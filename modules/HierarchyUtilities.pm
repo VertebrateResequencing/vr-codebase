@@ -5,8 +5,6 @@ use File::Basename;
 use File::Spec; 
 use File::Copy;
 
-use AssemblyTools;
-
 =pod
 
 =head1 NAME
@@ -25,6 +23,13 @@ Thomas Keane, I<tk2@sanger.ac.uk>
 
 =cut
 
+my $DFIND = '/software/solexa/bin/dfind';
+my $MPSA_DOWNLOAD = '/software/solexa/bin/mpsa_download';
+my $FASTQ_CHECK = '/software/solexa/bin/fastqcheck';
+#my $LSF_QUEUE = 'normal';
+my $LSF_QUEUE = 'small';
+my $CLIP_POINT_SCRIPT='sh ~tk2/code/vert_reseq/user/tk2/mapping/slx/findClipPoints.sh';
+
 sub importExternalData
 {
 	croak "Usage: importExternalData populations/samples_csv DCC_index hierarchy_parent_directory mapping_hierarchy_directory fastq_directory" unless @_ == 5;
@@ -35,11 +40,11 @@ sub importExternalData
 	my $mapping_hierarchy_dir = shift;
 	my $fastqDir = shift;
 	
-	croak "Cant find populations_csv file" unless -f $pop_csv;
-	croak "Cant find index file" unless -f $index_file;
-	croak "Cant find fastq directory" unless -d $fastqDir;
-	croak "Cant find data hierarchy parent directory" unless -d $data_hierarchy_dir;
-	croak "Cant find mapping hierarchy parent directory" unless -d $mapping_hierarchy_dir;
+	croak "Can't find populations_csv file" unless -f $pop_csv;
+	croak "Can't find index file" unless -f $index_file;
+	croak "Can't find fastq directory" unless -d $fastqDir;
+	croak "Can't find data hierarchy parent directory" unless -d $data_hierarchy_dir;
+	croak "Can't find mapping hierarchy parent directory" unless -d $mapping_hierarchy_dir;
 	
 	my %study_vs_id = (
 			28911   => 'LowCov',  # pilot 1
@@ -83,8 +88,8 @@ sub importExternalData
 		next if( $_ =~ /^\s+$/ || length( $_ ) == 0 || $_ =~ /^FASTQ_FILE/ );
 		
 		my @info = split( /\t/, $_ );
-		croak "Cant find study for lane ID: $info[ 3 ]\n" if( ! defined $study_vs_id{ $info[ 3 ] } );
-		croak "Cant find population for lane ID: $info[ 9 ]\n" if( ! defined $populations{ $info[ 9 ] } );
+		croak "Can't find study for lane ID: $info[ 3 ]\n" if( ! defined $study_vs_id{ $info[ 3 ] } );
+		croak "Can't find population for lane ID: $info[ 9 ]\n" if( ! defined $populations{ $info[ 9 ] } );
 		
 		#check SRR is unique
 		if( defined( $srrCount{ $info[ 2 ] } ) )
@@ -213,8 +218,8 @@ sub importExternalData
 		}
 		
 		#write a meta file with the read file names
-		open( META, ">$mdirName/meta.info" ) or die "Cant open meta.info file in $mdirName\n";
-		open( META1, ">$pdirName/meta.info" ) or die "Cant open meta.info file in $pdirName\n";
+		open( META, ">$mdirName/meta.info" ) or die "Can't open meta.info file in $mdirName\n";
+		open( META1, ">$pdirName/meta.info" ) or die "Can't open meta.info file in $pdirName\n";
 		
 		#copy the files into the directory
 		if( defined( $exp_unpaired{ $_ } ) && ! -l $pdirName.'/'.$exp_unpaired{ $_ } && ! -f $pdirName.'/'.$exp_unpaired{ $_ } )
@@ -249,263 +254,288 @@ sub importExternalData
 	}
 }
 
-#for checking the NPG for new sequence and importing it into the hierarchy
-#requires a text file with 1 project name per line
-#writes a meta.info file in each lane directory
-my $DFIND = '/software/solexa/bin/dfind';
-my $MPSA_DOWNLOAD = '/software/solexa/bin/mpsa_download';
-my $FASTQ_CHECK = '/software/solexa/bin/fastqcheck';
-my $LSF_QUEUE = 'normal';
-my $CLIP_POINT_SCRIPT='sh ~/code/vert_reseq/user/tk2/mapping/slx/findClipPoints.sh';
-sub importInternalData
-{
-	croak "Usage: importInternalData project_list_file data_hierarchy_parent_directory analysis_hierarchy_parent_directory" unless @_ == 3;
-	my $projectFile = shift;
-	my $dhierarchyDir = shift;
-	my $ahierarchyDir = shift;
-	
-	croak "Cant find data hierarchy directory\n" unless -d $dhierarchyDir;
-	croak "Cant find analysis hierarchy directory\n" unless -d $ahierarchyDir;
-	croak "Cant find projects file\n" unless -f $projectFile;
-	
-	open( PROJS, "$projectFile" ) or die "Cannot open projects file\n";
-	while( <PROJS> )
-	{
+
+=head2 importInternalData
+
+  Arg [1]    : file of NPG project names, one per line
+  Arg [2]    : Data directory to build hierarchy in
+  Arg [3]    : Analysis directory to build hierarchy in
+  Example    : importInternalData( 'mouse.proj', '$G1K/MOUSE/DATA', '$G1K/MOUSE/MAPPING');
+  Description: Imports all new sequence from NPG into a hierarchy.  Existing fastq are skipped.
+  Returntype : none
+
+=cut
+
+sub importInternalData {
+    croak "Usage: importInternalData project_list_file data_hierarchy_parent_directory analysis_hierarchy_parent_directory" unless @_ == 3;
+    my $projectFile = shift;
+    my $dhierarchyDir = shift;
+    my $ahierarchyDir = shift;
+
+    croak "Can't find data hierarchy directory\n" unless -d $dhierarchyDir;
+    croak "Can't find analysis hierarchy directory\n" unless -d $ahierarchyDir;
+    croak "Can't find projects file\n" unless -f $projectFile;
+    
+    my %projects;
+    open( my $PROJS, "$projectFile" ) or die "Cannot open projects file\n";
+    while(my $project =  <$PROJS> ) {
+	chomp;
+	$projects{$project} = {};
+
+	open(my $SAMPLES, q[-|], qq[$DFIND -project="$project" -samples] ) or die "Cannot run dfind on project: $project\n";
+	while(my $sample = <$SAMPLES> ) {
+	    chomp;
+	    $projects{$project}{$sample} = [];
+
+	    open my $LANES, q[-|], qq[$DFIND -project="$project" -sample="$sample" -filetype fastq] or die "Can't get lanes for $project $sample: $!\n";
+	    while(my $lane = <$LANES> ) {
 		chomp;
-		
-		print "Updating project: $_\n";
-		
-		my $project = $_;
-		my $project1 = $project;
-		$project1 =~ s/\W+/_/g;
-		
-		my $projPath = $dhierarchyDir.'/'.$project1;
-		mkdir $projPath unless -d $projPath;
-		if( ! -d $projPath )
-		{
-			mkdir $projPath or die "Cannot create directory $projPath\n";
-		}
-		
-		my $aprojPath = $ahierarchyDir.'/'.$project1;
-		mkdir $aprojPath unless -d $aprojPath;
-		if( ! -d $aprojPath )
-		{
-			mkdir $aprojPath or die "Cannot create directory $aprojPath\n";
-		}
-		
-		my $numLibraries = 0;
-		
-		#dfind on the project
-		open( SAMPLES, q[-|], qq[$DFIND -project="$project" -samples] ) or die "Cannot run dfind on project: $project\n";
-		while( <SAMPLES> )
-		{
-			chomp;
-			print "Updating library: $_\n";
-			
-			my $sample = $_; #library name
-			
-			#hack for G1K where sample starts with the individual
-			my $individual = 1;
-			if( $sample =~ /^NA\d+/ )
-			{
-				$individual = (split( /-/, $sample ) )[ 0 ];
-			}
-			
-			my $sample1 = $sample;
-			$sample1 =~ s/\W+/_/g;
-			
-			my $path = $projPath.'/'.$individual;
-			if( ! -d $path )
-			{
-				mkdir $path or die "Cannot create directory $path\n";
-			}
-			$path .= '/SLX';
-			if( ! -d $path )
-			{
-				mkdir $path or die "Cannot create directory $path\n";
-			}
-			$path .= '/'.$sample1;
-			if( ! -d $path )
-			{
-				mkdir $path or die "Cannot create directory $path\n";
-			}
-			
-			my $apath = $aprojPath.'/'.$individual;
-			if( ! -d $apath )
-			{
-				mkdir $apath or die "Cannot create directory $apath\n";
-			}
-			$apath .= '/SLX';
-			if( ! -d $apath )
-			{
-				mkdir $apath or die "Cannot create directory $apath\n";
-			}
-			$apath .= '/'.$sample1;
-			if( ! -d $apath )
-			{
-				mkdir $apath or die "Cannot create directory $apath\n";
-			}
-			
-			print "$DFIND -project=\"$project\" -sample=\"$sample\" -filetype fastq\n";
-			open LANES, q[-|], qq[$DFIND -project="$project" -sample="$sample" -filetype fastq] or die "Can't get lanes for $project $sample: $!\n";
-			my @dirs;
-			while( <LANES> )
-			{
-				chomp;
-				my $fastq = basename( $_ );
-				
-				my @s = split( /\./, $fastq );
-				my @s1 = split( '_', $s[ 0 ] );
-				
-				my $lPath = '';
-				my $alPath = '';
-				if( $s1[ 1 ] eq 's' ) #hack for old read file names with s character
-				{
-					$lPath = $path.'/'.$s1[ 0 ].'_'.$s1[ 2 ];
-					$alPath = $apath.'/'.$s1[ 0 ].'_'.$s1[ 2 ];
-				}
-				else
-				{
-					$lPath = $path.'/'.$s1[ 0 ].'_'.$s1[ 1 ];
-					$alPath = $apath.'/'.$s1[ 0 ].'_'.$s1[ 1 ];
-				}
-				
-				push( @dirs, $lPath );
-				
-				if( ! -d $lPath )
-				{
-					mkdir $lPath or die "Cannot create directory $lPath\n";
-				}
-				
-				if( ! -d $alPath )
-				{
-					mkdir $alPath or die "Cannot create directory $alPath\n";
-				}
-				
-				#check if the fastq file already exists
-				my $fqPath = $lPath.'/'.$fastq;
-				
-				#check if the gzipped reads are already on disk
-				if( $s1[ 1 ] eq 's' ) #hack for old read file names with s character
-				{
-					my $fastq1 = $s1[ 0 ].'_'.$s1[ 2 ].'_1.fastq.gz'; #read1 fastq
-					
-					if( ! -s $fqPath && ! -s $lPath.'/'.$fastq1 )
-					{
-						chdir( $lPath );
-						
-						print "Requesting file $fastq from MPSA.....\n";
-						my $random = int(rand( 100000000 ));
-						
-						#use mpsadownload to get fastq
-						my $cmd = 'bsub -J mpsa.'.$random.' -o import.o -e import.e -q '.$LSF_QUEUE.' "'.$MPSA_DOWNLOAD.' -c -f '.$fastq.' > '.$fastq.'"';
-						system( $cmd );
-						
-						$fastq =~ /(\d+)_s_(\d+)\.fastq/;
-						
-						my $fastq1 = $1.'_'.$2.'_1.fastq';
-						my $fastq2 = $1.'_'.$2.'_2.fastq';
-						
-						#write the meta.info file
-						open( META, ">$alPath/meta.info" ) or die "Cannot create meta.info file\n";
-						print META "read1:$fastq1.gz\n";
-						print META "read2:$fastq2.gz\n";
-						close( META );
-						
-						print "Writing meta info for: $fastq1.gz\n";
-						print "Writing meta info for: $fastq2.gz\n";
-						
-						#work out the clip points (if any)
-						$cmd = 'bsub -J clip.'.$random.' -w "done(mpsa.'.$random.')" -o import.o -e import.e -q '.$CLIP_POINT_SCRIPT.' '.$fastq1.' meta.info 1;'.$CLIP_POINT_SCRIPT.' '.$fastq2.' meta.info 2';
-						system( $cmd );
-						
-						#create a bsub job to split the fastq
-						$cmd = 'bsub -J split.'.$random.' -w "done(mpsa.'.$random.')" -o import.o -e import.e -q '.$LSF_QUEUE.' perl -w -e "use AssemblyTools;AssemblyTools::sanger2SplitFastq( \''.$fastq.'\', \''.$fastq1.'\', \''.$fastq2.'\' );"';
-						system( $cmd );
-						
-						#run fastqcheck
-						$cmd = 'bsub -J fastqcheck.'.$random.'.1 -o import.o -e import.e -q '.$LSF_QUEUE.' -w "done(split.'.$random.')" "cat '.$fastq1.' | '.$FASTQ_CHECK.'> '.$fastq1.'.gz.fastqcheck"';
-						system( $cmd );
-						
-						$cmd = 'bsub -J fastqcheck.'.$random.'.2 -o import.o -e import.e -q '.$LSF_QUEUE.' -w "done(split.'.$random.')" "cat '.$fastq2.' | '.$FASTQ_CHECK.'> '.$fastq2.'.gz.fastqcheck; rm '.$fastq.';ln -s '.$lPath.'/'.$fastq1.'.gz '.$alPath.';ln -s '.$lPath.'/'.$fastq2.'.gz '.$alPath.'"';
-						system( $cmd );
-						
-						#gzip the split fastq files
-						$cmd = 'bsub -q '.$LSF_QUEUE.' -w "done(clip.'.$random.')&&done(fastqcheck.'.$random.'.*)" -o import.o -e import.e "gzip '.$fastq1.' '.$fastq2.'"';
-						system( $cmd );
-						#print $cmd."\n";
-						#exit;
-					}
-					else
-					{
-						print "Lane already in hierarchy: $fastq\n";
-					}
-				}
-				elsif( ! -s $fqPath.'.gz' && ! -s $fqPath )
-				{
-					print "Requesting file $fastq from MPSA.....\n";
-					
-					chdir( $lPath );
-					my $random = int(rand( 100000000 ));
-					
-					#use mpsadownload to get fastq
-					my $cmd = 'bsub -J mpsa.'.$random.' -o import.o -e import.e -q '.$LSF_QUEUE.' "'.$MPSA_DOWNLOAD.' -c -f '.$fastq.' > '.$fastq.'"';
-					system( $cmd );
-					
-					#run fastqcheck
-					system( 'bsub -J fastqcheck.'.$random.' -w "done(mpsa.'.$random.')" -o import.o -e import.e -q '.$LSF_QUEUE.' "cat '.$fastq.' | '.$FASTQ_CHECK.' > '.$fastq.'.gz.fastqcheck"' );
-					
-					print "Writing meta.info for: $fastq.gz\n";
-					
-					#then write the meta info file
-					open( META, ">>$alPath/meta.info" ) or die "Cannot create meta file in $lPath\n";
-					
-					#figure out if its paired or unpaired read
-					if( $fastq =~ /^\d+_\d+\.fastq$/ ) #unpaired
-					{
-						print META "read0:$fastq.gz\n";
-					}
-					elsif( $fastq =~/^\d+_\d+_1.fastq$/ )
-					{
-						print META "read1:$fastq.gz\n";
-					}
-					elsif( $fastq =~/^\d+_\d+_2.fastq$/ )
-					{
-						print META "read2:$fastq.gz\n";
-					}
-					else
-					{
-						print "ERROR: Cant determine read information: $fastq\n";
-						exit;
-					}
-					close( META );
-					
-					#work out the clip point (if any)
-					my $readNum = 1;
-					if( $fastq =~ /.*_2\.fastq/ )
-					{
-						$readNum = 2;
-					}
-					$cmd = 'bsub -J clip.'.$random.' -w "done(mpsa.'.$random.')" -o import.o -e import.e -q '.$LSF_QUEUE.' '.$CLIP_POINT_SCRIPT.' '.$fastq.' '.$alPath.'/meta.info '.$readNum;
-					system( $cmd );
-					
-					#gzip the fastq file
-					system( 'bsub -w "done(fastqcheck.'.$random.')&&done(clip.'.$random.')" -q '.$LSF_QUEUE.' -o import.o -e import.e "gzip '.$fastq.'; ln -s '.$lPath.'/'.$fastq.'.gz '.$alPath.'"' );
-				}
-				else
-				{
-					print "Fastq already in hierarchy: $fastq\n";
-				}
-			}
-			close( LANES );
-			$numLibraries ++;
-		}
-		close( SAMPLES );
-		
-		print "WARNING: No libraries found for $project\n" unless $numLibraries > 0;
+		push @{$projects{$project}{$sample}}, $lane;
+	    }
+	    close( $LANES );
 	}
-	close( PROJS )
+	close( $SAMPLES );
+    }
+    close( $PROJS )
+    &buildInternalHierarchy(\%projects,$dhierarchyDir,$ahierarchyDir);
 }
+
+
+
+sub buildInternalHierarchy {
+    my $projecthash = shift; # ref to hash of projectnames->samplenames->lists of fastq
+    my $dhierarchyDir = shift;
+    my $ahierarchyDir = shift;
+
+    croak "Can't find data hierarchy directory\n" unless -d $dhierarchyDir;
+    croak "Can't find analysis hierarchy directory\n" unless -d $ahierarchyDir;
+
+    foreach my $project (keys %$projecthash){
+	print "Updating project: $project\n";
+	
+	my $project1 = $project;
+	$project1 =~ s/\W+/_/g;
+	
+	my $projPath = $dhierarchyDir.'/'.$project1;
+	if( ! -d $projPath )
+	{
+		mkdir $projPath or die "Cannot create directory $projPath\n";
+	}
+	
+	my $aprojPath = $ahierarchyDir.'/'.$project1;
+	if( ! -d $aprojPath )
+	{
+		mkdir $aprojPath or die "Cannot create directory $aprojPath\n";
+	}
+	
+	my $numLibraries = 0;
+	
+	#dfind on the project
+	foreach my $sample (keys %{$projecthash->{$project}}){
+	    chomp;
+	    print "Updating library: $_\n";
+	    
+	    #hack for G1K where sample starts with the individual
+	    my $individual = 1;
+	    if( $sample =~ /^NA\d+/ )
+	    {
+		    $individual = (split( /-/, $sample ) )[ 0 ];
+	    }
+	    
+	    my $sample1 = $sample;
+	    $sample1 =~ s/\W+/_/g;
+	    
+	    my $path = $projPath.'/'.$individual;
+	    if( ! -d $path )
+	    {
+		    mkdir $path or die "Cannot create directory $path\n";
+	    }
+	    $path .= '/SLX';
+	    if( ! -d $path )
+	    {
+		    mkdir $path or die "Cannot create directory $path\n";
+	    }
+	    $path .= '/'.$sample1;
+	    if( ! -d $path )
+	    {
+		    mkdir $path or die "Cannot create directory $path\n";
+	    }
+	    
+	    my $apath = $aprojPath.'/'.$individual;
+	    if( ! -d $apath )
+	    {
+		    mkdir $apath or die "Cannot create directory $apath\n";
+	    }
+	    $apath .= '/SLX';
+	    if( ! -d $apath )
+	    {
+		    mkdir $apath or die "Cannot create directory $apath\n";
+	    }
+	    $apath .= '/'.$sample1;
+	    if( ! -d $apath )
+	    {
+		    mkdir $apath or die "Cannot create directory $apath\n";
+	    }
+	    
+	    my @dirs;
+	    foreach my $fastq (@{$projecthash->{$project}{$sample}}){
+		chomp;
+		my $fastq = basename( $fastq );
+		
+		my @s = split( /\./, $fastq );
+		my @s1 = split( '_', $s[ 0 ] );
+		
+		my $lPath = '';
+		my $alPath = '';
+		if( $s1[ 1 ] eq 's' ) #hack for old read file names with s character
+		{
+			$lPath = $path.'/'.$s1[ 0 ].'_'.$s1[ 2 ];
+			$alPath = $apath.'/'.$s1[ 0 ].'_'.$s1[ 2 ];
+		}
+		else
+		{
+			$lPath = $path.'/'.$s1[ 0 ].'_'.$s1[ 1 ];
+			$alPath = $apath.'/'.$s1[ 0 ].'_'.$s1[ 1 ];
+		}
+		
+		push( @dirs, $lPath );
+		
+		if( ! -d $lPath )
+		{
+			mkdir $lPath or die "Cannot create directory $lPath\n";
+		}
+		
+		if( ! -d $alPath )
+		{
+			mkdir $alPath or die "Cannot create directory $alPath\n";
+		}
+		
+		#check if the fastq file already exists
+		my $fqPath = $lPath.'/'.$fastq;
+		
+		#check if the gzipped reads are already on disk
+		if( $s1[ 1 ] eq 's' ) #hack for old read file names with s character
+		{
+			my $fastq1 = $s1[ 0 ].'_'.$s1[ 2 ].'_1.fastq.gz'; #read1 fastq
+			
+			if( ! -s $fqPath && ! -s $lPath.'/'.$fastq1 )
+			{
+				chdir( $lPath );
+				
+				print "Requesting file $fastq from MPSA.....\n";
+				my $random = int(rand( 100000000 ));
+				
+				#use mpsadownload to get fastq
+				my $cmd = qq[bsub -J mpsa.$random -o import.o -e import.e -q $LSF_QUEUE "$MPSA_DOWNLOAD -c -f $fastq > $fastq"];
+				system( $cmd );
+				
+				$fastq =~ /(\d+)_s_(\d+)\.fastq/;
+				
+				my $fastq1 = $1.'_'.$2.'_1.fastq';
+				my $fastq2 = $1.'_'.$2.'_2.fastq';
+				
+				#write the meta.info file
+				open( META, ">$alPath/meta.info" ) or die "Cannot create meta.info file\n";
+				print META "read1:$fastq1.gz\n";
+				print META "read2:$fastq2.gz\n";
+				close( META );
+				
+				print "Writing meta info for: $fastq1.gz\n";
+				print "Writing meta info for: $fastq2.gz\n";
+				
+				#create a bsub job to split the fastq
+				$cmd = qq[bsub -J split.$random -w "done(mpsa.$random)" -o import.o -e import.e -q $LSF_QUEUE perl -w -e "use AssemblyTools;AssemblyTools::sanger2SplitFastq( '$fastq', '$fastq1', '$fastq2');"];
+				system( $cmd );
+				
+				#work out the clip points (if any)
+				$cmd = qq[bsub -J clip.$random -w "done(mpsa.$random)" -o import.o -e import.e -q $LSF_QUEUE "$CLIP_POINT_SCRIPT $fastq1 meta.info 1;$CLIP_POINT_SCRIPT $fastq2 meta.info 2"];
+				system( $cmd );	
+
+				#run fastqcheck
+				$cmd = qq[bsub -J fastqcheck.$random.1 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq1 | $FASTQ_CHECK > $fastq1.gz.fastqcheck"];
+				system( $cmd );
+				
+				$cmd = qq[bsub -J fastqcheck.$random.2 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq2 | $FASTQ_CHECK> $fastq2.gz.fastqcheck; rm $fastq;ln -s $lPath/$fastq1.gz $alPath;ln -s $lPath/$fastq2.gz $alPath"];
+				system( $cmd );
+				
+				#gzip the split fastq files
+				$cmd = qq[bsub -q $LSF_QUEUE -w "done(clip.$random)&&done(fastqcheck.$random.*)" -o import.o -e import.e "gzip $fastq1 $fastq2"];
+				system( $cmd );
+				#print $cmd."\n";
+				#exit;
+			}
+			else
+			{
+				print "Lane already in hierarchy: $fastq\n";
+			}
+		}
+		elsif( ! -s $fqPath.'.gz' && ! -s $fqPath )
+		{
+			print "Requesting file $fastq from MPSA.....\n";
+			
+			chdir( $lPath );
+			my $random = int(rand( 100000000 ));
+			
+			#use mpsadownload to get fastq
+			my $cmd = qq[bsub -J mpsa.$random -o import.o -e import.e -q $LSF_QUEUE "$MPSA_DOWNLOAD -c -f $fastq > $fastq"];
+			system( $cmd );
+			
+			#run fastqcheck
+			my $cmd = qq[bsub -J fastqcheck.$random -w "done(mpsa.$random)" -o import.o -e import.e -q $LSF_QUEUE "cat $fastq | $FASTQ_CHECK > $fastq.gz.fastqcheck"];
+			system( $cmd );
+			
+			print "Writing meta.info for: $fastq.gz\n";
+			
+			#then write the meta info file
+			open( META, ">>$alPath/meta.info" ) or die "Cannot create meta file in $lPath\n";
+			
+			#figure out if its paired or unpaired read
+			if( $fastq =~ /^\d+_\d+\.fastq$/ ) #unpaired
+			{
+				print META "read0:$fastq.gz\n";
+			}
+			elsif( $fastq =~/^\d+_\d+_1.fastq$/ )
+			{
+				print META "read1:$fastq.gz\n";
+			}
+			elsif( $fastq =~/^\d+_\d+_2.fastq$/ )
+			{
+				print META "read2:$fastq.gz\n";
+			}
+			else
+			{
+				print "ERROR: Can't determine read information: $fastq\n";
+				exit;
+			}
+			close( META );
+			
+			#work out the clip point (if any)
+			my $readNum = 1;
+			if( $fastq =~ /.*_2\.fastq/ )
+			{
+				$readNum = 2;
+			}
+			$cmd = qq[bsub -J clip.$random -w "done(mpsa.$random)" -o import.o -e import.e -q $LSF_QUEUE "$CLIP_POINT_SCRIPT $fastq $alPath/meta.info $readNum"];
+			system( $cmd );
+			
+			#gzip the fastq file
+			
+			$cmd = qq[bsub -w "done(fastqcheck.$random)&&done(clip.$random)" -q $LSF_QUEUE -o import.o -e import.e "gzip $fastq; ln -s $lPath/$fastq.gz $alPath"];
+			system( $cmd );
+		}
+		else
+		{
+			print "Fastq already in hierarchy: $fastq\n";
+		}
+	    }
+	    $numLibraries ++;
+	}
+	
+	print "WARNING: No libraries found for $project\n" unless $numLibraries > 0;
+    }
+
+}
+
 
 =pod
 	Function to delete lanes from a hierarchy.
@@ -519,9 +549,9 @@ sub deleteIndexLanes
 	my $index_file = shift;
 	my $hierarchy_dir = shift;
 	
-	croak "Cant find populations_csv file" unless -f $pop_csv;
-	croak "Cant find index file" unless -f $index_file;
-	croak "Cant find hierarchy parent directory" unless -d $hierarchy_dir;
+	croak "Can't find populations_csv file" unless -f $pop_csv;
+	croak "Can't find index file" unless -f $index_file;
+	croak "Can't find hierarchy parent directory" unless -d $hierarchy_dir;
 	
 	my %study_vs_id = (28911   => 'LowCov',  # pilot 1
 		    28919   => 'Trio',    # pilot 2
@@ -549,7 +579,7 @@ sub deleteIndexLanes
 	
 	my %exp_path; #within hierarchy
 	
-	croak "Cant find input index file\n" unless -f $index_file;
+	croak "Can't find input index file\n" unless -f $index_file;
 	
 	open( IN, "$index_file" ) or die "Cannot open input index file\n";
 	while( <IN> )
@@ -558,8 +588,8 @@ sub deleteIndexLanes
 		next if( $_ =~ /^\s+$/ || length( $_ ) == 0 || $_ =~ /^FASTQ_FILE/ );
 		
 		my @info = split( /\t+/, $_ );
-		croak "Cant find study for lane ID: $info[ 3 ]\n" if( ! defined $study_vs_id{ $info[ 3 ] } );
-		croak "Cant find population for lane ID: $info[ 9 ]\n" if( ! defined $populations{ $info[ 9 ] } );
+		croak "Can't find study for lane ID: $info[ 3 ]\n" if( ! defined $study_vs_id{ $info[ 3 ] } );
+		croak "Can't find population for lane ID: $info[ 9 ]\n" if( ! defined $populations{ $info[ 9 ] } );
 		
 		my @s = split( /\t+/, $_ );
 		
