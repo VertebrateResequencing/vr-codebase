@@ -449,7 +449,7 @@ sub buildInternalHierarchy {
 				print "Writing meta info for: $fastq2.gz\n";
 				
 				#create a bsub job to split the fastq
-				$cmd = qq[bsub -J split.$random -o import.o -e import.e -q $LSF_QUEUE perl -w -e "use AssemblyTools;AssemblyTools::sanger2SplitFastq( '$fastq', '$fastq1', '$fastq2');"];
+				$cmd = qq[bsub -J split.$random -o import.o -e import.e -q $LSF_QUEUE perl -w -e "use AssemblyTools;AssemblyTools::sanger2SplitFastq( '$fastq', '$fastq1', '$fastq2');rm $fastq;"];
 				system( $cmd );
 				
 				#work out the clip points (if any)
@@ -457,14 +457,14 @@ sub buildInternalHierarchy {
 				system( $cmd );	
 
 				#run fastqcheck
-				$cmd = qq[bsub -J fastqcheck.$random.1 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq1 | $FASTQ_CHECK > $fastq1.gz.fastqcheck"];
+				$cmd = qq[bsub -J fastqcheck.$random.1 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq1 | $FASTQ_CHECK > $fastq1.gz.fastqcheck;ln -s $lPath/$fastq1.gz.fastqcheck $alPath"];
 				system( $cmd );
 				
-				$cmd = qq[bsub -J fastqcheck.$random.2 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq2 | $FASTQ_CHECK> $fastq2.gz.fastqcheck; rm $fastq;ln -s $lPath/$fastq1.gz $alPath;ln -s $lPath/$fastq2.gz $alPath"];
+				$cmd = qq[bsub -J fastqcheck.$random.2 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq2 | $FASTQ_CHECK> $fastq2.gz.fastqcheck;ln -s $lPath/$fastq2.gz.fastqcheck $alPath"];
 				system( $cmd );
 				
 				#gzip the split fastq files
-				$cmd = qq[bsub -q $LSF_QUEUE -w "done(clip.$random)&&done(fastqcheck.$random.*)" -o import.o -e import.e "gzip $fastq1 $fastq2"];
+				$cmd = qq[bsub -q $LSF_QUEUE -w "done(clip.$random)&&done(fastqcheck.$random.*)" -o import.o -e import.e "gzip $fastq1 $fastq2; ln -s $lPath/$fastq1.gz $alPath;ln -s $lPath/$fastq2.gz $alPath"];
 				system( $cmd );
 				#print $cmd."\n";
 				#exit;
