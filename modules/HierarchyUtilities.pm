@@ -330,7 +330,6 @@ sub buildInternalHierarchy {
 	
 	my $numLibraries = 0;
 	
-	#dfind on the project
 	foreach my $sample (keys %{$projecthash->{$project}}){
 	    chomp;
 	    print "Updating library: $_\n";
@@ -378,8 +377,7 @@ sub buildInternalHierarchy {
 	    }
 	    
 	    my @dirs;
-	    foreach my $fastq (@{$projecthash->{$project}{$sample}})
-	    {
+	    foreach my $fastq (@{$projecthash->{$project}{$sample}}){
 		chomp;
 		my $fastq = basename( $fastq );
 		
@@ -427,8 +425,14 @@ sub buildInternalHierarchy {
 				my $random = int(rand( 100000000 ));
 				
 				#use mpsadownload to get fastq
-				my $cmd = qq[bsub -J mpsa.$random -o import.o -e import.e -q $LSF_QUEUE "$MPSA_DOWNLOAD -c -f $fastq > $fastq"];
+				# jws 2009-02-11 - do this inline, and then do any parallelisation outside this module
+				#my $cmd = qq[bsub -J mpsa.$random -o import.o -e import.e -q $LSF_QUEUE "$MPSA_DOWNLOAD -c -f $fastq > $fastq"];
+				my $cmd = "$MPSA_DOWNLOAD -c -f $fastq > $fastq 2> import.e";
 				system( $cmd );
+				unless (-s $fastq){
+				    print "Error retrieving $fastq with mpsa_download: $!\n";
+				    next;
+				}
 				
 				$fastq =~ /(\d+)_s_(\d+)\.fastq/;
 				
@@ -445,11 +449,11 @@ sub buildInternalHierarchy {
 				print "Writing meta info for: $fastq2.gz\n";
 				
 				#create a bsub job to split the fastq
-				$cmd = qq[bsub -J split.$random -w "done(mpsa.$random)" -o import.o -e import.e -q $LSF_QUEUE perl -w -e "use AssemblyTools;AssemblyTools::sanger2SplitFastq( '$fastq', '$fastq1', '$fastq2');"];
+				$cmd = qq[bsub -J split.$random -o import.o -e import.e -q $LSF_QUEUE perl -w -e "use AssemblyTools;AssemblyTools::sanger2SplitFastq( '$fastq', '$fastq1', '$fastq2');"];
 				system( $cmd );
 				
 				#work out the clip points (if any)
-				$cmd = qq[bsub -J clip.$random -w "done(mpsa.$random)" -o import.o -e import.e -q $LSF_QUEUE "$CLIP_POINT_SCRIPT $fastq1 meta.info 1;$CLIP_POINT_SCRIPT $fastq2 meta.info 2"];
+				$cmd = qq[bsub -J clip.$random -w "done(split.$random)" -o import.o -e import.e -q $LSF_QUEUE "$CLIP_POINT_SCRIPT $fastq1 meta.info 1;$CLIP_POINT_SCRIPT $fastq2 meta.info 2"];
 				system( $cmd );	
 
 				#run fastqcheck
@@ -477,12 +481,18 @@ sub buildInternalHierarchy {
 			chdir( $lPath );
 			my $random = int(rand( 100000000 ));
 			
-			#use mpsadownload to get fastq
-			my $cmd = qq[bsub -J mpsa.$random -o import.o -e import.e -q $LSF_QUEUE "$MPSA_DOWNLOAD -c -f $fastq > $fastq"];
+			#use mpsadownload to get fastq.
+			# jws 2009-02-11 - do this inline, and then do any parallelisation outside this module
+			#my $cmd = qq[bsub -J mpsa.$random -o import.o -e import.e -q $LSF_QUEUE "$MPSA_DOWNLOAD -c -f $fastq > $fastq"];
+			my $cmd = "$MPSA_DOWNLOAD -c -f $fastq > $fastq 2> import.e";
 			system( $cmd );
+			unless ( -s $fastq){	# TODO: add md5 check if mpsa ever add it
+			    print "Error retrieving $fastq with mpsa_download: $!\n";
+			    next;
+			}
 			
 			#run fastqcheck
-			my $cmd = qq[bsub -J fastqcheck.$random -w "done(mpsa.$random)" -o import.o -e import.e -q $LSF_QUEUE "cat $fastq | $FASTQ_CHECK > $fastq.gz.fastqcheck; ln -s $fastq.gz.fastqcheck $alPath"];
+			my $cmd = qq[bsub -J fastqcheck.$random -o import.o -e import.e -q $LSF_QUEUE "cat $fastq | $FASTQ_CHECK > $fastq.gz.fastqcheck; ln -s $fastq.gz.fastqcheck $alPath"];
 			system( $cmd );
 			
 			print "Writing meta.info for: $fastq.gz\n";
@@ -516,7 +526,7 @@ sub buildInternalHierarchy {
 			{
 				$readNum = 2;
 			}
-			$cmd = qq[bsub -J clip.$random -w "done(mpsa.$random)" -o import.o -e import.e -q $LSF_QUEUE "$CLIP_POINT_SCRIPT $fastq $alPath/meta.info $readNum"];
+			$cmd = qq[bsub -J clip.$random -o import.o -e import.e -q $LSF_QUEUE "$CLIP_POINT_SCRIPT $fastq $alPath/meta.info $readNum"];
 			system( $cmd );
 			
 			#gzip the fastq file
@@ -537,6 +547,67 @@ sub buildInternalHierarchy {
 
 }
 
+
+
+=head2 checkInternalFastq
+
+  Arg [1]    : DATA lane directory to check
+  Example    : my $is_ok = checkInternalFastq('/lustre/sf4/1kgenomes/G1K/SANGER/1000Genomes_B1_TOS/NA20534/SLX/NA20534_TOS_1/1513_2');
+  Description: compares NPG/MPSA fastqcheck to fastqcheck(s) for retrieved fastq.  Handles split fastq as well as unsplit.  Note, uses dfind to retrieve the NPG fastqcheck file(s).
+  Returntype : 1 if fastqcheck counts are the same.
+
+=cut
+
+sub checkInternalFastq {
+    croak "Usage: checkInternalFastql hierarchy_fastq_dir" unless @_ == 1;
+    my $fastqdir = shift;
+    $fastqdir =~ s|/$||;    # remove any trailing separator
+    my ($run,$lane) = $fastqdir=~m|.*/(\d+)_(\d+)$|;
+    my $check_bad;
+    unless ($run && $lane){
+	carp "Can't find run and lane from $fastqdir";
+	return undef;
+    }
+
+    open my $FQCHECK, q[-|], qq[$DFIND -run $run -lane $lane -filetype fastqcheck];
+    while (<$FQCHECK>){
+	chomp;
+	my ($orig_seqs,$orig_len) = getSeqAndLengthFromFastqcheck($_);
+	my ($lanename) = m|.*/(\w+)\.fastqcheck$|;
+	my ($new_seqs,$new_len);
+	if ($lanename eq "${run}_s_${lane}"){
+	    # old fastq that needed splitting.
+	    # should have two corresponding fastqchecks from the split files
+	    foreach my $ori (1,2){
+		my $fq = "${run}_${lane}_${ori}";
+		my ($seqs, $len) = getSeqAndLengthFromFastqcheck("$fastqdir/$fq.fastq.gz.fastqcheck");
+		$new_seqs += $seqs;
+		$new_len  += $len;
+	    }
+	    $new_seqs = $new_seqs/2;	# should be same number of seqs in both
+					# split files
+	}
+	else {
+	    # files are pre-split, so just need corresponding fastqcheck
+	    ($new_seqs, $new_len) = getSeqAndLengthFromFastqcheck("$fastqdir/$lanename.fastq.gz.fastqcheck");
+	}
+	unless ($orig_seqs == $new_seqs && $orig_len == $new_len){
+	    $check_bad = 1;
+	}
+    }
+    my $check_ok = $check_bad ? 0 : 1;
+    return $check_ok;
+}
+
+
+sub getSeqAndLengthFromFastqcheck {
+    my $fastqcheck = shift;
+    open (my $FQC, $fastqcheck) or croak "Can't open $fastqcheck: $!\n";
+    my $header = <$FQC>;
+    close $FQC;
+    my ($seqcount,undef,$length) = split /\s+/,$header;
+    return ($seqcount,$length);
+}
 
 =pod
 	Function to delete lanes from a hierarchy.
