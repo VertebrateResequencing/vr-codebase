@@ -378,7 +378,8 @@ sub buildInternalHierarchy {
 	    }
 	    
 	    my @dirs;
-	    foreach my $fastq (@{$projecthash->{$project}{$sample}}){
+	    foreach my $fastq (@{$projecthash->{$project}{$sample}})
+	    {
 		chomp;
 		my $fastq = basename( $fastq );
 		
@@ -481,7 +482,7 @@ sub buildInternalHierarchy {
 			system( $cmd );
 			
 			#run fastqcheck
-			my $cmd = qq[bsub -J fastqcheck.$random -w "done(mpsa.$random)" -o import.o -e import.e -q $LSF_QUEUE "cat $fastq | $FASTQ_CHECK > $fastq.gz.fastqcheck"];
+			my $cmd = qq[bsub -J fastqcheck.$random -w "done(mpsa.$random)" -o import.o -e import.e -q $LSF_QUEUE "cat $fastq | $FASTQ_CHECK > $fastq.gz.fastqcheck; ln -s $fastq.gz.fastqcheck $alPath"];
 			system( $cmd );
 			
 			print "Writing meta.info for: $fastq.gz\n";
