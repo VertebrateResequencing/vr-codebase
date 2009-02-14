@@ -492,7 +492,7 @@ sub buildInternalHierarchy {
 			}
 			
 			#run fastqcheck
-			my $cmd = qq[bsub -J fastqcheck.$random -o import.o -e import.e -q $LSF_QUEUE "cat $fastq | $FASTQ_CHECK > $fastq.gz.fastqcheck; ln -s $fastq.gz.fastqcheck $alPath"];
+			my $cmd = qq[bsub -J fastqcheck.$random -o import.o -e import.e -q $LSF_QUEUE "cat $fastq | $FASTQ_CHECK > $fastq.gz.fastqcheck; ln -s $lPath/$fastq.gz.fastqcheck $alPath"];
 			system( $cmd );
 			
 			print "Writing meta.info for: $fastq.gz\n";
