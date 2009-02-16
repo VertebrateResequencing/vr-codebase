@@ -498,7 +498,7 @@ sub buildInternalHierarchy {
 			print "Writing meta.info for: $fastq.gz\n";
 			
 			#then write the meta info file
-			open( META, ">>$alPath/meta.info" ) or die "Cannot create meta file in $lPath\n";
+			open( META, ">>$lPath/meta.info" ) or die "Cannot create meta file in $lPath\n";
 			
 			#figure out if its paired or unpaired read
 			if( $fastq =~ /^\d+_\d+\.fastq$/ ) #unpaired
@@ -519,6 +519,9 @@ sub buildInternalHierarchy {
 				exit;
 			}
 			close( META );
+			
+			#link the meta file into mapping hierarchy
+			system( "ln -s $lPath/meta.info $alPath" );
 			
 			#work out the clip point (if any)
 			my $readNum = 1;
