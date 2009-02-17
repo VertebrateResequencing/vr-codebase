@@ -332,7 +332,7 @@ sub buildInternalHierarchy {
 	
 	foreach my $sample (keys %{$projecthash->{$project}}){
 	    chomp;
-	    print "Updating library: $_\n";
+	    print "Updating library: $sample\n";
 	    
 	    #hack for G1K where sample starts with the individual
 	    my $individual = 1;
@@ -457,21 +457,21 @@ sub buildInternalHierarchy {
 				system( $cmd );	
 
 				#run fastqcheck
-				$cmd = qq[bsub -J fastqcheck.$random.1 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq1 | $FASTQ_CHECK > $fastq1.gz.fastqcheck;ln -s $lPath/$fastq1.gz.fastqcheck $alPath"];
+				$cmd = qq[bsub -J fastqcheck.$random.1 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq1 | $FASTQ_CHECK > $fastq1.gz.fastqcheck;ln -s $lPath/$fastq1.gz.fastqcheck $alPath/$fastq1.gz.fastqcheck"];
 				system( $cmd );
 				
-				$cmd = qq[bsub -J fastqcheck.$random.2 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq2 | $FASTQ_CHECK> $fastq2.gz.fastqcheck;ln -s $lPath/$fastq2.gz.fastqcheck $alPath"];
+				$cmd = qq[bsub -J fastqcheck.$random.2 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq2 | $FASTQ_CHECK> $fastq2.gz.fastqcheck;ln -s $lPath/$fastq2.gz.fastqcheck $alPath/$fastq2.gz.fastqcheck"];
 				system( $cmd );
 				
 				#gzip the split fastq files
-				$cmd = qq[bsub -q $LSF_QUEUE -w "done(clip.$random)&&done(fastqcheck.$random.*)" -o import.o -e import.e "gzip $fastq1 $fastq2; ln -s $lPath/$fastq1.gz $alPath;ln -s $lPath/$fastq2.gz $alPath"];
+				$cmd = qq[bsub -q $LSF_QUEUE -w "done(clip.$random)&&done(fastqcheck.$random.*)" -o import.o -e import.e "gzip $fastq1 $fastq2; ln -s $lPath/$fastq1.gz $alPath/$fastq1.gz;ln -s $lPath/$fastq2.gz $alPath/$fastq2.gz"];
 				system( $cmd );
 				#print $cmd."\n";
 				#exit;
 
 				# check fastqcheck on new files agrees with fastqcheck from NPG/MPSA
 				# if not, warn user and delete the lane directory
-				if (checkInternalFastq("$lPath/$fastq1.gz") && checkInternalFastq("$lPath/$fastq2.gz")){
+				if (checkInternalFastq($lPath)){
 				    print "$lPath/$fastq1.gz imported\n";
 				    print "$lPath/$fastq2.gz imported\n";
 				}
@@ -506,7 +506,7 @@ sub buildInternalHierarchy {
 			}
 			
 			#run fastqcheck
-			my $cmd = qq[bsub -J fastqcheck.$random -o import.o -e import.e -q $LSF_QUEUE "cat $fastq | $FASTQ_CHECK > $fastq.gz.fastqcheck; ln -s $lPath/$fastq.gz.fastqcheck $alPath"];
+			my $cmd = qq[bsub -J fastqcheck.$random -o import.o -e import.e -q $LSF_QUEUE "cat $fastq | $FASTQ_CHECK > $fastq.gz.fastqcheck; ln -s $lPath/$fastq.gz.fastqcheck $alPath/$fastq.gz.fastqcheck"];
 			system( $cmd );
 			
 			print "Writing meta.info for: $fastq.gz\n";
@@ -535,7 +535,7 @@ sub buildInternalHierarchy {
 			close( META );
 			
 			#link the meta file into mapping hierarchy
-			system( "ln -s $lPath/meta.info $alPath" );
+			system( "ln -s $lPath/meta.info $alPath/meta.info" );
 			
 			#work out the clip point (if any)
 			my $readNum = 1;
@@ -548,12 +548,12 @@ sub buildInternalHierarchy {
 			
 			#gzip the fastq file
 			
-			$cmd = qq[bsub -w "done(fastqcheck.$random)&&done(clip.$random)" -q $LSF_QUEUE -o import.o -e import.e "gzip $fastq; ln -s $lPath/$fastq.gz $alPath"];
+			$cmd = qq[bsub -w "done(fastqcheck.$random)&&done(clip.$random)" -q $LSF_QUEUE -o import.o -e import.e "gzip $fastq; ln -s $lPath/$fastq.gz $alPath/$fastq.gz"];
 			system( $cmd );
 
 			# check fastqcheck on new files agrees with fastqcheck from NPG/MPSA
 			# if not, warn user and delete the lane directory
-			if (checkInternalFastq("$lPath/$fastq.gz")){
+			if (checkInternalFastq($lPath)){
 			    print "$lPath/$fastq.gz imported\n";
 			}
 			else{
