@@ -466,22 +466,7 @@ sub buildInternalHierarchy {
 				#gzip the split fastq files
 				$cmd = qq[bsub -q $LSF_QUEUE -w "done(clip.$random)&&done(fastqcheck.$random.*)" -o import.o -e import.e "gzip $fastq1 $fastq2; ln -s $lPath/$fastq1.gz $alPath/$fastq1.gz;ln -s $lPath/$fastq2.gz $alPath/$fastq2.gz"];
 				system( $cmd );
-				#print $cmd."\n";
-				#exit;
 
-				# check fastqcheck on new files agrees with fastqcheck from NPG/MPSA
-				# if not, warn user and delete the lane directory
-				if (checkInternalFastq($lPath)){
-				    print "$lPath/$fastq1.gz imported\n";
-				    print "$lPath/$fastq2.gz imported\n";
-				}
-				else{
-				    print "$fastq split fastqchecks don't agree with MPSA fastqcheck.  Deleting.\n";
-				    unlink(glob("$lPath/*"));
-				    unlink(glob("$alPath/*"));
-				    rmdir($lPath);
-				    rmdir($alPath);
-				}
 			}
 			else
 			{
@@ -551,18 +536,6 @@ sub buildInternalHierarchy {
 			$cmd = qq[bsub -w "done(fastqcheck.$random)&&done(clip.$random)" -q $LSF_QUEUE -o import.o -e import.e "gzip $fastq; ln -s $lPath/$fastq.gz $alPath/$fastq.gz"];
 			system( $cmd );
 
-			# check fastqcheck on new files agrees with fastqcheck from NPG/MPSA
-			# if not, warn user and delete the lane directory
-			if (checkInternalFastq($lPath)){
-			    print "$lPath/$fastq.gz imported\n";
-			}
-			else{
-			    print "$fastq fastqcheck doesn't agree with MPSA fastqcheck.  Deleting.\n";
-			    unlink(glob("$lPath/*"));
-			    unlink(glob("$alPath/*"));
-			    rmdir($lPath);
-			    rmdir($alPath);
-			}
 		}
 		else
 		{
