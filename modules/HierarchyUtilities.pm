@@ -468,6 +468,20 @@ sub buildInternalHierarchy {
 				system( $cmd );
 				#print $cmd."\n";
 				#exit;
+
+				# check fastqcheck on new files agrees with fastqcheck from NPG/MPSA
+				# if not, warn user and delete the lane directory
+				if (checkInternalFastq("$lPath/$fastq1.gz") && checkInternalFastq("$lPath/$fastq2.gz")){
+				    print "$lPath/$fastq1.gz imported\n";
+				    print "$lPath/$fastq2.gz imported\n";
+				}
+				else{
+				    carp "$fastq split fastqchecks don't agree with MPSA fastqcheck.  Deleting.";
+				    unlink(glob("$lPath/*"));
+				    unlink(glob("$alPath/*"));
+				    rmdir($lPath);
+				    rmdir($alPath);
+				}
 			}
 			else
 			{
@@ -536,11 +550,25 @@ sub buildInternalHierarchy {
 			
 			$cmd = qq[bsub -w "done(fastqcheck.$random)&&done(clip.$random)" -q $LSF_QUEUE -o import.o -e import.e "gzip $fastq; ln -s $lPath/$fastq.gz $alPath"];
 			system( $cmd );
+
+			# check fastqcheck on new files agrees with fastqcheck from NPG/MPSA
+			# if not, warn user and delete the lane directory
+			if (checkInternalFastq("$lPath/$fastq.gz")){
+			    print "$lPath/$fastq.gz imported\n";
+			}
+			else{
+			    carp "$fastq fastqcheck doesn't agree with MPSA fastqcheck.  Deleting.";
+			    unlink(glob("$lPath/*"));
+			    unlink(glob("$alPath/*"));
+			    rmdir($lPath);
+			    rmdir($alPath);
+			}
 		}
 		else
 		{
 			print "Fastq already in hierarchy: $fastq\n";
 		}
+
 	    }
 	    $numLibraries ++;
 	}
