@@ -476,7 +476,7 @@ sub buildInternalHierarchy {
 				    print "$lPath/$fastq2.gz imported\n";
 				}
 				else{
-				    carp "$fastq split fastqchecks don't agree with MPSA fastqcheck.  Deleting.";
+				    print "$fastq split fastqchecks don't agree with MPSA fastqcheck.  Deleting.";
 				    unlink(glob("$lPath/*"));
 				    unlink(glob("$alPath/*"));
 				    rmdir($lPath);
@@ -557,7 +557,7 @@ sub buildInternalHierarchy {
 			    print "$lPath/$fastq.gz imported\n";
 			}
 			else{
-			    carp "$fastq fastqcheck doesn't agree with MPSA fastqcheck.  Deleting.";
+			    print "$fastq fastqcheck doesn't agree with MPSA fastqcheck.  Deleting.";
 			    unlink(glob("$lPath/*"));
 			    unlink(glob("$alPath/*"));
 			    rmdir($lPath);
