@@ -440,7 +440,7 @@ sub buildInternalHierarchy {
 				my $fastq2 = $1.'_'.$2.'_2.fastq';
 				
 				#write the meta.info file
-				open( META, ">$alPath/meta.info" ) or die "Cannot create meta.info file\n";
+				open( META, ">$lPath/meta.info" ) or die "Cannot create meta.info file\n";
 				print META "read1:$fastq1.gz\n";
 				print META "read2:$fastq2.gz\n";
 				close( META );
@@ -448,6 +448,9 @@ sub buildInternalHierarchy {
 				print "Writing meta info for: $fastq1.gz\n";
 				print "Writing meta info for: $fastq2.gz\n";
 				
+				#link the meta file into mapping hierarchy
+				system( "ln -fs $lPath/meta.info $alPath/meta.info" );
+
 				#create a bsub job to split the fastq
 				$cmd = qq[bsub -J split.$random -o import.o -e import.e -q $LSF_QUEUE perl -w -e "use AssemblyTools;AssemblyTools::sanger2SplitFastq( '$fastq', '$fastq1', '$fastq2');unlink '$fastq';"];
 				system( $cmd );
@@ -497,7 +500,7 @@ sub buildInternalHierarchy {
 			print "Writing meta.info for: $fastq.gz\n";
 			
 			#then write the meta info file
-			open( META, ">>$lPath/meta.info" ) or die "Cannot create meta file in $lPath\n";
+			open( META, ">$lPath/meta.info" ) or die "Cannot create meta file in $lPath\n";
 			
 			#figure out if its paired or unpaired read
 			if( $fastq =~ /^\d+_\d+\.fastq$/ ) #unpaired
