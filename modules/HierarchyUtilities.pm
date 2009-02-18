@@ -226,7 +226,7 @@ sub importExternalData
 		{
 			copy( $fastqDir.'/'.$exp_unpaired{ $_ }, $pdirName.'/'.$exp_unpaired{ $_ } ) or die "Failed to copy file: ".$exp_unpaired{ $_ };
 			symlink( $pdirName.'/'.$exp_unpaired{ $_ }, $mdirName.'/'.$exp_unpaired{ $_ } );
-			system( 'bsub -q small -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_unpaired{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_unpaired{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_unpaired{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_unpaired{ $_ }.'.fastqcheck"' );
+			system( 'bsub -q small -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_unpaired{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_unpaired{ $_ }.'.fastqcheck; ln -fs '.$pdirName.'/'.$exp_unpaired{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_unpaired{ $_ }.'.fastqcheck"' );
 			print META "read0:".$exp_unpaired{ $_ }."\n";
 			print META1 "read0:".$exp_unpaired{ $_ }."\n";
 		}
@@ -235,7 +235,7 @@ sub importExternalData
 		{
 			copy( $fastqDir.'/'.$exp_read1{ $_ }, $pdirName.'/'.$exp_read1{ $_ } ) or die "Failed to copy file: ".$exp_read1{ $_ };
 			symlink( $pdirName.'/'.$exp_read1{ $_ }, $mdirName.'/'.$exp_read1{ $_ } ) or die "Failed to sym link read into mapping directory: ".$mdirName.'/'.$exp_read1{ $_ };
-			system( 'bsub -q small -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_read1{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read1{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_read1{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read1{ $_ }.'.fastqcheck"' );
+			system( 'bsub -q small -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_read1{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read1{ $_ }.'.fastqcheck; ln -fs '.$pdirName.'/'.$exp_read1{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read1{ $_ }.'.fastqcheck"' );
 			print META "read1:".$exp_read1{ $_ }."\n";
 			print META1 "read1:".$exp_read1{ $_ }."\n";
 		}
@@ -244,7 +244,7 @@ sub importExternalData
 		{
 			copy( $fastqDir.'/'.$exp_read2{ $_ }, $pdirName.'/'.$exp_read2{ $_ } ) or die "Failed to copy file: ".$exp_read2{ $_ };
 			symlink( $pdirName.'/'.$exp_read2{ $_ }, $mdirName.'/'.$exp_read2{ $_ } ) or die "Failed to sym link read into mapping directory: ".$mdirName.'/'.$exp_read2{ $_ };
-			system( 'bsub -q small -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_read2{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read2{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_read2{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read2{ $_ }.'.fastqcheck"' );
+			system( 'bsub -q small -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_read2{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read2{ $_ }.'.fastqcheck; ln -fs '.$pdirName.'/'.$exp_read2{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read2{ $_ }.'.fastqcheck"' );
 			print META "read2:".$exp_read2{ $_ }."\n";
 			print META1 "read2:".$exp_read2{ $_ }."\n";
 		}
@@ -449,7 +449,7 @@ sub buildInternalHierarchy {
 				print "Writing meta info for: $fastq2.gz\n";
 				
 				#create a bsub job to split the fastq
-				$cmd = qq[bsub -J split.$random -o import.o -e import.e -q $LSF_QUEUE perl -w -e "use AssemblyTools;AssemblyTools::sanger2SplitFastq( '$fastq', '$fastq1', '$fastq2');unlink $fastq;"];
+				$cmd = qq[bsub -J split.$random -o import.o -e import.e -q $LSF_QUEUE perl -w -e "use AssemblyTools;AssemblyTools::sanger2SplitFastq( '$fastq', '$fastq1', '$fastq2');unlink '$fastq';"];
 				system( $cmd );
 				
 				#work out the clip points (if any)
@@ -457,14 +457,14 @@ sub buildInternalHierarchy {
 				system( $cmd );	
 
 				#run fastqcheck
-				$cmd = qq[bsub -J fastqcheck.$random.1 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq1 | $FASTQ_CHECK > $fastq1.gz.fastqcheck;ln -s $lPath/$fastq1.gz.fastqcheck $alPath/$fastq1.gz.fastqcheck"];
+				$cmd = qq[bsub -J fastqcheck.$random.1 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq1 | $FASTQ_CHECK > $fastq1.gz.fastqcheck;ln -fs $lPath/$fastq1.gz.fastqcheck $alPath/$fastq1.gz.fastqcheck"];
 				system( $cmd );
 				
-				$cmd = qq[bsub -J fastqcheck.$random.2 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq2 | $FASTQ_CHECK> $fastq2.gz.fastqcheck;ln -s $lPath/$fastq2.gz.fastqcheck $alPath/$fastq2.gz.fastqcheck"];
+				$cmd = qq[bsub -J fastqcheck.$random.2 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq2 | $FASTQ_CHECK> $fastq2.gz.fastqcheck;ln -fs $lPath/$fastq2.gz.fastqcheck $alPath/$fastq2.gz.fastqcheck"];
 				system( $cmd );
 				
 				#gzip the split fastq files
-				$cmd = qq[bsub -q $LSF_QUEUE -w "done(clip.$random)&&done(fastqcheck.$random.*)" -o import.o -e import.e "gzip $fastq1 $fastq2; ln -s $lPath/$fastq1.gz $alPath/$fastq1.gz;ln -s $lPath/$fastq2.gz $alPath/$fastq2.gz"];
+				$cmd = qq[bsub -q $LSF_QUEUE -w "done(clip.$random)&&done(fastqcheck.$random.*)" -o import.o -e import.e "gzip $fastq1 $fastq2; ln -fs $lPath/$fastq1.gz $alPath/$fastq1.gz;ln -fs $lPath/$fastq2.gz $alPath/$fastq2.gz"];
 				system( $cmd );
 
 			}
@@ -491,7 +491,7 @@ sub buildInternalHierarchy {
 			}
 			
 			#run fastqcheck
-			my $cmd = qq[bsub -J fastqcheck.$random -o import.o -e import.e -q $LSF_QUEUE "cat $fastq | $FASTQ_CHECK > $fastq.gz.fastqcheck; ln -s $lPath/$fastq.gz.fastqcheck $alPath/$fastq.gz.fastqcheck"];
+			my $cmd = qq[bsub -J fastqcheck.$random -o import.o -e import.e -q $LSF_QUEUE "cat $fastq | $FASTQ_CHECK > $fastq.gz.fastqcheck; ln -fs $lPath/$fastq.gz.fastqcheck $alPath/$fastq.gz.fastqcheck"];
 			system( $cmd );
 			
 			print "Writing meta.info for: $fastq.gz\n";
@@ -520,7 +520,7 @@ sub buildInternalHierarchy {
 			close( META );
 			
 			#link the meta file into mapping hierarchy
-			system( "ln -s $lPath/meta.info $alPath/meta.info" );
+			system( "ln -fs $lPath/meta.info $alPath/meta.info" );
 			
 			#work out the clip point (if any)
 			my $readNum = 1;
@@ -533,7 +533,7 @@ sub buildInternalHierarchy {
 			
 			#gzip the fastq file
 			
-			$cmd = qq[bsub -w "done(fastqcheck.$random)&&done(clip.$random)" -q $LSF_QUEUE -o import.o -e import.e "gzip $fastq; ln -s $lPath/$fastq.gz $alPath/$fastq.gz"];
+			$cmd = qq[bsub -w "done(fastqcheck.$random)&&done(clip.$random)" -q $LSF_QUEUE -o import.o -e import.e "gzip $fastq; ln -fs $lPath/$fastq.gz $alPath/$fastq.gz"];
 			system( $cmd );
 
 		}
