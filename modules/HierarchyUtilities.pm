@@ -449,7 +449,7 @@ sub buildInternalHierarchy {
 				print "Writing meta info for: $fastq2.gz\n";
 				
 				#create a bsub job to split the fastq
-				$cmd = qq[bsub -J split.$random -o import.o -e import.e -q $LSF_QUEUE perl -w -e "use AssemblyTools;AssemblyTools::sanger2SplitFastq( '$fastq', '$fastq1', '$fastq2');rm $fastq;"];
+				$cmd = qq[bsub -J split.$random -o import.o -e import.e -q $LSF_QUEUE perl -w -e "use AssemblyTools;AssemblyTools::sanger2SplitFastq( '$fastq', '$fastq1', '$fastq2');unlink $fastq;"];
 				system( $cmd );
 				
 				#work out the clip points (if any)
