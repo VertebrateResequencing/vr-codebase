@@ -528,7 +528,7 @@ sub buildInternalHierarchy {
 			{
 				$readNum = 2;
 			}
-			$cmd = qq[bsub -J clip.$random -o import.o -e import.e -q $LSF_QUEUE "$CLIP_POINT_SCRIPT $fastq $alPath/meta.info $readNum"];
+			$cmd = qq[bsub -J clip.$random -o import.o -e import.e -q $LSF_QUEUE "$CLIP_POINT_SCRIPT $fastq $lPath/meta.info $readNum"];
 			system( $cmd );
 			
 			#gzip the fastq file
