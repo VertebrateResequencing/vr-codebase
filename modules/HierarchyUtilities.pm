@@ -417,7 +417,7 @@ sub buildInternalHierarchy {
 		{
 			my $fastq1 = $s1[ 0 ].'_'.$s1[ 2 ].'_1.fastq.gz'; #read1 fastq
 			
-			if( ! -s $fqPath && ! -s $lPath.'/'.$fastq1 )
+			if(! -s $fqPath && ! -s $lPath.'/'.$fastq1 )
 			{
 				chdir( $lPath );
 				
@@ -594,9 +594,13 @@ sub checkInternalFastq {
 	    $new_seqs = $new_seqs/2;	# should be same number of seqs in both
 					# split files
 	}
-	else {
+	elsif ($lanename =~ /^${run}_${lane}(_[12])?$/){
 	    # files are pre-split, so just need corresponding fastqcheck
 	    ($new_seqs, $new_len) = getSeqAndLengthFromFastqcheck("$fastqdir/$lanename.fastq.gz.fastqcheck");
+	}
+	else {
+	    warn "$_ unrecognised fastqcheck name\n";
+	    next;
 	}
 	unless ($orig_seqs == $new_seqs && $orig_len == $new_len){
 	    $check_bad = 1;
