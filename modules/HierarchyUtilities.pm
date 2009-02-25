@@ -282,19 +282,19 @@ sub importInternalData {
 	chomp;
 	$projects{$project} = {};
 
-	open(my $SAMPLES, q[-|], qq[$DFIND -project="$project" -samples] ) or die "Cannot run dfind on project: $project\n";
-	while(my $sample = <$SAMPLES> ) {
+	open(my $LIBS, q[-|], qq[$DFIND -project "$project" -libraries] ) or die "Cannot run dfind on project: $project\n";
+	while(my $lib = <$LIBS> ) {
 	    chomp;
-	    $projects{$project}{$sample} = [];
+	    $projects{$project}{$lib} = [];
 
-	    open my $LANES, q[-|], qq[$DFIND -project="$project" -sample="$sample" -filetype fastq] or die "Can't get lanes for $project $sample: $!\n";
+	    open my $LANES, q[-|], qq[$DFIND -project "$project" -library "$lib" -filetype fastq] or die "Can't get lanes for $project $lib: $!\n";
 	    while(my $lane = <$LANES> ) {
 		chomp;
-		push @{$projects{$project}{$sample}}, $lane;
+		push @{$projects{$project}{$lib}}, $lane;
 	    }
 	    close( $LANES );
 	}
-	close( $SAMPLES );
+	close( $LIBS );
     }
     close( $PROJS )
     &buildInternalHierarchy(\%projects,$dhierarchyDir,$ahierarchyDir);
