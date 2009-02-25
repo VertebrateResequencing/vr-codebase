@@ -331,7 +331,6 @@ sub buildInternalHierarchy {
 	my $numLibraries = 0;
 	
 	foreach my $sample (keys %{$projecthash->{$project}}){
-	    chomp $sample;
 	    print "Updating library: $sample\n";
 	    
 	    #hack for G1K where sample starts with the individual
@@ -378,7 +377,6 @@ sub buildInternalHierarchy {
 	    
 	    my @dirs;
 	    foreach my $fastq (@{$projecthash->{$project}{$sample}}){
-		chomp $fastq;
 		my $fastq = basename( $fastq );
 		
 		my @s = split( /\./, $fastq );
