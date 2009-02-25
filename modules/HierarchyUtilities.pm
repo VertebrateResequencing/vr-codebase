@@ -279,17 +279,17 @@ sub importInternalData {
     my %projects;
     open( my $PROJS, "$projectFile" ) or die "Cannot open projects file\n";
     while(my $project =  <$PROJS> ) {
-	chomp;
+	chomp $project;
 	$projects{$project} = {};
 
 	open(my $LIBS, q[-|], qq[$DFIND -project "$project" -libraries] ) or die "Cannot run dfind on project: $project\n";
 	while(my $lib = <$LIBS> ) {
-	    chomp;
+	    chomp $lib;
 	    $projects{$project}{$lib} = [];
 
 	    open my $LANES, q[-|], qq[$DFIND -project "$project" -library "$lib" -filetype fastq] or die "Can't get lanes for $project $lib: $!\n";
 	    while(my $lane = <$LANES> ) {
-		chomp;
+		chomp $lane;
 		push @{$projects{$project}{$lib}}, $lane;
 	    }
 	    close( $LANES );
