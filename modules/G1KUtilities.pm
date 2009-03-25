@@ -37,6 +37,7 @@ sub path2Gender
 			}
 		}
 	}
+	print 'unknown';
 	return "unknown";
 }
 
