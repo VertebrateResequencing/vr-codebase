@@ -484,6 +484,45 @@ sub sanger2SplitFastq
 	return 1;
 }
 
+sub fastq2fasta
+{
+	croak "Usage: fastq2fasta file_name output_file_name" unless @_ == 2; 
+	my $file = shift;
+	my $output_file = shift;
+	
+	if( ! (-f $file) ){croak "Cannot find file: $file\n";}
+	if( ! (-s $file) ){croak "Empty file: $file\n";}
+	
+	open( READS_FILE, $file ) or die "Error: Cannot open fastq file\n";
+	open( FASTA_FILE, ">$output_file" ) or die "Error: Cannot create fasta file\n";
+	open( FASTA_QUAL_FILE, ">$output_file.qual" ) or die "Error: Cannot create fasta QUAL file\n";
+	
+	while( <READS_FILE> )
+	{
+		chomp;
+		my $key = substr( $_, 1 ); #remove the @ sign
+		my $sequence = <READS_FILE>;
+		chomp( $sequence );
+		my $qual_name = <READS_FILE>;
+		chomp( $qual_name );
+		my $quals = <READS_FILE>;
+		chomp( $quals );
+		
+		print FASTA_FILE ">".$key."\n".$sequence."\n";
+		
+		my @q = split( //, $quals );
+		my $fasta_quals = '';
+		foreach( @q )
+		{
+			$fasta_quals .= ( unpack( 'C', $_ ) - 33 ).' ';
+		}
+		print FASTA_QUAL_FILE ">".$key."\n".$fasta_quals."\n";
+	}
+	close( READS_FILE );
+	close( FASTA_FILE );
+	close( FASTA_QUAL_FILE );
+}
+
 sub splitUnpairedFastq
 {
 	croak "Usage: splitUnpairedFastq fastq1 prefix chunkBases outputdirectory" unless @_ == 4; 
@@ -612,11 +651,21 @@ sub splitPairedFastq
 			open( L, ">$outputDirectory/$prefix$fileCount"."_1.fastq" ) or die "Cannot create LEFT file\n";
 			open( R, ">$outputDirectory/$prefix$fileCount"."_2.fastq" ) or die "Cannot create RIGHT file\n";
 		}
+		
+		if( eof( READS2 ) )
+		{
+			croak "Fastq2 file truncated: $fastq2\n";
+		}
 	}
 	close( L );
 	close( R );
 	close( READS1 );
 	close( READS2 );
+	
+	if( ! eof( READS2 ) )
+	{
+		croak "Fastq1 file truncated: $fastq1\n";
+	}
 	
 	return 1;
 }
@@ -812,10 +861,11 @@ sub determineClipPointMaq
 		if( $numReads > $totalReads * 0.9 )
 		{
 			print ($_ - 1);
-			exit;
+			return ($_ - 1);
 		}
 	}
 	print "-1";
+	return -1;
 }
 
 sub extractContigSection
@@ -895,6 +945,137 @@ sub extractContigSection
 	
 	close( CONTIG );
 	close( OUTPUT );
+}
+
+=pod
+
+=head1 NAME
+
+hash_ssaha_cigar_output - hashes a ssaha cigar format output file
+
+=head1 SYNOPSIS
+
+hash_ssaha_cigar_output ssaha_output_file
+
+=head1 ARGUMENTS
+
+The function takes the following arguments:
+
+B<ssaha_output_file> : a ssaha cigar format output file (run with -tags 1)
+
+The function returns a hash with each read as a key. Each entry is a reference to an array.
+
+=head1 DESCRIPTION
+
+A subroutine to take ssaha cigar output and group the records according to reads
+
+=head1 AUTHOR
+
+Thomas Keane I<tk2@sanger.ac.uk>
+
+=cut
+
+sub hash_ssaha_cigar_output
+{
+	if(  @_ != 1 )
+	{
+		print "Usage: hash_ssaha_cigar_output ssaha_output_file";
+		exit;
+	}
+	my $ssaha_output = shift;
+	
+	if( $ssaha_output =~ /\.gz$/ )
+	{
+		open( SSAHA_OUTPUT, "gunzip -c $ssaha_output |" ) or die "Cant open ssaha2 output file: $!\n";
+	}
+	else
+	{
+		open( SSAHA_OUTPUT, $ssaha_output ) or die "Cant open ssaha2 output file: $!\n";
+	}
+	
+	#open( SSAHA_OUTPUT, $ssaha_output ) or die "Cant open ssaha2 output file: $!\n";
+	
+	my %ssaha_read_matches;
+	my $ssaha_current_read = "";
+	my $ssaha_current_read_ref = [];
+	while( <SSAHA_OUTPUT> )
+	{
+		chomp;
+		
+		if( $_ =~ /^cigar::/ )
+		{
+			my @ssaha_splits = split( /\s+/, $_ );
+		
+		if( $ssaha_current_read eq "" )
+		{
+			$ssaha_current_read = $ssaha_splits[ 1 ];
+			$ssaha_current_read_ref = [];
+			push( @{ $ssaha_current_read_ref }, $_ );
+			#push( @ssaha_current_read_matches, $_ );
+		}
+		elsif( $ssaha_current_read ne $ssaha_splits[ 1 ] )
+		{
+			#at a changover point between two different read matches
+			my $tmp_ref = \@{ $ssaha_current_read_ref };
+			$ssaha_read_matches{ $ssaha_current_read } = $tmp_ref;
+			
+			$ssaha_current_read_ref = undef;
+			$ssaha_current_read_ref = [];
+			
+			$ssaha_current_read = $ssaha_splits[ 1 ];
+			push( @{ $ssaha_current_read_ref } , $_ );
+		}
+		else
+		{
+			push( @{ $ssaha_current_read_ref } , $_ );
+		}
+		}
+	}
+	#put the entries for the last read in the hash table
+	$ssaha_read_matches{ $ssaha_current_read } = $ssaha_current_read_ref;
+	close( SSAHA_OUTPUT );
+	
+	return \%ssaha_read_matches;
+}
+
+sub verifyFastqFile
+{
+	croak "Usage: verifyFastqFile fastq" unless @_ == 1;
+	my $input = shift;
+	
+	if( $input =~ /\.gz$/ )
+	{
+		open( IN, "gunzip -c $input |" ) or die "Cant open input gzip file: $!\n";
+	}
+	else
+	{
+		open( IN, $input ) or die "Cant open input file: $!\n";
+	}
+	
+	while( <IN> )
+	{
+		chomp;
+		my $name = $_;
+		croak "Invalid name: $name\n" unless $name =~ /^@.+/;
+		
+		my $seq = <IN>;
+		chomp( $seq );
+		
+		croak "Invalid sequence: $seq\n" unless uc( $seq ) =~ /^A|C|G|T|N$/;
+		
+		my $qname = <IN>;
+		chomp( $qname );
+		
+		croak "Invalid qual tag: $qname\n" unless $qname =~ /^\+.*/;
+		
+		my $quals = <IN>;
+		chomp( $quals );
+		
+		croak "No. quals not equal to length sequence: $name ".length( $seq )." ".length( $quals )."\n" unless length( $seq ) == length( $quals );
+	}
+	close( IN );
+	
+	print "$input Good\n";
 }
 
 1;

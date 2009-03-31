@@ -55,7 +55,7 @@ sub cigar2MatchMismatchTable
 			delete( $cigarHash{ $_ } );
 		}
 	}
-		
+	
 	my $currentChrSeq = '';
 	my $currentChrName = '';
 	my %mismatch;

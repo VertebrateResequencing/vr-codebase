@@ -583,7 +583,7 @@ sub laneToBAM
 	
 	croak "Cant find lane directory: $cwd\n" unless -d $cwd;
 	croak "Cant find index file: $indexF\n" unless -f $indexF;
-	
+	#unlink( "rmdup.bam" )  unless ! -f "rmdup.bam";
 	chdir( $cwd );
 	if( -s "rmdup.bam" )
 	{
@@ -617,12 +617,6 @@ sub laneToBAM
 	{
 		$insertSize = `grep $accession $indexF | head -1 | awk -F"\t" '{print \$18}'`;
 		chomp( $insertSize );
-		
-		if( $insertSize !~ /^\d+$/)
-		{
-			print "Cant find insert size: $insertSize\n";
-			return;
-		}
 	}
 	
 	my $jobCondition = '';
@@ -667,7 +661,15 @@ sub laneToBAM
 		close( FAI );
 	}
 	
-	print H "\@RG\tID:$accession\tPU:$runName\tLB:$library\tSM:$individual\n";
+	print H "\@RG\tID:$accession\tPU:$runName\tLB:$library\tSM:$individual";
+	if( $insertSize =~ /\d+/ )
+	{
+		print H "\tPI:$insertSize\n";
+	}
+	else
+	{
+		print H "\n";
+	}
 	close( H );
 	
 	system( "echo 'touched' > lane.touch" );
@@ -676,7 +678,7 @@ sub laneToBAM
 	unlink( "bam.e" ) unless ! -f "bam.e";
 	
 	#convert to bam
-	my $cmd = qq[bsub -J bam.$libID.$laneID -q normal $jobCondition -o bam.o -e bam.e "mkdir $tmp_directory;maq2sam-long raw.map $library > $tmp_directory/tmp.sam; cat raw.sam $tmp_directory/tmp.sam > $tmp_directory/raw.sam; rm $tmp_directory/tmp.sam;rm raw.sam];
+	my $cmd = qq[bsub -R "select[type==X86_64] rusage[tmp=15000]" -J bam.$libID.$laneID -q normal $jobCondition -o bam.o -e bam.e "mkdir $tmp_directory;maq2sam-long raw.map $library > $tmp_directory/tmp.sam; cat raw.sam $tmp_directory/tmp.sam > $tmp_directory/raw.sam; rm $tmp_directory/tmp.sam;rm raw.sam];
 	if( $gender eq 'male' || $gender eq 'unknown' )
 	{
 		$cmd .= qq[; $SAMTOOLS import $MALE_REF_FAI $tmp_directory/raw.sam - | $SAMTOOLS sort - $tmp_directory/raw.sorted; $SAMTOOLS rmdup $tmp_directory/raw.sorted.bam $cwd/rmdup.bam; rm -rf $tmp_directory;rm lane.touch"]

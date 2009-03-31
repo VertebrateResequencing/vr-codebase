@@ -156,7 +156,7 @@ sub map_454
 													}
 													else
 													{
-														#system( "echo 'touched' > $fastq.touch" );
+														system( "echo 'touched' > $fastq.touch" );
 														
 														my $preExec = qq/perl -w -e "use Mapping_454;Mapping_454::getLocalCopyRefSSAHA( \\"$gender\\" );"/;
 														
@@ -165,14 +165,14 @@ sub map_454
 														if( $gender eq 'male' || $gender eq 'unknown' )
 														{
 															my $cmd = qq{bsub -J map.$libID.$laneID.$fileID -R "select[type==X86_64 && mem > 6000] rusage[mem=6000:tmp=21000]" -M6000000 -q normal -o $fastq.map.o -e $fastq.map.e -E '$preExec' "mkdir /tmp/$directory; gunzip -c $fastq > /tmp/$directory/reads.fastq; $SSAHA2 -454 -output cigar -diff 10 -save $LOCAL_CACHE/human_b36_male /tmp/$directory/reads.fastq | /nfs/team81/tk2/code/vert_reseq/user/tk2/miscScripts/filterCigarStreamTop10.pl | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch"};
-															print $cmd."\n";
-															#system( $cmd );
+															#print $cmd."\n";
+															system( $cmd );
 														}
 														elsif( $gender eq 'female' )
 														{
 															my $cmd = qq{bsub -J map.$libID.$laneID.$fileID -R "select[type==X86_64 && mem > 6000] rusage[mem=6000:tmp=21000]" -M6000000 -q normal -o $fastq.map.o -e $fastq.map.e -E '$preExec' "mkdir /tmp/$directory; gunzip -c $fastq > /tmp/$directory/reads.fastq; $SSAHA2 -454 -output cigar -diff 10 -save $LOCAL_CACHE/human_b36_female.Y /tmp/$directory/reads.fastq | /nfs/team81/tk2/code/vert_reseq/user/tk2/miscScripts/filterCigarStreamTop10.pl | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch"};
-															print $cmd."\n";
-															#system( $cmd );
+															#print $cmd."\n";
+															system( $cmd );
 														}
 													}
 												}
@@ -282,7 +282,7 @@ sub laneToBAM
 	
 	croak "Cant find lane directory: $cwd\n" unless -d $cwd;
 	croak "Cant find index file: $indexF\n" unless -f $indexF;
-	
+	#unlink( "rmdup.bam" )  unless ! -f "rmdup.bam";
 	chdir( $cwd );
 	if( -f "rmdup.bam" && -s "rmdup.bam" > 2000 )
 	{
@@ -316,11 +316,6 @@ sub laneToBAM
 	{
 		$insertSize = `grep $accession $indexF | head -1 | awk -F"\t" '{print \$18}'`;
 		chomp( $insertSize );
-		
-		if( $insertSize !~ /\d+/)
-		{
-			croak "Cant find insert size: $insertSize\n";
-		}
 	}
 	
 	my $jobCondition = '';
@@ -404,7 +399,15 @@ sub laneToBAM
 		close( FAI );
 	}
 	
-	print H "\@RG\tID:$accession\tPU:$runName\tLB:$library\tSM:$individual\n";
+	print H "\@RG\tID:$accession\tPU:$runName\tLB:$library\tSM:$individual";
+	if( $insertSize =~ /\d+/ )
+	{
+		print H "\tPI:$insertSize\n";
+	}
+	else
+	{
+		print H "\n";
+	}
 	close( H );
 	
 	open( S, ">makeBam.sh" ) or die $!;
