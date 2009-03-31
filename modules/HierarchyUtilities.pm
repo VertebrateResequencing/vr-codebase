@@ -1129,24 +1129,28 @@ sub markFailedGenotypeLanes
 	while( <A> )
 	{
 		chomp;
-		$accessions{ $_ } = 1;
+		my $acc = (split( /\t/, $_))[ 0 ];
+		$accessions{ $acc } = 1;
 	}
 	close( A );
-	
+
 	open( IN, $indexF ) or die "Cant open index file: $indexF\n";
 	while( <IN> )
 	{
 		chomp;
 		my $acc = (split( /\t/, $_))[ 2 ];
+
 		if( defined( $accessions{ $acc } ) )
 		{
 			my @paths = @{ indexLineToPaths( $_ ) };
 			
-			my $meta = $paths[ 2 ]."/meta.info";
-			print $meta."\n";
-			#open( M, ">>$meta" ) or die "Cant open $meta\n";
-			#print M "genotype:fail\n";
-			#close( M );
+			my $meta = $dRoot."/".$paths[ 1 ]."/meta.info";
+			if( -f $meta )
+			{
+				open( M, ">>$meta" ) or die "Cant open $meta\n";
+				print M "genotype:fail\n";
+				close( M );
+			}
 		}
 	}
 	close( IN );
