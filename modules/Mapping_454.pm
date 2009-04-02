@@ -164,13 +164,13 @@ sub map_454
 														
 														if( $gender eq 'male' || $gender eq 'unknown' )
 														{
-															my $cmd = qq{bsub -J map.$libID.$laneID.$fileID -R "select[type==X86_64 && mem > 6000] rusage[mem=6000:tmp=21000]" -M6000000 -q normal -o $fastq.map.o -e $fastq.map.e -E '$preExec' "mkdir /tmp/$directory; gunzip -c $fastq > /tmp/$directory/reads.fastq; $SSAHA2 -454 -output cigar -diff 10 -save $LOCAL_CACHE/human_b36_male /tmp/$directory/reads.fastq | /nfs/team81/tk2/code/vert_reseq/user/tk2/miscScripts/filterCigarStreamTop10.pl | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch"};
+															my $cmd = qq{bsub -J map.$libID.$laneID.$fileID -R "select[type==X86_64 && mem > 6000] rusage[mem=6000:tmp=21000]" -M6000000 -q $lsf_queue -o $fastq.map.o -e $fastq.map.e -E '$preExec' "mkdir /tmp/$directory; gunzip -c $fastq > /tmp/$directory/reads.fastq; $SSAHA2 -454 -output cigar -diff 10 -save $LOCAL_CACHE/human_b36_male /tmp/$directory/reads.fastq | /nfs/team81/tk2/code/vert_reseq/user/tk2/miscScripts/filterCigarStreamTop10.pl | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch"};
 															#print $cmd."\n";
 															system( $cmd );
 														}
 														elsif( $gender eq 'female' )
 														{
-															my $cmd = qq{bsub -J map.$libID.$laneID.$fileID -R "select[type==X86_64 && mem > 6000] rusage[mem=6000:tmp=21000]" -M6000000 -q normal -o $fastq.map.o -e $fastq.map.e -E '$preExec' "mkdir /tmp/$directory; gunzip -c $fastq > /tmp/$directory/reads.fastq; $SSAHA2 -454 -output cigar -diff 10 -save $LOCAL_CACHE/human_b36_female.Y /tmp/$directory/reads.fastq | /nfs/team81/tk2/code/vert_reseq/user/tk2/miscScripts/filterCigarStreamTop10.pl | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch"};
+															my $cmd = qq{bsub -J map.$libID.$laneID.$fileID -R "select[type==X86_64 && mem > 6000] rusage[mem=6000:tmp=21000]" -M6000000 -q $lsf_queue -o $fastq.map.o -e $fastq.map.e -E '$preExec' "mkdir /tmp/$directory; gunzip -c $fastq > /tmp/$directory/reads.fastq; $SSAHA2 -454 -output cigar -diff 10 -save $LOCAL_CACHE/human_b36_female.Y /tmp/$directory/reads.fastq | /nfs/team81/tk2/code/vert_reseq/user/tk2/miscScripts/filterCigarStreamTop10.pl | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch"};
 															#print $cmd."\n";
 															system( $cmd );
 														}
@@ -181,7 +181,7 @@ sub map_454
 											#setoff the BAM conversion after the mapping is done (if required)
 											if( length( $indexF ) > 0 )
 											{
-												laneToBAM( getcwd(), $libID, $laneID, $lane_read0, $lane_read1, $lane_read2, basename( getcwd() ), $gender, $indexF );
+												laneToBAM( getcwd(), $libID, $laneID, $lane_read0, $lane_read1, $lane_read2, basename( getcwd() ), $gender, $indexF, $lsf_queue );
 											}
 											
 											chdir( ".." );
@@ -269,7 +269,7 @@ sub checkDownloadLocalFile
 #assume current directory is a lane
 sub laneToBAM
 {
-	croak "Usage: laneToBAM cwd libID laneID read0 read1 read2 laneAccession gender index_file\n" unless @_ == 9;
+	croak "Usage: laneToBAM cwd libID laneID read0 read1 read2 laneAccession gender index_file [lsf_queue]\n" unless @_ == 10;
 	my $cwd = shift;
 	my $libID = shift;
 	my $laneID = shift;
@@ -279,6 +279,8 @@ sub laneToBAM
 	my $accession = shift;
 	my $gender = shift;
 	my $indexF = shift;
+	my $lsf_queue = shift;
+	$lsf_queue ||= 'normal';
 	
 	croak "Cant find lane directory: $cwd\n" unless -d $cwd;
 	croak "Cant find index file: $indexF\n" unless -f $indexF;
@@ -305,6 +307,12 @@ sub laneToBAM
 	my $runName = `grep $accession $indexF | head -1 | awk -F"\t" '{print \$16}'`;
 	chomp( $runName );
 	
+	my $platform = `grep $accession $indexF | head -1 | awk -F"\t" '{print \$13}'`;
+	chomp( $platform );
+
+	my $centre = `grep $accession $indexF | head -1 | awk -F"\t" '{print \$6}'`;
+	chomp ($centre);
+
 	if( length( $individual ) == 0 || length( $runName ) == 0 )
 	{
 		print "Cant get index file entries: $accession\n";
@@ -339,8 +347,8 @@ sub laneToBAM
 		fi/;
 		close( S );
 		
-		#my $cmd = "bsub -J sam.$libID.$laneID.0 -q normal -o bam.o -e bam.e $jobCondition perl -w -e \"use SamTools;SamTools::ssaha2samUnpaired( '$lane_read0', '$cigarName', '$accession', 'unpaired.sam.gz');\"";
-		my $cmd = qq/bsub -J sam.$libID.$laneID.0 -q normal -o bam.o -e bam.e $jobCondition "sh unpaired.bam.sh;rm unpaired.bam.sh"/;
+		#my $cmd = "bsub -J sam.$libID.$laneID.0 -q $lsf_queue -o bam.o -e bam.e $jobCondition perl -w -e \"use SamTools;SamTools::ssaha2samUnpaired( '$lane_read0', '$cigarName', '$accession', 'unpaired.sam.gz');\"";
+		my $cmd = qq/bsub -J sam.$libID.$laneID.0 -q $lsf_queue -o bam.o -e bam.e $jobCondition "sh unpaired.bam.sh;rm unpaired.bam.sh"/;
 		#print $cmd."\n";
 		system( $cmd );
 	}
@@ -360,8 +368,8 @@ sub laneToBAM
 		fi/;
 		close( S );
 		
-		#my $cmd = "bsub -J sam.$libID.$laneID.1 -q normal -o bam.o -e bam.e $jobCondition perl -w -e \"use SamTools;SamTools::ssaha2samPaired( '$lane_read1', '$lane_read1.cigar.gz', '$lane_read2','$read2Cigar', '$insertSize', '$accession', 'paired.sam.gz');\"";
-		my $cmd = qq/bsub -J sam.$libID.$laneID.1 -q normal -o bam.o -e bam.e $jobCondition "sh paired.bam.sh;rm paired.bam.sh"/;
+		#my $cmd = "bsub -J sam.$libID.$laneID.1 -q $lsf_queue -o bam.o -e bam.e $jobCondition perl -w -e \"use SamTools;SamTools::ssaha2samPaired( '$lane_read1', '$lane_read1.cigar.gz', '$lane_read2','$read2Cigar', '$insertSize', '$accession', 'paired.sam.gz');\"";
+		my $cmd = qq/bsub -J sam.$libID.$laneID.1 -q $lsf_queue -o bam.o -e bam.e $jobCondition "sh paired.bam.sh;rm paired.bam.sh"/;
 		#print $cmd."\n";
 		system( $cmd );
 	}
@@ -400,14 +408,17 @@ sub laneToBAM
 	}
 	
 	print H "\@RG\tID:$accession\tPU:$runName\tLB:$library\tSM:$individual";
-	if( $insertSize =~ /\d+/ )
-	{
-		print H "\tPI:$insertSize\n";
+	if( $insertSize =~ /\d+/ ){
+	    print H "\tPI:$insertSize";
 	}
-	else
-	{
-		print H "\n";
+	if( $centre ){
+	    print H "\tCN:$centre";
 	}
+	if( $platform ){
+	    print H "\tPL:$platform";
+	}
+
+	print H "\n";
 	close( H );
 	
 	open( S, ">makeBam.sh" ) or die $!;
@@ -438,8 +449,8 @@ sub laneToBAM
 	}
 	close( S );
 	
-	#my $cmd = qq/bsub -J bam.$libID.$laneID -w 'done(sam.$libID.$laneID.*)' -q normal -o bam.o -e bam.e "echo '\@HD VN:1.0' > lane.sam; echo '\@RG ID:$accession PU:$accession LB:$library SM:$individual' > lane.sam; zcat *.sam.gz | gzip -c >> lane.sam.gz;"/;
-	my $cmd = qq/bsub -J bam.$libID.$laneID -q normal -o bam.o -e bam.e -w "done(sam.$libID.$laneID.*)" "sh makeBam.sh;rm makeBam.sh;rm lane.touch"/;
+	#my $cmd = qq/bsub -J bam.$libID.$laneID -w 'done(sam.$libID.$laneID.*)' -q $lsf_queue -o bam.o -e bam.e "echo '\@HD VN:1.0' > lane.sam; echo '\@RG ID:$accession PU:$accession LB:$library SM:$individual' > lane.sam; zcat *.sam.gz | gzip -c >> lane.sam.gz;"/;
+	my $cmd = qq/bsub -J bam.$libID.$laneID -q $lsf_queue -o bam.o -e bam.e -w "done(sam.$libID.$laneID.*)" "sh makeBam.sh;rm makeBam.sh;rm lane.touch"/;
 	#print $cmd."\n";
 	system( $cmd );
 }
