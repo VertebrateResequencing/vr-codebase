@@ -146,7 +146,7 @@ sub map_SLX
 												#only do the bam conversion when there is an index file (i.e. doesnt apply to mouse)
 												if( length( $indexF ) > 0 )
 												{
-													laneToBAM( getcwd(), $libID, $laneID, $lane_read0, $lane_read1, $lane_read2, basename( getcwd() ), $gender, $indexF );
+													laneToBAM( getcwd(), $libID, $laneID, $lane_read0, $lane_read1, $lane_read2, basename( getcwd() ), $gender, $indexF, $lsf_queue );
 												}
 												
 												chdir( ".." );
@@ -557,7 +557,7 @@ sub map_SLX
 											chdir( ".." );
 											if( length( $indexF ) > 0 )
 											{
-												laneToBAM( getcwd(), $libID, $laneID, $lane_read0, $lane_read1, $lane_read2, basename( getcwd() ), $gender, $indexF );
+												laneToBAM( getcwd(), $libID, $laneID, $lane_read0, $lane_read1, $lane_read2, basename( getcwd() ), $gender, $indexF, $lsf_queue );
 											}
 										}
 									}
@@ -577,7 +577,7 @@ sub map_SLX
 
 sub laneToBAM
 {
-	croak "Usage: laneToBAM cwd libID laneID read0 read1 read2 laneAccession gender index_file\n" unless @_ == 9;
+	croak "Usage: laneToBAM cwd libID laneID read0 read1 read2 laneAccession gender index_file lsf_queue\n" unless @_ == 10;
 	my $cwd = shift;
 	my $libID = shift;
 	my $laneID = shift;
@@ -587,6 +587,7 @@ sub laneToBAM
 	my $accession = shift;
 	my $gender = shift;
 	my $indexF = shift;
+	my $lsf_queue = shift;
 	
 	croak "Cant find lane directory: $cwd\n" unless -d $cwd;
 	croak "Cant find index file: $indexF\n" unless -f $indexF;
@@ -694,7 +695,7 @@ sub laneToBAM
 	unlink( "bam.e" ) unless ! -f "bam.e";
 	
 	#convert to bam
-	my $cmd = qq[bsub -R "select[type==X86_64] rusage[tmp=15000]" -J bam.$libID.$laneID -q normal $jobCondition -o bam.o -e bam.e "mkdir $tmp_directory;$MAQ2SAM raw.map $accession > $tmp_directory/tmp.sam; cat raw.sam $tmp_directory/tmp.sam > $tmp_directory/raw.sam; rm $tmp_directory/tmp.sam;rm raw.sam];
+	my $cmd = qq[bsub -R "select[type==X86_64] rusage[tmp=15000]" -J bam.$libID.$laneID -q $lsf_queue $jobCondition -o bam.o -e bam.e "mkdir $tmp_directory;$MAQ2SAM raw.map $accession > $tmp_directory/tmp.sam; cat raw.sam $tmp_directory/tmp.sam > $tmp_directory/raw.sam; rm $tmp_directory/tmp.sam;rm raw.sam];
 	if( $gender eq 'male' || $gender eq 'unknown' )
 	{
 		$cmd .= qq[; $SAMTOOLS import $MALE_REF_FAI $tmp_directory/raw.sam - | $SAMTOOLS sort - $tmp_directory/raw.sorted; $SAMTOOLS rmdup $tmp_directory/raw.sorted.bam $cwd/rmdup.bam; rm -rf $tmp_directory;rm lane.touch"]
