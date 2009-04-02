@@ -9,7 +9,7 @@ use G1KUtilities;
 
 =pod
 	A function that takes a mapping root directory and a list of projects
-	Goes through the hierarchy and checks for unmapped 454 lanes, and starts the mapping
+	Goes through the hierarchy and checks for unmapped SLX lanes, and starts the mapping
 =cut
 
 my $G1K = $ENV{ 'G1K' };
@@ -152,8 +152,9 @@ sub map_SLX
 												chdir( ".." );
 												next;
 											}
-											chdir( ".." );
-											next;
+											# jws 2009-04-01 - these next two lines are surely an error
+											#chdir( ".." );
+											#next;
 											
 											#create a sym link to the ref bfa
 											if( $gender eq 'male' || $gender eq 'unknown' )
@@ -204,9 +205,10 @@ sub map_SLX
 											{
 												foreach my $s (`ls split/*.fastq`)
 												{
+												    chomp $s;
 													if( ! -f $s || -z $s ) #each split fastq file is non-zero size
 													{
-														#system( "rm -rf split" ); #delete the split directory
+														system( "rm -rf split" ); #delete the split directory
 														last;
 													}
 												}
@@ -225,11 +227,14 @@ sub map_SLX
 												if( $lane_read1 && $lane_read2 )
 												{
 													my $cmd = qq[bsub -J split.$libID.$laneID -q $lsf_queue -o $lane_dir/split/split.o -e $lane_dir/split/split.e perl -w -e "use AssemblyTools;AssemblyTools::splitPairedFastq( '$lane_read1', '$lane_read2', 'split', '$BASES_PER_CHUNK', '$lane_dir/split' );"];
-													print "$cmd\n";
+													#print "$cmd\n";
+													system( $cmd );
 												}
 												elsif( $lane_read0 )
 												{
 													my $cmd = qq[bsub -J split.$libID.$laneID -q $lsf_queue -o $lane_dir/split/split.o -e $lane_dir/split/split.e perl -w -e "use AssemblyTools;AssemblyTools::splitUnpairedFastq( '$lane_read0', 'split', '$BASES_PER_CHUNK', '$lane_dir/split' );"];
+													#print "$cmd\n";
+													system( $cmd );
 												}
 												else
 												{
@@ -271,14 +276,14 @@ sub map_SLX
 															{
 																my $insert = $expectedInsert*2;
 																my $cmd = qq[bsub -w "done(split.$libID.$laneID)" -J map.$libID.$laneID.$s -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -u $prefix.unmapped -a 2000 -A $insert $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																print "$cmd\n";
-																#system( $cmd );
+																#print "$cmd\n";
+																system( $cmd );
 															}
 															else
 															{
 																my $cmd = qq[bsub -w "done(split.$libID.$laneID)" -J map.$libID.$laneID.$s -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -u $prefix.unmapped -a 2000 $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																print "$cmd\n";
-																#system( $cmd );
+																#print "$cmd\n";
+																system( $cmd );
 															}
 														}
 														elsif( $clipPoint1 == -1 && $clipPoint2 > -1 )
@@ -287,14 +292,14 @@ sub map_SLX
 															{
 																my $insert = $expectedInsert*2;
 																my $cmd = qq[bsub -w "done(split.$libID.$laneID)" -J map.$libID.$laneID.$s -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -2 $clipPoint2 -u $prefix.unmapped -a 2000 -A $insert $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																print "$cmd\n";
-																#system( $cmd );
+																#print "$cmd\n";
+																system( $cmd );
 															}
 															else
 															{
 																my $cmd = qq[bsub -w "done(split.$libID.$laneID)" -J map.$libID.$laneID.$s -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -2 $clipPoint2 -u $prefix.unmapped -a 2000 $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																print "$cmd\n";
-																#system( $cmd );
+																#print "$cmd\n";
+																system( $cmd );
 															}
 														}
 														elsif( $clipPoint1 > -1 && $clipPoint2 == -1 )
@@ -303,14 +308,14 @@ sub map_SLX
 															{
 																my $insert = $expectedInsert*2;
 																my $cmd = qq[bsub -w "done(split.$libID.$laneID)" -J map.$libID.$laneID.$s -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -1 $clipPoint1  -u $prefix.unmapped -a 2000 -A $insert $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																print "$cmd\n";
-																#system( $cmd );
+																#print "$cmd\n";
+																system( $cmd );
 															}
 															else
 															{
 																my $cmd = qq[bsub -w "done(split.$libID.$laneID)" -J map.$libID.$laneID.$s -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -1 $clipPoint1  -u $prefix.unmapped -a 2000 $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																print "$cmd\n";
-																#system( $cmd );
+																#print "$cmd\n";
+																system( $cmd );
 															}
 														}
 														else
@@ -319,14 +324,14 @@ sub map_SLX
 															{
 																my $insert = $expectedInsert*2;
 																my $cmd = qq[bsub -w "done(split.$libID.$laneID)" -J map.$libID.$laneID.$s -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -1 $clipPoint1 -2 $clipPoint2 -u $prefix.unmapped -a 2000 -A $insert $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																print "$cmd\n";
-																#system( $cmd );
+																#print "$cmd\n";
+																system( $cmd );
 															}
 															else
 															{
 																my $cmd = qq[bsub -w "done(split.$libID.$laneID)" -J map.$libID.$laneID.$s -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -1 $clipPoint1 -2 $clipPoint2 -u $prefix.unmapped -a 2000 $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																print "$cmd\n";
-																#system( $cmd );
+																#print "$cmd\n";
+																system( $cmd );
 															}
 														}
 														$mapping=1;
@@ -356,14 +361,14 @@ sub map_SLX
 														if( $clipPoint0 == -1 )
 														{
 															my $cmd = qq[bsub -w "done(split.$libID.$laneID)" -J map.$libID.$laneID.$s -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read0 $read0.bfq; $MAQ match -u $prefix.unmapped $prefix.raw.map ../ref.bfa $read0.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read0.bfq"];
-															print "$cmd\n";
-															#system( $cmd );
+															#print "$cmd\n";
+															system( $cmd );
 														}
 														else
 														{
 															my $cmd = qq[bsub -w "done(split.$libID.$laneID)" -J map.$libID.$laneID.$s -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read0 $read0.bfq; $MAQ match -1 $clipPoint0 -u $prefix.unmapped $prefix.raw.map ../ref.bfa $read0.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read0.bfq"];
-															print "$cmd\n";
-															#system( $cmd );
+															#print "$cmd\n";
+															system( $cmd );
 														}
 														$mapping=1;
 													}
@@ -371,7 +376,7 @@ sub map_SLX
 											}
 											elsif( ! -f "raw.map" && -d "split" )
 											{
-												#system( "echo 'touched' > lane.touch" );
+												system( "echo 'touched' > lane.touch" );
 												
 												#the lane splits are partially mapped
 												chdir( "split" );
@@ -379,6 +384,7 @@ sub map_SLX
 												{
 													foreach my $read1 (`ls split*_1.fastq`)
 													{
+													    chomp $read1;
 														if( ! -f $read1 )
 														{
 															last;
@@ -406,14 +412,14 @@ sub map_SLX
 																{
 																	my $insert = $expectedInsert*2;
 																	my $cmd = qq[bsub -J map.$libID.$laneID.$read2 -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -u $prefix.unmapped -a 2000 -A $insert $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																	print "$cmd\n";
-																	#system( $cmd );
+																	#print "$cmd\n";
+																	system( $cmd );
 																}
 																else
 																{
 																	my $cmd = qq[bsub -J map.$libID.$laneID.$read2 -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -u $prefix.unmapped -a 2000 $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																	print "$cmd\n";
-																	#system( $cmd );
+																	#print "$cmd\n";
+																	system( $cmd );
 																}
 															}
 															elsif( $clipPoint1 == -1 && $clipPoint2 > -1 )
@@ -422,14 +428,14 @@ sub map_SLX
 																{
 																	my $insert = $expectedInsert*2;
 																	my $cmd = qq[bsub -J map.$libID.$laneID.$read2 -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -2 $clipPoint2 -u $prefix.unmapped -a 2000 -A $insert $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																	print "$cmd\n";
-																	#system( $cmd );
+																	#print "$cmd\n";
+																	system( $cmd );
 																}
 																else
 																{
 																	my $cmd = qq[bsub -J map.$libID.$laneID.$read2 -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -2 $clipPoint2 -u $prefix.unmapped -a 2000 $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																	print "$cmd\n";
-																	#system( $cmd );
+																	#print "$cmd\n";
+																	system( $cmd );
 																}
 															}
 															elsif( $clipPoint1 > -1 && $clipPoint2 == -1 )
@@ -438,14 +444,14 @@ sub map_SLX
 																{
 																	my $insert = $expectedInsert*2;
 																	my $cmd = qq[bsub -J map.$libID.$laneID.$read2 -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -1 $clipPoint1  -u $prefix.unmapped -a 2000 -A $insert $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																	print "$cmd\n";
-																	#system( $cmd );
+																	#print "$cmd\n";
+																	system( $cmd );
 																}
 																else
 																{
 																	my $cmd = qq[bsub -J map.$libID.$laneID.$read2 -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -1 $clipPoint1  -u $prefix.unmapped -a 2000 $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																	print "$cmd\n";
-																	#system( $cmd );
+																	#print "$cmd\n";
+																	system( $cmd );
 																}
 															}
 															else
@@ -454,14 +460,14 @@ sub map_SLX
 																{
 																	my $insert = $expectedInsert*2;
 																	my $cmd = qq[bsub -J map.$libID.$laneID.$read2 -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -1 $clipPoint1 -2 $clipPoint2 -u $prefix.unmapped -a 2000 -A $insert $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																	print "$cmd\n";
-																	#system( $cmd );
+																	#print "$cmd\n";
+																	system( $cmd );
 																}
 																else
 																{
 																	my $cmd = qq[bsub -J map.$libID.$laneID.$read2 -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read1 $read1.bfq; $MAQ fastq2bfq $read2 $read2.bfq; $MAQ match -1 $clipPoint1 -2 $clipPoint2 -u $prefix.unmapped -a 2000 $prefix.raw.map ../ref.bfa $read1.bfq $read2.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read1.bfq $read2.bfq"];
-																	print "$cmd\n";
-																	#system( $cmd );
+																	#print "$cmd\n";
+																	system( $cmd );
 																}
 															}
 															$mapping=1;
@@ -473,6 +479,7 @@ sub map_SLX
 													my $s = 0;
 													foreach my $read0 (`ls split*.fastq`)
 													{
+													    chomp $read0;
 														if( ! -f $read0 )
 														{
 															last;
@@ -492,14 +499,14 @@ sub map_SLX
 															if( $clipPoint0 == -1 )
 															{
 																my $cmd = qq[bsub -J map.$libID.$laneID.$s -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read0 $read0.bfq; $MAQ match -u $prefix.unmapped $prefix.raw.map ../ref.bfa $read0.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read0.bfq"];
-																print "$cmd\n";
-																#system( $cmd );
+																#print "$cmd\n";
+																system( $cmd );
 															}
 															else
 															{
 																my $cmd = qq[bsub -J map.$libID.$laneID.$s -q $lsf_queue -o ../map.o -e ../map.e "rm ../$prefix.maq.out.gz; $MAQ fastq2bfq $read0 $read0.bfq; $MAQ match -1 $clipPoint0 -u $prefix.unmapped $prefix.raw.map ../ref.bfa $read0.bfq 2>&1 | gzip -c > ../$prefix.maq.out.gz; rm $read0.bfq"];
-																print "$cmd\n";
-																#system( $cmd );
+																#print "$cmd\n";
+																system( $cmd );
 															}
 														}
 														$mapping=1;
@@ -543,8 +550,8 @@ sub map_SLX
 												close( S );
 												
 												my $cmd = qq[bsub -J merge.$libID.$laneID -q $lsf_queue -o $lane_dir/merge.o -e $lane_dir/merge.e -w "done(map.$libID.$laneID.*)" "sh check_and_merge.sh; rm check_and_merge.sh; rm lane.touch"];
-												print "$cmd\n";
-												#system( $cmd );
+												#print "$cmd\n";
+												system( $cmd );
 											}
 											
 											chdir( ".." );
