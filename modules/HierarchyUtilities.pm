@@ -767,7 +767,12 @@ sub auditMappingHierarchy
 											
 											if( $technology =~ /^SLX$/ )
 											{
-												if( -f "raw.map.mapstat" )
+												my $rawMappedReads = 0;
+												my $rawMappedBases = 0;
+												my $rmdupMappedReads = 0;
+												my $rmdupMappedBases = 0;
+												my $errorRate = 0;
+												if( -s "raw.map.mapstat" )
 												{
 													my $isLastIteration = 0;
 													my $lastFileName = '';
@@ -796,14 +801,19 @@ sub auditMappingHierarchy
 																$successfulLane = 0;
 															}
 														}
+														else 
+														{
+														# jws - what does this state mean: pass or fail?
+														}
 													}
 													
 													#verify the number of reads agrees with the mapstat file
-													my $rawMappedReads = `head raw.map.mapstat | grep 'Total number of reads' | awk -F":" '{print \$2}'`;chomp( $rawMappedReads );
-													my $rawMappedBases = `head raw.map.mapstat | grep 'Sum of read length' | awk -F":" '{print \$2}'`;chomp( $rawMappedBases );
-													my $errorRate = `head raw.map.mapstat | grep 'Error rate' | awk -F":" '{print \$2}'`;chomp( $errorRate );
-													#my $rmdupMappedReads = `head rmdup.map.mapstat | grep 'Total number of reads' | awk -F":" '{print \$2}'`;chomp( $rmdupMappedReads );
-													#my $rmdupMappedBases = `head rmdup.map.mapstat | grep 'Sum of read length' | awk -F":" '{print \$2}'`;chomp( $rmdupMappedBases );
+													$rawMappedReads = `head raw.map.mapstat | grep 'Total number of reads' | awk -F":" '{print \$2}'`;chomp( $rawMappedReads );
+													$rawMappedBases = `head raw.map.mapstat | grep 'Sum of read length' | awk -F":" '{print \$2}'`;chomp( $rawMappedBases );
+													$errorRate = `head raw.map.mapstat | grep 'Error rate' | awk -F":" '{print \$2}'`;chomp( $errorRate );
+
+													#$rmdupMappedReads = `head rmdup.map.mapstat | grep 'Total number of reads' | awk -F":" '{print \$2}'`;chomp( $rmdupMappedReads );
+													#$rmdupMappedBases = `head rmdup.map.mapstat | grep 'Sum of read length' | awk -F":" '{print \$2}'`;chomp( $rmdupMappedBases );
 													
 													if( $rawMappedReads != $mappedNumReads )
 													{
@@ -812,33 +822,39 @@ sub auditMappingHierarchy
 														$successfulLane = 0;
 													}
 													
-													if( $successfulLane == 1 )
-													{
-														$completedLanes ++ ;
-														print LSUM "MAPPED,$center,$project,$individual,$technology,$library,$lane,";
-														if( length( $lane_read0 ) > 0 )
-														{
-															print LSUM "$lane_read0,$readLength0,,,,,$num_reads0,$num_bases0,$rawMappedReads,$rawMappedBases,0,$errorRate\n";
-														}
-														else
-														{
-															print LSUM ",,$lane_read1,$readLength1,$lane_read2,$readLength2,".($num_reads1+$num_reads2).",".($num_bases1 + $num_bases2).",$rawMappedReads,$rawMappedBases,$rawPairedNumReads,$errorRate\n";
-														}
-													}
+											
 												}
 												else
 												{
-													print "INCOMPLETE: Cant find mapstat file\n";
-													print LSUM "NOT_MAPPED,$center,$project,$individual,$technology,$library,$lane,";
+													print "INCOMPLETE: Can't find mapstat file\n";
+													$successfulLane = 0;
+												}
+
+												if( $successfulLane == 1 )
+												{
+													$completedLanes ++ ;
+													print LSUM "MAPPED,$center,$project,$individual,$technology,$library,$lane,";
 													if( length( $lane_read0 ) > 0 )
 													{
-														print LSUM "$lane_read0,$readLength0,,,,,$num_reads0,$num_bases0\n";
+														print LSUM "$lane_read0,$readLength0,,,,,$num_reads0,$num_bases0,$rawMappedReads,$rawMappedBases,0,$errorRate\n";
 													}
 													else
 													{
-														print LSUM ",,$lane_read1,$readLength1,$lane_read2,$readLength2,".($num_reads1+$num_reads2).",".($num_bases1 + $num_bases2)."\n";
+														print LSUM ",,$lane_read1,$readLength1,$lane_read2,$readLength2,".($num_reads1+$num_reads2).",".($num_bases1 + $num_bases2).",$rawMappedReads,$rawMappedBases,$rawPairedNumReads,$errorRate\n";
 													}
-												}	
+												}
+												else 
+												{
+												    print LSUM "NOT_MAPPED,$center,$project,$individual,$technology,$library,$lane,";
+												    if( length( $lane_read0 ) > 0 )
+												    {
+													print LSUM "$lane_read0,$readLength0,,,,,$num_reads0,$num_bases0\n";
+												    }
+												    else
+												    {
+													print LSUM ",,$lane_read1,$readLength1,$lane_read2,$readLength2,".($num_reads1+$num_reads2).",".($num_bases1 + $num_bases2)."\n";
+												    }
+												}
 											}
 											elsif( $technology =~ /^454$/ )
 											{
@@ -901,9 +917,11 @@ sub auditMappingHierarchy
 													{
 														my $t = `zcat $cigarName | tail -5 | grep "^SSAHA2 finished" | wc -l`;
 														chomp( $t );
-														if( $t == 1 )
+														# jws - I think this change is required otherwise unfinished ssaha2 won't cause failure
+														unless( $t == 1 )
 														{
-															$finished = 1;
+															$finished = 0;
+															last;
 														}
 													}
 													else
