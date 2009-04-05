@@ -649,31 +649,32 @@ sub laneToBAM
 	
 	#write the SAM header
 	open( H, ">raw.sam" ) or die "Cannot create raw.sam: $!\n";
-	print H "\@HD\tVN:1.0\n";
+	print H "\@HD\tVN:1.0\tSO:coordinate\n";
 	
-	#write the SQ headers
-	if( $gender eq 'male' || $gender eq 'unknown' )
-	{
-		open( FAI, $MALE_REF_FAI ) or die $!;
-		while( <FAI> )
-		{
-			chomp( $_ );
-			my @s = split( /\s+/ , $_ );
-			print H "\@SQ\tSN:$s[0]\tAS:NCBI36\tLN:$s[1]\n";
-		}
-		close( FAI );
-	}
-	else
-	{
-		open( FAI, $FEMALE_REF_FAI ) or die $!;
-		while( <FAI> )
-		{
-			chomp( $_ );
-			my @s = split( /\s+/ , $_ );
-			print H "\@SQ\tSN:$s[0]\tAS:NCBI36\tLN:$s[1]\n";
-		}
-		close( FAI );
-	}
+# 2009-04-03 jws: removed this, as samtools adds its own set of SQ headers, so we had two.
+#	#write the SQ headers
+#	if( $gender eq 'male' || $gender eq 'unknown' )
+#	{
+#		open( FAI, $MALE_REF_FAI ) or die $!;
+#		while( <FAI> )
+#		{
+#			chomp( $_ );
+#			my @s = split( /\s+/ , $_ );
+#			print H "\@SQ\tSN:$s[0]\tAS:NCBI36\tLN:$s[1]\n";
+#		}
+#		close( FAI );
+#	}
+#	else
+#	{
+#		open( FAI, $FEMALE_REF_FAI ) or die $!;
+#		while( <FAI> )
+#		{
+#			chomp( $_ );
+#			my @s = split( /\s+/ , $_ );
+#			print H "\@SQ\tSN:$s[0]\tAS:NCBI36\tLN:$s[1]\n";
+#		}
+#		close( FAI );
+#	}
 	
 	print H "\@RG\tID:$accession\tPU:$runName\tLB:$library\tSM:$individual";
 	if( $insertSize =~ /\d+/ ){
@@ -696,14 +697,19 @@ sub laneToBAM
 	
 	#convert to bam
 	my $cmd = qq[bsub -R "select[type==X86_64] rusage[tmp=15000]" -J bam.$libID.$laneID -q $lsf_queue $jobCondition -o bam.o -e bam.e "mkdir $tmp_directory;$MAQ2SAM raw.map $accession > $tmp_directory/tmp.sam; cat raw.sam $tmp_directory/tmp.sam > $tmp_directory/raw.sam; rm $tmp_directory/tmp.sam;rm raw.sam];
+	my $REF_FAI;
 	if( $gender eq 'male' || $gender eq 'unknown' )
 	{
-		$cmd .= qq[; $SAMTOOLS import $MALE_REF_FAI $tmp_directory/raw.sam - | $SAMTOOLS sort - $tmp_directory/raw.sorted; $SAMTOOLS rmdup $tmp_directory/raw.sorted.bam $cwd/rmdup.bam; rm -rf $tmp_directory;rm lane.touch"]
+	    $REF_FAI = $MALE_REF_FAI;
 	}
-	else
-	{
-		$cmd .= qq[; $SAMTOOLS import $FEMALE_REF_FAI $tmp_directory/raw.sam - | $SAMTOOLS sort - $tmp_directory/raw.sorted; $SAMTOOLS rmdup $tmp_directory/raw.sorted.bam $cwd/rmdup.bam; rm -rf $tmp_directory;rm lane.touch"];
+	else {
+	    $REF_FAI = $FEMALE_REF_FAI;
 	}
+
+	$cmd .= qq[; $SAMTOOLS import $REF_FAI $tmp_directory/raw.sam - | $SAMTOOLS sort - $tmp_directory/raw.sorted; ];
+	$cmd .= qq[ $SAMTOOLS rmdup $tmp_directory/raw.sorted.bam $cwd/rmdup.bam; ];
+	$cmd .= qq[ $SAMTOOLS flagstat $cwd/rmdup.bam > $cwd/rmdup.bam.flagstat ;];
+	$cmd .= qq[ rm -rf $tmp_directory ; rm lane.touch"]
 	
 	#print $cmd."\n";
 	system( $cmd );

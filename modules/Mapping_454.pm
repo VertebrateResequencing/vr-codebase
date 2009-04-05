@@ -381,31 +381,32 @@ sub laneToBAM
 	}
 	
 	open( H, ">raw.sam" ) or die "Cannot create raw.sam: $!\n";
-	print H "\@HD\tVN:1.0\n";
+	print H "\@HD\tVN:1.0\tSO:coordinate\n";
 	
-	#write the SQ headers
-	if( $gender eq 'male' || $gender eq 'unknown' )
-	{
-		open( FAI, $MALE_REF_FAI ) or die $!;
-		while( <FAI> )
-		{
-			chomp( $_ );
-			my @s = split( /\s+/ , $_ );
-			print H "\@SQ\tSN:$s[0]\tAS:NCBI36\tLN:$s[1]\n";
-		}
-		close( FAI );
-	}
-	else
-	{
-		open( FAI, $FEMALE_REF_FAI ) or die $!;
-		while( <FAI> )
-		{
-			chomp( $_ );
-			my @s = split( /\s+/ , $_ );
-			print H "\@SQ\tSN:$s[0]\tAS:NCBI36\tLN:$s[1]\n";
-		}
-		close( FAI );
-	}
+# 2009-04-03 jws: removed this, as samtools adds its own set of SQ headers, so we had two.
+#	#write the SQ headers
+#	if( $gender eq 'male' || $gender eq 'unknown' )
+#	{
+#		open( FAI, $MALE_REF_FAI ) or die $!;
+#		while( <FAI> )
+#		{
+#			chomp( $_ );
+#			my @s = split( /\s+/ , $_ );
+#			print H "\@SQ\tSN:$s[0]\tAS:NCBI36\tLN:$s[1]\n";
+#		}
+#		close( FAI );
+#	}
+#	else
+#	{
+#		open( FAI, $FEMALE_REF_FAI ) or die $!;
+#		while( <FAI> )
+#		{
+#			chomp( $_ );
+#			my @s = split( /\s+/ , $_ );
+#			print H "\@SQ\tSN:$s[0]\tAS:NCBI36\tLN:$s[1]\n";
+#		}
+#		close( FAI );
+#	}
 	
 	print H "\@RG\tID:$accession\tPU:$runName\tLB:$library\tSM:$individual";
 	if( $insertSize =~ /\d+/ ){
@@ -439,17 +440,17 @@ sub laneToBAM
 	print S "\n";
 	print S qq/zcat *.sam.gz >> raw.sam;rm *.sam.gz;/;
 	
-	if( $gender eq 'male' || $gender eq 'unknown' )
-	{
-		print S	qq/$SAMTOOLS import $MALE_REF_FAI raw.sam - | $SAMTOOLS sort - raw.sorted; $SAMTOOLS rmdup raw.sorted.bam rmdup.bam; rm raw.sorted.*;rm raw.sam/;
+	my $REF_FAI;
+	if( $gender eq 'male' || $gender eq 'unknown' ){
+	    $REF_FAI = $MALE_REF_FAI;
 	}
-	else
-	{
-		print S	qq/$SAMTOOLS import $FEMALE_REF_FAI raw.sam - | $SAMTOOLS sort - raw.sorted; $SAMTOOLS rmdup raw.sorted.bam rmdup.bam; rm raw.sorted.*;rm raw.sam/;
+	else {
+	    $REF_FAI = $FEMALE_REF_FAI;
 	}
+
+	print S	qq/$SAMTOOLS import $REF_FAI raw.sam - | $SAMTOOLS sort - raw.sorted; $SAMTOOLS rmdup raw.sorted.bam rmdup.bam; $SAMTOOLS flagstat rmdup.bam > rmdup.bam.flagstat ; rm raw.sorted.*;rm raw.sam/;
 	close( S );
 	
-	#my $cmd = qq/bsub -J bam.$libID.$laneID -w 'done(sam.$libID.$laneID.*)' -q $lsf_queue -o bam.o -e bam.e "echo '\@HD VN:1.0' > lane.sam; echo '\@RG ID:$accession PU:$accession LB:$library SM:$individual' > lane.sam; zcat *.sam.gz | gzip -c >> lane.sam.gz;"/;
 	my $cmd = qq/bsub -J bam.$libID.$laneID -q $lsf_queue -o bam.o -e bam.e -w "done(sam.$libID.$laneID.*)" "sh makeBam.sh;rm makeBam.sh;rm lane.touch"/;
 	#print $cmd."\n";
 	system( $cmd );
