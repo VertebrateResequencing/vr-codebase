@@ -105,6 +105,21 @@ sub new {
   Arg[2]     : FASTA file
   Returns    : hashref to hash of arrays or undef if no matches are
                identified
+               %alignments = (
+                  seq_one => (
+                    [score     => $score,     q_name    => $q_name,
+                     s_name    => $s_name,    q_start   => $q_start,
+                     q_end     => $q_end,     s_start   => $s_start,
+                     s_end     => $s_end,     direction => $direction,
+                     num_bases => $num_bases, identity  => $identity]
+                    [score => $score,         q_name    => $q_name, ...]
+                   )
+                  seq_two => (
+                    [score => $score, q_name => $q_name, ...}]
+                    []
+                   )
+                  ...
+               )
 
 =cut
 
@@ -117,9 +132,12 @@ sub do_ssaha{
   #
   # %alignments = (
   #      seq_one => (
-  #                  [{score => $score, q_name => $q_name, ...}]
-  #                  [{score => $score, q_name => $q_name, ...}]
-  #                  []
+  #                  [{score => $score,         q_name => $q_name,
+  #                    s_name => $s_name,       q_start => $q_start,
+  #                    q_end  => $q_end,        s_start => $s_start,
+  #                    s_end => $s_end,         direction => $direction,
+  #                    num_bases => $num_bases, identity => $identity}]
+  #                  [{score => $score,         q_name => $q_name, ...}]
   #                 )
   #      seq_two => (
   #                  [{score => $score, q_name => $q_name, ...}]
@@ -127,7 +145,11 @@ sub do_ssaha{
   #                 )
   #      ...
   #   )
-
+  #
+  # each sequence in the defined FASTA sequence file has an entry
+  # in the results hash.  if no alignment is found the results
+  # entry is 'undef'
+  #
   # on failure returns undef
 
   my ($self, $species_hash_tables, $fasta_file)= @_;
@@ -171,9 +193,6 @@ sub do_ssaha{
 
     while (<RES>) {
       my $line = $_;
-
-      #print $line;
-
       chomp $line;
 
       my $q_name;
@@ -189,7 +208,17 @@ sub do_ssaha{
 
 	my @fields= split(/\s+/, $line);
 
-	my $q_name= $fields[2];
+	my $curr_qname= $fields[2];
+
+	# check that the query already has an entry
+	# in the results hash, which should have
+	# come from the previous check on
+	# Matches For Query
+
+	if ( !exists $ssaha_results{$curr_qname} ) {
+	  die("Error processing Ssaha ouput\n" .
+	     "Trying to store an unknown query\n");
+	}
 
 	my $href= {'score'     => $fields[1],
 		   'q_name'    => $fields[2],
@@ -202,7 +231,7 @@ sub do_ssaha{
 		   'num_bases' => $fields[9],
 		   'identity'  => $fields[10]};
 
-	push @{$ssaha_results{$q_name}}, $href;
+	push @{$ssaha_results{$curr_qname}}, $href;
       }
     }
     close(RES);
