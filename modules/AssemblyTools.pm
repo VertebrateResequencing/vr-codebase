@@ -616,6 +616,14 @@ sub splitPairedFastq
 		my $q1 = <READS1>;
 		my $q2 = <READS2>;
 		
+		# move truncation checking here
+		unless($q1){
+		    croak "Fastq1 file truncated: $fastq1\n";
+		}
+		unless($q2){
+		    croak "Fastq2 file truncated: $fastq2\n";
+		}
+
 		my $countNs1 = ($seq1 =~ tr/N//);
 		my $countNs2 = ($seq2 =~ tr/N//);
 		
@@ -624,7 +632,7 @@ sub splitPairedFastq
 			next;
 		}
 		
-		if( $seq1 =~ /^A+\n$/ || $seq1 =~ /^N+\n$/ || $seq2 =~ /^A+\n$/ || $seq2 =~ /^N+\n$/ )
+		if( $seq1 =~ /^A+\n$/ || $seq2 =~ /^A+\n$/)
 		{
 			next;
 		}
@@ -652,20 +660,22 @@ sub splitPairedFastq
 			open( R, ">$outputDirectory/$prefix$fileCount"."_2.fastq" ) or die "Cannot create RIGHT file\n";
 		}
 		
-		if( eof( READS2 ) )
-		{
-			croak "Fastq2 file truncated: $fastq2\n";
-		}
+		# Don't understand why this doesn't fire for every pair of files
+		#if( eof( READS2 ) )
+		#{
+		#	croak "Fastq2 file truncated: $fastq2\n";
+		#}
 	}
 	close( L );
 	close( R );
 	close( READS1 );
 	close( READS2 );
 	
-	if( ! eof( READS2 ) )
-	{
-		croak "Fastq1 file truncated: $fastq1\n";
-	}
+	# this is a null op, as READS2 is closed!
+	#if( ! eof( READS2 ) )
+	#{
+	#	croak "Fastq1 file truncated: $fastq1\n";
+	#}
 	
 	return 1;
 }
