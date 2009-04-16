@@ -652,7 +652,7 @@ sub auditMappingHierarchy
 	
 	open( LSUM, ">$laneSummary" ) or die $!;
 	
-	print LSUM "Status,Center,Project,Individual,Tech,Library,Lane,Fastq0,ReadLength,Fastq1,ReadLength,Fastq2,ReadLength,#Reads,#Bases,#RawReadsMapped,#RawBasesMapped,#ReadsPaired,ErrorRate\n";
+	print LSUM "Status,Center,Project,Individual,Tech,Library,Lane,Fastq0,ReadLength,Fastq1,ReadLength,Fastq2,ReadLength,#Reads,#Bases,#RawReadsMapped,#RawBasesMapped,#RawReadsPaired,#RmdupReadsMapped,#RmdupBasesMapped,ErrorRate\n";
 	
 	my $completedLanes = 0;
 	my $totalLanes = 0;
@@ -811,9 +811,13 @@ sub auditMappingHierarchy
 													$rawMappedReads = `head raw.map.mapstat | grep 'Total number of reads' | awk -F":" '{print \$2}'`;chomp( $rawMappedReads );
 													$rawMappedBases = `head raw.map.mapstat | grep 'Sum of read length' | awk -F":" '{print \$2}'`;chomp( $rawMappedBases );
 													$errorRate = `head raw.map.mapstat | grep 'Error rate' | awk -F":" '{print \$2}'`;chomp( $errorRate );
-
-													#$rmdupMappedReads = `head rmdup.map.mapstat | grep 'Total number of reads' | awk -F":" '{print \$2}'`;chomp( $rmdupMappedReads );
-													#$rmdupMappedBases = `head rmdup.map.mapstat | grep 'Sum of read length' | awk -F":" '{print \$2}'`;chomp( $rmdupMappedBases );
+													if( -s "rmdup.map.mapstat"){
+													    $rmdupMappedReads = `head rmdup.map.mapstat | grep 'Total number of reads' | awk -F":" '{print \$2}'`;chomp( $rmdupMappedReads );
+													    $rmdupMappedBases = `head rmdup.map.mapstat | grep 'Sum of read length' | awk -F":" '{print \$2}'`;chomp( $rmdupMappedBases );
+													}
+													else {
+													    print "No rmdup.map.mapstat: ".getcwd."\n";
+													}
 													
 													if( $rawMappedReads != $mappedNumReads )
 													{
@@ -836,11 +840,11 @@ sub auditMappingHierarchy
 													print LSUM "MAPPED,$center,$project,$individual,$technology,$library,$lane,";
 													if( length( $lane_read0 ) > 0 )
 													{
-														print LSUM "$lane_read0,$readLength0,,,,,$num_reads0,$num_bases0,$rawMappedReads,$rawMappedBases,0,$errorRate\n";
+														print LSUM "$lane_read0,$readLength0,,,,,$num_reads0,$num_bases0,$rawMappedReads,$rawMappedBases,0,$rmdupMappedReads,$rmdupMappedBases,$errorRate\n";
 													}
 													else
 													{
-														print LSUM ",,$lane_read1,$readLength1,$lane_read2,$readLength2,".($num_reads1+$num_reads2).",".($num_bases1 + $num_bases2).",$rawMappedReads,$rawMappedBases,$rawPairedNumReads,$errorRate\n";
+														print LSUM ",,$lane_read1,$readLength1,$lane_read2,$readLength2,".($num_reads1+$num_reads2).",".($num_bases1 + $num_bases2).",$rawMappedReads,$rawMappedBases,$rawPairedNumReads,$rmdupMappedReads,$rmdupMappedBases,$errorRate\n";
 													}
 												}
 												else 
