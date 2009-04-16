@@ -448,7 +448,7 @@ sub laneToBAM
 	    $REF_FAI = $FEMALE_REF_FAI;
 	}
 
-	print S	qq/$SAMTOOLS import $REF_FAI raw.sam - | $SAMTOOLS sort - raw.sorted; $SAMTOOLS rmdup raw.sorted.bam rmdup.bam; $SAMTOOLS flagstat rmdup.bam > rmdup.bam.flagstat ; rm raw.sorted.*;rm raw.sam/;
+	print S	qq/$SAMTOOLS import $REF_FAI raw.sam - | $SAMTOOLS sort - raw.sorted; $SAMTOOLS rmdup raw.sorted.bam rmdup.bam; $SAMTOOLS flagstat rmdup.bam > rmdup.bam.flagstat ; $SAMTOOLS index rmdup.bam; rm raw.sorted.*;rm raw.sam/;
 	close( S );
 	
 	my $cmd = qq/bsub -J bam.$libID.$laneID -q $lsf_queue -o bam.o -e bam.e -w "done(sam.$libID.$laneID.*)" "sh makeBam.sh;rm makeBam.sh;rm lane.touch"/;

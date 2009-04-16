@@ -709,7 +709,8 @@ sub laneToBAM
 	$cmd .= qq[; $SAMTOOLS import $REF_FAI $tmp_directory/raw.sam - | $SAMTOOLS sort - $tmp_directory/raw.sorted; ];
 	$cmd .= qq[ $SAMTOOLS rmdup $tmp_directory/raw.sorted.bam $cwd/rmdup.bam; ];
 	$cmd .= qq[ $SAMTOOLS flagstat $cwd/rmdup.bam > $cwd/rmdup.bam.flagstat ;];
-	$cmd .= qq[ rm -rf $tmp_directory ; rm lane.touch"]
+	$cmd .= qq[ $SAMTOOLS index $cwd/rmdup.bam ;];
+	$cmd .= qq[ rm -rf $tmp_directory ; rm lane.touch"];
 	
 	#print $cmd."\n";
 	system( $cmd );
