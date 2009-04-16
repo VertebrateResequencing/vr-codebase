@@ -545,6 +545,8 @@ sub map_SLX
 													cat split/*.unmapped | gzip -c > unmapped.gz
 													$MAQ mapmerge raw.map split/*.raw.map
 													$MAQ mapstat raw.map > raw.map.mapstat
+													$MAQ rmdup rmdup.map raw.map
+													$MAQ mapstat rmdup.map > rmdup.map.mapstat
 													rm -rf split
 												fi];
 												close( S );
