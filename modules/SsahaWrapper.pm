@@ -74,11 +74,11 @@ sub new {
 
     my $self= {};
 
-    # set up default Ssaha parameters
-    $self->{'params'}={'-seeds'    => 2,
-		       '-depth'    => 5,
-		       '-score'    => 20,
-		       '-identity' => 30.0,
+    # set up default ssaha parameters
+    $self->{'params'}={'-seeds'    => 5,
+		       '-depth'    => 50,
+		       '-score'    => 30,
+		       '-identity' => 50.0,
 		       '-align'    => 0,
 		       '-output'   => 'ssaha2',
 		    };
