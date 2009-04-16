@@ -75,13 +75,12 @@ sub new {
     my $self= {};
 
     # set up default ssaha parameters
-    $self->{'params'}={'-seeds'    => 5,
-		       '-depth'    => 50,
-		       '-score'    => 30,
-		       '-identity' => 50.0,
-		       '-align'    => 0,
-		       '-output'   => 'ssaha2',
-		    };
+    $self->{seeds} = 5;
+    $self->{depth} = 50;
+    $self->{score} = 30;
+    $self->{identity} = 50.0;
+    $self->{align} = 0;
+    $self->{output} = 'ssaha2';
 
     bless($self, $class);
 
@@ -175,15 +174,14 @@ sub do_ssaha{
   my $cmd= $SSAHA2_BIN;
 
   # tag on any specified params
-  foreach my $option(keys %{$self->{params}} ){
-    $cmd .= " " . $option . " " . $self->{params}->{$option};
+  foreach my $option (keys %{$self} ){
+    $cmd .= " -" . $option . " " . $self->{$option};
   }
 
   $cmd .= " -save " . $species_hash_tables;
   $cmd .= " " . $fasta_file;
 
   #print $cmd . "\n";
-
 
   # hash to store alignment results
   my %ssaha_results;
@@ -278,7 +276,7 @@ sub ckmer {
 
 =head2 cmatch
 
-  Example    : $sWrapper->cmatch(10)
+  Example    : $sWrapper->cmatch(14)
   Description: A get/set method for specifying the minimum match
                length for cross_match matching
   Arg        : int
@@ -302,7 +300,7 @@ sub cmatch {
 
 =head2 depth
 
-  Example    : $sWrapper->depth(42)
+  Example    : $sWrapper->depth(50)
   Description: A get/set method for the number of hits to consider
                for alignment
   Arg        : int
@@ -326,7 +324,7 @@ sub depth {
 
 =head2 identity
 
-  Example    : $sWrapper->identity(42)
+  Example    : $sWrapper->identity(50.000)
   Description: A get/set method for specifying the minimum identity
                for a match to be reported
   Arg        : float
@@ -350,7 +348,7 @@ sub identity {
 
 =head2 seeds
 
-  Example    : $sWrapper->seeds(10)
+  Example    : $sWrapper->seeds(5)
   Description: A get/set method for specifying the number of kmer
                matches required to flag a hit
   Arg        : int
@@ -374,7 +372,7 @@ sub seeds {
 
 =head2 score
 
-  Example    : $sWrapper->score(10)
+  Example    : $sWrapper->score(30)
   Description: A get/set method for specifying the minimum score for 
                a match to be reported
   Arg        : float
