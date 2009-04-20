@@ -170,7 +170,7 @@ sub do_pairwise_alignment{
     my %alignment;
     $alignment{start} = $align_start;
     $alignment{end} = $align_end;
-    $alignment{complement} = '0';
+    $alignment{strand} = '+';
     $alignment{score} = $alignment->score();
     $alignment{identity} = $alignment->percentage_identity();
 
@@ -240,7 +240,7 @@ sub do_multistrand_pairwise_alignment{
 
     # determine the highest scoring alignment
     my $best_alignment;
-    my $is_complement = 0;
+    my $strand = '+';
 
     if ( $fwd_alignment->score() == $revcomp_alignment->score()) {
       carp("Needle alignments both have similar scores => " . 
@@ -254,7 +254,7 @@ sub do_multistrand_pairwise_alignment{
     } # $fwd_alignment->score() < $revcomp_alignment->score()
     else {
       $best_alignment = $revcomp_alignment;
-      $is_complement = 1;
+      $strand = '-';
     }
 
 
@@ -281,7 +281,7 @@ sub do_multistrand_pairwise_alignment{
     my %alignment;
     $alignment{start} = $align_start;
     $alignment{end} = $align_end;
-    $alignment{complement} = $is_complement;
+    $alignment{strand} = $strand;
     $alignment{score} = $best_alignment->score();
     $alignment{identity} = $best_alignment->percentage_identity();
 
