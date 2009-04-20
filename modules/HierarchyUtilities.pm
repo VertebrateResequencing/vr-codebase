@@ -315,7 +315,8 @@ sub buildInternalHierarchy {
     croak "Can't find data hierarchy directory\n" unless -d $dhierarchyDir;
     croak "Can't find analysis hierarchy directory\n" unless -d $ahierarchyDir;
 
-    foreach my $project (keys %$projecthash){
+    foreach my $project (keys %$projecthash)
+    {
 	print "Updating project: $project\n";
 	
 	my $project1 = $project;
@@ -335,7 +336,8 @@ sub buildInternalHierarchy {
 	
 	my $numLibraries = 0;
 	
-	foreach my $sample (keys %{$projecthash->{$project}}){
+	foreach my $sample (keys %{$projecthash->{$project}})
+	{
 	    print "Updating library: $sample\n";
 	    
 	    #hack for G1K where sample starts with the individual
@@ -567,7 +569,7 @@ sub buildInternalHierarchy {
 =cut
 
 sub checkInternalFastq {
-    croak "Usage: checkInternalFastql hierarchy_fastq_dir" unless @_ == 1;
+    croak "Usage: checkInternalFastq hierarchy_fastq_dir" unless @_ == 1;
     my $fastqdir = shift;
     $fastqdir =~ s|/$||;    # remove any trailing separator
     my ($run,$lane) = $fastqdir=~m|.*/(\d+)_(\d+)$|;
@@ -576,7 +578,7 @@ sub checkInternalFastq {
 	carp "Can't find run and lane from $fastqdir";
 	return undef;
     }
-
+    
     open my $FQCHECK, q[-|], qq[$DFIND -run $run -lane $lane -filetype fastqcheck];
     while (<$FQCHECK>){
 	chomp;
@@ -610,7 +612,6 @@ sub checkInternalFastq {
     my $check_ok = $check_bad ? 0 : 1;
     return $check_ok;
 }
-
 
 sub getSeqAndLengthFromFastqcheck 
 {
