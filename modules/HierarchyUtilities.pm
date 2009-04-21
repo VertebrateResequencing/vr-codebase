@@ -308,6 +308,7 @@ sub importInternalData {
     &buildInternalHierarchy(\%projects,$dhierarchyDir,$ahierarchyDir);
 }
 
+
 sub buildInternalHierarchy {
     my $projecthash = shift; # ref to hash of projectnames->samplenames->lists of fastq
     my $dhierarchyDir = shift;
@@ -430,13 +431,8 @@ sub buildInternalHierarchy {
         print "Requesting file $fastq from MPSA.....\n";
         my $random = int(rand( 100000000 ));
         
-        #use mpsadownload to get fastq
-        # jws 2009-02-11 - do this inline, and then do any parallelisation outside this module
-        #my $cmd = qq[bsub -J mpsa.$random -o import.o -e import.e -q $LSF_QUEUE "$MPSA_DOWNLOAD -c -f $fastq > $fastq"];
-        my $cmd = "$MPSA_DOWNLOAD -c -f $fastq > $fastq 2> import.e";
-        system( $cmd );
-        unless (-s $fastq){
-            print "Error retrieving $fastq with mpsa_download: $!\n";
+        unless (getMpsaFastq($fastq)){
+            print "Error retrieving $fastq with mpsa_download\n";
             next;
         }
         
@@ -458,7 +454,7 @@ sub buildInternalHierarchy {
         system( "ln -fs $lPath/meta.info $alPath/meta.info" );
 
         #create a bsub job to split the fastq
-        $cmd = qq[bsub -J split.$random -o import.o -e import.e -q $LSF_QUEUE perl -w -e "use AssemblyTools;AssemblyTools::sanger2SplitFastq( '$fastq', '$fastq1', '$fastq2');unlink '$fastq';"];
+        my $cmd = qq[bsub -J split.$random -o import.o -e import.e -q $LSF_QUEUE perl -w -e "use AssemblyTools;AssemblyTools::sanger2SplitFastq( '$fastq', '$fastq1', '$fastq2');unlink '$fastq';"];
         system( $cmd );
         
         #work out the clip points (if any)
@@ -489,18 +485,13 @@ sub buildInternalHierarchy {
       chdir( $lPath );
       my $random = int(rand( 100000000 ));
       
-      #use mpsadownload to get fastq.
-      # jws 2009-02-11 - do this inline, and then do any parallelisation outside this module
-      #my $cmd = qq[bsub -J mpsa.$random -o import.o -e import.e -q $LSF_QUEUE "$MPSA_DOWNLOAD -c -f $fastq > $fastq"];
-      my $cmd = "$MPSA_DOWNLOAD -c -f $fastq > $fastq 2> import.e";
-      system( $cmd );
-      unless ( -s $fastq){  # TODO: add md5 check if mpsa ever add it
-          print "Error retrieving $fastq with mpsa_download: $!\n";
-          next;
-      }
+	unless (getMpsaFastq($fastq)){
+	    print "Error retrieving $fastq with mpsa_download\n";
+	    next;
+	}
       
       #run fastqcheck
-      $cmd = qq[bsub -J fastqcheck.$random -o import.o -e import.e -q $LSF_QUEUE "cat $fastq | $FASTQ_CHECK > $fastq.gz.fastqcheck; ln -fs $lPath/$fastq.gz.fastqcheck $alPath/$fastq.gz.fastqcheck"];
+      my $cmd = qq[bsub -J fastqcheck.$random -o import.o -e import.e -q $LSF_QUEUE "cat $fastq | $FASTQ_CHECK > $fastq.gz.fastqcheck; ln -fs $lPath/$fastq.gz.fastqcheck $alPath/$fastq.gz.fastqcheck"];
       system( $cmd );
       
       print "Writing meta.info for: $fastq.gz\n";
@@ -559,6 +550,60 @@ sub buildInternalHierarchy {
     }
 
 }
+
+
+
+=head2 getMpsaFastq
+
+  Arg [1]    : fastq name to retrieve
+  Example    : my $dl_ok = getMpsaFastq ('1513_2_1.fastq');
+  Description: retrieves a fastq from the mpsa and writes it to the same name in the current directory.  Checks the md5 of the fastq.
+ 
+  If an error occurs or the md5 don't match, warns error and removes the fastq.
+  Returntype : 1 if there were no errors, otherwise undef.
+
+=cut
+
+sub getMpsaFastq {
+    croak "Usage: getMpsaFastq fastq" unless @_ == 1;
+    my $fastq = shift;
+
+    # jws 2009-02-11 - do this inline, and then do any parallelisation outside
+    # this module
+    my $cmd = "$MPSA_DOWNLOAD -c -f $fastq > $fastq 2> import.e";
+    system( $cmd );
+    my $ran_ok;
+    if ( -s $fastq){
+	# MD5 check
+	my $mpsa_md5 = `$MPSA_DOWNLOAD -m -f $fastq|awk '{print \$1}'`;
+	my $dl_md5 = `md5sum $fastq|awk '{print \$1}'`;
+	if ($mpsa_md5 && $dl_md5){
+	    if($mpsa_md5 eq $dl_md5){
+		$ran_ok = 1;
+	    }
+	    else {
+		warn "md5 of $fastq did not match that in MPSA\n";
+		$ran_ok = 0;
+	    }
+	}
+	else {
+	    warn "Can't retrieve md5 of $fastq\n";
+	    $ran_ok = 0;
+	}
+    }
+    else {
+	warn "Error retrieving $fastq with mpsa_download: $!\n";
+	$ran_ok = 0;
+    }
+
+    unless ($ran_ok){
+	unlink($fastq);
+    }
+    return $ran_ok;
+
+}
+ 
+
 
 =head2 checkInternalFastq
 
