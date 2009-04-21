@@ -318,7 +318,8 @@ sub find_exact_matches{
   Arg [1]    : file barcodes
   Example    : read_barcodes($my_barcodes);
   Description: Reads a text file of barcodes, where each barcode
-               is on a separate line in the file
+               is on a separate line in the file and is formatted
+               as BC_number tab barcode sequence
   Returntype : hash ref of barcodes read, keyed on generated barcode
                names (BC..)
 
@@ -349,12 +350,10 @@ sub read_barcodes {
       }
 
       chomp;
-      $barcode_cnt++;
 
-      my $formatted_bc = sprintf("%03d",$barcode_cnt);
-      my $barcode_key = 'BC' . $formatted_bc;
+      my ($barcode_number, $barcode_sequence) = split("\t",$_);
 
-      $barcodes{$barcode_key} = $_;
+      $barcodes{$barcode_number} = $barcode_sequence;
     }
     close(BAR);
 
