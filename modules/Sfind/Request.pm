@@ -179,7 +179,7 @@ sub read_len {
 
   Arg [1]    : status (optional)
   Example    : my $status = $request->status();
-	       $request->status('104');
+	       $request->status('pending');
   Description: Get/Set for request status
   Returntype : string
 
