@@ -49,7 +49,7 @@ my $SSAHA2_BIN;
 
 BEGIN {
   # 1KGenomes ssaha executable
-  $SSAHA2_BIN = '/lustre/sf4/1kgenomes/bin/ssaha2';
+  $SSAHA2_BIN = '/nfs/sf7/bin/ssaha2';
 
   if ( !-e $SSAHA2_BIN ) {
     die ("Unable to find defined Ssaha binary: $SSAHA2_BIN\n");
