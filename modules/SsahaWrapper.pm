@@ -78,8 +78,10 @@ sub new {
     $self->{seeds} = 5;
     $self->{depth} = 50;
     $self->{score} = 30;
+    $self->{skip} = 12;
     $self->{identity} = 50.0;
     $self->{align} = 0;
+    $self->{rtype} = undef;
     $self->{output} = 'ssaha2';
 
     bless($self, $class);
@@ -168,20 +170,39 @@ sub do_ssaha{
     die("Unable to find specified FASTA file\n$fasta_file");
   }
 
-
-
   # construct the ssaha command
+  # this is somewhat ugly due to the way that ssaha seems to
+  # handle command-line parameters.  ssaha has three set
+  # rtypes; 454, abi and solexa.  these have associated sets
+  # of default parameter settings.  however, it looks as if
+  # even if you define an rtype, any other explicitly defined
+  # on the command line, overrides the any specific rtype value.
+  # so check to see if the rtype is defined.  if it isn't
+  # then create a command line using the values held in the
+  # current ssaha object.  if it is set, set the rtype and
+  # ignore the object's set parameters.
+
   my $cmd= $SSAHA2_BIN;
 
-  # tag on any specified params
-  foreach my $option (keys %{$self} ){
-    $cmd .= " -" . $option . " " . $self->{$option};
+  # if no rtype is defined, concatenate the current command
+  # line options onto the ssaha command
+  if ( !defined $self->{rtype} ) {
+
+    # tag on any specified params
+    foreach my $option (keys %{$self} ){
+      if ( defined $self->{$option} ) {
+	$cmd .= " -" . $option . " " . $self->{$option};
+      }
+    }
+  }
+  # otherwise specify the rtype
+  else {
+    $cmd .= " -" . $self->{rtype};
   }
 
   $cmd .= " -save " . $species_hash_tables;
   $cmd .= " " . $fasta_file;
 
-  #print $cmd . "\n";
 
   # hash to store alignment results
   my %ssaha_results;
@@ -191,6 +212,8 @@ sub do_ssaha{
 
     while (<RES>) {
       my $line = $_;
+
+      print $line;
       chomp $line;
 
       my $q_name;
@@ -346,26 +369,29 @@ sub identity {
 
 
 
-=head2 seeds
+=head2 rtype
 
-  Example    : $sWrapper->seeds(5)
-  Description: A get/set method for specifying the number of kmer
-               matches required to flag a hit
-  Arg        : int
-  Returns    : int
+  Example    : $sWrapper->rtype('454')
+  Description: A get/set method for specifying the source of the reads
+               454 implies: -skip 3 -seeds 2 -score 30 -sense 1 -cmatch 10 -ckmer 6
+               solexa implies: -kmer 13 -skip 2 -seeds 2 -score 12 -cmatch 9 -ckmer 6
+  Arg        : string
+  Returns    : string
 
 =cut
 
-sub seeds {
+sub rtype {
     my $self = shift;
     if (@_) { 
-	my $curr_seeds = shift;
-	if ( $curr_seeds < 0 ) {
-	  die("$MODULE_NAME Trying to set an incorrect seeds: $curr_seeds");
+	my $curr_rtype = shift;
+	if ( $curr_rtype ne '454' && $curr_rtype ne 'solexa'
+	     && $curr_rtype ne 'abi') {
+	  die("$MODULE_NAME Trying to set an incorrect rtype: $curr_rtype\n" .
+	     "Valid rtypes [454, solexa, abi]");
 	}
-	$self->{'seeds'} = int($curr_seeds);
+	$self->{'rtype'} = $curr_rtype;
       }
-    return $self->{'seeds'};
+    return $self->{'rtype'};
 }
 
 
@@ -392,6 +418,52 @@ sub score {
     return $self->{'score'};
 }
 
+
+
+=head2 seeds
+
+  Example    : $sWrapper->seeds(5)
+  Description: A get/set method for specifying the number of kmer
+               matches required to flag a hit
+  Arg        : int
+  Returns    : int
+
+=cut
+
+sub seeds {
+    my $self = shift;
+    if (@_) { 
+	my $curr_seeds = shift;
+	if ( $curr_seeds < 0 ) {
+	  die("$MODULE_NAME Trying to set an incorrect seeds: $curr_seeds");
+	}
+	$self->{'seeds'} = int($curr_seeds);
+      }
+    return $self->{'seeds'};
+}
+
+
+
+=head2 skip
+
+  Example    : $sWrapper->skip(30)
+  Description: A get/set method for specifying the step size for ssaha hashing
+  Arg        : int
+  Returns    : int
+
+=cut
+
+sub skip {
+    my $self = shift;
+    if (@_) { 
+	my $curr_skip = shift;
+	if ( $curr_skip < 0 ) {
+	  die("$MODULE_NAME Trying to set an incorrect skip: $curr_skip");
+	}
+	$self->{'skip'} = int($curr_skip);
+      }
+    return $self->{'skip'};
+}
 
 
 
