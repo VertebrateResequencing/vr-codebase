@@ -209,7 +209,7 @@ sub lanes {
     unless ($self->{'lanes'}){
 	my @lanes;
     	foreach my $id (@{$self->lane_ids()}){
-	    my $obj = Sfind::File->new($self->{_dbh},$id);
+	    my $obj = Sfind::Lane->new($self->{_dbh},$id);
 	    push @lanes, $obj;
 	}
 	$self->{'lanes'} = \@lanes;
@@ -230,21 +230,23 @@ sub lanes {
 
 sub lane_ids {
     my ($self) = @_;
+	# TODO: add this
+	die "Not implemented yet";
     unless ($self->{'lane_ids'}){
-	my $sql = qq[select distinct(name) from file where request_id=?];
-	my @files;
+	my $sql = qq[];
+	my @ids;
 	my $sth = $self->{_dbh}->prepare($sql);
 
 	if ($sth->execute($self->id)){
 	    foreach(@{$sth->fetchall_arrayref()}){
-		push @files, $_->[0];
+		push @ids, $_->[0];
 	    }
 	}
 	else{
-	    die(sprintf('Cannot retrieve files: %s', $DBI::errstr));
+	    die(sprintf('Cannot retrieve ids: %s', $DBI::errstr));
 	}
 
-	$self->{'lane_ids'} = \@files;
+	$self->{'lane_ids'} = \@ids;
     }
  
     return $self->{'lane_ids'};
