@@ -213,7 +213,7 @@ sub do_ssaha{
     while (<RES>) {
       my $line = $_;
 
-      print $line;
+      #print $line;
       chomp $line;
 
       my $q_name;
