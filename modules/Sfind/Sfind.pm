@@ -4,13 +4,13 @@ package Sfind::Sfind;
 Sfind::Sfind - API for the denormalised SeqScape & NPG tracking database
 
 =head1 SYNOPSIS
-    my $track = Sfind::Sfind->new();
+    my $sfind = Sfind::Sfind->new();
 
     #get arrayref of projects being tracked for traversing hierarchy
-    my $projects = $track->projects();
+    my $projects = $sfind->projects();
 
     #also provides accessors for arbitrary objects in hierarchy
-    my $lane = $track->get_lane_by_id
+    my $sample = $sfind->get_sample_by_name('NA12878');
 
 =head1 DESCRIPTION
 
@@ -32,7 +32,7 @@ use Sfind::Project;
 =head2 new
 
   Arg [1]    : None
-  Example    : my $track = Sfind::Sfind->new()
+  Example    : my $sfind = Sfind::Sfind->new()
   Description: Returns Sfind object if can connect to database
   Returntype : Sfind::Sfind object
 
@@ -54,7 +54,7 @@ sub new {
 =head2 get_project_by_id
 
   Arg [1]    : project id from sequencescape
-  Example    : my $project = $track->get_project_by_id(140);
+  Example    : my $project = $sfind->get_project_by_id(140);
   Description: retrieve project object by sequencescape id
   Returntype : Sfind::Project object
 
@@ -70,7 +70,7 @@ sub get_project_by_id {
 =head2 get_project_by_name
 
   Arg [1]    : project name in sequencescape
-  Example    : my $project = $track->get_project_by_name('1000Genomes-A1-CEU');
+  Example    : my $project = $sfind->get_project_by_name('1000Genomes-A1-CEU');
   Description: retrieve project object by sequencescape name
   Returntype : Sfind::Project object
 
@@ -93,7 +93,7 @@ sub get_project_by_name {
 =head2 project_names
 
   Arg [1]    : None
-  Example    : my $project_names = $track->project_names();
+  Example    : my $project_names = $sfind->project_names();
   Description: Returns a ref to an array of the project names that are being tracked
   Returntype : ref to array of project name strings
 
@@ -118,24 +118,127 @@ sub project_names {
 }
 
 
-=head2 get_lane_by_filename
+=head2 get_sample_by_name
 
-  Arg [1]    : file name
-  Example    : my $lane = $track->get_lane_by_filename('123_s_1.fastq');
-  Description: retrieve lane object by filename
-  Returntype : Sfind::Lane object
+  Arg [1]    : sample name
+  Arg [2]    : project name.  Only required if sample is in > 1 project
+  Example    : my $sample = $sfind->get_sample_by_name('NA12878');
+  Description: retrieve sample object by sample name.  If project is not supplied and sample is in more than one project, sample object creation will fail.
+  Returntype : Sfind::Sample object
 
 =cut
 
-sub get_lane_by_filename {
-    my ($self, $name) = @_;
-    my $file = $self->get_file_by_name($name);
+sub get_sample_by_name {
+    my ($self, $name, $projname) = @_;
+    my ($sample_id, $project_id) = $self->get_sample_project_id_by_name($name,$projname);
     my $obj;
-    if ($file){
-	my $lane_id = $file->lane_id;
-	$obj = Sfind::Lane->new($self->{_dbh},$id);
+    if ($sample_id, $project_id){
+	$obj = $self->get_sample_by_id_project($sample_id, $project_id);
     }
     return $obj;
 }
 
+
+=head2 get_sample_project_id_by_name
+
+  Arg [1]    : sample name
+  Arg [2]    : project name.  Only required if sample is in > 1 project
+  Example    : my ($sample_id,$project_id) = $sfind->get_sample_project_id_by_name('NA12878');
+  Description: retrieve sample id by sample name.  If project is not supplied and sample is in more than one project, call will die.
+  Returntype : sample_id, project_id
+
+=cut
+
+sub get_sample_project_id_by_name {
+    my ($self, $name, $projname) = @_;
+    my ($sample_id, $project_id);
+    if($projname){
+	my $sql = qq[select distinct sample_id,project_id from requests where sample_name=? and project_name=?];
+	my $id_ref = $self->{_dbh}->selectall_arrayref($sql, undef, ($name, $projname));
+	if (scalar @$id_ref == 0){
+	    # warn "No sample with name $name in $projname\n";
+	}
+	elsif (scalar @$id_ref > 1){
+	    die "More than one project id for name $projname\n";
+	}
+	else {
+	    $sample_id = $id_ref->[0][0];
+	    $project_id = $id_ref->[0][1];
+	}
+    }
+    else { 
+	# no project name supplied, so need to check if more than one	
+	# project for this sample
+	my $sql = qq[select distinct sample_id,project_id from requests where sample_name=?];
+	my $id_ref = $self->{_dbh}->selectall_arrayref($sql, undef, ($name));
+	if (scalar @$id_ref == 0){
+	    # warn "No sample with name $name\n";
+	}
+	elsif (scalar @$id_ref > 1){
+	    die "More than one project for sample $name\n";
+	}
+	else {
+	    $sample_id = $id_ref->[0][0];
+	    $project_id = $id_ref->[0][1];
+	}
+    }
+
+    return ($sample_id, $project_id);
+}
+
+
+=head2 get_library_by_name
+
+  Arg [1]    : library name
+  Example    : my $library = $sfind->get_library_by_name('NA12878-1');
+  Description: retrieve library object by library name.
+  Returntype : Sfind::Library object
+
+=cut
+
+sub get_library_by_name {
+    my ($self, $name) = @_;
+    my $sql = qq[select distinct item_id from requests where item_name=?];
+    my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($name));
+    unless ($id_ref){
+	warn "No library with name $name\n";
+	return undef;
+    }
+    my $id = $id_ref->{item_id};
+    return $self->get_library_by_id($id);
+}
+
+
+
+=head2 get_library_by_id
+
+  Arg [1]    : library id from sequencescape
+  Example    : my $library = $sfind->get_library_by_id(140);
+  Description: retrieve library object by sequencescape id
+  Returntype : Sfind::Library object
+
+=cut
+
+sub get_library_by_id {
+    my ($self, $id) = @_;
+    my $obj = Sfind::Library->new($self->{_dbh},$id);
+    return $obj;
+}
+
+
+=head2 get_sample_by_id_project
+
+  Arg [1]    : sample name
+  Arg [2]    : project name
+  Example    : my $sample = $sfind->get_sample_by_id_project(1000,104);
+  Description: retrieve sample object by sample name.  If project is not supplied and sample is in more than one project, sample object creation will fail.
+  Returntype : Sfind::Sample object
+
+=cut
+
+sub get_sample_by_id_project {
+    my ($self, $id, $projid) = @_;
+    my $obj = Sfind::Sample->new($self->{_dbh},$id, $projid);
+    return $obj;
+}
 1;
