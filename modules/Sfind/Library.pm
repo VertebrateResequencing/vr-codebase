@@ -152,7 +152,7 @@ sub id {
   Arg [1]    : sample_id (optional)
   Example    : my $sample_id = $lib->sample_id();
 	       $lib->sample_id('104');
-  Description: Get/Set for ID of a library
+  Description: Get/Set for sample ID of a library
   Returntype : SequenceScape ID (usu. integer)
 
 =cut
@@ -162,7 +162,32 @@ sub sample_id {
     if (defined $sample_id and $sample_id ne $self->{'sample_id'}){
 	$self->{'sample_id'} = $sample_id;
     }
+    unless ($self->{'sample_id'}){
+	$self->_load_sample_project_id();
+    }
     return $self->{'sample_id'};
+}
+
+
+=head2 project_id
+
+  Arg [1]    : project_id (optional)
+  Example    : my $project_id = $lib->project_id();
+	       $lib->project_id('104');
+  Description: Get/Set for project ID of a library
+  Returntype : SequenceScape ID (usu. integer)
+
+=cut
+
+sub project_id {
+    my ($self,$project_id) = @_;
+    if (defined $project_id and $project_id ne $self->{'project_id'}){
+	$self->{'project_id'} = $project_id;
+    }
+    unless ($self->{'project_id'}){
+	$self->_load_sample_project_id();
+    }
+    return $self->{'project_id'};
 }
 
 
@@ -340,4 +365,16 @@ sub type {
     return $self->{'_data'}{'library_type'};
 }
 
+
+# Internal function to populate sample_id and project_id
+sub _load_sample_project_id {
+    my ($self) = @_;
+
+    my $sql = qq[select sample_id, project_id from requests where item_id = ? and type='Library creation'];
+    my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
+    if($id_ref){
+	$self->sample_id($id_ref->{sample_id});
+	$self->project_id($id_ref->{project_id});
+    }
+}
 1;
