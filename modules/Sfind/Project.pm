@@ -172,7 +172,7 @@ sub get_sample_by_id {
 =head2 get_sample_by_name
 
   Arg [1]    : sample name from sequencescape
-  Example    : my $sample = $proj->get_sample_by_name(1154);
+  Example    : my $sample = $proj->get_sample_by_name('NA12878')
   Description: retrieve sample object by sequencescape name
   Returntype : Sfind::Sample object
 
