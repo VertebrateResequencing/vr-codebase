@@ -118,6 +118,7 @@ sub batch_id {
 }
 
 
+
 =head2 run_name
 
   Arg [1]    : run_name (optional)
@@ -135,6 +136,21 @@ sub run_name {
 	$self->{'run_name'} = $run_name;
     }
     return $self->{'run_name'};
+}
+
+
+=head2 name
+
+  Arg [1]    : None
+  Example    : my $lane_name = $lane->name();
+  Description: 'name' of lane.  This is the concatenation of run_name with run_lane, e.g. '1234_1'
+  Returntype : common name for lane
+
+=cut
+
+sub name {
+    my ($self) = @_;
+    return join "_", ($self->run_name, $self->run_lane);
 }
 
 
