@@ -75,10 +75,14 @@ sub new {
     my $self= {};
 
     # set up default ssaha parameters
+    # this is default for -rtype abi
+    $self->{kmer} = 12;
+    $self->{skip} = 12;
+    $self->{ckmer} = 10;
+    $self->{cmatch} = 14;
     $self->{seeds} = 5;
     $self->{depth} = 50;
     $self->{score} = 30;
-    $self->{skip} = 12;
     $self->{identity} = 50.0;
     $self->{align} = 0;
     $self->{rtype} = undef;
@@ -198,6 +202,20 @@ sub do_ssaha{
   # otherwise specify the rtype
   else {
     $cmd .= " -" . $self->{rtype};
+
+    # tag on any specified params
+    foreach my $option (keys %{$self} ){
+      if ( defined $self->{$option} ) {
+
+	# skip the options implied by the rtype
+	if ( $option ne 'skip' && $option ne 'seeds'
+	     && $option ne 'score' && $option ne 'sense'
+	     && $option ne 'cmatch' && $option ne 'ckmer'
+	     && $option ne 'kmer' ) {
+	  $cmd .= " -" . $option . " " . $self->{$option};
+	}
+      }
+    }
   }
 
   $cmd .= " -save " . $species_hash_tables;
@@ -365,6 +383,30 @@ sub identity {
 	$self->{'identity'} = $curr_identity;
       }
     return $self->{'identity'};
+}
+
+
+
+=head2 kmer
+
+  Example    : $sWrapper->kmer(10)
+  Description: A get/set method for specifying the word size for
+               hashing
+  Arg        : int
+  Returns    : int
+
+=cut
+
+sub kmer {
+  my $self = shift;
+  if (@_) { 
+    my $curr_kmer = shift;
+    if ( $curr_kmer < 1 ) {
+      die("$MODULE_NAME Trying to set an incorrect ckmer: $curr_kmer");
+    }
+    $self->{'kmer'} = int($curr_kmer);
+  }
+  return $self->{'kmer'};
 }
 
 
