@@ -481,13 +481,8 @@ sub buildInternalHierarchy {
 			chdir( $lPath );
 			my $random = int(rand( 100000000 ));
 			
-			#use mpsadownload to get fastq.
-			# jws 2009-02-11 - do this inline, and then do any parallelisation outside this module
-			#my $cmd = qq[bsub -J mpsa.$random -o import.o -e import.e -q $LSF_QUEUE "$MPSA_DOWNLOAD -c -f $fastq > $fastq"];
-			my $cmd = "$MPSA_DOWNLOAD -c -f $fastq > $fastq 2> import.e";
-			system( $cmd );
-			unless ( -s $fastq){	# TODO: add md5 check if mpsa ever add it
-			    print "Error retrieving $fastq with mpsa_download: $!\n";
+			unless ( getMpsaFastq($fastq)){
+			    print "Error retrieving $fastq with mpsa_download\n";
 			    next;
 			}
 			

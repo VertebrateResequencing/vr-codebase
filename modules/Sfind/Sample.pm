@@ -77,8 +77,7 @@ sub libraries {
 	my @libraries;
     	foreach my $id (@{$self->library_ids()}){
 	    my $obj = Sfind::Library->new($self->{_dbh},$id);
-	    # skip cancelled libs
-	    push @libraries, $obj if $obj->prep_status;
+	    push @libraries, $obj; 
 	}
 	@libraries = sort {$a <=> $b} @libraries;
 	$self->{'libraries'} = \@libraries;
