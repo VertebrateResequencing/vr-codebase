@@ -31,6 +31,25 @@ sub parseForMouseInsertionSites {
       next;
     }
 
+
+    # check that the best alignment starts from the very first nt
+    # of the trace.  if not it implies that the insertion is not
+    # actually at the real biological site (TA in the current case)
+
+    if ( $$ssaha_hits_hash_ref{$curr_seq}[0]->{'direction'} eq 'F' ) {
+      if ( $$ssaha_hits_hash_ref{$curr_seq}[0]->{'q_start'} != 1 ) {
+	$results_hash{$curr_seq}{status} = 'distant_from_insertion_site';
+	next;
+      }
+    }
+    elsif ( $$ssaha_hits_hash_ref{$curr_seq}[0]->{'direction'} eq 'C' ) {
+      if ( $$ssaha_hits_hash_ref{$curr_seq}[0]->{'q_end'} != 1 ) {
+	$results_hash{$curr_seq}{status} = 'distant_from_insertion_site';
+	next;
+      }
+    }
+
+
     # if the best alignment is above the score threshold
     if ($$ssaha_hits_hash_ref{$curr_seq}[0]->{score} >= $SSAHA_SCORE_THRESHOLD){
 
@@ -40,7 +59,9 @@ sub parseForMouseInsertionSites {
 
       # very clunky ...
 
+      ################################
       # check for multiple alignments
+      ################################
       if(defined $$ssaha_hits_hash_ref{$curr_seq}[1]) {
 
 	#print "Number of alignments => " . scalar @{$$ssaha_hits_hash_ref{$curr_seq}} . "\n";
@@ -77,6 +98,10 @@ sub parseForMouseInsertionSites {
 	  $results_hash{$curr_seq}{status} = 'multiple_alignments';
 	}
       }
+
+      ###############
+      # a unique hit
+      ###############
       else {
 	$chr = $best_hit->{'s_name'};
 	$results_hash{$curr_seq}{status} = 'unique_alignment';
