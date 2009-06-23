@@ -49,6 +49,10 @@ sub new {
     unless ($data){
 	return undef;
     }
+    # cancelled requests are currently in the database with no status
+    unless ($data->[3]){
+        $data->[3] = 'cancelled';
+    }
     $self->id($id);
     $self->library_id($data->[0]);
     $self->library_name($data->[1]);
