@@ -1,5 +1,0 @@
- * 20080501 by lh3
-   - update maq_post.pl to 0.1.2
-   - fix a bug when only hapmap3 SNPs are available
-   - update maq_eval.pl to 0.1.8
-   - fix a bug in 'evalsub' to work with >2GB genomes
