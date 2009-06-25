@@ -1,0 +1,22 @@
+#
+# Copyright 2006 Sun Microsystems, Inc. All rights reserved.
+# Use is subject to license terms.
+#
+# @(#)sun_java.desktop	1.8 06/04/25
+#
+# Desktop entry for the Java Control Panel (jcontrol).  The name is poor,
+# but maintained for compatibility reasons.
+#
+# Note: This file may be installed under both "control-center-2.0" and
+# "applications".  Depending upon the version of GNOME, the copy in
+# "applications" may take precedence.
+#
+[Desktop Entry]
+Encoding=UTF-8
+Name=Java
+Comment=Java Control Panel
+Exec=jcontrol
+Icon=sun-jcontrol.png
+Terminal=false
+Type=Application
+Categories=Application;Settings;Java;X-Red-Hat-Base;X-Ximian-Settings;

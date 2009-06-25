@@ -1,0 +1,24 @@
+#
+# Copyright 2006 Sun Microsystems, Inc. All rights reserved.
+# Use is subject to license terms.
+#
+# @(#)sun-javaws.desktop	1.1 06/04/25
+#
+# Desktop entry for the automatic execution of jnlp files identified as
+# the x-java-jnlp-file mime type.
+#
+# Note: This file may be installed under both "control-center-2.0" and
+# "applications".  Depending upon the version of GNOME, the copy in
+# "applications" may take precedence.
+#
+[Desktop Entry]
+Encoding=UTF-8
+Name=JavaWS
+Comment=Java Web Start
+Exec=javaws
+Icon=sun-javaws.png
+Terminal=false
+Type=Application
+NoDisplay=true
+Categories=Java;Applications;
+MimeType=application/x-java-jnlp-file;
