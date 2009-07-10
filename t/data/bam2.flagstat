@@ -1,0 +1,12 @@
+2000 in total
+0 QC failure
+0 duplicates
+1812 mapped (90.60%)
+2000 paired in sequencing
+1000 read1
+1000 read2
+1696 properly paired (84.80%)
+1780 with itself and mate mapped
+188 singletons (9.40%)
+52 with mate mapped to a different chr
+17 with mate mapped to a different chr (mapQ>=5)

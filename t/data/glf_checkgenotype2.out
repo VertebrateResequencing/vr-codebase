@@ -1,0 +1,5 @@
+entropy 30.2
+sample snps-hapmap3/NA19468.snp likelihood 5 over 76226 sites, avg depth 0.101695
+sample snps-hapmap3/NA19046.snp likelihood 10 over 74898 sites, avg depth 0.099907
+sample snps-hapmap3/NA20589.snp likelihood 15 over 76985 sites, avg depth 0.102706
+sample snps-hapmap3/NA20810.snp likelihood 20 over 79255 sites, avg depth 0.105717

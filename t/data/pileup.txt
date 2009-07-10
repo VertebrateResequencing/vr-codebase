@@ -1,0 +1,10 @@
+Streptococcus_suis	4927	c	1	^h.	?
+Streptococcus_suis	4928	t	1	.	>
+Streptococcus_suis	4929	a	1	.	?
+Streptococcus_suis	4930	g	1	.	?
+Streptococcus_suis	4931	a	1	.	;
+Streptococcus_suis	4932	a	1	.	:
+Streptococcus_suis	4933	g	1	.	@
+Streptococcus_suis	4934	a	1	.	<
+Streptococcus_suis	4935	c	1	.	?
+Streptococcus_suis	4936	g	1	.	?
