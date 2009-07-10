@@ -148,6 +148,8 @@ sub verifyMd5
 	while( <MD5> )
 	{
 		chomp;
+		next unless $_ !~ /^FASTQ_FILE\t.*/;
+		
 		$_ =~ /(.*)\s+(.*\.fastq.gz)$/;
 
 		next if( ! defined $1 );
@@ -179,7 +181,6 @@ sub verifyMd5
 		{
 			print "ERROR: MD5 incorrect for: $fastq\n";
 			print $md5{ $fastq }." vs. $md5\n";
-			exit;
 		}
 	}
 	close( IN );
@@ -192,28 +193,56 @@ sub verifyMd5
 =cut
 sub reportUncalibrated
 {
-	croak "Usage: reportUncalibrated directoryCalibrated indexFile uncalDirectory" unless @_ == 3;
+	croak "Usage: reportUncalibrated directoryCalibrated original_index uncalDirectory uncalibrated_index calibrated_index\n" unless @_ == 5;
 	my $dir = shift;
 	my $indexFile = shift;
 	my $uncalibratedDir = shift;
+	my $uncal_index = shift;
+	my $recal_index = shift;
+	
+	croak "Cant find original index file: $indexFile\n" unless -f $indexFile;
 	
 	my %index;
+	my %uncalibratedAccessions;
 	open( IN, $indexFile ) or die "Cant open index file\n";
+	open( UN, ">$uncal_index" ) or die "Cant create uncal index file\n";
+	open( RE, ">$recal_index" ) or die "Cant create recal index file\n";
 	while( <IN> )
 	{
 		chomp;
+		next unless $_ !~ /^FASTQ/;
 		my @s = split( /\t/, $_ );
+		
+		$s[ 0 ] = basename( $s[ 0 ] );
 		
 		$s[ 0 ] =~ /(.*)\.(fastq)\.(gz)/;
 		
-		#print "Searching: $dir/$1.recal.fastq.gz\n";
-		
 		if( -f "$uncalibratedDir/$s[ 0 ]" && ! -f "$dir/$1.recal.fastq.gz" )
 		{
-			print $_."\n";
+			$uncalibratedAccessions{ $s[ 2 ] } = 1;
+		}
+	}
+	
+	seek IN,0,0;#reset back to start of file
+
+	while( <IN> )
+	{
+		chomp;
+		next unless $_ !~ /^FASTQ/;
+		my @s = split( /\t/, $_ );
+		
+		if( defined( $uncalibratedAccessions{ $s[ 2 ] } ) )
+		{
+			print UN $_."\n";
+		}
+		else
+		{
+			print RE $_."\n";
 		}
 	}
 	close( IN );
+	close( UN );
+	close( RE );
 }
 
 =pod
@@ -238,8 +267,7 @@ sub extractFastqEntries
 		
 		$s[ 0 ] =~ /(.*)\.(fastq)\.(gz)/;
 		
-		#print "Searching: $dir/$1.recal.fastq.gz\n";
-		
+		$s[ 0 ] = basename( $s[ 0 ] );
 		if( -f "$dir/$s[ 0 ]" )
 		{
 			print OUT $_."\n";
@@ -354,6 +382,95 @@ sub downloadFastqFiles
 		}
 	}
 	close( INDEX );
+}
+
+sub hashIndexFile
+{
+	croak "Usage: hashIndexFile indexFile\n" unless @_ == 1;
+	my $indexFile = shift;
+	
+	my %indexF;
+	open( I, $indexFile ) or die "Cant open index file: $indexFile\n";
+	while( <I> )
+	{
+		my @s = split( /\t/, $_ );
+		if( defined( $indexF{ $s[ 2 ] } ) )
+		{
+			$indexF{ $s[ 2 ] } .= "\n".$_; #multiple rows per SRR
+		}
+		else
+		{
+			$indexF{ $s[ 2 ] } = $_;
+		}
+	}
+	close( I );
+	
+	return \%indexF;
+}
+
+sub extractLanes
+{
+	croak "Usage: extractLanes indexFile accession_fofn output_file" unless @_ == 3;
+	my $indexFile = shift;
+	my $accessionsF = shift;
+	my $output = shift;
+	
+	my $t = hashIndexFile( $indexFile );
+	my %index = %{ $t };
+	
+	open( F, $accessionsF ) or die "Cant open accessions file: $accessionsF\n";
+	open( O, ">$output" ) or die "cant make output file: $output\n";
+	while( <F> )
+	{
+		chomp;
+		if( defined( $index{ $_ } ) )
+		{
+			print O $index{ $_ }."\n";
+		}
+	}
+	close( F );
+	close( O );
+}
+
+=head2 excludeLanes
+
+  Arg [1]    : index file
+  Arg [2]    : file of accession IDs
+  Arg [3]    : Output index file
+  Example    : excludeLanes( 'seq.index', 'lanes.fofn', 'new.seq.index');
+  Description: Filter out a set of lane entries from an index file
+  Returntype : none
+
+=cut
+
+sub excludeLanes
+{
+	croak "Usage: extractLanes indexFile accession_fofn output_file" unless @_ == 3;
+	my $indexFile = shift;
+	my $accessionsF = shift;
+	my $output = shift;
+	
+	my $t = hashIndexFile( $indexFile );
+	my %index = %{ $t };
+	
+	my %exclude;
+	open( F, $accessionsF ) or die "Cant open accessions file: $accessionsF\n";
+	while( <F> )
+	{
+		chomp;
+		$exclude{ $_ } = 1;
+	}
+	close( F );
+	
+	open( O, ">$output" ) or die "cant make output file: $output\n";
+	foreach( keys( %index ) )
+	{
+		if( ! defined( $exclude{ $_ } ) )
+		{
+			print O $index{ $_ }."\n";
+		}
+	}
+	close( O );
 }
 
 1;

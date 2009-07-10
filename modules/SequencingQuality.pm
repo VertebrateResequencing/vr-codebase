@@ -5,11 +5,12 @@ use File::Spec;
 use Cwd;
 use File::Basename;
 
-my $MAQ_CMD = "maq_x86_64_0.7.1";
+my $MAQ_CMD = "maq";
 my $LSF_NORMAL_PREFIX = 'bsub -q normal -o out.o -e out.e';
 my $LSF_LONG_PREFIX = 'bsub -q long -o out.o -e out.e';
 my $R_LOCATION = '/software/R-2.7.1/bin/R';
 my $SLX_LINKER = 'A*GATCGGAAGAGCGGTTCAGCAGGAATGCCGAGA';
+my $IMAGE_MAGIC = '/usr/bin/convert';
 
 #a perl module of functions for assessing the quality of sequencing reads
 
@@ -163,7 +164,7 @@ sub gcContentHistogram
         print R 'dev.off();';
 	close( R );
 	
-        system( $R_LOCATION.' CMD BATCH gc.R' );
+        system( $R_LOCATION.' CMD BATCH gc.R;'.$IMAGE_MAGIC.' gc.bmp gc.gif;rm gc.bmp' );
 	#unlink( "$fastq1._gc.R" );
 	
 	print "$fastq1 Average GC: $avgContent1\n";
@@ -267,126 +268,6 @@ sub splitSolexaReadsMaq
 	close( L );
 	close( R );
 }
-=pod
-sub splitRunMaqChunks
-{
-	croak "Usage: splitRunMaqChunks reads1.fastq reads2.fastq numReads reference maxInsert" unless @_ == 5;
-	my $reads1 = shift;
-	my $reads2 = shift;
-	my $chunkSize = shift;
-	my $reference = shift;
-	my $insert = shift;
-	
-	#croak "Long (>500bp) or short (<500bp) insert library should be specified" unless $insert eq "long" || $insert eq "short";
-	croak "Max insert size should be a number: $insert\n" unless $insert =~ /^\d+/ && $insert > 0;
-	croak "Cant find reference!" unless -f $reference;
-	croak "Cant find reads!" unless -f $reads;
-	
-	if( $reference !~ /\.bfa$/ )
-	{
-		print "Converting reference to bfa.....";
-		system( $MAQ_CMD." fasta2bfa $reference $reference.bfa" );
-		$reference = "$reference.bfa";
-	}
-	
-	my $fileCount = 0;
-	my $readCount = 0;
-	open( READS1, "$reads1" ) or die "cannot open reads1 file\n";
-	open( READS2, $reads2 ) or die "cannot open reads2 file\n";
-	open( L, ">$reads1.$fileCount" ) or die "Cannot create LEFT file\n";
-	open( R, ">$reads2.$fileCount" ) or die "Cannot create RIGHT file\n";
-	while( <READS1> )
-	{
-		my $rn1 = $_;
-		print L $rn1;
-		
-		my $rn2 = <READS2>;
-		print R $rn2;
-		
-		my $seq1 = <READS1>;
-		print L $seq1;
-		
-		my $seq2 = <READS2>;
-		print R $seq2;
-		
-		my $qn1 = <READS1>;
-		print L $qn1;
-		
-		my $qn2 = <READS2>;
-		print R $qn2;
-		
-		my $q1 = <READS1>;
-		print L $q1;
-		
-		my $q2 = <READS2>;
-		print R $q2;
-		
-		$readCount ++;
-		if( $readCount > $chunkSize )
-		{
-			close( L );
-			close( R );
-			
-			my $cmds;
-			if( $insert < 1500 )
-			{
-				$cmds = $MAQ_CMD." fastq2bfq $reads1.$fileCount $reads1.$fileCount.bfq;".$MAQ_CMD." fastq2bfq $reads2.$fileCount $reads2.$fileCount.bfq;".$MAQ_CMD." match -a $insert $reads1.raw.$fileCount.map $reference $reads1.$fileCount.bfq $reads2.$fileCount.bfq;".$MAQ_CMD." rmdup $reads1.rmdup.$fileCount.map $reads1.raw.$fileCount.map;$MAQ_CMD mapview $reads1.rmdup.$fileCount.map | gzip -c > $reads1.rmdup.$fileCount.mapview.gz;rm $reads1.$fileCount.bfq $reads2.$fileCount.bfq";
-			}
-			else
-			{
-				$cmds = $MAQ_CMD." fastq2bfq $reads.left.$fileCount $reads.left.$fileCount.bfq;".$MAQ_CMD." fastq2bfq $reads.right.$fileCount $reads.right.$fileCount.bfq;".$MAQ_CMD." match -a 1000 -A $insert $reads.raw.$fileCount.map $reference $reads.left.$fileCount.bfq $reads.right.$fileCount.bfq;".$MAQ_CMD." rmdup $reads.rmdup.$fileCount.map $reads.raw.$fileCount.map;$MAQ_CMD mapview $reads.rmdup.$fileCount.map | gzip -c > $reads.rmdup.$fileCount.mapview.gz;rm $reads.left.$fileCount.bfq $reads.right.$fileCount.bfq";
-			}
-			
-			#check if job was already completed and resubmit
-			if( ! -f "$reads1.rmdup.$fileCount.map" )
-			{
-				print "starting $reads1.$fileCount.map\n";
-				#start the maq LSF job
-				system( $LSF_NORMAL_PREFIX." -J mapping.$reads1.fileCount \"$cmds\"" );
-			}
-			elsif( -f "$reads1.rmdup.$fileCount.map" && -s "$reads1.rmdup.$fileCount.map" < 100 ) #job must have failed so put on again in the long queue
-			{
-				print "resubmitting $reads1.$fileCount.map\n";
-				#resubmit in the long queue
-				system( $LSF_NORMAL_PREFIX." -J mapping.$reads1.fileCount \"$cmds\"" );
-			}
-			
-			$fileCount ++;
-			$readCount = 0;
-			
-			open( L, ">$reads1.$fileCount" ) or die "Cannot create LEFT file\n";
-			open( R, ">$reads2.$fileCount" ) or die "Cannot create RIGHT file\n";
-		}
-	}
-	close( READS );
-	close( L );
-	close( R );
-	
-	#start the maq LSF job
-	my $cmds;
-	if( $insert < 1500 )
-	{
-		$cmds = $MAQ_CMD." fastq2bfq $reads1.$fileCount $reads1.$fileCount.bfq;".$MAQ_CMD." fastq2bfq $reads2.$fileCount $reads2.$fileCount.bfq;".$MAQ_CMD." match -a $insert $reads1.raw.$fileCount.map $reference $reads1.$fileCount.bfq $reads2.$fileCount.bfq;".$MAQ_CMD." rmdup $reads1.rmdup.$fileCount.map $reads1.raw.$fileCount.map;$MAQ_CMD mapview $reads1.rmdup.$fileCount.map | gzip -c > $reads1.rmdup.$fileCount.mapview.gz;rm $reads1.$fileCount.bfq $reads2.$fileCount.bfq";
-	}
-	else
-	{
-		$cmds = $MAQ_CMD." fastq2bfq $reads.left.$fileCount $reads.left.$fileCount.bfq;".$MAQ_CMD." fastq2bfq $reads.right.$fileCount $reads.right.$fileCount.bfq;".$MAQ_CMD." match -a 1000 -A $insert $reads.raw.$fileCount.map $reference $reads.left.$fileCount.bfq $reads.right.$fileCount.bfq;".$MAQ_CMD." rmdup $reads.rmdup.$fileCount.map $reads.raw.$fileCount.map;$MAQ_CMD mapview $reads.rmdup.$fileCount.map | gzip -c > $reads.rmdup.$fileCount.mapview.gz;rm $reads.left.$fileCount.bfq $reads.right.$fileCount.bfq";
-	}
-	
-	#check if job was already completed and resubmit
-	if( ! -f "$reads1.rmdup.$fileCount.map" )
-	{
-		print "starting $reads1.$fileCount.map\n";
-		system( $LSF_NORMAL_PREFIX." \"$cmds\"" );
-	}
-	elsif( -f "$reads1.rmdup.$fileCount.map" && -s "$reads1.rmdup.$fileCount.map" < 100 ) #job must have failed so put on again in the long queue
-	{
-		print "resubmitting $reads1.$fileCount.map\n";
-		#resubmit in the long queue
-		system( $LSF_NORMAL_PREFIX." \"$cmds\"" );
-	}
-}
-=cut
 
 sub mergeMaqMaps
 {
@@ -898,10 +779,9 @@ sub createInsertGraphLowMem
 		chomp;
 		my @s = split( /\s+/, $_ );
 		
-		if( $s[ 5 ] == 130 || $s[ 5 ] == 18 || $s[ 5 ] == 20 ) #flag 192 means reads that were not mapped
+		if( $s[ 5 ] == 130 || $s[ 5 ] == 18 || $s[ 5 ] == 20 || ( $maxInsert > 2000 && $s[ 5 ] == 4 ) )
 		{
 			my $insert = abs( $s[ 4 ] );
-			
 			if( $insert < $maxInsert )
 			{
 				if( defined $inserts{ $insert } )
@@ -938,7 +818,9 @@ sub createInsertGraphLowMem
 	print R "dev.off();\n";
 	close( R );
 	
-	system( $R_LOCATION." CMD BATCH $mapview.insert.R" );
+	my $output_file_gif = $output_file;
+	$output_file_gif =~ s/bmp/gif/;
+	system( $R_LOCATION." CMD BATCH $mapview.insert.R;$IMAGE_MAGIC $output_file $output_file_gif" );
 }
 
 sub createInsertGraph

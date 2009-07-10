@@ -1,10 +1,12 @@
 package HierarchyUtilities;
 use strict;
 use Carp;
+use Utils;
 use File::Basename;
 use File::Spec; 
 use File::Copy;
-use Cwd;
+use Cwd qw(getcwd abs_path);
+use Utils;
 
 use AssemblyTools;
 
@@ -12,7 +14,6 @@ my $DFIND = '/software/solexa/bin/dfind';
 my $MPSA_DOWNLOAD = '/software/solexa/bin/mpsa_download';
 my $FASTQ_CHECK = '/software/solexa/bin/fastqcheck';
 my $LSF_QUEUE = 'normal';
-my $CLIP_POINT_SCRIPT='sh ~tk2/code/vert_reseq/user/tk2/mapping/slx/findClipPoints.sh';
 
 =pod
 
@@ -26,27 +27,146 @@ function to import the DCC tab index files into the hierarchy
 
 =head1 DESCRPTION
 
-=head1 AUTHOR
+=head1 AUTHORS
 
 Thomas Keane, I<tk2@sanger.ac.uk>
+Petr Danecek, I<pd3@sanger.ac.uk>
 
 =cut
 
+=head1 METHODS
+
+=head2 lane_info
+
+    Arg [1]     : the lane path
+    Returntype  : the hash with the following fields: 
+                    project
+                    sample
+                    technology
+                    library
+                    lane
+                    bwa_ref     .. e.g. /nfs/sf7/MOUSE/ref/NCBIM37_um
+                    fa_ref      .. e.g. /nfs/sf7/MOUSE/ref/NCBIM37_um.fa
+                    fai_ref     .. e.g. /nfs/sf7/MOUSE/ref/NCBIM37_um.fa.fai
+                    ref_name    .. e.g. NCBIM37 (official name of the assembly)
+                    md5_ref     .. e.g. 28f4ff5cf14f5931d0d531a901236378
+                    snps        .. e.g. /nfs/sf7/MOUSE/ref/hapmap_mm9_matrix.snps.bin
+                    genotype    .. e.g. 129S1_SvImJ
+                    insert_size .. expected insert size, 0 for unpaired
+
+=cut
+
+sub lane_info
+{
+    my ($lane) = @_;
+
+    # Get rid of multiple slashes // and the slash at the end dir/. Pathological cases
+    #   like ./././../../ are not treated.
+    #
+    $lane =~ s{/+}{/};
+    $lane =~ s{/$}{};
+    my @items = split m{/}, $lane;
+    if ( scalar @items < 5 ) { Utils::error("Wrong lane path: \"$lane\".\n") }
+
+    my $info = 
+    {
+        'project'     => $items[-5],
+        'sample'      => $items[-4],
+        'technology'  => $items[-3],
+        'library'     => $items[-2],
+        'lane'        => $items[-1],
+
+        'insert_size' => 500,
+    };
+
+    # This should be done differently in the future - the DB should tell us.
+    if ( $$info{'project'} =~ /mouse/i ) 
+    { 
+        $$info{'bwa_ref'}  = '/nfs/sf7/MOUSE/ref/NCBIM37_um';
+        $$info{'fa_ref'}   = '/nfs/sf7/MOUSE/ref/NCBIM37_um.fa';
+        $$info{'fai_ref'}  = '/nfs/sf7/MOUSE/ref/NCBIM37_um.fa.fai';
+        $$info{'ref_name'} = 'NCBIM37';
+        $$info{'snps'}     = '/nfs/sf7/MOUSE/ref/mousehapmap.snps.bin';
+        $$info{'md5_ref'}  = '36a352ec67f958c40f19a9cf6ceb0d1e';
+
+        my $genotype = 
+        {
+            '129P2_Mouse_Genome'         => '129P2_OlaHsD',
+            '129S1_SvImJ_Mouse_Genome'   => '129S1_SvImJ',
+            'AKR_J_Mouse_Genome'         => 'AKR_J',
+            'A_J_Mouse_Genome'           => 'A_J',
+            'BALBc_J_Mouse_Genome'       => 'BALB_cJ',
+            'C3H_HeJ_Mouse_Genome'       => 'C3H_HeJ',
+            'C57BL_6N_Mouse_Genome'      => 'C57BL_6NJ',
+            'CAST_Ei_Mouse_Genome'       => 'CAST_EiJ',
+            'CBA_J_Mouse_Genome'         => 'CBA_J',
+            'DBA_2J_Mouse_Genome'        => 'DBA_2J',
+            'LP_J_Mouse_Genome'          => 'LP_J',
+            'NOD_Mouse_Genome'           => 'NOD_LtJ',
+            'NZO_Mouse_Genome'           => 'NZO_HlLtJ',
+            'PWK_Ph_Mouse_Genome'        => 'PWK_PhJ',
+            'Spretus_Ei_Mouse_Genome'    => 'SPRET_EiJ',
+            'WSB_Ei_Mouse_Genome'        => 'WSB_EiJ',
+        };
+
+        if ( exists($$genotype{$$info{'project'}}) )
+        {
+            $$info{'genotype'} = $$genotype{$$info{'project'}};
+        }
+
+    }
+    elsif ( $$info{'sample'} =~ /^NA\d+$/  )   # something like NA18942
+    {
+        my $gender = `grep $$info{'sample'} $ENV{'G1K'}/ref/genders.txt`;
+        chomp($gender);
+        if ( $gender && $gender=~/\s+female/ )
+        {
+            $$info{'bwa_ref'}  = '/nfs/sf8/G1K/ref/human_b36_female';
+            $$info{'fa_ref'}   = '/nfs/sf8/G1K/ref/human_b36_female.fa';
+            $$info{'fai_ref'}  = '/nfs/sf8/G1K/ref/human_b36_female.fa.fai';
+            $$info{'md5_ref'}  = '28f4ff5cf14f5931d0d531a901236378';
+        }
+        elsif ( $gender && $gender=~/\s+male/ )
+        {
+            $$info{'bwa_ref'}  = '/nfs/sf8/G1K/ref/human_b36_male';
+            $$info{'fa_ref'}   = '/nfs/sf8/G1K/ref/human_b36_male.fa';
+            $$info{'fai_ref'}  = '/nfs/sf8/G1K/ref/human_b36_male.fa.fai';
+            $$info{'md5_ref'}  = '7bcc140d6728a6c9fe6ed411ee633862';
+        }
+        else
+        {
+            Utils::error("FIXME: $ENV{'G1K'}/ref/genders.txt not accessible or no $$info{'sample'} in there?\n");
+        }
+        $$info{'ref_name'} = 'NCBI36';
+        $$info{'snps'} = '/nfs/sf8/G1K/ref/snps/hapmap3-plus10.bin';
+        # $$info{'snps'} = '/lustre/scratch102/g1k/ref/snps/hapmap3_release2_sb10.bin';
+    }
+    else
+    {
+        Utils::error("FIXME: no reference data for the project $$info{'project'} .. $lane\n");
+    }
+
+    return $info;
+}
+
+
 sub importExternalData
 {
-  croak "Usage: importExternalData populations/samples_csv DCC_index hierarchy_parent_directory mapping_hierarchy_directory fastq_directory" unless @_ == 5;
+  croak "Usage: importExternalData populations/samples_csv DCC_index hierarchy_parent_directory mapping_hierarchy_directory fastq_directory link|copy" unless @_ == 6;
   
   my $pop_csv = shift;
   my $index_file = shift;
-  my $data_hierarchy_dir = shift;
-  my $mapping_hierarchy_dir = shift;
-  my $fastqDir = shift;
+  my $data_hierarchy_dir = abs_path(shift);
+  my $mapping_hierarchy_dir = abs_path(shift);
+  my $fastqDir = abs_path(shift);
+  my $method = shift;
   
   croak "Cant find populations_csv file" unless -f $pop_csv;
   croak "Cant find index file" unless -f $index_file;
   croak "Cant find fastq directory" unless -d $fastqDir;
   croak "Cant find data hierarchy parent directory" unless -d $data_hierarchy_dir;
   croak "Cant find mapping hierarchy parent directory" unless -d $mapping_hierarchy_dir;
+  croak "Method of import not specified correctly: " unless $method eq "link" || $method eq "copy";
   
   my %study_vs_id = (
       28911   => 'LowCov',  # pilot 1
@@ -100,7 +220,7 @@ sub importExternalData
         print $i."->x".$info[ $i ]."x\n";
         $i ++;
       }
-			
+            
       exit;
       next;
     }
@@ -166,6 +286,10 @@ sub importExternalData
     {
       croak "Cannot determine sequencing technology: $info[ 12 ] in\n$original\n";
     }
+    
+    #transform spaces to underscores
+    $info[ 14 ] =~ s/\s+/_/g;
+    
     $dpath .= '/'.$info[ 14 ].'/'.$info[ 2 ];
     $mpath .= '/'.$info[ 14 ].'/'.$info[ 2 ];
     
@@ -235,26 +359,49 @@ sub importExternalData
     #copy the files into the directory
     if( defined( $exp_read0{ $_ } ) && ! -l $pdirName.'/'.$exp_read0{ $_ } && ! -f $pdirName.'/'.$exp_read0{ $_ } )
     {
-      copy( $fastqDir.'/'.$exp_read0{ $_ }, $pdirName.'/'.$exp_read0{ $_ } ) or die "Failed to copy file: ".$exp_read0{ $_ };
-      symlink( $pdirName.'/'.$exp_read0{ $_ }, $mdirName.'/'.$exp_read0{ $_ } );
-      system( 'bsub -q yesterday -o /dev/null -e /dev/null "zcat '.$pdirName.'/'.$exp_read0{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read0{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_read0{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read0{ $_ }.'.fastqcheck"' );
-      print META "read0:".$exp_read0{ $_ }."\n";
+        if( $method eq "copy" )
+        {
+            copy( $fastqDir.'/'.$exp_read0{ $_ }, $pdirName.'/'.$exp_read0{ $_ } ) or die "Failed to copy file: ".$exp_read0{ $_ };
+            system( 'bsub -q yesterday -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_read0{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read0{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_read0{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read0{ $_ }.'.fastqcheck"' );
+        }
+        elsif( $method eq "link" )
+        {
+            symlink( $fastqDir.'/'.$exp_read0{ $_ }, $pdirName.'/'.$exp_read0{ $_ } ) or die "Failed to link file: ".$exp_read0{ $_ };
+        }
+        symlink( $pdirName.'/'.$exp_read0{ $_ }, $mdirName.'/'.$exp_read0{ $_ } );
+        print META "read0:".$exp_read0{ $_ }."\n";
     }
     
     if( defined( $exp_read1{ $_ } ) && ! -l $pdirName.'/'.$exp_read1{ $_ } && ! -f $pdirName.'/'.$exp_read1{ $_ } )
     {
-      copy( $fastqDir.'/'.$exp_read1{ $_ }, $pdirName.'/'.$exp_read1{ $_ } ) or die "Failed to copy file: ".$exp_read1{ $_ };
-      symlink( $pdirName.'/'.$exp_read1{ $_ }, $mdirName.'/'.$exp_read1{ $_ } ) or die "Failed to sym link read into mapping directory: ".$mdirName.'/'.$exp_read1{ $_ };
-      system( 'bsub -q yesterday -o /dev/null -e /dev/null "zcat '.$pdirName.'/'.$exp_read1{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read1{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_read1{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read1{ $_ }.'.fastqcheck"' );
-      print META "read1:".$exp_read1{ $_ }."\n";
+        if( $method eq "copy" )
+        {
+            copy( $fastqDir.'/'.$exp_read1{ $_ }, $pdirName.'/'.$exp_read1{ $_ } ) or die "Failed to copy file: ".$exp_read1{ $_ };
+            system( 'bsub -q yesterday -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_read1{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read1{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_read1{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read1{ $_ }.'.fastqcheck"' );
+        }
+        elsif( $method eq "link" )
+        {
+            symlink( $fastqDir.'/'.$exp_read1{ $_ }, $pdirName.'/'.$exp_read1{ $_ } ) or die "Failed to link file: ".$exp_read1{ $_ };
+        }
+        
+        symlink( $pdirName.'/'.$exp_read1{ $_ }, $mdirName.'/'.$exp_read1{ $_ } ) or die "Failed to sym link read into mapping directory: ".$mdirName.'/'.$exp_read1{ $_ };
+        print META "read1:".$exp_read1{ $_ }."\n";
     }
     
     if( defined( $exp_read2{ $_ } ) && ! -l $pdirName.'/'.$exp_read2{ $_ } && ! -f $pdirName.'/'.$exp_read2{ $_ } )
     {
-      copy( $fastqDir.'/'.$exp_read2{ $_ }, $pdirName.'/'.$exp_read2{ $_ } ) or die "Failed to copy file: ".$exp_read2{ $_ };
-      symlink( $pdirName.'/'.$exp_read2{ $_ }, $mdirName.'/'.$exp_read2{ $_ } ) or die "Failed to sym link read into mapping directory: ".$mdirName.'/'.$exp_read2{ $_ };
-      system( 'bsub -q yesterday -o /dev/null -e /dev/null "zcat '.$pdirName.'/'.$exp_read2{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read2{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_read2{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read2{ $_ }.'.fastqcheck"' );
-      print META "read2:".$exp_read2{ $_ }."\n";
+        if( $method eq "copy" )
+        {
+            copy( $fastqDir.'/'.$exp_read2{ $_ }, $pdirName.'/'.$exp_read2{ $_ } ) or die "Failed to copy file: ".$exp_read2{ $_ };
+            system( 'bsub -q yesterday -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_read2{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read2{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_read2{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read2{ $_ }.'.fastqcheck"' );
+        }
+        elsif( $method eq "link" )
+        {
+            symlink( $fastqDir.'/'.$exp_read2{ $_ }, $pdirName.'/'.$exp_read2{ $_ } ) or die "Failed to symlink file: ".$exp_read2{ $_ };
+        }
+        
+        symlink( $pdirName.'/'.$exp_read2{ $_ }, $mdirName.'/'.$exp_read2{ $_ } ) or die "Failed to sym link read into mapping directory: ".$mdirName.'/'.$exp_read2{ $_ };
+        print META "read2:".$exp_read2{ $_ }."\n";
     }
     
     close( META );
@@ -274,43 +421,48 @@ sub importExternalData
 
 =cut
 
-sub importInternalData {
-    croak "Usage: importInternalData project_list_file data_hierarchy_parent_directory analysis_hierarchy_parent_directory" unless @_ == 3;
+sub importInternalData 
+{
+	croak "Usage: importInternalData project_list_file data_hierarchy_parent_directory analysis_hierarchy_parent_directory" unless @_ == 3;
     my $projectFile = shift;
     my $dhierarchyDir = shift;
     my $ahierarchyDir = shift;
-
+	
     croak "Can't find data hierarchy directory\n" unless -d $dhierarchyDir;
     croak "Can't find analysis hierarchy directory\n" unless -d $ahierarchyDir;
     croak "Can't find projects file\n" unless -f $projectFile;
     
     my %projects;
     open( my $PROJS, "$projectFile" ) or die "Cannot open projects file\n";
-    while(my $project =  <$PROJS> ) {
-  chomp $project;
-  $projects{$project} = {};
+    while(my $project =  <$PROJS> ) 
+	{
+		chomp $project;
+		$projects{$project} = {};
 
-  open(my $LIBS, q[-|], qq[$DFIND -project "$project" -libraries] ) or die "Cannot run dfind on project: $project\n";
-  while(my $lib = <$LIBS> ) {
-      chomp $lib;
-      $projects{$project}{$lib} = [];
-
-      open my $LANES, q[-|], qq[$DFIND -project "$project" -library "$lib" -filetype fastq] or die "Can't get lanes for $project $lib: $!\n";
-      while(my $lane = <$LANES> ) {
-    chomp $lane;
-    push @{$projects{$project}{$lib}}, $lane;
-      }
-      close( $LANES );
-  }
-  close( $LIBS );
-    }
+		open(my $LIBS, q[-|], qq[$DFIND -project "$project" -libraries] ) or die "Cannot run dfind on project: $project\n";
+		while(my $lib = <$LIBS> ) 
+		{
+			chomp $lib;
+			$projects{$project}{$lib} = [];
+			
+			open my $LANES, q[-|], qq[$DFIND -project "$project" -library "$lib" -filetype fastq] or die "Can't get lanes for $project $lib: $!\n";
+			while(my $lane = <$LANES> ) 
+			{
+				chomp $lane;
+				push @{$projects{$project}{$lib}}, $lane;
+			}
+			close( $LANES );
+		}
+		close( $LIBS );
+	}
     close( $PROJS )
     &buildInternalHierarchy(\%projects,$dhierarchyDir,$ahierarchyDir);
 }
 
 
-sub buildInternalHierarchy {
-    my $projecthash = shift; # ref to hash of projectnames->samplenames->lists of fastq
+sub buildInternalHierarchy 
+{
+	my $projecthash = shift; # ref to hash of projectnames->samplenames->lists of fastq
     my $dhierarchyDir = shift;
     my $ahierarchyDir = shift;
 
@@ -319,9 +471,9 @@ sub buildInternalHierarchy {
 
     foreach my $project (keys %$projecthash)
     {
-  print "Updating project: $project\n";
+		print "Updating project: $project\n";
   
-  my $project1 = $project;
+		my $project1 = $project;
   $project1 =~ s/\W+/_/g;
   
   my $projPath = $dhierarchyDir.'/'.$project1;
@@ -386,7 +538,7 @@ sub buildInternalHierarchy {
       
       my @dirs;
       foreach my $fastq (@{$projecthash->{$project}{$sample}}){
-    my $fastq = basename( $fastq );
+    $fastq = basename( $fastq );
     
     my @s = split( /\./, $fastq );
     my @s1 = split( '_', $s[ 0 ] );
@@ -452,15 +604,17 @@ sub buildInternalHierarchy {
         
         #link the meta file into mapping hierarchy
         system( "ln -fs $lPath/meta.info $alPath/meta.info" );
-
+		
         #create a bsub job to split the fastq
         my $cmd = qq[bsub -J split.$random -o import.o -e import.e -q $LSF_QUEUE perl -w -e "use AssemblyTools;AssemblyTools::sanger2SplitFastq( '$fastq', '$fastq1', '$fastq2');unlink '$fastq';"];
         system( $cmd );
         
         #work out the clip points (if any)
-        $cmd = qq[bsub -J clip.$random -w "done(split.$random)" -o import.o -e import.e -q $LSF_QUEUE "$CLIP_POINT_SCRIPT $fastq1 meta.info 1;$CLIP_POINT_SCRIPT $fastq2 meta.info 2"];
-        system( $cmd );  
-
+		$cmd = qq[bsub -J clip.$random.1 -w "done(split.$random)" -q small -o import.o -e import.e perl -w -e "use AssemblyTools;AssemblyTools::writeClipPointMeta( '$fastq1', 'meta.info', '1' );"];
+		$cmd = qq[bsub -J clip.$random.2 -w "done(split.$random)" -q small -o import.o -e import.e perl -w -e "use AssemblyTools;AssemblyTools::writeClipPointMeta( '$fastq2', 'meta.info', '2' );"];
+        
+        system( $cmd );
+		
         #run fastqcheck
         $cmd = qq[bsub -J fastqcheck.$random.1 -o import.o -e import.e -q $LSF_QUEUE -w "done(split.$random)" "cat $fastq1 | $FASTQ_CHECK > $fastq1.gz.fastqcheck;ln -fs $lPath/$fastq1.gz.fastqcheck $alPath/$fastq1.gz.fastqcheck"];
         system( $cmd );
@@ -469,9 +623,8 @@ sub buildInternalHierarchy {
         system( $cmd );
         
         #gzip the split fastq files
-        $cmd = qq[bsub -q $LSF_QUEUE -w "done(clip.$random)&&done(fastqcheck.$random.*)" -o import.o -e import.e "gzip $fastq1 $fastq2; ln -fs $lPath/$fastq1.gz $alPath/$fastq1.gz;ln -fs $lPath/$fastq2.gz $alPath/$fastq2.gz"];
+        $cmd = qq[bsub -q $LSF_QUEUE -w "done(clip.$random.*)&&done(fastqcheck.$random.*)" -o import.o -e import.e "gzip $fastq1 $fastq2; ln -fs $lPath/$fastq1.gz $alPath/$fastq1.gz;ln -fs $lPath/$fastq2.gz $alPath/$fastq2.gz"];
         system( $cmd );
-
       }
       else
       {
@@ -485,10 +638,10 @@ sub buildInternalHierarchy {
       chdir( $lPath );
       my $random = int(rand( 100000000 ));
       
-	unless (getMpsaFastq($fastq)){
-	    print "Error retrieving $fastq with mpsa_download\n";
-	    next;
-	}
+    unless (getMpsaFastq($fastq)){
+        print "Error retrieving $fastq with mpsa_download\n";
+        next;
+    }
       
       #run fastqcheck
       my $cmd = qq[bsub -J fastqcheck.$random -o import.o -e import.e -q $LSF_QUEUE "cat $fastq | $FASTQ_CHECK > $fastq.gz.fastqcheck; ln -fs $lPath/$fastq.gz.fastqcheck $alPath/$fastq.gz.fastqcheck"];
@@ -528,7 +681,8 @@ sub buildInternalHierarchy {
       {
         $readNum = 2;
       }
-      $cmd = qq[bsub -J clip.$random -o import.o -e import.e -q $LSF_QUEUE "$CLIP_POINT_SCRIPT $fastq $lPath/meta.info $readNum"];
+      $cmd = qq[bsub -J clip.$random -q small -o import.o -e import.e perl -w -e "use AssemblyTools;AssemblyTools::writeClipPointMeta( '$fastq', '$lPath/meta.info', '$readNum' );"];
+	  
       system( $cmd );
       
       #gzip the fastq file
@@ -574,30 +728,30 @@ sub getMpsaFastq {
     system( $cmd );
     my $ran_ok;
     if ( -s $fastq){
-	# MD5 check
-	my $mpsa_md5 = `$MPSA_DOWNLOAD -m -f $fastq|awk '{print \$1}'`;
-	my $dl_md5 = `md5sum $fastq|awk '{print \$1}'`;
-	if ($mpsa_md5 && $dl_md5){
-	    if($mpsa_md5 eq $dl_md5){
-		$ran_ok = 1;
-	    }
-	    else {
-		warn "md5 of $fastq did not match that in MPSA\n";
-		$ran_ok = 0;
-	    }
-	}
-	else {
-	    warn "Can't retrieve md5 of $fastq\n";
-	    $ran_ok = 0;
-	}
+    # MD5 check
+    my $mpsa_md5 = `$MPSA_DOWNLOAD -m -f $fastq|awk '{print \$1}'`;
+    my $dl_md5 = `md5sum $fastq|awk '{print \$1}'`;
+    if ($mpsa_md5 && $dl_md5){
+        if($mpsa_md5 eq $dl_md5){
+        $ran_ok = 1;
+        }
+        else {
+        warn "md5 of $fastq did not match that in MPSA\n";
+        $ran_ok = 0;
+        }
     }
     else {
-	warn "Error retrieving $fastq with mpsa_download: $!\n";
-	$ran_ok = 0;
+        warn "Can't retrieve md5 of $fastq\n";
+        $ran_ok = 0;
+    }
+    }
+    else {
+    warn "Error retrieving $fastq with mpsa_download: $!\n";
+    $ran_ok = 0;
     }
 
     unless ($ran_ok){
-	unlink($fastq);
+    unlink($fastq);
     }
     return $ran_ok;
 
@@ -775,427 +929,142 @@ sub deleteIndexLanes
   close( IN );
 }
 
-#a function to go through the mapping hierarchy and flag up lanes that failed mapping
-sub auditMappingHierarchy
-{
-  croak "Usage: auditMappingHierarchy hierarchyRootDir projects_dir_list lane_summary [sequence.index]" unless @_ == 4 || @_ == 3;
-  
-  my $mapping_root = shift;
-  my $projects = shift;
-  my $laneSummary = shift;
-  
-  my $indexF = '';
-  if( @_ > 0 )
-  {
-    $indexF = shift;
-    croak "Cant find index file" unless -f $indexF;
-  }
-  
-  croak "Cant find mapping root directory" unless -d $mapping_root;
-  croak "Cant find projects file" unless -f $projects;
-  
-  my %projects;
-  open( P, $projects ) or die $!;
-  while( <P> )
-  {
-    chomp;
-    $_ =~ tr/ /_/;
-    $projects{ $_} = 1;
-  }
-  close( P );
-  
-  chdir( $mapping_root );
-  
-  open( LSUM, ">$laneSummary" ) or die $!;
-  
-  print LSUM "Status,Center,Project,Individual,Tech,Library,Lane,Fastq0,ReadLength,Fastq1,ReadLength,Fastq2,ReadLength,#Reads,#Bases,#RawReadsMapped,#RawBasesMapped,#RawReadsPaired,#RmdupReadsMapped,#RmdupBasesMapped,ErrorRate\n";
-  
-  my $completedLanes = 0;
-  my $totalLanes = 0;
-  
-  foreach my $project (`ls`) 
-  {
-    chomp( $project );
-    
-    $project =~ tr/ /_/;
-    print "Checking $project\n";
-    if( -d $project && $projects{ $project } )
-    {
-      chdir( $project );
-      print "In ".getcwd."\n";
-      
-      foreach my $individual (`ls`) 
-      {
-        chomp( $individual );
-        if( -d $individual )
-        {
-          chdir( $individual );
-          print "In ".getcwd."\n";
-          
-          foreach my $technology (`ls`)
-          {
-            chomp( $technology );
-            if( -d $technology )
-            {
-              chdir( $technology );
-              print "In ".getcwd."\n";
-            
-              foreach my $library (`ls`) 
-              {
-                chomp( $library );
-                if( -d $library )
-                {
-                  chdir( $library );
-                  print "In ".getcwd."\n";
-                  
-                  my $libraryLanesCompleted = 1;
-                  
-                  foreach my $lane (`ls`) 
-                  {
-                    chomp( $lane );
-                    if( -d $lane )
-                    {
-                      chdir( $lane );
-                      print "In ".getcwd."\n";
-                      
-                      my $center = '';
-                      if( -f $indexF )
-                      {
-                        my $accession = basename( getcwd() );
-                        $center = `grep $accession $indexF | awk -F"\t" '{print \$6}' | head -1`;
-                        chomp( $center );
-                      }
-                      
-                      my $paired = 0;
-                      my $lane_read0 = '';
-                      my $lane_read1 = '';
-                      my $lane_read2 = '';
-                      my $num_bases0 = 0;
-                      my $num_bases1 = 0;
-                      my $num_bases2 = 0;
-                      my $num_reads0 = 0;
-                      my $num_reads1 = 0;
-                      my $num_reads2 = 0;
-                      my $readLength0 = 0;
-                      my $readLength1 = 0;
-                      my $readLength2 = 0;
-                      if( -f "meta.info" || -l "meta.info" )
-                      {
-                        $lane_read0=`grep read0 meta.info | head -1 | awk -F: '{print \$2}'`;
-                        $lane_read1=`grep read1 meta.info | head -1 | awk -F: '{print \$2}'`;
-                        $lane_read2=`grep read2 meta.info | head -1 | awk -F: '{print \$2}'`;
-                        
-                        chomp( $lane_read0 );
-                        chomp( $lane_read1 );
-                        chomp( $lane_read2 );
-                        
-                        if( length( $lane_read1 ) > 0 && length( $lane_read2 ) > 0 )
-                        {
-                          $paired = 1;
-                          
-                          $num_bases1 = `cat $lane_read1.fastqcheck | head -1 | awk '{print \$3}'`;chomp( $num_bases1 );
-                          $num_reads1 = `cat $lane_read1.fastqcheck | head -1 | awk '{print \$1}'`;chomp( $num_reads1 );
-                          $num_bases2 = `cat $lane_read2.fastqcheck | head -1 | awk '{print \$3}'`;chomp( $num_bases2 );
-                          $num_reads2 = `cat $lane_read2.fastqcheck | head -1 | awk '{print \$1}'`;chomp( $num_reads2 );
-                          $readLength1 = `cat $lane_read1.fastqcheck | head -1 | awk '{print \$6}'`;chomp( $readLength1 );
-                          $readLength2 = `cat $lane_read2.fastqcheck | head -1 | awk '{print \$6}'`;chomp( $readLength2 );
-                        }
-                        else
-                        {
-                          $num_bases0 = `cat $lane_read0.fastqcheck | head -1 | awk '{print \$3}'`;chomp( $num_bases0 );
-                          $num_reads0 = `cat $lane_read0.fastqcheck | head -1 | awk '{print \$1}'`;chomp( $num_reads0 );
-                          $readLength0 = `cat $lane_read0.fastqcheck | head -1 | awk '{print \$6}'`;chomp( $readLength0 );
-                        }
-                      }
-                      else
-                      {
-                        print "ERROR: No meta.info file found: ".getcwd()."\n";
-                        chdir( ".." );
-                        next;
-                      }
-                      
-                      $totalLanes ++;
-                      
-                      my $rawNumReads = 0;
-                      my $mappedNumReads = 0;
-                      my $rawPairedNumReads = 0;
-                      my $successfulLane = 1;
-                      
-                      if( $technology =~ /^SLX$/ )
-                      {
-                        my $rawMappedReads = 0;
-                        my $rawMappedBases = 0;
-                        my $rmdupMappedReads = 0;
-                        my $rmdupMappedBases = 0;
-                        my $errorRate = 0;
-                        if( -s "raw.map.mapstat" )
-                        {
-                          my $isLastIteration = 0;
-                          my $lastFileName = '';
-                          
-                          my @outputs = (`ls -l split*.maq.out.gz | sort -k 4 -r | awk '{print \$9}'`);
-                          
-                          for( my $i = 0; $i < @outputs; $i ++ )
-                          {
-                            chomp( $outputs[ $i ] );
-                            
-                            my $line=`zcat $outputs[ $i ] | tail -5 | grep '(total, isPE, mapped, paired)'`;
-                            my $zeroReads=`zcat $outputs[ $i ] | head -5`;
-                            if( $zeroReads !~ /\[ma_load_reads\]\s+0\*2\s+reads\s+loaded\./ )
-                            {
-                              if( length( $line ) > 0 )
-                              {
-                                $line =~ /.*=\s+\((\d+),\s+(\d+),\s+(\d+),\s+(\d+)\)/;
-                                
-                                $rawNumReads += $1;
-                                $mappedNumReads += $3;
-                                $rawPairedNumReads += $4;
-                              }
-                              else
-                              {
-                                print "1BAD_LANE_SPLIT: $outputs[ $i ] ".getcwd."\n";
-                                $successfulLane = 0;
-                              }
-                            }
-                            else 
-                            {
-                            # jws - what does this state mean: pass or fail?
-                            }
-                          }
-                          
-                          #verify the number of reads agrees with the mapstat file
-                          $rawMappedReads = `head raw.map.mapstat | grep 'Total number of reads' | awk -F":" '{print \$2}'`;chomp( $rawMappedReads );
-                          $rawMappedBases = `head raw.map.mapstat | grep 'Sum of read length' | awk -F":" '{print \$2}'`;chomp( $rawMappedBases );
-                          $errorRate = `head raw.map.mapstat | grep 'Error rate' | awk -F":" '{print \$2}'`;chomp( $errorRate );
-                          if( -s "rmdup.map.mapstat"){
-                              $rmdupMappedReads = `head rmdup.map.mapstat | grep 'Total number of reads' | awk -F":" '{print \$2}'`;chomp( $rmdupMappedReads );
-                              $rmdupMappedBases = `head rmdup.map.mapstat | grep 'Sum of read length' | awk -F":" '{print \$2}'`;chomp( $rmdupMappedBases );
-                          }
-                          else {
-                              print "No rmdup.map.mapstat: ".getcwd."\n";
-                          }
-                          
-                          if( $rawMappedReads != $mappedNumReads )
-                          {
-                            print "Number of reads in mapstat not equal to split outputs: $rawMappedReads vs. $mappedNumReads\n";
-                            print "BAD_LANE_MAPSTAT: ".getcwd."\n";
-                            $successfulLane = 0;
-                          }
-                          
-                      
-                        }
-                        else
-                        {
-                          print "INCOMPLETE: Can't find mapstat file\n";
-                          $successfulLane = 0;
-                        }
-
-                        if( $successfulLane == 1 )
-                        {
-                          $completedLanes ++ ;
-                          print LSUM "MAPPED,$center,$project,$individual,$technology,$library,$lane,";
-                          if( length( $lane_read0 ) > 0 )
-                          {
-                            print LSUM "$lane_read0,$readLength0,,,,,$num_reads0,$num_bases0,$rawMappedReads,$rawMappedBases,0,$rmdupMappedReads,$rmdupMappedBases,$errorRate\n";
-                          }
-                          else
-                          {
-                            print LSUM ",,$lane_read1,$readLength1,$lane_read2,$readLength2,".($num_reads1+$num_reads2).",".($num_bases1 + $num_bases2).",$rawMappedReads,$rawMappedBases,$rawPairedNumReads,$rmdupMappedReads,$rmdupMappedBases,$errorRate\n";
-                          }
-                        }
-                        else 
-                        {
-                            print LSUM "NOT_MAPPED,$center,$project,$individual,$technology,$library,$lane,";
-                            if( length( $lane_read0 ) > 0 )
-                            {
-                          print LSUM "$lane_read0,$readLength0,,,,,$num_reads0,$num_bases0\n";
-                            }
-                            else
-                            {
-                          print LSUM ",,$lane_read1,$readLength1,$lane_read2,$readLength2,".($num_reads1+$num_reads2).",".($num_bases1 + $num_bases2)."\n";
-                            }
-                        }
-                      }
-                      elsif( $technology =~ /^454$/ )
-                      {
-                        my $paired = 0;
-                        my $lane_read0 = '';
-                        my $lane_read1 = '';
-                        my $lane_read2 = '';
-                        my $num_bases0 = 0;
-                        my $num_bases1 = 0;
-                        my $num_bases2 = 0;
-                        my $num_reads0 = 0;
-                        my $num_reads1 = 0;
-                        my $num_reads2 = 0;
-                        if( -f "meta.info" || -l "meta.info" )
-                        {
-                          $lane_read0=`grep read0 meta.info | head -1 | awk -F: '{print \$2}'`;
-                          $lane_read1=`grep read1 meta.info | head -1 | awk -F: '{print \$2}'`;
-                          $lane_read2=`grep read2 meta.info | head -1 | awk -F: '{print \$2}'`;
-                          
-                          chomp( $lane_read0 );
-                          chomp( $lane_read1 );
-                          chomp( $lane_read2 );
-                          
-                          if( length( $lane_read1 ) > 0 && length( $lane_read2 ) > 0 )
-                          {
-                            $paired = 1;
-                            
-                            $num_bases1 = `cat $lane_read1.fastqcheck | head -1 | awk '{print \$3}'`;chomp( $num_bases1 );
-                            $num_reads1 = `cat $lane_read1.fastqcheck | head -1 | awk '{print \$1}'`;chomp( $num_reads1 );
-                            $num_bases2 = `cat $lane_read2.fastqcheck | head -1 | awk '{print \$3}'`;chomp( $num_bases2 );
-                            $num_reads2 = `cat $lane_read2.fastqcheck | head -1 | awk '{print \$1}'`;chomp( $num_reads2 );
-                            $readLength1 = `cat $lane_read1.fastqcheck | head -1 | awk '{print \$6}'`;chomp( $readLength1 );
-                            $readLength2 = `cat $lane_read2.fastqcheck | head -1 | awk '{print \$6}'`;chomp( $readLength2 );
-                          }
-                          
-                          if( length( $lane_read0 ) > 0 )
-                          {
-                            $num_bases0 = `cat $lane_read0.fastqcheck | head -1 | awk '{print \$3}'`;chomp( $num_bases0 );
-                            $num_reads0 = `cat $lane_read0.fastqcheck | head -1 | awk '{print \$1}'`;chomp( $num_reads0 );
-                            $readLength0 = `cat $lane_read0.fastqcheck | head -1 | awk '{print \$6}'`;chomp( $readLength0 );
-                          }
-                        }
-                        else
-                        {
-                          print "ERROR: No meta.info file found: ".getcwd()."\n";
-                          chdir( ".." );
-                          next;
-                        }
-                        
-                        #check to see if the lane is mapped
-                        my $finished = 1;
-                        foreach my $fastq (`ls *.fastq.gz`)
-                        {
-                          chomp( $fastq );
-                          next unless -f $fastq;
-                          
-                          my @s = split( /\./, $lane_read0 );
-                          my $cigarName = $s[ 0 ].'.'.$s[ 1 ].'.cigar.gz';
-                          if( -f $cigarName )
-                          {
-                            my $t = `zcat $cigarName | tail -5 | grep "^SSAHA2 finished" | wc -l`;
-                            chomp( $t );
-                            # jws - I think this change is required otherwise unfinished ssaha2 won't cause failure
-                            unless( $t == 1 )
-                            {
-                              $finished = 0;
-                              last;
-                            }
-                          }
-                          else
-                          {
-                            $finished = 0;
-                            last;
-                          }
-                        }
-                        
-                        if( $finished == 1 )
-                        {
-                          print LSUM "MAPPED,$center,"
-                        }
-                        else
-                        {
-                          print LSUM "NOT_MAPPED,$center,";
-                        }
-                        
-                        print LSUM "$project,$individual,$technology,$library,$lane,$lane_read0,$readLength0,$lane_read1,$readLength1,$lane_read2,$readLength2,".($num_reads0 + $num_reads1 + $num_reads2).",".($num_bases0 + $num_bases1 + $num_bases2)."\n";
-                        
-                      }
-                      
-                      chdir( ".." );
-                    }
-                  }
-                  chdir( ".." );
-                }
-              }
-              chdir( ".." );
-            }
-          }
-          chdir( ".." );
-        }
-      }
-      chdir( ".." );
-    }
-  }
-  
-  close( LSUM );
-  print $completedLanes." / $totalLanes fully completed\n";
-}
-
 sub syncIndexFile
 {
-  croak "Usage: syncIndexFile index_file dataRootDir mappingRootDir" unless @_ == 3;
-  
-  my $index_file = shift;
-  my $dRoot = shift;
-  my $mRoot =  shift;
-  
-  croak "Cant find index file" unless -f $index_file;
-  croak "Cant find data root directory" unless -d $dRoot;
-  croak "Cant find mapping root directory" unless -d $mRoot;
-  
-  open( MIS, ">$index_file.missing.index" ) or die $!;
-  
-  open( WITH, ">remove_withdrawn.sh" ) or die $!;
-  open( INCOMPLETE, ">remove_incomplete.sh" ) or die $!;
-  open( IN, $index_file ) or die "Cannot open index file\n";
-  while( <IN> )
-  {
-    chomp;
+    croak "Usage: syncIndexFile index_file lanes_fofn dataRootDir mappingRootDir" unless @_ == 4;
     
-    next unless $_ !~ /FASTQ/;
+    my $index_file = shift;
+    my $lanesfofn = shift;
+    my $dRoot = shift;
+    my $mRoot =  shift;
     
-    my @paths = @{ indexLineToPaths( $_ ) };
-    my @s = split( /\t/, $_ );
+    croak "Cant find index file" unless -f $index_file;
+    croak "Cant find lanes file" unless -f $lanesfofn;
+    croak "Cant find data root directory" unless -d $dRoot;
+    croak "Cant find mapping root directory" unless -d $mRoot;
     
-    if( ! -d $dRoot."/".$paths[ 0 ] )
+    my $base = basename( $index_file );
+    
+    my %lanesInHierarchy;
+    open( LANES, $lanesfofn ) or die "Cannot open lanes fofn: $lanesfofn\n";
+    while( <LANES> )
     {
-      print "LIBRARY_NOT_FOUND: $dRoot/$paths[ 0 ]\n";
-      print MIS $_."\n";
-      next;
+        chomp;
+        
+        my $id = basename( $_ );
+        
+        $lanesInHierarchy{ $id } = $_;
+    }
+    close( LANES );
+    
+    open( LIBMIS, ">$base.lib.missing.index" ) or die $!;
+    open( FMIS, ">$base.fastq.missing.index" ) or die $!;
+    open( LMIS, ">$base.lane.missing.index" ) or die $!;
+    #open( LM, ">$base.lane.missing.index" ) or die $!;
+    open( WITH, ">remove_withdrawn.sh" ) or die $!;
+    open( INCOMPLETE, ">remove_incomplete.sh" ) or die $!;
+    open( IN, $index_file ) or die "Cannot open index file\n";
+    open( EXTRA, ">remove_extra_lanes.sh" ) or die $!;
+    my %index_ids;
+    my %withdrawn;
+    while( <IN> )
+    {
+        chomp;
+        
+        next unless $_ !~ /FASTQ/;
+        
+        my @paths = @{ indexLineToPaths( $_ ) };
+        my @s = split( /\t/, $_ );
+        
+        #check if the lane has been withdrawn
+        if( $s[ 20 ] == 1 )
+        {
+            if( -d $dRoot."/".$paths[ 1 ] )
+            {
+                print "WITHDRAWN: $dRoot/$paths[ 1 ]\n";
+                
+                #delete the directory in the mapping and data hierarchies
+                print WITH "rm -rf $dRoot/$paths[ 1 ] $mRoot/$paths[ 1 ]\n";
+                $withdrawn{ $s[ 2 ] } = 1;
+            }
+            
+            next;
+        }
+        
+        $index_ids{ $s[ 2 ] } = 1;
+        
+        if( ! -d $dRoot."/".$paths[ 0 ] )
+        {
+            if( defined( $lanesInHierarchy{ $s[ 2 ] } ) )
+            {
+                print "LIBRARY_SWAP: $lanesInHierarchy{ $s[ 2 ] } $_\n";
+                next;
+            }
+            else
+            {
+                print "LIBRARY_NOT_FOUND: $dRoot/$paths[ 0 ]\n";
+                print LIBMIS $_."\n";
+                next;
+            }
+        }
+        
+        if( ! -d $dRoot."/".$paths[ 1 ] )
+        {
+            #check the file has not been withdrawn
+            if( $s[ 20 ] == 0 )
+            {
+                if( defined( $lanesInHierarchy{ $s[ 2 ] } ) )
+                {
+                    print "LANE_SWAP: $lanesInHierarchy{ $s[ 2 ] } $_\n";
+                    next;
+                }
+                else
+                {
+                    print "LANE_NOT_FOUND: $_\t$dRoot/$paths[ 1 ]\n";
+                    print LMIS $_."\n";
+                }
+            }
+        }
+        elsif( ! -f $dRoot."/".$paths[ 2 ] )
+        {
+            #check the file has not been withdrawn
+            if( $s[ 20 ] == 0 )
+            {
+                if( defined( $lanesInHierarchy{ $s[ 2 ] } ) )
+                {
+                    print "FASTQ_SWAP: $lanesInHierarchy{ $s[ 2 ] } $_\n";
+                    next;
+                }
+                else
+                {
+                    print "FASTQ_NOT_FOUND: $_\t$dRoot/$paths[ 2 ]\n";
+                    print INCOMPLETE "rm -rf $dRoot/$paths[ 1 ] $mRoot/$paths[ 1 ]\n";
+                    print FMIS $_."\n";
+                }
+            }
+        }
+        else
+        {
+            print "AGREE: $dRoot/$paths[ 1 ]\n";
+        }
     }
     
-    #check if the lane has been withdrawn
-    if( -d $dRoot."/".$paths[ 1 ] && $s[ 20 ] == 1 )
+    foreach( keys( %lanesInHierarchy ) )
     {
-      print "WITHDRAWN: $dRoot/$paths[ 1 ]\n";
-      
-      #delete the directory in the mapping and data hierarchies
-      print WITH "rm -rf $dRoot/$paths[ 1 ] $mRoot/$paths[ 1 ]\n";
-      
-      next;
+        if( ! defined( $index_ids{ $_ } ) && ! defined( $withdrawn{ $_ } ) )
+        {
+            print "EXTRA_LANE: $_\n";
+            print EXTRA "$_\n";
+        }
     }
     
-    if( ! -d $dRoot."/".$paths[ 1 ] )
-    {
-      #check the file has not been withdrawn
-      if( $s[ 20 ] == 0 )
-      {
-        print "LANE_NOT_FOUND: $_\t$dRoot/$paths[ 1 ]\n";
-        print MIS $_."\n";
-      }
-    }
-    elsif( ! -f $dRoot."/".$paths[ 2 ] )
-    {
-      #check the file has not been withdrawn
-      if( $s[ 20 ] == 0 )
-      {
-        print "FASTQ_NOT_FOUND: $_\t$dRoot/$paths[ 2 ]\n";
-        print INCOMPLETE "rm -rf $dRoot/$paths[ 1 ] $mRoot/$paths[ 1 ]\n";
-        print MIS $_."\n";
-      }
-    }
-    else
-    {
-      print "AGREE: $dRoot/$paths[ 1 ]\n";
-    }
-  }
-  close( IN );
-  close( MIS );
-  close( WITH );
-  close( INCOMPLETE );
+    close( IN );
+    close( LIBMIS );
+    close( LMIS );
+    close( FMIS );
+    close( WITH );
+    close( INCOMPLETE );
+    close( EXTRA );
 }
 
 #takes an index line and returns 3 paths (the library path, lane path, fastq path)
@@ -1229,6 +1098,8 @@ sub indexLineToPaths
     croak "Cannot determine sequencing technology: $s[ 12 ]\n";
   }
   
+  $s[ 14 ] =~ s/\s+/_/g;
+  
   my $libraryPath = $individualPath."/".$s[ 14 ];
   push( @paths, $libraryPath );
   
@@ -1241,7 +1112,7 @@ sub indexLineToPaths
   return \@paths;
 }
 
-my $SAMPLES_CSV = $ENV{ 'G1K' }.'/G1K/meta-data/G1K_samples.txt';
+my $SAMPLES_CSV = $ENV{ 'G1K' }.'/meta-data/G1K_samples.txt';
 my %G1K_SAMPLES;
 sub determineIndividualProjectDir
 {
@@ -1290,6 +1161,15 @@ sub determineIndividualProjectDir
   return $study_vs_id{ $proj_code }.'-'.$G1K_SAMPLES{ $individual };
 }
 
+=head2 markFailedGenotypeLanes
+
+    Arg [1]    : file of lane accessions
+    Arg [2]    : hierarchy root directory
+    Arg [3]    : sequence.index file
+    Example    : markFailedGenotypeLanes( 'accessions.fofn', '$G1K/MOUSE/DATA', 'sequence.index');
+    Description: Takes a list of lane accessions and marks them (i.e. in meta.info) as being genotype failed
+    Returntype : none
+=cut
 sub markFailedGenotypeLanes
 {
   croak "Usage: markBadLanes fileOfAccessions data_root index_file" unless @_ == 3;
@@ -1334,23 +1214,311 @@ sub markFailedGenotypeLanes
   close( IN );
 }
 
-sub pathmk {
-   my @parts = File::Spec->splitdir( shift() );
-   my $nofatal = shift;
-   my $pth = $parts[0];
-   my $zer = 0;
-   if(!$pth) {
-      $pth = File::Spec->catdir($parts[0],$parts[1]);
-      $zer = 1;
-   }
-   my $DirPerms = '';
-   for($zer..$#parts) {
-      $DirPerms = oct($DirPerms) if substr($DirPerms,0,1) eq '0';
-      mkdir($pth,$DirPerms) or return if !-d $pth && !$nofatal;
-      mkdir($pth,$DirPerms) if !-d $pth && $nofatal;
-      $pth = File::Spec->catdir($pth, $parts[$_ + 1]) unless $_ == $#parts;
-   }
-   1;
+=head2 buildReleaseHierarchy
+
+    Arg [1]    : original hierarchy root directory
+    Arg [2]    : file of bam files (path relative to hierarchy root dir)
+    Arg [3]    : root directory of release hierarchy
+    Example    : buildReleaseHierarchy( '$G1K/MOUSE/MAPPING', 'bam.fofn', '$G1K/MOUSE/RELEASE-01');
+    Description: Builds a sideways hierarchy and links in the bam files listed in the fofn
+    Returntype : none
+=cut
+sub buildReleaseHierarchy
+{
+    croak "Usage: buildReleaseHierarchy original_rootDir files_fofn release_root_directory index_file" unless @_ == 4;
+    
+    my $original_root = shift;
+    my $files_fofn = shift;
+    my $release_root = shift;
+    my $indexF = shift;
+    
+    croak "Cant find the lanes_fofn file: $files_fofn\n" unless -f $files_fofn;
+    croak "Cant find root directory: $original_root\n" unless -d $original_root;
+    croak "Cant find release root directory: $release_root\n" unless -d $release_root;
+    croak "Cant find index file: $indexF\n" unless -f $indexF;
+    
+    my %studyToRoot;
+    $studyToRoot{ 'LowCov' } = "SRP000031";
+    $studyToRoot{ 'Trio' } = "SRP000032";
+    $studyToRoot{ 'Exon' } = "SRP000033";
+    
+    my %indexFile;
+    open( LANES, $indexF ) or die "Cannot open lanes fofn: $indexF\n";
+    while( <LANES> )
+    {
+        chomp;
+        
+        my @s = split( /\t/, $_ );
+        
+        if( $s[ 20 ] == 0 )
+        {
+            $indexFile{ $s[ 2 ] } = \@s;
+        }
+        else
+        {
+            print "Skipping withdrawn lane: $s[ 2 ]\n";
+        }
+    }
+    close( LANES );
+    
+    open( LANES, $files_fofn ) or die "Cant open bam fofn file: $!\n";
+    while( <LANES> )
+    {
+        chomp;
+        
+        my $file = $_;
+        
+        my $originalPath = qq[$original_root/$file];
+        my $destinationPath = qq[$release_root/$file];
+        my $destinationDir = dirname( $destinationPath );
+        
+        if( ! -f $originalPath )
+        {
+            print "Cant find original lane file: ".$originalPath."\n";
+            next;
+        }
+        
+        #verify that the genotype is correct
+        #if( $file =~ /.*\/(NA[0-9]+)\/.*\/([SRR|ERR][0-9]+)\/.*/ ){print "boo!";}exit;
+        $file =~ /(LowCov|Trio|Exon)-.*\/(NA[0-9]+)\/.*\/(SRR[0-9]+|ERR[0-9]+).*/;
+        my $ind = $2;
+        my $acc = $3;
+        my $laneStudyRoot = $1;
+        
+        if( ! defined( $indexFile{ $acc } ) )
+        {
+            print "No entry in index file for accession: $acc\n";
+            print "$file\n";
+            next;
+        }
+        elsif( $indexFile{ $acc }[ 9 ] ne $ind )
+        {
+            print "IND_SWAP: $_ -> @{ $indexFile{ $acc } }\n";
+            next;
+        }
+        
+        if( $studyToRoot{ $laneStudyRoot } ne $indexFile{ $acc }[ 3 ] )
+        {
+            print "STUDY_SWAP: $_ -> @{ $indexFile{ $acc } }\n";
+            #next;
+        }
+        
+        if( ! -d $destinationDir )
+        {
+            system( "mkdir -p $destinationDir" ) #or die "Failed to make release directory path: $release_root/$relativeDir\n";
+        }
+        
+        if( ! -l $destinationPath && ! -f $destinationPath )
+        {
+            print "Linking file in: $destinationPath to $originalPath\n";
+            symlink( $originalPath, $destinationPath ) or die "Failed to link file in: $destinationPath to $originalPath\n";
+        }
+    }
+    close( LANES );
+}
+
+=head2 getFastqInfo
+
+    Arg [1]    : lane directory
+    Returntype : 2d array reference where each array consists of [ fastq name ][ read length ][ num reads ][ num bases ]
+                where this information is derived from the meta.info file and fastqcheck files
+=cut
+sub getFastqInfo
+{
+	croak "Usage: getFastqInfo laneDir" unless @_ == 1;
+	
+	my $laneDir = shift;
+	
+	croak "Cant find lane directory: $laneDir\n" unless -d $laneDir;
+	
+	my $meta_info_file = File::Spec->catfile($laneDir, 'meta.info');
+	
+	croak "Cant find meta.info file in $laneDir\n" unless -f $meta_info_file;
+	
+	my $lane_read0 = '';
+	my $lane_read1 = '';
+	my $lane_read2 = '';
+	if( -f $meta_info_file || -l $meta_info_file )
+	{
+		$lane_read0=`grep read0 $meta_info_file | head -1 | awk -F: '{print \$2}'`;
+		$lane_read1=`grep read1 $meta_info_file | head -1 | awk -F: '{print \$2}'`;
+		$lane_read2=`grep read2 $meta_info_file | head -1 | awk -F: '{print \$2}'`;
+		chomp( $lane_read0 );
+		chomp( $lane_read1 );
+		chomp( $lane_read2 );
+		$lane_read0 = File::Spec->catfile($laneDir, $lane_read0) if $lane_read0;
+		$lane_read1 = File::Spec->catfile($laneDir, $lane_read1) if $lane_read1;
+		$lane_read2 = File::Spec->catfile($laneDir, $lane_read2) if $lane_read2;
+	}
+	
+	my @reads;
+	
+	#get the read lengths from the fastqcheck
+	if( -f $lane_read0 )
+	{
+		my $length0 = `head -1 $lane_read0.fastqcheck | awk '{print \$6}'`;chomp( $length0 );
+		my $num_reads = `head -1 $lane_read0.fastqcheck | awk '{print \$1}'`;chomp( $num_reads );
+		my $num_bases = `head -1 $lane_read0.fastqcheck | awk '{print \$3}'`;chomp( $num_bases );
+		$reads[ 0 ] = [ basename($lane_read0), $length0, $num_reads, $num_bases ];
+	}
+	else
+	{
+		$reads[ 0 ] = [ '', 0, 0, 0 ];
+	}
+	
+	if( -f $lane_read1 )
+	{
+		my $length1 = `head -1 $lane_read1.fastqcheck | awk '{print \$6}'`;chomp( $length1 );
+		my $num_reads = `head -1 $lane_read1.fastqcheck | awk '{print \$1}'`;chomp( $num_reads );
+		my $num_bases = `head -1 $lane_read1.fastqcheck | awk '{print \$3}'`;chomp( $num_bases );
+		$reads[ 1 ] = [ basename($lane_read1), $length1, $num_reads, $num_bases ];
+	}
+	else
+	{
+		$reads[ 1 ] = [ '', 0, 0, 0 ];
+	}
+	
+	if( -f $lane_read2 )
+	{
+		my $length2 = `head -1 $lane_read2.fastqcheck | awk '{print \$6}'`;chomp( $length2 );
+		my $num_reads = `head -1 $lane_read2.fastqcheck | awk '{print \$1}'`;chomp( $num_reads );
+		my $num_bases = `head -1 $lane_read2.fastqcheck | awk '{print \$3}'`;chomp( $num_bases );
+		$reads[ 2 ] = [ basename($lane_read2), $length2, $num_reads, $num_bases ];
+	}
+	else
+	{
+		$reads[ 2 ] = [ '', 0, 0, 0 ];
+	}
+	
+	return \@reads;
+}
+
+=head2 buildInternalHierarchyRecalibrated
+
+    Arg [1]    : lane directory
+    Returntype : 2d array reference where each array consists of [ fastq name ][ read length ][ num reads ][ num bases ]
+                where this information is derived from the meta.info file and fastqcheck files
+=cut
+sub buildInternalHierarchyRecalibrated
+{
+    croak "Usage: buildInternalHierarchyRecalibrated fastq_files_fofn lane_dir_fofn new_root_dir copy|move" unless @_ == 4;
+    
+    my $recal_fofn = shift;
+    my $old_lanes_fofn = shift;
+    my $new_root = shift;
+    my $mode = shift;
+    
+    croak "Cant find recal fofn: $recal_fofn\n" unless -f $recal_fofn;
+    croak "Cant find old lanes fofn: $old_lanes_fofn\n" unless -f $old_lanes_fofn;
+    croak "Cant find new root dir: $new_root\n" unless -d $new_root;
+    
+    croak "must specify copy or move as mode: $mode\n" unless $mode eq 'copy' || $mode eq 'move';
+    
+    mkdir( $new_root."/DATA" ) unless -d $new_root."/DATA";
+    mkdir( $new_root."/MAPPING" ) unless -d $new_root."/MAPPING";
+    my $dataRoot = $new_root."/DATA";
+    my $mapRoot = $new_root."/MAPPING";
+    
+    my %lane_dirs;
+    open( my $ldFh, $old_lanes_fofn ) or die $!;
+    while( <$ldFh> )
+    {
+        chomp;
+        
+        $lane_dirs{ basename( $_ ) } = $_;
+    }
+    close( $ldFh );
+    
+    my %linked;
+    open( my $recalFh, $recal_fofn ) or print $!;
+    while( <$recalFh> )
+    {
+        chomp;
+        my $filename = basename( $_ );
+        
+        croak "No fastq name found in fastq pathname: $_\n" unless $_ =~ /.*fastq.*/;
+        
+        next unless ! defined( $linked{ $filename } );
+        
+        $filename =~ /(\d+)_(\d+)[_\d+]*([\.recal]*\.fastq\.gz)/;
+        
+        croak "Malformed fastq filename: $filename\n" unless defined $1 && defined $2;
+        
+        my $laneDir = "$1_$2";
+        
+        if( defined( $lane_dirs{ $laneDir } ) )
+        {
+            #make the lane directory in the new root
+            if( ! -d "$dataRoot/".$lane_dirs{ $laneDir } )
+            {
+                 system( "mkdir -p $dataRoot/".$lane_dirs{ $laneDir } ) == 0 or die "Failed to create data direcotry: $?\n";
+                 system( "mkdir -p $mapRoot/".$lane_dirs{ $laneDir } ) == 0 or die "Failed to create mapping direcotry: $?\n";
+            }
+            
+            chdir( "$dataRoot/".$lane_dirs{ $laneDir } );
+            
+            if( -s $_ )
+            {
+                print "Already imported fastq: $_\n";
+                next;
+            }
+            
+            if( $mode eq 'copy' )
+            {
+                #copy in the fastq to data
+                copy( $_, "." ) or die "Failed to copy fastq file: $_ $!\n";
+            }
+            else
+            {
+                move( $_, "." ) or die "Failed to move fastq file: $_ $!\n";
+            }
+            
+            #link the fastq into mapping
+            symlink( "$dataRoot/".$lane_dirs{ $laneDir }."/".$filename, $mapRoot."/".$lane_dirs{ $laneDir }."/".$filename ) or die "failed to sym link fastq file: $!\n";
+            
+            #setup the reference links
+            
+            #run a fastqcheck
+            my $cmd = qq[bsub -q small -o import.o -e import.e "zcat $filename | fastqcheck > $filename.fastqcheck; ln -s $dataRoot/$lane_dirs{ $laneDir }/$filename.fastqcheck $mapRoot/$lane_dirs{ $laneDir }"];
+            system( $cmd );
+            
+            #setup the meta info file
+            if( $filename =~ /^\d+_\d+[\.recal]*\.fastq\.gz$/ ) #if unpaired
+            {
+                system( qq[echo "read0:$filename" > meta.info] ) == 0 or die "Failed to write to meta.info file:$!\n";
+                symlink( qq[$dataRoot/$lane_dirs{ $laneDir }/meta.info], "$mapRoot/$lane_dirs{ $laneDir }/meta.info" ) or die "Failed to sym link meta.info: $!";
+                
+                #run the clip point script
+                $cmd = qq[bsub -q small -o import.o -e import.e perl -w -e "use AssemblyTools;AssemblyTools::writeClipPointMeta( '$filename', 'meta.info', '0' );"];
+                system( $cmd );
+            }
+            else
+            {
+                if( $filename =~ /^\d+_\d+_2[\.recal]*\.fastq\.gz$/ ) #read 2
+                {
+                    #2nd read in pair
+                    system( qq[echo "read2:$filename" >> meta.info] ) == 0 or die "Failed to write to meta.info file:$!\n";
+                    symlink( qq[$dataRoot/$lane_dirs{ $laneDir }/meta.info], "$mapRoot/$lane_dirs{ $laneDir }/meta.info" ) or die "Failed to sym link meta.info: $!" unless -l "$mapRoot/$lane_dirs{ $laneDir }/meta.info";
+                    
+                    #run the clip point script
+                    $cmd = qq[bsub -q small -o import.o -e import.e perl -w -e "use AssemblyTools;AssemblyTools::writeClipPointMeta( '$filename', 'meta.info', '2' );"];
+                    system( $cmd );
+                }
+                elsif( $filename =~ /^\d+_\d+_1[\.recal]*\.fastq\.gz$/ ) #read 1
+                {
+                    system( qq[echo "read1:$filename" >> meta.info] ) == 0 or die "Failed to write to meta.info file:$!\n";
+                    symlink( qq[$dataRoot/$lane_dirs{ $laneDir }/meta.info], "$mapRoot/$lane_dirs{ $laneDir }/meta.info" ) or die "Failed to sym link meta.info: $!" unless -l "$mapRoot/$lane_dirs{ $laneDir }/meta.info";
+                    
+                    #run the clip point script
+                    $cmd = qq[bsub -q small -o import.o -e import.e perl -w -e "use AssemblyTools;AssemblyTools::writeClipPointMeta( '$filename', 'meta.info', '1' );"];
+                    system( $cmd );
+                }
+            }
+        }
+        
+        $linked{ $filename } = 1;
+    }
+    close( $recalFh );
 }
 
 1;

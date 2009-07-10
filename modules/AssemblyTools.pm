@@ -2,6 +2,7 @@ package AssemblyTools;
 use strict;
 use Carp;
 use Cwd;
+use File::Basename;
 
 #a perl module of many commonly used functions during assembly analysis
 
@@ -616,14 +617,6 @@ sub splitPairedFastq
 		my $q1 = <READS1>;
 		my $q2 = <READS2>;
 		
-		# move truncation checking here
-		unless($q1){
-		    croak "Fastq1 file truncated: $fastq1\n";
-		}
-		unless($q2){
-		    croak "Fastq2 file truncated: $fastq2\n";
-		}
-
 		my $countNs1 = ($seq1 =~ tr/N//);
 		my $countNs2 = ($seq2 =~ tr/N//);
 		
@@ -632,7 +625,7 @@ sub splitPairedFastq
 			next;
 		}
 		
-		if( $seq1 =~ /^A+\n$/ || $seq2 =~ /^A+\n$/)
+		if( $seq1 =~ /^A+\n$/ || $seq1 =~ /^N+\n$/ || $seq2 =~ /^A+\n$/ || $seq2 =~ /^N+\n$/ )
 		{
 			next;
 		}
@@ -660,22 +653,20 @@ sub splitPairedFastq
 			open( R, ">$outputDirectory/$prefix$fileCount"."_2.fastq" ) or die "Cannot create RIGHT file\n";
 		}
 		
-		# Don't understand why this doesn't fire for every pair of files
-		#if( eof( READS2 ) )
-		#{
-		#	croak "Fastq2 file truncated: $fastq2\n";
-		#}
+		if( eof( READS2 ) && ! eof( READS1 ) )
+		{
+			croak "Fastq2 file truncated: $fastq2\n";
+		}
 	}
 	close( L );
 	close( R );
 	close( READS1 );
 	close( READS2 );
 	
-	# this is a null op, as READS2 is closed!
-	#if( ! eof( READS2 ) )
-	#{
-	#	croak "Fastq1 file truncated: $fastq1\n";
-	#}
+	if( ! eof( READS2 ) )
+	{
+		croak "Fastq1 file truncated: $fastq1\n";
+	}
 	
 	return 1;
 }
@@ -803,6 +794,22 @@ sub revCompDNA
 	
 	$seq =~ tr/ACGTacgt/TGCAtgca/;
 	return $seq;
+}
+
+sub writeClipPointMeta
+{
+	croak "Usage: writeClipPointMeta reads_fastq meta_file read_num" unless @_ == 3;
+	my $fastq = shift;
+	my $meta_file = shift;
+	my $read_num = shift;
+	
+	croak "Cant find reads file: $fastq\n" unless -f $fastq;
+	croak "Cant find meta file: $meta_file\n" unless -f $meta_file;
+	croak "Invalid read number: $read_num\n" unless $read_num > -1 && $read_num < 3;
+	
+	my $clip = determineClipPointMaq( $fastq );
+	
+	system( qq[ echo "read$read_num:$clip" >> $meta_file ] );
 }
 
 sub determineClipPointMaq
@@ -1086,6 +1093,55 @@ sub verifyFastqFile
 	close( IN );
 	
 	print "$input Good\n";
+}
+
+=pod
+	A function to take the output of two md5sum runs on a set of files and check the md5 vs. a meta index file
+=cut
+sub verifyMd5Outputs
+{
+	croak "Usage: verifyMd5 md5_output md5_output" unless @_ == 2;
+	my $md5sum1 = shift;
+	my $md5sum2 = shift;
+	
+	croak "Cant find input md5sum file\n" unless -f $md5sum1 && -f $md5sum2;
+	
+	my %md5;
+	open( MD5, $md5sum1 ) or die "Cant open md5sum output\n";
+	while( <MD5> )
+	{
+		chomp;
+		$_ =~ /(.*)\s+(.*)/;
+		
+		$md5{ $1 } = $2;
+	}
+	close( MD5 );
+	
+	open( MD5, $md5sum2 ) or die "Cant open md5sum output\n";
+	while( <MD5> )
+	{
+		chomp;
+		
+		$_ =~ /(.*)\s+(.*)/;
+		my $md5_ = $1;
+		my $file = $2;
+		
+		if( ! defined( $md5{ $md5_ } ) )
+		{
+			print "Not defined in md5_1 file: $2\n";
+			next;
+		}
+		
+		if( $md5{ $md5_ } !~ /$file$/ && $file !~ /$md5{ $md5_ }$/ )
+		{
+			print "Incorrect md5: $file $md5{ $md5_ }\n";
+		}
+		else
+		{
+			#print "correct: ".$_."\n";
+		}
+	}
+	print "success\n";
 }
 
 1;

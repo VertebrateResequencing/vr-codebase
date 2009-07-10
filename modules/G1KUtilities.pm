@@ -4,14 +4,13 @@ use Carp;
 use File::Spec;
 use Cwd;
 
+my $GENDERS_FILE = '/nfs/sf8/G1K/ref/genders.txt';
+
 #a function to determin which ssaha disk hash table to use from the current location within the hierarchy
 sub path2Gender
 {
-	croak "Usage: path2Gender gender_file" unless @_ == 1;
-	my $genderFile = shift;
-	
 	my %genders;
-	open( G, "$genderFile" ) or die "Cant open gender file: $genderFile\n";
+	open( G, "$GENDERS_FILE" ) or die "Cant open gender file: $GENDERS_FILE\n";
 	while( <G> )
 	{
 		my @s = split( /\s+/, $_ );
@@ -31,13 +30,13 @@ sub path2Gender
 			{
 				if( defined( $genders{ $_ } ) )
 				{
-					print $genders{ $_ };
+					print $genders{ $_ }, "\n";
 					return $genders{ $_ };
 				}
 			}
 		}
 	}
-	print 'unknown';
+	print 'unknown', "\n";
 	return "unknown";
 }
 

@@ -668,8 +668,6 @@ sub sampleSubsetBasesLaneSolexa
 	
 	croak "Cant find fastq1 file: $fastq1 in ".getcwd()."\n" unless -f $fastq1;
 	
-	$sampleSize = int( $sampleSize * 1.1 );
-	
 	my $fastq2 = '';
 	my $output2 = '';
 	if( @_ == 2 )
@@ -691,8 +689,15 @@ sub sampleSubsetBasesLaneSolexa
 		print "Read2 Length: $readLength2 bp\n";
 	}
 	
+	#see if can work out clip points to remove any trailing Ns
 	my $clip1Point = -1;
 	my $clip2Point = -1;
+	
+	$clip1Point = AssemblyTools::determineClipPointMaq( $fastq1 );
+	if( length( $fastq2 ) > 0 )
+	{
+		$clip2Point = AssemblyTools::determineClipPointMaq( $fastq2 );
+	}
 	
 	my $readLength = $readLength1 + $readLength2;
 	
@@ -746,12 +751,53 @@ sub sampleSubsetBasesLaneSolexa
 	my $totalNReads2 = 0;
 	my $totalReadCounter = 0;
 	my $totalBasesSampled = 0;
-	while( <FASTQ1> )
+	my $fileIterations = 0;
+	while()
 	{
-		chomp;
-		last unless $totalReadsSampled < $numReadsToSample;
+		if( $totalBasesSampled > $sampleSize || $fileIterations > 10 )
+		{
+			last;
+		}
 		
-		my $rn1 = $_;
+		my $rn1 = <FASTQ1>;
+		
+		if( ! defined( $rn1 ) )
+		{
+			print "Sampled $totalBasesSampled bases. Target: $sampleSize bp\n";
+			print "Resetting to start of file....\n";
+			
+			#reset to the start of the file again
+			if( $fastq1 =~ /\.gz$/ )
+			{
+				open( FASTQ1, "gunzip -c $fastq1 |" ) or die "Cannot open gzipped fastq: $fastq1\n";
+			}
+			else
+			{
+				open( FASTQ1, "$fastq1" ) or die "Cannot open fastq: $fastq1\n";
+			}
+			
+			if( length( $fastq2 ) > 0 )
+			{
+				if( $fastq2 =~ /\.gz$/ )
+				{
+					open( FASTQ2, "gunzip -c $fastq2 |" ) or die "Cannot open gzipped fastq: $fastq2\n";
+				}
+				else
+				{
+					open( FASTQ2, "$fastq2" ) or die "Cannot open fastq: $fastq2\n";
+				}
+			}
+			
+			$numReadsInChunk = 0;
+			%currentReads1 = ();
+			%currentReads2 = ();
+			
+			$fileIterations ++; #count the number of times iterated over the file trying to sample enough bases
+			
+			$rn1 = <FASTQ1>;
+		}
+		
+		chomp( $rn1 );
 		my $seq1 = <FASTQ1>;
 		chomp( $seq1 );
 		
@@ -870,45 +916,13 @@ sub sampleSubsetBasesLaneSolexa
 			$totalReadsSampled ++;
 			$totalBasesSampled += length( $seq1 ) + length( $seq2 );
 		}
-	
-		if( eof( FASTQ1 ) )
-		{
-			print "Sampled $totalReadsSampled reads. Target: $numReadsToSample\n";
-			print "Resetting to start of file....\n";
-			
-			#reset to the start of the file again
-			if( $fastq1 =~ /\.gz$/ )
-			{
-				open( FASTQ1, "gunzip -c $fastq1 |" ) or die "Cannot open gzipped fastq: $fastq1\n";
-			}
-			else
-			{
-				open( FASTQ1, "$fastq1" ) or die "Cannot open fastq: $fastq1\n";
-			}
-			
-			if( length( $fastq2 ) > 0 )
-			{
-				if( $fastq2 =~ /\.gz$/ )
-				{
-					open( FASTQ2, "gunzip -c $fastq2 |" ) or die "Cannot open gzipped fastq: $fastq2\n";
-				}
-				else
-				{
-					open( FASTQ2, "$fastq2" ) or die "Cannot open fastq: $fastq2\n";
-				}
-			}
-			
-			$numReadsInChunk = 0;
-			%currentReads1 = ();
-			%currentReads2 = ();
-		}
 	}
 	
 	close( FASTQ1 );
 	close( OUT1 );
 	
 	print "Total reads Sampled: $totalReadsSampled\n";
-	print "Total bases Sampled: $totalBasesSampled\n";
+	print "Total bases Sampled: $totalBasesSampled vs. $sampleSize\n";
 	print "NReads in read1: $totalNReads1\n";
 	
 	if( length( $fastq2 ) > 0 )
@@ -919,9 +933,10 @@ sub sampleSubsetBasesLaneSolexa
 	}
 	
 	#check that we sampled enough bases - otherwise make empty files to indicate this
-	if( $totalBasesSampled < ( $sampleSize / 1.1 ) )
+	if( $totalBasesSampled < $sampleSize )
 	{
-		unlink( $output1 ); 
+		print "Failed to sample enough bases: $totalBasesSampled bp\n";
+		unlink( $output1 );
 		open( T, ">$output1" );close( T );
 		
 		if( length( $fastq2 ) > 0 )
@@ -1059,9 +1074,6 @@ sub applyMatchMismatchTable
 		
 		if( $entries[ 1 ] > 0 )
 		{
-			#my $newQval = abs( log($entries[ 1 ] / $entries[ 0 ] ) ) * 10;
-			#my $newQval = -10 * log10( $entries[ 1 ] / ( $entries[ 0 ] + $entries[ 1 ] ) );
-			
 			$recalibrations{ $_ } = estimateQuality( ($entries[ 0 ] + $entries[ 1 ]), $entries[ 1 ] );
 			print SUM "$_\t$entries[ 0 ]\t$entries[ 1 ]\t".$recalibrations{ $_ }."\n";
 		}
@@ -1670,9 +1682,12 @@ Verify that the reads after recalibration are the same as before = apart from qu
 =cut
 sub verifyBeforeAfterSequence
 {
-	croak "Usage: verifyBeforeAfterSequence before.fastq after.fastq" unless @_ == 2;
+	croak "Usage: verifyBeforeAfterSequence before.fastq after.fastq destination_dir" unless @_ == 3;
 	my $before = shift;
 	my $after = shift;
+	my $dest = shift;
+	
+	croak "Cant find destination directory: $dest\n" unless -d $dest;
 	
 	my $totalBases = 0;
 	if( $before =~ /\.gz$/ )
@@ -1702,19 +1717,33 @@ sub verifyBeforeAfterSequence
 		
 		if( ! defined $a )
 		{
+			print "rm ".getcwd()."/$after\n";
 			croak "More reads in uncalibrated file: $before vs. $after in ".getcwd()."\n";
 		}
-		croak "E: Read names not same: $b vs. $a\n in ".getcwd()."\n" unless $b eq $a;
+		
+		if( $b ne $a )
+		{
+			print "rm ".getcwd()."/$after\n";
+			croak "E: Read names not same: $b vs. $a\n in ".getcwd()."\n";
+		}
 		
 		$b = <BEF>;
 		$a = <AFTER>;
 		
-		croak "E: Read sequences not same: $b vs. $a\n in ".getcwd()."\n" unless $b eq $a;
+		if( $b ne $a )
+		{
+			print "rm ".getcwd()."/$after\n";
+			croak "E: Read sequences not same: $b vs. $a\n in ".getcwd()."\n";
+		}
 		
 		$b = <BEF>;
 		$a = <AFTER>;
 		
-		croak "E: Qual names not same: $b vs. $a\n in ".getcwd()."\n" unless $b eq $a;
+		if( $b ne $a )
+		{
+			print "rm ".getcwd()."/$after\n";
+			croak "E: Qual names not same: $b vs. $a\n in ".getcwd()."\n";
+		}
 		
 		$b = <BEF>;
 		$a = <AFTER>;
@@ -1725,12 +1754,22 @@ sub verifyBeforeAfterSequence
 	my $t = <AFTER>;
 	if( defined $t )
 	{
+		print "rm ".getcwd()."/$after\n";
 		croak "More reads in recalibrated file: $before vs. $after in ".getcwd()."\n";
 	}
 	close( AFTER );
 	close( BEF );
 	
-	croak "E: Qual values are same: $before $after in ".getcwd()."\n" unless $numSame < ( $numReads / 2 );
+	if( $numReads == 0 )
+	{
+		print "rm ".getcwd()."/$after\n";
+		croak "Empty recalibrated fastq file found: $before vs. $after in ".getcwd()."\n";
+	}
+	
+	#move the recal file to the destination and delete the uncal file
+	system( "mv $after $dest" );
+	system( "rm -f $before" );
+	
 	print "$before Verified!";
 }
 
