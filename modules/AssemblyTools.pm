@@ -1144,4 +1144,45 @@ sub verifyMd5Outputs
 	print "success\n";
 }
 
+sub filterOutShortReads
+{
+	croak "Usage: filterOutShortReads fastq minLength outputFile" unless @_ == 3;
+	my $inFastq = shift;
+	my $minLen = shift;
+	my $outFastq = shift;
+	
+	if( $inFastq =~ /\.gz$/ )
+	{
+		open( IN, "gunzip -c $inFastq |" ) or die "Cant open input gzip file: $!\n";
+		open( OUT, "| gzip -c > $outFastq" ) or die "Cant create output fastq: $!\n";
+	}
+	else
+	{
+		open( IN, $inFastq ) or die "Cant open input file: $!\n";
+		open( OUT, ">$outFastq" ) or die "Cant create output fastq: $!\n";
+	}
+	
+	while( <IN> )
+	{
+		chomp;
+		my $name = $_;
+		
+		my $seq = <IN>;
+		chomp( $seq );
+		
+		my $qname = <IN>;
+		chomp( $qname );
+		
+		my $quals = <IN>;
+		chomp( $quals );
+		
+		if( length( $seq ) >= $minLen )
+		{
+			print OUT "$name\n$seq\n$qname\n$quals\n";
+		}
+	}
+	close( OUT );
+	close( IN );
+}
+
 1;
