@@ -193,8 +193,12 @@ sub samse {
 =head2 do_mapping
 
  Title   : do_mapping
- Usage   : $wrapper->do_mapping('ref.fa', 'reads_1.fastq', 'reads_2.fastq',
-                                'output.sam', %opts);
+ Usage   : $wrapper->do_mapping(ref => 'ref.fa',
+                                read1 => 'reads_1.fastq',
+                                read2 => 'reads_2.fastq',
+                                output => 'output.sam',
+                                index_a => 'bwtsw',
+                                sampe_a => 2000);
  Function: Run bwa on the supplied files, generating a sam file of the mapping.
            Checks the sam file isn't truncated.
  Returns : n/a
