@@ -4,9 +4,16 @@ VertRes::Pipelines::Mapping - pipeline for mapping fastqs to reference
 
 =head1 SYNOPSIS
 
-use VertRes::Pipelines::Mapping;
+# make a file of absolute paths to your desired lane directories, eg:
+find $G1K/data -type d -name "*RR*" | grep -v "SOLID" > lanes.fofn
 
-...
+# make a config file:
+echo '<lanes.fofn verbose=1;do_cleanup=1' > pipeline.config
+
+# run the pipeline:
+run-pipeline -c pipeline.config -v -l mapping_pipeline.log -m VertRes::Pipelines::Mapping
+
+# (and make sure it keeps running by adding that last to a regular cron job)
 
 =head1 DESCRIPTION
 
@@ -31,14 +38,18 @@ use LSF;
 
 use base qw(VertRes::Pipeline);
 
-our $actions = [ { name     => 'map',
+our $actions = [ { name     => 'split',
+                   action   => \&split,
+                   requires => \&split_requires, 
+                   provides => \&split_provides },
+                { name     => 'map',
                    action   => \&map,
                    requires => \&map_requires, 
                    provides => \&map_provides },
-                 { name     => 'sam_to_bam',
-                   action   => \&sam_to_bam,
-                   requires => \&sam_to_bam_requires, 
-                   provides => \&sam_to_bam_provides },
+                 { name     => 'merge_and_stat',
+                   action   => \&merge_and_stat,
+                   requires => \&merge_and_stat_requires, 
+                   provides => \&merge_and_stat_provides },
                  { name     => 'cleanup',
                    action   => \&cleanup,
                    requires => \&cleanup_requires, 
@@ -46,7 +57,10 @@ our $actions = [ { name     => 'map',
 
 our %options = (bsub_opts => "-q normal -M5000000 -R 'select[mem>5000] rusage[mem=5000]'",
                 sequence_index => '/nfs/sf8/G1K/misc/sequence.index',
-                do_cleanup => 0);
+                do_cleanup => 0,
+                chunk_size => 1000000);
+
+our $split_dir_name = 'split';
 
 =head2 new
 
@@ -57,6 +71,7 @@ our %options = (bsub_opts => "-q normal -M5000000 -R 'select[mem>5000] rusage[me
  Args    : lane => '/path/to/lane'
            sequence_index => '/path/to/sequence.index' (there is a default)
            do_cleanup => boolean (default false: don't do the cleanup action)
+           chunk_size => int (default 1000000)
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -138,10 +153,12 @@ sub split {
     my @read_args = $self->_get_read_args($lane_path);
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
-    my $split_dir = $self->{io}->catfile($lane_path, 'split');
+    my $chunk_size = $self->{chunk_size};
+    my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name);
     my $complete_file = $self->{io}->catfile($lane_path, '.split_complete');
     my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}.'split.pl');
     
+    # run mapping in an LSF call to a temp script (escaping a perl -e is a bitch)
     open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
     print $scriptfh qq{
 use strict;
@@ -153,7 +170,7 @@ my \$mapper = $mapper_class->new(verbose => $verbose);
 # split
 my \$splits = \$mapper->split_fastq(@read_args,
                                     split_dir => '$split_dir',
-                                    chunk_size => 1000000);
+                                    chunk_size => $chunk_size);
 
 # (it will only return >0 if all splits created and checked out fine)
 \$mapper->throw("split failed - try again?") unless \$splits;
@@ -206,13 +223,13 @@ sub _get_read_args {
 
 sub map_requires {
     my ($self, $lane_path) = @_;
-    my @requires = $self->_require_fastqs(@_);
+    my @requires = $self->_require_fastqs($lane_path);
     
     my %lane_info = %{HierarchyUtilities::lane_info($lane_path)};
     # we require the .bwt so that multiple lanes during 'map' action don't all
     # try and create the .bwt at once automatically if it is missing; could add
     # an index action before map action to solve this...
-    push(@requires, $lane_info{fa_ref}, $lane_info{fa_ref}.'.bwt');
+    push(@requires, '.split_complete', $lane_info{fa_ref}, $lane_info{fa_ref}.'.bwt');
     
     return \@requires;
 }
@@ -229,7 +246,9 @@ sub map_requires {
 
 sub map_provides {
     my ($self, $lane_path) = @_;
-    my @provides = ('.mapping_complete');
+    
+    my @provides = ($self->{io}->catfile($lane_path, '.mapping_complete'));
+    
     return \@provides;
 }
 
@@ -237,10 +256,9 @@ sub map_provides {
 
  Title   : map
  Usage   : $obj->map('/path/to/lane', 'lock_filename');
- Function: Carry out mapping of the fastq files in a lane directory to the
-           reference genome. Always generates a sam file ('raw.sam'), regardless of the
-           technology/ mapping tool. Also creates a bam file of unmapped reads,
-           along with a flagstat file for that.
+ Function: Carry out mapping of the split fastq files in a lane directory to the
+           reference genome. Always generates a bam file ('[splitnum].raw.sorted.bam')
+           per split, regardless of the technology/ mapping tool.
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : lane path, name of lock file to use
 
@@ -255,16 +273,30 @@ sub map {
     
     my @read_args = $self->_get_read_args($lane_path);
     
-    # run mapping in an LSF call to a temp script (escaping a perl -e is a bitch)
-    my $outfile = $self->{io}->catfile($lane_path, 'raw.sam');
-    my $unmapped_out = $self->{io}->catfile($lane_path, 'unmapped.bam');
-    my $mapper_class = $self->{mapper_class};
-    my $sequence_index = $self->{sequence_index};
-    my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}.'map.pl');
-    my $verbose = $self->verbose;
+    # get the number of splits
+    my $num_of_splits = $self->_num_of_splits($lane_path);
+    my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name);
     
-    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
-    print $scriptfh qq{
+    # run mapping of each split in LSF calls to temp scripts
+    my $mapper_class = $self->{mapper_class};
+    my $verbose = $self->verbose;
+    my $sequence_index = $self->{sequence_index};
+    
+    foreach my $split (1..$num_of_splits) {
+        my $sam_file = $self->{io}->catfile($lane_path, $split_dir_name, $split.'.raw.sam');
+        my $bam_file = $self->{io}->catfile($lane_path, $split_dir_name, $split.'.raw.sorted.bam');
+        my $script_name = $self->{io}->catfile($lane_path, $split_dir_name, $self->{prefix}.$split.'.map.pl');
+        
+        my @split_read_args = ();
+        foreach my $read_arg (@read_args) {
+            my $split_read_arg = $read_arg;
+            $split_read_arg =~ s/\.f[^.]+(?:\.gz)?('(?:, )?)$/.$split.fastq$1/;
+            $split_read_arg =~ s/\/([^\/]+)$/\/$split_dir_name\/$1/;
+            push(@split_read_args, $split_read_arg);
+        }
+        
+        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+        print $scriptfh qq{
 use strict;
 use $mapper_class;
 
@@ -273,8 +305,8 @@ my \$mapper = $mapper_class->new(verbose => $verbose);
 # mapping won't get repeated if mapping works the first time but subsequent
 # steps fail
 my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
-                               @read_args,
-                               output => '$outfile',
+                               @split_read_args,
+                               output => '$sam_file',
                                insert_size => 2000);
 
 # (it will only return ok and create output if the sam file was created and not
@@ -282,63 +314,96 @@ my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
 \$mapper->throw("mapping failed - try again?") unless \$ok;
 
 # add sam header
-open(my \$samfh, '$outfile') || \$mapper->throw("Unable to open sam file '$outfile'");
+open(my \$samfh, '$sam_file') || \$mapper->throw("Unable to open sam file '$sam_file'");
 my \$head = <\$samfh>;
 close(\$samfh);
 unless (\$head =~ /^\\\@HD/) {
-    my \$ok = \$mapper->add_sam_header('$outfile', '$sequence_index',
-                                        lane_path => '$lane_path');
+    my \$ok = \$mapper->add_sam_header('$sam_file', '$sequence_index',
+                                       lane_path => '$lane_path');
     \$mapper->throw("Failed to add sam header!") unless \$ok;
 }
 
-# make an unmapped bam and get stats for it
-\$ok = \$mapper->make_unmapped_bam('$outfile', '$unmapped_out');
-\$mapper->throw("making unmapped bam failed - try again?") unless \$ok;
-\$ok = \$mapper->stats('$unmapped_out');
-unlink('$unmapped_out'.'.bamstat');
-\$mapper->throw("getting stats for unmapped bam failed - try again?") unless \$ok;
+# convert to mate-fixed sorted bam
+unless (-s '$bam_file') {
+    my \$ok = \$mapper->sam_to_fixed_sorted_bam('$sam_file', '$bam_file');
+    
+    unless (\$ok) {
+        # (will only return ok and create output bam file if bam was created and
+        #  not truncted)
+        \$mapper->throw("Failed to create sorted bam file!");
+    }
+    else {
+        unlink('$sam_file');
+    }
+}
 
 exit;
-    };
-    close $scriptfh;
-    
-    LSF::run($action_lock, $lane_path, $self->{prefix}.'map', $self, qq{perl -w $script_name});
+        };
+        close $scriptfh;
+        
+        LSF::run($action_lock, $lane_path, $self->{prefix}.'map', $self, qq{perl -w $script_name});
+    }
     
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete
     return $self->{No};
 }
 
-=head2 sam_to_bam_requires
+sub _num_of_splits {
+    my ($self, $lane_path) = @_;
+    
+    # get the number of splits
+    my $split_file = $self->{io}->catfile($lane_path, '.split_complete');
+    my $io = VertRes::IO->new(file => $split_file);
+    my $split_fh = $io->fh;
+    my $splits = <$split_fh>;
+    chomp($splits);
+    $io->close;
+    
+    return $splits;
+}
 
- Title   : sam_to_bam_requires
- Usage   : my $required_files = $obj->sam_to_bam_requires('/path/to/lane');
- Function: Find out what files the sam_to_bam action needs before it will run.
+=head2 merge_and_stat_requires
+
+ Title   : merge_and_stat_requires
+ Usage   : my $required_files = $obj->merge_and_stat_requires('/path/to/lane');
+ Function: Find out what files the merge_and_stat action needs before it will run.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub sam_to_bam_requires {
+sub merge_and_stat_requires {
     my ($self, $lane_path) = @_;
-    my @requires = ('raw.sam');
+    
+    # get the number of splits
+    my $num_of_splits = $self->_num_of_splits($lane_path);
+    my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name);
+    
+    my @requires;
+    foreach my $split (1..$num_of_splits) {
+        push(@requires, $self->{io}->catfile($lane_path, $split_dir_name, $split.'.raw.sorted.bam'));
+    }
+    
     return \@requires;
 }
 
-=head2 sam_to_bam_provides
+=head2 merge_and_stat_provides
 
- Title   : sam_to_bam_provides
- Usage   : my $provided_files = $obj->sam_to_bam_provides('/path/to/lane');
- Function: Find out what files the sam_to_bam action generates on success.
+ Title   : merge_and_stat_provides
+ Usage   : my $provided_files = $obj->merge_and_stat_provides('/path/to/lane');
+ Function: Find out what files the merge_and_stat action generates on success.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub sam_to_bam_provides {
+sub merge_and_stat_provides {
     my ($self, $lane_path) = @_;
-    my @provides = ('raw.sorted.bam', 'rmdup.bam');
-    foreach my $file (qw(raw.sorted.bam rmdup.bam)) {
+    my @provides;
+    foreach my $file (qw(raw.sorted.bam rmdup.bam unmapped.bam)) {
+        push(@provides, $file);
+        
         foreach my $suffix ('bamstat', 'flagstat') {
             push(@provides, $file.'.'.$suffix);
         }
@@ -346,30 +411,34 @@ sub sam_to_bam_provides {
     return \@provides;
 }
 
-=head2 sam_to_bam
+=head2 merge_and_stat
 
- Title   : sam_to_bam
- Usage   : $obj->sam_to_bam('/path/to/lane', 'lock_filename');
- Function: Takes the sam file generated during map(), and creates a sorted
-           bam file from it. Also removes duplicates and creates statistic
-           files.
+ Title   : merge_and_stat
+ Usage   : $obj->merge_and_stat('/path/to/lane', 'lock_filename');
+ Function: Takes the bam files generated during map(), and creates a merged,
+           sorted bam file from them. Also removes duplicates and creates
+           statistic files. Finally, creates a bam file of unmapped reads, along
+           with stat files for that too.
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : lane path, name of lock file to use
 
 =cut
 
-sub sam_to_bam {
+sub merge_and_stat {
     my ($self, $lane_path, $action_lock) = @_;
     
     # setup filenames etc. we'll use within our temp script
     my $mapper_class = $self->{mapper_class};
-    my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}.'sam_to_bam.pl');
+    my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}.'merge_and_stat.pl');
     my $verbose = $self->verbose;
-    my $sam_file = $self->{io}->catfile($lane_path, 'raw.sam');
+    
+    my @bams = @{$self->merge_and_stat_requires($lane_path)};
+    
     my $bam_file = $self->{io}->catfile($lane_path, 'raw.sorted.bam');
     my $rmdup_file = $self->{io}->catfile($lane_path, 'rmdup.bam');
+    my $unmapped_out = $self->{io}->catfile($lane_path, 'unmapped.bam');
     my @stat_files;
-    foreach my $file (qw(raw.sorted.bam rmdup.bam)) {
+    foreach my $file (qw(raw.sorted.bam rmdup.bam unmapped.bam)) {
         foreach my $suffix ('bamstat', 'flagstat') {
             push(@stat_files, $self->{io}->catfile($lane_path, $file.'.'.$suffix));
         }
@@ -380,28 +449,34 @@ sub sam_to_bam {
     print $scriptfh qq{
 use strict;
 use $mapper_class;
+use VertRes::Wrapper::samtools;
 
 my \$mapper = $mapper_class->new(verbose => $verbose);
+my \$samtools = VertRes::Wrapper::samtools->new(verbose => $verbose);
 
-# convert to mate-fixed sorted bam
+# merge bams
 unless (-s '$bam_file') {
-    my \$ok = \$mapper->sam_to_fixed_sorted_bam('$sam_file', '$bam_file');
-    
-    unless (\$ok) {
-        # (will only return ok and create output bam file if bam was created and not truncted)
-        \$mapper->throw("Failed to create sorted bam file!");
-    }
+    \$samtools->merge_and_check('$bam_file', [qw(@bams)]);
+    \$mapper->throw("merging bam failed - try again?") unless \$samtools->run_status == 2;
 }
+
+my \$ok = 0;
 
 # rmdup
 unless (-s '$rmdup_file') {
-    my \$ok = \$mapper->rmdup('$bam_file', '$rmdup_file',
-                              lane_path => '$lane_path');
+    \$ok = \$mapper->rmdup('$bam_file', '$rmdup_file',
+                          lane_path => '$lane_path');
     
     unless (\$ok) {
         unlink('$rmdup_file');
         \$mapper->throw("Failed to rmdup the bam file!");
     }
+}
+
+# make an unmapped bam
+unless (-s '$unmapped_out') {
+    \$ok = \$mapper->make_unmapped_bam('$bam_file', '$unmapped_out');
+    \$mapper->throw("making unmapped bam failed - try again?") unless \$ok;
 }
 
 # make stat files
@@ -410,7 +485,7 @@ foreach my \$stat_file (qw(@stat_files)) {
     \$num_present++ if -s \$stat_file;
 }
 unless (\$num_present == ($#stat_files + 1)) {
-    my \$ok = \$mapper->stats('$bam_file', '$rmdup_file');
+    my \$ok = \$mapper->stats('$bam_file', '$rmdup_file', '$unmapped_out');
     
     unless (\$ok) {
         foreach my \$stat_file (qw(@stat_files)) {
@@ -424,7 +499,7 @@ exit;
     };
     close $scriptfh;
     
-    LSF::run($action_lock, $lane_path, $self->{prefix}.'sam_to_bam', $self, qq{perl -w $script_name});
+    LSF::run($action_lock, $lane_path, $self->{prefix}.'merge_and_stat', $self, qq{perl -w $script_name});
     
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete
@@ -468,7 +543,7 @@ sub cleanup_provides {
  Title   : cleanup
  Usage   : $obj->cleanup('/path/to/lane', 'lock_filename');
  Function: Unlink all the pipeline-related files (_*) in a lane, as well
-           as the raw.sam and .sai files.
+           as the .sai files and split directory.
            NB: do_cleanup => 1 must have been supplied to new();
  Returns : $VertRes::Pipeline::Yes
  Args    : lane path, name of lock file to use
@@ -484,11 +559,10 @@ sub cleanup {
         unlink($sai);
     }
     
-    foreach my $file (qw(raw.sam
-                         _log
+    foreach my $file (qw(_log
                          _split.e _split.o _split.pl
                          _map.e _map.o _map.pl
-                         _sam_to_bam.e _sam_to_bam.o _sam_to_bam.pl)) {
+                         _merge_and_stat.e _merge_and_stat.o _merge_and_stat.pl)) {
         unlink($self->{io}->catfile($lane_path, $file));
     }
     
@@ -500,16 +574,24 @@ sub cleanup {
 sub is_finished {
     my ($self, $lane_path, $action) = @_;
     
-    # so that we can delete the raw.sam at the end of the pipeline, and not
-    # redo the map action when it sees there is no raw.sam
+    # so that we can delete the split dir at the end of the pipeline, and not
+    # redo the map action when it sees there are no split bams
     if ($action->{name} eq 'map') {
         my $done_file = $self->{io}->catfile($lane_path, '.mapping_complete');
-        if (! -e $done_file && -s $self->{io}->catfile($lane_path, 'raw.sam')) {
+        
+        my $done_bams = 0;
+        my $num_of_splits = $self->_num_of_splits($lane_path);
+        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name);
+        foreach my $split (1..$num_of_splits) {
+            $done_bams += (-s $self->{io}->catfile($lane_path, $split_dir_name, $split.'.raw.sorted.bam')) ? 1 : 0;
+        }
+        
+        if (! -e $done_file && $done_bams == $num_of_splits) {
             system("touch $done_file");
         }
     }
     elsif ($action->{name} eq 'cleanup') {
-        -e $self->{io}->catfile($lane_path, 'raw.sam') ? (return $self->{No}) : (return $self->{Yes});
+        return $self->{No};
     }
     
     return $self->SUPER::is_finished($lane_path, $action);

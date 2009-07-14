@@ -4,7 +4,20 @@ VertRes::Utils::Mapping - mapping utility functions
 
 =head1 SYNOPSIS
 
-...
+use VertRes::Utils::Mapping;
+
+# get the mapping utility object appropriate for the lane's technology
+my $chooser = VertRes::Utils::Mapping->new();
+my $class = $chooser->lane_to_module('/path/to/SLX/lane');
+# $class is VertRes::Utils::Mappers::SLX
+require $class;
+my $mapping_util = $class->new();
+
+# use any of the utility functions described here, eg.
+$mapping_util->split_fastq(read1 => 'reads_1.fastq',
+                           read2 => 'reads_2.fastq',
+                           split_dir => '/path/to/desired/split_dir',
+                           chunk_size => 1000000);
 
 =head1 DESCRIPTION
 
@@ -312,21 +325,23 @@ sub add_sam_header {
 =head2 make_unmapped_bam
 
  Title   : make_unmapped_bam
- Usage   : $obj->make_unmapped_bam('in.sam', 'out.bam');
- Function: Converts a sam file (that has a header, ie. post add_sam_header())
-           to a bam file that contains only the unmapped reads.
+ Usage   : $obj->make_unmapped_bam('in.bam', 'out.bam');
+ Function: Given a bam file, generates another bam file that contains only the
+           unmapped reads.
  Returns : boolean (true on success)
  Args    : starting sam file, output name for bam file.
 
 =cut
 
 sub make_unmapped_bam {
-    my ($self, $in_sam, $out_bam) = @_;
+    my ($self, $in_bam, $out_bam) = @_;
     
     # create a new sam file with just the header and unmapped reads
-    my $in = VertRes::IO->new(file => $in_sam);
-    my $in_fh = $in->fh();
-    my $filtered_sam = $in_sam.'.unmapped';
+    my $in = VertRes::Wrapper::samtools->new(file => $in_bam,
+                                             run_method => 'open',
+                                             verbose => $self->verbose);
+    my $in_fh = $in->view($in_bam, undef, h => 1);
+    my $filtered_sam = $in_bam.'.unmapped_sam';
     $self->register_for_unlinking($filtered_sam);
     my $out = VertRes::IO->new(file => ">$filtered_sam");
     my $out_fh = $out->fh();
