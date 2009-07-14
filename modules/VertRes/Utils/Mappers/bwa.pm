@@ -4,7 +4,16 @@ VertRes::Utils::Mappers::bwa - mapping utility functions, bwa-specific
 
 =head1 SYNOPSIS
 
-...
+use VertRes::Utils::Mappers::bwa;
+
+my $mapping_util = VertRes::Utils::Mappers::bwa->new();
+
+# use any of the utility functions described here, eg.
+$mapping_util->do_mapping(ref => 'ref.fa',
+                          read1 => 'reads_1.fastq',
+                          read2 => 'reads_2.fastq',
+                          output => 'output.sam',
+                          insert_size => 2000);
 
 =head1 DESCRIPTION
 
@@ -63,8 +72,11 @@ sub wrapper {
 =head2 do_mapping
 
  Title   : do_mapping
- Usage   : $obj->do_mapping('ref.fa', 'reads_1.fastq', 'reads_2.fastq',
-                            'output.sam', insert_size => 2000);
+ Usage   : $obj->do_mapping(ref => 'ref.fa',
+                            read1 => 'reads_1.fastq',
+                            read2 => 'reads_2.fastq',
+                            output => 'output.sam',
+                            insert_size => 2000);
  Function: A convienience method that calls do_mapping() on the return value of
            wrapper(), translating generic options to those suitable for the
            wrapper.

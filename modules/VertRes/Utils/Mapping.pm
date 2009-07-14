@@ -554,7 +554,4 @@ sub get_mapping_stats {
     return ($mapped_reads, $mapped_bases, $paired_reads, $rmdup_mapped_reads, $rmdup_mapped_bases, 0);
 }
 
-# splitting prior to mapping...
-
-
 1;
