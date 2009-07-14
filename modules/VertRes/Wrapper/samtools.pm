@@ -150,7 +150,7 @@ sub sort {
 
  Title   : merge
  Usage   : $wrapper->merge('out.bam', \@in_bams, %options);
- Function: merge...
+ Function: merge... 
  Returns : n/a
  Args    : paths to out.bam and array ref of input bams, options as a hash
 
@@ -168,6 +168,61 @@ sub merge {
     $self->register_output_file_to_check($out_bam);
     
     return $self->run($out_bam, @{$in_bams});
+}
+
+=head2 merge_and_check
+
+ Title   : merge_and_check
+ Usage   : $wrapper->merge_and_check('out.bam', \@in_bams, %options);
+ Function: Merges multiple bam files together and checks the output merged bam
+           isn't truncated.
+ Returns : n/a
+ Args    : paths to out.bam and array ref of input bams, options as a hash
+
+=cut
+
+sub merge_and_check {
+    my ($self, $out_bam, $in_bams, %options) = @_;
+    
+    my $orig_run_method = $self->run_method;
+    
+    # do the merge
+    $self->run_method('system');
+    $self->merge($out_bam.'.tmp', $in_bams, %options);
+    $self->throw("failed during the merge step, giving up for now") unless $self->run_status >= 1;
+    
+    # find out our expectation
+    $self->run_method('open');
+    my $bam_count = 0;
+    foreach my $bam_file (@{$in_bams}) {
+        my $fh = $self->view($bam_file);
+        while (<$fh>) {
+            $bam_count++;
+        }
+        close($fh);
+    }
+    
+    # find out how many lines are in the merged bam file
+    my $merge_count = 0;
+    my $fh = $self->view($out_bam.'.tmp');
+    while (<$fh>) {
+        $merge_count++;
+    }
+    close($fh);
+    
+    # check for truncation
+    if ($merge_count >= $bam_count) {
+        system("mv $out_bam.tmp $out_bam");
+        $self->_set_run_status(2);
+    }
+    else {
+        $self->warn("$out_bam.tmp is bad (only $merge_count lines vs $bam_count), will unlink it");
+        $self->run_status(-1);
+        unlink("$out_bam.tmp");
+    }
+    
+    $self->run_method($orig_run_method);
+    return;
 }
 
 =head2 pileup
@@ -320,7 +375,8 @@ sub rmdupse {
  Usage   : $wrapper->flagstat('in.bam', 'out.bam.flagstat');
  Function: flagstat...
  Returns : n/a
- Args    : paths to input and output bams
+ Args    : paths to input and output bams. output can be excluded if you're
+           piping out with run_method('open')
 
 =cut
 
@@ -332,12 +388,12 @@ sub flagstat {
     $self->switches([]);
     $self->params([]);
     
-    $self->register_output_file_to_check($out_bam);
+    $self->register_output_file_to_check($out_bam) if $out_bam;
+    my @args = ($in_bam);
+    push(@args, ' > '.$out_bam) if $out_bam;
     
-    return $self->run($in_bam, ' > '.$out_bam);
+    return $self->run(@args);
 }
-
-
 
 =head2 sam_to_fixed_sorted_bam
 
@@ -394,6 +450,7 @@ sub sam_to_fixed_sorted_bam {
     my $sam_count = $io->num_lines();
     if ($bam_count >= $sam_count) {
         system("mv $tmp_bam.bam $out_bam.bam");
+        $self->_set_run_status(2);
     }
     else {
         $self->warn("$tmp_bam.bam is bad (only $bam_count lines vs $sam_count), will unlink it");
