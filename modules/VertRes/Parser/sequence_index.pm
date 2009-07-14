@@ -182,13 +182,17 @@ sub next_result {
     
     # get the next line
     my $tell = tell($fh);
-    my $line = <$fh> || return;
+    my $line = <$fh>;
+    unless ($line) {
+        $self->{"saw_last_line_$fh_id"} = 1;
+        return;
+    }
     chomp($line);
     
     my @data = split(/\t/, $line);
     @data == 25 or return;
     
-    $self->{'lanes'.$fh_id}->{$data[2]} = $tell;
+    $self->{'lanes'.$fh_id}->{$data[2]}->{$tell} = 1;
     
     for my $i (0..$#data) {
         $self->{_result_holder}->[$i] = $data[$i];
@@ -202,7 +206,8 @@ sub next_result {
  Title   : lane_info
  Usage   : my $sample_name = $obj->lane_info('SRR005864', 'sample_name');
  Function: Get a particular bit of info for a particular lane (run_id).
- Returns : string
+ Returns : in scalar context, the most common answer; in list context, all
+           the different answers
  Args    : lane/run_id, field name (see result_holder() for the list of valid
            field names)
 
@@ -220,22 +225,42 @@ sub lane_info {
     my $fh_id = $self->_fh_id;
     $self->_save_position || return;
     
-    # seek to the line for our desired lane
-    while (! defined $self->{'lanes'.$fh_id}->{$lane}) {
-        $self->next_result || last;
+    # since a lane can appear multiple times in the file, we have to just
+    # parse the whole file
+    unless ($self->{"saw_last_line_$fh_id"}) {
+        while ($self->next_result) {
+            next;
+        }
     }
     if (! defined $self->{'lanes'.$fh_id}->{$lane}) {
         $self->warn("'$lane' wasn't a run_id in your sequence.index file");
         return;
     }
     
-    seek($fh, $self->{'lanes'.$fh_id}->{$lane}, 0);
-    $self->next_result;
-    my $answer = $self->{_result_holder}->[$index];
+    my %answers;
+    foreach my $tell (keys %{$self->{'lanes'.$fh_id}->{$lane}}) {
+        seek($fh, $tell, 0);
+        $self->next_result;
+        $answers{$self->{_result_holder}->[$index]}++;
+    }
     
     $self->_restore_position;
     
-    return $answer;
+    if (wantarray) {
+        my @answers = sort keys %answers;
+        return @answers;
+    }
+    else {
+        my $most_common_answer;
+        my $highest_count = 0;
+        while (my ($answer, $count) = each %answers) {
+            if ($count > $highest_count) {
+                $highest_count = $count;
+                $most_common_answer = $answer;
+            }
+        }
+        return $most_common_answer;
+    }
 }
 
 =head2 get_lanes
@@ -290,7 +315,6 @@ sub get_lanes {
     my $fh = $self->fh || return;
     seek($fh, 0, 0);
     RESULT: while ($self->next_result) {
-        
         if ($do_ignores) {
             keys %ignores; # reset the iterator, since we may have nexted out
             while (my ($index, $regex) = each %ignores) {

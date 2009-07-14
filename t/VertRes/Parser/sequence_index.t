@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 30;
+    use Test::Most tests => 32;
     
     use_ok('VertRes::Parser::sequence_index');
 }
@@ -122,5 +122,10 @@ is @lanes, 120, 'got all lanes with a given sample_name';
 is @lanes, 8508, 'got all non-withdrawn lanes';
 @lanes = $sip->get_lanes(ignore_INSTRUMENT_PLATFORM => 'solid');
 is @lanes, 4544, 'got all non-solid lanes';
+
+# problem run_id where it is both withdrawn and not withdrawn
+my @answers = $sip->lane_info('ERR000061', 'withdrawn');
+is_deeply \@answers, [0, 1], 'knew that a given lane was both withdrawn and not';
+is $sip->lane_info('ERR000061', 'withdrawn'), 1, 'knew that the lane was noted as withdrawn more times than not';
 
 exit;
