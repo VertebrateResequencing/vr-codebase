@@ -746,7 +746,7 @@ sub parse_bam_line
         Options    : (see the code for default values)
                         do_chrm          .. should collect the chromosome distrib. stats.
                         do_gc_content    .. should we collect the gc_content (default is 1)
-                        do_rmdup         .. default is 1
+                        do_rmdup         .. default is 1 (calculate the rmdup); alternatively supply the filename of a pre-calculated rmdup
 
                         insert_size_bin  .. the length of the distribution intervals for the insert size frequencies
                         gc_content_bin   
@@ -935,7 +935,13 @@ sub collect_detailed_bam_stats
     # Find out the duplication rate
     if ( $do_rmdup )
     {
-        chomp(my ($rmdup_reads_total) = Utils::CMD("samtools rmdup $bam_file - 2>/dev/null | samtools view - | wc -l"));
+	my $rmdup_reads_total;
+	if (-f $do_rmdup && -s $do_rmdup) {
+		chomp(($rmdup_reads_total) = Utils::CMD("wc -l $do_rmdup"));
+	}
+	else {
+		chomp(($rmdup_reads_total) = Utils::CMD("samtools rmdup $bam_file - 2>/dev/null | samtools view - | wc -l"));
+	}
         $$raw_stats{'total'}{'rmdup_reads_total'} = $rmdup_reads_total;
     }
 
