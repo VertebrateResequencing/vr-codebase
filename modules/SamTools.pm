@@ -903,10 +903,10 @@ sub collect_detailed_bam_stats
             }
             elsif ( !($flag & $$FLAGS{'paired_tech'}) )  # Not a paired-read technology
             { 
-                # If the pair flag is not set, it is not a paired read technology.
+                # Either it is a non-paired-read technology, or the 1st_in_pair and
+                #   and 2nd_in_pair flags got lost in the process. (The specs allows this.)
                 for my $stat (@stats) { $$raw_stats{$stat}{'gc_content_fwd_freqs'}{$bin}++; }
             }
-            else { Utils::error("FIXME: unexpected flag: $line") }
         }
 
         #if ( $i++>50000 ) { last }
@@ -1117,9 +1117,9 @@ sub cigar_stats
 sub print_flags
 {
     my ($bam_file,$options) = @_;
-    if ( !$bam_file ) { Utils::error("Expected .bam file as a parameter.\n") }
 
-    open(my $fh, "samtools view $bam_file |") or Utils::error("samtools view $bam_file |: $!");
+    my $fh = \*STDIN;
+    if ( $bam_file ) { open($fh, "samtools view $bam_file |") or Utils::error("samtools view $bam_file |: $!"); }
     while (my $line=<$fh>)
     {
         # IL14_1902:3:83:1158:1446        89      1       23069154        37      54M     =       23069154        0       TGCAC
