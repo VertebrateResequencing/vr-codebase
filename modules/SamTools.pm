@@ -773,7 +773,7 @@ sub collect_detailed_bam_stats
 {
     my ($bam_file,$fai_file,$options) = @_;
     if ( !$bam_file ) { Utils::error("Expected .bam file as a parameter.\n") }
-
+	
     $options = {} unless $options;
     my $insert_size_bin = exists($$options{'insert_size_bin'}) ? $$options{'insert_size_bin'} : 1;
     my $gc_content_bin  = exists($$options{'gc_content_bin'}) ? $$options{'gc_content_bin'} : 1;

@@ -18,16 +18,6 @@ my $SAMTOOLS = "samtools";
 my $BASES_PER_CHUNK = 57600000;
 my $MAQ2SAM = "maq2sam-long";
 
-my $MOUSE_REF_FA = $MOUSE.'/ref/NCBIM37_um.fa';
-my $MOUSE_REF_BFA = $MOUSE.'/ref/NCBIM37_um.bfa';
-
-my $HUMAN_FEMALE_REF_FA = $G1K.'/ref/human_b36_female.fa';
-my $HUMAN_MALE_REF_FA = $G1K.'/ref/human_b36_male.fa';
-my $HUMAN_FEMALE_REF_BFA = $G1K.'/ref/human_b36_female.bfa';
-my $HUMAN_MALE_REF_BFA = $G1K.'/ref/human_b36_male.bfa';
-my $HUMAN_FEMALE_REF_FAI = $G1K.'/ref/human_b36_female.fa.fai';
-my $HUMAN_MALE_REF_FAI = $G1K.'/ref/human_b36_male.fa.fai';
-
 #read length ranges and what to set the -e parameter in maq to
 my %eParameter =
 (
@@ -283,7 +273,7 @@ sub mapLane
 	if( ! -l 'ref.bfa' && ! -f 'ref.bfa' )
 	{
 		#create a sym link to the ref bfa
-		symLinkReference();
+		croak "Error: Cant find ref.bfa file!";
 	}
     
 	my $mapping = 0;
@@ -858,35 +848,6 @@ sub verifyBamFile
 		print "GOOD $lane_dir\n";
 	}
 	
-}
-=head2 isLaneMapped
-
-	Arg [1]    : lane directory
-	Returntype : 0/1
-=cut
-sub symLinkReference
-{
-	return unless ! -l 'ref.fa' && ! -l 'ref.bfa';
-	
-	if( getcwd() =~ /MOUSE/ )
-	{
-		symlink( $MOUSE_REF_FA, 'ref.fa' );
-		symlink( $MOUSE_REF_BFA, 'ref.bfa' );
-	}
-	elsif( getcwd() =~ /G1K/ )
-	{
-		my $gender = G1KUtilities::path2Gender();
-		if( $gender eq 'male' || $gender eq 'unknown' )
-		{
-			symlink( $HUMAN_MALE_REF_FA, 'ref.fa' );
-			symlink( $HUMAN_MALE_REF_BFA, 'ref.bfa' );
-		}
-		else
-		{
-			symlink( $HUMAN_FEMALE_REF_FA, 'ref.fa' );
-			symlink( $HUMAN_FEMALE_REF_BFA, 'ref.bfa' );
-		}
-	}
 }
 
 sub removeIntermediateMappingFiles
