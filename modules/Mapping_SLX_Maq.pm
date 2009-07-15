@@ -9,10 +9,6 @@ use G1KUtilities;
 use AssemblyTools;
 use SamTools;
 
-my $BIN = $ENV{ 'BIN' };
-my $G1K = $ENV{ 'G1K' };
-my $MOUSE = $ENV{ 'MOUSE' };
-
 my $MAQ = "maq";
 my $SAMTOOLS = "samtools";
 my $BASES_PER_CHUNK = 57600000;
