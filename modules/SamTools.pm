@@ -1194,17 +1194,45 @@ sub determineUnmappedFlag
 	return $total;
 }
 
-=head2 determineUnmappedFlag
+=head2 pileup2Intervals
 
-	Arg [1]    : 1/0 flag to say whether the lane is a paired lane
-	Arg [2]    : -1/0/1 flag of whether the read is the first read of a pair
-	Example    : determineUnmappedFlag( 0, 1 );
-	Description: works out the SAM flag value for an unmapped read
-	Returntype : int
+	Arg [1]    : samtools pileup file
+	Arg [2]    : sam header file
+	Arg [3]    : output intervals file
+	Example    : pileup2Intervals
+	Description: creates an intervals file for the broad recalibrator which excludes all positions +/- 20bp around all indels
+	Returntype : none
 =cut
 
-
+sub pileup2Intervals
+{
+	croak "Usage: pileup2Intervals samtools_pileup_file sam_header_file output_file\n" unless @_ == 3;
+	
+	my $pileup = shift;
+	my $sam_header = shift;
+	my $output = shift;
+	
+	croak "Cant find pileup file: $pileup" unless -f $pileup;
+	croak "Cant find sam header file: $sam_header" unless -f $sam_header;
+	
+	open( my $pfh, $pileup ) or die "Cannot open pileup file: $!\n";
+	open( my $out, ">$output" ) or die "Cannot create output file: $!\n";
+	my $currentStartPos = 1;
+	my $c = 0;
+	while( <$pfh> )
+	{
+		chomp;
+		if( $_ =~ /^\d+\t\d+\*\t.*/ )
+		{
+			my @s = split( /\t/, $_ );
+			my $stop = $s[ 1 ] - 20;
+			print $out qq/$s[ 0 ]\t$currentStartPos\t$stop\t+\ttarget_$c\n/;
+			$currentStartPos = $s[ 1 ] + 20;
+			$c ++;
+		}
+	}
+	close( $pfh );
+	close( $out );
+}
 
 1;
-
-
