@@ -928,6 +928,7 @@ sub collect_detailed_bam_stats
         $$raw_stats{$stat}{'reads_unmapped'} = 0 unless exists($$raw_stats{$stat}{'reads_unmapped'});
         $$raw_stats{$stat}{'reads_unpaired'} = 0 unless exists($$raw_stats{$stat}{'reads_unpaired'});
         $$raw_stats{$stat}{'reads_paired'}   = 0 unless exists($$raw_stats{$stat}{'reads_paired'});
+        $$raw_stats{$stat}{'reads_total'}    = 0 unless exists($$raw_stats{$stat}{'reads_total'});
 
         $$raw_stats{$stat}{'reads_mapped'} = $$raw_stats{$stat}{'reads_total'} - $$raw_stats{$stat}{'reads_unmapped'}; 
     }
