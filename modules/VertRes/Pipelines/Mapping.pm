@@ -55,6 +55,9 @@ our $actions = [ { name     => 'split',
                    requires => \&cleanup_requires, 
                    provides => \&cleanup_provides }];
 
+#*** currently the bsub_opts are for bwa, don't know how to mix in those for
+#    ssaha, or should really change these depending on the mapper...
+#    select[type==X86_64] rusage[tmp=35000]
 our %options = (bsub_opts => "-q normal -M5000000 -R 'select[mem>5000] rusage[mem=5000]'",
                 sequence_index => '/nfs/sf8/G1K/misc/sequence.index',
                 do_cleanup => 0,
@@ -133,7 +136,15 @@ sub _require_fastqs {
 
 sub split_provides {
     my ($self, $lane_path) = @_;
-    my @provides = ('.split_complete');
+    
+    my @provides;
+    
+    foreach my $ended ('se', 'pe') {
+        if ($self->_get_read_args($lane_path, $ended)) {
+            push(@provides, '.split_complete_'.$ended);
+        }
+    }
+    
     return \@provides;
 }
 
@@ -150,17 +161,23 @@ sub split_provides {
 sub split {
     my ($self, $lane_path, $action_lock) = @_;
     
-    my @read_args = $self->_get_read_args($lane_path);
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
     my $chunk_size = $self->{chunk_size};
-    my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name);
-    my $complete_file = $self->{io}->catfile($lane_path, '.split_complete');
-    my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}.'split.pl');
     
-    # run mapping in an LSF call to a temp script (escaping a perl -e is a bitch)
-    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
-    print $scriptfh qq{
+    # run split in an LSF call to a temp script;
+    # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
+    # independantly.
+    foreach my $ended ('se', 'pe') {
+        my $these_read_args = $self->_get_read_args($lane_path, $ended) || next;
+        my @these_read_args = @{$these_read_args};
+        
+        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended);
+        my $complete_file = $self->{io}->catfile($lane_path, '.split_complete_'.$ended);
+        my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}."split_$ended.pl");
+        
+        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+        print $scriptfh qq{
 use strict;
 use $mapper_class;
 use VertRes::IO;
@@ -168,7 +185,7 @@ use VertRes::IO;
 my \$mapper = $mapper_class->new(verbose => $verbose);
 
 # split
-my \$splits = \$mapper->split_fastq(@read_args,
+my \$splits = \$mapper->split_fastq(@these_read_args,
                                     split_dir => '$split_dir',
                                     chunk_size => $chunk_size);
 
@@ -182,10 +199,11 @@ print \$fh \$splits, "\n";
 \$io->close;
 
 exit;
-    };
-    close $scriptfh;
-    
-    LSF::run($action_lock, $lane_path, $self->{prefix}.'split', $self, qq{perl -w $script_name});
+        };
+        close $scriptfh;
+        
+        LSF::run($action_lock, $lane_path, $self->{prefix}.'split_'.$ended, $self, qq{perl -w $script_name});
+    }
     
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete
@@ -193,7 +211,8 @@ exit;
 }
 
 sub _get_read_args {
-    my ($self, $lane_path) = @_;
+    my ($self, $lane_path, $ended) = @_;
+    ($ended && ($ended eq 'se' || $ended eq 'pe')) || $self->throw("bad ended arg");
     
     # get the fastq filenames
     # *** currently HierarchyUtilities::getFastqInfo tells me what fastq files
@@ -201,14 +220,20 @@ sub _get_read_args {
     my @fastq_info = @{HierarchyUtilities::getFastqInfo($lane_path)};
     my @read_args;
     if ($fastq_info[0]->[0]) {
-        @read_args = ("read0 => '".$self->{io}->catfile($lane_path, $fastq_info[0]->[0])."'");
+        $read_args[0] = ["read0 => '".$self->{io}->catfile($lane_path, $fastq_info[0]->[0])."'"];
     }
-    if ($fastq_info[1]->[0]) {
-        push(@read_args, ("read1 => '".$self->{io}->catfile($lane_path, $fastq_info[1]->[0])."', ",
-                          "read2 => '".$self->{io}->catfile($lane_path, $fastq_info[2]->[0])."'"));
+    if ($fastq_info[1]->[0] && $fastq_info[2]->[0]) {
+        $read_args[1] = ["read1 => '".$self->{io}->catfile($lane_path, $fastq_info[1]->[0])."', ",
+                         "read2 => '".$self->{io}->catfile($lane_path, $fastq_info[2]->[0])."'"];
     }
+    @read_args || $self->throw("$lane_path had no compatible set of fastq files!");
     
-    return @read_args;
+    if ($ended eq 'se') {
+        return $read_args[0];
+    }
+    elsif ($ended eq 'pe') {
+        return $read_args[1];
+    }
 }
 
 =head2 map_requires
@@ -229,7 +254,13 @@ sub map_requires {
     # we require the .bwt so that multiple lanes during 'map' action don't all
     # try and create the .bwt at once automatically if it is missing; could add
     # an index action before map action to solve this...
-    push(@requires, '.split_complete', $lane_info{fa_ref}, $lane_info{fa_ref}.'.bwt');
+    push(@requires, $lane_info{fa_ref}, $lane_info{fa_ref}.'.bwt', $lane_info{fai_ref});
+    
+    foreach my $ended ('se', 'pe') {
+        if ($self->_get_read_args($lane_path, $ended)) {
+            push(@requires, '.split_complete_'.$ended);
+        }
+    }
     
     return \@requires;
 }
@@ -247,7 +278,13 @@ sub map_requires {
 sub map_provides {
     my ($self, $lane_path) = @_;
     
-    my @provides = ($self->{io}->catfile($lane_path, '.mapping_complete'));
+    my @provides;
+    
+    foreach my $ended ('se', 'pe') {
+        if ($self->_get_read_args($lane_path, $ended)) {
+            push(@provides, '.mapping_complete_'.$ended);
+        }
+    }
     
     return \@provides;
 }
@@ -271,32 +308,36 @@ sub map {
     my %lane_info = %{HierarchyUtilities::lane_info($lane_path)};
     my $ref_fa = $lane_info{fa_ref} || $self->throw("the reference fasta wasn't known for $lane_path");
     
-    my @read_args = $self->_get_read_args($lane_path);
-    
-    # get the number of splits
-    my $num_of_splits = $self->_num_of_splits($lane_path);
-    my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name);
-    
-    # run mapping of each split in LSF calls to temp scripts
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
     my $sequence_index = $self->{sequence_index};
     
-    foreach my $split (1..$num_of_splits) {
-        my $sam_file = $self->{io}->catfile($lane_path, $split_dir_name, $split.'.raw.sam');
-        my $bam_file = $self->{io}->catfile($lane_path, $split_dir_name, $split.'.raw.sorted.bam');
-        my $script_name = $self->{io}->catfile($lane_path, $split_dir_name, $self->{prefix}.$split.'.map.pl');
+    # run mapping of each split in LSF calls to temp scripts;
+    # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
+    # independantly.
+    foreach my $ended ('se', 'pe') {
+        my $these_read_args = $self->_get_read_args($lane_path, $ended) || next;
+        my @these_read_args = @{$these_read_args};
         
-        my @split_read_args = ();
-        foreach my $read_arg (@read_args) {
-            my $split_read_arg = $read_arg;
-            $split_read_arg =~ s/\.f[^.]+(?:\.gz)?('(?:, )?)$/.$split.fastq$1/;
-            $split_read_arg =~ s/\/([^\/]+)$/\/$split_dir_name\/$1/;
-            push(@split_read_args, $split_read_arg);
-        }
+        # get the number of splits
+        my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
+        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended);
         
-        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
-        print $scriptfh qq{
+        foreach my $split (1..$num_of_splits) {
+            my $sam_file = $self->{io}->catfile($split_dir, $split.'.raw.sam');
+            my $bam_file = $self->{io}->catfile($split_dir, $split.'.raw.sorted.bam');
+            my $script_name = $self->{io}->catfile($split_dir, $self->{prefix}.$split.'.map.pl');
+            
+            my @split_read_args = ();
+            foreach my $read_arg (@these_read_args) {
+                my $split_read_arg = $read_arg;
+                $split_read_arg =~ s/\.f[^.]+(?:\.gz)?('(?:, )?)$/.$split.fastq$1/;
+                $split_read_arg =~ s/\/([^\/]+)$/\/${split_dir_name}_$ended\/$1/;
+                push(@split_read_args, $split_read_arg);
+            }
+            
+            open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+            print $scriptfh qq{
 use strict;
 use $mapper_class;
 
@@ -338,10 +379,11 @@ unless (-s '$bam_file') {
 }
 
 exit;
-        };
-        close $scriptfh;
-        
-        LSF::run($action_lock, $lane_path, $self->{prefix}.'map', $self, qq{perl -w $script_name});
+            };
+            close $scriptfh;
+            
+            LSF::run($action_lock, $lane_path, $self->{prefix}.'map_'.$ended, $self, qq{perl -w $script_name});
+        }
     }
     
     # we've only submitted to LSF, so it won't have finished; we always return
@@ -350,10 +392,10 @@ exit;
 }
 
 sub _num_of_splits {
-    my ($self, $lane_path) = @_;
+    my ($self, $lane_path, $ended) = @_;
     
     # get the number of splits
-    my $split_file = $self->{io}->catfile($lane_path, '.split_complete');
+    my $split_file = $self->{io}->catfile($lane_path, '.split_complete_'.$ended);
     my $io = VertRes::IO->new(file => $split_file);
     my $split_fh = $io->fh;
     my $splits = <$split_fh>;
@@ -376,13 +418,18 @@ sub _num_of_splits {
 sub merge_and_stat_requires {
     my ($self, $lane_path) = @_;
     
-    # get the number of splits
-    my $num_of_splits = $self->_num_of_splits($lane_path);
-    my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name);
-    
     my @requires;
-    foreach my $split (1..$num_of_splits) {
-        push(@requires, $self->{io}->catfile($lane_path, $split_dir_name, $split.'.raw.sorted.bam'));
+    
+    foreach my $ended ('se', 'pe') {
+        $self->_get_read_args($lane_path, $ended) || next;
+        
+        # get the number of splits
+        my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
+        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended);
+        
+        foreach my $split (1..$num_of_splits) {
+            push(@requires, $self->{io}->catfile($split_dir, $split.'.raw.sorted.bam'));
+        }
     }
     
     return \@requires;
@@ -400,14 +447,21 @@ sub merge_and_stat_requires {
 
 sub merge_and_stat_provides {
     my ($self, $lane_path) = @_;
+    
     my @provides;
-    foreach my $file (qw(raw.sorted.bam rmdup.bam unmapped.bam)) {
-        push(@provides, $file);
+    
+    foreach my $ended ('se', 'pe') {
+        $self->_get_read_args($lane_path, $ended) || next;
         
-        foreach my $suffix ('bamstat', 'flagstat') {
-            push(@provides, $file.'.'.$suffix);
+        foreach my $file ("${ended}_raw.sorted.bam", "${ended}_rmdup.bam", "${ended}_unmapped.bam") {
+            push(@provides, $file);
+            
+            foreach my $suffix ('bamstat', 'flagstat') {
+                push(@provides, $file.'.'.$suffix);
+            }
         }
     }
+    
     return \@provides;
 }
 
@@ -429,24 +483,37 @@ sub merge_and_stat {
     
     # setup filenames etc. we'll use within our temp script
     my $mapper_class = $self->{mapper_class};
-    my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}.'merge_and_stat.pl');
     my $verbose = $self->verbose;
     
-    my @bams = @{$self->merge_and_stat_requires($lane_path)};
-    
-    my $bam_file = $self->{io}->catfile($lane_path, 'raw.sorted.bam');
-    my $rmdup_file = $self->{io}->catfile($lane_path, 'rmdup.bam');
-    my $unmapped_out = $self->{io}->catfile($lane_path, 'unmapped.bam');
-    my @stat_files;
-    foreach my $file (qw(raw.sorted.bam rmdup.bam unmapped.bam)) {
-        foreach my $suffix ('bamstat', 'flagstat') {
-            push(@stat_files, $self->{io}->catfile($lane_path, $file.'.'.$suffix));
+    # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
+    # independantly.
+    foreach my $ended ('se', 'pe') {
+        $self->_get_read_args($lane_path, $ended) || next;
+        
+        my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}."merge_and_stat_$ended.pl");
+        
+        # get the input bams that need merging
+        my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
+        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended);
+        my @bams;
+        foreach my $split (1..$num_of_splits) {
+            push(@bams, $self->{io}->catfile($split_dir, $split.'.raw.sorted.bam'));
         }
-    }
-    
-    # run the multiple steps required for this in an LSF call to a temp script
-    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
-    print $scriptfh qq{
+        
+        # define the output files
+        my $bam_file = $self->{io}->catfile($lane_path, "${ended}_raw.sorted.bam");
+        my $rmdup_file = $self->{io}->catfile($lane_path, "${ended}_rmdup.bam");
+        my $unmapped_out = $self->{io}->catfile($lane_path, "${ended}_unmapped.bam");
+        my @stat_files;
+        foreach my $file ("${ended}_raw.sorted.bam", "${ended}_rmdup.bam", "${ended}_unmapped.bam") {
+            foreach my $suffix ('bamstat', 'flagstat') {
+                push(@stat_files, $self->{io}->catfile($lane_path, $file.'.'.$suffix));
+            }
+        }
+        
+        # run the multiple steps required for this in an LSF call to a temp script
+        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+        print $scriptfh qq{
 use strict;
 use $mapper_class;
 use VertRes::Wrapper::samtools;
@@ -496,10 +563,11 @@ unless (\$num_present == ($#stat_files + 1)) {
 }
 
 exit;
-    };
-    close $scriptfh;
-    
-    LSF::run($action_lock, $lane_path, $self->{prefix}.'merge_and_stat', $self, qq{perl -w $script_name});
+        };
+        close $scriptfh;
+        
+        LSF::run($action_lock, $lane_path, $self->{prefix}.'merge_and_stat_'.$ended, $self, qq{perl -w $script_name});
+    }
     
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete
@@ -554,19 +622,18 @@ sub cleanup {
     my ($self, $lane_path, $action_lock) = @_;
     return $self->{Yes} unless $self->{do_cleanup};
     
-    my @sais = $self->{io}->get_filepaths($lane_path, suffix => 'sai');
-    foreach my $sai (@sais) {
-        unlink($sai);
+    my $prefix = $self->{prefix};
+    
+    foreach my $file (qw(log
+                         split_se.e split_se.o split_se.pl split_pe.e split_pe.o split_pe.pl
+                         map_se.e map_se.o map_pe.e map_pe.o
+                         merge_and_stat_se.e merge_and_stat_se.o merge_and_stat_se.pl
+                         merge_and_stat_pe.e merge_and_stat_pe.o merge_and_stat_pe.pl)) {
+        unlink($self->{io}->catfile($lane_path, $prefix.$file));
     }
     
-    foreach my $file (qw(_log
-                         _split.e _split.o _split.pl
-                         _map.e _map.o _map.pl
-                         _merge_and_stat.e _merge_and_stat.o _merge_and_stat.pl)) {
-        unlink($self->{io}->catfile($lane_path, $file));
-    }
-    
-    $self->{io}->rmtree($self->{io}->catfile($lane_path, 'split'));
+    $self->{io}->rmtree($self->{io}->catfile($lane_path, 'split_se'));
+    $self->{io}->rmtree($self->{io}->catfile($lane_path, 'split_pe'));
     
     return $self->{Yes};
 }
@@ -574,20 +641,24 @@ sub cleanup {
 sub is_finished {
     my ($self, $lane_path, $action) = @_;
     
-    # so that we can delete the split dir at the end of the pipeline, and not
+    # so that we can delete the split dir(s) at the end of the pipeline, and not
     # redo the map action when it sees there are no split bams
     if ($action->{name} eq 'map') {
-        my $done_file = $self->{io}->catfile($lane_path, '.mapping_complete');
-        
-        my $done_bams = 0;
-        my $num_of_splits = $self->_num_of_splits($lane_path);
-        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name);
-        foreach my $split (1..$num_of_splits) {
-            $done_bams += (-s $self->{io}->catfile($lane_path, $split_dir_name, $split.'.raw.sorted.bam')) ? 1 : 0;
-        }
-        
-        if (! -e $done_file && $done_bams == $num_of_splits) {
-            system("touch $done_file");
+        foreach my $ended ('se', 'pe') {
+            $self->_get_read_args($lane_path, $ended) || next;
+            
+            my $done_file = $self->{io}->catfile($lane_path, '.mapping_complete_'.$ended);
+            
+            my $done_bams = 0;
+            my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
+            my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended);
+            foreach my $split (1..$num_of_splits) {
+                $done_bams += (-s $self->{io}->catfile($split_dir, $split.'.raw.sorted.bam')) ? 1 : 0;
+            }
+            
+            if (! -e $done_file && $done_bams == $num_of_splits) {
+                system("touch $done_file");
+            }
         }
     }
     elsif ($action->{name} eq 'cleanup') {
