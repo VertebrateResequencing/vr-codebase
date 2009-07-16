@@ -1241,7 +1241,7 @@ sub pileup2Intervals
 		{
 			my @s = split( /\t/, $_ );
 			
-			if( $currentChr == -1 || $currentChr != $s[ 0 ] )
+			if( $currentChr == -1 || $currentChr ne $s[ 0 ] )
 			{
 				$currentChr = $s[ 0 ];
 				$currentStartPos = 1;
