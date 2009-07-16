@@ -1233,12 +1233,20 @@ sub pileup2Intervals
 	my $currentStartPos = 1;
 	my $c = 0;
 	
+	my $currentChr = -1;
 	while( <$pfh> )
 	{
 		chomp;
 		if( $_ =~ /^.+\t\d+\t\*\t.*/ )
 		{
 			my @s = split( /\t/, $_ );
+			
+			if( $currentChr == -1 || $currentChr != $s[ 0 ] )
+			{
+				$currentChr = $s[ 0 ];
+				$currentStartPos = 1;
+			}
+			
 			my $stop = $s[ 1 ] - 20;
 			
 			if( $stop > $currentStartPos )
