@@ -1226,13 +1226,14 @@ sub pileup2Intervals
 	{
 		open( $pfh, $pileup ) or die "Cannot open pileup file: $!\n";
 	}
+	
 	open( my $out, ">$output" ) or die "Cannot create output file: $!\n";
 	my $currentStartPos = 1;
 	my $c = 0;
 	while( <$pfh> )
 	{
 		chomp;
-		if( $_ =~ /^\d+\t\d+\*\t.*/ )
+		if( $_ =~ /^\d+\t\d+\t\*\t.*/ )
 		{
 			my @s = split( /\t/, $_ );
 			my $stop = $s[ 1 ] - 20;
