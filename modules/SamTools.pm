@@ -1220,11 +1220,11 @@ sub pileup2Intervals
 	my $pfh;
 	if( $pileup =~ /\.gz$/ )
 	{
-		open( my $pfh, "gunzip -c $pileup |" ) or die "Cannot open pileup file: $!\n";
+		open( $pfh, "gunzip -c $pileup |" ) or die "Cannot open pileup file: $!\n";
 	}
 	else
 	{
-		open( my $pfh, $pileup ) or die "Cannot open pileup file: $!\n";
+		open( $pfh, $pileup ) or die "Cannot open pileup file: $!\n";
 	}
 	open( my $out, ">$output" ) or die "Cannot create output file: $!\n";
 	my $currentStartPos = 1;
