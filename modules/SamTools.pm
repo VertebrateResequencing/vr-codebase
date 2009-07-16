@@ -1240,9 +1240,13 @@ sub pileup2Intervals
 		{
 			my @s = split( /\t/, $_ );
 			my $stop = $s[ 1 ] - 20;
-			print $out qq/$s[ 0 ]\t$currentStartPos\t$stop\t+\ttarget_$c\n/;
-			$currentStartPos = $s[ 1 ] + 20;
-			$c ++;
+			
+			if( $stop > $currentStartPos )
+			{
+				print $out qq/$s[ 0 ]\t$currentStartPos\t$stop\t+\ttarget_$c\n/;
+				$currentStartPos = $s[ 1 ] + 20;
+				$c ++;
+			}
 		}
 	}
 	close( $pfh );
