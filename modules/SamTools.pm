@@ -1236,7 +1236,7 @@ sub pileup2Intervals
 	while( <$pfh> )
 	{
 		chomp;
-		if( $_ =~ /^\d+\t\d+\t\*\t.*/ )
+		if( $_ =~ /^.+\t\d+\t\*\t.*/ )
 		{
 			my @s = split( /\t/, $_ );
 			my $stop = $s[ 1 ] - 20;
