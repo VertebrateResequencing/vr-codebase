@@ -1217,6 +1217,7 @@ sub pileup2Intervals
 	croak "Cant find pileup file: $pileup" unless -f $pileup;
 	croak "Cant find sam header file: $sam_header" unless -f $sam_header;
 	
+	my $pfh;
 	if( $pileup =~ /\.gz$/ )
 	{
 		open( my $pfh, "gunzip -c $pileup |" ) or die "Cannot open pileup file: $!\n";
