@@ -49,6 +49,7 @@ sub ssaha2samUnpaired
 	my $fastq1 = shift;
 	my $cigar1 = shift;
 	my $read_group = shift;
+	$read_group = $read_group ? "\tRG:Z:".$read_group : '';
 	my $sam = shift;
 	
 	croak "Cant find fastq1 file\n" unless -f $fastq1;
@@ -105,7 +106,7 @@ sub ssaha2samUnpaired
 				$seq1 = AssemblyTools::revCompDNA( $seq1 ) if( $s1[ 4 ] eq '-' );
 				$quals1 = reverse( $quals1 ) if( $s1[ 4 ] eq '-' );
 				
-				print SAM "$name1\t".$flag."\t".$s1[ 5 ]."\t".$s1[ 6 ]."\t".$mapScore."\t".$samCigar1."\t*\t0\t0\t".$seq1."\t".$quals1."\tRG:Z:".$read_group."\n";
+				print SAM "$name1\t".$flag."\t".$s1[ 5 ]."\t".$s1[ 6 ]."\t".$mapScore."\t".$samCigar1."\t*\t0\t0\t".$seq1."\t".$quals1.$read_group."\n";
 				$numReadsWritten ++;
 			}
 			else
@@ -138,6 +139,7 @@ sub ssaha2samPaired
 	my $cigar2 = shift;
 	my $insert = shift;
 	my $read_group = shift;
+	$read_group = $read_group ? "\tRG:Z:".$read_group : '';
 	my $sam = shift;
 	
 	croak "Cant find fastq1 file\n" unless -f $fastq1;
@@ -232,16 +234,16 @@ sub ssaha2samPaired
 			
 			if( $mapScore1 > -1 && $mapScore2 > -1 )
 			{
-				print SAM "$name1\t".$flags[ 0 ]."\t".$s1[ 5 ]."\t".$s1[ 6 ]."\t".$mapScore1."\t".$samCigar1."\t".($s2[ 5 ] eq $s1[ 5 ] ? "=" : $s2[ 5 ])."\t".$s2[ 6 ]."\t".( determineInsertSize( $s1[ 6], $s1[ 7 ], $s2[ 6 ], $s2[ 7 ] ) )."\t".$seq1."\t".$quals1."\tRG:Z:".$read_group."\n";
+				print SAM "$name1\t".$flags[ 0 ]."\t".$s1[ 5 ]."\t".$s1[ 6 ]."\t".$mapScore1."\t".$samCigar1."\t".($s2[ 5 ] eq $s1[ 5 ] ? "=" : $s2[ 5 ])."\t".$s2[ 6 ]."\t".( determineInsertSize( $s1[ 6], $s1[ 7 ], $s2[ 6 ], $s2[ 7 ] ) )."\t".$seq1."\t".$quals1.$read_group."\n";
 				$numReadsWritten ++;
-				print SAM "$name2\t".$flags[ 1 ]."\t".$s2[ 5 ]."\t".$s2[ 6 ]."\t".$mapScore2."\t".$samCigar2."\t".($s1[ 5 ] eq $s2[ 5 ] ? "=" : $s1[ 5 ])."\t".$s1[ 6 ]."\t".( determineInsertSize( $s1[ 6 ], $s1[ 7 ], $s2[ 6 ], $s2[ 7 ] ) )."\t".$seq2."\t".$quals2."\tRG:Z:".$read_group."\n";
+				print SAM "$name2\t".$flags[ 1 ]."\t".$s2[ 5 ]."\t".$s2[ 6 ]."\t".$mapScore2."\t".$samCigar2."\t".($s1[ 5 ] eq $s2[ 5 ] ? "=" : $s1[ 5 ])."\t".$s1[ 6 ]."\t".( determineInsertSize( $s1[ 6 ], $s1[ 7 ], $s2[ 6 ], $s2[ 7 ] ) )."\t".$seq2."\t".$quals2.$read_group."\n";
 				$numReadsWritten ++;
 				next;
 			}
 			elsif( $mapScore1 > -1 ) #just one read aligns
 			{
 				$flags[ 0 ] += hex( "0x0008" );
-				print SAM "$name1\t".$flags[ 0 ]."\t".$s1[ 5 ]."\t".$s1[ 6 ]."\t".$mapScore1."\t".$samCigar1."\t*\t0\t0\t".$seq1."\t".$quals1."\tRG:Z:".$read_group."\n";
+				print SAM "$name1\t".$flags[ 0 ]."\t".$s1[ 5 ]."\t".$s1[ 6 ]."\t".$mapScore1."\t".$samCigar1."\t*\t0\t0\t".$seq1."\t".$quals1.$read_group."\n";
 				$numReadsWritten ++;
 				$numReadsDiscarded ++;
 				next;
@@ -249,7 +251,7 @@ sub ssaha2samPaired
 			elsif( $mapScore2 > -1 )
 			{
 				$flags[ 1 ] += hex( "0x0008" );
-				print SAM "$name2\t".$flags[ 1 ]."\t".$s2[ 5 ]."\t".$s2[ 6 ]."\t".$mapScore2."\t".$samCigar2."\t*\t0\t0\t".$seq2."\t".$quals2."\tRG:Z:".$read_group."\n";
+				print SAM "$name2\t".$flags[ 1 ]."\t".$s2[ 5 ]."\t".$s2[ 6 ]."\t".$mapScore2."\t".$samCigar2."\t*\t0\t0\t".$seq2."\t".$quals2.$read_group."\n";
 				$numReadsWritten ++;
 				$numReadsDiscarded ++;
 				next;
@@ -274,7 +276,7 @@ sub ssaha2samPaired
 				$seq1 = AssemblyTools::revCompDNA( $seq1 ) if( $s1[ 4 ] eq '-' );
 				$quals1 = reverse( $quals1 ) if( $s1[ 4 ] eq '-' );
 				
-				print SAM "$name1\t".$flag."\t".$s1[ 5 ]."\t".$s1[ 6 ]."\t".$mapScore."\t".$samCigar1."\t*\t0\t0\t".$seq1."\t".$quals1."\tRG:Z:".$read_group."\n";
+				print SAM "$name1\t".$flag."\t".$s1[ 5 ]."\t".$s1[ 6 ]."\t".$mapScore."\t".$samCigar1."\t*\t0\t0\t".$seq1."\t".$quals1.$read_group."\n";
 				$numReadsWritten ++;
 			}
 			else
@@ -312,7 +314,7 @@ sub ssaha2samPaired
 				$seq2 = AssemblyTools::revCompDNA( $seq2 ) if( $s2[ 4 ] eq '-' );
 				$quals2 = reverse( $quals2 ) if( $s2[ 4 ] eq '-' );
 				
-				print SAM "$name2\t".$flag."\t".$s2[ 5 ]."\t".$s2[ 6 ]."\t".$mapScore."\t".$samCigar2."\t*\t0\t0\t".$seq2."\t".$quals2."\tRG:Z:".$read_group."\n";
+				print SAM "$name2\t".$flag."\t".$s2[ 5 ]."\t".$s2[ 6 ]."\t".$mapScore."\t".$samCigar2."\t*\t0\t0\t".$seq2."\t".$quals2.$read_group."\n";
 				$numReadsWritten ++;
 			}
 			else
