@@ -75,27 +75,57 @@ sub parseForMouseInsertionSites {
 	  ( $$ssaha_hits_hash_ref{$curr_seq}[0]->{score} - $$ssaha_hits_hash_ref{$curr_seq}[1]->{score} )
 	    - ( 2 * scalar @{$$ssaha_hits_hash_ref{$curr_seq}} );
 
-	# if the second best score is less than the threshold score
-	# flag the best score as being unique
-	if ( $$ssaha_hits_hash_ref{$curr_seq}[1]->{score} < $SSAHA_SCORE_THRESHOLD ) {
-	  $chr = $best_hit->{'s_name'};
-	  $results_hash{$curr_seq}{status} = 'unique_alignment';
+
+	# loop through all the reported alignments to find one that also
+	# maps from the first nt of the trace (i.e. should ensure that the
+	# neighbouring nts are a TA site).
+
+	# heavily assumes that the ssaha hits are returned sorted on score
+	my $best_matching_hit = 0;
+
+	for ( my $i = 1; $i < $num_of_alignments; $i++ ) {
+	  if ( $$ssaha_hits_hash_ref{$curr_seq}[$i]->{'direction'} eq 'F' &&
+	       $$ssaha_hits_hash_ref{$curr_seq}[$i]->{'q_start'} == 1 ) {
+	    $best_matching_hit = $i;
+	    last;
+	  }
+	  elsif ( $$ssaha_hits_hash_ref{$curr_seq}[$i]->{'direction'} eq 'C' &&
+		  $$ssaha_hits_hash_ref{$curr_seq}[$i]->{'q_end'} == 1 ) {
+	    $best_matching_hit = $i;
+	    last;
+	  }
 	}
 
-	# if the difference between the best and second best hit is
-	# above some threshold, again flag the hit as being unique
-	elsif ( $$ssaha_hits_hash_ref{$curr_seq}[0]->{score} >=
-		$SSAHA_FOLD_DIFFERENCE * $$ssaha_hits_hash_ref{$curr_seq}[1]->{score}) {
 
-	  $chr = $best_hit->{'s_name'};
-	  $results_hash{$curr_seq}{status} = 'unique_alignment';
+	# if another alignment begins from nt 1 then check how good that hit is
+	if ( $best_matching_hit != 0 ) {
+	  # if the second best score is less than the threshold score
+	  # flag the best score as being unique
+	  if ( $$ssaha_hits_hash_ref{$curr_seq}[$best_matching_hit]->{score} < $SSAHA_SCORE_THRESHOLD ) {
+	    $chr = $best_hit->{'s_name'};
+	    $results_hash{$curr_seq}{status} = 'unique_alignment';
+	  }
+
+	  # if the difference between the best and second best hit is
+	  # above some threshold, again flag the hit as being unique
+	  elsif ( $$ssaha_hits_hash_ref{$curr_seq}[0]->{score} >=
+		  $SSAHA_FOLD_DIFFERENCE * $$ssaha_hits_hash_ref{$curr_seq}[$best_matching_hit]->{score}) {
+
+	    $chr = $best_hit->{'s_name'};
+	    $results_hash{$curr_seq}{status} = 'unique_alignment';
+	  }
+
+	  # if the second best hit, is 'close' then flag the trace as
+	  # having multiple alignments
+	  else {
+	    $chr = "MULTI";
+	    $results_hash{$curr_seq}{status} = 'multiple_alignments';
+	  }
 	}
-
-	# if the second best hit, is 'close' then flag the trace as
-	# having multiple alignments
+	# otherwise flag the best alignment as being unique
 	else {
-	  $chr = "MULTI";
-	  $results_hash{$curr_seq}{status} = 'multiple_alignments';
+	    $chr = $best_hit->{'s_name'};
+	    $results_hash{$curr_seq}{status} = 'unique_alignment';
 	}
       }
 
