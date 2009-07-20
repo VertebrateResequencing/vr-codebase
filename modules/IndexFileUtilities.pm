@@ -368,7 +368,7 @@ sub downloadFastqFiles
 		chomp;
 		my @s = split( /\t/, $_ );
 		
-		if( $s[ 0 ] =~ /.*\.fastq.gz/ )
+		if( $s[ 0 ] =~ /.*\.fastq.gz/ || $s[ 0 ] =~ /.*\.bam/ )
 		{
 			if( ! -f basename( $s[ 0 ] ) )
 			{
