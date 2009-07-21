@@ -974,6 +974,7 @@ sub collect_detailed_bam_stats
             'reads_unmapped'    => $$raw_stats{$stat}{'reads_unmapped'},
             'bases_total'       => $$raw_stats{$stat}{'bases_total'},
             'bases_mapped'      => $$raw_stats{$stat}{'bases_mapped'},
+            'num_mismatches'    => $$raw_stats{$stat}{'num_mismatches'},
 
             'insert_size' => 
             {
