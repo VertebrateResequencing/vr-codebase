@@ -1113,7 +1113,7 @@ sub verifyMd5Outputs
 		chomp;
 		$_ =~ /(.*)\s+(.*)/;
 		
-		$md5{ $1 } = $2;
+		$md5{ $1 } = basename( $2 );
 	}
 	close( MD5 );
 	
@@ -1124,7 +1124,7 @@ sub verifyMd5Outputs
 		
 		$_ =~ /(.*)\s+(.*)/;
 		my $md5_ = $1;
-		my $file = $2;
+		my $file = basename( $2 );
 		
 		if( ! defined( $md5{ $md5_ } ) )
 		{

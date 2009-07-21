@@ -731,6 +731,10 @@ sub parse_bam_line
         {
             $$out{'RG'} = $vals[1];
         }
+		elsif( $key eq 'NM' )
+		{
+			$$out{'NM'} = $vals[ 1 ];
+		}
     }
     return $out;
 }
@@ -768,7 +772,7 @@ sub parse_bam_line
                         bases_total
                         bases_mapped
                         duplication
-
+						num_mismatches (if defined in bam file)
 =cut
 
 sub collect_detailed_bam_stats
@@ -835,7 +839,7 @@ sub collect_detailed_bam_stats
         my $cigar = $$data{'cigar'};
         my $isize = $$data{'isize'};
         my $seq   = $$data{'seq'};
-
+		
         my $seq_len = length($seq);
         for my $stat (@stats)
         {
