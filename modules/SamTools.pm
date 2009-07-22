@@ -1314,6 +1314,7 @@ sub makeBamStat
 			$_ =~ /\t\@RG:/;
 			print "Reading Header: $_\n";
 			my $ref = parse_bam_header_line( $_ );
+			foreach( keys( %$ref ) ){print $_."\n";}
 			$$laneMeta{ $$ref{ 'RG' } } = $ref;
 		}
 	}
