@@ -1301,7 +1301,7 @@ sub makeBamStat
 	my $stats = collect_detailed_bam_stats( $bam_file, $fai_file, \%opts );
 	
 	#get the study id
-	my $study = `grep `;
+	#my $study = `grep `;
 	
 	open( my $bfh, "samtools view -H $bam_file|" ) or $!;
 	my $laneMeta = {};
