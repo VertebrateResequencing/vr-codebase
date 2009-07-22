@@ -1303,7 +1303,7 @@ sub makeBamStat
 	#get the study id
 	#my $study = `grep `;
 	
-	open( my $bfh, "samtools view -H $bam_file" ) or $!;
+	open( my $bfh, "samtools view -H $bam_file|" ) or $!;
 	my $laneMeta = {};
 	while( <$bfh> )
 	{
@@ -1312,7 +1312,7 @@ sub makeBamStat
 		{
 			$_ =~ /\t\@RG:/;
 			print "Reading Header: $_\n";
-			my $ref = parse_bam_header_line( $_ );
+			#my $ref = parse_bam_header_line( $_ );
 			#$$laneMeta{ $$ref{ 'RG' } } = $ref;
 		}
 	}
