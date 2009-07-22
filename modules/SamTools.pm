@@ -1298,8 +1298,8 @@ sub makeBamStat
 	my $output = shift;
 	
 	my %opts = ( 'do_chrm' => 0, 'do_gc_content' => 0, 'do_rmdup' => 0 );
-	#print "Collecting bam stats.....\n";
-	#my $stats = collect_detailed_bam_stats( $bam_file, $fai_file, \%opts );
+	print "Collecting bam stats.....\n";
+	my $stats = collect_detailed_bam_stats( $bam_file, $fai_file, \%opts );
 	
 	#get the study id
 	#my $study = `grep `;
@@ -1314,16 +1314,14 @@ sub makeBamStat
 			$_ =~ /\t\@RG:/;
 			print "Reading Header: $_\n";
 			my $ref = parse_bam_header_line( $_ );
-			foreach( keys( %$ref ) ){print $_."\n";}
 			$$laneMeta{ $$ref{ 'ID' } } = $ref;
 		}
 	}
 	close( $bfh );
-
+	
 	foreach( keys( %$laneMeta ) )
 	{
-		print "$_\n";
-		
+		print "$_\n" unless ! defined $$stats{ $_ };
 	}
 =pod
 	my $output = '';
