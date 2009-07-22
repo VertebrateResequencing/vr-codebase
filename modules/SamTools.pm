@@ -1314,17 +1314,17 @@ sub makeBamStat
 			$_ =~ /\t\@RG:/;
 			print "Reading Header: $_\n";
 			my $ref = parse_bam_header_line( $_ );
-			#$$laneMeta{ $$ref{ 'RG' } } = $ref;
+			$$laneMeta{ $$ref{ 'RG' } } = $ref;
 		}
 	}
 	close( $bfh );
-=pod	
+
 	foreach( keys( %$laneMeta ) )
 	{
 		print "$_\n";
 		
 	}
-
+=pod
 	my $output = '';
 	foreach( my $id ( keys( %$stats ) ) )
 	{
