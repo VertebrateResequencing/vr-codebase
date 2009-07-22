@@ -1309,7 +1309,7 @@ sub makeBamStat
 	while( <$bfh> )
 	{
 		chomp;
-		if( $_ =~ /^\@ZG/ )
+		if( $_ =~ /^\@RG/ )
 		{
 			$_ =~ /\t\@RG:/;
 			print "Reading Header: $_\n";
