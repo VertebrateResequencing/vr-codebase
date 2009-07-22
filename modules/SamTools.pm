@@ -1307,8 +1307,8 @@ sub makeBamStat
 	my $laneMeta = {};
 	while( <$bfh> )
 	{
-		chomp;
-		if( $_ =~ /^\@RG/ )
+		chomp;print $_;
+		if( $_ =~ /^\@ZG/ )
 		{
 			$_ =~ /\t\@RG:/;
 			print "Reading Header: $_\n";
@@ -1317,13 +1317,13 @@ sub makeBamStat
 		}
 	}
 	close( $bfh );
-	
+=pod	
 	foreach( keys( %$laneMeta ) )
 	{
 		print "$_\n";
 		
 	}
-=pod
+
 	my $output = '';
 	foreach( my $id ( keys( %$stats ) ) )
 	{
