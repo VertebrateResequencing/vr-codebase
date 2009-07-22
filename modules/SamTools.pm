@@ -1298,21 +1298,22 @@ sub makeBamStat
 	my $output = shift;
 	
 	my %opts = ( 'do_chrm' => 0, 'do_gc_content' => 0, 'do_rmdup' => 0 );
-	my $stats = collect_detailed_bam_stats( $bam_file, $fai_file, \%opts );
+	#print "Collecting bam stats.....\n";
+	#my $stats = collect_detailed_bam_stats( $bam_file, $fai_file, \%opts );
 	
 	#get the study id
 	#my $study = `grep `;
-	
+	print "Printing bam stats per RG....\n"
 	open( my $bfh, "samtools view -H $bam_file|" ) or die $!;
 	my $laneMeta = {};
 	while( <$bfh> )
 	{
-		chomp;print $_;
+		chomp;
 		if( $_ =~ /^\@ZG/ )
 		{
 			$_ =~ /\t\@RG:/;
 			print "Reading Header: $_\n";
-			#my $ref = parse_bam_header_line( $_ );
+			my $ref = parse_bam_header_line( $_ );
 			#$$laneMeta{ $$ref{ 'RG' } } = $ref;
 		}
 	}
