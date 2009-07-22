@@ -1303,7 +1303,7 @@ sub makeBamStat
 	
 	#get the study id
 	#my $study = `grep `;
-	print "Printing bam stats per RG....\n"
+	print "Printing bam stats per RG....\n";
 	open( my $bfh, "samtools view -H $bam_file|" ) or die $!;
 	my $laneMeta = {};
 	while( <$bfh> )
