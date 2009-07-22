@@ -1291,7 +1291,7 @@ sub pileup2Intervals
 =cut
 sub makeBamStat
 {
-	croak "Usage: makeBamStat bam_file fai_file seq_index output_file\n" unless @_ == 2;
+	croak "Usage: makeBamStat bam_file fai_file seq_index output_file\n" unless @_ == 4;
 	
 	my $bam_file = shift;
 	my $fai_file = shift;
