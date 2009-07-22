@@ -830,7 +830,7 @@ sub collect_detailed_bam_stats
             $$raw_stats{$$header{'ID'}}{'header'} = $header;
             next;
         }
-
+		
         # The @stats array is a convenient way how to reuse the same code for the total and individual
         #   statistics - we will always add the same numbers to 'total' and the ID.
         #
@@ -1278,6 +1278,61 @@ sub pileup2Intervals
     }
     close( $pfh );
     close( $out );
+}
+
+=head2 makeBamStat
+
+	Arg [1]    : bam file
+	Arg [2]    : output file
+	Example    : makeBamStat
+	Description: creates a bam stat file in the following tab-delimited format
+				Study	sample	platform	RG	mapped_bases	total_reads	mapped_reads	paired_reads	properly_paired_reads	num_mismatches	avg_mapped_bases	avg_insert	sd_insert
+	Returntype : none
+=cut
+sub makeBamStat
+{
+	croak "Usage: makeBamStat bam_file fai_file seq_index output_file\n" unless @_ == 2;
+	
+	my $bam_file = shift;
+	my $fai_file = shift;
+	my $output = shift;
+	
+	my %opts = ( 'do_chrm' => 0, 'do_gc_content' => 0, 'do_rmdup' => 0 );
+	my $stats = collect_detailed_bam_stats( $bam_file, $fai_file, \%opts );
+	
+	#get the study id
+	my $study = `grep `;
+	
+	open( my $bfh, "samtools view -H $bam_file|" ) or $!;
+	my $laneMeta = {};
+	while( <$bfh> )
+	{
+		chomp;
+		if( $_ =~ /^\@RG/ )
+		{
+			$_ =~ /\t\@RG:/;
+			my $ref = parse_bam_header_line( $_ );
+			$$laneMeta{ $$ref{ 'RG' } } = $ref;
+		}
+	}
+	close( $bfh );
+	
+	foreach( keys( %$laneMeta ) )
+	{
+		print "$_\n";
+		
+	}
+=pod
+	my $output = '';
+	foreach( my $id ( keys( %$stats ) ) )
+	{
+		$output .= qq[];
+	}
+	
+	open( my $fh, ">$output" ) or die "Cant create output $!";
+	print $fh qq[];
+	close( $fh );
+=cut
 }
 
 1;
