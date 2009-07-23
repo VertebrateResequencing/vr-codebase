@@ -431,7 +431,7 @@ sub getProjectDirectory
 	
 	my @s = split( $_ );
 	
-	if( $s[ 3 ] eq '' || $s[ 3 ] eq '' || $s[ 3 ] eq '' || $s[ 4 ] =~ /1000Genomes/ )
+	if( $s[ 3 ] eq 'SRP000031' || $s[ 3 ] eq 'SRP000032' || $s[ 3 ] eq 'SRP000033' || $s[ 4 ] =~ /1000Genomes/ )
 	{
 		my $samples_csv = $ENV{ 'G1K' }.'/ref/G1K_samples.txt';
 		
