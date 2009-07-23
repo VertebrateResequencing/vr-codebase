@@ -21,7 +21,6 @@ my $LSF_QUEUE = 'normal';
 
 =head1 SYNOPSIS
 
-function to import the DCC tab index files into the hierarchy
 
 =head1 ARGUMENTS
 
@@ -79,7 +78,7 @@ sub lane_info
 
         'insert_size' => 500,
     };
-
+	
     # This should be done differently in the future - the DB should tell us.
     if ( $$info{'project'} =~ /mouse/i ) 
     { 
@@ -172,49 +171,34 @@ sub lane_info
     return $info;
 }
 
+=head2 importExternalData
+
+  Arg [1]	: sequence index file
+  Arg [2]	: data hierarchy parent directory
+  Arg [3]	: mapping hierarchy parent directory
+  Arg [4]	: directory of fastq files
+  Arg [5]	: mode (link or copy)
+  Example	: importExternalData( 'sequence.index', '$G1K/MOUSE/DATA', '$G1K/MOUSE/MAPPING', '/lustre/data', 'link' );
+  Description: Imports the files listed in the sequence index file into an existing hierarchy.
+  Returntype : none
+
+=cut
 
 sub importExternalData
 {
-  croak "Usage: importExternalData populations/samples_csv DCC_index hierarchy_parent_directory mapping_hierarchy_directory fastq_directory link|copy" unless @_ == 6;
+  croak "Usage: importExternalData seq_index hierarchy_parent_directory mapping_hierarchy_directory fastq_directory link|copy" unless @_ == 5;
   
-  my $pop_csv = shift;
   my $index_file = shift;
   my $data_hierarchy_dir = abs_path(shift);
   my $mapping_hierarchy_dir = abs_path(shift);
   my $fastqDir = abs_path(shift);
   my $method = shift;
   
-  croak "Cant find populations_csv file" unless -f $pop_csv;
   croak "Cant find index file" unless -f $index_file;
   croak "Cant find fastq directory" unless -d $fastqDir;
   croak "Cant find data hierarchy parent directory" unless -d $data_hierarchy_dir;
   croak "Cant find mapping hierarchy parent directory" unless -d $mapping_hierarchy_dir;
   croak "Method of import not specified correctly: " unless $method eq "link" || $method eq "copy";
-  
-  my %study_vs_id = (
-      28911   => 'LowCov',  # pilot 1
-        28919   => 'Trio',    # pilot 2
-        28917   => 'Exon',    # pilot 3
-        'SRP000031'   => 'LowCov',    # pilot 1
-        'SRP000032'   => 'Trio',    # pilot 2
-        'SRP000033'   => 'Exon',    # pilot 3
-        'Pilot1'   => 'LowCov',    # pilot 1
-        'Pilot2'   => 'LowCov',    # pilot 1
-        'Pilot3'   => 'LowCov',    # pilot 1
-        );
-  
-  #read in the project spreadsheet with individuals
-  open( PCSV, $pop_csv ) or die "Failed to open population csv sheet: $!\n";
-  my %populations;
-  while( <PCSV> )
-  {
-    chomp;
-    next unless length( $_ ) > 0 && $_ !~ /^\s+$/ && $_ !~ /^,+$/;
-    
-    my @s = split( /,/, $_ );
-    $populations{ $s[ 1 ] } = $s[ 5 ];
-  }
-  close( PCSV );
   
   my %exp_read0;
   my %exp_read1;
@@ -232,6 +216,8 @@ sub importExternalData
     
     next if( $_ =~ /^\s+$/ || length( $_ ) == 0 || $_ =~ /^FASTQ_FILE/ );
     
+	my $project_directory = getProjectDirectory( $_ );
+	
     my @info = split( /\t/, $_ );
     
     if( $info[ 18 ] ne "PAIRED" && $info[ 18 ] ne "SINGLE" )
@@ -247,9 +233,6 @@ sub importExternalData
       exit;
       next;
     }
-    
-    croak "Cant find study for lane ID: $info[ 3 ]\n" if( ! defined $study_vs_id{ $info[ 3 ] } );
-    croak "Cant find population for lane ID: $info[ 9 ]\n" if( ! defined $populations{ $info[ 9 ] } );
     
     #check SRR is unique
     if( defined( $srrCount{ $info[ 2 ] } ) )
@@ -286,8 +269,8 @@ sub importExternalData
       }
     }
     
-    my $dpath = $data_hierarchy_dir.'/'.$study_vs_id{ $info[ 3 ] }.'-'.$populations{ $info[ 9 ] }.'/'.$info[ 9 ];
-    my $mpath = $mapping_hierarchy_dir.'/'.$study_vs_id{ $info[ 3 ] }.'-'.$populations{ $info[ 9 ] }.'/'.$info[ 9 ];
+    my $dpath = $data_hierarchy_dir.'/'.$project_directory.'/'.$info[ 9 ];
+    my $mpath = $mapping_hierarchy_dir.'/'.$project_directory.'/'.$info[ 9 ];
     
     #technology
     if( $info[ 12 ] =~ /454|roche/i )
@@ -431,6 +414,67 @@ sub importExternalData
     
     symlink( $pdirName.'/meta.info', $mdirName.'/meta.info' );
   }
+}
+
+=head2 getProjectDirectory
+
+  Arg [1]    : seq index line
+  Example    : getProjectDirectory( 'a seq index line string');
+  Description: Figures out what is the name of the project directory (includes a nice hack for G1K)
+  Returntype : string
+
+=cut
+
+sub getProjectDirectory
+{
+	croak "Usage: getProjectDirectory( 'seq_index_line' )" unless @_ == 1;
+	
+	my @s = split( $_ );
+	
+	if( $s[ 3 ] eq '' || $s[ 3 ] eq '' || $s[ 3 ] eq '' || $s[ 4 ] =~ /1000Genomes/ )
+	{
+		my $samples_csv = $ENV{ 'G1K' }.'/ref/G1K_samples.txt';
+		
+		croak "Cant find G1K samples csv file: $samples_csv\n" unless -f $samples_csv;
+		
+		my %study_vs_id = (
+			28911   => 'LowCov',  # pilot 1
+			28919   => 'Trio',    # pilot 2
+			28917   => 'Exon',    # pilot 3
+			'SRP000031'   => 'LowCov',    # pilot 1
+			'SRP000032'   => 'Trio',    # pilot 2
+			'SRP000033'   => 'Exon',    # pilot 3
+			'Pilot1'   => 'LowCov',    # pilot 1
+			'Pilot2'   => 'LowCov',    # pilot 1
+			'Pilot3'   => 'LowCov',    # pilot 1
+        );
+		
+		#read in the project spreadsheet with individuals
+		open( PCSV, $samples_csv ) or die "Failed to open population csv sheet: $!\n";
+		my %populations;
+		while( <PCSV> )
+		{
+			chomp;
+			next unless length( $_ ) > 0 && $_ !~ /^\s+$/ && $_ !~ /^,+$/;
+			
+			my @s = split( /,/, $_ );
+			$populations{ $s[ 1 ] } = $s[ 5 ];
+		}
+		close( PCSV );
+		
+		croak "Cant find study for lane ID: $s[ 3 ]\n" if( ! defined $study_vs_id{ $s[ 3 ] } );
+		croak "Cant find population for lane ID: $s[ 9 ]\n" if( ! defined $populations{ $s[ 9 ] } );
+		
+		return $study_vs_id{ $s[ 3 ] }.'-'.$populations{ $s[ 9 ] };
+	}
+	else
+	{
+		$s[ 4 ] =~ s/\W+/_/g;
+		
+		croak "Study name not set: $_\n" unless $_ =~ /.+/;
+		
+		return $s[ 4 ];
+	}
 }
 
 =head2 importInternalData
