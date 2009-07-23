@@ -529,7 +529,54 @@ sub importInternalData
     &buildInternalHierarchy(\%projects,$dhierarchyDir,$ahierarchyDir);
 }
 
+=head2 importInternalData
 
+  Arg [1]    : file of sanger lanes ids in format <run>_<lane>
+  Arg [2]    : Data directory to build hierarchy in
+  Arg [3]    : Mapping directory to build hierarchy in
+  Example    : importInternalData( 'mouse.proj', '$G1K/MOUSE/DATA', '$G1K/MOUSE/MAPPING');
+  Description: Imports all new sequence from the lanes listed into a hierarchy.  Existing fastq are skipped.
+  Returntype : none
+
+=cut
+=pod
+sub importInternalLanes
+{
+	croak "Usage: importInternalData lanes_fofn data_hierarchy_parent_directory analysis_hierarchy_parent_directory" unless @_ == 3;
+    my $lanes = shift;
+    my $dhierarchyDir = shift;
+    my $ahierarchyDir = shift;
+	
+    croak "Can't find data hierarchy directory\n" unless -d $dhierarchyDir;
+    croak "Can't find analysis hierarchy directory\n" unless -d $ahierarchyDir;
+    croak "Can't find lanes file\n" unless -f $lanes;
+	
+	my $projects;
+	open( my $fh, $lanes ) or die "Cannot open lanes file: $!";
+	while( <$fh>)
+	{
+		chomp;
+		my @s = split( /_/, $_ );
+		
+		open( my $lfh, q[-|], qq/$DFIND -run $s[ 0 ] -lane $s[ 1 ] -projects/ ) or die "Cannot run dfind on lane $_\n";
+		while( <$lfh> )
+		{
+			chomp;
+			$projects{ $_ } = {};
+		}
+		close( $lfh );
+		
+		open( my $lfh, q[-|], qq/$DFIND -run $s[ 0 ] -lane $s[ 1 ] -libraries/ ) or die "Cannot run dfind on lane $_\n";
+		while( <$lfh> )
+		{
+			chomp;
+			$projects{}
+		}
+		close( $lfh );
+	}
+	close( $fh );
+}
+=cut
 sub buildInternalHierarchy 
 {
 	my $projecthash = shift; # ref to hash of projectnames->samplenames->lists of fastq
