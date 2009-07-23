@@ -429,7 +429,7 @@ sub getProjectDirectory
 {
 	croak "Usage: getProjectDirectory( 'seq_index_line' )" unless @_ == 1;
 	
-	my @s = split( $_[ 0 ] );
+	my @s = split( /\t/, $_[ 0 ] );
 	
 	if( $s[ 3 ] eq 'SRP000031' || $s[ 3 ] eq 'SRP000032' || $s[ 3 ] eq 'SRP000033' || $s[ 4 ] =~ /1000Genomes/ )
 	{
