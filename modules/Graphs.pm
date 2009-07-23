@@ -82,17 +82,18 @@ sub plot_stats
         }
         $y = join(',', @{$$vals{'yvals'}});
 
-        print $fh qq{
+        print $fh qq[
 x$set <- c($x)
 y$set <- c($y)
 
 xrange <- range($xrange)
 yrange <- range($yrange)
 
-};
+];
         $set++;
     }
 
+    print $fh "par(cex=1.25)\n";
     if ( $barplot )
     {
         print $fh "barplot(y0,,,x0, xlab='$xlabel',ylab='$ylabel')\n";
@@ -137,10 +138,10 @@ sub create_gc_depth_graph
         if ( !($line=~/^(\S+)\s+(\d+)\s+/) ) { Utils::error("Expected different output: $line"); }
 
         $chrm = $1;
-        $pos  = $1;
+        $pos  = $2;
         if ( defined $prev_pos && $chrm eq '1' )
         {
-            if ( !defined $bin_size ) { $bin_size = $pos - $prev_pos }
+            if ( !defined $bin_size ) { $bin_size = $pos - $prev_pos; }
             if ( $bin_size != $pos-$prev_pos )
             {
                 Utils::error("The bin_size of diffent size on line $nlines: $bin_size vs ".($pos-$prev_pos)."\n");
@@ -154,11 +155,11 @@ sub create_gc_depth_graph
 
     # Finally, create the R script and run the command.
     open($fh, '>', "$png_file.R") or Utils::error("$png_file.R: $!");
-    print $fh qq{
+    print $fh qq[
 source('$gcdepth_R')
 depdat = read.depdat('$bindepth_file', Ndat = $nlines, bin = $bin_size)
 gcdepth(depdat, sname = '', depmax = NULL, hc = TRUE, nbins = 30, binned = TRUE, outfile = '$png_file')
-};
+];
 
     close $fh;
     Utils::CMD("cat $png_file.R | $R_CMD --slave --vanilla");

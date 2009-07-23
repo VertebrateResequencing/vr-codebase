@@ -949,13 +949,13 @@ sub collect_detailed_bam_stats
     # Find out the duplication rate
     if ( $do_rmdup )
     {
-    my $rmdup_reads_total;
-    if (-f $do_rmdup && -s $do_rmdup) {
-        chomp(($rmdup_reads_total) = Utils::CMD("wc -l $do_rmdup"));
-    }
-    else {
-        chomp(($rmdup_reads_total) = Utils::CMD("samtools rmdup $bam_file - 2>/dev/null | samtools view - | wc -l"));
-    }
+        my $rmdup_reads_total;
+        if (-f $do_rmdup && -s $do_rmdup) {
+            chomp(($rmdup_reads_total) = Utils::CMD("wc -l $do_rmdup"));
+        }
+        else {
+            chomp(($rmdup_reads_total) = Utils::CMD("samtools rmdup $bam_file - 2>/dev/null | samtools view - | wc -l"));
+        }
         $$raw_stats{'total'}{'rmdup_reads_total'} = $rmdup_reads_total;
     }
 

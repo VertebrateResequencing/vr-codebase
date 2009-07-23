@@ -7,7 +7,7 @@ use Utils;
 our $No      = 0;
 our $Running = 1;
 our $Error   = 2;
-our $Unknown = 3;
+our $Unknown = 4;
 
 
 =pod
@@ -29,6 +29,7 @@ Utilities for manipulating LSF jobs.
                   $LSF::No if none of the jobs is present in the queue.
                   $LSF::Error if some of the jobs failed.
                   If the lock file is empty, $LSF::No is returned.
+                  If some of the jobs failed while others are running, $LSF::Running|$LSF::Error is returned.
 
 =cut
 
@@ -49,11 +50,11 @@ sub is_job_running
         if ( !($jid=~/^(\d+)\s*(\S*.*)$/) ) { Utils::error("Uh, could not parse \"$jid\".\n") }
 
         my $status = job_in_queue($1,$2);
-        if ( $status == $Error ) { $job_running=$Error; last }
+        if ( $status == $Error ) { $job_running |= $Error; }
         if ( $status == $Running ) 
         { 
             # Do not exit if one running was found - check all jobs, no one should have the EXIT status.
-            $job_running=$Running; 
+            $job_running |= $Running; 
         }
     }
     close($fh);

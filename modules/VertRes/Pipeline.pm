@@ -62,7 +62,7 @@ sub new
 =head2 run_lanes
 
         Arg [1]     : file with a list of lanes to be processed
-        Description : A convenience wrapper for the run_lane routine.
+        Description : A convenience wrapper for the run_lane routine - not used.
         Example    : See test-qc and run-qc-pipeline for an example.
         Returntype : $YES if all of the lanes have finished, $No when some is unfinished and $Error if an error occured.
 
@@ -153,10 +153,9 @@ sub run_lane
             unlink($action_lock);
             next;
         }
-        if ( $status == $Error )
+        if ( $status & $Error )
         {
             $self->warn("The task \"$$action{'name'}\" ended with an error:\n\t$lane_path\n");
-            $self->throw() unless !$$self{'exit_on_errors'};
             $all_done = $Error;
             last;
         }
@@ -165,20 +164,22 @@ sub run_lane
         # If we are here, the task needs to be run. Check if it is currently running.
         #
         $status = $self->running_status($action_lock);
-        if ( $status == $LSF::Running ) 
+        if ( $status & $LSF::Running ) 
         { 
             $self->debug("The task \"$$action{'name'}\" is running.\n");
             $all_done = $No; 
             next unless $$self{'stepwise'};
             last;
         }
-        if ( $status == $LSF::Error )
+        if ( $status & $LSF::Error )
         {
             $self->warn("The task \"$$action{'name'}\" ended with an error - some of the LSF jobs returned wrong status:\n\t$action_lock\n");
-            $self->warn("When problem fixed, remove the lockfile and rerun...\n");
-            $self->throw() unless !$$self{'exit_on_errors'};
-            $all_done = $Error;
-            last;
+            if ( $$self{'exit_on_errors'} )
+            {
+                $self->warn("When problem fixed, remove the lockfile and rerun...\n");
+                $all_done = $Error;
+                last;
+            }
         }
         $all_done = $No;
 

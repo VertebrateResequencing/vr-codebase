@@ -45,14 +45,15 @@ Petr Danecek, I<pd3@sanger.ac.uk>
                     technology
                     library
                     lane
-                    bwa_ref     .. e.g. /nfs/sf7/MOUSE/ref/NCBIM37_um
-                    fa_ref      .. e.g. /nfs/sf7/MOUSE/ref/NCBIM37_um.fa
-                    fai_ref     .. e.g. /nfs/sf7/MOUSE/ref/NCBIM37_um.fa.fai
-                    ref_name    .. e.g. NCBIM37 (official name of the assembly)
-                    md5_ref     .. e.g. 28f4ff5cf14f5931d0d531a901236378
-                    snps        .. e.g. /nfs/sf7/MOUSE/ref/hapmap_mm9_matrix.snps.bin
-                    genotype    .. e.g. 129S1_SvImJ
-                    insert_size .. expected insert size, 0 for unpaired
+                    bwa_ref             .. e.g. /nfs/sf7/MOUSE/ref/NCBIM37_um
+                    fa_ref              .. e.g. /nfs/sf7/MOUSE/ref/NCBIM37_um.fa
+                    fai_ref             .. e.g. /nfs/sf7/MOUSE/ref/NCBIM37_um.fa.fai
+                    ref_name            .. e.g. NCBIM37 (official name of the assembly)
+                    md5_ref             .. e.g. 28f4ff5cf14f5931d0d531a901236378
+                    snps                .. e.g. /nfs/sf7/MOUSE/ref/hapmap_mm9_matrix.snps.bin
+                    genotype            .. e.g. 129S1_SvImJ
+                    gtype_confidence    .. the expected likelihood ratio for genotype checks
+                    insert_size         .. expected insert size, 0 for unpaired
 
 =cut
 
@@ -108,12 +109,34 @@ sub lane_info
             'Spretus_Ei_Mouse_Genome'    => 'SPRET_EiJ',
             'WSB_Ei_Mouse_Genome'        => 'WSB_EiJ',
         };
+        my $gtype_confidence = 
+        {
+            '129P2_Mouse_Genome'         => 5.0,
+            '129S1_SvImJ_Mouse_Genome'   => 5.0,
+            'AKR_J_Mouse_Genome'         => 5.0,
+            'A_J_Mouse_Genome'           => 5.0,
+            'BALBc_J_Mouse_Genome'       => 5.0,
+            'C3H_HeJ_Mouse_Genome'       => 5.0,
+            'C57BL_6N_Mouse_Genome'      => 5.0,
+            'CAST_Ei_Mouse_Genome'       => 5.0,
+            'CBA_J_Mouse_Genome'         => 5.0,
+            'DBA_2J_Mouse_Genome'        => 5.0,
+            'LP_J_Mouse_Genome'          => 5.0,
+            'NOD_Mouse_Genome'           => 5.0,
+            'NZO_Mouse_Genome'           => 5.0,
+            'PWK_Ph_Mouse_Genome'        => 5.0,
+            'Spretus_Ei_Mouse_Genome'    => 5.0,
+            'WSB_Ei_Mouse_Genome'        => 5.0,
+        };
 
         if ( exists($$genotype{$$info{'project'}}) )
         {
             $$info{'genotype'} = $$genotype{$$info{'project'}};
         }
-
+        if ( exists($$gtype_confidence{$$info{'project'}}) )
+        {
+            $$info{'gtype_confidence'} = $$gtype_confidence{$$info{'project'}};
+        }
     }
     elsif ( $$info{'sample'} =~ /^NA\d+$/  )   # something like NA18942
     {

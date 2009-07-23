@@ -453,7 +453,7 @@ sub check_genotype
     $$options{'snps'}          = exists($$self{'snps'}) ? $$self{'snps'} : $$lane_info{'snps'};
     $$options{'samtools'}      = $$self{'samtools'};
     $$options{'genotype'}      = exists($$lane_info{'genotype'}) ? $$lane_info{'genotype'} : '';
-    $$options{'min_glf_ratio'} = $$self{'min_glf_ratio'};
+    $$options{'min_glf_ratio'} = exists($$lane_info{'gtype_confidence'}) ? $$lane_info{'gtype_confidence'} : $$self{'min_glf_ratio'};
     $$options{'prefix'}        = $$self{'prefix'};
     $$options{'lock_file'}     = $lock_file;
 
@@ -507,7 +507,7 @@ my \$params =
     'sample_dir'   => q[$$self{'sample_dir'}],
 };
 
-VertRes::TrackQC::run_graphs(\$params,q[$lane_path]);
+VertRes::TrackQC::run_graphs(\$params,\$\$params{lane_path});
 ];
     close $fh;
 
@@ -578,7 +578,7 @@ sub run_graphs
             'desc_yvals' => 'Frequency',
             'desc_xvals' => 'Insert Size',
             'data'       => [ $$stats{'insert_size'} ],
-            'r_cmd'      => qq[text($x,$y,'$x',pos=4,col='green')\n],
+            'r_cmd'      => qq[text($x,$y,'$x',pos=4,col='darkgreen')\n],
             'r_plot'     => "xlim=c(0," . ($$lane_info{'insert_size'}*2.5) . ")",
             });
 

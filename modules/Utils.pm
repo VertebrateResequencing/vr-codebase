@@ -351,7 +351,7 @@ sub relative_symlink
 }
 
 
-=head2 fai_chromosome_lengths
+=head2 basename
 
     Arg[1]      : The file name.
     Returntype  : The path '/some/path/basename.suffix' splitted to ('/some/path','basename','.suffix')

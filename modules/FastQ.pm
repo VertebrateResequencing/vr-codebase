@@ -161,8 +161,8 @@ sub parse_fastqcheck
         #   histogram for the whole read. If the reads have 50 bases, the line Total would be the
         #   averages of each column.
         #
-        # Total    28.4 21.4 21.5 28.6  0.1    0   0   ..   2   1   2   2   0 25.0
-        # base  1  29.6 19.6 21.7 28.9  0.3    0   0   ..   0   3   1   4   0 27.3
+        # Total    28.4 21.4 21.5 28.6  0.1    0   0   ..   2   1   2   2  -72-136 0 25.0
+        # base  1  29.6 19.6 21.7 28.9  0.3    0   0   ..   0   3   1   4  175 639 0 27.3
         #
         my @items = split(/\s+/, $line);
 
@@ -174,6 +174,10 @@ sub parse_fastqcheck
         } 
 
         my @data  = splice(@items,6,-1);
+        if ( scalar @xvals != scalar @data ) 
+        { 
+            Utils::error("Could not parse the file, different data size?? ", scalar @xvals," ",scalar @data,"\nThe file .. $in_file\nThe line .. $line");
+        }
         push @out, {'title'=>$title, 'xvals'=>\@xvals, 'yvals'=>\@data };
     }
     close($fh);
