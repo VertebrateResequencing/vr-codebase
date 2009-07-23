@@ -373,6 +373,7 @@ sub importExternalData
         elsif( $method eq "link" )
         {
             symlink( $fastqDir.'/'.$exp_read0{ $_ }, $pdirName.'/'.$exp_read0{ $_ } ) or die "Failed to link file: ".$exp_read0{ $_ };
+			system( 'bsub -q yesterday -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_read0{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read0{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_read0{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read0{ $_ }.'.fastqcheck"' );
         }
         symlink( $pdirName.'/'.$exp_read0{ $_ }, $mdirName.'/'.$exp_read0{ $_ } );
         print META "read0:".$exp_read0{ $_ }."\n";
@@ -388,6 +389,7 @@ sub importExternalData
         elsif( $method eq "link" )
         {
             symlink( $fastqDir.'/'.$exp_read1{ $_ }, $pdirName.'/'.$exp_read1{ $_ } ) or die "Failed to link file: ".$exp_read1{ $_ };
+			system( 'bsub -q yesterday -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_read1{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read1{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_read1{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read1{ $_ }.'.fastqcheck"' );
         }
         
         symlink( $pdirName.'/'.$exp_read1{ $_ }, $mdirName.'/'.$exp_read1{ $_ } ) or die "Failed to sym link read into mapping directory: ".$mdirName.'/'.$exp_read1{ $_ };
@@ -404,6 +406,7 @@ sub importExternalData
         elsif( $method eq "link" )
         {
             symlink( $fastqDir.'/'.$exp_read2{ $_ }, $pdirName.'/'.$exp_read2{ $_ } ) or die "Failed to symlink file: ".$exp_read2{ $_ };
+			system( 'bsub -q yesterday -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_read2{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read2{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_read2{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read2{ $_ }.'.fastqcheck"' );
         }
         
         symlink( $pdirName.'/'.$exp_read2{ $_ }, $mdirName.'/'.$exp_read2{ $_ } ) or die "Failed to sym link read into mapping directory: ".$mdirName.'/'.$exp_read2{ $_ };
