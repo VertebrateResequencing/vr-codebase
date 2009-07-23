@@ -809,7 +809,7 @@ sub writeClipPointMeta
 	
 	my $clip = determineClipPointMaq( $fastq );
 	
-	system( qq[ echo "read$read_num:$clip" >> $meta_file ] );
+	system( qq[ echo "clip$read_num:$clip" >> $meta_file ] );
 }
 
 sub determineClipPointMaq
