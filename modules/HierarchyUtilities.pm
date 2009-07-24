@@ -375,7 +375,12 @@ sub importExternalData
             symlink( $fastqDir.'/'.$exp_read0{ $_ }, $pdirName.'/'.$exp_read0{ $_ } ) or die "Failed to link file: ".$exp_read0{ $_ };
 			system( 'bsub -q yesterday -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_read0{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read0{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_read0{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read0{ $_ }.'.fastqcheck"' );
         }
-        symlink( $pdirName.'/'.$exp_read0{ $_ }, $mdirName.'/'.$exp_read0{ $_ } );
+
+		#work out the clip points (if any)
+		my $cmd = qq[bsub -q small -o import.o -e import.e perl -w -e "use AssemblyTools;AssemblyTools::writeClipPointMeta( '$pdirName/$exp_read0{ $_ }', '$pdirName/meta.info', '0' );"];
+		system( $cmd );
+		
+		symlink( $pdirName.'/'.$exp_read0{ $_ }, $mdirName.'/'.$exp_read0{ $_ } );
         print META "read0:".$exp_read0{ $_ }."\n";
     }
     
@@ -392,6 +397,10 @@ sub importExternalData
 			system( 'bsub -q yesterday -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_read1{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read1{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_read1{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read1{ $_ }.'.fastqcheck"' );
         }
         
+		#work out the clip points (if any)
+		my $cmd = qq[bsub -q small -o import.o -e import.e perl -w -e "use AssemblyTools;AssemblyTools::writeClipPointMeta( '$pdirName/$exp_read1{ $_ }', '$pdirName/meta.info', '1' );"];
+		system( $cmd );
+
         symlink( $pdirName.'/'.$exp_read1{ $_ }, $mdirName.'/'.$exp_read1{ $_ } ) or die "Failed to sym link read into mapping directory: ".$mdirName.'/'.$exp_read1{ $_ };
         print META "read1:".$exp_read1{ $_ }."\n";
     }
@@ -408,6 +417,10 @@ sub importExternalData
             symlink( $fastqDir.'/'.$exp_read2{ $_ }, $pdirName.'/'.$exp_read2{ $_ } ) or die "Failed to symlink file: ".$exp_read2{ $_ };
 			system( 'bsub -q yesterday -o fastqcheck.o -e fastqcheck.e "zcat '.$pdirName.'/'.$exp_read2{ $_ }.' | awk \'{print \$1}\' | /software/solexa/bin/fastqcheck > '.$pdirName.'/'.$exp_read2{ $_ }.'.fastqcheck; ln -s '.$pdirName.'/'.$exp_read2{ $_ }.'.fastqcheck '.$mdirName.'/'.$exp_read2{ $_ }.'.fastqcheck"' );
         }
+
+		#work out the clip points (if any)
+		my $cmd = qq[bsub -q small -o import.o -e import.e perl -w -e "use AssemblyTools;AssemblyTools::writeClipPointMeta( '$pdirName/$exp_read2{ $_ }', '$pdirName/meta.info', '2' );"];
+		system( $cmd );
         
         symlink( $pdirName.'/'.$exp_read2{ $_ }, $mdirName.'/'.$exp_read2{ $_ } ) or die "Failed to sym link read into mapping directory: ".$mdirName.'/'.$exp_read2{ $_ };
         print META "read2:".$exp_read2{ $_ }."\n";
@@ -728,8 +741,9 @@ sub buildInternalHierarchy
         
         #work out the clip points (if any)
 		$cmd = qq[bsub -J clip.$random.1 -w "done(split.$random)" -q small -o import.o -e import.e perl -w -e "use AssemblyTools;AssemblyTools::writeClipPointMeta( '$fastq1', 'meta.info', '1' );"];
+		system( $cmd );
+
 		$cmd = qq[bsub -J clip.$random.2 -w "done(split.$random)" -q small -o import.o -e import.e perl -w -e "use AssemblyTools;AssemblyTools::writeClipPointMeta( '$fastq2', 'meta.info', '2' );"];
-        
         system( $cmd );
 		
         #run fastqcheck
