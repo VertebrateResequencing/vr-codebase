@@ -637,7 +637,7 @@ sub splitPairedFastq
 		{
 			$rn2 .= "/2";
 		}
-
+		
 		print R $rn2;
 		print R $seq2;
 		print R $qn2;
