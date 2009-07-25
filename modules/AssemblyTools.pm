@@ -617,24 +617,27 @@ sub splitPairedFastq
 		my $q1 = <READS1>;
 		my $q2 = <READS2>;
 		
-		my $countNs1 = ($seq1 =~ tr/N//);
-		my $countNs2 = ($seq2 =~ tr/N//);
-		
-		if( $countNs1 > 2 || $countNs2 > 2 )
-		{
-			next;
-		}
-		
 		if( $seq1 =~ /^A+\n$/ || $seq1 =~ /^N+\n$/ || $seq2 =~ /^A+\n$/ || $seq2 =~ /^N+\n$/ )
 		{
 			next;
 		}
 		
+		#MAQ requires /1 before readname
+		if( $rn1 !~ /\@.*\/1/ )
+		{
+			$rn1 .= "/1";
+		}
 		print L $rn1;
 		print L $seq1;
 		print L $qn1;
 		print L $q1;
 		
+		#MAQ requires /2 before readname
+		if( $rn2 !~ /\@.*\/2/ )
+		{
+			$rn2 .= "/2";
+		}
+
 		print R $rn2;
 		print R $seq2;
 		print R $qn2;
