@@ -625,7 +625,8 @@ sub splitPairedFastq
 		#MAQ requires /1 before readname
 		if( $rn1 !~ /\@.*\/1/ )
 		{
-			$rn1 .= "/1";
+			chomp( $rn1 );
+			$rn1 .= "/1\n";
 		}
 		print L $rn1;
 		print L $seq1;
@@ -635,7 +636,8 @@ sub splitPairedFastq
 		#MAQ requires /2 before readname
 		if( $rn2 !~ /\@.*\/2/ )
 		{
-			$rn2 .= "/2";
+			chomp( $rn2 );
+			$rn2 .= "/2\n";
 		}
 		
 		print R $rn2;
