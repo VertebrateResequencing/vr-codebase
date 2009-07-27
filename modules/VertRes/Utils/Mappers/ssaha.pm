@@ -54,6 +54,18 @@ sub new {
     return $self;
 }
 
+sub _bsub_opts {
+    my ($self, $lane_path, $action) = @_;
+    
+    my %bsub_opts = (bsub_opts => '');
+    
+    if ($action eq 'map') {
+        $bsub_opts{bsub_opts} = '-q normal -R \'select[type==X86_64] rusage[tmp=35000]\'';
+    }
+    
+    return \%bsub_opts;
+}
+
 =head2 wrapper
 
  Title   : wrapper
@@ -67,6 +79,35 @@ sub new {
 sub wrapper {
     my $self = shift;
     return VertRes::Wrapper::ssaha->new(verbose => $self->verbose);
+}
+
+=head2 split_fastq
+
+ Title   : split_fastq
+ Usage   : $obj->split_fastq(read1 => 'reads_1.fastq',
+                             read2 => 'reads_2.fastq',
+                             split_dir => '/path/to/desired/split_dir',
+                             chunk_size => 10000000);
+ Function: Split the fastq(s) into multiple smaller files. This is just a
+           convienience alias to VertRes::Utils::FastQ::split, with syntax
+           more similar to do_mapping().
+ Returns : int (the number of splits created)
+ Args    : read1 => 'reads_1.fastq', read2 => 'reads_2.fastq'
+           -or-
+           read0 => 'reads.fastq'
+
+           split_dir => '/path/to/desired/split_dir'
+           chunk_size => int (max number of bases per chunk, default 10000000)
+
+=cut
+
+sub split_fastq {
+    my ($self, %args) = @_;
+    unless ($args{chunk_size}) {
+        $args{chunk_size} = 10000000;
+    }
+    
+    return $self->SUPER::split_fastq(%args);
 }
 
 =head2 do_mapping

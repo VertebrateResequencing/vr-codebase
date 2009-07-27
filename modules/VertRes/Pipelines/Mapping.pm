@@ -55,13 +55,8 @@ our $actions = [ { name     => 'split',
                    requires => \&cleanup_requires, 
                    provides => \&cleanup_provides }];
 
-#*** currently the bsub_opts are for bwa, don't know how to mix in those for
-#    ssaha, or should really change these depending on the mapper...
-#    select[type==X86_64] rusage[tmp=35000]
-our %options = (bsub_opts => "-q normal -M5000000 -R 'select[mem>5000] rusage[mem=5000]'",
-                sequence_index => '/nfs/sf8/G1K/misc/sequence.index',
-                do_cleanup => 0,
-                chunk_size => 1000000);
+our %options = (sequence_index => '/nfs/sf8/G1K/misc/sequence.index',
+                do_cleanup => 0);
 
 our $split_dir_name = 'split';
 
@@ -72,9 +67,9 @@ our $split_dir_name = 'split';
  Function: Create a new VertRes::Pipelines::Mapping object;
  Returns : VertRes::Pipelines::Mapping object
  Args    : lane => '/path/to/lane'
-           sequence_index => '/path/to/sequence.index' (there is a default)
+           sequence_index => '/path/to/sequence.index' (there is a G1K default)
            do_cleanup => boolean (default false: don't do the cleanup action)
-           chunk_size => int (default 1000000)
+           chunk_size => int (default depends on mapper)
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -93,6 +88,14 @@ sub new {
     $self->{io} = VertRes::IO->new;
     
     return $self;
+}
+
+# Mappers should override this as appropriate
+sub _bsub_opts {
+    my ($self, $lane_path, $action) = @_;
+    
+    # by default, no extra bsub options will be supplied to LSF::Run
+    return {bsub_opts => ''};
 }
 
 =head2 split_requires
@@ -163,7 +166,7 @@ sub split {
     
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
-    my $chunk_size = $self->{chunk_size};
+    my $chunk_size = $self->{chunk_size} || 0; # if 0, will get set to mapper's default size
     
     # run split in an LSF call to a temp script;
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
@@ -202,7 +205,7 @@ exit;
         };
         close $scriptfh;
         
-        LSF::run($action_lock, $lane_path, $self->{prefix}.'split_'.$ended, $self, qq{perl -w $script_name});
+        LSF::run($action_lock, $lane_path, $self->{prefix}.'split_'.$ended, $self->_bsub_opts($lane_path, 'split'), qq{perl -w $script_name});
     }
     
     # we've only submitted to LSF, so it won't have finished; we always return
@@ -382,7 +385,7 @@ exit;
             };
             close $scriptfh;
             
-            LSF::run($action_lock, $lane_path, $self->{prefix}.'map_'.$ended, $self, qq{perl -w $script_name});
+            LSF::run($action_lock, $lane_path, $self->{prefix}.'map_'.$ended, $self->_bsub_opts($lane_path, 'map'), qq{perl -w $script_name});
         }
     }
     
@@ -566,7 +569,7 @@ exit;
         };
         close $scriptfh;
         
-        LSF::run($action_lock, $lane_path, $self->{prefix}.'merge_and_stat_'.$ended, $self, qq{perl -w $script_name});
+        LSF::run($action_lock, $lane_path, $self->{prefix}.'merge_and_stat_'.$ended, $self->_bsub_opts($lane_path, 'merge_and_stat'), qq{perl -w $script_name});
     }
     
     # we've only submitted to LSF, so it won't have finished; we always return
