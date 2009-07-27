@@ -52,13 +52,17 @@ use base qw(VertRes::Wrapper::WrapperI);
  Function: Create a VertRes::Wrapper::samtools object.
  Returns : VertRes::Wrapper::samtools object
  Args    : quiet   => boolean
+           exe     => string (default 'samtools' - the first one on your path
+                              will get used)
 
 =cut
 
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => 'samtools');
+    my $self = $class->SUPER::new(@args);
+    
+    $self->{base_exe} = $self->exe() || 'samtools';
     
     return $self;
 }
@@ -76,7 +80,7 @@ sub new {
 sub sam_import {
     my ($self, $in_ref_list, $in_sam, $out_bam) = @_;
     
-    $self->exe('samtools import');
+    $self->exe($self->{base_exe}.' import');
     
     $self->switches([]);
     $self->params([]);
@@ -101,7 +105,7 @@ sub sam_import {
 sub view {
     my ($self, $in_sam, $out_file, %options) = @_;
     
-    $self->exe('samtools view');
+    $self->exe($self->{base_exe}.' view');
     
     my @file_and_regions = ($in_sam);
     if (defined $options{regions} && ref($options{regions}) eq 'ARRAY') {
@@ -135,7 +139,7 @@ sub view {
 sub sort {
     my ($self, $in_bam, $out_prefix, %options) = @_;
     
-    $self->exe('samtools sort');
+    $self->exe($self->{base_exe}.' sort');
     
     $self->switches([qw(n)]);
     $self->params([qw(m)]);
@@ -159,7 +163,7 @@ sub sort {
 sub merge {
     my ($self, $out_bam, $in_bams, %options) = @_;
     
-    $self->exe('samtools merge');
+    $self->exe($self->{base_exe}.' merge');
     
     $self->switches([qw(n)]);
     $self->params([]);
@@ -239,13 +243,42 @@ sub merge_and_check {
 sub pileup {
     my ($self, $in_file, $out_file, %options) = @_;
     
-    $self->exe('samtools pileup');
+    $self->exe($self->{base_exe}.' pileup');
     
     $self->switches([qw(s i c g)]);
     $self->params([qw(m t l f T N r G I)]);
     $self->_set_params_and_switches_from_args(%options);
     
     my @files = ($in_file);
+    if ($out_file) {
+        push(@files, ' > '.$out_file);
+        $self->register_output_file_to_check($out_file);
+    }
+    
+    return $self->run(@files);
+}
+
+=head2 fillmd
+
+ Title   : fillmd
+ Usage   : $wrapper->fillmd('in.bam', 'ref.fa', 'out.bam', %options);
+ Function: fillmd...
+ Returns : n/a
+ Args    : list of file paths, options as a hash. If using the 'open' run_method
+           you should set the third arg to undef.
+
+=cut
+
+sub fillmd {
+    my ($self, $in_file, $ref, $out_file, %options) = @_;
+    
+    $self->exe($self->{base_exe}.' fillmd');
+    
+    $self->switches([qw(e u b S)]);
+    $self->params([]);
+    $self->_set_params_and_switches_from_args(%options);
+    
+    my @files = ($in_file, $ref);
     if ($out_file) {
         push(@files, ' > '.$out_file);
         $self->register_output_file_to_check($out_file);
@@ -267,7 +300,7 @@ sub pileup {
 sub index {
     my ($self, $in_bam, $out_index) = @_;
     
-    $self->exe('samtools index');
+    $self->exe($self->{base_exe}.' index');
     
     $self->switches([]);
     $self->params([]);
@@ -290,7 +323,7 @@ sub index {
 sub faidx {
     my ($self, $in_fa) = @_;
     
-    $self->exe('samtools faidx');
+    $self->exe($self->{base_exe}.' faidx');
     
     $self->switches([]);
     $self->params([]);
@@ -313,7 +346,7 @@ sub faidx {
 sub fixmate {
     my ($self, $in_bam, $out_bam) = @_;
     
-    $self->exe('samtools fixmate');
+    $self->exe($self->{base_exe}.' fixmate');
     
     $self->switches([]);
     $self->params([]);
@@ -336,7 +369,7 @@ sub fixmate {
 sub rmdup {
     my ($self, $in_bam, $out_bam) = @_;
     
-    $self->exe('samtools rmdup');
+    $self->exe($self->{base_exe}.' rmdup');
     
     $self->switches([]);
     $self->params([]);
@@ -359,7 +392,7 @@ sub rmdup {
 sub rmdupse {
     my ($self, $in_bam, $out_bam) = @_;
     
-    $self->exe('samtools rmdupse');
+    $self->exe($self->{base_exe}.' rmdupse');
     
     $self->switches([]);
     $self->params([]);
@@ -383,7 +416,7 @@ sub rmdupse {
 sub flagstat {
     my ($self, $in_bam, $out_bam) = @_;
     
-    $self->exe('samtools flagstat');
+    $self->exe($self->{base_exe}.' flagstat');
     
     $self->switches([]);
     $self->params([]);
@@ -460,30 +493,6 @@ sub sam_to_fixed_sorted_bam {
     
     $self->run_method($orig_run_method);
     return;
-}
-
-=head2 run
-
- Title   : run
- Usage   : Do not call directly: use one of the other methods like index()
-           instead.
- Function: Run your chosen samtools command on the supplied file(s).
- Returns : n/a
- Args    : paths to input/output files
-
-=cut
-
-sub _pre_run {
-    my ($self, @files) = @_;
-    
-    #*** what actually happens if open is used??...
-    #my $run_method = $self->run_method();
-    #if ($run_method eq 'open') {
-    #    $self->warn("the open run method isn't compatible with this wrapper, switching to system");
-    #    $self->run_method('system');
-    #}
-    
-    return @files;
 }
 
 1;
