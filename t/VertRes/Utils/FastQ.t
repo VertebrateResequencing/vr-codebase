@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 9;
+    use Test::Most tests => 10;
     
     use_ok('VertRes::Utils::FastQ');
     use_ok('VertRes::IO');
@@ -33,6 +33,9 @@ is $fastq_util->split([$fq1_file, $fq2_file], chunk_size => 11500, split_dir => 
 push(@expected, @expected);
 @got = split_check($split_dir);
 is_deeply \@got, \@expected, 'each split had the correct number of lines, and there were twice as many files';
+
+# test qual_to_ints
+is_deeply [$fastq_util->qual_to_ints('!"#$%&\'()*+,5?DIS]')], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 20, 30, 35, 40, 50, 60], 'qual_to_ints test';
 
 exit;
 

@@ -182,4 +182,25 @@ sub split {
     return $split_num;
 }
 
+=head2 qual_to_ints
+
+ Title   : qual_to_ints
+ Usage   : my @qualities = $obj->qual_to_ints($quality_string);
+ Function: Convert the quality string of a fastq sequence into quality integers.
+ Returns : list of int
+ Args    : quality string
+
+=cut
+
+sub qual_to_ints {
+    my ($self, $qual_string) = @_;
+    
+    my @quals;
+    foreach my $char (split('', $qual_string)) {
+        push(@quals,  unpack('C', $char) - 33);
+    }
+    
+    return @quals;
+}
+
 1;
