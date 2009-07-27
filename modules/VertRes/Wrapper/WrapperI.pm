@@ -45,10 +45,11 @@ package VertRes::Wrapper::WrapperI;
 use strict;
 use warnings;
 use Cwd qw(abs_path);
+use IPC::Open2;
 
 use base qw(VertRes::Base);
 
-our %allowed_run_methods = (bsub => 1, open => 1, open_to => 1, system => 1);
+our %allowed_run_methods = (bsub => 1, open => 1, open_to => 1, open_2 => 1, system => 1);
 
 =head2 new
 
@@ -209,6 +210,8 @@ sub run {
                  read through - useful for piping straight through to a parser)
            open_to (run in an open() call where one of the file args is a
                     filehandle that will be piped into the executable)
+           open_2 (run in an IPC::Open2 call where input is a supplied filehanle
+                   like for open_to and you are returned a filehandle like open)
 
 =cut
 
@@ -286,6 +289,29 @@ sub _open_to_run {
     close($pipe);
     
     return;
+}
+
+sub _open_2_run {
+    my ($self, $exe, $params, @extra_args) = @_;
+    
+    my $in_fh;
+    foreach (@extra_args) {
+        if (ref($_) && ref($_) eq 'GLOB') {
+            $in_fh = $_;
+            $_ = '-';
+        }
+    }
+    
+    my $redirect = $self->quiet ? ' 2> /dev/null ' : '';
+    my $command = $exe.$params." @extra_args".$redirect;
+    $self->debug("will run command '$command'");
+    
+    my ($out_fh);
+    my $pid = open2($out_fh, $in_fh, $command);
+    push(@{$self->{_open_2_pids}}, $pid);
+    print "got pid $pid\n";
+    
+    return $out_fh;
 }
 
 sub _system_run {
@@ -565,6 +591,14 @@ sub _is_older {
     my $second_mtime = $stat[9];
     
     return $second_mtime < $first_mtime;
+}
+
+sub DESTROY {
+    my $self = shift;
+    
+    foreach my $pid (@{$self->{_open_2_pids} || []}) {
+        waitpid $pid, 0;
+    }
 }
 
 1;
