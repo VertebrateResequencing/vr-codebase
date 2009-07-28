@@ -1323,13 +1323,16 @@ sub makeBamStat
 	{
 		print "$_\n" unless ! defined $$stats{ $_ };
 	}
-=pod
+
 	my $output = '';
-	foreach( my $id ( keys( %$stats ) ) )
+	foreach( keys( %$laneMeta ) )
 	{
-		$output .= qq[];
+		my $platform = $laneMeta{ $_ }{ 'PU' };
+		my $sample = $laneMeta{ $_ }{ 'SM' };
+		my $read_group = $_;
+		#$output .= qq[\t$_\t];
 	}
-	
+=pod	
 	open( my $fh, ">$output" ) or die "Cant create output $!";
 	print $fh qq[];
 	close( $fh );

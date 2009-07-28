@@ -205,6 +205,7 @@ sub importExternalData
   my %exp_read2;
   my %data_exp_path; #directory within data hierarchy
   my %mapping_exp_path; #mapping directory
+  my %inserts; #insert sizes per accession
   
   my %srrCount;
   
@@ -308,6 +309,10 @@ sub importExternalData
     
     $data_exp_path{ $info[ 2 ] } = $dpath;
     $mapping_exp_path{ $info[ 2 ] } = $mpath;
+	if( $info[ 17 ] =~ /\d+/ )
+	{
+		$inserts{ $info[ 2 ] } = $info[ 17 ];
+	}
   }
   close( LCSV );
   
@@ -403,6 +408,12 @@ sub importExternalData
 
         symlink( $pdirName.'/'.$exp_read1{ $_ }, $mdirName.'/'.$exp_read1{ $_ } ) or die "Failed to sym link read into mapping directory: ".$mdirName.'/'.$exp_read1{ $_ };
         print META "read1:".$exp_read1{ $_ }."\n";
+		
+		#write the insert size information
+		if( defined( $inserts{ $_ } ) )
+		{
+			print META "insert:$inserts{ $_ }\n";
+		}
     }
     
     if( defined( $exp_read2{ $_ } ) && ! -l $pdirName.'/'.$exp_read2{ $_ } && ! -f $pdirName.'/'.$exp_read2{ $_ } )

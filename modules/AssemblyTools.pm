@@ -621,25 +621,26 @@ sub splitPairedFastq
 		{
 			next;
 		}
-		
+=pod		
 		#MAQ requires /1 before readname
 		if( $rn1 !~ /\@.*\/1/ )
 		{
 			chomp( $rn1 );
 			$rn1 .= "/1\n";
 		}
+=cut
 		print L $rn1;
 		print L $seq1;
 		print L $qn1;
 		print L $q1;
-		
+=pod		
 		#MAQ requires /2 before readname
 		if( $rn2 !~ /\@.*\/2/ )
 		{
 			chomp( $rn2 );
 			$rn2 .= "/2\n";
 		}
-		
+=cut		
 		print R $rn2;
 		print R $seq2;
 		print R $qn2;
