@@ -1289,6 +1289,7 @@ sub pileup2Intervals
 				Study	sample	platform	RG	mapped_bases	total_reads	mapped_reads	paired_reads	properly_paired_reads	num_mismatches	avg_mapped_bases	avg_insert	sd_insert
 	Returntype : none
 =cut
+=pod
 sub makeBamStat
 {
 	croak "Usage: makeBamStat bam_file fai_file seq_index output_file\n" unless @_ == 4;
@@ -1332,7 +1333,7 @@ sub makeBamStat
 		my $read_group = $_;
 		#$output .= qq[\t$_\t];
 	}
-=pod	
+
 	open( my $fh, ">$output" ) or die "Cant create output $!";
 	print $fh qq[];
 	close( $fh );
