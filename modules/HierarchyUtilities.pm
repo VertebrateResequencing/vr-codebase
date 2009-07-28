@@ -620,7 +620,7 @@ sub importInternalLanes
 	seek $fh,0,0;
 	
 	my $projectsHash = ();
-	while( <fh> )
+	while( <$fh> )
 	{
 		chomp;
 		if( ! defined $fastq{ $_ } || ! defined $projects{ $_ } || ! defined $libraries{ $_ } )
