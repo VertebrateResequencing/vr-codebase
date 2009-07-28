@@ -616,7 +616,6 @@ sub importInternalLanes
 		}
 		close( $ffh );
 	}
-	close( $fh );
 	
 	seek $fh,0,0;
 	
