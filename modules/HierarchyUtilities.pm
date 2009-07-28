@@ -563,7 +563,7 @@ sub importInternalData
   Returntype : none
 
 =cut
-=pod
+
 sub importInternalLanes
 {
 	croak "Usage: importInternalData lanes_fofn data_hierarchy_parent_directory analysis_hierarchy_parent_directory" unless @_ == 3;
@@ -575,32 +575,80 @@ sub importInternalLanes
     croak "Can't find analysis hierarchy directory\n" unless -d $ahierarchyDir;
     croak "Can't find lanes file\n" unless -f $lanes;
 	
-	my $projects;
+	my %projects;
+	my %libraries;
+	my %fastq;
 	open( my $fh, $lanes ) or die "Cannot open lanes file: $!";
 	while( <$fh>)
 	{
 		chomp;
+		my $lane = $_;
 		my @s = split( /_/, $_ );
 		
-		open( my $lfh, q[-|], qq/$DFIND -run $s[ 0 ] -lane $s[ 1 ] -projects/ ) or die "Cannot run dfind on lane $_\n";
-		while( <$lfh> )
+		open( my $pfh, q[-|], qq/$DFIND -run $s[ 0 ] -lane $s[ 1 ] -projects/ ) or die "Cannot run dfind on lane $_\n";
+		while( <$pfh> )
 		{
 			chomp;
-			$projects{ $_ } = {};
+			$projects{ $lane } = $_;
 		}
-		close( $lfh );
+		close( $pfh );
 		
 		open( my $lfh, q[-|], qq/$DFIND -run $s[ 0 ] -lane $s[ 1 ] -libraries/ ) or die "Cannot run dfind on lane $_\n";
 		while( <$lfh> )
 		{
 			chomp;
-			$projects{}
+			$libraries{ $lane } = $_;
 		}
 		close( $lfh );
+		
+		open( my $ffh, q[-|], qq/$DFIND -run $s[ 0 ] -lane $s[ 1 ] -filetype fastq/ ) or die "Cannot run dfind on lane $_\n";
+		while( <$ffh> )
+		{
+			chomp;
+			if( defined( $fastq{ $lane } ) )
+			{
+				$fastq{ $lane } = [ $_ ];
+			}
+			else
+			{
+				push( @{$fastq{ $lane }}, $_ );
+			}
+		}
+		close( $ffh );
 	}
 	close( $fh );
+	
+	seek $fh,0,0;
+	
+	my $projectsHash = ();
+	while( <fh> )
+	{
+		chomp;
+		if( ! defined $fastq{ $_ } || ! defined $projects{ $_ } || ! defined $libraries{ $_ } )
+		{
+			print "WARNING: Cant find full entry for lane: $_\n";
+			next;
+		}
+		$$projectsHash{ $projects{ $_ } }{ $libraries{ $_ } } = $fastq{ $_ };
+	}
+	close( $fh );
+	
+	foreach( keys( %$projectsHash ) )
+	{
+		my $proj = $_;
+		foreach( keys( %{ $$projectsHash{ $proj } } ) )
+		{
+			my $lib = $_;
+			foreach( @{$$projectsHash{$proj}{$lib}} )
+			{
+				print $proj."->".$lib."->".$_."\n";
+			}
+		}
+	}
+	#buildInternalHierarchy()
+
 }
-=cut
+
 sub buildInternalHierarchy 
 {
 	my $projecthash = shift; # ref to hash of projectnames->samplenames->lists of fastq
@@ -609,7 +657,7 @@ sub buildInternalHierarchy
 
     croak "Can't find data hierarchy directory\n" unless -d $dhierarchyDir;
     croak "Can't find analysis hierarchy directory\n" unless -d $ahierarchyDir;
-
+	
     foreach my $project (keys %$projecthash)
     {
 		print "Updating project: $project\n";
