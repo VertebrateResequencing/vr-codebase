@@ -1337,7 +1337,8 @@ sub makeBamStat
 	open( my $fh, ">$output" ) or die "Cant create output $!";
 	print $fh qq[];
 	close( $fh );
-=cut
+
 }
+=cut
 
 1;
