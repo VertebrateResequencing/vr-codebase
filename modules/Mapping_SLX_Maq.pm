@@ -391,7 +391,7 @@ sub mapLane
 			#check if the clip points exist - else dont clip
 			my $clipPoint1=-1;
 			my $clipPoint2=-1;
-			if( length( `grep "clip1" ../meta.info | wc -l`) > 1 )
+			if( length( `grep "clip1" ../meta.info | wc -l`) > 1 && length( `grep "clip2" ../meta.info | wc -l`) > 1 )
 			{
 				$clipPoint1=`grep "clip1" ../meta.info | awk -F ":" '{print \$2}' | head -1`;chomp( $clipPoint1 );if( length( $clipPoint1 ) == 0 ){$clipPoint1=-1;}
 				$clipPoint2=`grep "clip2" ../meta.info | awk -F ":" '{print \$2}' | head -1`;chomp( $clipPoint2 );if( length( $clipPoint2 ) == 0 ){$clipPoint2=-1;}
