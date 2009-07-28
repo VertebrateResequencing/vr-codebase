@@ -608,10 +608,12 @@ sub importInternalLanes
 			if( defined( $fastq{ $lane } ) )
 			{
 				$fastq{ $lane } = [ $_ ];
+				print $_;
 			}
 			else
 			{
 				push( @{$fastq{ $lane }}, $_ );
+				print $_;
 			}
 		}
 		close( $ffh );
