@@ -648,6 +648,61 @@ sub importInternalLanes
 
 }
 
+sub importInternalLanes2
+{
+	croak "Usage: importInternalData lanes_fofn data_hierarchy_parent_directory analysis_hierarchy_parent_directory" unless @_ == 3;
+    my $lanes = shift;
+    my $dhierarchyDir = shift;
+    my $ahierarchyDir = shift;
+	
+    croak "Can't find data hierarchy directory\n" unless -d $dhierarchyDir;
+    croak "Can't find analysis hierarchy directory\n" unless -d $ahierarchyDir;
+    croak "Can't find lanes file\n" unless -f $lanes;
+	
+	my $projectsHash;
+	open( my $fh, $lanes ) or die "Cannot open lanes file: $!";
+	while( <$fh>)
+	{
+		chomp;
+		my $lane = $_;
+		my @s = split( /_/, $_ );
+		
+		open( my $ffh, q[-|], qq/$DFIND -file $s[ 0 ]_$s[ 1 ]_1.fastq/ ) or die "Cannot run dfind on lane $_\n";
+		my $lib = '';
+		my $proj = '';
+		while( <$ffh> )
+		{
+			chomp;
+			if( $_ =~ /^Project Tracking/ )
+			{
+				my @s1 = split( /\t/, $_ );
+				$lib = $s1[ 1 ];
+			}
+			elsif( $_ =~ /Library Tracking/ )
+			{
+				my @s1 = split( /\t/, $_ );
+				$proj = $s1[ 1 ];
+			}
+		}
+		
+		$$projectsHash{ $proj }{ $lib } = [ qq/$s[ 0 ]_$s[ 1 ]_1.fastq/, qq/$s[ 0 ]_$s[ 1 ]_2.fastq/ ];
+		close( $ffh );
+	}
+	
+	foreach( keys( %$projectsHash ) )
+	{
+		my $proj = $_;
+		foreach( keys( %{ $$projectsHash{ $proj } } ) )
+		{
+			my $lib = $_;
+			foreach( @{$$projectsHash{$proj}{$lib}} )
+			{
+				print $proj."->".$lib."->".$_."\n";
+			}
+		}
+	}
+}
+
 sub buildInternalHierarchy 
 {
 	my $projecthash = shift; # ref to hash of projectnames->samplenames->lists of fastq
