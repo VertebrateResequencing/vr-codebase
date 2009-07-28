@@ -592,12 +592,12 @@ sub importInternalLanes
 			if( $_ =~ /^Project Tracking/ )
 			{
 				my @s1 = split( /\t/, $_ );
-				$lib = $s1[ 1 ];
+				$proj = $s1[ 1 ];
 			}
 			elsif( $_ =~ /Library Tracking/ )
 			{
 				my @s1 = split( /\t/, $_ );
-				$proj = $s1[ 1 ];
+				$lib = $s1[ 1 ];
 			}
 		}
 		
