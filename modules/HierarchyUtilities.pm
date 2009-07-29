@@ -613,7 +613,17 @@ sub importInternalLanes
 		close( $ffh );
 	}
 	
-	&buildInternalHierarchy($projectsHash,$dhierarchyDir,$ahierarchyDir);
+	foreach( keys( %{$projectsHash}) )
+	{
+		my $p = $_;
+		foreach( keys( %{ $$projectsHash{ $_ } } ) )
+		{
+			print qq/$p -> $_ -> $$projectsHash{ $p }{ $_ }[ 0 ]/;
+			print qq/$p -> $_ -> $$projectsHash{ $p }{ $_ }[ 1 ]/;
+		}
+	}
+	
+	#&buildInternalHierarchy($projectsHash,$dhierarchyDir,$ahierarchyDir);
 }
 
 sub buildInternalHierarchy 
