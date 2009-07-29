@@ -344,6 +344,7 @@ sub _system_run {
 
 sub run_status {
     my $self = shift;
+    $self->warn("run_status doesn't take any arguments") if shift;
     return $self->{_run_status};
 }
 
