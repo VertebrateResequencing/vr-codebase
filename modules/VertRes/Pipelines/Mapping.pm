@@ -76,6 +76,7 @@ our $split_dir_name = 'split';
 
 sub new {
     my ($class, @args) = @_;
+    
     my $self = $class->SUPER::new(%options, actions => $actions, @args);
     
     # we should have been supplied the option 'lane' which tells us which lane
@@ -83,19 +84,13 @@ sub new {
     my $lane = $self->{lane} || $self->throw("lane directory not supplied, can't continue");
     my $mapping_util = VertRes::Utils::Mapping->new();
     my $mapper_class = $mapping_util->lane_to_module($lane);
+    eval "require $mapper_class;";
     $self->{mapper_class} = $mapper_class;
+    $self->{mapper_obj} = $mapper_class->new();
     
     $self->{io} = VertRes::IO->new;
     
     return $self;
-}
-
-# Mappers should override this as appropriate
-sub _bsub_opts {
-    my ($self, $lane_path, $action) = @_;
-    
-    # by default, no extra bsub options will be supplied to LSF::Run
-    return {bsub_opts => ''};
 }
 
 =head2 split_requires
@@ -205,7 +200,7 @@ exit;
         };
         close $scriptfh;
         
-        LSF::run($action_lock, $lane_path, $self->{prefix}.'split_'.$ended, $self->_bsub_opts($lane_path, 'split'), qq{perl -w $script_name});
+        LSF::run($action_lock, $lane_path, $self->{prefix}.'split_'.$ended, $self->{mapper_obj}->_bsub_opts($lane_path, 'split'), qq{perl -w $script_name});
     }
     
     # we've only submitted to LSF, so it won't have finished; we always return
@@ -343,6 +338,7 @@ sub map {
             print $scriptfh qq{
 use strict;
 use $mapper_class;
+use VertRes::Utils::Sam;
 
 my \$mapper = $mapper_class->new(verbose => $verbose);
 
@@ -358,23 +354,25 @@ my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
 \$mapper->throw("mapping failed - try again?") unless \$ok;
 
 # add sam header
+my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
 open(my \$samfh, '$sam_file') || \$mapper->throw("Unable to open sam file '$sam_file'");
 my \$head = <\$samfh>;
 close(\$samfh);
 unless (\$head =~ /^\\\@HD/) {
-    my \$ok = \$mapper->add_sam_header('$sam_file', '$sequence_index',
-                                       lane_path => '$lane_path');
-    \$mapper->throw("Failed to add sam header!") unless \$ok;
+    my \$ok = \$sam_util->add_sam_header('$sam_file',
+                                         sequence_index => '$sequence_index',
+                                         lane_path => '$lane_path');
+    \$sam_util->throw("Failed to add sam header!") unless \$ok;
 }
 
 # convert to mate-fixed sorted bam
 unless (-s '$bam_file') {
-    my \$ok = \$mapper->sam_to_fixed_sorted_bam('$sam_file', '$bam_file');
+    my \$ok = \$sam_util->sam_to_fixed_sorted_bam('$sam_file', '$bam_file');
     
     unless (\$ok) {
         # (will only return ok and create output bam file if bam was created and
         #  not truncted)
-        \$mapper->throw("Failed to create sorted bam file!");
+        \$sam_util->throw("Failed to create sorted bam file!");
     }
     else {
         unlink('$sam_file');
@@ -385,7 +383,7 @@ exit;
             };
             close $scriptfh;
             
-            LSF::run($action_lock, $lane_path, $self->{prefix}.'map_'.$ended, $self->_bsub_opts($lane_path, 'map'), qq{perl -w $script_name});
+            LSF::run($action_lock, $lane_path, $self->{prefix}.'map_'.$ended, $self->{mapper_obj}->_bsub_opts($lane_path, 'map'), qq{perl -w $script_name});
         }
     }
     
@@ -518,35 +516,35 @@ sub merge_and_stat {
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
 use strict;
-use $mapper_class;
+use VertRes::Utils::Sam;
 use VertRes::Wrapper::samtools;
 
-my \$mapper = $mapper_class->new(verbose => $verbose);
+my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
 my \$samtools = VertRes::Wrapper::samtools->new(verbose => $verbose);
 
 # merge bams
 unless (-s '$bam_file') {
     \$samtools->merge_and_check('$bam_file', [qw(@bams)]);
-    \$mapper->throw("merging bam failed - try again?") unless \$samtools->run_status == 2;
+    \$sam_util->throw("merging bam failed - try again?") unless \$samtools->run_status == 2;
 }
 
 my \$ok = 0;
 
 # rmdup
 unless (-s '$rmdup_file') {
-    \$ok = \$mapper->rmdup('$bam_file', '$rmdup_file',
-                          lane_path => '$lane_path');
+    \$ok = \$sam_util->rmdup('$bam_file', '$rmdup_file',
+                             lane_path => '$lane_path');
     
     unless (\$ok) {
         unlink('$rmdup_file');
-        \$mapper->throw("Failed to rmdup the bam file!");
+        \$sam_util->throw("Failed to rmdup the bam file!");
     }
 }
 
 # make an unmapped bam
 unless (-s '$unmapped_out') {
-    \$ok = \$mapper->make_unmapped_bam('$bam_file', '$unmapped_out');
-    \$mapper->throw("making unmapped bam failed - try again?") unless \$ok;
+    \$ok = \$sam_util->make_unmapped_bam('$bam_file', '$unmapped_out');
+    \$sam_util->throw("making unmapped bam failed - try again?") unless \$ok;
 }
 
 # make stat files
@@ -555,13 +553,13 @@ foreach my \$stat_file (qw(@stat_files)) {
     \$num_present++ if -s \$stat_file;
 }
 unless (\$num_present == ($#stat_files + 1)) {
-    my \$ok = \$mapper->stats('$bam_file', '$rmdup_file', '$unmapped_out');
+    my \$ok = \$sam_util->stats('$bam_file', '$rmdup_file', '$unmapped_out');
     
     unless (\$ok) {
         foreach my \$stat_file (qw(@stat_files)) {
             unlink(\$stat_file);
         }
-        \$mapper->throw("Failed to get stats for the bam files!");
+        \$sam_util->throw("Failed to get stats for the bam files!");
     }
 }
 
@@ -569,7 +567,7 @@ exit;
         };
         close $scriptfh;
         
-        LSF::run($action_lock, $lane_path, $self->{prefix}.'merge_and_stat_'.$ended, $self->_bsub_opts($lane_path, 'merge_and_stat'), qq{perl -w $script_name});
+        LSF::run($action_lock, $lane_path, $self->{prefix}.'merge_and_stat_'.$ended, $self->{mapper_obj}->_bsub_opts($lane_path, 'merge_and_stat'), qq{perl -w $script_name});
     }
     
     # we've only submitted to LSF, so it won't have finished; we always return
