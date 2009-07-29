@@ -608,7 +608,16 @@ sub importInternalLanes
 		}
 		else
 		{
-			$$projectsHash{ $proj }{ $lib } = [ qq/$s[ 0 ]_$s[ 1 ]_1.fastq/, qq/$s[ 0 ]_$s[ 1 ]_2.fastq/ ];
+			if( defined( $$projectsHash{ $proj }{ $lib } ) )
+			{
+				my @t = @{ $$projectsHash{ $proj }{ $lib } };
+				push( @t, qq/$s[ 0 ]_$s[ 1 ]_1.fastq/ );
+				push( @t, qq/$s[ 0 ]_$s[ 1 ]_2.fastq/ );
+			}
+			else
+			{
+				$$projectsHash{ $proj }{ $lib } = [ qq/$s[ 0 ]_$s[ 1 ]_1.fastq/, qq/$s[ 0 ]_$s[ 1 ]_2.fastq/ ];
+			}
 		}
 		close( $ffh );
 	}
