@@ -602,7 +602,14 @@ sub importInternalLanes
 			}
 		}
 		
-		$$projectsHash{ $proj }{ $lib } = [ qq/$s[ 0 ]_$s[ 1 ]_1.fastq/, qq/$s[ 0 ]_$s[ 1 ]_2.fastq/ ];
+		if( length( $proj ) == 0 || length( $lib ) == 0 )
+		{
+			print "WARNING: No proj/library info for $lane\n";
+		}
+		else
+		{
+			$$projectsHash{ $proj }{ $lib } = [ qq/$s[ 0 ]_$s[ 1 ]_1.fastq/, qq/$s[ 0 ]_$s[ 1 ]_2.fastq/ ];
+		}
 		close( $ffh );
 	}
 	
@@ -614,7 +621,7 @@ sub buildInternalHierarchy
 	my $projecthash = shift; # ref to hash of projectnames->samplenames->lists of fastq
     my $dhierarchyDir = shift;
     my $ahierarchyDir = shift;
-
+	
     croak "Can't find data hierarchy directory\n" unless -d $dhierarchyDir;
     croak "Can't find analysis hierarchy directory\n" unless -d $ahierarchyDir;
 	
