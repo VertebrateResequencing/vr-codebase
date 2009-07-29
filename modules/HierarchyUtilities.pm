@@ -604,7 +604,40 @@ sub importInternalLanes
 		
 		if( length( $proj ) == 0 || length( $lib ) == 0 )
 		{
-			print "WARNING: No proj/library info for $lane\n";
+			#try the older hack of using _s_
+			open( my $ffh, q[-|], qq/$DFIND -file $s[ 0 ]_s_$s[ 1 ].fastq/ ) or die "Cannot run dfind on lane $_\n";
+			my $lib = '';
+			my $proj = '';
+			while( <$ffh> )
+			{
+				chomp;
+				if( $_ =~ /^Project Tracking/ )
+				{
+					my @s1 = split( /\t/, $_ );
+					$proj = $s1[ 1 ];
+				}
+				elsif( $_ =~ /Library Tracking/ )
+				{
+					my @s1 = split( /\t/, $_ );
+					$lib = $s1[ 1 ];
+				}
+			}
+			
+			if( length( $proj ) == 0 || length( $lib ) == 0 )
+			{
+				print "WARNING: No proj/library info for $lane\n";
+				next;
+			}
+			
+			if( defined( $$projectsHash{ $proj }{ $lib } ) )
+			{
+				my @t = @{ $$projectsHash{ $proj }{ $lib } };
+				push( @t, qq/$s[ 0 ]_s_$s[ 1 ].fastq/ );
+			}
+			else
+			{
+				$$projectsHash{ $proj }{ $lib } = [ qq/$s[ 0 ]_s_$s[ 1 ].fastq/ ];
+			}
 		}
 		else
 		{
