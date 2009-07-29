@@ -631,8 +631,7 @@ sub importInternalLanes
 			
 			if( defined( $$projectsHash{ $proj }{ $lib } ) )
 			{
-				my @t = @{ $$projectsHash{ $proj }{ $lib } };
-				push( @t, qq/$s[ 0 ]_s_$s[ 1 ].fastq/ );
+				push( @{ $$projectsHash{ $proj }{ $lib } }, qq/$s[ 0 ]_s_$s[ 1 ].fastq/ );
 			}
 			else
 			{
@@ -643,9 +642,8 @@ sub importInternalLanes
 		{
 			if( defined( $$projectsHash{ $proj }{ $lib } ) )
 			{
-				my @t = @{ $$projectsHash{ $proj }{ $lib } };
-				push( @t, qq/$s[ 0 ]_$s[ 1 ]_1.fastq/ );
-				push( @t, qq/$s[ 0 ]_$s[ 1 ]_2.fastq/ );
+				push( @{ $$projectsHash{ $proj }{ $lib } }, qq/$s[ 0 ]_$s[ 1 ]_1.fastq/ );
+				push( @{ $$projectsHash{ $proj }{ $lib } }, qq/$s[ 0 ]_$s[ 1 ]_2.fastq/ );
 			}
 			else
 			{
