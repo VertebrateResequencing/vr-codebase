@@ -660,8 +660,10 @@ sub importInternalLanes
 		my $p = $_;
 		foreach( keys( %{ $$projectsHash{ $_ } } ) )
 		{
-			print qq/$p -> $_ -> $$projectsHash{ $p }{ $_ }[ 0 ]\n/;
-			print qq/$p -> $_ -> $$projectsHash{ $p }{ $_ }[ 1 ]\n\n/;
+			foreach( @{$$projectsHash{ $p }{ $_ }} )
+			{
+				print qq/$p -> $_ -> $_\n/;
+			}
 		}
 	}
 	
