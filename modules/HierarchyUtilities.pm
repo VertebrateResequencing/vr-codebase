@@ -583,6 +583,7 @@ sub importInternalLanes
 		my $lane = $_;
 		my @s = split( /_/, $_ );
 		
+		print "SEARCHING: $lane\n";
 		open( my $ffh, q[-|], qq/$DFIND -file $s[ 0 ]_$s[ 1 ]_1.fastq/ ) or die "Cannot run dfind on lane $_\n";
 		my $lib = '';
 		my $proj = '';
@@ -603,19 +604,6 @@ sub importInternalLanes
 		
 		$$projectsHash{ $proj }{ $lib } = [ qq/$s[ 0 ]_$s[ 1 ]_1.fastq/, qq/$s[ 0 ]_$s[ 1 ]_2.fastq/ ];
 		close( $ffh );
-	}
-	
-	foreach( keys( %$projectsHash ) )
-	{
-		my $proj = $_;
-		foreach( keys( %{ $$projectsHash{ $proj } } ) )
-		{
-			my $lib = $_;
-			foreach( @{$$projectsHash{$proj}{$lib}} )
-			{
-				print $proj."->".$lib."->".$_."\n";
-			}
-		}
 	}
 	
 	&buildInternalHierarchy($projectsHash,$dhierarchyDir,$ahierarchyDir);
