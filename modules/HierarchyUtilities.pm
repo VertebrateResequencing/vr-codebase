@@ -666,7 +666,7 @@ sub importInternalLanes
 		}
 	}
 	
-	#&buildInternalHierarchy($projectsHash,$dhierarchyDir,$ahierarchyDir);
+	&buildInternalHierarchy($projectsHash,$dhierarchyDir,$ahierarchyDir);
 }
 
 sub buildInternalHierarchy 
