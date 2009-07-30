@@ -233,6 +233,9 @@ sub _do_read_args {
     elsif (defined $args{read2}) {
         $self->throw("read1 must be supplied with read2");
     }
+    else {
+        $self->throw("read0 or read1 & read2 must be supplied");
+    }
     
     return %out_hash;
 }
