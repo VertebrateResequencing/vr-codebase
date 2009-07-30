@@ -251,7 +251,7 @@ sub mapLane
 		next;
 	}
 	
-	my $laneID = basename( $laneDir );
+	my $laneID = basename( $laneDir ).int(rand(10000000000));
 	
 	#check if the lane is already mapped
 	if( -f "raw.map" && -s "raw.map" > 2000 )
@@ -436,7 +436,7 @@ sub mapLane
 			my $totalLength=`cat ../$lane_read0.fastqcheck | head -1 | awk '{print \$3}'`;chomp( $totalLength );
 			my $numSplits= int($totalLength/$BASES_PER_CHUNK) + 1;
 			print "Num splits: $numSplits\n";
-                         
+			
             my $clipPoint0=-1;
             if( length( `grep "clip0" ../meta.info | wc -l` ) > 1 )
             {
@@ -508,7 +508,7 @@ sub mapLane
 				{
 					$cmdMiddle .= qq[ -1 $clipPoint1 ];
 				}
-
+				
 				if( $clipPoint2 > -1 )
 				{
 					$cmdMiddle .= qq[ -2 $clipPoint2 ];
