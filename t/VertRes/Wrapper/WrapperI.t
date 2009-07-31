@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 3;
+    use Test::Most tests => 6;
     
     use_ok('VertRes::Wrapper::WrapperI');
 }
@@ -29,6 +29,43 @@ my $fh = $wrapper->run($0);
 my @lines = <$fh>;
 is @lines, 5, 'looks like head -n 5 worked';
 
+# arg handling tests
+package VertRes::Wrapper::Foo;
+use base qw(VertRes::Wrapper::WrapperI);
+sub new {
+    my ($class, @args) = @_;
+    my $self = $class->SUPER::new(@args,
+                                  exe => 'foo');
+    return $self;
+}
+sub action1 {
+    my ($self, @args) = @_;
+    
+    $self->switches([qw(baz naz)]);
+    $self->params([qw(foo bar)]);
+    
+    $self->_set_params_and_switches_from_args(@args);
+}
+sub action2 {
+    my ($self, @args) = @_;
+    
+    $self->switches([qw(caz maz)]);
+    $self->params([qw(goo car)]);
+    
+    $self->_set_params_and_switches_from_args(@args);
+    $self->_set_params_string(join => '=');
+}
+package main;
+$wrapper = VertRes::Wrapper::Foo->new();
+$wrapper->action1(baz => 1, foo => 'boo');
+is $wrapper->_get_params_string(), ' -foo boo -baz', '_get_params_string default test';
+$wrapper->action2(maz => 1, car => 'far');
+is $wrapper->_get_params_string(), ' car=far maz', '_get_params_string non-default test';
+
 # needs a zillion more tests!...
+TODO: {
+    local $TODO = "Currently little more than a stub";
+    ok 0, 'needs more tests...';
+}
 
 exit;
