@@ -85,8 +85,7 @@ sub new {
 }
 
 sub _set_params_and_switches_from_args {
-    my ($self, $args, $opts) = @_;
-    $opts ||= {case_sensitive => 1};
+    my $self = shift;
     
     my @methods;
     foreach my $hash_ref ($self->params(), $self->switches()) {
@@ -94,7 +93,7 @@ sub _set_params_and_switches_from_args {
         push(@methods, keys %{$hash_ref});
     }
     if (@methods) {
-        my @args = @{$args};
+        my @args = @_;
         # first reset to undefs and 0s
         my $hash_ref = $self->params();
         foreach my $param (keys %{$hash_ref || {}}) {
@@ -109,7 +108,7 @@ sub _set_params_and_switches_from_args {
         $self->_set_from_args(\@args,
                               methods => \@methods,
                               create => 1,
-                              %{$opts});
+                              case_sensitive => 1);
     }
 }
 

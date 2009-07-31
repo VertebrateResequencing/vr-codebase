@@ -100,7 +100,7 @@ sub index {
     
     $self->switches([qw(c)]);
     $self->params([qw(a p)]);
-    $self->_set_params_and_switches_from_args([a => 'bwtsw', %opts]);
+    $self->_set_params_and_switches_from_args(a => 'bwtsw', %opts);
     
     my $out_file = $in_fa;
     $out_file .= '.bwt';
@@ -127,7 +127,7 @@ sub aln {
     
     $self->switches([qw(c L N)]);
     $self->params([qw(n o e i d l k m t M O E R)]);
-    $self->_set_params_and_switches_from_args([%opts]);
+    $self->_set_params_and_switches_from_args(%opts);
     
     $self->register_output_file_to_check($out_sai);
     
@@ -156,7 +156,7 @@ sub sampe {
     $self->switches([qw(s)]);
     $self->params([qw(a o)]);
     
-    $self->_set_params_and_switches_from_args([%opts]);
+    $self->_set_params_and_switches_from_args(%opts);
     
     $self->register_output_file_to_check($out_sam);
     
@@ -183,7 +183,7 @@ sub samse {
     $self->switches([]);
     $self->params([qw(n)]);
     
-    $self->_set_params_and_switches_from_args([%opts]);
+    $self->_set_params_and_switches_from_args(%opts);
     
     $self->register_output_file_to_check($out_sam);
     
