@@ -246,14 +246,15 @@ sub add_sam_header {
  Returns : boolean (true on success)
  Args    : starting sam file, output name for bam file. The reference.fai is
            only needed if add_sam_header() hasn't already been called on the
-           in.sam.
+           in.sam. Optionally, args to pass to VertRes::Wrapper::samtools (eg.
+           quiet => 1).
 
 =cut
 
 sub sam_to_fixed_sorted_bam {
-    my ($self, $in_sam, $out_bam, $ref_fai) = @_;
+    my ($self, $in_sam, $out_bam, $ref_fai, @args) = @_;
     
-    my $wrapper = VertRes::Wrapper::samtools->new(verbose => $self->verbose);
+    my $wrapper = VertRes::Wrapper::samtools->new(verbose => $self->verbose, @args);
     $wrapper->sam_to_fixed_sorted_bam($in_sam, $out_bam, $ref_fai);
     
     return $wrapper->run_status() >= 1;
@@ -272,6 +273,9 @@ sub sam_to_fixed_sorted_bam {
            -or-
            single_ended => boolean (false by default, ie. paired)
 
+           Optionally, args to pass to VertRes::Wrapper::samtools (eg.
+           quiet => 1)
+
 =cut
 
 sub rmdup {
@@ -279,18 +283,18 @@ sub rmdup {
     
     my $command = 'rmdup';
     
-    my $lane_path = $args{lane_path};
+    my $lane_path = delete $args{lane_path};
     if ($lane_path) {
         my @fastq_info = @{HierarchyUtilities::getFastqInfo($lane_path)};
         if ($fastq_info[0]->[0] && ! $fastq_info[1]->[0] && ! $fastq_info[2]->[0]) {
             $command = 'rmdupse';
         }
     }
-    if ($args{single_ended}) {
+    if (delete $args{single_ended}) {
         $command = 'rmdupse';
     }
     
-    my $wrapper = VertRes::Wrapper::samtools->new(verbose => $self->verbose);
+    my $wrapper = VertRes::Wrapper::samtools->new(verbose => $self->verbose, %args);
     $wrapper->$command($in_bam, $out_bam);
     
     return $wrapper->run_status() >= 1;
