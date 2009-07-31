@@ -120,7 +120,7 @@ sub view {
     
     $self->switches([qw(b h H S)]);
     $self->params([qw(t o f F q)]);
-    $self->_set_params_and_switches_from_args(%options);
+    $self->_set_params_and_switches_from_args([%options]);
     
     
     return $self->run(@file_and_regions);
@@ -143,7 +143,7 @@ sub sort {
     
     $self->switches([qw(n)]);
     $self->params([qw(m)]);
-    $self->_set_params_and_switches_from_args(%options);
+    $self->_set_params_and_switches_from_args([%options]);
     
     $self->register_output_file_to_check($out_prefix.'.bam');
     
@@ -167,7 +167,7 @@ sub merge {
     
     $self->switches([qw(n)]);
     $self->params([]);
-    $self->_set_params_and_switches_from_args(%options);
+    $self->_set_params_and_switches_from_args([%options]);
     
     $self->register_output_file_to_check($out_bam);
     
@@ -247,7 +247,7 @@ sub pileup {
     
     $self->switches([qw(s i c g)]);
     $self->params([qw(m t l f T N r G I)]);
-    $self->_set_params_and_switches_from_args(%options);
+    $self->_set_params_and_switches_from_args([%options]);
     
     my @files = ($in_file);
     if ($out_file) {
@@ -276,7 +276,7 @@ sub fillmd {
     
     $self->switches([qw(e u b S)]);
     $self->params([]);
-    $self->_set_params_and_switches_from_args(%options);
+    $self->_set_params_and_switches_from_args([%options]);
     
     my @files = ($in_file, $ref);
     if ($out_file) {
