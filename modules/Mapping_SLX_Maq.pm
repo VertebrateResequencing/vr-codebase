@@ -976,13 +976,13 @@ sub getMappingStats
 		}
 =cut		
 		#verify the number of reads agrees with the mapstat file
-		$rawMappedReads = `head raw.map.mapstat | grep 'Total number of reads' | awk -F":" '{print \$2}'`;chomp( $rawMappedReads );
-		$rawMappedBases = `head raw.map.mapstat | grep 'Sum of read length' | awk -F":" '{print \$2}'`;chomp( $rawMappedBases );
-		$errorRate = `head raw.map.mapstat | grep 'Error rate' | awk -F":" '{print \$2}'`;chomp( $errorRate );
+		$rawMappedReads = `head raw.map.mapstat | grep 'Total number of reads' | awk -F":" '{print \$2}'`; $rawMappedReads =~ s/\s//g;
+		$rawMappedBases = `head raw.map.mapstat | grep 'Sum of read length' | awk -F":" '{print \$2}'`; $rawMappedBases =~ s/\s//g;
+		$errorRate = `head raw.map.mapstat | grep 'Error rate' | awk -F":" '{print \$2}'`; $errorRate =~ s/\s//g;
 		if( -s "rmdup.map.mapstat" )
 		{
-			$rmdupMappedReads = `head rmdup.map.mapstat | grep 'Total number of reads' | awk -F":" '{print \$2}'`;chomp( $rmdupMappedReads );
-			$rmdupMappedBases = `head rmdup.map.mapstat | grep 'Sum of read length' | awk -F":" '{print \$2}'`;chomp( $rmdupMappedBases );
+			$rmdupMappedReads = `head rmdup.map.mapstat | grep 'Total number of reads' | awk -F":" '{print \$2}'`; $rmdupMappedReads =~ s/\s//g;
+			$rmdupMappedBases = `head rmdup.map.mapstat | grep 'Sum of read length' | awk -F":" '{print \$2}'`; $rmdupMappedBases =~ s/\s//g;
 		}
 		else
 		{
@@ -1005,6 +1005,8 @@ sub getMappingStats
 			{
 				return undef;
 			}
+			
+			$rawPairedNumReads = `cat raw.sorted.flagstat | grep 'properly paired' | awk '{print \$1}'`; $rawPairedNumReads =~ s/\s//g;
 		}
 		else
 		{
