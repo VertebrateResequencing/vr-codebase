@@ -397,7 +397,7 @@ sub mappingHierarchyReport
 			$numBases += $fastq[ $i ][ 3 ];
 		}
 		
-		my ($project, $sample, $platform, $lib, $lane ) = split "/", $_;
+		my ($project, $sample, $platform, $lib, $lane ) = (split "/", $_)[-5..-1];
 		
 		if( $laneAbsPath =~ /\/SLX\// )
 		{
