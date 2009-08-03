@@ -120,7 +120,7 @@ sub view {
     
     $self->switches([qw(b h H S)]);
     $self->params([qw(t o f F q)]);
-    $self->_set_params_and_switches_from_args([%options]);
+    $self->_set_params_and_switches_from_args(%options);
     
     
     return $self->run(@file_and_regions);
