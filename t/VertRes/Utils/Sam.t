@@ -61,8 +61,8 @@ TODO: {
 
 # sam_to_fixed_sorted_bam (just a shortcut to VertRes::Wrapper::samtools::sam_to_fixed_sorted_bam - no need to test thoroughly here)
 my $sorted_bam = $io->catfile($temp_dir, 'sorted.bam');
-ok $sam_util->sam_to_fixed_sorted_bam($temp_sam, $sorted_bam, quiet => 1), 'sam_to_fixed_sorted_bam test, no ref';
-ok $sam_util->sam_to_fixed_sorted_bam($headless_sam, $sorted_bam, $ref, quiet => 1), 'sam_to_fixed_sorted_bam test, with ref';
+ok $sam_util->sam_to_fixed_sorted_bam($temp_sam, $sorted_bam, undef, quiet => 1), 'sam_to_fixed_sorted_bam test, no fai';
+ok $sam_util->sam_to_fixed_sorted_bam($headless_sam, $sorted_bam, $fai, quiet => 1), 'sam_to_fixed_sorted_bam test, with fai';
 
 # rmdup (just a shortcut to VertRes::Wrapper::samtools::rmdup - no need to test thoroughly here)
 my $rmdup_bam = $io->catfile($temp_dir, 'rmdup.bam');
