@@ -21,6 +21,9 @@ jws@sanger.ac.uk
 
 =cut
 
+use strict;
+use warnings;
+no warnings 'uninitialized';
 use Sfind::Lane;
 
 =head2 new

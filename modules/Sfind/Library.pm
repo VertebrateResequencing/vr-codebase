@@ -33,6 +33,9 @@ jws@sanger.ac.uk
 
 =cut
 
+use strict;
+use warnings;
+no warnings 'uninitialized';
 use Sfind::Request;
 use Sfind::Lane;
 
@@ -263,7 +266,6 @@ sub lanes {
 	}
 	$self->{'lanes'} = \@lanes;
     }
-
     return $self->{'lanes'};
 }
 

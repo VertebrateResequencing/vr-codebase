@@ -24,6 +24,9 @@ jws@sanger.ac.uk
 
 =cut
 
+use strict;
+use warnings;
+no warnings 'uninitialized';
 use Sfind::Library;
 
 =head2 new

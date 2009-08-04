@@ -20,7 +20,10 @@ jws@sanger.ac.uk
 
 =cut
 
-#use Sfind::Lane;
+use strict;
+use warnings;
+no warnings 'uninitialized';
+use Sfind::Fastq;
 
 =head2 new
 
@@ -40,8 +43,8 @@ sub new {
     $self->{_dbh} = $dbh;
 
     # id_run_pair = 0 means this is the first of any pair
-    # which is what the srf,fastq & fastqcheck files are named for
-    my $sql = qq[select batch_id, id_run, position, run_complete, cycles from npg_information where id_npg_information = ? and id_run_pair=0];
+    # which is what the srf, fastq & fastqcheck files are named for
+    my $sql = qq[select batch_id, id_run, position, run_complete, cycles,paired_read from npg_information where id_npg_information = ? and id_run_pair=0];
     my $sth = $self->{_dbh}->prepare($sql);
 
     $sth->execute($id);
@@ -55,6 +58,7 @@ sub new {
     $self->run_lane($data->[2]);
     $self->created($data->[3]);
     $self->read_len($data->[4]);
+    $self->is_paired($data->[5]);
 
     $self->_load_pair_info();
     return $self;
@@ -154,6 +158,25 @@ sub name {
 }
 
 
+=head2 is_paired
+
+  Arg [1]    : boolean for whether lane is paired (optional)
+  Example    : my $paired = $lane->is_paired();
+	       $lane->is_paired('1');
+  Description: Get/Set for whether lane is paired-end read
+  Returntype : boolean
+
+=cut
+
+sub is_paired {
+    my ($self,$is_paired) = @_;
+    if (defined $is_paired and $is_paired ne $self->{'is_paired'}){
+	$self->{'is_paired'} = $is_paired ? 1 : 0;
+    }
+    return $self->{'is_paired'};
+}
+
+
 =head2 pair_run_name
 
   Arg [1]    : pair_run_name (optional)
@@ -210,19 +233,40 @@ sub run_lane {
     return $self->{'run_lane'};
 }
 
-
 =head2 fastq
 
-  Arg [1]    : none
+  Arg [1]    : None
   Example    : my $fastq = $lane->fastq();
-  Description: fetch array ref of mpsa fastq files for this lane
-  Returntype : array ref of mpsa fuse file locations
+  Description: Returns a ref to an array of the fastq objects that have been generated from this lane.
+  Returntype : ref to array of Sfind::Fastq objects
 
 =cut
 
 sub fastq {
     my ($self) = @_;
     unless ($self->{'fastq'}){
+	my @fastq;
+    	foreach my $name (@{$self->fastq_filenames()}){
+	    push @fastq, $self->get_fastq_by_filename($name);
+	}
+	$self->{'fastq'} = \@fastq;
+    }
+    return $self->{'fastq'};
+}
+
+
+=head2 fastq_filenames
+
+  Arg [1]    : none
+  Example    : my $fastq_files = $lane->fastq_filenames();
+  Description: fetch array ref of mpsa fastq files for this lane
+  Returntype : array ref of mpsa fuse file locations
+
+=cut
+
+sub fastq_filenames {
+    my ($self) = @_;
+    unless ($self->{'fastq_filenames'}){
 	my $run = $self->run_name;
 	my $lane = $self->run_lane;
 	open(my $FASTQ, "/software/solexa/bin/dfind -run $run -lane $lane -filetype fastq |grep fuse |") or die "Can't run dfind to locate fastq: $!\n";
@@ -232,9 +276,25 @@ sub fastq {
 	    push @fastq, $fq;
 	}
 	close $FASTQ;
-	$self->{'fastq'} = \@fastq;
+	$self->{'fastq_filenames'} = \@fastq;
     }
-    return $self->{'fastq'};
+    return $self->{'fastq_filenames'};
+}
+
+
+=head2 get_fastq_by_filename
+
+  Arg [1]    : fastq filename, including path
+  Example    : my $fastqfile = $lane->get_fastq_by_filename('/fuse/mpsafs/runs/1378/1378_s_1.fastq);
+  Description: retrieve Sfind::Fastq object by id
+  Returntype : Sfind::Fastq object
+
+=cut
+
+sub get_fastq_by_filename {
+    my ($self, $filename) = @_;
+    my $obj = Sfind::Fastq->new($filename);
+    return $obj;
 }
 
 
@@ -242,7 +302,7 @@ sub fastq {
 
   Arg [1]    : none
   Example    : my $mean_quality = $lane->mean_quality();
-  Description: get mean_quality (from fastqcheck) in resulting fastq
+  Description: get mean_quality (from fastqcheck) in resulting fastq.  Note that this is the mean of the mean_qualities in the fastqcheck.
   Returntype : mean_quality to 1dp
 
 =cut
@@ -250,7 +310,7 @@ sub fastq {
 sub mean_quality {
     my ($self) = @_;
     unless ($self->{'mean_quality'}){
-	$self->_get_fastqcheck_stats;
+	$self->_get_fastq_stats;
     }
     return $self->{'mean_quality'};
 }
@@ -268,7 +328,7 @@ sub mean_quality {
 sub reads {
     my ($self) = @_;
     unless ($self->{'reads'}){
-	$self->_get_fastqcheck_stats;
+	$self->_get_fastq_stats;
     }
     return $self->{'reads'};
 }
@@ -286,7 +346,7 @@ sub reads {
 sub basepairs {
     my ($self) = @_;
     unless ($self->{'basepairs'}){
-	$self->_get_fastqcheck_stats;
+	$self->_get_fastq_stats;
     }
     return $self->{'basepairs'};
 }
@@ -294,45 +354,23 @@ sub basepairs {
 
 # Internal function to populate basepairs, reads, and mean_quality from
 # fastqcheck
-sub _get_fastqcheck_stats {
+sub _get_fastq_stats {
     my ($self) = @_;
     my $fastq = $self->fastq;
     my $read_tot = 0;
     my $bp_tot = 0;
     my $mean_q = 0;
-    my $q_tot = 0;
-    my $q_n = 0;
+    my $q_tot;
+    my $count;
     foreach my $fq(@$fastq){
-	my $fqc = $fq."check";	# should really dfind, but this is faster
-	open(my $FQC, $fqc) or die "Can't open $fqc to retrieve readcount: $!\n";
-	my $header = <$FQC>;
-	chomp $header;
-	my $totals;
-	while(<$FQC>){
-	    if (/^Total/){
-		chomp;
-		$totals = $_;
-		last;
-	    }
-	}
-	close $FQC;
-	# TODO check cycles from here too?
-	my ($reads, $foo, $bp) = split " ", $header;
-	$read_tot += $reads;
-	$bp_tot += $bp;
-
-	my ($label, $atot, $ctot, $gtot, $ttot, $ntot, @vals) = split " ", $totals;	
-	my $AQ = pop @vals; # NB, this is NOT average quality
-	# the numbers in @vals are the counts (in millions I think) of bases
-	# at the quality of the subscript (i.e. from 0..x)
-	# want average of these
-	for (my $i=0; $i < scalar @vals; ++$i){
-	    $q_n += $vals[$i]; 
-	    $q_tot += $vals[$i] * $i;
-	}
+        $count++;
+        $q_tot += $fq->mean_quality;
+        $read_tot += $fq->reads;
+        $bp_tot += $fq->basepairs;
     }
-    if ($q_n){
-	$mean_q = $q_tot/$q_n;
+
+    if ($count){
+	$mean_q = $q_tot/$count;
     }
     $self->{'reads'} = $read_tot;
     $self->{'basepairs'} = $bp_tot;
