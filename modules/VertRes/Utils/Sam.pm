@@ -25,6 +25,7 @@ package VertRes::Utils::Sam;
 
 use strict;
 use warnings;
+use File::Copy;
 use VertRes::IO;
 use VertRes::Wrapper::samtools;
 use HierarchyUtilities;
@@ -229,7 +230,7 @@ sub add_sam_header {
     my $actual_lines = $io->num_lines();
     
     if ($expected_lines == $actual_lines) {
-        system("mv $headed_sam $raw_sam_file");
+        move($headed_sam, $raw_sam_file) || $self->throw("Failed to move $headed_sam to $raw_sam_file: $!");
         return 1;
     }
     else {

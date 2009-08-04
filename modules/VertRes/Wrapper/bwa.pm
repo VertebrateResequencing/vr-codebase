@@ -58,6 +58,7 @@ package VertRes::Wrapper::bwa;
 
 use strict;
 use warnings;
+use File::Copy;
 use VertRes::IO;
 
 use base qw(VertRes::Wrapper::WrapperI);
@@ -288,7 +289,7 @@ sub do_mapping {
         my $sam_lines = $io->num_lines();
         
         if ($sam_lines == $num_reads) {
-            system("mv $tmp_sam $out_sam");
+            move($tmp_sam, $out_sam) || $self->throw("Failed to move $tmp_sam to $out_sam: $!");
         }
         else {
             $self->warn("a sam file was made by do_mapping(), but it only had $sam_lines lines, not the expected $num_reads - will unlink it");

@@ -40,6 +40,7 @@ package VertRes::Wrapper::samtools;
 
 use strict;
 use warnings;
+use File::Copy;
 use VertRes::IO;
 
 use base qw(VertRes::Wrapper::WrapperI);
@@ -216,7 +217,7 @@ sub merge_and_check {
     
     # check for truncation
     if ($merge_count >= $bam_count) {
-        system("mv $out_bam.tmp $out_bam");
+        move("$out_bam.tmp", $out_bam) || $self->throw("Failed to move $out_bam.tmp to $out_bam: $!");
         $self->_set_run_status(2);
     }
     else {
@@ -482,7 +483,7 @@ sub sam_to_fixed_sorted_bam {
     $io->file($in_sam);
     my $sam_count = $io->num_lines();
     if ($bam_count >= $sam_count) {
-        system("mv $tmp_bam.bam $out_bam.bam");
+        move("$tmp_bam.bam", "$out_bam.bam") || $self->throw("Failed to move $tmp_bam.bam to $out_bam.bam: $!");;
         $self->_set_run_status(2);
     }
     else {

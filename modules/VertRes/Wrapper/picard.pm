@@ -35,6 +35,7 @@ package VertRes::Wrapper::picard;
 
 use strict;
 use warnings;
+use File::Copy;
 use VertRes::IO;
 use VertRes::Wrapper::samtools;
 use VertRes::Parser::sam;
@@ -241,7 +242,7 @@ sub rmdup {
     close($fh);
     my $expected_count = $total_lines - $dup_lines;
     if ($bam_count >= $expected_count) { # >= because it might have 1 or 2 extra header lines
-        system("mv $tmp_bam $out_bam");
+        move($tmp_bam, $out_bam) || $self->throw("Failed to move $tmp_bam to $out_bam: $!");
         $self->_set_run_status(2);
     }
     else {
