@@ -1,9 +1,10 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use Cwd 'cwd';
 
 BEGIN {
-    use Test::Most tests => 36;
+    use Test::Most tests => 37;
     
     use_ok('VertRes::IO');
 }
@@ -90,5 +91,15 @@ $io->rmtree($test_dir);
 ok ! -d $test_dir, 'rmtree removed a directory that contained a file';
 undef $io;
 ok ! -d $tmp_dir, 'tmpdir destroyed ok';
+
+# parse a fod file
+$io = VertRes::IO->new();
+$file = $io->catfile('t', 'data', 'fod.txt');
+my $cwd = cwd();
+my @expected;
+foreach my $dir ('data', 'VertRes') {
+    push(@expected, $io->catfile($cwd, 't', $dir));
+}
+is_deeply [sort $io->parse_fod($file)], [sort @expected], 'parse_fod test';
 
 exit;

@@ -304,6 +304,35 @@ sub get_filepaths {
     return @filepaths;
 }
 
+=head2 parse_fod
+
+ Title   : parse_fod
+ Usage   : my @directories = $obj->parse_fod('file_of_directories'); 
+ Function: Parse a file containing a list of directories.
+ Returns : a list consisting of the absolute paths to the directories listed in
+           the file
+ Args    : filename
+
+=cut
+
+sub parse_fod {
+    my ($self, $fod) = @_;
+    
+    -s $fod || $self->throw("fod file '$fod' empty!");
+    
+    open(my $fodfh, $fod) || $self->throw("Couldn't open fod file '$fod'");
+    my %dirs;
+    while (<$fodfh>) {
+        chomp;
+        /\S/ || next;
+        -d $_ || $self->throw("fod file contained a line that wasn't a directory: $_");
+        my $lane = abs_path($_);
+        $dirs{$lane} = 1;
+    }
+    
+    return keys %dirs;
+}
+
 =head2 tempfile
 
  Title   : tempfile
