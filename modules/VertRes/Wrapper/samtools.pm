@@ -487,7 +487,7 @@ sub sam_to_fixed_sorted_bam {
     }
     else {
         $self->warn("$tmp_bam.bam is bad (only $bam_count lines vs $sam_count), will unlink it");
-        $self->run_status(-1);
+        $self->_set_run_status(-1);
         unlink("$tmp_bam.bam");
     }
     
