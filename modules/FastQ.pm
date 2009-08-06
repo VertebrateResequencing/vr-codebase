@@ -48,7 +48,6 @@ sub sample
     #   Otherwise, see how big is the file and find out how dense should be the sampling.
     if ( !defined $idxs )
     {
-        my $file_size = ( $in_file =~ /\.gz$/i ) ? Utils::uncompressed_gz_size($in_file) : -s $in_file;
         open($fh_in, "zcat $in_file | ") or Utils::error("zcat $in_file: $!");
 
         # Read only the first four lines:
@@ -66,8 +65,20 @@ sub sample
         # How many sequences must be read for the sample
         my $nseqs_to_read = $sample_size / (length($line_seq)-1);
 
-        # How many blocks (sequences) are in the file. (Estimate only, assumes that all fields have the same length.)
-        my $nseqs_total = $file_size / ( length($line_id) + length($line_seq) + length($line_sep) + length($line_qual)  );
+        # How many blocks (sequences) are in the file. First look in the fastqcheck file.
+        #   If it does not exist, try to estimate (assumes that all fields have the same length).
+        #
+        my ($fqcheck_data, $nseqs_total);
+        eval { $fqcheck_data = parse_fastqcheck($in_file . '.fastqcheck'); };
+        if ( $@ )
+        {
+            my $file_size = ( $in_file =~ /\.gz$/i ) ? Utils::uncompressed_gz_size($in_file) : -s $in_file;
+            $nseqs_total = $file_size / ( length($line_id) + length($line_seq) + length($line_sep) + length($line_qual)  );
+        }
+        else
+        {
+            $nseqs_total = $$fqcheck_data{nseqs};
+        }
 
         my $nseqs_to_skip = int($nseqs_total / $nseqs_to_read);
 
@@ -148,10 +159,16 @@ sub parse_fastqcheck
     my @out = ();
 
     open(my $fh,'<',$in_file) or Utils::error("$in_file: $!");
-    <$fh>; <$fh>; 
+
+    # 23891022 sequences, 1815717672 total length, 76.00 average, 76 max
+    my $line  = <$fh>; 
+    if ( !($line=~/^(\d+)\s+sequences/) ) { Utils::error("Could not parse $in_file: $line"); }
+    my $nseqs = $1;
+
+    <$fh>; 
 
     # A    C    G    T    N    0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17  18  19  20  21  2
-    my $line = <$fh>;
+    $line = <$fh>;
     my @header = split(/\s+/, $line);
     my @xvals  = splice(@header,6,-1);
 
@@ -182,7 +199,7 @@ sub parse_fastqcheck
     }
     close($fh);
 
-    return {'data'=>\@out};
+    return {'data'=>\@out, 'nseqs'=>$nseqs };
 }
 
 1;

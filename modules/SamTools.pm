@@ -20,7 +20,7 @@ $FLAGS
 our $FLAGS = 
 {
     'paired_tech'    => 0x0001,
-    'read_mapped'    => 0x0002,
+    'read_mapped'    => 0x0002,     # This name is confusing, should be called mapped_in_pair instead.
     'unmapped'       => 0x0004,
     'mate_unmapped'  => 0x0008,
     'reverse_strand' => 0x0010,
@@ -1053,7 +1053,7 @@ sub collect_detailed_bam_stats
             $$stat{$key}{'yvals'} = scalar @yvals ? \@yvals : [0];
             $$stat{$key}{'max'}{'x'} = defined $xmax ? $xmax : 0;
             $$stat{$key}{'max'}{'y'} = defined $ymax ? $ymax : 0;
-            $$stat{$key}{'average'}  = $avg/$navg;
+            $$stat{$key}{'average'}  = $navg ? $avg/$navg : 0;
         }
 
         # Chromosome distribution histograms (reads_chrm_distrib) are different - xvalues are not numeric
@@ -1146,8 +1146,10 @@ sub print_flags
 {
     my ($bam_file,$options) = @_;
 
+    if ( !$options ) { $options='' }
+
     my $fh = \*STDIN;
-    if ( $bam_file ) { open($fh, "samtools view $bam_file |") or Utils::error("samtools view $bam_file |: $!"); }
+    if ( $bam_file ) { open($fh, "samtools view $bam_file $options |") or Utils::error("samtools view $bam_file $options |: $!"); }
     while (my $line=<$fh>)
     {
         # IL14_1902:3:83:1158:1446        89      1       23069154        37      54M     =       23069154        0       TGCAC

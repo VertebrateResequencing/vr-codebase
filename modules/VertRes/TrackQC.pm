@@ -101,6 +101,32 @@ sub new
 }
 
 
+=head2 clean
+
+        Description : If mrProper option is set, the entire QC directory will be deleted.
+        Returntype  : None
+
+=cut
+
+sub clean
+{
+    my ($self) = @_;
+
+    $self->SUPER::clean();
+
+    if ( !$$self{'lane'} ) { $self->throw("Missing parameter: the lane to be cleaned.\n"); }
+    if ( !$$self{'sample_dir'} ) { $self->throw("Missing parameter: the sample_dir to be cleaned.\n"); }
+
+    if ( !$$self{'mrProper'} ) { return; }
+    my $qc_dir = qq[$$self{'lane'}/$$self{'sample_dir'}];
+    if ( ! -d $qc_dir ) { return; }
+
+    $self->debug("rm -rf $qc_dir\n");
+    Utils::CMD(qq[rm -rf $qc_dir]);
+    return;
+}
+
+
 #---------- rename ---------------------
 
 # Requires nothing

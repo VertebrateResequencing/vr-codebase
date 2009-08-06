@@ -131,6 +131,7 @@ sub backtrace
     Returns  : The output returned by the command.
     Example  : my @out = Utils::CMD("ls",{'verbose'=>1,'exit_on_error'=>0});
     Options  :
+                chomp         .. run chomp on all returned lines
                 exit_on_error .. should the encountered errors be ignored?
                 logfile       .. where should be the command and the output logged?
                 verbose       .. print what's being done.
@@ -171,6 +172,15 @@ sub CMD
 
         Utils::error(@msg) unless !exists($$options{'exit_on_error'});
         print STDERR $msg;
+    }
+
+    if ( $$options{chomp} )
+    {
+        my $len = scalar @out;
+        for (my $i=0; $i<$len; $i++)
+        {
+            chomp($out[$i]);
+        }
     }
 
     return (@out);
@@ -220,17 +230,24 @@ sub uncompressed_gz_size
     #   my @output = <$reader>;
     #   my @errors = <$err>;
 
-    my ($writer, $reader);
-    open3($writer, $reader, \*ERR, "gzip -l $file");
-    my @output = <$reader>;
-    my @errors = <ERR>;
+    # Uh, gzip -l is not reliable. Occasionally it gives wrong uncompressed size, as it
+    #   happened e.g. for 3290_5_2.fastq.gz. In that case, the ratio was -2208.2%
+    #
+    #    my ($writer, $reader);
+    #    open3($writer, $reader, \*ERR, "gzip -l $file");
+    #    my @output = <$reader>;
+    #    my @errors = <ERR>;
+    #
+    #    if ( scalar @errors ) { error("gzip -l $file:\n", @errors) }
+    #
+    #    # Expected output:
+    #    #   compressed        uncompressed  ratio uncompressed_name
+    #    #   1772198718          4147914907  57.3% mouse-2470_1_2.fastq
+    #    if ( scalar @output != 2 || !($output[1]=~/^\s+\d+\s+(\d+)/ ) ) { error("Uh, expected something else:\n", @output) }
 
-    if ( scalar @errors ) { error("gzip -l $file:\n", @errors) }
-
-    # Expected output:
-    #   compressed        uncompressed  ratio uncompressed_name
-    #   1772198718          4147914907  57.3% mouse-2470_1_2.fastq
-    if ( scalar @output != 2 || !($output[1]=~/^\s+\d+\s+(\d+)/ ) ) { error("Uh, expected something else:\n", @output) }
+    my @output = CMD("zcat $file | wc -c");
+    if ( scalar @output != 1 ) { error("Uh, expeceted something else from zcat $file | wc -c, got: ", join('',@output), "\n"); }
+    if ( !($output[0] =~ /^(\d+)$/) ) { error("Uh, expeceted something else from zcat $file | wc -c, not \"$output[0]\"\n"); }
     return $1;
 }
 
@@ -361,10 +378,15 @@ sub relative_symlink
 sub basename
 {
     my ($path) = @_;
-    if ( !($path =~ m{/?([^/]+?)(\.?[^.]*)$}) ) { Utils::error("FIXME: could not parse \"$path\".\n") }
+    if ( !($path =~ m{/?([^/]+)/?$}) ) { Utils::error("FIXME: could not parse \"$path\".\n") }
     my $dir  = $` ? $` : '';
-    my $base = $1 ? $1 : '';
-    my $suff = $2 ? $2 : '';
+    my $base = $1;
+    my $suff = '';
+    if ( $base =~ m{(\.[^.]+)$} )
+    {
+        $base = $`;
+        $suff = $1;
+    }
     return ($dir,$base,$suff);
 }
 

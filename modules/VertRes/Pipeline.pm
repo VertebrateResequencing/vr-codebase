@@ -37,8 +37,8 @@ our $default_options =
 
         Options    :
                     check_status    .. if set to 1, nothing will be run, only the status of the lane will be reported
-                    clean           .. delete all files provided by actions (** TODO **)
-                    exit_on_errors  .. ** not used consistently, we'll see in the future how/if to use this **
+                    clean           .. delete all files provided by actions
+                    exit_on_errors  .. if set to 0, an unfinished task will be run again even if the LSF job previously failed
                     global_lock     .. lock file for the lane, to prevent multiple run_lane subroutines running
                     lane            .. optional, can be overrided by run_lane
                     list_tasks      .. don't do anything, only list available tasks
@@ -117,6 +117,14 @@ sub run_lane
 
     $$self{'logfile'} = ($$self{'log'} =~ m{^/}) ? $$self{'log'} : "$lane_path/$$self{'log'}";
     $self->log_file($$self{'logfile'});
+
+    
+    # The cleaning should be called directly, not via run_lane.
+    if ( $$self{clean} )
+    {
+        $self->clean();
+        return $Yes;
+    }
 
     # This lock file prevents multiple running instances of Pipeline for one lane (e.g. one
     #   is run from cron and one manually). 
@@ -230,6 +238,31 @@ sub what_files_are_missing
     }
     return \@missing;
 }
+
+=head2 clean
+
+        Description : The default routine cleans all lock files. The pipelines should implement the cleaning.
+        Returntype  : None
+
+=cut
+
+sub clean
+{
+    my ($self) = @_;
+
+    if ( !$$self{'lane'} ) { $self->throw("Missing parameter: the lane to be cleaned.\n"); }
+
+    for my $action (@{$self->{'actions'}})
+    {
+        my $action_lock = "$$self{'lane'}/$$self{'prefix'}$$action{'name'}.lock";
+        if ( ! -e $action_lock ) { next }
+        $self->debug("unlink $action_lock\n");
+        unlink($action_lock) or $self->throw("Could not unlink $action_lock: $!");
+    }
+
+    return;
+}
+
 
 =head2 is_finished
 

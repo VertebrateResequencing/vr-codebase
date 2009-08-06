@@ -96,6 +96,7 @@ yrange <- range($yrange)
     print $fh "par(cex=1.25)\n";
     if ( $barplot )
     {
+        print $fh "par(las=2)\n";
         print $fh "barplot(y0,,,x0, xlab='$xlabel',ylab='$ylabel')\n";
     }
     else

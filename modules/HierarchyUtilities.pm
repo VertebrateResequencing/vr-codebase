@@ -160,8 +160,9 @@ sub lane_info
             Utils::error("FIXME: $ENV{'G1K'}/ref/genders.txt not accessible or no $$info{'sample'} in there?\n");
         }
         $$info{'ref_name'} = 'NCBI36';
-        $$info{'snps'} = '/nfs/sf8/G1K/ref/snps/hapmap3-plus10.bin';
-        # $$info{'snps'} = '/lustre/scratch102/g1k/ref/snps/hapmap3_release2_sb10.bin';
+        $$info{'snps'}     = '/nfs/sf8/G1K/ref/snps/hapmap3.snps.bin';
+        $$info{'genotype'} = $$info{sample};
+        $$info{'gtype_confidence'} = 1.4;
     }
     else
     {
