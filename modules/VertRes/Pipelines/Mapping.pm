@@ -528,6 +528,9 @@ unless (-s '$bam_file') {
     \$sam_util->throw("merging bam failed - try again?") unless \$samtools->run_status == 2;
 }
 
+# remake the bam via fillmd so we have accurate NM field
+#...
+
 my \$ok = 0;
 
 # rmdup
