@@ -39,7 +39,8 @@ cmp_ok $pt->run_status, '>=', 1, 'MergeSamFiles ran ok with settings via new';
 is get_bam_lines($bam_out_file), 4000, 'merged bam had the correct number of lines with settings via new';
 
 # test of rmdup should bring that back down to 2000... actually, 3972 (!).
-# samtools rmdup gets rid of more, but still only gets it to 2927. Whatever...
+# samtools rmdup gets rid of more, but still only gets it to 2927. Both samtools
+# and picard agree that simple.bam contains 6 duplicates. Whatever...
 $pt->rmdup($bam_out_file, $rmdup_file);
 is $pt->run_status, 2, 'rmdup ran ok';
 is get_bam_lines($rmdup_file), 3972, 'rmdup bam had the correct number of lines';
