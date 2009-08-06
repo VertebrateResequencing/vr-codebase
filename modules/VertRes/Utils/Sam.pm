@@ -28,6 +28,7 @@ use warnings;
 use File::Copy;
 use VertRes::IO;
 use VertRes::Wrapper::samtools;
+use VertRes::Wrapper::picard;
 use HierarchyUtilities;
 use VertRes::Parser::sequence_index;
 use SamTools;
@@ -297,6 +298,37 @@ sub rmdup {
     
     my $wrapper = VertRes::Wrapper::samtools->new(verbose => $self->verbose, %args);
     $wrapper->$command($in_bam, $out_bam);
+    
+    return $wrapper->run_status() >= 1;
+}
+
+=head2 merge
+
+ Title   : merge
+ Usage   : $obj->merge('out.bam', @bams_for_merging);
+ Function: Merges bam files using picard-tools. If only one bam supplied for
+           merging, just symlinks it to out.bam.
+ Returns : boolean (true on success)
+ Args    : output bam filename, list of input bam filenames
+
+=cut
+
+sub merge {
+    my ($self, $out_bam, @in_bams) = @_;
+    return unless @in_bams;
+    
+    unlink($out_bam);
+    
+    if (@in_bams == 1) {
+        return symlink($in_bams[0], $out_bam);
+    }
+    
+    my $io = VertRes::IO->new();
+    my $wrapper = VertRes::Wrapper::picard->new(quiet => 1,
+                                                validation_stringency => 'silent',
+                                                tmp_dir => $io->tempdir());
+    
+    $wrapper->MergeSamFiles($out_bam, @in_bams);
     
     return $wrapper->run_status() >= 1;
 }

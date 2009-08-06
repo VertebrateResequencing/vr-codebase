@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 17;
+    use Test::Most tests => 22;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::IO');
@@ -69,6 +69,13 @@ my $rmdup_bam = $io->catfile($temp_dir, 'rmdup.bam');
 ok $sam_util->rmdup($sorted_bam, $rmdup_bam, single_ended => 0, quiet => 1), 'rmdup test, paired';
 ok $sam_util->rmdup($sorted_bam, $rmdup_bam, single_ended => 1, quiet => 1), 'rmdup test, single ended';
 
+# merge (pretty much just a shortcut to VertRes::Wrapper::picard::MergeSamFiles - no need to test thoroughly here)
+my $merge_bam = $io->catfile($temp_dir, 'merge.bam');
+ok $sam_util->merge($merge_bam, $rmdup_bam), 'merge on single bam test';
+ok -l $merge_bam, 'merge on single bam created a symlink';
+ok $sam_util->merge($merge_bam, $rmdup_bam, $sorted_bam), 'merge on multiple bam test';
+ok -f $merge_bam, 'merge on multiple bams created a new file ';
+ok -s $merge_bam > -s $rmdup_bam, 'merge on multiple bams created a new file bigger then one of the originals';
 
 exit;
 
