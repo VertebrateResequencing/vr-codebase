@@ -222,7 +222,7 @@ sub merge_and_check {
     }
     else {
         $self->warn("$out_bam.tmp is bad (only $merge_count lines vs $bam_count), will unlink it");
-        $self->run_status(-1);
+        $self->_set_run_status(-1);
         unlink("$out_bam.tmp");
     }
     
