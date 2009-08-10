@@ -99,7 +99,7 @@ sub _handle_common_params {
 
  Title   : MergeSamFiles
  Usage   : $wrapper->MergeSamFiles('out.bam', @in_bams, %options);
- Function: MergeSamFiles...
+ Function: MergeSamFiles... (can merge both sam and bam files)
  Returns : n/a
  Args    : list of file paths (output bam, input bams), followed by a hash of
            options understood by MergeSamFiles, eg. VALIDATION_STRINGENCY =>
@@ -134,6 +134,78 @@ sub MergeSamFiles {
     $self->_set_params_and_switches_from_args(%params);
     
     return $self->run(@file_args);
+}
+
+=head2 merge_and_check
+
+ Title   : merge_and_check
+ Usage   : $wrapper->merge_and_check('out.bam', \@in_bams, %options);
+ Function: Merges multiple sam/bam files together and checks the output merged
+           file isn't truncated.
+ Returns : n/a
+ Args    : output bam, array ref of input bams, options hash as understood by
+           MergeSamFiles()
+
+=cut
+
+sub merge_and_check {
+    my ($self, $out_bam, $in_bams, %opts) = @_;
+    
+    my $orig_run_method = $self->run_method;
+    
+    # do the merge
+    $self->run_method('system');
+    my $tmp_out = $out_bam;
+    $tmp_out =~ s/\.bam$/.tmp.bam/; # won't work unless the final suffix is .bam
+    $self->MergeSamFiles($tmp_out, @{$in_bams}, %opts);
+    $self->throw("failed during the merge step, giving up for now") unless $self->run_status >= 1;
+    
+    # find out our expectation
+    my $st = VertRes::Wrapper::samtools->new(quiet => 1);
+    $st->run_method('open');
+    my $bam_count = 0;
+    foreach my $bam_file (@{$in_bams}) {
+        my $fh;
+        if ($bam_file =~ /\.sam$/) {
+            open($fh, $bam_file) || $self->throw("Could not open sam file '$bam_file'");
+        }
+        else {
+            $fh = $st->view($bam_file);
+        }
+        
+        while (<$fh>) {
+            $bam_count++;
+        }
+        close($fh);
+    }
+    
+    # find out how many lines are in the merged bam file
+    my $merge_count = 0;
+    my $fh;
+    if ($out_bam =~ /\.sam$/) {
+        open($fh, $tmp_out) || $self->throw("Could not open sam file '$tmp_out'");
+    }
+    else {
+        $fh = $st->view($tmp_out);
+    }
+    while (<$fh>) {
+        $merge_count++;
+    }
+    close($fh);
+    
+    # check for truncation
+    if ($merge_count >= $bam_count) {
+        move($tmp_out, $out_bam) || $self->throw("Failed to move $tmp_out to $out_bam: $!");
+        $self->_set_run_status(2);
+    }
+    else {
+        $self->warn("$tmp_out is bad (only $merge_count lines vs $bam_count), will unlink it");
+        $self->_set_run_status(-1);
+        unlink("$tmp_out");
+    }
+    
+    $self->run_method($orig_run_method);
+    return;
 }
 
 =head2 MarkDuplicates
@@ -267,7 +339,7 @@ sub run {
     if ($self->quiet) {
         my $run_method = $self->run_method;
         $self->run_method('open');
-        my $fh = $self->SUPER::run(@_);
+        my ($fh) = $self->_run(@_);
         while (<$fh>) {
             next;
         }
