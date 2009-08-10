@@ -1,5 +1,5 @@
 
 t/data/2822_6_1_1000.fastq
 t/data/S_suis_P17.dna.fai
+# not/a/file just a comment
 t/data/fastq.gz.fastqcheck
-

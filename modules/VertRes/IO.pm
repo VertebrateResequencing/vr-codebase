@@ -338,7 +338,8 @@ sub parse_fod {
 
  Title   : parse_fofn
  Usage   : my @files = $obj->parse_fofn('file_of_files'); 
- Function: Parse a file containing a list of files.
+ Function: Parse a file containing a list of files. Lines beginning with # are
+           ignored.
  Returns : a list consisting of the absolute paths to the files listed in
            the file
  Args    : filename
@@ -355,6 +356,7 @@ sub parse_fofn {
     while (<$fofnfh>) {
         chomp;
         /\S/ || next;
+        /^#/ && next;
         -f $_ || -l $_ || $self->throw("fofn file contained a line that wasn't a file: $_");
         my $file = abs_path($_);
         $files{$file} = 1;
