@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 12;
+    use Test::Most tests => 14;
     
     use_ok('VertRes::Wrapper::picard');
     use_ok('VertRes::Wrapper::samtools');
@@ -37,6 +37,12 @@ $pt = VertRes::Wrapper::picard->new(quiet => 1,
 $pt->MergeSamFiles($bam_out_file, ($bam_input_file, $bam_input_file));
 cmp_ok $pt->run_status, '>=', 1, 'MergeSamFiles ran ok with settings via new';
 is get_bam_lines($bam_out_file), 4000, 'merged bam had the correct number of lines with settings via new';
+
+# and do this same thing but with checks:
+unlink($bam_out_file);
+$pt->merge_and_check($bam_out_file, [$bam_input_file, $bam_input_file]);
+cmp_ok $pt->run_status, '>=', 1, 'merge_and_check ran ok';
+is get_bam_lines($bam_out_file), 4000, 'merged bam had the correct number of lines with merge_and_check';
 
 # test of rmdup should bring that back down to 2000... actually, 3972 (!).
 # samtools rmdup gets rid of more, but still only gets it to 2927. Both samtools
