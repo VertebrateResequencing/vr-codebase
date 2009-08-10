@@ -328,7 +328,7 @@ sub merge {
                                                 validation_stringency => 'silent',
                                                 tmp_dir => $io->tempdir());
     
-    $wrapper->MergeSamFiles($out_bam, @in_bams);
+    $wrapper->merge_and_check($out_bam, \@in_bams);
     
     return $wrapper->run_status() >= 1;
 }
