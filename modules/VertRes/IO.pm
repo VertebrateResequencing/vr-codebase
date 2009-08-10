@@ -326,11 +326,42 @@ sub parse_fod {
         chomp;
         /\S/ || next;
         -d $_ || $self->throw("fod file contained a line that wasn't a directory: $_");
-        my $lane = abs_path($_);
-        $dirs{$lane} = 1;
+        my $dir = abs_path($_);
+        $dirs{$dir} = 1;
     }
     
-    return keys %dirs;
+    my @sorted = sort keys %dirs;
+    return @sorted;
+}
+
+=head2 parse_fofn
+
+ Title   : parse_fofn
+ Usage   : my @files = $obj->parse_fofn('file_of_files'); 
+ Function: Parse a file containing a list of files.
+ Returns : a list consisting of the absolute paths to the files listed in
+           the file
+ Args    : filename
+
+=cut
+
+sub parse_fofn {
+    my ($self, $fofn) = @_;
+    
+    -s $fofn || $self->throw("fofn file '$fofn' empty!");
+    
+    open(my $fofnfh, $fofn) || $self->throw("Couldn't open fofn file '$fofn'");
+    my %files;
+    while (<$fofnfh>) {
+        chomp;
+        /\S/ || next;
+        -f $_ || -l $_ || $self->throw("fofn file contained a line that wasn't a file: $_");
+        my $file = abs_path($_);
+        $files{$file} = 1;
+    }
+    
+    my @sorted = sort keys %files;
+    return @sorted;
 }
 
 =head2 tempfile
