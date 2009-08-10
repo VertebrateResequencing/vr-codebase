@@ -183,6 +183,14 @@ sub quiet {
 
 sub run {
     my $self = shift;
+    
+    my @result = $self->_post_run($self->_run(@_));
+    
+    return wantarray ? @result : $result[0];
+}
+
+sub _run {
+    my $self = shift;
     my @extra_args = $self->_pre_run(@_);
     my $params = $self->_get_params_string();
     
@@ -191,9 +199,9 @@ sub run {
     my $run_method = $self->run_method();
     $run_method = '_'.$run_method.'_run';
     $self->_set_run_status(0);
-    my @result = $self->_post_run($self->$run_method($exe, $params, @extra_args));
+    my @result = $self->$run_method($exe, $params, @extra_args);
     
-    return wantarray ? @result : $result[0];
+    return @result;
 }
 
 =head2 run_method
