@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Copy;
 
 BEGIN {
     use Test::Most tests => 39;
@@ -16,13 +17,15 @@ is $bwa->quiet, 1, 'quiet set via new';
 # prepare our test files; copy them to a temp dir where we will do the tests
 my $io = VertRes::IO->new();
 my $temp_dir = $io->tempdir;
-my $read1 = '2822_6_1_1000.fastq';
-my $read2 = '2822_6_2_1000.fastq';
-my $ref = 'S_suis_P17.dna';
-system("cp t/data/$read1 t/data/$read2 t/data/$ref $temp_dir/");
-$read1 = $io->catfile($temp_dir, $read1);
-$read2 = $io->catfile($temp_dir, $read2);
-$ref = $io->catfile($temp_dir, $ref);
+my $read1_basename = '2822_6_1_1000.fastq';
+my $read2_basename = '2822_6_2_1000.fastq';
+my $ref_basename = 'S_suis_P17.dna';
+my $read1 = $io->catfile($temp_dir, $read1_basename);
+my $read2 = $io->catfile($temp_dir, $read2_basename);
+my $ref = $io->catfile($temp_dir, $ref_basename);
+copy($io->catfile('t', 'data', $read1_basename), $read1);
+copy($io->catfile('t', 'data', $read2_basename), $read2);
+copy($io->catfile('t', 'data', $ref_basename), $ref);
 ok -s $read1, 'test file 1 ready to use';
 ok -s $read2, 'test file 2 ready to use';
 ok -s $ref, 'test file 3 ready to use';
