@@ -1,6 +1,6 @@
 =head1 NAME
 
-VertRes::Wrapper::ssaha - wrapper for ssaha
+VertRes::Wrapper::ssaha - wrapper for ssaha2
 
 =head1 SYNOPSIS
 
@@ -21,7 +21,7 @@ $wrapper->do_mapping(ref => 'ref.fa',
 
 =head1 DESCRIPTION
 
-Runs ssaha in a nice way. Encapsulates the series of commands that must be
+Runs ssaha2 in a nice way. Encapsulates the series of commands that must be
 run into just one command. (and let's you run individual commands, but not all
 have been wrapped yet...)
 
@@ -47,11 +47,15 @@ use strict;
 use warnings;
 use VertRes::IO;
 use File::Basename;
+use File::Spec;
+use Cwd 'abs_path';
 use AssemblyTools;
+use VertRes::Utils::Cigar;
 use SamTools;
 
 use base qw(VertRes::Wrapper::WrapperI);
 
+our @ref_hash_suffixes = ('head', 'body', 'name', 'base', 'size');
 
 =head2 new
 
@@ -71,6 +75,37 @@ sub new {
     return $self;
 }
 
+=head2 ssaha2Build
+
+ Title   : ssaha2Build
+ Usage   : $wrapper->ssaha2Build('ref.fa', 'output_basename', skip => 3);
+ Function: Index the reference genome.
+ Returns : n/a
+ Args    : input reference fasta, output basename, hash of options understood
+           by ssaha2Build (currently limited to kmer and skip. NB: skip must
+           match the skip parameter you later plan to use when mapping)
+
+=cut
+
+sub ssaha2Build {
+    my ($self, $in_fa, $out_basename, %opts) = @_;
+    $in_fa = abs_path($in_fa);
+    my (undef, $path) = fileparse($in_fa);
+    $out_basename = File::Spec->catfile($path, basename($out_basename));
+    
+    $self->exe('ssaha2Build');
+    
+    $self->switches([]);
+    $self->params([qw(kmer skip save)]);
+    $self->_set_params_and_switches_from_args(%opts, save => $out_basename);
+    
+    foreach my $suffix (@ref_hash_suffixes) {
+        $self->register_output_file_to_check($out_basename.'.'.$suffix);
+    }
+    
+    return $self->run($in_fa);
+}
+
 =head2 do_mapping
 
  Title   : do_mapping
@@ -78,33 +113,42 @@ sub new {
                                 read0 => 'reads.fastq'
                                 read1 => 'reads_1.fastq',
                                 read2 => 'reads_2.fastq',
-                                output => 'output.sam');
- Function: Run bwa on the supplied files, generating a sam file of the mapping.
-           Checks the sam file isn't truncated.
+                                output => 'output.sam'
+                                local_cache => '/local/space/for/files');
+ Function: Run ssaha2 on the supplied files, generating a sam file of the
+           mapping. Checks the sam file isn't truncated. Optimises for 454.
+           Filters short reads. Does custom read pair matching. Indexes the
+           reference with ssaha2Build if not already done.
  Returns : n/a
  Args    : required options:
            ref => 'ref.fa'
            output => 'output.sam'
            insert_size => int (default 2000)
+           local_cache => '/path' (defaults to standard tmp space)
 
            read1 => 'reads_1.fastq', read2 => 'reads_2.fastq'
            -or-
            read0 => 'reads.fastq'
 
-           Optionally, also supply opts as understood by index(), aln(), samse()
-           or sampe(), but prefix the option name with the name of the command,
-           eg. index_a => 'is', sampe_a => 500.
+           Optionally, also supply opts as understood by ssaha2Build() and
+           ssaha2(), but prefix the option name with the name of the command,
+           eg. ssaha2Build_skip => 3, ssaha2_454 => 1. Many sensible defaults
+           are set - best not to supply any of your own, really.
 
 =cut
 
 sub do_mapping {
     my ($self, %args) = @_;
     
+    my $io = VertRes::IO->new();
+    my $cigar_util = VertRes::Utils::Cigar->new();
+    
     my $orig_run_method = $self->run_method;
     $self->run_method('system');
     
     my $ref_fa = delete $args{ref} || $self->throw("ref is required");
-    $ref_fa =~ s/\.fa$//;
+    my $ref_fa_hash_base = $ref_fa;
+    $ref_fa_hash_base =~ s/\.fa[^.]*$//;
     my $insert_size = delete $args{insert_size} || 2000;
     my @fqs;
     if (defined $args{read1} && defined $args{read2} && ! defined $args{read0}) {
@@ -121,13 +165,49 @@ sub do_mapping {
     
     my %command_opts;
     while (my ($key, $val) = each %args) {
-        if ($key =~ /^(index|aln|sampe|samse)_(\w+)/) {
+        if ($key =~ /^(ssaha2Build|ssaha2)_(\w+)/) {
             $command_opts{$1}->{$2} = $val;
         }
     }
     
-    my $io = VertRes::IO->new;
-    my @files;
+    # copy reference hash files to local cache; create hash files first if
+    # necessary
+    my $local_cache = delete $args{local_cache};
+    unless ($local_cache) {
+        $local_cache = File::Spec->tmpdir();
+        # == /tmp : ideally we don't want these files deleted when we're done
+        # with them, so we don't clean them up by using VertRes::IO->tempdir
+    }
+    my $hash_files_found = 0;
+    foreach my $suffix (@ref_hash_suffixes) {
+        $hash_files_found++ if -s "$ref_fa_hash_base.$suffix";
+    }
+    unless ($hash_files_found == 5) {
+        $self->ssaha2Build($ref_fa, $ref_fa_hash_base, skip => 3, %{$command_opts{ssah2Build}});
+        $self->throw("failed during the ref hash index build step, giving up for now") unless $self->run_status >= 1;
+    }
+    my $hash_basename = basename($ref_fa_hash_base);
+    foreach my $suffix (@ref_hash_suffixes) {
+        my $source = "$ref_fa_hash_base.$suffix";
+        my $dest = $io->catfile($local_cache, "$hash_basename.$suffix");
+        
+        # if dest already exists, check it is really our file
+        my $do_copy = 1;
+        if (-s $dest) {
+            my $diff = `diff $source $dest`;
+            unless ($diff) {
+                $do_copy = 0;
+            }
+        }
+        
+        # copy if it doesn't exist or isn't correct
+        if ($do_copy) {
+            my $ok = $io->copy($source, $dest);
+            $ok || $self->throw("failed prior to attempting the mapping (could not copy $source -> $dest)");
+        }
+    }
+    
+    my (@files, @filtered_fastqs, @cigar_outputs);
     foreach my $fastq (@fqs) {
         my $temp_dir = $io->tempdir();
         
@@ -138,91 +218,44 @@ sub do_mapping {
         AssemblyTools::filterOutShortReads($fastq, 30, $tmp_fastq);
         
         # run ssaha2, filtering the output to get the top 10 hits per read,
-        # and compressing it
+        # grouping by readname, and compressing it
         my $cigar_out = $io->catfile($temp_dir, 'ssaha.cigar.gz');
-        system("ssaha2 -disk 1 -454 -output cigar -diff 10 -save $ref_fa $tmp_fastq | /nfs/users/nfs_s/sb10/src/vert_reseq/user/tk2/miscScripts/filterCigarStreamTop10.pl | gzip -c > $cigar_out");
+        open(my $sfh, "ssaha2 -disk 1 -454 -output cigar -diff 10 -save $ref_fa_hash_base $tmp_fastq |");
+        open(my $cfh, "| gzip -c > $cigar_out");
+        $cigar_util->top_10_hits_per_read($sfh, $cfh);
         
         # check for completion
-        my $done = `zcat $cigar_out | tail -50 | grep "SSAHA2 finished" | wc -l`;
+        my $done = `zcat $cigar_out | tail -1 | grep "SSAHA2 finished" | wc -l`;
         $done || $self->throw("ssah2 failed to finish for fastq $fastq");
         
         #$cmd .= qq{; perl -w -e "use Mapping_454_ssaha;Mapping_454_ssaha::cigarStat( \\"$currentDir/$cigarName\\", \\"$currentDir/$cigarName.mapstat\\");"'};
         
         push(@files, ($tmp_fastq, $cigar_out));
+        push(@filtered_fastqs, $tmp_fastq);
+        push(@cigar_outputs, $cigar_out);
     }
+    
     
     # convert to sam
-    if (@files == 2) {
-        $self->debug("will do SamTools::ssaha2samUnpaired(@files, undef, $out_sam.'.gz')");
-        SamTools::ssaha2samUnpaired(@files, undef, $out_sam.'.gz');
-    }
-    elsif (@files == 4) {
-        $self->debug("will do SamTools::ssaha2samPaired(@files, $insert_size, undef, $out_sam.'.gz')");
-        SamTools::ssaha2samPaired(@files, $insert_size, undef, $out_sam.'.gz');
+    my $expected_sam_lines = 0;
+    if (@cigar_outputs == 1 || @cigar_outputs == 2) {
+        $self->debug("will do cigar_to_sam([@filtered_fastqs], [@cigar_outputs], $insert_size, undef, $out_sam.'.gz')");
+        $expected_sam_lines = $cigar_util->cigar_to_sam(\@filtered_fastqs, \@cigar_outputs, $insert_size, undef, $out_sam);
     }
     else {
-        $self->throw("Something went wrong, ended up with (@files)");
+        $self->throw("Something went wrong, ended up with ([@filtered_fastqs], [@cigar_outputs])");
     }
     
-    system("gunzip -f $out_sam.gz");
+    # sanity check the sam
+    $io->file($out_sam);
+    my $actual_sam_lines = $io->num_lines;
+    unless ($actual_sam_lines == $expected_sam_lines) {
+        $self->throw("Wrote $expected_sam_lines sam entries but could only read back $actual_sam_lines!");
+    }
     
     $self->_set_run_status(1);
     
     $self->run_method($orig_run_method);
-    return;
-}
-
-=head2 filter_cigar_stream_top10
-
- Title   : filter_cigar_stream_top10
- Usage   : $wrapper->filter_cigar_stream_top10($infh, $outfh);
- Function: Filters the cigar output of ssaha2, outputting only the top 10 hits
-           per read.
- Returns : n/a
- Args    : input and output filehandles
-
-=cut
-
-sub filter_cigar_stream_top10 {
-    my ($self, $infh, $outfh) = @_;
-    
-    my $currentRead = '';
-    my @currentHits;
-    while (<$infh>) {
-        chomp;
-        
-        if (/^cigar::/) {
-            my @s = split(/\s+/, $_);
-            
-            if (length($currentRead) == 0) {
-                $currentRead = $s[1];
-                push(@currentHits, $_);
-            }
-            elsif ($currentRead ne $s[1]) {
-                foreach my $i (0..$#currentHits) {
-                    print $outfh $currentHits[$i], "\n";
-                }
-                
-                $currentRead = $s[1];
-                undef(@currentHits);
-                push(@currentHits, $_);
-            }
-            else {
-                push(@currentHits, $_);
-            }
-        }
-        elsif (/^SSAHA2 finished/) {
-            print $outfh $_, "\n";
-        }
-    }
-    
-    foreach my $i (0..$#currentHits) {
-        print $outfh $currentHits[$i], "\n";
-    }
-    
-    close($infh);
-    close($outfh);
-    
     return;
 }
 
