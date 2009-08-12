@@ -56,6 +56,7 @@ our $actions = [ { name     => 'split',
                    provides => \&cleanup_provides }];
 
 our %options = (sequence_index => '/nfs/sf8/G1K/misc/sequence.index',
+                local_cache => '',
                 do_cleanup => 0);
 
 our $split_dir_name = 'split';
@@ -68,6 +69,7 @@ our $split_dir_name = 'split';
  Returns : VertRes::Pipelines::Mapping object
  Args    : lane => '/path/to/lane'
            sequence_index => '/path/to/sequence.index' (there is a G1K default)
+           local_cache => '/local/dir' (defaults to standard tmp space)
            do_cleanup => boolean (default false: don't do the cleanup action)
            chunk_size => int (default depends on mapper)
            other optional args as per VertRes::Pipeline
@@ -249,10 +251,10 @@ sub map_requires {
     my @requires = $self->_require_fastqs($lane_path);
     
     my %lane_info = %{HierarchyUtilities::lane_info($lane_path)};
-    # we require the .bwt so that multiple lanes during 'map' action don't all
-    # try and create the .bwt at once automatically if it is missing; could add
-    # an index action before map action to solve this...
-    push(@requires, $lane_info{fa_ref}, $lane_info{fa_ref}.'.bwt', $lane_info{fai_ref});
+    # we require the .bwt and .body so that multiple lanes during 'map' action don't all
+    # try and create the bwa/ssaha2 reference indexs at once automatically if it
+    # is missing; could add an index action before map action to solve this...
+    push(@requires, $lane_info{fa_ref}, $lane_info{fa_ref}.'.bwt', $lane_info{bwa_ref}.'.body', $lane_info{fai_ref});
     
     foreach my $ended ('se', 'pe') {
         if ($self->_get_read_args($lane_path, $ended)) {
@@ -306,6 +308,10 @@ sub map {
     my %lane_info = %{HierarchyUtilities::lane_info($lane_path)};
     my $ref_fa = $lane_info{fa_ref} || $self->throw("the reference fasta wasn't known for $lane_path");
     
+    # and get the expected insert size for this lane
+    # ***... from where?
+    my $insert_size = 2000;
+    
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
     my $sequence_index = $self->{sequence_index};
@@ -347,7 +353,7 @@ my \$mapper = $mapper_class->new(verbose => $verbose);
 my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
                                @split_read_args,
                                output => '$sam_file',
-                               insert_size => 2000);
+                               insert_size => $insert_size);
 
 # (it will only return ok and create output if the sam file was created and not
 #  truncated)
@@ -517,15 +523,16 @@ sub merge_and_stat {
         print $scriptfh qq{
 use strict;
 use VertRes::Utils::Sam;
-use VertRes::Wrapper::samtools;
+use VertRes::Wrapper::picard;
 
 my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
-my \$samtools = VertRes::Wrapper::samtools->new(verbose => $verbose);
+my \$picard = VertRes::Wrapper::picard->new(verbose => $verbose);
 
 # merge bams
 unless (-s '$bam_file') {
-    \$samtools->merge_and_check('$bam_file', [qw(@bams)]);
-    \$sam_util->throw("merging bam failed - try again?") unless \$samtools->run_status == 2;
+    # (picard can handle merging a single file; samtools can't)
+    \$picard->merge_and_check('$bam_file', [qw(@bams)]);
+    \$picard->throw("merging bam failed - try again?") unless \$picard->run_status == 2;
 }
 
 # remake the bam via fillmd so we have accurate NM field
