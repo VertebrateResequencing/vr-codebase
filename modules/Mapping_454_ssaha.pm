@@ -417,7 +417,7 @@ sub laneToBAM
 		open( S, ">unpaired.bam.sh" ) or die $!;
 		print S qq/if [ -s $cigarName0 ]
 		then
-			perl -w -e "use SamTools;SamTools::ssaha2samUnpaired( '$lane_read0', '$cigarName0', '$accession', 'unpaired.sam.gz');" > unpaired.samstat
+			perl -w -e "use VertRes::Utils::Cigar; \$c = VertRes::Utils::Cigar->new(); \$lines = \$c->cigar_to_sam(['$lane_read0'], ['$cigarName0'], undef, '$accession', 'unpaired.sam'); print \$lines; system('gzip unpaired.sam');" > unpaired.samstat
 		fi/;
 		close( S );
 		
@@ -438,7 +438,7 @@ sub laneToBAM
 		open( S, ">paired.bam.sh" ) or die $!;
 		print S qq/if [ -s $cigarName1 ] && [ -s $cigarName2 ]
 		then
-			perl -w -e "use SamTools;SamTools::ssaha2samPaired( '$lane_read1', '$cigarName1', '$lane_read2','$cigarName2', '$insertSize', '$accession', 'paired.sam.gz');" > paired.samstat
+			perl -w -e "use VertRes::Utils::Cigar; \$c = VertRes::Utils::Cigar->new(); \$lines = \$c->cigar_to_sam(['$lane_read1', '$lane_read2'], ['$cigarName1', '$cigarName2'], '$insertSize', '$accession', 'paired.sam'); print \$lines; system('gzip paired.sam');" > paired.samstat
 		fi/;
 		close( S );
 		
