@@ -45,7 +45,7 @@ use base qw(VertRes::Base);
 our %tech_to_module = (454 => 'VertRes::Utils::Mappers::ssaha',
                        SLX => 'VertRes::Utils::Mappers::bwa');
 
-our %do_mapping_args = (insert_size => 1);
+our %do_mapping_args = (insert_size => 1, local_cache => 1);
 
 
 =head2 new
@@ -206,7 +206,8 @@ sub _do_mapping_args {
     
     foreach my $arg (keys %do_mapping_args) {
         if (defined $args{$arg}) {
-            $out_hash{$converter->{$arg}} = $args{$arg};
+            my $key = $converter->{$arg} || next;
+            $out_hash{$key} = $args{$arg};
         }
     }
     
