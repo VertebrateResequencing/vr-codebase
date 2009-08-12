@@ -10,7 +10,7 @@ BEGIN {
     use_ok('VertRes::IO');
 }
 
-my $debug = 1;
+my $debug = 0;
 my $quiet = $debug ? 0 : 1;
 my $verbose = $debug ? 1 : 0;
 my $ssaha = VertRes::Wrapper::ssaha->new(quiet => $quiet, verbose => $verbose);
