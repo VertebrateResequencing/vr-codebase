@@ -8,6 +8,7 @@ use File::Copy;
 use Data::Dumper;
 
 use AssemblyTools;
+use VertRes::Utils::Cigar;
 
 #a perl module of many commonly used for recalibrating g1k sequencing data
 
@@ -42,7 +43,8 @@ sub cigar2MatchMismatchTable
 	
 	print "Read in reads\n";
 	
-	my $ref = AssemblyTools::hash_ssaha_cigar_output( $cigar );
+	my $cigar_util = VertRes::Utils::Cigar->new();
+	my $ref = $cigar_util->cigar_by_reads($cigar);
 	print "Hashed cigar\n";
 	my %cigarHash = %{ $ref };
 	
