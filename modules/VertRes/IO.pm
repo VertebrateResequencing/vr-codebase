@@ -51,6 +51,7 @@ use File::Temp;
 use File::Spec;
 use File::Basename;
 require File::Path;
+require File::Copy;
 
 use base qw(VertRes::Base);
 
@@ -436,6 +437,37 @@ sub catfile {
 sub rmtree {
     my $self = shift;
     return File::Path::rmtree(@_);
+}
+
+=head2  copy
+
+ Title   : copy
+ Usage   : $obj->copy('source.file', 'dest.file'); 
+ Function: Copy a file and check that the copy is identical to the source
+           afterwards.
+ Returns : boolean (true on success; on failure the destination path won't
+           exist)
+ Args    : source file path, output file path. Optionally, the number of times
+           to retry the copy if the copy isn't identical, before giving up
+           (default 3).
+
+=cut
+
+sub copy {
+    my ($self, $source, $dest, $max_retries) = @_;
+    unless (defined $max_retries) {
+        $max_retries = 3;
+    }
+    
+    for (1..$max_retries) {
+        my $success = File::Copy::copy($source, $dest);
+        if ($success) {
+            my $diff = `diff $source $dest`;
+            return 1 unless $diff;
+        }
+    }
+    
+    return 0;
 }
 
 1;

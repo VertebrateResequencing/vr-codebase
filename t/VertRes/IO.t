@@ -4,7 +4,7 @@ use warnings;
 use Cwd 'cwd';
 
 BEGIN {
-    use Test::Most tests => 38;
+    use Test::Most tests => 41;
     
     use_ok('VertRes::IO');
 }
@@ -89,6 +89,14 @@ is_deeply [$io->get_filepaths($tmp_dir, subdir => 'moo', dir => 'test_dir')], []
 is_deeply [$io->get_filepaths($tmp_dir, dir => 'moo')], [], 'get_filepaths bad dir';
 $io->rmtree($test_dir);
 ok ! -d $test_dir, 'rmtree removed a directory that contained a file';
+# copy... impossible to test the diff part of copy failure?
+$file = $io->catfile('t', 'data', 'io_test.txt');
+my $copy = $io->catfile($tmp_dir, 'copy_test');
+ok $io->copy($file, $copy), 'simple copy test';
+ok -s $copy, 'copy test really did work';
+my $devnull = $io->catfile('dev', 'null', 'copy_test');
+my $ok = $io->copy($file, $devnull);
+is $ok, 0, 'copy fails to /dev/null';
 undef $io;
 ok ! -d $tmp_dir, 'tmpdir destroyed ok';
 
@@ -103,12 +111,12 @@ foreach my $dir ('data', 'VertRes') {
 is_deeply [$io->parse_fod($file)], [sort @expected], 'parse_fod test';
 
 # parse a fofn file  ***ideally should have a symlink inside the fofn as well...
-$io = VertRes::IO->new();
 $file = $io->catfile('t', 'data', 'fofn.txt');
 @expected = ();
 foreach my $file ('2822_6_1_1000.fastq', 'S_suis_P17.dna.fai', 'fastq.gz.fastqcheck') {
     push(@expected, $io->catfile($cwd, 't', 'data', $file));
 }
 is_deeply [$io->parse_fofn($file)], [sort @expected], 'parse_fofn test';
+
 
 exit;
