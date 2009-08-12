@@ -88,7 +88,6 @@ sub split {
         $prefix =~ s/\.f[^.]+(?:\.gz)?$//;
         
         my $in = VertRes::IO->new(file => $fastq_file);
-        my $in_fh = $io->fh;
         push(@ins, [$fastq_file, $in]);
         
         my $split_file = $io->catfile($split_dir, "$prefix.$split_num.fastq");
