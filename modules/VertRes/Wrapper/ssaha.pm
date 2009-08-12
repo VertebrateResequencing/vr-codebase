@@ -103,7 +103,41 @@ sub ssaha2Build {
         $self->register_output_file_to_check($out_basename.'.'.$suffix);
     }
     
-    return $self->run($in_fa);
+    $self->{silence_stdout} = 1;
+    my @results = $self->run($in_fa);
+    $self->{silence_stdout} = 0;
+    return @results;
+}
+
+=head2 ssaha2
+
+ Title   : ssaha2
+ Usage   : $wrapper->ssaha2(\@inputs, $output, skip => 3);
+ Function: Align the @inputs.
+ Returns : n/a
+ Args    : input sequece file name(s) in an array reference, output name (undef
+           if using run_method('open')), hash of options understood by ssaha2
+           (NB: skip must match the skip parameter you set in ssaha2Build if
+           using the save option)
+
+=cut
+
+sub ssaha2 {
+    my ($self, $seqs, $out, %opts) = @_;
+    
+    $self->exe('ssaha2');
+    
+    $self->switches([qw(sense best 454 NQS tags name fix solexa)]);
+    $self->params([qw(kmer skip save ckmer cmatch cut seeds depth memory score
+                      identity port align edge array start end quality output
+                      diff udiff disk weight rtype pair outfile mthresh)]);
+    $self->_set_params_and_switches_from_args(%opts);
+    
+    if ($out) {
+        $self->register_output_file_to_check($out);
+    }
+    
+    return $self->run(@{$seqs});
 }
 
 =head2 do_mapping
@@ -207,7 +241,8 @@ sub do_mapping {
         }
     }
     
-    my (@files, @filtered_fastqs, @cigar_outputs);
+    my (@filtered_fastqs, @cigar_outputs);
+    $self->run_method('open');
     foreach my $fastq (@fqs) {
         my $temp_dir = $io->tempdir();
         
@@ -220,7 +255,7 @@ sub do_mapping {
         # run ssaha2, filtering the output to get the top 10 hits per read,
         # grouping by readname, and compressing it
         my $cigar_out = $io->catfile($temp_dir, 'ssaha.cigar.gz');
-        open(my $sfh, "ssaha2 -disk 1 -454 -output cigar -diff 10 -save $ref_fa_hash_base $tmp_fastq |");
+        my $sfh = $self->ssaha2([$tmp_fastq], undef, disk => 1, '454' => 1, output => 'cigar', diff => 10, save => $ref_fa_hash_base);
         open(my $cfh, "| gzip -c > $cigar_out");
         $cigar_util->top_10_hits_per_read($sfh, $cfh);
         
@@ -230,16 +265,14 @@ sub do_mapping {
         
         #$cmd .= qq{; perl -w -e "use Mapping_454_ssaha;Mapping_454_ssaha::cigarStat( \\"$currentDir/$cigarName\\", \\"$currentDir/$cigarName.mapstat\\");"'};
         
-        push(@files, ($tmp_fastq, $cigar_out));
         push(@filtered_fastqs, $tmp_fastq);
         push(@cigar_outputs, $cigar_out);
     }
     
-    
     # convert to sam
     my $expected_sam_lines = 0;
     if (@cigar_outputs == 1 || @cigar_outputs == 2) {
-        $self->debug("will do cigar_to_sam([@filtered_fastqs], [@cigar_outputs], $insert_size, undef, $out_sam.'.gz')");
+        $self->debug("will do cigar_to_sam([@filtered_fastqs], [@cigar_outputs], $insert_size, undef, $out_sam)");
         $expected_sam_lines = $cigar_util->cigar_to_sam(\@filtered_fastqs, \@cigar_outputs, $insert_size, undef, $out_sam);
     }
     else {
