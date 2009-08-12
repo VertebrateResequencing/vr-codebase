@@ -33,7 +33,8 @@ use VertRes::Wrapper::ssaha;
 
 use base qw(VertRes::Utils::Mapping);
 
-our %do_mapping_args = (insert_size => 'insert_size');
+our %do_mapping_args = (insert_size => 'insert_size',
+                        local_cache => 'local_cache');
 
 
 =head2 new
@@ -116,8 +117,7 @@ sub split_fastq {
  Usage   : $obj->do_mapping(ref => 'ref.fa',
                             read1 => 'reads_1.fastq',
                             read2 => 'reads_2.fastq',
-                            output => 'output.sam',
-                            insert_size => 2000);
+                            output => 'output.sam');
  Function: A convienience method that calls do_mapping() on the return value of
            wrapper(), translating generic options to those suitable for the
            wrapper. Also converts output to sam format.
@@ -132,16 +132,19 @@ sub split_fastq {
 
            and optional generic options:
            insert_size => int (default 2000)
+           local_cache => /path/where/reference_hash_files/can/be/copied/to
+                          (defaults to standard tmp space, which isn't ideal
+                           since it will be deleted afterwards every time)
 
 =cut
 
 sub do_mapping {
     my $self = shift;
     
-    my @args = $self->_do_mapping_args(\%do_mapping_args, @_);
+    my %args = $self->_do_mapping_args(\%do_mapping_args, @_);
     
     my $wrapper = $self->wrapper;
-    $wrapper->do_mapping(@args);
+    $wrapper->do_mapping(%args);
     
     # ssaha do_mapping auto-converts to sam, so we're done
     
