@@ -326,6 +326,9 @@ sub _system_run {
     my ($self, $exe, $params, @extra_args) = @_;
     
     my $redirect = $self->quiet ? ' 2> /dev/null ' : '';
+    if ($self->quiet && $self->{silence_stdout}) {
+        $redirect = ' > /dev/null'.$redirect;
+    }
     my $command = $exe.$params." @extra_args".$redirect;
     $self->debug("will run command '$command'");
     
