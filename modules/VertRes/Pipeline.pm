@@ -181,6 +181,10 @@ sub run_lane
         }
         if ( $status & $LSF::Error )
         {
+            # If exit_on_errors is set to 0, the action will be rerun. If it finishes
+            #   successfully, the lock file will be deleted above after the is_finished()
+            #   call. Only in case it fails again, we'll be executing this again...
+            #
             $self->warn("The task \"$$action{'name'}\" ended with an error - some of the LSF jobs returned wrong status:\n\t$action_lock\n");
             if ( $$self{'exit_on_errors'} )
             {

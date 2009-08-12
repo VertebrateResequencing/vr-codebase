@@ -79,7 +79,7 @@ sub lane_info
     };
 	
     # This should be done differently in the future - the DB should tell us.
-    if ( $$info{'project'} =~ /mouse/i ) 
+    if ( $$info{'project'} =~ /mouse/i or $$info{'project'} =~ /mice/i ) 
     { 
         $$info{'bwa_ref'}  = '/nfs/sf7/MOUSE/ref/NCBIM37_um';
         $$info{'fa_ref'}   = '/nfs/sf7/MOUSE/ref/NCBIM37_um.fa';

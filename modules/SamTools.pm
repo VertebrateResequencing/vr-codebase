@@ -20,7 +20,7 @@ $FLAGS
 our $FLAGS = 
 {
     'paired_tech'    => 0x0001,
-    'read_mapped'    => 0x0002,     # This name is confusing, should be called mapped_in_pair instead.
+    'read_paired'    => 0x0002,
     'unmapped'       => 0x0004,
     'mate_unmapped'  => 0x0008,
     'reverse_strand' => 0x0010,
@@ -212,8 +212,8 @@ sub collect_detailed_bam_stats
     # Use hashes, not arrays - the data can be broken and we might end up allocating insanely big arrays 
 
     #   reads_unmapped  ..   That is, not aligned to the ref sequence (unmapped flag)
-    #   reads_paired    ..      both mates are mapped and form a pair (read_mapped flag)
-    #   reads_unpaired  ..      both mates mapped, but do not form a pair (neither unmapped nor read_mapped flag set)
+    #   reads_paired    ..      both mates are mapped and form a pair (read_paired flag)
+    #   reads_unpaired  ..      both mates mapped, but do not form a pair (neither unmapped nor read_paired flag set)
     #   bases_total     ..   The total number of bases determined as \sum_{seq} length(seq)
     #   bases_mapped    ..      number of bases with 'M' in cigar
 
@@ -268,24 +268,9 @@ sub collect_detailed_bam_stats
             $$raw_stats{$stat}{'num_mismatches'} += $mismatch;
         }
 
-        my $paired = ($flag & $$FLAGS{'read_mapped'}) && ($flag & $$FLAGS{'paired_tech'});
-        if ( $paired || !($flag & $$FLAGS{'paired_tech'}) )
+        if ( !($flag & $$FLAGS{'unmapped'}) )
         {
-            if ( $paired ) 
-            { 
-                for my $stat (@stats) { $$raw_stats{$stat}{'reads_paired'}++; }
-
-                # Insert Size Frequencies
-                #
-                my $bin = abs(int( $isize / $insert_size_bin ));
-                for my $stat (@stats) { $$raw_stats{$stat}{'insert_size_freqs'}{$bin}++; }
-            }
-
-            my $cigar_info = cigar_stats($cigar);
-            if ( exists($$cigar_info{'M'}) )
-            {
-                for my $stat (@stats) { $$raw_stats{$stat}{'bases_mapped'} += $$cigar_info{'M'}; }
-            }
+            for my $stat (@stats) { $$raw_stats{$stat}{'bases_mapped'} += $seq_len; }
 
             # Chromosome distribution
             #
@@ -294,6 +279,17 @@ sub collect_detailed_bam_stats
                 for my $stat (@stats) { $$raw_stats{$stat}{'chrm_distrib_freqs'}{$chrom}++; }
             }
         }
+
+        my $paired = ($flag & $$FLAGS{'read_paired'}) && ($flag & $$FLAGS{'paired_tech'});
+        if ( $paired )
+        {
+            for my $stat (@stats) { $$raw_stats{$stat}{'reads_paired'}++; }
+
+            # Insert Size Frequencies
+            #
+            my $bin = abs(int( $isize / $insert_size_bin ));
+            for my $stat (@stats) { $$raw_stats{$stat}{'insert_size_freqs'}{$bin}++; }
+        }
         elsif ( $flag & $$FLAGS{'unmapped'} ) 
         { 
             for my $stat (@stats) { $$raw_stats{$stat}{'reads_unmapped'}++;  }
@@ -301,12 +297,6 @@ sub collect_detailed_bam_stats
         else 
         { 
             for my $stat (@stats) { $$raw_stats{$stat}{'reads_unpaired'}++; }
-
-            my $cigar_info = cigar_stats($cigar);
-            if ( exists($$cigar_info{'M'}) )
-            {
-                for my $stat (@stats) { $$raw_stats{$stat}{'bases_mapped'} += $$cigar_info{'M'}; }
-            }
         }
 
         # GC Content Frequencies - collect stats for both pairs separately
@@ -340,22 +330,14 @@ sub collect_detailed_bam_stats
     }
     close $fh;
 
-    # This sanity check could be used for paired reads only.
-    #
-    #   if ( ($flag & $$FLAGS{'paired_tech'}) && $reads_total != $reads_paired + $reads_unmapped + $reads_unpaired )
-    #   {
-    #       Utils::error("FIXME: Incorrect assumption: paired + unpaired + unmapped != total ($reads_paired+$reads_unpaired+$reads_unmapped!=$reads_total)\n");
-    #   }
-    #
-    # This calculation worked only for paired reads.
-    #   my $reads_mapped = $reads_unpaired + $reads_paired;
-    #
     for my $stat (keys %$raw_stats) 
     { 
         $$raw_stats{$stat}{'reads_unmapped'} = 0 unless exists($$raw_stats{$stat}{'reads_unmapped'});
         $$raw_stats{$stat}{'reads_unpaired'} = 0 unless exists($$raw_stats{$stat}{'reads_unpaired'});
         $$raw_stats{$stat}{'reads_paired'}   = 0 unless exists($$raw_stats{$stat}{'reads_paired'});
         $$raw_stats{$stat}{'reads_total'}    = 0 unless exists($$raw_stats{$stat}{'reads_total'});
+        $$raw_stats{$stat}{'bases_total'}    = 0 unless exists($$raw_stats{$stat}{'bases_total'});
+        $$raw_stats{$stat}{'bases_mapped'}   = 0 unless exists($$raw_stats{$stat}{'bases_mapped'});
 
         $$raw_stats{$stat}{'reads_mapped'} = $$raw_stats{$stat}{'reads_total'} - $$raw_stats{$stat}{'reads_unmapped'}; 
     }
@@ -389,6 +371,7 @@ sub collect_detailed_bam_stats
             'bases_total'       => $$raw_stats{$stat}{'bases_total'},
             'bases_mapped'      => $$raw_stats{$stat}{'bases_mapped'},
             'num_mismatches'    => $$raw_stats{$stat}{'num_mismatches'},
+            'error_rate'        => $$raw_stats{$stat}{'num_mismatches'} ? $$raw_stats{$stat}{'num_mismatches'}/$$raw_stats{$stat}{'bases_total'} : 0,
 
             'insert_size' => 
             {
@@ -463,11 +446,22 @@ sub collect_detailed_bam_stats
 
                 if ( !defined $ymax || $yval>$ymax ) { $xmax=$bin; $ymax=$yval }
             }
-            $$stat{$key}{'xvals'} = scalar @xvals ? \@xvals : [0];  # Yes, this can happen,e.g. AKR_J_SLX_200_NOPCR_1/1902_3
-            $$stat{$key}{'yvals'} = scalar @yvals ? \@yvals : [0];
+
+            if ( !@xvals ) { @xvals=(0); }  # Yes, this can happen,e.g. AKR_J_SLX_200_NOPCR_1/1902_3
+            if ( !@yvals ) { @yvals=(0); }
+            
+            my $dev  = 0;
+            for (my $i=0; $i<scalar @xvals; $i++)
+            {
+                $dev += $xvals[$i]*($yvals[$i]-$avg)**2;
+            }
+
+            $$stat{$key}{'xvals'} = \@xvals;
+            $$stat{$key}{'yvals'} = \@yvals;
             $$stat{$key}{'max'}{'x'} = defined $xmax ? $xmax : 0;
             $$stat{$key}{'max'}{'y'} = defined $ymax ? $ymax : 0;
             $$stat{$key}{'average'}  = $navg ? $avg/$navg : 0;
+            $$stat{$key}{'std_dev'}  = $navg ? sqrt($dev/$navg) : 0;
         }
 
         # Chromosome distribution histograms (reads_chrm_distrib) are different - xvalues are not numeric
@@ -571,11 +565,12 @@ sub print_flags
         my $flag  = $items[1];
         my $chrom = $items[2];
         my $pos   = $items[3];
+        my $qual  = $items[4];
         my $isize = $items[8];
         my $seq   = $items[9];
 
         print $line;
-        print "\t insert_size=$isize flag=$flag\n\t --\n";
+        print "\t insert_size=$isize flag=$flag qual=$qual\n\t --\n";
         print debug_flag($flag);
         print "\n";
     }

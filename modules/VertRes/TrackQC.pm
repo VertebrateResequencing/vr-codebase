@@ -57,7 +57,7 @@ our $options =
     'mapviewdepth'   => 'mapviewdepth_sam',
     'samtools'       => 'samtools',
 
-    'bsub_opts'      => "-q normal -M5000000 -R 'select[mem>5000] rusage[mem=5000]'",
+    'bsub_opts'      => "-q normal -M5000000 -R 'select[type==X86_64 && mem>5000] rusage[mem=5000]'",
     'gc_depth_bin'   => 20000,
     'min_glf_ratio'  => 5.0,
     'sample_dir'     => 'qc-sample',
@@ -125,7 +125,6 @@ sub clean
     Utils::CMD(qq[rm -rf $qc_dir]);
     return;
 }
-
 
 #---------- rename ---------------------
 
@@ -433,8 +432,9 @@ Utils::CMD("$bwa_cmd > ${name}.sam");
 if ( ! -s "${name}.sam" ) { Utils::error("The command ended with an error:\n\t$bwa_cmd > ${name}.sam\n") }
 
 Utils::CMD("$samtools import $fai_ref ${name}.sam ${name}.ubam");
-Utils::CMD("$samtools sort ${name}.ubam ${name};");
+Utils::CMD("$samtools sort ${name}.ubam ${name}x");     # Test - will this help from NFS problems?
 Utils::CMD("rm -f ${name}.sam ${name}.ubam");
+rename("${name}x.bam", "$name.bam") or Utils::CMD("rename ${name}x.bam $name.bam: \$!");
 };
 
     LSF::run($lock_file,$work_dir,"_${name}_sampe",$self, q{perl -w _map.pl});
@@ -662,6 +662,10 @@ sub report_detailed_stats
     printf $fh "bases total .. %d\n", $$stats{'bases_total'};
     printf $fh "     mapped .. %d (%.1f%%)\n", $$stats{'bases_mapped'}, 100*($$stats{'bases_mapped'}/$$stats{'bases_total'});
     printf $fh "duplication .. %.2f\n", (1-$$stats{'rmdup_reads_total'}/$$stats{'reads_total'});
+    printf $fh "\n";
+    printf $fh "insert size        \n";
+    printf $fh "    average .. %0.f\n", $$stats{insert_size}{average};
+    printf $fh "    std dev .. %0.f\n", $$stats{insert_size}{std_dev};
     printf $fh "\n";
     printf $fh "chrm distrib dev .. %f\n", $$stats{'reads_chrm_distrib'}{'scaled_dev'};
 
