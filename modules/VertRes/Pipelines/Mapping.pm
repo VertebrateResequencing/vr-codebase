@@ -530,7 +530,9 @@ my \$picard = VertRes::Wrapper::picard->new(verbose => $verbose);
 
 # merge bams
 unless (-s '$bam_file') {
-    # (picard can handle merging a single file; samtools can't)
+    # (picard can handle merging a single file; samtools can't. We can't use
+    #  VertRes::Utils::Sam->merge because that makes a symlink if there's only
+    #  one bam, whereas we want the merge to effectively copy the bam)
     \$picard->merge_and_check('$bam_file', [qw(@bams)]);
     \$picard->throw("merging bam failed - try again?") unless \$picard->run_status == 2;
 }
