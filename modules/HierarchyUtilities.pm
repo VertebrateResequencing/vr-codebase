@@ -681,7 +681,6 @@ sub buildInternalHierarchy
 	{
 		print "Updating project: $project\n";
 		
-		$project =~ s/\W+/_/g;
 		( my $projectDirName = $project ) =~ s/\W+/_/g;
 		
 		my $projPath = $dhierarchyDir.'/'.$projectDirName;
