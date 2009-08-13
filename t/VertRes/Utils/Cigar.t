@@ -43,7 +43,7 @@ $io->file($sam_out);
 is $io->num_lines, 741, 'cigar_to_sam generated sam with correct number of lines - second only';
 
 # above tests are with non-454 fastqs. These fastqs are real G1K 454 reads and
-# caused problems during the mapping pipline:
+# caused problems during the mapping pipeline:
 $fq1_file = $io->catfile('t', 'data', 'SRR001629_1.fastq');
 ok -s $fq1_file, 'SRR001629_1 fastq file ready to test with';
 $fq2_file = $io->catfile('t', 'data', 'SRR001629_2.fastq');
@@ -61,14 +61,5 @@ $fq2_file = $io->catfile('t', 'data', 'SRR001629_2.filtered.fastq');
 ok -s $fq2_file, 'SRR001629_2 filtered fastq file ready to test with';
 
 is $cigar_util->cigar_to_sam([$fq1_file, $fq2_file], [$cigar1_file, $cigar2_file], 2000, undef, $sam_out), 1426, 'cigar_to_sam worked with filtered SRR001629 reads';
-
-#use VertRes::Wrapper::ssaha;
-#my $sw = VertRes::Wrapper::ssaha->new();
-#my $sfh = $sw->do_mapping(ref => '/nfs/sf8/G1K/ref/human_b36_female.fa',
-#                          read1 => $fq1_file,
-#                          read2 => $fq2_file,
-#                          output => 'raw.sam',
-#                          insert_size => 2000,
-#                          local_cache => $temp_dir);
 
 exit;
