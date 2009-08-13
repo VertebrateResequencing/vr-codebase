@@ -708,7 +708,7 @@ sub buildInternalHierarchy
 				$individual = $1;
 			}
 			
-			$library =~ s/\W+/_/g;
+			( my $libraryHierarchyName = $library ) =~ s/\W+/_/g;
 			
 			my $path = $projPath.'/'.$individual;
 			if( ! -d $path )
@@ -720,7 +720,7 @@ sub buildInternalHierarchy
 			{
 				mkdir $path or die "Cannot create directory $path\n";
 			}
-			$path .= '/'.$library;
+			$path .= '/'.$libraryHierarchyName;
 			if( ! -d $path )
 			{
 				mkdir $path or die "Cannot create directory $path\n";
@@ -737,7 +737,7 @@ sub buildInternalHierarchy
 			{
 				mkdir $apath or die "Cannot create directory $apath\n";
 			}
-			$apath .= '/'.$library;
+			$apath .= '/'.$libraryHierarchyName;
 			
 			if( ! -d $apath )
 			{
