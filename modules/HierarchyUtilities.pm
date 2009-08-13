@@ -665,7 +665,6 @@ sub importInternalLanes
 			}
 		}
 	}
-	exit;
 	&buildInternalHierarchy($projectsHash,$dhierarchyDir,$ahierarchyDir);
 }
 
