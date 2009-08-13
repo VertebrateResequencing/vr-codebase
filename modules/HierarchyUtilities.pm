@@ -671,105 +671,107 @@ sub importInternalLanes
 sub buildInternalHierarchy 
 {
 	my $projecthash = shift; # ref to hash of projectnames->samplenames->lists of fastq
-    my $dhierarchyDir = shift;
-    my $ahierarchyDir = shift;
+	my $dhierarchyDir = shift;
+	my $ahierarchyDir = shift;
 	
-    croak "Can't find data hierarchy directory\n" unless -d $dhierarchyDir;
-    croak "Can't find analysis hierarchy directory\n" unless -d $ahierarchyDir;
+	croak "Can't find data hierarchy directory\n" unless -d $dhierarchyDir;
+	croak "Can't find analysis hierarchy directory\n" unless -d $ahierarchyDir;
 	
-    foreach my $project (keys %$projecthash)
-    {
+	foreach my $project (keys %$projecthash)
+	{
 		print "Updating project: $project\n";
-  
+		
 		my $project1 = $project;
-  $project1 =~ s/\W+/_/g;
-  
-  my $projPath = $dhierarchyDir.'/'.$project1;
-  if( ! -d $projPath )
-  {
-    mkdir $projPath or die "Cannot create directory $projPath\n";
-  }
-  
-  my $aprojPath = $ahierarchyDir.'/'.$project1;
-  if( ! -d $aprojPath )
-  {
-    mkdir $aprojPath or die "Cannot create directory $aprojPath\n";
-  }
-  
-  my $numLibraries = 0;
-  
-  foreach my $sample (keys %{$projecthash->{$project}})
-  {
-      print "Updating library: $sample\n";
-      
-      #hack for G1K where sample starts with the individual
-      my $individual = 1;
-      if( $sample =~ /^NA\d+/ )
-      {
-        $individual = (split( /-/, $sample ) )[ 0 ];
-      }
-      
-      my $sample1 = $sample;
-      $sample1 =~ s/\W+/_/g;
-      
-      my $path = $projPath.'/'.$individual;
-      if( ! -d $path )
-      {
-        mkdir $path or die "Cannot create directory $path\n";
-      }
-      $path .= '/SLX';
-      if( ! -d $path )
-      {
-        mkdir $path or die "Cannot create directory $path\n";
-      }
-      $path .= '/'.$sample1;
-      if( ! -d $path )
-      {
-        mkdir $path or die "Cannot create directory $path\n";
-      }
-      
-      my $apath = $aprojPath.'/'.$individual;
-      if( ! -d $apath )
-      {
-        mkdir $apath or die "Cannot create directory $apath\n";
-      }
-      $apath .= '/SLX';
-      if( ! -d $apath )
-      {
-        mkdir $apath or die "Cannot create directory $apath\n";
-      }
-      $apath .= '/'.$sample1;
-      if( ! -d $apath )
-      {
-        mkdir $apath or die "Cannot create directory $apath\n";
-      }
-      
-      my @dirs;
-      foreach my $fastq (@{$projecthash->{$project}{$sample}}){
-    $fastq = basename( $fastq );
-    
-    my @s = split( /\./, $fastq );
-    my @s1 = split( '_', $s[ 0 ] );
-    
-    my $lPath = '';
-    my $alPath = '';
-    if( $s1[ 1 ] eq 's' ) #hack for old read file names with s character
-    {
-      $lPath = $path.'/'.$s1[ 0 ].'_'.$s1[ 2 ];
-      $alPath = $apath.'/'.$s1[ 0 ].'_'.$s1[ 2 ];
-    }
-    else
-    {
-      $lPath = $path.'/'.$s1[ 0 ].'_'.$s1[ 1 ];
-      $alPath = $apath.'/'.$s1[ 0 ].'_'.$s1[ 1 ];
-    }
-    
-    push( @dirs, $lPath );
-    
-    if( ! -d $lPath )
-    {
-      mkdir $lPath or die "Cannot create directory $lPath\n";
-    }
+		$project1 =~ s/\W+/_/g;
+		
+		my $projPath = $dhierarchyDir.'/'.$project1;
+		if( ! -d $projPath )
+		{
+			mkdir $projPath or die "Cannot create directory $projPath\n";
+		}
+		
+		my $aprojPath = $ahierarchyDir.'/'.$project1;
+		if( ! -d $aprojPath )
+		{
+			mkdir $aprojPath or die "Cannot create directory $aprojPath\n";
+		}
+		
+		my $numLibraries = 0;
+		
+		foreach my $library (keys %{$projecthash->{$project}})
+		{
+			print "Updating library: $library\n";
+			
+			#hack for G1K where sample starts with the individual
+			my $individual = 1;
+			if( $library =~ /^(NA\d+).*/ )
+			{
+				$individual = $1;
+			}
+			
+			$library =~ s/\W+/_/g;
+			
+			my $path = $projPath.'/'.$individual;
+			if( ! -d $path )
+			{
+				mkdir $path or die "Cannot create directory $path\n";
+			}
+			$path .= '/SLX';
+			if( ! -d $path )
+			{
+				mkdir $path or die "Cannot create directory $path\n";
+			}
+			$path .= '/'.$library;
+			if( ! -d $path )
+			{
+				mkdir $path or die "Cannot create directory $path\n";
+			}
+			
+			my $apath = $aprojPath.'/'.$individual;
+			if( ! -d $apath )
+			{
+				mkdir $apath or die "Cannot create directory $apath\n";
+			}
+			
+			$apath .= '/SLX';
+			if( ! -d $apath )
+			{
+				mkdir $apath or die "Cannot create directory $apath\n";
+			}
+			$apath .= '/'.$library;
+			
+			if( ! -d $apath )
+			{
+				mkdir $apath or die "Cannot create directory $apath\n";
+			}
+			print qq[$path\n$apath\n\n];exit;
+			my @dirs;
+			foreach my $fastq (@{$projecthash->{$project}{$library}})
+			{
+				$fastq = basename( $fastq );
+				
+				my @s = split( /\./, $fastq );
+				my @s1 = split( '_', $s[ 0 ] );
+				
+				my $lPath = '';
+				my $alPath = '';
+				if( $s1[ 1 ] eq 's' ) #hack for old read file names with s character
+				{
+					$lPath = $path.'/'.$s1[ 0 ].'_'.$s1[ 2 ];
+					$alPath = $apath.'/'.$s1[ 0 ].'_'.$s1[ 2 ];
+				}
+				else
+				{
+					$lPath = $path.'/'.$s1[ 0 ].'_'.$s1[ 1 ];
+					$alPath = $apath.'/'.$s1[ 0 ].'_'.$s1[ 1 ];
+				}
+				
+				push( @dirs, $lPath );
+				
+				if( ! -d $lPath )
+				{
+					mkdir $lPath or die "Cannot create directory $lPath\n";
+				}
     
     if( ! -d $alPath )
     {
