@@ -682,14 +682,15 @@ sub buildInternalHierarchy
 		print "Updating project: $project\n";
 		
 		$project =~ s/\W+/_/g;
+		( my $projectDirName = $project ) =~ s/\W+/_/g;
 		
-		my $projPath = $dhierarchyDir.'/'.$project;
+		my $projPath = $dhierarchyDir.'/'.$projectDirName;
 		if( ! -d $projPath )
 		{
 			mkdir $projPath or die "Cannot create directory $projPath\n";
 		}
 		
-		my $aprojPath = $ahierarchyDir.'/'.$project;
+		my $aprojPath = $ahierarchyDir.'/'.$projectDirName;
 		if( ! -d $aprojPath )
 		{
 			mkdir $aprojPath or die "Cannot create directory $aprojPath\n";
