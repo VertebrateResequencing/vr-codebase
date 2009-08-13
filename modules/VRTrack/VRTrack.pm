@@ -37,7 +37,7 @@ use VRTrack::File;
 use VRTrack::Utils;
 
 use constant DBI_DUPLICATE => '1062';
-use constant SCHEMA_VERSION => '1';
+use constant SCHEMA_VERSION => '2';
 
 =head2 new
 
