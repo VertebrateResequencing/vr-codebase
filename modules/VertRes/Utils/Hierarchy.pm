@@ -48,7 +48,8 @@ our %project_to_srp = ('Exon-CEU' => 'SRP000033',
                        'Trio-CEU' => 'SRP000032',
                        'Trio-YRI' => 'SRP000032');
 
-our %platform_aliases = (ILLUMINA => 'SLX');
+our %platform_aliases = (ILLUMINA => 'SLX',
+                         LS454 => '454');
 
 =head2 new
 
@@ -180,7 +181,9 @@ sub check_lanes_vs_sequence_index {
 sub create_release_hierarchy {
     my ($self, $lane_paths, $release_dir) = @_;
     
-    mkdir($release_dir) || $self->throw("Unable to create base release directory: $!");
+    unless (-d $release_dir) {
+        mkdir($release_dir) || $self->throw("Unable to create base release directory: $!");
+    }
     my $io = VertRes::IO->new();
     
     my @all_linked_bams;
