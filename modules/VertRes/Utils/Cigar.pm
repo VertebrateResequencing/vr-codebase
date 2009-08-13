@@ -154,6 +154,7 @@ sub cigar_to_sam {
         # get the corresponding data from each input fastq
         my (@names, @seqs, @quals);
         foreach my $parser (@fastq_parsers) {
+            my $this_read_name = $read_name;
             if (@fastq_parsers > 1 && ! $parser->exists($read_name)) {
                 # allow them to differ by the last character, eg. the
                 # forward and reverse have been differentiated by name in
@@ -178,16 +179,16 @@ sub cigar_to_sam {
                     $test_read_name =~ s/[12ab]$/$change_to/;
                     
                     if ($parser->exists($test_read_name)) {
-                        $read_name = $test_read_name;
+                        $this_read_name = $test_read_name;
                         $already_done{$test_read_name} = 1;
                     }
                 }
             }
             
-            if ($parser->exists($read_name)) {
-                push(@names, $read_name);
-                push(@seqs, $parser->seq($read_name));
-                push(@quals, $parser->quality($read_name));
+            if ($parser->exists($this_read_name)) {
+                push(@names, $this_read_name);
+                push(@seqs, $parser->seq($this_read_name));
+                push(@quals, $parser->quality($this_read_name));
             }
         }
         
