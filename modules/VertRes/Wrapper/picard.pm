@@ -22,6 +22,8 @@ $wrapper->ViewSam();
 =head1 DESCRIPTION
 
 Runs picard tools in a nice way.
+NB: you need to reserve at least 5GB to run this, or the java engine might fail
+to start!
 
 * not all picard tools have been wrapped yet*
 
