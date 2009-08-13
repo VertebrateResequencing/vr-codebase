@@ -681,16 +681,15 @@ sub buildInternalHierarchy
 	{
 		print "Updating project: $project\n";
 		
-		my $project1 = $project;
-		$project1 =~ s/\W+/_/g;
+		$project =~ s/\W+/_/g;
 		
-		my $projPath = $dhierarchyDir.'/'.$project1;
+		my $projPath = $dhierarchyDir.'/'.$project;
 		if( ! -d $projPath )
 		{
 			mkdir $projPath or die "Cannot create directory $projPath\n";
 		}
 		
-		my $aprojPath = $ahierarchyDir.'/'.$project1;
+		my $aprojPath = $ahierarchyDir.'/'.$project;
 		if( ! -d $aprojPath )
 		{
 			mkdir $aprojPath or die "Cannot create directory $aprojPath\n";
@@ -744,7 +743,7 @@ sub buildInternalHierarchy
 			{
 				mkdir $apath or die "Cannot create directory $apath\n";
 			}
-			print qq[$path\n$apath\n\n];exit;
+			
 			my @dirs;
 			foreach my $fastq (@{$projecthash->{$project}{$library}})
 			{
@@ -772,23 +771,23 @@ sub buildInternalHierarchy
 				{
 					mkdir $lPath or die "Cannot create directory $lPath\n";
 				}
-    
-    if( ! -d $alPath )
-    {
-      mkdir $alPath or die "Cannot create directory $alPath\n";
-    }
-    
-    #check if the fastq file already exists
-    my $fqPath = $lPath.'/'.$fastq;
-    
-    #check if the gzipped reads are already on disk
-    if( $s1[ 1 ] eq 's' ) #hack for old read file names with s character
-    {
-      my $fastq1 = $s1[ 0 ].'_'.$s1[ 2 ].'_1.fastq.gz'; #read1 fastq
-      
-      if(! -s $fqPath && ! -s $lPath.'/'.$fastq1 )
-      {
-        chdir( $lPath );
+				
+				if( ! -d $alPath )
+				{
+					mkdir $alPath or die "Cannot create directory $alPath\n";
+				}
+				
+				#check if the fastq file already exists
+				my $fqPath = $lPath.'/'.$fastq;
+				
+				#check if the gzipped reads are already on disk
+				if( $s1[ 1 ] eq 's' ) #hack for old read file names with s character
+				{
+					my $fastq1 = $s1[ 0 ].'_'.$s1[ 2 ].'_1.fastq.gz'; #read1 fastq
+					
+					if(! -s $fqPath && ! -s $lPath.'/'.$fastq1 )
+					{
+						chdir( $lPath );
         
         print "Requesting file $fastq from MPSA.....\n";
         my $random = int(rand( 100000000 ));
