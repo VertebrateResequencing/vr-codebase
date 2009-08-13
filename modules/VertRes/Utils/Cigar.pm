@@ -27,6 +27,7 @@ use strict;
 use warnings;
 use VertRes::IO;
 use VertRes::Utils::Seq;
+use VertRes::Parser::fastq;
 
 use base qw(VertRes::Base);
 
@@ -120,10 +121,16 @@ sub cigar_to_sam {
     my ($self, $fastqs, $cigars, $insert_size, $read_group, $out_sam) = @_;
     $read_group = $read_group ? "\tRG:Z:".$read_group : '';
     
-    my @fastq_ios;
+    my @fastq_parsers;
+    my %all_read_names;
     foreach my $fastq (@{$fastqs}) {
-        my $io = VertRes::IO->new(file => $fastq);
-        push(@fastq_ios, $io);
+        my $fastq_parser = VertRes::Parser::fastq->new(file => $fastq);
+        
+        foreach ($fastq_parser->sequence_ids()) {
+            $all_read_names{$_} = 1;
+        }
+        
+        push(@fastq_parsers, $fastq_parser);
     }
     
     open(my $out_fh, '>', $out_sam) or $self->throw("Cannot create sam file: $!");
@@ -140,40 +147,48 @@ sub cigar_to_sam {
     my $numReadsPaired = 0;
     my $numReadsDiscarded = 0;
     my $totalReadsHit = 0;
-    my $expected_lines = @fastq_ios * 4;
-    while (1) {
-        # get the next entry (4 lines) from each input fastq
-        my $lines = 0;
+    my %already_done;
+    while (my ($read_name, $val) = each %all_read_names) {
+        next if $already_done{$read_name};
+        
+        # get the corresponding data from each input fastq
         my (@names, @seqs, @quals);
-        foreach my $i (0..$#fastq_ios) {
-            my $in_fh = $fastq_ios[$i]->fh;
-            
-            for (1..4) {
-                my $line = <$in_fh>;
-                defined $line || next;
-                $lines++;
-                chomp($line);
-                
-                if ($_ == 1) {
-                    my $name = substr($line, 1);
-                    ($name) = split(/\s+/, $name);
-                    push(@names, $name);
-                }
-                elsif ($_ == 2) {
-                    push(@seqs, $line);
-                }
-                elsif ($_ == 4) {
-                    push(@quals, $line);
+        foreach my $parser (@fastq_parsers) {
+            if (@fastq_parsers > 1 && ! $parser->exists($read_name)) {
+                # allow them to differ by the last character, eg. the
+                # forward and reverse have been differentiated by name in
+                # the fastqs
+                if ($read_name =~ /[\/.:]([12ab])$/) {
+                    my $this = $1;
+                    my $change_to;
+                    if ($this eq '1') {
+                        $change_to = 2;
+                    }
+                    elsif ($this eq '2') {
+                        $change_to = 1;
+                    }
+                    elsif ($this eq 'a') {
+                        $change_to = 'b';
+                    }
+                    else {
+                        $change_to = 'a';
+                    }
+                    
+                    my $test_read_name = $read_name;
+                    $test_read_name =~ s/[12ab]$/$change_to/;
+                    
+                    if ($parser->exists($test_read_name)) {
+                        $read_name = $test_read_name;
+                        $already_done{$test_read_name} = 1;
+                    }
                 }
             }
-        }
-        
-        # check for truncation/ eof
-        if ($lines == 0) {
-            last;
-        }
-        elsif ($lines != $expected_lines) {
-            $self->throw("one of the fastq files ended early");
+            
+            if ($parser->exists($read_name)) {
+                push(@names, $read_name);
+                push(@seqs, $parser->seq($read_name));
+                push(@quals, $parser->quality($read_name));
+            }
         }
         
         # get the hits for each fastq
@@ -259,34 +274,7 @@ sub cigar_to_sam {
             else {
                 $numReadsDiscarded++;
             }
-            
-            if (@fastq_ios > 1 && $names[$bad_i] ne $names[$good_i]) {
-                my $fh = $fastq_ios[$bad_i]->fh;
-                my $tell = tell($fh);
-                my $found = 0;
-                while (<$fh>) {
-                    if (/^\@$names[$good_i]/) {
-                        <$fh>;
-                        <$fh>;
-                        <$fh>;
-                        $found = 1;
-                        last;
-                    }
-                }
-                unless ($found) {
-                    # allow them to differ by the last character, eg. the
-                    # forward and reverse have been differentiated by name in
-                    # the fastqs
-                    my $name1 = substr($names[0], 0, -1);
-                    my $name2 = substr($names[1], 0, -1);
-                    $self->warn("$names[$good_i] not found in both fastq files") unless $name1 eq $name2;
-                    seek($fh, $tell, 0);
-                }
-            }
         }
-    }
-    foreach my $io (@fastq_ios) {
-        $io->close();
     }
     close($out_fh);
     
