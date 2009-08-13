@@ -63,6 +63,9 @@ sub _bsub_opts {
     if ($action eq 'map') {
         $bsub_opts{bsub_opts} = '-q normal -R \'select[type==X86_64] rusage[tmp=35000]\'';
     }
+    else {
+        return $self->SUPER::_bsub_opts($lane_path, $action);
+    }
     
     return \%bsub_opts;
 }

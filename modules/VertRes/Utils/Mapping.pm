@@ -172,8 +172,13 @@ sub do_mapping {
 sub _bsub_opts {
     my ($self, $lane_path, $action) = @_;
     
-    # by default, no extra bsub options will be supplied to LSF::Run
-    return {bsub_opts => ''};
+    my %bsub_opts = (bsub_opts => '');
+    
+    if ($action eq 'merge_and_stat') {
+        $bsub_opts{bsub_opts} = '-q normal -M5100000 -R \'select[mem>5100] rusage[mem=5100]\'';
+    }
+    
+    return \%bsub_opts;
 }
 
 =head2 _do_mapping_args
