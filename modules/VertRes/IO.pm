@@ -341,14 +341,15 @@ sub parse_fod {
  Usage   : my @files = $obj->parse_fofn('file_of_files'); 
  Function: Parse a file containing a list of files. Lines beginning with # are
            ignored.
- Returns : a list consisting of the absolute paths to the files listed in
-           the file
- Args    : filename
+ Returns : a list of paths to files in the fofn
+ Args    : filename. To get absolute paths (symlinks are followed), no other
+           args. Supply a dir ('' for current dir) to get paths relative
+           to it.
 
 =cut
 
 sub parse_fofn {
-    my ($self, $fofn) = @_;
+    my ($self, $fofn, $relative) = @_;
     
     -s $fofn || $self->throw("fofn file '$fofn' empty!");
     
@@ -359,7 +360,7 @@ sub parse_fofn {
         /\S/ || next;
         /^#/ && next;
         -f $_ || -l $_ || $self->throw("fofn file contained a line that wasn't a file: $_");
-        my $file = abs_path($_);
+        my $file = defined $relative ? File::Spec->abs2rel($_, $relative) : abs_path($_);
         $files{$file} = 1;
     }
     
