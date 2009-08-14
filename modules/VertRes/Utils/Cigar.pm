@@ -200,7 +200,6 @@ sub cigar_to_sam {
             my $hits = $cigar_hashes[$i]{$names[$i]} if $names[$i];
             $hits[$i] = $hits || [];
         }
-        @hits > 0 || $self->throw("got no hits for @names");
         
         if ($#{$hits[0]} >= 0 && $#{$hits[1]} >= 0) {
             $numReadsPaired++;
@@ -237,7 +236,7 @@ sub cigar_to_sam {
             
             if ($mapScore1 > -1 && $mapScore2 > -1) {
                 $self->_print_sam_line($out_fh, \$numReadsWritten, $names[0], $flags[0], $mapScore1, $samCigar1, $seq1, $quals1, $read_group, \@s1, \@s2);
-                $self->_print_sam_line($out_fh, \$numReadsWritten, $names[1], $flags[1], $mapScore2, $samCigar1, $seq1, $quals1, $read_group, \@s2, \@s1);
+                $self->_print_sam_line($out_fh, \$numReadsWritten, $names[1], $flags[1], $mapScore2, $samCigar2, $seq2, $quals2, $read_group, \@s2, \@s1);
             }
             # just one read aligns
             elsif ($mapScore1 > -1) {
@@ -247,7 +246,7 @@ sub cigar_to_sam {
             }
             elsif ($mapScore2 > -1) {
                 $flags[1] += hex("0x0008");
-                $self->_print_sam_line($out_fh, \$numReadsWritten, $names[1], $flags[1], $mapScore2, $samCigar1, $seq1, $quals1, $read_group, \@s2);
+                $self->_print_sam_line($out_fh, \$numReadsWritten, $names[1], $flags[1], $mapScore2, $samCigar2, $seq2, $quals2, $read_group, \@s2);
                 $numReadsDiscarded++;
             }
             # neither read aligns

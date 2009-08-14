@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 23;
+    use Test::Most tests => 29;
     
     use_ok('VertRes::Utils::Cigar');
     use_ok('VertRes::IO');
@@ -52,14 +52,27 @@ $cigar1_file = $io->catfile('t', 'data', 'SRR001629_1.cigar');
 ok -s $cigar1_file, 'SRR001629_1 cigar file ready to test with';
 $cigar2_file = $io->catfile('t', 'data', 'SRR001629_2.cigar');
 ok -s $cigar2_file, 'SRR001629_2 cigar file ready to test with';
-
 is $cigar_util->cigar_to_sam([$fq1_file, $fq2_file], [$cigar1_file, $cigar2_file], 2000, undef, $sam_out), 1506, 'cigar_to_sam worked with unfiltered SRR001629 reads';
 
 $fq1_file = $io->catfile('t', 'data', 'SRR001629_1.filtered.fastq');
 ok -s $fq1_file, 'SRR001629_1 filtered fastq file ready to test with';
 $fq2_file = $io->catfile('t', 'data', 'SRR001629_2.filtered.fastq');
 ok -s $fq2_file, 'SRR001629_2 filtered fastq file ready to test with';
-
 is $cigar_util->cigar_to_sam([$fq1_file, $fq2_file], [$cigar1_file, $cigar2_file], 2000, undef, $sam_out), 1506, 'cigar_to_sam worked with filtered SRR001629 reads';
+
+# for this read pair it was outputting read _1 in the sam instead of read _2
+$fq1_file = $io->catfile('t', 'data', 'SRR001629.99999_1.fastq');
+ok -s $fq1_file, 'SRR001629.99999_1 filtered fastq file ready to test with';
+$fq2_file = $io->catfile('t', 'data', 'SRR001629.99999_2.fastq');
+ok -s $fq2_file, 'SRR001629.99999_2 filtered fastq file ready to test with';
+$cigar1_file = $io->catfile('t', 'data', 'SRR001629.99999_1.cigar');
+ok -s $cigar1_file, 'SRR001629.99999_1.cigar cigar file ready to test with';
+$cigar2_file = $io->catfile('t', 'data', 'SRR001629.99999_2.cigar');
+ok -s $cigar2_file, 'SRR001629.99999_1.cigar cigar file ready to test with';
+is $cigar_util->cigar_to_sam([$fq1_file, $fq2_file], [$cigar1_file, $cigar2_file], 2000, undef, $sam_out), 1, 'cigar_to_sam worked with mini .99999 cigars';
+$io->file($sam_out);
+my $fh = $io->fh;
+my $line = <$fh>;
+is $line, "SRR001629.99999\t139\t6\t123545210\t254\t62M\t*\t0\t0\tTTTCCCAGTCAAGGGAAGCAGTAAGGGATTGTGCTATCCGGCCCAGGTACTATGCTTTTCCC\t".'>998889;@@;;;;>;;9>><<<<<<B<<<>@>>>>@@@99999999>>@@>>@@9988888'."\n", 'the sam line output for the .99999 cigar was correct';
 
 exit;
