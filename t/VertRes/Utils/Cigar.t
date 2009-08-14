@@ -73,6 +73,9 @@ is $cigar_util->cigar_to_sam([$fq1_file, $fq2_file], [$cigar1_file, $cigar2_file
 $io->file($sam_out);
 my $fh = $io->fh;
 my $line = <$fh>;
+# the 137 flag is important: in the old mapping pipline code, this came out as
+# the invalid flag 139 which means 'proper pair' yet also 'mate unmapped'.
+# 137 doesn't claim to be properly paired
 is $line, "SRR001629.99999\t137\t6\t123545210\t254\t62M\t*\t0\t0\tTTTCCCAGTCAAGGGAAGCAGTAAGGGATTGTGCTATCCGGCCCAGGTACTATGCTTTTCCC\t".'>998889;@@;;;;>;;9>><<<<<<B<<<>@>>>>@@@99999999>>@@>>@@9988888'."\n", 'the sam line output for the .99999 cigar was correct';
 
 exit;
