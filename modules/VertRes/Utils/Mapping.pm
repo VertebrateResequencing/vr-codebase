@@ -45,7 +45,9 @@ use base qw(VertRes::Base);
 our %tech_to_module = (454 => 'VertRes::Utils::Mappers::ssaha',
                        SLX => 'VertRes::Utils::Mappers::bwa');
 
-our %do_mapping_args = (insert_size => 1, local_cache => 1);
+our %do_mapping_args = (insert_size => 1,
+                        local_cache => 1,
+                        read_group  => 1);
 
 
 =head2 new
@@ -160,6 +162,8 @@ sub wrapper {
 
            and optional generic options:
            insert_size => int (default 2000)
+           local_cache => path
+           read_group  => string
 
 =cut
 

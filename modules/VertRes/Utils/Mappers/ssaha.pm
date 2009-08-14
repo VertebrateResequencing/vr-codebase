@@ -34,7 +34,8 @@ use VertRes::Wrapper::ssaha;
 use base qw(VertRes::Utils::Mapping);
 
 our %do_mapping_args = (insert_size => 'insert_size',
-                        local_cache => 'local_cache');
+                        local_cache => 'local_cache',
+                        read_group => 'read_group');
 
 
 =head2 new
@@ -138,6 +139,7 @@ sub split_fastq {
            local_cache => /path/where/reference_hash_files/can/be/copied/to
                           (defaults to standard tmp space, which isn't ideal
                            since it will be deleted afterwards every time)
+           read_group  => string (to set the RG tag in the output sam)
 
 =cut
 
