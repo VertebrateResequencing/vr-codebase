@@ -141,7 +141,9 @@ sub bams_are_similar {
  Usage   : $obj->add_sam_header('headerless.sam',
                                 sequence_index => 'sequence.index',
                                 lane_path => '/path/to/lane');
- Function: Adds more meta infomation to the header of a sam file.
+ Function: Adds more meta infomation to the header of a lane-level sam file.
+           Also, if the records don't have RG tags, these will be added (or
+           corrected).
  Returns : boolean (true on success - the sam filename doesn't change)
  Args    : path to sam and:
            either just sequence_index => 'sequence.index' (to calculate the
@@ -215,9 +217,19 @@ sub add_sam_header {
     print $shfh "\n";
     $header_lines++;
     
-    # combine the header with the raw sam file
+    # combine the header with the raw sam file, adding/correcting RG tag if
+    # necessary, ignoring existing header
     open(my $rsfh, '<', $raw_sam_file) or $self->throw("Couldn't open raw sam file '$raw_sam_file'");
+    my $expected_lines = 0;
     while (<$rsfh>) {
+        next if /^@/;
+        $expected_lines++;
+        unless (/\tRG:Z:/) {
+            s/\n$/\tRG:Z:$lane\n/;
+        }
+        else {
+            s/\tRG:Z:\S+/\tRG:Z:$lane/;
+        }
         print $shfh $_;
     }
     close($rsfh);
@@ -226,7 +238,7 @@ sub add_sam_header {
     # check and mv
     my $io = VertRes::IO->new(file => $raw_sam_file);
     my $raw_lines = $io->num_lines();
-    my $expected_lines = $raw_lines + $header_lines;
+    $expected_lines += $header_lines;
     $io->file($headed_sam);
     my $actual_lines = $io->num_lines();
     
@@ -236,7 +248,7 @@ sub add_sam_header {
     }
     else {
         unlink($headed_sam);
-        $self->throw("Failed to prepend sam header to sam file '$raw_sam_file'");
+        $self->throw("Failed to prepend sam header to sam file '$raw_sam_file' (expected $expected_lines lines but got $actual_lines");
     }
 }
 

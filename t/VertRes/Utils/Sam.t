@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 22;
+    use Test::Most tests => 26;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::IO');
@@ -51,6 +51,29 @@ is_deeply [get_sam_header($temp_sam)], \@expected, 'generated the correct header
 my $wc = `wc -l $temp_sam`;
 my ($lines) = $wc =~ /^(\d+)/;
 is $lines, 2003, 'correct number of lines in sam after adding header';
+# adding a header to a file that already has one replaces it:
+ok $sam_util->add_sam_header($temp_sam,
+                             sample_name => 'NA00001',
+                             run_name => '7563',
+                             library => 'alib',
+                             platform => 'SLX',
+                             centre => 'Sanger',
+                             insert_size => 2000,
+                             lane => 'SRR00001',
+                             ref_fa => $ref,
+                             ref_fai => $fai,
+                             ref_name => 'SsP17',
+                             ref_md5 => 'md5checksum'), 'add_sam_header manual args test';
+@expected = ("\@HD\tVN:1.0\tSO:coordinate",
+             "\@SQ\tSN:Streptococcus_suis\tLN:2007491\tAS:SsP17\tM5:md5checksum\tUR:file:t/data/S_suis_P17.dna",
+             "\@RG\tID:SRR00001\tPU:7563\tLB:alib\tSM:NA00001\tPI:2000\tCN:Sanger\tPL:SLX");
+my @header_lines = get_sam_header($temp_sam);
+is_deeply \@header_lines, \@expected, 'generated the correct header for the second time';
+# we also add RG tags to the body
+my @records = get_sam_body($temp_sam);
+is @header_lines + @records, 2003, 'correct number of lines in sam after adding header a second time';
+is substr($records[0], -14), "\tRG:Z:SRR00001", 'correct RG tag added to record';
+
 TODO: {
     local $TODO = "Difficult to test add_sam_header with non-manual args since must fake things...";
     ok 0, 'add_sam_header auto args test';
@@ -89,4 +112,16 @@ sub get_sam_header {
         push(@header_lines, $_);
     }
     return @header_lines;
+}
+
+sub get_sam_body {
+    my $sam_file = shift;
+    open(my $samfh, $sam_file) || die "Could not open sam file '$sam_file'\n";
+    my @records;
+    while (<$samfh>) {
+        chomp;
+        next if /^@/;
+        push(@records, $_);
+    }
+    return @records;
 }
