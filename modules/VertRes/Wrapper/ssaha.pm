@@ -48,6 +48,7 @@ use warnings;
 use VertRes::IO;
 use File::Basename;
 use File::Spec;
+use File::Copy;
 use Cwd 'abs_path';
 use AssemblyTools;
 use VertRes::Utils::Cigar;
@@ -241,52 +242,66 @@ sub do_mapping {
         }
     }
     
-    my (@filtered_fastqs, @cigar_outputs);
-    $self->run_method('open');
-    foreach my $fastq (@fqs) {
-        my $temp_dir = $io->tempdir();
+    unless (-s $out_sam) {
+        my $tmp_sam = $out_sam.'_tmp';
         
-        # filter out short reads from fastq
-        my $fq_basename = basename($fastq);
-        $fq_basename =~ s/\.gz$//;
-        my $tmp_fastq = $io->catfile($temp_dir, $fq_basename);
-        AssemblyTools::filterOutShortReads($fastq, 30, $tmp_fastq);
+        my (undef, $out_dir) = fileparse($tmp_sam);
+        my (@filtered_fastqs, @cigar_outputs);
+        $self->run_method('open');
         
-        # run ssaha2, filtering the output to get the top 10 hits per read,
-        # grouping by readname, and compressing it
-        my $cigar_out = $io->catfile($temp_dir, 'ssaha.cigar.gz');
-        my $sfh = $self->ssaha2([$tmp_fastq], undef, disk => 1, '454' => 1, output => 'cigar', diff => 10, save => $ref_fa_hash_base);
-        open(my $cfh, "| gzip -c > $cigar_out");
-        $cigar_util->top_10_hits_per_read($sfh, $cfh);
+        foreach my $fastq (@fqs) {
+            my $temp_dir = $io->tempdir();
+            
+            # filter out short reads from fastq
+            my $fq_basename = basename($fastq);
+            $fq_basename =~ s/\.gz$//;
+            my $tmp_fastq = $io->catfile($temp_dir, $fq_basename);
+            AssemblyTools::filterOutShortReads($fastq, 30, $tmp_fastq);
+            
+            # run ssaha2, filtering the output to get the top 10 hits per read,
+            # grouping by readname, and compressing it
+            my $cigar_name = $fq_basename;
+            $cigar_name =~ s/\.fastq$//;
+            my $cigar_out = $io->catfile($out_dir, $cigar_name.'.cigar.gz');
+            my $sfh = $self->ssaha2([$tmp_fastq], undef, disk => 1, '454' => 1, output => 'cigar', diff => 10, save => $ref_fa_hash_base);
+            open(my $cfh, "| gzip -c > $cigar_out");
+            $cigar_util->top_10_hits_per_read($sfh, $cfh);
+            
+            # check for completion
+            my $done = `zcat $cigar_out | tail -1 | grep "SSAHA2 finished" | wc -l`;
+            $done || $self->throw("ssah2 failed to finish for fastq $fastq");
+            
+            #$cmd .= qq{; perl -w -e "use Mapping_454_ssaha;Mapping_454_ssaha::cigarStat( \\"$currentDir/$cigarName\\", \\"$currentDir/$cigarName.mapstat\\");"'};
+            
+            push(@filtered_fastqs, $tmp_fastq);
+            push(@cigar_outputs, $cigar_out);
+        }
         
-        # check for completion
-        my $done = `zcat $cigar_out | tail -1 | grep "SSAHA2 finished" | wc -l`;
-        $done || $self->throw("ssah2 failed to finish for fastq $fastq");
+        # convert to sam
+        my $expected_sam_lines = 0;
+        if (@cigar_outputs == 1 || @cigar_outputs == 2) {
+            $self->debug("will do cigar_to_sam([@fqs], [@cigar_outputs], $insert_size, undef, $tmp_sam)");
+            $expected_sam_lines = $cigar_util->cigar_to_sam(\@fqs, \@cigar_outputs, $insert_size, undef, $tmp_sam);
+        }
+        else {
+            $self->throw("Something went wrong, ended up with ([@filtered_fastqs], [@cigar_outputs])");
+        }
         
-        #$cmd .= qq{; perl -w -e "use Mapping_454_ssaha;Mapping_454_ssaha::cigarStat( \\"$currentDir/$cigarName\\", \\"$currentDir/$cigarName.mapstat\\");"'};
-        
-        push(@filtered_fastqs, $tmp_fastq);
-        push(@cigar_outputs, $cigar_out);
-    }
-    
-    # convert to sam
-    my $expected_sam_lines = 0;
-    if (@cigar_outputs == 1 || @cigar_outputs == 2) {
-        $self->debug("will do cigar_to_sam([@filtered_fastqs], [@cigar_outputs], $insert_size, undef, $out_sam)");
-        $expected_sam_lines = $cigar_util->cigar_to_sam(\@filtered_fastqs, \@cigar_outputs, $insert_size, undef, $out_sam);
+        # sanity check the sam
+        $io->file($tmp_sam);
+        my $actual_sam_lines = $io->num_lines;
+        if ($actual_sam_lines == $expected_sam_lines) {
+            move($tmp_sam, $out_sam) || $self->throw("Failed to move $tmp_sam to $out_sam: $!");
+        }
+        else {
+            $self->warn("a sam file was made by do_mapping(), but it only had $actual_sam_lines lines, not the expected $expected_sam_lines - will unlink it");
+            $self->_set_run_status(-1);
+            unlink("$tmp_sam");
+        }
     }
     else {
-        $self->throw("Something went wrong, ended up with ([@filtered_fastqs], [@cigar_outputs])");
+        $self->_set_run_status(1);
     }
-    
-    # sanity check the sam
-    $io->file($out_sam);
-    my $actual_sam_lines = $io->num_lines;
-    unless ($actual_sam_lines == $expected_sam_lines) {
-        $self->throw("Wrote $expected_sam_lines sam entries but could only read back $actual_sam_lines!");
-    }
-    
-    $self->_set_run_status(1);
     
     $self->run_method($orig_run_method);
     return;
