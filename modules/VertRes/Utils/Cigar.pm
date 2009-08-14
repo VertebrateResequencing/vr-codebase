@@ -281,9 +281,6 @@ sub cigar_to_sam {
     }
     close($out_fh);
     
-    my $tmp_copy = 'out_sam'.++$self->{sam_outs};
-    system("cp $out_sam $tmp_copy");
-    
     #print "num_reads_written:$numReadsWritten\n";
     #print "num_reads_paired:$numReadsPaired\n";
     #print "num_reads_discarded:$numReadsDiscarded\n";
