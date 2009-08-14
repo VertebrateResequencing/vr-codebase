@@ -307,10 +307,11 @@ sub map {
     # get the reference filename
     my %lane_info = %{HierarchyUtilities::lane_info($lane_path)};
     my $ref_fa = $lane_info{fa_ref} || $self->throw("the reference fasta wasn't known for $lane_path");
+    my $read_group = $lane_info{lane} || $self->throw("the read group wasn't known for $lane_path");
     
     # and get the expected insert size for this lane
     # ***... from where?
-    my $insert_size = 2000;
+    my $insert_size = 2000; # $lane_info{insert_size} - currently just hardcoded to 500
     
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
@@ -320,6 +321,8 @@ sub map {
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
     # independantly.
     foreach my $ended ('se', 'pe') {
+        my $done_file = $self->{io}->catfile($lane_path, '.mapping_complete_'.$ended);
+        next if -e $done_file;
         my $these_read_args = $self->_get_read_args($lane_path, $ended) || next;
         my @these_read_args = @{$these_read_args};
         
@@ -353,7 +356,8 @@ my \$mapper = $mapper_class->new(verbose => $verbose);
 my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
                                @split_read_args,
                                output => '$sam_file',
-                               insert_size => $insert_size);
+                               insert_size => $insert_size,
+                               read_group => '$read_group');
 
 # (it will only return ok and create output if the sam file was created and not
 #  truncated)
@@ -507,6 +511,8 @@ sub merge_and_stat {
             push(@bams, $self->{io}->catfile($split_dir, $split.'.raw.sorted.bam'));
         }
         
+        my $copy_instead_of_merge = @bams > 1 ? 0 : 1;
+        
         # define the output files
         my $bam_file = $self->{io}->catfile($lane_path, "${ended}_raw.sorted.bam");
         my $rmdup_file = $self->{io}->catfile($lane_path, "${ended}_rmdup.bam");
@@ -523,18 +529,24 @@ sub merge_and_stat {
         print $scriptfh qq{
 use strict;
 use VertRes::Utils::Sam;
-use VertRes::Wrapper::picard;
+use VertRes::Wrapper::samtools;
+use File::Copy;
 
 my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
-my \$picard = VertRes::Wrapper::picard->new(verbose => $verbose);
+my \$samtools = VertRes::Wrapper::samtools->new(verbose => $verbose);
 
 # merge bams
 unless (-s '$bam_file') {
-    # (picard can handle merging a single file; samtools can't. We can't use
-    #  VertRes::Utils::Sam->merge because that makes a symlink if there's only
-    #  one bam, whereas we want the merge to effectively copy the bam)
-    \$picard->merge_and_check('$bam_file', [qw(@bams)]);
-    \$picard->throw("merging bam failed - try again?") unless \$picard->run_status == 2;
+    # (can't use VertRes::Utils::Sam->merge since that is implemented with
+    #  picard, which renames the RG tags (to uniquify) when it merges multiple
+    #  files with the same RG tag!
+    if ($copy_instead_of_merge) {
+        copy('@bams', '$bam_file') || \$sam_util->throw("copy of bam failed: $!");
+    }
+    else {
+        \$samtools->merge_and_check('$bam_file', [qw(@bams)]);
+        \$samtools->throw("merging bam failed - try again?") unless \$samtools->run_status == 2;
+    }
 }
 
 # remake the bam via fillmd so we have accurate NM field
