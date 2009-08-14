@@ -174,12 +174,14 @@ sub parse_bam_line
                         gc_content_bin   
 
         Returntype : Hash with the following entries, each statistics type is a hash as well. See also Graphs::plot_stats.
+                     The stats are collected for all reads ('total') and for each reading group (RG) separately.
                         insert_size =>
                             yvals      .. array of insert size frequencies 
                             xvals      .. 
                             max => x   .. maximum values
                             max => y
                             average    .. average value (estimated from histogram, the binsize may influence the accuracy)
+                            std_dev    .. standard deviation
                         gc_content_forward  .. gc content of sequences with the 0x0040 flag set
                         gc_content_reverse  .. gc content of seqs with the 0x0080 flag set
                         reads_chrm_distrib  .. read distribution with respect to chromosomes
@@ -189,9 +191,10 @@ sub parse_bam_line
                         reads_unpaired
                         reads_unmapped
                         bases_total
-                        bases_mapped
+                        bases_mapped_read   .. number of mapped reads * read length
+                        bases_mapped_cigar  .. number of M+I in cigars
                         duplication
-                        num_mismatches (if defined in bam file, otherwise 0)
+                        num_mismatches (if NM fields defined in bam file, otherwise 0)
 =cut
 
 sub collect_detailed_bam_stats
@@ -211,17 +214,18 @@ sub collect_detailed_bam_stats
 
     # Use hashes, not arrays - the data can be broken and we might end up allocating insanely big arrays 
 
-    #   reads_unmapped  ..   That is, not aligned to the ref sequence (unmapped flag)
-    #   reads_paired    ..      both mates are mapped and form a pair (read_paired flag)
-    #   reads_unpaired  ..      both mates mapped, but do not form a pair (neither unmapped nor read_paired flag set)
-    #   bases_total     ..   The total number of bases determined as \sum_{seq} length(seq)
-    #   bases_mapped    ..      number of bases with 'M' in cigar
+    #   reads_unmapped      ..   That is, not aligned to the ref sequence (unmapped flag)
+    #   reads_paired        ..      both mates are mapped and form a pair (read_paired flag)
+    #   reads_unpaired      ..      both mates mapped, but do not form a pair (neither unmapped nor read_paired flag set)
+    #   bases_total         ..   The total number of bases determined as \sum_{seq} length(seq)
+    #   bases_mapped_cigar  ..      number of bases with 'M+I' in cigar
+    #   bases_mapped_read   ..      number of mapped reads * read length
 
-    my $raw_stats = {};
+    my $out_stats = {};
 
     # Collect the statistics - always collect the total statistics for all lanes ('total') and
     #   when the RG information is present in the header, collect also statistics individually
-    #   for each ID (@RG ID:xyz). The statistics are collected into raw_stats hash, individual
+    #   for each ID (@RG ID:xyz). The statistics are collected into out_stats hash, individual
     #   keys are 'total' and IDs.
     #
     my $i=0;
@@ -241,7 +245,7 @@ sub collect_detailed_bam_stats
             my $header = parse_bam_header_line($line);
             if ( !exists($$header{'ID'}) ) { Utils::error("No ID in the header line? $line\n"); }
 
-            $$raw_stats{$$header{'ID'}}{'header'} = $header;
+            $$out_stats{$$header{'ID'}}{'header'} = $header;
             next;
         }
 		
@@ -260,43 +264,56 @@ sub collect_detailed_bam_stats
         my $seq   = $$data{'seq'};
         
         my $seq_len  = length($seq);
-        my $mismatch = exists($$data{'NM'}) ? $$data{'NM'} : 0;
         for my $stat (@stats)
         {
-            $$raw_stats{$stat}{'reads_total'}++;
-            $$raw_stats{$stat}{'bases_total'} += $seq_len;
-            $$raw_stats{$stat}{'num_mismatches'} += $mismatch;
+            $$out_stats{$stat}{'reads_total'}++;
+            $$out_stats{$stat}{'bases_total'} += $seq_len;
         }
 
         if ( !($flag & $$FLAGS{'unmapped'}) )
         {
-            for my $stat (@stats) { $$raw_stats{$stat}{'bases_mapped'} += $seq_len; }
+            # Stats which make sense only for mapped reads.
+
+            my $cigar_info = cigar_stats($cigar);
+            my $nmapped = 0;
+            if ( exists($$cigar_info{'M'}) ) { $nmapped += $$cigar_info{'M'}; }
+            if ( exists($$cigar_info{'I'}) ) { $nmapped += $$cigar_info{'I'}; }
+            my $mismatch = exists($$data{'NM'}) ? $$data{'NM'} : 0;
+            for my $stat (@stats) 
+            { 
+                # There are two ways how to determine the number of mapped reads:
+                #   reads_maped * read_length OR count M+I in cigars. 
+                # Let's do both.
+                $$out_stats{$stat}{'bases_mapped_read'}  += $seq_len; 
+                $$out_stats{$stat}{'bases_mapped_cigar'} += $nmapped; 
+                $$out_stats{$stat}{'num_mismatches'} += $mismatch;
+            }
 
             # Chromosome distribution
             #
             if ( $do_chrm && $chrom=~/^(?:\d+|X|Y)$/i ) 
             {
-                for my $stat (@stats) { $$raw_stats{$stat}{'chrm_distrib_freqs'}{$chrom}++; }
+                for my $stat (@stats) { $$out_stats{$stat}{'chrm_distrib_freqs'}{$chrom}++; }
             }
         }
 
         my $paired = ($flag & $$FLAGS{'read_paired'}) && ($flag & $$FLAGS{'paired_tech'});
         if ( $paired )
         {
-            for my $stat (@stats) { $$raw_stats{$stat}{'reads_paired'}++; }
+            for my $stat (@stats) { $$out_stats{$stat}{'reads_paired'}++; }
 
             # Insert Size Frequencies
             #
             my $bin = abs(int( $isize / $insert_size_bin ));
-            for my $stat (@stats) { $$raw_stats{$stat}{'insert_size_freqs'}{$bin}++; }
+            for my $stat (@stats) { $$out_stats{$stat}{'insert_size_freqs'}{$bin}++; }
         }
         elsif ( $flag & $$FLAGS{'unmapped'} ) 
         { 
-            for my $stat (@stats) { $$raw_stats{$stat}{'reads_unmapped'}++;  }
+            for my $stat (@stats) { $$out_stats{$stat}{'reads_unmapped'}++;  }
         }
         else 
         { 
-            for my $stat (@stats) { $$raw_stats{$stat}{'reads_unpaired'}++; }
+            for my $stat (@stats) { $$out_stats{$stat}{'reads_unpaired'}++; }
         }
 
         # GC Content Frequencies - collect stats for both pairs separately
@@ -312,17 +329,18 @@ sub collect_detailed_bam_stats
             my $bin = abs(int( $gc_count / $gc_content_bin ));
             if ( $flag & $$FLAGS{'1st_in_pair'} )
             {
-                for my $stat (@stats) { $$raw_stats{$stat}{'gc_content_fwd_freqs'}{$bin}++; }
+                for my $stat (@stats) { $$out_stats{$stat}{'gc_content_fwd_freqs'}{$bin}++; }
             }
             elsif ( $flag & $$FLAGS{'2nd_in_pair'} )
             {
-                for my $stat (@stats) { $$raw_stats{$stat}{'gc_content_rev_freqs'}{$bin}++; }
+                for my $stat (@stats) { $$out_stats{$stat}{'gc_content_rev_freqs'}{$bin}++; }
             }
-            elsif ( !($flag & $$FLAGS{'paired_tech'}) )  # Not a paired-read technology
+            else
             { 
                 # Either it is a non-paired-read technology, or the 1st_in_pair and
-                #   and 2nd_in_pair flags got lost in the process. (The specs allows this.)
-                for my $stat (@stats) { $$raw_stats{$stat}{'gc_content_fwd_freqs'}{$bin}++; }
+                #   and 2nd_in_pair flags got lost in the process. In that case, 
+                #   both 1st_in_pair and 2nd_in_pair should be set to zero.
+                for my $stat (@stats) { $$out_stats{$stat}{'gc_content_fwd_freqs'}{$bin}++; }
             }
         }
 
@@ -330,16 +348,17 @@ sub collect_detailed_bam_stats
     }
     close $fh;
 
-    for my $stat (keys %$raw_stats) 
+    for my $stat (keys %$out_stats) 
     { 
-        $$raw_stats{$stat}{'reads_unmapped'} = 0 unless exists($$raw_stats{$stat}{'reads_unmapped'});
-        $$raw_stats{$stat}{'reads_unpaired'} = 0 unless exists($$raw_stats{$stat}{'reads_unpaired'});
-        $$raw_stats{$stat}{'reads_paired'}   = 0 unless exists($$raw_stats{$stat}{'reads_paired'});
-        $$raw_stats{$stat}{'reads_total'}    = 0 unless exists($$raw_stats{$stat}{'reads_total'});
-        $$raw_stats{$stat}{'bases_total'}    = 0 unless exists($$raw_stats{$stat}{'bases_total'});
-        $$raw_stats{$stat}{'bases_mapped'}   = 0 unless exists($$raw_stats{$stat}{'bases_mapped'});
+        $$out_stats{$stat}{'reads_unmapped'} = 0 unless exists($$out_stats{$stat}{'reads_unmapped'});
+        $$out_stats{$stat}{'reads_unpaired'} = 0 unless exists($$out_stats{$stat}{'reads_unpaired'});
+        $$out_stats{$stat}{'reads_paired'}   = 0 unless exists($$out_stats{$stat}{'reads_paired'});
+        $$out_stats{$stat}{'reads_total'}    = 0 unless exists($$out_stats{$stat}{'reads_total'});
+        $$out_stats{$stat}{'bases_total'}    = 0 unless exists($$out_stats{$stat}{'bases_total'});
+        $$out_stats{$stat}{'bases_mapped_read'}  = 0 unless exists($$out_stats{$stat}{'bases_mapped_read'});
+        $$out_stats{$stat}{'bases_mapped_cigar'} = 0 unless exists($$out_stats{$stat}{'bases_mapped_cigar'});
 
-        $$raw_stats{$stat}{'reads_mapped'} = $$raw_stats{$stat}{'reads_total'} - $$raw_stats{$stat}{'reads_unmapped'}; 
+        $$out_stats{$stat}{'reads_mapped'} = $$out_stats{$stat}{'reads_total'} - $$out_stats{$stat}{'reads_unmapped'}; 
     }
 
     # Find out the duplication rate
@@ -352,61 +371,49 @@ sub collect_detailed_bam_stats
         else {
             chomp(($rmdup_reads_total) = Utils::CMD("samtools rmdup $bam_file - 2>/dev/null | samtools view - | wc -l"));
         }
-        $$raw_stats{'total'}{'rmdup_reads_total'} = $rmdup_reads_total;
+        $$out_stats{'total'}{'rmdup_reads_total'} = $rmdup_reads_total;
     }
 
-    # Now process the reults. The raw_stats hash now contains the total statistics (the key 'total')
+    # Now process the results. The out_stats hash now contains the total statistics (the key 'total')
     #   and possibly also separate statistics for individual libraries (other keys, e.g. 'ERR001773').
+    #   Calculate some numbers (error_rate and duplication) and include bin_size for the histograms
+    #   (insert_size and gc_content).
     #
-    my $stats = {};
-    for my $stat (keys %$raw_stats)
+    for my $stat (keys %$out_stats)
     {
-        $$stats{$stat} = 
-        {
-            'reads_total'       => $$raw_stats{$stat}{'reads_total'},
-            'reads_paired'      => $$raw_stats{$stat}{'reads_paired'},
-            'reads_mapped'      => $$raw_stats{$stat}{'reads_mapped'},
-            'reads_unpaired'    => $$raw_stats{$stat}{'reads_unpaired'},
-            'reads_unmapped'    => $$raw_stats{$stat}{'reads_unmapped'},
-            'bases_total'       => $$raw_stats{$stat}{'bases_total'},
-            'bases_mapped'      => $$raw_stats{$stat}{'bases_mapped'},
-            'num_mismatches'    => $$raw_stats{$stat}{'num_mismatches'},
-            'error_rate'        => $$raw_stats{$stat}{'num_mismatches'} ? $$raw_stats{$stat}{'num_mismatches'}/$$raw_stats{$stat}{'bases_total'} : 0,
+        $$out_stats{$stat}{error_rate} = $$out_stats{$stat}{'num_mismatches'} ? $$out_stats{$stat}{'num_mismatches'}/$$out_stats{$stat}{'bases_total'} : 0;
 
-            'insert_size' => 
+        if ( exists($$out_stats{$stat}{'rmdup_reads_total'}) )
+        {
+            $$out_stats{$stat}{'duplication'} = $$out_stats{$stat}{'rmdup_reads_total'}/$$out_stats{$stat}{'reads_total'};
+        }
+
+        if ( exists($$out_stats{$stat}{insert_size_freqs}) )
+        {
+            $$out_stats{$stat}{insert_size} =
             {
-                'data'       => $$raw_stats{$stat}{'insert_size_freqs'},
+                'data'       => $$out_stats{$stat}{'insert_size_freqs'},
                 'bin_size'   => $insert_size_bin,
-            },
-        };
-        if ( exists($$raw_stats{$stat}{'header'}) )
-        {
-            $$stats{$stat}{'header'} = $$raw_stats{$stat}{'header'};
+            };
+            delete($$out_stats{$stat}{insert_size_freqs});
         }
-        if ( exists($$raw_stats{$stat}{'chrm_distrib_freqs'}) )
+        if ( exists($$out_stats{$stat}{'gc_content_fwd_freqs'}) )
         {
-            $$stats{$stat}{'chrm_distrib_freqs'} = $$raw_stats{$stat}{'chrm_distrib_freqs'};
-        }
-        if ( exists($$raw_stats{$stat}{'rmdup_reads_total'}) )
-        {
-            $$stats{$stat}{'rmdup_reads_total'} = $$raw_stats{$stat}{'rmdup_reads_total'};
-            $$stats{$stat}{'duplication'}       = $$raw_stats{$stat}{'rmdup_reads_total'}/$$raw_stats{$stat}{'reads_total'};
-        }
-        if ( exists($$raw_stats{$stat}{'gc_content_fwd_freqs'}) )
-        {
-            $$stats{$stat}{'gc_content_forward'} = 
+            $$out_stats{$stat}{'gc_content_forward'} = 
             {
-                'data'       => $$raw_stats{$stat}{'gc_content_fwd_freqs'},
+                'data'       => $$out_stats{$stat}{'gc_content_fwd_freqs'},
                 'bin_size'   => $gc_content_bin,
             };
+            delete($$out_stats{$stat}{'gc_content_fwd_freqs'});
         }
-        if ( exists($$raw_stats{$stat}{'gc_content_rev_freqs'}) )
+        if ( exists($$out_stats{$stat}{'gc_content_rev_freqs'}) )
         {
-            $$stats{$stat}{'gc_content_reverse'} =
+            $$out_stats{$stat}{'gc_content_reverse'} =
             {
-                'data'       => $$raw_stats{$stat}{'gc_content_rev_freqs'},
+                'data'       => $$out_stats{$stat}{'gc_content_rev_freqs'},
                 'bin_size'   => $gc_content_bin,
             };
+            delete($$out_stats{$stat}{'gc_content_rev_freqs'});
         }
     }
 
@@ -414,9 +421,9 @@ sub collect_detailed_bam_stats
     #   TrackQC uses this. Although the code is lengthy, the histograms are small and take
     #   no time to process.
     #
-    for my $stat_name (keys %$stats)
+    for my $stat_name (keys %$out_stats)
     {
-        my $stat = $$stats{$stat_name};
+        my $stat = $$out_stats{$stat_name};
 
         for my $key (keys %$stat)
         {
@@ -446,6 +453,7 @@ sub collect_detailed_bam_stats
 
                 if ( !defined $ymax || $yval>$ymax ) { $xmax=$bin; $ymax=$yval }
             }
+            $avg = $navg ? $avg/$navg : 0;
 
             if ( !@xvals ) { @xvals=(0); }  # Yes, this can happen,e.g. AKR_J_SLX_200_NOPCR_1/1902_3
             if ( !@yvals ) { @yvals=(0); }
@@ -453,15 +461,16 @@ sub collect_detailed_bam_stats
             my $dev  = 0;
             for (my $i=0; $i<scalar @xvals; $i++)
             {
-                $dev += $xvals[$i]*($yvals[$i]-$avg)**2;
+                $dev += $yvals[$i]*($xvals[$i]-$avg)**2;    # yval is the count and xval the value
             }
+            $dev = $navg ? $dev/$navg : 0;
 
             $$stat{$key}{'xvals'} = \@xvals;
             $$stat{$key}{'yvals'} = \@yvals;
             $$stat{$key}{'max'}{'x'} = defined $xmax ? $xmax : 0;
             $$stat{$key}{'max'}{'y'} = defined $ymax ? $ymax : 0;
-            $$stat{$key}{'average'}  = $navg ? $avg/$navg : 0;
-            $$stat{$key}{'std_dev'}  = $navg ? sqrt($dev/$navg) : 0;
+            $$stat{$key}{'average'}  = $avg;
+            $$stat{$key}{'std_dev'}  = sqrt($dev);
         }
 
         # Chromosome distribution histograms (reads_chrm_distrib) are different - xvalues are not numeric
@@ -482,7 +491,7 @@ sub collect_detailed_bam_stats
         }
     }
     
-    return $stats;
+    return $out_stats;
 }
 
 

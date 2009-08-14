@@ -566,6 +566,7 @@ sub run_graphs
 
     my $stats_file  = "$outdir/_stats";
     my $other_stats = "$outdir/_detailed-stats.txt";
+    my $dump_file   = "$outdir/_stats.dump";
 
     my $fastq_files = existing_fastq_files("$lane_path/$name");
     for (my $i=1; $i<=scalar @$fastq_files; $i++)
@@ -594,6 +595,7 @@ sub run_graphs
     my $stats = $$all_stats{'total'};
     report_stats($stats,$lane_path,$stats_file);
     report_detailed_stats($stats,$lane_path,$other_stats);
+    dump_detailed_stats($stats,$dump_file);
 
     my ($x,$y);
     $x = $$stats{'insert_size'}{'max'}{'x'};
@@ -643,7 +645,7 @@ sub report_stats
     open(my $fh,'>',$outfile) or Utils::error("$outfile: $!");
     print  $fh "MAPPED,,$$info{project},$$info{sample},$$info{technology},$$info{library},$$info{lane},";
     printf $fh ",0,$$info{lane}_1.fastq.gz,%.1f,$$info{lane}_2.fastq.gz,%.1f,", $avg_read_length,$avg_read_length;
-    print  $fh "$$stats{reads_total},$$stats{bases_total},$$stats{reads_mapped},$$stats{bases_mapped},$$stats{reads_paired},";
+    print  $fh "$$stats{reads_total},$$stats{bases_total},$$stats{reads_mapped},$$stats{bases_mapped_cigar},$$stats{reads_paired},";
     print  $fh "$$stats{rmdup_reads_total},0,-1\n";
     close $fh;
 }
@@ -660,15 +662,27 @@ sub report_detailed_stats
     printf $fh "     mapped .. %d (%.1f%%)\n", $$stats{'reads_mapped'}, 100*($$stats{'reads_mapped'}/$$stats{'reads_total'});
     printf $fh "     paired .. %d (%.1f%%)\n", $$stats{'reads_paired'}, 100*($$stats{'reads_paired'}/$$stats{'reads_total'});
     printf $fh "bases total .. %d\n", $$stats{'bases_total'};
-    printf $fh "     mapped .. %d (%.1f%%)\n", $$stats{'bases_mapped'}, 100*($$stats{'bases_mapped'}/$$stats{'bases_total'});
+    printf $fh "    mapped (read)  .. %d (%.1f%%)\n", $$stats{'bases_mapped_read'}, 100*($$stats{'bases_mapped_read'}/$$stats{'bases_total'});
+    printf $fh "    mapped (cigar) .. %d (%.1f%%)\n", $$stats{'bases_mapped_cigar'}, 100*($$stats{'bases_mapped_cigar'}/$$stats{'bases_total'});
     printf $fh "duplication .. %.2f\n", (1-$$stats{'rmdup_reads_total'}/$$stats{'reads_total'});
     printf $fh "\n";
     printf $fh "insert size        \n";
-    printf $fh "    average .. %0.f\n", $$stats{insert_size}{average};
-    printf $fh "    std dev .. %0.f\n", $$stats{insert_size}{std_dev};
+    printf $fh "    average .. %.1f\n", $$stats{insert_size}{average};
+    printf $fh "    std dev .. %.1f\n", $$stats{insert_size}{std_dev};
     printf $fh "\n";
     printf $fh "chrm distrib dev .. %f\n", $$stats{'reads_chrm_distrib'}{'scaled_dev'};
 
+    close $fh;
+}
+
+
+sub dump_detailed_stats
+{
+    my ($stats,$outfile) = @_;
+
+    use Data::Dumper;
+    open(my $fh,'>',$outfile) or Utils::error("$outfile: $!");
+    print $fh Dumper($stats);
     close $fh;
 }
 

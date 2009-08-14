@@ -118,8 +118,8 @@ sub is_genotype_ok
 
     if ( $ratio<$min_ratio ) 
     { 
-        if ( $expected ) { return "status=wrong expected=$expected found=none ratio=$ratio\n"; }
-        return "status=unconfirmed expected=none found=none ratio=$ratio\n";
+        if ( $expected ) { return "status=unconfirmed expected=$expected found=none ratio=$ratio\n"; }
+        return "status=unknown expected=none found=none ratio=$ratio\n";
     }
     if ( !$expected ) { return "status=candidate expected=none found=$gtype1 ratio=$ratio\n" }
     if ( $expected eq $gtype1 ) { return "status=confirmed expected=$expected found=$gtype1 ratio=$ratio\n" }
