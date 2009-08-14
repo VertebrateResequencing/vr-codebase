@@ -119,7 +119,7 @@ sub top_10_hits_per_read {
 
 sub cigar_to_sam {
     my ($self, $fastqs, $cigars, $insert_size, $read_group, $out_sam) = @_;
-    $read_group = $read_group ? "\tRG:Z:".$read_group : '';
+    $read_group = $read_group ? 'RG:Z:'.$read_group : '';
     
     my @fastq_parsers;
     my %all_read_names;
