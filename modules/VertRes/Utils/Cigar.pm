@@ -241,11 +241,13 @@ sub cigar_to_sam {
             # just one read aligns
             elsif ($mapScore1 > -1) {
                 $flags[0] += hex("0x0008");
+                $flags[0] -= hex('0x0002');
                 $self->_print_sam_line($out_fh, \$numReadsWritten, $names[0], $flags[0], $mapScore1, $samCigar1, $seq1, $quals1, $read_group, \@s1);
                 $numReadsDiscarded++;
             }
             elsif ($mapScore2 > -1) {
                 $flags[1] += hex("0x0008");
+                $flags[1] -= hex('0x0002');
                 $self->_print_sam_line($out_fh, \$numReadsWritten, $names[1], $flags[1], $mapScore2, $samCigar2, $seq2, $quals2, $read_group, \@s2);
                 $numReadsDiscarded++;
             }
