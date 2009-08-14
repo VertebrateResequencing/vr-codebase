@@ -148,8 +148,9 @@ sub ssaha2 {
                                 read0 => 'reads.fastq'
                                 read1 => 'reads_1.fastq',
                                 read2 => 'reads_2.fastq',
-                                output => 'output.sam'
-                                local_cache => '/local/space/for/files');
+                                output => 'output.sam',
+                                local_cache => '/local/space/for/files',
+                                read_group => 'SRR000000');
  Function: Run ssaha2 on the supplied files, generating a sam file of the
            mapping. Checks the sam file isn't truncated. Optimises for 454.
            Filters short reads. Does custom read pair matching. Indexes the
@@ -160,6 +161,8 @@ sub ssaha2 {
            output => 'output.sam'
            insert_size => int (default 2000)
            local_cache => '/path' (defaults to standard tmp space)
+           read_group => string (defaults to undef, so your sam will have no
+                                 RG tag!)
 
            read1 => 'reads_1.fastq', read2 => 'reads_2.fastq'
            -or-
@@ -180,6 +183,8 @@ sub do_mapping {
     
     my $orig_run_method = $self->run_method;
     $self->run_method('system');
+    
+    my $read_group = delete $args{read_group};
     
     my $ref_fa = delete $args{ref} || $self->throw("ref is required");
     my $ref_fa_hash_base = $ref_fa;
@@ -252,26 +257,37 @@ sub do_mapping {
         foreach my $fastq (@fqs) {
             my $temp_dir = $io->tempdir();
             
-            # filter out short reads from fastq
             my $fq_basename = basename($fastq);
             $fq_basename =~ s/\.gz$//;
             my $tmp_fastq = $io->catfile($temp_dir, $fq_basename);
-            AssemblyTools::filterOutShortReads($fastq, 30, $tmp_fastq);
             
-            # run ssaha2, filtering the output to get the top 10 hits per read,
-            # grouping by readname, and compressing it
             my $cigar_name = $fq_basename;
             $cigar_name =~ s/\.fastq$//;
             my $cigar_out = $io->catfile($out_dir, $cigar_name.'.cigar.gz');
-            my $sfh = $self->ssaha2([$tmp_fastq], undef, disk => 1, '454' => 1, output => 'cigar', diff => 10, save => $ref_fa_hash_base);
-            open(my $cfh, "| gzip -c > $cigar_out");
-            $cigar_util->top_10_hits_per_read($sfh, $cfh);
             
-            # check for completion
-            my $done = `zcat $cigar_out | tail -1 | grep "SSAHA2 finished" | wc -l`;
-            $done || $self->throw("ssah2 failed to finish for fastq $fastq");
-            
-            #$cmd .= qq{; perl -w -e "use Mapping_454_ssaha;Mapping_454_ssaha::cigarStat( \\"$currentDir/$cigarName\\", \\"$currentDir/$cigarName.mapstat\\");"'};
+            unless (-s $cigar_out) {
+                # filter out short reads from fastq
+                AssemblyTools::filterOutShortReads($fastq, 30, $tmp_fastq);
+                
+                # run ssaha2, filtering the output to get the top 10 hits per read,
+                # grouping by readname, and compressing it
+                my $sfh = $self->ssaha2([$tmp_fastq], undef, disk => 1, '454' => 1, output => 'cigar', diff => 10, save => $ref_fa_hash_base);
+                my $tmp_cigar = $cigar_out;
+                $tmp_cigar =~ s/cigar\.gz$/cigar.tmp.gz/;
+                open(my $cfh, "| gzip -c > $tmp_cigar");
+                $cigar_util->top_10_hits_per_read($sfh, $cfh);
+                
+                # check for completion
+                my $done = `zcat $tmp_cigar | tail -1 | grep "SSAHA2 finished" | wc -l`;
+                if ($done) {
+                    move($tmp_cigar, $cigar_out) || $self->throw("Failed to move $tmp_cigar to $cigar_out: $!");
+                }
+                else {
+                    $self->throw("ssah2 failed to finish for fastq $fastq");
+                }
+                
+                #$cmd .= qq{; perl -w -e "use Mapping_454_ssaha;Mapping_454_ssaha::cigarStat( \\"$currentDir/$cigarName\\", \\"$currentDir/$cigarName.mapstat\\");"'};
+            }
             
             push(@filtered_fastqs, $tmp_fastq);
             push(@cigar_outputs, $cigar_out);
@@ -280,8 +296,9 @@ sub do_mapping {
         # convert to sam
         my $expected_sam_lines = 0;
         if (@cigar_outputs == 1 || @cigar_outputs == 2) {
-            $self->debug("will do cigar_to_sam([@fqs], [@cigar_outputs], $insert_size, undef, $tmp_sam)");
-            $expected_sam_lines = $cigar_util->cigar_to_sam(\@fqs, \@cigar_outputs, $insert_size, undef, $tmp_sam);
+            my $print_group = $read_group ? $read_group : 'undef';
+            $self->debug("will do cigar_to_sam([@fqs], [@cigar_outputs], $insert_size, $print_group, $tmp_sam)");
+            $expected_sam_lines = $cigar_util->cigar_to_sam(\@fqs, \@cigar_outputs, $insert_size, $read_group, $tmp_sam);
         }
         else {
             $self->throw("Something went wrong, ended up with ([@filtered_fastqs], [@cigar_outputs])");
@@ -292,6 +309,7 @@ sub do_mapping {
         my $actual_sam_lines = $io->num_lines;
         if ($actual_sam_lines == $expected_sam_lines) {
             move($tmp_sam, $out_sam) || $self->throw("Failed to move $tmp_sam to $out_sam: $!");
+            $self->_set_run_status(1);
         }
         else {
             $self->warn("a sam file was made by do_mapping(), but it only had $actual_sam_lines lines, not the expected $expected_sam_lines - will unlink it");
