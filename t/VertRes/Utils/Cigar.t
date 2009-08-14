@@ -60,6 +60,6 @@ ok -s $fq1_file, 'SRR001629_1 filtered fastq file ready to test with';
 $fq2_file = $io->catfile('t', 'data', 'SRR001629_2.filtered.fastq');
 ok -s $fq2_file, 'SRR001629_2 filtered fastq file ready to test with';
 
-is $cigar_util->cigar_to_sam([$fq1_file, $fq2_file], [$cigar1_file, $cigar2_file], 2000, undef, $sam_out), 1426, 'cigar_to_sam worked with filtered SRR001629 reads';
+is $cigar_util->cigar_to_sam([$fq1_file, $fq2_file], [$cigar1_file, $cigar2_file], 2000, undef, $sam_out), 1506, 'cigar_to_sam worked with filtered SRR001629 reads';
 
 exit;

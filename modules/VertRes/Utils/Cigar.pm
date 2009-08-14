@@ -153,7 +153,9 @@ sub cigar_to_sam {
         
         # get the corresponding data from each input fastq
         my (@names, @seqs, @quals);
-        foreach my $parser (@fastq_parsers) {
+        foreach my $i (0..$#fastq_parsers) {
+            my $parser = $fastq_parsers[$i];
+            
             my $this_read_name = $read_name;
             if (@fastq_parsers > 1 && ! $parser->exists($read_name)) {
                 # allow them to differ by the last character, eg. the
@@ -186,17 +188,17 @@ sub cigar_to_sam {
             }
             
             if ($parser->exists($this_read_name)) {
-                push(@names, $this_read_name);
-                push(@seqs, $parser->seq($this_read_name));
-                push(@quals, $parser->quality($this_read_name));
+                $names[$i] = $this_read_name;
+                $seqs[$i] = $parser->seq($this_read_name);
+                $quals[$i] = $parser->quality($this_read_name);
             }
         }
         
         # get the hits for each fastq
         my @hits;
         foreach my $i (0..$#names) {
-            my $hits = $cigar_hashes[$i]{$names[$i]} || [];
-            $hits[$i] = $hits;
+            my $hits = $cigar_hashes[$i]{$names[$i]} if $names[$i];
+            $hits[$i] = $hits || [];
         }
         @hits > 0 || $self->throw("got no hits for @names");
         
@@ -278,6 +280,9 @@ sub cigar_to_sam {
         }
     }
     close($out_fh);
+    
+    my $tmp_copy = 'out_sam'.++$self->{sam_outs};
+    system("cp $out_sam $tmp_copy");
     
     #print "num_reads_written:$numReadsWritten\n";
     #print "num_reads_paired:$numReadsPaired\n";
