@@ -46,6 +46,7 @@ Petr Danecek, I<pd3@sanger.ac.uk>
                     bwa_ref             .. e.g. /nfs/sf7/MOUSE/ref/NCBIM37_um
                     fa_ref              .. e.g. /nfs/sf7/MOUSE/ref/NCBIM37_um.fa
                     fai_ref             .. e.g. /nfs/sf7/MOUSE/ref/NCBIM37_um.fa.fai
+                    dict_ref            .. e.g. /nfs/sf7/MOUSE/ref/NCBIM37_um.dict
                     ref_name            .. e.g. NCBIM37 (official name of the assembly)
                     md5_ref             .. e.g. 28f4ff5cf14f5931d0d531a901236378
                     snps                .. e.g. /nfs/sf7/MOUSE/ref/hapmap_mm9_matrix.snps.bin
@@ -84,6 +85,7 @@ sub lane_info
         $$info{'bwa_ref'}  = '/nfs/sf7/MOUSE/ref/NCBIM37_um';
         $$info{'fa_ref'}   = '/nfs/sf7/MOUSE/ref/NCBIM37_um.fa';
         $$info{'fai_ref'}  = '/nfs/sf7/MOUSE/ref/NCBIM37_um.fa.fai';
+        $$info{'dict_ref'}  = '/lustre/scratch103/sanger/team145/mouse/ref/NCBIM37_um.dict';
         $$info{'ref_name'} = 'NCBIM37';
         $$info{'snps'}     = '/nfs/sf7/MOUSE/ref/mousehapmap.snps.bin';
         $$info{'md5_ref'}  = '36a352ec67f958c40f19a9cf6ceb0d1e';
@@ -145,6 +147,7 @@ sub lane_info
             $$info{'bwa_ref'}  = '/nfs/sf8/G1K/ref/human_b36_female';
             $$info{'fa_ref'}   = '/nfs/sf8/G1K/ref/human_b36_female.fa';
             $$info{'fai_ref'}  = '/nfs/sf8/G1K/ref/human_b36_female.fa.fai';
+            $$info{'dict_ref'}  = '/lustre/scratch103/sanger/team145/g1k/ref/human_b36_female.dict';
             $$info{'md5_ref'}  = '28f4ff5cf14f5931d0d531a901236378';
         }
         elsif ( $gender && $gender=~/\s+male/ )
@@ -152,6 +155,7 @@ sub lane_info
             $$info{'bwa_ref'}  = '/nfs/sf8/G1K/ref/human_b36_male';
             $$info{'fa_ref'}   = '/nfs/sf8/G1K/ref/human_b36_male.fa';
             $$info{'fai_ref'}  = '/nfs/sf8/G1K/ref/human_b36_male.fa.fai';
+            $$info{'dict_ref'}  = '/lustre/scratch103/sanger/team145/g1k/ref/human_b36_male.dict';
             $$info{'md5_ref'}  = '7bcc140d6728a6c9fe6ed411ee633862';
         }
         else
