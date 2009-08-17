@@ -29,6 +29,7 @@ use File::Copy;
 use VertRes::IO;
 use VertRes::Wrapper::samtools;
 use VertRes::Wrapper::picard;
+use VertRes::Parser::dict;
 use HierarchyUtilities;
 use VertRes::Parser::sequence_index;
 use SamTools;
@@ -165,9 +166,8 @@ sub bams_are_similar {
            all of these key => value pairs:
            lane => run_id, eg. SRR00000
            ref_fa => '/full/path/to/reference.fasta'
-           ref_fai => '/full/path/to/reference.fasta.fai'
+           ref_dict => '/full/path/to/reference.dict'
            ref_name => standard name for the reference, eg. NCBI36
-           ref_md5 => the md5sum string for the reference fasta file
 
 =cut
 
@@ -180,9 +180,8 @@ sub add_sam_header {
     my %lane_info = %{HierarchyUtilities::lane_info($lane_path)} if $lane_path;
     my $lane = $args{lane} || $lane_info{lane} || $self->throw("lane must be supplied");
     my $ref_fa = $args{ref_fa} || $lane_info{fa_ref} || $self->throw("the reference fasta must be supplied");
-    my $ref_fai = $args{ref_fai} || $lane_info{fai_ref} || $self->throw("the reference fai must be supplied");
+    my $ref_dict = $args{ref_dict} || $lane_info{dict_ref} || $self->throw("the reference dict must be supplied");
     my $ref_name = $args{ref_name} || $lane_info{ref_name} || $self->throw("the reference assembly name must be supplied");
-    my $ref_md5 = $args{ref_md5} || $lane_info{md5_ref} || $self->throw("the reference md5 must be supplied");
     
     my $seq_index = $args{sequence_index} || '';
     my $parser = VertRes::Parser::sequence_index->new(file => $seq_index) if $seq_index;
@@ -200,14 +199,15 @@ sub add_sam_header {
     print $shfh "\@HD\tVN:1.0\tSO:coordinate\n";
     $header_lines++;
     
-    open(my $faifh, $ref_fai) or $self->throw("Can't open ref fai file: $ref_fai $!");
-    while (<$faifh>) {
-        chomp;
-        my @s = split;
-        print $shfh "\@SQ\tSN:$s[0]\tLN:$s[1]\tAS:$ref_name\tM5:$ref_md5\tUR:file:$ref_fa\n";
+    # md5 in the sam spec is supposed to be of the sequence in the uppercase
+    # with no spaces, which can be found with my sequence_dicter.pl script,
+    # which was used to generate the .dict files for our references
+    my $dict_parser = VertRes::Parser::dict->new(file => $ref_dict);
+    my $rh = $dict_parser->result_holder;
+    while ($dict_parser->next_result) {
+        print $shfh "\@SQ\tSN:$rh->[0]\tLN:$rh->[1]\tAS:$ref_name\tM5:$rh->[3]\tUR:file:$ref_fa\n";
         $header_lines++;
     }
-    close($faifh);
     
     print $shfh "\@RG\tID:$lane\tPU:$run_name\tLB:$library\tSM:$individual";
     print $shfh "\tPI:$insert_size" if (defined $insert_size);
@@ -255,23 +255,57 @@ sub add_sam_header {
 =head2 sam_to_fixed_sorted_bam
 
  Title   : sam_to_fixed_sorted_bam
- Usage   : $obj->sam_to_fixed_sorted_bam('in.sam', 'sorted.bam', 'ref.fai');
- Function: Converts a sam file to a mate-fixed and sorted bam file.
+ Usage   : $obj->sam_to_fixed_sorted_bam('headed.sam', 'sorted.bam', 'ref.fa');
+ Function: Converts a sam file to a mate-fixed and sorted bam file. Also runs
+           the bam via fillmd to get accurate MD and NM tags. (Both maq and bwa
+           get these wrong; ssaha doesn't give it at all.)
+           NB: the input sam must already have headers, eg. by using
+           add_sam_header() on it. 
  Returns : boolean (true on success)
- Args    : starting sam file, output name for bam file. The reference.fai is
-           only needed if add_sam_header() hasn't already been called on the
-           in.sam. Optionally, args to pass to VertRes::Wrapper::samtools (eg.
-           quiet => 1).
+ Args    : starting sam file, output name for bam file, reference fasta used to
+           make the sam. Optionally, args to pass to VertRes::Wrapper::samtools
+           (eg. quiet => 1).
 
 =cut
 
 sub sam_to_fixed_sorted_bam {
-    my ($self, $in_sam, $out_bam, $ref_fai, @args) = @_;
+    my ($self, $in_sam, $out_bam, $ref_fa, @args) = @_;
     
+    my $io = VertRes::IO->new();
+    my $temp_dir = $io->tempdir();
+    my $tmp_bam = $io->catfile($temp_dir, 'fixed_sorted.bam');
+    
+    # sam -> fixed, sorted bam
     my $wrapper = VertRes::Wrapper::samtools->new(verbose => $self->verbose, @args);
-    $wrapper->sam_to_fixed_sorted_bam($in_sam, $out_bam, $ref_fai);
+    $wrapper->sam_to_fixed_sorted_bam($in_sam, $tmp_bam);
+    unless ($wrapper->run_status() >= 1) {
+        $self->warn("Failed the initial sam->bam step");
+        return 0;
+    }
     
-    return $wrapper->run_status() >= 1;
+    # bam -> fillmd'd bam
+    my $tmp2_bam = $io->catfile($temp_dir, 'fillmd.bam');
+    $wrapper->quiet(1);
+    $wrapper->fillmd($tmp_bam, $ref_fa, $tmp2_bam, b => 1);
+    
+    # check it
+    $wrapper->run_method('open');
+    my $fh = $wrapper->view($tmp2_bam, undef, h => 1);
+    my $bam_count = 0;
+    while (<$fh>) {
+        $bam_count++;
+    }
+    close($fh);
+    $io->file($in_sam);
+    my $sam_count = $io->num_lines();
+    if ($bam_count >= $sam_count) {
+        move($tmp2_bam, $out_bam) || $self->throw("Failed to move $tmp2_bam to $out_bam: $!");;
+        return 1;
+    }
+    else {
+        $self->warn("$tmp2_bam is bad (only $bam_count lines vs $sam_count)");
+        return 0;
+    }
 }
 
 =head2 rmdup
@@ -336,7 +370,9 @@ sub merge {
     }
     
     my $io = VertRes::IO->new();
-    my $wrapper = VertRes::Wrapper::picard->new(quiet => 1,
+    my $verbose = $self->verbose();
+    my $wrapper = VertRes::Wrapper::picard->new(verbose => $verbose,
+                                                quiet => $verbose ? 0 : 1,
                                                 validation_stringency => 'silent',
                                                 tmp_dir => $io->tempdir());
     
