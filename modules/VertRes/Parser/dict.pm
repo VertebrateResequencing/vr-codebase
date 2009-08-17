@@ -91,7 +91,7 @@ sub next_result {
     #@SQ     SN:1    LN:247249719    UR:file:/lustre/scratch103/sanger/team145/g1k/ref/human_b36_male.fa     M5:9ebc6df9496613f373e73396d5b3b6b6
     
     # ignore header and any other non SQ lines
-    while (index($line, '@SQ') == -1) {
+    while (index($line, '@SQ') != 0) {
         $line = <$fh> || return;
     }
     
