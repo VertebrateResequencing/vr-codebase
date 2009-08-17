@@ -377,7 +377,7 @@ unless (\$head =~ /^\\\@HD/) {
 
 # convert to mate-fixed sorted bam
 unless (-s '$bam_file') {
-    my \$ok = \$sam_util->sam_to_fixed_sorted_bam('$sam_file', '$bam_file');
+    my \$ok = \$sam_util->sam_to_fixed_sorted_bam('$sam_file', '$bam_file', '$ref_fa');
     
     unless (\$ok) {
         # (will only return ok and create output bam file if bam was created and
