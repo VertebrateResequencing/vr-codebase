@@ -178,7 +178,7 @@ sub _bsub_opts {
     
     my %bsub_opts = (bsub_opts => '');
     
-    if ($action eq 'merge_and_stat') {
+    if ($action && $action eq 'merge_and_stat') {
         $bsub_opts{bsub_opts} = '-q normal -M5100000 -R \'select[mem>5100] rusage[mem=5100]\'';
     }
     
