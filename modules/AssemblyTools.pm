@@ -722,7 +722,7 @@ sub printFofnDifferences
 		push( @union, $e );
 		push @{ $count{$e} == 2 ? \@isect : \@diff }, $e;
 	}
-
+	
 	my $insect_size = @isect;
 	print "There are $insect_size common reads\n";
 	
@@ -1098,120 +1098,6 @@ sub filterOutShortReads
 	}
 	close( OUT );
 	close( IN );
-}
-
-sub printFofnDifferences
-{
-	croak "Usage: printFofnDifferences reads_fofn reads_fofn output_fofn" unless @_ == 3; 
-	my $file1 = shift;
-	my $file2 = shift;
-	my $output = shift;
-	
-	if( (! (-f $file1)) || (! (-f $file2)) ){croak "Cannot find input file\n";}
-	if( (! (-s $file1)) || (! (-s $file2)) ){croak "Empty input file\n";}
-	
-	open( FILE1, $file1 ) or die "Cannot open file: $file1\n";
-	open( FILE2, $file2 ) or die "Cannot open file: $file2\n";
-	open( OUTPUT, ">$output" ) or die "Cannot create output file\n";
-	
-	my @fofn1;
-	while( <FILE1> )
-	{
-		chomp;
-		push( @fofn1, $_ );
-	}
-	close( FILE1 );
-	
-	my @fofn2;
-	while( <FILE2> )
-	{
-		chomp;
-		push( @fofn2, $_ );
-	}
-	close( FILE2 );
-	
-	print "Read in fofn files...starting comparison\n";
-	
-	my @isect = ();
-	my @diff = ();
-	my @union = ();
-	my %count;
-	my $e;
-	
-	foreach $e (@fofn1, @fofn2) { $count{$e}++ }
-	
-	foreach $e (keys %count)
-	{
-		push( @union, $e );
-		push @{ $count{$e} == 2 ? \@isect : \@diff }, $e;
-	}
-
-	my $insect_size = @isect;
-	print "There are $insect_size common reads\n";
-	
-	foreach( @diff )
-	{
-		print OUTPUT "$_\n";
-	}
-
-	close( OUTPUT );
-}
-
-sub printFofnIntersection
-{
-	croak "Usage: printFofnIntersection reads_fofn reads_fofn output_fofn" unless @_ == 3; 
-	my $file1 = shift;
-	my $file2 = shift;
-	my $output = shift;
-	
-	if( (! (-f $file1)) || (! (-f $file2)) ){croak "Cannot find input file\n";}
-	if( (! (-s $file1)) || (! (-s $file2)) ){croak "Empty input file\n";}
-	
-	open( FILE1, $file1 ) or die "Cannot open file: $file1\n";
-	open( FILE2, $file2 ) or die "Cannot open file: $file2\n";
-	open( OUTPUT, ">$output" ) or die "Cannot create output file\n";
-	
-	my @fofn1;
-	while( <FILE1> )
-	{
-		chomp;
-		push( @fofn1, $_ );
-	}
-	close( FILE1 );
-	
-	my @fofn2;
-	while( <FILE2> )
-	{
-		chomp;
-		push( @fofn2, $_ );
-	}
-	close( FILE2 );
-	
-	print "Read in fofn files...starting comparison\n";
-	
-	my @isect = ();
-	my @diff = ();
-	my @union = ();
-	my %count;
-	my $e;
-	
-	foreach $e (@fofn1, @fofn2) { $count{$e}++ }
-	
-	foreach $e (keys %count)
-	{
-		push( @union, $e );
-		push @{ $count{$e} == 2 ? \@isect : \@diff }, $e;
-	}
-
-	my $insect_size = @isect;
-	print "There are $insect_size common reads\n";
-	
-	foreach( @isect )
-	{
-		print OUTPUT "$_\n";
-	}
-
-	close( OUTPUT );
 }
 
 1;
