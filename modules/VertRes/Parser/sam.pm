@@ -50,17 +50,17 @@ my %col_to_name = (0  => 'QNAME',
                    9  => 'SEQ',
                    10 => 'QUAL');
 
-my %flags = (paired_tech    => 0x0001,
-             paired_map     => 0x0002,
-             self_unmapped  => 0x0004,
-             mate_unmapped  => 0x0008,
-             self_reverse   => 0x0010,
-             mate_reverse   => 0x0020,
-             '1st_in_pair'  => 0x0040,
-             '2nd_in_pair'  => 0x0080,
-             not_primary    => 0x0100,
-             failed_qc      => 0x0200,
-             duplicate      => 0x0400);
+our %flags = (paired_tech    => 0x0001,
+              paired_map     => 0x0002,
+              self_unmapped  => 0x0004,
+              mate_unmapped  => 0x0008,
+              self_reverse   => 0x0010,
+              mate_reverse   => 0x0020,
+              '1st_in_pair'  => 0x0040,
+              '2nd_in_pair'  => 0x0080,
+              not_primary    => 0x0100,
+              failed_qc      => 0x0200,
+              duplicate      => 0x0400);
 
 =head2 new
 
