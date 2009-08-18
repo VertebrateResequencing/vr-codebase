@@ -1100,4 +1100,280 @@ sub filterOutShortReads
 	close( IN );
 }
 
+#convert one or more sff files to a fastq file with phred-like qualities
+sub sff2fastq
+{
+	croak "Usage: sff2fastq fastq_output sff1 [sff2 sff3.....]" unless @_ > 1;
+	
+	my $fastq = shift;
+	
+	foreach( @_ )
+	{
+		if( -f $_ )
+		{
+			print "Processing sff file: $_\n";
+			#rescore the sff file using sfffile to phred-like values
+			#system( "sfffile -r " );
+			
+			print "Running sffinfo...\n";
+			#convert the sff file to fasta
+			system( "sffinfo -seq $_ > /tmp/$$.fasta" );
+			system( "sffinfo -qual $_ > /tmp/$$.qual" );
+			
+			#convert the fasta file to fastq
+			fasta2fastq(  "/tmp/$$.fasta", "/tmp/$$.fastq" );
+			
+			system( "cat /tmp/$$.fastq >> $fastq" );
+		}
+	}
+	
+	system( "rm /tmp/$$.fast* /tmp/$$.qual" );
+}
+
+sub fasta2fastq
+{
+	croak "Usage: fasta2fastq fasta_file output_fastq\n" unless @_ == 2;
+	
+	my $r = createFastaHash( $_[ 0 ] );
+	my %fasta_seqs = %{ $r };
+	my @fasta_seqs_keys = keys( %fasta_seqs );
+	
+	my %fasta_quals;
+	my @fasta_quals_keys;
+	$r = undef;
+	
+	my $prefix = (split( /\./, $_[0]))[0];
+	
+	if( -f  $_[ 0 ].'.qual' )
+	{
+		$r = createFastaQualHash( $_[ 0 ].'.qual' );
+		%fasta_quals = %{ $r };
+		@fasta_quals_keys = keys( %fasta_quals );
+		
+		if( @fasta_seqs_keys != @fasta_quals_keys )
+		{
+			croak "unequal sequences vs. quals!\n";
+		}
+	}
+	elsif( -f $prefix.'.qual')
+	{
+		$r = createFastaQualHash( $prefix.'.qual' );
+		%fasta_quals = %{ $r };
+		@fasta_quals_keys = keys( %fasta_quals );
+		
+		if( @fasta_seqs_keys != @fasta_quals_keys )
+		{
+			croak "unequal sequences vs. quals!\n";
+		}
+	}
+	else
+	{
+		print "No qual file supplied! Faking qualities\n";
+	}
+	
+	open( OUT, ">$_[1]" ) or die "cannot create output fastq\n";
+	foreach( @fasta_seqs_keys )
+	{
+		my @s1 = split( /\n/, $fasta_seqs{ $_ } );
+		
+		my @quals;
+		my @s;
+		if( @fasta_quals_keys > 0 )
+		{
+			@s = split( /\n/, $fasta_quals{ $_ } );
+			@quals = split( /\s+/, $s[ 1 ] );
+			if( @quals != length( $s1[ 1 ] ) )
+			{
+				my $n = @quals;
+				croak "Read: $s[ 0 ] Bases: ".length( $s1[ 1 ] )." Quals: $n\n";
+			}
+		}
+		
+		my $name = ( split( /\s+/, substr( $fasta_seqs{ $_ }, 1 ) ) )[ 0 ];
+		my $seq = ( split( /\n/, substr( $fasta_seqs{ $_ }, 1 ) ) )[ 1 ];
+		print OUT "@".$name."\n".$seq."\n";
+		print OUT "+".$name."\n";
+		print OUT "!";
+		
+		if( @fasta_quals_keys > 0 )
+		{
+			for( my $i = 1; $i < @quals; $i ++ )
+			{
+				print OUT chr($quals[ $i ] + 33);
+			}
+		}
+		else
+		{
+			for( my $i = 1; $i < length( $s1[1] ); $i ++ )
+			{
+				print OUT "I";
+				#print OUT "&";
+			}
+		}
+		print OUT "\n";
+	}
+	close( OUT );
+}
+
+sub createFastaQualHash
+{
+	croak "Usage: createFastaQualHash file_name" unless @_ == 1; 
+	my $file = shift;
+	
+	if( ! ( -f $file ) )
+	{
+		croak "Cannot find file: $file\n";
+	}
+	
+	my %reads_file;
+	if( $file =~ /\.gz$/ )
+	{
+		open( READS, "gunzip -c $file |" ) or die "Cannot open gzipped fastq file\n";
+	}
+	else
+	{
+		open( READS, $file ) or die "Failed to open reads file";
+	}
+	
+	my $read_name = <READS>; #first readname in first line of file
+	chomp( $read_name );
+	my $read = "$read_name\n";
+	$read_name =~ s/^\s+//;
+	$read_name =~ s/\s+$//;
+	my $line = <READS>; #read next line
+	chomp( $line );
+	while() #read down file until hit start of next read
+	{
+		if( $line =~ /^>.*/ ) #if hit start of next read
+		{
+			$read_name = substr( $read_name, 1, length( $read_name ) - 1 ); #remove the > sign
+			$read_name =~ s/^\s+//;
+			$read_name =~ s/\s+$//;
+			
+			if( defined $reads_file{ $read_name } )
+			{
+				print "Warning: Read entry already exists in hash: $read_name\n";
+			}
+			else
+			{
+				$reads_file{ $read_name } = $read; #enter into the hash
+			}
+			
+			$read_name = $line; #next read name is in the line variable
+			$read = "$read_name\n";
+		}
+		else
+		{
+			if( length( $read ) > 0 )
+			{
+				$line =~ s/^\s+//;
+				$line =~ s/\s+$//;
+				if( $read !~ /\n$/ )
+				{
+					$read = $read." ".$line; #add to info for the current read
+				}
+				else
+				{
+					$read = $read.$line;
+				}
+			}
+			else
+			{
+				$read = $line;
+			}
+		}
+		
+		$line = <READS>;
+		if( ! defined $line )
+		{
+			last;
+		}
+		chomp( $line );
+	}
+	close( READS );
+	
+	#enter final value into the hash
+	$read_name = substr( $read_name, 1, length( $read_name ) - 1 ); #remove the > sign
+	$read_name =~ s/^\s+//;
+	$read_name =~ s/\s+$//;
+	$reads_file{ $read_name } = $read; #enter into the hash
+	
+	return \%reads_file;
+}
+
+sub createFastaHash
+{
+	croak "Usage: createFastaHash file_name" unless @_ == 1; 
+	my $file = shift;
+	
+	if( ! ( -f $file ) )
+	{
+		croak "Cannot find file: $file\n";
+	}
+	
+	my %reads_file;
+	if( $file =~ /\.gz$/ )
+	{
+		open( READS, "gunzip -c $file |" ) or die "Cannot open gzipped fastq file\n";
+	}
+	else
+	{
+		open( READS, $file ) or die "Failed to open reads file";
+	}
+	
+	my $read_name = <READS>; #first readname in first line of file
+	chomp( $read_name );
+	my $read = "$read_name\n";
+	$read_name =~ s/^\s+//;
+	$read_name =~ s/\s+$//;
+	my $line = <READS>; #read next line
+	chomp( $line );
+	while() #read down file until hit start of next read
+	{
+		if( $line =~ /^>.*/ ) #if hit start of next read
+		{
+			$read_name = substr( $read_name, 1, length( $read_name ) - 1 ); #remove the > sign
+			$read_name =~ s/^\s+//;
+			$read_name =~ s/\s+$//;
+			
+			if( defined $reads_file{ $read_name } )
+			{
+				print "Warning: Read entry already exists in hash: $read_name\n";
+			}
+			else
+			{
+				$reads_file{ $read_name } = $read; #enter into the hash
+			}
+			
+			$read_name = $line; #next read name is in the line variable
+			$read = "$read_name\n";
+		}
+		else
+		{
+			if( length( $read ) > 0 )
+			{
+				$read = $read.$line; #add to info for the current read
+			}
+			else
+			{
+				$read = $line;
+			}
+		}
+		
+		$line = <READS>;
+		if( ! defined $line )
+		{
+			last;
+		}
+		chomp( $line );
+	}
+	close( READS );
+	
+	#enter final value into the hash
+	$read_name = substr( $read_name, 1, length( $read_name ) - 1 ); #remove the > sign
+	$reads_file{ $read_name } = $read; #enter into the hash
+	
+	return \%reads_file;
+}
+
 1;
