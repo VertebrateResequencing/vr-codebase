@@ -36,6 +36,18 @@ use SamTools;
 
 use base qw(VertRes::Base);
 
+use VertRes::Parser::sam;
+our %flags = (paired_tech    => '0x0001',
+              paired_map     => '0x0002',
+              self_unmapped  => '0x0004',
+              mate_unmapped  => '0x0008',
+              self_reverse   => '0x0010',
+              mate_reverse   => '0x0020',
+              '1st_in_pair'  => '0x0040',
+              '2nd_in_pair'  => '0x0080',
+              not_primary    => '0x0100',
+              failed_qc      => '0x0200',
+              duplicate      => '0x0400');
 
 =head2 new
 
@@ -454,6 +466,68 @@ sub make_unmapped_bam {
     $samtools->view($filtered_sam, $out_bam, b => 1, S => 1);
     
     return $samtools->run_status() >= 1;
+}
+
+=head2 calculate_flag
+
+ Title   : calculate_flag
+ Usage   : my $flag = $obj->calculate_flag(mapped => 1);
+ Function: Make a sam flag that has the desired meaning. 
+ Returns : int
+ Args    : hash of desired meaning, where keys are one or more of the following
+           and values are boolean:
+           paired_tech
+           paired_map
+           self_unmapped
+           mate_unmapped
+           self_reverse
+           mate_reverse
+           '1st_in_pair'
+           '2nd_in_pair'
+           not_primary 
+           failed_qc
+           duplicate
+
+=cut
+
+sub calculate_flag {
+    my ($self, %desired) = @_;
+    
+    # first, fix to make sane
+    if ($desired{'self_unmapped'}) {
+        foreach my $meaning ('duplicate', 'self_reverse', 'paired_map') {
+            if ($desired{$meaning}) {
+                $self->warn("'self_unmapped' was set, but so was '$meaning'; forcing $meaning off");
+                $desired{$meaning} = 0;
+            }
+        }
+        if ($desired{'mate_unmapped'}) {
+            $self->warn("mate_unmapped isn't needed when self_unmapped; forcing mate_unmapped off");
+            $desired{'mate_unmapped'} = 0;
+        }
+    }
+    if ($desired{'1st_in_pair'} && $desired{'2nd_in_pair'}) {
+        $self->warn("Can't have both 1st_in_pair and 2nd_in_pair; forcing both off");
+        $desired{'1st_in_pair'} = 0;
+        $desired{'2nd_in_pair'} = 0;
+    }
+    if (! $desired{'paired_tech'}) {
+        foreach my $meaning ('paired_map', 'mate_unmapped', 'mate_reverse', '1st_in_pair', '2nd_in_pair') {
+            if ($desired{$meaning}) {
+                $self->warn("'$meaning' was set, but 'paired_tech' was not; forcing paired_tech on");
+                $desired{'paired_tech'} = 1;
+            }
+        }
+    }
+    
+    my $result = 0;
+    while (my ($flag, $val) = each %desired) {
+        $val || next;
+        exists $flags{$flag} || next;
+        $result += hex($flags{$flag});
+    }
+    
+    return $result;
 }
 
 1;

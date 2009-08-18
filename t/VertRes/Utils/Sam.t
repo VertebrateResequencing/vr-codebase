@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 29;
+    use Test::Most tests => 50;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::IO');
@@ -101,6 +101,25 @@ ok -l $merge_bam, 'merge on single bam created a symlink';
 ok $sam_util->merge($merge_bam, $rmdup_bam, $sorted_bam), 'merge on multiple bam test';
 ok -f $merge_bam, 'merge on multiple bams created a new file';
 ok -s $merge_bam > -s $rmdup_bam, 'merge on multiple bams created a new file bigger than one of the originals';
+
+# calculate_flag
+is $sam_util->calculate_flag(), 0, 'calculate_flag no args test';
+is $sam_util->calculate_flag(paired_tech => 1), 1, 'calculate_flag paired_tech test';
+warning_like {is $sam_util->calculate_flag(self_unmapped => 1, paired_map => 1), 4, 'calculate_flag self_unmapped test';} {carped => qr/was set/}, 'calculate_flag extra paired_map warning test';
+warning_like {is $sam_util->calculate_flag(self_unmapped => 1, mate_unmapped => 1), 4, 'calculate_flag self_unmapped test';} {carped => qr/mate_unmapped isn't needed/}, 'calculate_flag extra mate_unmapped warning test';
+warning_like {is $sam_util->calculate_flag(mate_unmapped => 1), 9, 'calculate_flag mate_unmapped test';} {carped => qr/forcing paired_tech on/}, 'calculate_flag missing paired_tech warning test';
+warning_like {is $sam_util->calculate_flag('1st_in_pair' => 1, '2nd_in_pair' => 1), 0, 'calculate_flag both test';} {carped => qr/forcing both off/}, 'calculate_flag both warning test';
+is $sam_util->calculate_flag(self_reverse => 1), 16, 'calculate_flag self_reverse test';
+is $sam_util->calculate_flag(paired_tech => 1, mate_reverse => 1), 33, 'calculate_flag mate_reverse test';
+is $sam_util->calculate_flag(not_primary => 1), 256, 'calculate_flag not_primary test';
+is $sam_util->calculate_flag(failed_qc => 1), 512, 'calculate_flag failed_qc test';
+is $sam_util->calculate_flag(duplicate => 1), 1024, 'calculate_flag duplicate test';
+is $sam_util->calculate_flag(paired_tech => 1, paired_map => 1, mate_reverse => 1, '1st_in_pair', => 1), 99, 'calculate_flag mapped pair first test';
+is $sam_util->calculate_flag(paired_tech => 1, paired_map => 1, self_reverse => 1, '2nd_in_pair', => 1), 147, 'calculate_flag mapped pair second test';
+is $sam_util->calculate_flag(paired_tech => 1, self_unmapped => 1, mate_reverse => 1, '1st_in_pair', => 1), 101, 'calculate_flag pair self unmapped test';
+is $sam_util->calculate_flag(paired_tech => 1, mate_unmapped => 1, self_reverse => 1, '2nd_in_pair', => 1), 153, 'calculate_flag pair mate unmapped args test';
+is $sam_util->calculate_flag(paired_tech => 1, self_unmapped => 1, '1st_in_pair', => 1), 69, 'calculate_flag pair both unmapped first test';
+is $sam_util->calculate_flag(paired_tech => 1, self_unmapped => 1, '2nd_in_pair', => 1), 133, 'calculate_flag pair both unmapped second test';
 
 exit;
 
