@@ -302,6 +302,9 @@ sub cigar_to_sam {
         my $paired_in_tech = $names[0] && $names[1] ? 1 : 0;
         my $flag = {paired_tech => $paired_in_tech,
                     self_unmapped => 1};
+        if ($unmapped[0] && $unmapped[1]) {
+            $flag->{mate_unmapped} = 1;
+        }
         if ($unmapped[0]) {
             $flag->{'1st_in_pair'} = 1 if $paired_in_tech;
             $self->_print_sam_line($out_fh, \$numReadsWritten, $names[0], $flag, 0, '*', $seqs[0], $quals[0], $read_group, \@s);
