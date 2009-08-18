@@ -28,6 +28,7 @@ use warnings;
 use VertRes::IO;
 use VertRes::Utils::Seq;
 use VertRes::Parser::fastq;
+use VertRes::Utils::Sam;
 
 use base qw(VertRes::Base);
 
@@ -194,6 +195,8 @@ sub cigar_to_sam {
             }
         }
         
+        my @unmapped;
+        
         # get the hits for each fastq
         my @hits;
         foreach my $i (0..$#names) {
@@ -240,20 +243,21 @@ sub cigar_to_sam {
             }
             # just one read aligns
             elsif ($mapScore1 > -1) {
-                $flags[0] += hex("0x0008");
-                $flags[0] -= hex('0x0002');
+                $flags[0]->{mate_unmapped} = 1;
+                delete $flags[0]->{paired_map};
                 $self->_print_sam_line($out_fh, \$numReadsWritten, $names[0], $flags[0], $mapScore1, $samCigar1, $seq1, $quals1, $read_group, \@s1);
-                $numReadsDiscarded++;
+                $unmapped[1] = $names[1];
             }
             elsif ($mapScore2 > -1) {
-                $flags[1] += hex("0x0008");
-                $flags[1] -= hex('0x0002');
+                $flags[1]->{mate_unmapped} = 1;
+                delete $flags[1]->{paired_map};
                 $self->_print_sam_line($out_fh, \$numReadsWritten, $names[1], $flags[1], $mapScore2, $samCigar2, $seq2, $quals2, $read_group, \@s2);
-                $numReadsDiscarded++;
+                $unmapped[0] = $names[0];
             }
             # neither read aligns
             else {
-                $numReadsDiscarded += 2;
+                $unmapped[0] = $names[0];
+                $unmapped[1] = $names[1];
             }
         }
         elsif ($#{$hits[0]} >= 0 || $#{$hits[1]} >= 0) {
@@ -267,7 +271,14 @@ sub cigar_to_sam {
                 
                 my @s1 = split(/\s+/, $hits[$good_i]->[0]);
                 
-                my $flag = $self->determine_sam_flag_unpaired($hits[$good_i]->[0]);
+                my $flag;
+                if ($names[0] && $names[1]) {
+                    my $flags = $self->determine_sam_flag_paired($hits[0]->[0] || '', $hits[1]->[0] || '');
+                    $flag = $flags->[$good_i];
+                }
+                else {
+                    $flag = $self->determine_sam_flag_unpaired($hits[$good_i]->[0]);
+                }
                 
                 my $reverse = $s1[4] eq '-';
                 my $seq = $reverse ? $seq_util->rev_com($seqs[$good_i]) : $seqs[$good_i];
@@ -276,21 +287,41 @@ sub cigar_to_sam {
                 $self->_print_sam_line($out_fh, \$numReadsWritten, $names[$good_i], $flag, $mapScore, $samCigar, $seq, $quals, $read_group, \@s1);
             }
             else {
-                $numReadsDiscarded++;
+                $unmapped[$good_i] = $names[$good_i];
             }
+            
+            $unmapped[$bad_i] = $names[$bad_i];
+        }
+        else {
+            $unmapped[0] = $names[0];
+            $unmapped[1] = $names[1];
+        }
+        
+        # print out unmapped reads as well
+        my @s = (0, 0, 0, 0, 0, '*', 0);
+        my $paired_in_tech = $names[0] && $names[1] ? 1 : 0;
+        my $flag = {paired_tech => $paired_in_tech,
+                    self_unmapped => 1};
+        if ($unmapped[0]) {
+            $flag->{'1st_in_pair'} = 1 if $paired_in_tech;
+            $self->_print_sam_line($out_fh, \$numReadsWritten, $names[0], $flag, 0, '*', $seqs[0], $quals[0], $read_group, \@s);
+        }
+        if ($unmapped[1]) {
+            delete $flag->{'1st_in_pair'};
+            $flag->{'2nd_in_pair'} = 1 if $paired_in_tech;
+            $self->_print_sam_line($out_fh, \$numReadsWritten, $names[1], $flag, 0, '*', $seqs[1], $quals[1], $read_group, \@s);
         }
     }
     close($out_fh);
     
-    #print "num_reads_written:$numReadsWritten\n";
-    #print "num_reads_paired:$numReadsPaired\n";
-    #print "num_reads_discarded:$numReadsDiscarded\n";
-    #print "num_reads_cigar_hit:$totalReadsHit\n";
     return $numReadsWritten;
 }
 
 sub _print_sam_line {
-    my ($self, $out_fh, $count_ref, $name, $flag, $map_score, $cigar, $seq, $qual, $read_group, $s1, $s2) = @_;
+    my ($self, $out_fh, $count_ref, $name, $flag_parts, $map_score, $cigar, $seq, $qual, $read_group, $s1, $s2) = @_;
+    
+    my $sam_util = VertRes::Utils::Sam->new();
+    my $flag = $sam_util->calculate_flag(%{$flag_parts});
     
     print $out_fh join("\t", ($name, $flag, $s1->[5], $s1->[6], $map_score, $cigar)), "\t";
     if ($s2) {
@@ -371,7 +402,7 @@ sub ssaha_cigar_to_sam_cigar {
     
     my @s = split(/\s+/, $ssaha_cigar);
     
-    #work out the soft clip of the reads (if any)
+    # work out the soft clip of the reads (if any)
     my $softClip = '';
     if ($s[4] eq '+' && $s[2] > 1) {
         $softClip = ($s[2] - 1).'S';
@@ -547,9 +578,9 @@ sub determine_insert_size {
 
  Title   : determine_sam_flag_paired
  Usage   : my $data = $obj->determine_sam_flag_paired($cigar1, $cigar2, $i_size);
- Function: Return a sam-style flag indicating if these cigar lines are paired.
- Returns : array ref of flags for each input and boolean (true if consistently
-           paired for 454)
+ Function: See if these cigar lines are paired.
+ Returns : array ref of flag hash refs for each input and boolean (true if
+           consistently paired for 454)
  Args    : cigar string1, cigar string2, expected insert size
 
 =cut
@@ -557,41 +588,45 @@ sub determine_insert_size {
 sub determine_sam_flag_paired {
     my ($self, $cigar1, $cigar2, $expected) = @_;
     
-    my $flag1 = hex('0x0001');
-    my $flag2 = hex('0x0001');
+    my $flag1 = {paired_tech => 1, '1st_in_pair' => 1};
+    my $flag2 = {paired_tech => 1, '2nd_in_pair' => 1};
     my @s1 = split(/\s+/, $cigar1);
+    $s1[4] ||= '';
     my @s2 = split(/\s+/, $cigar2);
+    $s2[4] ||= '';
+    
+    $flag1->{self_reverse} = 1 if $s1[4] eq '-';
+    $flag2->{self_reverse} = 1 if $s2[4] eq '-';
     
     my $consistent = 0;
     
     if (length($cigar1) > 0 && length($cigar2) > 0) {
         # if within 3 times the insert size and on same strand (454) - then paired normally
         if ($s1[5] eq $s2[5] && abs(abs($self->determine_insert_size($s1[2], $s1[3], $s2[2], $s2[3])) - $expected) < $expected * 3 && $s1[4] eq $s2[4]) {
-            $flag1 += hex('0x0002');
-            $flag2 += hex('0x0002');
-        }
-        $flag1 += hex('0x0010') if $s1[4] eq '-';
-        if ($s2[4] eq '-') {
-            $flag1 += hex('0x0020');
+            $flag1->{paired_map} = 1;
+            $flag2->{paired_map} = 1;
         }
         
-        $flag2 += hex('0x0010') if $s2[4] eq '-';
-        if ($s1[4] eq '-') {
-            $flag2 += hex('0x0020');
-        }
-        
-        $flag1 += hex('0x0040');
-        $flag2 += hex('0x0080');
+        $flag1->{mate_reverse} = 1 if $s2[4] eq '-';
+        $flag2->{mate_reverse} = 1 if $s1[4] eq '-';
         
         $consistent = 1;
     }
     elsif (length($cigar1) > 0) {
-        $flag1 += hex('0x0008');
-        $flag1 += hex('0x0010') if $s1[4] eq '-';
+        $flag1->{mate_unmapped} = 1;
+        $flag2->{self_unmapped} = 1;
+        $flag2->{self_reverse} = 0;
     }
     elsif (length($cigar2) > 0 ) {
-        $flag2 += hex('0x0008');
-        $flag2 += hex('0x0010') if $s2[4] eq '-';
+        $flag2->{mate_unmapped} = 1;
+        $flag1->{self_unmapped} = 1;
+        $flag1->{self_reverse} = 0;
+    }
+    else {
+        $flag1->{self_unmapped} = 1;
+        $flag1->{self_reverse} = 0;
+        $flag2->{self_unmapped} = 1;
+        $flag2->{self_reverse} = 0;
     }
     
     return [$flag1, $flag2, $consistent];
@@ -602,7 +637,7 @@ sub determine_sam_flag_paired {
  Title   : determine_sam_flag_unpaired
  Usage   : my $flag = $obj->determine_sam_flag_unpaired($cigar);
  Function: Return a sam-style flag indicating if this cigar line is unpaired.
- Returns : string
+ Returns : hash ref of flags
  Args    : cigar string
 
 =cut
@@ -611,8 +646,14 @@ sub determine_sam_flag_unpaired {
     my ($self, $cigar) = @_;
     my @s = split(/\s+/, $cigar);
     
-    my $flag = 0;
-    $flag += hex('0x0010') if $s[4] eq '-';
+    my $flag = {};
+    
+    if (length($cigar) > 0) {
+        $flag->{self_reverse} = 1 if $s[4] eq '-';
+    }
+    else {
+        $flag->{self_unmapped} = 1;
+    }
     
     return $flag;
 }
