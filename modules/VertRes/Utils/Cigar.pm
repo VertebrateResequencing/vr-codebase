@@ -535,7 +535,16 @@ sub determine_mapping_score {
     else {
         my @hit2 = split(/\s+/, $hits[1]);
         
+        # richard durbin suggested this; it is supposed to downweight reads that
+        # hit to lots of places due to repetitiveness
         my $d = ($hit1[9] - $hit2[9]) - (2 * scalar(@hits));
+        my $total_hits = scalar(@hits);
+        
+        # we'll behave like MAQ though and give it a mapping quality of at
+        # least 0
+        if ($d < 0) {
+            $d = 0;
+        }
         
         return $d < 255 ? $d : 254;
     }
