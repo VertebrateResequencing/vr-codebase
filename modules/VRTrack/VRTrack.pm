@@ -37,7 +37,6 @@ use VRTrack::Lane;
 use VRTrack::File;
 use VRTrack::Core_obj;
 
-use constant DBI_DUPLICATE => '1062';
 use constant SCHEMA_VERSION => '2';
 
 =head2 new
@@ -263,24 +262,24 @@ sub hierarchy_path_of_lane_name {
 }
 
 
-=head2 filtered_lane_names
+=head2 qc_filtered_lane_names
 
-  Arg [1]    : [optional] arrayref of qc_status filters
-  Example    : my $all_lanes = $track->filtered_lane_names('2404_1');
-               my $pend_pass_lanes = $track->filtered_lane_names('2404_1',['pending','passed']);
+  Arg [1]    : [optional] list of qc_status filters
+  Example    : my $all_lanes = $track->qc_filtered_lane_names();
+               my $pend_pass_lanes = $track->qc_filtered_lane_names('pending','passed');
   Description: retrieves a optionally-filtered list of all lane names, ordered by project, sample, library names.
                This is a helper function for the qc web interface for speed.
   Returntype : arrayref
 
 =cut
 
-sub filtered_lane_names {
-    my ($self,$filter) = @_;
+sub qc_filtered_lane_names {
+    my ($self,@filter) = @_;
     my $filterclause;
-    if (@$filter){
+    if (@filter){
         # input validation
         my %allowed = map {$_ => 1} @{VRTrack::Core_obj::list_enum_vals($self,'lane','qc_status')};
-        my @goodfilters = grep {$allowed{lc($_)}} @$filter;
+        my @goodfilters = grep {$allowed{lc($_)}} @filter;
 
 	$filterclause = 'and lane.qc_status in (';
 	$filterclause .= join (",", map {"'$_'"} @goodfilters).')';
