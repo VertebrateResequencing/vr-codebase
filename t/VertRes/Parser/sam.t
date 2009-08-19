@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 29;
+    use Test::Most tests => 48;
     
     use_ok('VertRes::Parser::sam');
 }
@@ -61,5 +61,38 @@ is $ps->is_second($flag), 1, 'is_second test';
 is $ps->is_primary($flag), 1, 'is_primary test';
 is $ps->passes_qc($flag), 1, 'passes_qc test';
 is $ps->is_duplicate($flag), 0, 'is_duplicate test';
+
+# test the header methods on this headerless sam, then on a headed sam
+is $ps->sam_version, undef, 'no header info on headless sam';
+my $headed_sam = $ps->catfile('t', 'data', 'NA11918SLX.headed.sam');
+ok -e $headed_sam, 'headed sam file ready for testing';
+ok $ps->file($headed_sam), 'headed sam set into parser';
+ok $ps->next_result, 'next_result worked on a headed sam';
+is $rh->{QNAME}, 'SRR003436.685', 'QNAME fine for first record';
+is $ps->sam_version, '1.0', 'sam_version worked on headed sam';
+is $ps->group_order, 'none', 'group_order correct';
+is $ps->sort_order, 'coordinate', 'sort_order correct';
+is $ps->program, 'bwa', 'program correct';
+is $ps->program_version, '0.4.9', 'program_version correct';
+is $ps->command_line, 'bwa -foo bar', 'command_line correct';
+is $ps->sequence_info(1, 'LN'), '247249719', 'sequence_info 1st line specific correct';
+is $ps->sequence_info('NT_113947', 'LN'), '4262', 'sequence_info last line specific correct';
+is $ps->sequence_info(16, 'UR'), 'file:/nfs/sf8/G1K/ref/human_b36_female.fa', 'sequence_info other specific correct';
+my %all_rgs = $ps->readgroup_info();
+is_deeply [sort keys %all_rgs], ['SRR003435', 'SRR003436', 'SRR003447'], 'readgroup_info all had all the readgroups';
+my $rg_info = $all_rgs{SRR003435};
+my $expected_info = {PL => 'ILLUMINA',
+                     PU => 'BI.PE.080728_SL-XBE_0001_FC3044GAAXX.080731_SL-XBE_0007_FC3044GAAXX.1',
+                     LB => 'Solexa-6391',
+                     PI => 500,
+                     SM => 'NA11918',
+                     CN => 'BI'};
+is_deeply $rg_info, $expected_info, 'readgroup info from all hash contains the correct info';
+is_deeply {$ps->readgroup_info('SRR003435')}, $expected_info, 'readgroup_info(id) gave correct info';
+is $ps->readgroup_info('SRR003435', 'LB'), 'Solexa-6391', 'readgroup_info specific was correct';
+while ($ps->next_result) {
+    next;
+}
+is $rh->{QNAME}, 'SRR003447.1000', 'QNAME fine for last record';
 
 exit;
