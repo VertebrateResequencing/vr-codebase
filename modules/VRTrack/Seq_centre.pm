@@ -1,4 +1,5 @@
 package VRTrack::Seq_centre;
+# author: jws
 =head1 NAME
 
 VRTrack::Seq_centre - Sequence Tracking Seq_centre object

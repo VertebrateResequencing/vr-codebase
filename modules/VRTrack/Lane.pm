@@ -1,4 +1,5 @@
 package VRTrack::Lane; 
+# author: jws
 =head1 NAME
 
 VRTrack::Lane - Sequence Tracking Lane object
@@ -24,108 +25,50 @@ jws@sanger.ac.uk
 use strict;
 use warnings;
 no warnings 'uninitialized';
-use constant DBI_DUPLICATE => '1062';
 use VRTrack::Mapstats;
 use VRTrack::File;
 use VRTrack::Submission;
-use VRTrack::Utils;
+use VRTrack::Core_obj;
+our @ISA = qw(VRTrack::Core_obj);
+
+=head2 fields_dispatch
+
+  Arg [1]    : none
+  Example    : my $fieldsref = $lane->fields_dispatch();
+  Description: Returns hashref dispatch table keyed on database field
+               Used internally for new and update methods
+  Returntype : hashref
+
+=cut
+
+sub fields_dispatch {
+    my $self = shift;
+    my %fields = ( 
+                'lane_id'           => sub { $self->id(@_)},
+                'library_id'        => sub { $self->library_id(@_)},
+                'name'              => sub { $self->name(@_)},
+                'hierarchy_name'    => sub { $self->hierarchy_name(@_)},
+                'acc'               => sub { $self->acc(@_)},
+                'readlen'           => sub { $self->read_len(@_)},
+                'paired'            => sub { $self->is_paired(@_)},
+                'recalibrated'      => sub { $self->is_recalibrated(@_)},
+                'raw_reads'         => sub { $self->raw_reads(@_)},
+                'raw_bases'         => sub { $self->raw_bases(@_)},
+                'qc_status'         => sub { $self->qc_status(@_)},
+                'gt_status'         => sub { $self->genotype_status(@_)},
+                'submission_id'     => sub { $self->submission_id(@_)},
+                'withdrawn'         => sub { $self->is_withdrawn(@_)},
+                'note_id'           => sub { $self->note_id(@_)},
+                'changed'           => sub { $self->changed(@_)},
+                'latest'            => sub { $self->is_latest(@_)},
+                );
+
+    return \%fields;
+}
 
 ###############################################################################
 # Class methods
 ###############################################################################
-
-=head2 new
-
-  Arg [1]    : database handle to seqtracking database
-  Arg [2]    : lane id
-  Example    : my $lane= VRTrack::Lane->new($dbh, $id)
-  Description: Returns Lane object by lane_id
-  Returntype : VRTrack::Lane object
-
-=cut
-
-sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
-    my $self = {};
-    bless ($self, $class);
-    $self->{_dbh} = $dbh;
-
-    my $sql = qq[select lane_id, library_id, name, hierarchy_name, acc, readlen, paired, recalibrated, raw_reads, raw_bases, qc_status, submission_id, withdrawn, changed, latest from lane where lane_id = ? and latest = true];
-    my $sth = $self->{_dbh}->prepare($sql);
-
-    if ($sth->execute($id)){
-        my $data = $sth->fetchrow_hashref;
-	unless ($data){
-	    return undef;
-	}
-	$self->id($data->{'lane_id'});
-	$self->library_id($data->{'library_id'});
-	$self->name($data->{'name'});
-	$self->hierarchy_name($data->{'hierarchy_name'});
-	$self->acc($data->{'acc'});
-	$self->read_len($data->{'readlen'});
-	$self->is_paired($data->{'paired'});
-	$self->is_recalibrated($data->{'recalibrated'});
-	$self->raw_reads($data->{'raw_reads'});
-	$self->raw_bases($data->{'raw_bases'});
-	$self->qc_status($data->{'qc_status'});
-	$self->submission_id($data->{'submission_id'});
-	$self->is_withdrawn($data->{'withdrawn'});
-        $self->changed($data->{'changed'});
-	$self->dirty(0);    # unset the dirty flag
-    }
-    else{
-	die(sprintf('Cannot retrieve lane: %s', $DBI::errstr));
-    }
-
-    return $self;
-}
-
-
-=head2 new_by_field_value
-
-  Arg [1]    : database handle to seqtracking database
-  Arg [2]    : field name
-  Arg [3]    : field value
-  Example    : my $lane = VRTrack::Lane->new_by_field_value($dbh, 'name',$name)
-  Description: Class method. Returns latest Lane object by field name and value.  If no such value is in the database, returns undef.
-               Dies if there is more than one matching record.
-  Returntype : VRTrack::Lane object
-
-=cut
-
-sub new_by_field_value {
-    my ($class,$dbh, $field, $value) = @_;
-    die "Need to call with a db handle, field name, field value" unless ($dbh && $field && defined $value);
-    
-    # check field exists
-    my $colnames = $dbh->selectcol_arrayref(q[select column_name from information_schema.columns where table_name='lane']);
-    my %cols = map { $_ => 1 } @$colnames;
-    unless (exists($cols{lc($field)})){
-        die "No such column $field in lane table\n";
-    }
-
-    # retrieve lane_id
-    my $sql = qq[select lane_id from lane where $field = ? and latest = true];
-    my $sth = $dbh->prepare($sql);
-    my $id;
-    if ($sth->execute($value)){
-        my $data = $sth->fetchall_arrayref({}); #return array of hashes
-        unless (@$data){
-            return undef;
-        }
-        if (scalar @$data > 1){
-            die "$field = $value is not a unique identifier for lane\n";
-        }
-        $id = $data->[0]{'lane_id'};
-    }
-    else{
-        die(sprintf('Cannot retrieve lane by %s = %s: %s', ($field,$value,$DBI::errstr)));
-    }
-    return $class->new($dbh, $id);
-}
-
 
 =head2 new_by_name
 
@@ -588,7 +531,7 @@ sub get_submission_by_name {
 
   Arg [1]    : qc_status (optional)
   Example    : my $qc_status = $lane->qc_status();
-	       $lane->qc_status('104');
+	       $lane->qc_status('passed');
   Description: Get/Set for lane qc_status
   Returntype : string
 
@@ -597,7 +540,7 @@ sub get_submission_by_name {
 sub qc_status {
     my ($self,$qc_status) = @_;
     if (defined $qc_status and $qc_status ne $self->{'qc_status'}){
-        my %allowed = map {$_ => 1} @{VRTrack::Utils::list_enum_vals($self->{_dbh},'lane','qc_status')};
+        my %allowed = map {$_ => 1} @{$self->list_enum_vals('lane','qc_status')};
         unless ($allowed{lc($qc_status)}){
             die "'$qc_status' is not a defined qc_status";
         }
@@ -605,6 +548,30 @@ sub qc_status {
 	$self->dirty(1);
     }
     return $self->{'qc_status'};
+}
+
+
+=head2 genotype_status
+
+  Arg [1]    : genotype_status (optional)
+  Example    : my $genotype_status = $lane->genotype_status();
+	       $lane->genotype_status('confirmed');
+  Description: Get/Set for lane genotype check status
+  Returntype : string
+
+=cut
+
+sub genotype_status {
+    my ($self,$genotype_status) = @_;
+    if (defined $genotype_status and $genotype_status ne $self->{'genotype_status'}){
+        my %allowed = map {$_ => 1} @{$self->list_enum_vals('lane','gt_status')};
+        unless ($allowed{lc($genotype_status)}){
+            die "'$genotype_status' is not a defined genotype_status";
+        }
+	$self->{'genotype_status'} = $genotype_status;
+	$self->dirty(1);
+    }
+    return $self->{'genotype_status'};
 }
 
 
@@ -849,63 +816,5 @@ sub get_file_by_id {
     return $obj;
 }
 
-
-=head2 update
-
-  Arg [1]    : None
-  Example    : $lane->update();
-  Description: Update a lane whose properties you have changed.  If properties haven't changed (i.e. dirty flag is unset) do nothing.  
-	       Changes the changed datestamp to now() on the mysql server (i.e. you don't have to set changed yourself, and indeed if you do, it will be overridden).
-               Unsets dirty flag on success.
-  Returntype : 1 if successful, otherwise undef.
-
-=cut
-
-sub update {
-    my ($self) = @_;
-    my $success = undef;
-    if ($self->dirty){
-	my $dbh = $self->{_dbh};
-	my $save_re = $dbh->{RaiseError};
-	my $save_pe = $dbh->{PrintError};
-	my $save_ac = $dbh->{AutoCommit};
-	$dbh->{RaiseError} = 1; # raise exception if an error occurs
-	$dbh->{PrintError} = 0; # don't print an error message
-	$dbh->{AutoCommit} = 0; # disable auto-commit (starts transaction)
-
-	eval {
-	    # Need to unset 'latest' flag on current latest lane and add
-	    # the new lane details with the latest flag set
-	    my $updsql = qq[UPDATE lane SET latest=false WHERE lane_id = ? and latest=true];
-	    
-	    my $addsql = qq[INSERT INTO lane (lane_id, library_id, name, hierarchy_name, acc, readlen, paired, recalibrated, raw_reads, raw_bases, qc_status, submission_id, withdrawn, changed, latest) 
-			    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,now(),true)];
-	    $dbh->do ($updsql, undef,$self->id);
-	    $dbh->do ($addsql, undef,$self->id, $self->library_id, $self->name, $self->hierarchy_name, $self->acc, $self->read_len, $self->is_paired, $self->is_recalibrated, $self->raw_reads, $self->raw_bases, $self->qc_status, $self->submission_id, $self->is_withdrawn);
-	    $dbh->commit ( );
-	};
-
-	if ($@) {
-	    warn "Transaction failed, rolling back. Error was:\n$@\n";
-	    # roll back within eval to prevent rollback
-	    # failure from terminating the script
-	    eval { $dbh->rollback ( ); };
-	}
-	else {
-	    $success = 1;
-	}
-
-	# restore attributes to original state
-	$dbh->{AutoCommit} = $save_ac;
-	$dbh->{PrintError} = $save_pe;
-	$dbh->{RaiseError} = $save_re;
-
-    }
-    if ($success){
-        $self->dirty(0);
-    }
-
-    return $success;
-}
 
 1;

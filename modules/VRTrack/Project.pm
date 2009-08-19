@@ -1,4 +1,5 @@
 package VRTrack::Project;
+# author: jws
 =head1 NAME
 
 VRTrack::Project - Sequence Tracking Project object
@@ -27,53 +28,39 @@ jws@sanger.ac.uk
 use strict;
 use warnings;
 no warnings 'uninitialized';
+use VRTrack::Core_obj;
 use VRTrack::Sample;
+our @ISA = qw(VRTrack::Core_obj);
 
-use constant DBI_DUPLICATE => '1062';
+=head2 fields_dispatch
+
+  Arg [1]    : none
+  Example    : my $fieldsref = $proj->fields_dispatch();
+  Description: Returns hashref dispatch table keyed on database field
+               Used internally for new and update methods
+  Returntype : hashref
+
+=cut
+
+sub fields_dispatch {
+    my $self = shift;
+    my %fields = ( 
+                'project_id'        => sub { $self->id(@_)},
+                'ssid'              => sub { $self->ssid(@_)},
+                'name'              => sub { $self->name(@_)},
+                'hierarchy_name'    => sub { $self->hierarchy_name(@_)},
+                'acc'               => sub { $self->acc(@_)},
+                'note_id'           => sub { $self->note_id(@_)},
+                'changed'           => sub { $self->changed(@_)},
+                'latest'            => sub { $self->is_latest(@_)},
+                );
+
+    return \%fields;
+}
 
 ###############################################################################
 # Class methods
 ###############################################################################
-
-=head2 new
-
-  Arg [1]    : database handle to seqtracking database
-  Arg [2]    : project id
-  Example    : my $proj = VRTrack::Project->new($dbh, $id)
-  Description: Returns Project object by project_id
-  Returntype : VRTrack::Project object
-
-=cut
-
-sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
-    my $self = {};
-    bless ($self, $class);
-    $self->{_dbh} = $dbh;
-
-    my $sql = qq[select project_id, ssid, name, hierarchy_name, acc, changed, latest from project where project_id = ? and latest = true];
-    my $sth = $self->{_dbh}->prepare($sql);
-
-    if ($sth->execute($id)){
-        my $data = $sth->fetchrow_hashref;
-        unless ($data){
-            return undef;
-        }
-        $self->id($data->{'project_id'});
-        $self->ssid($data->{'ssid'});
-        $self->name($data->{'name'});
-        $self->hierarchy_name($data->{'hierarchy_name'});
-        $self->acc($data->{'acc'});
-        $self->changed($data->{'changed'});
-	$self->dirty(0); # unset the dirty flag
-    }
-    else{
-        die(sprintf('Cannot retrieve project: %s', $DBI::errstr));
-    }
-
-    return $self;
-}
 
 
 =head2 new_by_name
@@ -89,21 +76,24 @@ sub new {
 sub new_by_name {
     my ($class,$dbh, $name) = @_;
     die "Need to call with a db handle, name" unless ($dbh && $name);
-    my $sql = qq[select project_id from project where name = ? and latest = true];
-    my $sth = $dbh->prepare($sql);
+    return $class->new_by_field_value($dbh, 'name',$name);
+}
 
-    my $id;
-    if ($sth->execute($name)){
-        my $data = $sth->fetchrow_hashref;
-        unless ($data){
-            return undef;
-        }
-        $id = $data->{'project_id'};
-    }
-    else{
-        die(sprintf('Cannot retrieve project by $name: %s', $DBI::errstr));
-    }
-    return $class->new($dbh, $id);
+
+=head2 new_by_hierarchy_name
+
+  Arg [1]    : database handle to seqtracking database
+  Arg [2]    : project hierarchy_name
+  Example    : my $project = VRTrack::Project->new_by_hierarchy_name($dbh, $hierarchy_name)
+  Description: Class method. Returns latest Project object by hierarchy_name.  If no such hierarchy_name is in the database, returns undef.  Dies if multiple hierarchy_names match.
+  Returntype : VRTrack::Project object
+
+=cut
+
+sub new_by_hierarchy_name {
+    my ($class,$dbh, $hierarchy_name) = @_;
+    die "Need to call with a db handle, hierarchy_name" unless ($dbh && $hierarchy_name);
+    return $class->new_by_field_value($dbh, 'hierarchy_name',$hierarchy_name);
 }
 
 
@@ -460,63 +450,5 @@ sub get_sample_by_id {
     return $obj;
 }
 
-
-=head2 update
-
-  Arg [1]    : None
-  Example    : $project->update();
-  Description: Update a project whose properties you have changed.  If properties haven't changed (i.e. dirty flag is unset) do nothing.  
-	       Changes the changed datestamp to now() on the mysql server (i.e. you don't have to set changed yourself, and indeed if you do, it will be overridden).
-               Unsets the dirty flag on success.
-  Returntype : 1 if successful, otherwise undef.
-
-=cut
-
-sub update {
-    my ($self) = @_;
-    my $success = undef;
-    if ($self->dirty){
-	my $dbh = $self->{_dbh};
-	my $save_re = $dbh->{RaiseError};
-	my $save_pe = $dbh->{PrintError};
-	my $save_ac = $dbh->{AutoCommit};
-	$dbh->{RaiseError} = 1; # raise exception if an error occurs
-	$dbh->{PrintError} = 0; # don't print an error message
-	$dbh->{AutoCommit} = 0; # disable auto-commit
-
-	eval {
-	    # Need to unset 'latest' flag on current latest file and add
-	    # the new file details with the latest flag set
-	    my $updsql = qq[UPDATE project SET latest=false WHERE project_id = ? and latest=true];
-	    
-	    my $addsql = qq[INSERT INTO project (project_id, ssid, name, hierarchy_name, acc, changed, latest) 
-			    VALUES (?,?,?,?,?,now(),true)];
-	    $dbh->do ($updsql, undef,$self->id);
-	    $dbh->do ($addsql, undef,$self->id, $self->ssid, $self->name, $self->hierarchy_name, $self->acc);
-	    $dbh->commit ( );
-	};
-
-	if ($@) {
-	    warn "Transaction failed, rolling back. Error was:\n$@\n";
-	    # roll back within eval to prevent rollback
-	    # failure from terminating the script
-	    eval { $dbh->rollback ( ); };
-	}
-	else {
-	    $success = 1;
-	}
-
-	# restore attributes to original state
-	$dbh->{AutoCommit} = $save_ac;
-	$dbh->{PrintError} = $save_pe;
-	$dbh->{RaiseError} = $save_re;
-
-    }
-    if ($success){
-        $self->dirty(0);
-    }
-
-    return $success;
-}
 
 1;

@@ -1,4 +1,5 @@
 package VRTrack::VRTrack;
+# author: jws
 =head1 NAME
 
 VRTrack::VRTrack - Sequence Tracking container
@@ -34,7 +35,7 @@ use VRTrack::Sample;
 use VRTrack::Library;
 use VRTrack::Lane;
 use VRTrack::File;
-use VRTrack::Utils;
+use VRTrack::Core_obj;
 
 use constant DBI_DUPLICATE => '1062';
 use constant SCHEMA_VERSION => '2';
@@ -278,7 +279,7 @@ sub filtered_lane_names {
     my $filterclause;
     if (@$filter){
         # input validation
-        my %allowed = map {$_ => 1} @{VRTrack::Utils::list_enum_vals($self->{_dbh},'lane','qc_status')};
+        my %allowed = map {$_ => 1} @{VRTrack::Core_obj::list_enum_vals($self,'lane','qc_status')};
         my @goodfilters = grep {$allowed{lc($_)}} @$filter;
 
 	$filterclause = 'and lane.qc_status in (';

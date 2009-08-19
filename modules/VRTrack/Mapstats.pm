@@ -1,4 +1,5 @@
 package VRTrack::Mapstats; 
+# author: jws
 =head1 NAME
 
 VRTrack::Mapstats - Sequence Tracking Mapstats object
@@ -24,62 +25,54 @@ jws@sanger.ac.uk
 use strict;
 use warnings;
 no warnings 'uninitialized';
-use constant DBI_DUPLICATE => '1062';
+
+use VRTrack::Core_obj;
 use VRTrack::Image;
 use VRTrack::Mapper;
 use VRTrack::Assembly;
+our @ISA = qw(VRTrack::Core_obj);
+
+=head2 fields_dispatch
+
+  Arg [1]    : none
+  Example    : my $fieldsref = $mapstats->fields_dispatch();
+  Description: Returns hashref dispatch table keyed on database field
+               Used internally for new and update methods
+  Returntype : hashref
+
+=cut
+
+sub fields_dispatch {
+    my $self = shift;
+    my %fields = ( 
+                'mapstats_id'        => sub { $self->id(@_)},
+                'lane_id'            => sub { $self->lane_id(@_)},
+                'mapper_id'          => sub { $self->mapper_id(@_)},
+                'assembly_id'        => sub { $self->assembly_id(@_)},
+                'raw_reads'          => sub { $self->raw_reads(@_)},
+                'raw_bases'          => sub { $self->raw_bases(@_)},
+                'reads_mapped'       => sub { $self->reads_mapped(@_)},
+                'reads_paired'       => sub { $self->reads_paired(@_)},
+                'bases_mapped'       => sub { $self->bases_mapped(@_)},
+                'rmdup_reads_mapped' => sub { $self->rmdup_reads_mapped(@_)},
+                'rmdup_bases_mapped' => sub { $self->rmdup_bases_mapped(@_)},
+                'error_rate'         => sub { $self->error_rate(@_)},
+                'mean_insert'        => sub { $self->mean_insert(@_)},
+                'sd_insert'          => sub { $self->sd_insert(@_)},
+                'gt_expected'        => sub { $self->genotype_expected(@_)},
+                'gt_found'           => sub { $self->genotype_found(@_)},
+                'gt_ratio'           => sub { $self->genotype_ratio(@_)},
+                'note_id'            => sub { $self->note_id(@_)},
+                'changed'            => sub { $self->changed(@_)},
+                'latest'             => sub { $self->is_latest(@_)},
+                );
+
+    return \%fields;
+}
 
 ###############################################################################
 # Class methods
 ###############################################################################
-
-=head2 new
-
-  Arg [1]    : database handle to seqtracking database
-  Arg [2]    : mapstats name
-  Example    : my $mapstats= VRTrack::Mapstats->new($dbh, $name)
-  Description: Returns Mapstats object by mapstats name
-  Returntype : VRTrack::Mapstats object
-
-=cut
-
-sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
-    my $self = {};
-    bless ($self, $class);
-    $self->{_dbh} = $dbh;
-
-    my $sql = qq[select mapstats_id, lane_id, mapper_id, assembly_id, reads_mapped, reads_paired, bases_mapped, rmdup_reads_mapped, rmdup_bases_mapped, error_rate, mean_insert, sd_insert, changed, latest from mapstats where mapstats_id = ? and latest = true];
-    my $sth = $self->{_dbh}->prepare($sql);
-
-    if ($sth->execute($id)){
-        my $data = $sth->fetchrow_hashref;
-	unless ($data){
-	    return undef;
-	}
-	$self->id($data->{'mapstats_id'});
-	$self->lane_id($data->{'lane_id'});
-	$self->mapper_id($data->{'mapper_id'});
-	$self->assembly_id($data->{'assembly_id'});
-	$self->reads_mapped($data->{'reads_mapped'});
-	$self->reads_paired($data->{'reads_paired'});
-	$self->bases_mapped($data->{'bases_mapped'});
-	$self->rmdup_reads_mapped($data->{'rmdup_reads_mapped'});
-	$self->rmdup_bases_mapped($data->{'rmdup_bases_mapped'});
-	$self->error_rate($data->{'error_rate'});
-	$self->mean_insert($data->{'mean_insert'});
-	$self->sd_insert($data->{'sd_insert'});
-        $self->changed($data->{'changed'});
-	$self->dirty(0);    # unset the dirty flag
-    }
-    else{
-	die(sprintf('Cannot retrieve mapstats: %s', $DBI::errstr));
-    }
-
-    return $self;
-}
-
 
 =head2 create
 
@@ -375,6 +368,46 @@ sub get_assembly_by_name {
 }
 
 
+=head2 raw_reads
+
+  Arg [1]    : number of raw reads used in mapping (optional)
+  Example    : my $num_reads = $mapstats->raw_reads();
+	       $mapstats->raw_reads(1_000_000);
+  Description: Get/Set for total number of raw reads used in mapping
+  Returntype : integer
+
+=cut
+
+sub raw_reads {
+    my ($self,$num_reads) = @_;
+    if (defined $num_reads and $num_reads != $self->{'raw_reads'}){
+	$self->{'raw_reads'} = $num_reads;
+	$self->dirty(1);
+    }
+    return $self->{'raw_reads'};
+}
+
+
+=head2 raw_bases
+
+  Arg [1]    : number of raw bases used in mapping (optional)
+  Example    : my $num_bases = $mapstats->raw_bases();
+	       $mapstats->raw_bases(1_000_000);
+  Description: Get/Set for total number of raw bases used in mapping
+  Returntype : integer
+
+=cut
+
+sub raw_bases {
+    my ($self,$num_bases) = @_;
+    if (defined $num_bases and $num_bases != $self->{'raw_bases'}){
+	$self->{'raw_bases'} = $num_bases;
+	$self->dirty(1);
+    }
+    return $self->{'raw_bases'};
+}
+
+
 =head2 reads_mapped
 
   Arg [1]    : number of mapped reads in mapping (optional)
@@ -535,6 +568,63 @@ sub sd_insert {
 }
 
 
+=head2 genotype_expected
+
+  Arg [1]    : expected genotype in genotype checking (optional)
+  Example    : my $gt_exp = $mapstats->genotype_expected();
+  Description: Get/Set for expected genotype from genotype checking
+  Returntype : string
+
+=cut
+
+sub genotype_expected {
+    my ($self,$gt) = @_;
+    if (defined $gt and $gt ne $self->{'gt_expected'}){
+	$self->{'gt_expected'} = $gt;
+	$self->dirty(1);
+    }
+    return $self->{'gt_expected'};
+}
+
+
+=head2 genotype_found
+
+  Arg [1]    : found genotype in genotype checking (optional)
+  Example    : my $gt_fnd = $mapstats->genotype_found();
+  Description: Get/Set for found genotype from genotype checking
+  Returntype : string
+
+=cut
+
+sub genotype_found {
+    my ($self,$gt) = @_;
+    if (defined $gt and $gt ne $self->{'gt_found'}){
+	$self->{'gt_found'} = $gt;
+	$self->dirty(1);
+    }
+    return $self->{'gt_found'};
+}
+
+
+=head2 genotype_ratio
+
+  Arg [1]    : ratio between top two genotypes in genotype checking (optional)
+  Example    : my $gt_ratio = $mapstats->genotype_ratio();
+  Description: Get/Set for genotype ratio from genotype checking.
+  Returntype : float
+
+=cut
+
+sub genotype_ratio {
+    my ($self,$gt) = @_;
+    if (defined $gt and $gt != $self->{'gt_ratio'}){
+	$self->{'gt_ratio'} = $gt;
+	$self->dirty(1);
+    }
+    return $self->{'gt_ratio'};
+}
+
+
 =head2 dirty
 
   Arg [1]    : boolean for dirty status
@@ -654,59 +744,5 @@ sub changed {
 }
 
 
-=head2 update
-
-  Arg [1]    : None
-  Example    : $mapstats->update();
-  Description: Update a mapstats whose properties you have changed.  If properties haven't changed (i.e. dirty flag is unset) do nothing.  
-	       Changes the changed datestamp to now() on the mysql server (i.e. you don't have to set changed yourself, and indeed if you do, it will be overridden).
-  Returntype : 1 if successful, otherwise undef.
-
-=cut
-
-sub update {
-    my ($self) = @_;
-
-    my $success = undef;
-    if ($self->dirty){
-	my $dbh = $self->{_dbh};
-	my $save_re = $dbh->{RaiseError};
-	my $save_pe = $dbh->{PrintError};
-	my $save_ac = $dbh->{AutoCommit};
-	$dbh->{RaiseError} = 1; # raise exception if an error occurs
-	$dbh->{PrintError} = 0; # don't print an error message
-	$dbh->{AutoCommit} = 0; # disable auto-commit
-
-	eval {
-	    # Need to unset 'latest' flag on current latest mapstats and add
-	    # the new mapstats details with the latest flag set
-	    my $updsql = qq[UPDATE mapstats SET latest=false WHERE mapstats_id = ? and latest=true];
-	    
-	    my $addsql = qq[INSERT INTO mapstats (mapstats_id, lane_id, mapper_id, assembly_id, reads_mapped, reads_paired, bases_mapped, rmdup_reads_mapped, rmdup_bases_mapped, error_rate, mean_insert, sd_insert, changed, latest) 
-			    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,now(),true)];
-	    $dbh->do ($updsql, undef,$self->id);
-	    $dbh->do ($addsql, undef,$self->id, $self->lane_id, $self->mapper_id, $self->assembly_id, $self->reads_mapped, $self->reads_paired, $self->bases_mapped, $self->rmdup_reads_mapped, $self->rmdup_bases_mapped, $self->error_rate, $self->mean_insert, $self->sd_insert);
-	    $dbh->commit ( );
-	};
-
-	if ($@) {
-	    warn "Transaction failed, rolling back. Error was:\n$@\n";
-	    # roll back within eval to prevent rollback
-	    # failure from terminating the script
-	    eval { $dbh->rollback ( ); };
-	}
-	else {
-	    $success = 1;
-	}
-
-	# restore attributes to original state
-	$dbh->{AutoCommit} = $save_ac;
-	$dbh->{PrintError} = $save_pe;
-	$dbh->{RaiseError} = $save_re;
-
-    }
-
-    return $success;
-}
 
 1;

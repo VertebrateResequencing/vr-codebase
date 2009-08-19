@@ -1,4 +1,5 @@
 package VRTrack::Library; 
+# author: jws
 =head1 NAME
 
 VRTrack::Library - Sequence Tracking Library object
@@ -31,105 +32,45 @@ use VRTrack::Lane;
 use VRTrack::Library_type;
 use VRTrack::Seq_centre;
 use VRTrack::Seq_tech;
-use VRTrack::Utils;
+use VRTrack::Core_obj;
+our @ISA = qw(VRTrack::Core_obj);
 
-use constant DBI_DUPLICATE => '1062';
+=head2 fields_dispatch
+
+  Arg [1]    : none
+  Example    : my $fieldsref = $lib->fields_dispatch();
+  Description: Returns hashref dispatch table keyed on database field
+               Used internally for new and update methods
+  Returntype : hashref
+
+=cut
+
+sub fields_dispatch {
+    my $self = shift;
+    my %fields = ( 
+                'library_id'        => sub { $self->id(@_)},
+                'sample_id'         => sub { $self->sample_id(@_)},
+                'ssid'              => sub { $self->ssid(@_)},
+                'name'              => sub { $self->name(@_)},
+                'hierarchy_name'    => sub { $self->hierarchy_name(@_)},
+                'prep_status'       => sub { $self->prep_status(@_)},
+                'qc_status'         => sub { $self->qc_status(@_)},
+                'insert_size'       => sub { $self->insert_size(@_)},
+                'library_type_id'   => sub { $self->library_type_id(@_)},
+                'seq_centre_id'     => sub { $self->seq_centre_id(@_)},
+                'seq_tech_id'       => sub { $self->seq_tech_id(@_)},
+                'open'              => sub { $self->open(@_)},
+                'note_id'           => sub { $self->note_id(@_)},
+                'changed'           => sub { $self->changed(@_)},
+                'latest'            => sub { $self->is_latest(@_)},
+                );
+
+    return \%fields;
+}
 
 ###############################################################################
 # Class methods
 ###############################################################################
-
-=head2 new
-
-  Arg [1]    : database handle to seqtracking database
-  Arg [2]    : library id
-  Example    : my $lib = VRTrack::Library->new($dbh, $id)
-  Description: Returns Library object by library_id
-  Returntype : VRTrack::Library object
-
-=cut
-
-sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
-    my $self = {};
-    bless ($self, $class);
-    $self->{_dbh} = $dbh;
-
-    my $sql = qq[select library_id, sample_id, ssid, name, hierarchy_name, prep_status, qc_status, insert_size, library_type_id, seq_centre_id, seq_tech_id, open,  changed, latest from library where library_id = ? and latest=true];
-    my $sth = $self->{_dbh}->prepare($sql);
-
-    if ($sth->execute($id)){
-        my $data = $sth->fetchrow_hashref;
-        unless ($data){
-            return undef;
-        }
-        $self->id($data->{'library_id'});
-        $self->sample_id($data->{'sample_id'});
-        $self->ssid($data->{'ssid'});
-        $self->name($data->{'name'});
-        $self->hierarchy_name($data->{'hierarchy_name'});
-        $self->prep_status($data->{'prep_status'});
-        $self->qc_status($data->{'qc_status'});
-        $self->insert_size($data->{'insert_size'});
-        $self->library_type_id($data->{'library_type_id'});
-        $self->seq_centre_id($data->{'seq_centre_id'});
-        $self->seq_tech_id($data->{'seq_tech_id'});
-        $self->open($data->{'open'});
-        $self->changed($data->{'changed'});
-        $self->dirty(0);    # unset the dirty flag
-    }
-    else{
-        die(sprintf('Cannot retrieve library: %s', $DBI::errstr));
-    }
-
-    return $self;
-}
-
-
-=head2 new_by_field_value
-
-  Arg [1]    : database handle to seqtracking database
-  Arg [2]    : field name
-  Arg [3]    : field value
-  Example    : my $library = VRTrack::Library->new_by_field_value($dbh, 'name',$name)
-  Description: Class method. Returns latest Library object by field name and value.  If no such value is in the database, returns undef.
-               Dies if there is more than one matching record.
-  Returntype : VRTrack::Library object
-
-=cut
-
-sub new_by_field_value {
-    my ($class,$dbh, $field, $value) = @_;
-    die "Need to call with a db handle, field name, field value" unless ($dbh && $field && defined $value);
-    
-    # check field exists
-    my $colnames = $dbh->selectcol_arrayref(q[select column_name from information_schema.columns where table_name='library']);
-    my %cols = map { $_ => 1 } @$colnames;
-    unless (exists($cols{lc($field)})){
-        die "No such column $field in library table\n";
-    }
-
-    # retrieve library_id
-    my $sql = qq[select library_id from library where $field = ? and latest = true];
-    my $sth = $dbh->prepare($sql);
-    my $id;
-    if ($sth->execute($value)){
-        my $data = $sth->fetchall_arrayref({}); #return array of hashes
-        unless ($data){
-            return undef;
-        }
-        if (scalar @$data > 1){
-            die "$field = $value is not a unique identifier for library\n";
-        }
-        $id = $data->[0]{'library_id'};
-    }
-    else{
-        die(sprintf('Cannot retrieve library by %s = %s: %s', ($field,$value,$DBI::errstr)));
-    }
-    return $class->new($dbh, $id);
-}
-
 
 =head2 new_by_name
 
@@ -423,7 +364,7 @@ sub name {
 sub prep_status {
     my ($self,$prep_status) = @_;
     if (defined $prep_status and $prep_status ne $self->{'prep_status'}){
-        my %allowed = map {$_ => 1} @{VRTrack::Utils::list_enum_vals($self->{_dbh},'library','prep_status')};
+        my %allowed = map {$_ => 1} @{$self->list_enum_vals('library','prep_status')};
         unless ($allowed{lc($prep_status)}){
             die "'$prep_status' is not a defined qc_status";
         }
@@ -447,7 +388,7 @@ sub prep_status {
 sub qc_status {
     my ($self,$qc_status) = @_;
     if (defined $qc_status and $qc_status ne $self->{'qc_status'}){
-        my %allowed = map {$_ => 1} @{VRTrack::Utils::list_enum_vals($self->{_dbh},'library','qc_status')};
+        my %allowed = map {$_ => 1} @{$self->list_enum_vals('library','qc_status')};
         unless ($allowed{lc($qc_status)}){
             die "'$qc_status' is not a defined qc_status";
         }
@@ -877,66 +818,6 @@ sub add_lane {
 
     return $obj;
 
-}
-
-
-=head2 update
-
-  Arg [1]    : None
-  Example    : $lib->update();
-  Description: Update a library whose properties you have changed.  If properties haven't changed (i.e. dirty flag is unset) do nothing.  
-               Changes the changed datestamp to now() on the mysql server (i.e. you don't have to set changed yourself, and indeed if you do, it will be overridden).
-               Unsets the dirty flag on success.
-  Returntype : 1 if successful, otherwise undef.
-
-=cut
-
-sub update {
-    my ($self) = @_;
-    my $success = undef;
-
-    if ($self->dirty){
-        my $dbh = $self->{_dbh};
-        my $save_re = $dbh->{RaiseError};
-        my $save_pe = $dbh->{PrintError};
-        my $save_ac = $dbh->{AutoCommit};
-        $dbh->{RaiseError} = 1; # raise exception if an error occurs
-        $dbh->{PrintError} = 0; # don't print an error message
-        $dbh->{AutoCommit} = 0; # disable auto-commit
-
-        eval {
-            # Need to unset 'latest' flag on current latest library and add
-            # the new library details with the latest flag set
-            my $updsql = qq[UPDATE library SET latest=false WHERE library_id = ? and latest=true];
-            my $addsql = qq[INSERT INTO library (library_id, sample_id, ssid, name, hierarchy_name, prep_status, qc_status, insert_size, library_type_id, seq_centre_id, seq_tech_id, open, changed, latest) 
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,now(),true)];
-            
-            $dbh->do ($updsql, undef,$self->id);
-            $dbh->do ($addsql, undef,$self->id, $self->sample_id, $self->ssid, $self->name, $self->hierarchy_name, $self->prep_status, $self->qc_status, $self->insert_size, $self->library_type_id, $self->seq_centre_id, $self->seq_tech_id, $self->open );
-            $dbh->commit ( );
-        };
-
-        if ($@) {
-            warn "Transaction failed, rolling back. Error was:\n$@\n";
-            # roll back within eval to prevent rollback
-            # failure from terminating the script
-            eval { $dbh->rollback ( ); };
-        }
-        else {
-            $success = 1;
-        }
-
-        # restore attributes to original state
-        $dbh->{AutoCommit} = $save_ac;
-        $dbh->{PrintError} = $save_pe;
-        $dbh->{RaiseError} = $save_re;
-
-    }
-
-    if ($success){
-        $self->dirty(0);
-    }
-    return $success;
 }
 
 

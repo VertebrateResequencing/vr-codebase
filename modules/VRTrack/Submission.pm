@@ -1,4 +1,5 @@
 package VRTrack::Submission;
+# author: jws
 =head1 NAME
 
 VRTrack::Submission - Sequence Tracking Submission object

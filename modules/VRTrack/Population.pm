@@ -1,4 +1,5 @@
 package VRTrack::Population;
+# author: jws
 =head1 NAME
 
 VRTrack::Population - Sequence Tracking Population object

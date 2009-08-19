@@ -1,4 +1,5 @@
 package VRTrack::Individual;
+# author: jws
 =head1 NAME
 
 VRTrack::Individual - Sequence Tracking Individual object

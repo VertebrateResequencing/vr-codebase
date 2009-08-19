@@ -1,4 +1,5 @@
 package VRTrack::File; 
+# author: jws
 =head1 NAME
 
 VRTrack::File - Sequence Tracking File object
@@ -24,67 +25,52 @@ jws@sanger.ac.uk
 use strict;
 use warnings;
 no warnings 'uninitialized';
-use constant DBI_DUPLICATE => '1062';
-use VRTrack::Utils;
+use VRTrack::Core_obj;
+our @ISA = qw(VRTrack::Core_obj);
+
+=head2 fields_dispatch
+
+  Arg [1]    : none
+  Example    : my $fieldsref = $file->fields_dispatch();
+  Description: Returns hashref dispatch table keyed on database field
+               Used internally for new and update methods
+  Returntype : hashref
+
+=cut
+
+sub fields_dispatch {
+    my $self = shift;
+    my %fields = ( 
+                'file_id'           => sub { $self->id(@_)},
+                'lane_id'           => sub { $self->lane_id(@_)},
+                'name'              => sub { $self->name(@_)},
+                'hierarchy_name'    => sub { $self->hierarchy_name(@_)},
+                'qc_status'         => sub { $self->qc_status(@_)},
+                'type'              => sub { $self->type(@_)},
+                'readlen'           => sub { $self->read_len(@_)},
+                'raw_reads'         => sub { $self->raw_reads(@_)},
+                'raw_bases'         => sub { $self->raw_bases(@_)},
+                'recalibrated'      => sub { $self->is_recalibrated(@_)},
+                'md5'               => sub { $self->md5(@_)},
+                'note_id'           => sub { $self->note_id(@_)},
+                'changed'           => sub { $self->changed(@_)},
+                'latest'            => sub { $self->is_latest(@_)},
+                );
+
+    return \%fields;
+}
+
 
 ###############################################################################
 # Class methods
 ###############################################################################
 
-=head2 new
-
-  Arg [1]    : database handle to seqtracking database
-  Arg [2]    : file name
-  Example    : my $file= VRTrack::File->new($dbh, $name)
-  Description: Returns File object by file name
-  Returntype : VRTrack::File object
-
-=cut
-
-sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
-    my $self = {};
-    bless ($self, $class);
-    $self->{_dbh} = $dbh;
-
-    my $sql = qq[select file_id, lane_id, name, hierarchy_name, qc_status, type, readlen, raw_reads, raw_bases, recalibrated, md5, changed, latest from file where file_id = ? and latest = true];
-    my $sth = $self->{_dbh}->prepare($sql);
-
-    if ($sth->execute($id)){
-	my $data = $sth->fetchrow_hashref;
-	unless ($data){
-	    return undef;
-	}
-
-	$self->id($data->{'file_id'});
-	$self->lane_id($data->{'lane_id'});
-	$self->name($data->{'name'});
-	$self->hierarchy_name($data->{'hierarchy_name'});
-	$self->qc_status($data->{'qc_status'});
-	$self->type($data->{'type'});
-	$self->read_len($data->{'readlen'});
-	$self->raw_reads($data->{'raw_reads'});
-	$self->raw_bases($data->{'raw_bases'});
-	$self->is_recalibrated($data->{'recalibrated'});
-	$self->md5($data->{'md5'});
-	$self->changed($data->{'changed'});
-	$self->dirty(0);    # unset the dirty flag
-    }
-    else{
-	die(sprintf('Cannot retrieve file: %s', $DBI::errstr));
-    }
-
-    return $self;
-}
-
-
 =head2 new_by_name
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : file name
-  Example    : my $file = VRTrack::File->new_by_name($dbh, $name,$project_id)
-  Description: Class method. Returns latest File object by name and project_id.  If no such name is in the database, returns undef
+  Example    : my $file = VRTrack::File->new_by_name($dbh, $name)
+  Description: Class method. Returns latest File object by name.  If no such name is in the database, returns undef.  Dies if multiple names match.
   Returntype : VRTrack::File object
 
 =cut
@@ -92,21 +78,24 @@ sub new {
 sub new_by_name {
     my ($class,$dbh, $name) = @_;
     die "Need to call with a db handle, name" unless ($dbh && $name);
-    my $sql = qq[select file_id from file where name = ? and latest = true];
-    my $sth = $dbh->prepare($sql);
+    return $class->new_by_field_value($dbh, 'name',$name);
+}
 
-    my $id;
-    if ($sth->execute($name)){
-        my $data = $sth->fetchrow_hashref;
-        unless ($data){
-            return undef;
-        }
-        $id = $data->{'file_id'};
-    }
-    else{
-        die(sprintf('Cannot retrieve file by name %s: %s', $name,$DBI::errstr));
-    }
-    return $class->new($dbh, $id);
+
+=head2 new_by_hierarchy_name
+
+  Arg [1]    : database handle to seqtracking database
+  Arg [2]    : file hierarchy_name
+  Example    : my $file = VRTrack::File->new_by_hierarchy_name($dbh, $hierarchy_name)
+  Description: Class method. Returns latest File object by hierarchy_name.  If no such hierarchy_name is in the database, returns undef.  Dies if multiple hierarchy_names match.
+  Returntype : VRTrack::File object
+
+=cut
+
+sub new_by_hierarchy_name {
+    my ($class,$dbh, $hierarchy_name) = @_;
+    die "Need to call with a db handle, hierarchy_name" unless ($dbh && $hierarchy_name);
+    return $class->new_by_field_value($dbh, 'hierarchy_name',$hierarchy_name);
 }
 
 
@@ -343,7 +332,7 @@ sub lane_id {
 sub qc_status {
     my ($self,$qc_status) = @_;
     if (defined $qc_status and $qc_status ne $self->{'qc_status'}){
-        my %allowed = map {$_ => 1} @{VRTrack::Utils::list_enum_vals($self->{_dbh},'file','qc_status')};
+        my %allowed = map {$_ => 1} @{$self->list_enum_vals('file','qc_status')};
         unless ($allowed{lc($qc_status)}){
             die "'$qc_status' is not a defined qc_status";
         }
@@ -454,59 +443,5 @@ sub read_len {
     return $self->{'readlen'};
 }
 
-
-=head2 update
-
-  Arg [1]    : None
-  Example    : $file->update();
-  Description: Update a file whose properties you have changed.  If properties haven't changed (i.e. dirty flag is unset) do nothing.  
-	       Changes the changed datestamp to now() on the mysql server (i.e. you don't have to set changed yourself, and indeed if you do, it will be overridden).
-  Returntype : 1 if successful, otherwise undef.
-
-=cut
-
-sub update {
-    my ($self) = @_;
-    my $success = undef;
-    if ($self->dirty){
-	my $dbh = $self->{_dbh};
-	my $save_re = $dbh->{RaiseError};
-	my $save_pe = $dbh->{PrintError};
-	my $save_ac = $dbh->{AutoCommit};
-	$dbh->{RaiseError} = 1; # raise exception if an error occurs
-	$dbh->{PrintError} = 0; # don't print an error message
-	$dbh->{AutoCommit} = 0; # disable auto-commit
-
-	eval {
-	    # Need to unset 'latest' flag on current latest file and add
-	    # the new file details with the latest flag set
-	    my $updsql = qq[UPDATE file SET latest=false WHERE file_id = ? and latest=true];
-	    
-	    my $addsql = qq[INSERT INTO file (file_id, lane_id, name, hierarchy_name,  qc_status, type, readlen, raw_reads, raw_bases, recalibrated, md5, changed, latest) 
-			    VALUES (?,?,?,?,?,?,?,?,?,?,?,now(),true)];
-	    $dbh->do ($updsql, undef,$self->id);
-	    $dbh->do ($addsql, undef,$self->id, $self->lane_id, $self->name, $self->hierarchy_name, $self->qc_status, $self->type, $self->read_len, $self->raw_reads, $self->raw_bases, $self->is_recalibrated, $self->md5);
-	    $dbh->commit ( );
-	};
-
-	if ($@) {
-	    warn "Transaction failed, rolling back. Error was:\n$@\n";
-	    # roll back within eval to prevent rollback
-	    # failure from terminating the script
-	    eval { $dbh->rollback ( ); };
-	}
-	else {
-	    $success = 1;
-	}
-
-	# restore attributes to original state
-	$dbh->{AutoCommit} = $save_ac;
-	$dbh->{PrintError} = $save_pe;
-	$dbh->{RaiseError} = $save_re;
-
-    }
-
-    return $success;
-}
 
 1;

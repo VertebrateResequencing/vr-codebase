@@ -1,4 +1,5 @@
 package VRTrack::Sample;
+# author: jws
 =head1 NAME
 
 VRTrack::Sample - Sequence Tracking Sample object
@@ -29,52 +30,39 @@ use warnings;
 no warnings 'uninitialized';
 use VRTrack::Library;
 use VRTrack::Individual;
-use constant DBI_DUPLICATE => '1062';
+use VRTrack::Core_obj;
+our @ISA = qw(VRTrack::Core_obj);
+
+=head2 fields_dispatch
+
+  Arg [1]    : none
+  Example    : my $fieldsref = $sample->fields_dispatch();
+  Description: Returns hashref dispatch table keyed on database field
+               Used internally for new and update methods
+  Returntype : hashref
+
+=cut
+
+sub fields_dispatch {
+    my $self = shift;
+    my %fields = ( 
+                'sample_id'     => sub { $self->id(@_)},
+                'project_id'    => sub { $self->project_id(@_)},
+                'ssid'          => sub { $self->ssid(@_)},
+                'name'          => sub { $self->name(@_)},
+                'acc'           => sub { $self->acc(@_)},
+                'individual_id' => sub { $self->individual_id(@_)},
+                'note_id'       => sub { $self->note_id(@_)},
+                'changed'       => sub { $self->changed(@_)},
+                'latest'        => sub { $self->is_latest(@_)},
+                );
+
+    return \%fields;
+}
 
 ###############################################################################
 # Class methods
 ###############################################################################
-
-=head2 new
-
-  Arg [1]    : database handle to seqtracking database
-  Arg [2]    : sample id
-  Example    : my $samp = VRTrack::Sample->new($dbh, $id)
-  Description: Class method. Returns Sample object by sample_id
-  Returntype : VRTrack::Sample object
-
-=cut
-
-sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
-    my $self = {};
-    bless ($self, $class);
-    $self->{_dbh} = $dbh;
-
-    my $sql = qq[select sample_id, project_id, ssid, name, acc, individual_id, changed, latest from sample where sample_id = ? and latest=true];
-    my $sth = $self->{_dbh}->prepare($sql);
-
-    if ($sth->execute($id)){
-        my $data = $sth->fetchrow_hashref;
-        unless ($data){
-            return undef;
-        }
-        $self->id($data->{'sample_id'});
-        $self->project_id($data->{'project_id'});
-        $self->ssid($data->{'ssid'});
-        $self->name($data->{'name'});
-        $self->acc($data->{'acc'});
-        $self->individual_id($data->{'individual_id'});
-        $self->changed($data->{'changed'});
-	$self->dirty(0); # unset the dirty flag
-    }
-    else{
-        die(sprintf('Cannot retrieve sample: %s', $DBI::errstr));
-    }
-
-    return $self;
-}
 
 
 =head2 new_by_name_project
@@ -549,63 +537,5 @@ sub dirty {
     return $self->{_dirty};
 }
 
-
-=head2 update
-
-  Arg [1]    : None
-  Example    : $sample->update();
-  Description: Update a sample whose properties you have changed.  If properties haven't changed (i.e. dirty flag is unset) do nothing.  
-	       Changes the changed datestamp to now() on the mysql server (i.e. you don't have to set changed yourself, and indeed if you do, it will be overridden).
-               Unsets the dirty flag on success.
-  Returntype : 1 if successful, otherwise undef.
-
-=cut
-
-sub update {
-    my ($self) = @_;
-    my $success = undef;
-    if ($self->dirty){
-	my $dbh = $self->{_dbh};
-	my $save_re = $dbh->{RaiseError};
-	my $save_pe = $dbh->{PrintError};
-	my $save_ac = $dbh->{AutoCommit};
-	$dbh->{RaiseError} = 1; # raise exception if an error occurs
-	$dbh->{PrintError} = 0; # don't print an error message
-	$dbh->{AutoCommit} = 0; # disable auto-commit
-
-	eval {
-	    # Need to unset 'latest' flag on current latest file and add
-	    # the new file details with the latest flag set
-	    my $updsql = qq[UPDATE sample SET latest=false WHERE sample_id = ? and latest=true];
-	    
-	    my $addsql = qq[INSERT INTO sample (sample_id, project_id, ssid, name, acc, individual_id, changed, latest) 
-			    VALUES (?,?,?,?,?,?,now(),true)];
-	    $dbh->do ($updsql, undef,$self->id);
-	    $dbh->do ($addsql, undef,$self->id, $self->project_id, $self->ssid, $self->name, $self->acc, $self->individual_id);
-	    $dbh->commit ( );
-	};
-
-	if ($@) {
-	    warn "Transaction failed, rolling back. Error was:\n$@\n";
-	    # roll back within eval to prevent rollback
-	    # failure from terminating the script
-	    eval { $dbh->rollback ( ); };
-	}
-	else {
-	    $success = 1;
-	}
-
-	# restore attributes to original state
-	$dbh->{AutoCommit} = $save_ac;
-	$dbh->{PrintError} = $save_pe;
-	$dbh->{RaiseError} = $save_re;
-
-    }
-
-    if ($success){
-        $self->dirty(0);
-    }
-    return $success;
-}
 
 1;

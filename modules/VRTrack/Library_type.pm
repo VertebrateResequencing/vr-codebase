@@ -1,4 +1,5 @@
 package VRTrack::Library_type;
+# author: jws
 =head1 NAME
 
 VRTrack::Library_type - Sequence Tracking Library_type object

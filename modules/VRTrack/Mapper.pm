@@ -1,4 +1,5 @@
 package VRTrack::Mapper;
+# author: jws
 =head1 NAME
 
 VRTrack::Mapper - Sequence Tracking Mapper object

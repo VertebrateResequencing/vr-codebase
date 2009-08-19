@@ -1,4 +1,5 @@
 package VRTrack::Species;
+# author: jws
 =head1 NAME
 
 VRTrack::Species - Sequence Tracking Species object

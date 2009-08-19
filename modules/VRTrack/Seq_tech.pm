@@ -1,4 +1,5 @@
 package VRTrack::Seq_tech;
+# author: jws
 =head1 NAME
 
 VRTrack::Seq_tech - Sequence Tracking Seq_tech object

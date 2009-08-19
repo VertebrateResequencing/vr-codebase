@@ -1,4 +1,5 @@
 package VRTrack::Assembly;
+# author: jws
 =head1 NAME
 
 VRTrack::Assembly - Sequence Tracking Assembly object

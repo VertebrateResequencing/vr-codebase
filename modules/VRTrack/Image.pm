@@ -1,4 +1,5 @@
 package VRTrack::Image;
+# author: jws
 =head1 NAME
 
 VRTrack::Image - Sequence Tracking Image object
