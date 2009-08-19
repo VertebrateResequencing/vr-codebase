@@ -364,14 +364,36 @@ sub collect_detailed_bam_stats
     # Find out the duplication rate
     if ( $do_rmdup )
     {
-        my $rmdup_reads_total;
-        if (-f $do_rmdup && -s $do_rmdup) {
+        my ($rmdup_reads_total,$rmdup_reads_mapped);
+        if ( -f $do_rmdup && -s $do_rmdup ) 
+        {
+            # Not sure what the precalculated do_rmdup looks like....? Should be changed accordingly to bellow.
             chomp(($rmdup_reads_total) = Utils::CMD("wc -l $do_rmdup"));
         }
-        else {
-            chomp(($rmdup_reads_total) = Utils::CMD("samtools rmdup $bam_file - 2>/dev/null | samtools view - | wc -l"));
+        else 
+        {
+            # Gets the '1854311 mapped (94.42%)' line from the flagstat output.
+            #   '1854311 mapped (94.42%)' -> 1854311
+            my @out = Utils::CMD("samtools rmdup $bam_file - | samtools flagstat -");
+            for my $line (@out)
+            {
+                # 1963832 in total
+                if ( $line=~/^(\d+) in total/ )
+                {
+                    $rmdup_reads_total = $1;
+                    next;
+                }
+
+                # 1854311 mapped (94.42%)
+                if ( $line=~/^(\d+) mapped \(/ )
+                {
+                    $rmdup_reads_mapped = $1;
+                    next;
+                }
+            }
         }
-        $$out_stats{'total'}{'rmdup_reads_total'} = $rmdup_reads_total;
+        $$out_stats{'total'}{'rmdup_reads_total'}  = $rmdup_reads_total;
+        $$out_stats{'total'}{'rmdup_reads_mapped'} = $rmdup_reads_mapped;
     }
 
     # Now process the results. The out_stats hash now contains the total statistics (the key 'total')
@@ -383,9 +405,10 @@ sub collect_detailed_bam_stats
     {
         $$out_stats{$stat}{error_rate} = $$out_stats{$stat}{'num_mismatches'} ? $$out_stats{$stat}{'num_mismatches'}/$$out_stats{$stat}{'bases_total'} : 0;
 
-        if ( exists($$out_stats{$stat}{'rmdup_reads_total'}) )
+        if ( exists($$out_stats{$stat}{'rmdup_reads_mapped'}) )
         {
-            $$out_stats{$stat}{'duplication'} = $$out_stats{$stat}{'rmdup_reads_total'}/$$out_stats{$stat}{'reads_total'};
+            $$out_stats{$stat}{'duplication'} = 1 - 
+                $$out_stats{$stat}{'rmdup_reads_mapped'} / ($$out_stats{$stat}{'reads_total'}-$$out_stats{$stat}{'reads_unmapped'});
         }
 
         if ( exists($$out_stats{$stat}{insert_size_freqs}) )

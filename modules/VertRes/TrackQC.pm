@@ -588,8 +588,11 @@ sub run_graphs
         Graphs::plot_stats($data);
     }
 
-    Utils::CMD("$samtools view $bam_file | $mapview $refseq -b=$gc_depth_bin > $bindepth");
-    Graphs::create_gc_depth_graph($bindepth,$gcdepth_R,qq[$outdir/gc-depth.png]);
+    if ( ! -e "$outdir/gc-depth.png" || Utils::file_newer($bam_file,$bindepth) )
+    {
+        Utils::CMD("$samtools view $bam_file | $mapview $refseq -b=$gc_depth_bin > $bindepth");
+        Graphs::create_gc_depth_graph($bindepth,$gcdepth_R,qq[$outdir/gc-depth.png]);
+    }
 
     my $all_stats = SamTools::collect_detailed_bam_stats($bam_file,$$lane_info{'fai_ref'});
     my $stats = $$all_stats{'total'};
@@ -646,7 +649,7 @@ sub report_stats
     print  $fh "MAPPED,,$$info{project},$$info{sample},$$info{technology},$$info{library},$$info{lane},";
     printf $fh ",0,$$info{lane}_1.fastq.gz,%.1f,$$info{lane}_2.fastq.gz,%.1f,", $avg_read_length,$avg_read_length;
     print  $fh "$$stats{reads_total},$$stats{bases_total},$$stats{reads_mapped},$$stats{bases_mapped_cigar},$$stats{reads_paired},";
-    print  $fh "$$stats{rmdup_reads_total},0,-1\n";
+    print  $fh "$$stats{rmdup_reads_total},0,$$stats{error_rate}\n";
     close $fh;
 }
 
@@ -664,7 +667,8 @@ sub report_detailed_stats
     printf $fh "bases total .. %d\n", $$stats{'bases_total'};
     printf $fh "    mapped (read)  .. %d (%.1f%%)\n", $$stats{'bases_mapped_read'}, 100*($$stats{'bases_mapped_read'}/$$stats{'bases_total'});
     printf $fh "    mapped (cigar) .. %d (%.1f%%)\n", $$stats{'bases_mapped_cigar'}, 100*($$stats{'bases_mapped_cigar'}/$$stats{'bases_total'});
-    printf $fh "duplication .. %.2f\n", (1-$$stats{'rmdup_reads_total'}/$$stats{'reads_total'});
+    printf $fh "duplication .. %f\n", $$stats{'duplication'};
+    printf $fh "error rate  .. %f\n", $$stats{error_rate};
     printf $fh "\n";
     printf $fh "insert size        \n";
     printf $fh "    average .. %.1f\n", $$stats{insert_size}{average};

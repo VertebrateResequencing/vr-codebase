@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use Carp qw(confess);
 use IPC::Open3 'open3';
+use Time::HiRes qw(gettimeofday tv_interval);
 local $SIG{CHLD} = 'IGNORE';
 
 =pod
@@ -134,6 +135,7 @@ sub backtrace
                 chomp         .. run chomp on all returned lines
                 exit_on_error .. should the encountered errors be ignored?
                 logfile       .. where should be the command and the output logged?
+                time          .. print the execution time
                 verbose       .. print what's being done.
 
 =cut
@@ -145,10 +147,14 @@ sub CMD
     $options = {} unless $options;
     $$options{'exit_on_error'} = 1 unless exists($$options{'exit_on_error'});
     $$options{'verbose'}       = 0 unless exists($$options{'verbose'});
+    $$options{'time'}          = 0 unless exists($$options{'time'});
 
     print "$cmd\n" unless !$$options{'verbose'};
     log_msg($$options{'logfile'},"$cmd\n") unless !exists($$options{'logfile'});
+    my ($time_start,$elapsed);
+    if ( $$options{time} ) { $time_start = [gettimeofday]; }
     my @out = `$cmd`;
+    if ( $$options{time} ) { $elapsed = tv_interval($time_start); }
 
     if ( $? )
     {
@@ -183,6 +189,11 @@ sub CMD
         }
     }
 
+    if ( $$options{time} ) 
+    { 
+        my $now = gmtime;
+        print STDERR "Finished $now, elapsed $elapsed\n"; 
+    }
     return (@out);
 }
 
