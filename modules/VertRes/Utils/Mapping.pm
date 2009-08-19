@@ -139,6 +139,36 @@ sub wrapper {
     $self->throw("This is supposed to be overriden");
 }
 
+=head2 exe
+
+ Title   : exe
+ Usage   : my $exe = $obj->exe();
+ Function: Get the name of the exe.
+ Returns : string
+ Args    : n/a
+
+=cut
+
+sub exe {
+    my $self = shift;
+    return $self->wrapper->exe;
+}
+
+=head2 version
+
+ Title   : version
+ Usage   : my $version = $obj->version();
+ Function: Get the version of the exe.
+ Returns : string
+ Args    : n/a
+
+=cut
+
+sub version {
+    my $self = shift;
+    return $self->wrapper->version;
+}
+
 =head2 do_mapping
 
  Title   : do_mapping

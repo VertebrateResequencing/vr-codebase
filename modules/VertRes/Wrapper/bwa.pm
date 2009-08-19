@@ -82,6 +82,33 @@ sub new {
     return $self;
 }
 
+=head2 version
+
+ Title   : version
+ Usage   : my $version = $obj->version();
+ Function: Returns the program version.
+ Returns : string representing version of the program 
+ Args    : n/a
+
+=cut
+
+sub version {
+    my $self = shift;
+    
+    my $exe = $self->exe;
+    open(my $fh, "$exe 2>&1 |") || $self->throw("Could not start $exe");
+    my $version = 0;
+    while (<$fh>) {
+        if (/Version: (\S+)/) {
+            $version = $1;
+            last;
+        }
+    }
+    close($fh);
+    
+    return $version;
+}
+
 =head2 index
 
  Title   : index

@@ -76,6 +76,33 @@ sub new {
     return $self;
 }
 
+=head2 version
+
+ Title   : version
+ Usage   : my $version = $obj->version();
+ Function: Returns the program version.
+ Returns : string representing version of the program 
+ Args    : n/a
+
+=cut
+
+sub version {
+    my $self = shift;
+    
+    my $exe = $self->exe;
+    open(my $fh, "$exe -v |") || $self->throw("Could not start $exe");
+    my $version = 0;
+    while (<$fh>) {
+        if (/ SSAHA2 version (\S+)/) {
+            $version = $1;
+            last;
+        }
+    }
+    close($fh);
+    
+    return $version;
+}
+
 =head2 ssaha2Build
 
  Title   : ssaha2Build

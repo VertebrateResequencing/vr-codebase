@@ -4,7 +4,7 @@ use warnings;
 use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 39;
+    use Test::Most tests => 41;
     
     use_ok('VertRes::Wrapper::bwa');
     use_ok('VertRes::IO');
@@ -13,6 +13,9 @@ BEGIN {
 my $bwa = VertRes::Wrapper::bwa->new(quiet => 1);
 isa_ok $bwa, 'VertRes::Wrapper::WrapperI';
 is $bwa->quiet, 1, 'quiet set via new';
+
+is $bwa->exe, 'bwa', 'exe ok';
+like $bwa->version, qr/\d\.\d.\d/, 'version ok';
 
 # prepare our test files; copy them to a temp dir where we will do the tests
 my $io = VertRes::IO->new();

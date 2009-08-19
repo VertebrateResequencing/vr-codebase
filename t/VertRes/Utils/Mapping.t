@@ -3,9 +3,11 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 28;
+    use Test::Most tests => 34;
     
     use_ok('VertRes::Utils::Mapping');
+    use_ok('VertRes::Utils::Mappers::ssaha');
+    use_ok('VertRes::Utils::Mappers::bwa');
     use_ok('VertRes::IO');
 }
 
@@ -55,6 +57,13 @@ is $mapping_util->split_fastq(read1 => $faq1_file,
                               split_dir => $temp_dir,
                               chunk_size => 11500), 10, 'split_fastq with two fastqs worked';
 
+# mapper-specific methods
+my $bwa_mapper = VertRes::Utils::Mappers::bwa->new();
+is $bwa_mapper->exe, 'bwa', 'exe test for bwa mapper';
+like $bwa_mapper->version, qr/\d\.\d\.\d/, 'version test for bwa mapper';
+my $ssaha_mapper = VertRes::Utils::Mappers::ssaha->new();
+is $ssaha_mapper->exe, 'ssaha2', 'exe test for ssaha mapper';
+like $ssaha_mapper->version, qr/\d\.\d\.\d\.\d/, 'version test for ssaha mapper';
 
 TODO: {
     local $TODO = "Currently unused methods that are difficult to test for";

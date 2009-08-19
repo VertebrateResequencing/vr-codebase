@@ -4,7 +4,7 @@ use warnings;
 use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 14;
+    use Test::Most tests => 16;
     
     use_ok('VertRes::Wrapper::ssaha');
     use_ok('VertRes::IO');
@@ -16,6 +16,9 @@ my $verbose = $debug ? 1 : 0;
 my $ssaha = VertRes::Wrapper::ssaha->new(quiet => $quiet, verbose => $verbose);
 isa_ok $ssaha, 'VertRes::Wrapper::WrapperI';
 is $ssaha->quiet, $quiet, 'quiet set via new';
+
+is $ssaha->exe, 'ssaha2', 'exe ok';
+like $ssaha->version, qr/\d\.\d.\d.\d/, 'version ok';
 
 # prepare our test files; copy them to a temp dir where we will do the tests
 my $io = VertRes::IO->new();
@@ -63,7 +66,7 @@ $ssaha->do_mapping(ref => $ref,
 is $ssaha->run_status, 1, 'status after mapping is ok';
 ok -s $mapping, 'output file exists';
 my ($lines, $mapped) = check_sam($mapping);
-is $lines, 1596, 'output sam not truncated'; # want to get it up to 2000 by including back in unmapped reads?
+is $lines, 2000, 'output sam not truncated';
 cmp_ok $mapped, '>=', 1596, 'mapped enough reads';
 
 # doing the mapping didn't re-create the index hash files
