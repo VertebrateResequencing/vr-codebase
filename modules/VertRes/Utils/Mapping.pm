@@ -38,6 +38,7 @@ use VertRes::Utils::FastQ;
 use VertRes::IO;
 use VertRes::Parser::bas;
 use File::Basename;
+use HierarchyUtilities;
 
 use base qw(VertRes::Base);
 
@@ -305,20 +306,6 @@ sub mapping_hierarchy_report {
             next;
         }
         
-        # get the fastq info
-        my @fastq_info = @{HierarchyUtilities::getFastqInfo($lane_path)};
-        my $num_bases = 0;
-        my $num_reads = 0;
-        for my $i (0..$#fastq_info) {
-            $num_reads += $fastq_info[$i][2];
-            $num_bases += $fastq_info[$i][3];
-        }
-        my $fastq_csv = "$fastq_info[0][0],$fastq_info[0][1],$fastq_info[1][0],$fastq_info[1][1],$fastq_info[2][0],$fastq_info[2][1]";
-        
-        # get the lane info
-        my %lane_info = %{HierarchyUtilities::lane_info($lane_path)};
-        my $laneinfo_csv = "$lane_info{project},$lane_info{sample},$lane_info{technology},$lane_info{library},$lane_info{lane},$fastq_csv,$num_reads,$num_bases";
-        
         # get the mapping stats, which may be in two different bas files, so
         # we sum
         my %mapping_stats;
@@ -326,20 +313,44 @@ sub mapping_hierarchy_report {
             my $bas = $io->catfile($lane_path, $bas_name);
             next unless -s $bas;
             my %these_stats = $self->get_mapping_stats($bas);
+            $mapping_stats{total_bases} += $these_stats{total_bases};
+            $mapping_stats{total_reads} += $these_stats{total_reads};
             $mapping_stats{mapped_bases} += $these_stats{mapped_bases};
             $mapping_stats{mapped_reads} += $these_stats{mapped_reads};
             $mapping_stats{mapped_reads_in_proper_pairs} += $these_stats{mapped_reads_in_proper_pairs};
         }
         
+        # get the fastq info
+        my @fastq_info = @{HierarchyUtilities::getFastqInfo($lane_path)};
+        my $num_bases = 0;
+        my $num_reads = 0;
+        if ($mapping_stats{total_bases}) {
+            $num_bases = $mapping_stats{total_bases};
+            $num_reads = $mapping_stats{total_reads};
+        }
+        else {
+            for my $i (0..$#fastq_info) {
+                $num_reads += $fastq_info[$i][2];
+                $num_bases += $fastq_info[$i][3];
+            }
+        }
+        my $fastq_csv = "$fastq_info[0][0],$fastq_info[0][1],$fastq_info[1][0],$fastq_info[1][1],$fastq_info[2][0],$fastq_info[2][1]";
+        
+        # get the lane info
+        my %lane_info = %{HierarchyUtilities::lane_info($lane_path)};
+        my $laneinfo_csv = "$lane_info{project},$lane_info{sample},$lane_info{technology},$lane_info{library},$lane_info{lane},$fastq_csv,$num_reads,$num_bases";
+        
+        
         if ($mapping_stats{mapped_bases}) {
             print $csvfh "MAPPED,$laneinfo_csv";
             
             foreach my $stat ('mapped_reads', 'mapped_bases', 'mapped_reads_in_proper_pairs') {
-                print $csvfh ",$_";
+                
+                print $csvfh ",$mapping_stats{$stat}";
             }
             
-            my $p_mapped = sprintf("%0.2f", ((100 / $num_bases) * $mapping_stats{mapped_bases}));
-            my $ppp = sprintf("%0.2f", ((100 / $num_reads) * $mapping_stats{mapped_reads_in_proper_pairs}));
+            my $p_mapped = $num_bases ? sprintf("%0.2f", ((100 / $num_bases) * $mapping_stats{mapped_bases})) : 0;
+            my $ppp = $num_reads ? sprintf("%0.2f", ((100 / $num_reads) * $mapping_stats{mapped_reads_in_proper_pairs})) : 0;
             
             print $csvfh ",$p_mapped,$ppp\n";
         }
