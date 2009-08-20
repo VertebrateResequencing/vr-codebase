@@ -26,13 +26,16 @@ package VertRes::Utils::Sam;
 use strict;
 use warnings;
 use File::Copy;
+use File::Basename;
 use VertRes::IO;
 use VertRes::Wrapper::samtools;
 use VertRes::Wrapper::picard;
-use VertRes::Parser::dict;
 use HierarchyUtilities;
+use VertRes::Parser::dict;
 use VertRes::Parser::sequence_index;
-use SamTools;
+use VertRes::Parser::sam;
+use VertRes::Utils::FastQ;
+use VertRes::Utils::Math;
 
 use base qw(VertRes::Base);
 
@@ -169,6 +172,7 @@ sub bams_are_similar {
            platform => string
            centre => string
            insert_size => int
+           project => string, the study id, eg. SRP000001
  
            -and-
 
@@ -180,6 +184,10 @@ sub bams_are_similar {
            ref_fa => '/full/path/to/reference.fasta'
            ref_dict => '/full/path/to/reference.dict'
            ref_name => standard name for the reference, eg. NCBI36
+
+           -optionally-
+           program => name of the program used to do the mapping
+           program_version => version of the program
 
 =cut
 
@@ -203,6 +211,7 @@ sub add_sam_header {
     my $run_name = $args{run_name} || $parser->lane_info($lane, 'run_name') || $self->throw("Unable to get run_name for $lane");
     my $platform = $args{platform} || $parser->lane_info($lane, 'INSTRUMENT_PLATFORM');
     my $centre = $args{centre} || $parser->lane_info($lane, 'CENTER_NAME');
+    my $project = $args{project} || $parser->lane_info($lane, 'STUDY_ID');
     
     # write the sam header
     my $headed_sam = $raw_sam_file.'.withheader';
@@ -225,9 +234,17 @@ sub add_sam_header {
     print $shfh "\tPI:$insert_size" if (defined $insert_size);
     print $shfh "\tCN:$centre" if (defined $centre);
     print $shfh "\tPL:$platform" if (defined $platform);
+    print $shfh "\tDS:$project" if (defined $project);
     
     print $shfh "\n";
     $header_lines++;
+    
+    if ($args{program}) {
+        print $shfh "\@PG\tID:$args{program}";
+        print $shfh "\tVN:$args{program_version}" if (defined $args{program_version});
+        print $shfh "\n";
+        $header_lines++;
+    }
     
     # combine the header with the raw sam file, adding/correcting RG tag if
     # necessary, ignoring existing header
@@ -397,7 +414,7 @@ sub merge {
 
  Title   : stats
  Usage   : $obj->stats('in.bam', 'in2.bam', ...);
- Function: Generate both flagstat and bamstat files for the given bam files
+ Function: Generate both flagstat and bas files for the given bam files.
  Returns : boolean (true on success)
  Args    : list of bam files (for each, a .bamstat and .flagstat file will be
            created)
@@ -410,16 +427,276 @@ sub stats {
     my $wrapper = VertRes::Wrapper::samtools->new(verbose => $self->verbose);
     my $all_ok = 1;
     foreach my $in_bam (@in_bams) {
-        #  $cmd .= qq[ $SAMTOOLS index $lane_dir/rmdup.bam;]; ??? old mapping code used to index the rmdup.bam (only)
-        $wrapper->flagstat($in_bam, $in_bam.'.flagstat');
-        $all_ok = 0 unless $wrapper->run_status() >= 1;
+        my $flagstat = $in_bam.'.flagstat';
+        $wrapper->flagstat($in_bam, $flagstat);
+        unless ($wrapper->run_status() >= 1) {
+            $all_ok = 0;
+            unlink($flagstat);
+        }
         
-        my $bamstat = $in_bam.'.bamstat';
-        SamTools::bam_stat($in_bam, $bamstat);
-        $all_ok = 0 unless -s $bamstat;
+        my $bas = $in_bam.'.bas';
+        my $ok = $self->bas($in_bam, $bas);
+        unless ($ok) {
+            $all_ok = 0;
+            unlink($bas);
+        }
     }
     
     return $all_ok;
+}
+
+=head2 bas
+
+ Title   : bas
+ Usage   : $obj->bas('in.bam', 'out.bas');
+ Function: Generate a 'bas' file. These are bam statistic files that provide
+           various stats about each readgroup in a bam.
+ Returns : boolean (true on success)
+ Args    : input bam file (must have been run via samtools fillmd so that there
+           are accurate NM tags for each record), output filename
+
+=cut
+
+sub bas {
+    my ($self, $in_bam, $out_bas) = @_;
+    
+    open(my $bas_fh, '>', $out_bas) || $self->throw("Couldn't write to '$out_bas': $!");
+    
+    # print header
+    print $bas_fh join("\t", 'bam_filename', 'project', 'sample', 'platform',
+                             'library', 'readgroup', '#_total_bases',
+                             '#_mapped_bases', '#_total_reads',
+                             '#_mapped_reads',
+                             '#_mapped_reads_paired_in_sequencing',
+                             '#_mapped_reads_properly_paired',
+                             '%_of_mismatched_bases',
+                             'average_quality_of_mapped_bases',
+                             'mean_insert_size', 'insert_size_sd',
+                             'median_insert_size',
+                             'insert_size_median_absolute_deviation'), "\n";
+    
+    # print stats per-readgroup
+    my %readgroup_data = $self->bam_statistics($in_bam);
+    foreach my $rg (sort keys %readgroup_data) {
+        my %data = %{$readgroup_data{$rg}};
+        print $bas_fh join("\t", $data{dcc_filename},
+                                 $data{project},
+                                 $data{sample},
+                                 $data{platform},
+                                 $data{library},
+                                 $rg,
+                                 $data{total_bases} || 0,
+                                 $data{mapped_bases} || 0,
+                                 $data{total_reads} || 0,
+                                 $data{mapped_reads} || 0,
+                                 $data{mapped_reads_paired_in_seq} || 0,
+                                 $data{mapped_reads_properly_paired} || 0,
+                                 $data{percent_mismatch},
+                                 $data{avg_qual},
+                                 $data{avg_isize},
+                                 $data{sd_isize},
+                                 $data{median_isize},
+                                 $data{mad}), "\n";
+    }
+}
+
+=head2 bam_statistics
+
+ Title   : bam_statistics
+ Usage   : $obj->bam_statistics('in.bam');
+ Function: Calculate all the stats per-readgroup for a bam needed for the bas
+           format.
+ Returns : hash with keys as readgroup ids and values as hash refs. Those refs
+           have the keys:
+           dcc_filename, project, sample, platform, library, total_bases,
+           mapped_bases, total_reads, mapped_reads, mapped_reads_paired_in_seq,
+           mapped_reads_properly_paired, percent_mismatch, avg_qual, avg_isize,
+           sd_isize, median_isize, mad
+ Args    : input bam file (must have been run via samtools fillmd so that there
+           are accurate NM tags for each record)
+
+=cut
+
+sub bam_statistics {
+    my ($self, $bam) = @_;
+    
+    # view the bam and accumulate all the raw stats in little memory
+    my $stw = VertRes::Wrapper::samtools->new(quiet => 1);
+    $stw->run_method('open');
+    my $view_fh = $stw->view($bam, undef, h => 1);
+    $view_fh || $self->throw("Failed to samtools view '$bam'");
+    
+    my $ps = VertRes::Parser::sam->new(fh => $view_fh);
+    my $rh = $ps->result_holder;
+    
+    # we need what will be the DCC filename, which currently has the format
+    # NAXXXXX.[chromN].technology.[center].algorithm.study_id.YYYY_MM.bam
+    # the date "should represent when the alignment was carried out"
+    # http://1000genomes.org/wiki/doku.php?id=1000_genomes:dcc:filenames
+    my ($project, $sample, $technology, %techs) = ('unknown_project', 'unknown_sample', 'unknown_platform');
+    my %readgroup_info = $ps->readgroup_info();
+    while (my ($rg, $info) = each %readgroup_info) {
+        # there should only be one of these, so we just keep resetting it
+        # (there's no proper tag for holding project, so the mapping pipeline
+        # sticks the project into the description tag 'DS')
+        $project = $info->{DS};
+        $sample = $info->{SM};
+        
+        # might be more than one of these if we're a sample-level bam.
+        # DCC puts eg. 'ILLUMINA' in the sequence.index files but the
+        # filename format expects 'SLX' etc.
+        $technology = $info->{PL};
+        if ($technology =~ /illumina/i) {
+            $technology = 'SLX';
+        }
+        elsif ($technology =~ /solid/i) {
+            $technology = 'SOLID';
+        }
+        elsif ($technology =~ /454/) {
+            $technology = '454';
+        }
+        $techs{$technology}++;
+    }
+    if (keys %techs > 1) {
+        $technology = '';
+    }
+    else {
+        $technology .= '.';
+    }
+    my $bamname = basename($bam);
+    my $chrom = '';
+    if ($bamname =~ /^(\d+|[XY]|MT)/) {
+        $chrom = "chrom$1.";
+    }
+    my $mtime = (stat($bam))[9];
+    my ($month, $year) = (localtime($mtime))[4..5];
+    $year += 1900;
+    $month = sprintf("%02d", $month + 1);
+    my $algorithm = $ps->program || 'unknown_algorithm';
+    my $dcc_filename = "$sample.$chrom$technology$algorithm.$project.$year.$month";
+    
+    my $fqu = VertRes::Utils::FastQ->new();
+    
+    my %readgroup_data;
+    my ($previous_rg) = sort keys %readgroup_info;
+    $previous_rg ||= 'unknown_readgroup';
+    while ($ps->next_result) {
+        my $rg = $rh->{RG};
+        unless ($rg) {
+            $self->warn("$rh->{QNAME} had no RG tag, using previous RG tag '$previous_rg'");
+            $rg = $previous_rg;
+        }
+        $previous_rg = $rg;
+        
+        $readgroup_data{$rg}->{total_reads}++;
+        my $read_length = length($rh->{SEQ});
+        $readgroup_data{$rg}->{total_bases} += $read_length;
+        
+        my $flag = $rh->{FLAG};
+        if ($ps->is_mapped($flag)) {
+            $readgroup_data{$rg}->{mapped_reads}++;
+            $readgroup_data{$rg}->{mapped_bases} += $read_length;
+            $readgroup_data{$rg}->{mapped_reads_paired_in_seq}++ if $ps->is_sequencing_paired($flag);
+            
+            # avg quality of mapped bases
+            foreach my $qual ($fqu->qual_to_ints($rh->{QUAL})) {
+                $readgroup_data{$rg}->{qual_count}++;
+                
+                if ($readgroup_data{$rg}->{qual_count} == 1) {
+                    $readgroup_data{$rg}->{qual_mean} = $qual;
+                }
+                else {
+                    $readgroup_data{$rg}->{qual_mean} += ($qual - $readgroup_data{$rg}->{qual_mean}) / $readgroup_data{$rg}->{qual_count};
+                }
+            }
+            
+            # avg insert size and keep track of 's' for later calculation of sd.
+            # algorithm based on http://www.johndcook.com/standard_deviation.html
+            if ($ps->is_mapped_paired($flag)) {
+                $readgroup_data{$rg}->{mapped_reads_properly_paired}++;
+                
+                if ($rh->{MAPQ} > 0) {
+                    my $isize = $rh->{ISIZE} || 0;
+                    if ($isize > 0) { # avoids counting the isize twice for a pair, since one will be negative
+                        $readgroup_data{$rg}->{isize_count}++;
+                        
+                        if ($readgroup_data{$rg}->{isize_count} == 1) {
+                            $readgroup_data{$rg}->{isize_mean} = $isize;
+                            $readgroup_data{$rg}->{isize_s} = 0;
+                        }
+                        else {
+                            my $old_mean = $readgroup_data{$rg}->{isize_mean};
+                            $readgroup_data{$rg}->{isize_mean} += ($isize - $old_mean) / $readgroup_data{$rg}->{isize_count};
+                            $readgroup_data{$rg}->{isize_s} += ($isize - $old_mean) * ($isize - $readgroup_data{$rg}->{isize_mean});
+                        }
+                        
+                        # also, median insert size. Couldn't find an accurate
+                        # running algorithm, but just keeping a histogram is
+                        # accurate and uses less than 1MB. We can use the same
+                        # histogram later to calculate the MAD.
+                        $readgroup_data{$rg}->{isize_median_histogram}->{$isize}++;
+                    }
+                }
+            }
+            
+            # for later calculation of mismatch %
+            if (defined $rh->{NM}) {
+                $readgroup_data{$rg}->{total_bases_with_nm} += $read_length;
+                $readgroup_data{$rg}->{edits} += $rh->{NM};
+            }
+        }
+    }
+    
+    # calculate the means etc.
+    my $math_util = VertRes::Utils::Math->new();
+    foreach my $rg (sort keys %readgroup_data) {
+        my %data = %{$readgroup_data{$rg}};
+        
+        # calculate/round stats
+        my $avg_qual = defined $data{qual_count} ? sprintf("%0.2f", $data{qual_mean}) : 0;
+        my $avg_isize = defined $data{isize_count} ? sprintf("%0.0f", $data{isize_mean}) : 0;
+        my $sd_isize = $avg_isize ? sprintf("%0.2f", sqrt($data{isize_s} / $data{isize_count})) : 0;
+        my $percent_mismatch = defined $data{edits} ? sprintf("%0.2f", (100 / $data{total_bases_with_nm}) * $data{edits}) : 0;
+        
+        my $median_isize = 0;
+        my $mad = 0;
+        if (defined $data{isize_median_histogram}) {
+            $median_isize = $math_util->histogram_median($data{isize_median_histogram});
+            
+            my %ads;
+            while (my ($isize, $freq) = each %{$data{isize_median_histogram}}) {
+                my $ad = abs($median_isize - $isize);
+                $ads{$ad} += $freq;
+            }
+            
+            $mad = $math_util->histogram_median(\%ads);
+        }
+        
+        delete $readgroup_data{$rg}->{qual_count};
+        delete $readgroup_data{$rg}->{qual_mean};
+        delete $readgroup_data{$rg}->{isize_count};
+        delete $readgroup_data{$rg}->{isize_mean};
+        delete $readgroup_data{$rg}->{isize_s};
+        delete $readgroup_data{$rg}->{edits};
+        delete $readgroup_data{$rg}->{total_bases_with_nm};
+        delete $readgroup_data{$rg}->{isize_median_histogram};
+        
+        $readgroup_data{$rg}->{avg_qual} = $avg_qual;
+        $readgroup_data{$rg}->{avg_isize} = $avg_isize;
+        $readgroup_data{$rg}->{sd_isize} = $sd_isize;
+        $readgroup_data{$rg}->{percent_mismatch} = $percent_mismatch;
+        $readgroup_data{$rg}->{median_isize} = $median_isize;
+        $readgroup_data{$rg}->{mad} = $mad;
+        
+        # add in header info
+        $readgroup_data{$rg}->{dcc_filename} = $dcc_filename;
+        $readgroup_data{$rg}->{project} = $project;
+        $readgroup_data{$rg}->{sample} = $sample;
+        $readgroup_data{$rg}->{platform} = $ps->readgroup_info($rg, 'PL') || 'unknown_platform';
+        $readgroup_data{$rg}->{library} = $ps->readgroup_info($rg, 'LB') || 'unknown_library';
+    }
+    
+    return %readgroup_data;
 }
 
 =head2 make_unmapped_bam
@@ -500,10 +777,6 @@ sub calculate_flag {
                 $self->warn("'self_unmapped' was set, but so was '$meaning'; forcing $meaning off");
                 $desired{$meaning} = 0;
             }
-        }
-        if ($desired{'mate_unmapped'}) {
-            $self->warn("mate_unmapped isn't needed when self_unmapped; forcing mate_unmapped off");
-            $desired{'mate_unmapped'} = 0;
         }
     }
     if ($desired{'1st_in_pair'} && $desired{'2nd_in_pair'}) {
