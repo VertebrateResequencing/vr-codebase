@@ -462,6 +462,8 @@ sub bas {
     
     open(my $bas_fh, '>', $out_bas) || $self->throw("Couldn't write to '$out_bas': $!");
     
+    my $expected_lines = 0;
+    
     # print header
     print $bas_fh join("\t", 'bam_filename', 'project', 'sample', 'platform',
                              'library', 'readgroup', '#_total_bases',
@@ -474,6 +476,7 @@ sub bas {
                              'mean_insert_size', 'insert_size_sd',
                              'median_insert_size',
                              'insert_size_median_absolute_deviation'), "\n";
+    $expected_lines++;
     
     # print stats per-readgroup
     my %readgroup_data = $self->bam_statistics($in_bam);
@@ -497,6 +500,19 @@ sub bas {
                                  $data{sd_isize},
                                  $data{median_isize},
                                  $data{mad}), "\n";
+        $expected_lines++;
+    }
+    close($bas_fh);
+    
+    my $io = VertRes::IO->new(file => $out_bas);
+    my $actual_lines = $io->num_lines;
+    if ($actual_lines == $expected_lines) {
+        return 1;
+    }
+    else {
+        unlink($out_bas);
+        $self->warn("Wrote $expected_lines to $out_bas, but only read back $actual_lines! Deleted the output.");
+        return 0;
     }
 }
 

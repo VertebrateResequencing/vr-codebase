@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 52;
+    use Test::Most tests => 56;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::IO');
@@ -161,6 +161,15 @@ is_deeply {$sam_util->bam_statistics($sorted_bam)}, {SRR00001 => {dcc_filename =
                                                                   sd_isize => '74.10',
                                                                   median_isize => 275,
                                                                   mad => 48}}, 'bam_statistics test';
+my $given_bas = $io->catfile($temp_dir, 'test.bas');
+ok $sam_util->bas($sorted_bam, $given_bas), 'bas() ran ok';
+my $expected_bas = $io->catfile('t', 'data', 'example.bas');
+ok open(my $ebfh, $expected_bas), 'opened expected .bas';
+@expected = <$ebfh>;
+ok open(my $tbfh, $given_bas), 'opened result .bas';
+my @given = <$tbfh>;
+is_deeply \@given, \@expected, 'bas output was as expected';
+
 
 exit;
 
