@@ -493,7 +493,7 @@ sub _get_header {
     }
     
     $self->{'_got_header'.$fh_id} = 1;
-    return $non_header;
+    $self->{'_first_record'.$fh_id} = $non_header;
 }
 
 =head2 result_holder
@@ -538,10 +538,17 @@ sub next_result {
     
     # get the next line
     my $fh = $self->fh() || return;
+    my $fh_id = $self->_fh_id;
     
     # make sure we've gotten our header first
-    my $line = $self->_get_header();
-    $line ||= <$fh> || return;
+    $self->_get_header();
+    my $line;
+    if ($self->{'_first_record'.$fh_id}) {
+        $line = delete $self->{'_first_record'.$fh_id};
+    }
+    else {
+        $line = <$fh> || return;
+    }
     
     my @data = split(qr/\t/, $line);
     @data || return;

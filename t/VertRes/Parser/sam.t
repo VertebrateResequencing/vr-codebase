@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 48;
+    use Test::Most tests => 52;
     
     use_ok('VertRes::Parser::sam');
 }
@@ -69,6 +69,7 @@ ok -e $headed_sam, 'headed sam file ready for testing';
 ok $ps->file($headed_sam), 'headed sam set into parser';
 ok $ps->next_result, 'next_result worked on a headed sam';
 is $rh->{QNAME}, 'SRR003436.685', 'QNAME fine for first record';
+is $rh->{FLAG}, 121, 'FLAG fine for first record';
 is $ps->sam_version, '1.0', 'sam_version worked on headed sam';
 is $ps->group_order, 'none', 'group_order correct';
 is $ps->sort_order, 'coordinate', 'sort_order correct';
@@ -94,5 +95,13 @@ while ($ps->next_result) {
     next;
 }
 is $rh->{QNAME}, 'SRR003447.1000', 'QNAME fine for last record';
+
+# and check that first record works when we call a header method first
+$ps = VertRes::Parser::sam->new(file => $headed_sam);
+$rh = $ps->result_holder();
+%all_rgs = $ps->readgroup_info();
+ok $ps->next_result, 'next_result worked on a headed sam after calling a header method';
+is $rh->{QNAME}, 'SRR003436.685', 'QNAME fine for first record after first calling a header method';
+is $rh->{FLAG}, 121, 'FLAG fine for first record after first calling a header method';
 
 exit;
