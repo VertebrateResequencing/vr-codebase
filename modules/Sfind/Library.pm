@@ -349,7 +349,16 @@ sub sequenced_bases {
 
 sub fragment_size {
     my ($self, $id) = @_;
-    return [$self->{'_data'}{'fragment_size_required_from'},$self->{'_data'}{'fragment_size_required_to'}];
+    my $from = lc($self->{'_data'}{'fragment_size_required_from'});
+    my $to = lc($self->{'_data'}{'fragment_size_required_to'});
+    # convert kb to 1000s
+    foreach ($from,$to){
+        if ($_ =~ /kb/){
+            $_ =~ s/\s*kb//;
+            $_ = $_ * 1000;
+        }
+    }
+    return [$from, $to];
 }
 
 
