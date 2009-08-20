@@ -15,11 +15,16 @@ run-pipeline -c pipeline.config -v -l mapping_pipeline.log -m VertRes::Pipelines
 
 # (and make sure it keeps running by adding that last to a regular cron job)
 
+# when complete, get a report:
+perl -MVertRes::Utils::Mapping -MVertRes::IO -e '@lanes = VertRes::IO->new->parse_fod("lanes.fofn"); VertRes::Utils::Mapping->new->mapping_hierarchy_report("report.csv", @lanes);'
+
 =head1 DESCRIPTION
 
 A module for carrying out mapping on the Vertebrate Resequencing Informatics 
 mapping hierarchy. The hierarchy can consist of multiple different sequencing 
 technologies.
+
+*** Currently only Illumina (SLX) and 454 technologies are supported.
 
 =head1 AUTHOR
 
@@ -86,6 +91,7 @@ sub new {
     my $lane = $self->{lane} || $self->throw("lane directory not supplied, can't continue");
     my $mapping_util = VertRes::Utils::Mapping->new();
     my $mapper_class = $mapping_util->lane_to_module($lane);
+    $mapper_class || $self->throw("Lane '$lane' was for an unsupported technology");
     eval "require $mapper_class;";
     $self->{mapper_class} = $mapper_class;
     $self->{mapper_obj} = $mapper_class->new();
@@ -371,7 +377,9 @@ close(\$samfh);
 unless (\$head =~ /^\\\@HD/) {
     my \$ok = \$sam_util->add_sam_header('$sam_file',
                                          sequence_index => '$sequence_index',
-                                         lane_path => '$lane_path');
+                                         lane_path => '$lane_path',
+                                         program => \$mapper->exe,
+                                         program_version => \$mapper->version);
     \$sam_util->throw("Failed to add sam header!") unless \$ok;
 }
 
@@ -464,12 +472,11 @@ sub merge_and_stat_provides {
     foreach my $ended ('se', 'pe') {
         $self->_get_read_args($lane_path, $ended) || next;
         
-        foreach my $file ("${ended}_raw.sorted.bam", "${ended}_rmdup.bam", "${ended}_unmapped.bam") {
-            push(@provides, $file);
-            
-            foreach my $suffix ('bamstat', 'flagstat') {
-                push(@provides, $file.'.'.$suffix);
-            }
+        my $file = "${ended}_raw.sorted.bam";
+        push(@provides, $file);
+        
+        foreach my $suffix ('bas', 'flagstat') {
+            push(@provides, $file.'.'.$suffix);
         }
     }
     
@@ -481,9 +488,7 @@ sub merge_and_stat_provides {
  Title   : merge_and_stat
  Usage   : $obj->merge_and_stat('/path/to/lane', 'lock_filename');
  Function: Takes the bam files generated during map(), and creates a merged,
-           sorted bam file from them. Also removes duplicates and creates
-           statistic files. Finally, creates a bam file of unmapped reads, along
-           with stat files for that too.
+           sorted bam file from them. Also creates statistic files.
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : lane path, name of lock file to use
 
@@ -515,13 +520,9 @@ sub merge_and_stat {
         
         # define the output files
         my $bam_file = $self->{io}->catfile($lane_path, "${ended}_raw.sorted.bam");
-        my $rmdup_file = $self->{io}->catfile($lane_path, "${ended}_rmdup.bam");
-        my $unmapped_out = $self->{io}->catfile($lane_path, "${ended}_unmapped.bam");
         my @stat_files;
-        foreach my $file ("${ended}_raw.sorted.bam", "${ended}_rmdup.bam", "${ended}_unmapped.bam") {
-            foreach my $suffix ('bamstat', 'flagstat') {
-                push(@stat_files, $self->{io}->catfile($lane_path, $file.'.'.$suffix));
-            }
+        foreach my $suffix ('bas', 'flagstat') {
+            push(@stat_files, $bam_file.'.'.$suffix);
         }
         
         # run the multiple steps required for this in an LSF call to a temp script
@@ -549,27 +550,7 @@ unless (-s '$bam_file') {
     }
 }
 
-# remake the bam via fillmd so we have accurate NM field
-#...
-
 my \$ok = 0;
-
-# rmdup
-unless (-s '$rmdup_file') {
-    \$ok = \$sam_util->rmdup('$bam_file', '$rmdup_file',
-                             lane_path => '$lane_path');
-    
-    unless (\$ok) {
-        unlink('$rmdup_file');
-        \$sam_util->throw("Failed to rmdup the bam file!");
-    }
-}
-
-# make an unmapped bam
-unless (-s '$unmapped_out') {
-    \$ok = \$sam_util->make_unmapped_bam('$bam_file', '$unmapped_out');
-    \$sam_util->throw("making unmapped bam failed - try again?") unless \$ok;
-}
 
 # make stat files
 my \$num_present = 0;
@@ -577,13 +558,13 @@ foreach my \$stat_file (qw(@stat_files)) {
     \$num_present++ if -s \$stat_file;
 }
 unless (\$num_present == ($#stat_files + 1)) {
-    my \$ok = \$sam_util->stats('$bam_file', '$rmdup_file', '$unmapped_out');
+    my \$ok = \$sam_util->stats('$bam_file');
     
     unless (\$ok) {
         foreach my \$stat_file (qw(@stat_files)) {
             unlink(\$stat_file);
         }
-        \$sam_util->throw("Failed to get stats for the bam files!");
+        \$sam_util->throw("Failed to get stats for the bam '$bam_file'!");
     }
 }
 
@@ -636,7 +617,7 @@ sub cleanup_provides {
  Title   : cleanup
  Usage   : $obj->cleanup('/path/to/lane', 'lock_filename');
  Function: Unlink all the pipeline-related files (_*) in a lane, as well
-           as the .sai files and split directory.
+           as the split directory.
            NB: do_cleanup => 1 must have been supplied to new();
  Returns : $VertRes::Pipeline::Yes
  Args    : lane path, name of lock file to use
