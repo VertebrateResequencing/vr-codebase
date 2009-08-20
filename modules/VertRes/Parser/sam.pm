@@ -10,7 +10,9 @@ use VertRes::Parser::sam;
 my $pars = VertRes::Parser::sam->new(file => 'mapping.sam');
 
 # get header information
-
+my $program = $pars->program();
+my %readgroup_info = $pars->readgroup_info();
+# etc.
 
 # get the hash reference that will hold the most recently requested result
 my $result_holder = $pars->result_holder();
