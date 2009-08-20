@@ -451,4 +451,23 @@ sub get_sample_by_id {
 }
 
 
+=head2 descendants
+
+  Arg [1]    : none
+  Example    : my $desc_objs = $obj->descendants();
+  Description: Returns a ref to an array of all objects that are descendants of this object
+  Returntype : arrayref of objects
+
+=cut
+
+sub descendants {
+    my ($self) = @_;
+    my @desc;
+    foreach (@{$self->samples}){
+        push @desc, $_;
+        push @desc, @{$_->descendants};
+    }
+    return \@desc;
+}
+
 1;

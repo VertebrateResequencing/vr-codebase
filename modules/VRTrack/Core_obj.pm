@@ -186,6 +186,67 @@ sub update {
 }
 
 
+=head2 delete
+
+  Arg [1]    : none
+  Example    : $obj->delete();
+  Description: Deletes the current object and all its descendant objects from the database.  R
+  Returntype : 1 if successful, otherwise undef.
+
+=cut
+
+sub delete {
+    my ($self) = @_;
+    my $success;
+    my $objs_to_delete = [$self];
+    push @$objs_to_delete, @{$self->descendants};
+    my %lanes_from_table;
+    foreach (@$objs_to_delete){
+        my $class=ref($_);
+        $class =~/VRTrack::(\w+)$/;
+        my $table = lc($1);
+        $table or die "Unrecognised classname $class\n";
+        push @{$lanes_from_table{$table}}, $_->id;
+    }
+
+    # now delete them all, one table at a time
+    my $dbh = $self->{_dbh};
+    my $save_re = $dbh->{RaiseError};
+    my $save_pe = $dbh->{PrintError};
+    my $save_ac = $dbh->{AutoCommit};
+    $dbh->{RaiseError} = 1; # raise exception if an error occurs
+    $dbh->{PrintError} = 0; # don't print an error message
+    $dbh->{AutoCommit} = 0; # disable auto-commit
+
+    eval {
+        foreach my $table (keys %lanes_from_table){
+            my $lanes = join ",", @{$lanes_from_table{$table}};
+            my $delsql = qq[delete from $table WHERE ${table}_id in ($lanes)];
+            $dbh->do ($delsql);
+        }
+        $dbh->commit ( );
+    };
+
+    if ($@) {
+        warn "Transaction failed, rolling back. Error was:\n$@\n";
+        # roll back within eval to prevent rollback
+        # failure from terminating the script
+        eval { $dbh->rollback ( ); };
+    }
+    else {
+        $success = 1;
+    }
+
+    # restore attributes to original state
+    $dbh->{AutoCommit} = $save_ac;
+    $dbh->{PrintError} = $save_pe;
+    $dbh->{RaiseError} = $save_re;
+
+    return $success;
+}
+
+
+
 =head2 note_id
 
   Arg [1]    : note_id (optional)
@@ -230,7 +291,7 @@ sub is_latest {
   Arg [2]    : column name
   Example    : my $vals = $obj->list_enum_vals('library','qc_status');
   Description: retrieves the list of allowed enum values for a column in lowercase.  Dies if the column is not of type enum
-  Return_type_id : array ref
+  Returntype : array ref
 
 =cut
 
@@ -247,5 +308,7 @@ sub list_enum_vals {
     my @vals = split /','/, $type;
     return \@vals;
 }
+
+
 
 1;
