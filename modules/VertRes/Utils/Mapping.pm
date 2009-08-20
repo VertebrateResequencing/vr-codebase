@@ -36,8 +36,7 @@ use strict;
 use warnings;
 use VertRes::Utils::FastQ;
 use VertRes::IO;
-use VertRes::Parser::flagstat;
-use SamTools;
+use VertRes::Parser::bas;
 use File::Basename;
 
 use base qw(VertRes::Base);
@@ -296,9 +295,10 @@ sub mapping_hierarchy_report {
     
     # write a header for our output csv
     open(my $csvfh, '>', $output_csv) or $self->throw("Cannot create output file: $output_csv");
-    print $csvfh "Status,Center,Project,Individual,Tech,Library,Lane,Fastq0,ReadLength,Fastq1,ReadLength,Fastq2,ReadLength,#Reads,#Bases,#RawReadsMapped,#RawBasesMapped,#RawReadsPaired,#RmdupReadsMapped,#RmdupBasesMapped,ErrorRate\n";
+    print $csvfh "Status,Project,Individual,Tech,Library,Lane,Fastq0,ReadLength,Fastq1,ReadLength,Fastq2,ReadLength,#Reads,#Bases,#RawReadsMapped,#RawBasesMapped,#RawReadsPaired,\%BasesMapped,\%ReadsPaired\n";
     
     # print mapping stats for each lane
+    my $io = VertRes::IO->new();
     foreach my $lane_path (@lane_paths) {
         if (! -d $lane_path) {
             $self->warn("Cant find lane directory: $lane_path");
@@ -319,21 +319,32 @@ sub mapping_hierarchy_report {
         my %lane_info = %{HierarchyUtilities::lane_info($lane_path)};
         my $laneinfo_csv = "$lane_info{project},$lane_info{sample},$lane_info{technology},$lane_info{library},$lane_info{lane},$fastq_csv,$num_reads,$num_bases";
         
-        my $io = VertRes::IO->new();
-        my $raw_bam = $io->catfile($lane_path, 'raw.sorted.bam');
-        my $rmdup_bam = $io->catfile($lane_path, 'rmdup.bam');
+        # get the mapping stats, which may be in two different bas files, so
+        # we sum
+        my %mapping_stats;
+        foreach my $bas_name ('pe_raw.sorted.bam.bas', 'se_raw.sorted.bam.bas') {
+            my $bas = $io->catfile($lane_path, $bas_name);
+            next unless -s $bas;
+            my %these_stats = $self->get_mapping_stats($bas);
+            $mapping_stats{mapped_bases} += $these_stats{mapped_bases};
+            $mapping_stats{mapped_reads} += $these_stats{mapped_reads};
+            $mapping_stats{mapped_reads_in_proper_pairs} += $these_stats{mapped_reads_in_proper_pairs};
+        }
         
-        if (-s $raw_bam && -s $rmdup_bam) {
-            my @stats = $self->get_mapping_stats($raw_bam, $rmdup_bam);
+        if ($mapping_stats{mapped_bases}) {
+            print $csvfh "MAPPED,$laneinfo_csv";
             
-            print $csvfh "MAPPED,,$laneinfo_csv";
-            foreach (@stats) {
+            foreach my $stat ('mapped_reads', 'mapped_bases', 'mapped_reads_in_proper_pairs') {
                 print $csvfh ",$_";
             }
-            print $csvfh "\n";
+            
+            my $p_mapped = sprintf("%0.2f", ((100 / $num_bases) * $mapping_stats{mapped_bases}));
+            my $ppp = sprintf("%0.2f", ((100 / $num_reads) * $mapping_stats{mapped_reads_in_proper_pairs}));
+            
+            print $csvfh ",$p_mapped,$ppp\n";
         }
         else {
-            print $csvfh "UNMAPPED,,$laneinfo_csv\n";
+            print $csvfh "UNMAPPED,$laneinfo_csv\n";
         }
     }
     close($csvfh);
@@ -344,39 +355,44 @@ sub mapping_hierarchy_report {
 =head2 get_mapping_stats
 
  Title   : get_mapping_stats
- Usage   : my @stats = $obj->get_mapping_stats('raw.bam', 'rmdup.bam');
- Function: Get certain mapping stats for a bam file and its rmdup. Assumes
-           VertRes::Utils::Sam->stats() has already been run on the two bam
-           files.
- Returns : list of these stats: number of mapped reads, number of mapped bases,
-           number of paired reads, number of mapped reads after removing
-           duplicates, number of mapped bases after removing duplicates,
-           error rate.
-           NB: error rate is always 0, since this is a hold-over from maq, when
-           maq mapstat was used on .map files, which told the error rate; we
-           have no way of determining this with bam files.
- Args    : bam file, rmdup'd version of the bam file (both must have been
-           supplied to stats() already)
+ Usage   : my @stats = $obj->get_mapping_stats('raw.bam.bas', $genome_size);
+ Function: Extract/calculate most commonly needed stats from a .bas file
+           (produced by VertRes::Utils::Sam->stats() or ->bas()).
+ Returns : hash of stats, with keys:
+           total_bases
+           mapped_bases
+           percent_mapped (based on the base counts)
+           coverage (if genome size supplied)
+           total_reads
+           mapped_reads
+           mapped_reads_in_proper_pairs
+           percent_properly_paired
+           (values are summed across and calculated for all readgroups, so
+           represent stats for the whole file)
+ Args    : bas file, optionally genome size in bp to calculate the coverage
 
 =cut
 
 sub get_mapping_stats {
-    my ($self, $raw_bam, $rmdup_bam) = @_;
+    my ($self, $bas_file, $genome_size) = @_;
     
-    my $fsparser = VertRes::Parser::flagstat->new(file => $raw_bam.'.flagstat');
-    my $mapped_reads = $fsparser->mapped_reads();
-    my $paired_reads = $fsparser->mapped_proper_paired_reads(); #*** or is this supposed to be mapped_paired_reads() ?
-    $fsparser->file($rmdup_bam.'.flagstat');
-    my $rmdup_mapped_reads = $fsparser->mapped_reads();
+    my $bas_parser = VertRes::Parser::bas->new(file => $bas_file);
+    my $rh = $bas_parser->result_holder;
     
-    # correct number of mapped bases isn't reported in either flagstat or
-    # bamstat files; we have to calculate it
-    my $stats = SamTools::collect_detailed_bam_stats($raw_bam, undef, {do_chrm => 0, do_rmdup => 0});
-    my $mapped_bases = $stats->{bases_mapped};
-    $stats = SamTools::collect_detailed_bam_stats($rmdup_bam, undef, {do_chrm => 0, do_rmdup => 0});
-    my $rmdup_mapped_bases = $stats->{bases_mapped};
+    my %stats;
+    while ($bas_parser->next_result) {
+        $stats{total_bases} += $rh->[6];
+        $stats{mapped_bases} += $rh->[7];
+        $stats{total_reads} += $rh->[8];
+        $stats{mapped_reads} += $rh->[9];
+        $stats{mapped_reads_in_proper_pairs} += $rh->[11];
+    }
     
-    return ($mapped_reads, $mapped_bases, $paired_reads, $rmdup_mapped_reads, $rmdup_mapped_bases, 0);
+    $stats{percent_mapped} = sprintf("%0.2f", ((100 / $stats{total_bases}) * $stats{mapped_bases}));
+    $stats{coverage} = sprintf("%0.2f", $stats{mapped_bases} / $genome_size) if $genome_size;
+    $stats{percent_properly_paired} = sprintf("%0.2f", ((100 / $stats{total_reads}) * $stats{mapped_reads_in_proper_pairs}));
+    
+    return %stats;
 }
 
 1;

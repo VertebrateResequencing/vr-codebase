@@ -57,6 +57,17 @@ is $mapping_util->split_fastq(read1 => $faq1_file,
                               split_dir => $temp_dir,
                               chunk_size => 11500), 10, 'split_fastq with two fastqs worked';
 
+# get_mapping_stats
+my $bas_file = $io->catfile('t', 'data', 'example2.bas');
+is_deeply {$mapping_util->get_mapping_stats($bas_file, 3000000000)}, {total_bases => 345000,
+                                                                      mapped_bases => 186864,
+                                                                      percent_mapped => 54.16,
+                                                                      coverage => '0.00',
+                                                                      total_reads => 6000,
+                                                                      mapped_reads => 3252,
+                                                                      mapped_reads_in_proper_pairs => 3210,
+                                                                      percent_properly_paired => '53.50'}, 'get_mapping_stats worked';
+
 # mapper-specific methods
 my $bwa_mapper = VertRes::Utils::Mappers::bwa->new();
 is $bwa_mapper->exe, 'bwa', 'exe test for bwa mapper';
@@ -68,7 +79,6 @@ like $ssaha_mapper->version, qr/\d\.\d\.\d\.\d/, 'version test for ssaha mapper'
 TODO: {
     local $TODO = "Currently unused methods that are difficult to test for";
     ok 0, 'mapping_hierarchy_report() test';
-    ok 0, 'get_mapping_stats';
 }
 
 exit;
