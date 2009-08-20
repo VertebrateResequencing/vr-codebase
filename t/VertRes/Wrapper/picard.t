@@ -3,10 +3,11 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 14;
+    use Test::Most tests => 22;
     
     use_ok('VertRes::Wrapper::picard');
     use_ok('VertRes::Wrapper::samtools');
+    use_ok('VertRes::Parser::sam');
     use_ok('VertRes::IO');
 }
 
@@ -50,6 +51,27 @@ is get_bam_lines($bam_out_file), 4000, 'merged bam had the correct number of lin
 $pt->rmdup($bam_out_file, $rmdup_file);
 is $pt->run_status, 2, 'rmdup ran ok';
 is get_bam_lines($rmdup_file), 3972, 'rmdup bam had the correct number of lines';
+
+# merge of two headed bams with the same PG header line shouldn't rename the
+# id, but it does!
+my $headed1_bam = $io->catfile('t', 'data', 'headed1.bam');
+ok -s $headed1_bam, 'headed1 bam file ready to test on';
+my $headed2_bam = $io->catfile('t', 'data', 'headed2.bam');
+ok -s $headed2_bam, 'headed2 bam file ready to test on';
+unlink($bam_out_file);
+$pt->merge_and_check($bam_out_file, [$headed1_bam, $headed2_bam]);
+cmp_ok $pt->run_status, '>=', 1, 'merge_and_check ran ok on 2 headed bams';
+is get_bam_lines($bam_out_file), 4000, 'merged bam had the correct number of lines with merge_and_check on 2 headed bams';
+my $st = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+my $fh = $st->view($headed1_bam, undef, h => 1);
+my $sp = VertRes::Parser::sam->new(fh => $fh);
+is $sp->program, 'bwa', 'input bam1 has expected PG ID';
+$fh = $st->view($headed2_bam, undef, h => 1);
+$sp->fh($fh);
+is $sp->program, 'bwa', 'input bam2 has expected PG ID';
+$fh = $st->view($bam_out_file, undef, h => 1);
+$sp->fh($fh);
+is $sp->program, 'bwa', 'merge didn\'t change the PG ID';
 
 exit;
 
