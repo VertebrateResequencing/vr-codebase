@@ -107,7 +107,7 @@ sub wrapper {
 sub split_fastq {
     my ($self, %args) = @_;
     unless ($args{chunk_size}) {
-        $args{chunk_size} = 1000000;
+        $args{chunk_size} = 1000000000;
     }
     
     return $self->SUPER::split_fastq(%args);
