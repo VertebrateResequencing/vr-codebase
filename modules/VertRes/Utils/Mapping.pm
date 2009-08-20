@@ -340,7 +340,6 @@ sub mapping_hierarchy_report {
         my %lane_info = %{HierarchyUtilities::lane_info($lane_path)};
         my $laneinfo_csv = "$lane_info{project},$lane_info{sample},$lane_info{technology},$lane_info{library},$lane_info{lane},$fastq_csv,$num_reads,$num_bases";
         
-        
         if ($mapping_stats{mapped_bases}) {
             print $csvfh "MAPPED,$laneinfo_csv";
             
