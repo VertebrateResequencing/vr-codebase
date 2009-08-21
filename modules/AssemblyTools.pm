@@ -734,6 +734,81 @@ sub printFofnDifferences
 	close( OUTPUT );
 }
 
+sub printFofnOverlaps
+{
+	croak "Usage: printFofnDifferences reads_fofn reads_fofn output_fofn" unless @_ == 3; 
+	my $file1 = shift;
+	my $file2 = shift;
+	my $output = shift;
+	
+	if( (! (-f $file1)) || (! (-f $file2)) ){croak "Cannot find input file\n";}
+	if( (! (-s $file1)) || (! (-s $file2)) ){croak "Empty input file\n";}
+	
+	open( FILE1, $file1 ) or die "Cannot open file: $file1\n";
+	open( FILE2, $file2 ) or die "Cannot open file: $file2\n";
+	open( OUTPUT, ">$output" ) or die "Cannot create output file\n";
+	
+	my %fofn1;
+	while( <FILE1> )
+	{
+		chomp;
+		$fofn1{ $_ } = 1;
+	}
+	close( FILE1 );
+	
+	my %fofn2;
+	while( <FILE2> )
+	{
+		chomp;
+		$fofn2{ $_ } = 1;
+	}
+	close( FILE2 );
+	
+	print "Read in fofn files...starting comparison\n";
+	
+	my %isect;
+	my @diff1;
+	my @diff2;
+	foreach( keys( %fofn1 ) )
+	{
+		if( ! defined $fofn2{ $_ } )
+		{
+			push( @diff1, $_ );
+		}
+		else
+		{
+			$isect{ $_ } = 1;
+		}
+	}
+	
+	foreach( keys( %fofn2 ) )
+	{
+		if( ! defined $fofn1{ $_ } )
+		{
+			push( @diff2, $_ );
+		}
+		else
+		{
+			$isect{ $_ } = 1;
+		}
+	}
+	
+	foreach( @diff1 )
+	{
+		print OUTPUT "DIFF1: $_\n;"
+	}
+	
+	foreach( @diff2 )
+	{
+		print OUTPUT "DIFF2: $_\n;"
+	}
+	
+	foreach( keys( %isect ) )
+	{
+		print OUTPUT "$_\n";
+	}
+}
+
 sub printFofnIntersection
 {
 	croak "Usage: printFofnIntersection reads_fofn reads_fofn output_fofn" unless @_ == 3; 
