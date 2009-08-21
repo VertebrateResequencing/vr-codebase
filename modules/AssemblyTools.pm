@@ -795,12 +795,12 @@ sub printFofnOverlaps
 	
 	foreach( @diff1 )
 	{
-		print OUTPUT "DIFF1: $_\n";
+		print OUTPUT "UNIQ1: $_\n";
 	}
 	
 	foreach( @diff2 )
 	{
-		print OUTPUT "DIFF2: $_\n";
+		print OUTPUT "UNIQ2: $_\n";
 	}
 	
 	foreach( keys( %isect ) )
