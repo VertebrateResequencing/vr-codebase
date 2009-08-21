@@ -11,7 +11,7 @@ find $G1K/data -type d -name "*RR*" | grep -v "SOLID" > lanes.fofn
 echo '<lanes.fofn verbose=1;do_cleanup=1' > pipeline.config
 
 # run the pipeline:
-run-pipeline -c pipeline.config -v -l mapping_pipeline.log -m VertRes::Pipelines::Mapping
+run-pipeline -c pipeline.config -t 30 -m VertRes::Pipelines::Mapping
 
 # (and make sure it keeps running by adding that last to a regular cron job)
 
