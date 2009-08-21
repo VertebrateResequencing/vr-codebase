@@ -29,18 +29,16 @@ lanes mapped by VertRes::Pipelines::Mapping.
 
 
 0) List of lanes -> create a hierarchy & symlink lane bams
-1) Lanes contain paired, single ended and unmapped bams
-   *** mapping pipeline needs to be updated so bams created have gone via fillmd
+1) Lanes may contain paired and/or single ended bams
 2) lib-level merge, creating seperate [ps]e_raw.bam files and doing
    rmdup/rmdupse as appropriate to create [ps]e_rmdup.bam
-3) platform-level merge, combining both [ps]e_rmdup.bam into raw.bam, and all
-   lane-level unmapped.bam into unmapped.bam. Optional broad recal on all these
-   (with option to force repeat recals). Option to split by chr afterwards.
+3) platform-level merge, combining both [ps]e_rmdup.bam into raw.bam.
+   Optional broad recal on all these (with option to force repeat recals).
+   Option to split by chr afterwards.
    Option to filter out lanes at this stage?
    Create release.bam symlinks. bai and md5 and bas file creation.
-4) sample-level merge, making raw.bam (optionally from platform recals) and
-   unmapped.bam. Option to split by chr. for sample-level have 'latest.bam'
-   symlinks.
+4) sample-level merge, making raw.bam (optionally from platform recals).
+   Option to split by chr. for sample-level have 'latest.bam' symlinks.
 
 =head1 AUTHOR
 
@@ -312,24 +310,8 @@ sub lib_rmdup {
         
         my $single_ended = $basename =~ /^se_/ ? 1 : 0;
         
-        my $unique_name = "lib_rmdup_${library}_$single_ended";
-        my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}.$unique_name.'.pl');
-        
-        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
-        print $scriptfh qq{
-use strict;
-use VertRes::Utils::Sam;
-
-my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
-my \$ok = \$sam_util->rmdup('$merge_bam', '$rmdup_bam', single_ended => $single_ended);
-
-\$sam_util->throw("rmdup failed for $merge_bam") unless \$ok;
-
-exit;
-        };
-        close $scriptfh;
-        
-        LSF::run($action_lock, $lane_path, $self->{prefix}.$unique_name, $self, qq{perl -w $script_name});
+        LSF::run($action_lock, $lane_path, $self->{prefix}.'lib_rmdup', $self,
+                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->rmdup(qq[$merge_bam], qq[$rmdup_bam], single_ended => $single_ended) || die qq[rmdup failed for $merge_bam\n];"});
     }
     
     my $out_fofn = $self->{io}->catfile($lane_path, '.lib_rmdup_expected');
@@ -517,25 +499,8 @@ sub merge_up_one_level {
         
         next if -s $out_bam;
         
-        my @uniquers = File::Spec->splitdir($out_dir);
-        my $group_job_name = $job_name.join('_', @uniquers);
-        my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}.$group_job_name.'.pl');
-        
-        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
-        print $scriptfh qq{
-use strict;
-use VertRes::Utils::Sam;
-
-my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
-my \$ok = \$sam_util->merge('$out_bam', qw(@bams));
-
-\$sam_util->throw("merge failed for (@bams) -> $out_bam") unless \$ok;
-
-exit;
-        };
-        close $scriptfh;
-        
-        LSF::run($action_lock, $lane_path, $self->{prefix}.$group_job_name, $self, qq{perl -w $script_name});
+        LSF::run($action_lock, $lane_path, $self->{prefix}.$job_name, $self,
+                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->merge(qq[$out_bam], qw(@bams)) || die qq[merge failed for (@bams) -> $out_bam\n];"});
     }
     
     open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
@@ -632,7 +597,7 @@ sub cleanup {
     
     my $file_base = $self->{io}->catfile($lane_path, $prefix);
     foreach my $job_base (qw(library_merge lib_rmdup platform_merge sample_merge)) {
-        system("rm $file_base$job_base*.pl $file_base$job_base*.o $file_base$job_base*.e");
+        system("rm $file_base$job_base.o $file_base$job_base.e");
     }
     
     return $self->{Yes};
