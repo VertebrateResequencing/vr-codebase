@@ -90,7 +90,7 @@ sub wrapper {
  Usage   : $obj->split_fastq(read1 => 'reads_1.fastq',
                              read2 => 'reads_2.fastq',
                              split_dir => '/path/to/desired/split_dir',
-                             chunk_size => 1000000);
+                             chunk_size => 1000000000);
  Function: Split the fastq(s) into multiple smaller files. This is just a
            convienience alias to VertRes::Utils::FastQ::split, with syntax
            more similar to do_mapping().
