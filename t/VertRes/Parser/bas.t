@@ -25,12 +25,12 @@ ok $basp->file($bas_file), 'file set into parser';
 
 ok $basp->next_result, 'next_result now works';
 
-is_deeply $rh, [qw(NA00001.SLX.bwa.SRP000001.2009.08 SRP000001 NA00001 SLX alib SRR00001 115000 62288 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48)], 'first result was correct';
+is_deeply $rh, [qw(NA00001.SLX.bwa.SRP000001.2009.08 116cc7761844bd19e7544fb266471dae SRP000001 NA00001 SLX alib SRR00001 115000 62288 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48)], 'first result was correct';
 
 while ($basp->next_result) {
     next;
 }
 
-is_deeply $rh, [qw(NA00003.SLX.bwa.SRP000003.2009.08 SRP000003 NA00003 SLX alib3 SRR00003 115000 62288 2000 1084 1084 1070 2.05 23.32 286 74.10 275 46)], 'last result was correct';
+is_deeply $rh, [qw(NA00003.SLX.bwa.SRP000003.2009.08 116cc7761844bd19e7544fb266471dae SRP000003 NA00003 SLX alib3 SRR00003 115000 62288 2000 1084 1084 1070 2.05 23.32 286 74.10 275 46)], 'last result was correct';
 
 exit;
