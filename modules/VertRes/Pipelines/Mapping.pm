@@ -344,7 +344,7 @@ sub map {
             my @split_read_args = ();
             foreach my $read_arg (@these_read_args) {
                 my $split_read_arg = $read_arg;
-                $split_read_arg =~ s/\.f[^.]+(?:\.gz)?('(?:, )?)$/.$split.fastq$1/;
+                $split_read_arg =~ s/\.f[^.]+(?:\.gz)?('(?:, )?)$/.$split.fastq.gz$1/;
                 $split_read_arg =~ s/\/([^\/]+)$/\/${split_dir_name}_$ended\/$1/;
                 push(@split_read_args, $split_read_arg);
             }
