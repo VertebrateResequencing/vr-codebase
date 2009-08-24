@@ -316,9 +316,10 @@ sub write_snp_records
 			$self->throw("Multiple supercontigs found for $_\n");
 		}
 		
+		my $contig;
 		foreach my $curr_superc ( @$supercontig_projection ) 
 		{
-			my $contig = $curr_superc->to_Slice();
+			$contig = $curr_superc->to_Slice();
 			$snp_rec{'supercontig'} = $contig->seq_region_name;
 		}
 		
