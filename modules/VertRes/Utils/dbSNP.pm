@@ -50,22 +50,22 @@ sub new
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
     	    
-	if( ! defined( $self{ 'handle' } ) )
+	if( ! defined( $$self{ 'handle' } ) )
 	{
-		$self->throw("You must pass in a dbSNP handle!");
+		$$self->throw("You must pass in a dbSNP handle!");
 	}
 	
-	if( ! defined( $self{ 'strain_tag' } ) )
+	if( ! defined( $$self{ 'strain_tag' } ) )
 	{
-		$self->throw("You must pass in a strain tag!");
+		$$self->throw("You must pass in a strain tag!");
 	}
 	
-	if( ! defined( $self{ 'pop_handle' } ) )
+	if( ! defined( $$self{ 'pop_handle' } ) )
 	{
-		$self->throw("You must pass in a population handle!");
+		$$self->throw("You must pass in a population handle!");
 	}
 	
-    return $self;
+    return $$self;
 }
 
 =head2 write_header
