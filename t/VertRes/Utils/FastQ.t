@@ -1,9 +1,10 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use Cwd 'abs_path';
 
 BEGIN {
-    use Test::Most tests => 10;
+    use Test::Most tests => 13;
     
     use_ok('VertRes::Utils::FastQ');
     use_ok('VertRes::IO');
@@ -34,6 +35,13 @@ push(@expected, @expected);
 @got = split_check($split_dir);
 is_deeply \@got, \@expected, 'each split had the correct number of lines, and there were twice as many files';
 
+# when just 1 split we only make symlinks
+$split_dir = $io->tempdir();
+is $fastq_util->split([$fq1_file], chunk_size => 61000, split_dir => $split_dir), 1, 'split with one fastq -> 1 split worked';
+my $split_file = $io->catfile($split_dir, '2822_6_1_1000.1.fastq');
+ok -l $split_file, 'split file was made and it was a symlink';
+is abs_path($split_file), abs_path($fq1_file), 'symlink points to the original fastq';
+
 # test qual_to_ints
 is_deeply [$fastq_util->qual_to_ints('!"#$%&\'()*+,5?DIS]')], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 20, 30, 35, 40, 50, 60], 'qual_to_ints test';
 
@@ -46,7 +54,7 @@ sub split_check {
     
     my @got = ();
     foreach my $file (readdir($dirfh)) {
-        if ($file =~ /fastq$/) {
+        if ($file =~ /fastq.gz$/) {
             my $split_file = $io->catfile($split_dir, $file);
             $io->file($split_file);
             push(@got, $io->num_lines);

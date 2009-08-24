@@ -24,8 +24,11 @@ package VertRes::Utils::FastQ;
 
 use strict;
 use warnings;
+use POSIX;
 use VertRes::IO;
 use File::Basename;
+use VertRes::Parser::fastqcheck;
+use Cwd 'abs_path';
 
 use base qw(VertRes::Base);
 
@@ -67,13 +70,13 @@ sub new {
  Args    : array ref of fastq files,
            split_dir => '/path/to/desired/split_dir' (location to store the
                                                       resulting files)
-           chunk_size => int (max number of bases per chunk, default 1000000)
+           chunk_size => int (max number of bases per chunk, default 10000000)
 
 =cut
 
 sub split {
     my ($self, $fastqs, %args) = @_;
-    my $chunk_size = $args{chunk_size} || 1000000;
+    my $chunk_size = $args{chunk_size} || 10000000;
     my $split_dir = $args{split_dir} || $self->throw("split_dir must be supplied");
     
     mkdir($split_dir);
@@ -82,17 +85,48 @@ sub split {
     my @outs;
     my $split_num = 1;
     my $io = VertRes::IO->new();
+    my $fqc = VertRes::Parser::fastqcheck->new();
+    my $total_bases = 0;
+    my $num_fqcs = 0;
     foreach my $fastq_file (@{$fastqs}) {
         my $basename = basename($fastq_file);
         my $prefix = $basename;
         $prefix =~ s/\.f[^.]+(?:\.gz)?$//;
         
-        my $in = VertRes::IO->new(file => $fastq_file);
+        my $in = VertRes::IO->new(file => $fastq_file, verbose => $self->verbose);
         push(@ins, [$fastq_file, $in]);
         
-        my $split_file = $io->catfile($split_dir, "$prefix.$split_num.fastq");
-        my $out = VertRes::IO->new(file => ">$split_file");
-        push(@outs, [$prefix, $out]);
+        # if there are corresponding fastqcheck files we'll check them for the
+        # total bases in each fastq, and if we'd only generate one chunk, simply
+        # symlink the input to the ouput
+        my $fastqcheck = $fastq_file.'.fastqcheck';
+        if (-s $fastqcheck) {
+            $num_fqcs++;
+            $fqc->file($fastqcheck);
+            $total_bases += $fqc->total_length();
+        }
+        
+        my $split_file = $io->catfile($split_dir, "$prefix.$split_num.fastq.gz");
+        my $out = VertRes::IO->new(file => ">$split_file", verbose => $self->verbose);
+        push(@outs, [$prefix, $out, $split_file]);
+    }
+    
+    if ($num_fqcs == @ins) {
+        my $splits = ceil($total_bases / $chunk_size);
+        if ($splits == 1) {
+            foreach my $i (0..$#ins) {
+                my $fastq_file = $ins[$i]->[0];
+                my $out = $outs[$i]->[1];
+                $out->close();
+                my $split_file = $outs[$i]->[2];
+                unlink($split_file);
+                unless ($fastq_file =~ /\.gz$/) {
+                    $split_file =~ s/\.gz$//;
+                }
+                symlink(abs_path($fastq_file), $split_file);
+            }
+            return 1;
+        }
     }
     
     my $num_bases = 0;
@@ -140,8 +174,8 @@ sub split {
                 my ($prefix, $old) = @{$ref};
                 $old->close;
                 
-                my $split_file = $io->catfile($split_dir, "$prefix.$split_num.fastq");
-                my $out = VertRes::IO->new(file => ">$split_file");
+                my $split_file = $io->catfile($split_dir, "$prefix.$split_num.fastq.gz");
+                my $out = VertRes::IO->new(file => ">$split_file", verbose => $self->verbose);
                 $ref->[1] = $out;
             }
         }
@@ -168,7 +202,7 @@ sub split {
         my $prefix = $outs[$i]->[0];
         my $out_lines = 0;
         foreach my $test_split_num (1..$split_num) {
-            my $split_file = $io->catfile($split_dir, "$prefix.$test_split_num.fastq");
+            my $split_file = $io->catfile($split_dir, "$prefix.$test_split_num.fastq.gz");
             $io->file($split_file);
             $out_lines += $io->num_lines;
         }
