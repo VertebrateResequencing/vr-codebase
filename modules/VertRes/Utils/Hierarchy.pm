@@ -30,7 +30,7 @@ use File::Basename;
 use File::Spec;
 use File::Path;
 use VertRes::Parser::sequence_index;
-use VertRes::Utils::Sam;
+use VertRes::Wrapper::samtools;
 
 use base qw(VertRes::Base);
 
@@ -254,6 +254,107 @@ sub create_release_hierarchy {
     }
     
     return @all_linked_bams;
+}
+
+=head2 dcc_filename
+
+ Title   : dcc_filename
+ Usage   : my $filename = $obj->dcc_filename('/abs/path/to/platform/release.bam');
+ Function: Get the DCC filename of a bam file.
+ Returns : string (filename) in scalar context
+           list of filename, project, sample, platform, first readgroup strings
+           in list context
+ Args    : absolute path to a platform-level release bam file
+
+=cut
+
+sub dcc_filename {
+    my ($self, $file) = @_;
+    
+    # NAXXXXX.[chromN].technology.[center].algorithm.study_id.YYYY_MM.bam
+    # the date "should represent when the alignment was carried out"
+    # http://1000genomes.org/wiki/doku.php?id=1000_genomes:dcc:filenames
+    
+    my ($dcc_filename, $project, $sample, $platform);
+    
+    # view the bam header
+    my $stw = VertRes::Wrapper::samtools->new(quiet => 1);
+    $stw->run_method('open');
+    my $view_fh = $stw->view($file, undef, H => 1);
+    $view_fh || $self->throw("Failed to samtools view '$file'");
+    
+    my $ps = VertRes::Parser::sam->new(fh => $view_fh);
+    my $rh = $ps->result_holder;
+    
+    ($project, $sample, $platform) = ('unknown_project', 'unknown_sample', 'unknown_platform');
+    my %techs;
+    my %readgroup_info = $ps->readgroup_info();
+    while (my ($rg, $info) = each %readgroup_info) {
+        # there should only be one of these, so we just keep resetting it
+        # (there's no proper tag for holding project, so the mapping pipeline
+        # sticks the project into the description tag 'DS')
+        $project = $info->{DS} || 'unknown_project';
+        $sample = $info->{SM} || 'unknown_sample';
+        
+        # might be more than one of these if we're a sample-level bam.
+        # DCC puts eg. 'ILLUMINA' in the sequence.index files but the
+        # filename format expects 'SLX' etc.
+        $platform = $info->{PL};
+        if ($platform =~ /illumina/i) {
+            $platform = 'SLX';
+        }
+        elsif ($platform =~ /solid/i) {
+            $platform = 'SOLID';
+        }
+        elsif ($platform =~ /454/) {
+            $platform = '454';
+        }
+        $techs{$platform}++;
+    }
+    
+    # SOLID bams are not made by us and have unreliable headers; we'll need to
+    # cheat and get the info from the filesystem
+    if ($sample eq 'unknown_sample') {
+        my (undef, $bam_dir) = fileparse($file);
+        my @dirs = File::Spec->splitdir($bam_dir);
+        if ($dirs[-1] eq '') {
+            pop @dirs;
+        }
+        if ($dirs[-1] eq 'SOLID') {
+            $platform = 'SOLID';
+            $sample = $dirs[-2];
+            $project = $dirs[-3];
+            if (exists $project_to_srp{$project}) {
+                $project = $project_to_srp{$project};
+            }
+            else {
+                $self->warn("bam $file detected as being in unknown project '$project'");
+            }
+        }
+    }
+    
+    if (keys %techs > 1) {
+        $platform = '';
+    }
+    else {
+        $platform .= '.';
+    }
+    my $bamname = basename($file);
+    my $chrom = '';
+    if ($bamname =~ /^(\d+|[XY]|MT)/) {
+        $chrom = "chrom$1.";
+    }
+    my $mtime = (stat($file))[9];
+    my ($month, $year) = (localtime($mtime))[4..5];
+    $year += 1900;
+    $month = sprintf("%02d", $month + 1);
+    my $algorithm = $ps->program || 'unknown_algorithm';
+    $dcc_filename = "$sample.$chrom$platform$algorithm.$project.$year.$month";
+    
+    my ($first_readgroup) = sort keys %readgroup_info;
+    $first_readgroup ||= 'unknown_readgroup';
+    
+    return wantarray ? ($dcc_filename, $project, $sample, $platform, $first_readgroup) : $dcc_filename;
 }
 
 1;

@@ -27,6 +27,7 @@ use strict;
 use warnings;
 use File::Copy;
 use File::Basename;
+use File::Spec;
 use VertRes::IO;
 use VertRes::Wrapper::samtools;
 use VertRes::Wrapper::picard;
@@ -36,6 +37,8 @@ use VertRes::Parser::sequence_index;
 use VertRes::Parser::sam;
 use VertRes::Utils::FastQ;
 use VertRes::Utils::Math;
+use VertRes::Utils::Hierarchy;
+use Digest::MD5;
 
 use base qw(VertRes::Base);
 
@@ -465,7 +468,7 @@ sub bas {
     my $expected_lines = 0;
     
     # print header
-    print $bas_fh join("\t", 'bam_filename', 'project', 'sample', 'platform',
+    print $bas_fh join("\t", 'bam_filename', 'md5', 'project', 'sample', 'platform',
                              'library', 'readgroup', '#_total_bases',
                              '#_mapped_bases', '#_total_reads',
                              '#_mapped_reads',
@@ -483,6 +486,7 @@ sub bas {
     foreach my $rg (sort keys %readgroup_data) {
         my %data = %{$readgroup_data{$rg}};
         print $bas_fh join("\t", $data{dcc_filename},
+                                 $data{md5},
                                  $data{project},
                                  $data{sample},
                                  $data{platform},
@@ -524,17 +528,37 @@ sub bas {
            format.
  Returns : hash with keys as readgroup ids and values as hash refs. Those refs
            have the keys:
-           dcc_filename, project, sample, platform, library, total_bases,
+           dcc_filename, md5, project, sample, platform, library, total_bases,
            mapped_bases, total_reads, mapped_reads, mapped_reads_paired_in_seq,
            mapped_reads_properly_paired, percent_mismatch, avg_qual, avg_isize,
            sd_isize, median_isize, mad
  Args    : input bam file (must have been run via samtools fillmd so that there
-           are accurate NM tags for each record)
+           are accurate NM tags for each record), optionally a sequence.index
+           file from the DCC if working on bams with poor headers
 
 =cut
 
 sub bam_statistics {
-    my ($self, $bam) = @_;
+    my ($self, $bam, $seq_index) = @_;
+    
+    my $sip = VertRes::Parser::sequence_index->new(file => $seq_index) if $seq_index;
+    
+    my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
+    my ($dcc_filename, $project, $sample, $technology, $previous_rg) = $hu->dcc_filename($bam);
+    my $md5;
+    my $md5_file = $bam.'.md5';
+    if (-s $md5_file) {
+        open(my $md5fh, $md5_file) || $self->throw("Couldn't open md5 file '$md5_file': $!");
+        my $line = <$md5fh>;
+        ($md5) = split(' ', $line);
+    }
+    else {
+        my $dmd5 = Digest::MD5->new();
+        open(FILE, $bam) or $self->throw("Couldn't open bam '$bam': $!");
+        binmode(FILE);
+        $dmd5->addfile(*FILE);
+        $md5 = $dmd5->hexdigest;
+    }
     
     # view the bam and accumulate all the raw stats in little memory
     my $stw = VertRes::Wrapper::samtools->new(quiet => 1);
@@ -545,57 +569,9 @@ sub bam_statistics {
     my $ps = VertRes::Parser::sam->new(fh => $view_fh);
     my $rh = $ps->result_holder;
     
-    # we need what will be the DCC filename, which currently has the format
-    # NAXXXXX.[chromN].technology.[center].algorithm.study_id.YYYY_MM.bam
-    # the date "should represent when the alignment was carried out"
-    # http://1000genomes.org/wiki/doku.php?id=1000_genomes:dcc:filenames
-    my ($project, $sample, $technology, %techs) = ('unknown_project', 'unknown_sample', 'unknown_platform');
-    my %readgroup_info = $ps->readgroup_info();
-    while (my ($rg, $info) = each %readgroup_info) {
-        # there should only be one of these, so we just keep resetting it
-        # (there's no proper tag for holding project, so the mapping pipeline
-        # sticks the project into the description tag 'DS')
-        $project = $info->{DS};
-        $sample = $info->{SM};
-        
-        # might be more than one of these if we're a sample-level bam.
-        # DCC puts eg. 'ILLUMINA' in the sequence.index files but the
-        # filename format expects 'SLX' etc.
-        $technology = $info->{PL};
-        if ($technology =~ /illumina/i) {
-            $technology = 'SLX';
-        }
-        elsif ($technology =~ /solid/i) {
-            $technology = 'SOLID';
-        }
-        elsif ($technology =~ /454/) {
-            $technology = '454';
-        }
-        $techs{$technology}++;
-    }
-    if (keys %techs > 1) {
-        $technology = '';
-    }
-    else {
-        $technology .= '.';
-    }
-    my $bamname = basename($bam);
-    my $chrom = '';
-    if ($bamname =~ /^(\d+|[XY]|MT)/) {
-        $chrom = "chrom$1.";
-    }
-    my $mtime = (stat($bam))[9];
-    my ($month, $year) = (localtime($mtime))[4..5];
-    $year += 1900;
-    $month = sprintf("%02d", $month + 1);
-    my $algorithm = $ps->program || 'unknown_algorithm';
-    my $dcc_filename = "$sample.$chrom$technology$algorithm.$project.$year.$month";
-    
     my $fqu = VertRes::Utils::FastQ->new();
     
     my %readgroup_data;
-    my ($previous_rg) = sort keys %readgroup_info;
-    $previous_rg ||= 'unknown_readgroup';
     while ($ps->next_result) {
         my $rg = $rh->{RG};
         unless ($rg) {
@@ -710,6 +686,13 @@ sub bam_statistics {
         $readgroup_data{$rg}->{sample} = $sample;
         $readgroup_data{$rg}->{platform} = $ps->readgroup_info($rg, 'PL') || 'unknown_platform';
         $readgroup_data{$rg}->{library} = $ps->readgroup_info($rg, 'LB') || 'unknown_library';
+        
+        if ($readgroup_data{$rg}->{library} eq 'unknown_library' && $sip) {
+            $readgroup_data{$rg}->{platform} = $sip->lane_info($rg, 'INSTRUMENT_PLATFORM') || 'unknown_platform';
+            readgroup_data{$rg}->{library} = $sip->lane_info($rg, 'LIBRARY_NAME') || 'unknown_library';
+        }
+        
+        $readgroup_data{$rg}->{md5} = $md5;
     }
     
     return %readgroup_data;
