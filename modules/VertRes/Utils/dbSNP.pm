@@ -85,7 +85,7 @@ sub write_header
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
     print $ofh qq[
 TYPE:   CONT
-HANDLE: $self{'handle'}
+HANDLE: $self->handle
 NAME:   $name
 FAX:    $fone
 TEL:    $fax
@@ -95,7 +95,7 @@ INST:   Wellcome Trust Sanger Institute
 ADDR:   Wellcome Trust Genome Campus, Hinxton, Cambridge, CB10 1SA, UK
 ||
 TYPE:    PUB
-HANDLE:  $self{'handle'}
+HANDLE:  $$self{'handle'}
 TITLE:   $title
 AUTHORS:
 $authors
@@ -123,7 +123,7 @@ sub write_methods
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
     print $ofh qq[
 TYPE:                   METHOD
-HANDLE:                 $self{'handle'}
+HANDLE:                 $$self{'handle'}
 ID:                     method_id
 METHOD_CLASS:           Sequence
 SEQ_BOTH_STRANDS:       YES
@@ -154,8 +154,8 @@ sub write_population
 	
     print $file_handle qq[
 TYPE:       POPULATION
-HANDLE:     $self{'handle'}
-ID:         $self{ 'pop_handle' }
+HANDLE:     $$self{'handle'}
+ID:         $$self{ 'pop_handle' }
 POP_CLASS:
 POPULATION:
 ||
@@ -185,7 +185,7 @@ sub write_individual
 	
     print $ofh qq[
 TYPE:   INDIVIDUAL
-IND:    $self{'handle'}|$pop_handle|$self{ 'strain_tag' }|10090|Unknown|I|NA
+IND:    $$self{'handle'}|$pop_handle|$$self{ 'strain_tag' }|10090|Unknown|I|NA
 SOURCE: repository|Wellcome Trust Sanger Institute|$strain_tag|NA
 ||
 ];
@@ -211,7 +211,7 @@ sub write_snpassay
 	
     print $ofh qq[
 TYPE:       SNPASSAY
-HANDLE:     $self{'handle'}
+HANDLE:     $$self{'handle'}
 BATCH:      $batch_name
 MOLTYPE:    Genomic
 SAMPLESIZE: 2
@@ -320,7 +320,7 @@ sub write_snp_records
 		# computed location of the SNP (ACCESSION + LOCATION)
 		# flanking sequence (200 bp 5' and 200 bp 3' of the variant position)
 		
-		my $snp_id = qq[$self{ 'handle' }_$self{ 'strain_tag' }_$snpcnt];
+		my $snp_id = qq[$$self{ 'handle' }_$$self{ 'strain_tag' }_$snpcnt];
 		
 		print $ofh qq[
 SNP:        $snp_id
