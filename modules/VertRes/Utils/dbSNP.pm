@@ -259,7 +259,8 @@ sub write_snp_records
 		my @s = split( /\t/, $_ );
 		$self->throw("Cannot create $outputFile: $!") unless @s == 6;
 		
-		($rec{'chromosome'}, $rec{'position'}, $rec{'reference_base'}, $rec{'consensus_base'}, $rec{'phred_quality'}, $rec{'read_depth'}) = @s;
+		my %snp_rec;
+		($snp_rec{'chromosome'}, $snp_rec{'position'}, $snp_rec{'reference_base'}, $snp_rec{'consensus_base'}, $snp_rec{'phred_quality'}, $snp_rec{'read_depth'}) = @s;
 		
 		# grab the entire sequence once instead of having to make
 		# multiple accesses to the db i.e. for upstream and downstream say
