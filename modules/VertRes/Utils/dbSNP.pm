@@ -264,11 +264,11 @@ sub write_snp_records
 		-port    => '5304',
 		-verbose => 0
 	);
-
+	
 	my $slice_adaptor = $registry->get_adaptor( $self->species, 'Core', 'Slice' );
-
+	
 	#loop over the SNPs and write out the sequence
-	while ( <sfh> ) 
+	while ( <sfh> )
 	{
 		# ignore any blank lines
 		if ( /\^\n/ ) 
