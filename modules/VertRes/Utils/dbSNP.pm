@@ -353,11 +353,11 @@ LOCATION:   $start_pos
 SAMPLESIZE: 2
 LENGTH:     1
 5'_FLANK:   $five_prime_seq
-OBSERVED:   $reference_base
+OBSERVED:   $snp_rec{'reference_base'}
 3'_FLANK:   $three_prime_seq
 COMMENT:
-quality: $rec{'phred_quality'}
-read_depth: $rec{'read_depth'}
+quality: $snp_rec{'phred_quality'}
+read_depth: $snp_rec{'read_depth'}
 ||
 ];
 	}
