@@ -4,7 +4,7 @@ use warnings;
 use Cwd 'cwd';
 
 BEGIN {
-    use Test::Most tests => 41;
+    use Test::Most tests => 45;
     
     use_ok('VertRes::IO');
 }
@@ -97,6 +97,15 @@ ok -s $copy, 'copy test really did work';
 my $devnull = $io->catfile('dev', 'null', 'copy_test');
 my $ok = $io->copy($file, $devnull);
 is $ok, 0, 'copy fails to /dev/null';
+# write compressed
+$gz_file = $io->catfile($tmp_dir, 'test.gz');
+ok $io->file(">$gz_file"), 'could set up write to .gz file';
+$fh = $io->fh();
+ok print($fh "compressed test\n"), 'could print to a gz file';
+$io->close();
+ok $io->file($gz_file), 'the .gz file was created';
+$fh = $io->fh();
+is <$fh>, "compressed test\n", 'could read back what we wrote';
 undef $io;
 ok ! -d $tmp_dir, 'tmpdir destroyed ok';
 
