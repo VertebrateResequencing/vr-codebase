@@ -139,7 +139,7 @@ $method
 =head2 write_population
 
  Title   : write_population
- Usage   : my $write = $obj->write_population($self, $file_handle, $name, $fax, $fone, $email, $lab, $title, $authors, $year, $status);
+ Usage   : my $write = $obj->write_population($self, $name, $fax, $fone, $email, $lab, $title, $authors, $year, $status);
  Function: write the population section of a dbSNP submission
  Returns : n/a
  Args    : 
@@ -152,7 +152,7 @@ sub write_population
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
 	
-    print $file_handle qq[
+    print $ofh qq[
 TYPE:       POPULATION
 HANDLE:     $self->handle
 ID:         $self->pop_handle
@@ -185,8 +185,8 @@ sub write_individual
 	
     print $ofh qq[
 TYPE:   INDIVIDUAL
-IND:    $self->handle|$self->pop_handle|$self->strain_tag }|10090|Unknown|I|NA
-SOURCE: repository|Wellcome Trust Sanger Institute|$strain_tag|NA
+IND:    $self->handle|$self->pop_handle|$self->strain_tag|10090|Unknown|I|NA
+SOURCE: repository|Wellcome Trust Sanger Institute|$self->strain_tag|NA
 ||
 ];
 	close( $ofh );
@@ -240,7 +240,7 @@ sub write_snp_records
 	my ($self, $outputFile, $snp_file ) = @_;
 	
 	# read in the file containing the SNP data
-	open( my $sfh, $snp_fie ) or $self->throw("Cannot open $snp_file: $!");
+	open( my $sfh, $snp_file ) or $self->throw("Cannot open $snp_file: $!");
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
 	
