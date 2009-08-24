@@ -623,7 +623,7 @@ sub run_graphs
             'desc_yvals' => 'Frequency',
             'desc_xvals' => 'GC Content [%]',
             'data'       => \@gc_data,
-            'r_cmd'      => "text($x,$y,'$x',pos=4,col='green')\n",
+            'r_cmd'      => "text($x,$y,'$x',pos=4,col='darkgreen')\n",
             });
 
     Graphs::plot_stats({

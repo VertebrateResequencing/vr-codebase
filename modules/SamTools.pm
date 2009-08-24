@@ -168,7 +168,7 @@ sub parse_bam_line
         Options    : (see the code for default values)
                         do_chrm          .. should collect the chromosome distrib. stats.
                         do_gc_content    .. should we collect the gc_content (default is 1)
-                        do_rmdup         .. default is 1 (calculate the rmdup); alternatively supply the filename of a pre-calculated rmdup
+                        do_rmdup         .. default is 1 (calculate the rmdup)
 
                         insert_size_bin  .. the length of the distribution intervals for the insert size frequencies
                         gc_content_bin   
@@ -304,7 +304,7 @@ sub collect_detailed_bam_stats
 
             # Insert Size Frequencies
             #
-            my $bin = abs(int( $isize / $insert_size_bin ));
+            my $bin = abs(int($isize/$insert_size_bin));
             for my $stat (@stats) { $$out_stats{$stat}{'insert_size_freqs'}{$bin}++; }
         }
         elsif ( $flag & $$FLAGS{'unmapped'} ) 
@@ -325,22 +325,48 @@ sub collect_detailed_bam_stats
                 my $nuc  = substr($seq, $ipos, 1);
                 if ( $nuc eq 'g' || $nuc eq 'G' || $nuc eq 'c' || $nuc eq 'C' ) { $gc_count++; }
             }
+            # Alternatively, one could calculate GC content as GC/(GC+AT), but this
+            #   produces spiky curve instead of the expected smooth curve - there
+            #   are few N's compared to [GCAT] and the discrete nature of the data 
+            #   comes into play. 
+            #   Different way of rounding does not help, only moves the spikes to
+            #   different bins. Anyway, the result is not much different, the 
+            #   smooth curve forms the envelope of the spiky one.
+            #
+            #   For an example, see these values, most common contributions to the spiky
+            #   bins 35,40,44 and its neighbours:
+            #
+            #   count in bin       GC        AT      other
+            #    2077   35      .. 26        49      1       34.6666666666667
+            #   43799   36      .. 27        49      0       35.5263157894737
+            #   51523   37      .. 28        48      0       36.8421052631579
+            #   58024   38      .. 29        47      0       38.1578947368421
+            #   62577   39      .. 30        46      0       39.4736842105263
+            #    3420   40      .. 30        45      1       40              
+            #   64145   41      .. 31        45      0       40.7894736842105
+            #   64560   42      .. 32        44      0       42.1052631578947
+            #   63943   43      .. 33        43      0       43.4210526315789
+            #    3586   44      .. 33        42      1       44 
+            #
             $gc_count = $gc_count*100./$seq_len;
-            my $bin = abs(int( $gc_count / $gc_content_bin ));
-            if ( $flag & $$FLAGS{'1st_in_pair'} )
+            my $bin = abs(int($gc_count/$gc_content_bin));
+            if ( $gc_count )
             {
-                for my $stat (@stats) { $$out_stats{$stat}{'gc_content_fwd_freqs'}{$bin}++; }
-            }
-            elsif ( $flag & $$FLAGS{'2nd_in_pair'} )
-            {
-                for my $stat (@stats) { $$out_stats{$stat}{'gc_content_rev_freqs'}{$bin}++; }
-            }
-            else
-            { 
-                # Either it is a non-paired-read technology, or the 1st_in_pair and
-                #   and 2nd_in_pair flags got lost in the process. In that case, 
-                #   both 1st_in_pair and 2nd_in_pair should be set to zero.
-                for my $stat (@stats) { $$out_stats{$stat}{'gc_content_fwd_freqs'}{$bin}++; }
+                if ( $flag & $$FLAGS{'1st_in_pair'} )
+                {
+                    for my $stat (@stats) { $$out_stats{$stat}{'gc_content_fwd_freqs'}{$bin}++; }
+                }
+                elsif ( $flag & $$FLAGS{'2nd_in_pair'} )
+                {
+                    for my $stat (@stats) { $$out_stats{$stat}{'gc_content_rev_freqs'}{$bin}++; }
+                }
+                else
+                { 
+                    # Either it is a non-paired-read technology, or the 1st_in_pair and
+                    #   and 2nd_in_pair flags got lost in the process. In that case, 
+                    #   both 1st_in_pair and 2nd_in_pair should be set to zero.
+                    for my $stat (@stats) { $$out_stats{$stat}{'gc_content_fwd_freqs'}{$bin}++; }
+                }
             }
         }
 
@@ -365,31 +391,24 @@ sub collect_detailed_bam_stats
     if ( $do_rmdup )
     {
         my ($rmdup_reads_total,$rmdup_reads_mapped);
-        if ( -f $do_rmdup && -s $do_rmdup ) 
-        {
-            # Not sure what the precalculated do_rmdup looks like....? Should be changed accordingly to bellow.
-            chomp(($rmdup_reads_total) = Utils::CMD("wc -l $do_rmdup"));
-        }
-        else 
-        {
-            # Gets the '1854311 mapped (94.42%)' line from the flagstat output.
-            #   '1854311 mapped (94.42%)' -> 1854311
-            my @out = Utils::CMD("samtools rmdup $bam_file - | samtools flagstat -");
-            for my $line (@out)
-            {
-                # 1963832 in total
-                if ( $line=~/^(\d+) in total/ )
-                {
-                    $rmdup_reads_total = $1;
-                    next;
-                }
 
-                # 1854311 mapped (94.42%)
-                if ( $line=~/^(\d+) mapped \(/ )
-                {
-                    $rmdup_reads_mapped = $1;
-                    next;
-                }
+        # Gets the '1854311 mapped (94.42%)' line from the flagstat output.
+        #   '1854311 mapped (94.42%)' -> 1854311
+        my @out = Utils::CMD("samtools rmdup $bam_file - | samtools flagstat -");
+        for my $line (@out)
+        {
+            # 1963832 in total
+            if ( $line=~/^(\d+) in total/ )
+            {
+                $rmdup_reads_total = $1;
+                next;
+            }
+
+            # 1854311 mapped (94.42%)
+            if ( $line=~/^(\d+) mapped \(/ )
+            {
+                $rmdup_reads_mapped = $1;
+                next;
             }
         }
         $$out_stats{'total'}{'rmdup_reads_total'}  = $rmdup_reads_total;
