@@ -115,12 +115,8 @@ sub file {
             $in_out = '';
         }
         
-        $self->debug("will do open $in_out$open");
-        
         # go ahead and open it (3 arg form not working when middle is optional)
         open(my $fh, $in_out.$open) || $self->throw("Couldn't open '$open': $!");
-        
-        $self->debug("got fh $fh");
         
         $self->{_filename} = $filename;
         $self->fh($fh);
