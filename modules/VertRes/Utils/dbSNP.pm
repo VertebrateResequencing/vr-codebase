@@ -211,7 +211,7 @@ sub write_snpassay
 	
     print $ofh qq[
 TYPE:       SNPASSAY
-HANDLE:     $$self{'handle'}
+HANDLE:     $self->handle
 BATCH:      $batch_name
 MOLTYPE:    Genomic
 SAMPLESIZE: 2
@@ -320,7 +320,7 @@ sub write_snp_records
 		# computed location of the SNP (ACCESSION + LOCATION)
 		# flanking sequence (200 bp 5' and 200 bp 3' of the variant position)
 		
-		my $snp_id = qq[$$self{ 'handle' }_$$self{ 'strain_tag' }_$snpcnt];
+		my $snp_id = qq[$self->handle_$->strain_tag_$snpcnt];
 		
 		print $ofh qq[
 SNP:        $snp_id
