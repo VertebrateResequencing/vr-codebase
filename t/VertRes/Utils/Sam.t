@@ -146,7 +146,7 @@ is $sam_util->calculate_flag(paired_tech => 1, self_unmapped => 1, mate_unmapped
 # perl -e '$bases = 0; $matches = 0; open($fh, "samtools pileup -sf t/data/S_suis_P17.dna sorted.bam |"); while (<$fh>) { @s = split; $bases += $s[3]; $matches += $s[4] =~ tr/.,/.,/; } print "$bases / $matches\n"; $p = 100 - ((100/$bases) * $matches); print "percent mismatches: $p\n";'
 is_deeply {$sam_util->bam_statistics($sorted_bam)}, {SRR00001 => {dcc_filename => 'NA00001.SLX.bwa.SRP000001.2009.08',
                                                                   md5 => '116cc7761844bd19e7544fb266471dae',
-                                                                  project => 'SRP000001',
+                                                                  study => 'SRP000001',
                                                                   sample => 'NA00001',
                                                                   platform => 'SLX',
                                                                   library => 'alib',

@@ -468,7 +468,7 @@ sub bas {
     my $expected_lines = 0;
     
     # print header
-    print $bas_fh join("\t", 'bam_filename', 'md5', 'project', 'sample', 'platform',
+    print $bas_fh join("\t", 'bam_filename', 'md5', 'study', 'sample', 'platform',
                              'library', 'readgroup', '#_total_bases',
                              '#_mapped_bases', '#_total_reads',
                              '#_mapped_reads',
@@ -487,7 +487,7 @@ sub bas {
         my %data = %{$readgroup_data{$rg}};
         print $bas_fh join("\t", $data{dcc_filename},
                                  $data{md5},
-                                 $data{project},
+                                 $data{study},
                                  $data{sample},
                                  $data{platform},
                                  $data{library},
@@ -528,7 +528,7 @@ sub bas {
            format.
  Returns : hash with keys as readgroup ids and values as hash refs. Those refs
            have the keys:
-           dcc_filename, md5, project, sample, platform, library, total_bases,
+           dcc_filename, md5, study, sample, platform, library, total_bases,
            mapped_bases, total_reads, mapped_reads, mapped_reads_paired_in_seq,
            mapped_reads_properly_paired, percent_mismatch, avg_qual, avg_isize,
            sd_isize, median_isize, mad
@@ -544,7 +544,7 @@ sub bam_statistics {
     my $sip = VertRes::Parser::sequence_index->new(file => $seq_index) if $seq_index;
     
     my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
-    my ($dcc_filename, $project, $sample, $technology, $previous_rg) = $hu->dcc_filename($bam);
+    my ($dcc_filename, $study, $sample, $technology, $previous_rg) = $hu->dcc_filename($bam);
     my $md5;
     my $md5_file = $bam.'.md5';
     if (-s $md5_file) {
@@ -682,7 +682,7 @@ sub bam_statistics {
         
         # add in header info
         $readgroup_data{$rg}->{dcc_filename} = $dcc_filename;
-        $readgroup_data{$rg}->{project} = $project;
+        $readgroup_data{$rg}->{study} = $study;
         $readgroup_data{$rg}->{sample} = $sample;
         $readgroup_data{$rg}->{platform} = $ps->readgroup_info($rg, 'PL') || 'unknown_platform';
         $readgroup_data{$rg}->{library} = $ps->readgroup_info($rg, 'LB') || 'unknown_library';

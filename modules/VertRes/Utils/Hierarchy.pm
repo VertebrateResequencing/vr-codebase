@@ -34,19 +34,19 @@ use VertRes::Wrapper::samtools;
 
 use base qw(VertRes::Base);
 
-our %project_to_srp = ('Exon-CEU' => 'SRP000033',
-                       'Exon-CHB' => 'SRP000033',
-                       'Exon-DEN' => 'SRP000033',
-                       'Exon-JPT' => 'SRP000033',
-                       'Exon-LWK' => 'SRP000033',
-                       'Exon-TSI' => 'SRP000033',
-                       'Exon-YRI' => 'SRP000033',
-                       'LowCov-CEU' => 'SRP000031',
-                       'LowCov-CHB' => 'SRP000031',
-                       'LowCov-JPT' => 'SRP000031',
-                       'LowCov-YRI' => 'SRP000031',
-                       'Trio-CEU' => 'SRP000032',
-                       'Trio-YRI' => 'SRP000032');
+our %study_to_srp = ('Exon-CEU' => 'SRP000033',
+                     'Exon-CHB' => 'SRP000033',
+                     'Exon-DEN' => 'SRP000033',
+                     'Exon-JPT' => 'SRP000033',
+                     'Exon-LWK' => 'SRP000033',
+                     'Exon-TSI' => 'SRP000033',
+                     'Exon-YRI' => 'SRP000033',
+                     'LowCov-CEU' => 'SRP000031',
+                     'LowCov-CHB' => 'SRP000031',
+                     'LowCov-JPT' => 'SRP000031',
+                     'LowCov-YRI' => 'SRP000031',
+                     'Trio-CEU' => 'SRP000032',
+                     'Trio-YRI' => 'SRP000032');
 
 our %platform_aliases = (ILLUMINA => 'SLX',
                          LS454 => '454');
@@ -130,7 +130,7 @@ sub check_lanes_vs_sequence_index {
         }
         
         # study swaps
-        my $given_study = $project_to_srp{$lane_info{study}} || $lane_info{study};
+        my $given_study = $study_to_srp{$lane_info{study}} || $lane_info{study};
         my $study = $sip->lane_info($lane_id, 'study_id');
         unless ($study eq $given_study) {
             $self->warn("study swap: $study vs $given_study for $lane_id ($lane_path)");
@@ -275,7 +275,7 @@ sub dcc_filename {
     # the date "should represent when the alignment was carried out"
     # http://1000genomes.org/wiki/doku.php?id=1000_genomes:dcc:filenames
     
-    my ($dcc_filename, $project, $sample, $platform);
+    my ($dcc_filename, $study, $sample, $platform);
     
     # view the bam header
     my $stw = VertRes::Wrapper::samtools->new(quiet => 1);
@@ -286,14 +286,14 @@ sub dcc_filename {
     my $ps = VertRes::Parser::sam->new(fh => $view_fh);
     my $rh = $ps->result_holder;
     
-    ($project, $sample, $platform) = ('unknown_project', 'unknown_sample', 'unknown_platform');
+    ($study, $sample, $platform) = ('unknown_study', 'unknown_sample', 'unknown_platform');
     my %techs;
     my %readgroup_info = $ps->readgroup_info();
     while (my ($rg, $info) = each %readgroup_info) {
         # there should only be one of these, so we just keep resetting it
         # (there's no proper tag for holding project, so the mapping pipeline
         # sticks the project into the description tag 'DS')
-        $project = $info->{DS} || 'unknown_project';
+        $study = $info->{DS} || 'unknown_study';
         $sample = $info->{SM} || 'unknown_sample';
         
         # might be more than one of these if we're a sample-level bam.
@@ -323,12 +323,12 @@ sub dcc_filename {
         if ($dirs[-1] eq 'SOLID') {
             $platform = 'SOLID';
             $sample = $dirs[-2];
-            $project = $dirs[-3];
-            if (exists $project_to_srp{$project}) {
-                $project = $project_to_srp{$project};
+            $study = $dirs[-3];
+            if (exists $study_to_srp{$study}) {
+                $study = $study_to_srp{$study};
             }
             else {
-                $self->warn("bam $file detected as being in unknown project '$project'");
+                $self->warn("bam $file detected as being in unknown study '$study'");
             }
         }
     }
@@ -349,12 +349,12 @@ sub dcc_filename {
     $year += 1900;
     $month = sprintf("%02d", $month + 1);
     my $algorithm = $ps->program || 'unknown_algorithm';
-    $dcc_filename = "$sample.$chrom$platform$algorithm.$project.$year.$month";
+    $dcc_filename = "$sample.$chrom$platform$algorithm.$study.$year.$month";
     
     my ($first_readgroup) = sort keys %readgroup_info;
     $first_readgroup ||= 'unknown_readgroup';
     
-    return wantarray ? ($dcc_filename, $project, $sample, $platform, $first_readgroup) : $dcc_filename;
+    return wantarray ? ($dcc_filename, $study, $sample, $platform, $first_readgroup) : $dcc_filename;
 }
 
 1;

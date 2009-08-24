@@ -63,7 +63,7 @@ sub new {
  Returns : array ref, where the elements are:
            [0] bam_filename
            [1] bam md5 checksum
-           [2] project
+           [2] study
            [3] sample
            [4] platform
            [5] library
