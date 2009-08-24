@@ -95,7 +95,7 @@ INST:   Wellcome Trust Sanger Institute
 ADDR:   Wellcome Trust Genome Campus, Hinxton, Cambridge, CB10 1SA, UK
 ||
 TYPE:    PUB
-HANDLE:  $$self{'handle'}
+HANDLE:  $self->handle
 TITLE:   $title
 AUTHORS:
 $authors
@@ -123,7 +123,7 @@ sub write_methods
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
     print $ofh qq[
 TYPE:                   METHOD
-HANDLE:                 $$self{'handle'}
+HANDLE:                 $self->handle
 ID:                     method_id
 METHOD_CLASS:           Sequence
 SEQ_BOTH_STRANDS:       YES
@@ -154,8 +154,8 @@ sub write_population
 	
     print $file_handle qq[
 TYPE:       POPULATION
-HANDLE:     $$self{'handle'}
-ID:         $$self{ 'pop_handle' }
+HANDLE:     $self->handle
+ID:         $self->pop_handle
 POP_CLASS:
 POPULATION:
 ||
@@ -175,7 +175,7 @@ POPULATION:
 
 sub write_individual
 {
-	my ($self, $outputFile, $pop_handle ) = @_;
+	my ($self, $outputFile ) = @_;
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
 
@@ -185,7 +185,7 @@ sub write_individual
 	
     print $ofh qq[
 TYPE:   INDIVIDUAL
-IND:    $$self{'handle'}|$pop_handle|$$self{ 'strain_tag' }|10090|Unknown|I|NA
+IND:    $self->handle|$self->pop_handle|$self->strain_tag }|10090|Unknown|I|NA
 SOURCE: repository|Wellcome Trust Sanger Institute|$strain_tag|NA
 ||
 ];
