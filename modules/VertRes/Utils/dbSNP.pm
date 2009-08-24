@@ -50,19 +50,29 @@ sub new
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
     	    
-	if( ! defined( $$self{ 'handle' } ) )
+	if( ! defined( $self->handle ) )
 	{
-		$$self->throw("You must pass in a dbSNP handle!");
+		$self->throw("You must pass in a dbSNP handle!");
 	}
 	
-	if( ! defined( $$self{ 'strain_tag' } ) )
+	if( ! defined( $self->strain_tag ) )
 	{
-		$$self->throw("You must pass in a strain tag!");
+		$self->throw("You must pass in a strain tag!");
 	}
 	
-	if( ! defined( $$self{ 'pop_handle' } ) )
+	if( ! defined( $self->pop_handle ) )
 	{
-		$$self->throw("You must pass in a population handle!");
+		$self->throw("You must pass in a population handle!");
+	}
+	
+	if( ! defined( $self->species ) )
+	{
+		$self->throw("You must pass in a species name!");
+	}
+	
+	if( $self->species ne 'Mouse' )
+	{
+		$self->throw( "Sorry - only valid species at the moment is Mouse\n");
 	}
 	
     return $$self;
@@ -245,6 +255,18 @@ sub write_snp_records
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
 	
 	my $snpcnt = 0;
+	# grab a connection to an EnsEMBL mouse db
+	my $registry = 'Bio::EnsEMBL::Registry';
+	
+	$registry->load_registry_from_db(
+		-host    => 'ensdb-archive',
+		-user    => 'ensro',
+		-port    => '5304',
+		-verbose => 0
+	);
+
+	my $slice_adaptor = $registry->get_adaptor( $self->species, 'Core', 'Slice' );
+
 	#loop over the SNPs and write out the sequence
 	while ( <sfh> ) 
 	{
@@ -269,7 +291,7 @@ sub write_snp_records
 		
 		# grab the SNP and surrounding genomic region based on its 
 		# chromosomal location
-		$slice = $slice_adaptor->fetch_by_region( 'chromosome',
+		my $slice = $slice_adaptor->fetch_by_region( 'chromosome',
 					      $snp_rec{'chromosome'},
 					      $start_pos,
 					      $end_pos,
