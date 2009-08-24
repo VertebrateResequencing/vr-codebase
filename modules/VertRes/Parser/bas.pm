@@ -14,7 +14,7 @@ my $result_holder = $pars->result_holder();
 
 # loop through the output, getting results
 while ($pars->next_result()) {
-    my $total_bases = $result_holder->[6];
+    my $total_bases = $result_holder->[7];
     # etc.
 }
 
@@ -62,23 +62,24 @@ sub new {
            next_result()
  Returns : array ref, where the elements are:
            [0] bam_filename
-           [1] project
-           [2] sample
-           [3] platform
-           [4] library
-           [5] readgroup
-           [6] #_total_bases
-           [7] #_mapped_bases
-           [8] #_total_reads
-           [9] #_mapped_reads
-           [10] #_mapped_reads_paired_in_sequencing
-           [11] #_mapped_reads_properly_paired
-           [12] %_of_mismatched_bases
-           [13] average_quality_of_mapped_bases
-           [14] mean_insert_size
-           [15] insert_size_sd
-           [16] median_insert_size
-           [17] insert_size_median_absolute_deviation
+           [1] bam md5 checksum
+           [2] project
+           [3] sample
+           [4] platform
+           [5] library
+           [6] readgroup
+           [7] #_total_bases
+           [8] #_mapped_bases
+           [9] #_total_reads
+           [10] #_mapped_reads
+           [11] #_mapped_reads_paired_in_sequencing
+           [12] #_mapped_reads_properly_paired
+           [13] %_of_mismatched_bases
+           [14] average_quality_of_mapped_bases
+           [15] mean_insert_size
+           [16] insert_size_sd
+           [17] median_insert_size
+           [18] insert_size_median_absolute_deviation
  Args    : n/a
 
 =cut
@@ -106,7 +107,7 @@ sub next_result {
     @data || return;
     
     # header?
-    if ($data[17] eq 'insert_size_median_absolute_deviation') {
+    if ($data[18] eq 'insert_size_median_absolute_deviation') {
         return $self->next_result;
     }
     

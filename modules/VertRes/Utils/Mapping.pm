@@ -391,11 +391,11 @@ sub get_mapping_stats {
     
     my %stats;
     while ($bas_parser->next_result) {
-        $stats{total_bases} += $rh->[6];
-        $stats{mapped_bases} += $rh->[7];
-        $stats{total_reads} += $rh->[8];
-        $stats{mapped_reads} += $rh->[9];
-        $stats{mapped_reads_in_proper_pairs} += $rh->[11];
+        $stats{total_bases} += $rh->[7];
+        $stats{mapped_bases} += $rh->[8];
+        $stats{total_reads} += $rh->[9];
+        $stats{mapped_reads} += $rh->[10];
+        $stats{mapped_reads_in_proper_pairs} += $rh->[12];
     }
     
     $stats{percent_mapped} = sprintf("%0.2f", ((100 / $stats{total_bases}) * $stats{mapped_bases}));
