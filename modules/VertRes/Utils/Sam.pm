@@ -215,6 +215,12 @@ sub add_sam_header {
     my $platform = $args{platform} || $parser->lane_info($lane, 'INSTRUMENT_PLATFORM');
     my $centre = $args{centre} || $parser->lane_info($lane, 'CENTER_NAME');
     my $project = $args{project} || $parser->lane_info($lane, 'STUDY_ID');
+    if ($parser && (! $project || $project eq '-')) {
+        my $sn = $parser->lane_info($lane, 'STUDY_NAME');
+        if ($sn && $sn ne '-') {
+            $project = $sn;
+        }
+    }
     
     # write the sam header
     my $headed_sam = $raw_sam_file.'.withheader';
