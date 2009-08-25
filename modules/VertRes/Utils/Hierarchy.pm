@@ -261,9 +261,7 @@ sub create_release_hierarchy {
  Title   : dcc_filename
  Usage   : my $filename = $obj->dcc_filename('/abs/path/to/platform/release.bam');
  Function: Get the DCC filename of a bam file.
- Returns : string (filename) in scalar context
-           list of filename, project, sample, platform, first readgroup strings
-           in list context
+ Returns : string (filename without .bam suffix)
  Args    : absolute path to a platform-level release bam file
 
 =cut
@@ -284,7 +282,6 @@ sub dcc_filename {
     $view_fh || $self->throw("Failed to samtools view '$file'");
     
     my $ps = VertRes::Parser::sam->new(fh => $view_fh);
-    my $rh = $ps->result_holder;
     
     ($study, $sample, $platform) = ('unknown_study', 'unknown_sample', 'unknown_platform');
     my %techs;
@@ -339,22 +336,23 @@ sub dcc_filename {
     else {
         $platform .= '.';
     }
+    
     my $bamname = basename($file);
     my $chrom = '';
     if ($bamname =~ /^(\d+|[XY]|MT)/) {
         $chrom = "chrom$1.";
     }
+    
     my $mtime = (stat($file))[9];
     my ($month, $year) = (localtime($mtime))[4..5];
     $year += 1900;
     $month = sprintf("%02d", $month + 1);
+    
     my $algorithm = $ps->program || 'unknown_algorithm';
+    
     $dcc_filename = "$sample.$chrom$platform$algorithm.$study.$year.$month";
     
-    my ($first_readgroup) = sort keys %readgroup_info;
-    $first_readgroup ||= 'unknown_readgroup';
-    
-    return wantarray ? ($dcc_filename, $study, $sample, $platform, $first_readgroup) : $dcc_filename;
+    return $dcc_filename;
 }
 
 1;

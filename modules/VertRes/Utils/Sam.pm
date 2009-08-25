@@ -462,12 +462,13 @@ sub stats {
            various stats about each readgroup in a bam.
  Returns : boolean (true on success)
  Args    : input bam file (must have been run via samtools fillmd so that there
-           are accurate NM tags for each record), output filename
+           are accurate NM tags for each record), output filename, optionally a
+           sequence.index file from the DCC if working on bams with poor headers
 
 =cut
 
 sub bas {
-    my ($self, $in_bam, $out_bas) = @_;
+    my ($self, $in_bam, $out_bas, $seq_index) = @_;
     
     open(my $bas_fh, '>', $out_bas) || $self->throw("Couldn't write to '$out_bas': $!");
     
@@ -487,8 +488,61 @@ sub bas {
                              'insert_size_median_absolute_deviation'), "\n";
     $expected_lines++;
     
-    # print stats per-readgroup
+    # get the stats for each read group
     my %readgroup_data = $self->bam_statistics($in_bam);
+    
+    # get the meta data
+    my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
+    my $dcc_filename = $hu->dcc_filename($in_bam);
+    
+    my $md5;
+    my $md5_file = $in_bam.'.md5';
+    if (-s $md5_file) {
+        open(my $md5fh, $md5_file) || $self->throw("Couldn't open md5 file '$md5_file': $!");
+        my $line = <$md5fh>;
+        ($md5) = split(' ', $line);
+    }
+    else {
+        my $dmd5 = Digest::MD5->new();
+        open(FILE, $in_bam) or $self->throw("Couldn't open bam '$in_bam': $!");
+        binmode(FILE);
+        $dmd5->addfile(*FILE);
+        $md5 = $dmd5->hexdigest;
+    }
+    
+    my $sip = VertRes::Parser::sequence_index->new(file => $seq_index) if $seq_index;
+    
+    my $stw = VertRes::Wrapper::samtools->new(quiet => 1);
+    $stw->run_method('open');
+    my $view_fh = $stw->view($in_bam, undef, H => 1);
+    $view_fh || $self->throw("Failed to samtools view '$in_bam'");
+    my $ps = VertRes::Parser::sam->new(fh => $view_fh);
+    
+    # add in the meta data
+    while (my ($rg, $data) = each %readgroup_data) {
+        $readgroup_data{$rg}->{dcc_filename} = $dcc_filename;
+        $readgroup_data{$rg}->{study} = $ps->readgroup_info($rg, 'DS') || 'unknown_study';
+        $readgroup_data{$rg}->{sample} = $ps->readgroup_info($rg, 'SM') || 'unknown_sample';
+        $readgroup_data{$rg}->{platform} = $ps->readgroup_info($rg, 'PL') || 'unknown_platform';
+        $readgroup_data{$rg}->{library} = $ps->readgroup_info($rg, 'LB') || 'unknown_library';
+        
+        # fall back on the sequence.index if we have to
+        if ($sip) {
+            my %convert = (study => 'STUDY_ID',
+                           sample => 'SAMPLE_NAME',
+                           platform => 'INSTRUMENT_PLATFORM',
+                           library => 'LIBRARY_NAME');
+            foreach my $field (keys %convert) {
+                if (! $readgroup_data{$rg}->{$field} || $readgroup_data{$rg}->{$field} eq "unknown_$field" || $readgroup_data{$rg}->{$field} eq '-') {
+                    $readgroup_data{$rg}->{$field} = $sip->lane_info($rg, $convert{$field}) || "unknown_$field";
+                }
+            }
+        }
+        
+        $readgroup_data{$rg}->{md5} = $md5;
+    }
+    
+    # print stats per-readgroup
     foreach my $rg (sort keys %readgroup_data) {
         my %data = %{$readgroup_data{$rg}};
         print $bas_fh join("\t", $data{dcc_filename},
@@ -534,37 +588,16 @@ sub bas {
            format.
  Returns : hash with keys as readgroup ids and values as hash refs. Those refs
            have the keys:
-           dcc_filename, md5, study, sample, platform, library, total_bases,
-           mapped_bases, total_reads, mapped_reads, mapped_reads_paired_in_seq,
-           mapped_reads_properly_paired, percent_mismatch, avg_qual, avg_isize,
-           sd_isize, median_isize, mad
+           total_bases, mapped_bases, total_reads, mapped_reads,
+           mapped_reads_paired_in_seq, mapped_reads_properly_paired,
+           percent_mismatch, avg_qual, avg_isize, sd_isize, median_isize, mad
  Args    : input bam file (must have been run via samtools fillmd so that there
-           are accurate NM tags for each record), optionally a sequence.index
-           file from the DCC if working on bams with poor headers
+           are accurate NM tags for each record)
 
 =cut
 
 sub bam_statistics {
-    my ($self, $bam, $seq_index) = @_;
-    
-    my $sip = VertRes::Parser::sequence_index->new(file => $seq_index) if $seq_index;
-    
-    my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
-    my ($dcc_filename, $study, $sample, $technology, $previous_rg) = $hu->dcc_filename($bam);
-    my $md5;
-    my $md5_file = $bam.'.md5';
-    if (-s $md5_file) {
-        open(my $md5fh, $md5_file) || $self->throw("Couldn't open md5 file '$md5_file': $!");
-        my $line = <$md5fh>;
-        ($md5) = split(' ', $line);
-    }
-    else {
-        my $dmd5 = Digest::MD5->new();
-        open(FILE, $bam) or $self->throw("Couldn't open bam '$bam': $!");
-        binmode(FILE);
-        $dmd5->addfile(*FILE);
-        $md5 = $dmd5->hexdigest;
-    }
+    my ($self, $bam) = @_;
     
     # view the bam and accumulate all the raw stats in little memory
     my $stw = VertRes::Wrapper::samtools->new(quiet => 1);
@@ -578,6 +611,7 @@ sub bam_statistics {
     my $fqu = VertRes::Utils::FastQ->new();
     
     my %readgroup_data;
+    my $previous_rg = 'unknown_readgroup';
     while ($ps->next_result) {
         my $rg = $rh->{RG};
         unless ($rg) {
@@ -685,20 +719,6 @@ sub bam_statistics {
         $readgroup_data{$rg}->{percent_mismatch} = $percent_mismatch;
         $readgroup_data{$rg}->{median_isize} = $median_isize;
         $readgroup_data{$rg}->{mad} = $mad;
-        
-        # add in header info
-        $readgroup_data{$rg}->{dcc_filename} = $dcc_filename;
-        $readgroup_data{$rg}->{study} = $study;
-        $readgroup_data{$rg}->{sample} = $sample;
-        $readgroup_data{$rg}->{platform} = $ps->readgroup_info($rg, 'PL') || 'unknown_platform';
-        $readgroup_data{$rg}->{library} = $ps->readgroup_info($rg, 'LB') || 'unknown_library';
-        
-        if ($readgroup_data{$rg}->{library} eq 'unknown_library' && $sip) {
-            $readgroup_data{$rg}->{platform} = $sip->lane_info($rg, 'INSTRUMENT_PLATFORM') || 'unknown_platform';
-            readgroup_data{$rg}->{library} = $sip->lane_info($rg, 'LIBRARY_NAME') || 'unknown_library';
-        }
-        
-        $readgroup_data{$rg}->{md5} = $md5;
     }
     
     return %readgroup_data;
