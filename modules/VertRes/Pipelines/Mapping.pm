@@ -47,7 +47,7 @@ our $actions = [ { name     => 'split',
                    action   => \&split,
                    requires => \&split_requires, 
                    provides => \&split_provides },
-                { name     => 'map',
+                 { name     => 'map',
                    action   => \&map,
                    requires => \&map_requires, 
                    provides => \&map_provides },
@@ -58,7 +58,7 @@ our $actions = [ { name     => 'split',
                  { name     => 'cleanup',
                    action   => \&cleanup,
                    requires => \&cleanup_requires, 
-                   provides => \&cleanup_provides }];
+                   provides => \&cleanup_provides } ];
 
 our %options = (sequence_index => '/nfs/sf8/G1K/misc/sequence.index',
                 local_cache => '',
