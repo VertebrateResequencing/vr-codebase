@@ -221,13 +221,13 @@ sub importExternalData
     
     next if( $_ =~ /^\s+$/ || length( $_ ) == 0 || $_ =~ /^FASTQ_FILE/ );
     
-	my $project_directory = getProjectDirectory( $_ );
-	
-    my @info = split( /\t/, $_ );
+    my $project_directory = getProjectDirectory( $_ );
+    
+    my @info = split( /\t/, $original );
     
     if( $info[ 18 ] ne "PAIRED" && $info[ 18 ] ne "SINGLE" )
     {
-      print "Skipping line: $_\n";
+      print "Skipping line: $original\n";
       my $i = 0;
       foreach( @info )
       {
