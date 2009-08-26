@@ -291,6 +291,7 @@ sub _set_from_args {
  Function: Sets verbose level for how ->warn() behaves
            -1 = no warning
             0 = standard, small warning
+	    0.5 = tiny warning with no line numbers
             1 = warning with stack trace
             2 = warning becomes throw
  Returns : The current verbosity setting (integer between -1 to 2)
@@ -347,6 +348,9 @@ sub warn {
     }
     elsif ($verbose == 1) {
         cluck($message);
+    }
+    elsif ($verbose == 0.5) {
+	CORE::warn($message."\n");
     }
     else {
         carp($message);
