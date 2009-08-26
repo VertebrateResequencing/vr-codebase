@@ -49,6 +49,7 @@ our %study_to_srp = ('Exon-CEU' => 'SRP000033',
                      'Trio-YRI' => 'SRP000032');
 
 our %platform_aliases = (ILLUMINA => 'SLX',
+                         Illumina => 'SLX',
                          LS454 => '454');
 
 =head2 new
@@ -100,19 +101,24 @@ sub parse_lane {
  Function: Check that the given lanes reside in the correct part of the
            hierarchy by checking the information in the sequence.index file.
  Returns : boolean (true if all lanes agree with the sequence index)
- Args    : reference to a list of lane paths to check, sequence.index filename
+ Args    : reference to a list of lane paths to check, sequence.index filename,
+           boolean to turn on optional checking to see if you're missing any
+           lanes that you should have according to the sequence.index
 
 =cut
 
 sub check_lanes_vs_sequence_index {
-    my ($self, $lanes, $sequence_index) = @_;
+    my ($self, $lanes, $sequence_index, $check_for_missing) = @_;
     
-    my $sip = VertRes::Parser::sequence_index->new(file => $sequence_index);
+    my $sip = VertRes::Parser::sequence_index->new(file => $sequence_index,
+                                                   verbose => $self->verbose);
     
     my $all_ok = 1;
+    my @lane_ids;
     foreach my $lane_path (@{$lanes}) {
         my %lane_info = $self->parse_lane($lane_path);
         my $lane_id = $lane_info{lane};
+        push(@lane_ids, $lane_id);
         
         # check this lane is even in the sequence.index; $sip will warn if not
         my $sample_name = $sip->lane_info($lane_id, 'sample_name');
@@ -124,7 +130,7 @@ sub check_lanes_vs_sequence_index {
         # check this lane hasn't been withdrawn
         my $withdrawn = $sip->lane_info($lane_id, 'WITHDRAWN');
         if ($withdrawn) {
-            $self->warn("");
+            $self->warn("withdrawn: $lane_id ($lane_path)");
             $all_ok = 0;
             next;
         }
@@ -145,20 +151,52 @@ sub check_lanes_vs_sequence_index {
         
         # platform swaps
         my $platform = $sip->lane_info($lane_id, 'INSTRUMENT_PLATFORM');
-        unless ($platform eq $lane_info{platform} || $platform_aliases{$platform} eq $lane_info{platform}) {
+        unless ($platform eq $lane_info{platform} || (exists $platform_aliases{$platform} && $platform_aliases{$platform} eq $lane_info{platform})) {
             $self->warn("platform swap: $platform vs $lane_info{platform} for $lane_id ($lane_path)");
             $all_ok = 0;
         }
         
         # library swaps
         my $library = $sip->lane_info($lane_id, 'LIBRARY_NAME');
+        $library =~ s/\s/_/;
         unless ($library eq $lane_info{library}) {
             $self->warn("library swap: $library vs $lane_info{library} for $lane_id ($lane_path)");
             $all_ok = 0;
         }
     }
     
-    return $all_ok;
+    if ($check_for_missing) {
+        my @lanes = $sip->get_lanes(ignore_withdrawn => 1);
+        
+        # if we only ignore lines with withdrawn, it doesn't stop us picking up
+        # lanes that were both withdrawn and not withdrawn. Filter those out as
+        # well:
+        my @expected_lanes;
+        foreach my $lane (@lanes) {
+            my $withdrawn = $sip->lane_info($lane, 'withdrawn');
+            if ($withdrawn) {
+                $self->warn("lane $lane was both withdrawn and not withdrawn - treating it as withdrawn");
+            }
+            else {
+                push(@expected_lanes, $lane);
+            }
+        }
+        
+        # uniquify
+        my %expected_lanes = map { $_ => 1 } @expected_lanes;
+        @expected_lanes = sort keys %expected_lanes;
+        
+        my %actual_lanes = map { $_ => 1 } @lane_ids;
+        
+        foreach my $lane (@expected_lanes) {
+            unless (exists $actual_lanes{$lane}) {
+                $self->warn("missing: $lane was in the sequence.index but not in the supplied list of lanes");
+                $all_ok = 0;
+            }
+        }
+    }
+    
+    return $all_ok = 0;
 }
 
 =head2 create_release_hierarchy
@@ -350,7 +388,7 @@ sub dcc_filename {
     
     my $algorithm = $ps->program || 'unknown_algorithm';
     
-    $dcc_filename = "$sample.$chrom$platform$algorithm.$study.$year.$month";
+    $dcc_filename = "$sample.$chrom$platform$algorithm.$study.${year}_$month";
     
     return $dcc_filename;
 }
