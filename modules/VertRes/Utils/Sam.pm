@@ -602,7 +602,7 @@ sub bam_statistics {
     # view the bam and accumulate all the raw stats in little memory
     my $stw = VertRes::Wrapper::samtools->new(quiet => 1);
     $stw->run_method('open');
-    my $view_fh = $stw->view($bam, undef, h => 1);
+    my $view_fh = $stw->view($bam);
     $view_fh || $self->throw("Failed to samtools view '$bam'");
     
     my $ps = VertRes::Parser::sam->new(fh => $view_fh);
