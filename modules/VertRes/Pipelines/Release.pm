@@ -37,6 +37,9 @@ lanes mapped by VertRes::Pipelines::Mapping.
    Option to split by chr afterwards.
    Option to filter out lanes at this stage?
    Create release.bam symlinks. bai and md5 and bas file creation.
+     *** or better, hardlinks to DCC-style filenames for the bams, bais and bas
+         files, then make a single md5 file for everything, making for an easy
+         aspera upload
 4) sample-level merge, making raw.bam (optionally from platform recals).
    Option to split by chr. for sample-level have 'latest.bam' symlinks.
 
