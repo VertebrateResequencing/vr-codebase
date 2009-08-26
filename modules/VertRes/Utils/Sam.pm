@@ -583,7 +583,7 @@ sub bas {
 =head2 bam_statistics
 
  Title   : bam_statistics
- Usage   : $obj->bam_statistics('in.bam');
+ Usage   : my %readgroup_stats = $obj->bam_statistics('in.bam');
  Function: Calculate all the stats per-readgroup for a bam needed for the bas
            format.
  Returns : hash with keys as readgroup ids and values as hash refs. Those refs
