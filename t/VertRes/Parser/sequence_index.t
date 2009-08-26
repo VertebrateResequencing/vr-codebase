@@ -3,12 +3,12 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 32;
+    use Test::Most tests => 34;
     
     use_ok('VertRes::Parser::sequence_index');
 }
 
-my $sip = VertRes::Parser::sequence_index->new();
+my $sip = VertRes::Parser::sequence_index->new(verbose => 1);
 isa_ok $sip, 'VertRes::Parser::ParserI';
 isa_ok $sip, 'VertRes::IO';
 isa_ok $sip, 'VertRes::Base';
@@ -93,6 +93,12 @@ while ($sip->next_result) { next; };
 $expected = shift @expected_data;
 is_deeply $rh, $expected, 'parsed data for last line';
 
+# test get_lanes() on headed
+my @all_lanes = $sip->get_lanes;
+is $all_lanes[0], 'ERR000018', 'got first lane with get_lanes on headed file';
+my %all_lanes = map { $_ => 1 } @all_lanes;
+ok ! defined $all_lanes{RUN_ID}, 'RUN_ID did not get treated as a lane';
+
 # try parsing a sequence.index with no header line
 $si_file = $sip->catfile('t', 'data', 'sequence.index.headerless');
 ok -e $si_file, 'headerlessfile we will test with exists';
@@ -102,9 +108,9 @@ is $sip->lane_info('ERR000044', 'sample_name'), 'NA18550', 'headerless file pars
 $sip->next_result;
 is $rh->[0], 'data/NA18550/sequence_read/ERR000044_1.recal.fastq.gz', 'got first line correctly';
 
-# test get_lanes()
-my @all_lanes = $sip->get_lanes;
-is $all_lanes[0], 'ERR000044', 'got first lane';
+# test get_lanes() on headerless
+@all_lanes = $sip->get_lanes;
+is $all_lanes[0], 'ERR000044', 'got first lane with get_lanes on headerless file';
 is $all_lanes[-1], 'SRR014220', 'got last lane';
 is @all_lanes, 8723, 'got all lanes';
 is $rh->[0], 'data/NA18550/sequence_read/ERR000044_1.recal.fastq.gz', 'getting all lanes didn\'t alter our result holder';

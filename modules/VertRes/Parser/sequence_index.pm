@@ -192,6 +192,10 @@ sub next_result {
     my @data = split(/\t/, $line);
     @data == 25 or return;
     
+    if ($data[2] eq 'RUN_ID') {
+        $self->throw("got RUN_ID!");
+    }
+    
     $self->{'lanes'.$fh_id}->{$data[2]}->{$tell} = 1;
     
     for my $i (0..$#data) {
@@ -313,6 +317,8 @@ sub get_lanes {
     
     # parse the whole file
     my $fh = $self->fh || return;
+    my $fh_id = $self->_fh_id;
+    delete $self->{'_got_header'.$fh_id};
     seek($fh, 0, 0);
     RESULT: while ($self->next_result) {
         if ($do_ignores) {
