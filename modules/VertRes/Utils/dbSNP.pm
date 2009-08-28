@@ -50,13 +50,15 @@ sub new
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
     	    
-	checkFields();
+	checkFields( $self );
 	
     return $$self;
 }
 
-sub checkFields
+sub _checkFields
 {
+	my $self = $_[ 0 ];
+	
 	if( ! defined( $self->handle ) )
 	{
 		$self->throw("You must pass in a dbSNP handle at object creation!");
@@ -98,7 +100,7 @@ sub write_header
 	my ($self, $outputFile, $name, $fax, $fone, $email, $lab, $title, $authors, $year, $status) = @_;
 	
 	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 11;
-	checkFields();
+	checkFields( $self );
     
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
     print $ofh qq[
@@ -140,7 +142,7 @@ sub write_methods
 	my ($self, $outputFile, $id, $methods) = @_;
 	
 	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 2;
-	checkFields();
+	checkFields( $self );
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
     print $ofh qq[
@@ -174,7 +176,7 @@ sub write_population
     my ($self, $outputFile ) = @_;
 	
 	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 1;
-	checkFields();
+	checkFields( $self );
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
 	
@@ -204,7 +206,7 @@ sub write_individual
 	my ($self, $outputFile ) = @_;
 	
 	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 1;
-	checkFields();
+	checkFields( $self );
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
 
@@ -237,7 +239,7 @@ sub write_snpassay
 	my ($self, $outputFile, $batch_name ) = @_;
 	
 	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 3;
-	checkFields();
+	checkFields( $self );
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
 	
