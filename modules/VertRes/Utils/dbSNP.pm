@@ -50,32 +50,37 @@ sub new
     my ($class, %args) = @_;
     my $self = $class->SUPER::new(%args);
     	    
+	checkFields();
+	
+    return $$self;
+}
+
+sub checkFields
+{
 	if( ! defined( $self->handle ) )
 	{
-		$self->throw("You must pass in a dbSNP handle!");
+		$self->throw("You must pass in a dbSNP handle at object creation!");
 	}
 	
 	if( ! defined( $self->strain_tag ) )
 	{
-		$self->throw("You must pass in a strain tag!");
+		$self->throw("You must pass in a strain tag at object creation!");
 	}
 	
 	if( ! defined( $self->pop_handle ) )
 	{
-		$self->throw("You must pass in a population handle!");
+		$self->throw("You must pass in a population handle at object creation!");
 	}
 	
 	if( ! defined( $self->species ) )
 	{
-		$self->throw("You must pass in a species name!");
+		$self->throw("You must pass in a species name at object creation!");
 	}
 	
 	if( $self->species ne 'Mouse' )
 	{
 		$self->throw( "Sorry - only valid species at the moment is Mouse\n");
 	}
-	
-    return $$self;
 }
 
 =head2 write_header
@@ -91,6 +96,9 @@ sub new
 sub write_header 
 {
 	my ($self, $outputFile, $name, $fax, $fone, $email, $lab, $title, $authors, $year, $status) = @_;
+	
+	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 11;
+	checkFields();
     
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
     print $ofh qq[
@@ -114,6 +122,7 @@ STATUS:  $status
 ||
 ];
 	close( $ofh );
+	$self->title = $title;
 }
 
 =head2 write_methods
@@ -128,22 +137,26 @@ STATUS:  $status
 
 sub write_methods
 {
-	my ($self, $outputFile, $id, $method) = @_;
+	my ($self, $outputFile, $id, $methods) = @_;
+	
+	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 2;
+	checkFields();
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
     print $ofh qq[
 TYPE:                   METHOD
 HANDLE:                 $self->handle
-ID:                     method_id
+ID:                     $id
 METHOD_CLASS:           Sequence
 SEQ_BOTH_STRANDS:       YES
 TEMPLATE_TYPE:          DIPLOID
 MULT_PCR_AMPLIFICATION: NA
 MULT_CLONES_TESTED:     NA
 METHOD:
-$method
+$methods
 ];
 	close( $ofh );
+	$self->method_id=$id;
 }
 
 =head2 write_population
@@ -159,6 +172,9 @@ $method
 sub write_population
 {
     my ($self, $outputFile ) = @_;
+	
+	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 1;
+	checkFields();
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
 	
@@ -186,6 +202,9 @@ POPULATION:
 sub write_individual
 {
 	my ($self, $outputFile ) = @_;
+	
+	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 1;
+	checkFields();
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
 
@@ -217,7 +236,12 @@ sub write_snpassay
 {
 	my ($self, $outputFile, $batch_name ) = @_;
 	
+	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 3;
+	checkFields();
+	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
+	
+	$self->throw("You must call the write_header function first to define the title!") unless defined( $self->title );
 	
     print $ofh qq[
 TYPE:       SNPASSAY
@@ -225,10 +249,9 @@ HANDLE:     $self->handle
 BATCH:      $batch_name
 MOLTYPE:    Genomic
 SAMPLESIZE: 2
-METHOD:     mouse.chr17.SNP.calls
+METHOD:     Genomic Sequencing
 ORGANISM:   Mus musculus
-CITATION:   Short-read sequencing and assembly of chromosome 17 from
-            two inbred mouse strains: A/J and CAST/Ei
+CITATION:   $self->title
 ||
 ];
 	close( $ofh );
@@ -281,24 +304,25 @@ sub write_snp_records
 		my @s = split( /\t/, $_ );
 		$self->throw("Cannot create $outputFile: $!") unless @s == 6;
 		
-		my %snp_rec;
-		($snp_rec{'chromosome'}, $snp_rec{'position'}, $snp_rec{'reference_base'}, $snp_rec{'consensus_base'}, $snp_rec{'phred_quality'}, $snp_rec{'read_depth'}) = @s;
+		(my $chromosome, $position, $reference_base, $consensus_base, $phred_quality, $read_depth ) = @s;
+		
+		$self->throw("Invalid SNP entry in file: $_") unless @s == 6; #do more sanity checks here.....
 		
 		# grab the entire sequence once instead of having to make
 		# multiple accesses to the db i.e. for upstream and downstream say
-		my $start_pos = $snp_rec{'position'} - $FIVE_PRIME_REGION;
-		my $end_pos = $snp_rec{'position'} + $THREE_PRIME_REGION;
+		my $start_pos = $position - $FIVE_PRIME_REGION;
+		my $end_pos = $position + $THREE_PRIME_REGION;
 		
 		# grab the SNP and surrounding genomic region based on its 
 		# chromosomal location
 		my $slice = $slice_adaptor->fetch_by_region( 'chromosome',
-					      $snp_rec{'chromosome'},
+					      $chromosome,
 					      $start_pos,
 					      $end_pos,
 					      1,
 					      $REFERENCE_ASSEMBLY);
 		my $full_seq = $slice->seq();
- 
+		
 		# determine the supercontig
 		my $supercontig_projection = $slice->project('supercontig', $REFERENCE_ASSEMBLY);
 		
@@ -317,10 +341,11 @@ sub write_snp_records
 		}
 		
 		my $contig;
+		my $supercontig;
 		foreach my $curr_superc ( @$supercontig_projection ) 
 		{
 			$contig = $curr_superc->to_Slice();
-			$snp_rec{'supercontig'} = $contig->seq_region_name;
+			$supercontig = $contig->seq_region_name;
 		}
 		
 		# a quick sanity check that the base in the defined snp position
@@ -328,15 +353,14 @@ sub write_snp_records
 
 		my $snp_seq = substr($full_seq,$FIVE_PRIME_REGION,1);
 
-		if ( $snp_seq ne $snp_rec{'reference_base'} ) 
+		if ( $snp_seq ne $reference_base ) 
 		{
 			$self->throw("Snp reference_base does not match sequence retrieved from EnsEMBL: $_\n");
 		}
 		
 		# extract the upstream and downstream sequences
 		my $five_prime_seq = substr($full_seq,0,$FIVE_PRIME_REGION);
-		$snp_rec{'five_prime_seq'} = $five_prime_seq;
-		
+
 		# indexing from zero so add a 1 to the starting position
 		my $three_prime_seq = substr($full_seq,$FIVE_PRIME_REGION+1,$THREE_PRIME_REGION);
 		
@@ -344,25 +368,23 @@ sub write_snp_records
 		# computed location of the SNP (ACCESSION + LOCATION)
 		# flanking sequence (200 bp 5' and 200 bp 3' of the variant position)
 		
-		my $snp_id = qq[$self->handle_$->strain_tag_$snpcnt];
+		my $snp_id = $self->handle.'_'.$->strain_tag.'_'.$snpcnt;
 		
 		print $ofh qq[
 SNP:        $snp_id
-ACCESSION:  $contig
+ACCESSION:  $supercontig
 LOCATION:   $start_pos
 SAMPLESIZE: 2
 LENGTH:     1
 5'_FLANK:   $five_prime_seq
-OBSERVED:   $snp_rec{'reference_base'}
+OBSERVED:   $reference_base
 3'_FLANK:   $three_prime_seq
 COMMENT:
-quality: $snp_rec{'phred_quality'}
-read_depth: $snp_rec{'read_depth'}
+quality: $phred_quality
+read_depth: $read_depth
 ||
 ];
 	}
 	close( $ofh );
 	close( $sfh );
 }
-
-
