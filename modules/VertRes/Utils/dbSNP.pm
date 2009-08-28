@@ -306,7 +306,7 @@ sub write_snp_records
 		my @s = split( /\t/, $_ );
 		$self->throw("Cannot create $outputFile: $!") unless @s == 6;
 		
-		(my $chromosome, $position, $reference_base, $consensus_base, $phred_quality, $read_depth ) = @s;
+		my ($chromosome, $position, $reference_base, $consensus_base, $phred_quality, $read_depth ) = @s;
 		
 		$self->throw("Invalid SNP entry in file: $_") unless @s == 6; #do more sanity checks here.....
 		
