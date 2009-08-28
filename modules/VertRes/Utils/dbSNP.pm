@@ -370,7 +370,7 @@ sub write_snp_records
 		# computed location of the SNP (ACCESSION + LOCATION)
 		# flanking sequence (200 bp 5' and 200 bp 3' of the variant position)
 		
-		my $snp_id = $self->handle.'_'.$->strain_tag.'_'.$snpcnt;
+		my $snp_id = $self->handle.'_'.$self->strain_tag.'_'.$snpcnt;
 		
 		print $ofh qq[
 SNP:        $snp_id
