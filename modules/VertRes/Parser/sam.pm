@@ -26,6 +26,12 @@ while ($pars->next_result()) {
     my $mapped = $pars->is_mapped($flag);
 }
 
+# or for speed critical situations:
+$pars = VertRes::Parser::sam->new(file => 'mapping.sam');
+while (my @fields = $pars->get_fields('QNAME', 'FLAG', 'RG')) {
+    # @fields contains the qname, flag and rg tag
+}
+
 =head1 DESCRIPTION
 
 A parser for sam files.
@@ -54,6 +60,18 @@ my %col_to_name = (0  => 'QNAME',
                    8  => 'ISIZE',
                    9  => 'SEQ',
                    10 => 'QUAL');
+
+my %name_to_col = (QNAME => 0,
+                   FLAG => 1,
+                   RNAME => 2,
+                   POS => 3,
+                   MAPQ => 4,
+                   CIGAR => 5,
+                   MRNM => 6,
+                   MPOS => 7,
+                   ISIZE => 8,
+                   SEQ => 9,
+                   QUAL => 10);
 
 our %flags = (paired_tech    => 0x0001,
               paired_map     => 0x0002,
@@ -576,6 +594,75 @@ sub next_result {
     }
     
     return 1;
+}
+
+=head2 get_fields
+
+ Title   : get_fields
+ Usage   : while (my @fields = $obj->get_fields('QNAME', 'FLAG')) { #... }
+ Function: From the next line in the sam file, get the values of certain
+           fields/tags. This is faster than using next_result().
+           NB: this must either be run on a headerless sam file, or you must
+           not use any of the header-related methods
+ Returns : list of desired values
+ Args    : list of desired fields (see result_holder()) or tags (like 'RG')
+
+=cut
+
+sub get_fields {
+    my ($self, @fields) = @_;
+    
+    # get the next line; we don't deal with header issues to increase speed
+    my $fh = $self->fh() || return;
+    my $line = <$fh> || return;
+    while (index($line, '@') == 0) {
+        $line = <$fh> || return;
+    }
+    
+    my @data = split(qr/\t/, $line);
+    @data || return;
+    
+    for my $i (11..$#data) {
+        my $tag = substr($data[$i], 0, 2);
+        $name_to_col{$tag} = $i;
+    }
+    
+    my @cols;
+    foreach my $field (@fields) {
+        my $col = $name_to_col{$field};
+        if (defined $col) {
+            push(@cols, $col);
+        }
+        else {
+            $self->warn("'$field' wasn't found in this sam record");
+            push(@cols, undef);
+        }
+    }
+    
+    my @values;
+    foreach my $col (@cols) {
+        if (! defined $col) {
+            push(@values, undef);
+            next;
+        }
+        
+        chomp($data[$col]) if $col == $#data;
+        
+        if ($col <= 10) {
+            push(@values, $data[$col]);
+        }
+        else {
+            my $tag = $data[$col];
+            unless ($tag) {
+                $self->warn("column $col missing for this sam record");
+                push(@values, undef);
+                next;
+            }
+            push(@values, substr($tag, 5));
+        }
+    }
+    
+    return @values;
 }
 
 1;

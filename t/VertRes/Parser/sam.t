@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 52;
+    use Test::Most tests => 56;
     
     use_ok('VertRes::Parser::sam');
 }
@@ -103,5 +103,24 @@ $rh = $ps->result_holder();
 ok $ps->next_result, 'next_result worked on a headed sam after calling a header method';
 is $rh->{QNAME}, 'SRR003436.685', 'QNAME fine for first record after first calling a header method';
 is $rh->{FLAG}, 121, 'FLAG fine for first record after first calling a header method';
+
+# test the fast parsing method
+$ps = VertRes::Parser::sam->new(file => $s_file);
+my @fields = $ps->get_fields('QNAME', 'FLAG', 'QUAL');
+is_deeply \@fields, ['IL3_2822:6:1:3:1989', '69', '44444477774774774447477747($$(447474\'$(($(7777477744477774477'], 'correct fields retrieved from first line';
+@fields = $ps->get_fields('SEQ');
+is $fields[0], 'NANANNAAANNANNANAAAAAAAAANAAANNNNNNNNNNNNNNNNNNANNNNNN', 'correct field retrieved from second line';
+# check the last line as well
+my $last_field;
+while (@fields = $ps->get_fields('QNAME')) {
+    $last_field = $fields[0];
+    next;
+}
+is $last_field, 'IL3_2822:6:1:46:1716', 'correct field retrieved from last line';
+
+# and on a headed sam, getting tags
+$ps->file($headed_sam);
+@fields = $ps->get_fields('QNAME', 'FLAG', 'RG');
+is_deeply \@fields, ['SRR003436.685', 121, 'SRR003436'], 'correct fields retrieved from first line with an RG tag';
 
 exit;
