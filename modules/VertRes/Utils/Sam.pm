@@ -605,98 +605,99 @@ sub bam_statistics {
     my $view_fh = $stw->view($bam);
     $view_fh || $self->throw("Failed to samtools view '$bam'");
     
-    my $ps = VertRes::Parser::sam->new(fh => $view_fh);
-    my $rh = $ps->result_holder;
+    my $ps = VertRes::Parser::sam->new(fh => $view_fh, verbose => -1);
     
     my $fqu = VertRes::Utils::FastQ->new();
     
     my %readgroup_data;
     my $previous_rg = 'unknown_readgroup';
-    while ($ps->next_result) {
-        my $rg = $rh->{RG};
+    while (my ($qname, $rg, $seq, $flag, $quality, $mapq, $isize, $nm) = $ps->get_fields('QNAME', 'RG', 'SEQ', 'FLAG', 'QUAL', 'MAPQ', 'ISIZE', 'NM')) {
         unless ($rg) {
-            $self->warn("$rh->{QNAME} had no RG tag, using previous RG tag '$previous_rg'");
+            $self->warn("$qname had no RG tag, using previous RG tag '$previous_rg'");
             $rg = $previous_rg;
         }
         $previous_rg = $rg;
         
-        $readgroup_data{$rg}->{total_reads}++;
-        my $read_length = length($rh->{SEQ});
-        $readgroup_data{$rg}->{total_bases} += $read_length;
+        my @this_rg_data = @{$readgroup_data{$rg} || []};
+        $this_rg_data[0]++;
+        my $read_length = length($seq);
+        $this_rg_data[1] += $read_length;
         
-        my $flag = $rh->{FLAG};
         if ($ps->is_mapped($flag)) {
-            $readgroup_data{$rg}->{mapped_reads}++;
-            $readgroup_data{$rg}->{mapped_bases} += $read_length;
-            $readgroup_data{$rg}->{mapped_reads_paired_in_seq}++ if $ps->is_sequencing_paired($flag);
+            $this_rg_data[2]++;
+            $this_rg_data[3] += $read_length;
+            $this_rg_data[4]++ if $ps->is_sequencing_paired($flag);
             
             # avg quality of mapped bases
-            foreach my $qual ($fqu->qual_to_ints($rh->{QUAL})) {
-                $readgroup_data{$rg}->{qual_count}++;
+            foreach my $qual ($fqu->qual_to_ints($quality)) {
+                $this_rg_data[5]++;
                 
-                if ($readgroup_data{$rg}->{qual_count} == 1) {
-                    $readgroup_data{$rg}->{qual_mean} = $qual;
+                if ($this_rg_data[5] == 1) {
+                    $this_rg_data[6] = $qual;
                 }
                 else {
-                    $readgroup_data{$rg}->{qual_mean} += ($qual - $readgroup_data{$rg}->{qual_mean}) / $readgroup_data{$rg}->{qual_count};
+                    $this_rg_data[6] += ($qual - $this_rg_data[6]) / $this_rg_data[5];
                 }
             }
             
             # avg insert size and keep track of 's' for later calculation of sd.
             # algorithm based on http://www.johndcook.com/standard_deviation.html
             if ($ps->is_mapped_paired($flag)) {
-                $readgroup_data{$rg}->{mapped_reads_properly_paired}++;
+                $this_rg_data[7]++;
                 
-                if ($rh->{MAPQ} > 0) {
-                    my $isize = $rh->{ISIZE} || 0;
+                if ($mapq > 0) {
+                    $isize ||= 0;
                     if ($isize > 0) { # avoids counting the isize twice for a pair, since one will be negative
-                        $readgroup_data{$rg}->{isize_count}++;
+                        $this_rg_data[8]++;
                         
-                        if ($readgroup_data{$rg}->{isize_count} == 1) {
-                            $readgroup_data{$rg}->{isize_mean} = $isize;
-                            $readgroup_data{$rg}->{isize_s} = 0;
+                        if ($this_rg_data[8] == 1) {
+                            $this_rg_data[9] = $isize;
+                            $this_rg_data[10] = 0;
                         }
                         else {
-                            my $old_mean = $readgroup_data{$rg}->{isize_mean};
-                            $readgroup_data{$rg}->{isize_mean} += ($isize - $old_mean) / $readgroup_data{$rg}->{isize_count};
-                            $readgroup_data{$rg}->{isize_s} += ($isize - $old_mean) * ($isize - $readgroup_data{$rg}->{isize_mean});
+                            my $old_mean = $this_rg_data[9];
+                            $this_rg_data[9] += ($isize - $old_mean) / $this_rg_data[8];
+                            $this_rg_data[10] += ($isize - $old_mean) * ($isize - $this_rg_data[9]);
                         }
                         
                         # also, median insert size. Couldn't find an accurate
                         # running algorithm, but just keeping a histogram is
                         # accurate and uses less than 1MB. We can use the same
                         # histogram later to calculate the MAD.
-                        $readgroup_data{$rg}->{isize_median_histogram}->{$isize}++;
+                        $this_rg_data[11]->{$isize}++;
                     }
                 }
             }
             
             # for later calculation of mismatch %
-            if (defined $rh->{NM}) {
-                $readgroup_data{$rg}->{total_bases_with_nm} += $read_length;
-                $readgroup_data{$rg}->{edits} += $rh->{NM};
+            if (defined $nm) {
+                $this_rg_data[12] += $read_length;
+                $this_rg_data[13] += $nm;
             }
         }
+        
+        $readgroup_data{$rg} = \@this_rg_data;
     }
     
     # calculate the means etc.
+    my %stats;
     my $math_util = VertRes::Utils::Math->new();
     foreach my $rg (sort keys %readgroup_data) {
-        my %data = %{$readgroup_data{$rg}};
+        my @data = @{$readgroup_data{$rg}};
         
         # calculate/round stats
-        my $avg_qual = defined $data{qual_count} ? sprintf("%0.2f", $data{qual_mean}) : 0;
-        my $avg_isize = defined $data{isize_count} ? sprintf("%0.0f", $data{isize_mean}) : 0;
-        my $sd_isize = $avg_isize ? sprintf("%0.2f", sqrt($data{isize_s} / $data{isize_count})) : 0;
-        my $percent_mismatch = defined $data{edits} ? sprintf("%0.2f", (100 / $data{total_bases_with_nm}) * $data{edits}) : 0;
+        my $avg_qual = defined $data[5] ? sprintf("%0.2f", $data[6]) : 0;
+        my $avg_isize = defined $data[8] ? sprintf("%0.0f", $data[9]) : 0;
+        my $sd_isize = $avg_isize ? sprintf("%0.2f", sqrt($data[10] / $data[8])) : 0;
+        my $percent_mismatch = defined $data[13] ? sprintf("%0.2f", (100 / $data[12]) * $data[13]) : 0;
         
         my $median_isize = 0;
         my $mad = 0;
-        if (defined $data{isize_median_histogram}) {
-            $median_isize = $math_util->histogram_median($data{isize_median_histogram});
+        if (defined $data[11]) {
+            $median_isize = $math_util->histogram_median($data[11]);
             
             my %ads;
-            while (my ($isize, $freq) = each %{$data{isize_median_histogram}}) {
+            while (my ($isize, $freq) = each %{$data[11]}) {
                 my $ad = abs($median_isize - $isize);
                 $ads{$ad} += $freq;
             }
@@ -704,24 +705,23 @@ sub bam_statistics {
             $mad = $math_util->histogram_median(\%ads);
         }
         
-        delete $readgroup_data{$rg}->{qual_count};
-        delete $readgroup_data{$rg}->{qual_mean};
-        delete $readgroup_data{$rg}->{isize_count};
-        delete $readgroup_data{$rg}->{isize_mean};
-        delete $readgroup_data{$rg}->{isize_s};
-        delete $readgroup_data{$rg}->{edits};
-        delete $readgroup_data{$rg}->{total_bases_with_nm};
-        delete $readgroup_data{$rg}->{isize_median_histogram};
-        
-        $readgroup_data{$rg}->{avg_qual} = $avg_qual;
-        $readgroup_data{$rg}->{avg_isize} = $avg_isize;
-        $readgroup_data{$rg}->{sd_isize} = $sd_isize;
-        $readgroup_data{$rg}->{percent_mismatch} = $percent_mismatch;
-        $readgroup_data{$rg}->{median_isize} = $median_isize;
-        $readgroup_data{$rg}->{mad} = $mad;
+        my %rg_stats;
+        $rg_stats{total_reads} = $data[0];
+        $rg_stats{total_bases} = $data[1];
+        $rg_stats{mapped_reads} = $data[2];
+        $rg_stats{mapped_bases} = $data[3];
+        $rg_stats{mapped_reads_paired_in_seq} = $data[4];
+        $rg_stats{mapped_reads_properly_paired} = $data[7];
+        $rg_stats{avg_qual} = $avg_qual;
+        $rg_stats{avg_isize} = $avg_isize;
+        $rg_stats{sd_isize} = $sd_isize;
+        $rg_stats{percent_mismatch} = $percent_mismatch;
+        $rg_stats{median_isize} = $median_isize;
+        $rg_stats{mad} = $mad;
+        $stats{$rg} = \%rg_stats;
     }
     
-    return %readgroup_data;
+    return %stats;
 }
 
 =head2 make_unmapped_bam
