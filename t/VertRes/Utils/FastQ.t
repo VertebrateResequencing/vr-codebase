@@ -43,7 +43,7 @@ ok -l $split_file, 'split file was made and it was a symlink';
 is abs_path($split_file), abs_path($fq1_file), 'symlink points to the original fastq';
 
 # test qual_to_ints
-is_deeply [$fastq_util->qual_to_ints('!"#$%&\'()*+,5?DIS]')], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 20, 30, 35, 40, 50, 60], 'qual_to_ints test';
+is_deeply [$fastq_util->qual_to_ints('!"#$%&\'()*+,5?DIS]~')], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 20, 30, 35, 40, 50, 60, 93], 'qual_to_ints test';
 
 exit;
 

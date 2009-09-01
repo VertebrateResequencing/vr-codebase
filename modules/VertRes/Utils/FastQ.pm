@@ -32,7 +32,6 @@ use Cwd 'abs_path';
 
 use base qw(VertRes::Base);
 
-
 =head2 new
 
  Title   : new
@@ -220,6 +219,8 @@ sub split {
  Title   : qual_to_ints
  Usage   : my @qualities = $obj->qual_to_ints($quality_string);
  Function: Convert the quality string of a fastq sequence into quality integers.
+           NB: this currently only works correctly for sanger (phred) quality
+           strings, as found in sam files.
  Returns : list of int
  Args    : quality string
 
@@ -229,8 +230,11 @@ sub qual_to_ints {
     my ($self, $qual_string) = @_;
     
     my @quals;
-    foreach my $char (split('', $qual_string)) {
-        push(@quals,  unpack('C', $char) - 33);
+    foreach my $char (unpack("C*", $qual_string)) {
+        # (doing the substraction is pretty much exactly the same speed as
+        #  precalculating all the answers in an array and looking the answers
+        #  up by index)
+        push(@quals, $char - 33);
     }
     
     return @quals;
