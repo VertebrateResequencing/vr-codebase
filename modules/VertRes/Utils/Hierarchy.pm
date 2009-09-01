@@ -29,6 +29,8 @@ use VertRes::IO;
 use File::Basename;
 use File::Spec;
 use File::Path;
+use File::Copy;
+use Cwd 'abs_path';
 use VertRes::Parser::sequence_index;
 use VertRes::Wrapper::samtools;
 
@@ -120,8 +122,16 @@ sub check_lanes_vs_sequence_index {
         my $lane_id = $lane_info{lane};
         push(@lane_ids, $lane_id);
         
-        # check this lane is even in the sequence.index; $sip will warn if not
         my $sample_name = $sip->lane_info($lane_id, 'sample_name');
+        my $platform = $sip->lane_info($lane_id, 'INSTRUMENT_PLATFORM');
+        if (exists $platform_aliases{$platform}) {
+            $platform = $platform_aliases{$platform};
+        }
+        my $library = $sip->lane_info($lane_id, 'LIBRARY_NAME');
+        $library =~ s/\s/_/;
+        my $expected_path = join('/', $sample_name, $platform, $library);
+        
+        # check this lane is even in the sequence.index; $sip will warn if not
         unless ($sample_name) {
             $all_ok = 0;
             next;
@@ -139,28 +149,25 @@ sub check_lanes_vs_sequence_index {
         my $given_study = $study_to_srp{$lane_info{study}} || $lane_info{study};
         my $study = $sip->lane_info($lane_id, 'study_id');
         unless ($study eq $given_study) {
-            $self->warn("study swap: $study vs $given_study for $lane_id ($lane_path)");
+            $self->warn("study swap: $study vs $given_study for $lane_id ($lane_path -> $expected_path)");
             $all_ok = 0;
         }
         
         # sample swaps
         unless ($sample_name eq $lane_info{sample}) {
-            $self->warn("sample swap: $sample_name vs $lane_info{sample} for $lane_id ($lane_path)");
+            $self->warn("sample swap: $sample_name vs $lane_info{sample} for $lane_id ($lane_path -> $expected_path)");
             $all_ok = 0;
         }
         
         # platform swaps
-        my $platform = $sip->lane_info($lane_id, 'INSTRUMENT_PLATFORM');
-        unless ($platform eq $lane_info{platform} || (exists $platform_aliases{$platform} && $platform_aliases{$platform} eq $lane_info{platform})) {
-            $self->warn("platform swap: $platform vs $lane_info{platform} for $lane_id ($lane_path)");
+        unless ($platform eq $lane_info{platform}) {
+            $self->warn("platform swap: $platform vs $lane_info{platform} for $lane_id ($lane_path -> $expected_path)");
             $all_ok = 0;
         }
         
         # library swaps
-        my $library = $sip->lane_info($lane_id, 'LIBRARY_NAME');
-        $library =~ s/\s/_/;
         unless ($library eq $lane_info{library}) {
-            $self->warn("library swap: $library vs $lane_info{library} for $lane_id ($lane_path)");
+            $self->warn("library swap: $library vs $lane_info{library} for $lane_id ($lane_path -> $expected_path)");
             $all_ok = 0;
         }
     }
@@ -197,6 +204,115 @@ sub check_lanes_vs_sequence_index {
     }
     
     return $all_ok = 0;
+}
+
+=head2 fix_simple_swaps
+
+ Title   : fix_simple_swaps
+ Usage   : my $swapped = $obj->fix_simple_swaps(['/lane/paths', ...],
+                                                'sequence.index');
+ Function: For lanes that check_lanes_vs_sequence_index() would complain
+           suffered from a swap, moves the lane to the correct part of the
+           hierarchy.
+ Returns : int (the number of swaps fixed)
+ Args    : reference to a list of lane paths to check, sequence.index filename
+
+=cut
+
+sub fix_simple_swaps {
+    my ($self, $lanes, $sequence_index) = @_;
+    
+    my $sip = VertRes::Parser::sequence_index->new(file => $sequence_index,
+                                                   verbose => 0);
+    
+    my $fixed = 0;
+    my @lane_ids;
+    foreach my $lane_path (@{$lanes}) {
+        my %lane_info = $self->parse_lane($lane_path);
+        my $lane_id = $lane_info{lane};
+        push(@lane_ids, $lane_id);
+        
+        my $sample_name = $sip->lane_info($lane_id, 'sample_name');
+        next unless $sample_name;
+        next if $sip->lane_info($lane_id, 'WITHDRAWN');
+        
+        my $platform = $sip->lane_info($lane_id, 'INSTRUMENT_PLATFORM');
+        if (exists $platform_aliases{$platform}) {
+            $platform = $platform_aliases{$platform};
+        }
+        my $library = $sip->lane_info($lane_id, 'LIBRARY_NAME');
+        $library =~ s/\s/_/;
+        
+        # can't handle study swaps, because we don't know which study directory
+        # we'd need to move to
+        
+        # sample swaps
+        unless ($sample_name eq $lane_info{sample}) {
+            $fixed += $self->_fix_simple_swap($lane_path, $sample_name, $platform, $library);
+            next;
+        }
+        
+        # platform swaps
+        unless ($platform eq $lane_info{platform}) {
+            $fixed += $self->_fix_simple_swap($lane_path, $sample_name, $platform, $library);
+            next;
+        }
+        
+        # library swaps
+        unless ($library eq $lane_info{library}) {
+            $fixed += $self->_fix_simple_swap($lane_path, $sample_name, $platform, $library);
+            next;
+        }
+    }
+    
+    return $fixed;
+}
+
+sub _fix_simple_swap {
+    my ($self, $old, $new_sample, $new_platform, $new_library) = @_;
+    
+    $old = abs_path($old);
+    my @dirs = File::Spec->splitdir($old);
+    @dirs >= 5 || $self->throw("lane path '$old' wasn't valid");
+    my ($sample, $platform, $library, $lane) = splice(@dirs, -4);
+    
+    # do the swap by moving the lane dir
+    my $new = File::Spec->catdir(@dirs, $new_sample, $new_platform, $new_library, $lane);
+    if (-d $new) {
+        $self->warn("Wanted to swap $old -> $new, but the destination already exists");
+        return 0;
+    }
+    else {
+        my $parent = File::Spec->catdir(@dirs, $new_sample, $new_platform, $new_library);
+        mkpath($parent);
+        $self->throw("Could not create path $parent") unless -d $parent;
+    }
+    move($old, $new);
+    
+    # did we just empty any of the parent directories? if so, remove them
+    my $parent = File::Spec->catdir(@dirs, $sample, $platform, $library);
+    $self->_remove_empty_parent($parent);
+    $parent = File::Spec->catdir(@dirs, $sample, $platform);
+    $self->_remove_empty_parent($parent);
+    $parent = File::Spec->catdir(@dirs, $sample);
+    $self->_remove_empty_parent($parent);
+    
+    return 1;
+}
+
+sub _remove_empty_parent {
+    my ($self, $parent) = @_;
+    
+    opendir(my $pfh, $parent) || $self->throw("Could not open dir $parent");
+    my $things = 0;
+    foreach (readdir($pfh)) {
+        next if /^\.+$/;
+        $things++;
+    }
+    
+    if ($things == 0) {
+        system("rm -fr $parent");
+    }
 }
 
 =head2 create_release_hierarchy
