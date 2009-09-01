@@ -90,7 +90,6 @@ TODO: {
     #                         lane_path => '/path/to/lane'), 'add_sam_header auto args test';
 }
 
-system("cp $temp_sam input.sam");
 # sam_to_fixed_sorted_bam (basically a shortcut to VertRes::Wrapper::samtools::sam_to_fixed_sorted_bam - no need to test thoroughly here)
 my $sorted_bam = $io->catfile($temp_dir, 'sorted.bam');
 ok $sam_util->sam_to_fixed_sorted_bam($temp_sam, $sorted_bam, $ref, quiet => 1), 'sam_to_fixed_sorted_bam test';
@@ -161,6 +160,12 @@ ok $sam_util->bas($sorted_bam, $given_bas), 'bas() ran ok';
 my $expected_bas = $io->catfile('t', 'data', 'example.bas');
 ok open(my $ebfh, $expected_bas), 'opened expected .bas';
 @expected = <$ebfh>;
+# first field of second line contains the month and day, which will obviously
+# be wrong; correct it now to make the is_deeply test pass
+my ($month, $year) = (localtime(time()))[4..5];
+$year += 1900;
+$month = sprintf("%02d", $month + 1);
+$expected[1] =~ s/^(\S+)2009_08/$1${year}_$month/;
 ok open(my $tbfh, $given_bas), 'opened result .bas';
 my @given = <$tbfh>;
 is_deeply \@given, \@expected, 'bas output was as expected';
