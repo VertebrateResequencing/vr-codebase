@@ -214,6 +214,14 @@ sub split {
     return $split_num;
 }
 
+
+use Inline C => DATA => FILTERS => 'Strip_POD';
+
+1;
+
+__DATA__
+__C__
+
 =head2 qual_to_ints
 
  Title   : qual_to_ints
@@ -226,18 +234,16 @@ sub split {
 
 =cut
 
-sub qual_to_ints {
-    my ($self, $qual_string) = @_;
+void qual_to_ints(SV* obj, char* str) {
+    Inline_Stack_Vars;
     
-    my @quals;
-    foreach my $char (unpack("C*", $qual_string)) {
-        # (doing the substraction is pretty much exactly the same speed as
-        #  precalculating all the answers in an array and looking the answers
-        #  up by index)
-        push(@quals, $char - 33);
+    Inline_Stack_Reset;
+    
+    char c;
+    int i = 0;
+    while (c = str[i++]) {
+        Inline_Stack_Push(sv_2mortal(newSViv(c - 33)));
     }
     
-    return @quals;
+    Inline_Stack_Done;
 }
-
-1;
