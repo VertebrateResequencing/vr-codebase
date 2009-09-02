@@ -203,7 +203,7 @@ sub check_lanes_vs_sequence_index {
         }
     }
     
-    return $all_ok = 0;
+    return $all_ok;
 }
 
 =head2 fix_simple_swaps
