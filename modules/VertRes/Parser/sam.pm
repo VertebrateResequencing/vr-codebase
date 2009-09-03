@@ -46,6 +46,7 @@ package VertRes::Parser::sam;
 
 use strict;
 use warnings;
+use Inline C => Config => FILTERS => 'Strip_POD';
 
 use base qw(VertRes::Parser::ParserI);
 
@@ -106,6 +107,8 @@ sub new {
     return $self;
 }
 
+use Inline C => <<'END_C';
+
 =head2 is_sequencing_paired
 
  Title   : is_sequencing_paired
@@ -116,9 +119,8 @@ sub new {
 
 =cut
 
-sub is_sequencing_paired {
-    my ($self, $flag) = @_;
-    return ($flag & $flags{paired_tech}) > 0 ? 1 : 0;
+int is_sequencing_paired(SV* self, int flag) {
+    return (flag & 0x0001) > 0 ? 1 : 0;
 }
 
 =head2 is_mapped_paired
@@ -131,9 +133,8 @@ sub is_sequencing_paired {
 
 =cut
 
-sub is_mapped_paired {
-    my ($self, $flag) = @_;
-    return ($flag & $flags{paired_map}) > 0 ? 1 : 0;
+int is_mapped_paired(SV* self, int flag) {
+    return (flag & 0x0002) > 0 ? 1 : 0;
 }
 
 =head2 is_mapped
@@ -146,9 +147,8 @@ sub is_mapped_paired {
 
 =cut
 
-sub is_mapped {
-    my ($self, $flag) = @_;
-    return ($flag & $flags{self_unmapped}) == 0 ? 1 : 0;
+int is_mapped(SV* self, int flag) {
+    return (flag & 0x0004) == 0 ? 1 : 0;
 }
 
 =head2 is_mate_mapped
@@ -161,9 +161,8 @@ sub is_mapped {
 
 =cut
 
-sub is_mate_mapped {
-    my ($self, $flag) = @_;
-    return ($flag & $flags{mate_unmapped}) == 0 ? 1 : 0;
+int is_mate_mapped(SV* self, int flag) {
+    return (flag & 0x0008) == 0 ? 1 : 0;
 }
 
 =head2 is_reverse_strand
@@ -176,9 +175,8 @@ sub is_mate_mapped {
 
 =cut
 
-sub is_reverse_strand {
-    my ($self, $flag) = @_;
-    return ($flag & $flags{self_reverse}) > 0 ? 1 : 0;
+int is_reverse_strand(SV* self, int flag) {
+    return (flag & 0x0010) > 0 ? 1 : 0;
 }
 
 =head2 is_mate_reverse_strand
@@ -192,9 +190,8 @@ sub is_reverse_strand {
 
 =cut
 
-sub is_mate_reverse_strand {
-    my ($self, $flag) = @_;
-    return ($flag & $flags{mate_reverse}) > 0 ? 1 : 0;
+int is_mate_reverse_strand(SV* self, int flag) {
+    return (flag & 0x0020) > 0 ? 1 : 0;
 }
 
 =head2 is_first
@@ -207,9 +204,8 @@ sub is_mate_reverse_strand {
 
 =cut
 
-sub is_first {
-    my ($self, $flag) = @_;
-    return ($flag & $flags{'1st_in_pair'}) > 0 ? 1 : 0;
+int is_first(SV* self, int flag) {
+    return (flag & 0x0040) > 0 ? 1 : 0;
 }
 
 =head2 is_second
@@ -222,9 +218,8 @@ sub is_first {
 
 =cut
 
-sub is_second {
-    my ($self, $flag) = @_;
-    return ($flag & $flags{'2nd_in_pair'}) > 0 ? 1 : 0;
+int is_second(SV* self, int flag) {
+    return (flag & 0x0080) > 0 ? 1 : 0;
 }
 
 =head2 is_primary
@@ -237,9 +232,8 @@ sub is_second {
 
 =cut
 
-sub is_primary {
-    my ($self, $flag) = @_;
-    return ($flag & $flags{not_primary}) == 0 ? 1 : 0;
+int is_primary(SV* self, int flag) {
+    return (flag & 0x0100) == 0 ? 1 : 0;
 }
 
 =head2 passes_qc
@@ -252,9 +246,8 @@ sub is_primary {
 
 =cut
 
-sub passes_qc {
-    my ($self, $flag) = @_;
-    return ($flag & $flags{failed_qc}) == 0 ? 1 : 0;
+int passes_qc(SV* self, int flag) {
+    return (flag & 0x0200) == 0 ? 1 : 0;
 }
 
 =head2 is_duplicate
@@ -267,10 +260,11 @@ sub passes_qc {
 
 =cut
 
-sub is_duplicate {
-    my ($self, $flag) = @_;
-    return ($flag & $flags{duplicate}) > 0 ? 1 : 0;
+int is_duplicate(SV* self, int flag) {
+    return (flag & 0x0400) > 0 ? 1 : 0;
 }
+
+END_C
 
 =head2 sam_version
 
