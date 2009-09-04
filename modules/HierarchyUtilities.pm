@@ -84,7 +84,7 @@ sub lane_info
         $$info{'bwa_ref'}  = $ENV{MOUSE}.'/ref/NCBIM37_um';
         $$info{'fa_ref'}   = $ENV{MOUSE}.'/ref/NCBIM37_um.fa';
         $$info{'fai_ref'}  = $ENV{MOUSE}.'/ref/NCBIM37_um.fa.fai';
-        $$info{'dict_ref'} = $ENV{MOUSE}.'/NCBIM37_um.dict';
+        $$info{'dict_ref'} = $ENV{MOUSE}.'/ref/NCBIM37_um.dict';
         $$info{'ref_name'} = 'NCBIM37';
         $$info{'snps'}     = '/nfs/sf7/MOUSE/ref/mousehapmap.snps.bin';
 
@@ -152,7 +152,7 @@ sub lane_info
             $$info{'bwa_ref'}  = $ENV{G1K}.'/ref/human_b36_male';
             $$info{'fa_ref'}   = $ENV{G1K}.'/ref/human_b36_male.fa';
             $$info{'fai_ref'}  = $ENV{G1K}.'/ref/human_b36_male.fa.fai';
-            $$info{'dict_ref'} = $ENV{G1K}.'/human_b36_male.dict';
+            $$info{'dict_ref'} = $ENV{G1K}.'/ref/human_b36_male.dict';
         }
         else
         {
