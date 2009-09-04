@@ -11,7 +11,7 @@ use G1KUtilities;
 	A function that takes a mapping root directory and a list of projects
 	Goes through the hierarchy and checks for unmapped 454 lanes, and starts the mapping
 =cut
-my $G1K = $ENV{ 'G1K' };
+my $G1K = '/nfs/sf8/G1K'; #$ENV{ 'G1K' };
 my $SSAHA2 = $G1K."/bin/ssaha2";
 my $SAMTOOLS = $G1K."/bin/samtools";
 
@@ -20,6 +20,8 @@ my $FEMALE_REF_FAI = $G1K.'/ref/human_b36_female.fa.fai';
 
 my $LOCAL_CACHE = '/localcache';
 my $REMOTE_REF_DIR= $G1K.'/ref';
+
+my $filterCigarStreamTop10 = '/nfs/users/nfs_t/tk2/code/tk2/miscScripts/filterCigarStreamTop10.pl';
 
 sub map_454
 {
@@ -164,13 +166,13 @@ sub map_454
 														
 														if( $gender eq 'male' || $gender eq 'unknown' )
 														{
-															my $cmd = qq{bsub -J map.$libID.$laneID.$fileID -R "select[type==X86_64 && mem > 6000] rusage[mem=6000:tmp=21000]" -M6000000 -q $lsf_queue -o $fastq.map.o -e $fastq.map.e -E '$preExec' "mkdir /tmp/$directory; gunzip -c $fastq > /tmp/$directory/reads.fastq; $SSAHA2 -454 -output cigar -diff 10 -save $LOCAL_CACHE/human_b36_male /tmp/$directory/reads.fastq | /nfs/team81/tk2/code/vert_reseq/user/tk2/miscScripts/filterCigarStreamTop10.pl | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch"};
+															my $cmd = qq{bsub -J map.$libID.$laneID.$fileID -R "select[type==X86_64 && mem > 6000] rusage[mem=6000:tmp=21000]" -M6000000 -q $lsf_queue -o $fastq.map.o -e $fastq.map.e -E '$preExec' "mkdir /tmp/$directory; gunzip -c $fastq > /tmp/$directory/reads.fastq; $SSAHA2 -454 -output cigar -diff 10 -save $LOCAL_CACHE/human_b36_male /tmp/$directory/reads.fastq | $filterCigarStreamTop10 | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch"};
 															#print $cmd."\n";
 															system( $cmd );
 														}
 														elsif( $gender eq 'female' )
 														{
-															my $cmd = qq{bsub -J map.$libID.$laneID.$fileID -R "select[type==X86_64 && mem > 6000] rusage[mem=6000:tmp=21000]" -M6000000 -q $lsf_queue -o $fastq.map.o -e $fastq.map.e -E '$preExec' "mkdir /tmp/$directory; gunzip -c $fastq > /tmp/$directory/reads.fastq; $SSAHA2 -454 -output cigar -diff 10 -save $LOCAL_CACHE/human_b36_female.Y /tmp/$directory/reads.fastq | /nfs/team81/tk2/code/vert_reseq/user/tk2/miscScripts/filterCigarStreamTop10.pl | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch"};
+															my $cmd = qq{bsub -J map.$libID.$laneID.$fileID -R "select[type==X86_64 && mem > 6000] rusage[mem=6000:tmp=21000]" -M6000000 -q $lsf_queue -o $fastq.map.o -e $fastq.map.e -E '$preExec' "mkdir /tmp/$directory; gunzip -c $fastq > /tmp/$directory/reads.fastq; $SSAHA2 -454 -output cigar -diff 10 -save $LOCAL_CACHE/human_b36_female.Y /tmp/$directory/reads.fastq | $filterCigarStreamTop10 | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch"};
 															#print $cmd."\n";
 															system( $cmd );
 														}

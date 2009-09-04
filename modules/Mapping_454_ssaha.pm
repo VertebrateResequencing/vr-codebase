@@ -20,6 +20,9 @@ my $REMOTE_REF_DIR= $G1K.'/ref';
 
 my $SSAHA2 = $G1K."/bin/ssaha2";
 my $SAMTOOLS = $G1K."/bin/samtools";
+
+my $filterCigarStreamTop10 = '/nfs/users/nfs_t/tk2/code/tk2/miscScripts/filterCigarStreamTop10.pl';
+
 =pod
 
 =head1 NAME
@@ -294,7 +297,7 @@ sub mapLane
 			{
 				#my $cmd = qq{bsub -J map.454.$laneID.$fileID $jobReqs -q normal -o $fastq.map.o -e $fastq.map.e -E '$preExec' 'mkdir /tmp/$directory; gunzip -c $currentDir/$fastq > /tmp/$directory/reads.fastq; perl -w -e "use AssemblyTools;AssemblyTools::filterOutShortReads( \\"/tmp/$directory/reads.fastq\\", \\"30\\", \\"/tmp/$directory/t.fastq\\" );"; mv /tmp/$directory/t.fastq /tmp/$directory/reads.fastq; $SSAHA2 -454 -output cigar -diff 10 -save $Mapping::LOCAL_CACHE_DIR/human_b36_male /tmp/$directory/reads.fastq | /nfs/team81/tk2/code/vert_reseq/user/tk2/miscScripts/filterCigarStreamTop10.pl | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch};
 				
-				my $cmd = qq{bsub -J map.454.$laneID.$fileID $jobReqs -q normal -o $fastq.map.o -e $fastq.map.e -E '$preExec' 'mkdir /tmp/$directory; gunzip -c $currentDir/$fastq > /tmp/$directory/reads.fastq; perl -w -e "use AssemblyTools;AssemblyTools::filterOutShortReads( \\"/tmp/$directory/reads.fastq\\", \\"30\\", \\"/tmp/$directory/t.fastq\\" );"; mv /tmp/$directory/t.fastq /tmp/$directory/reads.fastq; $SSAHA2 -disk 1 -454 -output cigar -diff 10 -save $Mapping::LOCAL_CACHE_DIR/human_b36_male /tmp/$directory/reads.fastq | /nfs/team81/tk2/code/vert_reseq/user/tk2/miscScripts/filterCigarStreamTop10.pl | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch};
+				my $cmd = qq{bsub -J map.454.$laneID.$fileID $jobReqs -q normal -o $fastq.map.o -e $fastq.map.e -E '$preExec' 'mkdir /tmp/$directory; gunzip -c $currentDir/$fastq > /tmp/$directory/reads.fastq; perl -w -e "use AssemblyTools;AssemblyTools::filterOutShortReads( \\"/tmp/$directory/reads.fastq\\", \\"30\\", \\"/tmp/$directory/t.fastq\\" );"; mv /tmp/$directory/t.fastq /tmp/$directory/reads.fastq; $SSAHA2 -disk 1 -454 -output cigar -diff 10 -save $Mapping::LOCAL_CACHE_DIR/human_b36_male /tmp/$directory/reads.fastq | $filterCigarStreamTop10 | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch};
 				
 				$cmd .= qq{; perl -w -e "use Mapping_454_ssaha;Mapping_454_ssaha::cigarStat( \\"$currentDir/$cigarName\\", \\"$currentDir/$cigarName.mapstat\\");"'};
 				#print $cmd."\n";
@@ -304,7 +307,7 @@ sub mapLane
 			{
 				#my $cmd = qq{bsub -J map.454.$laneID.$fileID $jobReqs -q normal -o $fastq.map.o -e $fastq.map.e -E '$preExec' 'mkdir /tmp/$directory; gunzip -c $currentDir/$fastq > /tmp/$directory/reads.fastq; perl -w -e "use AssemblyTools;AssemblyTools::filterOutShortReads( \\"/tmp/$directory/reads.fastq\\", \\"30\\", \\"/tmp/$directory/t.fastq\\" );"; mv /tmp/$directory/t.fastq /tmp/$directory/reads.fastq; $SSAHA2 -454 -output cigar -diff 10 -save $Mapping::LOCAL_CACHE_DIR/human_b36_female.Y /tmp/$directory/reads.fastq | /nfs/team81/tk2/code/vert_reseq/user/tk2/miscScripts/filterCigarStreamTop10.pl | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch};
 				
-				my $cmd = qq{bsub -J map.454.$laneID.$fileID $jobReqs -q normal -o $fastq.map.o -e $fastq.map.e -E '$preExec' 'mkdir /tmp/$directory; gunzip -c $currentDir/$fastq > /tmp/$directory/reads.fastq; perl -w -e "use AssemblyTools;AssemblyTools::filterOutShortReads( \\"/tmp/$directory/reads.fastq\\", \\"30\\", \\"/tmp/$directory/t.fastq\\" );"; mv /tmp/$directory/t.fastq /tmp/$directory/reads.fastq; $SSAHA2 -disk 1 -454 -output cigar -diff 10 -save $Mapping::LOCAL_CACHE_DIR/human_b36_female.Y /tmp/$directory/reads.fastq | /nfs/team81/tk2/code/vert_reseq/user/tk2/miscScripts/filterCigarStreamTop10.pl | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch};
+				my $cmd = qq{bsub -J map.454.$laneID.$fileID $jobReqs -q normal -o $fastq.map.o -e $fastq.map.e -E '$preExec' 'mkdir /tmp/$directory; gunzip -c $currentDir/$fastq > /tmp/$directory/reads.fastq; perl -w -e "use AssemblyTools;AssemblyTools::filterOutShortReads( \\"/tmp/$directory/reads.fastq\\", \\"30\\", \\"/tmp/$directory/t.fastq\\" );"; mv /tmp/$directory/t.fastq /tmp/$directory/reads.fastq; $SSAHA2 -disk 1 -454 -output cigar -diff 10 -save $Mapping::LOCAL_CACHE_DIR/human_b36_female.Y /tmp/$directory/reads.fastq | $filterCigarStreamTop10 | gzip -c > /tmp/$directory/$cigarName;cp /tmp/$directory/$cigarName $currentDir; rm -rf /tmp/$directory $fastq.touch};
 				
 				$cmd .= qq{; perl -w -e "use Mapping_454_ssaha;Mapping_454_ssaha::cigarStat( \\"$currentDir/$cigarName\\", \\"$currentDir/$cigarName.mapstat\\");"'};
 				#print $cmd."\n";
