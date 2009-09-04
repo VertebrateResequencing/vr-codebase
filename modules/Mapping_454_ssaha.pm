@@ -8,7 +8,7 @@ use Cwd;
 use G1KUtilities;
 use Mapping;
 
-my $G1K = $ENV{ 'G1K' };
+my $G1K = '/nfs/sf8/G1K'; #$ENV{ 'G1K' };
 my $MOUSE_REF_FA = '/nfs/sf7/MOUSE/ref/NCBIM37_um.fa';
 my $HUMAN_FEMALE_REF_FA = $G1K.'/ref/human_b36_female.fa';
 my $HUMAN_MALE_REF_FA = $G1K.'/ref/human_b36_male.fa';
