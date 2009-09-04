@@ -21,7 +21,7 @@ my $REMOTE_REF_DIR= $G1K.'/ref';
 my $SSAHA2 = $G1K."/bin/ssaha2";
 my $SAMTOOLS = $G1K."/bin/samtools";
 
-my $filterCigarStreamTop10 = '/nfs/users/nfs_t/tk2/code/tk2/miscScripts/filterCigarStreamTop10.pl';
+my $filterCigarStreamTop10 = 'perl /nfs/users/nfs_t/tk2/code/tk2/miscScripts/filterCigarStreamTop10.pl';
 
 =pod
 

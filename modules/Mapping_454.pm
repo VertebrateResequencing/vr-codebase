@@ -21,7 +21,7 @@ my $FEMALE_REF_FAI = $G1K.'/ref/human_b36_female.fa.fai';
 my $LOCAL_CACHE = '/localcache';
 my $REMOTE_REF_DIR= $G1K.'/ref';
 
-my $filterCigarStreamTop10 = '/nfs/users/nfs_t/tk2/code/tk2/miscScripts/filterCigarStreamTop10.pl';
+my $filterCigarStreamTop10 = 'perl /nfs/users/nfs_t/tk2/code/tk2/miscScripts/filterCigarStreamTop10.pl';
 
 sub map_454
 {
