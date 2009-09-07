@@ -713,6 +713,7 @@ sub buildInternalHierarchy
 				opendir( my $dh, $projPath ) or die "Cant open directory $projPath: $!\n";
 				my $count = 0;
 				my $dir = '';
+				print "P: $projPath\n";
 				while( ( my $filename = readdir( $dh ) ) )
 				{
 					next unless -d $filename;
