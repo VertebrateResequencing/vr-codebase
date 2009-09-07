@@ -716,8 +716,7 @@ sub buildInternalHierarchy
 				print "P: $projPath\n";
 				while( ( my $filename = readdir( $dh ) ) )
 				{
-					print "$filename\n";if( -d $filename){print "*\n";}
-					next unless -d $filename;
+					next unless -d "$projPath/$filename" && $filename !~ /^\.+$/;
 					$dir = $filename;
 					$count ++;
 				}
