@@ -716,12 +716,12 @@ sub buildInternalHierarchy
 				print "P: $projPath\n";
 				while( ( my $filename = readdir( $dh ) ) )
 				{
+					print "$filename\n";if( -d $filename){print "*\n";}
 					next unless -d $filename;
-					print "$filename\n";
 					$dir = $filename;
 					$count ++;
 				}
-
+				
 				croak "Cant determine individual directory for mouse strain in: $projPath\n" unless $count == 1;
 				$individual = $dir;
 			}
