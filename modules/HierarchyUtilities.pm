@@ -161,7 +161,7 @@ sub lane_info
         $$info{'ref_name'} = 'NCBI36';
         $$info{'snps'}     = '/nfs/sf8/G1K/ref/snps/hapmap3.snps.bin';
         $$info{'genotype'} = $$info{sample};
-        $$info{'gtype_confidence'} = 1.4;
+        $$info{'gtype_confidence'} = 1.2;
     }
     else
     {

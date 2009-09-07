@@ -584,4 +584,22 @@ sub DESTROY {
     }
 }
 
+=head2 Signal handling
+
+    By default, DESTROY is called for each object when __DIE__, SIGINT, or SIGTERM 
+    is received. In case that the default DESTROY handlers are not flexible enough,
+    do NOT override $SIG{INT} or $SIG{TERM} handlers. Either create a child of Base
+    and modify the DESTROY handler, or add static set_die_handler and unset_die_handler
+    calls to Base. 
+    
+    The signals should be probably trapped only when requested, not by default. Maybe
+    the subroutine register_for_unlinking should do this, as it this was introduced
+    only to really unlink certain files?
+
+=cut
+
+our $SIGNAL_CAUGHT_EVENT = "Signal caught.\n";
+$SIG{TERM} = sub { die $SIGNAL_CAUGHT_EVENT; };   # Pipeline.pm and pipeline script rely on this string.
+$SIG{INT}  = sub { die $SIGNAL_CAUGHT_EVENT; };
+
 1;

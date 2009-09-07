@@ -1,4 +1,6 @@
 # This example pipeline contains two actions named "hello" and "world".
+# Note: This code is not maintained and may not work with latest version 
+#   of Pipeline.pm.
 #
 
 package VertRes::TrackDummy;

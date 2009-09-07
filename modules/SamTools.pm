@@ -125,6 +125,8 @@ sub parse_bam_line
     my ($line) = @_;
     my $out = {};
 
+    chomp($line);
+
     #   IL14_1902:3:83:1158:1446        89      1       23069154        37      54M     =       23069154        0       TGCAC ... RG:Z:ERR001720
     my @items = split /\t/, $line;
 
@@ -150,6 +152,12 @@ sub parse_bam_line
         elsif( $key eq 'NM' )
         {
             $$out{'NM'} = $vals[1];
+        }
+
+        # e.g. MF:i:64
+        elsif( $key eq 'MF' )
+        {
+            $$out{'MF'} = $vals[1];
         }
     }
     return $out;

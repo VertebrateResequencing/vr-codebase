@@ -4,10 +4,11 @@ use strict;
 use warnings;
 use Utils;
 
-our $No      = 0;
 our $Running = 1;
 our $Error   = 2;
 our $Unknown = 4;
+our $No      = 8;
+our $Done    = 16;
 
 
 =pod
@@ -30,6 +31,7 @@ Utilities for manipulating LSF jobs.
                   $LSF::Error if some of the jobs failed.
                   If the lock file is empty, $LSF::No is returned.
                   If some of the jobs failed while others are running, $LSF::Running|$LSF::Error is returned.
+
 
 =cut
 
@@ -63,7 +65,7 @@ sub is_job_running
 }
 
 
-# Return status: $No not in queue, $Running running, $Error aborted
+# Return status: $No not in queue, $Running running, $Error aborted, $Done finished.
 sub job_in_queue
 {
     my ($jid,$lsf_output) = @_;
@@ -82,8 +84,8 @@ sub job_in_queue
     $status = $No;
     if ( !open($fh,'<',$lsf_output) ) 
     { 
-        my $bt = Utils::backtrace();
-        print STDERR @$bt,"\nFIXME: $jid .. $lsf_output: $!\n"; 
+        # This really can happen: The status of the LSF job can be queried before
+        #   the file is created.
         return $status; 
     }
     while (my $line=<$fh>)
@@ -94,7 +96,7 @@ sub job_in_queue
             # It is unlikely that there had been two jobs with the same IDs' 
             #   but the last wins anyway.
             if ( $1 eq 'Exited' ) { $status=$Error; }
-            if ( $1 eq 'Done' ) { $status=$No;  }
+            if ( $1 eq 'Done' ) { $status=$Done;  }
             last;
         }
     }
@@ -120,7 +122,7 @@ sub job_in_bjobs
     
     if ( ! scalar @out ) { return $Unknown; }
     if ( scalar @out != 2 ) { Utils::error("Expected different output, got: ", @out) }
-    if ( $out[1] =~ /^$jid\s+\S+\s+DONE/ ) { return $No; }
+    if ( $out[1] =~ /^$jid\s+\S+\s+DONE/ ) { return $Done; }
     if ( $out[1] =~ /^$jid\s+\S+\s+EXIT/ ) { return $Error; }
 
     return $Running;
@@ -159,12 +161,29 @@ sub run
     { 
         Utils::error("Expected different output from bsub. The command was:\n\t$cmd\nThe output was:\n", @out);
     }
+    my $jid = $1;
     open(my $jids_fh, '>>', $jids_file) or Utils::error("$jids_file: $!");
-    print $jids_fh "$1\t$work_dir/$lsf_output_file\n";
+    print $jids_fh "$jid\t$work_dir/$lsf_output_file\n";
     close $jids_fh;
+
+    # Now wait until the job appears in the queue, it may take few seconds. If another
+    #   pipeline was running in the meantime, it would schedule the same job to LSF.
+    #   We can safely sleep here, because run_lane protects us by its locking mechanism.
+    #
+    my $max_wait = 30;
+    my $status   = $No;
+    while ($max_wait>0)
+    {
+        $status = job_in_queue($jid,"$work_dir/$lsf_output_file");
+        if ( $status!=$No ) { last }
+        sleep(2);
+        $max_wait-=2;
+    }
 
     if ( $work_dir ) { chdir($cwd) or Utils::error("chdir \"$cwd\": $!"); }
 
+    if ( $status==$No ) { Utils::error("The job $1 $work_dir/$lsf_output_file still not in queue??\n"); }
+    
     return;
 }
 

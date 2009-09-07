@@ -3,6 +3,7 @@ use base qw(VertRes::Base);
 
 use strict;
 use warnings;
+use Carp;
 use LSF;
 use Utils;
 
@@ -118,41 +119,32 @@ sub is_genotype_ok
 
     if ( $ratio<$min_ratio ) 
     { 
-        if ( $expected ) { return "status=unconfirmed expected=$expected found=none ratio=$ratio\n"; }
-        return "status=unknown expected=none found=none ratio=$ratio\n";
+        if ( $expected ) { return "status=unconfirmed expected=$expected found=$gtype1 ratio=$ratio\n"; }
+        return "status=unknown expected=none found=$gtype1 ratio=$ratio\n";
     }
     if ( !$expected ) { return "status=candidate expected=none found=$gtype1 ratio=$ratio\n" }
     if ( $expected eq $gtype1 ) { return "status=confirmed expected=$expected found=$gtype1 ratio=$ratio\n" }
     return "status=wrong expected=$expected found=$gtype1 ratio=$ratio\n";
 }
 
-#---------- Debugging and error reporting -----------------
 
-#   sub warn
-#   {
-#       my ($self,@msg) = @_;
-#       if ($self->verbose > 0) 
-#       {
-#           print STDERR join('',@msg);
-#       }
-#       $self->log(join('',@msg));
-#   }
-#   
-#   sub debug
-#   {
-#       my ($self,@msg) = @_;
-#       if ($self->verbose > 0) 
-#       {
-#           print STDERR join('',@msg);
-#           $self->log(join('',@msg));
-#       }
-#   }
-#   
-#   sub throw
-#   {
-#       my ($self,@msg) = @_;
-#       Utils::error(@msg);
-#   }
+sub get_status
+{
+    my ($gtype_file) = @_;
+    my %info = ( status=>'', expected=>'', found=>'', ratio=>'' );
+
+    open(my $fh,'<',$gtype_file) or croak "$gtype_file: $!";
+    my (@lines) = <$fh>;
+    close($fh) or croak "$gtype_file: $!";
+    if ( !scalar @lines ) { croak "Could not read $gtype_file\n"; }
+
+    # status=confirmed expected=NA19107 found=NA19107 ratio=1.28724761001092
+    if ( !($lines[0]=~/status=(\S+)\s+expected=(\S+)\s+found=(\S+)\s+ratio=(\S+)/) ) { croak "Could not parse $gtype_file: $lines[0]"; }
+    $info{status}   = $1;
+    $info{expected} = $2;
+    $info{found}    = $3;
+    $info{ratio}    = $4;
+}
 
 
 1;
