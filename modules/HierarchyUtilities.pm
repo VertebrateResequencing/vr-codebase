@@ -707,7 +707,24 @@ sub buildInternalHierarchy
 			{
 				$individual = $1;
 			}
-			
+			else
+			{
+				#hack for mouse where the indvidiual directories are known on disk
+				opendir( my $dh, $projPath ) or die "Cant open directory $projPath: $!\n";
+				my $count = 0;
+				my $dir = '';
+				while( (my $filename = readdir(DIR)))
+				{
+					next unless -d $filename;
+					
+					$dir = $filename;
+					$count ++;
+				}
+
+				croak "Cant determine individual directory for mouse strain in: $projPath\n" unless $count == 1;
+				$individual = $dir;
+			}
+			print "I: $individual\n";
 			( my $libraryHierarchyName = $library ) =~ s/\W+/_/g;
 			
 			my $path = $projPath.'/'.$individual;
@@ -899,7 +916,7 @@ sub buildInternalHierarchy
       
       $cmd = qq[bsub -w "done(fastqcheck.$random)&&done(clip.$random)" -q $LSF_QUEUE -o import.o -e import.e "gzip $fastq; ln -fs $lPath/$fastq.gz $alPath/$fastq.gz"];
       system( $cmd );
-
+	  
     }
     else
     {
