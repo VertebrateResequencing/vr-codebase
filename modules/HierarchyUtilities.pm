@@ -724,7 +724,7 @@ sub buildInternalHierarchy
 				croak "Cant determine individual directory for mouse strain in: $projPath\n" unless $count == 1;
 				$individual = $dir;
 			}
-			print "I: $individual\n";
+			print "I: $individual\n";next;
 			( my $libraryHierarchyName = $library ) =~ s/\W+/_/g;
 			
 			my $path = $projPath.'/'.$individual;
