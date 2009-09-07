@@ -716,7 +716,7 @@ sub buildInternalHierarchy
 				while( ( my $filename = readdir( $dh ) ) )
 				{
 					next unless -d $filename;
-					
+					print "$filename\n";
 					$dir = $filename;
 					$count ++;
 				}
