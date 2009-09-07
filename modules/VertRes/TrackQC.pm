@@ -596,7 +596,8 @@ my \%params =
     'mapviewdepth' => q[$$self{'mapviewdepth'}],
     'samtools'     => q[$$self{'samtools'}],
     'gcdepth_R'    => q[$$self{'gcdepth_R'}],
-    'lane'         => q[$lane_path],
+    'lane_path'    => q[$lane_path],
+    'lane'         => q[$$self{lane}],
     'sample_dir'   => q[$$self{'sample_dir'}],
     'fa_ref'       => q[$$self{fa_ref}],
     'fai_ref'      => q[$$self{fai_ref}],
@@ -604,7 +605,7 @@ my \%params =
 );
 
 my \$qc = VertRes::TrackQC->new(\%params);
-\$qc->run_graphs(\$params{lane});
+\$qc->run_graphs(\$params{lane_path});
 ];
     close $fh;
 
