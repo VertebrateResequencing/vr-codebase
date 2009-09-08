@@ -29,12 +29,13 @@ our @actions =
         'provides' => \&subsample_provides,
     },
 
-    # Runs bwa to create the .sai files.
+    # Runs bwa to create the .sai files and checks for the presence of 
+    #   adapter sequences.
     {
-        'name'     => 'aln_fastqs',
-        'action'   => \&aln_fastqs,
-        'requires' => \&aln_fastqs_requires, 
-        'provides' => \&aln_fastqs_provides,
+        'name'     => 'process_fastqs',
+        'action'   => \&process_fastqs,
+        'requires' => \&process_fastqs_requires, 
+        'provides' => \&process_fastqs_provides,
     },
 
     # Runs bwa to create the bam file.
@@ -53,12 +54,12 @@ our @actions =
         'provides' => \&check_genotype_provides,
     },
 
-    # Creates some QC graphs.
+    # Creates some QC graphs and generate some statistics.
     {
-        'name'     => 'create_graphs',
-        'action'   => \&create_graphs,
-        'requires' => \&create_graphs_requires, 
-        'provides' => \&create_graphs_provides,
+        'name'     => 'stats_and_graphs',
+        'action'   => \&stats_and_graphs,
+        'requires' => \&stats_and_graphs_requires, 
+        'provides' => \&stats_and_graphs_provides,
     },
 
     # Writes the QC status to the tracking database.
@@ -73,12 +74,14 @@ our @actions =
 our $options = 
 {
     # Executables
+    'blat'            => '/software/pubseq/bin/blat',
     'bwa_exec'        => 'bwa-0.4.9',
     'gcdepth_R'       => '/nfs/users/nfs_p/pd3/cvs/maqtools/mapdepth/gcdepth/gcdepth.R',
     'glf'             => '/nfs/users/nfs_p/pd3/cvs/glftools/glfv3/glf',
     'mapviewdepth'    => 'mapviewdepth_sam',
     'samtools'        => 'samtools',
 
+    'adapters'        => '/software/pathogen/projects/protocols/ext/solexa-adapters.fasta',
     'bsub_opts'       => "-q normal -M5000000 -R 'select[type==X86_64 && mem>5000] rusage[mem=5000]'",
     'gc_depth_bin'    => 20000,
     'insert_size'     => 500,
@@ -99,6 +102,7 @@ our $options =
         Options    : See Pipeline.pm for general options.
 
                     # Executables
+                    blat            .. blat executable
                     bwa_exec        .. bwa executable
                     gcdepth_R       .. gcdepth R script
                     glf             .. glf executable
@@ -106,6 +110,7 @@ our $options =
                     samtools        .. samtools executable
 
                     # Options specific to TrackQC
+                    adapters        .. the location of .fa with adapter sequences
                     assembly        .. e.g. NCBI36
                     bsub_opts       .. LSF bsub options for jobs
                     bwa_ref         .. the prefix to reference files, as required by bwa
@@ -348,10 +353,10 @@ sub subsample
 
 
 
-#----------- aln_fastqs ---------------------
+#----------- process_fastqs ---------------------
 
 # If one sample is in place (_1.fastq.gz), we assume all are in place.
-sub aln_fastqs_requires
+sub process_fastqs_requires
 {
     my ($self) = @_;
 
@@ -360,7 +365,7 @@ sub aln_fastqs_requires
     return \@requires;
 }
 
-sub aln_fastqs_provides
+sub process_fastqs_provides
 {
     my ($self,$lane_path) = @_;
 
@@ -370,20 +375,19 @@ sub aln_fastqs_provides
 
     my $fastq_files = existing_fastq_files("$lane_path/$sample_dir/$name");
     my $nfiles = scalar @$fastq_files;
-    if ( !$nfiles ) 
-    {
-        @provides = ("$sample_dir/${name}_1.sai");
-        return \@provides;
-    }
+
+    # This should not happen, only when the import is broken.
+    if ( !$nfiles ) { return 0; }
     
     for (my $i=1; $i<=$nfiles; $i++)
     {
         push @provides, "$sample_dir/${name}_$i.sai";
+        push @provides, "$sample_dir/${name}_$i.nadapters";
     }
     return \@provides;
 }
 
-sub aln_fastqs
+sub process_fastqs
 {
     my ($self,$lane_path,$lock_file) = @_;
 
@@ -403,11 +407,16 @@ sub aln_fastqs
     my $nfiles = scalar @$fastq_files;
     if ( $nfiles<1 || $nfiles>2 ) { Utils::error("FIXME: we can handle 1 or 2 fastq files in $work_dir, not $nfiles.\n") }
 
+    # Run bwa aln for each fastq file to create .sai files.
     for (my $i=1; $i<=$nfiles; $i++)
     {
+        if ( -e qq[$work_dir/${name}_$i.sai] ) { next; }
+
         open(my $fh,'>', "$work_dir/${prefix}aln_fastq_$i.pl") or Utils::error("$work_dir/${prefix}aln_fastq_$i.pl: $!");
         print $fh
 qq[
+use strict;
+use warnings;
 use Utils;
 
 Utils::CMD("$bwa aln -l 32 $bwa_ref ${name}_$i.fastq.gz > ${name}_$i.saix");
@@ -415,7 +424,31 @@ if ( ! -s "${name}_$i.saix" ) { Utils::error("The command ended with an error:\n
 rename("${name}_$i.saix","${name}_$i.sai") or Utils::CMD("rename ${name}_$i.saix ${name}_$i.sai: \$!");
 
 ];
+        close($fh);
         LSF::run($lock_file,$work_dir,"_${name}_$i",$self,qq[perl -w ${prefix}aln_fastq_$i.pl]);
+    }
+
+    # Run blat for each fastq file to find out how many adapter sequences are in there.
+    Utils::CMD(qq[cat $$self{adapters} | sed 's/>/>ADAPTER|/' > $work_dir/adapters.fa]);
+
+    for (my $i=1; $i<=$nfiles; $i++)
+    {
+        if ( -e qq[$work_dir/${name}_$i.nadapters] ) { next; }
+
+        open(my $fh,'>', "$work_dir/${prefix}blat_fastq_$i.pl") or Utils::error("$work_dir/${prefix}blat_fastq_$i.pl: $!");
+        print $fh
+qq[
+use strict;
+use warnings;
+use Utils;
+
+Utils::CMD(q[zcat ${name}_$i.fastq.gz | awk '{print ">"substr(\$1,2,length(\$1)); getline; print; getline; getline}' > ${name}_$i.fa ]);
+Utils::CMD(q[$$self{blat} adapters.fa ${name}_$i.fa ${name}_$i.blat -out=blast8]);
+Utils::CMD(q[cat ${name}_$i.blat | awk '{if (\$2 ~ /^ADAPTER/) print}' | sort -u | wc -l > ${name}_$i.nadapters]);
+unlink("${name}_$i.fa", "${name}_$i.blat");
+];
+        close($fh);
+        LSF::run($lock_file,$work_dir,"_${name}_a$i",$self,qq[perl -w ${prefix}blat_fastq_$i.pl]);
     }
 
     return $$self{'No'};
@@ -506,6 +539,7 @@ Utils::CMD("$samtools sort ${name}.ubam ${name}x");     # Test - will this help 
 Utils::CMD("rm -f ${name}.sam ${name}.ubam");
 rename("${name}x.bam", "$name.bam") or Utils::CMD("rename ${name}x.bam $name.bam: \$!");
 };
+    close($fh);
 
     LSF::run($lock_file,$work_dir,"_${name}_sampe",$self, q{perl -w _map.pl});
     return $$self{'No'};
@@ -559,9 +593,9 @@ sub check_genotype
 }
 
 
-#----------- create_graphs ---------------------
+#----------- stats_and_graphs ---------------------
 
-sub create_graphs_requires
+sub stats_and_graphs_requires
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
@@ -569,7 +603,7 @@ sub create_graphs_requires
     return \@requires;
 }
 
-sub create_graphs_provides
+sub stats_and_graphs_provides
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
@@ -577,7 +611,7 @@ sub create_graphs_provides
     return \@provides;
 }
 
-sub create_graphs
+sub stats_and_graphs
 {
     my ($self,$lane_path,$lock_file) = @_;
 
@@ -669,7 +703,7 @@ sub run_graphs
 
     my $all_stats = SamTools::collect_detailed_bam_stats($bam_file,$fai_ref);
     my $stats = $$all_stats{'total'};
-    report_stats($stats,$lane_path,$stats_file);
+    # report_stats($stats,$lane_path,$stats_file); shouldn't be needed anymore
     report_detailed_stats($stats,$lane_path,$other_stats);
     dump_detailed_stats($stats,$dump_file);
 
@@ -922,6 +956,7 @@ sub log
     { 
         print $fh $msg_str; 
     }
+    if ( $fh ) { close($fh); }
 }
 
 

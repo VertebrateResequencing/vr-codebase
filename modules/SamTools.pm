@@ -217,8 +217,8 @@ sub collect_detailed_bam_stats
     my $do_chrm  = exists($$options{'do_chrm'}) ?  $$options{'do_chrm'} : 1;
     my $do_gc    = exists($$options{'do_gc_content'}) ? $$options{'do_gc_content'} : 1;
     my $do_rmdup = exists($$options{'do_rmdup'}) ? $$options{'do_rmdup'} : 1;
-
     my $chrm_lengths = $do_chrm ? Utils::fai_chromosome_lengths($fai_file) : {};
+
 
     # Use hashes, not arrays - the data can be broken and we might end up allocating insanely big arrays 
 
