@@ -1,13 +1,16 @@
 =head1 NAME
 
-VertRes::Wrapper::RecalQual - wrapper for Broad's bam recalibrator
+VertRes::Wrapper::GATK - wrapper for Broad's GenomeAnalysisToolKit
 
 =head1 SYNOPSIS
 
-use VertRes::Wrapper::RecalQual;
+use VertRes::Wrapper::GATK;
 
-my $wrapper = VertRes::Wrapper::RecalQual->new(recalibrate => 1);
-$wrapper->run('input_bam', 'output_bam');
+my $wrapper = VertRes::Wrapper::GATK->new(recalibrate => 1);
+
+# run something with the toolkit
+
+#...
 
 # check the status
 my $status = $wrapper->run_status;
@@ -17,7 +20,9 @@ if ($status == -1) {
 
 =head1 DESCRIPTION
 
-Runs Broad's bam recalibrator RecalQual.py in a nice way.
+Ostensibly a wrapper for Broad's GenomeAnalysisToolKit, this is primarily
+focused on using it to recalibrate the quality values in bam files. See:
+http://www.broadinstitute.org/gsa/wiki/index.php/Quality_scores_recalibration
 
 For mouse, assumes you have the env variable MOUSE pointing to team145's mouse
 directory.
@@ -28,7 +33,7 @@ Sendu Bala: bix@sendu.me.uk
 
 =cut
 
-package VertRes::Wrapper::RecalQual;
+package VertRes::Wrapper::GATK;
 
 use strict;
 use warnings;
@@ -47,9 +52,9 @@ our $default_mouse_dnsnp = File::Spec->catfile($ENV{MOUSE}, 'ref', 'broad_recal_
 =head2 new
 
  Title   : new
- Usage   : my $wrapper = VertRes::Wrapper::RecalQual->new();
- Function: Create a VertRes::Wrapper::RecalQual object.
- Returns : VertRes::Wrapper::RecalQual object
+ Usage   : my $wrapper = VertRes::Wrapper::GATK->new();
+ Function: Create a VertRes::Wrapper::GATK object.
+ Returns : VertRes::Wrapper::GATK object
  Args    : quiet    => boolean
            recalibrate => boolean
            evaluate => boolean
