@@ -105,22 +105,22 @@ is $rh->{QNAME}, 'SRR003436.685', 'QNAME fine for first record after first calli
 is $rh->{FLAG}, 121, 'FLAG fine for first record after first calling a header method';
 
 # test the fast parsing method
-$ps = VertRes::Parser::sam->new(file => $s_file);
-my @fields = $ps->get_fields('QNAME', 'FLAG', 'QUAL');
-is_deeply \@fields, ['IL3_2822:6:1:3:1989', '69', '44444477774774774447477747($$(447474\'$(($(7777477744477774477'], 'correct fields retrieved from first line';
-@fields = $ps->get_fields('SEQ');
-is $fields[0], 'NANANNAAANNANNANAAAAAAAAANAAANNNNNNNNNNNNNNNNNNANNNNNN', 'correct field retrieved from second line';
-# check the last line as well
-my $last_field;
-while (@fields = $ps->get_fields('QNAME')) {
-    $last_field = $fields[0];
-    next;
-}
-is $last_field, 'IL3_2822:6:1:46:1716', 'correct field retrieved from last line';
+my $b_file = $ps->catfile('t', 'data', 'simple.bam');
+ok -e $b_file, 'bam file we will test with exists';
+$ps = VertRes::Parser::sam->new(file => $b_file);
 
-# and on a headed sam, getting tags
-$ps->file($headed_sam);
-@fields = $ps->get_fields('QNAME', 'FLAG', 'RG');
-is_deeply \@fields, ['SRR003436.685', 121, 'SRR003436'], 'correct fields retrieved from first line with an RG tag';
+is_deeply [$ps->get_fields('QNAME', 'FLAG', 'RNAME', 'POS', 'MAPQ', 'CIGAR', 'MRNM', 'MPOS', 'ISIZE', 'SEQ', 'QUAL', 'XT', 'NM', 'SM', 'AM', 'X0', 'X1', 'XM', 'XO', 'XG', 'MD')], ['IL3_2822:6:1:40:1780', 163, 'Streptococcus_suis', 4927, 37, '54M', 'Streptococcus_suis', 5086, 213, 'CTAGAAGACGGAAAATCTGCCCGCACAGTTGAGTTCACAGATGAAGAACAAAAA', '?>??;:@<?????6)5><?8=;??=;;?2:?>>2<>:>:?:3@97?1764091=', 'U', 0, 37, 37, 1, 0, 0, 0, 0, 54], 'get_fields test on first line';
+is $ps->get_fields('ISIZE'), -213, 'get_fields second line mate gets a negative isize';
+my $last_fields;
+my @fields;
+while (@fields = $ps->get_fields('QNAME', 'FLAG', 'RG', 'RNAME', 'POS', 'MAPQ', 'CIGAR', 'MRNM', 'MPOS', 'ISIZE', 'SEQ', 'SEQ_LENGTH', 'QUAL', 'XT')) {
+    $last_fields = [@fields];
+}
+is_deeply $last_fields, ['IL3_2822:6:1:46:1362', 133, '*', '*', 0, 0, '*', '*', 0, 0, 'CGTTGTAGCTGAGGCTGACATTGAATTTTCACATCTCGAAAGCTTCATCAGTCT', 54, '??,<-(\'4+9/&<A>8((2)4<?835?>.9+(.\'%39@<8<3\'6,.)-==./.(', '*'], 'get_fields test on last line';
+
+
+# *** need a better test bam with multiple chromosomes and RG tags, and with
+# an EOF marker to avoid the warning
+
 
 exit;

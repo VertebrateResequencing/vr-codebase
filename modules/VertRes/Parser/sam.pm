@@ -27,14 +27,17 @@ while ($pars->next_result()) {
 }
 
 # or for speed critical situations:
-$pars = VertRes::Parser::sam->new(file => 'mapping.sam');
+$pars = VertRes::Parser::sam->new(file => 'mapping.bam');
 while (my @fields = $pars->get_fields('QNAME', 'FLAG', 'RG')) {
     # @fields contains the qname, flag and rg tag
 }
 
 =head1 DESCRIPTION
 
-A parser for sam files.
+A parser for sam and bam files.
+
+The environment variable SAMTOOLS must point to a directory where samtools
+source has been compiled, so containing at least bam.h and libbam.a.
 
 =head1 AUTHOR
 
@@ -46,7 +49,11 @@ package VertRes::Parser::sam;
 
 use strict;
 use warnings;
-use Inline C => Config => FILTERS => 'Strip_POD';
+use Bio::DB::Sam;
+use Inline C => Config => FILTERS => 'Strip_POD' =>
+           INC => "-I$ENV{SAMTOOLS}" =>
+           LIBS => "-L$ENV{SAMTOOLS} -lbam -lz" =>
+           CCFLAGS => '-D_IOLIB=2 -D_FILE_OFFSET_BITS=64';
 
 use base qw(VertRes::Parser::ParserI);
 
@@ -61,18 +68,6 @@ my %col_to_name = (0  => 'QNAME',
                    8  => 'ISIZE',
                    9  => 'SEQ',
                    10 => 'QUAL');
-
-my %name_to_col = (QNAME => 0,
-                   FLAG => 1,
-                   RNAME => 2,
-                   POS => 3,
-                   MAPQ => 4,
-                   CIGAR => 5,
-                   MRNM => 6,
-                   MPOS => 7,
-                   ISIZE => 8,
-                   SEQ => 9,
-                   QUAL => 10);
 
 our %flags = (paired_tech    => 0x0001,
               paired_map     => 0x0002,
@@ -593,70 +588,250 @@ sub next_result {
 =head2 get_fields
 
  Title   : get_fields
- Usage   : while (my @fields = $obj->get_fields('QNAME', 'FLAG')) { #... }
+ Usage   : while (my @fields = $obj->get_fields('QNAME', 'FLAG', 'RG')) { #... }
  Function: From the next line in the sam file, get the values of certain
-           fields/tags. This is faster than using next_result().
-           NB: this must either be run on a headerless sam file, or you must
-           not use any of the header-related methods
- Returns : list of desired values
- Args    : list of desired fields (see result_holder()) or tags (like 'RG')
+           fields/tags. This is much faster than using next_result().
+           NB: this is incompatible with other methods, and only works on
+           bam files (not sam files, or opened filehandles).
+ Returns : list of desired values (if a desired tag isn't present, '*' will be
+           returned in that slot)
+ Args    : list of desired fields (see result_holder()) or tags (like 'RG').
+           additionaly, there is the psuedo-field 'SEQ_LENGTH' to get the
+           length of the read
 
 =cut
 
 sub get_fields {
     my ($self, @fields) = @_;
     
-    # get the next line; we don't deal with header issues to increase speed
-    my $fh = $self->fh() || return;
-    my $line = <$fh> || return;
-    while (index($line, '@') == 0) {
-        $line = <$fh> || return;
+    unless (defined $self->{_cbam}) {
+        ($self->{_chead}, $self->{_cbam}, $self->{_cb}) = $self->_initialize_bam($self->file());
     }
     
-    my @data = split(qr/\t/, $line);
-    @data || return;
-    
-    for my $i (11..$#data) {
-        my $tag = substr($data[$i], 0, 2);
-        $name_to_col{$tag} = $i;
-    }
-    
-    my @cols;
-    foreach my $field (@fields) {
-        my $col = $name_to_col{$field};
-        if (defined $col) {
-            push(@cols, $col);
-        }
-        else {
-            $self->warn("'$field' wasn't found in this sam record");
-            push(@cols, undef);
-        }
-    }
-    
-    my @values;
-    foreach my $col (@cols) {
-        if (! defined $col) {
-            push(@values, undef);
-            next;
-        }
-        
-        chomp($data[$col]) if $col == $#data;
-        
-        if ($col <= 10) {
-            push(@values, $data[$col]);
-        }
-        else {
-            my $tag = $data[$col];
-            unless ($tag) {
-                $self->warn("column $col missing for this sam record");
-                push(@values, undef);
-                next;
-            }
-            push(@values, substr($tag, 5));
-        }
-    }
-    
-    return @values;
+    return $self->_get_fields($self->{_cbam}, $self->{_cb}, $self->{_chead}, @fields);
 }
 
+use Inline C => <<'END_C';
+
+#include "bam.h"
+#include "kstring.h"
+
+void _initialize_bam(SV* self, char* bamfile) {
+    bamFile *bam;
+    bam = bam_open(bamfile, "r");
+    
+    bam1_t *b;
+    b = bam_init1();
+    
+    bam_header_t *bh;
+    bgzf_seek(bam,0,0);
+    bh = bam_header_read(bam);
+    
+    Inline_Stack_Vars;
+    Inline_Stack_Reset;
+    Inline_Stack_Push(newRV_noinc(newSViv(bh)));
+    Inline_Stack_Push(newRV_noinc(newSViv(bam)));
+    Inline_Stack_Push(newRV_noinc(newSViv(b)));
+    Inline_Stack_Done;
+}
+
+void _get_fields(SV* self, SV* bam_ref, SV* b_ref, SV* header_ref, ...) {
+    bamFile *bam;
+    bam = (bamFile*)SvIV(SvRV(bam_ref));
+    bam1_t *b;
+    b = (bam1_t*)SvIV(SvRV(b_ref));
+    
+    int i;
+    char *field;
+    STRLEN field_length;
+    uint8_t *tag_value;
+    int type;
+    
+    int32_t tid;
+    bam_header_t *header;
+    uint32_t  *cigar;
+    int cigar_loop;
+    AV *cigar_avref;
+    kstring_t cigar_str;
+    cigar_str.l = cigar_str.m = 0; cigar_str.s = 0;
+    
+    char *seq;
+    int seq_i;
+    uint8_t *qual;
+    int qual_i;
+    kstring_t qual_str;
+    qual_str.l = qual_str.m = 0; qual_str.s = 0;
+    
+    Inline_Stack_Vars;
+    
+    Inline_Stack_Reset;
+    if (bam_read1(bam, b) >= 0) {
+        for (i = 2; i < Inline_Stack_Items; i++) {
+            field = SvPV(Inline_Stack_Item(i), field_length);
+            
+            if (field_length > 2) {
+                if (strEQ(field, "QNAME")) {
+                    Inline_Stack_Push(sv_2mortal(newSVpv(bam1_qname(b), 0)));
+                }
+                else if (strEQ(field, "FLAG")) {
+                    Inline_Stack_Push(sv_2mortal(newSVuv(b->core.flag)));
+                }
+                else if (strEQ(field, "RNAME")) {
+                    if (b->core.tid < 0) {
+                        Inline_Stack_Push(sv_2mortal(newSVpv("*", 1)));
+                    }
+                    else {
+                        header = (bam_header_t*)SvIV(SvRV(header_ref));
+                        Inline_Stack_Push(sv_2mortal(newSVpv(header->target_name[b->core.tid], 0)));
+                    }
+                }
+                else if (strEQ(field, "POS")) {
+                    Inline_Stack_Push(sv_2mortal(newSVuv(b->core.pos + 1)));
+                }
+                else if (strEQ(field, "MAPQ")) {
+                    Inline_Stack_Push(sv_2mortal(newSVuv(b->core.qual)));
+                }
+                else if (strEQ(field, "CIGAR_ARRAY")) {
+                    cigar_avref = (AV*) sv_2mortal((SV*)newAV());
+                    cigar = bam1_cigar(b);
+                    for (cigar_loop = 0; cigar_loop < b->core.n_cigar; cigar_loop++) {
+                        av_push(cigar_avref, newSViv(cigar[cigar_loop]));
+                    }
+                    Inline_Stack_Push(sv_2mortal(newRV((SV*)cigar_avref)));
+                }
+                else if (strEQ(field, "CIGAR")) {
+                    if (b->core.n_cigar == 0) {
+                        Inline_Stack_Push(sv_2mortal(newSVpv("*", 1)));
+                    }
+                    else {
+                        cigar = bam1_cigar(b);
+                        for (cigar_loop = 0; cigar_loop < b->core.n_cigar; ++cigar_loop) {
+                            ksprintf(&cigar_str, "%d%c", cigar[cigar_loop]>>BAM_CIGAR_SHIFT, "MIDNSHP"[cigar[cigar_loop]&BAM_CIGAR_MASK]);
+                        }
+                        Inline_Stack_Push(sv_2mortal(newSVpv(cigar_str.s, 0)));
+                    }
+                }
+                else if (strEQ(field, "MRNM")) {
+                    if (b->core.mtid < 0) {
+                        Inline_Stack_Push(sv_2mortal(newSVpv("*", 1)));
+                    }
+                    else {
+                        header = (bam_header_t*)SvIV(SvRV(header_ref));
+                        Inline_Stack_Push(sv_2mortal(newSVpv(header->target_name[b->core.mtid], 0)));
+                    }
+                }
+                else if (strEQ(field, "MPOS")) {
+                    Inline_Stack_Push(sv_2mortal(newSVuv(b->core.mpos + 1)));
+                }
+                else if (strEQ(field, "ISIZE")) {
+                    Inline_Stack_Push(sv_2mortal(newSViv(b->core.isize)));
+                }
+                else if (strEQ(field, "SEQ_LENGTH")) {
+                    if (b->core.l_qseq) {
+                        Inline_Stack_Push(sv_2mortal(newSVuv(b->core.l_qseq)));
+                    }
+                    else {
+                        Inline_Stack_Push(sv_2mortal(newSVuv(0)));
+                    }
+                }
+                else if (strEQ(field, "SEQ")) {
+                    if (b->core.l_qseq) {
+                        seq = Newxz(seq, b->core.l_qseq + 1, char);
+                        for (seq_i = 0; seq_i < b->core.l_qseq; seq_i++) {
+                            seq[seq_i] = bam_nt16_rev_table[bam1_seqi(bam1_seq(b), seq_i)];
+                        }
+                        Inline_Stack_Push(sv_2mortal(newSVpv(seq, b->core.l_qseq)));
+                        Safefree(seq);
+                    }
+                    else {
+                        Inline_Stack_Push(sv_2mortal(newSVpv("*", 1)));
+                    }
+                }
+                else if (strEQ(field, "QUAL")) {
+                    if (b->core.l_qseq) {
+                        qual = bam1_qual(b);
+                        if (qual[0] != 0xff) {
+                            for (qual_i = 0; qual_i < b->core.l_qseq; ++qual_i) {
+                                kputc(qual[qual_i] + 33, &qual_str);
+                            }
+                        }
+                        Inline_Stack_Push(sv_2mortal(newSVpv(qual_str.s, b->core.l_qseq)));
+                    }
+                    else {
+                        Inline_Stack_Push(sv_2mortal(newSVpv("*", 1)));
+                    }
+                }
+            }
+            else {
+                tag_value = bam_aux_get(b, field);
+                
+                if (tag_value != 0) {
+                    type = *tag_value++;
+                    switch (type) {
+                        case 'c':
+                            Inline_Stack_Push(sv_2mortal(newSViv((int32_t)*(int8_t*)tag_value)));
+                            break;
+                        case 'C':
+                            Inline_Stack_Push(sv_2mortal(newSViv((int32_t)*(uint8_t*)tag_value)));
+                            break;
+                        case 's':
+                            Inline_Stack_Push(sv_2mortal(newSViv((int32_t)*(int16_t*)tag_value)));
+                            break;
+                        case 'S':
+                            Inline_Stack_Push(sv_2mortal(newSViv((int32_t)*(uint16_t*)tag_value)));
+                            break;
+                        case 'i':
+                            Inline_Stack_Push(sv_2mortal(newSViv(*(int32_t*)tag_value)));
+                            break;
+                        case 'I':
+                            Inline_Stack_Push(sv_2mortal(newSViv((int32_t)*(uint32_t*)tag_value)));
+                            break;
+                        case 'f':
+                            Inline_Stack_Push(sv_2mortal(newSVnv(*(float*)tag_value)));
+                            break;
+                        case 'A':
+                            Inline_Stack_Push(sv_2mortal(newSVpv((char*)tag_value, 1)));
+                            break;
+                        case 'Z':
+                        case 'H':
+                            Inline_Stack_Push(sv_2mortal(newSVpv((char*)tag_value, 0)));
+                            break;
+                    }
+                }
+                else {
+                    Inline_Stack_Push(sv_2mortal(newSVpv("*", 1)));
+                }
+            }
+        }
+    }
+    Inline_Stack_Done;
+}
+
+END_C
+
 1;
+
+=pod
+
+    Safefree(b);
+    Safefree(cigar_avref);
+    
+    Safefree(bam);
+    Safefree(b);
+    Safefree(i);
+    Safefree(field);
+    Safefree(field_length);
+    Safefree(tag_value);
+    Safefree(type);
+    Safefree(tid);
+    Safefree(header);
+    Safefree(cigar);
+    Safefree(cigar_loop);
+    Safefree(cigar_avref);
+    Safefree(cigar_str);
+    Safefree(seq);
+    Safefree(seq_i);
+    Safefree(qual);
+    Safefree(qual_i);
+    Safefree(qual_str);
+=cut
