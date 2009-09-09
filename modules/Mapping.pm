@@ -158,7 +158,7 @@ sub makeBam
 			if( Mapping_454_ssaha::isLaneMapped( $laneAbsPath ) )
 			{
 				print "Making bam for Lane: $laneAbsPath\n";
-				Mapping_454_ssaha::laneToBAM( $laneAbsPath, $lsf_queue, $indexF, $male_fai, $female_fai );
+				Mapping_454_ssaha::laneToBAM( $laneAbsPath, $lsf_queue, $indexF);
 			}
 		}
 		else
