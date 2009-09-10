@@ -8,12 +8,9 @@ use VertRes::Utils::dbSNP;
 
 my $dbsnp_util = VertRes::Utils::dbSNP->new();
 
-# use any of the utility functions described here, eg.
-my $are_similar = $dbsnp_util->bams_are_similar(@bam_files);
-
 =head1 DESCRIPTION
 
-General utility functions for making dbSNP submission files
+General utility functions for making dbSNP submission files - 1 method per dbSNP submission section
 
 =head1 AUTHOR
 
@@ -38,7 +35,7 @@ our $THREE_PRIME_REGION = 200;
 =head2 new
 
  Title   : new
- Usage   : my $obj = VertRes::Utils::dbSNP->new();
+ Usage   : my $obj = VertRes::Utils::dbSNP->new(handle=>'myhandle',strain_tag=>'myStrainTag',pop_handle=>'myPopHandle',species=>'Mouse');
  Function: Create a new VertRes::Utils::dbSNP object.
  Returns : VertRes::Utils::dbSNP object
  Args    : n/a
@@ -47,8 +44,8 @@ our $THREE_PRIME_REGION = 200;
 
 sub new 
 {
-    my ($class, %args) = @_;
-    my $self = $class->SUPER::new(%args);
+    my ($class, @args) = @_;
+    my $self = $class->SUPER::new(@args);
     	    
 	checkFields( $self );
 	
@@ -141,7 +138,7 @@ sub write_methods
 {
 	my ($self, $outputFile, $id, $methods) = @_;
 	
-	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 2;
+	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 3;
 	checkFields( $self );
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
