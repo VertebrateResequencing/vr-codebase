@@ -287,8 +287,11 @@ sub population {
         my $obj = $self->get_population_by_name($population);
         if ($obj){
             $self->{'population'} = $obj;
-            $self->{'population_id'} = $obj->id;
-            $self->dirty(1);
+            # Have we actually changed?
+            if ($self->population_id != $obj->id){
+                $self->population_id($obj->id);
+                $self->dirty(1);
+            }
         }
         else {
             # warn "No such population in the database";
@@ -409,8 +412,11 @@ sub species {
         my $obj = $self->get_species_by_name($species);
         if ($obj){
             $self->{'species'} = $obj;
-            $self->{'species_id'} = $obj->id;
-            $self->dirty(1);
+            # Have we actually changed?
+            if ($self->species_id != $obj->id){
+                $self->species_id($obj->id);
+                $self->dirty(1);
+            }
         }
         else {
             # warn "No such species in the database";

@@ -30,6 +30,7 @@ use VRTrack::Core_obj;
 use VRTrack::Image;
 use VRTrack::Mapper;
 use VRTrack::Assembly;
+use File::Basename;
 our @ISA = qw(VRTrack::Core_obj);
 
 =head2 fields_dispatch
@@ -665,6 +666,25 @@ sub add_image {
     delete $self->{'images'};
 
     return $obj;
+}
+
+
+=head2 add_image_by_filename
+
+  Arg [1]    : image file path
+  Example    : my $newimage = $lib->add_image_by_filename('/tmp/gc.png');
+  Description: create a new image, and if successful, return the object.  The image will be named for the name of the image file, e.g. 'gc.png' for '/tmp/gc.png'.
+  Returntype : VRTrack::Image object
+
+=cut
+
+sub add_image_by_filename {
+    my ($self, $imgfile) = @_;
+    open( my $IMG, $imgfile ) or die "Can't read image $imgfile: $!\n";
+    my $img = do { local( $/ ) ; <$IMG> } ;  # one-line slurp
+    close $IMG;
+    my $imgname = basename($imgfile);
+    return $self->add_image($imgname, $img);
 }
 
 

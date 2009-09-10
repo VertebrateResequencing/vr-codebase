@@ -267,7 +267,7 @@ sub hierarchy_path_of_lane_name {
   Arg [1]    : [optional] list of qc_status filters
   Example    : my $all_lanes = $track->qc_filtered_lane_names();
                my $pend_pass_lanes = $track->qc_filtered_lane_names('pending','passed');
-  Description: retrieves a optionally-filtered list of all lane names, ordered by project, sample, library names.
+  Description: retrieves a optionally-filtered list of all lane hierarchy names, ordered by project, sample, library names.
                This is a helper function for the qc web interface for speed.
   Returntype : arrayref
 

@@ -53,6 +53,24 @@ sub fields_dispatch {
     return \%fields;
 }
 
+
+=head2 new_by_ssid
+
+  Arg [1]    : database handle to seqtracking database
+  Arg [2]    : request sequencescape id
+  Example    : my $request = VRTrack::Request->new_by_ssid($dbh, $ssid);
+  Description: Class method. Returns latest Request object by ssid.  If no such ssid is in the database, returns undef
+  Returntype : VRTrack::Request object
+
+=cut
+
+sub new_by_ssid {
+    my ($class,$dbh, $ssid) = @_;
+    die "Need to call with a db handle, ssid" unless ($dbh && $ssid);
+    return $class->new_by_field_value($dbh, 'ssid',$ssid);
+}
+
+
 ###############################################################################
 # Class methods
 ###############################################################################

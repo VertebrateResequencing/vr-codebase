@@ -97,6 +97,23 @@ sub new_by_hierarchy_name {
 }
 
 
+=head2 new_by_ssid
+
+  Arg [1]    : database handle to seqtracking database
+  Arg [2]    : project sequencescape id
+  Example    : my $project = VRTrack::Project->new_by_ssid($dbh, $ssid);
+  Description: Class method. Returns latest Project object by ssid.  If no such ssid is in the database, returns undef
+  Returntype : VRTrack::Project object
+
+=cut
+
+sub new_by_ssid {
+    my ($class,$dbh, $ssid) = @_;
+    die "Need to call with a db handle, ssid" unless ($dbh && $ssid);
+    return $class->new_by_field_value($dbh, 'ssid',$ssid);
+}
+
+
 =head2 create
 
   Arg [1]    : database handle to seqtracking database
