@@ -324,6 +324,10 @@ sub lane_id {
   Arg [1]    : qc_status (optional) ['pending','passed','failed']
   Example    : my $qc_status = $file->qc_status();
 	       $file->qc_status('passed');
+
+               NB before a file has been 'imported', i.e. copied into a disk
+               hierarchy, the qc_status should be NULL.  On import, it should
+               be set to 'no_qc'.
   Description: Get/Set for file qc_status
   Returntype : string
 
