@@ -614,7 +614,6 @@ sub get_fields {
 use Inline C => <<'END_C';
 
 #include "bam.h"
-#include "kstring.h"
 
 void _initialize_bam(SV* self, char* bamfile) {
     bamFile *bam;
@@ -652,15 +651,17 @@ void _get_fields(SV* self, SV* bam_ref, SV* b_ref, SV* header_ref, ...) {
     uint32_t  *cigar;
     int cigar_loop;
     AV *cigar_avref;
-    kstring_t cigar_str;
-    cigar_str.l = cigar_str.m = 0; cigar_str.s = 0;
+    char *cigar_str;
+    char *cigar_digits;
+    int cigar_digits_length;
+    int cigar_digits_i;
+    int cigar_chars_total;
     
     char *seq;
     int seq_i;
     uint8_t *qual;
     int qual_i;
-    kstring_t qual_str;
-    qual_str.l = qual_str.m = 0; qual_str.s = 0;
+    char *qual_str;
     
     Inline_Stack_Vars;
     
@@ -691,24 +692,31 @@ void _get_fields(SV* self, SV* bam_ref, SV* b_ref, SV* header_ref, ...) {
                 else if (strEQ(field, "MAPQ")) {
                     Inline_Stack_Push(sv_2mortal(newSVuv(b->core.qual)));
                 }
-                else if (strEQ(field, "CIGAR_ARRAY")) {
-                    cigar_avref = (AV*) sv_2mortal((SV*)newAV());
-                    cigar = bam1_cigar(b);
-                    for (cigar_loop = 0; cigar_loop < b->core.n_cigar; cigar_loop++) {
-                        av_push(cigar_avref, newSViv(cigar[cigar_loop]));
-                    }
-                    Inline_Stack_Push(sv_2mortal(newRV((SV*)cigar_avref)));
-                }
                 else if (strEQ(field, "CIGAR")) {
                     if (b->core.n_cigar == 0) {
                         Inline_Stack_Push(sv_2mortal(newSVpv("*", 1)));
                     }
                     else {
                         cigar = bam1_cigar(b);
+                        cigar_str = Newxz(cigar_str, b->core.n_cigar * 5, char);
+                        cigar_chars_total = 0;
+                        cigar_digits = Newxz(cigar_digits, 3, char);
                         for (cigar_loop = 0; cigar_loop < b->core.n_cigar; ++cigar_loop) {
-                            ksprintf(&cigar_str, "%d%c", cigar[cigar_loop]>>BAM_CIGAR_SHIFT, "MIDNSHP"[cigar[cigar_loop]&BAM_CIGAR_MASK]);
+                            Renew(cigar_digits, 3, char);
+                            cigar_digits_length = sprintf(cigar_digits, "%i", cigar[cigar_loop]>>BAM_CIGAR_SHIFT);
+                            for (cigar_digits_i = 0; cigar_digits_i < cigar_digits_length; ++cigar_digits_i) {
+                                cigar_str[cigar_chars_total] = cigar_digits[cigar_digits_i];
+                                cigar_chars_total++;
+                            }
+                            
+                            cigar_str[cigar_chars_total] =  "MIDNSHP"[cigar[cigar_loop]&BAM_CIGAR_MASK];
+                            cigar_chars_total++;
                         }
-                        Inline_Stack_Push(sv_2mortal(newSVpv(cigar_str.s, 0)));
+                        
+                        Inline_Stack_Push(sv_2mortal(newSVpv(cigar_str, cigar_chars_total)));
+                        
+                        Safefree(cigar_str);
+                        Safefree(cigar_digits);
                     }
                 }
                 else if (strEQ(field, "MRNM")) {
@@ -724,7 +732,7 @@ void _get_fields(SV* self, SV* bam_ref, SV* b_ref, SV* header_ref, ...) {
                     Inline_Stack_Push(sv_2mortal(newSVuv(b->core.mpos + 1)));
                 }
                 else if (strEQ(field, "ISIZE")) {
-                    Inline_Stack_Push(sv_2mortal(newSViv(b->core.isize)));
+                    Inline_Stack_Push(sv_2mortal(newSViv((int*)b->core.isize)));
                 }
                 else if (strEQ(field, "SEQ_LENGTH")) {
                     if (b->core.l_qseq) {
@@ -737,7 +745,7 @@ void _get_fields(SV* self, SV* bam_ref, SV* b_ref, SV* header_ref, ...) {
                 else if (strEQ(field, "SEQ")) {
                     if (b->core.l_qseq) {
                         seq = Newxz(seq, b->core.l_qseq + 1, char);
-                        for (seq_i = 0; seq_i < b->core.l_qseq; seq_i++) {
+                        for (seq_i = 0; seq_i < b->core.l_qseq; ++seq_i) {
                             seq[seq_i] = bam_nt16_rev_table[bam1_seqi(bam1_seq(b), seq_i)];
                         }
                         Inline_Stack_Push(sv_2mortal(newSVpv(seq, b->core.l_qseq)));
@@ -751,11 +759,17 @@ void _get_fields(SV* self, SV* bam_ref, SV* b_ref, SV* header_ref, ...) {
                     if (b->core.l_qseq) {
                         qual = bam1_qual(b);
                         if (qual[0] != 0xff) {
+                            qual_str = Newxz(qual_str, b->core.l_qseq + 1, char);
                             for (qual_i = 0; qual_i < b->core.l_qseq; ++qual_i) {
-                                kputc(qual[qual_i] + 33, &qual_str);
+                                qual_str[qual_i] = qual[qual_i] + 33;
                             }
+                            Inline_Stack_Push(sv_2mortal(newSVpv(qual_str, b->core.l_qseq)));
+                            Safefree(qual_str);
                         }
-                        Inline_Stack_Push(sv_2mortal(newSVpv(qual_str.s, b->core.l_qseq)));
+                        else {
+                            Inline_Stack_Push(sv_2mortal(newSVpv("*", 1)));
+                        }
+                        
                     }
                     else {
                         Inline_Stack_Push(sv_2mortal(newSVpv("*", 1)));
