@@ -49,7 +49,6 @@ package VertRes::Parser::sam;
 
 use strict;
 use warnings;
-use Bio::DB::Sam;
 use Inline C => Config => FILTERS => 'Strip_POD' =>
            INC => "-I$ENV{SAMTOOLS}" =>
            LIBS => "-L$ENV{SAMTOOLS} -lbam -lz" =>
