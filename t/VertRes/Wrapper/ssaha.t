@@ -18,7 +18,7 @@ isa_ok $ssaha, 'VertRes::Wrapper::WrapperI';
 is $ssaha->quiet, $quiet, 'quiet set via new';
 
 is $ssaha->exe, 'ssaha2', 'exe ok';
-like $ssaha->version, qr/\d\.\d.\d.\d/, 'version ok';
+like $ssaha->version, qr/\d\.\d.\d/, 'version ok';
 
 # prepare our test files; copy them to a temp dir where we will do the tests
 my $io = VertRes::IO->new();

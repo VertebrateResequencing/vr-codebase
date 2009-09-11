@@ -74,7 +74,7 @@ is $bwa_mapper->exe, 'bwa', 'exe test for bwa mapper';
 like $bwa_mapper->version, qr/\d\.\d\.\d/, 'version test for bwa mapper';
 my $ssaha_mapper = VertRes::Utils::Mappers::ssaha->new();
 is $ssaha_mapper->exe, 'ssaha2', 'exe test for ssaha mapper';
-like $ssaha_mapper->version, qr/\d\.\d\.\d\.\d/, 'version test for ssaha mapper';
+like $ssaha_mapper->version, qr/\d\.\d\.\d/, 'version test for ssaha mapper';
 
 TODO: {
     local $TODO = "Currently unused methods that are difficult to test for";
