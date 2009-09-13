@@ -51,6 +51,7 @@ sub new {
     my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($id));
     if ($id_ref){
 	my $name = $id_ref->{project_name};
+        $name =~ s/\s+$//;  # trim trailing whitespace
 	#warn "Project name : $name\n";
 	$self->id($id);
 	$self->name($name);

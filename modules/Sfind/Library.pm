@@ -66,6 +66,7 @@ sub new {
 	$self->{'_data'}{$param} = $value;
     }
 
+    $name =~ s/\s+$//;  # trim trailing whitespace
     $self->id($id);
     $self->name($name);
 
