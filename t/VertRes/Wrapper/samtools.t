@@ -17,7 +17,7 @@ is $st->quiet, 1, 'quiet set via new';
 my $io = VertRes::IO->new();
 my $sam_input_file = $io->catfile('t', 'data', 'simple.sam');
 ok -s $sam_input_file, 'input sam file ready to test on';
-my $fai_file = $io->catfile('t', 'data', 'S_suis_P17.dna.fai');
+my $fai_file = $io->catfile('t', 'data', 'S_suis_P17.fa.fai');
 ok -s $fai_file, 'fai file ready to test with';
 my $temp_dir = $io->tempdir();
 my $bam_out_file = $io->catfile($temp_dir, 'out.bam');

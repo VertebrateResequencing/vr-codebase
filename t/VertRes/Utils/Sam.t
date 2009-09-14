@@ -21,7 +21,7 @@ my $bam2_file = $io->catfile('t', 'data', 'nsort2.bam');
 ok -s $bam2_file, 'second bam file ready to test with';
 my $headless_sam = $io->catfile('t', 'data', 'simple.sam');
 ok -s $headless_sam, 'headerless sam file ready to test with';
-my $ref = $io->catfile('t', 'data', 'S_suis_P17.dna');
+my $ref = $io->catfile('t', 'data', 'S_suis_P17.fa');
 ok -s $ref, 'ref file ready to test with';
 my $dict = $io->catfile('t', 'data', 'S_suis_P17.dict');
 ok -s $dict, 'dict file ready to test with';
@@ -46,7 +46,7 @@ ok $sam_util->add_sam_header($temp_sam,
                              ref_name => 'SsP17',
                              project => 'SRP000001'), 'add_sam_header manual args test';
 my @expected = ("\@HD\tVN:1.0\tSO:coordinate",
-                "\@SQ\tSN:Streptococcus_suis\tLN:2007491\tAS:SsP17\tM5:c52b2f0394e12013e2573e9a38f51031\tUR:file:t/data/S_suis_P17.dna",
+                "\@SQ\tSN:Streptococcus_suis\tLN:2007491\tAS:SsP17\tM5:c52b2f0394e12013e2573e9a38f51031\tUR:file:t/data/S_suis_P17.fa",
                 "\@RG\tID:SRR00000\tPU:7563\tLB:alib\tSM:NA00000\tPI:2000\tCN:Sanger\tPL:SLX\tDS:SRP000001");
 is_deeply [get_sam_header($temp_sam)], \@expected, 'generated the correct header';
 my $wc = `wc -l $temp_sam`;
@@ -68,7 +68,7 @@ ok $sam_util->add_sam_header($temp_sam,
                              program => 'bwa',
                              program_version => '0.4.9'), 'add_sam_header manual args test';
 @expected = ("\@HD\tVN:1.0\tSO:coordinate",
-             "\@SQ\tSN:Streptococcus_suis\tLN:2007491\tAS:SsP17\tM5:c52b2f0394e12013e2573e9a38f51031\tUR:file:t/data/S_suis_P17.dna",
+             "\@SQ\tSN:Streptococcus_suis\tLN:2007491\tAS:SsP17\tM5:c52b2f0394e12013e2573e9a38f51031\tUR:file:t/data/S_suis_P17.fa",
              "\@RG\tID:SRR00001\tPU:7563\tLB:alib\tSM:NA00001\tPI:2000\tCN:Sanger\tPL:SLX\tDS:SRP000001",
              "\@PG\tID:bwa\tVN:0.4.9");
 my @header_lines = get_sam_header($temp_sam);
@@ -142,7 +142,7 @@ is $sam_util->calculate_flag(paired_tech => 1, self_unmapped => 1, mate_unmapped
 # Math::NumberCruncher and Statistics::Robust::Scale:
 # perl -MVertRes::Utils::FastQ -MMath::NumberCruncher -MVertRes::Parser::sam -Mstrict -we 'my $fqu = VertRes::Utils::FastQ->new(); my $pars = VertRes::Parser::sam->new(file => "t/data/simple.sam"); my $rh = $pars->result_holder; my %stats; while ($pars->next_result) { my $flag = $rh->{FLAG}; if ($pars->is_mapped($flag)) { my $seq = $rh->{SEQ}; $stats{mapped_bases} += length($seq); $stats{mapped_reads}++ if $pars->is_sequencing_paired($flag); foreach my $qual ($fqu->qual_to_ints($rh->{QUAL})) { push(@{$stats{qs}}, $qual); } if ($rh->{MAPQ} > 0) { push(@{$stats{isizes}}, $rh->{ISIZE}) if $rh->{ISIZE} > 0; } } } while (my ($stat, $val) = each %stats) { print "$stat => $val\n"; } print "avg isize: ", Math::NumberCruncher::Mean($stats{isizes}), "\n"; print "sd isize: ", Math::NumberCruncher::StandardDeviation($stats{isizes}), "\n"; print "med isize: ", Math::NumberCruncher::Median($stats{isizes}), "\n"; use Statistics::Robust::Scale "MAD"; print "mad isize: ", MAD($stats{isizes}), "\n"; print "avg qual: ", Math::NumberCruncher::Mean($stats{qs}), "\n";'
 # , and percent_mismatch with:
-# perl -e '$bases = 0; $matches = 0; open($fh, "samtools pileup -sf t/data/S_suis_P17.dna sorted.bam |"); while (<$fh>) { @s = split; $bases += $s[3]; $matches += $s[4] =~ tr/.,/.,/; } print "$bases / $matches\n"; $p = 100 - ((100/$bases) * $matches); print "percent mismatches: $p\n";'
+# perl -e '$bases = 0; $matches = 0; open($fh, "samtools pileup -sf t/data/S_suis_P17.fa sorted.bam |"); while (<$fh>) { @s = split; $bases += $s[3]; $matches += $s[4] =~ tr/.,/.,/; } print "$bases / $matches\n"; $p = 100 - ((100/$bases) * $matches); print "percent mismatches: $p\n";'
 is_deeply {$sam_util->bam_statistics($sorted_bam)}, {SRR00001 => {total_bases => 115000,
                                                                   mapped_bases => 62288,
                                                                   total_reads => 2000,

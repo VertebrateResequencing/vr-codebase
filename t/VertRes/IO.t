@@ -122,7 +122,7 @@ is_deeply [$io->parse_fod($file)], [sort @expected], 'parse_fod test';
 # parse a fofn file  ***ideally should have a symlink inside the fofn as well...
 $file = $io->catfile('t', 'data', 'fofn.txt');
 @expected = ();
-foreach my $file ('2822_6_1_1000.fastq', 'S_suis_P17.dna.fai', 'fastq.gz.fastqcheck') {
+foreach my $file ('2822_6_1_1000.fastq', 'S_suis_P17.fa.fai', 'fastq.gz.fastqcheck') {
     push(@expected, $io->catfile($cwd, 't', 'data', $file));
 }
 is_deeply [$io->parse_fofn($file)], [sort @expected], 'parse_fofn test';

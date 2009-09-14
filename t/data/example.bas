@@ -1,2 +1,2 @@
 bam_filename	md5	study	sample	platform	library	readgroup	#_total_bases	#_mapped_bases	#_total_reads	#_mapped_reads	#_mapped_reads_paired_in_sequencing	#_mapped_reads_properly_paired	%_of_mismatched_bases	average_quality_of_mapped_bases	mean_insert_size	insert_size_sd	median_insert_size	insert_size_median_absolute_deviation
-NA00001.SLX.bwa.SRP000001.2009_08	e90ee3520a211c3dd205ef444c293b7a	SRP000001	NA00001	SLX	alib	SRR00001	115000	62288	2000	1084	1084	1070	2.05	23.32	286	74.10	275	48
+NA00001.SLX.bwa.SRP000001.2009_08	007c160b07f7d928bfa47a85410113e0	SRP000001	NA00001	SLX	alib	SRR00001	115000	62288	2000	1084	1084	1070	2.05	23.32	286	74.10	275	48

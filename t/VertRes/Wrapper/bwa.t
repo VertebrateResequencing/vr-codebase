@@ -22,7 +22,7 @@ my $io = VertRes::IO->new();
 my $temp_dir = $io->tempdir;
 my $read1_basename = '2822_6_1_1000.fastq';
 my $read2_basename = '2822_6_2_1000.fastq';
-my $ref_basename = 'S_suis_P17.dna';
+my $ref_basename = 'S_suis_P17.fa';
 my $read1 = $io->catfile($temp_dir, $read1_basename);
 my $read2 = $io->catfile($temp_dir, $read2_basename);
 my $ref = $io->catfile($temp_dir, $ref_basename);
@@ -39,7 +39,7 @@ my $sai2 = $io->catfile($temp_dir, '2822_6_2_1000.sai');
 my $mapping = $io->catfile($temp_dir, 'mapping.sam');
 my @ref_index_files;
 foreach my $suffix (qw(amb ann bwt pac rbwt rpac rsa sa)) {
-    push(@ref_index_files, $io->catfile($temp_dir, 'S_suis_P17.dna.'.$suffix));
+    push(@ref_index_files, $io->catfile($temp_dir, 'S_suis_P17.fa.'.$suffix));
 }
 
 # run the whole mapping
