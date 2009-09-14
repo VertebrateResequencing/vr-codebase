@@ -1471,7 +1471,7 @@ sub concatenatePairedWith2Ns
 	my $fastq2 = shift;
 	my $outFastq = shift;
 	
-	croak "cant find fastq file" unless ! -f $fastq1 || ! -f $fastq2;
+	croak "cant find fastq file" unless -f $fastq1 && -f $fastq2;
 	
 	my $fh1;
 	if( $fastq1 =~ /\.gz$/ )
@@ -1511,7 +1511,6 @@ sub concatenatePairedWith2Ns
 	close( $fh1 );
 	close( $fh2 );
 	close( $fh3 );
-	
 }
 
 1;
