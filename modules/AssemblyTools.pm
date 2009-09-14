@@ -1496,7 +1496,7 @@ sub concatenatePairedWith2Ns
 	open( my $fh3, ">$outFastq" ) or die $!;
 	while( <$fh1> )
 	{
-		my $name1 = <$fh1>;chomp( $name1 );
+		my $name1 = $_;chomp( $name1 );
 		my $seq1 = <$fh1>;chomp( $seq1 );
 		<$fh1>;
 		my $quals1 = <$fh1>;chomp( $quals1 );
