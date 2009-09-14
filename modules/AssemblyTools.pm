@@ -1506,7 +1506,7 @@ sub concatenatePairedWith2Ns
 		<$fh2>;
 		my $quals2 = <$fh2>;chomp( $quals2 );
 		
-		print "$name1\n".$seq1."NN$seq2\n+\n$quals1"."!!$quals2\n";
+		print $fh3 "$name1\n".$seq1."NN$seq2\n+\n$quals1"."!!$quals2\n";
 	}
 	close( $fh1 );
 	close( $fh2 );
