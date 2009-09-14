@@ -328,4 +328,75 @@ sub qc_filtered_lane_names {
     return \@lane_names;
 }
 
+
+=head2 qc_filtered_file_names
+
+  Arg [1]    : [optional] list of qc_status filters
+  Example    : my $all_files = $track->qc_filtered_file_names();
+               my $files_to_import = $track->qc_filtered_file_names('NULL');
+
+  Description: retrieves a (optionally filtered) list of all file names,
+               ordered by project, sample, library, lane names.
+
+               A QC status of NULL for a file indicates that this file has been imported into the database from
+               sequence tracking, but is not been imported into a disk hierarchy.
+  Returntype : arrayref
+
+=cut
+
+sub qc_filtered_file_names {
+    my ($self,@filter) = @_;
+    my $filterclause;
+    if (@filter){
+        # input validation
+        my %allowed = map {$_ => 1} @{VRTrack::Core_obj::list_enum_vals($self,'file','qc_status')};
+        my @goodfilters = grep {$allowed{lc($_)}} @filter;
+        my $get_null = grep {lc($_) eq 'null'} @filter;
+
+        # NULL complicates things, because the SQL syntax is different.  Can't do = NULL or in (NULL)
+        if ($get_null){
+            if (scalar @goodfilters){
+                $filterclause = 'and (file.qc_status is NULL or file.qc_status in (';
+                $filterclause .= join (",", map {"'$_'"} @goodfilters).')';
+                $filterclause .= ')';
+            }
+            else {  # only checking for NULL
+                $filterclause = 'and file.qc_status is NULL';
+            }
+        }
+        else {
+            $filterclause = 'and file.qc_status in (';
+            $filterclause .= join (",", map {"'$_'"} @goodfilters).')';
+        }
+    }
+    my @file_names;
+    my $sql =qq[select file.name 
+                from latest_project as project,
+                    latest_sample as sample,
+                    latest_library as library,
+                    latest_lane as lane,
+                    latest_file as file 
+                where file.lane_id = lane.lane_id 
+                      and lane.library_id = library.library_id 
+                      and library.sample_id = sample.sample_id 
+                      and sample.project_id = project.project_id 
+                $filterclause 
+                order by project.hierarchy_name, 
+                        sample.name, 
+                        library.hierarchy_name, 
+                        lane.hierarchy_name, 
+                        file.name];
+    my $sth = $self->{_dbh}->prepare($sql);
+
+    my $tmpname;
+    if ($sth->execute()){
+        $sth->bind_columns ( \$tmpname );
+        push @file_names, $tmpname while $sth->fetchrow_arrayref;
+    }
+    else{
+        die(sprintf('Cannot retrieve projects: %s', $DBI::errstr));
+    }
+
+    return \@file_names;
+}
 1;
