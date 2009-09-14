@@ -1450,5 +1450,68 @@ sub createFastaHash
 	
 	return \%reads_file;
 }
+=pod
+sub filterOutShortContigsFastq
+{
+	croak "Usage: filterOutShortContigsFastq fastq minLength" unless @_ == 2; 
+	my $file = shift;
+	croak "cant find fastq file" unless -f $file;
+	my $minLength = shift;
+	croak "invalid min length" unless $minLength > 0;
+	
+	
+}
+=cut
+
+#make paired reads in a form suitable for phusion
+sub concatenatePairedWith2Ns
+{
+	croak "Usage: concatenatePairedWith2Ns fastq1 fastq2 fastq_out" unless @_ == 3; 
+	my $fastq1 = shift;
+	my $fastq2 = shift;
+	my $outFastq = shift;
+	
+	croak "cant find fastq file" unless ! -f $fastq1 || ! -f $fastq2;
+	
+	my $fh1;
+	if( $fastq1 =~ /\.gz$/ )
+	{
+		open( $fh1, "gunzip -c $fastq1 |" ) or die "Cannot open gzipped fastq file\n";
+	}
+	else
+	{
+		open( $fh1, $fastq1 ) or die "Failed to open reads file";
+	}
+	
+	my $fh2;
+	if( $fastq2 =~ /\.gz$/ )
+	{
+		open( $fh2, "gunzip -c $fastq2 |" ) or die "Cannot open gzipped fastq file\n";
+	}
+	else
+	{
+		open( $fh2, $fastq2 ) or die "Failed to open reads file";
+	}
+	
+	open( my $fh3, ">$outFastq" ) or die $!;
+	while( <$fh1> )
+	{
+		my $name1 = <$fh1>;chomp( $name1 );
+		my $seq1 = <$fh1>;chomp( $seq1 );
+		<$fh1>;
+		my $quals1 = <$fh1>;chomp( $quals1 );
+		
+		my $name2 = <$fh2>;chomp( $name2 );
+		my $seq2 = <$fh2>;chomp( $seq2 );
+		<$fh2>;
+		my $quals2 = <$fh2>;chomp( $quals2 );
+		
+		print "$name1\n".$seq1."NN$seq2\n+\n$quals1"."!!$quals2\n";
+	}
+	close( $fh1 );
+	close( $fh2 );
+	close( $fh3 );
+	
+}
 
 1;
