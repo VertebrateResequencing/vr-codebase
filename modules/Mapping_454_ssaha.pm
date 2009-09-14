@@ -539,7 +539,7 @@ sub laneToBAM
 		print S qq/$SAMTOOLS rmdup raw.sorted.bam rmdup.bam;/;
 	}
 	
-	#print S qq/rm raw.sam;/;
+	print S qq/rm raw.sam;/;
 	print S qq/$SAMTOOLS flagstat rmdup.bam > rmdup.flagstat;/;
 	print S qq/$SAMTOOLS flagstat raw.sorted.bam > raw.sorted.flagstat;/;
 	print S qq[ perl -w -e "use SamTools;SamTools::bam_stat( \\"rmdup.bam\\", \\"rmdup.bamstat\\");";];
