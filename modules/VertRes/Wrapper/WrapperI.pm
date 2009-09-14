@@ -453,7 +453,7 @@ sub _set_params_string {
     
     my ($join, $lc, $d, $dd, $md, $utd) =
        ($args{join}, $args{lc}, $args{dash}, $args{double_dash},
-        $args{misxed_dash}, $args{underscore_to_dash});
+        $args{mixed_dash}, $args{underscore_to_dash});
     $self->throw("-dash, -double_dash and -mixed_dash are mutually exclusive") if (defined($d) + defined($dd) + defined($md) > 1);
     $join ||= ' ';
     
