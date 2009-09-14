@@ -9,8 +9,11 @@ use VertRes::Wrapper::GATK;
 my $wrapper = VertRes::Wrapper::GATK->new(recalibrate => 1);
 
 # run something with the toolkit
+$wrapper->count_covariates('in.bam', 'in.bam');
+$wrapper->table_recalibration('in.bam', 'in.bam.recal_data.csv', 'out.bam');
 
-#...
+# or for your convienience:
+$wrapper->recalibrate('in.bam', 'out.bam');
 
 # check the status
 my $status = $wrapper->run_status;
@@ -40,14 +43,15 @@ use warnings;
 use Cwd qw (abs_path);
 use File::Basename;
 use File::Spec;
+use File::Copy;
 
 use base qw(VertRes::Wrapper::WrapperI);
 use VertRes::Wrapper::samtools;
 
-our $default_output_dir = './broad_evaluation_files/';
-our $mouse_dbsnp_link = File::Spec->catfile($ENV{MOUSE}, 'ref', 'broad_recal_data', 'dbsnp.mouse_rod_link');
-our $default_mouse_dnsnp = File::Spec->catfile($ENV{MOUSE}, 'ref', 'broad_recal_data', 'dbsnp.mouse.rod.out');
-
+our $DEFAULT_GATK_JAR = File::Spec->catfile($ENV{BIN}, 'GenomeAnalysisTK.jar');
+our $DEFAULT_REFERENCE = File::Spec->catfile($ENV{G1K}, 'ref', 'broad_recal_data', 'human_b36_both.fasta');
+our $DEFAULT_DBSNP = File::Spec->catfile($ENV{G1K}, 'ref', 'broad_recal_data', 'dbsnp_129_b36.rod');
+our $DEFAULT_LOGLEVEL = 'ERROR';
 
 =head2 new
 
@@ -55,118 +59,205 @@ our $default_mouse_dnsnp = File::Spec->catfile($ENV{MOUSE}, 'ref', 'broad_recal_
  Usage   : my $wrapper = VertRes::Wrapper::GATK->new();
  Function: Create a VertRes::Wrapper::GATK object.
  Returns : VertRes::Wrapper::GATK object
- Args    : quiet    => boolean
-           recalibrate => boolean
-           evaluate => boolean
-           species => human|mouse
-           dbsbp_file => /path/to/rod.out (currently only affects mouse)
+ Args    : quiet => boolean
+           exe   => string (full path to GenomeAnalysisTK.jar; a TEAM145 default
+                            exists)
+           reference => ref.fa (path to reference fasta; can be overriden in
+                                individual methods with the R option; a TEAM145
+                                default exists for human G1K project)
+           dbsnp    => snp.rod (path to dbsnp rod file; can be overriden in
+                                individual methods with the DBSNP option; a
+                                TEAM145 default exists for human G1K project)
+           log_level => DEBUG|INFO|WARN|ERROR|FATAL|OFF (set the log level;
+                                can be overriden in individual methods with the
+                                l option; default 'ERROR')
 
 =cut
 
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args,
-                                  exe      => 'RecalQual.py',
-                                  switches => [qw(recalibrate evaluate)]);
+    my $self = $class->SUPER::new(exe => $DEFAULT_GATK_JAR, @args);
+    
+    $self->exe('java -Xmx4000m -jar '.$self->exe);
     
     # our bsub jobs will get killed if we don't select high-mem machines
     $self->bsub_options(M => 4000000, R => "'select[mem>4000] rusage[mem=4000]'");
     
-    # reset mouse dbsnp to default
-    unlink($mouse_dbsnp_link);
-    system("ln -s $default_mouse_dnsnp $mouse_dbsnp_link");
-    
-    # allow user to change species and mouse dbsnp file
-    $self->_set_from_args(\@args, methods => ['species', 'dbsnp_file']);
-    
-    # not user-configurable atm since this location is hard-coded within
-    # RecalQual.py
-    $self->{_output_dir} = $default_output_dir;
+    # default settings
+    $self->{_default_R} = delete $self->{reference} || $DEFAULT_REFERENCE;
+    $self->{_default_DBSNP} = delete $self->{dbsnp} || $DEFAULT_DBSNP;
+    $self->{_default_loglevel} = delete $self->{log_level} || $DEFAULT_LOGLEVEL;
     
     return $self;
 }
 
-=head2 species
-
- Title   : species
- Usage   : $obj->species('mouse');
- Function: Get/set the species you are recalibrating.
- Returns : species as a string (default human)
- Args    : human|mouse
-
-=cut
-
-sub species {
-    my ($self, $species) = @_;
+sub _handle_common_params {
+    my ($self, $params) = @_;
     
-    if ($species && ($species eq 'human' || $species eq 'mouse')) {
-        $self->{_species} = $species;
+    unless (defined $params->{R}) {
+        $params->{R} = $self->{_default_R};
     }
-    
-    return $self->{_species} || 'human';
-}
-
-=head2 dbsnp_file
-
- Title   : dbsnp_file
- Usage   : $obj->dbsnp_file('/path/to/dbsnp.rod.out');
- Function: Set the dbsnp file to use. Must already be in rod.out format. See
-           http://www.broadinstitute.org/gsa/wiki/index.php/The_DBSNP_rod for
-           details.
-           NB: currently only affects mouse!
- Returns : n/a
- Args    : path to dbsnp.rod.out
-
-=cut
-
-sub dbsnp_file {
-    my ($self, $dbsnp_file) = @_;
-    $self->throw("dbsnp_file can only currently be set when working on mouse") unless $self->species eq 'mouse';
-    
-    if ($dbsnp_file && -s $dbsnp_file) {
-        $dbsnp_file = abs_path($dbsnp_file);
-        unlink($mouse_dbsnp_link);
-        system("ln -s $dbsnp_file $mouse_dbsnp_link");
+    unless (defined $params->{DBSNP}) {
+        $params->{DBSNP} = $self->{_default_DBSNP};
+    }
+    unless (defined $params->{l}) {
+        $params->{l} = $self->{_default_loglevel};
     }
 }
 
-=head2 run
+=head2 count_covariates
 
- Title   : run
- Usage   : $wrapper->run('input.bam', 'output.bam');
- Function: Recalibrate and/or evaluate a bam file. Will create first
+ Title   : count_covariates
+ Usage   : $wrapper->count_covariates('input.bam', 'output_prefix');
+ Function: Generates a file necessary for recalibration. Will create first
            input.bam.bai using samtools index if it doesn't already exist.
- Returns : n/a (in addition to the output.bam, you will find .png files in
-           subdirs of broad_evaluation_files directory if you did evaluate())
- Args    : path to input .bam file, path to output .bam file
+ Returns : n/a
+ Args    : path to input .bam file, path to output file (which will have its
+           name suffixed with '.recal_data.csv'). Optionally, supply R, DBSNP,
+           or l options (as a hash), as understood by GATK.
 
 =cut
+
+sub count_covariates {
+    my ($self, $in_bam, $out_csv, @params) = @_;
+    
+    # java -Xmx2048m -jar GenomeAnalysisTK.jar \
+    #   -R resources/Homo_sapiens_assembly18.fasta \
+    #   --DBSNP resources/dbsnp_129_hg18.rod \
+    #   -l INFO \
+    #   -T CountCovariates \ 
+    #   -I my_reads.bam \
+    #   --OUTPUT_FILEROOT my_reads.recal_data.csv
+    
+    $self->switches([qw(quiet_output_mode)]);
+    $self->params([qw(R DBSNP l T)]);
+    
+    my @file_args = (" -I $in_bam", " --OUTPUT_FILEROOT $out_csv");
+    
+    my %params = @params;
+    $params{T} = 'CountCovariates';
+    $params{quiet_output_mode} = $self->quiet();
+    $self->_handle_common_params(\%params);
+    
+    $self->register_output_file_to_check($out_csv);
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
+}
+
+=head2  table_recalibration
+
+ Title   : table_recalibration
+ Usage   : $wrapper->table_recalibration('in.bam', 'recal_data.csv', 'out.bam');
+ Function: Recalibrates a bam using the csv file made with count_covariates().
+ Returns : n/a
+ Args    : path to input .bam file, path to output file. Optionally, supply R
+           or l options (as a hash), as understood by GATK.
+
+=cut
+
+sub table_recalibration {
+    my ($self, $in_bam, $csv, $out_bam, @params) = @_;
+    
+    # java -Xmx2048m -jar GenomeAnalysisTK.jar \
+    #   -l INFO \ 
+    #   -R resources/Homo_sapiens_assembly18.fasta \ 
+    #   -T TableRecalibration \
+    #   -I my_reads.bam \
+    #   -outputBAM my_reads.recal.bam \
+    #   -params my_reads.recal_data.csv
+    
+    $self->switches([qw(quiet_output_mode)]);
+    $self->params([qw(R l T)]);
+    
+    my @file_args = (" -I $in_bam", " -outputBAM $out_bam", " -params $csv");
+    
+    my %params = @params;
+    $params{T} = 'TableRecalibration';
+    $params{params} = $csv;
+    $params{quiet_output_mode} = $self->quiet();
+    $self->_handle_common_params(\%params);
+    
+    $self->register_output_file_to_check($out_bam);
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
+}
+
+=head2 recalibrate
+
+ Title   : recalibrate
+ Usage   : $wrapper->recalibrate('input.bam', 'out.bam');
+ Function: Easy-to-use recalibration. Just runs count_covariates() followed by
+           table_recalibration(). Also ensures the output bam isn't truncated.
+           Won't attempt to recalibrate if out.bam already exists.
+ Returns : n/a
+ Args    : path to input .bam file, path to output file. Optionally, supply R,
+           DBSNP, or l options (as a hash), as understood by GATK.
+
+=cut
+
+sub recalibrate {
+    my ($self, $in_bam, $out_bam, @params) = @_;
+    
+    my $orig_run_method = $self->run_method;
+    $self->run_method('system');
+    
+    # count_covariates
+    my $csv = $in_bam.".recal_data.csv";
+    unless (-s $csv) {
+        $self->count_covariates($in_bam, $in_bam, @params);
+        $self->throw("failed during the count_covariates step, giving up for now") unless $self->run_status >= 1;
+    }
+    
+    # table_recalibration
+    unless (-s $out_bam) {
+        my $tmp_out = $out_bam;
+        $tmp_out =~ s/\.bam$/.tmp.bam/;
+        $self->table_recalibration($in_bam, $csv, $tmp_out, @params);
+        $self->throw("failed during the table_recalibration step, giving up for now") unless $self->run_status >= 1;
+        
+        # find out how many lines are in the input bam file
+        my $st = VertRes::Wrapper::samtools->new(quiet => 1);
+        $st->run_method('open');
+        my $bam_count = 0;
+        my $fh = $st->view($in_bam);
+        while (<$fh>) {
+            $bam_count++;
+        }
+        close($fh);
+        
+        # find out how many lines are in the recalibrated bam file
+        my $recal_count = 0;
+        $fh = $st->view($tmp_out);
+        while (<$fh>) {
+            $recal_count++;
+        }
+        close($fh);
+        
+        # check for truncation
+        if ($recal_count >= $bam_count) {
+            move($tmp_out, $out_bam) || $self->throw("Failed to move $tmp_out to $out_bam: $!");
+            $self->_set_run_status(2);
+        }
+        else {
+            $self->warn("$tmp_out is bad (only $recal_count lines vs $bam_count), will unlink it");
+            $self->_set_run_status(-1);
+            unlink($tmp_out);
+        }
+    }
+    
+    $self->run_method($orig_run_method);
+    return;
+}
 
 sub _pre_run {
-    my ($self, $input_bam, $output_bam) = @_;
-    $input_bam && $output_bam || $self->throw("input and output bam files are required");
-    -s $input_bam || $self->throw("Your input bam file '$input_bam' is empty or non-existant!");
-    ($self->recalibrate || $self->evaluate) || $self->throw("recalibrate() and/or evaluate() must have been set before running");
+    my $self = shift;
+    $self->_set_params_string(mixed_dash => 1);
     
-    $self->exe($self->species eq 'human' ? 'RecalQual.py' : 'RecalQual_mouse.py');
-    
-    # fix up the bam file so we know that RecalQual.pm will like it
-    # *** doesn't actually help!
-    #my $healed_bam = $input_bam;
-    #$healed_bam =~ s/\.bam$/.healed.bam/;
-    ## check that the healed is older than the original
-    #if (-s $healed_bam) {
-    #    unless ($self->_is_older($healed_bam, $input_bam)) {
-    #        unlink($healed_bam);
-    #    }
-    #}
-    #unless (-s $healed_bam) {
-    #    # need to write a wrapper for this...
-    #    system("java -jar $ENV{G1K}/bin/picard-tools-1.01/MergeSamFiles.jar I=$input_bam O=$healed_bam") && $self->throw("Failed to run MergeSamFiles: $! | $?");
-    #}
-    #$input_bam = $healed_bam;
-    
+    my $input_bam = $_[0];
+    $input_bam =~ s/^ -I //;
     my $bai_file = $input_bam.'.bai';
     
     # check that the bai is older than the bam
@@ -176,7 +267,6 @@ sub _pre_run {
     
     # create a bai file if necessary
     unless (-e $bai_file) {
-        # run via system instead of bsub until we have dependency stuff in place...
         my $sam_wrapper = VertRes::Wrapper::samtools->new(verbose => $self->verbose,
                                                           run_method => 'system');
         $sam_wrapper->index($input_bam, $bai_file);
@@ -193,16 +283,30 @@ sub _pre_run {
         }
     }
     
-    $self->_set_params_string(double_dash => 1);
-    mkdir($self->{_output_dir});
-    
-    $self->{_inbam} = $input_bam;
-    $self->{_outbam} = $output_bam;
-    
-    return ($input_bam, $output_bam);
+    return @_;
 }
 
-sub _post_run {
+sub run {
+    my $self = shift;
+    
+    # refuses to be quiet, so force the issue
+    if ($self->quiet) {
+        my $run_method = $self->run_method;
+        $self->run_method('open');
+        my ($fh) = $self->_run(@_);
+        while (<$fh>) {
+            next;
+        }
+        close($fh);
+        $self->_post_run();
+        $self->run_method($run_method);
+    }
+    else {
+        return $self->SUPER::run(@_);
+    }
+}
+
+sub _post_run_old {
     my $self = shift;
     
     # check the output
@@ -231,11 +335,6 @@ sub _post_run {
     else {
         $self->_set_run_status(0);
     }
-    
-    # move .pngs and .cvs to somewhere nice and delete the output dir?
-    # ./broad_evaluation_files/output.$input_bam_minus_suffix/ contains:
-    # [initial|recalibrated].*.empirical_v_reported_quality.csv
-    # ".*.png
     
     return @_;
 }
