@@ -479,16 +479,46 @@ sub add_library {
 
 =head2 get_library_by_id
 
-  Arg [1]    : library id from sequencescape
+  Arg [1]    : library internal id
   Example    : my $library = $sam->get_library_by_id(1930);
-  Description: retrieve library object by sequencescape id
+  Description: retrieve library object by internal id
   Returntype : VRTrack::Library object
 
 =cut
 
 sub get_library_by_id {
     my ($self, $id) = @_;
-    my $obj = VRTrack::Library->new($self->{_dbh},$id);
+    my @match = grep {$_->id == $id} @{$self->libraries};
+    if (scalar @match > 1){ # shouldn't happen
+        die "More than one library with id $id";
+    }
+    my $obj;
+    if (@match){
+        $obj = $match[0];
+    }
+    return $obj;
+}
+
+
+=head2 get_library_by_ssid
+
+  Arg [1]    : library sequencescape id
+  Example    : my $library = $sam->get_library_by_ssid(1930);
+  Description: retrieve library object by sequencescape id
+  Returntype : VRTrack::Library object
+
+=cut
+
+sub get_library_by_ssid {
+    my ($self, $ssid) = @_;
+    my @match = grep {$_->ssid == $ssid} @{$self->libraries};
+    if (scalar @match > 1){ # shouldn't happen
+        die "More than one library with ssid $ssid";
+    }
+    my $obj;
+    if (@match){
+        $obj = $match[0];
+    }
     return $obj;
 }
 
@@ -510,7 +540,7 @@ sub get_library_by_name {
     #}
     my @match = grep {$_->name eq $name} @{$self->libraries};
     if (scalar @match > 1){ # shouldn't happen
-        die "More than one matching library with name $name";
+        die "More than one library with name $name";
     }
     my $obj;
     if (@match){

@@ -858,7 +858,14 @@ sub add_lane {
 
 sub get_lane_by_id {
     my ($self, $id) = @_;
-    my $obj = VRTrack::Lane->new($self->{_dbh},$id);
+    my @match = grep {$_->id == $id} @{$self->lanes};
+    if (scalar @match > 1){ # shouldn't happen
+        die "More than one matching lane with id $id";
+    }
+    my $obj;
+    if (@match){
+        $obj = $match[0];
+    }
     return $obj;
 }
 

@@ -212,9 +212,9 @@ sub get_project_by_name {
 
 =head2 get_project_by_id
 
-  Arg [1]    : project id from sequencescape
+  Arg [1]    : project internal id
   Example    : my $project = $track->get_project_by_id(140);
-  Description: retrieve project object by sequencescape id
+  Description: retrieve project object by internal id
   Returntype : VRTrack::Project object
 
 =cut
@@ -222,6 +222,22 @@ sub get_project_by_name {
 sub get_project_by_id {
     my ($self, $id) = @_;
     my $obj = VRTrack::Project->new($self->{_dbh},$id);
+    return $obj;
+}
+
+
+=head2 get_project_by_ssid
+
+  Arg [1]    : project sequencescape id
+  Example    : my $project = $track->get_project_by_ssid(140);
+  Description: retrieve project object by sequencescape id
+  Returntype : VRTrack::Project object
+
+=cut
+
+sub get_project_by_ssid {
+    my ($self, $id) = @_;
+    my $obj = VRTrack::Project->new_by_ssid($self->{_dbh},$id);
     return $obj;
 }
 
@@ -267,7 +283,7 @@ sub hierarchy_path_of_lane_name {
   Arg [1]    : [optional] list of qc_status filters
   Example    : my $all_lanes = $track->qc_filtered_lane_names();
                my $pend_pass_lanes = $track->qc_filtered_lane_names('pending','passed');
-  Description: retrieves a optionally-filtered list of all lane hierarchy names, ordered by project, sample, library names.
+  Description: retrieves a (optionally filtered) list of all lane hierarchy names, ordered by project, sample, library names.
                This is a helper function for the qc web interface for speed.
   Returntype : arrayref
 

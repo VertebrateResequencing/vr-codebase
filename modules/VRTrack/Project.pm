@@ -441,7 +441,7 @@ sub get_sample_by_name {
     #my $obj = VRTrack::Sample->new_by_name_project($self->{_dbh},$name, $self->id);
     my @match = grep {$_->name eq $name} @{$self->samples};
     if (scalar @match > 1){ # shouldn't happen
-        die "More than one matching sample with name $name";
+        die "More than one sample with name $name";
     }
     my $obj;
     if (@match){
@@ -463,7 +463,39 @@ sub get_sample_by_name {
 
 sub get_sample_by_id {
     my ($self, $id) = @_;
-    my $obj = VRTrack::Sample->new($self->{_dbh},$id);
+    my @match = grep {$_->id == $id} @{$self->samples};
+    if (scalar @match > 1){ # shouldn't happen
+        die "More than one sample with id $id";
+    }
+    my $obj;
+    if (@match){
+        $obj = $match[0];
+    }
+
+    return $obj;
+}
+
+
+=head2 get_sample_by_ssid
+
+  Arg [1]    : sample sequencescape id
+  Example    : my $sample = $proj->get_sample_by_ssid(1154);
+  Description: retrieve sample object by sequencescape id
+  Returntype : VRTrack::Sample object
+
+=cut
+
+sub get_sample_by_ssid {
+    my ($self, $ssid) = @_;
+    my @match = grep {$_->ssid == $ssid} @{$self->samples};
+    if (scalar @match > 1){ # shouldn't happen
+        die "More than one sample with ssid $ssid";
+    }
+    my $obj;
+    if (@match){
+        $obj = $match[0];
+    }
+
     return $obj;
 }
 
