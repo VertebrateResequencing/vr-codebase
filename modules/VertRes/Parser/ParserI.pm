@@ -103,10 +103,10 @@ sub _save_position {
 sub _restore_position {
     my $self = shift;
     
-    my $fh = $self->fh() || return;
+    $self->fh() || return;
     my @current_results = @{$self->{_current_results}};
     
-    $self->seek($fh, $self->{_tell}, 0);
+    $self->seek($self->{_tell}, 0);
     for my $i (0..$#current_results) {
         $self->{_result_holder}->[$i] = $current_results[$i];
     }

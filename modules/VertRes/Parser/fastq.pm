@@ -224,7 +224,7 @@ sub _get_seq_data {
     $self->_save_position || return;
     
     my $tell = $self->{'seqnames'.$fh_id}->{$seq_name};
-    $self->seek($fh, $tell, 0);
+    $self->seek($tell, 0);
     $self->next_result;
     my $index = $type_to_index{$type};
     my $result = $self->result_holder->[$index];

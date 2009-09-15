@@ -33,7 +33,7 @@ $io->close();
 $file = $io->catfile('t', 'data', 'io_test.txt.gz');
 ok -f $io->file($file), 'file returns a functioning path to the file';
 ok $fh = $io->fh(), 'fh returned something for a .gz';
-is ref($fh), 'GLOB', 'fh returned a glob';
+is ref($fh), 'IO::Uncompress::Gunzip', 'fh returned a glob';
 @expected_lines = qw(foo bar);
 while (<$fh>) {
     chomp;

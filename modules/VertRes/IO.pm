@@ -165,17 +165,18 @@ sub _fh_id {
 =head2 seek
 
  Title   : seek
- Usage   : $obj->seek($filehandle, $pos, $whence);
+ Usage   : $obj->seek($pos, $whence);
  Function: Behaves exactly like Perl's standard seek(), except that if the
            filehandle was made by opening a .gz file for reading, you can
            effectively seek backwards.
  Returns : boolean (for success)
- Args    : filehandle, position to seek to, position to seek from
+ Args    : position to seek to, position to seek from
 
 =cut
 
 sub seek {
-    my ($self, $fh, $tell, $whence) = @_;
+    my ($self, $tell, $whence) = @_;
+    my $fh = $self->{_fh} || return;
     
     if (ref($fh) eq 'IO::Uncompress::Gunzip') {
         # we can't go backwards, so close and re-open without changing our
@@ -234,11 +235,11 @@ sub num_lines {
     my $tell = tell($fh);
     
     my $lines = 0;
-    $self->seek($fh, 0, 0);
+    $self->seek(0, 0);
     while (<$fh>) {
         $lines++;
     }
-    $self->seek($fh, $tell, 0);
+    $self->seek($tell, 0);
     
     return $lines;
 }
