@@ -138,7 +138,7 @@ sub write_methods
 {
 	my ($self, $outputFile, $id, $methods) = @_;
 	
-	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 3;
+	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 4;
 	_checkFields( $self );
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
