@@ -56,27 +56,27 @@ sub _checkFields
 {
 	my $self = $_[ 0 ];
 	
-	if( ! defined( $self->handle ) )
+	if( ! defined( $self->{handle} ) )
 	{
 		$self->throw("You must pass in a dbSNP handle at object creation!");
 	}
 	
-	if( ! defined( $self->strain_tag ) )
+	if( ! defined( $self->{strain_tag} ) )
 	{
 		$self->throw("You must pass in a strain tag at object creation!");
 	}
 	
-	if( ! defined( $self->pop_handle ) )
+	if( ! defined( $self->{pop_handle} ) )
 	{
 		$self->throw("You must pass in a population handle at object creation!");
 	}
 	
-	if( ! defined( $self->species ) )
+	if( ! defined( $self->{species} ) )
 	{
 		$self->throw("You must pass in a species name at object creation!");
 	}
 	
-	if( $self->species ne 'Mouse' )
+	if( $self->{species} ne 'Mouse' )
 	{
 		$self->throw( "Sorry - only valid species at the moment is Mouse\n");
 	}
