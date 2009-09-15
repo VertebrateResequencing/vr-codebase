@@ -96,8 +96,8 @@ sub write_header
 {
 	my ($self, $outputFile, $name, $fax, $fone, $email, $lab, $title, $authors, $year, $status) = @_;
 	
-	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 11;
-	checkFields( $self );
+	$self->throw( "Required fields not defined - see perldoc!" ) unless @_ == 11;
+	_checkFields( $self );
     
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
     print $ofh qq[
