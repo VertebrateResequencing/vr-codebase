@@ -76,7 +76,7 @@ sub _checkFields
 		$self->throw("You must pass in a species name at object creation!");
 	}
 	
-	if( $self->{species} ne 'Mouse' )
+	if( $self->{species} ne 'Mus musculus' )
 	{
 		$self->throw( "Sorry - only valid species at the moment is Mouse\n");
 	}
@@ -259,11 +259,11 @@ CITATION:   $self->{title}
 =head2 write_snp_records
 
  Title   : write_methods
- Usage   : my $write = $obj->write_methods($self, $file_handle, $name, $fax, $fone, $email, $lab, $title, $authors, $year, $status);
- Function: Check if multiple name-sorted bam files are the same, ignoring
-           mapping quality 0 reads.
- Returns : boolean (false if they differ)
- Args    : list of bam files
+ Usage   : my $write = $obj->write_snp_records($outputFile, $snp_file);
+ Function: Write out the snp entries for dbsnp submission
+ 			The SNP file must be in the format: chr\tpos\tref_base\tsnp_cons_base\tsnp_quality\tread_depth
+ Returns : none
+ Args    : 
 
 =cut
 
