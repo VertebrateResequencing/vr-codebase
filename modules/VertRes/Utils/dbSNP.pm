@@ -202,7 +202,7 @@ sub write_individual
 {
 	my ($self, $outputFile ) = @_;
 	
-	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 1;
+	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 2;
 	_checkFields( $self );
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
