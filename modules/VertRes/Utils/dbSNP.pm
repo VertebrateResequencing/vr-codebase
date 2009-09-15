@@ -287,7 +287,7 @@ sub write_snp_records
 		-verbose => 0
 	);
 	
-	my $slice_adaptor = $registry->get_adaptor( $self->species, 'Core', 'Slice' );
+	my $slice_adaptor = $registry->get_adaptor( $self->{species}, 'Core', 'Slice' );
 	
 	#loop over the SNPs and write out the sequence
 	while ( <$sfh> )
@@ -367,8 +367,13 @@ sub write_snp_records
 		# computed location of the SNP (ACCESSION + LOCATION)
 		# flanking sequence (200 bp 5' and 200 bp 3' of the variant position)
 		
-		my $snp_id = $self->handle.'_'.$self->strain_tag.'_'.$snpcnt;
+		my $snp_id = $self->{handle}.'_'.$self->{strain_tag}.'_'.$snpcnt;
 		
+		my $phred_entry = '';
+		if( length( $phred_quality ) > 0 )
+		{
+			$phred_entry = "snp quality: $phred_quality";
+		}
 		print $ofh qq[
 SNP:        $snp_id
 ACCESSION:  $supercontig
@@ -379,7 +384,7 @@ LENGTH:     1
 OBSERVED:   $reference_base
 3'_FLANK:   $three_prime_seq
 COMMENT:
-quality: $phred_quality
+$phred_quality
 read_depth: $read_depth
 ||
 ];
