@@ -351,6 +351,9 @@ sub laneToBAM
 	}
 	
 	my $accession = basename( getcwd() );
+	# have a random number to help uniqufiy and avoid problems with bsub
+	# dependencies not firing
+	my $random = int(rand(1000));
 	
 	my @fastq = @{ HierarchyUtilities::getFastqInfo( getcwd() ) };
 	my $lane_read0 = $fastq[ 0 ][ 0 ];
@@ -414,40 +417,44 @@ sub laneToBAM
 	
 	if( -f $lane_read0 || -l $lane_read0 )
 	{
-		$lane_read0 =~ /^(.*)\.fastq\.gz$/;
-		my $cigarName0 = $1.'.cigar.gz';
-		
-		open( S, ">unpaired.bam.sh" ) or die $!;
-		print S qq/if [ -s $cigarName0 ]
-		then
-			perl -w -e 'use VertRes::Utils::Cigar; \$c = VertRes::Utils::Cigar->new(); \$lines = \$c->cigar_to_sam(["$lane_read0"], ["$cigarName0"], undef, "$accession", "unpaired.sam"); print \$lines; system("gzip unpaired.sam");' > unpaired.samstat
-		fi/;
-		close( S );
-		
-		#my $cmd = "bsub -J sam.$accession.0 -q normal -o bam.o -e bam.e $jobCondition perl -w -e \"use SamTools;SamTools::ssaha2samUnpaired( '$lane_read0', '$cigarName', '$accession', 'unpaired.sam.gz');\"";
-		my $cmd = qq/bsub -J sam.454.$accession.0 -q $lsf_queue -o bam.o -e bam.e $jobCondition "sh unpaired.bam.sh;rm unpaired.bam.sh"/;
-		#print $cmd."\n";
-		system( $cmd );
+		unless (-s "unpaired.sam.gz") {
+			$lane_read0 =~ /^(.*)\.fastq\.gz$/;
+			my $cigarName0 = $1.'.cigar.gz';
+			
+			open( S, ">unpaired.bam.sh" ) or die $!;
+			print S qq/if [ -s $cigarName0 ]
+			then
+				perl -w -e 'use VertRes::Utils::Cigar; \$c = VertRes::Utils::Cigar->new(); \$lines = \$c->cigar_to_sam(["$lane_read0"], ["$cigarName0"], undef, "$accession", "unpaired.sam"); print \$lines; system("gzip unpaired.sam");' > unpaired.samstat
+			fi/;
+			close( S );
+			
+			#my $cmd = "bsub -J sam.$accession.0 -q normal -o bam.o -e bam.e $jobCondition perl -w -e \"use SamTools;SamTools::ssaha2samUnpaired( '$lane_read0', '$cigarName', '$accession', 'unpaired.sam.gz');\"";
+			my $cmd = qq/bsub -J sam.454.$accession.$random.0 -q $lsf_queue -o bam.o -e bam.e $jobCondition "sh unpaired.bam.sh;rm unpaired.bam.sh"/;
+			#print $cmd."\n";
+			system( $cmd );
+		}
 	}
 	
 	if( ( -f $lane_read1 || -l $lane_read1 ) && ( -f $lane_read2 || -l $lane_read2 ) )
 	{
-		$lane_read1 =~ /^(.*)\.fastq\.gz$/;
-		my $cigarName1 = $1.'.cigar.gz';
-		
-		$lane_read2 =~ /^(.*)\.fastq\.gz$/;
-		my $cigarName2 = $1.'.cigar.gz';
-		
-		open( S, ">paired.bam.sh" ) or die $!;
-		print S qq/if [ -s $cigarName1 ] && [ -s $cigarName2 ]
-		then
-			perl -w -e 'use VertRes::Utils::Cigar; \$c = VertRes::Utils::Cigar->new(); \$lines = \$c->cigar_to_sam(["$lane_read1", "$lane_read2"], ["$cigarName1", "$cigarName2"], "$insertSize", "$accession", "paired.sam"); print \$lines; system("gzip paired.sam");' > paired.samstat
-		fi/;
-		close( S );
-		
-		my $cmd = qq/bsub -J sam.454.$accession.1 -q $lsf_queue -o bam.o -e bam.e $jobCondition "sh paired.bam.sh;rm paired.bam.sh"/;
-		#print $cmd."\n";
-		system( $cmd );
+		unless (-s "paired.sam.gz") {
+			$lane_read1 =~ /^(.*)\.fastq\.gz$/;
+			my $cigarName1 = $1.'.cigar.gz';
+			
+			$lane_read2 =~ /^(.*)\.fastq\.gz$/;
+			my $cigarName2 = $1.'.cigar.gz';
+			
+			open( S, ">paired.bam.sh" ) or die $!;
+			print S qq/if [ -s $cigarName1 ] && [ -s $cigarName2 ]
+			then
+				perl -w -e 'use VertRes::Utils::Cigar; \$c = VertRes::Utils::Cigar->new(); \$lines = \$c->cigar_to_sam(["$lane_read1", "$lane_read2"], ["$cigarName1", "$cigarName2"], "$insertSize", "$accession", "paired.sam"); print \$lines; system("gzip paired.sam");' > paired.samstat
+			fi/;
+			close( S );
+			
+			my $cmd = qq/bsub -J sam.454.$accession.$random.1 -q $lsf_queue -o bam.o -e bam.e $jobCondition "sh paired.bam.sh;rm paired.bam.sh"/;
+			#print $cmd."\n";
+			system( $cmd );
+		}
 	}
 	
 	#write the SAM header
@@ -518,7 +525,8 @@ sub laneToBAM
 	}
 	
 	print S "\n";
-	print S qq/zcat *.sam.gz >> raw.sam;rm *.sam.gz;/;
+	print S qq/zcat *.sam.gz >> raw.sam;/;
+	print S qq/rm *.sam.gz;/;
 	
 	if( $gender eq 'male' || $gender eq 'unknown' )
 	{
@@ -547,7 +555,7 @@ sub laneToBAM
 	print S qq[ perl -w -e "use Mapping_454_ssaha;Mapping_454_ssaha::unmapped2Bam( \\"$lane_dir\\", \\"$indexF\\");"; ];
 	close( S );
 	
-	my $cmd = qq/bsub -J bam.454.$accession -q $lsf_queue -o bam.o -e bam.e -w "done(sam.454.$accession.*)" "sh makeBam.sh;rm makeBam.sh;rm lane.touch"/;
+	my $cmd = qq/bsub -J bam.454.$accession.$random -q $lsf_queue -o bam.o -e bam.e -w "done(sam.454.$accession.$random.*)" "sh makeBam.sh;rm makeBam.sh;rm lane.touch"/;
 	#print $cmd."\n";
 	system( $cmd );
 }
