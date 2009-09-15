@@ -18,7 +18,7 @@ Thomas Keane: thomas.keane@sanger.ac.uk
 
 =cut
 
-package VertRes::Utils::dbSBP;
+package VertRes::Utils::dbSNP;
 
 use strict;
 use warnings;
