@@ -138,7 +138,7 @@ sub write_methods
 {
 	my ($self, $outputFile, $id, $methods) = @_;
 	
-	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 4;
+	$self->throw( "Required fields not defined - see perldoc!" ) unless @_ == 4;
 	_checkFields( $self );
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
@@ -172,7 +172,7 @@ sub write_population
 {
     my ($self, $outputFile ) = @_;
 	
-	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 1;
+	$self->throw( "Required fields not defined - see perldoc!" ) unless @_ == 1;
 	checkFields( $self );
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
