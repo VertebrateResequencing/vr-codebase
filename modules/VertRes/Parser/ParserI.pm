@@ -106,7 +106,7 @@ sub _restore_position {
     my $fh = $self->fh() || return;
     my @current_results = @{$self->{_current_results}};
     
-    seek($fh, $self->{_tell}, 0);
+    $self->seek($fh, $self->{_tell}, 0);
     for my $i (0..$#current_results) {
         $self->{_result_holder}->[$i] = $current_results[$i];
     }

@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 21;
+    use Test::Most tests => 26;
     
     use_ok('VertRes::Parser::fastq');
 }
@@ -21,6 +21,8 @@ ok ! $fqp->next_result, 'next_result returns false when we have no file set';
 
 my $fq_file = $fqp->catfile('t', 'data', 'SRR001629_1.fastq');
 ok -e $fq_file, 'file we will test with exists';
+my $gz_file = $fqp->catfile('t', 'data', 'SRR001629_1.fastq.gz');
+ok -e $gz_file, 'gz file we will test with exists';
 ok $fqp->file($fq_file), 'file set into parser';
 
 # parse the first sequence
@@ -49,5 +51,12 @@ is_deeply $rh, ['SRR001629.2599', 'CACGTGTCCTCAACCTTGGCAAAATAAACTTTCAAAATTAACTGA
 
 ok $fqp->exists('SRR001629.13'), 'exists found an existing sequence';
 ok ! $fqp->exists('fake'), 'exists didn\'t find a fake sequence';
+
+# needs to work on .gz files as well
+ok $fqp->file($gz_file), 'gz file set into parser';
+is $fqp->seq('SRR001629.2598'), 'AATGTCTCCTTGTGAACAGACTTTTGAGTATTTGGCTTTGTTATCCCCCAGAGAATACAAATGTCTCTATGGACACCAAGGTCATAATAACTCCACTTCTCCCATCCCCCTCACACCCTTTGGCAGCCTCATATAT', 'seq test on gz compressed fastq - penultimate read';
+is $fqp->seq('SRR001629.1683'), 'CAACAAGTTATTTTAATTGAAAATAAATTTTCCTGACCAACTATTCTGTCAAAACCACATTAAATGAAGATAGCTCAGCAGTGACCAAATCACTATAAAAAGCATTACATGTTATGGGAGAAATGAGTGGGA', 'seq test on gz compressed fastq - read in the middle';
+is $fqp->seq('SRR001629.2599'), 'CACGTGTCCTCAACCTTGGCAAAATAAACTTTCAAAATTAACTGAGACCTATCTCAGATTTTCGGGGTTCACAGTAGCAAGGAAGTGGGGTCTGAGAGACGCCCC', 'seq test on gz compressed fastq - last read';
+
 
 exit;

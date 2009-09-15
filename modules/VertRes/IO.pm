@@ -52,6 +52,7 @@ use File::Spec;
 use File::Basename;
 require File::Path;
 require File::Copy;
+use IO::Uncompress::Gunzip;
 
 use base qw(VertRes::Base);
 
@@ -107,7 +108,11 @@ sub file {
         my $open = $filename;
         if ($filename =~ /\.gz$/) {
             if ($in_out eq '<') {
-                $open = "zcat $filename |";
+                my $z = IO::Uncompress::Gunzip->new($filename);
+                $self->{_filename} = $filename;
+                $self->fh($z);
+                return $filename;
+                #$open = "zcat $filename |";
             }
             else {
                 $open = "| gzip -c > $filename";
@@ -141,7 +146,7 @@ sub fh {
     if ($fh) {
         $self->close();
         my $ref = ref($fh) || 'string';
-        $ref eq 'GLOB' or $self->throw("fh() takes a filehandle GLOB, not a '$ref'");
+        ($ref eq 'GLOB' || $ref eq 'IO::Uncompress::Gunzip') or $self->throw("fh() takes a filehandle GLOB or IO::Uncompress::Gunzip, not a '$ref'");
         $self->{_fh} = $fh;
         $self->{_fh_count}++; # acts as a unique id so you can know if your
                               # fh has been changed from out under you - _fh
@@ -155,6 +160,33 @@ sub fh {
 sub _fh_id {
     my $self = shift;
     return $self->{_fh_count};
+}
+
+=head2 seek
+
+ Title   : seek
+ Usage   : $obj->seek($filehandle, $pos, $whence);
+ Function: Behaves exactly like Perl's standard seek(), except that if the
+           filehandle was made by opening a .gz file for reading, you can
+           effectively seek backwards.
+ Returns : boolean (for success)
+ Args    : filehandle, position to seek to, position to seek from
+
+=cut
+
+sub seek {
+    my ($self, $fh, $tell, $whence) = @_;
+    
+    if (ref($fh) eq 'IO::Uncompress::Gunzip') {
+        # we can't go backwards, so close and re-open without changing our
+        # fh id
+        close($fh);
+        my $z = IO::Uncompress::Gunzip->new($self->{_filename});
+        $self->{_fh} = $z;
+        $fh = $z;
+    }
+    
+    CORE::seek($fh, $tell, $whence);
 }
 
 =head2 close
@@ -202,11 +234,11 @@ sub num_lines {
     my $tell = tell($fh);
     
     my $lines = 0;
-    seek($fh, 0, 0);
+    $self->seek($fh, 0, 0);
     while (<$fh>) {
         $lines++;
     }
-    seek($fh, $tell, 0);
+    $self->seek($fh, $tell, 0);
     
     return $lines;
 }

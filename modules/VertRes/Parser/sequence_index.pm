@@ -109,7 +109,7 @@ sub _get_header {
                 if ($tell == -1) {
                     $self->throw("sequence.index has no header line, and you've piped it in - can't cope!");
                 }
-                seek($fh, 0, 0);
+                $self->seek($fh, 0, 0);
                 $saw++;
                 last;
             }
@@ -243,7 +243,7 @@ sub lane_info {
     
     my %answers;
     foreach my $tell (keys %{$self->{'lanes'.$fh_id}->{$lane}}) {
-        seek($fh, $tell, 0);
+        $self->seek($fh, $tell, 0);
         $self->next_result;
         $answers{$self->{_result_holder}->[$index]}++;
     }
@@ -319,7 +319,7 @@ sub get_lanes {
     my $fh = $self->fh || return;
     my $fh_id = $self->_fh_id;
     delete $self->{'_got_header'.$fh_id};
-    seek($fh, 0, 0);
+    $self->seek($fh, 0, 0);
     RESULT: while ($self->next_result) {
         if ($do_ignores) {
             keys %ignores; # reset the iterator, since we may have nexted out
