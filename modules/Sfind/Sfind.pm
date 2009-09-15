@@ -24,7 +24,9 @@ jws@sanger.ac.uk
 
 =cut
 
-
+use strict;
+use warnings;
+no warnings 'uninitialized';
 use DBI;
 use Sfind::Project;
 
