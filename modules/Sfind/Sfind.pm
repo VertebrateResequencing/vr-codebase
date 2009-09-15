@@ -134,7 +134,7 @@ sub get_sample_by_name {
     my ($self, $name, $projname) = @_;
     my ($sample_id, $project_id) = $self->get_sample_project_id_by_name($name,$projname);
     my $obj;
-    if ($sample_id, $project_id){
+    if ($sample_id && $project_id){
 	$obj = $self->get_sample_by_id_project($sample_id, $project_id);
     }
     return $obj;
