@@ -665,7 +665,7 @@ sub bam_statistics {
             }
             
             # for later calculation of mismatch %
-            if (defined $nm) {
+            if (defined $nm && $nm ne '*') {
                 $this_rg_data[12] += $read_length;
                 $this_rg_data[13] += $nm;
             }
