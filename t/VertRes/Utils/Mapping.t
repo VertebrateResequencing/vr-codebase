@@ -16,7 +16,7 @@ isa_ok $mapping_util, 'VertRes::Base';
 
 # setup our input files
 my $io = VertRes::IO->new();
-my $ref_file = $io->catfile('t', 'data', 'S_suis_P17.dna');
+my $ref_file = $io->catfile('t', 'data', 'S_suis_P17.fa');
 ok -s $ref_file, 'ref file ready to test with';
 my $faq1_file = $io->catfile('t', 'data', '2822_6_1_1000.fastq');
 ok -s $faq1_file, 'faq1 file ready to test with';
