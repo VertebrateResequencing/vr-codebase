@@ -139,12 +139,12 @@ sub write_methods
 	my ($self, $outputFile, $id, $methods) = @_;
 	
 	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 3;
-	checkFields( $self );
+	_checkFields( $self );
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
     print $ofh qq[
 TYPE:                   METHOD
-HANDLE:                 $self->handle
+HANDLE:                 $self->{handle}
 ID:                     $id
 METHOD_CLASS:           Sequence
 SEQ_BOTH_STRANDS:       YES
@@ -155,7 +155,7 @@ METHOD:
 $methods
 ];
 	close( $ofh );
-	$self->method_id=$id;
+	$self->{method_id}=$id;
 }
 
 =head2 write_population
