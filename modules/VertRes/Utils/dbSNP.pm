@@ -102,7 +102,7 @@ sub write_header
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
     print $ofh qq[
 TYPE:   CONT
-HANDLE: $self->handle
+HANDLE: $self->{handle}
 NAME:   $name
 FAX:    $fone
 TEL:    $fax
@@ -112,16 +112,16 @@ INST:   Wellcome Trust Sanger Institute
 ADDR:   Wellcome Trust Genome Campus, Hinxton, Cambridge, CB10 1SA, UK
 ||
 TYPE:    PUB
-HANDLE:  $self->handle
+HANDLE:  $self->{handle}
 TITLE:   $title
 AUTHORS:
 $authors
 YEAR:    $year
 STATUS:  $status
-||
+||\n
 ];
 	close( $ofh );
-	$self->title = $title;
+	$self->{title} = $title;
 }
 
 =head2 write_methods
