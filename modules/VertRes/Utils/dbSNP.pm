@@ -388,6 +388,7 @@ $phred_quality
 read_depth: $read_depth
 ||
 ];
+		$snpcnt ++;
 	}
 	close( $ofh );
 	close( $sfh );
