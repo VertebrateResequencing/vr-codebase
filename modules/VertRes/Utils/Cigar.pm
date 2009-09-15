@@ -110,6 +110,9 @@ sub top_10_hits_per_read {
  Usage   : $obj->cigar_to_sam(\@fastqs, \@cigars, $i_size, $rg, $out_sam);
  Function: Convert ssaha2 cigar output to sam format. Given 2 fastqs and the
            corresponding cigars, pairs up reads correctly in the output sam.
+           NB: fastq files must 'match' in that they have the same number of
+           sequences in the same order, so mates are the Nth sequence in the
+           files.
  Returns : int (the number of sam records written)
  Args    : array ref of fastq files (max 2), array ref of cigar files (max 2,
            the output of running ssaha2 on the corresponding fastqs),
@@ -123,15 +126,10 @@ sub cigar_to_sam {
     $read_group = $read_group ? 'RG:Z:'.$read_group : '';
     
     my @fastq_parsers;
-    my %all_read_names;
     foreach my $fastq (@{$fastqs}) {
         my $fastq_parser = VertRes::Parser::fastq->new(file => $fastq);
-        
-        foreach ($fastq_parser->sequence_ids()) {
-            $all_read_names{$_} = 1;
-        }
-        
-        push(@fastq_parsers, $fastq_parser);
+        my $rh = $fastq_parser->result_holder;
+        push(@fastq_parsers, [$fastq_parser, $rh]);
     }
     
     open(my $out_fh, '>', $out_sam) or $self->throw("Cannot create sam file: $!");
@@ -148,17 +146,18 @@ sub cigar_to_sam {
     my $numReadsPaired = 0;
     my $numReadsDiscarded = 0;
     my $totalReadsHit = 0;
-    my %already_done;
-    while (my ($read_name, $val) = each %all_read_names) {
-        next if $already_done{$read_name};
+    my ($first_parser, $first_rh) = @{$fastq_parsers[0]};
+    while ($first_parser->next_result) {
+        my $read_name = $first_rh->[0];
         
         # get the corresponding data from each input fastq
         my (@names, @seqs, @quals);
         foreach my $i (0..$#fastq_parsers) {
-            my $parser = $fastq_parsers[$i];
+            my ($parser, $rh) = @{$fastq_parsers[$i]};
+            $parser->next_result unless $i == 0;
             
             my $this_read_name = $read_name;
-            if (@fastq_parsers > 1 && ! $parser->exists($read_name)) {
+            if ($rh->[0] ne $read_name) {
                 # allow them to differ by the last character, eg. the
                 # forward and reverse have been differentiated by name in
                 # the fastqs
@@ -181,17 +180,19 @@ sub cigar_to_sam {
                     my $test_read_name = $read_name;
                     $test_read_name =~ s/[12ab]$/$change_to/;
                     
-                    if ($parser->exists($test_read_name)) {
+                    if ($rh->[0] eq $test_read_name) {
                         $this_read_name = $test_read_name;
-                        $already_done{$test_read_name} = 1;
                     }
                 }
             }
             
-            if ($parser->exists($this_read_name)) {
+            if ($rh->[0] eq $this_read_name) {
                 $names[$i] = $this_read_name;
-                $seqs[$i] = $parser->seq($this_read_name);
-                $quals[$i] = $parser->quality($this_read_name);
+                $seqs[$i] = $rh->[1];
+                $quals[$i] = $rh->[2];
+            }
+            else {
+                $self->throw("read $read_name was in the first fastq, but not in the other at the same position");
             }
         }
         

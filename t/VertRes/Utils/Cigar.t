@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 33;
+    use Test::Most tests => 29;
     
     use_ok('VertRes::Utils::Cigar');
     use_ok('VertRes::IO');
@@ -58,19 +58,22 @@ is $cigar_util->cigar_to_sam([$fq1_file, $fq2_file], [$cigar1_file, $cigar2_file
 ($mapped, $unmapped) = sam_lines_check($sam_out);
 is_deeply [$mapped, $unmapped], [1736, 264], 'cigar_to_sam generated sam with correct number of mapped and unmapped reads - unfiltered SRR001629';
 
-$fq1_file = $io->catfile('t', 'data', 'SRR001629_1.filtered.fastq');
-ok -s $fq1_file, 'SRR001629_1 filtered fastq file ready to test with';
-$fq2_file = $io->catfile('t', 'data', 'SRR001629_2.filtered.fastq');
-ok -s $fq2_file, 'SRR001629_2 filtered fastq file ready to test with';
-is $cigar_util->cigar_to_sam([$fq1_file, $fq2_file], [$cigar1_file, $cigar2_file], 2000, undef, $sam_out), 1770, 'cigar_to_sam worked with filtered SRR001629 reads';
-($mapped, $unmapped) = sam_lines_check($sam_out);
-is_deeply [$mapped, $unmapped], [1736, 34], 'cigar_to_sam generated sam with correct number of mapped and unmapped reads - filtered SRR001629';
+# we no longer support filtered reads, since it wouldn't give us the true full
+# set of unmapped reads in the output anyway, and it's hyper-slow with .gz
+# compressed fastqs
+#$fq1_file = $io->catfile('t', 'data', 'SRR001629_1.filtered.fastq');
+#ok -s $fq1_file, 'SRR001629_1 filtered fastq file ready to test with';
+#$fq2_file = $io->catfile('t', 'data', 'SRR001629_2.filtered.fastq');
+#ok -s $fq2_file, 'SRR001629_2 filtered fastq file ready to test with';
+#is $cigar_util->cigar_to_sam([$fq1_file, $fq2_file], [$cigar1_file, $cigar2_file], 2000, undef, $sam_out), 1770, 'cigar_to_sam worked with filtered SRR001629 reads';
+#($mapped, $unmapped) = sam_lines_check($sam_out);
+#is_deeply [$mapped, $unmapped], [1736, 34], 'cigar_to_sam generated sam with correct number of mapped and unmapped reads - filtered SRR001629';
 
 # for this read pair it was outputting read _1 in the sam instead of read _2
 $fq1_file = $io->catfile('t', 'data', 'SRR001629.99999_1.fastq');
-ok -s $fq1_file, 'SRR001629.99999_1 filtered fastq file ready to test with';
+ok -s $fq1_file, 'SRR001629.99999_1 fastq file ready to test with';
 $fq2_file = $io->catfile('t', 'data', 'SRR001629.99999_2.fastq');
-ok -s $fq2_file, 'SRR001629.99999_2 filtered fastq file ready to test with';
+ok -s $fq2_file, 'SRR001629.99999_2 fastq file ready to test with';
 $cigar1_file = $io->catfile('t', 'data', 'SRR001629.99999_1.cigar');
 ok -s $cigar1_file, 'SRR001629.99999_1.cigar cigar file ready to test with';
 $cigar2_file = $io->catfile('t', 'data', 'SRR001629.99999_2.cigar');
