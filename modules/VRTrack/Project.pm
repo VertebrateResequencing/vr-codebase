@@ -410,7 +410,7 @@ sub add_sample {
     my ($self, $sname) = @_;
     # Sample names should be unique for a project
     # TODO: if ssid is defined, then it should also not be added twice
-    my $obj = $self->get_sample_by_name($sname);
+    my $obj = VRTrack::Sample->new_by_name_project($self->{_dbh},$sname,$self->id);
     if ($obj){
         warn "Sample $sname is already present in the database\n";
         return undef;

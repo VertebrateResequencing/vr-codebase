@@ -455,11 +455,11 @@ sub get_individual_by_name {
 
 sub add_library {
     my ($self, $name) = @_;
-
+    $name or die "Must call with name";
     # Check for unwanted duplicates.  Should not allow two libraries to
     # have the same name even though this can happen in sequencescape.
 
-    my $obj = $self->get_library_by_name($name);
+    my $obj = VRTrack::Library->new_by_name($self->{_dbh},$name);
     if ($obj){
         warn "Library $name is already present in the database\n";
         return undef;

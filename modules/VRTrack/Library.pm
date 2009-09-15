@@ -828,7 +828,7 @@ sub add_lane {
     $name or die "Must call add_lane with lane name";
     # Lane names should not be added twice - this can't be caught by the
     # database, as we expect there will be multiple rows for the same lane.
-    my $obj = $self->get_lane_by_name($name);
+    my $obj = VRTrack::Lane->new_by_name($self->{_dbh},$name);
     if ($obj){
         warn "Lane $name is already present in the database\n";
         return undef;
