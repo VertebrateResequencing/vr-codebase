@@ -172,7 +172,7 @@ sub write_population
 {
     my ($self, $outputFile ) = @_;
 	
-	$self->throw( "Required fields not defined - see perldoc!" ) unless @_ == 1;
+	$self->throw( "Required fields not defined - see perldoc!" ) unless @_ == 2;
 	checkFields( $self );
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
