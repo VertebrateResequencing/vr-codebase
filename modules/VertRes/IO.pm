@@ -236,6 +236,7 @@ sub num_lines {
     
     my $lines = 0;
     $self->seek(0, 0);
+    $fh = $self->fh(); # if seeking on a .gz, fh will change
     while (<$fh>) {
         $lines++;
     }
