@@ -738,7 +738,7 @@ sub add_file {
 
     # File names should not be added twice - this can't be caught by the
     # database, as we expect there will be multiple rows for the same file.
-    my $obj = $self->get_file_by_name($name);
+    my $obj = VRTrack::File->new_by_name($self->{_dbh},$name);
     if ($obj){
         warn "File $name is already present in the database\n";
         return undef;
