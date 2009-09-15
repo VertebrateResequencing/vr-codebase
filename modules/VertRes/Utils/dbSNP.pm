@@ -173,7 +173,7 @@ sub write_population
     my ($self, $outputFile ) = @_;
 	
 	$self->throw( "Required fields not defined - see perldoc!" ) unless @_ == 2;
-	checkFields( $self );
+	_checkFields( $self );
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
 	
@@ -203,7 +203,7 @@ sub write_individual
 	my ($self, $outputFile ) = @_;
 	
 	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 1;
-	checkFields( $self );
+	_checkFields( $self );
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
 
@@ -213,8 +213,8 @@ sub write_individual
 	
     print $ofh qq[
 TYPE:   INDIVIDUAL
-IND:    $self->handle|$self->pop_handle|$self->strain_tag|10090|Unknown|I|NA
-SOURCE: repository|Wellcome Trust Sanger Institute|$self->strain_tag|NA
+IND:    $self->{handle}|$self->{pop_handle}|$self->{strain_tag}|10090|Unknown|I|NA
+SOURCE: repository|Wellcome Trust Sanger Institute|$self->{strain_tag}|NA
 ||
 ];
 	close( $ofh );
@@ -236,21 +236,21 @@ sub write_snpassay
 	my ($self, $outputFile, $batch_name ) = @_;
 	
 	$self->throw( "Required fields not defined - see perldoc!\n" ) unless @_ == 3;
-	checkFields( $self );
+	_checkFields( $self );
 	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
 	
-	$self->throw("You must call the write_header function first to define the title!") unless defined( $self->title );
+	$self->throw("You must call the write_header function first to define the title!") unless defined( $self->{title} );
 	
     print $ofh qq[
 TYPE:       SNPASSAY
-HANDLE:     $self->handle
+HANDLE:     $self->{handle}
 BATCH:      $batch_name
 MOLTYPE:    Genomic
 SAMPLESIZE: 2
 METHOD:     Genomic Sequencing
 ORGANISM:   Mus musculus
-CITATION:   $self->title
+CITATION:   $self->{title}
 ||
 ];
 	close( $ofh );
