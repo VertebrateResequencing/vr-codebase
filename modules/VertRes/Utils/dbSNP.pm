@@ -78,7 +78,7 @@ sub _checkFields
 	
 	if( $self->{species} ne 'Mus musculus' )
 	{
-		$self->throw( "Sorry - only valid species at the moment is Mouse\n");
+		$self->throw( "Sorry - only valid species at the moment is Mouse: $self->{species}\n");
 	}
 }
 
