@@ -47,7 +47,7 @@ sub new {
     $table or die "Unrecognised classname $class\n";
 
     my $fieldsref = $self->fields_dispatch;
-    my $sql = qq[select ].(join ", ",keys %$fieldsref).qq[ from $table ];
+    my $sql = qq[select row_id,].(join ", ",keys %$fieldsref).qq[ from $table ];
     $sql .= qq[where ${table}_id = ? and latest = true];
 
     my $sth = $self->{_dbh}->prepare($sql);
@@ -60,6 +60,11 @@ sub new {
         foreach (keys %$fieldsref){
             $fieldsref->{$_}->($data->{$_});
         }
+
+        # handle row_id as a special case outside fields_dispatch, as otherwise
+        # we'd need to remove it from fields_dispatch before update.
+        # Note also it is hard-coded in the select statement above
+        $self->row_id($data->{'row_id'});
 
 	$self->dirty(0);    # unset the dirty flag
     }
@@ -150,6 +155,7 @@ sub update {
 
         my $fieldsref = $self->fields_dispatch;
         my @fields = grep {!/^changed$/ && !/^latest$/} keys %$fieldsref;
+        my $row_id; # new row_id if update works
 	eval {
 	    # Need to unset 'latest' flag on current latest obj and add
 	    # the new obj details with the latest flag set
@@ -162,7 +168,9 @@ sub update {
 
 	    $dbh->do ($updsql, undef,$self->id);
 	    $dbh->do ($addsql, undef, map {$_->()} @$fieldsref{@fields});
+            $row_id = $dbh->{'mysql_insertid'};
 	    $dbh->commit ( );
+
 	};
 
 	if ($@) {
@@ -172,6 +180,8 @@ sub update {
 	    eval { $dbh->rollback ( ); };
 	}
 	else {
+            # Remember to update the row_id to the _new_ row_id, as this is an autoinc field
+            $self->row_id($row_id);
 	    $success = 1;
 	}
 
@@ -282,6 +292,26 @@ sub is_latest {
 	$self->{is_latest} = $is_latest ? 1 : 0;
     }
     return $self->{is_latest};
+}
+
+
+=head2 row_id
+
+  Arg [1]    : row_id (optional)
+  Example    : my $row_id = $obj->row_id();
+               $obj->row_id(104);
+  Description: Get/Set for internal ID of the row_id of this object.
+               Note that this is a database auto_increment value, so if set, is not written to the database.
+  Returntype : integer
+
+=cut
+
+sub row_id {
+    my ($self,$row_id) = @_;
+    if (defined $row_id and $row_id != $self->{'row_id'}){
+        $self->{'row_id'} = $row_id;
+    }
+    return $self->{'row_id'};
 }
 
 
