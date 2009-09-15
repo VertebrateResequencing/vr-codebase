@@ -99,6 +99,8 @@ sub write_header
 	$self->throw( "Required fields not defined - see perldoc!" ) unless @_ == 11;
 	_checkFields( $self );
     
+	$self->throw( "Status must be 1,2,3,4") unless $status > 0 && $status < 5;
+	
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
     print $ofh qq[
 TYPE:   CONT
@@ -381,7 +383,7 @@ LOCATION:   $start_pos
 SAMPLESIZE: 2
 LENGTH:     1
 5'_FLANK:   $five_prime_seq
-OBSERVED:   $reference_base
+OBSERVED:   $reference_base/$consensus_base
 3'_FLANK:   $three_prime_seq
 COMMENT:
 $phred_quality
