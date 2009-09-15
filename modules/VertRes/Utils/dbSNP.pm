@@ -118,7 +118,7 @@ AUTHORS:
 $authors
 YEAR:    $year
 STATUS:  $status
-||\n
+||
 ];
 	close( $ofh );
 	$self->{title} = $title;
@@ -179,8 +179,8 @@ sub write_population
 	
     print $ofh qq[
 TYPE:       POPULATION
-HANDLE:     $self->handle
-ID:         $self->pop_handle
+HANDLE:     $self->{handle}
+ID:         $self->{pop_handle}
 POP_CLASS:
 POPULATION:
 ||
