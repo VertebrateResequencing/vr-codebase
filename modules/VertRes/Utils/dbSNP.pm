@@ -380,7 +380,6 @@ sub write_snp_records
 SNP:        $snp_id
 ACCESSION:  $supercontig
 LOCATION:   $start_pos
-SAMPLESIZE: 2
 LENGTH:     1
 5'_FLANK:   $five_prime_seq
 OBSERVED:   $reference_base/$consensus_base
