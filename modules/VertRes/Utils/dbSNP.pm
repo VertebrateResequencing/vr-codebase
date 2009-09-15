@@ -46,10 +46,10 @@ sub new
 {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(@args);
-    	    
+	
 	_checkFields( $self );
 	
-    return $$self;
+    return $self;
 }
 
 sub _checkFields
