@@ -60,6 +60,7 @@ sub fields_dispatch {
                 'error_rate'         => sub { $self->error_rate(@_)},
                 'mean_insert'        => sub { $self->mean_insert(@_)},
                 'sd_insert'          => sub { $self->sd_insert(@_)},
+                'adapter_reads'      => sub { $self->adapter_reads(@_)},
                 'gt_expected'        => sub { $self->genotype_expected(@_)},
                 'gt_found'           => sub { $self->genotype_found(@_)},
                 'gt_ratio'           => sub { $self->genotype_ratio(@_)},
@@ -566,6 +567,26 @@ sub sd_insert {
 	$self->dirty(1);
     }
     return $self->{'sd_insert'};
+}
+
+
+=head2 adapter_reads
+
+  Arg [1]    : number of reads containing adapter sequence
+  Example    : my $num_adap_reads = $mapstats->adapter_reads();
+	       $mapstats->adapter_reads(1_000_000);
+  Description: Get/Set for total number of reads containing adapter sequence
+  Returntype : integer
+
+=cut
+
+sub adapter_reads {
+    my ($self,$num_reads) = @_;
+    if (defined $num_reads and $num_reads != $self->{'adapter_reads'}){
+	$self->{'adapter_reads'} = $num_reads;
+	$self->dirty(1);
+    }
+    return $self->{'adapter_reads'};
 }
 
 
