@@ -8,17 +8,33 @@ VertRes::Pipelines::Release - pipeline for creating a release from mapped lanes
 # eg:
 find $G1K/mapping -type d -name "*RR*" | grep -v "SOLID" > lanes.fofn
 
-# make a config file with a single directory path pointing to where you want
-# the release built, and setting the lanes option
-echo '/path/to/release verbose=1;do_cleanup=1;lanes=lanes.fofn' > pipeline.config
+# make a conf file with root pointing to where you want the release built, and
+# setting the lanes option. Optional settings also go here.
+# Your release.conf file may look like:
+root    => '/path/to/rel_dir',
+module  => 'VertRes::Pipelines::Release',
+prefix  => '_',
+data => 
+{
+    lanes => 'lanes.fofn',
+    do_recalibration => 1,
+    do_cleanup => 1
+}
 
-# other options you could add to the above config line include:
+# other options you could add to the release.conf include:
 # do_chr_splits=1
-# do_recalibration=1
+
+# make another file that simply also contains the release directory:
+echo "/path/to/rel_dir" > rel.fod
+
+# make another config file that mentions the previous two files:
+echo "<rel.fod release.conf" > release.pipeline
+
+# make your release directory if it doesn't already exist:
+mkdir /path/to/rel_dir
 
 # run the pipeline:
-mkdir /path/to/release
-run-pipeline -c pipeline.config -v -m VertRes::Pipelines::Release
+run-pipeline -c release.pipeline -v
 
 # (and make sure it keeps running by adding that last to a regular cron job)
 
@@ -54,7 +70,6 @@ package VertRes::Pipelines::Release;
 use strict;
 use warnings;
 use VertRes::Utils::Hierarchy;
-use HierarchyUtilities;
 use VertRes::IO;
 use File::Spec;
 use File::Copy;
@@ -79,6 +94,10 @@ our $actions = [{ name     => 'create_release_hierarchy',
                   action   => \&platform,
                   requires => \&platform_requires, 
                   provides => \&platform_provides },
+                { name     => 'recalibrate',
+                  action   => \&recalibrate,
+                  requires => \&recalibrate_requires, 
+                  provides => \&recalibrate_provides },
                 { name     => 'sample',
                   action   => \&sample,
                   requires => \&sample_requires, 
@@ -108,7 +127,9 @@ our %options = (sequence_index => '/nfs/sf8/G1K/misc/sequence.index',
            do_chr_splits => boolean (default false: don't split platform-level
                                      or individual-level bams by chr)
            do_recalibration => boolean (default false: don't recalibrate any
-                                        bams)
+                                        bams; when true, recalibrates the
+                                        platform-level bams, which will be used
+                                        to make the individual-level bams)
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -195,7 +216,7 @@ sub create_release_hierarchy {
         $self->throw("Write to $done_file gave inconsistent data");
     }
     
-    return $self->{YES};
+    return $self->{Yes};
 }
 
 =head2 library_requires
@@ -394,7 +415,7 @@ sub platform {
 
 sub sample_requires {
     my $self = shift;
-    return ['.platform_merge_done'];
+    return $self->{do_recalibration} ? ['.recalibration_done'] : ['.platform_merge_done'];
 }
 
 =head2 sample_provides
@@ -427,7 +448,7 @@ sub sample {
     
     $self->merge_up_one_level($lane_path,
                               $action_lock,
-                              '.platform_merge_done',
+                              $self->{do_recalibration} ? '.recalibration_done' : '.platform_merge_done',
                               'raw.bam',
                               'sample_merge',
                               '.sample_merge_expected');
@@ -546,6 +567,85 @@ sub _fofn_to_bam_groups {
     return %bams_groups;
 }
 
+=head2 recalibrate_requires
+
+ Title   : recalibrate_requires
+ Usage   : my $required_files = $obj->recalibrate_requires('/path/to/lane');
+ Function: Find out what files the recalibrate action needs before
+           it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub recalibrate_requires {
+    my $self = shift;
+    return ['.platform_merge_done'];
+}
+
+=head2 recalibrate_provides
+
+ Title   : recalibrate_provides
+ Usage   : my $provided_files = $obj->recalibrate_provides('/path/to/lane');
+ Function: Find out what files the recalibrate action generates on
+           success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub recalibrate_provides {
+    my ($self, $lane_path) = @_;
+    return $self->{do_recalibration} ? ['.recalibration_done'] : ['.platform_merge_done'];
+}
+
+=head2 recalibrate
+
+ Title   : recalibrate
+ Usage   : $obj->recalibrate('/path/to/lane', 'lock_filename');
+ Function: Recalibrate the quality values in platform-level bams.
+           Doesn't run unless do_recalibration has been supplied as a config
+           option.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub recalibrate {
+    my ($self, $lane_path, $action_lock) = @_;
+    return $self->{Yes} unless $self->{do_recalibration};
+    
+    my $fofn = $self->{io}->catfile($lane_path, '.platform_merge_done');
+    my @in_bams = $self->{io}->parse_fofn($fofn);
+    
+    my $out_fofn = $self->{io}->catfile($lane_path, '.recalibration_expected');
+    unlink($out_fofn);
+    
+    my $verbose = $self->verbose;
+    
+    my @out_bams;
+    foreach my $bam (@in_bams) {
+        my $out_bam = $bam;
+        $out_bam =~ s/\.bam$/.recal.bam/;
+        push(@out_bams, $out_bam);
+        
+        next if -s $out_bam;
+        
+        LSF::run($action_lock, $lane_path, $self->{prefix}.'platform_recalibration', $self,
+                 qq{perl -MVertRes::Wrapper::GATK -Mstrict -e "VertRes::Wrapper::GATK->new(verbose => $verbose)->recalibrate(qq[$bam], qq[$out_bam]); die qq[recalibration failed for $bam\n] unless -s qq[$out_bam];"});
+    }
+    
+    open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
+    foreach my $out_bam (@out_bams) {
+        print $ofh $out_bam, "\n";
+    }
+    my $expected = @out_bams;
+    print $ofh "# expecting $expected\n";
+    close($ofh);
+    
+    return $self->{NO};
+}
+
 =head2 cleanup_requires
 
  Title   : cleanup_requires
@@ -594,13 +694,15 @@ sub cleanup {
     
     my $prefix = $self->{prefix};
     
-    foreach my $file (qw(log)) {
+    foreach my $file (qw(log job_status)) {
         unlink($self->{io}->catfile($lane_path, $prefix.$file));
     }
     
     my $file_base = $self->{io}->catfile($lane_path, $prefix);
-    foreach my $job_base (qw(library_merge lib_rmdup platform_merge sample_merge)) {
-        system("rm $file_base$job_base.o $file_base$job_base.e");
+    foreach my $job_base (qw(library_merge lib_rmdup platform_merge platform_recalibration sample_merge)) {
+        foreach my $suffix ('o', 'e') {
+            unlink("$file_base$job_base.$suffix");
+        }
     }
     
     return $self->{Yes};
@@ -622,6 +724,11 @@ sub is_finished {
     elsif ($action_name eq 'library' || $action_name eq 'platform' || $action_name eq 'sample') {
         my $expected_file = $self->{io}->catfile($lane_path, ".${action_name}_merge_expected");
         my $done_file = $self->{io}->catfile($lane_path, ".${action_name}_merge_done");
+        $self->_merge_check($expected_file, $done_file);
+    }
+    elsif ($action_name eq 'recalibrate') {
+        my $expected_file = $self->{io}->catfile($lane_path, ".recalibration_expected");
+        my $done_file = $self->{io}->catfile($lane_path, ".recalibration_done");
         $self->_merge_check($expected_file, $done_file);
     }
     
