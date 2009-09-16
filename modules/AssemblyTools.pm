@@ -1450,18 +1450,51 @@ sub createFastaHash
 	
 	return \%reads_file;
 }
-=pod
-sub filterOutShortContigsFastq
+
+sub filterOutShortContigsFasta
 {
-	croak "Usage: filterOutShortContigsFastq fastq minLength" unless @_ == 2; 
+	croak "Usage: filterOutShortContigsFasta fasta minLength output" unless @_ == 3; 
 	my $file = shift;
-	croak "cant find fastq file" unless -f $file;
+	croak "cant find fasta file" unless -f $file;
 	my $minLength = shift;
 	croak "invalid min length" unless $minLength > 0;
+	my $output = shift;
 	
+	open( my $fh, $file ) or die $!;
+	open( my $ofh, $output ) or die $!;
+	my $name = '';
+	my $seq = '';
+	while( <$fh> )
+	{
+		chomp;
+		if( $_ =~ /^>/ )
+		{
+			if( length( $name ) > 0 )
+			{
+				if( length( $seq ) > $minLength )
+				{
+					print $ofh "$name\n$seq\n";
+				}
+			}
+			$seq = '';
+			$name = $_;
+		}
+		else
+		{
+			$seq .= $_;
+		}
+	}
 	
+	if( length( $name ) > 0 )
+	{
+		if( length( $seq ) > $minLength )
+		{
+			print $ofh "$name\n$seq\n";
+		}
+	}
+	close( $fh );
+	close( $ofh );
 }
-=cut
 
 #make paired reads in a form suitable for phusion
 sub concatenatePairedWith2Ns

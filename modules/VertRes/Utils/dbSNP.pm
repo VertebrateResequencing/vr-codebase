@@ -376,7 +376,7 @@ sub write_snp_records
 		my $phred_entry = '';
 		if( length( $phred_quality ) > 0 )
 		{
-			$phred_entry = "snp quality: $phred_quality";
+			$phred_entry = "snp quality: $phred_quality\n";
 		}
 		print $ofh qq[
 SNP:        $snp_id
@@ -387,8 +387,7 @@ LENGTH:     1
 OBSERVED:   $reference_base/$consensus_base
 3'_FLANK:   $three_prime_seq
 COMMENT:
-$phred_quality
-read_depth: $read_depth
+$phred_quality read_depth: $read_depth
 ||
 ];
 		$snpcnt ++;
