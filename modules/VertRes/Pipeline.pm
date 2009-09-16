@@ -323,7 +323,7 @@ sub can_be_run
 
     if ( !scalar @$missing ) { return $Yes; }
 
-    $self->debug("Some of the files required by \"$$action{'name'}\" not in place:\n\t".join("\n\t",@$missing));
+    $self->debug("Some of the files required by \"$$action{'name'}\" not in place:\n\t".join("\n\t",@$missing)."\n");
 
     return $No;
 }
