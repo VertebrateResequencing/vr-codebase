@@ -372,7 +372,7 @@ sub relative_symlink
     $path .= join('/', @cur_els);
 
     #print STDERR "cd $dir; symlink '$path' '$new_els[0]'\n";
-    symlink($path,$new_els[0]);
+    symlink($path,$new_els[0]) or Utils::error("symlink $path $new_els[0]: $!");
 
     chdir($cwd) or Utils::error("chdir $cwd: $!");
     return;
@@ -475,6 +475,33 @@ sub log_msg
     print $fh $str, "\n";
     close $fh;
 }
+
+sub mysql_exec
+{
+    my ($args,$query) = @_;
+
+    if ( $args && $$args{'verbose'} ) { print STDERR "$query\n"; }
+
+    my $sth = $$args{dbh}->prepare($query);
+    if ( !$sth ) { Utils::error("$query:\n", $!) }
+
+    $sth->execute or Utils::error("$query:\n", $!);
+    $sth->finish;
+    return;
+}
+
+sub mysql_query
+{
+    my ($args,$query) = @_;
+
+    if ( $args && $$args{'verbose'} ) { print STDERR "$query\n"; }
+
+    my $sth = $$args{dbh}->prepare($query);
+    if ( !$sth ) { Utils::error("$query:\n", $!) }
+    $sth->execute or Utils::error("$query:\n", $!);
+    return $sth;
+}
+
 
 
 1;

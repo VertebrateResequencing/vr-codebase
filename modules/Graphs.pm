@@ -21,6 +21,7 @@ our $R_CMD = '/software/R-2.9.0/bin/R';
                             desc_xvals      .. the x-axis label 
                             desc_yvals      .. the y-axis label
                             barplot         .. 1 for barplot
+                            normalize       .. if set, yvals will be scaled so that the max value is 1
                             r_cmd           .. extra R commands to be executed
                             r_plot          .. extra R statements to plot(), such as e.g. "xlim=c(0,10)"
                             data => \[      .. Multiple lines can be plotted in one graph
@@ -80,7 +81,24 @@ sub plot_stats
         {
             $x = join(',', @{$$vals{'xvals'}});
         }
-        $y = join(',', @{$$vals{'yvals'}});
+
+        if ( $$stats{normalize} )
+        {
+            my ($extreme);
+            $extreme = $$vals{yvals}->[0];
+            for my $y (@{$$vals{'yvals'}})
+            {
+                if ( abs($y)>$extreme ) { $extreme=abs($y); }
+            }
+
+            my @scaled = ();
+            for my $y (@{$$vals{'yvals'}})
+            {
+                push @scaled, 1.0*$y/$extreme;
+            }
+            $y = join(',', @scaled);
+        }
+        else { $y = join(',', @{$$vals{'yvals'}}); }
 
         print $fh qq[
 x$set <- c($x)

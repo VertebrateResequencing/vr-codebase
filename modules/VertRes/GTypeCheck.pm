@@ -144,6 +144,8 @@ sub get_status
     $info{expected} = $2;
     $info{found}    = $3;
     $info{ratio}    = $4;
+
+    return \%info;
 }
 
 
