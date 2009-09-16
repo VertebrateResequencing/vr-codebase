@@ -207,7 +207,7 @@ sub run_lane
         }
 
         # Some actions are done immediately and return $Yes. For those, run next action.
-        last unless (!$$self{'stepwise'} || ($status && $status==$Yes) );
+        last unless (!$$self{'stepwise'} || (defined $status && $status==$Yes) );
     }
 
     if ( $locked_fh )
