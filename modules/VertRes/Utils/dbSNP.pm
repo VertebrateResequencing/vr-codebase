@@ -155,6 +155,7 @@ MULT_PCR_AMPLIFICATION: NA
 MULT_CLONES_TESTED:     NA
 METHOD:
 $methods
+||
 ];
 	close( $ofh );
 	$self->{method_id}=$id;
@@ -249,7 +250,8 @@ TYPE:       SNPASSAY
 HANDLE:     $self->{handle}
 BATCH:      $batch_name
 MOLTYPE:    Genomic
-SAMPLESIZE: 2
+SAMPLESIZE: 19
+STRAIN: $self->{strain_tag}
 METHOD:     Genomic Sequencing
 ORGANISM:   Mus musculus
 CITATION:   $self->{title}
@@ -361,7 +363,7 @@ sub write_snp_records
 		
 		# extract the upstream and downstream sequences
 		my $five_prime_seq = substr($full_seq,0,$FIVE_PRIME_REGION);
-
+		
 		# indexing from zero so add a 1 to the starting position
 		my $three_prime_seq = substr($full_seq,$FIVE_PRIME_REGION+1,$THREE_PRIME_REGION);
 		
