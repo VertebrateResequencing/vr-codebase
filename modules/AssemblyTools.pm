@@ -1461,7 +1461,7 @@ sub filterOutShortContigsFasta
 	my $output = shift;
 	
 	open( my $fh, $file ) or die $!;
-	open( my $ofh, $output ) or die $!;
+	open( my $ofh, ">$output" ) or die $!;
 	my $name = '';
 	my $seq = '';
 	while( <$fh> )
