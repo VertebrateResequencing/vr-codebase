@@ -208,6 +208,8 @@ sub run_lane
 
         # Some actions are done immediately and return $Yes. For those, run next action.
         last unless (!$$self{'stepwise'} || (defined $status && $status==$Yes) );
+        $self->debug("The task \"$$action{'name'}\" completed.\n");
+        unlink($action_lock);
     }
 
     if ( $locked_fh )
