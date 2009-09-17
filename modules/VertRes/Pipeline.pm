@@ -200,8 +200,7 @@ sub run_lane
                 die $@; 
             }
 
-            $self->warn("The action \"$$action{'name'}\" failed.\n"); 
-            $self->warn($@); 
+            $self->warn("The action \"$$action{'name'}\" failed:\n$@"); 
             $all_done = $Error; 
             last; 
         }
