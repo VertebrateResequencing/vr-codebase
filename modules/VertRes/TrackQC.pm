@@ -717,7 +717,7 @@ sub run_graphs
 
         my $pars = VertRes::Parser::fastqcheck->new(file => $fastqcheck);
         my ($bases,$quals) = $pars->avg_base_quals();
-        push @fastq_quals, { xvals=>$bases, yvals=>$quals, type=>'b' };
+        push @fastq_quals, { xvals=>$bases, yvals=>$quals };
     }
 
     if ( scalar @fastq_quals )
