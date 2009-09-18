@@ -125,7 +125,8 @@ yrange <- range($yrange)
         for my $vals (@{$$stats{'data'}})
         {
             my $lines = exists($$vals{lines}) ? $$vals{lines} : '';
-            print $fh "lines(x$set,y$set,type='l',col=",$set+1,",pch=",$set+1,"$lines)\n";
+            my $type  = exists($$vals{type}) ? "type='$$vals{type}'" : "type='l'";
+            print $fh "lines(x$set,y$set,$type,col=",$set+1,",pch=",$set+1,"$lines)\n";
             $set++;
         }
     }

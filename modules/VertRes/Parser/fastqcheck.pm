@@ -15,6 +15,7 @@ my $total_length_of_all_sequences = $pars->total_length();
 my $average_length_of_a_sequence = $pars->avg_length();
 my $length_of_longest_sequence = $pars->max_length();
 my ($total_sd, $per_base_sd) = $pars->standard_deviations();
+my ($bases,$avg_quals) = $pars->avg_base_quals();
 
 # get the array reference that will hold the most recently requested result
 my $result_holder = $pars->result_holder();
@@ -243,6 +244,41 @@ sub next_result {
     }
     
     return 1;
+}
+
+
+=head2 avg_base_quals
+
+ Title   : avg_base_quals
+ Usage   : my ($bases,$quals) = $pars->avg_base_quals();
+ Function: Get the average qualities for each base.
+ Returns : list with two array references
+ Args    : n/a (new() or file() must allready have been supplied with a
+                filename or filehandle)
+
+=cut
+
+sub avg_base_quals
+{
+    my ($self) = @_;
+
+    my (@bases,@quals);
+    while ($self->next_result()) 
+    {
+        if ( !$self->{_result_holder}->[0] ) { next; }
+
+        my $sum    = 0;
+        my $nvals  = 0;
+        my $nquals = scalar @{$$self{_result_holder}} - 1;
+        for (my $i=6; $i<$nquals; $i++)
+        {
+            $nvals += $$self{_result_holder}->[$i];
+            $sum   += $$self{_result_holder}->[$i] * ($i-6);
+        }
+        push @bases, $$self{_result_holder}->[0];
+        push @quals, $sum/$nvals;
+    }
+    return (\@bases,\@quals);
 }
 
 1;

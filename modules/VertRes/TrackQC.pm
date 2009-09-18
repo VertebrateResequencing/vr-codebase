@@ -8,6 +8,7 @@ use VertRes::GTypeCheck;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::Mapstats;
+use VertRes::Parser::fastqcheck;
 
 our @actions =
 (
@@ -261,7 +262,14 @@ sub rename
     for my $file (sort cmp_last_number @files)
     {
         $i++;
-        Utils::relative_symlink($file,"$lane_path/${name}_$i.fastq.gz");
+        if ( ! -e "$lane_path/${name}_$i.fastq.gz" )
+        {
+            Utils::relative_symlink($file,"$lane_path/${name}_$i.fastq.gz");
+        }
+        if ( -e "$file.fastqcheck" && ! -e "$lane_path/${name}_$i.fastq.gz.fastqcheck" )
+        {
+            Utils::relative_symlink("$file.fastqcheck","$lane_path/${name}_$i.fastq.gz.fastqcheck");
+        }
     }
     return $$self{'Yes'};
 }
@@ -687,6 +695,7 @@ sub run_graphs
 
 
     # Create the multiline fastqcheck files
+    my @fastq_quals = ();
     my $fastq_files = existing_fastq_files("$lane_path/$name");
     for (my $i=1; $i<=scalar @$fastq_files; $i++)
     {
@@ -705,6 +714,22 @@ sub run_graphs
         push @{$$data{'data'}}, $total;
 
         Graphs::plot_stats($data);
+
+        my $pars = VertRes::Parser::fastqcheck->new(file => $fastqcheck);
+        my ($bases,$quals) = $pars->avg_base_quals();
+        push @fastq_quals, { xvals=>$bases, yvals=>$quals, type=>'b' };
+    }
+
+    if ( scalar @fastq_quals )
+    {
+        Graphs::plot_stats({
+                outfile     => qq[$outdir/fastqcheck.png],
+                title       => 'fastqcheck base qualities',
+                desc_yvals  => 'Quality',
+                desc_xvals  => 'Base',
+                data        => \@fastq_quals,
+                r_plot      => "ylim=c(0,50)",
+                });
     }
 
     # The GC-depth graphs
@@ -725,19 +750,21 @@ sub run_graphs
 
     # Insert size graph
     my ($x,$y);
-    $x = $$stats{'insert_size'}{'max'}{'x'};
-    $y = $$stats{'insert_size'}{'max'}{'y'};
-    my $insert_size  = $$stats{insert_size}{average}<500 ? 500 : $$stats{insert_size}{average};
-    Graphs::plot_stats({
-            'outfile'    => qq[$outdir/insert-size.png],
-            'title'      => 'Insert Size',
-            'desc_yvals' => 'Frequency',
-            'desc_xvals' => 'Insert Size',
-            'data'       => [ $$stats{'insert_size'} ],
-            'r_cmd'      => qq[text($x,$y,'$x',pos=4,col='darkgreen')\n],
-            'r_plot'     => "xlim=c(0," . ($insert_size*2.5) . ")",
-            });
-
+    if ( exists($$stats{insert_size}) )
+    {
+        $x = $$stats{'insert_size'}{'max'}{'x'};
+        $y = $$stats{'insert_size'}{'max'}{'y'};
+        my $insert_size  = $$stats{insert_size}{average}<500 ? 500 : $$stats{insert_size}{average};
+        Graphs::plot_stats({
+                'outfile'    => qq[$outdir/insert-size.png],
+                'title'      => 'Insert Size',
+                'desc_yvals' => 'Frequency',
+                'desc_xvals' => 'Insert Size',
+                'data'       => [ $$stats{'insert_size'} ],
+                'r_cmd'      => qq[text($x,$y,'$x',pos=4,col='darkgreen')\n],
+                'r_plot'     => "xlim=c(0," . ($insert_size*2.5) . ")",
+                });
+    }
 
     # GC content graph
     $x = $$stats{'gc_content_forward'}{'max'}{'x'};
@@ -821,8 +848,15 @@ sub report_detailed_stats
     printf $fh "error rate  .. %f\n", $$stats{error_rate};
     printf $fh "\n";
     printf $fh "insert size        \n";
-    printf $fh "    average .. %.1f\n", $$stats{insert_size}{average};
-    printf $fh "    std dev .. %.1f\n", $$stats{insert_size}{std_dev};
+    if ( exists($$stats{insert_size}) )
+    {
+        printf $fh "    average .. %.1f\n", $$stats{insert_size}{average};
+        printf $fh "    std dev .. %.1f\n", $$stats{insert_size}{std_dev};
+    }
+    else
+    {
+        printf $fh "    N/A\n";
+    }
     printf $fh "\n";
     printf $fh "chrm distrib dev .. %f\n", $$stats{'reads_chrm_distrib'}{'scaled_dev'};
 
