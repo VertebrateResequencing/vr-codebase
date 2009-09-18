@@ -496,7 +496,7 @@ sub unmapped2Bam
 			print "Cant find lane directory: $laneAbsPath\n";
 			next;
 		}
-		
+		print "hello:$laneAbsPath\n";
 		if( $laneAbsPath =~ /\/SLX\// )
 		{
 			if( ! Mapping_SLX_Maq::isLaneMapped( $laneAbsPath ) && ! Mapping_SLX_Maq::mappingInProgress( $laneAbsPath ) )
