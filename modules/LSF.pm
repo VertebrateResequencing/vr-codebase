@@ -181,12 +181,11 @@ sub run
             sleep(2);
             $max_wait-=2;
         }
+        if ( $status==$No ) { Utils::error("The job $1 $work_dir/$lsf_output_file still not in queue??\n"); }
     }
 
     if ( $work_dir ) { chdir($cwd) or Utils::error("chdir \"$cwd\": $!"); }
 
-    if ( $status==$No ) { Utils::error("The job $1 $work_dir/$lsf_output_file still not in queue??\n"); }
-    
     return;
 }
 
