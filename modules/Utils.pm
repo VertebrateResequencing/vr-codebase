@@ -470,8 +470,10 @@ sub cmp_mixed($$)
 sub log_msg
 {
     my ($log_file, $str) = @_;
+    chomp(my $cwd=`pwd`);
     open(my $fh, '>>', $log_file) or error("$log_file: $!");
     print $fh scalar gmtime, "\n";
+    print $fh $cwd, "\n";
     print $fh $str, "\n";
     close $fh;
 }
