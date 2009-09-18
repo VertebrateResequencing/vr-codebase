@@ -166,18 +166,21 @@ sub run
     print $jids_fh "$jid\t$work_dir/$lsf_output_file\n";
     close $jids_fh;
 
-    # Now wait until the job appears in the queue, it may take few seconds. If another
-    #   pipeline was running in the meantime, it would schedule the same job to LSF.
-    #   We can safely sleep here, because run_lane protects us by its locking mechanism.
-    #
-    my $max_wait = 30;
-    my $status   = $No;
-    while ($max_wait>0)
+    if ( !$$options{dont_wait} )
     {
-        $status = job_in_queue($jid,"$work_dir/$lsf_output_file");
-        if ( $status!=$No ) { last }
-        sleep(2);
-        $max_wait-=2;
+        # Now wait until the job appears in the queue, it may take few seconds. If another
+        #   pipeline was running in the meantime, it would schedule the same job to LSF.
+        #   We can safely sleep here, because run_lane protects us by its locking mechanism.
+        #
+        my $max_wait = 30;
+        my $status   = $No;
+        while ($max_wait>0)
+        {
+            $status = job_in_queue($jid,"$work_dir/$lsf_output_file");
+            if ( $status!=$No ) { last }
+            sleep(2);
+            $max_wait-=2;
+        }
     }
 
     if ( $work_dir ) { chdir($cwd) or Utils::error("chdir \"$cwd\": $!"); }
