@@ -983,7 +983,7 @@ sub update_db
 
     # Write the QC status. Never overwrite a QC status set by human, only NULL or no_qc.
     $mapping->update;
-    my $qc_status = $vrlane->qc_status();
+    $qc_status = $vrlane->qc_status();
     if ( !$qc_status || $qc_status eq 'no_qc' ) { $vrlane->qc_status('pending'); }
     $vrlane->update;
 
