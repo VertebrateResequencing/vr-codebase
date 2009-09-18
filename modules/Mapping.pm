@@ -455,4 +455,68 @@ sub mappingHierarchyReport
 	close( OUT );
 }
 
+
+sub unmapped2Bam
+{
+	croak "Usage: rootDir lsf_queue lanes_fofn index_file" unless @_ == 4;
+	
+	my $mRoot = shift;
+	my $lsf_queue = shift;
+	my $lanes_fofn = shift;
+	my $indexF = shift;
+	
+	croak "Cant find the lanes_fofn file: $lanes_fofn\n" unless -f $lanes_fofn;
+	
+	if( ! -f $indexF )
+	{
+		print "Cant find index file: $indexF - ignoring index file\n";
+		$indexF = '';
+	}
+	
+	my %lanes;
+	
+	my $cwd = getcwd;
+
+	open( LANES, $lanes_fofn ) or die "Cant open lanes fofn file: $!\n";
+	while( <LANES> )
+	{
+		chomp;
+		
+		my $laneAbsPath = $_;
+		if( $_ !~ /^$mRoot.*/ )
+		{
+			$laneAbsPath = $mRoot.'/'.$_;
+		}
+		
+		chdir($cwd); # mapLane can change our dir and not change us back
+		$laneAbsPath = abs_path($laneAbsPath);
+		
+		if( ! -d $laneAbsPath )
+		{
+			print "Cant find lane directory: $laneAbsPath\n";
+			next;
+		}
+		
+		if( $laneAbsPath =~ /\/SLX\// )
+		{
+			if( ! Mapping_SLX_Maq::isLaneMapped( $laneAbsPath ) && ! Mapping_SLX_Maq::mappingInProgress( $laneAbsPath ) )
+			{
+				print "Making unmapped bam for lane: $laneAbsPath\n";
+				my $cmd = qq[bsub -q $lsf_queue -o $laneAbsPath/unmapped.o -e $laneAbsPath/unmapped.e "perl -w -e use Mapping_SLX_Maq;Mapping_SLX_Maq::unmapped2Bam( \\"$laneAbsPath\\", \\"$indexF\\");"; ];
+				#system( $cmd );
+				print qq[$cmd\n];
+			}
+		}
+		elsif( $laneAbsPath =~ /\/454\// )
+		{
+			if( ! Mapping_454_ssaha::isLaneMapped( $laneAbsPath ) && ! Mapping_454_ssaha::mappingInProgress( $laneAbsPath ) )
+			{
+				#print "Mapping Lane: $laneAbsPath\n";
+				#Mapping_454_ssaha::mapLane( $laneAbsPath, $lsf_queue, $indexF );
+			}
+		}
+	}
+	close( LANES );
+}
+
 1;
