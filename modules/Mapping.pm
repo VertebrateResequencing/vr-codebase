@@ -499,7 +499,7 @@ sub unmapped2Bam
 		print "hello:$laneAbsPath\n";
 		if( $laneAbsPath =~ /\/SLX\// )
 		{
-			if( ! Mapping_SLX_Maq::isLaneMapped( $laneAbsPath ) && ! Mapping_SLX_Maq::mappingInProgress( $laneAbsPath ) )
+			if( ! -f $laneAbsPath."/raw.unmapped.bam" && ! Mapping_SLX_Maq::mappingInProgress( $laneAbsPath ) )
 			{
 				print "Making unmapped bam for lane: $laneAbsPath\n";
 				my $cmd = qq[bsub -q $lsf_queue -o $laneAbsPath/unmapped.o -e $laneAbsPath/unmapped.e "perl -w -e use Mapping_SLX_Maq;Mapping_SLX_Maq::unmapped2Bam( \\"$laneAbsPath\\", \\"$indexF\\");"; ];
