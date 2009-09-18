@@ -785,7 +785,6 @@ sub run_graphs
         }
         push @gc_data, { xvals=>\@xvals, yvals=>\@yvals, lines=>',lty=4' };
         $normalize = 1;
-        print STDERR "$$self{stats_ref}\n";
     }
     if ( $$stats{'gc_content_forward'} ) { push @gc_data, $$stats{'gc_content_forward'}; } # Should be always present
     if ( $$stats{'gc_content_reverse'} ) { push @gc_data, $$stats{'gc_content_reverse'}; } # May be not present (single end sequencing)

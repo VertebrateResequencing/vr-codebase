@@ -324,7 +324,9 @@ sub collect_detailed_bam_stats
             for my $stat (@stats) { $$out_stats{$stat}{'reads_unpaired'}++; }
         }
 
-        # GC Content Frequencies - collect stats for both pairs separately
+        # GC Content Frequencies - collect stats for both pairs separately. Dont' attempt
+        #   to calculate first % GC content - this would occasionally produce spikes. We
+        #   work with discrete data. Do the x-axis scaling at the end.
         if ( $do_gc )
         {
             my $gc_count = 0;
@@ -333,47 +335,22 @@ sub collect_detailed_bam_stats
                 my $nuc  = substr($seq, $ipos, 1);
                 if ( $nuc eq 'g' || $nuc eq 'G' || $nuc eq 'c' || $nuc eq 'C' ) { $gc_count++; }
             }
-            # Alternatively, one could calculate GC content as GC/(GC+AT), but this
-            #   produces spiky curve instead of the expected smooth curve - there
-            #   are few N's compared to [GCAT] and the discrete nature of the data 
-            #   comes into play. 
-            #   Different way of rounding does not help, only moves the spikes to
-            #   different bins. Anyway, the result is not much different, the 
-            #   smooth curve forms the envelope of the spiky one.
-            #
-            #   For an example, see these values, most common contributions to the spiky
-            #   bins 35,40,44 and its neighbours:
-            #
-            #   count in bin       GC        AT      other
-            #    2077   35      .. 26        49      1       34.6666666666667
-            #   43799   36      .. 27        49      0       35.5263157894737
-            #   51523   37      .. 28        48      0       36.8421052631579
-            #   58024   38      .. 29        47      0       38.1578947368421
-            #   62577   39      .. 30        46      0       39.4736842105263
-            #    3420   40      .. 30        45      1       40              
-            #   64145   41      .. 31        45      0       40.7894736842105
-            #   64560   42      .. 32        44      0       42.1052631578947
-            #   63943   43      .. 33        43      0       43.4210526315789
-            #    3586   44      .. 33        42      1       44 
-            #
-            $gc_count = $gc_count*100./$seq_len;
-            my $bin = abs(int($gc_count/$gc_content_bin));
             if ( $gc_count )
             {
                 if ( $flag & $$FLAGS{'1st_in_pair'} )
                 {
-                    for my $stat (@stats) { $$out_stats{$stat}{'gc_content_fwd_freqs'}{$bin}++; }
+                    for my $stat (@stats) { $$out_stats{$stat}{'gc_content_fwd_freqs'}{$gc_count}++; }
                 }
                 elsif ( $flag & $$FLAGS{'2nd_in_pair'} )
                 {
-                    for my $stat (@stats) { $$out_stats{$stat}{'gc_content_rev_freqs'}{$bin}++; }
+                    for my $stat (@stats) { $$out_stats{$stat}{'gc_content_rev_freqs'}{$gc_count}++; }
                 }
                 else
                 { 
                     # Either it is a non-paired-read technology, or the 1st_in_pair and
                     #   and 2nd_in_pair flags got lost in the process. In that case, 
                     #   both 1st_in_pair and 2nd_in_pair should be set to zero.
-                    for my $stat (@stats) { $$out_stats{$stat}{'gc_content_fwd_freqs'}{$bin}++; }
+                    for my $stat (@stats) { $$out_stats{$stat}{'gc_content_fwd_freqs'}{$gc_count}++; }
                 }
             }
         }
@@ -392,7 +369,7 @@ sub collect_detailed_bam_stats
         $$out_stats{$stat}{'bases_mapped_read'}  = 0 unless exists($$out_stats{$stat}{'bases_mapped_read'});
         $$out_stats{$stat}{'bases_mapped_cigar'} = 0 unless exists($$out_stats{$stat}{'bases_mapped_cigar'});
 
-        $$out_stats{$stat}{'reads_mapped'} = $$out_stats{$stat}{'reads_total'} - $$out_stats{$stat}{'reads_unmapped'}; 
+        $$out_stats{$stat}{'reads_mapped'} = $$out_stats{$stat}{'reads_total'} - $$out_stats{$stat}{'reads_unmapped'};
     }
 
     # Find out the duplication rate
@@ -447,12 +424,15 @@ sub collect_detailed_bam_stats
             };
             delete($$out_stats{$stat}{insert_size_freqs});
         }
+
+        my $avg_read_length = $$out_stats{$stat}{'reads_total'} ? $$out_stats{$stat}{'bases_total'}/$$out_stats{$stat}{'reads_total'} : 0;
         if ( exists($$out_stats{$stat}{'gc_content_fwd_freqs'}) )
         {
             $$out_stats{$stat}{'gc_content_forward'} = 
             {
-                'data'       => $$out_stats{$stat}{'gc_content_fwd_freqs'},
-                'bin_size'   => $gc_content_bin,
+                data        => $$out_stats{$stat}{'gc_content_fwd_freqs'},
+                scale_x     => 100./$avg_read_length,
+                bin_size    => 1,
             };
             delete($$out_stats{$stat}{'gc_content_fwd_freqs'});
         }
@@ -460,8 +440,9 @@ sub collect_detailed_bam_stats
         {
             $$out_stats{$stat}{'gc_content_reverse'} =
             {
-                'data'       => $$out_stats{$stat}{'gc_content_rev_freqs'},
-                'bin_size'   => $gc_content_bin,
+                data        => $$out_stats{$stat}{'gc_content_rev_freqs'},
+                scale_x     => 100./$avg_read_length,
+                bin_size    => 1,
             };
             delete($$out_stats{$stat}{'gc_content_rev_freqs'});
         }
@@ -492,7 +473,7 @@ sub collect_detailed_bam_stats
             for my $ibin (sort {$a<=>$b} keys %$data)
             {
                 my $bin = $ibin * $$stat{$key}{'bin_size'};
-                if ( $$stat{$key}{'bin_size'}>1 ) { $bin += $$stat{$key}{'bin_size'}*0.5; }
+                if ( exists($$stat{$key}{scale_x}) ) { $bin *= $$stat{$key}{scale_x}; }
                 push @xvals, $bin;
 
                 my $yval = $$data{$ibin};
