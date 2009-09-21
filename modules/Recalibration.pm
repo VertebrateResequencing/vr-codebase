@@ -1770,7 +1770,7 @@ sub verifyBeforeAfterSequence
 	
 	#move the recal file to the destination and delete the uncal file
 	system( "mv $after $dest" );
-	system( "rm -f $before" );
+	#system( "rm -f $before" );
 	
 	print "$before Verified!";
 }
