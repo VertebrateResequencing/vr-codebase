@@ -52,6 +52,7 @@ sub fields_dispatch {
                 'assembly_id'        => sub { $self->assembly_id(@_)},
                 'raw_reads'          => sub { $self->raw_reads(@_)},
                 'raw_bases'          => sub { $self->raw_bases(@_)},
+                'clip_bases'         => sub { $self->clip_bases(@_)},
                 'reads_mapped'       => sub { $self->reads_mapped(@_)},
                 'reads_paired'       => sub { $self->reads_paired(@_)},
                 'bases_mapped'       => sub { $self->bases_mapped(@_)},
@@ -407,6 +408,26 @@ sub raw_bases {
 	$self->dirty(1);
     }
     return $self->{'raw_bases'};
+}
+
+
+=head2 clip_bases
+
+  Arg [1]    : number of raw bases after clipping
+  Example    : my $bases_after_clipping = $mapstats->clip_bases();
+	       $mapstats->clip_bases(1_000_000);
+  Description: Get/Set for total number of raw bases after clipping
+  Returntype : integer
+
+=cut
+
+sub clip_bases {
+    my ($self,$num_bases) = @_;
+    if (defined $num_bases and $num_bases != $self->{'clip_bases'}){
+	$self->{'clip_bases'} = $num_bases;
+	$self->dirty(1);
+    }
+    return $self->{'clip_bases'};
 }
 
 

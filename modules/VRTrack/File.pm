@@ -50,7 +50,7 @@ sub fields_dispatch {
                 'readlen'           => sub { $self->read_len(@_)},
                 'raw_reads'         => sub { $self->raw_reads(@_)},
                 'raw_bases'         => sub { $self->raw_bases(@_)},
-                'recalibrated'      => sub { $self->is_recalibrated(@_)},
+                'mean_q'            => sub { $self->mean_q(@_)},
                 'md5'               => sub { $self->md5(@_)},
                 'note_id'           => sub { $self->note_id(@_)},
                 'changed'           => sub { $self->changed(@_)},
@@ -219,24 +219,6 @@ sub id {
         $self->dirty(1);
     }
     return $self->{'id'};
-}
-
-
-=head2 is_recalibrated
-
-  Arg [1]    : boolean for recalibrated status
-  Example    : $file->is_recalibrated(1);
-  Description: Get/Set for file having been recalibrated
-  Returntype : boolean
-
-=cut
-
-sub is_recalibrated {
-    my ($self,$recalibrated) = @_;
-    if (defined $recalibrated){
-	$self->{_recalibrated} = $recalibrated ? 1 : 0;
-    }
-    return $self->{_recalibrated};
 }
 
 
@@ -425,6 +407,26 @@ sub raw_bases {
 	$self->dirty(1);
     }
     return $self->{'raw_bases'};
+}
+
+
+=head2 mean_q
+
+  Arg [1]    : mean quality score for bases in file
+  Example    : my $mean_q = $file->mean_q();
+	       $file->mean_q(27);
+  Description: Get/Set for mean quality score for bases in file
+  Returntype : float
+
+=cut
+
+sub mean_q {
+    my ($self,$mean_q) = @_;
+    if (defined $mean_q and $mean_q != $self->{'mean_q'}){
+	$self->{'mean_q'} = $mean_q;
+	$self->dirty(1);
+    }
+    return $self->{'mean_q'};
 }
 
 

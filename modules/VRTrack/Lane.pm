@@ -51,9 +51,9 @@ sub fields_dispatch {
                 'acc'               => sub { $self->acc(@_)},
                 'readlen'           => sub { $self->read_len(@_)},
                 'paired'            => sub { $self->is_paired(@_)},
-                'recalibrated'      => sub { $self->is_recalibrated(@_)},
                 'raw_reads'         => sub { $self->raw_reads(@_)},
                 'raw_bases'         => sub { $self->raw_bases(@_)},
+                'npg_qc_status'     => sub { $self->npg_qc_status(@_)},
                 'qc_status'         => sub { $self->qc_status(@_)},
                 'gt_status'         => sub { $self->genotype_status(@_)},
                 'submission_id'     => sub { $self->submission_id(@_)},
@@ -348,24 +348,6 @@ sub is_paired {
 }
 
 
-=head2 is_recalibrated
-
-  Arg [1]    : boolean for is_recalibrated status
-  Example    : $lane->is_recalibrated(1);
-  Description: Get/Set for whether lane has been recalibrated or not
-  Returntype : boolean
-
-=cut
-
-sub is_recalibrated {
-    my ($self,$is_recalibrated) = @_;
-    if (defined $is_recalibrated){
-	$self->{is_recalibrated} = $is_recalibrated ? 1 : 0;
-    }
-    return $self->{is_recalibrated};
-}
-
-
 =head2 is_withdrawn
 
   Arg [1]    : boolean for is_withdrawn status
@@ -548,6 +530,30 @@ sub qc_status {
 	$self->dirty(1);
     }
     return $self->{'qc_status'};
+}
+
+
+=head2 npg_qc_status
+
+  Arg [1]    : npg_qc_status (optional)
+  Example    : my $npg_qc_status = $lane->npg_qc_status();
+	       $lane->npg_qc_status('pass');
+  Description: Get/Set for lane npg_qc_status.  This is the manual QC that sequencescape/npg perform on a lane.
+  Returntype : string
+
+=cut
+
+sub npg_qc_status {
+    my ($self,$npg_qc_status) = @_;
+    if (defined $npg_qc_status and $npg_qc_status ne $self->{'npg_qc_status'}){
+        my %allowed = map {$_ => 1} @{$self->list_enum_vals('lane','npg_qc_status')};
+        unless ($allowed{lc($npg_qc_status)}){
+            die "'$npg_qc_status' is not a defined npg_qc_status";
+        }
+	$self->{'npg_qc_status'} = $npg_qc_status;
+	$self->dirty(1);
+    }
+    return $self->{'npg_qc_status'};
 }
 
 
