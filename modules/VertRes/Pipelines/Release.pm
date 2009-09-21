@@ -18,11 +18,14 @@ data =>
 {
     lanes => 'lanes.fofn',
     do_recalibration => 1,
+    dcc_hardlinks => 1,
     do_cleanup => 1
 }
 
 # other options you could add to the release.conf include:
-# do_chr_splits=1
+# sequence_index => path (a G1K default exists)
+# do_chr_splits => 1
+# do_sample_merge => 1
 
 # make another file that simply also contains the release directory:
 echo "/path/to/rel_dir" > rel.fod
@@ -71,6 +74,7 @@ use strict;
 use warnings;
 use VertRes::Utils::Hierarchy;
 use VertRes::IO;
+use File::Basename;
 use File::Spec;
 use File::Copy;
 use Cwd 'abs_path';
@@ -82,26 +86,30 @@ our $actions = [{ name     => 'create_release_hierarchy',
                   action   => \&create_release_hierarchy,
                   requires => \&create_release_hierarchy_requires, 
                   provides => \&create_release_hierarchy_provides },
-                { name     => 'library',
-                  action   => \&library,
-                  requires => \&library_requires, 
-                  provides => \&library_provides },
+                { name     => 'library_merge',
+                  action   => \&library_merge,
+                  requires => \&library_merge_requires, 
+                  provides => \&library_merge_provides },
                 { name     => 'lib_rmdup',
                   action   => \&lib_rmdup,
                   requires => \&lib_rmdup_requires, 
                   provides => \&lib_rmdup_provides },
-                { name     => 'platform',
-                  action   => \&platform,
-                  requires => \&platform_requires, 
-                  provides => \&platform_provides },
+                { name     => 'platform_merge',
+                  action   => \&platform_merge,
+                  requires => \&platform_merge_requires, 
+                  provides => \&platform_merge_provides },
                 { name     => 'recalibrate',
                   action   => \&recalibrate,
                   requires => \&recalibrate_requires, 
                   provides => \&recalibrate_provides },
-                { name     => 'sample',
-                  action   => \&sample,
-                  requires => \&sample_requires, 
-                  provides => \&sample_provides },
+                { name     => 'create_release_files',
+                  action   => \&create_release_files,
+                  requires => \&create_release_files_requires, 
+                  provides => \&create_release_files_provides},
+                { name     => 'sample_merge',
+                  action   => \&sample_merge,
+                  requires => \&sample_merge_requires, 
+                  provides => \&sample_merge_provides },
                 { name     => 'cleanup',
                   action   => \&cleanup,
                   requires => \&cleanup_requires, 
@@ -111,7 +119,9 @@ our %options = (sequence_index => '/nfs/sf8/G1K/misc/sequence.index',
                 do_cleanup => 0,
                 do_chr_splits => 0,
                 do_recalibration => 0,
-                bsub_opts => '');
+                do_sample_merge => 0,
+                bsub_opts => '',
+                dont_wait => 1);
 
 =head2 new
 
@@ -130,6 +140,10 @@ our %options = (sequence_index => '/nfs/sf8/G1K/misc/sequence.index',
                                         bams; when true, recalibrates the
                                         platform-level bams, which will be used
                                         to make the individual-level bams)
+           dcc_hardlinks => boolean (default false: don't create hardlinks to
+                                     release files with DCC-style filenames)
+           do_sample_merge => boolean (default false: don't create sample-level
+                                       bams)
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -219,47 +233,47 @@ sub create_release_hierarchy {
     return $self->{Yes};
 }
 
-=head2 library_requires
+=head2 library_merge_requires
 
- Title   : library_requires
- Usage   : my $required_files = $obj->library_requires('/path/to/lane');
- Function: Find out what files the library action needs before it will run.
+ Title   : library_merge_requires
+ Usage   : my $required_files = $obj->library_merge_requires('/path/to/lane');
+ Function: Find out what files the library_merge action needs before it will run.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub library_requires {
+sub library_merge_requires {
     my $self = shift;
     return ['.release_hierarchy_made'];
 }
 
-=head2 library_provides
+=head2 library_merge_provides
 
- Title   : library_provides
- Usage   : my $provided_files = $obj->library_provides('/path/to/lane');
- Function: Find out what files the library action generates on success.
+ Title   : library_merge_provides
+ Usage   : my $provided_files = $obj->library_merge_provides('/path/to/lane');
+ Function: Find out what files the library_merge action generates on success.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub library_provides {
+sub library_merge_provides {
     my $self = shift;
     return ['.library_merge_done'];
 }
 
-=head2 library
+=head2 library_merge
 
- Title   : library
- Usage   : $obj->library('/path/to/lane', 'lock_filename');
+ Title   : library_merge
+ Usage   : $obj->library_merge('/path/to/lane', 'lock_filename');
  Function: Merge lane-level bams to the library level.
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : lane path, name of lock file to use
 
 =cut
 
-sub library {
+sub library_merge {
     my ($self, $lane_path, $action_lock) = @_;
     
     $self->merge_up_one_level($lane_path,
@@ -350,47 +364,47 @@ sub lib_rmdup {
     return $self->{No};
 }
 
-=head2 platform_requires
+=head2 platform_merge_requires
 
- Title   : platform_requires
- Usage   : my $required_files = $obj->platform_requires('/path/to/lane');
- Function: Find out what files the platform action needs before it will run.
+ Title   : platform_merge_requires
+ Usage   : my $required_files = $obj->platform_merge_requires('/path/to/lane');
+ Function: Find out what files the platform_merge action needs before it will run.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub platform_requires {
+sub platform_merge_requires {
     my $self = shift;
     return ['.lib_rmdup_done'];
 }
 
-=head2 platform_provides
+=head2 platform_merge_provides
 
- Title   : platform_provides
- Usage   : my $provided_files = $obj->platform_provides('/path/to/lane');
- Function: Find out what files the platform action generates on success.
+ Title   : platform_merge_provides
+ Usage   : my $provided_files = $obj->platform_merge_provides('/path/to/lane');
+ Function: Find out what files the platform_merge action generates on success.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub platform_provides {
+sub platform_merge_provides {
     my $self = shift;
     return ['.platform_merge_done'];
 }
 
-=head2 platform
+=head2 platform_merge
 
- Title   : platform
- Usage   : $obj->platform('/path/to/lane', 'lock_filename');
+ Title   : platform_merge
+ Usage   : $obj->platform_merge('/path/to/lane', 'lock_filename');
  Function: Merge library-level bams to the platform level.
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : lane path, name of lock file to use
 
 =cut
 
-sub platform {
+sub platform_merge {
     my ($self, $lane_path, $action_lock) = @_;
     
     $self->merge_up_one_level($lane_path,
@@ -403,52 +417,55 @@ sub platform {
     return $self->{No};
 }
 
-=head2 sample_requires
+=head2 sample_merge_requires
 
- Title   : sample_requires
- Usage   : my $required_files = $obj->sample_requires('/path/to/lane');
- Function: Find out what files the sample action needs before it will run.
+ Title   : sample_merge_requires
+ Usage   : my $required_files = $obj->sample_merge_requires('/path/to/lane');
+ Function: Find out what files the sample_merge action needs before it will run.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub sample_requires {
+sub sample_merge_requires {
     my $self = shift;
-    return $self->{do_recalibration} ? ['.recalibration_done'] : ['.platform_merge_done'];
+    return ['.release_files_done'];
 }
 
-=head2 sample_provides
+=head2 sample_merge_provides
 
- Title   : sample_provides
- Usage   : my $provided_files = $obj->sample_provides('/path/to/lane');
- Function: Find out what files the sample action generates on success.
+ Title   : sample_merge_provides
+ Usage   : my $provided_files = $obj->sample_merge_provides('/path/to/lane');
+ Function: Find out what files the sample_merge action generates on success.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub sample_provides {
+sub sample_merge_provides {
     my $self = shift;
-    return ['.sample_merge_done'];
+    return $self->{do_sample_merge} ? ['.sample_merge_done'] : [];
 }
 
-=head2 sample
+=head2 sample_merge
 
- Title   : sample
- Usage   : $obj->sample('/path/to/lane', 'lock_filename');
+ Title   : sample_merge
+ Usage   : $obj->sample_merge('/path/to/lane', 'lock_filename');
  Function: Merge platform-level bams to the sample level.
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : lane path, name of lock file to use
 
 =cut
 
-sub sample {
+sub sample_merge {
     my ($self, $lane_path, $action_lock) = @_;
+    return $self->{Yes} unless $self->{do_sample_merge};
+    
+    #*** probably going to have an issue with relative paths in .recalibrate_done ?
     
     $self->merge_up_one_level($lane_path,
                               $action_lock,
-                              $self->{do_recalibration} ? '.recalibration_done' : '.platform_merge_done',
+                              $self->{do_recalibration} ? '.recalibrate_done' : '.platform_merge_done',
                               'raw.bam',
                               'sample_merge',
                               '.sample_merge_expected');
@@ -596,7 +613,7 @@ sub recalibrate_requires {
 
 sub recalibrate_provides {
     my ($self, $lane_path) = @_;
-    return $self->{do_recalibration} ? ['.recalibration_done'] : ['.platform_merge_done'];
+    return $self->{do_recalibration} ? ['.recalibrate_done'] : ['.platform_merge_done'];
 }
 
 =head2 recalibrate
@@ -616,15 +633,19 @@ sub recalibrate {
     return $self->{Yes} unless $self->{do_recalibration};
     
     my $fofn = $self->{io}->catfile($lane_path, '.platform_merge_done');
-    my @in_bams = $self->{io}->parse_fofn($fofn);
+    my @in_bams = $self->{io}->parse_fofn($fofn, $lane_path);
     
-    my $out_fofn = $self->{io}->catfile($lane_path, '.recalibration_expected');
+    my $out_fofn = $self->{io}->catfile($lane_path, '.recalibrate_expected');
     unlink($out_fofn);
     
     my $verbose = $self->verbose;
     
+    my $orig_bsub_opts = $self->{bsub_opts};
+    $self->{bsub_opts} = '-q normal -M6000000 -R \'select[mem>6000] rusage[mem=6000]\'';
+    
     my @out_bams;
     foreach my $bam (@in_bams) {
+        $bam = $self->{io}->catfile($lane_path, $bam);
         my $out_bam = $bam;
         $out_bam =~ s/\.bam$/.recal.bam/;
         push(@out_bams, $out_bam);
@@ -640,6 +661,125 @@ sub recalibrate {
         print $ofh $out_bam, "\n";
     }
     my $expected = @out_bams;
+    print $ofh "# expecting $expected\n";
+    close($ofh);
+    
+    $self->{bsub_opts} = $orig_bsub_opts;
+    return $self->{NO};
+}
+
+=head2 create_release_files_requires
+
+ Title   : create_release_files_requires
+ Usage   : my $required_files = $obj->create_release_files_requires('/path/to/lane');
+ Function: Find out what files the create_release_files action needs before
+           it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub create_release_files_requires {
+    my $self = shift;
+    return $self->{do_recalibration} ? ['.recalibrate_done'] : ['.platform_merge_done'];
+}
+
+=head2 create_release_files_provides
+
+ Title   : create_release_files_provides
+ Usage   : my $provided_files = $obj->create_release_files_provides('/path/to/lane');
+ Function: Find out what files the create_release_files action generates on
+           success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub create_release_files_provides {
+    my ($self, $lane_path) = @_;
+    my @files = ('.create_release_files_done');
+    if ($self->{dcc_hardlinks}) {
+        push(@files, 'release_files.fofn', 'release_files.md5');
+    }
+    return \@files;
+}
+
+=head2 create_release_files
+
+ Title   : create_release_files
+ Usage   : $obj->create_release_files('/path/to/lane', 'lock_filename');
+ Function: Creates the set of platform-level files that form the release and
+           would be uploaded to the DCC. That is, .bai and .bas files are made
+           for each platform-level bam. .md5 files are made for all 3. If the
+           dcc_hardlinks option is supplied, will also make hardlinks to these
+           release files to give them DCC-style filenames. Always also makes
+           softlinks to the release files prefixed with 'release' (release.bam,
+           release.bam.bai, release.bam.bas), so that it is consistent to find
+           them, regardless of if recalibration was done or not.
+
+           At the end, if dcc_hardlinks option was supplied, will create two
+           files in the root of the release directory: release_files.fofn
+           (listing all the DCC-filenamed release files minus the md5s) and
+           release_files.md5 (containing all the md5 checksums for the release
+           files).
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub create_release_files {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    my $fofn = $self->{io}->catfile($lane_path, $self->{do_recalibration} ? '.recalibrate_done' : '.platform_merge_done');
+    my @in_bams = $self->{io}->parse_fofn($fofn, $lane_path);
+    
+    my $out_fofn = $self->{io}->catfile($lane_path, '.create_release_files_expected');
+    unlink($out_fofn);
+    if ($self->{dcc_hardlinks}) {
+        unlink($self->{io}->catfile($lane_path, 'release_files.fofn'));
+        unlink($self->{io}->catfile($lane_path, 'release_files.md5'));
+    }
+    
+    my $verbose = $self->verbose;
+    
+    my @release_files;
+    foreach my $bam (@in_bams) {
+        $bam = $self->{io}->catfile($lane_path, $bam);
+        my (undef, $path) = fileparse($bam);
+        my $release_name = File::Spec->catfile($path, 'release.bam');
+        
+        # md5 of bam & links
+        my $bam_md5 = $bam.'.md5';
+        unless (-s $bam_md5) {
+            LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
+                     qq{md5sum $bam > $bam_md5; ln -s $bam $release_name});
+        }
+        push(@release_files, $bam, $bam_md5);
+        
+        # bai & its md5 & links
+        my $bai = $bam.'.bai';
+        my $bai_md5 = $bai.'.md5';
+        unless (-s $bai && -s $bai_md5) {
+            LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
+                     qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$bam], qq[$bai]); die qq[index failed for $bam\n] unless -s qq[$bai]; system(qq[md5sum $bai > $bai_md5; ln -s $bai $release_name.bai]);"});
+        }
+        push(@release_files, $bai, $bai_md5);
+        
+        # bas & its md5 & links
+        my $bas = $bam.'.bas';
+        my $bas_md5 = $bas.'.md5';
+        unless (-s $bas && -s $bas_md5) {
+            LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
+                     qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$bas], qq[$self->{sequence_index}]); die qq[bas failed for $bam\n] unless -s qq[$bas]; system(qq[md5sum $bas > $bas_md5; ln -s $bas $release_name.bas]);"});
+        }
+        push(@release_files, $bas, $bas_md5);
+    }
+    
+    open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
+    foreach my $file (@release_files) {
+        print $ofh $file, "\n";
+    }
+    my $expected = @release_files;
     print $ofh "# expecting $expected\n";
     close($ofh);
     
@@ -699,7 +839,7 @@ sub cleanup {
     }
     
     my $file_base = $self->{io}->catfile($lane_path, $prefix);
-    foreach my $job_base (qw(library_merge lib_rmdup platform_merge platform_recalibration sample_merge)) {
+    foreach my $job_base (qw(library_merge lib_rmdup platform_merge platform_recalibration create_release_files sample_merge)) {
         foreach my $suffix ('o', 'e') {
             unlink("$file_base$job_base.$suffix");
         }
@@ -716,20 +856,67 @@ sub is_finished {
     if ($action_name eq 'cleanup') {
         return $self->{No};
     }
-    elsif ($action_name eq 'lib_rmdup') {
-        my $expected_file = $self->{io}->catfile($lane_path, ".lib_rmdup_expected");
-        my $done_file = $self->{io}->catfile($lane_path, ".lib_rmdup_done");
+    elsif ($action_name eq 'lib_rmdup' ||
+            $action_name eq 'library_merge' ||
+            $action_name eq 'platform_merge' ||
+            $action_name eq 'sample_merge' ||
+            $action_name eq 'recalibrate' ||
+            $action_name eq 'create_release_files') {
+        my $expected_file = $self->{io}->catfile($lane_path, ".${action_name}_expected");
+        my $done_file = $self->{io}->catfile($lane_path, ".${action_name}_done");
         $self->_merge_check($expected_file, $done_file);
     }
-    elsif ($action_name eq 'library' || $action_name eq 'platform' || $action_name eq 'sample') {
-        my $expected_file = $self->{io}->catfile($lane_path, ".${action_name}_merge_expected");
-        my $done_file = $self->{io}->catfile($lane_path, ".${action_name}_merge_done");
-        $self->_merge_check($expected_file, $done_file);
-    }
-    elsif ($action_name eq 'recalibrate') {
-        my $expected_file = $self->{io}->catfile($lane_path, ".recalibration_expected");
-        my $done_file = $self->{io}->catfile($lane_path, ".recalibration_done");
-        $self->_merge_check($expected_file, $done_file);
+    
+    if ($action_name eq 'create_release_files' &&
+            $self->{dcc_hardlinks} &&
+            -s $self->{io}->catfile($lane_path, ".create_release_files_done") &&
+            ! -s $self->{io}->catfile($lane_path, "release_files.fofn")) {
+        my $vuh = VertRes::Utils::Hierarchy->new();
+        
+        # make a release_files.fofn with all the bams and other files sans the
+        # md5s, and cat all the md5s into 1 file
+        my $rfofn = $self->{io}->catfile($lane_path, "release_files.fofn");
+        open(my $rfofnfh, '>', $rfofn) || $self->throw("Couldn't write to $rfofn");
+        my $rmd5 = $self->{io}->catfile($lane_path, "release_files.md5");
+        open(my $rmd5fh, '>', $rmd5) || $self->throw("Couldn't write to $rmd5");
+        
+        my $rdone = $self->{io}->catfile($lane_path, ".create_release_files_done");
+        open(my $rdfh, $rdone) || $self->throw("Couldn't open $rdone");
+        my $dcc_filename;
+        my $orig_name;
+        while (<$rdfh>) {
+            chomp;
+            /\S/ || next;
+            /^#/ && next;
+            my $file = $_;
+            my ($base, $path) = fileparse($file);
+            
+            if (/bam$/) {
+                $dcc_filename = $vuh->dcc_filename($file).'.bam';
+                $orig_name = $base;
+            }
+            
+            $base =~ s/$orig_name/$dcc_filename/;
+            
+            if ($file =~ /md5$/) {
+                open(my $md5fh, $file) || $self->throw("Couldn't open $_");
+                my $line = <$md5fh>;
+                my ($md5, $path) = split(' ', $line);
+                $base =~ s/\.md5$//;
+                print $rmd5fh $md5, "\t", $base, "\n";
+                close($md5fh);
+            }
+            else {
+                # make hardlink to DCC-style filename
+                my $dcc_path = File::Spec->catfile($path, $base);
+                unlink($dcc_path);
+                system("ln $file $dcc_path");
+                print $rfofnfh $dcc_path, "\n";
+            }
+        }
+        close($rdfh);
+        close($rmd5fh);
+        close($rfofnfh);
     }
     
     return $self->SUPER::is_finished($lane_path, $action);
