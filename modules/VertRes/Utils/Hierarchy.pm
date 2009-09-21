@@ -33,6 +33,7 @@ use File::Copy;
 use Cwd 'abs_path';
 use VertRes::Parser::sequence_index;
 use VertRes::Wrapper::samtools;
+use VertRes::Parser::sam;
 
 use base qw(VertRes::Base);
 
@@ -503,6 +504,17 @@ sub dcc_filename {
     $month = sprintf("%02d", $month + 1);
     
     my $algorithm = $ps->program || 'unknown_algorithm';
+    if ($algorithm eq 'unknown_algorithm') {
+        if ($platform =~ /SLX/) {
+            $algorithm = 'maq';
+        }
+        elsif ($platform =~ /454/) {
+            $algorithm = 'ssaha2';
+        }
+        elsif ($platform =~ /SOLID/) {
+            $algorithm = 'corona';
+        }
+    }
     
     $dcc_filename = "$sample.$chrom$platform$algorithm.$study.${year}_$month";
     
