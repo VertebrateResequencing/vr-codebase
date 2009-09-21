@@ -7,11 +7,11 @@ VertRes::Pipelines::Mapping - pipeline for mapping fastqs to reference
 # make a file of absolute paths to your desired lane directories, eg:
 find $G1K/data -type d -name "*RR*" | grep -v "SOLID" > lanes.fofn
 
-# make a config file:
-echo '<lanes.fofn verbose=1;do_cleanup=1' > pipeline.config
+# make a config file, which specifies a standard pre-created config file:
+echo '<lanes.fofn mapping-g1k.conf' > pipeline.config
 
 # run the pipeline:
-run-pipeline -c pipeline.config -t 30 -m VertRes::Pipelines::Mapping
+run-pipeline -c pipeline.config -s 30
 
 # (and make sure it keeps running by adding that last to a regular cron job)
 
@@ -62,7 +62,8 @@ our $actions = [ { name     => 'split',
 
 our %options = (sequence_index => '/nfs/sf8/G1K/misc/sequence.index',
                 local_cache => '',
-                do_cleanup => 0);
+                do_cleanup => 0,
+                dont_wait => 1);
 
 our $split_dir_name = 'split';
 
