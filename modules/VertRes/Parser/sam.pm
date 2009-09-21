@@ -603,8 +603,10 @@ sub next_result {
 sub get_fields {
     my ($self, @fields) = @_;
     
-    unless (defined $self->{_cbam}) {
+    my $fh_id = $self->_fh_id || return;
+    unless (defined $self->{"_getfields_$fh_id"}) {
         ($self->{_chead}, $self->{_cbam}, $self->{_cb}) = $self->_initialize_bam($self->file());
+        $self->{"_getfields_$fh_id"} = 1;
     }
     
     return $self->_get_fields($self->{_cbam}, $self->{_cb}, $self->{_chead}, @fields);
