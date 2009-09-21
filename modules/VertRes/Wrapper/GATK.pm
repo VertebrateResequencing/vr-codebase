@@ -79,10 +79,10 @@ sub new {
     
     my $self = $class->SUPER::new(exe => $DEFAULT_GATK_JAR, @args);
     
-    $self->exe('java -Xmx4000m -jar '.$self->exe);
+    $self->exe('java -Xmx6000m -jar '.$self->exe);
     
     # our bsub jobs will get killed if we don't select high-mem machines
-    $self->bsub_options(M => 4000000, R => "'select[mem>4000] rusage[mem=4000]'");
+    $self->bsub_options(M => 6000000, R => "'select[mem>6000] rusage[mem=6000]'");
     
     # default settings
     $self->{_default_R} = delete $self->{reference} || $DEFAULT_REFERENCE;
