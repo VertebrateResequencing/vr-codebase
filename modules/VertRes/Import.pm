@@ -134,8 +134,8 @@ sub get_files
     my ($self) = @_;
 
     my $prefix = $$self{prefix};
-    my @files = ();         # to be gzipped
-    my @fastqcheck = ();    # to be fastqchecked
+    my @gzip_files = ();    # to be gzipped .. only the new splitted files
+    my @fastqcheck = ();    # to be fastqchecked .. only the new splitted files 
     for my $file (@{$$self{files}})
     {
         if ( -e "$file.gz" ) { next; }
@@ -149,25 +149,21 @@ sub get_files
             my $run  = $1;
             my $lane = $2;
             my ($file1,$file2) = $self->split_single_fastq($file,$run,$lane);
-            push @files, $file1,$file2;
+            push @gzip_files, $file1,$file2;
             push @fastqcheck, $file1,$file2;
         }
-        else
-        {
-            push @fastqcheck, $file;
-        }
-        push @files,$file;
+        push @gzip_files,$file;
     }
 
     for my $file (@fastqcheck)
     {
-        if ( ! -e "$file.md5" ) { Utils::CMD(qq[md5sum $file > $file.md5]); }
-        if ( -e "$file.gz" ) { next; }
+        if ( -e $file && ! -e "$file.md5" ) { Utils::CMD(qq[md5sum $file > $file.md5]); }
+        if ( -e "$file.gz.fastqcheck" ) { next; }
 
         Utils::CMD(qq[cat $file | $$self{fastqcheck} > $file.gz.fastqcheck;]);
     }
 
-    for my $file (@files)
+    for my $file (@gzip_files)
     {
         if ( -e "$file.gz" ) { next; }
 
@@ -287,6 +283,8 @@ sub update_db
     my $i = 0;
     while (1)
     {
+        # Check what fastq files actually exist in the hierarchy and update
+        #   their qc_status.
         $i++;
         my $name = "$$self{lane}_$i.fastq";
 
@@ -312,22 +310,27 @@ sub update_db
         $vrfile->read_len($fastq->avg_length());
         $vrfile->raw_bases($fastq->total_length());
         $vrfile->raw_reads($fastq->num_sequences());
-        $vrfile->qc_status('no_qc');
+        $vrfile->mean_q($fastq->avg_qual()); 
+        my $qc_status = $vrfile->qc_status();
+        if ( !$qc_status ) { $vrfile->qc_status('no_qc'); } # Never change status which was set manually
         $vrfile->update();
     }
 
-    # If the fastq files were created by splitting of the \d+_s_\d+.fastq file, change also the singlet qc status.
+    # Change also the qc status of the single _s_ file, if there is any. To find out,
+    #   loop through the files supplied by run-pipeline.
     for my $file (@{$$self{files}})
     {
-        if ( !($file=~/^(\d+)_s_(\d+)\./) ) { next; }
+        if ( !($file=~/^\d+_s_\d+\./) ) { next; }
+
         my $vrfile = $vrlane->get_file_by_name($file);
         my $qc_status = $vrfile->qc_status();
-        if ( !$qc_status ) { $vrfile->qc_status('no_qc'); }
+        if ( !$qc_status ) { $vrfile->qc_status('no_qc'); } # Never change status which was set manually
         $vrfile->update();
     }
 
+    # Change the qc status of the lane.
     my $qc_status = $vrlane->qc_status();
-    if ( !$qc_status ) { $vrlane->qc_status('no_qc'); }
+    if ( !$qc_status ) { $vrlane->qc_status('no_qc'); } # Never change status which was set manually
     $vrlane->update();
 
     return $$self{Yes};

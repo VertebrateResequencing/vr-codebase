@@ -136,6 +136,7 @@ sub parse_bam_line
     $$out{'cigar'} = $items[5];
     $$out{'isize'} = $items[8];
     $$out{'seq'}   = $items[9];
+    $$out{'qual'}  = $items[10];
 
     my $nitems = @items;
     for (my $i=11; $i<$nitems; $i++)
@@ -163,6 +164,27 @@ sub parse_bam_line
     return $out;
 }
 
+sub soft_clip
+{
+    my ($threshold,$quals,$len) = @_;
+
+    my $sum = 0;
+    my $max = 0;
+    my $max_l = $len-1;
+    my $l = $max_l;
+    for (my $l=$max_l; $l>=35-1; $l--)
+    {
+        $sum += $threshold - (ord(substr($quals,$l,1)) - 33);
+        if ( $sum<0 ) { last; }
+        if ( $sum>$max )
+        {
+            $max = $sum;
+            $max_l = $l;
+        }
+    }
+    return ($max_l + 1);
+}
+
 
 =head2 collect_detailed_bam_stats
 
@@ -170,11 +192,12 @@ sub parse_bam_line
                         histograms of insert size; QC content of mapped and both mapped
                         and unmapped sequences; reads distribution with respect to
                         chromosomes; duplication rate.
-        Arg [1]    : The .bam file (sorted and indexed).
+        Arg [1]    : The .bam file (sorted and indexed) or a filehandle.
         Arg [2]    : The .fai file (to determine chromosome lengths). (Can be NULL with do_chrm=>0.)
         Arg [3]    : Options (hash) [Optional]
         Options    : (see the code for default values)
                         do_chrm          .. should collect the chromosome distrib. stats.
+                        do_clipped       .. collect the number of bases left after BWA clipping, use the given threshold
                         do_gc_content    .. should we collect the gc_content (default is 1)
                         do_rmdup         .. default is 1 (calculate the rmdup)
 
@@ -214,9 +237,10 @@ sub collect_detailed_bam_stats
     my $insert_size_bin = exists($$options{'insert_size_bin'}) ? $$options{'insert_size_bin'} : 1;
     my $gc_content_bin  = exists($$options{'gc_content_bin'}) ? $$options{'gc_content_bin'} : 1;
 
-    my $do_chrm  = exists($$options{'do_chrm'}) ?  $$options{'do_chrm'} : 1;
-    my $do_gc    = exists($$options{'do_gc_content'}) ? $$options{'do_gc_content'} : 1;
-    my $do_rmdup = exists($$options{'do_rmdup'}) ? $$options{'do_rmdup'} : 1;
+    my $do_clipped   = exists($$options{'do_clipped'}) ?  $$options{'do_clipped'} : 0;
+    my $do_chrm      = exists($$options{'do_chrm'}) ?  $$options{'do_chrm'} : 1;
+    my $do_gc        = exists($$options{'do_gc_content'}) ? $$options{'do_gc_content'} : 1;
+    my $do_rmdup     = exists($$options{'do_rmdup'}) ? $$options{'do_rmdup'} : 1;
     my $chrm_lengths = $do_chrm ? Utils::fai_chromosome_lengths($fai_file) : {};
 
 
@@ -237,7 +261,9 @@ sub collect_detailed_bam_stats
     #   keys are 'total' and IDs.
     #
     my $i=0;
-    open(my $fh, "samtools view -h $bam_file |") or Utils::error("samtools view -h $bam_file |: $!");
+    my $fh;
+    if ( ref($bam_file) eq 'GLOB' ) { $fh=$bam_file; }
+    else { open($fh, "samtools view -h $bam_file |") or Utils::error("samtools view -h $bam_file |: $!"); }
     while (my $line=<$fh>)
     {
         # Header line:
@@ -278,14 +304,25 @@ sub collect_detailed_bam_stats
             $$out_stats{$stat}{'bases_total'} += $seq_len;
         }
 
+        my $soft_clip = 0;
+        my $nmapped = 0;
+        my $cigar_info;
+        if ( $cigar ne '*' )
+        {
+            $cigar_info = cigar_stats($cigar);
+            if ( exists($$cigar_info{'M'}) ) { $nmapped += $$cigar_info{'M'}; }
+            if ( exists($$cigar_info{'I'}) ) { $nmapped += $$cigar_info{'I'}; }
+            $soft_clip += $nmapped;
+        }
+        elsif ( $do_clipped )
+        {
+            $soft_clip += soft_clip($do_clipped,$$data{qual},$seq_len);
+        }
+        for my $stat (@stats) { $$out_stats{$stat}{clip_bases} += $soft_clip; } 
+
         if ( !($flag & $$FLAGS{'unmapped'}) )
         {
             # Stats which make sense only for mapped reads.
-
-            my $cigar_info = cigar_stats($cigar);
-            my $nmapped = 0;
-            if ( exists($$cigar_info{'M'}) ) { $nmapped += $$cigar_info{'M'}; }
-            if ( exists($$cigar_info{'I'}) ) { $nmapped += $$cigar_info{'I'}; }
             my $mismatch = exists($$data{'NM'}) ? $$data{'NM'} : 0;
             for my $stat (@stats) 
             { 
@@ -355,10 +392,11 @@ sub collect_detailed_bam_stats
             }
         }
 
-        #if ( $i++>50000 ) { last }
+        #if ( $i++>5000 ) { last }
     }
     close $fh;
 
+    # If some type of reads were not present, set the values to 0.
     for my $stat (keys %$out_stats) 
     { 
         $$out_stats{$stat}{'reads_unmapped'} = 0 unless exists($$out_stats{$stat}{'reads_unmapped'});
@@ -372,32 +410,22 @@ sub collect_detailed_bam_stats
         $$out_stats{$stat}{'reads_mapped'} = $$out_stats{$stat}{'reads_total'} - $$out_stats{$stat}{'reads_unmapped'};
     }
 
-    # Find out the duplication rate
+    # Find out the duplication rate. For this, run rmdup.
     if ( $do_rmdup )
     {
-        my ($rmdup_reads_total,$rmdup_reads_mapped);
+        # Run the same routine recursively to get the same stats from the rmdupped file.
+        my $rmdup_opts = { do_rmdup=>0, do_chrm=>0, do_gc=>0, do_clipped=>0 };
+        open(my $rmdup_fh,"samtools rmdup $bam_file - | samtools view - |") or Utils::error("samtools rmdup $bam_file - | samtools view - |: $!");
+        my $rmdup_stats = collect_detailed_bam_stats($rmdup_fh,0,$rmdup_opts);
+        close($rmdup_fh);
 
-        # Gets the '1854311 mapped (94.42%)' line from the flagstat output.
-        #   '1854311 mapped (94.42%)' -> 1854311
-        my @out = Utils::CMD("samtools rmdup $bam_file - | samtools flagstat -");
-        for my $line (@out)
+        for my $stat (keys %$rmdup_stats)
         {
-            # 1963832 in total
-            if ( $line=~/^(\d+) in total/ )
-            {
-                $rmdup_reads_total = $1;
-                next;
-            }
-
-            # 1854311 mapped (94.42%)
-            if ( $line=~/^(\d+) mapped \(/ )
-            {
-                $rmdup_reads_mapped = $1;
-                next;
-            }
+            $$out_stats{$stat}{rmdup_bases_mapped_cigar} = $$rmdup_stats{$stat}{bases_mapped_cigar};
+            $$out_stats{$stat}{rmdup_bases_total}        = $$rmdup_stats{$stat}{bases_total};
+            $$out_stats{$stat}{rmdup_reads_total}        = $$rmdup_stats{$stat}{reads_total};
+            $$out_stats{$stat}{rmdup_reads_mapped}       = $$rmdup_stats{$stat}{reads_mapped};
         }
-        $$out_stats{'total'}{'rmdup_reads_total'}  = $rmdup_reads_total;
-        $$out_stats{'total'}{'rmdup_reads_mapped'} = $rmdup_reads_mapped;
     }
 
     # Now process the results. The out_stats hash now contains the total statistics (the key 'total')
@@ -409,10 +437,9 @@ sub collect_detailed_bam_stats
     {
         $$out_stats{$stat}{error_rate} = $$out_stats{$stat}{'num_mismatches'} ? $$out_stats{$stat}{'num_mismatches'}/$$out_stats{$stat}{'bases_total'} : 0;
 
-        if ( exists($$out_stats{$stat}{'rmdup_reads_mapped'}) )
+        if ( exists($$out_stats{$stat}{'rmdup_bases_mapped_cigar'}) )
         {
-            $$out_stats{$stat}{'duplication'} = 1 - 
-                $$out_stats{$stat}{'rmdup_reads_mapped'} / ($$out_stats{$stat}{'reads_total'}-$$out_stats{$stat}{'reads_unmapped'});
+            $$out_stats{$stat}{'duplication'} = 1 - $$out_stats{$stat}{'rmdup_reads_mapped'} / $$out_stats{$stat}{'reads_mapped'};
         }
 
         if ( exists($$out_stats{$stat}{insert_size_freqs}) )

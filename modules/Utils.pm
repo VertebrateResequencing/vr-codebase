@@ -459,6 +459,26 @@ sub cmp_mixed($$)
     return $a cmp $b;
 }
 
+# Numbers go first, then the rest.
+sub cmp_chrpos
+{
+    my ($chr1,$pos1,$chr2,$pos2) = @_;
+
+    if ( $chr1 eq $chr2 ) { return $pos1<=>$pos2; }
+
+    if ( $chr1=~/^\d+$/ )
+    {
+        if ( $chr2=~/^\d+$/ ) { return $chr1<=>$chr2; }
+        return -1;
+    }
+    elsif ( $chr2=~/^\d+$/ )
+    {
+        return 1;
+    }
+    return $chr1 cmp $chr2;
+}
+
+
 
 =head2 log_msg
 
@@ -504,6 +524,23 @@ sub mysql_query
     return $sth;
 }
 
+
+sub aa_to_iupac
+{
+    my ($a,$b) = @_;
+    my $ab = join('', sort($a,$b));
+
+    my %iupac = (
+            'GT' => 'K',
+            'AC' => 'M',
+            'CG' => 'S',
+            'AG' => 'R',
+            'AT' => 'W',
+            'CT' => 'Y',
+            );
+    if ( exists($iupac{$ab}) ) { return $iupac{$ab}; }
+    return undef;
+}
 
 
 1;
