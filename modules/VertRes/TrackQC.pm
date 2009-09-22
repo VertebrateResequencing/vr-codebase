@@ -963,6 +963,7 @@ sub update_db
     if ( -e "$sample_dir/gc-depth.png" ) { $images{'gc-depth.png'} = 'GC Depth'; }
     if ( -e "$sample_dir/fastqcheck_1.png" ) { $images{'fastqcheck_1.png'} = 'FastQ Check 1'; }
     if ( -e "$sample_dir/fastqcheck_2.png" ) { $images{'fastqcheck_2.png'} = 'FastQ Check 2'; }
+    if ( -e "$sample_dir/fastqcheck.png" ) { $images{'fastqcheck.png'} = 'FastQ Check'; }
 
     my $nadapters = 0;
     if ( -e "$sample_dir/${name}_1.nadapters" ) { $nadapters += do "$sample_dir/${name}_1.nadapters"; }
