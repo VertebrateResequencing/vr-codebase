@@ -158,9 +158,7 @@ sub _get_header {
     my $self = shift;
     
     my $fh = $self->fh() || return;
-    my $fh_id = $self->_fh_id;
-    
-    return 1 if $self->{'_got_header'.$fh_id};
+    return 1 if $self->_header_parsed();
     
     my $saw = 0;
     while (<$fh>) {
@@ -182,7 +180,7 @@ sub _get_header {
     }
     
     if ($saw == 3) {
-        $self->{'_got_header'.$fh_id} = 1;
+        $self->_set_header_parsed();
         return 1;
     }
     return;
@@ -246,7 +244,6 @@ sub next_result {
     return 1;
 }
 
-
 =head2 avg_base_quals
 
  Title   : avg_base_quals
@@ -258,27 +255,65 @@ sub next_result {
 
 =cut
 
-sub avg_base_quals
-{
-    my ($self) = @_;
-
-    my (@bases,@quals);
-    while ($self->next_result()) 
-    {
-        if ( !$self->{_result_holder}->[0] ) { next; }
-
-        my $sum    = 0;
-        my $nvals  = 0;
-        my $nquals = scalar @{$$self{_result_holder}} - 1;
-        for (my $i=6; $i<$nquals; $i++)
-        {
-            $nvals += $$self{_result_holder}->[$i];
-            $sum   += $$self{_result_holder}->[$i] * ($i-6);
-        }
-        push @bases, $$self{_result_holder}->[0];
-        push @quals, $sum/$nvals;
+sub avg_base_quals {
+    my $self = shift;
+    
+    $self->_save_position || return;
+    $self->_seek_first_result();
+    my $rh = $self->result_holder();
+    
+    my (@bases, @quals);
+    while ($self->next_result()) {
+        next unless $self->{_result_holder}->[0];
+        push @bases, $rh->[0];
+        push @quals, $self->_avg_base_qual;
     }
-    return (\@bases,\@quals);
+    
+    $self->_restore_position;
+    
+    return (\@bases, \@quals);
+}
+
+=head2 avg_qual
+
+ Title   : avg_qual
+ Usage   : my $avg_qual = $pars->avg_qual();
+ Function: Get the average quality of all bases.
+ Returns : float
+ Args    : n/a (new() or file() must allready have been supplied with a
+                filename or filehandle)
+
+=cut
+
+sub avg_qual {
+    my $self = shift;
+    
+    $self->_save_position || return;
+    $self->_seek_first_result();
+    
+    $self->next_result();
+    
+    my $avg_qual = $self->_avg_base_qual;
+    
+    $self->_restore_position;
+    
+    return $avg_qual;
+}
+
+sub _avg_base_qual {
+    my $self = shift;
+    my $rh = $self->result_holder();
+    
+    my $sum    = 0;
+    my $nvals  = 0;
+    my $nquals = $#{$rh} - 1;
+    for my $i (6..$nquals) {
+        $nvals += $rh->[$i];
+        $sum   += $rh->[$i] * ($i-6);
+    }
+    my $avg_qual = $sum / $nvals;
+    
+    return $avg_qual;
 }
 
 1;
