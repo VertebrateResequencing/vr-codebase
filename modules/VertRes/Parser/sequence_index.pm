@@ -90,9 +90,7 @@ sub _get_header {
     my $self = shift;
     
     my $fh = $self->fh() || return;
-    my $fh_id = $self->_fh_id;
-    
-    return 1 if $self->{'_got_header'.$fh_id};
+    return 1 if $self->_header_parsed();
     
     my $saw = 0;
     while (<$fh>) {
@@ -117,7 +115,7 @@ sub _get_header {
     }
     
     if ($saw) {
-        $self->{'_got_header'.$fh_id} = 1;
+        $self->_set_header_parsed();
         return 1;
     }
     return;
@@ -316,10 +314,7 @@ sub get_lanes {
     my %lanes;
     
     # parse the whole file
-    my $fh = $self->fh || return;
-    my $fh_id = $self->_fh_id;
-    delete $self->{'_got_header'.$fh_id};
-    $self->seek(0, 0);
+    $self->_seek_first_result();
     RESULT: while ($self->next_result) {
         if ($do_ignores) {
             keys %ignores; # reset the iterator, since we may have nexted out
