@@ -138,10 +138,8 @@ sub get_files
     my @fastqcheck = ();    # to be fastqchecked .. only the new splitted files 
     for my $file (@{$$self{files}})
     {
-        if ( -e "$file.gz" ) { next; }
-
-        Utils::CMD(qq[$$self{mpsa} -m -f $file > $file.md5]);
-        Utils::CMD(qq[$$self{mpsa} -c -f $file > $file]);
+        Utils::CMD(qq[$$self{mpsa} -m -f $file > $file.md5]) unless -e  "$file.md5";
+        Utils::CMD(qq[$$self{mpsa} -c -f $file > $file]) unless -e "$file";
         Utils::CMD(qq[md5sum -c $file.md5]);
 
         if ( $file=~/^(\d+)_s_(\d+)\./ )
@@ -179,6 +177,8 @@ sub split_single_fastq
     my ($self,$file,$run,$lane) = @_;
     my $fname1 = qq[${run}_${lane}_1.fastq];
     my $fname2 = qq[${run}_${lane}_2.fastq];
+
+    if ( -e "$fname1.gz" && -e "$fname2.gz" ) { return; }
 
     open(my $fh_in,'<',$file) or $self->throw("$file: $!");
     open(my $fh_out1,'>',$fname1) or $self->throw("$fname1: $!");
