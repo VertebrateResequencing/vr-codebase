@@ -904,7 +904,7 @@ sub update_db_requires
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
     my $name = $$self{lane};
-    my @requires = ("$sample_dir/chrom-distrib.png","$sample_dir/gc-content.png","$sample_dir/insert-size.png",
+    my @requires = ("$sample_dir/chrom-distrib.png","$sample_dir/gc-content.png",
         "$sample_dir/gc-depth.png","$sample_dir/${name}.gtype","$sample_dir/$$self{stats_dump}");
     return \@requires;
 }
