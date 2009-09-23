@@ -262,9 +262,10 @@ sub avg_base_quals {
     $self->_seek_first_result();
     my $rh = $self->result_holder();
     
+    $self->next_result();
+    
     my (@bases, @quals);
     while ($self->next_result()) {
-        next unless $self->{_result_holder}->[0];
         push @bases, $rh->[0];
         push @quals, $self->_avg_base_qual;
     }
