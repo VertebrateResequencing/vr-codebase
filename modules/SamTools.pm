@@ -435,7 +435,8 @@ sub collect_detailed_bam_stats
     #
     for my $stat (keys %$out_stats)
     {
-        $$out_stats{$stat}{error_rate} = $$out_stats{$stat}{'num_mismatches'} ? $$out_stats{$stat}{'num_mismatches'}/$$out_stats{$stat}{'bases_total'} : 0;
+        $$out_stats{$stat}{error_rate} = $$out_stats{$stat}{'num_mismatches'} ? 
+                                                $$out_stats{$stat}{'num_mismatches'}/$$out_stats{$stat}{'bases_mapped_cigar'} : 0;
 
         if ( exists($$out_stats{$stat}{'rmdup_bases_mapped_cigar'}) )
         {
