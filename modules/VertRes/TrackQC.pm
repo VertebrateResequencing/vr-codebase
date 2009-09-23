@@ -761,7 +761,7 @@ sub run_graphs
 
     if ( $total_reads != $$stats{reads_total} )
     {
-        $self->throw("Sanity check failed, different number of reads in fastq files and $bam_file\n");
+        $self->warn("Sanity check failed, different number of reads in fastq files and $bam_file ($total_reads .. $$stats{reads_total})\n");
     }
 
 
