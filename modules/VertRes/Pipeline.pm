@@ -240,6 +240,8 @@ sub what_files_are_missing
 =head2 clean
 
         Description : The default routine cleans all lock files. The pipelines should implement the cleaning.
+                        If task is set, all files listed by call of 'provides' for this task will be deleted.
+                        This will effectively force to rerun the task once next time.
         Returntype  : None
 
 =cut
@@ -253,9 +255,23 @@ sub clean
     for my $action (@{$self->{'actions'}})
     {
         my $action_lock = "$$self{'lane_path'}/$$self{'prefix'}$$action{'name'}.jids";
-        if ( ! -e $action_lock ) { next }
-        $self->debug("unlink $action_lock\n");
-        unlink($action_lock) or $self->throw("Could not unlink $action_lock: $!");
+        if ( -e $action_lock ) 
+        { 
+            $self->debug("unlink $action_lock\n");
+            unlink($action_lock) or $self->throw("Could not unlink $action_lock: $!");
+        }
+
+        # Clean the files for each listed task.
+        if ( $$self{'task'}{$$action{name}} && (my $provides=&{$$action{'provides'}}($self,$$self{lane_path})) )
+        {
+            for my $file (@$provides)
+            {
+                my $file_path = index($file, '/') == 0 ? $file : "$$self{lane_path}/$file";
+                if ( !(-e $file_path) ) { next; }
+                $self->debug("unlink $file_path\n");
+                unlink($file_path) or $self->throw("Could not unlink $file_path: $!");
+            }
+        }
     }
 
     return;
