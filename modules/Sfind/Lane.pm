@@ -23,6 +23,8 @@ jws@sanger.ac.uk
 use strict;
 use warnings;
 no warnings 'uninitialized';
+BEGIN { push(@INC,qw(/software/solexa/lib/site_perl/5.8.8)) }
+use npg::api::run_lane;
 use Sfind::Fastq;
 
 =head2 new
@@ -196,6 +198,7 @@ sub pair_run_name {
 }
 
 
+
 =head2 read_len
 
   Arg [1]    : read_len (optional)
@@ -295,6 +298,30 @@ sub get_fastq_by_filename {
     my ($self, $filename) = @_;
     my $obj = Sfind::Fastq->new($filename);
     return $obj;
+}
+
+
+=head2 npg_qc
+
+  Arg [1]    : none
+  Example    : my $npg_qc = $lane->npg_qc();
+  Description: get npg manual qc for this lane.
+  Returntype : npg_qc status string
+
+=cut
+
+sub npg_qc {
+    my ($self) = @_;
+    unless ($self->{'npg_qc'}){
+        my $rl=npg::api::run_lane->new({id_run=>$self->run_name,position=>$self->run_lane}); 
+        if ($rl){
+            $self->{'npg_qc'} = $rl->manual_qc;
+        }
+        else {
+            warn "Can't get NPG run_lane for ",$self->run_name,"_",$self->run_lane,"\n";
+        }
+    }
+    return $self->{'npg_qc'};
 }
 
 
