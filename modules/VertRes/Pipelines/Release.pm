@@ -26,6 +26,7 @@ data =>
 # sequence_index => path (a G1K default exists)
 # do_chr_splits => 1
 # do_sample_merge => 1
+# skip_fails => 1
 
 # make another file that simply also contains the release directory:
 echo "/path/to/rel_dir" > rel.fod
@@ -144,6 +145,8 @@ our %options = (sequence_index => '/nfs/sf8/G1K/misc/sequence.index',
                                      release files with DCC-style filenames)
            do_sample_merge => boolean (default false: don't create sample-level
                                        bams)
+           skip_fails => boolean (default false; when true, if some jobs fail,
+                                  continue to the next action anyway)
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -864,7 +867,7 @@ sub is_finished {
             $action_name eq 'create_release_files') {
         my $expected_file = $self->{io}->catfile($lane_path, ".${action_name}_expected");
         my $done_file = $self->{io}->catfile($lane_path, ".${action_name}_done");
-        $self->_merge_check($expected_file, $done_file);
+        $self->_merge_check($expected_file, $done_file, $lane_path);
     }
     
     if ($action_name eq 'create_release_files' &&
@@ -875,21 +878,36 @@ sub is_finished {
         
         # make a release_files.fofn with all the bams and other files sans the
         # md5s, and cat all the md5s into 1 file
-        my $rfofn = $self->{io}->catfile($lane_path, "release_files.fofn");
+        my $rfofn = $self->{io}->catfile($lane_path, "release_files.fofn.tmp");
         open(my $rfofnfh, '>', $rfofn) || $self->throw("Couldn't write to $rfofn");
-        my $rmd5 = $self->{io}->catfile($lane_path, "release_files.md5");
+        my $rmd5 = $self->{io}->catfile($lane_path, "release_files.md5.tmp");
         open(my $rmd5fh, '>', $rmd5) || $self->throw("Couldn't write to $rmd5");
         
         my $rdone = $self->{io}->catfile($lane_path, ".create_release_files_done");
         open(my $rdfh, $rdone) || $self->throw("Couldn't open $rdone");
         my $dcc_filename;
         my $orig_name;
+        local $| = 1;
+        print "making links ";
+        my $doti = 0;
         while (<$rdfh>) {
             chomp;
             /\S/ || next;
             /^#/ && next;
             my $file = $_;
             my ($base, $path) = fileparse($file);
+            
+            $doti++;
+            if ($doti == 1) {
+                print "\b\b\b.  ";
+            }
+            elsif ($doti == 2) {
+                print "\b\b.. ";
+            }
+            if ($doti == 3) {
+                print "\b...";
+                $doti = 0;
+            }
             
             if (/bam$/) {
                 $dcc_filename = $vuh->dcc_filename($file).'.bam';
@@ -915,15 +933,18 @@ sub is_finished {
             }
         }
         close($rdfh);
+        print $rfofnfh $self->{io}->catfile($lane_path, "release_files.md5"), "\n";
         close($rmd5fh);
         close($rfofnfh);
+        move($rfofn, $self->{io}->catfile($lane_path, "release_files.fofn"));
+        move($rmd5, $self->{io}->catfile($lane_path, "release_files.md5"));
     }
     
     return $self->SUPER::is_finished($lane_path, $action);
 }
 
 sub _merge_check {
-    my ($self, $expected_file, $done_file) = @_;
+    my ($self, $expected_file, $done_file, $lane_path) = @_;
     
     if (-s $expected_file && ! -e $done_file) {
         my $done_bams = 0;
@@ -931,6 +952,7 @@ sub _merge_check {
         my $written_expected;
         open(my $efh, $expected_file) || $self->throw("Couldn't open $expected_file");
         my @bams;
+        my @skipped;
         while (<$efh>) {
             chomp;
             /\S/ || next;
@@ -939,11 +961,36 @@ sub _merge_check {
                 next;
             }
             $expected_bams++;
-            $done_bams++ if -s $_;
+            if (-s $_) {
+                $done_bams++;
+                push(@bams, $_);
+            }
+            else {
+                push(@skipped, $_);
+            }
         }
         
         if ($written_expected == $expected_bams && $done_bams == $expected_bams) {
             move($expected_file, $done_file) || $self->throw("Failed to move $expected_file -> $done_file");
+        }
+        elsif ($written_expected == $expected_bams && $self->{skip_fails}) {
+            my $new_expected = @bams;
+            my $diff = $expected_bams - $done_bams;
+            $self->warn("$diff files are being skipped! See skipped_files.fofn in your release directory.\n");
+            
+            open(my $dfh, '>', $done_file) || $self->throw("Couldn't write to $done_file");
+            foreach my $bam (@bams) {
+                print $dfh $bam, "\n";
+            }
+            print $dfh "# expecting $new_expected\n";
+            close($dfh);
+            
+            my $skip_file = $self->{io}->catfile($lane_path, 'skipped_files.fofn');
+            open(my $sfh, '>>', $skip_file) || $self->throw("Couldn't write to $skip_file");
+            foreach my $bam (@skipped) {
+                print $sfh $bam, "\n";
+            }
+            close($sfh);
         }
     }
 }
