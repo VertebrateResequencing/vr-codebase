@@ -97,6 +97,7 @@ sub get_fastqs
     {
         # If all gzipped files are in place, everything has been done already.
         if ( !-e qq[$lane_path/$file.gz] ) { $must_be_run=1; last; }
+        if ( !-e qq[$lane_path/$file.gz.fastqcheck] ) { $must_be_run=1; last; }
     }
     if ( !$must_be_run ) { return $$self{No}; }
 
@@ -138,9 +139,15 @@ sub get_files
     my @fastqcheck = ();    # to be fastqchecked .. only the new splitted files 
     for my $file (@{$$self{files}})
     {
-        Utils::CMD(qq[$$self{mpsa} -m -f $file > $file.md5]) unless -e  "$file.md5";
-        Utils::CMD(qq[$$self{mpsa} -c -f $file > $file]) unless -e "$file";
-        Utils::CMD(qq[md5sum -c $file.md5]);
+        Utils::CMD(qq[$$self{mpsa} -m -f $file > $file.md5]) unless -e "$file.md5";
+        Utils::CMD(qq[$$self{mpsa} -c -f $file > $file]) unless ( -e "$file.gz" || -e $file );
+        if ( -e $file )
+        {
+            # This should always be true if everything goes alright. But if the subroutine is called
+            #   again after an error, the file may be already gzipped. Will be executed only once, 
+            #   when $file is not gzipped yet.
+            Utils::CMD(qq[md5sum -c $file.md5]);
+        }
 
         if ( $file=~/^(\d+)_s_(\d+)\./ )
         {
@@ -151,6 +158,7 @@ sub get_files
             push @fastqcheck, $file1,$file2;
         }
         push @gzip_files,$file;
+        push @fastqcheck,$file;
     }
 
     for my $file (@fastqcheck)
@@ -158,7 +166,14 @@ sub get_files
         if ( -e $file && ! -e "$file.md5" ) { Utils::CMD(qq[md5sum $file > $file.md5]); }
         if ( -e "$file.gz.fastqcheck" ) { next; }
 
-        Utils::CMD(qq[cat $file | $$self{fastqcheck} > $file.gz.fastqcheck;]);
+        if ( -e $file )
+        {
+            Utils::CMD(qq[cat $file | $$self{fastqcheck} > $file.gz.fastqcheck;]);
+        }
+        elsif ( -e "$file.gz" )
+        {
+            Utils::CMD(qq[zcat $file.gz | $$self{fastqcheck} > $file.gz.fastqcheck;]);
+        }
     }
 
     for my $file (@gzip_files)
