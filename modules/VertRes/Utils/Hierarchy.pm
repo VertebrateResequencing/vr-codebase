@@ -443,8 +443,8 @@ sub dcc_filename {
     my %readgroup_info = $ps->readgroup_info();
     while (my ($rg, $info) = each %readgroup_info) {
         # there should only be one of these, so we just keep resetting it
-        # (there's no proper tag for holding project, so the mapping pipeline
-        # sticks the project into the description tag 'DS')
+        # (there's no proper tag for holding study, so the mapping pipeline
+        # sticks the study into the description tag 'DS')
         $study = $info->{DS} || 'unknown_study';
         $sample = $info->{SM} || 'unknown_sample';
         
@@ -462,6 +462,25 @@ sub dcc_filename {
             $platform = '454';
         }
         $techs{$platform}++;
+    }
+    
+    # old bams don't have study in DS tag
+    if ($study eq 'unknown_study') {
+        my (undef, $bam_dir) = fileparse($file);
+        my @dirs = File::Spec->splitdir($bam_dir);
+        if ($dirs[-1] eq '') {
+            pop @dirs;
+        }
+        my $study_dir = $dirs[-3] || '';
+        if ($study_dir =~ /LowCov/) {
+            $study = 'SRP000031';
+        }
+        elsif ($study_dir =~ /Trio/) {
+            $study = 'SRP000032';
+        }
+        elsif ($study_dir =~ /Exon/) {
+            $study = 'SRP000033';
+        }
     }
     
     # SOLID bams are not made by us and have unreliable headers; we'll need to
