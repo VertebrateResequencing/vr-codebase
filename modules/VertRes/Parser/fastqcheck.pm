@@ -311,7 +311,7 @@ sub _avg_base_qual {
         $nvals += $rh->[$i];
         $sum   += $rh->[$i] * ($i-6);
     }
-    my $avg_qual = $sum / $nvals;
+    my $avg_qual = $nvals ? $sum / $nvals : 0;
     
     return $avg_qual;
 }
