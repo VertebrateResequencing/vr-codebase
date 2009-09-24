@@ -631,7 +631,8 @@ sub stats_and_graphs_provides
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @provides = ("$sample_dir/chrom-distrib.png","$sample_dir/gc-content.png","$sample_dir/insert-size.png","$sample_dir/gc-depth.png");
+    my @provides = ("$sample_dir/chrom-distrib.png","$sample_dir/gc-content.png","$sample_dir/insert-size.png",
+                        "$sample_dir/gc-depth.png","$sample_dir/fastqcheck.png");
     return \@provides;
 }
 
@@ -1006,11 +1007,19 @@ sub update_db
         $img->update;
     }
 
-    # Write the QC status. Never overwrite a QC status set by human, only NULL or no_qc.
+    # Write the QC status. Never overwrite a QC status set previously by human. Only NULL or no_qc can be overwritten.
     $mapping->update;
     $qc_status = $vrlane->qc_status();
     if ( !$qc_status || $qc_status eq 'no_qc' ) { $vrlane->qc_status('pending'); } # Never change status which was set manually
     $vrlane->update;
+
+    my $vrlibrary = VRTrack::Library->new($vrtrack->{_dbh},$vrlane->library_id()) or $self->throw("No such library in the DB: lane=[$name]\n");
+    $qc_status = $vrlibrary->qc_status();
+    if ( !$qc_status || $qc_status eq 'no_qc' ) 
+    { 
+        $vrlibrary->qc_status('pending'); 
+        $vrlibrary->update(); 
+    }
 
     return $$self{'Yes'};
 }
