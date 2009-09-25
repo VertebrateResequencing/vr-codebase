@@ -179,6 +179,7 @@ sub lane_id {
 sub mapper_id {
     my ($self,$mapper_id) = @_;
     if (defined $mapper_id and $mapper_id != $self->{'mapper_id'}){
+        delete $self->{'mapper'};
         $self->{'mapper_id'} = $mapper_id;
         $self->dirty(1);
     }
@@ -203,9 +204,11 @@ sub mapper {
         # get existing mapper by name,version
         my $obj = $self->get_mapper_by_name_version($mapper,$version);
         if ($obj){
+            if ($self->mapper_id != $obj->id){
+                $self->mapper_id($obj->id);
+                $self->dirty(1);
+            }
             $self->{'mapper'} = $obj;
-            $self->{'mapper_id'} = $obj->id;
-            $self->dirty(1);
         }
         else {
             # warn "No such mapper in the database";
@@ -283,6 +286,7 @@ sub get_mapper_by_name_version {
 sub assembly_id {
     my ($self,$assembly_id) = @_;
     if (defined $assembly_id and $assembly_id != $self->{'assembly_id'}){
+        delete $self->{'assembly'};
         $self->{'assembly_id'} = $assembly_id;
         $self->dirty(1);
     }
@@ -306,9 +310,12 @@ sub assembly {
         # get existing assembly by name
         my $obj = $self->get_assembly_by_name($assembly);
         if ($obj){
+            # Have we actually changed?
+            if ($self->assembly_id != $obj->id){
+                $self->assembly_id($obj->id);
+                $self->dirty(1);
+            }
             $self->{'assembly'} = $obj;
-            $self->{'assembly_id'} = $obj->id;
-            $self->dirty(1);
         }
         else {
             # warn "No such assembly in the database";

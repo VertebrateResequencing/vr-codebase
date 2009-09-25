@@ -376,12 +376,12 @@ sub individual {
         # get existing individual by name
         my $obj = $self->get_individual_by_name($individual);
         if ($obj){
-            $self->{'individual'} = $obj;
             # Have we actually changed?
             if ($self->individual_id != $obj->id){
                 $self->individual_id($obj->id);
                 $self->dirty(1);
             }
+            $self->{'individual'} = $obj;
         }
         else {
             # warn "No such individual in the database";

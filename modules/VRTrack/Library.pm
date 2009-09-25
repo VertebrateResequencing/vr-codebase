@@ -473,12 +473,12 @@ sub library_type {
         # get existing library_type by name
         my $obj = $self->get_library_type_by_name($name);
         if ($obj){
-            $self->{'library_type'} = $obj;
             # Have we actually changed?
             if ($self->library_type_id != $obj->id){
                 $self->library_type_id($obj->id);
                 $self->dirty(1);
             }
+            $self->{'library_type'} = $obj;
         }
         else {
             # warn "No such library_type in the database";
@@ -580,12 +580,12 @@ sub seq_centre {
         # get existing seq_centre by name
         my $obj = $self->get_seq_centre_by_name($name);
         if ($obj){
-            $self->{'seq_centre'} = $obj;
             # Have we actually changed?
             if ($self->seq_centre_id != $obj->id){
                 $self->seq_centre_id($obj->id);
                 $self->dirty(1);
             }
+            $self->{'seq_centre'} = $obj;
         }
         else {
             # warn "No such seq_centre in the database";
@@ -686,12 +686,12 @@ sub seq_tech {
         # get existing seq_tech by name
         my $obj = $self->get_seq_tech_by_name($name);
         if ($obj){
-            $self->{'seq_tech'} = $obj;
             # Have we actually changed?
             if ($self->seq_tech_id != $obj->id){
                 $self->seq_tech_id($obj->id);
                 $self->dirty(1);
             }
+            $self->{'seq_tech'} = $obj;
         }
         else {
             # warn "No such seq_tech in the database";

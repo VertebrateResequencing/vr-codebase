@@ -612,7 +612,10 @@ sub changed {
 
 sub latest_mapping {
     my ($self) = @_;
-    my @sorted_mappings = sort {$a->changed cmp $b->changed} @{$self->mappings};
+    # sort by changed date, and then by row_id
+    my @sorted_mappings = sort {$a->changed cmp $b->changed 
+                                || $a->row_id <=> $b->row_id} 
+                                @{$self->mappings};
     return $sorted_mappings[-1];
 }
 
