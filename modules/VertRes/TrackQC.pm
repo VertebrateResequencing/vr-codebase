@@ -631,7 +631,7 @@ sub stats_and_graphs_provides
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @provides = ("$sample_dir/chrom-distrib.png","$sample_dir/gc-content.png","$sample_dir/insert-size.png",
+    my @provides = ("$sample_dir/chrom-distrib.png","$sample_dir/gc-content.png",
                         "$sample_dir/gc-depth.png","$sample_dir/fastqcheck.png");
     return \@provides;
 }
