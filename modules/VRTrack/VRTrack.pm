@@ -475,4 +475,18 @@ sub transaction_rollback {
 }
 
 
+=head2 vrtrack
+
+  Arg [1]    : None
+  Example    : my $vrtrack = $obj->vrtrack();
+  Description: Get vrtrack.  This is self, as we _are_ a VRTrack object.  This call is just to provide consistency to getting new objects through the api by my $sub = VRTrack::Whatever($parent->vrtrack, $id);
+  Returntype : integer
+
+=cut
+
+sub vrtrack {
+    my ($self) = @_;
+    return $self;
+}
+
 1;
