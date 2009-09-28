@@ -5,7 +5,7 @@ package VRTrack::Individual;
 VRTrack::Individual - Sequence Tracking Individual object
 
 =head1 SYNOPSIS
-    my $ind = VRTrack::Individual->new($dbh, $individual_id);
+    my $ind = VRTrack::Individual->new($vrtrack, $individual_id);
 
     my $id      = $individual->id();
     my $name    = $individual->name();
@@ -28,6 +28,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 use VRTrack::Species;
 use VRTrack::Population;
@@ -41,18 +42,21 @@ use constant DBI_DUPLICATE => '1062';
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : individual id
-  Example    : my $ind = VRTrack::Individual->new($dbh, $id)
+  Example    : my $ind = VRTrack::Individual->new($vrtrack, $id)
   Description: Returns Individual object by individual_id
   Returntype : VRTrack::Individual object
 
 =cut
 
 sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
+    my ($class,$vrtrack, $id) = @_;
+    die "Need to call with a vrtrack handle and id" unless ($vrtrack && $id);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $self = {};
     bless ($self, $class);
     $self->{_dbh} = $dbh;
+    $self->{vrtrack} = $vrtrack;
 
     my $sql = qq[select individual_id, name, hierarchy_name, alias, sex, species_id, population_id from individual where individual_id = ?];
     my $sth = $self->{_dbh}->prepare($sql);
@@ -83,15 +87,17 @@ sub new {
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : individual name
-  Example    : my $ind = VRTrack::Individual->new($dbh, $name)
+  Example    : my $ind = VRTrack::Individual->new($vrtrack, $name)
   Description: Class method. Returns Individual object by name.  If no such name is in the database, returns undef
   Returntype : VRTrack::Individual object
 
 =cut
 
 sub new_by_name {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle and name" unless ($dbh && $name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[select individual_id from individual where name = ?];
     my $sth = $dbh->prepare($sql);
 
@@ -106,7 +112,7 @@ sub new_by_name {
     else{
         die(sprintf('Cannot retrieve individual by name $name: %s', $DBI::errstr));
     }
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 }
 
 
@@ -114,15 +120,17 @@ sub new_by_name {
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : individual name
-  Example    : my $ind = VRTrack::Individual->create($dbh, $name)
+  Example    : my $ind = VRTrack::Individual->create($vrtrack, $name)
   Description: Class method. Creates new Individual object in the database.
   Returntype : VRTrack::Individual object
 
 =cut
 
 sub create {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle and name" unless ($dbh && $name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
 
     my $hierarchy_name = $name;
     $hierarchy_name =~ s/\W+/_/g;
@@ -140,7 +148,7 @@ sub create {
         die( sprintf('DB load insert failed: %s %s', $name, $DBI::errstr));
     }
 
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 
 }
 
@@ -304,7 +312,7 @@ sub population {
     }
     else {  # lazy-load population from database
         if ($self->population_id){
-            my $obj = VRTrack::Population->new($self->{_dbh},$self->population_id);
+            my $obj = VRTrack::Population->new($self->{vrtrack},$self->population_id);
             $self->{'population'} = $obj;
         }
     }
@@ -330,7 +338,7 @@ sub add_population {
         return undef;
     }
     else {
-        my $pop = VRTrack::Population->create($self->{_dbh}, $name);
+        my $pop = VRTrack::Population->create($self->{vrtrack}, $name);
         # populate caches
         $self->{'population_id'} = $pop->id;
         $self->{'population'} = $pop;
@@ -350,7 +358,7 @@ sub add_population {
 
 sub get_population_by_name {
     my ($self,$name) = @_;
-    return VRTrack::Population->new_by_name($self->{_dbh}, $name);
+    return VRTrack::Population->new_by_name($self->{vrtrack}, $name);
 }
 
 
@@ -430,7 +438,7 @@ sub species {
     }
     else {  # lazy-load species from database
         if ($self->species_id){
-            my $obj = VRTrack::Species->new($self->{_dbh},$self->species_id);
+            my $obj = VRTrack::Species->new($self->{vrtrack},$self->species_id);
             $self->{'species'} = $obj;
         }
     }
@@ -456,7 +464,7 @@ sub add_species {
         return undef;
     }
     else {
-        my $pop = VRTrack::Species->create($self->{_dbh}, $name);
+        my $pop = VRTrack::Species->create($self->{vrtrack}, $name);
         # populate caches
         $self->{'species_id'} = $pop->id;
         $self->{'species'} = $pop;
@@ -476,7 +484,7 @@ sub add_species {
 
 sub get_species_by_name {
     my ($self,$name) = @_;
-    return VRTrack::Species->new_by_name($self->{_dbh}, $name);
+    return VRTrack::Species->new_by_name($self->{vrtrack}, $name);
 }
 
 
@@ -497,30 +505,20 @@ sub update {
 	my $dbh = $self->{_dbh};
 	my $save_re = $dbh->{RaiseError};
 	my $save_pe = $dbh->{PrintError};
-	my $save_ac = $dbh->{AutoCommit};
 	$dbh->{RaiseError} = 1; # raise exception if an error occurs
 	$dbh->{PrintError} = 0; # don't print an error message
-	$dbh->{AutoCommit} = 0; # disable auto-commit
 
 	eval {
 	    my $updsql = qq[UPDATE individual SET name=?, hierarchy_name=?,alias=?, sex=?, species_id=?, population_id=? WHERE individual_id = ? ];
 	    
 	    $dbh->do ($updsql, undef, $self->name, $self->hierarchy_name, $self->alias, $self->sex,, $self->species_id, $self->population_id, $self->id);
-	    $dbh->commit ( );
 	};
 
-	if ($@) {
-	    warn "Transaction failed, rolling back. Error was:\n$@\n";
-	    # roll back within eval to prevent rollback
-	    # failure from terminating the script
-	    eval { $dbh->rollback ( ); };
-	}
-	else {
+	if (!$@) {
 	    $success = 1;
 	}
 
 	# restore attributes to original state
-	$dbh->{AutoCommit} = $save_ac;
 	$dbh->{PrintError} = $save_pe;
 	$dbh->{RaiseError} = $save_re;
 

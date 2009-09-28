@@ -21,25 +21,29 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 
 
 =head2 new
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle
   Arg [2]    : obj id
-  Example    : my $obj= $class->new($dbh, $id)
+  Example    : my $obj= $class->new($vrtrack, $id)
   Description: Returns core objects by id
   Returntype : $class object
 
 =cut
 
 sub new {
-    my ($class, $dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
+    my ($class, $vrtrack, $id) = @_;
+    die "Need to call with a vrtrack reference and id" unless ($vrtrack && $id);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+
     my $self = {};
     bless ($self, $class);
-    $self->{_dbh} = $dbh;
+    $self->{_dbh} = $vrtrack->{_dbh};
+    $self->{vrtrack} = $vrtrack;
     
     # database tables for core objects are named the same as the class,
     $class =~/VRTrack::(\w+)$/;
@@ -78,10 +82,10 @@ sub new {
 
 =head2 new_by_field_value
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : field name
   Arg [3]    : field value
-  Example    : my $obj = $class->new_by_field_value($dbh, 'name',$name)
+  Example    : my $obj = $class->new_by_field_value($vrtrack, 'name',$name)
   Description: Class method. Returns latest $class object by field name and value.  If no such value is in the database, returns undef.
                Dies if there is more than one matching record.
   Returntype : $class object
@@ -89,8 +93,10 @@ sub new {
 =cut
 
 sub new_by_field_value {
-    my ($class,$dbh, $field, $value) = @_;
-    die "Need to call with a db handle, field name, field value" unless ($dbh && $field && defined $value);
+    my ($class,$vrtrack, $field, $value) = @_;
+    die "Need to call with a vrtrack handle, field name, field value" unless ($vrtrack && $field && defined $value);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     
     # database tables for core objects are named the same as the class,
     $class =~/VRTrack::(\w+)$/;
@@ -121,7 +127,7 @@ sub new_by_field_value {
     else{
         die(sprintf('Cannot retrieve $class by %s = %s: %s', ($field,$value,$DBI::errstr)));
     }
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 }
 
 
@@ -145,51 +151,37 @@ sub update {
 
     my $success = undef;
     if ($self->dirty){
-	my $dbh = $self->{_dbh};
-	my $save_re = $dbh->{RaiseError};
-	my $save_pe = $dbh->{PrintError};
-	my $save_ac = $dbh->{AutoCommit};
-	$dbh->{RaiseError} = 1; # raise exception if an error occurs
-	$dbh->{PrintError} = 0; # don't print an error message
-	$dbh->{AutoCommit} = 0; # disable auto-commit
+	    my $dbh = $self->{_dbh};
+        $self->{vrtrack}->transaction_start();
 
         my $fieldsref = $self->fields_dispatch;
         my @fields = grep {!/^changed$/ && !/^latest$/} keys %$fieldsref;
         my $row_id; # new row_id if update works
-	eval {
-	    # Need to unset 'latest' flag on current latest obj and add
-	    # the new obj details with the latest flag set
-	    my $updsql = qq[UPDATE $table SET latest=false WHERE ${table}_id = ? and latest=true];
-	    
-            # build insert statement from update fields
-            my $addsql = qq[INSERT INTO $table ( ].(join ", ", @fields);
-            $addsql .= qq[, changed, latest ) ];
-            $addsql .= qq[ VALUES ( ].('?,' x scalar @fields).qq[now(),true) ];
+            eval {
+                # Need to unset 'latest' flag on current latest obj and add
+                # the new obj details with the latest flag set
+                my $updsql = qq[UPDATE $table SET latest=false WHERE ${table}_id = ? and latest=true];
 
-	    $dbh->do ($updsql, undef,$self->id);
-	    $dbh->do ($addsql, undef, map {$_->()} @$fieldsref{@fields});
-            $row_id = $dbh->{'mysql_insertid'};
-	    $dbh->commit ( );
+                # build insert statement from update fields
+                my $addsql = qq[INSERT INTO $table ( ].(join ", ", @fields);
+                        $addsql .= qq[, changed, latest ) ];
+                $addsql .= qq[ VALUES ( ].('?,' x scalar @fields).qq[now(),true) ];
 
-	};
+                $dbh->do ($updsql, undef,$self->id);
+                $dbh->do ($addsql, undef, map {$_->()} @$fieldsref{@fields});
+                $row_id = $dbh->{'mysql_insertid'};
+                $self->{vrtrack}->transaction_commit();
+            };
 
-	if ($@) {
-	    warn "Transaction failed, rolling back. Error was:\n$@\n";
-	    # roll back within eval to prevent rollback
-	    # failure from terminating the script
-	    eval { $dbh->rollback ( ); };
-	}
-	else {
+        if ($@) {
+            warn "Transaction failed, rolling back. Error was:\n$@\n";
+            $self->{vrtrack}->transaction_rollback();
+        }
+        else {
             # Remember to update the row_id to the _new_ row_id, as this is an autoinc field
             $self->row_id($row_id);
-	    $success = 1;
-	}
-
-	# restore attributes to original state
-	$dbh->{AutoCommit} = $save_ac;
-	$dbh->{PrintError} = $save_pe;
-	$dbh->{RaiseError} = $save_re;
-
+            $success = 1;
+        }
     }
 
     return $success;
@@ -221,12 +213,7 @@ sub delete {
 
     # now delete them all, one table at a time
     my $dbh = $self->{_dbh};
-    my $save_re = $dbh->{RaiseError};
-    my $save_pe = $dbh->{PrintError};
-    my $save_ac = $dbh->{AutoCommit};
-    $dbh->{RaiseError} = 1; # raise exception if an error occurs
-    $dbh->{PrintError} = 0; # don't print an error message
-    $dbh->{AutoCommit} = 0; # disable auto-commit
+    $self->{vrtrack}->transaction_start();
 
     eval {
         foreach my $table (keys %lanes_from_table){
@@ -234,23 +221,16 @@ sub delete {
             my $delsql = qq[delete from $table WHERE ${table}_id in ($lanes)];
             $dbh->do ($delsql);
         }
-        $dbh->commit ( );
+        $self->{vrtrack}->transaction_commit();
     };
 
     if ($@) {
         warn "Transaction failed, rolling back. Error was:\n$@\n";
-        # roll back within eval to prevent rollback
-        # failure from terminating the script
-        eval { $dbh->rollback ( ); };
+        $self->{vrtrack}->transaction_rollback();
     }
     else {
         $success = 1;
     }
-
-    # restore attributes to original state
-    $dbh->{AutoCommit} = $save_ac;
-    $dbh->{PrintError} = $save_pe;
-    $dbh->{RaiseError} = $save_re;
 
     return $success;
 }

@@ -5,7 +5,7 @@ package VRTrack::Library_type;
 VRTrack::Library_type - Sequence Tracking Library_type object
 
 =head1 SYNOPSIS
-    my $library_type = VRTrack::Library_type->new($dbh, $library_type_id);
+    my $library_type = VRTrack::Library_type->new($vrtrack, $library_type_id);
 
     my $id      = $library_type->id();
     my $name    = $library_type->name();
@@ -26,6 +26,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 
 use constant DBI_DUPLICATE => '1062';
@@ -38,18 +39,21 @@ use constant DBI_DUPLICATE => '1062';
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : library_type id
-  Example    : my $library_type = VRTrack::Library_type->new($dbh, $id)
+  Example    : my $library_type = VRTrack::Library_type->new($vrtrack, $id)
   Description: Returns Library_type object by library_type_id
   Returntype : VRTrack::Library_type object
 
 =cut
 
 sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
+    my ($class,$vrtrack, $id) = @_;
+    die "Need to call with a vrtrack handle and id" unless ($vrtrack && $id);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $self = {};
     bless ($self, $class);
     $self->{_dbh} = $dbh;
+    $self->{vrtrack} = $vrtrack;
 
     my $sql = qq[select library_type_id, name from library_type where library_type_id = ?];
     my $sth = $self->{_dbh}->prepare($sql);
@@ -75,15 +79,17 @@ sub new {
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : library_type name
-  Example    : my $library_type = VRTrack::Library_type->new_by_name($dbh, $name)
+  Example    : my $library_type = VRTrack::Library_type->new_by_name($vrtrack, $name)
   Description: Class method. Returns Library_type object by name and project_id.  If no such name is in the database, returns undef
   Returntype : VRTrack::Library_type object
 
 =cut
 
 sub new_by_name {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle, name" unless ($dbh && $name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[select library_type_id from library_type where name = ?];
     my $sth = $dbh->prepare($sql);
 
@@ -98,7 +104,7 @@ sub new_by_name {
     else{
         die(sprintf('Cannot retrieve library_type by $name: %s', $DBI::errstr));
     }
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 }
 
 
@@ -106,16 +112,17 @@ sub new_by_name {
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : library_type name
-  Example    : my $library_type = VRTrack::Library_type->create($dbh, $name)
+  Example    : my $library_type = VRTrack::Library_type->create($vrtrack, $name)
   Description: Class method.  Creates new Library_type object in the database.
   Returntype : VRTrack::Library_type object
 
 =cut
 
 sub create {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle and name" unless ($dbh && $name);
-
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[INSERT INTO library_type (library_type_id, name) 
                  VALUES (NULL,?)];
 
@@ -129,7 +136,7 @@ sub create {
         die( sprintf('DB load insert failed: %s %s', $name, $DBI::errstr));
     }
  
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 }
 
 
@@ -213,30 +220,20 @@ sub update {
 	my $dbh = $self->{_dbh};
 	my $save_re = $dbh->{RaiseError};
 	my $save_pe = $dbh->{PrintError};
-	my $save_ac = $dbh->{AutoCommit};
 	$dbh->{RaiseError} = 1; # raise exception if an error occurs
 	$dbh->{PrintError} = 0; # don't print an error message
-	$dbh->{AutoCommit} = 0; # disable auto-commit
 
 	eval {
 	    my $updsql = qq[UPDATE library_type SET name=? WHERE library_type_id = ? ];
 	    
 	    $dbh->do ($updsql, undef, $self->name,$self->id);
-	    $dbh->commit ( );
 	};
 
-	if ($@) {
-	    warn "Transaction failed, rolling back. Error was:\n$@\n";
-	    # roll back within eval to prevent rollback
-	    # failure from terminating the script
-	    eval { $dbh->rollback ( ); };
-	}
-	else {
+	if (!$@) {
 	    $success = 1;
 	}
 
 	# restore attributes to original state
-	$dbh->{AutoCommit} = $save_ac;
 	$dbh->{PrintError} = $save_pe;
 	$dbh->{RaiseError} = $save_re;
 

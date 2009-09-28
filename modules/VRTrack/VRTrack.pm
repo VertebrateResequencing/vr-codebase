@@ -70,6 +70,7 @@ sub new {
     }
 
     $self->{_dbh} = $dbh;
+    $self->{transaction} = 0;
 
     # Check version is OK.
     my $schema_version = $self->schema_version();
@@ -124,7 +125,7 @@ sub projects {
     unless ($self->{'projects'}){
         my @projects;
         foreach my $id (@{$self->project_ids()}){
-            my $obj = VRTrack::Project->new($self->{_dbh},$id);
+            my $obj = VRTrack::Project->new($self->{vrtrack},$id);
             push @projects, $obj;
         }
         $self->{'projects'} = \@projects;
@@ -187,7 +188,7 @@ sub add_project {
         return undef;
     }
 
-    $obj = VRTrack::Project->create($self->{_dbh},$name);
+    $obj = VRTrack::Project->create($self->{vrtrack},$name);
     delete $self->{'project_ids'};
     delete $self->{'projects'};
     return $obj;
@@ -205,7 +206,7 @@ sub add_project {
 
 sub get_project_by_name {
     my ($self, $name) = @_;
-    my $obj = VRTrack::Project->new_by_name($self->{_dbh},$name);
+    my $obj = VRTrack::Project->new_by_name($self->{vrtrack},$name);
     return $obj;
 }
 
@@ -221,7 +222,7 @@ sub get_project_by_name {
 
 sub get_project_by_id {
     my ($self, $id) = @_;
-    my $obj = VRTrack::Project->new($self->{_dbh},$id);
+    my $obj = VRTrack::Project->new($self->{vrtrack},$id);
     return $obj;
 }
 
@@ -237,7 +238,7 @@ sub get_project_by_id {
 
 sub get_project_by_ssid {
     my ($self, $id) = @_;
-    my $obj = VRTrack::Project->new_by_ssid($self->{_dbh},$id);
+    my $obj = VRTrack::Project->new_by_ssid($self->{vrtrack},$id);
     return $obj;
 }
 
@@ -255,13 +256,13 @@ sub get_project_by_ssid {
 sub hierarchy_path_of_lane_name {
     my ($self, $lane_name) = @_;
     my $hier_path;
-    my $lane = VRTrack::Lane->new_by_name($self->{_dbh},$lane_name);
+    my $lane = VRTrack::Lane->new_by_name($self,$lane_name);
     if ($lane){
-        my $lib = VRTrack::Library->new($self->{_dbh},$lane->library_id);
+        my $lib = VRTrack::Library->new($self,$lane->library_id);
         if ($lib && $lib->seq_tech){
-            my $samp = VRTrack::Sample->new($self->{_dbh},$lib->sample_id);
+            my $samp = VRTrack::Sample->new($self,$lib->sample_id);
             if ($samp){
-                my $proj = VRTrack::Project->new($self->{_dbh},$samp->project_id);
+                my $proj = VRTrack::Project->new($self,$samp->project_id);
                 if ($proj){
                     $hier_path = join '/', ($proj->hierarchy_name,
                                             $samp->hierarchy_name,
@@ -399,4 +400,82 @@ sub qc_filtered_file_names {
 
     return \@file_names;
 }
+
+
+=head2 transaction_start
+
+  Arg [1]    : None
+  Example    : $vrtrack->transaction_start();
+  Description: 
+  Returntype : none
+
+=cut
+
+sub transaction_start {
+    my ($self) = @_;
+
+    my $dbh = $self->{_dbh};
+
+    $self->{transaction}++;                         # Increase the counter
+    if ( $self->{transaction}>1 ) { return; }       # If already inside a transaction, we are done.
+
+    $self->{_AutoCommit} = $dbh->{AutoCommit};      # Remember the previous state
+    $dbh->{AutoCommit} = 0;                         # Start the transaction
+
+    return;
+}
+
+
+=head2 transaction_commit
+
+  Arg [1]    : None
+  Example    : $vrtrack->transaction_commit();
+  Description: 
+  Returntype : none
+
+=cut
+
+sub transaction_commit {
+    my ($self) = @_;
+
+    die "transaction_commit: no active transaction\n" unless $self->{transaction}>0;
+
+    $self->{transaction}--;
+    if ( $self->{transaction} ) { return; }         # If inside a nested transactions, don't commit yet.
+
+    $self->{_dbh}->commit;
+    $self->{_dbh}->{AutoCommit} = $self->{_AutoCommit};
+
+    return;
+}
+
+
+=head2 transaction_rollback
+
+  Arg [1]    : None
+  Example    : $vrtrack->transaction_rollback();
+  Description: 
+  Returntype : none
+
+=cut
+
+sub transaction_rollback {
+    my ($self) = @_;
+
+    die "transaction_commit: no active transaction\n" unless $self->{transaction}>0;
+
+    $self->{transaction}--;
+
+    # roll back within eval to prevent rollback
+    # failure from terminating the script
+    eval { $self->{_dbh}->rollback; };
+
+    $self->{_dbh}->{AutoCommit} = $self->{_AutoCommit};
+
+    if ( $self->{transaction} ) { die "Transaction failed\n"; }     # If inside a nested transaction, return the control higher
+
+    return;
+}
+
+
 1;

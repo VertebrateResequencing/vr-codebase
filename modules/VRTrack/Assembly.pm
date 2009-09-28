@@ -5,7 +5,7 @@ package VRTrack::Assembly;
 VRTrack::Assembly - Sequence Tracking Assembly object
 
 =head1 SYNOPSIS
-    my $assembly = VRTrack::Assembly->new($dbh, $assembly_id);
+    my $assembly = VRTrack::Assembly->new($vrtrack, $assembly_id);
 
     my $id      = $assembly->id();
     my $name    = $assembly->name();
@@ -25,6 +25,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 
 use constant DBI_DUPLICATE => '1062';
@@ -35,20 +36,22 @@ use constant DBI_DUPLICATE => '1062';
 
 =head2 new
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : assembly id
-  Example    : my $assembly = VRTrack::Assembly->new($dbh, $id)
+  Example    : my $assembly = VRTrack::Assembly->new($vrtrack, $id)
   Description: Returns Assembly object by assembly_id
   Returntype : VRTrack::Assembly object
 
 =cut
 
 sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
+    my ($class,$vrtrack, $id) = @_;
+    die "Need to call with a vrtrack handle and id" unless ($vrtrack && $id);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
     my $self = {};
     bless ($self, $class);
-    $self->{_dbh} = $dbh;
+    $self->{_dbh} = $vrtrack->{_dbh};
+    $self->{vrtrack} = $vrtrack;
 
     my $sql = qq[select assembly_id, name from assembly where assembly_id = ?];
     my $sth = $self->{_dbh}->prepare($sql);
@@ -72,17 +75,19 @@ sub new {
 
 =head2 new_by_name
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : assembly name
-  Example    : my $assembly = VRTrack::Assembly->new_by_name($dbh, $name)
+  Example    : my $assembly = VRTrack::Assembly->new_by_name($vrtrack, $name)
   Description: Class method. Returns Assembly object by name and project_id.  If no such name is in the database, returns undef
   Returntype : VRTrack::Assembly object
 
 =cut
 
 sub new_by_name {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle, name" unless ($dbh && $name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[select assembly_id from assembly where name = ?];
     my $sth = $dbh->prepare($sql);
 
@@ -97,23 +102,26 @@ sub new_by_name {
     else{
         die(sprintf('Cannot retrieve assembly by $name: %s', $DBI::errstr));
     }
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 }
 
 
 =head2 create
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : assembly name
-  Example    : my $assembly = VRTrack::Assembly->create($dbh, $name)
+  Example    : my $assembly = VRTrack::Assembly->create($vrtrack, $name)
   Description: Class method.  Creates new Assembly object in the database.
   Returntype : VRTrack::Assembly object
 
 =cut
 
 sub create {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle and name" unless ($dbh && $name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a db handle and name" unless ($vrtrack && $name);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
+
 
     my $sql = qq[INSERT INTO assembly (assembly_id, name) 
                  VALUES (NULL,?)];
@@ -128,7 +136,7 @@ sub create {
         die( sprintf('DB load insert failed: %s %s', $name, $DBI::errstr));
     }
  
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 }
 
 
@@ -211,30 +219,20 @@ sub update {
 	my $dbh = $self->{_dbh};
 	my $save_re = $dbh->{RaiseError};
 	my $save_pe = $dbh->{PrintError};
-	my $save_ac = $dbh->{AutoCommit};
 	$dbh->{RaiseError} = 1; # raise exception if an error occurs
 	$dbh->{PrintError} = 0; # don't print an error message
-	$dbh->{AutoCommit} = 0; # disable auto-commit
 
 	eval {
 	    my $updsql = qq[UPDATE assembly SET name=? WHERE assembly_id = ? ];
 	    
 	    $dbh->do ($updsql, undef, $self->name,$self->id);
-	    $dbh->commit ( );
 	};
 
-	if ($@) {
-	    warn "Transaction failed, rolling back. Error was:\n$@\n";
-	    # roll back within eval to prevent rollback
-	    # failure from terminating the script
-	    eval { $dbh->rollback ( ); };
-	}
-	else {
+	if (!$@) {
 	    $success = 1;
 	}
 
 	# restore attributes to original state
-	$dbh->{AutoCommit} = $save_ac;
 	$dbh->{PrintError} = $save_pe;
 	$dbh->{RaiseError} = $save_re;
 

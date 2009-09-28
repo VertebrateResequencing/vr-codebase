@@ -5,7 +5,7 @@ package VRTrack::Seq_centre;
 VRTrack::Seq_centre - Sequence Tracking Seq_centre object
 
 =head1 SYNOPSIS
-    my $seq_centre = VRTrack::Seq_centre->new($dbh, $seq_centre_id);
+    my $seq_centre = VRTrack::Seq_centre->new($vrtrack, $seq_centre_id);
 
     my $id      = $seq_centre->id();
     my $name    = $seq_centre->name();
@@ -26,6 +26,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 
 use constant DBI_DUPLICATE => '1062';
@@ -38,18 +39,21 @@ use constant DBI_DUPLICATE => '1062';
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : seq_centre id
-  Example    : my $seq_centre = VRTrack::Seq_centre->new($dbh, $id)
+  Example    : my $seq_centre = VRTrack::Seq_centre->new($vrtrack, $id)
   Description: Returns Seq_centre object by seq_centre_id
   Returntype : VRTrack::Seq_centre object
 
 =cut
 
 sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
+    my ($class,$vrtrack, $id) = @_;
+    die "Need to call with a vrtrack handle and id" unless ($vrtrack && $id);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $self = {};
     bless ($self, $class);
     $self->{_dbh} = $dbh;
+    $self->{vrtrack} = $vrtrack;
 
     my $sql = qq[select seq_centre_id, name from seq_centre where seq_centre_id = ?];
     my $sth = $self->{_dbh}->prepare($sql);
@@ -75,15 +79,17 @@ sub new {
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : seq_centre name
-  Example    : my $seq_centre = VRTrack::Seq_centre->new_by_name($dbh, $name)
+  Example    : my $seq_centre = VRTrack::Seq_centre->new_by_name($vrtrack, $name)
   Description: Class method. Returns Seq_centre object by seq_centre name.  If no such name is in the database, returns undef
   Returntype : VRTrack::Seq_centre object
 
 =cut
 
 sub new_by_name {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle, name" unless ($dbh && $name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[select seq_centre_id from seq_centre where name = ?];
     my $sth = $dbh->prepare($sql);
 
@@ -98,7 +104,7 @@ sub new_by_name {
     else{
         die(sprintf('Cannot retrieve seq_centre by $name: %s', $DBI::errstr));
     }
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 }
 
 
@@ -106,15 +112,16 @@ sub new_by_name {
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : seq_centre name
-  Example    : my $seq_centre = VRTrack::Seq_centre->create($dbh, $name)
+  Example    : my $seq_centre = VRTrack::Seq_centre->create($vrtrack, $name)
   Description: Class method.  Creates new Seq_centre object in the database.
   Returntype : VRTrack::Seq_centre object
 
 =cut
 
 sub create {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle and name" unless ($dbh && $name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
+    my $dbh = $vrtrack->{_dbh};
 
     my $sql = qq[INSERT INTO seq_centre (seq_centre_id, name) 
                  VALUES (NULL,?)];
@@ -129,7 +136,7 @@ sub create {
         die( sprintf('DB load insert failed: %s %s', $name, $DBI::errstr));
     }
  
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 }
 
 
@@ -213,30 +220,20 @@ sub update {
 	my $dbh = $self->{_dbh};
 	my $save_re = $dbh->{RaiseError};
 	my $save_pe = $dbh->{PrintError};
-	my $save_ac = $dbh->{AutoCommit};
 	$dbh->{RaiseError} = 1; # raise exception if an error occurs
 	$dbh->{PrintError} = 0; # don't print an error message
-	$dbh->{AutoCommit} = 0; # disable auto-commit
 
 	eval {
 	    my $updsql = qq[UPDATE seq_centre SET name=? WHERE seq_centre_id = ? ];
 	    
 	    $dbh->do ($updsql, undef, $self->name,$self->id);
-	    $dbh->commit ( );
 	};
 
-	if ($@) {
-	    warn "Transaction failed, rolling back. Error was:\n$@\n";
-	    # roll back within eval to prevent rollback
-	    # failure from terminating the script
-	    eval { $dbh->rollback ( ); };
-	}
-	else {
+	if (!$@) {
 	    $success = 1;
 	}
 
 	# restore attributes to original state
-	$dbh->{AutoCommit} = $save_ac;
 	$dbh->{PrintError} = $save_pe;
 	$dbh->{RaiseError} = $save_re;
 

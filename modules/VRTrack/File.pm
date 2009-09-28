@@ -5,7 +5,7 @@ package VRTrack::File;
 VRTrack::File - Sequence Tracking File object
 
 =head1 SYNOPSIS
-    my $file= VRTrack::File->new($dbh, $file_id);
+    my $file= VRTrack::File->new($vrtrack, $file_id);
 
     my $id = $file->id();
     my $qc_status = $file->qc_status();
@@ -24,6 +24,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 use VRTrack::Core_obj;
 our @ISA = qw(VRTrack::Core_obj);
@@ -67,54 +68,56 @@ sub fields_dispatch {
 
 =head2 new_by_name
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : file name
-  Example    : my $file = VRTrack::File->new_by_name($dbh, $name)
+  Example    : my $file = VRTrack::File->new_by_name($vrtrack, $name)
   Description: Class method. Returns latest File object by name.  If no such name is in the database, returns undef.  Dies if multiple names match.
   Returntype : VRTrack::File object
 
 =cut
 
 sub new_by_name {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle, name" unless ($dbh && $name);
-    return $class->new_by_field_value($dbh, 'name',$name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
+    return $class->new_by_field_value($vrtrack, 'name',$name);
 }
 
 
 =head2 new_by_hierarchy_name
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : file hierarchy_name
-  Example    : my $file = VRTrack::File->new_by_hierarchy_name($dbh, $hierarchy_name)
+  Example    : my $file = VRTrack::File->new_by_hierarchy_name($vrtrack, $hierarchy_name)
   Description: Class method. Returns latest File object by hierarchy_name.  If no such hierarchy_name is in the database, returns undef.  Dies if multiple hierarchy_names match.
   Returntype : VRTrack::File object
 
 =cut
 
 sub new_by_hierarchy_name {
-    my ($class,$dbh, $hierarchy_name) = @_;
-    die "Need to call with a db handle, hierarchy_name" unless ($dbh && $hierarchy_name);
-    return $class->new_by_field_value($dbh, 'hierarchy_name',$hierarchy_name);
+    my ($class,$vrtrack, $hierarchy_name) = @_;
+    die "Need to call with a vrtrack handle, hierarchy_name" unless ($vrtrack && $hierarchy_name);
+    return $class->new_by_field_value($vrtrack, 'hierarchy_name',$hierarchy_name);
 }
 
 
 =head2 create
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : file name
-  Example    : my $file = VRTrack::File->create($dbh, $name)
+  Example    : my $file = VRTrack::File->create($vrtrack, $name)
   Description: Class method.  Creates new File object in the database.
   Returntype : VRTrack::File object
 
 =cut
 
 sub create {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle and name" unless ($dbh && $name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
 
     # prevent adding a file with an existing name
-    if ($class->is_name_in_database($dbh, $name, $name)){
+    if ($class->is_name_in_database($vrtrack, $name, $name)){
         die "Already a file by name $name";
     }
 
@@ -146,7 +149,7 @@ sub create {
 
     $dbh->do (qq[UNLOCK TABLES]);
 
-    return $class->new($dbh, $next_id);
+    return $class->new($vrtrack, $next_id);
 }
 
 
@@ -154,15 +157,17 @@ sub create {
 
   Arg [1]    : file name
   Arg [2]    : hierarchy name
-  Example    : if(VRTrack::File->is_name_in_database($dbh, $name,$hname)
+  Example    : if(VRTrack::File->is_name_in_database($vrtrack, $name,$hname)
   Description: Class method. Checks to see if a name or hierarchy name is already used in the file table.
   Returntype : boolean
 
 =cut
 
 sub is_name_in_database {
-    my ($class, $dbh, $name, $hname) = @_;
-    die "Need to call with a db handle, name, hierarchy name" unless ($dbh && $name && $hname);
+    my ($class, $vrtrack, $name, $hname) = @_;
+    die "Need to call with a vrtrack handle, name, hierarchy name" unless ($vrtrack && $name && $hname);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[select file_id from file where latest=true and (name = ? or hierarchy_name = ?) ];
     my $sth = $dbh->prepare($sql);
 

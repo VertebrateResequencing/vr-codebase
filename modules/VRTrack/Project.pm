@@ -5,7 +5,7 @@ package VRTrack::Project;
 VRTrack::Project - Sequence Tracking Project object
 
 =head1 SYNOPSIS
-    my $proj = VRTrack::Project->new($dbh, $project_id);
+    my $proj = VRTrack::Project->new($vrtrack, $project_id);
 
     #get arrayref of sample objects in a project
     my $samples = $project->samples();
@@ -27,6 +27,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 use VRTrack::Core_obj;
 use VRTrack::Sample;
@@ -65,74 +66,76 @@ sub fields_dispatch {
 
 =head2 new_by_name
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : project name
-  Example    : my $project = VRTrack::Project->new_by_name($dbh, $name);
+  Example    : my $project = VRTrack::Project->new_by_name($vrtrack, $name);
   Description: Class method. Returns latest Project object by name and project_id.  If no such name is in the database, returns undef
   Returntype : VRTrack::Project object
 
 =cut
 
 sub new_by_name {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle, name" unless ($dbh && $name);
-    return $class->new_by_field_value($dbh, 'name',$name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
+    return $class->new_by_field_value($vrtrack, 'name',$name);
 }
 
 
 =head2 new_by_hierarchy_name
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : project hierarchy_name
-  Example    : my $project = VRTrack::Project->new_by_hierarchy_name($dbh, $hierarchy_name)
+  Example    : my $project = VRTrack::Project->new_by_hierarchy_name($vrtrack, $hierarchy_name)
   Description: Class method. Returns latest Project object by hierarchy_name.  If no such hierarchy_name is in the database, returns undef.  Dies if multiple hierarchy_names match.
   Returntype : VRTrack::Project object
 
 =cut
 
 sub new_by_hierarchy_name {
-    my ($class,$dbh, $hierarchy_name) = @_;
-    die "Need to call with a db handle, hierarchy_name" unless ($dbh && $hierarchy_name);
-    return $class->new_by_field_value($dbh, 'hierarchy_name',$hierarchy_name);
+    my ($class,$vrtrack, $hierarchy_name) = @_;
+    die "Need to call with a vrtrack handle, hierarchy_name" unless ($vrtrack && $hierarchy_name);
+    return $class->new_by_field_value($vrtrack, 'hierarchy_name',$hierarchy_name);
 }
 
 
 =head2 new_by_ssid
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : project sequencescape id
-  Example    : my $project = VRTrack::Project->new_by_ssid($dbh, $ssid);
+  Example    : my $project = VRTrack::Project->new_by_ssid($vrtrack, $ssid);
   Description: Class method. Returns latest Project object by ssid.  If no such ssid is in the database, returns undef
   Returntype : VRTrack::Project object
 
 =cut
 
 sub new_by_ssid {
-    my ($class,$dbh, $ssid) = @_;
-    die "Need to call with a db handle, ssid" unless ($dbh && $ssid);
-    return $class->new_by_field_value($dbh, 'ssid',$ssid);
+    my ($class,$vrtrack, $ssid) = @_;
+    die "Need to call with a vrtrack handle, ssid" unless ($vrtrack && $ssid);
+    return $class->new_by_field_value($vrtrack, 'ssid',$ssid);
 }
 
 
 =head2 create
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : project name
-  Example    : my $project = VRTrack::Project->create($dbh, $name)
+  Example    : my $project = VRTrack::Project->create($vrtrack, $name)
   Description: Class method.  Creates new Project object in the database.
   Returntype : VRTrack::Project object
 
 =cut
 
 sub create {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle and name" unless ($dbh && $name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
 
     my $hierarchy_name = $name;
     $hierarchy_name =~ s/\W+/_/g;
 
     # prevent adding a project with an existing name
-    if ($class->is_name_in_database($dbh, $name, $hierarchy_name)){
+    if ($class->is_name_in_database($vrtrack, $name, $hierarchy_name)){
         die "Already a project by name $name/$hierarchy_name";
     }
 
@@ -164,7 +167,7 @@ sub create {
     }
     $dbh->do (qq[UNLOCK TABLES]);
 
-    return $class->new($dbh, $next_id);
+    return $class->new($vrtrack, $next_id);
 }
 
 
@@ -172,15 +175,17 @@ sub create {
 
   Arg [1]    : project name
   Arg [2]    : hierarchy name
-  Example    : if(VRTrack::Project->is_name_in_database($dbh, $name,$hname)
+  Example    : if(VRTrack::Project->is_name_in_database($vrtrack, $name,$hname)
   Description: Class method. Checks to see if a name or hierarchy name is already used in the project table.
   Returntype : boolean
 
 =cut
 
 sub is_name_in_database {
-    my ($class, $dbh, $name, $hname) = @_;
-    die "Need to call with a db handle, name, hierarchy name" unless ($dbh && $name && $hname);
+    my ($class, $vrtrack, $name, $hname) = @_;
+    die "Need to call with a vrtrack handle, name, hierarchy name" unless ($vrtrack && $name && $hname);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[select project_id from project where latest=true and (name = ? or hierarchy_name = ?) ];
     my $sth = $dbh->prepare($sql);
 
@@ -235,7 +240,7 @@ sub samples {
     unless ($self->{'samples'}){
         my @samples;
         foreach my $id (@{$self->sample_ids()}){
-            my $obj = VRTrack::Sample->new($self->{_dbh},$id);
+            my $obj = VRTrack::Sample->new($self->{vrtrack},$id);
             push @samples, $obj;
         }
         $self->{'samples'} = \@samples;
@@ -410,13 +415,13 @@ sub add_sample {
     my ($self, $sname) = @_;
     # Sample names should be unique for a project
     # TODO: if ssid is defined, then it should also not be added twice
-    my $obj = VRTrack::Sample->new_by_name_project($self->{_dbh},$sname,$self->id);
+    my $obj = VRTrack::Sample->new_by_name_project($self->{vrtrack},$sname,$self->id);
     if ($obj){
         warn "Sample $sname is already present in the database\n";
         return undef;
     }
 
-    $obj = VRTrack::Sample->create($self->{_dbh},$sname);
+    $obj = VRTrack::Sample->create($self->{vrtrack},$sname);
     if ($obj){
         $obj->project_id($self->id);
         $obj->update;
@@ -438,7 +443,7 @@ sub add_sample {
 
 sub get_sample_by_name {
     my ($self, $name) = @_;
-    #my $obj = VRTrack::Sample->new_by_name_project($self->{_dbh},$name, $self->id);
+    #my $obj = VRTrack::Sample->new_by_name_project($self->{vrtrack},$name, $self->id);
     my @match = grep {$_->name eq $name} @{$self->samples};
     if (scalar @match > 1){ # shouldn't happen
         die "More than one sample with name $name";

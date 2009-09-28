@@ -945,7 +945,7 @@ sub update_db
     #   already written.
     my $vrtrack   = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
     my $name      = $$self{lane};
-    my $vrlane    = VRTrack::Lane->new_by_name($vrtrack->{_dbh},$name) or $self->throw("No such lane in the DB: [$name]\n");
+    my $vrlane    = VRTrack::Lane->new_by_name($vrtrack,$name) or $self->throw("No such lane in the DB: [$name]\n");
     my $qc_status = $vrlane->qc_status();
 
     # Make sure we don't overwrite info of lanes which were already QC-ed.
@@ -971,6 +971,8 @@ sub update_db
     my $nadapters = 0;
     if ( -e "$sample_dir/${name}_1.nadapters" ) { $nadapters += do "$sample_dir/${name}_1.nadapters"; }
     if ( -e "$sample_dir/${name}_2.nadapters" ) { $nadapters += do "$sample_dir/${name}_1.nadapters"; }
+
+    $vrtrack->transaction_start();
 
     # Now call the database API and fill the mapstats object with values
     my $mapping = $vrlane->add_mapping();
@@ -1013,13 +1015,14 @@ sub update_db
     if ( !$qc_status || $qc_status eq 'no_qc' ) { $vrlane->qc_status('pending'); } # Never change status which was set manually
     $vrlane->update;
 
-    my $vrlibrary = VRTrack::Library->new($vrtrack->{_dbh},$vrlane->library_id()) or $self->throw("No such library in the DB: lane=[$name]\n");
+    my $vrlibrary = VRTrack::Library->new($vrtrack,$vrlane->library_id()) or $self->throw("No such library in the DB: lane=[$name]\n");
     $qc_status = $vrlibrary->qc_status();
     if ( !$qc_status || $qc_status eq 'no_qc' ) 
     { 
         $vrlibrary->qc_status('pending'); 
         $vrlibrary->update(); 
     }
+    $vrtrack->transaction_commit();
 
     return $$self{'Yes'};
 }

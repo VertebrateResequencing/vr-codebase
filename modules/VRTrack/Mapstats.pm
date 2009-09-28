@@ -5,7 +5,7 @@ package VRTrack::Mapstats;
 VRTrack::Mapstats - Sequence Tracking Mapstats object
 
 =head1 SYNOPSIS
-    my $mapstats= VRTrack::Mapstats->new($dbh, $mapstats_id);
+    my $mapstats= VRTrack::Mapstats->new($vrtrack, $mapstats_id);
 
     my $id = $mapstats->id();
     my $qc_status = $mapstats->qc_status();
@@ -24,6 +24,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 
 use VRTrack::Core_obj;
@@ -81,15 +82,17 @@ sub fields_dispatch {
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : lane id that this mapping relates to
-  Example    : my $mapstats = VRTrack::Mapstats->create($dbh, $lane_id)
+  Example    : my $mapstats = VRTrack::Mapstats->create($vrtrack, $lane_id)
   Description: Class method.  Creates new Mapstats object in the database.
   Returntype : VRTrack::Mapstats object
 
 =cut
 
 sub create {
-    my ($class,$dbh, $lane_id) = @_;
-    die "Need to call with a db handle and lane_id" unless ($dbh && $lane_id);
+    my ($class,$vrtrack, $lane_id) = @_;
+    die "Need to call with a vrtrack handle and lane_id" unless ($vrtrack && $lane_id);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     $dbh->do (qq[LOCK TABLE mapstats WRITE]);
     my $sql = qq[select max(mapstats_id) as id from mapstats];
     my $sth = $dbh->prepare($sql);
@@ -118,7 +121,7 @@ sub create {
 
     $dbh->do (qq[UNLOCK TABLES]);
 
-    return $class->new($dbh, $next_id);
+    return $class->new($vrtrack, $next_id);
 }
 
 
@@ -220,7 +223,7 @@ sub mapper {
     }
     else {  # lazy-load mapper from database
         if ($self->mapper_id){
-            my $obj = VRTrack::Mapper->new($self->{_dbh},$self->mapper_id);
+            my $obj = VRTrack::Mapper->new($self->{vrtrack},$self->mapper_id);
             $self->{'mapper'} = $obj;
         }
     }
@@ -247,7 +250,7 @@ sub add_mapper {
         return undef;
     }
     else {
-        $obj = VRTrack::Mapper->create($self->{_dbh}, $name, $version);
+        $obj = VRTrack::Mapper->create($self->{vrtrack}, $name, $version);
         # populate caches
         $self->{'mapper_id'} = $obj->id;
         $self->{'mapper'} = $obj;
@@ -269,7 +272,7 @@ sub add_mapper {
 
 sub get_mapper_by_name_version {
     my ($self,$name,$version) = @_;
-    return VRTrack::Mapper->new_by_name_version($self->{_dbh}, $name,$version);
+    return VRTrack::Mapper->new_by_name_version($self->{vrtrack}, $name,$version);
 }
 
 
@@ -327,7 +330,7 @@ sub assembly {
     }
     else {  # lazy-load assembly from database
         if ($self->assembly_id){
-            my $obj = VRTrack::Assembly->new($self->{_dbh},$self->assembly_id);
+            my $obj = VRTrack::Assembly->new($self->{vrtrack},$self->assembly_id);
             $self->{'assembly'} = $obj;
         }
     }
@@ -353,7 +356,7 @@ sub add_assembly {
         return undef;
     }
     else {
-        $obj = VRTrack::Assembly->create($self->{_dbh}, $name);
+        $obj = VRTrack::Assembly->create($self->{vrtrack}, $name);
         # populate caches
         $self->{'assembly_id'} = $obj->id;
         $self->{'assembly'} = $obj;
@@ -374,7 +377,7 @@ sub add_assembly {
 
 sub get_assembly_by_name {
     my ($self,$name,$version) = @_;
-    return VRTrack::Assembly->new_by_name($self->{_dbh}, $name);
+    return VRTrack::Assembly->new_by_name($self->{vrtrack}, $name);
 }
 
 
@@ -705,7 +708,7 @@ sub dirty {
 
 sub add_image {
     my ($self, $name, $img) = @_;
-    my $obj = VRTrack::Image->create($self->{_dbh}, $name, $img);
+    my $obj = VRTrack::Image->create($self->{vrtrack}, $name, $img);
     if ($obj){
         $obj->mapstats_id($self->id);
         $obj->update;
@@ -751,7 +754,7 @@ sub images {
     unless ($self->{'images'}){
 	my @images;
     	foreach my $id (@{$self->image_ids()}){
-	    my $obj = VRTrack::Image->new($self->{_dbh},$id);
+	    my $obj = VRTrack::Image->new($self->{vrtrack},$id);
 	    push @images, $obj;
 	}
 	$self->{'images'} = \@images;

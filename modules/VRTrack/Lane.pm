@@ -5,7 +5,7 @@ package VRTrack::Lane;
 VRTrack::Lane - Sequence Tracking Lane object
 
 =head1 SYNOPSIS
-    my $lane= VRTrack::Lane->new($dbh, $lane_id);
+    my $lane= VRTrack::Lane->new($vrtrack, $lane_id);
 
     my $id = $lane->id();
     my $status = $lane->status();
@@ -24,6 +24,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 use VRTrack::Mapstats;
 use VRTrack::File;
@@ -72,57 +73,59 @@ sub fields_dispatch {
 
 =head2 new_by_name
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle
   Arg [2]    : lane name
-  Example    : my $lane = VRTrack::Lane->new_by_name($dbh, $name)
+  Example    : my $lane = VRTrack::Lane->new_by_name($vrtrack, $name)
   Description: Class method. Returns latest Lane object by name.  If no such name is in the database, returns undef.  Dies if multiple names match.
   Returntype : VRTrack::Lane object
 
 =cut
 
 sub new_by_name {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle, name" unless ($dbh && $name);
-    return $class->new_by_field_value($dbh, 'name',$name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a handle, name" unless ($vrtrack && $name);
+    return $class->new_by_field_value($vrtrack, 'name',$name);
 }
 
 
 =head2 new_by_hierarchy_name
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle
   Arg [2]    : lane hierarchy_name
-  Example    : my $lane = VRTrack::Lane->new_by_hierarchy_name($dbh, $hierarchy_name)
+  Example    : my $lane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $hierarchy_name)
   Description: Class method. Returns latest Lane object by hierarchy_name.  If no such hierarchy_name is in the database, returns undef.  Dies if multiple hierarchy_names match.
   Returntype : VRTrack::Lane object
 
 =cut
 
 sub new_by_hierarchy_name {
-    my ($class,$dbh, $hierarchy_name) = @_;
-    die "Need to call with a db handle, hierarchy_name" unless ($dbh && $hierarchy_name);
-    return $class->new_by_field_value($dbh, 'hierarchy_name',$hierarchy_name);
+    my ($class,$vrtrack, $hierarchy_name) = @_;
+    die "Need to call with a vrtrack handle, hierarchy_name" unless ($vrtrack && $hierarchy_name);
+    return $class->new_by_field_value($vrtrack, 'hierarchy_name',$hierarchy_name);
 }
 
 
 =head2 create
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle
   Arg [2]    : lane name
-  Example    : my $lane = VRTrack::Lane->create($dbh, $name)
+  Example    : my $lane = VRTrack::Lane->create($vrtrack, $name)
   Description: Class method.  Creates new Lane object in the database.
   Returntype : VRTrack::Lane object
 
 =cut
 
 sub create {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle and name" unless ($dbh && $name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
 
     my $hierarchy_name = $name;
     $hierarchy_name =~ s/\W+/_/g;
 
     # prevent adding a lane with an existing name
-    if ($class->is_name_in_database($dbh, $name, $hierarchy_name)){
+    if ($class->is_name_in_database($vrtrack, $name, $hierarchy_name)){
         die "Already a lane by name $name/$hierarchy_name";
     }
 
@@ -154,7 +157,7 @@ sub create {
 
     $dbh->do (qq[UNLOCK TABLES]);
 
-    return $class->new($dbh, $next_id);
+    return $class->new($vrtrack, $next_id);
 }
 
 
@@ -162,15 +165,17 @@ sub create {
 
   Arg [1]    : lane name
   Arg [2]    : hierarchy name
-  Example    : if(VRTrack::Lane->is_name_in_database($dbh, $name, $hname)
+  Example    : if(VRTrack::Lane->is_name_in_database($vrtrack, $name, $hname)
   Description: Class method. Checks to see if a name or hierarchy name is already used in the lane table.
   Returntype : boolean
 
 =cut
 
 sub is_name_in_database {
-    my ($class, $dbh, $name, $hname) = @_;
-    die "Need to call with a db handle, name, hierarchy name" unless ($dbh && $name && $hname);
+    my ($class, $vrtrack, $name, $hname) = @_;
+    die "Need to call with a vrtrack handle, name, hierarchy name" unless ($vrtrack && $name && $hname);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[select lane_id from lane where latest=true and (name = ? or hierarchy_name = ?) ];
     my $sth = $dbh->prepare($sql);
 
@@ -456,7 +461,7 @@ sub submission {
     }
     else {  # lazy-load submission from database
         if ($self->submission_id){
-            my $obj = VRTrack::Submission->new($self->{_dbh},$self->submission_id);
+            my $obj = VRTrack::Submission->new($self->{vrtrack},$self->submission_id);
             $self->{'submission'} = $obj;
         }
     }
@@ -482,7 +487,7 @@ sub add_submission {
         return undef;
     }
     else {
-        $obj = VRTrack::Submission->create($self->{_dbh}, $name);
+        $obj = VRTrack::Submission->create($self->{vrtrack}, $name);
         # populate caches
         $self->{'submission_id'} = $obj->id;
         $self->{'submission'} = $obj;
@@ -505,7 +510,7 @@ sub add_submission {
 
 sub get_submission_by_name {
     my ($self,$name) = @_;
-    return VRTrack::Submission->new_by_name($self->{_dbh}, $name);
+    return VRTrack::Submission->new_by_name($self->{vrtrack}, $name);
 }
 
 
@@ -634,7 +639,7 @@ sub mappings {
     unless ($self->{'mappings'}){
 	my @mappings;
     	foreach my $id (@{$self->mapping_ids()}){
-	    my $obj = VRTrack::Mapstats->new($self->{_dbh},$id);
+	    my $obj = VRTrack::Mapstats->new($self->{vrtrack},$id);
 	    push @mappings, $obj;
 	}
 	$self->{'mappings'} = \@mappings;
@@ -690,7 +695,7 @@ sub files {
     unless ($self->{'files'}){
 	my @files;
     	foreach my $id (@{$self->file_ids()}){
-	    my $obj = VRTrack::File->new($self->{_dbh},$id);
+	    my $obj = VRTrack::File->new($self->{vrtrack},$id);
 	    push @files, $obj;
 	}
 	$self->{'files'} = \@files;
@@ -747,12 +752,12 @@ sub add_file {
 
     # File names should not be added twice - this can't be caught by the
     # database, as we expect there will be multiple rows for the same file.
-    my $obj = VRTrack::File->new_by_name($self->{_dbh},$name);
+    my $obj = VRTrack::File->new_by_name($self->{vrtrack},$name);
     if ($obj){
         warn "File $name is already present in the database\n";
         return undef;
     }
-    $obj = VRTrack::File->create($self->{_dbh}, $name);
+    $obj = VRTrack::File->create($self->{vrtrack}, $name);
     if ($obj){
         $obj->lane_id($self->id);
         $obj->update;
@@ -777,7 +782,7 @@ sub add_file {
 
 sub add_mapping {
     my ($self) = @_;
-    my $obj = VRTrack::Mapstats->create($self->{_dbh}, $self->id);
+    my $obj = VRTrack::Mapstats->create($self->{vrtrack}, $self->id);
     # clear caches
     delete $self->{'mapping_ids'};
     delete $self->{'mappings'};
@@ -796,7 +801,7 @@ sub add_mapping {
 
 sub get_file_by_name {
     my ($self, $name) = @_;
-    #my $obj = VRTrack::File->new_by_name($self->{_dbh},$name);
+    #my $obj = VRTrack::File->new_by_name($self->{vrtrack},$name);
     my @match = grep {$_->name eq $name} @{$self->files};
     if (scalar @match > 1){ # shouldn't happen
         die "More than one matching file with name $name";
@@ -821,7 +826,7 @@ sub get_file_by_name {
 
 sub get_file_by_id {
     my ($self, $id) = @_;
-    my $obj = VRTrack::File->new($self->{_dbh},$id);
+    my $obj = VRTrack::File->new($self->{vrtrack},$id);
     return $obj;
 }
 

@@ -5,7 +5,7 @@ package VRTrack::Image;
 VRTrack::Image - Sequence Tracking Image object
 
 =head1 SYNOPSIS
-    my $image = VRTrack::Image->new($dbh, $image_id);
+    my $image = VRTrack::Image->new($vrtrack, $image_id);
 
     my $id = $image->id();
     my $name = $image->name();
@@ -27,6 +27,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 
 use constant DBI_DUPLICATE => '1062';
@@ -39,17 +40,20 @@ use constant DBI_DUPLICATE => '1062';
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : image id
-  Example    : my $image = VRTrack::Image->new($dbh, $id)
+  Example    : my $image = VRTrack::Image->new($vrtrack, $id)
   Description: Returns Image object by image_id
   Returntype : VRTrack::Image object
 
 =cut
 
 sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
+    my ($class,$vrtrack, $id) = @_;
+    die "Need to call with a vrtrack handle and id" unless ($vrtrack && $id);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
     my $self = {};
     bless ($self, $class);
+    my $dbh = $vrtrack->{_dbh};
+    $self->{vrtrack} = $vrtrack;
     $self->{_dbh} = $dbh;
 
     my $sql = qq[select image_id, mapstats_id, name, caption, image from image where image_id = ?];
@@ -80,16 +84,17 @@ sub new {
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : image name
   Arg [3]    : image data - the actual image itself
-  Example    : my $ind = VRTrack::Image->create($dbh, $name, $img)
+  Example    : my $ind = VRTrack::Image->create($vrtrack, $name, $img)
   Description: Class method. Creates new Image object in the database.
   Returntype : VRTrack::Image object
 
 =cut
 
 sub create {
-    my ($class,$dbh, $name, $img) = @_;
-    die "Need to call with a db handle and name and image" unless ($dbh && $name && $img);
-
+    my ($class,$vrtrack, $name, $img) = @_;
+    die "Need to call with a vrtrack handle and name and image" unless ($vrtrack && $name && $img);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[INSERT INTO image (image_id, name, image) 
                  VALUES (NULL,?,?)];
 
@@ -102,7 +107,7 @@ sub create {
     else {
         die( sprintf('DB load insert failed: %s %s', $name, $DBI::errstr));
     }
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 
 }
 
@@ -247,30 +252,20 @@ sub update {
 	my $dbh = $self->{_dbh};
 	my $save_re = $dbh->{RaiseError};
 	my $save_pe = $dbh->{PrintError};
-	my $save_ac = $dbh->{AutoCommit};
 	$dbh->{RaiseError} = 1; # raise exception if an error occurs
 	$dbh->{PrintError} = 0; # don't print an error message
-	$dbh->{AutoCommit} = 0; # disable auto-commit
 
 	eval {
 	    my $updsql = qq[UPDATE image SET mapstats_id=?, name=?, caption=?, image=? WHERE image_id = ? ];
 	    
 	    $dbh->do ($updsql, undef,$self->mapstats_id, $self->name, $self->caption, $self->image, $self->id);
-	    $dbh->commit ( );
 	};
 
-	if ($@) {
-	    warn "Transaction failed, rolling back. Error was:\n$@\n";
-	    # roll back within eval to prevent rollback
-	    # failure from terminating the script
-	    eval { $dbh->rollback ( ); };
-	}
-	else {
+	if (!$@) {
 	    $success = 1;
 	}
 
 	# restore attributes to original state
-	$dbh->{AutoCommit} = $save_ac;
 	$dbh->{PrintError} = $save_pe;
 	$dbh->{RaiseError} = $save_re;
 

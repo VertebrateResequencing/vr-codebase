@@ -5,7 +5,7 @@ package VRTrack::Request;
 VRTrack::Request - Sequence Tracking Request object
 
 =head1 SYNOPSIS
-    my $request= VRTrack::Request->new($dbh, $request_id);
+    my $request= VRTrack::Request->new($vrtrack, $request_id);
 
     my $id = $request->id();
     my $status = $request->status();
@@ -58,16 +58,16 @@ sub fields_dispatch {
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : request sequencescape id
-  Example    : my $request = VRTrack::Request->new_by_ssid($dbh, $ssid);
+  Example    : my $request = VRTrack::Request->new_by_ssid($vrtrack, $ssid);
   Description: Class method. Returns latest Request object by ssid.  If no such ssid is in the database, returns undef
   Returntype : VRTrack::Request object
 
 =cut
 
 sub new_by_ssid {
-    my ($class,$dbh, $ssid) = @_;
-    die "Need to call with a db handle, ssid" unless ($dbh && $ssid);
-    return $class->new_by_field_value($dbh, 'ssid',$ssid);
+    my ($class,$vrtrack, $ssid) = @_;
+    die "Need to call with a vrtrack handle, ssid" unless ($vrtrack && $ssid);
+    return $class->new_by_field_value($vrtrack, 'ssid',$ssid);
 }
 
 

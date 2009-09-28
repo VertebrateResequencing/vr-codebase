@@ -5,7 +5,7 @@ package VRTrack::Mapper;
 VRTrack::Mapper - Sequence Tracking Mapper object
 
 =head1 SYNOPSIS
-    my $mapper = VRTrack::Mapper->new($dbh, $mapper_id);
+    my $mapper = VRTrack::Mapper->new($vrtrack, $mapper_id);
 
     my $id      = $mapper->id();
     my $name    = $mapper->name();
@@ -26,6 +26,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 
 use constant DBI_DUPLICATE => '1062';
@@ -38,18 +39,21 @@ use constant DBI_DUPLICATE => '1062';
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : mapper id
-  Example    : my $mapper = VRTrack::Mapper->new($dbh, $id)
+  Example    : my $mapper = VRTrack::Mapper->new($vrtrack, $id)
   Description: Returns Mapper object by mapper_id
   Returntype : VRTrack::Mapper object
 
 =cut
 
 sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
+    my ($class,$vrtrack, $id) = @_;
+    die "Need to call with a vrtrack handle and id" unless ($vrtrack && $id);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $self = {};
     bless ($self, $class);
     $self->{_dbh} = $dbh;
+    $self->{vrtrack} = $vrtrack;
 
     my $sql = qq[select mapper_id, name, version from mapper where mapper_id = ?];
     my $sth = $self->{_dbh}->prepare($sql);
@@ -77,15 +81,17 @@ sub new {
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : mapper name
   Arg [3]    : mapper version
-  Example    : my $ind = VRTrack::Mapper->new($dbh, $name, $v)
+  Example    : my $ind = VRTrack::Mapper->new($vrtrack, $name, $v)
   Description: Class method. Returns Mapper object by name.  If no such name is in the database, returns undef
   Returntype : VRTrack::Mapper object
 
 =cut
 
 sub new_by_name_version {
-    my ($class,$dbh, $name, $version) = @_;
-    die "Need to call with a db handle and name" unless ($dbh && $name && $version);
+    my ($class,$vrtrack, $name, $version) = @_;
+    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name && $version);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[select mapper_id from mapper where name = ? and version = ?];
     my $sth = $dbh->prepare($sql);
 
@@ -100,7 +106,7 @@ sub new_by_name_version {
     else{
         die(sprintf('Cannot retrieve mapper by name %s version %s: %s', $name, $version,$DBI::errstr));
     }
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 }
 
 
@@ -109,16 +115,17 @@ sub new_by_name_version {
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : mapper name
   Arg [3]    : mapper version
-  Example    : my $ind = VRTrack::Mapper->create($dbh, $name, $v)
+  Example    : my $ind = VRTrack::Mapper->create($vrtrack, $name, $v)
   Description: Class method. Creates new Mapper object in the database.
   Returntype : VRTrack::Mapper object
 
 =cut
 
 sub create {
-    my ($class,$dbh, $name, $version) = @_;
-    die "Need to call with a db handle, name, version" unless ($dbh && $name && $version);
-
+    my ($class,$vrtrack, $name, $version) = @_;
+    die "Need to call with a vrtrack handle, name, version" unless ($vrtrack && $name && $version);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[INSERT INTO mapper (mapper_id, name, version) 
                  VALUES (NULL,?,?)];
 
@@ -131,7 +138,7 @@ sub create {
     else {
         die( sprintf('DB load insert failed for %s %s: %s', $name, $version,$DBI::errstr));
     }
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 
 }
 
@@ -235,30 +242,20 @@ sub update {
 	my $dbh = $self->{_dbh};
 	my $save_re = $dbh->{RaiseError};
 	my $save_pe = $dbh->{PrintError};
-	my $save_ac = $dbh->{AutoCommit};
 	$dbh->{RaiseError} = 1; # raise exception if an error occurs
 	$dbh->{PrintError} = 0; # don't print an error message
-	$dbh->{AutoCommit} = 0; # disable auto-commit
 
 	eval {
 	    my $updsql = qq[UPDATE mapper SET name=?,version=? WHERE mapper_id = ? ];
 	    
 	    $dbh->do ($updsql, undef, $self->name,$self->version,$self->id);
-	    $dbh->commit ( );
 	};
 
-	if ($@) {
-	    warn "Transaction failed, rolling back. Error was:\n$@\n";
-	    # roll back within eval to prevent rollback
-	    # failure from terminating the script
-	    eval { $dbh->rollback ( ); };
-	}
-	else {
+	if (!$@) {
 	    $success = 1;
 	}
 
 	# restore attributes to original state
-	$dbh->{AutoCommit} = $save_ac;
 	$dbh->{PrintError} = $save_pe;
 	$dbh->{RaiseError} = $save_re;
 

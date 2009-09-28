@@ -5,7 +5,7 @@ package VRTrack::Sample;
 VRTrack::Sample - Sequence Tracking Sample object
 
 =head1 SYNOPSIS
-    my $samp = VRTrack::Sample->new($dbh, $sample_id);
+    my $samp = VRTrack::Sample->new($vrtrack, $sample_id);
 
     #get arrayref of library objects in a sample
     my $libs = $sample->libraries();
@@ -27,6 +27,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 use VRTrack::Library;
 use VRTrack::Individual;
@@ -67,18 +68,20 @@ sub fields_dispatch {
 
 =head2 new_by_name_project
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : sample name
   Arg [3]    : project id
-  Example    : my $sample = VRTrack::Sample->new_by_name_project($dbh, $name,$project_id)
+  Example    : my $sample = VRTrack::Sample->new_by_name_project($vrtrack, $name,$project_id)
   Description: Class method. Returns latest Sample object by name and project_id.  If no such name is in the database, returns undef
   Returntype : VRTrack::Sample object
 
 =cut
 
 sub new_by_name_project {
-    my ($class,$dbh, $name, $project_id) = @_;
-    die "Need to call with a db handle, name, project_id" unless ($dbh && $name && $project_id);
+    my ($class,$vrtrack, $name, $project_id) = @_;
+    die "Need to call with a vrtrack handle, name, project_id" unless ($vrtrack && $name && $project_id);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[select sample_id from sample where name = ? and project_id = ? and latest = true];
     my $sth = $dbh->prepare($sql);
 
@@ -93,40 +96,42 @@ sub new_by_name_project {
     else{
         die(sprintf('Cannot retrieve sample by $name, $project: %s', $DBI::errstr));
     }
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 }
 
 
 =head2 new_by_ssid
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : sample sequencescape id
-  Example    : my $sample = VRTrack::Sample->new_by_ssid($dbh, $ssid);
+  Example    : my $sample = VRTrack::Sample->new_by_ssid($vrtrack, $ssid);
   Description: Class method. Returns latest Sample object by ssid.  If no such ssid is in the database, returns undef
   Returntype : VRTrack::Sample object
 
 =cut
 
 sub new_by_ssid {
-    my ($class,$dbh, $ssid) = @_;
-    die "Need to call with a db handle, ssid" unless ($dbh && $ssid);
-    return $class->new_by_field_value($dbh, 'ssid',$ssid);
+    my ($class,$vrtrack, $ssid) = @_;
+    die "Need to call with a vrtrack handle, ssid" unless ($vrtrack && $ssid);
+    return $class->new_by_field_value($vrtrack, 'ssid',$ssid);
 }
 
 
 =head2 create
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : sample name
-  Example    : my $sample = VRTrack::Sample->create($dbh, $name)
+  Example    : my $sample = VRTrack::Sample->create($vrtrack, $name)
   Description: Class method.  Creates new Sample object in the database.
   Returntype : VRTrack::Sample object
 
 =cut
 
 sub create {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle and name" unless ($dbh && $name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     $dbh->do (qq[LOCK TABLE sample WRITE]);
     my $sql = qq[select max(sample_id) as id from sample];
     my $sth = $dbh->prepare($sql);
@@ -155,7 +160,7 @@ sub create {
 
     $dbh->do (qq[UNLOCK TABLES]);
 
-    return $class->new($dbh, $next_id);
+    return $class->new($vrtrack, $next_id);
 }
 
 
@@ -178,7 +183,7 @@ sub libraries {
     unless ($self->{'libraries'}){
         my @libraries;
         foreach my $id (@{$self->library_ids()}){
-            my $obj = VRTrack::Library->new($self->{_dbh},$id);
+            my $obj = VRTrack::Library->new($self->{vrtrack},$id);
             push @libraries, $obj;
         }
         $self->{'libraries'} = \@libraries;
@@ -393,7 +398,7 @@ sub individual {
     }
     else {  # lazy-load individual from database
         if ($self->individual_id){
-            my $obj = VRTrack::Individual->new($self->{_dbh},$self->individual_id);
+            my $obj = VRTrack::Individual->new($self->{vrtrack},$self->individual_id);
             $self->{'individual'} = $obj;
         }
     }
@@ -419,7 +424,7 @@ sub add_individual {
         return undef;
     }
     else {
-        my $pop = VRTrack::Individual->create($self->{_dbh}, $name);
+        my $pop = VRTrack::Individual->create($self->{vrtrack}, $name);
         # populate caches
         $self->{'individual_id'} = $pop->id;
         $self->{'individual'} = $pop;
@@ -440,7 +445,7 @@ sub add_individual {
 
 sub get_individual_by_name {
     my ($self,$name) = @_;
-    return VRTrack::Individual->new_by_name($self->{_dbh}, $name);
+    return VRTrack::Individual->new_by_name($self->{vrtrack}, $name);
 }
 
 
@@ -459,12 +464,12 @@ sub add_library {
     # Check for unwanted duplicates.  Should not allow two libraries to
     # have the same name even though this can happen in sequencescape.
 
-    my $obj = VRTrack::Library->new_by_name($self->{_dbh},$name);
+    my $obj = VRTrack::Library->new_by_name($self->{vrtrack},$name);
     if ($obj){
         warn "Library $name is already present in the database\n";
         return undef;
     }
-    $obj = VRTrack::Library->create($self->{_dbh}, $name);
+    $obj = VRTrack::Library->create($self->{vrtrack}, $name);
     if ($obj){
         $obj->sample_id($self->id);
         $obj->update;
@@ -534,7 +539,7 @@ sub get_library_by_ssid {
 
 sub get_library_by_name {
     my ($self, $name) = @_;
-    # my $obj = VRTrack::Library->new_by_name($self->{_dbh},$name);
+    # my $obj = VRTrack::Library->new_by_name($self->{vrtrack},$name);
     # unless ($obj->sample_id == $self->sample_id){
     #    die "Library $name does not belong to sample ",$self->name,"\n";
     #}

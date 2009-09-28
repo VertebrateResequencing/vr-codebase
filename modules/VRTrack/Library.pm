@@ -5,7 +5,7 @@ package VRTrack::Library;
 VRTrack::Library - Sequence Tracking Library object
 
 =head1 SYNOPSIS
-    my $lib = VRTrack::Library->new($dbh, $library_id);
+    my $lib = VRTrack::Library->new($vrtrack, $library_id);
 
     #get arrayref of lane objects in a library
     my $libs = $library->lanes();
@@ -27,6 +27,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 use VRTrack::Lane;
 use VRTrack::Library_type;
@@ -74,60 +75,60 @@ sub fields_dispatch {
 
 =head2 new_by_name
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : library name
-  Example    : my $library = VRTrack::Library->new_by_name($dbh, $name)
+  Example    : my $library = VRTrack::Library->new_by_name($vrtrack, $name)
   Description: Class method. Returns latest Library object by name.  If no such name is in the database, returns undef.  Dies if multiple names match.
   Returntype : VRTrack::Library object
 
 =cut
 
 sub new_by_name {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle, name" unless ($dbh && $name);
-    return $class->new_by_field_value($dbh, 'name',$name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
+    return $class->new_by_field_value($vrtrack, 'name',$name);
 }
 
 
 =head2 new_by_hierarchy_name
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : library hierarchy_name
-  Example    : my $library = VRTrack::Library->new_by_hierarchy_name($dbh, $hierarchy_name)
+  Example    : my $library = VRTrack::Library->new_by_hierarchy_name($vrtrack, $hierarchy_name)
   Description: Class method. Returns latest Library object by hierarchy_name.  If no such hierarchy_name is in the database, returns undef.  Dies if multiple hierarchy_names match.
   Returntype : VRTrack::Library object
 
 =cut
 
 sub new_by_hierarchy_name {
-    my ($class,$dbh, $hierarchy_name) = @_;
-    die "Need to call with a db handle, hierarchy_name" unless ($dbh && $hierarchy_name);
-    return $class->new_by_field_value($dbh, 'hierarchy_name',$hierarchy_name);
+    my ($class,$vrtrack, $hierarchy_name) = @_;
+    die "Need to call with a vrtrack handle, hierarchy_name" unless ($vrtrack && $hierarchy_name);
+    return $class->new_by_field_value($vrtrack, 'hierarchy_name',$hierarchy_name);
 }
 
 
 =head2 new_by_ssid
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : library sequencescape id
-  Example    : my $library = VRTrack::Library->new_by_ssid($dbh, $ssid);
+  Example    : my $library = VRTrack::Library->new_by_ssid($vrtrack, $ssid);
   Description: Class method. Returns latest Library object by ssid.  If no such ssid is in the database, returns undef
   Returntype : VRTrack::Library object
 
 =cut
 
 sub new_by_ssid {
-    my ($class,$dbh, $ssid) = @_;
-    die "Need to call with a db handle, ssid" unless ($dbh && $ssid);
-    return $class->new_by_field_value($dbh, 'ssid',$ssid);
+    my ($class,$vrtrack, $ssid) = @_;
+    die "Need to call with a vrtrack handle, ssid" unless ($vrtrack && $ssid);
+    return $class->new_by_field_value($vrtrack, 'ssid',$ssid);
 }
 
 
 =head2 create
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : library name
-  Example    : my $library = VRTrack::Library->create($dbh, $name)
+  Example    : my $library = VRTrack::Library->create($vrtrack, $name)
   Description: Class method.  Creates new Library object in the database.
                Dies if the name or hierarchy_name already exists.
   Returntype : VRTrack::Library object
@@ -135,14 +136,16 @@ sub new_by_ssid {
 =cut
 
 sub create {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle and name" unless ($dbh && $name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
 
     my $hierarchy_name = $name;
     $hierarchy_name =~ s/\W+/_/g;
 
     # prevent adding a library with an existing name
-    if ($class->is_name_in_database($dbh, $name, $hierarchy_name)){
+    if ($class->is_name_in_database($vrtrack, $name, $hierarchy_name)){
         die "Already a library by name $name/$hierarchy_name";
     }
 
@@ -174,7 +177,7 @@ sub create {
 
     $dbh->do (qq[UNLOCK TABLES]);
 
-    return $class->new($dbh, $next_id);
+    return $class->new($vrtrack, $next_id);
 }
 
 
@@ -182,15 +185,16 @@ sub create {
 
   Arg [1]    : library name
   Arg [2]    : hierarchy name
-  Example    : if(VRTrack::Library->is_name_in_database($dbh, $name, $hname)
+  Example    : if(VRTrack::Library->is_name_in_database($vrtrack, $name, $hname)
   Description: Class method. Checks to see if a name or hierarchy name is already used in the library table.
   Returntype : boolean
 
 =cut
 
 sub is_name_in_database {
-    my ($class, $dbh, $name, $hname) = @_;
-    die "Need to call with a db handle, name, hierarchy name" unless ($dbh && $name && $hname);
+    my ($class, $vrtrack, $name, $hname) = @_;
+    die "Need to call with a vrtrack handle, name, hierarchy name" unless ($vrtrack && $name && $hname);
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[select library_id from library where latest=true and (name = ? or hierarchy_name = ?) ];
     my $sth = $dbh->prepare($sql);
 
@@ -227,7 +231,7 @@ sub lanes {
     unless ($self->{'lanes'}){
         my @lanes;
         foreach my $id (@{$self->lane_ids()}){
-            my $obj = VRTrack::Lane->new($self->{_dbh},$id);
+            my $obj = VRTrack::Lane->new($self->{vrtrack},$id);
             push @lanes, $obj if $obj;
         }
         $self->{'lanes'} = \@lanes;
@@ -490,7 +494,7 @@ sub library_type {
     }
     else {  # lazy-load library_type from database
         if ($self->library_type_id){
-            my $obj = VRTrack::Library_type->new($self->{_dbh},$self->library_type_id);
+            my $obj = VRTrack::Library_type->new($self->{vrtrack},$self->library_type_id);
             $self->{'library_type'} = $obj;
         }
     }
@@ -516,7 +520,7 @@ sub add_library_type {
         return undef;
     }
     else {
-        $obj = VRTrack::Library_type->create($self->{_dbh}, $name);
+        $obj = VRTrack::Library_type->create($self->{vrtrack}, $name);
         # populate caches
         $self->{'library_type_id'} = $obj->id;
         $self->{'library_type'} = $obj;
@@ -540,7 +544,7 @@ sub add_library_type {
 
 sub get_library_type_by_name {
     my ($self,$name) = @_;
-    return VRTrack::Library_type->new_by_name($self->{_dbh}, $name);
+    return VRTrack::Library_type->new_by_name($self->{vrtrack}, $name);
 }
 
 
@@ -597,7 +601,7 @@ sub seq_centre {
     }
     else {  # lazy-load seq_centre from database
         if ($self->seq_centre_id){
-            my $obj = VRTrack::Seq_centre->new($self->{_dbh},$self->seq_centre_id);
+            my $obj = VRTrack::Seq_centre->new($self->{vrtrack},$self->seq_centre_id);
             $self->{'seq_centre'} = $obj;
         }
     }
@@ -623,7 +627,7 @@ sub add_seq_centre {
         return undef;
     }
     else {
-        $obj = VRTrack::Seq_centre->create($self->{_dbh}, $name);
+        $obj = VRTrack::Seq_centre->create($self->{vrtrack}, $name);
         # populate caches
         $self->{'seq_centre_id'} = $obj->id;
         $self->{'seq_centre'} = $obj;
@@ -646,7 +650,7 @@ sub add_seq_centre {
 
 sub get_seq_centre_by_name {
     my ($self,$name) = @_;
-    return VRTrack::Seq_centre->new_by_name($self->{_dbh}, $name);
+    return VRTrack::Seq_centre->new_by_name($self->{vrtrack}, $name);
 }
 
 
@@ -703,7 +707,7 @@ sub seq_tech {
     }
     else {  # lazy-load seq_tech from database
         if ($self->seq_tech_id){
-            my $obj = VRTrack::Seq_tech->new($self->{_dbh},$self->seq_tech_id);
+            my $obj = VRTrack::Seq_tech->new($self->{vrtrack},$self->seq_tech_id);
             $self->{'seq_tech'} = $obj;
         }
     }
@@ -729,7 +733,7 @@ sub add_seq_tech {
         return undef;
     }
     else {
-        $obj = VRTrack::Seq_tech->create($self->{_dbh}, $name);
+        $obj = VRTrack::Seq_tech->create($self->{vrtrack}, $name);
         # populate caches
         $self->{'seq_tech_id'} = $obj->id;
         $self->{'seq_tech'} = $obj;
@@ -752,7 +756,7 @@ sub add_seq_tech {
 
 sub get_seq_tech_by_name {
     my ($self,$name) = @_;
-    return VRTrack::Seq_tech->new_by_name($self->{_dbh}, $name);
+    return VRTrack::Seq_tech->new_by_name($self->{vrtrack}, $name);
 }
 
 
@@ -828,12 +832,12 @@ sub add_lane {
     $name or die "Must call add_lane with lane name";
     # Lane names should not be added twice - this can't be caught by the
     # database, as we expect there will be multiple rows for the same lane.
-    my $obj = VRTrack::Lane->new_by_name($self->{_dbh},$name);
+    my $obj = VRTrack::Lane->new_by_name($self->{vrtrack},$name);
     if ($obj){
         warn "Lane $name is already present in the database\n";
         return undef;
     }
-    $obj = VRTrack::Lane->create($self->{_dbh}, $name);
+    $obj = VRTrack::Lane->create($self->{vrtrack}, $name);
     if ($obj){
         $obj->library_id($self->id);
         $obj->update;
@@ -881,7 +885,7 @@ sub get_lane_by_id {
 
 sub get_lane_by_name {
     my ($self, $name) = @_;
-    #my $obj = VRTrack::Lane->new_by_name($self->{_dbh},$name);
+    #my $obj = VRTrack::Lane->new_by_name($self->{vrtrack},$name);
     my @match = grep {$_->name eq $name} @{$self->lanes};
     if (scalar @match > 1){ # shouldn't happen
         die "More than one matching lane with name $name";

@@ -5,7 +5,7 @@ package VRTrack::Population;
 VRTrack::Population - Sequence Tracking Population object
 
 =head1 SYNOPSIS
-    my $pop = VRTrack::Population->new($dbh, $population_id);
+    my $pop = VRTrack::Population->new($vrtrack, $population_id);
 
     my $id      = $population->id();
     my $name    = $population->name();
@@ -26,6 +26,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 use constant DBI_DUPLICATE => '1062';
 
@@ -37,18 +38,21 @@ use constant DBI_DUPLICATE => '1062';
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : population id
-  Example    : my $pop = VRTrack::Population->new($dbh, $id)
+  Example    : my $pop = VRTrack::Population->new($vrtrack, $id)
   Description: Class method. Returns Population object by population_id
   Returntype : VRTrack::Population object
 
 =cut
 
 sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
+    my ($class,$vrtrack, $id) = @_;
+    die "Need to call with a vrtrack handle and id" unless ($vrtrack && $id);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $self = {};
     bless ($self, $class);
     $self->{_dbh} = $dbh;
+    $self->{vrtrack} = $vrtrack;
 
     my $sql = qq[select population_id, name from population where population_id = ?];
     my $sth = $self->{_dbh}->prepare($sql);
@@ -74,15 +78,17 @@ sub new {
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : population name
-  Example    : my $pop = VRTrack::Population->new($dbh, $name)
+  Example    : my $pop = VRTrack::Population->new($vrtrack, $name)
   Description: Class method. Returns Population object by name.  If no such name is in the database, returns undef
   Returntype : VRTrack::Population object
 
 =cut
 
 sub new_by_name {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle and name" unless ($dbh && $name);
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[select population_id from population where name = ?];
     my $sth = $dbh->prepare($sql);
 
@@ -97,24 +103,25 @@ sub new_by_name {
     else{
         die(sprintf('Cannot retrieve population by name $name: %s', $DBI::errstr));
     }
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 }
 
 
 =head2 create
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : population name
-  Example    : my $pop = VRTrack::Population->create($dbh, $name)
+  Example    : my $pop = VRTrack::Population->create($vrtrack, $name)
   Description: Class method. Creates new Population object in the database.
   Returntype : VRTrack::Population object
 
 =cut
 
 sub create {
-    my ($class,$dbh, $name) = @_;
-    die "Need to call with a db handle and name" unless ($dbh && $name);
-
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
     my $sql = qq[INSERT INTO population (population_id, name) 
                  VALUES (NULL,?)];
 
@@ -127,7 +134,7 @@ sub create {
     else {
         die( sprintf('DB load insert failed: %s %s', $name, $DBI::errstr));
     }
-    return $class->new($dbh, $id);
+    return $class->new($vrtrack, $id);
 
 }
 
@@ -211,30 +218,20 @@ sub update {
 	my $dbh = $self->{_dbh};
 	my $save_re = $dbh->{RaiseError};
 	my $save_pe = $dbh->{PrintError};
-	my $save_ac = $dbh->{AutoCommit};
 	$dbh->{RaiseError} = 1; # raise exception if an error occurs
 	$dbh->{PrintError} = 0; # don't print an error message
-	$dbh->{AutoCommit} = 0; # disable auto-commit
 
 	eval {
 	    my $updsql = qq[UPDATE population SET name=? WHERE population_id = ? ];
 	    
 	    $dbh->do ($updsql, undef, $self->name,$self->id);
-	    $dbh->commit ( );
 	};
 
-	if ($@) {
-	    warn "Transaction failed, rolling back. Error was:\n$@\n";
-	    # roll back within eval to prevent rollback
-	    # failure from terminating the script
-	    eval { $dbh->rollback ( ); };
-	}
-	else {
+	if (!$@) {
 	    $success = 1;
 	}
 
 	# restore attributes to original state
-	$dbh->{AutoCommit} = $save_ac;
 	$dbh->{PrintError} = $save_pe;
 	$dbh->{RaiseError} = $save_re;
 
