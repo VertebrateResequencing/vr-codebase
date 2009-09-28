@@ -1030,7 +1030,7 @@ sub update_db
 sub warn
 {
     my ($self,@msg) = @_;
-    my $msg = gmtime . "\n" . join('',@msg);
+    my $msg = scalar gmtime() . "\n" . join('',@msg);
     if ($self->verbose > 0) 
     {
         print STDERR $msg;
@@ -1052,7 +1052,7 @@ sub debug
 sub throw
 {
     my ($self,@msg) = @_;
-    Utils::error(scalar gmtime . "\n", @msg);
+    Utils::error(scalar gmtime() . "\n", @msg);
 }
 
 sub log
