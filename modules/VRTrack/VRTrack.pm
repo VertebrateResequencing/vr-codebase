@@ -122,16 +122,14 @@ sub schema_version {
 sub projects {
     my ($self) = @_;
 
-    unless ($self->{'projects'}){
-        my @projects;
-        foreach my $id (@{$self->project_ids()}){
-            my $obj = VRTrack::Project->new($self->{vrtrack},$id);
-            push @projects, $obj;
-        }
-        $self->{'projects'} = \@projects;
+    # removed cache here, otherwise we would have a reference to a bunch
+    # of objects that had a reference back to us.  Bad thing.
+    my @projects;
+    foreach my $id (@{$self->project_ids()}){
+        my $obj = VRTrack::Project->new($self,$id);
+        push @projects, $obj;
     }
-
-    return $self->{'projects'};
+    return \@projects;
 }
 
 
@@ -188,9 +186,8 @@ sub add_project {
         return undef;
     }
 
-    $obj = VRTrack::Project->create($self->{vrtrack},$name);
+    $obj = VRTrack::Project->create($self,$name);
     delete $self->{'project_ids'};
-    delete $self->{'projects'};
     return $obj;
 }
 
@@ -206,7 +203,7 @@ sub add_project {
 
 sub get_project_by_name {
     my ($self, $name) = @_;
-    my $obj = VRTrack::Project->new_by_name($self->{vrtrack},$name);
+    my $obj = VRTrack::Project->new_by_name($self,$name);
     return $obj;
 }
 
@@ -222,7 +219,7 @@ sub get_project_by_name {
 
 sub get_project_by_id {
     my ($self, $id) = @_;
-    my $obj = VRTrack::Project->new($self->{vrtrack},$id);
+    my $obj = VRTrack::Project->new($self,$id);
     return $obj;
 }
 
@@ -238,7 +235,7 @@ sub get_project_by_id {
 
 sub get_project_by_ssid {
     my ($self, $id) = @_;
-    my $obj = VRTrack::Project->new_by_ssid($self->{vrtrack},$id);
+    my $obj = VRTrack::Project->new_by_ssid($self,$id);
     return $obj;
 }
 
