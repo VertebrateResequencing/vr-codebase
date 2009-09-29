@@ -340,4 +340,18 @@ sub vrtrack {
 }
 
 
+=head2 allowed_processed_flags
+
+  Example    : my %flags = VRTrack::Core_obj->allowed_processed_flags();
+  Description: List allowed flags: ( imported=>1, qc=>2, downloaded=>4, in_hierarchy=>8 )
+  Returntype : Hash
+
+=cut
+
+sub allowed_processed_flags
+{
+    my %flags = ( imported=>1, qc=>2, downloaded=>4, in_hierarchy=>8 );
+    return %flags;
+}
+
 1;

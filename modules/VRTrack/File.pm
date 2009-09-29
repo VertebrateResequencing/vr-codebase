@@ -355,7 +355,7 @@ sub processed {
 sub is_processed {
     my ($self,$flag,$processed) = @_;
 
-    my %flags = ( imported=>1, downloaded=>4, in_hierarchy=>8 );
+    my %flags = VRTrack::Core_obj->allowed_processed_flags();
     if ( !exists($flags{$flag}) ) { croak qq[The flag "$flag" not recognised.\n]; }
 
     $flag = $flags{$flag};

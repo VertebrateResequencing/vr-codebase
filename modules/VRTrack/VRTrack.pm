@@ -28,6 +28,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
+use Carp;
 no warnings 'uninitialized';
 use DBI;
 use VRTrack::Project;
@@ -276,6 +277,63 @@ sub hierarchy_path_of_lane_name {
 }
 
 
+=head2 processed_lane_names
+
+  Arg [1]    : list of flags and values
+  Example    : my $all_lanes   = $track->processed_lane_names();
+               my $qc_lanes    = $track->qc_filtered_lane_names('qc'=>1);
+               my $no_qc_lanes = $track->qc_filtered_lane_names('qc'=>0);
+  Description: retrieves a (optionally filtered) list of all lane hierarchy names, ordered by project, sample, library names.
+               This is a helper function for the qc web interface for speed.
+  Returntype : arrayref
+
+=cut
+
+sub processed_lane_names {
+    my ($self,@filter) = @_;
+    if ( scalar @filter % 2 ) { croak "Expected list of keys and values.\n"; }
+    my %flags = VRTrack::Core_obj->allowed_processed_flags();
+    my @goodfilters;
+    my $filterclause = '';
+    print STDERR "processed_lane_names: test me\n";
+    while (my ($key,$value)=splice(@filter,0,2))
+    {
+        if ( !exists($flags{$key}) ) { croak qq[The flag "$key" not recognised.\n]; }
+        push @goodfilters, ($value ? '' : '!') . qq[(lane.processed & $flags{$key})];
+    }
+    if ( scalar @goodfilters )
+    {
+        $filterclause = ' AND ' . join(' AND ', @goodfilters);
+    }
+    my @lane_names;
+    my $sql =qq[select lane.hierarchy_name 
+                from latest_project as project,
+                    latest_sample as sample,
+                    latest_library as library,
+                    latest_lane as lane 
+                where lane.library_id = library.library_id 
+                      and library.sample_id = sample.sample_id 
+                      and sample.project_id = project.project_id 
+                $filterclause 
+                order by project.hierarchy_name, 
+                        sample.name, 
+                        library.hierarchy_name, 
+                        lane.hierarchy_name];
+    my $sth = $self->{_dbh}->prepare($sql);
+
+    my $tmpname;
+    if ($sth->execute()){
+        $sth->bind_columns ( \$tmpname );
+        push @lane_names, $tmpname while $sth->fetchrow_arrayref;
+    }
+    else{
+        die(sprintf('Cannot retrieve projects: %s', $DBI::errstr));
+    }
+
+    return \@lane_names;
+}
+
+
 =head2 qc_filtered_lane_names
 
   Arg [1]    : [optional] list of qc_status filters
@@ -327,45 +385,33 @@ sub qc_filtered_lane_names {
 }
 
 
-=head2 qc_filtered_file_names
+=head2 processed_file_names
 
-  Arg [1]    : [optional] list of qc_status filters
-  Example    : my $all_files = $track->qc_filtered_file_names();
-               my $files_to_import = $track->qc_filtered_file_names('NULL');
-
-  Description: retrieves a (optionally filtered) list of all file names,
-               ordered by project, sample, library, lane names.
-
-               A QC status of NULL for a file indicates that this file has been imported into the database from
-               sequence tracking, but is not been imported into a disk hierarchy.
+  Arg [1]    : list of flags and values
+  Example    : my $all_files   = $track->processed_file_names();
+               my $qc_files    = $track->qc_filtered_file_names('qc'=>1);
+               my $no_qc_files = $track->qc_filtered_file_names('qc'=>0);
+  Description: retrieves a (optionally filtered) list of all file hierarchy names, ordered by project, sample, library names.
+               This is a helper function for the qc web interface for speed.
   Returntype : arrayref
 
 =cut
 
-sub qc_filtered_file_names {
+sub processed_file_names {
     my ($self,@filter) = @_;
-    my $filterclause;
-    if (@filter){
-        # input validation
-        my %allowed = map {$_ => 1} @{VRTrack::Core_obj::list_enum_vals($self,'file','qc_status')};
-        my @goodfilters = grep {$allowed{lc($_)}} @filter;
-        my $get_null = grep {lc($_) eq 'null'} @filter;
-
-        # NULL complicates things, because the SQL syntax is different.  Can't do = NULL or in (NULL)
-        if ($get_null){
-            if (scalar @goodfilters){
-                $filterclause = 'and (file.qc_status is NULL or file.qc_status in (';
-                $filterclause .= join (",", map {"'$_'"} @goodfilters).')';
-                $filterclause .= ')';
-            }
-            else {  # only checking for NULL
-                $filterclause = 'and file.qc_status is NULL';
-            }
-        }
-        else {
-            $filterclause = 'and file.qc_status in (';
-            $filterclause .= join (",", map {"'$_'"} @goodfilters).')';
-        }
+    if ( scalar @filter % 2 ) { croak "Expected list of keys and values.\n"; }
+    my %flags = VRTrack::Core_obj->allowed_processed_flags();
+    my @goodfilters;
+    my $filterclause = '';
+    print STDERR "processed_file_names: test me\n";
+    while (my ($key,$value)=splice(@filter,0,2))
+    {
+        if ( !exists($flags{$key}) ) { croak qq[The flag "$key" not recognised.\n]; }
+        push @goodfilters, ($value ? '' : '!') . qq[(file.processed & $flags{$key})];
+    }
+    if ( scalar @goodfilters )
+    {
+        $filterclause = ' AND ' . join(' AND ', @goodfilters);
     }
     my @file_names;
     my $sql =qq[select file.name 
@@ -392,7 +438,7 @@ sub qc_filtered_file_names {
         push @file_names, $tmpname while $sth->fetchrow_arrayref;
     }
     else{
-        die(sprintf('Cannot retrieve projects: %s', $DBI::errstr));
+        die(sprintf('Cannot retrieve projects: %s. The query was %s', $DBI::errstr, $sql));
     }
 
     return \@file_names;
