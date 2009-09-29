@@ -52,15 +52,18 @@ sub fields_dispatch {
                 'acc'               => sub { $self->acc(@_)},
                 'readlen'           => sub { $self->read_len(@_)},
                 'paired'            => sub { $self->is_paired(@_)},
+                'processed'         => sub { $self->processed(@_)},
                 'raw_reads'         => sub { $self->raw_reads(@_)},
                 'raw_bases'         => sub { $self->raw_bases(@_)},
                 'npg_qc_status'     => sub { $self->npg_qc_status(@_)},
                 'qc_status'         => sub { $self->qc_status(@_)},
+                'auto_qc_status'    => sub { $self->auto_qc_status(@_)},
                 'gt_status'         => sub { $self->genotype_status(@_)},
                 'submission_id'     => sub { $self->submission_id(@_)},
                 'withdrawn'         => sub { $self->is_withdrawn(@_)},
                 'note_id'           => sub { $self->note_id(@_)},
                 'changed'           => sub { $self->changed(@_)},
+                'run_date'          => sub { $self->run_date(@_)},
                 'latest'            => sub { $self->is_latest(@_)},
                 );
 
@@ -514,6 +517,30 @@ sub get_submission_by_name {
 }
 
 
+=head2 auto_qc_status
+
+  Arg [1]    : auto_qc_status (optional)
+  Example    : my $qc_status = $lane->auto_qc_status();
+	       $lane->auto_qc_status('passed');
+  Description: Get/Set for lane auto_qc_status
+  Returntype : string
+
+=cut
+
+sub auto_qc_status {
+    my ($self,$auto_qc_status) = @_;
+    if (defined $auto_qc_status and $auto_qc_status ne $self->{'auto_qc_status'}){
+        my %allowed = map {$_ => 1} @{$self->list_enum_vals('lane','auto_qc_status')};
+        unless ($allowed{lc($auto_qc_status)}){
+            die "'$auto_qc_status' is not a defined auto_qc_status";
+        }
+	$self->{'auto_qc_status'} = $auto_qc_status;
+	$self->dirty(1);
+    }
+    return $self->{'auto_qc_status'};
+}
+
+
 =head2 qc_status
 
   Arg [1]    : qc_status (optional)
@@ -586,6 +613,26 @@ sub genotype_status {
 }
 
 
+=head2 run_date
+
+  Arg [1]    : run_date (optional)
+  Example    : my $run_date = $lane->run_date();
+               $lane->run_date('20080810123000');
+  Description: Get/Set for lane run_date
+  Returntype : string
+
+=cut
+
+sub run_date {
+    my ($self,$run_date) = @_;
+    if (defined $run_date and $run_date ne $self->{'run_date'}){
+	$self->{'run_date'} = $run_date;
+	$self->dirty(1);
+    }
+    return $self->{'run_date'};
+}
+
+
 =head2 changed
 
   Arg [1]    : changed (optional)
@@ -603,6 +650,54 @@ sub changed {
 	$self->dirty(1);
     }
     return $self->{'changed'};
+}
+
+=head2 processed
+
+  Arg [1]    : processed (optional)
+  Description: Don't use this method, use is_processed instead.
+  Returntype : string
+
+=cut
+
+sub processed {
+    my ($self,$processed) = @_;
+    if (defined $processed and $processed ne $self->{'processed'}){
+	$self->{'processed'} = $processed;
+	$self->dirty(1);
+    }
+    return $self->{'processed'};
+}
+
+
+=head2 is_processed
+
+  Arg [1]    : flag, one of: 'downloaded','in_hierarchy','imported','qc'
+  Arg [2]    : processed: 0 or 1 (optional)
+  Example    : my $processed = $lane->is_processed('qc');
+               $lane->processed('qc',1);
+  Description: Get/Set for lane processed
+  Returntype : 1 or 0
+
+=cut
+
+sub is_processed {
+    my ($self,$flag,$processed) = @_;
+
+    my %flags = ( imported=>1, qc=>2, downloaded=>4, in_hierarchy=>8 );
+    if ( !exists($flags{$flag}) ) { croak qq[The flag "$flag" not recognised.\n]; }
+
+    $flag = $flags{$flag};
+    if ( defined $processed )
+    {
+        $processed = $processed ? $self->{processed}|$flag : $self->{processed}&(~$flag);
+        if ( $processed != $self->{'processed'} )
+        {
+            $self->{'processed'} = $processed;
+            $self->dirty(1);
+        }
+    }
+    return $self->{'processed'} & $flag ? 1 : 0;
 }
 
 

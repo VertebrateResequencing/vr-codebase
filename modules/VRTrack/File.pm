@@ -8,7 +8,6 @@ VRTrack::File - Sequence Tracking File object
     my $file= VRTrack::File->new($vrtrack, $file_id);
 
     my $id = $file->id();
-    my $qc_status = $file->qc_status();
 
 =head1 DESCRIPTION
 
@@ -46,7 +45,7 @@ sub fields_dispatch {
                 'lane_id'           => sub { $self->lane_id(@_)},
                 'name'              => sub { $self->name(@_)},
                 'hierarchy_name'    => sub { $self->hierarchy_name(@_)},
-                'qc_status'         => sub { $self->qc_status(@_)},
+                'processed'         => sub { $self->processed(@_)},
                 'type'              => sub { $self->type(@_)},
                 'readlen'           => sub { $self->read_len(@_)},
                 'raw_reads'         => sub { $self->raw_reads(@_)},
@@ -306,34 +305,6 @@ sub lane_id {
 }
 
 
-=head2 qc_status
-
-  Arg [1]    : qc_status (optional) ['pending','passed','failed']
-  Example    : my $qc_status = $file->qc_status();
-	       $file->qc_status('passed');
-
-               NB before a file has been 'imported', i.e. copied into a disk
-               hierarchy, the qc_status should be NULL.  On import, it should
-               be set to 'no_qc'.
-  Description: Get/Set for file qc_status
-  Returntype : string
-
-=cut
-
-sub qc_status {
-    my ($self,$qc_status) = @_;
-    if (defined $qc_status and $qc_status ne $self->{'qc_status'}){
-        my %allowed = map {$_ => 1} @{$self->list_enum_vals('file','qc_status')};
-        unless ($allowed{lc($qc_status)}){
-            die "'$qc_status' is not a defined qc_status";
-        }
-	$self->{'qc_status'} = $qc_status;
-	$self->dirty(1);
-    }
-    return $self->{'qc_status'};
-}
-
-
 =head2 changed
 
   Arg [1]    : changed (optional)
@@ -352,6 +323,54 @@ sub changed {
     }
     return $self->{'changed'};
 }
+
+=head2 processed
+
+  Arg [1]    : processed (optional)
+  Description: Don't use this method, use is_processed instead.
+  Returntype : string
+
+=cut
+
+sub processed {
+    my ($self,$processed) = @_;
+    if (defined $processed and $processed ne $self->{'processed'}){
+	$self->{'processed'} = $processed;
+	$self->dirty(1);
+    }
+    return $self->{'processed'};
+}
+
+=head2 is_processed
+
+  Arg [1]    : flag, one of: 'downloaded','in_hierarchy','imported'
+  Arg [2]    : processed: 0 or 1 (optional)
+  Example    : my $processed = $file->is_processed('imported');
+               $file->processed('imported',1);
+  Description: Get/Set for file processed
+  Returntype : 1 or 0
+
+=cut
+
+sub is_processed {
+    my ($self,$flag,$processed) = @_;
+
+    my %flags = ( imported=>1, downloaded=>4, in_hierarchy=>8 );
+    if ( !exists($flags{$flag}) ) { croak qq[The flag "$flag" not recognised.\n]; }
+
+    $flag = $flags{$flag};
+    if ( defined $processed )
+    {
+        $processed = $processed ? $self->{processed}|$flag : $self->{processed}&(~$flag);
+        if ( $processed != $self->{'processed'} )
+        {
+            $self->{'processed'} = $processed;
+            $self->dirty(1);
+        }
+    }
+    return $self->{'processed'} & $flag ? 1 : 0;
+}
+
 
 
 =head2 type
