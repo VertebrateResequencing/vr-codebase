@@ -73,6 +73,9 @@ sub new {
     $self->{_dbh} = $dbh;
     $self->{transaction} = 0;
 
+    $dbh->{RaiseError} = 1;
+    $dbh->{PrintError} = 1;
+
     # Check version is OK.
     my $schema_version = $self->schema_version();
     unless ($schema_version == SCHEMA_VERSION){
