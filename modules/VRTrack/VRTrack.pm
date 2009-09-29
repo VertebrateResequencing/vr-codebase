@@ -295,7 +295,6 @@ sub processed_lane_names {
     my %flags = VRTrack::Core_obj->allowed_processed_flags();
     my @goodfilters;
     my $filterclause = '';
-    print STDERR "processed_lane_names: test me\n";
     while (my ($key,$value)=splice(@filter,0,2))
     {
         if ( !exists($flags{$key}) ) { croak qq[The flag "$key" not recognised.\n]; }
@@ -403,7 +402,6 @@ sub processed_file_names {
     my %flags = VRTrack::Core_obj->allowed_processed_flags();
     my @goodfilters;
     my $filterclause = '';
-    print STDERR "processed_file_names: test me\n";
     while (my ($key,$value)=splice(@filter,0,2))
     {
         if ( !exists($flags{$key}) ) { croak qq[The flag "$key" not recognised.\n]; }

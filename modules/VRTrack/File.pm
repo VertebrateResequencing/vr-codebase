@@ -343,10 +343,10 @@ sub processed {
 
 =head2 is_processed
 
-  Arg [1]    : flag, one of: 'downloaded','in_hierarchy','imported'
+  Arg [1]    : One of flags listed in Core_obj::allowed_processed_flags();
   Arg [2]    : processed: 0 or 1 (optional)
-  Example    : my $processed = $file->is_processed('imported');
-               $file->processed('imported',1);
+  Example    : my $processed = $file->is_processed('import');
+               $file->processed('import',1);
   Description: Get/Set for file processed
   Returntype : 1 or 0
 

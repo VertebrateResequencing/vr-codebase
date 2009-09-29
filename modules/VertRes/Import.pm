@@ -290,16 +290,17 @@ sub update_db
     if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
 
     my $vrtrack = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database\n");
-    my $vrlane  = VRTrack::Lane->new_by_name($vrtrack->{_dbh},$$self{lane}) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
+    my $vrlane  = VRTrack::Lane->new_by_name($vrtrack,$$self{lane}) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
 
     my $mapping_dir = "$$self{mapping_root}/" . $self->get_hierarchy_path();
     Utils::CMD(qq[mkdir -p '$mapping_dir']);
 
+    $vrtrack->transaction_start();
+
     my $i = 0;
     while (1)
     {
-        # Check what fastq files actually exist in the hierarchy and update
-        #   their qc_status.
+        # Check what fastq files actually exist in the hierarchy and update the processed flag
         $i++;
         my $name = "$$self{lane}_$i.fastq";
 
@@ -326,8 +327,7 @@ sub update_db
         $vrfile->raw_bases($fastq->total_length());
         $vrfile->raw_reads($fastq->num_sequences());
         $vrfile->mean_q($fastq->avg_qual()); 
-        my $qc_status = $vrfile->qc_status();
-        if ( !$qc_status ) { $vrfile->qc_status('no_qc'); } # Never change status which was set manually
+        $vrfile->is_processed('import',1);
         $vrfile->update();
     }
 
@@ -338,15 +338,14 @@ sub update_db
         if ( !($file=~/^\d+_s_\d+\./) ) { next; }
 
         my $vrfile = $vrlane->get_file_by_name($file);
-        my $qc_status = $vrfile->qc_status();
-        if ( !$qc_status ) { $vrfile->qc_status('no_qc'); } # Never change status which was set manually
+        $vrfile->is_processed('import',1);
         $vrfile->update();
     }
 
     # Change the qc status of the lane.
-    my $qc_status = $vrlane->qc_status();
-    if ( !$qc_status ) { $vrlane->qc_status('no_qc'); } # Never change status which was set manually
+    $vrlane->is_processed('import',1);
     $vrlane->update();
+    $vrtrack->transaction_commit();
 
     return $$self{Yes};
 }

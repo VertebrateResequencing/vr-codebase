@@ -946,10 +946,8 @@ sub update_db
     my $vrtrack   = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
     my $name      = $$self{lane};
     my $vrlane    = VRTrack::Lane->new_by_name($vrtrack,$name) or $self->throw("No such lane in the DB: [$name]\n");
-    my $qc_status = $vrlane->qc_status();
 
-    # Make sure we don't overwrite info of lanes which were already QC-ed.
-    if ( $qc_status ne 'no_qc' && $qc_status ne 'pending' && !$$self{ignore_qc_status} ) { return $$self{Yes}; }
+    if ( !$vrlane->is_processed('import') ) { return $$self{Yes}; }
 
     # Get the stats dump
     my $stats = do "$sample_dir/$$self{stats_dump}";
@@ -1011,7 +1009,8 @@ sub update_db
 
     # Write the QC status. Never overwrite a QC status set previously by human. Only NULL or no_qc can be overwritten.
     $mapping->update;
-    $qc_status = $vrlane->qc_status();
+    $vrlane->is_processed('qc',1);
+    my $qc_status = $vrlane->qc_status();
     if ( !$qc_status || $qc_status eq 'no_qc' ) { $vrlane->qc_status('pending'); } # Never change status which was set manually
     $vrlane->update;
 

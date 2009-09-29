@@ -672,7 +672,7 @@ sub processed {
 
 =head2 is_processed
 
-  Arg [1]    : flag, one of: 'downloaded','in_hierarchy','imported','qc'
+  Arg [1]    : flag, one of the flags listed in Core_obj::allowed_processed_flags();
   Arg [2]    : processed: 0 or 1 (optional)
   Example    : my $processed = $lane->is_processed('qc');
                $lane->processed('qc',1);
