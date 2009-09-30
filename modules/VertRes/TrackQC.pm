@@ -543,7 +543,7 @@ sub map_sample
     }
     else
     {
-        $bwa_cmd = "$bwa sampe $bwa_ref ${name}_1.sai ${name}_2.sai ${name}_1.fastq.gz ${name}_2.fastq.gz";
+        $bwa_cmd = "$bwa sampe -a 2000 $bwa_ref ${name}_1.sai ${name}_2.sai ${name}_1.fastq.gz ${name}_2.fastq.gz";
     }
 
     # Dynamic script to be run by LSF. We must check that the bwa exists alright
