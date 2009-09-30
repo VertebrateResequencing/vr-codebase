@@ -53,6 +53,9 @@ use File::Basename;
 require File::Path;
 require File::Copy;
 use IO::Uncompress::Gunzip;
+use File::Fetch;
+use Net::FTP::Robust;
+use Digest::MD5;
 
 use base qw(VertRes::Base);
 
@@ -85,6 +88,9 @@ sub new {
            $obj->file('>filename'); # open to write
            $obj->file('>filename.gz'); # open to write compressed
  Function: Get/set filename; when setting also opens the file and sets fh().
+           There is also read support for remote files like
+           'ftp://ftp..../file.txt' and it will be downloaded to a temporary
+           location and opened.
  Returns : absolute path of file
  Args    : filename
 
@@ -99,6 +105,9 @@ sub file {
             $in_out = $1;
             $filename =~ s/^>+//;
         }
+        elsif ($filename =~ /^ftp:|^http:/) {
+            $filename = $self->get_remote_file($filename) || $self->throw("Could not download remote file '$filename'");
+        }
         
         # avoid potential problems with caller changing dir and things being
         # relative; also more informative and explicit to throw with full path
@@ -112,7 +121,6 @@ sub file {
                 $self->{_filename} = $filename;
                 $self->fh($z);
                 return $filename;
-                #$open = "zcat $filename |";
             }
             else {
                 $open = "| gzip -c > $filename";
@@ -503,6 +511,105 @@ sub copy {
     }
     
     return 0;
+}
+
+=head2  get_remote_file
+
+ Title   : get_remote_file
+ Usage   : $obj->get_remote_file('url', save => '/path/to/download/to'); 
+ Function: Download a remote file from the internet. Tries to be robust: will
+           attempt multiple times to get a file.
+ Returns : path to downloaded file on success (otherwise the file won't exist)
+ Args    : source url. Optionally:
+           save => path to save to. With no path, saves to a temp file.
+           md5 => the expected md5 of the file - if it doesn't match what was
+                  downloaded, the download will be automatically reattempted up
+                  to 3 times. Currently only applies to ftp downloads.
+
+=cut
+
+sub get_remote_file {
+    my ($self, $url, %opts) = @_;
+    return unless $url;
+    my $local_dir = $self->tempdir();
+    
+    my $ff = File::Fetch->new(uri => $url);
+    my $scheme = $ff->scheme;
+    my $host = $ff->host;
+    my $path = $ff->path;
+    my $basename = $ff->file;
+    my $full_path = $path.$basename;
+    
+    my $out_file = $self->catfile($local_dir, $ff->output_file);
+    
+    if ($scheme eq 'ftp') {
+        # use Net::FTP::Robust, since it's potentially better
+        my $ftp;
+        if (exists $self->{ftp_objs}->{$host}) {
+            $ftp = $self->{ftp_objs}->{$host};
+        }
+        else {
+            $ftp = Net::FTP::Robust->new(Host => $host);
+            $self->{ftp_objs}->{$host} = $ftp;
+        }
+        
+        $ftp->get($full_path, $local_dir);
+        
+        my $md5 = $opts{md5};
+        if ($md5) {
+            my $ok = $self->verify_md5($out_file, $md5);
+            
+            unless ($ok) {
+                my $tries = 0;
+                while (! $ok) {
+                    unlink($out_file);
+                    $ftp->get($path, $local_dir);
+                    $ok = $self->verify_md5($out_file, $md5);
+                    
+                    $tries++;
+                    last if $tries == 3;
+                }
+            }
+            
+            unless ($ok) {
+                $self->warn("Tried downloading $url 3 times, but the md5 never matched '$md5'\n");
+                unlink($out_file);
+                return;
+            }
+        }
+    }
+    else {
+        $out_file = $ff->fetch(to => $local_dir) or $self->throw($ff->error);
+    }
+    
+    my $save_file = $opts{save};
+    if ($save_file) {
+        my $success = File::Copy::move($out_file, $save_file);
+        $success || $self->throw("Failed to move $out_file to $save_file");
+        return $save_file;
+    }
+    return $out_file;
+}
+
+=head2  verify_md5
+
+ Title   : verify_md5
+ Usage   : if ($obj->verify_md5($file, $md5)) { #... }
+ Function: Verify that a given file has the given md5.
+ Returns : boolean
+ Args    : path to file, the expected md5 (hexdigest as produced by the md5sum
+           program) as a string
+
+=cut
+
+sub verify_md5 {
+    my ($self, $file, $md5) = @_;
+    open(my $fh, $file) || $self->throw("Could not open file $file");
+    binmode($fh);
+    my $dmd5 = Digest::MD5->new();
+    $dmd5->addfile($fh);
+    my $new_md5 = $dmd5->hexdigest;
+    return $new_md5 eq $md5;
 }
 
 1;

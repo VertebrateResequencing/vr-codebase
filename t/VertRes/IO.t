@@ -4,7 +4,7 @@ use warnings;
 use Cwd 'cwd';
 
 BEGIN {
-    use Test::Most tests => 45;
+    use Test::Most tests => 56;
     
     use_ok('VertRes::IO');
 }
@@ -127,5 +127,35 @@ foreach my $file ('2822_6_1_1000.fastq', 'S_suis_P17.fa.fai', 'fastq.gz.fastqche
 }
 is_deeply [$io->parse_fofn($file)], [sort @expected], 'parse_fofn test';
 
+# download a remote file
+$io = VertRes::IO->new();
+my $remote_md5 = '4b62815f42eeadf93eb7835a99d9fbb5';
+my @remote_content = ("A test file for VertRes::IO->get_remote_file()\n", "it\n", "has\n", "4 lines.\n");
+# via http
+my $http_url = 'http://wwwdev.sanger.ac.uk/modelorgs/mousegenomes/VertResIO.get_remote_file.test_file.txt';
+ok my $http_file = $io->get_remote_file($http_url), 'get_remote_file on http returned a downloaded file path';
+test_file($http_file);
+unlink($http_file);
+# via ftp, with md5 check and save to custom location
+my $ftp_url = 'ftp://ftp.sanger.ac.uk/pub/1000genomes/sb10/VertResIO.get_remote_file.test_file.txt';
+$tmp_dir = $io->tempdir;
+my $custom_save_location = $io->catfile($tmp_dir, 'ftp_download.txt');
+ok my $ftp_file = $io->get_remote_file($ftp_url, md5 => $remote_md5, save => $custom_save_location), 'get_remote_file on ftp returned a downloaded file path';
+is $ftp_file, $custom_save_location, 'get_remote_file with save option save file to correct place';
+test_file($ftp_file);
+unlink($ftp_file);
+# with the file() shorthand
+ok $ftp_file = $io->file($ftp_url), 'file() on a url returned something';
+test_file($ftp_file);
+$fh = $io->fh;
+is <$fh>, $remote_content[0], 'fh() readline on a url file worked transparently';
 
 exit;
+
+sub test_file {
+    my $file = shift;
+    ok open(my $fh, $file), 'downloaded file could be opened';
+    my @download_content = <$fh>;
+    is_deeply \@download_content, \@remote_content, 'downloaded file content was correct';
+    close($fh);
+}
