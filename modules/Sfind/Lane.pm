@@ -67,6 +67,46 @@ sub new {
 }
 
 
+=head2 new_by_run_lane
+
+  Arg [1]    : database handle to seqtracking database
+  Arg [2]    : lane id
+  Example    : my $lane= Sfind::Sfind->new_by_run_lane($dbh, '2064', '3')
+  Description: Returns Lane object from a run and lane
+  Returntype : Sfind::Lane object
+
+=cut
+
+sub new_by_run_lane {
+    my ($class,$dbh, $run, $lane) = @_;
+    die "Need to call with a db handle, run and lane" unless ($dbh && $run && $lane);
+    my $self = {};
+    bless ($self, $class);
+    $self->{_dbh} = $dbh;
+
+    # id_run_pair = 0 means this is the first of any pair
+    # which is what the srf, fastq & fastqcheck files are named for
+    my $sql = qq[select batch_id, id_run, position, run_complete, cycles, paired_read, id_npg_information from npg_information where id_run = ? and position = ? and id_run_pair=0];
+    my $sth = $self->{_dbh}->prepare($sql);
+
+    $sth->execute($run, $lane);
+    my $data = $sth->fetchall_arrayref()->[0];	# only one row for each id
+    unless ($data){
+	return undef;
+    }
+    $self->batch_id($data->[0]);
+    $self->run_name($data->[1]);
+    $self->run_lane($data->[2]);
+    $self->created($data->[3]);
+    $self->read_len($data->[4]);
+    $self->is_paired($data->[5]);
+    $self->id($data->[6]);
+
+    $self->_load_pair_info();
+    return $self;
+}
+
+
 =head2 id
 
   Arg [1]    : id (optional)
