@@ -412,7 +412,7 @@ sub qc_filtered_lib_names {
     my $sql =qq[select library.hierarchy_name 
                 from latest_project as project,
                     latest_sample as sample,
-                    latest_library as library,
+                    latest_library as library 
                 where library.sample_id = sample.sample_id 
                       and sample.project_id = project.project_id 
                 $filterclause 
