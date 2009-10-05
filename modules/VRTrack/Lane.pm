@@ -361,7 +361,7 @@ sub is_paired {
   Arg [1]    : boolean for is_withdrawn status
   Example    : $lane->is_withdrawn(1);
   Description: Get/Set for whether lane has been withdrawn or not
-  Returntype : boolean
+  Returntype : boolean (undef if withdrawn status had never been set)
 
 =cut
 
