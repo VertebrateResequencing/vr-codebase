@@ -192,7 +192,7 @@ sub update {
 
   Arg [1]    : none
   Example    : $obj->delete();
-  Description: Deletes the current object and all its descendant objects from the database.  R
+  Description: Deletes the current object and all its descendant objects from the database.
   Returntype : 1 if successful, otherwise undef.
 
 =cut
@@ -202,13 +202,13 @@ sub delete {
     my $success;
     my $objs_to_delete = [$self];
     push @$objs_to_delete, @{$self->descendants};
-    my %lanes_from_table;
+    my %rows_from_table;
     foreach (@$objs_to_delete){
         my $class=ref($_);
         $class =~/VRTrack::(\w+)$/;
         my $table = lc($1);
         $table or die "Unrecognised classname $class\n";
-        push @{$lanes_from_table{$table}}, $_->id;
+        push @{$rows_from_table{$table}}, $_->id;
     }
 
     # now delete them all, one table at a time
@@ -216,9 +216,9 @@ sub delete {
     $self->{vrtrack}->transaction_start();
 
     eval {
-        foreach my $table (keys %lanes_from_table){
-            my $lanes = join ",", @{$lanes_from_table{$table}};
-            my $delsql = qq[delete from $table WHERE ${table}_id in ($lanes)];
+        foreach my $table (keys %rows_from_table){
+            my $rows = join ",", @{$rows_from_table{$table}};
+            my $delsql = qq[delete from $table WHERE ${table}_id in ($rows)];
             $dbh->do ($delsql);
         }
         $self->{vrtrack}->transaction_commit();
