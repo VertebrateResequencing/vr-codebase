@@ -343,7 +343,7 @@ sub read_len {
   Arg [1]    : boolean for is_paired status
   Example    : $lane->is_paired(1);
   Description: Get/Set for lane being paired-end sequencing
-  Returntype : boolean
+  Returntype : boolean (undef if paired status had never been set)
 
 =cut
 
