@@ -24,7 +24,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
-use Carp;
+use Carp qw(cluck confess carp croak);
 no warnings 'uninitialized';
 use VRTrack::Mapstats;
 use VRTrack::File;
@@ -351,6 +351,7 @@ sub is_paired {
     my ($self,$is_paired) = @_;
     if (defined $is_paired){
 	$self->{is_paired} = $is_paired ? 1 : 0;
+	$self->dirty(1);
     }
     return $self->{is_paired};
 }
@@ -369,6 +370,7 @@ sub is_withdrawn {
     my ($self,$is_withdrawn) = @_;
     if (defined $is_withdrawn){
 	$self->{is_withdrawn} = $is_withdrawn ? 1 : 0;
+	$self->dirty(1);
     }
     return $self->{is_withdrawn};
 }
