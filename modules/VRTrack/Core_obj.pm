@@ -37,7 +37,7 @@ no warnings 'uninitialized';
 
 sub new {
     my ($class, $vrtrack, $id) = @_;
-    die "Need to call with a vrtrack reference and id" unless ($vrtrack && $id);
+    confess "Need to call with a vrtrack reference and id" unless ($vrtrack && $id);
     if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
 
     my $self = {};

@@ -87,7 +87,7 @@ sub new {
 
 sub new_by_name {
     my ($class,$vrtrack, $name) = @_;
-    die "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
+    confess "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
     if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
     my $dbh = $vrtrack->{_dbh};
     my $sql = qq[select seq_centre_id from seq_centre where name = ?];
