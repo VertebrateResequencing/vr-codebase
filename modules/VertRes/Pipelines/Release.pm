@@ -748,14 +748,14 @@ sub create_release_files {
     my @release_files;
     foreach my $bam (@in_bams) {
         $bam = $self->{io}->catfile($lane_path, $bam);
-        my (undef, $path) = fileparse($bam);
+        my ($basename, $path) = fileparse($bam);
         my $release_name = File::Spec->catfile($path, 'release.bam');
         
         # md5 of bam & links
         my $bam_md5 = $bam.'.md5';
         unless (-s $bam_md5) {
             LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
-                     qq{md5sum $bam > $bam_md5; ln -s $bam $release_name});
+                     qq{md5sum $bam > $bam_md5; ln -s $basename $release_name});
         }
         push(@release_files, $bam, $bam_md5);
         
@@ -764,7 +764,7 @@ sub create_release_files {
         my $bai_md5 = $bai.'.md5';
         unless (-s $bai && -s $bai_md5) {
             LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
-                     qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$bam], qq[$bai]); die qq[index failed for $bam\n] unless -s qq[$bai]; system(qq[md5sum $bai > $bai_md5; ln -s $bai $release_name.bai]);"});
+                     qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$bam], qq[$bai]); die qq[index failed for $bam\n] unless -s qq[$bai]; system(qq[md5sum $bai > $bai_md5; ln -s $basename.bai $release_name.bai]);"});
         }
         push(@release_files, $bai, $bai_md5);
         
@@ -773,7 +773,7 @@ sub create_release_files {
         my $bas_md5 = $bas.'.md5';
         unless (-s $bas && -s $bas_md5) {
             LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
-                     qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$bas], qq[$self->{sequence_index}]); die qq[bas failed for $bam\n] unless -s qq[$bas]; system(qq[md5sum $bas > $bas_md5; ln -s $bas $release_name.bas]);"});
+                     qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$bas], qq[$self->{sequence_index}]); die qq[bas failed for $bam\n] unless -s qq[$bas]; system(qq[md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"});
         }
         push(@release_files, $bas, $bas_md5);
     }
