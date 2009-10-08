@@ -38,7 +38,7 @@ use VRTrack::Lane;
 use VRTrack::File;
 use VRTrack::Core_obj;
 
-use constant SCHEMA_VERSION => '6';
+use constant SCHEMA_VERSION => '7';
 
 =head2 new
 
