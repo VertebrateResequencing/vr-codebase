@@ -56,6 +56,7 @@ sub fields_dispatch {
                 'hierarchy_name'    => sub { $self->hierarchy_name(@_)},
                 'prep_status'       => sub { $self->prep_status(@_)},
                 'qc_status'         => sub { $self->qc_status(@_)},
+                'auto_qc_status'    => sub { $self->auto_qc_status(@_)},
                 'insert_size'       => sub { $self->insert_size(@_)},
                 'library_type_id'   => sub { $self->library_type_id(@_)},
                 'seq_centre_id'     => sub { $self->seq_centre_id(@_)},
@@ -394,6 +395,30 @@ sub prep_status {
     }
     return $self->{'prep_status'};
 }
+
+=head2 auto_qc_status
+
+  Arg [1]    : auto_qc_status (optional)
+  Example    : my $qc_status = $lib->auto_qc_status();
+	       $lib->auto_qc_status('passed');
+  Description: Get/Set for library auto_qc_status
+  Returntype : string
+
+=cut
+
+sub auto_qc_status {
+    my ($self,$auto_qc_status) = @_;
+    if (defined $auto_qc_status and $auto_qc_status ne $self->{'auto_qc_status'}){
+        my %allowed = map {$_ => 1} @{$self->list_enum_vals('lane','auto_qc_status')};
+        unless ($allowed{lc($auto_qc_status)}){
+            die "'$auto_qc_status' is not a defined auto_qc_status";
+        }
+	$self->{'auto_qc_status'} = $auto_qc_status;
+	$self->dirty(1);
+    }
+    return $self->{'auto_qc_status'};
+}
+
 
 
 =head2 qc_status
