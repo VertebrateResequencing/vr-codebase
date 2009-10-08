@@ -90,7 +90,6 @@ sub new_by_name {
     return $class->new_by_field_value($vrtrack, 'name',$name);
 }
 
-
 =head2 new_by_hierarchy_name
 
   Arg [1]    : vrtrack handle to seqtracking database

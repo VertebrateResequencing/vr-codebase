@@ -244,6 +244,7 @@ sub write_snpassay
 	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
 	
 	$self->throw("You must call the write_header function first to define the title!") unless defined( $self->{title} );
+	$self->throw("You must call the write_methods function first to define the method ID!") unless defined( $self->{method_id} );
 	
     print $ofh qq[
 TYPE:       SNPASSAY
@@ -252,7 +253,7 @@ BATCH:      $batch_name
 MOLTYPE:    Genomic
 SAMPLESIZE: 19
 STRAIN: $self->{strain_tag}
-METHOD:     Genomic Sequencing
+METHOD:     $self->{method_id}
 ORGANISM:   Mus musculus
 CITATION:   $self->{title}
 ||
@@ -381,7 +382,6 @@ sub write_snp_records
 		print $ofh qq[
 SNP:        $snp_id
 ACCESSION:  $supercontig
-LOCATION:   $start_pos
 LENGTH:     1
 5'_FLANK:   $five_prime_seq
 OBSERVED:   $reference_base/$consensus_base
