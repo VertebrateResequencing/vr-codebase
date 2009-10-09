@@ -112,7 +112,7 @@ ok $sam_util->rmdup($sorted_bam, $rmdup_bam, single_ended => 1, quiet => 1), 'rm
 # merge (pretty much just a shortcut to VertRes::Wrapper::picard::merge_and_check - no need to test thoroughly here)
 my $merge_bam = $io->catfile($temp_dir, 'merge.bam');
 ok $sam_util->merge($merge_bam, $rmdup_bam), 'merge on single bam test';
-ok -l $merge_bam, 'merge on single bam created a symlink';
+is readlink($merge_bam), 'rmdup.bam', 'merge on single bam created the correct relative symlink';
 ok $sam_util->merge($merge_bam, $rmdup_bam, $sorted_bam), 'merge on multiple bam test';
 ok -f $merge_bam, 'merge on multiple bams created a new file';
 ok -s $merge_bam > -s $rmdup_bam, 'merge on multiple bams created a new file bigger than one of the originals';

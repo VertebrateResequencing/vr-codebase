@@ -404,7 +404,11 @@ sub merge {
     unlink($out_bam);
     
     if (@in_bams == 1) {
-        return symlink($in_bams[0], $out_bam);
+        # we want a relative symlink, so get the path of out_bam and make the
+        # symlink relative to that
+        my ($basename, $base) = fileparse($out_bam);
+        my $rel_path = File::Spec->abs2rel($in_bams[0], $base);
+        return symlink($rel_path, $out_bam);
     }
     
     my $io = VertRes::IO->new();
