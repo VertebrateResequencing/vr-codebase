@@ -89,7 +89,7 @@ sub _pre_run {
     
     # must be run via an awk pipe to avoid bug where fastqcheck can't cope with
     # spaces in sequence ids
-    $exe .= 'awk \'{print $1}\' | '.$self->{_orig_exe};
+    $exe .= "awk '{print \$1}' | ".$self->{_orig_exe};
     
     $self->exe($exe);
     
