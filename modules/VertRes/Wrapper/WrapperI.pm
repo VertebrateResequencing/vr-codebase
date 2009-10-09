@@ -253,7 +253,20 @@ sub _bsub_run {
     $optional .= ' -R '.$bo->{R} if $bo->{R};
     $optional .= ' -M '.$bo->{M} if $bo->{M};
     
-    my $command = "bsub -J $bo->{J} -e $bo->{e} -o $bo->{o} -q $bo->{q}$optional '$exe$params @extra_args'";
+    my $cmd = "$exe$params @extra_args";
+    if ($cmd =~ /'/) {
+        # can't pass it into bsub like this; create a temp script with the
+        # cmd and pass the script in
+        my $script = $bo->{J}.'.csh';
+        open(my $fh, '>', $script) || $self->throw("Couldn't write to temp script $script");
+        print $fh qq{
+#!/bin/csh
+$cmd
+        };
+        $cmd = "/bin/csh $script";
+    }
+    
+    my $command = "bsub -J $bo->{J} -e $bo->{e} -o $bo->{o} -q $bo->{q}$optional '$cmd'";
     $self->debug("will run command '$command'");
     
     system($command) && $self->throw("$exe call ($command) crashed: $? | $!");
