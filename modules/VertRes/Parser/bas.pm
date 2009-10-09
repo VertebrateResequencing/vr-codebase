@@ -106,13 +106,37 @@ sub next_result {
     my @data = split(qr/\t/, $line);
     @data || return;
     
-    # header?
-    if ($data[18] eq 'insert_size_median_absolute_deviation') {
-        return $self->next_result;
+    # old bas files didn't have md5 checksum in column 2, and oldest didn't
+    # have bam filename in column 1
+    if (@data == 19) {
+        for my $i (0..$#data) {
+            $self->{_result_holder}->[$i] = $data[$i];
+        }
+    }
+    elsif (@data == 18) {
+        my $j = 0;
+        for my $i (0..$#data) {
+            if ($i == 1) {
+                $j++;
+            }
+            $self->{_result_holder}->[$j] = $data[$i];
+            $j++;
+        }
+    }
+    elsif (@data == 17) {
+        my $j = 2;
+        for my $i (0..$#data) {
+            $self->{_result_holder}->[$j] = $data[$i];
+            $j++;
+        }
+    }
+    else {
+        $self->throw("Unexpected number of columns (".scalar(@data)."); is this really a bas file?\n$line");
     }
     
-    for my $i (0..$#data) {
-        $self->{_result_holder}->[$i] = $data[$i];
+    # header?
+    if ($self->{_result_holder}->[18] eq 'insert_size_median_absolute_deviation') {
+        return $self->next_result;
     }
     
     return 1;
