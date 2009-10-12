@@ -49,6 +49,8 @@ use IPC::Open2;
 
 use base qw(VertRes::Base);
 
+my $bsub_uniquer = 1;
+
 our %allowed_run_methods = (bsub => 1, open => 1, open_to => 1, open_2 => 1, system => 1);
 
 =head2 new
@@ -257,11 +259,12 @@ sub _bsub_run {
     if ($cmd =~ /'/) {
         # can't pass it into bsub like this; create a temp script with the
         # cmd and pass the script in
-        my $script = $bo->{J}.'.csh';
+        my $script = $bo->{J}.'.'.$bsub_uniquer++.'.csh';
         open(my $fh, '>', $script) || $self->throw("Couldn't write to temp script $script");
         print $fh qq{
 #!/bin/csh
-$cmd
+$cmd;
+rm $script;
         };
         $cmd = "/bin/csh $script";
     }
