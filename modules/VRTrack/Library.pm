@@ -947,8 +947,8 @@ sub descendants {
 
 =head2 projected_passed_depth
 
-  Arg [1]    : none
-  Example    : my $estDepth = $lib->projected_passed_depth();
+  Arg [1]    : ref bp
+  Example    : my $estDepth = $lib->projected_passed_depth(3000000000);
   Description: Returns the estimated mapped depth based on the qc_status of the lib lanes and latest mapstats
   Returntype : float
 
