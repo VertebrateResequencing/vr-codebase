@@ -139,8 +139,8 @@ sub get_files
     my @fastqcheck = ();    # to be fastqchecked .. only the new splitted files 
     for my $file (@{$$self{files}})
     {
-        Utils::CMD(qq[$$self{mpsa} -m -f $file > $file.md5]) unless -e "$file.md5";
-        Utils::CMD(qq[$$self{mpsa} -c -f $file > $file]) unless ( -e "$file.gz" || -e $file );
+        Utils::CMD(qq[$$self{mpsa} -m -f $file > $file.md5]) unless (-e "$file.md5" && -s "$file.md5");
+        Utils::CMD(qq[$$self{mpsa} -c -f $file > $file]) unless ( (-e "$file.gz" && -s "$file.gz") || (-e $file && -s $file) );
         if ( -e $file )
         {
             # This should always be true if everything goes alright. But if the subroutine is called
@@ -163,7 +163,7 @@ sub get_files
 
     for my $file (@fastqcheck)
     {
-        if ( -e $file && ! -e "$file.md5" ) { Utils::CMD(qq[md5sum $file > $file.md5]); }
+        if ( -e $file && ! -e "$file.md5" && -s "$file.md5" ) { Utils::CMD(qq[md5sum $file > $file.md5]); }
         if ( -e "$file.gz.fastqcheck" ) { next; }
 
         if ( -e $file )
@@ -178,7 +178,7 @@ sub get_files
 
     for my $file (@gzip_files)
     {
-        if ( -e "$file.gz" ) { next; }
+        if ( -e "$file.gz" && -s "$file.gz" ) { next; }
 
         Utils::CMD(qq[mv $file $file.x; gzip $file.x;]);
         Utils::CMD(qq[mv $file.x.gz $file.gz]);

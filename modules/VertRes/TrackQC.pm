@@ -63,6 +63,14 @@ our @actions =
         'provides' => \&stats_and_graphs_provides,
     },
 
+    # Checks the generated stats and attempts to auto pass or fail the lane.
+    {
+        'name'     => 'auto_qc',
+        'action'   => \&auto_qc,
+        'requires' => \&auto_qc_requires, 
+        'provides' => \&auto_qc_provides,
+    },
+
     # Writes the QC status to the tracking database.
     {
         'name'     => 'update_db',
@@ -862,8 +870,8 @@ sub report_detailed_stats
     printf $fh "     paired .. %d (%.1f%%)\n", $$stats{'reads_paired'}, 100*($$stats{'reads_paired'}/$$stats{'reads_total'});
     printf $fh "bases total .. %d\n", $$stats{'bases_total'};
     printf $fh "    clip bases     .. %d (%.1f%%)\n", $$stats{'clip_bases'}, 100*($$stats{'clip_bases'}/$$stats{'bases_total'});
-    printf $fh "    mapped (read)  .. %d (%.1f%%)\n", $$stats{'bases_mapped_read'}, 100*($$stats{'bases_mapped_read'}/$$stats{'bases_total'});
-    printf $fh "    mapped (cigar) .. %d (%.1f%%)\n", $$stats{'bases_mapped_cigar'}, 100*($$stats{'bases_mapped_cigar'}/$$stats{'bases_total'});
+    printf $fh "    mapped (read)  .. %d (%.1f%%)\n", $$stats{'bases_mapped_read'}, 100*($$stats{'bases_mapped_read'}/$$stats{'clip_bases'});
+    printf $fh "    mapped (cigar) .. %d (%.1f%%)\n", $$stats{'bases_mapped_cigar'}, 100*($$stats{'bases_mapped_cigar'}/$$stats{'clip_bases'});
     printf $fh "error rate  .. %f\n", $$stats{error_rate};
     printf $fh "rmdup\n";
     printf $fh "     reads total  .. %d (%.1f%%)\n", $$stats{'rmdup_reads_total'}, 100*($$stats{'rmdup_reads_total'}/$$stats{'reads_total'});
@@ -897,6 +905,176 @@ sub dump_detailed_stats
     open(my $fh,'>',$outfile) or Utils::error("$outfile: $!");
     print $fh Dumper($stats);
     close $fh;
+}
+
+
+#----------- auto_qc ---------------------
+
+sub auto_qc_requires
+{
+    my ($self) = @_;
+    my $sample_dir = $$self{'sample_dir'};
+    my $name = $$self{lane};
+    my @requires = ("$sample_dir/gc-content.png","$sample_dir/${name}.gtype","$sample_dir/$$self{stats_dump}");
+    return \@requires;
+}
+
+# See description of update_db.
+#
+sub auto_qc_provides
+{
+    my ($self) = @_;
+
+    if ( exists($$self{db}) ) { return 0; }
+
+    my @provides = ();
+    return \@provides;
+}
+
+sub auto_qc
+{
+    my ($self,$lane_path,$lock_file) = @_;
+
+    my $sample_dir = "$lane_path/$$self{sample_dir}";
+    if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
+
+    my $vrtrack   = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
+    my $name      = $$self{lane};
+    my $vrlane    = VRTrack::Lane->new_by_name($vrtrack,$name) or $self->throw("No such lane in the DB: [$name]\n");
+
+    if ( !$vrlane->is_processed('import') ) { return $$self{Yes}; }
+
+    # Get the stats dump
+    my $stats = do "$sample_dir/$$self{stats_dump}";
+    if ( !$stats ) { $self->throw("Could not read $sample_dir/$$self{stats_dump}\n"); }
+
+    my @qc_status = ();
+
+    # Genotype check results
+    my $gtype  = VertRes::GTypeCheck::get_status("$sample_dir/${name}.gtype");
+    my $test   = 'Genotype check';
+    my $status = 1;
+    my $reason = qq[The status is 'confirmed'.];
+    if ( $$gtype{status} ne 'confirmed' ) { $status=0; $reason="Other than 'confirmed' status ($$gtype{status})."; }
+    push @qc_status, { test=>$test, status=>$status, reason=>$reason };
+
+    # Mapped bases
+    my $min = 80;
+    $test   = 'Mapped bases';
+    $status = 1;
+    my $value = 100.*$$stats{'bases_mapped_cigar'}/$$stats{'clip_bases'};
+    $reason = "At least $min% bases mapped after clipping ($value%).";
+    if ( $value < $min ) { $status=0; $reason="Less than $min% bases mapped after clipping ($value%)."; }
+    push @qc_status, { test=>$test, status=>$status, reason=>$reason };
+
+    # Error rate
+    $min = 0.02;
+    $test   = 'Error rate';
+    $status = 1;
+    $reason = "The error rate smaller than $min ($$stats{error_rate}).";
+    if ( $$stats{error_rate} > $min ) { $status=0; $reason="The error rate higher than $min ($$stats{error_rate})."; }
+    push @qc_status, { test=>$test, status=>$status, reason=>$reason };
+
+    # Insert size
+    if ( $vrlane->is_paired() )
+    {
+        $test   = 'Insert size';
+        if ( !exists($$stats{insert_size}) ) 
+        { 
+            push @qc_status, { test=>$test, status=>0, reason=>'The insert size not available, yet flagged as paired' };
+        }
+        else
+        {
+            $status = 1;
+            my ($amount,$range) = insert_size_ok($$stats{insert_size}{xvals},$$stats{insert_size}{yvals},25,80);
+            $reason = "There are 80% or more inserts within 25% of max peak ($amount).";
+            if ( $amount<80 ) 
+            { 
+                $status=0; $reason="Less than 80% of the inserts within 25% of max peak ($amount)."; 
+            }
+            push @qc_status, { test=>$test, status=>$status, reason=>$reason };
+
+            $reason = "80% inserts are within 25% of max peak ($range).";
+            if ( $range>25 )
+            {
+                $status = 0; $reason="80% inserts are not within 25% of max peak ($range).";
+            }
+            push @qc_status, { test=>'Insert size (rev)', status=>$status, reason=>$reason };
+
+        }
+    }
+
+    # Now output the results.
+    open(my $fh,'>',"$sample_dir/auto_qc.txt") or $self->throw("$sample_dir/auto_qc.txt: $!");
+    $status = 1;
+    for my $stat (@qc_status)
+    {
+        if ( !$$stat{status} ) { $status=0; }
+        print $fh "$$stat{test}:\t", ($$stat{status} ? 'PASSED' : 'FAILED'), "\t # $$stat{reason}\n";
+    }
+    print $fh "Verdict:\t", ($status ? 'PASSED' : 'FAILED'), "\n";
+    close($fh);
+
+    # Then write to the database.
+
+    return $$self{'Yes'};
+}
+
+# xvals, yvals, calculates 
+#   1) what percentage of the data lies within the allowed range from the max peak (e.g. [mpeak*(1-0.25),mpeak*(1+0.25)])
+#   2) how wide is the distribution - how wide has to be the range to accomodate the given amount of data (e.g. 80% of the reads) 
+sub insert_size_ok
+{
+    my ($xvals,$yvals,$maxpeak_range,$data_amount) = @_;
+
+    # Determine the max peak
+    my $count     = 0;
+    my $imaxpeak  = 0;
+    my $ndata     = scalar @$xvals;
+    my $total_count = 0;
+    my $max = 0;
+    for (my $i=0; $i<$ndata; $i++)
+    {
+        my $xval = $$xvals[$i];
+        my $yval = $$yvals[$i];
+
+        $total_count += $yval;
+        if ( $max < $yval ) { $imaxpeak = $i; $max = $yval; }
+    }
+
+    # See how many reads are within the median range
+    $maxpeak_range *= 0.01;
+    $count = 0;
+    for (my $i=0; $i<$ndata; $i++)
+    {
+        my $xval = $$xvals[$i];
+        my $yval = $$yvals[$i];
+
+        if ( $xval<$$xvals[$imaxpeak]*(1-$maxpeak_range) ) { next; }
+        if ( $xval>$$xvals[$imaxpeak]*(1+$maxpeak_range) ) { next; }
+        $count += $yval;
+    }
+    my $out_amount = 100.0*$count/$total_count;
+
+    # How big must be the range in order to accomodate the requested amount of data
+    $data_amount *= 0.01;
+    my $idiff = 0;
+    $count = $$yvals[$imaxpeak];
+    while ( $count/$total_count < $data_amount )
+    {
+        $idiff++;
+        if ( $idiff<=$imaxpeak ) { $count += $$yvals[$imaxpeak-$idiff]; }
+        if ( $idiff+$imaxpeak<$ndata ) { $count += $$yvals[$imaxpeak+$idiff]; }
+
+        # This should never happen, unless $data_range is bigger than 100%
+        if ( $idiff>$imaxpeak && $idiff+$imaxpeak>=$ndata ) { last; }
+    }
+    my $out_range  = $idiff<=$imaxpeak ? $$xvals[$imaxpeak]-$$xvals[$imaxpeak-$idiff] : $$xvals[$imaxpeak];
+    my $out_range2 = $idiff+$imaxpeak<$ndata ? $$xvals[$imaxpeak+$idiff]-$$xvals[$imaxpeak] : $$xvals[-1]-$$xvals[$imaxpeak];
+    if ( $out_range2 > $out_range ) { $out_range=$out_range2; }
+    $out_range = 100.0*$out_range/$$xvals[$imaxpeak];
+
+    return ($out_amount,$out_range);
 }
 
 
