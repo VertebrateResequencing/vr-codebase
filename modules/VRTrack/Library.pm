@@ -944,4 +944,47 @@ sub descendants {
     }
     return \@desc;
 }
+
+=head2 projected_passed_depth
+
+  Arg [1]    : none
+  Example    : my $estDepth = $lib->projected_passed_depth();
+  Description: Returns the estimated mapped depth based on the qc_status of the lib lanes and latest mapstats
+  Returntype : float
+
+=cut
+
+sub projected_passed_depth
+{
+	my ($self, $ref_size) = @_;
+	
+	die( "Size of reference must be a number!" ) unless -d $ref_size;
+	
+	my $lanes = $self->lanes();
+	my $passedBases = 0;
+	my $sampledBases = 0;
+	my $total_passed_bases = 0;
+	foreach( @$lanes )
+	{
+		my $lane = $_;
+		if( $lane->qc_status() eq 'Passed' )
+		{
+			my $mapping = $lane->latest_mapping();
+			if( $mapping )
+			{
+				$passedBases += $mapping->rmdup_bases_mapped;
+				$sampledBases += $mapping->raw_bases();
+				$total_passed_bases += $lane->raw_bases();
+			}
+		}
+	}
+			
+	my $depth = 0;
+	if( $total_passed_bases > 0 )
+	{
+		$depth = ( ( $passedBases / $sampledBases ) * $total_passed_bases ) / $ref_size;
+		$depth = sprintf("%.2f", $depth);
+	}
+	return $depth;
+}
 1;
