@@ -967,7 +967,7 @@ sub projected_passed_depth
 	foreach( @$lanes )
 	{
 		my $lane = $_;
-		if( $lane->qc_status() eq 'Passed' )
+		if( $lane->qc_status() eq 'passed' )
 		{
 			my $mapping = $lane->latest_mapping();
 			if( $mapping )
