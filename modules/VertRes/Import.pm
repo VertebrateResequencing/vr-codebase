@@ -169,7 +169,7 @@ sub get_files
     # Run fastqcheck for all fastqs.
     for my $file (@fastqcheck)
     {
-        if ( -e $file && ! -e "$file.md5" && -s "$file.md5" ) { Utils::CMD(qq[md5sum $file > $file.md5]); }
+        if ( -e $file && (! -e "$file.md5" || !-s "$file.md5") ) { Utils::CMD(qq[md5sum $file > $file.md5]); }
         if ( -e "$file.gz.fastqcheck" ) { next; }
 
         if ( -e $file )
@@ -360,6 +360,11 @@ sub update_db
             $vrfile = $vrlane->add_file($name); 
             $vrfile->hierarchy_name($name);
         }
+
+        # This is temporary and should be removed - fix for existing lanes without md5s
+        my $xfile = "$lane_path/$name";
+        if ( -e "$xfile.gz" && (! -e "$xfile.md5" || !-s "$xfile.md5") ) { Utils::CMD(qq[zcat $xfile.gz | md5sum > $xfile.md5]); }
+
         $vrfile->md5(`awk '{printf "%s",\$1}' $lane_path/$name.md5`);
         my $fastq = VertRes::Parser::fastqcheck->new(file => "$lane_path/$name.gz.fastqcheck");
         $vrfile->read_len($fastq->avg_length());
