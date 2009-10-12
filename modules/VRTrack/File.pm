@@ -346,7 +346,7 @@ sub processed {
   Arg [1]    : One of flags listed in Core_obj::allowed_processed_flags();
   Arg [2]    : processed: 0 or 1 (optional)
   Example    : my $processed = $file->is_processed('import');
-               $file->processed('import',1);
+               $file->is_processed('import',1);
   Description: Get/Set for file processed
   Returntype : 1 or 0
 
