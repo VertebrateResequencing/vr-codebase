@@ -50,6 +50,7 @@ our $options =
                     files           .. Array reference to the list of files to be imported.
                     mapping_root    .. The root of the mapping hierarchy, where symlinks should be created
                     mpsa            .. The mpsa executable
+                    paired          .. Is the lane from the paired end sequencing.
 
 =cut
 
@@ -63,6 +64,7 @@ sub new
     if ( !$$self{fastqcheck} ) { $self->throw("Missing the option fastqcheck.\n"); }
     if ( !$$self{mapping_root} ) { $self->throw("Missing the option mapping_root.\n"); }
     if ( !$$self{files} ) { $self->throw("Missing the option files.\n"); }
+    if ( !exists($$self{paired}) ) { $self->throw("Missing the option paired.\n"); }
 
     return $self;
 }
@@ -115,8 +117,10 @@ use VertRes::Import;
 
 my \$opts = {
     fastqcheck   => q[$$self{fastqcheck}],
+    lane         => q[$$self{lane}],
     mpsa         => q[$$self{mpsa}], 
     mapping_root => q[$$self{mapping_root}],
+    paired       => $$self{paired},
     files        => [ $files ],
 };
 my \$import = VertRes::Import->new(%\$opts);
@@ -134,6 +138,7 @@ sub get_files
 {
     my ($self) = @_;
 
+    # Download the files and their md5 from mpsa.
     my $prefix = $$self{prefix};
     my @gzip_files = ();    # to be gzipped .. only the new splitted files
     my @fastqcheck = ();    # to be fastqchecked .. only the new splitted files 
@@ -149,7 +154,7 @@ sub get_files
             Utils::CMD(qq[md5sum -c $file.md5]);
         }
 
-        if ( $file=~/^(\d+)_s_(\d+)\./ )
+        if ( $$self{paired} && $file=~/^(\d+)_s_(\d+)\./ )
         {
             my $run  = $1;
             my $lane = $2;
@@ -161,6 +166,7 @@ sub get_files
         push @fastqcheck,$file;
     }
 
+    # Run fastqcheck for all fastqs.
     for my $file (@fastqcheck)
     {
         if ( -e $file && ! -e "$file.md5" && -s "$file.md5" ) { Utils::CMD(qq[md5sum $file > $file.md5]); }
@@ -176,6 +182,7 @@ sub get_files
         }
     }
 
+    # Gzip the fastqs
     for my $file (@gzip_files)
     {
         if ( -e "$file.gz" && -s "$file.gz" ) { next; }
@@ -183,6 +190,38 @@ sub get_files
         Utils::CMD(qq[mv $file $file.x; gzip $file.x;]);
         Utils::CMD(qq[mv $file.x.gz $file.gz]);
     }
+
+    # If there are any single files (e.g. *_s_*) which are not paired, create a symlink to it:
+    #   First find out how many fastq files with the conventional naming there are (there 
+    #   shouldn't be any).
+    my $i = 1;
+    while ( -e "$$self{lane}_$i.fastq.gz" ) { $i++; }
+    for my $file (@{$$self{files}})
+    {
+        if ( $$self{paired} ) { next; }
+        if ( $file=~/^$$self{lane}_(\d+).fastq/ ) { next; } # This one is named correctly
+
+        my ($run,$lane);
+        if ( $file=~/^(\d+)_(\d+)/ || $file=~/^(\d+)_s_(\d+)/ ) { $run=$1; $lane=$2; }
+        else { $self->throw("Weird naming, could not parse '$file'"); }
+
+        my $name = "${1}_${2}_$i";
+        if ( ! -e "$name.fastq.gz" ) 
+        { 
+            Utils::relative_symlink("$file.gz","$name.fastq.gz"); 
+        }
+        if ( -e "$file.gz.fastqcheck" && ! -e "$name.fastq.gz.fastqcheck" )
+        {
+            Utils::relative_symlink("$file.gz.fastqcheck","$name.fastq.gz.fastqcheck");
+        }
+        if ( -e "$file.md5" && ! -e "$name.fastq.md5" )
+        {
+            Utils::relative_symlink("$file.md5","$name.fastq.md5");
+        }
+
+        $i++;
+    }
+
 }
 
 # Splits the fastq file into two. Assuming that sequences and qualities have even length
@@ -193,7 +232,7 @@ sub split_single_fastq
     my $fname1 = qq[${run}_${lane}_1.fastq];
     my $fname2 = qq[${run}_${lane}_2.fastq];
 
-    if ( -e "$fname1.gz" && -e "$fname2.gz" ) { return; }
+    if ( -e "$fname1.gz" && -e "$fname2.gz" ) { return ($fname1,$fname2); }
 
     open(my $fh_in,'<',$file) or $self->throw("$file: $!");
     open(my $fh_out1,'>',$fname1) or $self->throw("$fname1: $!");

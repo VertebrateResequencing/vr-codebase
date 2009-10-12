@@ -525,12 +525,20 @@ sub mysql_query
 }
 
 
-sub aa_to_iupac
+sub bb_to_iupac
 {
     my ($a,$b) = @_;
+    if ( !$b ) 
+    { 
+        ($a,$b)=split(//,$a); 
+    }
     my $ab = join('', sort($a,$b));
 
     my %iupac = (
+            'AA' => 'A',
+            'CC' => 'C',
+            'GG' => 'G',
+            'TT' => 'T',
             'GT' => 'K',
             'AC' => 'M',
             'CG' => 'S',
