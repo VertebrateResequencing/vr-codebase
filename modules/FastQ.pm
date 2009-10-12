@@ -100,7 +100,7 @@ sub sample
 
     if ( !scalar keys %$idxs )
     {
-        Utils::relative_symlink($in_file,$out_file);
+        Utils::relative_symlink($in_file,$out_file) unless -e $out_file;
         return $idxs;
     }
 
