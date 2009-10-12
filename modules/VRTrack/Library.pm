@@ -958,7 +958,7 @@ sub projected_passed_depth
 {
 	my ($self, $ref_size) = @_;
 	
-	die( "Size of reference must be a number!" ) unless -d $ref_size;
+	die( "Size of reference must be a number!" ) unless $ref_size =~ /^\d+$/;
 	
 	my $lanes = $self->lanes();
 	my $passedBases = 0;
