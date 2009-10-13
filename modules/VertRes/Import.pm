@@ -382,6 +382,7 @@ sub update_db
         if ( !($file=~/^\d+_s_\d+\./) ) { next; }
 
         my $vrfile = $vrlane->get_file_by_name($file);
+        if ( !$vrfile ) { $self->throw("FIXME: no such file [$file] for the lane [$lane_path]."); }
         $vrfile->is_processed('import',1);
         $vrfile->update();
     }
