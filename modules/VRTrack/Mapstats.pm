@@ -78,51 +78,51 @@ sub fields_dispatch {
 # Class methods
 ###############################################################################
 
-=head2 create
-
-  Arg [1]    : database handle to seqtracking database
-  Arg [2]    : lane id that this mapping relates to
-  Example    : my $mapstats = VRTrack::Mapstats->create($vrtrack, $lane_id)
-  Description: Class method.  Creates new Mapstats object in the database.
-  Returntype : VRTrack::Mapstats object
-
-=cut
-
-sub create {
-    my ($class,$vrtrack, $lane_id) = @_;
-    die "Need to call with a vrtrack handle and lane_id" unless ($vrtrack && $lane_id);
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-    my $dbh = $vrtrack->{_dbh};
-    $dbh->do (qq[LOCK TABLE mapstats WRITE]);
-    my $sql = qq[select max(mapstats_id) as id from mapstats];
-    my $sth = $dbh->prepare($sql);
-    my $next_id;
-    if ($sth->execute()){
-	my $data = $sth->fetchrow_hashref;
-	unless ($data){
-            $dbh->do (qq[UNLOCK TABLES]);
-            die( sprintf("Can't retrieve next mapstats id: %s", $DBI::errstr));
-	}
-        $next_id = $data->{'id'};
-        $next_id++;
-    }
-    else{
-	die(sprintf("Can't retrieve next mapstats id: %s", $DBI::errstr));
-    }
-
-    $sql = qq[INSERT INTO mapstats (mapstats_id, lane_id, changed, latest) 
-                 VALUES (?,?,now(),true)];
-
-    $sth = $dbh->prepare($sql);
-    unless ($sth->execute( $next_id, $lane_id)) {
-        $dbh->do (qq[UNLOCK TABLES]);
-        die( sprintf('DB load insert failed: %s %s', $next_id, $DBI::errstr));
-    }
-
-    $dbh->do (qq[UNLOCK TABLES]);
-
-    return $class->new($vrtrack, $next_id);
-}
+#   =head2 create
+#   
+#     Arg [1]    : database handle to seqtracking database
+#     Arg [2]    : lane id that this mapping relates to
+#     Example    : my $mapstats = VRTrack::Mapstats->create($vrtrack, $lane_id)
+#     Description: Class method.  Creates new Mapstats object in the database.
+#     Returntype : VRTrack::Mapstats object
+#   
+#   =cut
+#   
+#   sub create {
+#       my ($class,$vrtrack, $lane_id) = @_;
+#       die "Need to call with a vrtrack handle and lane_id" unless ($vrtrack && $lane_id);
+#       if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+#       my $dbh = $vrtrack->{_dbh};
+#       $dbh->do (qq[LOCK TABLE mapstats WRITE]);
+#       my $sql = qq[select max(mapstats_id) as id from mapstats];
+#       my $sth = $dbh->prepare($sql);
+#       my $next_id;
+#       if ($sth->execute()){
+#   	my $data = $sth->fetchrow_hashref;
+#   	unless ($data){
+#               $dbh->do (qq[UNLOCK TABLES]);
+#               die( sprintf("Can't retrieve next mapstats id: %s", $DBI::errstr));
+#   	}
+#           $next_id = $data->{'id'};
+#           $next_id++;
+#       }
+#       else{
+#   	die(sprintf("Can't retrieve next mapstats id: %s", $DBI::errstr));
+#       }
+#   
+#       $sql = qq[INSERT INTO mapstats (mapstats_id, lane_id, changed, latest) 
+#                    VALUES (?,?,now(),true)];
+#   
+#       $sth = $dbh->prepare($sql);
+#       unless ($sth->execute( $next_id, $lane_id)) {
+#           $dbh->do (qq[UNLOCK TABLES]);
+#           die( sprintf('DB load insert failed: %s %s', $next_id, $DBI::errstr));
+#       }
+#   
+#       $dbh->do (qq[UNLOCK TABLES]);
+#   
+#       return $class->new($vrtrack, $next_id);
+#   }
 
 
 ###############################################################################

@@ -99,57 +99,59 @@ sub new_by_hierarchy_name {
 }
 
 
-=head2 create
-
-  Arg [1]    : vrtrack handle to seqtracking database
-  Arg [2]    : file name
-  Example    : my $file = VRTrack::File->create($vrtrack, $name)
-  Description: Class method.  Creates new File object in the database.
-  Returntype : VRTrack::File object
-
-=cut
-
-sub create {
-    my ($class,$vrtrack, $name) = @_;
-    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-    my $dbh = $vrtrack->{_dbh};
-
-    # prevent adding a file with an existing name
-    if ($class->is_name_in_database($vrtrack, $name, $name)){
-        die "Already a file by name $name";
-    }
-
-    $dbh->do (qq[LOCK TABLE file WRITE]);
-    my $sql = qq[select max(file_id) as id from file];
-    my $sth = $dbh->prepare($sql);
-    my $next_id;
-    if ($sth->execute()){
-	my $data = $sth->fetchrow_hashref;
-	unless ($data){
-            $dbh->do (qq[UNLOCK TABLES]);
-            die( sprintf("Can't retrieve next file id: %s", $DBI::errstr));
-	}
-        $next_id = $data->{'id'};
-        $next_id++;
-    }
-    else{
-	die(sprintf("Can't retrieve next file id: %s", $DBI::errstr));
-    }
-
-    $sql = qq[INSERT INTO file (file_id, name, changed, latest) 
-                 VALUES (?,?,now(),true)];
-
-    $sth = $dbh->prepare($sql);
-    unless ($sth->execute( $next_id, $name )) {
-        $dbh->do (qq[UNLOCK TABLES]);
-        die( sprintf('DB load insert failed: %s %s', $next_id, $DBI::errstr));
-    }
-
-    $dbh->do (qq[UNLOCK TABLES]);
-
-    return $class->new($vrtrack, $next_id);
-}
+#   =head2 create
+#   
+#     Arg [1]    : vrtrack handle to seqtracking database
+#     Arg [2]    : file name
+#     Example    : my $file = VRTrack::File->create($vrtrack, $name)
+#     Description: Class method.  Creates new File object in the database.
+#     Returntype : VRTrack::File object
+#   
+#   =cut
+#   
+#   sub create {
+#       my ($class,$vrtrack, $name) = @_;
+#       die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
+#       if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+#       my $dbh = $vrtrack->{_dbh};
+#   
+#       # prevent adding a file with an existing name
+#       if ($class->is_name_in_database($vrtrack, $name, $name)){
+#           die "Already a file by name $name";
+#       }
+#   
+#       #   $dbh->do (qq[LOCK TABLE file WRITE]);
+#       #   my $sql = qq[select max(file_id) as id from file];
+#       #   my $sth = $dbh->prepare($sql);
+#       #   my $next_id;
+#       #   if ($sth->execute()){
+#       #       my $data = $sth->fetchrow_hashref;
+#       #       unless ($data){
+#       #           $dbh->do (qq[UNLOCK TABLES]);
+#       #           die( sprintf("Can't retrieve next file id: %s", $DBI::errstr));
+#       #       }
+#       #       $next_id = $data->{'id'};
+#       #       $next_id++;
+#       #   }
+#       #   else{
+#       #       die(sprintf("Can't retrieve next file id: %s", $DBI::errstr));
+#       #   }
+#       #
+#       #    $sql = qq[INSERT INTO file (file_id, name, changed, latest) 
+#       #                 VALUES (?,?,now(),true)];
+#       #
+#       #    $sth = $dbh->prepare($sql);
+#       #    unless ($sth->execute( $next_id, $name )) {
+#       #        #   $dbh->do (qq[UNLOCK TABLES]);
+#       #        die( sprintf('DB load insert failed: %s %s', $next_id, $DBI::errstr));
+#       #    }
+#       #
+#       # $dbh->do (qq[UNLOCK TABLES]);
+#   
+#       $next_id = Core_obj->create_with_unique_id('file',['name'],[$name]);
+#   
+#       return $class->new($vrtrack, $next_id);
+#   }
 
 
 =head2 is_name_in_database

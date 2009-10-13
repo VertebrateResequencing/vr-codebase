@@ -117,51 +117,51 @@ sub new_by_ssid {
 }
 
 
-=head2 create
-
-  Arg [1]    : vrtrack handle to seqtracking database
-  Arg [2]    : sample name
-  Example    : my $sample = VRTrack::Sample->create($vrtrack, $name)
-  Description: Class method.  Creates new Sample object in the database.
-  Returntype : VRTrack::Sample object
-
-=cut
-
-sub create {
-    my ($class,$vrtrack, $name) = @_;
-    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-    my $dbh = $vrtrack->{_dbh};
-    $dbh->do (qq[LOCK TABLE sample WRITE]);
-    my $sql = qq[select max(sample_id) as id from sample];
-    my $sth = $dbh->prepare($sql);
-    my $next_id;
-    if ($sth->execute()){
-	my $data = $sth->fetchrow_hashref;
-	unless ($data){
-            $dbh->do (qq[UNLOCK TABLES]);
-            die( sprintf("Can't retrieve next sample id: %s", $DBI::errstr));
-	}
-        $next_id = $data->{'id'};
-        $next_id++;
-    }
-    else{
-	die(sprintf("Can't retrieve next sample id: %s", $DBI::errstr));
-    }
-
-    $sql = qq[INSERT INTO sample (sample_id, name, changed, latest) 
-                 VALUES (?,?,now(),true)];
-
-    $sth = $dbh->prepare($sql);
-    unless ($sth->execute( $next_id, $name )) {
-        $dbh->do (qq[UNLOCK TABLES]);
-        die( sprintf('DB load insert failed: %s %s', $next_id, $DBI::errstr));
-    }
-
-    $dbh->do (qq[UNLOCK TABLES]);
-
-    return $class->new($vrtrack, $next_id);
-}
+#   =head2 create
+#   
+#     Arg [1]    : vrtrack handle to seqtracking database
+#     Arg [2]    : sample name
+#     Example    : my $sample = VRTrack::Sample->create($vrtrack, $name)
+#     Description: Class method.  Creates new Sample object in the database.
+#     Returntype : VRTrack::Sample object
+#   
+#   =cut
+#   
+#   sub create {
+#       my ($class,$vrtrack, $name) = @_;
+#       die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
+#       if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+#       my $dbh = $vrtrack->{_dbh};
+#       $dbh->do (qq[LOCK TABLE sample WRITE]);
+#       my $sql = qq[select max(sample_id) as id from sample];
+#       my $sth = $dbh->prepare($sql);
+#       my $next_id;
+#       if ($sth->execute()){
+#   	my $data = $sth->fetchrow_hashref;
+#   	unless ($data){
+#               $dbh->do (qq[UNLOCK TABLES]);
+#               die( sprintf("Can't retrieve next sample id: %s", $DBI::errstr));
+#   	}
+#           $next_id = $data->{'id'};
+#           $next_id++;
+#       }
+#       else{
+#   	die(sprintf("Can't retrieve next sample id: %s", $DBI::errstr));
+#       }
+#   
+#       $sql = qq[INSERT INTO sample (sample_id, name, changed, latest) 
+#                    VALUES (?,?,now(),true)];
+#   
+#       $sth = $dbh->prepare($sql);
+#       unless ($sth->execute( $next_id, $name )) {
+#           $dbh->do (qq[UNLOCK TABLES]);
+#           die( sprintf('DB load insert failed: %s %s', $next_id, $DBI::errstr));
+#       }
+#   
+#       $dbh->do (qq[UNLOCK TABLES]);
+#   
+#       return $class->new($vrtrack, $next_id);
+#   }
 
 
 ###############################################################################

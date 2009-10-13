@@ -131,6 +131,52 @@ sub new_by_field_value {
 }
 
 
+=head2 create
+
+  Arg [1]    : vrtrack handle to seqtracking database
+  Arg [2]    : file name
+  Example    : my $file = VRTrack::File->create($vrtrack, $name)
+  Description: Class method.  Creates new File object in the database.
+  Returntype : VRTrack::File object
+
+=cut
+
+sub create 
+{
+    my ($class,$vrtrack, $name) = @_;
+    die "Need to call with a vrtrack handle" unless $vrtrack;
+    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my $dbh = $vrtrack->{_dbh};
+
+    # prevent adding an object with an existing name, if name supplied. In case of mapstats, the name is void
+    if ($name && $class->is_name_in_database($vrtrack, $name, $name)){
+        die "Already a file by name $name";
+    }
+
+    if ( !($class=~/([^:]+)$/) ) { croak "Could not determine the class name [$class]."; } 
+    my $table = lc($1);
+
+    $vrtrack->transaction_start();
+
+    # insert a fake record to obtain a unique id (row_id)
+    my $query = qq[INSERT INTO $table SET ${table}_id=0];
+    my $sth   = $dbh->prepare($query) or croak qq[The query "$query" failed: $!];
+    my $rv    = $sth->execute or croak qq[The query "$query" failed: $!];
+
+    # now update the inserted the record
+    my $next_id = $dbh->last_insert_id(undef,undef,$table,'row_id') or croak "No last_insert_id? $!";
+    $name  = $name ? qq[name='$name', ] : '';
+    $query = qq[UPDATE $table SET ${table}_id=$next_id, $name changed=now(), latest=true WHERE row_id=$next_id];
+    $sth   = $dbh->prepare($query) or croak qq[The query "$query" failed: $!];
+    $sth->execute or croak qq[The query "$query" failed: $!];
+
+    $vrtrack->transaction_commit();
+
+    return $class->new($vrtrack, $next_id);
+}
+
+
+
 =head2 update
 
   Arg [1]    : None
@@ -166,7 +212,6 @@ sub update {
                 my $addsql = qq[INSERT INTO $table ( ].(join ", ", @fields);
                         $addsql .= qq[, changed, latest ) ];
                 $addsql .= qq[ VALUES ( ].('?,' x scalar @fields).qq[now(),true) ];
-
                 $dbh->do ($updsql, undef,$self->id);
                 $dbh->do ($addsql, undef, map {$_->()} @$fieldsref{@fields});
                 $row_id = $dbh->{'mysql_insertid'};

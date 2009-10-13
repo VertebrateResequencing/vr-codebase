@@ -108,60 +108,60 @@ sub new_by_hierarchy_name {
 }
 
 
-=head2 create
-
-  Arg [1]    : vrtrack handle
-  Arg [2]    : lane name
-  Example    : my $lane = VRTrack::Lane->create($vrtrack, $name)
-  Description: Class method.  Creates new Lane object in the database.
-  Returntype : VRTrack::Lane object
-
-=cut
-
-sub create {
-    my ($class,$vrtrack, $name) = @_;
-    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-    my $dbh = $vrtrack->{_dbh};
-
-    my $hierarchy_name = $name;
-    $hierarchy_name =~ s/\W+/_/g;
-
-    # prevent adding a lane with an existing name
-    if ($class->is_name_in_database($vrtrack, $name, $hierarchy_name)){
-        die "Already a lane by name $name/$hierarchy_name";
-    }
-
-    $dbh->do (qq[LOCK TABLE lane WRITE]);
-    my $sql = qq[select max(lane_id) as id from lane];
-    my $sth = $dbh->prepare($sql);
-    my $next_id;
-    if ($sth->execute()){
-	my $data = $sth->fetchrow_hashref;
-	unless ($data){
-            $dbh->do (qq[UNLOCK TABLES]);
-            die( sprintf("Can't retrieve next lane id: %s", $DBI::errstr));
-	}
-        $next_id = $data->{'id'};
-        $next_id++;
-    }
-    else{
-	die(sprintf("Can't retrieve next lane id: %s", $DBI::errstr));
-    }
-
-    $sql = qq[INSERT INTO lane (lane_id, name, hierarchy_name, changed, latest) 
-                 VALUES (?,?,?,now(),true)];
-
-    $sth = $dbh->prepare($sql);
-    unless ($sth->execute( $next_id, $name,$hierarchy_name )) {
-        $dbh->do (qq[UNLOCK TABLES]);
-        die( sprintf('DB load insert failed: %s %s', $next_id, $DBI::errstr));
-    }
-
-    $dbh->do (qq[UNLOCK TABLES]);
-
-    return $class->new($vrtrack, $next_id);
-}
+#   =head2 create
+#   
+#     Arg [1]    : vrtrack handle
+#     Arg [2]    : lane name
+#     Example    : my $lane = VRTrack::Lane->create($vrtrack, $name)
+#     Description: Class method.  Creates new Lane object in the database.
+#     Returntype : VRTrack::Lane object
+#   
+#   =cut
+#   
+#   sub create {
+#       my ($class,$vrtrack, $name) = @_;
+#       die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
+#       if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+#       my $dbh = $vrtrack->{_dbh};
+#   
+#       my $hierarchy_name = $name;
+#       $hierarchy_name =~ s/\W+/_/g;
+#   
+#       # prevent adding a lane with an existing name
+#       if ($class->is_name_in_database($vrtrack, $name, $hierarchy_name)){
+#           die "Already a lane by name $name/$hierarchy_name";
+#       }
+#   
+#       $dbh->do (qq[LOCK TABLE lane WRITE]);
+#       my $sql = qq[select max(lane_id) as id from lane];
+#       my $sth = $dbh->prepare($sql);
+#       my $next_id;
+#       if ($sth->execute()){
+#   	my $data = $sth->fetchrow_hashref;
+#   	unless ($data){
+#               $dbh->do (qq[UNLOCK TABLES]);
+#               die( sprintf("Can't retrieve next lane id: %s", $DBI::errstr));
+#   	}
+#           $next_id = $data->{'id'};
+#           $next_id++;
+#       }
+#       else{
+#   	die(sprintf("Can't retrieve next lane id: %s", $DBI::errstr));
+#       }
+#   
+#       $sql = qq[INSERT INTO lane (lane_id, name, hierarchy_name, changed, latest) 
+#                    VALUES (?,?,?,now(),true)];
+#   
+#       $sth = $dbh->prepare($sql);
+#       unless ($sth->execute( $next_id, $name,$hierarchy_name )) {
+#           $dbh->do (qq[UNLOCK TABLES]);
+#           die( sprintf('DB load insert failed: %s %s', $next_id, $DBI::errstr));
+#       }
+#   
+#       $dbh->do (qq[UNLOCK TABLES]);
+#   
+#       return $class->new($vrtrack, $next_id);
+#   }
 
 
 =head2 is_name_in_database
@@ -879,7 +879,11 @@ sub add_file {
 
 sub add_mapping {
     my ($self) = @_;
-    my $obj = VRTrack::Mapstats->create($self->{vrtrack}, $self->id);
+    my $obj = VRTrack::Mapstats->create($self->{vrtrack});
+    if ($obj){
+        $obj->lane_id($self->id);
+        $obj->update;
+    }
     # clear caches
     delete $self->{'mapping_ids'};
     delete $self->{'mappings'};
