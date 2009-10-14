@@ -1489,11 +1489,11 @@ sub symLinkHierarchyFiles
             print "Linking file in: $destinationPath to $originalPath\n";
 			if( $type eq 'soft' )
 			{
-				symlink( $originalPath, $destinationPath ) or die "Failed to link file in: $destinationPath to $originalPath\n";
+				symlink( $originalPath, $destinationPath ) or die "Failed to link file in: $destinationPath to $originalPath: $!\n";
 			}
 			else
 			{
-				link( $originalPath, $destinationPath ) or die "Failed to link file in: $destinationPath to $originalPath\n";
+				link( $originalPath, $destinationPath ) or die "Failed to link file in: $destinationPath to $originalPath: $!\n";
 			}
         }
     }
