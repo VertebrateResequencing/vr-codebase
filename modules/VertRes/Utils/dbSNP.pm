@@ -252,7 +252,7 @@ HANDLE:     $self->{handle}
 BATCH:      $batch_name
 MOLTYPE:    Genomic
 SAMPLESIZE: 19
-STRAIN: $self->{strain_tag}
+STRAIN: 	$self->{strain_tag}
 METHOD:     $self->{method_id}
 ORGANISM:   Mus musculus
 CITATION:   $self->{title}
@@ -388,6 +388,7 @@ OBSERVED:   $reference_base/$consensus_base
 3'_FLANK:   $three_prime_seq
 COMMENT:
 $phred_quality read_depth: $read_depth
+LOCATION:   $start_pos
 ||
 ];
 		$snpcnt ++;

@@ -1439,6 +1439,58 @@ sub markFailedGenotypeLanes
   close( IN );
 }
 
+=head2
+dfd
+=cut
+
+sub symLinkHierarchyFiles
+{
+	croak "Usage: buildReleaseHierarchy original_rootDir files_fofn release_root_directory" unless @_ == 3;
+    
+    my $original_root = shift;
+    my $files_fofn = shift;
+    my $release_root = shift;
+    
+    croak "Cant find the lanes_fofn file: $files_fofn\n" unless -f $files_fofn;
+    croak "Cant find root directory: $original_root\n" unless -d $original_root;
+    croak "Cant find release root directory: $release_root\n" unless -d $release_root;
+    
+    my %studyToRoot;
+    $studyToRoot{ 'LowCov' } = "SRP000031";
+    $studyToRoot{ 'Trio' } = "SRP000032";
+    $studyToRoot{ 'Exon' } = "SRP000033";
+	
+	open( LANES, $files_fofn ) or die "Cant open bam fofn file: $!\n";
+    while( <LANES> )
+    {
+        chomp;
+        
+        my $file = $_;
+        
+        my $originalPath = qq[$original_root/$file];
+        my $destinationPath = qq[$release_root/$file];
+        my $destinationDir = dirname( $destinationPath );
+        
+        if( ! -f $originalPath )
+        {
+            print "Cant find original lane file: ".$originalPath."\n";
+            next;
+        }
+        
+        if( ! -d $destinationDir )
+        {
+            system( "mkdir -p $destinationDir" ) #or die "Failed to make release directory path: $release_root/$relativeDir\n";
+        }
+        
+        if( ! -l $destinationPath && ! -f $destinationPath )
+        {
+            print "Linking file in: $destinationPath to $originalPath\n";
+            symlink( $originalPath, $destinationPath ) or die "Failed to link file in: $destinationPath to $originalPath\n";
+        }
+    }
+    close( LANES );
+}
+
 =head2 buildReleaseHierarchy
 
     Arg [1]    : original hierarchy root directory
