@@ -48,7 +48,6 @@ our $options =
 
                     fastqcheck      .. The fastqcheck executable
                     files           .. Array reference to the list of files to be imported.
-                    mapping_root    .. The root of the mapping hierarchy, where symlinks should be created
                     mpsa            .. The mpsa executable
                     paired          .. Is the lane from the paired end sequencing.
 
@@ -62,7 +61,6 @@ sub new
 
     if ( !$$self{mpsa} ) { $self->throw("Missing the option mpsa.\n"); }
     if ( !$$self{fastqcheck} ) { $self->throw("Missing the option fastqcheck.\n"); }
-    if ( !$$self{mapping_root} ) { $self->throw("Missing the option mapping_root.\n"); }
     if ( !$$self{files} ) { $self->throw("Missing the option files.\n"); }
     if ( !exists($$self{paired}) ) { $self->throw("Missing the option paired.\n"); }
 
@@ -119,7 +117,6 @@ my \$opts = {
     fastqcheck   => q[$$self{fastqcheck}],
     lane         => q[$$self{lane}],
     mpsa         => q[$$self{mpsa}], 
-    mapping_root => q[$$self{mapping_root}],
     paired       => $$self{paired},
     files        => [ $files ],
 };
@@ -331,9 +328,6 @@ sub update_db
     my $vrtrack = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database\n");
     my $vrlane  = VRTrack::Lane->new_by_name($vrtrack,$$self{lane}) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
 
-    my $mapping_dir = "$$self{mapping_root}/" . $self->get_hierarchy_path();
-    Utils::CMD(qq[mkdir -p '$mapping_dir']);
-
     $vrtrack->transaction_start();
 
     my $i = 0;
@@ -344,15 +338,6 @@ sub update_db
         my $name = "$$self{lane}_$i.fastq";
 
         if ( ! -e "$lane_path/$name.gz" ) { last; }
-
-        if ( ! -e "$mapping_dir/$name.gz" )
-        {
-            Utils::relative_symlink("$lane_path/$name.gz","$mapping_dir/$name.gz");
-        }
-        if ( ! -e "$mapping_dir/$name.gz.fastqcheck" )
-        {
-            Utils::relative_symlink("$lane_path/$name.gz.fastqcheck","$mapping_dir/$name.gz.fastqcheck");
-        }
 
         my $vrfile = $vrlane->get_file_by_name($name);
         if ( !$vrfile ) 
