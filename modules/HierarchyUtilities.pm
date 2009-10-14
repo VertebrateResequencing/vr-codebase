@@ -1445,15 +1445,17 @@ dfd
 
 sub symLinkHierarchyFiles
 {
-	croak "Usage: buildReleaseHierarchy original_rootDir files_fofn release_root_directory" unless @_ == 3;
+	croak "Usage: symLinkHierarchyFiles original_rootDir files_fofn release_root_directory hard|soft" unless @_ == 4;
     
     my $original_root = shift;
     my $files_fofn = shift;
     my $release_root = shift;
+	my $type = shift;
     
     croak "Cant find the lanes_fofn file: $files_fofn\n" unless -f $files_fofn;
     croak "Cant find root directory: $original_root\n" unless -d $original_root;
     croak "Cant find release root directory: $release_root\n" unless -d $release_root;
+	croak "Must specify either hard or soft as link type" unless $type eq 'soft' || $type eq 'hard';
     
     my %studyToRoot;
     $studyToRoot{ 'LowCov' } = "SRP000031";
@@ -1485,7 +1487,14 @@ sub symLinkHierarchyFiles
         if( ! -l $destinationPath && ! -f $destinationPath )
         {
             print "Linking file in: $destinationPath to $originalPath\n";
-            symlink( $originalPath, $destinationPath ) or die "Failed to link file in: $destinationPath to $originalPath\n";
+			if( $type eq 'soft' )
+			{
+				symlink( $originalPath, $destinationPath ) or die "Failed to link file in: $destinationPath to $originalPath\n";
+			}
+			else
+			{
+				link( $originalPath, $destinationPath ) or die "Failed to link file in: $destinationPath to $originalPath\n";
+			}
         }
     }
     close( LANES );
