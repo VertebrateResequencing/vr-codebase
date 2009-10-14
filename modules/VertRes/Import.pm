@@ -360,12 +360,9 @@ sub update_db
         $vrfile->update();
     }
 
-    # Change also the qc status of the single _s_ file, if there is any. To find out,
-    #   loop through the files supplied by run-pipeline.
+    # Change also the qc status of all single files.
     for my $file (@{$$self{files}})
     {
-        if ( !($file=~/^\d+_s_\d+\./) ) { next; }
-
         my $vrfile = $vrlane->get_file_by_name($file);
         if ( !$vrfile ) { $self->throw("FIXME: no such file [$file] for the lane [$lane_path]."); }
         $vrfile->is_processed('import',1);
