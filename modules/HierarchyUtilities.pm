@@ -1456,7 +1456,7 @@ sub symLinkHierarchyFiles
     croak "Cant find the lanes_fofn file: $files_fofn\n" unless -f $files_fofn;
     croak "Cant find root directory: $original_root\n" unless -d $original_root;
     croak "Cant find release root directory: $release_root\n" unless -d $release_root;
-	croak "Must specify either hard or soft as link type" unless $type eq 'soft' || $type eq 'hard' || $type eq 'cp';
+	croak "Must specify either hard or soft as link type" unless $type eq 'soft' || $type eq 'hard' || $type eq 'copy';
     
     my %studyToRoot;
     $studyToRoot{ 'LowCov' } = "SRP000031";
