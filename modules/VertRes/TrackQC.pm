@@ -982,7 +982,9 @@ sub auto_qc
     if ( $$stats{error_rate} > $min ) { $status=0; $reason="The error rate higher than $min ($$stats{error_rate})."; }
     push @qc_status, { test=>$test, status=>$status, reason=>$reason };
 
-    # Insert size
+    $vrtrack->transaction_start();
+
+    # Insert size. 
     if ( $vrlane->is_paired() )
     {
         $test   = 'Insert size';
@@ -992,24 +994,31 @@ sub auto_qc
         }
         else
         {
+            # Only libraries can be failed based on wrong insert size. The lanes are always passed as
+            #   long as the insert size is consistent with other lanes from the same library.
+
             $status = 1;
             my ($amount,$range) = insert_size_ok($$stats{insert_size}{xvals},$$stats{insert_size}{yvals},25,80);
             $reason = "There are 80% or more inserts within 25% of max peak ($amount).";
             if ( $amount<80 ) 
             { 
-                $status=0; $reason="Less than 80% of the inserts within 25% of max peak ($amount)."; 
+                $status=0; $reason="Fail library, less than 80% of the inserts within 25% of max peak ($amount)."; 
             }
             push @qc_status, { test=>$test, status=>$status, reason=>$reason };
 
             $reason = "80% inserts are within 25% of max peak ($range).";
             if ( $range>25 )
             {
-                $status = 0; $reason="80% inserts are not within 25% of max peak ($range).";
+                $status=0; $reason="Fail library, 80% inserts are not within 25% of max peak ($range).";
             }
-            push @qc_status, { test=>'Insert size (rev)', status=>$status, reason=>$reason };
+            push @qc_status, { test=>'Insert size (rev)', status=>1, reason=>$reason };
 
+            my $vrlib = VRTrack::Library->new_by_field_value($vrtrack,'library_id',$vrlane->library_id()) or $self->throw("No vrtrack library?");
+            $vrlib->auto_qc_status($status ? 'passed' : 'failed');
+            $vrlib->update();
         }
     }
+
 
     # Now output the results.
     open(my $fh,'>',"$sample_dir/auto_qc.txt") or $self->throw("$sample_dir/auto_qc.txt: $!");
@@ -1023,9 +1032,13 @@ sub auto_qc
     close($fh);
 
     # Then write to the database.
+    $vrlane->auto_qc_status($status ? 'passed' : 'failed');
+    $vrlane->update();
+    $vrtrack->transaction_commit();
 
     return $$self{'Yes'};
 }
+
 
 # xvals, yvals, calculates 
 #   1) what percentage of the data lies within the allowed range from the max peak (e.g. [mpeak*(1-0.25),mpeak*(1+0.25)])
