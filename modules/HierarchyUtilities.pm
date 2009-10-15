@@ -461,7 +461,7 @@ sub getProjectDirectory
 	
 	if( $s[ 3 ] eq 'SRP000031' || $s[ 3 ] eq 'SRP000032' || $s[ 3 ] eq 'SRP000033' || $s[ 4 ] =~ /1000Genomes/ )
 	{
-		my $samples_csv = $ENV{ 'G1K' }.'/ref/G1K_samples.txt';
+		my $samples_csv = '/nfs/sf8/G1K/meta-data/G1K_samples.txt';
 		
 		croak "Cant find G1K samples csv file: $samples_csv\n" unless -f $samples_csv;
 		
