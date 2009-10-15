@@ -532,6 +532,7 @@ sub get_remote_file {
     my ($self, $url, %opts) = @_;
     return unless $url;
     my $local_dir = $self->tempdir();
+    my $md5 = $opts{md5};
     
     my $ff = File::Fetch->new(uri => $url);
     my $scheme = $ff->scheme;
@@ -555,7 +556,6 @@ sub get_remote_file {
         
         $ftp->get($full_path, $local_dir);
         
-        my $md5 = $opts{md5};
         if ($md5) {
             my $ok = $self->verify_md5($out_file, $md5);
             
@@ -584,8 +584,28 @@ sub get_remote_file {
     
     my $save_file = $opts{save};
     if ($save_file) {
-        my $success = File::Copy::move($out_file, $save_file);
-        $success || $self->throw("Failed to move $out_file to $save_file");
+        my $tmp_save_file = $save_file;
+        if ($md5) {
+            $tmp_save_file .= '.tmp';
+        }
+        
+        my $success = File::Copy::move($out_file, $tmp_save_file);
+        $success || $self->throw("Failed to move $out_file to $tmp_save_file");
+        
+        if ($md5) {
+            # recheck md5 after the move, since we may have crossed filesystems
+            my $ok = $self->verify_md5($tmp_save_file, $md5);
+            if ($ok) {
+                my $success = File::Copy::move($tmp_save_file, $save_file);
+                $success || $self->throw("Failed to move $tmp_save_file to $save_file");
+            }
+            else {
+                $self->warn("md5 match failed after moving good download file from $out_file to $tmp_save_file; will unlink it\n");
+                unlink($tmp_save_file);
+                return;
+            }
+        }
+        
         return $save_file;
     }
     return $out_file;
