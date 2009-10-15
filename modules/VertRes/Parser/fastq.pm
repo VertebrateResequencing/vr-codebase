@@ -89,12 +89,14 @@ sub new {
  Function: Parse the next entry from the fastq file.
  Returns : boolean (false at end of output; check the result_holder for the
            actual result information)
- Args    : n/a
+ Args    : none for normal usage, true to disable indexing (saves memory, but
+           breaks most other methods)
 
 =cut
 
 sub next_result {
     my $self = shift;
+    my $no_index = shift;
     
     # just return if no file set
     my $fh = $self->fh() || return;
@@ -117,8 +119,9 @@ sub next_result {
     # seqname
     # for speed purposes, we allow anything for the seqname up to the first
     # space
+    my $filename = $self->file || '-';
     unless (index($line, '@') == 0) {
-        $self->throw("fastq file was bad, seqname line didn't start as expected: $line");
+        $self->throw("fastq file '$filename' was bad, seqname line didn't start as expected: $line");
     }
     my ($seq_name) = split(' ', $line);
     $seq_name = substr($seq_name, 1);
@@ -128,24 +131,26 @@ sub next_result {
     # lazy way out and assume it will always be on one line.
     # For speed, we don't validate the line.
     my $seq = <$fh>;
-    $seq || $self->throw("fastq file was truncated - no sequence for $seq_name");
+    $seq || $self->throw("fastq file '$filename' was truncated - no sequence for $seq_name");
     chomp($seq);
     
     # seqname repeated
     $line = <$fh>;
-    $line || $self->throw("fastq file was truncated - no + line $seq_name");
+    $line || $self->throw("fastq file '$filename' was truncated - no + line $seq_name");
     unless (index($line, '+') == 0) {
-        $self->throw("fastq file was bad, + line didn't start as expected: $line");
+        $self->throw("fastq file '$filename' was bad, + line didn't start as expected: $line");
     }
     
     # qual
     # for speed purposes, we don't validate the line
     my $qual = <$fh>;
-    $qual || $self->throw("fastq file was truncated - no quality line for $seq_name");
+    $qual || $self->throw("fastq file '$filename' was truncated - no quality line for $seq_name");
     chomp($qual);
     
     # we assume that seqnames are unique in our fastqs...
-    $self->{'seqnames'.$fh_id}->{$seq_name} = $tell;
+    unless ($no_index) {
+        $self->{'seqnames'.$fh_id}->{$seq_name} = $tell;
+    }
     
     $self->{_result_holder}->[0] = $seq_name;
     $self->{_result_holder}->[1] = $seq;
