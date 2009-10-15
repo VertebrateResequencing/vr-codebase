@@ -1004,7 +1004,7 @@ sub auto_qc
             { 
                 $status=0; $reason="Fail library, less than 80% of the inserts within 25% of max peak ($amount)."; 
             }
-            push @qc_status, { test=>$test, status=>$status, reason=>$reason };
+            push @qc_status, { test=>$test, status=>1, reason=>$reason };
 
             $reason = "80% inserts are within 25% of max peak ($range).";
             if ( $range>25 )
