@@ -42,8 +42,8 @@ use HierarchyUtilities;
 
 use base qw(VertRes::Base);
 
-our %tech_to_module = (454 => 'VertRes::Utils::Mappers::ssaha',
-                       SLX => 'VertRes::Utils::Mappers::bwa');
+our %tech_to_mapper = (454 => 'ssaha',
+                       SLX => 'bwa');
 
 our %do_mapping_args = (insert_size => 1,
                         local_cache => 1,
@@ -56,7 +56,10 @@ our %do_mapping_args = (insert_size => 1,
  Usage   : my $obj = VertRes::Utils::Mapping->new();
  Function: Create a new VertRes::Utils::Mapping object.
  Returns : VertRes::Utils::Mapping object
- Args    : n/a
+ Args    : slx_mapper => 'bwa'|'maq' (default bwa; the mapper to use for SLX
+                                      lanes)
+           '454_mapper' => 'ssaha' (default ssaha; the mapper to use for 454
+                                    lanes)
 
 =cut
 
@@ -81,15 +84,18 @@ sub new {
 sub lane_to_module {
     my ($self, $arg) = @_;
     
+    my $mapper;
     if ($arg =~ /\/SLX\//i) {
-        return $tech_to_module{SLX};
+        $mapper = $self->{slx_mapper} || $tech_to_mapper{SLX};
     }
     elsif ($arg =~ /\/454\//) {
-        return $tech_to_module{454};
+        $mapper = $self->{'454_mapper'} || $tech_to_mapper{454};
     }
     else {
         $self->throw("Encountered an argument that doesn't correspond to a technology: $arg");
     }
+    
+    return "VertRes::Utils::Mappers::$mapper";
 }
 
 =head2 split_fastq
