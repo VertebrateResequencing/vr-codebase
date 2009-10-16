@@ -12,27 +12,18 @@ root    => '/abs/path/to/root/data/dir',
 module  => 'VertRes::Pipelines::DCCImport',
 prefix  => '_',
 
-mpsa_limit => 30,
+ftp_limit => 100,
 
 db  => {
     database => 'g1k_meta',
     host     => 'mcs4a',
     port     => 3306,
-    user     => 'vreseq_ro',
+    user     => 'vreseq_rw',
+    password => 'xxxxxxx',
 },
 
-data => {
-    db  => 
-    {
-        database => 'g1k_meta',
-        host     => 'mcs4a',
-        port     => 3306,
-        user     => 'vreseq_rw',
-        password => 'xxxxxxx',
-    }
-},
-
-# (the mpsa_limit option is the maximum number of downloads to do at once)
+# (the ftp_limit option is the maximum number of lanes worth of fastqs to
+#  download at once)
 
 # run the pipeline:
 run-pipeline -c pipeline.config -s 1
@@ -42,10 +33,31 @@ run-pipeline -c pipeline.config -s 1
 =head1 DESCRIPTION
 
 A module for importing new fastqs from the DCC: first it downloads the fastq
-files, then it adds them to our data hierarchies for G1K. It depends on
+files, then it adds them to our data hierarchy for G1K. It depends on
 si_to_vr.pl script to be run first, to update our database with the latest
 sequence.index information, and afterwards the mapping pipeline should be run,
 which will pick up on newly imported lanes and map them.
+
+It will also work to import non-G1K fastqs in a local directory into a G1K-style
+hierarchy, assuming a fake sequence.index has been used with si_to_vr.pl on
+a custom database. In this case, the import.conf file must contain the
+fastq_base option:
+
+root    => '/abs/path/to/root/data/dir',
+module  => 'VertRes::Pipelines::DCCImport',
+prefix  => '_',
+
+db  => {
+    database => 'special_meta',
+    host     => 'mcs4a',
+    port     => 3306,
+    user     => 'vreseq_rw',
+    password => 'xxxxxxx',
+},
+
+data => {
+    fastq_base => '/abs/path/to/flattened/fastq/dir'
+},
 
 =head1 AUTHOR
 
@@ -59,6 +71,7 @@ use strict;
 use warnings;
 use File::Basename;
 use VertRes::IO;
+use VertRes::Parser::fastqcheck;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::Library;
@@ -81,7 +94,7 @@ our $actions = [ { name     => 'import_fastqs',
                    provides => \&cleanup_provides } ];
 
 our %options = (do_cleanup => 0,
-                dcc_ftp_base => 'ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/',
+                fastq_base => 'ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/',
                 bsub_opts => '-q normal');
 
 =head2 new
@@ -95,7 +108,9 @@ our %options = (do_cleanup => 0,
            files => \@files_for_import
            root => path to dir where hierarchy will be built to contain the
                    downloaded files (data dir)
-           dcc_ftp_base => ftp url containing the data dir (default exists)
+           fastq_base => ftp url containing the data dir (default exists);
+                         can also be a local path to the dir containing the
+                         fastq files
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -175,16 +190,16 @@ sub import_fastqs {
     my $did_one = 0;
     for my $file_obj (@files) {
         my $file = $file_obj->name;
-        my $ftp_path = $self->{dcc_ftp_base}.$file;
+        my $ftp_path = $self->{fastq_base}.$file;
         my $fastq = $file_obj->hierarchy_name;
         my $data_path = $self->{io}->catfile($lane_path, $fastq);
-        
-        next if -s $data_path;
-        $did_one++;
         
         my $precheck_file = $data_path;
         $precheck_file =~ s/\.fastq\.gz$/.precheck.fastq.gz/;
         my $fqc_file = $data_path.'.fastqcheck';
+        
+        next if (-s $data_path && -s $fqc_file);
+        $did_one++;
         
         my $md5 = $file_obj->md5;
         my $total_reads = $file_obj->raw_reads;
@@ -203,14 +218,28 @@ use VertRes::Parser::fastqcheck;
 
 unless (-s '$data_path') {
     unless (-s '$precheck_file') {
-        # download to a temp-named file
         my \$io = VertRes::IO->new;
-        my \$got = \$io->get_remote_file('$ftp_path',
-                                         save => '$precheck_file',
-                                         md5  => '$md5');
         
-        unless (\$got eq '$precheck_file') {
-            die "Failed to download '$ftp_path' to '$precheck_file'\n";
+        if ('$ftp_path' =~ qr{^(?:ftp|http)://}) {
+            # download to a temp-named file
+            my \$got = \$io->get_remote_file('$ftp_path',
+                                             save => '$precheck_file',
+                                             md5  => '$md5');
+            
+            unless (\$got eq '$precheck_file') {
+                die "Failed to download '$ftp_path' to '$precheck_file'\n";
+            }
+        }
+        elsif (-s '$ftp_path') {
+            copy('$ftp_path', '$precheck_file') || die "Failed to move '$ftp_path' to '$precheck_file'\n";
+            my \$ok = \$io->verify_md5('$precheck_file', '$md5');
+            unless (\$ok) {
+                unlink('$precheck_file');
+                die "md5 check on '$ftp_path' after moving it to hierarchy failed! The hierarchy copy was deleted.\n";
+            }
+        }
+        else {
+            die "The given path to the fastq file to import was invalid ('$ftp_path')\n";
         }
     }
     
@@ -328,11 +357,6 @@ sub update_db_requires {
 =cut
 
 sub update_db_provides {
-    my ($self, $lane_path) = @_;
-    # run this action if we have the database details to write to the db
-    return 0 if exists($self->{db});
-    # otherwise, the empty list returned means that the action thinks it is
-    # complete
     return [];
 }
 
@@ -349,13 +373,9 @@ sub update_db_provides {
 
 sub update_db {
     my ($self, $lane_path, $action_lock) = @_;
-    $self->throw("VRTrack database details are needed via the db config hash") unless $self->{db};
     
-    # make our own vrtrack and vrlane objects, since $self->{db} should contain
-    # the database details with write permissions, whereas $self->{vrlane} might
-    # not
-    my $vrtrack = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
-    my $vrlane  = VRTrack::Lane->new_by_name($vrtrack, $self->{lane}) or $self->throw("No such lane in the DB: [$self->{lane}]");
+    my $vrlane  = $self->{vrlane};
+    my $vrtrack = $vrlane->vrtrack;
     my @files = @{$vrlane->files || []};
     
     $vrtrack->transaction_start();
@@ -364,6 +384,7 @@ sub update_db {
     my $total_files = 0;
     my $attempted_updates = 0;
     my $successful_updates = 0;
+    my $largest_read_len = 0;
     for my $file_obj (@files) {
         my $file = $file_obj->name;
         my $fastq = $file_obj->hierarchy_name;
@@ -374,6 +395,14 @@ sub update_db {
         $imported_files++;
         
         $file_obj->is_processed('import', 1);
+        
+        # set mean_q and read_len, based on the fastqcheck info
+        my $fqc = VertRes::Parser::fastqcheck->new(file => "$data_path.fastqcheck");
+        my $read_len = int($fqc->avg_length);
+        $largest_read_len = $read_len if $read_len > $largest_read_len;
+        $file_obj->read_len($read_len);
+        $file_obj->mean_q($fqc->avg_qual);
+        
         my $ok = $file_obj->update();
         $attempted_updates++;
         $successful_updates++ if $ok;
@@ -382,6 +411,11 @@ sub update_db {
     # update import status of whole lane if we imported all the files
     if ($imported_files && $imported_files == $total_files) {
         $vrlane->is_processed('import', 1);
+        
+        if ($largest_read_len) {
+            $vrlane->read_len($largest_read_len);
+        }
+        
         my $ok = $vrlane->update();
         $attempted_updates++;
         $successful_updates++ if $ok;
@@ -408,7 +442,6 @@ sub update_db {
 =cut
 
 sub cleanup_requires {
-    my ($self, $lane_path) = @_;
     return [];
 }
 
@@ -417,13 +450,12 @@ sub cleanup_requires {
  Title   : cleanup_provides
  Usage   : my $provided_files = $obj->cleanup_provides('/path/to/lane');
  Function: Find out what files the cleanup action generates on success.
- Returns : array ref of file names
+ Returns : n/a - doesn't provide anything, and always runs
  Args    : lane path
 
 =cut
 
 sub cleanup_provides {
-    my ($self, $lane_path) = @_;
     return [];
 }
 
@@ -465,7 +497,10 @@ sub cleanup {
 sub is_finished {
     my ($self, $lane_path, $action) = @_;
     
-    if ($action->{name} eq 'cleanup') {
+    if ($action->{name} eq 'update_db') {
+        $self->{vrlane}->is_processed('import') ? return $self->{Yes} : return $self->{No};
+    }
+    elsif ($action->{name} eq 'cleanup') {
         return $self->{No};
     }
     
