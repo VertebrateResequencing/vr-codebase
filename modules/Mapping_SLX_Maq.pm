@@ -348,6 +348,16 @@ sub mapLane
 			}
 		}
 	}
+	
+	if( -d "split" )
+	{
+		#if the splitting job failed to run completely - reset by deleting the split directory
+		my $count = `ls split | wc`; chomp( $count );
+		if( $count == 0 && ! -f "split/split.o" && ! -f "split/split.e" )
+		{
+			system( "rm -rf split" );
+		}
+	}
     
 	my $lane_dir = getcwd();
 	
