@@ -349,11 +349,11 @@ sub mapLane
 		}
 	}
 	
-	if( -d "split" )
+	if( ! -f "raw.map" && -d "split" )
 	{
 		#if the splitting job failed to run completely - reset by deleting the split directory
 		my $count = `ls split | wc`; chomp( $count );
-		if( $count == 0 && ! -f "split/split.o" && ! -f "split/split.e" )
+		if( ! -f "split/split.o" && ! -f "split/split.e" )
 		{
 			system( "rm -rf split" );
 		}
