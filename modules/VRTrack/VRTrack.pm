@@ -191,6 +191,13 @@ sub add_project {
     }
 
     $obj = VRTrack::Project->create($self,$name);
+    # set default hierarchy_name
+    if ($obj){
+        my $hierarchy_name = $name;
+        $hierarchy_name =~ s/\W+/_/g;
+        $obj->hierarchy_name($hierarchy_name);
+        $obj->update;
+    }
     delete $self->{'project_ids'};
     return $obj;
 }
