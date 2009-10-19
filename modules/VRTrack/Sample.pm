@@ -472,6 +472,9 @@ sub add_library {
     $obj = VRTrack::Library->create($self->{vrtrack}, $name);
     if ($obj){
         $obj->sample_id($self->id);
+        my $hierarchy_name = $name;
+        $hierarchy_name =~ s/\W+/_/g;
+        $obj->hierarchy_name($hierarchy_name);
         $obj->update;
     }
     # clear caches
