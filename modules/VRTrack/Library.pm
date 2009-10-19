@@ -863,7 +863,12 @@ sub add_lane {
     }
     $obj = VRTrack::Lane->create($self->{vrtrack}, $name);
     if ($obj){
+        # set library_id on lane, and set hierarchy_name default
         $obj->library_id($self->id);
+
+        my $hierarchy_name = $name;
+        $hierarchy_name =~ s/\W+/_/g;
+        $obj->hierarchy_name($hierarchy_name);
         $obj->update;
     }
     # clear caches
