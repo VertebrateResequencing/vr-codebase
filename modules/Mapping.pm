@@ -533,7 +533,7 @@ sub mergeBam
 	croak "Cant find input fofn" unless -f $bamFofn;
 	
 	my $cmd = "java -jar -Xmx$memory"."m $PICARD_MERGE TMP_DIR=".getcwd()."  VALIDATION_STRINGENCY=SILENT O=$outputBam";
-	open( my $fh, $bamFofn ) or $!;
+	open( my $fh, $bamFofn ) or die $!;
 	while( <$fh> )
 	{
 		chomp;
