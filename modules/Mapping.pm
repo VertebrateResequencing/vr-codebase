@@ -530,6 +530,7 @@ sub mergeBam
 	my $outputBam = shift;
 	
 	croak "Output files must be a bam: $outputBam" unless $outputBam =~ /.*\.bam$/;
+	croak "Cant find input fofn" unless -f $bamFofn;
 	
 	my $cmd = "java -jar -Xmx$memory"."m $PICARD_MERGE TMP_DIR=".getcwd()."  VALIDATION_STRINGENCY=SILENT O=$outputBam";
 	open( my $fh, $bamFofn ) or $!;
