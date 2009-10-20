@@ -543,7 +543,7 @@ sub mergeBam
 	}
 	close( $fh );
 	
-	my $lsf = qq{bsub -q $queue -R "select[type==X86_64 && mem > $memory] rusage[mem=$memory]" -M$memory}.qq{000 "$cmd && samtools index $outputBam && samtools flagstat $outputBam > $outputBam.flagstat"};
+	my $lsf = qq{bsub -o merge.o -e merge.e -q $queue -R "select[type==X86_64 && mem > $memory] rusage[mem=$memory]" -M$memory}.qq{000 "$cmd && samtools index $outputBam && samtools flagstat $outputBam > $outputBam.flagstat"};
 	system( $lsf );
 	#print $lsf;
 }
