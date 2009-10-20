@@ -519,4 +519,32 @@ sub unmapped2Bam
 	close( LANES );
 }
 
+my $PICARD_MERGE = $ENV{ 'BIN' }."/picard-tools-1.01/MergeSamFiles.jar";
+sub mergeBam
+{
+	croak "Usage: mergeBam input_bam_fofn max_memory_mb queue output_bam" unless @_ == 4;
+	
+	my $bamFofn = shift;
+	my $memory = shift;
+	my $queue = shift;
+	my $outputBam = shift;
+	
+	croak "Output files must be a bam: $outputBam" unless $outputBam =~ /.*\.bam$/;
+	
+	my $cmd = "java -jar -Xmx$memory"."m $PICARD_MERGE TMP_DIR=".getcwd()."  VALIDATION_STRINGENCY=SILENT O=$outputBam";
+	open( my $fh, $bamFofn ) or $!;
+	while( <$fh> )
+	{
+		chomp;
+		croak "Cant find bam file: $_\n" unless -f $_ && $_ =~ /.*\.bam$/;
+		
+		$cmd .= " I=$_";
+	}
+	close( $fh );
+	
+	my $lsf = qq{bsub -q $queue -R "select[type==X86_64 && mem > $memory] rusage[mem=$memory]" -M6000}.qq{000 "$cmd && samtools index $outputBam && samtools flagstat $outputBam > $outputBam.flagstat"};
+	#system( $lsf );
+	print $lsf;
+}
+
 1;
