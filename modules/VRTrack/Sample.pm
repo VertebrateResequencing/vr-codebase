@@ -51,7 +51,6 @@ sub fields_dispatch {
                 'project_id'    => sub { $self->project_id(@_)},
                 'ssid'          => sub { $self->ssid(@_)},
                 'name'          => sub { $self->name(@_)},
-                'acc'           => sub { $self->acc(@_)},
                 'individual_id' => sub { $self->individual_id(@_)},
                 'note_id'       => sub { $self->note_id(@_)},
                 'changed'       => sub { $self->changed(@_)},
@@ -322,26 +321,6 @@ sub ssid {
 	$self->dirty(1);
     }
     return $self->{'ssid'};
-}
-
-
-=head2 acc
-
-  Arg [1]    : acc (optional)
-  Example    : my $acc = $samp->acc();
-               $samp->acc('ERS000090');
-  Description: Get/Set for sample accession, i.e. [SE]RR sample id
-  Returntype : string
-
-=cut
-
-sub acc {
-    my ($self,$acc) = @_;
-    if (defined $acc and $acc ne $self->{'acc'}){
-        $self->{'acc'} = $acc;
-	$self->dirty(1);
-    }
-    return $self->{'acc'};
 }
 
 

@@ -58,7 +58,7 @@ sub new {
     $self->{_dbh} = $dbh;
     $self->{vrtrack} = $vrtrack;
 
-    my $sql = qq[select individual_id, name, hierarchy_name, alias, sex, species_id, population_id from individual where individual_id = ?];
+    my $sql = qq[select individual_id, name, hierarchy_name, alias, sex, acc, species_id, population_id from individual where individual_id = ?];
     my $sth = $self->{_dbh}->prepare($sql);
 
     if ($sth->execute($id)){
@@ -71,6 +71,7 @@ sub new {
         $self->hierarchy_name($data->{'hierarchy_name'});
         $self->alias($data->{'alias'});
         $self->sex($data->{'sex'});
+        $self->acc($data->{'acc'});
         $self->species_id($data->{'species_id'});
         $self->population_id($data->{'population_id'});
 	$self->dirty(0); # unset the dirty flag
@@ -275,6 +276,26 @@ sub sex {
 	$self->dirty(1);
     }
     return $self->{'sex'};
+}
+
+
+=head2 acc
+
+  Arg [1]    : acc (optional)
+  Example    : my $acc = $study->acc();
+               $samp->acc('ERS000090');
+  Description: Get/Set for individual accession, i.e. SRA/ERA sample id
+  Returntype : string
+
+=cut
+
+sub acc {
+    my ($self,$acc) = @_;
+    if (defined $acc and $acc ne $self->{'acc'}){
+        $self->{'acc'} = $acc;
+	$self->dirty(1);
+    }
+    return $self->{'acc'};
 }
 
 

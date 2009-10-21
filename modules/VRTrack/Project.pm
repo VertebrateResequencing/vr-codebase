@@ -31,6 +31,7 @@ use Carp;
 no warnings 'uninitialized';
 use VRTrack::Core_obj;
 use VRTrack::Sample;
+use VRTrack::Study;
 our @ISA = qw(VRTrack::Core_obj);
 
 =head2 fields_dispatch
@@ -50,7 +51,7 @@ sub fields_dispatch {
                 'ssid'              => sub { $self->ssid(@_)},
                 'name'              => sub { $self->name(@_)},
                 'hierarchy_name'    => sub { $self->hierarchy_name(@_)},
-                'acc'               => sub { $self->acc(@_)},
+                'study_id'          => sub { $self->study_id(@_)},
                 'note_id'           => sub { $self->note_id(@_)},
                 'changed'           => sub { $self->changed(@_)},
                 'latest'            => sub { $self->is_latest(@_)},
@@ -362,26 +363,6 @@ sub ssid {
 }
 
 
-=head2 acc
-
-  Arg [1]    : acc (optional)
-  Example    : my $acc = $proj->acc();
-               $proj->acc('ERA000090');
-  Description: Get/Set for project accession, i.e. [SE]RR project id
-  Returntype : string
-
-=cut
-
-sub acc {
-    my ($self,$acc) = @_;
-    if (defined $acc and $acc ne $self->{'acc'}){
-        $self->{'acc'} = $acc;
-	$self->dirty(1);
-    }
-    return $self->{'acc'};
-}
-
-
 =head2 changed
 
   Arg [1]    : changed (optional)
@@ -502,6 +483,110 @@ sub get_sample_by_ssid {
     }
 
     return $obj;
+}
+
+
+=head2 study_id
+
+  Arg [1]    : study_id (optional)
+  Example    : my $study_id = $proj->study_id();
+               $proj->study_id(1);
+  Description: Get/Set for project internal study_id
+  Returntype : integer
+
+=cut
+
+sub study_id {
+    my ($self,$study_id) = @_;
+    if (defined $study_id and $study_id ne $self->{'study_id'}){
+        $self->{'study_id'} = $study_id;
+	$self->dirty(1);
+    }
+    return $self->{'study_id'};
+}
+
+
+=head2 study
+
+  Arg [1]    : study accession (optional)
+  Example    : my $study = $proj->study();
+               $proj->study('SRP000031');
+  Description: Get/Set for project study.  Lazy-loads study object from $self->study_id.  If a study accession is supplied, then study_id is set to the corresponding study in the database.  If no such study exists, returns undef.  Use add_study to add a study in this case.
+  Returntype : VRTrack::Study object
+
+=cut
+
+sub study {
+    my ($self,$study) = @_;
+    if ($study){
+        # get existing study by name
+        my $obj = $self->get_study_by_acc($study);
+        if ($obj){
+            # Have we actually changed?
+            if ($self->study_id != $obj->id){
+                $self->study_id($obj->id);
+                $self->dirty(1);
+            }
+            $self->{'study'} = $obj;
+        }
+        else {
+            # warn "No such study in the database";
+            return undef; # explicitly return nothing.
+        }
+    }
+    elsif ($self->{'study'}){
+        # already got a study object.  We'll return it at the end.
+    }
+    else {  # lazy-load study from database
+        if ($self->study_id){
+            my $obj = VRTrack::Study->new($self->{vrtrack},$self->study_id);
+            $self->{'study'} = $obj;
+        }
+    }
+    return $self->{'study'};
+}
+
+
+=head2 add_study
+
+  Arg [1]    : study acc
+  Example    : my $ind = $proj->add_study('NA19820');
+  Description: create a new study, and if successful, return the object
+  Returntype : VRTrack::Library object
+
+=cut
+
+sub add_study {
+    my ($self, $acc) = @_;
+
+    my $obj = $self->get_study_by_acc($acc);
+    if ($obj){
+        warn "Study $acc is already present in the database\n";
+        return undef;
+    }
+    else {
+        my $study = VRTrack::Study->create($self->{vrtrack}, $acc);
+        # populate caches
+        $self->{'study_id'} = $study->id;
+        $self->{'study'} = $study;
+        $self->dirty(1);
+    }
+    return $self->{'study'};
+}
+
+
+=head2 get_study_by_acc
+
+  Arg [1]    : study_name
+  Example    : my $ind = $proj->get_study_by_acc('NA19820');
+  Description: Retrieve a VRTrack::Study object by name
+  Returntype : VRTrack::Study object
+
+=cut
+
+sub get_study_by_acc {
+    my ($self,$acc) = @_;
+    return VRTrack::Study->new_by_acc($self->{vrtrack}, $acc);
 }
 
 

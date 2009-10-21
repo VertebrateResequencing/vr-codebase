@@ -408,7 +408,7 @@ sub prep_status {
 sub auto_qc_status {
     my ($self,$auto_qc_status) = @_;
     if (defined $auto_qc_status and $auto_qc_status ne $self->{'auto_qc_status'}){
-        my %allowed = map {$_ => 1} @{$self->list_enum_vals('lane','auto_qc_status')};
+        my %allowed = map {$_ => 1} @{$self->list_enum_vals('library','auto_qc_status')};
         unless ($allowed{lc($auto_qc_status)}){
             die "'$auto_qc_status' is not a defined auto_qc_status";
         }
