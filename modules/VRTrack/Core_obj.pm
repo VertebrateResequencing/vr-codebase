@@ -230,7 +230,6 @@ sub update {
                         $addsql .= qq[, changed, latest ) ];
                 $addsql .= qq[ VALUES ( ].('?,' x scalar @fields).qq[now(),true) ];
                 $dbh->do ($updsql, undef,$self->id);
-    print STDERR "$addsql; ",join('][',undef, map {$_->()} @$fieldsref{@fields}),"\n";
                 $dbh->do ($addsql, undef, map {$_->()} @$fieldsref{@fields});
                 $row_id = $dbh->{'mysql_insertid'};
                 $self->{vrtrack}->transaction_commit();
