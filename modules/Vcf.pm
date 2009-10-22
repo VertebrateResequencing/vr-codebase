@@ -15,8 +15,21 @@ Vcf
 
 =head1 SYNOPSIS
 
-perl -MVcf -ne '$x=vcf1;print if $x->{NA00001}{GT} eq "0/1"' example.vcf
-perl -MVcf -e validate example.vcf
+From the command line:
+    perl -MVcf -ne '$x=vcf1;print if $x->{NA00001}{GT} eq "0/1"' example.vcf
+    perl -MVcf -e validate example.vcf
+
+From a script:
+    use Vcf;
+    $vcf->parse_header();
+    while (my $x=$vcf->parse_next_data_line()) 
+    { 
+        for my $gt (keys %{$$x{gtypes}})
+        {
+            print "\t$gt:", $$x{gtypes}{$gt}{GT};
+        }
+        print "\n";
+    }
 
 =cut
 
@@ -74,7 +87,7 @@ sub validate
     if ( !$vcf->{header} ) { $vcf->warn("No VCF header found.\n"); }
     if ( !$vcf->{columns} ) { $vcf->warn("No column descriptions found.\n"); }
 
-    while ($vcf->parse_next_data_line()) { ; }
+    while (my $x=$vcf->parse_next_data_line()) { ; }
 }
 
 sub new
@@ -178,6 +191,8 @@ sub parse_next_data_line
             {
                 $self->throw("Error parsing the column $cname [$cols[$i]] on line [$line].\n");
             }
+            $out{gtypes}{$cname} = $value;
+            next;
         }
         $out{$cname} = $value; 
     }
