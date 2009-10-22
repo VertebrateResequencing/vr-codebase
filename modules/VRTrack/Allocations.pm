@@ -107,7 +107,6 @@ sub add_allocation {
 sub is_allocation_in_database {
     my ($self,$study,$ind,$centre) = @_;
     my $dbh = $self->{_dbh};
-    my $vrtrack = $self->{vrtrack};
 
     my $sql = qq[SELECT study_id, individual_id, seq_centre_id from allocation  where study_id = ? and individual_id = ? and seq_centre_id = ?];
     my $sth = $dbh->prepare($sql);
@@ -125,4 +124,37 @@ sub is_allocation_in_database {
 }
 
 
+=head2 get_centres_for_study_ind
+
+  Arg [1]    : study id
+  Arg [2]    : individual id
+  Example    : my @centres = @{$vrallocs->get_centres_for_study_ind(5,3)};
+  Description: get a list of sequencing centres that an individual has been allocated to in a specific study.
+  Returntype : arrayref of VRTrack::Seq_centres
+
+=cut
+
+sub get_centres_for_study_ind {
+    my ($self,$study,$ind) = @_;
+    my $dbh = $self->{_dbh};
+    my $vrtrack = $self->{vrtrack};
+
+    my @centres;
+    my $sql = qq[SELECT seq_centre_id from allocation 
+                 where study_id = ? and individual_id = ?];
+    my $sth = $dbh->prepare($sql);
+    if ($sth->execute($study,$ind)) {
+        foreach(@{$sth->fetchall_arrayref()}){
+            push @centres, VRTrack::Seq_centre->new($vrtrack,$_->[0]);
+        } 
+    }
+    else {
+        die( sprintf('DB allocation retrieval failed: %s %s %s', $study,$ind, $DBI::errstr));
+    }
+    return \@centres;
+}
+
+
+
 1;
+
