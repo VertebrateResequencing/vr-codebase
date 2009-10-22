@@ -20,7 +20,7 @@ db  => {
     password => 'xxxxxxx',
 },
 
-data {
+data => {
     slx_mapper => 'bwa',
     '454_mapper' => 'ssaha',
     reference => '/abs/path/to/ref.fa',
