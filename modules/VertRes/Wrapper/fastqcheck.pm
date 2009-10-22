@@ -80,6 +80,11 @@ sub _pre_run {
         $self->{_orig_exe} = $self->exe;
     }
     
+    # this is going to go to shell, so spaces in filename needs to be escaped
+    $fastq_file =~ s/ /\\ /g;
+    $self->register_output_file_to_check($output_file);
+    $output_file =~ s/ /\\ /g;
+    
     my $exe = "cat $fastq_file | ";
     
     # run via zcat pipe if fastq is gz
@@ -93,7 +98,6 @@ sub _pre_run {
     
     $self->exe($exe);
     
-    $self->register_output_file_to_check($output_file);
     $output_file = ' > '.$output_file;
     
     return ($output_file);
