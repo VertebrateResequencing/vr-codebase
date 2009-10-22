@@ -20,7 +20,20 @@ my $db =
 my $vrtrack = VRTrack::VRTrack->new($db);
 isa_ok $vrtrack, 'VRTrack::VRTrack';
 
-my $name = '1111_1';
+
+my $name = 'TestProject';
+my $vrproj = VRTrack::Project->new_by_name($vrtrack,$name);
+if ( !$vrproj )
+{
+    $vrproj = VRTrack::Project->create($vrtrack,$name);
+    $vrproj->update();
+
+    $vrproj = VRTrack::Project->new_by_name($vrtrack,$name);
+    $vrproj->study_id('test_study');
+    $vrproj->update();
+}
+
+$name = '1111_1';
 my $vrlane  = VRTrack::Lane->new_by_name($vrtrack,$name);
 if ( !$vrlane )
 {
