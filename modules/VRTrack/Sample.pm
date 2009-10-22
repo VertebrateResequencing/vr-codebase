@@ -165,6 +165,25 @@ sub new_by_ssid {
 #   }
 
 
+=head2 is_name_in_database
+
+  Arg [1]    : project name
+  Arg [2]    : hierarchy name
+  Example    : if(VRTrack::Project->is_name_in_database($vrtrack, $name,$hname)
+  Description: Class method. Checks to see if a name or hierarchy name is already used in the project table.
+  Returntype : boolean
+
+=cut
+
+sub is_name_in_database {
+    # with no create method in core objects, they all inherit from create in
+    # Core_obj, but that tests against is_name_in_database, which wasn't here
+    # before. Since old behaviour here was to not check the name, we just
+    # return 0
+    return 0;
+}
+
+
 ###############################################################################
 # Object methods
 ###############################################################################
