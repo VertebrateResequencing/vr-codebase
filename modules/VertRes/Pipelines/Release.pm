@@ -116,7 +116,7 @@ our $actions = [{ name     => 'create_release_hierarchy',
                   requires => \&cleanup_requires, 
                   provides => \&cleanup_provides }];
 
-our %options = (sequence_index => '/nfs/sf8/G1K/misc/sequence.index',
+our %options = (sequence_index => 'ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/sequence.index',
                 do_cleanup => 0,
                 do_chr_splits => 0,
                 do_recalibration => 0,
@@ -518,6 +518,9 @@ sub merge_up_one_level {
     
     unlink($out_fofn);
     
+    my $orig_bsub_opts = $self->{bsub_opts};
+    $self->{bsub_opts} = '-q normal -M5000000 -R \'select[mem>5000] rusage[mem=5000]\'';
+    
     my $group_by_basename = ! defined $output_basename;
     my %grouped_bams = $self->_fofn_to_bam_groups($lane_path, $fofn, $group_by_basename);
     
@@ -554,6 +557,8 @@ sub merge_up_one_level {
     my $expected = @out_bams;
     print $ofh "# expecting $expected\n";
     close($ofh);
+    
+    $self->{bsub_opts} = $orig_bsub_opts;
     
     return;
 }
