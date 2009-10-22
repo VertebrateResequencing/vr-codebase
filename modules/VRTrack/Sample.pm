@@ -32,6 +32,8 @@ no warnings 'uninitialized';
 use VRTrack::Library;
 use VRTrack::Individual;
 use VRTrack::Core_obj;
+use VRTrack::Allocations;
+use VRTrack::Project;
 our @ISA = qw(VRTrack::Core_obj);
 
 =head2 fields_dispatch
@@ -513,7 +515,7 @@ sub get_library_by_ssid {
 =head2 get_library_by_name
 
   Arg [1]    : library name
-  Example    : my $library = $track->get_library_by_name('My library');
+  Example    : my $library = $sam->get_library_by_name('My library');
   Description: retrieve library object by name
   Returntype : VRTrack::Library object
 
@@ -534,6 +536,49 @@ sub get_library_by_name {
         $obj = $match[0];
     }
     return $obj;
+}
+
+
+=head2 get_allocated_seq_centres
+
+  Arg [1]    : None
+  Example    : my @centres = $sam->get_allocated_seq_centres();
+  Description: retrieve sequencing centres allocated to this sample (in this project)
+  Returntype : arrayref of VRTrack::Seq_centre objects
+
+=cut
+
+sub get_allocated_seq_centres {
+    my ($self) = @_;
+    unless ($self->{'seq_centres'}){
+        my $allocs = VRTrack::Allocations->new($self->{vrtrack});
+        my $project = VRTrack::Project->new($self->{vrtrack},$self->project_id);
+        unless ($allocs && $project){
+            die "Can't retrieve Allocations and Project";
+        }
+        my $centres = $allocs->get_centres_for_study_ind($project->study->id,$self->individual->id);
+        $self->{'seq_centres'} = $centres;
+    }
+    return $self->{'seq_centres'};
+}
+
+
+=head2 is_sanger_sample
+
+  Arg [1]    : None
+  Example    : my $is_ours = $sam->is_sanger_sample();
+  Description: checks that this sample in this project has been allocated to the Sanger (SC).
+  Returntype : Boolean
+
+=cut
+
+sub is_sanger_sample {
+    my ($self) = @_;
+    my $is_ours = 0;
+    if (grep {$_->name eq 'SC'} @{$self->get_allocated_seq_centres}){
+        $is_ours = 1;
+    }
+    return $is_ours;
 }
 
 
