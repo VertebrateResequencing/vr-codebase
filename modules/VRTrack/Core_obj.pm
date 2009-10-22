@@ -165,7 +165,24 @@ sub create
 
     # now update the inserted the record
     my $next_id = $dbh->last_insert_id(undef,undef,$table,'row_id') or croak "No last_insert_id? $!";
-    $name  = $name ? qq[name='$name', ] : '';
+
+    if ( $name )
+    {
+        my $hierarchy_name;
+
+        my $fieldsref = $class->fields_dispatch();
+        if ( exists($fieldsref->{hierarchy_name}) )
+        {
+            $hierarchy_name = $name;
+            $hierarchy_name =~ s/\W+/_/g;
+        }
+
+        $name = qq[name='$name', ];
+        if ( $hierarchy_name )
+        {
+            $name .= qq[hierarchy_name='$hierarchy_name', ];
+        }
+    }
     $query = qq[UPDATE $table SET ${table}_id=$next_id, $name changed=now(), latest=true WHERE row_id=$next_id];
     $sth   = $dbh->prepare($query) or croak qq[The query "$query" failed: $!];
     $sth->execute or croak qq[The query "$query" failed: $!];
@@ -213,6 +230,7 @@ sub update {
                         $addsql .= qq[, changed, latest ) ];
                 $addsql .= qq[ VALUES ( ].('?,' x scalar @fields).qq[now(),true) ];
                 $dbh->do ($updsql, undef,$self->id);
+    print STDERR "$addsql; ",join('][',undef, map {$_->()} @$fieldsref{@fields}),"\n";
                 $dbh->do ($addsql, undef, map {$_->()} @$fieldsref{@fields});
                 $row_id = $dbh->{'mysql_insertid'};
                 $self->{vrtrack}->transaction_commit();
