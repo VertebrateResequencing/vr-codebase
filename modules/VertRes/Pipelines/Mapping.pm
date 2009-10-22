@@ -4,27 +4,60 @@ VertRes::Pipelines::Mapping - pipeline for mapping fastqs to reference
 
 =head1 SYNOPSIS
 
-# make a file of absolute paths to your desired lane directories, eg:
-find $G1K/data -type d -name "*RR*" | grep -v "SOLID" > lanes.fofn
+# make the config files, which specifies the details for connecting to the
+# VRTrack g1k-meta database and the data roots:
+echo '__VRTrack_Mapping__ g1k_mapping.conf' > pipeline.config
+# where g1k_mapping.conf contains:
+root    => '/abs/path/to/root/data/dir',
+module  => 'VertRes::Pipelines::Mapping',
+prefix  => '_',
 
-# make a config file, which specifies a standard pre-created config file:
-echo '<lanes.fofn mapping-g1k.conf' > pipeline.config
+db  => {
+    database => 'g1k_meta',
+    host     => 'mcs4a',
+    port     => 3306,
+    user     => 'vreseq_rw',
+    password => 'xxxxxxx',
+},
+
+data {
+    slx_mapper => 'bwa',
+    '454_mapper' => 'ssaha',
+    reference => '/abs/path/to/ref.fa',
+    assembly_name => 'NCBI36'
+},
+
+# reference option can be replaced with male_reference and female_reference
+# if you have 2 different references
 
 # run the pipeline:
 run-pipeline -c pipeline.config -s 30
 
 # (and make sure it keeps running by adding that last to a regular cron job)
 
+# alternatively to determining lanes to map with the database, it can work
+# on a file of directory paths by altering pipeline.config:
+# make a file of absolute paths to your desired lane directories, eg:
+find $G1K/data -type d -name "*RR*" | grep -v "SOLID" > lanes.fod
+echo '<lanes.fod g1k_mapping.conf' > pipeline.config
+# in this case, the db => {} option must be moved in the the data => {} section
+# of g1k_mappingf.config
+
 # when complete, get a report:
-perl -MVertRes::Utils::Mapping -MVertRes::IO -e '@lanes = VertRes::IO->new->parse_fod("lanes.fofn"); VertRes::Utils::Mapping->new->mapping_hierarchy_report("report.csv", @lanes);'
+perl -MVertRes::Utils::Mapping -MVertRes::IO -e '@lanes = VertRes::IO->new->parse_fod("lanes.fod");
+VertRes::Utils::Mapping->new->mapping_hierarchy_report("report.csv", @lanes);'
 
 =head1 DESCRIPTION
 
 A module for carrying out mapping on the Vertebrate Resequencing Informatics 
-mapping hierarchy. The hierarchy can consist of multiple different sequencing 
+data hierarchy. The hierarchy can consist of multiple different sequencing 
 technologies.
 
 *** Currently only Illumina (SLX) and 454 technologies are supported.
+
+This pipeline relies on information stored in a meta database. Such a database
+can be created with update_vrmeta.pl, using meta information held in a
+(possibly faked) sequence.index
 
 =head1 AUTHOR
 
@@ -37,8 +70,12 @@ package VertRes::Pipelines::Mapping;
 use strict;
 use warnings;
 use VertRes::Utils::Mapping;
-use HierarchyUtilities;
 use VertRes::IO;
+use VRTrack::VRTrack;
+use VRTrack::Lane;
+use VRTrack::Library;
+use VRTrack::Sample;
+use File::Basename;
 use LSF;
 
 use base qw(VertRes::Pipeline);
@@ -60,8 +97,9 @@ our $actions = [ { name     => 'split',
                    requires => \&cleanup_requires, 
                    provides => \&cleanup_provides } ];
 
-our %options = (sequence_index => '/nfs/sf8/G1K/misc/sequence.index',
-                local_cache => '',
+our %options = (local_cache => '',
+                slx_mapper => 'bwa',
+                '454_mapper' => 'ssaha',
                 do_cleanup => 0,
                 dont_wait => 1);
 
@@ -74,10 +112,20 @@ our $split_dir_name = 'split';
  Function: Create a new VertRes::Pipelines::Mapping object;
  Returns : VertRes::Pipelines::Mapping object
  Args    : lane => '/path/to/lane'
-           sequence_index => '/path/to/sequence.index' (there is a G1K default)
            local_cache => '/local/dir' (defaults to standard tmp space)
            do_cleanup => boolean (default false: don't do the cleanup action)
            chunk_size => int (default depends on mapper)
+           slx_mapper => 'bwa'|'maq' (default bwa; the mapper to use for mapping
+                                      SLX lanes)
+           '454_mapper' => 'ssaha', (default ssaha; the mapper to use for
+                                     mapping 454 lanes)
+           
+           reference => '/path/to/ref.fa' (no default, either this or the
+                        male_reference and female_reference pair of args must be
+                        supplied)
+           assembly_name => 'NCBI36' (no default, must be set to the name of
+                                      the reference)
+           
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -90,12 +138,55 @@ sub new {
     # we should have been supplied the option 'lane' which tells us which lane
     # we're in, which lets us choose which mapper module to use.
     my $lane = $self->{lane} || $self->throw("lane directory not supplied, can't continue");
-    my $mapping_util = VertRes::Utils::Mapping->new();
+    my $mapping_util = VertRes::Utils::Mapping->new(slx_mapper => $self->{slx_mapper},
+                                                    '454_mapper' => $self->{'454_mapper'});
     my $mapper_class = $mapping_util->lane_to_module($lane);
     $mapper_class || $self->throw("Lane '$lane' was for an unsupported technology");
     eval "require $mapper_class;";
     $self->{mapper_class} = $mapper_class;
     $self->{mapper_obj} = $mapper_class->new();
+    
+    # if we've been supplied a list of lane paths to work with, instead of
+    # getting the lanes from the db, we won't have a vrlane object; make one
+    if (! $self->{vrlane}) {
+        $self->throw("db option was not supplied in config") unless $self->{db};
+        my $vrtrack = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
+        my $rg = basename($lane);
+        my $vrlane  = VRTrack::Lane->new_by_name($vrtrack, $rg) or $self->throw("No such lane in the DB: [$rg]");
+        $self->{vrlane} = $vrlane;
+        
+        my $files = $vrlane->files();
+        foreach my $file (@{$files}) {
+            push @{$self->{files}}, $file->hierarchy_name;
+        }
+    }
+    $self->{vrlane} || $self->throw("vrlane object missing");
+    
+    # if we've been supplied both male and female references, we'll need to
+    # pick one and set the reference option
+    unless ($self->{reference} || ($self->{male_reference} && $self->{female_reference})) {
+        $self->throw("reference or (male_reference and female_reference) options are required");
+    }
+    if ($self->{male_reference}) {
+        my $vrtrack = $self->{vrlane}->vrtrack;
+        my $lib_id = $self->{vrlane}->library_id;
+        my $lib = VRTrack::Library->new($vrtrack, $lib_id);
+        my $samp_id = $lib->sample_id;
+        my $samp = VRTrack::Sample->new($vrtrack, $samp_id);
+        my $individual = $samp->individual();
+        my $gender = $individual->sex();
+        
+        if ($gender eq 'F') {
+            $self->{reference} = $self->{female_reference};
+        }
+        elsif ($gender eq 'M') {
+            $self->{reference} = $self->{male_reference};
+        }
+        else {
+            $self->throw("gender could not be determined for lane $lane");
+        }
+    }
+    $self->throw("assembly_name must be supplied in conf") unless $self->{assembly_name};
     
     $self->{io} = VertRes::IO->new;
     
@@ -119,16 +210,7 @@ sub split_requires {
 
 sub _require_fastqs {
     my ($self, $lane_path) = @_;
-    my @requires;
-    
-    my @fastq_info = @{HierarchyUtilities::getFastqInfo($lane_path)};
-    # *** currently HierarchyUtilities::getFastqInfo tells me what fastq files
-    #     are actually there, not which ones are /supposed/ to be there...
-    foreach my $info (@fastq_info) {
-        push(@requires, $info->[0]);
-    }
-    
-    return @requires;
+    return $self->{files};
 }
 
 =head2 split_provides
@@ -221,10 +303,17 @@ sub _get_read_args {
     my ($self, $lane_path, $ended) = @_;
     ($ended && ($ended eq 'se' || $ended eq 'pe')) || $self->throw("bad ended arg");
     
-    # get the fastq filenames
-    # *** currently HierarchyUtilities::getFastqInfo tells me what fastq files
-    #     are actually there, not which ones are /supposed/ to be there...
-    my @fastq_info = @{HierarchyUtilities::getFastqInfo($lane_path)};
+    my @fastqs = @{$self->{files}};
+    my @fastq_info;
+    foreach my $fastq (@fastqs) {
+        if ($fastq =~ /_(\d)\.fastq/) {
+            $fastq_info[$1]->[0] = $fastq;
+        }
+        else {
+            $fastq_info[0]->[0] = $fastq;
+        }
+    }
+    
     my @read_args;
     if ($fastq_info[0]->[0]) {
         $read_args[0] = ["read0 => '".$self->{io}->catfile($lane_path, $fastq_info[0]->[0])."'"];
@@ -257,11 +346,16 @@ sub map_requires {
     my ($self, $lane_path) = @_;
     my @requires = $self->_require_fastqs($lane_path);
     
-    my %lane_info = %{HierarchyUtilities::lane_info($lane_path)};
-    # we require the .bwt and .body so that multiple lanes during 'map' action don't all
-    # try and create the bwa/ssaha2 reference indexs at once automatically if it
-    # is missing; could add an index action before map action to solve this...
-    push(@requires, $lane_info{fa_ref}, $lane_info{fa_ref}.'.bwt', $lane_info{bwa_ref}.'.body', $lane_info{fai_ref});
+    # we require the .bwt and .body so that multiple lanes during 'map' action
+    # don't all try and create the bwa/ssaha2 reference indexes at once
+    # automatically if it is missing; could add an index action before map
+    # action to solve this...
+    push(@requires,
+         $self->{reference},
+         $self->{reference}.'.bwt',
+         $self->{reference}.'.body',
+         $self->{reference}.'.fai',
+         $self->{reference}.'.dict');
     
     foreach my $ended ('se', 'pe') {
         if ($self->_get_read_args($lane_path, $ended)) {
@@ -312,17 +406,34 @@ sub map {
     my ($self, $lane_path, $action_lock) = @_;
     
     # get the reference filename
-    my %lane_info = %{HierarchyUtilities::lane_info($lane_path)};
-    my $ref_fa = $lane_info{fa_ref} || $self->throw("the reference fasta wasn't known for $lane_path");
-    my $read_group = $lane_info{lane} || $self->throw("the read group wasn't known for $lane_path");
+    my $ref_fa = $self->{reference} || $self->throw("the reference fasta wasn't known for $lane_path");
+    
+    my $vrlane = $self->{vrlane};
+    my $read_group = $vrlane->hierarchy_name || $self->throw("the read group wasn't known for $lane_path");
     
     # and get the expected insert size for this lane
-    # ***... from where?
-    my $insert_size = 2000; # $lane_info{insert_size} - currently just hardcoded to 500
+    my $vrtrack = $vrlane->vrtrack;
+    my $lib = VRTrack::Library->new($vrtrack, $vrlane->library_id);
+    my $insert_size = $lib->insert_size || $self->throw("insert size wasn't known for $lane_path");
+    
+    # and all the other meta info we need for creating the sam header
+    #sample_name => string, eg. NA00000;
+    #run_name => string, the platform unit, eg. 7563
+    #library => string
+    #platform => string
+    #centre => string
+    #project => string, the study id, eg. SRP000001
+    
+    #sample_name => '$sample_name',
+    #run_name => '$run_name',
+    #library => '$library_name',
+    #platform => '$platform',
+    #centre => '$centre',
+    #project => '$project',
+    
     
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
-    my $sequence_index = $self->{sequence_index};
     
     # run mapping of each split in LSF calls to temp scripts;
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
@@ -377,8 +488,17 @@ my \$head = <\$samfh>;
 close(\$samfh);
 unless (\$head =~ /^\\\@HD/) {
     my \$ok = \$sam_util->add_sam_header('$sam_file',
-                                         sequence_index => '$sequence_index',
-                                         lane_path => '$lane_path',
+                                         sample_name => '$sample_name',
+                                         run_name => '$run_name',
+                                         library => '$library_name',
+                                         platform => '$platform',
+                                         centre => '$centre',
+                                         insert_size => '$insert_size',
+                                         project => '$project',
+                                         lane => '$read_group',
+                                         ref_fa => '$ref_fa',
+                                         ref_dict => '$ref_fa.dict',
+                                         ref_name => '$self->{assembly_name}',
                                          program => \$mapper->exe,
                                          program_version => \$mapper->version);
     \$sam_util->throw("Failed to add sam header!") unless \$ok;
