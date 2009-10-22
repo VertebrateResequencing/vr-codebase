@@ -3,7 +3,7 @@ package Vcf;
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcfv3.2
 #
 # Questions:
-# - FT record - semi-colon in specs, colon in the example
+# - FT record - semi-colon in specs, comma in the example
 # - missing gtype: ./. or .
 #
 # Authors: lh3, pd3
@@ -71,6 +71,9 @@ sub validate
 {
     my $vcf = $ARGV[0] ? Vcf->new(file=>$ARGV[0]) : Vcf->new();
     $vcf->parse_header();
+    if ( !$vcf->{header} ) { $vcf->warn("No VCF header found.\n"); }
+    if ( !$vcf->{columns} ) { $vcf->warn("No column descriptions found.\n"); }
+
     while ($vcf->parse_next_data_line()) { ; }
 }
 
@@ -87,9 +90,9 @@ sub new
         }
         else { $$self{fh} = *STDIN; }
     }
-    $$self{buffer}  = [];   # buffer stores the lines in the reverse order
-    $$self{header}  = {};
-    $$self{columns} = [];   # column names 
+    $$self{buffer}  = [];       # buffer stores the lines in the reverse order
+    $$self{header}  = undef;
+    $$self{columns} = undef;    # column names 
     return $self;
 }
 
@@ -270,11 +273,19 @@ sub parse_gtype_field
             next;
         }
 
-        if ( $$format[$i] eq 'GT' && !($items[$i]=~m{^(?:\.|\d+)[\|/](?:\.|\d+)$}) ) 
-        { 
-            # Dot or a number separated by one of |/\
-            $self->warn("[parse_gtype_field] Could not parse GT [$items[$i]]\n");
-            return undef; 
+        if ( $$format[$i] eq 'GT' )
+        {
+            if ( !($items[$i]=~m{^(?:\.|(\d+)[\|/](\d+))$}) ) 
+            { 
+                # A dot or two numbers separated by either of \|/
+                $self->warn("[parse_gtype_field] Could not parse GT [$items[$i]]\n");
+                return undef; 
+            }
+            if ( (defined($1) && $1>@$alts) || (defined($2) && $2>@$alts) )
+            {
+                $self->warn("[parse_gtype_field] The gtype value too big in [$items[$i]]\n");
+                return undef;
+            }
         }
         elsif ( $$format[$i] eq 'GQ' )
         {
