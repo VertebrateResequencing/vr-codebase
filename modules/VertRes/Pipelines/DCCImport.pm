@@ -297,6 +297,7 @@ exit;
         };
         close $scriptfh;
         
+        $script_name =~ s/ /\\ /g;
         LSF::run($action_lock, $lane_path, $self->{prefix}.'import_'.$fastq, $self, qq{perl -w $script_name});
     }
     
