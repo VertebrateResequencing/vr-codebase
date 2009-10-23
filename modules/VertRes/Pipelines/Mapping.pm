@@ -72,6 +72,7 @@ use warnings;
 use VertRes::Utils::Mapping;
 use VertRes::Utils::Hierarchy;
 use VertRes::IO;
+use VertRes::Parser::bas;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use File::Basename;
@@ -91,6 +92,10 @@ our $actions = [ { name     => 'split',
                    action   => \&merge_and_stat,
                    requires => \&merge_and_stat_requires, 
                    provides => \&merge_and_stat_provides },
+                 { name     => 'update_db',
+                   action   => \&update_db,
+                   requires => \&update_db_requires, 
+                   provides => \&update_db_provides },
                  { name     => 'cleanup',
                    action   => \&cleanup,
                    requires => \&cleanup_requires, 
@@ -680,6 +685,107 @@ exit;
     return $self->{No};
 }
 
+=head2 update_db_requires
+
+ Title   : update_db_requires
+ Usage   : my $required_files = $obj->update_db_requires('/path/to/lane');
+ Function: Find out what files the update_db action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub update_db_requires {
+    my ($self, $lane_path) = @_;
+    return $self->merge_and_stat_provides($lane_path);
+}
+
+=head2 update_db_provides
+
+ Title   : update_db_provides
+ Usage   : my $provided_files = $obj->update_db_provides('/path/to/lane');
+ Function: Find out what files the update_db action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub update_db_provides {
+    return [];
+}
+
+=head2 update_db
+
+ Title   : update_db
+ Usage   : $obj->update_db('/path/to/lane', 'lock_filename');
+ Function: Records in the database that the lane has been mapped, and also store
+           some of the mapping stats.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub update_db {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    # get the bas files that contain our mapping stats
+    my $files = $self->update_db_requires($lane_path);
+    my @bas_files;
+    foreach my $file (@{$files}) {
+        next unless $file =~ /\.bas$/;
+        push(@bas_files, $self->{io}->catfile($lane_path, $file));
+        -s $bas_files[-1] || $self->throw("Expected bas file $bas_files[-1] but it didn't exist!");
+    }
+    
+    my $vrlane = $self->{vrlane};
+    my $vrtrack = $vrlane->vrtrack;
+    
+    $self->throw("update_db not yet implemented...");
+    
+    $vrtrack->transaction_start();
+    
+    # set mapped status
+    $vrlane->is_processed('mapped', 1);
+    $vrlane->update() || $self->throw("Unable to set mapped status on lane $lane_path");
+    
+    # get the mapping stats from each bas file
+    foreach my $file (@bas_files) {
+        my $bp = VertRes::Parser::bas->new(file => $file);
+        my $rh = $bp->result_holder;
+        $bp->next_result; # we'll only ever have one line, since this is only
+                          # one read group
+        
+        # add mapping details to db
+        my $mapping = $vrlane->add_mapping();
+        $mapping->raw_reads($rh->[9]);
+        $mapping->raw_bases($rh->[7]);
+        $mapping->reads_mapped($rh->[10]);
+        $mapping->reads_paired($rh->[12]);
+        $mapping->bases_mapped($rh->[8]);
+        $mapping->mean_insert($rh->[15]);
+        $mapping->sd_insert($rh->[16]);
+        
+        my $assembly = $mapping->assembly($self->{assembly_name});
+        if (!$assembly) {
+            $assembly = $mapping->add_assembly($self->{assembly_name});
+        }
+        
+        my $mapper_class = $self->{mapper_class};
+        my $mapper_obj = $mapper_class->new();
+        my $mapper = $mapping->mapper($mapper_obj->exe, $mapper_obj->version);
+        if (!$mapper) {
+            $mapper = $mapping->add_mapper($mapper_obj->exe, $mapper_obj->version);
+        }
+        
+        $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
+        $vrlane->update || $self->throw("Unable to set mapping details of lane $lane_path");
+    }
+    
+    $vrtrack->transaction_commit();
+    
+    return $self->{Yes};
+}
+
 =head2 cleanup_requires
 
  Title   : cleanup_requires
@@ -691,9 +797,7 @@ exit;
 =cut
 
 sub cleanup_requires {
-    my ($self, $lane_path) = @_;
-    my @requires = ();
-    return \@requires;
+    return [];
 }
 
 =head2 cleanup_provides
@@ -707,9 +811,7 @@ sub cleanup_requires {
 =cut
 
 sub cleanup_provides {
-    my ($self, $lane_path) = @_;
-    my @provides = ();
-    return \@provides;
+    return [];
 }
 
 =head2 cleanup
