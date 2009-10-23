@@ -601,6 +601,7 @@ sub displayProjectPage
 		<table RULES=GROUPS width="100%">
 		<tr>
 		<th>Sample</th>
+		<th<Sanger/th>
 		<th>Library</th>
 		<th>Lanes</th>
 		<th>Passed</th>
@@ -619,11 +620,27 @@ sub displayProjectPage
 	{
 		my $sample = $_;
 		my $sname = $sample->name;
+		my $is_ours = $sample->is_sanger_sample();
 		
 		print qq[
 			<tr>
-			<td>$sname</td>
 		];
+		
+		if( ! $is_ours )
+		{
+			print qq[
+				<td bgcolor="red">$sname</td>
+				<td bgcolor="red">NO</td>
+			];
+		}
+		else
+		{
+			print qq[
+				<td>$sname</td>
+				<td></td>
+			];
+		}
+		
 		my $libraries = $sample->libraries();
 		my $firstL = 1;
 		my $sampleLanes = 0;
