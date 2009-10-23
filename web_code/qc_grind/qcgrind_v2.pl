@@ -728,7 +728,7 @@ sub displayProjectPage
 		$grandTotalNoQC += $sample_no_qcLanes;
 	}
 	
-	print qq[<tr><tfoot><th>Grand Total</th><th></th><th>$grandTotalLanes</th><th>$grandTotalPassed</th><th>$grandTotalDepth].qq[x];
+	print qq[<tr><tfoot><th>Grand Total</th><th></th><th></th><th>$grandTotalLanes</th><th>$grandTotalPassed</th><th>$grandTotalDepth].qq[x];
 	
 	if( $grandTotalNoQC > 0 )
 	{
