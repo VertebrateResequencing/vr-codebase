@@ -691,7 +691,7 @@ sub displayProjectPage
 			
 			my $colour = get_colour_for_status( $library->qc_status() );
 			my $numLanes = @$lanes;
-			if( ! $firstL ){print qq[<tr><td></td>];$firstL=0;}
+			if( ! $firstL ){print qq[<tr><td></td><td></td>];$firstL=0;}
 			print qq[
 				<td style="background-color:$colour;"><a href="$SCRIPT_NAME?mode=$LIB_VIEW&amp;sp=$species&amp;lib_id=$lid">$lname</a></td>
 			];
