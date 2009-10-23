@@ -215,7 +215,7 @@ sub do_mapping {
     
     my $ref_fa = delete $args{ref} || $self->throw("ref is required");
     my $ref_fa_hash_base = $ref_fa;
-    $ref_fa_hash_base =~ s/\.fa[^.]*$//;
+    #$ref_fa_hash_base =~ s/\.fa[^.]*$//;
     my $insert_size = delete $args{insert_size} || 2000;
     my @fqs;
     if (defined $args{read1} && defined $args{read2} && ! defined $args{read0}) {
