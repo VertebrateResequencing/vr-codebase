@@ -323,7 +323,6 @@ sub do_mapping {
             $self->warn("a sam file was made by do_mapping(), but it only had $sam_lines lines, not the expected $num_reads - will unlink it");
             $self->_set_run_status(-1);
             unlink("$tmp_sam");
-            exit;
         }
     }
     else {
