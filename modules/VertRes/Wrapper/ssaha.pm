@@ -306,6 +306,7 @@ sub do_mapping {
                 
                 # check for completion
                 my $done = `zcat $tmp_cigar | tail -1 | grep "SSAHA2 finished" | wc -l`;
+                ($done) = $done =~ /^(\d+)/;
                 if ($done) {
                     move($tmp_cigar, $cigar_out) || $self->throw("Failed to move $tmp_cigar to $cigar_out: $!");
                 }
