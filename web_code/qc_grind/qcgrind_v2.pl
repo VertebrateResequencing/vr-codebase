@@ -601,7 +601,7 @@ sub displayProjectPage
 		<table RULES=GROUPS width="100%">
 		<tr>
 		<th>Sample</th>
-		<th<Sanger/th>
+		<th>Sanger/th>
 		<th>Library</th>
 		<th>Lanes</th>
 		<th>Passed</th>
