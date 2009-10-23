@@ -211,8 +211,14 @@ sub add_sam_header {
     my $parser = VertRes::Parser::sequence_index->new(file => $seq_index) if $seq_index;
     my $individual = $args{sample_name} || $parser->lane_info($lane, 'sample_name') || $lane_info{sample} || $self->throw("Unable to get sample_name for $lane from sequence index '$seq_index' or other supplied args");
     my $library = $args{library} || $parser->lane_info($lane, 'LIBRARY_NAME') || $lane_info{library};
-    my $insert_size = $args{insert_size} || $parser->lane_info($lane, 'INSERT_SIZE') || $lane_info{insert_size};
-    my $run_name = $args{run_name} || $parser->lane_info($lane, 'run_name') || '';
+    my $insert_size = $args{insert_size};
+    unless (defined $insert_size) {
+        $insert_size = $parser->lane_info($lane, 'INSERT_SIZE') || $lane_info{insert_size};
+    }
+    my $run_name = $args{run_name};
+    if (! defined $run_name && $parser) {
+        $run_name = $parser->lane_info($lane, 'run_name');
+    }
     my $platform = $args{platform} || $parser->lane_info($lane, 'INSTRUMENT_PLATFORM');
     my $centre = $args{centre} || $parser->lane_info($lane, 'CENTER_NAME');
     my $project = $args{project} || $parser->lane_info($lane, 'STUDY_ID');
