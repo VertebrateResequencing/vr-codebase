@@ -410,6 +410,7 @@ sub map {
     
     # get all the meta info about the lane
     my %info = VertRes::Utils::Hierarchy->new->lane_info($self->{vrlane});
+    $info{insert_size} = 0 unless $info{insert_size};
     
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
@@ -469,7 +470,7 @@ unless (\$head =~ /^\\\@HD/) {
     my \$ok = \$sam_util->add_sam_header('$sam_file',
                                          sample_name => '$info{sample}',
                                          library => '$info{library}',
-                                         platform => '$info{platform}',
+                                         platform => '$info{technology}',
                                          centre => '$info{centre}',
                                          insert_size => $info{insert_size},
                                          project => '$info{project}',
