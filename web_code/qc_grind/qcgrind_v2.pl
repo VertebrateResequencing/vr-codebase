@@ -710,7 +710,7 @@ sub displayProjectPage
 			$firstL = 0;
 			$sample_no_qcLanes += $lib_no_qcLanes;
 		}
-		print qq[<tr><th></th><th></th><th>$sampleLanes</th><th>$samplePassed<th>$sampleDepth].qq[x</th>];
+		print qq[<tr><th></th><th></th><th></th><th>$sampleLanes</th><th>$samplePassed<th>$sampleDepth].qq[x</th>];
 		
 		if( $sample_no_qcLanes > 0 )
 		{
