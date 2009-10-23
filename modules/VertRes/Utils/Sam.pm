@@ -170,7 +170,6 @@ sub bams_are_similar {
            -or-
            all of these key => value pairs:
            sample_name => string, eg. NA00000;
-           run_name => string, the platform unit, eg. 7563
            library => string
            platform => string
            centre => string
@@ -191,6 +190,8 @@ sub bams_are_similar {
            -optionally-
            program => name of the program used to do the mapping
            program_version => version of the program
+           run_name => string, the platform unit - the original accession before
+                       DCC gave it the [ES]RR id
 
 =cut
 
@@ -211,7 +212,7 @@ sub add_sam_header {
     my $individual = $args{sample_name} || $parser->lane_info($lane, 'sample_name') || $lane_info{sample} || $self->throw("Unable to get sample_name for $lane from sequence index '$seq_index' or other supplied args");
     my $library = $args{library} || $parser->lane_info($lane, 'LIBRARY_NAME') || $lane_info{library};
     my $insert_size = $args{insert_size} || $parser->lane_info($lane, 'INSERT_SIZE') || $lane_info{insert_size};
-    my $run_name = $args{run_name} || $parser->lane_info($lane, 'run_name') || $self->throw("Unable to get run_name for $lane");
+    my $run_name = $args{run_name} || $parser->lane_info($lane, 'run_name') || '';
     my $platform = $args{platform} || $parser->lane_info($lane, 'INSTRUMENT_PLATFORM');
     my $centre = $args{centre} || $parser->lane_info($lane, 'CENTER_NAME');
     my $project = $args{project} || $parser->lane_info($lane, 'STUDY_ID');
@@ -239,7 +240,8 @@ sub add_sam_header {
         $header_lines++;
     }
     
-    print $shfh "\@RG\tID:$lane\tPU:$run_name\tLB:$library\tSM:$individual";
+    print $shfh "\@RG\tID:$lane\tLB:$library\tSM:$individual";
+    print $shfh "\tPU:$run_name" if (defined $run_name);
     print $shfh "\tPI:$insert_size" if (defined $insert_size);
     print $shfh "\tCN:$centre" if (defined $centre);
     print $shfh "\tPL:$platform" if (defined $platform);
