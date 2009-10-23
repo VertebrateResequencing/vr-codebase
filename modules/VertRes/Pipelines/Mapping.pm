@@ -70,11 +70,10 @@ package VertRes::Pipelines::Mapping;
 use strict;
 use warnings;
 use VertRes::Utils::Mapping;
+use VertRes::Utils::Hierarchy;
 use VertRes::IO;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
-use VRTrack::Library;
-use VRTrack::Sample;
 use File::Basename;
 use LSF;
 
@@ -111,7 +110,8 @@ our $split_dir_name = 'split';
  Usage   : my $obj = VertRes::Pipelines::Mapping->new(lane => '/path/to/lane');
  Function: Create a new VertRes::Pipelines::Mapping object;
  Returns : VertRes::Pipelines::Mapping object
- Args    : lane => '/path/to/lane'
+ Args    : lane => 'readgroup_id'
+           lane_path => '/path/to/lane'
            local_cache => '/local/dir' (defaults to standard tmp space)
            do_cleanup => boolean (default false: don't do the cleanup action)
            chunk_size => int (default depends on mapper)
@@ -137,11 +137,12 @@ sub new {
     
     # we should have been supplied the option 'lane' which tells us which lane
     # we're in, which lets us choose which mapper module to use.
-    my $lane = $self->{lane} || $self->throw("lane directory not supplied, can't continue");
+    my $lane = $self->{lane} || $self->throw("lane readgroup not supplied, can't continue");
+    my $lane_path = $self->{lane_path} || $self->throw("lane path not supplied, can't continue");
     my $mapping_util = VertRes::Utils::Mapping->new(slx_mapper => $self->{slx_mapper},
                                                     '454_mapper' => $self->{'454_mapper'});
-    my $mapper_class = $mapping_util->lane_to_module($lane);
-    $mapper_class || $self->throw("Lane '$lane' was for an unsupported technology");
+    my $mapper_class = $mapping_util->lane_to_module($lane_path);
+    $mapper_class || $self->throw("Lane '$lane_path' was for an unsupported technology");
     eval "require $mapper_class;";
     $self->{mapper_class} = $mapper_class;
     $self->{mapper_obj} = $mapper_class->new();
@@ -151,8 +152,7 @@ sub new {
     if (! $self->{vrlane}) {
         $self->throw("db option was not supplied in config") unless $self->{db};
         my $vrtrack = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
-        my $rg = basename($lane);
-        my $vrlane  = VRTrack::Lane->new_by_name($vrtrack, $rg) or $self->throw("No such lane in the DB: [$rg]");
+        my $vrlane  = VRTrack::Lane->new_by_name($vrtrack, $lane) or $self->throw("No such lane in the DB: [$lane]");
         $self->{vrlane} = $vrlane;
         
         my $files = $vrlane->files();
@@ -210,7 +210,7 @@ sub split_requires {
 
 sub _require_fastqs {
     my ($self, $lane_path) = @_;
-    return $self->{files};
+    return @{$self->{files}};
 }
 
 =head2 split_provides
@@ -408,29 +408,8 @@ sub map {
     # get the reference filename
     my $ref_fa = $self->{reference} || $self->throw("the reference fasta wasn't known for $lane_path");
     
-    my $vrlane = $self->{vrlane};
-    my $read_group = $vrlane->hierarchy_name || $self->throw("the read group wasn't known for $lane_path");
-    
-    # and get the expected insert size for this lane
-    my $vrtrack = $vrlane->vrtrack;
-    my $lib = VRTrack::Library->new($vrtrack, $vrlane->library_id);
-    my $insert_size = $lib->insert_size || $self->throw("insert size wasn't known for $lane_path");
-    
-    # and all the other meta info we need for creating the sam header
-    #sample_name => string, eg. NA00000;
-    #run_name => string, the platform unit, eg. 7563
-    #library => string
-    #platform => string
-    #centre => string
-    #project => string, the study id, eg. SRP000001
-    
-    #sample_name => '$sample_name',
-    #run_name => '$run_name',
-    #library => '$library_name',
-    #platform => '$platform',
-    #centre => '$centre',
-    #project => '$project',
-    
+    # get all the meta info about the lane
+    my %info = VertRes::Utils::Hierarchy->new->lane_info($self->{vrlane});
     
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
@@ -474,8 +453,8 @@ my \$mapper = $mapper_class->new(verbose => $verbose);
 my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
                                @split_read_args,
                                output => '$sam_file',
-                               insert_size => $insert_size,
-                               read_group => '$read_group');
+                               insert_size => $info{insert_size},
+                               read_group => '$info{lane}');
 
 # (it will only return ok and create output if the sam file was created and not
 #  truncated)
@@ -488,14 +467,13 @@ my \$head = <\$samfh>;
 close(\$samfh);
 unless (\$head =~ /^\\\@HD/) {
     my \$ok = \$sam_util->add_sam_header('$sam_file',
-                                         sample_name => '$sample_name',
-                                         run_name => '$run_name',
-                                         library => '$library_name',
-                                         platform => '$platform',
-                                         centre => '$centre',
-                                         insert_size => '$insert_size',
-                                         project => '$project',
-                                         lane => '$read_group',
+                                         sample_name => '$info{sample}',
+                                         library => '$info{library}',
+                                         platform => '$info{platform}',
+                                         centre => '$info{centre}',
+                                         insert_size => $info{insert_size},
+                                         project => '$info{project}',
+                                         lane => '$info{lane}',
                                          ref_fa => '$ref_fa',
                                          ref_dict => '$ref_fa.dict',
                                          ref_name => '$self->{assembly_name}',
