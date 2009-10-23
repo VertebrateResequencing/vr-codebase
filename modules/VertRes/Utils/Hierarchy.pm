@@ -34,6 +34,11 @@ use Cwd 'abs_path';
 use VertRes::Parser::sequence_index;
 use VertRes::Wrapper::samtools;
 use VertRes::Parser::sam;
+use VRTrack::VRTrack;
+use VRTrack::Lane;
+use VRTrack::Library;
+use VRTrack::Sample;
+use VRTrack::Project;
 
 use base qw(VertRes::Base);
 
@@ -94,6 +99,93 @@ sub parse_lane {
     
     return (study => $study, sample => $sample, platform => $platform,
             library => $library, lane => $lane);
+}
+
+=head2 lane_info
+
+ Title   : lane_info
+ Usage   : my $path = $obj->lane_info('lane_name');
+ Function: Get information about a lane from the VRTrack meta database.
+ Returns : hash of information, with keys:
+           hierarchy_path => string,
+           project        => string,
+           sample         => string (aka individual),
+           technology     => string (aka platform),
+           library        => string,
+           lane           => string (aka read group),
+           centre         => string (the sequencing centre name),
+           insert_size    => int (can be undef if this lane is single-ended),
+           withdrawn      => boolean,
+           imported       => boolean,
+           mapped         => boolean,
+           vrlane         => VRTrack::Lane object
+           (returns undef if lane name isn't in the database)
+ Args    : lane name (read group) OR a VRTrack::Lane object.
+           Optionally, a hash with key db OR vrtrack to provide the database
+           connection info (shown with defaults):
+           db => {
+            host => 'mcs4a',
+            port => 3306,
+            user => 'vreseq_ro',
+            password => undef,
+            database => 'g1k_meta'
+           }
+           -or-
+           vrtrack => VRTrack::VRTrack object
+
+=cut
+
+sub lane_info {
+    my ($self, $lane, %args) = @_;
+    
+    my ($rg, $vrlane, $vrtrack);
+    if (ref($lane) && $lane->isa('VRTrack::Lane')) {
+        $vrlane = $lane;
+        $vrtrack = $vrlane->vrtrack;
+        $rg = $vrlane->hierarchy_name;
+    }
+    else {
+        if ($args{vrtrack}) {
+            $vrtrack = $args{vrtrack};
+        }
+        else {
+            my $db = $args{db} || {host => 'mcs4a',
+                                   port => 3306,
+                                   user => 'vreseq_ro',
+                                   database => 'g1k_meta'};
+            $vrtrack = VRTrack::VRTrack->new($db);
+        }
+        
+        $vrlane = VRTrack::Lane->new_by_name($vrtrack, $lane);
+        $rg = $lane;
+    }
+    
+    return unless ($rg && $vrlane && $vrtrack);
+    
+    my %info = (lane => $rg, vrlane => $vrlane);
+    
+    $info{hierarchy_path} = $vrtrack->hierarchy_path_of_lane_name($rg);
+    $info{withdrawn} = $vrlane->is_withdrawn;
+    $info{imported} = $vrlane->is_processed('import');
+    $info{mapped} = $vrlane->is_processed('mapped');
+    
+    my $lib = VRTrack::Library->new($vrtrack, $vrlane->library_id);
+    $info{insert_size} = $lib->insert_size;
+    
+    $info{library} = $lib->name || $self->throw("library name wasn't known for $rg");
+    my $sc = $lib->seq_centre;
+    $info{centre} = $sc->name || $self->throw("sequencing centre wasn't known for $rg");
+    my $st = $lib->seq_tech;
+    $info{technology} = $st->name || $self->throw("sequencing platform wasn't known for $rg");
+    
+    my $sample = VRTrack::Sample->new($vrtrack, $lib->sample_id);
+    my $individual = $sample->individual;
+    $info{sample} = $individual->name || $self->throw("sample name wasn't known for $rg");
+    
+    my $project_obj = VRTrack::Project->new($vrtrack, $sample->project_id);
+    $info{project} = $project_obj->hierarchy_name;
+    
+    return %info;
 }
 
 =head2 check_lanes_vs_sequence_index
@@ -539,5 +631,15 @@ sub dcc_filename {
     
     return $dcc_filename;
 }
+
+=head2 netapp_lane_path
+
+ Title   : netapp_lane_path
+ Usage   : my $path = $obj->netapp_lane_path('lane_name');
+ Function: 
+ Returns : path string
+ Args    : 
+
+=cut
 
 1;

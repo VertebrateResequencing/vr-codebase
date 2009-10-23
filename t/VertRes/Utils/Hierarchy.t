@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 11;
+    use Test::Most tests => 17;
     
     use_ok('VertRes::Utils::Hierarchy');
     use_ok('VertRes::IO');
@@ -17,6 +17,8 @@ isa_ok $h_util, 'VertRes::Base';
 my $io = VertRes::IO->new();
 my $si_file = $io->catfile('t', 'data', 'sequence.index');
 ok -s $si_file, 'sequence.index file ready to test with';
+my $bam_file = $io->catfile('t', 'data', 'headed1.bam');
+ok -s $bam_file, 'bam file ready to test with';
 my $temp_dir = $io->tempdir();
 
 my $lane_path = '/path/to/LowCov-CEU/NA06986/SLX/Solexa-5459/SRR003670';
@@ -60,5 +62,20 @@ foreach my $link (@expected_rel_bam_paths) {
     $created_links++ if -e $link;
 }
 is $created_links, 4, 'create_release_hierarchy created the correct bam symlinks';
+
+# lane_info test
+ok my %info = $h_util->lane_info('SRR014870'), 'lane_info ran ok';
+is $info{sample}, 'NA18560', 'lane_info gave correct sample';
+# needs more thougher tests for all the different ways of calling lane_info...
+
+# dcc_filename test
+is $h_util->dcc_filename($bam_file), 'NA11918.SLX.bwa.SRP000031.2009_08', 'dcc_filename test';
+
+# fix_simple_swaps test?? netapp_lane_path not yet implemented
+TODO {
+    local $TODO = "fix_simple_swaps test not yet done, netapp_lane_path not yet implemented...\n";
+    ok 0;
+    ok 0;
+}
 
 exit;
