@@ -626,7 +626,7 @@ sub displayProjectPage
 			<tr>
 		];
 		
-		if( ! $is_ours )
+		if( ! $is_ours && $species eq 'g1k' )
 		{
 			print qq[
 				<td bgcolor="red">$sname</td>
