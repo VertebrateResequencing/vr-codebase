@@ -483,7 +483,7 @@ sub displayProjectsPage
 	foreach( @$projects )
 	{
 		my $project = $_;
-		my $acc = $project->acc();
+		my $acc = $project->study()->acc();
 		my $pid = $project->id();
 		
 		my $name = $project->name;
