@@ -1,0 +1,234 @@
+td { vertical-align:top; }
+
+.error 
+{ 
+    background-color:#ff9540;
+    padding:1em;
+    border:solid #621700 1px;
+    -moz-border-radius: 5px;    /* For Mozilla Firefox */
+    -khtml-border-radius: 5px;  /* For Konqueror */
+    -webkit-border-radius: 5px; /* For Safari */
+    border-radius: 5px;         /* For future native implementations */
+}
+
+#snps ul { list-style:none; margin-top:0; padding-left:1em; }
+
+/* --------------- The default -------------------------------------- */
+
+
+
+/* --------------- The form ----------------------------------------- */
+.help
+{ 
+    max-width:20em;
+    position:absolute; 
+    display:none;
+    background-color:#F4F8FD;
+    padding:1em;
+    margin:0em;
+    z-index:1;
+    border:solid #074987 1px;
+    -moz-border-radius: 5px;    /* For Mozilla Firefox */
+    -khtml-border-radius: 5px;  /* For Konqueror */
+    -webkit-border-radius: 5px; /* For Safari */
+    border-radius: 5px;         /* For future native implementations */
+}
+.help_link { text-decoration:none; font-size:smaller; font-style:italic; cursor:pointer; }
+
+ul.example { margin-top:0.2em; margin-bottom:0.2em; }
+
+.border, textarea, input, select
+{
+    border: solid #074987 1px;
+    background-color:#F4F8FD;
+    border-width:1px;
+    padding:0px;
+    margin:0px;
+}
+input { font-size:smaller; }
+.button { cursor:pointer; }
+
+#form { padding-top:1em; }
+#form fieldset, #upper_nav fieldset
+{ 
+    border:dotted #83A4C3 1px; 
+    background-color:#F4F8FD;
+    vertical-align:top; 
+    padding:1em; 
+    margin:0.5em; 
+    -moz-border-radius: 5px;    /* For Mozilla Firefox */
+    -khtml-border-radius: 5px;  /* For Konqueror */
+    -webkit-border-radius: 5px; /* For Safari */
+    border-radius: 5px;         /* For future native implementations */
+}
+#form legend, #upper_nav legend { font-weight:bold; }
+
+/* Mouse infos - for strains onmouseover */
+.mouseinfo { font-size:smaller; }
+div.mouseinfo 
+{ 
+    width:20em; 
+    background-color:#e7edf3;
+    padding:1em;
+    padding-right:0em;
+    border:dotted #074987 1px;
+    -moz-border-radius: 5px;    /* For Mozilla Firefox */
+    -khtml-border-radius: 5px;  /* For Konqueror */
+    -webkit-border-radius: 5px; /* For Safari */
+    border-radius: 5px;         /* For future native implementations */
+}
+
+
+/* --------------- Result page - list of SNPs ----------------------- */
+
+.gene2 { background-color:#cbdced;}     /* Alternating rows */
+.gene1 { background-color:#9fc6ee;}
+
+/* The consequence details pop-up divs */
+.hidden 
+{ 
+    position:absolute; 
+    display:none;
+    background-color:#F4F8FD;
+    padding:1em;
+    margin:0em;
+    z-index:1;
+    border: solid #074987 1px;
+    -moz-border-radius: 5px;    /* For Mozilla Firefox */
+    -khtml-border-radius: 5px;  /* For Konqueror */
+    -webkit-border-radius: 5px; /* For Safari */
+    border-radius: 5px;         /* For future native implementations */
+}
+
+/* The small popup tables with details */
+table.details td
+{
+    text-align:left;
+}
+
+/* The main results table */
+table.results 
+{ 
+    border-collapse:collapse; 
+    padding:1em;
+    margin-top:1em;
+}
+.results th { text-align:center; vertical-align:bottom; background-color:#F4F8FD; border-bottom:dotted #83A4C3 1px; }
+.results td { margin:0px; text-align:center; padding:0em 0.3em 0em 0.3em; }
+.resultsbar { border-right:dotted #83A4C3 1px; }
+.resultsdiv 
+{
+    float:left;
+    padding:1em; 
+    margin-bottom:1em;
+    border:dotted #83A4C3 1px;
+    background-color:#F4F8FD;
+    -moz-border-radius: 5px;    /* For Mozilla Firefox */
+    -khtml-border-radius: 5px;  /* For Konqueror */
+    -webkit-border-radius: 5px; /* For Safari */
+    border-radius: 5px;         /* For future native implementations */
+}
+
+
+/* Consequence types - these colors reflect Ensembl convention. The page will be typically huge, therefore
+    the names are made as concise as possible.  */
+/* .c1, td.c1, td.c1 *, .c1 A { background-color:#89bbee; color:#2f4f4f; }       /* 3PRIME_UTR - light blue */
+
+.c1, td.c1 { background-color:#89bbee; color:#2f4f4f; }       /* 3PRIME_UTR - light blue */
+.c2, td.c2 { background-color:#89bbee; color:#2f4f4f; }       /* 5PRIME_UTR - light blue */
+.c3, td.c3 { background-color:#ff7200; color:#2f4f4f; }       /* ESSENTIAL_SPLICE_SITE  - orange */
+.c5, td.c5 { background-color:#4577a5; color:white; }         /* Intronic - dark blue */
+.c6, td.c6 { background-color:#ffd500; color:#2f4f4f; }       /* NON_SYNONYMOUS_CODING - yellow */
+.c7, td.c7 { background-color:#87a04d; color:#2f4f4f; }       /* SYNONYMOUS_CODING - greenish */
+/*
+.c9, td.c9   { background-color:#ccb376; color:#2f4f4f; }
+.c10, td.c10 { background-color:#ccb376; color:#2f4f4f; }
+.c11, td.c11 { background-color:#ccb376; color:#2f4f4f; }
+*/
+.c9, td.c9   { background-color:#846d53; color:white; }        /* STOP_GAINED - brown */  
+.c10, td.c10 { background-color:#846d53; color:white; }        /* STOP_LOST   - brown */  
+.c11, td.c11 { background-color:#846d53; color:white; }        /* FRAME_SHIFT - brown */  
+
+#legend 
+{ 
+    float:right; 
+    width:15em; 
+    padding:1em; 
+    border:dotted #074987 1px;
+    background-color:#e7edf3;
+    -moz-border-radius: 5px;    /* For Mozilla Firefox */
+    -khtml-border-radius: 5px;  /* For Konqueror */
+    -webkit-border-radius: 5px; /* For Safari */
+    border-radius: 5px;         /* For future native implementations */
+}
+#legend table { border-collapse:collapse; margin-left:1em; margin-top:0.5em; }
+#legend td { padding:0px 0px 0px 0.3em; vertical-align:middle; } 
+
+#llist * { padding:0px 0.3em 0em 0.3em; border-collapse:collapse; margin:0px; border:0px; }
+
+#params { font-size:smaller; }
+#params td { vertical-align:top; padding-top:0.5em; }
+
+/* --------------- The LookSeq page ----------------------- */
+
+#float_container
+{
+    float:right;
+    max-width:15em;
+    padding-top:1em;
+}
+
+#lanes_container
+{
+    max-width:15em;
+    border:dotted #074987 1px;
+    background-color:#e7edf3;
+    -moz-border-radius: 5px;    /* For Mozilla Firefox */
+    -khtml-border-radius: 5px;  /* For Konqueror */
+    -webkit-border-radius: 5px; /* For Safari */
+    border-radius: 5px;         /* For future native implementations */
+}
+
+#ls_legend
+{
+    margin-top:1em;
+    max-width:15em;
+    padding:0.5em;
+    border:dotted #074987 1px;
+    background-color:#e7edf3;
+    -moz-border-radius: 5px;    /* For Mozilla Firefox */
+    -khtml-border-radius: 5px;  /* For Konqueror */
+    -webkit-border-radius: 5px; /* For Safari */
+    border-radius: 5px;         /* For future native implementations */
+}
+
+.ls_ref { color:#2f4f4f; }
+.ls_paired { color:#4577a5; }
+.ls_single { color:#87a04d; }
+.ls_mismatch { color:#c3001d; }
+.ls_invers { color:#846d53; }
+.ls_zero_mq { color:#ff7200; }
+.ls_insertion { color:white; background-color:#c3001d; padding:0.1em; font-size:smaller; }
+
+#lanes 
+{ 
+    border-top: solid black 1px; 
+    padding: 0.5em;
+}
+
+#img_container
+{
+    border:dotted #83A4C3 1px; 
+    background-color:#F4F8FD;
+    padding:1em 0.1em 1em 0.1em;
+    margin:0.5em;
+    -moz-border-radius: 5px;    /* For Mozilla Firefox */
+    -khtml-border-radius: 5px;  /* For Konqueror */
+    -webkit-border-radius: 5px; /* For Safari */
+    border-radius: 5px;         /* For future native implementations */
+}
+
+#main_image { padding-bottom:0em; margin-bottom:0em; }
+#gc_image { padding-bottom:0.5em; }
+#coverage_image { padding-bottom:0.5em; }
+
