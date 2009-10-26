@@ -6,7 +6,7 @@ VertRes::Pipelines::DCCImport - pipeline for importing fastq files from the DCC
 
 # make the config files, which specifies the details for connecting to the
 # VRTrack g1k-meta database and the data roots:
-echo '__VRTrack_Import__ dcc_import.conf' > pipeline.config
+echo '__VRTrack_DCCImport__ dcc_import.conf' > pipeline.config
 # where dcc_import.conf contains:
 root    => '/abs/path/to/root/data/dir',
 module  => 'VertRes::Pipelines::DCCImport',
@@ -39,7 +39,7 @@ sequence.index information, and afterwards the mapping pipeline should be run,
 which will pick up on newly imported lanes and map them.
 
 It will also work to import non-G1K fastqs in a local directory into a G1K-style
-hierarchy, assuming a fake sequence.index has been used with si_to_vr.pl on
+hierarchy, assuming a fake sequence.index has been used with update_vrmeta.pl on
 a custom database. In this case, the import.conf file must contain the
 fastq_base option:
 
