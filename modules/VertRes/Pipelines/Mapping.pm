@@ -24,7 +24,8 @@ data => {
     slx_mapper => 'bwa',
     '454_mapper' => 'ssaha',
     reference => '/abs/path/to/ref.fa',
-    assembly_name => 'NCBI36'
+    assembly_name => 'NCBI36',
+    do_cleanup => 1
 },
 
 # reference option can be replaced with male_reference and female_reference
@@ -740,7 +741,7 @@ sub update_db {
     my $vrlane = $self->{vrlane};
     my $vrtrack = $vrlane->vrtrack;
     
-    $self->throw("update_db not yet implemented...");
+    return $self->{Yes} if $vrlane->is_processed('mapped');
     
     $vrtrack->transaction_start();
     
@@ -832,7 +833,7 @@ sub cleanup {
     
     my $prefix = $self->{prefix};
     
-    foreach my $file (qw(log
+    foreach my $file (qw(log job_status
                          split_se.e split_se.o split_se.pl split_pe.e split_pe.o split_pe.pl
                          map_se.e map_se.o map_pe.e map_pe.o
                          merge_and_stat_se.e merge_and_stat_se.o merge_and_stat_se.pl
@@ -869,7 +870,7 @@ sub is_finished {
             }
         }
     }
-    elsif ($action->{name} eq 'cleanup') {
+    elsif ($action->{name} eq 'cleanup' || $action->{name} eq 'update_db') {
         return $self->{No};
     }
     
