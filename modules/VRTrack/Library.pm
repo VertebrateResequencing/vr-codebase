@@ -966,9 +966,7 @@ sub projected_passed_depth
 	die( "Size of reference must be a number!" ) unless $ref_size =~ /^\d+$/;
 	
 	my $lanes = $self->lanes();
-	my $passedBases = 0;
-	my $sampledBases = 0;
-	my $total_passed_bases = 0;
+	my $cum_depth = 0;
 	foreach( @$lanes )
 	{
 		my $lane = $_;
@@ -977,19 +975,12 @@ sub projected_passed_depth
 			my $mapping = $lane->latest_mapping();
 			if( $mapping )
 			{
-				$passedBases += $mapping->rmdup_bases_mapped;
-				$sampledBases += $mapping->raw_bases();
-				$total_passed_bases += $lane->raw_bases();
+				$cum_depth += ( ( $mapping->rmdup_bases_mapped / $mapping->raw_bases() ) * $lane->raw_bases() ) /$ref_size;
 			}
 		}
 	}
-			
-	my $depth = 0;
-	if( $total_passed_bases > 0 )
-	{
-		$depth = ( ( $passedBases / $sampledBases ) * $total_passed_bases ) / $ref_size;
-		$depth = sprintf("%.2f", $depth);
-	}
-	return $depth;
+	
+	$cum_depth = sprintf("%.2f", $cum_depth);
+	return $cum_depth;
 }
 1;
