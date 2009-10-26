@@ -28,6 +28,7 @@ use POSIX;
 use VertRes::IO;
 use File::Basename;
 use VertRes::Parser::fastqcheck;
+use VertRes::Parser::fastq;
 use Cwd 'abs_path';
 
 use base qw(VertRes::Base);
@@ -214,6 +215,119 @@ sub split {
     return $split_num;
 }
 
+=head2 filter_reads
+
+ Title   : filter_reads
+ Usage   : $obj->filter_reads($fastq_file, $filt_file, min_length => 30);
+ Function: Filter a fastq file so that certain sequences are excluded.
+ Returns : int (the number of sequences output)
+ Args    : input fastq (can be gzip compressed), output fastq (can be
+           automatically compressed if it is named ...gz), filtering options
+           hash:
+           min_length => int (only sequences this length or longer are output)
+
+=cut
+
+sub filter_reads {
+    my ($self, $in, $out, %filt) = @_;
+    
+    my $i = VertRes::IO->new(file => $in);
+    my $ifh = $i->fh;
+    my $o = VertRes::IO->new(file => ">$out");
+    my $ofh = $o->fh;
+    
+    my $min_length = $filt{min_length};
+    
+    # we only support one option right now, so die if it wasn't supplied
+    $min_length || $self->throw("Since min_length is the only filtering option right now, it is required");
+    
+    my $count = 0;
+    while (<$ifh>) {
+        chomp;
+        my $name = $_;
+        
+        my $seq = <$ifh>;
+        chomp($seq);
+        
+        my $qname = <$ifh>;
+        chomp($qname);
+        
+        my $quals = <$ifh>;
+        chomp($quals);
+        
+        unless ($name && $seq && $qname && $quals) {
+            $self->throw("Fastq file '$in' is bad: truncated sequence entry");
+        }
+        
+        if (defined $min_length && length($seq) >= $min_length) {
+            $count++;
+            print $ofh "$name\n$seq\n$qname\n$quals\n";
+        }
+    }
+    close($ifh);
+    close($ofh);
+    
+    return $count;
+}
+
+=head2 clip_point
+
+ Title   : clip_point
+ Usage   : my $clip_point = $obj->clip_point($fastq_file);
+ Function: Find the base position where 90% of reads have fewer than 2 Ns.
+           This can be used as a suitable hard clipping point for MAQ mapping.
+ Returns : int (-1 if no clipping is necessary or could satisfy the 90%)
+ Args    : input fastq (can be gzip compressed)
+
+=cut
+
+sub clip_point {
+    my ($self, $fastq) = @_;
+    
+    my $fp = VertRes::Parser::fastq->new(file => $fastq);
+    my $rh = $fp->result_holder;
+    
+    my $totalReads = 0;
+    my %clipLengths;
+    while ($fp->next_result) {
+        my $seq = uc($rh->[1]);
+        
+        # we'll look for the position of the second N in the sequence
+        my $ns = $seq =~ tr/N//;
+        if ($ns >= 2) {
+            my @s = split(//, $seq);
+            my $nCount = 0;
+            my $clipLength = @s;
+            foreach my $i (0..$#s) {
+                if ($s[$i] eq 'N') {
+                    $nCount++;
+                    
+                    if ($nCount == 2) {
+                        # *** shouldn't this be $i + 1? Keeping it as it was
+                        #     originally...
+                        $clipLengths{$i}++;
+                        last;
+                    }
+                }
+            }
+        }
+        
+        $totalReads++;
+    }
+    
+    # determine the point where 90% of the reads are ok
+    my $numReads = 0;
+    foreach (sort { $a <=> $b } keys %clipLengths) {
+        # *** does this make sense? Could investigate...
+        $numReads += $clipLengths{$_};
+        
+        if ($numReads > $totalReads * 0.9) {
+            return ($_ - 1);
+        }
+    }
+    
+    return -1;
+}
 
 use Inline C => DATA => FILTERS => 'Strip_POD';
 
