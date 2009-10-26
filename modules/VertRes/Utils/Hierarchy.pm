@@ -172,7 +172,7 @@ sub lane_info {
     my $lib = VRTrack::Library->new($vrtrack, $vrlane->library_id);
     $info{insert_size} = $lib->insert_size;
     
-    $info{library} = $lib->name || $self->throw("library name wasn't known for $rg");
+    $info{library} = $lib->hierarchy_name || $self->throw("library name wasn't known for $rg");
     my $sc = $lib->seq_centre;
     $info{centre} = $sc->name || $self->throw("sequencing centre wasn't known for $rg");
     my $st = $lib->seq_tech;
