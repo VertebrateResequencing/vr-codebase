@@ -83,7 +83,8 @@ sub _bsub_opts {
 
 sub wrapper {
     my $self = shift;
-    return VertRes::Wrapper::ssaha->new(verbose => $self->verbose);
+    return VertRes::Wrapper::ssaha->new(verbose => $self->verbose,
+                                        quiet => $self->verbose > 0 ? 0 : 1);
 }
 
 =head2 split_fastq
