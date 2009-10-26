@@ -47,7 +47,7 @@ ok $sam_util->add_sam_header($temp_sam,
                              project => 'SRP000001'), 'add_sam_header manual args test';
 my @expected = ("\@HD\tVN:1.0\tSO:coordinate",
                 "\@SQ\tSN:Streptococcus_suis\tLN:2007491\tAS:SsP17\tM5:c52b2f0394e12013e2573e9a38f51031\tUR:file:t/data/S_suis_P17.fa",
-                "\@RG\tID:SRR00000\tPU:7563\tLB:alib\tSM:NA00000\tPI:2000\tCN:Sanger\tPL:SLX\tDS:SRP000001");
+                "\@RG\tID:SRR00000\tLB:alib\tSM:NA00000\tPU:7563\tPI:2000\tCN:Sanger\tPL:SLX\tDS:SRP000001");
 is_deeply [get_sam_header($temp_sam)], \@expected, 'generated the correct header';
 my $wc = `wc -l $temp_sam`;
 my ($lines) = $wc =~ /^(\d+)/;
@@ -69,7 +69,7 @@ ok $sam_util->add_sam_header($temp_sam,
                              program_version => '0.4.9'), 'add_sam_header manual args test';
 @expected = ("\@HD\tVN:1.0\tSO:coordinate",
              "\@SQ\tSN:Streptococcus_suis\tLN:2007491\tAS:SsP17\tM5:c52b2f0394e12013e2573e9a38f51031\tUR:file:t/data/S_suis_P17.fa",
-             "\@RG\tID:SRR00001\tPU:7563\tLB:alib\tSM:NA00001\tPI:2000\tCN:Sanger\tPL:SLX\tDS:SRP000001",
+             "\@RG\tID:SRR00001\tLB:alib\tSM:NA00001\tPU:7563\tPI:2000\tCN:Sanger\tPL:SLX\tDS:SRP000001",
              "\@PG\tID:bwa\tVN:0.4.9");
 my @header_lines = get_sam_header($temp_sam);
 is_deeply \@header_lines, \@expected, 'generated the correct header for the second time';
