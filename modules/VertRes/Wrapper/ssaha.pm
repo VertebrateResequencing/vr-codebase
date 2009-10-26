@@ -50,8 +50,8 @@ use File::Basename;
 use File::Spec;
 use File::Copy;
 use Cwd 'abs_path';
-use AssemblyTools;
 use VertRes::Utils::Cigar;
+use VertRes::Utils::FastQ;
 use SamTools;
 
 use base qw(VertRes::Wrapper::WrapperI);
@@ -143,7 +143,7 @@ sub ssaha2Build {
  Usage   : $wrapper->ssaha2(\@inputs, $output, skip => 3);
  Function: Align the @inputs.
  Returns : n/a
- Args    : input sequece file name(s) in an array reference, output name (undef
+ Args    : input sequence file name(s) in an array reference, output name (undef
            if using run_method('open')), hash of options understood by ssaha2
            (NB: skip must match the skip parameter you set in ssaha2Build if
            using the save option)
@@ -161,11 +161,15 @@ sub ssaha2 {
                       diff udiff disk weight rtype pair outfile mthresh)]);
     $self->_set_params_and_switches_from_args(%opts);
     
+    # we pipe via tee because some sort of buffer issue prevents any output
+    # to file or straight pipe to perl normally
+    my @args = (@{$seqs}, ' | tee');
     if ($out) {
         $self->register_output_file_to_check($out);
+        push(@args, " > $out");
     }
     
-    return $self->run(@{$seqs});
+    return $self->run(@args);
 }
 
 =head2 do_mapping
@@ -273,6 +277,7 @@ sub do_mapping {
             $ok || $self->throw("failed prior to attempting the mapping (could not copy $source -> $dest)");
         }
     }
+    $ref_fa_hash_base = $io->catfile($local_cache, $hash_basename);
     
     unless (-s $out_sam) {
         my $tmp_sam = $out_sam.'_tmp';
@@ -294,11 +299,13 @@ sub do_mapping {
             
             unless (-s $cigar_out) {
                 # filter out short reads from fastq
-                AssemblyTools::filterOutShortReads($fastq, 30, $tmp_fastq);
+                my $fu = VertRes::Utils::FastQ->new();
+                $fu->filter_reads($fastq, $tmp_fastq, min_length => 30);
                 
                 # run ssaha2, filtering the output to get the top 10 hits per read,
                 # grouping by readname, and compressing it
                 my $sfh = $self->ssaha2([$tmp_fastq], undef, disk => 1, '454' => 1, output => 'cigar', diff => 10, save => $ref_fa_hash_base);
+                
                 my $tmp_cigar = $cigar_out;
                 $tmp_cigar =~ s/cigar\.gz$/cigar.tmp.gz/;
                 open(my $cfh, "| gzip -c > $tmp_cigar");
