@@ -391,7 +391,7 @@ sub parse_gtype_field
             { 
                 $items[$i] = './.';
             }
-            elsif ( !($items[$i]=~m{^(?:\.|(\d+)[\|/](\d+))$}) ) 
+            elsif ( !($items[$i]=~m{^(?:\.|(\d+))[\|/](?:\.|(\d+))$}) ) 
             { 
                 # Dots or two numbers separated by either of \|/
                 $self->warn("[parse_gtype_field] Could not parse GT [$items[$i]]\n");
