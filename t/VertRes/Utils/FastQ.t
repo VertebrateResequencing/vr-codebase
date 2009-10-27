@@ -4,7 +4,7 @@ use warnings;
 use Cwd 'abs_path';
 
 BEGIN {
-    use Test::Most tests => 13;
+    use Test::Most tests => 15;
     
     use_ok('VertRes::Utils::FastQ');
     use_ok('VertRes::IO');
@@ -44,6 +44,13 @@ is abs_path($split_file), abs_path($fq1_file), 'symlink points to the original f
 
 # test qual_to_ints
 is_deeply [$fastq_util->qual_to_ints('!"#$%&\'()*+,5?DIS]~')], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 20, 30, 35, 40, 50, 60, 93], 'qual_to_ints test';
+
+# filter_reads and clip_point
+TODO: {
+    local $TODO = "filter_reads and clip_point need tests...";
+    ok 0;
+    ok 0;
+}
 
 exit;
 
