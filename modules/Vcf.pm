@@ -16,11 +16,14 @@ Vcf
 =head1 SYNOPSIS
 
 From the command line:
-    perl -MVcf -ne '$x=vcf1;print if $x->{NA00001}{GT} eq "0/1"' example.vcf
     perl -MVcf -e validate example.vcf
+    perl -MVcf -ne '$x=vcf1;print if $x->{NA00001}{GT} eq "0/1"' example.vcf
 
 From a script:
     use Vcf;
+
+    # Do some simple parsing 
+    my $vcf = Vcf->new(file=>'example.vcf');
     $vcf->parse_header();
     while (my $x=$vcf->parse_next_data_line()) 
     { 
@@ -29,6 +32,16 @@ From a script:
             print "\t$gt:", $$x{gtypes}{$gt}{GT};
         }
         print "\n";
+    }
+
+    # Output a subset of the original file, only the columns NA00001, NA00002 and NA00003
+    my $vcf = Vcf->new(file=>'example.vcf');
+    $vcf->parse_header();
+    my %columns = map { $_ => $i++ } qw(NA00001 NA00002 NA00003);
+    print $vcf->sprint_header(\%columns);
+    while (my $x=$vcf->parse_next_data_line())
+    {
+        print $vcf->sprint_line($x,\%columns);     # this will recalculate AC and AN counts
     }
 
 =cut
@@ -87,8 +100,23 @@ sub validate
     if ( !$vcf->{header} ) { $vcf->warn("No VCF header found.\n"); }
     if ( !$vcf->{columns} ) { $vcf->warn("No column descriptions found.\n"); }
 
-    while (my $x=$vcf->parse_next_data_line()) { ; }
+    while (my $x=$vcf->parse_next_data_line()) 
+    { 
+        if ( exists($$x{INFO}{AN}) || exists($$x{INFO}{AC}) )
+        {
+            my ($an,$ac) = $vcf->calc_an_ac($$x{gtypes});
+            if ( exists($$x{INFO}{AN}) && $an ne $$x{INFO}{AN} ) 
+            { 
+                $vcf->throw("$$x{CHROM}:$$x{POS} .. AN is $$x{INFO}{AN}, should be $an\n"); 
+            }
+            if ( exists($$x{INFO}{AC}) && $ac ne $$x{INFO}{AC} ) 
+            { 
+                $vcf->throw("$$x{CHROM}:$$x{POS} .. AC is $$x{INFO}{AC}, should be $ac\n"); 
+            }
+        }
+    }
 }
+
 
 sub new
 {
@@ -107,6 +135,75 @@ sub new
     $$self{header}  = undef;
     $$self{columns} = undef;    # column names 
     return $self;
+}
+
+sub sprint_header
+{
+    my ($self,$columns) = @_;
+    my $out;
+    if ( $$self{header} ) 
+    {
+        while (my ($key,$value) = each %{$$self{header}})
+        {
+            $out .= "##" . $key .'='. $value ."\n";
+        }
+    }
+    if ( $$self{columns} )
+    {
+        my @out ;
+        if ( $columns )
+        {
+            my $icol=0;
+            for my $col (@{$$self{columns}})
+            {
+                if ( $icol++>8 && !exists($$columns{$col}) ) { next; }
+                push @out, $col;
+            }
+        }
+        else 
+        { 
+            @out = @{$$self{columns}}; 
+        }
+        $out .= "#". join("\t", @out). "\n";
+    }
+    return $out;
+}
+
+sub sprint_line
+{
+    my ($self,$record,$columns) = @_;
+    # CHROM  POS     ID      REF     ALT     QUAL    FILTER  INFO    FORMAT  NA00001 NA00002 NA00003
+    my $out = $$record{CHROM} ."\t". $$record{POS} ."\t". $$record{ID} ."\t". $$record{REF};
+    $out .= "\t". join(',',@{$$record{ALT}});
+    $out .= "\t". $$record{QUAL} ."\t". $$record{FILTER};
+
+    my %gtypes;
+    if ( $columns )
+    {
+        %gtypes = map { $_ => $$record{gtypes}{$_} } sort { $$columns{$a} <=> $$columns{$b} } keys %$columns;
+    }
+    else
+    {
+        %gtypes = %{$$record{gtypes}};
+    }
+    my ($an,$ac) = $self->calc_an_ac(\%gtypes);
+    my @info = ("AN=$an","AC=$ac");
+    while (my ($key,$value) = each %{$$record{INFO}})
+    {
+        if ( $key eq 'AN' ) { next; }
+        if ( $key eq 'AC' ) { next; }
+        push @info, (defined $value ? "$key=$value" : $key);
+    }
+    $out .= "\t". join(';', @info);
+    $out .= "\t". join(':', @{$$record{FORMAT}});
+
+    for my $gt (values %gtypes)
+    {
+        $out .= "\t" . join(':', map { $$gt{$_} ? $$gt{$_} : '' } @{$$record{FORMAT}});
+    }
+
+    $out .= "\n";
+    return $out;
 }
 
 sub parse_header
@@ -290,9 +387,13 @@ sub parse_gtype_field
 
         if ( $$format[$i] eq 'GT' )
         {
-            if ( !($items[$i]=~m{^(?:\.|(\d+)[\|/](\d+))$}) ) 
+            if ( $items[$i] eq '.' ) # This is only to convert existing malformatted vcf's
             { 
-                # A dot or two numbers separated by either of \|/
+                $items[$i] = './.';
+            }
+            elsif ( !($items[$i]=~m{^(?:\.|(\d+)[\|/](\d+))$}) ) 
+            { 
+                # Dots or two numbers separated by either of \|/
                 $self->warn("[parse_gtype_field] Could not parse GT [$items[$i]]\n");
                 return undef; 
             }
@@ -333,6 +434,24 @@ sub parse_gtype_field
         $out{$$format[$i]} = $items[$i];
     }
     return \%out;
+}
+
+sub calc_an_ac
+{
+    my ($self,$gtypes) = @_;
+    my ($an,%ac_counts);
+    for my $gt (keys %$gtypes)
+    {
+        my $value = $$gtypes{$gt}{GT};
+        if ( $value eq './.' ) { next; }
+        my ($al1,$al2) = split(m{[\|/]},$value);
+        $an += 2;
+        $ac_counts{$al1}++ unless $al1 eq '0';
+        $ac_counts{$al2}++ unless $al2 eq '0';
+    }
+    my @ac = map { $ac_counts{$_} } sort { $a <=> $b } keys %ac_counts;
+    if ( !@ac ) { @ac = '0'; }
+    return ($an,join(',',@ac));
 }
 
 
