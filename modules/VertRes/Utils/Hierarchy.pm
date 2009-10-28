@@ -110,6 +110,8 @@ sub parse_lane {
            hierarchy_path => string,
            project        => string,
            sample         => string (aka individual),
+           sample_acc     => string
+           population     => string
            technology     => string (aka platform),
            library        => string,
            lane           => string (aka read group),
@@ -181,6 +183,10 @@ sub lane_info {
     my $sample = VRTrack::Sample->new($vrtrack, $lib->sample_id);
     my $individual = $sample->individual;
     $info{sample} = $individual->name || $self->throw("sample name wasn't known for $rg");
+    $info{sample_acc} = $individual->acc || $self->throw("sample accession wasn't known for $rg");
+    
+    my $pop = $individual->population;
+    $info{population} = $pop->name;
     
     my $project_obj = VRTrack::Project->new($vrtrack, $sample->project_id);
     $info{project} = $project_obj->hierarchy_name;
