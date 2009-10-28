@@ -24,12 +24,19 @@ data => {
     slx_mapper => 'bwa',
     '454_mapper' => 'ssaha',
     reference => '/abs/path/to/ref.fa',
-    assembly_name => 'NCBI36',
+    assembly_name => 'NCBI37',
     do_cleanup => 1
 },
 
-# reference option can be replaced with male_reference and female_reference
-# if you have 2 different references
+# Reference option can be replaced with male_reference and female_reference
+# if you have 2 different references.
+# By default it will map all unmapped lanes in a random order. You can limit
+# it to only mapping certain lanes by suppling the following keys:
+# project_limit => ['SRP000031'],
+# population_limit => ['CEU', 'TSI'],
+# platform_limit => ['SLX']
+# (that would map only LowCov CEU or TSI lanes that had been imported but not
+#  mapped already and that had been sequenced on a Selexa platform)
 
 # run the pipeline:
 run-pipeline -c pipeline.config -s 30
@@ -59,6 +66,9 @@ technologies.
 This pipeline relies on information stored in a meta database. Such a database
 can be created with update_vrmeta.pl, using meta information held in a
 (possibly faked) sequence.index
+
+NB: there is an expectation that read fastqs are named [readgroup]_[1|2].*
+for paired end sequencing, and [readgroup].* for single ended.
 
 =head1 AUTHOR
 
@@ -141,8 +151,8 @@ sub new {
     
     my $self = $class->SUPER::new(%options, actions => $actions, @args);
     
-    # we should have been supplied the option 'lane' which tells us which lane
-    # we're in, which lets us choose which mapper module to use.
+    # we should have been supplied the option 'lane_path' which tells us which
+    # lane we're in, which lets us choose which mapper module to use.
     my $lane = $self->{lane} || $self->throw("lane readgroup not supplied, can't continue");
     my $lane_path = $self->{lane_path} || $self->throw("lane path not supplied, can't continue");
     my $mapping_util = VertRes::Utils::Mapping->new(slx_mapper => $self->{slx_mapper},
@@ -194,6 +204,49 @@ sub new {
     }
     $self->throw("assembly_name must be supplied in conf") unless $self->{assembly_name};
     
+    # to allow multiple mappings to be stored in the same lane, our output files
+    # are going to be prefixed with a VRTrack::mapstats mapstats_id; discover
+    # that id now:
+    my $mappings = $self->{vrlane}->mappings();
+    my $mapping;
+    if ($mappings && @{$mappings}) {
+        # find the already created mapping that corresponds to what we're trying
+        # to do (we're basically forcing ourselves to only allow one mapping
+        # per mapper,version,assembly combo - can't change mapping args and keep
+        # that as a separate file)
+        foreach my $possible (@{$mappings}) {
+            # we're expecting it to have the correct assembly and mapper
+            my $assembly = $possible->assembly() || next;
+            $assembly->name eq $self->{assembly_name} || next;
+            my $mapper = $possible->mapper() || next;
+            $mapper->name eq $self->{mapper_obj}->exe || next;
+            $mapper->version eq $self->{mapper_obj}->version || next;
+            
+            $mapping = $possible;
+            last;
+        }
+    }
+    unless ($mapping) {
+        # make a new mapping
+        $mapping = $self->{vrlane}->add_mapping();
+        
+        # associate it with the assembly name, creating assembly if necessary
+        my $assembly = $mapping->assembly($self->{assembly_name});
+        if (!$assembly) {
+            $assembly = $mapping->add_assembly($self->{assembly_name});
+        }
+        
+        # associate with a mapper, creating that if necessary
+        my $mapper = $mapping->mapper($self->{mapper_obj}->exe, $self->{mapper_obj}->version);
+        if (!$mapper) {
+            $mapper = $mapping->add_mapper($self->{mapper_obj}->exe, $self->{mapper_obj}->version);
+        }
+        
+        $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
+    }
+    $self->{mapstats_obj} = $mapping || $self->throw("Couldn't get an empty mapstats object for this lane from the database");
+    $self->{mapstats_id} = $mapping->id;
+    
     $self->{io} = VertRes::IO->new;
     
     return $self;
@@ -236,7 +289,7 @@ sub split_provides {
     
     foreach my $ended ('se', 'pe') {
         if ($self->_get_read_args($lane_path, $ended)) {
-            push(@provides, '.split_complete_'.$ended);
+            push(@provides, '.split_complete_'.$ended.'_'.$self->{mapstats_id});
         }
     }
     
@@ -267,9 +320,9 @@ sub split {
         my $these_read_args = $self->_get_read_args($lane_path, $ended) || next;
         my @these_read_args = @{$these_read_args};
         
-        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended);
-        my $complete_file = $self->{io}->catfile($lane_path, '.split_complete_'.$ended);
-        my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}."split_$ended.pl");
+        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
+        my $complete_file = $self->{io}->catfile($lane_path, '.split_complete_'.$ended.'_'.$self->{mapstats_id});
+        my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}."split_${ended}_$self->{mapstats_id}.pl");
         
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
@@ -297,7 +350,7 @@ exit;
         };
         close $scriptfh;
         
-        LSF::run($action_lock, $lane_path, $self->{prefix}.'split_'.$ended, $self->{mapper_obj}->_bsub_opts($lane_path, 'split'), qq{perl -w $script_name});
+        LSF::run($action_lock, $lane_path, $self->{prefix}.'split_'.$ended.'_'.$self->{mapstats_id}, $self->{mapper_obj}->_bsub_opts($lane_path, 'split'), qq{perl -w $script_name});
     }
     
     # we've only submitted to LSF, so it won't have finished; we always return
@@ -309,10 +362,12 @@ sub _get_read_args {
     my ($self, $lane_path, $ended) = @_;
     ($ended && ($ended eq 'se' || $ended eq 'pe')) || $self->throw("bad ended arg");
     
+    my $lane = basename($lane_path);
+    
     my @fastqs = @{$self->{files}};
     my @fastq_info;
     foreach my $fastq (@fastqs) {
-        if ($fastq =~ /_(\d)\.fastq/) {
+        if ($fastq =~ /${lane}_(\d)\./) {
             $fastq_info[$1]->[0] = $fastq;
         }
         else {
@@ -365,7 +420,7 @@ sub map_requires {
     
     foreach my $ended ('se', 'pe') {
         if ($self->_get_read_args($lane_path, $ended)) {
-            push(@requires, '.split_complete_'.$ended);
+            push(@requires, '.split_complete_'.$ended.'_'.$self->{mapstats_id});
         }
     }
     
@@ -389,7 +444,7 @@ sub map_provides {
     
     foreach my $ended ('se', 'pe') {
         if ($self->_get_read_args($lane_path, $ended)) {
-            push(@provides, '.mapping_complete_'.$ended);
+            push(@provides, '.mapping_complete_'.$ended.'_'.$self->{mapstats_id});
         }
     }
     
@@ -425,14 +480,14 @@ sub map {
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
     # independantly.
     foreach my $ended ('se', 'pe') {
-        my $done_file = $self->{io}->catfile($lane_path, '.mapping_complete_'.$ended);
+        my $done_file = $self->{io}->catfile($lane_path, '.mapping_complete_'.$ended.'_'.$self->{mapstats_id});
         next if -e $done_file;
         my $these_read_args = $self->_get_read_args($lane_path, $ended) || next;
         my @these_read_args = @{$these_read_args};
         
         # get the number of splits
         my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
-        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended);
+        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
         
         foreach my $split (1..$num_of_splits) {
             my $sam_file = $self->{io}->catfile($split_dir, $split.'.raw.sam');
@@ -443,7 +498,7 @@ sub map {
             foreach my $read_arg (@these_read_args) {
                 my $split_read_arg = $read_arg;
                 $split_read_arg =~ s/\.f[^.]+(?:\.gz)?('(?:, )?)$/.$split.fastq.gz$1/;
-                $split_read_arg =~ s/\/([^\/]+)$/\/${split_dir_name}_$ended\/$1/;
+                $split_read_arg =~ s/\/([^\/]+)$/\/${split_dir_name}_${ended}_$self->{mapstats_id}\/$1/;
                 push(@split_read_args, $split_read_arg);
             }
             
@@ -507,7 +562,7 @@ exit;
             };
             close $scriptfh;
             
-            LSF::run($action_lock, $lane_path, $self->{prefix}.'map_'.$ended, $self->{mapper_obj}->_bsub_opts($lane_path, 'map'), qq{perl -w $script_name});
+            LSF::run($action_lock, $lane_path, $self->{prefix}.'map_'.$ended.'_'.$self->{mapstats_id}, $self->{mapper_obj}->_bsub_opts($lane_path, 'map'), qq{perl -w $script_name});
         }
     }
     
@@ -520,7 +575,7 @@ sub _num_of_splits {
     my ($self, $lane_path, $ended) = @_;
     
     # get the number of splits
-    my $split_file = $self->{io}->catfile($lane_path, '.split_complete_'.$ended);
+    my $split_file = $self->{io}->catfile($lane_path, '.split_complete_'.$ended.'_'.$self->{mapstats_id});
     my $io = VertRes::IO->new(file => $split_file);
     my $split_fh = $io->fh;
     my $splits = <$split_fh>;
@@ -550,7 +605,7 @@ sub merge_and_stat_requires {
         
         # get the number of splits
         my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
-        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended);
+        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
         
         foreach my $split (1..$num_of_splits) {
             push(@requires, $self->{io}->catfile($split_dir, $split.'.raw.sorted.bam'));
@@ -578,7 +633,7 @@ sub merge_and_stat_provides {
     foreach my $ended ('se', 'pe') {
         $self->_get_read_args($lane_path, $ended) || next;
         
-        my $file = "${ended}_raw.sorted.bam";
+        my $file = "$self->{mapstats_id}.$ended.raw.sorted.bam";
         push(@provides, $file);
         
         foreach my $suffix ('bas', 'flagstat') {
@@ -612,11 +667,11 @@ sub merge_and_stat {
     foreach my $ended ('se', 'pe') {
         $self->_get_read_args($lane_path, $ended) || next;
         
-        my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}."merge_and_stat_$ended.pl");
+        my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}."merge_and_stat_${ended}_$self->{mapstats_id}.pl");
         
         # get the input bams that need merging
         my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
-        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended);
+        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
         my @bams;
         foreach my $split (1..$num_of_splits) {
             push(@bams, $self->{io}->catfile($split_dir, $split.'.raw.sorted.bam'));
@@ -625,7 +680,7 @@ sub merge_and_stat {
         my $copy_instead_of_merge = @bams > 1 ? 0 : 1;
         
         # define the output files
-        my $bam_file = $self->{io}->catfile($lane_path, "${ended}_raw.sorted.bam");
+        my $bam_file = $self->{io}->catfile($lane_path, "$self->{mapstats_id}.$ended.raw.sorted.bam");
         my @stat_files;
         foreach my $suffix ('bas', 'flagstat') {
             push(@stat_files, $bam_file.'.'.$suffix);
@@ -678,7 +733,7 @@ exit;
         };
         close $scriptfh;
         
-        LSF::run($action_lock, $lane_path, $self->{prefix}.'merge_and_stat_'.$ended, $self->{mapper_obj}->_bsub_opts($lane_path, 'merge_and_stat'), qq{perl -w $script_name});
+        LSF::run($action_lock, $lane_path, $self->{prefix}.'merge_and_stat_'.$ended.'_'.$self->{mapstats_id}, $self->{mapper_obj}->_bsub_opts($lane_path, 'merge_and_stat'), qq{perl -w $script_name});
     }
     
     # we've only submitted to LSF, so it won't have finished; we always return
@@ -750,36 +805,25 @@ sub update_db {
     $vrlane->update() || $self->throw("Unable to set mapped status on lane $lane_path");
     
     # get the mapping stats from each bas file
+    my $mapping = $self->{mapstats_obj};
     foreach my $file (@bas_files) {
         my $bp = VertRes::Parser::bas->new(file => $file);
         my $rh = $bp->result_holder;
         $bp->next_result; # we'll only ever have one line, since this is only
                           # one read group
         
-        # add mapping details to db
-        my $mapping = $vrlane->add_mapping();
-        $mapping->raw_reads($rh->[9]);
-        $mapping->raw_bases($rh->[7]);
-        $mapping->reads_mapped($rh->[10]);
-        $mapping->reads_paired($rh->[12]);
-        $mapping->bases_mapped($rh->[8]);
-        $mapping->mean_insert($rh->[15]);
-        $mapping->sd_insert($rh->[16]);
-        
-        my $assembly = $mapping->assembly($self->{assembly_name});
-        if (!$assembly) {
-            $assembly = $mapping->add_assembly($self->{assembly_name});
-        }
-        
-        my $mapper_class = $self->{mapper_class};
-        my $mapper_obj = $mapper_class->new();
-        my $mapper = $mapping->mapper($mapper_obj->exe, $mapper_obj->version);
-        if (!$mapper) {
-            $mapper = $mapping->add_mapper($mapper_obj->exe, $mapper_obj->version);
-        }
+        # add mapping details to db. We can have up to 2 bas files, one
+        # representing single ended mapping, the other paired, so we add where
+        # appropriate and only set insert size for the paired
+        $mapping->raw_reads(($mapping->raw_reads || 0) + $rh->[9]);
+        $mapping->raw_bases(($mapping->raw_bases || 0) + $rh->[7]);
+        $mapping->reads_mapped(($mapping->reads_mapped || 0) + $rh->[10]);
+        $mapping->reads_paired(($mapping->reads_paired || 0) + $rh->[12]);
+        $mapping->bases_mapped(($mapping->bases_mapped || 0) + $rh->[8]);
+        $mapping->mean_insert($rh->[15]) if $rh->[15];
+        $mapping->sd_insert($rh->[16]) if $rh->[15];
         
         $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
-        $vrlane->update || $self->throw("Unable to set mapping details of lane $lane_path");
     }
     
     $vrtrack->transaction_commit();
@@ -834,15 +878,17 @@ sub cleanup {
     my $prefix = $self->{prefix};
     
     foreach my $file (qw(log job_status
-                         split_se.e split_se.o split_se.pl split_pe.e split_pe.o split_pe.pl
-                         map_se.e map_se.o map_pe.e map_pe.o
-                         merge_and_stat_se.e merge_and_stat_se.o merge_and_stat_se.pl
-                         merge_and_stat_pe.e merge_and_stat_pe.o merge_and_stat_pe.pl)) {
+                         split_se split_pe
+                         map_se map_pe
+                         merge_and_stat_se merge_and_stat_pe)) {
         unlink($self->{io}->catfile($lane_path, $prefix.$file));
+        foreach my $suffix (qw(o e pl)) {
+            unlink($self->{io}->catfile($lane_path, $prefix.$file.'_'.$self->{mapstats_id}.'.'.$suffix));
+        }
     }
     
-    $self->{io}->rmtree($self->{io}->catfile($lane_path, 'split_se'));
-    $self->{io}->rmtree($self->{io}->catfile($lane_path, 'split_pe'));
+    $self->{io}->rmtree($self->{io}->catfile($lane_path, 'split_se'.'_'.$self->{mapstats_id}));
+    $self->{io}->rmtree($self->{io}->catfile($lane_path, 'split_pe'.'_'.$self->{mapstats_id}));
     
     return $self->{Yes};
 }
@@ -856,11 +902,11 @@ sub is_finished {
         foreach my $ended ('se', 'pe') {
             $self->_get_read_args($lane_path, $ended) || next;
             
-            my $done_file = $self->{io}->catfile($lane_path, '.mapping_complete_'.$ended);
+            my $done_file = $self->{io}->catfile($lane_path, '.mapping_complete_'.$ended.'_'.$self->{mapstats_id});
             
             my $done_bams = 0;
             my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
-            my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended);
+            my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
             foreach my $split (1..$num_of_splits) {
                 $done_bams += (-s $self->{io}->catfile($split_dir, $split.'.raw.sorted.bam')) ? 1 : 0;
             }
