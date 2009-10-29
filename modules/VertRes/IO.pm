@@ -624,12 +624,30 @@ sub get_remote_file {
 
 sub verify_md5 {
     my ($self, $file, $md5) = @_;
+    my $new_md5 = $self->calculate_md5($file);
+    return $new_md5 eq $md5;
+}
+
+=head2  calculate_md5
+
+ Title   : calculate_md5
+ Usage   : my $md5 = $obj->calculate_md5($file)
+ Function: Calculate the md5 of a file.
+ Returns : hexdigest string
+ Args    : path to file
+
+=cut
+
+sub calculate_md5 {
+    my ($self, $file) = @_;
+    
     open(my $fh, $file) || $self->throw("Could not open file $file");
     binmode($fh);
     my $dmd5 = Digest::MD5->new();
     $dmd5->addfile($fh);
-    my $new_md5 = $dmd5->hexdigest;
-    return $new_md5 eq $md5;
+    my $md5 = $dmd5->hexdigest;
+    
+    return $md5;
 }
 
 1;
