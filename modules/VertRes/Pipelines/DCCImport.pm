@@ -404,6 +404,13 @@ sub update_db {
         next unless -s $data_path;
         $imported_files++;
         
+        # check the md5; the existing md5 in the db may correspond to the md5
+        # of the uncompressed fastq, but we want the compressed md5
+        my $actual_md5 = $self->{io}->calculate_md5($data_path);
+        unless ($actual_md5 eq $file_obj->md5) {
+            $file_obj->md5($actual_md5);
+        }
+        
         $file_obj->is_processed('import', 1);
         
         # set mean_q and read_len, based on the fastqcheck info
