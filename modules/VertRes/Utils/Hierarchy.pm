@@ -60,6 +60,11 @@ our %platform_aliases = (ILLUMINA => 'SLX',
                          Illumina => 'SLX',
                          LS454 => '454');
 
+our $DEFAULT_DB_SETTINGS = {host => 'mcs4a',
+                            port => 3306,
+                            user => 'vreseq_ro',
+                            database => 'g1k_meta'};
+
 =head2 new
 
  Title   : new
@@ -109,14 +114,16 @@ sub parse_lane {
  Returns : hash of information, with keys:
            hierarchy_path => string,
            project        => string,
-           sample         => string (aka individual),
-           sample_acc     => string
-           population     => string
-           technology     => string (aka platform),
+           sample         => string,
+           individual     => string,
+           individual_acc => string,
+           individual_coverage => float, (the coverage of this lane's individual)
+           population     => string,
+           technology     => string, (aka platform)
            library        => string,
-           lane           => string (aka read group),
-           centre         => string (the sequencing centre name),
-           insert_size    => int (can be undef if this lane is single-ended),
+           lane           => string, (aka read group)
+           centre         => string, (the sequencing centre name)
+           insert_size    => int, (can be undef if this lane is single-ended)
            withdrawn      => boolean,
            imported       => boolean,
            mapped         => boolean,
@@ -135,6 +142,9 @@ sub parse_lane {
            -or-
            vrtrack => VRTrack::VRTrack object
 
+           optionally, the optional args understood by individual_coverage() to
+           configure how individual_coverage will be calculated
+
 =cut
 
 sub lane_info {
@@ -151,10 +161,7 @@ sub lane_info {
             $vrtrack = $args{vrtrack};
         }
         else {
-            my $db = $args{db} || {host => 'mcs4a',
-                                   port => 3306,
-                                   user => 'vreseq_ro',
-                                   database => 'g1k_meta'};
+            my $db = $args{db} || $DEFAULT_DB_SETTINGS;
             $vrtrack = VRTrack::VRTrack->new($db);
         }
         
@@ -182,8 +189,14 @@ sub lane_info {
     
     my $sample = VRTrack::Sample->new($vrtrack, $lib->sample_id);
     my $individual = $sample->individual;
-    $info{sample} = $individual->name || $self->throw("sample name wasn't known for $rg");
-    $info{sample_acc} = $individual->acc || $self->throw("sample accession wasn't known for $rg");
+    $info{sample} = $sample->name || $self->throw("sample name wasn't known for $rg");
+    $info{individual} = $individual->name || $self->throw("individual name wasn't known for $rg");
+    $info{individual_acc} = $individual->acc || $self->throw("sample accession wasn't known for $rg");
+    $info{individual_coverage} = $self->individual_coverage($individual,
+                                                            $args{genome_size} ? (genome_size => $args{genome_size}) : (),
+                                                            $args{gt_confirmed} ? (gt_confirmed => $args{gt_confirmed}) : (),
+                                                            $args{qc_passed} ? (qc_passed => $args{qc_passed}) : (),
+                                                            $args{mapped} ? (mapped => $args{mapped}) : ());
     
     my $pop = $individual->population;
     $info{population} = $pop->name;
@@ -192,6 +205,245 @@ sub lane_info {
     $info{project} = $project_obj->hierarchy_name;
     
     return %info;
+}
+
+=head2 individual_coverage
+
+ Title   : individual_coverage
+ Usage   : my $coverage = $obj->individual_coverage($vrtrack_individual,
+                                                    genome_size => 3e9);
+ Function: Discover the sequencing coverage of an individual.
+ Returns : float
+ Args    : individual name OR VRTrack::Individual object, optional hash:
+           genome_size => int (total genome size in bp; default 3e9)
+           gt_confirmed => boolean (only consider genotype confirmed lanes;
+                                    default false)
+           qc_passed => boolean (only consider qc passed lanes; default false)
+           mapped => boolean (coverage of mapped bases; default false: coverage
+                              of total bases)
+
+           Optionally, a hash with key db OR vrtrack to provide the database
+           connection info (shown with defaults):
+           db => {
+            host => 'mcs4a',
+            port => 3306,
+            user => 'vreseq_ro',
+            password => undef,
+            database => 'g1k_meta'
+           }
+           -or-
+           vrtrack => VRTrack::VRTrack object
+
+=cut
+
+sub individual_coverage {
+    my ($self, $indiv_thing, %args) = @_;
+    my $genome_size = $args{genome_size} || 3e9;
+    my $gt = $args{gt_confirmed} ? 1 : 0;
+    my $qc = $args{qc_passed} ? 1 : 0;
+    my $mapped = $args{mapped} ? 1 : 0;
+    
+    my $indiv;
+    if (ref($indiv_thing) && $indiv_thing->isa('VRTrack::Individual')) {
+        $indiv = $indiv_thing;
+    }
+    else {
+        my $vrtrack;
+        if ($args{vrtrack}) {
+            $vrtrack = $args{vrtrack};
+        }
+        else {
+            my $db = $args{db} || $DEFAULT_DB_SETTINGS;
+            $vrtrack = VRTrack::VRTrack->new($db);
+        }
+        
+        $indiv = VRTrack::Individual->new_by_name($vrtrack, $indiv_thing);
+    }
+    $indiv || return;
+    
+    my $ind_id = $indiv->id;
+    my $store = "$ind_id,$gt,$qc,$mapped";
+    
+    unless (defined $self->{_indiv_bases}->{$store}) {
+        my $vrtrack = $indiv->vrtrack;
+        
+        my $bps = 0;
+        
+        # for all the samples in the db with our individual id
+        foreach my $project (@{$vrtrack->projects}) {
+            foreach my $sample (@{$project->samples}) {
+                next unless $sample->individual_id eq $ind_id;
+                
+                # sum raw bases for all the qc passed, gt confirmed and not
+                # withdrawn lanes of all the libraries under this sample
+                foreach my $library (@{$sample->libraries}){
+                    foreach my $lane (@{$library->lanes}){
+                        next if $lane->is_withdrawn;
+                        if ($gt) {
+                            next unless $lane->genotype_status eq 'confirmed';
+                        }
+                        if ($qc) {
+                            next unless $lane->qc_status eq 'passed';
+                        }
+                        
+                        my $bp = $lane->raw_bases;
+                        
+                        if ($mapped) {
+                            my $mapstats = $lane->latest_mapping;
+                            
+                            if ($mapstats && $mapstats->raw_bases){
+                                if ($mapstats->genotype_ratio) {
+                                    # this is a QC mapped lane, so we make a projection
+                                    $bps += $bp * ($mapstats->rmdup_bases_mapped / $mapstats->raw_bases);
+                                }
+                                else {
+                                    # this is a fully mapped lane, so we know the real answer
+                                    $bps += $mapstats->bases_mapped;
+                                }
+                            }
+                            else {
+                                $bps += $bp * 0.9; # not sure what else to do here?
+                            }
+                        }
+                        else {
+                            $bps += $bp;
+                        }
+                    }
+                }
+            }
+        }
+        
+        $self->{_indiv_bases}->{$store} = $bps;
+    }
+    
+    return sprintf('%.2f', $self->{_indiv_bases}->{$store} / $genome_size);
+}
+
+=head2 get_lanes
+
+ Title   : get_lanes
+ Usage   : my @lanes = $obj->get_lanes(sample => ['NA19239']);
+ Function: Get all the lanes under certain parts of the hierarchy, excluding
+           withdrawn lanes.
+ Returns : list of VRTrack::Lane objects
+ Args    : At least one hierarchy level as a key, and an array ref of names
+           as values, eg. sample => ['NA19239'], platform => ['SLX', '454'].
+           Valid key levels are project, sample, individual, population,
+           platform, centre and library. (With no options at all, all active
+           lanes in the database will be returned)
+
+           Optionally, a hash with key db OR vrtrack to provide the database
+           connection info (shown with defaults):
+           db => {
+            host => 'mcs4a',
+            port => 3306,
+            user => 'vreseq_ro',
+            password => undef,
+            database => 'g1k_meta'
+           }
+           -or-
+           vrtrack => VRTrack::VRTrack object
+
+=cut
+
+sub get_lanes {
+    my ($self, %args) = @_;
+    
+    my $vrtrack;
+    if ($args{vrtrack}) {
+        $vrtrack = $args{vrtrack};
+    }
+    else {
+        my $db = $args{db} || $DEFAULT_DB_SETTINGS;
+        $vrtrack = VRTrack::VRTrack->new($db);
+    }
+    
+    my @good_lanes;
+    foreach my $project (@{$vrtrack->projects}) {
+        my $ok = 1;
+        if (defined ($args{project})) {
+            $ok = 0;
+            foreach my $name (@{$args{project}}) {
+                if ($name eq $project->name || $name eq $project->hierarchy_name || $name eq $project->study->acc) {
+                    $ok = 1;
+                    last;
+                }
+            }
+        }
+        $ok || next;
+        
+        foreach my $sample (@{$project->samples}) {
+            my $ok = 1;
+            if (defined ($args{sample})) {
+                $ok = 0;
+                foreach my $name (@{$args{sample}}) {
+                    if ($name eq $sample->name) {
+                        $ok = 1;
+                        last;
+                    }
+                }
+            }
+            $ok || next;
+            
+            my %objs;
+            $objs{individual} = $sample->individual;
+            $objs{population} = $objs{individual}->population;
+            
+            my ($oks, $limits) = (0, 0);
+            foreach my $limit (qw(individual population)) {
+                if (defined $args{$limit}) {
+                    $limits++;
+                    my $ok = 0;
+                    foreach my $name (@{$args{$limit}}) {
+                        if ($name eq $objs{$limit}->name || ($objs{$limit}->can('hierarchy_name') && $name eq $objs{$limit}->hierarchy_name)) {
+                            $ok = 1;
+                            last;
+                        }
+                    }
+                    $oks += $ok;
+                }
+            }
+            next unless $oks == $limits;
+            
+            foreach my $library (@{$sample->libraries}) {
+                my $ok = 1;
+                if (defined ($args{library})) {
+                    $ok = 0;
+                    foreach my $name (@{$args{library}}) {
+                        if ($name eq $library->name || $name eq $library->hierarchy_name) {
+                            $ok = 1;
+                            last;
+                        }
+                    }
+                }
+                $ok || next;
+                
+                my %objs;
+                $objs{centre} = $library->seq_centre;
+                $objs{platform} = $library->seq_tech;
+                
+                my ($oks, $limits) = (0, 0);
+                foreach my $limit (qw(centre platform)) {
+                    if (defined $args{$limit}) {
+                        $limits++;
+                        my $ok = 0;
+                        foreach my $name (@{$args{$limit}}) {
+                            if ($name eq $objs{$limit}->name) {
+                                $ok = 1;
+                                last;
+                            }
+                        }
+                        $oks += $ok;
+                    }
+                }
+                next unless $oks == $limits;
+                
+                push(@good_lanes, @{$library->lanes});
+            }
+        }
+    }
+    
+    return @good_lanes;
 }
 
 =head2 check_lanes_vs_sequence_index
