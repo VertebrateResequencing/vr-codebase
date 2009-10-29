@@ -242,8 +242,8 @@ sub rename_requires
     return \@requires;
 }
 
-# It may provide also _2.fastq.gz, but we assume that if
-#   there is _1.fastq.gz but _2 is missing, it is OK.
+# It may provide also _2.fastq.gz and _3.fastq.gz, but we assume that if
+#   there is _1.fastq.gz and the others are missing, it is OK.
 #
 sub rename_provides
 {
@@ -254,8 +254,15 @@ sub rename_provides
 
 # The naming convention is to name fastq files according
 #   to the lane, e.g. 
-#       project/sample/tech/libr/lane/lane_1.fastq.gz
-#       project/sample/tech/libr/lane/lane_2.fastq.gz
+#       project/sample/tech/libr/lane/lane_1.fastq.gz    .. pair 1
+#       project/sample/tech/libr/lane/lane_2.fastq.gz    .. pair 2
+#       project/sample/tech/libr/lane/lane_3.fastq.gz    .. single
+#
+# The lanes named like "lane_s_1" complicate the algorithm: for 
+#   paired reads, it should be ignored.  For unpaired, it should be used.
+#   Luckily, these were treated already in Import.pm. Rename will have a
+#   problem only with lanes which did not go through Import.pm and contain
+#   these _s_ files. 
 #
 sub rename
 {
@@ -269,12 +276,27 @@ sub rename
     if ( scalar @$fastq_files  ) { return $$self{'Yes'}; }
 
     my @files = glob("$lane_path/*.fastq.gz");
-    if ( scalar @files > 2 ) { Utils::error("FIXME: so far can handle up to 2 fastq files: $lane_path.\n") }
+    if ( scalar @files > 3 ) { Utils::error("FIXME: so far can handle up to 3 fastq files: $lane_path.\n") }
 
-    my $i = 0;
+    # If there are three files, the one without a number is non-paired, the 1,2 are paired
+    my $i = 1;
     for my $file (sort cmp_last_number @files)
     {
-        $i++;
+        if ( ($file=~/^\d+_s_\d+/) && scalar @files>1 )
+        {
+            # If there are more fastq files and some is named as _s_, it is not clear which are
+            #   paired, which are non-paired and if they should be used at all.
+            $self->throw(qq[Heuristic failed, did not expect "$file". Please symlink manually.]);
+        }
+        elsif ( $i<3 && !($file=~/_\d+\D*$/) && scalar @files>1 )
+        {
+            $self->throw(qq[Heuristic failed, which files are single-ended and which are paired? Please symlink manually.]); 
+        }
+        elsif ( $i==3 && ($file=~/_\d+\D*$/) ) 
+        { 
+            $self->throw(qq[Heuristic failed, this should be single-ended file "$file". Please symlink manually.]); 
+        }
+
         if ( ! -e "$lane_path/${name}_$i.fastq.gz" )
         {
             Utils::relative_symlink($file,"$lane_path/${name}_$i.fastq.gz");
@@ -287,6 +309,7 @@ sub rename
         {
             Utils::relative_symlink("$file.md5","$lane_path/${name}_$i.fastq.md5");
         }
+        $i++;
     }
     return $$self{'Yes'};
 }
@@ -294,9 +317,9 @@ sub rename
 sub cmp_last_number($$)
 {
     my ($a,$b) = @_;
-    if ( !($a=~/(\d+)\D*$/) ) { return 0 } # leave unsorted if there is no number in the name
+    if ( !($a=~/_(\d+)\D*$/) ) { return 1 } # is greater than the rest if there is no number in the name
     my $x = $1;
-    if ( !($b=~/(\d+)\D*$/) ) { return 0 }
+    if ( !($b=~/_(\d+)\D*$/) ) { return -1 }
     my $y = $1;
     return $x<=>$y;
 }
@@ -372,10 +395,17 @@ sub subsample
     #   only to subsequent calls of FastQ::sample.
     #
     print $fh "use FastQ;\n";
-    print $fh '$seq_list = ' unless $nfiles==1;
     for (my $i=$nfiles; $i>0; $i--)
     {
-        my $print_seq_list = ($i==$nfiles) ? '' : ', $seq_list';
+        my $print_seq_list = '';
+        if ( $i==2 )
+        {
+            print $fh '$seq_list = ';
+        }
+        elsif ( $i==1 )
+        {
+            $print_seq_list = ', $seq_list';
+        }
         print $fh "FastQ::sample(q{../${name}_$i.fastq.gz},q{${name}_$i.fastq.gz}, $$self{'sample_size'}$print_seq_list);\n";
     }
     close $fh;
@@ -439,7 +469,7 @@ sub process_fastqs
     # How many files do we have?
     my $fastq_files = existing_fastq_files("$work_dir/$name");
     my $nfiles = scalar @$fastq_files;
-    if ( $nfiles<1 || $nfiles>2 ) { Utils::error("FIXME: we can handle 1 or 2 fastq files in $work_dir, not $nfiles.\n") }
+    if ( $nfiles<1 || $nfiles>3 ) { Utils::error("FIXME: we can handle 1-3 fastq files in $work_dir, not $nfiles.\n") }
 
     # Run bwa aln for each fastq file to create .sai files.
     for (my $i=1; $i<=$nfiles; $i++)
@@ -542,23 +572,31 @@ sub map_sample
     my $bwa_ref    = $$self{'bwa_ref'};
     my $fai_ref    = $$self{'fai_ref'};
     my $samtools   = $$self{'samtools'};
+    my $max_isize  = exists($$self{insert_size}) ? $$self{insert_size}*2 : 2000;
 
 
     # How many files do we have?
     my $fastq_files = existing_fastq_files("$work_dir/$name");
     my $nfiles = scalar @$fastq_files;
-    if ( $nfiles<1 || $nfiles>2 ) { $self->throw("FIXME: we can handle 1 or 2 fastq files in $work_dir, not $nfiles.\n") }
+    if ( $nfiles<1 || $nfiles>3 ) { $self->throw("FIXME: we can handle 1-3 fastq files in $work_dir, not $nfiles.\n") }
 
-
-    my $bwa_cmd  = '';
-    if ( $nfiles == 1 || !$$self{paired} )
+    # There can be a mixture of: 
+    #   1) two paired-end fastqs, no single
+    #   2) one single+two paired-end fastqs 
+    #   3) arbitrary number of singles (i.e. 1-3)
+    my @singles = ();
+    my @paired;
+    if ( $nfiles==1 || !$$self{paired} )
     {
-        if ( $nfiles>1 ) { $self->throw("FIXME: not ready for two fastqs per lane from non-paired-end sequencing."); }
-        $bwa_cmd = "$bwa samse $bwa_ref ${name}_1.sai ${name}_1.fastq.gz";
+        for my $file (@$fastq_files) { push @singles, $file; }
     }
-    else
+    elsif ( $nfiles==3 ) 
+    { 
+        push @singles, $$fastq_files[2]; 
+    }
+    if ( $$self{paired} && $nfiles>1 )
     {
-        $bwa_cmd = "$bwa sampe -a 2000 $bwa_ref ${name}_1.sai ${name}_2.sai ${name}_1.fastq.gz ${name}_2.fastq.gz";
+        @paired = ($$fastq_files[0],$$fastq_files[1]);  # paired-end must be named _1 and _2
     }
 
     # Dynamic script to be run by LSF. We must check that the bwa exists alright
@@ -566,18 +604,55 @@ sub map_sample
     #   nothing read from the input.
     #
     open(my $fh,'>', "$work_dir/_map.pl") or Utils::error("$work_dir/_map.pl: $!");
-    print $fh 
-qq{
-use Utils;
+    print $fh "use Utils;\n";
+    my @single_bams;
+    for my $single (@singles)
+    {
+        if ( !($single=~m{/?(${name}_\d+).fastq.gz$})) { Utils::error("Failed to parse [$single]"); }
+        my $sname = $1;
+        my $bwa_cmd = "$bwa samse $bwa_ref $sname.sai $sname.fastq.gz";
+        push @single_bams, "$sname.bam";
 
-Utils::CMD("$bwa_cmd > ${name}.sam");
-if ( ! -s "${name}.sam" ) { Utils::error("The command ended with an error:\n\t$bwa_cmd > ${name}.sam\n") }
+        print $fh
+qq[
+Utils::CMD("$bwa_cmd > $sname.sam");
+if ( ! -s "$sname.sam" ) { Utils::error("The command ended with an error:\n\t$bwa_cmd > $sname.sam\\n"); }
+Utils::CMD("$samtools import $fai_ref $sname.sam $sname.ubam");
+Utils::CMD("$samtools sort $sname.ubam ${sname}x");
+Utils::CMD("rm -f $sname.sam $sname.ubam");
+rename("${sname}x.bam", "$sname.bam") or Utils::CMD("rename ${sname}x.bam $sname.bam: \$!");
+];
+    }
+    my $paired_name;
+    if ( scalar @paired )
+    {
+        my $bwa_cmd  = "$bwa sampe -a $max_isize $bwa_ref ${name}_1.sai ${name}_2.sai ${name}_1.fastq.gz ${name}_2.fastq.gz";
+        $paired_name = scalar @singles ? "tmp_$name" : $name;
 
-Utils::CMD("$samtools import $fai_ref ${name}.sam ${name}.ubam");
-Utils::CMD("$samtools sort ${name}.ubam ${name}x");     # Test - will this help from NFS problems?
-Utils::CMD("rm -f ${name}.sam ${name}.ubam");
-rename("${name}x.bam", "$name.bam") or Utils::CMD("rename ${name}x.bam $name.bam: \$!");
-};
+        print $fh
+qq[
+Utils::CMD("$bwa_cmd > $paired_name.sam");
+if ( ! -s "$paired_name.sam" ) { Utils::error("The command ended with an error:\\n\\t$bwa_cmd > $paired_name.sam\\n"); }
+Utils::CMD("$samtools import $fai_ref $paired_name.sam $paired_name.ubam");
+Utils::CMD("$samtools sort $paired_name.ubam ${paired_name}x");
+Utils::CMD("rm -f $paired_name.sam $paired_name.ubam");
+rename("${paired_name}x.bam", "$paired_name.bam") or Utils::error("rename ${paired_name}x.bam $paired_name.bam: \$!");
+];
+    }
+
+    # Now merge the files if necessary
+    if ( scalar @single_bams )
+    {
+        my $bams = join(' ', @single_bams);
+        if ( $paired_name ) { $bams .= " $paired_name.bam"; }
+
+        print $fh 
+qq[
+Utils::CMD("$samtools merge x$name.bam $bams");
+if ( ! -s "x$name.bam" ) { Utils::error("The command ended with an error:\\n\\t$samtools merge x$name.bam $bams\\n"); }
+rename("x$name.bam","$name.bam") or Utils::error("rename x$name.bam $name.bam: \$!");
+];
+    }
     close($fh);
 
     LSF::run($lock_file,$work_dir,"_${name}_sampe",$self, q{perl -w _map.pl});
@@ -719,9 +794,10 @@ sub run_graphs
 
 
     # Create the multiline fastqcheck files
-    my @fastq_quals = ();
-    my $fastq_files = existing_fastq_files("$lane_path/$name");
-    my $total_reads = 0;    # this is for integrity check of the bam file
+    my @fastq_legend = ();
+    my @fastq_quals  = ();
+    my $fastq_files  = existing_fastq_files("$lane_path/$name");
+    my $total_reads  = 0;    # this is for integrity check of the bam file
     for (my $i=1; $i<=scalar @$fastq_files; $i++)
     {
         my $fastqcheck = "$lane_path/${name}_$i.fastq.gz.fastqcheck";
@@ -742,7 +818,7 @@ sub run_graphs
 
         my $pars = VertRes::Parser::fastqcheck->new(file => $fastqcheck);
         my ($bases,$quals) = $pars->avg_base_quals();
-        push @fastq_quals, { xvals=>$bases, yvals=>$quals };
+        push @fastq_quals, { xvals=>$bases, yvals=>$quals, legend=>"FQ $i" };
 
         # To check the integrity of the BAM file
         open(my $fh,"zcat $outdir/${name}_$i.fastq.gz | fastqcheck |") or $self->throw("zcat $outdir/${name}_$i.fastq.gz | fastqcheck |: $!");
@@ -818,11 +894,12 @@ sub run_graphs
             push @xvals,$bin;
             push @yvals,$$gc_freqs{$bin};
         }
-        push @gc_data, { xvals=>\@xvals, yvals=>\@yvals, lines=>',lty=4' };
+        push @gc_data, { xvals=>\@xvals, yvals=>\@yvals, lines=>',lty=4', legend=>'ref' };
         $normalize = 1;
     }
-    if ( $$stats{'gc_content_forward'} ) { push @gc_data, $$stats{'gc_content_forward'}; } # Should be always present
-    if ( $$stats{'gc_content_reverse'} ) { push @gc_data, $$stats{'gc_content_reverse'}; } # May be not present (single end sequencing)
+    if ( $$stats{'gc_content_forward'} ) { push @gc_data, { %{$$stats{'gc_content_forward'}}, legend=>'fwd' }; }
+    if ( $$stats{'gc_content_reverse'} ) { push @gc_data, { %{$$stats{'gc_content_reverse'}}, legend=>'rev' }; }
+    if ( $$stats{'gc_content_single'} ) { push @gc_data, { %{$$stats{'gc_content_single'}}, legend=>'single' }; } 
     Graphs::plot_stats({
             'outfile'    => qq[$outdir/gc-content.png],
             'title'      => 'GC Content (both mapped and unmapped)',
@@ -1240,8 +1317,11 @@ sub warn
 
 sub debug
 {
+    # The granularity of verbose messaging does not make much sense
+    #   now, because verbose cannot be bigger than 1 (made Base.pm
+    #   throw on warn's).
     my ($self,@msg) = @_;
-    if ($self->verbose > 1) 
+    if ($self->verbose > 0) 
     {
         my $msg = join('',@msg);
         print STDERR $msg;
