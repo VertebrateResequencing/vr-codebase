@@ -25,7 +25,7 @@ our $R_CMD = '/software/R-2.9.0/bin/R';
                             r_cmd           .. extra R commands to be executed
                             r_plot          .. extra R statements to plot(), such as e.g. "xlim=c(0,10)"
                             data => \[      .. Multiple lines can be plotted in one graph
-                                { xvals=>xvals1, yvals=>yvals1 },
+                                { xvals=>xvals1, yvals=>yvals1, legend=>'desc' },
                                 { xvals=>xvals2, yvals=>yvals2 },
                                 ...
                             ],
@@ -58,11 +58,13 @@ sub plot_stats
     print $fh "par(bg='cornsilk')\n";
     print $fh "$file_type(file='$$stats{'outfile'}')\n";
 
+    my %legend;
     my $set  = 0;
     for my $vals (@{$$stats{'data'}})
     {
         if ( !$vals ) { Utils::error("Given ampty data set for $$stats{'outfile'}\n") }
         if ( !scalar @{$$vals{'xvals'}} ) { Utils::error("The data set is empty for $$stats{'outfile'}\n") }
+        if ( exists($$vals{legend}) ) { push @{$legend{label}}, qq["$$vals{legend}"]; }
 
         my $xrange = "x$set";
         my $yrange = "y$set";
@@ -126,12 +128,27 @@ yrange <- range($yrange)
         {
             my $lines = exists($$vals{lines}) ? $$vals{lines} : '';
             my $type  = exists($$vals{type}) ? "type='$$vals{type}'" : "type='l'";
+
+            if ( exists($$vals{legend}) ) 
+            { 
+                push @{$legend{col}}, $set+1; 
+                push @{$legend{lwd}}, 1; 
+            }
+
             print $fh "lines(x$set,y$set,$type,col=",$set+1,",pch=",$set+1,"$lines)\n";
             $set++;
         }
     }
     print $fh "title(main='$title', font.main=3)\n";
     print $fh $$stats{'r_cmd'} unless !exists($$stats{'r_cmd'});
+    if ( exists($legend{label}) )
+    {
+        my $col   = join(',',@{$legend{col}});
+        my $lwd   = join(',',@{$legend{lwd}});
+        my $label = join(',',@{$legend{label}});
+
+        print $fh qq[\nlegend("topright",c($label),col=c($col),lwd=c($lwd))\n];
+    }
 
     close $fh;
 
