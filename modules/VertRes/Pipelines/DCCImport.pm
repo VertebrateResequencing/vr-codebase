@@ -94,7 +94,7 @@ our $actions = [ { name     => 'import_fastqs',
                    provides => \&cleanup_provides } ];
 
 our %options = (do_cleanup => 0,
-                fastq_base => 'ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/',
+                fastq_base => 'ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp',
                 bsub_opts => '-q normal');
 
 =head2 new
@@ -190,7 +190,7 @@ sub import_fastqs {
     my $did_one = 0;
     for my $file_obj (@files) {
         my $file = $file_obj->name;
-        my $ftp_path = $self->{fastq_base}.$file;
+        my $ftp_path = $self->{fastq_base}.'/'.$file;
         my $fastq = $file_obj->hierarchy_name;
         my $data_path = $self->{io}->catfile($lane_path, $fastq);
         
@@ -234,8 +234,17 @@ unless (-s '$data_path') {
             copy('$ftp_path', '$precheck_file') || die "Failed to move '$ftp_path' to '$precheck_file'\n";
             my \$ok = \$io->verify_md5('$precheck_file', '$md5');
             unless (\$ok) {
-                unlink('$precheck_file');
-                die "md5 check on '$ftp_path' after moving it to hierarchy failed! The hierarchy copy was deleted.\n";
+                # we might have the md5 of the file in its uncompressed form
+                if ('$precheck_file' =~ /\.gz\$/) {
+                    system("gunzip -c $precheck_file > $precheck_file.uncompressed");
+                    \$ok = \$io->verify_md5('$precheck_file.uncompressed', '$md5');
+                    unlink('$precheck_file.uncompressed');
+                }
+                
+                unless (\$ok) {
+                    unlink('$precheck_file');
+                    die "md5 check on '$ftp_path' after moving it to hierarchy failed! The hierarchy copy was deleted.\n";
+                }
             }
         }
         else {
