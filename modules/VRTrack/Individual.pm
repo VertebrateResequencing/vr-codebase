@@ -551,4 +551,23 @@ sub update {
     return $success;
 }
 
+=head2 vrtrack
+
+  Arg [1]    : vrtrack (optional)
+  Example    : my $vrtrack = $obj->vrtrack();
+               $obj->vrtrack($vrtrack);
+  Description: Get/Set for vrtrack object.  NB you probably really shouldn't be setting vrtrack from outside this object unless you know what you're doing.
+  Returntype : integer
+
+=cut
+
+sub vrtrack {
+    my ($self,$vrtrack) = @_;
+    if (defined $vrtrack and $vrtrack != $self->{'vrtrack'}){
+        $self->{_dbh} = $vrtrack->{_dbh};
+        $self->{vrtrack} = $vrtrack;
+    }
+    return $self->{'vrtrack'};
+}
+
 1;
