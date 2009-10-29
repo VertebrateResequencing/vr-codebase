@@ -376,18 +376,33 @@ sub collect_detailed_bam_stats
             {
                 if ( $flag & $$FLAGS{'1st_in_pair'} )
                 {
-                    for my $stat (@stats) { $$out_stats{$stat}{'gc_content_fwd_freqs'}{$gc_count}++; }
+                    for my $stat (@stats) 
+                    { 
+                        $$out_stats{$stat}{'gc_content_fwd_freqs'}{$gc_count}++; 
+                        $$out_stats{$stat}{'gc_content_fwd_reads'}++; 
+                        $$out_stats{$stat}{'gc_content_fwd_bases'}+= $seq_len; 
+                    }
                 }
                 elsif ( $flag & $$FLAGS{'2nd_in_pair'} )
                 {
-                    for my $stat (@stats) { $$out_stats{$stat}{'gc_content_rev_freqs'}{$gc_count}++; }
+                    for my $stat (@stats) 
+                    { 
+                        $$out_stats{$stat}{'gc_content_rev_freqs'}{$gc_count}++; 
+                        $$out_stats{$stat}{'gc_content_rev_reads'}++; 
+                        $$out_stats{$stat}{'gc_content_rev_bases'}+= $seq_len; 
+                    }
                 }
                 else
                 { 
                     # Either it is a non-paired-read technology, or the 1st_in_pair and
                     #   and 2nd_in_pair flags got lost in the process. In that case, 
                     #   both 1st_in_pair and 2nd_in_pair should be set to zero.
-                    for my $stat (@stats) { $$out_stats{$stat}{'gc_content_fwd_freqs'}{$gc_count}++; }
+                    for my $stat (@stats) 
+                    { 
+                        $$out_stats{$stat}{'gc_content_single_freqs'}{$gc_count}++; 
+                        $$out_stats{$stat}{'gc_content_single_reads'}++; 
+                        $$out_stats{$stat}{'gc_content_single_bases'}+= $seq_len; 
+                    }
                 }
             }
         }
@@ -453,13 +468,12 @@ sub collect_detailed_bam_stats
             delete($$out_stats{$stat}{insert_size_freqs});
         }
 
-        my $avg_read_length = $$out_stats{$stat}{'reads_total'} ? $$out_stats{$stat}{'bases_total'}/$$out_stats{$stat}{'reads_total'} : 0;
         if ( exists($$out_stats{$stat}{'gc_content_fwd_freqs'}) )
         {
             $$out_stats{$stat}{'gc_content_forward'} = 
             {
                 data        => $$out_stats{$stat}{'gc_content_fwd_freqs'},
-                scale_x     => 100./$avg_read_length,
+                scale_x     => 100.*$$out_stats{$stat}{gc_content_fwd_reads}/$$out_stats{$stat}{gc_content_fwd_bases},
                 bin_size    => 1,
             };
             delete($$out_stats{$stat}{'gc_content_fwd_freqs'});
@@ -469,10 +483,20 @@ sub collect_detailed_bam_stats
             $$out_stats{$stat}{'gc_content_reverse'} =
             {
                 data        => $$out_stats{$stat}{'gc_content_rev_freqs'},
-                scale_x     => 100./$avg_read_length,
+                scale_x     => 100.*$$out_stats{$stat}{gc_content_rev_reads}/$$out_stats{$stat}{gc_content_rev_bases},
                 bin_size    => 1,
             };
             delete($$out_stats{$stat}{'gc_content_rev_freqs'});
+        }
+        if ( exists($$out_stats{$stat}{'gc_content_single_freqs'}) )
+        {
+            $$out_stats{$stat}{'gc_content_single'} =
+            {
+                data        => $$out_stats{$stat}{'gc_content_single_freqs'},
+                scale_x     => 100.*$$out_stats{$stat}{gc_content_single_reads}/$$out_stats{$stat}{gc_content_single_bases},
+                bin_size    => 1,
+            };
+            delete($$out_stats{$stat}{'gc_content_single_freqs'});
         }
     }
 
