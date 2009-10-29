@@ -530,9 +530,9 @@ sub update {
 	$dbh->{PrintError} = 0; # don't print an error message
 
 	eval {
-	    my $updsql = qq[UPDATE individual SET name=?, hierarchy_name=?,alias=?, sex=?, species_id=?, population_id=? WHERE individual_id = ? ];
+	    my $updsql = qq[UPDATE individual SET name=?, hierarchy_name=?,alias=?, sex=?, species_id=?, population_id=?, acc=? WHERE individual_id = ? ];
 	    
-	    $dbh->do ($updsql, undef, $self->name, $self->hierarchy_name, $self->alias, $self->sex,, $self->species_id, $self->population_id, $self->id);
+	    $dbh->do ($updsql, undef, $self->name, $self->hierarchy_name, $self->alias, $self->sex, $self->species_id, $self->population_id, $self->acc, $self->id);
 	};
 
 	if (!$@) {
