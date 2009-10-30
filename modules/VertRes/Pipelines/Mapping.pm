@@ -20,6 +20,17 @@ db  => {
     password => 'xxxxxxx',
 },
 
+limits => {
+    project => ['SRP000031'],
+    population => ['CEU', 'TSI'],
+    platform => ['SLX'],
+},
+
+coverage_limit => {
+    min_coverage => 20,
+    level => 'individual'
+},
+
 data => {
     slx_mapper => 'bwa',
     '454_mapper' => 'ssaha',
@@ -30,13 +41,38 @@ data => {
 
 # Reference option can be replaced with male_reference and female_reference
 # if you have 2 different references.
+
 # By default it will map all unmapped lanes in a random order. You can limit
-# it to only mapping certain lanes by suppling the following keys:
-# project_limit => ['SRP000031'],
-# population_limit => ['CEU', 'TSI'],
-# platform_limit => ['SLX']
-# (that would map only LowCov CEU or TSI lanes that had been imported but not
-#  mapped already and that had been sequenced on a Selexa platform)
+# it to only mapping certain lanes by suppling the limits key with a hash ref
+# as a value. The hash ref should contain options understood by
+# VertRes::Utils::Hierarchy->get_lanes(), as in the example above. The db
+# option defaults to the same db settings as supplied elsewhere in the config
+# file.
+# The example would map only LowCov CEU or TSI lanes that had been imported but
+# not mapped already and that had been sequenced on a Selexa platform.
+
+# You can also limit by minimum coverage using the coverage key, where
+# the value is a hash ref containing options understood by
+# VertRes::Utils::Hierarchy->hierarchy_coverage() with the addition of the
+# min_coverage option (db can be included if you want different settings to
+# the main db option), requiring the level option and ignoring the lane option.
+# Eg. this:
+# coverage_limit => {
+#     min_coverage => 20,
+#     level => 'individual',
+#     qc_passed => 1,
+#     mapped => 1,
+#     db => {
+#         database => 'g1k_reseq',
+#         host     => 'mcs4a',
+#         port     => 3306,
+#         user     => 'vreseq_ro'
+#     }
+# }
+# would for each candidate lane determine the mapped coverage of all the lanes
+# that share the same individual as the candidate, that had passed QC, according
+# to the g1k_reseq database. The coverage would have to be 20x or higher or
+# the candidate would be rejected (and so not mapped).
 
 # run the pipeline:
 run-pipeline -c pipeline.config -s 30
