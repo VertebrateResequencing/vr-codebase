@@ -368,7 +368,10 @@ sub parse_fod {
     while (<$fodfh>) {
         chomp;
         /\S/ || next;
-        -d $_ || $self->throw("fod file contained a line that wasn't a directory: $_");
+        unless (-d $_) {
+            $self->warn("fod file contained a line that wasn't a directory, ignoring: $_");
+            next;
+        }
         my $dir = abs_path($_);
         $dirs{$dir} = 1;
     }
