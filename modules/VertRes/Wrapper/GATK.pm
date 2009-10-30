@@ -6,7 +6,7 @@ VertRes::Wrapper::GATK - wrapper for Broad's GenomeAnalysisToolKit
 
 use VertRes::Wrapper::GATK;
 
-my $wrapper = VertRes::Wrapper::GATK->new(recalibrate => 1);
+my $wrapper = VertRes::Wrapper::GATK->new();
 
 # run something with the toolkit
 $wrapper->count_covariates('in.bam', 'in.bam');
