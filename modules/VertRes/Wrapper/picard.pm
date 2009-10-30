@@ -73,6 +73,9 @@ sub new {
     $self->{picard_dir} = $self->exe() || $DEFAULT_PICARD_DIR;
     $self->{base_exe} = 'java -Xmx5g -jar ';
     
+    # our bsub jobs will get killed if we don't select high-mem machines
+    $self->bsub_options(M => 5000000, R => "'select[mem>5000] rusage[mem=5000]'");
+    
     my $stringency = delete $self->{validation_stringency} || 'silent';
     $self->{_default_validation_stringency} = uc($stringency);
     
