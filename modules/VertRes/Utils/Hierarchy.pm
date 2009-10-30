@@ -178,43 +178,85 @@ sub lane_info {
     $info{imported} = $vrlane->is_processed('import');
     $info{mapped} = $vrlane->is_processed('mapped');
     
-    my $lib = VRTrack::Library->new($vrtrack, $vrlane->library_id);
-    $info{insert_size} = $lib->insert_size;
+    my %objs = $self->lane_hierarchy_objects($vrlane);
     
-    $info{library} = $lib->hierarchy_name || $self->throw("library name wasn't known for $rg");
-    my $sc = $lib->seq_centre;
-    $info{centre} = $sc->name || $self->throw("sequencing centre wasn't known for $rg");
-    my $st = $lib->seq_tech;
-    $info{technology} = $st->name || $self->throw("sequencing platform wasn't known for $rg");
-    
-    my $sample = VRTrack::Sample->new($vrtrack, $lib->sample_id);
-    my $individual = $sample->individual;
-    $info{sample} = $sample->name || $self->throw("sample name wasn't known for $rg");
-    $info{individual} = $individual->name || $self->throw("individual name wasn't known for $rg");
-    $info{individual_acc} = $individual->acc || $self->throw("sample accession wasn't known for $rg");
-    $info{individual_coverage} = $self->individual_coverage($individual,
-                                                            $args{genome_size} ? (genome_size => $args{genome_size}) : (),
-                                                            $args{gt_confirmed} ? (gt_confirmed => $args{gt_confirmed}) : (),
-                                                            $args{qc_passed} ? (qc_passed => $args{qc_passed}) : (),
-                                                            $args{mapped} ? (mapped => $args{mapped}) : ());
-    
-    my $pop = $individual->population;
-    $info{population} = $pop->name;
-    
-    my $project_obj = VRTrack::Project->new($vrtrack, $sample->project_id);
-    $info{project} = $project_obj->hierarchy_name;
+    $info{insert_size} = $objs{library}->insert_size;
+    $info{library} = $objs{library}->hierarchy_name || $self->throw("library name wasn't known for $rg");
+    $info{centre} = $objs{centre}->name || $self->throw("sequencing centre wasn't known for $rg");
+    $info{technology} = $objs{platform}->name || $self->throw("sequencing platform wasn't known for $rg");
+    $info{sample} = $objs{sample}->name || $self->throw("sample name wasn't known for $rg");
+    $info{individual} = $objs{individual}->name || $self->throw("individual name wasn't known for $rg");
+    $info{individual_acc} = $objs{individual}->acc || $self->throw("sample accession wasn't known for $rg");
+    $info{individual_coverage} = $self->hierarchy_coverage(individual => [$objs{individual}->name],
+                                                           $args{genome_size} ? (genome_size => $args{genome_size}) : (),
+                                                           $args{gt_confirmed} ? (gt_confirmed => $args{gt_confirmed}) : (),
+                                                           $args{qc_passed} ? (qc_passed => $args{qc_passed}) : (),
+                                                           $args{mapped} ? (mapped => $args{mapped}) : ());
+    $info{population} = $objs{population}->name;
+    $info{project} = $objs{project}->hierarchy_name;
     
     return %info;
 }
 
-=head2 individual_coverage
+=head2 lane_hierarchy_objects
 
- Title   : individual_coverage
- Usage   : my $coverage = $obj->individual_coverage($vrtrack_individual,
-                                                    genome_size => 3e9);
- Function: Discover the sequencing coverage of an individual.
+ Title   : lane_hierarchy_objects
+ Usage   : my $objects = $obj->lane_hierarchy_objects($lane);
+ Function: Get all the parent objects of a lane, from the library up to the
+           project.
+ Returns : hash with these key and value pairs:
+           project => VRTrack::Project object
+           sample => VRTrack::Sample object
+           individual => VRTrack::Individual object
+           population => VRTrack::Population object
+           platform => VRTrack::Seq_tech object
+           centre => VRTrack::Seq_centre object
+           library => VRTrack::Library object
+ Args    : VRTrack::Lane object
+
+=cut
+
+sub lane_hierarchy_objects {
+    my ($self, $vrlane) = @_;
+    
+    my $vrtrack = $vrlane->vrtrack;
+    my $lib = VRTrack::Library->new($vrtrack, $vrlane->library_id);
+    my $sc = $lib->seq_centre;
+    my $st = $lib->seq_tech;
+    my $sample = VRTrack::Sample->new($vrtrack, $lib->sample_id);
+    my $individual = $sample->individual;
+    my $pop = $individual->population;
+    my $project_obj = VRTrack::Project->new($vrtrack, $sample->project_id);
+    
+    return (project => $project_obj,
+            sample => $sample,
+            individual => $individual,
+            population => $pop,
+            platform => $st,
+            centre => $sc,
+            library => $lib);
+}
+
+=head2 hierarchy_coverage
+
+ Title   : hierarchy_coverage
+ Usage   : my $coverage = $obj->hierarchy_coverage(sample => ['NA19239'],
+                                                   genome_size => 3e9);
+ Function: Discover the sequencing coverage calculated over certain lanes.
  Returns : float
- Args    : individual name OR VRTrack::Individual object, optional hash:
+ Args    : At least one hierarchy level as a key, and an array ref of names
+           as values, eg. sample => ['NA19239'], platform => ['SLX', '454'].
+           Valid key levels are project, sample, individual, population,
+           platform, centre and library. (With no options at all, coverage will
+           be calculated over all lanes in the database)
+           -OR-
+           A special mode can be activated by supplying a single lane name with
+           the key lane, and a desired level with the level key, eg.:
+           lane => 'lane_name', level => 'individual'. This would calculate the
+           coverage of all the lanes that belong to the individual that the
+           supplied lane belonged to. Caching allows 
+
+           plus optional hash:
            genome_size => int (total genome size in bp; default 3e9)
            gt_confirmed => boolean (only consider genotype confirmed lanes;
                                     default false)
@@ -236,87 +278,98 @@ sub lane_info {
 
 =cut
 
-sub individual_coverage {
-    my ($self, $indiv_thing, %args) = @_;
-    my $genome_size = $args{genome_size} || 3e9;
-    my $gt = $args{gt_confirmed} ? 1 : 0;
-    my $qc = $args{qc_passed} ? 1 : 0;
-    my $mapped = $args{mapped} ? 1 : 0;
+sub hierarchy_coverage {
+    my ($self, %args) = @_;
+    my $genome_size = delete $args{genome_size} || 3e9;
+    my $gt = delete $args{gt_confirmed} ? 1 : 0;
+    my $qc = delete $args{qc_passed} ? 1 : 0;
+    my $mapped = delete $args{mapped} ? 1 : 0;
     
-    my $indiv;
-    if (ref($indiv_thing) && $indiv_thing->isa('VRTrack::Individual')) {
-        $indiv = $indiv_thing;
+    if (exists $args{lane} || exists $args{level}) {
+        my $lane = delete $args{lane};
+        my $level = delete $args{level};
+        $self->throw("Both lane and level options must be supplied if either of them are") unless $lane && $level;
+        
+        my @levels = qw(project sample individual population platform centre library);
+        foreach my $valid_level (@levels) {
+            $self->throw("'$valid_level' option is mutually exclusive of lane&level") if exists $args{$valid_level};
+        }
+        my %levels = map { $_ => 1 } @levels;
+        $self->throw("Supplied level '$level' wasn't valid") unless exists $levels{$level};
+        
+        my $db = $args{db} || $DEFAULT_DB_SETTINGS;
+        my $vrtrack = VRTrack::VRTrack->new($db);
+        my $vrlane = VRTrack::Lane->new_by_name($vrtrack, $lane) || $self->throw("Could not get a lane from the db with name '$lane'");
+        
+        my %objs = $self->lane_hierarchy_objects($vrlane);
+        $self->throw("Could not get the $level of lane $lane") unless defined $objs{$level};
+        
+        $args{$level} = [$objs{$level}->name];
     }
-    else {
-        my $vrtrack;
-        if ($args{vrtrack}) {
-            $vrtrack = $args{vrtrack};
+    
+    my @store = ($gt, $qc, $mapped);
+    while (my ($key, $val) = each %args) {
+        unless (ref($val)) {
+            push(@store, $key, $val);
         }
         else {
-            my $db = $args{db} || $DEFAULT_DB_SETTINGS;
-            $vrtrack = VRTrack::VRTrack->new($db);
-        }
-        
-        $indiv = VRTrack::Individual->new_by_name($vrtrack, $indiv_thing);
-    }
-    $indiv || return;
-    
-    my $ind_id = $indiv->id;
-    my $store = "$ind_id,$gt,$qc,$mapped";
-    
-    unless (defined $self->{_indiv_bases}->{$store}) {
-        my $vrtrack = $indiv->vrtrack;
-        
-        my $bps = 0;
-        
-        # for all the samples in the db with our individual id
-        foreach my $project (@{$vrtrack->projects}) {
-            foreach my $sample (@{$project->samples}) {
-                next unless $sample->individual_id eq $ind_id;
-                
-                # sum raw bases for all the qc passed, gt confirmed and not
-                # withdrawn lanes of all the libraries under this sample
-                foreach my $library (@{$sample->libraries}){
-                    foreach my $lane (@{$library->lanes}){
-                        next if $lane->is_withdrawn;
-                        if ($gt) {
-                            next unless $lane->genotype_status eq 'confirmed';
-                        }
-                        if ($qc) {
-                            next unless $lane->qc_status eq 'passed';
-                        }
-                        
-                        my $bp = $lane->raw_bases;
-                        
-                        if ($mapped) {
-                            my $mapstats = $lane->latest_mapping;
-                            
-                            if ($mapstats && $mapstats->raw_bases){
-                                if ($mapstats->genotype_ratio) {
-                                    # this is a QC mapped lane, so we make a projection
-                                    $bps += $bp * ($mapstats->rmdup_bases_mapped / $mapstats->raw_bases);
-                                }
-                                else {
-                                    # this is a fully mapped lane, so we know the real answer
-                                    $bps += $mapstats->bases_mapped;
-                                }
-                            }
-                            else {
-                                $bps += $bp * 0.9; # not sure what else to do here?
-                            }
-                        }
-                        else {
-                            $bps += $bp;
-                        }
-                    }
+            if (ref($val) eq 'ARRAY') {
+                push(@store, $key, @{$val});
+            }
+            else {
+                push(@store, $key);
+                while (my ($sub_key, $sub_val) = each %{$val}) {
+                    push(@store, $sub_key, $sub_val);
                 }
             }
         }
+    }
+    my $store = join(",", sort @store);
+    
+    unless (defined $self->{_cover_bases}->{$store}) {
+        my @lanes = $self->get_lanes(%args);
+        @lanes || return 0;
+        my $bps = 0;
         
-        $self->{_indiv_bases}->{$store} = $bps;
+        # sum raw bases for all the qc passed, gt confirmed and not withdrawn
+        # lanes
+        foreach my $lane (@lanes) {
+            next if $lane->is_withdrawn;
+            if ($gt) {
+                next unless ($lane->genotype_status && $lane->genotype_status eq 'confirmed');
+            }
+            if ($qc) {
+                next unless ($lane->qc_status && $lane->qc_status eq 'passed');
+            }
+            
+            my $bp = $lane->raw_bases;
+            
+            if ($mapped) {
+                my $mapstats = $lane->latest_mapping;
+                
+                if ($mapstats && $mapstats->raw_bases){
+                    if ($mapstats->genotype_ratio) {
+                        # this is a QC mapped lane, so we make a projection
+                        $bps += $bp * ($mapstats->rmdup_bases_mapped / $mapstats->raw_bases);
+                    }
+                    else {
+                        # this is a fully mapped lane, so we know the real answer
+                        $bps += $mapstats->bases_mapped;
+                    }
+                }
+                else {
+                    $bps += $bp * 0.9; # not sure what else to do here?
+                }
+            }
+            else {
+                $bps += $bp;
+            }
+        }
+        
+        $self->{_cover_bases}->{$store} = $bps;
     }
     
-    return sprintf('%.2f', $self->{_indiv_bases}->{$store} / $genome_size);
+    return sprintf('%.2f', $self->{_cover_bases}->{$store} / $genome_size);
 }
 
 =head2 get_lanes

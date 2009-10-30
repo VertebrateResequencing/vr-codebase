@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 17;
+    use Test::Most tests => 20;
     
     use_ok('VertRes::Utils::Hierarchy');
     use_ok('VertRes::IO');
@@ -67,6 +67,14 @@ is $created_links, 4, 'create_release_hierarchy created the correct bam symlinks
 ok my %info = $h_util->lane_info('SRR014870'), 'lane_info ran ok';
 is $info{sample}, 'NA18560', 'lane_info gave correct sample';
 # needs more thougher tests for all the different ways of calling lane_info...
+
+# hierarchy_coverage test
+my $mouse_reseq_track_db = { host => 'mcs4a', port => 3306, user => 'vreseq_ro', database => 'mouse_reseq_track' };
+my $cov = $h_util->hierarchy_coverage(individual => ['129P2/OlaHsd'], db => $mouse_reseq_track_db, qc_passed => 1, mapped => 1);
+cmp_ok $cov, '>=', 22.39, 'hierarchy_coverage direct test';
+my $cov2 = $h_util->hierarchy_coverage(lane => '3034_8', level => 'individual', db => $mouse_reseq_track_db, qc_passed => 1, mapped => 1);
+cmp_ok $cov, '>=', 22.39, 'hierarchy_coverage lane level test';
+is $cov, $cov2, 'coverage was the same in both tests';
 
 # dcc_filename test
 is $h_util->dcc_filename($bam_file), 'NA11918.SLX.bwa.SRP000031.2009_08', 'dcc_filename test';
