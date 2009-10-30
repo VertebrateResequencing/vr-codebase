@@ -237,7 +237,28 @@ unless (-s '$data_path') {
                 # we might have the md5 of the file in its uncompressed form
                 if ('$precheck_file' =~ /\.gz\$/) {
                     system("gunzip -c $precheck_file > $precheck_file.uncompressed");
-                    \$ok = \$io->verify_md5('$precheck_file.uncompressed', '$md5');
+                    my \$uncomp_md5 = \$io->calculate_md5('$precheck_file.uncompressed');
+                    if (\$uncomp_md5 eq '$md5') {
+                        \$ok = 1;
+                        my \$opened = open(my \$md5fh, '>', '$data_path.md5');
+                        unless (\$opened) {
+                            unlink('$precheck_file');
+                            die "Could not write to $data_path.md5\n";
+                        }
+                        print \$md5fh \$uncomp_md5, "\n";
+                        close(\$md5fh);
+                        \$opened = open(\$md5fh, '<', '$data_path.md5');
+                        unless (\$opened) {
+                            unlink('$precheck_file');
+                            die "Could not open $data_path.md5\n";
+                        }
+                        my \$confirm_md5 = <\$md5fh>;
+                        chomp(\$confirm_md5);
+                        unless (\$confirm_md5 eq \$uncomp_md5) {
+                            unlink('$precheck_file');
+                            die "Tried to write the actual md5 to '$data_path.md5' (\$uncomp_md5), but something went wrong\n";
+                        }
+                    }
                     unlink('$precheck_file.uncompressed');
                 }
                 
@@ -395,6 +416,7 @@ sub update_db {
     my $attempted_updates = 0;
     my $successful_updates = 0;
     my $largest_read_len = 0;
+    my @md5_files;
     for my $file_obj (@files) {
         my $file = $file_obj->name;
         my $fastq = $file_obj->hierarchy_name;
@@ -406,8 +428,13 @@ sub update_db {
         
         # check the md5; the existing md5 in the db may correspond to the md5
         # of the uncompressed fastq, but we want the compressed md5
-        my $actual_md5 = $self->{io}->calculate_md5($data_path);
-        unless ($actual_md5 eq $file_obj->md5) {
+        my $actual_md5_file = $data_path.'.md5';
+        if (-e $actual_md5_file) {
+            push(@md5_files, $actual_md5_file);
+            open(my $md5fh, $actual_md5_file) || $self->throw("Could not open $actual_md5_file");
+            my $actual_md5 = <$md5fh>;
+            close($md5fh);
+            chomp($actual_md5);
             $file_obj->md5($actual_md5);
         }
         
@@ -441,6 +468,9 @@ sub update_db {
     $vrtrack->transaction_commit();
     
     if ($attempted_updates == $successful_updates) {
+        foreach my $md5_file (@md5_files) {
+            unlink($md5_file);
+        }
         return $self->{Yes};
     }
     else {
