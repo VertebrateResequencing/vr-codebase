@@ -2,10 +2,6 @@ package Vcf;
 
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcfv3.2
 #
-# Questions:
-# - FT record - semi-colon in specs, comma in the example
-# - missing gtype: ./. or .
-#
 # Authors: lh3, pd3
 # for VCF v3.2
 
@@ -100,8 +96,20 @@ sub validate
     if ( !$vcf->{header} ) { $vcf->warn("No VCF header found.\n"); }
     if ( !$vcf->{columns} ) { $vcf->warn("No column descriptions found.\n"); }
 
+    my $warn_sorted=1;
+    my ($prev_chrm,$prev_pos);
     while (my $x=$vcf->parse_next_data_line()) 
-    { 
+    {
+        if ( $warn_sorted )
+        {
+            if ( $prev_chrm && $prev_chrm eq $$x{CHROM} && $prev_pos > $$x{POS} ) 
+            { 
+                $vcf->warn("The file not sorted, seee e.g. $prev_chrm:$prev_pos and $$x{CHROM}:$$x{POS}\n");
+                $warn_sorted = 0;
+            }
+            $prev_chrm = $$x{CHROM};
+            $prev_pos  = $$x{POS};
+        }
         if ( exists($$x{INFO}{AN}) || exists($$x{INFO}{AC}) )
         {
             my ($an,$ac) = $vcf->calc_an_ac($$x{gtypes});
@@ -134,6 +142,7 @@ sub new
     $$self{buffer}  = [];       # buffer stores the lines in the reverse order
     $$self{header}  = undef;
     $$self{columns} = undef;    # column names 
+    $$self{mandatory} = ['CHROM','POS','ID','REF','ALT','QUAL','FILTER','INFO','FORMAT']; 
     return $self;
 }
 
@@ -199,7 +208,7 @@ sub sprint_line
 
     for my $gt (values %gtypes)
     {
-        $out .= "\t" . join(':', map { $$gt{$_} ? $$gt{$_} : '' } @{$$record{FORMAT}});
+        $out .= "\t" . join(':', map { exists($$gt{$_}) ? $$gt{$_} : '' } @{$$record{FORMAT}});
     }
 
     $out .= "\n";
@@ -509,13 +518,13 @@ sub read_column_names
 
     # Check the names of the mandatory columns
     if ( $ncols < 8 ) { $self->throw("Mssing mandatory columns in [$line].\n"); }
-    my @fields = ('CHROM','POS','ID','REF','ALT','QUAL','FILTER','INFO','FORMAT');
+    my $fields = $$self{mandatory};
     for (my $i=0; $i<$ncols; $i++)
     {
-        if ( @fields <= $i ) { last; }
-        if ( $cols[$i] ne $fields[$i] ) 
+        if ( @$fields <= $i ) { last; }
+        if ( $cols[$i] ne $$fields[$i] ) 
         { 
-            $self->throw("Expected mandatory column [$fields[$i]], got [$cols[$i]]\n"); 
+            $self->throw("Expected mandatory column [$$fields[$i]], got [$cols[$i]]\n"); 
         }
     }
     $$self{columns} = \@cols;
