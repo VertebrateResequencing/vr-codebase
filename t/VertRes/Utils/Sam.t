@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 56;
+    use Test::Most tests => 59;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::IO');
@@ -170,6 +170,11 @@ ok open(my $tbfh, $given_bas), 'opened result .bas';
 my @given = <$tbfh>;
 is_deeply \@given, \@expected, 'bas output was as expected';
 
+# stats method
+ok $sam_util->stats($sorted_bam), 'stats test';
+foreach my $file ($io->catfile($temp_dir, 'sorted.bam.flagstat'), $io->catfile($temp_dir, 'sorted.bam.bas')) {
+    ok -s $file, 'stats output file exists';
+}
 
 exit;
 

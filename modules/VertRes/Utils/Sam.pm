@@ -437,7 +437,7 @@ sub merge {
  Usage   : $obj->stats('in.bam', 'in2.bam', ...);
  Function: Generate both flagstat and bas files for the given bam files.
  Returns : boolean (true on success)
- Args    : list of bam files (for each, a .bamstat and .flagstat file will be
+ Args    : list of bam files (for each, a .bas and .flagstat file will be
            created)
 
 =cut
@@ -449,17 +449,23 @@ sub stats {
     my $all_ok = 1;
     foreach my $in_bam (@in_bams) {
         my $flagstat = $in_bam.'.flagstat';
-        $wrapper->flagstat($in_bam, $flagstat);
+        $wrapper->flagstat($in_bam, $flagstat.'.tmp');
         unless ($wrapper->run_status() >= 1) {
             $all_ok = 0;
             unlink($flagstat);
         }
+        else {
+            move($flagstat.'.tmp', $flagstat) || ($all_ok = 0);
+        }
         
         my $bas = $in_bam.'.bas';
-        my $ok = $self->bas($in_bam, $bas);
+        my $ok = $self->bas($in_bam, $bas.'.tmp');
         unless ($ok) {
             $all_ok = 0;
             unlink($bas);
+        }
+        else {
+            move($bas.'.tmp', $bas) || ($all_ok = 0);
         }
     }
     
