@@ -411,6 +411,12 @@ sub _get_read_args {
         }
     }
     
+    # Petr's mouse track database can have a single se fastq named _1
+    if (@fastqs == 1 && ! $fastq_info[0]->[0] && $fastq_info[1]->[0] && ! $self->{vrlane}->is_paired) {
+        $fastq_info[0]->[0] = $fastqs[0];
+        $fastq_info[1]->[0] = undef;
+    }
+    
     my @read_args;
     if ($fastq_info[0]->[0]) {
         $read_args[0] = ["read0 => '".$self->{io}->catfile($lane_path, $fastq_info[0]->[0])."'"];
@@ -419,6 +425,7 @@ sub _get_read_args {
         $read_args[1] = ["read1 => '".$self->{io}->catfile($lane_path, $fastq_info[1]->[0])."', ",
                          "read2 => '".$self->{io}->catfile($lane_path, $fastq_info[2]->[0])."'"];
     }
+    
     @read_args || $self->throw("$lane_path had no compatible set of fastq files!");
     
     if ($ended eq 'se') {
