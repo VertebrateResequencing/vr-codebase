@@ -306,7 +306,9 @@ sub do_mapping {
             @bfqs = ($bfq1);
         }
         
-        # work out 'e', '1' and '2'
+        # work out 'e', '1' and '2'. If these turn out to be less than maq's
+        # minimum size of 12, don't try to map
+        my @final_bfqs = @bfqs;
         unless (defined $args{e} && defined $args{1} && (@fqs > 1 ? defined $args{2} : 1)) {
             my @fqcps = $self->_get_fastq_details(@fqs);
             my @read_lengths;
@@ -329,15 +331,31 @@ sub do_mapping {
                 if ($read_lengths[0] < $_ && ($read_lengths[1] ? $read_lengths[1] < $_ : 1)) {
                     $args{e} = $e_parameter{$_} unless defined $args{e};
                     
-                    $args{1} = $read_lengths[0];
-                    $args{2} = $read_lengths[1] if $read_lengths[1];
+                    @final_bfqs = ();
+                    if ($read_lengths[0] <= 12) {
+                        $self->warn("fastq file $fqs[0] will be skipped, since after hard-clipping to position $read_lengths[0] it is too small to map");
+                    }
+                    else {
+                        $args{1} = $read_lengths[0];
+                        push(@final_bfqs, $bfqs[0]);
+                    }
+                    
+                    if ($read_lengths[1]) {
+                        if ($read_lengths[1] <= 12) {
+                            $self->warn("fastq file $fqs[1] will be skipped, since after hard-clipping to position $read_lengths[1] it is too small to map");
+                        }
+                        else {
+                            push(@final_bfqs, $bfqs[1]);
+                        }
+                    }
+                    
                     last;
                 }
             }
         }
         
         # work out 'a' and 'A'
-        if (@fqs > 1) {
+        if (@final_bfqs > 1) {
             my $a = $args{a};
             # the aim with insert size settings is to capture everything within
             # a reasonable distance as being paired. So in the first instance
@@ -355,8 +373,13 @@ sub do_mapping {
             delete $args{A};
         }
         
-        $self->map($out_map, $bfa, \@bfqs, %args);
-        $self->throw("failed during the map, giving up for now") unless $self->run_status >= 1;
+        if (@final_bfqs) {
+            $self->map($out_map, $bfa, \@final_bfqs, %args);
+            $self->throw("failed during the map, giving up for now") unless $self->run_status >= 1;
+        }
+        else {
+            $self->throw("none of the input fastqs had long enough sequences after clipping to map");
+        }
     }
     
     my $io = VertRes::IO->new();
