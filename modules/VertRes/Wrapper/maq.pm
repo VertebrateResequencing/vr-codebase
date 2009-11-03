@@ -287,15 +287,16 @@ sub do_mapping {
         }
     }
     
+    # map
+    my $out_map = $out_sam;
+    $out_map =~ s/\.sam$/.map/;
+    
     # our output sam must contain all reads, including the unmapped, so we
     # force 'u' on
     unless (defined $args{u}) {
         $args{u} = $out_map.'.unmapped';
     }
     
-    # map
-    my $out_map = $out_sam;
-    $out_map =~ s/\.sam$/.map/;
     unless (-s $out_map) {
         my @bfqs;
         if (@fqs == 2) {
