@@ -287,6 +287,12 @@ sub do_mapping {
         }
     }
     
+    # our output sam must contain all reads, including the unmapped, so we
+    # force 'u' on
+    unless (defined $args{u}) {
+        $args{u} = $out_map.'.unmapped';
+    }
+    
     # map
     my $out_map = $out_sam;
     $out_map =~ s/\.sam$/.map/;
@@ -346,12 +352,6 @@ sub do_mapping {
         else {
             delete $args{a};
             delete $args{A};
-        }
-        
-        # our output sam must contain all reads, including the unmapped, so we
-        # force 'u' on
-        unless (defined $args{u}) {
-            $args{u} = $out_map.'.unmapped';
         }
         
         $self->map($out_map, $bfa, \@bfqs, %args);
