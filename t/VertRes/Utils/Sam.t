@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 59;
+    use Test::Most tests => 63;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::IO');
@@ -19,6 +19,8 @@ my $bam1_file = $io->catfile('t', 'data', 'nsort1.bam');
 ok -s $bam1_file, 'first bam file ready to test with';
 my $bam2_file = $io->catfile('t', 'data', 'nsort2.bam');
 ok -s $bam2_file, 'second bam file ready to test with';
+my $headed_bam = $io->catfile('t', 'data', 'headed2.bam');
+ok -s $headed_bam, 'headed bam file ready to test with';
 my $headless_sam = $io->catfile('t', 'data', 'simple.sam');
 ok -s $headless_sam, 'headerless sam file ready to test with';
 my $ref = $io->catfile('t', 'data', 'S_suis_P17.fa');
@@ -175,6 +177,26 @@ ok $sam_util->stats($sorted_bam), 'stats test';
 foreach my $file ($io->catfile($temp_dir, 'sorted.bam.flagstat'), $io->catfile($temp_dir, 'sorted.bam.bas')) {
     ok -s $file, 'stats output file exists';
 }
+
+# split_bam_by_sequence method
+my @splits = $sam_util->split_bam_by_sequence($headed_bam,
+                                              output_dir => $temp_dir,
+                                              ignore => '^N[TC]_\d+');
+my @expected_splits;
+foreach (1..22, 'X', 'MT') {
+    push(@expected_splits, $io->catfile($temp_dir, $_.'.headed2.bam'));
+}
+@expected_splits = sort @expected_splits;
+@splits = sort @splits;
+is_deeply \@splits, \@expected_splits, 'split_bam_by_sequence claimed to make the appropriate files';
+my $actually_created = 0;
+my $created_lines = 0;
+foreach my $split (@expected_splits) {
+    $actually_created += -s $split ? 1 : 0;
+    $created_lines += get_bam_body($split);
+}
+is $actually_created, 24, 'split_bam_by_sequence actually created all the split bams';
+is $created_lines, 32, 'split_bam_by_sequence created split bams with appropriate numbers of entries';
 
 exit;
 

@@ -153,6 +153,74 @@ sub bams_are_similar {
     return 1;
 }
 
+=head2 split_bam_by_sequence
+
+ Title   : split_bam_by_sequence
+ Usage   : my @bams = $obj->split_bam_by_sequence($bam_file);
+ Function: Splits a bam file into multiple bam files, one for each sequence the
+           reads were aligned to.
+ Returns : list of the bam files it made
+ Args    : bam filename, optionally these hash options:
+           ignore => 'regex' to ignore sequences with ids that match the regex,
+                     eg. ignore => '^N[TC]_\d+' to avoid making splits for
+                     contigs
+           output_dir => 'path' to specify where the split bams are created;
+                         default is the same dir as the input bam
+
+=cut
+
+sub split_bam_by_sequence {
+    my ($self, $bam, %opts) = @_;
+    
+    my $sw = VertRes::Wrapper::samtools->new(verbose => $self->verbose,
+                                             run_method => 'open',
+                                             quiet => 1);
+    
+    my $basename = basename($bam);
+    my $output_dir;
+    if (defined $opts{output_dir}) {
+        $output_dir = $opts{output_dir};
+    }
+    else {
+        $output_dir = $bam;
+        $output_dir =~ s/$basename$//;
+    }
+    
+    # find out what sequences there are
+    my $bamfh = $sw->view($bam, undef, H => 1);
+    my $sp = VertRes::Parser::sam->new(fh => $bamfh);
+    my %all_sequences = $sp->sequence_info();
+    
+    $sw->run_method('system');
+    
+    # we must have a bam index file
+    my $bai = $bam.'.bai';
+    my $created_bai = 0;;
+    unless (-s $bai) {
+        $sw->index($bam, $bai);
+        $sw->run_status >= 1 || $self->throw("Failed to create $bai");
+        $created_bai = 1;
+    }
+    
+    # make a split for each sequence
+    my @out_bams;
+    foreach my $seq (keys %all_sequences) {
+        next if ($opts{ignore} && $seq =~ /$opts{ignore}/);
+        
+        my $out_bam = File::Spec->catfile($output_dir, $seq.'.'.$basename);
+        
+        $sw->view($bam, $out_bam, regions => [$seq], h => 1, b => 1);
+        $sw->run_status >= 1 || $self->throw("Failed to create split $out_bam");
+        
+        push(@out_bams, $out_bam);
+    }
+    
+    if ($created_bai) {
+        unlink($bai);
+    }
+    
+    return @out_bams;
+}
 
 =head2 add_sam_header
 
