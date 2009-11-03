@@ -307,7 +307,7 @@ sub do_mapping {
         }
         
         # work out 'e', '1' and '2'. If these turn out to be less than maq's
-        # minimum size of 12, don't try to map
+        # minimum size of 12, set clip to sequence length
         unless (defined $args{e} && defined $args{1} && (@fqs > 1 ? defined $args{2} : 1)) {
             my @fqcps = $self->_get_fastq_details(@fqs);
             my @read_lengths;
