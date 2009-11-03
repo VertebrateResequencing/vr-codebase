@@ -297,6 +297,9 @@ sub do_mapping {
         $args{u} = $out_map.'.unmapped';
     }
     
+    # sometimes we won't use all input fastqs, so we need to make a note of that
+    my $skipped_fqs_file = $out_map.'.skipped_fastqs';
+    
     unless (-s $out_map) {
         my @bfqs;
         if (@fqs == 2) {
@@ -307,7 +310,8 @@ sub do_mapping {
         }
         
         # work out 'e', '1' and '2'. If these turn out to be less than maq's
-        # minimum size of 12, set clip to sequence length
+        # minimum size of 12, don't try to map
+        my @final_bfqs = @bfqs;
         unless (defined $args{e} && defined $args{1} && (@fqs > 1 ? defined $args{2} : 1)) {
             my @fqcps = $self->_get_fastq_details(@fqs);
             my @read_lengths;
@@ -317,10 +321,6 @@ sub do_mapping {
                 # calculate the clip point
                 my $length = $fqu->clip_point($fqs[$i]);
                 if ($length == -1) {
-                    $length = int($fqcp->avg_length);
-                }
-                elsif ($length <= 12) {
-                    $self->warn("Clip point for $fqs[$i] was $length, but that is too small to map; leaving clip point as sequence length to allow mapping to proceed, even though most likely most reads will fail to map");
                     $length = int($fqcp->avg_length);
                 }
                 else {
@@ -334,15 +334,37 @@ sub do_mapping {
                 if ($read_lengths[0] < $_ && ($read_lengths[1] ? $read_lengths[1] < $_ : 1)) {
                     $args{e} = $e_parameter{$_} unless defined $args{e};
                     
-                    $args{1} = $read_lengths[0];
-                    $args{2} = $read_lengths[1] if $read_lengths[1];
+                    @final_bfqs = ();
+                    if ($read_lengths[0] <= 12) {
+                        $self->warn("fastq file $fqs[0] will be skipped, since after hard-clipping to position $read_lengths[0] it is too small to map");
+                        open(my $skipped_fh, '>>', $skipped_fqs_file) || $self->throw("Couldn't write to $skipped_fqs_file");
+                        print $skipped_fh 0, "\n";
+                        close($skipped_fh);
+                    }
+                    else {
+                        $args{1} = $read_lengths[0];
+                        push(@final_bfqs, $bfqs[0]);
+                    }
+                    
+                    if ($read_lengths[1]) {
+                        if ($read_lengths[1] <= 12) {
+                            $self->warn("fastq file $fqs[1] will be skipped since, after hard-clipping to position $read_lengths[1], sequences are too short to map");
+                            open(my $skipped_fh, '>>', $skipped_fqs_file) || $self->throw("Couldn't write to $skipped_fqs_file");
+                            print $skipped_fh 1, "\n";
+                            close($skipped_fh);
+                        }
+                        else {
+                            push(@final_bfqs, $bfqs[1]);
+                        }
+                    }
+                    
                     last;
                 }
             }
         }
         
         # work out 'a' and 'A'
-        if (@fqs > 1) {
+        if (@final_bfqs > 1) {
             my $a = $args{a};
             # the aim with insert size settings is to capture everything within
             # a reasonable distance as being paired. So in the first instance
@@ -360,8 +382,13 @@ sub do_mapping {
             delete $args{A};
         }
         
-        $self->map($out_map, $bfa, \@bfqs, %args);
-        $self->throw("failed during the map, giving up for now") unless $self->run_status >= 1;
+        if (@final_bfqs) {
+            $self->map($out_map, $bfa, \@final_bfqs, %args);
+            $self->throw("failed during the map, giving up for now") unless $self->run_status >= 1;
+        }
+        else {
+            $self->warn("none of the input fastqs had long enough sequences after clipping to map; will generate a pure unmapped sam file");
+        }
     }
     
     my $io = VertRes::IO->new();
@@ -401,8 +428,47 @@ sub do_mapping {
                 print $sfh "$id\t$flags\t*\t0\t0\t*\t*\t0\t0\t$seq\t$qual\n";
             }
         }
+        if (-s $skipped_fqs_file) {
+            open(my $skipped_fh, '<', $skipped_fqs_file) || $self->throw("Couldn't open $skipped_fqs_file");
+            my @skipped_fqs;
+            while (<$skipped_fh>) {
+                chomp;
+                next unless /^\d+$/;
+                push(@skipped_fqs, $fqs[$_]);
+            }
+            
+            open(my $sfh, '>>', $tmp_sam) || $self->throw("Could not append to $tmp_sam");
+            my $su = VertRes::Utils::Sam->new();
+            my %seen_reads;
+            foreach my $fq (@skipped_fqs) {
+                my $fp = VertRes::Parser::fastq->new(file => $fq);
+                my $rh = $fp->result_holder;
+                
+                while ($fp->next_result) {
+                    my ($id, $seq, $qual) = @{$rh};
+                    
+                    # work out the SAM flags
+                    my $flags;
+                    if (exists $seen_reads{$id}) {
+                        $flags = $su->calculate_flag(paired_tech => $paired,
+                                                     mate_unmapped => 1,
+                                                     self_unmapped => 1,
+                                                     '2nd_in_pair' => 1);
+                    }
+                    else {
+                        $flags = $su->calculate_flag(paired_tech => $paired,
+                                                     mate_unmapped => 1,
+                                                     self_unmapped => 1,
+                                                     '1st_in_pair' => 1);
+                        $seen_reads{$id} = 1;
+                    }
+                    
+                    print $sfh "$id\t$flags\t*\t0\t0\t*\t*\t0\t0\t$seq\t$qual\n";
+                }
+            }
+        }
         
-        # check the sam file isn't truncted
+        # check the sam file isn't truncated
         my $num_reads = 0;
         my @fqcps = $self->_get_fastq_details(@fqs);
         foreach my $fqcp (@fqcps) {
