@@ -41,7 +41,9 @@ which will pick up on newly imported lanes and map them.
 It will also work to import non-G1K fastqs in a local directory into a G1K-style
 hierarchy, assuming a fake sequence.index has been used with update_vrmeta.pl on
 a custom database. In this case, the import.conf file must contain the
-fastq_base option:
+fastq_base option. If you don't have md5, number of reads and number of bases
+information on the fastqs, you'll also need to supply the
+calculate_missing_information option:
 
 root    => '/abs/path/to/root/data/dir',
 module  => 'VertRes::Pipelines::DCCImport',
@@ -56,7 +58,8 @@ db  => {
 },
 
 data => {
-    fastq_base => '/abs/path/to/flattened/fastq/dir'
+    fastq_base => '/abs/path/to/flattened/fastq/dir',
+    calculate_missing_information => 1
 },
 
 =head1 AUTHOR
@@ -95,7 +98,8 @@ our $actions = [ { name     => 'import_fastqs',
 
 our %options = (do_cleanup => 0,
                 fastq_base => 'ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp',
-                bsub_opts => '-q normal');
+                bsub_opts => '-q normal',
+                calculate_missing_information => 0);
 
 =head2 new
 
@@ -111,6 +115,10 @@ our %options = (do_cleanup => 0,
            fastq_base => ftp url containing the data dir (default exists);
                          can also be a local path to the dir containing the
                          fastq files
+           calculate_missing_information => boolean (if this is true and the
+                         database does not contain md5, reads or bases info on
+                         a fastq, then these will be calculated and stored in
+                         the db; otherwise it will fail with an error)
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -201,9 +209,17 @@ sub import_fastqs {
         next if (-s $data_path && -s $fqc_file);
         $did_one++;
         
-        my $md5 = $file_obj->md5 || $self->throw("missing md5 for file $file");
-        my $total_reads = $file_obj->raw_reads || $self->throw("missing raw_reads for file $file");
-        my $total_bases = $file_obj->raw_bases || $self->throw("missing raw_bases for file $file");
+        my $md5 = $file_obj->md5 ||= '';
+        my $total_reads = $file_obj->raw_reads ||= '';
+        my $total_bases = $file_obj->raw_bases ||= '';
+        
+        my $file_id;
+        unless ($self->{calculate_missing_information}) {
+            $md5 || $self->throw("missing md5 for file $file");
+            $total_reads || $self->throw("missing raw_reads for file $file");
+            $total_bases || $self->throw("missing raw_bases for file $file");
+            $file_id = $file->id;
+        }
         
         my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}."import_$fastq.pl");
         
@@ -224,7 +240,7 @@ unless (-s '$data_path') {
             # download to a temp-named file
             my \$got = \$io->get_remote_file('$ftp_path',
                                              save => '$precheck_file',
-                                             md5  => '$md5');
+                                             '$md5' ? (md5  => '$md5') : ());
             
             unless (\$got eq '$precheck_file') {
                 die "Failed to download '$ftp_path' to '$precheck_file'\n";
@@ -232,39 +248,42 @@ unless (-s '$data_path') {
         }
         elsif (-s '$ftp_path') {
             copy('$ftp_path', '$precheck_file') || die "Failed to move '$ftp_path' to '$precheck_file'\n";
-            my \$ok = \$io->verify_md5('$precheck_file', '$md5');
-            unless (\$ok) {
-                # we might have the md5 of the file in its uncompressed form
-                if ('$precheck_file' =~ /\.gz\$/) {
-                    system("gunzip -c $precheck_file > $precheck_file.uncompressed");
-                    my \$uncomp_md5 = \$io->calculate_md5('$precheck_file.uncompressed');
-                    if (\$uncomp_md5 eq '$md5') {
-                        \$ok = 1;
-                        my \$opened = open(my \$md5fh, '>', '$data_path.md5');
-                        unless (\$opened) {
-                            unlink('$precheck_file');
-                            die "Could not write to $data_path.md5\n";
-                        }
-                        print \$md5fh \$uncomp_md5, "\n";
-                        close(\$md5fh);
-                        \$opened = open(\$md5fh, '<', '$data_path.md5');
-                        unless (\$opened) {
-                            unlink('$precheck_file');
-                            die "Could not open $data_path.md5\n";
-                        }
-                        my \$confirm_md5 = <\$md5fh>;
-                        chomp(\$confirm_md5);
-                        unless (\$confirm_md5 eq \$uncomp_md5) {
-                            unlink('$precheck_file');
-                            die "Tried to write the actual md5 to '$data_path.md5' (\$uncomp_md5), but something went wrong\n";
-                        }
-                    }
-                    unlink('$precheck_file.uncompressed');
-                }
-                
+            
+            if ('$md5') {
+                my \$ok = \$io->verify_md5('$precheck_file', '$md5');
                 unless (\$ok) {
-                    unlink('$precheck_file');
-                    die "md5 check on '$ftp_path' after moving it to hierarchy failed! The hierarchy copy was deleted.\n";
+                    # we might have the md5 of the file in its uncompressed form
+                    if ('$precheck_file' =~ /\.gz\$/) {
+                        system("gunzip -c $precheck_file > $precheck_file.uncompressed");
+                        my \$uncomp_md5 = \$io->calculate_md5('$precheck_file.uncompressed');
+                        if (\$uncomp_md5 eq '$md5') {
+                            \$ok = 1;
+                            my \$opened = open(my \$md5fh, '>', '$data_path.md5');
+                            unless (\$opened) {
+                                unlink('$precheck_file');
+                                die "Could not write to $data_path.md5\n";
+                            }
+                            print \$md5fh \$uncomp_md5, "\n";
+                            close(\$md5fh);
+                            \$opened = open(\$md5fh, '<', '$data_path.md5');
+                            unless (\$opened) {
+                                unlink('$precheck_file');
+                                die "Could not open $data_path.md5\n";
+                            }
+                            my \$confirm_md5 = <\$md5fh>;
+                            chomp(\$confirm_md5);
+                            unless (\$confirm_md5 eq \$uncomp_md5) {
+                                unlink('$precheck_file');
+                                die "Tried to write the actual md5 to '$data_path.md5' (\$uncomp_md5), but something went wrong\n";
+                            }
+                        }
+                        unlink('$precheck_file.uncompressed');
+                    }
+                    
+                    unless (\$ok) {
+                        unlink('$precheck_file');
+                        die "md5 check on '$ftp_path' after moving it to hierarchy failed! The hierarchy copy was deleted.\n";
+                    }
                 }
             }
         }
@@ -274,6 +293,26 @@ unless (-s '$data_path') {
     }
     
     if (-s '$precheck_file') {
+        my \$vrfile;
+        if ($self->{calculate_missing_information}) {
+            require VRTrack::VRTrack;
+            my \$vrtrack = VRTrack::VRTrack->new({ host => '$self->{db}->{host}',
+                                                   port => $self->{db}->{port},
+                                                   user => '$self->{db}->{user}',
+                                                   password => '$self->{db}->{password}',
+                                                   database => '$self->{db}->{database}' });
+            require VRTrack::File;
+            \$vrfile = VRTrack::File->new(\$vrtrack, $file_id);
+        }
+        
+        # calculate and store the md5 if we didn't already know it
+        unless ('$md5') {
+            my \$io = VertRes::IO->new;
+            my \$md5 = \$io->calculate_md5('$precheck_file');
+            \$vrfile->md5(\$md5);
+            \$vrfile->update;
+        }
+        
         # run fastqcheck on it and confirm it matches expectations
         unless (-s '$fqc_file') {
             # make the fqc file
@@ -300,24 +339,37 @@ unless (-s '$data_path') {
             my \$num_bases = \$parser->total_length();
             
             my \$ok = 0;
-            if (\$num_sequences == $total_reads) {
-                \$ok++;
+            if ('$total_reads') {
+                if (\$num_sequences == $total_reads) {
+                    \$ok++;
+                }
+                else {
+                    warn "fastqcheck reports number of reads as \$num_sequences, not the expected $total_reads\n";
+                }
             }
             else {
-                warn "fastqcheck reports number of reads as \$num_sequences, not the expected $total_reads\n";
+                \$vrfile->raw_reads(\$num_sequences);
+                \$ok += \$vrfile->update || 0;
             }
-            if (\$num_bases == $total_bases) {
-                \$ok++;
+            
+            if ('$total_bases') {
+                if (\$num_bases == $total_bases) {
+                    \$ok++;
+                }
+                else {
+                    warn "fastqcheck reports number of bases as \$num_bases, not the expected $total_bases\n";
+                }
             }
             else {
-                warn "fastqcheck reports number of bases as \$num_bases, not the expected $total_bases\n";
+                \$vrfile->raw_bases(\$num_sequences);
+                \$ok += \$vrfile->update || 0;
             }
             
             if (\$ok == 2) {
                 move('$precheck_file', '$data_path') || die "Could not rename '$precheck_file' to '$data_path'\n";
             }
             else {
-                die "fastqcheck of fastq file doesn't match expectations\n";
+                die "fastqcheck of fastq file doesn't match expectations, or unable to store\n";
             }
         }
     }
