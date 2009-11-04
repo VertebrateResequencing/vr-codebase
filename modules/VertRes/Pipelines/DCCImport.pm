@@ -209,9 +209,9 @@ sub import_fastqs {
         next if (-s $data_path && -s $fqc_file);
         $did_one++;
         
-        my $md5 = $file_obj->md5 ||= '';
-        my $total_reads = $file_obj->raw_reads ||= '';
-        my $total_bases = $file_obj->raw_bases ||= '';
+        my $md5 = $file_obj->md5 || '';
+        my $total_reads = $file_obj->raw_reads || '';
+        my $total_bases = $file_obj->raw_bases || '';
         
         my $file_id;
         unless ($self->{calculate_missing_information}) {

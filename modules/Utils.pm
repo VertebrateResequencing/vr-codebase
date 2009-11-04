@@ -149,7 +149,7 @@ sub CMD
     $$options{'verbose'}       = 0 unless exists($$options{'verbose'});
     $$options{'time'}          = 0 unless exists($$options{'time'});
 
-    print "$cmd\n" unless !$$options{'verbose'};
+    print STDERR "$cmd\n" unless !$$options{'verbose'};
     log_msg($$options{'logfile'},"$cmd\n") unless !exists($$options{'logfile'});
     my ($time_start,$elapsed);
     if ( $$options{time} ) { $time_start = [gettimeofday]; }

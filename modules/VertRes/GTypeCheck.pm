@@ -95,25 +95,45 @@ sub is_genotype_ok
 
     open (my $fh,'<',$gtype_file) or $self->throw("$gtype_file; $!");
 
-    # entropy 16.7
-    # sample C57BL_6J likelihood 9863 over 2583 sites, avg depth 1.05
-    # sample C57BLKS_J likelihood 16203 over 2469 sites, avg depth 1.05
+    # Reading the first two lines would be enough, but we must see if there were
+    #   data for the expected genotype.
+    #
+    #   entropy 16.7
+    #   sample C57BL_6J likelihood 9863 over 2583 sites, avg depth 1.05
+    #   sample C57BLKS_J likelihood 16203 over 2469 sites, avg depth 1.05
+
+    my $has_data = 0;
+    my ($hit1,$hit2,$gtype1,$lhood1,$gtype2,$lhood2);
 
     my $entrp = <$fh>;
-    my $hit1  = <$fh>;
-    my $hit2  = <$fh>;
+    while (my $line=<$fh>)
+    {
+        if ( $has_data && defined($hit1) && defined($hit2) ) { last; }
+
+        # The regex matches both lines:
+        #   sample NA12717 likelihood 104917 over 13788 sites, avg depth 0.026506
+        #   sample xx/NA12717.snp likelihood 104917 over 13788 sites, avg depth 0.026506
+        #
+        if ( !($line =~ m{sample\s+(?:.*/)?(\S+?)(?:\.snp)?\s+likelihood (\d+)} ) ) { $self->throw("Could not parse $gtype_file: $hit1") }
+
+        if ( $expected && $1 eq $expected ) { $has_data = 1; } 
+
+        if ( !defined $hit1 ) 
+        { 
+            $hit1   = $line; 
+            $gtype1 = $1;
+            $lhood1 = $2;
+        }
+        elsif ( !defined $hit2 ) 
+        { 
+            $hit2   = $line; 
+            $gtype2 = $1;
+            $lhood2 = $2;
+        }
+    }
     close $fh;
 
-    # The regex matches both lines:
-    #   sample NA12717 likelihood 104917 over 13788 sites, avg depth 0.026506
-    #   sample xx/NA12717.snp likelihood 104917 over 13788 sites, avg depth 0.026506
-    #
-    if ( !($hit1 =~ m{sample\s+(?:.*/)?(\S+?)(?:\.snp)?\s+likelihood (\d+)} ) ) { $self->throw("Could not parse $gtype_file: $hit1") }
-    my $gtype1 = $1;
-    my $lhood1 = $2;
-    if ( !($hit2 =~ m{sample\s+(?:.*/)?(\S+?)(?:\.snp)?\s+likelihood (\d+)} ) ) { $self->throw("Could not parse $gtype_file: $hit2") }
-    my $gtype2 = $1;
-    my $lhood2 = $2;
+    if ( $expected && !$has_data ) { $expected = 0; }
 
     my $ratio = $lhood1!=0 ? $lhood2 / $lhood1 : 0;
 
