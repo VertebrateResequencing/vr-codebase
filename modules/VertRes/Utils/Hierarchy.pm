@@ -187,7 +187,8 @@ sub lane_info {
     $info{sample} = $objs{sample}->name || $self->throw("sample name wasn't known for $rg");
     $info{individual} = $objs{individual}->name || $self->throw("individual name wasn't known for $rg");
     $info{individual_acc} = $objs{individual}->acc || $self->throw("sample accession wasn't known for $rg");
-    $info{individual_coverage} = $self->hierarchy_coverage(individual => [$objs{individual}->name],
+    $info{individual_coverage} = $self->hierarchy_coverage(individual => [$info{individual}],
+                                                           vrtrack => $vrtrack,
                                                            $args{genome_size} ? (genome_size => $args{genome_size}) : (),
                                                            $args{gt_confirmed} ? (gt_confirmed => $args{gt_confirmed}) : (),
                                                            $args{qc_passed} ? (qc_passed => $args{qc_passed}) : (),

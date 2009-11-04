@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 20;
+    use Test::Most tests => 21;
     
     use_ok('VertRes::Utils::Hierarchy');
     use_ok('VertRes::IO');
@@ -64,12 +64,13 @@ foreach my $link (@expected_rel_bam_paths) {
 is $created_links, 4, 'create_release_hierarchy created the correct bam symlinks';
 
 # lane_info test
-ok my %info = $h_util->lane_info('SRR014870'), 'lane_info ran ok';
-is $info{sample}, 'NA18560', 'lane_info gave correct sample';
+my $mouse_reseq_track_db = { host => 'mcs4a', port => 3306, user => 'vreseq_ro', database => 'mouse_reseq_track' };
+ok my %info = $h_util->lane_info('3034_8', db => $mouse_reseq_track_db, qc_passed => 1, mapped => 1), 'lane_info ran ok';
+is $info{sample}, '129P2_1', 'lane_info gave correct sample';
+is $info{individual_coverage}, 22.39, 'lane_info had the correct individual_coverage';
 # needs more thougher tests for all the different ways of calling lane_info...
 
 # hierarchy_coverage test
-my $mouse_reseq_track_db = { host => 'mcs4a', port => 3306, user => 'vreseq_ro', database => 'mouse_reseq_track' };
 my $cov = $h_util->hierarchy_coverage(individual => ['129P2/OlaHsd'], db => $mouse_reseq_track_db, qc_passed => 1, mapped => 1);
 cmp_ok $cov, '>=', 22.39, 'hierarchy_coverage direct test';
 my $cov2 = $h_util->hierarchy_coverage(lane => '3034_8', level => 'individual', db => $mouse_reseq_track_db, qc_passed => 1, mapped => 1);
