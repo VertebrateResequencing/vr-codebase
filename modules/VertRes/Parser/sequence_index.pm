@@ -185,10 +185,14 @@ sub next_result {
         $self->{"saw_last_line_$fh_id"} = 1;
         return;
     }
-    chomp($line);
-    
+
     my @data = split(/\t/, $line);
-    @data == 25 or return;
+    chomp($data[-1]);
+    if ( @data != 25 )
+    {
+        $self->debug("Expected 25 columns, got " . scalar @data . ": $line\n");
+        return;
+    }
     
     if ($data[2] eq 'RUN_ID') {
         $self->throw("got RUN_ID!");
