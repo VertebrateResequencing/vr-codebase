@@ -43,7 +43,8 @@ hierarchy, assuming a fake sequence.index has been used with update_vrmeta.pl on
 a custom database. In this case, the import.conf file must contain the
 fastq_base option. If you don't have md5, number of reads and number of bases
 information on the fastqs, you'll also need to supply the
-calculate_missing_information option:
+calculate_missing_information option, and duplicate the db option in the data
+section:
 
 root    => '/abs/path/to/root/data/dir',
 module  => 'VertRes::Pipelines::DCCImport',
@@ -59,7 +60,15 @@ db  => {
 
 data => {
     fastq_base => '/abs/path/to/flattened/fastq/dir',
-    calculate_missing_information => 1
+    calculate_missing_information => 1,
+    
+    db  => {
+        database => 'special_meta',
+        host     => 'mcs4a',
+        port     => 3306,
+        user     => 'vreseq_rw',
+        password => 'xxxxxxx',
+    },
 },
 
 =head1 AUTHOR
