@@ -77,7 +77,7 @@ sub fields_dispatch {
 
 sub new_by_name {
     my ($class,$vrtrack, $name) = @_;
-    die "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
+    confess "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
     return $class->new_by_field_value($vrtrack, 'name',$name);
 }
 

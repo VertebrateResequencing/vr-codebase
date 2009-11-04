@@ -251,6 +251,42 @@ sub get_project_by_ssid {
 }
 
 
+=head2 hierarchy_path_of_lane_hname
+
+  Arg [1]    : lane name
+  Example    : my $lane_hier = $track->hierarchy_path_of_lane_hname('2404_1');
+  Description: retrieve the hierarchy path for a lane, to the root of the hierarchy.  Does not check the filesystem.
+               Returns undef if hierarchy can not be built.
+  Returntype : string
+
+=cut
+
+sub hierarchy_path_of_lane_hname {
+    my ($self, $lane_name) = @_;
+    my $hier_path;
+    my $lane = VRTrack::Lane->new_by_hierarchy_name($self,$lane_name);
+    if ($lane){
+        my $lib = VRTrack::Library->new($self,$lane->library_id);
+        if ($lib && $lib->seq_tech){
+            my $samp = VRTrack::Sample->new($self,$lib->sample_id);
+            if ($samp){
+                my $proj = VRTrack::Project->new($self,$samp->project_id);
+                if ($proj){
+                    $hier_path = join '/', ($proj->hierarchy_name,
+                                            $samp->hierarchy_name,
+                                            $lib->seq_tech->name,
+                                            $lib->hierarchy_name,
+                                            $lane->hierarchy_name
+                                            );
+                }
+            }
+        }
+    }
+
+    return $hier_path;
+}
+
+
 =head2 hierarchy_path_of_lane_name
 
   Arg [1]    : lane name
@@ -287,19 +323,19 @@ sub hierarchy_path_of_lane_name {
 }
 
 
-=head2 processed_lane_names
+=head2 processed_lane_hnames
 
   Arg [1]    : list of flags and values
-  Example    : my $all_lanes   = $track->processed_lane_names();
-               my $qc_lanes    = $track->qc_filtered_lane_names('qc'=>1);
-               my $no_qc_lanes = $track->qc_filtered_lane_names('qc'=>0);
+  Example    : my $all_lanes   = $track->processed_lane_hnames();
+               my $qc_lanes    = $track->qc_filtered_lane_hnames('qc'=>1);
+               my $no_qc_lanes = $track->qc_filtered_lane_hnames('qc'=>0);
   Description: retrieves a (optionally filtered) list of all lane hierarchy names, ordered by project, sample, library names.
                This is a helper function for the qc web interface for speed.
   Returntype : arrayref
 
 =cut
 
-sub processed_lane_names {
+sub processed_lane_hnames {
     my ($self,@filter) = @_;
     if ( scalar @filter % 2 ) { croak "Expected list of keys and values.\n"; }
     my %flags = VRTrack::Core_obj->allowed_processed_flags();
@@ -343,18 +379,18 @@ sub processed_lane_names {
 }
 
 
-=head2 qc_filtered_lane_names
+=head2 qc_filtered_lane_hnames
 
   Arg [1]    : [optional] list of qc_status filters
-  Example    : my $all_lanes = $track->qc_filtered_lane_names();
-               my $pend_pass_lanes = $track->qc_filtered_lane_names('pending','passed');
+  Example    : my $all_lanes = $track->qc_filtered_lane_hnames();
+               my $pend_pass_lanes = $track->qc_filtered_lane_hnames('pending','passed');
   Description: retrieves a (optionally filtered) list of all lane hierarchy names, ordered by project, sample, library names.
                This is a helper function for the qc web interface for speed.
   Returntype : arrayref
 
 =cut
 
-sub qc_filtered_lane_names {
+sub qc_filtered_lane_hnames {
     my ($self,@filter) = @_;
     my $filterclause;
     if (@filter){
@@ -393,18 +429,18 @@ sub qc_filtered_lane_names {
     return \@lane_names;
 }
 
-=head2 qc_filtered_lib_names
+=head2 qc_filtered_lib_hnames
 
   Arg [1]    : [optional] list of qc_status filters
-  Example    : my $all_libs = $track->qc_filtered_lib_names();
-               my $pend_pass_libs = $track->qc_filtered_lib_names('pending','passed');
+  Example    : my $all_libs = $track->qc_filtered_lib_hnames();
+               my $pend_pass_libs = $track->qc_filtered_lib_hnames('pending','passed');
   Description: retrieves a (optionally filtered) list of all lib hierarchy names, ordered by project, sample, name
                This is a helper function for the qc web interface for speed.
   Returntype : arrayref
 
 =cut
 
-sub qc_filtered_lib_names {
+sub qc_filtered_lib_hnames {
     my ($self,@filter) = @_;
     my $filterclause;
     if (@filter){
@@ -440,19 +476,19 @@ sub qc_filtered_lib_names {
     return \@lib_names;
 }
 
-=head2 processed_file_names
+=head2 processed_file_hnames
 
   Arg [1]    : list of flags and values
-  Example    : my $all_files   = $track->processed_file_names();
-               my $qc_files    = $track->qc_filtered_file_names('qc'=>1);
-               my $no_qc_files = $track->qc_filtered_file_names('qc'=>0);
+  Example    : my $all_files   = $track->processed_file_hnames();
+               my $qc_files    = $track->qc_filtered_file_hnames('qc'=>1);
+               my $no_qc_files = $track->qc_filtered_file_hnames('qc'=>0);
   Description: retrieves a (optionally filtered) list of all file hierarchy names, ordered by project, sample, library names.
                This is a helper function for the qc web interface for speed.
   Returntype : arrayref
 
 =cut
 
-sub processed_file_names {
+sub processed_file_hnames {
     my ($self,@filter) = @_;
     if ( scalar @filter % 2 ) { croak "Expected list of keys and values.\n"; }
     my %flags = VRTrack::Core_obj->allowed_processed_flags();
