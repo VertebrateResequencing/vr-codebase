@@ -201,9 +201,9 @@ sub import_fastqs {
         next if (-s $data_path && -s $fqc_file);
         $did_one++;
         
-        my $md5 = $file_obj->md5;
-        my $total_reads = $file_obj->raw_reads;
-        my $total_bases = $file_obj->raw_bases;
+        my $md5 = $file_obj->md5 || $self->throw("missing md5 for file $file");
+        my $total_reads = $file_obj->raw_reads || $self->throw("missing raw_reads for file $file");
+        my $total_bases = $file_obj->raw_bases || $self->throw("missing raw_bases for file $file");
         
         my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}."import_$fastq.pl");
         
