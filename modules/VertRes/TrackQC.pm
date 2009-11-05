@@ -878,8 +878,7 @@ sub run_graphs
     }
 
     # GC content graph
-    $x = $$stats{'gc_content_forward'}{'max'}{'x'};
-    $y = $$stats{'gc_content_forward'}{'max'}{'y'};
+    $y = 0;
     my $normalize = 0; 
     my @gc_data   = ();
     if ( $$self{stats_ref} ) 
@@ -897,16 +896,41 @@ sub run_graphs
         push @gc_data, { xvals=>\@xvals, yvals=>\@yvals, lines=>',lty=4', legend=>'ref' };
         $normalize = 1;
     }
-    if ( $$stats{'gc_content_forward'} ) { push @gc_data, { %{$$stats{'gc_content_forward'}}, legend=>'fwd' }; }
-    if ( $$stats{'gc_content_reverse'} ) { push @gc_data, { %{$$stats{'gc_content_reverse'}}, legend=>'rev' }; }
-    if ( $$stats{'gc_content_single'} ) { push @gc_data, { %{$$stats{'gc_content_single'}}, legend=>'single' }; } 
+    if ( $$stats{'gc_content_forward'} ) 
+    {
+        if ( $y < $$stats{'gc_content_forward'}{'max'}{'y'} )
+        {
+            $x = $$stats{'gc_content_forward'}{'max'}{'x'};
+            $y = $$stats{'gc_content_forward'}{'max'}{'y'};
+        }
+        push @gc_data, { %{$$stats{'gc_content_forward'}}, legend=>'fwd' }; 
+    }
+    if ( $$stats{'gc_content_reverse'} ) 
+    { 
+        if ( $y < $$stats{'gc_content_reverse'}{'max'}{'y'} )
+        {
+            $x = $$stats{'gc_content_reverse'}{'max'}{'x'};
+            $y = $$stats{'gc_content_reverse'}{'max'}{'y'};
+        }
+        push @gc_data, { %{$$stats{'gc_content_reverse'}}, legend=>'rev' }; 
+    }
+    if ( $$stats{'gc_content_single'} ) 
+    { 
+        if ( $y < $$stats{'gc_content_single'}{'max'}{'y'} )
+        {
+            $x = $$stats{'gc_content_single'}{'max'}{'x'};
+            $y = $$stats{'gc_content_single'}{'max'}{'y'};
+        }
+        push @gc_data, { %{$$stats{'gc_content_single'}}, legend=>'single' }; 
+    }
+    if ( $normalize ) { $y=1; }
     Graphs::plot_stats({
             'outfile'    => qq[$outdir/gc-content.png],
             'title'      => 'GC Content (both mapped and unmapped)',
             'desc_yvals' => 'Frequency',
             'desc_xvals' => 'GC Content [%]',
             'data'       => \@gc_data,
-            'r_cmd'      => "text($x,$y,'$x',pos=4,col='darkgreen')\n",
+            'r_cmd'      => sprintf("text($x,$y,'%.1f',pos=4,col='darkgreen')\n",$x),
             'normalize'  => $normalize,
             });
 
