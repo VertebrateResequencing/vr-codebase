@@ -449,6 +449,7 @@ sub calc_an_ac
 {
     my ($self,$gtypes) = @_;
     my ($an,%ac_counts);
+    $an = 0;
     for my $gt (keys %$gtypes)
     {
         my $value = $$gtypes{$gt}{GT};
