@@ -413,15 +413,15 @@ sub do_mapping {
                 my $flags;
                 if (exists $seen_reads{$id}) {
                     $flags = $su->calculate_flag(paired_tech => $paired,
-                                                 mate_unmapped => 1,
+                                                 $paired ? (mate_unmapped => 1) : (),
                                                  self_unmapped => 1,
-                                                 '2nd_in_pair' => 1);
+                                                 $paired ? ('2nd_in_pair' => 1) : ());
                 }
                 else {
                     $flags = $su->calculate_flag(paired_tech => $paired,
-                                                 mate_unmapped => 1,
+                                                 $paired ? (mate_unmapped => 1) : (),
                                                  self_unmapped => 1,
-                                                 '1st_in_pair' => 1);
+                                                 $paired ? ('1st_in_pair' => 1) : ());
                     $seen_reads{$id} = 1;
                 }
                 
