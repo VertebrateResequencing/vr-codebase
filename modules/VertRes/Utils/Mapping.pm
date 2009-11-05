@@ -38,7 +38,8 @@ use VertRes::Utils::FastQ;
 use VertRes::IO;
 use VertRes::Parser::bas;
 use File::Basename;
-use HierarchyUtilities;
+use VertRes::Utils::Hierarchy;
+use VRTrack::Lane;
 
 use base qw(VertRes::Base);
 
@@ -289,91 +290,122 @@ sub _do_read_args {
 =head2 mapping_hierarchy_report
 
  Title   : mapping_hierarchy_report
- Usage   : $obj->mapping_hierarchy_report('output.csv', @paths_to_lanes);
+ Usage   : $obj->mapping_hierarchy_report('output.csv', $vrtrack);
  Function: Create a summary report for all lanes, describing how the mapping
            went.
  Returns : n/a
- Args    : output file, list of absolute paths to lanes
+ Args    : output file, VRTrack::VRTrack
 
 =cut
 
 sub mapping_hierarchy_report {
-    my ($self, $output_csv, @lane_paths) = @_;
+    my ($self, $output_csv, $vrtrack) = @_;
+    my $genome_size = 3e9;
+    
+    my $lanes = $vrtrack->qc_filtered_lane_hnames();
+    
+    # get mapping stats at all hierarchy levels
+    my %hierarchy_stats;
+    my $hu = VertRes::Utils::Hierarchy->new();
+    foreach my $lane_name (@{$lanes}) {
+        my $lane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane_name) || $self->throw("Could not get lane '$lane_name' from the database");
+        
+        my %li = $hu->lane_info($lane);
+        
+        # get latest stats for this lane *** should probably generalise this
+        # to allow extra options to choose which mapstats, and to set the
+        # genome size for calculating coverage...
+        my $mappings = $lane->mappings();
+        my $mapstats;
+        if ($mappings && @{$mappings}) {
+            # pick the most recent mapstats that has the highest raw_bases
+            my $highest_id = 0;
+            my $highest_raw_bases = 0;
+            foreach my $possible (@{$mappings}) {
+                my $this_id = $possible->id;
+                my $these_raw_bases = $possible->raw_bases;
+                
+                if ($these_raw_bases > $highest_raw_bases || ($this_id > $highest_id && $these_raw_bases == $highest_raw_bases)) {
+                    $highest_id = $this_id;
+                    $highest_raw_bases = $these_raw_bases;
+                    $mapstats = $possible;
+                }
+            }
+        }
+        
+        my %mapping_stats;
+        my $mapped = 0;
+        if ($mapstats) {
+            %mapping_stats = $self->get_mapping_stats($mapstats);
+            $mapped = 1;
+        }
+        $mapping_stats{mapped} = $mapped;
+        
+        $hierarchy_stats{$li{hierarchy_path}} = \%mapping_stats;
+        
+        foreach my $level (qw(all project individual technology library)) {
+            my $level_path;
+            if (exists $li{$level}) {
+                $level_path = $li{hierarchy_path};
+                ($level_path) = $level_path =~ /^(.*?$li{$level})/;
+            }
+            else {
+                $level_path = '/';
+            }
+            
+            if ($mapped) {
+                $hierarchy_stats{$level_path}->{mapped} = 1;
+                foreach my $stat (qw(total_bases mapped_bases total_reads mapped_reads mapped_reads_in_proper_pairs)) {
+                    $hierarchy_stats{$level_path}->{$stat} += $mapping_stats{$stat};
+                }
+            }
+            elsif (! exists $hierarchy_stats{$level_path}->{mapped}) {
+                $hierarchy_stats{$level_path}->{mapped} = 0;
+            }
+        }
+    }
     
     # write a header for our output csv
     open(my $csvfh, '>', $output_csv) or $self->throw("Cannot create output file: $output_csv");
-    print $csvfh "Status,Project,Individual,Tech,Library,Lane,Fastq0,ReadLength,Fastq1,ReadLength,Fastq2,ReadLength,#Reads,#Bases,#RawReadsMapped,#RawBasesMapped,#RawReadsPaired,\%BasesMapped,\%ReadsPaired\n";
+    print $csvfh "HierarchyPath,Mapped,#TotalBases,#MappedBases,\%BasesMapped,#TotalReads,#MappedReads,\%ReadsMapped,#ReadsCorrectlyPaired,\%ReadsPaired,Coverage\n";
     
-    # print mapping stats for each lane
-    my $io = VertRes::IO->new();
-    foreach my $lane_path (@lane_paths) {
-        if (! -d $lane_path) {
-            $self->warn("Cant find lane directory: $lane_path");
-            next;
-        }
+    # print mapping stats
+    foreach my $path (sort keys %hierarchy_stats) {
+        my %stats = %{$hierarchy_stats{$path}};
         
-        # get the mapping stats, which may be in two different bas files, so
-        # we sum
-        my %mapping_stats;
-        foreach my $bas_name ('pe_raw.sorted.bam.bas', 'se_raw.sorted.bam.bas') {
-            my $bas = $io->catfile($lane_path, $bas_name);
-            next unless -s $bas;
-            my %these_stats = $self->get_mapping_stats($bas);
-            $mapping_stats{total_bases} += $these_stats{total_bases};
-            $mapping_stats{total_reads} += $these_stats{total_reads};
-            $mapping_stats{mapped_bases} += $these_stats{mapped_bases};
-            $mapping_stats{mapped_reads} += $these_stats{mapped_reads};
-            $mapping_stats{mapped_reads_in_proper_pairs} += $these_stats{mapped_reads_in_proper_pairs};
-        }
-        
-        # get the fastq info
-        my @fastq_info = @{HierarchyUtilities::getFastqInfo($lane_path)};
-        my $num_bases = 0;
-        my $num_reads = 0;
-        if ($mapping_stats{total_bases}) {
-            $num_bases = $mapping_stats{total_bases};
-            $num_reads = $mapping_stats{total_reads};
+        my @columns;
+        if ($stats{mapped}) {
+            unless (defined $stats{percent_mapped}) {
+                $stats{percent_mapped} = sprintf("%0.2f", ((100 / $stats{total_bases}) * $stats{mapped_bases}));
+            }
+            unless (defined $stats{coverage}) {
+                $stats{coverage} = sprintf("%0.2f", $stats{mapped_bases} / $genome_size);
+            }
+            unless (defined $stats{percent_properly_paired}) {
+                $stats{percent_properly_paired} = sprintf("%0.2f", ((100 / $stats{total_reads}) * $stats{mapped_reads_in_proper_pairs}));
+            }
+            my $percent_reads_mapped = sprintf("%0.2f", ((100 / $stats{total_reads}) * $stats{mapped_reads}));
+            
+            @columns = ($path, 1, $stats{total_bases}, $stats{mapped_bases}, $stats{percent_mapped}, $stats{total_reads}, $stats{mapped_reads}, $percent_reads_mapped, $stats{mapped_reads_in_proper_pairs}, $stats{percent_properly_paired}, $stats{coverage});
         }
         else {
-            for my $i (0..$#fastq_info) {
-                $num_reads += $fastq_info[$i][2];
-                $num_bases += $fastq_info[$i][3];
-            }
+            @columns = ($path, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
-        my $fastq_csv = "$fastq_info[0][0],$fastq_info[0][1],$fastq_info[1][0],$fastq_info[1][1],$fastq_info[2][0],$fastq_info[2][1]";
         
-        # get the lane info
-        my %lane_info = %{HierarchyUtilities::lane_info($lane_path)};
-        my $laneinfo_csv = "$lane_info{project},$lane_info{sample},$lane_info{technology},$lane_info{library},$lane_info{lane},$fastq_csv,$num_reads,$num_bases";
-        
-        if ($mapping_stats{mapped_bases}) {
-            print $csvfh "MAPPED,$laneinfo_csv";
-            
-            foreach my $stat ('mapped_reads', 'mapped_bases', 'mapped_reads_in_proper_pairs') {
-                
-                print $csvfh ",$mapping_stats{$stat}";
-            }
-            
-            my $p_mapped = $num_bases ? sprintf("%0.2f", ((100 / $num_bases) * $mapping_stats{mapped_bases})) : 0;
-            my $ppp = $num_reads ? sprintf("%0.2f", ((100 / $num_reads) * $mapping_stats{mapped_reads_in_proper_pairs})) : 0;
-            
-            print $csvfh ",$p_mapped,$ppp\n";
-        }
-        else {
-            print $csvfh "UNMAPPED,$laneinfo_csv\n";
-        }
+        print $csvfh join(',', @columns), "\n";
     }
-    close($csvfh);
     
+    close($csvfh);
     return;
 }
 
 =head2 get_mapping_stats
 
  Title   : get_mapping_stats
- Usage   : my @stats = $obj->get_mapping_stats('raw.bam.bas', $genome_size);
+ Usage   : my %stats = $obj->get_mapping_stats('raw.bam.bas', $genome_size);
  Function: Extract/calculate most commonly needed stats from a .bas file
-           (produced by VertRes::Utils::Sam->stats() or ->bas()).
+           (produced by VertRes::Utils::Sam->stats() or ->bas()) or a
+           VRTrack::Mapstats object.
  Returns : hash of stats, with keys:
            total_bases
            mapped_bases
@@ -384,28 +416,43 @@ sub mapping_hierarchy_report {
            mapped_reads_in_proper_pairs
            percent_properly_paired
            (values are summed across and calculated for all readgroups, so
-           represent stats for the whole file)
- Args    : bas file, optionally genome size in bp to calculate the coverage
+           represent stats for the whole file when working on a bas file)
+ Args    : bas file OR VRTrack::Mapstats object, optionally genome size in bp
+           (defaults to 3e9)
 
 =cut
 
 sub get_mapping_stats {
-    my ($self, $bas_file, $genome_size) = @_;
-    
-    my $bas_parser = VertRes::Parser::bas->new(file => $bas_file);
-    my $rh = $bas_parser->result_holder;
+    my ($self, $thing, $genome_size) = @_;
+    $genome_size ||= 3e9;
     
     my %stats;
-    while ($bas_parser->next_result) {
-        $stats{total_bases} += $rh->[7];
-        $stats{mapped_bases} += $rh->[8];
-        $stats{total_reads} += $rh->[9];
-        $stats{mapped_reads} += $rh->[10];
-        $stats{mapped_reads_in_proper_pairs} += $rh->[12];
+    
+    if (ref($thing) && $thing->isa('VRTrack::Mapstats')) {
+        $stats{total_bases} = $thing->raw_bases || 0;
+        $stats{mapped_bases} = $thing->bases_mapped || 0;
+        $stats{total_reads} = $thing->raw_reads || 0;
+        $stats{mapped_reads} = $thing->reads_mapped || 0;
+        $stats{mapped_reads_in_proper_pairs} = $thing->reads_paired || 0;
+    }
+    elsif (-s $thing) {
+        my $bas_parser = VertRes::Parser::bas->new(file => $thing);
+        my $rh = $bas_parser->result_holder;
+        
+        while ($bas_parser->next_result) {
+            $stats{total_bases} += $rh->[7];
+            $stats{mapped_bases} += $rh->[8];
+            $stats{total_reads} += $rh->[9];
+            $stats{mapped_reads} += $rh->[10];
+            $stats{mapped_reads_in_proper_pairs} += $rh->[12];
+        }
+    }
+    else {
+        $self->throw("First argument to get_mapping_stats was '$thing' which wasn't understood");
     }
     
     $stats{percent_mapped} = sprintf("%0.2f", ((100 / $stats{total_bases}) * $stats{mapped_bases}));
-    $stats{coverage} = sprintf("%0.2f", $stats{mapped_bases} / $genome_size) if $genome_size;
+    $stats{coverage} = sprintf("%0.2f", $stats{mapped_bases} / $genome_size);
     $stats{percent_properly_paired} = sprintf("%0.2f", ((100 / $stats{total_reads}) * $stats{mapped_reads_in_proper_pairs}));
     
     return %stats;
