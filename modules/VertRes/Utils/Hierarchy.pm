@@ -165,7 +165,7 @@ sub lane_info {
             $vrtrack = VRTrack::VRTrack->new($db);
         }
         
-        $vrlane = VRTrack::Lane->new_by_name($vrtrack, $lane);
+        $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane);
         $rg = $lane;
     }
     
