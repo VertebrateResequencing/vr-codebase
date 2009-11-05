@@ -535,6 +535,9 @@ sub map {
         foreach my $split (1..$num_of_splits) {
             my $sam_file = $self->{io}->catfile($split_dir, $split.'.raw.sam');
             my $bam_file = $self->{io}->catfile($split_dir, $split.'.raw.sorted.bam');
+            
+            next if -s $bam_file;
+            
             my $script_name = $self->{io}->catfile($split_dir, $self->{prefix}.$split.'.map.pl');
             
             my @split_read_args = ();
