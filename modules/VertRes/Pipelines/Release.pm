@@ -6,7 +6,7 @@ VertRes::Pipelines::Release - pipeline for creating a release from mapped lanes
 
 # make a file of absolute paths to the lane directories you want in the release,
 # eg:
-find $G1K/mapping -type d -name "*RR*" | grep -v "SOLID" > lanes.fofn
+release_lanes.pl --g1k --complete --ignore_platform SOLID > lanes.fofn
 
 # make a conf file with root pointing to where you want the release built, and
 # setting the lanes option. Optional settings also go here.
@@ -46,22 +46,6 @@ run-pipeline -c release.pipeline -v
 
 A module for creating a release (merging, splitting, recalibration etc.) from
 lanes mapped by VertRes::Pipelines::Mapping.
-
-
-0) List of lanes -> create a hierarchy & symlink lane bams
-1) Lanes may contain paired and/or single ended bams
-2) lib-level merge, creating seperate [ps]e_raw.bam files and doing
-   rmdup/rmdupse as appropriate to create [ps]e_rmdup.bam
-3) platform-level merge, combining both [ps]e_rmdup.bam into raw.bam.
-   Optional broad recal on all these (with option to force repeat recals).
-   Option to split by chr afterwards.
-   Option to filter out lanes at this stage?
-   Create release.bam symlinks. bai and md5 and bas file creation.
-     *** or better, hardlinks to DCC-style filenames for the bams, bais and bas
-         files, then make a single md5 file for everything, making for an easy
-         aspera upload
-4) sample-level merge, making raw.bam (optionally from platform recals).
-   Option to split by chr. for sample-level have 'latest.bam' symlinks.
 
 =head1 AUTHOR
 
