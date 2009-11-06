@@ -173,7 +173,7 @@ sub lane_info {
     
     my %info = (lane => $rg, vrlane => $vrlane);
     
-    $info{hierarchy_path} = $vrtrack->hierarchy_path_of_lane_name($rg);
+    $info{hierarchy_path} = $vrtrack->hierarchy_path_of_lane_hname($rg);
     $info{withdrawn} = $vrlane->is_withdrawn;
     $info{imported} = $vrlane->is_processed('import');
     $info{mapped} = $vrlane->is_processed('mapped');
