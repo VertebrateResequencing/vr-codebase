@@ -263,27 +263,8 @@ sub get_project_by_ssid {
 
 sub hierarchy_path_of_lane_hname {
     my ($self, $lane_name) = @_;
-    my $hier_path;
     my $lane = VRTrack::Lane->new_by_hierarchy_name($self,$lane_name);
-    if ($lane){
-        my $lib = VRTrack::Library->new($self,$lane->library_id);
-        if ($lib && $lib->seq_tech){
-            my $samp = VRTrack::Sample->new($self,$lib->sample_id);
-            if ($samp){
-                my $proj = VRTrack::Project->new($self,$samp->project_id);
-                if ($proj){
-                    $hier_path = join '/', ($proj->hierarchy_name,
-                                            $samp->hierarchy_name,
-                                            $lib->seq_tech->name,
-                                            $lib->hierarchy_name,
-                                            $lane->hierarchy_name
-                                            );
-                }
-            }
-        }
-    }
-
-    return $hier_path;
+    return $self->hierarchy_path_of_lane($lane);
 }
 
 
@@ -299,9 +280,24 @@ sub hierarchy_path_of_lane_hname {
 
 sub hierarchy_path_of_lane_name {
     my ($self, $lane_name) = @_;
-    my $hier_path;
     my $lane = VRTrack::Lane->new_by_name($self,$lane_name);
-    if ($lane){
+    return $self->hierarchy_path_of_lane($lane);
+}
+
+=head2 hierarchy_path_of_lane
+
+  Arg [1]    : VRTrack::Lane object
+  Example    : my $lane_hier = $track->hierarchy_path_of_lane($vrlane);
+  Description: retrieve the hierarchy path for a lane, to the root of the hierarchy.  Does not check the filesystem.
+               Returns undef if hierarchy can not be built.
+  Returntype : string
+
+=cut
+
+sub hierarchy_path_of_lane {
+    my ($self, $lane) = @_;
+    my $hier_path;
+    if ($lane && ref($lane) && $lane->isa('VRTrack::Lane')) {
         my $lib = VRTrack::Library->new($self,$lane->library_id);
         if ($lib && $lib->seq_tech){
             my $samp = VRTrack::Sample->new($self,$lib->sample_id);
