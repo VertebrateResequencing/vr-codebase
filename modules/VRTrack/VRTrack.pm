@@ -392,6 +392,28 @@ sub processed_lane_hnames {
 
 sub qc_filtered_lane_hnames {
     my ($self,@filter) = @_;
+    return $self->_qc_filtered_lane_field('hierarchy_name',@filter);
+}
+
+=head2 qc_filtered_lane_names
+
+  Arg [1]    : [optional] list of qc_status filters
+  Example    : my $all_lanes = $track->qc_filtered_lane_names();
+               my $pend_pass_lanes = $track->qc_filtered_lane_names('pending','passed');
+  Description: retrieves a (optionally filtered) list of all lane hierarchy names, ordered by project, sample, library names.
+               This is a helper function for the qc web interface for speed.
+  Returntype : arrayref
+
+=cut
+
+sub qc_filtered_lane_names {
+    my ($self,@filter) = @_;
+    return $self->_qc_filtered_lane_field('name',@filter);
+}
+
+sub _qc_filtered_lane_field
+{
+    my ($self,$field,@filter) = @_;
     my $filterclause;
     if (@filter){
         # input validation
@@ -402,7 +424,7 @@ sub qc_filtered_lane_hnames {
 	$filterclause .= join (",", map {"'$_'"} @goodfilters).')';
     }
     my @lane_names;
-    my $sql =qq[select lane.hierarchy_name 
+    my $sql =qq[select lane.$field
                 from latest_project as project,
                     latest_sample as sample,
                     latest_library as library,
@@ -428,6 +450,7 @@ sub qc_filtered_lane_hnames {
 
     return \@lane_names;
 }
+
 
 =head2 qc_filtered_lib_hnames
 
