@@ -523,7 +523,7 @@ sub processed_file_hnames {
         $filterclause = ' AND ' . join(' AND ', @goodfilters);
     }
     my @file_names;
-    my $sql =qq[select file.name 
+    my $sql =qq[select file.hierarchy_name 
                 from latest_project as project,
                     latest_sample as sample,
                     latest_library as library,
