@@ -796,7 +796,8 @@ sub get_seq_tech_by_name {
 
 sub open {
     my ($self,$open) = @_;
-    if (defined $open and $open != $self->{'open'}){
+    # NB: comparison is ne rather than != as don't want 0 to match undef.
+    if (defined $open and $open ne $self->{'open'}){
         $self->{'open'} = $open ? 1 : 0;
         $self->dirty(1);
     }
