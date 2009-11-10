@@ -38,7 +38,7 @@ my $SPECIES_VIEW = 4;
 my $LIB_UPDATE = 5;
 my $PROJ_VIEW = 6;
 my $SAMP_VIEW = 7;
-my $LANE_UPDATE = 5;
+my $LANE_UPDATE = 10;
 my $SELECT_SPECIES_VIEW = 8;
 my $LANES_UPDATE = 9;
 
@@ -974,7 +974,7 @@ sub displayLane
     }
 }
 
-sub displayLibrary()
+sub displayLibrary
 {
     my ( $cgi, $database, $libID, $filter, $species ) = @_;
     
@@ -1262,7 +1262,7 @@ sub displayLibrary()
     ];
 }
 
-sub displayError()
+sub displayError
 {
     my $message = $_[ 0 ];
     
