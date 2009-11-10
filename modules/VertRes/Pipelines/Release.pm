@@ -6,24 +6,38 @@ VertRes::Pipelines::Release - pipeline for creating a release from mapped lanes
 
 # make a file of absolute paths to the lane directories you want in the release,
 # eg:
-release_lanes.pl --g1k --complete --ignore_platform SOLID > lanes.fofn
+release_lanes.pl --root /abs/META --db g1k_meta --all_samples
+                 --ignore_platform SOLID > lanes.fofn
 
 # make a conf file with root pointing to where you want the release built, and
-# setting the lanes option. Optional settings also go here.
-# Your release.conf file may look like:
+# setting the lanes, mapper and assembly_name options. Optional settings also go
+# here. Your release.conf file may look like:
 root    => '/path/to/rel_dir',
 module  => 'VertRes::Pipelines::Release',
 prefix  => '_',
-data => 
-{
+data => {
     lanes => 'lanes.fofn',
+    slx_mapper => 'bwa',
+    '454_mapper' => 'ssaha',
+    assembly_name => 'NCBI37',
+    
     do_recalibration => 1,
     dcc_hardlinks => 1,
-    do_cleanup => 1
+    do_cleanup => 1,
+    
+    db => {
+        database => 'g1k_meta',
+        host     => 'mcs4a',
+        port     => 3306,
+        user     => 'vreseq_ro'
+    }
 }
 
+# note that slx_mapper, 454_mapper and assembly_name options must be the same
+# as those you used in the VertRes::Pipelines::Mapping pipeline config file
+# used to do the mapping you want to now make a release from
+
 # other options you could add to the release.conf include:
-# sequence_index => path (a G1K default exists)
 # do_chr_splits => 1
 # do_sample_merge => 1
 # skip_fails => 1
@@ -59,6 +73,8 @@ use strict;
 use warnings;
 use VertRes::Utils::Hierarchy;
 use VertRes::IO;
+use VRTrack::VRTrack;
+use VRTrack::Lane;
 use File::Basename;
 use File::Spec;
 use File::Copy;
@@ -100,8 +116,7 @@ our $actions = [{ name     => 'create_release_hierarchy',
                   requires => \&cleanup_requires, 
                   provides => \&cleanup_provides }];
 
-our %options = (sequence_index => 'ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/sequence.index',
-                do_cleanup => 0,
+our %options = (do_cleanup => 0,
                 do_chr_splits => 0,
                 do_recalibration => 0,
                 do_sample_merge => 0,
@@ -117,7 +132,11 @@ our %options = (sequence_index => 'ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/sequ
  Args    : lane => '/path/to/desired/release_dir' (REQUIRED)
            lanes => fofn (REQUIRED; a file listing all the mapped lanes you want
                           included in the release)
-           sequence_index => '/path/to/sequence.index' (there is a G1K default)
+           db => {} (REQUIRED, meta database connection details)
+           slx_mapper => string (REQUIRED, the mapper used for SLX lanes)
+           '454_mapper' => string (REQUIRED, the mapper used for 454 lanes)
+           assembly_name => string (REQUIRED, the name of the assembly)
+
            do_cleanup => boolean (default false: don't do the cleanup action)
            do_chr_splits => boolean (default false: don't split platform-level
                                      or individual-level bams by chr)
@@ -141,8 +160,14 @@ sub new {
     
     $self->{lane} || $self->throw("lane directory not supplied, can't continue");
     $self->{lanes} || $self->throw("lanes fofn not supplied, can't continue");
+    $self->{db} || $self->throw("db connection details not supplied, can't continue");
+    $self->{slx_mapper} || $self->throw("slx_mapper not supplied, can't continue");
+    $self->{'454_mapper'} || $self->throw("454_mapper not supplied, can't continue");
+    $self->{assembly_name} || $self->throw("assembly_name not supplied, can't continue");
     
     $self->{io} = VertRes::IO->new;
+    
+    $self->{vrtrack} = VRTrack::VRTrack->new($self->{db});
     
     return $self;
 }
@@ -195,9 +220,13 @@ sub create_release_hierarchy {
     my @mapped_lanes = $self->{io}->parse_fod($self->{lanes});
     
     my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
-    $hu->check_lanes_vs_sequence_index(\@mapped_lanes, $self->{sequence_index}) || $self->throw("There was inconsistency between the mapped lanes and the sequence index, can't continue");
+    # we don't supply true as the third arg to check we have all lanes, since
+    # for releases we expect new lanes to be added after we start building, but
+    # a release is a freeze and this is OK. release_lanes.pl, which makes our
+    # list of lanes to include in the release, does this check.
+    $hu->check_lanes_vs_database(\@mapped_lanes, $self->{vrtrack}) || $self->throw("There was inconsistency between the mapped lanes and the database, can't continue");
     
-    my @bams_in_rel = $hu->create_release_hierarchy(\@mapped_lanes, $lane_path);
+    my @bams_in_rel = $hu->create_release_hierarchy(\@mapped_lanes, $lane_path, %{$self});
     @bams_in_rel || $self->throw("Failed to create the release hierarchy");
     
     my $done_file = $self->{io}->catfile($lane_path, '.release_hierarchy_made');
@@ -399,7 +428,8 @@ sub platform_merge {
                               '.lib_rmdup_done',
                               'raw.bam',
                               'platform_merge',
-                              '.platform_merge_expected');
+                              '.platform_merge_expected',
+                              'long');
     
     return $self->{No};
 }
@@ -468,42 +498,45 @@ sub sample_merge {
                                     'fofn',
                                     'output_basename',
                                     'job_name',
-                                    'out_fofn');
+                                    'out_fofn',
+                                    'queue_name');
  Function: Given a fofn of absolute paths to bams in multiple different
            directories but at the same depth within a hierarchy, groups them
            by their containing directory's parent and basename prefix, and
            merges the groups into bam files placed in that parent directory.
 
            Eg. given a fofn listing:
-           /.../mapping/proj1/ind1/SLX/lib1/lane1/se_map.bam
-           /.../mapping/proj1/ind1/SLX/lib1/lane2/se_map.bam
-           /.../mapping/proj1/ind1/SLX/lib2/lane3/pe_map.bam
-           /.../mapping/proj1/ind1/SLX/lib2/lane4/se_map.filtered.bam
-           /.../mapping/proj1/ind1/SLX/lib2/lane5/pe_map.bam
-           /.../mapping/proj1/ind1/SLX/lib2/lane6/se_map.bam
+           /.../mapping/proj1/ind1/SLX/lib1/lane1/se.map.bam
+           /.../mapping/proj1/ind1/SLX/lib1/lane2/se.map.bam
+           /.../mapping/proj1/ind1/SLX/lib2/lane3/pe.map.bam
+           /.../mapping/proj1/ind1/SLX/lib2/lane4/se.map.filtered.bam
+           /.../mapping/proj1/ind1/SLX/lib2/lane5/pe.map.bam
+           /.../mapping/proj1/ind1/SLX/lib2/lane6/se.map.bam
            with output_basename undef it will create:
-           /.../mapping/proj1/ind1/SLX/lib1/se_map.bam (lane1+2 merge)
-           /.../mapping/proj1/ind1/SLX/lib2/pe_map.bam (lane3+5 merge)
-           /.../mapping/proj1/ind1/SLX/lib2/se_map.bam (lane4+6 merge)
+           /.../mapping/proj1/ind1/SLX/lib1/se.map.bam (lane1+2 merge)
+           /.../mapping/proj1/ind1/SLX/lib2/pe.map.bam (lane3+5 merge)
+           /.../mapping/proj1/ind1/SLX/lib2/se.map.bam (lane4+6 merge)
            and with the output_basename set to 'merged.bam' it will create:
            /.../mapping/proj1/ind1/SLX/lib1/merged.bam (lane1+2 merge)
            /.../mapping/proj1/ind1/SLX/lib2/merged.bam (lane3,4,5,6 merge)
 
  Returns : n/a (creates out_fofn which will be a fofn of absolute paths to
            the merged bams it was supposed to create)
- Args    : a file basename to name output bams after
+ Args    : see usage. last option of queue name is optional, and defaults to
+           'normal'
 
 =cut
 
 sub merge_up_one_level {
-    my ($self, $lane_path, $action_lock, $fofn, $output_basename, $job_name, $out_fofn) = @_;
+    my ($self, $lane_path, $action_lock, $fofn, $output_basename, $job_name, $out_fofn, $queue) = @_;
     $fofn = $self->{io}->catfile($lane_path, $fofn);
     $out_fofn = $self->{io}->catfile($lane_path, $out_fofn);
     
     unlink($out_fofn);
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M5000000 -R \'select[mem>5000] rusage[mem=5000]\'';
+    $queue ||= 'normal';
+    $self->{bsub_opts} = '-q '.$queue.' -M5000000 -R \'select[mem>5000] rusage[mem=5000]\'';
     
     my $group_by_basename = ! defined $output_basename;
     my %grouped_bams = $self->_fofn_to_bam_groups($lane_path, $fofn, $group_by_basename);
@@ -550,7 +583,7 @@ sub merge_up_one_level {
 sub _fofn_to_bam_groups {
     my ($self, $lane_path, $fofn, $group_by_basename) = @_;
     
-    # /.../mapping/proj1/ind1/SLX/lib1/lane1/pe_raw.sorted.bam
+    # /.../mapping/proj1/ind1/SLX/lib1/lane1/pe.raw.sorted.bam
     
     my @files = $self->{io}->parse_fofn($fofn, $lane_path);
     
