@@ -500,6 +500,105 @@ sub get_lanes {
     return @good_lanes;
 }
 
+=head2 check_lanes_vs_database
+
+ Title   : check_lanes_vs_database
+ Usage   : my $ok = $obj->check_lanes_vs_database(['/lane/paths', ...],
+                                                  $vrtrack);
+ Function: Check that the given lanes reside in the correct part of the
+           hierarchy by checking the information in the database.
+ Returns : boolean (true if all lanes agree with the database)
+ Args    : reference to a list of lane paths to check, VRTrack::VRTrack object,
+           boolean to turn on optional checking to see if you're missing any
+           lanes from any of the samples that your input lanes belong to
+
+=cut
+
+sub check_lanes_vs_database {
+    my ($self, $lanes, $vrtrack, $check_for_missing) = @_;
+    
+    my $all_ok = 1;
+    my @lane_ids;
+    my @sample_names;
+    foreach my $lane_path (@{$lanes}) {
+        my %lane_info = $self->parse_lane($lane_path);
+        my $lane_id = basename($lane_path);
+        my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane_id);
+        
+        # check this lane is even in the database
+        unless ($vrlane) {
+            $all_ok = 0;
+            $self->warn("not in db: $lane_id ($lane_path)");
+            next;
+        }
+        
+        push(@lane_ids, $lane_id);
+        my %objs = $self->lane_hierarchy_objects($vrlane);
+        push(@sample_names, $objs{sample}->name);
+        
+        
+        my $sample_name = $objs{individual}->hierarchy_name;
+        my $platform = $objs{platform}->name;
+        if (exists $platform_aliases{$platform}) {
+            $platform = $platform_aliases{$platform};
+        }
+        my $library = $objs{library}->hierarchy_name;
+        my $expected_path = join('/', $sample_name, $platform, $library);
+        
+        # check this lane hasn't been withdrawn
+        if ($vrlane->is_withdrawn) {
+            $self->warn("withdrawn: $lane_id ($lane_path)");
+            $all_ok = 0;
+            next;
+        }
+        
+        # study swaps
+        my $given_study = $study_to_srp{$lane_info{study}} || $lane_info{study};
+        my $study = $objs{project}->hierarchy_name;
+        unless ($study eq $given_study) {
+            $self->warn("study swap: $study vs $given_study for $lane_id ($lane_path -> $expected_path)");
+            $all_ok = 0;
+        }
+        
+        # sample swaps
+        unless ($sample_name eq $lane_info{sample}) {
+            $self->warn("sample swap: $sample_name vs $lane_info{sample} for $lane_id ($lane_path -> $expected_path)");
+            $all_ok = 0;
+        }
+        
+        # platform swaps
+        unless ($platform eq $lane_info{platform}) {
+            $self->warn("platform swap: $platform vs $lane_info{platform} for $lane_id ($lane_path -> $expected_path)");
+            $all_ok = 0;
+        }
+        
+        # library swaps
+        unless ($library eq $lane_info{library}) {
+            $self->warn("library swap: $library vs $lane_info{library} for $lane_id ($lane_path -> $expected_path)");
+            $all_ok = 0;
+        }
+    }
+    
+    if ($check_for_missing) {
+        my @expected_lanes = $self->get_lanes(sample => \@sample_names);
+        
+        # uniquify
+        my %expected_lanes = map { $_->hierarchy_name => 1 } @expected_lanes;
+        @expected_lanes = sort keys %expected_lanes;
+        
+        my %actual_lanes = map { $_ => 1 } @lane_ids;
+        
+        foreach my $lane (@expected_lanes) {
+            unless (exists $actual_lanes{$lane}) {
+                $self->warn("missing: $lane was in the database but not in the supplied list of lanes");
+                $all_ok = 0;
+            }
+        }
+    }
+    
+    return $all_ok;
+}
+
 =head2 check_lanes_vs_sequence_index
 
  Title   : check_lanes_vs_sequence_index
@@ -724,21 +823,30 @@ sub _remove_empty_parent {
 
  Title   : create_release_hierarchy
  Usage   : my $ok = $obj->create_release_hierarchy(\@abs_lane_paths,
-                                                   '/path/to/release');
+                                                   '/path/to/release',
+                                                   vrtrack => $vrtrack,
+                                                   slx_mapper => 'bwa',
+                                                   '454_mapper' => 'ssaha',
+                                                   assembly_name => 'NCBI37');
  Function: Given a list of absolute paths to mapped lanes in a mapping
            hierarchy, creates a release hierarchy with mapped bams symlinked
            across.
-           NB: You should probably call check_lanes_vs_sequence_index() on the
+           NB: You should probably call check_lanes_vs_database() on the
            the input lanes beforehand.
  Returns : list of absolute paths to the bam symlinks in the created release
            hierarchy
  Args    : reference to a list of mapped lane paths, base path you want to
-           build the release hierarchy in
+           build the release hierarchy in, and a hash of the following required
+           options:
+           vrtrack => VRTrack::VRTrack object
+           slx_mapper => string
+           454_mapper => string
+           assembly_name => string
 
 =cut
 
 sub create_release_hierarchy {
-    my ($self, $lane_paths, $release_dir) = @_;
+    my ($self, $lane_paths, $release_dir, %args) = @_;
     
     unless (-d $release_dir) {
         mkdir($release_dir) || $self->throw("Unable to create base release directory: $!");
@@ -748,6 +856,32 @@ sub create_release_hierarchy {
     my @all_linked_bams;
     
     foreach my $lane_path (@{$lane_paths}) {
+        # first get the mapstats object so we'll know the bam prefix
+        my $lane_name = basename($lane_path);
+        my $vrlane = VRTrack::Lane->new_by_hierarchy_name($args{vrtrack}, $lane_name) || $self->throw("Unable to get lane $lane_name from db");
+        my %objs = $self->lane_hierarchy_objects($vrlane);
+        my $platform = lc($objs{platform}->name);
+        my $mappings = $vrlane->mappings();
+        my $mapstats;
+        if ($mappings && @{$mappings}) {
+            # find the most recent mapstats that corresponds to our mapping
+            my $highest_id = 0;
+            foreach my $possible (@{$mappings}) {
+                # we're expecting it to have the correct assembly and mapper
+                my $assembly = $possible->assembly() || next;
+                $assembly->name eq $args{assembly_name} || next;
+                my $mapper = $possible->mapper() || next;
+                $mapper->name eq $args{$platform.'_mapper'} || next;
+                
+                if ($possible->id > $highest_id) {
+                    $mapstats = $possible;
+                    $highest_id = $possible->id;
+                }
+            }
+        }
+        $mapstats || $self->throw("Could not get a mapstats for lane $lane_name");
+        my $mapstats_prefix = $mapstats->id;
+        
         # setup release lane
         my @dirs = File::Spec->splitdir($lane_path);
         @dirs >= 5 || $self->throw("lane path '$lane_path' wasn't valid");
@@ -758,11 +892,10 @@ sub create_release_hierarchy {
         # symlink bams
         my @linked_bams;
         foreach my $ended ('pe', 'se') {
-            my $bam_file = "${ended}_raw.sorted.bam";
-            my $source = $io->catfile($lane_path, $bam_file);
+            my $source = $io->catfile($lane_path, "$mapstats_prefix.$ended.raw.sorted.bam");
             
             if (-s $source) {
-                my $destination = $io->catfile($release_lane_path, $bam_file);
+                my $destination = $io->catfile($release_lane_path, "$ended.raw.sorted.bam");
                 symlink($source, $destination) || $self->throw("Couldn't symlink $source -> $destination");
                 push(@linked_bams, $destination);
             }
