@@ -204,6 +204,14 @@ sub import_fastqs {
     # download the files that haven't been downloaded already
     my @files = @{$lane_obj->files || []};
     
+    unless (defined $self->{db}) {
+        $self->{db}->{host} = '';
+        $self->{db}->{port} = '',
+        $self->{db}->{user} = '',
+        $self->{db}->{password} = '',
+        $self->{db}->{database} = ''
+    }
+    
     my $did_one = 0;
     for my $file_obj (@files) {
         my $file = $file_obj->name;
