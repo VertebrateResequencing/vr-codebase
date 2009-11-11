@@ -120,7 +120,11 @@ sub parse_lane {
            individual_coverage => float, (the coverage of this lane's individual)
            population     => string,
            technology     => string, (aka platform)
-           library        => string,
+           library        => string, (the hierarchy name, which is most likely
+                                      similar to the true original library name)
+           library_raw    => string, (the name stored in the database, which may
+                                      be a uniquified version of the original
+                                      library name)
            lane           => string, (aka read group)
            centre         => string, (the sequencing centre name)
            insert_size    => int, (can be undef if this lane is single-ended)
@@ -181,7 +185,8 @@ sub lane_info {
     my %objs = $self->lane_hierarchy_objects($vrlane);
     
     $info{insert_size} = $objs{library}->insert_size;
-    $info{library} = $objs{library}->hierarchy_name || $self->throw("library name wasn't known for $rg");
+    $info{library} = $objs{library}->hierarchy_name || $self->throw("library hierarchy_name wasn't known for $rg");
+    $info{library_raw} = $objs{library}->name || $self->throw("library name wasn't known for $rg");
     $info{centre} = $objs{centre}->name || $self->throw("sequencing centre wasn't known for $rg");
     $info{technology} = $objs{platform}->name || $self->throw("sequencing platform wasn't known for $rg");
     $info{sample} = $objs{sample}->name || $self->throw("sample name wasn't known for $rg");
