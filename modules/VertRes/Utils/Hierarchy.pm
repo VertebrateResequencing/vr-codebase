@@ -348,7 +348,7 @@ sub hierarchy_coverage {
                 next unless ($lane->qc_status && $lane->qc_status eq 'passed');
             }
             
-            my $bp = $lane->raw_bases;
+            my $bp = $lane->raw_bases || 0;
             
             if ($mapped) {
                 my $mapstats = $lane->latest_mapping;
