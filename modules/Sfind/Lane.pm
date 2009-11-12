@@ -46,7 +46,7 @@ sub new {
 
     # id_run_pair = 0 means this is the first of any pair
     # which is what the srf, fastq & fastqcheck files are named for
-    my $sql = qq[select batch_id, id_run, position, run_complete, cycles,paired_read from npg_information where id_npg_information = ? and id_run_pair=0];
+    my $sql = qq[select batch_id, id_run, position, run_complete, cycles, paired_read, has_two_runfolders from npg_information where id_npg_information = ? and id_run_pair=0];
     my $sth = $self->{_dbh}->prepare($sql);
 
     $sth->execute($id);
@@ -59,9 +59,15 @@ sub new {
     $self->run_name($data->[1]);
     $self->run_lane($data->[2]);
     $self->created($data->[3]);
-    $self->read_len($data->[4]);
     $self->is_paired($data->[5]);
-
+    if ($data->[5] &! $data->[6]){
+        # if paired, and only one runfolder, then cycles is total cycles (i.e.
+        # fwd+rev) rather than one end.  Need to divide by two.
+        $self->read_len(int($data->[4]/2));
+    }
+    else {
+        $self->read_len($data->[4]);
+    }
     $self->_load_pair_info();
     return $self;
 }
