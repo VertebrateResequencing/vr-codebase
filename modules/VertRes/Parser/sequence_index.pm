@@ -99,7 +99,9 @@ sub _get_header {
             last;
         }
         else {
-            # allow header line to not be present
+            # allow header line to not be present. lines can also end with an
+            # extraneous \t\n, so remove that first
+            s/\t\n$//;
             my @a = split("\t", $_);
             if (@a == 25) {
                 $self->{_first_line} = $_;
@@ -109,6 +111,10 @@ sub _get_header {
                 }
                 $self->seek(0, 0);
                 $saw++;
+                last;
+            }
+            else {
+                $self->warn("This file has no header line, and has ".scalar(@a)." columns instead of 25");
                 last;
             }
         }
@@ -185,7 +191,10 @@ sub next_result {
         $self->{"saw_last_line_$fh_id"} = 1;
         return;
     }
-
+    
+    # bug in sequence.index generation can result in lines ending in \t\n
+    $line =~ s/\t\n//;
+    
     my @data = split(/\t/, $line);
     chomp($data[-1]);
     if ( @data != 25 )
