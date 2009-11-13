@@ -75,7 +75,7 @@ is $bwa_mapper->exe, 'bwa', 'exe test for bwa mapper';
 like $bwa_mapper->version, qr/\d\.\d\.\d/, 'version test for bwa mapper';
 my $ssaha_mapper = VertRes::Utils::Mappers::ssaha->new();
 is $ssaha_mapper->exe, 'ssaha2', 'exe test for ssaha mapper';
-like $ssaha_mapper->version, qr/\d\.\d\.\d/, 'version test for ssaha mapper';
+like $ssaha_mapper->version, qr/\d\.\d/, 'version test for ssaha mapper';
 my $maq_mapper = VertRes::Utils::Mappers::maq->new();
 is $maq_mapper->exe, 'maq', 'exe test for maq mapper';
 like $maq_mapper->version, qr/\d\.\d/, 'version test for maq mapper';
