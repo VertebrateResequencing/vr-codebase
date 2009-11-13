@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 63;
+    use Test::Most tests => 64;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::IO');
@@ -109,7 +109,11 @@ is $found_rgs, @records, 'correct RG tag still present on all records';
 # rmdup (just a shortcut to VertRes::Wrapper::samtools::rmdup - no need to test thoroughly here)
 my $rmdup_bam = $io->catfile($temp_dir, 'rmdup.bam');
 ok $sam_util->rmdup($sorted_bam, $rmdup_bam, single_ended => 0, quiet => 1), 'rmdup test, paired';
+my @rmdup_pe = get_bam_body($rmdup_bam);
+unlink($rmdup_bam);
 ok $sam_util->rmdup($sorted_bam, $rmdup_bam, single_ended => 1, quiet => 1), 'rmdup test, single ended';
+my @rmdup_se = get_bam_body($rmdup_bam);
+cmp_ok scalar(@rmdup_pe), '<', scalar(@rmdup_se), 'rmdup pe gave fewer reads than se mode';
 
 # merge (pretty much just a shortcut to VertRes::Wrapper::picard::merge_and_check - no need to test thoroughly here)
 my $merge_bam = $io->catfile($temp_dir, 'merge.bam');

@@ -373,7 +373,7 @@ sub rmdup {
     
     $self->exe($self->{base_exe}.' rmdup');
     
-    $self->switches([qw(sS)]);
+    $self->switches([qw(s S)]);
     $self->params([]);
     $self->_set_params_and_switches_from_args(%options);
     
