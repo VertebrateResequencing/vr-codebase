@@ -39,8 +39,8 @@ A parser for sam and bam files.
 The environment variable SAMTOOLS must point to a directory where samtools
 source has been compiled, so containing at least bam.h and libbam.a.
 See http://cpansearch.perl.org/src/LDS/Bio-SamTools-1.06/README for advice on
-gettings things to work. Specifically, you'll probably need to add -fPIC to the
-CFLAGS line in samtools's Makefile before compiling.
+gettings things to work. Specifically, you'll probably need to add -fPIC and
+-m64 to the CFLAGS line in samtools's Makefile before compiling.
 
 =head1 AUTHOR
 
