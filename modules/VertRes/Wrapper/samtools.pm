@@ -360,43 +360,22 @@ sub fixmate {
 =head2 rmdup
 
  Title   : rmdup
- Usage   : $wrapper->rmdup('sorted_in.bam', 'out.bam');
+ Usage   : $wrapper->rmdup('sorted_in.bam', 'out.bam', %options);
  Function: rmdup...
  Returns : n/a
- Args    : paths to input and output bams
+ Args    : paths to input and output bams, optionally options understood by
+           rmdup, most significantly s => 1 to set single-ended mode
 
 =cut
 
 sub rmdup {
-    my ($self, $in_bam, $out_bam) = @_;
+    my ($self, $in_bam, $out_bam, %options) = @_;
     
     $self->exe($self->{base_exe}.' rmdup');
     
-    $self->switches([]);
+    $self->switches([qw(sS)]);
     $self->params([]);
-    
-    $self->register_output_file_to_check($out_bam);
-    
-    return $self->run($in_bam, $out_bam);
-}
-
-=head2 rmdupse
-
- Title   : rmdupse
- Usage   : $wrapper->rmdupse('sorted_in.bam', 'out.bam');
- Function: rmdupse...
- Returns : n/a
- Args    : paths to input and output bams
-
-=cut
-
-sub rmdupse {
-    my ($self, $in_bam, $out_bam) = @_;
-    
-    $self->exe($self->{base_exe}.' rmdupse');
-    
-    $self->switches([]);
-    $self->params([]);
+    $self->_set_params_and_switches_from_args(%options);
     
     $self->register_output_file_to_check($out_bam);
     

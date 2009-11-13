@@ -445,19 +445,20 @@ sub rmdup {
     
     my $command = 'rmdup';
     
+    my @args = ();
     my $lane_path = delete $args{lane_path};
     if ($lane_path) {
         my @fastq_info = @{HierarchyUtilities::getFastqInfo($lane_path)};
         if ($fastq_info[0]->[0] && ! $fastq_info[1]->[0] && ! $fastq_info[2]->[0]) {
-            $command = 'rmdupse';
+            @args = (s => 1);
         }
     }
     if (delete $args{single_ended}) {
-        $command = 'rmdupse';
+        @args = (s => 1);
     }
     
     my $wrapper = VertRes::Wrapper::samtools->new(verbose => $self->verbose, %args);
-    $wrapper->$command($in_bam, $out_bam);
+    $wrapper->rmdup($in_bam, $out_bam, @args);
     
     return $wrapper->run_status() >= 1;
 }
