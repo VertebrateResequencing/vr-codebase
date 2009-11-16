@@ -482,7 +482,6 @@ sub do_mapping {
             move($tmp_sam, $out_sam) || $self->throw("Failed to move $tmp_sam to $out_sam: $!");
         }
         else {
-            system("cp $tmp_sam tmp.sam");
             $self->warn("a sam file was made by do_mapping(), but it only had $sam_lines lines, not the expected $num_reads - will unlink it");
             $self->_set_run_status(-1);
             unlink("$tmp_sam");
