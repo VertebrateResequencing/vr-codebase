@@ -354,6 +354,7 @@ sub do_mapping {
                             close($skipped_fh);
                         }
                         else {
+                            $args{2} = $read_lengths[1];
                             push(@final_bfqs, $bfqs[1]);
                         }
                     }
