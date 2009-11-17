@@ -559,6 +559,12 @@ sub get_remote_file {
         
         $ftp->get($full_path, $local_dir);
         
+        unless (-s $out_file) {
+            $self->warn("After 10 automated attempts, failed to download $url at all");
+            unlink($out_file);
+            return;
+        }
+        
         if ($md5) {
             my $ok = $self->verify_md5($out_file, $md5);
             
@@ -566,7 +572,7 @@ sub get_remote_file {
                 my $tries = 0;
                 while (! $ok) {
                     unlink($out_file);
-                    $ftp->get($path, $local_dir);
+                    $ftp->get($full_path, $local_dir);
                     $ok = $self->verify_md5($out_file, $md5);
                     
                     $tries++;
@@ -575,7 +581,7 @@ sub get_remote_file {
             }
             
             unless ($ok) {
-                $self->warn("Tried downloading $url 3 times, but the md5 never matched '$md5'\n");
+                $self->warn("Tried downloading $url 3 times, but the md5 never matched '$md5'");
                 unlink($out_file);
                 return;
             }
