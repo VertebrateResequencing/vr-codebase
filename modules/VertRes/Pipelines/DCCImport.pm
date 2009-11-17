@@ -107,7 +107,7 @@ our $actions = [ { name     => 'import_fastqs',
 
 our %options = (do_cleanup => 0,
                 fastq_base => 'ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp',
-                bsub_opts => '-q normal',
+                bsub_opts => '-q normal -R \'rusage[tmp=500]\'',
                 calculate_missing_information => 0);
 
 =head2 new
@@ -267,7 +267,7 @@ unless (-s \$data_path) {
                                              save => \$precheck_file,
                                              \$md5 ? (md5  => \$md5) : ());
             
-            unless (\$got eq \$precheck_file) {
+            unless (\$got && \$got eq \$precheck_file) {
                 die "Failed to download \$ftp_path to \$precheck_file\\n";
             }
         }
