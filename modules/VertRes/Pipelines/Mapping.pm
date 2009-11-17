@@ -608,7 +608,7 @@ exit;
             };
             close $scriptfh;
             
-            LSF::run($action_lock, $lane_path, $self->{prefix}.'map_'.$ended.'_'.$self->{mapstats_id}, $self->{mapper_obj}->_bsub_opts($lane_path, 'map'), qq{perl -w $script_name});
+            LSF::run($action_lock, $lane_path, $self->{prefix}.'map_'.$ended.'_'.$self->{mapstats_id}.'_'.$split, $self->{mapper_obj}->_bsub_opts($lane_path, 'map'), qq{perl -w $script_name});
         }
     }
     
@@ -929,6 +929,16 @@ sub cleanup {
                          merge_and_stat_se merge_and_stat_pe)) {
         unlink($self->{io}->catfile($lane_path, $prefix.$file));
         foreach my $suffix (qw(o e pl)) {
+            if ($file =~ /map_([sp]e)/) {
+                my $ended = $1;
+                $self->_get_read_args($lane_path, $ended) || next;
+                my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
+                
+                foreach my $split (1..$num_of_splits) {
+                    unlink($self->{io}->catfile($lane_path, $prefix.$file.'_'.$self->{mapstats_id}.'_'.$split.'.'.$suffix));
+                }
+            }
+            
             unlink($self->{io}->catfile($lane_path, $prefix.$file.'_'.$self->{mapstats_id}.'.'.$suffix));
         }
     }
