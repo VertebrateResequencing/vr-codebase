@@ -41,6 +41,12 @@ data => {
 # do_chr_splits => 1
 # do_sample_merge => 1
 # skip_fails => 1
+# previous_release_root => '/path/to/rel'
+
+# the previous_release_root will result in the pipline checking if a particular
+# bam needs to be (re)made depending on if lanes have been removed/added/altered
+# since that previous release. If a bam doesn't need to be made, the new
+# release directory will contain a symlink to the bam in the old directory
 
 # make another file that simply also contains the release directory:
 echo "/path/to/rel_dir" > rel.fod
@@ -79,6 +85,7 @@ use File::Basename;
 use File::Spec;
 use File::Copy;
 use Cwd 'abs_path';
+use Date::Parse;
 use LSF;
 
 use base qw(VertRes::Pipeline);
@@ -121,7 +128,8 @@ our %options = (do_cleanup => 0,
                 do_recalibration => 0,
                 do_sample_merge => 0,
                 bsub_opts => '',
-                dont_wait => 1);
+                dont_wait => 1,
+                previous_release_root => '');
 
 =head2 new
 
@@ -150,6 +158,10 @@ our %options = (do_cleanup => 0,
                                        bams)
            skip_fails => boolean (default false; when true, if some jobs fail,
                                   continue to the next action anyway)
+           previous_release_root => string (if a part of the hierarchy didn't
+                                            change since the last release,
+                                            bams are symlinked instead of being
+                                            remade)
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -544,22 +556,69 @@ sub merge_up_one_level {
     my $verbose = $self->verbose;
     
     my @out_bams;
+    my %lane_paths;
     while (my ($group, $bams) = each %grouped_bams) {
         my @bams = @{$bams};
         @bams || next;
         
         my ($out_dir, $out_prefix) = split(':!:', $group);
-        my $out_bam;
+        my $out_bam_name;
         if ($out_prefix) {
-            $out_bam = $out_prefix.'.bam';
+            $out_bam_name = $out_prefix.'.bam';
         }
         else {
-            $out_bam = $output_basename;
+            $out_bam_name = $output_basename;
         }
-        $out_bam || $self->throw("Couldn't work out what to call the merged bam given ($lane_path, $output_basename, $job_name, $group)!");
+        $out_bam_name || $self->throw("Couldn't work out what to call the merged bam given ($lane_path, $output_basename, $job_name, $group)!");
         
-        $out_bam = $self->{io}->catfile($lane_path, $out_dir, $out_bam);
+        my $current_path = $self->{io}->catfile($lane_path, $out_dir);
+        my $out_bam = $self->{io}->catfile($current_path, $out_bam_name);
         push(@out_bams, $out_bam);
+        
+        # no need to merge if the hierarchy beneath hasn't changed since the
+        # previous release
+        if ($self->{previous_release_root}) {
+            my $previous_path = $self->{io}->catfile($self->{previous_release_root}, $out_dir);
+            my $previous_bam =  $self->{io}->catfile($previous_path, $out_bam_name);
+            
+            if ($self->_hierarchy_same($previous_path, $current_path, \%lane_paths)) {
+                # check that none of the lanes in this part of the hierarchy
+                # have been deleted and recreated since the previous release
+                my $lanes_changed = 0;
+                foreach my $lane_hname (keys %{$lane_paths{$previous_path}}) {
+                    my $lane = VRTrack::Lane->new_by_hierarchy_name($self->{vrtrack}, $lane_hname) || $self->throw("Lane $lane_hname was in the release, but not in the db!");
+                    my $changed = str2time($lane->changed);
+                    
+                    if ($changed > $lane_paths{$previous_path}->{$lane_hname}) {
+                        $lanes_changed = 1;
+                    }
+                }
+                
+                unless ($lanes_changed) {
+                    symlink($previous_bam, $out_bam);
+                    
+                    # symlink the other files we might have made from that bam
+                    # in other actions
+                    my $prev_rmdup_bam = $previous_bam;
+                    $prev_rmdup_bam =~ s/\.bam$/.rmdup.bam/;
+                    if (-s $prev_rmdup_bam) {
+                        my $cur_rmdup_bam = $out_bam;
+                        $cur_rmdup_bam =~ s/\.bam$/.rmdup.bam/;
+                        symlink($prev_rmdup_bam, $cur_rmdup_bam);
+                    }
+                    
+                    my $prev_recal_bam = $previous_bam;
+                    $prev_recal_bam =~ s/\.bam$/.recal.bam/;
+                    if (-s $prev_recal_bam) {
+                        my $cur_recal_bam = $out_bam;
+                        $cur_recal_bam =~ s/\.bam$/.recal.bam/;
+                        symlink($prev_recal_bam, $cur_recal_bam);
+                    }
+                    
+                    # *** splits?....
+                }
+            }
+        }
         
         next if -s $out_bam;
         
@@ -607,6 +666,47 @@ sub _fofn_to_bam_groups {
     }
     
     return %bams_groups;
+}
+
+sub _hierarchy_same {
+    my ($self, $root1, $root2, $lane_paths, $orig_path) = @_;
+    $orig_path ||= $root1;
+    
+    opendir(my $dh1, $root1) || return 0;
+    opendir(my $dh2, $root2) || return 0;
+    
+    my %checked_things;
+    my $had_subdirs = 0;
+    while (my $thing = readdir($dh1)) {
+        next if $thing =~ /^\.{1,2}$/;
+        my $this_path = File::Spec->catdir($root1, $thing);
+        next unless -d $this_path;
+        $had_subdirs++;
+        
+        my $other_path = File::Spec->catdir($root2, $thing);
+        my $thing_same = $self->_hierarchy_same($this_path, $other_path, $lane_paths, $orig_path);
+        if ($thing_same) {
+            $checked_things{$thing} = 1;
+        }
+        else {
+            return 0;
+        }
+    }
+    
+    while (my $thing = readdir($dh2)) {
+        next if $thing =~ /^\.{1,2}$/;
+        next unless -d $thing;
+        next if exists $checked_things{$thing};
+        return 0;
+    }
+    
+    unless ($had_subdirs) {
+        # this is a lane directory, store that fact and its mtime
+        my @s = stat($root1);
+        $lane_paths->{$orig_path}->{basename($root1)} = $s[9];
+    }
+    
+    return 1;
 }
 
 =head2 recalibrate_requires
