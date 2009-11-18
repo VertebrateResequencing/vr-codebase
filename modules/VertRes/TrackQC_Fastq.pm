@@ -1,3 +1,14 @@
+=head1 NAME
+
+VertRes::TrackQC_Fastq - pipeline for QC of fastq files, inherits from VertRes::TrackQC_Bam.
+
+=head1 SYNOPSIS
+
+See /lustre/scratch102/conf/pipeline.conf and /lustre/scratch102/conf/qc-g1k.conf
+for an example.
+
+=cut
+
 package VertRes::TrackQC_Fastq;
 use base qw(VertRes::TrackQC_Bam);
 
@@ -136,6 +147,7 @@ sub VertRes::TrackQC_Fastq::new
 {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(%$options,'actions'=>\@actions,@args);
+    bless($self,$class);
     $self->write_logs(1);
 
     if ( !$$self{bwa_exec} ) { $self->throw("Missing the option bwa_exec.\n"); }

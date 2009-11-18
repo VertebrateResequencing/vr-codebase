@@ -1,3 +1,14 @@
+=head1 NAME
+
+VertRes::TrackQC_Bam - pipeline for QC of bam files
+
+=head1 SYNOPSIS
+
+See /lustre/scratch102/conf/pipeline.conf and /lustre/scratch102/conf/qc-g1k-meta.conf
+for an example.
+
+=cut
+
 package VertRes::TrackQC_Bam;
 use base qw(VertRes::Pipeline);
 
@@ -110,6 +121,7 @@ sub VertRes::TrackQC_Bam::new
 {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(%$options,'actions'=>\@actions,@args);
+    bless($self,$class);
     $self->write_logs(1);
 
     if ( !$$self{gcdepth_R} ) { $self->throw("Missing the option gcdepth_R.\n"); }

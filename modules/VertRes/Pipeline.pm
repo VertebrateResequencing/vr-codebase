@@ -57,6 +57,7 @@ sub new
 {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(%$default_options, @args);
+    bless($self,$class);
     return $self;
 }
 
@@ -164,15 +165,15 @@ sub run_lane
             #   call. Only in case it fails repeatedly, we'll be executing this again. 
             #   The script calling pipeline must handle repeated failures.
             #
+            if ( $$self{check_status} )
+            {
+                $all_done = $Error;
+                last;
+            }
             $self->warn("The task \"$$action{'name'}\" ended with an error - some of the LSF jobs returned wrong status:\n\t$action_lock\n");
             if ( $$self{'exit_on_errors'} )
             {
                 $self->warn("When problem fixed, remove the lockfile and rerun...\n");
-                $all_done = $Error;
-                last;
-            }
-            if ( $$self{check_status} )
-            {
                 $all_done = $Error;
                 last;
             }
@@ -262,7 +263,7 @@ sub clean
         }
 
         # Clean the files for each listed task.
-        if ( $$self{'task'}{$$action{name}} && (my $provides=&{$$action{'provides'}}($self,$$self{lane_path})) )
+        if ( $$self{task} && $$self{'task'}{$$action{name}} && (my $provides=&{$$action{'provides'}}($self,$$self{lane_path})) )
         {
             for my $file (@$provides)
             {
@@ -305,7 +306,7 @@ sub is_finished
     #   finished and must be run. It is the caller responsibility to ensure that
     #   the task will not be run again and again.
     #
-    my $provides = &{$$action{'provides'}}($self,$lane_path);
+    my $provides = &{$$action{'provides'}}($self,$lane_path); 
     if ( !$provides ) { return $No; }
 
     my $missing = $self->what_files_are_missing($lane_path,$provides);
