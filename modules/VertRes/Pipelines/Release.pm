@@ -615,6 +615,16 @@ sub merge_up_one_level {
                         symlink($prev_recal_bam, $cur_recal_bam);
                     }
                     
+                    foreach my $suffix2 ('', '.md5') {
+                        foreach my $suffix ('', '.bai', '.bas') {
+                            my $prev = $previous_bam.$suffix.$suffix2;
+                            if (-s $prev) {
+                                my $cur = $out_bam.$suffix.$suffix2;
+                                symlink($prev, $cur);
+                            }
+                        }
+                    }
+                    
                     # *** splits?....
                 }
             }
