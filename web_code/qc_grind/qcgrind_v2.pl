@@ -49,6 +49,8 @@ my $PASSED_FILTER = 'passed';
 my $PENDING_FILTER = 'pending';
 my $NO_QC = 'no_qc';
 my $FAILED_FILTER = 'failed';
+my $CLOSE_LIBRARY = 'close';
+my $OPEN_LIBRARY = 'open';
 
 # Use SSO to authenticate, and then authorise against a list of people allowed
 # to update the database.
@@ -1045,7 +1047,23 @@ sub displayLibrary
             <td align="center"><input type="submit" name="lib_update" value="$PENDING_FILTER" class="btn" style="background-color: #F5F5F5;" onmouseover="this.className='btn btnhov'" onmouseout="this.className='btn'" /></td>
             <td align="center"><input type="submit" name="lib_update" value="$FAILED_FILTER" class="btn" style="background-color: #FFC0C0;" onmouseover="this.className='btn btnhov'" onmouseout="this.className='btn'" /></td>
             <td align="center"><input type="submit" name="lib_update" value="$PASSED_FILTER" class="btn" style="background-color: #C0FFC0;" onmouseover="this.className='btn btnhov'" onmouseout="this.className='btn'" /></td>
-            </tr>
+            ];
+			
+			if( $library->open() == 1 )
+			{
+				print qq[
+					<td align="center"><input type="submit" name="lib_update" value="$CLOSE_LIBRARY" class="btn" style="background-color: #FFC0C0;" onmouseover="this.className='btn btnhov'" onmouseout="this.className='btn'" /></td>
+				];
+			}
+			else
+			{
+				print qq[
+					<td align="center"><input type="submit" name="lib_update" value="$OPEN_LIBRARY" class="btn" style="background-color: #C0FFC0;" onmouseover="this.className='btn btnhov'" onmouseout="this.className='btn'" /></td>
+				];
+			}
+			
+			print qq[
+			</tr>
             <tr>
             <td align="left"></td>
             <td align="center"><b>$libcount</b> lanes in library</td>
