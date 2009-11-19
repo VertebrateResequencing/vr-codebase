@@ -687,7 +687,7 @@ sub displayProjectPage
                 $sampleDepth += $depth;
             }
             
-			print $library->name().'xxx'.$library->open();
+			#print $library->name().'xxx'.$library->open();
             my $colour = get_colour_for_status( $library->open() ? $library->qc_status() : $CLOSE_LIBRARY );
             my $numLanes = @$lanes;
             if( ! $firstL ){print qq[<tr><td></td><td></td>];$firstL=0;}
@@ -1340,22 +1340,29 @@ sub redirectErrorScreen
 sub get_colour_for_status {
     my $status = shift;
     my $status_colour;
-    
+
 	if( $status eq $CLOSE_LIBRARY )
 	{
 		$status_colour="yellow";
 	}
-    if ($status eq 'no_qc'){
-    $status_colour="#FFFFFF";
-    }
-    if ($status eq 'passed'){
-    $status_colour="#C0FFC0";
-    }
-    elsif ($status eq 'failed'){
-    $status_colour="#FFC0C0";
-    }
-    else {
-    $status_colour="#F5F5F5";
+	else
+	{
+		if ($status eq 'no_qc')
+		{
+			$status_colour="#FFFFFF";
+		}
+		if ($status eq 'passed')
+		{
+			$status_colour="#C0FFC0";
+		}
+		elsif ($status eq 'failed')
+		{
+			$status_colour="#FFC0C0";
+		}
+		else 
+		{
+			$status_colour="#F5F5F5";
+		}
     }
 
     return $status_colour;
