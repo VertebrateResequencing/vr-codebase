@@ -301,17 +301,35 @@ elsif( $mode == $LIB_VIEW || $mode == $LIB_UPDATE )
         
         #update the lane in the db
         my $library = VRTrack::Library->new( $vrtrack, $libID );
-        if( $state ne $PASSED_FILTER && $state ne $PENDING_FILTER && $state ne $FAILED_FILTER )
+        if( $state ne $PASSED_FILTER && $state ne $PENDING_FILTER && $state ne $FAILED_FILTER && $state ne $CLOSE_LIBRARY && $state ne $OPEN_LIBRARY )
         {
             redirectErrorScreen( $cgi, "Invalid library state found: $state" );
         }
         else
         {
-            eval
-            {
-                $library->qc_status( $state );
-                $library->update;
-            };
+			if( $state eq $CLOSE_LIBRARY || $state eq $OPEN_LIBRARY )
+			{
+				eval
+				{
+					if( $state eq $CLOSE_LIBRARY )
+					{
+						$library->open( 0 );
+					}
+					else
+					{
+						$library->open( 1 );
+					}
+					$library->update;
+				};
+			}
+			else
+			{
+				eval
+				{
+					$library->qc_status( $state );
+					$library->update;
+				};
+			}
             redirectErrorScreen( $cgi, "Failed to update library: $libID" ) unless ! $@;
         }
     }
