@@ -687,8 +687,7 @@ sub displayProjectPage
                 $sampleDepth += $depth;
             }
             
-			#print $library->name().'xxx'.$library->open();
-            my $colour = get_colour_for_status( $library->open() ? $library->qc_status() : $CLOSE_LIBRARY );
+			my $colour = get_colour_for_status( $library->open() ? $library->qc_status() : $CLOSE_LIBRARY );
             my $numLanes = @$lanes;
             if( ! $firstL ){print qq[<tr><td></td><td></td>];$firstL=0;}
             print qq[
@@ -1343,7 +1342,7 @@ sub get_colour_for_status {
 
 	if( $status eq $CLOSE_LIBRARY )
 	{
-		$status_colour="yellow";
+		$status_colour="#FFBF00";
 	}
 	else
 	{
