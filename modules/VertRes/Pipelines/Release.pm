@@ -694,6 +694,7 @@ sub _hierarchy_same {
         $had_subdirs++;
         
         my $other_path = File::Spec->catdir($root2, $thing);
+        
         my $thing_same = $self->_hierarchy_same($this_path, $other_path, $lane_paths, $orig_path);
         if ($thing_same) {
             $checked_things{$thing} = 1;
@@ -705,7 +706,8 @@ sub _hierarchy_same {
     
     while (my $thing = readdir($dh2)) {
         next if $thing =~ /^\.{1,2}$/;
-        next unless -d $thing;
+        my $this_path = File::Spec->catdir($root2, $thing);
+        next unless -d $this_path;
         next if exists $checked_things{$thing};
         return 0;
     }
@@ -877,6 +879,9 @@ sub create_release_files {
     
     my $verbose = $self->verbose;
     
+    my $orig_bsub_opts = $self->{bsub_opts};
+    $self->{bsub_opts} = '-q long';
+    
     my @release_files;
     foreach my $bam (@in_bams) {
         $bam = $self->{io}->catfile($lane_path, $bam);
@@ -917,6 +922,8 @@ sub create_release_files {
     my $expected = @release_files;
     print $ofh "# expecting $expected\n";
     close($ofh);
+    
+    $self->{bsub_opts} = $orig_bsub_opts;
     
     return $self->{NO};
 }
