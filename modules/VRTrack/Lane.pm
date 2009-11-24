@@ -30,6 +30,7 @@ use VRTrack::Mapstats;
 use VRTrack::File;
 use VRTrack::Submission;
 use VRTrack::Core_obj;
+use File::Spec;
 our @ISA = qw(VRTrack::Core_obj);
 
 =head2 fields_dispatch
@@ -413,6 +414,28 @@ sub raw_bases {
 	$self->dirty(1);
     }
     return $self->{'raw_bases'};
+}
+
+
+=head2 storage_path
+
+  Arg [1]    : storage_path (optional)
+  Example    : my $storage_path = $lane->storage_path();
+	       $lane->storage_path('/abs/path/to/lane');
+  Description: Get/Set the absolute path to where the files associated with
+               this lane are stored on disc
+  Returntype : string
+
+=cut
+
+sub storage_path {
+    my ($self, $storage_path) = @_;
+    if (defined $storage_path and $storage_path != $self->{'storage_path'}){
+	die "The supplied storage_path '$storage_path' was not absolute" unless File::Spec->file_name_is_absolute($storage_path);
+	$self->{'storage_path'} = $storage_path;
+	$self->dirty(1);
+    }
+    return $self->{'storage_path'};
 }
 
 
