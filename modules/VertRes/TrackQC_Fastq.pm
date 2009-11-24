@@ -147,7 +147,6 @@ sub VertRes::TrackQC_Fastq::new
 {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(%$options,'actions'=>\@actions,@args);
-    bless($self,$class);
     $self->write_logs(1);
 
     if ( !$$self{bwa_exec} ) { $self->throw("Missing the option bwa_exec.\n"); }
@@ -505,6 +504,7 @@ sub map_sample
 
     my $bwa        = $$self{'bwa_exec'};
     my $bwa_ref    = $$self{'bwa_ref'};
+    my $fa_ref     = $$self{'fa_ref'};
     my $fai_ref    = $$self{'fai_ref'};
     my $samtools   = $$self{'samtools'};
     my $max_isize  = exists($$self{insert_size}) ? $$self{insert_size}*2 : 2000;
@@ -538,7 +538,7 @@ sub map_sample
     }
 
     # Dynamic script to be run by LSF. We must check that the bwa exists alright
-    #   - samtools do not return proper status and create .bam file even if there was
+    #   - samtools do not return proper status and create .bam file even when there was
     #   nothing read from the input.
     #
     open(my $fh,'>', "$work_dir/_map.pl") or Utils::error("$work_dir/_map.pl: $!");
@@ -557,8 +557,9 @@ Utils::CMD("$bwa_cmd > $sname.sam");
 if ( ! -s "$sname.sam" ) { Utils::error("The command ended with an error:\n\t$bwa_cmd > $sname.sam\\n"); }
 Utils::CMD("$samtools import $fai_ref $sname.sam $sname.ubam");
 Utils::CMD("$samtools sort $sname.ubam ${sname}x");
-Utils::CMD("rm -f $sname.sam $sname.ubam");
-rename("${sname}x.bam", "$sname.bam") or Utils::CMD("rename ${sname}x.bam $sname.bam: \$!");
+Utils::CMD("$samtools calmd -b ${sname}x.bam $fa_ref >${sname}.bam.part 2>/dev/null");
+Utils::CMD("rm -f $sname.sam $sname.ubam ${sname}x.bam");
+rename("${sname}.bam.part", "$sname.bam") or Utils::CMD("rename ${sname}.bam.part $sname.bam: \$!");
 ];
     }
     my $paired_name;
@@ -573,8 +574,9 @@ Utils::CMD("$bwa_cmd > $paired_name.sam");
 if ( ! -s "$paired_name.sam" ) { Utils::error("The command ended with an error:\\n\\t$bwa_cmd > $paired_name.sam\\n"); }
 Utils::CMD("$samtools import $fai_ref $paired_name.sam $paired_name.ubam");
 Utils::CMD("$samtools sort $paired_name.ubam ${paired_name}x");
-Utils::CMD("rm -f $paired_name.sam $paired_name.ubam");
-rename("${paired_name}x.bam", "$paired_name.bam") or Utils::error("rename ${paired_name}x.bam $paired_name.bam: \$!");
+Utils::CMD("$samtools calmd -b ${paired_name}x.bam $fa_ref >${paired_name}.bam.part 2>/dev/null");
+Utils::CMD("rm -f $paired_name.sam $paired_name.ubam ${paired_name}x.bam");
+rename("${paired_name}.bam.part", "$paired_name.bam") or Utils::error("rename ${paired_name}.bam.part $paired_name.bam: \$!");
 ];
     }
 
