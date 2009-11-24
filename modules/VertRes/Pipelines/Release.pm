@@ -48,11 +48,9 @@ data => {
 # since that previous release. If a bam doesn't need to be made, the new
 # release directory will contain a symlink to the bam in the old directory
 
-# make another file that simply also contains the release directory:
-echo "/path/to/rel_dir" > rel.fod
-
-# make another config file that mentions the previous two files:
-echo "<rel.fod release.conf" > release.pipeline
+# make another config file that simply mentions the release directory and the
+# previous config file:
+echo "/path/to/rel_dir release.conf" > rel.pipeline
 
 # make your release directory if it doesn't already exist:
 mkdir /path/to/rel_dir
