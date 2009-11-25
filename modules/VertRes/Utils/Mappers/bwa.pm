@@ -143,7 +143,7 @@ sub split_fastq {
 =cut
 
 sub do_mapping {
-    my ($self, %input_args) = shift;
+    my ($self, %input_args) = @_;
     
     my @args = $self->_do_mapping_args(\%do_mapping_args, %input_args);
     
