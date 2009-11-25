@@ -176,7 +176,7 @@ sub CMD
         my $msg = join('',@$bt) . "\n" . join('',@msg) . "\n";
         log_msg($$options{'logfile'},$msg) unless !exists($$options{'logfile'});
 
-        Utils::error(@msg) unless !exists($$options{'exit_on_error'});
+        Utils::error(@msg) unless !$$options{'exit_on_error'};
         print STDERR $msg;
     }
 
