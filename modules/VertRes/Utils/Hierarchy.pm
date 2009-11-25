@@ -26,6 +26,7 @@ package VertRes::Utils::Hierarchy;
 use strict;
 use warnings;
 use VertRes::IO;
+use VertRes::Utils::FileSystem;
 use File::Basename;
 use File::Spec;
 use File::Path;
@@ -857,6 +858,7 @@ sub create_release_hierarchy {
         mkdir($release_dir) || $self->throw("Unable to create base release directory: $!");
     }
     my $io = VertRes::IO->new();
+    my $fsu = VertRes::Utils::FileSystem->new();
     
     my @all_linked_bams;
     
@@ -890,17 +892,17 @@ sub create_release_hierarchy {
         # setup release lane
         my @dirs = File::Spec->splitdir($lane_path);
         @dirs >= 5 || $self->throw("lane path '$lane_path' wasn't valid");
-        my $release_lane_path = $io->catfile($release_dir, @dirs[-5..-1]);
+        my $release_lane_path = $fsu->catfile($release_dir, @dirs[-5..-1]);
         mkpath($release_lane_path);
         -d $release_lane_path || $self->throw("Unable to make release lane '$release_lane_path'");
         
         # symlink bams
         my @linked_bams;
         foreach my $ended ('pe', 'se') {
-            my $source = $io->catfile($lane_path, "$mapstats_prefix.$ended.raw.sorted.bam");
+            my $source = $fsu->catfile($lane_path, "$mapstats_prefix.$ended.raw.sorted.bam");
             
             if (-s $source) {
-                my $destination = $io->catfile($release_lane_path, "$ended.raw.sorted.bam");
+                my $destination = $fsu->catfile($release_lane_path, "$ended.raw.sorted.bam");
                 symlink($source, $destination) || $self->throw("Couldn't symlink $source -> $destination");
                 push(@linked_bams, $destination);
             }
@@ -909,10 +911,10 @@ sub create_release_hierarchy {
         # old mapping pipeline didn't create pe/se bams
         unless (@linked_bams) {
             my $legacy_bam_file = 'raw.sorted.bam';
-            my $source = $io->catfile($lane_path, $legacy_bam_file);
+            my $source = $fsu->catfile($lane_path, $legacy_bam_file);
             if (-s $source) {
                 # figure out if it was generated from paired or single ended reads
-                my $meta_file = $io->catfile($lane_path, 'meta.info');
+                my $meta_file = $fsu->catfile($lane_path, 'meta.info');
                 if (-s $meta_file) {
                     $io->file($meta_file);
                     my $fh = $io->fh;
@@ -936,7 +938,7 @@ sub create_release_hierarchy {
                     }
                     
                     my $bam_file = "${ended}_raw.sorted.bam";
-                    my $destination = $io->catfile($release_lane_path, $bam_file);
+                    my $destination = $fsu->catfile($release_lane_path, $bam_file);
                     symlink($source, $destination) || $self->throw("Couldn't symlink $source -> $destination");
                     push(@linked_bams, $destination);
                 }

@@ -2,12 +2,13 @@
 use strict;
 use warnings;
 use File::Copy;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 12;
     
     use_ok('VertRes::Wrapper::GATK');
-    use_ok('VertRes::IO');
+    use_ok('VertRes::Utils::FileSystem');
     use_ok('VertRes::Parser::sam');
     use_ok('VertRes::Utils::FastQ');
     use_ok('Math::NumberCruncher');
@@ -17,17 +18,17 @@ my $gatk = VertRes::Wrapper::GATK->new(quiet => 1);
 isa_ok $gatk, 'VertRes::Wrapper::WrapperI';
 
 # setup in/out files
-my $io = VertRes::IO->new();
-my $ref = $io->catfile('t', 'data', 'S_suis_P17.fa');
-my $in_bam = $io->catfile('t', 'data', 'simple.bam');
+my $fsu = VertRes::Utils::FileSystem->new();
+my $ref = File::Spec->catfile('t', 'data', 'S_suis_P17.fa');
+my $in_bam = File::Spec->catfile('t', 'data', 'simple.bam');
 ok -e $in_bam, 'bam file we will test with exists';
-my $temp_dir = $io->tempdir();
-my $temp_in_bam = $io->catfile($temp_dir, 'in.bam');
+my $temp_dir = $fsu->tempdir();
+my $temp_in_bam = File::Spec->catfile($temp_dir, 'in.bam');
 copy($in_bam, $temp_in_bam);
 ok -s $temp_in_bam, 'copied in bam ready to test with';
 $in_bam = $temp_in_bam;
-my $out_bam = $io->catfile($temp_dir, 'out.bam');
-my $out_csv_prefix = $io->catfile($temp_dir, 'in.bam');
+my $out_bam = File::Spec->catfile($temp_dir, 'out.bam');
+my $out_csv_prefix = File::Spec->catfile($temp_dir, 'in.bam');
 my $out_csv = $out_csv_prefix.'.recal_data.csv';
 
 # individual method tests

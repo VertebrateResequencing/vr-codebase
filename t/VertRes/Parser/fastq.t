@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 26;
@@ -19,9 +20,9 @@ is @{$rh}, 0, 'the result_holder starts off empty';
 
 ok ! $fqp->next_result, 'next_result returns false when we have no file set';
 
-my $fq_file = $fqp->catfile('t', 'data', 'SRR001629_1.fastq');
+my $fq_file = File::Spec->catfile('t', 'data', 'SRR001629_1.fastq');
 ok -e $fq_file, 'file we will test with exists';
-my $gz_file = $fqp->catfile('t', 'data', 'SRR001629_1.fastq.gz');
+my $gz_file = File::Spec->catfile('t', 'data', 'SRR001629_1.fastq.gz');
 ok -e $gz_file, 'gz file we will test with exists';
 ok $fqp->file($fq_file), 'file set into parser';
 

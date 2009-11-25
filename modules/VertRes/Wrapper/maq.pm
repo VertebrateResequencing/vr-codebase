@@ -42,6 +42,7 @@ use warnings;
 use File::Copy;
 use File::Basename;
 use VertRes::IO;
+use VertRes::Utils::FileSystem;
 use VertRes::Wrapper::samtools;
 use VertRes::Wrapper::fastqcheck;
 use VertRes::Parser::fastqcheck;
@@ -498,7 +499,7 @@ sub do_mapping {
 sub _get_fastq_details {
     my ($self, @fqs) = @_;
     
-    my $io = VertRes::IO->new();
+    my $fsu = VertRes::Utils::FileSystem->new();
     
     # make temp fastqcheck files if they don't already exist
     my @fqcs;
@@ -508,8 +509,8 @@ sub _get_fastq_details {
         
         unless (-s $fqc && $older) {
             my $fqcw = VertRes::Wrapper::fastqcheck->new(quiet => 1);
-            my $tempdir = $io->tempdir;
-            $fqc = $io->catfile($tempdir, basename($fq).'.fastqcheck');
+            my $tempdir = $fsu->tempdir;
+            $fqc = $fsu->catfile($tempdir, basename($fq).'.fastqcheck');
             if ($self->_is_older($fq, $fqc)) {
                 unlink($fqc);
             }

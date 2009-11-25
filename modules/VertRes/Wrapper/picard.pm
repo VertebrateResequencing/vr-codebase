@@ -38,14 +38,14 @@ package VertRes::Wrapper::picard;
 use strict;
 use warnings;
 use File::Copy;
-use VertRes::IO;
+use VertRes::Utils::FileSystem;
 use VertRes::Wrapper::samtools;
 use VertRes::Parser::sam;
 
 use base qw(VertRes::Wrapper::WrapperI);
 
-my $io = VertRes::IO->new();
-our $DEFAULT_PICARD_DIR = $io->catfile($ENV{BIN}, 'picard-tools');
+my $fsu = VertRes::Utils::FileSystem->new();
+our $DEFAULT_PICARD_DIR = $fsu->catfile($ENV{BIN}, 'picard-tools');
 
 =head2 new
 
@@ -59,9 +59,9 @@ our $DEFAULT_PICARD_DIR = $io->catfile($ENV{BIN}, 'picard-tools');
            validation_stringency => STRICT|LENIENT|SILENT (silent by default,
                                     overriden if VALIDATION_STRINGENCY is set
                                     directly in any other method call)
-           tmp_dir => /tmp/dir (VertRes::IO->tempdir by default, overriden if
-                                TMP_DIR is set directly in any other method
-                                call)
+           tmp_dir => /tmp/dir (VertRes::Utils::FileSystem->tempdir by default,
+                                overriden if TMP_DIR is set directly in any
+                                other method call)
 
 =cut
 
@@ -79,7 +79,7 @@ sub new {
     my $stringency = delete $self->{validation_stringency} || 'silent';
     $self->{_default_validation_stringency} = uc($stringency);
     
-    my $temp_dir = delete $self->{tmp_dir} || $io->tempdir;
+    my $temp_dir = delete $self->{tmp_dir} || $fsu->tempdir;
     $self->{_default_tmp_dir} = $temp_dir;
     
     return $self;
@@ -115,7 +115,7 @@ sub _handle_common_params {
 sub MergeSamFiles {
     my ($self, $out_bam, @args) = @_;
     
-    $self->exe($self->{base_exe}.$io->catfile($self->{picard_dir}, 'MergeSamFiles.jar'));
+    $self->exe($self->{base_exe}.$fsu->catfile($self->{picard_dir}, 'MergeSamFiles.jar'));
     
     $self->switches([]);
     $self->params([qw(SORT_ORDER SO ASSUME_SORTED AS TMP_DIR VERBOSITY QUIET
@@ -229,7 +229,7 @@ sub merge_and_check {
 sub MarkDuplicates {
     my ($self, $in_bam, $out_bam, %args) = @_;
     
-    $self->exe($self->{base_exe}.$io->catfile($self->{picard_dir}, 'MarkDuplicates.jar'));
+    $self->exe($self->{base_exe}.$fsu->catfile($self->{picard_dir}, 'MarkDuplicates.jar'));
     
     $self->switches([]);
     $self->params([qw(METRICS_FILE M TMP_DIR VERBOSITY QUIET
@@ -263,8 +263,8 @@ sub rmdup {
     my ($self, $in_bam, $out_bam, %args) = @_;
     
     # MarkDuplicates
-    my $temp_dir = $io->tempdir;
-    my $marked_bam = $io->catfile($temp_dir, 'marked.bam');
+    my $temp_dir = $fsu->tempdir;
+    my $marked_bam = $fsu->catfile($temp_dir, 'marked.bam');
     my $orig_run_method = $self->run_method;
     $self->run_method('system');
     $self->MarkDuplicates($in_bam, $marked_bam, %args);
@@ -282,7 +282,7 @@ sub rmdup {
     
     my $total_lines = 0;
     my $dup_lines = 0;
-    my $filtered_sam = $io->catfile($temp_dir, 'filtered.sam');
+    my $filtered_sam = $fsu->catfile($temp_dir, 'filtered.sam');
     open(my $fsfh, '>', $filtered_sam) || $self->throw("Could not write to $filtered_sam: $!");
     while (<$fh>) {
         if (/^@/) {

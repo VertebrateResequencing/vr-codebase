@@ -1,30 +1,33 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 29;
+    use Test::Most tests => 30;
     
     use_ok('VertRes::Utils::Cigar');
-    use_ok('VertRes::IO');
+    use_ok('VertRes::Utils::FileSystem');
     use_ok('VertRes::Parser::sam');
+    use_ok('VertRes::IO');
 }
 
 my $cigar_util = VertRes::Utils::Cigar->new();
 isa_ok $cigar_util, 'VertRes::Base';
 
 # setup our input files
-my $io = VertRes::IO->new();
-my $fq1_file = $io->catfile('t', 'data', '2822_6_1_1000.fastq');
+my $io = VertRes::IO->new;
+my $fsu = VertRes::Utils::FileSystem->new();
+my $fq1_file = File::Spec->catfile('t', 'data', '2822_6_1_1000.fastq');
 ok -s $fq1_file, 'first fastq file ready to test with';
-my $fq2_file = $io->catfile('t', 'data', '2822_6_2_1000.fastq');
+my $fq2_file = File::Spec->catfile('t', 'data', '2822_6_2_1000.fastq');
 ok -s $fq2_file, 'first fastq file ready to test with';
-my $cigar1_file = $io->catfile('t', 'data', 'ssaha1.cigar');
+my $cigar1_file = File::Spec->catfile('t', 'data', 'ssaha1.cigar');
 ok -s $cigar1_file, 'first cigar file ready to test with';
-my $cigar2_file = $io->catfile('t', 'data', 'ssaha2.cigar');
+my $cigar2_file = File::Spec->catfile('t', 'data', 'ssaha2.cigar');
 ok -s $cigar2_file, 'second cigar file ready to test with';
-my $temp_dir = $io->tempdir();
-my $sam_out = $io->catfile($temp_dir, 'cigar_to_sam.sam');
+my $temp_dir = $fsu->tempdir();
+my $sam_out = File::Spec->catfile($temp_dir, 'cigar_to_sam.sam');
 
 my $hash = $cigar_util->cigar_by_reads($cigar1_file);
 is keys %{$hash}, 881, 'cigar_by_reads returned the correct number of read keys for first cigar';
@@ -46,13 +49,13 @@ is_deeply [$mapped, $unmapped], [757, 243], 'cigar_to_sam generated sam with cor
 
 # above tests are with non-454 fastqs. These fastqs are real G1K 454 reads and
 # caused problems during the mapping pipeline:
-$fq1_file = $io->catfile('t', 'data', 'SRR001629_1.fastq');
+$fq1_file = File::Spec->catfile('t', 'data', 'SRR001629_1.fastq');
 ok -s $fq1_file, 'SRR001629_1 fastq file ready to test with';
-$fq2_file = $io->catfile('t', 'data', 'SRR001629_2.fastq');
+$fq2_file = File::Spec->catfile('t', 'data', 'SRR001629_2.fastq');
 ok -s $fq2_file, 'SRR001629_2 fastq file ready to test with';
-$cigar1_file = $io->catfile('t', 'data', 'SRR001629_1.cigar');
+$cigar1_file = File::Spec->catfile('t', 'data', 'SRR001629_1.cigar');
 ok -s $cigar1_file, 'SRR001629_1 cigar file ready to test with';
-$cigar2_file = $io->catfile('t', 'data', 'SRR001629_2.cigar');
+$cigar2_file = File::Spec->catfile('t', 'data', 'SRR001629_2.cigar');
 ok -s $cigar2_file, 'SRR001629_2 cigar file ready to test with';
 is $cigar_util->cigar_to_sam([$fq1_file, $fq2_file], [$cigar1_file, $cigar2_file], 2000, undef, $sam_out), 2000, 'cigar_to_sam worked with unfiltered SRR001629 reads';
 ($mapped, $unmapped) = sam_lines_check($sam_out);
@@ -61,22 +64,22 @@ is_deeply [$mapped, $unmapped], [1736, 264], 'cigar_to_sam generated sam with co
 # we no longer support filtered reads, since it wouldn't give us the true full
 # set of unmapped reads in the output anyway, and it's hyper-slow with .gz
 # compressed fastqs
-#$fq1_file = $io->catfile('t', 'data', 'SRR001629_1.filtered.fastq');
+#$fq1_file = File::Spec->catfile('t', 'data', 'SRR001629_1.filtered.fastq');
 #ok -s $fq1_file, 'SRR001629_1 filtered fastq file ready to test with';
-#$fq2_file = $io->catfile('t', 'data', 'SRR001629_2.filtered.fastq');
+#$fq2_file = File::Spec->catfile('t', 'data', 'SRR001629_2.filtered.fastq');
 #ok -s $fq2_file, 'SRR001629_2 filtered fastq file ready to test with';
 #is $cigar_util->cigar_to_sam([$fq1_file, $fq2_file], [$cigar1_file, $cigar2_file], 2000, undef, $sam_out), 1770, 'cigar_to_sam worked with filtered SRR001629 reads';
 #($mapped, $unmapped) = sam_lines_check($sam_out);
 #is_deeply [$mapped, $unmapped], [1736, 34], 'cigar_to_sam generated sam with correct number of mapped and unmapped reads - filtered SRR001629';
 
 # for this read pair it was outputting read _1 in the sam instead of read _2
-$fq1_file = $io->catfile('t', 'data', 'SRR001629.99999_1.fastq');
+$fq1_file = File::Spec->catfile('t', 'data', 'SRR001629.99999_1.fastq');
 ok -s $fq1_file, 'SRR001629.99999_1 fastq file ready to test with';
-$fq2_file = $io->catfile('t', 'data', 'SRR001629.99999_2.fastq');
+$fq2_file = File::Spec->catfile('t', 'data', 'SRR001629.99999_2.fastq');
 ok -s $fq2_file, 'SRR001629.99999_2 fastq file ready to test with';
-$cigar1_file = $io->catfile('t', 'data', 'SRR001629.99999_1.cigar');
+$cigar1_file = File::Spec->catfile('t', 'data', 'SRR001629.99999_1.cigar');
 ok -s $cigar1_file, 'SRR001629.99999_1.cigar cigar file ready to test with';
-$cigar2_file = $io->catfile('t', 'data', 'SRR001629.99999_2.cigar');
+$cigar2_file = File::Spec->catfile('t', 'data', 'SRR001629.99999_2.cigar');
 ok -s $cigar2_file, 'SRR001629.99999_1.cigar cigar file ready to test with';
 is $cigar_util->cigar_to_sam([$fq1_file, $fq2_file], [$cigar1_file, $cigar2_file], 2000, undef, $sam_out), 6, 'cigar_to_sam worked with mini .99999 cigars';
 $io->file($sam_out);

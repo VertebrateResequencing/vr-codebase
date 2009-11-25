@@ -1,12 +1,12 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 24;
+    use Test::Most tests => 23;
     
     use_ok('VertRes::Utils::Hierarchy');
-    use_ok('VertRes::IO');
     use_ok('File::Copy');
 }
 
@@ -14,12 +14,12 @@ my $h_util = VertRes::Utils::Hierarchy->new();
 isa_ok $h_util, 'VertRes::Base';
 
 # setup our files and paths
-my $io = VertRes::IO->new();
-my $si_file = $io->catfile('t', 'data', 'sequence.index');
+my $si_file = File::Spec->catfile('t', 'data', 'sequence.index');
 ok -s $si_file, 'sequence.index file ready to test with';
-my $bam_file = $io->catfile('t', 'data', 'headed1.bam');
+my $bam_file = File::Spec->catfile('t', 'data', 'headed1.bam');
 ok -s $bam_file, 'bam file ready to test with';
-my $temp_dir = $io->tempdir();
+my $fsu = VertRes::Utils::FileSystem->new();
+my $temp_dir = $fsu->tempdir();
 ok my $vrtrack = VRTrack::VRTrack->new({database => 'g1k_meta', host => 'mcs4a', port => 3306, user => 'vreseq_ro'}), 'setup vrtrack accessing g1k_meta';
 
 my $lane_path = '/path/to/META/SRP000031/NA06986/SLX/Solexa-5459/SRR003670';
@@ -43,28 +43,28 @@ ok $h_util->check_lanes_vs_database([$lane_path], $vrtrack), 'check_lanes_vs_dat
 # update_vrmeta.pl --database vrtrack_vertres_test --samples t/data/vrtrack_vertres_test.samples --index t/data/vrtrack_vertres_test.si
 # perl -MVRTrack::VRTrack -MVRTrack::Lane -Mstrict -we 'my $vrtrack = VRTrack::VRTrack->new({host => "mcs4a", port => 3306, user => "vreseq_rw", password => "t3aml3ss", database => "vrtrack_vertres_test"}); my $all_lanes = $vrtrack->processed_lane_hnames(); my $count = 0; foreach my $lane_hname (sort @{$all_lanes}) { my $lane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane_hname); $lane->is_processed("import", 1); $lane->is_processed("mapped", 1); foreach my $file (@{$lane->files()}) { $file->is_processed("import", 1); $file->update; } my $mapping = $lane->add_mapping(); my $assembly = $mapping->assembly("NCBI37"); if ( ! $assembly) { $assembly = $mapping->add_assembly("NCBI37"); } my $exe; $count++; if ($count <= 2) { $exe = "bwa"; } else { $exe = "ssaha"; } my $mapper = $mapping->mapper($exe, "1.5"); if ( ! $mapper) { $mapper = $mapping->add_mapper($exe, "1.5"); } $mapping->update; $lane->update; }'
 ok $vrtrack = VRTrack::VRTrack->new({database => 'vrtrack_vertres_test', host => 'mcs4a', port => 3306, user => 'vreseq_ro'}), 'setup vrtrack accessing vrtrack_vertres_test';
-my $release_dir = $io->catfile($temp_dir, 'REL');
-my $mapping_tar_gz = $io->catfile($temp_dir, 'mapping.tar.gz');
-copy($io->catfile('t', 'data', 'mapping_hierarchy_with_bams.tar.gz'), $mapping_tar_gz);
+my $release_dir = File::Spec->catfile($temp_dir, 'REL');
+my $mapping_tar_gz = File::Spec->catfile($temp_dir, 'mapping.tar.gz');
+copy(File::Spec->catfile('t', 'data', 'mapping_hierarchy_with_bams.tar.gz'), $mapping_tar_gz);
 ok -s $mapping_tar_gz, 'mapping_hierarchy_with_bams.tar.gz copied and ready to test with';
 system("tar -xz -C $temp_dir -f $mapping_tar_gz");
-ok -d $io->catfile($temp_dir, 'mapping'), 'mapping hierarchy extracted and ready to test with';
+ok -d File::Spec->catfile($temp_dir, 'mapping'), 'mapping hierarchy extracted and ready to test with';
 my @mapping_paths;
 my @expected_rel_paths;
 foreach my $lane_path ('mapping/proj1/ind1/SLX/lib1/lane1', # 1.pe.raw.sorted.bam
                        'mapping/proj1/ind1/SLX/lib1/lane2', # 4.se.raw.sorted.bam
                        'mapping/proj2/ind2/454/lib3/lane3/', # 7.se.raw.sorted.bam
                        'mapping/proj2/ind2/454/lib3/lane4/') { # 10.pe.raw.sorted.bam
-    push(@mapping_paths, $io->catfile($temp_dir, $lane_path));
+    push(@mapping_paths, File::Spec->catfile($temp_dir, $lane_path));
     my $rel_path = $lane_path;
     $rel_path =~ s/^mapping\///;
-    push(@expected_rel_paths, $io->catfile($temp_dir, 'REL', $rel_path));
+    push(@expected_rel_paths, File::Spec->catfile($temp_dir, 'REL', $rel_path));
 }
 my @expected_rel_bams = ('pe.raw.sorted.bam', 'se.raw.sorted.bam', 'se.raw.sorted.bam', 'pe.raw.sorted.bam');
 my @expected_rel_bam_paths;
 foreach my $rel_path (@expected_rel_paths) {
     my $expected_bam = shift @expected_rel_bams;
-    push(@expected_rel_bam_paths, $io->catfile($rel_path, $expected_bam));
+    push(@expected_rel_bam_paths, File::Spec->catfile($rel_path, $expected_bam));
 }
 
 is_deeply [$h_util->create_release_hierarchy(\@mapping_paths, $release_dir,
@@ -83,7 +83,7 @@ is $created_links, 4, 'create_release_hierarchy created the correct bam symlinks
 my $mouse_reseq_track_db = { host => 'mcs4a', port => 3306, user => 'vreseq_ro', database => 'mouse_reseq_track' };
 ok my %info = $h_util->lane_info('3034_8', db => $mouse_reseq_track_db, qc_passed => 1, mapped => 1), 'lane_info ran ok';
 is $info{sample}, '129P2_1', 'lane_info gave correct sample';
-is $info{individual_coverage}, 22.39, 'lane_info had the correct individual_coverage';
+cmp_ok $info{individual_coverage}, '>=', 22.39, 'lane_info had the correct individual_coverage';
 # needs more thougher tests for all the different ways of calling lane_info...
 
 # hierarchy_coverage test

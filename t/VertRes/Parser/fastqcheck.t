@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 26;
@@ -19,7 +20,7 @@ is @{$rh}, 0, 'the result_holder starts off empty';
 
 ok ! $fqc->next_result, 'next_result returns false when we have no file set';
 
-my $fastqcheck_file = $fqc->catfile('t', 'data', 'fastq.gz.fastqcheck');
+my $fastqcheck_file = File::Spec->catfile('t', 'data', 'fastq.gz.fastqcheck');
 ok -e $fastqcheck_file, 'file we will test with exists';
 ok $fqc->file($fastqcheck_file), 'file set into parser';
 is $fqc->num_sequences, 7156780, 'num_sequences test';

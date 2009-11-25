@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 56;
@@ -19,7 +20,7 @@ is keys %{$rh}, 0, 'the result_holder starts off empty';
 
 ok ! $ps->next_result, 'next_result returns false when we have no file set';
 
-my $s_file = $ps->catfile('t', 'data', 'simple.sam');
+my $s_file = File::Spec->catfile('t', 'data', 'simple.sam');
 ok -e $s_file, 'file we will test with exists';
 ok $ps->file($s_file), 'file set into parser';
 
@@ -64,7 +65,7 @@ is $ps->is_duplicate($flag), 0, 'is_duplicate test';
 
 # test the header methods on this headerless sam, then on a headed sam
 is $ps->sam_version, undef, 'no header info on headless sam';
-my $headed_sam = $ps->catfile('t', 'data', 'NA11918SLX.headed.sam');
+my $headed_sam = File::Spec->catfile('t', 'data', 'NA11918SLX.headed.sam');
 ok -e $headed_sam, 'headed sam file ready for testing';
 ok $ps->file($headed_sam), 'headed sam set into parser';
 ok $ps->next_result, 'next_result worked on a headed sam';
@@ -105,7 +106,7 @@ is $rh->{QNAME}, 'SRR003436.685', 'QNAME fine for first record after first calli
 is $rh->{FLAG}, 121, 'FLAG fine for first record after first calling a header method';
 
 # test the fast parsing method
-my $b_file = $ps->catfile('t', 'data', 'simple.bam');
+my $b_file = File::Spec->catfile('t', 'data', 'simple.bam');
 ok -e $b_file, 'bam file we will test with exists';
 $ps = VertRes::Parser::sam->new(file => $b_file);
 

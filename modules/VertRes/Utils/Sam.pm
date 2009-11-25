@@ -29,6 +29,7 @@ use File::Copy;
 use File::Basename;
 use File::Spec;
 use VertRes::IO;
+use VertRes::Utils::FileSystem;
 use VertRes::Wrapper::samtools;
 use VertRes::Wrapper::picard;
 use HierarchyUtilities;
@@ -386,8 +387,9 @@ sub sam_to_fixed_sorted_bam {
     my ($self, $in_sam, $out_bam, $ref_fa, @args) = @_;
     
     my $io = VertRes::IO->new();
-    my $temp_dir = $io->tempdir();
-    my $tmp_bam = $io->catfile($temp_dir, 'fixed_sorted.bam');
+    my $fsu = VertRes::Utils::FileSystem->new();
+    my $temp_dir = $fsu->tempdir();
+    my $tmp_bam = $fsu->catfile($temp_dir, 'fixed_sorted.bam');
     
     # sam -> fixed, sorted bam
     my $wrapper = VertRes::Wrapper::samtools->new(verbose => $self->verbose, @args);
@@ -398,7 +400,7 @@ sub sam_to_fixed_sorted_bam {
     }
     
     # bam -> fillmd'd bam
-    my $tmp2_bam = $io->catfile($temp_dir, 'fillmd.bam');
+    my $tmp2_bam = $fsu->catfile($temp_dir, 'fillmd.bam');
     $wrapper->quiet(1);
     $wrapper->fillmd($tmp_bam, $ref_fa, $tmp2_bam, b => 1);
     
@@ -488,12 +490,12 @@ sub merge {
         return symlink($rel_path, $out_bam);
     }
     
-    my $io = VertRes::IO->new();
+    my $fsu = VertRes::Utils::FileSystem->new();
     my $verbose = $self->verbose();
     my $wrapper = VertRes::Wrapper::picard->new(verbose => $verbose,
                                                 quiet => $verbose ? 0 : 1,
                                                 validation_stringency => 'silent',
-                                                tmp_dir => $io->tempdir());
+                                                tmp_dir => $fsu->tempdir());
     
     $wrapper->merge_and_check($out_bam, \@in_bams);
     

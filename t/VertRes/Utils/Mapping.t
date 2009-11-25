@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 37;
@@ -9,19 +10,18 @@ BEGIN {
     use_ok('VertRes::Utils::Mappers::ssaha');
     use_ok('VertRes::Utils::Mappers::bwa');
     use_ok('VertRes::Utils::Mappers::maq');
-    use_ok('VertRes::IO');
+    use_ok('VertRes::Utils::FileSystem');
 }
 
 my $mapping_util = VertRes::Utils::Mapping->new();
 isa_ok $mapping_util, 'VertRes::Base';
 
 # setup our input files
-my $io = VertRes::IO->new();
-my $ref_file = $io->catfile('t', 'data', 'S_suis_P17.fa');
+my $ref_file = File::Spec->catfile('t', 'data', 'S_suis_P17.fa');
 ok -s $ref_file, 'ref file ready to test with';
-my $faq1_file = $io->catfile('t', 'data', '2822_6_1_1000.fastq');
+my $faq1_file = File::Spec->catfile('t', 'data', '2822_6_1_1000.fastq');
 ok -s $faq1_file, 'faq1 file ready to test with';
-my $faq2_file = $io->catfile('t', 'data', '2822_6_2_1000.fastq');
+my $faq2_file = File::Spec->catfile('t', 'data', '2822_6_2_1000.fastq');
 ok -s $faq2_file, 'faq2 file ready to test with';
 
 # simple methods
@@ -49,7 +49,8 @@ is_deeply {$mapping_util->_do_read_args(read1 => $faq1_file, read2 => $faq2_file
 
 # split_fastq (basically just an alias to VertRes::Utils::FastQ::split, which
 # is already well tested in the FastQ.t script - just a basic check needed here)
-my $temp_dir = $io->tempdir();
+my $fsu = VertRes::Utils::FileSystem->new();
+my $temp_dir = $fsu->tempdir();
 is $mapping_util->split_fastq(read0 => $faq1_file,
                               split_dir => $temp_dir,
                               chunk_size => 6100), 10, 'split_fastq with one fastq worked';
@@ -59,7 +60,7 @@ is $mapping_util->split_fastq(read1 => $faq1_file,
                               chunk_size => 11500), 10, 'split_fastq with two fastqs worked';
 
 # get_mapping_stats
-my $bas_file = $io->catfile('t', 'data', 'example2.bas');
+my $bas_file = File::Spec->catfile('t', 'data', 'example2.bas');
 is_deeply {$mapping_util->get_mapping_stats($bas_file, 3000000000)}, {total_bases => 345000,
                                                                       mapped_bases => 186864,
                                                                       percent_mapped => 54.16,

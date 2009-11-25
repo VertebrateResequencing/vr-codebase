@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 34;
@@ -19,7 +20,7 @@ is @{$rh}, 0, 'the result_holder starts off empty';
 
 ok ! $sip->next_result, 'next_result returns false when we have no file set';
 
-my $si_file = $sip->catfile('t', 'data', 'sequence.index');
+my $si_file = File::Spec->catfile('t', 'data', 'sequence.index');
 ok -e $si_file, 'file we will test with exists';
 ok $sip->file($si_file), 'file set into parser';
 
@@ -100,7 +101,7 @@ my %all_lanes = map { $_ => 1 } @all_lanes;
 ok ! defined $all_lanes{RUN_ID}, 'RUN_ID did not get treated as a lane';
 
 # try parsing a sequence.index with no header line
-$si_file = $sip->catfile('t', 'data', 'sequence.index.headerless');
+$si_file = File::Spec->catfile('t', 'data', 'sequence.index.headerless');
 ok -e $si_file, 'headerlessfile we will test with exists';
 ok $sip->file($si_file), 'headerlessfile set into parser';
 

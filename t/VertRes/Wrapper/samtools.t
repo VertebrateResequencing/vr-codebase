@@ -1,12 +1,13 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 30;
     
     use_ok('VertRes::Wrapper::samtools');
-    use_ok('VertRes::IO');
+    use_ok('VertRes::Utils::FileSystem');
 }
 
 my $st = VertRes::Wrapper::samtools->new(quiet => 1);
@@ -14,13 +15,13 @@ isa_ok $st, 'VertRes::Wrapper::WrapperI';
 is $st->quiet, 1, 'quiet set via new';
 
 # setup files
-my $io = VertRes::IO->new();
-my $sam_input_file = $io->catfile('t', 'data', 'simple.sam');
+my $fsu = VertRes::Utils::FileSystem->new();
+my $sam_input_file = File::Spec->catfile('t', 'data', 'simple.sam');
 ok -s $sam_input_file, 'input sam file ready to test on';
-my $fai_file = $io->catfile('t', 'data', 'S_suis_P17.fa.fai');
+my $fai_file = File::Spec->catfile('t', 'data', 'S_suis_P17.fa.fai');
 ok -s $fai_file, 'fai file ready to test with';
-my $temp_dir = $io->tempdir();
-my $bam_out_file = $io->catfile($temp_dir, 'out.bam');
+my $temp_dir = $fsu->tempdir();
+my $bam_out_file = File::Spec->catfile($temp_dir, 'out.bam');
 
 # test the fancy multi-step methods first
 $st->sam_to_fixed_sorted_bam($sam_input_file, $bam_out_file, $fai_file);
@@ -44,7 +45,7 @@ is $count, 2000, 'sam -> bam -> sam didn\'t lose any reads';
 # merging an RG-tagged bam with itself (simulating merging splits at the lane
 # level) should generate a merged bam with a single RG tag (unlike picard-tools
 # merger, which uniquifies the RG tags)
-my $bam_input_file = $io->catfile('t', 'data', 'rgtagged.bam');
+my $bam_input_file = File::Spec->catfile('t', 'data', 'rgtagged.bam');
 ok -s $bam_input_file, 'input rgtagged bam file ready to test on';
 $st->merge_and_check($bam_out_file, [$bam_input_file, $bam_input_file]);
 cmp_ok $st->run_status, '>=', 1, 'merge_and_check ran ok';

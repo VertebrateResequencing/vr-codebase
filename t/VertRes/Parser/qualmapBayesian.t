@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 15;
@@ -19,7 +20,7 @@ is @{$rh}, 0, 'the result_holder starts off empty';
 
 ok ! $qmb->next_result, 'next_result returns false when we have no file set';
 
-my $qmb_file = $qmb->catfile('t', 'data', 'qualmapBayesian.txt');
+my $qmb_file = File::Spec->catfile('t', 'data', 'qualmapBayesian.txt');
 ok -e $qmb_file, 'file we will test with exists';
 ok $qmb->file($qmb_file), 'file set into parser';
 

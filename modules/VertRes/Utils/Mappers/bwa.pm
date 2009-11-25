@@ -133,15 +133,59 @@ sub split_fastq {
            -or-
            read0 => 'reads.fastq'
 
+           optionally, to check an error output file for common problems and
+           delete certain files before reattempting:
+           error_file => '/path/to/STDERR/output/of/a/previous/call'
+
            and optional generic options:
            insert_size => int (default 2000)
 
 =cut
 
 sub do_mapping {
-    my $self = shift;
+    my ($self, %input_args) = shift;
     
-    my @args = $self->_do_mapping_args(\%do_mapping_args, @_);
+    my @args = $self->_do_mapping_args(\%do_mapping_args, %input_args);
+    
+    my $error_file = delete $input_args{error_file};
+    if ($error_file && -s $error_file && ! -s $input_args{output}) {
+        # check the error file for common problems and delete various files as
+        # necessary before reattempting
+        open(my $efh, $error_file) || $self->throw("Could not open error file '$error_file'");
+        my $problem_found = 0;
+        my $delete_sais = 0;
+        my $messages = '';
+        while (<$efh>) {
+            if (/\[previous attempts\]/) {
+                $messages .= $_;
+            }
+            if (/weird pairing/) {
+                $problem_found = 1;
+                $delete_sais = 1;
+                last;
+            }
+        }
+        close($efh);
+        
+        if ($problem_found) {
+            unlink($error_file);
+            open($efh, '>', $error_file) || $self->throw("Could not write to error file '$error_file'");
+            print $efh $messages;
+            if ($delete_sais) {
+                my %args = @args;
+                while (my ($key, $val)  = each %args) {
+                    if ($key =~ /^read/) {
+                        my $sai = $val;
+                        $sai =~ s/\.f[^.]+(?:\.gz)?$/.sai/;
+                        unlink($sai);
+                    }
+                }
+                
+                print $efh  "[previous attempts] deleted sai files due to weird pairing\n";
+            }
+            close($efh);
+        }
+    }
     
     my $wrapper = $self->wrapper;
     $wrapper->do_mapping(@args);

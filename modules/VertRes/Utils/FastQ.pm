@@ -26,6 +26,7 @@ use strict;
 use warnings;
 use POSIX;
 use VertRes::IO;
+use VertRes::Utils::FileSystem;
 use File::Basename;
 use VertRes::Parser::fastqcheck;
 use VertRes::Parser::fastq;
@@ -85,6 +86,7 @@ sub split {
     my @outs;
     my $split_num = 1;
     my $io = VertRes::IO->new();
+    my $fsu = VertRes::Utils::FileSystem->new();
     my $fqc = VertRes::Parser::fastqcheck->new();
     my $total_bases = 0;
     my $num_fqcs = 0;
@@ -106,7 +108,7 @@ sub split {
             $total_bases += $fqc->total_length();
         }
         
-        my $split_file = $io->catfile($split_dir, "$prefix.$split_num.fastq.gz");
+        my $split_file = $fsu->catfile($split_dir, "$prefix.$split_num.fastq.gz");
         my $out = VertRes::IO->new(file => ">$split_file", verbose => $self->verbose);
         push(@outs, [$prefix, $out, $split_file]);
     }
@@ -174,7 +176,7 @@ sub split {
                 my ($prefix, $old) = @{$ref};
                 $old->close;
                 
-                my $split_file = $io->catfile($split_dir, "$prefix.$split_num.fastq.gz");
+                my $split_file = $fsu->catfile($split_dir, "$prefix.$split_num.fastq.gz");
                 my $out = VertRes::IO->new(file => ">$split_file", verbose => $self->verbose);
                 $ref->[1] = $out;
             }
@@ -202,7 +204,7 @@ sub split {
         my $prefix = $outs[$i]->[0];
         my $out_lines = 0;
         foreach my $test_split_num (1..$split_num) {
-            my $split_file = $io->catfile($split_dir, "$prefix.$test_split_num.fastq.gz");
+            my $split_file = $fsu->catfile($split_dir, "$prefix.$test_split_num.fastq.gz");
             $io->file($split_file);
             $out_lines += $io->num_lines;
         }

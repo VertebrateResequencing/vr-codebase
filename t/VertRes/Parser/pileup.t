@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 15;
@@ -19,7 +20,7 @@ is @{$rh}, 0, 'the result_holder starts off empty';
 
 ok ! $pp->next_result, 'next_result returns false when we have no file set';
 
-my $p_file = $pp->catfile('t', 'data', 'pileup.txt');
+my $p_file = File::Spec->catfile('t', 'data', 'pileup.txt');
 ok -e $p_file, 'file we will test with exists';
 ok $pp->file($p_file), 'file set into parser';
 

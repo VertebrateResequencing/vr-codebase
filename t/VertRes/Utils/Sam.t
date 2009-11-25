@@ -1,39 +1,40 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 64;
     
     use_ok('VertRes::Utils::Sam');
-    use_ok('VertRes::IO');
     use_ok('VertRes::Wrapper::samtools');
+    use_ok('VertRes::Utils::FileSystem');
 }
 
 my $sam_util = VertRes::Utils::Sam->new();
 isa_ok $sam_util, 'VertRes::Base';
 
 # setup our input files
-my $io = VertRes::IO->new();
-my $bam1_file = $io->catfile('t', 'data', 'nsort1.bam');
+my $bam1_file = File::Spec->catfile('t', 'data', 'nsort1.bam');
 ok -s $bam1_file, 'first bam file ready to test with';
-my $bam2_file = $io->catfile('t', 'data', 'nsort2.bam');
+my $bam2_file = File::Spec->catfile('t', 'data', 'nsort2.bam');
 ok -s $bam2_file, 'second bam file ready to test with';
-my $headed_bam = $io->catfile('t', 'data', 'headed2.bam');
+my $headed_bam = File::Spec->catfile('t', 'data', 'headed2.bam');
 ok -s $headed_bam, 'headed bam file ready to test with';
-my $headless_sam = $io->catfile('t', 'data', 'simple.sam');
+my $headless_sam = File::Spec->catfile('t', 'data', 'simple.sam');
 ok -s $headless_sam, 'headerless sam file ready to test with';
-my $ref = $io->catfile('t', 'data', 'S_suis_P17.fa');
+my $ref = File::Spec->catfile('t', 'data', 'S_suis_P17.fa');
 ok -s $ref, 'ref file ready to test with';
-my $dict = $io->catfile('t', 'data', 'S_suis_P17.dict');
+my $dict = File::Spec->catfile('t', 'data', 'S_suis_P17.dict');
 ok -s $dict, 'dict file ready to test with';
 
 # bams_are_similar
 is $sam_util->bams_are_similar($bam1_file, $bam2_file), 1, 'bams are similar';
 
 # add_sam_header
-my $temp_dir = $io->tempdir();
-my $temp_sam = $io->catfile($temp_dir, 'test.sam');
+my $fsu = VertRes::Utils::FileSystem->new();
+my $temp_dir = $fsu->tempdir();
+my $temp_sam = File::Spec->catfile($temp_dir, 'test.sam');
 system("cp $headless_sam $temp_sam");
 ok $sam_util->add_sam_header($temp_sam,
                              sample_name => 'NA00000',
@@ -93,7 +94,7 @@ TODO: {
 }
 
 # sam_to_fixed_sorted_bam (basically a shortcut to VertRes::Wrapper::samtools::sam_to_fixed_sorted_bam - no need to test thoroughly here)
-my $sorted_bam = $io->catfile($temp_dir, 'sorted.bam');
+my $sorted_bam = File::Spec->catfile($temp_dir, 'sorted.bam');
 ok $sam_util->sam_to_fixed_sorted_bam($temp_sam, $sorted_bam, $ref, quiet => 1), 'sam_to_fixed_sorted_bam test';
 @records = get_bam_body($sorted_bam);
 is @records, 2000, 'sorted bam had the correct number of records';
@@ -107,7 +108,7 @@ foreach my $record (@records) {
 is $found_rgs, @records, 'correct RG tag still present on all records';
 
 # rmdup (just a shortcut to VertRes::Wrapper::samtools::rmdup - no need to test thoroughly here)
-my $rmdup_bam = $io->catfile($temp_dir, 'rmdup.bam');
+my $rmdup_bam = File::Spec->catfile($temp_dir, 'rmdup.bam');
 ok $sam_util->rmdup($sorted_bam, $rmdup_bam, single_ended => 0, quiet => 1), 'rmdup test, paired';
 my @rmdup_pe = get_bam_body($rmdup_bam);
 unlink($rmdup_bam);
@@ -116,7 +117,7 @@ my @rmdup_se = get_bam_body($rmdup_bam);
 cmp_ok scalar(@rmdup_pe), '<', scalar(@rmdup_se), 'rmdup pe gave fewer reads than se mode';
 
 # merge (pretty much just a shortcut to VertRes::Wrapper::picard::merge_and_check - no need to test thoroughly here)
-my $merge_bam = $io->catfile($temp_dir, 'merge.bam');
+my $merge_bam = File::Spec->catfile($temp_dir, 'merge.bam');
 ok $sam_util->merge($merge_bam, $rmdup_bam), 'merge on single bam test';
 is readlink($merge_bam), 'rmdup.bam', 'merge on single bam created the correct relative symlink';
 ok $sam_util->merge($merge_bam, $rmdup_bam, $sorted_bam), 'merge on multiple bam test';
@@ -161,9 +162,9 @@ is_deeply {$sam_util->bam_statistics($sorted_bam)}, {SRR00001 => {total_bases =>
                                                                   sd_isize => '74.10',
                                                                   median_isize => 275,
                                                                   mad => 48}}, 'bam_statistics test';
-my $given_bas = $io->catfile($temp_dir, 'test.bas');
+my $given_bas = File::Spec->catfile($temp_dir, 'test.bas');
 ok $sam_util->bas($sorted_bam, $given_bas), 'bas() ran ok';
-my $expected_bas = $io->catfile('t', 'data', 'example.bas');
+my $expected_bas = File::Spec->catfile('t', 'data', 'example.bas');
 ok open(my $ebfh, $expected_bas), 'opened expected .bas';
 @expected = <$ebfh>;
 # first field of second line contains the month and day, which will obviously
@@ -178,7 +179,7 @@ is_deeply \@given, \@expected, 'bas output was as expected';
 
 # stats method
 ok $sam_util->stats($sorted_bam), 'stats test';
-foreach my $file ($io->catfile($temp_dir, 'sorted.bam.flagstat'), $io->catfile($temp_dir, 'sorted.bam.bas')) {
+foreach my $file (File::Spec->catfile($temp_dir, 'sorted.bam.flagstat'), File::Spec->catfile($temp_dir, 'sorted.bam.bas')) {
     ok -s $file, 'stats output file exists';
 }
 
@@ -188,7 +189,7 @@ my @splits = $sam_util->split_bam_by_sequence($headed_bam,
                                               ignore => '^N[TC]_\d+');
 my @expected_splits;
 foreach (1..22, 'X', 'MT') {
-    push(@expected_splits, $io->catfile($temp_dir, $_.'.headed2.bam'));
+    push(@expected_splits, File::Spec->catfile($temp_dir, $_.'.headed2.bam'));
 }
 @expected_splits = sort @expected_splits;
 @splits = sort @splits;

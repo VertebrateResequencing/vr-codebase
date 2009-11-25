@@ -119,6 +119,7 @@ use warnings;
 use VertRes::Utils::Mapping;
 use VertRes::Utils::Hierarchy;
 use VertRes::IO;
+use VertRes::Utils::FileSystem;
 use VertRes::Parser::bas;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
@@ -284,6 +285,7 @@ sub new {
     $self->{mapstats_id} = $mapping->id;
     
     $self->{io} = VertRes::IO->new;
+    $self->{fsu} = VertRes::Utils::FileSystem->new;
     
     return $self;
 }
@@ -356,9 +358,9 @@ sub split {
         my $these_read_args = $self->_get_read_args($lane_path, $ended) || next;
         my @these_read_args = @{$these_read_args};
         
-        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
-        my $complete_file = $self->{io}->catfile($lane_path, '.split_complete_'.$ended.'_'.$self->{mapstats_id});
-        my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}."split_${ended}_$self->{mapstats_id}.pl");
+        my $split_dir = $self->{fsu}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
+        my $complete_file = $self->{fsu}->catfile($lane_path, '.split_complete_'.$ended.'_'.$self->{mapstats_id});
+        my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."split_${ended}_$self->{mapstats_id}.pl");
         
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
@@ -419,11 +421,11 @@ sub _get_read_args {
     
     my @read_args;
     if ($fastq_info[0]->[0]) {
-        $read_args[0] = ["read0 => '".$self->{io}->catfile($lane_path, $fastq_info[0]->[0])."'"];
+        $read_args[0] = ["read0 => '".$self->{fsu}->catfile($lane_path, $fastq_info[0]->[0])."'"];
     }
     if ($fastq_info[1]->[0] && $fastq_info[2]->[0]) {
-        $read_args[1] = ["read1 => '".$self->{io}->catfile($lane_path, $fastq_info[1]->[0])."', ",
-                         "read2 => '".$self->{io}->catfile($lane_path, $fastq_info[2]->[0])."'"];
+        $read_args[1] = ["read1 => '".$self->{fsu}->catfile($lane_path, $fastq_info[1]->[0])."', ",
+                         "read2 => '".$self->{fsu}->catfile($lane_path, $fastq_info[2]->[0])."'"];
     }
     
     @read_args || $self->throw("$lane_path had no compatible set of fastq files!");
@@ -523,22 +525,22 @@ sub map {
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
     # independantly.
     foreach my $ended ('se', 'pe') {
-        my $done_file = $self->{io}->catfile($lane_path, '.mapping_complete_'.$ended.'_'.$self->{mapstats_id});
+        my $done_file = $self->{fsu}->catfile($lane_path, '.mapping_complete_'.$ended.'_'.$self->{mapstats_id});
         next if -e $done_file;
         my $these_read_args = $self->_get_read_args($lane_path, $ended) || next;
         my @these_read_args = @{$these_read_args};
         
         # get the number of splits
         my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
-        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
+        my $split_dir = $self->{fsu}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
         
         foreach my $split (1..$num_of_splits) {
-            my $sam_file = $self->{io}->catfile($split_dir, $split.'.raw.sam');
-            my $bam_file = $self->{io}->catfile($split_dir, $split.'.raw.sorted.bam');
+            my $sam_file = $self->{fsu}->catfile($split_dir, $split.'.raw.sam');
+            my $bam_file = $self->{fsu}->catfile($split_dir, $split.'.raw.sorted.bam');
             
             next if -s $bam_file;
             
-            my $script_name = $self->{io}->catfile($split_dir, $self->{prefix}.$split.'.map.pl');
+            my $script_name = $self->{fsu}->catfile($split_dir, $self->{prefix}.$split.'.map.pl');
             
             my @split_read_args = ();
             foreach my $read_arg (@these_read_args) {
@@ -547,6 +549,8 @@ sub map {
                 $split_read_arg =~ s/\/([^\/]+)$/\/${split_dir_name}_${ended}_$self->{mapstats_id}\/$1/;
                 push(@split_read_args, $split_read_arg);
             }
+            
+            my $error_file = $self->{fsu}->catfile($lane_path, $self->{prefix}.'map_'.$ended.'_'.$self->{mapstats_id}.'_'.$split.'.e');
             
             open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
             print $scriptfh qq{
@@ -562,7 +566,8 @@ my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
                                @split_read_args,
                                output => '$sam_file',
                                insert_size => $info{insert_size},
-                               read_group => '$info{lane}');
+                               read_group => '$info{lane}',
+                               error_file => '$error_file');
 
 # (it will only return ok and create output if the sam file was created and not
 #  truncated)
@@ -621,7 +626,7 @@ sub _num_of_splits {
     my ($self, $lane_path, $ended) = @_;
     
     # get the number of splits
-    my $split_file = $self->{io}->catfile($lane_path, '.split_complete_'.$ended.'_'.$self->{mapstats_id});
+    my $split_file = $self->{fsu}->catfile($lane_path, '.split_complete_'.$ended.'_'.$self->{mapstats_id});
     my $io = VertRes::IO->new(file => $split_file);
     my $split_fh = $io->fh;
     my $splits = <$split_fh>;
@@ -651,10 +656,10 @@ sub merge_and_stat_requires {
         
         # get the number of splits
         my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
-        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
+        my $split_dir = $self->{fsu}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
         
         foreach my $split (1..$num_of_splits) {
-            push(@requires, $self->{io}->catfile($split_dir, $split.'.raw.sorted.bam'));
+            push(@requires, $self->{fsu}->catfile($split_dir, $split.'.raw.sorted.bam'));
         }
     }
     
@@ -713,20 +718,20 @@ sub merge_and_stat {
     foreach my $ended ('se', 'pe') {
         $self->_get_read_args($lane_path, $ended) || next;
         
-        my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}."merge_and_stat_${ended}_$self->{mapstats_id}.pl");
+        my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."merge_and_stat_${ended}_$self->{mapstats_id}.pl");
         
         # get the input bams that need merging
         my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
-        my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
+        my $split_dir = $self->{fsu}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
         my @bams;
         foreach my $split (1..$num_of_splits) {
-            push(@bams, $self->{io}->catfile($split_dir, $split.'.raw.sorted.bam'));
+            push(@bams, $self->{fsu}->catfile($split_dir, $split.'.raw.sorted.bam'));
         }
         
         my $copy_instead_of_merge = @bams > 1 ? 0 : 1;
         
         # define the output files
-        my $bam_file = $self->{io}->catfile($lane_path, "$self->{mapstats_id}.$ended.raw.sorted.bam");
+        my $bam_file = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.raw.sorted.bam");
         my @stat_files;
         foreach my $suffix ('bas', 'flagstat') {
             push(@stat_files, $bam_file.'.'.$suffix);
@@ -835,7 +840,7 @@ sub update_db {
     my @bas_files;
     foreach my $file (@{$files}) {
         next unless $file =~ /\.bas$/;
-        push(@bas_files, $self->{io}->catfile($lane_path, $file));
+        push(@bas_files, $self->{fsu}->catfile($lane_path, $file));
         -s $bas_files[-1] || $self->throw("Expected bas file $bas_files[-1] but it didn't exist!");
     }
     
@@ -927,7 +932,7 @@ sub cleanup {
                          split_se split_pe
                          map_se map_pe
                          merge_and_stat_se merge_and_stat_pe)) {
-        unlink($self->{io}->catfile($lane_path, $prefix.$file));
+        unlink($self->{fsu}->catfile($lane_path, $prefix.$file));
         foreach my $suffix (qw(o e pl)) {
             if ($file =~ /map_([sp]e)/) {
                 my $ended = $1;
@@ -935,16 +940,16 @@ sub cleanup {
                 my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
                 
                 foreach my $split (1..$num_of_splits) {
-                    unlink($self->{io}->catfile($lane_path, $prefix.$file.'_'.$self->{mapstats_id}.'_'.$split.'.'.$suffix));
+                    unlink($self->{fsu}->catfile($lane_path, $prefix.$file.'_'.$self->{mapstats_id}.'_'.$split.'.'.$suffix));
                 }
             }
             
-            unlink($self->{io}->catfile($lane_path, $prefix.$file.'_'.$self->{mapstats_id}.'.'.$suffix));
+            unlink($self->{fsu}->catfile($lane_path, $prefix.$file.'_'.$self->{mapstats_id}.'.'.$suffix));
         }
     }
     
-    $self->{io}->rmtree($self->{io}->catfile($lane_path, 'split_se'.'_'.$self->{mapstats_id}));
-    $self->{io}->rmtree($self->{io}->catfile($lane_path, 'split_pe'.'_'.$self->{mapstats_id}));
+    $self->{fsu}->rmtree($self->{fsu}->catfile($lane_path, 'split_se'.'_'.$self->{mapstats_id}));
+    $self->{fsu}->rmtree($self->{fsu}->catfile($lane_path, 'split_pe'.'_'.$self->{mapstats_id}));
     
     return $self->{Yes};
 }
@@ -958,13 +963,13 @@ sub is_finished {
         foreach my $ended ('se', 'pe') {
             $self->_get_read_args($lane_path, $ended) || next;
             
-            my $done_file = $self->{io}->catfile($lane_path, '.mapping_complete_'.$ended.'_'.$self->{mapstats_id});
+            my $done_file = $self->{fsu}->catfile($lane_path, '.mapping_complete_'.$ended.'_'.$self->{mapstats_id});
             
             my $done_bams = 0;
             my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
-            my $split_dir = $self->{io}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
+            my $split_dir = $self->{fsu}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
             foreach my $split (1..$num_of_splits) {
-                $done_bams += (-s $self->{io}->catfile($split_dir, $split.'.raw.sorted.bam')) ? 1 : 0;
+                $done_bams += (-s $self->{fsu}->catfile($split_dir, $split.'.raw.sorted.bam')) ? 1 : 0;
             }
             
             if (! -e $done_file && $done_bams == $num_of_splits) {

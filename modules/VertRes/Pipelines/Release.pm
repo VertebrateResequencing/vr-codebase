@@ -77,6 +77,7 @@ use strict;
 use warnings;
 use VertRes::Utils::Hierarchy;
 use VertRes::IO;
+use VertRes::Utils::FileSystem;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use File::Basename;
@@ -176,6 +177,7 @@ sub new {
     $self->{assembly_name} || $self->throw("assembly_name not supplied, can't continue");
     
     $self->{io} = VertRes::IO->new;
+    $self->{fsu} = VertRes::Utils::FileSystem->new;
     
     $self->{vrtrack} = VRTrack::VRTrack->new($self->{db});
     
@@ -239,7 +241,7 @@ sub create_release_hierarchy {
     my @bams_in_rel = $hu->create_release_hierarchy(\@mapped_lanes, $lane_path, %{$self});
     @bams_in_rel || $self->throw("Failed to create the release hierarchy");
     
-    my $done_file = $self->{io}->catfile($lane_path, '.release_hierarchy_made');
+    my $done_file = $self->{fsu}->catfile($lane_path, '.release_hierarchy_made');
     open(my $dfh, '>', $done_file) || $self->throw("Could not write to $done_file");
     foreach my $bam_in_rel (@bams_in_rel) {
         print $dfh $bam_in_rel, "\n";
@@ -358,13 +360,13 @@ sub lib_rmdup_provides {
 sub lib_rmdup {
     my ($self, $lane_path, $action_lock) = @_;
     
-    my $fofn = $self->{io}->catfile($lane_path, '.library_merge_done');
+    my $fofn = $self->{fsu}->catfile($lane_path, '.library_merge_done');
     my @files = $self->{io}->parse_fofn($fofn, $lane_path);
     my $verbose = $self->verbose();
     
     my @rmdup_bams;
     foreach my $merge_bam (@files) {
-        $merge_bam = $self->{io}->catfile($lane_path, $merge_bam);
+        $merge_bam = $self->{fsu}->catfile($lane_path, $merge_bam);
         my ($library, $basename) = (File::Spec->splitdir($merge_bam))[-2..-1];
         
         my $rmdup_bam = $merge_bam;
@@ -378,7 +380,7 @@ sub lib_rmdup {
                  qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->rmdup(qq[$merge_bam], qq[$rmdup_bam], single_ended => $single_ended) || die qq[rmdup failed for $merge_bam\n];"});
     }
     
-    my $out_fofn = $self->{io}->catfile($lane_path, '.lib_rmdup_expected');
+    my $out_fofn = $self->{fsu}->catfile($lane_path, '.lib_rmdup_expected');
     open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
     foreach my $out_bam (@rmdup_bams) {
         print $ofh $out_bam, "\n";
@@ -539,8 +541,8 @@ sub sample_merge {
 
 sub merge_up_one_level {
     my ($self, $lane_path, $action_lock, $fofn, $output_basename, $job_name, $out_fofn, $queue) = @_;
-    $fofn = $self->{io}->catfile($lane_path, $fofn);
-    $out_fofn = $self->{io}->catfile($lane_path, $out_fofn);
+    $fofn = $self->{fsu}->catfile($lane_path, $fofn);
+    $out_fofn = $self->{fsu}->catfile($lane_path, $out_fofn);
     
     unlink($out_fofn);
     
@@ -569,15 +571,15 @@ sub merge_up_one_level {
         }
         $out_bam_name || $self->throw("Couldn't work out what to call the merged bam given ($lane_path, $output_basename, $job_name, $group)!");
         
-        my $current_path = $self->{io}->catfile($lane_path, $out_dir);
-        my $out_bam = $self->{io}->catfile($current_path, $out_bam_name);
+        my $current_path = $self->{fsu}->catfile($lane_path, $out_dir);
+        my $out_bam = $self->{fsu}->catfile($current_path, $out_bam_name);
         push(@out_bams, $out_bam);
         
         # no need to merge if the hierarchy beneath hasn't changed since the
         # previous release
         if ($self->{previous_release_root}) {
-            my $previous_path = $self->{io}->catfile($self->{previous_release_root}, $out_dir);
-            my $previous_bam =  $self->{io}->catfile($previous_path, $out_bam_name);
+            my $previous_path = $self->{fsu}->catfile($self->{previous_release_root}, $out_dir);
+            my $previous_bam =  $self->{fsu}->catfile($previous_path, $out_bam_name);
             
             if ($self->_hierarchy_same($previous_path, $current_path, \%lane_paths)) {
                 # check that none of the lanes in this part of the hierarchy
@@ -659,7 +661,7 @@ sub _fofn_to_bam_groups {
         my @parts = File::Spec->splitdir($path);
         my $basename = pop @parts;
         pop @parts;
-        my $parent = File::Spec->catfile(@parts);
+        my $parent = $self->{fsu}->catfile(@parts);
         
         my $group;
         if ($group_by_basename) {
@@ -670,7 +672,7 @@ sub _fofn_to_bam_groups {
             $group = $parent;
         }
         
-        push(@{$bams_groups{$group}}, $self->{io}->catfile($lane_path, $path));
+        push(@{$bams_groups{$group}}, $self->{fsu}->catfile($lane_path, $path));
     }
     
     return %bams_groups;
@@ -767,10 +769,10 @@ sub recalibrate {
     my ($self, $lane_path, $action_lock) = @_;
     return $self->{Yes} unless $self->{do_recalibration};
     
-    my $fofn = $self->{io}->catfile($lane_path, '.platform_merge_done');
+    my $fofn = $self->{fsu}->catfile($lane_path, '.platform_merge_done');
     my @in_bams = $self->{io}->parse_fofn($fofn, $lane_path);
     
-    my $out_fofn = $self->{io}->catfile($lane_path, '.recalibrate_expected');
+    my $out_fofn = $self->{fsu}->catfile($lane_path, '.recalibrate_expected');
     unlink($out_fofn);
     
     my $verbose = $self->verbose;
@@ -780,7 +782,7 @@ sub recalibrate {
     
     my @out_bams;
     foreach my $bam (@in_bams) {
-        $bam = $self->{io}->catfile($lane_path, $bam);
+        $bam = $self->{fsu}->catfile($lane_path, $bam);
         my $out_bam = $bam;
         $out_bam =~ s/\.bam$/.recal.bam/;
         push(@out_bams, $out_bam);
@@ -865,14 +867,14 @@ sub create_release_files_provides {
 sub create_release_files {
     my ($self, $lane_path, $action_lock) = @_;
     
-    my $fofn = $self->{io}->catfile($lane_path, $self->{do_recalibration} ? '.recalibrate_done' : '.platform_merge_done');
+    my $fofn = $self->{fsu}->catfile($lane_path, $self->{do_recalibration} ? '.recalibrate_done' : '.platform_merge_done');
     my @in_bams = $self->{io}->parse_fofn($fofn, $lane_path);
     
-    my $out_fofn = $self->{io}->catfile($lane_path, '.create_release_files_expected');
+    my $out_fofn = $self->{fsu}->catfile($lane_path, '.create_release_files_expected');
     unlink($out_fofn);
     if ($self->{dcc_hardlinks}) {
-        unlink($self->{io}->catfile($lane_path, 'release_files.fofn'));
-        unlink($self->{io}->catfile($lane_path, 'release_files.md5'));
+        unlink($self->{fsu}->catfile($lane_path, 'release_files.fofn'));
+        unlink($self->{fsu}->catfile($lane_path, 'release_files.md5'));
     }
     
     my $verbose = $self->verbose;
@@ -882,9 +884,9 @@ sub create_release_files {
     
     my @release_files;
     foreach my $bam (@in_bams) {
-        $bam = $self->{io}->catfile($lane_path, $bam);
+        $bam = $self->{fsu}->catfile($lane_path, $bam);
         my ($basename, $path) = fileparse($bam);
-        my $release_name = File::Spec->catfile($path, 'release.bam');
+        my $release_name = $self->{fsu}->catfile($path, 'release.bam');
         
         # md5 of bam & links
         my $bam_md5 = $bam.'.md5';
@@ -975,10 +977,10 @@ sub cleanup {
     my $prefix = $self->{prefix};
     
     foreach my $file (qw(log job_status)) {
-        unlink($self->{io}->catfile($lane_path, $prefix.$file));
+        unlink($self->{fsu}->catfile($lane_path, $prefix.$file));
     }
     
-    my $file_base = $self->{io}->catfile($lane_path, $prefix);
+    my $file_base = $self->{fsu}->catfile($lane_path, $prefix);
     foreach my $job_base (qw(library_merge lib_rmdup platform_merge platform_recalibration create_release_files sample_merge)) {
         foreach my $suffix ('o', 'e') {
             unlink("$file_base$job_base.$suffix");
@@ -1002,25 +1004,25 @@ sub is_finished {
             $action_name eq 'sample_merge' ||
             $action_name eq 'recalibrate' ||
             $action_name eq 'create_release_files') {
-        my $expected_file = $self->{io}->catfile($lane_path, ".${action_name}_expected");
-        my $done_file = $self->{io}->catfile($lane_path, ".${action_name}_done");
+        my $expected_file = $self->{fsu}->catfile($lane_path, ".${action_name}_expected");
+        my $done_file = $self->{fsu}->catfile($lane_path, ".${action_name}_done");
         $self->_merge_check($expected_file, $done_file, $lane_path);
     }
     
     if ($action_name eq 'create_release_files' &&
             $self->{dcc_hardlinks} &&
-            -s $self->{io}->catfile($lane_path, ".create_release_files_done") &&
-            ! -s $self->{io}->catfile($lane_path, "release_files.fofn")) {
+            -s $self->{fsu}->catfile($lane_path, ".create_release_files_done") &&
+            ! -s $self->{fsu}->catfile($lane_path, "release_files.fofn")) {
         my $vuh = VertRes::Utils::Hierarchy->new();
         
         # make a release_files.fofn with all the bams and other files sans the
         # md5s, and cat all the md5s into 1 file
-        my $rfofn = $self->{io}->catfile($lane_path, "release_files.fofn.tmp");
+        my $rfofn = $self->{fsu}->catfile($lane_path, "release_files.fofn.tmp");
         open(my $rfofnfh, '>', $rfofn) || $self->throw("Couldn't write to $rfofn");
-        my $rmd5 = $self->{io}->catfile($lane_path, "release_files.md5.tmp");
+        my $rmd5 = $self->{fsu}->catfile($lane_path, "release_files.md5.tmp");
         open(my $rmd5fh, '>', $rmd5) || $self->throw("Couldn't write to $rmd5");
         
-        my $rdone = $self->{io}->catfile($lane_path, ".create_release_files_done");
+        my $rdone = $self->{fsu}->catfile($lane_path, ".create_release_files_done");
         open(my $rdfh, $rdone) || $self->throw("Couldn't open $rdone");
         my $dcc_filename;
         my $orig_name;
@@ -1063,18 +1065,18 @@ sub is_finished {
             }
             else {
                 # make hardlink to DCC-style filename
-                my $dcc_path = File::Spec->catfile($path, $base);
+                my $dcc_path = $self->{fsu}->catfile($path, $base);
                 unlink($dcc_path);
                 system("ln $file $dcc_path");
                 print $rfofnfh $dcc_path, "\n";
             }
         }
         close($rdfh);
-        print $rfofnfh $self->{io}->catfile($lane_path, "release_files.md5"), "\n";
+        print $rfofnfh $self->{fsu}->catfile($lane_path, "release_files.md5"), "\n";
         close($rmd5fh);
         close($rfofnfh);
-        move($rfofn, $self->{io}->catfile($lane_path, "release_files.fofn"));
-        move($rmd5, $self->{io}->catfile($lane_path, "release_files.md5"));
+        move($rfofn, $self->{fsu}->catfile($lane_path, "release_files.fofn"));
+        move($rmd5, $self->{fsu}->catfile($lane_path, "release_files.md5"));
     }
     
     return $self->SUPER::is_finished($lane_path, $action);
@@ -1122,7 +1124,7 @@ sub _merge_check {
             print $dfh "# expecting $new_expected\n";
             close($dfh);
             
-            my $skip_file = $self->{io}->catfile($lane_path, 'skipped_files.fofn');
+            my $skip_file = $self->{fsu}->catfile($lane_path, 'skipped_files.fofn');
             open(my $sfh, '>>', $skip_file) || $self->throw("Couldn't write to $skip_file");
             foreach my $bam (@skipped) {
                 print $sfh $bam, "\n";

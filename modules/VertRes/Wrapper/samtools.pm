@@ -42,6 +42,7 @@ use strict;
 use warnings;
 use File::Copy;
 use VertRes::IO;
+use VertRes::Utils::FileSystem;
 
 use base qw(VertRes::Wrapper::WrapperI);
 
@@ -432,8 +433,9 @@ sub sam_to_fixed_sorted_bam {
     $fh || $self->throw("failed to get a filehandle from the view step, giving up for now");
     
     my $io = VertRes::IO->new();
-    my $temp_dir = $io->tempdir();
-    my $name_sorted_file = $io->catfile($temp_dir, 'namesorted');
+    my $fsu = VertRes::Utils::FileSystem->new();
+    my $temp_dir = $fsu->tempdir();
+    my $name_sorted_file = $fsu->catfile($temp_dir, 'namesorted');
     
     $self->run_method('open_to');
     $self->sort($fh, $name_sorted_file, n => 1);

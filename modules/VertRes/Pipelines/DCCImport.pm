@@ -83,6 +83,7 @@ use strict;
 use warnings;
 use File::Basename;
 use VertRes::IO;
+use VertRes::Utils::FileSystem;
 use VertRes::Parser::fastqcheck;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
@@ -140,6 +141,7 @@ sub new {
     $self->throw("files option is required") unless defined $self->{files};
     
     $self->{io} = VertRes::IO->new;
+    $self->{fsu} = VertRes::Utils::FileSystem->new;
     
     return $self;
 }
@@ -217,7 +219,7 @@ sub import_fastqs {
         my $file = $file_obj->name;
         my $ftp_path = $self->{fastq_base}.'/'.$file;
         my $fastq = $file_obj->hierarchy_name;
-        my $data_path = $self->{io}->catfile($lane_path, $fastq);
+        my $data_path = $self->{fsu}->catfile($lane_path, $fastq);
         
         my $precheck_file = $data_path;
         $precheck_file =~ s/\.fastq\.gz$/.precheck.fastq.gz/;
@@ -237,12 +239,13 @@ sub import_fastqs {
             $total_bases || $self->throw("missing raw_bases for file $file");
         }
         
-        my $script_name = $self->{io}->catfile($lane_path, $self->{prefix}."import_$fastq.pl");
+        my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."import_$fastq.pl");
         
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
 use strict;
 use VertRes::IO;
+use VertRes::Utils::FileSystem;
 use File::Spec;
 use File::Copy;
 use VertRes::Wrapper::fastqcheck;
@@ -275,12 +278,13 @@ unless (-s \$data_path) {
             copy(\$ftp_path, \$precheck_file) || die "Failed to move \$ftp_path to \$precheck_file\\n";
             
             if (\$md5) {
-                my \$ok = \$io->verify_md5(\$precheck_file, \$md5);
+                my \$fsu = VertRes::Utils::FileSystem->new();
+                my \$ok = \$fsu->verify_md5(\$precheck_file, \$md5);
                 unless (\$ok) {
                     # we might have the md5 of the file in its uncompressed form
                     if (\$precheck_file =~ /\.gz\$/) {
                         system("gunzip -c \$precheck_file > \$precheck_file.uncompressed");
-                        my \$uncomp_md5 = \$io->calculate_md5(\$precheck_file.'.uncompressed');
+                        my \$uncomp_md5 = \$fsu->calculate_md5(\$precheck_file.'.uncompressed');
                         if (\$uncomp_md5 eq \$md5) {
                             \$ok = 1;
                             my \$opened = open(my \$md5fh, '>', \$data_path.'.md5');
@@ -332,8 +336,8 @@ unless (-s \$data_path) {
         
         # calculate and store the md5 if we didn't already know it
         unless (\$md5) {
-            my \$io = VertRes::IO->new;
-            \$md5 = \$io->calculate_md5(\$precheck_file);
+            my \$fsu = VertRes::Utils::FileSystem->new();
+            \$md5 = \$fsu->calculate_md5(\$precheck_file);
             \$vrfile->md5(\$md5);
             \$vrfile->update;
         }
@@ -408,9 +412,9 @@ exit;
         LSF::run($action_lock, $lane_path, $self->{prefix}.'import_'.$fastq, $self, qq{perl -w $script_name});
     }
     
-    my $male_file = $self->{io}->catfile($lane_path, 'MALE');
-    my $female_file = $self->{io}->catfile($lane_path, 'FEMALE');
-    my $unknown_file = $self->{io}->catfile($lane_path, 'UNKNOWN');
+    my $male_file = $self->{fsu}->catfile($lane_path, 'MALE');
+    my $female_file = $self->{fsu}->catfile($lane_path, 'FEMALE');
+    my $unknown_file = $self->{fsu}->catfile($lane_path, 'UNKNOWN');
     if (! -s $male_file && ! -s $female_file && ! -s $unknown_file) {
         # find the gender for this lane
         my $gender;
@@ -497,7 +501,7 @@ sub update_db {
     for my $file_obj (@files) {
         my $file = $file_obj->name;
         my $fastq = $file_obj->hierarchy_name;
-        my $data_path = $self->{io}->catfile($lane_path, $fastq);
+        my $data_path = $self->{fsu}->catfile($lane_path, $fastq);
         
         $total_files++;
         next unless -s $data_path;
@@ -598,6 +602,8 @@ sub cleanup {
     
     my $prefix = $self->{prefix};
     
+    my $fsu = VertRes::Utils::FileSystem->new();
+    
     my $fastqs = $self->import_fastqs_provides($lane_path);
     my @files = ('log', 'job_status');
     foreach my $fastq (@{$fastqs}) {
@@ -609,11 +615,11 @@ sub cleanup {
     }
     
     foreach my $file (@files) {
-        unlink($self->{io}->catfile($lane_path, $prefix.$file));
+        unlink($fsu->catfile($lane_path, $prefix.$file));
     }
     
-    $self->{io}->rmtree($self->{io}->catfile($lane_path, 'split_se'));
-    $self->{io}->rmtree($self->{io}->catfile($lane_path, 'split_pe'));
+    $fsu->rmtree($fsu->catfile($lane_path, 'split_se'));
+    $fsu->rmtree($fsu->catfile($lane_path, 'split_pe'));
     
     return $self->{Yes};
 }

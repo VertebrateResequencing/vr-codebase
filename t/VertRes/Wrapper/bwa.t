@@ -2,12 +2,13 @@
 use strict;
 use warnings;
 use File::Copy;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 41;
     
     use_ok('VertRes::Wrapper::bwa');
-    use_ok('VertRes::IO');
+    use_ok('VertRes::Utils::FileSystem');
 }
 
 my $bwa = VertRes::Wrapper::bwa->new(quiet => 1);
@@ -18,28 +19,28 @@ is $bwa->exe, 'bwa', 'exe ok';
 like $bwa->version, qr/\d\.\d.\d/, 'version ok';
 
 # prepare our test files; copy them to a temp dir where we will do the tests
-my $io = VertRes::IO->new();
-my $temp_dir = $io->tempdir;
+my $fsu = VertRes::Utils::FileSystem->new();
+my $temp_dir = $fsu->tempdir;
 my $read1_basename = '2822_6_1_1000.fastq';
 my $read2_basename = '2822_6_2_1000.fastq';
 my $ref_basename = 'S_suis_P17.fa';
-my $read1 = $io->catfile($temp_dir, $read1_basename);
-my $read2 = $io->catfile($temp_dir, $read2_basename);
-my $ref = $io->catfile($temp_dir, $ref_basename);
-copy($io->catfile('t', 'data', $read1_basename), $read1);
-copy($io->catfile('t', 'data', $read2_basename), $read2);
-copy($io->catfile('t', 'data', $ref_basename), $ref);
+my $read1 = File::Spec->catfile($temp_dir, $read1_basename);
+my $read2 = File::Spec->catfile($temp_dir, $read2_basename);
+my $ref = File::Spec->catfile($temp_dir, $ref_basename);
+copy(File::Spec->catfile('t', 'data', $read1_basename), $read1);
+copy(File::Spec->catfile('t', 'data', $read2_basename), $read2);
+copy(File::Spec->catfile('t', 'data', $ref_basename), $ref);
 ok -s $read1, 'test file 1 ready to use';
 ok -s $read2, 'test file 2 ready to use';
 ok -s $ref, 'test file 3 ready to use';
 
 # the files we expect to be created
-my $sai1 = $io->catfile($temp_dir, '2822_6_1_1000.sai');
-my $sai2 = $io->catfile($temp_dir, '2822_6_2_1000.sai');
-my $mapping = $io->catfile($temp_dir, 'mapping.sam');
+my $sai1 = File::Spec->catfile($temp_dir, '2822_6_1_1000.sai');
+my $sai2 = File::Spec->catfile($temp_dir, '2822_6_2_1000.sai');
+my $mapping = File::Spec->catfile($temp_dir, 'mapping.sam');
 my @ref_index_files;
 foreach my $suffix (qw(amb ann bwt pac rbwt rpac rsa sa)) {
-    push(@ref_index_files, $io->catfile($temp_dir, 'S_suis_P17.fa.'.$suffix));
+    push(@ref_index_files, File::Spec->catfile($temp_dir, 'S_suis_P17.fa.'.$suffix));
 }
 
 # run the whole mapping

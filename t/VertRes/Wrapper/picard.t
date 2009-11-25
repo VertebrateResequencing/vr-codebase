@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 22;
@@ -8,7 +9,7 @@ BEGIN {
     use_ok('VertRes::Wrapper::picard');
     use_ok('VertRes::Wrapper::samtools');
     use_ok('VertRes::Parser::sam');
-    use_ok('VertRes::IO');
+    use_ok('VertRes::Utils::FileSystem');
 }
 
 my $pt = VertRes::Wrapper::picard->new(quiet => 1);
@@ -16,12 +17,12 @@ isa_ok $pt, 'VertRes::Wrapper::WrapperI';
 is $pt->quiet, 1, 'quiet set via new';
 
 # setup files
-my $io = VertRes::IO->new();
-my $bam_input_file = $io->catfile('t', 'data', 'simple.bam');
+my $fsu = VertRes::Utils::FileSystem->new();
+my $bam_input_file = File::Spec->catfile('t', 'data', 'simple.bam');
 ok -s $bam_input_file, 'input bam file ready to test on';
-my $temp_dir = $io->tempdir();
-my $bam_out_file = $io->catfile($temp_dir, 'merged.bam');
-my $rmdup_file = $io->catfile($temp_dir, 'rmdup.bam');
+my $temp_dir = $fsu->tempdir();
+my $bam_out_file = File::Spec->catfile($temp_dir, 'merged.bam');
+my $rmdup_file = File::Spec->catfile($temp_dir, 'rmdup.bam');
 
 # MergeSamFiles
 $pt->MergeSamFiles($bam_out_file, ($bam_input_file, $bam_input_file),
@@ -54,9 +55,9 @@ is get_bam_lines($rmdup_file), 3972, 'rmdup bam had the correct number of lines'
 
 # merge of two headed bams with the same PG header line shouldn't rename the
 # id, but it does!
-my $headed1_bam = $io->catfile('t', 'data', 'headed1.bam');
+my $headed1_bam = File::Spec->catfile('t', 'data', 'headed1.bam');
 ok -s $headed1_bam, 'headed1 bam file ready to test on';
-my $headed2_bam = $io->catfile('t', 'data', 'headed2.bam');
+my $headed2_bam = File::Spec->catfile('t', 'data', 'headed2.bam');
 ok -s $headed2_bam, 'headed2 bam file ready to test on';
 unlink($bam_out_file);
 $pt->merge_and_check($bam_out_file, [$headed1_bam, $headed2_bam]);

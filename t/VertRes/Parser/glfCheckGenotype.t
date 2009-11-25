@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 46;
@@ -19,7 +20,7 @@ is @{$rh}, 0, 'the result_holder starts off empty';
 
 ok ! $gcg->next_result, 'next_result returns false when we have no file set';
 
-my $check_genotype_file = $gcg->catfile('t', 'data', 'glf_checkgenotype.out');
+my $check_genotype_file = File::Spec->catfile('t', 'data', 'glf_checkgenotype.out');
 ok -e $check_genotype_file, 'file we will test with exists';
 ok $gcg->file($check_genotype_file), 'file set into parser';
 
@@ -39,7 +40,7 @@ is @expected_data, 0, 'parsed out all the results';
 is $gcg->entropy, 32.8, 'entropy test';
 
 # can we change file and still parse OK?
-$check_genotype_file = $gcg->catfile('t', 'data', 'glf_checkgenotype2.out');
+$check_genotype_file = File::Spec->catfile('t', 'data', 'glf_checkgenotype2.out');
 $gcg->file($check_genotype_file);
 
 is $gcg->entropy, 30.2, 'entropy test';

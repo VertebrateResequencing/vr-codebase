@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 27;
@@ -20,7 +21,7 @@ is @{$rh}, 0, 'the result_holder starts off empty';
 ok ! $fsp->next_result, 'next_result returns false when we have no file set';
 is $fsp->total_reads(), undef, 'total_reads returns undef before we set file';
 
-my $fs_file = $fsp->catfile('t', 'data', 'bam.flagstat');
+my $fs_file = File::Spec->catfile('t', 'data', 'bam.flagstat');
 ok -e $fs_file, 'file we will test with exists';
 ok $fsp->file($fs_file), 'file set into parser';
 
@@ -40,7 +41,7 @@ is $fsp->mate_mapped_to_other_chr(), 2, 'mate_mapped_to_other_chr test';
 is $fsp->mate_mapped_to_other_chr(1), 1, 'mate_mapped_to_other_chr(1) test';
 
 # check we can change files
-$fs_file = $fsp->catfile('t', 'data', 'bam2.flagstat');
+$fs_file = File::Spec->catfile('t', 'data', 'bam2.flagstat');
 ok -e $fs_file, 'second file we will test with exists';
 ok $fsp->file($fs_file), 'second file set into parser';
 

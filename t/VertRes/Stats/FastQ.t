@@ -1,20 +1,19 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 14;
+    use Test::Most tests => 13;
     
     use_ok('VertRes::Stats::FastQ');
-    use_ok('VertRes::IO');
 }
 
 my $sfq = VertRes::Stats::FastQ->new();
 isa_ok $sfq, 'VertRes::Stats::FastQ';
 isa_ok $sfq, 'VertRes::Base';
 
-my $io = VertRes::IO->new();
-my $fqc_file = $io->catfile('t', 'data', 'fastq.gz.fastqcheck');
+my $fqc_file = File::Spec->catfile('t', 'data', 'fastq.gz.fastqcheck');
 ok -e $fqc_file, 'file we will test with exists';
 is $sfq->num_sequences($fqc_file), 7156780, 'num_sequences test';
 is $sfq->total_length($fqc_file), 364995780, 'total_length test';
@@ -24,7 +23,7 @@ is_deeply [$sfq->standard_deviations($fqc_file)], ['0.00', 0.02], 'standard_devi
 
 is $sfq->avg_quality($fqc_file), 27.9, 'avg_quality test';
 
-my $qmb_file = $io->catfile('t', 'data', 'qualmapBayesian_simple.txt');
+my $qmb_file = File::Spec->catfile('t', 'data', 'qualmapBayesian_simple.txt');
 ok -e $qmb_file, 'second file we will test with exists';
 my ($before, $after) = $sfq->changed_quality($qmb_file);
 is_deeply $before, {'fastq_1' => ['2.50', '2.50'],

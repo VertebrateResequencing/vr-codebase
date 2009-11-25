@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use File::Spec;
 
 BEGIN {
     use Test::Most tests => 13;
@@ -19,7 +20,7 @@ is @{$rh}, 0, 'the result_holder starts off empty';
 
 ok ! $basp->next_result, 'next_result returns false when we have no file set';
 
-my $bas_file = $basp->catfile('t', 'data', 'example2.bas');
+my $bas_file = File::Spec->catfile('t', 'data', 'example2.bas');
 ok -e $bas_file, 'file we will test with exists';
 ok $basp->file($bas_file), 'file set into parser';
 

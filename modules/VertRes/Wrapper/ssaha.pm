@@ -46,6 +46,7 @@ package VertRes::Wrapper::ssaha;
 use strict;
 use warnings;
 use VertRes::IO;
+use VertRes::Utils::FileSystem;
 use File::Basename;
 use File::Spec;
 use File::Copy;
@@ -210,6 +211,7 @@ sub do_mapping {
     my ($self, %args) = @_;
     
     my $io = VertRes::IO->new();
+    my $fsu = VertRes::Utils::FileSystem->new();
     my $cigar_util = VertRes::Utils::Cigar->new();
     
     my $orig_run_method = $self->run_method;
@@ -247,7 +249,7 @@ sub do_mapping {
     unless ($local_cache) {
         $local_cache = File::Spec->tmpdir();
         # == /tmp : ideally we don't want these files deleted when we're done
-        # with them, so we don't clean them up by using VertRes::IO->tempdir
+        # with them, so we don't clean them up by using VertRes::Utils::FileSystem->tempdir
     }
     my $hash_files_found = 0;
     foreach my $suffix (@ref_hash_suffixes) {
@@ -260,7 +262,7 @@ sub do_mapping {
     my $hash_basename = basename($ref_fa_hash_base);
     foreach my $suffix (@ref_hash_suffixes) {
         my $source = "$ref_fa_hash_base.$suffix";
-        my $dest = $io->catfile($local_cache, "$hash_basename.$suffix");
+        my $dest = $fsu->catfile($local_cache, "$hash_basename.$suffix");
         
         # if dest already exists, check it is really our file
         my $do_copy = 1;
@@ -273,11 +275,11 @@ sub do_mapping {
         
         # copy if it doesn't exist or isn't correct
         if ($do_copy) {
-            my $ok = $io->copy($source, $dest);
+            my $ok = $fsu->copy($source, $dest);
             $ok || $self->throw("failed prior to attempting the mapping (could not copy $source -> $dest)");
         }
     }
-    $ref_fa_hash_base = $io->catfile($local_cache, $hash_basename);
+    $ref_fa_hash_base = $fsu->catfile($local_cache, $hash_basename);
     
     unless (-s $out_sam) {
         my $tmp_sam = $out_sam.'_tmp';
@@ -287,15 +289,15 @@ sub do_mapping {
         $self->run_method('open');
         
         foreach my $fastq (@fqs) {
-            my $temp_dir = $io->tempdir();
+            my $temp_dir = $fsu->tempdir();
             
             my $fq_basename = basename($fastq);
             $fq_basename =~ s/\.gz$//;
-            my $tmp_fastq = $io->catfile($temp_dir, $fq_basename);
+            my $tmp_fastq = $fsu->catfile($temp_dir, $fq_basename);
             
             my $cigar_name = $fq_basename;
             $cigar_name =~ s/\.fastq$//;
-            my $cigar_out = $io->catfile($out_dir, $cigar_name.'.cigar.gz');
+            my $cigar_out = $fsu->catfile($out_dir, $cigar_name.'.cigar.gz');
             
             unless (-s $cigar_out) {
                 # filter out short reads from fastq
