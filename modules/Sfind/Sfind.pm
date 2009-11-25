@@ -45,9 +45,8 @@ sub new {
 
     my $self = {};
     bless ($self, $class);
-#tk2 edit for new warehouse location
-#   my $dbh = DBI->connect("DBI:mysql:host=mcs2a:port=3313;database=warehouse_production", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
-	my $dbh = DBI->connect("DBI:mysql:host=psdp:port=3305;database=warehouse_production", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
+    #my $dbh = DBI->connect("DBI:mysql:host=mcs2a:port=3313;database=warehouse_staging", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
+    my $dbh = DBI->connect("DBI:mysql:host=psdp:port=3305;database=warehouse_production", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
     $self->{_dbh} = $dbh;
 
     return $self;

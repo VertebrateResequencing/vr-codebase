@@ -46,7 +46,7 @@ sub new {
 
     # id_run_pair = 0 means this is the first of any pair
     # which is what the srf, fastq & fastqcheck files are named for
-    my $sql = qq[select batch_id, id_run, position, run_complete, cycles, paired_read, has_two_runfolders from npg_information where id_npg_information = ? and id_run_pair=0];
+    my $sql = qq[select batch_id, id_run, position, run_complete, cycles, paired_read, has_two_runfolders from npg_information where id_npg_information = ? and (id_run_pair=0 or id_run_pair is null)];
     my $sth = $self->{_dbh}->prepare($sql);
 
     $sth->execute($id);

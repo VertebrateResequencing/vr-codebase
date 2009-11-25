@@ -283,7 +283,7 @@ sub lanes {
 sub lane_ids {
     my ($self) = @_;
     unless ($self->{'lane_ids'}){
-	my $sql = qq[select id_npg_information from npg_information n, library l where l.item_id=? and l.batch_id =n.batch_id and l.position = n.position and n.id_run_pair=0;];
+	my $sql = qq[select id_npg_information from npg_information n, library l where l.item_id=? and l.batch_id =n.batch_id and l.position = n.position and (n.id_run_pair=0 or n.id_run_pair is null);];
 	my @lanes;
 	my $sth = $self->{_dbh}->prepare($sql);
 
