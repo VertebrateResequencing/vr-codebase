@@ -1,6 +1,6 @@
 =head1 NAME
 
-VertRes::TrackQC_Fastq - pipeline for QC of fastq files, inherits from VertRes::TrackQC_Bam.
+VertRes::Pipelines::TrackQC_Fastq - pipeline for QC of fastq files, inherits from VertRes::Pipelines::TrackQC_Bam.
 
 =head1 SYNOPSIS
 
@@ -9,8 +9,8 @@ for an example.
 
 =cut
 
-package VertRes::TrackQC_Fastq;
-use base qw(VertRes::TrackQC_Bam);
+package VertRes::Pipelines::TrackQC_Fastq;
+use base qw(VertRes::Pipelines::TrackQC_Bam);
 
 use strict;
 use warnings;
@@ -57,9 +57,9 @@ our @actions =
     # Runs glf to check the genotype. Inherited from TrackQC_Bam.
     {
         'name'     => 'check_genotype',
-        'action'   => \&VertRes::TrackQC_Bam::check_genotype,
-        'requires' => \&VertRes::TrackQC_Bam::check_genotype_requires, 
-        'provides' => \&VertRes::TrackQC_Bam::check_genotype_provides,
+        'action'   => \&VertRes::Pipelines::TrackQC_Bam::check_genotype,
+        'requires' => \&VertRes::Pipelines::TrackQC_Bam::check_genotype_requires, 
+        'provides' => \&VertRes::Pipelines::TrackQC_Bam::check_genotype_provides,
     },
 
     # Creates some QC graphs and generate some statistics.
@@ -73,17 +73,17 @@ our @actions =
     # Checks the generated stats and attempts to auto pass or fail the lane. Inherited from TrackQC_Bam.
     {
         'name'     => 'auto_qc',
-        'action'   => \&VertRes::TrackQC_Bam::auto_qc,
-        'requires' => \&VertRes::TrackQC_Bam::auto_qc_requires, 
-        'provides' => \&VertRes::TrackQC_Bam::auto_qc_provides,
+        'action'   => \&VertRes::Pipelines::TrackQC_Bam::auto_qc,
+        'requires' => \&VertRes::Pipelines::TrackQC_Bam::auto_qc_requires, 
+        'provides' => \&VertRes::Pipelines::TrackQC_Bam::auto_qc_provides,
     },
 
     # Writes the QC status to the tracking database. Inherited from TrackQC_Bam.
     {
         'name'     => 'update_db',
-        'action'   => \&VertRes::TrackQC_Bam::update_db,
-        'requires' => \&VertRes::TrackQC_Bam::update_db_requires, 
-        'provides' => \&VertRes::TrackQC_Bam::update_db_provides,
+        'action'   => \&VertRes::Pipelines::TrackQC_Bam::update_db,
+        'requires' => \&VertRes::Pipelines::TrackQC_Bam::update_db_requires, 
+        'provides' => \&VertRes::Pipelines::TrackQC_Bam::update_db_provides,
     },
 );
 
@@ -114,7 +114,7 @@ our $options =
 
 =head2 new
 
-        Example    : my $qc = VertRes::TrackQC_Fastq->new( 'sample_dir'=>'dir', 'sample_size'=>1e6 );
+        Example    : my $qc = VertRes::Pipelines::TrackQC_Fastq->new( 'sample_dir'=>'dir', 'sample_size'=>1e6 );
         Options    : See Pipeline.pm for general options.
 
                     # Executables
@@ -143,7 +143,7 @@ our $options =
 
 =cut
 
-sub VertRes::TrackQC_Fastq::new 
+sub VertRes::Pipelines::TrackQC_Fastq::new 
 {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(%$options,'actions'=>\@actions,@args);
@@ -633,7 +633,7 @@ sub stats_and_graphs
     open(my $fh, '>', "$lane_path/$sample_dir/_graphs.pl") or Utils::error("$lane_path/$sample_dir/_graphs.pl: $!");
     print $fh 
 qq[
-use VertRes::TrackQC_Fastq;
+use VertRes::Pipelines::TrackQC_Fastq;
 
 my \%params = 
 (
@@ -650,7 +650,7 @@ my \%params =
     'bwa_clip'     => q[$$self{bwa_clip}],
 );
 
-my \$qc = VertRes::TrackQC_Fastq->new(\%params);
+my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
 \$qc->run_graphs(\$params{lane_path});
 ];
     close $fh;

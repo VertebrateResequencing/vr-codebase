@@ -3,7 +3,7 @@
 #   of Pipeline.pm.
 #
 
-package VertRes::TrackDummy;
+package VertRes::Pipelines::TrackDummy;
 use base qw(VertRes::Pipeline);
 
 use strict;

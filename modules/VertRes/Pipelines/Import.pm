@@ -1,4 +1,4 @@
-package VertRes::Import;
+package VertRes::Pipelines::Import;
 use base qw(VertRes::Pipeline);
 
 use strict;
@@ -43,7 +43,7 @@ our $options =
 
 =head2 new
 
-        Example    : my $qc = VertRes::TrackDummy->new( files=>[2451_6_1.fastq, 2451_6_2.fastq] );
+        Example    : my $qc = VertRes::Pipelines::TrackDummy->new( files=>[2451_6_1.fastq, 2451_6_2.fastq] );
         Options    : See Pipeline.pm for general options.
 
                     fastqcheck      .. The fastqcheck executable
@@ -111,7 +111,7 @@ sub get_fastqs
         qq[
 use strict;
 use warnings;
-use VertRes::Import;
+use VertRes::Pipelines::Import;
 
 my \$opts = {
     fastqcheck   => q[$$self{fastqcheck}],
@@ -120,7 +120,7 @@ my \$opts = {
     paired       => $$self{paired},
     files        => [ $files ],
 };
-my \$import = VertRes::Import->new(%\$opts);
+my \$import = VertRes::Pipelines::Import->new(%\$opts);
 \$import->get_files();
 
 ];

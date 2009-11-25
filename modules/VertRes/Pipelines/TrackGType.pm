@@ -1,11 +1,11 @@
-package VertRes::TrackGType;
+package VertRes::Pipelines::TrackGType;
 use base qw(VertRes::Pipeline);
 
 use strict;
 use warnings;
 use LSF;
 use HierarchyUtilities;
-use VertRes::GTypeCheck;
+use VertRes::Pipelines::GTypeCheck;
 
 our @actions =
 (
@@ -131,7 +131,7 @@ sub check_genotype
     $$options{'prefix'}        = $$self{'prefix'};
     $$options{'lock_file'}     = $lock_file;
 
-    my $gtc = VertRes::GTypeCheck->new(%$options);
+    my $gtc = VertRes::Pipelines::GTypeCheck->new(%$options);
     $gtc->check_genotype();
 
     return $$self{'No'};
