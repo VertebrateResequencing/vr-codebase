@@ -32,7 +32,7 @@ our @actions =
 our $options = 
 {
     # Executables
-    'fastqcheck'      => '/nfs/sf8/G1K/bin/fastqcheck',
+    'fastqcheck'      => 'fastqcheck',
     'mpsa'            => '/software/solexa/bin/mpsa_download',
 
     'bsub_opts'       => "-q normal -R 'select[type==X86_64]'",
