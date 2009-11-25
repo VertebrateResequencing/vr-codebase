@@ -423,7 +423,7 @@ if ( ! -s "${name}_$i.saix" )
 { 
     Utils::error("The command ended with an error:\n\t$bwa aln -q $$self{bwa_clip} -l 32 $bwa_ref ${name}_$i.fastq.gz > ${name}_$i.saix\n");
 }
-rename("${name}_$i.saix","${name}_$i.sai") or Utils::CMD("rename ${name}_$i.saix ${name}_$i.sai: \$!");
+rename("${name}_$i.saix","${name}_$i.sai") or Utils::error("rename ${name}_$i.saix ${name}_$i.sai: \$!");
 
 ];
         close($fh);
@@ -559,7 +559,7 @@ Utils::CMD("$samtools import $fai_ref $sname.sam $sname.ubam");
 Utils::CMD("$samtools sort $sname.ubam ${sname}x");
 Utils::CMD("$samtools calmd -b ${sname}x.bam $fa_ref >${sname}.bam.part 2>/dev/null");
 Utils::CMD("rm -f $sname.sam $sname.ubam ${sname}x.bam");
-rename("${sname}.bam.part", "$sname.bam") or Utils::CMD("rename ${sname}.bam.part $sname.bam: \$!");
+rename("${sname}.bam.part", "$sname.bam") or Utils::error("rename ${sname}.bam.part $sname.bam: \$!");
 ];
     }
     my $paired_name;

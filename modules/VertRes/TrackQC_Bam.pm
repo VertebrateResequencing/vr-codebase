@@ -121,7 +121,6 @@ sub VertRes::TrackQC_Bam::new
 {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(%$options,'actions'=>\@actions,@args);
-    bless($self,$class);
     $self->write_logs(1);
 
     if ( !$$self{gcdepth_R} ) { $self->throw("Missing the option gcdepth_R.\n"); }
