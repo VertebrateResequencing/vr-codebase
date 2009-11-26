@@ -581,7 +581,7 @@ sub merge_up_one_level {
             my $previous_path = $self->{fsu}->catfile($self->{previous_release_root}, $out_dir);
             my $previous_bam =  $self->{fsu}->catfile($previous_path, $out_bam_name);
             
-            if ($self->_hierarchy_same($previous_path, $current_path, \%lane_paths)) {
+            if ($self->{fsu}->directory_structure_same($previous_path, $current_path, leaf_mtimes => \%lane_paths)) {
                 # check that none of the lanes in this part of the hierarchy
                 # have been deleted and recreated since the previous release
                 my $lanes_changed = 0;
@@ -676,49 +676,6 @@ sub _fofn_to_bam_groups {
     }
     
     return %bams_groups;
-}
-
-sub _hierarchy_same {
-    my ($self, $root1, $root2, $lane_paths, $orig_path) = @_;
-    $orig_path ||= $root1;
-    
-    opendir(my $dh1, $root1) || return 0;
-    opendir(my $dh2, $root2) || return 0;
-    
-    my %checked_things;
-    my $had_subdirs = 0;
-    while (my $thing = readdir($dh1)) {
-        next if $thing =~ /^\.{1,2}$/;
-        my $this_path = File::Spec->catdir($root1, $thing);
-        next unless -d $this_path;
-        $had_subdirs++;
-        
-        my $other_path = File::Spec->catdir($root2, $thing);
-        
-        my $thing_same = $self->_hierarchy_same($this_path, $other_path, $lane_paths, $orig_path);
-        if ($thing_same) {
-            $checked_things{$thing} = 1;
-        }
-        else {
-            return 0;
-        }
-    }
-    
-    while (my $thing = readdir($dh2)) {
-        next if $thing =~ /^\.{1,2}$/;
-        my $this_path = File::Spec->catdir($root2, $thing);
-        next unless -d $this_path;
-        next if exists $checked_things{$thing};
-        return 0;
-    }
-    
-    unless ($had_subdirs) {
-        # this is a lane directory, store that fact and its mtime
-        my @s = stat($root1);
-        $lane_paths->{$orig_path}->{basename($root1)} = $s[9];
-    }
-    
-    return 1;
 }
 
 =head2 recalibrate_requires

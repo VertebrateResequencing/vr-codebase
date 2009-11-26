@@ -35,6 +35,9 @@ package VertRes::Utils::FileSystem;
 
 use strict;
 use warnings;
+
+no warnings 'recursion';
+
 use Cwd qw(abs_path);
 use File::Temp;
 use File::Spec;
@@ -232,13 +235,16 @@ sub rmtree {
 =head2 copy
 
  Title   : copy
- Usage   : $obj->copy('source.file', 'dest.file'); 
+ Usage   : $obj->copy('source.file', 'dest.file');
+           $obj->copy('source_dir', 'dest_dir');
  Function: Copy a file and check that the copy is identical to the source
-           afterwards.
+           afterwards. If given a directory as the first argument, copies all
+           all the files and subdirectories (recursively), again ensuring
+           copies are perfect.
  Returns : boolean (true on success; on failure the destination path won't
            exist)
- Args    : source file path, output file path. Optionally, the number of times
-           to retry the copy if the copy isn't identical, before giving up
+ Args    : source file/dir path, output file/dir path. Optionally, the number of
+           times to retry the copy if the copy isn't identical, before giving up
            (default 3).
 
 =cut
@@ -248,16 +254,87 @@ sub copy {
     unless (defined $max_retries) {
         $max_retries = 3;
     }
+    my $tmp_dest = $dest.'_copy_tmp';
     
-    for (1..$max_retries) {
-        my $success = File::Copy::copy($source, $dest);
-        if ($success) {
-            my $diff = `diff $source $dest`;
-            return 1 unless $diff;
+    if (-e $dest) {
+        $self->warn("destination '$dest' already exists, won't attempt to copy");
+        return 0;
+    }
+    
+    if (-d $source) {
+        mkdir($tmp_dest) || $self->throw("Could not make destination directory '$tmp_dest'");
+        opendir(my $dfh, $source) || $self->throw("Could not open source directory '$source'");
+        foreach my $thing (readdir($dfh)) {
+            next if $thing =~ /^\.{1,2}$/;
+            my $ok = $self->copy($self->catfile($source, $thing), $self->catfile($tmp_dest, $thing));
+            unless ($ok) {
+                $self->rmtree($tmp_dest);
+                return 0;
+            }
+        }
+        close($dfh);
+        
+        File::Copy::move($tmp_dest, $dest) || $self->throw("Failed to rename successfully copied directory '$tmp_dest' to '$dest'");
+        return 1;
+    }
+    else {
+        for (1..$max_retries) {
+            my $success = File::Copy::copy($source, $tmp_dest);
+            if ($success) {
+                my $diff = `diff $source $tmp_dest`;
+                unless ($diff) {
+                    File::Copy::move($tmp_dest, $dest) || $self->throw("Failed to rename successfully copied file '$tmp_dest' to '$dest'");
+                    return 1;
+                }
+            }
+        }
+        
+        unlink($tmp_dest);
+        return 0;
+    }
+}
+
+=head2 move
+
+ Title   : move
+ Usage   : $obj->move('source.file', 'dest.file');
+           $obj->move('source_dir', 'dest_dir');
+ Function: Does a VertRes::Utils::FileSystem->copy on the source to the
+           destination, and on success deletes the source. If the source was a
+           directory in which new files were added between the start and finish
+           of the copy, the destination will be deleted and source left
+           untouched.
+ Returns : boolean (true on success; on failure the destination path won't
+           exist)
+ Args    : source file/dir path, output file/dir path. Optionally, the number of
+           times to retry the copy if the copy isn't identical, before giving up
+           (default 3).
+
+=cut
+
+sub move {
+    my ($self, $source, $dest, $max_retries) = @_;
+    my $tmp_dest = $dest.'_move_tmp';
+    
+    $self->copy($source, $tmp_dest, $max_retries) || return 0;
+    
+    if (-d $source) {
+        unless ($self->directory_structure_same($source, $tmp_dest, consider_files => 1)) {
+            $self->rmtree($tmp_dest);
+            $self->warn("Source directory '$source' was updated before the move completed, so the destination was deleted and the source will be left untouched");
+            return 0;
         }
     }
     
-    return 0;
+    File::Copy::move($tmp_dest, $dest) || $self->throw("Failed to rename successfully moved source '$tmp_dest' to '$dest'");
+    if (-d $source) {
+        $self->rmtree($source);
+    }
+    else {
+        unlink($source);
+    }
+    
+    return 1;
 }
 
 =head2 verify_md5
@@ -297,6 +374,98 @@ sub calculate_md5 {
     my $md5 = $dmd5->hexdigest;
     
     return $md5;
+}
+
+=head2 directory_structure_same
+
+ Title   : directory_structure_same
+ Usage   : if ($obj->directory_structure_same($root1, $root2)) { ... }
+ Function: Find out if two directory structures are identical. (files are
+           ignored by default)
+ Returns : boolean
+ Args    : two absolute paths to root directories to compare, optionally a hash
+           of extra options:
+           leaf_mtimes => \%hash (the hash ref will have a single key added to
+                                  it of the first root path, where the value
+                                  is another hash ref. That hash will have keys
+                                  as leaf directory names and their mtimes as
+                                  values)
+           consider_files => boolean (default false; when true, directory
+                                      structures are only considered the same if
+                                      they also share the same files, and if
+                                      files in the first root are all older
+                                      or the same age as the corresponding file
+                                      in the second root)
+
+=cut
+
+sub directory_structure_same {
+    my ($self, $root1, $root2, %opts) = @_;
+    my $orig_path = delete $opts{orig_path};
+    $orig_path ||= $root1;
+    
+    opendir(my $dh1, $root1) || return 0;
+    opendir(my $dh2, $root2) || return 0;
+    
+    my %checked_things;
+    my $had_subdirs = 0;
+    while (my $thing = readdir($dh1)) {
+        next if $thing =~ /^\.{1,2}$/;
+        my $this_path = File::Spec->catdir($root1, $thing);
+        
+        my $is_dir = -d $this_path ? 1 : 0;
+        my $other_path;
+        if ($is_dir) {
+            $had_subdirs++;
+            $other_path = File::Spec->catdir($root2, $thing);
+        }
+        elsif ($opts{consider_files}) {
+            $other_path = File::Spec->catfile($root2, $thing);
+            
+            if (-e $other_path) {
+                my @this_s = stat($this_path);
+                my @other_s = stat($other_path);
+                
+                if ($this_s[9] <= $other_s[9]) {
+                    $checked_things{$thing} = 1;
+                    next;
+                }
+                else {
+                    return 0;
+                }
+            }
+            else {
+                return 0;
+            }
+        }
+        else {
+            next;
+        }
+        
+        my $thing_same = $self->directory_structure_same($this_path, $other_path, %opts, orig_path => $orig_path);
+        if ($thing_same) {
+            $checked_things{$thing} = 1;
+        }
+        else {
+            return 0;
+        }
+    }
+    
+    while (my $thing = readdir($dh2)) {
+        next if $thing =~ /^\.{1,2}$/;
+        my $this_path = File::Spec->catdir($root2, $thing);
+        next if (! $opts{consider_files} && ! -d $this_path);
+        next if exists $checked_things{$thing};
+        return 0;
+    }
+    
+    if ($opts{leaf_mtimes} && ! $had_subdirs) {
+        # this is a leaf directory, store that fact and its mtime
+        my @s = stat($root1);
+        $opts{leaf_mtimes}->{$orig_path}->{basename($root1)} = $s[9];
+    }
+    
+    return 1;
 }
 
 1;
