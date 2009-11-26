@@ -581,7 +581,7 @@ rename("${paired_name}.bam.part", "$paired_name.bam") or Utils::error("rename ${
     }
 
     # Now merge the files if necessary
-    if ( scalar @single_bams )
+    if ( scalar @single_bams + scalar @paired > 1 )
     {
         my $bams = join(' ', @single_bams);
         if ( $paired_name ) { $bams .= " $paired_name.bam"; }

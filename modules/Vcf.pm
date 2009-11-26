@@ -319,7 +319,7 @@ sub next_data_hash
         for my $info (split(/;/,$items[7]))
         {
             my ($key,$val) = split(/=/,$info);
-            $hash{$key} = $val || $$self{header}{$$cols[7]}{$key}{default};
+            $hash{$key} = $val || ( exists($$self{header}{$$cols[7]}{$key}) ? $$self{header}{$$cols[7]}{$key}{default} : undef);
         }
         $out{$$cols[7]} = \%hash;
     }
@@ -411,11 +411,9 @@ sub _next_header_line
     }
     push @{$$self{header_lines}}, $line;
 
-    if ( !($line=~/^\#\#(\S+)=(.*)$/) )
-    { 
-        chomp($line);
-        $self->warn("Could not parse the header line: [$line]\n"); 
-    }
+    # This header line does not define a key=value pair.
+    if ( !($line=~/^\#\#(\S+)=(.*)$/) ) { return $line; }
+
     if ( $1 eq 'INFO' ) { $self->_add_field($1,$2); }
     elsif ( $1 eq 'FILTER' ) { $self->_add_filter_field($2); }
     elsif ( $1 eq 'FORMAT' ) { $self->_add_field($1,$2); }
@@ -448,13 +446,14 @@ sub _next_header_line
     About   : Stores the field types of INFO or FORMAT
     Usage   : $vcf->_add_field('INFO', q[AA,1,String,"Ancestral Allele"]);
               $vcf->_add_field('FORMAT', q[GT,1,String,"Genotype"]);
-    Args    : name, value 
+    Args    : name, value
 
 =cut
 
 sub _add_field
 {
     my ($self,$field,$string) = @_;
+
     my @values = split(/,/,$string);
     if ( @values < 3 ) { $self->throw("Could not parse [$field=$string].\n"); }
     elsif ( @values < 4 ) { $self->warn("No description in [$field=$string].\n"); } 
@@ -470,16 +469,17 @@ sub _add_field
     elsif ( $values[2] eq 'Flag' ) { }
     else { $self->throw("Unknown field type [$field=$string].\n"); }
 
-    unshift(@values,$missing); # prepend with the default (missing) value
+    # If no paramater is expected for this field, set default to undef
+    if ( !$values[1] ) { $missing=undef; }
 
-    if ( exists($$self{header}{$field}{$values[1]}) ) { $self->warn("The field specified twice [$field=$string].\n"); }
-    $$self{header}{$field}{$values[1]} = 
+    if ( exists($$self{header}{$field}{$values[0]}) ) { $self->warn("The field specified twice [$field=$string].\n"); }
+    $$self{header}{$field}{$values[0]} = 
     {
-        default => $values[0],
-        name    => $values[1],
-        nparams => $values[2],
-        type    => $values[3],
-        desc    => $values[4],
+        default => $missing,        # this is used for checking and autocorrecting
+        name    => $values[0],
+        nparams => $values[1],
+        type    => $values[2],
+        desc    => $values[3],
         handler => $handler,
     };
 }
@@ -830,6 +830,9 @@ sub validate_info_field
 {
     my ($self,$values) = @_;
 
+    # First handle the empty INFO field (.)
+    if ( scalar keys %$values == 1 && exists($$values{'.'}) ) { return undef; }
+
     my @errs;
     while (my ($key,$value) = each %$values)
     {
@@ -842,7 +845,7 @@ sub validate_info_field
         }
         my $type = $$self{header}{INFO}{$key};
         if ( $$type{nparams}==0 ) 
-        { 
+        {
             if ( defined($value) ) { push @errs, "INFO tag [$key] did not expect any parameters, got [$value]"; }
             next; 
         }
@@ -902,7 +905,7 @@ sub validate_gtype_field
         }
     }
     if ( !exists($$data{GT}) ) { push @errs, "The mandatory tag GT not present."; }
-    elsif ( !($$data{GT} =~ m{^(\.|\d+)(?:[\|/](\.|\d+))?$}) ) { push @errs, "Unable to parse the GT field [$$data{GT}]."; } 
+    elsif ( !($$data{GT} =~ m{^(\.|\d+)(?:[\\|/](\.|\d+))?$}) ) { push @errs, "Unable to parse the GT field [$$data{GT}]."; } 
     else
     {
         my $nalts = @$alts==1 && $$alts[0] eq '.' ? 0 : @$alts;
@@ -911,12 +914,12 @@ sub validate_gtype_field
         my $b = $2;
         my $err = $self->validate_int($a,'.');
         if ( $err ) { push @errs,$err; }
-        elsif ( $a<0 || $a>$nalts ) { push @errs, "Bad ALT value in the GT field [$$data{GT}]."; }
+        elsif ( $a ne '.' && ($a<0 || $a>$nalts) ) { push @errs, "Bad ALT value in the GT field [$$data{GT}]."; }
         if ( defined($b) )
         {
             $err = $self->validate_int($b,'.');
             if ( $err ) { push @errs,$err; }
-            elsif ( $b<0 || $b>$nalts ) { push @errs, "Bad ALT value in the GT field [$$data{GT}]."; }
+            elsif ( $b ne '.' && ($b<0 || $b>$nalts) ) { push @errs, "Bad ALT value in the GT field [$$data{GT}]."; }
         }
     }
     if ( !@errs ) { return undef; }
