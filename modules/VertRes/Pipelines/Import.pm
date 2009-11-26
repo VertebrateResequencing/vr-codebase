@@ -97,7 +97,7 @@ sub get_fastqs
     {
         # If all gzipped files are in place, everything has been done already.
         if ( !-e qq[$lane_path/$file.gz] ) { $must_be_run=1; last; }
-        if ( !-e qq[$lane_path/$file.gz.fastqcheck] ) { $must_be_run=1; last; }
+        if ( !-e qq[$lane_path/$file.gz.fastqcheck] || !-s qq[$lane_path/$file.gz.fastqcheck] ) { $must_be_run=1; last; }
     }
     if ( !$must_be_run ) { return $$self{No}; }
 
@@ -167,15 +167,23 @@ sub get_files
     for my $file (@fastqcheck)
     {
         if ( -e $file && (! -e "$file.md5" || !-s "$file.md5") ) { Utils::CMD(qq[md5sum $file > $file.md5]); }
-        if ( -e "$file.gz.fastqcheck" ) { next; }
+        if ( -e "$file.gz.fastqcheck" && -s "$file.gz.fastqcheck" ) { next; }
 
         if ( -e $file )
         {
-            Utils::CMD(qq[cat $file | $$self{fastqcheck} > $file.gz.fastqcheck;]);
+            Utils::CMD(qq[cat $file | $$self{fastqcheck} > $file.gz.fastqcheck.part]);
+            if ( -s "$file.gz.fastqcheck.part" ) 
+            { 
+                rename("$file.gz.fastqcheck.part","$file.gz.fastqcheck") or $self->throw("rename $file.gz.fastqcheck.part $file.gz.fastqcheck: $!"); 
+            }
         }
         elsif ( -e "$file.gz" )
         {
-            Utils::CMD(qq[zcat $file.gz | $$self{fastqcheck} > $file.gz.fastqcheck;]);
+            Utils::CMD(qq[zcat $file.gz | $$self{fastqcheck} > $file.gz.fastqcheck.part]);
+            if ( -s "$file.gz.fastqcheck.part" ) 
+            { 
+                rename("$file.gz.fastqcheck.part","$file.gz.fastqcheck") or $self->throw("rename $file.gz.fastqcheck.part $file.gz.fastqcheck: $!"); 
+            }
         }
     }
 
@@ -351,11 +359,25 @@ sub update_db
         if ( -e "$xfile.gz" && (! -e "$xfile.md5" || !-s "$xfile.md5") ) { Utils::CMD(qq[zcat $xfile.gz | md5sum > $xfile.md5]); }
 
         $vrfile->md5(`awk '{printf "%s",\$1}' $lane_path/$name.md5`);
-        my $fastq = VertRes::Parser::fastqcheck->new(file => "$lane_path/$name.gz.fastqcheck");
-        $vrfile->read_len($fastq->avg_length());
-        $vrfile->raw_bases($fastq->total_length());
-        $vrfile->raw_reads($fastq->num_sequences());
-        $vrfile->mean_q($fastq->avg_qual()); 
+
+        # Hm, this must be evaled, otherwise it dies without rollback
+        my ($avg_len,$tot_len,$num_seq,$avg_qual);
+        eval {
+            my $fastq = VertRes::Parser::fastqcheck->new(file => "$lane_path/$name.gz.fastqcheck");
+            $avg_len  = $fastq->avg_length();
+            $tot_len  = $fastq->total_length();
+            $num_seq  = $fastq->num_sequences();
+            $avg_qual = $fastq->avg_qual();
+        };
+        if ( $@ )
+        {
+            $vrtrack->transaction_rollback();
+            $self->throw("Problem reading the fastqcheck file: $lane_path/$name.gz.fastqcheck\n");
+        }
+        $vrfile->read_len($avg_len);
+        $vrfile->raw_bases($tot_len);
+        $vrfile->raw_reads($num_seq);
+        $vrfile->mean_q($avg_qual); 
         $vrfile->is_processed('import',1);
         $vrfile->update();
     }
