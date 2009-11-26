@@ -1,4 +1,4 @@
-package VertRes::Pipelines::GTypeCheck;
+package VertRes::Utils::GTypeCheck;
 use base qw(VertRes::Base);
 
 use strict;
@@ -46,7 +46,7 @@ sub check_genotype
     print $fh
     qq{
 use Utils;
-use VertRes::Pipelines::GTypeCheck;
+use VertRes::Utils::GTypeCheck;
 
 \$base = VertRes::Base->new();
 
@@ -74,7 +74,7 @@ if ( ! -e "$name.gtypex" || Utils::file_newer("$name.glf","$name.gtypex") )
 }
 if ( -s "$name.gtypex" )
 {
-    my \$gtc = VertRes::Pipelines::GTypeCheck->new();
+    my \$gtc = VertRes::Utils::GTypeCheck->new();
 
     open (my \$fh,'>',"$name.gtype") or Utils::error("$name.gtype: \$!");
     print \$fh \$gtc->is_genotype_ok("$name.gtypex",'$genotype',$ratio);

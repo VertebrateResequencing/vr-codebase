@@ -5,7 +5,7 @@ use strict;
 use warnings;
 use LSF;
 use HierarchyUtilities;
-use VertRes::Pipelines::GTypeCheck;
+use VertRes::Utils::GTypeCheck;
 
 our @actions =
 (
@@ -131,7 +131,7 @@ sub check_genotype
     $$options{'prefix'}        = $$self{'prefix'};
     $$options{'lock_file'}     = $lock_file;
 
-    my $gtc = VertRes::Pipelines::GTypeCheck->new(%$options);
+    my $gtc = VertRes::Utils::GTypeCheck->new(%$options);
     $gtc->check_genotype();
 
     return $$self{'No'};

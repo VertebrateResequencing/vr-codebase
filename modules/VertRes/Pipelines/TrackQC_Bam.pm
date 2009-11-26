@@ -15,7 +15,7 @@ use base qw(VertRes::Pipeline);
 use strict;
 use warnings;
 use LSF;
-use VertRes::Pipelines::GTypeCheck;
+use VertRes::Utils::GTypeCheck;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::Mapstats;
@@ -318,7 +318,7 @@ sub check_genotype
     $$options{'prefix'}        = $$self{'prefix'};
     $$options{'lock_file'}     = $lock_file;
 
-    my $gtc = VertRes::Pipelines::GTypeCheck->new(%$options);
+    my $gtc = VertRes::Utils::GTypeCheck->new(%$options);
     $gtc->check_genotype();
 
     return $$self{'No'};
@@ -604,7 +604,7 @@ sub auto_qc
     my @qc_status = ();
 
     # Genotype check results
-    my $gtype  = VertRes::Pipelines::GTypeCheck::get_status("$sample_dir/${name}.gtype");
+    my $gtype  = VertRes::Utils::GTypeCheck::get_status("$sample_dir/${name}.gtype");
     my $test   = 'Genotype check';
     my $status = 1;
     my $reason = qq[The status is 'confirmed'.];
@@ -796,7 +796,7 @@ sub update_db
 
     my $read_length = $$stats{bases_total} / $$stats{reads_total};
 
-    my $gtype = VertRes::Pipelines::GTypeCheck::get_status("$sample_dir/${name}.gtype");
+    my $gtype = VertRes::Utils::GTypeCheck::get_status("$sample_dir/${name}.gtype");
 
     my %images = ();
     if ( -e "$sample_dir/chrom-distrib.png" ) { $images{'chrom-distrib.png'} = 'Chromosome Coverage'; }
