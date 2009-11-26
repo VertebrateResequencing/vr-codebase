@@ -136,6 +136,9 @@ sub split_fastq {
            optionally, to check an error output file for common problems and
            delete certain files before reattempting:
            error_file => '/path/to/STDERR/output/of/a/previous/call'
+           
+           to set the aln q parameter (quality threshold for read trimming):
+           aln_q => int (default 15)
 
            and optional generic options:
            insert_size => int (default 2000)
@@ -187,8 +190,13 @@ sub do_mapping {
         }
     }
     
+    my $aln_q = delete $input_args{aln_q};
+    unless (defined $aln_q) {
+        $aln_q = 15;
+    }
+    
     my $wrapper = $self->wrapper;
-    $wrapper->do_mapping(@args);
+    $wrapper->do_mapping(@args, aln_q => $aln_q);
     
     # bwa directly generates sam files, so nothing futher to do
     

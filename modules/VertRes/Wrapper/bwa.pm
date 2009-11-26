@@ -154,7 +154,7 @@ sub aln {
     $self->exe('bwa aln');
     
     $self->switches([qw(c L N)]);
-    $self->params([qw(n o e i d l k m t M O E R)]);
+    $self->params([qw(n o e i d l k m t M O E R q)]);
     $self->_set_params_and_switches_from_args(%opts);
     
     $self->register_output_file_to_check($out_sai);
