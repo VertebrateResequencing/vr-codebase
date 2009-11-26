@@ -1,10 +1,10 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
-use Cwd 'cwd';
+use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 40;
+    use Test::Most tests => 46;
     
     use_ok('VertRes::Utils::FileSystem');
 }
@@ -46,14 +46,14 @@ is_deeply [$fsu->get_filepaths($tmp_dir, subdir => 'test', dir => 'test_dir')], 
 is_deeply [$fsu->get_filepaths($tmp_dir, subdir => 'moo', dir => 'test_dir')], [], 'get_filepaths dir + bad subdir test';
 is_deeply [$fsu->get_filepaths($tmp_dir, dir => 'moo')], [], 'get_filepaths bad dir';
 
-# copy... impossible to test the diff part of copy failure?
+# copy & move  *** impossible to test the diff part of copy failure?
 $file = $fsu->catfile('t', 'data', 'io_test.txt');
 my $copy = $fsu->catfile($tmp_dir, 'copy_test');
 ok $fsu->copy($file, $copy), 'simple copy test';
 ok -s $copy, 'copy test really did work';
-my $devnull = $fsu->catfile('dev', 'null', 'copy_test');
-my $ok = $fsu->copy($file, $devnull);
-is $ok, 0, 'copy fails to /dev/null';
+my $devnull = File::Spec->devnull();
+$devnull = $fsu->catfile($devnull, 'copy_test');
+warning_like { ok ! $fsu->copy($file, $devnull), 'copy fails to /dev/null' } qr/There isn't enough disk space/, "copy to a disk with not enough disk space generates a warning";
 
 my $sub_dir = $fsu->catfile($test_dir, 'sub_dir');
 mkdir($sub_dir);
@@ -114,6 +114,12 @@ is $fsu->calculate_md5($test_file), '6fd5c2f7f105b15d44ed374916d0cd34', 'calcula
 ok $fsu->verify_md5($test_file, '6fd5c2f7f105b15d44ed374916d0cd34'), 'verify_md5 worked in a positive test';
 ok ! $fsu->verify_md5($test_file, '6fd5c2f7f105b15d44ed374916d0cd35'), 'verify_md5 worked in a negative test';
 
-
+# hashed path and the other disk-related methods
+is $fsu->hashed_path('/abs/path/to/lane'), '6/2/9/0/lane', 'hashed_path test';
+cmp_ok $fsu->disk_usage($fsu->catfile('t', 'data')), '>=', 46069393, 'disk_usage seemed to work on t/data';
+cmp_ok $fsu->disk_available($fsu->catfile('t', 'data')), '>=', 1, 'disk_available seemed to work on t/data';
+ok $fsu->can_be_copied($fsu->catfile('t', 'data'), File::Spec->tmpdir), 'can_be_moved positive test';
+#*** impossible to have a decent can_be_moved negative test?
+ok ! $fsu->can_be_copied($fsu->catfile('t', 'data'), '/proc'), 'can_be_moved negative test';
 
 

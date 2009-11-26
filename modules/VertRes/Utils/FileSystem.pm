@@ -45,6 +45,8 @@ use File::Basename;
 require File::Path;
 require File::Copy;
 use Digest::MD5;
+use Filesys::DfPortable;
+use Filesys::DiskUsage qw/du/;
 
 use base qw(VertRes::Base);
 
@@ -263,6 +265,13 @@ sub copy {
     
     if (-d $source) {
         mkdir($tmp_dest) || $self->throw("Could not make destination directory '$tmp_dest'");
+        
+        unless ($self->can_be_copied($source, $tmp_dest)) {
+            $self->warn("There isn't enough disk space at '$dest' to copy '$source' there");
+            $self->rmtree($tmp_dest);
+            return 0;
+        }
+        
         opendir(my $dfh, $source) || $self->throw("Could not open source directory '$source'");
         foreach my $thing (readdir($dfh)) {
             next if $thing =~ /^\.{1,2}$/;
@@ -278,6 +287,14 @@ sub copy {
         return 1;
     }
     else {
+        open(my $fh, '>', $tmp_dest);
+        close($fh);
+        unless ($self->can_be_copied($source, $tmp_dest)) {
+            $self->warn("There isn't enough disk space at '$dest' to copy '$source' there");
+            unlink($tmp_dest);
+            return 0;
+        }
+        
         for (1..$max_retries) {
             my $success = File::Copy::copy($source, $tmp_dest);
             if ($success) {
@@ -466,6 +483,81 @@ sub directory_structure_same {
     }
     
     return 1;
+}
+
+=head2 hashed_path
+
+ Title   : hashed_path
+ Usage   : my $hashed_path = $obj->hashed_path('/abs/path/to/dir');
+ Function: Convert a certain path to a 4-level deep hashed path based on the
+           md5 digest of the input path. Eg. use the returned path as the place
+           to move a directory to on a new disc, so spreading dirs out evenly
+           and not having too many dirs in a single folder.
+ Returns : string
+ Args    : absolute path
+
+=cut
+
+sub hashed_path {
+    my ($self, $path) = @_;
+    my $dmd5 = Digest::MD5->new();
+    $dmd5->add($path);
+    my $md5 = $dmd5->hexdigest;
+    my @chars = split("", $md5);
+    my $basename = basename($path);
+    return $self->catfile(@chars[0..3], $basename);
+}
+
+=head2 can_be_copied
+
+ Title   : can_be_copied
+ Usage   : if ($obj->can_be_copied('/abs/.../source', '/abs/.../dest')) { ... }
+ Function: Find out of there is enough disc space at a destination to copy
+           a source directory/file to.
+ Returns : boolean
+ Args    : two absolute paths (source and destination)
+
+=cut
+
+sub can_be_copied {
+    my ($self, $source, $destination) = @_;
+    my $usage = $self->disk_usage($source) || 0;
+    my $available = $self->disk_available($destination) || return 0;
+    return $available > $usage;
+}
+
+=head2 disk_available
+
+ Title   : disk_available
+ Usage   : my $bytes_left = $obj->disk_available('/path');
+ Function: Find out how much disk space is available on the disk the supplied
+           path is mounted on. This is how much is available to the current
+           user (so considers quotas), not the total free space on the disk.
+ Returns : int
+ Args    : path string
+
+=cut
+
+sub disk_available {
+    my ($self, $path) = @_;
+    my $ref = dfportable($path) || (return 0);
+    return $ref->{bavail};
+}
+
+=head2 disk_usage
+
+ Title   : disk_usage
+ Usage   : my $bytes_used = $obj->disk_usage('/path');
+ Function: Find out how much disk space a file or directory is using up.
+ Returns : int
+ Args    : path string
+
+=cut
+
+sub disk_usage {
+    my ($self, $path) = @_;
+    my $total = du($path);
+    return $total || 0;
 }
 
 1;
