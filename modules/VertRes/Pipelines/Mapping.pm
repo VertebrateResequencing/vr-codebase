@@ -630,6 +630,7 @@ sub _num_of_splits {
     my $io = VertRes::IO->new(file => $split_file);
     my $split_fh = $io->fh;
     my $splits = <$split_fh>;
+    $splits || $self->throw("Unable to read the number of splits from split file '$split_file'");
     chomp($splits);
     $io->close;
     
@@ -663,6 +664,8 @@ sub merge_and_stat_requires {
         }
     }
     
+    @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
+    
     return \@requires;
 }
 
@@ -691,6 +694,8 @@ sub merge_and_stat_provides {
             push(@provides, $file.'.'.$suffix);
         }
     }
+    
+    @provides || $self->throw("Something went wrong; we don't seem to provide any merged bams!");
     
     return \@provides;
 }
@@ -843,6 +848,8 @@ sub update_db {
         push(@bas_files, $self->{fsu}->catfile($lane_path, $file));
         -s $bas_files[-1] || $self->throw("Expected bas file $bas_files[-1] but it didn't exist!");
     }
+    
+    @bas_files || $self->throw("There were no bas files!");
     
     my $vrlane = $self->{vrlane};
     my $vrtrack = $vrlane->vrtrack;
