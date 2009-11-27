@@ -1213,6 +1213,7 @@ sub store_lane {
     
     symlink($storage_path, $source_dir);
     
+    my $vrtrack = $lane->vrtrack;
     $vrtrack->transaction_start();
     $lane->storage_path($storage_path);
     $lane->is_processed('stored', 1);
