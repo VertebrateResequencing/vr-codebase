@@ -144,6 +144,10 @@ our $actions = [ { name     => 'split',
                    action   => \&update_db,
                    requires => \&update_db_requires, 
                    provides => \&update_db_provides },
+                 { name     => 'store_nfs',
+                   action   => \&store_nfs,
+                   requires => \&store_nfs_requires, 
+                   provides => \&store_nfs_provides },
                  { name     => 'cleanup',
                    action   => \&cleanup,
                    requires => \&cleanup_requires, 
@@ -896,6 +900,97 @@ sub update_db {
     return $self->{Yes};
 }
 
+
+=head2 store_nfs_requires
+
+ Title   : update_db_requires
+ Usage   : my $required_files = $obj->store_nfs_requires('/path/to/lane');
+ Function: Find out what files the store_nfs action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub store_nfs_requires {
+    my ($self, $lane_path) = @_;
+    return $self->merge_and_stat_provides($lane_path);
+}
+
+=head2 store_nfs_provides
+
+ Title   : store_nfs_provides
+ Usage   : my $provided_files = $obj->store_nfs_provides('/path/to/lane');
+ Function: Find out what files the store_nfs action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub store_nfs_provides {
+    return [];
+}
+
+=head2 store_nfs
+
+ Title   : store_nfs
+ Usage   : $obj->store_nfs('/path/to/lane', 'lock_filename');
+ Function: Moves the lane directory to an nfs disk. Records in the database that
+           the lane has been stored.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub store_nfs {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    my $vrlane = $self->{vrlane};
+    return $self->{Yes} if $vrlane->is_processed('stored');
+    my $vrtrack = $vrlane->vrtrack;
+    my $db = $vrtrack->database_params;
+    my $lane_name = $vrlane->name;
+    
+    my $host = $db->{host} || $self->throw("db params missing host");
+    my $database = $db->{database} || $self->throw("db params missing database");
+    my $user = $db->{user} || $self->throw("db params missing database");
+    my $password = $db->{password} || $self->throw("db params missing password");
+    my $port = $db->{port} || $self->throw("db params missing port");
+    
+    my $job_name = $self->{prefix}.'store_nfs';
+    my $script_name = $job_name.'.pl';
+    
+    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+        print $scriptfh qq{
+use strict;
+use warnings;
+use VertRes::Utils::Hierarchy;
+use VRTrack::VRTrack;
+use VRTrack::Lane;
+
+my \$vrtrack = VRTrack::VRTrack->new({host => '$host',
+                                     port => '$port',
+                                     database => '$database',
+                                     user => '$user',
+                                     password => '$password'});
+
+my \$vrlane = VRTrack::Lane->new_by_name(\$vrtrack, '$lane_name');
+
+my \$hu = VertRes::Utils::Hierarchy->new();
+my \$ok = \$hu->store_lane('$lane_path', \$vrlane);
+
+\$ok || die "Failed to store lane\n";
+
+exit;
+    };
+    close $scriptfh;
+    
+    $self->archive_bsub_files($lane_path, $job_name);
+    
+    LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'store_nfs'), qq{perl -w $script_name});
+    
+    return $self->{No};
+}
+
 =head2 cleanup_requires
 
  Title   : cleanup_requires
@@ -942,11 +1037,13 @@ sub cleanup {
     
     my $prefix = $self->{prefix};
     
-    foreach my $file (qw(log job_status
+    foreach my $file (qw(log job_status store_nfs
                          split_se split_pe
                          map_se map_pe
                          merge_and_stat_se merge_and_stat_pe)) {
+        
         unlink($self->{fsu}->catfile($lane_path, $prefix.$file));
+        
         foreach my $suffix (qw(o e pl)) {
             if ($file =~ /map_([sp]e)/) {
                 my $ended = $1;
