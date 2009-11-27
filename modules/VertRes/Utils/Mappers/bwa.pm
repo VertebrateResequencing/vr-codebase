@@ -155,38 +155,26 @@ sub do_mapping {
         # check the error file for common problems and delete various files as
         # necessary before reattempting
         open(my $efh, $error_file) || $self->throw("Could not open error file '$error_file'");
-        my $problem_found = 0;
         my $delete_sais = 0;
-        my $messages = '';
         while (<$efh>) {
-            if (/\[previous attempts\]/) {
-                $messages .= $_;
-            }
             if (/weird pairing/) {
-                $problem_found = 1;
                 $delete_sais = 1;
                 last;
             }
         }
         close($efh);
         
-        if ($problem_found) {
-            unlink($error_file);
-            open($efh, '>', $error_file) || $self->throw("Could not write to error file '$error_file'");
-            print $efh $messages;
-            if ($delete_sais) {
-                my %args = @args;
-                while (my ($key, $val)  = each %args) {
-                    if ($key =~ /^read/) {
-                        my $sai = $val;
-                        $sai =~ s/\.f[^.]+(?:\.gz)?$/.sai/;
-                        unlink($sai);
-                    }
+        if ($delete_sais) {
+            my %args = @args;
+            while (my ($key, $val)  = each %args) {
+                if ($key =~ /^read/) {
+                    my $sai = $val;
+                    $sai =~ s/\.f[^.]+(?:\.gz)?$/.sai/;
+                    unlink($sai);
                 }
-                
-                print $efh  "[previous attempts] deleted sai files due to weird pairing\n";
             }
-            close($efh);
+            
+            $self->warn("deleted existing sai files due to weird pairing in previous mapping attempt");
         }
     }
     
