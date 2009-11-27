@@ -602,8 +602,8 @@ sub set_stripe_dir_tree {
 		$self->throw("Invalid stripe value: $stripe_value");
 	}
 	
-	chdir( $root );
-	opendir(my $dfh, $root) or $self->throw( "can't open $root: $!" );
+	chdir( $root ) or $self->throw( "can't find $root: $!" );
+	opendir(my $dfh, '.') or $self->throw( "can't open current directory: $!" );
 	while( defined( my $file = readdir( $dfh ) ) ) 
 	{
 		next unless -d $file;
