@@ -430,7 +430,7 @@ sub raw_bases {
 
 sub storage_path {
     my ($self, $storage_path) = @_;
-    if (defined $storage_path and $storage_path != $self->{'storage_path'}){
+    if (defined $storage_path and $storage_path ne $self->{'storage_path'}){
 	die "The supplied storage_path '$storage_path' was not absolute" unless File::Spec->file_name_is_absolute($storage_path);
 	$self->{'storage_path'} = $storage_path;
 	$self->dirty(1);
