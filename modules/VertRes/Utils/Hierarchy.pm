@@ -31,7 +31,7 @@ use File::Basename;
 use File::Spec;
 use File::Path;
 use File::Copy;
-use Cwd 'abs_path';
+use Cwd qw(abs_path cwd);
 use VertRes::Parser::sequence_index;
 use VertRes::Wrapper::samtools;
 use VertRes::Parser::sam;
@@ -65,6 +65,9 @@ our $DEFAULT_DB_SETTINGS = {host => 'mcs4a',
                             port => 3306,
                             user => 'vreseq_ro',
                             database => 'g1k_meta'};
+
+our $nfs_disc_basename = '/nfs/vertreseq';
+
 
 =head2 new
 
@@ -1084,14 +1087,137 @@ sub dcc_filename {
     return $dcc_filename;
 }
 
-=head2 netapp_lane_path
+=head2 nfs_disks
 
- Title   : netapp_lane_path
- Usage   : my $path = $obj->netapp_lane_path('lane_name');
- Function: 
- Returns : path string
- Args    : 
+ Title   : nfs_disks
+ Usage   : my @disks = $obj->nfs_disks();
+ Function: Find and prepare all of team145's nfs disks intended for storing
+           lane directories.
+ Returns : list of disk root directories
+ Args    : n/a
 
 =cut
+
+sub nfs_disks {
+    my $self = shift;
+    
+    # /nfs/vertreseq01 - /nfs/vertreseq16
+    my @disks;
+    my $cwd = cwd();
+    foreach my $i (1..99) {
+        my $disk_num = sprintf("%02d", $i);
+        my $disk = $nfs_disc_basename.$disk_num;
+        
+        # spin the disk up
+        chdir($disk);
+        chdir($cwd);
+        
+        # does it exist?
+        -d $disk || last;
+        push(@disks, $disk);
+    }
+    
+    return @disks;
+}
+
+=head2 nfs_disk
+
+ Title   : nfs_disk
+ Usage   : my $dir = $obj->nfs_disk();
+ Function: Get the path to the root of one of the nfs_disks() - the one with
+           the most available disk space.
+ Returns : string path
+ Args    : n/a
+
+=cut
+
+sub nfs_disk {
+    my $self = shift;
+    my $fsu = VertRes::Utils::FileSystem->new();
+    
+    my @disks = $self->nfs_disks;
+    my $most_available = 0;
+    my $best_disk;
+    foreach my $disk (@disks) {
+        my $available = $fsu->disk_available($disk);
+        if ($available > $most_available) {
+            $most_available = $available;
+            $best_disk = $disk;
+        }
+    }
+    
+    return $best_disk;
+}
+
+=head2 lane_storage_path
+
+ Title   : lane_storage_path
+ Usage   : my $path = $obj->lane_storage_path($lane);
+ Function: Get the absolute path to where a lane either is or should be stored
+           on an nfs disk.
+ Returns : path string
+ Args    : VRTrack::Lane object
+
+=cut
+
+sub lane_storage_path {
+    my ($self, $lane) = @_;
+    my $storage_path = $lane->storage_path;
+    
+    unless ($storage_path) {
+        my $hpath = $lane->vrtrack->hierarchy_path_of_lane($lane);
+        my $fsu = VertRes::Utils::FileSystem->new();
+        $storage_path = $fsu->catfile($self->nfs_disk, 'hashed_lanes', $fsu->hashed_path($hpath));
+    }
+    
+    return $storage_path;
+}
+
+=head2 store_lane
+
+ Title   : store_lane
+ Usage   : $obj->store_lane('/abs/path/to/hierarchy/root', $lane);
+ Function: Move a lane directory from its current location to where it should
+           be according to lane_storage_path(). Once successfully moved a
+           symlink to the storage location will be left in the original
+           location, and the database will be updated with the storage_path.
+ Returns : boolean (true if the move was successful or not necessary because the
+           lane has already been stored on nfs; false otherwise)
+ Args    : absolute path to hierarchy root containing the lane directory,
+           VRTrack::Lane object
+
+=cut
+
+sub store_lane {
+    my ($self, $hroot, $lane) = @_;
+    
+    my $storage_path = $self->lane_storage_path;
+    if (-d $storage_path) {
+        return 1;
+    }
+    
+    my $fsu = VertRes::Utils::FileSystem->new();
+    my $hpath = $lane->vrtrack->hierarchy_path_of_lane($lane);
+    my $source_dir = $fsu->catfile($hroot, $hpath);
+    unless (-d $source_dir) {
+        $self->warn("Lane '$source_dir' wasn't a directory, can't move it to store it on NFS");
+        return 0;
+    }
+    
+    my $moved = $fsu->move($source_dir, $storage_path);
+    unless ($moved) {
+        $self->warn("Failed to move $source_dir to storage path '$storage_path'");
+        return 0;
+    }
+    
+    symlink($storage_path, $source_dir);
+    
+    # (not the end of the world if this db update fails... but we could add
+    #  checking?...)
+    $lane->storage_path($storage_path);
+    $lane->update;
+    
+    return 1;
+}
 
 1;
