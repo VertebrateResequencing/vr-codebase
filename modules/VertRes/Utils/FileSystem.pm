@@ -602,9 +602,9 @@ sub set_stripe_dir_tree {
 		$self->throw("Invalid stripe value: $stripe_value");
 	}
 	
-	opendir(DIR, $root) or $self->throw( "can't open $root: $!" );
-	while (defined(my $file = readdir(DIR))) 
-	{
+	opendir(my $dfh, $root) or $self->throw( "can't open $root: $!" );
+	while (defined(my $file = readdir($dfh))) 
+	{		print $file."\n";
 		next unless -d $file;
 		print $file."\n";
 		next unless $file !~ '^\.+$';
