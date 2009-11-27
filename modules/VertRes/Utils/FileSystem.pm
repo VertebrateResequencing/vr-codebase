@@ -585,6 +585,8 @@ sub set_stripe_dir {
 		$self->throw("Invalid stripe value: $stripe_value");
 	}
 	
+	#it should first check the striping and see if necessary
+	
 	print "Setting stripe for $path\n";
 	system( "lfs setstripe -c -1 $path" ) == 0 or $self->throw( "Failed to set stripe on directory: $path" );
 	
@@ -615,6 +617,7 @@ sub set_stripe_dir_tree {
 	{
 		next unless -d $file;
 		next unless $file !~ /^\.+$/ && $file !~ /^_Inline$/;
+		next if( -l $file );
 		
 		$self->set_stripe_dir( $file, $stripe_value ); #set the stripe
 		print "Recursing into $file\n";
