@@ -615,7 +615,7 @@ sub set_stripe_dir_tree {
 		$self->set_stripe_dir_tree( $file, $stripe_value ); #recurse into the directory also
 		chdir( ".." )
 	}
-	closedir(DIR);
+	closedir($dfh);
 }
 
 1;
