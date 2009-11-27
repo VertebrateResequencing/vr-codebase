@@ -388,7 +388,10 @@ exit;
         };
         close $scriptfh;
         
-        LSF::run($action_lock, $lane_path, $self->{prefix}.'split_'.$ended.'_'.$self->{mapstats_id}, $self->{mapper_obj}->_bsub_opts($lane_path, 'split'), qq{perl -w $script_name});
+        my $job_name = $self->{prefix}.'split_'.$ended.'_'.$self->{mapstats_id};
+        $self->archive_bsub_files($lane_path, $job_name);
+        
+        LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'split'), qq{perl -w $script_name});
     }
     
     # we've only submitted to LSF, so it won't have finished; we always return
@@ -550,7 +553,8 @@ sub map {
                 push(@split_read_args, $split_read_arg);
             }
             
-            my $error_file = $self->{fsu}->catfile($lane_path, $self->{prefix}.'map_'.$ended.'_'.$self->{mapstats_id}.'_'.$split.'.e');
+            my $job_name = $self->{prefix}.'map_'.$ended.'_'.$self->{mapstats_id}.'_'.$split;
+            my $prev_error_file = $self->archive_bsub_files($lane_path, $job_name);
             
             open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
             print $scriptfh qq{
@@ -567,7 +571,7 @@ my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
                                output => '$sam_file',
                                insert_size => $info{insert_size},
                                read_group => '$info{lane}',
-                               error_file => '$error_file');
+                               error_file => '$prev_error_file');
 
 # (it will only return ok and create output if the sam file was created and not
 #  truncated)
@@ -613,7 +617,7 @@ exit;
             };
             close $scriptfh;
             
-            LSF::run($action_lock, $lane_path, $self->{prefix}.'map_'.$ended.'_'.$self->{mapstats_id}.'_'.$split, $self->{mapper_obj}->_bsub_opts($lane_path, 'map'), qq{perl -w $script_name});
+            LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'map'), qq{perl -w $script_name});
         }
     }
     
@@ -789,7 +793,10 @@ exit;
         };
         close $scriptfh;
         
-        LSF::run($action_lock, $lane_path, $self->{prefix}.'merge_and_stat_'.$ended.'_'.$self->{mapstats_id}, $self->{mapper_obj}->_bsub_opts($lane_path, 'merge_and_stat'), qq{perl -w $script_name});
+        my $job_name = $self->{prefix}.'merge_and_stat_'.$ended.'_'.$self->{mapstats_id};
+        $self->archive_bsub_files($lane_path, $job_name);
+        
+        LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'merge_and_stat'), qq{perl -w $script_name});
     }
     
     # we've only submitted to LSF, so it won't have finished; we always return
@@ -947,11 +954,23 @@ sub cleanup {
                 my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
                 
                 foreach my $split (1..$num_of_splits) {
-                    unlink($self->{fsu}->catfile($lane_path, $prefix.$file.'_'.$self->{mapstats_id}.'_'.$split.'.'.$suffix));
+                    my $job_name = $prefix.$file.'_'.$self->{mapstats_id}.'_'.$split;
+                    
+                    if ($suffix eq 'o') {
+                        $self->archive_bsub_files($lane_path, $job_name, 1);
+                    }
+                    
+                    unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
                 }
             }
             
-            unlink($self->{fsu}->catfile($lane_path, $prefix.$file.'_'.$self->{mapstats_id}.'.'.$suffix));
+            my $job_name = $prefix.$file.'_'.$self->{mapstats_id};
+            
+            if ($suffix eq 'o') {
+                $self->archive_bsub_files($lane_path, $job_name, 1);
+            }
+            
+            unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
         }
     }
     

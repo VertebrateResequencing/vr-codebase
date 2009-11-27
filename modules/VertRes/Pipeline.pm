@@ -6,6 +6,8 @@ use Carp;   # this is for confess in lock_file and unlock_file. eventually shoul
 
 use base qw(VertRes::Base);
 use LSF;
+use File::Spec;
+use File::Copy;
 use Fcntl qw(:DEFAULT :flock);
 
 our $Yes     = 0;
@@ -400,6 +402,56 @@ sub unlock_file
     if ( -e $lock_file ) { unlink $lock_file; }
     flock($lock_fh,LOCK_UN);
     close($lock_fh) or confess "close $lock_fh: $!";
+}
+
+# For a given bsub job name (arg 3 to LSF::run), if the bsub o/e files exist
+# they will be moved to .previous files. If a .previous file exists, its
+# content will be moved to an .archive file. Returns the abs path to the
+# .previous error file so you can parse it for errors before proceeding.
+#
+# With extra option set to true, will move all data from any existing current
+# or previous bsub file to the .archive file: for use when an action completed
+# successfully and you want to tidy up
+sub archive_bsub_files {
+    my ($self, $lane_path, $job_name, $final) = @_;
+    
+    my $prev_error;
+    foreach my $suffix ('e', 'o') {
+        my $bsub_file = File::Spec->catfile($lane_path, $job_name.'.'.$suffix);
+        my $previous_bsub_file = $bsub_file.'.previous';
+        my $archive_bsub_file = File::Spec->catfile($lane_path, '.'.$job_name.'.'.$suffix.'.archive');
+        
+        if (-s $bsub_file) {
+            $self->_move_file_content($previous_bsub_file, $archive_bsub_file);
+            move($bsub_file, $previous_bsub_file) || $self->throw("Couldn't move $bsub_file to $previous_bsub_file");
+        }
+        
+        if ($final) {
+            $self->_move_file_content($previous_bsub_file, $archive_bsub_file);
+        }
+        
+        if ($suffix eq 'e' && -s $previous_bsub_file) {
+            $prev_error = $previous_bsub_file;
+        }
+    }
+    
+    return $prev_error;
+}
+
+sub _move_file_content {
+    my ($self, $source, $dest) = @_;
+    
+    if (-s $source) {
+        open(my $ifh, $source) || $self->throw("Could not open '$source'");
+        open(my $ofh, '>>', $dest) || $self->throw("Could not append to '$dest'");
+        while (<$ifh>) {
+            print $ofh $_;
+        }
+        close($ofh);
+        close($ifh);
+        
+        unlink($source);
+    }
 }
 
 1;
