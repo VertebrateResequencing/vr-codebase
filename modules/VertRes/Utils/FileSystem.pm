@@ -609,7 +609,6 @@ sub set_stripe_dir_tree {
 		next unless -d $file;
 		next unless $file !~ '^\.+$';
 		
-		chdir( $file );
 		$self->set_stripe_dir( $file, $stripe_value ); #set the stripe
 		print "Recursing into $file\n";
 		$self->set_stripe_dir_tree( $file, $stripe_value ); #recurse into the directory also
