@@ -1192,7 +1192,7 @@ sub store_lane {
     my ($self, $hroot, $lane) = @_;
     
     my $storage_path = $self->lane_storage_path;
-    if (-d $storage_path) {
+    if (-d $storage_path && $lane->is_processed('stored')) {
         return 1;
     }
     
@@ -1212,10 +1212,11 @@ sub store_lane {
     
     symlink($storage_path, $source_dir);
     
-    # (not the end of the world if this db update fails... but we could add
-    #  checking?...)
+    $vrtrack->transaction_start();
     $lane->storage_path($storage_path);
-    $lane->update;
+    $lane->is_processed('stored', 1);
+    $lane->update || $self->throw("Could not update db to note that lane $hpath has been stored");
+    $vrtrack->transaction_commit();
     
     return 1;
 }
