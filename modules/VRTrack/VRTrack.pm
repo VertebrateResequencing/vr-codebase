@@ -69,7 +69,8 @@ sub new {
           warn(sprintf('DB connection failed: %s', $DBI::errstr));
           return undef;
     }
-
+    
+    $self->{_db_params} = $dbparams;
     $self->{_dbh} = $dbh;
     $self->{transaction} = 0;
 
@@ -635,13 +636,28 @@ sub transaction_rollback {
   Arg [1]    : None
   Example    : my $vrtrack = $obj->vrtrack();
   Description: Get vrtrack.  This is self, as we _are_ a VRTrack object.  This call is just to provide consistency to getting new objects through the api by my $sub = VRTrack::Whatever($parent->vrtrack, $id);
-  Returntype : integer
+  Returntype : VRTrack::VRTrack
 
 =cut
 
 sub vrtrack {
     my ($self) = @_;
     return $self;
+}
+
+=head2 database_params
+
+  Arg [1]    : None
+  Example    : my $parms = $obj->database_params();
+  Description: Get the database parameters that were supplied to new() to create
+               this instance of VRTrack::VRTrack. 
+  Returntype : hash ref
+
+=cut
+
+sub database_params {
+    my $self = shift;
+    return $self->{_db_params};
 }
 
 1;
