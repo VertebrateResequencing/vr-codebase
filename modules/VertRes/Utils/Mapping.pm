@@ -324,6 +324,7 @@ sub mapping_hierarchy_report {
             foreach my $possible (@{$mappings}) {
                 my $this_id = $possible->id;
                 my $these_raw_bases = $possible->raw_bases;
+                $these_raw_bases || next;
                 
                 if ($these_raw_bases > $highest_raw_bases || ($this_id > $highest_id && $these_raw_bases == $highest_raw_bases)) {
                     $highest_id = $this_id;
@@ -451,9 +452,9 @@ sub get_mapping_stats {
         $self->throw("First argument to get_mapping_stats was '$thing' which wasn't understood");
     }
     
-    $stats{percent_mapped} = sprintf("%0.2f", ((100 / $stats{total_bases}) * $stats{mapped_bases}));
+    $stats{percent_mapped} = $stats{total_bases} ? sprintf("%0.2f", ((100 / $stats{total_bases}) * $stats{mapped_bases})) : 0;
     $stats{coverage} = sprintf("%0.2f", $stats{mapped_bases} / $genome_size);
-    $stats{percent_properly_paired} = sprintf("%0.2f", ((100 / $stats{total_reads}) * $stats{mapped_reads_in_proper_pairs}));
+    $stats{percent_properly_paired} = $stats{total_reads} ? sprintf("%0.2f", ((100 / $stats{total_reads}) * $stats{mapped_reads_in_proper_pairs})) : 0;
     
     return %stats;
 }
