@@ -1183,8 +1183,8 @@ sub lane_storage_path {
            location, and the database will be updated with the storage_path.
  Returns : boolean (true if the move was successful or not necessary because the
            lane has already been stored on nfs; false otherwise)
- Args    : absolute path to hierarchy root containing the lane directory,
-           VRTrack::Lane object
+ Args    : absolute path to hierarchy root containing the lane directory (or the
+           full path to the lane), VRTrack::Lane object
 
 =cut
 
@@ -1198,6 +1198,7 @@ sub store_lane {
     
     my $fsu = VertRes::Utils::FileSystem->new();
     my $hpath = $lane->vrtrack->hierarchy_path_of_lane($lane);
+    $hroot =~ s/$hpath//;
     my $source_dir = $fsu->catfile($hroot, $hpath);
     unless (-d $source_dir) {
         $self->warn("Lane '$source_dir' wasn't a directory, can't move it to store it on NFS");
