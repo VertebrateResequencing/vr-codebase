@@ -38,7 +38,7 @@ use warnings;
 
 no warnings 'recursion';
 
-use Cwd qw(abs_path);
+use Cwd qw(abs_path cwd);
 use File::Temp;
 use File::Spec;
 use File::Basename;
@@ -264,7 +264,7 @@ sub copy {
     }
     
     if (-d $source) {
-        mkdir($tmp_dest) || $self->throw("Could not make destination directory '$tmp_dest'");
+        File::Path::make_path($tmp_dest) || $self->throw("Could not make destination directory '$tmp_dest'");
         
         unless ($self->can_be_copied($source, $tmp_dest)) {
             $self->warn("There isn't enough disk space at '$dest' to copy '$source' there");
@@ -345,6 +345,13 @@ sub move {
     
     File::Copy::move($tmp_dest, $dest) || $self->throw("Failed to rename successfully moved source '$tmp_dest' to '$dest'");
     if (-d $source) {
+        # we might be in the source directory, which will prevent us removing
+        # it; chdir to parent if that's the case
+        my $cwd = cwd();
+        if (abs_path($cwd) eq abs_path($source)) {
+            my $parent = File::Spec->updir();
+            chdir($parent);
+        }
         $self->rmtree($source);
     }
     else {
