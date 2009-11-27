@@ -869,31 +869,40 @@ sub update_db {
     
     $vrtrack->transaction_start();
     
-    # set mapped status
-    $vrlane->is_processed('mapped', 1);
-    $vrlane->update() || $self->throw("Unable to set mapped status on lane $lane_path");
-    
     # get the mapping stats from each bas file
-    my $mapping = $self->{mapstats_obj};
+    my %stats;
     foreach my $file (@bas_files) {
         my $bp = VertRes::Parser::bas->new(file => $file);
         my $rh = $bp->result_holder;
         $bp->next_result; # we'll only ever have one line, since this is only
                           # one read group
         
-        # add mapping details to db. We can have up to 2 bas files, one
-        # representing single ended mapping, the other paired, so we add where
-        # appropriate and only set insert size for the paired
-        $mapping->raw_reads(($mapping->raw_reads || 0) + $rh->[9]);
-        $mapping->raw_bases(($mapping->raw_bases || 0) + $rh->[7]);
-        $mapping->reads_mapped(($mapping->reads_mapped || 0) + $rh->[10]);
-        $mapping->reads_paired(($mapping->reads_paired || 0) + $rh->[12]);
-        $mapping->bases_mapped(($mapping->bases_mapped || 0) + $rh->[8]);
-        $mapping->mean_insert($rh->[15]) if $rh->[15];
-        $mapping->sd_insert($rh->[16]) if $rh->[15];
-        
-        $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
+        # We can have up to 2 bas files, one representing single ended mapping,
+        # the other paired, so we add where appropriate and only set insert size
+        # for the paired
+        $stats{raw_reads} += $rh->[9]);
+        $stats{raw_bases} += $rh->[7]);
+        $stats{reads_mapped} += $rh->[10]);
+        $stats{reads_paired} += $rh->[12]);
+        $stats{bases_mapped} += $rh->[8]);
+        $stats{mean_insert} = $rh->[15] if $rh->[15];
+        $stats{sd_insert} = $rh->[16] if $rh->[15];
     }
+    
+    # add mapping details to db (overwriting any existing values)
+    my $mapping = $self->{mapstats_obj};
+    $mapping->raw_reads($stats{raw_reads});
+    $mapping->raw_bases($stats{raw_bases});
+    $mapping->reads_mapped($stats{reads_mapped});
+    $mapping->reads_paired($stats{reads_paired});
+    $mapping->bases_mapped($stats{bases_mapped});
+    $mapping->mean_insert($stats{mean_insert}) if $stats{mean_insert};
+    $mapping->sd_insert($stats{sd_insert}) if $stats{sd_insert};
+    $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
+    
+    # set mapped status
+    $vrlane->is_processed('mapped', 1);
+    $vrlane->update() || $self->throw("Unable to set mapped status on lane $lane_path");
     
     $vrtrack->transaction_commit();
     
@@ -957,7 +966,7 @@ sub store_nfs {
     my $port = $db->{port} || $self->throw("db params missing port");
     
     my $job_name = $self->{prefix}.'store_nfs';
-    my $script_name = $job_name.'.pl';
+    my $script_name = $self->{fsu}->catfile($lane_path, $job_name.'.pl');
     
     open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
@@ -1100,7 +1109,7 @@ sub is_finished {
             }
         }
     }
-    elsif ($action->{name} eq 'cleanup' || $action->{name} eq 'update_db') {
+    elsif ($action->{name} eq 'cleanup' || $action->{name} eq 'update_db' || $action->{name} eq 'store_nfs') {
         return $self->{No};
     }
     
