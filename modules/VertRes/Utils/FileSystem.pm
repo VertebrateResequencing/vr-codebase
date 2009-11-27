@@ -560,4 +560,57 @@ sub disk_usage {
     return $total || 0;
 }
 
+=head2 set_stripe_dir
+
+ Title   : set_stripe_dir
+ Usage   : my $stripe = $obj->set_stripe_dir('dir', '-1');
+ Function: Set the Lustre striping for large or small files (note only subsequent file writes will be affected)
+ Returns : boolean
+ Args    : path (string) and an int (stripe value)
+
+=cut
+
+sub set_stripe_dir {
+    my ($self, $path, $stripe_value) = @_;
+	
+	if( $stripe_value < -1 || $stripe_value > 10 )
+	{
+		$self->throw("Invalid stripe value: $stripe_value");
+	}
+	
+	system( "lfs setstripe -c -1 $path" ) == 0 or $self->throw( "Failed to set stripe on directory: $path" );
+	
+	return 1;
+}
+
+=head2 set_stripe_dir_tree
+
+ Title   : set_stripe_dir_tree
+ Usage   : my $stripe = $obj->set_stripe_dir_tree('root_dir', '-1');
+ Function: Set the Lustre striping for large or small files on a whole directory tree
+ Returns : boolean
+ Args    : path (string) stripe value (int)
+
+=cut
+
+sub set_stripe_dir_tree {
+	my ($self, $root, $stripe_value) = @_;
+	
+	if( $stripe_value < -1 || $stripe_value > 10 )
+	{
+		$self->throw("Invalid stripe value: $stripe_value");
+	}
+	
+	opendir(DIR, $root) or $self->throw( "can't open $root: $!" );
+	while (defined(my $file = readdir(DIR))) 
+	{
+		next unless -d $file;
+		next unless $file ne '.' && $file ne '..';
+		
+		$self->set_stripe_dir( $file, $stripe_value ); #set the stripe
+		$self->set_stripe_dir_tree( $file, $stripe_value ); #recurse into the directory also
+	}
+	closedir(DIR);
+}
+
 1;
