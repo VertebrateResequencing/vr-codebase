@@ -1191,12 +1191,17 @@ sub lane_storage_path {
 sub store_lane {
     my ($self, $hroot, $lane) = @_;
     
+    my $fsu = VertRes::Utils::FileSystem->new();
+    
     my $storage_path = $self->lane_storage_path($lane);
     if (-d $storage_path && $lane->is_processed('stored')) {
         return 1;
     }
+    elsif (-d $storage_path && -d $hroot) {
+        $self->warn("storage path '$storage_path' already exists; will delete it first");
+        $fsu->rmtree($storage_path);
+    }
     
-    my $fsu = VertRes::Utils::FileSystem->new();
     my $hpath = $lane->vrtrack->hierarchy_path_of_lane($lane);
     $hroot =~ s/$hpath//;
     my $source_dir = $fsu->catfile($hroot, $hpath);
@@ -1205,13 +1210,18 @@ sub store_lane {
         return 0;
     }
     
+    # if we're in the source_dir, move() will chdir to parent, so store our
+    # current directory and chdir back to it afterwards
+    my $cwd = cwd();
     my $moved = $fsu->move($source_dir, $storage_path);
+    
     unless ($moved) {
         $self->warn("Failed to move $source_dir to storage path '$storage_path'");
         return 0;
     }
     
     symlink($storage_path, $source_dir);
+    chdir($cwd);
     
     my $vrtrack = $lane->vrtrack;
     $vrtrack->transaction_start();
