@@ -602,16 +602,18 @@ sub set_stripe_dir_tree {
 		$self->throw("Invalid stripe value: $stripe_value");
 	}
 	
+	chdir( $root );
 	opendir(my $dfh, $root) or $self->throw( "can't open $root: $!" );
-	while (defined(my $file = readdir($dfh))) 
-	{		print $file."\n";
+	while( defined( my $file = readdir( $dfh ) ) ) 
+	{
 		next unless -d $file;
-		print $file."\n";
 		next unless $file !~ '^\.+$';
-		print $file."\n";
+		
+		chdir( $file );
 		$self->set_stripe_dir( $file, $stripe_value ); #set the stripe
 		print "Recursing into $file\n";
 		$self->set_stripe_dir_tree( $file, $stripe_value ); #recurse into the directory also
+		chdir( ".." )
 	}
 	closedir(DIR);
 }
