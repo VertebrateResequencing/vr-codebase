@@ -578,7 +578,7 @@ sub set_stripe_dir {
 		$self->throw("Invalid stripe value: $stripe_value");
 	}
 	
-	print "Setting stripe for $file\n";
+	print "Setting stripe for $path\n";
 	system( "lfs setstripe -c -1 $path" ) == 0 or $self->throw( "Failed to set stripe on directory: $path" );
 	
 	return 1;
