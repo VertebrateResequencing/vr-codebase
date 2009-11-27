@@ -1191,7 +1191,7 @@ sub lane_storage_path {
 sub store_lane {
     my ($self, $hroot, $lane) = @_;
     
-    my $storage_path = $self->lane_storage_path;
+    my $storage_path = $self->lane_storage_path($lane);
     if (-d $storage_path && $lane->is_processed('stored')) {
         return 1;
     }
