@@ -614,7 +614,7 @@ sub set_stripe_dir_tree {
 	while( defined( my $file = readdir( $dfh ) ) ) 
 	{
 		next unless -d $file;
-		next unless $file !~ '^\.+$';
+		next unless $file !~ /^\.+$/ || $file =~ /^_Inline$/;
 		
 		$self->set_stripe_dir( $file, $stripe_value ); #set the stripe
 		print "Recursing into $file\n";
