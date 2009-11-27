@@ -578,6 +578,7 @@ sub set_stripe_dir {
 		$self->throw("Invalid stripe value: $stripe_value");
 	}
 	
+	print "Setting stripe for $file\n";
 	system( "lfs setstripe -c -1 $path" ) == 0 or $self->throw( "Failed to set stripe on directory: $path" );
 	
 	return 1;
@@ -608,6 +609,7 @@ sub set_stripe_dir_tree {
 		next unless $file ne '.' && $file ne '..';
 		
 		$self->set_stripe_dir( $file, $stripe_value ); #set the stripe
+		print "Recursing into $file\n";
 		$self->set_stripe_dir_tree( $file, $stripe_value ); #recurse into the directory also
 	}
 	closedir(DIR);
