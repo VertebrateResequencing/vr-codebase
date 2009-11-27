@@ -880,11 +880,11 @@ sub update_db {
         # We can have up to 2 bas files, one representing single ended mapping,
         # the other paired, so we add where appropriate and only set insert size
         # for the paired
-        $stats{raw_reads} += $rh->[9]);
-        $stats{raw_bases} += $rh->[7]);
-        $stats{reads_mapped} += $rh->[10]);
-        $stats{reads_paired} += $rh->[12]);
-        $stats{bases_mapped} += $rh->[8]);
+        $stats{raw_reads} += $rh->[9];
+        $stats{raw_bases} += $rh->[7];
+        $stats{reads_mapped} += $rh->[10];
+        $stats{reads_paired} += $rh->[12];
+        $stats{bases_mapped} += $rh->[8];
         $stats{mean_insert} = $rh->[15] if $rh->[15];
         $stats{sd_insert} = $rh->[16] if $rh->[15];
     }
