@@ -979,7 +979,7 @@ sub is_finished {
                 $done_bams += (-s $self->{fsu}->catfile($split_dir, $split.'.raw.sorted.bam')) ? 1 : 0;
             }
             
-            if (! -e $done_file && $done_bams == $num_of_splits) {
+            if (! -e $done_file && $done_bams > 0 && $done_bams == $num_of_splits) {
                 system("touch $done_file");
             }
         }
