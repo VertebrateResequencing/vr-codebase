@@ -405,14 +405,14 @@ sub vrtrack {
 =head2 allowed_processed_flags
 
   Example    : my %flags = VRTrack::Core_obj->allowed_processed_flags();
-  Description: List allowed flags: ( import=>1, qc=>2, mapped=>4 )
+  Description: List allowed flags: ( import=>1, qc=>2, mapped=>4, stored=>8 )
   Returntype : Hash
 
 =cut
 
 sub allowed_processed_flags
 {
-    my %flags = ( import=>1, qc=>2, mapped=>4 );
+    my %flags = ( import=>1, qc=>2, mapped=>4, stored=>8 );
     return %flags;
 }
 
