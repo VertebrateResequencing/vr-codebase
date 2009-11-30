@@ -588,7 +588,7 @@ sub set_stripe_dir {
 	#it should first check the striping and see if necessary
 	
 	print "Setting stripe for $path\n";
-	system( "lfs setstripe -c -1 $path" ) == 0 or $self->throw( "Failed to set stripe on directory: $path" );
+	system( "lfs setstripe -c $stripe_value $path" ) == 0 or $self->throw( "Failed to set stripe on directory: $path" );
 	
 	return 1;
 }
