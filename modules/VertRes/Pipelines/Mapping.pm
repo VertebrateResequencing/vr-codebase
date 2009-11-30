@@ -35,8 +35,7 @@ data => {
     slx_mapper => 'bwa',
     '454_mapper' => 'ssaha',
     reference => '/abs/path/to/ref.fa',
-    assembly_name => 'NCBI37',
-    do_cleanup => 1
+    assembly_name => 'NCBI37'
 },
 
 # Reference option can be replaced with male_reference and female_reference
@@ -144,6 +143,10 @@ our $actions = [ { name     => 'split',
                    action   => \&update_db,
                    requires => \&update_db_requires, 
                    provides => \&update_db_provides },
+                 { name     => 'cleanup',
+                   action   => \&cleanup,
+                   requires => \&cleanup_requires, 
+                   provides => \&cleanup_provides },
                  { name     => 'store_nfs',
                    action   => \&store_nfs,
                    requires => \&store_nfs_requires, 
@@ -156,7 +159,7 @@ our $actions = [ { name     => 'split',
 our %options = (local_cache => '',
                 slx_mapper => 'bwa',
                 '454_mapper' => 'ssaha',
-                do_cleanup => 0,
+                do_cleanup => 1,
                 dont_wait => 1);
 
 our $split_dir_name = 'split';
@@ -170,7 +173,7 @@ our $split_dir_name = 'split';
  Args    : lane => 'readgroup_id'
            lane_path => '/path/to/lane'
            local_cache => '/local/dir' (defaults to standard tmp space)
-           do_cleanup => boolean (default false: don't do the cleanup action)
+           do_cleanup => boolean (default true: run the cleanup action)
            chunk_size => int (default depends on mapper)
            slx_mapper => 'bwa'|'maq' (default bwa; the mapper to use for mapping
                                       SLX lanes)
@@ -523,7 +526,7 @@ sub map {
     
     # get all the meta info about the lane
     my %info = VertRes::Utils::Hierarchy->new->lane_info($self->{vrlane});
-    $info{insert_size} = 0 unless $info{insert_size};
+    $info{insert_size} = 2000 unless $info{insert_size};
     
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
@@ -1034,7 +1037,6 @@ sub cleanup_provides {
  Usage   : $obj->cleanup('/path/to/lane', 'lock_filename');
  Function: Unlink all the pipeline-related files (_*) in a lane, as well
            as the split directory.
-           NB: do_cleanup => 1 must have been supplied to new();
  Returns : $VertRes::Pipeline::Yes
  Args    : lane path, name of lock file to use
 
