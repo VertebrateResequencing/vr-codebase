@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 56;
+    use Test::Most tests => 58;
     
     use_ok('VertRes::Parser::sam');
 }
@@ -119,6 +119,11 @@ while (@fields = $ps->get_fields('QNAME', 'FLAG', 'RG', 'RNAME', 'POS', 'MAPQ', 
 }
 is_deeply $last_fields, ['IL3_2822:6:1:46:1362', 133, '*', '*', 0, 0, '*', '*', 0, 0, 'CGTTGTAGCTGAGGCTGACATTGAATTTTCACATCTCGAAAGCTTCATCAGTCT', 54, '??,<-(\'4+9/&<A>8((2)4<?835?>.9+(.\'%39@<8<3\'6,.)-==./.(', '*'], 'get_fields test on last line';
 
+# hard/soft clipping seq length tests
+$b_file = File::Spec->catfile('t', 'data', 'hard_soft.bam');
+ok -e $b_file, 'hard/soft bam file we will test with exists';
+$ps = VertRes::Parser::sam->new(file => $b_file);
+is_deeply [$ps->get_fields('SEQ', 'SEQ_LENGTH', 'MAPPED_SEQ_LENGTH')], ['CCCATAGCCCTATCCCTAACCCTAACCCGAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAAC', 76, 72], 'seq length correct both raw and clipped';
 
 # *** need a better test bam with multiple chromosomes and RG tags, and with
 # an EOF marker to avoid the warning

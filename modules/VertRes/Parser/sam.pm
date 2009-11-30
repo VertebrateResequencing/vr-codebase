@@ -598,8 +598,10 @@ sub next_result {
  Returns : list of desired values (if a desired tag isn't present, '*' will be
            returned in that slot)
  Args    : list of desired fields (see result_holder()) or tags (like 'RG').
-           additionaly, there is the psuedo-field 'SEQ_LENGTH' to get the
-           length of the read
+           additionaly, there are the psuedo-fields 'SEQ_LENGTH' to get the
+           raw length of the read (including hard/soft clipped bases) and
+           'MAPPED_SEQ_LENGTH' (only bases that match or mismatch to the
+           reference, ie. cigar operator M).
 
 =cut
 
@@ -660,6 +662,11 @@ void _get_fields(SV* self, SV* bam_ref, SV* b_ref, SV* header_ref, ...) {
     int cigar_digits_length;
     int cigar_digits_i;
     int cigar_chars_total;
+    
+    char *cigar_op;
+    int cigar_op_length;
+    int raw_seq_length;
+    int mapped_seq_length;
     
     char *seq;
     int seq_i;
@@ -738,12 +745,38 @@ void _get_fields(SV* self, SV* bam_ref, SV* b_ref, SV* header_ref, ...) {
                 else if (strEQ(field, "ISIZE")) {
                     Inline_Stack_Push(sv_2mortal(newSViv((int*)b->core.isize)));
                 }
-                else if (strEQ(field, "SEQ_LENGTH")) {
-                    if (b->core.l_qseq) {
-                        Inline_Stack_Push(sv_2mortal(newSVuv(b->core.l_qseq)));
+                else if (strEQ(field, "SEQ_LENGTH") || strEQ(field, "MAPPED_SEQ_LENGTH")) {
+                    if (b->core.n_cigar == 0) {
+                        if (b->core.l_qseq) {
+                            Inline_Stack_Push(sv_2mortal(newSVuv(b->core.l_qseq)));
+                        }
+                        else {
+                            Inline_Stack_Push(sv_2mortal(newSVuv(0)));
+                        }
                     }
                     else {
-                        Inline_Stack_Push(sv_2mortal(newSVuv(0)));
+                        cigar = bam1_cigar(b);
+                        raw_seq_length = 0;
+                        mapped_seq_length = 0;
+                        for (cigar_loop = 0; cigar_loop < b->core.n_cigar; ++cigar_loop) {
+                            cigar_op_length = cigar[cigar_loop]>>BAM_CIGAR_SHIFT;
+                            cigar_op = "MIDNSHP"[cigar[cigar_loop]&BAM_CIGAR_MASK];
+                            
+                            if (cigar_op == 'S' || cigar_op == 'H' || cigar_op == 'I') {
+                                raw_seq_length = raw_seq_length + cigar_op_length;
+                            }
+                            else if (cigar_op == 'M') {
+                                raw_seq_length = raw_seq_length + cigar_op_length;
+                                mapped_seq_length = mapped_seq_length + cigar_op_length;
+                            }
+                        }
+                        
+                        if (strEQ(field, "SEQ_LENGTH")) {
+                            Inline_Stack_Push(sv_2mortal(newSVuv(raw_seq_length)));
+                        }
+                        else {
+                            Inline_Stack_Push(sv_2mortal(newSVuv(mapped_seq_length)));
+                        }
                     }
                 }
                 else if (strEQ(field, "SEQ")) {
