@@ -31,6 +31,7 @@ use File::Basename;
 use VertRes::Parser::fastqcheck;
 use VertRes::Parser::fastq;
 use Cwd 'abs_path';
+use Inline C => Config => FILTERS => 'Strip_POD';
 
 use base qw(VertRes::Base);
 
@@ -331,12 +332,7 @@ sub clip_point {
     return -1;
 }
 
-use Inline C => DATA => FILTERS => 'Strip_POD';
-
-1;
-
-__DATA__
-__C__
+use Inline C => <<'END_C';
 
 =head2 qual_to_ints
 
@@ -363,3 +359,7 @@ void qual_to_ints(SV* obj, char* str) {
     
     Inline_Stack_Done;
 }
+
+END_C
+
+1;
