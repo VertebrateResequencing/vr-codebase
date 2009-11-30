@@ -694,8 +694,8 @@ sub bam_statistics {
     
     my %readgroup_data;
     my $previous_rg = 'unknown_readgroup';
-    while (my ($qname, $read_length, $flag, $qual_str, $mapq, $isize, $rg, $nm) =
-           $ps->get_fields('QNAME', 'SEQ_LENGTH', 'FLAG', 'QUAL', 'MAPQ', 'ISIZE', 'RG', 'NM')) {
+    while (my ($qname, $read_length, $mapped_length, $flag, $qual_str, $mapq, $isize, $rg, $nm) =
+           $ps->get_fields('QNAME', 'SEQ_LENGTH', 'MAPPED_SEQ_LENGTH', 'FLAG', 'QUAL', 'MAPQ', 'ISIZE', 'RG', 'NM')) {
         unless ($rg) {
             $self->warn("$qname had no RG tag, using previous RG tag '$previous_rg'");
             $rg = $previous_rg;
@@ -708,7 +708,7 @@ sub bam_statistics {
         
         if ($ps->is_mapped($flag)) {
             $this_rg_data[2]++;
-            $this_rg_data[3] += $read_length;
+            $this_rg_data[3] += $mapped_length;
             $this_rg_data[4]++ if $ps->is_sequencing_paired($flag);
             
             # avg quality of mapped bases
