@@ -1194,40 +1194,56 @@ sub store_lane {
     my $fsu = VertRes::Utils::FileSystem->new();
     
     my $storage_path = $self->lane_storage_path($lane);
+    my $storage_path_temp = $storage_path."_store_lane_temp";
+    my $do_move = 1;
     if (-d $storage_path && $lane->is_processed('stored')) {
         return 1;
     }
-    elsif (-d $storage_path && -d $hroot) {
+    elsif (-l $hroot && -d $storage_path) {
+        $do_move = 0;
+    }
+    elsif (-d $hroot && (-d $storage_path || -d $storage_path_temp)) {
         $self->warn("storage path '$storage_path' already exists; will delete it first");
         $fsu->rmtree($storage_path);
+        $fsu->rmtree($storage_path_temp);
     }
     
     my $hpath = $lane->vrtrack->hierarchy_path_of_lane($lane);
-    $hroot =~ s/$hpath//;
-    my $source_dir = $fsu->catfile($hroot, $hpath);
-    unless (-d $source_dir) {
-        $self->warn("Lane '$source_dir' wasn't a directory, can't move it to store it on NFS");
-        return 0;
-    }
     
-    # if we're in the source_dir, move() will chdir to parent, so store our
-    # current directory and chdir back to it afterwards
     my $cwd = cwd();
-    my $moved = $fsu->move($source_dir, $storage_path);
-    
-    unless ($moved) {
-        $self->warn("Failed to move $source_dir to storage path '$storage_path'");
-        return 0;
+    my $source_dir;
+    if ($do_move) {
+        $hroot =~ s/$hpath//;
+        $source_dir = $fsu->catfile($hroot, $hpath);
+        unless (-d $source_dir) {
+            $self->warn("Lane '$source_dir' wasn't a directory, can't move it to store it on NFS");
+            return 0;
+        }
+        
+        # if we're in the source_dir, move() will chdir to parent, so store our
+        # current directory and chdir back to it afterwards
+        my $moved = $fsu->move($source_dir, $storage_path_temp);
+        
+        unless ($moved) {
+            $self->warn("Failed to move $source_dir to storage path '$storage_path_temp'");
+            return 0;
+        }
     }
-    
-    symlink($storage_path, $source_dir);
-    chdir($cwd);
     
     my $vrtrack = $lane->vrtrack;
     $vrtrack->transaction_start();
+    
+    if ($do_move) {
+        symlink($storage_path, $source_dir) || $self->throw("Failed to create symlink from $storage_path to $source_dir");
+        chdir($cwd);
+        
+        File::Copy::move($storage_path_temp, $storage_path) || $self->throw("Could not rename $storage_path_temp to $storage_path");
+    }
+    
     $lane->storage_path($storage_path);
     $lane->is_processed('stored', 1);
     $lane->update || $self->throw("Could not update db to note that lane $hpath has been stored");
+    
     $vrtrack->transaction_commit();
     
     return 1;
