@@ -143,6 +143,11 @@ sub validate
         # Is the position numeric?
         if ( !($$x{POS}=~/^\d+$/) ) { $vcf->warn("Expected integer for the position at $$x{CHROM}:$$x{POS}\n"); }
 
+        if ( $prev_chrm && $prev_chrm eq $$x{CHROM} && $prev_pos eq $$x{POS} )
+        {
+            $vcf->warn("Duplicate entry $$x{CHROM}:$$x{POS}\n");
+        }
+
         # Is the file sorted?
         if ( $warn_sorted )
         {
@@ -168,6 +173,7 @@ sub validate
         # The QUAL field
         my $ret = $vcf->validate_float($$x{QUAL},-1);
         if ( $ret ) { $vcf->warn("QUAL field at $$x{CHROM}:$$x{POS} .. $ret\n"); }
+        elsif ( $$x{QUAL}<-1 ) { $vcf->warn("QUAL field at $$x{CHROM}:$$x{POS} is negative .. $$x{QUAL}\n"); }
 
         # The FILTER field
         $err = $vcf->validate_filter_field($$x{FILTER});
@@ -299,8 +305,28 @@ sub next_data_hash
     my @items = split(/\t/,$line);
     chomp($items[-1]);
 
-    if ( !$$self{columns} ) { $self->_fake_column_names(scalar @items); }
     my $cols = $$self{columns};
+    if ( !$$self{columns} ) { $self->_fake_column_names(scalar @items); }
+    else
+    {
+        $cols = $$self{columns};
+
+        # Check the number of columns
+        if ( scalar @items != scalar @$cols )  
+        { 
+            $self->warn("Different number of columns at $items[0]:$items[1] (expected ".scalar @$cols.", got ".scalar @items.")\n");
+            while ( $items[-1] eq '' ) { pop(@items); }
+            if ( scalar @items != scalar @$cols ) 
+            {
+                my @test = split(/\s+/,$line);
+                if ( scalar @test == scalar @$cols ) { $self->warn("(Have spaces been used instead of tabs?)\n\n"); }
+                else { $self->throw("Error not recoverable, exiting.\n"); }
+
+                @items = @test;
+            }
+            else { $self->warn("(Trailing tabs?)\n\n"); }
+        }
+    }
     my %out;
 
     # Mandatory fields
@@ -326,6 +352,7 @@ sub next_data_hash
 
     # Format, e.g. GT:GQ:DP:HQ
     my $format = $out{$$cols[8]} = [ split(/:/,$items[8]) ];
+    if ( !$$format[0] || $$format[0] ne 'GT' ) { $self->warn("Expected GT as the first genotype field at $items[0]:$items[1]\n"); }
 
     # Genotype fields
     my %gtypes;
@@ -334,8 +361,8 @@ sub next_data_hash
     {
         my @fields = split(/:/, $items[$icol]);
         if ( $check_nformat && @fields != @$format ) 
-        { 
-            $self->warn("Different number of fields in the format spec and the column $$cols[$icol] at $items[0]:$items[1] ("
+        {
+            $self->warn("Different number of fields in the format and the column $$cols[$icol] at $items[0]:$items[1] ("
                 .scalar @fields." vs ".scalar @$format.")\n"); 
         }
         my %hash;
@@ -552,6 +579,7 @@ sub _read_column_names
         if ( $i<$nfields && $cols[$i] ne $$fields[$i] ) 
         { 
             $self->warn("Expected mandatory column [$$fields[$i]], got [$cols[$i]]\n"); 
+            $cols[$i] = $$fields[$i];
         }
         $$self{has_column}{$cols[$i]} = $i+1;
     }
@@ -895,7 +923,7 @@ sub validate_gtype_field
         my @vals = split(/,/, $value);
         if ( $$type{nparams}!=-1 && @vals!=$$type{nparams} )
         {
-            push @errs, "FORMAT tag [$key=$value] expected different number of values ($$type{nparams})";
+            push @errs, "FORMAT tag [$key] expected different number of values ($$type{nparams})";
         }
         if ( !$$type{handler} ) { next; }
         for my $val (@vals)
