@@ -60,6 +60,7 @@ sub fields_dispatch {
                 'qc_status'         => sub { $self->qc_status(@_)},
                 'auto_qc_status'    => sub { $self->auto_qc_status(@_)},
                 'gt_status'         => sub { $self->genotype_status(@_)},
+                'storage_path'      => sub { $self->storage_path(@_)},
                 'submission_id'     => sub { $self->submission_id(@_)},
                 'withdrawn'         => sub { $self->is_withdrawn(@_)},
                 'note_id'           => sub { $self->note_id(@_)},
