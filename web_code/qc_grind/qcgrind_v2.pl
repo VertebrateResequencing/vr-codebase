@@ -585,12 +585,15 @@ sub displayProjectPage
     
     my $pname = $project->name;
     my $ssid = $project->ssid();
-    print qq[
-        <h2 align="center" style="font: normal 900 1.5em arial">QC Grind</h2>
-        <h3 style="font: normal 700 1.5em arial"><a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;sp=$species">].ucfirst($species).qq{</a> :
-        $pname [<a href="http://psd-production.internal.sanger.ac.uk:6600/projects/$ssid/workflows/1">SS</a>] 
-        </h3><br/>
-    };
+	if( defined( $ssid ) && $ssid > 0 )
+	{
+		print qq[
+    	    <h2 align="center" style="font: normal 900 1.5em arial">QC Grind</h2>
+			<h3 style="font: normal 700 1.5em arial"><a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;sp=$species">].ucfirst($species).qq{</a> :
+			$pname [<a href="http://psd-production.internal.sanger.ac.uk:6600/projects/$ssid/workflows/1">SS</a>] 
+			</h3><br/>
+		};
+	}
     
     print qq[
         <div class="centerFieldset">
