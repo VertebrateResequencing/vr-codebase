@@ -1165,9 +1165,11 @@ sub lane_storage_path {
     my $storage_path = $lane->storage_path;
     
     unless ($storage_path) {
-        my $hpath = $lane->vrtrack->hierarchy_path_of_lane($lane);
+        my $vrtrack = $lane->vrtrack;
+        my $hpath = $vrtrack->hierarchy_path_of_lane($lane);
+        my $db_params = $vrtrack->database_params;
         my $fsu = VertRes::Utils::FileSystem->new();
-        $storage_path = $fsu->catfile($self->nfs_disk, 'hashed_lanes', $fsu->hashed_path($hpath));
+        $storage_path = $fsu->catfile($self->nfs_disk, 'hashed_lanes', $db_params->{database}, $fsu->hashed_path($hpath));
     }
     
     return $storage_path;
