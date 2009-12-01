@@ -790,9 +790,15 @@ sub displayLane
         <a href="$SCRIPT_NAME?mode=$PROJ_VIEW&amp;proj_id=$pid&amp;sp=$species">$pname</a> :
         <a href="$SCRIPT_NAME?mode=$PROJ_VIEW&amp;proj_id=$pid&amp;sp=$species">$sname</a> :
         <a href="$SCRIPT_NAME?mode=$LIB_VIEW&amp;lib_id=$lid&amp;sp=$species">$libname</a> :
-        $name [<a href="http://intweb.sanger.ac.uk/perl/prodsoft/npg/npg/run/$run">npg</a>]
-        </h3>
-    ];
+        $name 
+	];
+		
+	if( $run !~ /SRR|ERR/ )
+	{
+		print qq{[<a href="http://intweb.sanger.ac.uk/perl/prodsoft/npg/npg/run/$run">npg</a>]};
+	}
+	
+	print "</h3>";
     
     my $status = $lane->qc_status;
     my $mapstats = $lane->latest_mapping;
@@ -1045,9 +1051,9 @@ sub displayLibrary
 		print qq[
         <a href="http://psd-production.internal.sanger.ac.uk:6600/workflow_samples/$sample_ssid/items/$lib_ssid">[SS]</a>
         <a href="http://intweb.sanger.ac.uk/perl/prodsoft/npg/npg/search?query=$name">[NPG]</a>
-        </h3>
 		];
 	}
+	print "</h3>";
     
     #print the pass fail buttons on top
     my $lib_status = $library->qc_status;
