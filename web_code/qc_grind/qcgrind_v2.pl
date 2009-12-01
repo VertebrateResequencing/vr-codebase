@@ -1109,17 +1109,27 @@ sub displayLibrary
     
     #print some info on the library
     my $insert = $library->insert_size();
-    my $typeID = $library ->library_type_id();
-    my $type = VRTrack::Library_type->new($vrtrack, $typeID);
-    my $type_ = $type->name();
-    print qq[
-    <div class="centerFieldset">
-    <table>
-    <tr>
-    <td>Insert</td>
-    <td>$insert</td>
-    <td>Type</td>
-    <td>$type_</td>
+	print qq[
+    	<div class="centerFieldset">
+		<table>
+		<tr>
+		<td>Insert</td>
+		<td>$insert</td>
+	];
+    
+	my $typeID = $library->library_type_id();
+	if( defined( $typeID ) && $typeID > 0 )
+	{
+		my $type = VRTrack::Library_type->new($vrtrack, $typeID);
+		$type_ = $type->name();
+		
+		print qq[
+			<td>Type</td>
+			<td>$type_</td>
+		];
+	}
+	
+	print qq[
     </tr>
     </table>
     </div>
