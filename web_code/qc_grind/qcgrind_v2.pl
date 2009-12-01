@@ -1031,7 +1031,9 @@ sub displayLibrary
     my $sid = $sample->id();
     my $lib_ssid = $library->ssid();
     my $sample_ssid = $sample->ssid();
-    print qq[
+	if( defined( $lib_ssid ) && $lib_ssid > 0 )
+	{
+		print qq[
         <h2 align="center" style="font: normal 900 1.5em arial">QC Grind</h2>
         <h3 style="font: normal 700 1.5em arial">
         <a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;sp=$species">].ucfirst($species).qq[</a> :
@@ -1041,7 +1043,8 @@ sub displayLibrary
         <a href="http://psd-production.internal.sanger.ac.uk:6600/workflow_samples/$sample_ssid/items/$lib_ssid">[SS]</a>
         <a href="http://intweb.sanger.ac.uk/perl/prodsoft/npg/npg/search?query=$name">[NPG]</a>
         </h3>
-    ];
+		];
+	}
     
     #print the pass fail buttons on top
     my $lib_status = $library->qc_status;
