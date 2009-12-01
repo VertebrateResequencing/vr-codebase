@@ -173,7 +173,7 @@ sub validate
         # The QUAL field
         my $ret = $vcf->validate_float($$x{QUAL},-1);
         if ( $ret ) { $vcf->warn("QUAL field at $$x{CHROM}:$$x{POS} .. $ret\n"); }
-        elsif ( $$x{QUAL}<-1 ) { $vcf->warn("QUAL field at $$x{CHROM}:$$x{POS} is negative .. $$x{QUAL}\n"); }
+        elsif ( $$x{QUAL}=~/^-?\d+$/ && $$x{QUAL}<-1 ) { $vcf->warn("QUAL field at $$x{CHROM}:$$x{POS} is negative .. $$x{QUAL}\n"); }
 
         # The FILTER field
         $err = $vcf->validate_filter_field($$x{FILTER});
@@ -789,7 +789,7 @@ sub calc_an_ac
         }
     }
     my @ac;
-    for my $ac ( sort { $a <=> $b } values %ac_counts) { push @ac, $ac; }
+    for my $ac ( sort { $a <=> $b } keys %ac_counts) { push @ac, $ac_counts{$ac}; }
     if ( !@ac ) { @ac = ('0'); }
     return ($an,join(',',@ac));
 }
