@@ -42,7 +42,7 @@ my $LANE_UPDATE = 10;
 my $SELECT_SPECIES_VIEW = 8;
 my $LANES_UPDATE = 9;
 
-my %DB_FOR_SPECIES = ( 'mouse'  => 'mouse_reseq_track', 'g1k'   => 'g1k_track');
+my %DB_FOR_SPECIES = ( 'mouse'  => 'mouse_reseq_track', 'g1k'   => 'g1k_track', 'g1kmeta'	=> 'g1k_meta');
 
 #possible filters for libaries/lanes
 my $PASSED_FILTER = 'passed';
