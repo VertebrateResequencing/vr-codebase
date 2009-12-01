@@ -306,11 +306,13 @@ sub next_data_hash
     chomp($items[-1]);
 
     my $cols = $$self{columns};
-    if ( !$$self{columns} ) { $self->_fake_column_names(scalar @items); }
+    if ( !$$self{columns} ) 
+    { 
+        $self->_fake_column_names(scalar @items); 
+        $cols = $$self{columns};
+    }
     else
     {
-        $cols = $$self{columns};
-
         # Check the number of columns
         if ( scalar @items != scalar @$cols )  
         { 
@@ -359,6 +361,8 @@ sub next_data_hash
     my $check_nformat = $$self{version} < 3.3 ? 0 : 1;
     for (my $icol=9; $icol<@items; $icol++)
     {
+        if ( $items[$icol] eq '' ) { $self->warn("Empty column $$cols[$icol] at $items[0]:$items[1]\n"); next; }
+
         my @fields = split(/:/, $items[$icol]);
         if ( $check_nformat && @fields != @$format ) 
         {
