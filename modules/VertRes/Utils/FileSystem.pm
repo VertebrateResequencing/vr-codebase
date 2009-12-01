@@ -47,6 +47,7 @@ require File::Copy;
 use Digest::MD5;
 use Filesys::DfPortable;
 use Filesys::DiskUsage qw/du/;
+use File::Rsync;
 
 use base qw(VertRes::Base);
 
@@ -263,8 +264,12 @@ sub copy {
         return 0;
     }
     
+    my $rsync = File::Rsync->new({archive => 1, compress => 1, delete => 1, checksum => 1});
+    
     if (-d $source) {
-        File::Path::make_path($tmp_dest) || $self->throw("Could not make destination directory '$tmp_dest'");
+        unless (-d $tmp_dest) {
+            File::Path::make_path($tmp_dest) || $self->throw("Could not make destination directory '$tmp_dest'");
+        }
         
         unless ($self->can_be_copied($source, $tmp_dest)) {
             $self->warn("There isn't enough disk space at '$dest' to copy '$source' there");
@@ -272,19 +277,25 @@ sub copy {
             return 0;
         }
         
-        opendir(my $dfh, $source) || $self->throw("Could not open source directory '$source'");
-        foreach my $thing (readdir($dfh)) {
-            next if $thing =~ /^\.{1,2}$/;
-            my $ok = $self->copy($self->catfile($source, $thing), $self->catfile($tmp_dest, $thing));
-            unless ($ok) {
-                $self->rmtree($tmp_dest);
-                return 0;
-            }
+        my $ok = $rsync->exec({src => $source.'/', dest => $tmp_dest});
+        if ($ok) {
+            # we run it again; with the checksum option this should hopefully
+            # ensure the copy is perfect
+            $ok = $rsync->exec({src => $source.'/', dest => $tmp_dest});
         }
-        close($dfh);
+        else {
+            $self->warn("rsync copy of $source to $tmp_dest failed");
+            return 0;
+        }
         
-        File::Copy::move($tmp_dest, $dest) || $self->throw("Failed to rename successfully copied directory '$tmp_dest' to '$dest'");
-        return 1;
+        if ($ok) {
+            File::Copy::move($tmp_dest, $dest) || $self->throw("Failed to rename successfully copied directory '$tmp_dest' to '$dest'");
+            return 1;
+        }
+        else {
+            $self->warn("rsync copy of $source to $tmp_dest failed");
+            return 0;
+        }
     }
     else {
         open(my $fh, '>', $tmp_dest);
@@ -296,7 +307,7 @@ sub copy {
         }
         
         for (1..$max_retries) {
-            my $success = File::Copy::copy($source, $tmp_dest);
+            my $success = $rsync->exec({src => $source, dest => $tmp_dest});
             if ($success) {
                 my $diff = `diff $source $tmp_dest`;
                 unless ($diff) {
