@@ -1121,7 +1121,7 @@ sub displayLibrary
 	if( defined( $typeID ) && $typeID > 0 )
 	{
 		my $type = VRTrack::Library_type->new($vrtrack, $typeID);
-		$type_ = $type->name();
+		my $type_ = $type->name();
 		
 		print qq[
 			<td>Type</td>
