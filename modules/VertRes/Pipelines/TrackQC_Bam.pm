@@ -817,24 +817,6 @@ sub update_db
     my $mapping;
     my $has_mapstats = 0;
 
-# temporary hack to backward fill some info
-if ( ! -e "$sample_dir/$$self{mapstat_id}" )
-{
-    my @files = glob("$lane_path/*.se.raw.sorted.bam");
-    my %mapstat_id;
-    for my $file (@files)
-    {
-        if ( $file=~m{(\d+)\.[ps]e\.raw\.sorted\.bam} ) { $mapstat_id{$1} = 1; }
-    }
-    print STDERR "temp hack .. " .(keys %mapstat_id). " \n";
-    if ( scalar keys %mapstat_id == 1 )
-    {
-        open(my $fh,'>',"$sample_dir/$$self{mapstat_id}") or $self->throw("$sample_dir/$$self{mapstat_id}: $!");
-        print $fh keys %mapstat_id,"\n";
-        close($fh);
-    }
-}
-
     if ( -e "$sample_dir/$$self{mapstat_id}" )
     {
         # When run on bam files created by the mapping pipeline, reuse existing
@@ -902,6 +884,12 @@ if ( ! -e "$sample_dir/$$self{mapstat_id}" )
         $vrlibrary->update(); 
     }
     $vrtrack->transaction_commit();
+
+    # Clean the big files
+    for my $file ('gc-depth.bindepth',"$$self{lane}.bam.bai","$$self{lane}*.sai","$$self{lane}*.fastq.gz","$$self{lane}.bam","$$self{lane}.glf")
+    {
+        Utils::CMD("rm -f $file");
+    }
 
     return $$self{'Yes'};
 }
