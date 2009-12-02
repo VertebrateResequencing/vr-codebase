@@ -888,7 +888,7 @@ sub update_db
     # Clean the big files
     for my $file ('gc-depth.bindepth',"$$self{lane}.bam.bai","$$self{lane}*.sai","$$self{lane}*.fastq.gz","$$self{lane}.bam","$$self{lane}.glf")
     {
-        Utils::CMD("rm -f $file");
+        Utils::CMD("rm -f $sample_dir/$file");
     }
 
     return $$self{'Yes'};
