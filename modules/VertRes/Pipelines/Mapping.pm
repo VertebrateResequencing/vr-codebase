@@ -552,7 +552,7 @@ sub map {
             }
             
             my $job_name = $self->{prefix}.'map_'.$ended.'_'.$self->{mapstats_id}.'_'.$split;
-            my $prev_error_file = $self->archive_bsub_files($lane_path, $job_name);
+            my $prev_error_file = $self->archive_bsub_files($lane_path, $job_name) || '';
             
             open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
             print $scriptfh qq{
