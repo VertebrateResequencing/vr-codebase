@@ -46,6 +46,7 @@ use strict;
 use warnings;
 use Cwd qw(abs_path);
 use IPC::Open2;
+use Time::Format;
 
 use base qw(VertRes::Base);
 
@@ -270,7 +271,7 @@ rm $script;
     }
     
     my $command = "bsub -J $bo->{J} -e $bo->{e} -o $bo->{o} -q $bo->{q}$optional '$cmd'";
-    $self->debug("will run command '$command'");
+    $self->debug("[$time{'yyyy/mm/dd hh:mm:ss'}] will run command '$command'");
     
     system($command) && $self->throw("$exe call ($command) crashed: $? | $!");
     
@@ -282,7 +283,7 @@ sub _open_run {
     
     my $redirect = $self->quiet ? ' 2> /dev/null ' : '';
     my $command = $exe.$params." @extra_args".$redirect;
-    $self->debug("will run command '$command'");
+    $self->debug("[$time{'yyyy/mm/dd hh:mm:ss'}] will run command '$command'");
     
     open(my $pipe, "$command |") || $self->throw("$exe call ($command) failed to start: $? | $!");
     
@@ -302,7 +303,7 @@ sub _open_to_run {
     
     my $redirect = $self->quiet ? ' 2> /dev/null ' : '';
     my $command = $exe.$params." @extra_args".$redirect;
-    $self->debug("will run command '$command'");
+    $self->debug("[$time{'yyyy/mm/dd hh:mm:ss'}] will run command '$command'");
     
     open(my $pipe, "| $command") || $self->throw("$exe call ($command) failed to start: $? | $!");
     
@@ -328,7 +329,7 @@ sub _open_2_run {
     
     my $redirect = $self->quiet ? ' 2> /dev/null ' : '';
     my $command = $exe.$params." @extra_args".$redirect;
-    $self->debug("will run command '$command'");
+    $self->debug("[$time{'yyyy/mm/dd hh:mm:ss'}] will run command '$command'");
     
     my ($out_fh);
     my $pid = open2($out_fh, $in_fh, $command);
@@ -346,7 +347,7 @@ sub _system_run {
         $redirect = ' > /dev/null'.$redirect;
     }
     my $command = $exe.$params." @extra_args".$redirect;
-    $self->debug("will run command '$command'");
+    $self->debug("[$time{'yyyy/mm/dd hh:mm:ss'}] will run command '$command'");
     
     system($command) && $self->throw("$exe call ($command) crashed: $? | $!");
     
