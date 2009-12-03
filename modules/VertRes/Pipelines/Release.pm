@@ -735,7 +735,7 @@ sub recalibrate {
     my $verbose = $self->verbose;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M6000000 -R \'select[mem>6000] rusage[mem=6000]\'';
+    $self->{bsub_opts} = '-q normal -M6500000 -R \'select[mem>6500] rusage[mem=6500]\'';
     
     my @out_bams;
     foreach my $bam (@in_bams) {
