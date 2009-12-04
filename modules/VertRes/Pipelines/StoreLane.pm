@@ -12,6 +12,7 @@ echo '__VRTrack_Storing__ g1k_storelane.conf' > pipeline.config
 root    => '/abs/path/to/root/data/dir',
 module  => 'VertRes::Pipelines::StoreLane',
 prefix  => '_',
+limit => 50,
 db  => {
     database => 'g1k_meta',
     host     => 'mcs4a',
@@ -23,6 +24,9 @@ db  => {
 # by default __VRTrack_Storing__ will pick up lanes that have been both mapped
 # and qcd. To override this, set eg:
 # vrtrack_processed_flags => { mapped => 1, stored => 0 },
+#
+# the 'limit' option specifies the maximum number of storage jobs to run at
+# once, to protect IO being too great. Defaults to 50.
 
 # run the pipeline:
 run-pipeline -c pipeline.config
