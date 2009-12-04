@@ -20,6 +20,10 @@ db  => {
     password => 'xxxxxxx',
 }
 
+# by default __VRTrack_Storing__ will pick up lanes that have been both mapped
+# and qcd. To override this, set eg:
+# vrtrack_processed_flags => { mapped => 1, stored => 0 };
+
 # run the pipeline:
 run-pipeline -c pipeline.config
 
