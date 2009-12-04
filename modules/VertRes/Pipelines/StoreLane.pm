@@ -22,7 +22,7 @@ db  => {
 
 # by default __VRTrack_Storing__ will pick up lanes that have been both mapped
 # and qcd. To override this, set eg:
-# vrtrack_processed_flags => { mapped => 1, stored => 0 };
+# vrtrack_processed_flags => { mapped => 1, stored => 0 },
 
 # run the pipeline:
 run-pipeline -c pipeline.config
@@ -57,7 +57,7 @@ our $actions = [ { name     => 'store_nfs',
                    requires => \&store_nfs_requires, 
                    provides => \&store_nfs_provides } ];
 
-our %options = ();
+our %options = (bsub_opts => '');
 
 =head2 new
 
@@ -65,7 +65,8 @@ our %options = ();
  Usage   : my $obj = VertRes::Pipelines::StoreLane->new(lane => '/path/to/lane');
  Function: Create a new VertRes::Pipelines::StoreLane object;
  Returns : VertRes::Pipelines::StoreLane object
- Args    : optional args as per VertRes::Pipeline
+ Args    : lane => readgroup id
+           optional args as per VertRes::Pipeline
 
 =cut
 
@@ -73,6 +74,8 @@ sub new {
     my ($class, @args) = @_;
     
     my $self = $class->SUPER::new(%options, actions => $actions, @args);
+    
+    my $lane = $self->{lane} || $self->throw("lane readgroup not supplied, can't continue");
     
     # if we've been supplied a list of lane paths to work with, instead of
     # getting the lanes from the db, we won't have a vrlane object; make one
@@ -179,7 +182,7 @@ exit;
     
     $self->archive_bsub_files($lane_path, $job_name);
     
-    LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'store_nfs'), qq{perl -w $script_name});
+    LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     
     return $self->{No};
 }
