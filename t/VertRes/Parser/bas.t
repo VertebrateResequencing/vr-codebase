@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 13;
+    use Test::Most tests => 17;
     
     use_ok('VertRes::Parser::bas');
 }
@@ -33,5 +33,14 @@ while ($basp->next_result) {
 }
 
 is_deeply $rh, [qw(NA00003.SLX.bwa.SRP000003.2009_08 007c160b07f7d928bfa47a85410113e0 SRP000003 NA00003 SLX alib3 SRR00003 115000 62288 2000 1084 1084 1070 2.05 23.32 286 74.10 275 46)], 'last result was correct';
+
+# test parsing an empty (header-only) bas file: should return unknowns and 0s,
+# not the header column names
+$bas_file = File::Spec->catfile('t', 'data', 'empty.bas');
+ok -e $bas_file, 'empty file we will test with exists';
+ok $basp->file($bas_file), 'file set into parser';
+ok ! $basp->next_result, 'next_result never worked';
+$rh = $basp->result_holder();
+is_deeply $rh, [qw(unknown unknown unknown unknown unknown unknown unknown 0 0 0 0 0 0 0 0 0 0 0 0)], 'result holder contains unknows and 0s';
 
 exit;

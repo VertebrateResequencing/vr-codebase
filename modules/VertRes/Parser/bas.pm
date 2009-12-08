@@ -136,6 +136,15 @@ sub next_result {
     
     # header?
     if ($self->{_result_holder}->[18] eq 'insert_size_median_absolute_deviation') {
+        # initialise everything to unknown/0 so that if user looks at result
+        # holder without checking that next_result returned true, they don't
+        # get the header values
+        for my $i (0..6) {
+            $self->{_result_holder}->[$i] = 'unknown';
+        }
+        for my $i (7..18) {
+            $self->{_result_holder}->[$i] = 0;
+        }
         return $self->next_result;
     }
     
