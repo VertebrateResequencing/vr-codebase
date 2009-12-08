@@ -851,6 +851,9 @@ sub create_release_files {
             LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
                      qq{md5sum $bam > $bam_md5; ln -s $basename $release_name});
         }
+        elsif (! -e $release_name) {
+            symlink($basename, $release_name);
+        }
         push(@release_files, $bam, $bam_md5);
         
         # bai & its md5 & links
@@ -860,6 +863,9 @@ sub create_release_files {
             LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
                      qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$bam], qq[$bai]); die qq[index failed for $bam\n] unless -s qq[$bai]; system(qq[md5sum $bai > $bai_md5; ln -s $basename.bai $release_name.bai]);"});
         }
+        elsif (! -e "$release_name.bai") {
+            symlink("$basename.bai", "$release_name.bai");
+        }
         push(@release_files, $bai, $bai_md5);
         
         # bas & its md5 & links
@@ -868,6 +874,9 @@ sub create_release_files {
         unless (-s $bas && -s $bas_md5) {
             LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
                      qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$bas]); die qq[bas failed for $bam\n] unless -s qq[$bas]; system(qq[md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"}); # , qq[$self->{sequence_index}] bas() needs a database option?
+        }
+        elsif (! -e "$release_name.bas") {
+            symlink("$basename.bas", "$release_name.bas");
         }
         push(@release_files, $bas, $bas_md5);
     }
