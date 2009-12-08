@@ -483,6 +483,12 @@ sub _add_filter_field
     if ( @values < 1 ) { $self->throw("Could not parse [FILTER=$string].\n"); }
     elsif ( @values < 2 ) { $self->warn("No description in [FILTER=$string].\n"); } 
 
+    if ( @values>2 ) 
+    { 
+        $self->warn("The FILTER fields expects semi-colons, not commas [FILTER=$string].\n"); 
+        return;
+    }
+    
     if ( exists($$self{header}{'FILTER'}{$values[0]}) ) { $self->warn("The field specified twice [FILTER=$string].\n"); }
     $$self{header}{'FILTER'}{$values[0]} = 
     {
@@ -791,16 +797,18 @@ sub validate_filter_field
     if ( @$values == 1 && $$values[0] eq '.' ) { return undef; }
     
     my @errs;
+    my @missing;
     for my $item (@$values)
     {
         if ( $item eq '0' ) { next; }
+        if ( $item=~/,/ ) { push @errs,"Expected semicolon as a separator."; }
         if ( exists($$self{header}{FILTER}{$item}) ) { next; }
-        push @errs, $item;
+        push @missing, $item;
         $self->_add_filter_field("$item,No description");
     }
     if ( !@errs ) { return undef; }
     if ( $$self{version}<3.3 ) { return undef; }
-    return 'The filter(s) [' . join(',',@errs) . '] not listed in the header.';
+    return join(',',@errs) .' '. 'The filter(s) [' . join(',',@missing) . '] not listed in the header.';
 }
 
 
