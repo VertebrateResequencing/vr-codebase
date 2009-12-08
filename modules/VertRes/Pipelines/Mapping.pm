@@ -868,8 +868,9 @@ sub update_db {
     foreach my $file (@bas_files) {
         my $bp = VertRes::Parser::bas->new(file => $file);
         my $rh = $bp->result_holder;
-        $bp->next_result; # we'll only ever have one line, since this is only
-                          # one read group
+        my $ok = $bp->next_result; # we'll only ever have one line, since this
+                                   # is only one read group
+        $ok || $self->throw("bas file '$file' had no entries, suggesting the bam file is empty, which should never happen!");
         
         # We can have up to 2 bas files, one representing single ended mapping,
         # the other paired, so we add where appropriate and only set insert size
@@ -882,6 +883,8 @@ sub update_db {
         $stats{mean_insert} = $rh->[15] if $rh->[15];
         $stats{sd_insert} = $rh->[16] if $rh->[15];
     }
+    
+    $stats{raw_bases} || $self->throw("bas file(s) for $lane_path indicate no raw bases; bam file must be empty, which should never happen!");
     
     # add mapping details to db (overwriting any existing values)
     my $mapping = $self->{mapstats_obj};
