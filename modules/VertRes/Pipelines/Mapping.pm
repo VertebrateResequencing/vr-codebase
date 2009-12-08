@@ -122,6 +122,7 @@ use VertRes::Utils::FileSystem;
 use VertRes::Parser::bas;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
+use VRTrack::File;
 use File::Basename;
 use LSF;
 
@@ -420,13 +421,19 @@ sub _get_read_args {
         $fastq_info[1]->[0] = undef;
     }
     
+    # before doing a split we will double-check that the fastq files have the
+    # correct md5, so we include _md5 options in the read_args
     my @read_args;
     if ($fastq_info[0]->[0]) {
-        $read_args[0] = ["read0 => '".$self->{fsu}->catfile($lane_path, $fastq_info[0]->[0])."'"];
+        my $file = 
+        $read_args[0] = ["read0 => '".$self->{fsu}->catfile($lane_path, $fastq_info[0]->[0])."', ".
+                         "read0_md5 => '".$self->_file_md5($fastq_info[0]->[0])."'"];
     }
     if ($fastq_info[1]->[0] && $fastq_info[2]->[0]) {
-        $read_args[1] = ["read1 => '".$self->{fsu}->catfile($lane_path, $fastq_info[1]->[0])."', ",
-                         "read2 => '".$self->{fsu}->catfile($lane_path, $fastq_info[2]->[0])."'"];
+        $read_args[1] = ["read1 => '".$self->{fsu}->catfile($lane_path, $fastq_info[1]->[0])."', ".
+                         "read1_md5 => '".$self->_file_md5($fastq_info[1]->[0])."', ",
+                         "read2 => '".$self->{fsu}->catfile($lane_path, $fastq_info[2]->[0])."', ".
+                         "read2_md5 => '".$self->_file_md5($fastq_info[2]->[0])."'"];
     }
     
     @read_args || $self->throw("$lane_path had no compatible set of fastq files!");
@@ -437,6 +444,13 @@ sub _get_read_args {
     elsif ($ended eq 'pe') {
         return $read_args[1];
     }
+}
+
+sub _file_md5 {
+    my ($self, $filehname) = @_;
+    my $vrtrack = $self->{vrlane}->vrtrack;
+    my $file = VRTrack::File->new_by_hierarchy_name($vrtrack, $filehname) || $self->throw("Could not get file object from db for $filehname");
+    return $file->md5 || $self->throw("No md5 for file $filehname");
 }
 
 =head2 map_requires
@@ -546,7 +560,7 @@ sub map {
             my @split_read_args = ();
             foreach my $read_arg (@these_read_args) {
                 my $split_read_arg = $read_arg;
-                $split_read_arg =~ s/\.f[^.]+(?:\.gz)?('(?:, )?)$/.$split.fastq.gz$1/;
+                $split_read_arg =~ s/\.f[^.]+(?:\.gz)?('(?:, )?).*$/.$split.fastq.gz$1/;
                 $split_read_arg =~ s/\/([^\/]+)$/\/${split_dir_name}_${ended}_$self->{mapstats_id}\/$1/;
                 push(@split_read_args, $split_read_arg);
             }
@@ -565,7 +579,7 @@ my \$mapper = $mapper_class->new(verbose => $verbose);
 # mapping won't get repeated if mapping works the first time but subsequent
 # steps fail
 my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
-                               @split_read_args,
+                               @split_read_args
                                output => '$sam_file',
                                insert_size => $info{insert_size},
                                read_group => '$info{lane}',

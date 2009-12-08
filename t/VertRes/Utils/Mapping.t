@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 37;
+    use Test::Most tests => 39;
     
     use_ok('VertRes::Utils::Mapping');
     use_ok('VertRes::Utils::Mappers::ssaha');
@@ -58,6 +58,18 @@ is $mapping_util->split_fastq(read1 => $faq1_file,
                               read2 => $faq2_file,
                               split_dir => $temp_dir,
                               chunk_size => 11500), 10, 'split_fastq with two fastqs worked';
+is $mapping_util->split_fastq(read1 => $faq1_file,
+                              read1_md5 => '4cefa7839705ddd822ddf5a37a648a66',
+                              read2 => $faq2_file,
+                              read2_md5 => 'd2495c33af00c6093697b4c129541fa6',
+                              split_dir => $temp_dir,
+                              chunk_size => 11500), 10, 'split_fastq with two fastqs worked after checking md5s';
+throws_ok { $mapping_util->split_fastq(read1 => $faq1_file,
+                              read1_md5 => '4cefa7839705ddd822ddf5a37a648a66',
+                              read2 => $faq2_file,
+                              read2_md5 => 'foo',
+                              split_dir => $temp_dir,
+                              chunk_size => 11500) } qr/failed to match md5s/, 'split_fastq throws when md5 checking against wrong md5';
 
 # get_mapping_stats
 my $bas_file = File::Spec->catfile('t', 'data', 'example2.bas');

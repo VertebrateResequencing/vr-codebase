@@ -39,6 +39,7 @@ use VertRes::IO;
 use VertRes::Parser::bas;
 use File::Basename;
 use VertRes::Utils::Hierarchy;
+use VertRes::Utils::FileSystem;
 use VRTrack::Lane;
 
 use base qw(VertRes::Base);
@@ -126,6 +127,10 @@ sub split_fastq {
     my $split_dir = $args{split_dir} || $self->throw("split_dir must be supplied");
     
     my @fastq_files = values %read_args;
+    
+    # immediately prior to splitting we'll check fastq md5s if we've been
+    # given any
+    $self->_check_fastqs(%args) || $self->throw("fastq files (@fastq_files) failed to match md5s just prior to splitting");
     
     my $fastq_util = VertRes::Utils::FastQ->new(verbose => $self->verbose);
     return $fastq_util->split(\@fastq_files, split_dir => $split_dir, chunk_size => $chunk_size);
@@ -285,6 +290,24 @@ sub _do_read_args {
     }
     
     return %out_hash;
+}
+
+
+sub _check_fastqs {
+    my ($self, %args) = @_;
+    
+    my %read_args = $self->_do_read_args(%args);
+    
+    my $fsu = VertRes::Utils::FileSystem->new();
+    if (defined $read_args{read0} && defined $args{read0_md5}) {
+        $fsu->verify_md5($read_args{read0}, $args{read0_md5}) || return;
+    }
+    elsif (defined $read_args{read1} && defined $args{read1_md5} && defined $args{read2_md5}) {
+        $fsu->verify_md5($read_args{read1}, $args{read1_md5}) || return;
+        $fsu->verify_md5($read_args{read2}, $args{read2_md5}) || return;
+    }
+    
+    return 1;
 }
 
 =head2 mapping_hierarchy_report
