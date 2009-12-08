@@ -64,7 +64,7 @@ use Exporter;
 
 use vars qw/@ISA @EXPORT %s2i @i2s/;
 @ISA = qw/Exporter/;
-@EXPORT = qw/vcf1 validate/;
+@EXPORT = qw/vcf1 validate validate_v32/;
 
 
 # This is the original code, not used, left only for backward compatibility.
@@ -128,81 +128,33 @@ sub validate
     if ( $fh ) { $vcf = fileno($fh) ? Vcf->new(fh=>$fh) : Vcf->new(file=>$fh); }
     else { $vcf = Vcf->new(); }
 
-    $vcf->parse_header();
-    if ( !exists($$vcf{header_lc}{fileformat}) ) 
-    { 
-        $vcf->warn(qq[The "fileformat" field not present in the header, assuming VCFv$$vcf{version}\n]);
-    }
-    if ( !$vcf->{header} ) { $vcf->warn("No VCF header found.\n"); }
-    if ( !$vcf->{columns} ) { $vcf->warn("No column descriptions found.\n"); }
-
-    my $warn_sorted=1;
-    my ($prev_chrm,$prev_pos);
-    while (my $x=$vcf->next_data_hash()) 
-    {
-        # Is the position numeric?
-        if ( !($$x{POS}=~/^\d+$/) ) { $vcf->warn("Expected integer for the position at $$x{CHROM}:$$x{POS}\n"); }
-
-        if ( $prev_chrm && $prev_chrm eq $$x{CHROM} && $prev_pos eq $$x{POS} )
-        {
-            $vcf->warn("Duplicate entry $$x{CHROM}:$$x{POS}\n");
-        }
-
-        # Is the file sorted?
-        if ( $warn_sorted )
-        {
-            if ( $prev_chrm && $prev_chrm eq $$x{CHROM} && $prev_pos > $$x{POS} ) 
-            { 
-                $vcf->warn("The file is not sorted, for example $$x{CHROM}:$$x{POS} comes after $prev_chrm:$prev_pos\n");
-                $warn_sorted = 0;
-            }
-            $prev_chrm = $$x{CHROM};
-            $prev_pos  = $$x{POS};
-        }
-
-        # Is the ID non-empty?
-        if ( $$x{ID}=~/^$/ ) { $vcf->warn("The ID should be set to . if unknown at $$x{CHROM}:$$x{POS}\n"); }
-
-        # The reference base: one of A,C,G,T,N, non-empty.
-        if ( !($$x{REF}=~/^[ACGTN]$/) ) { $vcf->warn("Expected one of A,C,G,T,N for the reference base at $$x{CHROM}:$$x{POS}, got [$$x{REF}]\n"); }
-        
-        # The ALT field (alternate non-reference base)
-        my $err = $vcf->validate_alt_field($$x{ALT});
-        if ( $err ) { $vcf->warn("$$x{CHROM}:$$x{POS} .. $err\n"); }
-
-        # The QUAL field
-        my $ret = $vcf->validate_float($$x{QUAL},-1);
-        if ( $ret ) { $vcf->warn("QUAL field at $$x{CHROM}:$$x{POS} .. $ret\n"); }
-        elsif ( $$x{QUAL}=~/^-?\d+$/ && $$x{QUAL}<-1 ) { $vcf->warn("QUAL field at $$x{CHROM}:$$x{POS} is negative .. $$x{QUAL}\n"); }
-
-        # The FILTER field
-        $err = $vcf->validate_filter_field($$x{FILTER});
-        if ( $err ) { $vcf->warn("FILTER field at $$x{CHROM}:$$x{POS} .. $err\n"); }
-
-        # The INFO field
-        $err = $vcf->validate_info_field($$x{INFO});
-        if ( $err ) { $vcf->warn("INFO field at $$x{CHROM}:$$x{POS} .. $err\n"); } 
-
-        while (my ($gt,$data) = each %{$$x{gtypes}})
-        {
-            $err = $vcf->validate_gtype_field($data,$$x{ALT});
-            if ( $err ) { $vcf->warn("$gt column at $$x{CHROM}:$$x{POS} .. $err\n"); }
-        }
-
-        if ( exists($$x{INFO}{AN}) || exists($$x{INFO}{AC}) )
-        {
-            my ($an,$ac) = $vcf->calc_an_ac($$x{gtypes});
-            if ( exists($$x{INFO}{AN}) && $an ne $$x{INFO}{AN} ) 
-            { 
-                $vcf->warn("$$x{CHROM}:$$x{POS} .. AN is $$x{INFO}{AN}, should be $an\n"); 
-            }
-            if ( exists($$x{INFO}{AC}) && $ac ne $$x{INFO}{AC} ) 
-            { 
-                $vcf->warn("$$x{CHROM}:$$x{POS} .. AC is $$x{INFO}{AC}, should be $ac\n"); 
-            }
-        }
-    }
+    $vcf->run_validation();
 }
+
+
+=head2 validate_v32
+
+    About   : Same as validate, but assumes v3.2 VCF version.
+    Usage   : perl -MVcf -e validate_v32 example.vcf.gz     # (from the command line)
+    Args    : File name or file handle. When no argument given, the first command line
+              argument is interpreted as the file name.
+
+=cut
+
+sub validate_v32
+{
+    my ($fh) = @_;
+
+    if ( !$fh && @ARGV && -e $ARGV[0] ) { $fh = $ARGV[0]; }
+
+    my $vcf;
+    if ( $fh ) { $vcf = fileno($fh) ? Vcf->new(fh=>$fh) : Vcf->new(file=>$fh); }
+    else { $vcf = Vcf->new(); }
+
+    $$vcf{version} = '3.2';
+    $vcf->run_validation();
+}
+
 
 =head2 new
 
@@ -220,7 +172,7 @@ sub new
 {
     my ($class,@args) = @_;
     my $self = {@args};
-    bless($self);
+    bless $self, ref($class) || $class;
     if ( !exists($$self{fh}) ) 
     { 
         if ( exists($$self{file}) ) 
@@ -534,8 +486,8 @@ sub _add_filter_field
     if ( exists($$self{header}{'FILTER'}{$values[0]}) ) { $self->warn("The field specified twice [FILTER=$string].\n"); }
     $$self{header}{'FILTER'}{$values[0]} = 
     {
-        name    => $values[1],
-        desc    => $values[4],
+        name    => $values[0],
+        desc    => $values[1],
     };
 }
 
@@ -700,7 +652,7 @@ sub _format_line_hash
     for my $i (0..3) { $out .= $$record{$$cols[$i]} ."\t";  }
 
     # ALT
-    $out .= join(',',@{$$record{$$cols[4]}});
+    $out .= join(',',@{$$record{$$cols[4]}} ? @{$$record{$$cols[4]}} : '.');
 
     # QUAL
     $out .= "\t". $$record{$$cols[5]};
@@ -738,6 +690,7 @@ sub _format_line_hash
         my ($an,$ac) = $self->calc_an_ac($gtypes);
         push @info, "AN=$an","AC=$ac";
     }
+    if ( !@info ) { push @info, '.'; }
     $out .= "\t". join(';', sort @info);
 
     # FORMAT
@@ -846,6 +799,7 @@ sub validate_filter_field
         $self->_add_filter_field("$item,No description");
     }
     if ( !@errs ) { return undef; }
+    if ( $$self{version}<3.3 ) { return undef; }
     return 'The filter(s) [' . join(',',@errs) . '] not listed in the header.';
 }
 
@@ -870,7 +824,7 @@ sub validate_info_field
     {
         if ( !exists($$self{header}{INFO}{$key}) )
         {
-            push @errs, "INFO tag [$key] not listed in the header";
+            push @errs, "INFO tag [$key] not listed in the header" unless $$self{version}<3.3;
             my $nargs = defined $value ? -1 : 0;
             $self->_add_field('INFO',qq[$key,$nargs,String,"No description"]);
             next;
@@ -918,7 +872,7 @@ sub validate_gtype_field
     {
         if ( !exists($$self{header}{FORMAT}{$key}) )
         {
-            push @errs, "FORMAT tag [$key] not listed in the header";
+            push @errs, "FORMAT tag [$key] not listed in the header" unless $$self{version}<3.3;
             $self->_add_field('FORMAT',qq[$key,-1,String,"No description"]);
             next;
         }
@@ -983,6 +937,95 @@ sub validate_char
     if ( defined($default) && $value eq $default ) { return undef; }
     if ( length($value)==1) { return undef; }
     return "Could not validate the char value [$value]";
+}
+
+
+=head2 run_validation
+
+    About   : Validates the VCF file.
+    Usage   : my $vcf = Vcf->new(file=>'file.vcf'); $vcf->run_validation('example.vcf.gz');
+    Args    : File name or file handle.
+
+=cut
+
+sub run_validation
+{
+    my ($self) = @_;
+
+    $self->parse_header();
+    if ( !exists($$self{header_lc}{fileformat}) && $$self{version}>=3.3 )
+    { 
+        $self->warn(qq[The "fileformat" field not present in the header, assuming VCFv$$self{version}\n]);
+    }
+    if ( !$self->{header} ) { $self->warn("No VCF header found.\n"); }
+    if ( !$self->{columns} ) { $self->warn("No column descriptions found.\n"); }
+
+    my $warn_sorted=1;
+    my ($prev_chrm,$prev_pos);
+    while (my $x=$self->next_data_hash()) 
+    {
+        # Is the position numeric?
+        if ( !($$x{POS}=~/^\d+$/) ) { $self->warn("Expected integer for the position at $$x{CHROM}:$$x{POS}\n"); }
+
+        if ( $prev_chrm && $prev_chrm eq $$x{CHROM} && $prev_pos eq $$x{POS} )
+        {
+            $self->warn("Duplicate entry $$x{CHROM}:$$x{POS}\n");
+        }
+
+        # Is the file sorted?
+        if ( $warn_sorted )
+        {
+            if ( $prev_chrm && $prev_chrm eq $$x{CHROM} && $prev_pos > $$x{POS} ) 
+            { 
+                $self->warn("The file is not sorted, for example $$x{CHROM}:$$x{POS} comes after $prev_chrm:$prev_pos\n");
+                $warn_sorted = 0;
+            }
+            $prev_chrm = $$x{CHROM};
+            $prev_pos  = $$x{POS};
+        }
+
+        # Is the ID non-empty?
+        if ( $$x{ID}=~/^$/ ) { $self->warn("The ID should be set to . if unknown at $$x{CHROM}:$$x{POS}\n"); }
+
+        # The reference base: one of A,C,G,T,N, non-empty.
+        if ( !($$x{REF}=~/^[ACGTN]$/) ) { $self->warn("Expected one of A,C,G,T,N for the reference base at $$x{CHROM}:$$x{POS}, got [$$x{REF}]\n"); }
+        
+        # The ALT field (alternate non-reference base)
+        my $err = $self->validate_alt_field($$x{ALT});
+        if ( $err ) { $self->warn("$$x{CHROM}:$$x{POS} .. $err\n"); }
+
+        # The QUAL field
+        my $ret = $self->validate_float($$x{QUAL},-1);
+        if ( $ret ) { $self->warn("QUAL field at $$x{CHROM}:$$x{POS} .. $ret\n"); }
+        elsif ( $$x{QUAL}=~/^-?\d+$/ && $$x{QUAL}<-1 ) { $self->warn("QUAL field at $$x{CHROM}:$$x{POS} is negative .. $$x{QUAL}\n"); }
+
+        # The FILTER field
+        $err = $self->validate_filter_field($$x{FILTER});
+        if ( $err ) { $self->warn("FILTER field at $$x{CHROM}:$$x{POS} .. $err\n"); }
+
+        # The INFO field
+        $err = $self->validate_info_field($$x{INFO});
+        if ( $err ) { $self->warn("INFO field at $$x{CHROM}:$$x{POS} .. $err\n"); } 
+
+        while (my ($gt,$data) = each %{$$x{gtypes}})
+        {
+            $err = $self->validate_gtype_field($data,$$x{ALT});
+            if ( $err ) { $self->warn("$gt column at $$x{CHROM}:$$x{POS} .. $err\n"); }
+        }
+
+        if ( exists($$x{INFO}{AN}) || exists($$x{INFO}{AC}) )
+        {
+            my ($an,$ac) = $self->calc_an_ac($$x{gtypes});
+            if ( exists($$x{INFO}{AN}) && $an ne $$x{INFO}{AN} ) 
+            { 
+                $self->warn("$$x{CHROM}:$$x{POS} .. AN is $$x{INFO}{AN}, should be $an\n"); 
+            }
+            if ( exists($$x{INFO}{AC}) && $ac ne $$x{INFO}{AC} ) 
+            { 
+                $self->warn("$$x{CHROM}:$$x{POS} .. AC is $$x{INFO}{AC}, should be $ac\n"); 
+            }
+        }
+    }
 }
 
 
