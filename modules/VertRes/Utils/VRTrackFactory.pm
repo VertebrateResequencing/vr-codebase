@@ -44,6 +44,7 @@ my $WRITE_PASS = 't3aml3ss';
 =cut
 sub instantiate
 {
+	my $self = shift;
 	my $database = shift;
 	my $mode = lc( shift );
 	
