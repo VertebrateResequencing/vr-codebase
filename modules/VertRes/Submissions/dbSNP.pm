@@ -1,12 +1,12 @@
 =head1 NAME
 
-VertRes::Utils::dbSNP - dbSNP submission utility functions
+VertRes::Submissons::dbSNP - dbSNP submission utility functions
 
 =head1 SYNOPSIS
 
 use VertRes::Utils::dbSNP;
 
-my $dbsnp_util = VertRes::Utils::dbSNP->new();
+my $dbsnp_util = VertRes::Submissions::dbSNP->new();
 
 =head1 DESCRIPTION
 
