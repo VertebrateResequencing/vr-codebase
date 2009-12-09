@@ -6,7 +6,7 @@ VertRes::Utils::VRTrackFactory - factory class for getting VRTrack objects
 
 use VertRes::Utils::VRTrackFactory;
 
-my $fsu = VertRes::Utils::VRTrackFactory->instanstiate('mouse_reseq_track', 'r');
+my $fsu = VertRes::Utils::VRTrackFactory->instantiate('mouse_reseq_track', 'r');
 
 =head1 DESCRIPTION
 
@@ -47,7 +47,7 @@ sub instantiate
 	my $database = shift;
 	my $mode = lc( shift );
 	
-	croak "Invalid connection mode (r or rw valid): $mode\n" unless $mode =~ /^r|rw$/;
+	croak "Invalid connection mode (r or rw valid): $mode\n" unless $mode =~ /^[r|rw]$/;
 	
 	my $user = $mode =~ /^r$/ ? $READ_USER : $WRITE_USER;
 	my $pass = $mode =~ /^r$/ ? '' : $WRITE_PASS;
