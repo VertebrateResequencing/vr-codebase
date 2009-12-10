@@ -1,12 +1,12 @@
 =head1 NAME
 
-VertRes::Utils::SRA - SRA submission utility functions
+VertRes::Submissions::SRA - SRA submission utility functions
 
 =head1 SYNOPSIS
 
-use VertRes::Utils::SRA;
+use VertRes::Submissions::SRA;
 
-my $dbsnp_util = VertRes::Utils::SRA->new();
+my $dbsnp_util = VertRes::Submissions::SRA->new();
 
 =head1 DESCRIPTION
 
@@ -24,6 +24,8 @@ use strict;
 use warnings;
 
 use VRTrack::VRTrack;
+
+use base qw(VertRes::Base);
 
 =head2 new
 
