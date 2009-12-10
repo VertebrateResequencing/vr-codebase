@@ -35,7 +35,7 @@ use VRTrack::VRTrack;
 
 =cut
 
-sub new 
+sub new
 {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(@args);
@@ -55,6 +55,7 @@ sub new
     return $self;
 }
 
+#private function to validate the lanes are eligible for submission
 sub _validateLanes
 {
 	my $self = shift;
@@ -72,26 +73,94 @@ sub _validateLanes
 	}
 	close( $fh );
 	
+	my $originally = @laneNames;
+	
 	#connect to the database
 	my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate($$self{'database'}, 'r');
 	
-	my @lanes;
-	foreach( @laneNames )
+	for(my $i = 0; $i < @laneNames; $i ++ )
 	{
 		my $lane = VRTrack::Lane->new_by_name( $vrtrack, $_ );
 		
-		if( defined( $lane->submission_id() ) && $lane->submission_id() > 0 )
+		if( ( defined( $lane->submission_id() ) && $lane->submission_id() > 0 ) || ( $lane->qc_status() ne 'passed' ) )
 		{
-			push( @lanes, $lane );
+			delete( $laneNames[ $i ] );
+			$i --;
 		}
 	}
 	
-	$$self{'laneObjects'} = \@lanes;
+	print scalar( @laneNames ).' out of '.$originally.' lanes are eligible for submission\n';
+	
+	$$self{'lanes'} = \@laneNames;
 }
 
 sub _gatherAllUnsubmittedLanes
 {
+	my ($self, $project) = @_;
 	
+	my @projects;
+	
+	#connect to the database
+	my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate($$self{'database'}, 'r');
+	
+	if( defined( $project ) )
+	{
+		my $p = VRTrack::Project->new_by_name($vrtrack, $project);
+		$self->throw("Cant find project: $project") unless defined( $p );
+		push( @projects, $p );
+	}
+	else
+	{
+		@projects = @{ $vrtrack->projects() };
+	}
+	
+	my @laneNames;
+	foreach( @projects )
+	{
+		my $samples = $project->samples();
+		foreach( @{$samples} )
+		{
+			my $sample = $_;
+			my $libraries = $sample->libraries();
+			
+			foreach( @{$libraries} )
+			{
+				my $library = $_;
+				my $lanes = $library->lanes();
+				
+				foreach( @{$lanes} )
+				{
+					my $lane = $_;
+					if( ! defined( $lane->submission_id() ) && $lane->qc_status() eq 'passed' )
+					{
+						push( @laneNames, $lane->name() );
+					}
+				}
+			}
+		}
+	}
+	
+	$$self{'lanes'} = \@laneNames;
+}
+
+=head2 printLanes
+
+ Title   : printLanes
+ Usage   : my $obj = VertRes::Submissions::SRA->printLanes();
+ Function: Print the list of lanes to be submitted
+ Returns : n/a
+ Args    : n/a
+
+=cut
+sub printLanes()
+{
+	my $self = shift;
+	
+	my @lanes = @{ $$self{'lanes'} };
+	foreach( @lanes )
+	{
+		print $_."\n";
+	}
 }
 
 1;
