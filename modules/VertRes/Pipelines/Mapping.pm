@@ -671,6 +671,21 @@ sub merge_and_stat_requires {
     foreach my $ended ('se', 'pe') {
         $self->_get_read_args($lane_path, $ended) || next;
         
+        # if we already merged this ended, we don't require the files in the
+        # split dir, which in strange and unusual (manual intervention...)
+        # circumstances, might not exist
+        my $bam = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.raw.sorted.bam");
+        my $dones = 0;
+        if (-s $bam) {
+            $dones++;
+        }
+        foreach my $suffix ('bas', 'flagstat') {
+            if (-s $bam.'.'.$suffix) {
+                $dones++;
+            }
+        }
+        next if $dones == 3;
+        
         # get the number of splits
         my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
         my $split_dir = $self->{fsu}->catfile($lane_path, $split_dir_name.'_'.$ended.'_'.$self->{mapstats_id});
