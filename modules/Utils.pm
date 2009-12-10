@@ -153,7 +153,23 @@ sub CMD
     log_msg($$options{'logfile'},"$cmd\n") unless !exists($$options{'logfile'});
     my ($time_start,$elapsed);
     if ( $$options{time} ) { $time_start = [gettimeofday]; }
-    my @out = `$cmd`;
+
+    # Why not to use backticks? Perl calls /bin/sh, which is often bash. To get the correct
+    #   status of failing pipes, it must be called with the pipefail option.
+    my @out;
+    my $pid = open(KID_TO_READ, "-|");
+    if ( !defined $pid ) { error("Cannot fork: $!"); }
+    if ($pid) 
+    {   
+        # parent
+        @out = <KID_TO_READ>;
+        close(KID_TO_READ);
+    } 
+    else 
+    {      
+        # child
+        exec('/bin/bash', '-o','pipefail','-c', $cmd) or error("Cannot exec the command [/bin/sh -o pipefail -c $cmd]: $!");
+    }
     if ( $$options{time} ) { $elapsed = tv_interval($time_start); }
 
     if ( $? )
