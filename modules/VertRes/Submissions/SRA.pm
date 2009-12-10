@@ -48,11 +48,11 @@ sub new
 	
 	if( exists($$self{'lanes'}) )
 	{
-		_validateLanes();
+		_validateLanes($self);
 	}
 	else
 	{
-		_gatherAllUnsubmittedLanes($$self{'project'});
+		_gatherAllUnsubmittedLanes($self, $$self{'project'});
 	}
 	
     return $self;
