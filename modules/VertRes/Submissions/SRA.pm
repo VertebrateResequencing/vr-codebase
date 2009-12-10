@@ -121,7 +121,7 @@ sub _gatherAllUnsubmittedLanes
 	my @laneNames;
 	foreach( @projects )
 	{
-		my $samples = $project->samples();
+		my $samples = $_->samples();
 		foreach( @{$samples} )
 		{
 			my $sample = $_;
