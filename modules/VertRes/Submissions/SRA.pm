@@ -18,7 +18,7 @@ Thomas Keane: thomas.keane@sanger.ac.uk
 
 =cut
 
-package VertRes::Utils::SRA;
+package VertRes::Submissions::SRA;
 
 use strict;
 use warnings;
