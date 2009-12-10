@@ -22,10 +22,10 @@ our @actions =
     # Takes care of naming convention, fastq.gz file names should match
     #   the lane name. 
     {
-        'name'     => 'rename',
-        'action'   => \&rename,
-        'requires' => \&rename_requires, 
-        'provides' => \&rename_provides,
+        'name'     => 'rename_files',
+        'action'   => \&rename_files,
+        'requires' => \&rename_files_requires, 
+        'provides' => \&rename_files_provides,
     },
 
     # Creates a smaller subsample out of the fastq files to speed up
@@ -166,10 +166,10 @@ sub VertRes::Pipelines::TrackQC_Fastq::new
 
 
 
-#---------- rename ---------------------
+#---------- rename_files ---------------------
 
 # Requires nothing
-sub rename_requires
+sub rename_files_requires
 {
     my ($self) = @_;
     my @requires = ();
@@ -179,7 +179,7 @@ sub rename_requires
 # It may provide also _2.fastq.gz and _3.fastq.gz, but we assume that if
 #   there is _1.fastq.gz and the others are missing, it is OK.
 #
-sub rename_provides
+sub rename_files_provides
 {
     my ($self) = @_;
     my @provides = ("$$self{lane}_1.fastq.gz");
@@ -198,7 +198,7 @@ sub rename_provides
 #   problem only with lanes which did not go through Import.pm and contain
 #   these _s_ files. 
 #
-sub rename
+sub rename_files
 {
     my ($self,$lane_path,$lock_file) = @_;
 
@@ -664,7 +664,7 @@ sub run_graphs
 {
     my ($self,$lane_path) = @_;
 
-    $self->SUPER::run_graphs($lane_path);
+    #$self->SUPER::run_graphs($lane_path);
 
     use Graphs;
     use Utils;
@@ -685,7 +685,18 @@ sub run_graphs
     for (my $i=1; $i<=scalar @$fastq_files; $i++)
     {
         my $fastqcheck = "$lane_path/${name}_$i.fastq.gz.fastqcheck";
-        if ( !-e $fastqcheck ) { next }
+        if ( !-e $fastqcheck )
+        {
+            # This can happen when the lane was not imported by the Import.pm pipeline.
+            if ( ! -e "$lane_path/${name}_$i.fastq.gz" ) { next; }
+
+            Utils::CMD(qq[zcat $lane_path/${name}_$i.fastq.gz | fastqcheck > $fastqcheck.part]);
+            if ( -s "$fastqcheck.part" )
+            {
+                rename("$fastqcheck.part","$fastqcheck") or $self->throw("rename $fastqcheck.part $fastqcheck: $!");
+            }
+            else { next; }
+        }
 
         my $data = FastQ::parse_fastqcheck($fastqcheck);
         $$data{'outfile'}    = "$outdir/fastqcheck_$i.png";
