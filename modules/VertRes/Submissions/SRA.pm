@@ -103,6 +103,7 @@ sub _gatherAllUnsubmittedLanes
 	my @projects;
 	
 	#connect to the database
+	print "Connecting to ".$$self{'database'}.".....\n";
 	my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate($$self{'database'}, 'r');
 	
 	if( defined( $project ) )
