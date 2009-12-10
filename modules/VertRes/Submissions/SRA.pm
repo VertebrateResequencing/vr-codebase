@@ -41,6 +41,7 @@ sub new
 {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(@args);
+	bless($self,$class);
 	
 	if ( !exists($$self{'database'}) ) { $self->throw("Expected a database name to be provided!");}
 	if ( exists($$self{'lanes'}) && ! -f $$self{'lanes'} ) {$self->throw("Cant find file of lane names: ".$$self{'lanes'})}
