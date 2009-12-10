@@ -664,7 +664,7 @@ sub run_graphs
 {
     my ($self,$lane_path) = @_;
 
-    #$self->SUPER::run_graphs($lane_path);
+    $self->SUPER::run_graphs($lane_path);
 
     use Graphs;
     use Utils;
