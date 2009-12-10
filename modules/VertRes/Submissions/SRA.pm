@@ -57,6 +57,7 @@ sub new
 
 sub _validateLanes
 {
+	my $self = shift;
 	#read in the lane names
 	my @laneNames;
 	open( my $fh, $$self{'lanes'} ) or $self->throw('Cant open file of lane names: '.$$self{'lanes'});
