@@ -23,7 +23,7 @@ package VertRes::Utils::SRA;
 use strict;
 use warnings;
 
-use VRTrack;
+use VRTrack::VRTrack;
 
 =head2 new
 
@@ -92,3 +92,5 @@ sub _gatherAllUnsubmittedLanes
 {
 	
 }
+
+1;
