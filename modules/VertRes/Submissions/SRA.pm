@@ -1,12 +1,12 @@
 =head1 NAME
 
-VertRes::Submissons::dbSNP - dbSNP submission utility functions
+VertRes::Utils::SRA - SRA submission utility functions
 
 =head1 SYNOPSIS
 
-use VertRes::Utils::dbSNP;
+use VertRes::Utils::SRA;
 
-my $dbsnp_util = VertRes::Submissions::dbSNP->new();
+my $dbsnp_util = VertRes::Utils::SRA->new();
 
 =head1 DESCRIPTION
 
@@ -18,7 +18,7 @@ Thomas Keane: thomas.keane@sanger.ac.uk
 
 =cut
 
-package VertRes::Utils::ERA;
+package VertRes::Utils::SRA;
 
 use strict;
 use warnings;
@@ -42,7 +42,7 @@ sub new
 	
 	if ( !exists($$self{'database'}) ) { $self->throw("Expected a database name to be provided!");}
 	if ( exists($$self{'lanes'}) && ! -f $$self{'lanes'} ) {$self->throw("Cant find file of lane names: ".$$self{'lanes'})}
-
+	
 	if( exists($$self{'lanes'}) )
 	{
 		_validateLanes();
