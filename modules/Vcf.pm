@@ -824,6 +824,8 @@ sub validate_info_field
 {
     my ($self,$values) = @_;
 
+    if ( !defined $values ) { return 'Empty INFO field.'; }
+
     # First handle the empty INFO field (.)
     if ( scalar keys %$values == 1 && exists($$values{'.'}) ) { return undef; }
 
