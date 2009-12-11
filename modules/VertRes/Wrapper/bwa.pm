@@ -60,6 +60,7 @@ use strict;
 use warnings;
 use File::Copy;
 use VertRes::IO;
+use VertRes::Parser::fastq;
 
 use base qw(VertRes::Wrapper::WrapperI);
 
@@ -159,7 +160,49 @@ sub aln {
     
     $self->register_output_file_to_check($out_sai);
     
-    return $self->run($ref, $fastq, ' > '.$out_sai);
+    my $error_file = $out_sai.'.err';
+    my $run_method = $self->run_method;
+    unless ($run_method eq 'system') {
+        $self->warn("aln() needs to run with the system run method; switching");
+        $self->run_method('system');
+    }
+    my $quiet = $self->quiet;
+    $self->quiet(0);
+    $self->run($ref, $fastq, ' > '.$out_sai, ' 2> '.$error_file);
+    $self->quiet($quiet);
+    $self->run_method($run_method);
+    
+    # sai files are constantly corrupted; we need to check the error output
+    # which notes how many reads were processed and confirm again expectation
+    if (-s $out_sai && -s $error_file) {
+        my $pars = VertRes::Parser::fastq->new(file => $fastq);
+        my $seqs = 0;
+        while ($pars->next_result()) {
+            $seqs++;
+        }
+        $seqs > 0 || $self->throw("failed to find the number of sequences in the fastq file '$fastq'");
+        
+        open(my $efh, $error_file) || $self->throw("Could not open error file '$error_file'");
+        my $max_processed = 0;
+        while (<$efh>) {
+            if (/^\[bwa_aln_core\] (\d+) sequences have been processed/) {
+                my $processed = $1;
+                if ($processed > $max_processed) {
+                    $max_processed = $processed;
+                }
+            }
+        }
+        
+        unless ($max_processed == $seqs) {
+            $self->warn("For creation of sai file '$out_sai' $max_processed sequences were processed, but there were $seqs sequences in the fastq file; unlinking the sai file");
+            unlink($out_sai);
+        }
+    }
+    else {
+        system("ls -alth $out_sai; ls -alth $error_file");
+        $self->warn("one or both of sai/error files $out_sai,$error_file were missing; will delete sai file");
+        unlink($out_sai);
+    }
 }
 
 =head2 sampe
