@@ -600,7 +600,6 @@ sub _gatherMetaInformation
 		my $projectName = $project->name();
 		
 		my $sample_name = $sample->individual->name;
-        my $sample_acc = $sample->acc;
         my $species = $sample->individual->species->name;
 		my $libraryName = $library->name();
 		$libraryName =~ s/[_ ]/-/g;
