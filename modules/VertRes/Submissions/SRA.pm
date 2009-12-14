@@ -54,7 +54,15 @@ sub new
 	bless($self,$class);
 	
 	if ( !$$self{'database'} ) { $self->throw("Expected a database name to be provided!");}
-	if( $$self{'lanes'} )
+	if( $$self{ 'accessions' } )
+	{
+		#connect to the database
+		print "Connecting to ".$$self{'database'}.".....\n";
+		my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate($$self{'database'}, 'r');
+		
+		_readAccessionInformation($self, $vrtrack);
+	}
+	else
 	{
 		if ( $$self{'lanes'} && ! -f $$self{'lanes'} ) {$self->throw("Cant find file of lane names: ".$$self{'lanes'})}
 		if( !$$self{'contact_name'} || !$$self{'contact_email'} ){$self->thow("Insufficient contact information provided - contact_name and contact_email required");}
@@ -109,18 +117,6 @@ sub new
 		}
 		
 		_gatherMetaInformation($self, $vrtrack);
-	}
-	elsif( $$self{ 'accessions' } )
-	{
-		#connect to the database
-		print "Connecting to ".$$self{'database'}.".....\n";
-		my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate($$self{'database'}, 'r');
-		
-		_readAccessionInformation($self, $vrtrack);
-	}
-	else
-	{
-		$self->throw("Not enough information provided - check usage");
 	}
 	
     return $self;
