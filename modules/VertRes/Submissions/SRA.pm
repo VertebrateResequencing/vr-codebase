@@ -607,7 +607,7 @@ sub _gatherMetaInformation
 		if( ! $studyInfo{ $study_acc } )
 		{
 			$studyInfo{ $study_acc } = $projectName;
-			$subnames{ $study_acc } = lc(sprintf("%s-%s-%s", $projectName, lc($$self{'center'}) ,dateStr(time)));
+			$subnames{ $study_acc } = lc(sprintf("%s-%s-%s", $projectName, lc($$self{'center'}) ,_dateStr(time)));
 		}
 		
 		my ($file, $md5) = get_lane_srf($lane->name);
