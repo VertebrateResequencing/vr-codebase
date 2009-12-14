@@ -57,7 +57,7 @@ sub new
 		if( !$$self{'contact_name'} || !$$self{'contact_email'} ){$self->thow("Insufficient contact information provided - contact_name and contact_email required");}
 		$self->throw( "Library selection not specified" ) unless $$self{'library_selection'};
 		$self->warn( "Library selection not set to RANDOM" ) unless $$self{ 'library_selection' } =~ /^RANDOM$/i;
-		$self->throw( "Machine code not specified correctly (0,1,2)" unless $$self{'machine_code'} && $$self{'machine_code'} =~ /^[0-2]$/;
+		$self->throw( "Machine code not specified correctly (0,1,2)" ) unless $$self{'machine_code'} && $$self{'machine_code'} =~ /^[0-2]$/;
 		$self->warn( "Library source not set to GENOMIC" ) unless $$self{'library_source'} =~ /GENOMIC/i;
 		
 		if( $$self{'holdUntil'} )
