@@ -66,10 +66,11 @@ sub new
 	{
 		if ( $$self{'lanes'} && ! -f $$self{'lanes'} ) {$self->throw("Cant find file of lane names: ".$$self{'lanes'})}
 		if( !$$self{'contact_name'} || !$$self{'contact_email'} ){$self->thow("Insufficient contact information provided - contact_name and contact_email required");}
-		$self->throw( "Library selection not specified" ) unless $$self{'library_selection'};
+		
 		if( ! $$self{ 'library_selection' } )
 		{
-			$self->warn( "Library selection set to RANDOM" )
+			$self->warn( "Library selection set to RANDOM" );
+			$$self{ 'library_selection' } = "RANDOM";
 		}
 		elsif( $$self{ 'library_selection' } !~ /^RANDOM$/i )
 		{
@@ -89,6 +90,8 @@ sub new
 		if( ! $$self{'library_source'} )
 		{
 			$self->warn( "Library source not set - defaulting to GENOMIC" );
+			$$self{'library_source'} = "GENOMIC";
+			
 		}
 		elsif( $$self{'library_source'} !~ /GENOMIC/i )
 		{
