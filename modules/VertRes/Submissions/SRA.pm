@@ -610,7 +610,7 @@ sub _gatherMetaInformation
 			$subnames{ $study_acc } = lc(sprintf("%s-%s-%s", $projectName, lc($$self{'center'}) ,_dateStr(time)));
 		}
 		
-		my ($file, $md5) = get_lane_srf($lane->name);
+		my ($file, $md5) = _get_lane_srf($lane->name);
 		my $cycles = $lane->read_len;
 		
 		my $experiment_id = sprintf("%s-%s-%s-%s", $libraryName,$sample_name,$cycles,$$self{'machine_code'} );
