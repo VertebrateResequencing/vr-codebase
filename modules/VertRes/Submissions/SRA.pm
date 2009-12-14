@@ -143,7 +143,7 @@ sub writeXMLs
 		
 		_createSubXML( $$self{'laneInfo'}, $subnames{ $_ } );
 		
-		print $lfh
+		print $lfh "$$subnames{ $_ }\t$_\n";
 	}
 	close( $lfh );
 }
