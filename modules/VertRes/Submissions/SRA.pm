@@ -30,10 +30,12 @@ use base qw(VertRes::Base);
 =head2 new
 
  Title   : new
- Usage   : my $obj = VertRes::Submissions::SRA->new(database=>'database_name',lanes=>'lanes file', holduntil=>'YYYY-MM-DD', project=>'project', contact_email=>'x@sanger.ac.uk', contact_name=>'Thomas',library_source=>'genomic', library_selection=>'random', machine_code=>'0', center=>'SC');
+ Usage   : my $obj = VertRes::Submissions::SRA->new(database=>'database_name',lanes=>'lanes file', holduntil=>'YYYY-MM-DD', project=>'project', contact_email=>'x@sanger.ac.uk', contact_name=>'Your Name',library_source=>'genomic', library_selection=>'random', machine_code=>'0', center=>'SC');
  Function: Create a new VertRes::Submissions::SRA object.
  Returns : VertRes::Submissions::SRA object
- Args    : 	database: VR Track db name
+ Args    : 	Required
+ 			database: VR Track db name
+			Creating XMLs
 			lanes: file of lane names
 			holdUntil: date at which the lanes become publicly visible (optional)
 			project: project name to be used in the xml??
@@ -41,7 +43,8 @@ use base qw(VertRes::Base);
 			contact_name: name of contact person
 			library_selection: 'random' for whole genome shotgun
 			machine_code: 0 for 'unspecified', 1 for 'Illumina Genome Analyzer', 2 for 'Illumina Genome Analyzer II'
-			accessions: file lane/accession pairs (tab separated) - this is provided post submission to set the submitted status of the lanes post-submission
+			Entering accessions
+			accessions: file of subname/lane/accession (tab separated)
 =cut
 
 sub new
@@ -90,6 +93,10 @@ sub new
 		my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate($$self{'database'}, 'r');
 		
 		_readAccessionInformation($self, $vrtrack);
+	}
+	else
+	{
+		$self->throw("Not enough information provided - check usage");
 	}
 	
     return $self;
@@ -143,7 +150,7 @@ sub writeXMLs
 		
 		_createSubXML( $$self{'laneInfo'}, $subnames{ $_ } );
 		
-		print $lfh "$$subnames{ $_ }\t$_\n";
+		print $lfh $subnames{ $_ }."\t$_\n";
 	}
 	close( $lfh );
 }
