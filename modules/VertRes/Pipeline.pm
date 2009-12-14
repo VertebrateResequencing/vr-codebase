@@ -88,7 +88,11 @@ sub run_lane
     {
         my @tasks = split(/\s*,\s*/,$$self{'task'});
         $$self{'task'} = {};
-        for my $task (@tasks) { $$self{'task'}{$task}=1; }
+        for my $task (@tasks) 
+        { 
+            if ( !$self->_has_action($task) ) { $self->throw(qq[The task "$task" not recognised.\n]); }
+            $$self{'task'}{$task}=1; 
+        }
     }
 
     $$self{'logfile'} = ($$self{'log'} =~ m{^/}) ? $$self{'log'} : "$lane_path/$$self{'log'}";
@@ -452,6 +456,18 @@ sub _move_file_content {
         
         unlink($source);
     }
+}
+
+
+sub _has_action
+{
+    my ($self,$task) = @_;
+    if ( $task eq 'clean' ) { return 1; }
+    for my $action (@{$self->{'actions'}})
+    {
+        if ( $$action{name} eq $task ) { return 1; }
+    }
+    return 0;
 }
 
 1;
