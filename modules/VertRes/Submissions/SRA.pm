@@ -596,8 +596,8 @@ sub _gatherMetaInformation
 		my $library = VRTrack::Library->new($vrtrack, $lane->library_id());
 		my $sample = VRTrack::Sample->new($vrtrack, $library->id());
 		my $project = VRTrack::Project->new($vrtrack, $sample->id());
-		my $study_acc = $project->acc() or $self->throw('No accession for project: $project');
-		my $projectName = $project->acc;
+		my $study_acc = $project->study()->acc() or $self->throw('No accession for project: $project');
+		my $projectName = $project->name();
 		
 		my $sample_name = $sample->individual->name;
         my $sample_acc = $sample->acc;
