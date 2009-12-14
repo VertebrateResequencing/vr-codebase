@@ -341,7 +341,7 @@ sub _createSubXML
 
 	# header
     print $SUB qq(<?xml version="1.0" encoding="UTF-8"?>\n);
-    print $SUB sprintf (qq(<SUBMISSION center_name="%s" submission_date="%s" submission_id="%s" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n), $CENTER,_isoDate(time),$subname);
+    print $SUB sprintf (qq(<SUBMISSION center_name="%s" submission_date="%s" submission_id="%s" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n), $$self{'center'},_isoDate(time),$subname);
 	
     # Contact info
     my $conxml = <<'EOXML';
@@ -359,12 +359,10 @@ EOXML
     </ACTION>
 EOXML
     print $SUB "  <ACTIONS>\n";
-    unless($nostudy){
+	
 	printf $SUB $actxml, "study", "$subname.study.xml";
-    }
-    unless ($nosample){
 	printf $SUB $actxml, "sample", "$subname.sample.xml";
-    }
+
     foreach $_ qw(experiment run){
 	printf $SUB $actxml, $_, "$subname.$_.xml";
     }
@@ -409,6 +407,7 @@ EOXML
 sub writeToDatabase
 {
 	my $self = shift;
+	my $vrtrack = shift;
 	$self->throw("Lane accessions must be defined on object construction!") unless $$self{ 'laneAccessions' };
 	
 	my %accessions = %{ $$self{ 'laneAccessions' } };
@@ -587,16 +586,16 @@ sub _gatherMetaInformation
 		
 		my $experiment_id = sprintf("%s-%s-%s-%s", $libraryName,$sample_name,$cycles,$$self{'machine_code'} );
 		
-		$sampleinfo{$study_acc}{$sample_name}{species} = $species;
-		$laneinfo{$study_acc}{$file} = {'filetype'  => 'srf',
+		$sampleInfo{$study_acc}{$sample_name}{species} = $species;
+		$laneInfo{$study_acc}{$file} = {'filetype'  => 'srf',
 			'md5'       => $md5,
 			'experiment'=> $experiment_id,
 			'lane'      => $lane,
 		};
 		
-		unless( defined $expinfo{$study_acc}{$experiment_id} )
+		unless( defined $experimentInfo{$study_acc}{$experiment_id} )
 		{
-			$expinfo{$study_acc}{$experiment_id} = 
+			$experimentInfo{$study_acc}{$experiment_id} = 
 			{
 				'sample'    => $sample_name,
 				'species'   => $species,
@@ -610,7 +609,7 @@ sub _gatherMetaInformation
 	$$self{ 'experimentInfo' } = \%experimentInfo;
 	$$self{ 'laneInfo' } = \%laneInfo;
 	$$self{ 'sampleInfo' } = \%sampleInfo;
-	$$self{ 'studyInfo' } = \$studyInfo;
+	$$self{ 'studyInfo' } = \%studyInfo;
 	$$self{ 'subnames' } = \%subnames;
 }
 
