@@ -33,17 +33,17 @@ use base qw(VertRes::Base);
  Usage   : my $obj = VertRes::Submissions::SRA->new(database=>'database_name',lanes=>'lanes file', holduntil=>'YYYY-MM-DD', project=>'project', contact_email=>'x@sanger.ac.uk', contact_name=>'Your Name',library_source=>'genomic', library_selection=>'random', machine_code=>'0', center=>'SC');
  Function: Create a new VertRes::Submissions::SRA object.
  Returns : VertRes::Submissions::SRA object
- Args    : 	Required
+ Args    : 	Always Required
  			database: VR Track db name
-			Creating XMLs
-			lanes: file of lane names
+			Mode 1: Creating XMLs
+			lanes: file of lane names (optional)
 			holdUntil: date at which the lanes become publicly visible (optional)
-			project: project name to be used in the xml??
+			project: project name to be used in the xml?? (optional)
 			contact_email: person to contact with submission status/problems
 			contact_name: name of contact person
-			library_selection: 'random' for whole genome shotgun
-			machine_code: 0 for 'unspecified', 1 for 'Illumina Genome Analyzer', 2 for 'Illumina Genome Analyzer II'
-			Entering accessions
+			library_selection: 'random' for whole genome shotgun (optional - default is random)
+			machine_code: 0 for 'unspecified', 1 for 'Illumina Genome Analyzer', 2 for 'Illumina Genome Analyzer II' (optional - default is 2)
+			Mode 2: Entering accessions
 			accessions: file of subname/lane/accession (tab separated)
 =cut
 
@@ -59,9 +59,33 @@ sub new
 		if ( $$self{'lanes'} && ! -f $$self{'lanes'} ) {$self->throw("Cant find file of lane names: ".$$self{'lanes'})}
 		if( !$$self{'contact_name'} || !$$self{'contact_email'} ){$self->thow("Insufficient contact information provided - contact_name and contact_email required");}
 		$self->throw( "Library selection not specified" ) unless $$self{'library_selection'};
-		$self->warn( "Library selection not set to RANDOM" ) unless $$self{ 'library_selection' } =~ /^RANDOM$/i;
-		$self->throw( "Machine code not specified correctly (0,1,2)" ) unless $$self{'machine_code'} && $$self{'machine_code'} =~ /^[0-2]$/;
-		$self->warn( "Library source not set to GENOMIC" ) unless $$self{'library_source'} =~ /GENOMIC/i;
+		if( ! $$self{ 'library_selection' } )
+		{
+			$self->warn( "Library selection set to RANDOM" )
+		}
+		elsif( $$self{ 'library_selection' } !~ /^RANDOM$/i )
+		{
+			$self->warn( "Library selection not set to RANDOM" ) unless $$self{ 'library_selection' } =~ /^RANDOM$/i;
+		}
+
+		if( ! $$self{'machine_code'} )
+		{
+			$self->warn( "Machine code not specified - defaulting to 2" );
+			$$self{'machine_code'} = 2;
+		}
+		elsif( $$self{'machine_code'} !~ /^[0-2]$/ )
+		{
+			$self->throw( "Machine code not specified correctly - pleaes check value (0,1,2)" );
+		}
+		
+		if( ! $$self{'library_source'} )
+		{
+			$self->warn( "Library source not set - defaulting to GENOMIC" );
+		}
+		elsif( $$self{'library_source'} !~ /GENOMIC/i )
+		{
+			$self->warn( "Library source not set to GENOMIC" );
+		}
 		
 		if( $$self{'holdUntil'} )
 		{
