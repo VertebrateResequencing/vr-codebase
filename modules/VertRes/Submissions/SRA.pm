@@ -593,9 +593,9 @@ sub _gatherMetaInformation
 	foreach( @lanes )
 	{
 		my $lane = VRTrack::Lane->new_by_name( $vrtrack, $_ );
-		my $library = $lane->library();
-		my $sample = $library->sample();
-		my $project = $sample->project();
+		my $library = VRTrack::Library->new($vrtrack, $lane->library_id());
+		my $sample = VRTrack::Sample->new($vrtrack, $library->id());
+		my $project = VRTrack::Project->new($vrtrack, $sample->id());
 		my $study_acc = $project->acc() or $self->throw('No accession for project: $project');
 		my $projectName = $project->acc;
 		
