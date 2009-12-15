@@ -322,8 +322,6 @@ sub do_mapping {
                 else {
                     $self->throw("ssah2 failed to finish for fastq $fastq");
                 }
-                
-                #$cmd .= qq{; perl -w -e "use Mapping_454_ssaha;Mapping_454_ssaha::cigarStat( \\"$currentDir/$cigarName\\", \\"$currentDir/$cigarName.mapstat\\");"'};
             }
             
             push(@filtered_fastqs, $tmp_fastq);
