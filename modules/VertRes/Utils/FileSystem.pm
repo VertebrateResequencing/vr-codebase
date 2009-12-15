@@ -260,7 +260,7 @@ sub copy {
     
     my $tmp_dest = $dest.'_copy_tmp';
     my $dest_dir_exists = 0;
-    if (-d $source && -d $dest) {
+    if (-d $source && -e $dest) {
         $dest_dir_exists = 1;
         $tmp_dest = $dest;
     }
@@ -351,7 +351,7 @@ sub move {
     my ($self, $source, $dest, $max_retries) = @_;
     my $tmp_dest = $dest.'_move_tmp';
     my $dest_dir_exists = 0;
-    if (-d $source && -d $dest) {
+    if (-d $source && -e $dest) {
         $dest_dir_exists = 1;
         $tmp_dest = $dest;
     }
