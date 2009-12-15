@@ -110,7 +110,7 @@ sub library_ids {
 
 	$sth->execute($self->id, $self->project_id);
 	foreach(@{$sth->fetchall_arrayref()}){
-	    push @libraries, $_->[0];
+	    push @libraries, $_->[0] if $_->[0];
 	}
 	$self->{'library_ids'} = \@libraries;
     }
