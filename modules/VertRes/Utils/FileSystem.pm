@@ -257,14 +257,19 @@ sub copy {
     unless (defined $max_retries) {
         $max_retries = 3;
     }
-    my $tmp_dest = $dest.'_copy_tmp';
     
-    if (-e $dest) {
+    my $tmp_dest = $dest.'_copy_tmp';
+    my $dest_dir_exists = 0;
+    if (-d $source && -d $dest) {
+        $dest_dir_exists = 1;
+        $tmp_dest = $dest;
+    }
+    elsif (-e $dest) {
         $self->warn("destination '$dest' already exists, won't attempt to copy");
         return 0;
     }
     
-    my $rsync = File::Rsync->new({archive => 1, compress => 1, delete => 1, checksum => 1, 'copy-unsafe-links' => 1});
+    my $rsync = File::Rsync->new({archive => 1, compress => 1, checksum => 1, 'copy-unsafe-links' => 1});
     
     if (-d $source) {
         unless (-d $tmp_dest) {
@@ -289,7 +294,9 @@ sub copy {
         }
         
         if ($ok) {
-            File::Copy::move($tmp_dest, $dest) || $self->throw("Failed to rename successfully copied directory '$tmp_dest' to '$dest'");
+            unless ($dest_dir_exists) {
+                File::Copy::move($tmp_dest, $dest) || $self->throw("Failed to rename successfully copied directory '$tmp_dest' to '$dest'");
+            }
             return 1;
         }
         else {
@@ -330,8 +337,8 @@ sub copy {
  Function: Does a VertRes::Utils::FileSystem->copy on the source to the
            destination, and on success deletes the source. If the source was a
            directory in which new files were added between the start and finish
-           of the copy, the destination will be deleted and source left
-           untouched.
+           of the copy, the destination will be deleted (unless the destination
+           existed before the move was requested) and source left untouched.
  Returns : boolean (true on success; on failure the destination path won't
            exist)
  Args    : source file/dir path, output file/dir path. Optionally, the number of
@@ -343,18 +350,31 @@ sub copy {
 sub move {
     my ($self, $source, $dest, $max_retries) = @_;
     my $tmp_dest = $dest.'_move_tmp';
+    my $dest_dir_exists = 0;
+    if (-d $source && -d $dest) {
+        $dest_dir_exists = 1;
+        $tmp_dest = $dest;
+    }
     
     $self->copy($source, $tmp_dest, $max_retries) || return 0;
     
     if (-d $source) {
         unless ($self->directory_structure_same($source, $tmp_dest, consider_files => 1)) {
-            $self->rmtree($tmp_dest);
-            $self->warn("Source directory '$source' was updated before the move completed, so the destination was deleted and the source will be left untouched");
+            unless ($dest_dir_exists) {
+                $self->rmtree($tmp_dest) unless $dest_dir_exists;
+                $self->warn("Source directory '$source' was updated before the move completed, so the temporary destination was deleted and the source will be left untouched");
+            }
+            else {
+                $self->warn("Source directory '$source' was updated before the move completed, so the destination is now in an unknown state!");
+            }
             return 0;
         }
     }
     
-    File::Copy::move($tmp_dest, $dest) || $self->throw("Failed to rename successfully moved source '$tmp_dest' to '$dest'");
+    unless ($dest_dir_exists) {
+        File::Copy::move($tmp_dest, $dest) || $self->throw("Failed to rename successfully moved source '$tmp_dest' to '$dest'");
+    }
+    
     if (-d $source) {
         # we might be in the source directory, which will prevent us removing
         # it; chdir to parent if that's the case
