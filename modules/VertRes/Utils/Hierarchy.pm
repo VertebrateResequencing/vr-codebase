@@ -129,6 +129,10 @@ sub parse_lane {
            library_raw    => string, (the name stored in the database, which may
                                       be a uniquified version of the original
                                       library name)
+           library_true   => string, (an attempt at getting the true original
+                                      library name, as it was before it was
+                                      munged in various ways to create library
+                                      and library_raw)
            lane           => string, (aka read group)
            centre         => string, (the sequencing centre name)
            insert_size    => int, (can be undef if this lane is single-ended)
@@ -149,6 +153,10 @@ sub parse_lane {
            }
            -or-
            vrtrack => VRTrack::VRTrack object
+
+           optionally, pre_swap => 1 to get info applicable to the lane in its
+           state immediately prior to the last time is_processed('swapped', 1)
+           was called on it.
 
            optionally, the optional args understood by individual_coverage() to
            configure how individual_coverage will be calculated
@@ -179,6 +187,10 @@ sub lane_info {
     
     return unless ($rg && $vrlane && $vrtrack);
     
+    if ($args{pre_swap}) {
+        $self->throw("pre_swap not yet implemented");
+    }
+    
     my %info = (lane => $rg, vrlane => $vrlane);
     
     $info{hierarchy_path} = $vrtrack->hierarchy_path_of_lane($vrlane);
@@ -190,7 +202,10 @@ sub lane_info {
     
     $info{insert_size} = $objs{library}->insert_size;
     $info{library} = $objs{library}->hierarchy_name || $self->throw("library hierarchy_name wasn't known for $rg");
-    $info{library_raw} = $objs{library}->name || $self->throw("library name wasn't known for $rg");
+    my $lib_name = $objs{library}->name || $self->throw("library name wasn't known for $rg");
+    $info{library_raw} = $lib_name;
+    ($lib_name) = split('|', $lib_name);
+    $info{library_true} = $lib_name;
     $info{centre} = $objs{centre}->name || $self->throw("sequencing centre wasn't known for $rg");
     $info{technology} = $objs{platform}->name || $self->throw("sequencing platform wasn't known for $rg");
     $info{sample} = $objs{sample}->name || $self->throw("sample name wasn't known for $rg");

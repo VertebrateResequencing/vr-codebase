@@ -597,7 +597,7 @@ close(\$samfh);
 unless (\$head =~ /^\\\@HD/) {
     my \$ok = \$sam_util->add_sam_header('$sam_file',
                                          sample_name => '$info{sample}',
-                                         library => '$info{library}',
+                                         library => '$info{library_true}',
                                          platform => '$info{technology}',
                                          centre => '$info{centre}',
                                          insert_size => $info{insert_size},
