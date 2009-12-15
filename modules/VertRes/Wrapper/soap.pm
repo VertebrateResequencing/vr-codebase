@@ -8,6 +8,10 @@ VertRes::Wrapper::soap - wrapper for soap
 
 =head1 DESCRIPTION
 
+2.20 continually fails with unable to write to output file error.
+trying 2.19...
+
+
 37:
     default
 54:
@@ -33,6 +37,7 @@ use strict;
 use warnings;
 use File::Copy;
 use VertRes::IO;
+use VertRes::Parser::fastqcheck;
 
 use base qw(VertRes::Wrapper::MapperI);
 
@@ -51,6 +56,7 @@ sub new {
     my ($class, @args) = @_;
     
     my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/soap2.20release/');
+    # 2.19: /lustre/scratch102/user/sb10/mapper_comparisons/mappers/SOAPgz/
     
     return $self;
 }
@@ -83,7 +89,8 @@ sub setup_reference {
     my ($self, $ref) = @_;
     
     my $index = $ref.'.index';
-    my @suffixes = qw(amb ann lkt pac rev.lkt rev.pac);
+    my @suffixes = qw(ann bwt fmv hot lkt pac rev.bwt rev.fmv rev.lkt rev.pac sa sai);
+    # (there's also an .amb, but it has 0 size?)
     my $indexed = 0;
     foreach my $suffix (@suffixes) {
         if (-s "$index.$suffix") {
@@ -120,6 +127,27 @@ sub setup_reference {
 
 sub setup_fastqs {
     my ($self, $ref, @fqs) = @_;
+    
+    # 2.20 does not support gzip IO though 2.19 did. Uncompress:
+    foreach my $fq (@fqs) {
+        if ($fq =~ /\.gz$/) {
+            my $fq_new = $fq;
+            $fq_new =~ s/\.gz$//;
+            
+            unless (-s $fq_new) {
+                my $i = VertRes::IO->new(file => $fq);
+                my $o = VertRes::IO->new(file => ">$fq_new");
+                my $ifh = $i->fh;
+                my $ofh = $o->fh;
+                while (<$ifh>) {
+                    print $ofh $_;
+                }
+                $i->close;
+                $o->close;
+            }
+        }
+    }
+    
     return 1;
 }
 
@@ -138,9 +166,11 @@ sub generate_sam {
     my ($self, $out, $ref, @fqs) = @_;
     
     my $soap_out = $out.'.soap';
-    unless (-s $soap_out) {
+    my $sop = $soap_out.'.pe';
+    my $sos = $soap_out.'.se';
+    unless (-s $sop && -e $sos) {
         my $orig_exe = $self->exe;
-        $self->exe($orig_exe.'soap');
+        $self->exe($orig_exe.'soap_2.21');
         
         # settings depend on read length
         my $longest_read = 0;
@@ -163,7 +193,11 @@ sub generate_sam {
             $extra_args = ' -l 35 -v 1';
         }
         
-        $self->simple_run("-a $fqs[0] -b $fqs[1] -D $ref.index -o $soap_out -m 100$extra_args");
+        foreach my $fq (@fqs) {
+            $fq =~ s/\.gz$//;
+        }
+        
+        $self->simple_run("-a $fqs[0] -b $fqs[1] -D $ref.index -o $sop -2 $sos -m 100 -x1000$extra_args");
         
         $self->exe($orig_exe);
     }
@@ -171,7 +205,8 @@ sub generate_sam {
     unless (-s $out) {
         my $orig_exe = $self->exe;
         $self->exe($orig_exe.'soap2sam.pl');
-        $self->simple_run("$soap_out > $out");
+        $self->simple_run("$sop > $out");
+        $self->simple_run("$sos >> $out");
         $self->exe($orig_exe);
     }
     

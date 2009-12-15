@@ -8,6 +8,8 @@ VertRes::Wrapper::srprism - wrapper for srprism
 
 =head1 DESCRIPTION
 
+# supposed to run in under 8GB, but using more than 10?
+
 srprism mkindex -i reference.fa -o reference -M 7168
 srprism search -i "query_1.fq,query_2.fq" -F fastq -I reference -o output.sam -O sam -n 2 -R 0 -M 7168 -p true -s 200 -r 100
 

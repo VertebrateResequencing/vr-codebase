@@ -8,6 +8,11 @@ VertRes::Wrapper::mosaik - wrapper for mosaik
 
 =head1 DESCRIPTION
 
+Ran out of memory given 80GB and its own estimate said it would take over 4000
+days! Giving up on this...
+
+
+
 Since author mentioned no settings, nothing on wiki, will use defaults for
 all steps. Below are examples from example scripts supplied with release.
 

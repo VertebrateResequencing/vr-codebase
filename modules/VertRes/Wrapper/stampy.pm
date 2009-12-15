@@ -79,7 +79,7 @@ sub setup_reference {
     }
     
     my $sthash = $ref.'.sthash';
-    unless (-s $stidx) {
+    unless (-s $sthash) {
         $self->simple_run("-g $ref -H $ref");
     }
     
@@ -116,7 +116,7 @@ sub generate_sam {
     my ($self, $out, $ref, @fqs) = @_;
     
     unless (-s $out) {
-        $self->simple_run("--bwaoptions=\"-q15 /lustre/scratch102/user/sb10/mapper_comparisons/test_runs/bwa/ref.fa\" -g $ref -h $ref -M $fqs[0],$fqs[1]");
+        $self->simple_run("--bwaoptions=\"-q15 /lustre/scratch102/user/sb10/mapper_comparisons/test_runs/bwa/ref.fa\" -g $ref -h $ref -M $fqs[0],$fqs[1] > $out");
     }
     
     return -s $out ? 1 : 0;

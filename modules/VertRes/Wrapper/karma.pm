@@ -74,11 +74,34 @@ sub version {
 sub setup_reference {
     my ($self, $ref) = @_;
     
-    #*** don't know what files this makes
-    my $wordSize = 15; # readsize / 4 ... author suggested using 15 for all read sizes
-    $self->simple_run("--createIndex --reference $ref --wordSize $wordSize --occurrenceCutoff 99");
+    # this step needs 80GB
     
-    return 1;
+    my $wordSize = 15; # readsize / 4 ... author suggested using 15 for all read sizes
+    
+    my $no_fa = $ref;
+    $no_fa =~ s/\.fa.*$//;
+    my @indexes = qw(umfa umwhl umwhr umwihi umwiwp);
+    my $indexed  = 0;
+    foreach my $suffix (@indexes) {
+        my $index = $no_fa.'.'.$suffix;
+        if (-s $index || -l $index) {
+            $indexed++;
+        }
+    }
+    
+    unless ($indexed == @indexes) {
+        $self->simple_run("--createIndex --reference $ref --wordSize $wordSize --occurrenceCutoff 99");
+        
+        $indexed  = 0;
+        foreach my $suffix (@indexes) {
+            my $index = $no_fa.'.'.$suffix;
+            if (-s $index) {
+                $indexed++;
+            }
+        }
+    }
+    
+    return $indexed == @indexes ? 1 : 0;
 }
 
 =head2 setup_fastqs
@@ -111,7 +134,22 @@ sub generate_sam {
     my ($self, $out, $ref, @fqs) = @_;
     
     unless (-s $out) {
-        $self->simple_run("--reference $ref --pairedReads @fqs > $out");
+        $self->simple_run("--reference $ref --pairedReads @fqs");
+        
+        # it generates output files in the current working directory named after
+        # the first fastq
+        my $fq = basename($fqs[0]);
+        $fq =~ s/\.gz//;
+        
+        my ($out_path) = $out =~ /^(.+)$fq/;
+        foreach my $suffix ('R', 'sam', 'stats') {
+            move($fq.'.'.$suffix, $out_path);
+        }
+        
+        my $sam = $out_path.$fq.'.sam';
+        if (-s $sam) {
+            move($sam, $out);
+        }
     }
     
     return -s $out ? 1 : 0;
