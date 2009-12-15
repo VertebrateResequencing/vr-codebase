@@ -1,15 +1,16 @@
 =head1 NAME
 
-VertRes::Pipelines::DCCImport - pipeline for importing fastq files from the DCC
+VertRes::Pipelines::HierarchyUpdate - pipeline for importing fastq files and
+                                      doing lane swaps etc.
 
 =head1 SYNOPSIS
 
 # make the config files, which specifies the details for connecting to the
 # VRTrack g1k-meta database and the data roots:
-echo '__VRTrack_DCCImport__ dcc_import.conf' > pipeline.config
-# where dcc_import.conf contains:
+echo '__VRTrack_HierarchyUpdate__ HierarchyUpdate.conf' > pipeline.config
+# where HierarchyUpdate.conf contains:
 root    => '/abs/path/to/root/data/dir',
-module  => 'VertRes::Pipelines::DCCImport',
+module  => 'VertRes::Pipelines::HierarchyUpdate',
 prefix  => '_',
 
 ftp_limit => 100,
@@ -32,22 +33,29 @@ run-pipeline -c pipeline.config -s 1
 
 =head1 DESCRIPTION
 
-A module for importing new fastqs from the DCC: first it downloads the fastq
-files, then it adds them to our data hierarchy for G1K. It depends on
-si_to_vr.pl script to be run first, to update our database with the latest
-sequence.index information, and afterwards the mapping pipeline should be run,
-which will pick up on newly imported lanes and map them.
+A module for importing new or altered fastqs from some external source like the
+DCC: first it downloads the fastq files, then it adds them to a data hierarchy.
+It depends on update_vrmeta.pl script to be run first, to update the database
+with the latest sequence.index information, and afterwards the mapping pipeline
+should be run, which will pick up on newly imported/changed lanes and map them.
 
-It will also work to import non-G1K fastqs in a local directory into a G1K-style
+If the sequence.index had swaps (lanes moved to a different library or sample
+etc.), and you allowed those changes to be made to the database when running
+update_vrmeta.pl, the swaps will be made on disc, so that the disc hierarchy
+reflects the database. If bams had already been made, their headers will be
+corrected to reflect the new sample/library etc. Likewase .bas files will be
+fixed.
+
+
+It will also work to import non-DCC fastqs in a local directory into a G1K-style
 hierarchy, assuming a fake sequence.index has been used with update_vrmeta.pl on
-a custom database. In this case, the import.conf file must contain the
+a custom database. In this case, the HierarchyUpdate.conf file must contain the
 fastq_base option. If you don't have md5, number of reads and number of bases
 information on the fastqs, you'll also need to supply the
-calculate_missing_information option, and duplicate the db option in the data
-section:
+calculate_missing_information option:
 
 root    => '/abs/path/to/root/data/dir',
-module  => 'VertRes::Pipelines::DCCImport',
+module  => 'VertRes::Pipelines::HierarchyUpdate',
 prefix  => '_',
 
 db  => {
@@ -61,15 +69,12 @@ db  => {
 data => {
     fastq_base => '/abs/path/to/flattened/fastq/dir',
     calculate_missing_information => 1,
-    
-    db  => {
-        database => 'special_meta',
-        host     => 'mcs4a',
-        port     => 3306,
-        user     => 'vreseq_rw',
-        password => 'xxxxxxx',
-    },
 },
+
+=head1 NOTES
+
+It is the run-pipeline script that creates the lane directories for us. Hence
+no make_path() or similar usage here.
 
 =head1 AUTHOR
 
@@ -77,14 +82,18 @@ Sendu Bala: bix@sendu.me.uk
 
 =cut
 
-package VertRes::Pipelines::DCCImport;
+package VertRes::Pipelines::HierarchyUpdate;
 
 use strict;
 use warnings;
 use File::Basename;
+use File::Spec;
+use File::Copy;
 use VertRes::IO;
 use VertRes::Utils::FileSystem;
 use VertRes::Parser::fastqcheck;
+use VertRes::Utils::Hierarchy;
+use VertRes::Utils::Sam;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::Library;
@@ -93,36 +102,42 @@ use LSF;
 
 use base qw(VertRes::Pipeline);
 
-our $actions = [ { name     => 'import_fastqs',
+our $actions = [ { name     => 'fix_swaps',
+                   action   => \&fix_swaps,
+                   requires => \&action_requires, 
+                   provides => \&action_provides },
+                 { name     => 'deletion',
+                   action   => \&deletion,
+                   requires => \&action_requires, 
+                   provides => \&action_provides },
+                 { name     => 'import_fastqs',
                    action   => \&import_fastqs,
-                   requires => \&import_fastqs_requires, 
+                   requires => \&action_requires, 
                    provides => \&import_fastqs_provides },
                  { name     => 'update_db',
                    action   => \&update_db,
                    requires => \&update_db_requires, 
-                   provides => \&update_db_provides },
+                   provides => \&action_provides },
                  { name     => 'cleanup',
                    action   => \&cleanup,
-                   requires => \&cleanup_requires, 
-                   provides => \&cleanup_provides } ];
+                   requires => \&action_requires, 
+                   provides => \&action_provides } ];
 
-our %options = (do_cleanup => 0,
-                fastq_base => 'ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp',
+our %options = (fastq_base => 'ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp',
                 bsub_opts => '-q normal -R \'rusage[tmp=500]\'',
                 calculate_missing_information => 0);
 
 =head2 new
 
  Title   : new
- Usage   : my $obj = VertRes::Pipelines::DCCImport->new();
- Function: Create a new VertRes::Pipelines::DCCImport object;
- Returns : VertRes::Pipelines::Mapping object
- Args    : lane => '/path/to/lane'
-           do_cleanup => boolean (default false: don't do the cleanup action)
+ Usage   : my $obj = VertRes::Pipelines::HierarchyUpdate->new();
+ Function: Create a new VertRes::Pipelines::HierarchyUpdate object.
+ Returns : VertRes::Pipelines::HierarchyUpdate object
+ Args    : lane => 'readgroup_id'
            files => \@files_for_import
            root => path to dir where hierarchy will be built to contain the
                    downloaded files (data dir)
-           fastq_base => ftp url containing the data dir (default exists);
+           fastq_base => ftp url containing the data dir (DCC default exists);
                          can also be a local path to the dir containing the
                          fastq files
            calculate_missing_information => boolean (if this is true and the
@@ -140,26 +155,199 @@ sub new {
     
     $self->throw("files option is required") unless defined $self->{files};
     
+    # if we've been supplied a list of lane paths to work with, instead of
+    # getting the lanes from the db, we won't have a vrlane object; make one
+    if (! $self->{vrlane}) {
+        $self->throw("db option was not supplied in config") unless $self->{db};
+        my $vrtrack = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
+        my $lane = $self->{lane} || $self->throw("lane readgroup not supplied, can't continue");
+        my $vrlane  = VRTrack::Lane->new_by_name($vrtrack, $lane) or $self->throw("No such lane in the DB: [$lane]");
+        $self->{vrlane} = $vrlane;
+    }
+    $self->{vrlane} || $self->throw("vrlane object missing");
+    
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     
     return $self;
 }
 
-=head2 import_fastqs_requires
+=head2 action_requires
 
- Title   : import_fastqs_requires
- Usage   : my $required_files = $obj->import_fastqs_requires('/path/to/lane');
- Function: Find out what files the import_fastqs action needs before it will run.
+ Title   : action_requires
+ Usage   : my $required_files = $obj->action_requires('/path/to/lane');
+ Function: Find out what files the various actions need before they will run.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub import_fastqs_requires {
+sub action_requires {
     my $self = shift;
     return [];
 }
+
+=head2 action_provides
+
+ Title   : action_provides
+ Usage   : my $provided_files = $obj->action_provides('/path/to/lane');
+ Function: Find out what files the various actions generate on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub action_provides {
+    return [];
+}
+
+=head2 fix_swaps
+
+ Title   : fix_swaps
+ Usage   : $obj->fix_swaps('/path/to/lane', 'lock_filename');
+ Function: Move a lane directory to the correct part of the hierarchy if there
+           has been a swap. Corrects any bams and bas files that may have been
+           created.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub fix_swaps {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    # work out the pre-swap hierarchy path of the lane; our new lane location
+    # already exists and we'll need to move files and correct headers
+    my $vrlane = $self->{vrlane};
+    my %info = VertRes::Utils::Hierarchy->new->lane_info($vrlane, pre_swap => 1);
+    
+    my $old_path = $info{hierarchy_path};
+    if ($old_path ne $lane_path && -e $old_path) {
+        # move the contents of lane_path (just now created by run-pipline,
+        # containing pipline-related files like the lock file) to old_path, then
+        # move old_path to the new location
+        $self->{fsu}->move($lane_path, $old_path) || $self->throw("Failed to move contents of '$lane_path' to '$old_path'");
+        move($old_path, $lane_path) || $self->throw("Failed to move '$old_path' to '$lane_path'");
+        
+        $self->_prune_path($old_path);
+    }
+    
+    if ($vrlane->is_processed('mapped')) {
+        # look for bam and bas files to correct
+        opendir(my $dfh, $lane_path) || $self->throw("Could not open dir '$lane_path'");
+        my (@bams, @bass);
+        foreach (readdir($dfh)) {
+            if (/\.bam$/) {
+                push(@bams, $self->{fsu}->catfile($lane_path, $_));
+            }
+            elsif (/\.bam\.bas$/) {
+                push(@bass, $self->{fsu}->catfile($lane_path, $_));
+            }
+        }
+        
+        unless (@bams && @bams == @bass) {
+            $self->throw("$lane_path was supposed to be mapped, but either there were no bam files, or the number of bas files didn't match the number of bams");
+        }
+        
+        my $su = VertRes::Utils::Sam->new();
+        
+        my %new_meta = ($info{lane} => { sample_name => $info{sample},
+                                         library => $info{library_true},
+                                         platform => $info{technology},
+                                         centre => $info{centre},
+                                         insert_size => $info{insert_size},
+                                         project => $info{project} });
+        
+        foreach my $bam (@bams) {
+            $su->rewrite_bam_header($bam, %new_meta) || $self->throw("Failed to correct the header of '$bam'");
+        }
+        
+        foreach my $bas (@bass) {
+            $su->rewrite_bas_meta($bas, %new_meta) || $self->throw("Failed to correct meta information in '$bam'");
+        }
+    }
+    
+    $vrlane->is_processed('swapped', 0);
+    $vrlane->update || $self->throw("Having done the swap for $lane_path, failed to update the database");
+    
+    return $self->{Yes};
+}
+
+# if parent directory is now empty, delete the parent directory
+sub _prune_path {
+    my ($self, $path) = @_;
+    
+    my @dirs = File::Spec->splitdir($path);
+    my $lane = pop(@dirs);
+    $lane ||= pop(@dirs);
+    $lane || $self->throw("Couldn't get lane directory off path '$path'");
+    
+    my $parent = File::Spec->catdir(@dirs);
+    opendir(my $dfh, $parent) || $self->throw("Could not open dir '$parent'");
+    my $empty = 1;
+    foreach (readdir($dfh)) {
+        next if /^\.{1,2}$/;
+        $empty = 0;
+        last;
+    }
+    
+    if ($empty) {
+        unlink($parent);
+        $self->_prune_path($parent);
+    }
+}
+
+=head2 deletion
+
+ Title   : deletion
+ Usage   : $obj->deletion('/path/to/lane', 'lock_filename');
+ Function: If a lane was deleted entirely from the database, deletes it from
+           disc. Liewise if fastqs were altered.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub deletion {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    $self->throw("deletion not yet implemented");
+    
+    return $self->{Yes};
+}
+
+# copied over from update_vrmeta.pl; to become deletion() above...
+#sub delete_lane {
+#    my $lane = shift;
+#    my $lane_name = $lane->hierarchy_name;
+#    my $lane_path = $vrtrack->hierarchy_path_of_lane_hname($lane_name);
+#    
+#    if ($lane->is_processed('import')) {
+#        # in case the lane has been moved and $lane_path is only a symlink, we
+#        # get the absolute path
+#        my $abs_lane_path = abs_path($lane_path);
+#        my $deleted = rmtree($abs_lane_path);
+#        rmtree($lane_path);
+#        unlink($lane_path);
+#        
+#        unless ($deleted) {
+#            issue_warning("Lane $lane_path was supposed to be removed from disc, but the attempt failed to delete anything; I'm still going to delete the lane from the database though");
+#        }
+#        else {
+#            issue_warning("Lane $lane_path was removed from disc");
+#        }
+#    }
+#    
+#    my $deleted = $lane->delete;
+#    if ($deleted) {
+#        issue_warning("Lane $lane_name was deleted from the database");
+#        return 1;
+#    }
+#    else {
+#        issue_warning("Lane $lane_name was supposed to be deleted from the database, but the attempt failed!");
+#        return 0;
+#    }
+#}
 
 =head2 import_fastqs_provides
 
@@ -202,17 +390,12 @@ sub import_fastqs {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $lane_obj = $self->{vrlane};
+    unless (defined $self->{db}) {
+        $self->{db} = $lane_obj->vrtrack->database_params;
+    }
     
     # download the files that haven't been downloaded already
     my @files = @{$lane_obj->files || []};
-    
-    unless (defined $self->{db}) {
-        $self->{db}->{host} = '';
-        $self->{db}->{port} = '',
-        $self->{db}->{user} = '',
-        $self->{db}->{password} = '',
-        $self->{db}->{database} = ''
-    }
     
     my $did_one = 0;
     for my $file_obj (@files) {
@@ -408,8 +591,11 @@ exit;
         };
         close $scriptfh;
         
+        my $job_name = $self->{prefix}.'import_'.$fastq;
+        $self->archive_bsub_files($lane_path, $job_name);
+        
         $script_name =~ s/ /\\ /g;
-        LSF::run($action_lock, $lane_path, $self->{prefix}.'import_'.$fastq, $self, qq{perl -w $script_name});
+        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
     
     my $male_file = $self->{fsu}->catfile($lane_path, 'MALE');
@@ -458,25 +644,11 @@ sub update_db_requires {
     return $self->import_fastqs_provides($lane_path);
 }
 
-=head2 update_db_provides
-
- Title   : update_db_provides
- Usage   : my $provided_files = $obj->update_db_provides('/path/to/lane');
- Function: Find out what files the update_db action generates on success.
- Returns : array ref of file names
- Args    : lane path
-
-=cut
-
-sub update_db_provides {
-    return [];
-}
-
 =head2 update_db
 
  Title   : update_db
  Usage   : $obj->update_db('/path/to/lane', 'lock_filename');
- Function: Update the g1k-meta database to indicate which fastqs have now been
+ Function: Update the  database to indicate which fastqs have now been
            successfully downloaded and imported, and are ready to be mapped.
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : lane path, name of lock file to use
@@ -559,34 +731,6 @@ sub update_db {
     }
 }
 
-=head2 cleanup_requires
-
- Title   : cleanup_requires
- Usage   : my $required_files = $obj->cleanup_requires('/path/to/lane');
- Function: Find out what files the cleanup action needs before it will run.
- Returns : array ref of file names
- Args    : lane path
-
-=cut
-
-sub cleanup_requires {
-    return [];
-}
-
-=head2 cleanup_provides
-
- Title   : cleanup_provides
- Usage   : my $provided_files = $obj->cleanup_provides('/path/to/lane');
- Function: Find out what files the cleanup action generates on success.
- Returns : n/a - doesn't provide anything, and always runs
- Args    : lane path
-
-=cut
-
-sub cleanup_provides {
-    return [];
-}
-
 =head2 cleanup
 
  Title   : cleanup
@@ -609,17 +753,17 @@ sub cleanup {
     foreach my $fastq (@{$fastqs}) {
         next if $fastq =~ /fastqcheck/;
         $fastq = basename($fastq);
-        foreach my $suffix ('o', 'e', 'pl') {
-            push(@files, 'import_'.$fastq.'.'.$suffix);
-        }
+        push(@files, 'import_'.$fastq.'.pl');
+        
+        $self->archive_bsub_files($lane_path, $prefix.'import_'.$fastq, 1);
     }
     
     foreach my $file (@files) {
         unlink($fsu->catfile($lane_path, $prefix.$file));
     }
     
-    $fsu->rmtree($fsu->catfile($lane_path, 'split_se'));
-    $fsu->rmtree($fsu->catfile($lane_path, 'split_pe'));
+    #$fsu->rmtree($fsu->catfile($lane_path, 'split_se'));
+    #$fsu->rmtree($fsu->catfile($lane_path, 'split_pe'));
     
     return $self->{Yes};
 }
@@ -629,6 +773,12 @@ sub is_finished {
     
     if ($action->{name} eq 'update_db') {
         $self->{vrlane}->is_processed('import') ? return $self->{Yes} : return $self->{No};
+    }
+    elsif ($action->{name} eq 'fix_swaps') {
+        $self->{vrlane}->is_processed('swapped') ? return $self->{No} : return $self->{Yes};
+    }
+    elsif ($action->{name} eq 'deletion') {
+        ($self->{vrlane}->is_processed('deleted') || $self->{vrlane}->is_processed('altered_fastq')) ? return $self->{No} : return $self->{Yes};
     }
     elsif ($action->{name} eq 'cleanup') {
         return $self->{No};
