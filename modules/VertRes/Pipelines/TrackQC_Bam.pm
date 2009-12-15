@@ -67,7 +67,7 @@ our $options =
 {
     # Executables
     'blat'            => '/software/pubseq/bin/blat',
-    'gcdepth_R'       => '/nfs/users/nfs_p/pd3/cvs/maqtools/mapdepth/gcdepth/gcdepth.R',
+    'gcdepth_R'       => '/software/vertres/bin/gcdepth.R',
     'glf'             => '/nfs/sf8/G1K/bin/glf',
     'mapviewdepth'    => 'mapviewdepth_sam',
     'samtools'        => 'samtools',
