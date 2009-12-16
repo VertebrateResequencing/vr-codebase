@@ -965,11 +965,14 @@ sub rewrite_bam_header {
             if (exists $rg_changes{$rg}) {
                 while (my ($arg, $value) = each %{$rg_changes{$rg}}) {
                     my $tag = $arg_to_tag{$arg} || next;
-                    $made_changes = 1;
-                    if (/\t$tag/) {
-                        s/\t$tag:[^\t]+/\t$tag:$value/;
+                    if (/\t$tag:([^\t]+)/) {
+                        if ($1 ne $value) {
+                            $made_changes = 1;
+                            s/\t$tag:[^\t]+/\t$tag:$value/;
+                        }
                     }
                     else {
+                        $made_changes = 1;
                         s/\n/\t$tag:$value\n/
                     }
                 }
@@ -1011,6 +1014,101 @@ sub rewrite_bam_header {
     else {
         $self->warn("$temp_bam is bad (only $new_bam_lines lines vs $expected_lines), will unlink it");
         unlink($temp_bam);
+        return 0;
+    }
+}
+
+=head2 rewrite_bas_meta
+
+ Title   : rewrite_bas_meta
+ Usage   : $obj->rewrite_bas_meta('a.bam.bas',
+                                  readgroup1 => { sample_name => 'NA000001' });
+ Function: Corrects the meta columns 1-6 in a bas file, eg. to account for
+           any swaps (say, the sample changed since the bas was made).
+ Returns : boolean (true on success, meaning a change was made and the bas has
+           been confirmed OK, or no change was necessary and the bas was
+           untouched)
+ Args    : path to bas and a hash with keys as readgroup identifiers and values
+           as hash refs with at least one of the following:
+           sample_name => string, eg. NA00000;
+           library => string
+           platform => string
+           project => string, the study id, eg. SRP000001
+           md5 => string (NB: if you've just used rewrite_bam_header on a bam
+                          and are making the same changes to its bas, the bam
+                          md5 will have changed so you should supply the new
+                          md5 here)
+
+=cut
+
+sub rewrite_bas_meta {
+    my ($self, $bas, %rg_changes) = @_;
+    
+    keys %rg_changes || return 1;
+    my %arg_to_col = (sample_name => 3,
+                      library => 5,
+                      project => 2,
+                      md5 => 1);
+    # NAXXXXX.[chromN].technology.[center].algorithm.study_id.YYYY_MM.bam
+    my %arg_to_filename_regex = (sample_name => qr{^[^\.]+(\.)},
+                                 platform => qr{(?:SLX|454|SOLID)(\.)},
+                                 project => qr{[^\.]+(\.\d{4}_)});
+    
+    my $temp_bas = $bas.'.rewrite_bas_meta.tmp.bas';
+    $self->register_for_unlinking($temp_bas);
+    open(my $ofh, '>', $temp_bas) || $self->throw("Could not write to '$temp_bas'");
+    
+    open(my $ifh, $bas) || $self->throw("Could not open '$bas'");
+    my $made_changes = 0;
+    my $expected_lines = 0;
+    while (<$ifh>) {
+        $expected_lines++;
+        
+        my @cols = split("\t", $_);
+        my $rg = $cols[6];
+        
+        if (exists $rg_changes{$rg}) {
+            while (my ($arg, $value) = each %{$rg_changes{$rg}}) {
+                my $col = $arg_to_col{$arg};
+                if ($col) {
+                    if ($cols[$col] ne $value) {
+                        $made_changes = 1;
+                        $cols[$col] = $value;
+                    }
+                }
+                
+                my $regex = $arg_to_filename_regex{$arg};
+                if ($regex) {
+                    my $orig = $cols[0];
+                    $cols[0] =~ s/$regex/$value$1/;
+                    if ($cols[0] ne $orig){
+                        $made_changes = 1;
+                    }
+                }
+            }
+        }
+        
+        print $ofh join("\t", @cols);
+    }
+    close($ifh);
+    close($ofh);
+    
+    unless ($made_changes) {
+        unlink($temp_bas);
+        return 1;
+    }
+    
+    # check the new bas for truncation
+    my $new_bas_lines = VertRes::IO->new(file => $temp_bas)->num_lines;
+    
+    if ($new_bas_lines == $expected_lines) {
+        unlink($bas);
+        move($temp_bas, $bas) || $self->throw("Failed to move $temp_bas to $bas: $!");;
+        return 1;
+    }
+    else {
+        $self->warn("$temp_bas is bad (only $new_bas_lines lines vs $expected_lines), will unlink it");
+        unlink($temp_bas);
         return 0;
     }
 }

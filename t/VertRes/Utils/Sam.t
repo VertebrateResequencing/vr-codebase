@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 69;
+    use Test::Most tests => 73;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -185,7 +185,20 @@ $month = sprintf("%02d", $month + 1);
 $expected[1] =~ s/^(\S+)2009_08/$1${year}_$month/;
 ok open(my $tbfh, $given_bas), 'opened result .bas';
 my @given = <$tbfh>;
+close($tbfh);
 is_deeply \@given, \@expected, 'bas output was as expected';
+
+# rewrite_bas_meta
+ok $sam_util->rewrite_bas_meta($given_bas, invalid => { sample_name => 'NA00003', library => 'clib', centre => 'FOO' }), 'rewrite_bas_meta ran ok with an invalid readgroup';
+open($tbfh, $given_bas);
+@given = <$tbfh>;
+close($tbfh);
+is $given[1], $expected[1], 'rewrite_bas_meta didn\'t change anything when readgroup not in the bas';
+ok $sam_util->rewrite_bas_meta($given_bas, SRR00001 => { sample_name => 'NA00003', library => 'clib', platform => '454', project => 'SRP000002' }), 'rewrite_bas_meta ran ok';
+open($tbfh, $given_bas);
+@given = <$tbfh>;
+close($tbfh);
+is_deeply \@given, [$expected[0], "NA00003.454.bwa.SRP000002.${year}_$month	bdd09c9315a4bab7463582b57cba7cd2	SRP000002	NA00003	SLX	clib	SRR00001	115000	58583	2000	1084	1084	1070	2.05	23.32	286	74.10	275	48\n"], 'rewrite_bas_meta actually changed the bas';
 
 # stats method
 ok $sam_util->stats($sorted_bam), 'stats test';
