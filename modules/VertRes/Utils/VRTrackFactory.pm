@@ -46,6 +46,7 @@ sub instantiate
 {
 	my ($class, @args) = @_;
 	my $self = $class->SUPER::new(@args);
+	bless($self,$class);
 	
 	$self->throw("A database name must be provided!") unless $$self{'database'};
 	my $database = $$self{'database'};
