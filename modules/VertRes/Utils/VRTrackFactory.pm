@@ -44,6 +44,7 @@ my $WRITE_PASS = 't3aml3ss';
 =cut
 sub instantiate
 {
+	my ($class, @args) = @_;
 	my $self = $class->SUPER::new(@args);
 	
 	$self->throw("A database name must be provided!") unless $$self{'database'};
