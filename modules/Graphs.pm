@@ -166,7 +166,7 @@ sub create_gc_depth_graph
     print $fh qq[
 source('$gcdepth_R')
 depdat = read.depth('$bindepth_file', type='samp2')
-gcdepth(depdat, sname = '$png_file', depmax = NULL, hc = TRUE, plotdev='bitmap', nbins = 30, binned = TRUE)
+gcdepth(depdat, sname = '$png_file', depmax = NULL, hc = TRUE, plotdev=bitmap, nbins = 30, binned = TRUE)
 ];
 
     close $fh;
