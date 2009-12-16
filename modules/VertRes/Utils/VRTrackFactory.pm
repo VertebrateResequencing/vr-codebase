@@ -36,7 +36,7 @@ my $WRITE_PASS = 't3aml3ss';
 =head2 new
 
  Title   : instantiate
- Usage   : my $vrtrack = VRTrackFactory->instantiate( 'mouse', 'r' );
+ Usage   : my $vrtrack = VRTrackFactory->instantiate( database=>'mouse', mode=>'r' );
  Function: Ask the factory to return a VRTrack object to the database specified
  Returns : VRTrack object
  Args    : database name: a valid VRTrack database, mode: either 'r' or 'rw' connection
@@ -44,11 +44,11 @@ my $WRITE_PASS = 't3aml3ss';
 =cut
 sub instantiate
 {
-	my $class = shift;
-	my $database = shift;
-	my $mode = lc( shift );
+	my $self = $class->SUPER::new(@args);
+	my $database = $$self{'database'};
+	my $mode = lc( $$self{'mode'} );
 	
-	croak "Invalid connection mode (r or rw valid): $mode\n" unless $mode =~ /^[r|rw]$/;
+	$self->throw "Invalid connection mode (r or rw valid): $mode\n" unless $mode =~ /^[r|rw]$/;
 	
 	my $user = $mode =~ /^r$/ ? $READ_USER : $WRITE_USER;
 	my $pass = $mode =~ /^r$/ ? '' : $WRITE_PASS;
