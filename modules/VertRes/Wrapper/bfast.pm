@@ -200,7 +200,7 @@ sub setup_fastqs {
     }
     
     my $i = $max_length >= 40 ? '11-20' : '1-10';
-    $self->simple_run("match -f $ref -r $merged_fq -n 1 -i $i -T /tmp/ -t > $out");
+    $self->simple_run("match -f $ref -r $merged_fq -n 8 -i $i -T /tmp/ -t > $out");
     
     return 1;
 }
@@ -217,11 +217,11 @@ sub _merged_fastq_file {
                 $merged_fq = $name;
             }
             else {
-                $merged_fq .= basename($name);
+                $merged_fq .= '-'.basename($name);
             }
         }
         
-        $merged_fq .= '.fastq.gz';
+        $merged_fq .= '.fastq';
     }
     else {
         $merged_fq = $fqs[0];
