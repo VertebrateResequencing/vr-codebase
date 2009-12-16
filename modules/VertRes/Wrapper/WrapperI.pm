@@ -52,7 +52,7 @@ use base qw(VertRes::Base);
 
 my $bsub_uniquer = 1;
 
-our %allowed_run_methods = (bsub => 1, open => 1, open_to => 1, open_2 => 1, system => 1);
+our %allowed_run_methods = (bsub => 1, open => 1, open_to => 1, write_to => 1, open_2 => 1, system => 1);
 
 =head2 new
 
@@ -221,6 +221,8 @@ sub _run {
                  read through - useful for piping straight through to a parser)
            open_to (run in an open() call where one of the file args is a
                     filehandle that will be piped into the executable)
+           write_to (run in an open() call which returns filehandle you must
+                     write to and then close)
            open_2 (run in an IPC::Open2 call where input is a supplied filehanle
                    like for open_to and you are returned a filehandle like open)
 
@@ -314,6 +316,24 @@ sub _open_to_run {
     close($pipe);
     
     return;
+}
+
+sub _write_to_run {
+    my ($self, $exe, $params, @extra_args) = @_;
+    
+    foreach (@extra_args) {
+        unless (defined $_) {
+            $_ = '-';
+        }
+    }
+    
+    my $redirect = $self->quiet ? ' 2> /dev/null ' : '';
+    my $command = $exe.$params." @extra_args".$redirect;
+    $self->debug("[$time{'yyyy/mm/dd hh:mm:ss'}] will run command '$command'");
+    
+    open(my $pipe, "| $command") || $self->throw("$exe call ($command) failed to start: $? | $!");
+    
+    return $pipe;
 }
 
 sub _open_2_run {
