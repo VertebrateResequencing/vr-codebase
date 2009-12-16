@@ -52,7 +52,7 @@ sub instantiate
 	$self->throw("A connection mode name must be provided!") unless $$self{'mode'};
 	my $mode = lc( $$self{'mode'} );
 	
-	$self->throw "Invalid connection mode (r or rw valid): $mode\n" unless $mode =~ /^[r|rw]$/;
+	$self->throw( "Invalid connection mode (r or rw valid): $mode\n") unless $mode =~ /^[r|rw]$/;
 	
 	my $user = $mode =~ /^r$/ ? $READ_USER : $WRITE_USER;
 	my $pass = $mode =~ /^r$/ ? '' : $WRITE_PASS;
