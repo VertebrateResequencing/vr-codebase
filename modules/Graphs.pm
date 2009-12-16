@@ -161,41 +161,12 @@ sub create_gc_depth_graph
 {
     my ($bindepth_file,$gcdepth_R,$png_file) = @_;
 
-    # Parse the .bindepth file and create stats so that the R script can generate the graph
-    #   - basically counts the lines and determines the bin size.
-    #
-    open(my $fh,'<',$bindepth_file) or Utils::error("$bindepth_file: $!");
-    my $nlines   = 0;
-    my ($prev_pos,$pos,$bin_size,$chrm,$chrm_prev);
-    while (my $line=<$fh>)
-    {
-        $nlines++;
-
-        # 1       10000   0       NA      0.0000  1.0000
-        if ( !($line=~/^(\S+)\s+(\d+)\s+/) ) { Utils::error("Expected different output: $line"); }
-
-        $chrm = $1;
-        $pos  = $2;
-        if ( defined $prev_pos && $chrm eq '1' )
-        {
-            if ( !defined $bin_size ) { $bin_size = $pos - $prev_pos; }
-            if ( $bin_size != $pos-$prev_pos )
-            {
-                Utils::error("The bin_size of diffent size on line $nlines: $bin_size vs ".($pos-$prev_pos)."\n");
-            }
-        }
-
-        $prev_pos  = $pos;
-        $chrm_prev = $chrm;
-    }
-    close $fh;
-
-    # Finally, create the R script and run the command.
-    open($fh, '>', "$png_file.R") or Utils::error("$png_file.R: $!");
+    # Create the R script and run the command.
+    open(my $fh, '>', "$png_file.R") or Utils::error("$png_file.R: $!");
     print $fh qq[
 source('$gcdepth_R')
-depdat = read.depdat('$bindepth_file', Ndat = $nlines, bin = $bin_size)
-gcdepth(depdat, sname = '', depmax = NULL, hc = TRUE, nbins = 30, binned = TRUE, outfile = '$png_file')
+depdat = read.depth('$bindepth_file', type='samp2')
+gcdepth(depdat, sname = '$png_file', depmax = NULL, hc = TRUE, plotdev='bitmap', nbins = 30, binned = TRUE)
 ];
 
     close $fh;
