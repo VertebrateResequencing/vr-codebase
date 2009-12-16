@@ -263,7 +263,7 @@ sub fix_swaps {
         }
         
         foreach my $bas (@bass) {
-            $su->rewrite_bas_meta($bas, %new_meta) || $self->throw("Failed to correct meta information in '$bam'");
+            $su->rewrite_bas_meta($bas, %new_meta) || $self->throw("Failed to correct meta information in '$bas'");
         }
     }
     
@@ -292,7 +292,7 @@ sub _prune_path {
     }
     
     if ($empty) {
-        unlink($parent);
+        rmdir($parent); # only works if it's empty anyway, but checking for empty allows us to avoid recursing unecessarily
         $self->_prune_path($parent);
     }
 }
