@@ -100,7 +100,9 @@ sub sam_import {
  Returns : n/a
  Args    : list of file paths, options as a hash including regions as a key
            and the value as an array ref. If using the 'open' run_method, the
-           second arg should be undef.
+           second arg should be undef. Special option append => 1 can be used
+           to append to output file instead of overwriting it; only makes sense
+           when outputting sam format.
 
 =cut
 
@@ -116,7 +118,9 @@ sub view {
     }
     
     if ($out_file) {
-        push(@file_and_regions, ' > '.$out_file);
+        my $append = delete $options{append};
+        my $redirect = $append ? ' >> ' : ' > ';
+        push(@file_and_regions, $redirect.$out_file);
         $self->register_output_file_to_check($out_file);
     }
     
