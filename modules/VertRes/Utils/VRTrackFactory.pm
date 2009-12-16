@@ -45,7 +45,11 @@ my $WRITE_PASS = 't3aml3ss';
 sub instantiate
 {
 	my $self = $class->SUPER::new(@args);
+	
+	$self->throw("A database name must be provided!") unless $$self{'database'};
 	my $database = $$self{'database'};
+	
+	$self->throw("A connection mode name must be provided!") unless $$self{'mode'};
 	my $mode = lc( $$self{'mode'} );
 	
 	$self->throw "Invalid connection mode (r or rw valid): $mode\n" unless $mode =~ /^[r|rw]$/;
