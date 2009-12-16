@@ -912,4 +912,107 @@ sub calculate_flag {
     return $result;
 }
 
+=head2 rewrite_bam_header
+
+ Title   : rewrite_bam_header
+ Usage   : $obj->rewrite_bam_header('a.bam',
+                                    readgroup1 => { sample_name => 'NA000001' });
+ Function: Corrects the @RG header lines in a bam header, eg. to account for
+           any swaps (say, the sample changed since the bam was made).
+ Returns : boolean (true on success, meaning a change was made and the bam has
+           been confirmed OK, or no change was necessary and the bam was
+           untouched)
+ Args    : path to sam and a hash with keys as readgroup identifiers and values
+           as hash refs with at least one of the following:
+           sample_name => string, eg. NA00000;
+           library => string
+           platform => string
+           centre => string
+           insert_size => int
+           project => string, the study id, eg. SRP000001
+
+=cut
+
+sub rewrite_bam_header {
+    my ($self, $bam, %rg_changes) = @_;
+    
+    keys %rg_changes || return 1;
+    my %arg_to_tag = (sample_name => 'SM',
+                      library => 'LB',
+                      platform => 'PL',
+                      centre => 'CN',
+                      insert_size => 'PI',
+                      project => 'DS');
+    
+    my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+    my $stout = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'write_to');
+    
+    # output to bam
+    my $temp_bam = $bam.'.rewrite_header.tmp.bam';
+    $self->register_for_unlinking($temp_bam);
+    my $sfh = $stout->view(undef, $temp_bam, b => 1, S => 1);
+    $sfh || $self->throw("failed to get a filehandle for writing to '$temp_bam'");
+    
+    # parse just the header through perl to make changes
+    my $expected_lines = 0;
+    my $made_changes = 0;
+    my $bamfh = $stin->view($bam, undef, H => 1);
+    while (<$bamfh>) {
+        $expected_lines++;
+        
+        if (/^\@RG.+ID:([^\t]+)/) {
+            my $rg = $1;
+            if (exists $rg_changes{$rg}) {
+                while (my ($arg, $value) = each %{$rg_changes{$rg}}) {
+                    my $tag = $arg_to_tag{$arg} || next;
+                    $made_changes = 1;
+                    if (/\t$tag/) {
+                        s/\t$tag:[^\t]+/\t$tag:$value/;
+                    }
+                    else {
+                        s/\n/\t$tag:$value\n/
+                    }
+                }
+            }
+        }
+        
+        print $sfh $_;
+    }
+    close($bamfh);
+    
+    unless ($made_changes) {
+        close($sfh);
+        unlink($temp_bam);
+        return 1;
+    }
+    
+    # then quickly (no regex) append all the bam records
+    $bamfh = $stin->view($bam);
+    while (<$bamfh>) {
+        $expected_lines++;
+        print $sfh $_;
+    }
+    close($bamfh);
+    close($sfh);
+    
+    # check the new bam for truncation
+    $bamfh = $stin->view($temp_bam, undef, h => 1);
+    my $new_bam_lines = 0;
+    while (<$bamfh>) {
+        $new_bam_lines++;
+    }
+    close($bamfh);
+    
+    if ($new_bam_lines == $expected_lines) {
+        unlink($bam);
+        move($temp_bam, $bam) || $self->throw("Failed to move $temp_bam to $bam: $!");;
+        return 1;
+    }
+    else {
+        $self->warn("$temp_bam is bad (only $new_bam_lines lines vs $expected_lines), will unlink it");
+        unlink($temp_bam);
+        return 0;
+    }
+}
+
 1;

@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 64;
+    use Test::Most tests => 69;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -107,6 +107,16 @@ foreach my $record (@records) {
 }
 is $found_rgs, @records, 'correct RG tag still present on all records';
 
+# rewrite_bam_header
+ok $sam_util->rewrite_bam_header($sorted_bam, invalid => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI' }), 'rewrite_bam_header ran ok with an invalid readgroup';
+@header_lines = get_bam_header($sorted_bam);
+is $header_lines[2], "\@RG\tID:SRR00001\tLB:alib\tSM:NA00001\tPU:7563\tPI:2000\tCN:Sanger\tPL:SLX\tDS:SRP000001", 'rewrite_bam_header didn\'t change the header when readgroup not in the bam';
+ok $sam_util->rewrite_bam_header($sorted_bam, SRR00001 => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI' }), 'rewrite_bam_header ran ok';
+@header_lines = get_bam_header($sorted_bam);
+is $header_lines[2], "\@RG\tID:SRR00001\tLB:blib\tSM:NA00002\tPU:7563\tPI:2000\tCN:NCBI\tPL:SLX\tDS:SRP000001", 'rewrite_bam_header actually changed the header';
+@records = get_bam_body($sorted_bam);
+is @records, 2000, 'rewrite_bam_header didn\'t change the number of records';
+
 # rmdup (just a shortcut to VertRes::Wrapper::samtools::rmdup - no need to test thoroughly here)
 my $rmdup_bam = File::Spec->catfile($temp_dir, 'rmdup.bam');
 ok $sam_util->rmdup($sorted_bam, $rmdup_bam, single_ended => 0, quiet => 1), 'rmdup test, paired';
@@ -151,7 +161,7 @@ is $sam_util->calculate_flag(paired_tech => 1, self_unmapped => 1, mate_unmapped
 # , and percent_mismatch with:
 # perl -e '$bases = 0; $matches = 0; open($fh, "samtools pileup -sf t/data/S_suis_P17.fa sorted.bam |"); while (<$fh>) { @s = split; $bases += $s[3]; $matches += $s[4] =~ tr/.,/.,/; } print "$bases / $matches\n"; $p = 100 - ((100/$bases) * $matches); print "percent mismatches: $p\n";'
 is_deeply {$sam_util->bam_statistics($sorted_bam)}, {SRR00001 => {total_bases => 115000,
-                                                                  mapped_bases => 62288,
+                                                                  mapped_bases => 58583,
                                                                   total_reads => 2000,
                                                                   mapped_reads => 1084,
                                                                   mapped_reads_paired_in_seq => 1084,
@@ -227,6 +237,19 @@ sub get_sam_body {
         push(@records, $_);
     }
     return @records;
+}
+
+sub get_bam_header {
+    my $bam_file = shift;
+    my $samtools = VertRes::Wrapper::samtools->new(quiet => 1);
+    $samtools->run_method('open');
+    my $bamfh = $samtools->view($bam_file, undef, H => 1);
+    my @header_lines;
+    while (<$bamfh>) {
+        chomp;
+        push(@header_lines, $_);
+    }
+    return @header_lines;
 }
 
 sub get_bam_body {
