@@ -188,6 +188,7 @@ sub lane_info {
     return unless ($rg && $vrlane && $vrtrack);
     
     if ($args{pre_swap}) {
+        
         $self->throw("pre_swap not yet implemented");
     }
     
@@ -226,7 +227,7 @@ sub lane_info {
 =head2 lane_hierarchy_objects
 
  Title   : lane_hierarchy_objects
- Usage   : my $objects = $obj->lane_hierarchy_objects($lane);
+ Usage   : my %objects = $obj->lane_hierarchy_objects($lane);
  Function: Get all the parent objects of a lane, from the library up to the
            project.
  Returns : hash with these key and value pairs:
