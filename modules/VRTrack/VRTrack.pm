@@ -18,6 +18,11 @@ VRTrack::VRTrack - Sequence Tracking container
 
 Retrieves/adds projects in the sequencing tracking database.
 
+==head1 NOTES
+
+A mysql database required. The schema is mysql specific, so other drivers
+cannot be used instead.
+
 =head1 CONTACT
 
 jws@sanger.ac.uk
@@ -40,10 +45,12 @@ use VRTrack::Core_obj;
 
 use constant SCHEMA_VERSION => '9';
 
+our $DEFAULT_PORT = 3306;
+
 =head2 new
 
-  Arg [1]    : hashref of database, host, port, user, password connection
-               details
+  Arg [1]    : hashref of {database, host, port, user, password}
+               connection details. port defaults to 3306.
   Example    : my $track = VRTrack::VRTrack->new()
   Description: Returns VRTrack object if can connect to database
   Returntype : VRTrack::VRTrack object
@@ -55,7 +62,7 @@ sub new {
 
     my $self = {};
     bless ($self, $class);
-    $dbparams->{'port'} ||= 3306;
+    $dbparams->{port} ||= $DEFAULT_PORT;
     my $dbh = DBI->connect( "DBI:mysql:host=$dbparams->{host};".
                             "port=$dbparams->{port};".
                             "database=$dbparams->{database};",
@@ -87,6 +94,38 @@ sub new {
     return $self;
 }
 
+=head2 schema
+
+  Arg [1]    : n/a
+  Example    : foreach (VRTrack::VRTrack->schema()) { print }
+  Description: Get an array of sql lines suitable for printing out and streaming
+               into your database to (drop and then) create all the VRTrack
+               tables. WARNING: using these sql lines on an existing database
+               will DESTROY ALL DATA!
+  Returntype : array of ;\n termianted sql strings
+
+=cut
+
+sub schema {
+    my @sql;
+    
+    my $line = '';
+    while (<DATA>) {
+        chomp;
+        next if /^--/;
+        next unless /\S/;
+        $line .= $_;
+        if (/;\s*$/) {
+            push(@sql, $line."\n");
+            $line = '';
+        }
+    }
+    if ($line =~ /;\s*$/) {
+        push(@sql, $line);
+    }
+    
+    return @sql;
+}
 
 =head2 schema_version
 
@@ -661,3 +700,385 @@ sub database_params {
 }
 
 1;
+
+
+__DATA__
+--
+-- Table structure for table `version`
+--
+
+DROP TABLE IF EXISTS `schema_version`;
+CREATE TABLE `schema_version` (
+  `schema_version` mediumint(8) unsigned NOT NULL,
+  PRIMARY KEY  (`schema_version`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+insert into schema_version(schema_version) values (9);
+
+--
+-- Table structure for table `assembly`
+--
+
+DROP TABLE IF EXISTS `assembly`;
+CREATE TABLE `assembly` (
+  `assembly_id` smallint(5) unsigned NOT NULL auto_increment,
+  `name` varchar(40) NOT NULL,
+  PRIMARY KEY  (`assembly_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `note`
+--
+
+DROP TABLE IF EXISTS `note`;
+CREATE TABLE `note` (
+  `note_id` mediumint(8) unsigned NOT NULL auto_increment,
+  `note` text default NULL,
+  PRIMARY KEY  (`note_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+--
+-- Table structure for table `file`
+--
+
+DROP TABLE IF EXISTS `file`;
+CREATE TABLE `file` (
+  `row_id` int unsigned NOT NULL auto_increment key,
+  `file_id` mediumint(8) unsigned NOT NULL,
+  `lane_id` mediumint(8) unsigned NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `hierarchy_name` varchar(255) default NULL,
+  `processed` int(10) default 0,
+  `type` tinyint(4) default NULL,
+  `readlen` smallint(5) unsigned default NULL,
+  `raw_reads` bigint(20) unsigned default NULL,
+  `raw_bases` bigint(20) unsigned default NULL,
+  `mean_q` float unsigned default NULL,
+  `md5` varchar(40) default NULL,
+  `note_id` mediumint(8) unsigned default NULL,
+  `changed` datetime NOT NULL,
+  `latest` tinyint(1) default '0',
+  KEY `file_id` (`file_id`),
+  KEY `lane_id` (`lane_id`),
+  KEY `hierarchy_name` (`hierarchy_name`),
+  KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `image`
+--
+
+DROP TABLE IF EXISTS `image`;
+CREATE TABLE `image` (
+  `image_id` mediumint(8) unsigned NOT NULL auto_increment,
+  `mapstats_id` mediumint(8) unsigned NOT NULL,
+  `name` varchar(40) NOT NULL,
+  `caption` varchar(40) default NULL,
+  `image` MEDIUMBLOB,
+  PRIMARY KEY (`image_id`),
+  KEY  `mapstats_id` (`mapstats_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `lane`
+--
+
+DROP TABLE IF EXISTS `lane`;
+CREATE TABLE `lane` (
+  `row_id` int unsigned NOT NULL auto_increment key,
+  `lane_id` mediumint(8) unsigned NOT NULL,
+  `library_id` smallint(5) unsigned NOT NULL,
+  `name` varchar(255) NOT NULL default '',
+  `hierarchy_name` varchar(255) NOT NULL default '',
+  `acc` varchar(40) default NULL,
+  `readlen` smallint(5) unsigned default NULL,
+  `paired` tinyint(1) default NULL,
+  `raw_reads` int(10) unsigned default NULL,
+  `raw_bases` bigint(20) unsigned default NULL,
+  `npg_qc_status` enum('pending','pass','fail','-') default NULL,
+  `processed` int(10) default 0,
+  `auto_qc_status` enum('no_qc','passed','failed') default NULL,
+  `qc_status` enum('no_qc','pending','passed','failed') default NULL,
+  `gt_status` enum('unchecked','confirmed','wrong','unconfirmed','candidate','unknown','swapped') default 'unchecked',
+  `submission_id` smallint(5) unsigned default NULL,
+  `withdrawn` tinyint(1) default NULL,
+  `note_id` mediumint(8) unsigned default NULL,
+  `changed` datetime NOT NULL,
+  `run_date` datetime default NULL,
+  `storage_path` varchar(255) default NULL,
+  `latest` tinyint(1) default '0',
+  KEY `lane_id` (`lane_id`),
+  KEY `lanename` (`name`),
+  KEY `hierarchy_name` (`hierarchy_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `request`
+--
+
+DROP TABLE IF EXISTS `request`;
+CREATE TABLE `request` (
+  `row_id` int unsigned NOT NULL auto_increment key,
+  `request_id` mediumint(8) unsigned NOT NULL,
+  `library_id` smallint(5) unsigned NOT NULL,
+  `ssid` mediumint(8) unsigned default NULL,
+  `seq_status` enum('unknown','pending','started','passed','failed','cancelled') default 'unknown',
+  `note_id` mediumint(8) unsigned default NULL,
+  `changed` datetime NOT NULL,
+  `latest` tinyint(1) default '0',
+  KEY `request_id` (`request_id`),
+  KEY `ssid` (`ssid`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `library`
+--
+
+DROP TABLE IF EXISTS `library`;
+CREATE TABLE `library` (
+  `row_id` int unsigned NOT NULL auto_increment key,
+  `library_id` smallint(5) unsigned NOT NULL,
+  `sample_id` smallint(5) unsigned NOT NULL,
+  `ssid` mediumint(8) unsigned default NULL,
+  `name` varchar(255) NOT NULL default '',
+  `hierarchy_name` varchar(255) NOT NULL default '',
+  `prep_status` enum('unknown','pending','started','passed','failed','cancelled') default 'unknown',
+  `auto_qc_status` enum('no_qc','passed','failed') default NULL,
+  `qc_status` enum('no_qc','pending','passed','failed') default 'no_qc',
+  `insert_size` mediumint(8) unsigned default NULL,
+  `library_type_id` smallint(5) unsigned default NULL,
+  `seq_centre_id` smallint(5) unsigned default NULL,
+  `seq_tech_id` smallint(5) unsigned default NULL,
+  `open` tinyint(1) default '1',
+  `note_id` mediumint(8) unsigned default NULL,
+  `changed` datetime NOT NULL,
+  `latest` tinyint(1) default '0',
+  KEY `ssid` (`ssid`),
+  KEY `name` (`name`),
+  KEY `hierarchy_name` (`hierarchy_name`),
+  KEY `library_id` (`library_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `library_type`
+--
+
+DROP TABLE IF EXISTS `library_type`;
+CREATE TABLE `library_type` (
+  `library_type_id` smallint(5) unsigned NOT NULL auto_increment,
+  `name` varchar(40) NOT NULL,
+  PRIMARY KEY  (`library_type_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `mapper`
+--
+
+DROP TABLE IF EXISTS `mapper`;
+CREATE TABLE `mapper` (
+  `mapper_id` smallint(5) unsigned NOT NULL auto_increment,
+  `name` varchar(40) NOT NULL,
+  `version` varchar(40) NOT NULL,
+  PRIMARY KEY  (`mapper_id`),
+  UNIQUE KEY `name_v` (`name`, `version`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `mapstats`
+--
+
+DROP TABLE IF EXISTS `mapstats`;
+CREATE TABLE `mapstats` (
+  `row_id` int unsigned NOT NULL auto_increment key,
+  `mapstats_id` mediumint(8) unsigned NOT NULL,
+  `lane_id` mediumint(8) unsigned NOT NULL,
+  `mapper_id` smallint(5) unsigned default NULL,
+  `assembly_id` smallint(5) unsigned default NULL,
+  `raw_reads` int(10) unsigned default NULL,
+  `raw_bases` int(10) unsigned default NULL,
+  `clip_bases` int(10) unsigned default NULL,
+  `reads_mapped` int(10) unsigned default NULL,
+  `reads_paired` int(10) unsigned default NULL,
+  `bases_mapped` bigint(20) unsigned default NULL,
+  `rmdup_reads_mapped` int(10) unsigned default NULL,
+  `rmdup_bases_mapped` bigint(20) unsigned default NULL,
+  `adapter_reads` int(10) unsigned default NULL,
+  `error_rate` float unsigned default NULL,
+  `mean_insert` float unsigned default NULL,
+  `sd_insert` float unsigned default NULL,
+  `gt_expected` varchar(40) default NULL,
+  `gt_found` varchar(40) default NULL,
+  `gt_ratio` float unsigned default NULL,
+  `note_id` mediumint(8) unsigned default NULL,
+  `changed` datetime NOT NULL,
+  `latest` tinyint(1) default '0',
+  KEY `mapstats_id` (`mapstats_id`),
+  KEY `lane_id` (`lane_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `population`
+--
+
+DROP TABLE IF EXISTS `population`;
+CREATE TABLE `population` (
+  `population_id` smallint(5) unsigned NOT NULL auto_increment,
+  `name` varchar(40) NOT NULL,
+  PRIMARY KEY  (`population_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `species`
+--
+
+DROP TABLE IF EXISTS `species`;
+CREATE TABLE `species` (
+  `species_id` smallint(5) unsigned NOT NULL auto_increment,
+  `name` varchar(40) NOT NULL,
+  `taxon_id` mediumint(8) unsigned NOT NULL,
+  PRIMARY KEY  (`species_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `individual`
+--
+
+DROP TABLE IF EXISTS `individual`;
+CREATE TABLE `individual` (
+  `individual_id` smallint(5) unsigned NOT NULL auto_increment,
+  `name` varchar(40) NOT NULL,
+  `hierarchy_name` varchar(40) NOT NULL,
+  `alias` varchar(40) NOT NULL,
+  `sex` enum('M','F','unknown') default 'unknown',
+  `acc` varchar(40) default NULL,
+  `species_id` smallint(5) unsigned default NULL,
+  `population_id` smallint(5) unsigned default NULL,
+  PRIMARY KEY  (`individual_id`),
+  UNIQUE KEY `name` (`name`),
+  UNIQUE KEY `hierarchy_name` (`hierarchy_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `project`
+--
+
+DROP TABLE IF EXISTS `project`;
+CREATE TABLE `project` (
+  `row_id` int unsigned NOT NULL auto_increment key,
+  `project_id` smallint(5) unsigned NOT NULL,
+  `ssid` mediumint(8) unsigned default NULL,
+  `name` varchar(40) NOT NULL default '',
+  `hierarchy_name` varchar(40) NOT NULL default '',
+  `study_id` smallint(5) default NULL,
+  `note_id` mediumint(8) unsigned default NULL,
+  `changed` datetime NOT NULL,
+  `latest` tinyint(1) default '0',
+  KEY `project_id` (`project_id`),
+  KEY `ssid` (`ssid`),
+  KEY `latest` (`latest`),
+  KEY `hierarchy_name` (`hierarchy_name`),
+  KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+--
+-- Table structure for table `study`
+--
+
+DROP TABLE IF EXISTS `study`;
+create table `study` (
+`study_id` smallint(5) unsigned NOT NULL auto_increment,
+`acc` varchar(40) default NULL,
+PRIMARY KEY  (`study_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `allocation`
+--
+
+DROP TABLE IF EXISTS `allocation`;
+create table `allocation` (
+`study_id` smallint(5) unsigned default NULL,
+`individual_id` smallint(5) unsigned default NULL,
+`seq_centre_id` smallint(5) unsigned default NULL,
+PRIMARY KEY  (`study_id`,`individual_id`,`seq_centre_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+--
+-- Table structure for table `sample`
+--
+
+DROP TABLE IF EXISTS `sample`;
+CREATE TABLE `sample` (
+  `row_id` int unsigned NOT NULL auto_increment key,
+  `sample_id` smallint(5) unsigned NOT NULL,
+  `project_id` smallint(5) unsigned NOT NULL,
+  `ssid` mediumint(8) unsigned default NULL,
+  `name` varchar(40) NOT NULL default '',
+  `individual_id` smallint(5) unsigned default NULL,
+  `note_id` mediumint(8) unsigned default NULL,
+  `changed` datetime NOT NULL,
+  `latest` tinyint(1) default '0',
+  KEY  (`sample_id`),
+  KEY `ssid` (`ssid`),
+  KEY `latest` (`latest`),
+  KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `seq_centre`
+--
+
+DROP TABLE IF EXISTS `seq_centre`;
+CREATE TABLE `seq_centre` (
+  `seq_centre_id` smallint(5) unsigned NOT NULL auto_increment,
+  `name` varchar(40) NOT NULL,
+  PRIMARY KEY  (`seq_centre_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `seq_tech`
+--
+
+DROP TABLE IF EXISTS `seq_tech`;
+CREATE TABLE `seq_tech` (
+  `seq_tech_id` smallint(5) unsigned NOT NULL auto_increment,
+  `name` varchar(40) NOT NULL,
+  PRIMARY KEY  (`seq_tech_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `submission`
+--
+
+DROP TABLE IF EXISTS `submission`;
+CREATE TABLE `submission` (
+  `submission_id` smallint(5) unsigned NOT NULL auto_increment,
+  `date` datetime NOT NULL,
+  `name` varchar(40) NOT NULL,
+  `acc` varchar(40) default NULL,
+  PRIMARY KEY  (`submission_id`),
+  UNIQUE KEY `acc` (`acc`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+--
+-- Views
+--
+
+DROP VIEW if EXISTS `latest_project`;
+create view latest_project as select * from project where latest=true;
+DROP VIEW if EXISTS `latest_sample`;
+create view latest_sample as select * from sample where latest=true;
+DROP VIEW if EXISTS `latest_library`;
+create view latest_library as select * from library where latest=true;
+DROP VIEW if EXISTS `latest_request`;
+create view latest_request as select * from request where latest=true;
+DROP VIEW if EXISTS `latest_lane`;
+create view latest_lane as select * from lane where latest=true;
+DROP VIEW if EXISTS `latest_file`;
+create view latest_file as select * from file where latest=true;
+DROP VIEW if EXISTS `latest_mapstats`;
+create view latest_mapstats as select * from mapstats where latest=true;
