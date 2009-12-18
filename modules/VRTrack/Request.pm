@@ -71,6 +71,21 @@ sub new_by_ssid {
 }
 
 
+=head2 create
+
+  Arg [1]    : none
+  Example    : n/a
+  Description: create does not apply to Request objects, since they can't be
+               created?!
+  Returntype : n/a
+
+=cut
+
+sub create {
+    return undef;
+}
+
+
 ###############################################################################
 # Class methods
 ###############################################################################
