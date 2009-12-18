@@ -3,9 +3,10 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 27;
+    use Test::Most tests => 88;
 
     use_ok('VRTrack::VRTrack');
+    use_ok('VRTrack::Request');
 }
 
 my $connection_details = { database => 'vrtrack_test',
@@ -56,18 +57,56 @@ is $vrproj->study_id($study_id), $study_id, 'study_id could be set';
 ok $vrproj->update(), 'and written to the db';
 #*** should test all other attributes...
 
+# generic testing of all the core objects
+my @core_objects = qw(Project Sample Library Request Lane File Mapstats);
+foreach my $class (@core_objects) {
+    my $name = $class.'_test';
+    my $vrobj;
+    if ("VRTrack::$class"->can('new_by_name')) {
+        $vrobj = "VRTrack::$class"->new_by_name($vrtrack, $name);
+        ok ! $vrobj, $class.'->new_by_name returns undef before we\'ve added any';
+    }
+    
+    $vrobj = "VRTrack::$class"->create($vrtrack, $class ne 'Mapstats' ? $name : undef);
+    if ($class eq 'Request') {
+        #*** Request objects can't be created? How the fuck do I test them?
+        ok ! $vrobj, 'VRTrack::Request->create returns undef';
+        next;
+    }
+    ok $vrobj, $class.'->create returned something';
+    isa_ok $vrobj, "VRTrack::$class";
+    isa_ok $vrobj, "VRTrack::Core_obj";
+    
+    # generic methods
+    unless ($class eq 'Project') {
+        is $vrobj->row_id, 1, 'being the first object of it\'s kind, row_id is 1';
+        is $vrobj->id, 1, 'first of an object also gets an id of 1';
+    }
+    is $vrobj->note_id, undef, 'note_id is undef by default';
+    like ($vrobj->changed, qr/^\d{4}\-\d{2}\-\d{2} \d{2}:\d{2}:\d{2}$/, 'changed is set');
+    is $vrobj->is_latest, 1, 'is_latest is true';
+    
+    # shared by some, but not all
+    if ($vrobj->can('hierarchy_name')) {
+        #isa_ok $vrobj, "VRTrack::Hierarchy_obj";
+        
+        # Sample hierarchy_name comes from Individual, which we haven't made yet
+        unless ($class eq 'Sample') {
+            is $vrobj->hierarchy_name, $name, 'hierarchy_name set to name by default';
+        }
+    }
+    if ($vrobj->can('ssid')) {
+        is $vrobj->ssid, undef, 'ssid is undef by default';
+    }
+    if ($vrobj->can('name')) {
+        is $vrobj->name, $name, 'name was set';
+    }
+}
 
-
-#*** could probably have a generic tester of all core obj types...
-
-# lane
-$name = '1111_1';
-my $vrlane = VRTrack::Lane->new_by_name($vrtrack, $name);
-ok ! $vrlane, 'Lane->new_by_name returns undef before we\'ve added any lanes';
-ok $vrlane = VRTrack::Lane->create($vrtrack, $name), 'Lane->create returned something';
-isa_ok $vrlane, 'VRTrack::Lane';
-
+# test bits of the core classes that are unique to themselves
 # lane children
+$name = 'Lane_test';
+my $vrlane = VRTrack::Lane->new_by_name($vrtrack, $name);
 $name = "${name}_1.fastq";
 my $vrfile = $vrlane->get_file_by_name($name);
 ok ! $vrfile, 'Lane->get_file_by_name returns undef before we\'ve added any files';

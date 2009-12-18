@@ -1,5 +1,5 @@
-package VRTrack::Core_obj; 
-# author: jws
+package VRTrack::Core_obj;
+
 =head1 NAME
 
 VRTrack::Core_obj - Sequence Tracking Core_obj object
@@ -8,12 +8,15 @@ VRTrack::Core_obj - Sequence Tracking Core_obj object
 
 =head1 DESCRIPTION
 
-This is the superclass of the core objects (Project, Sample, Library, etc) in
-VRTrack, and implements some common methods.
+This is the superclass of the core objects (Project, Sample, Library, Request,
+Lane, File, Mapstats) in VRTrack, and implements some common methods.
+
+The primary feature of a core object is that it has a history and concept of
+a latest version.
 
 =head1 CONTACT
 
-jws@sanger.ac.uk
+jws@sanger.ac.uk (author)
 
 =head1 METHODS
 
@@ -21,7 +24,7 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
-use Carp;
+use Carp qw(cluck confess);
 no warnings 'uninitialized';
 
 
@@ -38,20 +41,21 @@ no warnings 'uninitialized';
 sub new {
     my ($class, $vrtrack, $id) = @_;
     confess "Need to call with a vrtrack reference and id" unless ($vrtrack && $id);
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-
+    if ( $vrtrack->isa('DBI::db') ) { confess "The interface has changed, expected vrtrack reference.\n"; }
+    
     my $self = {};
-    bless ($self, $class);
+    bless $self, ref($class) || $class;
+    
     $self->{_dbh} = $vrtrack->{_dbh};
     $self->{vrtrack} = $vrtrack;
     
-    # database tables for core objects are named the same as the class,
+    # database tables for core objects are named the same as the class
     $class =~/VRTrack::(\w+)$/;
     my $table = lc($1);
-    $table or die "Unrecognised classname $class\n";
+    $table or confess "Unrecognised classname $class\n";
 
-    my $fieldsref = $self->fields_dispatch;
-    my $sql = qq[select row_id,].(join ", ",keys %$fieldsref).qq[ from $table ];
+    my $fields = $self->fields_dispatch;
+    my $sql = qq[select row_id,].(join ", ",keys %$fields).qq[ from $table ];
     $sql .= qq[where ${table}_id = ? and latest = true];
 
     my $sth = $self->{_dbh}->prepare($sql);
@@ -61,22 +65,47 @@ sub new {
 	unless ($data){
 	    return undef;
 	}
-        foreach (keys %$fieldsref){
-            $fieldsref->{$_}->($data->{$_});
+        foreach (keys %$fields){
+            $fields->{$_}->($data->{$_});
         }
-
+	
         # handle row_id as a special case outside fields_dispatch, as otherwise
         # we'd need to remove it from fields_dispatch before update.
         # Note also it is hard-coded in the select statement above
         $self->row_id($data->{'row_id'});
-
+	
 	$self->dirty(0);    # unset the dirty flag
     }
-    else{
-	die(sprintf('Cannot retrieve $table: %s', $DBI::errstr));
+    else {
+	confess(sprintf('Cannot retrieve $table: %s', $DBI::errstr));
     }
 
     return $self;
+}
+
+
+=head2 fields_dispatch
+
+  Arg [1]    : none
+  Example    : my %fieldsref = $obj->fields_dispatch();
+  Description: Returns hash dispatch table keyed on database field.
+               Used internally for new and update methods. Should be extended
+	       by inheriting classes to add their unique table columns and
+	       methods.
+  Returntype : hash
+
+=cut
+
+sub fields_dispatch {
+    my $self = shift;
+    
+    my %fields = (name            => sub { $self->name(@_)},
+                  hierarchy_name  => sub { $self->hierarchy_name(@_)},
+                  note_id         => sub { $self->note_id(@_)},
+                  changed         => sub { $self->changed(@_)},
+                  latest          => sub { $self->is_latest(@_)});
+    
+    return \%fields;
 }
 
 
@@ -93,39 +122,39 @@ sub new {
 =cut
 
 sub new_by_field_value {
-    my ($class,$vrtrack, $field, $value) = @_;
-    die "Need to call with a vrtrack handle, field name, field value" unless ($vrtrack && $field && defined $value);
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my ($class, $vrtrack, $field, $value) = @_;
+    confess "Need to call with a vrtrack handle, field name, field value" unless ($vrtrack && $field && defined $value);
+    if ( $vrtrack->isa('DBI::db') ) { confess "The interface has changed, expected vrtrack reference.\n"; }
     my $dbh = $vrtrack->{_dbh};
     
     # database tables for core objects are named the same as the class,
     $class =~/VRTrack::(\w+)$/;
     my $table = lc($1);
-    $table or die "Unrecognised classname $class\n";
+    $table or confess "Unrecognised classname $class\n";
 
     # check field exists
     my $colnames = $dbh->selectcol_arrayref(qq[select column_name from information_schema.columns where table_name='$table']);
     my %cols = map { $_ => 1 } @$colnames;
-    unless (exists($cols{lc($field)})){
-        die "No such column $field in $table table\n";
+    unless (exists($cols{lc($field)})) {
+        confess "No such column $field in $table table\n";
     }
 
     # retrieve lane_id
     my $sql = qq[select ${table}_id from $table where $field = ? and latest = true];
     my $sth = $dbh->prepare($sql);
     my $id;
-    if ($sth->execute($value)){
+    if ($sth->execute($value)) {
         my $data = $sth->fetchall_arrayref({}); #return array of hashes
-        unless (@$data){
+        unless (@$data) {
             return undef;
         }
-        if (scalar @$data > 1){
-            die "$field = $value is not a unique identifier for $table\n";
+        if (scalar @$data > 1) {
+            confess "$field = $value is not a unique identifier for $table\n";
         }
         $id = $data->[0]{"${table}_id"};
     }
-    else{
-        die(sprintf('Cannot retrieve $class by %s = %s: %s', ($field,$value,$DBI::errstr)));
+    else {
+        confess(sprintf('Cannot retrieve $class by %s = %s: %s', ($field,$value,$DBI::errstr)));
     }
     return $class->new($vrtrack, $id);
 }
@@ -141,57 +170,53 @@ sub new_by_field_value {
 
 =cut
 
-sub create 
-{
+sub create {
     my ($class,$vrtrack, $name) = @_;
-    die "Need to call with a vrtrack handle" unless $vrtrack;
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    confess "Need to call with a vrtrack handle" unless $vrtrack;
+    if ( $vrtrack->isa('DBI::db') ) { confess "The interface has changed, expected vrtrack reference.\n"; }
     my $dbh = $vrtrack->{_dbh};
 
     # prevent adding an object with an existing name, if name supplied. In case of mapstats, the name is void
     if ($name && $class->is_name_in_database($vrtrack, $name, $name)){
-        die "Already a file by name $name";
+        confess "Already a file by name $name";
     }
 
-    if ( !($class=~/([^:]+)$/) ) { croak "Could not determine the class name [$class]."; } 
+    if ( !($class=~/([^:]+)$/) ) { confess "Could not determine the class name [$class]."; } 
     my $table = lc($1);
 
     $vrtrack->transaction_start();
 
     # insert a fake record to obtain a unique id (row_id)
     my $query = qq[INSERT INTO $table SET ${table}_id=0];
-    my $sth   = $dbh->prepare($query) or croak qq[The query "$query" failed: $!];
-    my $rv    = $sth->execute or croak qq[The query "$query" failed: $!];
+    my $sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
+    my $rv    = $sth->execute or confess qq[The query "$query" failed: $!];
 
     # now update the inserted the record
-    my $next_id = $dbh->last_insert_id(undef,undef,$table,'row_id') or croak "No last_insert_id? $!";
+    my $next_id = $dbh->last_insert_id(undef,undef,$table,'row_id') or confess "No last_insert_id? $!";
 
-    if ( $name )
-    {
+    if ($name) {
         my $hierarchy_name;
-
+	
         my $fieldsref = $class->fields_dispatch();
         if ( exists($fieldsref->{hierarchy_name}) )
         {
             $hierarchy_name = $name;
             $hierarchy_name =~ s/\W+/_/g;
         }
-
+	
         $name = qq[name='$name', ];
-        if ( $hierarchy_name )
-        {
+        if ($hierarchy_name) {
             $name .= qq[hierarchy_name='$hierarchy_name', ];
         }
     }
     $query = qq[UPDATE $table SET ${table}_id=$next_id, $name changed=now(), latest=true WHERE row_id=$next_id];
-    $sth   = $dbh->prepare($query) or croak qq[The query "$query" failed: $!];
-    $sth->execute or croak qq[The query "$query" failed: $!];
+    $sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
+    $sth->execute or confess qq[The query "$query" failed: $!];
 
     $vrtrack->transaction_commit();
 
     return $class->new($vrtrack, $next_id);
 }
-
 
 
 =head2 update
@@ -206,17 +231,17 @@ sub create
 
 sub update {
     my ($self) = @_;
-
+    
     # database tables for core objects are named the same as the class,
     my $class = ref($self);
     $class =~/VRTrack::(\w+)$/;
     my $table = lc($1);
-
+    
     my $success = undef;
-    if ($self->dirty){
-	    my $dbh = $self->{_dbh};
+    if ($self->dirty) {
+	my $dbh = $self->{_dbh};
         $self->{vrtrack}->transaction_start();
-
+	
         my $fieldsref = $self->fields_dispatch;
         my @fields = grep {!/^changed$/ && !/^latest$/} keys %$fieldsref;
         my $row_id; # new row_id if update works
@@ -224,19 +249,19 @@ sub update {
                 # Need to unset 'latest' flag on current latest obj and add
                 # the new obj details with the latest flag set
                 my $updsql = qq[UPDATE $table SET latest=false WHERE ${table}_id = ? and latest=true];
-
+		
                 # build insert statement from update fields
                 my $addsql = qq[INSERT INTO $table ( ].(join ", ", @fields);
-                        $addsql .= qq[, changed, latest ) ];
+                $addsql .= qq[, changed, latest ) ];
                 $addsql .= qq[ VALUES ( ].('?,' x scalar @fields).qq[now(),true) ];
                 $dbh->do ($updsql, undef,$self->id);
                 $dbh->do ($addsql, undef, map {$_->()} @$fieldsref{@fields});
                 $row_id = $dbh->{'mysql_insertid'};
                 $self->{vrtrack}->transaction_commit();
             };
-
+	
         if ($@) {
-            warn "Transaction failed, rolling back. Error was:\n$@\n";
+            cluck "Transaction failed, rolling back. Error was:\n$@\n";
             $self->{vrtrack}->transaction_rollback();
         }
         else {
@@ -245,7 +270,7 @@ sub update {
             $success = 1;
         }
     }
-
+    
     return $success;
 }
 
@@ -269,7 +294,7 @@ sub delete {
         my $class=ref($_);
         $class =~/VRTrack::(\w+)$/;
         my $table = lc($1);
-        $table or die "Unrecognised classname $class\n";
+        $table or confess "Unrecognised classname $class\n";
         push @{$rows_from_table{$table}}, $_->id;
     }
 
@@ -287,7 +312,7 @@ sub delete {
     };
 
     if ($@) {
-        warn "Transaction failed, rolling back. Error was:\n$@\n";
+        cluck "Transaction failed, rolling back. Error was:\n$@\n";
         $self->{vrtrack}->transaction_rollback();
     }
     else {
@@ -296,7 +321,6 @@ sub delete {
 
     return $success;
 }
-
 
 
 =head2 note_id
@@ -373,7 +397,7 @@ sub list_enum_vals {
     my $row = $dbh->selectrow_hashref("SHOW COLUMNS FROM $table LIKE ?", undef,$column);
     my $type = lc($row->{Type});
     unless ($type =~ /^enum/){
-        die "$table:$column is not of type enum";
+        confess "$table:$column is not of type enum";
     }
     $type =~ s/^enum\('//;
     $type =~ s/'\)$//;
@@ -410,9 +434,8 @@ sub vrtrack {
 
 =cut
 
-sub allowed_processed_flags
-{
-    my %flags = ( import=>1, qc=>2, mapped=>4, stored=>8, deleted=>16, swapped=>32, altered_fastq=>64 );
+sub allowed_processed_flags {
+    my %flags = (import => 1, qc => 2, mapped => 4, stored => 8, deleted => 16, swapped => 32, altered_fastq => 64);
     return %flags;
 }
 
