@@ -298,16 +298,35 @@ sub _check_fastqs {
     
     my %read_args = $self->_do_read_args(%args);
     
-    my $fsu = VertRes::Utils::FileSystem->new();
     if (defined $read_args{read0} && defined $args{read0_md5}) {
-        $fsu->verify_md5($read_args{read0}, $args{read0_md5}) || return;
+        $self->_verify_fastq_md5($read_args{read0}, $args{read0_md5}) || return;
     }
     elsif (defined $read_args{read1} && defined $args{read1_md5} && defined $args{read2_md5}) {
-        $fsu->verify_md5($read_args{read1}, $args{read1_md5}) || return;
-        $fsu->verify_md5($read_args{read2}, $args{read2_md5}) || return;
+        $self->_verify_fastq_md5($read_args{read1}, $args{read1_md5}) || return;
+        $self->_verify_fastq_md5($read_args{read2}, $args{read2_md5}) || return;
     }
     
     return 1;
+}
+
+sub _verify_fastq_md5 {
+    my ($self, $fq, $md5) = @_;
+    
+    my $fsu = VertRes::Utils::FileSystem->new();
+    my $ok = $fsu->verify_md5($fq, $md5);
+    
+    unless ($ok) {
+        # might be the md5 of the uncompressed fastq
+        if ($fq =~ /\.gz$/) {
+            my $fquncomp = $fq.'.uncompressed';
+            $self->register_for_unlinking($fquncomp);
+            system("gunzip -c $fq > $fquncomp");
+            $ok = $fsu->verify_md5($fquncomp, $md5);
+            unlink($fquncomp);
+        }
+    }
+    
+    return $ok;
 }
 
 =head2 mapping_hierarchy_report
