@@ -404,14 +404,22 @@ sub _get_read_args {
     
     my $lane = basename($lane_path);
     
+    my @vrfiles = @{$self->{vrlane}->files};
     my @fastqs = @{$self->{files}};
     my @fastq_info;
-    foreach my $fastq (@fastqs) {
-        if ($fastq =~ /${lane}_(\d)\./) {
-            $fastq_info[$1]->[0] = $fastq;
+    foreach my $vrfile (@vrfiles) {
+        my $fastq = $vrfile->hierarchy_name;
+        my $type = $vrfile->type;
+        if (defined $type && $type =~ /^(0|1|2)$/) {
+            $fastq_info[$type]->[0] = $fastq;
         }
         else {
-            $fastq_info[0]->[0] = $fastq;
+            if ($fastq =~ /${lane}_(\d)\./) {
+                $fastq_info[$1]->[0] = $fastq;
+            }
+            else {
+                $fastq_info[0]->[0] = $fastq;
+            }
         }
     }
     
