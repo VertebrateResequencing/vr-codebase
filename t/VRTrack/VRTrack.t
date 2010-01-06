@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 312;
+    use Test::Most tests => 327;
 
     use_ok('VRTrack::VRTrack');
     use_ok('VRTrack::Request');
@@ -55,7 +55,7 @@ foreach my $class (@core_objects) {
     ok $vrobj, $class.'->create returned something';
     isa_ok $vrobj, "VRTrack::$class";
     isa_ok $vrobj, "VRTrack::Core_obj";
-    #isa_ok $vrobj, "VRTrack::Table_obj";
+    isa_ok $vrobj, "VRTrack::Table_obj";
     
     # generic methods
     is $vrobj->row_id, 1, 'being the first object of it\'s kind, row_id is 1';
@@ -70,7 +70,7 @@ foreach my $class (@core_objects) {
     
     # shared by some, but not all
     if ($vrobj->can('hierarchy_name')) {
-        #isa_ok $vrobj, "VRTrack::Hierarchy_obj";
+        isa_ok $vrobj, "VRTrack::Hierarchy_obj";
         
         # Sample hierarchy_name comes from Individual, which we haven't made yet
         unless ($class eq 'Sample') {
@@ -89,7 +89,7 @@ foreach my $class (@core_objects) {
     }
     if ($vrobj->can('new_by_name')) {
         # (not all objects that can name() can new_by_name())
-        #isa_ok $vrobj, "VRTrack::Named_obj";
+        isa_ok $vrobj, "VRTrack::Named_obj";
     }
     
     # before we can update(), certain things need to be set on certain objects
