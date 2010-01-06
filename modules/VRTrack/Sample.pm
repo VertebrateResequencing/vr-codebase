@@ -1,5 +1,5 @@
 package VRTrack::Sample;
-# author: jws
+
 =head1 NAME
 
 VRTrack::Sample - Sequence Tracking Sample object
@@ -9,7 +9,7 @@ VRTrack::Sample - Sequence Tracking Sample object
 
     #get arrayref of library objects in a sample
     my $libs = $sample->libraries();
-    
+
     my $id = $sample->id();
     my $name = $sample->name();
 
@@ -19,7 +19,7 @@ An object describing the tracked properties of a sample.
 
 =head1 CONTACT
 
-jws@sanger.ac.uk
+jws@sanger.ac.uk (author)
 
 =head1 METHODS
 
@@ -27,14 +27,15 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
-use Carp;
-no warnings 'uninitialized';
+use Carp qw(cluck confess);
 use VRTrack::Library;
 use VRTrack::Individual;
-use VRTrack::Core_obj;
 use VRTrack::Allocations;
-use VRTrack::Project;
-our @ISA = qw(VRTrack::Core_obj);
+
+use base qw(VRTrack::Core_obj
+            VRTrack::Hierarchy_obj
+	    VRTrack::SequenceScape_obj);
+
 
 =head2 fields_dispatch
 
@@ -48,19 +49,18 @@ our @ISA = qw(VRTrack::Core_obj);
 
 sub fields_dispatch {
     my $self = shift;
-    my %fields = ( 
-                'sample_id'     => sub { $self->id(@_)},
-                'project_id'    => sub { $self->project_id(@_)},
-                'ssid'          => sub { $self->ssid(@_)},
-                'name'          => sub { $self->name(@_)},
-                'individual_id' => sub { $self->individual_id(@_)},
-                'note_id'       => sub { $self->note_id(@_)},
-                'changed'       => sub { $self->changed(@_)},
-                'latest'        => sub { $self->is_latest(@_)},
-                );
+    
+    my %fields = %{$self->SUPER::fields_dispatch()};
+    %fields = (%fields,
+               sample_id     => sub { $self->id(@_)},
+               project_id    => sub { $self->project_id(@_)},
+               ssid          => sub { $self->ssid(@_)},
+               individual_id => sub { $self->individual_id(@_)},
+	       name          => sub { $self->name(@_)});
 
     return \%fields;
 }
+
 
 ###############################################################################
 # Class methods
@@ -72,20 +72,21 @@ sub fields_dispatch {
   Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : sample name
   Arg [3]    : project id
-  Example    : my $sample = VRTrack::Sample->new_by_name_project($vrtrack, $name,$project_id)
-  Description: Class method. Returns latest Sample object by name and project_id.  If no such name is in the database, returns undef
+  Example    : my $sample = VRTrack::Sample->new_by_name_project($vrtrack, $name, $project_id)
+  Description: Class method. Returns latest Sample object by name and
+               project_id. If no such name is in the database, returns undef
   Returntype : VRTrack::Sample object
 
 =cut
 
 sub new_by_name_project {
-    my ($class,$vrtrack, $name, $project_id) = @_;
-    die "Need to call with a vrtrack handle, name, project_id" unless ($vrtrack && $name && $project_id);
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
+    my ($class, $vrtrack, $name, $project_id) = @_;
+    confess "Need to call with a vrtrack handle, name, project_id" unless ($vrtrack && $name && $project_id);
+    if ( $vrtrack->isa('DBI::db') ) { confess "The interface has changed, expected vrtrack reference.\n"; }
     my $dbh = $vrtrack->{_dbh};
     my $sql = qq[select sample_id from sample where name = ? and project_id = ? and latest = true];
     my $sth = $dbh->prepare($sql);
-
+    
     my $id;
     if ($sth->execute($name, $project_id)){
         my $data = $sth->fetchrow_hashref;
@@ -95,8 +96,9 @@ sub new_by_name_project {
         $id = $data->{'sample_id'};
     }
     else{
-        die(sprintf('Cannot retrieve sample by $name, $project: %s', $DBI::errstr));
+        confess(sprintf('Cannot retrieve sample by $name, $project: %s', $DBI::errstr));
     }
+    
     return $class->new($vrtrack, $id);
 }
 
@@ -111,58 +113,16 @@ sub new_by_name_project {
 
 =cut
 
-sub new_by_ssid {
-    my ($class,$vrtrack, $ssid) = @_;
-    die "Need to call with a vrtrack handle, ssid" unless ($vrtrack && $ssid);
-    return $class->new_by_field_value($vrtrack, 'ssid',$ssid);
-}
 
-
-#   =head2 create
-#   
-#     Arg [1]    : vrtrack handle to seqtracking database
-#     Arg [2]    : sample name
-#     Example    : my $sample = VRTrack::Sample->create($vrtrack, $name)
-#     Description: Class method.  Creates new Sample object in the database.
-#     Returntype : VRTrack::Sample object
-#   
-#   =cut
-#   
-#   sub create {
-#       my ($class,$vrtrack, $name) = @_;
-#       die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
-#       if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-#       my $dbh = $vrtrack->{_dbh};
-#       $dbh->do (qq[LOCK TABLE sample WRITE]);
-#       my $sql = qq[select max(sample_id) as id from sample];
-#       my $sth = $dbh->prepare($sql);
-#       my $next_id;
-#       if ($sth->execute()){
-#   	my $data = $sth->fetchrow_hashref;
-#   	unless ($data){
-#               $dbh->do (qq[UNLOCK TABLES]);
-#               die( sprintf("Can't retrieve next sample id: %s", $DBI::errstr));
-#   	}
-#           $next_id = $data->{'id'};
-#           $next_id++;
-#       }
-#       else{
-#   	die(sprintf("Can't retrieve next sample id: %s", $DBI::errstr));
-#       }
-#   
-#       $sql = qq[INSERT INTO sample (sample_id, name, changed, latest) 
-#                    VALUES (?,?,now(),true)];
-#   
-#       $sth = $dbh->prepare($sql);
-#       unless ($sth->execute( $next_id, $name )) {
-#           $dbh->do (qq[UNLOCK TABLES]);
-#           die( sprintf('DB load insert failed: %s %s', $next_id, $DBI::errstr));
-#       }
-#   
-#       $dbh->do (qq[UNLOCK TABLES]);
-#   
-#       return $class->new($vrtrack, $next_id);
-#   }
+=head2 create
+  
+  Arg [1]    : vrtrack handle to seqtracking database
+  Arg [2]    : name
+  Example    : my $file = VRTrack::Sample->create($vrtrack, $name)
+  Description: Class method.  Creates new Sample object in the database.
+  Returntype : VRTrack::Sample object
+   
+=cut
 
 
 =head2 is_name_in_database
@@ -188,64 +148,6 @@ sub is_name_in_database {
 # Object methods
 ###############################################################################
 
-=head2 libraries
-
-  Arg [1]    : None
-  Example    : my $libraries = $sample->libraries();
-  Description: Returns a ref to an array of the sample objects that are associated with this sample.
-  Returntype : ref to array of VRTrack::Sample objects
-
-=cut
-
-sub libraries {
-    my ($self) = @_;
-
-    unless ($self->{'libraries'}){
-        my @libraries;
-        foreach my $id (@{$self->library_ids()}){
-            my $obj = VRTrack::Library->new($self->{vrtrack},$id);
-            push @libraries, $obj;
-        }
-        $self->{'libraries'} = \@libraries;
-    }
-
-    return $self->{'libraries'};
-}
-
-
-=head2 library_ids
-
-  Arg [1]    : None
-  Example    : my $library_ids = $sample->library_ids();
-  Description: Returns a ref to an array of the library IDs that are associated with this sample
-  Returntype : ref to array of integer library IDs
-
-=cut
-
-sub library_ids {
-    my ($self) = @_;
-
-    unless ($self->{'library_ids'}){
-        my $sql = qq[select distinct(library_id) from library where sample_id=? and latest=true];
-        my @libraries;
-        my $sth = $self->{_dbh}->prepare($sql);
-
-        if ($sth->execute($self->id)){
-            foreach(@{$sth->fetchall_arrayref()}){
-                push @libraries, $_->[0];
-            }
-        }
-        else{
-            die(sprintf('Cannot retrieve libraries: %s', $DBI::errstr));
-        }
-
-        $self->{'library_ids'} = \@libraries;
-    }
- 
-    return $self->{'library_ids'};
-}
-
-
 =head2 id
 
   Arg [1]    : id (optional)
@@ -255,15 +157,6 @@ sub library_ids {
   Returntype : Internal ID integer
 
 =cut
-
-sub id {
-    my ($self,$id) = @_;
-    if (defined $id and $id != $self->{'id'}){
-        $self->{'id'} = $id;
-	$self->dirty(1);
-    }
-    return $self->{'id'};
-}
 
 
 =head2 project_id
@@ -277,12 +170,8 @@ sub id {
 =cut
 
 sub project_id {
-    my ($self,$project_id) = @_;
-    if (defined $project_id and $project_id ne $self->{'project_id'}){
-        $self->{'project_id'} = $project_id;
-	$self->dirty(1);
-    }
-    return $self->{'project_id'};
+    my $self = shift;
+    return $self->_get_set('project_id', 'number', @_);
 }
 
 
@@ -290,16 +179,20 @@ sub project_id {
 
   Arg [1]    : directory name (optional)
   Example    : my $hname = $sample->hierarchy_name();
-  Description: Get sample hierarchy name.  This is the directory name (without path) that the sample will be named in a file hierarchy.  Note that this is actually the individual hierarchy name, and is only gettable here for convenience.  Setting is done via the individual object.
+  Description: Get/set sample hierarchy name.  This is the directory name
+               (without path) that the sample will be named in a file hierarchy.
+	       Note that this is actually the individual hierarchy name, and is
+	       only gettable here for convenience. Setting is done via the
+	       individual object.
   Returntype : string
 
 =cut
 
 sub hierarchy_name {
-    my ($self) = @_;
-    my $name = undef;
-    if ($self->individual){
-        $name = $self->individual->hierarchy_name();
+    my $self = shift;
+    my $name;
+    if ($self->individual) {
+        $name = $self->individual->hierarchy_name(@_);
     }
     return $name;
 }
@@ -316,12 +209,10 @@ sub hierarchy_name {
 =cut
 
 sub name {
-    my ($self,$name) = @_;
-    if (defined $name and $name ne $self->{'name'}){
-        $self->{'name'} = $name;
-	$self->dirty(1);
-    }
-    return $self->{'name'};
+    # we can't be a Named_obj since we don't allow new_by_name(), so have to
+    # implement this ourselves
+    my $self = shift;
+    return $self->_get_set('name', 'string', @_);
 }
 
 
@@ -335,15 +226,6 @@ sub name {
 
 =cut
 
-sub ssid {
-    my ($self,$ssid) = @_;
-    if (defined $ssid and $ssid ne $self->{'ssid'}){
-        $self->{'ssid'} = $ssid;
-	$self->dirty(1);
-    }
-    return $self->{'ssid'};
-}
-
 
 =head2 individual_id
 
@@ -356,12 +238,8 @@ sub ssid {
 =cut
 
 sub individual_id {
-    my ($self,$individual_id) = @_;
-    if (defined $individual_id and $individual_id ne $self->{'individual_id'}){
-        $self->{'individual_id'} = $individual_id;
-	$self->dirty(1);
-    }
-    return $self->{'individual_id'};
+    my $self = shift;
+    return $self->_get_set('individual_id', 'number', @_);
 }
 
 
@@ -376,33 +254,8 @@ sub individual_id {
 =cut
 
 sub individual {
-    my ($self,$individual) = @_;
-    if ($individual){
-        # get existing individual by name
-        my $obj = $self->get_individual_by_name($individual);
-        if ($obj){
-            # Have we actually changed?
-            if ($self->individual_id != $obj->id){
-                $self->individual_id($obj->id);
-                $self->dirty(1);
-            }
-            $self->{'individual'} = $obj;
-        }
-        else {
-            # warn "No such individual in the database";
-            return undef; # explicitly return nothing.
-        }
-    }
-    elsif ($self->{'individual'}){
-        # already got a individual object.  We'll return it at the end.
-    }
-    else {  # lazy-load individual from database
-        if ($self->individual_id){
-            my $obj = VRTrack::Individual->new($self->{vrtrack},$self->individual_id);
-            $self->{'individual'} = $obj;
-        }
-    }
-    return $self->{'individual'};
+    my $self = shift;
+    return $self->_get_set_child_object('get_individual_by_name', 'VRTrack::Individual', @_);
 }
 
 
@@ -416,21 +269,8 @@ sub individual {
 =cut
 
 sub add_individual {
-    my ($self, $name) = @_;
-
-    my $obj = $self->get_individual_by_name($name);
-    if ($obj){
-        warn "Individual $name is already present in the database\n";
-        return undef;
-    }
-    else {
-        my $pop = VRTrack::Individual->create($self->{vrtrack}, $name);
-        # populate caches
-        $self->{'individual_id'} = $pop->id;
-        $self->{'individual'} = $pop;
-        $self->dirty(1);
-    }
-    return $self->{'individual'};
+    my $self = shift;
+    return $self->_create_child_object('get_individual_by_name', 'VRTrack::Individual', @_);
 }
 
 
@@ -449,6 +289,36 @@ sub get_individual_by_name {
 }
 
 
+=head2 libraries
+
+  Arg [1]    : None
+  Example    : my $libraries = $sample->libraries();
+  Description: Returns a ref to an array of the sample objects that are associated with this sample.
+  Returntype : ref to array of VRTrack::Sample objects
+
+=cut
+
+sub libraries {
+    my $self = shift;
+    return $self->_get_child_objects('VRTrack::Library');
+}
+
+
+=head2 library_ids
+
+  Arg [1]    : None
+  Example    : my $library_ids = $sample->library_ids();
+  Description: Returns a ref to an array of the library IDs that are associated with this sample
+  Returntype : ref to array of integer library IDs
+
+=cut
+
+sub library_ids {
+    my $self = shift;
+    return $self->_get_child_ids('VRTrack::Library');
+}
+
+
 =head2 add_library
 
   Arg [1]    : library name
@@ -459,29 +329,8 @@ sub get_individual_by_name {
 =cut
 
 sub add_library {
-    my ($self, $name) = @_;
-    $name or die "Must call with name";
-    # Check for unwanted duplicates.  Should not allow two libraries to
-    # have the same name even though this can happen in sequencescape.
-
-    my $obj = VRTrack::Library->new_by_name($self->{vrtrack},$name);
-    if ($obj){
-        warn "Library $name is already present in the database\n";
-        return undef;
-    }
-    $obj = VRTrack::Library->create($self->{vrtrack}, $name);
-    if ($obj){
-        $obj->sample_id($self->id);
-        my $hierarchy_name = $name;
-        $hierarchy_name =~ s/\W+/_/g;
-        $obj->hierarchy_name($hierarchy_name);
-        $obj->update;
-    }
-    # clear caches
-    delete $self->{'library_ids'};
-    delete $self->{'libraries'};
-
-    return $obj;
+    my $self = shift;
+    return $self->_add_child_object('new_by_name', 'VRTrack::Library', @_);
 }
 
 
@@ -495,16 +344,8 @@ sub add_library {
 =cut
 
 sub get_library_by_id {
-    my ($self, $id) = @_;
-    my @match = grep {$_->id == $id} @{$self->libraries};
-    if (scalar @match > 1){ # shouldn't happen
-        die "More than one library with id $id";
-    }
-    my $obj;
-    if (@match){
-        $obj = $match[0];
-    }
-    return $obj;
+    my $self = shift;
+    return $self->_get_child_by_field_value('libraries', 'id', @_);
 }
 
 
@@ -518,16 +359,8 @@ sub get_library_by_id {
 =cut
 
 sub get_library_by_ssid {
-    my ($self, $ssid) = @_;
-    my @match = grep {$_->ssid == $ssid} @{$self->libraries};
-    if (scalar @match > 1){ # shouldn't happen
-        die "More than one library with ssid $ssid";
-    }
-    my $obj;
-    if (@match){
-        $obj = $match[0];
-    }
-    return $obj;
+    my $self = shift;
+    return $self->_get_child_by_field_value('libraries', 'ssid', @_);
 }
 
 
@@ -541,20 +374,8 @@ sub get_library_by_ssid {
 =cut
 
 sub get_library_by_name {
-    my ($self, $name) = @_;
-    # my $obj = VRTrack::Library->new_by_name($self->{vrtrack},$name);
-    # unless ($obj->sample_id == $self->sample_id){
-    #    die "Library $name does not belong to sample ",$self->name,"\n";
-    #}
-    my @match = grep {$_->name eq $name} @{$self->libraries};
-    if (scalar @match > 1){ # shouldn't happen
-        die "More than one library with name $name";
-    }
-    my $obj;
-    if (@match){
-        $obj = $match[0];
-    }
-    return $obj;
+    my $self = shift;
+    return $self->_get_child_by_field_value('libraries', 'name', @_);
 }
 
 
@@ -571,9 +392,10 @@ sub get_allocated_seq_centres {
     my ($self) = @_;
     unless ($self->{'seq_centres'}){
         my $allocs = VRTrack::Allocations->new($self->{vrtrack});
+	eval "require VRTrack::Project;"; # (we avoid using this since Project uses us)
         my $project = VRTrack::Project->new($self->{vrtrack},$self->project_id);
         unless ($allocs && $project){
-            die "Can't retrieve Allocations and Project";
+            confess "Can't retrieve Allocations and Project";
         }
         my $centres = $allocs->get_centres_for_study_ind($project->study->id,$self->individual->id);
         $self->{'seq_centres'} = $centres;
@@ -611,33 +433,6 @@ sub is_sanger_sample {
 
 =cut
 
-sub changed {
-    my ($self,$changed) = @_;
-    if (defined $changed and $changed ne $self->{'changed'}){
-	$self->{'changed'} = $changed;
-	$self->dirty(1);
-    }
-    return $self->{'changed'};
-}
-
-
-=head2 dirty
-
-  Arg [1]    : boolean for dirty status
-  Example    : $obj->dirty(1);
-  Description: Get/Set for object properties having been altered.
-  Returntype : boolean
-
-=cut
-
-sub dirty {
-    my ($self,$dirty) = @_;
-    if (defined $dirty){
-	$self->{_dirty} = $dirty ? 1 : 0;
-    }
-    return $self->{_dirty};
-}
-
 
 =head2 descendants
 
@@ -648,15 +443,8 @@ sub dirty {
 
 =cut
 
-sub descendants {
-    my ($self) = @_;
-    my @desc;
-    foreach (@{$self->libraries}){
-        push @desc, $_;
-        push @desc, @{$_->descendants};
-    }
-    return \@desc;
+sub _get_child_methods {
+    return qw(libraries);
 }
-
 
 1;

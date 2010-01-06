@@ -1,5 +1,5 @@
 package VRTrack::Seq_tech;
-# author: jws
+
 =head1 NAME
 
 VRTrack::Seq_tech - Sequence Tracking Seq_tech object
@@ -18,7 +18,7 @@ seq_tech_id on the library.
 
 =head1 CONTACT
 
-jws@sanger.ac.uk
+jws@sanger.ac.uk (author)
 
 =head1 METHODS
 
@@ -26,10 +26,10 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
-use Carp;
-no warnings 'uninitialized';
+use Carp qw(cluck confess);
 
-use constant DBI_DUPLICATE => '1062';
+use base qw(VRTrack::Named_obj);
+
 
 ###############################################################################
 # Class methods
@@ -46,32 +46,26 @@ use constant DBI_DUPLICATE => '1062';
 =cut
 
 sub new {
-    my ($class,$vrtrack, $id) = @_;
-    die "Need to call with a vrtrack handle and id" unless ($vrtrack && $id);
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-    my $dbh = $vrtrack->{_dbh};
-    my $self = {};
-    bless ($self, $class);
-    $self->{_dbh} = $dbh;
-    $self->{vrtrack} = $vrtrack;
-
-    my $sql = qq[select seq_tech_id, name from seq_tech where seq_tech_id = ?];
-    my $sth = $self->{_dbh}->prepare($sql);
-
-    if ($sth->execute($id)){
-        my $data = $sth->fetchrow_hashref;
-        unless ($data){
-            return undef;
-        }
-        $self->id($data->{'seq_tech_id'});
-        $self->name($data->{'name'});
-	$self->dirty(0); # unset the dirty flag
-    }
-    else{
-        die(sprintf('Cannot retrieve seq_tech: %s', $DBI::errstr));
-    }
-
+    my $class = shift;
+    my $self = $class->SUPER::new(@_);
     return $self;
+}
+
+
+=head2 fields_dispatch
+
+  Arg [1]    : none
+  Example    : my $fieldsref = $file->fields_dispatch();
+  Description: Returns hashref dispatch table keyed on database field
+               Used internally for new and update methods
+  Returntype : hashref
+
+=cut
+
+sub fields_dispatch {
+    my $self = shift;
+    return {seq_tech_id  => sub { $self->id(@_) },
+	    name         => sub { $self->name(@_) }};
 }
 
 
@@ -85,28 +79,6 @@ sub new {
 
 =cut
 
-sub new_by_name {
-    my ($class,$vrtrack, $name) = @_;
-    die "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-    my $dbh = $vrtrack->{_dbh};
-    my $sql = qq[select seq_tech_id from seq_tech where name = ?];
-    my $sth = $dbh->prepare($sql);
-
-    my $id;
-    if ($sth->execute($name)){
-        my $data = $sth->fetchrow_hashref;
-        unless ($data){
-            return undef;
-        }
-        $id = $data->{'seq_tech_id'};
-    }
-    else{
-        die(sprintf('Cannot retrieve seq_tech by $name: %s', $DBI::errstr));
-    }
-    return $class->new($vrtrack, $id);
-}
-
 
 =head2 create
 
@@ -119,23 +91,8 @@ sub new_by_name {
 =cut
 
 sub create {
-    my ($class,$vrtrack, $name) = @_;
-    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
-    my $dbh = $vrtrack->{_dbh};
-    my $sql = qq[INSERT INTO seq_tech (seq_tech_id, name) 
-                 VALUES (NULL,?)];
-
-                
-    my $sth = $dbh->prepare($sql);
-    my $id;
-    if ($sth->execute( $name)) {
-        $id = $dbh->{'mysql_insertid'};
-    }
-    else {
-        die( sprintf('DB load insert failed: %s %s', $name, $DBI::errstr));
-    }
- 
-    return $class->new($vrtrack, $id);
+    my ($self, $vrtrack, $name) = @_;
+    return $self->SUPER::create($vrtrack, name => $name);
 }
 
 
@@ -152,14 +109,6 @@ sub create {
 
 =cut
 
-sub dirty {
-    my ($self,$dirty) = @_;
-    if (defined $dirty){
-	$self->{_dirty} = $dirty ? 1 : 0;
-    }
-    return $self->{_dirty};
-}
-
 
 =head2 id
 
@@ -170,15 +119,6 @@ sub dirty {
   Returntype : Internal ID integer
 
 =cut
-
-sub id {
-    my ($self,$id) = @_;
-    if (defined $id and $id ne $self->{'id'}){
-        $self->{'id'} = $id;
-	$self->dirty(1);
-    }
-    return $self->{'id'};
-}
 
 
 =head2 name
@@ -191,15 +131,6 @@ sub id {
 
 =cut
 
-sub name {
-    my ($self,$name) = @_;
-    if (defined $name and $name ne $self->{'name'}){
-        $self->{'name'} = $name;
-	$self->dirty(1);
-    }
-    return $self->{'name'};
-}
-
 
 =head2 update
 
@@ -210,37 +141,5 @@ sub name {
   Returntype : 1 if successful, otherwise undef.
 
 =cut
-
-sub update {
-    my ($self) = @_;
-    my $success = undef;
-    if ($self->dirty){
-	my $dbh = $self->{_dbh};
-	my $save_re = $dbh->{RaiseError};
-	my $save_pe = $dbh->{PrintError};
-	$dbh->{RaiseError} = 1; # raise exception if an error occurs
-	$dbh->{PrintError} = 0; # don't print an error message
-
-	eval {
-	    my $updsql = qq[UPDATE seq_tech SET name=? WHERE seq_tech_id = ? ];
-	    
-	    $dbh->do ($updsql, undef, $self->name,$self->id);
-	};
-
-	if (!$@) {
-	    $success = 1;
-	}
-
-	# restore attributes to original state
-	$dbh->{PrintError} = $save_pe;
-	$dbh->{RaiseError} = $save_re;
-
-    }
-    if ($success){
-        $self->dirty(0);
-    }
-
-    return $success;
-}
 
 1;

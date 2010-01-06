@@ -1,5 +1,5 @@
 package VRTrack::Mapstats; 
-# author: jws
+
 =head1 NAME
 
 VRTrack::Mapstats - Sequence Tracking Mapstats object
@@ -16,7 +16,7 @@ An object describing a set of statistics for a specific lane mapping.
 
 =head1 CONTACT
 
-jws@sanger.ac.uk
+jws@sanger.ac.uk (author)
 
 =head1 METHODS
 
@@ -24,15 +24,14 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
-use Carp;
-no warnings 'uninitialized';
-
-use VRTrack::Core_obj;
+use Carp qw(cluck confess);
 use VRTrack::Image;
 use VRTrack::Mapper;
 use VRTrack::Assembly;
 use File::Basename;
-our @ISA = qw(VRTrack::Core_obj);
+
+use base qw(VRTrack::Core_obj);
+
 
 =head2 fields_dispatch
 
@@ -46,83 +45,46 @@ our @ISA = qw(VRTrack::Core_obj);
 
 sub fields_dispatch {
     my $self = shift;
-    my %fields = ( 
-                'mapstats_id'        => sub { $self->id(@_)},
-                'lane_id'            => sub { $self->lane_id(@_)},
-                'mapper_id'          => sub { $self->mapper_id(@_)},
-                'assembly_id'        => sub { $self->assembly_id(@_)},
-                'raw_reads'          => sub { $self->raw_reads(@_)},
-                'raw_bases'          => sub { $self->raw_bases(@_)},
-                'clip_bases'         => sub { $self->clip_bases(@_)},
-                'reads_mapped'       => sub { $self->reads_mapped(@_)},
-                'reads_paired'       => sub { $self->reads_paired(@_)},
-                'bases_mapped'       => sub { $self->bases_mapped(@_)},
-                'rmdup_reads_mapped' => sub { $self->rmdup_reads_mapped(@_)},
-                'rmdup_bases_mapped' => sub { $self->rmdup_bases_mapped(@_)},
-                'error_rate'         => sub { $self->error_rate(@_)},
-                'mean_insert'        => sub { $self->mean_insert(@_)},
-                'sd_insert'          => sub { $self->sd_insert(@_)},
-                'adapter_reads'      => sub { $self->adapter_reads(@_)},
-                'gt_expected'        => sub { $self->genotype_expected(@_)},
-                'gt_found'           => sub { $self->genotype_found(@_)},
-                'gt_ratio'           => sub { $self->genotype_ratio(@_)},
-                'note_id'            => sub { $self->note_id(@_)},
-                'changed'            => sub { $self->changed(@_)},
-                'latest'             => sub { $self->is_latest(@_)},
-                );
+    
+    my %fields = %{$self->SUPER::fields_dispatch()};
+    %fields = (%fields,
+	       mapstats_id        => sub { $self->id(@_)},
+               lane_id            => sub { $self->lane_id(@_)},
+               mapper_id          => sub { $self->mapper_id(@_)},
+               assembly_id        => sub { $self->assembly_id(@_)},
+               raw_reads          => sub { $self->raw_reads(@_)},
+               raw_bases          => sub { $self->raw_bases(@_)},
+               clip_bases         => sub { $self->clip_bases(@_)},
+               reads_mapped       => sub { $self->reads_mapped(@_)},
+               reads_paired       => sub { $self->reads_paired(@_)},
+               bases_mapped       => sub { $self->bases_mapped(@_)},
+               rmdup_reads_mapped => sub { $self->rmdup_reads_mapped(@_)},
+               rmdup_bases_mapped => sub { $self->rmdup_bases_mapped(@_)},
+               error_rate         => sub { $self->error_rate(@_)},
+               mean_insert        => sub { $self->mean_insert(@_)},
+               sd_insert          => sub { $self->sd_insert(@_)},
+               adapter_reads      => sub { $self->adapter_reads(@_)},
+               gt_expected        => sub { $self->genotype_expected(@_)},
+               gt_found           => sub { $self->genotype_found(@_)},
+               gt_ratio           => sub { $self->genotype_ratio(@_)});
 
     return \%fields;
 }
+
 
 ###############################################################################
 # Class methods
 ###############################################################################
 
-#   =head2 create
-#   
-#     Arg [1]    : database handle to seqtracking database
-#     Arg [2]    : lane id that this mapping relates to
-#     Example    : my $mapstats = VRTrack::Mapstats->create($vrtrack, $lane_id)
-#     Description: Class method.  Creates new Mapstats object in the database.
-#     Returntype : VRTrack::Mapstats object
-#   
-#   =cut
-#   
-#   sub create {
-#       my ($class,$vrtrack, $lane_id) = @_;
-#       die "Need to call with a vrtrack handle and lane_id" unless ($vrtrack && $lane_id);
-#       if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-#       my $dbh = $vrtrack->{_dbh};
-#       $dbh->do (qq[LOCK TABLE mapstats WRITE]);
-#       my $sql = qq[select max(mapstats_id) as id from mapstats];
-#       my $sth = $dbh->prepare($sql);
-#       my $next_id;
-#       if ($sth->execute()){
-#   	my $data = $sth->fetchrow_hashref;
-#   	unless ($data){
-#               $dbh->do (qq[UNLOCK TABLES]);
-#               die( sprintf("Can't retrieve next mapstats id: %s", $DBI::errstr));
-#   	}
-#           $next_id = $data->{'id'};
-#           $next_id++;
-#       }
-#       else{
-#   	die(sprintf("Can't retrieve next mapstats id: %s", $DBI::errstr));
-#       }
-#   
-#       $sql = qq[INSERT INTO mapstats (mapstats_id, lane_id, changed, latest) 
-#                    VALUES (?,?,now(),true)];
-#   
-#       $sth = $dbh->prepare($sql);
-#       unless ($sth->execute( $next_id, $lane_id)) {
-#           $dbh->do (qq[UNLOCK TABLES]);
-#           die( sprintf('DB load insert failed: %s %s', $next_id, $DBI::errstr));
-#       }
-#   
-#       $dbh->do (qq[UNLOCK TABLES]);
-#   
-#       return $class->new($vrtrack, $next_id);
-#   }
+=head2 create
+   
+     Arg [1]    : database handle to seqtracking database
+     Arg [2]    : lane id that this mapping relates to
+     Example    : my $mapstats = VRTrack::Mapstats->create($vrtrack, $lane_id)
+     Description: Class method.  Creates new Mapstats object in the database.
+     Returntype : VRTrack::Mapstats object
+   
+=cut
 
 
 ###############################################################################
@@ -139,15 +101,6 @@ sub fields_dispatch {
 
 =cut
 
-sub id {
-    my ($self,$id) = @_;
-    if (defined $id and $id != $self->{'id'}){
-	$self->{'id'} = $id;
-	$self->dirty(1);
-    }
-    return $self->{'id'};
-}
-
 
 =head2 lane_id
 
@@ -160,12 +113,8 @@ sub id {
 =cut
 
 sub lane_id {
-    my ($self,$lane_id) = @_;
-    if (defined $lane_id and $lane_id != $self->{'lane_id'}){
-	$self->{'lane_id'} = $lane_id;
-	$self->dirty(1);
-    }
-    return $self->{'lane_id'};
+    my $self = shift;
+    return $self->_get_set('lane_id', 'number', @_);
 }
 
 
@@ -180,13 +129,8 @@ sub lane_id {
 =cut
 
 sub mapper_id {
-    my ($self,$mapper_id) = @_;
-    if (defined $mapper_id and $mapper_id != $self->{'mapper_id'}){
-        delete $self->{'mapper'};
-        $self->{'mapper_id'} = $mapper_id;
-        $self->dirty(1);
-    }
-    return $self->{'mapper_id'};
+    my $self = shift;
+    return $self->_get_set('mapper_id', 'number', @_);
 }
 
 
@@ -202,32 +146,8 @@ sub mapper_id {
 =cut
 
 sub mapper {
-    my ($self,$mapper, $version) = @_;
-    if ($mapper && $version){
-        # get existing mapper by name,version
-        my $obj = $self->get_mapper_by_name_version($mapper,$version);
-        if ($obj){
-            if ($self->mapper_id != $obj->id){
-                $self->mapper_id($obj->id);
-                $self->dirty(1);
-            }
-            $self->{'mapper'} = $obj;
-        }
-        else {
-            # warn "No such mapper in the database";
-            return undef; # explicitly return nothing.
-        }
-    }
-    elsif ($self->{'mapper'}){
-        # already got a mapper object.  We'll return it at the end.
-    }
-    else {  # lazy-load mapper from database
-        if ($self->mapper_id){
-            my $obj = VRTrack::Mapper->new($self->{vrtrack},$self->mapper_id);
-            $self->{'mapper'} = $obj;
-        }
-    }
-    return $self->{'mapper'};
+    my $self = shift;
+    return $self->_get_set_child_object('get_mapper_by_name_version', 'VRTrack::Mapper', @_);
 }
 
 
@@ -242,21 +162,8 @@ sub mapper {
 =cut
 
 sub add_mapper {
-    my ($self, $name,$version) = @_;
-
-    my $obj = $self->get_mapper_by_name_version($name,$version);
-    if ($obj){
-        warn "Mapper $name $version is already present in the database\n";
-        return undef;
-    }
-    else {
-        $obj = VRTrack::Mapper->create($self->{vrtrack}, $name, $version);
-        # populate caches
-        $self->{'mapper_id'} = $obj->id;
-        $self->{'mapper'} = $obj;
-        $self->dirty(1);
-    }
-    return $self->{'mapper'};
+    my $self = shift;
+    return $self->_create_child_object('get_mapper_by_name_version', 'VRTrack::Mapper', @_);
 }
 
 
@@ -271,8 +178,8 @@ sub add_mapper {
 =cut
 
 sub get_mapper_by_name_version {
-    my ($self,$name,$version) = @_;
-    return VRTrack::Mapper->new_by_name_version($self->{vrtrack}, $name,$version);
+    my ($self, $name, $version) = @_;
+    return VRTrack::Mapper->new_by_name_version($self->{vrtrack}, $name, $version);
 }
 
 
@@ -287,13 +194,8 @@ sub get_mapper_by_name_version {
 =cut
 
 sub assembly_id {
-    my ($self,$assembly_id) = @_;
-    if (defined $assembly_id and $assembly_id != $self->{'assembly_id'}){
-        delete $self->{'assembly'};
-        $self->{'assembly_id'} = $assembly_id;
-        $self->dirty(1);
-    }
-    return $self->{'assembly_id'};
+    my $self = shift;
+    return $self->_get_set('assembly_id', 'number', @_);
 }
 
 
@@ -308,33 +210,8 @@ sub assembly_id {
 =cut
 
 sub assembly {
-    my ($self,$assembly) = @_;
-    if ($assembly){
-        # get existing assembly by name
-        my $obj = $self->get_assembly_by_name($assembly);
-        if ($obj){
-            # Have we actually changed?
-            if ($self->assembly_id != $obj->id){
-                $self->assembly_id($obj->id);
-                $self->dirty(1);
-            }
-            $self->{'assembly'} = $obj;
-        }
-        else {
-            # warn "No such assembly in the database";
-            return undef; # explicitly return nothing.
-        }
-    }
-    elsif ($self->{'assembly'}){
-        # already got a assembly object.  We'll return it at the end.
-    }
-    else {  # lazy-load assembly from database
-        if ($self->assembly_id){
-            my $obj = VRTrack::Assembly->new($self->{vrtrack},$self->assembly_id);
-            $self->{'assembly'} = $obj;
-        }
-    }
-    return $self->{'assembly'};
+    my $self = shift;
+    return $self->_get_set_child_object('get_assembly_by_name', 'VRTrack::Assembly', @_);
 }
 
 
@@ -348,21 +225,8 @@ sub assembly {
 =cut
 
 sub add_assembly {
-    my ($self, $name) = @_;
-
-    my $obj = $self->get_assembly_by_name($name);
-    if ($obj){
-        warn "Assembly $name is already present in the database\n";
-        return undef;
-    }
-    else {
-        $obj = VRTrack::Assembly->create($self->{vrtrack}, $name);
-        # populate caches
-        $self->{'assembly_id'} = $obj->id;
-        $self->{'assembly'} = $obj;
-        $self->dirty(1);
-    }
-    return $self->{'assembly'};
+    my $self = shift;
+    return $self->_create_child_object('get_assembly_by_name', 'VRTrack::Assembly', @_);
 }
 
 
@@ -392,12 +256,8 @@ sub get_assembly_by_name {
 =cut
 
 sub raw_reads {
-    my ($self,$num_reads) = @_;
-    if (defined $num_reads and $num_reads != $self->{'raw_reads'}){
-	$self->{'raw_reads'} = $num_reads;
-	$self->dirty(1);
-    }
-    return $self->{'raw_reads'};
+    my $self = shift;
+    return $self->_get_set('raw_reads', 'number', @_);
 }
 
 
@@ -412,12 +272,8 @@ sub raw_reads {
 =cut
 
 sub raw_bases {
-    my ($self,$num_bases) = @_;
-    if (defined $num_bases and $num_bases != $self->{'raw_bases'}){
-	$self->{'raw_bases'} = $num_bases;
-	$self->dirty(1);
-    }
-    return $self->{'raw_bases'};
+    my $self = shift;
+    return $self->_get_set('raw_bases', 'number', @_);
 }
 
 
@@ -432,12 +288,8 @@ sub raw_bases {
 =cut
 
 sub clip_bases {
-    my ($self,$num_bases) = @_;
-    if (defined $num_bases and $num_bases != $self->{'clip_bases'}){
-	$self->{'clip_bases'} = $num_bases;
-	$self->dirty(1);
-    }
-    return $self->{'clip_bases'};
+    my $self = shift;
+    return $self->_get_set('clip_bases', 'number', @_);
 }
 
 
@@ -452,12 +304,8 @@ sub clip_bases {
 =cut
 
 sub reads_mapped {
-    my ($self,$num_reads) = @_;
-    if (defined $num_reads and $num_reads != $self->{'reads_mapped'}){
-	$self->{'reads_mapped'} = $num_reads;
-	$self->dirty(1);
-    }
-    return $self->{'reads_mapped'};
+    my $self = shift;
+    return $self->_get_set('reads_mapped', 'number', @_);
 }
 
 
@@ -472,12 +320,8 @@ sub reads_mapped {
 =cut
 
 sub reads_paired {
-    my ($self,$num_reads) = @_;
-    if (defined $num_reads and $num_reads != $self->{'reads_paired'}){
-	$self->{'reads_paired'} = $num_reads;
-	$self->dirty(1);
-    }
-    return $self->{'reads_paired'};
+    my $self = shift;
+    return $self->_get_set('reads_paired', 'number', @_);
 }
 
 
@@ -492,12 +336,8 @@ sub reads_paired {
 =cut
 
 sub bases_mapped {
-    my ($self,$num_bases) = @_;
-    if (defined $num_bases and $num_bases != $self->{'bases_mapped'}){
-	$self->{'bases_mapped'} = $num_bases;
-	$self->dirty(1);
-    }
-    return $self->{'bases_mapped'};
+    my $self = shift;
+    return $self->_get_set('bases_mapped', 'number', @_);
 }
 
 
@@ -512,12 +352,8 @@ sub bases_mapped {
 =cut
 
 sub rmdup_reads_mapped {
-    my ($self,$num_reads) = @_;
-    if (defined $num_reads and $num_reads != $self->{'rmdup_reads_mapped'}){
-	$self->{'rmdup_reads_mapped'} = $num_reads;
-	$self->dirty(1);
-    }
-    return $self->{'rmdup_reads_mapped'};
+    my $self = shift;
+    return $self->_get_set('rmdup_reads_mapped', 'number', @_);
 }
 
 
@@ -532,12 +368,8 @@ sub rmdup_reads_mapped {
 =cut
 
 sub rmdup_bases_mapped {
-    my ($self,$num_bases) = @_;
-    if (defined $num_bases and $num_bases != $self->{'rmdup_bases_mapped'}){
-	$self->{'rmdup_bases_mapped'} = $num_bases;
-	$self->dirty(1);
-    }
-    return $self->{'rmdup_bases_mapped'};
+    my $self = shift;
+    return $self->_get_set('rmdup_bases_mapped', 'number', @_);
 }
 
 
@@ -552,12 +384,8 @@ sub rmdup_bases_mapped {
 =cut
 
 sub error_rate {
-    my ($self,$err) = @_;
-    if (defined $err and $err != $self->{'error_rate'}){
-	$self->{'error_rate'} = $err;
-	$self->dirty(1);
-    }
-    return $self->{'error_rate'};
+    my $self = shift;
+    return $self->_get_set('error_rate', 'number', @_);
 }
 
 
@@ -572,12 +400,8 @@ sub error_rate {
 =cut
 
 sub mean_insert {
-    my ($self,$ins) = @_;
-    if (defined $ins and $ins != $self->{'mean_insert'}){
-	$self->{'mean_insert'} = $ins;
-	$self->dirty(1);
-    }
-    return $self->{'mean_insert'};
+    my $self = shift;
+    return $self->_get_set('mean_insert', 'number', @_);
 }
 
 
@@ -592,12 +416,8 @@ sub mean_insert {
 =cut
 
 sub sd_insert {
-    my ($self,$ins) = @_;
-    if (defined $ins and $ins != $self->{'sd_insert'}){
-	$self->{'sd_insert'} = $ins;
-	$self->dirty(1);
-    }
-    return $self->{'sd_insert'};
+    my $self = shift;
+    return $self->_get_set('sd_insert', 'number', @_);
 }
 
 
@@ -612,12 +432,8 @@ sub sd_insert {
 =cut
 
 sub adapter_reads {
-    my ($self,$num_reads) = @_;
-    if (defined $num_reads and $num_reads != $self->{'adapter_reads'}){
-	$self->{'adapter_reads'} = $num_reads;
-	$self->dirty(1);
-    }
-    return $self->{'adapter_reads'};
+    my $self = shift;
+    return $self->_get_set('adapter_reads', 'number', @_);
 }
 
 
@@ -631,12 +447,8 @@ sub adapter_reads {
 =cut
 
 sub genotype_expected {
-    my ($self,$gt) = @_;
-    if (defined $gt and $gt ne $self->{'gt_expected'}){
-	$self->{'gt_expected'} = $gt;
-	$self->dirty(1);
-    }
-    return $self->{'gt_expected'};
+    my $self = shift;
+    return $self->_get_set('gt_expected', 'string', @_);
 }
 
 
@@ -650,12 +462,8 @@ sub genotype_expected {
 =cut
 
 sub genotype_found {
-    my ($self,$gt) = @_;
-    if (defined $gt and $gt ne $self->{'gt_found'}){
-	$self->{'gt_found'} = $gt;
-	$self->dirty(1);
-    }
-    return $self->{'gt_found'};
+    my $self = shift;
+    return $self->_get_set('gt_found', 'string', @_);
 }
 
 
@@ -669,55 +477,8 @@ sub genotype_found {
 =cut
 
 sub genotype_ratio {
-    my ($self,$gt) = @_;
-    if (defined $gt and $gt != $self->{'gt_ratio'}){
-	$self->{'gt_ratio'} = $gt;
-	$self->dirty(1);
-    }
-    return $self->{'gt_ratio'};
-}
-
-
-=head2 dirty
-
-  Arg [1]    : boolean for dirty status
-  Example    : $mapstats->dirty(1);
-  Description: Get/Set for mapstats properties having been altered.
-  Returntype : boolean
-
-=cut
-
-sub dirty {
-    my ($self,$dirty) = @_;
-    if (defined $dirty){
-	$self->{_dirty} = $dirty ? 1 : 0;
-    }
-    return $self->{_dirty};
-}
-
-
-=head2 add_image
-
-  Arg [1]    : image name
-  Arg [2]    : image data (i.e. the binary image)
-  Example    : my $newimage = $lib->add_image('gc.png',$gc_png_img);
-  Description: create a new image, and if successful, return the object
-  Returntype : VRTrack::Image object
-
-=cut
-
-sub add_image {
-    my ($self, $name, $img) = @_;
-    my $obj = VRTrack::Image->create($self->{vrtrack}, $name, $img);
-    if ($obj){
-        $obj->mapstats_id($self->id);
-        $obj->update;
-    }
-    # clear caches
-    delete $self->{'image_ids'};
-    delete $self->{'images'};
-
-    return $obj;
+    my $self = shift;
+    return $self->_get_set('gt_ratio', 'number', @_);
 }
 
 
@@ -732,11 +493,27 @@ sub add_image {
 
 sub add_image_by_filename {
     my ($self, $imgfile) = @_;
-    open( my $IMG, $imgfile ) or die "Can't read image $imgfile: $!\n";
+    open( my $IMG, $imgfile ) or confess "Can't read image $imgfile: $!\n";
     my $img = do { local( $/ ) ; <$IMG> } ;  # one-line slurp
     close $IMG;
     my $imgname = basename($imgfile);
     return $self->add_image($imgname, $img);
+}
+
+
+=head2 add_image
+
+  Arg [1]    : image name
+  Arg [2]    : image data (i.e. the binary image)
+  Example    : my $newimage = $lib->add_image('gc.png',$gc_png_img);
+  Description: create a new image, and if successful, return the object
+  Returntype : VRTrack::Image object
+
+=cut
+
+sub add_image {
+    my $self = shift;
+    return $self->_add_child_object(undef, 'VRTrack::Image', @_);
 }
 
 
@@ -750,17 +527,8 @@ sub add_image_by_filename {
 =cut
 
 sub images {
-    my ($self) = @_;
-    unless ($self->{'images'}){
-	my @images;
-    	foreach my $id (@{$self->image_ids()}){
-	    my $obj = VRTrack::Image->new($self->{vrtrack},$id);
-	    push @images, $obj;
-	}
-	$self->{'images'} = \@images;
-    }
-
-    return $self->{'images'};
+    my $self = shift;
+    return $self->_get_child_objects('VRTrack::Image');
 }
 
 
@@ -774,25 +542,8 @@ sub images {
 =cut
 
 sub image_ids {
-    my ($self) = @_;
-    unless ($self->{'image_ids'}){
-	my $sql = qq[select image_id from image where mapstats_id=?];
-	my @images;
-	my $sth = $self->{_dbh}->prepare($sql);
-
-	if ($sth->execute($self->id)){
-	    foreach(@{$sth->fetchall_arrayref()}){
-		push @images, $_->[0];
-	    }
-	}
-	else{
-	    die(sprintf('Cannot retrieve images: %s', $DBI::errstr));
-	}
-
-	$self->{'image_ids'} = \@images;
-    }
- 
-    return $self->{'image_ids'};
+    my $self = shift;
+    return $self->_get_child_ids('VRTrack::Image');
 }
 
 
@@ -806,15 +557,6 @@ sub image_ids {
 
 =cut
 
-sub changed {
-    my ($self,$changed) = @_;
-    if (defined $changed and $changed ne $self->{'changed'}){
-	$self->{'changed'} = $changed;
-	$self->dirty(1);
-    }
-    return $self->{'changed'};
-}
-
 
 =head2 descendants
 
@@ -825,14 +567,8 @@ sub changed {
 
 =cut
 
-sub descendants {
-    my ($self) = @_;
-    my @desc;
-    foreach (@{$self->images}){
-        push @desc, $_;
-    }
-    return \@desc;
+sub _get_child_methods {
+    return qw(images);
 }
-
 
 1;

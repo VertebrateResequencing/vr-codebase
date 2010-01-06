@@ -1,5 +1,5 @@
 package VRTrack::Request; 
-# author: jws
+
 =head1 NAME
 
 VRTrack::Request - Sequence Tracking Request object
@@ -16,7 +16,7 @@ An object describing the tracked properties of a request.
 
 =head1 CONTACT
 
-jws@sanger.ac.uk
+jws@sanger.ac.uk (author)
 
 =head1 METHODS
 
@@ -24,9 +24,13 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
-no warnings 'uninitialized';
-use VRTrack::Core_obj;
-our @ISA = qw(VRTrack::Core_obj);
+use Carp qw(cluck confess);
+use VRTrack::Sample;
+use VRTrack::Study;
+
+use base qw(VRTrack::Core_obj
+	    VRTrack::SequenceScape_obj);
+
 
 =head2 fields_dispatch
 
@@ -40,16 +44,15 @@ our @ISA = qw(VRTrack::Core_obj);
 
 sub fields_dispatch {
     my $self = shift;
-    my %fields = ( 
-                'request_id'        => sub { $self->id(@_)},
-                'library_id'        => sub { $self->library_id(@_)},
-                'ssid'              => sub { $self->ssid(@_)},
-                'seq_status'        => sub { $self->seq_status(@_)},
-                'note_id'           => sub { $self->note_id(@_)},
-                'changed'           => sub { $self->changed(@_)},
-                'latest'            => sub { $self->is_latest(@_)},
-                );
-
+    
+    my %fields = %{$self->SUPER::fields_dispatch()};
+    %fields = (%fields,
+               request_id      => sub { $self->id(@_)},
+               library_id      => sub { $self->library_id(@_)},
+               ssid            => sub { $self->ssid(@_)},
+               seq_status      => sub { $self->seq_status(@_)},
+               name            => sub { $self->name(@_)});
+    
     return \%fields;
 }
 
@@ -63,12 +66,6 @@ sub fields_dispatch {
   Returntype : VRTrack::Request object
 
 =cut
-
-sub new_by_ssid {
-    my ($class,$vrtrack, $ssid) = @_;
-    die "Need to call with a vrtrack handle, ssid" unless ($vrtrack && $ssid);
-    return $class->new_by_field_value($vrtrack, 'ssid',$ssid);
-}
 
 
 =head2 create
@@ -90,24 +87,6 @@ sub create {
 # Class methods
 ###############################################################################
 
-=head2 dirty
-
-  Arg [1]    : boolean for dirty status
-  Example    : $request->dirty(1);
-  Description: Get/Set for request properties having been altered.
-  Returntype : boolean
-
-=cut
-
-sub dirty {
-    my ($self,$dirty) = @_;
-    if (defined $dirty){
-	$self->{_dirty} = $dirty ? 1 : 0;
-    }
-    return $self->{_dirty};
-}
-
-
 
 =head2 id
 
@@ -118,15 +97,6 @@ sub dirty {
   Returntype : integer
 
 =cut
-
-sub id {
-    my ($self,$id) = @_;
-    if (defined $id and $id != $self->{'id'}){
-	$self->{'id'} = $id;
-	$self->dirty(1);
-    }
-    return $self->{'id'};
-}
 
 
 =head2 library_id
@@ -140,12 +110,8 @@ sub id {
 =cut
 
 sub library_id {
-    my ($self,$library_id) = @_;
-    if (defined $library_id and $library_id != $self->{'library_id'}){
-	$self->{'library_id'} = $library_id;
-	$self->dirty(1);
-    }
-    return $self->{'library_id'};
+    my $self = shift;
+    return $self->_get_set('library_id', 'number', @_);
 }
 
 
@@ -159,15 +125,6 @@ sub library_id {
 
 =cut
 
-sub ssid {
-    my ($self,$ssid) = @_;
-    if (defined $ssid and $ssid != $self->{'ssid'}){
-        $self->{'ssid'} = $ssid;
-        $self->dirty(1);
-    }
-    return $self->{'ssid'};
-}
-
 
 =head2 seq_status
 
@@ -180,16 +137,9 @@ sub ssid {
 =cut
 
 sub seq_status {
-    my ($self,$seq_status) = @_;
-    if (defined $seq_status and $seq_status ne $self->{'seq_status'}){
-        my %allowed = map {$_ => 1} @{$self->list_enum_vals('request','seq_status')};
-        unless ($allowed{lc($seq_status)}){
-            die "'$seq_status' is not a defined seq_status";
-        }
-	$self->{'seq_status'} = $seq_status;
-	$self->dirty(1);
-    }
-    return $self->{'seq_status'};
+    my $self = shift;
+    $self->_check_status_value('seq_status', @_);
+    return $self->_get_set('seq_status', 'string', @_);
 }
 
 
@@ -202,15 +152,5 @@ sub seq_status {
   Returntype : string
 
 =cut
-
-sub changed {
-    my ($self,$changed) = @_;
-    if (defined $changed and $changed ne $self->{'changed'}){
-	$self->{'changed'} = $changed;
-	$self->dirty(1);
-    }
-    return $self->{'changed'};
-}
-
 
 1;

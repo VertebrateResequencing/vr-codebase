@@ -1,5 +1,5 @@
 package VRTrack::Project;
-# author: jws
+
 =head1 NAME
 
 VRTrack::Project - Sequence Tracking Project object
@@ -19,7 +19,7 @@ An object describing the tracked properties of a project.
 
 =head1 CONTACT
 
-jws@sanger.ac.uk
+jws@sanger.ac.uk (author)
 
 =head1 METHODS
 
@@ -27,12 +27,15 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
-use Carp;
-no warnings 'uninitialized';
-use VRTrack::Core_obj;
+use Carp qw(cluck confess);
 use VRTrack::Sample;
 use VRTrack::Study;
-our @ISA = qw(VRTrack::Core_obj);
+
+use base qw(VRTrack::Core_obj
+            VRTrack::Hierarchy_obj
+	    VRTrack::Named_obj
+	    VRTrack::SequenceScape_obj);
+
 
 =head2 fields_dispatch
 
@@ -46,17 +49,15 @@ our @ISA = qw(VRTrack::Core_obj);
 
 sub fields_dispatch {
     my $self = shift;
-    my %fields = ( 
-                'project_id'        => sub { $self->id(@_)},
-                'ssid'              => sub { $self->ssid(@_)},
-                'name'              => sub { $self->name(@_)},
-                'hierarchy_name'    => sub { $self->hierarchy_name(@_)},
-                'study_id'          => sub { $self->study_id(@_)},
-                'note_id'           => sub { $self->note_id(@_)},
-                'changed'           => sub { $self->changed(@_)},
-                'latest'            => sub { $self->is_latest(@_)},
-                );
-
+    
+    my %fields = %{$self->SUPER::fields_dispatch()};
+    %fields = (%fields,
+               project_id        => sub { $self->id(@_)},
+               ssid              => sub { $self->ssid(@_)},
+               hierarchy_name    => sub { $self->hierarchy_name(@_)},
+               study_id          => sub { $self->study_id(@_)},
+	       name              => sub { $self->name(@_)});
+    
     return \%fields;
 }
 
@@ -75,12 +76,6 @@ sub fields_dispatch {
 
 =cut
 
-sub new_by_name {
-    my ($class,$vrtrack, $name) = @_;
-    confess "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
-    return $class->new_by_field_value($vrtrack, 'name',$name);
-}
-
 
 =head2 new_by_hierarchy_name
 
@@ -91,12 +86,6 @@ sub new_by_name {
   Returntype : VRTrack::Project object
 
 =cut
-
-sub new_by_hierarchy_name {
-    my ($class,$vrtrack, $hierarchy_name) = @_;
-    die "Need to call with a vrtrack handle, hierarchy_name" unless ($vrtrack && $hierarchy_name);
-    return $class->new_by_field_value($vrtrack, 'hierarchy_name',$hierarchy_name);
-}
 
 
 =head2 new_by_ssid
@@ -109,121 +98,85 @@ sub new_by_hierarchy_name {
 
 =cut
 
-sub new_by_ssid {
-    my ($class,$vrtrack, $ssid) = @_;
-    die "Need to call with a vrtrack handle, ssid" unless ($vrtrack && $ssid);
-    return $class->new_by_field_value($vrtrack, 'ssid',$ssid);
-}
 
-
-#   =head2 create
-#   
-#     Arg [1]    : vrtrack handle to seqtracking database
-#     Arg [2]    : project name
-#     Example    : my $project = VRTrack::Project->create($vrtrack, $name)
-#     Description: Class method.  Creates new Project object in the database.
-#     Returntype : VRTrack::Project object
-#   
-#   =cut
-#   
-#   sub create {
-#       my ($class,$vrtrack, $name) = @_;
-#       die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
-#       if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-#       my $dbh = $vrtrack->{_dbh};
-#   
-#       my $hierarchy_name = $name;
-#       $hierarchy_name =~ s/\W+/_/g;
-#   
-#       # prevent adding a project with an existing name
-#       if ($class->is_name_in_database($vrtrack, $name, $hierarchy_name)){
-#           die "Already a project by name $name/$hierarchy_name";
-#       }
-#   
-#       # lock table, get max id, increment, and use as id
-#       $dbh->do (qq[LOCK TABLE project WRITE]);
-#       my $sql = qq[select max(project_id) as id from project];
-#       my $sth = $dbh->prepare($sql);
-#       my $next_id;
-#       if ($sth->execute()){
-#   	my $data = $sth->fetchrow_hashref;
-#   	unless ($data){
-#               $dbh->do (qq[UNLOCK TABLES]);
-#               die( sprintf("Can't retrieve next project id: %s", $DBI::errstr));
-#   	}
-#           $next_id = 1;
-#           $next_id += $data->{'id'};
-#       }
-#       else{
-#   	die(sprintf("Can't retrieve next project id: %s", $DBI::errstr));
-#       }
-#   
-#       # OK, have next project id to use for new project
-#       $sql = qq[INSERT INTO project (project_id,name,hierarchy_name,changed,latest) VALUES (?,?,?,now(),true)];
-#   
-#       $sth = $dbh->prepare($sql);
-#       my $obj;
-#       unless ($sth->execute( $next_id, $name, $hierarchy_name)) {
-#           die( sprintf('DB load insert failed: %s %s', $next_id, $DBI::errstr));
-#       }
-#       $dbh->do (qq[UNLOCK TABLES]);
-#   
-#       return $class->new($vrtrack, $next_id);
-#   }
+=head2 create
+  
+  Arg [1]    : vrtrack handle to seqtracking database
+  Arg [2]    : name
+  Example    : my $file = VRTrack::Project->create($vrtrack, $name)
+  Description: Class method.  Creates new Project object in the database.
+  Returntype : VRTrack::Project object
+   
+=cut
 
 
 =head2 is_name_in_database
 
   Arg [1]    : project name
   Arg [2]    : hierarchy name
-  Example    : if(VRTrack::Project->is_name_in_database($vrtrack, $name,$hname)
+  Example    : if(VRTrack::Project->is_name_in_database($vrtrack, $name, $hname)
   Description: Class method. Checks to see if a name or hierarchy name is already used in the project table.
   Returntype : boolean
 
 =cut
-
-sub is_name_in_database {
-    my ($class, $vrtrack, $name, $hname) = @_;
-    die "Need to call with a vrtrack handle, name, hierarchy name" unless ($vrtrack && $name && $hname);
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-    my $dbh = $vrtrack->{_dbh};
-    my $sql = qq[select project_id from project where latest=true and (name = ? or hierarchy_name = ?) ];
-    my $sth = $dbh->prepare($sql);
-
-    my $already_used = 0;
-    if ($sth->execute($name,$hname)){
-        my $data = $sth->fetchrow_hashref;
-        if ($data){
-            $already_used = 1;
-        }
-    }
-    else{
-        die(sprintf('Cannot retrieve project by $name: %s', $DBI::errstr));
-    }
-    return $already_used;
-}
 
 
 ###############################################################################
 # Object methods
 ###############################################################################
 
-=head2 dirty
+=head2 id
 
-  Arg [1]    : boolean for dirty status
-  Example    : $obj->dirty(1);
-  Description: Get/Set for object properties having been altered.
-  Returntype : boolean
+  Arg [1]    : id (optional)
+  Example    : my $id = $proj->id();
+               $proj->id('104');
+  Description: Get/Set for ID of a project
+  Returntype : Internal ID integer
 
 =cut
 
-sub dirty {
-    my ($self,$dirty) = @_;
-    if (defined $dirty){
-	$self->{_dirty} = $dirty ? 1 : 0;
-    }
-    return $self->{_dirty};
-}
+
+=head2 hierarchy_name
+
+  Arg [1]    : directory name (optional)
+  Example    : my $hname = $project->hierarchy_name();
+  Description: Get/set project hierarchy name.  This is the directory name (without path) that the project will be named in a file hierarchy.
+  Returntype : string
+
+=cut
+
+
+=head2 name
+
+  Arg [1]    : name (optional)
+  Example    : my $name = $proj->name();
+               $proj->name('1000Genomes-B1-TOS');
+  Description: Get/Set for project name
+  Returntype : string
+
+=cut
+
+
+=head2 ssid
+
+  Arg [1]    : ssid (optional)
+  Example    : my $ssid = $proj->ssid();
+               $proj->ssid(104);
+  Description: Get/Set for project SequenceScape ID
+  Returntype : string
+
+=cut
+
+
+=head2 changed
+
+  Arg [1]    : changed (optional)
+  Example    : my $changed = $project->changed();
+               $project->changed('20080810123000');
+  Description: Get/Set for project changed
+  Returntype : string
+
+=cut
 
 
 =head2 samples
@@ -236,18 +189,8 @@ sub dirty {
 =cut
 
 sub samples {
-    my ($self) = @_;
-
-    unless ($self->{'samples'}){
-        my @samples;
-        foreach my $id (@{$self->sample_ids()}){
-            my $obj = VRTrack::Sample->new($self->{vrtrack},$id);
-            push @samples, $obj;
-        }
-        $self->{'samples'} = \@samples;
-    }
-
-    return $self->{'samples'};
+    my $self = shift;
+    return $self->_get_child_objects('VRTrack::Sample');
 }
 
 
@@ -261,125 +204,8 @@ sub samples {
 =cut
 
 sub sample_ids {
-    my ($self) = @_;
-
-    unless ($self->{'sample_ids'}){
-        my $sql = qq[select sample_id from sample where project_id=? and latest=true];
-        my @samples;
-        my $sth = $self->{_dbh}->prepare($sql);
-
-        if ($sth->execute($self->id)){
-            foreach(@{$sth->fetchall_arrayref()}){
-                push @samples, $_->[0];
-            }
-        }
-        else{
-            die(sprintf('Cannot retrieve samples: %s', $DBI::errstr));
-        }
-
-        $self->{'sample_ids'} = \@samples;
-    }
- 
-    return $self->{'sample_ids'};
-}
-
-
-=head2 id
-
-  Arg [1]    : id (optional)
-  Example    : my $id = $proj->id();
-               $proj->id('104');
-  Description: Get/Set for ID of a project
-  Returntype : Internal ID integer
-
-=cut
-
-sub id {
-    my ($self,$id) = @_;
-    if (defined $id and $id ne $self->{'id'}){
-        $self->{'id'} = $id;
-	$self->dirty(1);
-    }
-    return $self->{'id'};
-}
-
-
-=head2 hierarchy_name
-
-  Arg [1]    : directory name (optional)
-  Example    : my $hname = $project->hierarchy_name();
-  Description: Get/set project hierarchy name.  This is the directory name (without path) that the project will be named in a file hierarchy.
-  Returntype : string
-
-=cut
-
-sub hierarchy_name {
-    my ($self,$name) = @_;
-    if (defined $name and $name ne $self->{'hierarchy_name'}){
-        $self->{'hierarchy_name'} = $name;
-	$self->dirty(1);
-    }
-    return $self->{'hierarchy_name'};
-}
-
-
-=head2 name
-
-  Arg [1]    : name (optional)
-  Example    : my $name = $proj->name();
-               $proj->name('1000Genomes-B1-TOS');
-  Description: Get/Set for project name
-  Returntype : string
-
-=cut
-
-sub name {
-    my ($self,$name) = @_;
-    if (defined $name and $name ne $self->{'name'}){
-        $self->{'name'} = $name;
-	$self->dirty(1);
-    }
-    return $self->{'name'};
-}
-
-
-=head2 ssid
-
-  Arg [1]    : ssid (optional)
-  Example    : my $ssid = $proj->ssid();
-               $proj->ssid(104);
-  Description: Get/Set for project SequenceScape ID
-  Returntype : string
-
-=cut
-
-sub ssid {
-    my ($self,$ssid) = @_;
-    if (defined $ssid and $ssid ne $self->{'ssid'}){
-        $self->{'ssid'} = $ssid;
-	$self->dirty(1);
-    }
-    return $self->{'ssid'};
-}
-
-
-=head2 changed
-
-  Arg [1]    : changed (optional)
-  Example    : my $changed = $project->changed();
-               $project->changed('20080810123000');
-  Description: Get/Set for project changed
-  Returntype : string
-
-=cut
-
-sub changed {
-    my ($self,$changed) = @_;
-    if (defined $changed and $changed ne $self->{'changed'}){
-	$self->{'changed'} = $changed;
-	$self->dirty(1);
-    }
-    return $self->{'changed'};
+    my $self = shift;
+    return $self->_get_child_ids('VRTrack::Sample');
 }
 
 
@@ -394,22 +220,8 @@ sub changed {
 
 sub add_sample {
     my ($self, $sname) = @_;
-    # Sample names should be unique for a project
     # TODO: if ssid is defined, then it should also not be added twice
-    my $obj = VRTrack::Sample->new_by_name_project($self->{vrtrack},$sname,$self->id);
-    if ($obj){
-        warn "Sample $sname is already present in the database\n";
-        return undef;
-    }
-
-    $obj = VRTrack::Sample->create($self->{vrtrack},$sname);
-    if ($obj){
-        $obj->project_id($self->id);
-        $obj->update;
-    }
-    delete $self->{'sample_ids'};
-    delete $self->{'samples'};
-    return $obj;
+    return $self->_add_child_object('new_by_name_project', 'VRTrack::Sample', $sname, $self->id);
 }
 
 
@@ -423,18 +235,8 @@ sub add_sample {
 =cut
 
 sub get_sample_by_name {
-    my ($self, $name) = @_;
-    #my $obj = VRTrack::Sample->new_by_name_project($self->{vrtrack},$name, $self->id);
-    my @match = grep {$_->name eq $name} @{$self->samples};
-    if (scalar @match > 1){ # shouldn't happen
-        die "More than one sample with name $name";
-    }
-    my $obj;
-    if (@match){
-        $obj = $match[0];
-    }
-
-    return $obj;
+    my $self = shift;
+    return $self->_get_child_by_field_value('samples', 'name', @_);
 }
 
 
@@ -448,17 +250,8 @@ sub get_sample_by_name {
 =cut
 
 sub get_sample_by_id {
-    my ($self, $id) = @_;
-    my @match = grep {$_->id == $id} @{$self->samples};
-    if (scalar @match > 1){ # shouldn't happen
-        die "More than one sample with id $id";
-    }
-    my $obj;
-    if (@match){
-        $obj = $match[0];
-    }
-
-    return $obj;
+    my $self = shift;
+    return $self->_get_child_by_field_value('samples', 'id', @_);
 }
 
 
@@ -472,17 +265,8 @@ sub get_sample_by_id {
 =cut
 
 sub get_sample_by_ssid {
-    my ($self, $ssid) = @_;
-    my @match = grep {$_->ssid == $ssid} @{$self->samples};
-    if (scalar @match > 1){ # shouldn't happen
-        die "More than one sample with ssid $ssid";
-    }
-    my $obj;
-    if (@match){
-        $obj = $match[0];
-    }
-
-    return $obj;
+    my $self = shift;
+    return $self->_get_child_by_field_value('samples', 'ssid', @_);
 }
 
 
@@ -497,12 +281,8 @@ sub get_sample_by_ssid {
 =cut
 
 sub study_id {
-    my ($self,$study_id) = @_;
-    if (defined $study_id and $study_id ne $self->{'study_id'}){
-        $self->{'study_id'} = $study_id;
-	$self->dirty(1);
-    }
-    return $self->{'study_id'};
+    my $self = shift;
+    return $self->_get_set('study_id', 'number', @_);
 }
 
 
@@ -511,39 +291,14 @@ sub study_id {
   Arg [1]    : study accession (optional)
   Example    : my $study = $proj->study();
                $proj->study('SRP000031');
-  Description: Get/Set for project study.  Lazy-loads study object from $self->study_id.  If a study accession is supplied, then study_id is set to the corresponding study in the database.  If no such study exists, returns undef.  Use add_study to add a study in this case.
+  Description: Get/Set for project study.  Lazy-loads study object from $self->study_id.  If a study accession is supplied, then study_id is set to the corresponding study in the database. If no such study exists, returns undef.  Use add_study to add a study in this case.
   Returntype : VRTrack::Study object
 
 =cut
 
 sub study {
-    my ($self,$study) = @_;
-    if ($study){
-        # get existing study by name
-        my $obj = $self->get_study_by_acc($study);
-        if ($obj){
-            # Have we actually changed?
-            if ($self->study_id != $obj->id){
-                $self->study_id($obj->id);
-                $self->dirty(1);
-            }
-            $self->{'study'} = $obj;
-        }
-        else {
-            # warn "No such study in the database";
-            return undef; # explicitly return nothing.
-        }
-    }
-    elsif ($self->{'study'}){
-        # already got a study object.  We'll return it at the end.
-    }
-    else {  # lazy-load study from database
-        if ($self->study_id){
-            my $obj = VRTrack::Study->new($self->{vrtrack},$self->study_id);
-            $self->{'study'} = $obj;
-        }
-    }
-    return $self->{'study'};
+    my $self = shift;
+    return $self->_get_set_child_object('get_study_by_acc', 'VRTrack::Study', @_);
 }
 
 
@@ -557,21 +312,8 @@ sub study {
 =cut
 
 sub add_study {
-    my ($self, $acc) = @_;
-
-    my $obj = $self->get_study_by_acc($acc);
-    if ($obj){
-        warn "Study $acc is already present in the database\n";
-        return undef;
-    }
-    else {
-        my $study = VRTrack::Study->create($self->{vrtrack}, $acc);
-        # populate caches
-        $self->{'study_id'} = $study->id;
-        $self->{'study'} = $study;
-        $self->dirty(1);
-    }
-    return $self->{'study'};
+    my $self = shift;
+    return $self->_create_child_object('get_study_by_acc', 'VRTrack::Study', @_);
 }
 
 
@@ -585,7 +327,7 @@ sub add_study {
 =cut
 
 sub get_study_by_acc {
-    my ($self,$acc) = @_;
+    my ($self, $acc) = @_;
     return VRTrack::Study->new_by_acc($self->{vrtrack}, $acc);
 }
 
@@ -599,14 +341,8 @@ sub get_study_by_acc {
 
 =cut
 
-sub descendants {
-    my ($self) = @_;
-    my @desc;
-    foreach (@{$self->samples}){
-        push @desc, $_;
-        push @desc, @{$_->descendants};
-    }
-    return \@desc;
+sub _get_child_methods {
+    return qw(samples);
 }
 
 1;

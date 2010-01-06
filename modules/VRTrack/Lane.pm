@@ -1,5 +1,5 @@
 package VRTrack::Lane; 
-# author: jws
+
 =head1 NAME
 
 VRTrack::Lane - Sequence Tracking Lane object
@@ -8,7 +8,7 @@ VRTrack::Lane - Sequence Tracking Lane object
     my $lane= VRTrack::Lane->new($vrtrack, $lane_id);
 
     my $id = $lane->id();
-    my $status = $lane->status();
+    my $qc_status = $lane->qc_status();
 
 =head1 DESCRIPTION
 
@@ -16,7 +16,7 @@ An object describing the tracked properties of a lane.
 
 =head1 CONTACT
 
-jws@sanger.ac.uk
+jws@sanger.ac.uk (author)
 
 =head1 METHODS
 
@@ -24,14 +24,16 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
-use Carp qw(cluck confess carp croak);
-no warnings 'uninitialized';
+use Carp qw(cluck confess);
 use VRTrack::Mapstats;
 use VRTrack::File;
 use VRTrack::Submission;
-use VRTrack::Core_obj;
 use File::Spec;
-our @ISA = qw(VRTrack::Core_obj);
+
+use base qw(VRTrack::Core_obj
+            VRTrack::Hierarchy_obj
+	    VRTrack::Named_obj);
+
 
 =head2 fields_dispatch
 
@@ -45,32 +47,31 @@ our @ISA = qw(VRTrack::Core_obj);
 
 sub fields_dispatch {
     my $self = shift;
-    my %fields = ( 
-                'lane_id'           => sub { $self->id(@_)},
-                'library_id'        => sub { $self->library_id(@_)},
-                'name'              => sub { $self->name(@_)},
-                'hierarchy_name'    => sub { $self->hierarchy_name(@_)},
-                'acc'               => sub { $self->acc(@_)},
-                'readlen'           => sub { $self->read_len(@_)},
-                'paired'            => sub { $self->is_paired(@_)},
-                'processed'         => sub { $self->processed(@_)},
-                'raw_reads'         => sub { $self->raw_reads(@_)},
-                'raw_bases'         => sub { $self->raw_bases(@_)},
-                'npg_qc_status'     => sub { $self->npg_qc_status(@_)},
-                'qc_status'         => sub { $self->qc_status(@_)},
-                'auto_qc_status'    => sub { $self->auto_qc_status(@_)},
-                'gt_status'         => sub { $self->genotype_status(@_)},
-                'storage_path'      => sub { $self->storage_path(@_)},
-                'submission_id'     => sub { $self->submission_id(@_)},
-                'withdrawn'         => sub { $self->is_withdrawn(@_)},
-                'note_id'           => sub { $self->note_id(@_)},
-                'changed'           => sub { $self->changed(@_)},
-                'run_date'          => sub { $self->run_date(@_)},
-                'latest'            => sub { $self->is_latest(@_)},
-                );
-
+    
+    my %fields = %{$self->SUPER::fields_dispatch()};
+    %fields = (%fields,
+               lane_id           => sub { $self->id(@_)},
+               library_id        => sub { $self->library_id(@_)},
+               name              => sub { $self->name(@_)},
+               hierarchy_name    => sub { $self->hierarchy_name(@_)},
+               acc               => sub { $self->acc(@_)},
+               readlen           => sub { $self->read_len(@_)},
+               paired            => sub { $self->is_paired(@_)},
+               processed         => sub { $self->processed(@_)},
+               raw_reads         => sub { $self->raw_reads(@_)},
+               raw_bases         => sub { $self->raw_bases(@_)},
+               npg_qc_status     => sub { $self->npg_qc_status(@_)},
+               qc_status         => sub { $self->qc_status(@_)},
+               auto_qc_status    => sub { $self->auto_qc_status(@_)},
+               gt_status         => sub { $self->genotype_status(@_)},
+               storage_path      => sub { $self->storage_path(@_)},
+               submission_id     => sub { $self->submission_id(@_)},
+               withdrawn         => sub { $self->is_withdrawn(@_)},
+               run_date          => sub { $self->run_date(@_)});
+    
     return \%fields;
 }
+
 
 ###############################################################################
 # Class methods
@@ -86,12 +87,6 @@ sub fields_dispatch {
 
 =cut
 
-sub new_by_name {
-    my ($class,$vrtrack, $name) = @_;
-    die "Need to call with a handle, name" unless ($vrtrack && $name);
-    return $class->new_by_field_value($vrtrack, 'name',$name);
-}
-
 
 =head2 new_by_hierarchy_name
 
@@ -102,68 +97,6 @@ sub new_by_name {
   Returntype : VRTrack::Lane object
 
 =cut
-
-sub new_by_hierarchy_name {
-    my ($class,$vrtrack, $hierarchy_name) = @_;
-    die "Need to call with a vrtrack handle, hierarchy_name" unless ($vrtrack && $hierarchy_name);
-    return $class->new_by_field_value($vrtrack, 'hierarchy_name',$hierarchy_name);
-}
-
-
-#   =head2 create
-#   
-#     Arg [1]    : vrtrack handle
-#     Arg [2]    : lane name
-#     Example    : my $lane = VRTrack::Lane->create($vrtrack, $name)
-#     Description: Class method.  Creates new Lane object in the database.
-#     Returntype : VRTrack::Lane object
-#   
-#   =cut
-#   
-#   sub create {
-#       my ($class,$vrtrack, $name) = @_;
-#       die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
-#       if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-#       my $dbh = $vrtrack->{_dbh};
-#   
-#       my $hierarchy_name = $name;
-#       $hierarchy_name =~ s/\W+/_/g;
-#   
-#       # prevent adding a lane with an existing name
-#       if ($class->is_name_in_database($vrtrack, $name, $hierarchy_name)){
-#           die "Already a lane by name $name/$hierarchy_name";
-#       }
-#   
-#       $dbh->do (qq[LOCK TABLE lane WRITE]);
-#       my $sql = qq[select max(lane_id) as id from lane];
-#       my $sth = $dbh->prepare($sql);
-#       my $next_id;
-#       if ($sth->execute()){
-#   	my $data = $sth->fetchrow_hashref;
-#   	unless ($data){
-#               $dbh->do (qq[UNLOCK TABLES]);
-#               die( sprintf("Can't retrieve next lane id: %s", $DBI::errstr));
-#   	}
-#           $next_id = $data->{'id'};
-#           $next_id++;
-#       }
-#       else{
-#   	die(sprintf("Can't retrieve next lane id: %s", $DBI::errstr));
-#       }
-#   
-#       $sql = qq[INSERT INTO lane (lane_id, name, hierarchy_name, changed, latest) 
-#                    VALUES (?,?,?,now(),true)];
-#   
-#       $sth = $dbh->prepare($sql);
-#       unless ($sth->execute( $next_id, $name,$hierarchy_name )) {
-#           $dbh->do (qq[UNLOCK TABLES]);
-#           die( sprintf('DB load insert failed: %s %s', $next_id, $DBI::errstr));
-#       }
-#   
-#       $dbh->do (qq[UNLOCK TABLES]);
-#   
-#       return $class->new($vrtrack, $next_id);
-#   }
 
 
 =head2 is_name_in_database
@@ -176,49 +109,21 @@ sub new_by_hierarchy_name {
 
 =cut
 
-sub is_name_in_database {
-    my ($class, $vrtrack, $name, $hname) = @_;
-    die "Need to call with a vrtrack handle, name, hierarchy name" unless ($vrtrack && $name && $hname);
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-    my $dbh = $vrtrack->{_dbh};
-    my $sql = qq[select lane_id from lane where latest=true and (name = ? or hierarchy_name = ?) ];
-    my $sth = $dbh->prepare($sql);
 
-    my $already_used = 0;
-    if ($sth->execute($name,$hname)){
-        my $data = $sth->fetchrow_hashref;
-        if ($data){
-            $already_used = 1;
-        }
-    }
-    else{
-        die(sprintf('Cannot retrieve lane by $name: %s', $DBI::errstr));
-    }
-    return $already_used;
-}
+=head2 create
+  
+  Arg [1]    : vrtrack handle to seqtracking database
+  Arg [2]    : name
+  Example    : my $file = VRTrack::Lane->create($vrtrack, $name)
+  Description: Class method.  Creates new Lane object in the database.
+  Returntype : VRTrack::Lane object
+   
+=cut
 
 
 ###############################################################################
 # Object methods
 ###############################################################################
-
-=head2 dirty
-
-  Arg [1]    : boolean for dirty status
-  Example    : $lane->dirty(1);
-  Description: Get/Set for lane properties having been altered.
-  Returntype : boolean
-
-=cut
-
-sub dirty {
-    my ($self,$dirty) = @_;
-    if (defined $dirty){
-	$self->{_dirty} = $dirty ? 1 : 0;
-    }
-    return $self->{_dirty};
-}
-
 
 =head2 id
 
@@ -229,15 +134,6 @@ sub dirty {
   Returntype : integer
 
 =cut
-
-sub id {
-    my ($self,$id) = @_;
-    if (defined $id and $id != $self->{'id'}){
-	$self->{'id'} = $id;
-	$self->dirty(1);
-    }
-    return $self->{'id'};
-}
 
 
 =head2 library_id
@@ -251,12 +147,8 @@ sub id {
 =cut
 
 sub library_id {
-    my ($self,$library_id) = @_;
-    if (defined $library_id and $library_id != $self->{'library_id'}){
-	$self->{'library_id'} = $library_id;
-	$self->dirty(1);
-    }
-    return $self->{'library_id'};
+    my $self = shift;
+    return $self->_get_set('library_id', 'number', @_);
 }
 
 
@@ -269,15 +161,6 @@ sub library_id {
 
 =cut
 
-sub hierarchy_name {
-    my ($self,$name) = @_;
-    if (defined $name and $name ne $self->{'hierarchy_name'}){
-        $self->{'hierarchy_name'} = $name;
-	$self->dirty(1);
-    }
-    return $self->{'hierarchy_name'};
-}
-
 
 =head2 name
 
@@ -288,15 +171,6 @@ sub hierarchy_name {
   Returntype : string
 
 =cut
-
-sub name {
-    my ($self,$name) = @_;
-    if (defined $name and $name ne $self->{'name'}){
-	$self->{'name'} = $name;
-	$self->dirty(1);
-    }
-    return $self->{'name'};
-}
 
 
 =head2 acc
@@ -310,14 +184,9 @@ sub name {
 =cut
 
 sub acc {
-    my ($self,$acc) = @_;
-    if (defined $acc and $acc ne $self->{'acc'}){
-	$self->{'acc'} = $acc;
-	$self->dirty(1);
-    }
-    return $self->{'acc'};
+    my $self = shift;
+    return $self->_get_set('acc', 'string', @_);
 }
-
 
 
 =head2 read_len
@@ -331,12 +200,8 @@ sub acc {
 =cut
 
 sub read_len {
-    my ($self,$read_len) = @_;
-    if (defined $read_len and $read_len != $self->{'read_len'}){
-	$self->{'read_len'} = $read_len;
-	$self->dirty(1);
-    }
-    return $self->{'read_len'};
+    my $self = shift;
+    return $self->_get_set('read_len', 'number', @_);
 }
 
 
@@ -350,12 +215,8 @@ sub read_len {
 =cut
 
 sub is_paired {
-    my ($self,$is_paired) = @_;
-    if (defined $is_paired){
-	$self->{is_paired} = $is_paired ? 1 : 0;
-	$self->dirty(1);
-    }
-    return $self->{is_paired};
+    my $self = shift;
+    return $self->_get_set('is_paired', 'boolean', @_);
 }
 
 
@@ -369,12 +230,8 @@ sub is_paired {
 =cut
 
 sub is_withdrawn {
-    my ($self,$is_withdrawn) = @_;
-    if (defined $is_withdrawn){
-	$self->{is_withdrawn} = $is_withdrawn ? 1 : 0;
-	$self->dirty(1);
-    }
-    return $self->{is_withdrawn};
+    my $self = shift;
+    return $self->_get_set('is_withdrawn', 'boolean', @_);
 }
 
 
@@ -389,12 +246,8 @@ sub is_withdrawn {
 =cut
 
 sub raw_reads {
-    my ($self,$raw_reads) = @_;
-    if (defined $raw_reads and $raw_reads != $self->{'raw_reads'}){
-	$self->{'raw_reads'} = $raw_reads;
-	$self->dirty(1);
-    }
-    return $self->{'raw_reads'};
+    my $self = shift;
+    return $self->_get_set('raw_reads', 'number', @_);
 }
 
 
@@ -409,12 +262,8 @@ sub raw_reads {
 =cut
 
 sub raw_bases {
-    my ($self,$raw_bases) = @_;
-    if (defined $raw_bases and $raw_bases != $self->{'raw_bases'}){
-	$self->{'raw_bases'} = $raw_bases;
-	$self->dirty(1);
-    }
-    return $self->{'raw_bases'};
+    my $self = shift;
+    return $self->_get_set('raw_bases', 'number', @_);
 }
 
 
@@ -430,13 +279,11 @@ sub raw_bases {
 =cut
 
 sub storage_path {
-    my ($self, $storage_path) = @_;
-    if (defined $storage_path and $storage_path ne $self->{'storage_path'}){
-	die "The supplied storage_path '$storage_path' was not absolute" unless File::Spec->file_name_is_absolute($storage_path);
-	$self->{'storage_path'} = $storage_path;
-	$self->dirty(1);
+    my $self = shift;
+    if ($_[0]) {
+	confess "The supplied storage_path '@_' was not absolute" unless File::Spec->file_name_is_absolute(@_);
     }
-    return $self->{'storage_path'};
+    return $self->_get_set('storage_path', 'string', @_);
 }
 
 
@@ -451,12 +298,8 @@ sub storage_path {
 =cut
 
 sub submission_id {
-    my ($self,$submission_id) = @_;
-    if (defined $submission_id and $submission_id != $self->{'submission_id'}){
-	$self->{'submission_id'} = $submission_id;
-	$self->dirty(1);
-    }
-    return $self->{'submission_id'};
+    my $self = shift;
+    return $self->_get_set('submission_id', 'number', @_);
 }
 
 
@@ -471,30 +314,8 @@ sub submission_id {
 =cut
 
 sub submission {
-    my ($self,$submission) = @_;
-    if ($submission){
-        # get existing submission by name
-        my $obj = $self->get_submission_by_name($submission);
-        if ($obj){
-            $self->{'submission'} = $obj;
-            $self->{'submission_id'} = $obj->id;
-            $self->dirty(1);
-        }
-        else {
-            # warn "No such submission in the database";
-            return undef; # explicitly return nothing.
-        }
-    }
-    elsif ($self->{'submission'}){
-        # already got a submission object.  We'll return it at the end.
-    }
-    else {  # lazy-load submission from database
-        if ($self->submission_id){
-            my $obj = VRTrack::Submission->new($self->{vrtrack},$self->submission_id);
-            $self->{'submission'} = $obj;
-        }
-    }
-    return $self->{'submission'};
+    my $self = shift;
+    return $self->_get_set_child_object('get_submission_by_name', 'VRTrack::Submission', @_);
 }
 
 
@@ -508,21 +329,8 @@ sub submission {
 =cut
 
 sub add_submission {
-    my ($self, $name) = @_;
-
-    my $obj = $self->get_submission_by_name($name);
-    if ($obj){
-        warn "Submission $name is already present in the database\n";
-        return undef;
-    }
-    else {
-        $obj = VRTrack::Submission->create($self->{vrtrack}, $name);
-        # populate caches
-        $self->{'submission_id'} = $obj->id;
-        $self->{'submission'} = $obj;
-        $self->dirty(1);
-    }
-    return $self->{'submission'};
+    my $self = shift;
+    return $self->_create_child_object('get_submission_by_name', 'VRTrack::Submission', @_);
 }
 
 
@@ -554,16 +362,9 @@ sub get_submission_by_name {
 =cut
 
 sub auto_qc_status {
-    my ($self,$auto_qc_status) = @_;
-    if (defined $auto_qc_status and $auto_qc_status ne $self->{'auto_qc_status'}){
-        my %allowed = map {$_ => 1} @{$self->list_enum_vals('lane','auto_qc_status')};
-        unless ($allowed{lc($auto_qc_status)}){
-            die "'$auto_qc_status' is not a defined auto_qc_status";
-        }
-	$self->{'auto_qc_status'} = $auto_qc_status;
-	$self->dirty(1);
-    }
-    return $self->{'auto_qc_status'};
+    my $self = shift;
+    $self->_check_status_value('auto_qc_status', @_);
+    return $self->_get_set('auto_qc_status', 'string', @_);
 }
 
 
@@ -578,16 +379,9 @@ sub auto_qc_status {
 =cut
 
 sub qc_status {
-    my ($self,$qc_status) = @_;
-    if (defined $qc_status and $qc_status ne $self->{'qc_status'}){
-        my %allowed = map {$_ => 1} @{$self->list_enum_vals('lane','qc_status')};
-        unless ($allowed{lc($qc_status)}){
-            die "'$qc_status' is not a defined qc_status";
-        }
-	$self->{'qc_status'} = $qc_status;
-	$self->dirty(1);
-    }
-    return $self->{'qc_status'};
+    my $self = shift;
+    $self->_check_status_value('qc_status', @_);
+    return $self->_get_set('qc_status', 'string', @_);
 }
 
 
@@ -602,16 +396,9 @@ sub qc_status {
 =cut
 
 sub npg_qc_status {
-    my ($self,$npg_qc_status) = @_;
-    if (defined $npg_qc_status and $npg_qc_status ne $self->{'npg_qc_status'}){
-        my %allowed = map {$_ => 1} @{$self->list_enum_vals('lane','npg_qc_status')};
-        unless ($allowed{lc($npg_qc_status)}){
-            die "'$npg_qc_status' is not a defined npg_qc_status";
-        }
-	$self->{'npg_qc_status'} = $npg_qc_status;
-	$self->dirty(1);
-    }
-    return $self->{'npg_qc_status'};
+    my $self = shift;
+    $self->_check_status_value('npg_qc_status', @_);
+    return $self->_get_set('npg_qc_status', 'string', @_);
 }
 
 
@@ -626,16 +413,9 @@ sub npg_qc_status {
 =cut
 
 sub genotype_status {
-    my ($self,$genotype_status) = @_;
-    if (defined $genotype_status and $genotype_status ne $self->{'genotype_status'}){
-        my %allowed = map {$_ => 1} @{$self->list_enum_vals('lane','gt_status')};
-        unless ($allowed{lc($genotype_status)}){
-            die "'$genotype_status' is not a defined genotype_status";
-        }
-	$self->{'genotype_status'} = $genotype_status;
-	$self->dirty(1);
-    }
-    return $self->{'genotype_status'};
+    my $self = shift;
+    $self->_check_status_value('gt_status', @_);
+    return $self->_get_set('genotype_status', 'string', @_);
 }
 
 
@@ -650,12 +430,8 @@ sub genotype_status {
 =cut
 
 sub run_date {
-    my ($self,$run_date) = @_;
-    if (defined $run_date and $run_date ne $self->{'run_date'}){
-	$self->{'run_date'} = $run_date;
-	$self->dirty(1);
-    }
-    return $self->{'run_date'};
+    my $self = shift;
+    return $self->_get_set('run_date', 'string', @_);
 }
 
 
@@ -669,14 +445,6 @@ sub run_date {
 
 =cut
 
-sub changed {
-    my ($self,$changed) = @_;
-    if (defined $changed and $changed ne $self->{'changed'}){
-	$self->{'changed'} = $changed;
-	$self->dirty(1);
-    }
-    return $self->{'changed'};
-}
 
 =head2 processed
 
@@ -687,12 +455,8 @@ sub changed {
 =cut
 
 sub processed {
-    my ($self,$processed) = @_;
-    if (defined $processed and $processed ne $self->{'processed'}){
-	$self->{'processed'} = $processed;
-	$self->dirty(1);
-    }
-    return $self->{'processed'};
+    my $self = shift;
+    return $self->_get_set('processed', 'number', @_);
 }
 
 
@@ -701,29 +465,28 @@ sub processed {
   Arg [1]    : flag, one of the flags listed in Core_obj::allowed_processed_flags();
   Arg [2]    : processed: 0 or 1 (optional)
   Example    : my $processed = $lane->is_processed('qc');
-               $lane->processed('qc',1);
-  Description: Get/Set for lane processed
-  Returntype : 1 or 0
+               $lane->is_processed('qc', 1);
+  Description: Get/Set for lane processed.
+  Returntype : boolean
 
 =cut
 
 sub is_processed {
-    my ($self,$flag,$processed) = @_;
-
-    my %flags = VRTrack::Core_obj->allowed_processed_flags();
-    if ( !exists($flags{$flag}) ) { croak qq[The flag "$flag" not recognised.\n]; }
-
+    my ($self, $flag, $processed) = @_;
+    
+    my %flags = $self->allowed_processed_flags();
+    confess "The flag '$flag' not recognised" unless exists $flags{$flag};
+    
     $flag = $flags{$flag};
-    if ( defined $processed )
-    {
+    if (defined $processed) {
         $processed = $processed ? $self->{processed}|$flag : $self->{processed}&(~$flag);
-        if ( $processed != $self->{'processed'} )
-        {
-            $self->{'processed'} = $processed;
+        if (! defined $self->{processed} || $processed != $self->{processed}) {
+            $self->{processed} = $processed;
             $self->dirty(1);
         }
     }
-    return $self->{'processed'} & $flag ? 1 : 0;
+    
+    return $self->{processed} & $flag ? 1 : 0;
 }
 
 
@@ -756,17 +519,8 @@ sub latest_mapping {
 =cut
 
 sub mappings {
-    my ($self) = @_;
-    unless ($self->{'mappings'}){
-	my @mappings;
-    	foreach my $id (@{$self->mapping_ids()}){
-	    my $obj = VRTrack::Mapstats->new($self->{vrtrack},$id);
-	    push @mappings, $obj;
-	}
-	$self->{'mappings'} = \@mappings;
-    }
-
-    return $self->{'mappings'};
+    my $self = shift;
+    return $self->_get_child_objects('VRTrack::Mapstats');
 }
 
 
@@ -780,25 +534,27 @@ sub mappings {
 =cut
 
 sub mapping_ids {
-    my ($self) = @_;
-    unless ($self->{'mapping_ids'}){
-	my $sql = qq[select distinct(mapstats_id) from mapstats where lane_id=? and latest=true];
-	my @files;
-	my $sth = $self->{_dbh}->prepare($sql);
+    my $self = shift;
+    return $self->_get_child_ids('VRTrack::Mapstats');
+}
+# _get_child_objects expects methods named after the child class, so we alias.
+# alias is repeated twice to avoid warning
+*mapstats_ids = \&mapping_ids;
+*mapstats_ids = \&mapping_ids;
 
-	if ($sth->execute($self->id)){
-	    foreach(@{$sth->fetchall_arrayref()}){
-		push @files, $_->[0];
-	    }
-	}
-	else{
-	    die(sprintf('Cannot retrieve files: %s', $DBI::errstr));
-	}
 
-	$self->{'mapping_ids'} = \@files;
-    }
- 
-    return $self->{'mapping_ids'};
+=head2 add_mapping
+
+  Arg [1]    : none
+  Example    : my $newmapping = $lib->add_mapping();
+  Description: create a new mapping, and if successful, return the object
+  Returntype : VRTrack::Mapstats object
+
+=cut
+
+sub add_mapping {
+    my $self = shift;
+    return $self->_add_child_object(undef, 'VRTrack::Mapstats');
 }
 
 
@@ -812,17 +568,8 @@ sub mapping_ids {
 =cut
 
 sub files {
-    my ($self) = @_;
-    unless ($self->{'files'}){
-	my @files;
-    	foreach my $id (@{$self->file_ids()}){
-	    my $obj = VRTrack::File->new($self->{vrtrack},$id);
-	    push @files, $obj;
-	}
-	$self->{'files'} = \@files;
-    }
-
-    return $self->{'files'};
+    my $self = shift;
+    return $self->_get_child_objects('VRTrack::File');
 }
 
 
@@ -836,25 +583,8 @@ sub files {
 =cut
 
 sub file_ids {
-    my ($self) = @_;
-    unless ($self->{'file_ids'}){
-	my $sql = qq[select file_id from file where lane_id=? and latest = true];
-	my @files;
-	my $sth = $self->{_dbh}->prepare($sql);
-
-	if ($sth->execute($self->id)){
-	    foreach(@{$sth->fetchall_arrayref()}){
-		push @files, $_->[0];
-	    }
-	}
-	else{
-	    die(sprintf('Cannot retrieve files: %s', $DBI::errstr));
-	}
-
-	$self->{'file_ids'} = \@files;
-    }
- 
-    return $self->{'file_ids'};
+    my $self = shift;
+    return $self->_get_child_ids('VRTrack::File');
 }
 
 
@@ -868,50 +598,8 @@ sub file_ids {
 =cut
 
 sub add_file {
-    my ($self, $name) = @_;
-    $name or die "Must call add_file with file name";
-
-    # File names should not be added twice - this can't be caught by the
-    # database, as we expect there will be multiple rows for the same file.
-    my $obj = VRTrack::File->new_by_name($self->{vrtrack},$name);
-    if ($obj){
-        warn "File $name is already present in the database\n";
-        return undef;
-    }
-    $obj = VRTrack::File->create($self->{vrtrack}, $name);
-    if ($obj){
-        $obj->lane_id($self->id);
-        $obj->update;
-    }
-    # clear caches
-    delete $self->{'file_ids'};
-    delete $self->{'files'};
-
-    return $obj;
-
-}
-
-
-=head2 add_mapping
-
-  Arg [1]    : none
-  Example    : my $newmapping = $lib->add_mapping();
-  Description: create a new mapping, and if successful, return the object
-  Returntype : VRTrack::Mapstats object
-
-=cut
-
-sub add_mapping {
-    my ($self) = @_;
-    my $obj = VRTrack::Mapstats->create($self->{vrtrack});
-    if ($obj){
-        $obj->lane_id($self->id);
-        $obj->update;
-    }
-    # clear caches
-    delete $self->{'mapping_ids'};
-    delete $self->{'mappings'};
-    return $obj;
+    my $self = shift;
+    return $self->_add_child_object('new_by_name', 'VRTrack::File', @_);
 }
 
 
@@ -925,18 +613,8 @@ sub add_mapping {
 =cut
 
 sub get_file_by_name {
-    my ($self, $name) = @_;
-    #my $obj = VRTrack::File->new_by_name($self->{vrtrack},$name);
-    my @match = grep {$_->name eq $name} @{$self->files};
-    if (scalar @match > 1){ # shouldn't happen
-        die "More than one matching file with name $name";
-    }
-    my $obj;
-    if (@match){
-        $obj = $match[0];
-    }
-
-    return $obj;
+    my $self = shift;
+    return $self->_get_child_by_field_value('files', 'name', @_);
 }
 
 
@@ -950,9 +628,10 @@ sub get_file_by_name {
 =cut
 
 sub get_file_by_id {
-    my ($self, $id) = @_;
-    my $obj = VRTrack::File->new($self->{vrtrack},$id);
-    return $obj;
+    # old behaviour was to:
+    # return VRTrack::File->new($self->{vrtrack}, $id);
+    my $self = shift;
+    return $self->_get_child_by_field_value('files', 'id', @_);
 }
 
 
@@ -965,17 +644,8 @@ sub get_file_by_id {
 
 =cut
 
-sub descendants {
-    my ($self) = @_;
-    my @desc;
-    foreach (@{$self->files}){
-        push @desc, $_;
-    }
-    foreach (@{$self->mappings}){
-        push @desc, $_;
-        push @desc, @{$_->descendants};
-    }
-    return \@desc;
+sub _get_child_methods {
+    return qw(files mappings);
 }
 
 1;

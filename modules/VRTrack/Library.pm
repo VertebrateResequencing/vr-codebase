@@ -1,5 +1,5 @@
 package VRTrack::Library; 
-# author: jws
+
 =head1 NAME
 
 VRTrack::Library - Sequence Tracking Library object
@@ -19,7 +19,7 @@ An object describing the tracked properties of a library.
 
 =head1 CONTACT
 
-jws@sanger.ac.uk
+jws@sanger.ac.uk (author)
 
 =head1 METHODS
 
@@ -27,14 +27,17 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
-use Carp;
-no warnings 'uninitialized';
+use Carp qw(cluck confess);
 use VRTrack::Lane;
 use VRTrack::Library_type;
 use VRTrack::Seq_centre;
 use VRTrack::Seq_tech;
-use VRTrack::Core_obj;
-our @ISA = qw(VRTrack::Core_obj);
+
+use base qw(VRTrack::Core_obj
+            VRTrack::Hierarchy_obj
+	    VRTrack::Named_obj
+	    VRTrack::SequenceScape_obj);
+
 
 =head2 fields_dispatch
 
@@ -48,27 +51,26 @@ our @ISA = qw(VRTrack::Core_obj);
 
 sub fields_dispatch {
     my $self = shift;
-    my %fields = ( 
-                'library_id'        => sub { $self->id(@_)},
-                'sample_id'         => sub { $self->sample_id(@_)},
-                'ssid'              => sub { $self->ssid(@_)},
-                'name'              => sub { $self->name(@_)},
-                'hierarchy_name'    => sub { $self->hierarchy_name(@_)},
-                'prep_status'       => sub { $self->prep_status(@_)},
-                'qc_status'         => sub { $self->qc_status(@_)},
-                'auto_qc_status'    => sub { $self->auto_qc_status(@_)},
-                'insert_size'       => sub { $self->insert_size(@_)},
-                'library_type_id'   => sub { $self->library_type_id(@_)},
-                'seq_centre_id'     => sub { $self->seq_centre_id(@_)},
-                'seq_tech_id'       => sub { $self->seq_tech_id(@_)},
-                'open'              => sub { $self->open(@_)},
-                'note_id'           => sub { $self->note_id(@_)},
-                'changed'           => sub { $self->changed(@_)},
-                'latest'            => sub { $self->is_latest(@_)},
-                );
-
+    
+    my %fields = %{$self->SUPER::fields_dispatch()};
+    %fields = (%fields, 
+               library_id        => sub { $self->id(@_)},
+               sample_id         => sub { $self->sample_id(@_)},
+               ssid              => sub { $self->ssid(@_)},
+               hierarchy_name    => sub { $self->hierarchy_name(@_)},
+               prep_status       => sub { $self->prep_status(@_)},
+               qc_status         => sub { $self->qc_status(@_)},
+               auto_qc_status    => sub { $self->auto_qc_status(@_)},
+               insert_size       => sub { $self->insert_size(@_)},
+               library_type_id   => sub { $self->library_type_id(@_)},
+               seq_centre_id     => sub { $self->seq_centre_id(@_)},
+               seq_tech_id       => sub { $self->seq_tech_id(@_)},
+               open              => sub { $self->open(@_)},
+               name              => sub { $self->name(@_)});
+    
     return \%fields;
 }
+
 
 ###############################################################################
 # Class methods
@@ -84,11 +86,6 @@ sub fields_dispatch {
 
 =cut
 
-sub new_by_name {
-    my ($class,$vrtrack, $name) = @_;
-    die "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
-    return $class->new_by_field_value($vrtrack, 'name',$name);
-}
 
 =head2 new_by_hierarchy_name
 
@@ -99,12 +96,6 @@ sub new_by_name {
   Returntype : VRTrack::Library object
 
 =cut
-
-sub new_by_hierarchy_name {
-    my ($class,$vrtrack, $hierarchy_name) = @_;
-    die "Need to call with a vrtrack handle, hierarchy_name" unless ($vrtrack && $hierarchy_name);
-    return $class->new_by_field_value($vrtrack, 'hierarchy_name',$hierarchy_name);
-}
 
 
 =head2 new_by_ssid
@@ -117,69 +108,6 @@ sub new_by_hierarchy_name {
 
 =cut
 
-sub new_by_ssid {
-    my ($class,$vrtrack, $ssid) = @_;
-    die "Need to call with a vrtrack handle, ssid" unless ($vrtrack && $ssid);
-    return $class->new_by_field_value($vrtrack, 'ssid',$ssid);
-}
-
-
-#   =head2 create
-#   
-#     Arg [1]    : vrtrack handle to seqtracking database
-#     Arg [2]    : library name
-#     Example    : my $library = VRTrack::Library->create($vrtrack, $name)
-#     Description: Class method.  Creates new Library object in the database.
-#                  Dies if the name or hierarchy_name already exists.
-#     Returntype : VRTrack::Library object
-#   
-#   =cut
-#   
-#   sub create {
-#       my ($class,$vrtrack, $name) = @_;
-#       die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
-#       if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-#       my $dbh = $vrtrack->{_dbh};
-#   
-#       my $hierarchy_name = $name;
-#       $hierarchy_name =~ s/\W+/_/g;
-#   
-#       # prevent adding a library with an existing name
-#       if ($class->is_name_in_database($vrtrack, $name, $hierarchy_name)){
-#           die "Already a library by name $name/$hierarchy_name";
-#       }
-#   
-#       $dbh->do (qq[LOCK TABLE library WRITE]);
-#       my $sql = qq[select max(library_id) as id from library];
-#       my $sth = $dbh->prepare($sql);
-#       my $next_id;
-#       if ($sth->execute()){
-#   	my $data = $sth->fetchrow_hashref;
-#   	unless ($data){
-#               $dbh->do (qq[UNLOCK TABLES]);
-#               die( sprintf("Can't retrieve next library id: %s", $DBI::errstr));
-#   	}
-#           $next_id = $data->{'id'};
-#           $next_id++;
-#       }
-#       else{
-#   	die(sprintf("Can't retrieve next library id: %s", $DBI::errstr));
-#       }
-#   
-#       $sql = qq[INSERT INTO library (library_id, name, hierarchy_name, changed, latest) 
-#                    VALUES (?,?,?,now(),true)];
-#   
-#       $sth = $dbh->prepare($sql);
-#       unless ($sth->execute( $next_id, $name, $hierarchy_name )) {
-#           $dbh->do (qq[UNLOCK TABLES]);
-#           die( sprintf('DB load insert failed: %s %s', $next_id, $DBI::errstr));
-#       }
-#   
-#       $dbh->do (qq[UNLOCK TABLES]);
-#   
-#       return $class->new($vrtrack, $next_id);
-#   }
-
 
 =head2 is_name_in_database
 
@@ -191,87 +119,21 @@ sub new_by_ssid {
 
 =cut
 
-sub is_name_in_database {
-    my ($class, $vrtrack, $name, $hname) = @_;
-    die "Need to call with a vrtrack handle, name, hierarchy name" unless ($vrtrack && $name && $hname);
-    my $dbh = $vrtrack->{_dbh};
-    my $sql = qq[select library_id from library where latest=true and (name = ? or hierarchy_name = ?) ];
-    my $sth = $dbh->prepare($sql);
 
-    my $already_used = 0;
-    if ($sth->execute($name,$hname)){
-        my $data = $sth->fetchrow_hashref;
-        if ($data){
-            $already_used = 1;
-        }
-    }
-    else{
-        die(sprintf('Cannot retrieve library by $name: %s', $DBI::errstr));
-    }
-    return $already_used;
-}
-
+=head2 create
+  
+  Arg [1]    : vrtrack handle to seqtracking database
+  Arg [2]    : name
+  Example    : my $file = VRTrack::Library->create($vrtrack, $name)
+  Description: Class method.  Creates new Library object in the database.
+  Returntype : VRTrack::Library object
+   
+=cut
 
 
 ###############################################################################
 # Object methods
 ###############################################################################
-
-=head2 lanes
-
-  Arg [1]    : None
-  Example    : my $lanes = $library->lanes();
-  Description: Returns a ref to an array of the lane objects that are associated with this library.
-  Returntype : ref to array of VRTrack::Lane objects
-
-=cut
-
-sub lanes {
-    my ($self) = @_;
-    unless ($self->{'lanes'}){
-        my @lanes;
-        foreach my $id (@{$self->lane_ids()}){
-            my $obj = VRTrack::Lane->new($self->{vrtrack},$id);
-            push @lanes, $obj if $obj;
-        }
-        $self->{'lanes'} = \@lanes;
-    }
-
-    return $self->{'lanes'};
-}
-
-
-=head2 lane_ids
-
-  Arg [1]    : None
-  Example    : my $lane_ids = $library->lane_ids();
-  Description: Returns a ref to an array of the lane IDs that are associated with this library
-  Returntype : ref to array of integer lane IDs
-
-=cut
-
-sub lane_ids {
-    my ($self) = @_;
-    unless ($self->{'lane_ids'}){
-        my $sql = qq[select lane_id from lane where library_id=? and latest=true];
-        my @lanes;
-        my $sth = $self->{_dbh}->prepare($sql);
-
-        if ($sth->execute($self->id)){
-            foreach(@{$sth->fetchall_arrayref()}){
-                push @lanes, $_->[0];
-            }
-        }
-        else{
-            die(sprintf('Cannot retrieve lanes: %s', $DBI::errstr));
-        }
-
-        $self->{'lane_ids'} = \@lanes;
-    }
- 
-    return $self->{'lane_ids'};
-}
-
 
 =head2 id
 
@@ -282,15 +144,6 @@ sub lane_ids {
   Returntype : integer
 
 =cut
-
-sub id {
-    my ($self,$id) = @_;
-    if (defined $id and $id != $self->{'id'}){
-        $self->{'id'} = $id;
-        $self->dirty(1);
-    }
-    return $self->{'id'};
-}
 
 
 =head2 sample_id
@@ -304,12 +157,8 @@ sub id {
 =cut
 
 sub sample_id {
-    my ($self,$sample_id) = @_;
-    if (defined $sample_id and $sample_id != $self->{'sample_id'}){
-        $self->{'sample_id'} = $sample_id;
-        $self->dirty(1);
-    }
-    return $self->{'sample_id'};
+    my $self = shift;
+    return $self->_get_set('sample_id', 'number', @_);
 }
 
 
@@ -323,15 +172,6 @@ sub sample_id {
 
 =cut
 
-sub ssid {
-    my ($self,$ssid) = @_;
-    if (defined $ssid and $ssid != $self->{'ssid'}){
-        $self->{'ssid'} = $ssid;
-        $self->dirty(1);
-    }
-    return $self->{'ssid'};
-}
-
 
 =head2 hierarchy_name
 
@@ -341,15 +181,6 @@ sub ssid {
   Returntype : string
 
 =cut
-
-sub hierarchy_name {
-    my ($self,$name) = @_;
-    if (defined $name and $name ne $self->{'hierarchy_name'}){
-        $self->{'hierarchy_name'} = $name;
-	$self->dirty(1);
-    }
-    return $self->{'hierarchy_name'};
-}
 
 
 =head2 name
@@ -361,15 +192,6 @@ sub hierarchy_name {
   Returntype : string
 
 =cut
-
-sub name {
-    my ($self,$name) = @_;
-    if (defined $name and $name ne $self->{'name'}){
-        $self->{'name'} = $name;
-        $self->dirty(1);
-    }
-    return $self->{'name'};
-}
 
 
 =head2 prep_status
@@ -383,17 +205,11 @@ sub name {
 =cut
 
 sub prep_status {
-    my ($self,$prep_status) = @_;
-    if (defined $prep_status and $prep_status ne $self->{'prep_status'}){
-        my %allowed = map {$_ => 1} @{$self->list_enum_vals('library','prep_status')};
-        unless ($allowed{lc($prep_status)}){
-            die "'$prep_status' is not a defined qc_status";
-        }
-        $self->{'prep_status'} = $prep_status;
-        $self->dirty(1);
-    }
-    return $self->{'prep_status'};
+    my $self = shift;
+    $self->_check_status_value('prep_status', @_);
+    return $self->_get_set('prep_status', 'string', @_);
 }
+
 
 =head2 auto_qc_status
 
@@ -406,18 +222,10 @@ sub prep_status {
 =cut
 
 sub auto_qc_status {
-    my ($self,$auto_qc_status) = @_;
-    if (defined $auto_qc_status and $auto_qc_status ne $self->{'auto_qc_status'}){
-        my %allowed = map {$_ => 1} @{$self->list_enum_vals('library','auto_qc_status')};
-        unless ($allowed{lc($auto_qc_status)}){
-            die "'$auto_qc_status' is not a defined auto_qc_status";
-        }
-	$self->{'auto_qc_status'} = $auto_qc_status;
-	$self->dirty(1);
-    }
-    return $self->{'auto_qc_status'};
+    my $self = shift;
+    $self->_check_status_value('auto_qc_status', @_);
+    return $self->_get_set('auto_qc_status', 'string', @_);
 }
-
 
 
 =head2 qc_status
@@ -431,17 +239,9 @@ sub auto_qc_status {
 =cut
 
 sub qc_status {
-    my ($self,$qc_status) = @_;
-    if (defined $qc_status and $qc_status ne $self->{'qc_status'}){
-        my %allowed = map {$_ => 1} @{$self->list_enum_vals('library','qc_status')};
-        unless ($allowed{lc($qc_status)}){
-            die "'$qc_status' is not a defined qc_status";
-        }
-
-        $self->{'qc_status'} = $qc_status;
-        $self->dirty(1);
-    }
-    return $self->{'qc_status'};
+    my $self = shift;
+    $self->_check_status_value('qc_status', @_);
+    return $self->_get_set('qc_status', 'string', @_);
 }
 
 
@@ -456,12 +256,8 @@ sub qc_status {
 =cut
 
 sub insert_size {
-    my ($self,$insert_size) = @_;
-    if (defined $insert_size and $insert_size != $self->{'insert_size'}){
-        $self->{'insert_size'} = $insert_size;
-        $self->dirty(1);
-    }
-    return $self->{'insert_size'};
+    my $self = shift;
+    return $self->_get_set('insert_size', 'number', @_);
 }
 
 
@@ -476,12 +272,8 @@ sub insert_size {
 =cut
 
 sub library_type_id {
-    my ($self,$library_type_id) = @_;
-    if (defined $library_type_id and $library_type_id != $self->{'library_type_id'}){
-        $self->{'library_type_id'} = $library_type_id;
-        $self->dirty(1);
-    }
-    return $self->{'library_type_id'};
+    my $self = shift;
+    return $self->_get_set('library_type_id', 'number', @_);
 }
 
 
@@ -496,33 +288,8 @@ sub library_type_id {
 =cut
 
 sub library_type {
-    my ($self,$name) = @_;
-    if ($name){
-        # get existing library_type by name
-        my $obj = $self->get_library_type_by_name($name);
-        if ($obj){
-            # Have we actually changed?
-            if ($self->library_type_id != $obj->id){
-                $self->library_type_id($obj->id);
-                $self->dirty(1);
-            }
-            $self->{'library_type'} = $obj;
-        }
-        else {
-            # warn "No such library_type in the database";
-            return undef; # explicitly return nothing.
-        }
-    }
-    elsif ($self->{'library_type'}){
-        # already got a library_type object.  We'll return it at the end.
-    }
-    else {  # lazy-load library_type from database
-        if ($self->library_type_id){
-            my $obj = VRTrack::Library_type->new($self->{vrtrack},$self->library_type_id);
-            $self->{'library_type'} = $obj;
-        }
-    }
-    return $self->{'library_type'};
+    my $self = shift;
+    return $self->_get_set_child_object('get_library_type_by_name', 'VRTrack::Library_type', @_);
 }
 
 
@@ -531,26 +298,13 @@ sub library_type {
   Arg [1]    : library_type name
   Example    : my $library_type = $samp->add_library_type('DSS');
   Description: create a new library_type, and if successful, return the object
-  Returntype : VRTrack::Library object
+  Returntype : VRTrack::Library_type object
 
 =cut
 
 sub add_library_type {
-    my ($self, $name) = @_;
-
-    my $obj = $self->get_library_type_by_name($name);
-    if ($obj){
-        warn "Library_type $name is already present in the database\n";
-        return undef;
-    }
-    else {
-        $obj = VRTrack::Library_type->create($self->{vrtrack}, $name);
-        # populate caches
-        $self->{'library_type_id'} = $obj->id;
-        $self->{'library_type'} = $obj;
-        $self->dirty(1);
-    }
-    return $self->{'library_type'};
+    my $self = shift;
+    return $self->_create_child_object('get_library_type_by_name', 'VRTrack::Library_type', @_);
 }
 
 
@@ -583,12 +337,8 @@ sub get_library_type_by_name {
 =cut
 
 sub seq_centre_id {
-    my ($self,$seq_centre_id) = @_;
-    if (defined $seq_centre_id and $seq_centre_id != $self->{'seq_centre_id'}){
-        $self->{'seq_centre_id'} = $seq_centre_id;
-        $self->dirty(1);
-    }
-    return $self->{'seq_centre_id'};
+    my $self = shift;
+    return $self->_get_set('seq_centre_id', 'number', @_);
 }
 
 
@@ -603,33 +353,8 @@ sub seq_centre_id {
 =cut
 
 sub seq_centre {
-    my ($self,$name) = @_;
-    if ($name){
-        # get existing seq_centre by name
-        my $obj = $self->get_seq_centre_by_name($name);
-        if ($obj){
-            # Have we actually changed?
-            if ($self->seq_centre_id != $obj->id){
-                $self->seq_centre_id($obj->id);
-                $self->dirty(1);
-            }
-            $self->{'seq_centre'} = $obj;
-        }
-        else {
-            # warn "No such seq_centre in the database";
-            return undef; # explicitly return nothing.
-        }
-    }
-    elsif ($self->{'seq_centre'}){
-        # already got a seq_centre object.  We'll return it at the end.
-    }
-    else {  # lazy-load seq_centre from database
-        if ($self->seq_centre_id){
-            my $obj = VRTrack::Seq_centre->new($self->{vrtrack},$self->seq_centre_id);
-            $self->{'seq_centre'} = $obj;
-        }
-    }
-    return $self->{'seq_centre'};
+    my $self = shift;
+    return $self->_get_set_child_object('get_seq_centre_by_name', 'VRTrack::Seq_centre', @_);
 }
 
 
@@ -643,21 +368,8 @@ sub seq_centre {
 =cut
 
 sub add_seq_centre {
-    my ($self, $name) = @_;
-
-    my $obj = $self->get_seq_centre_by_name($name);
-    if ($obj){
-        warn "Seq_centre $name is already present in the database\n";
-        return undef;
-    }
-    else {
-        $obj = VRTrack::Seq_centre->create($self->{vrtrack}, $name);
-        # populate caches
-        $self->{'seq_centre_id'} = $obj->id;
-        $self->{'seq_centre'} = $obj;
-        $self->dirty(1);
-    }
-    return $self->{'seq_centre'};
+    my $self = shift;
+    return $self->_create_child_object('get_seq_centre_by_name', 'VRTrack::Seq_centre', @_);
 }
 
 
@@ -689,12 +401,8 @@ sub get_seq_centre_by_name {
 =cut
 
 sub seq_tech_id {
-    my ($self,$seq_tech_id) = @_;
-    if (defined $seq_tech_id and $seq_tech_id != $self->{'seq_tech_id'}){
-        $self->{'seq_tech_id'} = $seq_tech_id;
-        $self->dirty(1);
-    }
-    return $self->{'seq_tech_id'};
+    my $self = shift;
+    return $self->_get_set('seq_tech_id', 'number', @_);
 }
 
 
@@ -709,33 +417,8 @@ sub seq_tech_id {
 =cut
 
 sub seq_tech {
-    my ($self,$name) = @_;
-    if ($name){
-        # get existing seq_tech by name
-        my $obj = $self->get_seq_tech_by_name($name);
-        if ($obj){
-            # Have we actually changed?
-            if ($self->seq_tech_id != $obj->id){
-                $self->seq_tech_id($obj->id);
-                $self->dirty(1);
-            }
-            $self->{'seq_tech'} = $obj;
-        }
-        else {
-            # warn "No such seq_tech in the database";
-            return undef; # explicitly return nothing.
-        }
-    }
-    elsif ($self->{'seq_tech'}){
-        # already got a seq_tech object.  We'll return it at the end.
-    }
-    else {  # lazy-load seq_tech from database
-        if ($self->seq_tech_id){
-            my $obj = VRTrack::Seq_tech->new($self->{vrtrack},$self->seq_tech_id);
-            $self->{'seq_tech'} = $obj;
-        }
-    }
-    return $self->{'seq_tech'};
+    my $self = shift;
+    return $self->_get_set_child_object('get_seq_tech_by_name', 'VRTrack::Seq_tech', @_);
 }
 
 
@@ -749,21 +432,8 @@ sub seq_tech {
 =cut
 
 sub add_seq_tech {
-    my ($self, $name) = @_;
-
-    my $obj = $self->get_seq_tech_by_name($name);
-    if ($obj){
-        warn "Seq_tech $name is already present in the database\n";
-        return undef;
-    }
-    else {
-        $obj = VRTrack::Seq_tech->create($self->{vrtrack}, $name);
-        # populate caches
-        $self->{'seq_tech_id'} = $obj->id;
-        $self->{'seq_tech'} = $obj;
-        $self->dirty(1);
-    }
-    return $self->{'seq_tech'};
+    my $self = shift;
+    return $self->_create_child_object('get_seq_tech_by_name', 'VRTrack::Seq_tech', @_);
 }
 
 
@@ -795,13 +465,8 @@ sub get_seq_tech_by_name {
 =cut
 
 sub open {
-    my ($self,$open) = @_;
-    # NB: comparison is ne rather than != as don't want 0 to match undef.
-    if (defined $open and $open ne $self->{'open'}){
-        $self->{'open'} = $open ? 1 : 0;
-        $self->dirty(1);
-    }
-    return $self->{'open'};
+    my $self = shift;
+    return $self->_get_set('open', 'boolean', @_);
 }
 
 
@@ -815,31 +480,34 @@ sub open {
 
 =cut
 
-sub changed {
-    my ($self,$changed) = @_;
-    if (defined $changed and $changed ne $self->{'changed'}){
-        $self->{'changed'} = $changed;
-        $self->dirty(1);
-    }
-    return $self->{'changed'};
-}
 
+=head2 lanes
 
-=head2 dirty
-
-  Arg [1]    : boolean for dirty status
-  Example    : $lib->dirty(1);
-  Description: Get/Set for library properties having been altered.
-  Returntype : boolean
+  Arg [1]    : None
+  Example    : my $lanes = $library->lanes();
+  Description: Returns a ref to an array of the lane objects that are associated with this library.
+  Returntype : ref to array of VRTrack::Lane objects
 
 =cut
 
-sub dirty {
-    my ($self,$dirty) = @_;
-    if (defined $dirty){
-        $self->{_dirty} = $dirty ? 1 : 0;
-    }
-    return $self->{_dirty};
+sub lanes {
+    my $self = shift;
+    return $self->_get_child_objects('VRTrack::Lane');
+}
+
+
+=head2 lane_ids
+
+  Arg [1]    : None
+  Example    : my $lane_ids = $library->lane_ids();
+  Description: Returns a ref to an array of the lane IDs that are associated with this library
+  Returntype : ref to array of integer lane IDs
+
+=cut
+
+sub lane_ids {
+    my $self = shift;
+    return $self->_get_child_ids('VRTrack::Lane');
 }
 
 
@@ -853,31 +521,8 @@ sub dirty {
 =cut
 
 sub add_lane {
-    my ($self, $name) = @_;
-    $name or die "Must call add_lane with lane name";
-    # Lane names should not be added twice - this can't be caught by the
-    # database, as we expect there will be multiple rows for the same lane.
-    my $obj = VRTrack::Lane->new_by_name($self->{vrtrack},$name);
-    if ($obj){
-        warn "Lane $name is already present in the database\n";
-        return undef;
-    }
-    $obj = VRTrack::Lane->create($self->{vrtrack}, $name);
-    if ($obj){
-        # set library_id on lane, and set hierarchy_name default
-        $obj->library_id($self->id);
-
-        my $hierarchy_name = $name;
-        $hierarchy_name =~ s/\W+/_/g;
-        $obj->hierarchy_name($hierarchy_name);
-        $obj->update;
-    }
-    # clear caches
-    delete $self->{'lane_ids'};
-    delete $self->{'lanes'};
-
-    return $obj;
-
+    my $self = shift;
+    return $self->_add_child_object('new_by_name', 'VRTrack::Lane', @_);
 }
 
 
@@ -891,16 +536,8 @@ sub add_lane {
 =cut
 
 sub get_lane_by_id {
-    my ($self, $id) = @_;
-    my @match = grep {$_->id == $id} @{$self->lanes};
-    if (scalar @match > 1){ # shouldn't happen
-        die "More than one matching lane with id $id";
-    }
-    my $obj;
-    if (@match){
-        $obj = $match[0];
-    }
-    return $obj;
+    my $self = shift;
+    return $self->_get_child_by_field_value('lanes', 'id', @_);
 }
 
 
@@ -914,17 +551,8 @@ sub get_lane_by_id {
 =cut
 
 sub get_lane_by_name {
-    my ($self, $name) = @_;
-    #my $obj = VRTrack::Lane->new_by_name($self->{vrtrack},$name);
-    my @match = grep {$_->name eq $name} @{$self->lanes};
-    if (scalar @match > 1){ # shouldn't happen
-        die "More than one matching lane with name $name";
-    }
-    my $obj;
-    if (@match){
-        $obj = $match[0];
-    }
-    return $obj;
+    my $self = shift;
+    return $self->_get_child_by_field_value('lanes', 'name', @_);
 }
 
 
@@ -937,19 +565,12 @@ sub get_lane_by_name {
 
 =cut
 
-sub descendants {
-    my ($self) = @_;
-    my @desc;
+sub _get_child_methods {
     # Requests aren't linked into the API yet
-    #foreach (@{$self->requests}){
-    #    push @desc, $_;
-    #}
-    foreach (@{$self->lanes}){
-        push @desc, $_;
-        push @desc, @{$_->descendants};
-    }
-    return \@desc;
+    # return qw(lanes requests);
+    return qw(lanes);
 }
+
 
 =head2 projected_passed_depth
 
@@ -960,28 +581,28 @@ sub descendants {
 
 =cut
 
-sub projected_passed_depth
-{
-	my ($self, $ref_size) = @_;
-	
-	die( "Size of reference must be a number!" ) unless $ref_size =~ /^\d+$/;
-	
-	my $lanes = $self->lanes();
-	my $cum_depth = 0;
-	foreach( @$lanes )
-	{
-		my $lane = $_;
-		if( $lane->qc_status() eq 'passed' )
-		{
-			my $mapping = $lane->latest_mapping();
-			if( $mapping )
-			{
-				$cum_depth += ( ( $mapping->rmdup_bases_mapped / $mapping->raw_bases() ) * $lane->raw_bases() ) /$ref_size;
-			}
-		}
-	}
-	
-	$cum_depth = sprintf("%.2f", $cum_depth);
-	return $cum_depth;
+sub projected_passed_depth {
+    my ($self, $ref_size) = @_;
+    
+    confess( "Size of reference must be a number!" ) unless $ref_size =~ /^\d+$/;
+    
+    my $lanes = $self->lanes();
+    my $cum_depth = 0;
+    foreach( @$lanes )
+    {
+        my $lane = $_;
+        if( $lane->qc_status() eq 'passed' )
+        {
+            my $mapping = $lane->latest_mapping();
+            if( $mapping )
+            {
+                $cum_depth += ( ( $mapping->rmdup_bases_mapped / $mapping->raw_bases() ) * $lane->raw_bases() ) /$ref_size;
+            }
+        }
+    }
+    
+    $cum_depth = sprintf("%.2f", $cum_depth);
+    return $cum_depth;
 }
+
 1;

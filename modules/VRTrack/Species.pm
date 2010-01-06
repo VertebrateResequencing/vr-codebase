@@ -1,5 +1,5 @@
 package VRTrack::Species;
-# author: jws
+
 =head1 NAME
 
 VRTrack::Species - Sequence Tracking Species object
@@ -18,7 +18,7 @@ VRTrack::Sample by the species_id on the individual.
 
 =head1 CONTACT
 
-jws@sanger.ac.uk
+jws@sanger.ac.uk (author)
 
 =head1 METHODS
 
@@ -26,10 +26,10 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
-use Carp;
-no warnings 'uninitialized';
+use Carp qw(cluck confess);
 
-use constant DBI_DUPLICATE => '1062';
+use base qw(VRTrack::Named_obj);
+
 
 ###############################################################################
 # Class methods
@@ -46,33 +46,27 @@ use constant DBI_DUPLICATE => '1062';
 =cut
 
 sub new {
-    my ($class,$vrtrack, $id) = @_;
-    die "Need to call with a vrtrack handle and id" unless ($vrtrack && $id);
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-    my $dbh = $vrtrack->{_dbh};
-    my $self = {};
-    bless ($self, $class);
-    $self->{_dbh} = $dbh;
-    $self->{vrtrack} = $vrtrack;
-
-    my $sql = qq[select species_id, name, taxon_id from species where species_id = ?];
-    my $sth = $self->{_dbh}->prepare($sql);
-
-    if ($sth->execute($id)){
-        my $data = $sth->fetchrow_hashref;
-        unless ($data){
-            return undef;
-        }
-        $self->id($data->{'species_id'});
-        $self->name($data->{'name'});
-        $self->taxon_id($data->{'taxon_id'});
-	$self->dirty(0); # unset the dirty flag
-    }
-    else{
-        die(sprintf('Cannot retrieve species: %s', $DBI::errstr));
-    }
-
+    my $class = shift;
+    my $self = $class->SUPER::new(@_);
     return $self;
+}
+
+
+=head2 fields_dispatch
+
+  Arg [1]    : none
+  Example    : my $fieldsref = $file->fields_dispatch();
+  Description: Returns hashref dispatch table keyed on database field
+               Used internally for new and update methods
+  Returntype : hashref
+
+=cut
+
+sub fields_dispatch {
+    my $self = shift;
+    return {species_id => sub { $self->id(@_) },
+	    name       => sub { $self->name(@_) },
+	    taxon_id   => sub { $self->taxon_id(@_) }};
 }
 
 
@@ -86,27 +80,6 @@ sub new {
 
 =cut
 
-sub new_by_name {
-    my ($class,$vrtrack, $name) = @_;
-    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
-    my $dbh = $vrtrack->{_dbh};
-    my $sql = qq[select species_id from species where name = ?];
-    my $sth = $dbh->prepare($sql);
-
-    my $id;
-    if ($sth->execute($name)){
-        my $data = $sth->fetchrow_hashref;
-        unless ($data){
-            return undef;
-        }
-        $id = $data->{'species_id'};
-    }
-    else{
-        die(sprintf('Cannot retrieve species by name $name: %s', $DBI::errstr));
-    }
-    return $class->new($vrtrack, $id);
-}
-
 
 =head2 create
 
@@ -119,32 +92,14 @@ sub new_by_name {
 =cut
 
 sub create {
-    my ($class,$vrtrack, $name) = @_;
-    die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-    my $dbh = $vrtrack->{_dbh};
-
-    my $sql = qq[INSERT INTO species (species_id, name) 
-                 VALUES (NULL,?)];
-
-                
-    my $sth = $dbh->prepare($sql);
-    my $id;
-    if ($sth->execute( $name)) {
-        $id = $dbh->{'mysql_insertid'};
-    }
-    else {
-        die( sprintf('DB load insert failed: %s %s', $name, $DBI::errstr));
-    }
-    return $class->new($vrtrack, $id);
+    my ($self, $vrtrack, $name) = @_;
+    return $self->SUPER::create($vrtrack, name => $name);
 }
 
 
 ###############################################################################
 # Object methods
 ###############################################################################
-
-
 
 =head2 dirty
 
@@ -154,14 +109,6 @@ sub create {
   Returntype : boolean
 
 =cut
-
-sub dirty {
-    my ($self,$dirty) = @_;
-    if (defined $dirty){
-	$self->{_dirty} = $dirty ? 1 : 0;
-    }
-    return $self->{_dirty};
-}
 
 
 =head2 id
@@ -174,15 +121,6 @@ sub dirty {
 
 =cut
 
-sub id {
-    my ($self,$id) = @_;
-    if (defined $id and $id ne $self->{'id'}){
-        $self->{'id'} = $id;
-	$self->dirty(1);
-    }
-    return $self->{'id'};
-}
-
 
 =head2 name
 
@@ -193,15 +131,6 @@ sub id {
   Returntype : string
 
 =cut
-
-sub name {
-    my ($self,$name) = @_;
-    if (defined $name and $name ne $self->{'name'}){
-        $self->{'name'} = $name;
-	$self->dirty(1);
-    }
-    return $self->{'name'};
-}
 
 
 =head2 taxon_id
@@ -215,12 +144,8 @@ sub name {
 =cut
 
 sub taxon_id {
-    my ($self,$taxon_id) = @_;
-    if (defined $taxon_id and $taxon_id ne $self->{'taxon_id'}){
-        $self->{'taxon_id'} = $taxon_id;
-	$self->dirty(1);
-    }
-    return $self->{'taxon_id'};
+    my $self = shift;
+    return $self->_get_set('taxon_id', 'number', @_);
 }
 
 
@@ -233,37 +158,5 @@ sub taxon_id {
   Returntype : 1 if successful, otherwise undef.
 
 =cut
-
-sub update {
-    my ($self) = @_;
-    my $success = undef;
-    if ($self->dirty){
-	my $dbh = $self->{_dbh};
-	my $save_re = $dbh->{RaiseError};
-	my $save_pe = $dbh->{PrintError};
-	$dbh->{RaiseError} = 1; # raise exception if an error occurs
-	$dbh->{PrintError} = 0; # don't print an error message
-
-	eval {
-	    my $updsql = qq[UPDATE species SET name=?, taxon_id=? WHERE species_id = ? ];
-	    
-	    $dbh->do ($updsql, undef, $self->name, $self->taxon_id, $self->id);
-	};
-
-	if (!$@) {
-	    $success = 1;
-	}
-
-	# restore attributes to original state
-	$dbh->{PrintError} = $save_pe;
-	$dbh->{RaiseError} = $save_re;
-
-    }
-    if ($success){
-        $self->dirty(0);
-    }
-
-    return $success;
-}
 
 1;

@@ -1,5 +1,5 @@
 package VRTrack::File; 
-# author: jws
+
 =head1 NAME
 
 VRTrack::File - Sequence Tracking File object
@@ -15,7 +15,7 @@ An object describing the tracked properties of a file.
 
 =head1 CONTACT
 
-jws@sanger.ac.uk
+jws@sanger.ac.uk (author)
 
 =head1 METHODS
 
@@ -23,10 +23,12 @@ jws@sanger.ac.uk
 
 use strict;
 use warnings;
-use Carp;
-no warnings 'uninitialized';
-use VRTrack::Core_obj;
-our @ISA = qw(VRTrack::Core_obj);
+use Carp qw(cluck confess);
+
+use base qw(VRTrack::Core_obj
+            VRTrack::Hierarchy_obj
+	    VRTrack::Named_obj);
+
 
 =head2 fields_dispatch
 
@@ -40,23 +42,21 @@ our @ISA = qw(VRTrack::Core_obj);
 
 sub fields_dispatch {
     my $self = shift;
-    my %fields = ( 
-                'file_id'           => sub { $self->id(@_)},
-                'lane_id'           => sub { $self->lane_id(@_)},
-                'name'              => sub { $self->name(@_)},
-                'hierarchy_name'    => sub { $self->hierarchy_name(@_)},
-                'processed'         => sub { $self->processed(@_)},
-                'type'              => sub { $self->type(@_)},
-                'readlen'           => sub { $self->read_len(@_)},
-                'raw_reads'         => sub { $self->raw_reads(@_)},
-                'raw_bases'         => sub { $self->raw_bases(@_)},
-                'mean_q'            => sub { $self->mean_q(@_)},
-                'md5'               => sub { $self->md5(@_)},
-                'note_id'           => sub { $self->note_id(@_)},
-                'changed'           => sub { $self->changed(@_)},
-                'latest'            => sub { $self->is_latest(@_)},
-                );
-
+    
+    my %fields = %{$self->SUPER::fields_dispatch()};
+    %fields = (%fields,
+               file_id           => sub { $self->id(@_)},
+               lane_id           => sub { $self->lane_id(@_)},
+               name              => sub { $self->name(@_)},
+               hierarchy_name    => sub { $self->hierarchy_name(@_)},
+               processed         => sub { $self->processed(@_)},
+               type              => sub { $self->type(@_)},
+               readlen           => sub { $self->read_len(@_)},
+               raw_reads         => sub { $self->raw_reads(@_)},
+               raw_bases         => sub { $self->raw_bases(@_)},
+               mean_q            => sub { $self->mean_q(@_)},
+               md5               => sub { $self->md5(@_)});
+    
     return \%fields;
 }
 
@@ -75,12 +75,6 @@ sub fields_dispatch {
 
 =cut
 
-sub new_by_name {
-    my ($class,$vrtrack, $name) = @_;
-    die "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
-    return $class->new_by_field_value($vrtrack, 'name',$name);
-}
-
 
 =head2 new_by_hierarchy_name
 
@@ -92,66 +86,16 @@ sub new_by_name {
 
 =cut
 
-sub new_by_hierarchy_name {
-    my ($class,$vrtrack, $hierarchy_name) = @_;
-    die "Need to call with a vrtrack handle, hierarchy_name" unless ($vrtrack && $hierarchy_name);
-    return $class->new_by_field_value($vrtrack, 'hierarchy_name',$hierarchy_name);
-}
 
-
-#   =head2 create
-#   
-#     Arg [1]    : vrtrack handle to seqtracking database
-#     Arg [2]    : file name
-#     Example    : my $file = VRTrack::File->create($vrtrack, $name)
-#     Description: Class method.  Creates new File object in the database.
-#     Returntype : VRTrack::File object
-#   
-#   =cut
-#   
-#   sub create {
-#       my ($class,$vrtrack, $name) = @_;
-#       die "Need to call with a vrtrack handle and name" unless ($vrtrack && $name);
-#       if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-#       my $dbh = $vrtrack->{_dbh};
-#   
-#       # prevent adding a file with an existing name
-#       if ($class->is_name_in_database($vrtrack, $name, $name)){
-#           die "Already a file by name $name";
-#       }
-#   
-#       #   $dbh->do (qq[LOCK TABLE file WRITE]);
-#       #   my $sql = qq[select max(file_id) as id from file];
-#       #   my $sth = $dbh->prepare($sql);
-#       #   my $next_id;
-#       #   if ($sth->execute()){
-#       #       my $data = $sth->fetchrow_hashref;
-#       #       unless ($data){
-#       #           $dbh->do (qq[UNLOCK TABLES]);
-#       #           die( sprintf("Can't retrieve next file id: %s", $DBI::errstr));
-#       #       }
-#       #       $next_id = $data->{'id'};
-#       #       $next_id++;
-#       #   }
-#       #   else{
-#       #       die(sprintf("Can't retrieve next file id: %s", $DBI::errstr));
-#       #   }
-#       #
-#       #    $sql = qq[INSERT INTO file (file_id, name, changed, latest) 
-#       #                 VALUES (?,?,now(),true)];
-#       #
-#       #    $sth = $dbh->prepare($sql);
-#       #    unless ($sth->execute( $next_id, $name )) {
-#       #        #   $dbh->do (qq[UNLOCK TABLES]);
-#       #        die( sprintf('DB load insert failed: %s %s', $next_id, $DBI::errstr));
-#       #    }
-#       #
-#       # $dbh->do (qq[UNLOCK TABLES]);
-#   
-#       $next_id = Core_obj->create_with_unique_id('file',['name'],[$name]);
-#   
-#       return $class->new($vrtrack, $next_id);
-#   }
+=head2 create
+  
+  Arg [1]    : vrtrack handle to seqtracking database
+  Arg [2]    : file name
+  Example    : my $file = VRTrack::File->create($vrtrack, $name)
+  Description: Class method.  Creates new File object in the database.
+  Returntype : VRTrack::File object
+   
+=cut
 
 
 =head2 is_name_in_database
@@ -164,49 +108,10 @@ sub new_by_hierarchy_name {
 
 =cut
 
-sub is_name_in_database {
-    my ($class, $vrtrack, $name, $hname) = @_;
-    die "Need to call with a vrtrack handle, name, hierarchy name" unless ($vrtrack && $name && $hname);
-    if ( $vrtrack->isa('DBI::db') ) { croak "The interface has changed, expected vrtrack reference.\n"; }
-    my $dbh = $vrtrack->{_dbh};
-    my $sql = qq[select file_id from file where latest=true and (name = ? or hierarchy_name = ?) ];
-    my $sth = $dbh->prepare($sql);
-
-    my $already_used = 0;
-    if ($sth->execute($name,$hname)){
-        my $data = $sth->fetchrow_hashref;
-        if ($data){
-            $already_used = 1;
-        }
-    }
-    else{
-        die(sprintf('Cannot retrieve file by $name: %s', $DBI::errstr));
-    }
-    return $already_used;
-}
-
 
 ###############################################################################
 # Object methods
 ###############################################################################
-
-=head2 dirty
-
-  Arg [1]    : boolean for dirty status
-  Example    : $file->dirty(1);
-  Description: Get/Set for file properties having been altered.
-  Returntype : boolean
-
-=cut
-
-sub dirty {
-    my ($self,$dirty) = @_;
-    if (defined $dirty){
-	$self->{_dirty} = $dirty ? 1 : 0;
-    }
-    return $self->{_dirty};
-}
-
 
 =head2 id
 
@@ -218,15 +123,6 @@ sub dirty {
 
 =cut
 
-sub id {
-    my ($self,$id) = @_;
-    if (defined $id and $id != $self->{'id'}){
-        $self->{'id'} = $id;
-        $self->dirty(1);
-    }
-    return $self->{'id'};
-}
-
 
 =head2 hierarchy_name
 
@@ -236,15 +132,6 @@ sub id {
   Returntype : string
 
 =cut
-
-sub hierarchy_name {
-    my ($self,$name) = @_;
-    if (defined $name and $name ne $self->{'hierarchy_name'}){
-        $self->{'hierarchy_name'} = $name;
-	$self->dirty(1);
-    }
-    return $self->{'hierarchy_name'};
-}
 
 
 =head2 name
@@ -256,15 +143,6 @@ sub hierarchy_name {
   Returntype : string
 
 =cut
-
-sub name {
-    my ($self,$name) = @_;
-    if (defined $name and $name ne $self->{'name'}){
-	$self->{'name'} = $name;
-	$self->dirty(1);
-    }
-    return $self->{'name'};
-}
 
 
 =head2 md5
@@ -278,12 +156,8 @@ sub name {
 =cut
 
 sub md5 {
-    my ($self,$md5) = @_;
-    if (defined $md5 and $md5 ne $self->{'md5'}){
-	$self->{'md5'} = $md5;
-	$self->dirty(1);
-    }
-    return $self->{'md5'};
+    my $self = shift;
+    return $self->_get_set('md5', 'string', @_);
 }
 
 
@@ -298,12 +172,8 @@ sub md5 {
 =cut
 
 sub lane_id {
-    my ($self,$lane_id) = @_;
-    if (defined $lane_id and $lane_id != $self->{'lane_id'}){
-	$self->{'lane_id'} = $lane_id;
-	$self->dirty(1);
-    }
-    return $self->{'lane_id'};
+    my $self = shift;
+    return $self->_get_set('lane_id', 'number', @_);
 }
 
 
@@ -317,14 +187,6 @@ sub lane_id {
 
 =cut
 
-sub changed {
-    my ($self,$changed) = @_;
-    if (defined $changed and $changed ne $self->{'changed'}){
-	$self->{'changed'} = $changed;
-	$self->dirty(1);
-    }
-    return $self->{'changed'};
-}
 
 =head2 processed
 
@@ -335,13 +197,10 @@ sub changed {
 =cut
 
 sub processed {
-    my ($self,$processed) = @_;
-    if (defined $processed and $processed ne $self->{'processed'}){
-	$self->{'processed'} = $processed;
-	$self->dirty(1);
-    }
-    return $self->{'processed'};
+    my $self = shift;
+    return $self->_get_set('processed', 'number', @_);
 }
+
 
 =head2 is_processed
 
@@ -355,24 +214,22 @@ sub processed {
 =cut
 
 sub is_processed {
-    my ($self,$flag,$processed) = @_;
+    my ($self, $flag, $processed) = @_;
 
-    my %flags = VRTrack::Core_obj->allowed_processed_flags();
-    if ( !exists($flags{$flag}) ) { croak qq[The flag "$flag" not recognised.\n]; }
+    my %flags = $self->allowed_processed_flags();
+    confess "The flag '$flag' not recognised" unless exists $flags{$flag};
 
     $flag = $flags{$flag};
-    if ( defined $processed )
-    {
+    if (defined $processed) {
         $processed = $processed ? $self->{processed}|$flag : $self->{processed}&(~$flag);
-        if ( $processed != $self->{'processed'} )
-        {
-            $self->{'processed'} = $processed;
+        if (! defined $self->{processed} || $processed != $self->{processed}) {
+            $self->{processed} = $processed;
             $self->dirty(1);
         }
     }
-    return $self->{'processed'} & $flag ? 1 : 0;
+    
+    return $self->{processed} & $flag ? 1 : 0;
 }
-
 
 
 =head2 type
@@ -386,12 +243,8 @@ sub is_processed {
 =cut
 
 sub type {
-    my ($self,$type) = @_;
-    if (defined $type and $type != $self->{'type'}){
-	$self->{'type'} = $type;
-	$self->dirty(1);
-    }
-    return $self->{'type'};
+    my $self = shift;
+    return $self->_get_set('type', 'number', @_);
 }
 
 
@@ -406,14 +259,9 @@ sub type {
 =cut
 
 sub raw_reads {
-    my ($self,$num_seqs) = @_;
-    if (defined $num_seqs and $num_seqs != $self->{'seq_count'}){
-	$self->{'seq_count'} = $num_seqs;
-	$self->dirty(1);
-    }
-    return $self->{'seq_count'};
+    my $self = shift;
+    return $self->_get_set('seq_count', 'number', @_);
 }
-
 
 
 =head2 raw_bases
@@ -427,12 +275,8 @@ sub raw_reads {
 =cut
 
 sub raw_bases {
-    my ($self,$num_bp) = @_;
-    if (defined $num_bp and $num_bp != $self->{'raw_bases'}){
-	$self->{'raw_bases'} = $num_bp;
-	$self->dirty(1);
-    }
-    return $self->{'raw_bases'};
+    my $self = shift;
+    return $self->_get_set('raw_bases', 'number', @_);
 }
 
 
@@ -447,12 +291,8 @@ sub raw_bases {
 =cut
 
 sub mean_q {
-    my ($self,$mean_q) = @_;
-    if (defined $mean_q and $mean_q != $self->{'mean_q'}){
-	$self->{'mean_q'} = $mean_q;
-	$self->dirty(1);
-    }
-    return $self->{'mean_q'};
+    my $self = shift;
+    return $self->_get_set('mean_q', 'number', @_);
 }
 
 
@@ -467,13 +307,8 @@ sub mean_q {
 =cut
 
 sub read_len {
-    my ($self,$readlen) = @_;
-    if (defined $readlen and $readlen != $self->{'readlen'}){
-	$self->{'readlen'} = $readlen;
-	$self->dirty(1);
-    }
-    return $self->{'readlen'};
+    my $self = shift;
+    return $self->_get_set('readlen', 'number', @_);
 }
-
 
 1;
