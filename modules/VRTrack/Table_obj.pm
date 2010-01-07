@@ -38,7 +38,7 @@ our %table_columns = ();
 =cut
 
 sub new {
-    my ($class, $vrtrack, $id) = @_;
+    my ($class, $vrtrack, $id, @other_args) = @_;
     
     my $self = {};
     bless $self, ref($class) || $class;
@@ -50,7 +50,7 @@ sub new {
 	$self->{_dbh} = $vrtrack->{_dbh};
 	$self->{vrtrack} = $vrtrack;
 	
-	$self->_initialize($id);
+	$self->_initialize($id, @other_args);
     }
     
     return $self;
@@ -79,8 +79,7 @@ sub _initialize {
 	$self->dirty(0); # unset the dirty flag
     }
     else {
-	confess(sprintf('Cannot retrieve $table: %s', $DBI::errstr));
-	$DBI::errstr;
+	confess "Cannot retrieve $table: ".$DBI::errstr;
     }
 }
 
@@ -164,7 +163,7 @@ sub _get_id_by_field_value {
         $id = $data->[0]{"${table}_id"};
     }
     else {
-        confess(sprintf('Cannot retrieve $class by %s = %s: %s', ($field, $value, $DBI::errstr)));
+        confess "Cannot retrieve $table by $field = $value: ".$DBI::errstr;
     }
     
     return $id;
@@ -209,7 +208,7 @@ sub create {
         $id = $dbh->{'mysql_insertid'};
     }
     else {
-        confess( sprintf('DB load insert failed: %s', $DBI::errstr));
+        confess 'DB load insert failed: '.$DBI::errstr;
     }
     
     return $class->new($vrtrack, $id);
@@ -327,6 +326,7 @@ sub _get_set_child_object {
     
     return $self->{$child_storage_key};
 }
+
 
 =head2 _create_child_object
 

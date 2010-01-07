@@ -29,6 +29,9 @@ use Carp qw(cluck confess);
 use base qw(VRTrack::Table_obj);
 
 
+our $history_date = 'latest';
+
+
 =head2 new
 
   Arg [1]    : vrtrack handle
@@ -73,7 +76,7 @@ sub _initialize {
 	$self->dirty(0); # unset the dirty flag
     }
     else {
-	confess(sprintf('Cannot retrieve $table: %s', $DBI::errstr));
+	confess "Cannot retrieve $table: ".$DBI::errstr;
     }
 }
 
@@ -136,7 +139,7 @@ sub _get_id_by_field_value {
         $id = $data->[0]{"${table}_id"};
     }
     else {
-        confess(sprintf('Cannot retrieve $class by %s = %s: %s', ($field, $value, $DBI::errstr)));
+        confess "Cannot retrieve $table by $field = $value: ".$DBI::errstr;
     }
     
     return $id;
@@ -235,7 +238,7 @@ sub is_name_in_database {
         }
     }
     else {
-        confess(sprintf('Cannot retrieve project by $name: %s', $DBI::errstr));
+        confess "Cannot retrieve $table by $name: ".$DBI::errstr;
     }
     
     return $already_used;
