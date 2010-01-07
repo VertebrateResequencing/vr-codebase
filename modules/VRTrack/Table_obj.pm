@@ -68,7 +68,7 @@ sub _initialize {
     if ($sth->execute($id)){
         my $data = $sth->fetchrow_hashref;
 	unless ($data){
-	    return undef;
+	    return;
 	}
         foreach (keys %$fields){
             $fields->{$_}->($data->{$_});
@@ -150,7 +150,7 @@ sub _get_id_by_field_value {
     if ($sth->execute($value)) {
         my $data = $sth->fetchall_arrayref({}); # return array of hashes
         unless (@$data) {
-            return undef;
+            return;
         }
         if (scalar @$data > 1) {
             confess "$field = $value is not a unique identifier for $table\n";
@@ -300,7 +300,7 @@ sub _get_set_child_object {
             $self->{$child_storage_key} = $obj;
         }
         else {
-            return undef; # explicitly return nothing.
+            return;
         }
     }
     elsif (defined $self->{$child_storage_key}) {
@@ -346,7 +346,7 @@ sub _create_child_object {
     my $obj = $self->$existing_method(@child_identifiers);
     if ($obj) {
         cluck "$child_class (@child_identifiers) is already present in the database\n";
-        return undef;
+        return;
     }
     else {
 	$obj = $child_class->create($self->{vrtrack}, @child_identifiers);
@@ -464,7 +464,7 @@ sub _add_child_object {
 	my $obj = $child_class->$existing_method($self->{vrtrack}, @child_identifiers);
 	if ($obj) {
 	    cluck "$child_class (@child_identifiers) is already present in the database\n";
-	    return undef;
+	    return;
 	}
     }
     

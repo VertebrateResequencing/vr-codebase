@@ -59,7 +59,7 @@ sub _initialize {
     if ($sth->execute($id)){
         my $data = $sth->fetchrow_hashref;
 	unless ($data){
-	    return undef;
+	    return;
 	}
         foreach (keys %$fields){
             $fields->{$_}->($data->{$_});
@@ -128,7 +128,7 @@ sub _get_id_by_field_value {
     if ($sth->execute($value)) {
         my $data = $sth->fetchall_arrayref({}); # return array of hashes
         unless (@$data) {
-            return undef;
+            return;
         }
         if (scalar @$data > 1) {
             confess "$field = $value is not a unique identifier for $table\n";
@@ -174,7 +174,7 @@ sub create {
     my $rv    = $sth->execute or confess qq[The query "$query" failed: $!];
     
     # now update the inserted record
-    my $next_id = $dbh->last_insert_id(undef,undef,$table,'row_id') or confess "No last_insert_id? $!";
+    my $next_id = $dbh->last_insert_id(undef, undef, $table, 'row_id') or confess "No last_insert_id? $!";
     
     if ($name) {
         my $hierarchy_name;
@@ -278,7 +278,7 @@ sub update {
 	    my $addsql = qq[INSERT INTO $table ( ].(join ", ", @fields);
 	    $addsql .= qq[, changed, latest ) ];
 	    $addsql .= qq[ VALUES ( ].('?,' x scalar @fields).qq[now(),true) ];
-	    $dbh->do ($updsql, undef,$self->id);
+	    $dbh->do ($updsql, undef, $self->id);
 	    $dbh->do ($addsql, undef, map {$_->()} @$fieldsref{@fields});
 	    $row_id = $dbh->{'mysql_insertid'};
 	    $self->{vrtrack}->transaction_commit();
@@ -463,7 +463,7 @@ sub row_id {
 sub list_enum_vals {
     my ($self, $table, $column) = @_;
     my $dbh = $self->{_dbh};
-    my $row = $dbh->selectrow_hashref("SHOW COLUMNS FROM $table LIKE ?", undef,$column);
+    my $row = $dbh->selectrow_hashref("SHOW COLUMNS FROM $table LIKE ?", undef, $column);
     my $type = lc($row->{Type});
     unless ($type =~ /^enum/){
         confess "$table:$column is not of type enum";

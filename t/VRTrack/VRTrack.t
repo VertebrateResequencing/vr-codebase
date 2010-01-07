@@ -134,7 +134,7 @@ is_deeply [$vrproj->id, $vrproj->row_id], [3, 3], 'ids were incremented for the 
 $vrproj->ssid(123);
 ok $vrproj->update(), 'after changing an attribute was able to update';
 $vrproj = VRTrack::Project->new_by_name($vrtrack, $name);
-is_deeply [$vrproj->id, $vrproj->row_id], [3, 4], 'getting it back with new_by_name shows the id has not changed and the row_id has incremented';
+is_deeply [$vrproj->id, $vrproj->row_id], [3, 4], 'getting it back with new_by_name shows the id has not changed whilst the row_id has incremented';
 # history test - can we get row_id 2 again?...
 
 # test bits of the core classes that are unique to themselves
