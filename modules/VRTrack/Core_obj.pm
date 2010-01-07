@@ -29,15 +29,22 @@ use Carp qw(cluck confess);
 use base qw(VRTrack::Table_obj);
 
 
-our $history_date = 'latest';
+our $HISTORY_DATE = 'latest';
 
 
 =head2 new
 
   Arg [1]    : vrtrack handle
   Arg [2]    : obj id
+  Arg [3]    : 'latest'(default)|datetime string(in the format returned by
+               changed())|row_id (optional)
   Example    : my $obj= $class->new($vrtrack, $id)
-  Description: Returns core objects by id
+  Description: Returns core objects by id. By default this will be the latest
+               version of the object. If Arg[3] is supplied, or if
+	       global_history_date() has been changed, the version returned will
+	       be the most recent version of the object that is older than
+	       the desired date. If Arg[3] is a row_id, the version with that
+	       row_id will be returned.
   Returntype : $class object
 
 =cut
@@ -49,35 +56,94 @@ sub new {
 }
 
 sub _initialize {
-    my ($self, $id) = @_;
+    my ($self, $id, $date) = @_;
     
     my $table = $self->_class_to_table;
     
     my $fields = $self->fields_dispatch;
-    my $sql = qq[select row_id,].(join ", ", keys %$fields).qq[ from $table ];
-    $sql .= qq[where ${table}_id = ? and latest = true];
+    my $sql = qq[select row_id,].(join ", ", keys %$fields).qq[ from $table where ${table}_id = ?];
+    $sql .= $self->_history_sql($date);
     
     my $sth = $self->{_dbh}->prepare($sql);
     
     if ($sth->execute($id)){
-        my $data = $sth->fetchrow_hashref;
-	unless ($data){
-	    return;
-	}
-        foreach (keys %$fields){
-            $fields->{$_}->($data->{$_});
+	my $data = $sth->fetchall_arrayref({}); # return array of hashes
+        unless (@$data) {
+            return;
+        }
+        # use the most recent row
+	my $row = $data->[-1];
+	
+        foreach (keys %$fields) {
+            $fields->{$_}->($row->{$_});
         }
 	
         # handle row_id as a special case outside fields_dispatch, as otherwise
         # we'd need to remove it from fields_dispatch before update.
         # Note also it is hard-coded in the select statement above
-        $self->row_id($data->{'row_id'});
+        $self->row_id($row->{'row_id'});
 	
 	$self->dirty(0); # unset the dirty flag
     }
     else {
 	confess "Cannot retrieve $table: ".$DBI::errstr;
     }
+}
+
+sub _history_sql {
+    my ($self, $thing) = @_;
+    
+    my $date_stamp = $thing || $self->global_history_date();
+    
+    my $sql = '';
+    if ("$date_stamp" eq 'latest') {
+	$sql = qq[ and latest = true];
+    }
+    elsif ($date_stamp =~ /^\d+$/) {
+	# presume it's a row_id
+	$sql = qq[ and row_id = $date_stamp];
+    }
+    elsif ($date_stamp =~ /^(latest|\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})$/) {
+	# get the most recent row with a 'changed' that is older than
+	# the desired date
+	$sql = qq[ and changed < '$date_stamp' order by row_id ASC];
+    }
+    else {
+	confess "bad datetime/row_id supplied ('$date_stamp')";
+    }
+    
+    return $sql;
+}
+
+
+=head2 global_history_date
+
+  Arg [1]    : 'latest'(default)|datestamp string(in the format returned by
+               changed()) (optional)
+  Example    : my $datestamp = $class->global_history_date();
+               $class->global_history_date('2010-01-04 10:49:10');
+  Description: When called on any instance or class inheriting from Core_obj,
+               gets/sets the date used for determining which version of a
+	       Core_obj is instantiated when any new*() method is subsequently
+	       used. By default the latest version is returned, and the special
+	       keyword 'latest' can be used to manually choose this.
+	       new*() methods have an optional arg to also pick a date; these
+	       will temporarily override the date set here.
+  Returntype : string
+
+=cut
+
+sub global_history_date {
+    my ($self, $date) = @_;
+    
+    if ($date) {
+	unless ($date =~ /^(latest|\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})$/) {
+	    confess "invalid date format set ('$date')";
+	}
+	$HISTORY_DATE = $date;
+    }
+    
+    return $HISTORY_DATE;
 }
 
 
@@ -110,9 +176,17 @@ sub fields_dispatch {
   Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : field name
   Arg [3]    : field value
+  Arg [4]    : 'latest'(default)|datetime string(in the format returned by
+               changed())|row_id (optional)
   Example    : my $obj = $class->new_by_field_value($vrtrack, 'name',$name)
-  Description: Class method. Returns latest $class object by field name and value.  If no such value is in the database, returns undef.
+  Description: Class method. Returns latest $class object by field name and
+               value. If no such value is in the database, returns undef.
                Dies if there is more than one matching record.
+	       On success, by default the latest version of the object will be
+	       returned. If Arg[4] is supplied, or if global_history_date() has
+	       been changed, the version returned will be the most recent
+	       version of the object that is older than the desired date. If
+	       Arg[4] is a row_id, the version with that row_id will be returned.
   Returntype : $class object
 
 =cut
@@ -123,9 +197,11 @@ sub new_by_field_value {
 }
 
 sub _get_id_by_field_value {
-    my ($self, $dbh, $table, $field, $value) = @_;
+    my ($self, $dbh, $table, $field, $value, $date) = @_;
     
-    my $sql = qq[select ${table}_id from $table where $field = ? and latest = true];
+    my $sql = qq[select ${table}_id from $table where $field = ?];
+    $sql .= $self->_history_sql($date);
+    
     my $sth = $dbh->prepare($sql);
     my $id;
     if ($sth->execute($value)) {
@@ -134,9 +210,20 @@ sub _get_id_by_field_value {
             return;
         }
         if (scalar @$data > 1) {
-            confess "$field = $value is not a unique identifier for $table\n";
+	    # check all the table ids are the same
+	    my $all_same = 1;
+	    my $last_id;
+	    foreach my $row (@{$data}) {
+		my $this_id = $row->{"${table}_id"};
+		$last_id ||= $this_id;
+		if ($this_id != $last_id) {
+		    $all_same = 0;
+		    last;
+		}
+	    }
+            confess "$field = $value is not a unique identifier for $table\n" unless $all_same;
         }
-        $id = $data->[0]{"${table}_id"};
+        $id = $data->[-1]{"${table}_id"};
     }
     else {
         confess "Cannot retrieve $table by $field = $value: ".$DBI::errstr;
@@ -254,12 +341,15 @@ sub is_name_in_database {
 	       Changes the changed datestamp to now() on the mysql server (i.e.
 	       you don't have to set changed yourself, and indeed if you do,
 	       it will be overridden).
+	       Only works if we are the lastest version - you can't update
+	       a historical version.
   Returntype : boolean
 
 =cut
 
 sub update {
     my $self = shift;
+    $self->is_latest || return 0;
     
     my $table = $self->_class_to_table;
     
@@ -307,13 +397,13 @@ sub update {
   Arg [1]    : none
   Example    : $obj->delete();
   Description: Deletes the current object and all its descendant objects from the database.
-  Returntype : 1 if successful, otherwise undef.
+  Returntype : boolean.
 
 =cut
 
 sub delete {
     my ($self) = @_;
-    my $success;
+    my $success = 0;
     my $objs_to_delete = [$self];
     push @$objs_to_delete, @{$self->descendants};
     my %rows_from_table;
@@ -322,11 +412,11 @@ sub delete {
         my $table = $class->_class_to_table;
         push @{$rows_from_table{$table}}, $_->id;
     }
-
+    
     # now delete them all, one table at a time
     my $dbh = $self->{_dbh};
     $self->{vrtrack}->transaction_start();
-
+    
     eval {
         foreach my $table (keys %rows_from_table){
             my $rows = join ",", @{$rows_from_table{$table}};
@@ -335,7 +425,7 @@ sub delete {
         }
         $self->{vrtrack}->transaction_commit();
     };
-
+    
     if ($@) {
         cluck "Transaction failed, rolling back. Error was:\n$@\n";
         $self->{vrtrack}->transaction_rollback();
@@ -343,7 +433,7 @@ sub delete {
     else {
         $success = 1;
     }
-
+    
     return $success;
 }
 
@@ -450,6 +540,38 @@ sub is_latest {
 sub row_id {
     my $self = shift;
     return $self->_get_set('row_id', 'number', @_);
+}
+
+
+=head2 row_ids
+
+  Example    : my @row_ids = $obj->row_ids();
+  Description: Get all the row_ids for this object. A new row_id is given to an
+               object every time it is updated.
+  Returntype : integer
+
+=cut
+
+sub row_ids {
+    my $self = shift;
+    
+    my $table = $self->_class_to_table;
+    my $sql = qq[select row_id from $table where ${table}_id = ?];
+    
+    my $sth = $self->{_dbh}->prepare($sql);
+    
+    if ($sth->execute($self->id)){
+	my $data = $sth->fetchall_arrayref({}); # return array of hashes
+        my %row_ids;
+	foreach my $row (@$data) {
+	    $row_ids{$row->{row_id}} = 1;
+	}
+	my @row_ids = sort { $a <=> $b } keys %row_ids;
+	return @row_ids;
+    }
+    else {
+	confess "Cannot retrieve $table: ".$DBI::errstr;
+    }
 }
 
 

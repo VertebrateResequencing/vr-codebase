@@ -49,6 +49,8 @@ sub new {
 
   Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : sequencescape id
+  Arg [3]    : 'latest'(default)|datestamp string(in the format returned by
+               changed()) (optional)
   Example    : my $obj = VRTrack::SequenceScape_obj->new_by_ssid($vrtrack, $ssid);
   Description: Class method. Returns latest object by ssid.  If no such ssid is
                in the database, returns undef.
@@ -57,9 +59,9 @@ sub new {
 =cut
 
 sub new_by_ssid {
-    my ($class, $vrtrack, $ssid) = @_;
+    my ($class, $vrtrack, $ssid, @extra_args) = @_;
     confess "Need to call with a vrtrack handle, ssid" unless ($vrtrack && $ssid);
-    return $class->new_by_field_value($vrtrack, 'ssid', $ssid);
+    return $class->new_by_field_value($vrtrack, 'ssid', $ssid, @extra_args);
 }
 
 

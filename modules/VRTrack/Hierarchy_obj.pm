@@ -51,6 +51,8 @@ sub new {
 
   Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : hierarchy_name
+  Arg [3]    : 'latest'(default)|datestamp string(in the format returned by
+               changed()) (optional)
   Example    : my $obj = VRTrack::Hierarchy_obj->new_by_hierarchy_name($vrtrack, $hierarchy_name)
   Description: Class method. Returns latest object by hierarchy_name.  If no
                such hierarchy_name is in the database, returns undef.
@@ -60,9 +62,9 @@ sub new {
 =cut
 
 sub new_by_hierarchy_name {
-    my ($class, $vrtrack, $hierarchy_name) = @_;
+    my ($class, $vrtrack, $hierarchy_name, @extra_args) = @_;
     confess "Need to call with a vrtrack handle, hierarchy_name" unless ($vrtrack && $hierarchy_name);
-    return $class->new_by_field_value($vrtrack, 'hierarchy_name', $hierarchy_name);
+    return $class->new_by_field_value($vrtrack, 'hierarchy_name', $hierarchy_name, @extra_args);
 }
 
 

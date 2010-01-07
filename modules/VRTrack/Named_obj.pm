@@ -49,6 +49,8 @@ sub new {
 
   Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : name
+  Arg [3]    : 'latest'(default)|datestamp string(in the format returned by
+               changed()) (optional)
   Example    : my $obj = VRTrack::Named_obj->new_by_name($vrtrack, $name);
   Description: Class method. Returns latest object by name. If no such name is
                in the database, returns undef.
@@ -57,9 +59,9 @@ sub new {
 =cut
 
 sub new_by_name {
-    my ($class, $vrtrack, $name) = @_;
+    my ($class, $vrtrack, $name, @extra_args) = @_;
     confess "Need to call with a vrtrack handle, name" unless ($vrtrack && $name);
-    return $class->new_by_field_value($vrtrack, 'name', $name);
+    return $class->new_by_field_value($vrtrack, 'name', $name, @extra_args);
 }
 
 

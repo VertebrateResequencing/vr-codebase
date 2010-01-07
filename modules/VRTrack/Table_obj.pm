@@ -44,7 +44,7 @@ sub new {
     bless $self, ref($class) || $class;
     
     if ($vrtrack) {
-	confess "The interface has changed, expected vrtrack reference." unless $vrtrack->isa('VRTrack::VRTrack');
+	confess "The interface has changed, expected vrtrack reference." unless $vrtrack && $vrtrack->isa('VRTrack::VRTrack');
 	confess "Need to call with a vrtrack reference and id" unless ($vrtrack && $id);
 	
 	$self->{_dbh} = $vrtrack->{_dbh};
@@ -123,7 +123,7 @@ sub fields_dispatch {
 =cut
 
 sub new_by_field_value {
-    my ($class, $vrtrack, $field, $value) = @_;
+    my ($class, $vrtrack, $field, $value, @other_args) = @_;
     confess "Need to call with a vrtrack handle, field name, field value" unless ($vrtrack && $field && defined $value);
     confess "The interface has changed, expected vrtrack reference." if $vrtrack->isa('DBI::db');
     
@@ -141,9 +141,9 @@ sub new_by_field_value {
         confess "No such column $field in $table table\n";
     }
 
-    my $id = $class->_get_id_by_field_value($dbh, $table, $field, $value);
+    my $id = $class->_get_id_by_field_value($dbh, $table, $field, $value, @other_args);
     return unless $id;
-    return $class->new($vrtrack, $id);
+    return $class->new($vrtrack, $id, @other_args);
 }
 
 sub _get_id_by_field_value {

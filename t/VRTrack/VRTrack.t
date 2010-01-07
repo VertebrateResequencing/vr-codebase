@@ -3,11 +3,12 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 327;
+    use Test::Most tests => 352;
 
     use_ok('VRTrack::VRTrack');
     use_ok('VRTrack::Request');
     use_ok('VRTrack::Study');
+    use_ok('VRTrack::History');
 }
 
 my $connection_details = { database => 'vrtrack_test',
@@ -131,11 +132,28 @@ foreach my $class (@core_objects) {
 my $name = 'Project_test2';
 ok my $vrproj = VRTrack::Project->create($vrtrack, $name), 'Project->create worked again';
 is_deeply [$vrproj->id, $vrproj->row_id], [3, 3], 'ids were incremented for the new object';
+my $changed = $vrproj->changed;
+sleep(1);
 $vrproj->ssid(123);
 ok $vrproj->update(), 'after changing an attribute was able to update';
 $vrproj = VRTrack::Project->new_by_name($vrtrack, $name);
+my $changed2 = $vrproj->changed;
 is_deeply [$vrproj->id, $vrproj->row_id], [3, 4], 'getting it back with new_by_name shows the id has not changed whilst the row_id has incremented';
-# history test - can we get row_id 2 again?...
+$vrproj = VRTrack::Project->new($vrtrack, 3, $changed2);
+is_deeply [$vrproj->id, $vrproj->row_id, $vrproj->changed], [3, 3, $changed], 'new(... new date) gives us the old version of the object';
+$vrproj = VRTrack::Project->new($vrtrack, 3, 'latest');
+is_deeply [$vrproj->id, $vrproj->row_id, $vrproj->changed], [3, 4, $changed2], 'new(... latest) gives us the latest version of the object';
+is $vrproj->global_history_date($changed2), $changed2, 'global_history_date could be set';
+$vrproj = VRTrack::Project->new($vrtrack, 3);
+is_deeply [$vrproj->id, $vrproj->row_id, $vrproj->changed], [3, 3, $changed], 'new() gives us the old version of the object when global was set';
+$vrproj = VRTrack::Project->new($vrtrack, 3, 'latest');
+is_deeply [$vrproj->id, $vrproj->row_id, $vrproj->changed], [3, 4, $changed2], 'new(... latest) gives us the latset version inspite of global setting';
+is $vrproj->global_history_date('latest'), 'latest', 'global_history_date could be set back to latest';
+$vrproj = VRTrack::Project->new_by_name($vrtrack, $name, 3);
+is_deeply [$vrproj->id, $vrproj->row_id, $vrproj->changed], [3, 3, $changed], 'new_by_name(... old row_id) gives us the old version of the object';
+$vrproj = VRTrack::Project->new_by_name($vrtrack, $name);
+is_deeply [$vrproj->id, $vrproj->row_id, $vrproj->changed], [3, 4, $changed2], 'new_by_name() still gives us the latest version of the object';
+is_deeply [$vrproj->row_ids], [3, 4], 'row_ids worked';
 
 # test bits of the core classes that are unique to themselves
 {
@@ -370,5 +388,75 @@ is_deeply [$vrproj->id, $vrproj->row_id], [3, 4], 'getting it back with new_by_n
         is_deeply [$obj->id, $obj->name], [$next_id, $obj_name], "$class new_by_name worked again";
     }
 }
+
+# more in-depth history testing using History object. First create some lanes
+# and libraries and see if we can see the state before and after a swap
+my $liba = VRTrack::Library->create($vrtrack, 'history_lib_a');
+$liba->add_lane('history_lane_a');
+$liba->add_lane('history_lane_b');
+$liba->update;
+my $libb = VRTrack::Library->create($vrtrack, 'history_lib_b');
+$libb->add_lane('history_lane_c');
+$libb->add_lane('history_lane_d');
+$libb->update;
+my %initial_lane_changed;
+foreach my $lane_name (qw(history_lane_a history_lane_b history_lane_c history_lane_d)) {
+    my $lane = VRTrack::Lane->new_by_name($vrtrack, $lane_name);
+    $initial_lane_changed{$lane_name} = $lane->changed;
+    $lane->is_processed('mapped', 1);
+    $lane->update;
+}
+sleep(1);
+my $lane = VRTrack::Lane->new_by_name($vrtrack, 'history_lane_b');
+$lane->is_processed('swapped', 1);
+$lane->library_id($libb->id);
+$lane->update;
+$lane = VRTrack::Lane->new_by_name($vrtrack, 'history_lane_d');
+$lane->is_processed('swapped', 1);
+$lane->library_id($liba->id);
+$lane->update;
+$liba->name('history_lib_a_changed');
+$liba->update;
+# now start the tests
+$lane = VRTrack::Lane->new_by_name($vrtrack, 'history_lane_a');
+is_deeply [$lane->library_id, VRTrack::Library->new($vrtrack, $lane->library_id)->name, $lane->is_processed('swapped')], [$liba->id, 'history_lib_a_changed', 0], 'after swap lane_a state was correct';
+$lane = VRTrack::Lane->new_by_name($vrtrack, 'history_lane_b');
+is_deeply [$lane->library_id, VRTrack::Library->new($vrtrack, $lane->library_id)->name, $lane->is_processed('swapped')], [$libb->id, 'history_lib_b', 1], 'after swap lane_b state was correct';
+$lane = VRTrack::Lane->new_by_name($vrtrack, 'history_lane_c');
+is_deeply [$lane->library_id, VRTrack::Library->new($vrtrack, $lane->library_id)->name, $lane->is_processed('swapped')], [$libb->id, 'history_lib_b', 0], 'after swap lane_c state was correct';
+$lane = VRTrack::Lane->new_by_name($vrtrack, 'history_lane_d');
+is_deeply [$lane->library_id, VRTrack::Library->new($vrtrack, $lane->library_id)->name, $lane->is_processed('swapped')], [$liba->id, 'history_lib_a_changed', 1], 'after swap lane_d state was correct';
+# do some time travel
+my $hist = VRTrack::History->new();
+$lane = VRTrack::Lane->new_by_name($vrtrack, 'history_lane_a');
+my $datetime = $hist->state_change($lane, 'library_id');
+is $datetime, $initial_lane_changed{'history_lane_a'}, 'lane_a never changed its library';
+$datetime = $hist->was_processed($lane, 'swapped');
+is $datetime, 'latest', 'lane_a was never swapped';
+$lane = VRTrack::Lane->new_by_name($vrtrack, 'history_lane_c');
+$datetime = $hist->state_change($lane, 'library_id');
+is $datetime, $initial_lane_changed{'history_lane_c'}, 'lane_c never changed its library';
+$datetime = $hist->was_processed($lane, 'swapped');
+is $datetime, 'latest', 'lane_c was never swapped';
+$lane = VRTrack::Lane->new_by_name($vrtrack, 'history_lane_b');
+$datetime = $hist->state_change($lane, 'library_id');
+isnt $datetime, 'latest', 'lane_b changed its library';
+$datetime = $hist->was_processed($lane, 'swapped');
+isnt $datetime, 'latest', 'lane_b was swapped';
+$hist->time_travel($datetime);
+$lane = VRTrack::Lane->new_by_name($vrtrack, 'history_lane_b');
+is_deeply [$lane->library_id, VRTrack::Library->new($vrtrack, $lane->library_id)->name, $lane->is_processed('swapped')], [$liba->id, 'history_lib_a', 0], 'before swap lane_b state was correct';
+$hist->time_travel('latest');
+$lane = VRTrack::Lane->new_by_name($vrtrack, 'history_lane_d');
+$datetime = $hist->state_change($lane, 'library_id');
+isnt $datetime, 'latest', 'lane_d changed its library';
+$datetime = $hist->was_processed($lane, 'swapped');
+isnt $datetime, 'latest', 'lane_d was swapped';
+$hist->time_travel($datetime);
+$lane = VRTrack::Lane->new_by_name($vrtrack, 'history_lane_d');
+is_deeply [$lane->library_id, VRTrack::Library->new($vrtrack, $lane->library_id)->name, $lane->is_processed('swapped')], [$libb->id, 'history_lib_b', 0], 'before swap lane_d state was correct';
+$hist->time_travel('latest');
+$lane = VRTrack::Lane->new_by_name($vrtrack, 'history_lane_d');
+is_deeply [$lane->library_id, VRTrack::Library->new($vrtrack, $lane->library_id)->name, $lane->is_processed('swapped')], [$liba->id, 'history_lib_a_changed', 1], 'after swap lane_d state still correct';
 
 exit;
