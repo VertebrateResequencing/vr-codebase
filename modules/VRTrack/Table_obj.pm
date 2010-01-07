@@ -24,6 +24,8 @@ use warnings;
 use Carp qw(cluck confess);
 use Scalar::Util qw(looks_like_number);
 
+our %table_columns = ();
+
 
 =head2 new
 
@@ -129,10 +131,14 @@ sub new_by_field_value {
     my $dbh = $vrtrack->{_dbh};
     my $table = $class->_class_to_table;
 
-    # check field exists
-    my $colnames = $dbh->selectcol_arrayref(qq[select column_name from information_schema.columns where table_name='$table']);
-    my %cols = map { $_ => 1 } @$colnames;
-    unless (exists($cols{lc($field)})) {
+    # check field exists by checking the db schema; since this won't change we
+    # can safely cache the information in a class variable
+    unless (defined $table_columns{$table}) {
+	my $colnames = $dbh->selectcol_arrayref(qq[select column_name from information_schema.columns where table_name='$table']);
+	my %cols = map { $_ => 1 } @$colnames;
+	$table_columns{$table} = \%cols;
+    }
+    unless (exists $table_columns{$table}->{lc($field)}) {
         confess "No such column $field in $table table\n";
     }
 
