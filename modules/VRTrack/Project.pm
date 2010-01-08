@@ -307,7 +307,7 @@ sub study {
   Arg [1]    : study acc
   Example    : my $ind = $proj->add_study('NA19820');
   Description: create a new study, and if successful, return the object
-  Returntype : VRTrack::Library object
+  Returntype : VRTrack::Study object
 
 =cut
 
