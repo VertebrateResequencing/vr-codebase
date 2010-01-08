@@ -24,6 +24,7 @@ package VertRes::Wrapper::karma;
 use strict;
 use warnings;
 use File::Copy;
+use File::Basename;
 use VertRes::IO;
 
 use base qw(VertRes::Wrapper::MapperI);

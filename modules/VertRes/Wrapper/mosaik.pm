@@ -8,20 +8,31 @@ VertRes::Wrapper::mosaik - wrapper for mosaik
 
 =head1 DESCRIPTION
 
-Ran out of memory given 80GB and its own estimate said it would take over 4000
-days! Giving up on this...
-
-
-
-Since author mentioned no settings, nothing on wiki, will use defaults for
-all steps. Below are examples from example scripts supplied with release.
+Below are examples from example scripts supplied with release.
 
 MosaikBuild -fr reference/c.elegans_chr2.fasta -oa reference/c.elegans_chr2.dat
+# MosaikJump -ia h.sapiens.dat -out h.sapiens_15 -hs 15
 MosaikBuild -q fastq/c_elegans_chr2_test.fastq -out sequence_archives/c_elegans_chr2_test.dat -st illumina
 MosaikAligner -in sequence_archives/c_elegans_chr2_test.dat -out sequence_archives/c_elegans_chr2_test_aligned.dat -ia reference/c.elegans_chr2.dat -hs 14 -act 17 -mm 2 -m unique
 MosaikSort -in sequence_archives/c_elegans_chr2_test_aligned.dat -out sequence_archives/c_elegans_chr2_test_sorted.dat
 # MosaikAssembler -in sequence_archives/c_elegans_chr2_test_sorted.dat -out assembly/c.elegans_chr2_test -ia reference/c.elegans_chr2.dat -f ace
 MosaikText -in yeast_aligned.dat -sam yeast_aligned.sam
+
+Author suggests MosaikAligner settings of:
+37: -mm 4 -act 20 -bw 13 -mhp 100 -ls 100
+54: -mm 6 -act 25 -bw 17 -mhp 100 -ls 100
+76: -mm 12 -act 35 -bw 29 -mhp 100 -ls 100
+108: -mm 15 -act 40 -bw 35 -mhp 100 -ls 100
+"-mfl 200" is recommended when using *MosaiBuild*
+
+jump database, which is strongly recommended. MosaikJump is a tool to generate jump database. Please refer Pages 16 and 17 in the attached document. If the jump database is used, the parameters go to
+=============================
+37: -mm 4 -act 20 -bw 13 -mhp 100 -ls 100 -j jumpFileName
+54: -mm 6 -act 25 -bw 17 -mhp 100 -ls 100 -j jumpFileName
+76: -mm 12 -act 35 -bw 29 -mhp 100 -ls 100 -j jumpFileName
+108: -mm 15 -act 40 -bw 35 -mhp 100 -ls 100 -j jumpFileName
+
+-p 8 for multiprocessors
 
 
 =head1 AUTHOR
@@ -94,7 +105,19 @@ sub setup_reference {
         $self->exe($orig_exe);
     }
     
-    return -s $out ? 1 : 0;
+    my $jump = $ref.'.jump';
+    if (-s $out) {
+        unless (-s $jump) {
+            my $orig_exe = $self->exe;
+            $self->exe($orig_exe.'MosaikJump');
+            $self->simple_run("-ia $out -out $ref -hs 15 -mhp 100");
+            $self->exe($orig_exe);
+        }
+        
+        return -s $jump ? 1 : 0;
+    }
+    
+    return 0;
 }
 
 =head2 setup_fastqs
@@ -115,7 +138,7 @@ sub setup_fastqs {
     unless (-s $out) {
         my $orig_exe = $self->exe;
         $self->exe($orig_exe.'MosaikBuild');
-        $self->simple_run("-q $fqs[0] -q2 $fqs[1] -out $out -st illumina");
+        $self->simple_run("-q $fqs[0] -q2 $fqs[1] -out $out -mfl 200 -st illumina");
         $self->exe($orig_exe);
     }
     
@@ -168,9 +191,32 @@ sub generate_sam {
     # align
     my $align_out = $out.'.align';
     unless (-s $align_out) {
+        # settings change depending on read length
+        my $max_length = 0;
+        foreach my $fq (@fqs) {
+            my $pars = VertRes::Parser::fastqcheck->new(file => "$fq.fastqcheck");
+            my $length = $pars->max_length();
+            if ($length > $max_length) {
+                $max_length = $length;
+            }
+        }
+        my $extra_settings;
+        if ($max_length >= 108) {
+            $extra_settings = "-mm 15 -act 40 -bw 35 -mhp 100 -ls 100 -j $ref";
+        }
+        elsif ($max_length >= 76) {
+            $extra_settings = "-mm 12 -act 35 -bw 29 -mhp 100 -ls 100 -j $ref";
+        }
+        elsif ($max_length >= 54) {
+            $extra_settings = "-mm 6 -act 25 -bw 17 -mhp 100 -ls 100 -j $ref";
+        }
+        else {
+            $extra_settings = "-mm 4 -act 20 -bw 13 -mhp 100 -ls 100 -j $ref";
+        }
+        
         $self->exe($orig_exe.'MosaikAligner');
         my $fastqs_dat = $self->_fastqs_dat(@fqs);
-        $self->simple_run("-in $fastqs_dat -out $align_out -ia $ref.dat");
+        $self->simple_run("-in $fastqs_dat -out $align_out -ia $ref.dat -p 8 $extra_settings");
         $self->exe($orig_exe);
     }
     unless (-s $align_out) {

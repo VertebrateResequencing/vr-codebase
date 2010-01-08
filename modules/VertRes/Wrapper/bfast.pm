@@ -48,6 +48,7 @@ use strict;
 use warnings;
 use File::Basename;
 use File::Copy;
+use File::Spec;
 use VertRes::IO;
 use VertRes::Parser::fastqcheck;
 
@@ -199,8 +200,14 @@ sub setup_fastqs {
         }
     }
     
+    my $out_dir = $out;
+    my $basename = basename($out_dir);
+    $out_dir =~ s/$basename$//;
+    $out_dir = File::Spec->catdir($out_dir, 'tmp');
+    mkdir($out_dir);
+    
     my $i = $max_length >= 40 ? '11-20' : '1-10';
-    $self->simple_run("match -f $ref -r $merged_fq -n 8 -i $i -T /tmp/ -t > $out");
+    $self->simple_run("match -f $ref -r $merged_fq -n 8 -i $i -T $out_dir/ -t > $out");
     
     return 1;
 }
