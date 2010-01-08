@@ -298,7 +298,8 @@ sub _get_set_child_object {
 	
         if ($obj) {
             # Have we actually changed?
-            if ($self->$child_id_method != $obj->id) {
+	    my $own_id = $self->$child_id_method;
+            if (! $own_id || $own_id != $obj->id) {
                 $self->$child_id_method($obj->id);
                 $self->dirty(1);
             }
