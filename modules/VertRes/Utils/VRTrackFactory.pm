@@ -6,11 +6,12 @@ VertRes::Utils::VRTrackFactory - factory class for getting VRTrack objects
 
 use VertRes::Utils::VRTrackFactory;
 
-my $fsu = VertRes::Utils::VRTrackFactory->instantiate('mouse_reseq_track', 'r');
+my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => 'mouse', mode => 'r');
 
 =head1 DESCRIPTION
 
-A simple factory class that returns VRTrack objects to centralise the database connection information
+A simple factory class that returns VRTrack objects to centralise the database
+connection information
 
 =head1 AUTHOR
 
@@ -23,7 +24,6 @@ use base qw(VertRes::Base);
 
 use strict;
 use warnings;
-use Carp;
 
 use VRTrack::VRTrack;
 
@@ -33,37 +33,36 @@ my $READ_USER = 'vreseq_ro';
 my $WRITE_USER = 'vreseq_rw';
 my $WRITE_PASS = 't3aml3ss';
 
+
 =head2 new
 
  Title   : instantiate
- Usage   : my $vrtrack = VRTrackFactory->instantiate( database=>'mouse', mode=>'r' );
+ Usage   : my $vrtrack = VRTrackFactory->instantiate(database => 'mouse', mode => 'r');
  Function: Ask the factory to return a VRTrack object to the database specified
  Returns : VRTrack object
  Args    : database name: a valid VRTrack database, mode: either 'r' or 'rw' connection
 
 =cut
-sub instantiate
-{
-	my ($class, @args) = @_;
-	my $self = $class->SUPER::new(@args);
-	
-	$self->throw("A database name must be provided!") unless $$self{'database'};
-	my $database = $$self{'database'};
-	
-	$self->throw("A connection mode name must be provided!") unless $$self{'mode'};
-	my $mode = lc( $$self{'mode'} );
-	
-	$self->throw( "Invalid connection mode (r or rw valid): $mode\n") unless $mode =~ /^[r|rw]$/;
-	
-	my $user = $mode =~ /^r$/ ? $READ_USER : $WRITE_USER;
-	my $pass = $mode =~ /^r$/ ? '' : $WRITE_PASS;
-	
-	my $vrtrack = VRTrack::VRTrack->new({ host => 'mcs4a',
-                                    port => 3306,
-                                    user => $user,
-                                    password => $pass,
-                                    database => $database,
-                                   });
+
+sub instantiate {
+    my $class = shift;
+    my $self = $class->SUPER::new(@_);
+    
+    my $database = $self->{database} || $self->throw("A database name must be provided!");
+    my $mode = lc($self->{mode}) || $self->throw("A connection mode name must be provided!");
+    
+    $self->throw("Invalid connection mode (r or rw valid): $mode\n") unless $mode =~ /^[r|rw]$/;
+    
+    my $user = $mode =~ /^r$/ ? $READ_USER : $WRITE_USER;
+    my $pass = $mode =~ /^r$/ ? '' : $WRITE_PASS;
+    
+    my $vrtrack = VRTrack::VRTrack->new({ host => 'mcs4a',
+                                port => 3306,
+                                user => $user,
+                                password => $pass,
+                                database => $database,
+                               });
+    
     return $vrtrack;
 }
 
