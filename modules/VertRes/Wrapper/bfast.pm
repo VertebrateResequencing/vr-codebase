@@ -188,7 +188,7 @@ sub setup_fastqs {
     }
     
     my $out = "$merged_fq.bmf";
-    return if -s $out;
+    return 1 if -s $out;
     
     # settings change depending on read length
     my $max_length = 0;
