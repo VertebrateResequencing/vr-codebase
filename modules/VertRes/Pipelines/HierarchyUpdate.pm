@@ -86,6 +86,7 @@ package VertRes::Pipelines::HierarchyUpdate;
 
 use strict;
 use warnings;
+use Cwd qw(cwd);
 use File::Basename;
 use File::Spec;
 use File::Copy;
@@ -154,6 +155,7 @@ sub new {
     my $self = $class->SUPER::new(%options, actions => $actions, @args);
     
     $self->throw("files option is required") unless defined $self->{files};
+    $self->throw("root option is required") unless defined $self->{root};
     
     # if we've been supplied a list of lane paths to work with, instead of
     # getting the lanes from the db, we won't have a vrlane object; make one
@@ -221,14 +223,26 @@ sub fix_swaps {
     my $vrlane = $self->{vrlane};
     my %info = VertRes::Utils::Hierarchy->new->lane_info($vrlane, pre_swap => 1);
     
-    my $old_path = $info{hierarchy_path};
+    my $old_path = File::Spec->catdir($self->{root}, $info{hierarchy_path});
+    
     if ($old_path ne $lane_path && -e $old_path) {
-        # move the contents of lane_path (just now created by run-pipline,
-        # containing pipline-related files like the lock file) to old_path, then
-        # move old_path to the new location
-        $self->{fsu}->move($lane_path, $old_path) || $self->throw("Failed to move contents of '$lane_path' to '$old_path'");
-        move($old_path, $lane_path) || $self->throw("Failed to move '$old_path' to '$lane_path'");
+        # lane_path (just now created by run-pipeline) should be empty except
+        # for a _job_status file; delete that and the dir prior to moving
+        # old_path to lane_path. We can't just move the contents of old_path
+        # to inside lane_path, because old_path may be a symlink to contents
+        # on an archival disc, and must remain there.
+        my $ok = $self->{fsu}->copy($lane_path, $old_path);
+        unless ($ok) {
+            $self->throw("Could not copy contents of $lane_path to $old_path\n");
+        }
         
+        my $cwd = cwd();
+        chdir(File::Spec->tmpdir) if $cwd eq $lane_path;
+        system("rm -fr $lane_path");
+        $self->throw("Failed to remove $lane_path prior to moving the old version here") if -e $lane_path;
+        
+        move($old_path, $lane_path) || $self->throw("Failed to move '$old_path' to '$lane_path'");
+        chdir($cwd);
         $self->_prune_path($old_path);
     }
     
@@ -251,6 +265,8 @@ sub fix_swaps {
         
         my $su = VertRes::Utils::Sam->new();
         
+        # get the latest info
+        %info = VertRes::Utils::Hierarchy->new->lane_info($vrlane);
         my %new_meta = ($info{lane} => { sample_name => $info{sample},
                                          library => $info{library_true},
                                          platform => $info{technology},
@@ -258,8 +274,20 @@ sub fix_swaps {
                                          insert_size => $info{insert_size},
                                          project => $info{project} });
         
+        my $needed_rewrite = 0;
+        my $verbose = $self->verbose;
         foreach my $bam (@bams) {
-            $su->rewrite_bam_header($bam, %new_meta) || $self->throw("Failed to correct the header of '$bam'");
+            my $needs_rewrite = $su->check_bam_header($bam, %new_meta);
+            if ($needs_rewrite) {
+                $needed_rewrite = 1;
+                $su->rewrite_bam_header($bam, %new_meta) || $self->throw("Failed to correct the header of '$bam'");
+                my $basename = basename($bam);
+                LSF::run($action_lock, $lane_path, $self->{prefix}.$basename.'_header_rewrite', $self,
+                    qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->rewrite_bam_header(qq[$bam], $info{lane} => { sample_name => qq[$info{sample}], library => qq[$info{library_true}], platform => qq[$info{technology}], centre => qq[$info{centre}], insert_size => qq[$info{insert_size}], project => qq[$info{project}] }) || die qq[Failed to correct the header of '$bam'\n];"});
+            }
+        }
+        if ($needed_rewrite) {
+            return $self->{No};
         }
         
         foreach my $bas (@bass) {
