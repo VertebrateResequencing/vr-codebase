@@ -949,7 +949,7 @@ sub rewrite_bam_header {
     
     # output to bam
     my $temp_bam = $bam.'.rewrite_header.tmp.bam';
-    #$self->register_for_unlinking($temp_bam);
+    $self->register_for_unlinking($temp_bam);
     my $sfh = $stout->view(undef, $temp_bam, b => 1, S => 1);
     $sfh || $self->throw("failed to get a filehandle for writing to '$temp_bam'");
     
@@ -1015,7 +1015,7 @@ sub rewrite_bam_header {
     }
     else {
         $self->warn("$temp_bam is bad (only $new_bam_lines lines vs $expected_lines), will unlink it");
-        #unlink($temp_bam);
+        unlink($temp_bam);
         return 0;
     }
 }
