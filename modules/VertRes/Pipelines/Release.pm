@@ -747,7 +747,7 @@ sub recalibrate {
         next if -s $out_bam;
         
         LSF::run($action_lock, $lane_path, $self->{prefix}.'platform_recalibration', $self,
-                 qq{perl -MVertRes::Wrapper::GATK -Mstrict -e "VertRes::Wrapper::GATK->new(verbose => $verbose)->recalibrate(qq[$bam], qq[$out_bam]); die qq[recalibration failed for $bam\n] unless -s qq[$out_bam];"});
+                 qq{perl -MVertRes::Wrapper::GATK -Mstrict -e "VertRes::Wrapper::GATK->new(verbose => $verbose)->recalibrate(qq[$bam], qq[$out_bam], build => qq[$self->{assembly_name}]); die qq[recalibration failed for $bam\n] unless -s qq[$out_bam];"});
     }
     
     open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
