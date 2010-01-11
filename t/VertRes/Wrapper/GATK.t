@@ -14,9 +14,6 @@ BEGIN {
     use_ok('Math::NumberCruncher');
 }
 
-my $gatk = VertRes::Wrapper::GATK->new(quiet => 1);
-isa_ok $gatk, 'VertRes::Wrapper::WrapperI';
-
 # setup in/out files
 my $fsu = VertRes::Utils::FileSystem->new();
 my $ref = File::Spec->catfile('t', 'data', 'S_suis_P17.fa');
@@ -30,6 +27,10 @@ $in_bam = $temp_in_bam;
 my $out_bam = File::Spec->catfile($temp_dir, 'out.bam');
 my $out_csv_prefix = File::Spec->catfile($temp_dir, 'in.bam');
 my $out_csv = $out_csv_prefix.'.recal_data.csv';
+my $rod = File::Spec->catfile('t', 'data', 'S_suis_P17.rod');
+
+my $gatk = VertRes::Wrapper::GATK->new(quiet => 1, dbsnp => $rod);
+isa_ok $gatk, 'VertRes::Wrapper::WrapperI';
 
 # individual method tests
 $gatk->count_covariates($in_bam, $out_csv_prefix, R => $ref);
