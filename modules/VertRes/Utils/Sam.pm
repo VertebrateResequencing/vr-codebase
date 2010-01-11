@@ -949,7 +949,7 @@ sub rewrite_bam_header {
     
     # output to bam
     my $temp_bam = $bam.'.rewrite_header.tmp.bam';
-    $self->register_for_unlinking($temp_bam);
+    #$self->register_for_unlinking($temp_bam);
     my $sfh = $stout->view(undef, $temp_bam, b => 1, S => 1);
     $sfh || $self->throw("failed to get a filehandle for writing to '$temp_bam'");
     
@@ -964,11 +964,13 @@ sub rewrite_bam_header {
             my $rg = $1;
             if (exists $rg_changes{$rg}) {
                 while (my ($arg, $value) = each %{$rg_changes{$rg}}) {
+                    next unless defined $value;
                     my $tag = $arg_to_tag{$arg} || next;
-                    if (/\t$tag:([^\t]+)/) {
+                    
+                    if (/\t$tag:([^\t\n]+)/) {
                         if ($1 ne $value) {
                             $made_changes = 1;
-                            s/\t$tag:[^\t]+/\t$tag:$value/;
+                            s/\t$tag:[^\t\n]+/\t$tag:$value/;
                         }
                     }
                     else {
@@ -1013,7 +1015,7 @@ sub rewrite_bam_header {
     }
     else {
         $self->warn("$temp_bam is bad (only $new_bam_lines lines vs $expected_lines), will unlink it");
-        unlink($temp_bam);
+        #unlink($temp_bam);
         return 0;
     }
 }

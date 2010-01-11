@@ -111,7 +111,7 @@ is $found_rgs, @records, 'correct RG tag still present on all records';
 ok $sam_util->rewrite_bam_header($sorted_bam, invalid => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI' }), 'rewrite_bam_header ran ok with an invalid readgroup';
 @header_lines = get_bam_header($sorted_bam);
 is $header_lines[2], "\@RG\tID:SRR00001\tLB:alib\tSM:NA00001\tPU:7563\tPI:2000\tCN:Sanger\tPL:SLX\tDS:SRP000001", 'rewrite_bam_header didn\'t change the header when readgroup not in the bam';
-ok $sam_util->rewrite_bam_header($sorted_bam, SRR00001 => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI' }), 'rewrite_bam_header ran ok';
+ok $sam_util->rewrite_bam_header($sorted_bam, SRR00001 => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI', project => 'SRP000001' }), 'rewrite_bam_header ran ok';
 @header_lines = get_bam_header($sorted_bam);
 is $header_lines[2], "\@RG\tID:SRR00001\tLB:blib\tSM:NA00002\tPU:7563\tPI:2000\tCN:NCBI\tPL:SLX\tDS:SRP000001", 'rewrite_bam_header actually changed the header';
 @records = get_bam_body($sorted_bam);
