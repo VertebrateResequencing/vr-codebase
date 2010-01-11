@@ -48,6 +48,7 @@ use warnings;
 use File::Copy;
 use File::Basename;
 use VertRes::IO;
+use VertRes::Parser::fastqcheck;
 
 use base qw(VertRes::Wrapper::MapperI);
 
@@ -105,16 +106,32 @@ sub setup_reference {
         $self->exe($orig_exe);
     }
     
-    my $jump = $ref.'.jump';
     if (-s $out) {
-        unless (-s $jump) {
+        my @jump_suffixes = ('_keys.jmp', '_meta.jmp', '_positions.jmp');
+        my $jumped = 1;
+        foreach my $suffix (@jump_suffixes) {
+            unless (-e "$ref$suffix") {
+                $jumped = 0;
+                last;
+            }
+        }
+        
+        unless ($jumped) {
             my $orig_exe = $self->exe;
             $self->exe($orig_exe.'MosaikJump');
             $self->simple_run("-ia $out -out $ref -hs 15 -mhp 100");
             $self->exe($orig_exe);
+            
+            $jumped = 1;
+            foreach my $suffix (@jump_suffixes) {
+                unless (-e "$ref$suffix") {
+                    $jumped = 0;
+                    last;
+                }
+            }
         }
         
-        return -s $jump ? 1 : 0;
+        return $jumped ? 1 : 0;
     }
     
     return 0;
@@ -238,10 +255,15 @@ sub generate_sam {
     # MosaikAssembler -in sequence_archives/c_elegans_chr2_test_sorted.dat -out assembly/c.elegans_chr2_test -ia reference/c.elegans_chr2.dat -f ace
     
     # convert to sam
-    unless (-s $out) {
+    my $sam_out = $out.'.gz';
+    unless (-s $sam_out) {
         $self->exe($orig_exe.'MosaikText');
         $self->simple_run("-in $sort_out -sam $out");
         $self->exe($orig_exe);
+    }
+    
+    unless (-s $out) {
+        system("gunzip $sam_out");
     }
     
     return -s $out ? 1 : 0;

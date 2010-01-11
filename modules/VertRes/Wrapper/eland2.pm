@@ -202,14 +202,33 @@ sub generate_sam {
         my $orig_exe = $self->exe;
         $self->exe('make');
         my $squash = $self->_squash_dir($ref);
-        my $cwd = cwd();
-        chdir($orig_exe);
         
+        my $fq_dir;
+        my $base_dir;
         foreach my $fq (@fqs) {
+            $fq_dir .= basename($fq);
+            unless ($base_dir) {
+                $base_dir = $fq;
+                $base_dir =~ s/$fq_dir//;
+            }
             $fq =~ s/\.gz$//;
         }
         
-        $self->simple_run("-j 1 paired CORES=1 INPUT1=$fqs[0] INPUT2=$fqs[1] SAM_OUTPUT=$out GENOME=$squash");
+        # fqs and the whole eland2 distributions need to be in their own
+        # directory or multiple runs will override same-named temp files
+        $fq_dir = File::Spec->catdir($base_dir, $fq_dir);
+        mkdir($fq_dir);
+        my @fq_links;
+        foreach my $fq (@fqs) {
+            my $dest = File::Spec->catfile($fq_dir, basename($fq));
+            symlink($fq, $dest);
+            push(@fq_links, $dest);
+        }
+        
+        my $cwd = cwd();
+        chdir($fq_dir);
+        system("cp -r $orig_exe/* .");
+        $self->simple_run("-j 1 paired CORES=1 INPUT1=$fq_links[0] INPUT2=$fq_links[1] SAM_OUTPUT=$out GENOME=$squash");
         $self->exe($orig_exe);
         chdir($cwd);
     }
