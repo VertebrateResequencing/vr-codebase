@@ -354,10 +354,6 @@ sub update_db
             $vrfile->hierarchy_name($name);
         }
 
-        # This is temporary and should be removed - fix for existing lanes without md5s
-        my $xfile = "$lane_path/$name";
-        if ( -e "$xfile.gz" && (! -e "$xfile.md5" || !-s "$xfile.md5") ) { Utils::CMD(qq[zcat $xfile.gz | md5sum > $xfile.md5]); }
-
         $vrfile->md5(`awk '{printf "%s",\$1}' $lane_path/$name.md5`);
 
         # Hm, this must be evaled, otherwise it dies without rollback
@@ -380,6 +376,18 @@ sub update_db
         $vrfile->mean_q($avg_qual); 
         $vrfile->is_processed('import',1);
         $vrfile->update();
+
+
+        # Add also the fastq.gz file into the File table. (Requested for the Mapping pipeline.)
+        $vrfile = $vrlane->get_file_by_name("$name.gz");
+        if ( !$vrfile )
+        {
+            $vrfile = $vrlane->add_file("$name.gz");
+            $vrfile->hierarchy_name("$name.gz");
+            $vrfile->md5(`md5sum $lane_path/$name.gz | awk '{printf "%s",\$1}'`);
+            $vrfile->is_processed('import',1);
+            $vrfile->update();
+        }
     }
 
     # Change also the qc status of all single files.
