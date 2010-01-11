@@ -27,8 +27,10 @@ Ostensibly a wrapper for Broad's GenomeAnalysisToolKit, this is primarily
 focused on using it to recalibrate the quality values in bam files. See:
 http://www.broadinstitute.org/gsa/wiki/index.php/Quality_scores_recalibration
 
-For mouse, assumes you have the env variable MOUSE pointing to team145's mouse
-directory.
+For default "exe" path assumes you have the env variable GATK pointing to the
+directory containing the GATK .jar files etc.
+For default reference and dbsnp file paths assumes you have the env variable
+GATK_RESOURCES pointing to the directory containing the .rod and .fa files etc.
 
 =head1 AUTHOR
 
@@ -48,9 +50,7 @@ use File::Copy;
 use base qw(VertRes::Wrapper::WrapperI);
 use VertRes::Wrapper::samtools;
 
-our $DEFAULT_GATK_JAR = File::Spec->catfile($ENV{BIN}, 'GenomeAnalysisTK.jar');
-our $DEFAULT_REFERENCE = File::Spec->catfile($ENV{G1K}, 'ref', 'broad_recal_data', 'human_b36_both.fasta');
-our $DEFAULT_DBSNP = File::Spec->catfile($ENV{G1K}, 'ref', 'broad_recal_data', 'dbsnp_129_b36.rod');
+our $DEFAULT_GATK_JAR = File::Spec->catfile($ENV{GATK}, 'GenomeAnalysisTK.jar');
 our $DEFAULT_LOGLEVEL = 'ERROR';
 
 =head2 new
@@ -63,11 +63,13 @@ our $DEFAULT_LOGLEVEL = 'ERROR';
            exe   => string (full path to GenomeAnalysisTK.jar; a TEAM145 default
                             exists)
            reference => ref.fa (path to reference fasta; can be overriden in
-                                individual methods with the R option; a TEAM145
-                                default exists for human G1K project)
-           dbsnp    => snp.rod (path to dbsnp rod file; can be overriden in
-                                individual methods with the DBSNP option; a
-                                TEAM145 default exists for human G1K project)
+                                individual methods with the R option)
+           dbsnp     => snp.rod (path to dbsnp rod file; can be overriden in
+                                 individual methods with the DBSNP option)
+           build     => NCBI36|NCBI37|NCBIM37 (default NCBI36: sets defaults for
+                        reference and dbsnp as appropriate for the build;
+                        overriden by the above two options if they are set
+                        manually)
            log_level => DEBUG|INFO|WARN|ERROR|FATAL|OFF (set the log level;
                                 can be overriden in individual methods with the
                                 l option; default 'ERROR')
@@ -85,8 +87,24 @@ sub new {
     $self->bsub_options(M => 6000000, R => "'select[mem>6000] rusage[mem=6000]'");
     
     # default settings
-    $self->{_default_R} = delete $self->{reference} || $DEFAULT_REFERENCE;
-    $self->{_default_DBSNP} = delete $self->{dbsnp} || $DEFAULT_DBSNP;
+    my $build = delete $self->{build} || 'NCBI36';
+    my ($default_ref, $default_dbsnp);
+    if ($build eq 'NCBI36') {
+        $default_ref = File::Spec->catfile($ENV{GATK_RESOURCES}, 'human_b36_both.fasta');
+        $default_dbsnp = File::Spec->catfile($ENV{GATK_RESOURCES}, 'dbsnp_129_b36.rod');
+    }
+    elsif ($build eq 'NCBI37') {
+        $self->throw("broad-supplied hg18 rod potentially not valid for our NCBI37 reference...");
+    }
+    elsif ($build eq 'NCBIM37') {
+        $self->throw("mouse .rod not available; suggest not attempting recalibration on mouse at the moment...");
+    }
+    else {
+        $self->throw("bad build option '$build'");
+    }
+    
+    $self->{_default_R} = delete $self->{reference} || $default_ref;
+    $self->{_default_DBSNP} = delete $self->{dbsnp} || $default_dbsnp;
     $self->{_default_loglevel} = delete $self->{log_level} || $DEFAULT_LOGLEVEL;
     
     return $self;
@@ -114,8 +132,9 @@ sub _handle_common_params {
            input.bam.bai using samtools index if it doesn't already exist.
  Returns : n/a
  Args    : path to input .bam file, path to output file (which will have its
-           name suffixed with '.recal_data.csv'). Optionally, supply R, DBSNP,
-           or l options (as a hash), as understood by GATK.
+           name suffixed with '.recal_data.csv' unless you suffix it yourself
+           with .csv). Optionally, supply R, DBSNP, use_original_quals or l
+           options (as a hash), as understood by GATK.
 
 =cut
 
@@ -128,19 +147,28 @@ sub count_covariates {
     #   -l INFO \
     #   -T CountCovariates \ 
     #   -I my_reads.bam \
-    #   --OUTPUT_FILEROOT my_reads.recal_data.csv
-    
-    $self->switches([qw(quiet_output_mode)]);
+    #   -cov ReadGroupCovariate \
+    #   -cov QualityScoreCovariate \
+    #   -cov CycleCovariate \
+    #   -cov DinucCovariate \
+    #   -recalFile my_reads.recal_data.csv
+
+    $self->switches([qw(quiet_output_mode use_original_quals)]);
     $self->params([qw(R DBSNP l T)]);
     
-    my @file_args = (" -I $in_bam", " --OUTPUT_FILEROOT $out_csv");
+    # used to take a fileroot, but now takes an output file
+    my $recal_file = $out_csv;
+    unless ($recal_file =~ /\.csv$/) {
+        $recal_file .= '.recal_data.csv';
+    }
+    my @file_args = (" -I $in_bam", " --standard_covs -recalFile $recal_file");
     
     my %params = @params;
     $params{T} = 'CountCovariates';
     $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
     
-    $self->register_output_file_to_check($out_csv);
+    $self->register_output_file_to_check($recal_file);
     $self->_set_params_and_switches_from_args(%params);
     
     return $self->run(@file_args);
@@ -152,8 +180,9 @@ sub count_covariates {
  Usage   : $wrapper->table_recalibration('in.bam', 'recal_data.csv', 'out.bam');
  Function: Recalibrates a bam using the csv file made with count_covariates().
  Returns : n/a
- Args    : path to input .bam file, path to output file. Optionally, supply R
-           or l options (as a hash), as understood by GATK.
+ Args    : path to input .bam file, path to csv file made by count_covariates(),
+           path to output file. Optionally, supply R or l or use_original_quals
+           options (as a hash), as understood by GATK.
 
 =cut
 
@@ -166,12 +195,12 @@ sub table_recalibration {
     #   -T TableRecalibration \
     #   -I my_reads.bam \
     #   -outputBAM my_reads.recal.bam \
-    #   -params my_reads.recal_data.csv
+    #   -recalFile my_reads.recal_data.csv
     
-    $self->switches([qw(quiet_output_mode)]);
+    $self->switches([qw(quiet_output_mode use_original_quals)]);
     $self->params([qw(R l T)]);
     
-    my @file_args = (" -I $in_bam", " -outputBAM $out_bam", " -params $csv");
+    my @file_args = (" -I $in_bam", " -recalFile $csv", " --output_bam $out_bam");
     
     my %params = @params;
     $params{T} = 'TableRecalibration';
@@ -194,7 +223,8 @@ sub table_recalibration {
            Won't attempt to recalibrate if out.bam already exists.
  Returns : n/a
  Args    : path to input .bam file, path to output file. Optionally, supply R,
-           DBSNP, or l options (as a hash), as understood by GATK.
+           DBSNP, use_original_quals or l options (as a hash), as understood by
+           GATK.
 
 =cut
 
@@ -233,6 +263,7 @@ sub recalibrate {
         $fh = $st->view($tmp_out);
         while (<$fh>) {
             $recal_count++;
+            print;
         }
         close($fh);
         
@@ -288,6 +319,9 @@ sub _pre_run {
 
 sub run {
     my $self = shift;
+    
+    # generates an error log in working directory; remove it
+    $self->register_for_unlinking('GATK_Error.log');
     
     # refuses to be quiet, so force the issue
     if ($self->quiet) {
