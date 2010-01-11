@@ -912,6 +912,60 @@ sub calculate_flag {
     return $result;
 }
 
+=head2 check_bam_header
+
+ Title   : check_bam_header
+ Usage   : if ($obj->check_bam_header('a.bam',
+                                    readgroup1 => { sample_name => 'NA000001' })
+ Function: Prior to calling rewrite_bam_header() with the same arguments, just
+           check that a rewrite is even necessary.
+ Returns : boolean
+ Args    : as per check_bam_header()
+
+=cut
+
+sub check_bam_header {
+    my ($self, $bam, %rg_changes) = @_;
+    
+    keys %rg_changes || return 1;
+    my %arg_to_tag = (sample_name => 'SM',
+                      library => 'LB',
+                      platform => 'PL',
+                      centre => 'CN',
+                      insert_size => 'PI',
+                      project => 'DS');
+    
+    my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+    my $bamfh = $stin->view($bam, undef, H => 1);
+    my $made_changes = 0;
+    while (<$bamfh>) {
+        if (/^\@RG.+ID:([^\t]+)/) {
+            my $rg = $1;
+            if (exists $rg_changes{$rg}) {
+                while (my ($arg, $value) = each %{$rg_changes{$rg}}) {
+                    next unless defined $value;
+                    my $tag = $arg_to_tag{$arg} || next;
+                    
+                    if (/\t$tag:([^\t\n]+)/) {
+                        if ($1 ne $value) {
+                            $made_changes = 1;
+                            # all of <$bamfh> must be gone through, otherwise
+                            # things will break, so we don't 'last' here.
+                        }
+                    }
+                    else {
+                        $made_changes = 1;
+                        # no 'last'; see above comment
+                    }
+                }
+            }
+        }
+    }
+    close($bamfh);
+    
+    return $made_changes;
+}
+
 =head2 rewrite_bam_header
 
  Title   : rewrite_bam_header
@@ -929,7 +983,7 @@ sub calculate_flag {
            platform => string
            centre => string
            insert_size => int
-           project => string, the study id, eg. SRP000001
+           project => string, the study id, eg. SRP000001 (overwrites DS)
 
 =cut
 
@@ -1053,7 +1107,7 @@ sub rewrite_bas_meta {
                       md5 => 1);
     # NAXXXXX.[chromN].technology.[center].algorithm.study_id.YYYY_MM.bam
     my %arg_to_filename_regex = (sample_name => qr{^[^\.]+(\.)},
-                                 platform => qr{(?:SLX|454|SOLID)(\.)},
+                                 platform => qr{(?:ABI_SOLID|ILLUMINA|LS454|SLX|454|SOLID)(\.)},
                                  project => qr{[^\.]+(\.\d{4}_)});
     
     my $temp_bas = $bas.'.rewrite_bas_meta.tmp.bas';
