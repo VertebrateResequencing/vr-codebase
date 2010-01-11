@@ -40,6 +40,7 @@ use VRTrack::Lane;
 use VRTrack::Library;
 use VRTrack::Sample;
 use VRTrack::Project;
+use VRTrack::History;
 
 use base qw(VertRes::Base);
 
@@ -123,7 +124,10 @@ sub parse_lane {
            individual_acc => string,
            individual_coverage => float, (the coverage of this lane's individual)
            population     => string,
-           technology     => string, (aka platform)
+           technology     => string, (aka platform, the way DCC puts it, eg.
+                                      'ILLUMINA' instead of 'SLX')
+           seq_tech       => string, (aka platform, the way Sanger puts it, eg.
+                                      'SLX' instead of 'ILLUMINA')
            library        => string, (the hierarchy name, which is most likely
                                       similar to the true original library name)
            library_raw    => string, (the name stored in the database, which may
@@ -166,11 +170,15 @@ sub parse_lane {
 sub lane_info {
     my ($self, $lane, %args) = @_;
     
+    my $hist = VRTrack::History->new();
+    my $orig_time_travel = $hist->time_travel;
+    
     my ($rg, $vrlane, $vrtrack);
     if (ref($lane) && $lane->isa('VRTrack::Lane')) {
         $vrlane = $lane;
         $vrtrack = $vrlane->vrtrack;
         $rg = $vrlane->hierarchy_name;
+        $lane = $rg;
     }
     else {
         if ($args{vrtrack}) {
@@ -187,10 +195,13 @@ sub lane_info {
     
     return unless ($rg && $vrlane && $vrtrack);
     
+    my $datetime = 'latest';
     if ($args{pre_swap}) {
-        
-        $self->throw("pre_swap not yet implemented");
+        $datetime = $hist->was_processed($vrlane, 'swapped');
     }
+    # make sure we've got a lane of the correct time period
+    $hist->time_travel($datetime);
+    $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane) || $self->throw("Could not get a vrlane with name $lane prior to $datetime");
     
     my %info = (lane => $rg, vrlane => $vrlane);
     
@@ -205,10 +216,20 @@ sub lane_info {
     $info{library} = $objs{library}->hierarchy_name || $self->throw("library hierarchy_name wasn't known for $rg");
     my $lib_name = $objs{library}->name || $self->throw("library name wasn't known for $rg");
     $info{library_raw} = $lib_name;
-    ($lib_name) = split('|', $lib_name);
+    ($lib_name) = split(/\|/, $lib_name);
     $info{library_true} = $lib_name;
     $info{centre} = $objs{centre}->name || $self->throw("sequencing centre wasn't known for $rg");
-    $info{technology} = $objs{platform}->name || $self->throw("sequencing platform wasn't known for $rg");
+    my $seq_tech = $objs{platform}->name || $self->throw("sequencing platform wasn't known for $rg");
+    $info{seq_tech} = $seq_tech;
+    if ($seq_tech =~ /illumina|slx/i) {
+        $info{technology} = 'ILLUMINA';
+    }
+    elsif ($seq_tech =~ /solid/i) {
+        $info{technology} = 'ABI_SOLID';
+    }
+    elsif ($seq_tech =~ /454/) {
+        $info{technology} = 'LS454';
+    }
     $info{sample} = $objs{sample}->name || $self->throw("sample name wasn't known for $rg");
     $info{individual} = $objs{individual}->name || $self->throw("individual name wasn't known for $rg");
     $info{individual_acc} = $objs{individual}->acc || $self->throw("sample accession wasn't known for $rg");
@@ -220,6 +241,8 @@ sub lane_info {
                                                            $args{mapped} ? (mapped => $args{mapped}) : ());
     $info{population} = $objs{population}->name;
     $info{project} = $objs{project}->hierarchy_name;
+    
+    $hist->time_travel($orig_time_travel);
     
     return %info;
 }
@@ -1015,7 +1038,7 @@ sub dcc_filename {
         # DCC puts eg. 'ILLUMINA' in the sequence.index files but the
         # filename format expects 'SLX' etc.
         $platform = $info->{PL};
-        if ($platform =~ /illumina/i) {
+        if ($platform =~ /illumina|slx/i) {
             $platform = 'SLX';
         }
         elsif ($platform =~ /solid/i) {
