@@ -232,7 +232,7 @@ sub lane_info {
     }
     $info{sample} = $objs{sample}->name || $self->throw("sample name wasn't known for $rg");
     $info{individual} = $objs{individual}->name || $self->throw("individual name wasn't known for $rg");
-    $info{individual_acc} = $objs{individual}->acc || $self->throw("sample accession wasn't known for $rg");
+    $info{individual_acc} = $objs{individual}->acc; # || $self->throw("sample accession wasn't known for $rg");
     $info{individual_coverage} = $self->hierarchy_coverage(individual => [$info{individual}],
                                                            vrtrack => $vrtrack,
                                                            $args{genome_size} ? (genome_size => $args{genome_size}) : (),
@@ -938,15 +938,30 @@ sub create_release_hierarchy {
         mkpath($release_lane_path);
         -d $release_lane_path || $self->throw("Unable to make release lane '$release_lane_path'");
         
-        # symlink bams
+        # symlink bams; what ended are we supposed to have?
+        my $files = $vrlane->files();
+        my %ended;
+        foreach my $file (@{$files}) {
+            my $type = $file->type;
+            if (! $type) {
+                $ended{se} = 1;
+            }
+            else {
+                $ended{pe} = 1;
+            }
+        }
+        
         my @linked_bams;
-        foreach my $ended ('pe', 'se') {
+        foreach my $ended (keys %ended) {
             my $source = $fsu->catfile($lane_path, "$mapstats_prefix.$ended.raw.sorted.bam");
             
             if (-s $source) {
                 my $destination = $fsu->catfile($release_lane_path, "$ended.raw.sorted.bam");
                 symlink($source, $destination) || $self->throw("Couldn't symlink $source -> $destination");
                 push(@linked_bams, $destination);
+            }
+            else {
+                $self->warn("was expected there to be a bame '$source' but it didn't exist!");
             }
         }
         
