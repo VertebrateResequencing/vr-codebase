@@ -94,7 +94,7 @@ sub new {
         $default_dbsnp = File::Spec->catfile($ENV{GATK_RESOURCES}, 'dbsnp_129_b36.rod');
     }
     elsif ($build eq 'NCBI37') {
-        $self->throw("broad-supplied hg18 rod potentially not valid for our NCBI37 reference...");
+        $self->throw("no .rod is available for our NCBI37 reference...");
     }
     elsif ($build eq 'NCBIM37') {
         $self->throw("mouse .rod not available; suggest not attempting recalibration on mouse at the moment...");
@@ -263,7 +263,6 @@ sub recalibrate {
         $fh = $st->view($tmp_out);
         while (<$fh>) {
             $recal_count++;
-            print;
         }
         close($fh);
         
@@ -314,30 +313,9 @@ sub _pre_run {
         }
     }
     
-    return @_;
-}
-
-sub run {
-    my $self = shift;
-    
-    # generates an error log in working directory; remove it
     $self->register_for_unlinking('GATK_Error.log');
     
-    # refuses to be quiet, so force the issue
-    if ($self->quiet) {
-        my $run_method = $self->run_method;
-        $self->run_method('open');
-        my ($fh) = $self->_run(@_);
-        while (<$fh>) {
-            next;
-        }
-        close($fh);
-        $self->_post_run();
-        $self->run_method($run_method);
-    }
-    else {
-        return $self->SUPER::run(@_);
-    }
+    return @_;
 }
 
 sub _post_run_old {
