@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 58;
+    use Test::Most tests => 59;
     
     use_ok('VertRes::Parser::sam');
 }
@@ -74,6 +74,8 @@ is $rh->{FLAG}, 121, 'FLAG fine for first record';
 is $ps->sam_version, '1.0', 'sam_version worked on headed sam';
 is $ps->group_order, 'none', 'group_order correct';
 is $ps->sort_order, 'coordinate', 'sort_order correct';
+my %all_pgs = $ps->program_info();
+is_deeply [sort keys %all_pgs], ['bwa', 'second_pg'], 'program_info all had all the programs';
 is $ps->program, 'bwa', 'program correct';
 is $ps->program_version, '0.4.9', 'program_version correct';
 is $ps->command_line, 'bwa -foo bar', 'command_line correct';

@@ -309,11 +309,35 @@ sub sort_order {
     return $self->_get_single_header_tag('HD', 'SO');
 }
 
+=head2 program_info
+
+ Title   : program_info
+ Usage   : my %all_program_info = $obj->program_info();
+ Function: Get information about the programs used to create/process this bam,
+           as reported in the header.
+ Returns : undef if no PG lines in header, else:
+           with no args: hash (keys are program ids, values are hash refs with
+                               keys as tags (like VN and CL))
+           with just a program id: hash (keys as tags, like VN and CL)
+           with a program and a tag: the value of that tag for that program
+ Args    : none for all info,
+           program id for all the info for just that program,
+           program id and tag (like 'VN' or 'CL') for specific info
+
+=cut
+
+sub program_info {
+    my $self = shift;
+    return $self->_handle_multi_line_header_types('PG', @_);
+}
+
 =head2 program
 
  Title   : program
  Usage   : my $program = $obj->program();
  Function: Return the program used to do the mapping, as given in the header.
+           If there is more than 1 PG header line, tries to guess which one is
+           for the mapping program.
  Returns : string (undef if no header or not given in header)
  Args    : n/a
 
@@ -321,7 +345,28 @@ sub sort_order {
 
 sub program {
     my $self = shift;
-    return $self->_get_single_header_tag('PG', 'ID');
+    return $self->_guess_mapping_program();
+}
+
+sub _guess_mapping_program {
+    my $self = shift;
+    
+    my %info = $self->program_info();
+    my @programs = keys %info;
+    
+    if (@programs == 1) {
+        return $programs[0];
+    }
+    else {
+        foreach my $program (@programs) {
+            if ($program =~ /bwa|maq|ssha/) {
+                return $program;
+            }
+        }
+        
+        # guess randomly
+        return $programs[0];
+    }
 }
 
 =head2 program_version
@@ -330,6 +375,8 @@ sub program {
  Usage   : my $program_version = $obj->program_version();
  Function: Return the program version used to do the mapping, as given in the
            header.
+           If there is more than 1 PG header line, tries to guess which one is
+           for the mapping program.
  Returns : string (undef if no header or not given in header)
  Args    : n/a
 
@@ -337,7 +384,8 @@ sub program {
 
 sub program_version {
     my $self = shift;
-    return $self->_get_single_header_tag('PG', 'VN');
+    my $program_id = $self->_guess_mapping_program();
+    return $self->program_info($program_id, 'VN');
 }
 
 =head2 command_line
@@ -346,6 +394,8 @@ sub program_version {
  Usage   : my $command_line = $obj->command_line();
  Function: Return the command line used to do the mapping, as given in the
            header.
+           If there is more than 1 PG header line, tries to guess which one is
+           for the mapping program.
  Returns : string (undef if no header or not given in header)
  Args    : n/a
 
@@ -353,7 +403,8 @@ sub program_version {
 
 sub command_line {
     my $self = shift;
-    return $self->_get_single_header_tag('PG', 'CL');
+    my $program_id = $self->_guess_mapping_program();
+    return $self->program_info($program_id, 'CL');
 }
 
 =head2 sequence_info
@@ -488,7 +539,7 @@ sub _get_header {
             my $type = shift @tags;
             $type = substr($type, 1);
             
-            if ($type eq 'HD' || $type eq 'PG') {
+            if ($type eq 'HD') {
                 # we only expect and handle one of these lines per file
                 $self->{'_header'.$fh_id}->{$type} = \@tags;
             }
