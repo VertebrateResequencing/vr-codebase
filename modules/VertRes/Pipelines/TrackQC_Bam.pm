@@ -241,12 +241,6 @@ sub rename_and_merge
     my $work_dir = "$lane_path/$$self{sample_dir}";
     Utils::create_dir("$work_dir");
 
-    if ( scalar @files == 1 )
-    {
-        Utils::relative_symlink("$files[0]","$work_dir/$name.bam");
-        return $$self{'Yes'};
-    }
-
     # This is a hack: The bam files produced by the mapping pipeline are named
     #   as MAPSTAT_ID.pe.raw.sorted.bam. In such a case, use the mapstat id to
     #   update the mapstats, so that the mapper and assembly information is preserved.
@@ -261,6 +255,12 @@ sub rename_and_merge
         open(my $fh,'>',"$work_dir/$$self{mapstat_id}") or $self->throw("$work_dir/$$self{mapstat_id}: $!");
         print $fh keys %mapstat_id,"\n";
         close($fh);
+    }
+
+    if ( scalar @files == 1 )
+    {
+        Utils::relative_symlink("$files[0]","$work_dir/$name.bam") unless -e "$work_dir/$name.bam";
+        return $$self{'Yes'};
     }
 
     my $bams = join(' ',@files);
