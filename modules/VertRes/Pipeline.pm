@@ -426,12 +426,25 @@ sub archive_bsub_files {
         my $archive_bsub_file = File::Spec->catfile($lane_path, '.'.$job_name.'.'.$suffix.'.archive');
         
         if (-s $bsub_file) {
-            $self->_move_file_content($previous_bsub_file, $archive_bsub_file);
+            # don't archive files greater than 1GB
+            if (-e $previous_bsub_file && -s $previous_bsub_file < 1000000000) {
+                $self->_move_file_content($previous_bsub_file, $archive_bsub_file);
+            }
+            else {
+                unlink($previous_bsub_file);
+            }
+            
             move($bsub_file, $previous_bsub_file) || $self->throw("Couldn't move $bsub_file to $previous_bsub_file");
         }
         
         if ($final) {
-            $self->_move_file_content($previous_bsub_file, $archive_bsub_file);
+            # don't archive files greater than 1GB
+            if (-e $previous_bsub_file && -s $previous_bsub_file < 1000000000) {
+                $self->_move_file_content($previous_bsub_file, $archive_bsub_file);
+            }
+            else {
+                unlink($previous_bsub_file);
+            }
         }
         
         if ($suffix eq 'e' && -s $previous_bsub_file) {
