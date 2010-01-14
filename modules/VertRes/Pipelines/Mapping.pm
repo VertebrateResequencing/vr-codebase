@@ -35,7 +35,8 @@ data => {
     slx_mapper => 'bwa',
     '454_mapper' => 'ssaha',
     reference => '/abs/path/to/ref.fa',
-    assembly_name => 'NCBI37'
+    assembly_name => 'NCBI37',
+    do_recalibration => 1,
 },
 
 # Reference option can be replaced with male_reference and female_reference
@@ -73,6 +74,9 @@ data => {
 # to the g1k_reseq database. The coverage would have to be 20x or higher or
 # the candidate would be rejected (and so not mapped).
 
+# recalibration is done by default; you can turn it off (if eg. you do not have
+# a rod file to recalibrate successfully with) with do_recalibration => 0
+
 # run the pipeline:
 run-pipeline -c pipeline.config -s 30
 
@@ -103,7 +107,9 @@ can be created with update_vrmeta.pl, using meta information held in a
 (possibly faked) sequence.index
 
 NB: there is an expectation that read fastqs are named [readgroup]_[1|2].*
-for paired end sequencing, and [readgroup].* for single ended.
+for paired end sequencing, and [readgroup].* for single ended. Failing this
+the forward/reverse/single-ended information about a fastq must be stored in
+the database.
 
 =head1 AUTHOR
 
@@ -136,10 +142,18 @@ our $actions = [ { name     => 'split',
                    action   => \&map,
                    requires => \&map_requires, 
                    provides => \&map_provides },
-                 { name     => 'merge_and_stat',
-                   action   => \&merge_and_stat,
-                   requires => \&merge_and_stat_requires, 
-                   provides => \&merge_and_stat_provides },
+                 { name     => 'merge',
+                   action   => \&merge,
+                   requires => \&merge_requires, 
+                   provides => \&merge_provides },
+                 { name     => 'recalibrate',
+                   action   => \&recalibrate,
+                   requires => \&recalibrate_requires, 
+                   provides => \&recalibrate_provides },
+                 { name     => 'statistics',
+                   action   => \&statistics,
+                   requires => \&statistics_requires, 
+                   provides => \&statistics_provides },
                  { name     => 'update_db',
                    action   => \&update_db,
                    requires => \&update_db_requires, 
@@ -152,6 +166,7 @@ our $actions = [ { name     => 'split',
 our %options = (local_cache => '',
                 slx_mapper => 'bwa',
                 '454_mapper' => 'ssaha',
+                do_recalibration => 1,
                 do_cleanup => 1);
 
 our $split_dir_name = 'split';
@@ -165,6 +180,7 @@ our $split_dir_name = 'split';
  Args    : lane => 'readgroup_id'
            lane_path => '/path/to/lane'
            local_cache => '/local/dir' (defaults to standard tmp space)
+           do_recalibration => boolean (default true: run the recalibration action)
            do_cleanup => boolean (default true: run the cleanup action)
            chunk_size => int (default depends on mapper)
            slx_mapper => 'bwa'|'maq' (default bwa; the mapper to use for mapping
@@ -661,17 +677,17 @@ sub _num_of_splits {
     return $splits;
 }
 
-=head2 merge_and_stat_requires
+=head2 merge_requires
 
- Title   : merge_and_stat_requires
- Usage   : my $required_files = $obj->merge_and_stat_requires('/path/to/lane');
+ Title   : merge_requires
+ Usage   : my $required_files = $obj->merge_requires('/path/to/lane');
  Function: Find out what files the merge_and_stat action needs before it will run.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub merge_and_stat_requires {
+sub merge_requires {
     my ($self, $lane_path) = @_;
     
     my @requires;
@@ -683,16 +699,7 @@ sub merge_and_stat_requires {
         # split dir, which in strange and unusual (manual intervention...)
         # circumstances, might not exist
         my $bam = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.raw.sorted.bam");
-        my $dones = 0;
-        if (-s $bam) {
-            $dones++;
-        }
-        foreach my $suffix ('bas', 'flagstat') {
-            if (-s $bam.'.'.$suffix) {
-                $dones++;
-            }
-        }
-        next if $dones == 3;
+        next if -s $bam;
         
         # get the number of splits
         my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
@@ -708,17 +715,17 @@ sub merge_and_stat_requires {
     return \@requires;
 }
 
-=head2 merge_and_stat_provides
+=head2 merge_provides
 
- Title   : merge_and_stat_provides
- Usage   : my $provided_files = $obj->merge_and_stat_provides('/path/to/lane');
+ Title   : merge_provides
+ Usage   : my $provided_files = $obj->merge_provides('/path/to/lane');
  Function: Find out what files the merge_and_stat action generates on success.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub merge_and_stat_provides {
+sub merge_provides {
     my ($self, $lane_path) = @_;
     
     my @provides;
@@ -727,11 +734,21 @@ sub merge_and_stat_provides {
         $self->_get_read_args($lane_path, $ended) || next;
         
         my $file = "$self->{mapstats_id}.$ended.raw.sorted.bam";
-        push(@provides, $file);
         
-        foreach my $suffix ('bas', 'flagstat') {
-            push(@provides, $file.'.'.$suffix);
+        # if we're doing recalibration and that completed, our raw bam will
+        # have been deleted so it will look like on subsequent pipeline runs
+        # this action hasn't worked; detect that and say we provide recal
+        # files instead
+        if ($self->{do_recalibration}) {
+            unless (-s $self->{fsu}->catfile($lane_path, $file)) {
+                my $recal_file = "$self->{mapstats_id}.$ended.recal.sorted.bam";
+                if (-s $self->{fsu}->catfile($lane_path, $recal_file)) {
+                    $file = $recal_file;
+                }
+            }
         }
+        
+        push(@provides, $file);
     }
     
     @provides || $self->throw("Something went wrong; we don't seem to provide any merged bams!");
@@ -739,18 +756,18 @@ sub merge_and_stat_provides {
     return \@provides;
 }
 
-=head2 merge_and_stat
+=head2 merge
 
- Title   : merge_and_stat
- Usage   : $obj->merge_and_stat('/path/to/lane', 'lock_filename');
+ Title   : merge
+ Usage   : $obj->merge('/path/to/lane', 'lock_filename');
  Function: Takes the bam files generated during map(), and creates a merged,
-           sorted bam file from them. Also creates statistic files.
+           sorted bam file from them.
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : lane path, name of lock file to use
 
 =cut
 
-sub merge_and_stat {
+sub merge {
     my ($self, $lane_path, $action_lock) = @_;
     
     # setup filenames etc. we'll use within our temp script
@@ -762,7 +779,7 @@ sub merge_and_stat {
     foreach my $ended ('se', 'pe') {
         $self->_get_read_args($lane_path, $ended) || next;
         
-        my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."merge_and_stat_${ended}_$self->{mapstats_id}.pl");
+        my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."merge_${ended}_$self->{mapstats_id}.pl");
         
         # get the input bams that need merging
         my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
@@ -773,23 +790,15 @@ sub merge_and_stat {
         }
         
         my $copy_instead_of_merge = @bams > 1 ? 0 : 1;
-        
-        # define the output files
         my $bam_file = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.raw.sorted.bam");
-        my @stat_files;
-        foreach my $suffix ('bas', 'flagstat') {
-            push(@stat_files, $bam_file.'.'.$suffix);
-        }
         
-        # run the multiple steps required for this in an LSF call to a temp script
+        # run this in an LSF call to a temp script
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
 use strict;
-use VertRes::Utils::Sam;
 use VertRes::Wrapper::samtools;
 use File::Copy;
 
-my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
 my \$samtools = VertRes::Wrapper::samtools->new(verbose => $verbose);
 
 # merge bams
@@ -806,9 +815,207 @@ unless (-s '$bam_file') {
     }
 }
 
-my \$ok = 0;
+exit;
+        };
+        close $scriptfh;
+        
+        my $job_name = $self->{prefix}.'merge_'.$ended.'_'.$self->{mapstats_id};
+        $self->archive_bsub_files($lane_path, $job_name);
+        
+        LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'merge'), qq{perl -w $script_name});
+    }
+    
+    # we've only submitted to LSF, so it won't have finished; we always return
+    # that we didn't complete
+    return $self->{No};
+}
 
-# make stat files
+
+=head2 recalibrate_requires
+
+ Title   : recalibrate_requires
+ Usage   : my $required_files = $obj->recalibrate_requires('/path/to/lane');
+ Function: Find out what files the recalibrate action needs before
+           it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub recalibrate_requires {
+    my ($self, $lane_path) = @_;
+    
+    # we need bams
+    my @requires = @{$self->merge_provides($lane_path)};
+    
+    # and reference-related files
+    my $ref = $self->{reference};
+    my $dict = $ref;
+    $dict =~ s/\.[^\.]+$/.dict/;
+    push(@requires, $ref);
+    push(@requires, $dict);
+    push(@requires, $ref.'.rod');
+    
+    return \@requires;
+}
+
+=head2 recalibrate_provides
+
+ Title   : recalibrate_provides
+ Usage   : my $provided_files = $obj->recalibrate_provides('/path/to/lane');
+ Function: Find out what files the recalibrate action generates on
+           success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub recalibrate_provides {
+    my ($self, $lane_path) = @_;
+    
+    my @raw_bams = @{$self->merge_provides($lane_path)};
+    my @recal_bams;
+    foreach my $bam (@raw_bams) {
+        my $recal_bam = $bam;
+        $recal_bam =~ s/\.raw\.sorted\.bam$/.recal.sorted.bam/;
+        push(@recal_bams, $recal_bam);
+    }
+    
+    return $self->{do_recalibration} ? \@recal_bams : \@raw_bams;
+}
+
+=head2 recalibrate
+
+ Title   : recalibrate
+ Usage   : $obj->recalibrate('/path/to/lane', 'lock_filename');
+ Function: Recalibrate the quality values of bams. (Original quality values are
+           retained in the file.)
+           Doesn't run unless do_recalibration config option is true (default).
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub recalibrate {
+    my ($self, $lane_path, $action_lock) = @_;
+    return $self->{Yes} unless $self->{do_recalibration};
+    
+    my @in_bams = @{$self->merge_provides($lane_path)};
+    my $verbose = $self->verbose;
+    
+    my $orig_bsub_opts = $self->{bsub_opts};
+    $self->{bsub_opts} = '-q normal -M15500000 -R \'select[mem>15500] rusage[mem=15500]\'';
+    
+    my @out_bams;
+    foreach my $bam (@in_bams) {
+        $bam = $self->{fsu}->catfile($lane_path, $bam);
+        my $out_bam = $bam;
+        $out_bam =~ s/\.raw\.sorted\.bam$/.recal.sorted.bam/;
+        push(@out_bams, $out_bam);
+        
+        next if -s $out_bam;
+        
+        my $basename = basename($bam);
+        my $job_name = $self->{prefix}.'recalibrate_'.$basename;
+        $self->archive_bsub_files($lane_path, $job_name);
+        
+        # incase we ran without recalibration before, need to delete stat files
+        foreach my $suffix ('bas', 'flagstat') {
+            unlink($bam.'.'.$suffix);
+        }
+        
+        LSF::run($action_lock, $lane_path, $job_name, $self,
+                 qq{perl -MVertRes::Wrapper::GATK -Mstrict -e "VertRes::Wrapper::GATK->new(verbose => $verbose, reference => qq[$self->{reference}], dbsnp => qq[$self->{reference}.rod])->recalibrate(qq[$bam], qq[$out_bam]); die qq[recalibration failed for $bam\n] unless -s qq[$out_bam];"});
+    }
+    
+    $self->{bsub_opts} = $orig_bsub_opts;
+    return $self->{No};
+}
+
+=head2 statistics_requires
+
+ Title   : statistics_requires
+ Usage   : my $required_files = $obj->statistics_requires('/path/to/lane');
+ Function: Find out what files the statistics action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub statistics_requires {
+    my ($self, $lane_path) = @_;
+    
+    # varies based on if we did recalibration
+    my @requires = @{$self->recalibrate_provides($lane_path)};
+    
+    @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
+    
+    return \@requires;
+}
+
+=head2 statistics_provides
+
+ Title   : statistics_provides
+ Usage   : my $provided_files = $obj->statistics_provides('/path/to/lane');
+ Function: Find out what files the statistics action generates on
+           success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub statistics_provides {
+    my ($self, $lane_path) = @_;
+    
+    my @provides;
+    foreach my $bam (@{$self->statistics_requires($lane_path)}) {
+        foreach my $suffix ('bas', 'flagstat') {
+            push(@provides, $bam.'.'.$suffix);
+        }
+    }
+    
+    @provides || $self->throw("Something went wrong; we don't seem to provide any stat files!");
+    
+    return \@provides;
+}
+
+=head2 statistics
+
+ Title   : statistics
+ Usage   : $obj->statistics('/path/to/lane', 'lock_filename');
+ Function: Creates statistic files for the bam files.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub statistics {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    # setup filenames etc. we'll use within our temp script
+    my $mapper_class = $self->{mapper_class};
+    my $verbose = $self->verbose;
+    
+    # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
+    # independantly.
+    foreach my $bam_file (@{$self->statistics_requires($lane_path)}) {
+        my $basename = basename($bam_file);
+        $bam_file = $self->{fsu}->catfile($lane_path, $bam_file);
+        my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."statistics_$basename.pl");
+        
+        my @stat_files;
+        foreach my $suffix ('bas', 'flagstat') {
+            push(@stat_files, $bam_file.'.'.$suffix);
+        }
+        
+        # run this in an LSF call to a temp script
+        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+        print $scriptfh qq{
+use strict;
+use VertRes::Utils::Sam;
+
+my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
+
 my \$num_present = 0;
 foreach my \$stat_file (qw(@stat_files)) {
     \$num_present++ if -s \$stat_file;
@@ -828,14 +1035,12 @@ exit;
         };
         close $scriptfh;
         
-        my $job_name = $self->{prefix}.'merge_and_stat_'.$ended.'_'.$self->{mapstats_id};
+        my $job_name = $self->{prefix}.'statistics_'.$basename;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'merge_and_stat'), qq{perl -w $script_name});
+        LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'statistics'), qq{perl -w $script_name});
     }
     
-    # we've only submitted to LSF, so it won't have finished; we always return
-    # that we didn't complete
     return $self->{No};
 }
 
@@ -851,7 +1056,9 @@ exit;
 
 sub update_db_requires {
     my ($self, $lane_path) = @_;
-    return $self->merge_and_stat_provides($lane_path);
+    my @bams = @{$self->statistics_requires($lane_path)};
+    my @stats = @{$self->statistics_provides($lane_path)};
+    return [@bams, @stats];
 }
 
 =head2 update_db_provides
@@ -923,16 +1130,28 @@ sub update_db {
     
     $stats{raw_bases} || $self->throw("bas file(s) for $lane_path indicate no raw bases; bam file must be empty, which should never happen!");
     
-    # add mapping details to db (overwriting any existing values)
+    # add mapping details to db (overwriting any existing values, but checking
+    # existing values so we can work out if we need to update())
     my $mapping = $self->{mapstats_obj};
-    $mapping->raw_reads($stats{raw_reads});
-    $mapping->raw_bases($stats{raw_bases});
-    $mapping->reads_mapped($stats{reads_mapped});
-    $mapping->reads_paired($stats{reads_paired});
-    $mapping->bases_mapped($stats{bases_mapped});
-    $mapping->mean_insert($stats{mean_insert}) if $stats{mean_insert};
-    $mapping->sd_insert($stats{sd_insert}) if $stats{sd_insert};
-    $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
+    my $needs_update = 0;
+    foreach my $method (qw(raw_reads raw_bases reads_mapped reads_paired bases_mapped mean_insert sd_insert)) {
+        defined $stats{$method} || next;
+        my $existing = $mapping->$method;
+        if (defined $existing && $existing != $stats{$method}) {
+            $needs_update = 1;
+            last;
+        }
+    }
+    if ($needs_update) {
+        $mapping->raw_reads($stats{raw_reads});
+        $mapping->raw_bases($stats{raw_bases});
+        $mapping->reads_mapped($stats{reads_mapped});
+        $mapping->reads_paired($stats{reads_paired});
+        $mapping->bases_mapped($stats{bases_mapped});
+        $mapping->mean_insert($stats{mean_insert}) if $stats{mean_insert};
+        $mapping->sd_insert($stats{sd_insert}) if $stats{sd_insert};
+        $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
+    }
     
     # set mapped status
     $vrlane->is_processed('mapped', 1);
@@ -991,7 +1210,8 @@ sub cleanup {
     foreach my $file (qw(log job_status store_nfs
                          split_se split_pe
                          map_se map_pe
-                         merge_and_stat_se merge_and_stat_pe)) {
+                         merge_se merge_pe
+                         recalibrate statistics)) {
         
         unlink($self->{fsu}->catfile($lane_path, $prefix.$file));
         
@@ -1012,16 +1232,33 @@ sub cleanup {
                 }
             }
             
-            my $job_name = $prefix.$file.'_'.$self->{mapstats_id};
-            
-            if ($suffix eq 'o') {
-                $self->archive_bsub_files($lane_path, $job_name, 1);
+            my $job_name;
+            if ($file =~ /recalibrate|statistics/) {
+                foreach my $ended ('pe', 'se') {
+                    foreach my $type ('raw', 'recal') {
+                        my $bam = join('.', $ended, $type, 'sorted.bam');
+                        
+                        $job_name = $prefix.$file.'_'.$self->{mapstats_id}.'.'.$bam;
+                        if ($suffix eq 'o') {
+                            $self->archive_bsub_files($lane_path, $job_name, 1);
+                        }
+                        unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
+                    }
+                }
             }
-            
-            unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
+            else {
+                $job_name = $prefix.$file.'_'.$self->{mapstats_id};
+                
+                if ($suffix eq 'o') {
+                    $self->archive_bsub_files($lane_path, $job_name, 1);
+                }
+                
+                unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
+            }
         }
     }
     
+    unlink($self->{fsu}->catfile($lane_path, 'GATK_Error.log'));
     $self->{fsu}->rmtree($self->{fsu}->catfile($lane_path, 'split_se'.'_'.$self->{mapstats_id}));
     $self->{fsu}->rmtree($self->{fsu}->catfile($lane_path, 'split_pe'.'_'.$self->{mapstats_id}));
     
@@ -1053,6 +1290,22 @@ sub is_finished {
     }
     elsif ($action->{name} eq 'cleanup' || $action->{name} eq 'update_db') {
         return $self->{No};
+    }
+    elsif ($action->{name} eq 'recalibrate') {
+        if ($self->{do_recalibration}) {
+            my @raw_bams = @{$self->recalibrate_requires($lane_path)};
+            foreach my $bam (@raw_bams) {
+                my $bam_file = $self->{fsu}->catfile($lane_path, $bam);
+                my $recal_bam = $bam_file;
+                $recal_bam =~ s/\.raw\.sorted\.bam$/.recal.sorted.bam/;
+                next if $recal_bam eq $bam_file;
+                if (-s $recal_bam) {
+                    # unlink($bam_file);
+                    system("mv $bam_file $bam_file.deleted");
+                    system("mv $bam_file.bai $bam_file.bai.deleted");
+                }
+            }
+        }
     }
     
     return $self->SUPER::is_finished($lane_path, $action);

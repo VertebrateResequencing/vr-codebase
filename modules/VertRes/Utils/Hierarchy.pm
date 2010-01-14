@@ -953,15 +953,22 @@ sub create_release_hierarchy {
         
         my @linked_bams;
         foreach my $ended (keys %ended) {
-            my $source = $fsu->catfile($lane_path, "$mapstats_prefix.$ended.raw.sorted.bam");
+            # prefer the recalibrated bam if it was made to the unrecalibrated
+            # raw bam
+            my $type = 'recal';
+            my $source = $fsu->catfile($lane_path, "$mapstats_prefix.$ended.$type.sorted.bam");
+            unless (-s $source) {
+                $type = 'raw';
+                $source = $fsu->catfile($lane_path, "$mapstats_prefix.$ended.$type.sorted.bam");
+            }
             
             if (-s $source) {
-                my $destination = $fsu->catfile($release_lane_path, "$ended.raw.sorted.bam");
+                my $destination = $fsu->catfile($release_lane_path, "$ended.$type.sorted.bam");
                 symlink($source, $destination) || $self->throw("Couldn't symlink $source -> $destination");
                 push(@linked_bams, $destination);
             }
             else {
-                $self->warn("was expected there to be a bame '$source' but it didn't exist!");
+                $self->warn("was expected there to be a bam '$source' but it didn't exist!");
             }
         }
         

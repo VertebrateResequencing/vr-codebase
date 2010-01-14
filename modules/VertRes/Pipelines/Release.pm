@@ -21,7 +21,6 @@ data => {
     '454_mapper' => 'ssaha',
     assembly_name => 'NCBI37',
     
-    do_recalibration => 1,
     dcc_hardlinks => 1,
     do_cleanup => 1,
     
@@ -62,7 +61,7 @@ run-pipeline -c release.pipeline -v
 
 =head1 DESCRIPTION
 
-A module for creating a release (merging, splitting, recalibration etc.) from
+A module for creating a release (merging, splitting etc.) from
 lanes mapped by VertRes::Pipelines::Mapping.
 
 =head1 AUTHOR
@@ -105,10 +104,6 @@ our $actions = [{ name     => 'create_release_hierarchy',
                   action   => \&platform_merge,
                   requires => \&platform_merge_requires, 
                   provides => \&platform_merge_provides },
-                { name     => 'recalibrate',
-                  action   => \&recalibrate,
-                  requires => \&recalibrate_requires, 
-                  provides => \&recalibrate_provides },
                 { name     => 'create_release_files',
                   action   => \&create_release_files,
                   requires => \&create_release_files_requires, 
@@ -124,7 +119,6 @@ our $actions = [{ name     => 'create_release_hierarchy',
 
 our %options = (do_cleanup => 0,
                 do_chr_splits => 0,
-                do_recalibration => 0,
                 do_sample_merge => 0,
                 bsub_opts => '',
                 dont_wait => 1,
@@ -147,10 +141,6 @@ our %options = (do_cleanup => 0,
            do_cleanup => boolean (default false: don't do the cleanup action)
            do_chr_splits => boolean (default false: don't split platform-level
                                      or individual-level bams by chr)
-           do_recalibration => boolean (default false: don't recalibrate any
-                                        bams; when true, recalibrates the
-                                        platform-level bams, which will be used
-                                        to make the individual-level bams)
            dcc_hardlinks => boolean (default false: don't create hardlinks to
                                      release files with DCC-style filenames)
            do_sample_merge => boolean (default false: don't create sample-level
@@ -490,11 +480,9 @@ sub sample_merge {
     my ($self, $lane_path, $action_lock) = @_;
     return $self->{Yes} unless $self->{do_sample_merge};
     
-    #*** probably going to have an issue with relative paths in .recalibrate_done ?
-    
     $self->merge_up_one_level($lane_path,
                               $action_lock,
-                              $self->{do_recalibration} ? '.recalibrate_done' : '.platform_merge_done',
+                              '.platform_merge_done',
                               'raw.bam',
                               'sample_merge',
                               '.sample_merge_expected');
@@ -607,14 +595,6 @@ sub merge_up_one_level {
                         symlink($prev_rmdup_bam, $cur_rmdup_bam);
                     }
                     
-                    my $prev_recal_bam = $previous_bam;
-                    $prev_recal_bam =~ s/\.bam$/.recal.bam/;
-                    if (-s $prev_recal_bam) {
-                        my $cur_recal_bam = $out_bam;
-                        $cur_recal_bam =~ s/\.bam$/.recal.bam/;
-                        symlink($prev_recal_bam, $cur_recal_bam);
-                    }
-                    
                     foreach my $suffix2 ('', '.md5') {
                         foreach my $suffix ('', '.bai', '.bas') {
                             my $prev = $previous_bam.$suffix.$suffix2;
@@ -678,90 +658,6 @@ sub _fofn_to_bam_groups {
     return %bams_groups;
 }
 
-=head2 recalibrate_requires
-
- Title   : recalibrate_requires
- Usage   : my $required_files = $obj->recalibrate_requires('/path/to/lane');
- Function: Find out what files the recalibrate action needs before
-           it will run.
- Returns : array ref of file names
- Args    : lane path
-
-=cut
-
-sub recalibrate_requires {
-    my $self = shift;
-    return ['.platform_merge_done'];
-}
-
-=head2 recalibrate_provides
-
- Title   : recalibrate_provides
- Usage   : my $provided_files = $obj->recalibrate_provides('/path/to/lane');
- Function: Find out what files the recalibrate action generates on
-           success.
- Returns : array ref of file names
- Args    : lane path
-
-=cut
-
-sub recalibrate_provides {
-    my ($self, $lane_path) = @_;
-    return $self->{do_recalibration} ? ['.recalibrate_done'] : ['.platform_merge_done'];
-}
-
-=head2 recalibrate
-
- Title   : recalibrate
- Usage   : $obj->recalibrate('/path/to/lane', 'lock_filename');
- Function: Recalibrate the quality values in platform-level bams.
-           Doesn't run unless do_recalibration has been supplied as a config
-           option.
- Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
- Args    : lane path, name of lock file to use
-
-=cut
-
-sub recalibrate {
-    my ($self, $lane_path, $action_lock) = @_;
-    return $self->{Yes} unless $self->{do_recalibration};
-    
-    my $fofn = $self->{fsu}->catfile($lane_path, '.platform_merge_done');
-    my @in_bams = $self->{io}->parse_fofn($fofn, $lane_path);
-    
-    my $out_fofn = $self->{fsu}->catfile($lane_path, '.recalibrate_expected');
-    unlink($out_fofn);
-    
-    my $verbose = $self->verbose;
-    
-    my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q long -M6500000 -R \'select[mem>6500] rusage[mem=6500]\'';
-    
-    my @out_bams;
-    foreach my $bam (@in_bams) {
-        $bam = $self->{fsu}->catfile($lane_path, $bam);
-        my $out_bam = $bam;
-        $out_bam =~ s/\.bam$/.recal.bam/;
-        push(@out_bams, $out_bam);
-        
-        next if -s $out_bam;
-        
-        LSF::run($action_lock, $lane_path, $self->{prefix}.'platform_recalibration', $self,
-                 qq{perl -MVertRes::Wrapper::GATK -Mstrict -e "VertRes::Wrapper::GATK->new(verbose => $verbose)->recalibrate(qq[$bam], qq[$out_bam], build => qq[$self->{assembly_name}]); die qq[recalibration failed for $bam\n] unless -s qq[$out_bam];"});
-    }
-    
-    open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
-    foreach my $out_bam (@out_bams) {
-        print $ofh $out_bam, "\n";
-    }
-    my $expected = @out_bams;
-    print $ofh "# expecting $expected\n";
-    close($ofh);
-    
-    $self->{bsub_opts} = $orig_bsub_opts;
-    return $self->{NO};
-}
-
 =head2 create_release_files_requires
 
  Title   : create_release_files_requires
@@ -775,7 +671,7 @@ sub recalibrate {
 
 sub create_release_files_requires {
     my $self = shift;
-    return $self->{do_recalibration} ? ['.recalibrate_done'] : ['.platform_merge_done'];
+    return ['.platform_merge_done'];
 }
 
 =head2 create_release_files_provides
@@ -809,7 +705,7 @@ sub create_release_files_provides {
            release files to give them DCC-style filenames. Always also makes
            softlinks to the release files prefixed with 'release' (release.bam,
            release.bam.bai, release.bam.bas), so that it is consistent to find
-           them, regardless of if recalibration was done or not.
+           them.
 
            At the end, if dcc_hardlinks option was supplied, will create two
            files in the root of the release directory: release_files.fofn
@@ -824,7 +720,7 @@ sub create_release_files_provides {
 sub create_release_files {
     my ($self, $lane_path, $action_lock) = @_;
     
-    my $fofn = $self->{fsu}->catfile($lane_path, $self->{do_recalibration} ? '.recalibrate_done' : '.platform_merge_done');
+    my $fofn = $self->{fsu}->catfile($lane_path, '.platform_merge_done');
     my @in_bams = $self->{io}->parse_fofn($fofn, $lane_path);
     
     my $out_fofn = $self->{fsu}->catfile($lane_path, '.create_release_files_expected');
@@ -947,7 +843,7 @@ sub cleanup {
     }
     
     my $file_base = $self->{fsu}->catfile($lane_path, $prefix);
-    foreach my $job_base (qw(library_merge lib_rmdup platform_merge platform_recalibration create_release_files sample_merge)) {
+    foreach my $job_base (qw(library_merge lib_rmdup platform_merge create_release_files sample_merge)) {
         foreach my $suffix ('o', 'e') {
             unlink("$file_base$job_base.$suffix");
         }
@@ -968,7 +864,6 @@ sub is_finished {
             $action_name eq 'library_merge' ||
             $action_name eq 'platform_merge' ||
             $action_name eq 'sample_merge' ||
-            $action_name eq 'recalibrate' ||
             $action_name eq 'create_release_files') {
         my $expected_file = $self->{fsu}->catfile($lane_path, ".${action_name}_expected");
         my $done_file = $self->{fsu}->catfile($lane_path, ".${action_name}_done");
