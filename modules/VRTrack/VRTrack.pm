@@ -587,10 +587,43 @@ sub processed_file_hnames {
         push @file_names, $tmpname while $sth->fetchrow_arrayref;
     }
     else{
-        die(sprintf('Cannot retrieve projects: %s. The query was %s', $DBI::errstr, $sql));
+        die(sprintf('Cannot retrieve processed file hnames: %s. The query was %s', $DBI::errstr, $sql));
     }
 
     return \@file_names;
+}
+
+
+=head2 individual_names 
+
+  Arg [1]    : None
+  Example    : my $name_list   = $track->individual_names();
+  Description: retrieves a list of all individual names.
+               This is a helper function for updating the vrtrack database
+               from the warehouse.
+  Returntype : arrayref
+
+=cut
+
+sub individual_names {
+    my ($self) = @_;
+    my @individual_names;
+    my $sql =qq[select name
+                from individual
+                order by name
+                ];
+    my $sth = $self->{_dbh}->prepare($sql);
+
+    my $tmpname;
+    if ($sth->execute()){
+        $sth->bind_columns ( \$tmpname );
+        push @individual_names, $tmpname while $sth->fetchrow_arrayref;
+    }
+    else{
+        die(sprintf('Cannot retrieve individual names: %s. The query was %s', $DBI::errstr, $sql));
+    }
+
+    return \@individual_names;
 }
 
 
