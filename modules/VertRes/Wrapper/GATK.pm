@@ -95,6 +95,8 @@ sub new {
     }
     elsif ($build eq 'NCBI37') {
         $self->throw("no .rod is available for our NCBI37 reference...");
+        $default_ref = File::Spec->catfile($ENV{GATK_RESOURCES}, 'human_g1k_v37.fasta');
+        $default_dbsnp = File::Spec->catfile($ENV{GATK_RESOURCES}, 'dbsnp_130_b37.rod');
     }
     elsif ($build eq 'NCBIM37') {
         $self->throw("mouse .rod not available; suggest not attempting recalibration on mouse at the moment...");
@@ -167,6 +169,8 @@ sub count_covariates {
     $params{T} = 'CountCovariates';
     $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
+    
+    $self->throw("Non-existant rod file '$params{DBSNP}'") unless -s $params{DBSNP};
     
     $self->register_output_file_to_check($recal_file);
     $self->_set_params_and_switches_from_args(%params);
