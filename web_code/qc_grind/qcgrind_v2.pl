@@ -195,6 +195,34 @@ my $cgi = $sw->cgi();
 #decide on the entry point
 my $mode = $cgi->param('mode');
 
+#when you just want to look at a lane
+if( ! defined( $mode ) && defined( $cgi->param('lane') ) )
+{
+	my $lane_name = $cgi->param('lane');
+	if( $lane_name =~ /^\d+_\d+$/ )
+	{
+		my $database = $DB_FOR_SPECIES{ lc( $species ) };
+		if( ! defined $database ) 
+		{
+			redirectErrorScreen( $cgi, "Cant find the database name for species: $species" );
+			exit;
+		}
+		
+		#get the row_id for the lane
+        my $vrtrack = connectToDatabase( $database );
+		
+		my $lane = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$lane_name);
+		displayLane( $cgi, $database, $lane->id(), undef, $species );
+		exit;
+	}
+	else
+	{
+		#error
+		redirectErrorScreen( $cgi, "Invaid parameters for direct lane view (required are species and lane name)" );
+		exit;
+	}
+}
+
 if( $mode == $SELECT_SPECIES_VIEW || ! defined( $mode ) )
 {
     print $sw->header();
