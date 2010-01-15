@@ -219,7 +219,10 @@ if( ! defined( $mode ) && defined( $cgi->param('lane') ) )
         my $vrtrack = connectToDatabase( $database );
 		
 		my $lane = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$lane_name);
+		
+		print $sw->header();
 		displayLane( $cgi, $database, $lane->id(), undef, $species );
+		print $sw->footer();
 		exit;
 	}
 	else
