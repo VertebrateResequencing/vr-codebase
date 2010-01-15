@@ -201,6 +201,13 @@ if( ! defined( $mode ) && defined( $cgi->param('lane') ) )
 	my $lane_name = $cgi->param('lane');
 	if( $lane_name =~ /^\d+_\d+$/ )
 	{
+		my $species = $cgi->param('sp');
+		if( ! defined $species ) 
+		{
+			redirectErrorScreen( $cgi, "Species must be defined!" );
+			exit;
+		}
+		
 		my $database = $DB_FOR_SPECIES{ lc( $species ) };
 		if( ! defined $database ) 
 		{
