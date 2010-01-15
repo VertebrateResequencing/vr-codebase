@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 352;
+    use Test::Most tests => 353;
 
     use_ok('VRTrack::VRTrack');
     use_ok('VRTrack::Request');
@@ -240,9 +240,11 @@ is_deeply [$vrproj->row_ids], [3, 4], 'row_ids worked';
     is @{$vrlane->mappings}, 2, 'mappings returned the correct number of mappings';
     is_deeply $vrlane->mapping_ids, [3, 5], 'mapping_ids returned the correct ids';
     is $vrlane->latest_mapping->id, 5, 'latest_mapping got the last mapstats';
-    my $file_name = 'File_test_1.fastq';
+    my $file_name = 'File/test_1.fastq';
     ok ! $vrlane->get_file_by_name($file_name), 'Lane->get_file_by_name returns undef before we\'ve added any files';
-    is $vrlane->add_file('File_test_1.fastq')->id, 3, 'add_file worked';
+    my $file = $vrlane->add_file($file_name);
+    is $file->id, 3, 'add_file worked';
+    is_deeply [$file->name, $file->hierarchy_name], [$file_name, 'File_test_1.fastq'], 'added files have the correct name and hierarchy_name';
     is $vrlane->get_file_by_name($file_name)->id, 3, 'get_file_by_name now works';
     is $vrlane->add_file('File_test_2.fastq')->id, 5, 'add_file worked again';
     $vrlane->update;

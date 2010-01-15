@@ -480,7 +480,7 @@ sub _add_child_object {
         $obj->$child_parent_id_method($self->id);
 	if ($obj->can('hierarchy_name')) {
 	    my $hierarchy_name = $child_identifiers[0];
-	    $hierarchy_name =~ s/\W+/_/g;
+	    $hierarchy_name =~ s/[^\w\.]+/_/g;
 	    $obj->hierarchy_name($hierarchy_name);
 	}
         $obj->update;
