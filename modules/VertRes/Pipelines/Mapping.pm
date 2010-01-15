@@ -807,11 +807,11 @@ unless (-s '$bam_file') {
     #  picard, which renames the RG tags (to uniquify) when it merges multiple
     #  files with the same RG tag!
     if ($copy_instead_of_merge) {
-        copy('@bams', '$bam_file') || \$sam_util->throw("copy of bam failed: $!");
+        copy('@bams', '$bam_file') || die "copy of bam failed: $!\n";
     }
     else {
         \$samtools->merge_and_check('$bam_file', [qw(@bams)]);
-        \$samtools->throw("merging bam failed - try again?") unless \$samtools->run_status == 2;
+        die "merging bam failed - try again?\n" unless \$samtools->run_status == 2;
     }
 }
 
@@ -900,11 +900,14 @@ sub recalibrate {
     my ($self, $lane_path, $action_lock) = @_;
     return $self->{Yes} unless $self->{do_recalibration};
     
+    $self->throw("not quite ready to do recalibration yet");
+    
     my @in_bams = @{$self->merge_provides($lane_path)};
     my $verbose = $self->verbose;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M15500000 -R \'select[mem>15500] rusage[mem=15500]\'';
+    # some strange lanes might need over 27GB!
+    $self->{bsub_opts} = '-q normal -M6500000 -R \'select[mem>6500] rusage[mem=6500]\'';
     
     my @out_bams;
     foreach my $bam (@in_bams) {
@@ -1027,7 +1030,7 @@ unless (\$num_present == ($#stat_files + 1)) {
         foreach my \$stat_file (qw(@stat_files)) {
             unlink(\$stat_file);
         }
-        \$sam_util->throw("Failed to get stats for the bam '$bam_file'!");
+        die "Failed to get stats for the bam '$bam_file'!\n";
     }
 }
 
