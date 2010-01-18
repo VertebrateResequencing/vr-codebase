@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 59;
+    use Test::Most tests => 60;
     
     use_ok('VertRes::Parser::sam');
 }
@@ -59,6 +59,7 @@ is $ps->is_reverse_strand($flag), 0, 'is_reverse_strand test';
 is $ps->is_mate_reverse_strand($flag), 1, 'is_mate_reverse_strand test';
 is $ps->is_first($flag), 0, 'is_first test';
 is $ps->is_second($flag), 1, 'is_second test';
+is $ps->is_second(0), 0, 'is_second test on flag 0';
 is $ps->is_primary($flag), 1, 'is_primary test';
 is $ps->passes_qc($flag), 1, 'passes_qc test';
 is $ps->is_duplicate($flag), 0, 'is_duplicate test';
