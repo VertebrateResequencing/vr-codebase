@@ -29,7 +29,7 @@ my $out_csv_prefix = File::Spec->catfile($temp_dir, 'in.bam');
 my $out_csv = $out_csv_prefix.'.recal_data.csv';
 my $rod = File::Spec->catfile('t', 'data', 'S_suis_P17.rod');
 
-my $gatk = VertRes::Wrapper::GATK->new(quiet => 1, dbsnp => $rod);
+my $gatk = VertRes::Wrapper::GATK->new(quiet => 1, dbsnp => $rod, java_memory => 500);
 isa_ok $gatk, 'VertRes::Wrapper::WrapperI';
 
 # individual method tests
@@ -41,7 +41,7 @@ ok -s $out_bam, 'table_recalibration generated a bam';
 unlink($out_bam);
 
 # the multi-step method, and more careful testing of the output
-$gatk = VertRes::Wrapper::GATK->new(quiet => 1, reference => $ref);
+$gatk = VertRes::Wrapper::GATK->new(quiet => 1, reference => $ref, java_memory => 500);
 $gatk->recalibrate($in_bam, $out_bam);
 ok -s $out_bam, 'recalibrate generated a bam';
 my @recal_qs = get_qualities($out_bam);

@@ -62,6 +62,8 @@ our $DEFAULT_LOGLEVEL = 'ERROR';
  Args    : quiet => boolean
            exe   => string (full path to GenomeAnalysisTK.jar; a TEAM145 default
                             exists)
+           java_memory => int (the amount of memory in MB to give java; default
+                               6000)
            reference => ref.fa (path to reference fasta; can be overriden in
                                 individual methods with the R option)
            dbsnp     => snp.rod (path to dbsnp rod file; can be overriden in
@@ -81,11 +83,11 @@ sub new {
     
     my $self = $class->SUPER::new(exe => $DEFAULT_GATK_JAR, @args);
     
-    # some strange lanes might need over 27GB!
-    $self->exe('java -Xmx6000m -jar '.$self->exe);
+    my $java_mem = delete $self->{java_memory} || 6000;
+    $self->exe("java -Xmx${java_mem}m -jar ".$self->exe);
     
     # our bsub jobs will get killed if we don't select high-mem machines
-    $self->bsub_options(M => 6000000, R => "'select[mem>6000] rusage[mem=6000]'");
+    $self->bsub_options(M => ($java_mem * 1000), R => "'select[mem>$java_mem] rusage[mem=$java_mem]'");
     
     # default settings
     my $build = delete $self->{build} || 'NCBI36';
