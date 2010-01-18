@@ -56,6 +56,8 @@ our $DEFAULT_PICARD_DIR = $fsu->catfile($ENV{BIN}, 'picard-tools');
  Args    : quiet   => boolean
            exe     => string (full path to the location of the picard tools jar
                               files; a TEAM145 default exists)
+           java_memory => int (the amount of memory in MB to give java; default
+                               5000)
            validation_stringency => STRICT|LENIENT|SILENT (silent by default,
                                     overriden if VALIDATION_STRINGENCY is set
                                     directly in any other method call)
@@ -71,10 +73,11 @@ sub new {
     my $self = $class->SUPER::new(@args);
     
     $self->{picard_dir} = $self->exe() || $DEFAULT_PICARD_DIR;
-    $self->{base_exe} = 'java -Xmx5g -jar ';
+    my $java_mem = delete $self->{java_memory} || 5000;
+    $self->{base_exe} = "java -Xmx${java_mem}m -jar ";
     
     # our bsub jobs will get killed if we don't select high-mem machines
-    $self->bsub_options(M => 5000000, R => "'select[mem>5000] rusage[mem=5000]'");
+    $self->bsub_options(M => ($java_mem * 1000), R => "'select[mem>$java_mem] rusage[mem=$java_mem]'");
     
     my $stringency = delete $self->{validation_stringency} || 'silent';
     $self->{_default_validation_stringency} = uc($stringency);

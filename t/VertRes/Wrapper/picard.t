@@ -12,7 +12,7 @@ BEGIN {
     use_ok('VertRes::Utils::FileSystem');
 }
 
-my $pt = VertRes::Wrapper::picard->new(quiet => 1);
+my $pt = VertRes::Wrapper::picard->new(quiet => 1, java_memory => 500);
 isa_ok $pt, 'VertRes::Wrapper::WrapperI';
 is $pt->quiet, 1, 'quiet set via new';
 
@@ -34,6 +34,7 @@ is get_bam_lines($bam_out_file), 4000, 'merged bam had the correct number of lin
 # we can also set stringency and tmp via new
 unlink($bam_out_file);
 $pt = VertRes::Wrapper::picard->new(quiet => 1,
+                                    java_memory => 500,
                                     validation_stringency => 'silent',
                                     tmp_dir => $temp_dir);
 $pt->MergeSamFiles($bam_out_file, ($bam_input_file, $bam_input_file));
