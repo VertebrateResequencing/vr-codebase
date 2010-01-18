@@ -900,13 +900,10 @@ sub recalibrate {
     my ($self, $lane_path, $action_lock) = @_;
     return $self->{Yes} unless $self->{do_recalibration};
     
-    $self->throw("not quite ready to do recalibration yet");
-    
     my @in_bams = @{$self->merge_provides($lane_path)};
     my $verbose = $self->verbose;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    # some strange lanes might need over 27GB!
     $self->{bsub_opts} = '-q normal -M6500000 -R \'select[mem>6500] rusage[mem=6500]\'';
     
     my @out_bams;
