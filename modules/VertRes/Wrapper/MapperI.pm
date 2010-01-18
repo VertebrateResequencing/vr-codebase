@@ -197,8 +197,8 @@ sub do_mapping {
         }
         else {
             $self->warn("a sam file was made by do_mapping(), but it only had $sam_lines lines, not the expected $num_reads...");
-            if ($sam_lines > 1000) {
-                $self->warn("... will allow it anyway since it has over 1000 lines");
+            if ($sam_lines > 100000) {
+                $self->warn("... will allow it anyway since it has over 100000 lines");
                 move($tmp_sam, $out_sam) || $self->throw("Failed to move $tmp_sam to $out_sam: $!");
             }
             else {
