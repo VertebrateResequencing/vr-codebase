@@ -81,6 +81,7 @@ sub new {
     
     my $self = $class->SUPER::new(exe => $DEFAULT_GATK_JAR, @args);
     
+    # some strange lanes might need over 27GB!
     $self->exe('java -Xmx6000m -jar '.$self->exe);
     
     # our bsub jobs will get killed if we don't select high-mem machines
@@ -156,7 +157,7 @@ sub count_covariates {
     #   -recalFile my_reads.recal_data.csv
 
     $self->switches([qw(quiet_output_mode use_original_quals)]);
-    $self->params([qw(R DBSNP l T)]);
+    $self->params([qw(R DBSNP l T max_reads_at_locus B)]);
     
     # used to take a fileroot, but now takes an output file
     my $recal_file = $out_csv;
@@ -169,6 +170,7 @@ sub count_covariates {
     $params{T} = 'CountCovariates';
     $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
+    $params{max_reads_at_locus} ||= 50000; # stop it using tons of memory in repeat regions
     
     $self->throw("Non-existant rod file '$params{DBSNP}'") unless -s $params{DBSNP};
     
