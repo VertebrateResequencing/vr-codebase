@@ -62,7 +62,8 @@ our %flags = (paired_tech    => '0x0001',
  Usage   : my $obj = VertRes::Utils::Sam->new();
  Function: Create a new VertRes::Utils::Sam object.
  Returns : VertRes::Utils::Sam object
- Args    : n/a
+ Args    : java_memory => int (for methods that call picard, this will be passed
+                               on to the picard wrapper, which has a default)
 
 =cut
 
@@ -494,6 +495,7 @@ sub merge {
     my $verbose = $self->verbose();
     my $wrapper = VertRes::Wrapper::picard->new(verbose => $verbose,
                                                 quiet => $verbose ? 0 : 1,
+                                                $self->{java_memory} ? (java_memory => $self->{java_memory}) : (),
                                                 validation_stringency => 'silent',
                                                 tmp_dir => $fsu->tempdir());
     
