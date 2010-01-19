@@ -509,6 +509,7 @@ sub displayProjectsPage
         <tr>
         <th>Project</th>
         <th>Accession</th>
+		<th>Link</th>
         </tr>
     ];
     
@@ -521,8 +522,9 @@ sub displayProjectsPage
         my $name = $project->name;
         print qq[
             <tr>
-            <td><a href="$SCRIPT_NAME?sp=$species&amp;mode=$PROJ_VIEW&amp;proj_id=$pid">$name</a></td>
+            <td>$name</td>
             <td>$acc</td>
+			<td><a href="$SCRIPT_NAME?sp=$species&amp;mode=$PROJ_VIEW&amp;proj_id=$pid">link</a></td>
 			</tr>
         ];
 =pod        
