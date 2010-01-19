@@ -504,10 +504,10 @@ sub displayProjectsPage
     print qq[
         <div class="centerFieldset">
         <fieldset style="width: 800px">
-        <legend>$species</legend>
+        <legend>Projects</legend>
         <table width="100%">
         <tr>
-        <th>Project</th>
+        <th>Name</th>
         <th>Accession</th>
 		<th>Link</th>
         </tr>
