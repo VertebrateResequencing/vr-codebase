@@ -59,6 +59,7 @@ my %AUTH_USERS = (  'jws' => 1, # Jim Stalker
                     'pd3' => 1, # Petr Danecek
                     'sb10'=> 1, # Sendu Bala
                     'rd'  => 1, # Richard Durbin
+					'kb1'	  => 1,
                  );
 
 ###############################CSS Stuff#############################
@@ -508,11 +509,6 @@ sub displayProjectsPage
         <tr>
         <th>Project</th>
         <th>Accession</th>
-        <th>Samples</th>
-        <th>Libraries</th>
-        <th>Passed</th>
-        <th>Depth</th>
-        <th>Pending</th>
         </tr>
     ];
     
@@ -527,8 +523,9 @@ sub displayProjectsPage
             <tr>
             <td><a href="$SCRIPT_NAME?sp=$species&amp;mode=$PROJ_VIEW&amp;proj_id=$pid">$name</a></td>
             <td>$acc</td>
+			</tr>
         ];
-        
+=pod        
         my $first = 1;
         my @samples = sort {$a->ssid cmp $b->ssid} @{$project->samples()};
         
@@ -547,7 +544,7 @@ sub displayProjectsPage
                 <td>$sname</td>
                 <td>$libs</td>
             ];
-            
+           
             my $passed = 0;
             my $depth = 0;
             my $pending = 0;
@@ -596,7 +593,8 @@ sub displayProjectsPage
                 <th>$totalDepth].qq[x</th>
             ];
         }
-        else{print qq[<th></th>];}
+        else{print qq[<th></th>];
+=cut
     }
     print qq[
         </tr>
