@@ -496,8 +496,7 @@ sub displayProjectsPage
     my @projects = sort {$a->name cmp $b->name} @{$vrtrack->projects()};
     
     print qq[
-        <h2 align="center" style="font: normal 900 1.5em arial">QC Grind</h2>
-        <h3 style="font: normal 700 1.5em arial">].ucfirst($species).qq[</h3>
+        <h2 align="center" style="font: normal 900 1.5em arial">].ucfirst($species).qq[</h2>
     ];
     
     my $t = ucfirst( $species );
