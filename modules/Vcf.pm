@@ -26,7 +26,8 @@ From a script:
     { 
         for my $gt (keys %{$$x{gtypes}})
         {
-            print "\t$gt:", $$x{gtypes}{$gt}{GT};
+            my ($al1,$sep,$al2) = $vcf->parse_alleles($x,$gt);
+            print "\t$gt: $al1$sep$al2\n";
         }
         print "\n";
     }
@@ -360,7 +361,7 @@ sub _unread_line
 sub throw
 {
     my ($self,@msg) = @_;
-    croak @msg;
+    confess @msg;
 }
 
 sub warn
@@ -752,7 +753,7 @@ sub calc_an_ac
     {
         my $value = $$gtypes{$gt}{GT};
         if ( $value eq '.' || $value eq './.' ) { next; }
-        my ($al1,$al2) = split(m{[\|/]},$value);
+        my ($al1,$al2) = split(m{[\\|/]},$value);
         if ( defined($al1) )
         {
             $an++;
@@ -796,6 +797,42 @@ sub validate_alt_field
     }
     if ( !@err ) { return undef; }
     return 'Could not parse the allele(s) [' .join(',',@err). ']';
+}
+
+=head2 parse_alleles
+
+    Usage   : my $x = $vcf->next_data_hash(); my ($al1,$sep,$al2) = $vcf->parse_alleles($x,'NA00001');
+    Args    : VCF data line parsed by next_data_hash
+            : The genotype column name
+    Returns : Alleles and the separator. If only one allele is present, $sep and $al2 will be an empty string.
+
+=cut
+
+sub parse_alleles
+{
+    my ($self,$rec,$column) = @_;
+    if ( !exists($$rec{gtypes}) || !exists($$rec{gtypes}{$column}) ) { $self->throw("No such column '$column' present.\n"); }
+
+    my $gtype = $$rec{gtypes}{$column}{GT};
+    if ( !($gtype=~m{^([^\\|/]+)([\\|/]?)(.*)$}) ) { $self->throw("Could not parse gtype string [$gtype]\n"); }
+    my $al1 = $1;
+    my $sep = $2;
+    my $al2 = $3;
+
+    if ( !$al1 ) { $al1 = $$rec{REF}; }
+    elsif ( $al1 ne '.' ) { $al1 = $$rec{ALT}[$al1-1]; }
+
+    if ( !defined $al2 )
+    {
+        $sep = '';
+        $al2 = '';
+    }
+    else
+    {
+        if ( !$al2 ) { $al2 = $$rec{REF}; }
+        elsif ( $al2 ne '.' ) { $al2 = $$rec{ALT}[$al2-1]; }
+    }
+    return ($al1,$sep,$al2);
 }
 
 
