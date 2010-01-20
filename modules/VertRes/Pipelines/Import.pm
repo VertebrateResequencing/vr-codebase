@@ -379,14 +379,18 @@ sub update_db
 
 
         # Add also the fastq.gz file into the File table. (Requested for the Mapping pipeline.)
-        $vrfile = $vrlane->get_file_by_name("$name.gz");
-        if ( !$vrfile )
+# The vrtrack_copy_fields has not been tested yet.
+# The latest flag should be unset here and below (single files)
+#
+        my $vrfile_gz = $vrlane->get_file_by_name("$name.gz");
+        if ( !$vrfile_gz )
         {
-            $vrfile = $vrlane->add_file("$name.gz");
-            $vrfile->hierarchy_name("$name.gz");
-            $vrfile->md5(`md5sum $lane_path/$name.gz | awk '{printf "%s",\$1}'`);
-            $vrfile->is_processed('import',1);
-            $vrfile->update();
+            $vrfile_gz = $vrlane->add_file("$name.gz");
+            vrtrack_copy_fields($vrfile,$vrfile_gz,[qw(file_id name hierarchy_name)]);
+            $vrfile_gz->hierarchy_name("$name.gz");
+            $vrfile_gz->md5(`md5sum $lane_path/$name.gz | awk '{printf "%s",\$1}'`);
+            $vrfile_gz->is_processed('import',1);
+            $vrfile_gz->update();
         }
     }
 
@@ -405,6 +409,33 @@ sub update_db
     $vrtrack->transaction_commit();
 
     return $$self{Yes};
+}
+
+
+=head2 vrtrack_copy_fields
+
+        Example : vrtrack_copy_fields($src_obj,$dst_obj,[qw(lane_id library_id submission_id)]);
+        Args    : Source object
+                : Target object
+                : Array ref to the fields which should be omitted
+
+=cut
+
+sub vrtrack_copy_fields
+{
+    my ($src,$dst,$except) = @_;
+
+    my %omit = $except ? map { $_=>1 } @$except : ();
+    my $src_fields = $src->fields_dispatch();
+    my $dst_fields = $dst->fields_dispatch();
+
+    while (my ($key,$handler) = each %$src_fields)
+    {
+        if ( exists($omit{$key}) ) { next; }
+
+        my $value = &{$handler}();
+        &{$$dst_fields{$key}}($value);
+    }
 }
 
 
