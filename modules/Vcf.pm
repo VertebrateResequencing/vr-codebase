@@ -67,7 +67,7 @@ use vars qw/@ISA @EXPORT %s2i @i2s/;
 @EXPORT = qw/vcf1 validate validate_v32/;
 
 
-# This is the original code, not used, left only for backward compatibility.
+# This is the original code by lh3, not used, left only for backward compatibility.
 sub vcf1 {
   my %x = ();
   my $i;
@@ -243,16 +243,22 @@ sub next_data_array
     Usage   : my $vcf = Vcf->new(); 
               $vcf->parse_header(); 
               my $x = $vcf->next_data_hash();
-    Args    : none
+
+              # Or having a VCF data line $line
+              my $x = $vcf->next_data_hash($line);
+
+    Args    : Optional line to parse.
 
 =cut
 
 sub next_data_hash
 {
-    my ($self) = @_;
-    my $line;
-    if ( @{$$self{buffer}} ) { $line = shift(@{$$self{buffer}}); }
-    else { $line = readline($$self{fh}); }
+    my ($self,$line) = @_;
+    if ( !$line )
+    {
+        if ( @{$$self{buffer}} ) { $line = shift(@{$$self{buffer}}); }
+        else { $line = readline($$self{fh}); }
+    }
     if ( !$line ) { return undef; }
     my @items = split(/\t/,$line);
     chomp($items[-1]);
@@ -293,13 +299,24 @@ sub next_data_hash
     $out{$$cols[6]} = [ split(/;/,$items[6]) ];
 
     # Info, e.g. NS=58;DP=258;AF=0.786;DB;H2
-    if ( $items[7] )
+    if ( defined $items[7] )
     {
         my %hash;
         for my $info (split(/;/,$items[7]))
         {
             my ($key,$val) = split(/=/,$info);
-            $hash{$key} = $val || ( exists($$self{header}{$$cols[7]}{$key}) ? $$self{header}{$$cols[7]}{$key}{default} : undef);
+            if ( defined $val )
+            {
+                $hash{$key} = $val;
+            }
+            elsif ( exists($$self{header}{$$cols[7]}{$key}) )
+            {
+                $hash{$key} = $$self{header}{$$cols[7]}{$key}{default};
+            }
+            else
+            {
+                $hash{$key} = undef;
+            }
         }
         $out{$$cols[7]} = \%hash;
     }
