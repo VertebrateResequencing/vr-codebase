@@ -23,6 +23,8 @@ use warnings;
 use File::Copy;
 use VertRes::IO;
 use Time::Format;
+use VertRes::Utils::Sam;
+use VertRes::Parser::sam;
 
 use base qw(VertRes::Wrapper::WrapperI);
 
@@ -108,7 +110,7 @@ sub generate_sam {
 =head2 add_unmapped
 
  Title   : add_unmapped
- Usage   : $obj->add_unmapped($sam_file, $ref_fasta, @fastqs);
+ Usage   : $obj->add_unmapped($sam_file, @fastqs);
  Function: Do whatever needs to be done with the sam file to add in unmapped
            reads.
  Returns : boolean
@@ -117,7 +119,91 @@ sub generate_sam {
 =cut
 
 sub add_unmapped {
-    my ($self, $sam, $ref, @fqs) = @_;
+    my ($self, $sam, @fqs) = @_;
+    
+    my $paired = @fqs > 1;
+    
+    open(my $sfh, $sam) || $self->throw("Could not open $sam");
+    my $sp = VertRes::Parser::sam->new();
+    my %mapped_reads;
+    my $lines_before = 0;
+    while (<$sfh>) {
+        $lines_before++;
+        next if /^@/;
+        my ($qname, $flag) = split;
+        
+        unless ($qname =~ /\/([12])$/) {
+            my $read_num;
+            if ($sp->is_first($flag)) {
+                $read_num = 1;
+            }
+            elsif ($sp->is_second($flag)) {
+                $read_num = 2;
+            }
+            else {
+                $self->throw("Could not determine what read num $qname $flag was");
+            }
+            
+            $qname =~ s/\/$//;
+            $qname .= "/$read_num";
+        }
+        
+        $mapped_reads{$qname} = 1;
+    }
+    close($sfh);
+    
+    open($sfh, '>>', $sam) || $self->throw("Could not append to $sam");
+    my $su = VertRes::Utils::Sam->new();
+    my $unmapped_lines = 0;
+    foreach my $fq (@fqs) {
+        my $fqp = VertRes::Parser::fastq->new(file => $fq);
+        my $rh = $fqp->result_holder();
+        
+        while ($fqp->next_result()) {
+            my $id = $rh->[0];
+            next if exists $mapped_reads{$id};
+            my $seq = $rh->[1];
+            my $qual = $rh->[2];
+            
+            # work out the SAM flags
+            my ($mate_unmapped, $first, $second) = (0, 0, 0);
+            if ($paired) {
+                my ($read_num) = $id =~ /\/([12])$/;
+                $read_num || $self->throw("Couldn't work out read number for $id");
+                if ($read_num == 1) {
+                    $first = 1;
+                }
+                else {
+                    $second = 1;
+                }
+                
+                my $mate_num = $read_num == 1 ? 2 : 1;
+                my $mate_id = $id;
+                $mate_id =~ s/$read_num$/$mate_num/;
+                if (! exists $mapped_reads{$mate_id}) {
+                    $mate_unmapped = 1;
+                }
+            }
+            
+            my $flags = $su->calculate_flag(self_unmapped => 1,
+                                            paired_tech => $paired,
+                                            mate_unmapped => $mate_unmapped,
+                                            '1st_in_pair' => $first,
+                                            '2nd_in_pair' => $second);
+            
+            $unmapped_lines++;
+            print $sfh "$id\t$flags\t*\t0\t0\t*\t*\t0\t0\t$seq\t$qual\n";
+        }
+    }
+    close($sfh);
+    
+    my $lines_now = VertRes::IO->new(file => $sam)->num_lines;
+    my $lines_expected = $lines_before + $unmapped_lines;
+    unless ($lines_now = $lines_expected) {
+        $self->warn("Tried appending $unmapped_lines unmapped records to the $lines_before lines sam file, but ended up with only $lines_now lines!");
+        return 0;
+    }
+    
     return 1;
 }
 
@@ -179,7 +265,7 @@ sub do_mapping {
         }
         
         # add in unmapped reads if necessary
-        $self->add_unmapped($ref_fa, @fqs) || $self->throw("failed during the add unmapped step");
+        $self->add_unmapped($tmp_sam, @fqs) || $self->throw("failed during the add unmapped step");
         
         # check the sam file isn't truncted
         my $num_reads = 0;
@@ -197,15 +283,9 @@ sub do_mapping {
         }
         else {
             $self->warn("a sam file was made by do_mapping(), but it only had $sam_lines lines, not the expected $num_reads...");
-            if ($sam_lines > 100000) {
-                $self->warn("... will allow it anyway since it has over 100000 lines");
-                move($tmp_sam, $out_sam) || $self->throw("Failed to move $tmp_sam to $out_sam: $!");
-            }
-            else {
-                $self->_set_run_status(-1);
-                $self->warn("... deleting it since it has less than 1000 lines");
-                unlink("$tmp_sam");
-            }
+            $self->_set_run_status(-1);
+            $self->warn("... moving it to $out_sam.bad");
+            move($tmp_sam, "$out_sam.bad");
         }
     }
     else {

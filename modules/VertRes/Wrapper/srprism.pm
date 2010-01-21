@@ -11,7 +11,7 @@ VertRes::Wrapper::srprism - wrapper for srprism
 # supposed to run in under 8GB, but using more than 10?
 
 srprism mkindex -i reference.fa -o reference -M 7168
-srprism search -i "query_1.fq,query_2.fq" -F fastq -I reference -o output.sam -O sam -n 2 -R 0 -M 7168 -p true -s 200 -r 100
+srprism search -i "query_1.fq,query_2.fq" -F fastq -I reference -o output.sam -O sam -n 2 -R 0 -M 7168 -p true -s 200 -f 100
 
 =head1 AUTHOR
 
@@ -150,7 +150,7 @@ sub generate_sam {
             $fq =~ s/\.gz$//;
         }
         
-        $self->simple_run("search -i \"$fqs[0],$fqs[1]\" -F fastq -I $ref -o $out -O sam -n 2 -R 0 -M 7168 -p true -s 200 -r 100");
+        $self->simple_run("search -i \"$fqs[0],$fqs[1]\" -F fastq -I $ref -o $out -O sam -n 2 -R 0 -M 7168 -p true -s 200 -f 100");
     }
     
     return -s $out ? 1 : 0;
@@ -168,8 +168,8 @@ sub generate_sam {
 =cut
 
 sub add_unmapped {
-    my ($self, $sam, $ref, @fqs) = @_;
-    return 1;
+    my $self = shift;
+    return $self->SUPER::add_unmapped(@_);
 }
 
 =head2 do_mapping

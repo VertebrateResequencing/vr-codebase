@@ -281,8 +281,8 @@ sub generate_sam {
 =cut
 
 sub add_unmapped {
-    my ($self, $sam, $ref, @fqs) = @_;
-    return 1;
+    my $self = shift;
+    return $self->SUPER::add_unmapped(@_);
 }
 
 =head2 do_mapping
