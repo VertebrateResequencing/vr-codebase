@@ -79,20 +79,43 @@ sub version {
 sub setup_reference {
     my ($self, $ref) = @_;
     
-    my $orig_exe = $self->exe;
-    $self->exe($orig_exe.'/squashGenome');
     my $squash_dir = $self->_squash_dir($ref);
     
-    # 2GB file size limit; split ref by chromosome
+    # 2GB file size limit; split ref by chromosome, but keep all NT/NC sequences
+    # in one file to avoid overflow problem when too many ref files
     my $done_splits = File::Spec->catfile($squash_dir, '.done_splits');
     unless (-e $done_splits) {
         my @expected;
         my $i = Bio::SeqIO->new(-file => $ref);
         while (my $s = $i->next_seq) {
-            my $o_file = File::Spec->catfile($squash_dir, $s->id.".fa");
+            my $id = $s->id;
+            if ($id =~ /^N/) {
+                $id = 'N';
+            }
+            my $o_file = File::Spec->catfile($squash_dir, $id.".fa");
             push(@expected, $o_file);
-            next if -s $o_file;
-            my $o = Bio::SeqIO->new(-file => ">$o_file");
+            
+            my $o;
+            if ($id eq 'N') {
+                if (-s $o_file) {
+                    my $ni = Bio::SeqIO->new(-file => $o_file);
+                    my $done_sequence = 0;
+                    while (my $n = $ni->next_seq) {
+                        if ($n->id eq $s->id) {
+                            $done_sequence = 1;
+                            last;
+                        }
+                    }
+                    $ni->close;
+                    next if $done_sequence;
+                }
+                $o = Bio::SeqIO->new(-file => ">>$o_file");
+            }
+            else {
+                next if -s $o_file;
+                $o = Bio::SeqIO->new(-file => ">$o_file");
+            }
+            
             $o->write_seq($s);
             $o->close;
         }
@@ -113,7 +136,7 @@ sub setup_reference {
     }
     
     my $indexed = 0;
-    my $expected = 0;
+    my @expected;
     open(my $fh, '<', $done_splits);
     while (<$fh>) {
         chomp;
@@ -121,23 +144,32 @@ sub setup_reference {
         $fa =~ /fa/ || next;
         foreach my $suffix (qw(2bpb vld)) {
             my $file = $fa.".$suffix";
-            $expected++;
+            push(@expected, $file);
             if (-s $file) {
                 $indexed++;
             }
-            else {
-                warn "$file is missing\n";
-            }
+        }
+    }
+    close($fh);
+    
+    return 1 if $indexed == @expected;
+    
+    my $orig_exe = $self->exe;
+    $self->exe($orig_exe.'/squashGenome');
+    $self->simple_run("$squash_dir $squash_dir/*.fa");
+    $self->exe($orig_exe);
+    
+    $indexed = 0;
+    foreach my $file (@expected) {
+        if (-s $file) {
+            $indexed++;
+        }
+        else {
+            warn "$file is missing\n";
         }
     }
     
-    unless ($indexed == $expected) {
-        $self->simple_run("$squash_dir $squash_dir/*.fa");
-    }
-    
-    $self->exe($orig_exe);
-    
-    return $indexed == $expected ? 1 : 0;
+    return $indexed == @expected ? 1 : 0;
 }
 
 sub _squash_dir {
