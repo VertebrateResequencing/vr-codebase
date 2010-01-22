@@ -245,24 +245,32 @@ sub rename_and_merge
     #   as MAPSTAT_ID.pe.raw.sorted.bam. In such a case, use the mapstat id to
     #   update the mapstats, so that the mapper and assembly information is preserved.
     #
-    my %mapstat_id;
+    my %mapstat_ids;
     for my $file (@files)
     {
-        if ( $file=~m{(\d+)\.[ps]e\.raw\.sorted\.bam} ) { $mapstat_id{$1} = 1; }
-    }
-    if ( scalar keys %mapstat_id == 1 )
-    {
-        open(my $fh,'>',"$work_dir/$$self{mapstat_id}") or $self->throw("$work_dir/$$self{mapstat_id}: $!");
-        print $fh keys %mapstat_id,"\n";
-        close($fh);
+        if ( $file=~m{(\d+)\.[ps]e\.raw\.sorted\.bam} ) { push @{$mapstat_ids{$1}},$file; }
     }
 
+    my @ids = sort { $b<=>$a } keys %$mapstat_ids;
+    if ( ! scalar @ids ) { $self->throw("No bam files in $lane_path?"); }
+
+    # Take the bam file with the highest mapstat_id
+    my $mapstat_id = $ids[0];
+
+    # Remember the id for later
+    open(my $fh,'>',"$work_dir/$$self{mapstat_id}") or $self->throw("$work_dir/$$self{mapstat_id}: $!");
+    print $fh "$mapstat_id\n";
+    close($fh);
+
+    # There can be multiple files with this id, (paired and single end reads)
+    @files = @{$mapstat_ids{$mapstat_id}};
     if ( scalar @files == 1 )
     {
         Utils::relative_symlink("$files[0]","$work_dir/$name.bam") unless -e "$work_dir/$name.bam";
         return $$self{'Yes'};
     }
 
+    # If there are multiple bam files with the same mapstat_id, merge them
     my $bams = join(' ',@files);
 
     open(my $fh,'>', "$work_dir/_merge.pl") or Utils::error("$work_dir/_merge.pl: $!");
