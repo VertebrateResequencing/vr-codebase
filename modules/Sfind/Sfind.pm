@@ -14,7 +14,7 @@ Sfind::Sfind - API for the denormalised SeqScape & NPG tracking database
 
 =head1 DESCRIPTION
 
-Retrieves data from the sequencing tracking database.
+Retrieves data from the sequencing warehouse database.
 
 =head1 CONTACT
 

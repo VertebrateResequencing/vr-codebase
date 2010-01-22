@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 353;
+    use Test::Most tests => 370;
 
     use_ok('VRTrack::VRTrack');
     use_ok('VRTrack::Request');
@@ -154,6 +154,11 @@ is_deeply [$vrproj->id, $vrproj->row_id, $vrproj->changed], [3, 3, $changed], 'n
 $vrproj = VRTrack::Project->new_by_name($vrtrack, $name);
 is_deeply [$vrproj->id, $vrproj->row_id, $vrproj->changed], [3, 4, $changed2], 'new_by_name() still gives us the latest version of the object';
 is_deeply [$vrproj->row_ids], [3, 4], 'row_ids worked';
+$vrproj = VRTrack::Project->new_by_name($vrtrack, $name, 3);    # get old object again
+$vrproj->ssid(321);
+is $vrproj->ssid, 321, 'can change attributes on historical objects'; # this is mostly useless, except for is_latest(1), of course
+ok ! $vrproj->update(), 'can\'t update on historical objects after changing attribute';
+
 
 # test bits of the core classes that are unique to themselves
 {
@@ -460,5 +465,36 @@ is_deeply [$lane->library_id, VRTrack::Library->new($vrtrack, $lane->library_id)
 $hist->time_travel('latest');
 $lane = VRTrack::Lane->new_by_name($vrtrack, 'history_lane_d');
 is_deeply [$lane->library_id, VRTrack::Library->new($vrtrack, $lane->library_id)->name, $lane->is_processed('swapped')], [$liba->id, 'history_lib_a_changed', 1], 'after swap lane_d state still correct';
+
+# Testing unsetting and resetting is_latest
+# unset the latest flag to mark an object as 'not current' - e.g. _s_ files before splitting
+$name = 'Project_islatest_test';
+
+ok $vrproj = VRTrack::Project->create($vrtrack, $name), 'Project->create worked again';
+my $proj_id = $vrproj->id;
+sleep(1);
+$vrproj->ssid(123);
+ok $vrproj->update(), 'after changing an attribute was able to update';
+$vrproj = VRTrack::Project->new_by_name($vrtrack, $name); # get latest version again for changed 
+$changed = $vrproj->changed;
+is $vrproj->is_latest(),1,'latest object has is_latest true';
+ok $vrproj = VRTrack::Project->new($vrtrack, $proj_id, $changed), 'can retrieve old object';
+ok ! $vrproj->is_latest(),'historical object has is_latest false';
+is_deeply [$vrproj->is_latest(0),$vrproj->{'unset_latest'}],[0,undef], 'can\'t unset latest on a historical object';
+$vrproj = VRTrack::Project->new_by_name($vrtrack, $name); # latest obj
+is_deeply [$vrproj->is_latest(0),$vrproj->{'unset_latest'}],[1,1], 'can unset latest on the latest version of object';
+ok $vrproj->update(), 'can update an object after unsetting latest';
+$vrproj = VRTrack::Project->new_by_name($vrtrack, $name);
+ok ! $vrproj, 'can\'t retrieve object by name after unsetting latest';
+$vrproj = VRTrack::Project->new($vrtrack, $proj_id,'latest');
+ok ! $vrproj, 'can\'t retrieve latest version of object after unsetting latest';
+$vrproj = VRTrack::Project->new($vrtrack, $proj_id,'most_recent');
+ok $vrproj, 'can retrieve most_recent version of object after unsetting latest';
+ok ! $vrproj->is_latest(),'most_recent object can have is_latest false';
+ok $vrproj->is_latest(1), 'can set is_latest on non-latest object';
+ok $vrproj->update(), 'can update after resetting latest';
+$vrproj = VRTrack::Project->new($vrtrack, $proj_id,'latest');
+ok $vrproj, 'can retrieve latest version of object after resetting latest';
+
 
 exit;

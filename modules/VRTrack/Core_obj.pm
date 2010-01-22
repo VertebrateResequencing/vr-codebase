@@ -37,7 +37,7 @@ our $HISTORY_DATE = 'latest';
   Arg [1]    : vrtrack handle
   Arg [2]    : obj id
   Arg [3]    : 'latest'(default)|datetime string(in the format returned by
-               changed())|row_id (optional)
+               changed())|row_id (optional)|most_recent
   Example    : my $obj= $class->new($vrtrack, $id)
   Description: Returns core objects by id. By default this will be the latest
                version of the object. If Arg[3] is supplied, or if
@@ -103,10 +103,16 @@ sub _history_sql {
 	# presume it's a row_id
 	$sql = qq[ and row_id = $date_stamp];
     }
-    elsif ($date_stamp =~ /^(latest|\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})$/) {
+    elsif ($date_stamp =~ /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/) {
 	# get the most recent row with a 'changed' that is older than
 	# the desired date
-	$sql = qq[ and changed < '$date_stamp' order by row_id ASC];
+	$sql = qq[ and changed < '$date_stamp' order by changed,row_id ASC];
+    }
+    elsif ("$date_stamp" eq 'most_recent') {
+	# get the most recent row.  This may have had latest unset, which is
+        # why you'd use this rather than 'latest' (which should really be 
+        # called 'current').
+	$sql = qq[ order by changed,row_id ASC];
     }
     else {
 	confess "bad datetime/row_id supplied ('$date_stamp')";
@@ -341,7 +347,7 @@ sub is_name_in_database {
 	       Changes the changed datestamp to now() on the mysql server (i.e.
 	       you don't have to set changed yourself, and indeed if you do,
 	       it will be overridden).
-	       Only works if we are the lastest version - you can't update
+	       Only works if we are the latest version - you can't update
 	       a historical version.
   Returntype : boolean
 
@@ -357,6 +363,7 @@ sub update {
     
     if ($self->dirty) {
 	my $dbh = $self->{_dbh};
+        my $latestval = $self->{'unset_latest'} ? 'false' : 'true';
         $self->{vrtrack}->transaction_start();
 	
         my $fieldsref = $self->fields_dispatch;
@@ -370,7 +377,7 @@ sub update {
 	    # build insert statement from update fields
 	    my $addsql = qq[INSERT INTO $table ( ].(join ", ", @fields);
 	    $addsql .= qq[, changed, latest ) ];
-	    $addsql .= qq[ VALUES ( ].('?,' x scalar @fields).qq[now(),true) ];
+	    $addsql .= qq[ VALUES ( ].('?,' x scalar @fields).qq[now(),$latestval) ];
 	    $dbh->do ($updsql, undef, $self->id);
 	    $dbh->do ($addsql, undef, map {$_->()} @$fieldsref{@fields});
 	    $row_id = $dbh->{'mysql_insertid'};
@@ -516,13 +523,31 @@ sub note_id {
   Arg [1]    : boolean for is_latest status
   Example    : $obj->is_latest(1);
   Description: Get/Set for object being the latest
+                Note that this sub will return a value of 1 if used to unset
+                is_latest because is_latest has to be 1 for it to be set
+                to 0 in update.
+  
   Returntype : boolean
 
 =cut
 
 sub is_latest {
-    my $self = shift;
-    return $self->_get_set('is_latest', 'boolean', @_);
+    my ($self,$value) = @_;
+    my $retval;
+
+    # to allow unsetting of latest (which will make the object 'invisible' to
+    # most code), we need to set a special key which update will use to unset
+    # latest.  Can't just set is_latest to 0, as then update will not fire as
+    # it won't operate on non-latest (i.e. generally historical) objects.
+
+    if (defined $value && $value == 0 && $self->_get_set('is_latest')){
+        $self->_get_set('unset_latest', 'boolean', 1);
+        $retval = $self->_get_set('is_latest');
+    }
+    else {
+        $retval = $self->_get_set('is_latest', 'boolean', $value);
+    }
+    return $retval;
 }
 
 

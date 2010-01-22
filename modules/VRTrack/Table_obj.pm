@@ -33,7 +33,7 @@ our %table_columns = ();
   Arg [2]    : obj id
   Example    : my $obj= $class->new($vrtrack, $id)
   Description: Returns object by id
-  Returntype : $class object
+  Returntype : $class object or undef if no such object id
 
 =cut
 
@@ -51,6 +51,14 @@ sub new {
 	$self->{vrtrack} = $vrtrack;
 	
 	$self->_initialize($id, @other_args);
+    }
+    else {
+	confess "Need to call with a vrtrack reference and id";
+    }
+
+    # check we got data from database
+    unless ($self->id()){
+        return undef;
     }
     
     return $self;

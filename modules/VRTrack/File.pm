@@ -234,10 +234,12 @@ sub is_processed {
 
 =head2 type
 
-  Arg [1]    : type (optional) [0,1,2]
+  Arg [1]    : type (optional) [0,1,2,3]
   Example    : my $type = $file->type();
 	       $file->type(1);
   Description: Get/Set for file type - 0 is single-end, 1 fwd, 2 rev
+                3 is for _s_ files, i.e. fwd & rev concatenated on one
+                line
   Returntype : integer
 
 =cut
