@@ -51,6 +51,8 @@ use File::Copy;
 use File::Spec;
 use VertRes::IO;
 use VertRes::Parser::fastqcheck;
+use VertRes::Utils::Seq;
+use VertRes::Parser::fastq;
 
 use base qw(VertRes::Wrapper::MapperI);
 
@@ -171,18 +173,29 @@ sub setup_reference {
 sub setup_fastqs {
     my ($self, $ref, @fqs) = @_;
     
-    # fastqs must be merged into one file
+    # fastqs must be merged into one file, with the reads of a pair next to
+    # each other with the same name (strip /1|2) and the #2 reverse
+    # complemented
     my $merged_fq = $self->_merged_fastq_file(@fqs);
-    unless (@fqs > 1 && -s $merged_fq) {
+    if (@fqs > 1 && ! -s $merged_fq) {
         my $o = VertRes::IO->new(file => ">$merged_fq");
         my $ofh = $o->fh;
-        foreach my $fq (@fqs) {
-            my $i = VertRes::IO->new(file => $fq);
-            my $ifh = $i->fh;
-            while (<$ifh>) {
-                print $ofh $_;
-            }
-            $i->close;
+        
+        my $su = VertRes::Utils::Seq->new();
+        my $fqp1 = VertRes::Parser::fastq->new(file => $fqs[0]);
+        my $rh1 = $fqp1->result_holder();
+        my $fqp2 = VertRes::Parser::fastq->new(file => $fqs[1]);
+        my $rh2 = $fqp2->result_holder();
+        
+        while ($fqp1->next_result()) {
+            $fqp2->next_result();
+            
+            my $id = $rh1->[0];
+            $id =~ s/\/[12]$//;
+            my $seq1 = $rh1->[1];
+            my $qual1 = $rh1->[2];
+            print $ofh '@', $id, "\n", $rh1->[1], "\n", '+', "\n", $rh1->[2], "\n";
+            print $ofh '@', $id, "\n", $su->rev_com($rh2->[1]), "\n", '+', "\n", scalar(reverse($rh2->[2])), "\n";
         }
         $o->close;
     }
