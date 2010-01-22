@@ -10,8 +10,9 @@ VertRes::Wrapper::srprism - wrapper for srprism
 
 # supposed to run in under 8GB, but using more than 10?
 
-srprism mkindex -i reference.fa -o reference -M 7168
-srprism search -i "query_1.fq,query_2.fq" -F fastq -I reference -o output.sam -O sam -n 2 -R 0 -M 7168 -p true -s 200 -f 100
+srprism mkindex -i reference.fa -o reference -M 7168 
+srprism search --trace-level info -I reference -i "1.fq,2.fq" -F fastq \
+-n 2 -R 0 -r 10 -M 7168 -p true -s 300 -f 300 -o out -O sam 
 
 =head1 AUTHOR
 
@@ -150,7 +151,7 @@ sub generate_sam {
             $fq =~ s/\.gz$//;
         }
         
-        $self->simple_run("search -i \"$fqs[0],$fqs[1]\" -F fastq -I $ref -o $out -O sam -n 2 -R 0 -M 7168 -p true -s 200 -f 100");
+        $self->simple_run("search -i \"$fqs[0],$fqs[1]\" -F fastq -I $ref --trace-level info -o $out -O sam -n 2 -R 0 -r 10 -M 7168 -p true -s 300 -f 300");
     }
     
     return -s $out ? 1 : 0;
