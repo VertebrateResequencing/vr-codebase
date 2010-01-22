@@ -43,7 +43,7 @@ use base qw(VertRes::Wrapper::MapperI);
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/karma-0.8.6/karma/karma');
+    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/karma-0.8.8/karma/karma');
     
     return $self;
 }
@@ -75,8 +75,6 @@ sub version {
 sub setup_reference {
     my ($self, $ref) = @_;
     
-    # this step needs 80GB
-    
     my $wordSize = 15; # readsize / 4 ... author suggested using 15 for all read sizes
     
     my $no_fa = $ref;
@@ -91,7 +89,9 @@ sub setup_reference {
     }
     
     unless ($indexed == @indexes) {
-        $self->simple_run("--createIndex --reference $ref --wordSize $wordSize --occurrenceCutoff 99");
+        # new recommendation is to use no wordSize or occurrenceCutoff;
+        # this step will need about 72GB of ram
+        $self->simple_run("--createIndex --reference $ref");
         
         $indexed  = 0;
         foreach my $suffix (@indexes) {
