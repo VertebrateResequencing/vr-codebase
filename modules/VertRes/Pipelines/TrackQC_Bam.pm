@@ -273,7 +273,7 @@ sub rename_and_merge
     # If there are multiple bam files with the same mapstat_id, merge them
     my $bams = join(' ',@files);
 
-    open(my $fh,'>', "$work_dir/_merge.pl") or Utils::error("$work_dir/_merge.pl: $!");
+    open($fh,'>', "$work_dir/_merge.pl") or Utils::error("$work_dir/_merge.pl: $!");
     print $fh qq[
 use Utils;
 Utils::CMD("$samtools merge x$name.bam $bams");
