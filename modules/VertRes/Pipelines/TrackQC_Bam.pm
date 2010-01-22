@@ -251,7 +251,7 @@ sub rename_and_merge
         if ( $file=~m{(\d+)\.[ps]e\.raw\.sorted\.bam} ) { push @{$mapstat_ids{$1}},$file; }
     }
 
-    my @ids = sort { $b<=>$a } keys %$mapstat_ids;
+    my @ids = sort { $b<=>$a } keys %mapstat_ids;
     if ( ! scalar @ids ) { $self->throw("No bam files in $lane_path?"); }
 
     # Take the bam file with the highest mapstat_id
