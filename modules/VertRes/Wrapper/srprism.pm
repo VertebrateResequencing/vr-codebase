@@ -12,7 +12,7 @@ VertRes::Wrapper::srprism - wrapper for srprism
 
 srprism mkindex -i reference.fa -o reference -M 7168 
 srprism search --trace-level info -I reference -i "1.fq,2.fq" -F fastq \
--n 2 -R 0 -r 10 -M 7168 -p true -s 300 -f 300 -o out -O sam 
+-n 2 -R 0 -r 2 -M 7168 -p true -s 300 -f 300 -o out -O sam 
 
 =head1 AUTHOR
 
@@ -151,7 +151,7 @@ sub generate_sam {
             $fq =~ s/\.gz$//;
         }
         
-        $self->simple_run("search -i \"$fqs[0],$fqs[1]\" -F fastq -I $ref --trace-level info -o $out -O sam -n 2 -R 0 -r 10 -M 7168 -p true -s 300 -f 300");
+        $self->simple_run("search -i \"$fqs[0],$fqs[1]\" -F fastq -I $ref --trace-level info -o $out -O sam -n 2 -R 0 -r 2 -M 7168 -p true -s 300 -f 300");
     }
     
     return -s $out ? 1 : 0;
@@ -170,6 +170,10 @@ sub generate_sam {
 
 sub add_unmapped {
     my $self = shift;
+    
+    # could filter out non unique best hits?
+    # gawk '{if($5==100){print}}' the.sam > the.sam.uniq
+    
     return $self->SUPER::add_unmapped(@_);
 }
 
