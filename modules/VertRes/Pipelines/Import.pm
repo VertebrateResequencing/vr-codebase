@@ -338,22 +338,31 @@ sub update_db
 
     $vrtrack->transaction_start();
 
-    my $i = 0;
+    # To determine file types, a simple heuristic is used: When there are two files 
+    #   lane_1.fastq.gz and lane_2.fastq.gz, fwd (1) and rev (2) will be set for file type.
+    #   When only one file is present, single-end (0) will be set.
+    my $i=0;
+    my %processed_files;
     while (1)
     {
-        # Check what fastq files actually exist in the hierarchy and update the processed flag
         $i++;
         my $name = "$$self{lane}_$i.fastq";
 
-        if ( ! -e "$lane_path/$name.gz" ) { last; }
+        # Check what fastq files actually exist in the hierarchy
+        if ( -e "$lane_path/$name.gz" ) { next; }
 
+        $processed_files{$name} = $i;
+    }
+
+    while (my ($name,$type) = each %processed_files)
+    {
+        # The file may be absent from the database, if it was created by splitting the _s_ fastq.
         my $vrfile = $vrlane->get_file_by_name($name);
         if ( !$vrfile ) 
         { 
             $vrfile = $vrlane->add_file($name); 
             $vrfile->hierarchy_name($name);
         }
-
         $vrfile->md5(`awk '{printf "%s",\$1}' $lane_path/$name.md5`);
 
         # Hm, this must be evaled, otherwise it dies without rollback
@@ -375,13 +384,16 @@ sub update_db
         $vrfile->raw_reads($num_seq);
         $vrfile->mean_q($avg_qual); 
         $vrfile->is_processed('import',1);
+
+        # Only the gzipped variant will carry the latest flag
+        $vrfile->is_latest(0);  
+
+        # If there is only one file, it is single-end file
+        if ( scalar keys %processed_files == 1 ) { $type = 0; }
+        $vrfile->type($type);
         $vrfile->update();
 
-
-        # Add also the fastq.gz file into the File table. (Requested for the Mapping pipeline.)
-# The vrtrack_copy_fields has not been tested yet.
-# The latest flag should be unset here and below (single files)
-#
+        # Now add also the fastq.gz file into the File table. (Requested for the Mapping pipeline.)
         my $vrfile_gz = $vrlane->get_file_by_name("$name.gz");
         if ( !$vrfile_gz )
         {
@@ -394,16 +406,22 @@ sub update_db
         }
     }
 
-    # Change also the qc status of all single files.
+    # Update also the status of the _s_ file, if any. Loop over the
+    #   files passed to the pipeline and filter out those which were not
+    #   processed above.
     for my $file (@{$$self{files}})
     {
+        if ( exists($processed_files{$file}) ) { next; }
+
         my $vrfile = $vrlane->get_file_by_name($file);
         if ( !$vrfile ) { $self->throw("FIXME: no such file [$file] for the lane [$lane_path]."); }
         $vrfile->is_processed('import',1);
+        $vrfile->is_latest(0);
         $vrfile->update();
     }
 
-    # Change the qc status of the lane.
+    # Finally, change the import status of the lane, so that it will not be picked up again
+    #   by the run-pipeline script.
     $vrlane->is_processed('import',1);
     $vrlane->update();
     $vrtrack->transaction_commit();
