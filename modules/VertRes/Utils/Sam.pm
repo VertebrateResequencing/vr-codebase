@@ -40,6 +40,7 @@ use VertRes::Utils::FastQ;
 use VertRes::Utils::Math;
 use VertRes::Utils::Hierarchy;
 use Digest::MD5;
+use Tie::File::AsHash;
 
 use base qw(VertRes::Base);
 
@@ -817,7 +818,7 @@ sub bam_statistics {
  Function: Given a bam file, generates another bam file that contains only the
            unmapped reads.
  Returns : boolean (true on success)
- Args    : starting sam file, output name for bam file.
+ Args    : starting bam file, output name for bam file.
 
 =cut
 
@@ -833,6 +834,7 @@ sub make_unmapped_bam {
     $self->register_for_unlinking($filtered_sam);
     my $out = VertRes::IO->new(file => ">$filtered_sam");
     my $out_fh = $out->fh();
+    my $sp = VertRes::Parser::sam->new();
     
     while (<$in_fh>) {
         if (/^\@/) {
@@ -840,8 +842,7 @@ sub make_unmapped_bam {
         }
         else {
             my (undef, $flag) = split;
-            # 0x0004 is the unmapped flag
-            if ($flag & 0x0004) {
+            unless ($sp->is_mapped($flag)) {
                 print $out_fh $_;
             }
         }
@@ -854,6 +855,121 @@ sub make_unmapped_bam {
     $samtools->view($filtered_sam, $out_bam, b => 1, S => 1);
     
     return $samtools->run_status() >= 1;
+}
+
+=head2 add_unmapped
+
+ Title   : add_unmapped
+ Usage   : $obj->add_unmapped($sam_file, @fastqs);
+ Function: Append reads in the fastqs not already present in the sam file to the
+           end of the sam file.
+ Returns : boolean
+ Args    : sam file name, fastq file name(s)
+
+=cut
+
+sub add_unmapped {
+    my ($self, $sam, @fqs) = @_;
+    
+    my $paired = @fqs > 1;
+    
+    # store all the read names we already have in the sam in a tied hash
+    # (required to save memory)
+    my $tie_file = $sam.'.ids_tie.tmp';
+    $self->register_for_unlinking($tie_file);
+    tie my %mapped_reads, 'Tie::File::AsHash', $tie_file, split => ':' or $self->throw("Problem tying hash: $!");
+    
+    open(my $sfh, $sam) || $self->throw("Could not open $sam");
+    my $sp = VertRes::Parser::sam->new();
+    my $lines_before = 0;
+    while (<$sfh>) {
+        $lines_before++;
+        next if /^@/;
+        my ($qname, $flag) = split;
+        
+        unless ($qname =~ /\/([12])$/) {
+            my $read_num;
+            if ($sp->is_first($flag)) {
+                $read_num = 1;
+            }
+            elsif ($sp->is_second($flag)) {
+                $read_num = 2;
+            }
+            else {
+                # don't know what read this is; we'll call it read 1 and if both
+                # of these turn out to be present we'll add read 2 as well.
+                $read_num = 1;
+            }
+            
+            $qname =~ s/\/$//;
+            $qname .= "/$read_num";
+        }
+        
+        $mapped_reads{$qname}++;
+        if ($mapped_reads{$qname} > 1) {
+            $qname =~ s/1$/2/;
+            $mapped_reads{$qname} = 1;
+        }
+    }
+    close($sfh);
+    
+    open($sfh, '>>', $sam) || $self->throw("Could not append to $sam");
+    my $unmapped_lines = 0;
+    foreach my $fq (@fqs) {
+        my $fqp = VertRes::Parser::fastq->new(file => $fq);
+        my $rh = $fqp->result_holder();
+        
+        # loop through all the sequences in the fastq (without indexing to save
+        # memory)
+        while ($fqp->next_result(1)) {
+            my $id = $rh->[0];
+            next if exists $mapped_reads{$id};
+            my $seq = $rh->[1];
+            my $qual = $rh->[2];
+            
+            # work out the SAM flags
+            my ($mate_unmapped, $first, $second) = (0, 0, 0);
+            if ($paired) {
+                my ($read_num) = $id =~ /\/([12])$/;
+                $read_num || $self->throw("Couldn't work out read number for $id");
+                if ($read_num == 1) {
+                    $first = 1;
+                }
+                else {
+                    $second = 1;
+                }
+                
+                my $mate_num = $read_num == 1 ? 2 : 1;
+                my $mate_id = $id;
+                $mate_id =~ s/$read_num$/$mate_num/;
+                if (! exists $mapped_reads{$mate_id}) {
+                    $mate_unmapped = 1;
+                }
+            }
+            
+            my $flags = $self->calculate_flag(self_unmapped => 1,
+                                              paired_tech => $paired,
+                                              mate_unmapped => $mate_unmapped,
+                                              '1st_in_pair' => $first,
+                                              '2nd_in_pair' => $second);
+            
+            $unmapped_lines++;
+            print $sfh "$id\t$flags\t*\t0\t0\t*\t*\t0\t0\t$seq\t$qual\n";
+        }
+    }
+    close($sfh);
+    
+    untie %mapped_reads;
+    unlink($tie_file);
+    
+    my $lines_now = VertRes::IO->new(file => $sam)->num_lines;
+    my $lines_expected = $lines_before + $unmapped_lines;
+    unless ($lines_now == $lines_expected) {
+        $self->warn("Tried appending $unmapped_lines unmapped records to the $lines_before lines sam file, but ended up with only $lines_now lines!");
+        return 0;
+    }
+    
+    return 1;
 }
 
 =head2 calculate_flag

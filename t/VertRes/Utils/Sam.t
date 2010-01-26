@@ -4,14 +4,14 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 75;
+    use Test::Most tests => 80;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
     use_ok('VertRes::Utils::FileSystem');
 }
 
-my $sam_util = VertRes::Utils::Sam->new();
+my $sam_util = VertRes::Utils::Sam->new(java_memory => 1000);
 isa_ok $sam_util, 'VertRes::Base';
 
 # setup our input files
@@ -228,6 +228,20 @@ foreach my $split (@expected_splits) {
 }
 is $actually_created, 24, 'split_bam_by_sequence actually created all the split bams';
 is $created_lines, 32, 'split_bam_by_sequence created split bams with appropriate numbers of entries';
+
+# add_unmapped
+my $om_sam_orig = File::Spec->catfile('t', 'data', 'only_mapped.sam');
+my $om_sam = File::Spec->catfile($temp_dir, 'only_mapped.sam');
+system("cp $om_sam_orig $om_sam");
+@records = get_sam_body($om_sam);
+is @records, 6, 'only_mapped.sam starts with 6 records';
+my $om_1_fq = File::Spec->catfile('t', 'data', 'only_mapped_1.fastq');
+ok -s $om_1_fq, 'only mapped fq1 ready to test with';
+my $om_2_fq = File::Spec->catfile('t', 'data', 'only_mapped_2.fastq');
+ok -s $om_2_fq, 'only mapped fq2 ready to test with';
+ok $sam_util->add_unmapped($om_sam, $om_1_fq, $om_2_fq), 'add_unmapped returned true';
+@records = get_sam_body($om_sam);
+is @records, 10, 'after adding back unmapped we have 10 records';
 
 exit;
 
