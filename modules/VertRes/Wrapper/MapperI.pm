@@ -120,7 +120,7 @@ sub generate_sam {
 
 sub add_unmapped {
     my $self = shift;
-    $su = VertRes::Utils::Sam->new();
+    my $su = VertRes::Utils::Sam->new();
     return $su->add_unmapped(@_);
 }
 
@@ -170,53 +170,14 @@ sub do_mapping {
     # setup fastq-related files (may involve alignment)
     $self->setup_fastqs($ref_fa, @fqs) || $self->throw("failed during the fastq step");
     
-    my $mapped_sam = $out_sam.'.mapped_only';
-    if (-s $out_sam) {
-        # check the sam file isn't truncted
-        my $num_reads = 0;
-        my $io = VertRes::IO->new();
-        foreach my $fastq_file (@fqs) {
-            $io->file($fastq_file);
-            my $fastq_lines = $io->num_lines();
-            $num_reads += $fastq_lines / 4;
-        }
-        $io->file($out_sam);
-        my $sam_lines = $io->num_lines();
-        
-        unless ($sam_lines >= $num_reads) {
-            move($out_sam, $mapped_sam) || $self->throw("failed to move $out_sam to $mapped_sam");
-        }
-    }
-    if (-s $mapped_sam) {
-        $self->add_unmapped($mapped_sam, @fqs) || $self->throw("failed during the add unmapped step");
-        
-        # check the sam file isn't truncted
-        my $num_reads = 0;
-        my $io = VertRes::IO->new();
-        foreach my $fastq_file (@fqs) {
-            $io->file($fastq_file);
-            my $fastq_lines = $io->num_lines();
-            $num_reads += $fastq_lines / 4;
-        }
-        $io->file($mapped_sam);
-        my $sam_lines = $io->num_lines();
-        
-        if ($sam_lines >= $num_reads) {
-            move($mapped_sam, $out_sam) || $self->throw("Failed to move $mapped_sam to $out_sam: $!");
-        }
-        else {
-            $self->warn("a sam file was made by do_mapping(), but it only had $sam_lines lines, not the expected $num_reads...");
-            $self->_set_run_status(-1);
-            $self->warn("... moving it to $out_sam.bad");
-            move($mapped_sam, "$out_sam.bad");
-        }
-    }
-    
     # run the alignment/ combine alignments into final sam file
     unless (-s $out_sam) {
         my $tmp_sam = $out_sam.'_tmp';
         
         if (@fqs == 2) {
+            if (-s $tmp_sam) {
+                $self->throw("$tmp_sam already exists prior to mapping; clean up first if something went wrong before");
+            }
             $self->generate_sam($tmp_sam, $ref_fa, @fqs) || $self->throw("failed during the alignment step");
         }
         else {
