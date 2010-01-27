@@ -31,6 +31,8 @@ For default "exe" path assumes you have the env variable GATK pointing to the
 directory containing the GATK .jar files etc.
 For default reference and dbsnp file paths assumes you have the env variable
 GATK_RESOURCES pointing to the directory containing the .rod and .fa files etc.
+We also expect a vcfs subdirectory to be added there containing standard vcf
+files for use.
 
 =head1 AUTHOR
 
@@ -68,9 +70,11 @@ our $DEFAULT_LOGLEVEL = 'ERROR';
                                 individual methods with the R option)
            dbsnp     => snp.rod (path to dbsnp rod file; can be overriden in
                                  individual methods with the DBSNP option)
+           covs      => [] (as per set_covs())
+           vcfs      => [] (as per set_vcfs())
            build     => NCBI36|NCBI37|NCBIM37 (default NCBI36: sets defaults for
-                        reference and dbsnp as appropriate for the build;
-                        overriden by the above two options if they are set
+                        reference, dbsnp, covs and vcfs as appropriate for the
+                        build; overriden by the above 4 options if they are set
                         manually)
            log_level => DEBUG|INFO|WARN|ERROR|FATAL|OFF (set the log level;
                                 can be overriden in individual methods with the
@@ -91,15 +95,16 @@ sub new {
     
     # default settings
     my $build = delete $self->{build} || 'NCBI36';
-    my ($default_ref, $default_dbsnp);
+    my ($default_ref, $default_dbsnp, $default_covs, $default_vcfs);
     if ($build eq 'NCBI36') {
         $default_ref = File::Spec->catfile($ENV{GATK_RESOURCES}, 'human_b36_both.fasta');
         $default_dbsnp = File::Spec->catfile($ENV{GATK_RESOURCES}, 'dbsnp_129_b36.rod');
     }
     elsif ($build eq 'NCBI37') {
-        $self->throw("no .rod is available for our NCBI37 reference...");
-        $default_ref = File::Spec->catfile($ENV{GATK_RESOURCES}, 'human_g1k_v37.fasta');
-        $default_dbsnp = File::Spec->catfile($ENV{GATK_RESOURCES}, 'dbsnp_130_b37.rod');
+        $default_ref = File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'human_g1k_v37.fasta');
+        $default_dbsnp = File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'dbsnp_130_b37.rod');
+        $default_vcfs = ['pilot1_CEU,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'CEU.2and3_way.vcf'),
+                         'pilot1_YRI,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'YRI.2and3_way.vcf')];
     }
     elsif ($build eq 'NCBIM37') {
         $self->throw("mouse .rod not available; suggest not attempting recalibration on mouse at the moment...");
@@ -110,6 +115,8 @@ sub new {
     
     $self->{_default_R} = delete $self->{reference} || $default_ref;
     $self->{_default_DBSNP} = delete $self->{dbsnp} || $default_dbsnp;
+    $self->set_covs(@{delete $self->{covs} || $default_covs || []});
+    $self->set_vcfs(@{delete $self->{vcfs} || $default_vcfs || []});
     $self->{_default_loglevel} = delete $self->{log_level} || $DEFAULT_LOGLEVEL;
     
     return $self;
@@ -139,7 +146,8 @@ sub _handle_common_params {
  Args    : path to input .bam file, path to output file (which will have its
            name suffixed with '.recal_data.csv' unless you suffix it yourself
            with .csv). Optionally, supply R, DBSNP, use_original_quals or l
-           options (as a hash), as understood by GATK.
+           options (as a hash), as understood by GATK. -B and -cov should be set
+           with the set_vcfs() and set_covs() methods beforehand.
 
 =cut
 
@@ -149,6 +157,7 @@ sub count_covariates {
     # java -Xmx2048m -jar GenomeAnalysisTK.jar \
     #   -R resources/Homo_sapiens_assembly18.fasta \
     #   --DBSNP resources/dbsnp_129_hg18.rod \
+    #   -B mask,VCF,sitesToMask.vcf \
     #   -l INFO \
     #   -T CountCovariates \ 
     #   -I my_reads.bam \
@@ -159,14 +168,16 @@ sub count_covariates {
     #   -recalFile my_reads.recal_data.csv
 
     $self->switches([qw(quiet_output_mode use_original_quals)]);
-    $self->params([qw(R DBSNP l T max_reads_at_locus B)]);
+    $self->params([qw(R DBSNP l T max_reads_at_locus)]);
     
     # used to take a fileroot, but now takes an output file
     my $recal_file = $out_csv;
     unless ($recal_file =~ /\.csv$/) {
         $recal_file .= '.recal_data.csv';
     }
-    my @file_args = (" -I $in_bam", " --standard_covs -recalFile $recal_file");
+    my $covs = $self->get_covs();
+    my $vcfs = $self->get_vcfs();
+    my @file_args = (" -I $in_bam", " $covs $vcfs -recalFile $recal_file");
     
     my %params = @params;
     $params{T} = 'CountCovariates';
@@ -181,6 +192,99 @@ sub count_covariates {
     
     return $self->run(@file_args);
 }
+
+
+=head2 set_covs
+
+ Title   : set_covs
+ Usage   : $wrapper->set_covs('CycleCovariate', 'PositionCovariate');
+ Function: Set which covariates to calculate. See http://www.broadinstitute.org/gsa/wiki/index.php/Base_quality_score_recalibration#Available_covariates
+           for a list of valid ones.
+ Returns : list currently set
+ Args    : list of covariate name strings
+
+=cut
+
+sub set_covs {
+    my $self = shift;
+    if (@_) {
+        $self->{covs} = [@_];
+    }
+    return @{$self->{covs} || []};
+}
+
+
+=head2 get_covs
+
+ Title   : get_covs
+ Usage   : my $covs_string = $wrapper->get_covs();
+ Function: Get the command line options defining which covarates will be used
+           (one or more -cov options). If none have been set with set_cov,
+           returns the special --standard_covs option.
+ Returns : string
+ Args    : n/a
+
+=cut
+
+sub get_covs {
+    my $self = shift;
+    my @covs = $self->set_covs;
+    
+    if (@covs) {
+        my $args = '';
+        foreach my $cov (@covs) {
+            $args .= "-cov $cov ";
+        }
+        return $args;
+    }
+    else {
+        return '--standard_covs';
+    }
+}
+
+
+=head2 set_vcfs
+
+ Title   : set_vcfs
+ Usage   : $wrapper->set_vcfs('pilot1,VCF,file1.vcf', 'pilot2,VCF,file2.vcf');
+ Function: Set which vcf files to use (for setting B option).
+ Returns : list currently set
+ Args    : list of vcf strings (name,type,filename)
+
+=cut
+
+sub set_vcfs {
+    my $self = shift;
+    if (@_) {
+        $self->{vcfs} = [@_];
+    }
+    return @{$self->{vcfs} || []};
+}
+
+
+=head2 get_vcfs
+
+ Title   : get_vcfs
+ Usage   : my $covs_string = $wrapper->get_vcfs();
+ Function: Get the command line options defining which vcf files will be used
+           (one or more -B options). If none have been set with set_vcfs,
+           returns empty string.
+ Returns : string
+ Args    : n/a
+
+=cut
+
+sub get_vcfs {
+    my $self = shift;
+    my @vcfs = $self->set_vcfs;
+    
+    my $args = '';
+    foreach my $vcf (@vcfs) {
+        $args .= "-B $vcf ";
+    }
+    return $args;
+}
+
 
 =head2  table_recalibration
 
@@ -212,7 +316,6 @@ sub table_recalibration {
     
     my %params = @params;
     $params{T} = 'TableRecalibration';
-    $params{params} = $csv;
     $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
     

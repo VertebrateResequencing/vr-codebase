@@ -5,7 +5,7 @@ use File::Copy;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 12;
+    use Test::Most tests => 16;
     
     use_ok('VertRes::Wrapper::GATK');
     use_ok('VertRes::Utils::FileSystem');
@@ -41,13 +41,31 @@ ok -s $out_bam, 'table_recalibration generated a bam';
 unlink($out_bam);
 
 # the multi-step method, and more careful testing of the output
-$gatk = VertRes::Wrapper::GATK->new(quiet => 1, reference => $ref, java_memory => 500);
+unlink($out_csv);
+my $debug = 0;
+my @args;
+if ($debug) {
+    @args = (quiet => 0, verbose => 1, build => 'NCBI37');
+}
+else {
+    @args = (quiet => 1);
+}
+$gatk = VertRes::Wrapper::GATK->new(reference => $ref, dbsnp => $rod, java_memory => 500, @args);
+my @orig_qs = get_qualities($in_bam);
+my $orig_mean_q = Math::NumberCruncher::Mean(\@orig_qs);
 $gatk->recalibrate($in_bam, $out_bam);
 ok -s $out_bam, 'recalibrate generated a bam';
 my @recal_qs = get_qualities($out_bam);
 my $recal_mean_q = Math::NumberCruncher::Mean(\@recal_qs);
-# (orig_mean_q == 20.8908434782609)
-ok $recal_mean_q > 10 && $recal_mean_q < 20, 'recalibrated qualities changed, and are in the right ball-park';
+cmp_ok $recal_mean_q, '<', $orig_mean_q, 'recalibrated qualities changed';
+
+# special multi-value set methods
+is $gatk->get_covs, '--standard_covs', 'covs is standard_covs by default';
+$gatk->set_covs('CycleCovariate', 'PositionCovariate');
+is $gatk->get_covs, '-cov CycleCovariate -cov PositionCovariate ', 'correct -cov args set after calling set_covs';
+is $gatk->get_vcfs, '', 'no vcfs by default';
+$gatk->set_vcfs('1,VCF,1.vcf', '2,VCF,2.vcf');
+is $gatk->get_vcfs, '-B 1,VCF,1.vcf -B 2,VCF,2.vcf ', 'correct -B args set after calling set_vcfs';
 
 exit;
 
