@@ -349,11 +349,12 @@ sub update_db
         my $name = "$$self{lane}_$i.fastq";
 
         # Check what fastq files actually exist in the hierarchy
-        if ( -e "$lane_path/$name.gz" ) { next; }
+        if ( ! -e "$lane_path/$name.gz" ) { last; }
 
         $processed_files{$name} = $i;
     }
 
+    my $nfiles = scalar keys %processed_files;
     while (my ($name,$type) = each %processed_files)
     {
         # The file may be absent from the database, if it was created by splitting the _s_ fastq.
@@ -389,7 +390,7 @@ sub update_db
         $vrfile->is_latest(0);  
 
         # If there is only one file, it is single-end file
-        if ( scalar keys %processed_files == 1 ) { $type = 0; }
+        if ( $nfiles == 1 ) { $type = 0; }
         $vrfile->type($type);
         $vrfile->update();
 
