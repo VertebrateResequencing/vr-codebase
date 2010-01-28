@@ -46,6 +46,9 @@ my $debug = 0;
 my @args;
 if ($debug) {
     @args = (quiet => 0, verbose => 1, build => 'NCBI37');
+    # since vcf references chromosomes not present in S suis this would fail...
+    # really need some proper g1k tests with build NCBI37 to ensure default
+    # vcf files are used and work...
 }
 else {
     @args = (quiet => 1);
