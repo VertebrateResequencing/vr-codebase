@@ -906,6 +906,8 @@ sub recalibrate {
     my $orig_bsub_opts = $self->{bsub_opts};
     $self->{bsub_opts} = '-q normal -M6500000 -R \'select[mem>6500] rusage[mem=6500]\'';
     
+    my $build = $self->{assembly_name};
+    
     my @out_bams;
     foreach my $bam (@in_bams) {
         $bam = $self->{fsu}->catfile($lane_path, $bam);
@@ -925,7 +927,7 @@ sub recalibrate {
         }
         
         LSF::run($action_lock, $lane_path, $job_name, $self,
-                 qq{perl -MVertRes::Wrapper::GATK -Mstrict -e "VertRes::Wrapper::GATK->new(verbose => $verbose, reference => qq[$self->{reference}], dbsnp => qq[$self->{reference}.rod])->recalibrate(qq[$bam], qq[$out_bam]); die qq[recalibration failed for $bam\n] unless -s qq[$out_bam];"});
+                 qq{perl -MVertRes::Wrapper::GATK -Mstrict -e "VertRes::Wrapper::GATK->new(verbose => $verbose, reference => qq[$self->{reference}], dbsnp => qq[$self->{reference}.rod], build => qq[$build])->recalibrate(qq[$bam], qq[$out_bam]); die qq[recalibration failed for $bam\n] unless -s qq[$out_bam];"});
     }
     
     $self->{bsub_opts} = $orig_bsub_opts;
@@ -1300,9 +1302,8 @@ sub is_finished {
                 $recal_bam =~ s/\.raw\.sorted\.bam$/.recal.sorted.bam/;
                 next if $recal_bam eq $bam_file;
                 if (-s $recal_bam) {
-                    # unlink($bam_file);
-                    system("mv $bam_file $bam_file.deleted");
-                    system("mv $bam_file.bai $bam_file.bai.deleted");
+                    unlink($bam_file);
+                    unlink($bam_file.'.bai');
                 }
             }
         }
