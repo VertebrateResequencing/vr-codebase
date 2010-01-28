@@ -103,8 +103,9 @@ sub new {
     elsif ($build eq 'NCBI37') {
         $default_ref = File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'human_g1k_v37.fasta');
         $default_dbsnp = File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'dbsnp_130_b37.rod');
-        $default_vcfs = ['pilot1_CEU,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'CEU.2and3_way.vcf'),
-                         'pilot1_YRI,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'YRI.2and3_way.vcf')];
+        # no default vcfs for now, since issues with not being in NCBI37 coords?
+        #$default_vcfs = ['pilot1_CEU,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'CEU.2and3_way.vcf'),
+        #                 'pilot1_YRI,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'YRI.2and3_way.vcf')];
     }
     elsif ($build eq 'NCBIM37') {
         $self->throw("mouse .rod not available; suggest not attempting recalibration on mouse at the moment...");
@@ -182,6 +183,9 @@ sub count_covariates {
     my %params = @params;
     $params{T} = 'CountCovariates';
     $params{quiet_output_mode} = $self->quiet();
+    unless (defined $params{use_original_quals}) {
+        $params{use_original_quals} = 1;
+    }
     $self->_handle_common_params(\%params);
     $params{max_reads_at_locus} ||= 50000; # stop it using tons of memory in repeat regions
     
@@ -294,7 +298,8 @@ sub get_vcfs {
  Returns : n/a
  Args    : path to input .bam file, path to csv file made by count_covariates(),
            path to output file. Optionally, supply R or l or use_original_quals
-           options (as a hash), as understood by GATK.
+           options (as a hash), as understood by GATK. use_original_quals is on
+           by default.
 
 =cut
 
@@ -317,6 +322,9 @@ sub table_recalibration {
     my %params = @params;
     $params{T} = 'TableRecalibration';
     $params{quiet_output_mode} = $self->quiet();
+    unless (defined $params{use_original_quals}) {
+        $params{use_original_quals} = 1;
+    }
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_bam);
@@ -335,7 +343,8 @@ sub table_recalibration {
  Returns : n/a
  Args    : path to input .bam file, path to output file. Optionally, supply R,
            DBSNP, use_original_quals or l options (as a hash), as understood by
-           GATK.
+           GATK. use_original_quals is on by default. -B and -cov should be set
+           with the set_vcfs() and set_covs() methods beforehand.
 
 =cut
 
