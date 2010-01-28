@@ -14,6 +14,7 @@ Vcf
 
 From the command line:
     perl -MVcf -e validate example.vcf
+    perl -MVcf -e validate_v32 example.vcf
 
 From a script:
     use Vcf;
@@ -148,11 +149,12 @@ sub validate_v32
 
     if ( !$fh && @ARGV && -e $ARGV[0] ) { $fh = $ARGV[0]; }
 
-    my $vcf;
-    if ( $fh ) { $vcf = fileno($fh) ? Vcf->new(fh=>$fh) : Vcf->new(file=>$fh); }
-    else { $vcf = Vcf->new(); }
+    my %params = ( version=>'3.2' );
 
-    $$vcf{version} = '3.2';
+    my $vcf;
+    if ( $fh ) { $vcf = fileno($fh) ? Vcf->new(fh=>$fh, %params) : Vcf->new(file=>$fh, %params); }
+    else { $vcf = Vcf->new(%params); }
+
     $vcf->run_validation();
 }
 
@@ -189,7 +191,10 @@ sub new
         }
         else { $$self{fh} = *STDIN; }
     }
-    $$self{version}   = '3.3';
+    if ( !$$self{version} )
+    {
+        $$self{version} = '3.3';
+    }
     $$self{silent}    = 0 unless exists($$self{silent});
     $$self{strict}    = 0 unless exists($$self{strict});
     $$self{buffer}    = [];       # buffer stores the lines in the reverse order
@@ -197,6 +202,16 @@ sub new
     $$self{columns}   = undef;    # column names 
     $$self{mandatory} = ['CHROM','POS','ID','REF','ALT','QUAL','FILTER','INFO','FORMAT'] unless exists($$self{mandatory}); 
     $$self{recalc_ac_an} = 1;
+
+    if ( $$self{version} > 3.2 )
+    {
+        $$self{header}{QUAL}{default} = -1;
+    }
+    else
+    {
+        $$self{header}{QUAL}{default} = '.';
+    }
+
     return $self;
 }
 
@@ -347,6 +362,7 @@ sub next_data_hash
         $gtypes{$$cols[$icol]} = \%hash;
     }
     $out{gtypes} = \%gtypes;
+    $out{format} = $format;
 
     return \%out;
 }
@@ -568,10 +584,9 @@ sub _read_column_names
 }
 
 
-=head2 format_header
+=head2 _fake_column_names
 
     About   : When no header is present, fake column names as the default mandatory ones + numbers
-    Usage   : print $vcf->format_header();
     Args    : The number of columns total (i.e. including the mandatory columns)
 
 =cut
@@ -602,6 +617,26 @@ sub format_header
     if ( $$self{header_lines} ) 
     {
         for my $line (@{$$self{header_lines}}) { $out .= $line; }
+    }
+    else
+    {
+        for my $key qw(FORMAT INFO FILTER)
+        {
+            if ( !exists($$self{header}{$key}) ) { next; }
+
+            for my $field (keys %{$$self{header}{$key}})
+            {
+                my $info = $$self{header}{$key}{$field};
+                if ( $key eq 'FILTER' )
+                {
+                    $out .=  "##$key=$$info{name},$$info{desc}\n";
+                }
+                else
+                {
+                    $out .=  "##$key=$$info{name},$$info{nparams},$$info{type},$$info{desc}\n";
+                }
+            }
+        }
     }
 
     if ( !$$self{columns} ) { return $out; }
@@ -726,7 +761,16 @@ sub _format_line_hash
         for my $col (@$columns)
         {
             my $gt = $$gtypes{$col};
-            $out .= "\t" . join(':', map { exists($$gt{$_}) ? $$gt{$_} : '' } @{$$record{FORMAT}});
+            #$out .= "\t" . join(':', map { exists($$gt{$_}) ? $$gt{$_} : '' } @{$$record{FORMAT}});
+
+            my @gtype;
+            for my $field (@{$$record{FORMAT}})
+            {
+                if ( exists($$gt{$field}) ) { push @gtype,$$gt{$field}; }
+                elsif ( exists($$self{header}{FORMAT}{$field}{default}) ) { push @gtype,$$self{header}{FORMAT}{$field}{default}; }
+                else { push @gtype,''; }
+            }
+            $out .= "\t" . join(':',@gtype);
         }
     }
     else
@@ -735,7 +779,16 @@ sub _format_line_hash
         {
             my $gt = $$gtypes{$$cols[$i+8]};
             # Get all the fields specified in FORMAT. If not available, print empty string instead.
-            $out .= "\t" . join(':', map { exists($$gt{$_}) ? $$gt{$_} : '' } @{$$record{FORMAT}});
+            # $out .= "\t" . join(':', map { exists($$gt{$_}) ? $$gt{$_} : '' } @{$$record{FORMAT}});
+
+            my @gtype;
+            for my $field (@{$$record{FORMAT}})
+            {
+                if ( exists($$gt{$field}) ) { push @gtype,$$gt{$field}; }
+                elsif ( exists($$self{header}{FORMAT}{$field}{default}) ) { push @gtype,$$self{header}{FORMAT}{$field}{default}; }
+                else { push @gtype,''; }
+            }
+            $out .= "\t" . join(':',@gtype);
         }
     }
 
@@ -833,6 +886,66 @@ sub parse_alleles
         elsif ( $al2 ne '.' ) { $al2 = $$rec{ALT}[$al2-1]; }
     }
     return ($al1,$sep,$al2);
+}
+
+
+=head2 format_genotype_strings
+
+    Usage   : my $x = { REF=>'A', gtypes=>{'NA00001'=>'A/C'}, FORMAT=>['GT'], CHROM=>1, POS=>1, FILTER=>['.'], QUAL=>-1 };
+              $vcf->format_genotype_strings($x); 
+              print $vcf->format_line($x);
+    Args    : VCF data line in the format as if parsed by next_data_hash with alleles written as letters.
+    Returns : Modifies the ALT array and the genotypes so that ref alleles become 0 and non-ref alleles 
+                numbers starting from 1.
+
+=cut
+
+sub format_genotype_strings
+{
+    my ($self,$rec) = @_;
+
+    if ( !exists($$rec{gtypes}) ) { return; }
+
+    my $ref = $$rec{REF};
+
+    my %alts;
+    my $nalts = 0;
+    for my $key (keys %{$$rec{gtypes}})
+    {
+        my $gtype = $$rec{gtypes}{$key}{GT};
+        if ( !($gtype=~m{^([^\\|/]+)([\\|/]?)(.*)$}) ) { $self->throw("Could not parse gtype string [$gtype]\n"); }
+        my $al1 = $1;
+        my $sep = $2;
+        my $al2 = $3;
+
+        if ( $al1 eq $ref ) { $al1 = 0; }
+        elsif ( exists($alts{$al1}) ) { $al1 = $alts{$al1} }
+        elsif ( $al1=~/^[ACGT]$/i ) 
+        {
+            $alts{$al1} = ++$nalts;
+            $al1 = $nalts;
+        }
+
+        if ( defined $al2 )
+        {
+            if ( $al2 eq $ref ) { $al2 = 0; }
+            elsif ( exists($alts{$al2}) ) { $al2 = $alts{$al2} }
+            elsif ( $al2=~/^[ACGT]$/i ) 
+            {
+                $alts{$al2} = ++$nalts;
+                $al2 = $nalts;
+            }
+        }
+        else
+        {
+            $al2 = '';
+            $sep = '';
+        }
+
+        $$rec{gtypes}{$key}{GT} = $al1.$sep.$al2;
+    }
+
+    $$rec{ALT} = [ keys %alts ];
 }
 
 
@@ -990,7 +1103,9 @@ sub validate_float
 {
     my ($self,$value,$default) = @_;
     if ( defined($default) && $value eq $default ) { return undef; }
-    if ( $value =~ /^-?\d*(?:.\d*)$/ ) { return undef; }
+    if ( $value =~ /^-?\d+(?:\.\d*)$/ ) { return undef; }
+    if ( $value =~ /^-?\d*(?:\.\d+)$/ ) { return undef; }
+    if ( $value =~ /^-?\d+$/ ) { return undef; }
     return "Could not validate the float [$value]";
 }
 
@@ -1024,6 +1139,7 @@ sub run_validation
     if ( !$self->{header} ) { $self->warn("No VCF header found.\n"); }
     if ( !$self->{columns} ) { $self->warn("No column descriptions found.\n"); }
 
+    my $default_qual = $$self{header}{QUAL}{default};
     my $warn_sorted=1;
     my ($prev_chrm,$prev_pos);
     while (my $x=$self->next_data_hash()) 
@@ -1059,7 +1175,7 @@ sub run_validation
         if ( $err ) { $self->warn("$$x{CHROM}:$$x{POS} .. $err\n"); }
 
         # The QUAL field
-        my $ret = $self->validate_float($$x{QUAL},-1);
+        my $ret = $self->validate_float($$x{QUAL},$default_qual);
         if ( $ret ) { $self->warn("QUAL field at $$x{CHROM}:$$x{POS} .. $ret\n"); }
         elsif ( $$x{QUAL}=~/^-?\d+$/ && $$x{QUAL}<-1 ) { $self->warn("QUAL field at $$x{CHROM}:$$x{POS} is negative .. $$x{QUAL}\n"); }
 
