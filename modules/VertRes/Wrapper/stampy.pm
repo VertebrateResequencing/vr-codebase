@@ -116,7 +116,64 @@ sub generate_sam {
     my ($self, $out, $ref, @fqs) = @_;
     
     unless (-s $out) {
-        $self->simple_run("--bwaoptions=\"-q15 /lustre/scratch102/user/sb10/mapper_comparisons/test_runs/bwa/ref.fa\" -g $ref -h $ref -M $fqs[0],$fqs[1] > $out");
+        # reference files must be copied to /tmp
+        #1 sleep for a short random amount of time
+        #2 check if a sentinel file /tmp/reference.copying exists.  If yes, sleep for 10 seconds and go to 1
+        #3 check if /tmp/reference.stidx and /tmp/reference.sthash exist.  If yes, done & start stampy
+        #4 create the sentinel file
+        #5 copy hash and index to /tmp
+        #6 remove sentinel file, done & start stampy
+        my $g = $ref.'.stidx';
+        my $local_g = '/tmp/stampy_ref.stidx';
+        my $h = $ref.'.sthash';
+        my $local_h = '/tmp/stampy_ref.sthash';
+        my $local_ref = '/tmp/stampy_ref';
+        my $sentinal = '/tmp/.copying_stampy_ref_files';
+        my $in_use = '/tmp/stampy_ref.inuse.'.$$;
+        my $max_checks = 200;
+        
+        sleep(int(rand(14)) + 1);
+        my $checks = 0;
+        while (-e $sentinal) {
+            $checks++;
+            sleep(int(rand(14)) + 1);
+            $self->throw("waited for another job to finish coping reference files, but now giving up") if $checks >= $max_checks;
+        }
+        
+        my $start_stampy = 0;
+        if (-s $local_g && -s $local_h) {
+            $start_stampy = 1;
+        }
+        else {
+            $self->register_for_unlinking($sentinal);
+            open(my $sfh, '>', $sentinal) || $self->throw("could not create sentinal file");
+            close($sfh);
+            copy($g, $local_g) || $self->throw("could not copy $g to $local_g");
+            copy($h, $local_h) || $self->throw("could not copy $h to $local_h");
+            $start_stampy = 1;
+            unlink($sentinal);
+        }
+        
+        if ($start_stampy) {
+            $self->register_for_unlinking($in_use);
+            open(my $iufh, '>', $in_use) || $self->throw("Could not write to $in_use");
+            close($iufh);
+            $self->simple_run("--bwaoptions=\"-q15 /lustre/scratch102/user/sb10/mapper_comparisons/test_runs/bwa/ref.fa\" -g $local_ref -h $local_ref -M $fqs[0],$fqs[1] > $out");
+            unlink($in_use);
+            
+            # if no other pid is using the ref files, delete them
+            open(my $lsfh, 'ls /tmp/stampy_ref.inuse.* 2> /dev/null |');
+            my $others = 0;
+            while (<$lsfh>) {
+                $others++;
+            }
+            close($lsfh);
+            
+            unless ($others) {
+                unlink($local_g);
+                unlink($local_h);
+            }
+        }
     }
     
     return -s $out ? 1 : 0;
