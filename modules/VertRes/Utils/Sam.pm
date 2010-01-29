@@ -863,7 +863,10 @@ sub make_unmapped_bam {
  Function: Append reads in the fastqs not already present in the sam file to the
            end of the sam file.
  Returns : boolean
- Args    : sam file name, fastq file name(s)
+ Args    : sam file name, fastq file name(s) (NB: must be supplied in the order
+           first of a pair, second of a pair, if supplying a pair of fastqs.
+           Also, these fastqs are expected to have read names ending in /1 and
+           /2 respectively)
 
 =cut
 
@@ -878,204 +881,269 @@ sub add_unmapped {
     my $snames_file = $sam.'.snames';
     my $snames_sorted_file = $snames_file.'.sorted';
     my $snames_sorted_fixed_file = $snames_sorted_file.'.fixed';
-    my $num_mapped = 0;
-    unless (-s $snames_sorted_fixed_file) {
-        unless (-s $snames_sorted_file) {
-            unless (-s $snames_file) {
-                open(my $rfh, '>', $snames_file) || $self->throw("Could not write to $snames_file");
-                open(my $sfh, $sam) || $self->throw("Could not open $sam");
-                my $sp = VertRes::Parser::sam->new();
-                while (<$sfh>) {
-                    next if /^@/;
-                    my ($qname, $flag) = split;
-                    
-                    unless ($qname =~ /\/([12])$/) {
-                        my $read_num;
-                        if ($sp->is_first($flag)) {
-                            $read_num = 1;
-                        }
-                        elsif ($sp->is_second($flag)) {
-                            $read_num = 2;
-                        }
-                        else {
-                            # don't know what read this is; we'll call it read 1 and if both
-                            # of these turn out to be present we'll add read 2 as well.
-                            $read_num = 1;
+    my $snames_uniq_file = $snames_file.'.uniq';
+    my $s_lines = 0;
+    unless (-s $snames_uniq_file) {
+        unless (-s $snames_sorted_fixed_file) {
+            unless (-s $snames_sorted_file) {
+                unless (-s $snames_file) {
+                    open(my $rfh, '>', $snames_file) || $self->throw("Could not write to $snames_file");
+                    open(my $sfh, $sam) || $self->throw("Could not open $sam");
+                    my $sp = VertRes::Parser::sam->new();
+                    while (<$sfh>) {
+                        next if /^@/;
+                        my ($qname, $flag) = split;
+                        
+                        unless ($qname =~ /\/([12])$/) {
+                            my $read_num;
+                            if ($sp->is_first($flag)) {
+                                $read_num = 1;
+                            }
+                            elsif ($sp->is_second($flag)) {
+                                $read_num = 2;
+                            }
+                            else {
+                                # don't know what read this is; we'll call it read 1 and if both
+                                # of these turn out to be present we'll add read 2 as well.
+                                $read_num = 1;
+                            }
+                            
+                            $qname =~ s/\/$//;
+                            $qname .= "/$read_num";
                         }
                         
-                        $qname =~ s/\/$//;
-                        $qname .= "/$read_num";
+                        $s_lines++;
+                        print $rfh $qname, "\n";
                     }
+                    close($sfh);
+                    close($rfh);
                     
-                    $num_mapped++;
-                    print $rfh $qname, "\n";
+                    # check rnames file isn't truncated
+                    my $actual_count = VertRes::IO->new(file => $snames_file)->num_lines;
+                    unless ($actual_count == $s_lines) {
+                        unlink($snames_file);
+                        $self->throw("made an rnames file but it was truncated!");
+                    }
                 }
-                close($sfh);
-                close($rfh);
                 
-                # check rnames file isn't truncated
-                my $actual_count = VertRes::IO->new(file => $snames_file)->num_lines;
-                unless ($actual_count == $num_mapped) {
-                    unlink($snames_file);
-                    $self->throw("made an rnames file but it was truncated!");
+                $s_lines ||= VertRes::IO->new(file => $snames_file)->num_lines;
+                
+                system("sort $snames_file > $snames_sorted_file");
+                my $actual_count = VertRes::IO->new(file => $snames_sorted_file)->num_lines;
+                unless ($actual_count == $s_lines) {
+                    unlink($snames_sorted_file);
+                    $self->throw("made an rnames_sorted_file file but it was truncated!");
                 }
+                
+                unlink($snames_file);
             }
             
-            $num_mapped ||= VertRes::IO->new(file => $snames_file)->num_lines;
+            # if we have the same read name twice in a row, change the second one
+            # to be the second read of a pair
+            open(my $ofh, '>', $snames_sorted_fixed_file) || $self->throw("Could not write to $snames_sorted_fixed_file");
+            open(my $ifh, $snames_sorted_file) || $self->throw("Could not open $snames_sorted_file");
+            my $previous_name = '';
+            $s_lines = 0;
+            while (<$ifh>) {
+                $s_lines++;
+                
+                if ($_ eq $previous_name) {
+                    s/1\n$/2\n/;
+                }
+                
+                print $ofh $_;
+                
+                $previous_name = $_;
+            }
+            close($ofh);
+            close($ifh);
             
-            system("sort $snames_file > $snames_sorted_file");
-            my $actual_count = VertRes::IO->new(file => $snames_sorted_file)->num_lines;
-            unless ($actual_count == $num_mapped) {
-                unlink($snames_sorted_file);
-                $self->throw("made an rnames_sorted_file file but it was truncated!");
+            # check rnames_sorted_fixed_file file isn't truncated
+            my $actual_count = VertRes::IO->new(file => $snames_sorted_fixed_file)->num_lines;
+            unless ($actual_count == $s_lines) {
+                unlink($snames_sorted_fixed_file);
+                $self->throw("made an rnames_sorted_fixed_file file but it was truncated!");
             }
             
-            unlink($snames_file);
+            unlink($snames_sorted_file);
         }
         
-        # if we have the same read name twice in a row, change the second one
-        # to be the second read of a pair
-        open(my $ofh, '>', $snames_sorted_fixed_file) || $self->throw("Could not write to $snames_sorted_fixed_file");
-        open(my $ifh, $snames_sorted_file) || $self->throw("Could not open $snames_sorted_file");
-        my $previous_name = '';
-        $num_mapped = 0;
-        while (<$ifh>) {
-            $num_mapped++;
-            
-            if ($_ eq $previous_name) {
-                s/1\n$/2\n/;
-            }
-            
-            print $ofh $_;
-            
-            $previous_name = $_;
+        # for some reason we can end up with multiple copies of some read names;
+        # get rid of them with uniq. Unfortunately we have no way of knowning
+        # how many lines to expect, so can't check for truncation :(
+        my $failed = system("uniq -u $snames_sorted_fixed_file > $snames_uniq_file");
+        if ($failed) {
+            unlink($snames_uniq_file);
+            $self->throw("failed to uniq $snames_sorted_fixed_file");
         }
-        close($ofh);
-        close($ifh);
-        
-        # check rnames_sorted_fixed_file file isn't truncated
-        my $actual_count = VertRes::IO->new(file => $snames_sorted_fixed_file)->num_lines;
-        unless ($actual_count == $num_mapped) {
-            unlink($snames_sorted_fixed_file);
-            $self->throw("made an rnames_sorted_fixed_file file but it was truncated!");
-        }
-        
-        unlink($snames_sorted_file);
+        unlink($snames_sorted_fixed_file);
     }
-    $num_mapped ||= VertRes::IO->new(file => $snames_sorted_fixed_file)->num_lines;
+    $s_lines ||= VertRes::IO->new(file => $snames_uniq_file)->num_lines;
     
     # now list out to another file all the read names in the fastqs and sort
     # that
     my $qnames_file = $sam.'.qnames';
-    my $qnames_sorted_file = $snames_file.'.sorted';
-    my $qlines = 0;
-    unless (-s $qnames_sorted_file) {
-        unless (-s $qnames_file) {
-            open(my $qfh, '>', $qnames_file) || $self->throw("Could not write to $qnames_file");
-            foreach my $fq (@fqs) {
-                my $fqp = VertRes::Parser::fastq->new(file => $fq);
-                my $rh = $fqp->result_holder();
-                
-                # loop through all the sequences in the fastq (without indexing
-                # to save memory)
-                while ($fqp->next_result(1)) {
-                    $qlines++;
-                    print $qfh $rh->[0], "\n";
-                }
-            }
-            close($qfh);
-            
-            # check it's not truncated
-            my $actual_count = VertRes::IO->new(file => $qnames_file)->num_lines;
-            unless ($actual_count == $qlines) {
-                unlink($qnames_file);
-                $self->throw("made a qnames_file file but it was truncated!");
-            }
-        }
-        
-        $qlines ||= VertRes::IO->new(file => $qnames_file)->num_lines;
-        
-        system("sort $qnames_file > $qnames_sorted_file");
-        my $actual_count = VertRes::IO->new(file => $qnames_sorted_file)->num_lines;
-        unless ($actual_count == $qlines) {
-            unlink($qnames_sorted_file);
-            $self->throw("made a qnames_sorted_file file but it was truncated!");
-        }
-        
-        unlink($qnames_file);
-    }
-    
-    # do a simple diff to find the reads we're missing
-    open(my $snamesfh, $snames_sorted_fixed_file) || $self->throw("Could not open $snames_sorted_fixed_file");
-    open(my $qnamesfh, $qnames_sorted_file) || $self->throw("Could not open $qnames_sorted_file");
-    my %missing_reads;
-    while (my $sam_read = <$snamesfh>) {
-        while (my $fastq_read = <$qnamesfh>) {
-            if ($fastq_read ne $sam_read) {
-                chomp($fastq_read);
-                $missing_reads{$fastq_read} = 1;
-            }
-            else {
-                last;
-            }
-        }
-    }
-    close($snamesfh);
-    close($qnamesfh);
-    
-    # now for all the reads we're missing, append to original sam
-    if (keys %missing_reads) {
-        open(my $sfh, '>>', $sam) || $self->throw("Could not append to $sam");
+    my $q_lines = 0;
+    unless (-s $qnames_file) {
+        open(my $qfh, '>', $qnames_file) || $self->throw("Could not write to $qnames_file");
         foreach my $fq (@fqs) {
             my $fqp = VertRes::Parser::fastq->new(file => $fq);
             my $rh = $fqp->result_holder();
             
+            # loop through all the sequences in the fastq (without indexing
+            # to save memory)
             while ($fqp->next_result(1)) {
-                my $id = $rh->[0];
-                next unless exists $missing_reads{$id};
-                my $seq = $rh->[1];
-                my $qual = $rh->[2];
-                
-                # work out the SAM flags
-                my ($mate_unmapped, $first, $second) = (0, 0, 0);
-                if ($paired) {
-                    my ($read_num) = $id =~ /\/([12])$/;
-                    $read_num || $self->throw("Couldn't work out read number for $id");
-                    if ($read_num == 1) {
-                        $first = 1;
-                    }
-                    else {
-                        $second = 1;
-                    }
-                    
-                    my $mate_num = $read_num == 1 ? 2 : 1;
-                    my $mate_id = $id;
-                    $mate_id =~ s/$read_num$/$mate_num/;
-                    if (exists $missing_reads{$mate_id}) {
-                        $mate_unmapped = 1;
-                    }
-                }
-                
-                my $flags = $self->calculate_flag(self_unmapped => 1,
-                                                  paired_tech => $paired,
-                                                  mate_unmapped => $mate_unmapped,
-                                                  '1st_in_pair' => $first,
-                                                  '2nd_in_pair' => $second);
-                
-                print $sfh "$id\t$flags\t*\t0\t0\t*\t*\t0\t0\t$seq\t$qual\n";
+                $q_lines++;
+                print $qfh $rh->[0], "\n";
             }
         }
-        close($sfh);
+        close($qfh);
+        
+        # check it's not truncated
+        my $actual_count = VertRes::IO->new(file => $qnames_file)->num_lines;
+        unless ($actual_count == $q_lines) {
+            unlink($qnames_file);
+            $self->throw("made a qnames_file file but it was truncated!");
+        }
+    }
+    $q_lines ||= VertRes::IO->new(file => $qnames_file)->num_lines;
+    
+    my $unmapped = $q_lines - $s_lines;
+    unless ($unmapped) {
+        unlink($snames_uniq_file);
+        unlink($qnames_file);
+        $self->warn("no reads were unmapped, nothing to do!");
+        return 1;
     }
     
-    unlink($snames_sorted_fixed_file);
-    unlink($qnames_sorted_file);
+    # Now cat the qnames and snames files, sort and use uniq on that to find
+    # the names that weren't in both. (unix diff, or an attempt at finding a
+    # diff in perl uses too much memory.)
+    my $sq_file = $sam.'sqnames';
+    my $sq_sorted_file = $sq_file.'.sorted';
+    my $sq_uniq_file = $sq_sorted_file.'.uniq';
+    unless (-s $sq_uniq_file) {
+        unless (-s $sq_sorted_file) {
+            my $total_lines = $s_lines + $q_lines;
+            unless (-s $sq_file) {
+                system("cat $snames_uniq_file $qnames_file > $sq_file");
+                my $actual_count = VertRes::IO->new(file => $sq_file)->num_lines;
+                unless ($actual_count == $total_lines) {
+                    unlink($sq_file);
+                    $self->throw("made an sq_file file but it was truncated!");
+                }
+            }
+            
+            system("sort $sq_file > $sq_sorted_file");
+            my $actual_count = VertRes::IO->new(file => $sq_sorted_file)->num_lines;
+            unless ($actual_count == $total_lines) {
+                unlink($sq_sorted_file);
+                $self->throw("made an sq_sorted_file file but it was truncated!");
+            }
+            
+            unlink($sq_file);
+        }
+        
+        my $failed = system("uniq -u $sq_sorted_file > $sq_uniq_file");
+        if ($failed) {
+            unlink($snames_uniq_file);
+            $self->throw("failed to uniq $snames_sorted_fixed_file");
+        }
+        
+        my $actual_count = VertRes::IO->new(file => $sq_uniq_file)->num_lines;
+        unless ($actual_count == $unmapped) {
+            unlink($qnames_file);
+            $self->throw("made a sq_uniq_file file but it was truncated!");
+        }
+        
+        unlink($sq_sorted_file);
+    }
+    
+    # now for all the reads we're missing, append to original sam
+    my @fqps;
+    foreach my $fq (@fqs) {
+        my $fqp = VertRes::Parser::fastq->new(file => $fq);
+        my $rh = $fqp->result_holder();
+        push(@fqps, [$fqp, $rh]);
+    }
+    open(my $sfh, '>>', $sam) || $self->throw("Could not append to $sam");
+    open (my $ufh, $sq_uniq_file) || $self->throw("Could not open $sq_uniq_file");
+    # we assume that our list of unmapped read names in $ufh is in the same sort
+    # order as sequences in the fastqs, so for each unmapped read name...
+    my $previous_root = '';
+    while (<$ufh>) {
+        chomp;
+        my $read_name = $_;
+        my ($read_num) = $read_name =~ /\/([12])$/;
+        my ($fqp, $rh);
+        if ($read_num) {
+            ($fqp, $rh) = @{$fqps[$read_num - 1]};
+        }
+        else {
+            ($fqp, $rh) = @{$fqps[0]};
+        }
+        
+        my ($mate_unmapped, $first, $second) = (0, 0, 0);
+        my $root_name = $read_name;
+        $root_name =~ s/\/[12]$//;
+        if ($paired) {
+            if ($read_num == 2) {
+                $second = 1;
+                
+                if ($previous_root eq $root_name) {
+                    $mate_unmapped = 1;
+                }
+            }
+            else {
+                $first = 1;
+                
+                # see if the next line matches root name
+                my $tell = tell($ufh);
+                my $next_line = <$ufh>;
+                seek($ufh, $tell, 0);
+                my ($next_root) = $next_line =~ /^(.+)\/[12]\n$/;
+                if ($next_root eq $root_name) {
+                    $mate_unmapped = 1;
+                }
+            }
+        }
+        $previous_root = $root_name;
+        
+        # ... loop through the fastq until we find the corresponding sequence
+        my $found = 0;
+        while ($fqp->next_result(1)) {
+            my $id = $rh->[0];
+            next unless $id eq $read_name;
+            $found = 1;
+            my $seq = $rh->[1];
+            my $qual = $rh->[2];
+            
+            # work out the SAM flags
+            my $flags = $self->calculate_flag(self_unmapped => 1,
+                                              paired_tech => $paired,
+                                              mate_unmapped => $mate_unmapped,
+                                              '1st_in_pair' => $first,
+                                              '2nd_in_pair' => $second);
+            
+            print $sfh "$id\t$flags\t*\t0\t0\t*\t*\t0\t0\t$seq\t$qual\n";
+            
+            last;
+        }
+        
+        unless ($found) {
+            $self->throw("Didn't find the unmapped read $read_name in the fastqs!");
+        }
+    }
+    close($sfh);
+    close($ufh);
+    
+    unlink($snames_uniq_file);
+    unlink($qnames_file);
+    unlink($sq_uniq_file);
     
     my $lines_now = VertRes::IO->new(file => $sam)->num_lines;
-    my $unmapped_lines = keys %missing_reads;
-    my $lines_expected = $num_mapped + $unmapped_lines;
-    unless ($lines_now >= $lines_expected) {
-        $self->warn("Tried appending $unmapped_lines unmapped records to the $num_mapped mapped records sam file, but ended up with only $lines_now lines!");
+    unless ($lines_now >= $q_lines) {
+        $self->warn("Tried appending $unmapped unmapped records to the $s_lines mapped records sam file, but ended up with only $lines_now lines!");
         return 0;
     }
     
