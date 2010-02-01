@@ -948,7 +948,12 @@ sub add_unmapped {
                 $s_lines++;
                 
                 if ($_ eq $previous_name) {
-                    s/1\n$/2\n/;
+                    if (/1\n$/) {
+                        s/1\n$/2\n/;
+                    }
+                    else {
+                        s/2\n$/1\n/;
+                    }
                 }
                 
                 print $ofh $_;
@@ -1019,7 +1024,7 @@ sub add_unmapped {
     # Now cat the qnames and snames files, sort and use uniq on that to find
     # the names that weren't in both. (unix diff, or an attempt at finding a
     # diff in perl uses too much memory.)
-    my $sq_file = $sam.'sqnames';
+    my $sq_file = $sam.'.sqnames';
     my $sq_sorted_file = $sq_file.'.sorted';
     my $sq_uniq_file = $sq_sorted_file.'.uniq';
     unless (-s $sq_uniq_file) {
@@ -1052,8 +1057,8 @@ sub add_unmapped {
         
         my $actual_count = VertRes::IO->new(file => $sq_uniq_file)->num_lines;
         unless ($actual_count == $unmapped) {
-            unlink($qnames_file);
-            $self->throw("made a sq_uniq_file file but it was truncated!");
+            unlink($sq_uniq_file);
+            $self->throw("made a sq_uniq_file file but it was truncated! ($actual_count lines vs $unmapped unmapped, from $q_lines q - $s_lines s");
         }
         
         unlink($sq_sorted_file);
