@@ -551,6 +551,8 @@ sub _read_column_names
         $self->_unread_line($line);
         return undef;
     }
+    $$self{column_line} = $line;
+
     chomp($line);
     my @cols  = split(/\t/, substr($line,1));
     my $ncols = scalar @cols;
@@ -613,7 +615,7 @@ sub format_header
 {
     my ($self,$columns) = @_;
 
-    my $out;
+    my $out = '';
     if ( $$self{header_lines} ) 
     {
         for my $line (@{$$self{header_lines}}) { $out .= $line; }
@@ -873,7 +875,11 @@ sub parse_alleles
     my $al2 = $3;
 
     if ( !$al1 ) { $al1 = $$rec{REF}; }
-    elsif ( $al1 ne '.' ) { $al1 = $$rec{ALT}[$al1-1]; }
+    elsif ( $al1 ne '.' ) 
+    { 
+        if ( !($al1=~/^\d+$/) ) { $self->throw("Uh, what is this? [$al1] $$rec{CHROM}:$$rec{POS}\n"); } 
+        $al1 = $$rec{ALT}[$al1-1]; 
+    }
 
     if ( !defined $al2 )
     {
@@ -907,9 +913,11 @@ sub format_genotype_strings
     if ( !exists($$rec{gtypes}) ) { return; }
 
     my $ref = $$rec{REF};
-
     my %alts;
     my $nalts = 0;
+
+    for my $alt (@{$$rec{ALT}}) { $alts{$alt} = ++$nalts; }
+
     for my $key (keys %{$$rec{gtypes}})
     {
         my $gtype = $$rec{gtypes}{$key}{GT};
@@ -925,6 +933,10 @@ sub format_genotype_strings
             $alts{$al1} = ++$nalts;
             $al1 = $nalts;
         }
+        elsif ( !($al1=~/^\d+$/) && $al1 ne '.' )
+        {
+            $self->throw("Could not parse the genotype string [$gtype]\n");
+        }
 
         if ( defined $al2 )
         {
@@ -934,6 +946,10 @@ sub format_genotype_strings
             {
                 $alts{$al2} = ++$nalts;
                 $al2 = $nalts;
+            }
+            elsif ( !($al2=~/^\d+$/) && $al2 ne '.' )
+            {
+                $self->throw("Could not parse the genotype string [$gtype]\n");
             }
         }
         else
