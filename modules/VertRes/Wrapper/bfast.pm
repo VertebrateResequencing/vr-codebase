@@ -70,7 +70,7 @@ use base qw(VertRes::Wrapper::MapperI);
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/bfast-0.6.1c/bfast/bfast');
+    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/bfast-0.6.3a/bfast/bfast');
     
     return $self;
 }
@@ -268,7 +268,7 @@ sub generate_sam {
     
     my $baf = "$out.baf";
     unless (-s $baf) {
-        $self->simple_run("localalign -f $ref -m $merged_fq.bmf -n 1 -t > $baf");
+        $self->simple_run("localalign -f $ref -m $merged_fq.bmf -n 8 -t > $baf");
     }
     
     unless (-s $out) {
