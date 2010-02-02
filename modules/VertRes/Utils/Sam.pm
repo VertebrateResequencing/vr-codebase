@@ -985,8 +985,7 @@ sub add_unmapped {
     }
     $s_lines ||= VertRes::IO->new(file => $snames_uniq_file)->num_lines;
     
-    # now list out to another file all the read names in the fastqs and sort
-    # that
+    # now list out to another file all the read names in the fastqs
     my $qnames_file = $sam.'.qnames';
     my $q_lines = 0;
     unless (-s $qnames_file) {
@@ -1073,70 +1072,119 @@ sub add_unmapped {
     }
     open(my $sfh, '>>', $sam) || $self->throw("Could not append to $sam");
     open (my $ufh, $sq_uniq_file) || $self->throw("Could not open $sq_uniq_file");
-    # we assume that our list of unmapped read names in $ufh is in the same sort
-    # order as sequences in the fastqs, so for each unmapped read name...
-    my $previous_root = '';
-    while (<$ufh>) {
-        chomp;
-        my $read_name = $_;
-        my ($read_num) = $read_name =~ /\/([12])$/;
-        my ($fqp, $rh);
-        if ($read_num) {
-            ($fqp, $rh) = @{$fqps[$read_num - 1]};
-        }
-        else {
-            ($fqp, $rh) = @{$fqps[0]};
+    
+    if (-s $sam < 999999999) {
+        # we can hash the unmapped and go through the fastqs sequentially, and
+        # we don't care about the order of sequences in the fastqs
+        my %unmapped;
+        while (<$ufh>) {
+            chomp;
+            $unmapped{$_} = 1;
         }
         
-        my ($mate_unmapped, $first, $second) = (0, 0, 0);
-        my $root_name = $read_name;
-        $root_name =~ s/\/[12]$//;
-        if ($paired) {
-            if ($read_num == 2) {
-                $second = 1;
+        foreach my $fqp_data (@fqps) {
+            my ($fqp, $rh) = @{$fqp_data};
+            
+            while ($fqp->next_result(1)) {
+                my $id = $rh->[0];
+                next unless exists $unmapped{$id};
                 
-                if ($previous_root eq $root_name) {
-                    $mate_unmapped = 1;
+                my $seq = $rh->[1];
+                my $qual = $rh->[2];
+                
+                my ($read_num) = $id =~ /\/([12])$/;
+                my ($first, $second) = (0, 0, 0);
+                my $mate_id = $id;
+                if ($paired) {
+                    if ($read_num == 2) {
+                        $second = 1;
+                        $mate_id =~ s/2$/1/;
+                    }
+                    else {
+                        $first = 1;
+                        $mate_id =~ s/1$/2/;
+                    }
                 }
+                
+                # work out the SAM flags
+                my $flags = $self->calculate_flag(self_unmapped => 1,
+                                                  paired_tech => $paired,
+                                                  mate_unmapped => exists $unmapped{$mate_id},
+                                                  '1st_in_pair' => $first,
+                                                  '2nd_in_pair' => $second);
+                
+                print $sfh "$id\t$flags\t*\t0\t0\t*\t*\t0\t0\t$seq\t$qual\n";
+            }
+        }
+    }
+    else {
+        # we must assume that our list of unmapped read names in $ufh is in the
+        # same sort order as sequences in the fastqs, so for each unmapped read
+        # name...
+        my $previous_root = '';
+        while (<$ufh>) {
+            chomp;
+            my $read_name = $_;
+            my ($read_num) = $read_name =~ /\/([12])$/;
+            my ($fqp, $rh);
+            if ($read_num) {
+                ($fqp, $rh) = @{$fqps[$read_num - 1]};
             }
             else {
-                $first = 1;
-                
-                # see if the next line matches root name
-                my $tell = tell($ufh);
-                my $next_line = <$ufh>;
-                seek($ufh, $tell, 0);
-                my ($next_root) = $next_line =~ /^(.+)\/[12]\n$/;
-                if ($next_root eq $root_name) {
-                    $mate_unmapped = 1;
+                ($fqp, $rh) = @{$fqps[0]};
+            }
+            
+            my ($mate_unmapped, $first, $second) = (0, 0, 0);
+            my $root_name = $read_name;
+            $root_name =~ s/\/[12]$//;
+            if ($paired) {
+                if ($read_num == 2) {
+                    $second = 1;
+                    
+                    if ($previous_root eq $root_name) {
+                        $mate_unmapped = 1;
+                    }
+                }
+                else {
+                    $first = 1;
+                    
+                    # see if the next line matches root name
+                    my $tell = tell($ufh);
+                    my $next_line = <$ufh>;
+                    seek($ufh, $tell, 0);
+                    my ($next_root) = $next_line =~ /^(.+)\/[12]\n$/;
+                    if ($next_root eq $root_name) {
+                        $mate_unmapped = 1;
+                    }
                 }
             }
-        }
-        $previous_root = $root_name;
-        
-        # ... loop through the fastq until we find the corresponding sequence
-        my $found = 0;
-        while ($fqp->next_result(1)) {
-            my $id = $rh->[0];
-            next unless $id eq $read_name;
-            $found = 1;
-            my $seq = $rh->[1];
-            my $qual = $rh->[2];
+            $previous_root = $root_name;
             
-            # work out the SAM flags
-            my $flags = $self->calculate_flag(self_unmapped => 1,
-                                              paired_tech => $paired,
-                                              mate_unmapped => $mate_unmapped,
-                                              '1st_in_pair' => $first,
-                                              '2nd_in_pair' => $second);
+            # ... loop through the fastq until we find the corresponding sequence
+            $fqp->_seek_first_result;
+            my $found = 0;
+            while ($fqp->next_result(1)) {
+                my $id = $rh->[0];
+                next unless $id eq $read_name;
+                $found = 1;
+                my $seq = $rh->[1];
+                my $qual = $rh->[2];
+                
+                # work out the SAM flags
+                my $flags = $self->calculate_flag(self_unmapped => 1,
+                                                  paired_tech => $paired,
+                                                  mate_unmapped => $mate_unmapped,
+                                                  '1st_in_pair' => $first,
+                                                  '2nd_in_pair' => $second);
+                
+                print $sfh "$id\t$flags\t*\t0\t0\t*\t*\t0\t0\t$seq\t$qual\n";
+                
+                last;
+            }
             
-            print $sfh "$id\t$flags\t*\t0\t0\t*\t*\t0\t0\t$seq\t$qual\n";
-            
-            last;
-        }
-        
-        unless ($found) {
-            $self->throw("Didn't find the unmapped read $read_name in the fastqs!");
+            unless ($found) {
+                $self->throw("Didn't find the unmapped read $read_name in the fastqs!");
+            }
         }
     }
     close($sfh);
