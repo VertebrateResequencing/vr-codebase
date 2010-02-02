@@ -654,6 +654,7 @@ sub displayProjectPage
     my $grandTotalPassed = 0;
     my $grandTotalDepth = 0;
     my $grandTotalNoQC = 0;
+	my $grandTotalSamples = 0;
     foreach( @samples_ )
     {
         my $sample = $_;
@@ -764,9 +765,10 @@ sub displayProjectPage
         $grandTotalPassed += $samplePassed;
         $grandTotalDepth += $sampleDepth;
         $grandTotalNoQC += $sample_no_qcLanes;
+		$grandTotalSamples ++;
     }
     
-    print qq[<tr><tfoot><th>Grand Total</th><th></th><th></th><th>$grandTotalLanes</th><th>$grandTotalPassed</th><th>$grandTotalDepth].qq[x];
+    print qq[<tr><tfoot><th>$grandTotalSamples</th><th></th><th></th><th>$grandTotalLanes</th><th>$grandTotalPassed</th><th>$grandTotalDepth].qq[x];
     
     if( $grandTotalNoQC > 0 )
     {
