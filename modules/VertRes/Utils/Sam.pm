@@ -885,6 +885,7 @@ sub add_unmapped {
     my $s_lines = 0;
     unless (-s $snames_uniq_file) {
         unless (-s $snames_sorted_fixed_file) {
+            my $dubious = 0;
             unless (-s $snames_sorted_file) {
                 unless (-s $snames_file) {
                     open(my $rfh, '>', $snames_file) || $self->throw("Could not write to $snames_file");
@@ -906,6 +907,7 @@ sub add_unmapped {
                                 # don't know what read this is; we'll call it read 1 and if both
                                 # of these turn out to be present we'll add read 2 as well.
                                 $read_num = 1;
+                                $dubious = 1;
                             }
                             
                             $qname =~ s/\/$//;
@@ -938,39 +940,44 @@ sub add_unmapped {
                 unlink($snames_file);
             }
             
-            # if we have the same read name twice in a row, change the second one
-            # to be the second read of a pair
-            open(my $ofh, '>', $snames_sorted_fixed_file) || $self->throw("Could not write to $snames_sorted_fixed_file");
-            open(my $ifh, $snames_sorted_file) || $self->throw("Could not open $snames_sorted_file");
-            my $previous_name = '';
-            $s_lines = 0;
-            while (<$ifh>) {
-                $s_lines++;
+            if ($dubious) {
+                # if we have the same read name twice in a row, change the second one
+                # to be the second read of a pair
+                open(my $ofh, '>', $snames_sorted_fixed_file) || $self->throw("Could not write to $snames_sorted_fixed_file");
+                open(my $ifh, $snames_sorted_file) || $self->throw("Could not open $snames_sorted_file");
+                my $previous_name = '';
+                $s_lines = 0;
+                while (<$ifh>) {
+                    $s_lines++;
+                    
+                    if ($_ eq $previous_name) {
+                        if (/1\n$/) {
+                            s/1\n$/2\n/;
+                        }
+                        else {
+                            s/2\n$/1\n/;
+                        }
+                    }
+                    
+                    print $ofh $_;
+                    
+                    $previous_name = $_;
+                }
+                close($ofh);
+                close($ifh);
                 
-                if ($_ eq $previous_name) {
-                    if (/1\n$/) {
-                        s/1\n$/2\n/;
-                    }
-                    else {
-                        s/2\n$/1\n/;
-                    }
+                # check rnames_sorted_fixed_file file isn't truncated
+                my $actual_count = VertRes::IO->new(file => $snames_sorted_fixed_file)->num_lines;
+                unless ($actual_count == $s_lines) {
+                    unlink($snames_sorted_fixed_file);
+                    $self->throw("made an rnames_sorted_fixed_file file but it was truncated!");
                 }
                 
-                print $ofh $_;
-                
-                $previous_name = $_;
+                unlink($snames_sorted_file);
             }
-            close($ofh);
-            close($ifh);
-            
-            # check rnames_sorted_fixed_file file isn't truncated
-            my $actual_count = VertRes::IO->new(file => $snames_sorted_fixed_file)->num_lines;
-            unless ($actual_count == $s_lines) {
-                unlink($snames_sorted_fixed_file);
-                $self->throw("made an rnames_sorted_fixed_file file but it was truncated!");
+            else {
+                move($snames_sorted_file, $snames_sorted_fixed_file) || $self->throw("Could not move $snames_sorted_file to $snames_sorted_fixed_file");
             }
-            
-            unlink($snames_sorted_file);
         }
         
         # for some reason we can end up with multiple copies of some read names;
@@ -983,7 +990,7 @@ sub add_unmapped {
         }
         unlink($snames_sorted_fixed_file);
     }
-    $s_lines ||= VertRes::IO->new(file => $snames_uniq_file)->num_lines;
+    $s_lines = VertRes::IO->new(file => $snames_uniq_file)->num_lines;
     
     # now list out to another file all the read names in the fastqs
     my $qnames_file = $sam.'.qnames';
