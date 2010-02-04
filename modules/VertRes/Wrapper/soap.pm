@@ -197,7 +197,7 @@ sub generate_sam {
             $fq =~ s/\.gz$//;
         }
         
-        $self->simple_run("-a $fqs[0] -b $fqs[1] -D $ref.index -o $sop -2 $sos -m 100 -x1000$extra_args");
+        $self->simple_run("-a $fqs[0] -b $fqs[1] -D $ref.index -o $sop -2 $sos -u $out.unmapped.fastq -m 100 -x1000$extra_args");
         
         $self->exe($orig_exe);
     }
@@ -216,7 +216,7 @@ sub generate_sam {
 =head2 add_unmapped
 
  Title   : add_unmapped
- Usage   : $obj->add_unmapped($sam_file, $ref_fasta, @fastqs);
+ Usage   : $obj->add_unmapped($sam_file, @fastqs);
  Function: Do whatever needs to be done with the sam file to add in unmapped
            reads.
  Returns : boolean
@@ -225,8 +225,9 @@ sub generate_sam {
 =cut
 
 sub add_unmapped {
-    my $self = shift;
-    return $self->SUPER::add_unmapped(@_);
+    my ($self, $sam) = @_;
+    my $unmapped = $sam.'.unmapped.fastq';
+    return $self->add_unmapped_from_fastq($sam, $unmapped);
 }
 
 =head2 do_mapping

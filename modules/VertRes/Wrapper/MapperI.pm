@@ -124,6 +124,45 @@ sub add_unmapped {
     return $su->add_unmapped(@_);
 }
 
+=head2 add_unmapped_from_fastq
+
+ Title   : add_unmapped_from_fastq
+ Usage   : $obj->add_unmapped_from_fastq($sam_file, $unmapped_fastq);
+ Function: Do whatever needs to be done with the sam file to add in unmapped
+           reads, found in a fastq containing only unmapped reads.
+ Returns : boolean
+ Args    : n/a
+
+=cut
+
+sub add_unmapped_from_fastq {
+    my ($self, $sam, $unmapped) = @_;
+    
+    if (-s $unmapped) {
+        open(my $sfh, '>>', $sam) || $self->throw("Could not append to $sam");
+        my $fqp = VertRes::Parser::fastq->new(file => $unmapped);
+        my $rh = $fqp->result_holder;
+        
+        # normally we'd work out the correct sam flags based on if the mate
+        # was also unmapped, but since that requires we know what all the
+        # unmapped reads are beforehand (difficult or high memory), screw it;
+        # for mapper comparison the flags don't have to be perfect - just has
+        # to have unmapped flag
+        my $su = VertRes::Utils::Sam->new();
+        my $flags = $flags = $su->calculate_flag(self_unmapped => 1);
+        
+        while ($fqp->next_result) {
+            print $sfh "$rh->[0]\t$flags\t*\t0\t0\t*\t*\t0\t0\t$rh->[1]\t$rh->[2]\n";
+        }
+        close($sfh);
+        
+        return 1;
+    }
+    else {
+        return 1;
+    }
+}
+
 =head2 do_mapping
 
  Title   : do_mapping
@@ -175,10 +214,12 @@ sub do_mapping {
         my $tmp_sam = $out_sam.'_tmp';
         
         if (@fqs == 2) {
-            if (-s $tmp_sam) {
-                $self->throw("$tmp_sam already exists prior to mapping; clean up first if something went wrong before");
+            #if (-s $tmp_sam) {
+            #    $self->throw("$tmp_sam already exists prior to mapping; clean up first if something went wrong before");
+            #}
+            unless (-s $tmp_sam) {
+               $self->generate_sam($tmp_sam, $ref_fa, @fqs) || $self->throw("failed during the alignment step");
             }
-            $self->generate_sam($tmp_sam, $ref_fa, @fqs) || $self->throw("failed during the alignment step");
         }
         else {
             $self->throw("single-ended not yet implemented");

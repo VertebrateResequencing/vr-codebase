@@ -233,7 +233,7 @@ sub generate_sam {
         
         $self->exe($orig_exe.'MosaikAligner');
         my $fastqs_dat = $self->_fastqs_dat(@fqs);
-        $self->simple_run("-in $fastqs_dat -out $align_out -ia $ref.dat -p 8 $extra_settings");
+        $self->simple_run("-in $fastqs_dat -out $align_out -rur $out.unmapped.fastq -ia $ref.dat -p 8 $extra_settings");
         $self->exe($orig_exe);
     }
     unless (-s $align_out) {
@@ -281,8 +281,9 @@ sub generate_sam {
 =cut
 
 sub add_unmapped {
-    my $self = shift;
-    return $self->SUPER::add_unmapped(@_);
+    my ($self, $sam) = @_;
+    my $unmapped = $sam.'.unmapped.fastq';
+    return $self->add_unmapped_from_fastq($sam, $unmapped);
 }
 
 =head2 do_mapping
