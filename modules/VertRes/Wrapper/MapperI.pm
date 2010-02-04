@@ -149,7 +149,7 @@ sub add_unmapped_from_fastq {
         # for mapper comparison the flags don't have to be perfect - just has
         # to have unmapped flag
         my $su = VertRes::Utils::Sam->new();
-        my $flags = $flags = $su->calculate_flag(self_unmapped => 1);
+        my $flags = $su->calculate_flag(self_unmapped => 1);
         
         while ($fqp->next_result) {
             print $sfh "$rh->[0]\t$flags\t*\t0\t0\t*\t*\t0\t0\t$rh->[1]\t$rh->[2]\n";
