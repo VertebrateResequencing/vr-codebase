@@ -51,17 +51,16 @@ sub instantiate {
     my $database = $self->{database} || $self->throw("A database name must be provided!");
     my $mode = lc($self->{mode}) || $self->throw("A connection mode name must be provided!");
     
-    $self->throw("Invalid connection mode (r or rw valid): $mode\n") unless $mode =~ /^[r|rw]$/;
+    $self->throw("Invalid connection mode (r or rw valid): $mode\n") unless $mode =~ /^(?:r|rw)$/;
     
-    my $user = $mode =~ /^r$/ ? $READ_USER : $WRITE_USER;
-    my $pass = $mode =~ /^r$/ ? '' : $WRITE_PASS;
+    my $user = $mode eq 'rw' ? $WRITE_USER : $READ_USER;
+    my $pass = $mode eq 'rw' ? $WRITE_PASS : '';
     
     my $vrtrack = VRTrack::VRTrack->new({ host => 'mcs4a',
-                                port => 3306,
-                                user => $user,
-                                password => $pass,
-                                database => $database,
-                               });
+                                          port => 3306,
+                                          user => $user,
+                                          password => $pass,
+                                          database => $database });
     
     return $vrtrack;
 }
