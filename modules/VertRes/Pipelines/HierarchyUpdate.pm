@@ -221,7 +221,7 @@ sub fix_swaps {
     # work out the pre-swap hierarchy path of the lane; our new lane location
     # already exists and we'll need to move files and correct headers
     my $vrlane = $self->{vrlane};
-    my %info = VertRes::Utils::Hierarchy->new->lane_info($vrlane, pre_swap => 1);
+    my %info = VertRes::Utils::Hierarchy->new->lane_info($vrlane, pre_swap => 1, no_coverage => 1);
     
     my $old_path = File::Spec->catdir($self->{root}, $info{hierarchy_path});
     
@@ -266,7 +266,7 @@ sub fix_swaps {
         my $su = VertRes::Utils::Sam->new();
         
         # get the latest info
-        %info = VertRes::Utils::Hierarchy->new->lane_info($vrlane);
+        %info = VertRes::Utils::Hierarchy->new->lane_info($vrlane, no_coverage => 1);
         my %new_meta = ($info{lane} => { sample_name => $info{sample},
                                          library => $info{library_true},
                                          platform => $info{technology},
@@ -280,10 +280,10 @@ sub fix_swaps {
             my $needs_rewrite = $su->check_bam_header($bam, %new_meta);
             if ($needs_rewrite) {
                 $needed_rewrite = 1;
-                $su->rewrite_bam_header($bam, %new_meta) || $self->throw("Failed to correct the header of '$bam'");
                 my $basename = basename($bam);
+                my $isize = $info{insert_size} || 0; # can be NULL in the db
                 LSF::run($action_lock, $lane_path, $self->{prefix}.$basename.'_header_rewrite', $self,
-                    qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->rewrite_bam_header(qq[$bam], $info{lane} => { sample_name => qq[$info{sample}], library => qq[$info{library_true}], platform => qq[$info{technology}], centre => qq[$info{centre}], insert_size => qq[$info{insert_size}], project => qq[$info{project}] }) || die qq[Failed to correct the header of '$bam'\n];"});
+                    qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->rewrite_bam_header(qq[$bam], $info{lane} => { sample_name => qq[$info{sample}], library => qq[$info{library_true}], platform => qq[$info{technology}], centre => qq[$info{centre}], insert_size => qq[$isize], project => qq[$info{project}] }) || die qq[Failed to correct the header of '$bam'\n];"});
             }
         }
         if ($needed_rewrite) {
