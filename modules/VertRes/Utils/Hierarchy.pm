@@ -163,7 +163,9 @@ sub parse_lane {
            was called on it.
 
            optionally, the optional args understood by individual_coverage() to
-           configure how individual_coverage will be calculated
+           configure how individual_coverage will be calculated. Or supply the
+           special 'no_coverage => 1' option to not calculate
+           individual_coverage, which can be quite slow.
 
 =cut
 
@@ -233,12 +235,14 @@ sub lane_info {
     $info{sample} = $objs{sample}->name || $self->throw("sample name wasn't known for $rg");
     $info{individual} = $objs{individual}->name || $self->throw("individual name wasn't known for $rg");
     $info{individual_acc} = $objs{individual}->acc; # || $self->throw("sample accession wasn't known for $rg");
-    $info{individual_coverage} = $self->hierarchy_coverage(individual => [$info{individual}],
-                                                           vrtrack => $vrtrack,
-                                                           $args{genome_size} ? (genome_size => $args{genome_size}) : (),
-                                                           $args{gt_confirmed} ? (gt_confirmed => $args{gt_confirmed}) : (),
-                                                           $args{qc_passed} ? (qc_passed => $args{qc_passed}) : (),
-                                                           $args{mapped} ? (mapped => $args{mapped}) : ());
+    unless ($args{no_coverage}) {
+        $info{individual_coverage} = $self->hierarchy_coverage(individual => [$info{individual}],
+                                                               vrtrack => $vrtrack,
+                                                               $args{genome_size} ? (genome_size => $args{genome_size}) : (),
+                                                               $args{gt_confirmed} ? (gt_confirmed => $args{gt_confirmed}) : (),
+                                                               $args{qc_passed} ? (qc_passed => $args{qc_passed}) : (),
+                                                               $args{mapped} ? (mapped => $args{mapped}) : ());
+    }
     $info{population} = $objs{population}->name;
     $info{project} = $objs{project}->hierarchy_name;
     
@@ -303,7 +307,7 @@ sub lane_hierarchy_objects {
            the key lane, and a desired level with the level key, eg.:
            lane => 'lane_name', level => 'individual'. This would calculate the
            coverage of all the lanes that belong to the individual that the
-           supplied lane belonged to. Caching allows 
+           supplied lane belonged to.
 
            plus optional hash:
            genome_size => int (total genome size in bp; default 3e9)
@@ -359,16 +363,21 @@ sub hierarchy_coverage {
     my @store = ($gt, $qc, $mapped);
     while (my ($key, $val) = each %args) {
         unless (ref($val)) {
-            push(@store, $key, $val);
+            push(@store, $val);
         }
         else {
             if (ref($val) eq 'ARRAY') {
-                push(@store, $key, @{$val});
+                push(@store, @{$val});
             }
-            else {
-                push(@store, $key);
+            elsif (ref($val) eq 'HASH') {
                 while (my ($sub_key, $sub_val) = each %{$val}) {
-                    push(@store, $sub_key, $sub_val);
+                    push(@store, $sub_val);
+                }
+            }
+            elsif ($val->isa('VRTrack::VRTrack')) {
+                my $db_params = $val->database_params;
+                while (my ($sub_key, $sub_val) = each %{$db_params}) {
+                    push(@store, $sub_val);
                 }
             }
         }
