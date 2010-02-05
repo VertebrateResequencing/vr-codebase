@@ -163,6 +163,59 @@ sub add_unmapped_from_fastq {
     }
 }
 
+=head2 add_unmapped_from_fasta
+
+ Title   : add_unmapped_from_fasta
+ Usage   : $obj->add_unmapped_from_fasta($sam_file, $unmapped_fasta, @fastqs);
+ Function: Do whatever needs to be done with the sam file to add in unmapped
+           reads, found in a fasta containing only unmapped reads.
+ Returns : boolean
+ Args    : n/a
+
+=cut
+
+sub add_unmapped_from_fasta {
+    my ($self, $sam, $unmapped, @fastqs) = @_;
+    
+    if (-s $unmapped) {
+        open(my $sfh, '>>', $sam) || $self->throw("Could not append to $sam");
+        # need a fasta parser...
+        open(my $ufh, $unmapped) || $self->throw("Could not open $unmapped");
+        
+        # normally we'd work out the correct sam flags based on if the mate
+        # was also unmapped, but since that requires we know what all the
+        # unmapped reads are beforehand (difficult or high memory), screw it;
+        # for mapper comparison the flags don't have to be perfect - just has
+        # to have unmapped flag
+        my $su = VertRes::Utils::Sam->new();
+        my $flags = $su->calculate_flag(self_unmapped => 1);
+        
+        # and we should use the fasta to find the unmapped ids, then go through
+        # the original whole fastqs to get the quality strings... but screw it;
+        # for mapper comparison the quality string doesn't matter
+        
+        my $id;
+        while (<$ufh>) {
+            chomp;
+            if (/^>(.+)/) {
+                $id = $1;
+            }
+            else {
+                my $seq = $_;
+                my $length = length $seq;
+                my $qual = '?' x $length;
+                print $sfh "$id\t$flags\t*\t0\t0\t*\t*\t0\t0\t$seq\t$qual\n";
+            }
+        }
+        close($sfh);
+        
+        return 1;
+    }
+    else {
+        return 1;
+    }
+}
+
 =head2 do_mapping
 
  Title   : do_mapping
