@@ -283,6 +283,12 @@ sub generate_sam {
 sub add_unmapped {
     my ($self, $sam) = @_;
     my $unmapped = $sam.'.unmapped.fastq';
+    
+    # mosaik renames the fastq ids, stripping off the /1 or /2 and doing like:
+    # @9:107904153+67M200D9M:R:-161 (mate 2, length=76)
+    # but for mapper comparison purposes, it doesn't really matter; the add
+    # method still works
+    
     return $self->add_unmapped_from_fastq($sam, $unmapped);
 }
 
