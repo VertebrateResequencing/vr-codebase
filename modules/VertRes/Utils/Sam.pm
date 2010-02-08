@@ -56,6 +56,13 @@ our %flags = (paired_tech    => '0x0001',
               failed_qc      => '0x0200',
               duplicate      => '0x0400');
 
+my %tech_to_platform = (SLX => 'ILLUMINA',
+                        '454' => 'LS454',
+                        SOLID => 'ABI_SOLID',
+                        ILLUMINA => 'ILLUMINA',
+                        'LS454' => 'LS454',
+                        ABI_SOLID => 'ABI_SOLID',);
+
 =head2 new
 
  Title   : new
@@ -241,7 +248,8 @@ sub split_bam_by_sequence {
            all of these key => value pairs:
            sample_name => string, eg. NA00000;
            library => string
-           platform => string
+           platform => string (Must be sanger or DCC standard naming: SLX|SOLEXA
+                               454|LS454 SOLID|ABI_SOLID)
            centre => string
            insert_size => int
            project => string, the study id, eg. SRP000001
@@ -290,6 +298,7 @@ sub add_sam_header {
         $run_name = $parser->lane_info($lane, 'run_name');
     }
     my $platform = $args{platform} || $parser->lane_info($lane, 'INSTRUMENT_PLATFORM');
+    $platform = $tech_to_platform{$platform} || $self->throw("Bad platform '$platform'");
     my $centre = $args{centre} || $parser->lane_info($lane, 'CENTER_NAME');
     my $project = $args{project} || $parser->lane_info($lane, 'STUDY_ID');
     if ($parser && (! $project || $project eq '-')) {
@@ -628,6 +637,10 @@ sub bas {
                     $readgroup_data{$rg}->{$field} = $sip->lane_info($rg, $convert{$field}) || "unknown_$field";
                 }
             }
+        }
+        
+        if (defined $tech_to_platform{$readgroup_data{$rg}->{platform}}) {
+            $readgroup_data{$rg}->{platform} = $tech_to_platform{$readgroup_data{$rg}->{platform}};
         }
         
         $readgroup_data{$rg}->{md5} = $md5;
@@ -1291,6 +1304,10 @@ sub check_bam_header {
                       insert_size => 'PI',
                       project => 'DS');
     
+    if (defined $rg_changes{platform}) {
+        $rg_changes{platform} = $tech_to_platform{$rg_changes{platform}} || $self->throw("Bad platform '$rg_changes{platform}'");
+    }
+    
     my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
     my $bamfh = $stin->view($bam, undef, H => 1);
     my $made_changes = 0;
@@ -1353,6 +1370,10 @@ sub rewrite_bam_header {
                       centre => 'CN',
                       insert_size => 'PI',
                       project => 'DS');
+    
+    if (defined $rg_changes{platform}) {
+        $rg_changes{platform} = $tech_to_platform{$rg_changes{platform}} || $self->throw("Bad platform '$rg_changes{platform}'");
+    }
     
     my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
     my $stout = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'write_to');
