@@ -212,7 +212,7 @@ sub rename_files
     my @files = glob("$lane_path/*.fastq.gz");
     if ( scalar @files > 3 ) { Utils::error("FIXME: so far can handle up to 3 fastq files: $lane_path.\n") }
 
-    # If there are three files, the one without a number is non-paired, the 1,2 are paired
+    # If there are three files, the one without a number or numbered as 3 is non-paired, the 1,2 are paired
     my $i = 1;
     for my $file (sort cmp_last_number @files)
     {
@@ -592,6 +592,10 @@ Utils::CMD("$samtools merge x$name.bam $bams");
 if ( ! -s "x$name.bam" ) { Utils::error("The command ended with an error:\\n\\t$samtools merge x$name.bam $bams\\n"); }
 rename("x$name.bam","$name.bam") or Utils::error("rename x$name.bam $name.bam: \$!");
 ];
+    }
+    elsif ( scalar @single_bams == 1 && $single_bams[0] ne "$name.bam" )
+    {
+        print $fh qq[rename($singles_bams[0],"$name.bam") or Utils::error("rename $singles_bams[0] $name.bam: \$!");\n];
     }
     close($fh);
 
