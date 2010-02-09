@@ -595,7 +595,7 @@ rename("x$name.bam","$name.bam") or Utils::error("rename x$name.bam $name.bam: \
     }
     elsif ( scalar @single_bams == 1 && $single_bams[0] ne "$name.bam" )
     {
-        print $fh qq[rename($single_bams[0],"$name.bam") or Utils::error("rename $single_bams[0] $name.bam: \$!");\n];
+        print $fh qq[rename('$single_bams[0]',"$name.bam") or Utils::error("rename $single_bams[0] $name.bam: \$!");\n];
     }
     close($fh);
 
