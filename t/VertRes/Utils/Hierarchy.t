@@ -95,7 +95,7 @@ cmp_ok $cov, '>=', 22.39, 'hierarchy_coverage lane level test';
 is $cov, $cov2, 'coverage was the same in both tests';
 
 # dcc_filename test
-is $h_util->dcc_filename($bam_file), 'NA11918.SLX.bwa.SRP000031.2009_08', 'dcc_filename test';
+is $h_util->dcc_filename($bam_file, '20100208'), 'NA11918.ILLUMINA.bwa.SRP000031.20100208', 'dcc_filename test';
 
 # netapp-related methods
 is_deeply [$h_util->nfs_disks], [qw(/nfs/vertreseq01 /nfs/vertreseq02 /nfs/vertreseq03 /nfs/vertreseq04 /nfs/vertreseq05 /nfs/vertreseq06 /nfs/vertreseq07 /nfs/vertreseq08 /nfs/vertreseq09 /nfs/vertreseq10 /nfs/vertreseq11 /nfs/vertreseq12 /nfs/vertreseq13 /nfs/vertreseq14 /nfs/vertreseq15 /nfs/vertreseq16)], 'nfs_disks returned the expected disks';

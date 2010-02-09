@@ -1031,19 +1031,23 @@ sub create_release_hierarchy {
 =head2 dcc_filename
 
  Title   : dcc_filename
- Usage   : my $filename = $obj->dcc_filename('/abs/path/to/platform/release.bam');
+ Usage   : my $filename = $obj->dcc_filename('/abs/path/to/release.bam',
+                                             '20100208');
  Function: Get the DCC filename of a bam file.
  Returns : string (filename without .bam suffix)
- Args    : absolute path to a platform-level release bam file
+ Args    : absolute path to a platform-level release bam file, the release name
+           date string (YYYYMMDD corresponding to the sequence.index the release
+           was made from)
 
 =cut
 
 sub dcc_filename {
-    my ($self, $file) = @_;
+    my ($self, $file, $date_string) = @_;
+    $date_string || $self->throw("release date string must be supplied");
     
-    # NAXXXXX.[chromN].technology.[center].algorithm.study_id.YYYY_MM.bam
-    # the date "should represent when the alignment was carried out"
+    # NAXXXXX.[chromN].technology.[center].algorithm.study_id.YYYYMMDD.bam
     # http://1000genomes.org/wiki/doku.php?id=1000_genomes:dcc:filenames
+    # http://1000genomes.org/wiki/doku.php?id=1000_genomes:dcc:metadata
     
     my ($dcc_filename, $study, $sample, $platform);
     
@@ -1070,13 +1074,13 @@ sub dcc_filename {
         # filename format expects 'SLX' etc.
         $platform = $info->{PL};
         if ($platform =~ /illumina|slx/i) {
-            $platform = 'SLX';
+            $platform = 'ILLUMINA';
         }
         elsif ($platform =~ /solid/i) {
-            $platform = 'SOLID';
+            $platform = 'ABI_SOLID';
         }
         elsif ($platform =~ /454/) {
-            $platform = '454';
+            $platform = 'LS454';
         }
         $techs{$platform}++;
     }
@@ -1130,18 +1134,13 @@ sub dcc_filename {
     
     my $bamname = basename($file);
     my $chrom = '';
-    if ($bamname =~ /^(\d+|[XY]|MT)/) {
-        $chrom = "chrom$1.";
+    if ($bamname =~ /^((?:chrom(?:\d+|[XY]|MT))|nonchrom|unmapped)\./) {
+        $chrom = "$1.";
     }
-    
-    my $mtime = (stat($file))[9];
-    my ($month, $year) = (localtime($mtime))[4..5];
-    $year += 1900;
-    $month = sprintf("%02d", $month + 1);
     
     my $algorithm = $ps->program || 'unknown_algorithm';
     if ($algorithm eq 'unknown_algorithm') {
-        if ($platform =~ /SLX/) {
+        if ($platform =~ /ILLUMINA/) {
             $algorithm = 'maq';
         }
         elsif ($platform =~ /454/) {
@@ -1152,7 +1151,7 @@ sub dcc_filename {
         }
     }
     
-    $dcc_filename = "$sample.$chrom$platform$algorithm.$study.${year}_$month";
+    $dcc_filename = "$sample.$chrom$platform$algorithm.$study.$date_string";
     
     return $dcc_filename;
 }
