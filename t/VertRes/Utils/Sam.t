@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 86;
+    use Test::Most tests => 88;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -128,6 +128,11 @@ unlink($rmdup_bam);
 ok $sam_util->rmdup($sorted_bam, $rmdup_bam, single_ended => 1, quiet => 1), 'rmdup test, single ended';
 my @rmdup_se = get_bam_body($rmdup_bam);
 cmp_ok scalar(@rmdup_pe), '<', scalar(@rmdup_se), 'rmdup pe gave fewer reads than se mode';
+
+# markdup (just a shortcut to VertRes::Wrapper::picard::markdup - no need to test thoroughly here)
+ok $sam_util->markdup($sorted_bam, $rmdup_bam), 'markdup test';
+@rmdup_pe = get_bam_body($rmdup_bam);
+is @rmdup_pe, 2000, 'markdup gave the correct number of reads';
 
 # merge (pretty much just a shortcut to VertRes::Wrapper::picard::merge_and_check - no need to test thoroughly here)
 my $merge_bam = File::Spec->catfile($temp_dir, 'merge.bam');

@@ -250,6 +250,55 @@ sub MarkDuplicates {
     return $self->run(@file_args);
 }
 
+=head2 markdup
+
+ Title   : markdup
+ Usage   : $wrapper->markdup($in_bam, $out_bam, %options);
+ Function: Calls MarkDuplicates() and checks the output bam is sane.
+ Returns : n/a
+ Args    : list of file paths (input bam, output bam), followed by a hash of
+           options understood by MarkDuplicates().
+
+=cut
+
+sub markdup {
+    my ($self, $in_bam, $out_bam, %args) = @_;
+    
+    # MarkDuplicates
+    my $tmp_bam = $out_bam.'.tmp.bam';
+    my $orig_run_method = $self->run_method;
+    $self->run_method('system');
+    $self->MarkDuplicates($in_bam, $tmp_bam, %args);
+    $self->run_method($orig_run_method);
+    $self->throw("failed during the MarkDuplicates step, giving up") unless $self->run_status >= 1;
+    
+    # check the output isn't truncated, or unlink it
+    my $st = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+    my $fh = $st->view($tmp_bam, undef, h => 1);
+    my $bam_count = 0;
+    while (<$fh>) {
+        $bam_count++;
+    }
+    close($fh);
+    $fh = $st->view($in_bam, undef, h => 1);
+    my $expected_count = 0;
+    while (<$fh>) {
+        $expected_count++;
+    }
+    close($fh);
+    if ($bam_count >= $expected_count) {
+        move($tmp_bam, $out_bam) || $self->throw("Failed to move $tmp_bam to $out_bam: $!");
+        $self->_set_run_status(2);
+    }
+    else {
+        $self->warn("$tmp_bam is bad ($bam_count lines vs $expected_count), will unlink it");
+        $self->_set_run_status(-1);
+        unlink("$tmp_bam.bam");
+    }
+    
+    return;
+}
+
 =head2 rmdup
 
  Title   : rmdup

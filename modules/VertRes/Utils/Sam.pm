@@ -548,6 +548,34 @@ sub rmdup {
     return $wrapper->run_status() >= 1;
 }
 
+=head2 markdup
+
+ Title   : markdup
+ Usage   : $obj->markdup('in.bam', 'dupsmarked.bam');
+ Function: Marks duplicates in a bam file, automatically taking into account
+           if these are single ended or paired reads.
+ Returns : boolean (true on success)
+ Args    : starting bam file, output name for bam file
+
+           Optionally, args to pass to VertRes::Wrapper::picard (eg.
+           quiet => 1)
+
+=cut
+
+sub markdup {
+    my ($self, $in_bam, $out_bam, %args) = @_;
+    
+    my $verbose = $self->verbose();
+    my $wrapper = VertRes::Wrapper::picard->new(verbose => $verbose,
+                                                quiet => $verbose ? 0 : 1,
+                                                $self->{java_memory} ? (java_memory => $self->{java_memory}) : (),
+                                                %args);
+    
+    $wrapper->markdup($in_bam, $out_bam);
+    
+    return $wrapper->run_status() >= 1;
+}
+
 =head2 merge
 
  Title   : merge
