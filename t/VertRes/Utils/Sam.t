@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 80;
+    use Test::Most tests => 84;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -50,7 +50,7 @@ ok $sam_util->add_sam_header($temp_sam,
                              project => 'SRP000001'), 'add_sam_header manual args test';
 my @expected = ("\@HD\tVN:1.0\tSO:coordinate",
                 "\@SQ\tSN:Streptococcus_suis\tLN:2007491\tAS:SsP17\tM5:c52b2f0394e12013e2573e9a38f51031\tUR:file:t/data/S_suis_P17.fa",
-                "\@RG\tID:SRR00000\tLB:alib\tSM:NA00000\tPU:7563\tPI:2000\tCN:Sanger\tPL:SLX\tDS:SRP000001");
+                "\@RG\tID:SRR00000\tLB:alib\tSM:NA00000\tPU:7563\tPI:2000\tCN:Sanger\tPL:ILLUMINA\tDS:SRP000001");
 is_deeply [get_sam_header($temp_sam)], \@expected, 'generated the correct header';
 my $wc = `wc -l $temp_sam`;
 my ($lines) = $wc =~ /^(\d+)/;
@@ -72,7 +72,7 @@ ok $sam_util->add_sam_header($temp_sam,
                              program_version => '0.4.9'), 'add_sam_header manual args test';
 @expected = ("\@HD\tVN:1.0\tSO:coordinate",
              "\@SQ\tSN:Streptococcus_suis\tLN:2007491\tAS:SsP17\tM5:c52b2f0394e12013e2573e9a38f51031\tUR:file:t/data/S_suis_P17.fa",
-             "\@RG\tID:SRR00001\tLB:alib\tSM:NA00001\tPU:7563\tPI:2000\tCN:Sanger\tPL:SLX\tDS:SRP000001",
+             "\@RG\tID:SRR00001\tLB:alib\tSM:NA00001\tPU:7563\tPI:2000\tCN:Sanger\tPL:ILLUMINA\tDS:SRP000001",
              "\@PG\tID:bwa\tVN:0.4.9");
 my @header_lines = get_sam_header($temp_sam);
 is_deeply \@header_lines, \@expected, 'generated the correct header for the second time';
@@ -110,12 +110,12 @@ is $found_rgs, @records, 'correct RG tag still present on all records';
 # rewrite_bam_header
 ok $sam_util->rewrite_bam_header($sorted_bam, invalid => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI' }), 'rewrite_bam_header ran ok with an invalid readgroup';
 @header_lines = get_bam_header($sorted_bam);
-is $header_lines[2], "\@RG\tID:SRR00001\tLB:alib\tSM:NA00001\tPU:7563\tPI:2000\tCN:Sanger\tPL:SLX\tDS:SRP000001", 'rewrite_bam_header didn\'t change the header when readgroup not in the bam';
+is $header_lines[2], "\@RG\tID:SRR00001\tLB:alib\tSM:NA00001\tPU:7563\tPI:2000\tCN:Sanger\tPL:ILLUMINA\tDS:SRP000001", 'rewrite_bam_header didn\'t change the header when readgroup not in the bam';
 my %new_header_args = (SRR00001 => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI', project => 'SRP000001' });
 is $sam_util->check_bam_header($sorted_bam, %new_header_args), 1, 'before rewriting header, check returns true';
 ok $sam_util->rewrite_bam_header($sorted_bam, %new_header_args), 'rewrite_bam_header ran ok';
 @header_lines = get_bam_header($sorted_bam);
-is $header_lines[2], "\@RG\tID:SRR00001\tLB:blib\tSM:NA00002\tPU:7563\tPI:2000\tCN:NCBI\tPL:SLX\tDS:SRP000001", 'rewrite_bam_header actually changed the header';
+is $header_lines[2], "\@RG\tID:SRR00001\tLB:blib\tSM:NA00002\tPU:7563\tPI:2000\tCN:NCBI\tPL:ILLUMINA\tDS:SRP000001", 'rewrite_bam_header actually changed the header';
 @records = get_bam_body($sorted_bam);
 is @records, 2000, 'rewrite_bam_header didn\'t change the number of records';
 is $sam_util->check_bam_header($sorted_bam, %new_header_args), 0, 'after rewriting header, check returns false';
@@ -176,16 +176,10 @@ is_deeply {$sam_util->bam_statistics($sorted_bam)}, {SRR00001 => {total_bases =>
                                                                   median_isize => 275,
                                                                   mad => 48}}, 'bam_statistics test';
 my $given_bas = File::Spec->catfile($temp_dir, 'test.bas');
-ok $sam_util->bas($sorted_bam, $given_bas), 'bas() ran ok';
+ok $sam_util->bas($sorted_bam, '20100208', $given_bas), 'bas() ran ok';
 my $expected_bas = File::Spec->catfile('t', 'data', 'example.bas');
 ok open(my $ebfh, $expected_bas), 'opened expected .bas';
 @expected = <$ebfh>;
-# first field of second line contains the month and day, which will obviously
-# be wrong; correct it now to make the is_deeply test pass
-my ($month, $year) = (localtime(time()))[4..5];
-$year += 1900;
-$month = sprintf("%02d", $month + 1);
-$expected[1] =~ s/^(\S+)2009_08/$1${year}_$month/;
 ok open(my $tbfh, $given_bas), 'opened result .bas';
 my @given = <$tbfh>;
 close($tbfh);
@@ -197,14 +191,14 @@ open($tbfh, $given_bas);
 @given = <$tbfh>;
 close($tbfh);
 is $given[1], $expected[1], 'rewrite_bas_meta didn\'t change anything when readgroup not in the bas';
-ok $sam_util->rewrite_bas_meta($given_bas, SRR00001 => { sample_name => 'NA00003', library => 'clib', platform => '454', project => 'SRP000002' }), 'rewrite_bas_meta ran ok';
+ok $sam_util->rewrite_bas_meta($given_bas, SRR00001 => { sample_name => 'NA00003', library => 'clib', platform => 'LS454', project => 'SRP000002' }), 'rewrite_bas_meta ran ok';
 open($tbfh, $given_bas);
 @given = <$tbfh>;
 close($tbfh);
-is_deeply \@given, [$expected[0], "NA00003.454.bwa.SRP000002.${year}_$month	bdd09c9315a4bab7463582b57cba7cd2	SRP000002	NA00003	SLX	clib	SRR00001	115000	58583	2000	1084	1084	1070	2.05	23.32	286	74.10	275	48\n"], 'rewrite_bas_meta actually changed the bas';
+is_deeply \@given, [$expected[0], join("\t", qw(NA00003.LS454.bwa.SRP000002.20100208 d4f062c6eed8d0205517979801305bfd SRP000002 NA00003 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48))."\n"], 'rewrite_bas_meta actually changed the bas';
 
 # stats method
-ok $sam_util->stats($sorted_bam), 'stats test';
+ok $sam_util->stats('20100208', $sorted_bam), 'stats test';
 foreach my $file (File::Spec->catfile($temp_dir, 'sorted.bam.flagstat'), File::Spec->catfile($temp_dir, 'sorted.bam.bas')) {
     ok -s $file, 'stats output file exists';
 }
@@ -212,10 +206,12 @@ foreach my $file (File::Spec->catfile($temp_dir, 'sorted.bam.flagstat'), File::S
 # split_bam_by_sequence method
 my @splits = $sam_util->split_bam_by_sequence($headed_bam,
                                               output_dir => $temp_dir,
-                                              ignore => '^N[TC]_\d+');
+                                              ignore => '^N[TC]_\d+',
+                                              make_unmapped => 0,
+                                              non_chr => 0);
 my @expected_splits;
 foreach (1..22, 'X', 'MT') {
-    push(@expected_splits, File::Spec->catfile($temp_dir, $_.'.headed2.bam'));
+    push(@expected_splits, File::Spec->catfile($temp_dir, 'chrom'.$_.'.headed2.bam'));
 }
 @expected_splits = sort @expected_splits;
 @splits = sort @splits;
@@ -227,7 +223,32 @@ foreach my $split (@expected_splits) {
     $created_lines += get_bam_body($split);
 }
 is $actually_created, 24, 'split_bam_by_sequence actually created all the split bams';
-is $created_lines, 32, 'split_bam_by_sequence created split bams with appropriate numbers of entries';
+is $created_lines, 30, 'split_bam_by_sequence created split bams with appropriate numbers of entries';
+@splits = $sam_util->split_bam_by_sequence($headed_bam,
+                                           output_dir => $temp_dir,
+                                           ignore => '^N[TC]_\d+',
+                                           make_unmapped => 1,
+                                           non_chr => 0);
+push(@expected_splits, File::Spec->catfile($temp_dir, 'unmapped.headed2.bam'));
+$actually_created = 0;
+$created_lines = 0;
+foreach my $split (@expected_splits) {
+    $actually_created += -s $split ? 1 : 0;
+    $created_lines += get_bam_body($split);
+}
+is $actually_created, 25, 'split_bam_by_sequence with make_unmapped gives an unmapped bam as well';
+is $created_lines, 2012, 'and the unmapped gives us more entries';
+@splits = $sam_util->split_bam_by_sequence($headed_bam,
+                                           output_dir => $temp_dir);
+push(@expected_splits, File::Spec->catfile($temp_dir, 'nonchrom.headed2.bam'));
+$actually_created = 0;
+$created_lines = 0;
+foreach my $split (@expected_splits) {
+    $actually_created += -s $split ? 1 : 0;
+    $created_lines += get_bam_body($split);
+}
+is $actually_created, 26, 'split_bam_by_sequence defaults gives a nonchrom bam as well';
+is $created_lines, 2014, 'and the nonchrom gives us all entries';
 
 # add_unmapped
 my $om_sam_orig = File::Spec->catfile('t', 'data', 'only_mapped.sam');

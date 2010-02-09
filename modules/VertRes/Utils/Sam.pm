@@ -173,6 +173,17 @@ sub bams_are_similar {
            ignore => 'regex' to ignore sequences with ids that match the regex,
                      eg. ignore => '^N[TC]_\d+' to avoid making splits for
                      contigs
+           merge => {'regex' => 'prefix'} to put sequences with ids that match
+                     the regex into a single file with the corresponding prefix.
+                     ignore takes precendence.
+           non_chr => boolean (default true; ignore takes precendence: does a
+                               merge for sequences that don't look chromosomal
+                               into a 'nonchrom' prefixed file; does not make
+                               individual bams for each non-chromosomsal seq if
+                               ignore has not been set)
+           make_unmapped => boolean (default true: a file prefixed with
+                                     'unmapped' is made containing all the
+                                     unmapped reads)
            output_dir => 'path' to specify where the split bams are created;
                          default is the same dir as the input bam
 
@@ -194,6 +205,18 @@ sub split_bam_by_sequence {
         $output_dir = $bam;
         $output_dir =~ s/$basename$//;
     }
+    unless (defined $opts{make_unmapped}) {
+        $opts{make_unmapped} = 1;
+    }
+    unless (defined $opts{non_chr}) {
+        $opts{non_chr} = 1;
+    }
+    if ($opts{non_chr}) {
+        $opts{merge}->{'^(?:N[TC]_\d+|GL\d+)'} = 'nonchrom';
+        unless (defined $opts{ignore}) {
+            $opts{ignore} = '^(?:N[TC]_\d+|GL\d+)';
+        }
+    }
     
     # find out what sequences there are
     my $bamfh = $sw->view($bam, undef, H => 1);
@@ -213,10 +236,25 @@ sub split_bam_by_sequence {
     
     # make a split for each sequence
     my @out_bams;
+    my %merges;
     foreach my $seq (keys %all_sequences) {
-        next if ($opts{ignore} && $seq =~ /$opts{ignore}/);
+        my @prefixes;
+        if (defined $opts{merge}) {
+            while (my ($regex, $this_prefix) = each %{$opts{merge}}) {
+                if ($seq =~ /$regex/) {
+                    push(@prefixes, $this_prefix);
+                }
+            }
+        }
+        unless (scalar(@prefixes) || ($opts{ignore} && $seq =~ /$opts{ignore}/)) {
+            @prefixes = ('chrom'.$seq);
+        }
         
         my $out_bam = File::Spec->catfile($output_dir, $seq.'.'.$basename);
+        $self->register_for_unlinking($out_bam);
+        foreach my $prefix (@prefixes) {
+            push(@{$merges{$prefix}}, $out_bam);
+        }
         
         $sw->view($bam, $out_bam, regions => [$seq], h => 1, b => 1);
         $sw->run_status >= 1 || $self->throw("Failed to create split $out_bam");
@@ -224,11 +262,37 @@ sub split_bam_by_sequence {
         push(@out_bams, $out_bam);
     }
     
+    # do merging (or just renaming if there is only 1 bam to merge)
+    my @merged_bams;
+    while (my ($prefix, $bams) = each %merges) {
+        my @bams = @{$bams};
+        my $out_bam = File::Spec->catfile($output_dir, $prefix.'.'.$basename);
+        if (@bams == 1) {
+            move($bams[0], $out_bam);
+        }
+        else {
+            $sw->merge_and_check($out_bam, $bams);
+            $sw->run_status >= 1 || $self->throw("Failed to merge the bams for $out_bam");
+        }
+        push(@merged_bams, $out_bam);
+    }
+    
+    # make an unmapped bam
+    if ($opts{make_unmapped}) {
+        my $out_bam = File::Spec->catfile($output_dir, 'unmapped.'.$basename);
+        $self->make_unmapped_bam($bam, $out_bam) || $self->throw("Failed to make an unmapped bam from $bam");
+        push(@merged_bams, $out_bam);
+    }
+    
     if ($created_bai) {
         unlink($bai);
     }
+    foreach my $bam (@out_bams) {
+        # these should already be gone, but unlink anyway
+        unlink($bam);
+    }
     
-    return @out_bams;
+    return @merged_bams;
 }
 
 =head2 add_sam_header
@@ -516,16 +580,17 @@ sub merge {
 =head2 stats
 
  Title   : stats
- Usage   : $obj->stats('in.bam', 'in2.bam', ...);
+ Usage   : $obj->stats('YYYYMMDD', 'in.bam', 'in2.bam', ...);
  Function: Generate both flagstat and bas files for the given bam files.
  Returns : boolean (true on success)
- Args    : list of bam files (for each, a .bas and .flagstat file will be
-           created)
+ Args    : YYYYMMDD format date string to signify the release date, list of bam
+           files (for each, a .bas and .flagstat file will be created)
 
 =cut
 
 sub stats {
-    my ($self, @in_bams) = @_;
+    my ($self, $release_date, @in_bams) = @_;
+    $release_date =~ /^\d{8}$/ || $self->throw("bad release date '$release_date'");
     
     my $wrapper = VertRes::Wrapper::samtools->new(verbose => $self->verbose);
     my $all_ok = 1;
@@ -541,7 +606,7 @@ sub stats {
         }
         
         my $bas = $in_bam.'.bas';
-        my $ok = $self->bas($in_bam, $bas.'.tmp');
+        my $ok = $self->bas($in_bam, $release_date, $bas.'.tmp');
         unless ($ok) {
             $all_ok = 0;
             unlink($bas);
@@ -557,18 +622,20 @@ sub stats {
 =head2 bas
 
  Title   : bas
- Usage   : $obj->bas('in.bam', 'out.bas');
+ Usage   : $obj->bas('in.bam', 'YYYYMMDD', 'out.bas');
  Function: Generate a 'bas' file. These are bam statistic files that provide
            various stats about each readgroup in a bam.
  Returns : boolean (true on success)
  Args    : input bam file (must have been run via samtools fillmd so that there
-           are accurate NM tags for each record), output filename, optionally a
-           sequence.index file from the DCC if working on bams with poor headers
+           are accurate NM tags for each record), YYYYMMDD string describing the
+           date of the release, output filename, optionally a sequence.index
+           file from the DCC if working on bams with poor headers
 
 =cut
 
 sub bas {
-    my ($self, $in_bam, $out_bas, $seq_index) = @_;
+    my ($self, $in_bam, $release_date, $out_bas, $seq_index) = @_;
+    $release_date =~ /^\d{8}$/ || $self->throw("bad release date '$release_date'");
     
     open(my $bas_fh, '>', $out_bas) || $self->throw("Couldn't write to '$out_bas': $!");
     
@@ -593,7 +660,7 @@ sub bas {
     
     # get the meta data
     my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
-    my $dcc_filename = $hu->dcc_filename($in_bam);
+    my $dcc_filename = $hu->dcc_filename($in_bam, $release_date);
     
     my $md5;
     my $md5_file = $in_bam.'.md5';
@@ -1480,12 +1547,13 @@ sub rewrite_bas_meta {
     keys %rg_changes || return 1;
     my %arg_to_col = (sample_name => 3,
                       library => 5,
+                      platform => 4,
                       project => 2,
                       md5 => 1);
-    # NAXXXXX.[chromN].technology.[center].algorithm.study_id.YYYY_MM.bam
+    # NAXXXXX.[chromN].technology.[center].algorithm.study_id.YYYYMMDD.bam
     my %arg_to_filename_regex = (sample_name => qr{^[^\.]+(\.)},
                                  platform => qr{(?:ABI_SOLID|ILLUMINA|LS454|SLX|454|SOLID)(\.)},
-                                 project => qr{[^\.]+(\.\d{4}_)});
+                                 project => qr{[^\.]+(\.\d{8})});
     
     my $temp_bas = $bas.'.rewrite_bas_meta.tmp.bas';
     $self->register_for_unlinking($temp_bas);
