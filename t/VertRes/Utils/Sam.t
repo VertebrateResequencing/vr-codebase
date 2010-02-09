@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 84;
+    use Test::Most tests => 86;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -246,9 +246,19 @@ $created_lines = 0;
 foreach my $split (@expected_splits) {
     $actually_created += -s $split ? 1 : 0;
     $created_lines += get_bam_body($split);
+    unlink($split);
 }
 is $actually_created, 26, 'split_bam_by_sequence defaults gives a nonchrom bam as well';
 is $created_lines, 2014, 'and the nonchrom gives us all entries';
+@splits = $sam_util->split_bam_by_sequence($headed_bam,
+                                           output_dir => $temp_dir,
+                                           pretend => 1);
+$actually_created = 0;
+foreach my $split (@expected_splits) {
+    $actually_created += -s $split ? 1 : 0;
+}
+is @splits, 26, 'split_bam_by_sequence can pretend to make all splits';
+is $actually_created, 0, 'split_bam_by_sequence pretend doesn\'t actually make any splits';
 
 # add_unmapped
 my $om_sam_orig = File::Spec->catfile('t', 'data', 'only_mapped.sam');

@@ -186,6 +186,8 @@ sub bams_are_similar {
                                      unmapped reads)
            output_dir => 'path' to specify where the split bams are created;
                          default is the same dir as the input bam
+           pretend => boolean (if true, don't actually do anything, just return
+                               what files would be made)
 
 =cut
 
@@ -228,7 +230,7 @@ sub split_bam_by_sequence {
     # we must have a bam index file
     my $bai = $bam.'.bai';
     my $created_bai = 0;;
-    unless (-s $bai) {
+    unless (-s $bai || $opts{pretend}) {
         $sw->index($bam, $bai);
         $sw->run_status >= 1 || $self->throw("Failed to create $bai");
         $created_bai = 1;
@@ -256,10 +258,11 @@ sub split_bam_by_sequence {
             push(@{$merges{$prefix}}, $out_bam);
         }
         
+        push(@out_bams, $out_bam);
+        next if $opts{pretend};
+        
         $sw->view($bam, $out_bam, regions => [$seq], h => 1, b => 1);
         $sw->run_status >= 1 || $self->throw("Failed to create split $out_bam");
-        
-        push(@out_bams, $out_bam);
     }
     
     # do merging (or just renaming if there is only 1 bam to merge)
@@ -267,6 +270,10 @@ sub split_bam_by_sequence {
     while (my ($prefix, $bams) = each %merges) {
         my @bams = @{$bams};
         my $out_bam = File::Spec->catfile($output_dir, $prefix.'.'.$basename);
+        
+        push(@merged_bams, $out_bam);
+        next if $opts{pretend};
+        
         if (@bams == 1) {
             move($bams[0], $out_bam);
         }
@@ -274,14 +281,16 @@ sub split_bam_by_sequence {
             $sw->merge_and_check($out_bam, $bams);
             $sw->run_status >= 1 || $self->throw("Failed to merge the bams for $out_bam");
         }
-        push(@merged_bams, $out_bam);
     }
     
     # make an unmapped bam
     if ($opts{make_unmapped}) {
         my $out_bam = File::Spec->catfile($output_dir, 'unmapped.'.$basename);
-        $self->make_unmapped_bam($bam, $out_bam) || $self->throw("Failed to make an unmapped bam from $bam");
         push(@merged_bams, $out_bam);
+        
+        unless ($opts{pretend}) {
+            $self->make_unmapped_bam($bam, $out_bam) || $self->throw("Failed to make an unmapped bam from $bam");
+        }
     }
     
     if ($created_bai) {
