@@ -37,6 +37,7 @@ data => {
     reference => '/abs/path/to/ref.fa',
     assembly_name => 'NCBI37',
     do_recalibration => 1,
+    release_date => '20100208'
 },
 
 # Reference option can be replaced with male_reference and female_reference
@@ -130,6 +131,7 @@ use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::File;
 use File::Basename;
+use Time::Format;
 use LSF;
 
 use base qw(VertRes::Pipeline);
@@ -193,6 +195,14 @@ our $split_dir_name = 'split';
                         supplied)
            assembly_name => 'NCBI36' (no default, must be set to the name of
                                       the reference)
+           release_date => 'YYYYMMDD' (defaults to todays date; used for getting
+                                       the DCC filename correct in .bas files -
+                                       should be the same date as of the DCC
+                                       sequence.index used. Not important if
+                                       not doing a DCC release afterwards.
+                                       Probably not important at all, since this
+                                       only affects lane-level bas files, which
+                                       are not released)
            
            other optional args as per VertRes::Pipeline
 
@@ -298,6 +308,10 @@ sub new {
     }
     $self->{mapstats_obj} = $mapping || $self->throw("Couldn't get an empty mapstats object for this lane from the database");
     $self->{mapstats_id} = $mapping->id;
+    
+    unless (defined $self->{release_date}) {
+        $self->{release_date} = "$time{'yyyymmdd'}"; 
+    }
     
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
@@ -997,6 +1011,7 @@ sub statistics {
     # setup filenames etc. we'll use within our temp script
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
+    my $release_date = $self->{release_date};
     
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
     # independantly.
@@ -1023,7 +1038,7 @@ foreach my \$stat_file (qw(@stat_files)) {
     \$num_present++ if -s \$stat_file;
 }
 unless (\$num_present == ($#stat_files + 1)) {
-    my \$ok = \$sam_util->stats('$bam_file');
+    my \$ok = \$sam_util->stats('$release_date', '$bam_file');
     
     unless (\$ok) {
         foreach my \$stat_file (qw(@stat_files)) {
