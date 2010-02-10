@@ -750,7 +750,8 @@ sub glue_vcf_chunks
     my ($self,$vcfs,$name) = @_;
 
     my $args = join(' ',@$vcfs);
-    return qq[
+
+    my $out = qq[
 use strict;
 use warnings;
 use Utils;
@@ -758,8 +759,18 @@ use Utils;
 Utils::CMD(qq[(zcat $$vcfs[0] | grep ^#; zcat $args | grep -v ^# | sort -k1,1 -k2,2n) | uniq | gzip -c > $name.vcf.gz.part]);
 Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
 rename('$name.vcf.gz.part','$name.vcf.gz') or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
-Utils::CMD(qq[rm -f $args]) or Utils::error("rm -f $args: \$!");
-    ];
+
+];
+
+    for my $file (@$vcfs)
+    {
+        if ( !($file=~/.vcf.gz$/) ) { $self->throw("Could not parse the chunk file name: $file"); }
+        my $chunk = $`;
+        $out .= qq[unlink('$file');\n]; 
+        $out .= qq[unlink('_$chunk.names');\n]; 
+    }
+
+    return $out;
 }
 
 
