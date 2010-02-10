@@ -913,10 +913,8 @@ sub format_genotype_strings
     if ( !exists($$rec{gtypes}) ) { return; }
 
     my $ref = $$rec{REF};
-    my %alts;
     my $nalts = 0;
-
-    for my $alt (@{$$rec{ALT}}) { $alts{$alt} = ++$nalts; }
+    my %alts;
 
     for my $key (keys %{$$rec{gtypes}})
     {
@@ -927,29 +925,39 @@ sub format_genotype_strings
         my $al2 = $3;
 
         if ( $al1 eq $ref ) { $al1 = 0; }
-        elsif ( exists($alts{$al1}) ) { $al1 = $alts{$al1} }
-        elsif ( $al1=~/^[ACGT]$/i ) 
+        else
         {
-            $alts{$al1} = ++$nalts;
-            $al1 = $nalts;
-        }
-        elsif ( !($al1=~/^\d+$/) && $al1 ne '.' )
-        {
-            $self->throw("Could not parse the genotype string [$gtype]\n");
+            if ( $al1=~/^\d+$/ ) { $al1 = $$rec{ALT}[$al1]; }
+
+            if ( exists($alts{$al1}) ) { $al1 = $alts{$al1} }
+            elsif ( $al1=~/^[ACGT]$/i ) 
+            {
+                $alts{$al1} = ++$nalts;
+                $al1 = $nalts;
+            }
+            elsif ( $al1 ne '.' )
+            {
+                $self->throw("Could not parse the genotype string [$gtype]\n");
+            }
         }
 
         if ( defined $al2 )
         {
             if ( $al2 eq $ref ) { $al2 = 0; }
-            elsif ( exists($alts{$al2}) ) { $al2 = $alts{$al2} }
-            elsif ( $al2=~/^[ACGT]$/i ) 
+            else
             {
-                $alts{$al2} = ++$nalts;
-                $al2 = $nalts;
-            }
-            elsif ( !($al2=~/^\d+$/) && $al2 ne '.' )
-            {
-                $self->throw("Could not parse the genotype string [$gtype]\n");
+                if ( $al2=~/^\d+$/ ) { $al2 = $$rec{ALT}[$al2]; }
+
+                if ( exists($alts{$al2}) ) { $al2 = $alts{$al2} }
+                elsif ( $al2=~/^[ACGT]$/i ) 
+                {
+                    $alts{$al2} = ++$nalts;
+                    $al2 = $nalts;
+                }
+                elsif ( $al2 ne '.' )
+                {
+                    $self->throw("Could not parse the genotype string [$gtype]\n");
+                }
             }
         }
         else
