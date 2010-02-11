@@ -352,7 +352,7 @@ sub next_data_hash
         if ( $check_nformat && @fields != @$format ) 
         {
             $self->warn("Different number of fields in the format and the column $$cols[$icol] at $items[0]:$items[1] ("
-                .scalar @fields." vs ".scalar @$format.")\n"); 
+                .scalar @fields." vs ".scalar @$format.": [",join(',',@fields),"] vs [",join(',',@$format),"])\n");
         }
         my %hash;
         for (my $ifield=0; $ifield<@fields; $ifield++)
