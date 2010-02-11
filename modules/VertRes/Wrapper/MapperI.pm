@@ -257,7 +257,7 @@ sub do_mapping {
     my $out_sam = delete $args{output};
     
     # setup reference-related files
-    #$self->setup_reference($ref_fa) || $self->throw("failed during the reference step");
+    $self->setup_reference($ref_fa) || $self->throw("failed during the reference step");
     
     # setup fastq-related files (may involve alignment)
     $self->setup_fastqs($ref_fa, @fqs) || $self->throw("failed during the fastq step");
