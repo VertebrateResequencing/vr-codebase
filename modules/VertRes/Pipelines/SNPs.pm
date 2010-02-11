@@ -758,7 +758,7 @@ use strict;
 use warnings;
 use Utils;
 # Take the VCF header from one file and sort the rest
-Utils::CMD(qq[(zcat $$vcfs[0] | grep ^#; zcat $args | grep -v ^# | sort -k1,1 -k2,2n) | uniq | gzip -c > $name.vcf.gz.part]);
+Utils::CMD(qq[(zcat $$vcfs[0] | grep ^#; zcat $args | grep -v ^# | sort -k1,1 -k2,2n) | $$self{vcf_rmdup} | gzip -c > $name.vcf.gz.part]);
 Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
 rename('$name.vcf.gz.part','$name.vcf.gz') or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
 
