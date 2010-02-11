@@ -36,6 +36,7 @@ our $options =
     bsub_opts       => "-q normal -M6000000 -R 'select[type==X86_64 && mem>6000] rusage[mem=6000]'",
     #bsub_opts_long  => "-q long -M7000000 -R 'select[type==X86_64 && mem>7000] rusage[mem=7000]'",
     bsub_opts_long  => "-q normal -M7000000 -R 'select[type==X86_64 && mem>7000] rusage[mem=7000]'",
+    fai_chr_regex   => '\d+|x|y',
     gatk_bin        => 'java -Xmx6500m -jar /nfs/users/nfs_p/pd3/sandbox/call-snps/gatk/GenomeAnalysisTK/GenomeAnalysisTK.jar',
     gatk_hets_prob  => 1e-4,
     gatk_confidence => 30,
@@ -65,6 +66,7 @@ our $options =
                     file_list       .. File name containing a list of bam files (e.g. the 17 mouse strains). 
                     fa_ref          .. The reference sequence in fasta format
                     fai_ref         .. The reference fai file to read the chromosomes and lengths.
+                    fai_chr_regex   .. The chromosomes to be processed.
                     gatk_bin        .. The command to launch GATK
                     gatk_confidence .. The -confidence option to UnifiedGenotyper
                     gatk_hets_prob  .. The -hets option to UnifiedGenotyper
@@ -151,7 +153,7 @@ sub read_chr_lengths
     my %chr_lengths;
     while (my $line=<$fh>)
     {
-        if ( !($line=~/^(\d+|x|y)\t(\d+)/i) ) { next; }
+        if ( !($line=~/^($$self{fai_chr_regex})\t(\d+)/i) ) { next; }
         $chr_lengths{$1} = $2;
     }
     close($fh);
