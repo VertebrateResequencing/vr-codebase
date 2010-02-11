@@ -1037,12 +1037,15 @@ sub create_release_hierarchy {
  Returns : string (filename without .bam suffix)
  Args    : absolute path to a platform-level release bam file, the release name
            date string (YYYYMMDD corresponding to the sequence.index the release
-           was made from)
+           was made from), and optionally a chrom string if the supplied bam
+           is unsplit, but you want to work out what the dcc filename of a
+           certain chromosmal split of that bam would be prior to actually
+           making the split bam.
 
 =cut
 
 sub dcc_filename {
-    my ($self, $file, $date_string) = @_;
+    my ($self, $file, $date_string, $given_chrom) = @_;
     $date_string || $self->throw("release date string must be supplied");
     
     # NAXXXXX.[chromN].technology.[center].algorithm.study_id.YYYYMMDD.bam
@@ -1134,14 +1137,20 @@ sub dcc_filename {
     
     my $bamname = basename($file);
     my $chrom = '';
-    if ($bamname =~ /^((?:chrom(?:\d+|[XY]|MT))|nonchrom|unmapped)\./) {
+    if ($given_chrom) {
+        if ($given_chrom =~ /^(?:\d+|[XY]|MT)$/) {
+            $given_chrom = 'chrom'.$given_chrom;
+        }
+        $chrom = "$given_chrom.";
+    }
+    elsif ($bamname =~ /^(chrom(?:\d+|[XY]|MT)|nonchrom|unmapped)\./) {
         $chrom = "$1.";
     }
     
     my $algorithm = $ps->program || 'unknown_algorithm';
-    if ($algorithm eq 'unknown_algorithm') {
+    if ($algorithm eq 'unknown_algorithm' || $algorithm =~ /^\d+$/) { # picard merge can fuck with program names, converting them to unique numbers
         if ($platform =~ /ILLUMINA/) {
-            $algorithm = 'maq';
+            $algorithm = 'bwa';
         }
         elsif ($platform =~ /454/) {
             $algorithm = 'ssaha2';
