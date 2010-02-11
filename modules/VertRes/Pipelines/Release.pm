@@ -20,6 +20,7 @@ data => {
     slx_mapper => 'bwa',
     '454_mapper' => 'ssaha',
     assembly_name => 'NCBI37',
+    release_date => '20100208',
     
     dcc_hardlinks => 1,
     do_cleanup => 1,
@@ -76,6 +77,7 @@ use strict;
 use warnings;
 use VertRes::Utils::Hierarchy;
 use VertRes::IO;
+use VertRes::Utils::Sam;
 use VertRes::Utils::FileSystem;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
@@ -84,6 +86,7 @@ use File::Spec;
 use File::Copy;
 use Cwd 'abs_path';
 use Date::Parse;
+use Time::Format;
 use LSF;
 
 use base qw(VertRes::Pipeline);
@@ -96,10 +99,10 @@ our $actions = [{ name     => 'create_release_hierarchy',
                   action   => \&library_merge,
                   requires => \&library_merge_requires, 
                   provides => \&library_merge_provides },
-                { name     => 'lib_rmdup',
-                  action   => \&lib_rmdup,
-                  requires => \&lib_rmdup_requires, 
-                  provides => \&lib_rmdup_provides },
+                { name     => 'lib_markdup',
+                  action   => \&lib_markdup,
+                  requires => \&lib_markdup_requires, 
+                  provides => \&lib_markdup_provides },
                 { name     => 'platform_merge',
                   action   => \&platform_merge,
                   requires => \&platform_merge_requires, 
@@ -120,6 +123,7 @@ our $actions = [{ name     => 'create_release_hierarchy',
 our %options = (do_cleanup => 0,
                 do_chr_splits => 0,
                 do_sample_merge => 0,
+                dcc_mode => 0,
                 bsub_opts => '',
                 dont_wait => 1,
                 previous_release_root => '');
@@ -140,9 +144,10 @@ our %options = (do_cleanup => 0,
 
            do_cleanup => boolean (default false: don't do the cleanup action)
            do_chr_splits => boolean (default false: don't split platform-level
-                                     or individual-level bams by chr)
-           dcc_hardlinks => boolean (default false: don't create hardlinks to
-                                     release files with DCC-style filenames)
+                                     bams by chr)
+           dcc_mode => boolean (default false; when true, implies do_chr_splits
+                                and renames the per-chr bams to the DCC naming
+                                convention)
            do_sample_merge => boolean (default false: don't create sample-level
                                        bams)
            skip_fails => boolean (default false; when true, if some jobs fail,
@@ -151,6 +156,13 @@ our %options = (do_cleanup => 0,
                                             change since the last release,
                                             bams are symlinked instead of being
                                             remade)
+           release_date => 'YYYYMMDD' (defaults to todays date; used for getting
+                                       the DCC filename correct in .bas files
+                                       and getting the release filenames correct
+                                       - should be the same date as of the DCC
+                                       sequence.index used. Not important if
+                                       not doing a DCC release (dcc_mode is
+                                       off); required if dcc_mode is on
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -166,8 +178,19 @@ sub new {
     $self->{'454_mapper'} || $self->throw("454_mapper not supplied, can't continue");
     $self->{assembly_name} || $self->throw("assembly_name not supplied, can't continue");
     
+    if ($self->{dcc_mode}) {
+        $self->{do_chr_splits} = 1;
+    }
+    
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
+    
+    if ($self->{dcc_mode}) {
+        $self->throw("release_date must be supplied in dcc_mode") unless defined $self->{release_date};
+    }
+    unless (defined $self->{release_date}) {
+        $self->{release_date} = "$time{'yyyymmdd'}"; 
+    }
     
     $self->{vrtrack} = VRTrack::VRTrack->new($self->{db});
     
@@ -307,77 +330,82 @@ sub library_merge {
 }
 
 
-=head2 lib_rmdup_requires
+=head2 lib_markdup_requires
 
- Title   : lib_rmdup_requires
- Usage   : my $required_files = $obj->lib_rmdup_requires('/path/to/lane');
- Function: Find out what files the lib_rmdup action needs before it will run.
+ Title   : lib_markdup_requires
+ Usage   : my $required_files = $obj->lib_markdup_requires('/path/to/lane');
+ Function: Find out what files the lib_markdup action needs before it will run.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub lib_rmdup_requires {
+sub lib_markdup_requires {
     my $self = shift;
     return ['.library_merge_done'];
 }
 
-=head2 lib_rmdup_provides
+=head2 lib_markdup_provides
 
- Title   : lib_rmdup_provides
- Usage   : my $provided_files = $obj->lib_rmdup_provides('/path/to/lane');
- Function: Find out what files the lib_rmdup action generates on success.
+ Title   : lib_markdup_provides
+ Usage   : my $provided_files = $obj->lib_markdup_provides('/path/to/lane');
+ Function: Find out what files the lib_markdup action generates on success.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub lib_rmdup_provides {
+sub lib_markdup_provides {
     my $self = shift;
-    return ['.lib_rmdup_done'];
+    return ['.lib_markdup_done'];
 }
 
-=head2 lib_rmdup
+=head2 lib_markdup
 
- Title   : lib_rmdup
- Usage   : $obj->lib_rmdup('/path/to/lane', 'lock_filename');
- Function: Remove duplicates at the library level.
+ Title   : lib_markdup
+ Usage   : $obj->lib_markdup('/path/to/lane', 'lock_filename');
+ Function: Marks duplicates at the library level.
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : lane path, name of lock file to use
 
 =cut
 
-sub lib_rmdup {
+sub lib_markdup {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $fofn = $self->{fsu}->catfile($lane_path, '.library_merge_done');
     my @files = $self->{io}->parse_fofn($fofn, $lane_path);
     my $verbose = $self->verbose();
     
-    my @rmdup_bams;
+    my $orig_bsub_opts = $self->{bsub_opts};
+    $self->{bsub_opts} = '-q normal -M5100000 -R \'select[mem>5100] rusage[mem=5100]\'';
+    
+    my @markdup_bams;
     foreach my $merge_bam (@files) {
         $merge_bam = $self->{fsu}->catfile($lane_path, $merge_bam);
         my ($library, $basename) = (File::Spec->splitdir($merge_bam))[-2..-1];
         
-        my $rmdup_bam = $merge_bam;
-        $rmdup_bam =~ s/\.bam$/.rmdup.bam/;
-        push(@rmdup_bams, $rmdup_bam);
-        next if -s $rmdup_bam;
+        my $markdup_bam = $merge_bam;
+        $markdup_bam =~ s/\.bam$/.markdup.bam/;
+        push(@markdup_bams, $markdup_bam);
+        next if -s $markdup_bam;
         
         my $single_ended = $basename =~ /^se_/ ? 1 : 0;
         
-        LSF::run($action_lock, $lane_path, $self->{prefix}.'lib_rmdup', $self,
-                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->rmdup(qq[$merge_bam], qq[$rmdup_bam], single_ended => $single_ended) || die qq[rmdup failed for $merge_bam\n];"});
+        LSF::run($action_lock, $lane_path, $self->{prefix}.'lib_markdup', $self,
+                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->markdup(qq[$merge_bam], qq[$markdup_bam]) || die qq[markdup failed for $merge_bam\n];"});
     }
     
-    my $out_fofn = $self->{fsu}->catfile($lane_path, '.lib_rmdup_expected');
+    my $out_fofn = $self->{fsu}->catfile($lane_path, '.lib_markdup_expected');
     open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
-    foreach my $out_bam (@rmdup_bams) {
+    foreach my $out_bam (@markdup_bams) {
         print $ofh $out_bam, "\n";
     }
-    my $expected = @rmdup_bams;
+    my $expected = @markdup_bams;
     print $ofh "# expecting $expected\n";
     close($ofh);
+    
+    $self->{bsub_opts} = $orig_bsub_opts;
     
     return $self->{No};
 }
@@ -394,7 +422,7 @@ sub lib_rmdup {
 
 sub platform_merge_requires {
     my $self = shift;
-    return ['.lib_rmdup_done'];
+    return ['.lib_markdup_done'];
 }
 
 =head2 platform_merge_provides
@@ -427,7 +455,7 @@ sub platform_merge {
     
     $self->merge_up_one_level($lane_path,
                               $action_lock,
-                              '.lib_rmdup_done',
+                              '.lib_markdup_done',
                               'raw.bam',
                               'platform_merge',
                               '.platform_merge_expected',
@@ -587,12 +615,12 @@ sub merge_up_one_level {
                     
                     # symlink the other files we might have made from that bam
                     # in other actions
-                    my $prev_rmdup_bam = $previous_bam;
-                    $prev_rmdup_bam =~ s/\.bam$/.rmdup.bam/;
-                    if (-s $prev_rmdup_bam) {
-                        my $cur_rmdup_bam = $out_bam;
-                        $cur_rmdup_bam =~ s/\.bam$/.rmdup.bam/;
-                        symlink($prev_rmdup_bam, $cur_rmdup_bam);
+                    my $prev_markdup_bam = $previous_bam;
+                    $prev_markdup_bam =~ s/\.bam$/.markdup.bam/;
+                    if (-s $prev_markdup_bam) {
+                        my $cur_markdup_bam = $out_bam;
+                        $cur_markdup_bam =~ s/\.bam$/.markdup.bam/;
+                        symlink($prev_markdup_bam, $cur_markdup_bam);
                     }
                     
                     foreach my $suffix2 ('', '.md5') {
@@ -605,7 +633,8 @@ sub merge_up_one_level {
                         }
                     }
                     
-                    # *** splits?....
+                    # we don't merge split bams; we merge the parent, and split
+                    # the merge if we want to
                 }
             }
         }
@@ -688,7 +717,7 @@ sub create_release_files_requires {
 sub create_release_files_provides {
     my ($self, $lane_path) = @_;
     my @files = ('.create_release_files_done');
-    if ($self->{dcc_hardlinks}) {
+    if ($self->{dcc_mode}) {
         push(@files, 'release_files.fofn', 'release_files.md5');
     }
     return \@files;
@@ -698,16 +727,19 @@ sub create_release_files_provides {
 
  Title   : create_release_files
  Usage   : $obj->create_release_files('/path/to/lane', 'lock_filename');
- Function: Creates the set of platform-level files that form the release and
-           would be uploaded to the DCC. That is, .bai and .bas files are made
-           for each platform-level bam. .md5 files are made for all 3. If the
-           dcc_hardlinks option is supplied, will also make hardlinks to these
-           release files to give them DCC-style filenames. Always also makes
-           softlinks to the release files prefixed with 'release' (release.bam,
-           release.bam.bai, release.bam.bas), so that it is consistent to find
-           them.
+ Function: Creates the set of platform-level files that form the release. That
+           is, .bai and .bas files are made for each platform-level bam. .md5
+           files are made for all 3. Also makes softlinks to the release files
+           prefixed with 'release' (release.bam, release.bam.bai,
+           release.bam.bas), so that it is consistent to find them.
 
-           At the end, if dcc_hardlinks option was supplied, will create two
+           If the dcc_mode option is supplied, will also do per-chr splits and
+           rename these to DCC-style filenames. Otherwise, if do_chr_splits was
+           supplied, will just do the splits and leave them with Sanger-style
+           filenames. In either case, .bai and .bas files are made for each
+           per-chr bam.
+
+           At the end, if dcc_mode option was supplied, will create two
            files in the root of the release directory: release_files.fofn
            (listing all the DCC-filenamed release files minus the md5s) and
            release_files.md5 (containing all the md5 checksums for the release
@@ -725,10 +757,11 @@ sub create_release_files {
     
     my $out_fofn = $self->{fsu}->catfile($lane_path, '.create_release_files_expected');
     unlink($out_fofn);
-    if ($self->{dcc_hardlinks}) {
+    if ($self->{dcc_mode}) {
         unlink($self->{fsu}->catfile($lane_path, 'release_files.fofn'));
         unlink($self->{fsu}->catfile($lane_path, 'release_files.md5'));
     }
+    my $vuh = VertRes::Utils::Hierarchy->new();
     
     my $verbose = $self->verbose;
     
@@ -757,7 +790,7 @@ sub create_release_files {
         my $bai_md5 = $bai.'.md5';
         unless (-s $bai && -s $bai_md5) {
             LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
-                     qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$bam], qq[$bai]); die qq[index failed for $bam\n] unless -s qq[$bai]; system(qq[md5sum $bai > $bai_md5; ln -s $basename.bai $release_name.bai]);"});
+                     qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$bam], qq[$bai.tmp]); die qq[index failed for $bam\n] unless -s qq[$bai.tmp]; system(qq[mv $bai.tmp $bai; md5sum $bai > $bai_md5; ln -s $basename.bai $release_name.bai]);"});
         }
         elsif (! -e "$release_name.bai") {
             symlink("$basename.bai", "$release_name.bai");
@@ -769,12 +802,97 @@ sub create_release_files {
         my $bas_md5 = $bas.'.md5';
         unless (-s $bas && -s $bas_md5) {
             LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
-                     qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$bas]); die qq[bas failed for $bam\n] unless -s qq[$bas]; system(qq[md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"}); # , qq[$self->{sequence_index}] bas() needs a database option?
+                     qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$self->{release_date}], qq[$bas]); die qq[bas failed for $bam\n] unless -s qq[$bas]; system(qq[md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"}); # , qq[$self->{sequence_index}] bas() needs a database option?
         }
         elsif (! -e "$release_name.bas") {
             symlink("$basename.bas", "$release_name.bas");
         }
         push(@release_files, $bas, $bas_md5);
+        
+        # chr splits
+        if ($self->{do_chr_splits}) {
+            my $su = VertRes::Utils::Sam->new();
+            my @expected_split_bams = $su->split_bam_by_sequence($bam, pretend => 1);
+            my @orig_split_bams = @expected_split_bams;
+            
+            my $bams = 0;
+            foreach my $ebam (@expected_split_bams) {
+                push(@release_files, $ebam) unless $self->{dcc_mode};
+                $bams += -s $ebam ? 1 : 0;
+                
+                unless ($self->{dcc_mode}) {
+                    foreach my $suffix ('.md5', '.bai', '.bai.md5', '.bas', '.bas.md5') {
+                        push(@release_files, $ebam.$suffix);
+                    }
+                }
+            }
+            
+            my $dcc_bams = 0;
+            if ($self->{dcc_mode}) {
+                
+                my @expected_dcc_bams;
+                foreach my $ebam (@expected_split_bams) {
+                    my $basename = basename($ebam);
+                    my ($chr) = $basename =~ /^([^\.]+)/;
+                    my $dcc_filename = $vuh->dcc_filename($bam, $self->{release_date}, $chr).'.bam';
+                    
+                    my $dccbam = $ebam;
+                    $dccbam =~ s/$basename$/$dcc_filename/;
+                    push(@release_files, $dccbam);
+                    push(@expected_dcc_bams, $dccbam);
+                    $dcc_bams += -s $dccbam ? 1 : 0;
+                    
+                    foreach my $suffix ('.md5', '.bai', '.bai.md5', '.bas', '.bas.md5') {
+                        push(@release_files, $dccbam.$suffix);
+                    }
+                }
+                @expected_split_bams = @expected_dcc_bams;
+            }
+            else {
+                $dcc_bams = $bams;
+            }
+            
+            unless ($dcc_bams == @expected_split_bams) {
+                if ($bams == @expected_split_bams && $self->{dcc_mode}) {
+                    # rename to dcc
+                    foreach my $i (0..$#orig_split_bams) {
+                        move($orig_split_bams[$i], $expected_split_bams[$i]);
+                    }
+                }
+                elsif (-s $bai) {
+                    LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
+                             qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->split_bam_by_sequence(qq[$bam]);"});
+                }
+            }
+            else {
+                $self->{bsub_opts} = '-q normal';
+                foreach my $ebam (@expected_split_bams) {
+                    # md5
+                    my $emd5 = $ebam.'.md5';
+                    unless (-s $emd5) {
+                        $self->{bsub_opts} = '-q small';
+                        LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self, qq{md5sum $ebam > $emd5});
+                        $self->{bsub_opts} = '-q normal';
+                    }
+                    
+                    # bai & its md5
+                    my $ebai = $ebam.'.bai';
+                    my $ebai_md5 = $ebai.'.md5';
+                    unless (-s $ebai && -s $ebai_md5) {
+                        LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
+                                 qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$ebam], qq[$ebai.tmp]); die qq[index failed for $ebam\n] unless -s qq[$ebai.tmp]; system(qq[mv $ebai.tmp $ebai; md5sum $ebai > $ebai_md5]);"});
+                    }
+                    
+                    # bas & its md5
+                    my $ebas = $ebam.'.bas';
+                    my $ebas_md5 = $ebas.'.md5';
+                    unless (-s $ebas && -s $ebas_md5) {
+                        LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
+                                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$ebam], qq[$self->{release_date}], qq[$ebas]); die qq[bas failed for $ebam\n] unless -s qq[$ebas]; system(qq[md5sum $ebas > $ebas_md5]);"});
+                    }
+                }
+            }
+        }
     }
     
     open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
@@ -843,7 +961,7 @@ sub cleanup {
     }
     
     my $file_base = $self->{fsu}->catfile($lane_path, $prefix);
-    foreach my $job_base (qw(library_merge lib_rmdup platform_merge create_release_files sample_merge)) {
+    foreach my $job_base (qw(library_merge lib_markdup platform_merge create_release_files sample_merge)) {
         foreach my $suffix ('o', 'e') {
             unlink("$file_base$job_base.$suffix");
         }
@@ -860,7 +978,7 @@ sub is_finished {
     if ($action_name eq 'cleanup') {
         return $self->{No};
     }
-    elsif ($action_name eq 'lib_rmdup' ||
+    elsif ($action_name eq 'lib_markdup' ||
             $action_name eq 'library_merge' ||
             $action_name eq 'platform_merge' ||
             $action_name eq 'sample_merge' ||
@@ -871,7 +989,7 @@ sub is_finished {
     }
     
     if ($action_name eq 'create_release_files' &&
-            $self->{dcc_hardlinks} &&
+            $self->{dcc_mode} &&
             -s $self->{fsu}->catfile($lane_path, ".create_release_files_done") &&
             ! -s $self->{fsu}->catfile($lane_path, "release_files.fofn")) {
         my $vuh = VertRes::Utils::Hierarchy->new();
@@ -885,11 +1003,8 @@ sub is_finished {
         
         my $rdone = $self->{fsu}->catfile($lane_path, ".create_release_files_done");
         open(my $rdfh, $rdone) || $self->throw("Couldn't open $rdone");
-        my $dcc_filename;
-        my $orig_name;
         local $| = 1;
-        print "making links ";
-        my $doti = 0;
+        my $spin = 0;
         while (<$rdfh>) {
             chomp;
             /\S/ || next;
@@ -897,24 +1012,26 @@ sub is_finished {
             my $file = $_;
             my ($base, $path) = fileparse($file);
             
-            $doti++;
-            if ($doti == 1) {
-                print "\b\b\b.  ";
-            }
-            elsif ($doti == 2) {
-                print "\b\b.. ";
-            }
-            if ($doti == 3) {
-                print "\b...";
-                $doti = 0;
-            }
+            # only interested in splits
+            $base =~ /\.(?:chrom(?:\d+|[XY]|MT)|nonchrom|unmapped)\./ || next;
             
-            if (/bam$/) {
-                $dcc_filename = $vuh->dcc_filename($file).'.bam';
-                $orig_name = $base;
+            $spin++;
+            if ($spin == 1) {
+                print "\b-";
             }
-            
-            $base =~ s/$orig_name/$dcc_filename/;
+            elsif ($spin == 2) {
+                print "\b\\";
+            }
+            elsif ($spin == 3) {
+                print "\b|";
+            }
+            elsif ($spin == 4) {
+                print "\b/";
+            }
+            elsif ($spin == 5) {
+                print "\b-";
+                $spin = 0;
+            }
             
             if ($file =~ /md5$/) {
                 open(my $md5fh, $file) || $self->throw("Couldn't open $_");
@@ -925,11 +1042,7 @@ sub is_finished {
                 close($md5fh);
             }
             else {
-                # make hardlink to DCC-style filename
-                my $dcc_path = $self->{fsu}->catfile($path, $base);
-                unlink($dcc_path);
-                system("ln $file $dcc_path");
-                print $rfofnfh $dcc_path, "\n";
+                print $rfofnfh $file, "\n";
             }
         }
         close($rdfh);
