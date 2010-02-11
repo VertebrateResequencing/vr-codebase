@@ -914,7 +914,7 @@ sub format_genotype_strings
 
     my $ref = $$rec{REF};
     my $nalts = 0;
-    my %alts;
+    my %alts  = ();
 
     for my $key (keys %{$$rec{gtypes}})
     {
@@ -927,7 +927,7 @@ sub format_genotype_strings
         if ( $al1 eq $ref ) { $al1 = 0; }
         else
         {
-            if ( $al1=~/^\d+$/ ) { $al1 = $$rec{ALT}[$al1]; }
+            if ( $al1=~/^\d+$/ ) { $al1 = $$rec{ALT}[$al1-1]; }
 
             if ( exists($alts{$al1}) ) { $al1 = $alts{$al1} }
             elsif ( $al1=~/^[ACGT]$/i ) 
@@ -946,7 +946,7 @@ sub format_genotype_strings
             if ( $al2 eq $ref ) { $al2 = 0; }
             else
             {
-                if ( $al2=~/^\d+$/ ) { $al2 = $$rec{ALT}[$al2]; }
+                if ( $al2=~/^\d+$/ ) { $al2 = $$rec{ALT}[$al2-1]; }
 
                 if ( exists($alts{$al2}) ) { $al2 = $alts{$al2} }
                 elsif ( $al2=~/^[ACGT]$/i ) 
