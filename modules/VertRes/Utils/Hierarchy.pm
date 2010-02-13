@@ -554,7 +554,14 @@ sub get_lanes {
         }
     }
     
-    return @good_lanes;
+    # filter out withdrawn lanes
+    my @active;
+    foreach my $lane (@good_lanes) {
+        next if $lane->is_withdrawn;
+        push(@active, $lane);
+    }
+
+    return @active;
 }
 
 =head2 check_lanes_vs_database
