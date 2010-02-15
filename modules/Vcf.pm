@@ -924,7 +924,7 @@ sub format_genotype_strings
         my $sep = $2;
         my $al2 = $3;
 
-        if ( $al1 eq $ref ) { $al1 = 0; }
+        if ( $al1 eq $ref || $al1 eq '0' ) { $al1 = 0; }
         else
         {
             if ( $al1=~/^\d+$/ ) { $al1 = $$rec{ALT}[$al1-1]; }
@@ -943,7 +943,7 @@ sub format_genotype_strings
 
         if ( defined $al2 )
         {
-            if ( $al2 eq $ref ) { $al2 = 0; }
+            if ( $al2 eq $ref || $al2 eq '0' ) { $al2 = 0; }
             else
             {
                 if ( $al2=~/^\d+$/ ) { $al2 = $$rec{ALT}[$al2-1]; }
