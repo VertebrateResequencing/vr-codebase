@@ -11,8 +11,8 @@ VertRes::Wrapper::srprism - wrapper for srprism
 # supposed to run in under 8GB, but using more than 10?
 
 srprism mkindex -i reference.fa -o reference -M 7168 
-srprism search --trace-level info -I reference -i "1.fq,2.fq" -F fastq \
--n 2 -R 0 -r 2 -M 7168 -p true -s 300 -f 300 -o out -O sam 
+srprism search-uniq --trace-level info -I reference -i "1.fq,2.fq" -F fastq \
+-n 2 -R 0 -M 7168 -p true -s 300 -f 300 -o out
 
 =head1 AUTHOR
 
@@ -43,7 +43,7 @@ use base qw(VertRes::Wrapper::MapperI);
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/srprism/app/srprism');
+    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/srprism_uniq/app/srprism');
     
     return $self;
 }
@@ -151,7 +151,7 @@ sub generate_sam {
             $fq =~ s/\.gz$//;
         }
         
-        $self->simple_run("search -i \"$fqs[0],$fqs[1]\" -F fastq -I $ref --trace-level info -o $out -O sam -n 2 -R 0 -r 2 -M 7168 -p true -s 300 -f 300");
+        $self->simple_run("search-uniq --trace-level info -I $ref -i \"$fqs[0],$fqs[1]\" -F fastq -n 2 -R 0 -M 7168 -p true -s 300 -f 300 -o $out");
     }
     
     return -s $out ? 1 : 0;
@@ -170,11 +170,8 @@ sub generate_sam {
 
 sub add_unmapped {
     my $self = shift;
-    
-    # could filter out non unique best hits?
-    # gawk '{if($5==100){print}}' the.sam > the.sam.uniq
-    
-    return $self->SUPER::add_unmapped(@_);
+    return 1;
+    #return $self->SUPER::add_unmapped(@_);
 }
 
 =head2 do_mapping
