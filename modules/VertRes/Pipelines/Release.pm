@@ -21,6 +21,7 @@ data => {
     '454_mapper' => 'ssaha',
     assembly_name => 'NCBI37',
     release_date => '20100208',
+    simultaneous_merges => 200,
     
     dcc_hardlinks => 1,
     do_cleanup => 1,
@@ -123,6 +124,7 @@ our $actions = [{ name     => 'create_release_hierarchy',
 our %options = (do_cleanup => 0,
                 do_chr_splits => 0,
                 do_sample_merge => 0,
+                simultaneous_merges => 200,
                 dcc_mode => 0,
                 bsub_opts => '',
                 dont_wait => 1,
@@ -148,6 +150,9 @@ our %options = (do_cleanup => 0,
            dcc_mode => boolean (default false; when true, implies do_chr_splits
                                 and renames the per-chr bams to the DCC naming
                                 convention)
+           simultaneous_merges => int (default 200; the number of merge jobs to
+                                       do at once - limited to avoid IO
+                                       problems)
            do_sample_merge => boolean (default false: don't create sample-level
                                        bams)
            skip_fails => boolean (default false; when true, if some jobs fail,
@@ -322,7 +327,8 @@ sub library_merge {
                               '.release_hierarchy_made',
                               undef,
                               'library_merge',
-                              '.library_merge_expected');
+                              '.library_merge_expected',
+                              'long');
     
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete
@@ -573,6 +579,7 @@ sub merge_up_one_level {
     
     my @out_bams;
     my %lane_paths;
+    my $jobs = 0;
     while (my ($group, $bams) = each %grouped_bams) {
         my @bams = @{$bams};
         @bams || next;
@@ -641,8 +648,13 @@ sub merge_up_one_level {
         
         next if -s $out_bam;
         
+        # don't do more than desired merges at once, or we'll kill IO and jobs
+        # will fail
+        next if $jobs >= $self->{simultaneous_merges};
+	
         LSF::run($action_lock, $lane_path, $self->{prefix}.$job_name, $self,
                  qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->merge(qq[$out_bam], qw(@bams)) || die qq[merge failed for (@bams) -> $out_bam\n];"});
+        $jobs++;
     }
     
     open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
