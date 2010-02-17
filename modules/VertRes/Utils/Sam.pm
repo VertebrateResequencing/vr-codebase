@@ -593,21 +593,25 @@ sub merge {
     
     unlink($out_bam);
     
+    my ($basename, $path) = fileparse($out_bam);
     if (@in_bams == 1) {
-        # we want a relative symlink, so get the path of out_bam and make the
+        # we want a relative symlink, so use the path of out_bam and make the
         # symlink relative to that
-        my ($basename, $base) = fileparse($out_bam);
-        my $rel_path = File::Spec->abs2rel($in_bams[0], $base);
+        my $rel_path = File::Spec->abs2rel($in_bams[0], $path);
         return symlink($rel_path, $out_bam);
     }
     
+    # picard needs a tmp dir for merging, but we don't use /tmp because it's
+    # likely to fill up
     my $fsu = VertRes::Utils::FileSystem->new();
+    my $tmp_dir = $fsu->tempdir('_merge_tmp_XXXXXX', DIR => $path);
+    
     my $verbose = $self->verbose();
     my $wrapper = VertRes::Wrapper::picard->new(verbose => $verbose,
                                                 quiet => $verbose ? 0 : 1,
                                                 $self->{java_memory} ? (java_memory => $self->{java_memory}) : (),
                                                 validation_stringency => 'silent',
-                                                tmp_dir => $fsu->tempdir());
+                                                tmp_dir => $tmp_dir);
     
     $wrapper->merge_and_check($out_bam, \@in_bams);
     
