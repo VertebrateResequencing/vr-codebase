@@ -188,9 +188,9 @@ sub tempfile {
  Title   : tempdir
  Usage   : my $tempdir = $obj->tempdir(); 
  Function: Creates and returns the name of a new temporary directory. Just an
-           alias to File::Temp::tempdir.
+           alias to File::Temp::newdir.
  Returns : The name of a new temporary directory.
- Args    : as per File::Temp::tempdir
+ Args    : as per File::Temp::newdir
 
 =cut
 
