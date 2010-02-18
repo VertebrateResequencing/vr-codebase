@@ -555,11 +555,13 @@ sub gatk_merge_chunks
 {
     my ($self,$chunks,$name) = @_;
 
+    my $header;
     my $files;
     for my $chunk (@$chunks)
     {
         my $chunk_name = $name.'_'.$chunk;
         $files .= " $chunk_name.vcf.gz";
+        if ( !$header ) { $header = "$chunk_name.vcf.gz"; }
     }
 
     return qq[
@@ -569,7 +571,8 @@ use Utils;
 
 if ( ! -e "$name.vcf.gz" )
 {
-    Utils::CMD("zcat $files | grep -v ^# | sort -k1,1 -k2,2n | $$self{vcf_rmdup} -d DoC | gzip -c > $name.vcf.gz.part");
+    # Take the VCF header from one file and sort the rest
+    Utils::CMD("(zcat $header | grep ^#; zcat $files | grep -v ^# | sort -k1,1 -k2,2n) | $$self{vcf_rmdup} -d DoC | gzip -c > $name.vcf.gz.part");
     Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
     rename("$name.vcf.gz.part","$name.vcf.gz") or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
     Utils::CMD("rm -f $files");
