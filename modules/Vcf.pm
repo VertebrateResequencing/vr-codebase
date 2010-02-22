@@ -513,21 +513,16 @@ sub _add_field
 sub _add_filter_field
 {
     my ($self,$string) = @_;
-    my @values = split(/,/,$string);
-    if ( @values < 1 ) { $self->throw("Could not parse [FILTER=$string].\n"); }
-    elsif ( @values < 2 ) { $self->warn("No description in [FILTER=$string].\n"); } 
 
-    if ( @values>2 ) 
-    { 
-        $self->warn("The FILTER fields expects semi-colons, not commas [FILTER=$string].\n"); 
-        return;
-    }
-    
-    if ( exists($$self{header}{'FILTER'}{$values[0]}) ) { $self->warn("The field specified twice [FILTER=$string].\n"); }
-    $$self{header}{'FILTER'}{$values[0]} = 
+    if ( !($string=~/^([^,]+),"(.+)"$/) ) { $self->throw("Could not parse [FILTER=$string].\n"); }
+    my $name = $1;
+    my $desc = $2;
+
+    if ( exists($$self{header}{'FILTER'}{$name}) ) { $self->warn("The field specified twice [FILTER=$string].\n"); }
+    $$self{header}{'FILTER'}{$name} = 
     {
-        name    => $values[0],
-        desc    => $values[1],
+        name    => $name,
+        desc    => $desc,
     };
 }
 
