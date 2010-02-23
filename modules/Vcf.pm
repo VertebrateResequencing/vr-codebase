@@ -202,6 +202,7 @@ sub new
     $$self{columns}   = undef;    # column names 
     $$self{mandatory} = ['CHROM','POS','ID','REF','ALT','QUAL','FILTER','INFO','FORMAT'] unless exists($$self{mandatory}); 
     $$self{recalc_ac_an} = 1;
+    $$self{has_header} = 0;
 
     if ( $$self{version} > 3.2 )
     {
@@ -454,6 +455,8 @@ sub _next_header_line
         }
     }
 
+    $$self{has_header} = 1;
+
     return $line;
 }
 
@@ -636,6 +639,7 @@ sub format_header
         }
     }
 
+    if ( !($out=~/^##fileformat=/) ) { $out = "##fileformat=VCFv$$self{version}\n" . $out; }
     if ( !$$self{columns} ) { return $out; }
 
     my @out_cols;
