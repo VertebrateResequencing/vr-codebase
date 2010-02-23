@@ -320,23 +320,49 @@ sub index {
 
  Title   : faidx
  Usage   : $wrapper->faidx('in.fa');
+           my ($seq1, $seq2) = $wrapper->faidx('ref.fa', '1:1-5', '2:1-5');
  Function: faidx...
- Returns : n/a (creates 'in.fa.fai')
- Args    : paths to input fasta
+ Returns : no regions: n/a (creates 'in.fa.fai')
+           regions: list of strings (reference bases, undef if region invalid)
+ Args    : path to input fasta (only, to generate .fai file), optionally one or
+           more region strings to get back the reference bases in that region.
+           region specifications are strings like '1' for all of chr1, '1:20'
+           for chr1 position 20 onward, and '1:20-21' to get the 2 bases at
+           positions 20 and 21. Positions are 1-based.
 
 =cut
 
 sub faidx {
-    my ($self, $in_fa) = @_;
+    my ($self, $in_fa, @regions) = @_;
     
     $self->exe($self->{base_exe}.' faidx');
     
     $self->switches([]);
     $self->params([]);
     
-    $self->register_output_file_to_check($in_fa.'.fai');
     
-    return $self->run($in_fa);
+    my @files = ($in_fa);
+    if (@regions) {
+        push(@files, @regions);
+        my $orig_method = $self->run_method;
+        $self->run_method('open');
+        
+        my $fh = $self->run(@files);
+        my @seqs;
+        while (<$fh>) {
+            chomp;
+            next if /^>/;
+            push(@seqs, $_);
+        }
+        close($fh);
+        
+        $self->run_method($orig_method);
+        return @seqs;
+    }
+    else {
+        $self->register_output_file_to_check($in_fa.'.fai');
+        return $self->run(@files);
+    }
 }
 
 =head2 fixmate
