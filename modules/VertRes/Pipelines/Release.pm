@@ -384,7 +384,7 @@ sub lib_markdup {
     my $verbose = $self->verbose();
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M5100000 -R \'select[mem>5100] rusage[mem=5100]\'';
+    $self->{bsub_opts} = '-q long -M5100000 -R \'select[mem>5100] rusage[mem=5100]\'';
     
     my @markdup_bams;
     foreach my $merge_bam (@files) {
