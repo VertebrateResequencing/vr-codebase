@@ -517,7 +517,7 @@ sub _add_filter_field
 {
     my ($self,$string) = @_;
 
-    if ( !($string=~/^([^,]+),"(.+)"$/) ) { $self->throw("Could not parse [FILTER=$string].\n"); }
+    if ( !($string=~/^(.+),"(.+)"$/) ) { $self->throw("Could not parse [FILTER=$string].\n"); }
     my $name = $1;
     my $desc = $2;
 
@@ -994,7 +994,7 @@ sub validate_filter_field
         if ( $item=~/,/ ) { push @errs,"Expected semicolon as a separator."; }
         if ( exists($$self{header}{FILTER}{$item}) ) { next; }
         push @missing, $item;
-        $self->_add_filter_field("$item,No description");
+        $self->_add_filter_field(qq[$item,"No description"]);
     }
     if ( !@errs ) { return undef; }
     if ( $$self{version}<3.3 ) { return undef; }
