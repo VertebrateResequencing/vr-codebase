@@ -664,7 +664,11 @@ sub displayProjectPage
     {
         my $sample = $_;
         my $sname = $sample->name;
-        my $is_ours = $sample->is_sanger_sample();
+        my $is_ours = 1;
+        if( defined( $sample->study() ) )
+        {
+        	$is_ours = $sample->is_sanger_sample();
+        }
         
         print qq[
             <tr>
