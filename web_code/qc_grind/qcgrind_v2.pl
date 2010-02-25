@@ -665,7 +665,7 @@ sub displayProjectPage
         my $sample = $_;
         my $sname = $sample->name;
         my $is_ours = 1;
-        if( defined( $sample->study() ) )
+        if( defined( $project->study() ) )
         {
         	$is_ours = $sample->is_sanger_sample();
         }
