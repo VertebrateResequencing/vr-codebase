@@ -338,9 +338,13 @@ sub next_data_hash
         $out{$$cols[7]} = \%hash;
     }
 
-    # Format, e.g. GT:GQ:DP:HQ
-    my $format = $out{$$cols[8]} = [ split(/:/,$items[8]) ];
-    if ( !$$format[0] || $$format[0] ne 'GT' ) { $self->warn("Expected GT as the first genotype field at $items[0]:$items[1]\n"); }
+    # The format field may not be present. GT:GQ:DP:HQ
+    my $format;
+    if ( $$cols[8] || $items[8] )
+    {
+        $format = $out{$$cols[8]} = [ split(/:/,$items[8]) ];
+        if ( !$$format[0] || $$format[0] ne 'GT' ) { $self->warn("Expected GT as the first genotype field at $items[0]:$items[1]\n"); } 
+    }
 
     # Genotype fields
     my %gtypes;
@@ -565,7 +569,7 @@ sub _read_column_names
     }
 
     my $fields  = $$self{mandatory};
-    my $nfields = scalar @$fields;
+    my $nfields = scalar @$fields - 1;  # The FORMAT field is in fact not mandatory
 
     # Check the names of the mandatory columns
     if ( $ncols < $nfields ) { chomp($line); $self->warn("Missing mandatory column names. [$line].\n"); return; }
