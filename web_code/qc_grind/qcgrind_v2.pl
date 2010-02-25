@@ -515,7 +515,12 @@ sub displayProjectsPage
     foreach( @projects )
     {
         my $project = $_;
-        my $acc = $project->study()->acc();
+        my $study = $project->study();
+        my $acc = 'na';
+        if( defined( $study ) )
+        {
+        	$acc = $study->acc();
+        }
         my $pid = $project->id();
         
         my $name = $project->name;
