@@ -516,7 +516,7 @@ sub displayProjectsPage
     {
         my $project = $_;
         my $study = $project->study();
-        my $acc = 'na';
+        my $acc = '-';
         if( defined( $study ) )
         {
         	$acc = $study->acc();
