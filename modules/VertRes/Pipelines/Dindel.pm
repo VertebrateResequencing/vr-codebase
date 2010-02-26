@@ -357,7 +357,7 @@ sub call {
     unless (-d $lib_dir) {
         mkdir($lib_dir) || $self->throw("Could not create directory '$lib_dir'");
     }
-    my $lib_out_file = $self->{fsu}->catfile($lib_dir, 'running.libraries.txt');
+    my $lib_out_file = $self->{fsu}->catfile($lib_dir, 'libraries.txt');
     unless (-s $lib_out_file) {
         #*** also need to properly check that this was created ok
         open(my $lofh, '>', $lib_out_file) || $self->throw("Could not write to $lib_out_file");
@@ -411,18 +411,43 @@ sub call {
         next if $done == 3;
         
         my $job_name = $self->{fsu}->catfile($block_dir, "varfile.$splits");
-        $self->archive_bsub_files($block_dir, "varfile.$splits");
+        my $lock_file = $job_name.'.jids';
         
-        # jobs can fail because the .gz already exists, causing gzip to exit
-        # with code 1, so always delete the .gz files first
-        foreach my $type ('log', 'glf', 'calls') {
-            unlink("$block_dir/running.dindel.$splits.$type.txt.gz");
+        my $is_running = LSF::is_job_running($lock_file);
+        if ($is_running & $LSF::Error) {
+            warn "$job_name failed!\n";
+            #unlink($lock_file);
+            next;
+        }
+        elsif ($is_running & $LSF::Running) {
+            $jobs++;
+            next;
+        }
+        elsif ($is_running & $LSF::Done) {
+            #*** $LSF::Done means that the .o file said we were successful, but
+            #    that could just mean the gzip worked... don't know how to
+            #    check this properly yet
+            foreach my $type ('calls', 'glf', 'log') {
+                my $out_file = $self->{fsu}->catfile($block_dir, "dindel.$splits.$type.txt.gz");
+                my $running_file = $self->{fsu}->catfile($block_dir, "running.dindel.$splits.$type.txt.gz");
+                move($running_file, $out_file) || $self->throw("failed to move $running_file to $out_file");
+            }
+            next;
+        }
+        else {
+            $jobs++;
+            $self->archive_bsub_files($block_dir, "varfile.$splits");
+            
+            # jobs can fail because the .gz already exists, causing gzip to exit
+            # with code 1, so always delete the .gz files first
+            foreach my $type ('log', 'glf', 'calls') {
+                unlink("$block_dir/running.dindel.$splits.$type.txt.gz");
+            }
+            
+            LSF::run($action_lock, $lane_path, $job_name, $self,
+                     qq{$self->{dindel_bin} --analysis indels --bamFiles $self->{bamfiles_fofn} --varFile $var_file --ref $self->{ref} --outputFile $block_dir/running.dindel.$splits --mapUnmapped --libFile $lib_out_file $self->{dindelPars} $self->{addDindelOpt} > $block_dir/running.dindel.$splits.log.txt; gzip $block_dir/running.dindel.$splits.*.txt});
         }
         
-        LSF::run($action_lock, $lane_path, $job_name, $self,
-                 qq{$self->{dindel_bin} --analysis indels --bamFiles $self->{bamfiles_fofn} --varFile $var_file --ref $self->{ref} --outputFile $block_dir/running.dindel.$splits --mapUnmapped --libFile $lib_out_file $self->{dindelPars} $self->{addDindelOpt} > $block_dir/running.dindel.$splits.log.txt; gzip $block_dir/running.dindel.$splits.*.txt});
-        
-        $jobs++;
         last if $jobs >= $self->{simultaneous_jobs};
     }
     
@@ -529,55 +554,6 @@ sub is_finished {
             }
         }
     }
-    elsif ($action_name eq 'call') {
-        my $provided = $self->call_provides($lane_path);
-        my $libraries_txt = shift @{$provided};
-        my $num_done = 0;
-        foreach my $file (@{$provided}) {
-            my $finished = $self->{fsu}->catfile($lane_path, $file);
-            if (-s $finished) {
-                $num_done++;
-                next;
-            }
-            
-            my $basename = basename($finished);
-            my $running_basename = 'running.'.$basename;
-            my $running = $finished;
-            $running =~ s/$basename$/$running_basename/;
-            
-            if (-s $running) {
-                # check the bsub output file to see if we completed successfully
-                #*** currently wasteful since we only need to do this once for
-                #    each of the 3 file types 'calls', 'glf' and 'log'. none of
-                #    these files have a clear indication that they completed
-                #    successfully, so we have to just check for bsub to tell us
-                #    all was well
-                my ($split) = $basename =~ /(\d+)/;
-                my $bsub_basename = "varfile.$split.o";
-                my $bsub_o = $finished;
-                $bsub_o =~ s/$basename$/$bsub_basename/;
-                if (-s $bsub_o) {
-                    open(my $bofh, $bsub_o) || $self->throw("Could not open $bsub_o");
-                    my $done = 0;
-                    while (<$bofh>) {
-                        if (/^Successfully completed./) {
-                            $done++;
-                        }
-                    }
-                    close($bofh);
-                    
-                    if ($done == 1) {
-                        $num_done++;
-                        move($running, $finished);
-                    }
-                }
-            }
-        }
-        
-        if ($num_done == @{$provided}) {
-            move($self->{fsu}->catfile($self->{outdir}, 'libraries', 'running.libraries.txt'), $self->{fsu}->catfile($lane_path, $libraries_txt));
-        }
-    }
     if ($action_name eq 'merge') {
         my ($finished) = @{$self->merge_provides($lane_path)};
         $finished = $self->{fsu}->catfile($lane_path, $finished);
@@ -614,5 +590,17 @@ sub is_finished {
 
 # cleanup _get_variants.jids _job_status _log in $lane_path
 
-1;
 
+# we override running_status to allow calls() to be called even while some jobs
+# are still running, because it is doing 200 jobs at a time and we don't want
+# to wait for all 200 to finish before the next 200 are scheduled.
+sub running_status {
+    my ($self, $jids_file) = @_;
+    if ($jids_file =~ /call/) {
+        return $LSF::No;
+    }
+    
+    return $self->SUPER::running_status($jids_file);
+}
+
+1;
