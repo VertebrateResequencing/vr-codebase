@@ -384,12 +384,12 @@ sub lib_markdup {
     my $verbose = $self->verbose();
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q long -M5100000 -R \'select[mem>5100] rusage[mem=5100]\'';
+    $self->{bsub_opts} = '-q basement -M6100000 -R \'select[mem>6100] rusage[mem=6100]\'';
     
     my @markdup_bams;
     foreach my $merge_bam (@files) {
         $merge_bam = $self->{fsu}->catfile($lane_path, $merge_bam);
-        my ($library, $basename) = (File::Spec->splitdir($merge_bam))[-2..-1];
+        my($basename, $path) = fileparse($merge_bam);
         
         my $markdup_bam = $merge_bam;
         $markdup_bam =~ s/\.bam$/.markdup.bam/;
@@ -398,7 +398,11 @@ sub lib_markdup {
         
         my $single_ended = $basename =~ /^se_/ ? 1 : 0;
         
-        LSF::run($action_lock, $lane_path, $self->{prefix}.'lib_markdup', $self,
+        my $job_name = $self->{prefix}.'lib_markdup';
+        $self->archive_bsub_files($path, $job_name);
+        $job_name = $self->{fsu}->catfile($path, $job_name);
+        
+        LSF::run($action_lock, $lane_path, $job_name, $self,
                  qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->markdup(qq[$merge_bam], qq[$markdup_bam]) || die qq[markdup failed for $merge_bam\n];"});
     }
     
