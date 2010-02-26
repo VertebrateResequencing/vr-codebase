@@ -251,8 +251,8 @@ sub pileup {
     
     $self->exe($self->{base_exe}.' pileup');
     
-    $self->switches([qw(s i c g)]);
-    $self->params([qw(m t l f T N r G I)]);
+    $self->switches([qw(s i c g S a 2)]);
+    $self->params([qw(m M t l f T N r G I)]);
     $self->_set_params_and_switches_from_args(%options);
     
     my @files = ($in_file);
