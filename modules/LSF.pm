@@ -29,6 +29,7 @@ Utilities for manipulating LSF jobs.
     Returntype  : $LSF::Running if at least one of the jobs is still in the queue and/or running.
                   $LSF::No if none of the jobs is present in the queue.
                   $LSF::Error if some of the jobs failed.
+                  $LSF::Done if at least one job finished OK (so you should check for $LSF:Error first)
                   If the lock file is empty, $LSF::No is returned.
                   If some of the jobs failed while others are running, $LSF::Running|$LSF::Error is returned.
 
@@ -58,6 +59,7 @@ sub is_job_running
             # Do not exit if one running was found - check all jobs, no one should have the EXIT status.
             $job_running |= $Running; 
         }
+        if ( $status == $Done ) { $job_running |= $Done; }
     }
     close($fh);
 
