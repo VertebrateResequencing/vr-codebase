@@ -354,7 +354,6 @@ sub _open_2_run {
     my ($out_fh);
     my $pid = open2($out_fh, $in_fh, $command);
     push(@{$self->{_open_2_pids}}, $pid);
-    print "got pid $pid\n";
     
     return $out_fh;
 }
