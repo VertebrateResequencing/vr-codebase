@@ -656,7 +656,12 @@ sub merge_up_one_level {
         # will fail
         next if $jobs >= $self->{simultaneous_merges};
 	
-        LSF::run($action_lock, $lane_path, $self->{prefix}.$job_name, $self,
+        my (undef, $path) = fileparse($out_bam);
+        my $this_job_name = $self->{prefix}.$job_name;
+        $self->archive_bsub_files($path, $this_job_name);
+        $this_job_name = $self->{fsu}->catfile($path, $job_name);
+        
+        LSF::run($action_lock, $lane_path, $this_job_name, $self,
                  qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->merge(qq[$out_bam], qw(@bams)) || die qq[merge failed for (@bams) -> $out_bam\n];"});
         $jobs++;
     }
@@ -1000,8 +1005,23 @@ sub is_finished {
             $action_name eq 'sample_merge' ||
             $action_name eq 'create_release_files') {
         my $expected_file = $self->{fsu}->catfile($lane_path, ".${action_name}_expected");
+        my $not_yet_done = -e $expected_file;
         my $done_file = $self->{fsu}->catfile($lane_path, ".${action_name}_done");
         $self->_merge_check($expected_file, $done_file, $lane_path);
+        
+        if ($action_name eq 'lib_markdup' && $not_yet_done && -s $done_file) {
+            # we've just completed marking dups; delete the original unmarked
+            # bams to save space
+            my $fofn = $self->{fsu}->catfile($lane_path, '.library_merge_done');
+            my @files = $self->{io}->parse_fofn($fofn, $lane_path);
+            foreach my $file (@files) {
+                my $marked = $file;
+                $marked =~ s/\.bam$/.markdup.bam/;
+                if (-s $file && -s $marked) {
+                    unlink($file);
+                }
+            }
+        }
     }
     
     if ($action_name eq 'create_release_files' &&
