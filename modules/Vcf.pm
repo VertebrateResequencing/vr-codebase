@@ -713,7 +713,7 @@ sub _format_line_hash
 
     # CHROM  POS     ID      REF
     my $out;
-    for my $i (0..3) { $out .= $$record{$$cols[$i]} ."\t";  }
+    for my $i (0..3) { $out .= ($$record{$$cols[$i]} ? $$record{$$cols[$i]} : '.') ."\t";  }
 
     # ALT
     $out .= join(',',@{$$record{$$cols[4]}} ? @{$$record{$$cols[4]}} : '.');
@@ -722,7 +722,7 @@ sub _format_line_hash
     $out .= "\t". $$record{$$cols[5]};
 
     # FILTER
-    $out .= "\t". join(';',@{$$record{$$cols[6]}});
+    $out .= "\t". join(';',$$record{$$cols[6]} ? @{$$record{$$cols[6]}} : '.');
 
     # Collect the gtypes of interest
     my $gtypes;
@@ -738,7 +738,7 @@ sub _format_line_hash
 
     # INFO
     # .. calculate AN and AC, but only if recalc_ac_an is set
-    my $needs_an_ac;
+    my $needs_an_ac = $$self{recalc_ac_an}==2 ? 1 : 0;
     my @info;
     while (my ($key,$value) = each %{$$record{$$cols[7]}})
     {
