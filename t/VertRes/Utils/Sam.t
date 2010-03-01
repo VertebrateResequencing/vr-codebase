@@ -242,7 +242,7 @@ foreach my $split (@expected_splits) {
     $created_lines += get_bam_body($split);
 }
 is $actually_created, 25, 'split_bam_by_sequence with make_unmapped gives an unmapped bam as well';
-is $created_lines, 2012, 'and the unmapped gives us more entries';
+is $created_lines, 1998, 'and the unmapped gives us more entries';
 @splits = $sam_util->split_bam_by_sequence($headed_bam,
                                            output_dir => $temp_dir);
 push(@expected_splits, File::Spec->catfile($temp_dir, 'nonchrom.headed2.bam'));
@@ -254,7 +254,7 @@ foreach my $split (@expected_splits) {
     unlink($split);
 }
 is $actually_created, 26, 'split_bam_by_sequence defaults gives a nonchrom bam as well';
-is $created_lines, 2014, 'and the nonchrom gives us all entries';
+is $created_lines, 2000, 'and the nonchrom gives us all entries';
 @splits = $sam_util->split_bam_by_sequence($headed_bam,
                                            output_dir => $temp_dir,
                                            pretend => 1);
