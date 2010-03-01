@@ -183,7 +183,10 @@ sub bams_are_similar {
                                ignore has not been set)
            make_unmapped => boolean (default true: a file prefixed with
                                      'unmapped' is made containing all the
-                                     unmapped reads)
+                                     unmapped reads. NB: only unmapped pairs or
+                                     singletons appear in this file; the other
+                                     split bam files will contain unmapped reads
+                                     where that read's mate was mapped)
            output_dir => 'path' to specify where the split bams are created;
                          default is the same dir as the input bam
            pretend => boolean (if true, don't actually do anything, just return
@@ -289,7 +292,7 @@ sub split_bam_by_sequence {
         push(@merged_bams, $out_bam);
         
         unless ($opts{pretend}) {
-            $self->make_unmapped_bam($bam, $out_bam) || $self->throw("Failed to make an unmapped bam from $bam");
+            $self->make_unmapped_bam($bam, $out_bam, 1) || $self->throw("Failed to make an unmapped bam from $bam");
         }
     }
     
@@ -946,12 +949,14 @@ sub bam_statistics {
  Function: Given a bam file, generates another bam file that contains only the
            unmapped reads.
  Returns : boolean (true on success)
- Args    : starting bam file, output name for bam file.
+ Args    : starting bam file, output name for bam file. Optional boolean value
+           which if true will not output unmapped reads if that read's mate was
+           mapped
 
 =cut
 
 sub make_unmapped_bam {
-    my ($self, $in_bam, $out_bam) = @_;
+    my ($self, $in_bam, $out_bam, $skip_mate_mapped) = @_;
     
     # create a new sam file with just the header and unmapped reads
     my $in = VertRes::Wrapper::samtools->new(file => $in_bam,
@@ -971,6 +976,9 @@ sub make_unmapped_bam {
         else {
             my (undef, $flag) = split;
             unless ($sp->is_mapped($flag)) {
+                if ($skip_mate_mapped) {
+                    next if $sp->is_mate_mapped($flag);
+                }
                 print $out_fh $_;
             }
         }
