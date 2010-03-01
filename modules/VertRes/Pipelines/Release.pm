@@ -650,7 +650,7 @@ sub merge_up_one_level {
             }
         }
         
-        next if -s $out_bam;
+        next if -e $out_bam;
         
         # don't do more than desired merges at once, or we'll kill IO and jobs
         # will fail
@@ -664,7 +664,6 @@ sub merge_up_one_level {
         # keep simultaneous_merges jobs running all the time
         my $is_running = LSF::is_job_running($lock_file);
         if ($is_running & $LSF::Error) {
-            warn "$job_name failed!\n";
             next;
         }
         elsif ($is_running & $LSF::Running) {
@@ -676,9 +675,11 @@ sub merge_up_one_level {
         }
         else {
             $jobs++;
+            next if $jobs > $self->{simultaneous_merges};
+            
             $self->archive_bsub_files($path, $this_job_name);
             
-            LSF::run($action_lock, $lane_path, $pathed_job_name, $self,
+            LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                  qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->merge(qq[$out_bam], qw(@bams)) || die qq[merge failed for (@bams) -> $out_bam\n];"});
         }
     }
