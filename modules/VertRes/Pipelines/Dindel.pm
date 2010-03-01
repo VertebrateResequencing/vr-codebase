@@ -444,7 +444,7 @@ sub call {
                 unlink("$block_dir/running.dindel.$splits.$type.txt.gz");
             }
             
-            LSF::run($action_lock, $lane_path, $job_name, $self,
+            LSF::run($lock_file, $lane_path, $job_name, $self,
                      qq{$self->{dindel_bin} --analysis indels --bamFiles $self->{bamfiles_fofn} --varFile $var_file --ref $self->{ref} --outputFile $block_dir/running.dindel.$splits --mapUnmapped --libFile $lib_out_file $self->{dindelPars} $self->{addDindelOpt} > $block_dir/running.dindel.$splits.log.txt; gzip $block_dir/running.dindel.$splits.*.txt});
         }
         
