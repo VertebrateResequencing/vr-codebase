@@ -566,9 +566,17 @@ sub markdup {
     my ($self, $in_bam, $out_bam, %args) = @_;
     
     my $verbose = $self->verbose();
+    
+    # picard needs a tmp dir, but we don't use /tmp because it's likely to fill
+    # up
+    my (undef, $path) = fileparse($out_bam);
+    my $fsu = VertRes::Utils::FileSystem->new();
+    my $tmp_dir = $fsu->tempdir('_markdup_tmp_XXXXXX', DIR => $path);
+    
     my $wrapper = VertRes::Wrapper::picard->new(verbose => $verbose,
                                                 quiet => $verbose ? 0 : 1,
                                                 $self->{java_memory} ? (java_memory => $self->{java_memory}) : (),
+                                                tmp_dir => $tmp_dir,
                                                 %args);
     
     $wrapper->markdup($in_bam, $out_bam);
