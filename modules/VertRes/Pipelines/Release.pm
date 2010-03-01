@@ -658,12 +658,29 @@ sub merge_up_one_level {
 	
         my (undef, $path) = fileparse($out_bam);
         my $this_job_name = $self->{prefix}.$job_name;
-        $self->archive_bsub_files($path, $this_job_name);
-        $this_job_name = $self->{fsu}->catfile($path, $job_name);
+        my $pathed_job_name = $self->{fsu}->catfile($path, $this_job_name);
+        my $lock_file = $pathed_job_name.'.jids';
         
-        LSF::run($action_lock, $lane_path, $this_job_name, $self,
+        # keep simultaneous_merges jobs running all the time
+        my $is_running = LSF::is_job_running($lock_file);
+        if ($is_running & $LSF::Error) {
+            warn "$job_name failed!\n";
+            next;
+        }
+        elsif ($is_running & $LSF::Running) {
+            $jobs++;
+            next;
+        }
+        elsif ($is_running & $LSF::Done) {
+            next;
+        }
+        else {
+            $jobs++;
+            $self->archive_bsub_files($path, $this_job_name);
+            
+            LSF::run($action_lock, $lane_path, $pathed_job_name, $self,
                  qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->merge(qq[$out_bam], qw(@bams)) || die qq[merge failed for (@bams) -> $out_bam\n];"});
-        $jobs++;
+        }
     }
     
     open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
@@ -1142,6 +1159,18 @@ sub _merge_check {
             close($sfh);
         }
     }
+}
+
+# we override running_status to allow *_merge() to be called even while some jobs
+# are still running, because it is doing 200 jobs at a time and we don't want
+# to wait for all 200 to finish before the next 200 are scheduled.
+sub running_status {
+    my ($self, $jids_file) = @_;
+    if ($jids_file =~ /_merge/) {
+        return $LSF::No;
+    }
+    
+    return $self->SUPER::running_status($jids_file);
 }
 
 1;
