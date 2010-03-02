@@ -187,6 +187,11 @@ sub bams_are_similar {
                                      singletons appear in this file; the other
                                      split bam files will contain unmapped reads
                                      where that read's mate was mapped)
+           all_unmapped => boolean (default false; when true, the described
+                                    behaviour of make_unmapped above changes so
+                                    that the unmapped file contains all unmapped
+                                    reads, potentially duplicating reads in
+                                    different split files)
            output_dir => 'path' to specify where the split bams are created;
                          default is the same dir as the input bam
            pretend => boolean (if true, don't actually do anything, just return
@@ -292,7 +297,8 @@ sub split_bam_by_sequence {
         push(@merged_bams, $out_bam);
         
         unless ($opts{pretend}) {
-            $self->make_unmapped_bam($bam, $out_bam, 1) || $self->throw("Failed to make an unmapped bam from $bam");
+            my $skip_mate_mapped = $opts{all_unmapped} ? 0 : 1;
+            $self->make_unmapped_bam($bam, $out_bam, $skip_mate_mapped) || $self->throw("Failed to make an unmapped bam from $bam");
         }
     }
     

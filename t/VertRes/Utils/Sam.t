@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 88;
+    use Test::Most tests => 90;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -255,6 +255,18 @@ foreach my $split (@expected_splits) {
 }
 is $actually_created, 26, 'split_bam_by_sequence defaults gives a nonchrom bam as well';
 is $created_lines, 2000, 'and the nonchrom gives us all entries';
+@splits = $sam_util->split_bam_by_sequence($headed_bam,
+                                           output_dir => $temp_dir,
+                                           all_unmapped => 1);
+$actually_created = 0;
+$created_lines = 0;
+foreach my $split (@expected_splits) {
+    $actually_created += -s $split ? 1 : 0;
+    $created_lines += get_bam_body($split);
+    unlink($split);
+}
+is $actually_created, 26, 'split_bam_by_sequence all_unmapped gives the same number of files as before';
+is $created_lines, 2014, 'but we now have duplicate reads entries';
 @splits = $sam_util->split_bam_by_sequence($headed_bam,
                                            output_dir => $temp_dir,
                                            pretend => 1);
