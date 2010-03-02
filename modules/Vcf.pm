@@ -576,6 +576,12 @@ sub _read_column_names
 
     for (my $i=0; $i<$ncols; $i++)
     {
+        if ( $cols[$i]=~/^\s+/ or $cols[$i]=~/\s+$/ ) 
+        {
+            $self->warn("The column name contains leading/trailing spaces, removing: '$cols[$i]'\n");
+            $cols[$i] =~ s/^\s+//;
+            $cols[$i] =~ s/\s+$//;
+        }
         if ( $i<$nfields && $cols[$i] ne $$fields[$i] ) 
         { 
             $self->warn("Expected mandatory column [$$fields[$i]], got [$cols[$i]]\n"); 
@@ -869,7 +875,7 @@ sub validate_alt_field
 sub parse_alleles
 {
     my ($self,$rec,$column) = @_;
-    if ( !exists($$rec{gtypes}) || !exists($$rec{gtypes}{$column}) ) { $self->throw("No such column '$column' present.\n"); }
+    if ( !exists($$rec{gtypes}) || !exists($$rec{gtypes}{$column}) ) { $self->throw("The column not present: '$column'\n"); }
 
     my $gtype = $$rec{gtypes}{$column}{GT};
     if ( !($gtype=~m{^([^\\|/]+)([\\|/]?)(.*)$}) ) { $self->throw("Could not parse gtype string [$gtype]\n"); }
