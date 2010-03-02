@@ -1,0 +1,4 @@
+mouse	mouse_reseq_track
+g1k	g1k_track
+g1kmeta	g1k_meta
+human_colorectal	vrtrack_human_colorectal_exomes
