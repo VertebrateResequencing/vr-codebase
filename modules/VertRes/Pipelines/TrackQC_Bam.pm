@@ -248,7 +248,8 @@ sub rename_and_merge
     my %mapstat_ids;
     for my $file (@files)
     {
-        if ( $file=~m{(\d+)\.[ps]e\.raw\.sorted\.bam} ) { push @{$mapstat_ids{$1}},$file; }
+        if ( $file=~m{(\d+)\.[ps]e\.recal\.sorted\.bam} ) { push @{$mapstat_ids{$1}},$file; }
+        elsif ( $file=~m{(\d+)\.[ps]e\.raw\.sorted\.bam} ) { push @{$mapstat_ids{$1}},$file; }
     }
 
     my @ids = sort { $b<=>$a } keys %mapstat_ids;
