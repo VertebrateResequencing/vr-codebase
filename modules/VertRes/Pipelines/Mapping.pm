@@ -1154,7 +1154,7 @@ sub update_db {
     foreach my $method (qw(raw_reads raw_bases reads_mapped reads_paired bases_mapped mean_insert sd_insert)) {
         defined $stats{$method} || next;
         my $existing = $mapping->$method;
-        if (defined $existing && $existing != $stats{$method}) {
+        if (! defined $existing || $existing != $stats{$method}) {
             $needs_update = 1;
             last;
         }
