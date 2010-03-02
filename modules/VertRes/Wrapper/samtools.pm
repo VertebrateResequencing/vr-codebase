@@ -349,12 +349,18 @@ sub faidx {
         
         my $fh = $self->run(@files);
         my @seqs;
+        my $seq;
         while (<$fh>) {
             chomp;
-            next if /^>/;
-            push(@seqs, $_);
+            if (/^>/) {
+                push(@seqs, $seq) if $seq;
+                $seq = '';
+                next;
+            }
+            $seq .= $_;
         }
         close($fh);
+        push(@seqs, $seq) if $seq;
         
         $self->run_method($orig_method);
         return @seqs;

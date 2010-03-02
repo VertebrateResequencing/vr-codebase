@@ -5,7 +5,7 @@ use File::Spec;
 use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 36;
+    use Test::Most tests => 37;
     
     use_ok('VertRes::Wrapper::samtools');
     use_ok('VertRes::Utils::FileSystem');
@@ -102,6 +102,7 @@ TODO: {
 }
 ok -s $ref_file_copy.'.fai', 'faidx created a .fai file';
 is_deeply [$st->faidx($ref_file, 'Streptococcus_suis:1-5', 'Streptococcus_suis:2007487-2007491')], ['atgaa', 'aaaat'], 'faidx with regions worked';
+is_deeply [$st->faidx($ref_file, 'Streptococcus_suis:1-65')], ['atgaaccaagaacaacttttttggcaacgatttattgaattggcaaaggtaaattttaagccatc'], 'faidx with a region longer than 60bp worked';
 is_deeply [$st->faidx($ref_file, 'Streptococcus_suis:2007492')], [], 'faidx with bad region returns undef';
 
 # still lots more tests to do...
