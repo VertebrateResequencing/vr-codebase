@@ -42,7 +42,17 @@ my $LANE_UPDATE = 10;
 my $SELECT_SPECIES_VIEW = 8;
 my $LANES_UPDATE = 9;
 
-my %DB_FOR_SPECIES = ( 'mouse'  => 'mouse_reseq_track', 'g1k'   => 'g1k_track', 'g1kmeta'	=> 'g1k_meta');
+#read in the db names
+my %DB_FOR_SPECIES;
+open( my $ifh, "databases.txt" ) or die $!;
+while( <$ifh> )
+{
+	chomp;
+	my @s = split( /\t/, $_ );
+	next unless @s == 2;
+	$DB_FOR_SPECIES{ $s[ 0 ] } = $s[ 1 ];
+}
+close( $ifh );
 
 #possible filters for libaries/lanes
 my $PASSED_FILTER = 'passed';
