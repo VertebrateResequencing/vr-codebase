@@ -436,6 +436,8 @@ sub call {
         }
         else {
             $jobs++;
+            last if $jobs > $self->{simultaneous_jobs};
+            
             $self->archive_bsub_files($block_dir, "varfile.$splits");
             
             # jobs can fail because the .gz already exists, causing gzip to exit
