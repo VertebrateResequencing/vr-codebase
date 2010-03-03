@@ -899,8 +899,23 @@ sub create_release_files {
                     }
                 }
                 elsif (-s $bai) {
+                    # 454 bams made with ssaha2 and our own cigar->sam code
+                    # do not give unmapped reads with mapped mates the same
+                    # chr&pos as the mapped mate, so when we make our unmapped
+                    # split we must not exclude such reads from the unmapped
+                    # bam
+                    my $all_unmapped = 0;
+                    my $st = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+                    my $bamfh = $st->view($bam, undef, H => 1);
+                    while (<$bamfh>) {
+                        if (/^\@PG/ && /ssaha/) {
+                            $all_unmapped = 1;
+                        }
+                    }
+                    close($bamfh);
+                    
                     LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
-                             qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->split_bam_by_sequence(qq[$bam]);"});
+                             qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->split_bam_by_sequence(qq[$bam], all_unmapped => $all_unmapped);"});
                 }
             }
             else {
