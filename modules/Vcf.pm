@@ -68,7 +68,6 @@ use vars qw/@ISA @EXPORT %s2i @i2s/;
 @ISA = qw/Exporter/;
 @EXPORT = qw/vcf1 validate validate_v32/;
 
-
 # This is the original code by lh3, not used, left only for backward compatibility.
 sub vcf1 {
   my %x = ();
@@ -786,11 +785,17 @@ sub _format_line_hash
     }
     else
     {
-        for my $i (1..$ngtypes)
+        # Not sure what was the reason for looping like this. However, when the record contains 
+        #   additional gtype fields not present in columns, the old version will attempt to
+        #   work with out-of-range $i+8.
+        #
+        #   for my $i (1..$ngtypes)
+        #   {
+        #       my $gt = $$gtypes{$$cols[$i+8]};
+        #
+        for (my $i=9; $i<scalar @$cols; $i++)
         {
-            my $gt = $$gtypes{$$cols[$i+8]};
-            # Get all the fields specified in FORMAT. If not available, print empty string instead.
-            # $out .= "\t" . join(':', map { exists($$gt{$_}) ? $$gt{$_} : '' } @{$$record{FORMAT}});
+            my $gt = $$gtypes{$$cols[$i]};
 
             my @gtype;
             for my $field (@{$$record{FORMAT}})
