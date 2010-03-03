@@ -508,8 +508,13 @@ sub merge {
     my $job_name = $self->{fsu}->catfile($self->{logs}, 'merge');
     $self->archive_bsub_files($self->{logs}, 'merge');
     
+    my $orig_bsub_opts = $self->{bsub_opts};
+    $self->{bsub_opts} = ' -M5500000 -R \'select[mem>5500] rusage[mem=5500]\'';
+    
     LSF::run($action_lock, $lane_path, $job_name, $self,
              qq{python $self->{dindel_scripts}/MergeOutput.py -w merge -d $blocks_dir -e glf.txt.gz -t newdindel -o results.merged.glf.txt.gz; python $self->{dindel_scripts}/ParseDindelGLF.py -w callDiploidGLF -g $blocks_dir/results.merged.glf.txt.sorted.gz -o $self->{outdir}/running.indels.txt});
+    
+    $self->{bsub_opts} = $orig_bsub_opts;
     
     return $self->{No};
 }
