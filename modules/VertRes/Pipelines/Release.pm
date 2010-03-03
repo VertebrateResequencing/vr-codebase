@@ -469,7 +469,7 @@ sub platform_merge {
                               'raw.bam',
                               'platform_merge',
                               '.platform_merge_expected',
-                              'long');
+                              'basement');
     
     return $self->{No};
 }
