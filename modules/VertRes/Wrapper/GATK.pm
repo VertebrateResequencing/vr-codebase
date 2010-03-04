@@ -101,8 +101,8 @@ sub new {
         $default_dbsnp = File::Spec->catfile($ENV{GATK_RESOURCES}, 'dbsnp_129_b36.rod');
     }
     elsif ($build eq 'NCBI37') {
-        $default_ref = File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'human_g1k_v37.fasta');
-        $default_dbsnp = File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'dbsnp_130_b37.rod');
+        $default_ref = File::Spec->catfile($ENV{GATK_RESOURCES}, 'human_g1k_v37.fasta');
+        $default_dbsnp = File::Spec->catfile($ENV{GATK_RESOURCES}, 'dbsnp_130_b37.rod');
         # no default vcfs for now, since issues with not being in NCBI37 coords?
         #$default_vcfs = ['pilot1_CEU,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'CEU.2and3_way.vcf'),
         #                 'pilot1_YRI,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'YRI.2and3_way.vcf')];
