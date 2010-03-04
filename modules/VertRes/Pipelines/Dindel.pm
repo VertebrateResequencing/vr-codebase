@@ -485,7 +485,8 @@ sub merge_requires {
 
 sub merge_provides {
     my $self = shift;
-    return [$self->{fsu}->catfile('dindel', 'indels.txt')];
+    return [$self->{fsu}->catfile('dindel', 'calls.txt'),
+            $self->{fsu}->catfile('dindel', 'indels.txt')];
 }
 
 =head2 merge
@@ -512,7 +513,7 @@ sub merge {
     $self->{bsub_opts} = ' -M5500000 -R \'select[mem>5500] rusage[mem=5500]\'';
     
     LSF::run($action_lock, $lane_path, $job_name, $self,
-             qq{python $self->{dindel_scripts}/MergeOutput.py -w merge -d $blocks_dir -e glf.txt.gz -t newdindel -o results.merged.glf.txt.gz; python $self->{dindel_scripts}/ParseDindelGLF.py -w callDiploidGLF -g $blocks_dir/results.merged.glf.txt.sorted.gz -o $self->{outdir}/running.indels.txt});
+             qq{python $self->{dindel_scripts}/MergeOutput.py -w merge -d $blocks_dir -e glf.txt.gz -t newdindel -o results.merged.glf.txt.gz; python $self->{dindel_scripts}/ParseDindelGLF.py -w callDiploidGLF -g $blocks_dir/results.merged.glf.txt.sorted.gz -o $self->{outdir}/running.calls.txt});
     
     $self->{bsub_opts} = $orig_bsub_opts;
     
@@ -562,13 +563,13 @@ sub is_finished {
         }
     }
     if ($action_name eq 'merge') {
-        my ($finished) = @{$self->merge_provides($lane_path)};
-        $finished = $self->{fsu}->catfile($lane_path, $finished);
+        my ($finished_calls, $finished_indels) = @{$self->merge_provides($lane_path)};
+        $finished_calls = $self->{fsu}->catfile($lane_path, $finished_calls);
         
-        unless (-s $finished) {
-            my $basename = basename($finished);
+        unless (-s $finished_calls) {
+            my $basename = basename($finished_calls);
             my $running_basename = 'running.'.$basename;
-            my $running = $finished;
+            my $running = $finished_calls;
             $running =~ s/$basename$/$running_basename/;
             
             if (-s $running) {
@@ -585,9 +586,38 @@ sub is_finished {
                     close($bofh);
                     
                     if ($done == 1) {
-                        move($running, $finished);
+                        move($running, $finished_calls);
                     }
                 }
+            }
+        }
+        
+        if (-s $finished_calls && ! -e $finished_indels) {
+            # the third column contains the phred-scaled posterior probability,
+            # I generally use a minimum of 20 for this, corresponding to 99 %
+            # confidence.
+            #
+            # Columns 10 and 11 correspond to number of reads covering the indel
+            # site on the forward strand, and number of reads covering the indel
+            # on the reverse strand. (Even requiring a minimum of 5 on both
+            # strands gives 700K calls)
+            #
+            # The files also contains SNP calls. THe $6 ~ /[-+]/ requires that
+            # the most likely non-reference allele is an indel.
+            #
+            # The fourth column gives the phred-scaled confidence in the
+            # genotype. The difference with the third column is that you may be
+            # very confident about the statement that a non-reference allele is
+            # present, but not about the precise genotype.
+            #
+            # The 7th column ('genotype') contains the most likely genotype (the
+            # one with the highest posterior), where */* means ref/ref.
+            my $problem = system("less -S $finished_calls | awk '\$3>20 && \$10>5 && \$11>5 && \$6 ~ /[-+]/' > $finished_indels.running");
+            if ($problem) {
+                $self->throw("Failed to filter calls to $finished_indels: $!");
+            }
+            else {
+                move("$finished_indels.running", $finished_indels);
             }
         }
     }
