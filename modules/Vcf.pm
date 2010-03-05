@@ -800,9 +800,10 @@ sub _format_line_hash
             my @gtype;
             for my $field (@{$$record{FORMAT}})
             {
-                if ( exists($$gt{$field}) ) { push @gtype,$$gt{$field}; }
+                if ( exists($$gt{$field}) && $$gt{$field} ne '' ) { push @gtype,$$gt{$field}; }
                 elsif ( exists($$self{header}{FORMAT}{$field}{default}) ) { push @gtype,$$self{header}{FORMAT}{$field}{default}; }
-                else { push @gtype,''; }
+                elsif ( $$self{version}<3.3 ) { push @gtype,''; }
+                else { $self->throw(qq[No value for the field "$field" and no default available, $$cols[$i] at $$record{CHROM}:$$record{POS}.\n]); }
             }
             $out .= "\t" . join(':',@gtype);
         }
