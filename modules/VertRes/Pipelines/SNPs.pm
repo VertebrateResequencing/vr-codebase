@@ -591,8 +591,8 @@ sub run_gatk
         my $mc   = exists($$self{gatk_max_cov}) ? "-mc $$self{gatk_max_cov}": '';
 
         # Is the value of -mrl 10000000 small enough..? 
-        Utils::CMD("$$self{gatk_bin} -T UnifiedGenotyper $hets $conf $mmq $mc -mrl 10000000" .
-                    "--platform Solexa -R $$self{fa_ref} -I $bam -L $chunk | gzip -c > $name.vcf.gz.part",{verbose=>1});
+        Utils::CMD("$$self{gatk_bin} -T UnifiedGenotyper $hets $conf $mmq $mc -mrl 10000000 " .
+                   "--platform Solexa -R $$self{fa_ref} -I $bam -L $chunk | gzip -c > $name.vcf.gz.part",{verbose=>1});
 
         rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
     }
