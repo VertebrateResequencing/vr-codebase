@@ -915,7 +915,7 @@ sub create_release_files {
                     close($bamfh);
                     
                     LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
-                             qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->split_bam_by_sequence(qq[$bam], all_unmapped => $all_unmapped);"});
+                             qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->split_bam_by_sequence(qq[$bam], all_unmapped => $all_unmapped, check => 1);"});
                 }
             }
             else {

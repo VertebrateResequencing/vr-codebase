@@ -162,6 +162,26 @@ sub bams_are_similar {
     return 1;
 }
 
+=head2 num_bam_records
+
+ Title   : num_bam_records
+ Usage   : my $num_records = $obj->num_bam_records($bam_file);
+ Function: Find the number of records (reads) in a bam file.
+ Returns : int
+ Args    : bam filename
+
+=cut
+
+sub num_bam_records {
+    my ($self, $bam_file) = @_;
+    my $pars = VertRes::Parser::sam->new(file => $bam_file);
+    my $records = 0;
+    while (my @fields = $pars->get_fields('QNAME')) {
+        $records++;
+    }
+    return $records;
+}
+
 =head2 split_bam_by_sequence
 
  Title   : split_bam_by_sequence
@@ -194,6 +214,11 @@ sub bams_are_similar {
                                     different split files)
            output_dir => 'path' to specify where the split bams are created;
                          default is the same dir as the input bam
+           check => boolean (default false; when true, checks to see if the
+                             total number of reads in the split bams is the same
+                             as the number of reads in the original bam;
+                             depending on other settings this may or may not be
+                             expected)
            pretend => boolean (if true, don't actually do anything, just return
                                what files would be made)
 
@@ -305,9 +330,26 @@ sub split_bam_by_sequence {
     if ($created_bai) {
         unlink($bai);
     }
-    foreach my $bam (@out_bams) {
+    foreach my $out_bam (@out_bams) {
         # these should already be gone, but unlink anyway
-        unlink($bam);
+        unlink($out_bam);
+    }
+    
+    if ($opts{check} && ! $opts{pretend}) {
+        my $total_reads = 0;
+        foreach my $split_bam (@merged_bams) {
+            $total_reads += $self->num_bam_records($split_bam);
+        }
+        
+        my $expected_reads = $self->num_bam_records($bam);
+        
+        unless ($expected_reads == $total_reads) {
+            $self->warn("$bam was split, but ended up with $total_reads reads instead of $expected_reads; will delete all the split bams");
+            foreach my $split_bam (@merged_bams) {
+                unlink($split_bam);
+            }
+            @merged_bams = ();
+        }
     }
     
     return @merged_bams;
