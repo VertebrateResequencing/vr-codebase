@@ -1024,7 +1024,7 @@ sub make_unmapped_bam {
         else {
             my (undef, $flag) = split;
             unless ($sp->is_mapped($flag)) {
-                if ($skip_mate_mapped) {
+                if ($skip_mate_mapped && $sp->is_sequencing_paired($flag)) {
                     next if $sp->is_mate_mapped($flag);
                 }
                 print $out_fh $_;
