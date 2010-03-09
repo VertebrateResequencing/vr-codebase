@@ -742,7 +742,7 @@ sub _format_line_hash
     }
 
     # INFO
-    # .. calculate AN and AC, but only if recalc_ac_an is set
+    # .. calculate NS, AN and AC, but only if recalc_ac_an is set
     my $needs_an_ac = $$self{recalc_ac_an}==2 ? 1 : 0;
     my @info;
     while (my ($key,$value) = each %{$$record{$$cols[7]}})
@@ -751,13 +751,14 @@ sub _format_line_hash
         {
             if ( $key eq 'AN' ) { $needs_an_ac=1; next; }
             if ( $key eq 'AC' ) { $needs_an_ac=1; next; }
+            if ( $key eq 'NS' ) { $needs_an_ac=1; next; }
         }
         push @info, (defined $value ? "$key=$value" : $key);
     }
     if ( $needs_an_ac )
     {
-        my ($an,$ac) = $self->calc_an_ac($gtypes);
-        push @info, "AN=$an","AC=$ac";
+        my ($an,$ac,$ns) = $self->calc_an_ac_ns($gtypes);
+        push @info, "AN=$an","AC=$ac","NS=$ns";
     }
     if ( !@info ) { push @info, '.'; }
     $out .= "\t". join(';', sort @info);
@@ -814,16 +815,18 @@ sub _format_line_hash
 
 }
 
-sub calc_an_ac
+sub calc_an_ac_ns
 {
     my ($self,$gtypes) = @_;
-    my ($an,%ac_counts);
+    my ($an,%ac_counts,$ns);
     $an = 0;
+    $ns = 0;
     for my $gt (keys %$gtypes)
     {
         my $value = $$gtypes{$gt}{GT};
         if ( $value eq '.' || $value eq './.' ) { next; }
         my ($al1,$al2) = split(m{[\\|/]},$value);
+        if ( defined($al1) || defined($al2) ) { $ns++; }
         if ( defined($al1) )
         {
             $an++;
@@ -838,7 +841,7 @@ sub calc_an_ac
     my @ac;
     for my $ac ( sort { $a <=> $b } keys %ac_counts) { push @ac, $ac_counts{$ac}; }
     if ( !@ac ) { @ac = ('0'); }
-    return ($an,join(',',@ac));
+    return ($an,join(',',@ac),$ns);
 }
 
 
@@ -1232,9 +1235,9 @@ sub run_validation
             if ( $err ) { $self->warn("$gt column at $$x{CHROM}:$$x{POS} .. $err\n"); }
         }
 
-        if ( exists($$x{INFO}{AN}) || exists($$x{INFO}{AC}) )
+        if ( exists($$x{INFO}{AN}) || exists($$x{INFO}{AC}) || exists($$x{INFO}{NS}) )
         {
-            my ($an,$ac) = $self->calc_an_ac($$x{gtypes});
+            my ($an,$ac,$ns) = $self->calc_an_ac_ns($$x{gtypes});
             if ( exists($$x{INFO}{AN}) && $an ne $$x{INFO}{AN} ) 
             { 
                 $self->warn("$$x{CHROM}:$$x{POS} .. AN is $$x{INFO}{AN}, should be $an\n"); 
@@ -1242,6 +1245,10 @@ sub run_validation
             if ( exists($$x{INFO}{AC}) && $ac ne $$x{INFO}{AC} ) 
             { 
                 $self->warn("$$x{CHROM}:$$x{POS} .. AC is $$x{INFO}{AC}, should be $ac\n"); 
+            }
+            if ( exists($$x{INFO}{NS}) && $ns ne $$x{INFO}{NS} ) 
+            { 
+                $self->warn("$$x{CHROM}:$$x{POS} .. NS is $$x{INFO}{NS}, should be $ns\n"); 
             }
         }
     }
