@@ -813,10 +813,16 @@ sub create_release_files {
         my ($basename, $path) = fileparse($bam);
         my $release_name = $self->{fsu}->catfile($path, 'release.bam');
         
+        my $this_job_name = $self->{prefix}.'create_release_files';
+        my $pathed_job_name = $self->{fsu}->catfile($path, $this_job_name);
+        my $lock_file = $pathed_job_name.'.jids';
+        
+        $self->archive_bsub_files($path, $this_job_name);
+        
         # md5 of bam & links
         my $bam_md5 = $bam.'.md5';
         unless (-s $bam_md5) {
-            LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
+            LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                      qq{md5sum $bam > $bam_md5; ln -s $basename $release_name});
         }
         elsif (! -e $release_name) {
@@ -828,7 +834,7 @@ sub create_release_files {
         my $bai = $bam.'.bai';
         my $bai_md5 = $bai.'.md5';
         unless (-s $bai && -s $bai_md5) {
-            LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
+            LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                      qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$bam], qq[$bai.tmp]); die qq[index failed for $bam\n] unless -s qq[$bai.tmp]; system(qq[mv $bai.tmp $bai; md5sum $bai > $bai_md5; ln -s $basename.bai $release_name.bai]);"});
         }
         elsif (! -e "$release_name.bai") {
@@ -840,7 +846,7 @@ sub create_release_files {
         my $bas = $bam.'.bas';
         my $bas_md5 = $bas.'.md5';
         unless (-s $bas && -s $bas_md5) {
-            LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
+            LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                      qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$self->{release_date}], qq[$bas]); die qq[bas failed for $bam\n] unless -s qq[$bas]; system(qq[md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"}); # , qq[$self->{sequence_index}] bas() needs a database option?
         }
         elsif (! -e "$release_name.bas") {
@@ -908,13 +914,13 @@ sub create_release_files {
                     my $st = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
                     my $bamfh = $st->view($bam, undef, H => 1);
                     while (<$bamfh>) {
-                        if (/^\@PG/ && /ssaha/) {
+                        if (/^\@PG/ && (/ssaha/ || /VN:2.5/)) { # picard merge fucks the ids, getting rid of ssaha, so we detect ssaha by its version number
                             $all_unmapped = 1;
                         }
                     }
                     close($bamfh);
                     
-                    LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
+                    LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                              qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->split_bam_by_sequence(qq[$bam], all_unmapped => $all_unmapped, check => 1);"});
                 }
             }
@@ -925,7 +931,7 @@ sub create_release_files {
                     my $emd5 = $ebam.'.md5';
                     unless (-s $emd5) {
                         $self->{bsub_opts} = '-q small';
-                        LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self, qq{md5sum $ebam > $emd5});
+                        LSF::run($lock_file, $lane_path, $pathed_job_name, $self, qq{md5sum $ebam > $emd5});
                         $self->{bsub_opts} = '-q normal';
                     }
                     
@@ -933,7 +939,7 @@ sub create_release_files {
                     my $ebai = $ebam.'.bai';
                     my $ebai_md5 = $ebai.'.md5';
                     unless (-s $ebai && -s $ebai_md5) {
-                        LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
+                        LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                                  qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$ebam], qq[$ebai.tmp]); die qq[index failed for $ebam\n] unless -s qq[$ebai.tmp]; system(qq[mv $ebai.tmp $ebai; md5sum $ebai > $ebai_md5]);"});
                     }
                     
@@ -941,7 +947,7 @@ sub create_release_files {
                     my $ebas = $ebam.'.bas';
                     my $ebas_md5 = $ebas.'.md5';
                     unless (-s $ebas && -s $ebas_md5) {
-                        LSF::run($action_lock, $lane_path, $self->{prefix}.'create_release_files', $self,
+                        LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                                  qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$ebam], qq[$self->{release_date}], qq[$ebas]); die qq[bas failed for $ebam\n] unless -s qq[$ebas]; system(qq[md5sum $ebas > $ebas_md5]);"});
                     }
                 }
