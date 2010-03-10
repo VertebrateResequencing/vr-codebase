@@ -41,7 +41,7 @@ use base qw(VertRes::Wrapper::MapperI);
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/stampy-0.9/stampy.py');
+    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/stampy-0.92/stampy.py');
     
     return $self;
 }

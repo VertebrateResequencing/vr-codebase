@@ -35,6 +35,13 @@ jump database, which is strongly recommended. MosaikJump is a tool to generate j
 -p 8 for multiprocessors
 
 
+# latest version setting, dealing with including unmapped reads, Wang Ping used:
+MosaikBuild:	-mfl 200 -st illumina
+MosaikAligner:	-mm 15 -act 40 -bw 35 -mhp 100 -ls 250
+MosaikSort:	-rmm
+appendUnmappedRead2Sam fastq1 fastq2 sam updatedSam duplicatedReads
+
+
 =head1 AUTHOR
 
 Sendu Bala: bix@sendu.me.uk
@@ -52,6 +59,7 @@ use VertRes::Parser::fastqcheck;
 
 use base qw(VertRes::Wrapper::MapperI);
 
+my $append_exe = '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/AppendUnmappedRead2Sam/appendUnmappedRead2Sam';
 
 =head2 new
 
@@ -66,7 +74,7 @@ use base qw(VertRes::Wrapper::MapperI);
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/mosaik-aligner/bin/');
+    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/mosaik-source/bin');
     
     return $self;
 }
@@ -244,7 +252,7 @@ sub generate_sam {
     my $sort_out = $out.'.sort';
     unless (-s $sort_out) {
         $self->exe($orig_exe.'MosaikSort');
-        $self->simple_run("-in $align_out -out $sort_out");
+        $self->simple_run("-in $align_out -out $sort_out -rmm");
         $self->exe($orig_exe);
     }
     unless (-s $sort_out) {
@@ -281,15 +289,28 @@ sub generate_sam {
 =cut
 
 sub add_unmapped {
-    my ($self, $sam) = @_;
-    my $unmapped = $sam.'.unmapped.fastq';
+    my ($self, $sam, $ref, @fqs) = @_;
+    
+    my $all_sam = "$sam.all_reads.sam";
+    my $failed = system("$append_exe @fqs $sam $all_sam $sam.duplicated_reads");
+    unless ($failed) {
+        copy($sam, "$sam.orig");
+        move($all_sam, $sam);
+        return 1;
+    }
+    else {
+        $self->warn("failed [$append_exe @fqs $sam $all_sam $sam.duplicated_reads]: $!");
+        return 0;
+    }
+    
+    #my $unmapped = $sam.'.unmapped.fastq';
     
     # mosaik renames the fastq ids, stripping off the /1 or /2 and doing like:
     # @9:107904153+67M200D9M:R:-161 (mate 2, length=76)
     # but for mapper comparison purposes, it doesn't really matter; the add
     # method still works
     
-    return $self->add_unmapped_from_fastq($sam, $unmapped);
+    #return $self->add_unmapped_from_fastq($sam, $unmapped);
 }
 
 =head2 do_mapping

@@ -47,7 +47,7 @@ use base qw(VertRes::Wrapper::MapperI);
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/eland2_standalone_distribution');
+    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/eland2');
     
     return $self;
 }

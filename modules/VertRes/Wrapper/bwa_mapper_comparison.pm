@@ -39,7 +39,7 @@ use base qw(VertRes::Wrapper::MapperI);
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => 'bwa');
+    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/bwa-0.5.7/bwa');
     
     return $self;
 }
