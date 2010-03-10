@@ -817,7 +817,21 @@ sub create_release_files {
         my $pathed_job_name = $self->{fsu}->catfile($path, $this_job_name);
         my $lock_file = $pathed_job_name.'.jids';
         
-        $self->archive_bsub_files($path, $this_job_name);
+        # we have our own lock files, so have to do our own checking to see
+        # if this some part of this is still running
+        my $is_running = LSF::is_job_running($lock_file);
+        if ($is_running & $LSF::Error) {
+            warn "$pathed_job_name failed!\n";
+            next;
+        }
+        elsif ($is_running & $LSF::Running) {
+            next;
+        }
+        else {
+            # not started, or done
+            unlink($lock_file);
+            $self->archive_bsub_files($path, $this_job_name);
+        }
         
         # md5 of bam & links
         my $bam_md5 = $bam.'.md5';
@@ -874,7 +888,6 @@ sub create_release_files {
             
             my $dcc_bams = 0;
             if ($self->{dcc_mode}) {
-                
                 my @expected_dcc_bams;
                 foreach my $ebam (@expected_split_bams) {
                     my $basename = basename($ebam);
