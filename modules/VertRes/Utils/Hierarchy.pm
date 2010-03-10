@@ -1155,7 +1155,7 @@ sub dcc_filename {
     }
     
     my $algorithm = $ps->program || 'unknown_algorithm';
-    if ($algorithm eq 'unknown_algorithm' || $algorithm =~ /^\d+$/) { # picard merge can fuck with program names, converting them to unique numbers
+    if ($algorithm eq 'unknown_algorithm' || $algorithm =~ /^\d+$/ || $algorithm =~ /GATK/) { # picard merge can fuck with program names, converting them to unique numbers
         if ($platform =~ /ILLUMINA/) {
             $algorithm = 'bwa';
         }
