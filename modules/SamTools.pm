@@ -342,13 +342,18 @@ sub collect_detailed_bam_stats
             }
         }
 
-        my $paired = ($flag & $$FLAGS{'read_paired'}) && ($flag & $$FLAGS{'paired_tech'});
+        # For long inserts, the libraries are prepared differently and the pairs
+        #   point in other direction. bwa does not set the paired flag for them.
+        #   Similar thing is true also for 454 reads. Therefore, do the insert
+        #   size stats for all unmapped reads above.
+        #
+        #   my $paired = ($flag & $$FLAGS{'read_paired'}) && ($flag & $$FLAGS{'paired_tech'});
+        my $paired = ($flag & $$FLAGS{'paired_tech'}) && !($flag & $$FLAGS{'unmapped'});
         if ( $paired )
         {
             for my $stat (@stats) { $$out_stats{$stat}{'reads_paired'}++; }
 
             # Insert Size Frequencies
-            #
             my $bin = abs(int($isize/$insert_size_bin));
             for my $stat (@stats) { $$out_stats{$stat}{'insert_size_freqs'}{$bin}++; }
         }
