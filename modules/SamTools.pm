@@ -349,7 +349,7 @@ sub collect_detailed_bam_stats
         #
         #   my $paired = ($flag & $$FLAGS{'read_paired'}) && ($flag & $$FLAGS{'paired_tech'});
         my $paired = ($flag & $$FLAGS{'paired_tech'}) && !($flag & $$FLAGS{'unmapped'});
-        if ( $paired )
+        if ( $paired && $isize>0 )
         {
             for my $stat (@stats) { $$out_stats{$stat}{'reads_paired'}++; }
 
