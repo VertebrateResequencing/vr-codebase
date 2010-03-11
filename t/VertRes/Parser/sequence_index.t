@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 34;
+    use Test::Most tests => 37;
     
     use_ok('VertRes::Parser::sequence_index');
 }
@@ -134,5 +134,11 @@ is @lanes, 4544, 'got all non-solid lanes';
 my @answers = $sip->lane_info('ERR000061', 'withdrawn');
 is_deeply \@answers, [0, 1], 'knew that a given lane was both withdrawn and not';
 is $sip->lane_info('ERR000061', 'withdrawn'), 1, 'knew that the lane was noted as withdrawn more times than not';
+
+# in 2010, sequence.index format changed by adding a new ANALYSIS_GROUP column
+$si_file = File::Spec->catfile('t', 'data', 'sequence.index.2010');
+ok -e $si_file, '2010 file we will test with exists';
+ok $sip->file($si_file), 'file set into parser';
+is $sip->lane_info('ERR000018', 'analysis_group'), 'high coverage', 'ANALYSIS_GROUP is parsable';
 
 exit;

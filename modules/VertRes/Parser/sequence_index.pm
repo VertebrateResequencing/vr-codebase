@@ -65,7 +65,8 @@ our %field_to_index = (FASTQ_FILE => 0,
                        WITHDRAWN_DATE => 21,
                        COMMENT => 22,
                        READ_COUNT => 23,
-                       BASE_COUNT => 24);
+                       BASE_COUNT => 24,
+                       ANALYSIS_GROUP => 25);
 
 
 =head2 new
@@ -159,6 +160,7 @@ sub _get_header {
            [22] COMMENT
            [23] READ_COUNT
            [24] BASE_COUNT
+           [25] ANALYSIS_GROUP
  Args    : n/a
 
 =cut
@@ -197,9 +199,8 @@ sub next_result {
     
     my @data = split(/\t/, $line);
     chomp($data[-1]);
-    if ( @data != 25 )
-    {
-        $self->debug("Expected 25 columns, got " . scalar @data . ": $line\n");
+    if (@data != 26 && @data != 25) {
+        $self->warn("Expected 26 or 25 columns, got " . scalar @data . ": $line\n");
         return;
     }
     
