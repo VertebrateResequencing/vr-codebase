@@ -939,13 +939,13 @@ sub format_genotype_strings
         my $sep = $2;
         my $al2 = $3;
 
-        if ( $al1 eq $ref || $al1 eq '0' ) { $al1 = 0; }
+        if ( $al1 eq $ref || $al1 eq '0' || $al1 eq '*' ) { $al1 = 0; }
         else
         {
             if ( $al1=~/^\d+$/ ) { $al1 = $$rec{ALT}[$al1-1]; }
 
             if ( exists($alts{$al1}) ) { $al1 = $alts{$al1} }
-            elsif ( $al1=~/^[ACGT]$/i ) 
+            elsif ( $al1=~/^[ACGT]$/i or $al1=~/^I[ACGT]+$/ or $al1=~/^D\d+$/ )
             {
                 $alts{$al1} = ++$nalts;
                 $al1 = $nalts;
@@ -958,13 +958,13 @@ sub format_genotype_strings
 
         if ( defined $al2 )
         {
-            if ( $al2 eq $ref || $al2 eq '0' ) { $al2 = 0; }
+            if ( $al2 eq $ref || $al2 eq '0' || $al2 eq '*' ) { $al2 = 0; }
             else
             {
                 if ( $al2=~/^\d+$/ ) { $al2 = $$rec{ALT}[$al2-1]; }
 
                 if ( exists($alts{$al2}) ) { $al2 = $alts{$al2} }
-                elsif ( $al2=~/^[ACGT]$/i ) 
+                elsif ( $al2=~/^[ACGT]$/i or $al2=~/^I[ACGT]+$/i or $al2=~/^D\d+$/ ) 
                 {
                     $alts{$al2} = ++$nalts;
                     $al2 = $nalts;
