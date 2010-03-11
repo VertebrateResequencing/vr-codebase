@@ -439,7 +439,9 @@ sub run_graphs
     {
         $x = $$stats{'insert_size'}{'max'}{'x'};
         $y = $$stats{'insert_size'}{'max'}{'y'};
-        my $insert_size  = $$stats{insert_size}{average}<500 ? 500 : $$stats{insert_size}{average};
+
+        # This is a very simple method of dynamic display range and will not work always. Should be done better if time allows.
+        my $insert_size  = $$stats{insert_size}{main_bulk};
         Graphs::plot_stats({
                 'outfile'    => qq[$outdir/insert-size.png],
                 'title'      => 'Insert Size',
@@ -447,7 +449,7 @@ sub run_graphs
                 'desc_xvals' => 'Insert Size',
                 'data'       => [ $$stats{'insert_size'} ],
                 'r_cmd'      => qq[text($x,$y,'$x',pos=4,col='darkgreen')\n],
-                'r_plot'     => "xlim=c(0," . ($insert_size*2.5) . ")",
+                'r_plot'     => "xlim=c(0," . ($insert_size*1.5) . ")",
                 });
     }
 
