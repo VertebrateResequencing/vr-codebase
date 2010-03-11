@@ -330,7 +330,7 @@ sub _prune_path {
  Title   : deletion
  Usage   : $obj->deletion('/path/to/lane', 'lock_filename');
  Function: If a lane was deleted entirely from the database, deletes it from
-           disc. Liewise if fastqs were altered.
+           disc. Likewise if fastqs were altered.
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : lane path, name of lock file to use
 
