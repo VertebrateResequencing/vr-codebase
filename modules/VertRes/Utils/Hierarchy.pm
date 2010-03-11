@@ -244,7 +244,7 @@ sub lane_info {
                                                                $args{mapped} ? (mapped => $args{mapped}) : ());
     }
     $info{population} = $objs{population}->name;
-    $info{project} = $objs{project}->hierarchy_name;
+    $info{project} = $objs{project}->name;
     
     $hist->time_travel($orig_time_travel);
     
@@ -984,7 +984,7 @@ sub create_release_hierarchy {
                 push(@linked_bams, $destination);
             }
             else {
-                $self->warn("was expected there to be a bam '$source' but it didn't exist!");
+                $self->warn("expected there to be a bam '$source' but it didn't exist!");
             }
         }
         
