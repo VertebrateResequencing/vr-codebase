@@ -795,7 +795,13 @@ sub create_release_files {
     my @in_bams = $self->{io}->parse_fofn($fofn, $lane_path);
     
     my $out_fofn = $self->{fsu}->catfile($lane_path, '.create_release_files_expected');
-    unlink($out_fofn);
+    if (-s $out_fofn) {
+        # we don't want it there whilst we're still running, since it will slow
+        # down subsequent calls of this method as run-pipeline will have to stat
+        # them all before proceeding; though we might want to take a look at it
+        # manually, so we don't delete it
+        move($out_fofn, "$out_fofn.orig");
+    }
     if ($self->{dcc_mode}) {
         unlink($self->{fsu}->catfile($lane_path, 'release_files.fofn'));
         unlink($self->{fsu}->catfile($lane_path, 'release_files.md5'));
@@ -808,6 +814,7 @@ sub create_release_files {
     $self->{bsub_opts} = '-q long';
     
     my @release_files;
+    my $skipped_some = 0;
     foreach my $bam (@in_bams) {
         $bam = $self->{fsu}->catfile($lane_path, $bam);
         my ($basename, $path) = fileparse($bam);
@@ -818,13 +825,15 @@ sub create_release_files {
         my $lock_file = $pathed_job_name.'.jids';
         
         # we have our own lock files, so have to do our own checking to see
-        # if this some part of this is still running
+        # if some part of this is still running
         my $is_running = LSF::is_job_running($lock_file);
         if ($is_running & $LSF::Error) {
             warn "$pathed_job_name failed!\n";
+            $skipped_some = 1;
             next;
         }
         elsif ($is_running & $LSF::Running) {
+            $skipped_some = 1;
             next;
         }
         else {
@@ -933,25 +942,25 @@ sub create_release_files {
                     }
                     close($bamfh);
                     
+                    $self->{bsub_opts} = '-q long';
                     LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                              qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->split_bam_by_sequence(qq[$bam], all_unmapped => $all_unmapped, check => 1);"});
                 }
             }
             else {
-                $self->{bsub_opts} = '-q normal';
                 foreach my $ebam (@expected_split_bams) {
                     # md5
                     my $emd5 = $ebam.'.md5';
                     unless (-s $emd5) {
                         $self->{bsub_opts} = '-q small';
                         LSF::run($lock_file, $lane_path, $pathed_job_name, $self, qq{md5sum $ebam > $emd5});
-                        $self->{bsub_opts} = '-q normal';
                     }
                     
                     # bai & its md5
                     my $ebai = $ebam.'.bai';
                     my $ebai_md5 = $ebai.'.md5';
                     unless (-s $ebai && -s $ebai_md5) {
+                        $self->{bsub_opts} = '-q normal';
                         LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                                  qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$ebam], qq[$ebai.tmp]); die qq[index failed for $ebam\n] unless -s qq[$ebai.tmp]; system(qq[mv $ebai.tmp $ebai; md5sum $ebai > $ebai_md5]);"});
                     }
@@ -960,21 +969,25 @@ sub create_release_files {
                     my $ebas = $ebam.'.bas';
                     my $ebas_md5 = $ebas.'.md5';
                     unless (-s $ebas && -s $ebas_md5) {
+                        $self->{bsub_opts} = '-q long';
                         LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                                  qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$ebam], qq[$self->{release_date}], qq[$ebas]); die qq[bas failed for $ebam\n] unless -s qq[$ebas]; system(qq[md5sum $ebas > $ebas_md5]);"});
                     }
                 }
+                $self->{bsub_opts} = '-q long';
             }
         }
     }
     
-    open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
-    foreach my $file (@release_files) {
-        print $ofh $file, "\n";
+    unless ($skipped_some) {
+        open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
+        foreach my $file (@release_files) {
+            print $ofh $file, "\n";
+        }
+        my $expected = @release_files;
+        print $ofh "# expecting $expected\n";
+        close($ofh);
     }
-    my $expected = @release_files;
-    print $ofh "# expecting $expected\n";
-    close($ofh);
     
     $self->{bsub_opts} = $orig_bsub_opts;
     
