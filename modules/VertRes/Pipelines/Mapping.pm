@@ -569,7 +569,8 @@ sub map {
     
     # get all the meta info about the lane
     my %info = VertRes::Utils::Hierarchy->new->lane_info($self->{vrlane});
-    $info{insert_size} = 2000 unless $info{insert_size};
+    my $insert_size_for_mapping = $info{insert_size} || 2000;
+    my $insert_size_for_samheader = $info{insert_size} || 0;
     
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
@@ -619,7 +620,7 @@ my \$mapper = $mapper_class->new(verbose => $verbose);
 my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
                                @split_read_args
                                output => '$sam_file',
-                               insert_size => $info{insert_size},
+                               insert_size => $insert_size_for_mapping,
                                read_group => '$info{lane}',
                                error_file => '$prev_error_file');
 
@@ -638,7 +639,7 @@ unless (\$head =~ /^\\\@HD/) {
                                          library => '$info{library_true}',
                                          platform => '$info{technology}',
                                          centre => '$info{centre}',
-                                         insert_size => $info{insert_size},
+                                         insert_size => $insert_size_for_samheader,
                                          project => '$info{project}',
                                          lane => '$info{lane}',
                                          ref_fa => '$ref_fa',
