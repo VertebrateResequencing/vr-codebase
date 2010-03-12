@@ -307,6 +307,8 @@ sub split_bam_by_sequence {
         push(@merged_bams, $out_bam);
         next if $opts{pretend};
         
+        $out_bam .= '.unchecked' if $opts{check};
+        
         if (@bams == 1) {
             move($bams[0], $out_bam);
         }
@@ -320,6 +322,8 @@ sub split_bam_by_sequence {
     if ($opts{make_unmapped}) {
         my $out_bam = File::Spec->catfile($output_dir, 'unmapped.'.$basename);
         push(@merged_bams, $out_bam);
+        
+        $out_bam .= '.unchecked' if $opts{check};
         
         unless ($opts{pretend}) {
             my $skip_mate_mapped = $opts{all_unmapped} ? 0 : 1;
@@ -338,7 +342,7 @@ sub split_bam_by_sequence {
     if ($opts{check} && ! $opts{pretend}) {
         my $total_reads = 0;
         foreach my $split_bam (@merged_bams) {
-            $total_reads += $self->num_bam_records($split_bam);
+            $total_reads += $self->num_bam_records($split_bam.'.unchecked');
         }
         
         my $expected_reads = $self->num_bam_records($bam);
@@ -346,9 +350,14 @@ sub split_bam_by_sequence {
         unless ($expected_reads == $total_reads) {
             $self->warn("$bam was split, but ended up with $total_reads reads instead of $expected_reads; will delete all the split bams");
             foreach my $split_bam (@merged_bams) {
-                unlink($split_bam);
+                unlink($split_bam.'.unchecked');
             }
             @merged_bams = ();
+        }
+        else {
+            foreach my $split_bam (@merged_bams) {
+                move($split_bam.'.unchecked', $split_bam);
+            }
         }
     }
     
