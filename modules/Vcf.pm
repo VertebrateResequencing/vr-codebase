@@ -237,16 +237,18 @@ sub next_line
     Usage   : my $vcf = Vcf->new(); 
               $vcf->parse_header(); 
               my $x = $vcf->next_data_array();
-    Args    : none
+    Args    : Optional line to parse
 
 =cut
 
 sub next_data_array
 {
-    my ($self) = @_;
-    my $line;
-    if ( @{$$self{buffer}} ) { $line = shift(@{$$self{buffer}}); }
-    else { $line = readline($$self{fh}); }
+    my ($self,$line) = @_;
+    if ( !$line )
+    {
+        if ( @{$$self{buffer}} ) { $line = shift(@{$$self{buffer}}); }
+        else { $line = readline($$self{fh}); }
+    }
     if ( !$line ) { return undef; }
     my @items = split(/\t/,$line);
     chomp($items[-1]);
