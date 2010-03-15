@@ -2,9 +2,10 @@
 use strict;
 use warnings;
 use File::Spec;
+use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 93;
+    use Test::Most tests => 96;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -141,6 +142,19 @@ is readlink($merge_bam), 'rmdup.bam', 'merge on single bam created the correct r
 ok $sam_util->merge($merge_bam, $rmdup_bam, $sorted_bam), 'merge on multiple bam test';
 ok -f $merge_bam, 'merge on multiple bams created a new file';
 ok -s $merge_bam > -s $rmdup_bam, 'merge on multiple bams created a new file bigger than one of the originals';
+
+# do a samtools sam->bam, picard merge test on a multi-sequence sam file to
+# ensure things are all compatible
+my $multi_seq_sam = File::Spec->catfile('t', 'data', 'header.sam');
+my $multi_seq_bam = File::Spec->catfile($temp_dir, 'header.bam');
+my $samtools = VertRes::Wrapper::samtools->new(quiet => 1);
+$samtools->view($multi_seq_sam, $multi_seq_bam, S => 1, b => 1);
+ok -s $multi_seq_bam, 'samtools could make a bam from a multi-sequence sam';
+my $multi_seq_bam2 = File::Spec->catfile($temp_dir, 'header2.bam');
+copy($multi_seq_bam, $multi_seq_bam2);
+unlink($merge_bam);
+ok $sam_util->merge($merge_bam, $multi_seq_bam, $multi_seq_bam2), 'merge on multiple sequence bam test';
+ok -s $merge_bam, 'merge did generate a file';
 
 # calculate_flag
 is $sam_util->calculate_flag(), 0, 'calculate_flag no args test';
