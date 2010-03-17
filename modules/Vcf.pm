@@ -986,7 +986,7 @@ sub format_genotype_strings
         $$rec{gtypes}{$key}{GT} = $al1.$sep.$al2;
     }
 
-    $$rec{ALT} = [ keys %alts ];
+    $$rec{ALT} = [ sort { $alts{$a}<=>$alts{$b} } keys %alts ];
 }
 
 
