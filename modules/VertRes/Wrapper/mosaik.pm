@@ -74,7 +74,7 @@ my $append_exe = '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/Append
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/mosaik-source/bin');
+    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/mosaik-source/bin/');
     
     return $self;
 }

@@ -158,7 +158,7 @@ sub generate_sam {
             $self->register_for_unlinking($in_use);
             open(my $iufh, '>', $in_use) || $self->throw("Could not write to $in_use");
             close($iufh);
-            $self->simple_run("--bwaoptions=\"-q15 /lustre/scratch102/user/sb10/mapper_comparisons/test_runs/bwa/ref.fa\" -g $local_ref -h $local_ref -M $fqs[0],$fqs[1] > $out");
+            $self->simple_run("--bwaoptions=\"-q15 /lustre/scratch102/user/sb10/mapper_comparisons/reference_indices/bwa/ref.fa\" -g $local_ref -h $local_ref -M $fqs[0],$fqs[1] > $out");
             unlink($in_use);
             
             # if no other pid is using the ref files, delete them
