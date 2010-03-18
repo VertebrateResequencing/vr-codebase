@@ -339,7 +339,93 @@ sub _prune_path {
 sub deletion {
     my ($self, $lane_path, $action_lock) = @_;
     
-    $self->throw("deletion not yet implemented");
+    my $vrlane = $self->{vrlane};
+    
+    if ($vrlane->is_processed('deleted')) {
+        $self->throw("deletion not yet implemented");
+    }
+    elsif ($vrlane->is_processed('altered_fastq')) {
+        # download the fastq and see if it really was altered compared to the
+        # version of the fastq we already have
+        my $really_altered = 0;
+        
+        my $lane_obj = $self->{vrlane};
+        my @files = @{$lane_obj->files || []};
+        @files || $self->throw("$lane_path was marked as altered_fastq, yet there are no files in the database!");
+        my @origs;
+        # move original files to new names
+        for my $file_obj (@files) {
+            my $fastq = $file_obj->hierarchy_name;
+            my $fastq_file = $self->{fsu}->catfile($lane_path, $fastq);
+            my $fqc_file = $fastq_file.'.fastqcheck';
+            
+            my $orig_fastq = $fastq_file;
+            $orig_fastq =~ s/\.fastq\.gz$/.orig.fastq.gz/;
+            my $orig_fqc = $orig_fastq.'.fastqcheck';
+            my $orig_fastq_decomp = $orig_fastq;
+            $orig_fastq_decomp =~ s/\.gz$//;
+            
+            unless (-s $orig_fastq_decomp || -s $orig_fastq) {
+                move($fastq_file, $orig_fastq) || $self->throw("could not move $fastq_file -> $orig_fastq");
+            }
+            unless (-s $orig_fqc) {
+                move($fqc_file, $orig_fqc) || $self->throw("could not move $fqc_file -> $orig_fqc");
+            }
+            
+            push(@origs, $orig_fastq, $orig_fqc);
+        }
+        
+        # do a fresh import
+        my $result = $self->import_fastqs($lane_path, $action_lock);
+        if ($result eq $self->{No}) {
+            return $self->{No};
+        }
+        
+        # compare the original files to the newly imported and see if at least
+        # one of them is different
+        foreach my $orig (@origs) {
+            next unless $orig =~ /fastq\.gz$/;
+            my $new = $orig;
+            $new =~ s/\.orig//;
+            my $orig_i = VertRes::IO->new(file => $orig);
+            my $ofh = $orig_i->fh;
+            my $new_i = VertRes::IO->new(file => $new);
+            my $nfh = $new_i->fh;
+            
+            my $diff = 0;
+            while (<$ofh>) {
+                my $o = $_;
+                my $n = <$nfh>;
+                unless ($o && $n && $o eq $n) {
+                    $diff = 1;
+                    last;
+                }
+            }
+            close($ofh);
+            close($nfh);
+            
+            if ($diff) {
+                $really_altered = 1;
+            }
+        }
+        
+        if ($really_altered) {
+            # behave like a normal deletion
+            $self->throw("deletion not yet implemented");
+        }
+        else {
+            # unset the altered_fastq flag
+            $vrlane->is_processed('altered_fastq', 0);
+            $vrlane->update || $self->throw("Having confirmed $lane_path wasn't really altered, failed to update the database");
+            
+            foreach my $orig (@origs) {
+                unlink($orig);
+            }
+        }
+    }
+    else {
+        $self->throw("something odd happened, this lane ($lane_path) is marked as neither deleted nor altered_fastq");
+    }
     
     return $self->{Yes};
 }
