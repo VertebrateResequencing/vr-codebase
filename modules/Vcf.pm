@@ -764,8 +764,11 @@ sub _format_line_hash
     if ( !@info ) { push @info, '.'; }
     $out .= "\t". join(';', sort @info);
 
-    # FORMAT
-    $out .= "\t". join(':',@{$$record{$$cols[8]}});
+    # FORMAT, the column may not be present
+    if ( exists($$cols[8]) )
+    {
+        $out .= "\t". join(':',@{$$record{$$cols[8]}});
+    }
 
     # genotypes
     if ( $columns )
