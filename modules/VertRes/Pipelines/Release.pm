@@ -865,19 +865,23 @@ sub create_release_files {
         }
         push(@release_files, $bai, $bai_md5);
         
-        # bas & its md5 & links
-        my $bas = $bam.'.bas';
-        my $bas_md5 = $bas.'.md5';
-        unless (-s $bas && -s $bas_md5) {
-            $self->{bsub_opts} = '-q basement';
-            LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
-                     qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$self->{release_date}], qq[$bas]); die qq[bas failed for $bam\n] unless -s qq[$bas]; system(qq[md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"}); # , qq[$self->{sequence_index}] bas() needs a database option?
-            $self->{bsub_opts} = '-q long';
+        # since it can take a long time to make bas files on the unsplit bam,
+        # don't bother if we're in DCC mode
+        unless ($self->{dcc_mode}) {
+            # bas & its md5 & links
+            my $bas = $bam.'.bas';
+            my $bas_md5 = $bas.'.md5';
+            unless (-s $bas && -s $bas_md5) {
+                $self->{bsub_opts} = '-q basement';
+                LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
+                         qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$self->{release_date}], qq[$bas]); die qq[bas failed for $bam\n] unless -s qq[$bas]; system(qq[md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"}); # , qq[$self->{sequence_index}] bas() needs a database option?
+                $self->{bsub_opts} = '-q long';
+            }
+            elsif (! -e "$release_name.bas") {
+                symlink("$basename.bas", "$release_name.bas");
+            }
+            push(@release_files, $bas, $bas_md5);
         }
-        elsif (! -e "$release_name.bas") {
-            symlink("$basename.bas", "$release_name.bas");
-        }
-        push(@release_files, $bas, $bas_md5);
         
         # chr splits
         if ($self->{do_chr_splits}) {
