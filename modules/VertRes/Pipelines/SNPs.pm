@@ -49,9 +49,9 @@ our $options =
     sam2vcf         => 'sam2vcf.pl',
     split_size      => 10_000_000,
     gatk_split_size => 10_000_000,
-    varfilter       => 'samtools.pl varFilter',
+    varfilter       => 'samtools.pl varFilter -S 20 -i 20',
     pileup_rmdup    => 'pileup-rmdup',
-    samtools_het_prior => '-r 0.0001',
+    samtools_pileup_params => '-r 0.0001 -d 500',
     vcf_rmdup       => 'vcf-rmdup',
     vcf_stats       => 'vcf-stats',
 };
@@ -61,7 +61,7 @@ our $options =
 
 =head2 new
 
-        Options    : See Pipeline.pm for general options.
+        Options    : See Pipeline.pm for general options and the code for default values.
 
                     file_list       .. File name containing a list of bam files (e.g. the 17 mouse strains). 
                     fa_ref          .. The reference sequence in fasta format
@@ -79,7 +79,7 @@ our $options =
                     qcall_ct        .. The qcall -ct parameter.
                     qcall_pphet     .. The qcall -pphet parameter.
                     sam2vcf         .. The convertor from samtools pileup format to VCF.
-                    samtools_het_prior .. The -r option to samtools. (Used by QCall and varfilter.)
+                    samtools_pileup_params .. The options to samtools.pl varFilter (Used by Qcall and varFilter.)
                     split_size      .. The size of the chunks (default is 1Mb).
                     varfilter       .. The samtools varFilter command (samtools.pl varFilter).
                     vcf_rmdup       .. The script to remove duplicate positions.
@@ -419,7 +419,7 @@ sub run_varfilter
     my ($self,$bam,$name,$chunk) = @_;
     if ( ! -e "$name.pileup.gz" )
     {
-        Utils::CMD(qq[samtools view -bh $bam $chunk | samtools pileup -d 500 $$self{samtools_het_prior} -c -f $$self{fa_ref} - | $$self{varfilter} -S 20 -i 20 | gzip -c > $name.pileup.gz.part],{verbose=>1});
+        Utils::CMD(qq[samtools view -bh $bam $chunk | samtools pileup $$self{samtools_pileup_params} -c -f $$self{fa_ref} - | $$self{varfilter} | gzip -c > $name.pileup.gz.part],{verbose=>1});
         rename("$name.pileup.gz.part","$name.pileup.gz") or $self->throw("rename $name.pileup.gz.part $name.pileup.gz: $!");
         Utils::CMD("touch _$name.done",{verbose=>1});
     }
@@ -668,7 +668,7 @@ my \$opts = {
     fa_ref     => q[$$self{fa_ref}],
     fai_ref    => q[$$self{fai_ref}],
     split_size => q[$$self{split_size}],
-    samtools_het_prior => q[$$self{samtools_het_prior}],
+    samtools_pileup_params => q[$$self{samtools_pileup_params}],
 };
 my \$var = VertRes::Pipelines::SNPs->new(%\$opts);
 \$var->run_qcall_chunk(q[$chunk]);
@@ -728,7 +728,7 @@ sub run_qcall_chunk
         if ( exists($names{$id}) ) { $self->throw("FIXME: the names not unique [$file] -> [$dir/$name]\n"); }
         $names{$id} = 1;
         
-        $cmd .= qq[samtools view $file $chunk | samtools pileup -d 500 $$self{samtools_het_prior} -gsS -f $$self{fa_ref} - | samtools glfview - | awk '{printf("%s\\t$id\\n",\$0);}';\n];
+        $cmd .= qq[samtools view $file $chunk | samtools pileup $$self{samtools_pileup_params} -gsS -f $$self{fa_ref} - | samtools glfview - | awk '{printf("%s\\t$id\\n",\$0);}';\n];
     }
 
     # Write the column names for QCall
