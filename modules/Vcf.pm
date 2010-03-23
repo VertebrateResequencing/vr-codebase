@@ -432,35 +432,8 @@ sub _next_header_line
         $self->_unread_line($line);
         return undef;
     }
-    push @{$$self{header_lines}}, $line;
 
-    # This header line does not define a key=value pair.
-    if ( !($line=~/^\#\#(\S+)=(.*)$/) ) { return $line; }
-
-    if ( $1 eq 'INFO' ) { $self->_add_field($1,$2); }
-    elsif ( $1 eq 'FILTER' ) { $self->_add_filter_field($2); }
-    elsif ( $1 eq 'FORMAT' ) { $self->_add_field($1,$2); }
-    else 
-    {
-        $$self{header}{$1} = $2; 
-        my $key = lc($1);
-        $$self{header_lc}{$key} = $2;
-
-        # If the header line contains the file format version info, parse it and save.
-        if ( $key eq 'format' ) { $key='fileformat'; }
-        if ( $key eq 'fileformat' ) 
-        { 
-            my $value = $2;
-            if ( !($value=~/(\d+(?:\.\d+)?)$/) ) 
-            { 
-                $self->warn("Could not parse the fileformat version string [$value], assuming VCFv3.3\n");
-                $$self{version} = '3.3';
-            }
-            else { $$self{version} = $1; }
-        }
-    }
-
-    $$self{has_header} = 1;
+    $self->add_header_field($line);
 
     return $line;
 }
@@ -497,7 +470,7 @@ sub _add_field
     # If no paramater is expected for this field, set default to undef
     if ( !$values[1] ) { $missing=undef; }
 
-    if ( exists($$self{header}{$field}{$values[0]}) ) { $self->warn("The field specified twice [$field=$string].\n"); }
+    # if ( exists($$self{header}{$field}{$values[0]}) ) { $self->warn("The field specified twice [$field=$string].\n"); }
     $$self{header}{$field}{$values[0]} = 
     {
         default => $missing,        # this is used for checking and autocorrecting
@@ -526,7 +499,7 @@ sub _add_filter_field
     my $name = $1;
     my $desc = $2;
 
-    if ( exists($$self{header}{'FILTER'}{$name}) ) { $self->warn("The field specified twice [FILTER=$string].\n"); }
+    # if ( exists($$self{header}{'FILTER'}{$name}) ) { $self->warn("The field specified twice [FILTER=$string].\n"); }
     $$self{header}{'FILTER'}{$name} = 
     {
         name    => $name,
@@ -616,7 +589,7 @@ sub _fake_column_names
 
     About   : Returns the header.
     Usage   : print $vcf->format_header();
-    Args    : none
+    Args    : The columns to include on output [optional]
 
 =cut
 
@@ -990,6 +963,78 @@ sub format_genotype_strings
     }
 
     $$rec{ALT} = [ sort { $alts{$a}<=>$alts{$b} } keys %alts ];
+}
+
+
+=head2 add_header_field
+
+    Usage   : $vcf->add_header_field(q[FORMAT=GT,1,String,"Genotype"]);
+    Args    : 
+    Returns : 
+
+=cut
+
+sub add_header_field
+{
+    my ($self,$line) = @_;
+
+    $line =~ s/^\#\#//;
+    chomp($line);
+
+    my ($key,$value,$tag,$pattern);
+
+    # This header line defines a key=value pair.
+    if ( $line=~/^(\S+)=(.*)$/ ) 
+    {
+        $key   = $1;
+        $value = $2;
+
+        if ( $key eq 'INFO' or $key eq 'FILTER' or $key eq 'FORMAT' )
+        {
+            if ( !($value=~/^([^,]+),/) ) { $self->throw("Could not parse the header field $key: $value\n"); }
+            $pattern = "$key=$1";
+
+            if ( $key eq 'INFO' ) { $self->_add_field($key,$value); }
+            elsif ( $key eq 'FILTER' ) { $self->_add_filter_field($value); }
+            elsif ( $key eq 'FORMAT' ) { $self->_add_field($key,$value); }
+        }
+        else
+        {
+            $pattern = "$key=";
+
+            $$self{header}{$key} = $value;
+            my $lc_key = lc($key);
+            $$self{header_lc}{$lc_key} = $value;
+
+            # If the header line contains the file format version info, parse it and save.
+            if ( $lc_key eq 'format' ) { $lc_key='fileformat'; }
+            if ( $lc_key eq 'fileformat' )
+            {
+                if ( !($value=~/(\d+(?:\.\d+)?)$/) )
+                {
+                    $self->warn("Could not parse the fileformat version string [$value], assuming VCFv3.3\n");
+                    $$self{version} = '3.3';
+                }
+                else { $$self{version} = $1; }
+            }
+        }
+        $$self{has_header} = 1;
+    }
+
+    my $hlines = $$self{header_lines} ? $$self{header_lines} : [];
+    my $has_line = 0;
+    for (my $i=0; $i<@$hlines; $i++)
+    {
+        if ( !($$hlines[$i]=~/^\#\#$pattern/) ) { next; }
+        $$hlines[$i] = "##$line\n";
+        $has_line = 1;
+        last;
+    }
+
+    if ( !$has_line )
+    {
+        push @{$$self{header_lines}}, qq[##$line\n];
+    }
 }
 
 
