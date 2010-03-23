@@ -37,11 +37,7 @@ our $options =
     #bsub_opts_long  => "-q long -M7000000 -R 'select[type==X86_64 && mem>7000] rusage[mem=7000]'",
     bsub_opts_long  => "-q normal -M7000000 -R 'select[type==X86_64 && mem>7000] rusage[mem=7000]'",
     fai_chr_regex   => '\d+|x|y',
-    gatk_bin        => 'java -Xmx6500m -jar /nfs/users/nfs_p/pd3/sandbox/call-snps/gatk/GenomeAnalysisTK/GenomeAnalysisTK.jar',
-    gatk_hets_prob  => 1e-4,
-    gatk_confidence => 30,
-    gatk_max_cov    => 1000,
-    gatk_min_mapq   => 25,
+    gatk_cmd        => 'java -Xmx6500m -jar /nfs/users/nfs_p/pd3/sandbox/call-snps/gatk/GenomeAnalysisTK/GenomeAnalysisTK.jar -T UnifiedGenotyper -hets 0.0001 -confidence 30 -mmq 25 -mc 1000 -mrl 10000000 --platform Solexa',
     merge_vcf       => 'merge-vcf -d',
     qcall_bin       => 'QCALL',
     qcall_ct        => '-ct 0.01',
@@ -67,11 +63,7 @@ our $options =
                     fa_ref          .. The reference sequence in fasta format
                     fai_ref         .. The reference fai file to read the chromosomes and lengths.
                     fai_chr_regex   .. The chromosomes to be processed.
-                    gatk_bin        .. The command to launch GATK
-                    gatk_confidence .. The -confidence option to UnifiedGenotyper
-                    gatk_hets_prob  .. The -hets option to UnifiedGenotyper
-                    gatk_max_cov    .. The --max_coverage option to UnifiedGenotyper
-                    gatk_min_mapq   .. The -mmq option to UnifiedGenotyper
+                    gatk_cmd        .. The command to launch GATK SNP caller
                     gatk_split_size .. GATK seems to require more memory
                     merge_vcf       .. The merge-vcf script.
                     pileup_rmdup    .. The script to remove duplicate positions.
@@ -504,7 +496,7 @@ sub gatk
     my ($self,$dir,$lock_file) = @_;
 
     if ( !$$self{fai_ref} ) { $self->throw("Missing the option fai_ref.\n"); }
-    if ( !$$self{gatk_bin} ) { $self->throw("Missing the option gatk_bin.\n"); }
+    if ( !$$self{gatk_cmd} ) { $self->throw("Missing the option gatk_cmd.\n"); }
 
     my %opts =
     (
@@ -539,11 +531,7 @@ my \$opts = {
     fa_ref     => q[$$self{fa_ref}],
     fai_ref    => q[$$self{fai_ref}],
     sam2vcf    => q[$$self{sam2vcf}],
-    gatk_bin   => q[$$self{gatk_bin}],
-    gatk_hets_prob  => q[$$self{gatk_hets_prob}],
-    gatk_confidence => q[$$self{gatk_confidence}],
-    gatk_max_cov    => q[$$self{gatk_max_cov}],
-    gatk_min_mapq   => q[$$self{gatk_min_mapq}],
+    gatk_cmd   => q[$$self{gatk_cmd}],
 };
 my \$snps = VertRes::Pipelines::SNPs->new(%\$opts);
 \$snps->run_gatk(q[$bam],q[$chunk_name],q[$chunk]);
@@ -585,14 +573,8 @@ sub run_gatk
     my ($self,$bam,$name,$chunk) = @_;
     if ( ! -e "$name.vcf.gz" )
     {
-        my $hets = exists($$self{gatk_hets_prob}) ? "-hets $$self{gatk_hets_prob}": '';
-        my $conf = exists($$self{gatk_confidence}) ? "-confidence $$self{gatk_confidence}": '';
-        my $mmq  = exists($$self{gatk_min_mapq}) ? "-mmq $$self{gatk_min_mapq}": '';
-        my $mc   = exists($$self{gatk_max_cov}) ? "-mc $$self{gatk_max_cov}": '';
-
         # Is the value of -mrl 10000000 small enough..? 
-        Utils::CMD("$$self{gatk_bin} -T UnifiedGenotyper $hets $conf $mmq $mc -mrl 10000000 " .
-                   "--platform Solexa -R $$self{fa_ref} -I $bam -L $chunk | gzip -c > $name.vcf.gz.part",{verbose=>1});
+        Utils::CMD("$$self{gatk_cmd} -R $$self{fa_ref} -I $bam -L $chunk | gzip -c > $name.vcf.gz.part",{verbose=>1});
 
         rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
     }
