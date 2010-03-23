@@ -419,7 +419,7 @@ sub run_varfilter
     my ($self,$bam,$name,$chunk) = @_;
     if ( ! -e "$name.pileup.gz" )
     {
-        Utils::CMD(qq[samtools view -bh $bam $chunk | samtools pileup $$self{samtools_het_prior} -c -f $$self{fa_ref} - | $$self{varfilter} -S 20 -i 20 | gzip -c > $name.pileup.gz.part],{verbose=>1});
+        Utils::CMD(qq[samtools view -bh $bam $chunk | samtools pileup -d 500 $$self{samtools_het_prior} -c -f $$self{fa_ref} - | $$self{varfilter} -S 20 -i 20 | gzip -c > $name.pileup.gz.part],{verbose=>1});
         rename("$name.pileup.gz.part","$name.pileup.gz") or $self->throw("rename $name.pileup.gz.part $name.pileup.gz: $!");
         Utils::CMD("touch _$name.done",{verbose=>1});
     }
@@ -728,7 +728,7 @@ sub run_qcall_chunk
         if ( exists($names{$id}) ) { $self->throw("FIXME: the names not unique [$file] -> [$dir/$name]\n"); }
         $names{$id} = 1;
         
-        $cmd .= qq[samtools view $file $chunk | samtools pileup $$self{samtools_het_prior} -gsS -f $$self{fa_ref} - | samtools glfview - | awk '{printf("%s\\t$id\\n",\$0);}';\n];
+        $cmd .= qq[samtools view $file $chunk | samtools pileup -d 500 $$self{samtools_het_prior} -gsS -f $$self{fa_ref} - | samtools glfview - | awk '{printf("%s\\t$id\\n",\$0);}';\n];
     }
 
     # Write the column names for QCall
