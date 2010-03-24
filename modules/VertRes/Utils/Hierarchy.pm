@@ -1150,7 +1150,7 @@ sub dcc_filename {
         }
         $chrom = "$given_chrom.";
     }
-    elsif ($bamname =~ /^(chrom(?:\d+|[XY]|MT)|nonchrom|unmapped)\./) {
+    elsif ($bamname =~ /\.?(chrom(?:\d+|[XY]|MT)|nonchrom|unmapped)\./) {
         $chrom = "$1.";
     }
     
