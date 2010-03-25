@@ -280,7 +280,7 @@ sub generate_sam {
 =head2 add_unmapped
 
  Title   : add_unmapped
- Usage   : $obj->add_unmapped($sam_file, $ref_fasta, @fastqs);
+ Usage   : $obj->add_unmapped($sam_file, @fastqs);
  Function: Do whatever needs to be done with the sam file to add in unmapped
            reads.
  Returns : boolean
@@ -289,13 +289,13 @@ sub generate_sam {
 =cut
 
 sub add_unmapped {
-    my ($self, $sam, $ref, @fqs) = @_;
+    my ($self, $sam, @fqs) = @_;
     
     my $all_sam = "$sam.all_reads.sam";
     my $failed = system("$append_exe @fqs $sam $all_sam $sam.duplicated_reads");
     unless ($failed) {
-        copy($sam, "$sam.orig");
-        move($all_sam, $sam);
+        copy($sam, "$sam.orig") || $self->throw("could not copy $sam to $sam.orig");
+        move($all_sam, $sam) || $self->throw("Could not move $all_sam to $sam");
         return 1;
     }
     else {
