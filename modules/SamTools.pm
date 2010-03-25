@@ -130,13 +130,13 @@ sub parse_bam_line
     #   IL14_1902:3:83:1158:1446        89      1       23069154        37      54M     =       23069154        0       TGCAC ... RG:Z:ERR001720
     my @items = split /\t/, $line;
 
-    $$out{'flag'}  = $items[1];
-    $$out{'chrom'} = $items[2];
-    $$out{'pos'}   = $items[3];
-    $$out{'cigar'} = $items[5];
-    $$out{'isize'} = $items[8];
-    $$out{'seq'}   = $items[9];
-    $$out{'qual'}  = $items[10];
+    $$out{'flag'}   = $items[1];
+    $$out{'chrom'}  = $items[2];
+    $$out{'pos'}    = $items[3];
+    $$out{'cigar'}  = $items[5];
+    $$out{'isize'}  = $items[8];
+    $$out{'seq'}    = $items[9];
+    $$out{'qual'}   = $items[10];
 
     my $nitems = @items;
     for (my $i=11; $i<$nitems; $i++)
@@ -292,12 +292,12 @@ sub collect_detailed_bam_stats
         my $data  = parse_bam_line($line);
         if ( exists($$data{'RG'}) ) { push @stats, $$data{'RG'}; }
 
-        my $flag  = $$data{'flag'};
-        my $chrom = $$data{'chrom'};
-        my $pos   = $$data{'pos'};
-        my $cigar = $$data{'cigar'};
-        my $isize = $$data{'isize'};
-        my $seq   = $$data{'seq'};
+        my $flag   = $$data{'flag'};
+        my $chrom  = $$data{'chrom'};
+        my $pos    = $$data{'pos'};
+        my $cigar  = $$data{'cigar'};
+        my $isize  = $$data{'isize'};
+        my $seq    = $$data{'seq'};
         
         my $seq_len  = length($seq);
         for my $stat (@stats)
@@ -349,9 +349,16 @@ sub collect_detailed_bam_stats
         #   Similar thing is true also for 454 reads. Therefore, do the insert
         #   size stats for all unmapped reads above.
         #
+        # This is the original version which does not work with long insert sizes:
         #   my $paired = ($flag & $$FLAGS{'read_paired'}) && ($flag & $$FLAGS{'paired_tech'});
-        my $paired = ($flag & $$FLAGS{'paired_tech'}) && !($flag & $$FLAGS{'unmapped'});
-        if ( $paired && $isize>0 )
+        #   if ( $paired )
+        #
+        # This version gave about half of the paired reads only, the isize can be negative:
+        #   my $paired = ($flag & $$FLAGS{'paired_tech'}) && !($flag & $$FLAGS{'unmapped'});
+        #   if ( $paired && $isize>0 )
+
+        my $paired = ($flag & $$FLAGS{'paired_tech'}) && !($flag & $$FLAGS{'unmapped'}) && !($flag & $$FLAGS{'mate_unmapped'});
+        if ( $paired && $isize!=0 )
         {
             for my $stat (@stats) { $$out_stats{$stat}{'reads_paired'}++; }
 
