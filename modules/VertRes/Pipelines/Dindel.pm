@@ -410,7 +410,8 @@ sub call {
         }
         next if $done == 3;
         
-        my $job_name = $self->{fsu}->catfile($block_dir, "varfile.$splits");
+        my $job_base_name = "varfile.$splits";
+        my $job_name = $self->{fsu}->catfile($block_dir, $job_base_name);
         my $lock_file = $job_name.'.jids';
         
         my $is_running = LSF::is_job_running($lock_file);
@@ -438,7 +439,7 @@ sub call {
             $jobs++;
             last if $jobs > $self->{simultaneous_jobs};
             
-            $self->archive_bsub_files($block_dir, "varfile.$splits");
+            $self->archive_bsub_files($block_dir, $job_base_name);
             
             # jobs can fail because the .gz already exists, causing gzip to exit
             # with code 1, so always delete the .gz files first
@@ -446,7 +447,7 @@ sub call {
                 unlink("$block_dir/running.dindel.$splits.$type.txt.gz");
             }
             
-            LSF::run($lock_file, $lane_path, $job_name, {bsub_opts => '-q long'},
+            LSF::run($lock_file, $block_dir, $job_base_name, {bsub_opts => '-q long'},
                      qq{$self->{dindel_bin} --analysis indels --bamFiles $self->{bamfiles_fofn} --varFile $var_file --ref $self->{ref} --outputFile $block_dir/running.dindel.$splits --mapUnmapped --libFile $lib_out_file $self->{dindelPars} $self->{addDindelOpt} > $block_dir/running.dindel.$splits.log.txt; gzip $block_dir/running.dindel.$splits.*.txt});
         }
         
