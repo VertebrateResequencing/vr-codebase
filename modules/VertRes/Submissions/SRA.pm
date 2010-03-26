@@ -43,6 +43,7 @@ use base qw(VertRes::Base);
 			contact_name: name of contact person
 			library_selection: 'random' for whole genome shotgun (optional - default is random)
 			machine_code: 0 for 'unspecified', 1 for 'Illumina Genome Analyzer', 2 for 'Illumina Genome Analyzer II' (optional - default is 2)
+			centre: string (optonal - default is SC)
 			Mode 2: Entering accessions
 			accessions: file of subname/lane/accession (tab separated)
 =cut
@@ -98,6 +99,12 @@ sub new
 			$self->warn( "Library source not set to GENOMIC" );
 		}
 		
+		if( ! $$self{'centre'} )
+		{
+			$self->warn( "Sequencing centre not specified - defaulting to SC" );
+			$$self{'centre'} = 'SC';
+		}
+		
 		if( $$self{'holdUntil'} )
 		{
 			my $hold = $$self{'holduntil'};
@@ -141,7 +148,7 @@ sub printLanes
 	my @lanes = @{ $$self{'lanes'} };
 	foreach( @lanes )
 	{
-		print $_."\n";
+		print "L: $_\n";
 	}
 }
 
@@ -157,21 +164,23 @@ sub printLanes
 sub writeXMLs
 {
 	my $self = shift;
-	my %studyInfo = %{$$self{'studyinfo'}};
+	my %studyInfo = %{$$self{'studyInfo'}};
 	my %subnames = %{$$self{'subnames'}};
 	
 	open( my $lfh, ">lane_submission_info.tab" ) or $self->throw("Cannot create lane_submission_info.tab");
-	foreach my $study( keys %studyInfo )
+	foreach ( keys %studyInfo )
 	{
-		_createStudyXML( $_, $studyInfo{ $_ }, $subnames{ $_ } );
+		print "S: $_\n";
+		print "SUB: ".$subnames{ $_ }."\n";
+		_createStudyXML( $self, $_, $studyInfo{ $_ }, $subnames{ $_ } );
 		
-		_createSampleXML( $$self{'sampleInfo'}, $subnames{ $_ } );
+		_createSampleXML( $self, $_, $subnames{ $_ } );
+		exit;
+		_createExperimentXML( $self, $_, $subnames{ $_ } );
 		
-		_createExperimentXML( $$self{'experimentInfo'}, $_, $subnames{ $_ } );
+		_createRunXML( $self, $_, $subnames{ $_ } );
 		
-		_createRunXML( $$self{'laneInfo'}, $subnames{ $_ } );
-		
-		_createSubXML( $$self{'laneInfo'}, $subnames{ $_ } );
+		_createSubXML( $self, $_, $subnames{ $_ } );
 		
 		print $lfh $subnames{ $_ }."\t$_\n";
 	}
@@ -206,8 +215,8 @@ sub _createStudyXML
      </STUDY>
 </STUDY_SET>
 EOXML
-
-	printf $STUDY $studyxml, ($studyname, uc( $$self{'center'} ), $projectName);
+print $$self{'centre'};
+	printf $STUDY $studyxml, ($studyname, uc( $$self{'centre'} ), $projectName);
     close ($STUDY);
 }
 
@@ -222,11 +231,11 @@ EOXML
 =cut
 sub _createSampleXML 
 {
-    my ($self, $sampleref,  $subname) = @_;
+    my ($self, $study_acc,  $subname) = @_;
     open (my $SAMPLE, ">$subname.sample.xml") or $self->throw( "Can't open $subname.sample.xml : $!\n" );
     print $SAMPLE qq(<?xml version="1.0" encoding="UTF-8"?>\n);
     print $SAMPLE qq(<SAMPLE_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n);
-
+	
     my $sampxml = <<'EOXML';
     <SAMPLE alias="%s">
           <SAMPLE_NAME>
@@ -234,14 +243,15 @@ sub _createSampleXML
           </SAMPLE_NAME>
      </SAMPLE>
 EOXML
-
-    foreach my $samplename ( sort keys %{$sampleref} )
+	
+	my %sampleInfo = %{$$self{'sampleInfo'}};
+	foreach ( sort keys %{ $sampleInfo{$study_acc} }  )
 	{
-		my $species = $sampleref->{$samplename}{species};
-		printf $SAMPLE $sampxml, ($samplename,$species);
-    }
-    
-    print $SAMPLE "</SAMPLE_SET>\n";
+		my $species = $sampleInfo{ $study_acc }{ $_ }{species};
+		printf $SAMPLE $sampxml, ($_,$species);
+	}
+	
+	print $SAMPLE "</SAMPLE_SET>\n";
 	
     close ($SAMPLE);
 }
@@ -371,7 +381,7 @@ sub _createSubXML
 
 	# header
     print $SUB qq(<?xml version="1.0" encoding="UTF-8"?>\n);
-    print $SUB sprintf (qq(<SUBMISSION center_name="%s" submission_date="%s" submission_id="%s" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n), $$self{'center'},_isoDate(time),$subname);
+    print $SUB sprintf (qq(<SUBMISSION center_name="%s" submission_date="%s" submission_id="%s" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n), $$self{'centre'},_isoDate(time),$subname);
 	
     # Contact info
     my $conxml = <<'EOXML';
@@ -465,7 +475,7 @@ sub _validateLanes
 		chomp;
 		
 		#small sanity check
-		$self->throw("Invalid lane name: ".$_) unless $_ !~ /^\d+_\d+$/;
+		$self->throw("Invalid lane name: ".$_) unless $_ =~ /^\d+_\d+$/;
 		
 		push( @laneNames, $_ );
 	}
@@ -475,7 +485,7 @@ sub _validateLanes
 	
 	for(my $i = 0; $i < @laneNames; $i ++ )
 	{
-		my $lane = VRTrack::Lane->new_by_name( $vrtrack, $_ );
+		my $lane = VRTrack::Lane->new_by_name( $vrtrack, $laneNames[ $i ] );
 		
 		if( $lane->submission_id() && $lane->submission_id() > 0 )
 		{
@@ -488,7 +498,7 @@ sub _validateLanes
 		}
 	}
 	
-	print scalar( @laneNames ).' out of '.$originally.' lanes are eligible for submission\n';
+	print scalar( @laneNames )." out of $originally lanes are eligible for submission\n";
 	
 	$$self{'lanes'} = \@laneNames;
 }
@@ -594,25 +604,26 @@ sub _gatherMetaInformation
 	{
 		my $lane = VRTrack::Lane->new_by_name( $vrtrack, $_ );
 		my $library = VRTrack::Library->new($vrtrack, $lane->library_id());
-		my $sample = VRTrack::Sample->new($vrtrack, $library->id());
-		my $project = VRTrack::Project->new($vrtrack, $sample->id());
-		my $study_acc = $project->study()->acc() or $self->throw('No accession for project: $project');
-		my $projectName = $project->name();
-		
-		my $sample_name = $sample->individual->name;
-        my $species = $sample->individual->species->name;
 		my $libraryName = $library->name();
 		$libraryName =~ s/[_ ]/-/g;
+		my $sample = VRTrack::Sample->new($vrtrack, $library->sample_id());
+		my $project = VRTrack::Project->new($vrtrack, $sample->project_id());
+		my $sample_name = $sample->individual()->name();
+		my $projectName = $project->name();
+		my $study_acc = $project->study()->acc() or $self->throw('No accession for project: $project');
+        my $species = $sample->individual->species->name;
 		
 		if( ! $studyInfo{ $study_acc } )
 		{
 			$studyInfo{ $study_acc } = $projectName;
-			$subnames{ $study_acc } = lc(sprintf("%s-%s-%s", $projectName, lc($$self{'center'}) ,_dateStr(time)));
+			#print "P: $projectName CE: ".$$self{'centre'}." L:$libraryName S:$sample_name M:".$$self{'machine_code'}."\n";
+			
+			$subnames{ $study_acc } = lc(sprintf("%s-%s-%s", $projectName, lc($$self{'centre'}) ,_dateStr(time)));
+			$subnames{ $study_acc } =~ s/\W+/_/g;
 		}
 		
 		my ($file, $md5) = _get_lane_srf($lane->name);
 		my $cycles = $lane->read_len;
-		
 		my $experiment_id = sprintf("%s-%s-%s-%s", $libraryName,$sample_name,$cycles,$$self{'machine_code'} );
 		
 		$sampleInfo{$study_acc}{$sample_name}{species} = $species;
@@ -630,7 +641,7 @@ sub _gatherMetaInformation
 				'species'   => $species,
 				'library'   => $libraryName,
 				'cycles'    => $cycles,
-				'machine'   => $$$self{'machine_code'},
+				'machine'   => $$self{'machine_code'},
 			};
 		}
 	}
@@ -651,9 +662,9 @@ sub _get_lane_srf
     unless ($md5)
 	{
         $srf =~ s/_/_s_/;
-        $md5 = `mpsa_download -m -f $srf`;
+		$md5 = `mpsa_download -m -f $srf`;
     }
-
+	
     unless ($md5)
 	{
         die "Can't get md5 for $lane\n";
