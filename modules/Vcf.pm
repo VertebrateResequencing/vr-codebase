@@ -1021,6 +1021,8 @@ sub add_header_field
         $$self{has_header} = 1;
     }
 
+    if ( !$pattern ) { $self->throw("FIXME: Unexpected pattern, could not parse the line [$line]") }
+
     my $hlines = $$self{header_lines} ? $$self{header_lines} : [];
     my $has_line = 0;
     for (my $i=0; $i<@$hlines; $i++)
