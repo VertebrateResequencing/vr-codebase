@@ -378,7 +378,7 @@ sub varFilter_requires
 sub varFilter_provides
 {
     my ($self,$dir) = @_;
-    my @provides = ('varfilter.done');
+    my @provides = ('varFilter.done');
     return \@provides;
 }
 
