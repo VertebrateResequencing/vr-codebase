@@ -616,6 +616,13 @@ sub qcall
     my $work_dir = "$dir/qcall";
     Utils::CMD("mkdir -p $work_dir") unless -e $work_dir;
 
+    # The big VCF file already exists
+    if ( -e "$work_dir/qcall.vcf.gz" )
+    {
+        Utils::CMD("touch $dir/qcall.done");
+        return;
+    }
+
     my $chunks = $self->chr_chunks($$self{fai_ref},$$self{split_size});
 
     my $is_finished = 1;
@@ -663,13 +670,6 @@ my \$var = VertRes::Pipelines::SNPs->new(%\$opts);
 
     # Some chunks still not done
     if ( !$is_finished ) { return; }
-
-    # The big VCF file already exists
-    if ( -e "$work_dir/qcall.vcf.gz" )
-    {
-        Utils::CMD("touch $dir/qcall.done");
-        return;
-    }
 
     # Because this subroutine returns as if it has already finished, a custom jids_file must
     #   be used: Pipeline.pm will delete the $lock_file.
