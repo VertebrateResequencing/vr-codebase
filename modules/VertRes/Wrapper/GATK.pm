@@ -153,7 +153,7 @@ sub _handle_common_params {
  Returns : n/a
  Args    : path to input .bam file, path to output file (which will have its
            name suffixed with '.recal_data.csv' unless you suffix it yourself
-           with .csv). Optionally, supply R, DBSNP, useOriginalQualities or l
+           with .csv). Optionally, supply R, DBSNP, use_original_quals or l
            options (as a hash), as understood by GATK. -B and -cov should be set
            with the set_vcfs() and set_covs() methods beforehand.
 
@@ -175,7 +175,7 @@ sub count_covariates {
     #   -cov DinucCovariate \
     #   -recalFile my_reads.recal_data.csv
 
-    $self->switches([qw(quiet_output_mode useOriginalQualities)]);
+    $self->switches([qw(quiet_output_mode use_original_quals)]);
     $self->params([qw(R DBSNP l T max_reads_at_locus default_platform)]);
     
     # used to take a fileroot, but now takes an output file
@@ -190,8 +190,8 @@ sub count_covariates {
     my %params = @params;
     $params{T} = 'CountCovariates';
     $params{quiet_output_mode} = $self->quiet();
-    unless (defined $params{useOriginalQualities}) {
-        $params{useOriginalQualities} = 1;
+    unless (defined $params{use_original_quals}) {
+        $params{use_original_quals} = 1;
     }
     $self->_handle_common_params(\%params);
     $params{max_reads_at_locus} ||= 50000; # stop it using tons of memory in repeat regions
@@ -299,8 +299,8 @@ sub get_vcfs {
  Function: Recalibrates a bam using the csv file made with count_covariates().
  Returns : n/a
  Args    : path to input .bam file, path to csv file made by count_covariates(),
-           path to output file. Optionally, supply R or l or useOriginalQualities
-           options (as a hash), as understood by GATK. useOriginalQualities is on
+           path to output file. Optionally, supply R or l or use_original_quals
+           options (as a hash), as understood by GATK. use_original_quals is on
            by default.
 
 =cut
@@ -316,7 +316,7 @@ sub table_recalibration {
     #   -outputBAM my_reads.recal.bam \
     #   -recalFile my_reads.recal_data.csv
     
-    $self->switches([qw(quiet_output_mode useOriginalQualities)]);
+    $self->switches([qw(quiet_output_mode use_original_quals)]);
     $self->params([qw(R l T default_platform)]);
     
     my @file_args = (" -I $in_bam", " -recalFile $csv", " --output_bam $out_bam");
@@ -324,8 +324,8 @@ sub table_recalibration {
     my %params = @params;
     $params{T} = 'TableRecalibration';
     $params{quiet_output_mode} = $self->quiet();
-    unless (defined $params{useOriginalQualities}) {
-        $params{useOriginalQualities} = 1;
+    unless (defined $params{use_original_quals}) {
+        $params{use_original_quals} = 1;
     }
     $self->_handle_common_params(\%params);
     
@@ -390,8 +390,8 @@ sub analyze_covariates {
            Won't attempt to recalibrate if out.bam already exists.
  Returns : n/a
  Args    : path to input .bam file, path to output file. Optionally, supply R,
-           DBSNP, useOriginalQualities or l options (as a hash), as understood by
-           GATK. useOriginalQualities is on by default. -B and -cov should be set
+           DBSNP, use_original_quals or l options (as a hash), as understood by
+           GATK. use_original_quals is on by default. -B and -cov should be set
            with the set_vcfs() and set_covs() methods beforehand.
 
 =cut
