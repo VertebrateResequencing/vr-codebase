@@ -145,10 +145,80 @@ sub next_result {
         for my $i (7..18) {
             $self->{_result_holder}->[$i] = 0;
         }
+        $self->_set_header_parsed() unless $self->_header_parsed();
         return $self->next_result;
     }
     
     return 1;
+}
+
+=head2 total_reads
+
+ Title   : total_reads
+ Usage   : my $total_reads = $obj->total_reads();
+ Function: Get the total reads of all readgroups reported in the bas file.
+ Returns : int
+ Args    : n/a
+
+=cut
+
+sub total_reads {
+    my $self = shift;
+    return $self->_total(9);
+}
+
+sub _total {
+    my ($self, $index) = @_;
+    
+    my $fh = $self->fh() || return;
+    my $fh_id = $self->_fh_id;
+    $self->_save_position || return;
+    
+    $self->_seek_first_result();
+    
+    my $total = 0;
+    my $rh = $self->result_holder;
+    while ($self->next_result) {
+        $total += $rh->[$index];
+    }
+    
+    $self->_restore_position;
+    
+    return $total;
+}
+
+=head2 mapped_reads
+
+ Title   : mapped_reads
+ Usage   : my $mapped_reads = $obj->mapped_reads();
+ Function: Get the total mapped reads of all readgroups reported in the bas
+           file.
+ Returns : int
+ Args    : n/a
+
+=cut
+
+sub mapped_reads {
+    my $self = shift;
+    return $self->_total(10);
+}
+
+=head2 percent_mapped
+
+ Title   : percent_mapped
+ Usage   : my $percent_mapped = $obj->percent_mapped();
+ Function: Get the percent of mapped reads across all readgroups reported in
+           the bas file
+ Returns : float
+ Args    : n/a
+
+=cut
+
+sub percent_mapped {
+    my $self = shift;
+    my $total = $self->total_reads;
+    my $mapped = $self->mapped_reads;
+    return (100 / $total) * $mapped;
 }
 
 1;

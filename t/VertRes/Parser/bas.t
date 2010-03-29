@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 17;
+    use Test::Most tests => 23;
     
     use_ok('VertRes::Parser::bas');
 }
@@ -33,6 +33,20 @@ while ($basp->next_result) {
 }
 
 is_deeply $rh, [qw(NA00003.ILLUMINA.bwa.SRP000003.20100208 007c160b07f7d928bfa47a85410113e0 SRP000003 NA00003 ILLUMINA alib3 SRR00003 115000 62288 2000 1084 1084 1070 2.05 23.32 286 74.10 275 46)], 'last result was correct';
+
+# test the total-related methods, and that they work mid-file
+$basp = VertRes::Parser::bas->new(file => $bas_file);
+$basp->next_result;
+$basp->next_result;
+$rh = $basp->result_holder();
+is_deeply $rh, [qw(NA00002.ILLUMINA.bwa.SRP000002.20100208 007c160b07f7d928bfa47a85410113e0 SRP000002 NA00002 ILLUMINA alib2 SRR00002 115000 62288 2000 1084 1084 1070	2.05 23.32 286 74.10 275 47)], 'second result was correct';
+is $basp->total_reads, 6000, 'total_reads was correct';
+is $basp->mapped_reads, 3252, 'mapped_reads was correct';
+is sprintf("%0.1f", $basp->percent_mapped), 54.2, 'percent_mapped was correct';
+is_deeply $rh, [qw(NA00002.ILLUMINA.bwa.SRP000002.20100208 007c160b07f7d928bfa47a85410113e0 SRP000002 NA00002 ILLUMINA alib2 SRR00002 115000 62288 2000 1084 1084 1070	2.05 23.32 286 74.10 275 47)], 'second result still correct';
+$basp->next_result;
+is_deeply $rh, [qw(NA00003.ILLUMINA.bwa.SRP000003.20100208 007c160b07f7d928bfa47a85410113e0 SRP000003 NA00003 ILLUMINA alib3 SRR00003 115000 62288 2000 1084 1084 1070 2.05 23.32 286 74.10 275 46)], 'last result was correct';
+
 
 # test parsing an empty (header-only) bas file: should return unknowns and 0s,
 # not the header column names
