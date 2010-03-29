@@ -1040,6 +1040,29 @@ sub add_header_field
 }
 
 
+=head2 add_format_field
+
+    Usage   : $x=$vcf->next_data_hash(); $vcf->add_format_field($x,'FOO'); $$x{gtypes}{NA0001}{FOO}='Bar'; print $vcf->format_line($x);
+    Args    : The record obtained by next_data_hash
+            : The field name
+    Returns : 
+
+=cut
+
+sub add_format_field
+{
+    my ($self,$rec,$field) = @_;
+
+    if ( !$$rec{FORMAT} ) { $$rec{FORMAT}=[]; }
+
+    for my $key (@{$$rec{FORMAT}})
+    {
+        if ( $key eq $field ) { return; } # already there
+    }
+    push @{$$rec{FORMAT}}, $field;
+}
+
+
 =head2 validate_filter_field
 
     Usage   : my $x = $vcf->next_data_hash(); $vcf->validate_filter_field($$x{FILTER});
