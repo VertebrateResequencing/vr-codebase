@@ -1047,6 +1047,8 @@ sub make_unmapped_bam {
     my $samtools = VertRes::Wrapper::samtools->new(verbose => $self->verbose);
     $samtools->view($filtered_sam, $out_bam, b => 1, S => 1);
     
+    unlink($filtered_sam);
+    
     return $samtools->run_status() >= 1;
 }
 
