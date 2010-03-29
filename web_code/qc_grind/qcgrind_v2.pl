@@ -1320,7 +1320,7 @@ sub displayLibrary
                 <td style="background-color:$lane_status_colour;"><a href="$SCRIPT_NAME?mode=$LANE_VIEW&amp;lane_id=$id&amp;sp=$species">$name</a></td>
                 ];
                 
-                print defined($auto_qc_status) ? qq[<td style="background-color:$lane_auto_status_colour;">$auto_qc_status</td>] : qq[<td>undef</td>];
+                print defined($auto_qc_status) ? qq[<td style="background-color:$lane_auto_status_colour;"></td>] : qq[<td>undef</td>];
 
                 print qq[
                 <td>$cycles</td>
