@@ -948,7 +948,7 @@ sub create_release_files {
                     }
                     close($bamfh);
                     
-                    $self->{bsub_opts} = '-q long';
+                    $self->{bsub_opts} = '-q basement';
                     LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                              qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->split_bam_by_sequence(qq[$bam], all_unmapped => $all_unmapped, check => 1);"});
                 }
