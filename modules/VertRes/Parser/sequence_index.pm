@@ -104,7 +104,7 @@ sub _get_header {
             # extraneous \t\n, so remove that first
             s/\t\n$//;
             my @a = split("\t", $_);
-            if (@a == 25) {
+            if (@a == 25 || @a == 26) {
                 $self->{_first_line} = $_;
                 my $tell = tell($fh);
                 if ($tell == -1) {
@@ -115,7 +115,7 @@ sub _get_header {
                 last;
             }
             else {
-                $self->warn("This file has no header line, and has ".scalar(@a)." columns instead of 25");
+                $self->warn("This file has no header line, and has ".scalar(@a)." columns instead of 25 or 26");
                 last;
             }
         }
