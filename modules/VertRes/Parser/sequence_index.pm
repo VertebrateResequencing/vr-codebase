@@ -195,12 +195,14 @@ sub next_result {
     }
     
     # bug in sequence.index generation can result in lines ending in \t\n
-    $line =~ s/\t\n//;
+    # $line =~ s/\t\n//;
+    # ... but the above fix prevents us ending the sequence.index in empty
+    # values!
     
     my @data = split(/\t/, $line);
     chomp($data[-1]);
     if (@data != 26 && @data != 25) {
-        $self->warn("Expected 26 or 25 columns, got " . scalar @data . ": $line\n");
+        $self->warn("Expected 26 or 25 columns, got " . scalar @data . ": " . join(",", @data) ."\n");
         return;
     }
     
