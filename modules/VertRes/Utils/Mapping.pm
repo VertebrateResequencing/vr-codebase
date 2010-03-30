@@ -390,7 +390,14 @@ sub mapping_hierarchy_report {
             my $level_path;
             if (exists $li{$level}) {
                 $level_path = $li{hierarchy_path};
-                ($level_path) = $level_path =~ /^(.*?$li{$level})/;
+                my $level = $li{$level};
+                if ($level eq 'ILLUMINA') {
+                    $level = 'SLX';
+                }
+                elsif ($level eq 'LS454') {
+                    $level = 454;
+                }
+                ($level_path) = $level_path =~ /^(.*?$level)/;
             }
             else {
                 $level_path = '/';
@@ -399,7 +406,7 @@ sub mapping_hierarchy_report {
             if ($mapped) {
                 $hierarchy_stats{$level_path}->{mapped} = 1;
                 foreach my $stat (qw(total_bases mapped_bases total_reads mapped_reads mapped_reads_in_proper_pairs)) {
-                    $hierarchy_stats{$level_path}->{$stat} += $mapping_stats{$stat};
+                    $hierarchy_stats{$level_path}->{$stat} += $mapping_stats{$stat} || 0;
                 }
             }
             elsif (! exists $hierarchy_stats{$level_path}->{mapped}) {
