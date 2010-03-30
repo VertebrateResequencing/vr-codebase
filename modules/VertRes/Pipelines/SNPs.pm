@@ -433,6 +433,7 @@ my \$opts = {
     fai_ref    => q[$$self{fai_ref}],
     sam2vcf    => q[$$self{sam2vcf}],
     varfilter  => q[$$self{varfilter}],
+    samtools_pileup_params => q[$$self{samtools_pileup_params}],
 };
 my \$snps = VertRes::Pipelines::SNPs->new(%\$opts);
 \$snps->run_varfilter(q[$bam],q[$chunk_name],q[$chunk]);
