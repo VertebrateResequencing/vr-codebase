@@ -652,6 +652,10 @@ sub merge_up_one_level {
         
         next if -e $out_bam;
         
+        my $markdup_bam = $out_bam;
+        $markdup_bam =~ s/\.bam$/.markdup.bam/;
+        next if -s $markdup_bam;
+        
         # don't do more than desired merges at once, or we'll kill IO and jobs
         # will fail
         next if $jobs >= $self->{simultaneous_merges};
@@ -792,7 +796,9 @@ sub create_release_files {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $fofn = $self->{fsu}->catfile($lane_path, '.platform_merge_done');
+    warn "about to parse $fofn...\n";
     my @in_bams = $self->{io}->parse_fofn($fofn, $lane_path);
+    warn "... got ", scalar(@in_bams), " bams\n";
     
     my $out_fofn = $self->{fsu}->catfile($lane_path, '.create_release_files_expected');
     if (-s $out_fofn) {
@@ -820,6 +826,11 @@ sub create_release_files {
         my ($basename, $path) = fileparse($bam);
         my $release_name = $self->{fsu}->catfile($path, 'release.bam');
         
+        my $done_file = $self->{fsu}->catfile($path, '.release_done');
+        next if -e $done_file;
+        my @these_release_files;
+        print STDERR '. ';
+
         my $this_job_name = $self->{prefix}.'create_release_files';
         my $pathed_job_name = $self->{fsu}->catfile($path, $this_job_name);
         my $lock_file = $pathed_job_name.'.jids';
@@ -851,7 +862,7 @@ sub create_release_files {
         elsif (! -e $release_name) {
             symlink($basename, $release_name);
         }
-        push(@release_files, $bam, $bam_md5);
+        push(@these_release_files, $bam, $bam_md5);
         
         # bai & its md5 & links
         my $bai = $bam.'.bai';
@@ -863,7 +874,7 @@ sub create_release_files {
         elsif (! -e "$release_name.bai") {
             symlink("$basename.bai", "$release_name.bai");
         }
-        push(@release_files, $bai, $bai_md5);
+        push(@these_release_files, $bai, $bai_md5);
         
         # since it can take a long time to make bas files on the unsplit bam,
         # don't bother if we're in DCC mode
@@ -880,7 +891,7 @@ sub create_release_files {
             elsif (! -e "$release_name.bas") {
                 symlink("$basename.bas", "$release_name.bas");
             }
-            push(@release_files, $bas, $bas_md5);
+            push(@these_release_files, $bas, $bas_md5);
         }
         
         # chr splits
@@ -896,7 +907,7 @@ sub create_release_files {
                 
                 unless ($self->{dcc_mode}) {
                     foreach my $suffix ('.md5', '.bai', '.bai.md5', '.bas', '.bas.md5') {
-                        push(@release_files, $ebam.$suffix);
+                        push(@these_release_files, $ebam.$suffix);
                     }
                 }
             }
@@ -916,7 +927,7 @@ sub create_release_files {
                     $dcc_bams += -s $dccbam ? 1 : 0;
                     
                     foreach my $suffix ('.md5', '.bai', '.bai.md5', '.bas', '.bas.md5') {
-                        push(@release_files, $dccbam.$suffix);
+                        push(@these_release_files, $dccbam.$suffix);
                     }
                 }
                 @expected_split_bams = @expected_dcc_bams;
@@ -983,6 +994,17 @@ sub create_release_files {
                 $self->{bsub_opts} = '-q long';
             }
         }
+
+        my $done_release_files = 0;
+        foreach my $r_file (@these_release_files) {
+            $done_release_files++ if -s $r_file;
+        }
+        if ($done_release_files == @these_release_files) {
+            open(my $fh, '>', $done_file) || $self->throw("Could not write to $done_file");
+            close($fh);
+        }
+
+        push(@release_files, @these_release_files);
     }
     
     unless ($skipped_some) {
