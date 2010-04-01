@@ -796,9 +796,8 @@ sub create_release_files {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $fofn = $self->{fsu}->catfile($lane_path, '.platform_merge_done');
-    warn "about to parse $fofn...\n";
     my @in_bams = $self->{io}->parse_fofn($fofn, $lane_path);
-    warn "... got ", scalar(@in_bams), " bams\n";
+    warn scalar(@in_bams), " platform bams to create release files for...\n";
     
     my $out_fofn = $self->{fsu}->catfile($lane_path, '.create_release_files_expected');
     if (-s $out_fofn) {
@@ -826,11 +825,25 @@ sub create_release_files {
         my ($basename, $path) = fileparse($bam);
         my $release_name = $self->{fsu}->catfile($path, 'release.bam');
         
-        my $done_file = $self->{fsu}->catfile($path, '.release_done');
-        next if -e $done_file;
         my @these_release_files;
         print STDERR '. ';
-
+        my $done_file = $self->{fsu}->catfile($path, '.release_done');
+        if (-s $done_file) {
+            open(my $fh, $done_file) || $self->throw("Could not open $done_file");
+            while (<$fh>) {
+                chomp;
+                next unless /\S/;
+                push(@these_release_files, $_);
+            }
+            if (@these_release_files < 27) {
+                unlink($done_file);
+            }
+            else {
+                push(@release_files, @these_release_files);
+                next;
+            }
+        }
+        
         my $this_job_name = $self->{prefix}.'create_release_files';
         my $pathed_job_name = $self->{fsu}->catfile($path, $this_job_name);
         my $lock_file = $pathed_job_name.'.jids';
@@ -902,7 +915,7 @@ sub create_release_files {
             
             my $bams = 0;
             foreach my $ebam (@expected_split_bams) {
-                push(@release_files, $ebam) unless $self->{dcc_mode};
+                push(@these_release_files, $ebam) unless $self->{dcc_mode};
                 $bams += -s $ebam ? 1 : 0;
                 
                 unless ($self->{dcc_mode}) {
@@ -922,7 +935,7 @@ sub create_release_files {
                     
                     my $dccbam = $ebam;
                     $dccbam =~ s/$basename$/$dcc_filename/;
-                    push(@release_files, $dccbam);
+                    push(@these_release_files, $dccbam);
                     push(@expected_dcc_bams, $dccbam);
                     $dcc_bams += -s $dccbam ? 1 : 0;
                     
@@ -994,16 +1007,19 @@ sub create_release_files {
                 $self->{bsub_opts} = '-q long';
             }
         }
-
+        
         my $done_release_files = 0;
         foreach my $r_file (@these_release_files) {
             $done_release_files++ if -s $r_file;
         }
         if ($done_release_files == @these_release_files) {
             open(my $fh, '>', $done_file) || $self->throw("Could not write to $done_file");
+            foreach my $r_file (@these_release_files) {
+                print $fh $r_file, "\n";
+            }
             close($fh);
         }
-
+        
         push(@release_files, @these_release_files);
     }
     
