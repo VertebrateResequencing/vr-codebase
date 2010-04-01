@@ -5,7 +5,7 @@ use File::Spec;
 use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 26;
+    use Test::Most tests => 25;
     
     use_ok('VertRes::Utils::Hierarchy');
 }
@@ -30,7 +30,7 @@ is_deeply {$h_util->parse_lane($lane_path)}, {study => 'SRP000031',
                                               lane => 'SRR003670'}, 'parse_lane test';
 
 ok $h_util->check_lanes_vs_sequence_index([$lane_path], $si_file), 'check_lanes_vs_sequence_index test';
-$lane_path = '/path/to/META/YRI_low_coverage/NA06986/SLX/Solexa_5459/SRR003670';
+$lane_path = '/path/to/META/CEU_low_coverage/NA06986/SLX/Solexa_5459/SRR003670';
 ok $h_util->check_lanes_vs_database([$lane_path], $vrtrack), 'check_lanes_vs_database test';
 #ok ! $h_util->check_lanes_vs_database([$lane_path], $vrtrack, 1), 'check_lanes_vs_database check all test'; # too slow...
 
@@ -82,8 +82,7 @@ is $created_links, 4, 'create_release_hierarchy created the correct bam symlinks
 # lane_info test
 my $mouse_reseq_track_db = { host => 'mcs4a', port => 3306, user => 'vreseq_ro', database => 'mouse_reseq_track' };
 ok my %info = $h_util->lane_info('3034_8', db => $mouse_reseq_track_db, qc_passed => 1, mapped => 1), 'lane_info ran ok';
-is $info{sample}, '129P2_1', 'lane_info gave correct sample';
-is_deeply [$info{technology}, $info{seq_tech}], ['ILLUMINA', 'SLX'], 'lane_info gave correct technology and seq_tech';
+is_deeply [$info{technology}, $info{seq_tech}, $info{project}, $info{study}, $info{sample}], ['ILLUMINA', 'SLX', '129P2 Mouse Genome', 'ERP000034', '129P2_1'], 'lane_info gave correct technology and seq_tech, project, study and sample';
 cmp_ok $info{individual_coverage}, '>=', 22.39, 'lane_info had the correct individual_coverage';
 # needs more thougher tests for all the different ways of calling lane_info...
 

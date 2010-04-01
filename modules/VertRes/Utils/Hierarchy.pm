@@ -40,6 +40,7 @@ use VRTrack::Lane;
 use VRTrack::Library;
 use VRTrack::Sample;
 use VRTrack::Project;
+use VRTrack::Study;
 use VRTrack::History;
 
 use base qw(VertRes::Base);
@@ -118,7 +119,8 @@ sub parse_lane {
  Function: Get information about a lane from the VRTrack meta database.
  Returns : hash of information, with keys:
            hierarchy_path => string,
-           project        => string,
+           study          => string, (the true project code)
+           project        => string, (may not be the true project code)
            sample         => string,
            individual     => string,
            individual_acc => string,
@@ -245,6 +247,7 @@ sub lane_info {
     }
     $info{population} = $objs{population}->name;
     $info{project} = $objs{project}->name;
+    $info{study} = $objs{study}->acc;
     
     $hist->time_travel($orig_time_travel);
     
@@ -258,6 +261,7 @@ sub lane_info {
  Function: Get all the parent objects of a lane, from the library up to the
            project.
  Returns : hash with these key and value pairs:
+           study => VRTrack::Study object
            project => VRTrack::Project object
            sample => VRTrack::Sample object
            individual => VRTrack::Individual object
@@ -280,8 +284,10 @@ sub lane_hierarchy_objects {
     my $individual = $sample->individual;
     my $pop = $individual->population;
     my $project_obj = VRTrack::Project->new($vrtrack, $sample->project_id);
+    my $study_obj = VRTrack::Study->new($vrtrack, $project_obj->study_id);
     
-    return (project => $project_obj,
+    return (study => $study_obj,
+            project => $project_obj,
             sample => $sample,
             individual => $individual,
             population => $pop,

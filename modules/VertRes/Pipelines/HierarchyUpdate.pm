@@ -272,7 +272,7 @@ sub fix_swaps {
                                          platform => $info{technology},
                                          centre => $info{centre},
                                          insert_size => $info{insert_size},
-                                         project => $info{project} });
+                                         study => $info{study} });
         
         my $needed_rewrite = 0;
         my $verbose = $self->verbose;
@@ -283,7 +283,7 @@ sub fix_swaps {
                 my $basename = basename($bam);
                 my $isize = $info{insert_size} || 0; # can be NULL in the db
                 LSF::run($action_lock, $lane_path, $self->{prefix}.$basename.'_header_rewrite', $self,
-                    qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->rewrite_bam_header(qq[$bam], $info{lane} => { sample_name => qq[$info{sample}], library => qq[$info{library_true}], platform => qq[$info{technology}], centre => qq[$info{centre}], insert_size => qq[$isize], project => qq[$info{project}] }) || die qq[Failed to correct the header of '$bam'\n];"});
+                    qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->rewrite_bam_header(qq[$bam], $info{lane} => { sample_name => qq[$info{sample}], library => qq[$info{library_true}], platform => qq[$info{technology}], centre => qq[$info{centre}], insert_size => qq[$isize], study => qq[$info{study}] }) || die qq[Failed to correct the header of '$bam'\n];"});
             }
         }
         if ($needed_rewrite) {

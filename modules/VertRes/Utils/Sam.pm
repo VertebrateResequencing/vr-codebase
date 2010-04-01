@@ -385,7 +385,7 @@ sub split_bam_by_sequence {
                                454|LS454 SOLID|ABI_SOLID)
            centre => string
            insert_size => int
-           project => string, the study id, eg. SRP000001
+           study => string, the study id, eg. SRP000001
  
            -and-
 
@@ -433,7 +433,7 @@ sub add_sam_header {
     my $platform = $args{platform} || $parser->lane_info($lane, 'INSTRUMENT_PLATFORM');
     $platform = $tech_to_platform{$platform} || $self->throw("Bad platform '$platform'");
     my $centre = $args{centre} || $parser->lane_info($lane, 'CENTER_NAME');
-    my $project = $args{project} || $parser->lane_info($lane, 'STUDY_ID');
+    my $project = $args{study} || $args{project} || $parser->lane_info($lane, 'STUDY_ID');
     if ($parser && (! $project || $project eq '-')) {
         my $sn = $parser->lane_info($lane, 'STUDY_NAME');
         if ($sn && $sn ne '-') {
@@ -1485,6 +1485,7 @@ sub check_bam_header {
                       platform => 'PL',
                       centre => 'CN',
                       insert_size => 'PI',
+                      study => 'DS',
                       project => 'DS');
     
     if (defined $rg_changes{platform}) {
@@ -1539,7 +1540,7 @@ sub check_bam_header {
            platform => string
            centre => string
            insert_size => int
-           project => string, the study id, eg. SRP000001 (overwrites DS)
+           study => string, the study id, eg. SRP000001 (overwrites DS)
 
 =cut
 
@@ -1552,6 +1553,7 @@ sub rewrite_bam_header {
                       platform => 'PL',
                       centre => 'CN',
                       insert_size => 'PI',
+                      study => 'DS',
                       project => 'DS');
     
     if (defined $rg_changes{platform}) {
@@ -1649,7 +1651,7 @@ sub rewrite_bam_header {
            sample_name => string, eg. NA00000;
            library => string
            platform => string
-           project => string, the study id, eg. SRP000001
+           study => string, the study id, eg. SRP000001
            md5 => string (NB: if you've just used rewrite_bam_header on a bam
                           and are making the same changes to its bas, the bam
                           md5 will have changed so you should supply the new
@@ -1664,11 +1666,13 @@ sub rewrite_bas_meta {
     my %arg_to_col = (sample_name => 3,
                       library => 5,
                       platform => 4,
+                      study => 2,
                       project => 2,
                       md5 => 1);
     # NAXXXXX.[chromN].technology.[center].algorithm.study_id.YYYYMMDD.bam
     my %arg_to_filename_regex = (sample_name => qr{^[^\.]+(\.)},
                                  platform => qr{(?:ABI_SOLID|ILLUMINA|LS454|SLX|454|SOLID)(\.)},
+                                 study => qr{[^\.]+(\.\d{8})},
                                  project => qr{[^\.]+(\.\d{8})});
     
     my $temp_bas = $bas.'.rewrite_bas_meta.tmp.bas';

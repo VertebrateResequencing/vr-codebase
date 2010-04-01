@@ -48,7 +48,7 @@ ok $sam_util->add_sam_header($temp_sam,
                              ref_fa => $ref,
                              ref_dict => $dict,
                              ref_name => 'SsP17',
-                             project => 'SRP000001'), 'add_sam_header manual args test';
+                             study => 'SRP000001'), 'add_sam_header manual args test';
 my @expected = ("\@HD\tVN:1.0\tSO:coordinate",
                 "\@SQ\tSN:Streptococcus_suis\tLN:2007491\tAS:SsP17\tM5:c52b2f0394e12013e2573e9a38f51031\tUR:file:t/data/S_suis_P17.fa",
                 "\@RG\tID:SRR00000\tLB:alib\tSM:NA00000\tPU:7563\tPI:2000\tCN:Sanger\tPL:ILLUMINA\tDS:SRP000001");
@@ -68,7 +68,7 @@ ok $sam_util->add_sam_header($temp_sam,
                              ref_fa => $ref,
                              ref_dict => $dict,
                              ref_name => 'SsP17',
-                             project => 'SRP000001',
+                             study => 'SRP000001',
                              program => 'bwa',
                              program_version => '0.4.9'), 'add_sam_header manual args test';
 @expected = ("\@HD\tVN:1.0\tSO:coordinate",
@@ -112,14 +112,17 @@ is $found_rgs, @records, 'correct RG tag still present on all records';
 ok $sam_util->rewrite_bam_header($sorted_bam, invalid => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI' }), 'rewrite_bam_header ran ok with an invalid readgroup';
 @header_lines = get_bam_header($sorted_bam);
 is $header_lines[2], "\@RG\tID:SRR00001\tLB:alib\tSM:NA00001\tPU:7563\tPI:2000\tCN:Sanger\tPL:ILLUMINA\tDS:SRP000001", 'rewrite_bam_header didn\'t change the header when readgroup not in the bam';
-my %new_header_args = (SRR00001 => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI', project => 'SRP000001' });
+my %new_header_args = (SRR00001 => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI', study => 'SRP000009' });
 is $sam_util->check_bam_header($sorted_bam, %new_header_args), 1, 'before rewriting header, check returns true';
 ok $sam_util->rewrite_bam_header($sorted_bam, %new_header_args), 'rewrite_bam_header ran ok';
 @header_lines = get_bam_header($sorted_bam);
-is $header_lines[2], "\@RG\tID:SRR00001\tLB:blib\tSM:NA00002\tPU:7563\tPI:2000\tCN:NCBI\tPL:ILLUMINA\tDS:SRP000001", 'rewrite_bam_header actually changed the header';
+is $header_lines[2], "\@RG\tID:SRR00001\tLB:blib\tSM:NA00002\tPU:7563\tPI:2000\tCN:NCBI\tPL:ILLUMINA\tDS:SRP000009", 'rewrite_bam_header actually changed the header';
 @records = get_bam_body($sorted_bam);
 is @records, 2000, 'rewrite_bam_header didn\'t change the number of records';
 is $sam_util->check_bam_header($sorted_bam, %new_header_args), 0, 'after rewriting header, check returns false';
+# (subsequent tests expect a project/study of SRP000001, so change it back)
+%new_header_args = (SRR00001 => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI', project => 'SRP000001' });
+$sam_util->rewrite_bam_header($sorted_bam, %new_header_args);
 
 # rmdup (just a shortcut to VertRes::Wrapper::samtools::rmdup - no need to test thoroughly here)
 my $rmdup_bam = File::Spec->catfile($temp_dir, 'rmdup.bam');
@@ -210,7 +213,7 @@ open($tbfh, $given_bas);
 @given = <$tbfh>;
 close($tbfh);
 is $given[1], $expected[1], 'rewrite_bas_meta didn\'t change anything when readgroup not in the bas';
-ok $sam_util->rewrite_bas_meta($given_bas, SRR00001 => { sample_name => 'NA00003', library => 'clib', platform => 'LS454', project => 'SRP000002' }), 'rewrite_bas_meta ran ok';
+ok $sam_util->rewrite_bas_meta($given_bas, SRR00001 => { sample_name => 'NA00003', library => 'clib', platform => 'LS454', study => 'SRP000002' }), 'rewrite_bas_meta ran ok';
 open($tbfh, $given_bas);
 @given = <$tbfh>;
 close($tbfh);
