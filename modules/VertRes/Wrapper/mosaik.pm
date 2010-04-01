@@ -291,15 +291,40 @@ sub generate_sam {
 sub add_unmapped {
     my ($self, $sam, @fqs) = @_;
     
+    my @usable_fqs;
+    foreach my $fq (@fqs) {
+        if ($fq =~ /\.gz$/) {
+            my $fq_new = $fq;
+            $fq_new =~ s/\.gz$//;
+            
+            push(@usable_fqs, $fq_new);
+            
+            unless (-s $fq_new) {
+                my $i = VertRes::IO->new(file => $fq);
+                my $o = VertRes::IO->new(file => ">$fq_new");
+                my $ifh = $i->fh;
+                my $ofh = $o->fh;
+                while (<$ifh>) {
+                    print $ofh $_;
+                }
+                $i->close;
+                $o->close;
+            }
+        }
+        else {
+            push(@usable_fqs, $fq);
+        }
+    }
+    
     my $all_sam = "$sam.all_reads.sam";
-    my $failed = system("$append_exe @fqs $sam $all_sam $sam.duplicated_reads");
+    my $failed = system("$append_exe @usable_fqs $sam $all_sam $sam.duplicated_reads");
     unless ($failed) {
         copy($sam, "$sam.orig") || $self->throw("could not copy $sam to $sam.orig");
         move($all_sam, $sam) || $self->throw("Could not move $all_sam to $sam");
         return 1;
     }
     else {
-        $self->warn("failed [$append_exe @fqs $sam $all_sam $sam.duplicated_reads]: $!");
+        $self->warn("failed [$append_exe @usable_fqs $sam $all_sam $sam.duplicated_reads]: $!");
         return 0;
     }
     
