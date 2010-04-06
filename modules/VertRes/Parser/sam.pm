@@ -435,8 +435,8 @@ sub sequence_info {
 
  Title   : readgroup_info
  Usage   : my %all_rg_info = $obj->readgroup_info();
-           my %rg_info = $obj->sequence_info('SRR00001');
-           my $library = $obj->sequence_info('SRR00001', 'LB');
+           my %rg_info = $obj->readgroup_info('SRR00001');
+           my $library = $obj->readgroup_info('SRR00001', 'LB');
  Function: Get information about the read groups, as reported in the header.
  Returns : undef if no RG lines in header, else:
            with no args: hash (keys are sequence ids, values are hash refs with
