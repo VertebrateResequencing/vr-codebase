@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 370;
+    use Test::Most tests => 372;
 
     use_ok('VRTrack::VRTrack');
     use_ok('VRTrack::Request');
@@ -369,6 +369,12 @@ ok ! $vrproj->update(), 'can\'t update on historical objects after changing attr
     ok $study = VRTrack::Study->create($vrtrack, $study_acc), 'study create worked';
     $study = VRTrack::Study->new_by_acc($vrtrack, $study_acc);
     is_deeply [$study->id, $study->acc], [3, $study_acc], 'Study new_by_acc worked again';
+
+    # species
+    my $species = VRTrack::Species->create($vrtrack,"organism");
+    is $species->taxon_id(),0, 'Created a species entry with taxon id 0 as expected';
+    my $other_species = VRTrack::Species->create($vrtrack,"organism_2",456);
+    is $other_species->taxon_id(),456, 'Created a species entry with taxon id 456 as expected';
     
     
     # common tests for the classes that have just an id and name
@@ -378,7 +384,7 @@ ok ! $vrproj->update(), 'can\'t update on historical objects after changing attr
                             Seq_centre => 2,
                             Seq_tech => 2,
                             # *** actually the next two have some simple get/setters as well
-                            Species => 2, 
+                            Species => 4, 
                             Submission => 2);
     
     while (my ($class, $next_id) = each %class_to_next_id) {

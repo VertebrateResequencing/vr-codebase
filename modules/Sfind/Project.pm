@@ -80,8 +80,10 @@ sub samples {
     unless ($self->{'samples'}){
 	my @samples;
     	foreach my $id (@{$self->sample_ids()}){
-	    my $obj = Sfind::Sample->new($self->{_dbh},$id, $self->id);
-	    push @samples, $obj;
+	    if($id=~/^\d/){
+	        my $obj = Sfind::Sample->new($self->{_dbh},$id, $self->id);
+	        push @samples, $obj;
+	    }
 	}
 	$self->{'samples'} = \@samples;
     }
@@ -194,4 +196,127 @@ sub get_sample_by_name {
     my $id = $id_ref->{sample_id};
     return $self->get_sample_by_id($id);
 }
+
+
+=head2 get_accession
+
+  Arg [1]    : None
+  Example    : my $acc = $project->get_accession();
+  Description: retrieve EBI accession number from given project ID
+  Returntype : string
+
+=cut
+
+sub get_accession {
+    my ($self) = @_;
+    my $sql = qq[select value from project_information where `param` like "project_ebi_accession_number" and project_information.project_id=?];
+    my $acc = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
+    unless ($acc){
+	warn "No accession ", $self->id,"\n";
+	return undef;
+    }
+    my $acc_name = $acc->{value};
+    return $acc_name;
+}
+
+=head2 get_SAC_sponsor
+
+  Arg [1]    : None
+  Example    : my $acc = $project->get_SAC_sponsor();
+  Description: retrieve SAC sponsor from given project ID
+  Returntype : string
+
+=cut
+
+sub get_SAC_sponsor {
+    my ($self) = @_;
+    my $sql = qq[select value from project_information where `param` like "sac_sponsor" and project_information.project_id=?];
+    my $acc = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
+    unless ($acc){
+	warn "No sponsor", $self->id,"\n";
+	return undef;
+    }
+    my $acc_name = $acc->{value};
+    return $acc_name;
+}
+
+=head2 get_project_description
+
+  Arg [1]    : None
+  Example    : my $desc = $project->get_project_description();
+  Description: retrieve project description from given project ID
+  Returntype : string
+
+=cut
+
+sub get_project_description {
+    my ($self) = @_;
+    my $sql = qq[select value from project_information where `param` like "project_description" and project_information.project_id=?];
+    my $acc = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
+    unless ($acc){
+	warn "No description", $self->id,"\n";
+	return undef;
+    }
+    my $acc_name = $acc->{value};
+    return $acc_name;
+}
+1;
+
+=head2 get_project_manager
+
+  Arg [1]    : None
+  Example    : my $manager = $project->get_project_manager();
+  Description: retrieve project manager from given project ID
+  Returntype : string
+
+=cut
+
+sub get_project_manager {
+    my ($self) = @_;
+    my $sql = qq[select value from project_information where `param` like "sequencing_project_manager" and project_information.project_id=?];
+    my $acc = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
+    unless ($acc){
+	warn "No description", $self->id,"\n";
+	return undef;
+    }
+    my $acc_name = $acc->{value};
+    return $acc_name;
+}
+
+
+
+=head2 get_organism_names
+
+  Arg [1]    : None
+  Example    : my @org = $project->get_organism_name();
+  Description: Convenient method to gets all the organism names associated with 
+               this project, undef if no organism. The hash will also give the
+               number of samples for a particular organism (if needed)
+  Returntype : hash of strings
+
+=cut
+
+sub get_organism_names {
+    my ($self) = @_;
+    my %organisms;
+    foreach my $id (@{$self->sample_ids()}){
+	    if($id=~/^\d/){
+	        my $sample = Sfind::Sample->new($self->{_dbh},$id, $self->id);
+	        my $org_name = $sample->get_organism_name();
+	        if (exists $organisms{$org_name}){
+	        	$organisms{$org_name} = $organisms{$org_name}++;
+	        }else{
+	        	$organisms{$org_name} = 1;	
+	        }
+	        #push(@organisms,$sample->get_organism_name());
+	    }
+    }
+    return %organisms;
+}
+
+
+
+
+
+
 1;

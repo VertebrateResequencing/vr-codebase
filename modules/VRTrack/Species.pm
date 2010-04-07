@@ -92,9 +92,16 @@ sub fields_dispatch {
 =cut
 
 sub create {
-    my ($self, $vrtrack, $name) = @_;
-    return $self->SUPER::create($vrtrack, name => $name);
+    my ($self, $vrtrack, $name, $taxon_id) = @_;
+    if(defined $taxon_id){
+    	return $self->SUPER::create($vrtrack, name => $name, taxon_id => $taxon_id);
+    }else{
+    	return $self->SUPER::create($vrtrack, name => $name);
+    }	
 }
+
+
+
 
 
 ###############################################################################

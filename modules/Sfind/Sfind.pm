@@ -51,6 +51,7 @@ sub new {
     # my $dbh = DBI->connect("DBI:mysql:host=psdp:port=3306;database=warehouse_production", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
     # changed Mar 31 2010
     my $dbh = DBI->connect("DBI:mysql:host=mcs7:port=3306;database=warehouse_production", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
+#    my $dbh = DBI->connect("DBI:mysql:host=mcs6:port=3321;database=warehouse_staging", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
     $self->{_dbh} = $dbh;
 
     return $self;
@@ -247,4 +248,65 @@ sub get_sample_by_id_project {
     my $obj = Sfind::Sample->new($self->{_dbh},$id, $projid);
     return $obj;
 }
+
+=head2 get_projects_by_organism
+
+  Arg [1]    : organism name
+  Example    : my @proj = $sfind->get_projects_by_organism('Babesia bovis');
+  Description: retrieve all project names for an organism given the organism name
+  Returntype : array of project name strings
+
+=cut
+
+sub get_projects_by_organism {
+    my ($self, $org) = @_;
+    $org ="%$org%";   
+    my $sql = qq[select distinct project_name from project_information join project_sample_reports on project_information.project_id = project_sample_reports.project_id join property_information on project_sample_reports.sample_id= property_information.obj_id where `key` like "organism" and  property_information.value like ?];
+#   my @proj = $self->{_dbh}->selectall_arrayref($sql, undef, $org);
+    my @proj;
+    my $sth = $self->{_dbh}->prepare($sql);
+    $sth->execute($org);
+    foreach(@{$sth->fetchall_arrayref()}){
+	    push @proj, $_->[0] if $_->[0];
+	}
+    return @proj;
+}
+
+=head2 get_taxonid_for_organism
+
+  Arg [1]    : organism name
+  Example    : my $taxon_id = $sfind->get_taxonid_for_organism('Home sapiens');
+  Description: Get the taxon ID for a given organism name
+  Returntype : taxon_id
+
+=cut
+
+sub get_taxonid_for_organism {
+    my ($self, $org) = @_;
+    
+    my $sql = qq[select distinct(sample.value) 
+    		     from property_information sample 
+    		     join property_information organism using (obj_id) 
+    		     where organism.`key`="organism" 
+    		     and organism.value=? 
+    		     and sample.`key`="sample_taxon_id" 
+    		     and sample.obj_type="Sample"
+    		     limit 1;]; #TODO: Is this query faster if we use a subquery instead?
+
+   	my $sth = $self->{_dbh}->prepare($sql); 								
+   	$sth->execute($org);
+   	            
+	my ($taxon_id) = $sth->fetchrow_array();
+	unless ($taxon_id){
+		warn "No taxon_id found for $org\n";
+		return undef;
+    }
+#    Some taxon ids in the warehouse seem to have a .0 at the end which is incorrect
+#    We check and remove them here
+    $taxon_id =~ s/(\d+)\.0/$1/g;
+	
+    return $taxon_id;
+}
+
+
 1;

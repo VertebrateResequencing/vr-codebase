@@ -114,7 +114,7 @@ sub library_ids {
 	}
 	$self->{'library_ids'} = \@libraries;
     }
- 
+    
     return $self->{'library_ids'};
 }
 
@@ -212,5 +212,70 @@ sub get_library_by_name {
 
     my $id = $id_ref->{item_id};
     return $self->get_library_by_id($id);
+}
+
+
+
+=head2 get_organism_name
+
+  Arg [1]    : None
+  Example    : my $organism = $sample->get_organism_name();
+  Description: retrieve organism name from given sample ID
+  Returntype : string
+
+=cut
+
+sub get_organism_name {
+    my ($self) = @_;
+    my $sql = qq[select value from property_information where `key` like "organism" and property_information.obj_id=?];
+    my $org = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
+    unless ($org){
+	warn "No organism ", $self->id,"\n";
+	return undef;
+    }
+    my $orgname = $org->{value};
+    return $orgname;
+}
+
+=head2 get_strain_name
+
+  Arg [1]    : None
+  Example    : my $strain = $sample->get_strain_name();
+  Description: retrieve strain information from given sample ID
+  Returntype : string
+
+=cut
+
+sub get_strain_name {
+    my ($self) = @_;
+    my $sql = qq[select value from property_information where `key` like "sample_strain_att" and property_information.obj_id=?];
+    my $strain = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
+    unless ($strain){
+	warn "No strain ", $self->id,"\n";
+	return undef;
+    }
+    my $strain_name = $strain->{value};
+    return $strain_name;
+}
+
+=head2 get_accession
+
+  Arg [1]    : None
+  Example    : my $acc = $sample->get_accession();
+  Description: retrieve EBI accession number from given sample ID
+  Returntype : string
+
+=cut
+
+sub get_accession {
+    my ($self) = @_;
+    my $sql = qq[select value from property_information where `key` like "sample_ebi_accession_number" and property_information.obj_id=?];
+    my $acc = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
+    unless ($acc){
+	warn "No accession ", $self->id,"\n";
+	return undef;
+    }
+    my $acc_name = $acc->{value};
+    return $acc_name;
 }
 1;
