@@ -238,8 +238,27 @@ sub fix_swaps {
         
         my $cwd = cwd();
         chdir(File::Spec->tmpdir) if $cwd eq $lane_path;
-        system("rm -fr $lane_path");
-        $self->throw("Failed to remove $lane_path prior to moving the old version here") if -e $lane_path;
+        
+        # since deleting a whole lane dir is dangerous, double-check that
+        # lane_path is empty except for _job_status, and that old_path contains
+        # some fastqs at least
+        opendir(my $df, $lane_path) || $self->throw("Could not open dir $lane_path");
+        my @new_files = grep { !/^[\._]/ } readdir($df);
+        if (@new_files) {
+            $self->throw("Suspicious, the newly created $lane_path contains files (@new_files) and we expected it to be empty!");
+        }
+        opendir($df, $old_path) || $self->throw("Could not open dir $old_path");
+        my @old_files = grep { !/^[\._]/ } readdir($df);
+        my $found_fastq = 0;
+        foreach my $file (@old_files) {
+            if ($file =~ /fastq/) {
+                $found_fastq = 1;
+                last;
+            }
+        }
+        $self->throw("Suspicious, didn't find any fastq files in old path $old_path!") unless $found_fastq;
+        $self->{fsu}->rmtree($lane_path);
+        $self->throw("Failed to remove $lane_path prior to moving the old version ($old_path) there") if -e $lane_path;
         
         move($old_path, $lane_path) || $self->throw("Failed to move '$old_path' to '$lane_path'");
         chdir($cwd);
