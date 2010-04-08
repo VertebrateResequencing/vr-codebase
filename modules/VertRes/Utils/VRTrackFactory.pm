@@ -9,6 +9,8 @@ use VertRes::Utils::VRTrackFactory;
 my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => 'mouse',
                                                           mode => 'r');
 
+my @database_names = VertRes::Utils::VRTrackFactory->databases();
+
 =head1 DESCRIPTION
 
 A simple factory class that returns VRTrack objects to centralise the database
@@ -33,6 +35,7 @@ use base qw(VertRes::Base);
 use strict;
 use warnings;
 
+use DBI;
 use VRTrack::VRTrack;
 
 my $HOST = $ENV{VRTRACK_HOST} || 'mcs4a';
@@ -92,6 +95,32 @@ sub connection_details {
     my $pass = $mode eq 'rw' ? $WRITE_PASS : '';
     
     return (host => $HOST, port => $PORT, user => $user, password => $pass);
+}
+
+=head2 databases
+
+ Title   : databases
+ Usage   : my @db_names = VertRes::Utils::VRTrackFactory->databases();
+ Function: Find out what databases are available to instantiate. Excludes any
+           test databases.
+ Returns : list of strings
+ Args    : n/a
+
+=cut
+
+sub databases {
+    my $class = shift;
+    my $self = $class->SUPER::new(@_);
+    
+    my %dbparams = VertRes::Utils::VRTrackFactory->connection_details('r');
+    
+    my @databases = DBI->data_sources("mysql", \%dbparams);
+    @databases = grep(s/^DBI:mysql://, @databases); 
+    
+    # we skip information_schema and any test databases
+    @databases = grep(!/^information_schema|test/, @databases);
+    
+    return @databases;
 }
 
 1;
