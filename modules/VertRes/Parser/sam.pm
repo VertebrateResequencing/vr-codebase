@@ -52,6 +52,7 @@ package VertRes::Parser::sam;
 
 use strict;
 use warnings;
+use Cwd qw(abs_path);
 use Inline C => Config => FILTERS => 'Strip_POD' =>
            INC => "-I$ENV{SAMTOOLS}" =>
            LIBS => "-L$ENV{SAMTOOLS} -lbam -lz" =>
@@ -102,6 +103,49 @@ sub new {
     $self->{_result_holder} = {};
     
     return $self;
+}
+
+=head2 file
+
+ Title   : file
+ Usage   : $obj->file('filename.sam'); # open to read a sam file
+           $obj->file('filename.bam'); # open to read a bam file
+ Function: Get/set filename; when setting also opens the file and sets fh().
+           There is also read support for remote files like
+           'ftp://ftp..../file.bam' and it will be downloaded to a temporary
+           location and opened.
+           There is no support for writing to sam/bam.
+ Returns : absolute path of file
+ Args    : filename
+
+=cut
+
+sub file {
+    my ($self, $filename) = @_;
+    
+    if ($filename) {
+        if ($filename =~ /^ftp:|^http:/) {
+            $filename = $self->get_remote_file($filename) || $self->throw("Could not download remote file '$filename'");
+        }
+        
+        # avoid potential problems with caller changing dir and things being
+        # relative; also more informative and explicit to throw with full path
+        $filename = abs_path($filename);
+        
+        # set up the open command, handling bam files automatically
+        my $open = $filename;
+        if ($filename =~ /\.bam$/) {
+            $open = "samtools view -h $filename |";
+        }
+        
+        # go ahead and open it (3 arg form not working when middle is optional)
+        open(my $fh, $open) || $self->throw("Couldn't open '$open': $!");
+        
+        $self->{_filename} = $filename;
+        $self->fh($fh);
+    }
+    
+    return $self->{_filename};
 }
 
 use Inline C => <<'END_C';
@@ -642,10 +686,10 @@ sub next_result {
 
  Title   : get_fields
  Usage   : while (my @fields = $obj->get_fields('QNAME', 'FLAG', 'RG')) { #... }
- Function: From the next line in the sam file, get the values of certain
+ Function: From the next line in the bam file, get the values of certain
            fields/tags. This is much faster than using next_result().
-           NB: this is incompatible with other methods, and only works on
-           bam files (not sam files, or opened filehandles).
+           NB: this is incompatible with other non-flag methods, and only works
+           on bam files (not sam files, or opened filehandles).
  Returns : list of desired values (if a desired tag isn't present, '*' will be
            returned in that slot)
  Args    : list of desired fields (see result_holder()) or tags (like 'RG').
@@ -912,28 +956,3 @@ void _get_fields(SV* self, SV* bam_ref, SV* b_ref, SV* header_ref, ...) {
 END_C
 
 1;
-
-=pod
-
-    Safefree(b);
-    Safefree(cigar_avref);
-    
-    Safefree(bam);
-    Safefree(b);
-    Safefree(i);
-    Safefree(field);
-    Safefree(field_length);
-    Safefree(tag_value);
-    Safefree(type);
-    Safefree(tid);
-    Safefree(header);
-    Safefree(cigar);
-    Safefree(cigar_loop);
-    Safefree(cigar_avref);
-    Safefree(cigar_str);
-    Safefree(seq);
-    Safefree(seq_i);
-    Safefree(qual);
-    Safefree(qual_i);
-    Safefree(qual_str);
-=cut
