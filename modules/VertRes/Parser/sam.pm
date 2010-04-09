@@ -14,6 +14,7 @@ my $program = $pars->program();
 my %readgroup_info = $pars->readgroup_info();
 # etc.
 
+# for parsing sam records only:
 # get the hash reference that will hold the most recently requested result
 my $result_holder = $pars->result_holder();
 
@@ -26,7 +27,7 @@ while ($pars->next_result()) {
     my $mapped = $pars->is_mapped($flag);
 }
 
-# or for speed critical situations:
+# or for speed critical situations, parsing bam records only:
 $pars = VertRes::Parser::sam->new(file => 'mapping.bam');
 while (my @fields = $pars->get_fields('QNAME', 'FLAG', 'RG')) {
     # @fields contains the qname, flag and rg tag
@@ -34,7 +35,9 @@ while (my @fields = $pars->get_fields('QNAME', 'FLAG', 'RG')) {
 
 =head1 DESCRIPTION
 
-A parser for sam and bam files.
+A parser for sam and bam files. Bam files are can be parsed with the header
+methods and get_fields(), whilst sam files can be parsed with the header methods
+and next_result().
 
 The environment variable SAMTOOLS must point to a directory where samtools
 source has been compiled, so containing at least bam.h and libbam.a.
@@ -135,7 +138,10 @@ sub file {
         # set up the open command, handling bam files automatically
         my $open = $filename;
         if ($filename =~ /\.bam$/) {
-            $open = "samtools view -h $filename |";
+            #*** having difficulty closing an -h opened file; samtools doesn't
+            #    close and we hang forever. Instead we limit ourselves to
+            #    parsing header only
+            $open = "samtools view -H $filename |";
         }
         
         # go ahead and open it (3 arg form not working when middle is optional)
@@ -146,6 +152,32 @@ sub file {
     }
     
     return $self->{_filename};
+}
+
+=head2 close
+
+ Title   : close
+ Usage   : $obj->close();
+ Function: Ends the read of this sam/bam.
+ Returns : n/a
+ Args    : n/a
+
+=cut
+
+sub close {
+    my $self = shift;
+    
+    my $fh = $self->fh();
+    
+    if ($fh && $self->{_filename} =~ /\.bam$/) {
+        # make sure we've finished reading the whole thing before attempting to
+        # close
+        while (<$fh>) {
+            next;
+        }
+    }
+    
+    return $self->SUPER::close();
 }
 
 use Inline C => <<'END_C';
@@ -688,8 +720,8 @@ sub next_result {
  Usage   : while (my @fields = $obj->get_fields('QNAME', 'FLAG', 'RG')) { #... }
  Function: From the next line in the bam file, get the values of certain
            fields/tags. This is much faster than using next_result().
-           NB: this is incompatible with other non-flag methods, and only works
-           on bam files (not sam files, or opened filehandles).
+           NB: this only works on bam files (not sam files, or opened
+           filehandles).
  Returns : list of desired values (if a desired tag isn't present, '*' will be
            returned in that slot)
  Args    : list of desired fields (see result_holder()) or tags (like 'RG').
