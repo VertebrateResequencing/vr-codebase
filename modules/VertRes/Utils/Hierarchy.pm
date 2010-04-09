@@ -247,7 +247,7 @@ sub lane_info {
     }
     $info{population} = $objs{population}->name;
     $info{project} = $objs{project}->name;
-    $info{study} = $objs{study}->acc;
+    $info{study} = $objs{study} ? $objs{study}->acc : $info{project};
     
     $hist->time_travel($orig_time_travel);
     
@@ -284,7 +284,7 @@ sub lane_hierarchy_objects {
     my $individual = $sample->individual;
     my $pop = $individual->population;
     my $project_obj = VRTrack::Project->new($vrtrack, $sample->project_id);
-    my $study_obj = VRTrack::Study->new($vrtrack, $project_obj->study_id);
+    my $study_obj = VRTrack::Study->new($vrtrack, $project_obj->study_id) if $project_obj->study_id;
     
     return (study => $study_obj,
             project => $project_obj,
