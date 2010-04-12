@@ -41,7 +41,7 @@ use base qw(VertRes::Wrapper::MapperI);
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/stampy-0.92/stampy.py');
+    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/stampy-0.95/stampy.py');
     
     return $self;
 }
@@ -124,12 +124,13 @@ sub generate_sam {
         #5 copy hash and index to /tmp
         #6 remove sentinel file, done & start stampy
         my $g = $ref.'.stidx';
-        my $local_g = '/tmp/stampy_ref.stidx';
         my $h = $ref.'.sthash';
-        my $local_h = '/tmp/stampy_ref.sthash';
-        my $local_ref = '/tmp/stampy_ref';
-        my $sentinal = '/tmp/.copying_stampy_ref_files';
-        my $in_use = '/tmp/stampy_ref.inuse.'.$$;
+        my $local_ref = '/tmp/sb10_stampy_ref';
+        my $local_g = $local_ref.'.stidx';
+        my $local_h = $local_ref.'.sthash';
+        my $sentinal = '/tmp/.sb10_copying_stampy_ref_files';
+        my $in_use_base = $local_ref.'.inuse';
+        my $in_use = $in_use_base.'.'.$$;
         my $max_checks = 200;
         
         sleep(int(rand(14)) + 1);
@@ -162,7 +163,7 @@ sub generate_sam {
             unlink($in_use);
             
             # if no other pid is using the ref files, delete them
-            open(my $lsfh, 'ls /tmp/stampy_ref.inuse.* 2> /dev/null |');
+            open(my $lsfh, 'ls $in_use_base.* 2> /dev/null |');
             my $others = 0;
             while (<$lsfh>) {
                 $others++;
