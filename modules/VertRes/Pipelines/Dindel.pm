@@ -418,6 +418,11 @@ sub call {
         if ($is_running & $LSF::Error) {
             warn "$job_name failed!\n";
             #unlink($lock_file);
+            
+            # for some reason rare jobs (1-3 per strain) are failing because
+            # the gzip complains it could not find the file to compress, yet
+            # the files are actually created, compressed!...
+            
             next;
         }
         elsif ($is_running & $LSF::Running) {
