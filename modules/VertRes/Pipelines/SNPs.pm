@@ -39,9 +39,7 @@ our $options =
     fai_chr_regex   => '\d+|x|y',
     gatk_cmd        => 'java -Xmx6500m -jar /nfs/users/nfs_p/pd3/sandbox/call-snps/gatk/GenomeAnalysisTK/GenomeAnalysisTK.jar -T UnifiedGenotyper -hets 0.0001 -confidence 30 -mmq 25 -mc 1000 -mrl 10000000 --platform Solexa',
     merge_vcf       => 'merge-vcf -d',
-    qcall_bin       => 'QCALL',
-    qcall_ct        => '-ct 0.01',
-    qcall_pphet     => '-pphet 0',
+    qcall_cmd       => 'QCALL -ct 0.01 -snpcan -pphet 0',
     sam2vcf         => 'sam2vcf.pl',
     split_size      => 10_000_000,
     gatk_split_size => 10_000_000,
@@ -67,9 +65,7 @@ our $options =
                     gatk_split_size .. GATK seems to require more memory
                     merge_vcf       .. The merge-vcf script.
                     pileup_rmdup    .. The script to remove duplicate positions.
-                    qcall_bin       .. The qcall binary.
-                    qcall_ct        .. The qcall -ct parameter.
-                    qcall_pphet     .. The qcall -pphet parameter.
+                    qcall_cmd       .. The qcall command.
                     sam2vcf         .. The convertor from samtools pileup format to VCF.
                     samtools_pileup_params .. The options to samtools.pl varFilter (Used by Qcall and varFilter.)
                     split_size      .. The size of the chunks (default is 1Mb).
@@ -612,7 +608,7 @@ sub qcall
 
     if ( !$$self{fa_ref} ) { $self->throw("Missing the option fa_ref.\n"); }
     if ( !$$self{fai_ref} ) { $self->throw("Missing the option fai_ref.\n"); }
-    if ( !$$self{qcall_bin} ) { $self->throw("Missing the option qcall_bin.\n"); }
+    if ( !$$self{qcall_cmd} ) { $self->throw("Missing the option qcall_cmd.\n"); }
 
     my $work_dir = "$dir/qcall";
     Utils::CMD("mkdir -p $work_dir") unless -e $work_dir;
@@ -723,7 +719,7 @@ sub run_qcall_chunk
     close($fh);
 
     # Execute QCall
-    $cmd .= ") | sort -k1,1n -k2,2n | $$self{qcall_bin} $$self{qcall_ct} -snpcan $$self{qcall_pphet} -sn _$chunk.names -co $chunk.vcf.part";
+    $cmd .= ") | sort -k1,1n -k2,2n | $$self{qcall_cmd} -sn _$chunk.names -co $chunk.vcf.part";
     Utils::CMD($cmd,{verbose=>1});
 
     # Before it's fixed, convert to proper VCF
