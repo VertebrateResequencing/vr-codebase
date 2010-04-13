@@ -135,6 +135,7 @@ sub backtrace
                 chomp         .. run chomp on all returned lines
                 exit_on_error .. should the encountered errors be ignored?
                 logfile       .. where should be the command and the output logged?
+                return_fh     .. the caller will read from the pipe and take care of checking the exit status
                 time          .. print the execution time
                 verbose       .. print what's being done.
 
@@ -156,14 +157,16 @@ sub CMD
 
     # Why not to use backticks? Perl calls /bin/sh, which is often bash. To get the correct
     #   status of failing pipes, it must be called with the pipefail option.
+    my $kid_to_read;
     my @out;
-    my $pid = open(KID_TO_READ, "-|");
+    my $pid = open($kid_to_read, "-|");
     if ( !defined $pid ) { error("Cannot fork: $!"); }
     if ($pid) 
-    {   
+    {
         # parent
-        @out = <KID_TO_READ>;
-        close(KID_TO_READ);
+        if ( $$options{return_fh} ) { return $kid_to_read; }
+        @out = <$kid_to_read>;
+        close($kid_to_read);
     } 
     else 
     {      
