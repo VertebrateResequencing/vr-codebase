@@ -247,7 +247,9 @@ sub create_release_hierarchy_provides {
 sub create_release_hierarchy {
     my ($self, $lane_path, $action_lock) = @_;
     
-    my @mapped_lanes = $self->{io}->parse_fod($self->{lanes});
+    # (lanes may be symlinks, but we want the original location so that
+    # check_lanes_vs_database() will work, hence the '/' option here)
+    my @mapped_lanes = $self->{io}->parse_fod($self->{lanes}, '/');
     
     my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
     # we don't supply true as the third arg to check we have all lanes, since
