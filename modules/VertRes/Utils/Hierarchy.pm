@@ -602,6 +602,13 @@ sub check_lanes_vs_database {
             next;
         }
         
+        # check this lane hasn't been withdrawn
+        if ($vrlane->is_withdrawn) {
+            $self->warn("withdrawn: $lane_id ($lane_path)");
+            $all_ok = 0;
+            next;
+        }
+        
         push(@lane_ids, $lane_id);
         my %objs = $self->lane_hierarchy_objects($vrlane);
         push(@sample_names, $objs{sample}->name);
@@ -613,17 +620,13 @@ sub check_lanes_vs_database {
             $platform = $platform_aliases{$platform};
         }
         my $library = $objs{library}->hierarchy_name;
-        my $expected_path = join('/', $sample_name, $platform, $library);
         
-        # check this lane hasn't been withdrawn
-        if ($vrlane->is_withdrawn) {
-            $self->warn("withdrawn: $lane_id ($lane_path)");
-            $all_ok = 0;
-            next;
-        }
+        # quick test against the hierarchy_path
+        my $expected_path = $vrtrack->hierarchy_path_of_lane($vrlane);
+        next if $lane_path =~ /$expected_path$/;
         
         # study swaps
-        my $given_study = $study_to_srp{$lane_info{study}} || $lane_info{study};
+        my $given_study = $lane_info{study};
         my $study = $objs{project}->hierarchy_name;
         unless ($study eq $given_study) {
             $self->warn("study swap: $study vs $given_study for $lane_id ($lane_path -> $expected_path)");
