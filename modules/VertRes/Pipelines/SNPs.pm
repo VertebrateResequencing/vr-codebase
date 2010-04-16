@@ -205,9 +205,10 @@ sub merge_vcf_files
 use strict;
 use warnings;
 use Utils;
-Utils::CMD(qq[$$self{merge_vcf} $args | gzip -c > $name.vcf.gz.part]);
+Utils::CMD(qq[$$self{merge_vcf} $args | bgzip -c > $name.vcf.gz.part]);
 Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
 rename('$name.vcf.gz.part','$name.vcf.gz') or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
+Utils::CMD(qq[tabix -p vcf $name.vcf.gz]);
     ];
 }
 
@@ -461,9 +462,10 @@ if ( ! -e "$name.pileup.gz" )
 }
 if ( ! -e "$name.vcf.gz" )
 {
-    Utils::CMD("zcat $name.pileup.gz | $$self{pileup_rmdup} | $$self{sam2vcf} -s -t $name | gzip -c > $name.vcf.gz.part",{verbose=>1});
+    Utils::CMD("zcat $name.pileup.gz | $$self{pileup_rmdup} | $$self{sam2vcf} -s -t $name | bgzip -c > $name.vcf.gz.part",{verbose=>1});
     Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
     rename("$name.vcf.gz.part","$name.vcf.gz") or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
+    Utils::CMD(qq[tabix -p vcf $name.vcf.gz]);
 }
 
     ];
@@ -557,9 +559,10 @@ use Utils;
 if ( ! -e "$name.vcf.gz" )
 {
     # Take the VCF header from one file and sort the rest
-    Utils::CMD("(zcat $header | grep ^#; zcat $files | grep -v ^# | sort -k1,1 -k2,2n) | $$self{vcf_rmdup} -d DoC | gzip -c > $name.vcf.gz.part");
+    Utils::CMD("(zcat $header | grep ^#; zcat $files | grep -v ^# | sort -k1,1 -k2,2n) | $$self{vcf_rmdup} -d DoC | bgzip -c > $name.vcf.gz.part");
     Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
     rename("$name.vcf.gz.part","$name.vcf.gz") or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
+    Utils::CMD("tabix -p vcf $name.vcf.gz");
     Utils::CMD("rm -f $files");
 }
     ];
@@ -570,9 +573,7 @@ sub run_gatk
     my ($self,$bam,$name,$chunk) = @_;
     if ( ! -e "$name.vcf.gz" )
     {
-        # Is the value of -mrl 10000000 small enough..? 
         Utils::CMD("$$self{gatk_cmd} -R $$self{fa_ref} -I $bam -L $chunk | gzip -c > $name.vcf.gz.part",{verbose=>1});
-
         rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
     }
     if ( -e "$name.vcf.gz" )
@@ -740,9 +741,10 @@ use strict;
 use warnings;
 use Utils;
 # Take the VCF header from one file and sort the rest
-Utils::CMD(qq[(zcat $$vcfs[0] | grep ^#; zcat $args | grep -v ^# | sort -k1,1 -k2,2n) | $$self{vcf_rmdup} | gzip -c > $name.vcf.gz.part]);
+Utils::CMD(qq[(zcat $$vcfs[0] | grep ^#; zcat $args | grep -v ^# | sort -k1,1 -k2,2n) | $$self{vcf_rmdup} | bgzip -c > $name.vcf.gz.part]);
 Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
 rename('$name.vcf.gz.part','$name.vcf.gz') or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
+Utils::CMD(qq[tabix -p vcf $name.vcf.gz]);
 
 ];
 
