@@ -300,9 +300,20 @@ sub do_mapping {
             my $cigar_out = $fsu->catfile($out_dir, $cigar_name.'.cigar.gz');
             
             unless (-s $cigar_out) {
-                # filter out short reads from fastq
-                my $fu = VertRes::Utils::FastQ->new();
-                $fu->filter_reads($fastq, $tmp_fastq, min_length => 30);
+                # ssaha can actually work with fasta files, not just fastqs
+                if ($tmp_fastq =~ /q$/) {
+                    # filter out short reads from fastq
+                    my $fu = VertRes::Utils::FastQ->new();
+                    $fu->filter_reads($fastq, $tmp_fastq, min_length => 30);
+                }
+                else {
+                    if ($fastq =~ /\.gz$/) {
+                        system("gzip -dc $fastq > $tmp_fastq");
+                    }
+                    else {
+                        copy($fastq, $tmp_fastq) || $self->throw("failed to copy $fastq -> $tmp_fastq");
+                    }
+                }
                 
                 # run ssaha2, filtering the output to get the top 10 hits per read,
                 # grouping by readname, and compressing it

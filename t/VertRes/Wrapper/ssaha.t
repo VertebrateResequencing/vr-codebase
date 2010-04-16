@@ -5,7 +5,7 @@ use File::Copy;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 16;
+    use Test::Most tests => 19;
     
     use_ok('VertRes::Wrapper::ssaha');
     use_ok('VertRes::Utils::FileSystem');
@@ -29,12 +29,16 @@ my $read2_basename = '2822_6_2_1000.fastq';
 my $ref_basename = 'S_suis_P17.fa';
 my $read1 = File::Spec->catfile($temp_dir, $read1_basename);
 my $read2 = File::Spec->catfile($temp_dir, $read2_basename);
+my $read0_basename = 'ssaha.fa';
+my $read0 = File::Spec->catfile($temp_dir, $read0_basename);
 my $ref = File::Spec->catfile($temp_dir, $ref_basename);
 copy(File::Spec->catfile('t', 'data', $read1_basename), $read1);
 copy(File::Spec->catfile('t', 'data', $read2_basename), $read2);
+copy(File::Spec->catfile('t', 'data', $read0_basename), $read0);
 copy(File::Spec->catfile('t', 'data', $ref_basename), $ref);
 ok -s $read1, 'test file 1 ready to use';
 ok -s $read2, 'test file 2 ready to use';
+ok -s $read0, 'test file32 ready to use';
 ok -s $ref, 'test file 3 ready to use';
 
 # the files we expect to be created
@@ -78,6 +82,15 @@ foreach my $ref_file (@ref_files) {
 }
 is_deeply \@new_mtimes, \@mtimes, 'do_mapping with local_cache equal to ref dir didn\'t repeat the Build';
 
+# mapping also works with fasta files
+unlink($mapping);
+$ssaha->do_mapping(ref => $ref,
+                   read0 => $read0,
+                   output => $mapping,
+                   insert_size => 2000,
+                   local_cache => $temp_dir);
+is $ssaha->run_status, 1, 'status after mapping is ok';
+ok -s $mapping, 'output file exists';
 
 exit;
 
