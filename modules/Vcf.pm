@@ -56,6 +56,8 @@ From a script:
         print $vcf->format_line($x,\@columns); 
     }
 
+    $vcf->close();
+
 =cut
 
 
@@ -214,6 +216,24 @@ sub new
 
     return $self;
 }
+
+
+=head2 close
+
+    About   : Close the filehandle
+    Usage   : $vcf->close();
+    Args    : none
+
+=cut
+
+sub close
+{
+    my ($self) = @_;
+    if ( !$$self{fh} ) { return; }
+    close($$self{fh});
+    delete($$self{fh});
+}
+
 
 =head2 next_line
 
@@ -923,7 +943,7 @@ sub format_genotype_strings
             if ( $al1=~/^\d+$/ ) { $al1 = $$rec{ALT}[$al1-1]; }
 
             if ( exists($alts{$al1}) ) { $al1 = $alts{$al1} }
-            elsif ( $al1=~/^[ACGT]$/i or $al1=~/^I[ACGT]+$/ or $al1=~/^D\d+$/ )
+            elsif ( $al1=~/^[ACGT]$/i or $al1=~/^I[ACGTN]+$/ or $al1=~/^D\d+$/ )
             {
                 $alts{$al1} = ++$nalts;
                 $al1 = $nalts;
@@ -942,7 +962,7 @@ sub format_genotype_strings
                 if ( $al2=~/^\d+$/ ) { $al2 = $$rec{ALT}[$al2-1]; }
 
                 if ( exists($alts{$al2}) ) { $al2 = $alts{$al2} }
-                elsif ( $al2=~/^[ACGT]$/i or $al2=~/^I[ACGT]+$/i or $al2=~/^D\d+$/ ) 
+                elsif ( $al2=~/^[ACGT]$/i or $al2=~/^I[ACGTN]+$/i or $al2=~/^D\d+$/ ) 
                 {
                     $alts{$al2} = ++$nalts;
                     $al2 = $nalts;
@@ -1321,6 +1341,46 @@ sub run_validation
         }
     }
 }
+
+
+=head2 get_chromosomes
+
+    About   : Get list of chromosomes from the VCF file. Must be bgzipped and tabix indexed.
+    Usage   : my $vcf = Vcf->new(); $vcf->get_chromosomes();
+    Args    : none
+
+=cut
+
+sub get_chromosomes
+{
+    my ($self) = @_;
+    if ( !$$self{file} ) { $self->throw(qq[The parameter "file" not set.\n]); }
+    my (@out) = `tabix $$self{file} -l`;
+    if ( $? ) 
+    { 
+        $self->throw(qq[The command "tabix $$self{file} -l" exited with an error. Is the file tabix indexed?\n]); 
+    }
+    for (my $i=0; $i<@out; $i++) { chomp($out[$i]); }
+    return \@out;
+}
+
+
+=head2 open_tabix
+
+    About   : Open fh for reading from tabix
+    Usage   : my $vcf = Vcf->new(); $vcf->open_tabix('1:100-1000'); while (my $line=$vcf->next_line()) { ... }
+    Args    : Tabix command line argument
+
+=cut
+
+sub open_tabix
+{
+    my ($self,$arg) = @_;
+    if ( !$$self{file} ) { $self->throw(qq[The parameter "file" not set.\n]); }
+    $self->close();
+    open($$self{fh},"tabix $$self{file} $arg 2>/dev/null|");
+}
+
 
 
 1;
