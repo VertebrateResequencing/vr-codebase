@@ -23,7 +23,7 @@ data => {
     release_date => '20100208',
     simultaneous_merges => 200,
     
-    dcc_hardlinks => 1,
+    dcc_mode => 1,
     do_cleanup => 1,
     
     db => {
@@ -51,7 +51,7 @@ data => {
 
 # make another config file that simply mentions the release directory and the
 # previous config file:
-echo "/path/to/rel_dir release.conf" > rel.pipeline
+echo "/path/to/rel_dir release.conf" > release.pipeline
 
 # make your release directory if it doesn't already exist:
 mkdir /path/to/rel_dir
