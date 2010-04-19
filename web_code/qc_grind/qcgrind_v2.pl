@@ -20,6 +20,8 @@ use VRTrack::Project;
 use VRTrack::Sample;
 use VRTrack::Library;
 use VRTrack::Lane;
+use VertRes::Utils::VRTrackFactory;
+
 use SangerWeb;
 
 $ENV{PATH}= '/usr/local/bin';   # solely to stop taint from barfing
