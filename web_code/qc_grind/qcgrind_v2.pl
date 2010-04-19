@@ -42,18 +42,6 @@ my $LANE_UPDATE = 10;
 my $SELECT_SPECIES_VIEW = 8;
 my $LANES_UPDATE = 9;
 
-#read in the db names
-my %DB_FOR_SPECIES;
-open( my $ifh, "databases.txt" ) or die $!;
-while( <$ifh> )
-{
-	chomp;
-	my @s = split( /\t/, $_ );
-	next unless @s == 2;
-	$DB_FOR_SPECIES{ $s[ 0 ] } = $s[ 1 ];
-}
-close( $ifh );
-
 #possible filters for libaries/lanes
 my $PASSED_FILTER = 'passed';
 my $PENDING_FILTER = 'pending';
@@ -212,17 +200,16 @@ if( ! defined( $mode ) && defined( $cgi->param('lane') ) )
 	my $lane_name = $cgi->param('lane');
 	if( $lane_name =~ /^\d+_\d+$/ )
 	{
-		my $species = $cgi->param('sp');
-		if( ! defined $species ) 
+		my $database = $cgi->param('db');
+		if( ! defined $database ) 
 		{
-			redirectErrorScreen( $cgi, "Species must be defined!" );
+			redirectErrorScreen( $cgi, "Database must be defined!" );
 			exit;
 		}
 		
-		my $database = $DB_FOR_SPECIES{ lc( $species ) };
-		if( ! defined $database ) 
+		if( ! isDatabase( $database ) )
 		{
-			redirectErrorScreen( $cgi, "Cant find the database name for species: $species" );
+			redirectErrorScreen( $cgi, "Invalid database name!" );
 			exit;
 		}
 		
@@ -232,14 +219,14 @@ if( ! defined( $mode ) && defined( $cgi->param('lane') ) )
 		my $lane = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$lane_name);
 		
 		print $sw->header();
-		displayLane( $cgi, $database, $lane->id(), undef, $species );
+		displayLane( $cgi, $database, $lane->id(), undef );
 		print $sw->footer();
 		exit;
 	}
 	else
 	{
 		#error
-		redirectErrorScreen( $cgi, "Invaid parameters for direct lane view (required are species and lane name)" );
+		redirectErrorScreen( $cgi, "Invaid parameters for direct lane view (required are database and lane name)" );
 		exit;
 	}
 }
@@ -254,10 +241,11 @@ if( $mode == $SELECT_SPECIES_VIEW || ! defined( $mode ) )
         <legend>Select dataset to QC</legend>
     ];
     
-    foreach( keys( %DB_FOR_SPECIES ) )
+    my @dbs = VertRes::Utils::VRTrackFactory->databases();
+    foreach( @dbs )
     {
         print qq[
-            <p><a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;sp=$_">].ucfirst($_).qq[</a></p>
+            <p><a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;db=$_">].ucfirst( $_ ).qq[</a></p>
         ];
     }
     
@@ -270,32 +258,36 @@ if( $mode == $SELECT_SPECIES_VIEW || ! defined( $mode ) )
 }
 elsif( $mode == $SPECIES_VIEW )
 {
-    my $species = $cgi->param('sp');
-    if( ! defined $species ) 
+    my $db = $cgi->param('db');
+    if( ! defined $db )
     {
-        redirectErrorScreen( $cgi, "Species must be defined!" );
+        redirectErrorScreen( $cgi, "Database must be defined!" );
         exit;
     }
     
-    my $database = $DB_FOR_SPECIES{ lc( $species ) };
-    if( ! defined $database ) 
+    if( ! isDatabase( $db ) )
     {
-        redirectErrorScreen( $cgi, "Cant find the database name for species: $species" );
+    	redirectErrorScreen( $cgi, "Invalid database name!" );
         exit;
     }
     
     print $sw->header();
-    displayProjectsPage( $cgi, $database, $species );
+    displayProjectsPage( $cgi, $db );
     print $sw->footer();
     exit;
 }
 elsif( $mode == $PROJ_VIEW )
 {
-    my $species = $cgi->param('sp');
-    
-    if( ! defined $species ) 
+    my $db = $cgi->param('db');
+    if( ! defined $db )
     {
-        redirectErrorScreen( $cgi, "Species must be defined!" );
+        redirectErrorScreen( $cgi, "Database must be defined!" );
+        exit;
+    }
+    
+    if( ! isDatabase( $db ) )
+    {
+    	redirectErrorScreen( $cgi, "Invalid database name!" );
         exit;
     }
     
@@ -306,47 +298,37 @@ elsif( $mode == $PROJ_VIEW )
         exit;
     }
     
-    my $database = $DB_FOR_SPECIES{ lc( $species ) };
-    
-    if( ! defined $database ) 
-    {
-        redirectErrorScreen( $cgi, "Cant find the database name for species: $species" );
-        exit;
-    }
-    
     print $sw->header();
-    displayProjectPage($cgi, $database, $species, $pid);
+    displayProjectPage($cgi, $db, $pid);
     print $sw->footer();
     exit;
 }
 elsif( $mode == $LIB_VIEW || $mode == $LIB_UPDATE )
 {
-    my $species = $cgi->param('sp');
-    
-    if( ! defined $species ) 
+    my $db = $cgi->param('db');
+    if( ! defined $db )
     {
-        redirectErrorScreen( $cgi, "Species must be defined!" );
+        redirectErrorScreen( $cgi, "Database must be defined!" );
+        exit;
+    }
+    
+    if( ! isDatabase( $db ) )
+    {
+    	redirectErrorScreen( $cgi, "Invalid database name!" );
         exit;
     }
     
     my $libID = $cgi->param('lib_id');
     my $filter = $cgi->param('filter');
-    my $database = $DB_FOR_SPECIES{ lc( $species ) };
-    
-    if( ! defined $database ) 
-    {
-        redirectErrorScreen( $cgi, "Cant find the database name for species: $species" );
-        exit;
-    }
     
     if( $mode == $LIB_UPDATE )
     {
         my $state = $cgi->param("lib_update");
         
         #connect to the db
-        my $vrtrack = connectToDatabase( $database );
+        my $vrtrack = connectToDatabase( $db );
         
-        redirectErrorScreen( $cgi, "Failed to connect to database: $database" ) unless defined( $vrtrack );
+        redirectErrorScreen( $cgi, "Failed to connect to database: $db" ) unless defined( $vrtrack );
         
         #update the lane in the db
         my $library = VRTrack::Library->new( $vrtrack, $libID );
@@ -384,38 +366,36 @@ elsif( $mode == $LIB_VIEW || $mode == $LIB_UPDATE )
     }
     
     print $sw->header();
-    displayLibrary( $cgi, $database, defined( $libID ) ? $libID : -1, defined( $filter ) ? $filter : undef, $species );
+    displayLibrary( $cgi, $db, defined( $libID ) ? $libID : -1, defined( $filter ) ? $filter : undef );
     print $sw->footer();
     exit;
 }
 elsif( $mode == $LANE_VIEW || $mode == $LANE_UPDATE )
 {
-    my $species = $cgi->param('sp');
-    
-    if( ! defined $species )
+    my $db = $cgi->param('db');
+    if( ! defined $db )
     {
-        redirectErrorScreen( $cgi, "Species must be defined!" );
+        redirectErrorScreen( $cgi, "Database must be defined!" );
+        exit;
+    }
+    
+    if( ! isDatabase( $db ) )
+    {
+    	redirectErrorScreen( $cgi, "Invalid database name!" );
         exit;
     }
     
     my $laneID = $cgi->param('lane_id');
     my $filter = $cgi->param('filter');
-    my $database = $DB_FOR_SPECIES{ lc( $species ) };
-    
-    if( ! defined $species ) 
-    {
-        redirectErrorScreen( $cgi, "Cant find the database name for species: $species" );
-        exit;
-    }
     
     if( $mode == $LANE_UPDATE )
     {
         my $state = $cgi->param("lane_update");
         
         #connect to the db
-        my $vrtrack = connectToDatabase( $database );
+        my $vrtrack = connectToDatabase( $db );
         
-        redirectErrorScreen( $cgi, "Failed to connect to database: $database" ) unless defined( $vrtrack );
+        redirectErrorScreen( $cgi, "Failed to connect to database: $db" ) unless defined( $vrtrack );
         
         #update the lane in the db
         my $lane = VRTrack::Lane->new( $vrtrack, $laneID );
@@ -435,22 +415,28 @@ elsif( $mode == $LANE_VIEW || $mode == $LANE_UPDATE )
     }
     
     print $sw->header();
-    displayLane( $cgi, $database, defined( $laneID ) ? $laneID : -1, defined( $filter ) ? $filter : undef, $species );
+    displayLane( $cgi, $database, defined( $laneID ) ? $laneID : -1, defined( $filter ) ? $filter : undef );
     print $sw->footer();
     exit;
 }
 elsif( $mode == $LANES_UPDATE )
 {
-    my $species = $cgi->param('sp');
     my @parameters = $cgi->param;
     my $libID = $cgi->param('lib_id');
     my $filter = $cgi->param('filter');
     
-    my $database = $DB_FOR_SPECIES{ lc( $species ) };
-    #connect to the db
-    my $vrtrack = connectToDatabase( $database );
+    my $db = $cgi->param('db');
+    if( ! defined $db )
+    {
+        redirectErrorScreen( $cgi, "Database must be defined!" );
+        exit;
+    }
     
-    redirectErrorScreen( $cgi, "Failed to connect to database: $database" ) unless defined( $vrtrack );
+    if( ! isDatabase( $db ) )
+    {
+    	redirectErrorScreen( $cgi, "Invalid database name!" );
+        exit;
+    }
     
     foreach( @parameters )
     {
@@ -473,7 +459,7 @@ elsif( $mode == $LANES_UPDATE )
     }
 
     print $sw->header();
-    displayLibrary( $cgi, $database, defined( $libID ) ? $libID : -1, defined( $filter ) ? $filter : undef, $species );
+    displayLibrary( $cgi, $db, defined( $libID ) ? $libID : -1, defined( $filter ) ? $filter : undef );
     print $sw->footer();
     exit;
 }
@@ -496,7 +482,7 @@ else
 
 sub displayProjectsPage
 {
-    my ($cgi, $database, $species) = @_;
+    my ($cgi, $database ) = @_;
     
     #connect to the db
     my $vrtrack = connectToDatabase( $database );
@@ -506,10 +492,10 @@ sub displayProjectsPage
     my @projects = sort {$a->name cmp $b->name} @{$vrtrack->projects()};
     
     print qq[
-        <h2 align="center" style="font: normal 900 1.5em arial">].ucfirst($species).qq[</h2>
+        <h2 align="center" style="font: normal 900 1.5em arial">].ucfirst($database).qq[</h2>
     ];
     
-    my $t = ucfirst( $species );
+    my $t = ucfirst( $database );
     print qq[
         <div class="centerFieldset">
         <fieldset style="width: 800px">
@@ -538,79 +524,9 @@ sub displayProjectsPage
             <tr>
             <td>$name</td>
             <td>$acc</td>
-			<td><a href="$SCRIPT_NAME?sp=$species&amp;mode=$PROJ_VIEW&amp;proj_id=$pid">link</a></td>
+			<td><a href="$SCRIPT_NAME?db=$database&amp;mode=$PROJ_VIEW&amp;proj_id=$pid">link</a></td>
 			</tr>
         ];
-=pod        
-        my $first = 1;
-        my @samples = sort {$a->ssid cmp $b->ssid} @{$project->samples()};
-        
-        my $totalLibraries = 0;
-        my $totalPassedLibraries = 0;
-        my $totalDepth = 0;
-        foreach( @samples )
-        {
-            my $sample = $_;
-            my $sname = $sample->name;
-            my $sid = $sample->id();
-            my $libraries = $sample->libraries();
-            my $libs = @$libraries;
-            if( !$first ){print qq[<tr><td></td><td></td>];}
-            print qq[
-                <td>$sname</td>
-                <td>$libs</td>
-            ];
-           
-            my $passed = 0;
-            my $depth = 0;
-            my $pending = 0;
-            foreach( @$libraries )
-            {
-                my $library = $_;
-                if( $library->qc_status() eq $PASSED_FILTER )
-                {
-                    $passed ++;
-                }
-                
-                my $lanes = $library->lanes();
-                foreach( @$lanes )
-                {
-                    if( $_->qc_status() eq $PENDING_FILTER )
-                    {
-                        $pending ++;
-                    }
-                }
-                
-                $depth += $library->projected_passed_depth(3000000000);
-                my $lids = $library->lane_ids();
-            }
-            
-            $totalDepth += $depth;
-            print qq[
-                <td>$passed</td>
-                <td>$depth].qq[x</td>
-            ];
-            
-            print $pending > 0 ? qq[<td>$pending</td>] : qq[<td></td>];
-            print qq[</tr>];
-            
-            $totalLibraries += $libs;
-            $totalPassedLibraries += $passed;
-            $first = 0;
-        }
-        print qq[
-            <tr>
-            <th></th><th></th><th>Total</th><th>$totalLibraries</th><th>$totalPassedLibraries</th>
-        ];
-        
-        if( $totalDepth > 0 )
-        {
-            print qq[
-                <th>$totalDepth].qq[x</th>
-            ];
-        }
-        else{print qq[<th></th>];
-=cut
     }
     print qq[
         </tr>
@@ -622,7 +538,7 @@ sub displayProjectsPage
 
 sub displayProjectPage
 {
-    my ($cgi, $database, $species, $projectID) = @_;
+    my ($cgi, $database, $projectID) = @_;
     
     #connect to the db
     my $vrtrack = connectToDatabase( $database );
@@ -641,7 +557,7 @@ sub displayProjectPage
 	{
 		print qq[
     	    <h2 align="center" style="font: normal 900 1.5em arial">QC Grind</h2>
-			<h3 style="font: normal 700 1.5em arial"><a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;sp=$species">].ucfirst($species).qq{</a> :
+			<h3 style="font: normal 700 1.5em arial"><a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;db=$database">].ucfirst($database).qq{</a> :
 			$pname [<a href="http://psd-production.internal.sanger.ac.uk:6600/projects/$ssid/workflows/1">SS</a>] 
 			</h3><br/>
 		};
@@ -684,7 +600,7 @@ sub displayProjectPage
             <tr>
         ];
         
-        if( ! $is_ours && $species eq 'g1k' )
+        if( ! $is_ours && $database =~ '.*g1k.*' )
         {
             print qq[
                 <td bgcolor="red">$sname</td>
@@ -751,7 +667,7 @@ sub displayProjectPage
             my $numLanes = @$lanes;
             if( ! $firstL ){print qq[<tr><td></td><td></td>];$firstL=0;}
             print qq[
-                <td style="background-color:$colour;"><a href="$SCRIPT_NAME?mode=$LIB_VIEW&amp;sp=$species&amp;lib_id=$lid">$lname</a></td>
+                <td style="background-color:$colour;"><a href="$SCRIPT_NAME?mode=$LIB_VIEW&amp;db=$database&amp;lib_id=$lid">$lname</a></td>
             ];
             
             print $numLanes > 0 ? qq[<td>$numLanes</td><td>$passedLanes</td>] : qq[<td></td><td></td>];
@@ -808,7 +724,7 @@ sub displayProjectPage
 
 sub displayLane
 {
-    my ( $cgi, $database, $laneID, $filter, $species ) = @_;
+    my ( $cgi, $database, $laneID, $filter ) = @_;
     
     #connect to the db
     my $vrtrack = connectToDatabase( $database );
@@ -844,10 +760,10 @@ sub displayLane
     print qq[
         <h2 align="center" style="font: normal 900 1.5em arial">QC Grind</h2>
         <h3 style="font: normal 700 1.5em arial">
-        <a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;sp=$species">].ucfirst($species).qq[</a> : 
-        <a href="$SCRIPT_NAME?mode=$PROJ_VIEW&amp;proj_id=$pid&amp;sp=$species">$pname</a> :
-        <a href="$SCRIPT_NAME?mode=$PROJ_VIEW&amp;proj_id=$pid&amp;sp=$species">$sname</a> :
-        <a href="$SCRIPT_NAME?mode=$LIB_VIEW&amp;lib_id=$lid&amp;sp=$species">$libname</a> :
+        <a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;db=$database">].ucfirst($database).qq[</a> : 
+        <a href="$SCRIPT_NAME?mode=$PROJ_VIEW&amp;proj_id=$pid&amp;db=$database">$pname</a> :
+        <a href="$SCRIPT_NAME?mode=$PROJ_VIEW&amp;proj_id=$pid&amp;db=$database">$sname</a> :
+        <a href="$SCRIPT_NAME?mode=$LIB_VIEW&amp;lib_id=$lid&amp;db=$database">$libname</a> :
         $name 
 	];
 		
@@ -1033,7 +949,7 @@ sub displayLane
         print qq[
             <form action="$SCRIPT_NAME">
             <input type="hidden" name="mode" value="$LANE_UPDATE">
-            <input type="hidden" name="sp" value="$species">
+            <input type="hidden" name="db" value="$database">
             <input type="hidden" name="lane_id" value="$laneID">
         ];
         if( defined( $filter ) )
@@ -1063,7 +979,7 @@ sub displayLane
 
 sub displayLibrary
 {
-    my ( $cgi, $database, $libID, $filter, $species ) = @_;
+    my ( $cgi, $database, $libID, $filter ) = @_;
     
     #connect to the db
     my $vrtrack = connectToDatabase( $database );
@@ -1098,9 +1014,9 @@ sub displayLibrary
 	print qq[
         <h2 align="center" style="font: normal 900 1.5em arial">QC Grind</h2>
         <h3 style="font: normal 700 1.5em arial">
-        <a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;sp=$species">].ucfirst($species).qq[</a> :
-        <a href="$SCRIPT_NAME?mode=$PROJ_VIEW&amp;sp=$species&amp;proj_id=$pid">$project_name</a> : 
-        <a href="$SCRIPT_NAME?mode=$PROJ_VIEW&amp;sp=$species&amp;proj_id=$pid">$sample_name</a> : 
+        <a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;db=$database">].ucfirst($database).qq[</a> :
+        <a href="$SCRIPT_NAME?mode=$PROJ_VIEW&amp;db=$database&amp;proj_id=$pid">$project_name</a> : 
+        <a href="$SCRIPT_NAME?mode=$PROJ_VIEW&amp;db=$database&amp;proj_id=$pid">$sample_name</a> : 
         $name
 	];
 	
@@ -1130,7 +1046,7 @@ sub displayLibrary
         print qq[
             <form action="qcgrind_v2.pl">
             <input type="hidden" name="mode" value="$LIB_UPDATE">
-            <input type="hidden" name="sp" value="$species">
+            <input type="hidden" name="db" value="$database">
             <input type="hidden" name="lib_id" value="$libID">
             <p>
             <table width="400" align="center">
@@ -1199,7 +1115,7 @@ sub displayLibrary
     </div>
     ];
     
-    #get all the lanes for the library (max out at 20)
+    #get all the lanes for the library
     my $lanes = $library->lanes();
     
     #sort by the lane name
@@ -1214,7 +1130,7 @@ sub displayLibrary
     <legend>Lane data</legend>
     <form action="$SCRIPT_NAME">
     <input type="hidden" name="mode" value="$LANES_UPDATE">
-    <input type="hidden" name="sp" value="$species">
+    <input type="hidden" name="db" value="$database">
     <input type="hidden" name="lib_id" value="$libID">
     <input type="hidden" name="filter" value="$filter">
     <table width="100%">
@@ -1317,7 +1233,7 @@ sub displayLibrary
                 <td><input type="radio" name="$id" value="$PENDING_FILTER"];
                 print $status eq $PENDING_FILTER ? 'checked' : '';
                 print qq[></td>
-                <td style="background-color:$lane_status_colour;"><a href="$SCRIPT_NAME?mode=$LANE_VIEW&amp;lane_id=$id&amp;sp=$species">$name</a></td>
+                <td style="background-color:$lane_status_colour;"><a href="$SCRIPT_NAME?mode=$LANE_VIEW&amp;lane_id=$id&amp;db=$database">$name</a></td>
                 ];
                 
                 print defined($auto_qc_status) ? qq[<td style="background-color:$lane_auto_status_colour;"></td>] : qq[<td>undef</td>];
@@ -1534,4 +1450,13 @@ sub printPreviewImage
         <img src="$uri" width="100" height="100" alt="$caption" style="border:1px dotted #83A4C3;">
         <span><img src="$uri" alt="$caption" style="border:1px dotted #83A4C3;"/></span></a>
     ];
+}
+
+sub isDatabase
+{
+	my $db = shift;
+	
+	my @dbs = VertRes::Utils::VRTrackFactory->databases;
+	foreach( @dbs ){if( $db eq $_ ){return 1;}}
+	return 0;
 }
