@@ -415,7 +415,7 @@ elsif( $mode == $LANE_VIEW || $mode == $LANE_UPDATE )
     }
     
     print $sw->header();
-    displayLane( $cgi, $database, defined( $laneID ) ? $laneID : -1, defined( $filter ) ? $filter : undef );
+    displayLane( $cgi, $db, defined( $laneID ) ? $laneID : -1, defined( $filter ) ? $filter : undef );
     print $sw->footer();
     exit;
 }
@@ -437,6 +437,9 @@ elsif( $mode == $LANES_UPDATE )
     	redirectErrorScreen( $cgi, "Invalid database name!" );
         exit;
     }
+    
+    #connect to the db
+    my $vrtrack = connectToDatabase( $db );
     
     foreach( @parameters )
     {
