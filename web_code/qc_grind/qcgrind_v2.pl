@@ -1461,7 +1461,7 @@ sub isDatabase
 {
 	my $db = shift;
 	
-	my @dbs = VertRes::Utils::VRTrackFactory->databases;
+	my @dbs = VertRes::Utils::VRTrackFactory->databases();
 	foreach( @dbs ){if( $db eq $_ ){return 1;}}
 	return 0;
 }
