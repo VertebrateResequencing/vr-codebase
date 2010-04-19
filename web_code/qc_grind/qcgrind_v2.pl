@@ -10,11 +10,8 @@
 
 use strict;
 use warnings;
-no warnings 'uninitialized';
 use File::Basename;
 use URI;
-
-print foreach @INC;
 
 use SangerPaths qw(core team145);
 use VRTrack::VRTrack;
