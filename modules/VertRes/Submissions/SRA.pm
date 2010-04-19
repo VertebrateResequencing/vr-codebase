@@ -613,9 +613,9 @@ sub _gatherMetaInformation
 		print $project."\n";
 		my $study_acc = $project->study()->acc() or $self->throw('No accession for project: $project');
 		print $study_acc."\n";
-		my $projectName = $project->name();
+		$projectName = $project->name();
 		
-		my $sample_name = $sample->individual->name;
+		$sample_name = $sample->individual->name;
 
         my $species = $sample->individual->species->name;
 		
