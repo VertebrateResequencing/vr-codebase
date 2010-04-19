@@ -610,7 +610,13 @@ sub _gatherMetaInformation
 		my $project = VRTrack::Project->new($vrtrack, $sample->project_id());
 		my $sample_name = $sample->individual()->name();
 		my $projectName = $project->name();
+		print $project."\n";
 		my $study_acc = $project->study()->acc() or $self->throw('No accession for project: $project');
+		print $study_acc."\n";
+		my $projectName = $project->name();
+		
+		my $sample_name = $sample->individual->name;
+
         my $species = $sample->individual->species->name;
 		
 		if( ! $studyInfo{ $study_acc } )
@@ -635,6 +641,7 @@ sub _gatherMetaInformation
 		
 		unless( defined $experimentInfo{$study_acc}{$experiment_id} )
 		{
+			print $study_acc."\t".$experiment_id."\n";
 			$experimentInfo{$study_acc}{$experiment_id} = 
 			{
 				'sample'    => $sample_name,
