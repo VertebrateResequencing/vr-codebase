@@ -14,6 +14,8 @@ no warnings 'uninitialized';
 use File::Basename;
 use URI;
 
+print foreach @INC;
+
 use SangerPaths qw(core team145);
 use VRTrack::VRTrack;
 use VRTrack::Project;
