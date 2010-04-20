@@ -345,7 +345,7 @@ sub _print_sam_line {
     else {
         print $out_fh join("\t", ('*', 0, 0)), "\t";
     }
-    $qual ||= '';
+    $qual ||= '*';
     print $out_fh join("\t", ($seq, $qual));
     
     if ($read_group) {
