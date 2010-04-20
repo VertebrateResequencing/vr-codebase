@@ -386,7 +386,7 @@ sub lib_markdup {
     my $verbose = $self->verbose();
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q basement -M6100000 -R \'select[mem>6100] rusage[mem=6100]\'';
+    $self->{bsub_opts} = '-q long -M6100000 -R \'select[mem>6100] rusage[mem=6100]\'';
     
     my @markdup_bams;
     foreach my $merge_bam (@files) {
@@ -471,7 +471,7 @@ sub platform_merge {
                               'raw.bam',
                               'platform_merge',
                               '.platform_merge_expected',
-                              'basement');
+                              'long');
     
     return $self->{No};
 }
@@ -898,7 +898,7 @@ sub create_release_files {
             my $bas = $bam.'.bas';
             my $bas_md5 = $bas.'.md5';
             unless (-s $bas && -s $bas_md5) {
-                $self->{bsub_opts} = '-q basement';
+                $self->{bsub_opts} = '-q long';
                 LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                          qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$self->{release_date}], qq[$bas]); die qq[bas failed for $bam\n] unless -s qq[$bas]; system(qq[md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"}); # , qq[$self->{sequence_index}] bas() needs a database option?
                 $self->{bsub_opts} = '-q long';
@@ -974,7 +974,7 @@ sub create_release_files {
                     }
                     close($bamfh);
                     
-                    $self->{bsub_opts} = '-q basement';
+                    $self->{bsub_opts} = '-q long';
                     LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                              qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->split_bam_by_sequence(qq[$bam], all_unmapped => $all_unmapped, check => 1);"});
                 }
