@@ -267,15 +267,14 @@ sub do_mapping {
         my $tmp_sam = $out_sam.'_tmp';
         
         if (@fqs == 2) {
-            #if (-s $tmp_sam) {
-            #    $self->throw("$tmp_sam already exists prior to mapping; clean up first if something went wrong before");
-            #}
             unless (-s $tmp_sam) {
-               $self->generate_sam($tmp_sam, $ref_fa, @fqs) || $self->throw("failed during the alignment step");
+               $self->generate_sam($tmp_sam, $ref_fa, @fqs, %args) || $self->throw("failed during the alignment step");
             }
         }
         else {
-            $self->throw("single-ended not yet implemented");
+            unless (-s $tmp_sam) {
+               $self->generate_sam($tmp_sam, $ref_fa, $fqs[0], undef, %args) || $self->throw("failed during the alignment step");
+            }
         }
         
         # add in unmapped reads if necessary
