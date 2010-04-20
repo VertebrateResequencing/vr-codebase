@@ -24,6 +24,7 @@ use strict;
 use warnings;
 use File::Copy;
 use VertRes::IO;
+use VertRes::Utils::FileSystem;
 
 use base qw(VertRes::Wrapper::MapperI);
 
@@ -57,7 +58,19 @@ sub new {
 =cut
 
 sub version {
-    return 0;
+    my $self = shift;
+    
+    my $exe = $self->exe;
+    open(my $fh, "$exe |");
+    my $line = <$fh>;
+    while (<$fh>) {
+        next;
+    }
+    close($fh);
+    
+    my @nums = $line =~ /v(\d+)\.(\d+).+?(\d+)/;
+    
+    return join('.', @nums);
 }
 
 =head2 setup_reference
@@ -113,7 +126,12 @@ sub setup_fastqs {
 =cut
 
 sub generate_sam {
-    my ($self, $out, $ref, @fqs) = @_;
+    my ($self, $out, $ref, $fq1, $fq2, %other_args) = @_;
+    my @fqs = ($fq1);
+    if ($fq2) {
+        push(@fqs, $fq2);
+    }
+    my $fqs_string = join(',', @fqs);
     
     unless (-s $out) {
         # reference files must be copied to /tmp
@@ -125,14 +143,16 @@ sub generate_sam {
         #6 remove sentinel file, done & start stampy
         my $g = $ref.'.stidx';
         my $h = $ref.'.sthash';
-        my $local_ref = '/tmp/sb10_stampy_ref';
+        my $fsu = VertRes::Utils::FileSystem->new();
+        my $md5 = $fsu->calculate_md5($ref);
+        my $local_ref = '/tmp/VertRes_'.$md5.'_stampy_ref';
         my $local_g = $local_ref.'.stidx';
         my $local_h = $local_ref.'.sthash';
-        my $sentinal = '/tmp/.sb10_copying_stampy_ref_files';
+        my $sentinal = '/tmp/VertRes_'.$md5.'_copying_stampy_ref_files';
         my $in_use_base = $local_ref.'.inuse';
         my $in_use = $in_use_base.'.'.$$;
-        my $max_checks = 200;
         
+        my $max_checks = 400;
         sleep(int(rand(14)) + 1);
         my $checks = 0;
         while (-e $sentinal) {
@@ -159,7 +179,17 @@ sub generate_sam {
             $self->register_for_unlinking($in_use);
             open(my $iufh, '>', $in_use) || $self->throw("Could not write to $in_use");
             close($iufh);
-            $self->simple_run("--bwaoptions=\"-q15 /lustre/scratch102/user/sb10/mapper_comparisons/reference_indices/bwa/ref.fa\" -g $local_ref -h $local_ref -M $fqs[0],$fqs[1] > $out");
+            my $bwa_options = '';
+            my $aln_q = delete $other_args{aln_q};
+            unless (defined $aln_q) {
+                $aln_q = 15;
+            }
+            my $sampe_a = delete $other_args{sampe_a};
+            if ($sampe_a) {
+                $bwa_options .= "-a $sampe_a ";
+            }
+            $bwa_options .= "-q $aln_q $ref";
+            $self->simple_run("--bwaoptions=\"$bwa_options\" -g $local_ref -h $local_ref -M $fqs_string > $out");
             unlink($in_use);
             
             # if no other pid is using the ref files, delete them
