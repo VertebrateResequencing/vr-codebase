@@ -435,7 +435,7 @@ sub _guess_mapping_program {
     }
     else {
         foreach my $program (@programs) {
-            if ($program =~ /bwa|maq|ssha/) {
+            if ($program =~ /bwa|maq|ssha|bfast|stampy/ || $program !~ /GATK/) {
                 return $program;
             }
         }
