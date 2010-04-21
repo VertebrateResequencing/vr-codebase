@@ -220,14 +220,14 @@ sub get_library_by_name {
 
   Arg [1]    : None
   Example    : my $organism = $sample->get_organism_name();
-  Description: retrieve organism name from given sample ID
+  Description: retrieve organism name from sample_common_name key for given sample ID
   Returntype : string
 
 =cut
 
 sub get_organism_name {
     my ($self) = @_;
-    my $sql = qq[select value from property_information where `key` like "organism" and property_information.obj_id=?];
+    my $sql = qq[select value from property_information where `key` like "sample_common_name" and property_information.obj_id=?];
     my $org = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
     unless ($org){
 	warn "No organism ", $self->id,"\n";
@@ -277,5 +277,26 @@ sub get_accession {
     }
     my $acc_name = $acc->{value};
     return $acc_name;
+}
+
+=head2 get_public_name
+
+  Arg [1]    : None
+  Example    : my $pubname = $sample->get_public_name();
+  Description: retrieve sample public name from given sample ID
+  Returntype : string
+
+=cut
+
+sub get_public_name {
+    my ($self) = @_;
+    my $sql = qq[select value from property_information where `key` like "sample_public_name" and property_information.obj_id=?];
+    my $pub = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
+    unless ($pub){
+	warn "No public name ", $self->id,"\n";
+	return undef;
+    }
+    my $pub_name = $pub->{value};
+    return $pub_name;
 }
 1;
