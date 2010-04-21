@@ -261,7 +261,7 @@ sub get_sample_by_id_project {
 sub get_projects_by_organism {
     my ($self, $org) = @_;
     $org ="%$org%";   
-    my $sql = qq[select distinct project_name from project_information join project_sample_reports on project_information.project_id = project_sample_reports.project_id join property_information on project_sample_reports.sample_id= property_information.obj_id where `key` like "organism" and  property_information.value like ?];
+    my $sql = qq[select distinct project_name from project_information join project_sample_reports on project_information.project_id = project_sample_reports.project_id join property_information on project_sample_reports.sample_id= property_information.obj_id where `key` like "sample_common_name" and  property_information.value like ?];
 #   my @proj = $self->{_dbh}->selectall_arrayref($sql, undef, $org);
     my @proj;
     my $sth = $self->{_dbh}->prepare($sql);
@@ -287,7 +287,7 @@ sub get_taxonid_for_organism {
     my $sql = qq[select distinct(sample.value) 
     		     from property_information sample 
     		     join property_information organism using (obj_id) 
-    		     where organism.`key`="organism" 
+    		     where organism.`key`="sample_common_name" 
     		     and organism.value=? 
     		     and sample.`key`="sample_taxon_id" 
     		     and sample.obj_type="Sample"
