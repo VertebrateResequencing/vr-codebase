@@ -169,7 +169,7 @@ sub close {
     
     my $fh = $self->fh();
     
-    if ($fh && $self->{_filename} =~ /\.bam$/) {
+    if ($fh && ($self->{_filename} ? $self->{_filename} =~ /\.bam$/ : 1)) {
         # make sure we've finished reading the whole thing before attempting to
         # close
         while (<$fh>) {
