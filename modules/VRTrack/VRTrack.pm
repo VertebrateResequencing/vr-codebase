@@ -352,7 +352,6 @@ sub hierarchy_path_of_lane {
     # create objects if necessary (accessing db is expensive).
     my %objs;
     my $get_lane = sub { return $lane; };
-    my $lib = VRTrack::Library->new($self, $lane->library_id);
     my $get_lib = sub { $objs{library} ||= VRTrack::Library->new($self, $lane->library_id); return $objs{library}; };
     my $get_sample = sub { $objs{sample} ||= VRTrack::Sample->new($self, &{$get_lib}->sample_id); return $objs{sample}; };
     my $get_project = sub { $objs{project} ||= VRTrack::Project->new($self, &{$get_sample}->project_id); return $objs{project}; };
