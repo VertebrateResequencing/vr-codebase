@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 374;
+    use Test::Most tests => 375;
 
     use_ok('VRTrack::VRTrack');
     use_ok('VRTrack::Request');
@@ -259,6 +259,13 @@ ok ! $vrproj->update(), 'can\'t update on historical objects after changing attr
     # hierarchy_path_of_lane
     $ENV{DATA_HIERARCHY} = '';
     is $vrtrack->hierarchy_path_of_lane($vrlane), 'Project_test2/Individual_test/seq_tech_test/lib_a/lane_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY unset';
+    my $lane_b = VRTrack::Lane->new_by_name($vrtrack, 'lane_b');
+    my $lib_b = $sample->get_library_by_id(5);
+    $lib_b->add_seq_tech('seq_tech_test_b');
+    $lib_b->update;
+    $lane_b->library_id(5);
+    $lane_b->update;
+    is $vrtrack->hierarchy_path_of_lane($lane_b), 'Project_test2/Individual_test/seq_tech_test_b/lib_b/lane_b', 'hierarchy_path_of_lane works with DATA_HIERARCHY unset and on a different lane';
     $ENV{DATA_HIERARCHY} = 'species:foo:library';
     is $vrtrack->hierarchy_path_of_lane($vrlane), 'species/foo/lib_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY set to species:library';
     
@@ -388,7 +395,7 @@ ok ! $vrproj->update(), 'can\'t update on historical objects after changing attr
                             Library_type => 2,
                             Population => 2,
                             Seq_centre => 2,
-                            Seq_tech => 2,
+                            Seq_tech => 3,
                             # *** actually the next two have some simple get/setters as well
                             Species => 4, 
                             Submission => 2);
