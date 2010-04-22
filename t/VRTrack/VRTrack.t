@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 372;
+    use Test::Most tests => 374;
 
     use_ok('VRTrack::VRTrack');
     use_ok('VRTrack::Request');
@@ -256,6 +256,12 @@ ok ! $vrproj->update(), 'can\'t update on historical objects after changing attr
     is @{$vrlane->files}, 2, 'files returned the correct number of files';
     is_deeply $vrlane->file_ids, [3, 5], 'file_ids returned the correct ids';
     
+    # hierarchy_path_of_lane
+    $ENV{DATA_HIERARCHY} = '';
+    is $vrtrack->hierarchy_path_of_lane($vrlane), 'Project_test2/Individual_test/seq_tech_test/lib_a/lane_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY unset';
+    $ENV{DATA_HIERARCHY} = 'species:foo:library';
+    is $vrtrack->hierarchy_path_of_lane($vrlane), 'species/foo/lib_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY set to species:library';
+    
     # file
     ok my $vrfile = VRTrack::File->new($vrtrack, 3), 'was able to retrieve file object by id';
     is $vrfile->type(1), 1, 'File type could be set to 1';
@@ -501,6 +507,5 @@ ok $vrproj->is_latest(1), 'can set is_latest on non-latest object';
 ok $vrproj->update(), 'can update after resetting latest';
 $vrproj = VRTrack::Project->new($vrtrack, $proj_id,'latest');
 ok $vrproj, 'can retrieve latest version of object after resetting latest';
-
 
 exit;
