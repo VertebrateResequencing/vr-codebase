@@ -237,6 +237,10 @@ sub get_organism_name {
     return $orgname;
 }
 
+
+
+
+
 =head2 get_strain_name
 
   Arg [1]    : None

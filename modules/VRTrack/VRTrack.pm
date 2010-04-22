@@ -35,6 +35,7 @@ use strict;
 use warnings;
 use Carp;
 no warnings 'uninitialized';
+use Switch;
 use DBI;
 use VRTrack::Project;
 use VRTrack::Sample;
@@ -42,6 +43,7 @@ use VRTrack::Library;
 use VRTrack::Lane;
 use VRTrack::File;
 use VRTrack::Core_obj;
+
 
 use constant SCHEMA_VERSION => '9';
 
@@ -328,7 +330,8 @@ sub hierarchy_path_of_lane_name {
 
   Arg [1]    : VRTrack::Lane object
   Example    : my $lane_hier = $track->hierarchy_path_of_lane($vrlane);
-  Description: retrieve the hierarchy path for a lane, to the root of the hierarchy.  Does not check the filesystem.
+  Description: Retrieve the hierarchy path for a lane according to the environment variable, to the root of the hierarchy.  
+               Does not check the filesystem.
                Returns undef if hierarchy can not be built.
   Returntype : string
 
@@ -336,26 +339,58 @@ sub hierarchy_path_of_lane_name {
 
 sub hierarchy_path_of_lane {
     my ($self, $lane) = @_;
-    my $hier_path;
+    my @hier_path_bits;
+
+    my @acceptable_terms = ('genus', 'species-subspecies', 'strain', 'project', 'projectid', 'sample', 'technology', 'library', 'lane');
+    my $template = $ENV{DATA_HIERARCHY} || 'project:sample:technology:library:lane';
+    my @path = split(/:/, $template);
+
+    #For all acceptable terms, we generate the corresponding word, but for others
+    #we just append the term itself to the hierarchy. This allows for words like DATA or TRACKING
+    #to be injected into the hierarchy without much fuss.This does however also allow
+    #misspelt words and typos (like spcies) to creep into the heirarchy.
+
+       
     if ($lane && ref($lane) && $lane->isa('VRTrack::Lane')) {
         my $lib = VRTrack::Library->new($self,$lane->library_id);
         if ($lib && $lib->seq_tech){
             my $samp = VRTrack::Sample->new($self,$lib->sample_id);
             if ($samp){
                 my $proj = VRTrack::Project->new($self,$samp->project_id);
-                if ($proj){
-                    $hier_path = join '/', ($proj->hierarchy_name,
-                                            $samp->hierarchy_name,
-                                            $lib->seq_tech->name,
-                                            $lib->hierarchy_name,
-                                            $lane->hierarchy_name
-                                            );
-                }
-            }
-        }
+		my $individual = VRTrack::Individual->new($self, $samp->individual_id);
+		if ($proj and $individual){
+		    my $species = VRTrack::Species->new($self, $individual->species_id);
+		    if ($species){
+
+			foreach my $term (@path){
+			    switch($term){
+				case 'genus'              { push(@hier_path_bits,$species->genus);} #This is currently the first word of the species name
+				case 'species-subspecies' { my $species_subspecies = $species->species_subspecies;  #For now this is everything after the first space in species name
+							    $species_subspecies =~ s/\W/_/g; #replace any non-word char with underscores
+							    $species_subspecies =~ s/_+/_/g; #but don't any more than one underscore at a time
+				                            push(@hier_path_bits, $species_subspecies);}
+				case 'strain'             { push(@hier_path_bits,$individual->hierarchy_name);}
+				case 'project'            { push(@hier_path_bits,$proj->hierarchy_name);}
+				case 'projectid'          { push(@hier_path_bits,$proj->id);}
+				case 'sample'             { push(@hier_path_bits,$samp->hierarchy_name);}
+				case 'technology'         { push(@hier_path_bits,$lib->seq_tech->name);}
+				case 'library'            { push(@hier_path_bits,$lib->hierarchy_name);}
+				case 'lane'               { push(@hier_path_bits,$lane->hierarchy_name);}
+				else                      { push(@hier_path_bits,$term);}
+
+
+			    }
+			}
+			    
+
+		    }
+
+		}
+	    }
+	}
     }
 
-    return $hier_path;
+   return join '/', @hier_path_bits;
 }
 
 
