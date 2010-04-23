@@ -381,8 +381,7 @@ sub hierarchy_path_of_lane {
                 }
                 elsif ($term eq 'species-subspecies') {
                     my $species_subspecies = $obj->species_subspecies; # For now this is everything after the first space in species name
-                    $species_subspecies =~ s/\W/_/g; # replace any non-word char with underscores
-                    $species_subspecies =~ s/_+/_/g; # but don't any more than one underscore at a time
+                    $species_subspecies =~ s/\W+/_/g; # replace any non-word char with underscores
                     push(@hier_path_bits, $species_subspecies);
                 }
                 elsif ($term eq 'projectid') {
