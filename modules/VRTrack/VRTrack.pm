@@ -334,7 +334,7 @@ sub hierarchy_path_of_lane_name {
                the hierarchy. Template defaults to:
                'project:sample:technology:library:lane'
                Does not check the filesystem.
-               Dies if hierarchy can not be built.
+               Throws if hierarchy can not be built.
   Returntype : string
 
 =cut
@@ -400,8 +400,7 @@ sub hierarchy_path_of_lane {
                 # the POD says returns undef, but wouldn't it make more sense
                 # to warn or die? 
 		#Yes, good idea.
-		die "Unable to create data hierarchy on disk!\n"
-                
+		$self->throw("Unable to create data hierarchy on disk due to missing $term!");
             }
         }
         else {
@@ -409,8 +408,8 @@ sub hierarchy_path_of_lane {
         }
     }
     
-    foreach(@hier_path_bits){ 
-	s/\W+/_/g; #get rid of any non-word characters and replace with underscores
+    foreach (@hier_path_bits) { 
+        s/\W+/_/g; #get rid of any non-word characters and replace with underscores
     }
     return File::Spec->catdir(@hier_path_bits);
 }
