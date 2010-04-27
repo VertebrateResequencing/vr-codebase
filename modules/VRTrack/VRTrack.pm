@@ -334,7 +334,7 @@ sub hierarchy_path_of_lane_name {
                the hierarchy. Template defaults to:
                'project:sample:technology:library:lane'
                Does not check the filesystem.
-               Throws if hierarchy can not be built.
+               Returns undef if hierarchy can not be built.
   Returntype : string
 
 =cut
@@ -360,7 +360,6 @@ sub hierarchy_path_of_lane {
     my %terms = (genus => $get_species,
                  'species-subspecies' => $get_species,
                  strain => $get_individual,
-                 individual => $get_individual,
                  project => $get_project,
                  projectid => $get_project,
                  sample => $get_sample,
@@ -381,11 +380,11 @@ sub hierarchy_path_of_lane {
                     push(@hier_path_bits, $obj->genus); # This is currently the first word of the species name
                 }
                 elsif ($term eq 'species-subspecies') {
-                    push(@hier_path_bits,  $obj->species_subspecies);
+                    my $species_subspecies = $obj->species_subspecies; # For now this is everything after the first space in species name
+                    $species_subspecies =~ s/\W/_/g; # replace any non-word char with underscores
+                    $species_subspecies =~ s/_+/_/g; # but don't any more than one underscore at a time
+                    push(@hier_path_bits, $species_subspecies);
                 }
-		elsif ($term eq 'sample'){
-		    push(@hier_path_bits, $obj->name);
-		}
                 elsif ($term eq 'projectid') {
                     push(@hier_path_bits, $obj->id);
                 }
@@ -398,9 +397,8 @@ sub hierarchy_path_of_lane {
             }
             else {
                 # the POD says returns undef, but wouldn't it make more sense
-                # to warn or die? 
-		#Yes, good idea.
-		$self->throw("Unable to create data hierarchy on disk due to missing $term!");
+                # to warn or die?
+                return;
             }
         }
         else {
@@ -408,9 +406,6 @@ sub hierarchy_path_of_lane {
         }
     }
     
-    foreach (@hier_path_bits) { 
-        s/\W+/_/g; #get rid of any non-word characters and replace with underscores
-    }
     return File::Spec->catdir(@hier_path_bits);
 }
 
