@@ -856,6 +856,7 @@ sub create_release_files {
         if ($is_running & $LSF::Error) {
             warn "$pathed_job_name failed!\n";
             $skipped_some = 1;
+            #*** failure here doesn't result in any automatic reattempt...
             next;
         }
         elsif ($is_running & $LSF::Running) {
