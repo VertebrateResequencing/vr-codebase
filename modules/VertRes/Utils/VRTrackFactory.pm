@@ -104,24 +104,23 @@ sub connection_details {
  Function: Find out what databases are available to instantiate. Excludes any
            test databases by default.
  Returns : list of strings
- Args    : boolean, which if true will also return test databases (default
-           false)
+ Args    : boolean, which if true will also return test databases and databases
+           with old schema versions (default false)
 
 =cut
 
 sub databases {
     my $class = shift;
-    my $include_test_dbs = shift;
+    my $include_test_and_old_dbs = shift;
     my $self = $class->SUPER::new(@_);
     
     my %dbparams = VertRes::Utils::VRTrackFactory->connection_details('r');
     
-    my @databases = DBI->data_sources("mysql", \%dbparams);
-    @databases = grep(s/^DBI:mysql://, @databases); 
+    my @databases = grep(s/^DBI:mysql://, DBI->data_sources("mysql", \%dbparams));
     
     # we skip information_schema and any test databases
     @databases = grep(!/^information_schema/, @databases);
-    unless ($include_test_dbs) {
+    unless ($include_test_and_old_dbs) {
         @databases = grep(!/test/, @databases);
     }
     
@@ -130,7 +129,7 @@ sub databases {
     my $schema_version = VRTrack::VRTrack::SCHEMA_VERSION;
     my %expected_tables;
     foreach (VRTrack::VRTrack->schema()) {
-        if (/CREATE TABLE (`.+?`)/) {
+        if (/CREATE TABLE `(.+?)`/i || /create view (\S+)/i) {
             $expected_tables{$1} = 1;
         }
     }
@@ -143,7 +142,8 @@ sub databases {
             next;
         }
         
-        my %tables = map { $_ => 1 } grep { !/^`latest/ } $dbh->tables();
+        my %tables = map { s/`//g; s/^$db\.//; $_ => 1 } $dbh->tables();
+        
         foreach my $etable (keys %expected_tables) {
             next DB unless exists $tables{$etable};
         }
@@ -151,9 +151,11 @@ sub databases {
             next DB unless exists $expected_tables{$table};
         }
         
-        my $sql = qq[ select * from schema_version ];
-        my $rows = $dbh->selectall_arrayref($sql);
-        next unless $rows->[0]->[0] == $schema_version;
+        unless ($include_test_and_old_dbs) {
+            my $sql = qq[ select * from schema_version ];
+            my $rows = $dbh->selectall_arrayref($sql);
+            next unless $rows->[0]->[0] == $schema_version;
+        }
         
         push(@vr_dbs, $db);
     }
