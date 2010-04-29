@@ -232,7 +232,7 @@ if( ! defined( $mode ) && defined( $cgi->param('lane') ) )
 	}
 }
 
-if( $mode == $SELECT_SPECIES_VIEW || ! defined( $mode ) )
+if( ! defined( $mode ) || $mode == $SELECT_SPECIES_VIEW )
 {
     print $sw->header();
     print qq[
