@@ -43,7 +43,7 @@ use VRTrack::Lane;
 use VRTrack::File;
 use VRTrack::Core_obj;
 
-use constant SCHEMA_VERSION => '9';
+use constant SCHEMA_VERSION => '10';
 
 our $DEFAULT_PORT = 3306;
 
@@ -746,7 +746,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (9);
+insert into schema_version(schema_version) values (10);
 
 --
 -- Table structure for table `assembly`
@@ -827,7 +827,7 @@ CREATE TABLE `lane` (
   `acc` varchar(40) default NULL,
   `readlen` smallint(5) unsigned default NULL,
   `paired` tinyint(1) default NULL,
-  `raw_reads` int(10) unsigned default NULL,
+  `raw_reads` bigint(20) unsigned default NULL,
   `raw_bases` bigint(20) unsigned default NULL,
   `npg_qc_status` enum('pending','pass','fail','-') default NULL,
   `processed` int(10) default 0,
@@ -928,15 +928,15 @@ CREATE TABLE `mapstats` (
   `lane_id` mediumint(8) unsigned NOT NULL,
   `mapper_id` smallint(5) unsigned default NULL,
   `assembly_id` smallint(5) unsigned default NULL,
-  `raw_reads` int(10) unsigned default NULL,
-  `raw_bases` int(10) unsigned default NULL,
-  `clip_bases` int(10) unsigned default NULL,
-  `reads_mapped` int(10) unsigned default NULL,
-  `reads_paired` int(10) unsigned default NULL,
+  `raw_reads` bigint(20) unsigned default NULL,
+  `raw_bases` bigint(20) unsigned default NULL,
+  `clip_bases` bigint(20) unsigned default NULL,
+  `reads_mapped` bigint(20) unsigned default NULL,
+  `reads_paired` bigint(20) unsigned default NULL,
   `bases_mapped` bigint(20) unsigned default NULL,
-  `rmdup_reads_mapped` int(10) unsigned default NULL,
+  `rmdup_reads_mapped` bigint(20) unsigned default NULL,
   `rmdup_bases_mapped` bigint(20) unsigned default NULL,
-  `adapter_reads` int(10) unsigned default NULL,
+  `adapter_reads` bigint(20) unsigned default NULL,
   `error_rate` float unsigned default NULL,
   `mean_insert` float unsigned default NULL,
   `sd_insert` float unsigned default NULL,
@@ -1020,7 +1020,7 @@ CREATE TABLE `project` (
 --
 
 DROP TABLE IF EXISTS `study`;
-create table `study` (
+CREATE TABLE `study` (
 `study_id` smallint(5) unsigned NOT NULL auto_increment,
 `acc` varchar(40) default NULL,
 PRIMARY KEY  (`study_id`)
@@ -1031,7 +1031,7 @@ PRIMARY KEY  (`study_id`)
 --
 
 DROP TABLE IF EXISTS `allocation`;
-create table `allocation` (
+CREATE TABLE `allocation` (
 `study_id` smallint(5) unsigned default NULL,
 `individual_id` smallint(5) unsigned default NULL,
 `seq_centre_id` smallint(5) unsigned default NULL,
