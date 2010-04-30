@@ -45,27 +45,13 @@ use VRTrack::History;
 
 use base qw(VertRes::Base);
 
-our %study_to_srp = ('Exon-CEU' => 'SRP000033',
-                     'Exon-CHB' => 'SRP000033',
-                     'Exon-DEN' => 'SRP000033',
-                     'Exon-JPT' => 'SRP000033',
-                     'Exon-LWK' => 'SRP000033',
-                     'Exon-TSI' => 'SRP000033',
-                     'Exon-YRI' => 'SRP000033',
-                     'LowCov-CEU' => 'SRP000031',
-                     'LowCov-CHB' => 'SRP000031',
-                     'LowCov-JPT' => 'SRP000031',
-                     'LowCov-YRI' => 'SRP000031',
-                     'Trio-CEU' => 'SRP000032',
-                     'Trio-YRI' => 'SRP000032');
-
 our %platform_aliases = (ILLUMINA => 'SLX',
                          Illumina => 'SLX',
                          LS454 => '454');
 
-our $DEFAULT_DB_SETTINGS = {host => 'mcs4a',
-                            port => 3306,
-                            user => 'vreseq_ro',
+our $DEFAULT_DB_SETTINGS = {host => $ENV{VRTRACK_HOST},
+                            port => $ENV{VRTRACK_PORT},
+                            user => $ENV{VRTRACK_RO_USER},
                             database => 'g1k_meta'};
 
 our $nfs_disc_basename = '/nfs/vertreseq';
@@ -96,6 +82,8 @@ sub new {
  Function: Extract information about a lane based on its location in the
            hierarchy directory structure.
  Returns : hash with keys study, sample, platform, library and lane.
+           (where 'study' is actually the population and "analysis group", eg.
+           "CEU_low_coverage")
  Args    : a directory path
 
 =cut
@@ -149,11 +137,12 @@ sub parse_lane {
            (returns undef if lane name isn't in the database)
  Args    : lane name (read group) OR a VRTrack::Lane object.
            Optionally, a hash with key db OR vrtrack to provide the database
-           connection info (shown with defaults):
+           connection info (defaults depend on the VRTRACK_* environment
+           variables, as per VertRes::Utils::VRTrackFactory):
            db => {
-            host => 'mcs4a',
-            port => 3306,
-            user => 'vreseq_ro',
+            host => 'xxx',
+            port => xxx,
+            user => 'xxx',
             password => undef,
             database => 'g1k_meta'
            }
@@ -324,11 +313,12 @@ sub lane_hierarchy_objects {
                               of total bases)
 
            Optionally, a hash with key db OR vrtrack to provide the database
-           connection info (shown with defaults):
+           connection info (defaults depend on the VRTRACK_* environment
+           variables, as per VertRes::Utils::VRTrackFactory):
            db => {
-            host => 'mcs4a',
-            port => 3306,
-            user => 'vreseq_ro',
+            host => 'xxx',
+            port => xxx,
+            user => 'xxx',
             password => undef,
             database => 'g1k_meta'
            }
@@ -450,11 +440,12 @@ sub hierarchy_coverage {
            lanes in the database will be returned)
 
            Optionally, a hash with key db OR vrtrack to provide the database
-           connection info (shown with defaults):
+           connection info (defaults depend on the VRTRACK_* environment
+           variables, as per VertRes::Utils::VRTrackFactory):
            db => {
-            host => 'mcs4a',
-            port => 3306,
-            user => 'vreseq_ro',
+            host => 'xxx',
+            port => xxx,
+            user => 'xxx',
             password => undef,
             database => 'g1k_meta'
            }
@@ -723,8 +714,9 @@ sub check_lanes_vs_sequence_index {
         }
         
         # study swaps
-        my $given_study = $study_to_srp{$lane_info{study}} || $lane_info{study};
-        my $study = $sip->lane_info($lane_id, 'study_id');
+        my $given_study = $lane_info{study};
+        my $study = $sip->lane_info($lane_id, 'population').'_'.$sip->lane_info($lane_id, 'ANALYSIS_GROUP');
+        $study =~ s/\s/_/g;
         unless ($study eq $given_study) {
             $self->warn("study swap: $study vs $given_study for $lane_id ($lane_path -> $expected_path)");
             $all_ok = 0;
@@ -1047,28 +1039,30 @@ sub create_release_hierarchy {
 =head2 dcc_filename
 
  Title   : dcc_filename
- Usage   : my $filename = $obj->dcc_filename('/abs/path/to/release.bam',
-                                             '20100208');
- Function: Get the DCC filename of a bam file.
+ Usage   : my $filename = $obj->dcc_filename('release.bam',
+                                             '20100208',
+                                             'sequence.index');
+ Function: Get the DCC filename of a bam file. For this to work, the bam file
+           must have RG lines in the header where ID, PL, LB, PI, SM and CN are
+           all set, and DS is set to the SRP project code.
  Returns : string (filename without .bam suffix)
- Args    : absolute path to a platform-level release bam file, the release name
-           date string (YYYYMMDD corresponding to the sequence.index the release
-           was made from), and optionally a chrom string if the supplied bam
-           is unsplit, but you want to work out what the dcc filename of a
-           certain chromosmal split of that bam would be prior to actually
-           making the split bam.
+ Args    : path to release bam file, the release name date string (YYYYMMDD
+           corresponding to the sequence.index the release was made from), and
+           the path to the sequence.index file. Optionally a chrom string if the
+           supplied bam is unsplit, but you want to work out what the dcc
+           filename of a certain chromosmal split of that bam would be prior to
+           actually making the split bam.
 
 =cut
 
 sub dcc_filename {
-    my ($self, $file, $date_string, $given_chrom) = @_;
+    my ($self, $file, $date_string, $sequence_index, $given_chrom) = @_;
     $date_string || $self->throw("release date string must be supplied");
+    -s $sequence_index || $self->throw("sequence.index file must be supplied");
     
-    # NAXXXXX.[chromN].technology.[center].algorithm.study_id.YYYYMMDD.bam
-    # http://1000genomes.org/wiki/doku.php?id=1000_genomes:dcc:filenames
+    # NAXXXXX.[chromN].technology.[center].algorithm.population.analysis_group.YYYYMMDD.bam
+    # eg. NA12878.chrom1.LS454.ssaha.CEU.high_coverage.20091216.bam
     # http://1000genomes.org/wiki/doku.php?id=1000_genomes:dcc:metadata
-    
-    my ($dcc_filename, $study, $sample, $platform);
     
     # view the bam header
     my $stw = VertRes::Wrapper::samtools->new(quiet => 1);
@@ -1078,19 +1072,18 @@ sub dcc_filename {
     
     my $ps = VertRes::Parser::sam->new(fh => $view_fh);
     
-    ($study, $sample, $platform) = ('unknown_study', 'unknown_sample', 'unknown_platform');
+    my ($sample, $platform) = ('unknown_sample', 'unknown_platform');
     my %techs;
     my %readgroup_info = $ps->readgroup_info();
+    my $example_rg;
     while (my ($rg, $info) = each %readgroup_info) {
-        # there should only be one of these, so we just keep resetting it
-        # (there's no proper tag for holding study, so the mapping pipeline
-        # sticks the study into the description tag 'DS')
-        $study = $info->{DS} || 'unknown_study';
+        # there should only be one sample, so we just keep resetting it
         $sample = $info->{SM} || 'unknown_sample';
+        $example_rg = $rg;
         
-        # might be more than one of these if we're a sample-level bam.
-        # DCC puts eg. 'ILLUMINA' in the sequence.index files but the
-        # filename format expects 'SLX' etc.
+        # might be more than one of these if we're a sample-level bam. We
+        # standardise on the DCC nomenclature for the 3 platforms; they should
+        # be in this form anyway, so this is just-in-case
         $platform = $info->{PL};
         if ($platform =~ /illumina|slx/i) {
             $platform = 'ILLUMINA';
@@ -1104,46 +1097,18 @@ sub dcc_filename {
         $techs{$platform}++;
     }
     
-    # old bams don't have study in DS tag
-    if ($study eq 'unknown_study') {
-        my (undef, $bam_dir) = fileparse($file);
-        my @dirs = File::Spec->splitdir($bam_dir);
-        if ($dirs[-1] eq '') {
-            pop @dirs;
-        }
-        my $study_dir = $dirs[-3] || '';
-        if ($study_dir =~ /LowCov/) {
-            $study = 'SRP000031';
-        }
-        elsif ($study_dir =~ /Trio/) {
-            $study = 'SRP000032';
-        }
-        elsif ($study_dir =~ /Exon/) {
-            $study = 'SRP000033';
-        }
-    }
+    # instead of the srp (project code), we now have population and analysis
+    # group in it's place. These things are not stored in the bam header, so
+    # we must check the sequence.index file to figure this out. We assume that
+    # all the readgroups have the same pop and ag, since they DCC only do
+    # same-sample bams
+    my $sip = VertRes::Parser::sequence_index->new(file => $sequence_index,
+                                                   verbose => $self->verbose);
+    my $pop = $sip->lane_info($example_rg, 'POPULATION') || 'unknown_population';
+    my $ag = $sip->lane_info($example_rg, 'ANALYSIS_GROUP') || 'unknown_analysisgroup';
+    $ag =~ s/\s/_/g;
     
-    # SOLID bams are not made by us and have unreliable headers; we'll need to
-    # cheat and get the info from the filesystem
-    if ($sample eq 'unknown_sample') {
-        my (undef, $bam_dir) = fileparse($file);
-        my @dirs = File::Spec->splitdir($bam_dir);
-        if ($dirs[-1] eq '') {
-            pop @dirs;
-        }
-        if ($dirs[-1] eq 'SOLID') {
-            $platform = 'SOLID';
-            $sample = $dirs[-2];
-            $study = $dirs[-3];
-            if (exists $study_to_srp{$study}) {
-                $study = $study_to_srp{$study};
-            }
-            else {
-                $self->warn("bam $file detected as being in unknown study '$study'");
-            }
-        }
-    }
-    
+    # if there's more than 1 tech, it doesn't appear in the filename
     if (keys %techs > 1) {
         $platform = '';
     }
@@ -1164,7 +1129,8 @@ sub dcc_filename {
     }
     
     my $algorithm = $ps->program || 'unknown_algorithm';
-    if ($algorithm eq 'unknown_algorithm' || $algorithm =~ /^\d+$/ || $algorithm =~ /GATK/) { # picard merge can fuck with program names, converting them to unique numbers
+    # picard merge can fuck with program names, converting them to unique numbers
+    if ($algorithm eq 'unknown_algorithm' || $algorithm =~ /^\d+$/ || $algorithm =~ /GATK/) { 
         if ($platform =~ /ILLUMINA/) {
             $algorithm = 'bwa';
         }
@@ -1172,11 +1138,11 @@ sub dcc_filename {
             $algorithm = 'ssaha2';
         }
         elsif ($platform =~ /SOLID/) {
-            $algorithm = 'corona';
+            $algorithm = 'bfast';
         }
     }
     
-    $dcc_filename = "$sample.$chrom$platform$algorithm.$study.$date_string";
+    my $dcc_filename = "$sample.$chrom$platform$algorithm.$pop.$ag.$date_string";
     
     return $dcc_filename;
 }
