@@ -902,7 +902,7 @@ sub create_release_files {
             unless (-s $bas && -s $bas_md5) {
                 $self->{bsub_opts} = '-q long';
                 LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
-                         qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$self->{release_date}], qq[$bas]); die qq[bas failed for $bam\n] unless -s qq[$bas]; system(qq[md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"}); # , qq[$self->{sequence_index}] bas() needs a database option?
+                         qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$self->{release_date}], qq[$bas.tmp]); die qq[bas failed for $bam\n] unless -s qq[$bas.tmp]; system(qq[mv $bas.tmp $bas; md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"});
                 $self->{bsub_opts} = '-q long';
             }
             elsif (! -e "$release_name.bas") {
@@ -1004,8 +1004,9 @@ sub create_release_files {
                     my $ebas_md5 = $ebas.'.md5';
                     unless (-s $ebas && -s $ebas_md5) {
                         $self->{bsub_opts} = '-q long';
+                        my $si = $self->{dcc_mode} ? ", qq[$self->{dcc_mode}]" : '';
                         LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
-                                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$ebam], qq[$self->{release_date}], qq[$ebas]); die qq[bas failed for $ebam\n] unless -s qq[$ebas]; system(qq[md5sum $ebas > $ebas_md5]);"});
+                                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$ebam], qq[$self->{release_date}], qq[$ebas.tmp]$si); die qq[bas failed for $ebam\n] unless -s qq[$ebas.tmp]; system(qq[mv $ebas.tmp $ebas; md5sum $ebas > $ebas_md5]);"});
                     }
                 }
                 $self->{bsub_opts} = '-q long';
