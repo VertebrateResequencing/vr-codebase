@@ -37,7 +37,6 @@ data => {
     reference => '/abs/path/to/ref.fa',
     assembly_name => 'NCBI37',
     do_recalibration => 1,
-    release_date => '20100208'
 },
 
 # Reference option can be replaced with male_reference and female_reference
@@ -195,14 +194,6 @@ our $split_dir_name = 'split';
                         supplied)
            assembly_name => 'NCBI36' (no default, must be set to the name of
                                       the reference)
-           release_date => 'YYYYMMDD' (defaults to todays date; used for getting
-                                       the DCC filename correct in .bas files -
-                                       should be the same date as of the DCC
-                                       sequence.index used. Not important if
-                                       not doing a DCC release afterwards.
-                                       Probably not important at all, since this
-                                       only affects lane-level bas files, which
-                                       are not released)
            
            other optional args as per VertRes::Pipeline
 
