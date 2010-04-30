@@ -23,7 +23,7 @@ data => {
     release_date => '20100208',
     simultaneous_merges => 200,
     
-    dcc_mode => 1,
+    dcc_mode => '/path/to/sequence.index',
     do_cleanup => 1,
     
     db => {
@@ -125,7 +125,7 @@ our %options = (do_cleanup => 0,
                 do_chr_splits => 0,
                 do_sample_merge => 0,
                 simultaneous_merges => 200,
-                dcc_mode => 0,
+                dcc_mode => '',
                 bsub_opts => '',
                 dont_wait => 1,
                 previous_release_root => '');
@@ -147,9 +147,10 @@ our %options = (do_cleanup => 0,
            do_cleanup => boolean (default false: don't do the cleanup action)
            do_chr_splits => boolean (default false: don't split platform-level
                                      bams by chr)
-           dcc_mode => boolean (default false; when true, implies do_chr_splits
-                                and renames the per-chr bams to the DCC naming
-                                convention)
+           dcc_mode => sequence.index (default unset; when a DCC sequence.index
+                                       is supplied, implies do_chr_splits
+                                       and renames the per-chr bams to the DCC
+                                       naming convention)
            simultaneous_merges => int (default 200; the number of merge jobs to
                                        do at once - limited to avoid IO
                                        problems)
@@ -934,7 +935,7 @@ sub create_release_files {
                 foreach my $ebam (@expected_split_bams) {
                     my $basename = basename($ebam);
                     my ($chr) = $basename =~ /^([^\.]+)/;
-                    my $dcc_filename = $vuh->dcc_filename($bam, $self->{release_date}, $chr).'.bam';
+                    my $dcc_filename = $vuh->dcc_filename($bam, $self->{release_date}, $self->{dcc_mode}, $chr).'.bam';
                     
                     my $dccbam = $ebam;
                     $dccbam =~ s/$basename$/$dcc_filename/;
