@@ -1058,7 +1058,6 @@ sub create_release_hierarchy {
 sub dcc_filename {
     my ($self, $file, $date_string, $sequence_index, $given_chrom) = @_;
     $date_string || $self->throw("release date string must be supplied");
-    -s $sequence_index || $self->throw("sequence.index file must be supplied");
     
     # NAXXXXX.[chromN].technology.[center].algorithm.population.analysis_group.YYYYMMDD.bam
     # eg. NA12878.chrom1.LS454.ssaha.CEU.high_coverage.20091216.bam
@@ -1102,11 +1101,17 @@ sub dcc_filename {
     # we must check the sequence.index file to figure this out. We assume that
     # all the readgroups have the same pop and ag, since they DCC only do
     # same-sample bams
-    my $sip = VertRes::Parser::sequence_index->new(file => $sequence_index,
-                                                   verbose => $self->verbose);
-    my $pop = $sip->lane_info($example_rg, 'POPULATION') || 'unknown_population';
-    my $ag = $sip->lane_info($example_rg, 'ANALYSIS_GROUP') || 'unknown_analysisgroup';
-    $ag =~ s/\s/_/g;
+    # sometimes dcc_filename is used just to make bas files, and sometimes we
+    # don't care about the dcc_file being correct, so we don't want to require
+    # passing in sequence.index file
+    my ($pop, $ag) = ('unknown_population', 'unknown_analysisgroup');
+    if ($sequence_index) {
+        my $sip = VertRes::Parser::sequence_index->new(file => $sequence_index,
+                                                       verbose => $self->verbose);
+        $pop = $sip->lane_info($example_rg, 'POPULATION') || 'unknown_population';
+        $ag = $sip->lane_info($example_rg, 'ANALYSIS_GROUP') || 'unknown_analysisgroup';
+        $ag =~ s/\s/_/g;
+    }
     
     # if there's more than 1 tech, it doesn't appear in the filename
     if (keys %techs > 1) {

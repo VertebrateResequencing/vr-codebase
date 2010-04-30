@@ -5,7 +5,7 @@ use File::Spec;
 use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 25;
+    use Test::Most tests => 26;
     
     use_ok('VertRes::Utils::Hierarchy');
 }
@@ -97,6 +97,8 @@ is $cov, $cov2, 'coverage was the same in both tests';
 is $h_util->dcc_filename($bam_file, '20100208', $si_file), 'NA11918.ILLUMINA.bwa.CEU.low_coverage.20100208', 'dcc_filename test';
 my $chrom_bam = File::Spec->catfile('t', 'data', 'NA06985.chrom7.ILLUMINA.bwa.SRP000031.20091216.bam');
 is $h_util->dcc_filename($chrom_bam, '20100208', $si_file), 'NA06985.chrom7.ILLUMINA.bwa.CEU.low_coverage.20100208', 'dcc_filename chrom test';
+is $h_util->dcc_filename($chrom_bam, '20100208'), 'NA06985.chrom7.ILLUMINA.bwa.unknown_population.unknown_analysisgroup.20100208', 'dcc_filename chrom test without sequence.index';
+
 
 # netapp-related methods
 is_deeply [$h_util->nfs_disks], [qw(/nfs/vertreseq01 /nfs/vertreseq02 /nfs/vertreseq03 /nfs/vertreseq04 /nfs/vertreseq05 /nfs/vertreseq06 /nfs/vertreseq07 /nfs/vertreseq08 /nfs/vertreseq09 /nfs/vertreseq10 /nfs/vertreseq11 /nfs/vertreseq12 /nfs/vertreseq13 /nfs/vertreseq14 /nfs/vertreseq15 /nfs/vertreseq16)], 'nfs_disks returned the expected disks';
