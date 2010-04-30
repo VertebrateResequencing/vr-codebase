@@ -5,7 +5,7 @@ use File::Spec;
 use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 107;
+    use Test::Most tests => 109;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -237,7 +237,12 @@ ok $sam_util->rewrite_bas_meta($given_bas, SRR00001 => { sample_name => 'NA00003
 open($tbfh, $given_bas);
 @given = <$tbfh>;
 close($tbfh);
-is_deeply \@given, [$expected[0], join("\t", qw(NA00003.LS454.bwa.SRP000002.20100208 d4f062c6eed8d0205517979801305bfd SRP000002 NA00003 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48))."\n"], 'rewrite_bas_meta actually changed the bas';
+is_deeply \@given, [$expected[0], join("\t", qw(NA00003.LS454.bwa.unknown_population.unknown_analysisgroup.20100208 d4f062c6eed8d0205517979801305bfd SRP000002 NA00003 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48))."\n"], 'rewrite_bas_meta actually changed the bas';
+ok $sam_util->rewrite_bas_meta($given_bas, SRR00001 => { sample_name => 'NA00004', filename => 'foo' }), 'rewrite_bas_meta ran ok again';
+open($tbfh, $given_bas);
+@given = <$tbfh>;
+close($tbfh);
+is_deeply \@given, [$expected[0], join("\t", qw(foo d4f062c6eed8d0205517979801305bfd SRP000002 NA00004 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48))."\n"], 'rewrite_bas_meta actually changed the bas, and the filename option worked';
 
 # stats method
 ok $sam_util->stats('20100208', $sorted_bam), 'stats test';

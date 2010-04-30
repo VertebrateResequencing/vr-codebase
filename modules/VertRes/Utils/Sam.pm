@@ -756,14 +756,15 @@ sub stats {
 =head2 bas
 
  Title   : bas
- Usage   : $obj->bas('in.bam', 'YYYYMMDD', 'out.bas');
+ Usage   : $obj->bas('in.bam', 'YYYYMMDD', 'out.bas', 'sequence.index');
  Function: Generate a 'bas' file. These are bam statistic files that provide
            various stats about each readgroup in a bam.
  Returns : boolean (true on success)
  Args    : input bam file (must have been run via samtools fillmd so that there
            are accurate NM tags for each record), YYYYMMDD string describing the
-           date of the release, output filename, optionally a sequence.index
-           file from the DCC if working on bams with poor headers
+           date of the release, output filename, sequence.index file (optional
+           if your bam headers are good and you don't care about column 1 of the
+           bas file, which is the DCC filename)
 
 =cut
 
@@ -794,7 +795,7 @@ sub bas {
     
     # get the meta data
     my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
-    my $dcc_filename = $hu->dcc_filename($in_bam, $release_date);
+    my $dcc_filename = $hu->dcc_filename($in_bam, $release_date, $seq_index);
     
     my $md5;
     my $md5_file = $in_bam.'.md5';
@@ -1771,6 +1772,10 @@ sub standardise_pg_header_lines {
                           and are making the same changes to its bas, the bam
                           md5 will have changed so you should supply the new
                           md5 here)
+           filename => string OR ['/path/to/bam', 'release_date',
+                                  '/path/to/sequence.index']
+                                 (recalculates what the DCC filename of the bam
+                                  should be)
 
 =cut
 
@@ -1783,11 +1788,11 @@ sub rewrite_bas_meta {
                       platform => 4,
                       study => 2,
                       project => 2,
-                      md5 => 1);
+                      md5 => 1,
+                      filename => 0);
     # NAXXXXX.[chromN].technology.[center].algorithm.study_id.YYYYMMDD.bam
     my %arg_to_filename_regex = (sample_name => qr{^[^\.]+(\.)},
                                  platform => qr{(?:ABI_SOLID|ILLUMINA|LS454|SLX|454|SOLID)(\.)},
-                                 study => qr{[^\.]+(\.\d{8})},
                                  project => qr{[^\.]+(\.\d{8})});
     
     my $temp_bas = $bas.'.rewrite_bas_meta.tmp.bas';
@@ -1805,20 +1810,26 @@ sub rewrite_bas_meta {
         
         if (exists $rg_changes{$rg}) {
             while (my ($arg, $value) = each %{$rg_changes{$rg}}) {
+                if ($arg eq 'filename' && ref($value) && ref($value) eq 'ARRAY') {
+                    $value = VertRes::Utils::Hierarchy->new->dcc_filename(@{$value});
+                }
+                
                 my $col = $arg_to_col{$arg};
-                if ($col) {
+                if (defined $col) {
                     if ($cols[$col] ne $value) {
                         $made_changes = 1;
                         $cols[$col] = $value;
                     }
                 }
                 
-                my $regex = $arg_to_filename_regex{$arg};
-                if ($regex) {
-                    my $orig = $cols[0];
-                    $cols[0] =~ s/$regex/$value$1/;
-                    if ($cols[0] ne $orig){
-                        $made_changes = 1;
+                unless (exists $rg_changes{$rg}->{filename}) {
+                    my $regex = $arg_to_filename_regex{$arg};
+                    if ($regex) {
+                        my $orig = $cols[0];
+                        $cols[0] =~ s/$regex/$value$1/;
+                        if ($cols[0] ne $orig){
+                            $made_changes = 1;
+                        }
                     }
                 }
             }
