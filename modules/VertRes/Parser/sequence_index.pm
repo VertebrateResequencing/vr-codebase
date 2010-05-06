@@ -101,8 +101,10 @@ sub _get_header {
         }
         else {
             # allow header line to not be present. lines can also end with an
-            # extraneous \t\n, so remove that first
-            s/\t\n$//;
+            # extraneous \t\n, so remove that first... causes problems in
+            # fake sequence.indexes when people leave the last few columns
+            # empty...
+            #s/\t\n$//;
             my @a = split("\t", $_);
             if (@a == 25 || @a == 26) {
                 $self->{_first_line} = $_;
