@@ -344,7 +344,7 @@ sub mapping_hierarchy_report {
     my ($self, $output_csv, $vrtrack) = @_;
     my $genome_size = 3e9;
     
-    my $lanes = $vrtrack->qc_filtered_lane_hnames();
+    my $lanes = $vrtrack->processed_lane_hnames();
     
     # get mapping stats at all hierarchy levels
     my %hierarchy_stats;
@@ -397,7 +397,9 @@ sub mapping_hierarchy_report {
                 elsif ($level eq 'LS454') {
                     $level = 454;
                 }
+                my $orig_level_path = $level_path;
                 ($level_path) = $level_path =~ /^(.*?$level)/;
+                $level_path ||= $orig_level_path;
             }
             else {
                 $level_path = '/';
