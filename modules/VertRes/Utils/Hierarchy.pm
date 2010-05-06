@@ -1071,14 +1071,15 @@ sub dcc_filename {
     
     my $ps = VertRes::Parser::sam->new(fh => $view_fh);
     
-    my ($sample, $platform) = ('unknown_sample', 'unknown_platform');
+    my $sample;
+    my $platform = 'unknown_platform';
     my %techs;
     my %readgroup_info = $ps->readgroup_info();
     my $example_rg;
     while (my ($rg, $info) = each %readgroup_info) {
-        # there should only be one sample, so we just keep resetting it
-        $sample = $info->{SM} || 'unknown_sample';
-        $example_rg = $rg;
+        # there should only be one sample, so we just pick the first
+        $sample ||= $info->{SM};
+        $example_rg ||= $rg;
         
         # might be more than one of these if we're a sample-level bam. We
         # standardise on the DCC nomenclature for the 3 platforms; they should
@@ -1095,6 +1096,10 @@ sub dcc_filename {
         }
         $techs{$platform}++;
     }
+    $sample ||= 'unknown_sample';
+    
+    # picard merge may have tried to uniqueify the rg, so pluck off .\d
+    $example_rg =~ s/\.\d+$//;
     
     # instead of the srp (project code), we now have population and analysis
     # group in it's place. These things are not stored in the bam header, so
