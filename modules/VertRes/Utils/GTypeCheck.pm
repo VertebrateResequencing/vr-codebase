@@ -111,10 +111,13 @@ sub is_genotype_ok
         if ( $has_data && defined($hit1) && defined($hit2) ) { last; }
 
         # The regex matches both lines:
-        #   sample NA12717 likelihood 104917 over 13788 sites, avg depth 0.026506
-        #   sample xx/NA12717.snp likelihood 104917 over 13788 sites, avg depth 0.026506
+        #   sample NA12717 likelihood 104917 over 13788 sites, score 1.222, avg depth 0.026506
+        #   sample xx/NA12717.snp likelihood 104917 over 13788 sites, score 1.222, avg depth 0.026506
         #
-        if ( !($line =~ m{sample\s+(?:.*/)?(\S+?)(?:\.snp)?\s+likelihood (\d+)} ) ) { $self->throw("Could not parse $gtype_file: $hit1") }
+        if ( !($line =~ m{sample\s+(?:.*/)?(\S+?)(?:\.snp)?\s+likelihood \d+ over \d+ sites, score (\S+),} ) ) 
+        { 
+            $self->throw("Could not parse $gtype_file: $hit1") 
+        }
 
         if ( $expected && $1 eq $expected ) { $has_data = 1; } 
 
