@@ -275,7 +275,7 @@ sub get_projects_by_organism {
 =head2 get_taxonid_for_organism
 
   Arg [1]    : organism name
-  Example    : my $taxon_id = $sfind->get_taxonid_for_organism('Home sapiens');
+  Example    : my $taxon_id = $sfind->get_taxonid_for_organism('Homo sapiens');
   Description: Get the taxon ID for a given organism name
   Returntype : taxon_id
 
@@ -301,7 +301,7 @@ sub get_taxonid_for_organism {
 		warn "No taxon_id found for $org\n";
 		return undef;
     }
-#    Some taxon ids in the warehouse seem to have a .0 at the end which is incorrect
+#    Some taxon ids in the warehouse have a .0 at the end which appears to be incorrect
 #    We check and remove them here
     $taxon_id =~ s/(\d+)\.0/$1/g;
 	
