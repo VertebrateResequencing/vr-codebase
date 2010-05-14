@@ -136,7 +136,10 @@ sub job_in_bjobs
     Arg [1]     : lock file where to put the JID (opened in append mode)
     Arg [2]     : before bsub will be called, chdir to the working dir
     Arg [3]     : job name - the output will be redirected to $job.o and $job.e
-    Arg [4]     : options, expecting 'bsub_opts' key in the hash with the command line options
+    Arg [4]     : options
+                        bsub_opts   .. command line options
+                        dont_wait   .. if set, don't wait until the job appears in bjobs list
+                        append      .. unless explicitly set to zero, the lock file will be opened in the append mode
     Arg [5]     : the command to run
     Description : Executes bsub with the given parameters.
     Returntype  : none
@@ -163,8 +166,9 @@ sub run
     { 
         Utils::error("Expected different output from bsub. The command was:\n\t$cmd\nThe output was:\n", @out);
     }
-    my $jid = $1;
-    open(my $jids_fh, '>>', $jids_file) or Utils::error("$jids_file: $!");
+    my $jid  = $1;
+    my $mode = exists($$options{append}) && !$$options{append} ? '>' : '>>';
+    open(my $jids_fh, $mode, $jids_file) or Utils::error("$jids_file: $!");
     print $jids_fh "$jid\t$work_dir/$lsf_output_file\n";
     close $jids_fh;
 
