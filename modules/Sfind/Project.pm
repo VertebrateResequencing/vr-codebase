@@ -289,9 +289,9 @@ sub get_project_manager {
 
   Arg [1]    : None
   Example    : my @org = $project->get_organism_name();
-  Description: Convenient method to gets all the organism names associated with 
+  Description: Convenient method to get all the organism names associated with 
                this project, undef if no organism. The hash will also give the
-               number of samples for a particular organism (if needed)
+               number of samples for a particular organism (if needed later on)
   Returntype : hash of strings
 
 =cut
@@ -303,12 +303,14 @@ sub get_organism_names {
 	    if($id=~/^\d/){
 	        my $sample = Sfind::Sample->new($self->{_dbh},$id, $self->id);
 	        my $org_name = $sample->get_organism_name();
-	        if (exists $organisms{$org_name}){
+		if($org_name and $org_name!~/^\s*$/){ #If defined and not empty string
+		    if (exists $organisms{$org_name}){
 	        	$organisms{$org_name} = $organisms{$org_name}++;
-	        }else{
+		    }else{
 	        	$organisms{$org_name} = 1;	
-	        }
-	        #push(@organisms,$sample->get_organism_name());
+		    }
+		}
+
 	    }
     }
     return %organisms;

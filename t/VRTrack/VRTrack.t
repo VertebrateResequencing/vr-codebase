@@ -1,9 +1,10 @@
+
 #!/usr/bin/perl -w
 use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 372;
+    use Test::Most tests => 377;
 
     use_ok('VRTrack::VRTrack');
     use_ok('VRTrack::Request');
@@ -256,6 +257,19 @@ ok ! $vrproj->update(), 'can\'t update on historical objects after changing attr
     is @{$vrlane->files}, 2, 'files returned the correct number of files';
     is_deeply $vrlane->file_ids, [3, 5], 'file_ids returned the correct ids';
     
+    # hierarchy_path_of_lane
+    $ENV{DATA_HIERARCHY} = '';
+    is $vrtrack->hierarchy_path_of_lane($vrlane), 'Project_test2/Individual_test/seq_tech_test/lib_a/lane_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY unset';
+    my $lane_b = VRTrack::Lane->new_by_name($vrtrack, 'lane_b');
+    my $lib_b = $sample->get_library_by_id(5);
+    $lib_b->add_seq_tech('seq_tech_test_b');
+    $lib_b->update;
+    $lane_b->library_id(5);
+    $lane_b->update;
+    is $vrtrack->hierarchy_path_of_lane($lane_b), 'Project_test2/Individual_test/seq_tech_test_b/lib_b/lane_b', 'hierarchy_path_of_lane works with DATA_HIERARCHY unset and on a different lane';
+    $ENV{DATA_HIERARCHY} = 'species:foo:library';
+    is $vrtrack->hierarchy_path_of_lane($vrlane), 'species/foo/lib_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY set to species:library';
+    
     # file
     ok my $vrfile = VRTrack::File->new($vrtrack, 3), 'was able to retrieve file object by id';
     is $vrfile->type(1), 1, 'File type could be set to 1';
@@ -319,6 +333,7 @@ ok ! $vrproj->update(), 'can\'t update on historical objects after changing attr
     is_deeply [$image->id, $image->name], [3, $image_name], 'Image new worked again';
     
     # individual
+    # setting species_id and population id for the first individual
     my $individual = VRTrack::Individual->new($vrtrack, 1);
     is $individual->id, 1, 'Individual new returned the first assembly we made before';
     my $individual_name = 'individual_test|changed';
@@ -329,20 +344,32 @@ ok ! $vrproj->update(), 'can\'t update on historical objects after changing attr
     ok $individual->update, 'update worked on Individual';
     $individual = VRTrack::Individual->new_by_name($vrtrack, $individual_name);
     is_deeply [$individual->id, $individual->name, $individual->sex], [1, $individual_name, 'unknown'], 'Individual new_by_name worked';
-    $individual_name .= '2';
-    ok $individual = VRTrack::Individual->create($vrtrack, $individual_name), 'Individual create worked';
-    $individual = VRTrack::Individual->new_by_name($vrtrack, $individual_name);
-    is_deeply [$individual->id, $individual->name, $individual->hierarchy_name], [2, $individual_name, 'individual_test_changed2'], 'Individual new_by_name worked again';
+    my $species_name = 'genus species subspecies';
+    is $individual->species($species_name), undef, 'species() returned undef when setting a non-existant species';
+    is $individual->species_id, undef, 'species_id starts undefined';
+    is $individual->add_species($species_name)->id, 1, 'add_species made a new species';
+    is $individual->species_id, 1, 'species_id was updated';
     my $pop_name = 'population_test';
     is $individual->population($pop_name), undef, 'population() returned undef when setting a non-existant population';
     is $individual->population_id, undef, 'population_id starts undefined';
     is $individual->add_population($pop_name)->id, 1, 'add_population made a new population';
     is $individual->population_id, 1, 'population_id was updated';
-    my $species_name = 'species_test';
-    is $individual->species($species_name), undef, 'species() returned undef when setting a non-existant species';
-    is $individual->species_id, undef, 'species_id starts undefined';
-    is $individual->add_species($species_name)->id, 1, 'add_species made a new species';
-    is $individual->species_id, 1, 'species_id was updated';
+
+    $individual->update();
+
+    $individual_name .= '2';
+    ok $individual = VRTrack::Individual->create($vrtrack, $individual_name), 'Individual create worked';
+    $individual = VRTrack::Individual->new_by_name($vrtrack, $individual_name);
+    is_deeply [$individual->id, $individual->name, $individual->hierarchy_name], [2, $individual_name, 'individual_test_changed2'], 'Individual new_by_name worked again';
+    
+    
+    # more tests for hierarchy_path_of_lane 
+    my $vrlane = VRTrack::Lane->new_by_name($vrtrack, 'lane_a'); #Get our favourite lane back. At this point all the bits of data exist in the database
+    $ENV{DATA_HIERARCHY} = 'species:foo:library';
+    is $vrtrack->hierarchy_path_of_lane($vrlane), 'species/foo/lib_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY set to species:foo:library';
+    $ENV{DATA_HIERARCHY} = 'genus:species-subspecies:project:strain:sample:technology:library:lane';
+    is $vrtrack->hierarchy_path_of_lane($vrlane) ,'genus/species_subspecies/Project_test2/Individual_test/sample_a/seq_tech_test/lib_a/lane_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY set to all items';
+    
     
     # mapper
     my $mapper = VRTrack::Mapper->new($vrtrack, 1);
@@ -382,7 +409,7 @@ ok ! $vrproj->update(), 'can\'t update on historical objects after changing attr
                             Library_type => 2,
                             Population => 2,
                             Seq_centre => 2,
-                            Seq_tech => 2,
+                            Seq_tech => 3,
                             # *** actually the next two have some simple get/setters as well
                             Species => 4, 
                             Submission => 2);
@@ -501,6 +528,5 @@ ok $vrproj->is_latest(1), 'can set is_latest on non-latest object';
 ok $vrproj->update(), 'can update after resetting latest';
 $vrproj = VRTrack::Project->new($vrtrack, $proj_id,'latest');
 ok $vrproj, 'can retrieve latest version of object after resetting latest';
-
 
 exit;

@@ -156,6 +156,35 @@ sub taxon_id {
 }
 
 
+=head 2 genus
+
+  Example    : my $genus = $species->genus();
+  Description: Get the genus name of the species (for now, this is the first word)
+  Returntype : string
+
+=cut
+
+sub genus {
+    my $self = shift;
+    my @whole_name = split(/ /, $self->name());
+    return $whole_name[0];
+}
+
+=head 2 species_subspecies
+
+  Example    : my $genus = $species->species_subspecies();
+  Description: Gets everything after the genus name (for now, these are all the words after the first space)
+  Returntype : string
+
+=cut
+
+sub species_subspecies {
+    my $self = shift;
+    $self->name() =~ m/(\S+)\s+(.*)/;  
+    return $2;
+}
+
+
 =head2 update
 
   Arg [1]    : None
@@ -165,5 +194,7 @@ sub taxon_id {
   Returntype : 1 if successful, otherwise undef.
 
 =cut
+
+
 
 1;

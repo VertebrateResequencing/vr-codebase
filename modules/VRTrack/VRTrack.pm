@@ -36,6 +36,7 @@ use warnings;
 use Carp;
 no warnings 'uninitialized';
 use DBI;
+use File::Spec;
 use VRTrack::Project;
 use VRTrack::Sample;
 use VRTrack::Library;
@@ -328,7 +329,14 @@ sub hierarchy_path_of_lane_name {
 
   Arg [1]    : VRTrack::Lane object
   Example    : my $lane_hier = $track->hierarchy_path_of_lane($vrlane);
-  Description: retrieve the hierarchy path for a lane, to the root of the hierarchy.  Does not check the filesystem.
+  Description: Retrieve the hierarchy path for a lane according to the template
+               defined by environment variable 'DATA_HIERARCHY', to the root of
+               the hierarchy. Template defaults to:
+               'project:sample:technology:library:lane'
+               Possible terms are 'genus', 'species-subspecies', 'strain',
+               'individual', 'project', 'projectid', 'sample', 'technology',
+               'library', 'lane'. ('strain' and 'individual' are synonymous)
+               Does not check the filesystem.
                Returns undef if hierarchy can not be built.
   Returntype : string
 
@@ -336,26 +344,73 @@ sub hierarchy_path_of_lane_name {
 
 sub hierarchy_path_of_lane {
     my ($self, $lane) = @_;
-    my $hier_path;
-    if ($lane && ref($lane) && $lane->isa('VRTrack::Lane')) {
-        my $lib = VRTrack::Library->new($self,$lane->library_id);
-        if ($lib && $lib->seq_tech){
-            my $samp = VRTrack::Sample->new($self,$lib->sample_id);
-            if ($samp){
-                my $proj = VRTrack::Project->new($self,$samp->project_id);
-                if ($proj){
-                    $hier_path = join '/', ($proj->hierarchy_name,
-                                            $samp->hierarchy_name,
-                                            $lib->seq_tech->name,
-                                            $lib->hierarchy_name,
-                                            $lane->hierarchy_name
-                                            );
+    ($lane && ref($lane) && $lane->isa('VRTrack::Lane')) || confess "A VRTrack::Lane must be supplied\n";
+    
+    # For all acceptable terms, we generate the corresponding word, but for
+    # others we just append the term itself to the hierarchy. This allows for
+    # words like DATA or TRACKING to be injected into the hierarchy without much
+    # fuss. This does however also allow misspelt words and typos (like spcies)
+    # to creep into the heirarchy.
+    # Since not all possible terms might be used in the template, we will only
+    # create objects if necessary (accessing db is expensive).
+    my %objs;
+    my $get_lane = sub { return $lane; };
+    my $get_lib = sub { $objs{library} ||= VRTrack::Library->new($self, $lane->library_id); return $objs{library}; };
+    my $get_sample = sub { $objs{sample} ||= VRTrack::Sample->new($self, &{$get_lib}->sample_id); return $objs{sample}; };
+    my $get_project = sub { $objs{project} ||= VRTrack::Project->new($self, &{$get_sample}->project_id); return $objs{project}; };
+    my $get_individual = sub { $objs{individual} ||= VRTrack::Individual->new($self, &{$get_sample}->individual_id); return $objs{individual}; };
+    my $get_species = sub { $objs{species} ||= VRTrack::Species->new($self, &{$get_individual}->species_id); return $objs{species}; };
+    my %terms = (genus => $get_species,
+                 'species-subspecies' => $get_species,
+                 strain => $get_individual,
+                 individual => $get_individual,
+                 project => $get_project,
+                 projectid => $get_project,
+                 sample => $get_sample,
+                 technology => $get_lib,
+                 library => $get_lib,
+                 lane => $get_lane);
+    
+    my $template = $ENV{DATA_HIERARCHY} || 'project:sample:technology:library:lane';
+    my @path = split(/:/, $template);
+    
+    my @hier_path_bits;
+    foreach my $term (@path) {
+        my $get_method = $terms{$term};
+        if ($get_method) {
+            my $obj = &{$get_method};
+            if ($obj) {
+                if ($term eq 'genus') {
+                    push(@hier_path_bits, $obj->genus); # This is currently the first word of the species name
+                }
+                elsif ($term eq 'species-subspecies') {
+                    my $species_subspecies = $obj->species_subspecies; # For now this is everything after the first space in species name
+                    $species_subspecies =~ s/\W/_/g; # replace any non-word char with underscores
+                    $species_subspecies =~ s/_+/_/g; # but don't any more than one underscore at a time
+                    push(@hier_path_bits, $species_subspecies);
+                }
+                elsif ($term eq 'projectid') {
+                    push(@hier_path_bits, $obj->id);
+                }
+                elsif ($term eq 'technology') {
+                    push(@hier_path_bits, $obj->seq_tech->name);
+                }
+                else {
+                    push(@hier_path_bits, $obj->hierarchy_name);
                 }
             }
+            else {
+                # the POD says returns undef, but wouldn't it make more sense
+                # to warn or die?
+                return;
+            }
+        }
+        else {
+            push(@hier_path_bits, $term);
         }
     }
-
-    return $hier_path;
+    
+    return File::Spec->catdir(@hier_path_bits);
 }
 
 
