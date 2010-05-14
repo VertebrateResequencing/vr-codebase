@@ -40,6 +40,7 @@ use warnings;
 use File::Copy;
 use VertRes::Utils::FileSystem;
 use VertRes::Wrapper::samtools;
+use VertRes::Utils::Sam;
 use VertRes::Parser::sam;
 
 use base qw(VertRes::Wrapper::WrapperI);
@@ -169,40 +170,36 @@ sub merge_and_check {
     $self->throw("failed during the merge step, giving up for now") unless $self->run_status >= 1;
     
     # find out our expectation
-    my $st = VertRes::Wrapper::samtools->new(quiet => 1);
-    $st->run_method('open');
+    my $su = VertRes::Utils::Sam->new();
     my $bam_count = 0;
     foreach my $bam_file (@{$in_bams}) {
-        my $fh;
         if ($bam_file =~ /\.sam$/) {
-            open($fh, $bam_file) || $self->throw("Could not open sam file '$bam_file'");
+            open(my $fh, $bam_file) || $self->throw("Could not open sam file '$bam_file'");
+            while (<$fh>) {
+                $bam_count++;
+            }
+            close($fh);
         }
         else {
-            $fh = $st->view($bam_file);
+            $bam_count += $su->num_bam_records($bam_file);
         }
-        
-        while (<$fh>) {
-            $bam_count++;
-        }
-        close($fh);
     }
     
     # find out how many lines are in the merged bam file
     my $merge_count = 0;
-    my $fh;
     if ($out_bam =~ /\.sam$/) {
-        open($fh, $tmp_out) || $self->throw("Could not open sam file '$tmp_out'");
+        open(my $fh, $tmp_out) || $self->throw("Could not open sam file '$tmp_out'");
+        while (<$fh>) {
+            $merge_count++;
+        }
+        close($fh);
     }
     else {
-        $fh = $st->view($tmp_out);
+        $merge_count = $su->num_bam_records($tmp_out);
     }
-    while (<$fh>) {
-        $merge_count++;
-    }
-    close($fh);
     
     # check for truncation
-    if ($merge_count >= $bam_count) {
+    if ($merge_count == $bam_count) {
         move($tmp_out, $out_bam) || $self->throw("Failed to move $tmp_out to $out_bam: $!");
         $self->_set_run_status(2);
     }
@@ -273,19 +270,9 @@ sub markdup {
     $self->throw("failed during the MarkDuplicates step, giving up") unless $self->run_status >= 1;
     
     # check the output isn't truncated, or unlink it
-    my $st = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
-    my $fh = $st->view($tmp_bam, undef, h => 1);
-    my $bam_count = 0;
-    while (<$fh>) {
-        $bam_count++;
-    }
-    close($fh);
-    $fh = $st->view($in_bam, undef, h => 1);
-    my $expected_count = 0;
-    while (<$fh>) {
-        $expected_count++;
-    }
-    close($fh);
+    my $su = VertRes::Utils::Sam->new();
+    my $bam_count = $su->num_bam_lines($tmp_bam);
+    my $expected_count = $su->num_bam_lines($in_bam);
     if ($bam_count >= $expected_count) {
         move($tmp_bam, $out_bam) || $self->throw("Failed to move $tmp_bam to $out_bam: $!");
         $self->_set_run_status(2);
@@ -293,7 +280,7 @@ sub markdup {
     else {
         $self->warn("$tmp_bam is bad ($bam_count lines vs $expected_count), will unlink it");
         $self->_set_run_status(-1);
-        unlink("$tmp_bam.bam");
+        unlink("$tmp_bam");
     }
     
     return;

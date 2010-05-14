@@ -203,6 +203,38 @@ sub mapped_reads {
     return $self->_total(10);
 }
 
+=head2 total_bases
+
+ Title   : total_bases
+ Usage   : my $total_bases = $obj->total_bases();
+ Function: Get the total bases of all readgroups reported in the bas
+           file.
+ Returns : int
+ Args    : n/a
+
+=cut
+
+sub total_bases {
+    my $self = shift;
+    return $self->_total(7);
+}
+
+=head2 mapped_bases
+
+ Title   : mapped_bases
+ Usage   : my $mapped_bases = $obj->mapped_bases();
+ Function: Get the total mappedbases of all readgroups reported in the bas
+           file.
+ Returns : int
+ Args    : n/a
+
+=cut
+
+sub mapped_bases {
+    my $self = shift;
+    return $self->_total(8);
+}
+
 =head2 percent_mapped
 
  Title   : percent_mapped

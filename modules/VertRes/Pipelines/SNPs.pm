@@ -39,9 +39,7 @@ our $options =
     fai_chr_regex   => '\d+|x|y',
     gatk_cmd        => 'java -Xmx6500m -jar /nfs/users/nfs_p/pd3/sandbox/call-snps/gatk/GenomeAnalysisTK/GenomeAnalysisTK.jar -T UnifiedGenotyper -hets 0.0001 -confidence 30 -mmq 25 -mc 1000 -mrl 10000000 --platform Solexa',
     merge_vcf       => 'merge-vcf -d',
-    qcall_bin       => 'QCALL',
-    qcall_ct        => '-ct 0.01',
-    qcall_pphet     => '-pphet 0',
+    qcall_cmd       => 'QCALL -ct 0.01 -snpcan -pphet 0',
     sam2vcf         => 'sam2vcf.pl',
     split_size      => 10_000_000,
     gatk_split_size => 10_000_000,
@@ -67,9 +65,7 @@ our $options =
                     gatk_split_size .. GATK seems to require more memory
                     merge_vcf       .. The merge-vcf script.
                     pileup_rmdup    .. The script to remove duplicate positions.
-                    qcall_bin       .. The qcall binary.
-                    qcall_ct        .. The qcall -ct parameter.
-                    qcall_pphet     .. The qcall -pphet parameter.
+                    qcall_cmd       .. The qcall command.
                     sam2vcf         .. The convertor from samtools pileup format to VCF.
                     samtools_pileup_params .. The options to samtools.pl varFilter (Used by Qcall and varFilter.)
                     split_size      .. The size of the chunks (default is 1Mb).
@@ -209,9 +205,10 @@ sub merge_vcf_files
 use strict;
 use warnings;
 use Utils;
-Utils::CMD(qq[$$self{merge_vcf} $args | gzip -c > $name.vcf.gz.part]);
+Utils::CMD(qq[$$self{merge_vcf} $args | bgzip -c > $name.vcf.gz.part]);
 Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
 rename('$name.vcf.gz.part','$name.vcf.gz') or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
+Utils::CMD(qq[tabix -p vcf $name.vcf.gz]);
     ];
 }
 
@@ -465,9 +462,10 @@ if ( ! -e "$name.pileup.gz" )
 }
 if ( ! -e "$name.vcf.gz" )
 {
-    Utils::CMD("zcat $name.pileup.gz | $$self{pileup_rmdup} | $$self{sam2vcf} -s -t $name | gzip -c > $name.vcf.gz.part",{verbose=>1});
+    Utils::CMD("zcat $name.pileup.gz | $$self{pileup_rmdup} | $$self{sam2vcf} -s -t $name | bgzip -c > $name.vcf.gz.part",{verbose=>1});
     Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
     rename("$name.vcf.gz.part","$name.vcf.gz") or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
+    Utils::CMD(qq[tabix -p vcf $name.vcf.gz]);
 }
 
     ];
@@ -561,9 +559,10 @@ use Utils;
 if ( ! -e "$name.vcf.gz" )
 {
     # Take the VCF header from one file and sort the rest
-    Utils::CMD("(zcat $header | grep ^#; zcat $files | grep -v ^# | sort -k1,1 -k2,2n) | $$self{vcf_rmdup} -d DoC | gzip -c > $name.vcf.gz.part");
+    Utils::CMD("(zcat $header | grep ^#; zcat $files | grep -v ^# | sort -k1,1 -k2,2n) | $$self{vcf_rmdup} -d DoC | bgzip -c > $name.vcf.gz.part");
     Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
     rename("$name.vcf.gz.part","$name.vcf.gz") or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
+    Utils::CMD("tabix -p vcf $name.vcf.gz");
     Utils::CMD("rm -f $files");
 }
     ];
@@ -574,9 +573,7 @@ sub run_gatk
     my ($self,$bam,$name,$chunk) = @_;
     if ( ! -e "$name.vcf.gz" )
     {
-        # Is the value of -mrl 10000000 small enough..? 
         Utils::CMD("$$self{gatk_cmd} -R $$self{fa_ref} -I $bam -L $chunk | gzip -c > $name.vcf.gz.part",{verbose=>1});
-
         rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
     }
     if ( -e "$name.vcf.gz" )
@@ -612,7 +609,7 @@ sub qcall
 
     if ( !$$self{fa_ref} ) { $self->throw("Missing the option fa_ref.\n"); }
     if ( !$$self{fai_ref} ) { $self->throw("Missing the option fai_ref.\n"); }
-    if ( !$$self{qcall_bin} ) { $self->throw("Missing the option qcall_bin.\n"); }
+    if ( !$$self{qcall_cmd} ) { $self->throw("Missing the option qcall_cmd.\n"); }
 
     my $work_dir = "$dir/qcall";
     Utils::CMD("mkdir -p $work_dir") unless -e $work_dir;
@@ -723,7 +720,7 @@ sub run_qcall_chunk
     close($fh);
 
     # Execute QCall
-    $cmd .= ") | sort -k1,1n -k2,2n | $$self{qcall_bin} $$self{qcall_ct} -snpcan $$self{qcall_pphet} -sn _$chunk.names -co $chunk.vcf.part";
+    $cmd .= ") | sort -k1,1n -k2,2n | $$self{qcall_cmd} -sn _$chunk.names -co $chunk.vcf.part";
     Utils::CMD($cmd,{verbose=>1});
 
     # Before it's fixed, convert to proper VCF
@@ -744,9 +741,10 @@ use strict;
 use warnings;
 use Utils;
 # Take the VCF header from one file and sort the rest
-Utils::CMD(qq[(zcat $$vcfs[0] | grep ^#; zcat $args | grep -v ^# | sort -k1,1 -k2,2n) | $$self{vcf_rmdup} | gzip -c > $name.vcf.gz.part]);
+Utils::CMD(qq[(zcat $$vcfs[0] | grep ^#; zcat $args | grep -v ^# | sort -k1,1 -k2,2n) | $$self{vcf_rmdup} | bgzip -c > $name.vcf.gz.part]);
 Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
 rename('$name.vcf.gz.part','$name.vcf.gz') or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
+Utils::CMD(qq[tabix -p vcf $name.vcf.gz]);
 
 ];
 

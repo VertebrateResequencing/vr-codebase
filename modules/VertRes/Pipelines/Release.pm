@@ -23,7 +23,7 @@ data => {
     release_date => '20100208',
     simultaneous_merges => 200,
     
-    dcc_hardlinks => 1,
+    dcc_mode => '/path/to/sequence.index',
     do_cleanup => 1,
     
     db => {
@@ -51,7 +51,7 @@ data => {
 
 # make another config file that simply mentions the release directory and the
 # previous config file:
-echo "/path/to/rel_dir release.conf" > rel.pipeline
+echo "/path/to/rel_dir release.conf" > release.pipeline
 
 # make your release directory if it doesn't already exist:
 mkdir /path/to/rel_dir
@@ -125,7 +125,7 @@ our %options = (do_cleanup => 0,
                 do_chr_splits => 0,
                 do_sample_merge => 0,
                 simultaneous_merges => 200,
-                dcc_mode => 0,
+                dcc_mode => '',
                 bsub_opts => '',
                 dont_wait => 1,
                 previous_release_root => '');
@@ -147,9 +147,10 @@ our %options = (do_cleanup => 0,
            do_cleanup => boolean (default false: don't do the cleanup action)
            do_chr_splits => boolean (default false: don't split platform-level
                                      bams by chr)
-           dcc_mode => boolean (default false; when true, implies do_chr_splits
-                                and renames the per-chr bams to the DCC naming
-                                convention)
+           dcc_mode => sequence.index (default unset; when a DCC sequence.index
+                                       is supplied, implies do_chr_splits
+                                       and renames the per-chr bams to the DCC
+                                       naming convention)
            simultaneous_merges => int (default 200; the number of merge jobs to
                                        do at once - limited to avoid IO
                                        problems)
@@ -247,7 +248,9 @@ sub create_release_hierarchy_provides {
 sub create_release_hierarchy {
     my ($self, $lane_path, $action_lock) = @_;
     
-    my @mapped_lanes = $self->{io}->parse_fod($self->{lanes});
+    # (lanes may be symlinks, but we want the original location so that
+    # check_lanes_vs_database() will work, hence the '/' option here)
+    my @mapped_lanes = $self->{io}->parse_fod($self->{lanes}, '/');
     
     my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
     # we don't supply true as the third arg to check we have all lanes, since
@@ -384,7 +387,7 @@ sub lib_markdup {
     my $verbose = $self->verbose();
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q basement -M6100000 -R \'select[mem>6100] rusage[mem=6100]\'';
+    $self->{bsub_opts} = '-q long -M6100000 -R \'select[mem>6100] rusage[mem=6100]\'';
     
     my @markdup_bams;
     foreach my $merge_bam (@files) {
@@ -469,7 +472,7 @@ sub platform_merge {
                               'raw.bam',
                               'platform_merge',
                               '.platform_merge_expected',
-                              'basement');
+                              'long');
     
     return $self->{No};
 }
@@ -854,6 +857,7 @@ sub create_release_files {
         if ($is_running & $LSF::Error) {
             warn "$pathed_job_name failed!\n";
             $skipped_some = 1;
+            #*** failure here doesn't result in any automatic reattempt...
             next;
         }
         elsif ($is_running & $LSF::Running) {
@@ -896,9 +900,9 @@ sub create_release_files {
             my $bas = $bam.'.bas';
             my $bas_md5 = $bas.'.md5';
             unless (-s $bas && -s $bas_md5) {
-                $self->{bsub_opts} = '-q basement';
+                $self->{bsub_opts} = '-q long';
                 LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
-                         qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$self->{release_date}], qq[$bas]); die qq[bas failed for $bam\n] unless -s qq[$bas]; system(qq[md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"}); # , qq[$self->{sequence_index}] bas() needs a database option?
+                         qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$self->{release_date}], qq[$bas.tmp]); die qq[bas failed for $bam\n] unless -s qq[$bas.tmp]; system(qq[mv $bas.tmp $bas; md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"});
                 $self->{bsub_opts} = '-q long';
             }
             elsif (! -e "$release_name.bas") {
@@ -931,7 +935,7 @@ sub create_release_files {
                 foreach my $ebam (@expected_split_bams) {
                     my $basename = basename($ebam);
                     my ($chr) = $basename =~ /^([^\.]+)/;
-                    my $dcc_filename = $vuh->dcc_filename($bam, $self->{release_date}, $chr).'.bam';
+                    my $dcc_filename = $vuh->dcc_filename($bam, $self->{release_date}, $self->{dcc_mode}, $chr).'.bam';
                     
                     my $dccbam = $ebam;
                     $dccbam =~ s/$basename$/$dcc_filename/;
@@ -972,7 +976,7 @@ sub create_release_files {
                     }
                     close($bamfh);
                     
-                    $self->{bsub_opts} = '-q basement';
+                    $self->{bsub_opts} = '-q long';
                     LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                              qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->split_bam_by_sequence(qq[$bam], all_unmapped => $all_unmapped, check => 1);"});
                 }
@@ -1000,8 +1004,9 @@ sub create_release_files {
                     my $ebas_md5 = $ebas.'.md5';
                     unless (-s $ebas && -s $ebas_md5) {
                         $self->{bsub_opts} = '-q long';
+                        my $si = $self->{dcc_mode} ? ", qq[$self->{dcc_mode}]" : '';
                         LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
-                                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$ebam], qq[$self->{release_date}], qq[$ebas]); die qq[bas failed for $ebam\n] unless -s qq[$ebas]; system(qq[md5sum $ebas > $ebas_md5]);"});
+                                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$ebam], qq[$self->{release_date}], qq[$ebas.tmp]$si); die qq[bas failed for $ebam\n] unless -s qq[$ebas.tmp]; system(qq[mv $ebas.tmp $ebas; md5sum $ebas > $ebas_md5]);"});
                     }
                 }
                 $self->{bsub_opts} = '-q long';

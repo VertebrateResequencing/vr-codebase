@@ -182,6 +182,31 @@ sub num_bam_records {
     return $records;
 }
 
+=head2 num_bam_lines
+
+ Title   : num_bam_lines
+ Usage   : my $num_lines = $obj->num_bam_lines($bam_file);
+ Function: Find the number of records (reads) + header lines in a bam file.
+ Returns : int
+ Args    : bam filename
+
+=cut
+
+sub num_bam_lines {
+    my ($self, $bam_file) = @_;
+    
+    my $records = $self->num_bam_records($bam_file);
+    my $st = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+    my $fh = $st->view($bam_file, undef, H => 1);
+    my $header_lines = 0;
+    while (<$fh>) {
+        $header_lines++;
+    }
+    close($fh);
+    
+    return $header_lines + $records;
+}
+
 =head2 split_bam_by_sequence
 
  Title   : split_bam_by_sequence
@@ -731,14 +756,15 @@ sub stats {
 =head2 bas
 
  Title   : bas
- Usage   : $obj->bas('in.bam', 'YYYYMMDD', 'out.bas');
+ Usage   : $obj->bas('in.bam', 'YYYYMMDD', 'out.bas', 'sequence.index');
  Function: Generate a 'bas' file. These are bam statistic files that provide
            various stats about each readgroup in a bam.
  Returns : boolean (true on success)
  Args    : input bam file (must have been run via samtools fillmd so that there
            are accurate NM tags for each record), YYYYMMDD string describing the
-           date of the release, output filename, optionally a sequence.index
-           file from the DCC if working on bams with poor headers
+           date of the release, output filename, sequence.index file (optional
+           if your bam headers are good and you don't care about column 1 of the
+           bas file, which is the DCC filename)
 
 =cut
 
@@ -769,7 +795,7 @@ sub bas {
     
     # get the meta data
     my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
-    my $dcc_filename = $hu->dcc_filename($in_bam, $release_date);
+    my $dcc_filename = $hu->dcc_filename($in_bam, $release_date, $seq_index);
     
     my $md5;
     my $md5_file = $in_bam.'.md5';
@@ -1533,7 +1559,7 @@ sub check_bam_header {
  Returns : boolean (true on success, meaning a change was made and the bam has
            been confirmed OK, or no change was necessary and the bam was
            untouched)
- Args    : path to sam and a hash with keys as readgroup identifiers and values
+ Args    : path to bam and a hash with keys as readgroup identifiers and values
            as hash refs with at least one of the following:
            sample_name => string, eg. NA00000;
            library => string
@@ -1617,13 +1643,103 @@ sub rewrite_bam_header {
     close($sfh);
     
     # check the new bam for truncation
-    $bamfh = $stin->view($temp_bam, undef, h => 1);
-    my $new_bam_lines = 0;
+    my $new_bam_lines = $self->num_bam_lines($temp_bam);
+    if ($new_bam_lines == $expected_lines) {
+        unlink($bam);
+        move($temp_bam, $bam) || $self->throw("Failed to move $temp_bam to $bam: $!");;
+        return 1;
+    }
+    else {
+        $self->warn("$temp_bam is bad (only $new_bam_lines lines vs $expected_lines), will unlink it");
+        unlink($temp_bam);
+        return 0;
+    }
+}
+
+=head2 standardise_pg_header_lines
+
+ Title   : standardise_pg_header_lines
+ Usage   : $obj->standardise_pg_header_lines('a.bam',
+                                'PG ID' => { VN => 'CL' });
+ Function: For a given software and version, will change the CL to the one
+           supplied, so that you can standardise PG lines that are supposed to
+           be 'the same'.
+ Returns : boolean (true on success, meaning a change was made and the bam has
+           been confirmed OK, or no change was necessary and the bam was
+           untouched)
+ Args    : path to bam and a hash with keys as PG identifiers and values
+           as hash refs where keys are version numbers and values are the
+           CL command line you want to set, eg.
+           'GATK TableRecalibration' => { '1.0.3016' => 'pQ=5, maxQ=40' }
+
+=cut
+
+sub standardise_pg_header_lines {
+    my ($self, $bam, %pg_changes) = @_;
+    
+    keys %pg_changes || return 1;
+    
+    my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+    my $stout = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'write_to');
+    
+    # output to bam
+    my $temp_bam = $bam.'.rewrite_header.tmp.bam';
+    $self->register_for_unlinking($temp_bam);
+    my $sfh = $stout->view(undef, $temp_bam, b => 1, S => 1);
+    $sfh || $self->throw("failed to get a filehandle for writing to '$temp_bam'");
+    
+    # parse just the header through perl to make changes
+    my $expected_lines = 0;
+    my $made_changes = 0;
+    my $bamfh = $stin->view($bam, undef, H => 1);
     while (<$bamfh>) {
-        $new_bam_lines++;
+        $expected_lines++;
+        
+        if (/^\@PG.+ID:([^\t]+)/) {
+            my $pg = $1;
+            if (exists $pg_changes{$pg}) {
+                while (my ($vn, $cl) = each %{$pg_changes{$pg}}) {
+                    next unless defined $cl;
+                    
+                    if (/\tVN:([^\t\n]+)/) {
+                        if ($1 eq $vn) {
+                            if (/\tCL:([^\t\n]+)/) {
+                                if ($1 ne $cl) {
+                                    $made_changes = 1;
+                                    s/\tCL:[^\t\n]+/\tCL:$cl/;
+                                }
+                            }
+                            else {
+                                $made_changes = 1;
+                                s/\n/\tCL:$cl\n/
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        print $sfh $_;
     }
     close($bamfh);
     
+    unless ($made_changes) {
+        close($sfh);
+        unlink($temp_bam);
+        return 1;
+    }
+    
+    # then quickly (no regex) append all the bam records
+    $bamfh = $stin->view($bam);
+    while (<$bamfh>) {
+        $expected_lines++;
+        print $sfh $_;
+    }
+    close($bamfh);
+    close($sfh);
+    
+    # check the new bam for truncation
+    my $new_bam_lines = $self->num_bam_lines($temp_bam);
     if ($new_bam_lines == $expected_lines) {
         unlink($bam);
         move($temp_bam, $bam) || $self->throw("Failed to move $temp_bam to $bam: $!");;
@@ -1656,6 +1772,10 @@ sub rewrite_bam_header {
                           and are making the same changes to its bas, the bam
                           md5 will have changed so you should supply the new
                           md5 here)
+           filename => string OR ['/path/to/bam', 'release_date',
+                                  '/path/to/sequence.index']
+                                 (recalculates what the DCC filename of the bam
+                                  should be)
 
 =cut
 
@@ -1668,11 +1788,11 @@ sub rewrite_bas_meta {
                       platform => 4,
                       study => 2,
                       project => 2,
-                      md5 => 1);
+                      md5 => 1,
+                      filename => 0);
     # NAXXXXX.[chromN].technology.[center].algorithm.study_id.YYYYMMDD.bam
     my %arg_to_filename_regex = (sample_name => qr{^[^\.]+(\.)},
                                  platform => qr{(?:ABI_SOLID|ILLUMINA|LS454|SLX|454|SOLID)(\.)},
-                                 study => qr{[^\.]+(\.\d{8})},
                                  project => qr{[^\.]+(\.\d{8})});
     
     my $temp_bas = $bas.'.rewrite_bas_meta.tmp.bas';
@@ -1690,20 +1810,26 @@ sub rewrite_bas_meta {
         
         if (exists $rg_changes{$rg}) {
             while (my ($arg, $value) = each %{$rg_changes{$rg}}) {
+                if ($arg eq 'filename' && ref($value) && ref($value) eq 'ARRAY') {
+                    $value = VertRes::Utils::Hierarchy->new->dcc_filename(@{$value});
+                }
+                
                 my $col = $arg_to_col{$arg};
-                if ($col) {
+                if (defined $col) {
                     if ($cols[$col] ne $value) {
                         $made_changes = 1;
                         $cols[$col] = $value;
                     }
                 }
                 
-                my $regex = $arg_to_filename_regex{$arg};
-                if ($regex) {
-                    my $orig = $cols[0];
-                    $cols[0] =~ s/$regex/$value$1/;
-                    if ($cols[0] ne $orig){
-                        $made_changes = 1;
+                unless (exists $rg_changes{$rg}->{filename}) {
+                    my $regex = $arg_to_filename_regex{$arg};
+                    if ($regex) {
+                        my $orig = $cols[0];
+                        $cols[0] =~ s/$regex/$value$1/;
+                        if ($cols[0] ne $orig){
+                            $made_changes = 1;
+                        }
                     }
                 }
             }

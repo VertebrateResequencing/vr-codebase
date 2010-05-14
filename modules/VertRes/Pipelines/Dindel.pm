@@ -85,9 +85,11 @@ our %options = (simultaneous_jobs => 100,
  Function: Create a new VertRes::Pipelines::Dindel object.
  Returns : VertRes::Pipelines::Dindel object
  Args    : lane_path => '/path/to/dir/containing/release.bam' (REQUIRED, set by
-                         run-pipline automatically)
+                         run-pipeline automatically)
            ref => '/path/to/ref.fa' (REQUIRED)
 
+           chrom => string (to only do 1 chr, provide the chromosome name, eg.
+                            20)
            simultaneous_jobs => int (default 200; the number of jobs to
                                      do at once - limited to avoid IO
                                      problems)
@@ -107,8 +109,24 @@ sub new {
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     
+    $self->{outdir_basename} = 'dindel';
+    if ($self->{chrom}) {
+        my $chrom_bam = `ls $self->{lane_path}/*.chrom$self->{chrom}.*.bam`;
+        chomp($chrom_bam);
+        if ($chrom_bam) {
+            $self->{bam_file_name} = basename($chrom_bam);
+            $self->{outdir_basename} .= '_chrom'.$self->{chrom};
+        }
+        else {
+            $self->throw("Could not find a chrom$self->{chrom} bam in $self->{lane_path}");
+        }
+    }
+    else {
+        $self->{bam_file_name} = 'release.bam';
+    }
+    
     # setup output and log dirs
-    my $out_dir = $self->{fsu}->catfile($self->{lane_path}, 'dindel');
+    my $out_dir = $self->{fsu}->catfile($self->{lane_path}, $self->{outdir_basename});
     $self->{outdir} = $out_dir;
     unless (-d $out_dir) {
         mkdir($out_dir) || $self->throw("Could not create directory '$out_dir'");
@@ -123,7 +141,7 @@ sub new {
     $self->{bamfiles_fofn} = $self->{fsu}->catfile($out_dir, 'bamfiles.fofn');
     unless (-s $self->{bamfiles_fofn}) {
         open(my $bfh, '>', $self->{bamfiles_fofn}) || $self->throw("Could not write to $self->{bamfiles_fofn}");
-        my $release_bam = $self->{fsu}->catfile($self->{lane_path}, 'release.bam');
+        my $release_bam = $self->{fsu}->catfile($self->{lane_path}, $self->{bam_file_name});
         print $bfh $release_bam, "\n";
         close($bfh);
     }
@@ -144,7 +162,7 @@ sub new {
 
 sub get_variants_requires {
     my $self = shift;
-    return [$self->{ref}, 'release.bam', 'release.bam.bai'];
+    return [$self->{ref}, $self->{bam_file_name}, $self->{bam_file_name}.'.bai'];
 }
 
 =head2 get_variants_provides
@@ -160,8 +178,8 @@ sub get_variants_requires {
 
 sub get_variants_provides {
     my $self = shift;
-    return [$self->{fsu}->catfile('dindel', 'variants', 'variants.variants.txt'),
-            $self->{fsu}->catfile('dindel', 'variants', 'variants.libraries.txt')];
+    return [$self->{fsu}->catfile($self->{outdir_basename}, 'variants', 'variants.variants.txt'),
+            $self->{fsu}->catfile($self->{outdir_basename}, 'variants', 'variants.libraries.txt')];
 }
 
 =head2 get_variants
@@ -182,7 +200,7 @@ sub get_variants {
         mkdir($out_dir) || $self->throw("Could not create directory '$out_dir'");
     }
     
-    my $bam_file = $self->{fsu}->catfile($lane_path, 'release.bam');
+    my $bam_file = $self->{fsu}->catfile($lane_path, $self->{bam_file_name});
     my $out_file = $self->{fsu}->catfile($out_dir, 'running.variants');
     
     my $job_name = $self->{fsu}->catfile($self->{logs}, 'get_variants');
@@ -224,7 +242,7 @@ sub split_variants_requires {
 sub split_variants_provides {
     my ($self, $lane_path) = @_;
     
-    my $split_dir = $self->{fsu}->catfile('dindel', 'variants', 'split');
+    my $split_dir = $self->{fsu}->catfile($self->{outdir_basename}, 'variants', 'split');
     my $abs_split_dir = $self->{fsu}->catfile($lane_path, $split_dir);
     my @provides;
     
@@ -314,12 +332,12 @@ sub call_requires {
 sub call_provides {
     my ($self, $lane_path) = @_;
     
-    my @provides = ($self->{fsu}->catfile('dindel', 'libraries', 'libraries.txt'));
+    my @provides = ($self->{fsu}->catfile($self->{outdir_basename}, 'libraries', 'libraries.txt'));
     
     my @split_var_files = @{$self->split_variants_provides($lane_path)};
     my $splits = 0;
     my $blocks = 0;
-    my $blocks_dir = $self->{fsu}->catfile('dindel', 'blocks');
+    my $blocks_dir = $self->{fsu}->catfile($self->{outdir_basename}, 'blocks');
     my $block_dir;
     foreach my $var_file (@split_var_files) {
         $splits++;
@@ -418,6 +436,11 @@ sub call {
         if ($is_running & $LSF::Error) {
             warn "$job_name failed!\n";
             #unlink($lock_file);
+            
+            # for some reason rare jobs (1-3 per strain) are failing because
+            # the gzip complains it could not find the file to compress, yet
+            # the files are actually created, compressed!...
+            
             next;
         }
         elsif ($is_running & $LSF::Running) {
@@ -486,8 +509,8 @@ sub merge_requires {
 
 sub merge_provides {
     my $self = shift;
-    return [$self->{fsu}->catfile('dindel', 'calls.txt'),
-            $self->{fsu}->catfile('dindel', 'indels.txt')];
+    return [$self->{fsu}->catfile($self->{outdir_basename}, 'calls.txt'),
+            $self->{fsu}->catfile($self->{outdir_basename}, 'indels.txt')];
 }
 
 =head2 merge

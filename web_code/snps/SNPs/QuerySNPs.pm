@@ -27,7 +27,7 @@ sub new
         if ( !exists $$self{db_pass} ) { die("Expected db_pass parameter.\n"); }
 
         my $dbh = DBI->connect($$self{db_info},$$self{db_user},$$self{db_pass}, {'RaiseError' => 0, 'PrintError'=>0});
-        if ( !$dbh || $DBI::err ) { die(sprintf("DB connection failed: %s\n",$DBI::errstr)); }
+        if ( !$dbh || $DBI::err ) { die(sprintf("DB connection failed: %s\n",$DBI::errstr,"\n")); }
         $$self{'dbh'} = $dbh;
     }
     if ( !exists($$self{'writer'}) ) { die "Missing the 'writer' option.\n"; }
@@ -51,7 +51,7 @@ sub new
     $$self{print_legend} = 1 unless exists($$self{'print_legend'});
     $$self{'action'}     = 'snps';
 
-    # Why is this here?
+    # Why was this here?
     #   $$self{writer}->get_cookies('rows');
     #   $$self{'cache_page_size'} = $self->validate_int($$self{writer}->param('rows'));
     #   $$self{writer}->set_cookies('rows');
@@ -133,7 +133,7 @@ sub validate_location
     $loc =~ s/,//g;
     $loc =~ s/\s+//g;
 
-    if ( $loc=~/^([^:]+):(\d+)-(\d+)$/i )
+    if ( $loc=~/^([A-Za-z0-9.\-_]+):(\d+)-(\d+)$/i )
     {
         my $chrm = uc($1);
         my $from = $2;
@@ -154,7 +154,7 @@ sub validate_location
 
         if ( $to - $from > 10_000_000 )
         {
-            die ("Sorry, the selected region is too big. The current limit of the
+            die ("We are sorry, but the selected region is too big. The limit of the
                     web interface is 10Mb. Please contact us if you need bigger 
                     amounts of data.\n");
         }
@@ -167,9 +167,10 @@ sub validate_location
 
         return "s.chrpos>=$chrpos_from AND s.chrpos<=$chrpos_to";
     }
-    elsif ( $loc=~/.+:.+/ )
+    elsif ( !($loc=~/^[A-Za-z0-9.\-_]+$/) )
     {
-        die(qq[Sorry, could not parse the region "$location".]);
+        # Security, no tricks with altering the SQL commands
+        die(qq[Sorry, could not parse the region '$location'.\n]);
     }
 
     $$self{gene} = $loc;
@@ -224,7 +225,9 @@ sub validate_conseq_type
     my $intergenic = 0;
     for my $type (@$list)
     {
-        if ( $type eq 'INTERGENIC' ) { $intergenic=1; next; }   
+        if ( $type eq 'INTERGENIC' ) { $intergenic=1; next; }
+        # Security, no tricks with altering the SQL commands
+        if ( !($type=~/^[A-Za-z0-9_-]+$/) ) { die("Could not parse the consequence type: [$type]\n"); }
         push @selected, $type;
     }
 
@@ -324,11 +327,11 @@ sub sql_filters
     if ( $$self{'strains_sql'} ) { push @filters, $$self{'strains_sql'}; }
     if ( $$self{'pos_sql'} ) { push @filters,$$self{'pos_sql'}; }
     if ( $$self{'gene_sql'} ) { push @filters,$$self{'gene_sql'}; }
-    if ( $$self{'snp_qual'} ) { push @filters, "s.snp_qual>=$$self{snp_qual}"; }
-    if ( $$self{'map_qual'} ) { push @filters, "s.map_qual>=$$self{map_qual}"; }
-    if ( $$self{'cons_qual'} ) { push @filters, "s.cons_qual>=$$self{cons_qual}"; }
-    if ( $$self{'depth_min'} ) { push @filters, "s.depth>=$$self{depth_min}"; }
-    if ( $$self{'depth_max'} ) { push @filters, "s.depth<=$$self{depth_max}"; }
+    if ( $$self{'snp_qual'} ) { push @filters, "(s.snp_qual>=$$self{snp_qual} OR s.snp_qual IS NULL)"; }
+    if ( $$self{'map_qual'} ) { push @filters, "(s.map_qual>=$$self{map_qual} OR s.map_qual IS NULL)"; }
+    if ( $$self{'cons_qual'} ) { push @filters, "(s.cons_qual>=$$self{cons_qual} OR s.cons_qual IS NULL)"; }
+    if ( $$self{'depth_min'} ) { push @filters, "(s.depth>=$$self{depth_min} OR s.depth IS NULL)"; }
+    if ( $$self{'depth_max'} ) { push @filters, "(s.depth<=$$self{depth_max} OR s.depth IS NULL)"; }
     if ( $$self{'conseq_sql'} ) { push @filters, $$self{'conseq_sql'}; }
 
     push @filters, 'r.id=s.strain';
@@ -752,7 +755,7 @@ sub run
         my $filters = $self->sql_filters();
         my $query   = $self->sql_query($filters);
 
-        #$$self{'writer'}->out(qq[<div><pre>$query</pre></div>]);
+        # $$self{'writer'}->out(qq[<div><pre>$query</pre></div>]); return;
 
         $result = $self->mysql_query($query);
         $$self{'nrows'} = $result->rows;    # Beware: this is not the number of rows in the result table!

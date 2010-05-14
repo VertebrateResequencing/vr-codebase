@@ -130,13 +130,17 @@ sub backtrace
     Arg[1]   : The command to execute
     Arg[2]   : Hash with options controlling its behaviour
     Returns  : The output returned by the command.
-    Example  : my @out = Utils::CMD("ls",{'verbose'=>1,'exit_on_error'=>0});
+    Example  : my @out = Utils::CMD('ls',{'verbose'=>1,'exit_on_error'=>0});
+               my $fh_in  = Utils::CMD('ls',{rpipe=>1}); while (my $line=<$fh>) { print $line; } close($fh_in);
+               my $fh_out = Utils::CMD('gzip -c > out.gz',{wpipe=>1}); print $fh_out "test\n"; close($fh_out);
     Options  :
                 chomp         .. run chomp on all returned lines
                 exit_on_error .. should the encountered errors be ignored?
                 logfile       .. where should be the command and the output logged?
+                rpipe         .. the caller will read from the pipe and take care of checking the exit status
                 time          .. print the execution time
                 verbose       .. print what's being done.
+                wpipe         .. the same as rpipe but open for writing 
 
 =cut
 
@@ -156,14 +160,16 @@ sub CMD
 
     # Why not to use backticks? Perl calls /bin/sh, which is often bash. To get the correct
     #   status of failing pipes, it must be called with the pipefail option.
+    my $kid_io;
     my @out;
-    my $pid = open(KID_TO_READ, "-|");
+    my $pid = $$options{wpipe} ? open($kid_io, "|-") :  open($kid_io, "-|");
     if ( !defined $pid ) { error("Cannot fork: $!"); }
     if ($pid) 
-    {   
+    {
         # parent
-        @out = <KID_TO_READ>;
-        close(KID_TO_READ);
+        if ( $$options{wpipe} or $$options{rpipe} ) { return $kid_io; }
+        @out = <$kid_io>;
+        close($kid_io);
     } 
     else 
     {      
@@ -398,18 +404,30 @@ sub relative_symlink
 =head2 basename
 
     Arg[1]      : The file name.
+    Arg[2]      : (Optional) suffix. By default equals to \.[^.]+$
     Returntype  : The path '/some/path/basename.suffix' splitted to ('/some/path','basename','.suffix')
+    Usage       : 
+        my ($dir,$base,$suff) = basename('some/path/my-file.txt'); # returns ('some/path','my-file','.txt')
+        my ($dir,$base,$suff) = basename('some/path/my-file.txt.gz','.txt.gz'); # returns ('some/path','my-file','.txt.gz')
 
 =cut
 
 sub basename
 {
-    my ($path) = @_;
+    my ($path,$suffix) = @_;
     if ( !($path =~ m{/?([^/]+)/?$}) ) { Utils::error("FIXME: could not parse \"$path\".\n") }
     my $dir  = $` ? $` : '';
     my $base = $1;
     my $suff = '';
-    if ( $base =~ m{(\.[^.]+)$} )
+    if ( $suffix )
+    {
+        if ( $base=~m{($suffix)$} )
+        {
+            $base = $`;
+            $suff = $1;
+        }
+    }
+    elsif ( $base =~ m{(\.[^.]+)$} )
     {
         $base = $`;
         $suff = $1;

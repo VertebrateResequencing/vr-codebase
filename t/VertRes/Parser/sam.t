@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 60;
+    use Test::Most tests => 61;
     
     use_ok('VertRes::Parser::sam');
 }
@@ -131,5 +131,7 @@ is_deeply [$ps->get_fields('SEQ', 'SEQ_LENGTH', 'MAPPED_SEQ_LENGTH')], ['CCCATAG
 # *** need a better test bam with multiple chromosomes and RG tags, and with
 # an EOF marker to avoid the warning
 
+# test using the normal slow parser and header methods on a bam file
+is $ps->readgroup_info('ERR003975', 'LB'), 'g1k_sc_NA12878_WG_1', 'readgroup_info works on bam files';
 
 exit;

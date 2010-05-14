@@ -28,6 +28,7 @@ use warnings;
 use VertRes::IO;
 use VertRes::Utils::Seq;
 use VertRes::Parser::fastq;
+use VertRes::Parser::fasta;
 use VertRes::Utils::Sam;
 
 use base qw(VertRes::Base);
@@ -126,10 +127,18 @@ sub cigar_to_sam {
     $read_group = $read_group ? 'RG:Z:'.$read_group : '';
     
     my @fastq_parsers;
+    my $fasta_input = 0;
     foreach my $fastq (@{$fastqs}) {
-        my $fastq_parser = VertRes::Parser::fastq->new(file => $fastq);
-        my $rh = $fastq_parser->result_holder;
-        push(@fastq_parsers, [$fastq_parser, $rh]);
+        my $parser;
+        if ($fastq !~ /q(\.gz)?$/) {
+            $fasta_input = 1;
+            $parser = VertRes::Parser::fasta->new(file => $fastq);
+        }
+        else {
+            $parser = VertRes::Parser::fastq->new(file => $fastq);
+        }
+        my $rh = $parser->result_holder;
+        push(@fastq_parsers, [$parser, $rh]);
     }
     
     open(my $out_fh, '>', $out_sam) or $self->throw("Cannot create sam file: $!");
@@ -336,6 +345,7 @@ sub _print_sam_line {
     else {
         print $out_fh join("\t", ('*', 0, 0)), "\t";
     }
+    $qual ||= '*';
     print $out_fh join("\t", ($seq, $qual));
     
     if ($read_group) {

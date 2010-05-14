@@ -246,12 +246,15 @@ sub num_lines {
  Function: Parse a file containing a list of directories.
  Returns : a list consisting of the absolute paths to the directories listed in
            the file
- Args    : filename
+ Args    : filename. To get absolute paths (symlinks are followed), no other
+           args. Supply a dir ('' for current dir) to get paths relative
+           to it.'/' can be used to get an absolute path that does not follow
+           symlinks.
 
 =cut
 
 sub parse_fod {
-    my ($self, $fod) = @_;
+    my ($self, $fod, $relative) = @_;
     
     -s $fod || $self->throw("fod file '$fod' empty!");
     
@@ -264,7 +267,10 @@ sub parse_fod {
             $self->warn("fod file contained a line that wasn't a directory, ignoring: $_");
             next;
         }
-        my $dir = abs_path($_);
+        my $dir = defined $relative ? File::Spec->abs2rel($_, $relative) : abs_path($_);
+        if ($relative && $relative eq '/') {
+            $dir = '/'.$dir;
+        }
         $dirs{$dir} = 1;
     }
     
@@ -281,7 +287,8 @@ sub parse_fod {
  Returns : a list of paths to files in the fofn
  Args    : filename. To get absolute paths (symlinks are followed), no other
            args. Supply a dir ('' for current dir) to get paths relative
-           to it.
+           to it. '/' can be used to get an absolute path that does not follow
+           symlinks.
 
 =cut
 
@@ -298,6 +305,9 @@ sub parse_fofn {
         /^#/ && next;
         -f $_ || -l $_ || $self->throw("fofn file contained a line that wasn't a file: $_");
         my $file = defined $relative ? File::Spec->abs2rel($_, $relative) : abs_path($_);
+        if ($relative && $relative eq '/') {
+            $file = '/'.$file;
+        }
         $files{$file} = 1;
     }
     

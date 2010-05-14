@@ -5,7 +5,7 @@ use File::Spec;
 use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 96;
+    use Test::Most tests => 109;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -24,6 +24,8 @@ my $headed_bam = File::Spec->catfile('t', 'data', 'headed2.bam');
 ok -s $headed_bam, 'headed bam file ready to test with';
 my $headless_sam = File::Spec->catfile('t', 'data', 'simple.sam');
 ok -s $headless_sam, 'headerless sam file ready to test with';
+my $pg_bam = File::Spec->catfile('t', 'data', 'hard_soft.bam');
+ok -s $pg_bam, 'pg bam file ready to test with';
 my $ref = File::Spec->catfile('t', 'data', 'S_suis_P17.fa');
 ok -s $ref, 'ref file ready to test with';
 my $dict = File::Spec->catfile('t', 'data', 'S_suis_P17.dict');
@@ -36,7 +38,7 @@ is $sam_util->bams_are_similar($bam1_file, $bam2_file), 1, 'bams are similar';
 my $fsu = VertRes::Utils::FileSystem->new();
 my $temp_dir = $fsu->tempdir();
 my $temp_sam = File::Spec->catfile($temp_dir, 'test.sam');
-system("cp $headless_sam $temp_sam");
+copy($headless_sam, $temp_sam);
 ok $sam_util->add_sam_header($temp_sam,
                              sample_name => 'NA00000',
                              run_name => '7563',
@@ -123,6 +125,24 @@ is $sam_util->check_bam_header($sorted_bam, %new_header_args), 0, 'after rewriti
 # (subsequent tests expect a project/study of SRP000001, so change it back)
 %new_header_args = (SRR00001 => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI', project => 'SRP000001' });
 $sam_util->rewrite_bam_header($sorted_bam, %new_header_args);
+
+# standardise_pg_header_lines
+my $temp_pg_bam = File::Spec->catfile($temp_dir, 'pg.bam');
+copy($pg_bam, $temp_pg_bam);
+ok $sam_util->standardise_pg_header_lines($temp_pg_bam, invalid => { version => 'cl' }), 'standardise_pg_header_lines ran ok with an invalid pg';
+@header_lines = get_bam_header($temp_pg_bam);
+is $header_lines[-1], "\@PG\tID:bwa\tVN:0.5.3", 'standardise_pg_header_lines didn\'t change the header when pg not in the bam';
+ok $sam_util->standardise_pg_header_lines($temp_pg_bam, bwa => { '0.5.2' => '-q 15' }), 'standardise_pg_header_lines ran ok with an invalid version';
+@header_lines = get_bam_header($temp_pg_bam);
+is $header_lines[-1], "\@PG\tID:bwa\tVN:0.5.3", 'standardise_pg_header_lines didn\'t change the header when pg vn not in the bam';
+ok $sam_util->standardise_pg_header_lines($temp_pg_bam, bwa => { '0.5.3' => '-q 15' }), 'standardise_pg_header_lines ran ok with correct pg and vn';
+@header_lines = get_bam_header($temp_pg_bam);
+is $header_lines[-1], "\@PG\tID:bwa\tVN:0.5.3\tCL:-q 15", 'standardise_pg_header_lines actually changed the header';
+@records = get_bam_body($temp_pg_bam);
+is @records, 1, 'standardise_pg_header_lines didn\'t change the number of records';
+ok $sam_util->standardise_pg_header_lines($temp_pg_bam, bwa => { '0.5.3' => '-q 30' }), 'standardise_pg_header_lines ran ok with correct pg and vn again';
+@header_lines = get_bam_header($temp_pg_bam);
+is $header_lines[-1], "\@PG\tID:bwa\tVN:0.5.3\tCL:-q 30", 'standardise_pg_header_lines actually changed the header again';
 
 # rmdup (just a shortcut to VertRes::Wrapper::samtools::rmdup - no need to test thoroughly here)
 my $rmdup_bam = File::Spec->catfile($temp_dir, 'rmdup.bam');
@@ -217,7 +237,12 @@ ok $sam_util->rewrite_bas_meta($given_bas, SRR00001 => { sample_name => 'NA00003
 open($tbfh, $given_bas);
 @given = <$tbfh>;
 close($tbfh);
-is_deeply \@given, [$expected[0], join("\t", qw(NA00003.LS454.bwa.SRP000002.20100208 d4f062c6eed8d0205517979801305bfd SRP000002 NA00003 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48))."\n"], 'rewrite_bas_meta actually changed the bas';
+is_deeply \@given, [$expected[0], join("\t", qw(NA00003.LS454.bwa.unknown_population.unknown_analysisgroup.20100208 d4f062c6eed8d0205517979801305bfd SRP000002 NA00003 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48))."\n"], 'rewrite_bas_meta actually changed the bas';
+ok $sam_util->rewrite_bas_meta($given_bas, SRR00001 => { sample_name => 'NA00004', filename => 'foo' }), 'rewrite_bas_meta ran ok again';
+open($tbfh, $given_bas);
+@given = <$tbfh>;
+close($tbfh);
+is_deeply \@given, [$expected[0], join("\t", qw(foo d4f062c6eed8d0205517979801305bfd SRP000002 NA00004 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48))."\n"], 'rewrite_bas_meta actually changed the bas, and the filename option worked';
 
 # stats method
 ok $sam_util->stats('20100208', $sorted_bam), 'stats test';
@@ -307,6 +332,7 @@ is @splits, 26, 'split_bam_by_sequence can pretend to make all splits';
 is $actually_created, 0, 'split_bam_by_sequence pretend doesn\'t actually make any splits';
 
 is $sam_util->num_bam_records($headed_bam), 2000, 'num_bam_records works';
+is $sam_util->num_bam_lines($headed_bam), 2116, 'num_bam_lines works';
 
 # add_unmapped
 my $om_sam_orig = File::Spec->catfile('t', 'data', 'only_mapped.sam');

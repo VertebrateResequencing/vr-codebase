@@ -5,7 +5,7 @@ use File::Spec;
 use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 25;
+    use Test::Most tests => 26;
     
     use_ok('VertRes::Utils::Hierarchy');
 }
@@ -14,7 +14,7 @@ my $h_util = VertRes::Utils::Hierarchy->new();
 isa_ok $h_util, 'VertRes::Base';
 
 # setup our files and paths
-my $si_file = File::Spec->catfile('t', 'data', 'sequence.index');
+my $si_file = File::Spec->catfile('t', 'data', 'sequence.index.2010');
 ok -s $si_file, 'sequence.index file ready to test with';
 my $bam_file = File::Spec->catfile('t', 'data', 'headed1.bam');
 ok -s $bam_file, 'bam file ready to test with';
@@ -22,8 +22,8 @@ my $fsu = VertRes::Utils::FileSystem->new();
 my $temp_dir = $fsu->tempdir();
 ok my $vrtrack = VRTrack::VRTrack->new({database => 'g1k_meta', host => 'mcs4a', port => 3306, user => 'vreseq_ro'}), 'setup vrtrack accessing g1k_meta';
 
-my $lane_path = '/path/to/META/SRP000031/NA06986/SLX/Solexa-5459/SRR003670';
-is_deeply {$h_util->parse_lane($lane_path)}, {study => 'SRP000031',
+my $lane_path = '/path/to/META/CEU_low_coverage/NA06986/SLX/Solexa-5459/SRR003670';
+is_deeply {$h_util->parse_lane($lane_path)}, {study => 'CEU_low_coverage',
                                               sample => 'NA06986',
                                               platform => 'SLX',
                                               library => 'Solexa-5459',
@@ -94,9 +94,11 @@ cmp_ok $cov, '>=', 22.39, 'hierarchy_coverage lane level test';
 is $cov, $cov2, 'coverage was the same in both tests';
 
 # dcc_filename test
-is $h_util->dcc_filename($bam_file, '20100208'), 'NA11918.ILLUMINA.bwa.SRP000031.20100208', 'dcc_filename test';
+is $h_util->dcc_filename($bam_file, '20100208', $si_file), 'NA11918.ILLUMINA.bwa.CEU.low_coverage.20100208', 'dcc_filename test';
 my $chrom_bam = File::Spec->catfile('t', 'data', 'NA06985.chrom7.ILLUMINA.bwa.SRP000031.20091216.bam');
-is $h_util->dcc_filename($chrom_bam, '20100208'), 'NA06985.chrom7.ILLUMINA.bwa.SRP000031.20100208', 'dcc_filename chrom test';
+is $h_util->dcc_filename($chrom_bam, '20100208', $si_file), 'NA06985.chrom7.ILLUMINA.bwa.CEU.low_coverage.20100208', 'dcc_filename chrom test';
+is $h_util->dcc_filename($chrom_bam, '20100208'), 'NA06985.chrom7.ILLUMINA.bwa.unknown_population.unknown_analysisgroup.20100208', 'dcc_filename chrom test without sequence.index';
+
 
 # netapp-related methods
 is_deeply [$h_util->nfs_disks], [qw(/nfs/vertreseq01 /nfs/vertreseq02 /nfs/vertreseq03 /nfs/vertreseq04 /nfs/vertreseq05 /nfs/vertreseq06 /nfs/vertreseq07 /nfs/vertreseq08 /nfs/vertreseq09 /nfs/vertreseq10 /nfs/vertreseq11 /nfs/vertreseq12 /nfs/vertreseq13 /nfs/vertreseq14 /nfs/vertreseq15 /nfs/vertreseq16)], 'nfs_disks returned the expected disks';

@@ -1,3 +1,21 @@
+=head1 NAME
+
+VertRes::Pipeline 
+
+=head1 SYNOPSIS
+
+use VertRes::Pipeline;
+
+=head1 DESCRIPTION
+
+
+
+=head1 AUTHOR
+
+Petr Danecek pd3@sanger.ac.uk
+
+=cut
+
 package VertRes::Pipeline;
 
 use strict;
