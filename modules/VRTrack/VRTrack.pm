@@ -44,7 +44,7 @@ use VRTrack::Lane;
 use VRTrack::File;
 use VRTrack::Core_obj;
 
-use constant SCHEMA_VERSION => '10';
+use constant SCHEMA_VERSION => '11';
 
 our $DEFAULT_PORT = 3306;
 
@@ -232,13 +232,6 @@ sub add_project {
     }
 
     $obj = VRTrack::Project->create($self,$name);
-    # set default hierarchy_name
-    if ($obj){
-        my $hierarchy_name = $name;
-        $hierarchy_name =~ s/\W+/_/g;
-        $obj->hierarchy_name($hierarchy_name);
-        $obj->update;
-    }
     delete $self->{'project_ids'};
     return $obj;
 }
@@ -801,7 +794,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (10);
+insert into schema_version(schema_version) values (11);
 
 --
 -- Table structure for table `assembly`
@@ -1105,6 +1098,7 @@ CREATE TABLE `sample` (
   `project_id` smallint(5) unsigned NOT NULL,
   `ssid` mediumint(8) unsigned default NULL,
   `name` varchar(40) NOT NULL default '',
+  `hierarchy_name` varchar(40) NOT NULL default '',
   `individual_id` smallint(5) unsigned default NULL,
   `note_id` mediumint(8) unsigned default NULL,
   `changed` datetime NOT NULL,

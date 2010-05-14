@@ -52,11 +52,12 @@ sub fields_dispatch {
     
     my %fields = %{$self->SUPER::fields_dispatch()};
     %fields = (%fields,
-               sample_id     => sub { $self->id(@_)},
-               project_id    => sub { $self->project_id(@_)},
-               ssid          => sub { $self->ssid(@_)},
-               individual_id => sub { $self->individual_id(@_)},
-	       name          => sub { $self->name(@_)});
+               sample_id      => sub { $self->id(@_)},
+               project_id     => sub { $self->project_id(@_)},
+               ssid           => sub { $self->ssid(@_)},
+               individual_id  => sub { $self->individual_id(@_)},
+	       name           => sub { $self->name(@_)},
+	       hierarchy_name => sub { $self->hierarchy_name(@_)});
 
     return \%fields;
 }
@@ -181,20 +182,13 @@ sub project_id {
   Example    : my $hname = $sample->hierarchy_name();
   Description: Get/set sample hierarchy name.  This is the directory name
                (without path) that the sample will be named in a file hierarchy.
-	       Note that this is actually the individual hierarchy name, and is
-	       only gettable here for convenience. Setting is done via the
-	       individual object.
   Returntype : string
 
 =cut
 
 sub hierarchy_name {
     my $self = shift;
-    my $name;
-    if ($self->individual) {
-        $name = $self->individual->hierarchy_name(@_);
-    }
-    return $name;
+    return $self->_get_set('hierarchy_name', 'string', @_);
 }
 
 
