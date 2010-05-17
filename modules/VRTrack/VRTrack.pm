@@ -322,6 +322,7 @@ sub hierarchy_path_of_lane_hname {
 sub hierarchy_path_of_lane_name {
     my ($self, $lane_name) = @_;
     my $lane = VRTrack::Lane->new_by_name($self,$lane_name);
+    if ( !$lane ) { return undef; }
     return $self->hierarchy_path_of_lane($lane);
 }
 
