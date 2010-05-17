@@ -101,7 +101,10 @@ sub get_fastqs
     }
     if ( !$must_be_run ) { return $$self{No}; }
 
-    my $files    = 'q[' . join('],q[', @{$$self{files}}) . ']';
+    # The _1 should come as the last one, as it is the only one checked in _provides
+    my @rev_files = sort { $b cmp $a } @{$$self{files}};
+
+    my $files    = 'q[' . join('],q[', @rev_files) . ']';
     my $prefix   = $$self{prefix};
     my $work_dir = $lane_path;
 
