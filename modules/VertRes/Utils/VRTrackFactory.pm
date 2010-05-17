@@ -105,13 +105,16 @@ sub connection_details {
            test databases by default.
  Returns : list of strings
  Args    : boolean, which if true will also return test databases and databases
-           with old schema versions (default false)
+           with old schema versions (default false). Optionally a second
+           boolean, which if true will only return databases that have old
+           schema versions (the first boolean must be true for this to work)
 
 =cut
 
 sub databases {
     my $class = shift;
     my $include_test_and_old_dbs = shift;
+    my $only_old = shift;
     my $self = $class->SUPER::new(@_);
     
     my %dbparams = VertRes::Utils::VRTrackFactory->connection_details('r');
@@ -151,13 +154,16 @@ sub databases {
             next DB unless exists $expected_tables{$table};
         }
         
+        my $sql = qq[ select * from schema_version ];
+        my $rows = $dbh->selectall_arrayref($sql);
+        my $is_old = $rows->[0]->[0] < $schema_version;
         unless ($include_test_and_old_dbs) {
-            my $sql = qq[ select * from schema_version ];
-            my $rows = $dbh->selectall_arrayref($sql);
             next unless $rows->[0]->[0] == $schema_version;
         }
         
-        push(@vr_dbs, $db);
+        if (! $only_old || $only_old && $is_old) {
+            push(@vr_dbs, $db);
+        }
     }
     
     return @vr_dbs;
