@@ -4,7 +4,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 377;
+    use Test::Most tests => 396;
 
     use_ok('VRTrack::VRTrack');
     use_ok('VRTrack::Request');
@@ -74,11 +74,8 @@ foreach my $class (@core_objects) {
     if ($vrobj->can('hierarchy_name')) {
         isa_ok $vrobj, "VRTrack::Hierarchy_obj";
         
-        # Sample hierarchy_name comes from Individual, which we haven't made yet
-        unless ($class eq 'Sample') {
-            is $vrobj->hierarchy_name, $name, 'hierarchy_name set to name by default';
-            is $vrobj->hierarchy_name($new_name), $new_name, 'hierarchy_name could be reset, but it was not made file-system safe';
-        }
+        is $vrobj->hierarchy_name, $name, 'hierarchy_name set to name by default';
+        is $vrobj->hierarchy_name($new_name), $new_name, 'hierarchy_name could be reset, but it was not made file-system safe';
     }
     if ($vrobj->can('ssid')) {
         is $vrobj->ssid, undef, 'ssid is undef by default';
@@ -110,22 +107,24 @@ foreach my $class (@core_objects) {
     ok $vrobj->update, 'update worked to write changes to db';
     if ("VRTrack::$class"->can('new_by_name')) {
         $vrobj = "VRTrack::$class"->new_by_name($vrtrack, $new_name);
-        ok $vrobj, $class.'->new_by_name worked on the new name we set';
-        is $vrobj->row_id, 2, 'row_id was actually just autoincremented to 2, not set to 99 like we wanted';
-        is $vrobj->id, 999, 'id was actually reset';
-        is $vrobj->note_id, 1, 'note_id was actually reset';
-        isnt $vrobj->changed, $orig_changed, 'changed was automatically updated';
-        is $vrobj->is_latest, 1, 'is_latest is still true';
+    }
+    else {
+        $vrobj = "VRTrack::$class"->new($vrtrack, $vrobj->id);
+    }
+    ok $vrobj, $class.'->new_by_name worked on the new name we set';
+    is $vrobj->row_id, 2, 'row_id was actually just autoincremented to 2, not set to 99 like we wanted';
+    is $vrobj->id, 999, 'id was actually reset';
+    is $vrobj->note_id, 1, 'note_id was actually reset';
+    isnt $vrobj->changed, $orig_changed, 'changed was automatically updated';
+    is $vrobj->is_latest, 1, 'is_latest is still true';
+    if ($vrobj->can('name')) {
         is $vrobj->name, $new_name, 'name was actually reset';
-        
-        if ($vrobj->can('hierarchy_name')) {
-            unless ($class eq 'Sample') {
-                is $vrobj->hierarchy_name, $new_name, 'hierarchy_name was actually reset';
-            }
-        }
-        if ($vrobj->can('ssid')) {
-            is $vrobj->ssid($ssid), $ssid, 'ssid was actually reset';
-        }
+    }
+    if ($vrobj->can('hierarchy_name')) {
+        is $vrobj->hierarchy_name, $new_name, 'hierarchy_name was actually reset';
+    }
+    if ($vrobj->can('ssid')) {
+        is $vrobj->ssid($ssid), $ssid, 'ssid was actually reset';
     }
 }
 
@@ -182,6 +181,11 @@ ok ! $vrproj->update(), 'can\'t update on historical objects after changing attr
     my $sample_name = 'sample_a';
     is $vrproj->get_sample_by_name($sample_name)->id, 3, 'get_sample_by_name worked';
     is $vrproj->get_sample_by_id(3)->name, $sample_name, 'get_sample_by_id worked';
+    # when a new project is added, it gets a default hname that is file-system
+    # safe
+    my $added_p = $vrtrack->add_project('added|project');
+    is $added_p->name, 'added|project', 'newly added project name is same as set';
+    is $added_p->hierarchy_name, 'added_project', 'by default, hname is set to name but made file system safe';
     
     # sample
     ok my $sample = VRTrack::Sample->new_by_name_project($vrtrack, $sample_name, 3), 'sample new_by_name_project worked';
@@ -259,14 +263,14 @@ ok ! $vrproj->update(), 'can\'t update on historical objects after changing attr
     
     # hierarchy_path_of_lane
     $ENV{DATA_HIERARCHY} = '';
-    is $vrtrack->hierarchy_path_of_lane($vrlane), 'Project_test2/Individual_test/seq_tech_test/lib_a/lane_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY unset';
+    is $vrtrack->hierarchy_path_of_lane($vrlane), 'Project_test2/sample_a/seq_tech_test/lib_a/lane_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY unset';
     my $lane_b = VRTrack::Lane->new_by_name($vrtrack, 'lane_b');
     my $lib_b = $sample->get_library_by_id(5);
     $lib_b->add_seq_tech('seq_tech_test_b');
     $lib_b->update;
     $lane_b->library_id(5);
     $lane_b->update;
-    is $vrtrack->hierarchy_path_of_lane($lane_b), 'Project_test2/Individual_test/seq_tech_test_b/lib_b/lane_b', 'hierarchy_path_of_lane works with DATA_HIERARCHY unset and on a different lane';
+    is $vrtrack->hierarchy_path_of_lane($lane_b), 'Project_test2/sample_a/seq_tech_test_b/lib_b/lane_b', 'hierarchy_path_of_lane works with DATA_HIERARCHY unset and on a different lane';
     $ENV{DATA_HIERARCHY} = 'species:foo:library';
     is $vrtrack->hierarchy_path_of_lane($vrlane), 'species/foo/lib_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY set to species:library';
     
@@ -362,14 +366,12 @@ ok ! $vrproj->update(), 'can\'t update on historical objects after changing attr
     $individual = VRTrack::Individual->new_by_name($vrtrack, $individual_name);
     is_deeply [$individual->id, $individual->name, $individual->hierarchy_name], [2, $individual_name, 'individual_test_changed2'], 'Individual new_by_name worked again';
     
-    
     # more tests for hierarchy_path_of_lane 
     my $vrlane = VRTrack::Lane->new_by_name($vrtrack, 'lane_a'); #Get our favourite lane back. At this point all the bits of data exist in the database
     $ENV{DATA_HIERARCHY} = 'species:foo:library';
     is $vrtrack->hierarchy_path_of_lane($vrlane), 'species/foo/lib_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY set to species:foo:library';
     $ENV{DATA_HIERARCHY} = 'genus:species-subspecies:project:strain:sample:technology:library:lane';
     is $vrtrack->hierarchy_path_of_lane($vrlane) ,'genus/species_subspecies/Project_test2/Individual_test/sample_a/seq_tech_test/lib_a/lane_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY set to all items';
-    
     
     # mapper
     my $mapper = VRTrack::Mapper->new($vrtrack, 1);
