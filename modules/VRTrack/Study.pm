@@ -15,7 +15,7 @@ VRTrack::Study - Sequence Tracking Study object
 An object describing an accessioned study (i.e. an ERA/SRA study).
 Studys are usually attached to a VRTrack::Project by study_id.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

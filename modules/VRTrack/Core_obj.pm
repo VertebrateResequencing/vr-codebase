@@ -14,7 +14,7 @@ Lane, File, Mapstats) in VRTrack, and implements some common methods.
 The primary feature of a core object is that it has a history and concept of
 a latest version.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

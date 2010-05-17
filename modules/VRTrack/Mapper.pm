@@ -16,7 +16,7 @@ An object describing a sequence mapper, i.e. an aligner such as Maq or BWA.
 Mappers are usually attached to a VRTrack::Mapstats object by the
 mapper_id on the mapping.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

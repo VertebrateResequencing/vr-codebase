@@ -16,7 +16,7 @@ An object describing a library_type, such as DSS or NOPCR.
 Library_types are usually attached to a VRTrack::Library by the
 library_type_id on the library.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

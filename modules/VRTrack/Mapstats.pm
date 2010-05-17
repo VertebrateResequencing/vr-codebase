@@ -14,7 +14,7 @@ VRTrack::Mapstats - Sequence Tracking Mapstats object
 
 An object describing a set of statistics for a specific lane mapping.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

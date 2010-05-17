@@ -16,7 +16,7 @@ An object describing a sequencing technology, such as SLX or SOLID.
 Seq_techs are usually attached to a VRTrack::Library by the
 seq_tech_id on the library.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

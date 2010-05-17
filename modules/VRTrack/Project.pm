@@ -17,7 +17,7 @@ VRTrack::Project - Sequence Tracking Project object
 
 An object describing the tracked properties of a project.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

@@ -11,7 +11,7 @@ VRTrack::Base_obj - Sequence Tracking Table_obj object
 This is the superclass of all VRTrack modules that represent a table in the
 database, providing general methods.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk
 

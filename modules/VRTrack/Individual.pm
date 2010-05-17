@@ -18,7 +18,7 @@ An object describing an individual, i.e. the entity that a sample is taken
 from.  Individual are usually attached to a VRTrack::Sample by the
 individual_id on the sample.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

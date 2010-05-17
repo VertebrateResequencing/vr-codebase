@@ -40,7 +40,7 @@ Eg. if at some point a lane swapped libraries, you can effectively return to
 the state of the database just before it was swapped, to discover what the
 original library was.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 sb10@sanger.ac.uk (author)
 

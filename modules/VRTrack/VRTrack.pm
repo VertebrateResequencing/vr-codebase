@@ -23,7 +23,7 @@ Retrieves/adds projects in the sequencing tracking database.
 A mysql database required. The schema is mysql specific, so other drivers
 cannot be used instead.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk
 

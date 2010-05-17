@@ -13,7 +13,7 @@ VRTrack::Allocations - Sequence Tracking Allocations object
 
 An object for managing sample/study/centre allocations.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk
 

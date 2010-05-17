@@ -16,7 +16,7 @@ An object describing a population.
 Populations are usually attached to a VRTrack::Sample by the
 population_id on the individual.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

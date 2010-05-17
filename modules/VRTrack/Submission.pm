@@ -17,7 +17,7 @@ VRTrack::Submission - Sequence Tracking Submission object
 An object describing an [ES]RA submission, so we can track which lanes have
 been submitted, and to what submission.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

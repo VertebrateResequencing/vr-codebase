@@ -11,7 +11,7 @@ VRTrack::Named_obj - Sequence Tracking Named_obj object
 This is the superclass of objects that have the concept of a 'name' which is
 unique.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk
 

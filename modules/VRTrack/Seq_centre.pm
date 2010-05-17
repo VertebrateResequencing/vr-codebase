@@ -16,7 +16,7 @@ An object describing a sequencing_centre, such as SC or BROAD.
 Seq_centres are usually attached to a VRTrack::Library by the
 seq_centre_id on the library.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

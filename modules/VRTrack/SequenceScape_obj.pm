@@ -11,7 +11,7 @@ VRTrack::SequenceScape_obj - Sequence Tracking SequenceScape_obj object
 This is the superclass of objects that have an analogue in the sequencescape
 database, thus having an ssid() method to provide the relation.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk
 

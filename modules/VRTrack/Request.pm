@@ -14,7 +14,7 @@ VRTrack::Request - Sequence Tracking Request object
 
 An object describing the tracked properties of a request.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

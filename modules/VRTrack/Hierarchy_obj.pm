@@ -13,7 +13,7 @@ They all have a hierarchy_name() method.
 
 It inherits from Table_obj.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk
 

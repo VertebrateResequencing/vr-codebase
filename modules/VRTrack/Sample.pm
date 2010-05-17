@@ -17,7 +17,7 @@ VRTrack::Sample - Sequence Tracking Sample object
 
 An object describing the tracked properties of a sample.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

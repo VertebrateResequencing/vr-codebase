@@ -17,7 +17,7 @@ VRTrack::Library - Sequence Tracking Library object
 
 An object describing the tracked properties of a library.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

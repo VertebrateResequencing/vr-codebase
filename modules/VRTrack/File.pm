@@ -13,7 +13,7 @@ VRTrack::File - Sequence Tracking File object
 
 An object describing the tracked properties of a file.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

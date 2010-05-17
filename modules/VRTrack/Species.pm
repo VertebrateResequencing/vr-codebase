@@ -16,7 +16,7 @@ VRTrack::Species - Sequence Tracking Species object
 An object describing a species.  Species are usually attached to a
 VRTrack::Sample by the species_id on the individual.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

@@ -17,7 +17,7 @@ An object describing an image file for use on the QC web displays.  The images
 are generated as part of QC or as a mapping metric, and as such are properties
 of a mapping.  The images is stored in the database, and retrieved as the 'image' property of the object.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 

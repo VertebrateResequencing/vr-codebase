@@ -15,7 +15,7 @@ VRTrack::Assembly - Sequence Tracking Assembly object
 An object describing a reference assembly sequence.
 Used by VRTrack::Mapstats.
 
-=head1 CONTACT
+=head1 AUTHOR
 
 jws@sanger.ac.uk (author)
 
