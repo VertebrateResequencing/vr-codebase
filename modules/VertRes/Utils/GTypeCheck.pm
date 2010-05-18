@@ -138,7 +138,7 @@ sub is_genotype_ok
 
     if ( $expected && !$has_data ) { $expected = 0; }
 
-    my $ratio = $lhood1!=0 ? $lhood2 / $lhood1 : 0;
+    my $ratio = $lhood1!=0 ? $lhood2/$lhood1 : $lhood2/1e-6;
 
     if ( $ratio<$min_ratio ) 
     { 
