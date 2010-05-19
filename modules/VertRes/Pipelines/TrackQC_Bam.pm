@@ -604,7 +604,7 @@ sub auto_qc
 
     my $vrtrack   = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
     my $name      = $$self{lane};
-    my $vrlane    = VRTrack::Lane->new_by_name($vrtrack,$name) or $self->throw("No such lane in the DB: [$name]\n");
+    my $vrlane    = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$name) or $self->throw("No such lane in the DB: [$name]\n");
 
     if ( !$vrlane->is_processed('import') ) { return $$self{Yes}; }
 
@@ -797,7 +797,7 @@ sub update_db
     #   already written.
     my $vrtrack   = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
     my $name      = $$self{lane};
-    my $vrlane    = VRTrack::Lane->new_by_name($vrtrack,$name) or $self->throw("No such lane in the DB: [$name]\n");
+    my $vrlane    = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$name) or $self->throw("No such lane in the DB: [$name]\n");
 
     if ( !$vrlane->is_processed('import') ) { return $$self{Yes}; }
 
