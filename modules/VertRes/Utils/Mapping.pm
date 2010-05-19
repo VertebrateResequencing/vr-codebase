@@ -216,12 +216,15 @@ sub do_mapping {
 
 # Mappers should override this as appropriate
 sub _bsub_opts {
-    my ($self, $lane_path, $action) = @_;
+    my ($self, $lane_path, $action, $child_opts) = @_;
     
-    my %bsub_opts = (bsub_opts => '');
+    my %bsub_opts = (bsub_opts => $child_opts || '');
     
     if ($action && $action eq 'merge_and_stat') {
-        $bsub_opts{bsub_opts} = '-q normal -M5100000 -R \'select[mem>5100] rusage[mem=5100]\'';
+        $bsub_opts{bsub_opts} .= ' -q normal -M5100000 -R \'select[mem>5100] rusage[mem=5100]\'';
+    }
+    elsif ($action && $action =~ /split|map|merge/) {
+        $bsub_opts{bsub_opts} .= ' -R \'rusage[thouio=5]\'';
     }
     
     return \%bsub_opts;
