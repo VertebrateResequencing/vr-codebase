@@ -1297,6 +1297,39 @@ sub is_finished {
             }
         }
     }
+    elsif ($action->{name} eq 'statistics' && $self->{bam_symlink}) {
+        # If run statistics method, and want to link bam.* files
+        #
+        foreach my $file (@{$self->statistics_provides($lane_path)}) {
+        # Check if each file exists, if so symlink
+	my $fullpath = $self->{fsu}->catfile($lane_path, $file);
+	my @partnames = split(/\.bam/, $file);
+	my @mappers = split(/::/, $self->{mapper_class});
+	my $newname = $self->{fsu}->catfile($lane_path ,$self->{assembly_name}.'_'.$mappers[-1].".bam".$partnames[-1]);
+	if (-e $fullpath) {
+	  # File exists so symlink if the symlink doesn't already exist
+	  if (!-e $newname) {
+	    symlink $fullpath, $newname;
+	  }
+	}
+      }
+    }
+    elsif ($action->{name} eq 'merge' && $self->{bam_symlink}) {
+        # If run merge method, and want to link bam files
+        #
+        foreach my $file (@{$self->merge_provides($lane_path)}) {
+        # Check if each file exists, if so symlink
+	my $fullpath = $self->{fsu}->catfile($lane_path, $file);
+	my @mappers = split(/::/, $self->{mapper_class});
+	my $newname = $self->{fsu}->catfile($lane_path ,$self->{assembly_name}.'_'.$mappers[-1].".bam");
+	if (-e $fullpath) {
+	  # File exists so symlink if the symlink doesn't already exist
+	  if (!-e $newname) {
+	    symlink $fullpath, $newname;
+	  }
+	}
+      }
+    }
     elsif ($action->{name} eq 'cleanup' || $action->{name} eq 'update_db') {
         return $self->{No};
     }
@@ -1320,4 +1353,5 @@ sub is_finished {
 }
 
 1;
+
 
