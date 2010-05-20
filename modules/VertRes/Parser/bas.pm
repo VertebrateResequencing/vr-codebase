@@ -80,6 +80,7 @@ sub new {
            [16] insert_size_sd
            [17] median_insert_size
            [18] insert_size_median_absolute_deviation
+           [19] #_duplicate_reads
  Args    : n/a
 
 =cut
@@ -107,8 +108,8 @@ sub next_result {
     @data || return;
     
     # old bas files didn't have md5 checksum in column 2, and oldest didn't
-    # have bam filename in column 1
-    if (@data == 19) {
+    # have bam filename in column 1, and newest gained a 20 column
+    if (@data == 19 || @data == 20) {
         for my $i (0..$#data) {
             $self->{_result_holder}->[$i] = $data[$i];
         }
@@ -142,7 +143,7 @@ sub next_result {
         for my $i (0..6) {
             $self->{_result_holder}->[$i] = 'unknown';
         }
-        for my $i (7..18) {
+        for my $i (7..19) {
             $self->{_result_holder}->[$i] = 0;
         }
         $self->_set_header_parsed() unless $self->_header_parsed();
