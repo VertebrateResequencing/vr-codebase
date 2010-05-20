@@ -239,7 +239,8 @@ sub collect_detailed_bam_stats
     my $gc_content_bin  = exists($$options{'gc_content_bin'}) ? $$options{'gc_content_bin'} : 1;
 
     my $do_clipped   = exists($$options{'do_clipped'}) ?  $$options{'do_clipped'} : 0;
-    my $do_chrm      = exists($$options{'do_chrm'}) ?  $$options{'do_chrm'} : 1;
+    my $do_chrm      = exists($$options{'do_chrm'}) ?  $$options{'do_chrm'} : '^(?:\d+|X|Y)$';
+    my $chrom_regex  = $do_chrm ? qr/$do_chrm/ : undef;
     my $do_gc        = exists($$options{'do_gc_content'}) ? $$options{'do_gc_content'} : 1;
     my $do_rmdup     = exists($$options{'do_rmdup'}) ? $$options{'do_rmdup'} : 1;
     my $chrm_lengths = $do_chrm ? Utils::fai_chromosome_lengths($fai_file) : {};
@@ -338,7 +339,7 @@ sub collect_detailed_bam_stats
 
             # Chromosome distribution
             #
-            if ( $do_chrm && $chrom=~/^(?:\d+|X|Y)$/i ) 
+            if ( $do_chrm && $chrom=~$chrom_regex ) 
             {
                 for my $stat (@stats) { $$out_stats{$stat}{'chrm_distrib_freqs'}{$chrom}++; }
             }
