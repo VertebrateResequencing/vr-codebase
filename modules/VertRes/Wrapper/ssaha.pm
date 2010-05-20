@@ -204,6 +204,8 @@ sub ssaha2 {
            ssaha2(), but prefix the option name with the name of the command,
            eg. ssaha2Build_skip => 3, ssaha2_454 => 1. Many sensible defaults
            are set - best not to supply any of your own, really.
+           Optionally, no_ref_copy => boolean to turn off copying the ref
+           fasta to /tmp (normally done for speed reasons)
 
 =cut
 
@@ -259,27 +261,29 @@ sub do_mapping {
         $self->ssaha2Build($ref_fa, $ref_fa_hash_base, skip => 3, %{$command_opts{ssah2Build}});
         $self->throw("failed during the ref hash index build step, giving up for now") unless $self->run_status >= 1;
     }
-    my $hash_basename = basename($ref_fa_hash_base);
-    foreach my $suffix (@ref_hash_suffixes) {
-        my $source = "$ref_fa_hash_base.$suffix";
-        my $dest = $fsu->catfile($local_cache, "$hash_basename.$suffix");
-        
-        # if dest already exists, check it is really our file
-        my $do_copy = 1;
-        if (-s $dest) {
-            my $diff = `diff $source $dest`;
-            unless ($diff) {
-                $do_copy = 0;
+    unless ($args{no_ref_copy}) {
+        my $hash_basename = basename($ref_fa_hash_base);
+        foreach my $suffix (@ref_hash_suffixes) {
+            my $source = "$ref_fa_hash_base.$suffix";
+            my $dest = $fsu->catfile($local_cache, "$hash_basename.$suffix");
+            
+            # if dest already exists, check it is really our file
+            my $do_copy = 1;
+            if (-s $dest) {
+                my $diff = `diff $source $dest`;
+                unless ($diff) {
+                    $do_copy = 0;
+                }
+            }
+            
+            # copy if it doesn't exist or isn't correct
+            if ($do_copy) {
+                my $ok = $fsu->copy($source, $dest);
+                $ok || $self->throw("failed prior to attempting the mapping (could not copy $source -> $dest)");
             }
         }
-        
-        # copy if it doesn't exist or isn't correct
-        if ($do_copy) {
-            my $ok = $fsu->copy($source, $dest);
-            $ok || $self->throw("failed prior to attempting the mapping (could not copy $source -> $dest)");
-        }
+        $ref_fa_hash_base = $fsu->catfile($local_cache, $hash_basename);
     }
-    $ref_fa_hash_base = $fsu->catfile($local_cache, $hash_basename);
     
     unless (-s $out_sam) {
         my $tmp_sam = $out_sam.'_tmp';

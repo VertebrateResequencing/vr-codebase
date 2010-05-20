@@ -3,9 +3,10 @@ use strict;
 use warnings;
 use File::Copy;
 use File::Spec;
+use File::Basename;
 
 BEGIN {
-    use Test::Most tests => 19;
+    use Test::Most tests => 30;
     
     use_ok('VertRes::Wrapper::ssaha');
     use_ok('VertRes::Utils::FileSystem');
@@ -36,9 +37,10 @@ copy(File::Spec->catfile('t', 'data', $read1_basename), $read1);
 copy(File::Spec->catfile('t', 'data', $read2_basename), $read2);
 copy(File::Spec->catfile('t', 'data', $read0_basename), $read0);
 copy(File::Spec->catfile('t', 'data', $ref_basename), $ref);
+my $ref_orig = File::Spec->catfile('t', 'data', $ref_basename);
 ok -s $read1, 'test file 1 ready to use';
 ok -s $read2, 'test file 2 ready to use';
-ok -s $read0, 'test file32 ready to use';
+ok -s $read0, 'test file 3 ready to use';
 ok -s $ref, 'test file 3 ready to use';
 
 # the files we expect to be created
@@ -62,7 +64,7 @@ foreach my $ref_file (@ref_files) {
 is $ok_ref_files, 5, 'made the correct number of ref index hash files';
 
 # run the whole mapping
-$ssaha->do_mapping(ref => $ref,
+$ssaha->do_mapping(ref => $ref_orig,
                    read1 => $read1,
                    read2 => $read2,
                    output => $mapping,
@@ -74,7 +76,8 @@ my ($lines, $mapped) = check_sam($mapping);
 is $lines, 2000, 'output sam not truncated';
 cmp_ok $mapped, '>=', 1596, 'mapped enough reads';
 
-# doing the mapping didn't re-create the index hash files
+# doing the mapping didn't re-create the index hash files, nor did it create
+# in-place index files
 my @new_mtimes;
 foreach my $ref_file (@ref_files) {
     my @stat = stat($ref_file);
@@ -84,12 +87,31 @@ is_deeply \@new_mtimes, \@mtimes, 'do_mapping with local_cache equal to ref dir 
 
 # mapping also works with fasta files
 unlink($mapping);
-$ssaha->do_mapping(ref => $ref,
+$ssaha->do_mapping(ref => $ref_orig,
                    read0 => $read0,
                    output => $mapping,
                    insert_size => 2000,
                    local_cache => $temp_dir);
 is $ssaha->run_status, 1, 'status after mapping is ok';
+ok -s $mapping, 'output file exists';
+
+# and we can map without copying ref to /tmp
+unlink($mapping);
+foreach my $ref_file (@ref_files) {
+    unlink($ref_file);
+}
+$ssaha->do_mapping(ref => $ref_orig,
+                   read0 => $read0,
+                   output => $mapping,
+                   insert_size => 2000,
+                   local_cache => $temp_dir,
+                   no_ref_copy => 1);
+foreach my $ref_file (@ref_files) {
+    ok ! -s $ref_file, 'local_cache ref file not created';
+    my $in_place_ref_file = File::Spec->catfile('t', 'data', basename($ref_file));
+    ok -s $in_place_ref_file, 'in-place ref file was created';
+    unlink($in_place_ref_file);
+}
 ok -s $mapping, 'output file exists';
 
 exit;
