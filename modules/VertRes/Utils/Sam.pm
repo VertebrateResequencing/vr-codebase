@@ -787,7 +787,8 @@ sub bas {
                              'average_quality_of_mapped_bases',
                              'mean_insert_size', 'insert_size_sd',
                              'median_insert_size',
-                             'insert_size_median_absolute_deviation'), "\n";
+                             'insert_size_median_absolute_deviation',
+                             '#_duplicate_reads'), "\n";
     $expected_lines++;
     
     # get the stats for each read group
@@ -869,7 +870,8 @@ sub bas {
                                  $data{avg_isize},
                                  $data{sd_isize},
                                  $data{median_isize},
-                                 $data{mad}), "\n";
+                                 $data{mad},
+                                 $data{duplicate_reads} || 0), "\n";
         $expected_lines++;
     }
     close($bas_fh);
@@ -977,6 +979,10 @@ sub bam_statistics {
             }
         }
         
+        if ($ps->is_duplicate($flag)) {
+            $this_rg_data[14]++;
+        }
+        
         $readgroup_data{$rg} = \@this_rg_data;
     }
     
@@ -1019,6 +1025,7 @@ sub bam_statistics {
         $rg_stats{percent_mismatch} = $percent_mismatch;
         $rg_stats{median_isize} = $median_isize;
         $rg_stats{mad} = $mad;
+        $rg_stats{duplicate_reads} = $data[14] || 0;
         $stats{$rg} = \%rg_stats;
     }
     

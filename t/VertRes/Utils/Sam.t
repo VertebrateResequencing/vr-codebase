@@ -216,7 +216,8 @@ is_deeply {$sam_util->bam_statistics($sorted_bam)}, {SRR00001 => {total_bases =>
                                                                   avg_isize => 286,
                                                                   sd_isize => '74.10',
                                                                   median_isize => 275,
-                                                                  mad => 48}}, 'bam_statistics test';
+                                                                  mad => 48,
+                                                                  duplicate_reads => 2}}, 'bam_statistics test';
 my $given_bas = File::Spec->catfile($temp_dir, 'test.bas');
 ok $sam_util->bas($sorted_bam, '20100208', $given_bas), 'bas() ran ok';
 my $expected_bas = File::Spec->catfile('t', 'data', 'example.bas');
@@ -237,12 +238,12 @@ ok $sam_util->rewrite_bas_meta($given_bas, SRR00001 => { sample_name => 'NA00003
 open($tbfh, $given_bas);
 @given = <$tbfh>;
 close($tbfh);
-is_deeply \@given, [$expected[0], join("\t", qw(NA00003.LS454.bwa.unknown_population.unknown_analysisgroup.20100208 d4f062c6eed8d0205517979801305bfd SRP000002 NA00003 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48))."\n"], 'rewrite_bas_meta actually changed the bas';
+is_deeply \@given, [$expected[0], join("\t", qw(NA00003.LS454.bwa.unknown_population.unknown_analysisgroup.20100208 2980372f6eba447907d8d802edf6bc3d SRP000002 NA00003 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48 2))."\n"], 'rewrite_bas_meta actually changed the bas';
 ok $sam_util->rewrite_bas_meta($given_bas, SRR00001 => { sample_name => 'NA00004', filename => 'foo' }), 'rewrite_bas_meta ran ok again';
 open($tbfh, $given_bas);
 @given = <$tbfh>;
 close($tbfh);
-is_deeply \@given, [$expected[0], join("\t", qw(foo d4f062c6eed8d0205517979801305bfd SRP000002 NA00004 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48))."\n"], 'rewrite_bas_meta actually changed the bas, and the filename option worked';
+is_deeply \@given, [$expected[0], join("\t", qw(foo 2980372f6eba447907d8d802edf6bc3d SRP000002 NA00004 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48 2))."\n"], 'rewrite_bas_meta actually changed the bas, and the filename option worked';
 
 # stats method
 ok $sam_util->stats('20100208', $sorted_bam), 'stats test';
