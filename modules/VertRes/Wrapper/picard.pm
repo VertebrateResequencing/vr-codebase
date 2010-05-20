@@ -27,6 +27,9 @@ to start!
 
 * not all picard tools have been wrapped yet*
 
+For default "exe" path assumes you have the env variable PICARD pointing to the
+directory containing the picard .jar files etc.
+
 =head1 AUTHOR
 
 Sendu Bala: bix@sendu.me.uk
@@ -46,7 +49,7 @@ use VertRes::Parser::sam;
 use base qw(VertRes::Wrapper::WrapperI);
 
 my $fsu = VertRes::Utils::FileSystem->new();
-our $DEFAULT_PICARD_DIR = $fsu->catfile($ENV{BIN}, 'picard-tools');
+our $DEFAULT_PICARD_DIR = $ENV{PICARD} || die "PICARD environment variable not set\n";
 
 =head2 new
 
