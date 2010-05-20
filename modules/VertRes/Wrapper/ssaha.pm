@@ -147,12 +147,14 @@ sub ssaha2Build {
  Args    : input sequence file name(s) in an array reference, output name (undef
            if using run_method('open')), hash of options understood by ssaha2
            (NB: skip must match the skip parameter you set in ssaha2Build if
-           using the save option)
+           using the save option). A special option 'ref' can be supplied if
+           not using save.
 
 =cut
 
 sub ssaha2 {
     my ($self, $seqs, $out, %opts) = @_;
+    my $ref = delete $opts{ref};
     
     $self->exe('ssaha2');
     
@@ -171,6 +173,9 @@ sub ssaha2 {
     if ($out) {
         $self->register_output_file_to_check($out);
         push(@args, " > $out");
+    }
+    if ($ref) {
+        unshift(@args, $ref);
     }
     
     return $self->run(@args);
@@ -324,7 +329,14 @@ sub do_mapping {
                 
                 # run ssaha2, filtering the output to get the top 10 hits per read,
                 # grouping by readname, and compressing it
-                my $sfh = $self->ssaha2([$tmp_fastq], undef, disk => 1, '454' => 1, output => 'cigar', diff => 10, save => $ref_fa_hash_base);
+                my @extra_args;
+                if ($args{no_ref_copy}) {
+                    @extra_args = (ref => $ref_fa_hash_base);
+                }
+                else {
+                    @extra_args = (disk => 1, save => $ref_fa_hash_base);
+                }
+                my $sfh = $self->ssaha2([$tmp_fastq], undef, '454' => 1, output => 'cigar', diff => 10, @extra_args);
                 
                 my $tmp_cigar = $cigar_out;
                 $tmp_cigar =~ s/cigar\.gz$/cigar.tmp.gz/;
