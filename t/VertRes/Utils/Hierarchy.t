@@ -104,6 +104,7 @@ is $h_util->dcc_filename($chrom_bam, '20100208'), 'NA06985.chrom7.ILLUMINA.bwa.u
 is_deeply [$h_util->nfs_disks], [qw(/nfs/vertreseq01 /nfs/vertreseq02 /nfs/vertreseq03 /nfs/vertreseq04 /nfs/vertreseq05 /nfs/vertreseq06 /nfs/vertreseq07 /nfs/vertreseq08 /nfs/vertreseq09 /nfs/vertreseq10 /nfs/vertreseq11 /nfs/vertreseq12 /nfs/vertreseq13 /nfs/vertreseq14 /nfs/vertreseq15 /nfs/vertreseq16)], 'nfs_disks returned the expected disks';
 like $h_util->nfs_disk, qr{/nfs/vertreseq\d\d}, 'nfs_disk returns one of the disks'; # *** hard to test if it's the correct one though...
 my $lane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, 'lane1');
+$ENV{DATA_HIERARCHY} = 'project:sample:technology:library:lane';
 like $h_util->lane_storage_path($lane), qr{/nfs/vertreseq\d\d/hashed_lanes/vrtrack_vertres_test/6/b/8/2/lane1}, 'lane_storage_path gave the correct path';
 # *** store_lane can't really be tested? implemented with other well-tested
 #     things though
