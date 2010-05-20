@@ -52,7 +52,7 @@ use base qw(VertRes::Base);
 
 my $bsub_uniquer = 1;
 
-our %allowed_run_methods = (bsub => 1, open => 1, open_to => 1, write_to => 1, open_2 => 1, system => 1);
+our %allowed_run_methods = (bsub => 1, open => 1, open_to => 1, write_to => 1, open_2 => 1, system => 1, exec_fork => 1);
 
 =head2 new
 
@@ -209,7 +209,7 @@ sub _run {
 
 =head2 run_method
 
- Title   : via_bsub
+ Title   : run_method
  Usage   : $wrapper->run_method('bsub');
  Function: Wrapper module authors can choose how to run the executable if they
            don't want to override run(). End-users can also override.
@@ -225,6 +225,8 @@ sub _run {
                      write to and then close)
            open_2 (run in an IPC::Open2 call where input is a supplied filehanle
                    like for open_to and you are returned a filehandle like open)
+           exec_fork (for running trickier things that don't work with other
+                      methods; behaves like open)
 
 =cut
 
@@ -371,6 +373,44 @@ sub _system_run {
     system($command) && $self->throw("$exe call ($command) crashed: $? | $!");
     
     return;
+}
+
+sub _exec_fork_run {
+    my ($self, $exe, $params, @extra_args) = @_;
+    
+    my $redirect = $self->quiet ? ' 2> /dev/null ' : '';
+    if ($self->quiet && $self->{silence_stdout}) {
+        $redirect = ' > /dev/null'.$redirect;
+    }
+    my @command = ($exe, $params, @extra_args, $redirect);
+    my $command = "@command";
+    $self->debug("[$time{'yyyy/mm/dd hh:mm:ss'}] will run command '@command'");
+    
+    my $kid_io;
+    my @out;
+    my $pid = open($kid_io, "-|");
+    $self->throw("Could not fork: $!") unless defined $pid;
+    if ($pid)  {
+        # parent
+        return $kid_io;
+    } 
+    else {      
+        # child
+        exec('/bin/bash', '-o', 'pipefail', '-c', $command) or $self->throw("Cannot exec the command [/bin/sh -o pipefail -c @command]: $!");
+    }
+    if ($?) {
+        my $msg = "The command \"@command\" returned non-zero status $?";
+        if ($!) { 
+            $msg .= ": $!\n"; 
+        }
+        else { 
+            $msg .= ".\n"; 
+        }
+        if (scalar @out) {
+            $msg .= "@out";
+        }
+        $self->throw($msg);
+    }
 }
 
 =head2 run_status
