@@ -162,9 +162,12 @@ sub ssaha2 {
                       diff udiff disk weight rtype pair outfile mthresh)]);
     $self->_set_params_and_switches_from_args(%opts);
     
+    my @args = @{$seqs};
     # we pipe via tee because some sort of buffer issue prevents any output
     # to file or straight pipe to perl normally
-    my @args = (@{$seqs}, ' | tee');
+    unless ($self->run_method eq 'exec_fork') {
+        push(@args, ' | tee');
+    }
     if ($out) {
         $self->register_output_file_to_check($out);
         push(@args, " > $out");
@@ -290,7 +293,7 @@ sub do_mapping {
         
         my (undef, $out_dir) = fileparse($tmp_sam);
         my (@filtered_fastqs, @cigar_outputs);
-        $self->run_method('open');
+        $self->run_method($orig_run_method eq 'exec_fork' ? 'exec_fork' : 'open');
         
         foreach my $fastq (@fqs) {
             my $temp_dir = $fsu->tempdir();

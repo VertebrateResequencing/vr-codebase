@@ -6,7 +6,7 @@ use File::Spec;
 use File::Basename;
 
 BEGIN {
-    use Test::Most tests => 30;
+    use Test::Most tests => 32;
     
     use_ok('VertRes::Wrapper::ssaha');
     use_ok('VertRes::Utils::FileSystem');
@@ -42,6 +42,12 @@ ok -s $read1, 'test file 1 ready to use';
 ok -s $read2, 'test file 2 ready to use';
 ok -s $read0, 'test file 3 ready to use';
 ok -s $ref, 'test file 3 ready to use';
+my @cigars;
+foreach my $fq_basename ($read1_basename, $read2_basename, $read0_basename) {
+    my $cigar_name = $fq_basename;
+    $cigar_name =~ s/\.fastq$//;
+    push(@cigars, File::Spec->catfile($temp_dir, $cigar_name.'.cigar.gz'));
+}
 
 # the files we expect to be created
 my $mapping = File::Spec->catfile($temp_dir, 'mapping.sam');
@@ -86,7 +92,9 @@ foreach my $ref_file (@ref_files) {
 is_deeply \@new_mtimes, \@mtimes, 'do_mapping with local_cache equal to ref dir didn\'t repeat the Build';
 
 # mapping also works with fasta files
-unlink($mapping);
+foreach my $out_file (@cigars, $mapping) {
+    unlink($out_file);
+}
 $ssaha->do_mapping(ref => $ref_orig,
                    read0 => $read0,
                    output => $mapping,
@@ -95,10 +103,22 @@ $ssaha->do_mapping(ref => $ref_orig,
 is $ssaha->run_status, 1, 'status after mapping is ok';
 ok -s $mapping, 'output file exists';
 
+# and it works with exec_fork
+$ssaha->run_method('exec_fork');
+foreach my $out_file (@cigars, $mapping) {
+    unlink($out_file);
+}
+$ssaha->do_mapping(ref => $ref_orig,
+                   read0 => $read0,
+                   output => $mapping,
+                   insert_size => 2000,
+                   local_cache => $temp_dir);
+is $ssaha->run_status, 1, 'status after mapping with exec_fork is ok';
+ok -s $mapping, 'output file exists';
+
 # and we can map without copying ref to /tmp
-unlink($mapping);
-foreach my $ref_file (@ref_files) {
-    unlink($ref_file);
+foreach my $out_file (@cigars, $mapping, @ref_files) {
+    unlink($out_file);
 }
 $ssaha->do_mapping(ref => $ref_orig,
                    read0 => $read0,
