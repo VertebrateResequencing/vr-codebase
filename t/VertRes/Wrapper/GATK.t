@@ -5,7 +5,7 @@ use File::Copy;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 16;
+    use Test::Most tests => 18;
     
     use_ok('VertRes::Wrapper::GATK');
     use_ok('VertRes::Utils::FileSystem');
@@ -66,9 +66,15 @@ cmp_ok $recal_mean_q, '<', $orig_mean_q, 'recalibrated qualities changed';
 is $gatk->get_covs, '--standard_covs', 'covs is standard_covs by default';
 $gatk->set_covs('CycleCovariate', 'PositionCovariate');
 is $gatk->get_covs, '-cov CycleCovariate -cov PositionCovariate ', 'correct -cov args set after calling set_covs';
-is $gatk->get_vcfs, '', 'no vcfs by default';
-$gatk->set_vcfs('1,VCF,1.vcf', '2,VCF,2.vcf');
-is $gatk->get_vcfs, '-B 1,VCF,1.vcf -B 2,VCF,2.vcf ', 'correct -B args set after calling set_vcfs';
+is $gatk->get_b, '', 'no vcfs by default';
+$gatk->set_b('1,VCF,1.vcf', '2,VCF,2.vcf');
+is $gatk->get_b, '-B 1,VCF,1.vcf -B 2,VCF,2.vcf ', 'correct -B args set after calling set_vcfs';
+is $gatk->get_filters, '', 'filters are empty be default';
+$gatk->set_filters(filters => { StandardFilters => "MQ0 > 40 || SB > -0.10",
+                                HARD_TO_VALIDATE => "(MQ0 / (1.0 * DP)) > 0.1" });
+is $gatk->get_filters, ' --filterExpression "MQ0 > 40 || SB > -0.10" --filterName "StandardFilters" --filterExpression "(MQ0 / (1.0 * DP)) > 0.1" --filterName "HARD_TO_VALIDATE"', 'set filters can be retrieved in command-line form correctly';
+
+unlink(File::Spec->catfile('t', 'data', 'S_suis_P17.rod.idx'));
 
 exit;
 

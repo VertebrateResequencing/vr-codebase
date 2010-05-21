@@ -23,9 +23,9 @@ if ($status == -1) {
 
 =head1 DESCRIPTION
 
-Ostensibly a wrapper for Broad's GenomeAnalysisToolKit, this is primarily
-focused on using it to recalibrate the quality values in bam files. See:
-http://www.broadinstitute.org/gsa/wiki/index.php/Quality_scores_recalibration
+A wrapper for Broad's GenomeAnalysisToolKit, focusing on all the steps needed
+to call SNPs (from recalibration, through realignment to genotyping). See:
+http://www.broadinstitute.org/gsa/wiki/index.php/Whole_genome,_low-pass
 
 For default "exe" path assumes you have the env variable GATK pointing to the
 directory containing the GATK .jar files etc.
@@ -72,9 +72,9 @@ our $DEFAULT_PLATFORM = 'ILLUMINA';
            dbsnp     => snp.rod (path to dbsnp rod file; can be overriden in
                                  individual methods with the DBSNP option)
            covs      => [] (as per set_covs())
-           vcfs      => [] (as per set_vcfs())
-           build     => NCBI36|NCBI37|NCBIM37 (default NCBI36: sets defaults for
-                        reference, dbsnp, covs and vcfs as appropriate for the
+           bs        => [] (as per set_b())
+           build     => NCBI36|NCBI37|NCBIM37 (default NCBI37: sets defaults for
+                        reference, dbsnp, covs and bs as appropriate for the
                         build; overriden by the above 4 options if they are set
                         manually)
            log_level => DEBUG|INFO|WARN|ERROR|FATAL|OFF (set the log level;
@@ -97,8 +97,8 @@ sub new {
     $self->bsub_options(M => ($java_mem * 1000), R => "'select[mem>$java_mem] rusage[mem=$java_mem]'");
     
     # default settings
-    my $build = delete $self->{build} || 'NCBI36';
-    my ($default_ref, $default_dbsnp, $default_covs, $default_vcfs);
+    my $build = delete $self->{build} || 'NCBI37';
+    my ($default_ref, $default_dbsnp, $default_covs, $default_bs);
     if ($build eq 'NCBI36') {
         $default_ref = File::Spec->catfile($ENV{GATK_RESOURCES}, 'human_b36_both.fasta');
         $default_dbsnp = File::Spec->catfile($ENV{GATK_RESOURCES}, 'dbsnp_129_b36.rod');
@@ -106,9 +106,9 @@ sub new {
     elsif ($build eq 'NCBI37') {
         $default_ref = File::Spec->catfile($ENV{GATK_RESOURCES}, 'human_g1k_v37.fasta');
         $default_dbsnp = File::Spec->catfile($ENV{GATK_RESOURCES}, 'dbsnp_130_b37.rod');
-        # no default vcfs for now, since issues with not being in NCBI37 coords?
-        #$default_vcfs = ['pilot1_CEU,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'CEU.2and3_way.vcf'),
-        #                 'pilot1_YRI,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'YRI.2and3_way.vcf')];
+        # no default bs for now, since issues with not being in NCBI37 coords?
+        #$default_bs = ['pilot1_CEU,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'CEU.2and3_way.vcf'),
+        #               'pilot1_YRI,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'YRI.2and3_way.vcf')];
     }
     elsif ($build eq 'NCBIM37') {
         $self->throw("mouse .rod not available; suggest not attempting recalibration on mouse at the moment...");
@@ -120,7 +120,7 @@ sub new {
     $self->{_default_R} = delete $self->{reference} || $default_ref;
     $self->{_default_DBSNP} = delete $self->{dbsnp} || $default_dbsnp;
     $self->set_covs(@{delete $self->{covs} || $default_covs || []});
-    $self->set_vcfs(@{delete $self->{vcfs} || $default_vcfs || []});
+    $self->set_b(@{delete $self->{bs} || $default_bs || []});
     $self->{_default_loglevel} = delete $self->{log_level} || $DEFAULT_LOGLEVEL;
     $self->{_default_platform} = delete $self->{default_platform} || $DEFAULT_PLATFORM;
     
@@ -155,7 +155,7 @@ sub _handle_common_params {
            name suffixed with '.recal_data.csv' unless you suffix it yourself
            with .csv). Optionally, supply R, DBSNP, useOriginalQualities or l
            options (as a hash), as understood by GATK. -B and -cov should be set
-           with the set_vcfs() and set_covs() methods beforehand.
+           with the set_b() and set_covs() methods beforehand.
 
 =cut
 
@@ -184,8 +184,8 @@ sub count_covariates {
         $recal_file .= '.recal_data.csv';
     }
     my $covs = $self->get_covs();
-    my $vcfs = $self->get_vcfs();
-    my @file_args = (" -I $in_bam", " $covs $vcfs -recalFile $recal_file");
+    my $bs = $self->get_b();
+    my @file_args = (" -I $in_bam", " $covs $bs -recalFile $recal_file");
     
     my %params = @params;
     $params{T} = 'CountCovariates';
@@ -251,48 +251,103 @@ sub get_covs {
     }
 }
 
-=head2 set_vcfs
+=head2 set_b
 
- Title   : set_vcfs
- Usage   : $wrapper->set_vcfs('pilot1,VCF,file1.vcf', 'pilot2,VCF,file2.vcf');
+ Title   : set_b
+ Usage   : $wrapper->set_b('pilot1,VCF,file1.vcf', 'pilot2,VCF,file2.vcf');
  Function: Set which vcf files to use (for setting B option).
  Returns : list currently set
  Args    : list of vcf strings (name,type,filename)
 
 =cut
 
-sub set_vcfs {
+sub set_b {
     my $self = shift;
     if (@_) {
-        $self->{vcfs} = [@_];
+        $self->{bs} = [@_];
     }
-    return @{$self->{vcfs} || []};
+    return @{$self->{bs} || []};
 }
 
-=head2 get_vcfs
+=head2 get_b
 
- Title   : get_vcfs
- Usage   : my $covs_string = $wrapper->get_vcfs();
- Function: Get the command line options defining which vcf files will be used
-           (one or more -B options). If none have been set with set_vcfs,
-           returns empty string.
+ Title   : get_b
+ Usage   : my $covs_string = $wrapper->get_b();
+ Function: Get the command line options defining which vcf or bed etc. files
+           will be used (one or more -B options). If none have been set with
+           set_b, returns empty string.
  Returns : string
  Args    : n/a
 
 =cut
 
-sub get_vcfs {
+sub get_b {
     my $self = shift;
-    my @vcfs = $self->set_vcfs;
+    my @bs = $self->set_b;
     
     my $args = '';
-    foreach my $vcf (@vcfs) {
-        $args .= "-B $vcf ";
+    foreach my $b (@bs) {
+        $args .= "-B $b ";
     }
     return $args;
 }
 
-=head2  table_recalibration
+=head2 set_filters
+
+ Title   : set_filters
+ Usage   : $wrapper->set_filters(
+                     filters => {'filter_name' => 'filter expression', ... },
+                     g_filters => {'filter_name' => 'filter expression', ... });
+ Function: Set which filters to use during variant_filtration().
+ Returns : hash (keys are filters and g_filters) of hash refs of those filters
+           currently set
+ Args    : hash with keys 'filters' and 'g_filters', with values as hash refs.
+           Those hash refs should have keys as filter names (setting
+           --filterName or --genotypeFilterName) and values as filter
+           expressions (setting --filterExpression and
+           --genotypeFilterExpression)
+
+=cut
+
+sub set_filters {
+    my $self = shift;
+    if (@_) {
+        my %hash = @_;
+        $self->{the_filters} = {filters => $hash{filters} || {},
+                                g_filters => $hash{g_filters} || {}};
+    }
+    return %{$self->{the_filters} || {}};
+}
+
+=head2 get_filters
+
+ Title   : get_filters
+ Usage   : my $filters_string = $wrapper->get_filters();
+ Function: Get the command line options defining which filters to use for
+           variant_filtration().
+ Returns : string
+ Args    : n/a
+
+=cut
+
+sub get_filters {
+    my $self = shift;
+    my %both_filters = $self->set_filters;
+    
+    my $args = '';
+    foreach my $type ('filters', 'g_filters') {
+        my $filters = $both_filters{$type} || next;
+        my $name_arg = $type eq 'filters' ? '--filterName' : '--genotypeFilterName';
+        my $exp_arg = $type eq 'filters' ? '--filterExpression' : '--genotypeFilterExpression';
+        
+        while (my ($name, $exp) = each %{$filters}) {
+            $args .= " $exp_arg \"$exp\" $name_arg \"$name\"";
+        }
+    }
+    return $args;
+}
+
+=head2 table_recalibration
 
  Title   : table_recalibration
  Usage   : $wrapper->table_recalibration('in.bam', 'recal_data.csv', 'out.bam');
@@ -335,7 +390,256 @@ sub table_recalibration {
     return $self->run(@file_args);
 }
 
-=head2   analyze_covariates
+=head2 realignment_targets
+
+ Title   : realignment_targets
+ Usage   : $wrapper->realignment_targets('in.bam', 'out.intervals');
+ Function: Finds target intervals in a quality-recalibrated bam that could be
+           realigned with indel_realigner().
+ Returns : n/a
+ Args    : path to input .bam file, path to output intervals.
+           Optionally, supply R or DBSNP options (as a hash), as understood by
+           GATK.
+
+=cut
+
+sub realignment_targets {
+    my ($self, $in_bam, $out_intervals, @params) = @_;
+    
+    # java -jar GenomeAnalysisTK.jar \
+    #   -T RealignerTargetCreator \
+    #   -I recalibrated.bam \
+    #   -R resources/Homo_sapiens_assembly18.fasta \
+    #   -o forRealigner.intervals \
+    #   -D resources/dbsnp_129_hg18.rod  (-D == DBSNP ??)
+    
+    $self->switches([qw(quiet_output_mode)]);
+    $self->params([qw(R DBSNP T)]);
+    
+    my @file_args = (" -I $in_bam", " -o $out_intervals");
+    
+    my %params = @params;
+    $params{T} = 'RealignerTargetCreator';
+    $params{quiet_output_mode} = $self->quiet();
+    $self->_handle_common_params(\%params);
+    
+    $self->register_output_file_to_check($out_intervals);
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
+}
+
+=head2 indel_realigner
+
+ Title   : indel_realigner
+ Usage   : $wrapper->indel_realigner('in.bam', 'intervals', 'out.bam');
+ Function: Does local realignment around indels in intervals as determined by
+           realignment_targets(), generating a "cleaned" bam suitable for
+           calling SNPs on.
+ Returns : n/a
+ Args    : path to input .bam file, path to output of realignment_targets(),
+           path to output bam.
+           Optionally, supply R or DBSNP options (as a hash), as understood by
+           GATK.
+
+=cut
+
+sub indel_realigner {
+    my ($self, $in_bam, $intervals_file, $out_bam, @params) = @_;
+    
+    # java -Djava.io.tmpdir=/path/to/tmpdir -jar GenomeAnalysisTK.jar \
+    #   -I recalibrated.bam \
+    #   -R resources/Homo_sapiens_assembly18.fasta \
+    #   -T IndelRealigner \
+    #   -targetIntervals forRealigner.intervals \
+    #   --output cleaned.bam \
+    #   -D resources/dbsnp_129_hg18.rod
+    
+    $self->switches([qw(quiet_output_mode)]);
+    $self->params([qw(R DBSNP T)]);
+    
+    my @file_args = (" -I $in_bam", " -targetIntervals $intervals_file", " --output $out_bam");
+    
+    my %params = @params;
+    $params{T} = 'IndelRealigner';
+    $params{quiet_output_mode} = $self->quiet();
+    $self->_handle_common_params(\%params);
+    
+    $self->register_output_file_to_check($out_bam);
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
+}
+
+=head2 indel_genotyper
+
+ Title   : indel_genotyper
+ Usage   : $wrapper->indel_genotyper('in.bam', 'out.raw.bed', 'out.detailed.bed');
+ Function: Call indels on a bam file (preferably one that has been output by
+           indel_realigner()).
+ Returns : n/a
+ Args    : path to input .bam file, paths to two bed output files.
+           Optionally, supply R or DBSNP options (as a hash), as understood by
+           GATK, along with the other options like minIndelCount etc (1000
+           genomes defaults exist).
+
+=cut
+
+sub indel_genotyper {
+    my ($self, $in_bam, $out_raw_bed, $out_detailed_bed, @params) = @_;
+    
+    # java -jar GenomeAnalysisTK.jar \
+    #   -T IndelGenotyperV2 \
+    #   -R resources/Homo_sapiens_assembly18.fasta \
+    #   -I cleaned.bam \
+    #   -O indels.raw.bed \
+    #   -o detailed.output.bed \
+    #   --verbose \
+    #   -minCnt 2 \   (minIndelCount)
+    #   -minFraction 0.03 \
+    #   -minConsensusFraction 0.6 \
+    #   -mnr 1000000  (maxNumberOfReads)
+    
+    $self->switches([qw(quiet_output_mode verbose)]);
+    $self->params([qw(R DBSNP T 1kg_format minCoverage minNormalCoverage
+                      minFraction minConsensusFraction minIndelCount refseq
+                      blacklistedLanes window_size maxNumberOfReads)]);
+    
+    my @file_args = (" -I $in_bam", " -O $out_raw_bed -o $out_detailed_bed");
+    
+    my %params = (verbose => 1, minIndelCount => 2, minFraction => 0.03,
+                  minConsensusFraction => 0.6, maxNumberOfReads => 1000000,
+                  @params);
+    $params{T} = 'IndelGenotyperV2';
+    $params{quiet_output_mode} = $self->quiet();
+    $self->_handle_common_params(\%params);
+    
+    $self->register_output_file_to_check($out_raw_bed);
+    $self->register_output_file_to_check($out_detailed_bed);
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
+}
+
+=head2 unified_genotyper
+
+ Title   : unified_genotyper
+ Usage   : $wrapper->unified_genotyper('in.bam', 'out.vcf', 'out.beagle');
+ Function: Call SNPs on a bam file (preferably one that has been output by
+           indel_realigner()).
+ Returns : n/a
+ Args    : path to input .bam file, paths to output files (vcf, and file
+           suitable for input into Beagle.
+           Optionally, supply R or DBSNP options (as a hash), as understood by
+           GATK, along with the other options like confidence etc (1000
+           genomes defaults exist).
+
+=cut
+
+sub unified_genotyper {
+    my ($self, $in_bam, $out_vcf, $out_beagle, @params) = @_;
+    
+    # java -jar GenomeAnalysisTK.jar \
+    #   -R resources/Homo_sapiens_assembly18.fasta \
+    #   -T UnifiedGenotyper \
+    #   -I cleaned.bam \
+    #   -D resources/dbsnp_129_hg18.rod \
+    #   -varout snps.raw.vcf \
+    #   -confidence 10.0 \
+    #   -beagle snps.beagle
+    
+    $self->switches([qw(quiet_output_mode genotype output_all_callable_bases
+                        noSLOD)]);
+    $self->params([qw(R DBSNP T confidence genotype_model base_model
+                      heterozygosity
+                      standard_min_confidence_threshold_for_calling
+                      standard_min_confidence_threshold_for_emitting
+                      trigger_min_confidence_threshold_for_calling
+                      trigger_min_confidence_threshold_for_emitting
+                      assume_single_sample_reads platform
+                      min_base_quality_score min_mapping_quality_score
+                      max_mismatches_in_40bp_window use_reads_with_bad_mates
+                      max_deletion_fraction cap_base_quality_by_mapping_quality
+                      variant_output_format verbose_mode annotation group)]);
+    
+    my @file_args = (" -I $in_bam", " -varout $out_vcf -beagle $out_beagle");
+    
+    my %params = (confidence => 10, @params);
+    $params{T} = 'UnifiedGenotyper';
+    $params{quiet_output_mode} = $self->quiet();
+    $self->_handle_common_params(\%params);
+    
+    $self->register_output_file_to_check($out_vcf);
+    $self->register_output_file_to_check($out_beagle);
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
+}
+
+=head2 variant_filtration
+
+ Title   : variant_filtration
+ Usage   : $wrapper->set_b('variant,VCF,snps.vcf',
+                           'mask,Bed,indels.mask.bed');
+           $wrapper->set_filters(
+                     filters => {'filter_name' => 'filter expression', ... },
+                     g_filters => {'filter_name' => 'filter expression', ... });
+           $wrapper->variant_filtration('in.bam', 'out.vcf');
+ Function: Filters SNPs generated by unified_genotyper() to remove dodgy calls.
+ Returns : n/a
+ Args    : path to input .bam file, path to output vcf file.
+           Optionally, supply R or DBSNP options (as a hash), as understood by
+           GATK, along with the other options like clusterWindowSize etc (1000
+           genomes defaults exist).
+           Before calling this, you should use set_b() to set the input
+           snps.vcf as produced by unified_genotyper(), and an indel mask as
+           produced by the output of makeIndelMask.py on the raw bed output of
+           indel_genotyper().
+           You can also call set_filters() to set the filter expressions you
+           want to use. 1000 genomes defaults exist.
+
+=cut
+
+sub variant_filtration {
+    my ($self, $in_bam, $out_vcf, @params) = @_;
+    
+    # java -jar GenomeAnalysisTK.jar \
+    #   -T VariantFiltration \
+    #   -R resources/Homo_sapiens_assembly18.fasta \
+    #   -o snps.filtered.vcf \
+    #   -B variant,VCF,snps.raw.vcf \
+    #   -B mask,Bed,indels.mask.bed \
+    #   --maskName InDel \
+    #   --clusterWindowSize 10 \
+    #   --filterExpression "MQ0 > 40 || SB > -0.10" \
+    #   --filterName "StandardFilters" \
+    #   --filterExpression "(MQ0 / (1.0 * DP)) > 0.1" \
+    #   --filterName "HARD_TO_VALIDATE"
+    
+    $self->switches([qw(quiet_output_mode)]);
+    $self->params([qw(R DBSNP T clusterSize clusterWindowSize maskName)]);
+    
+    my $bs = $self->get_b();
+    my $filters = $self->get_filters();
+    unless ($filters) {
+        $self->set_filters(filters => { StandardFilters => "MQ0 > 40 || SB > -0.10",
+                                        HARD_TO_VALIDATE => "(MQ0 / (1.0 * DP)) > 0.1" });
+        $filters = $self->get_filters();
+    }
+    my @file_args = (" -I $in_bam", " $bs $filters -o $out_vcf");
+    
+    my %params = (maskName => 'InDel', clusterWindowSize => 10, @params);
+    $params{T} = 'VariantFiltration';
+    $params{quiet_output_mode} = $self->quiet();
+    $self->_handle_common_params(\%params);
+    
+    $self->register_output_file_to_check($out_vcf);
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
+}
+
+=head2 analyze_covariates
 
  Title   : analyze_covariates
  Usage   : $wrapper->analyze_covariates('recal_data.csv', 'output_dir');
@@ -392,7 +696,7 @@ sub analyze_covariates {
  Args    : path to input .bam file, path to output file. Optionally, supply R,
            DBSNP, useOriginalQualities or l options (as a hash), as understood by
            GATK. useOriginalQualities is on by default. -B and -cov should be set
-           with the set_vcfs() and set_covs() methods beforehand.
+           with the set_b() and set_covs() methods beforehand.
 
 =cut
 
