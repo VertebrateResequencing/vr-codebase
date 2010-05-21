@@ -195,7 +195,7 @@ sub get_files
     {
         if ( -e "$file.gz" && -s "$file.gz" ) { next; }
 
-        Utils::CMD(qq[mv $file $file.x; gzip $file.x;]);
+        Utils::CMD(qq[mv $file $file.x; rm -f $file.x.gz; gzip $file.x;]);
         Utils::CMD(qq[mv $file.x.gz $file.gz]);
     }
 
