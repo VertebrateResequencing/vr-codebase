@@ -12,6 +12,9 @@ VertRes::Wrapper::smalt - wrapper for smalt for mapper comparison
 This produces two files <hash name>.sma and <hash name>.smi
 For > 70bp Illumina data of the human genome, '-s 6' should be sufficiently sensitive when generating the hash index. 
 
+-k 13 -s 13 for ~1k sequences
+
+
 > smalt map -f samsoft -o <out> <hash name> <fastq file A> <fastq file B>
 
 
@@ -37,7 +40,9 @@ use base qw(VertRes::Wrapper::MapperI);
  Usage   : my $wrapper = VertRes::Wrapper::smalt->new();
  Function: Create a VertRes::Wrapper::smalt object.
  Returns : VertRes::Wrapper::smalt object
- Args    : quiet   => boolean
+ Args    : quiet       => boolean
+           read_length => int (the maximum read_length of your sequences; if
+                               fastqcheck files are present, this is auto-set)
 
 =cut
 
@@ -88,6 +93,7 @@ sub setup_reference {
         # we produce two sets of hashes, one for <70bp reads, one for >70bp
         $self->simple_run("index -k 13 -s 4 $ref.small $ref");
         $self->simple_run("index -k 13 -s 6 $ref.large $ref");
+        $self->simple_run("index -k 13 -s 13 $ref.vlarge $ref");
         
         $indexed = 0;
         foreach my $suffix (@suffixes) {
@@ -153,15 +159,23 @@ sub generate_sam {
         # settings change depending on read length
         my $max_length = 0;
         foreach my $fq (@fqs) {
-            my $pars = VertRes::Parser::fastqcheck->new(file => "$fq.fastqcheck");
-            my $length = $pars->max_length();
-            if ($length > $max_length) {
-                $max_length = $length;
+            if (-s "$fq.fastqcheck") {
+                my $pars = VertRes::Parser::fastqcheck->new(file => "$fq.fastqcheck");
+                my $length = $pars->max_length();
+                if ($length > $max_length) {
+                    $max_length = $length;
+                }
+            }
+            else {
+                $max_length = $self->{read_length};
             }
         }
         my $hash_name;
         if ($max_length < 70) {
             $hash_name = $ref.'.small';
+        }
+        elsif ($max_length > 500) {
+            $hash_name = $ref.'.vlarge';
         }
         else {
             $hash_name = $ref.'.large';
