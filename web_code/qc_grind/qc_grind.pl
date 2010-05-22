@@ -1195,17 +1195,19 @@ sub displayQCLaneList {
                 print $status eq $FAILED ? 'checked' : '';
                 print qq[></td>
 
-                <td><input type="radio" name="$id" value="$PENDING" ];
+
+                <td><input type="radio" name="$id" value="$INVESTIGATE" ];
                 print $status eq $INVESTIGATE ? 'checked' : '';
                 print qq[></td>
 
-                <td><input type="radio" name="$id" value="$INVESTIGATE" ];
+                <td><input type="radio" name="$id" value="$GT_PENDING" ];
                 print $status eq $GT_PENDING ? 'checked' : '';
                 print qq[></td>
 
-                <td><input type="radio" name="$id" value="$GT_PENDING" ];
+                <td><input type="radio" name="$id" value="$PENDING" ];
                 print $status eq $PENDING ? 'checked' : '';
                 print qq[></td>
+
                 <td style="background-color:$lane_status_colour;"><a href="$SCRIPT_NAME?mode=$LANE_VIEW&amp;lane_id=$id&amp;db=$database">$name</a></td>
                 ];
                 
