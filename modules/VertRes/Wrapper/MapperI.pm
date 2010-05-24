@@ -285,8 +285,18 @@ sub do_mapping {
         my $io = VertRes::IO->new();
         foreach my $fastq_file (@fqs) {
             $io->file($fastq_file);
-            my $fastq_lines = $io->num_lines();
-            $num_reads += $fastq_lines / 4;
+            if ($fastq_file =~ /\.fastq|\.fq/) {
+                my $fastq_lines = $io->num_lines();
+                $num_reads += $fastq_lines / 4;
+            }
+            else {
+                # blindly assume it's a fasta file
+                my $fh = $io->fh;
+                while (<$fh>) {
+                    $num_reads++ if /^>/;
+                }
+                close($fh);
+            }
         }
         $io->file($tmp_sam);
         my $sam_lines = $io->num_lines();
