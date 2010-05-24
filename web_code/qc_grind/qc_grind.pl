@@ -503,8 +503,11 @@ sub displayFilteredLanes {
     my $pname = $project->name;
     print qq[
     <h2 align="center" style="font: normal 900 1.5em arial"><a href="$SCRIPT_NAME">QC Grind</a></h2>
-    <h3 style="font: normal 700 1.5em arial"><a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;db=$database">].
-    ucfirst($database).qq{</a> : $pname : Filter $filter lanes</h3><br/>};
+    <h3 style="font: normal 700 1.5em arial">
+    <a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;db=$database">].ucfirst($database).qq[</a> : 
+    <a href="$SCRIPT_NAME?mode=$PROJ_VIEW&amp;proj_id=$projectID&amp;db=$database">$pname</a> :
+    Filter $filter lanes</h3><br/>
+        ];
     
     my @filtlanes;
 
