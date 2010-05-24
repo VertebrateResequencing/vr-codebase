@@ -159,6 +159,7 @@ sub generate_sam {
         # settings change depending on read length
         my $max_length = 0;
         foreach my $fq (@fqs) {
+            $fq || next;
             if (-s "$fq.fastqcheck") {
                 my $pars = VertRes::Parser::fastqcheck->new(file => "$fq.fastqcheck");
                 my $length = $pars->max_length();
@@ -182,6 +183,7 @@ sub generate_sam {
         }
         
         foreach my $fq (@fqs) {
+            $fq || next;
             $fq =~ s/\.gz$//;
         }
         
