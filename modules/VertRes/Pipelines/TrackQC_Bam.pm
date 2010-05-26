@@ -74,6 +74,7 @@ our $options =
 
     'adapters'        => '/software/pathogen/projects/protocols/ext/solexa-adapters.fasta',
     'bsub_opts'       => "-q normal -M5000000 -R 'select[type==X86_64 && mem>5000] rusage[mem=5000]'",
+    'bsub_opts_merge' => "-q normal -M5000000 -R 'select[type==X86_64 && mem>5000] rusage[mem=5000,thouio=50]'",
     'bwa_clip'        => 20,
     'gc_depth_bin'    => 20000,
     'gtype_confidence'=> 5.0,
@@ -103,6 +104,7 @@ our $options =
                     adapters        .. the location of .fa with adapter sequences
                     assembly        .. e.g. NCBI36
                     bsub_opts       .. LSF bsub options for jobs
+                    bsub_opts_merge .. LSF bsub options for the rename_and_merge task (thouio=50)
                     bwa_clip        .. The value to the 'bwa aln -q ' command.
                     bwa_ref         .. the prefix to reference files, as required by bwa
                     fa_ref          .. the reference sequence in fasta format
@@ -283,7 +285,7 @@ rename("x$name.bam","$name.bam") or Utils::error("rename x$name.bam $name.bam: \
 ];
     close($fh);
 
-    LSF::run($lock_file,$work_dir,"_${name}_merge",$self, q{perl -w _merge.pl});
+    LSF::run($lock_file,$work_dir,"_${name}_merge",{bsub_opts=>$$self{bsub_opts_merge}}, q{perl -w _merge.pl});
     return $$self{'No'};
 }
 
