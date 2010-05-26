@@ -1,6 +1,7 @@
 package Vcf;
 
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:variant_call_format
+# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf4.0
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf3.3
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcfv3.2
 #
@@ -332,7 +333,7 @@ sub next_data_hash
 
     # Genotype fields
     my %gtypes;
-    my $check_nformat = $$self{version} < 3.3 ? 0 : 1;
+    my $check_nformat = $$self{drop_trailings} ? 0 : 1;
     for (my $icol=9; $icol<@items; $icol++)
     {
         if ( $items[$icol] eq '' ) { $self->warn("Empty column $$cols[$icol] at $items[0]:$items[1]\n"); next; }
@@ -457,7 +458,7 @@ sub add_header_line
     if ( $key eq 'INFO' or $key eq 'FILTER' or $key eq 'FORMAT' )
     {
         my $id = $$rec{ID};
-        if ( !$id ) { $self->throw("Missing ID for the key $key: ",Dumper($rec)); }
+        if ( !defined $id ) { $self->throw("Missing ID for the key $key: ",Dumper($rec)); }
         if ( exists($$self{header}{$key}{$id}) ) 
         {
             $self->warn("The header tag $key:$id already exists, ignoring.\n");
@@ -740,46 +741,31 @@ sub _format_line_hash
     if ( !@info ) { push @info, '.'; }
     $out .= "\t". join(';', sort @info);
 
-    # FORMAT, the column may not be present
+    # FORMAT, the column is not required, it may not be present when there are no genotypes
     if ( exists($$cols[8]) )
     {
         $out .= "\t". join(':',@{$$record{$$cols[8]}});
     }
 
-    # genotypes
-    if ( $columns )
+    # Genotypes: output all columns or only a selection?
+    my @col_names = $columns ? @$columns : @$cols[9..@$cols-1];
+    my $nformat = @{$$record{FORMAT}};
+    for my $col (@col_names)
     {
-        for my $col (@$columns)
+        my $gt = $$gtypes{$col};
+        my $can_drop = $$self{drop_trailings};
+        my @gtype;
+        for (my $i=$nformat-1; $i>=0; $i--)
         {
-            my $gt = $$gtypes{$col};
+            my $field = $$record{FORMAT}[$i];
+            if ( $i==0 ) { $can_drop=0; }
 
-            my @gtype;
-            for my $field (@{$$record{FORMAT}})
-            {
-                if ( exists($$gt{$field}) ) { push @gtype,$$gt{$field}; }
-                elsif ( exists($$self{header}{FORMAT}{$field}{default}) ) { push @gtype,$$self{header}{FORMAT}{$field}{default}; }
-                else { push @gtype,''; }
-            }
-            $out .= "\t" . join(':',@gtype);
+            if ( exists($$gt{$field}) ) { unshift @gtype,$$gt{$field}; $can_drop=0; }
+            elsif ( $can_drop ) { next; }
+            elsif ( exists($$self{header}{FORMAT}{$field}{default}) ) { unshift @gtype,$$self{header}{FORMAT}{$field}{default}; $can_drop=0; }
+            else { $self->throw(qq[No value for the field "$field" and no default available, $col at $$record{CHROM}:$$record{POS}.\n]); }
         }
-    }
-    else
-    {
-        for (my $i=9; $i<scalar @$cols; $i++)
-        {
-            my $gt = $$gtypes{$$cols[$i]};
-
-            my @gtype;
-            for my $field (@{$$record{FORMAT}})
-            {
-                if ( exists($$gt{$field}) && $$gt{$field} ne '' ) { push @gtype,$$gt{$field}; }
-                elsif ( exists($$self{header}{FORMAT}{$field}{default}) ) { push @gtype,$$self{header}{FORMAT}{$field}{default}; }
-                elsif ( $$self{version}<3.3 ) { push @gtype,''; }
-                else { $self->throw(qq[No value for the field "$field" and no default available, $$cols[$i] at $$record{CHROM}:$$record{POS}.\n]); }
-            }
-            $out .= "\t" . join(':',@gtype);
-
-        }
+        $out .= "\t" . join(':',@gtype);
     }
 
     $out .= "\n";
@@ -962,7 +948,7 @@ sub format_genotype_strings
             }
         }
 
-        if ( defined $al2 )
+        if ( defined $al2 && $al2 ne '' )
         {
             if ( $al2 eq $ref || $al2 eq '0' || $al2 eq '*' ) { $al2 = 0; }
             else
@@ -1081,13 +1067,13 @@ sub validate_filter_field
     my @missing;
     for my $item (@$values)
     {
-        if ( $item eq '0' ) { next; }
+        if ( $item eq $$self{filter_passed} ) { next; }
         if ( $item=~/,/ ) { push @errs,"Expected semicolon as a separator."; }
         if ( exists($$self{header}{FILTER}{$item}) ) { next; }
         push @missing, $item;
-        $self->_add_filter_field(qq[$item,"No description"]);
+        $self->add_header_line({key=>'FILTER',ID=>$item,Description=>'No description'});
     }
-    if ( !@errs ) { return undef; }
+    if ( !@errs && !@missing ) { return undef; }
     if ( $$self{version}<3.3 ) { return undef; }
     return join(',',@errs) .' '. 'The filter(s) [' . join(',',@missing) . '] not listed in the header.';
 }
@@ -1163,7 +1149,7 @@ sub validate_info_field
 
 sub validate_gtype_field
 {
-    my ($self,$data,$alts) = @_;
+    my ($self,$data,$alts,$format) = @_;
 
     my @errs;
     while (my ($key,$value) = each %$data)
@@ -1322,7 +1308,7 @@ sub run_validation
 
         while (my ($gt,$data) = each %{$$x{gtypes}})
         {
-            $err = $self->validate_gtype_field($data,$$x{ALT});
+            $err = $self->validate_gtype_field($data,$$x{ALT},$$x{FORMAT});
             if ( $err ) { $self->warn("$gt column at $$x{CHROM}:$$x{POS} .. $err\n"); }
         }
 
@@ -1394,10 +1380,13 @@ sub renew
     bless $self, ref($class) || $class;
 
     $$self{version} = '3.2';
+    $$self{drop_trailings} = 1;
+    $$self{filter_passed}  = 0;
 
     $$self{defaults}{QUAL}    = '-1';
     $$self{defaults}{default} = '.';
     $$self{defaults}{Flag}    = undef;
+    $$self{defaults}{GT}      = '.';
 
     $$self{handlers}{Integer}   = \&Vcf::validate_int;
     $$self{handlers}{Float}     = \&Vcf::validate_float;
@@ -1427,6 +1416,8 @@ sub renew
     bless $self, ref($class) || $class;
 
     $$self{version} = '3.3';
+    $$self{drop_trailings} = 0;
+    $$self{filter_passed}  = 0;
 
     $$self{defaults}{QUAL}      = '-1';
     $$self{defaults}{Integer}   = '-1';
@@ -1434,6 +1425,7 @@ sub renew
     $$self{defaults}{Character} = '.';
     $$self{defaults}{String}    = '.';
     $$self{defaults}{Flag}      = undef;
+    $$self{defaults}{GT}        = './.';
     $$self{defaults}{default}   = '.';
 
     $$self{handlers}{Integer}   = \&Vcf::validate_int;
@@ -1445,7 +1437,7 @@ sub renew
     $$self{regex_del}   = qr/^D\d+$/;
     $$self{regex_gtsep} = qr{[\\|/]};
     $$self{regex_gt}    = qr{^(\.|\d+)([\\|/]?)(\.?|\d*)$};
-    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNIDacgtn]+)([\\|/]?)([0-9ACGTNIDacgtn]*)$}; # . 0/1 0|1 A/A A|A D4/IACGT
+    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNIDacgtn]+)([\\|/]?)((?:\.|[0-9ACGTNIDacgtn]+)?)$}; # . 0/1 0|1 A/A A|A D4/IACGT
 
     return $self;
 }
@@ -1470,16 +1462,19 @@ sub renew
     bless $self, ref($class) || $class;
 
     $$self{version} = '4.0';
+    $$self{drop_trailings} = 1;
+    $$self{filter_passed}  = 'PASS';
 
     $$self{defaults}{QUAL}    = '.';
     $$self{defaults}{Flag}    = undef;
+    $$self{defaults}{GT}      = '.';
     $$self{defaults}{default} = '.';
 
     $$self{handlers}{Integer}   = \&Vcf::validate_int;
     $$self{handlers}{Float}     = \&Vcf::validate_float;
     $$self{handlers}{Character} = \&Vcf::validate_char;
 
-    $$self{regex_snp}   = qr/^[ACGT]$/i;
+    $$self{regex_snp}   = qr/^[ACGT]$|^<[^<>\s]+>$/i;
     $$self{regex_ins}   = qr/^[ACGT]+$/;
     $$self{regex_del}   = qr/^[ACGT]+$/;
     $$self{regex_gtsep} = qr{[|/]};                     # | /
@@ -1492,11 +1487,14 @@ sub renew
 sub Vcf4_0::format_header_line
 {
     my ($self,$rec) = @_;
+
+    my $number = exists($$rec{Number}) && $$rec{Number}==-1 ? '.' : $$rec{Number};
+
     my $line = "##$$rec{key}=";
     $line .= $$rec{value} unless !exists($$rec{value});
     $line .= '<' unless !exists($$rec{ID});
     $line .= "ID=$$rec{ID}" unless !exists($$rec{ID});
-    $line .= ",Number=$$rec{Number}" unless !exists($$rec{Number});
+    $line .= ",Number=$number" unless !defined $number;
     $line .= ",Type=$$rec{Type}" unless !exists($$rec{Type});
     $line .= ",Description=\"$$rec{Description}\"" unless !exists($$rec{Description});
     $line .= ">" unless !exists($$rec{ID});
@@ -1542,6 +1540,7 @@ sub Vcf4_0::parse_header_line
     }
 
     if ( !exists($$rec{ID}) ) { $self->throw("Missing the ID tag in the $value\n"); }
+    if ( exists($$rec{Number}) && $$rec{Number} eq '.' ) { $$rec{Number}=-1; }
     return $rec;
 }
 
@@ -1565,8 +1564,9 @@ sub Vcf4_0::validate_alt_field
     my $msg = '';
     for my $item (@$values)
     {
-        if ( !($item=~/^[ACTGN]+$/) ) { push @err,$item; next; }
+        if ( !($item=~/^[ACTGN]+$|^<[^<>\s]+>$/) ) { push @err,$item; next; }
         if ( $ref_len==1 && length($item)==1 ) { next; }
+        if ( $item=~/^<[^<>\s]+>$/ ) { next; }
         if ( substr($item,0,1) ne $ref1 ) { $msg=', first base does not match the reference.'; push @err,$item; next; }
     }
     if ( !@err ) { return undef; }
@@ -1577,6 +1577,12 @@ sub Vcf4_0::event_type
 {
     my ($self,$rec,$allele) = @_;
     if ( exists($$rec{_cached_events}{$allele}) ) { return (@{$$rec{_cached_events}{$allele}}); }
+
+    if ( $allele=~/^<([^>]+)>$/ ) 
+    { 
+        $$rec{_cached_events}{$allele} = ['u',0,$1];
+        return ('u',0,$1); 
+    }
 
     my $ref = $$rec{REF};
     my $reflen = length($ref);
