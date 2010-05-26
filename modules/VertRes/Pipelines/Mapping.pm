@@ -648,10 +648,7 @@ unless (-s '$bam_file') {
     unless (\$ok) {
         # (will only return ok and create output bam file if bam was created and
         #  not truncted)
-        \$sam_util->throw("Failed to create sorted bam file!");
-    }
-    else {
-        unlink('$sam_file');
+        \$sam_util->throw("Failed to create sorted bam file from $sam_file!");
     }
 }
 
