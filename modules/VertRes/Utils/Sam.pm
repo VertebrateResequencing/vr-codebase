@@ -572,9 +572,13 @@ sub sam_to_fixed_sorted_bam {
     $wrapper->quiet(1);
     $wrapper->fillmd($tmp_bam, $ref_fa, $tmp2_bam, b => 1);
     
+    my $tmp3_bam = "$out_bam.copied";
+    unlink($tmp3_bam);
+    move($tmp2_bam, $tmp3_bam) || $self->throw("Failed to move $tmp2_bam to $tmp3_bam: $!");
+    
     # check it
     $wrapper->run_method('open');
-    my $fh = $wrapper->view($tmp2_bam, undef, h => 1);
+    my $fh = $wrapper->view($tmp3_bam, undef, h => 1);
     my $bam_count = 0;
     while (<$fh>) {
         $bam_count++;
@@ -583,11 +587,11 @@ sub sam_to_fixed_sorted_bam {
     $io->file($in_sam);
     my $sam_count = $io->num_lines();
     if ($bam_count >= $sam_count) {
-        move($tmp2_bam, $out_bam) || $self->throw("Failed to move $tmp2_bam to $out_bam: $!");;
+        move($tmp3_bam, $out_bam) || $self->throw("Failed to move $tmp2_bam to $out_bam: $!");
         return 1;
     }
     else {
-        $self->warn("$tmp2_bam is bad (only $bam_count lines vs $sam_count)");
+        $self->warn("$tmp3_bam is bad (only $bam_count lines vs $sam_count)");
         return 0;
     }
 }
