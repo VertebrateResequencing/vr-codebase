@@ -887,7 +887,7 @@ sub parse_alleles
         $al1 = $$rec{ALT}[$al1-1]; 
     }
 
-    if ( !defined $al2 )
+    if ( !defined $al2 or $al2 eq '' )
     {
         $sep = '';
         $al2 = '';
@@ -1392,7 +1392,7 @@ sub renew
     $$self{handlers}{Float}     = \&Vcf::validate_float;
     $$self{handlers}{Character} = \&Vcf::validate_char;
 
-    $$self{regex_snp}   = qr/^[ACGT]$/i;
+    $$self{regex_snp}   = qr/^[ACGTN]$/i;
     $$self{regex_ins}   = qr/^I[ACGTN]+$/;
     $$self{regex_del}   = qr/^D\d+$/;
     $$self{regex_gtsep} = qr{[\\|/]};
@@ -1432,7 +1432,7 @@ sub renew
     $$self{handlers}{Float}     = \&Vcf::validate_float;
     $$self{handlers}{Character} = \&Vcf::validate_char;
 
-    $$self{regex_snp}   = qr/^[ACGT]$/i;
+    $$self{regex_snp}   = qr/^[ACGTN]$/i;
     $$self{regex_ins}   = qr/^I[ACGTN]+$/;
     $$self{regex_del}   = qr/^D\d+$/;
     $$self{regex_gtsep} = qr{[\\|/]};
@@ -1474,9 +1474,9 @@ sub renew
     $$self{handlers}{Float}     = \&Vcf::validate_float;
     $$self{handlers}{Character} = \&Vcf::validate_char;
 
-    $$self{regex_snp}   = qr/^[ACGT]$|^<[^<>\s]+>$/i;
-    $$self{regex_ins}   = qr/^[ACGT]+$/;
-    $$self{regex_del}   = qr/^[ACGT]+$/;
+    $$self{regex_snp}   = qr/^[ACGTN]$|^<[^<>\s]+>$/i;
+    $$self{regex_ins}   = qr/^[ACGTN]+$/;
+    $$self{regex_del}   = qr/^[ACGTN]+$/;
     $$self{regex_gtsep} = qr{[|/]};                     # | /
     $$self{regex_gt}    = qr{^(\.|\d+)([|/]?)(\d*)$};   # . 0/1 0|1
     $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNacgtn]+)([|/]?)([0-9ACGTNacgtn]*)$};   # . 0/1 0|1 A/A A|A
