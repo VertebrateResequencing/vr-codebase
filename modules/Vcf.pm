@@ -979,6 +979,24 @@ sub format_genotype_strings
     $$rec{ALT} = [ sort { $alts{$a}<=>$alts{$b} } keys %alts ];
 }
 
+sub fill_ref_alt_mapping
+{
+    my ($self,$map) = @_;
+    
+    my $new_ref;
+    for my $ref (keys %$map)
+    {
+        $new_ref = $ref;
+        if ( $ref ne $new_ref ) { $self->throw("The reference prefixes do not agree: $ref vs $new_ref\n"); }
+        for my $alt (keys %{$$map{$ref}})
+        {
+            $$map{$ref}{$alt} = $alt;
+        }
+    }
+    $$map{$new_ref}{$new_ref} = $new_ref;
+    return $new_ref;
+}
+
 
 =head2 format_header_line
 
@@ -1573,6 +1591,64 @@ sub Vcf4_0::validate_alt_field
     return 'Could not parse the allele(s) [' .join(',',@err). ']' . $msg;
 }
 
+
+=head2 fill_ref_alt_mapping
+
+    About   : A tool for merging VCFv4.0 records. The subroutine unifies the REFs and creates a mapping
+                from the original haplotypes to the haplotypes based on the new REF. Consider the following
+                example:
+                    REF ALT
+                    G    GA
+                    GT   G
+                    GT   GA
+                    GT   GAA
+                    GTC  G
+                my $map={G=>{GA=>1},GT=>{G=>1,GA=>1,GAA=>1},GTC=>{G=>}};   
+                my $new_ref=$vcf->fill_ref_alt_mapping($map);
+                
+              The call returns GTC and $map is now
+                    G    GA     ->      GTC  GATC
+                    GT   G      ->      GTC  GC
+                    GT   GA     ->      GTC  GAC
+                    GT   GAA    ->      GTC  GAAC
+                    GTC  G      ->      GTC  G
+    Args    : 
+    Returns : New REF string and fills the hash with appropriate ALT.
+
+=cut
+
+sub Vcf4_0::fill_ref_alt_mapping
+{
+    my ($self,$map) = @_;
+    
+    my $max_len = 0;
+    my $new_ref;
+    for my $ref (keys %$map)
+    {
+        my $len = length($ref);
+        if ( $max_len<$len ) 
+        { 
+            $max_len = $len; 
+            $new_ref = $ref;
+        }
+        $$map{$ref}{$ref} = 1;
+    }
+    for my $ref (keys %$map)
+    {
+        my $rlen = length($ref);
+        if ( substr($new_ref,0,$rlen) ne $ref ) { $self->throw("The reference prefixes do not agree: $ref vs $new_ref\n"); }
+        for my $alt (keys %{$$map{$ref}})
+        {
+            my $new = $alt;
+            if ( $rlen<$max_len ) { $new .= substr($new_ref,$rlen); }
+            $$map{$ref}{$alt} = $new;
+        }
+    }
+    return $new_ref;
+}
+
+
+
 sub Vcf4_0::event_type
 {
     my ($self,$rec,$allele) = @_;
@@ -1588,6 +1664,7 @@ sub Vcf4_0::event_type
     my $reflen = length($ref);
     my $len = length($allele);
     
+    my $ht;
     my $type;
     if ( $len==$reflen )
     {
@@ -1600,19 +1677,25 @@ sub Vcf4_0::event_type
         if ( $mism==0 ) { $type='r'; $len=0; }
         else { $type='s'; $len=$mism; }
     }
-    elsif ( ($len=is_indel($ref,$allele)) )
+    else
     {
-        # Indel
-        $type = 'i';
-    }
-    else 
-    {
-        $type = 'o'; $len = $len>$reflen ? $len-1 : $reflen-1;
+        ($len,$ht)=is_indel($ref,$allele);
+        if ( $len )
+        {
+            # Indel
+            $type = 'i';
+            $allele = $ht;
+        }
+        else 
+        {
+            $type = 'o'; $len = $len>$reflen ? $len-1 : $reflen-1;
+        }
     }
 
     $$rec{_cached_events}{$allele} = [$type,$len,$allele];
     return ($type,$len,$allele);
 }
+
 
 sub is_indel
 {
@@ -1620,24 +1703,35 @@ sub is_indel
 
     my $len1 = length($seq1);
     my $len2 = length($seq2);
-    if ( $len1 eq $len2 ) { return 0; }
+    if ( $len1 eq $len2 ) { return (0,''); }
 
+    my $ht;
     my $len = $len1<$len2 ? $len1 : $len2;
     my $match  = 1;
     for (my $i=0; $i<$len; $i++)
     {
         if ( substr($seq1,$i,1) ne substr($seq2,$i,1) ) { $match=0; last; }
     }
-    if ( $match ) { return $len2-$len1; }
+    if ( $match ) 
+    { 
+        if ( $len1<$len2 ) { $ht=substr($seq2,$len); }
+        else { $ht=substr($seq1,$len); }
+        return ($len2-$len1,$ht); 
+    }
     $match = 1;
     for (my $i=1; $i<=$len; $i++)
     {
         if ( substr($seq1,$len1-$i,1) ne substr($seq2,$len2-$i,1) ) { $match=0; last; }
     }
-    if ( $match ) { return $len2-$len1; }
+    if ( $match ) 
+    { 
+        if ( $len1<$len2 ) { $ht=substr($seq2,0,$len); }
+        else { $ht=substr($seq1,0,$len); }
+        return ($len2-$len1,$ht); 
+    }
 
-    $len = sw_align($seq1,$seq2,{match=>2,mismatch=>-100,gap=>0,is_indel=>1});
-    return $len; 
+    ($len,$ht) = sw_align($seq1,$seq2,{match=>2,mismatch=>-100,gap=>0,is_indel=>1});
+    return ($len,$ht); 
 }
 
 sub sw_align
@@ -1789,8 +1883,9 @@ sub sw_align
         if ( defined $ins_i && defined $ins_j ) { return 0; }
         if ( !defined $ins_i && !defined $ins_j ) { return 0; }
         my $len = length($ht);
+        $ht = reverse($ht);
         if ( defined $ins_j ) { $len = -$len; }
-        return $len;
+        return ($len,$ht);
     }
 
     my $align1 = '';
@@ -1824,7 +1919,6 @@ sub sw_align
     $align2 = reverse $align2;
     return ($align1,$align2);
 }
-
 
 1;
 
