@@ -126,6 +126,7 @@ use VertRes::Utils::Hierarchy;
 use VertRes::IO;
 use VertRes::Utils::FileSystem;
 use VertRes::Parser::bas;
+use VertRes::Parser::fastqcheck;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::File;
@@ -420,7 +421,7 @@ exit;
 }
 
 sub _get_read_args {
-    my ($self, $lane_path, $ended) = @_;
+    my ($self, $lane_path, $ended, $just_paths) = @_;
     ($ended && ($ended eq 'se' || $ended eq 'pe')) || $self->throw("bad ended arg");
     
     my $lane = basename($lane_path);
@@ -454,7 +455,6 @@ sub _get_read_args {
     # correct md5, so we include _md5 options in the read_args
     my @read_args;
     if ($fastq_info[0]->[0]) {
-        my $file = 
         $read_args[0] = ["read0 => '".$self->{fsu}->catfile($lane_path, $fastq_info[0]->[0])."', ".
                          "read0_md5 => '".$self->_file_md5($fastq_info[0]->[0])."'"];
     }
@@ -468,10 +468,10 @@ sub _get_read_args {
     @read_args || $self->throw("$lane_path had no compatible set of fastq files!");
     
     if ($ended eq 'se') {
-        return $read_args[0];
+        return $just_paths ? ($fastq_info[0]->[0] ? $self->{fsu}->catfile($lane_path, $fastq_info[0]->[0]) : ()) : $read_args[0];
     }
     elsif ($ended eq 'pe') {
-        return $read_args[1];
+        return $just_paths ? ($fastq_info[1]->[0] ? ($self->{fsu}->catfile($lane_path, $fastq_info[1]->[0]), $self->{fsu}->catfile($lane_path, $fastq_info[2]->[0])) : ()) : $read_args[1];
     }
 }
 
@@ -702,7 +702,22 @@ sub merge_requires {
         # split dir, which in strange and unusual (manual intervention...)
         # circumstances, might not exist
         my $bam = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.raw.sorted.bam");
-        next if -s $bam;
+        my $check_file = $self->{fsu}->catfile($lane_path, ".$self->{mapstats_id}.$ended.raw.sorted.bam.checked");
+        next if -s $bam && -e $check_file;
+        
+        # if we've already mapped this lane but don't have the check_file,
+        # we probably don't have a split dir anymore and just want to
+        # check the merged bam (which might actually be a recal bam)
+        if ($self->{vrlane}->is_processed('mapped')) {
+            next if -e $check_file;
+            if ($self->{do_recalibration}) {
+                push(@requires, $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.recal.sorted.bam"));
+            }
+            else {
+                push(@requires, $bam);
+            }
+            next;
+        }
         
         # get the number of splits
         my $num_of_splits = $self->_num_of_splits($lane_path, $ended);
@@ -737,6 +752,7 @@ sub merge_provides {
         $self->_get_read_args($lane_path, $ended) || next;
         
         my $file = "$self->{mapstats_id}.$ended.raw.sorted.bam";
+        push(@provides, ".$file.checked");        
         
         # if we're doing recalibration and that completed, our raw bam will
         # have been deleted so it will look like on subsequent pipeline runs
@@ -780,7 +796,15 @@ sub merge {
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
     # independantly.
     foreach my $ended ('se', 'pe') {
-        $self->_get_read_args($lane_path, $ended) || next;
+        my @fastqs = $self->_get_read_args($lane_path, $ended, 1);
+        @fastqs || next;
+        
+        my $bam_file = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.raw.sorted.bam");
+        my $double_check_file = $self->{fsu}->catfile($lane_path, ".$self->{mapstats_id}.$ended.raw.sorted.bam.checked");
+        if ($self->{vrlane}->is_processed('mapped') && $self->{do_recalibration}) {
+            $bam_file = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.recal.sorted.bam");
+        }
+        next if -s $bam_file && -e $double_check_file;
         
         my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."merge_${ended}_$self->{mapstats_id}.pl");
         
@@ -791,18 +815,32 @@ sub merge {
         foreach my $split (1..$num_of_splits) {
             push(@bams, $self->{fsu}->catfile($split_dir, $split.'.raw.sorted.bam'));
         }
+
+        # get the total number of reads we're supposed to have from the fastqcheck files,
+        # to enable a secondary double-confirmation check on the merged bam
+        my $total_reads = 0;
+        foreach my $fq (@fastqs) {
+            my $fqcfile = "$fq.fastqcheck";
+            $self->throw("fastqcheck file $fqcfile is missing") unless -s $fqcfile;
+            my $fqc = VertRes::Parser::fastqcheck->new(file => $fqcfile);
+            $total_reads += $fqc->num_sequences();
+        }
+        $total_reads > 0 || $self->throw("From looking at the fastqcheck files for $lane_path $ended, didn't get any reads!");
         
         my $copy_instead_of_merge = @bams > 1 ? 0 : 1;
-        my $bam_file = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.raw.sorted.bam");
         
         # run this in an LSF call to a temp script
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
 use strict;
 use VertRes::Wrapper::samtools;
+use VertRes::Utils::Sam;
 use File::Copy;
 
 my \$samtools = VertRes::Wrapper::samtools->new(verbose => $verbose);
+
+my \$bad_bam = '$bam_file'.'.bad';
+die "A merged bam was created that was not truncated compared to the split bams, yet the merged bam has too few reads compared to the unsplit fastq files. You need to manually investigate this and delete \$bad_bam when resolved.\n" if -s \$bad_bam;
 
 # merge bams
 unless (-s '$bam_file') {
@@ -815,6 +853,21 @@ unless (-s '$bam_file') {
     else {
         \$samtools->merge_and_check('$bam_file', [qw(@bams)]);
         die "merging bam failed - try again?\n" unless \$samtools->run_status == 2;
+    }
+}
+
+if (-s '$bam_file') {
+    unless (-e '$double_check_file') {
+        my \$su = VertRes::Utils::Sam->new;
+        my \$num_bam_records = \$su->num_bam_records('$bam_file');
+        if (\$num_bam_records >= $total_reads) {
+            open(my \$fh, '>', '$double_check_file') || die "Couldn't write to $double_check_file\n";
+            close(\$fh);
+        }
+        else {
+            move('$bam_file', \$bad_bam);
+            die "Merged bam created OK, yet contains too few reads - moved to \$bad_bam\n";
+        }
     }
 }
 
@@ -876,7 +929,7 @@ sub recalibrate_requires {
 sub recalibrate_provides {
     my ($self, $lane_path) = @_;
     
-    my @raw_bams = @{$self->merge_provides($lane_path)};
+    my @raw_bams = grep(!/\.checked$/,  @{$self->merge_provides($lane_path)});
     my @recal_bams;
     foreach my $bam (@raw_bams) {
         my $recal_bam = $bam;
@@ -903,7 +956,7 @@ sub recalibrate {
     my ($self, $lane_path, $action_lock) = @_;
     return $self->{Yes} unless $self->{do_recalibration};
     
-    my @in_bams = @{$self->merge_provides($lane_path)};
+    my @in_bams = grep(!/\.checked$/, @{$self->merge_provides($lane_path)});
     my $verbose = $self->verbose;
     
     my $orig_bsub_opts = $self->{bsub_opts};
