@@ -1696,7 +1696,7 @@ sub Vcf4_0::event_type
     return ($type,$len,$allele);
 }
 
-
+# The sequences start at the same position, which simplifies things greatly.
 sub is_indel
 {
     my ($seq1,$seq2) = @_;
@@ -1705,219 +1705,39 @@ sub is_indel
     my $len2 = length($seq2);
     if ( $len1 eq $len2 ) { return (0,''); }
 
-    my $ht;
-    my $len = $len1<$len2 ? $len1 : $len2;
-    my $match  = 1;
-    for (my $i=0; $i<$len; $i++)
+    my ($del,$len,$LEN);
+    if ( $len1<$len2 )
     {
-        if ( substr($seq1,$i,1) ne substr($seq2,$i,1) ) { $match=0; last; }
+        $len = $len1;
+        $LEN = $len2;
+        $del = 1;
     }
-    if ( $match ) 
-    { 
-        if ( $len1<$len2 ) { $ht=substr($seq2,$len); }
-        else { $ht=substr($seq1,$len); }
-        return ($len2-$len1,$ht); 
-    }
-    $match = 1;
-    for (my $i=1; $i<=$len; $i++)
+    else
     {
-        if ( substr($seq1,$len1-$i,1) ne substr($seq2,$len2-$i,1) ) { $match=0; last; }
-    }
-    if ( $match ) 
-    { 
-        if ( $len1<$len2 ) { $ht=substr($seq2,0,$len); }
-        else { $ht=substr($seq1,0,$len); }
-        return ($len2-$len1,$ht); 
+        $len = $len2;
+        $LEN = $len1;
+        $del = -1;
+        my $tmp=$seq1; $seq1=$seq2; $seq2=$tmp;
     }
 
-    ($len,$ht) = sw_align($seq1,$seq2,{same_pos=>1,match=>2,mismatch=>-100,gap=>0,is_indel=>1});
-    return ($len,$ht); 
-}
-
-sub sw_align
-{
-    my ($seq1,$seq2,$opts) = @_;
-
-    if ( !$opts ) { $opts={}; }
-
-    my $MATCH    = exists($$opts{match}) ? $$opts{match} : 2;
-    my $MISMATCH = exists($$opts{mismatch}) ? $$opts{mismatch} : -1;
-    my $GAP      = exists($$opts{gap}) ? $$opts{gap} : -1;
-
-    my $score = 0;
-    my $ptr   = 1;
-    my $none  = 0;
-    my $diag  = 1;
-    my $up    = 2;
-    my $left  = 3;
-
-    my $len1 = length($seq1);
-    my $len2 = length($seq2);
-
-    # initialization
-    my @matrix;
-    $matrix[0][0][$score] = $$opts{same_pos} ? $MATCH : 0;
-    $matrix[0][0][$ptr]   = $none;
-    for(my $j=1; $j<=$len1; $j++) 
+    my $ileft;
+    for ($ileft=0; $ileft<$len; $ileft++)
     {
-        $matrix[0][$j][$score] = 0;
-        $matrix[0][$j][$ptr]   = $none;
+        if ( substr($seq1,$ileft,1) ne substr($seq2,$ileft,1) ) { last; }
     }
-    for (my $i=1; $i<=$len2; $i++) 
+    if ( $ileft==$len )
     {
-        $matrix[$i][0][$score] = 0;
-        $matrix[$i][0][$ptr]   = $none;
+        return ($del*($LEN-$len), substr($seq2,$ileft));
     }
 
-    # fill
-    my $max_i     = 0;
-    my $max_j     = 0;
-    my $max_score = 0;
-    for(my $i=1; $i<=$len2; $i++) 
+    my $iright;
+    for ($iright=0; $iright<$len; $iright++)
     {
-        for(my $j=1; $j<=$len1; $j++) 
-        {
-            my ($diagonal_score, $left_score, $up_score);
-
-            # calculate match score
-            my $letter1 = substr($seq1, $j-1, 1);
-            my $letter2 = substr($seq2, $i-1, 1);       
-            if ($letter1 eq $letter2) 
-            {
-                $diagonal_score = $matrix[$i-1][$j-1][$score] + $MATCH;
-            }
-            else 
-            {
-                $diagonal_score = $matrix[$i-1][$j-1][$score] + $MISMATCH;
-            }
-
-            # calculate gap scores
-            $up_score   = $matrix[$i-1][$j][$score] + $GAP;
-            $left_score = $matrix[$i][$j-1][$score] + $GAP;
-
-            if ( $diagonal_score<=0 and $up_score<=0 and $left_score<=0 ) 
-            {
-                $matrix[$i][$j][$score] = 0;
-                $matrix[$i][$j][$ptr]   = $none;
-                next; 
-            }
-
-            # choose best score
-            if ( $diagonal_score>=$up_score ) 
-            {
-                if ($diagonal_score >= $left_score) 
-                {
-                    $matrix[$i][$j][$score] = $diagonal_score;
-                    $matrix[$i][$j][$ptr]   = $diag;
-                }
-                else 
-                {
-                    $matrix[$i][$j][$score] = $left_score;
-                    $matrix[$i][$j][$ptr]   = $left;
-                }
-            } 
-            else 
-            {
-                if ( $up_score >= $left_score ) 
-                {
-                    $matrix[$i][$j][$score] = $up_score;
-                    $matrix[$i][$j][$ptr]   = $up;
-                }
-                else 
-                {
-                    $matrix[$i][$j][$score] = $left_score;
-                    $matrix[$i][$j][$ptr]   = $left;
-                }
-            }
-
-            # set maximum score
-            if ( $matrix[$i][$j][$score] > $max_score ) 
-            {
-                $max_i     = $i;
-                $max_j     = $j;
-                $max_score = $matrix[$i][$j][$score];
-            }
-        }
+        if ( substr($seq1,$len-$iright,1) ne substr($seq2,$LEN-$iright,1) ) { last; }
     }
+    if ( $iright+$ileft<=$len ) { return (0,''); }
 
-    # trace-back
-    if ( $$opts{is_indel} )
-    {
-        # The last position must be reached in case of an indel after the checks in is_indel
-        if ( $max_j!=$len1 or $max_i!=$len2 ) { return (0,''); }
-
-        my $ht;
-        my $j = $max_j;
-        my $i = $max_i;
-        my ($ins_j,$ins_i);
-        while (1) 
-        {
-            last if $matrix[$i][$j][$ptr] eq $none;
-
-            if ( $matrix[$i][$j][$ptr] eq $diag ) 
-            {
-                $i--; $j--;
-            }
-            elsif ( $matrix[$i][$j][$ptr] eq $left ) 
-            {
-                # Is the insertion continuous?
-                if ( defined $ins_j && $ins_j!=$j+1 ) { return (0,''); }
-                # Is there a deletion as well?
-                if ( defined $ins_i ) { return (0,''); }
-                $ht .= substr($seq1, $j-1, 1);
-                $ins_j = $j;
-                $j--;
-            }
-            elsif ( $matrix[$i][$j][$ptr] eq $up ) 
-            {
-                # Is the insertion continuous?
-                if ( defined $ins_i && $ins_i!=$i+1 ) { return (0,''); }
-                # Is there a deletion as well?
-                if ( defined $ins_j ) { return (0,''); }
-                $ht .= substr($seq2, $i-1, 1);
-                $ins_i = $i;
-                $i--;
-            }   
-        }
-        if ( $i!=0 or $j!=0 ) { return (0,''); }
-        if ( defined $ins_i && defined $ins_j ) { return (0,''); }
-        if ( !defined $ins_i && !defined $ins_j ) { return (0,''); }
-        my $len = length($ht);
-        $ht = reverse($ht);
-        if ( defined $ins_j ) { $len = -$len; }
-        return ($len,$ht);
-    }
-
-    my $align1 = '';
-    my $align2 = '';
-    my $j = $max_j;
-    my $i = $max_i;
-    while (1) 
-    {
-        last if $matrix[$i][$j][$ptr] eq $none;
-
-        if ( $matrix[$i][$j][$ptr] eq $diag ) 
-        {
-            $align1 .= substr($seq1, $j-1, 1);
-            $align2 .= substr($seq2, $i-1, 1);
-            $i--; $j--;
-        }
-        elsif ( $matrix[$i][$j][$ptr] eq $left ) 
-        {
-            $align1 .= substr($seq1, $j-1, 1);
-            $align2 .= '-';
-            $j--;
-        }
-        elsif ( $matrix[$i][$j][$ptr] eq $up ) 
-        {
-            $align1 .= '-';
-            $align2 .= substr($seq2, $i-1, 1);
-            $i--;
-        }   
-    }
-    $align1 = reverse $align1;
-    $align2 = reverse $align2;
-    return ($align1,$align2);
+    return ($del*($LEN-$len),substr($seq2,$ileft,$LEN-$len));
 }
 
 1;
