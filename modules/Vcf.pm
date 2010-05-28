@@ -1730,7 +1730,7 @@ sub is_indel
         return ($len2-$len1,$ht); 
     }
 
-    ($len,$ht) = sw_align($seq1,$seq2,{match=>2,mismatch=>-100,gap=>0,is_indel=>1});
+    ($len,$ht) = sw_align($seq1,$seq2,{same_pos=>1,match=>2,mismatch=>-100,gap=>0,is_indel=>1});
     return ($len,$ht); 
 }
 
@@ -1756,7 +1756,7 @@ sub sw_align
 
     # initialization
     my @matrix;
-    $matrix[0][0][$score] = 0;
+    $matrix[0][0][$score] = $$opts{same_pos} ? $MATCH : 0;
     $matrix[0][0][$ptr]   = $none;
     for(my $j=1; $j<=$len1; $j++) 
     {
@@ -1844,7 +1844,7 @@ sub sw_align
     if ( $$opts{is_indel} )
     {
         # The last position must be reached in case of an indel after the checks in is_indel
-        if ( $max_j!=$len1 or $max_i!=$len2 ) { return 0; }
+        if ( $max_j!=$len1 or $max_i!=$len2 ) { return (0,''); }
 
         my $ht;
         my $j = $max_j;
@@ -1861,9 +1861,9 @@ sub sw_align
             elsif ( $matrix[$i][$j][$ptr] eq $left ) 
             {
                 # Is the insertion continuous?
-                if ( defined $ins_j && $ins_j!=$j+1 ) { return 0; }
+                if ( defined $ins_j && $ins_j!=$j+1 ) { return (0,''); }
                 # Is there a deletion as well?
-                if ( defined $ins_i ) { return 0; }
+                if ( defined $ins_i ) { return (0,''); }
                 $ht .= substr($seq1, $j-1, 1);
                 $ins_j = $j;
                 $j--;
@@ -1871,17 +1871,17 @@ sub sw_align
             elsif ( $matrix[$i][$j][$ptr] eq $up ) 
             {
                 # Is the insertion continuous?
-                if ( defined $ins_i && $ins_i!=$i+1 ) { return 0; }
+                if ( defined $ins_i && $ins_i!=$i+1 ) { return (0,''); }
                 # Is there a deletion as well?
-                if ( defined $ins_j ) { return 0; }
+                if ( defined $ins_j ) { return (0,''); }
                 $ht .= substr($seq2, $i-1, 1);
                 $ins_i = $i;
                 $i--;
             }   
         }
-        if ( $i!=0 or $j!=0 ) { return 0; }
-        if ( defined $ins_i && defined $ins_j ) { return 0; }
-        if ( !defined $ins_i && !defined $ins_j ) { return 0; }
+        if ( $i!=0 or $j!=0 ) { return (0,''); }
+        if ( defined $ins_i && defined $ins_j ) { return (0,''); }
+        if ( !defined $ins_i && !defined $ins_j ) { return (0,''); }
         my $len = length($ht);
         $ht = reverse($ht);
         if ( defined $ins_j ) { $len = -$len; }
