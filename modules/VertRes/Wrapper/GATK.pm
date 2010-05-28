@@ -705,9 +705,13 @@ sub recalibrate {
     
     # count_covariates
     my $csv = $in_bam.".recal_data.csv";
+    my $csv_tmp = $in_bam.".recal_data.tmp.csv";
     unless (-s $csv) {
-        $self->count_covariates($in_bam, $in_bam, @params);
+        $self->count_covariates($in_bam, $csv_tmp, @params);
         $self->throw("failed during the count_covariates step, giving up for now") unless $self->run_status >= 1;
+        # *** need to be able to test csv_tmp for truncation... but just assume
+        #     that if we're still alive, all is well
+        move($csv_tmp, $csv) || $self->throw("Could not move $csv_tmp to $csv");
     }
     
     # table_recalibration
