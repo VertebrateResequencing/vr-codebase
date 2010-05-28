@@ -26,7 +26,9 @@ use base qw(VertRes::Base);
 use LSF;
 use File::Spec;
 use File::Copy;
+use File::Basename;
 use Fcntl qw(:DEFAULT :flock);
+use VertRes::Utils::FileSystem;
 
 our $Yes     = 0;
 our $No      = 1;
@@ -403,6 +405,15 @@ sub lock_file
     my ($lock_file,$block) = @_;
 
     my $operation = $block ? LOCK_EX : LOCK_EX|LOCK_NB;
+
+    # check the disk isn't full (below sysopen doesn't fail when disk is full;
+    # it just hangs instead)
+    my (undef, $lock_dir) = fileparse($lock_file);
+    my $bytes_left = VertRes::Utils::FileSystem->new->disk_available($lock_dir);
+    unless ($bytes_left > 1000) {
+        warn "got $bytes_left bytes free on $lock_dir\n";
+        return 0;
+    }
 
     sysopen(my $fh, $lock_file, O_RDWR|O_CREAT) or confess "$lock_file: $!";
     my $locked = flock($fh, $operation);
