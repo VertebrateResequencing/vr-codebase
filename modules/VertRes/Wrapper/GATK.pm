@@ -251,6 +251,51 @@ sub get_covs {
     }
 }
 
+=head2 set_annotations
+
+ Title   : set_annotations
+ Usage   : $wrapper->set_annotations('HaplotypeScore', 'SB', 'QD');
+ Function: Set which annotations to use during generate_variant_clusters().
+ Returns : list currently set
+ Args    : list of covariate name strings
+
+=cut
+
+sub set_annotations {
+    my $self = shift;
+    if (@_) {
+        $self->{ans} = [@_];
+    }
+    return @{$self->{ans} || []};
+}
+
+=head2 get_annotations
+
+ Title   : get_annotations
+ Usage   : my $ans_string = $wrapper->get_annotations();
+ Function: Get the command line options defining which annotations will be used
+           (one or more -an options). If none have been set with
+           set_annotations(), defaults to 'HaplotypeScore', 'SB', 'QD'.
+ Returns : string
+ Args    : n/a
+
+=cut
+
+sub get_annotations {
+    my $self = shift;
+    my @ans = $self->set_annotations;
+    unless (@ans) {
+        $self->set_annotations('HaplotypeScore', 'SB', 'QD');
+    }
+    
+    my $args = '';
+    foreach my $an (@ans) {
+        $args .= "-an $an ";
+    }
+    
+    return $args;
+}
+
 =head2 set_b
 
  Title   : set_b
@@ -564,7 +609,7 @@ sub unified_genotyper {
     
     my @file_args = (" -I $in_bam", " -varout $out_vcf -beagle $out_beagle");
     
-    my %params = (standard_min_confidence_threshold_for_calling => 30.0, @params);
+    my %params = (standard_min_confidence_threshold_for_calling => 10.0, @params);
     $params{T} = 'UnifiedGenotyper';
     $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
@@ -610,19 +655,19 @@ sub variant_filtration {
     #  -B variant,VCF,snps.raw.vcf \
     #  -B mask,Bed,indels.mask.bed \
     #  --maskName InDel \
-    #  --clusterWindowSize 10 \
-    #  --filterExpression "(MQ0 / (1.0 * DP)) > 0.1" \
-    #  --filterName "HARD_TO_VALIDATE"
+    #  --clusterWindowSize 10
 
     $self->switches([qw(quiet_output_mode)]);
     $self->params([qw(R DBSNP T clusterSize clusterWindowSize maskName)]);
     
     my $bs = $self->get_b();
     my $filters = $self->get_filters();
-    unless ($filters) {
-        $self->set_filters(filters => { HARD_TO_VALIDATE => "(MQ0 / (1.0 * DP)) > 0.1" });
-        $filters = $self->get_filters();
-    }
+    # used for maq; variant recalibration will handle bwa alignments without
+    # this
+    #unless ($filters) {
+    #    $self->set_filters(filters => { HARD_TO_VALIDATE => "(MQ0 / (1.0 * DP)) > 0.1" });
+    #    $filters = $self->get_filters();
+    #}
     my @file_args = (" $bs $filters -o $out_vcf");
     
     my %params = (maskName => 'InDel', clusterWindowSize => 10, @params);
@@ -631,6 +676,115 @@ sub variant_filtration {
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_vcf);
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
+}
+
+=head2 generate_variant_clusters
+
+ Title   : generate_variant_clusters
+ Usage   : $wrapper->set_b('input,VCF,snps.filtered.vcf');
+           $wrapper->set_annotations('HaplotypeScore', 'SB', 'QD');
+           $wrapper->generate_variant_clusters('cluster.out');
+ Function: Clusters variants for later variant recalibration.
+ Returns : n/a
+ Args    : path to output cluster file.
+           Optionally, supply R or DBSNP options (as a hash), as understood by
+           GATK, along with the other options like numGaussians etc (1000
+           genomes defaults exist).
+           Before calling this, you should use set_b() to set the input
+           snps.filtered.vcf as produced by variant_filtration(), and the
+           annotations to look at with set_annotations().
+
+=cut
+
+sub generate_variant_clusters {
+    my ($self, $out_cluster, @params) = @_;
+    
+    #java -Xmx4g -jar GenomeAnalysisTK.jar \
+    #   -R /broad/1KG/reference/human_b36_both.fasta \
+    #   -B input,VCF,snps.filtered.vcf \
+    #   -B input2,VCF,another.snps.filtered.vcf \
+    #   --DBSNP resources/dbsnp_129_hg18.rod \
+    #   -l INFO \
+    #   -nG 6 \  [--numGaussians]
+    #   -nI 10 \ [--numIterations]
+    #   -an HaplotypeScore -an SB -an QD \
+    #   -clusterFile output.cluster \
+    #   -resources R/ \
+    #   -T GenerateVariantClusters
+    
+    $self->switches([qw(quiet_output_mode ignore_all_input_filters)]);
+    $self->params([qw(R DBSNP T numGaussians numIterations ignore_filter
+                      minVarInCluster weightKnowns weightHapMap
+                      weight1000Genomes weightMQ1)]);
+    
+    my $bs = $self->get_b();
+    my $ans = $self->get_annotations();
+    my @file_args = (" $bs $ans -clusterFile $out_cluster",
+                     '-resources '.File::Spec->catdir($ENV{GATK}, 'resources'),
+                     '-Rscript Rscript');
+    
+    my %params = (numGaussians => 6, numIterations => 10, @params);
+    $params{T} = 'GenerateVariantClusters';
+    $params{quiet_output_mode} = $self->quiet();
+    $self->_handle_common_params(\%params);
+    
+    $self->register_output_file_to_check($out_cluster);
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
+}
+
+=head2 variant_recalibration
+
+ Title   : variant_recalibration
+ Usage   : $wrapper->set_b('input,VCF,snps.filtered.vcf');
+           $wrapper->variant_recalibration('in.cluster', 'out.vcf');
+ Function: Recalibrates variant calls.
+ Returns : n/a
+ Args    : path to output of generate_variant_clusters(), path to output vcf
+           file.
+           Optionally, supply R or DBSNP options (as a hash), as understood by
+           GATK, along with the other options like numGaussians etc (1000
+           genomes defaults exist).
+           Before calling this, you should use set_b() to set the input
+           snps.filtered.vcf as produced by variant_filtration(), and the
+           annotations to look at with set_annotations().
+
+=cut
+
+sub variant_recalibration {
+    my ($self, $in_cluster, $out_vcf, @params) = @_;
+    
+    #java -Xmx4g -jar GenomeAnalysisTK.jar \
+    #   -R /broad/1KG/reference/human_b36_both.fasta \
+    #   -B input,VCF,snps.filtered.vcf \
+    #   -B input2,VCF,another.snps.filtered.vcf \
+    #   --DBSNP resources/dbsnp_129_hg18.rod \
+    #   -l INFO \
+    #   -clusterFile output.cluster \
+    #   -output optimizer_output \
+    #   --target_titv 2.1 \
+    #   -resources R/ \
+    #   -T VariantRecalibration
+    
+    $self->switches([qw(quiet_output_mode ignore_all_input_filters)]);
+    $self->params([qw(R DBSNP T target_titv)]);
+    
+    my $bs = $self->get_b();
+    $out_vcf =~ s/\.vcf//; # it adds .vcf
+    my @file_args = (" $bs -clusterFile $in_cluster -output $out_vcf",
+                     '-resources '.File::Spec->catdir($ENV{GATK}, 'resources'),
+                     '-Rscript Rscript');
+    
+    my %params = (target_titv => 2.1, @params);
+    $params{T} = 'VariantRecalibration';
+    $params{quiet_output_mode} = $self->quiet();
+    $self->_handle_common_params(\%params);
+    
+    $self->register_output_file_to_check($out_vcf.'.vcf');
     $self->_set_params_and_switches_from_args(%params);
     
     return $self->run(@file_args);
