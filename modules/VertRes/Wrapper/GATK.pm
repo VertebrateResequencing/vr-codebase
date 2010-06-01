@@ -285,7 +285,7 @@ sub get_annotations {
     my $self = shift;
     my @ans = $self->set_annotations;
     unless (@ans) {
-        $self->set_annotations('HaplotypeScore', 'SB', 'QD');
+        @ans = ('HaplotypeScore', 'SB', 'QD');
     }
     
     my $args = '';
