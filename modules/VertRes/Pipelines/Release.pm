@@ -1096,7 +1096,7 @@ sub create_release_files {
                     }
                     else {
                         unless (-s $ebas && -s $ebas_md5) {
-                            $self->{bsub_opts} = '-q long';
+                            $self->{bsub_opts} = '-q normal';
                             my $si = $self->{dcc_mode} ? ", qq[$self->{dcc_mode}]" : '';
                             LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                                      qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$ebam], qq[$self->{release_date}], qq[$ebas.tmp]$si); die qq[bas failed for $ebam\n] unless -s qq[$ebas.tmp]; system(qq[mv $ebas.tmp $ebas; md5sum $ebas > $ebas_md5]);"});
