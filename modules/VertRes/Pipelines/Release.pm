@@ -916,6 +916,10 @@ sub create_release_files {
             $self->archive_bsub_files($path, $this_job_name);
         }
         
+        # ($vuh caches stuff for our split loop, but we don't want to run out
+        #  of memory so create this for each bam)
+        $vuh = VertRes::Utils::Hierarchy->new();
+        
         # md5 of bam & links
         my $bam_md5 = $bam.'.md5';
         if ($symlink_from_previous) {
