@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 46;
+    use Test::Most tests => 53;
     
     use_ok('VertRes::Utils::FileSystem');
 }
@@ -122,4 +122,18 @@ ok $fsu->can_be_copied($fsu->catfile('t', 'data'), File::Spec->tmpdir), 'can_be_
 #*** impossible to have a decent can_be_moved negative test?
 ok ! $fsu->can_be_copied($fsu->catfile('t', 'data'), '/proc'), 'can_be_moved negative test';
 
-
+# file_exists
+ok $fsu->file_exists($fsu->catfile('t', 'data', 'io_test.txt.gz'), force_check => 1), 'file_exists works on a file with force_check';
+ok $fsu->file_exists($fsu->catfile('t', 'data', 'io_test.txt.gz')), 'file_exists works again on the same file without force_check';
+ok ! $fsu->file_exists($fsu->catfile('t', 'data', 'io_test.txt.gz.fake'), force_check => 1), 'file_exists fails on a non-existant file with force_check';
+ok ! $fsu->file_exists($fsu->catfile('t', 'data', 'io_test.txt.gz.fake')), 'file_exists fails again on a non-existant file without force_check';
+ok ! $fsu->file_exists($fsu->catfile('t', 'data', 'io_test.txt.gz.fake'), no_check => 1), 'file_exists fails again on a non-existant file with no_check';
+($fh, $file) = $fsu->tempfile;
+close($fh);
+unlink($file);
+ok ! $fsu->file_exists($file), 'another non-existant file test';
+open($fh, '>', $file);
+print $fh "foo\n";
+close($fh);
+ok $fsu->file_exists($file), 'files_exists returns true on that file after creating it';
+unlink($file);

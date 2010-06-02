@@ -48,8 +48,12 @@ use Digest::MD5;
 use Filesys::DfPortable;
 use Filesys::DiskUsage qw/du/;
 use File::Rsync;
+use VertRes::Utils::VRTrackFactory;
 
 use base qw(VertRes::Base);
+
+our $file_exists_dbh;
+
 
 =head2 new
 
@@ -610,18 +614,17 @@ sub disk_usage {
 
 sub set_stripe_dir {
     my ($self, $path, $stripe_value) = @_;
-	
-	if( $stripe_value < -1 || $stripe_value > 10 )
-	{
-		$self->throw("Invalid stripe value: $stripe_value");
-	}
-	
-	#it should first check the striping and see if necessary
-	
-	print "Setting stripe for $path\n";
-	system( "lfs setstripe -c $stripe_value $path" ) == 0 or $self->throw( "Failed to set stripe on directory: $path" );
-	
-	return 1;
+    
+    if ($stripe_value < -1 || $stripe_value > 10) {
+        $self->throw("Invalid stripe value: $stripe_value");
+    }
+    
+    #it should first check the striping and see if necessary
+    
+    print "Setting stripe for $path\n";
+    system( "lfs setstripe -c $stripe_value $path" ) == 0 or $self->throw( "Failed to set stripe on directory: $path" );
+    
+    return 1;
 }
 
 =head2 set_stripe_dir_tree
@@ -635,27 +638,107 @@ sub set_stripe_dir {
 =cut
 
 sub set_stripe_dir_tree {
-	my ($self, $root, $stripe_value) = @_;
-	
-	if( $stripe_value < -1 || $stripe_value > 10 )
-	{
-		$self->throw("Invalid stripe value: $stripe_value");
-	}
-	
-	chdir( $root ) or $self->throw( "can't find $root: $!" );
-	opendir(my $dfh, '.') or $self->throw( "can't open current directory: $!" );
-	while( defined( my $file = readdir( $dfh ) ) ) 
-	{
-		next unless -d $file;
-		next unless $file !~ /^\.+$/ && $file !~ /^_Inline$/;
-		next if( -l $file );
-		
-		$self->set_stripe_dir( $file, $stripe_value ); #set the stripe
-		print "Recursing into $file\n";
-		$self->set_stripe_dir_tree( $file, $stripe_value ); #recurse into the directory also
-		chdir( ".." )
-	}
-	closedir($dfh);
+    my ($self, $root, $stripe_value) = @_;
+    
+    if ($stripe_value < -1 || $stripe_value > 10) {
+        $self->throw("Invalid stripe value: $stripe_value");
+    }
+    
+    chdir( $root ) or $self->throw( "can't find $root: $!" );
+    opendir(my $dfh, '.') or $self->throw( "can't open current directory: $!" );
+    while( defined( my $file = readdir( $dfh ) ) ) {
+        next unless -d $file;
+        next unless $file !~ /^\.+$/ && $file !~ /^_Inline$/;
+        next if( -l $file );
+        
+        $self->set_stripe_dir( $file, $stripe_value ); #set the stripe
+        print "Recursing into $file\n";
+        $self->set_stripe_dir_tree( $file, $stripe_value ); #recurse into the directory also
+        chdir( ".." )
+    }
+    closedir($dfh);
+}
+
+=head2 file_exists
+
+ Title   : file_exists
+ Usage   : if ($obj->file_exists('/abs/.../file')) { ... }
+ Function: Find out if a file exists on disc, avoiding where possible actually
+           doing a stat, which can be very slow on "high performance" systems
+           like lustre. By default, really checks the disk only when a file was
+           previously found not to exist, or when a file has not been previously
+           checked with file_exists(). Otherwise it will return the answer
+           stored in a database (which may be out of date).
+ Returns : boolean
+ Args    : absolute path to file
+           Optionally, these hash args:
+           force_check => boolean (really check the disk and update the db,
+                                   regardless of anything else)
+           no_check => boolean (do not check the disk if the file had previously
+                                been found not to exist; still checks the disk
+                                if the file isn't in the database at all)
+           clear => boolean (empty the db of all past results before doing
+                             anything else)
+
+=cut
+
+sub file_exists {
+    my ($self, $file, %opts) = @_;
+    $file = abs_path($file);
+    my $dmd5 = Digest::MD5->new();
+    $dmd5->add($file);
+    my $md5 = $dmd5->hexdigest;
+    
+    unless (defined $file_exists_dbh) {
+        my %cd = VertRes::Utils::VRTrackFactory->connection_details('rw');
+        my $dbname = 'vrtrack_fsu_file_exists';
+        $file_exists_dbh = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 });
+        unless ($file_exists_dbh) {
+            $self->warn("Could not connect to database $dbname; will try to create it...\n");
+            
+            #*** need a better way of doing this...
+            open(my $mysqlfh, "| mysql -h$cd{host} --port $cd{port} -u$cd{user} -p$cd{password}") || $self->throw("Could not connect to mysql server $cd{host}");
+            print $mysqlfh "create database $dbname;\n";
+            print $mysqlfh "use $dbname;\n";
+            print $mysqlfh "CREATE TABLE `file_status` (`hash` char(32) NOT NULL, `path` varchar(1000) NOT NULL, `status` enum('0','1') not null, PRIMARY KEY (`hash`)) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n";
+            close($mysqlfh);
+            
+            $file_exists_dbh = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 }) || $self->throw("Still couldn't connect to database $dbname; giving up");
+        }
+    }
+    
+    # empty db if asked
+    if ($opts{empty}) {
+        my $sql = qq{truncate table file_status};
+        $file_exists_dbh->do($sql) || $self->throw($file_exists_dbh->errstr);
+    }
+    
+    # check the db
+    unless ($opts{force_check}) {
+        my $sql = qq{select * from `file_status` where `hash` = ?};
+        my @row = $file_exists_dbh->selectrow_array($sql, undef, $md5);
+        if (@row) {
+            if ($row[2] && $row[2] == 1) {
+                return 1;
+            }
+            else {
+                if ($opts{no_check}) {
+                    return 0;
+                }
+            }
+        }
+    }
+    
+    # check the disk, avoiding a stat
+    my $exists = open(my $fh, $file) ? 1 : 0;
+    close($fh) if $exists;
+    
+    # store result in db
+    my $enum = $exists ? '1' : '0';
+    my $sql = qq{insert into `file_status` (hash,path,status) values (?,?,?) ON DUPLICATE KEY UPDATE `status`=?};
+    $file_exists_dbh->do($sql, undef, $md5, $file, $enum, $enum) || $self->throw($file_exists_dbh->errstr);
+    
+    return $exists;
 }
 
 1;
