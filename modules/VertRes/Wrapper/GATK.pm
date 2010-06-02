@@ -723,7 +723,7 @@ sub generate_variant_clusters {
     my $bs = $self->get_b();
     my $ans = $self->get_annotations();
     my @file_args = (" $bs $ans -clusterFile $out_cluster",
-                     '-resources '.File::Spec->catdir($ENV{GATK}, 'resources'),
+                     '-resources '.File::Spec->catdir($ENV{GATK}, 'resources').'/',
                      '-Rscript Rscript');
     
     my %params = (numGaussians => 6, numIterations => 10, @params);
@@ -734,14 +734,16 @@ sub generate_variant_clusters {
     $self->register_output_file_to_check($out_cluster);
     $self->_set_params_and_switches_from_args(%params);
     
+    #*** after completion, remove $out_cluster.1 .. $out_cluster.$numIterations
+    
     return $self->run(@file_args);
 }
 
-=head2 variant_recalibration
+=head2 variant_recalibrator
 
- Title   : variant_recalibration
+ Title   : variant_recalibrator
  Usage   : $wrapper->set_b('input,VCF,snps.filtered.vcf');
-           $wrapper->variant_recalibration('in.cluster', 'out.vcf');
+           $wrapper->variant_recalibrator('in.cluster', 'out.vcf');
  Function: Recalibrates variant calls.
  Returns : n/a
  Args    : path to output of generate_variant_clusters(), path to output vcf
@@ -755,7 +757,7 @@ sub generate_variant_clusters {
 
 =cut
 
-sub variant_recalibration {
+sub variant_recalibrator {
     my ($self, $in_cluster, $out_vcf, @params) = @_;
     
     #java -Xmx4g -jar GenomeAnalysisTK.jar \
@@ -768,10 +770,12 @@ sub variant_recalibration {
     #   -output optimizer_output \
     #   --target_titv 2.1 \
     #   -resources R/ \
-    #   -T VariantRecalibration
+    #   -T VariantRecalibrator
     
     $self->switches([qw(quiet_output_mode ignore_all_input_filters)]);
-    $self->params([qw(R DBSNP T target_titv)]);
+    $self->params([qw(R DBSNP T target_titv backOff desired_num_variants
+                      ignore_filter known_prior novel_prior
+                      quality_scale_factor)]);
     
     my $bs = $self->get_b();
     $out_vcf =~ s/\.vcf//; # it adds .vcf
@@ -780,7 +784,7 @@ sub variant_recalibration {
                      '-Rscript Rscript');
     
     my %params = (target_titv => 2.1, @params);
-    $params{T} = 'VariantRecalibration';
+    $params{T} = 'VariantRecalibrator';
     $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
     
@@ -834,6 +838,56 @@ sub analyze_covariates {
     
     $self->exe($orig_exe);
     return @return;
+}
+
+=head2 variant_eval
+
+ Title   : variant_eval
+ Usage   : $wrapper->set_b('eval,VCF,snps.recal.vcf', 'comp,VCF,other.vcf');
+           $wrapper->variant_eval('out.grepable');
+ Function: Get lots of summary stats about a vcf in comparison to another.
+ Returns : n/a
+ Args    : path to output file.
+           Optionally, supply R or DBSNP options (as a hash), as understood by
+           GATK, along with the other options like numGaussians etc (1000
+           genomes defaults exist).
+           Before calling this, you should use set_b() to set the input
+           snps.filtered.vcf as produced by variant_filtration(), and the
+           annotations to look at with set_annotations().
+
+=cut
+
+sub variant_eval {
+    my ($self, $out_file, @params) = @_;
+    
+    #java -Xmx2048m -jar GenomeAnalysisTK.jar \
+    #   -T VariantEval -R human_b36_both.fasta \
+    #   -l INFO \
+    #   -B eval,VCF,NA12878.vcf \
+    #   -B comp,VCF,NA12891.vcf \
+    #   -D /humgen/gsa-scr1/GATK_Data/dbsnp_129_b36.rod \
+    #   -E DbSNPPercentage
+    
+    $self->switches([qw(quiet_output_mode indelCalls useNoModules)]);
+    $self->params([qw(R DBSNP T family_structure
+                      MendelianViolationQualThreshold InterestingSitesVCF
+                      minPhredConfidenceScore minPhredConfidenceScoreForComp
+                      rsID maxRsIDBuild reportType reportLocation nSamples)]);
+    
+    # evalModule (default '') samples known_names select_names->select_exps
+    
+    my $bs = $self->get_b();
+    my @file_args = (" $bs -output $out_file");
+    
+    my %params = (reportType => 'grep', @params);
+    $params{T} = 'VariantEval';
+    $params{quiet_output_mode} = $self->quiet();
+    $self->_handle_common_params(\%params);
+    
+    $self->register_output_file_to_check($out_file);
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
 }
 
 =head2 recalibrate
