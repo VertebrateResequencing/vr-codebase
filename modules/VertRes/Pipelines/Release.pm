@@ -43,11 +43,14 @@ data => {
 # do_sample_merge => 1
 # skip_fails => 1
 # previous_release_root => '/path/to/rel'
+# previous_release_date => '20100115'
 
-# the previous_release_root will result in the pipline checking if a particular
+# the previous_release_root will result in the pipeline checking if a particular
 # bam needs to be (re)made depending on if lanes have been removed/added/altered
 # since that previous release. If a bam doesn't need to be made, the new
-# release directory will contain a symlink to the bam in the old directory
+# release directory will contain a symlink to the bam in the old directory.
+# If dcc_mode is also on, previous_release_date will need to be used to discover
+# the correct name of bams in the previous release directory.
 
 # make another config file that simply mentions the release directory and the
 # previous config file:
@@ -128,7 +131,8 @@ our %options = (do_cleanup => 0,
                 dcc_mode => '',
                 bsub_opts => '',
                 dont_wait => 1,
-                previous_release_root => '');
+                previous_release_root => '',
+                previous_release_date => 0);
 
 =head2 new
 
@@ -169,6 +173,9 @@ our %options = (do_cleanup => 0,
                                        sequence.index used. Not important if
                                        not doing a DCC release (dcc_mode is
                                        off); required if dcc_mode is on
+           previous_release_date => 'YYYYMMDD' (no default; required if
+                                       dcc_mode and previous_release_root
+                                       are on)
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -608,48 +615,67 @@ sub merge_up_one_level {
         # no need to merge if the hierarchy beneath hasn't changed since the
         # previous release
         if ($self->{previous_release_root}) {
-            my $previous_path = $self->{fsu}->catfile($self->{previous_release_root}, $out_dir);
-            my $previous_bam =  $self->{fsu}->catfile($previous_path, $out_bam_name);
-            
-            if ($self->{fsu}->directory_structure_same($previous_path, $current_path, leaf_mtimes => \%lane_paths)) {
-                # check that none of the lanes in this part of the hierarchy
-                # have been deleted and recreated since the previous release
-                my $lanes_changed = 0;
-                foreach my $lane_hname (keys %{$lane_paths{$previous_path}}) {
-                    my $lane = VRTrack::Lane->new_by_hierarchy_name($self->{vrtrack}, $lane_hname) || $self->throw("Lane $lane_hname was in the release, but not in the db!");
-                    my $changed = str2time($lane->changed);
-                    
-                    if ($changed > $lane_paths{$previous_path}->{$lane_hname}) {
-                        $lanes_changed = 1;
-                    }
-                }
+            # directory_structure_same() might be very expensive on lustre?
+            # up to 50mins to complete?! Store its result
+            my $dss_file = $self->{fsu}->catfile($current_path, '.dss');
+            unless (-s $dss_file) {
+                my $previous_path = $self->{fsu}->catfile($self->{previous_release_root}, $out_dir);
+                my $previous_bam =  $self->{fsu}->catfile($previous_path, $out_bam_name);
+                open(my $fh, '>', $dss_file) || $self->throw("Could not write to $dss_file");
                 
-                unless ($lanes_changed) {
-                    symlink($previous_bam, $out_bam);
+                if ($self->{fsu}->directory_structure_same($previous_path, $current_path, leaf_mtimes => \%lane_paths)) {
+                    #*** used to check changed on lanes, but can't do that now
+                    #    because moving to netapp after release results in all
+                    #    new lanes being changed...
+                    ## check that none of the lanes in this part of the hierarchy
+                    ## have been deleted and recreated since the previous release
+                    my $lanes_changed = 0;
+                    #foreach my $lane_hname (keys %{$lane_paths{$previous_path}}) {
+                    #    my $lane = VRTrack::Lane->new_by_hierarchy_name($self->{vrtrack}, $lane_hname) || $self->throw("Lane $lane_hname was in the release, but not in the db!");
+                    #    my $changed = str2time($lane->changed);
+                    #    
+                    #    if ($changed > $lane_paths{$previous_path}->{$lane_hname}) {
+                    #        $lanes_changed = 1;
+                    #    }
+                    #}
                     
-                    # symlink the other files we might have made from that bam
-                    # in other actions
-                    my $prev_markdup_bam = $previous_bam;
-                    $prev_markdup_bam =~ s/\.bam$/.markdup.bam/;
-                    if (-s $prev_markdup_bam) {
-                        my $cur_markdup_bam = $out_bam;
-                        $cur_markdup_bam =~ s/\.bam$/.markdup.bam/;
-                        symlink($prev_markdup_bam, $cur_markdup_bam);
-                    }
-                    
-                    foreach my $suffix2 ('', '.md5') {
-                        foreach my $suffix ('', '.bai', '.bas') {
-                            my $prev = $previous_bam.$suffix.$suffix2;
-                            if (-s $prev) {
-                                my $cur = $out_bam.$suffix.$suffix2;
-                                symlink($prev, $cur);
+                    unless ($lanes_changed) {
+                        symlink($previous_bam, $out_bam);
+                        
+                        # symlink the other files we might have made from that bam
+                        # in other actions
+                        my $prev_markdup_bam = $previous_bam;
+                        $prev_markdup_bam =~ s/\.bam$/.markdup.bam/;
+                        if (-s $prev_markdup_bam) {
+                            my $cur_markdup_bam = $out_bam;
+                            $cur_markdup_bam =~ s/\.bam$/.markdup.bam/;
+                            symlink($prev_markdup_bam, $cur_markdup_bam);
+                        }
+                        
+                        foreach my $suffix2 ('', '.md5') {
+                            foreach my $suffix ('', '.bai', '.bas') {
+                                my $prev = $previous_bam.$suffix.$suffix2;
+                                if (-s $prev) {
+                                    my $cur = $out_bam.$suffix.$suffix2;
+                                    symlink($prev, $cur);
+                                }
                             }
                         }
+                        
+                        # we don't merge split bams; we merge the parent, and split
+                        # the merge if we want to
+                        
+                        print $fh "1\n";
                     }
-                    
-                    # we don't merge split bams; we merge the parent, and split
-                    # the merge if we want to
+                    else {
+                        print $fh "0\n";
+                    }
                 }
+                else {
+                    print $fh "0\n";
+                }
+                
+                close($fh);
             }
         }
         
@@ -824,9 +850,29 @@ sub create_release_files {
     my @release_files;
     my $skipped_some = 0;
     foreach my $bam (@in_bams) {
+        my $rel_path = $bam;
         $bam = $self->{fsu}->catfile($lane_path, $bam);
         my ($basename, $path) = fileparse($bam);
         my $release_name = $self->{fsu}->catfile($path, 'release.bam');
+        
+        my $symlink_from_previous = 0;
+        if ($self->{previous_release_root}) {
+            my $dss_file = $self->{fsu}->catfile($path, '.dss');
+            if (-s $dss_file) {
+                open(my $fh, $dss_file) || $self->throw("Could not open $dss_file");
+                my $line = <$fh>;
+                close($fh);
+                chomp($line);
+                my $same = int($line);
+                if ($same) {
+                    my (undef, $rel_dir) = fileparse($rel_path);
+                    $symlink_from_previous = $self->{fsu}->catfile($self->{previous_release_root}, $rel_dir);
+                }
+            }
+            else {
+                $self->throw("There was no dss file $dss_file\n");
+            }
+        }
         
         my @these_release_files;
         print STDERR '. ';
@@ -872,24 +918,35 @@ sub create_release_files {
         
         # md5 of bam & links
         my $bam_md5 = $bam.'.md5';
-        unless (-s $bam_md5) {
-            LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
-                     qq{md5sum $bam > $bam_md5; ln -s $basename $release_name});
+        if ($symlink_from_previous) {
+            $self->_crf_symlink_previous($symlink_from_previous, basename($bam_md5), $bam_md5);
         }
-        elsif (! -e $release_name) {
-            symlink($basename, $release_name);
+        else {
+            unless (-s $bam_md5) {
+                LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
+                         qq{md5sum $bam > $bam_md5; ln -s $basename $release_name});
+            }
+            elsif (! -e $release_name) {
+                symlink($basename, $release_name);
+            }
         }
         push(@these_release_files, $bam, $bam_md5);
         
         # bai & its md5 & links
         my $bai = $bam.'.bai';
         my $bai_md5 = $bai.'.md5';
-        unless (-s $bai && -s $bai_md5) {
-            LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
-                     qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$bam], qq[$bai.tmp]); die qq[index failed for $bam\n] unless -s qq[$bai.tmp]; system(qq[mv $bai.tmp $bai; md5sum $bai > $bai_md5; ln -s $basename.bai $release_name.bai]);"});
+        if ($symlink_from_previous) {
+            $self->_crf_symlink_previous($symlink_from_previous, basename($bai), $bai);
+            $self->_crf_symlink_previous($symlink_from_previous, basename($bai_md5), $bai_md5);
         }
-        elsif (! -e "$release_name.bai") {
-            symlink("$basename.bai", "$release_name.bai");
+        else {
+            unless (-s $bai && -s $bai_md5) {
+                LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
+                         qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$bam], qq[$bai.tmp]); die qq[index failed for $bam\n] unless -s qq[$bai.tmp]; system(qq[mv $bai.tmp $bai; md5sum $bai > $bai_md5; ln -s $basename.bai $release_name.bai]);"});
+            }
+            elsif (! -e "$release_name.bai") {
+                symlink("$basename.bai", "$release_name.bai");
+            }
         }
         push(@these_release_files, $bai, $bai_md5);
         
@@ -899,14 +956,20 @@ sub create_release_files {
             # bas & its md5 & links
             my $bas = $bam.'.bas';
             my $bas_md5 = $bas.'.md5';
-            unless (-s $bas && -s $bas_md5) {
-                $self->{bsub_opts} = '-q long';
-                LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
-                         qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$self->{release_date}], qq[$bas.tmp]); die qq[bas failed for $bam\n] unless -s qq[$bas.tmp]; system(qq[mv $bas.tmp $bas; md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"});
-                $self->{bsub_opts} = '-q long';
+            if ($symlink_from_previous) {
+                $self->_crf_symlink_previous($symlink_from_previous, basename($bas), $bas);
+                $self->_crf_symlink_previous($symlink_from_previous, basename($bas_md5), $bas_md5);
             }
-            elsif (! -e "$release_name.bas") {
-                symlink("$basename.bas", "$release_name.bas");
+            else {
+                unless (-s $bas && -s $bas_md5) {
+                    $self->{bsub_opts} = '-q long';
+                    LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
+                             qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$self->{release_date}], qq[$bas.tmp]); die qq[bas failed for $bam\n] unless -s qq[$bas.tmp]; system(qq[mv $bas.tmp $bas; md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"});
+                    $self->{bsub_opts} = '-q long';
+                }
+                elsif (! -e "$release_name.bas") {
+                    symlink("$basename.bas", "$release_name.bas");
+                }
             }
             push(@these_release_files, $bas, $bas_md5);
         }
@@ -920,7 +983,10 @@ sub create_release_files {
             my $bams = 0;
             foreach my $ebam (@expected_split_bams) {
                 push(@these_release_files, $ebam) unless $self->{dcc_mode};
-                $bams += -s $ebam ? 1 : 0;
+                if ($symlink_from_previous && ! $self->{dcc_mode}) {
+                    $self->_crf_symlink_previous($symlink_from_previous, basename($ebam), $ebam);
+                }
+                $bams += (-s $ebam || -l $ebam) ? 1 : 0;
                 
                 unless ($self->{dcc_mode}) {
                     foreach my $suffix ('.md5', '.bai', '.bai.md5', '.bas', '.bas.md5') {
@@ -941,7 +1007,12 @@ sub create_release_files {
                     $dccbam =~ s/$basename$/$dcc_filename/;
                     push(@these_release_files, $dccbam);
                     push(@expected_dcc_bams, $dccbam);
-                    $dcc_bams += -s $dccbam ? 1 : 0;
+                    if ($symlink_from_previous) {
+                        my $prev_dcc = basename($dccbam);
+                        $prev_dcc =~ s/\.$self->{release_date}\./.$self->{previous_release_date}./;
+                        $self->_crf_symlink_previous($symlink_from_previous, $prev_dcc, $dccbam);
+                    }
+                    $dcc_bams += (-s $dccbam || -l $dccbam) ? 1 : 0;
                     
                     foreach my $suffix ('.md5', '.bai', '.bai.md5', '.bas', '.bas.md5') {
                         push(@these_release_files, $dccbam.$suffix);
@@ -985,28 +1056,51 @@ sub create_release_files {
                 foreach my $ebam (@expected_split_bams) {
                     # md5
                     my $emd5 = $ebam.'.md5';
-                    unless (-s $emd5) {
-                        $self->{bsub_opts} = '-q small';
-                        LSF::run($lock_file, $lane_path, $pathed_job_name, $self, qq{md5sum $ebam > $emd5});
+                    if ($symlink_from_previous) {
+                        my $prev_dcc = basename($emd5);
+                        $prev_dcc =~ s/\.$self->{release_date}\./.$self->{previous_release_date}./;
+                        $self->_crf_symlink_previous($symlink_from_previous, $prev_dcc, $emd5);
+                    }
+                    else {
+                        unless (-s $emd5) {
+                            $self->{bsub_opts} = '-q small';
+                            LSF::run($lock_file, $lane_path, $pathed_job_name, $self, qq{md5sum $ebam > $emd5});
+                        }
                     }
                     
                     # bai & its md5
                     my $ebai = $ebam.'.bai';
                     my $ebai_md5 = $ebai.'.md5';
-                    unless (-s $ebai && -s $ebai_md5) {
-                        $self->{bsub_opts} = '-q normal';
-                        LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
-                                 qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$ebam], qq[$ebai.tmp]); die qq[index failed for $ebam\n] unless -s qq[$ebai.tmp]; system(qq[mv $ebai.tmp $ebai; md5sum $ebai > $ebai_md5]);"});
+                    if ($symlink_from_previous) {
+                        my $prev_dcc = basename($ebai);
+                        $prev_dcc =~ s/\.$self->{release_date}\./.$self->{previous_release_date}./;
+                        $self->_crf_symlink_previous($symlink_from_previous, $prev_dcc, $ebai);
+                        $self->_crf_symlink_previous($symlink_from_previous, $prev_dcc.'.md5', $ebai_md5);
+                    }
+                    else {
+                        unless (-s $ebai && -s $ebai_md5) {
+                            $self->{bsub_opts} = '-q normal';
+                            LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
+                                     qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$ebam], qq[$ebai.tmp]); die qq[index failed for $ebam\n] unless -s qq[$ebai.tmp]; system(qq[mv $ebai.tmp $ebai; md5sum $ebai > $ebai_md5]);"});
+                        }
                     }
                     
                     # bas & its md5
                     my $ebas = $ebam.'.bas';
                     my $ebas_md5 = $ebas.'.md5';
-                    unless (-s $ebas && -s $ebas_md5) {
-                        $self->{bsub_opts} = '-q long';
-                        my $si = $self->{dcc_mode} ? ", qq[$self->{dcc_mode}]" : '';
-                        LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
-                                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$ebam], qq[$self->{release_date}], qq[$ebas.tmp]$si); die qq[bas failed for $ebam\n] unless -s qq[$ebas.tmp]; system(qq[mv $ebas.tmp $ebas; md5sum $ebas > $ebas_md5]);"});
+                    if (0 && $symlink_from_previous) {
+                        my $prev_dcc = basename($ebas);
+                        $prev_dcc =~ s/\.$self->{release_date}\./.$self->{previous_release_date}./;
+                        $self->_crf_symlink_previous($symlink_from_previous, $prev_dcc, $ebas);
+                        $self->_crf_symlink_previous($symlink_from_previous, $prev_dcc.'.md5', $ebas_md5);
+                    }
+                    else {
+                        unless (-s $ebas && -s $ebas_md5) {
+                            $self->{bsub_opts} = '-q long';
+                            my $si = $self->{dcc_mode} ? ", qq[$self->{dcc_mode}]" : '';
+                            LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
+                                     qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$ebam], qq[$self->{release_date}], qq[$ebas.tmp]$si); die qq[bas failed for $ebam\n] unless -s qq[$ebas.tmp]; system(qq[mv $ebas.tmp $ebas; md5sum $ebas > $ebas_md5]);"});
+                        }
                     }
                 }
                 $self->{bsub_opts} = '-q long';
@@ -1015,7 +1109,7 @@ sub create_release_files {
         
         my $done_release_files = 0;
         foreach my $r_file (@these_release_files) {
-            $done_release_files++ if -s $r_file;
+            $done_release_files++ if (-s $r_file || -l $r_file);
         }
         if ($done_release_files == @these_release_files) {
             open(my $fh, '>', $done_file) || $self->throw("Could not write to $done_file");
@@ -1041,6 +1135,20 @@ sub create_release_files {
     $self->{bsub_opts} = $orig_bsub_opts;
     
     return $self->{NO};
+}
+
+sub _crf_symlink_previous {
+    my ($self, $prev_dir, $basename, $dest) = @_;
+    
+    my $prev = $self->{fsu}->catfile($prev_dir, $basename);
+    if (-s $prev || -l $prev) {
+        unless (-e $dest) {
+            symlink($prev, $dest);
+        }
+    }
+    else {
+        $self->throw("Expected $prev to exist, but it didn't!");
+    }
 }
 
 =head2 cleanup_requires
