@@ -1064,17 +1064,28 @@ sub dcc_filename {
     # http://1000genomes.org/wiki/doku.php?id=1000_genomes:dcc:metadata
     
     # view the bam header
-    my $stw = VertRes::Wrapper::samtools->new(quiet => 1);
-    $stw->run_method('open');
-    my $view_fh = $stw->view($file, undef, H => 1);
-    $view_fh || $self->throw("Failed to samtools view '$file'");
-    
-    my $ps = VertRes::Parser::sam->new(fh => $view_fh);
+    my %readgroup_info;
+    my $algorithm = 'unknown_algorithm';
+    if (defined $self->{rginfo}->{$file}) {
+        %readgroup_info = %{$self->{rginfo}->{$file}};
+        $algorithm = $self->{algorithm}->{$file};
+    }
+    else {
+        my $stw = VertRes::Wrapper::samtools->new(quiet => 1);
+        $stw->run_method('open');
+        my $view_fh = $stw->view($file, undef, H => 1);
+        $view_fh || $self->throw("Failed to samtools view '$file'");
+        
+        my $ps = VertRes::Parser::sam->new(fh => $view_fh);
+        %readgroup_info = $ps->readgroup_info();
+        $self->{rginfo}->{$file} = \%readgroup_info;
+        $algorithm = $ps->program;
+        $self->{algorithm}->{$file} = $algorithm;
+    }
     
     my $sample;
     my $platform = 'unknown_platform';
     my %techs;
-    my %readgroup_info = $ps->readgroup_info();
     my $example_rg;
     while (my ($rg, $info) = each %readgroup_info) {
         # there should only be one sample, so we just pick the first
@@ -1111,8 +1122,15 @@ sub dcc_filename {
     # passing in sequence.index file
     my ($pop, $ag) = ('unknown_population', 'unknown_analysisgroup');
     if ($sequence_index) {
-        my $sip = VertRes::Parser::sequence_index->new(file => $sequence_index,
-                                                       verbose => $self->verbose);
+        my $sip;
+        if (defined $self->{sip}->{$sequence_index}) {
+            $sip = $self->{sip}->{$sequence_index};
+        }
+        else {
+            $sip = VertRes::Parser::sequence_index->new(file => $sequence_index,
+                                                        verbose => $self->verbose);
+            $self->{sip}->{$sequence_index} = $sip;
+        }
         $pop = $sip->lane_info($example_rg, 'POPULATION') || 'unknown_population';
         $ag = $sip->lane_info($example_rg, 'ANALYSIS_GROUP') || 'unknown_analysisgroup';
         $ag =~ s/\s/_/g;
@@ -1138,7 +1156,6 @@ sub dcc_filename {
         $chrom = "$1.";
     }
     
-    my $algorithm = $ps->program || 'unknown_algorithm';
     # picard merge can fuck with program names, converting them to unique numbers
     if ($algorithm eq 'unknown_algorithm' || $algorithm =~ /^\d+$/ || $algorithm =~ /GATK/) { 
         if ($platform =~ /ILLUMINA/) {
