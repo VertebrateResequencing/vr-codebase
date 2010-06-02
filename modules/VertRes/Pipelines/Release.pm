@@ -1139,12 +1139,11 @@ sub create_release_files {
 
 sub _crf_symlink_previous {
     my ($self, $prev_dir, $basename, $dest) = @_;
+    return if -e $dest;
     
     my $prev = $self->{fsu}->catfile($prev_dir, $basename);
     if (-s $prev || -l $prev) {
-        unless (-e $dest) {
-            symlink($prev, $dest);
-        }
+        symlink($prev, $dest);
     }
     else {
         $self->throw("Expected $prev to exist, but it didn't!");
