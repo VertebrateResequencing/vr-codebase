@@ -919,6 +919,7 @@ sub create_release_files {
         # ($vuh caches stuff for our split loop, but we don't want to run out
         #  of memory so create this for each bam)
         $vuh = VertRes::Utils::Hierarchy->new();
+        my $fsu = $self->{fsu};
         
         # md5 of bam & links
         my $bam_md5 = $bam.'.md5';
@@ -926,11 +927,11 @@ sub create_release_files {
             $self->_crf_symlink_previous($symlink_from_previous, basename($bam_md5), $bam_md5);
         }
         else {
-            unless (-s $bam_md5) {
+            unless ($fsu->file_exists($bam_md5)) {
                 LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                          qq{md5sum $bam > $bam_md5; ln -s $basename $release_name});
             }
-            elsif (! -e $release_name) {
+            elsif (! $fsu->file_exists($release_name)) {
                 symlink($basename, $release_name);
             }
         }
@@ -944,11 +945,11 @@ sub create_release_files {
             $self->_crf_symlink_previous($symlink_from_previous, basename($bai_md5), $bai_md5);
         }
         else {
-            unless (-s $bai && -s $bai_md5) {
+            unless ($fsu->file_exists($bai) && $fsu->file_exists($bai_md5)) {
                 LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                          qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$bam], qq[$bai.tmp]); die qq[index failed for $bam\n] unless -s qq[$bai.tmp]; system(qq[mv $bai.tmp $bai; md5sum $bai > $bai_md5; ln -s $basename.bai $release_name.bai]);"});
             }
-            elsif (! -e "$release_name.bai") {
+            elsif (! $fsu->file_exists("$release_name.bai")) {
                 symlink("$basename.bai", "$release_name.bai");
             }
         }
@@ -965,13 +966,13 @@ sub create_release_files {
                 $self->_crf_symlink_previous($symlink_from_previous, basename($bas_md5), $bas_md5);
             }
             else {
-                unless (-s $bas && -s $bas_md5) {
+                unless ($fsu->file_exists($bas) && $fsu->file_exists($bas_md5)) {
                     $self->{bsub_opts} = '-q long';
                     LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                              qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->bas(qq[$bam], qq[$self->{release_date}], qq[$bas.tmp]); die qq[bas failed for $bam\n] unless -s qq[$bas.tmp]; system(qq[mv $bas.tmp $bas; md5sum $bas > $bas_md5; ln -s $basename.bas $release_name.bas]);"});
                     $self->{bsub_opts} = '-q long';
                 }
-                elsif (! -e "$release_name.bas") {
+                elsif (! $fsu->file_exists("$release_name.bas")) {
                     symlink("$basename.bas", "$release_name.bas");
                 }
             }
@@ -990,7 +991,7 @@ sub create_release_files {
                 if ($symlink_from_previous && ! $self->{dcc_mode}) {
                     $self->_crf_symlink_previous($symlink_from_previous, basename($ebam), $ebam);
                 }
-                $bams += (-s $ebam || -l $ebam) ? 1 : 0;
+                $bams += $fsu->file_exists($ebam) ? 1 : 0;
                 
                 unless ($self->{dcc_mode}) {
                     foreach my $suffix ('.md5', '.bai', '.bai.md5', '.bas', '.bas.md5') {
@@ -1016,7 +1017,7 @@ sub create_release_files {
                         $prev_dcc =~ s/\.$self->{release_date}\./.$self->{previous_release_date}./;
                         $self->_crf_symlink_previous($symlink_from_previous, $prev_dcc, $dccbam);
                     }
-                    $dcc_bams += (-s $dccbam || -l $dccbam) ? 1 : 0;
+                    $dcc_bams += $fsu->file_exists($dccbam) ? 1 : 0;
                     
                     foreach my $suffix ('.md5', '.bai', '.bai.md5', '.bas', '.bas.md5') {
                         push(@these_release_files, $dccbam.$suffix);
@@ -1035,7 +1036,7 @@ sub create_release_files {
                         move($orig_split_bams[$i], $expected_split_bams[$i]);
                     }
                 }
-                elsif (-s $bai) {
+                elsif ($fsu->file_exists($bai)) {
                     # 454 bams made with ssaha2 and our own cigar->sam code
                     # do not give unmapped reads with mapped mates the same
                     # chr&pos as the mapped mate, so when we make our unmapped
@@ -1066,7 +1067,7 @@ sub create_release_files {
                         $self->_crf_symlink_previous($symlink_from_previous, $prev_dcc, $emd5);
                     }
                     else {
-                        unless (-s $emd5) {
+                        unless ($fsu->file_exists($emd5)) {
                             $self->{bsub_opts} = '-q small';
                             LSF::run($lock_file, $lane_path, $pathed_job_name, $self, qq{md5sum $ebam > $emd5});
                         }
@@ -1082,7 +1083,7 @@ sub create_release_files {
                         $self->_crf_symlink_previous($symlink_from_previous, $prev_dcc.'.md5', $ebai_md5);
                     }
                     else {
-                        unless (-s $ebai && -s $ebai_md5) {
+                        unless ($fsu->file_exists($ebai) && $fsu->file_exists($ebai_md5)) {
                             $self->{bsub_opts} = '-q normal';
                             LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                                      qq{perl -MVertRes::Wrapper::samtools -Mstrict -e "VertRes::Wrapper::samtools->new(verbose => $verbose)->index(qq[$ebam], qq[$ebai.tmp]); die qq[index failed for $ebam\n] unless -s qq[$ebai.tmp]; system(qq[mv $ebai.tmp $ebai; md5sum $ebai > $ebai_md5]);"});
@@ -1099,7 +1100,7 @@ sub create_release_files {
                         $self->_crf_symlink_previous($symlink_from_previous, $prev_dcc.'.md5', $ebas_md5);
                     }
                     else {
-                        unless (-s $ebas && -s $ebas_md5) {
+                        unless ($fsu->file_exists($ebas) && $fsu->file_exists($ebas_md5)) {
                             $self->{bsub_opts} = '-q normal';
                             my $si = $self->{dcc_mode} ? ", qq[$self->{dcc_mode}]" : '';
                             LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
@@ -1113,7 +1114,7 @@ sub create_release_files {
         
         my $done_release_files = 0;
         foreach my $r_file (@these_release_files) {
-            $done_release_files++ if (-s $r_file || -l $r_file);
+            $done_release_files++ if $fsu->file_exists($r_file);
         }
         if ($done_release_files == @these_release_files) {
             open(my $fh, '>', $done_file) || $self->throw("Could not write to $done_file");
@@ -1143,10 +1144,10 @@ sub create_release_files {
 
 sub _crf_symlink_previous {
     my ($self, $prev_dir, $basename, $dest) = @_;
-    return if -e $dest;
+    return if $self->{fsu}->file_exists($dest);
     
     my $prev = $self->{fsu}->catfile($prev_dir, $basename);
-    if (-s $prev || -l $prev) {
+    if ($self->{fsu}->file_exists($prev)) {
         symlink($prev, $dest);
     }
     else {
