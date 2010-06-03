@@ -684,7 +684,7 @@ sub set_stripe_dir_tree {
 
 sub file_exists {
     my ($self, $file, %opts) = @_;
-    $file = abs_path($file);
+    #$file = abs_path($file);
     my $dmd5 = Digest::MD5->new();
     $dmd5->add($file);
     my $md5 = $dmd5->hexdigest;
@@ -729,9 +729,8 @@ sub file_exists {
         }
     }
     
-    # check the disk, avoiding a stat
-    my $exists = open(my $fh, $file) ? 1 : 0;
-    close($fh) if $exists;
+    # check the disk
+    my $exists = -e $file;
     
     # store result in db
     my $enum = $exists ? '1' : '0';
