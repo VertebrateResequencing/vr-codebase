@@ -1320,6 +1320,7 @@ sub is_finished {
 
 sub _merge_check {
     my ($self, $expected_file, $done_file, $lane_path) = @_;
+    my $fsu = $self->{fsu};
     
     if (-s $expected_file && ! -e $done_file) {
         my $done_bams = 0;
@@ -1336,7 +1337,7 @@ sub _merge_check {
                 next;
             }
             $expected_bams++;
-            if (-s $_) {
+            if ($fsu->file_exists($_)) {
                 $done_bams++;
                 push(@bams, $_);
             }
