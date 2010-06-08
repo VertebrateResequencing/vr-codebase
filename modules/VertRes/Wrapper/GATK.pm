@@ -149,6 +149,9 @@ sub _handle_common_params {
     unless (defined $params->{max_reads_at_locus}) {
         $params->{max_reads_at_locus} = $self->{_default_max_reads_at_locus};
     }
+    unless (defined $params->{quiet_output_mode}) {
+        $params->{quiet_output_mode} = $self->quiet();
+    }
 }
 
 =head2 count_covariates
@@ -196,7 +199,6 @@ sub count_covariates {
     
     my %params = @params;
     $params{T} = 'CountCovariates';
-    $params{quiet_output_mode} = $self->quiet();
     unless (defined $params{useOriginalQualities}) {
         $params{useOriginalQualities} = 1;
     }
@@ -429,7 +431,6 @@ sub table_recalibration {
     
     my %params = @params;
     $params{T} = 'TableRecalibration';
-    $params{quiet_output_mode} = $self->quiet();
     unless (defined $params{useOriginalQualities}) {
         $params{useOriginalQualities} = 1;
     }
@@ -471,7 +472,6 @@ sub realignment_targets {
     
     my %params = @params;
     $params{T} = 'RealignerTargetCreator';
-    $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_intervals);
@@ -513,7 +513,6 @@ sub indel_realigner {
     
     my %params = @params;
     $params{T} = 'IndelRealigner';
-    $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_bam);
@@ -562,7 +561,6 @@ sub indel_genotyper {
                   minConsensusFraction => 0.6, maxNumberOfReads => 1000000,
                   @params);
     $params{T} = 'IndelGenotyperV2';
-    $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_raw_bed);
@@ -617,7 +615,6 @@ sub unified_genotyper {
     
     my %params = (standard_min_confidence_threshold_for_calling => 10.0, @params);
     $params{T} = 'UnifiedGenotyper';
-    $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_vcf);
@@ -631,12 +628,13 @@ sub unified_genotyper {
 
  Title   : variant_annotator
  Usage   : $wrapper->set_b('variant,VCF,variants.vcf');
+           $wrapper->set_annotations('HaplotypeScore', 'SB', 'QD');
            $wrapper->variant_annotator('the.bam.list', 'out.vcf');
  Function: Annotates VCF calls.
  Returns : n/a
  Args    : path to input bam or list of bams, path to output vcf file.
            Optionally, supply R or DBSNP options (as a hash), as understood by
-           GATK, along with the other options like clusterWindowSize etc (1000
+           GATK, along with the other options like useAllAnnotations etc (1000
            genomes defaults exist).
            Before calling this, you should use set_b() to set the input vcf
            to the VCF you want to annotate
@@ -655,15 +653,15 @@ sub variant_annotator {
     #   -o /path/to/output.vcf \
     #   -B variant,VCF,/path/to/input/variants.vcf \
 
-    $self->switches([qw(quiet_output_mode)]);
-    $self->params([qw(R DBSNP T L max_reads_at_locus)]);
+    $self->switches([qw(quiet_output_mode useAllAnnotations)]);
+    $self->params([qw(R DBSNP T L max_reads_at_locus G group)]);
     
     my $bs = $self->get_b();
-    my @file_args = (" $bs -I $input -o $out_vcf");
+    my $ans = $self->get_annotations();
+    my @file_args = (" $bs $ans -I $input -o $out_vcf");
     
     my %params = (@params);
     $params{T} = 'VariantAnnotator';
-    $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_vcf);
@@ -723,7 +721,6 @@ sub variant_filtration {
     
     my %params = (maskName => 'InDel', clusterWindowSize => 10, @params);
     $params{T} = 'VariantFiltration';
-    $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_vcf);
@@ -779,7 +776,6 @@ sub generate_variant_clusters {
     
     my %params = (numGaussians => 6, numIterations => 10, @params);
     $params{T} = 'GenerateVariantClusters';
-    $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_cluster);
@@ -836,7 +832,6 @@ sub variant_recalibrator {
     
     my %params = (target_titv => 2.1, @params);
     $params{T} = 'VariantRecalibrator';
-    $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_vcf.'.vcf');
@@ -938,7 +933,6 @@ sub variant_eval {
     
     my %params = (reportType => 'grep', @params);
     $params{T} = 'VariantEval';
-    $params{quiet_output_mode} = $self->quiet();
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_file);
