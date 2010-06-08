@@ -55,6 +55,7 @@ use VertRes::Wrapper::samtools;
 our $DEFAULT_GATK_JAR = File::Spec->catfile($ENV{GATK}, 'GenomeAnalysisTK.jar');
 our $DEFAULT_LOGLEVEL = 'ERROR';
 our $DEFAULT_PLATFORM = 'ILLUMINA';
+our $DEFAULT_MAX_READS = 50000;
 
 =head2 new
 
@@ -82,6 +83,8 @@ our $DEFAULT_PLATFORM = 'ILLUMINA';
                                 l option; default 'ERROR')
            default_platform => ILLUMINA (when not set in the RG header, this
                                          platform will be used)
+           max_reads_at_locus => int (prevent running out of memory when there
+                                      are lots of reads piled up)
 
 =cut
 
@@ -123,6 +126,7 @@ sub new {
     $self->set_b(@{delete $self->{bs} || $default_bs || []});
     $self->{_default_loglevel} = delete $self->{log_level} || $DEFAULT_LOGLEVEL;
     $self->{_default_platform} = delete $self->{default_platform} || $DEFAULT_PLATFORM;
+    $self->{_default_max_reads_at_locus} = delete $self->{max_reads_at_locus} || $DEFAULT_MAX_READS;
     
     return $self;
 }
@@ -141,6 +145,9 @@ sub _handle_common_params {
     }
     unless (defined $params->{default_platform}) {
         $params->{default_platform} = $self->{_default_platform};
+    }
+    unless (defined $params->{max_reads_at_locus}) {
+        $params->{max_reads_at_locus} = $self->{_default_max_reads_at_locus};
     }
 }
 
@@ -194,7 +201,6 @@ sub count_covariates {
         $params{useOriginalQualities} = 1;
     }
     $self->_handle_common_params(\%params);
-    $params{max_reads_at_locus} ||= 50000; # stop it using tons of memory in repeat regions
     
     $self->throw("Non-existant rod file '$params{DBSNP}'") unless -s $params{DBSNP};
     
@@ -612,7 +618,6 @@ sub unified_genotyper {
     my %params = (standard_min_confidence_threshold_for_calling => 10.0, @params);
     $params{T} = 'UnifiedGenotyper';
     $params{quiet_output_mode} = $self->quiet();
-    $params{max_reads_at_locus} ||= 50000; # stop it using tons of memory in repeat regions
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_vcf);
@@ -651,7 +656,7 @@ sub variant_annotator {
     #   -B variant,VCF,/path/to/input/variants.vcf \
 
     $self->switches([qw(quiet_output_mode)]);
-    $self->params([qw(R DBSNP T L)]);
+    $self->params([qw(R DBSNP T L max_reads_at_locus)]);
     
     my $bs = $self->get_b();
     my @file_args = (" $bs -I $input -o $out_vcf");
