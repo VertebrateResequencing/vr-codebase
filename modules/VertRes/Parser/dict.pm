@@ -9,7 +9,7 @@ use VertRes::Parser::dict;
 # create object, supplying .dict file or filehandle
 my $pars = VertRes::Parser::dict->new(file => 'reference.dict');
 
-# get the hash reference that will hold the most recently requested result
+# get the array reference that will hold the most recently requested result
 my $result_holder = $pars->result_holder();
 
 # loop through the output, getting results
