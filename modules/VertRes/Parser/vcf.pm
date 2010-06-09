@@ -87,11 +87,16 @@ sub _get_header {
             s/^#//;
             my @cols = split;
             my %col_to_name;
+            my $filter_col = 6;
             foreach my $col (0..$#cols) {
                 $col_to_name{$col} = $cols[$col];
+                if ($cols[$col] eq 'FILTER') {
+                    $filter_col = $col;
+                }
             }
             $self->{col_to_name} = \%col_to_name;
             $self->{sorted_cols} = [sort { $a <=> $b } keys %col_to_name];
+            $self->{filter_col} = $filter_col;
             
             last;
         }
@@ -138,6 +143,27 @@ sub _get_header {
 
 =cut
 
+=head2 match_filter
+
+ Title   : match_filter
+ Usage   : my $obj->match_filter(0);
+ Function: Change the behaviour of next_result(), so that it only returns
+           results that match the given filter.
+ Returns : string (the filter set)
+ Args    : string (the filter to set; not checked for validity)
+
+=cut
+
+sub match_filter {
+    my $self = shift;
+    
+    if (@_) {
+        $self->{match_filter} = shift;
+    }
+    
+    return $self->{match_filter};
+}
+
 =head2 next_result
 
  Title   : next_result
@@ -169,6 +195,20 @@ sub next_result {
     my $result_holder = $self->{_result_holder};
     foreach my $key (keys %{$result_holder}) {
         delete $result_holder->{$key};
+    }
+    
+    # should we skip this line?
+    my $match_filter = $self->match_filter;
+    if (defined $match_filter) {
+        my $filter_col = $self->{filter_col};
+        my $this_filter = $data[$filter_col];
+        while ("$this_filter" ne "$match_filter") {
+            $line = <$fh> || return;
+            @data = split(qr/\t/, $line);
+            @data || return;
+            $this_filter = $data[$filter_col];
+        }
+        chomp($data[-1]);
     }
     
     # fill in the new data

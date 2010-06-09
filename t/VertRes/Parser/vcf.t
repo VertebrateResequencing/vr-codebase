@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 18;
+    use Test::Most tests => 25;
     
     use_ok('VertRes::Parser::vcf');
 }
@@ -52,5 +52,34 @@ is $rh->{POS}, 10234, 'result_holder contains correct POS for last line';
 is $rh->{ID}, 'rs001', 'result_holder contains correct ID for last line';
 is $rh->{INFO}->{DB}, 1, 'result_holder had DB true for last line';
 is $rh->{SAMPLES}->{NA06994}->{DP}, 14, 'result_holder contains correct sample detail for last line';
+
+# test match_filter
+$pvcf->_seek_first_result;
+is $pvcf->match_filter(0), 0, 'match_filter(0) could be set';
+my $count = 0;
+while ($pvcf->next_result) {
+    $count++;
+    next;
+}
+is $count, 3, '3 results with filter 0';
+$pvcf->_seek_first_result;
+is $pvcf->match_filter('q10'), 'q10', 'match_filter(q10) could be set';
+$count = 0;
+my $filter;
+while ($pvcf->next_result) {
+    $filter = $rh->{FILTER};
+    $count++;
+    next;
+}
+is $count, 1, '1 result with filter q10';
+is $filter, 'q10', 'that result had a filter of q10';
+$pvcf->_seek_first_result;
+is $pvcf->match_filter(undef), undef, 'match_filter(undef) could be (un)set';
+$count = 0;
+while ($pvcf->next_result) {
+    $count++;
+    next;
+}
+is $count, 4, '4 results with no filter';
 
 exit;
