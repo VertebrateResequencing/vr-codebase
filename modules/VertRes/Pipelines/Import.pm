@@ -197,6 +197,7 @@ sub get_files
 
         Utils::CMD(qq[mv $file $file.x; rm -f $file.x.gz; gzip $file.x;]);
         Utils::CMD(qq[mv $file.x.gz $file.gz]);
+        Utils::CMD(qq[md5sum $file.gz > $file.gz.md5]);
     }
 
     # If there are any single files (e.g. *_s_*) which are not paired, create a symlink to it:
@@ -404,7 +405,7 @@ sub update_db
             $vrfile_gz = $vrlane->add_file("$name.gz");
             vrtrack_copy_fields($vrfile,$vrfile_gz,[qw(file_id name hierarchy_name)]);
             $vrfile_gz->hierarchy_name("$name.gz");
-            $vrfile_gz->md5(`md5sum $lane_path/$name.gz | awk '{printf "%s",\$1}'`);
+            $vrfile_gz->md5(`awk '{printf "%s",\$1}' $lane_path/$name.gz.md5`);
             $vrfile_gz->is_processed('import',1);
             $vrfile_gz->update();
         }
