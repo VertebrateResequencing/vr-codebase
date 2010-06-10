@@ -33,9 +33,8 @@ our @actions =
 
 our $options = 
 {
-    bsub_opts       => "-q normal -M6000000 -R 'select[type==X86_64 && mem>6000] rusage[mem=6000]'",
-    #bsub_opts_long  => "-q long -M7000000 -R 'select[type==X86_64 && mem>7000] rusage[mem=7000]'",
-    bsub_opts_long  => "-q normal -M7000000 -R 'select[type==X86_64 && mem>7000] rusage[mem=7000]'",
+    bsub_opts       => "-q normal -M6000000 -R 'select[type==X86_64 && mem>6000] rusage[mem=6000,thouio=1]'",
+    bsub_opts_long  => "-q normal -M7000000 -R 'select[type==X86_64 && mem>7000] rusage[mem=7000,thouio=1]'",
     fai_chr_regex   => '\d+|x|y',
     gatk_cmd        => 'java -Xmx6500m -jar /nfs/users/nfs_p/pd3/sandbox/call-snps/gatk/GenomeAnalysisTK/GenomeAnalysisTK.jar -T UnifiedGenotyper -hets 0.0001 -confidence 30 -mmq 25 -mc 1000 -mrl 10000000 --platform Solexa -U ALLOW_UNSET_BAM_SORT_ORDER',
     merge_vcf       => 'merge-vcf -d',
