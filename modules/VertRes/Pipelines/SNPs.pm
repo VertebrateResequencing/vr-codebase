@@ -5,6 +5,7 @@ use strict;
 use warnings;
 use LSF;
 use Utils;
+use VertRes::Parser::sam;
 
 our @actions =
 (
@@ -37,6 +38,7 @@ our $options =
     bsub_opts_long  => "-q normal -M7000000 -R 'select[type==X86_64 && mem>7000] rusage[mem=7000,thouio=1]'",
     fai_chr_regex   => '\d+|x|y',
     gatk_cmd        => 'java -Xmx6500m -jar /nfs/users/nfs_p/pd3/sandbox/call-snps/gatk/GenomeAnalysisTK/GenomeAnalysisTK.jar -T UnifiedGenotyper -hets 0.0001 -confidence 30 -mmq 25 -mc 1000 -mrl 10000000 --platform Solexa -U ALLOW_UNSET_BAM_SORT_ORDER',
+    max_jobs        => undef,
     merge_vcf       => 'merge-vcf -d',
     qcall_cmd       => 'QCALL -ct 0.01 -snpcan -pphet 0',
     sam2vcf         => 'sam2vcf.pl',
@@ -62,6 +64,7 @@ our $options =
                     fai_chr_regex   .. The chromosomes to be processed.
                     gatk_cmd        .. The command to launch GATK SNP caller
                     gatk_split_size .. GATK seems to require more memory
+                    max_jobs        .. The maximum number of running jobs per task
                     merge_vcf       .. The merge-vcf script.
                     pileup_rmdup    .. The script to remove duplicate positions.
                     qcall_cmd       .. The qcall command.
@@ -625,8 +628,10 @@ sub qcall
 
     my $chunks = $self->chr_chunks($$self{fai_ref},$$self{split_size});
 
-    my $is_finished = 1;
+    my $max_jobs = $$self{max_jobs} ? $$self{max_jobs} : 0;
+    my $done = $LSF::Done;
     my @to_be_merged;
+    my $ntasks = 0;
 
     # For all chromosomes create the 1Mb chunks and schedule them to LSF queue
     for my $chunk (@$chunks)
@@ -639,12 +644,24 @@ sub qcall
             $self->clean_files($work_dir,$chunk,"$work_dir/_done");
             next;
         }
-        $is_finished = 0;
 
         my $jids_file = "$work_dir/_$chunk.jid";
         my $status = LSF::is_job_running($jids_file);
-        if ( $status&$LSF::Running ) { next; }
-        if ( $status&$LSF::Error ) { $self->warn("Some jobs failed: $jids_file\n"); }
+
+        $ntasks++;
+        if ( $max_jobs && $ntasks>$max_jobs )
+        {
+            $done |= $LSF::Running;
+            $self->debug("The limit reached, $max_jobs jobs are running.\n");
+            last;
+        }
+
+        if ( $status&$LSF::Running ) { $done |= $LSF::Running; next; }
+        if ( $status&$LSF::Error ) 
+        { 
+            $done |= $LSF::Error;
+            $self->warn("The command failed: $work_dir .. perl -w _$chunk.pl\n"); 
+        }
 
         open(my $fh,'>',"$work_dir/_$chunk.pl") or $self->throw("$work_dir/_$chunk.pl: $!");
         print $fh qq[
@@ -665,11 +682,13 @@ my \$var = VertRes::Pipelines::SNPs->new(%\$opts);
 
         close($fh);
         LSF::run($jids_file,$work_dir,"_$chunk",{%$self,bsub_opts=>$$self{bsub_opts_long},dont_wait=>1,append=>0},qq[perl -w _$chunk.pl]);
-        $self->debug("Submitting $work_dir .. _$chunk\n");
+        $self->debug("Submitting $work_dir .. perl -w _$chunk.pl\n");
+
+        $done |= $LSF::Running;
     }
 
-    # Some chunks still not done
-    if ( !$is_finished ) { return; }
+    if ( $done&$LSF::Error ) { $self->throw("QCall failed for some of the files.\n"); }
+    if ( $done&$LSF::Running ) { $self->debug("Some files not finished...\n"); return $$self{No}; }
 
     # Because this subroutine returns as if it has already finished, a custom jids_file must
     #   be used: Pipeline.pm will delete the $lock_file.
@@ -690,6 +709,24 @@ my \$var = VertRes::Pipelines::SNPs->new(%\$opts);
     return $$self{Yes};
 }
 
+# Multiple BAM files can belong to the same sample and should be merged.
+sub bam_file_groups
+{
+    my ($self,$files) = @_;
+    my %groups;
+    for my $file (@$files)
+    {
+        my $fh = Utils::CMD("samtools view -H $file",{rpipe=>1});
+        my $pars = VertRes::Parser::sam->new(fh=>$fh);
+        my $samples = $pars->sample_names();
+        close($fh);
+
+        if ( @$samples>1 or !@$samples ) { $groups{$file} = $file; }
+        else { push @{$groups{$$samples[0]}}, $file; }
+    }
+    return \%groups;
+}
+
 sub run_qcall_chunk
 {
     my ($self,$chunk) = @_;
@@ -697,20 +734,40 @@ sub run_qcall_chunk
     if ( -e "$chunk.vcf.gz" ) { return; }
 
     my $files  = $self->read_files($$self{file_list});
+    my $groups = $self->bam_file_groups($files);
     my $prefix = $self->common_prefix($files);
     my %names;
 
     # Prepare the QCall command line arguments
     my $cmd = "(\n";
-    for my $file (@$files)
+    for my $grp (keys %$groups)
     {
-        my ($dir,$name,$suffix) = Utils::basename($file);
-        $dir =~ s{^/*$prefix/*}{};
-        my $id = $dir ? "$dir/$name" : $name;
-        if ( exists($names{$id}) ) { $self->throw("FIXME: the names not unique [$file] -> [$dir/$name]\n"); }
+        my $id;
+        if ( $grp eq $$groups{$grp}[0] ) 
+        {
+            # The group name is the file name
+            my ($dir,$name,$suffix) = Utils::basename($grp);
+            $dir =~ s{^/*$prefix/*}{};
+            $id  = $dir ? "$dir/$name" : $name;
+        }
+        else
+        {
+            $id = $grp;
+            $id =~ s/\s/_/g;    # Not sure if this can happen, just in case
+        }
+
+        if ( exists($names{$id}) ) { $self->throw("FIXME: the names not unique [$grp] -> [$id]\n"); }
         $names{$id} = 1;
-        
-        $cmd .= qq[samtools view $file $chunk | samtools pileup $$self{samtools_pileup_params} -gsS -f $$self{fa_ref} - | samtools glfview - | awk '{printf("%s\\t$id\\n",\$0);}';\n];
+
+        my $grp_cmd = "\t(\n";
+        for my $file (@{$$groups{$grp}})
+        {
+            $grp_cmd .= qq[samtools view $file $chunk; ];
+        }
+        $grp_cmd .= "\t) ";
+        if ( @{$$groups{$grp}}>1 ) { $grp_cmd .= q[ | sort -k3,3n -k4,4n ]; }
+        $grp_cmd .= qq[ | samtools pileup $$self{samtools_pileup_params} -gsS -f $$self{fa_ref} - | samtools glfview - | awk '{printf("%s\\t$id\\n",\$0);}';\n];
+        $cmd .= $grp_cmd;
     }
 
     # Write the column names for QCall
