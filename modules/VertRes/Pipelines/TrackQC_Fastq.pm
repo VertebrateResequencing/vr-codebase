@@ -653,6 +653,7 @@ my \%params =
     'fai_ref'      => q[$$self{fai_ref}],
     'stats_ref'    => q[$stats_ref],
     'bwa_clip'     => q[$$self{bwa_clip}],
+    'chr_regex'    => q[$$self{chr_regex}],
 );
 
 my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);

@@ -392,6 +392,7 @@ my \%params =
     'fai_ref'      => q[$$self{fai_ref}],
     'stats_ref'    => q[$stats_ref],
     'bwa_clip'     => q[$$self{bwa_clip}],
+    'chr_regex'    => q[$$self{chr_regex}],
 );
 
 my \$qc = VertRes::Pipelines::TrackQC_Bam->new(\%params);
@@ -440,7 +441,9 @@ sub run_graphs
 
 
     # Get stats from the BAM file
-    my $all_stats = SamTools::collect_detailed_bam_stats($bam_file,$fai_ref,{do_clipped=>$$self{bwa_clip}});
+    my %opts = (do_clipped=>$$self{bwa_clip});
+    if ( exists($$self{chr_regex}) ) { $opts{do_chrm} = $$self{chr_regex}; }
+    my $all_stats = SamTools::collect_detailed_bam_stats($bam_file,$fai_ref,\%opts);
     my $stats = $$all_stats{'total'};
     report_detailed_stats($stats,$lane_path,$other_stats);
     dump_detailed_stats($stats,$dump_file);
