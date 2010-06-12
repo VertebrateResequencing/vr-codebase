@@ -530,6 +530,33 @@ sub readgroup_info {
     return $self->_handle_multi_line_header_types('RG', @_);
 }
 
+=head2 samples
+
+ Title   : samples
+ Usage   : my @samples = $obj->samples();
+ Function: Get all the unique SM fields from amongst all RG lines in
+           the header.
+ Returns : list of strings (sample names)
+ Args    : none
+
+=cut
+
+sub samples {
+    my $self = shift;
+    return $self->_get_unique_rg_fields('SM');
+}
+
+sub _get_unique_rg_fields {
+    my ($self, $field) = @_;
+    my %vals;
+    my %rg_info = $self->readgroup_info();
+    while (my ($rg, $data) = each %rg_info) {
+        $vals{$data->{$field} || next} = 1;
+    }
+    my @uniques = sort keys %vals;
+    return @uniques;
+}
+
 sub _handle_multi_line_header_types {
     my ($self, $type, $id, $tag) = @_;
     

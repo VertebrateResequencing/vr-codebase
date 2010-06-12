@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 61;
+    use Test::Most tests => 62;
     
     use_ok('VertRes::Parser::sam');
 }
@@ -95,6 +95,7 @@ my $expected_info = {PL => 'ILLUMINA',
 is_deeply $rg_info, $expected_info, 'readgroup info from all hash contains the correct info';
 is_deeply {$ps->readgroup_info('SRR003435')}, $expected_info, 'readgroup_info(id) gave correct info';
 is $ps->readgroup_info('SRR003435', 'LB'), 'Solexa-6391', 'readgroup_info specific was correct';
+is_deeply [$ps->samples], ['NA11918'], 'samples worked';
 while ($ps->next_result) {
     next;
 }
