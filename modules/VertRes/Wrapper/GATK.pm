@@ -559,7 +559,7 @@ sub indel_genotyper {
     
     my %params = (verbose => 1, minIndelCount => 2, minFraction => 0.03,
                   minConsensusFraction => 0.6, maxNumberOfReads => 1000000,
-                  @params);
+                  window_size => 324, @params);
     $params{T} = 'IndelGenotyperV2';
     $self->_handle_common_params(\%params);
     
