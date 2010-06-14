@@ -675,6 +675,7 @@ my \$opts = {
     fai_ref    => q[$$self{fai_ref}],
     split_size => q[$$self{split_size}],
     samtools_pileup_params => q[$$self{samtools_pileup_params}],
+    qcall_cmd  => q[$$self{qcall_cmd}],
 };
 my \$var = VertRes::Pipelines::SNPs->new(%\$opts);
 \$var->run_qcall_chunk(q[$chunk]);
