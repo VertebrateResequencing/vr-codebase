@@ -660,10 +660,10 @@ sub qcall
         if ( $status&$LSF::Error ) 
         { 
             $done |= $LSF::Error;
-            $self->warn("The command failed: $work_dir .. perl -w _$chunk.pl\n"); 
+            $self->warn("The command failed: $work_dir .. perl -w $$self{prefix}$chunk.pl\n"); 
         }
 
-        open(my $fh,'>',"$work_dir/_$chunk.pl") or $self->throw("$work_dir/_$chunk.pl: $!");
+        open(my $fh,'>',"$work_dir/$$self{prefix}$chunk.pl") or $self->throw("$work_dir/$$self{prefix}$chunk.pl: $!");
         print $fh qq[
 use strict;
 use warnings;
@@ -676,14 +676,15 @@ my \$opts = {
     split_size => q[$$self{split_size}],
     samtools_pileup_params => q[$$self{samtools_pileup_params}],
     qcall_cmd  => q[$$self{qcall_cmd}],
+    prefix     => q[$$self{prefix}],
 };
 my \$var = VertRes::Pipelines::SNPs->new(%\$opts);
 \$var->run_qcall_chunk(q[$chunk]);
         \n];
 
         close($fh);
-        LSF::run($jids_file,$work_dir,"_$chunk",{%$self,bsub_opts=>$$self{bsub_opts_long},dont_wait=>1,append=>0},qq[perl -w _$chunk.pl]);
-        $self->debug("Submitting $work_dir .. perl -w _$chunk.pl\n");
+        LSF::run($jids_file,$work_dir,"$$self{prefix}$chunk",{%$self,bsub_opts=>$$self{bsub_opts_long},dont_wait=>1,append=>0},qq[perl -w $$self{prefix}$chunk.pl]);
+        $self->debug("Submitting $work_dir .. perl -w $$self{prefix}$chunk.pl\n");
 
         $done |= $LSF::Running;
     }
@@ -693,7 +694,7 @@ my \$var = VertRes::Pipelines::SNPs->new(%\$opts);
 
     # Because this subroutine returns as if it has already finished, a custom jids_file must
     #   be used: Pipeline.pm will delete the $lock_file.
-    my $jids_file = "$work_dir/_qcall_merge.jid";
+    my $jids_file = "$work_dir/$$self{prefix}qcall_merge.jid";
     my $status = LSF::is_job_running($jids_file);
     if ( $status&$LSF::Running ) { return; }
     if ( $status&$LSF::Error ) { $self->warn("Some jobs failed: $jids_file\n"); }
@@ -701,11 +702,11 @@ my \$var = VertRes::Pipelines::SNPs->new(%\$opts);
     # Get the VCF merging command
     my $cmd = $self->glue_vcf_chunks(\@to_be_merged,'qcall');
 
-    open(my $fh,'>',"$work_dir/_merge.pl") or $self->throw("$work_dir/_merge.pl: $!");
+    open(my $fh,'>',"$work_dir/$$self{prefix}merge.pl") or $self->throw("$work_dir/$$self{prefix}merge.pl: $!");
     print $fh $cmd;
     close($fh);
-    LSF::run($jids_file,$work_dir,"_merge",{%$self,bsub_opts=>$$self{bsub_opts_long},dont_wait=>1},qq[perl -w _merge.pl]);
-    $self->debug("Submitting $work_dir _merge\n");
+    LSF::run($jids_file,$work_dir,"$$self{prefix}merge",{%$self,bsub_opts=>$$self{bsub_opts_long},dont_wait=>1},qq[perl -w $$self{prefix}merge.pl]);
+    $self->debug("Submitting $work_dir $$self{prefix}merge\n");
 
     return $$self{Yes};
 }
@@ -772,7 +773,7 @@ sub run_qcall_chunk
     }
 
     # Write the column names for QCall
-    open(my $fh,'>',"_$chunk.names") or $self->throw("_$chunk.names: $!");
+    open(my $fh,'>',"$$self{prefix}$chunk.names") or $self->throw("$$self{prefix}$chunk.names: $!");
     for my $id (keys %names)
     {
         print $fh "$id\n";
@@ -780,7 +781,7 @@ sub run_qcall_chunk
     close($fh);
 
     # Execute QCall
-    $cmd .= ") | sort -k1,1n -k2,2n | $$self{qcall_cmd} -sn _$chunk.names -co $chunk.vcf.part";
+    $cmd .= ") | sort -k1,1n -k2,2n | $$self{qcall_cmd} -sn $$self{prefix}$chunk.names -co $chunk.vcf.part";
     Utils::CMD($cmd,{verbose=>1});
 
     # Before it's fixed, convert to proper VCF
@@ -813,7 +814,7 @@ Utils::CMD(qq[tabix -p vcf $name.vcf.gz]);
         if ( !($file=~/.vcf.gz$/) ) { $self->throw("Could not parse the chunk file name: $file"); }
         my $chunk = $`;
         $out .= qq[unlink('$file');\n]; 
-        $out .= qq[unlink('_$chunk.names');\n]; 
+        $out .= qq[unlink('$$self{prefix}$chunk.names');\n]; 
     }
 
     return $out;
