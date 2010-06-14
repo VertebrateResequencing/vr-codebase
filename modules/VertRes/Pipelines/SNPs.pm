@@ -645,7 +645,7 @@ sub qcall
             next;
         }
 
-        my $jids_file = "$work_dir/_$chunk.jid";
+        my $jids_file = "$work_dir/$$self{prefix}$chunk.jid";
         my $status = LSF::is_job_running($jids_file);
 
         $ntasks++;
