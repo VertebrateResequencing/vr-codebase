@@ -812,6 +812,8 @@ sub update_db {
         next unless -s $data_path;
         $imported_files++;
         
+        my $expect_change = 0;
+        
         # check the md5; the existing md5 in the db may correspond to the md5
         # of the uncompressed fastq, but we want the compressed md5
         my $actual_md5_file = $data_path.'.md5';
@@ -821,7 +823,11 @@ sub update_db {
             my $actual_md5 = <$md5fh>;
             close($md5fh);
             chomp($actual_md5);
-            $file_obj->md5($actual_md5);
+            my $current = $file_obj->md5;
+            if (! $current || $current ne $actual_md5) {
+                $expect_change = 1;
+                $file_obj->md5($actual_md5);
+            }
         }
         
         $file_obj->is_processed('import', 1);
@@ -830,25 +836,48 @@ sub update_db {
         my $fqc = VertRes::Parser::fastqcheck->new(file => "$data_path.fastqcheck");
         my $read_len = int($fqc->avg_length);
         $largest_read_len = $read_len if $read_len > $largest_read_len;
-        $file_obj->read_len($read_len);
-        $file_obj->mean_q($fqc->avg_qual);
+        my $current = $file_obj->read_len;
+        if (! defined $current || $current != $read_len) {
+            $expect_change = 1;
+            $file_obj->read_len($read_len);
+        }
+        $current = $file_obj->mean_q;
+        my $new = $fqc->avg_qual;
+        if (! defined $current || $current != $new) {
+            $expect_change = 1;
+            $file_obj->mean_q($new);
+        }
         
-        my $ok = $file_obj->update();
-        $attempted_updates++;
-        $successful_updates++ if $ok;
+        if ($expect_change) {
+            my $ok = $file_obj->update();
+            $attempted_updates++;
+            $successful_updates++ if $ok;
+        }
     }
     
     # update import status of whole lane if we imported all the files
     if ($imported_files && $imported_files == $total_files) {
-        $vrlane->is_processed('import', 1);
+        my $expect_change = 0;
         
-        if ($largest_read_len) {
-            $vrlane->read_len($largest_read_len);
+        my $current = $vrlane->is_processed('import');
+        unless ($current) {
+            $expect_change = 1;
+            $vrlane->is_processed('import', 1);
         }
         
-        my $ok = $vrlane->update();
-        $attempted_updates++;
-        $successful_updates++ if $ok;
+        if ($largest_read_len) {
+            $current = $vrlane->read_len;
+            if (! defined $current || $current != $largest_read_len) {
+                $expect_change = 1;
+                $vrlane->read_len($largest_read_len);
+            }
+        }
+        
+        if ($expect_change) {
+            my $ok = $vrlane->update();
+            $attempted_updates++;
+            $successful_updates++ if $ok;
+        }
     }
     
     $vrtrack->transaction_commit();
