@@ -632,7 +632,8 @@ sub unified_genotyper {
            $wrapper->variant_annotator('the.bam.list', 'out.vcf');
  Function: Annotates VCF calls.
  Returns : n/a
- Args    : path to input bam or list of bams, path to output vcf file.
+ Args    : path to input bam or list of bams (undef if not needed), path to
+           output vcf file.
            Optionally, supply R or DBSNP options (as a hash), as understood by
            GATK, along with the other options like useAllAnnotations etc (1000
            genomes defaults exist).
@@ -644,23 +645,25 @@ sub unified_genotyper {
 sub variant_annotator {
     my ($self, $input, $out_vcf, @params) = @_;
     
-    # java -jar /path/to/dist/GenomeAnalysisTK.jar \
-    #   -T VariantAnnotator \
-    #   -l INFO
-    #   --DBSNP resources/dbsnp_129_hg18.rod \
-    #   -R /seq/references/Homo_sapiens_assembly18/v0/Homo_sapiens_assembly18.fasta \
-    #   -I /path/to/bam/file.bam.list \
-    #   -o /path/to/output.vcf \
-    #   -B variant,VCF,/path/to/input/variants.vcf \
+    # java -jar GenomeAnalysisTK.jar \
+    #    -T VariantAnnotator \
+    #    -R ref.fasta \
+    #    -o output.vcf \
+    #    -B variant,VCF,calls.vcf \
+    #    -G Standard \      [use all standard annotations; don't run with '-all']
+    #    -BTI variant \      [speeds up the runtime]
+    #    -D dbsnp.rod 
 
     $self->switches([qw(quiet_output_mode useAllAnnotations)]);
-    $self->params([qw(R DBSNP T L max_reads_at_locus G group)]);
+    $self->params([qw(R DBSNP T L max_reads_at_locus G group
+                      rodToIntervalTrackName)]);
     
     my $bs = $self->get_b();
     my $ans = $self->get_annotations();
-    my @file_args = (" $bs $ans -I $input -o $out_vcf");
+    my $I = $input ? " -I $input" : '';
+    my @file_args = (" $bs $ans$I -o $out_vcf");
     
-    my %params = (@params);
+    my %params = (G => 'Standard', rodToIntervalTrackName => 'variant', @params);
     $params{T} = 'VariantAnnotator';
     $self->_handle_common_params(\%params);
     
