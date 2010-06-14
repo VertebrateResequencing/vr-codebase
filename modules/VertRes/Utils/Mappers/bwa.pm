@@ -123,7 +123,8 @@ sub split_fastq {
                             insert_size => 2000);
  Function: A convienience method that calls do_mapping() on the return value of
            wrapper(), translating generic options to those suitable for the
-           wrapper.
+           wrapper. insert_size here is the expected/average insert size and
+           will be ajusted as appropriate for bwa.
  Returns : boolean (true on success)
  Args    : required options:
            ref => 'ref.fa'
@@ -181,6 +182,12 @@ sub do_mapping {
     my $aln_q = delete $input_args{aln_q};
     unless (defined $aln_q) {
         $aln_q = 15;
+    }
+    
+    if (defined $input_args{insert_size} && $input_args{insert_size} != 2000) {
+        # in bwa, the insert_size parameter is the maximum, not the average,
+        # so we multiply by 2
+        $input_args{insert_size} *= 2;
     }
     
     my $wrapper = $self->wrapper;
