@@ -107,4 +107,32 @@ sub next_result {
     return 1;
 }
 
+=head2 seq_lengths
+
+ Title   : seq_lengths
+ Usage   : my %seq_lengths = $obj->seq_lengths;
+ Function: Get all the sequence lengths.
+ Returns : hash (keys as sequence ids, values as int lengths)
+ Args    : n/a
+
+=cut
+
+sub seq_lengths {
+    my $self = shift;
+    
+    my %seq_lengths;
+    
+    $self->_save_position;
+    $self->_seek_first_result;
+    
+    my $rh = $self->result_holder;
+    while ($self->next_result) {
+        $seq_lengths{$rh->[0]} = $rh->[1];
+    }
+    
+    $self->_restore_position();
+    return %seq_lengths;
+}
+
+
 1;
