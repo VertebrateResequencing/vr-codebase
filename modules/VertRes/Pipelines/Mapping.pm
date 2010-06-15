@@ -708,10 +708,11 @@ sub merge_requires {
         # if we've already mapped this lane but don't have the check_file,
         # we probably don't have a split dir anymore and just want to
         # check the merged bam (which might actually be a recal bam)
-        if ($self->{vrlane}->is_processed('mapped')) {
+        my $recal_bam = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.recal.sorted.bam");
+        if ($self->{vrlane}->is_processed('mapped') || $self->{fsu}->file_exists($recal_bam) || $self->{fsu}->file_exists($bam)) {
             next if -e $check_file;
             if ($self->{do_recalibration}) {
-                push(@requires, $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.recal.sorted.bam"));
+                push(@requires, $recal_bam);
             }
             else {
                 push(@requires, $bam);
