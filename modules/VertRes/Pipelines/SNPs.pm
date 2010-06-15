@@ -41,6 +41,7 @@ our $options =
     max_jobs        => undef,
     merge_vcf       => 'merge-vcf -d',
     qcall_cmd       => 'QCALL -ct 0.01 -snpcan -pphet 0',
+    sort_cmd        => 'sort',
     sam2vcf         => 'sam2vcf.pl',
     split_size      => 10_000_000,
     gatk_split_size => 10_000_000,
@@ -70,6 +71,7 @@ our $options =
                     qcall_cmd       .. The qcall command.
                     sam2vcf         .. The convertor from samtools pileup format to VCF.
                     samtools_pileup_params .. The options to samtools.pl varFilter (Used by Qcall and varFilter.)
+                    sort_cmd        .. Change e.g. to 'sort -T /big/space'
                     split_size      .. The size of the chunks (default is 1Mb).
                     varfilter       .. The samtools varFilter command (samtools.pl varFilter).
                     vcf_rmdup       .. The script to remove duplicate positions.
@@ -676,6 +678,7 @@ my \$opts = {
     split_size => q[$$self{split_size}],
     samtools_pileup_params => q[$$self{samtools_pileup_params}],
     qcall_cmd  => q[$$self{qcall_cmd}],
+    sort_cmd   => q[$$self{sort_cmd}],
     prefix     => q[$$self{prefix}],
 };
 my \$var = VertRes::Pipelines::SNPs->new(%\$opts);
@@ -767,7 +770,7 @@ sub run_qcall_chunk
             $grp_cmd .= qq[samtools view $file $chunk; ];
         }
         $grp_cmd .= "\t) ";
-        if ( @{$$groups{$grp}}>1 ) { $grp_cmd .= q[ | sort -k3,3n -k4,4n ]; }
+        if ( @{$$groups{$grp}}>1 ) { $grp_cmd .= q[ | $$self{sort_cmd} -k3,3n -k4,4n ]; }
         $grp_cmd .= qq[ | samtools pileup $$self{samtools_pileup_params} -gsS -f $$self{fa_ref} - | samtools glfview - | awk '{printf("%s\\t$id\\n",\$0);}';\n];
         $cmd .= $grp_cmd;
     }
@@ -781,7 +784,7 @@ sub run_qcall_chunk
     close($fh);
 
     # Execute QCall
-    $cmd .= ") | sort -k1,1n -k2,2n | $$self{qcall_cmd} -sn $$self{prefix}$chunk.names -co $chunk.vcf.part";
+    $cmd .= ") | $$self{sort_cmd} -k1,1n -k2,2n | $$self{qcall_cmd} -sn $$self{prefix}$chunk.names -co $chunk.vcf.part";
     Utils::CMD($cmd,{verbose=>1});
 
     # Before it's fixed, convert to proper VCF
@@ -802,7 +805,7 @@ use strict;
 use warnings;
 use Utils;
 # Take the VCF header from one file and sort the rest
-Utils::CMD(qq[(zcat $$vcfs[0] | grep ^#; zcat $args | grep -v ^# | sort -k1,1 -k2,2n) | $$self{vcf_rmdup} | bgzip -c > $name.vcf.gz.part]);
+Utils::CMD(qq[(zcat $$vcfs[0] | grep ^#; zcat $args | grep -v ^# | $$self{sort_cmd} -k1,1 -k2,2n) | $$self{vcf_rmdup} | bgzip -c > $name.vcf.gz.part]);
 Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
 rename('$name.vcf.gz.part','$name.vcf.gz') or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
 Utils::CMD(qq[tabix -p vcf $name.vcf.gz]);
