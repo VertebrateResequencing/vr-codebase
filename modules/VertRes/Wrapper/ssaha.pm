@@ -94,7 +94,7 @@ sub version {
     open(my $fh, "$exe -v |") || $self->throw("Could not start $exe");
     my $version = 0;
     while (<$fh>) {
-        if (/ SSAHA2 version (\S+)/) {
+        if (/ SSAHA2 version (\d+\.\d+)/) { # major and minor only, to avoid churn in mapping pipeline due to sub-minor revisions
             $version = $1;
             last;
         }
