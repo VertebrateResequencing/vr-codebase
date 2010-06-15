@@ -262,7 +262,9 @@ sub next_data_hash
         else { $line = readline($$self{fh}); }
     }
     if ( !$line ) { return undef; }
-    my @items = split(/\t/,$line);
+    my @items;
+    if ( ref($line) eq 'ARRAY' ) { @items = @$line; }
+    else { @items = split(/\t/,$line); }
     chomp($items[-1]);
 
     my $cols = $$self{columns};
