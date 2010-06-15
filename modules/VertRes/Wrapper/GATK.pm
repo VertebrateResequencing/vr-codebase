@@ -551,7 +551,7 @@ sub indel_genotyper {
     #   -mnr 1000000  (maxNumberOfReads)
     
     $self->switches([qw(quiet_output_mode verbose)]);
-    $self->params([qw(R DBSNP T 1kg_format minCoverage minNormalCoverage
+    $self->params([qw(R DBSNP T L 1kg_format minCoverage minNormalCoverage
                       minFraction minConsensusFraction minIndelCount refseq
                       blacklistedLanes window_size maxNumberOfReads)]);
     
@@ -599,7 +599,7 @@ sub unified_genotyper {
     
     $self->switches([qw(quiet_output_mode genotype output_all_callable_bases
                         noSLOD)]);
-    $self->params([qw(R DBSNP T confidence genotype_model base_model
+    $self->params([qw(R DBSNP T L confidence genotype_model base_model
                       heterozygosity max_reads_at_locus
                       standard_min_confidence_threshold_for_calling
                       standard_min_confidence_threshold_for_emitting
