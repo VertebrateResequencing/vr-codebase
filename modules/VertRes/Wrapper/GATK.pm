@@ -558,7 +558,7 @@ sub indel_genotyper {
     my @file_args = (" -I $in_bam", " -O $out_raw_bed -o $out_detailed_bed");
     
     my %params = (verbose => 1, minIndelCount => 2, minFraction => 0.03,
-                  minConsensusFraction => 0.6, maxNumberOfReads => 1000000,
+                  minConsensusFraction => 0.6, maxNumberOfReads => $self->{_default_max_reads_at_locus},
                   window_size => 324, @params);
     $params{T} = 'IndelGenotyperV2';
     $self->_handle_common_params(\%params);
