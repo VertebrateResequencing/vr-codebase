@@ -802,8 +802,9 @@ sub merge {
         
         my $bam_file = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.raw.sorted.bam");
         my $double_check_file = $self->{fsu}->catfile($lane_path, ".$self->{mapstats_id}.$ended.raw.sorted.bam.checked");
-        if ($self->{vrlane}->is_processed('mapped') && $self->{do_recalibration}) {
-            $bam_file = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.recal.sorted.bam");
+        my $recal_bam = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.recal.sorted.bam");
+        if ($self->{do_recalibration} && ($self->{vrlane}->is_processed('mapped') || $self->{fsu}->file_exists($recal_bam))) {
+            $bam_file = $recal_bam;
         }
         next if -s $bam_file && -e $double_check_file;
         
