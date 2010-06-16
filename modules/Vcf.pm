@@ -475,7 +475,7 @@ sub add_header_line
     if ( $key eq 'fileformat' )
     {
         my $value = $$rec{value};
-        if ( !($value=~/(\d+(?:\.\d+)?)$/) )
+        if ( !($value=~/(\d+(?:\.\d+)?)\s*$/) )
         {
             $self->warn("Could not parse the fileformat version string [$value], assuming VCFv$$self{default_version}\n");
             $$self{version} = $$self{default_version};
@@ -508,7 +508,8 @@ sub add_header_line
 sub parse_header_line
 {
     my ($self,$line) = @_;
-    
+
+   
     chomp($line);
     $line =~ s/^##//;
     
@@ -517,7 +518,7 @@ sub parse_header_line
     my $value = $';
 
     my $desc;
-    if ( $value=~/,\"([^\"]+)\"$/ ) { $desc=$1; $value=$`; }
+    if ( $value=~/,\"([^\"]+)\"\s*$/ ) { $desc=$1; $value=$`; }
 
     if ( !$desc ) { return { key=>$key, value=>$value }; }
 
