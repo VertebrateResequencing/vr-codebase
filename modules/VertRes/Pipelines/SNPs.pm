@@ -770,7 +770,7 @@ sub run_qcall_chunk
             $grp_cmd .= qq[samtools view $file $chunk; ];
         }
         $grp_cmd .= "\t) ";
-        if ( @{$$groups{$grp}}>1 ) { $grp_cmd .= q[ | $$self{sort_cmd} -k3,3n -k4,4n ]; }
+        if ( @{$$groups{$grp}}>1 ) { $grp_cmd .= qq[ | $$self{sort_cmd} -k3,3n -k4,4n ]; }
         $grp_cmd .= qq[ | samtools pileup $$self{samtools_pileup_params} -gsS -f $$self{fa_ref} - | samtools glfview - | awk '{printf("%s\\t$id\\n",\$0);}';\n];
         $cmd .= $grp_cmd;
     }
