@@ -43,7 +43,7 @@ our $options =
     qcall_cmd       => 'QCALL -ct 0.01 -snpcan -pphet 0',
     sort_cmd        => 'sort',
     sam2vcf         => 'sam2vcf.pl',
-    split_size      => 10_000_000,
+    split_size      => 1000000,
     gatk_split_size => 10_000_000,
     varfilter       => 'samtools.pl varFilter -S 20 -i 20',
     pileup_rmdup    => 'pileup-rmdup',
@@ -168,7 +168,7 @@ sub chr_chunks
         while ($pos<$len)
         {
             my $from = $pos;
-            my $to   = $from+$split_size;
+            my $to   = $from+$split_size-1;
 
             # GATK will fail if the region goes beyond the end of the chromosome
             if ( $to>$len ) { $to=$len; }
