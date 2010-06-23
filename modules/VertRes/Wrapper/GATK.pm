@@ -573,12 +573,11 @@ sub indel_genotyper {
 =head2 unified_genotyper
 
  Title   : unified_genotyper
- Usage   : $wrapper->unified_genotyper('in.bam', 'out.vcf', 'out.beagle');
+ Usage   : $wrapper->unified_genotyper('in.bam', 'out.vcf');
  Function: Call SNPs on a bam file (preferably one that has been output by
            indel_realigner()).
  Returns : n/a
- Args :    path to input .bam file (or bam fofn), paths to output files (vcf,
-           and file suitable for input into Beagle.
+ Args :    path to input .bam file (or bam fofn), path to output vcf file.
            Optionally, supply R or DBSNP options (as a hash), as understood by
            GATK, along with the other options like confidence etc (1000
            genomes defaults exist).
@@ -586,7 +585,7 @@ sub indel_genotyper {
 =cut
 
 sub unified_genotyper {
-    my ($self, $in_bam, $out_vcf, $out_beagle, @params) = @_;
+    my ($self, $in_bam, $out_vcf, @params) = @_;
     
     # java -jar GenomeAnalysisTK.jar \
     #   -R resources/Homo_sapiens_assembly18.fasta \
@@ -594,8 +593,7 @@ sub unified_genotyper {
     #   -I cleaned.bam \
     #   -D resources/dbsnp_129_hg18.rod \
     #   -varout snps.raw.vcf \
-    #   --standard_min_confidence_threshold_for_calling 10.0 \
-    #   -beagle snps.beagle
+    #   --standard_min_confidence_threshold_for_calling 10.0
     
     $self->switches([qw(quiet_output_mode genotype output_all_callable_bases
                         noSLOD)]);
@@ -611,14 +609,13 @@ sub unified_genotyper {
                       max_deletion_fraction cap_base_quality_by_mapping_quality
                       variant_output_format verbose_mode annotation group)]);
     
-    my @file_args = (" -I $in_bam", " -varout $out_vcf -beagle $out_beagle");
+    my @file_args = (" -I $in_bam", " -varout $out_vcf ");
     
     my %params = (standard_min_confidence_threshold_for_calling => 10.0, @params);
     $params{T} = 'UnifiedGenotyper';
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_vcf);
-    $self->register_output_file_to_check($out_beagle);
     $self->_set_params_and_switches_from_args(%params);
     
     return $self->run(@file_args);
