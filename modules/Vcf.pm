@@ -1568,7 +1568,12 @@ sub Vcf4_0::parse_header_line
 sub Vcf4_0::validate_ref_field
 {
     my ($self,$ref) = @_;
-    if ( !($ref=~/^[ACGTN]+$/) ) { return "Expected combination of A,C,G,T,N, got [$ref]\n"; }
+    if ( !($ref=~/^[ACGTN]+$/) ) 
+    {
+        my $offending = $ref;
+        $offending =~ s/[ACGTN]+//g;
+        return "Expected combination of A,C,G,T,N, got [$ref], the offending chars were [$offending]\n"; 
+    }
     return undef;
 }
 
