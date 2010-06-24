@@ -1169,7 +1169,7 @@ sub validate_info_field
         if ( !$$type{handler} ) { next; }
         for my $val (@vals)
         {
-            my $err = &{$$type{handler}}($self,$val,$$type{missing});
+            my $err = &{$$type{handler}}($self,$val,$$type{default});
             if ( $err ) { push @errs, $err; }
         }
     }
@@ -1211,7 +1211,7 @@ sub validate_gtype_field
         if ( !$$type{handler} ) { next; }
         for my $val (@vals)
         {
-            my $err = &{$$type{handler}}($self,$val,$$type{missing});
+            my $err = &{$$type{handler}}($self,$val,$$type{default});
             if ( $err ) { push @errs, $err; }
         }
     }
@@ -1519,8 +1519,8 @@ sub renew
     $$self{regex_ins}   = qr/^[ACGTN]+$/;
     $$self{regex_del}   = qr/^[ACGTN]+$/;
     $$self{regex_gtsep} = qr{[|/]};                     # | /
-    $$self{regex_gt}    = qr{^(\.|\d+)([|/]?)(\d*)$};   # . 0/1 0|1
-    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNacgtn]+)([|/]?)([0-9ACGTNacgtn]*)$};   # . 0/1 0|1 A/A A|A
+    $$self{regex_gt}    = qr{^(\.|\d+)([|/]?)(\.?|\d*)$};   # . ./. 0/1 0|1
+    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNacgtn]+)([|/]?)((?:\.|[0-9ACGTNacgtn]+)?)$};   # . ./. 0/1 0|1 A/A A|A
 
     return $self;
 }
