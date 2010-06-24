@@ -167,6 +167,7 @@ sub process_assembly_requires
 {
     my ($self) = @_;
     my @requires;
+    push(@requires, "$$self{assembly_path}/$$self{contigs_filename}");
     push(@requires, "$$self{assembly_path}/$$self{scaffolds_filename}");
     return \@requires;
 }
@@ -210,6 +211,10 @@ if ( ! -s "$$self{assembly_path}/$$self{scaffolds_filename}.bwt" ) {
 }
 
 # run stats
+Utils::CMD("python $$self{stats_exec} -f $$self{assembly_path}/$$self{contigs_filename}");
+if ( ! -s "$$self{assembly_path}/$$self{contigs_filename}.stats" ) { 
+    Utils::error("The command ended with an error:\\n\\tpython $$self{stats_exec} -f $$self{assembly_path}/$$self{contigs_filename}\\n");
+}
 Utils::CMD("python $$self{stats_exec} -f $$self{assembly_path}/$$self{scaffolds_filename}");
 if ( ! -s "$$self{assembly_path}/$$self{scaffolds_filename}.stats" ) { 
     Utils::error("The command ended with an error:\\n\\tpython $$self{stats_exec} -f $$self{assembly_path}/$$self{scaffolds_filename}\\n");

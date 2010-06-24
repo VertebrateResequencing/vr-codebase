@@ -158,7 +158,8 @@ sub new
     $$self{strict}    = 0 unless exists($$self{strict});
     $$self{buffer}    = [];       # buffer stores the lines in the reverse order
     $$self{columns}   = undef;    # column names 
-    $$self{mandatory} = ['CHROM','POS','ID','REF','ALT','QUAL','FILTER','INFO','FORMAT'] unless exists($$self{mandatory}); 
+    $$self{mandatory} = ['CHROM','POS','ID','REF','ALT','QUAL','FILTER','INFO'] unless exists($$self{mandatory}); 
+    $$self{reserved}{cols} = {CHROM=>1,POS=>1,ID=>1,REF=>1,ALT=>1,QUAL=>1,FILTER=>1,INFO=>1,FORMAT=>1} unless exists($$self{reserved_cols});
     $$self{recalc_ac_an} = 1;
     $$self{has_header} = 0;
     $$self{default_version} = '4.0';
@@ -270,26 +271,26 @@ sub next_data_hash
     my $cols = $$self{columns};
     if ( !$$self{columns} ) 
     { 
-        $self->_fake_column_names(scalar @items); 
+        $self->_fake_column_names(scalar @items - 9); 
         $cols = $$self{columns};
     }
-    else
-    {
-        # Check the number of columns
-        if ( scalar @items != scalar @$cols )  
-        { 
-            $self->warn("Different number of columns at $items[0]:$items[1] (expected ".scalar @$cols.", got ".scalar @items.")\n");
-            while ( $items[-1] eq '' ) { pop(@items); }
-            if ( scalar @items != scalar @$cols ) 
-            {
-                my @test = split(/\s+/,$line);
-                if ( scalar @test == scalar @$cols ) { $self->warn("(Have spaces been used instead of tabs?)\n\n"); }
-                else { $self->throw("Error not recoverable, exiting.\n"); }
 
-                @items = @test;
-            }
-            else { $self->warn("(Trailing tabs?)\n\n"); }
+    # Check the number of columns
+    if ( scalar @items != scalar @$cols )  
+    { 
+        if ( $line=~/^\s*$/ ) { $self->throw("Sorry, empty lines not allowed.\n"); }
+
+        $self->warn("Different number of columns at $items[0]:$items[1] (expected ".scalar @$cols.", got ".scalar @items.")\n");
+        while ( $items[-1] eq '' ) { pop(@items); }
+        if ( scalar @items != scalar @$cols ) 
+        {
+            my @test = split(/\s+/,$line);
+            if ( scalar @test == scalar @$cols ) { $self->warn("(Have spaces been used instead of tabs?)\n\n"); }
+            else { $self->throw("Error not recoverable, exiting.\n"); }
+
+            @items = @test;
         }
+        else { $self->warn("(Trailing tabs?)\n\n"); }
     }
     my %out;
 
@@ -572,10 +573,15 @@ sub _read_column_names
     }
 
     my $fields  = $$self{mandatory};
-    my $nfields = scalar @$fields - 1;  # The FORMAT field is in fact not mandatory
+    my $nfields = scalar @$fields;
 
     # Check the names of the mandatory columns
-    if ( $ncols < $nfields ) { chomp($line); $self->warn("Missing mandatory column names. [$line].\n"); return; }
+    if ( $ncols < $nfields ) 
+    { 
+        chomp($line); 
+        $self->warn("Missing some of the mandatory column names.\n\tGot:      $line\n\tExpected: #", join("\t",@{$$self{mandatory}}),"\n"); 
+        return; 
+    }
 
     for (my $i=0; $i<$ncols; $i++)
     {
@@ -600,7 +606,7 @@ sub _read_column_names
 =head2 _fake_column_names
 
     About   : When no header is present, fake column names as the default mandatory ones + numbers
-    Args    : The number of columns total (i.e. including the mandatory columns)
+    Args    : The number of genotype columns; 0 if no genotypes but FORMAT present; <0 if FORMAT and genotypes not present
 
 =cut
 
@@ -609,8 +615,8 @@ sub _fake_column_names
     my ($self,$ncols) = @_;
 
     $$self{columns} = [ @{$$self{mandatory}} ];
-    my $i = scalar @{$$self{columns}};
-    while ($i<$ncols) { push @{$$self{columns}}, $i-8; $i++; }
+    if ( $ncols>=0 ) { push @{$$self{columns}}, 'FORMAT'; }
+    for (my $i=1; $i<=$ncols; $i++) { push @{$$self{columns}}, $i; }
 }
 
 
@@ -694,8 +700,12 @@ sub _format_line_hash
 {
     my ($self,$record,$columns) = @_;
 
-    my $ngtypes = scalar keys %{$$record{gtypes}};
-    if ( !$$self{columns} ) { $self->_fake_column_names(9 + $ngtypes); }
+    if ( !$$self{columns} ) 
+    { 
+        my $ngtypes = scalar keys %{$$record{gtypes}};
+        if ( !$ngtypes && !exists($$record{FORMAT}) ) { $ngtypes--; }
+        $self->_fake_column_names($ngtypes); 
+    }
     my $cols = $$self{columns};
 
     # CHROM  POS     ID      REF
@@ -745,14 +755,14 @@ sub _format_line_hash
     $out .= "\t". join(';', sort @info);
 
     # FORMAT, the column is not required, it may not be present when there are no genotypes
-    if ( exists($$cols[8]) )
+    if ( exists($$cols[8]) && $$record{$$cols[8]} )
     {
         $out .= "\t". join(':',@{$$record{$$cols[8]}});
     }
 
     # Genotypes: output all columns or only a selection?
     my @col_names = $columns ? @$columns : @$cols[9..@$cols-1];
-    my $nformat = @{$$record{FORMAT}};
+    my $nformat = $$record{FORMAT} ? @{$$record{FORMAT}} : 0;
     for my $col (@col_names)
     {
         my $gt = $$gtypes{$col};
@@ -1035,7 +1045,17 @@ sub add_columns
     my ($self,@columns) = @_;
     if ( !$$self{columns} ) 
     { 
+        # The columns should be initialized de novo. Figure out if the @columns contain also the mandatory
+        #   columns and if FORMAT should be present (it can be absent when there is no genotype column present).
+        my $has_other = 0;
+        for my $col (@columns)
+        {
+            if ( !exists($$self{reserved}{cols}{$col}) ) { $has_other=1; last; }
+        }
+
         $$self{columns} = [ @{$$self{mandatory}} ]; 
+        if ( $has_other ) { push @{$$self{columns}},'FORMAT'; }
+
         for my $col (@{$$self{columns}}) { $$self{has_column}{$col}=1; }
     }
     my $ncols = @{$$self{columns}};
@@ -1149,7 +1169,7 @@ sub validate_info_field
         if ( !$$type{handler} ) { next; }
         for my $val (@vals)
         {
-            my $err = &{$$type{handler}}($self,$val,$$type{missing});
+            my $err = &{$$type{handler}}($self,$val,$$type{default});
             if ( $err ) { push @errs, $err; }
         }
     }
@@ -1191,7 +1211,7 @@ sub validate_gtype_field
         if ( !$$type{handler} ) { next; }
         for my $val (@vals)
         {
-            my $err = &{$$type{handler}}($self,$val,$$type{missing});
+            my $err = &{$$type{handler}}($self,$val,$$type{default});
             if ( $err ) { push @errs, $err; }
         }
     }
@@ -1499,8 +1519,8 @@ sub renew
     $$self{regex_ins}   = qr/^[ACGTN]+$/;
     $$self{regex_del}   = qr/^[ACGTN]+$/;
     $$self{regex_gtsep} = qr{[|/]};                     # | /
-    $$self{regex_gt}    = qr{^(\.|\d+)([|/]?)(\d*)$};   # . 0/1 0|1
-    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNacgtn]+)([|/]?)([0-9ACGTNacgtn]*)$};   # . 0/1 0|1 A/A A|A
+    $$self{regex_gt}    = qr{^(\.|\d+)([|/]?)(\.?|\d*)$};   # . ./. 0/1 0|1
+    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNacgtn]+)([|/]?)((?:\.|[0-9ACGTNacgtn]+)?)$};   # . ./. 0/1 0|1 A/A A|A
 
     return $self;
 }
@@ -1568,7 +1588,12 @@ sub Vcf4_0::parse_header_line
 sub Vcf4_0::validate_ref_field
 {
     my ($self,$ref) = @_;
-    if ( !($ref=~/^[ACGTN]+$/) ) { return "Expected combination of A,C,G,T,N, got [$ref]\n"; }
+    if ( !($ref=~/^[ACGTN]+$/) ) 
+    {
+        my $offending = $ref;
+        $offending =~ s/[ACGTN]+//g;
+        return "Expected combination of A,C,G,T,N, got [$ref], the offending chars were [$offending]\n"; 
+    }
     return undef;
 }
 
