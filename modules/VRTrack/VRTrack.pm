@@ -361,6 +361,7 @@ sub hierarchy_path_of_lane {
                  individual => $get_individual,
                  project => $get_project,
                  projectid => $get_project,
+                 projectssid => $get_project,  
                  sample => $get_sample,
                  technology => $get_lib,
                  library => $get_lib,
@@ -388,6 +389,9 @@ sub hierarchy_path_of_lane {
                 }
                 elsif ($term eq 'projectid') {
                     push(@hier_path_bits, $obj->id);
+                }
+                elsif ($term eq 'projectssid') {
+                    push(@hier_path_bits, $obj->ssid);
                 }
                 elsif ($term eq 'technology') {
                     push(@hier_path_bits, $obj->seq_tech->name);
