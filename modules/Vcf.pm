@@ -795,17 +795,16 @@ sub calc_an_ac
     for my $gt (keys %$gtypes)
     {
         my $value = $$gtypes{$gt}{GT};
-        if ( $value eq '.' || $value eq './.' ) { next; }
         my ($al1,$al2) = split($sep_re,$value);
         if ( defined($al1) )
         {
             $an++;
-            if ( $al1 ne '0' ) { $ac_counts{$al1}++; }
+            if ( $al1 ne '0' && $al1 ne '.' ) { $ac_counts{$al1}++; }
         }
         if ( defined($al2) )
         {
             $an++;
-            if ( $al2 ne '0' ) { $ac_counts{$al2}++; }
+            if ( $al2 ne '0' && $al2 ne '.' ) { $ac_counts{$al2}++; }
         }
     }
     my @ac;
@@ -1110,6 +1109,7 @@ sub validate_filter_field
     {
         if ( $item eq $$self{filter_passed} ) { next; }
         if ( $item=~/,/ ) { push @errs,"Expected semicolon as a separator."; }
+        if ( exists($$self{reserved}{FILTER}{$item}) ) { return qq[The filter name "$item" cannot be used, it is a reserved word.]; }
         if ( exists($$self{header}{FILTER}{$item}) ) { next; }
         push @missing, $item;
         $self->add_header_line({key=>'FILTER',ID=>$item,Description=>'No description'});
@@ -1510,6 +1510,7 @@ sub renew
     $$self{defaults}{Flag}    = undef;
     $$self{defaults}{GT}      = '.';
     $$self{defaults}{default} = '.';
+    $$self{reserved}{FILTER}  = { 0=>1 };
 
     $$self{handlers}{Integer}   = \&Vcf::validate_int;
     $$self{handlers}{Float}     = \&Vcf::validate_float;
