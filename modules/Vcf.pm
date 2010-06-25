@@ -459,7 +459,7 @@ sub add_header_line
         }
     }
 
-    if ( $key eq 'INFO' or $key eq 'FILTER' or $key eq 'FORMAT' )
+    if ( $key eq 'INFO' or $key eq 'FILTER' or $key eq 'FORMAT' or $key eq 'ALT' )
     {
         my $id = $$rec{ID};
         if ( !defined $id ) { $self->throw("Missing ID for the key $key: ",Dumper($rec)); }
@@ -1583,11 +1583,7 @@ sub Vcf4_0::parse_header_line
         if ( $tmp=~/^,/ ) { $tmp = $'; }
     }
 
-    if ( $$rec{key} eq 'ALT' ) 
-    {
-        if ( !exists($$rec{Type}) ) { $self->throw("Missing the Type tag in the $value\n"); }
-    }
-    elsif ( !exists($$rec{ID}) ) { $self->throw("Missing the ID tag in the $value\n"); }
+    if ( !exists($$rec{ID}) ) { $self->throw("Missing the ID tag in the $value\n"); }
     if ( exists($$rec{Number}) && $$rec{Number} eq '.' ) { $$rec{Number}=-1; }
 
     return $rec;
