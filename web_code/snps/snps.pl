@@ -56,8 +56,10 @@ my $params =
     'store_hours' => 1,     # The stored data are few bytes big only so far
     'store_key'   => 'modelorgs/mousegenomes/',
 
-    # 'db_info' => 'DBI:mysql:host=mcs4a;port=3307;database=mouse_web_snps',        # development version
-    'db_info' => 'DBI:mysql:host=web-mei-vrip;port=3307;database=mouse_web_snps',   # new public version
+    
+    #'db_info' => 'DBI:mysql:host=mcs4a;port=3306;database=test_snps_db',           # development version (test data)
+    'db_info' => 'DBI:mysql:host=mcs4a;port=3307;database=mouse_web_snps',         # test version (full data)
+    #'db_info' => 'DBI:mysql:host=web-mei-vrip;port=3307;database=mouse_web_snps',  # public version (full data)
     'db_user' => 'vreseq_ro', 
     'db_pass' => '',
 
@@ -132,6 +134,8 @@ my $params =
         'STOP_GAINED'           => { label=>'Stop gained', style=>'c9' }, 
         'STOP_LOST'             => { label=>'Stop lost', style=>'c10' },
         'FRAME_SHIFT'           => { label=>'Frame shift', style=>'c11' },
+        'WITHIN_NON_CODING_GENE'=> { label=>'Non-coding gene', style=>'c5' },
+        'WITHIN_MATURE_miRNA'   => { label=>'Mature miRNA', style=>'c7' },
     },
 };
 
