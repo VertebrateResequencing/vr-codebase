@@ -920,7 +920,7 @@ sub create_release_hierarchy {
     my $fsu = VertRes::Utils::FileSystem->new();
     
     my @all_linked_bams;
-    
+    my @bad_lanes;
     foreach my $lane_path (@{$lane_paths}) {
         # first get the mapstats object so we'll know the bam prefix
         my $lane_name = basename($lane_path);
@@ -1027,10 +1027,17 @@ sub create_release_hierarchy {
         }
         
         unless (@linked_bams) {
-            $self->throw("Mapping lane '$lane_path' contained no linkable bam files!");
+            $self->warn("Mapping lane '$lane_path' contained no linkable bam files!");
+            push(@bad_lanes, $lane_path);
         }
         
         push(@all_linked_bams, @linked_bams);
+    }
+    
+    if (@bad_lanes) {
+        $self->warn("Some lanes had no linkable bam files!");
+        print join("\n", @bad_lanes)."\n";
+        $self->throw("Can't continue due to previous warning");
     }
     
     return @all_linked_bams;
@@ -1292,9 +1299,10 @@ sub store_lane {
         $do_move = 0;
     }
     elsif (-d $hroot && (-d $storage_path || -d $storage_path_temp)) {
-        $self->warn("storage path '$storage_path' already exists; will delete it first");
-        $fsu->rmtree($storage_path);
-        $fsu->rmtree($storage_path_temp);
+        $self->throw("storage path '$storage_path' already exists");
+        #$self->warn("storage path '$storage_path' already exists; will delete it first");
+        #$fsu->rmtree($storage_path);
+        #$fsu->rmtree($storage_path_temp);
     }
     
     my $hpath = $lane->vrtrack->hierarchy_path_of_lane($lane);

@@ -282,7 +282,7 @@ sub copy {
         
         unless ($self->can_be_copied($source, $tmp_dest)) {
             $self->warn("There isn't enough disk space at '$dest' to copy '$source' there");
-            $self->rmtree($tmp_dest);
+            #$self->rmtree($tmp_dest);
             return 0;
         }
         
@@ -365,8 +365,8 @@ sub move {
     if (-d $source) {
         unless ($self->directory_structure_same($source, $tmp_dest, consider_files => 1)) {
             unless ($dest_dir_exists) {
-                $self->rmtree($tmp_dest) unless $dest_dir_exists;
-                $self->warn("Source directory '$source' was updated before the move completed, so the temporary destination was deleted and the source will be left untouched");
+                #$self->rmtree($tmp_dest) unless $dest_dir_exists;
+                $self->warn("Source directory '$source' was updated before the move completed, so the temporary destination '$tmp_dest' should be deleted and the source will be left untouched");
             }
             else {
                 $self->warn("Source directory '$source' was updated before the move completed, so the destination is now in an unknown state!");
@@ -377,6 +377,10 @@ sub move {
     
     unless ($dest_dir_exists) {
         File::Copy::move($tmp_dest, $dest) || $self->throw("Failed to rename successfully moved source '$tmp_dest' to '$dest'");
+    }
+    
+    unless ($self->directory_structure_same($source, $dest, consider_files => 1)) {
+        $self->throw("I thought I moved $source to $dest, but the contents aren't the same!");
     }
     
     if (-d $source) {
