@@ -2,6 +2,7 @@ package Vcf;
 
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:variant_call_format
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf4.0
+# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf_4.0_sv
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf3.3
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcfv3.2
 #
@@ -87,7 +88,7 @@ sub validate
 {
     my ($fh) = @_;
 
-    if ( !$fh && @ARGV && -e $ARGV[0] ) { $fh = $ARGV[0]; }
+    if ( !$fh && @ARGV ) { $fh = $ARGV[0]; }
 
     my $vcf;
     if ( $fh ) { $vcf = fileno($fh) ? Vcf->new(fh=>$fh) : Vcf->new(file=>$fh); }
@@ -1521,7 +1522,7 @@ sub renew
     $$self{regex_del}   = qr/^[ACGTN]+$/;
     $$self{regex_gtsep} = qr{[|/]};                     # | /
     $$self{regex_gt}    = qr{^(\.|\d+)([|/]?)(\.?|\d*)$};   # . ./. 0/1 0|1
-    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNacgtn]+)([|/]?)((?:\.|[0-9ACGTNacgtn]+)?)$};   # . ./. 0/1 0|1 A/A A|A
+    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNacgtn]+|<\S+>)([|/]?)((?:\.|[0-9ACGTNacgtn]+|<\S+>)?)$};   # . ./. 0/1 0|1 A/A A|A 0|<DEL:ME:ALU>
 
     return $self;
 }
@@ -1534,12 +1535,13 @@ sub Vcf4_0::format_header_line
 
     my $line = "##$$rec{key}=";
     $line .= $$rec{value} unless !exists($$rec{value});
-    $line .= '<' unless !exists($$rec{ID});
-    $line .= "ID=$$rec{ID}" unless !exists($$rec{ID});
-    $line .= ",Number=$number" unless !defined $number;
-    $line .= ",Type=$$rec{Type}" unless !exists($$rec{Type});
-    $line .= ",Description=\"$$rec{Description}\"" unless !exists($$rec{Description});
-    $line .= ">" unless !exists($$rec{ID});
+    $line .= '<' if (exists($$rec{ID}) or $$rec{key} eq 'ALT');
+    $line .= "ID=$$rec{ID}" if exists($$rec{ID});
+    $line .= "Type=$$rec{Type}" if $$rec{key} eq 'ALT';
+    $line .= ",Number=$number" if defined $number;
+    $line .= ",Type=$$rec{Type}" if (exists($$rec{Type}) && $$rec{key} ne 'ALT' );
+    $line .= ",Description=\"$$rec{Description}\"" if exists($$rec{Description});
+    $line .= ">" if (exists($$rec{ID}) or $$rec{key} eq 'ALT');
     $line .= "\n";
     return $line;
 }
@@ -1564,7 +1566,7 @@ sub Vcf4_0::parse_header_line
     my $key   = $1;
     my $value = $';
 
-    if ( !($value=~/^<(.+)>$/) ) { return { key=>$key, value=>$value }; }
+    if ( !($value=~/^<(.+)>\s*$/) ) { return { key=>$key, value=>$value }; }
 
     my $rec = { key=>$key };
     my $tmp = $1;
@@ -1581,8 +1583,13 @@ sub Vcf4_0::parse_header_line
         if ( $tmp=~/^,/ ) { $tmp = $'; }
     }
 
-    if ( !exists($$rec{ID}) ) { $self->throw("Missing the ID tag in the $value\n"); }
+    if ( $$rec{key} eq 'ALT' ) 
+    {
+        if ( !exists($$rec{Type}) ) { $self->throw("Missing the Type tag in the $value\n"); }
+    }
+    elsif ( !exists($$rec{ID}) ) { $self->throw("Missing the ID tag in the $value\n"); }
     if ( exists($$rec{Number}) && $$rec{Number} eq '.' ) { $$rec{Number}=-1; }
+
     return $rec;
 }
 
