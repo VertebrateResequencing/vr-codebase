@@ -103,10 +103,12 @@ sub file {
         my $open = $filename;
         if ($filename =~ /\.gz$/) {
             if ($in_out eq '<') {
-                my $z = IO::Uncompress::Gunzip->new($filename);
-                $self->{_filename} = $filename;
-                $self->fh($z);
-                return $filename;
+                #my $z = IO::Uncompress::Gunzip->new($filename);
+                #$self->{_filename} = $filename;
+                #$self->fh($z);
+                #return $filename;
+                $in_out = '';
+                $open = "gunzip -c $filename |";
             }
             else {
                 $open = "| gzip -c > $filename";
