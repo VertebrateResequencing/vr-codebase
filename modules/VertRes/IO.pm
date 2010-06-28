@@ -107,7 +107,6 @@ sub file {
                 #$self->{_filename} = $filename;
                 #$self->fh($z);
                 #return $filename;
-                $in_out = '';
                 $open = "gunzip -c $filename |";
             }
             else {
