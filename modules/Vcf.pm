@@ -1301,15 +1301,20 @@ sub run_validation
 
     my $default_qual = $$self{defaults}{QUAL};
     my $warn_sorted=1;
+    my $warn_duplicates=1;
     my ($prev_chrm,$prev_pos);
     while (my $x=$self->next_data_hash()) 
     {
         # Is the position numeric?
         if ( !($$x{POS}=~/^\d+$/) ) { $self->warn("Expected integer for the position at $$x{CHROM}:$$x{POS}\n"); }
 
-        if ( $prev_chrm && $prev_chrm eq $$x{CHROM} && $prev_pos eq $$x{POS} )
+        if ( $warn_duplicates )
         {
-            $self->warn("Duplicate entry $$x{CHROM}:$$x{POS}\n");
+            if ( $prev_chrm && $prev_chrm eq $$x{CHROM} && $prev_pos eq $$x{POS} )
+            {
+                $self->warn("Warning: Duplicate entries, for example $$x{CHROM}:$$x{POS}\n");
+                $warn_duplicates = 0;
+            }
         }
 
         # Is the file sorted?
@@ -1317,7 +1322,7 @@ sub run_validation
         {
             if ( $prev_chrm && $prev_chrm eq $$x{CHROM} && $prev_pos > $$x{POS} ) 
             { 
-                $self->warn("The file is not sorted, for example $$x{CHROM}:$$x{POS} comes after $prev_chrm:$prev_pos\n");
+                $self->warn("Warning: The file is not sorted, for example $$x{CHROM}:$$x{POS} comes after $prev_chrm:$prev_pos\n");
                 $warn_sorted = 0;
             }
             $prev_chrm = $$x{CHROM};
