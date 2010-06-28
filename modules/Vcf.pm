@@ -280,6 +280,7 @@ sub next_data_hash
     if ( scalar @items != scalar @$cols )  
     { 
         if ( $line=~/^\s*$/ ) { $self->throw("Sorry, empty lines not allowed.\n"); }
+        if ( $line=~/^#/ ) { $self->throw("FIXME: parse_header must be called before next_data_hash.\n"); }
 
         $self->warn("Different number of columns at $items[0]:$items[1] (expected ".scalar @$cols.", got ".scalar @items.")\n");
         while ( $items[-1] eq '' ) { pop(@items); }
@@ -1411,6 +1412,7 @@ sub open_tabix
     if ( !$$self{file} ) { $self->throw(qq[The parameter "file" not set.\n]); }
     $self->close();
     open($$self{fh},"tabix $$self{file} $arg 2>/dev/null|");
+    $self->parse_header();
 }
 
 
