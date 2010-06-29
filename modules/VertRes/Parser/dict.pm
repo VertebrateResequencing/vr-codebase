@@ -134,5 +134,31 @@ sub seq_lengths {
     return %seq_lengths;
 }
 
+=head2 seq_ids
+
+ Title   : seq_ids
+ Usage   : my @seq_ids = $obj->seq_ids;
+ Function: Get all the sequence ids.
+ Returns : list of strings
+ Args    : n/a
+
+=cut
+
+sub seq_ids {
+    my $self = shift;
+    
+    my @seq_ids;
+    
+    $self->_save_position;
+    $self->_seek_first_result;
+    
+    my $rh = $self->result_holder;
+    while ($self->next_result) {
+        push(@seq_ids, $rh->[0]);
+    }
+    
+    $self->_restore_position();
+    return @seq_ids;
+}
 
 1;
