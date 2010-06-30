@@ -175,6 +175,11 @@ sub close {
         while (<$fh>) {
             next;
         }
+        
+        my $fh_id = $self->_fh_id;
+        if (defined $self->{"_getfields_$fh_id"}) {
+            $self->_close_bam($self->{_cbam});
+        }
     }
     
     return $self->SUPER::close();
@@ -792,6 +797,12 @@ void _initialize_bam(SV* self, char* bamfile) {
     Inline_Stack_Push(newRV_noinc(newSViv(bam)));
     Inline_Stack_Push(newRV_noinc(newSViv(b)));
     Inline_Stack_Done;
+}
+
+void _close_bam(SV* self, SV* bam_ref) {
+    bamFile *bam;
+    bam = (bamFile*)SvIV(SvRV(bam_ref));
+    bam_close(bam);
 }
 
 void _get_fields(SV* self, SV* bam_ref, SV* b_ref, SV* header_ref, ...) {
