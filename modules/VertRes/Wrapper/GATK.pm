@@ -424,12 +424,12 @@ sub table_recalibration {
     #   -outputBAM my_reads.recal.bam \
     #   -recalFile my_reads.recal_data.csv
     
-    $self->switches([qw(quiet_output_mode useOriginalQualities)]);
+    $self->switches([qw(quiet_output_mode useOriginalQualities fail_with_no_eof_marker)]);
     $self->params([qw(R l T default_platform)]);
     
     my @file_args = (" -I $in_bam", " -recalFile $csv", " --output_bam $out_bam");
     
-    my %params = @params;
+    my %params = (fail_with_no_eof_marker => 1, @params);
     $params{T} = 'TableRecalibration';
     unless (defined $params{useOriginalQualities}) {
         $params{useOriginalQualities} = 1;
