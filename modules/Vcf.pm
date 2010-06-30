@@ -920,7 +920,8 @@ sub parse_alleles
     Usage   : my $x = { REF=>'A', gtypes=>{'NA00001'=>'A/C'}, FORMAT=>['GT'], CHROM=>1, POS=>1, FILTER=>['.'], QUAL=>-1 };
               $vcf->format_genotype_strings($x); 
               print $vcf->format_line($x);
-    Args    : VCF data line in the format as if parsed by next_data_hash with alleles written as letters.
+    Args 1  : VCF data line in the format as if parsed by next_data_hash with alleles written as letters.
+         2  : Optionally, a subset of columns can be supplied. See also format_line.
     Returns : Modifies the ALT array and the genotypes so that ref alleles become 0 and non-ref alleles 
                 numbers starting from 1.
 
@@ -928,7 +929,7 @@ sub parse_alleles
 
 sub format_genotype_strings
 {
-    my ($self,$rec) = @_;
+    my ($self,$rec,$columns) = @_;
 
     if ( !exists($$rec{gtypes}) ) { return; }
 
@@ -937,7 +938,9 @@ sub format_genotype_strings
     my %alts  = ();
     my $gt_re = $$self{regex_gt2};
 
-    for my $key (keys %{$$rec{gtypes}})
+    if ( !$columns ) { $columns = [keys %{$$rec{gtypes}}]; }
+
+    for my $key (@$columns)
     {
         my $gtype = $$rec{gtypes}{$key}{GT};
         if ( !($gtype=~$gt_re) ) { $self->throw("Could not parse gtype string [$gtype]\n"); }
@@ -989,7 +992,6 @@ sub format_genotype_strings
 
         $$rec{gtypes}{$key}{GT} = $al1.$sep.$al2;
     }
-
     $$rec{ALT} = [ sort { $alts{$a}<=>$alts{$b} } keys %alts ];
 }
 
@@ -1544,7 +1546,6 @@ sub Vcf4_0::format_header_line
     $line .= $$rec{value} unless !exists($$rec{value});
     $line .= '<' if (exists($$rec{ID}) or $$rec{key} eq 'ALT');
     $line .= "ID=$$rec{ID}" if exists($$rec{ID});
-    $line .= "Type=$$rec{Type}" if $$rec{key} eq 'ALT';
     $line .= ",Number=$number" if defined $number;
     $line .= ",Type=$$rec{Type}" if (exists($$rec{Type}) && $$rec{key} ne 'ALT' );
     $line .= ",Description=\"$$rec{Description}\"" if exists($$rec{Description});
