@@ -778,7 +778,7 @@ sub _format_line_hash
             if ( exists($$gt{$field}) ) { unshift @gtype,$$gt{$field}; $can_drop=0; }
             elsif ( $can_drop ) { next; }
             elsif ( exists($$self{header}{FORMAT}{$field}{default}) ) { unshift @gtype,$$self{header}{FORMAT}{$field}{default}; $can_drop=0; }
-            else { $self->throw(qq[No value for the field "$field" and no default available, $col at $$record{CHROM}:$$record{POS}.\n]); }
+            else { $self->throw(qq[No value for the field "$field" and no default available, column "$col" at $$record{CHROM}:$$record{POS}.\n]); }
         }
         $out .= "\t" . join(':',@gtype);
     }
