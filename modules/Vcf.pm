@@ -1623,8 +1623,8 @@ sub Vcf4_0::validate_alt_field
     for my $item (@$values)
     {
         if ( !($item=~/^[ACTGN]+$|^<[^<>\s]+>$/) ) { push @err,$item; next; }
-        if ( $ref_len==1 && length($item)==1 ) { next; }
         if ( $item=~/^<[^<>\s]+>$/ ) { next; }
+        if ( $ref_len==length($item) ) { next; }
         if ( substr($item,0,1) ne $ref1 ) { $msg=', first base does not match the reference.'; push @err,$item; next; }
     }
     if ( !@err ) { return undef; }
