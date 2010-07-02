@@ -798,15 +798,15 @@ sub calc_an_ac
     {
         my $value = $$gtypes{$gt}{GT};
         my ($al1,$al2) = split($sep_re,$value);
-        if ( defined($al1) )
+        if ( defined($al1) && $al1 ne '.' )
         {
             $an++;
-            if ( $al1 ne '0' && $al1 ne '.' ) { $ac_counts{$al1}++; }
+            if ( $al1 ne '0' ) { $ac_counts{$al1}++; }
         }
-        if ( defined($al2) )
+        if ( defined($al2) && $al2 ne '.' )
         {
             $an++;
-            if ( $al2 ne '0' && $al2 ne '.' ) { $ac_counts{$al2}++; }
+            if ( $al2 ne '0' ) { $ac_counts{$al2}++; }
         }
     }
     my @ac;
