@@ -4,22 +4,42 @@ VertRes::Pipelines::Dindel - pipeline for running Dindel on bams
 
 =head1 SYNOPSIS
 
-# make a file of absolute paths to your release bam-containing directories:
-find /path/to/REL -maxdepth 3 -mindepth 3 -type d > dindel.fofn
-# (each directoy should contain 'release.bam' and 'release.bam.bai' files)
+# Make multiple files for each of your populations/strains/other_sample_grouping
+# containing absolute paths to all the bams for all the samples in that group.
+# Even if you want to ultimately analysis multiple populations together, you
+# should create seperate files for each population. Dindel is only known to work
+# properly with SLX (Illumina) bams, so it's best to limit to those as well.
+# Eg. for a 1000 genomes directory structure:
+find /path/to/REL -maxdepth 3 -mindepth 3 -type d -name SLX | grep low_coverage > samples.fod
+cat samples.fod | perl -ne 'chomp; $path = $_; ($pop, $na) = $path =~ qr{^/(\w\w\w)_low_coverage/([^/]+)/SLX}; $na || next; open($fh, ">>$pop.bams.fofn"); print $fh "$path/release.bam\n"; close($fh);'
 
-# make a conf file with root pointing to the root of the release directory.
-# Optional settings also go here. Your dindel.conf file may look like:
-root    => '/path/to/REL',
+# make a conf file with root pointing to anywhere you'd like the dindel results
+# to appear, and that specifies the group => fofn mapping.
+# Optional settings also go here. If you wanted to analyses multiple groups
+# together, make use of the group_groups option.
+# Your dindel.conf file may look like:
+root    => '/path/to/REL/dindel',
 module  => 'VertRes::Pipelines::Dindel',
 prefix  => '_',
+sample_groups => {
+    population_A => 'A.fofn',
+    population_B => 'B.fofn',
+    population_C => 'C.fofn',
+    population_D => 'D.fofn'
+},
+group_groups =>  {
+    group_AB => ['population_A', 'population_B'],
+    group_CD => ['population_C', 'population_D']
+},
 data => {
     ref => '/path/to/ref.fa',
-    simultaneous_jobs => 100
+    simultaneous_jobs => 100,
+    type => 'diploid',
+    dindel_args => '--maxRead 5000',
 }
 
-# make a pipeline file that associates the lanes with the conf file:
-echo "<dindel.fofn dindel.conf" > dindel.pipeline
+# make a pipeline file:
+echo "__DINDEL__ dindel.conf" > dindel.pipeline
 
 # run the pipeline:
 run-pipeline -c dindel.pipeline -v
@@ -28,8 +48,17 @@ run-pipeline -c dindel.pipeline -v
 
 =head1 DESCRIPTION
 
-A module for running Dindel on a set of release bams. Dindel output appears in
-a dindel subdir of each dir containing a release bam.
+A module for running Dindel on groups of bams. If a 'sample_group' specifies
+a fofn with only 1 bam, dindel will be run in diploid mode. If it has multiple
+bams, dindel will be run in pool mode.
+
+NB: Dindel is hard-coded to assume that different bams are for different
+samples (individuals), so if you have bams split by chr you should run multiple
+independant pipelines for each chr and manually merge the final VCFs together
+once all the pipelines complete.
+
+For 1000 genomes there is a script 'dindel_pipeline_prepare.pl' that will
+generate all the fofn, conf and the pipeline files for you.
 
 =head1 AUTHOR
 
@@ -43,6 +72,7 @@ use strict;
 use warnings;
 use VertRes::IO;
 use VertRes::Utils::FileSystem;
+use VertRes::Parser::sam;
 use File::Basename;
 use File::Spec;
 use File::Copy;
@@ -51,31 +81,32 @@ use LSF;
 
 use base qw(VertRes::Pipeline);
 
-our $actions = [{ name     => 'get_variants',
-                  action   => \&get_variants,
-                  requires => \&get_variants_requires, 
-                  provides => \&get_variants_provides },
-                { name     => 'split_variants',
-                  action   => \&split_variants,
-                  requires => \&split_variants_requires, 
-                  provides => \&split_variants_provides },
-                { name     => 'call',
-                  action   => \&call,
-                  requires => \&call_requires, 
-                  provides => \&call_provides },
+our $actions = [{ name     => 'extract_indels',
+                  action   => \&extract_indels,
+                  requires => \&extract_indels_requires, 
+                  provides => \&extract_indels_provides },
+                { name     => 'concat_libvar',
+                  action   => \&concat_libvar,
+                  requires => \&extract_indels_provides, 
+                  provides => \&concat_libvar_provides },
+                { name     => 'make_windows',
+                  action   => \&make_windows,
+                  requires => \&concat_libvar_provides, 
+                  provides => \&make_windows_provides },
+                { name     => 'realign_windows',
+                  action   => \&realign_windows,
+                  requires => \&realign_windows_requires, 
+                  provides => \&realign_windows_provides },
                 { name     => 'merge',
                   action   => \&merge,
-                  requires => \&merge_requires, 
+                  requires => \&realign_windows_provides, 
                   provides => \&merge_provides }];
                 
-my $dindel_base = '/lustre/scratch102/user/sb10/dindel/';
+my $dindel_base = $ENV{DINDEL_SCRIPTS} || die "DINDEL_SCRIPTS environment variable not set\n";
 our %options = (simultaneous_jobs => 100,
-                vars_per_file => 1000,
-                files_per_block => 200,
-                dindelPars => '--maxRead 4000 --pMut 1e-6 --priorSNP 0.001 --priorIndel 0.0001 --maxLengthIndel 5 --slower --outputGLF --doDiploid',
-                addDindelOpt => '',
-                dindel_scripts => $dindel_base.'PythonCode/dindel',
-                dindel_bin => $dindel_base.'dindel',
+                dindel_scripts => $dindel_base,
+                dindel_bin => 'dindel',
+                dindel_args => '--maxRead 5000',
                 bsub_opts => '');
 
 =head2 new
@@ -84,15 +115,19 @@ our %options = (simultaneous_jobs => 100,
  Usage   : my $obj = VertRes::Pipelines::Dindel->new(lane => '/path/to/lane');
  Function: Create a new VertRes::Pipelines::Dindel object.
  Returns : VertRes::Pipelines::Dindel object
- Args    : lane_path => '/path/to/dir/containing/release.bam' (REQUIRED, set by
+ Args    : lane_path => '/path/to/dindel_group_dir' (REQUIRED, set by
                          run-pipeline automatically)
+           bam_fofn => '/path/to/bam.fofn' (REQUIRED, set by run-pipeline
+                                            automatically)
            ref => '/path/to/ref.fa' (REQUIRED)
+           type => 'diploid'|'haploid' (default diploid)
 
-           chrom => string (to only do 1 chr, provide the chromosome name, eg.
-                            20)
            simultaneous_jobs => int (default 200; the number of jobs to
                                      do at once - limited to avoid IO
                                      problems)
+           dindel_args => '--maxRead 5000' (specify special non-default
+                                            settings to the dindel window
+                                            realignment call)
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -101,346 +136,414 @@ sub new {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(%options, actions => $actions, @args);
     
-    $self->{lane_path} || $self->throw("lane_path (misnomer; actually releasese bam) directory not supplied, can't continue");
+    $self->{lane_path} || $self->throw("lane_path (misnomer; actually dindel group output) directory not supplied, can't continue");
     $self->{ref} || $self->throw("ref not supplied, can't continue");
-    -x $self->{dindel_bin} || $self->throw("bad dindel_bin $self->{dindel_bin}");
+    #-x $self->{dindel_bin} || $self->throw("bad dindel_bin $self->{dindel_bin}");
     -d $self->{dindel_scripts} || $self->throw("bad dindel_scripts $self->{dindel_scripts}");
+    $self->{bam_fofn} || $self->throw("bam_fofn not supplied, can't continue");
     
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     
-    $self->{outdir_basename} = 'dindel';
-    if ($self->{chrom}) {
-        my $chrom_bam = `ls $self->{lane_path}/*.chrom$self->{chrom}.*.bam`;
-        chomp($chrom_bam);
-        if ($chrom_bam) {
-            $self->{bam_file_name} = basename($chrom_bam);
-            $self->{outdir_basename} .= '_chrom'.$self->{chrom};
-        }
-        else {
-            $self->throw("Could not find a chrom$self->{chrom} bam in $self->{lane_path}");
-        }
+    my @bams = $self->{io}->parse_fofn($self->{bam_fofn});
+    $self->{bam_files} = \@bams;
+    my @bais;
+    my %bam_to_sample;
+    foreach my $bam (@bams) {
+        push(@bais, $bam.'.bai');
     }
-    else {
-        $self->{bam_file_name} = 'release.bam';
-    }
+    $self->{bai_files} = \@bais;
     
-    # setup output and log dirs
-    my $out_dir = $self->{fsu}->catfile($self->{lane_path}, $self->{outdir_basename});
-    $self->{outdir} = $out_dir;
-    unless (-d $out_dir) {
-        mkdir($out_dir) || $self->throw("Could not create directory '$out_dir'");
-    }
-    
-    my $logs_dir = $self->{fsu}->catfile($out_dir, 'logs');
-    $self->{logs} = $logs_dir;
-    unless (-d $logs_dir) {
-        mkdir($logs_dir) || $self->throw("Could not create directory '$logs_dir'");
-    }
-    
-    $self->{bamfiles_fofn} = $self->{fsu}->catfile($out_dir, 'bamfiles.fofn');
-    unless (-s $self->{bamfiles_fofn}) {
-        open(my $bfh, '>', $self->{bamfiles_fofn}) || $self->throw("Could not write to $self->{bamfiles_fofn}");
-        my $release_bam = $self->{fsu}->catfile($self->{lane_path}, $self->{bam_file_name});
-        print $bfh $release_bam, "\n";
-        close($bfh);
-    }
+    $self->{type} ||= 'diploid';
     
     return $self;
 }
 
-=head2 get_variants_requires
+sub _get_bam_to_sample {
+    my $self = shift;
+    
+    return if defined $self->{bam_to_sample};
+    
+    my %bam_to_sample;
+    foreach my $bam (@{$self->{bam_files}}) {
+        my $pars = VertRes::Parser::sam->new(file => $bam);
+        my @samples = $pars->samples();
+        $pars->close;
+        
+        if (@samples > 1) {
+            $self->throw("The bam '$bam' was for more than 1 sample (@samples)");
+        }
+        elsif (@samples < 1) {
+            $self->throw("Could not detect what sample '$bam' was for");
+        }
+        
+        $bam_to_sample{$bam} = $samples[0];
+    }
+    $self->{bam_to_sample} = \%bam_to_sample;
+    return;
+}
 
- Title   : get_variants_requires
- Usage   : my $required_files = $obj->get_variants_requires('/path/to/lane');
- Function: Find out what files the get_variants action needs before
+=head2 extract_indels_requires
+
+ Title   : extract_indels_requires
+ Usage   : my $required_files = $obj->extract_indels_requires('/path/to/lane');
+ Function: Find out what files the extract_indels action needs before
            it will run.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub get_variants_requires {
+sub extract_indels_requires {
     my $self = shift;
-    return [$self->{ref}, $self->{bam_file_name}, $self->{bam_file_name}.'.bai'];
+    return [$self->{ref}, @{$self->{bam_files}}, @{$self->{bai_files}}];
 }
 
-=head2 get_variants_provides
+=head2 extract_indels_provides
 
- Title   : get_variants_provides
- Usage   : my $provided_files = $obj->get_variants_provides('/path/to/lane');
- Function: Find out what files the get_variants action generates on
+ Title   : extract_indels_provides
+ Usage   : my $provided_files = $obj->extract_indels_provides('/path/to/lane');
+ Function: Find out what files the extract_indels action generates on
            success.
  Returns : array ref of file names
  Args    : lane path
 
 =cut
 
-sub get_variants_provides {
-    my $self = shift;
-    return [$self->{fsu}->catfile($self->{outdir_basename}, 'variants', 'variants.variants.txt'),
-            $self->{fsu}->catfile($self->{outdir_basename}, 'variants', 'variants.libraries.txt')];
+sub extract_indels_provides {
+    my ($self, $lane_path) = @_;
+    
+    my $out_dir = $self->{fsu}->catfile($lane_path, 'extract_indels');
+    my @bam_files = @{$self->{bam_files}};
+    $self->_get_bam_to_sample;
+    
+    my @lib_var_files;
+    foreach my $bam (@bam_files) {
+        my $sample = $self->{bam_to_sample}->{$bam} || $self->throw("No sample for bam '$bam'!");
+        my $out_base = $self->{fsu}->catfile($out_dir, $sample.'.dindel_extract_indels');
+        
+        foreach my $type ('libraries', 'variants') {
+            my $out_file = $out_base.".$type.txt";
+            push(@lib_var_files, $out_file);
+        }
+    }
+    
+    return \@lib_var_files;
 }
 
-=head2 get_variants
+=head2 extract_indels
 
- Title   : get_variants
- Usage   : $obj->get_variants('/path/to/lane', 'lock_filename');
- Function: Gets variants from the bam file.
+ Title   : extract_indels
+ Usage   : $obj->extract_indels('/path/to/lane', 'lock_filename');
+ Function: Extracts candidate indels and infer insert-size distribution on each
+           bam seperately, then merge.
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : lane path, name of lock file to use
 
 =cut
 
-sub get_variants {
+sub extract_indels {
     my ($self, $lane_path, $action_lock) = @_;
     
-    my $out_dir = $self->{fsu}->catfile($self->{outdir}, 'variants');
+    my $out_dir = $self->{fsu}->catfile($lane_path, 'extract_indels');
     unless (-d $out_dir) {
         mkdir($out_dir) || $self->throw("Could not create directory '$out_dir'");
     }
     
-    my $bam_file = $self->{fsu}->catfile($lane_path, $self->{bam_file_name});
-    my $out_file = $self->{fsu}->catfile($out_dir, 'running.variants');
+    my @bam_files = @{$self->{bam_files}};
+    $self->_get_bam_to_sample;
     
-    my $job_name = $self->{fsu}->catfile($self->{logs}, 'get_variants');
-    $self->archive_bsub_files($self->{logs}, 'get_variants');
-    
-    LSF::run($action_lock, $lane_path, $job_name, $self,
-             qq{$self->{dindel_bin} --analysis getCIGARindels --bamFile $bam_file --ref $self->{ref} --outputFile $out_file});
+    foreach my $bam (@bam_files) {
+        my $sample = $self->{bam_to_sample}->{$bam} || $self->throw("No sample for bam '$bam'!");
+        my $out_base = $self->{fsu}->catfile($out_dir, $sample.'.dindel_extract_indels');
+        my $running_base = $out_base.'.running';
+        
+        my $done = 0;
+        foreach my $type ('libraries', 'variants') {
+            my $out_file = $out_base.".$type.txt";
+            if ($self->{fsu}->file_exists($out_file)) {
+                $done++;
+            }
+        }
+        next if $done == 2;
+        
+        my $job_base_name = $sample.'.dindel_extract_indels';
+        my $job_name = $self->{fsu}->catfile($out_dir, $job_base_name);
+        my $lock_file = $job_name.'.jids';
+        
+        my $is_running = LSF::is_job_running($lock_file);
+        if ($is_running & $LSF::Error) {
+            warn "$job_name failed!\n";
+            unlink($lock_file);
+            next;
+        }
+        elsif ($is_running & $LSF::Running) {
+            next;
+        }
+        elsif ($is_running & $LSF::Done) {
+            #*** $LSF::Done means that the .o file said we were successful
+            foreach my $type ('libraries', 'variants') {
+                my $out_file = $out_base.".$type.txt";
+                my $running_file = $running_base.".$type.txt";
+                move($running_file, $out_file) || $self->throw("failed to move $running_file to $out_file");
+            }
+            next;
+        }
+        else {
+            $self->archive_bsub_files($out_dir, $job_base_name);
+            
+            LSF::run($lock_file, $out_dir, $job_base_name, $self,
+                     qq{$self->{dindel_bin} --analysis getCIGARindels --bamFile $bam --ref $self->{ref} --outputFile $running_base});
+        }
+    }
     
     return $self->{No};
 }
 
-=head2 split_variants_requires
-
- Title   : split_variants_requires
- Usage   : my $required_files = $obj->split_variants_requires('/path/to/lane');
- Function: Find out what files the split_variants action needs before
-           it will run.
- Returns : array ref of file names
- Args    : lane path
-
-=cut
-
-sub split_variants_requires {
-    my $self = shift;
-    return $self->get_variants_provides;
+sub concat_libvar_provides {
+    my ($self, $lane_dir) = @_;
+    return [$self->{fsu}->catfile($lane_dir, 'variants.txt'), $self->{fsu}->catfile($lane_dir, 'libraries.txt')];
 }
 
-=head2 split_variants_provides
+=head2 concat_libvar
 
- Title   : split_variants_provides
- Usage   : my $provided_files = $obj->split_variants_provides('/path/to/lane');
- Function: Find out what files the split_variants action generates on
-           success.
- Returns : array ref of file names
- Args    : lane path
-
-=cut
-
-sub split_variants_provides {
-    my ($self, $lane_path) = @_;
-    
-    my $split_dir = $self->{fsu}->catfile($self->{outdir_basename}, 'variants', 'split');
-    my $abs_split_dir = $self->{fsu}->catfile($lane_path, $split_dir);
-    my @provides;
-    
-    # don't know at the moment how many splits we're supposed to have, so cheat
-    # and see how many we do have and assume that's correct!
-    if (-d $abs_split_dir) {
-        opendir(my $splitfh, $abs_split_dir) || $self->throw("Could not open dir $abs_split_dir");
-        foreach my $file (readdir($splitfh)) {
-            if ($file =~ /\.variants\.txt$/) {
-                push(@provides, $self->{fsu}->catfile($split_dir, $file));
-            }
-        }
-        @provides > 1 || $self->throw("Something went wrong; not enough variant files in @provides");
-    }
-    else {
-        @provides = ($split_dir);
-    }
-    
-    return \@provides;
-}
-
-=head2 split_variants
-
- Title   : split_variants
- Usage   : $obj->split_variants('/path/to/lane', 'lock_filename');
- Function: Split variants.
+ Title   : concat_libvar
+ Usage   : $obj->concat_libvar('/path/to/lane', 'lock_filename');
+ Function: Concatenates the individual sample library and variant files made
+           by extract_indels() to give one file of each type per this sample
+           group.
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : lane path, name of lock file to use
 
 =cut
 
-sub split_variants {
+sub concat_libvar {
     my ($self, $lane_path, $action_lock) = @_;
     
-    # split the variants per chromosome
-    # (group variants into windows and split into individual files)
-    my $split_dir = $self->{fsu}->catfile($self->{outdir}, 'variants', 'split');
-    unless (-d $split_dir) {
-        mkdir($split_dir) || $self->throw("Could not create directory '$split_dir'");
+    my $var_out = $self->{fsu}->catfile($lane_path, 'variants.txt.running');
+    my $lib_out = $self->{fsu}->catfile($lane_path, 'libraries.txt.running');
+    open(my $vofh, '>', $var_out) || $self->throw("Could not write to $var_out");
+    open(my $lofh, '>', $lib_out) || $self->throw("Could not write to $lib_out");
+    
+    my ($v_exp, $l_exp) = (0, 0);
+    foreach my $file (@{$self->extract_indels_provides($lane_path)}) {
+        my ($ofh, $counter);
+        if ($file =~ /variants\.txt$/) {
+            $ofh = $vofh;
+            $counter = \$v_exp;
+        }
+        else {
+            $ofh = $lofh;
+            $counter = \$l_exp;
+        }
+        
+        open(my $fh, $file) || $self->throw("Could not open $file");
+        while (<$fh>) {
+            $$counter++;
+            print $ofh $_;
+        }
+        close($fh);
+    }
+    close($vofh);
+    close($lofh);
+    
+    # check the cat files are complete
+    my $v_lines = VertRes::IO->new(file => $var_out)->num_lines;
+    my $l_lines = VertRes::IO->new(file => $lib_out)->num_lines;
+    if ($v_lines != $v_exp) {
+        $self->throw("$var_out ended up with $v_lines instead of $v_exp lines");
+    }
+    if ($l_lines != $l_exp) {
+        $self->throw("$lib_out ended up with $l_lines instead of $l_exp lines");
     }
     
-    my $job_name = $self->{fsu}->catfile($self->{logs}, 'split_variants');
-    $self->archive_bsub_files($self->{logs}, 'split_variants');
+    move($var_out, $self->{fsu}->catfile($lane_path, 'variants.txt'));
+    move($lib_out, $self->{fsu}->catfile($lane_path, 'libraries.txt'));
     
-    my $var_file = $self->{fsu}->catfile($self->{outdir}, 'variants', 'variants.variants.txt');
-    
-    #*** we need a way of checking if it completed successfully; need
-    #    to know how many files it is supposed to create in $split_dir
-    my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = ' -M4000000 -R \'select[mem>4000] rusage[mem=4000]\'';
+    return $self->{Yes};
+}
 
-    LSF::run($action_lock, $lane_path, $job_name, $self,
-             qq{cat $var_file | python $self->{dindel_scripts}/MergeCandidates.py --outputDir $split_dir --minDist 25 --varPerFile $self->{vars_per_file}});
+sub make_windows_provides {
+    my ($self, $lane_path) = @_;
+    
+    # we don't know how many windows files there will be, but we can work out
+    # how many lines should be found across all the window files, and once we
+    # pass that check we'll make a .made_windows file listing all the window
+    # files
+    
+    return ['.made_windows'];
+}
+
+sub _check_all_windows_files {
+    my ($self, $lane_path) = @_;
+    
+    my $done_file = $self->{fsu}->catfile($lane_path, '.made_windows');
+    if ($self->{fsu}->file_exists($done_file)) {
+        return 1;
+    }
+    
+    # the number of lines in variants.txt should match the number of column 4+
+    # entries in all window files
+    my $var_file = $self->{fsu}->catfile($lane_path, 'variants.txt');
+    my $window_dir = $self->{fsu}->catfile($lane_path, 'windows');
+    
+    if (-d $window_dir) {
+        my $expected = $self->{io}->new(file => $var_file)->num_lines;
+        
+        my $actual = 0;
+        opendir(my $windowfh, $window_dir) || $self->throw("Could not open dir $window_dir");
+        my @window_files = ();
+        foreach my $file (readdir($windowfh)) {
+            if ($file =~ /window/) {
+                my $this_window_file = $self->{fsu}->catfile($window_dir, $file);
+                push(@window_files, $this_window_file);
+                open(my $wfh, $this_window_file) || $self->throw("Could not open window file '$this_window_file'");
+                while (<$wfh>) {
+                    my @a = split;
+                    $actual += scalar(@a) - 3;
+                }
+            }
+        }
+        
+        if ($actual >= $expected) {
+            open(my $dfh, '>', $done_file) || $self->throw("Could not write to $done_file");
+            foreach my $window_file (@window_files) {
+                print $dfh $window_file, "\n";
+            }
+            close($dfh);
+            $self->{windows_files} = \@window_files;
+            return 1;
+        }
+        else {
+            warn "$actual entries in window files < $expected\n";
+        }
+    }
+    
+    return 0;
+}
+
+sub _get_windows_files {
+    my ($self, $lane_path) = @_;
+    
+    if (defined $self->{windows_files}) {
+        return @{$self->{windows_files}};
+    }
+    
+    my $done_file = $self->{fsu}->catfile($lane_path, '.made_windows');
+    if ($self->{fsu}->file_exists($done_file)) {
+        open(my $fh, $done_file) || $self->throw("Could not open $done_file");
+        my @window_files;
+        while (<$fh>) {
+            chomp;
+            push(@window_files, $_);
+        }
+        close($fh);
+        $self->{windows_files} = \@window_files;
+        return @window_files;
+    }
+    else {
+        $self->throw(".made_windows not present, this method should not have been called");
+    }
+}
+
+=head2 make_windows
+
+ Title   : make_windows
+ Usage   : $obj->make_windows('/path/to/lane', 'lock_filename');
+ Function: Create realignment windows.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub make_windows {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    my $var_file = $self->{fsu}->catfile($lane_path, 'variants.txt');
+    my $window_dir = $self->{fsu}->catfile($lane_path, 'windows');
+    unless (-d $window_dir) {
+        mkdir($window_dir) || $self->throw("Could not create directory '$window_dir'");
+    }
+    
+    return $self->{Yes} if $self->_check_all_windows_files($lane_path);
+    
+    my $job_name = $self->{fsu}->catfile($window_dir, 'dindel_make_windows');
+    $self->archive_bsub_files($window_dir, 'dindel_make_windows');
+    
+    my $orig_bsub_opts = $self->{bsub_opts};
+    $self->{bsub_opts} = ' -M7900000 -R \'select[mem>7900] rusage[mem=7900]\'';
+
+    LSF::run($action_lock, $window_dir, $job_name, $self,
+             qq{python $self->{dindel_scripts}/makeWindows.py --inputVarFile $lane_path/variants.txt --windowFilePrefix $window_dir/window --numWindowsPerFile 1000});
     
     $self->{bsub_opts} = $orig_bsub_opts;
     
     return $self->{No};
 }
 
-=head2 call_requires
-
- Title   : call_requires
- Usage   : my $required_files = $obj->call_requires('/path/to/lane');
- Function: Find out what files the call action needs before
-           it will run.
- Returns : array ref of file names
- Args    : lane path
-
-=cut
-
-sub call_requires {
+sub realign_windows_requires {
     my ($self, $lane_path) = @_;
-    return $self->split_variants_provides($lane_path);
+    my @window_files = $self->_get_windows_files($lane_path);
+    $self->throw("Surely too few window files?!") if @window_files < 2;
+    return [$self->{fsu}->catfile($lane_path, 'libraries.txt'), @window_files];
 }
 
-=head2 call_provides
-
- Title   : call_provides
- Usage   : my $provided_files = $obj->call_provides('/path/to/lane');
- Function: Find out what files the call action generates on
-           success.
- Returns : array ref of file names
- Args    : lane path
-
-=cut
-
-sub call_provides {
+sub realign_windows_provides {
     my ($self, $lane_path) = @_;
     
-    my @provides = ($self->{fsu}->catfile($self->{outdir_basename}, 'libraries', 'libraries.txt'));
+    my @window_files = $self->_get_windows_files($lane_path);
     
-    my @split_var_files = @{$self->split_variants_provides($lane_path)};
-    my $splits = 0;
-    my $blocks = 0;
-    my $blocks_dir = $self->{fsu}->catfile($self->{outdir_basename}, 'blocks');
-    my $block_dir;
-    foreach my $var_file (@split_var_files) {
-        $splits++;
-        if ($splits % $self->{files_per_block} == 1) {
-            $blocks++;
-            $block_dir = $self->{fsu}->catfile($blocks_dir, 'block.'.$blocks);
-        }
-        
-        foreach my $type ('calls', 'glf', 'log') {
-            push(@provides, $self->{fsu}->catfile($block_dir, "dindel.$splits.$type.txt.gz"));
-        }
+    my @glfs;
+    foreach my $window_file (@window_files) {
+        my $glf = $window_file;
+        $glf =~ s/\.txt$/.glf.txt/;
+        push(@glfs, $glf);
     }
     
-    return \@provides;
+    @glfs > 1 || $self->throw("Surely too few glfs?!");
+    
+    return \@glfs;
 }
 
-=head2 call
+=head2 realign_windows
 
- Title   : call
- Usage   : $obj->call('/path/to/lane', 'lock_filename');
- Function: Calls variants in blocks.
+ Title   : realign_windows
+ Usage   : $obj->realign_windows('/path/to/lane', 'lock_filename');
+ Function: Realign the reads in each window (the computationally intensive bit).
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : lane path, name of lock file to use
 
 =cut
 
-sub call {
+sub realign_windows {
     my ($self, $lane_path, $action_lock) = @_;
     
-    # merge libraries
-    #*** not necessary? We only ever run on one bam at a time which is already
-    #    a merge of multiple libraries, so $lib_out_file and $lib_file end up
-    #    being the same thing
-    my $lib_dir = $self->{fsu}->catfile($self->{outdir}, 'libraries');
-    unless (-d $lib_dir) {
-        mkdir($lib_dir) || $self->throw("Could not create directory '$lib_dir'");
-    }
-    my $lib_out_file = $self->{fsu}->catfile($lib_dir, 'libraries.txt');
-    unless (-s $lib_out_file) {
-        #*** also need to properly check that this was created ok
-        open(my $lofh, '>', $lib_out_file) || $self->throw("Could not write to $lib_out_file");
-        my $lib_file = $self->{fsu}->catfile($self->{outdir}, 'variants', 'variants.libraries.txt');
-        open(my $lfh, $lib_file) || $self->throw("Could not open $lib_file");
-        while (<$lfh>) {
-            if (/^#/) {
-                chomp;
-                my @a = split;
-                shift(@a);
-                print $lofh '#LIB ', join('_', @a), "\n";
-            }
-            else {
-                print $lofh $_;
-            }
-        }
-        close($lfh);
-        close($lofh);
-    }
+    my $lib_file = $self->{fsu}->catfile($lane_path, 'libraries.txt');
+    my $window_dir = $self->{fsu}->catfile($lane_path, 'windows');
+    my @window_files = $self->_get_windows_files($lane_path);
     
-    # create dindel jobs - divide jobs over blocks/subdirectories with at most
-    # files_per_block files
-    my $blocks_dir = $self->{fsu}->catfile($self->{outdir}, 'blocks');
-    unless (-d $blocks_dir) {
-        mkdir($blocks_dir) || $self->throw("Could not create directory '$blocks_dir'");
-    }
-    my @split_var_files = @{$self->split_variants_provides($lane_path)};
-    my $splits = 0;
-    my $blocks = 0;
-    my $block_dir;
+    my $orig_bsub_opts = $self->{bsub_opts};
+    $self->{bsub_opts} = ' -M3000000 -R \'select[mem>3000] rusage[mem=3000]\'';
+    
     my $jobs = 0;
-    foreach my $var_file (@split_var_files) {
-        $var_file = $self->{fsu}->catfile($lane_path, $var_file);
+    foreach my $window_file (@window_files) {
+        my $glf = $window_file;
+        $glf =~ s/\.txt$/.glf.txt/;
         
-        $splits++;
-        if ($splits % $self->{files_per_block} == 1) {
-            $blocks++;
-            $block_dir = $self->{fsu}->catfile($blocks_dir, 'block.'.$blocks);
-            unless (-d $block_dir) {
-                mkdir($block_dir) || $self->throw("Could not create directory '$block_dir'");
-            }
-        }
+        next if $self->{fsu}->file_exists($glf);
         
-        my $done = 0;
-        foreach my $type ('calls', 'glf', 'log') {
-            my $out_file = $self->{fsu}->catfile($block_dir, "dindel.$splits.$type.txt.gz");
-            if (-s $out_file) {
-                $done++;
-            }
-        }
-        next if $done == 3;
+        my $running_base = $glf;
+        $running_base =~ s/\.glf\.txt/.running/;
         
-        my $job_base_name = "varfile.$splits";
-        my $job_name = $self->{fsu}->catfile($block_dir, $job_base_name);
+        my $job_base_name = basename($running_base);
+        $job_base_name =~ s/\.running//;
+        my $job_name = $self->{fsu}->catfile($window_dir, $job_base_name);
         my $lock_file = $job_name.'.jids';
         
         my $is_running = LSF::is_job_running($lock_file);
         if ($is_running & $LSF::Error) {
             warn "$job_name failed!\n";
-            #unlink($lock_file);
-            
-            # for some reason rare jobs (1-3 per strain) are failing because
-            # the gzip complains it could not find the file to compress, yet
-            # the files are actually created, compressed!...
-            
+            unlink($lock_file);
             next;
         }
         elsif ($is_running & $LSF::Running) {
@@ -448,69 +551,62 @@ sub call {
             next;
         }
         elsif ($is_running & $LSF::Done) {
-            #*** $LSF::Done means that the .o file said we were successful, but
-            #    that could just mean the gzip worked... don't know how to
-            #    check this properly yet
-            foreach my $type ('calls', 'glf', 'log') {
-                my $out_file = $self->{fsu}->catfile($block_dir, "dindel.$splits.$type.txt.gz");
-                my $running_file = $self->{fsu}->catfile($block_dir, "running.dindel.$splits.$type.txt.gz");
-                move($running_file, $out_file) || $self->throw("failed to move $running_file to $out_file");
+            my $running_file = $running_base.".glf.txt";
+            
+            # to check the glf file for completion properly, the number of lines
+            # should match the number of lines in the window file * number of
+            # variants on that line (cols 4+) * number of samples, or something
+            # like that. However, when a window is skipped only 1 line will
+            # appear for that window line. Cheat and just check the glf file
+            # ends with a line corresponding to the number of lines in the
+            # window
+            my $expected_index = $self->{io}->new(file => $window_file)->num_lines;
+            my $last_index = 0;
+            open(my $rfh, "tail -1 $running_file |") || $self->throw("Could not open tail to $running_file");
+            while (<$rfh>) {
+                (undef, $last_index) = split;
             }
+            close($rfh);
+            
+            if ($last_index == $expected_index) {
+                move($running_file, $glf) || $self->throw("failed to move $running_file to $glf");
+            }
+            else {
+                $self->warn("Made a glf file $glf, but it ended on window file index $last_index instead of $expected_index; moving it to .bad");
+                move($running_file, "$running_file.bad");
+            }
+            
+            unlink($lock_file);
             next;
         }
         else {
             $jobs++;
             last if $jobs > $self->{simultaneous_jobs};
             
-            $self->archive_bsub_files($block_dir, $job_base_name);
+            $self->archive_bsub_files($window_dir, $job_base_name);
             
-            # jobs can fail because the .gz already exists, causing gzip to exit
-            # with code 1, so always delete the .gz files first
-            foreach my $type ('log', 'glf', 'calls') {
-                unlink("$block_dir/running.dindel.$splits.$type.txt.gz");
+            my $bam_mode_args = '';
+            my @bam_files = @{$self->{bam_files}};
+            if (@bam_files > 1) {
+                $bam_mode_args = "--bamFiles $self->{bam_fofn} --doEM";
+            }
+            else {
+                $bam_mode_args = "--bamFile @bam_files --doDiploid";
             }
             
-            LSF::run($lock_file, $block_dir, $job_base_name, {bsub_opts => '-q long'},
-                     qq{$self->{dindel_bin} --analysis indels --bamFiles $self->{bamfiles_fofn} --varFile $var_file --ref $self->{ref} --outputFile $block_dir/running.dindel.$splits --mapUnmapped --libFile $lib_out_file $self->{dindelPars} $self->{addDindelOpt} > $block_dir/running.dindel.$splits.log.txt; gzip $block_dir/running.dindel.$splits.*.txt});
+            LSF::run($lock_file, $window_dir, $job_base_name, $self,
+                     qq{$self->{dindel_bin} --analysis indels $bam_mode_args $self->{dindel_args} --ref $self->{ref} --varFile $window_file --libFile $lib_file --outputFile $running_base});
         }
-        
-        last if $jobs >= $self->{simultaneous_jobs};
     }
+    
+    $self->{bsub_opts} = $orig_bsub_opts;
     
     return $self->{No};
 }
 
-=head2 merge_requires
-
- Title   : merge_requires
- Usage   : my $required_files = $obj->merge_requires('/path/to/lane');
- Function: Find out what files the merge action needs before
-           it will run.
- Returns : array ref of file names
- Args    : lane path
-
-=cut
-
-sub merge_requires {
-    my ($self, $lane_path) = @_;
-    return $self->call_provides($lane_path);
-}
-
-=head2 merge_provides
-
- Title   : merge_provides
- Usage   : my $provided_files = $obj->merge_provides('/path/to/lane');
- Function: Find out what files the merge action generates on
-           success.
- Returns : array ref of file names
- Args    : lane path
-
-=cut
-
 sub merge_provides {
-    my $self = shift;
-    return [$self->{fsu}->catfile($self->{outdir_basename}, 'calls.txt'),
-            $self->{fsu}->catfile($self->{outdir_basename}, 'indels.txt')];
+    my ($self, $lane_path) = @_;
+    return [$self->{fsu}->catfile($lane_path, 'calls.vcf')];
 }
 
 =head2 merge
@@ -526,20 +622,30 @@ sub merge_provides {
 sub merge {
     my ($self, $lane_path, $action_lock) = @_;
     
-    # filter output from .glf files into single file, and call genotypes from
-    # these
-    my $blocks_dir = $self->{fsu}->catfile($self->{outdir}, 'blocks');
+    my $glf_fofn = $self->{fsu}->catfile($lane_path, 'glf.fofn');
+    unless ($self->{fsu}->file_exists($glf_fofn)) {
+        my @glf_files = @{$self->realign_windows_provides($lane_path)};
+        open(my $ofh, '>', $glf_fofn) || $self->throw("Could not write to $glf_fofn");
+        print $ofh join("\n", @glf_files), "\n";
+        close($ofh);
+    }
     
-    my $job_name = $self->{fsu}->catfile($self->{logs}, 'merge');
-    $self->archive_bsub_files($self->{logs}, 'merge');
+    my $job_name = $self->{fsu}->catfile($lane_path, 'dindel_merge');
+    $self->archive_bsub_files($lane_path, 'dindel_merge');
     
-    my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = ' -M5500000 -R \'select[mem>5500] rusage[mem=5500]\'';
+    my $bam_mode_args = '';
+    my @bam_files = @{$self->{bam_files}};
+    if (@bam_files > 1) {
+        $bam_mode_args = "--bamFiles $self->{bam_fofn} --type pool";
+    }
+    else {
+        $bam_mode_args = "--bamFile @bam_files --type $self->{type}";
+    }
+    
+    my $running_out = $self->{fsu}->catfile($lane_path, 'calls.vcf.running');
     
     LSF::run($action_lock, $lane_path, $job_name, $self,
-             qq{python $self->{dindel_scripts}/MergeOutput.py -w merge -d $blocks_dir -e glf.txt.gz -t newdindel -o results.merged.glf.txt.gz; python $self->{dindel_scripts}/ParseDindelGLF.py -w callDiploidGLF -g $blocks_dir/results.merged.glf.txt.sorted.gz -o $self->{outdir}/running.calls.txt});
-    
-    $self->{bsub_opts} = $orig_bsub_opts;
+             qq{python $self->{dindel_scripts}/mergeOutput.py $bam_mode_args --inputFiles $glf_fofn --outputFile $running_out --ref $self->{ref}});
     
     return $self->{No};
 }
@@ -549,109 +655,21 @@ sub is_finished {
     
     my $action_name = $action->{name};
     
-    if ($action_name eq 'get_variants') {
-        my $provided = $self->get_variants_provides($lane_path);
-        foreach my $file (@{$provided}) {
-            my $finished = $self->{fsu}->catfile($lane_path, $file);
-            next if -s $finished;
-            
-            my $basename = basename($finished);
-            my $running_basename = 'running.'.$basename;
-            my $running = $finished;
-            $running =~ s/$basename$/$running_basename/;
-            
-            if (-s $running) {
-                # check the bsub output file to see if we completed successfully
-                # (could do seperate tests for writing all indels for each
-                #  ref sequence, and for writing the lib file, but just use
-                #  the same test for the 'done!' claim for now
-                my $bsub_o = $self->{fsu}->catfile($self->{logs}, 'get_variants.o');
-                if (-s $bsub_o) {
-                    open(my $bofh, $bsub_o) || $self->throw("Could not open $bsub_o");
-                    my $done = 0;
-                    while (<$bofh>) {
-                        if (/^done!$/) {
-                            $done++;
-                        }
-                        if (/^Successfully completed./) {
-                            $done++;
-                        }
-                    }
-                    close($bofh);
-                    
-                    if ($done == 2) {
-                        move($running, $finished);
-                    }
-                }
-            }
-        }
+    if ($action_name eq 'make_windows') {
+        $self->_check_all_windows_files($lane_path);
     }
     if ($action_name eq 'merge') {
-        my ($finished_calls, $finished_indels) = @{$self->merge_provides($lane_path)};
-        $finished_calls = $self->{fsu}->catfile($lane_path, $finished_calls);
-        $finished_indels = $self->{fsu}->catfile($lane_path, $finished_indels);
+        my $vcf = $self->{fsu}->catfile($lane_path, 'calls.vcf');
+        my $running = $vcf.'.running';
         
-        unless (-s $finished_calls) {
-            my $basename = basename($finished_calls);
-            my $running_basename = 'running.'.$basename;
-            my $running = $finished_calls;
-            $running =~ s/$basename$/$running_basename/;
-            
-            if (-s $running) {
-                # check the bsub output file to see if we completed successfully
-                my $bsub_o = $self->{fsu}->catfile($self->{logs}, 'merge.o');
-                if (-s $bsub_o) {
-                    open(my $bofh, $bsub_o) || $self->throw("Could not open $bsub_o");
-                    my $done = 0;
-                    while (<$bofh>) {
-                        if (/^Successfully completed./) {
-                            $done++;
-                        }
-                    }
-                    close($bofh);
-                    
-                    if ($done == 1) {
-                        move($running, $finished_calls);
-                    }
-                }
-            }
-        }
-        
-        if (-s $finished_calls && ! -e $finished_indels) {
-            # the third column contains the phred-scaled posterior probability,
-            # I generally use a minimum of 20 for this, corresponding to 99 %
-            # confidence.
-            #
-            # Columns 10 and 11 correspond to number of reads covering the indel
-            # site on the forward strand, and number of reads covering the indel
-            # on the reverse strand. (Even requiring a minimum of 5 on both
-            # strands gives 700K calls)
-            #
-            # The files also contains SNP calls. THe $6 ~ /[-+]/ requires that
-            # the most likely non-reference allele is an indel.
-            #
-            # The fourth column gives the phred-scaled confidence in the
-            # genotype. The difference with the third column is that you may be
-            # very confident about the statement that a non-reference allele is
-            # present, but not about the precise genotype.
-            #
-            # The 7th column ('genotype') contains the most likely genotype (the
-            # one with the highest posterior), where */* means ref/ref.
-            my $problem = system("less -S $finished_calls | awk '\$3>20 && \$10>5 && \$11>5 && \$6 ~ /[-+]/' > $finished_indels.running");
-            if ($problem) {
-                $self->throw("Failed to filter calls to $finished_indels: $!");
-            }
-            else {
-                move("$finished_indels.running", $finished_indels);
-            }
+        if (! $self->{fsu}->file_exists($vcf) && -s $running) {
+            # *** check for truncation and real completion?
+            move($running, $vcf) || $self->throw("failed to move $running to $vcf");
         }
     }
     
     return $self->SUPER::is_finished($lane_path, $action);
 }
-
-# cleanup _get_variants.jids _job_status _log in $lane_path
-
 
 # we override running_status to allow calls() to be called even while some jobs
 # are still running, because it is doing 200 jobs at a time and we don't want
