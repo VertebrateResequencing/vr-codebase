@@ -1362,7 +1362,7 @@ sub run_validation
             if ( $err ) { $self->warn("$gt column at $$x{CHROM}:$$x{POS} .. $err\n"); }
         }
 
-        if ( exists($$x{INFO}{AN}) || exists($$x{INFO}{AC}) )
+        if ( scalar keys %{$$x{gtypes}} && (exists($$x{INFO}{AN}) || exists($$x{INFO}{AC})) )
         {
             my ($an,$ac) = $self->calc_an_ac($$x{gtypes});
             if ( exists($$x{INFO}{AN}) && $an ne $$x{INFO}{AN} ) 
