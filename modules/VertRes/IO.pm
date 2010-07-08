@@ -38,7 +38,7 @@ use strict;
 use warnings;
 use Cwd qw(abs_path);
 use File::Spec;
-use IO::Uncompress::Gunzip;
+use IO::Uncompress::AnyUncompress;
 use File::Fetch;
 use Net::FTP::Robust;
 use VertRes::Utils::FileSystem;
@@ -101,13 +101,34 @@ sub file {
         
         # set up the open command, handling compressed files automatically
         my $open = $filename;
-        if ($filename =~ /\.gz$/) {
+        my $type = `file -bi $filename`;
+        ($type) = split(';', $type);
+        if ($type eq 'application/octet-stream' || $filename =~ /\.gz$/) {
             if ($in_out eq '<') {
-                #my $z = IO::Uncompress::Gunzip->new($filename);
-                #$self->{_filename} = $filename;
-                #$self->fh($z);
-                #return $filename;
-                $open = "gunzip -c $filename |";
+                # if it was made with Heng Li's bgzip it will be detected as a
+                # gzip file, but will fail to be decompressed properly with
+                # IO::Uncompress; manually detect the magic ourselves
+                my $magic = `od -b $filename | head -1`;
+                my (undef, @magic) = split(/\s/, $magic);
+                my @bgzip_magic = (37, 213, 10, 4, 0, 0, 0, 0, 0, 377, 6, 0, 102, 103, 2, 0);
+                my $is_bgzip = 1;
+                foreach my $m (@bgzip_magic) {
+                    my $this_m = shift(@magic);
+                    if ($this_m != $m) {
+                        $is_bgzip = 0;
+                        last;
+                    }
+                }
+                
+                if ($is_bgzip) {
+                    $open = "gunzip -c $filename |";
+                }
+                else {
+                    my $z = IO::Uncompress::AnyUncompress->new($filename, AutoClose => 1);
+                    $self->{_filename} = $filename;
+                    $self->fh($z);
+                    return $filename;
+                }
             }
             else {
                 $open = "| gzip -c > $filename";
