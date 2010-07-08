@@ -55,7 +55,7 @@ use VertRes::Wrapper::samtools;
 our $DEFAULT_GATK_JAR = File::Spec->catfile($ENV{GATK}, 'GenomeAnalysisTK.jar');
 our $DEFAULT_LOGLEVEL = 'ERROR';
 our $DEFAULT_PLATFORM = 'ILLUMINA';
-our $DEFAULT_MAX_READS = 50000;
+our $DEFAULT_MAX_READS = 5000;
 
 =head2 new
 
