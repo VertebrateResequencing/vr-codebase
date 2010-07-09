@@ -638,7 +638,10 @@ sub format_header
     for my $line (@{$$self{header_lines}}) { $out .= $self->format_header_line($line); }
 
     # This is required when using the API for writing new VCF files and the caller does not add the line explicitly
-    if ( $$self{header_lines}[0]{key} ne 'fileformat' ) { $out = "##fileformat=VCFv$$self{version}\n" .$out; }
+    if ( !exists($$self{header_lines}[0]{key}) or $$self{header_lines}[0]{key} ne 'fileformat' ) 
+    { 
+        $out = "##fileformat=VCFv$$self{version}\n" .$out; 
+    }
     if ( !$$self{columns} ) { return $out; }
 
     my @out_cols;
