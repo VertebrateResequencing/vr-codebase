@@ -394,7 +394,7 @@ sub _check_all_windows_files {
         opendir(my $windowfh, $window_dir) || $self->throw("Could not open dir $window_dir");
         my @window_files = ();
         foreach my $file (readdir($windowfh)) {
-            if ($file =~ /window/) {
+            if ($file =~ /window\./) {
                 my $this_window_file = $self->{fsu}->catfile($window_dir, $file);
                 push(@window_files, $this_window_file);
                 open(my $wfh, $this_window_file) || $self->throw("Could not open window file '$this_window_file'");
@@ -663,8 +663,16 @@ sub is_finished {
         my $running = $vcf.'.running';
         
         if (! $self->{fsu}->file_exists($vcf) && -s $running) {
-            # *** check for truncation and real completion?
-            move($running, $vcf) || $self->throw("failed to move $running to $vcf");
+            my $lock_file = $self->{fsu}->catfile($lane_path, $self->{prefix}.'merge.jids');
+            my $is_running = LSF::is_job_running($lock_file);
+            if ($is_running & $LSF::Error) {
+                warn "$lock_file indicates failure\n";
+                unlink($lock_file);
+            }
+            elsif ($is_running & $LSF::Done) {
+                # *** check for truncation?
+                move($running, $vcf) || $self->throw("failed to move $running to $vcf");
+            }
         }
     }
     
@@ -681,6 +689,21 @@ sub running_status {
     }
     
     return $self->SUPER::running_status($jids_file);
+}
+
+# we override this to use file_exists, which could be dangerous for general
+# use, but is pretty much required here
+sub what_files_are_missing {
+    my ($self, $path, $files) = @_;
+
+    my @missing = ();
+    for my $file (@$files) {
+        my $file_path = index($file, '/') == 0 ? $file : "$path/$file";
+        if (! $self->{fsu}->file_exists($file_path)) {
+            push @missing, $file_path;
+        }
+    }
+    return \@missing;
 }
 
 1;
