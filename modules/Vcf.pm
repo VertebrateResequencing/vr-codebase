@@ -373,7 +373,7 @@ sub _unread_line
 sub throw
 {
     my ($self,@msg) = @_;
-    confess @msg;
+    confess @msg,"\n";
 }
 
 sub warn
@@ -1588,6 +1588,10 @@ sub Vcf4_0::parse_header_line
         elsif ( $tmp=~/^([^=]+)=([^,]+)/ ) { $key=$1; $value=$2; }
         else { $self->throw(qq[Could not parse $value, got stuck here: "$tmp"\n]); }
 
+        if ( $key=~/^\s+/ or $key=~/\s+$/ or $value=~/^\s+/ or $value=~/\s+$/ ) 
+        { 
+            $self->throw("Leading or trailing space in key-value pairs is discouraged:\n\t[$key] [$value]\n\t$line\n"); 
+        }
         $$rec{$key} = $value;
 
         $tmp = $';
