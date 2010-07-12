@@ -592,6 +592,9 @@ sub map {
                 my $split_read_arg = $read_arg;
                 $split_read_arg =~ s/\.f[^.]+(?:\.gz)?('(?:, )?).*$/.$split.fastq.gz$1/;
                 $split_read_arg =~ s/\/([^\/]+)$/\/${split_dir_name}_${ended}_$self->{mapstats_id}\/$1/;
+                unless ($split_read_arg =~ /,\s*$/) {
+                    $split_read_arg .= ', ';
+                }
                 push(@split_read_args, $split_read_arg);
             }
             

@@ -83,6 +83,7 @@ our $options =
     'stats'           => '_stats',
     'stats_detailed'  => '_detailed-stats.txt',
     'stats_dump'      => '_stats.dump',
+    'chr_regex'       => '^(?:\d+|X|Y)$',
 
     auto_qc =>
     {

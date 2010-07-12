@@ -1,0 +1,282 @@
+<div style='visibility:hidden;display:none;position:absolute;top:0px;left:0px;'>
+    <div id='ori_lanes_container' style='right:0px;background-color:#EEEEEE;z-index:99;position:absolute;max-width:180px'>
+    <div style='float:right;'><a href='#' onclick='togglesidebar()' style='text-decoration: none'>&hArr;</a></div>
+    <div id='ori_lanes' style='white-space:nowrap'>
+    </div>
+    </div>
+    <div id='ori_upper_nav' style='align:center'>
+    %TO% <input type='text' id='chr_to' value='150000' size='5' />
+    <input type='button' name='ori_update_image' value='%UPDATE_IMAGE_BUTTON%' onclick='update_image();' />
+    <span style='display:none;margin-right:6px' id='span_sanger_bars'><input id='button_sanger_bars' type="button" onclick="toggle_sanger_stuff()" value="%HIDE_SANGER_BARS_BUTTON%" /></span>
+    <span id='insert_organism_specific_buttons_here'></span>
+    <span style='margin-right:12px'>
+    <input type='radio' name='display_mode' value='indel' id='ori_display_mode_indel' onclick='display_mode_indel()' checked="checked" /><label for='display_mode_indel'>%INDEL_BUTTON%</label>
+    <input type='radio' name='display_mode' value='pileup' id='display_mode_pileup' onclick='display_mode_pileup()' /><label for='display_mode_pileup'>%PILEUP_BUTTON%</label>
+    <input type='radio' name='display_mode' value='paired_pileup' id='ori_display_mode_paired_pileup' onclick='display_mode_paired_pileup()' /><label for='display_mode_paired_pileup'>%PAIRED_PILEUP_BUTTON%</label>
+    <input type='radio' name='display_mode' value='coverage' id='display_mode_coverage' onclick='display_mode_coverage()' /><label for='display_mode_coverage'>%COVERAGE_BUTTON%</label>
+    </span>
+    <a id='link_to_text' style='display:none'>%TEXT_VERSION_LINK%</a>
+    <div id='ori_loading' style='padding:2px;display:none'>
+    <img src="__HTMLPATH__/round_and_round_it_goes.gif" alt="waiting..." />
+    <span style="background-color:red;color:white;z-index:100">%UPDATING_STATUS%</span>
+    </div>
+    <br/>
+    <span style='margin-right:12px'><input type='button' name='button_zoom_in' id='button_zoom_in' value='%BUTTON_ZOOM_IN%' onclick='zoom_in()' /></span>
+    <span style='margin-right:12px'><input type='button' name='button_zoom_out' id='button_zoom_out' value='%BUTTON_ZOOM_OUT%' onclick='zoom_out()' /></span>
+    <span style='margin-right:12px'><input type='button' name='button_zoom_chr' id='button_zoom_chr' value='%BUTTON_ZOOM_FULL_CHROMOSOME%' onclick='chromosome_changed()' /></span>
+    <span style='margin-right:12px'>
+    InDel size
+    <select name='ori_indel_zoom' id='ori_indel_zoom' onchange='indel_zoom_changed()'>
+    <option value='auto'>%INDEL_ZOOM_AUTO%</option>
+    <option value='300'>300</option>
+    <option value='400'>400</option>
+    <option value='500'>500</option>
+    <option value='1000'>1000</option>
+    <option value='1500'>1500</option>
+    <option value='2500'>2500</option>
+    <option value='5000'>5000</option>
+    <option value='10000'>10000</option>
+    <option value='15000'>15000</option>
+    <option value='50000'>50000</option>
+    </select>
+    </span>
+    <span style='margin-right:12px'>
+    %IMAGE_WIDTH%
+    <select name='image_width' id='ori_image_width' onchange='image_width_changed()'>
+    <option value='1280'>1280px</option>
+    <option value='1024' selected="selected">1024px</option>
+    <option value='800'>800px</option>
+    <option value='640'>640px</option>
+    </select>
+    </span>
+    <span style='margin-right:12px' id='ori_mini_data'></span>
+    <br/>
+    <span style='margin-right:3px'>
+    %SHOW% 
+    <span style='margin-right:3px'><input type='checkbox' id='display_perfect' onclick="update_image()" checked="checked" /><label for="display_perfect">%OPT_PPM%</label></span>
+    <span style='margin-right:3px'><input type='checkbox' id='display_snps' onclick="update_image()"/><label for="display_snps">%OPT_PRS%</label></span>
+    <span style='margin-right:3px'><input type='checkbox' id='display_single_reads' onclick="update_image()" checked="checked" /><label for="display_single_reads">%OPT_SR%</label></span>
+    <span style='margin-right:3px'>
+    <input type='checkbox' id='display_inversions' onclick="update_image()" checked="checked" /><label for="display_inversions">%OPT_INV%</label>
+    <input type='checkbox' id='display_inversions_ext' onclick="update_image()" /><label for="display_inversions_ext">%OPT_INV_EXT%</label>
+    </span>
+    <span style='margin-right:3px'><input type='checkbox' id='display_pair_links' onclick="update_image()" checked="checked"/><label for="display_pair_links">%OPT_LP%</label></span>
+    <span style='margin-right:3px'><input type='checkbox' id='display_known_snps' onclick="update_image()" checked="checked"/><label for="display_known_snps">%OPT_KS%</label></span>
+    <span style='margin-right:3px'><input type='checkbox' id='display_uniqueness' onclick="update_image()" checked="checked"/><label for="display_uniqueness">%OPT_UN%</label></span>
+    </span>
+    <br/>%HELPER_DISPLAYS%
+    <span style='margin-right:3px'><input type='checkbox' id='display_annotation' onclick="update_image()" checked="checked" /><label for="display_annotation">%OPT_ANN%</label></span>
+    <span style='margin-right:3px'><input type='checkbox' id='display_gc' onclick="update_image()" checked="checked" /><label for="display_gc">%OPT_GC%</label></span>
+    <span style='margin-right:3px'><input type='checkbox' id='display_coverage' onclick="update_image()" checked="checked" /><label for="display_coverage">%CB_COVERAGE%</label></span>
+    <span style='margin-right:3px'>
+    <input id='search_query' name='search_query' type='text' value='' size='10' />
+    <input type='button' value='%BUTTON_SEARCH%' onclick='on_search()' />
+    </span>
+    <span style='margin-right:3px'><input type='checkbox' id='display_second_track' onclick="toggle_second_track()" /><label for="display_second_track">%CB_SECOND_TRACK%</label></span>
+    <span><input type='checkbox' id='squeeze_tracks' onclick="toggle_squeeze_tracks()" disabled="disabled" /><label for="squeeze_tracks">%CB_SQUEEZE_TRACKS%</label></span>
+    </div>
+    <div id='ori_img_container' style='border:2px solid gray;background:#CCCCCC;overflow:hidden'>
+    <div id='ori_vruler' style='border-right:1px dotted red;z-index:5;position:absolute'></div>
+    <img id='ori_main_image' onload='main_image_loaded()' class='dragme' ondblclick='main_image_clicked(event)' onmouseout='hide_vruler()'  onmousemove='mouse_moved_over_main_image(event)' style='position:relative' alt='' src='' />
+    <div id='ori_second_image_name' style='margin-top:3px;margin-left:3px;color:#AAAAAA;position:absolute;z-index:9;display:none'></div>
+    <img id='ori_second_image' onload='second_image_loaded()' class='dragme' ondblclick='main_image_clicked(event)' onmouseout='hide_vruler()'  onmousemove='mouse_moved_over_main_image(event)' style='position:relative;border-top:1px solid red;display:none' alt='' src='' />
+    <img id='ori_annotation_image' onload='annotation_image_loaded()' class='dragme' onmouseout='hide_vruler()'  onmousemove='mouse_moved_over_main_image(event)' ondblclick='annotation_clicked(event)' style='position:relative;margin-top:2px' alt='' src='' />
+    <img id='ori_gc_image' onload='gc_image_loaded()' class='dragme' onmouseout='hide_vruler()'  onmousemove='mouse_moved_over_main_image(event)' ondblclick='main_image_clicked(event)' style='position:relative;margin-top:2px' alt='' src='' />
+    <img id='ori_coverage_image' onload='coverage_image_loaded()' class='dragme' onmouseout='hide_vruler()'  onmousemove='mouse_moved_over_main_image(event)' ondblclick='main_image_clicked(event)' style='position:relative;margin-top:2px' alt='' src='' />
+    <div id='hbar' style='display:none;position:relative'>
+    <div id='dragbar' style='position:relative;background-color:#FFFFFF;border-left:2px solid #DDDDDD;border-top:2px solid #DDDDDD;border-right:2px solid #444444;border-bottom:2px solid #444444;'></div>
+    </div>
+    </div>
+    <div id='legend_container' style='background-color:#DDDDDD; padding:2px;margin-top:2px'><b>%LEGEND_TITLE%</b>
+    <div style='display:none' id='legend_indel'>%LEG_INDEL%
+    <span style="border-left:3px solid blue; margin-right:5px; padding-left:1px">%LEG_PP%</span>
+    <span style="border-left:3px solid green; margin-right:5px; padding-left:1px">%LEG_PS%</span>
+    <span style="border-left:3px solid red; margin-right:5px; padding-left:1px">%LEG_SNPS%</span>
+    <span style="border-left:3px solid #D2691E; margin-right:5px; padding-left:1px">%LEG_INV%</span>
+    <span style="border-left:3px solid yellow; margin-right:5px; padding-left:1px">%LEG_EFR%</span>
+    <span style="margin-left:5px; padding-left:1px">%LEG_CIG%</span>
+    <span style="border-left:3px solid cyan; margin-right:5px; padding-left:1px">%LEG_CMR%</span>
+    <span style="border-left:3px solid red; margin-right:5px; padding-left:1px">%LEG_DEL%</span>
+    <span style="border-left:3px solid green; margin-right:5px; padding-left:1px">%LEG_INS%</span>
+    </div>
+    <div style='display:none' id='legend_inv'>%LEG_INV_EXT%
+    <span style="border-left:3px solid brown; margin-right:5px; padding-left:1px">%LEG_INV_LS%</span>
+    <span style="border-left:3px solid green; margin-right:25px; padding-left:1px">%LEG_INV_RS%</span>
+    <span style="border-left:3px solid #B6BA18; margin-right:5px; padding-left:1px">%LEG_INV_LB%</span>
+    <span style="border-left:3px solid #7CEB98; margin-right:5px; padding-left:1px">%LEG_INV_RB%</span>
+    <span style="border-left:3px solid #99D258; margin-right:5px; padding-left:1px">%LEG_INV_MID%</span>
+    </div>
+    <div style='display:none' id='legend_pileup'>%LEG_PUV% 
+    <span style="border-left:3px solid blue; margin-right:5px; padding-left:1px">%LEG_PP%</span>
+    <span style="border-left:3px solid green; margin-right:5px; padding-left:1px">%LEG_PS%</span>
+    <span style="border-left:3px solid red; margin-right:5px; padding-left:1px">%LEG_SNPS%</span>
+    <span style="border-left:3px solid magenta; margin-right:5px; padding-left:1px">%LEG_INV%</span>
+    <span style="border-left:3px solid gray; margin-right:5px; padding-left:1px">%LEG_OOR%</span>
+    </div>
+    <div style='display:none' id='legend_coverage'>%LEG_COV% 
+    <span style="border-left:3px solid blue; margin-right:5px; padding-left:1px">%LEG_TOT%</span>
+    </div>
+    <div style='display:none' id='legend_known_snps'>%LEG_KS% 
+    <span style="border-left:3px solid gray; margin-right:5px; padding-left:1px">%LEG_IPA% (R=AG; Y=CT; M=AC; K=GT; W=AT; S=CG; B=CGT; D=AGT; H=ACT; V=ACG; N=ACGT)</span>
+    </div>
+    <div style='display:none' id='legend_annotation'>%LEG_ANN% 
+    <span style="border-left:3px solid blue; margin-right:5px; padding-left:1px">%LEG_CDS%</span>
+    <span style="border-left:3px solid red; margin-right:5px; padding-left:1px">%LEG_REPEAT%</span>
+    <span style="border-left:3px solid green; margin-right:5px; padding-left:1px">%LEG_CENTROMER%</span>
+    <span style="border-left:3px solid gray; margin-right:5px; padding-left:1px">%LEG_OTHER%</span>
+    <span style="border-left:3px solid white; margin-right:5px; padding-left:1px">%LEG_STRAND%</span>
+    </div>
+    <div style='display:none' id='legend_gc'>%LEG_GC_TITLE% 
+    <span style="border-left:3px solid blue; margin-right:5px; padding-left:1px">%LEG_GC%</span>
+    <span style="border-left:3px solid red; margin-right:5px; padding-left:1px">%LEG_50%</span>
+    [&plusmn;%LEG_WR%]
+    </div>
+    <div style='display:none' id='legend_coverage_two_samples'>%LEG_COV2% 
+    <span style="border-left:3px solid #44B4D5; margin-right:5px; padding-left:1px">%LEG_COV2_TOP%</span>
+    <span style="border-left:3px solid #72FE95; margin-right:5px; padding-left:1px">%LEG_COV2_BOT%</span>
+    <span style="border-left:3px solid #EDEF85; margin-right:5px; padding-left:1px">%LEG_COV2_BOTH%</span>
+    </div>
+    <div style='font-size:8pt'>
+    <div id='ie_warning' style='display:none;font-size:7pt;font-style:italic;'></div>
+    </div>
+    <div id='debug'></div>
+    </div>
+</div>
+
+
+<h3>Mouse Genomes Project</h3>
+<table style="width:100%;"><tr><td>
+    <table><tr><td>
+    <div id='upper_nav'>
+        <fieldset>
+        <legend>LookSeq</legend>
+            <table width="100%"><tr><td>
+                <select size="1" onchange="switch_display_mode(this.value);">
+                    <option value="indel" id='display_mode_indel'>%INDEL_BUTTON%</option>
+                    <option value="paired_pileup" id='display_mode_paired_pileup'>%PAIRED_PILEUP_BUTTON%</option>
+                </select>,
+                chromosome <select name='chr_list' id='chr_list'></select>
+                starting at <input type='text' id='chr_from' value='3012180' size='10' onchange='update_image()' />,
+                magnification 
+                    <select size="1" onchange="zoom(this.value);">
+                        <option value='100' id='button_zoom_150'>1:1</option>
+                        <option value='500' id='button_zoom_500'>500b</option>
+                        <option value='1000' id='button_zoom_1000'>1kb</option>
+                        <option value='2000' id='button_zoom_1500'>2kb</option>
+                        <option value='5000' id='button_zoom_5000'>5kb</option>
+                        <option value='10000' id='button_zoom_10k'>10kb</option>
+                        <option value='20000' id='button_zoom_20k'>20kb</option>
+                        <option value='50000' id='button_zoom_50k'>50kb</option>
+                        <option value='100000' id='button_zoom_100k'>100kb</option>
+                    </select>
+                </td>
+                <td style="text-align:right;">
+                    <input class='button' type='button' name='update_image' value='Refresh' onclick='update_image();' />
+                </td>
+            </tr>
+            <tr><td>
+                Image width <input type="text" size="3" name='image_width' id='image_width' onchange='image_width_changed()' />
+                insert size <input type="text" size="3" name='indel_zoom' id='indel_zoom' onchange='indel_zoom_changed()' value="500" />
+                MAPQ cutoff <input type="text" size="2" name='mapq' id='mapq' onchange='mapq_cutoff_changed()' value="0" />
+                show orientation <input type="checkbox" name='show_arrows' id='show_arrows' onClick='show_arrows_changed()' />
+                <!-- cache images <input type="checkbox" name='use_cache' id='use_cache' checked="checked" /> -->
+                </td><td></td>
+            </tr>
+            <tr><td style="text-align:left;">
+                    <div id='loading' style='padding:2px;display:none'>
+                        <img src="__HTMLPATH__/round_and_round_it_goes.gif" alt="waiting..." />
+                        <span style="background-color:#c3001d;color:white;z-index:100">%UPDATING_STATUS%</span>
+                    </div>
+                    <span style="padding-right:2em;" id='mini_data'></span>
+                </td>
+                <td style="text-align:right;">
+                    <a href='' id='reflink' style="font-size:smaller;">(Link to this view)</a>
+                </td>
+            </tr>
+            </table>
+        </fieldset>
+    </div>
+    </td></tr>
+    <tr><td>
+    <div id='img_container'>
+        <div id='vruler' style='border-right:1px dotted red;z-index:5;position:absolute'></div>
+        <table id="img_block">
+            <tr><td style="vertical-align:middle;">
+                    <img class='button' id='button_left' onclick='image_left()'
+                        src='/modelorgs/mousegenomes/lookseq/arrow-left.png' alt="left" />
+                </td>
+                <td>
+                    <img id='main_image' onload='main_image_loaded()' class='dragme' ondblclick='main_image_clicked(event)' 
+                        onmouseout='hide_vruler()'  onmousemove='mouse_moved_over_main_image(event)' style='position:relative' alt='' src='' />
+
+                    <div id='second_image_name' style='margin:0px;padding:0px;color:#AAAAAA;position:absolute;z-index:9;display:none'></div>
+                    <img id='second_image' onload='second_image_loaded()' class='dragme' ondblclick='main_image_clicked(event)'
+                            onmouseout='hide_vruler()'  onmousemove='mouse_moved_over_main_image(event)' 
+                            style='position:relative;border-top:1px solid red;display:none' alt='' src='' />
+                    <img id='annotation_image' onload='annotation_image_loaded()' class='dragme' onmouseout='hide_vruler()'
+                            onmousemove='mouse_moved_over_main_image(event)' ondblclick='annotation_clicked(event)' 
+                            style='position:relative;margin:0px;padding:0px;' alt='' src='' />
+                </td>
+                <td style="vertical-align:middle;">
+                    <img class='button'  id='button_right' onclick='image_right()'
+                        src='/modelorgs/mousegenomes/lookseq/arrow-right.png' alt="right" />
+                </td>
+            </tr>
+            <tr>
+                <td></td>
+                <td>GC content</td>
+                <td></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td><img id='gc_image' onload='gc_image_loaded()' class='dragme' onmouseout='hide_vruler()'  
+                        onmousemove='mouse_moved_over_main_image(event)' ondblclick='main_image_clicked(event)' 
+                        style='position:relative;margin-top:2px' alt='' src='' />
+                </td>
+                <td></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td>Coverage</td>
+                <td></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td><img id='coverage_image' onload='coverage_image_loaded()' class='dragme' onmouseout='hide_vruler()'  
+                        onmousemove='mouse_moved_over_main_image(event)' ondblclick='main_image_clicked(event)' 
+                        style='position:relative;margin-top:2px' alt='' src='' />
+                </td>
+                <td></td>
+            </tr>
+        </table>
+    </div>
+    </td></tr></table>
+
+</td><td>
+
+<div id='float_container'>
+    <div id='lanes_container'>
+        <div style='float:right;'><a href='#' onclick='togglesidebar()' style='text-decoration: none'>&hArr;</a></div>
+        <div style="padding-left:0.5em;"><b>Strains</b></div>
+        <div id='lanes' style='white-space:nowrap'>
+        </div>
+    </div>
+    <div id='ls_legend'>
+        <b>Legend</b>
+        <table style="margin-left:1em;white-space:nowrap;">
+        <tr><td><span class="ls_ref"   >c</span><span class="ls_mismatch">AG</span><span class="ls_ref">g</span></td><td>.. mismatch</td></tr>
+        <tr><td><span class="ls_invers">catg</span></td><td>.. inversion</td></tr>
+        <tr><td><span class="ls_ref"   >ca</span><span class="ls_insertion">T</span><span class="ls_ref">tg</span></td><td>.. insertion</td></tr>
+        <tr><td><span class="ls_ref"   >ca</span><span class="ls_insertion">*</span><span class="ls_ref">g</span></td><td>.. deletion</td></tr>
+        <tr><td><span class="ls_single">catg</span></td><td>.. mate unmapped</td></tr>
+        <tr><td><span class="ls_zero_mq">catg</span></td><td>.. non-unique mapping</td></tr>
+        <tr><td><span class="ls_paired">catg</span></td><td>.. paired read</td></tr>
+        <tr><td><span class="ls_ref"   >CATG</span></td><td>.. reference</td></tr>
+        </table>
+    </div>
+</div>
+
+</td></tr>
+</table>
+
+

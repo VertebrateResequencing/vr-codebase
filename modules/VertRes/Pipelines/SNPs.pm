@@ -721,10 +721,9 @@ sub bam_file_groups
     my %groups;
     for my $file (@$files)
     {
-        my $fh = Utils::CMD("samtools view -H $file",{rpipe=>1});
-        my $pars = VertRes::Parser::sam->new(fh=>$fh);
+        my $pars = VertRes::Parser::sam->new(file => $file);
         my @samples = $pars->samples();
-        close($fh);
+        $pars->close;
 
         unless ( @samples == 1 ) { $groups{$file} = $file; }
         else { push @{$groups{$samples[0]}}, $file; }

@@ -4,7 +4,7 @@ use warnings;
 use Cwd 'cwd';
 
 BEGIN {
-    use Test::Most tests => 37;
+    use Test::Most tests => 41;
     
     use_ok('VertRes::IO');
     use_ok('VertRes::Utils::FileSystem');
@@ -29,18 +29,32 @@ while (<$fh>) {
 }
 $io->close();
 
-# and from a compressed file
+# and from a gzip compressed file
 $file = $fsu->catfile('t', 'data', 'io_test.txt.gz');
 ok -f $io->file($file), 'file returns a functioning path to the file';
-ok $fh = $io->fh(), 'fh returned something for a .gz';
-is ref($fh), 'IO::Uncompress::Gunzip', 'fh returned a glob';
+ok $fh = $io->fh(), 'fh returned something for a gzip .gz';
+is ref($fh), 'IO::Uncompress::Gunzip', 'fh returned a IO::Uncompress::Gunzip';
 @expected_lines = qw(foo bar);
 while (<$fh>) {
     chomp;
     next unless $_;
     my $exp = shift @expected_lines;
-    is $_, $exp, 'filehandle must have been ok for a .gz';
+    is $_, $exp, 'filehandle must have been ok for a gzip .gz';
 }
+$io->close();
+
+# and from a bgzip compressed file
+$file = $fsu->catfile('t', 'data', 'io_test.bgzip.gz');
+ok -f $io->file($file), 'file returns a functioning path to the file';
+ok $fh = $io->fh(), 'fh returned something for a bgzip .gz';
+is ref($fh), 'GLOB', 'fh returned a GLOB';
+my $lines = 0;
+while (<$fh>) {
+    chomp;
+    next unless $_;
+    $lines++;
+}
+is $lines, 2000, 'all 2000 lines of the bgzip file were readable';
 $io->close();
 
 # get a temp file

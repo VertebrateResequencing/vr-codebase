@@ -1093,7 +1093,7 @@ sub create_release_files {
                     # bas & its md5
                     my $ebas = $ebam.'.bas';
                     my $ebas_md5 = $ebas.'.md5';
-                    if (0 && $symlink_from_previous) {
+                    if ($symlink_from_previous) {
                         my $prev_dcc = basename($ebas);
                         $prev_dcc =~ s/\.$self->{release_date}\./.$self->{previous_release_date}./;
                         $self->_crf_symlink_previous($symlink_from_previous, $prev_dcc, $ebas);
