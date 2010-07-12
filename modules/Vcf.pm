@@ -917,6 +917,49 @@ sub parse_alleles
     return ($al1,$sep,$al2);
 }
 
+=head2 parse_haplotype
+
+    About   : Similar to parse_alleles, supports also multiploid VCFs.
+    Usage   : my $x = $vcf->next_data_hash(); my ($alleles,$seps,$is_phased,$is_empty) = $vcf->parse_haplotype($x,'NA00001');
+    Args    : VCF data line parsed by next_data_hash
+            : The genotype column name
+    Returns : Two array refs and two boolean flags: List of alleles, list of separators, and is_phased/empty flags.
+
+=cut
+
+sub parse_haplotype
+{
+    my ($self,$rec,$column) = @_;
+    if ( !exists($$rec{gtypes}{$column}{GT}) ) { $self->throw("The column not present: '$column'\n"); }
+
+    my @alleles   = ();
+    my @seps      = ();
+    my $is_phased = 1;
+    my $is_empty  = 1;
+
+    my $gtype = $$rec{gtypes}{$column}{GT};
+    my $buf   = $gtype;
+    while ($buf ne '')
+    {
+        if ( !($buf=~m{^(\.|\d+)([|/]?)}) ) { $self->throw("Could not parse gtype string [$gtype] .. $$rec{CHROM}:$$rec{POS} $column\n"); }
+        $buf = $';
+
+        if ( $1 eq '.' ) { push @alleles,'.'; }
+        else
+        {
+            $is_empty = 0;
+            if ( $1 eq '0' ) { push @alleles,$$rec{REF}; }
+            elsif ( exists($$rec{ALT}[$1-1]) ) { push @alleles,$$rec{ALT}[$1-1]; }
+            else { $self->throw(qq[The haplotype indexes in "$gtype" do not match the ALT column .. $$rec{CHROM}:$$rec{POS} $column\n]); }
+        }
+        if ( $2 )
+        {
+            if ( $2 ne '|' ) { $is_phased=0; }
+            push @seps,$2;
+        }
+    }
+    return (\@alleles,\@seps,$is_phased,$is_empty);
+}
 
 =head2 format_genotype_strings
 
