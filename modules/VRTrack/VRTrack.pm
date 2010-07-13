@@ -322,6 +322,7 @@ sub hierarchy_path_of_lane_name {
 =head2 hierarchy_path_of_lane
 
   Arg [1]    : VRTrack::Lane object
+  Arg [2]    : hierarchy template
   Example    : my $lane_hier = $track->hierarchy_path_of_lane($vrlane);
   Description: Retrieve the hierarchy path for a lane according to the template
                defined by environment variable 'DATA_HIERARCHY', to the root of
@@ -337,7 +338,7 @@ sub hierarchy_path_of_lane_name {
 =cut
 
 sub hierarchy_path_of_lane {
-    my ($self, $lane) = @_;
+    my ($self, $lane, $template) = @_;
     ($lane && ref($lane) && $lane->isa('VRTrack::Lane')) || confess "A VRTrack::Lane must be supplied\n";
     
     # For all acceptable terms, we generate the corresponding word, but for
@@ -360,12 +361,15 @@ sub hierarchy_path_of_lane {
                  individual => $get_individual,
                  project => $get_project,
                  projectid => $get_project,
+                 projectssid => $get_project,  
                  sample => $get_sample,
                  technology => $get_lib,
                  library => $get_lib,
                  lane => $get_lane);
     
-    my $template = $ENV{DATA_HIERARCHY} || 'project:sample:technology:library:lane';
+    if ( not defined ($template) ) {
+        $template = $ENV{DATA_HIERARCHY} || 'project:sample:technology:library:lane';
+    }
     my @path = split(/:/, $template);
     
     my @hier_path_bits;
@@ -385,6 +389,9 @@ sub hierarchy_path_of_lane {
                 }
                 elsif ($term eq 'projectid') {
                     push(@hier_path_bits, $obj->id);
+                }
+                elsif ($term eq 'projectssid') {
+                    push(@hier_path_bits, $obj->ssid);
                 }
                 elsif ($term eq 'technology') {
                     push(@hier_path_bits, $obj->seq_tech->name);

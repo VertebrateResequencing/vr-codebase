@@ -23,12 +23,21 @@ our @actions =
         'requires' => \&world_requires, 
         'provides' => \&world_provides,
     },
+    {
+        'name'     => 'extra',
+        'action'   => \&extra,
+        'requires' => \&extra_requires, 
+        'provides' => \&extra_provides,
+    },
 );
 
 our $options = 
 {
     'Hello' => 'Hello',
     'World' => 'World',
+    'Extra' => 'Extra',
+    'assembly_path' => '/pyrodata01/assemblies/metahit/AlistipesshahiiDSM19121/P_2009_11_26_18_16_07_runAssembly/',
+    'lane' => 'F6ATPV203',
 };
 
 
@@ -36,8 +45,17 @@ our $options =
 
 sub new 
 {
+    print "In TrackDummy\n";
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(%$options,'actions'=>\@actions,@args);
+    use Data::Dumper;
+    print Dumper($self);
+
+    $self->throw("db option was not supplied in config") unless $self->{db};
+    my $vrtrack = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
+    my @lnames = @{$vrtrack->processed_lane_hnames(import => 1) || []};
+    print Dumper(@lnames);
+
     return $self;
 }
 
@@ -95,6 +113,32 @@ sub world
     return $$self{'Yes'};
 }
 
+# --------- extra --------------
+
+sub extra_requires
+{
+    my ($self,$lane) = @_;
+    my @requires = ('world.txt');
+    return \@requires;
+}
+
+sub extra_provides
+{
+    my ($self,$lane) = @_;
+    my @provides = ('extra.txt');
+    return \@provides;
+}
+
+sub extra
+{
+    my ($self,$lane_path,$action_lock) = @_;
+    open(my $fh, '>', "$lane_path/extra.txt") or Utils::error("$lane_path/extra.txt: $!");
+    print $fh $$self{'Extra'}, "\n";
+    print $fh "other stuff...\n";
+    close $fh;
+
+    return $$self{'Yes'};
+}
 
 1;
 

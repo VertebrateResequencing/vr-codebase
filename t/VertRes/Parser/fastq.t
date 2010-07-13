@@ -9,6 +9,8 @@ BEGIN {
     use_ok('VertRes::Parser::fastq');
 }
 
+print "FastQ module:", $INC{"modules/VertRes/Utils/FastQ.pm"}, "\n";
+
 my $fqp = VertRes::Parser::fastq->new();
 isa_ok $fqp, 'VertRes::Parser::ParserI';
 isa_ok $fqp, 'VertRes::IO';
