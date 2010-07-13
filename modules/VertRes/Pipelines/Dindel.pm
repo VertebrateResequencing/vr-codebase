@@ -664,15 +664,18 @@ sub is_finished {
         
         if (! $self->{fsu}->file_exists($vcf) && -s $running) {
             my $lock_file = $self->{fsu}->catfile($lane_path, $self->{prefix}.'merge.jids');
-            my $is_running = LSF::is_job_running($lock_file);
-            if ($is_running & $LSF::Error) {
-                warn "$lock_file indicates failure\n";
-                unlink($lock_file);
-            }
-            elsif ($is_running & $LSF::Done) {
-                # *** check for truncation?
+            
+            #*** checking is_running didn't work for some reason...
+            #my $is_running = LSF::is_job_running($lock_file);
+            #if ($is_running & $LSF::Error) {
+            #    warn "$lock_file indicates failure\n";
+            #    unlink($lock_file);
+            #}
+            #elsif ($is_running & $LSF::Done) {
+                # *** check for truncation? we could check the .o file which
+                #     lists all the glf files calls were made from...
                 move($running, $vcf) || $self->throw("failed to move $running to $vcf");
-            }
+            #}
         }
     }
     
