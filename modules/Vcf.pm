@@ -521,19 +521,19 @@ sub parse_header_line
     my $value = $';
 
     my $desc;
-    if ( $value=~/,\"([^\"]+)\"\s*$/ ) { $desc=$1; $value=$`; }
+    if ( $value=~/,\s*\"([^\"]+)\"\s*$/ ) { $desc=$1; $value=$`; }
 
     if ( !$desc ) { return { key=>$key, value=>$value }; }
 
     if ( $key eq 'INFO' or $key eq 'FORMAT' )
     {
-        my ($id,$number,$type,@rest) = split(/,/,$value);
+        my ($id,$number,$type,@rest) = split(/,\s*/,$value);
         if ( !$type or scalar @rest ) { $self->throw("Could not parse the header line: $line\n"); }
         return { key=>$key, ID=>$id, Number=>$number, Type=>$type, Description=>$desc };
     }
     if ( $key eq 'FILTER' )
     {
-        my ($id,@rest) = split(/,/,$value);
+        my ($id,@rest) = split(/,\s*/,$value);
         if ( !$id or scalar @rest ) { $self->throw("Could not parse the header line: $line\n"); }
         return { key=>$key, ID=>$id, Description=>$desc };
     }
