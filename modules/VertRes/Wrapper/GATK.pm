@@ -94,7 +94,8 @@ sub new {
     my $self = $class->SUPER::new(exe => $DEFAULT_GATK_JAR, @args);
     
     my $java_mem = delete $self->{java_memory} || 6000;
-    $self->exe("java -Xmx${java_mem}m -jar ".$self->exe);
+    my $xss = int($java_mem / 10);
+    $self->exe("java -Xmx${java_mem}m -Xms${java_mem}m -Xss${xss}m -jar ".$self->exe);
     
     # our bsub jobs will get killed if we don't select high-mem machines
     $self->bsub_options(M => ($java_mem * 1000), R => "'select[mem>$java_mem] rusage[mem=$java_mem]'");
