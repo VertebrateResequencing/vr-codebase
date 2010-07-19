@@ -1628,7 +1628,11 @@ sub Vcf4_0::parse_header_line
     {
         my ($key,$value);
         if ( $tmp=~/^([^=]+)="([^\"]+)"/ ) { $key=$1; $value=$2; }
-        elsif ( $tmp=~/^([^=]+)=([^,]+)/ ) { $key=$1; $value=$2; }
+        elsif ( $tmp=~/^([^=]+)=([^,]+)/ ) 
+        { 
+            $key=$1; $value=$2; 
+            if ( $key eq 'Description' ) { $self->warn(qq[Expected double quotes (Description="$value") .. $line\n]); }
+        }
         else { $self->throw(qq[Could not parse $value, got stuck here: "$tmp"\n]); }
 
         if ( $key=~/^\s+/ or $key=~/\s+$/ or $value=~/^\s+/ or $value=~/\s+$/ ) 
