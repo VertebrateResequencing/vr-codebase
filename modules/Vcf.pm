@@ -989,54 +989,36 @@ sub format_genotype_strings
     for my $key (@$columns)
     {
         my $gtype = $$rec{gtypes}{$key}{GT};
-        if ( !($gtype=~$gt_re) ) { $self->throw("Could not parse gtype string [$gtype]\n"); }
-        my $al1 = $1;
-        my $sep = $2;
-        my $al2 = $3;
-
-        if ( $al1 eq $ref || $al1 eq '0' || $al1 eq '*' ) { $al1 = 0; }
-        else
+        my $buf = $gtype;
+        my $out = '';
+        while ($buf ne '')
         {
-            if ( $al1=~/^\d+$/ ) { $al1 = $$rec{ALT}[$al1-1]; }
+            if ( !($buf=~$gt_re) ) { $self->throw("Could not parse gtype string [$gtype]\n"); }
+            $buf = $';
 
-            if ( exists($alts{$al1}) ) { $al1 = $alts{$al1} }
-            elsif ( $al1=~$$self{regex_snp} or $al1=~$$self{regex_ins} or $al1=~$$self{regex_del} )
-            {
-                $alts{$al1} = ++$nalts;
-                $al1 = $nalts;
-            }
-            elsif ( $al1 ne '.' )
-            {
-                $self->throw("Could not parse the genotype string [$gtype]\n");
-            }
-        }
-
-        if ( defined $al2 && $al2 ne '' )
-        {
-            if ( $al2 eq $ref || $al2 eq '0' || $al2 eq '*' ) { $al2 = 0; }
+            my $al  = $1;
+            my $sep = $2;
+            if ( $al eq $ref or $al eq '0' or $al eq '*' ) { $al=0; }
             else
             {
-                if ( $al2=~/^\d+$/ ) { $al2 = $$rec{ALT}[$al2-1]; }
+                if ( $al=~/^\d+$/ ) { $al = $$rec{ALT}[$al-1]; }
 
-                if ( exists($alts{$al2}) ) { $al2 = $alts{$al2} }
-                elsif ( $al2=~$$self{regex_snp} or $al2=~$$self{regex_ins} or $al2=~$$self{regex_del} ) 
+                if ( exists($alts{$al}) ) { $al = $alts{$al} }
+                elsif ( $al=~$$self{regex_snp} or $al=~$$self{regex_ins} or $al=~$$self{regex_del} )
                 {
-                    $alts{$al2} = ++$nalts;
-                    $al2 = $nalts;
+                    $alts{$al} = ++$nalts;
+                    $al = $nalts;
                 }
-                elsif ( $al2 ne '.' )
+                elsif ( $al ne '.' )
                 {
                     $self->throw("Could not parse the genotype string [$gtype]\n");
                 }
-            }
-        }
-        else
-        {
-            $al2 = '';
-            $sep = '';
-        }
 
-        $$rec{gtypes}{$key}{GT} = $al1.$sep.$al2;
+            }
+            $out .= $al;
+            if ( $sep ) { $out .= $sep; }
+        }
+        $$rec{gtypes}{$key}{GT} = $out;
     }
     $$rec{ALT} = [ sort { $alts{$a}<=>$alts{$b} } keys %alts ];
 }
@@ -1494,7 +1476,7 @@ sub renew
     $$self{regex_del}   = qr/^D\d+$/;
     $$self{regex_gtsep} = qr{[\\|/]};
     $$self{regex_gt}    = qr{^(\.|\d+)([\\|/]?)(\.?|\d*)$};
-    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNIDacgtn]+)([\\|/]?)([0-9ACGTNIDacgtn]*)$}; 
+    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNIDacgtn]+)([\\|/]?)}; 
 
     return $self;
 }
@@ -1534,7 +1516,7 @@ sub renew
     $$self{regex_del}   = qr/^D\d+$/;
     $$self{regex_gtsep} = qr{[\\|/]};
     $$self{regex_gt}    = qr{^(\.|\d+)([\\|/]?)(\.?|\d*)$};
-    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNIDacgtn]+)([\\|/]?)((?:\.|[0-9ACGTNIDacgtn]+)?)$}; # . 0/1 0|1 A/A A|A D4/IACGT
+    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNIDacgtn]+)([\\|/]?)}; # . 0/1 0|1 A/A A|A D4/IACGT
 
     return $self;
 }
@@ -1572,12 +1554,12 @@ sub renew
     $$self{handlers}{Float}     = \&Vcf::validate_float;
     $$self{handlers}{Character} = \&Vcf::validate_char;
 
-    $$self{regex_snp}   = qr/^[ACGTN]$|^<[^<>\s]+>$/i;
+    $$self{regex_snp}   = qr/^[ACGTN]$|^<[\w:.]+>$/i;
     $$self{regex_ins}   = qr/^[ACGTN]+$/;
     $$self{regex_del}   = qr/^[ACGTN]+$/;
     $$self{regex_gtsep} = qr{[|/]};                     # | /
     $$self{regex_gt}    = qr{^(\.|\d+)([|/]?)(\.?|\d*)$};   # . ./. 0/1 0|1
-    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNacgtn]+|<\S+>)([|/]?)((?:\.|[0-9ACGTNacgtn]+|<\S+>)?)$};   # . ./. 0/1 0|1 A/A A|A 0|<DEL:ME:ALU>
+    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNacgtn]+|<[\w:.]+>)([|/]?)};   # . ./. 0/1 0|1 A/A A|A 0|<DEL:ME:ALU>
 
     return $self;
 }
@@ -1628,12 +1610,12 @@ sub Vcf4_0::parse_header_line
     {
         my ($key,$value);
         if ( $tmp=~/^([^=]+)="([^\"]+)"/ ) { $key=$1; $value=$2; }
-        elsif ( $tmp=~/^([^=]+)=([^,]+)/ ) 
+        elsif ( $tmp=~/^([^=]+)=([^,"]+)/ ) 
         { 
             $key=$1; $value=$2; 
             if ( $key eq 'Description' ) { $self->warn(qq[Expected double quotes (Description="$value") .. $line\n]); }
         }
-        else { $self->throw(qq[Could not parse $value, got stuck here: "$tmp"\n]); }
+        else { $self->throw(qq[Could not parse header line: $line\n]); }
 
         if ( $key=~/^\s+/ or $key=~/\s+$/ or $value=~/^\s+/ or $value=~/\s+$/ ) 
         { 
