@@ -185,9 +185,9 @@ sub generate_sam {
                 $aln_q = 15;
             }
             my $sampe_a = delete $other_args{sampe_a};
-            if ($sampe_a) {
-                $bwa_options .= "-a $sampe_a ";
-            }
+            #if ($sampe_a) {
+            #    $bwa_options .= "-a $sampe_a ";
+            #}
             $bwa_options .= "-q $aln_q $ref";
             $self->simple_run("--bwaoptions=\"$bwa_options\" -g $local_ref -h $local_ref -M $fqs_string > $out");
             unlink($in_use);
