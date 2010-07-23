@@ -303,6 +303,7 @@ sub do_mapping {
         
         if ($sam_lines >= $num_reads) {
             move($tmp_sam, $out_sam) || $self->throw("Failed to move $tmp_sam to $out_sam: $!");
+            $self->_set_run_status(2);
         }
         else {
             $self->warn("a sam file was made by do_mapping(), but it only had $sam_lines lines, not the expected $num_reads...");
