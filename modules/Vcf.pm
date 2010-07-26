@@ -857,6 +857,7 @@ sub validate_alt_field
                 'i' for indel and a positive (resp. negative) number for the length of insertion (resp. deletion)
                 'r' identical to the reference, length 0
                 'o' for other (complex events) and the number of affected bases
+                'u' unknown
 
 =cut
 
@@ -1734,6 +1735,11 @@ sub Vcf4_0::event_type
     { 
         $$rec{_cached_events}{$allele} = ['u',0,$1];
         return ('u',0,$1); 
+    }
+    if ( $allele eq '.' )
+    {
+        $$rec{_cached_events}{$allele} = ['r',0,$$rec{REF}];
+        return ('r',0,$$rec{REF});
     }
 
     my $ref = $$rec{REF};
