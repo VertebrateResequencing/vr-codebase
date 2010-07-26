@@ -14,7 +14,7 @@ my $result_holder = $pars->result_holder();
 
 # loop through the output, getting results
 while ($pars->next_result()) {
-    my $individual = $result_holder->[0];
+    my $fastq_file = $result_holder->[0];
     # etc.
 }
 
