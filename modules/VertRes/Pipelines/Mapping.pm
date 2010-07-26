@@ -965,7 +965,7 @@ sub recalibrate {
     my $verbose = $self->verbose;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M6500000 -R \'select[mem>6500] rusage[mem=6500]\'';
+    $self->{bsub_opts} = '-q normal -M6800000 -R \'select[mem>6800] rusage[mem=6800]\'';
     
     my $build = $self->{assembly_name};
     
@@ -988,7 +988,7 @@ sub recalibrate {
         }
         
         LSF::run($action_lock, $lane_path, $job_name, $self,
-                 qq{perl -MVertRes::Wrapper::GATK -Mstrict -e "VertRes::Wrapper::GATK->new(verbose => $verbose, reference => qq[$self->{reference}], dbsnp => qq[$self->{reference}.rod], build => qq[$build])->recalibrate(qq[$bam], qq[$out_bam]); die qq[recalibration failed for $bam\n] unless -s qq[$out_bam];"});
+                 qq{perl -MVertRes::Wrapper::GATK -Mstrict -e "VertRes::Wrapper::GATK->new(verbose => $verbose, java_memory => 6000, reference => qq[$self->{reference}], dbsnp => qq[$self->{reference}.rod], build => qq[$build])->recalibrate(qq[$bam], qq[$out_bam]); die qq[recalibration failed for $bam\n] unless -s qq[$out_bam];"});
     }
     
     $self->{bsub_opts} = $orig_bsub_opts;
