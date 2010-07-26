@@ -67,7 +67,7 @@ our $DEFAULT_MAX_READS = 5000;
            exe   => string (full path to GenomeAnalysisTK.jar; a TEAM145 default
                             exists)
            java_memory => int (the amount of memory in MB to give java; default
-                               6000)
+                               2800)
            reference => ref.fa (path to reference fasta; can be overriden in
                                 individual methods with the R option)
            dbsnp     => snp.rod (path to dbsnp rod file; can be overriden in
@@ -93,9 +93,9 @@ sub new {
     
     my $self = $class->SUPER::new(exe => $DEFAULT_GATK_JAR, @args);
     
-    my $java_mem = delete $self->{java_memory} || 6000;
-    my $xss = int($java_mem / 10);
-    $self->exe("java -Xmx${java_mem}m -Xms${java_mem}m -Xss${xss}m -jar ".$self->exe);
+    my $java_mem = delete $self->{java_memory} || 2800;
+    my $xss = 280; # int($java_mem / 10);
+    $self->exe("java -Xmx${java_mem}m -Xms${java_mem}m -Xss${xss}m -server -XX:+UseParallelGC -XX:ParallelGCThreads=2 -jar ".$self->exe);
     
     # our bsub jobs will get killed if we don't select high-mem machines
     $self->bsub_options(M => ($java_mem * 1000), R => "'select[mem>$java_mem] rusage[mem=$java_mem]'");
