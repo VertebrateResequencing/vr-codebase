@@ -95,7 +95,7 @@ sub print_row
             $$conseqs{$type} = 1;
         }
 
-        if ( $$row[$i]->{'depth'} )
+        if ( $$row[$i]->{'ref_base'} )
         {
             $html->out("\t" . $$row[$i]->{'snp_base1'});
             if ( $$row[$i]->{'snp_base2'} ) { $html->out('/'.$$row[$i]->{'snp_base2'}); }
