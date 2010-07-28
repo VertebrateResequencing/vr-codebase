@@ -571,7 +571,7 @@ sub print_row
         my $onclick='';
         my $div='';
         my $snp1 = '-';
-        if ( $$row[$i]->{'depth'} )
+        if ( $$row[$i]->{'ref_base'} )
         {
             # If we are here, there is a SNP, not an empty row.
             #

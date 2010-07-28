@@ -151,13 +151,22 @@ sub print_row
 
         my $onclick='';
         my $div='';
-        if ( $$row[$i]->{'depth'} )
+        if ( $$row[$i]->{'sequence1'} )
         {
             # If we are here, there is some info, not an empty row.
             #
             $details = 
                 "<tr><td>Strain:</td><td>" .$$row[$i]->{strain_name}. "</td></tr>" .
                 "<tr><td>Location:</td><td>$chr:$pos</td></tr>" . $details;
+
+            my @seqs;
+            for my $s ($$row[$i]->{'sequence1'},$$row[$i]->{'sequence2'})
+            {
+                if ( !$s ) { next; }
+                if ( $s eq '*' ) { push @seqs,$s; next; }
+                push @seqs, ($insertion ? '+' : '-') . $s;
+            }
+            $details .= '<tr><td>Alleles:</td><td> ' .join('/',@seqs). '</td></tr>';
             $details .= '<tr><td>Depth:</td><td> ' . $$row[$i]->{'depth'} . '</td></tr>';
             $details .= '<tr><td>Quality:</td><td> ' . $$row[$i]->{'snp_qual'} .'/'. $$row[$i]->{'map_qual'} .'/'. $$row[$i]->{'cons_qual'} . '</td></tr>';
             $details .= qq[<tr><td colspan="2"><a href="http://www.ensembl.org/Mus_musculus/Location/View?db=core;r=$chr:$pos-$pos;">View in Ensembl</a></td></tr>];
