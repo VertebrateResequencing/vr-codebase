@@ -11,7 +11,7 @@ VertRes::Pipelines::Dindel - pipeline for running Dindel on bams
 # properly with SLX (Illumina) bams, so it's best to limit to those as well.
 # Eg. for a 1000 genomes directory structure:
 find /path/to/REL -maxdepth 3 -mindepth 3 -type d -name SLX | grep low_coverage > samples.fod
-cat samples.fod | perl -ne 'chomp; $path = $_; ($pop, $na) = $path =~ qr{^/(\w\w\w)_low_coverage/([^/]+)/SLX}; $na || next; open($fh, ">>$pop.bams.fofn"); print $fh "$path/release.bam\n"; close($fh);'
+cat samples.fod | perl -ne 'chomp; $path = $_; ($pop, $na) = $path =~ qr{/(\w\w\w)_low_coverage/([^/]+)/SLX}; $na || next; open($fh, ">>$pop.bams.fofn"); print $fh "$path/release.bam\n"; close($fh);'
 
 # make a conf file with root pointing to anywhere you'd like the dindel results
 # to appear, and that specifies the group => fofn mapping.
