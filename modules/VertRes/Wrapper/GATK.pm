@@ -111,6 +111,9 @@ sub new {
         $default_ref = File::Spec->catfile($ENV{GATK_RESOURCES}, 'human_g1k_v37.fasta');
         $default_dbsnp = File::Spec->catfile($ENV{GATK_RESOURCES}, 'dbsnp_130_b37.rod');
         # no default bs for now, since issues with not being in NCBI37 coords?
+        # ... and even now we have them, they're population specific...
+        # ... actually, we can and should use all the populations regardless of
+        #     which pop we're analysing
         #$default_bs = ['pilot1_CEU,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'CEU.2and3_way.vcf'),
         #               'pilot1_YRI,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'YRI.2and3_way.vcf')];
     }
@@ -294,7 +297,7 @@ sub get_annotations {
     my $self = shift;
     my @ans = $self->set_annotations;
     unless (@ans) {
-        @ans = ('HaplotypeScore', 'SB', 'QD');
+        @ans = ('HaplotypeScore', 'SB', 'QD', 'HRun');
     }
     
     my $args = '';
@@ -706,18 +709,16 @@ sub variant_filtration {
     #  -B mask,Bed,indels.mask.bed \
     #  --maskName InDel \
     #  --clusterWindowSize 10
-
+    
     $self->switches([qw(quiet_output_mode)]);
     $self->params([qw(R DBSNP T clusterSize clusterWindowSize maskName)]);
     
     my $bs = $self->get_b();
     my $filters = $self->get_filters();
-    # used for maq; variant recalibration will handle bwa alignments without
-    # this
-    #unless ($filters) {
-    #    $self->set_filters(filters => { HARD_TO_VALIDATE => "(MQ0 / (1.0 * DP)) > 0.1" });
-    #    $filters = $self->get_filters();
-    #}
+    unless ($filters) {
+        $self->set_filters(filters => { HARD_TO_VALIDATE => "MQ0 >= 4 && (MQ0 / (1.0 * DP)) > 0.1" });
+        $filters = $self->get_filters();
+    }
     my @file_args = (" $bs $filters -o $out_vcf");
     
     my %params = (maskName => 'InDel', clusterWindowSize => 10, @params);
@@ -740,7 +741,7 @@ sub variant_filtration {
  Returns : n/a
  Args    : path to output cluster file.
            Optionally, supply R or DBSNP options (as a hash), as understood by
-           GATK, along with the other options like numGaussians etc (1000
+           GATK, along with the other options like maxGaussians etc (1000
            genomes defaults exist).
            Before calling this, you should use set_b() to set the input
            snps.filtered.vcf as produced by variant_filtration(), and the
@@ -757,15 +758,15 @@ sub generate_variant_clusters {
     #   -B input2,VCF,another.snps.filtered.vcf \
     #   --DBSNP resources/dbsnp_129_hg18.rod \
     #   -l INFO \
-    #   -nG 6 \  [--numGaussians]
-    #   -nI 10 \ [--numIterations]
+    #   -mG 6 \  [--maxGaussians]
+    #   -mI 10 \ [--maxIterations]
     #   -an HaplotypeScore -an SB -an QD \
     #   -clusterFile output.cluster \
     #   -resources R/ \
     #   -T GenerateVariantClusters
     
     $self->switches([qw(quiet_output_mode ignore_all_input_filters)]);
-    $self->params([qw(R DBSNP T numGaussians numIterations ignore_filter
+    $self->params([qw(R DBSNP T l maxGaussians maxIterations ignore_filter
                       minVarInCluster weightKnowns weightHapMap
                       weight1000Genomes weightMQ1)]);
     
@@ -775,7 +776,7 @@ sub generate_variant_clusters {
                      '-resources '.File::Spec->catdir($ENV{GATK}, 'resources').'/',
                      '-Rscript Rscript');
     
-    my %params = (numGaussians => 6, numIterations => 10, @params);
+    my %params = (l => 'INFO', @params);
     $params{T} = 'GenerateVariantClusters';
     $self->_handle_common_params(\%params);
     
@@ -821,7 +822,7 @@ sub variant_recalibrator {
     #   -T VariantRecalibrator
     
     $self->switches([qw(quiet_output_mode ignore_all_input_filters)]);
-    $self->params([qw(R DBSNP T target_titv backOff desired_num_variants
+    $self->params([qw(R DBSNP T l target_titv backOff desired_num_variants
                       ignore_filter known_prior novel_prior
                       quality_scale_factor)]);
     
@@ -831,11 +832,57 @@ sub variant_recalibrator {
                      '-resources '.File::Spec->catdir($ENV{GATK}, 'resources'),
                      '-Rscript Rscript');
     
-    my %params = (target_titv => 2.1, @params);
+    my %params = (target_titv => 2.1, ignore_filter => 'HARD_TO_VALIDATE', l => 'INFO', @params);
     $params{T} = 'VariantRecalibrator';
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_vcf.'.vcf');
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
+}
+
+=head2 apply_variant_cuts
+
+ Title   : apply_variant_cuts
+ Usage   : $wrapper->set_b('input,VCF,recalibrator.output.vcf');
+           $wrapper->apply_variant_cuts('recal.dat.tranches', 'out.vcf');
+ Function: Filteres recalibrated calls.
+ Returns : n/a
+ Args    : path to the .tranches output of variant_recalibrator(), path to
+           output vcf file.
+           Optionally, supply R or DBSNP options (as a hash), as understood by
+           GATK, along with the other options like fdr_filter_level etc (1000
+           genomes defaults exist).
+           Before calling this, you should use set_b() to set the input
+           recalibrator.output.vcf as produced by variant_recalibrator().
+
+=cut
+
+sub apply_variant_cuts {
+    my ($self, $in_cluster, $out_vcf, @params) = @_;
+    
+    #java -Xmx6g -jar GenomeAnalysisTK.jar \
+    #   -R /broad/1KG/reference/human_b36_both.fasta \
+    #   -B input,VCF,recalibrator_output.vcf \
+    #   --DBSNP resources/dbsnp_129_b36.rod \
+    #   -l INFO \
+    #   --fdr_filter_level 12.5 \
+    #   --tranchesFile output.cluster.dat.tranches \
+    #   -outputVCF recalibrator_output.filtered.vcf \
+    #   -T ApplyVariantCuts
+    
+    $self->switches([qw(quiet_output_mode)]);
+    $self->params([qw(R DBSNP T l)]);
+    
+    my $bs = $self->get_b();
+    my @file_args = (" $bs --tranchesFile $in_cluster -outputVCF $out_vcf");
+    
+    my %params = (fdr_filter_level => 12.5, l => 'INFO', @params);
+    $params{T} = 'ApplyVariantCuts';
+    $self->_handle_common_params(\%params);
+    
+    $self->register_output_file_to_check($out_vcf);
     $self->_set_params_and_switches_from_args(%params);
     
     return $self->run(@file_args);
