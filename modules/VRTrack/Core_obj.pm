@@ -30,6 +30,7 @@ use base qw(VRTrack::Table_obj);
 
 
 our $HISTORY_DATE = 'latest';
+our %allowed_status;
 
 
 =head2 new
@@ -633,8 +634,13 @@ sub _check_status_value {
 	confess "Could not determine the class name [$class]." unless $class=~/([^:]+)$/;
 	my $table = lc($1);
 	
-        my %allowed = map {$_ => 1} @{$self->list_enum_vals($table, $type)};
-        unless ($allowed{lc($value)}){
+        my $allowed = $allowed_status{$table}->{$type};
+        unless ($allowed) {
+            my %allowed = map {$_ => 1} @{$self->list_enum_vals($table, $type)};
+            $allowed = \%allowed;
+            $allowed_status{$table}->{$type} = $allowed;
+        }
+        unless ($allowed->{lc($value)}){
             confess "'$value' is not a defined $type";
         }
     }
