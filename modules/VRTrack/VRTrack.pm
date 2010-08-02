@@ -899,6 +899,7 @@ CREATE TABLE `lane` (
   `latest` tinyint(1) default '0',
   KEY `lane_id` (`lane_id`),
   KEY `lanename` (`name`),
+  KEY `library_id` (`library_id`),
   KEY `hierarchy_name` (`hierarchy_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -946,6 +947,7 @@ CREATE TABLE `library` (
   KEY `ssid` (`ssid`),
   KEY `name` (`name`),
   KEY `hierarchy_name` (`hierarchy_name`),
+  KEY `sample_id` (`sample_id`),
   KEY `library_id` (`library_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -1114,6 +1116,7 @@ CREATE TABLE `sample` (
   KEY  (`sample_id`),
   KEY `ssid` (`ssid`),
   KEY `latest` (`latest`),
+  KEY `project_id` (`project_id`),
   KEY `name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
