@@ -41,6 +41,10 @@
  # $self->persistent(). auto-restore works if the necessary keys have been
  # supplied to new(), or if new(id => $id) was called. A unique (auto-increment)
  # id is associated with every sub-class key set.
+ 
+ # All VertRes::Persistent-based classes will also have a last_updated()
+ # auto-set during a save() which will be used to delete old 'rows' from the db
+ # when expunge_old($num_of_days) is called.
 
 =head1 VertRes::FileTypeHandler*
 
@@ -257,10 +261,8 @@
 
  # get the requirements:
  my $memory = $req->memory;
- # and so on for the other things passed to new();
-
- # make a new requirement based on an existing one
- my $new_req = $req->clone(time => 9);
+ # and so on for the other things passed to new(); This class is a simple
+ # get/setter.
 
 =head1 VertRes::JobManager::Submission
 
@@ -298,19 +300,49 @@
 
  # find out about and manipulate the submission:
  my $job_id = $sub->job_id;
+ my $job = $sub->job(); # convienence method since you'll do it so much
  my $requirements_id = $sub->requirements_id;
+ my $req = $sub->requirements; # convienence method for primarily internal use
  my $scheduler = $sub->scheduler; # eg. the string 'LSF';
 
+ # it provides get-only methods to all the requirements of our requirements
+ # object, for the most part just passing through:
+ my $memory = $sub->memory;
+ # except for time(), where we modify the result by increasing it by the return
+ # value of:
+ my $extra_time = $sub->extra_time();
+ # it works like:
+ my $time = $sub->time; # eg. 4, == $sub->requirements->time
+ $sub->extra_time(2);
+ $sub->extra_time(3);
+ $time = $sub->time; # now this returns 9
+ # this is done so that a particular submission can have its time increased
+ # on-the-fly without changing its requirments, which would make it become a
+ # different submission (it would get a different ->id).
+ 
  if ($sub->scheduled) {
-    # submission has been scheduled by the scheduler
-    my $sid = $sub->sid; # the id of the job given to us by the scheduler
-    if ($sub->running) {
-        # our associated job is running (according to the job, not the
-        # scheduler)
+    # when a user uses us to schedule a job, they set sid() to the id they got
+    # back from the scheduler
+    my $sid = $sub->sid; 
+    # and doing so auto-sets scheduled() to the time that sid() was set.
+    
+    if ($sub->job->running) {
+        # user's scheduler might kill the submission if it runs too long in the
+        # queue it was initially submitted to; user could do something like this
+        # every 30mins:
+        if ($sub->close_to_time_limit(30)) {
+            # where close_to_time_limit returns true if $job->
+        }
     }
-    elsif ($sub->finished) {
-        # our associated job had been run in the past, and is now no longer
-        # running (according to the job, not the scheduler)
+    elsif ($sub->job->finished) {
+        # 
+    }
+    else {
+        # we must be pending in the scheduler
+        my $pend_time = $sub->pend_time;
+        # this also works when we're running/finished by taking the difference
+        # between $job->start_time and $self->scheduled. Otherwise its the
+        # difference between the time now and $self->scheduled.
     }
  }
  else { # no action has been taken with this submission yet }
