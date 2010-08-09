@@ -558,6 +558,7 @@ sub displayProjectPage
         <th>Library</th>
         <th>Lanes</th>
         <th>Passed</th>
+        <th>Pass seq</th>
         <th>Depth</th>
         <th><a href="$SCRIPT_NAME?mode=$FILTER_LANES&amp;filter=$PENDING&amp;proj_id=$projectID&amp;db=$database">Pending</a></th>
         </tr>
@@ -601,6 +602,7 @@ sub displayProjectPage
         my $sampleLanes = 0;
         my $sampleDepth = 0;
         my $samplePassed = 0;
+        my $samplePassseq = 0;
         my $sample_no_qcLanes = 0;
         foreach( @libraries )
         {
@@ -637,11 +639,14 @@ sub displayProjectPage
             }
             
             my $depth = 0;
+            my $pass_seq = 0;
             if( $total_passed_bases > 0 )
             {
                 $depth = ( ( $passedBases / $sampledBases ) * $total_passed_bases ) / 3000000000;
                 $depth = sprintf("%.2f", $depth);
                 $sampleDepth += $depth;
+                $samplePassseq += $total_passed_bases;
+                $pass_seq = bp_to_nearest_unit($total_passed_bases, 1);
             }
             
             my $colour = get_colour_for_status( $library->open() ? $library->qc_status() : $CLOSE_LIBRARY );
@@ -652,6 +657,7 @@ sub displayProjectPage
             ];
             
             print $numLanes > 0 ? qq[<td>$numLanes</td><td>$passedLanes</td>] : qq[<td></td><td></td>];
+            print $total_passed_bases > 0 ? qq[<td>$pass_seq</td>] : qq[<td></td>];
             print $depth > 0 ? qq[<td>$depth].qq[x</td>] : qq[<td></td>];
             
             if( $lib_no_qcLanes > 0 )
@@ -665,7 +671,8 @@ sub displayProjectPage
             $firstL = 0;
             $sample_no_qcLanes += $lib_no_qcLanes;
         }
-        print qq[<tr><th></th><th></th><th></th><th>$sampleLanes</th><th>$samplePassed<th>$sampleDepth].qq[x</th>];
+        $samplePassseq = bp_to_nearest_unit($samplePassseq, 1);
+        print qq[<tr><th></th><th></th><th></th><th>$sampleLanes</th><th>$samplePassed</th><th>$samplePassseq</th><th>$sampleDepth].qq[x</th>];
         
         if( $sample_no_qcLanes > 0 )
         {
@@ -1439,3 +1446,26 @@ sub isDatabase
         foreach( @dbs ){if( $db eq $_ ){return 1;}}
         return 0;
 }
+
+
+sub bp_to_nearest_unit {
+    my ($bp,$dp) = @_;
+    $dp = 2 unless defined $dp;
+
+    my @units = qw( bp Kb Mb Gb Tb );
+
+    my $power_ranger = int( ( length( abs($bp) ) - 1 ) / 3 );
+    my $unit = $units[$power_ranger];
+    my $unit_str;
+
+    my $value = int( $bp / ( 10 ** ( $power_ranger * 3 ) ) );
+
+    if ( $unit ne "bp" ){
+        $unit_str = sprintf( "%.${dp}f%s", $bp / ( 10 ** ( $power_ranger * 3 ) ), " $unit" );
+    }
+    else{
+        $unit_str = "$value $unit";
+    }
+    return $unit_str;
+}
+
