@@ -15,8 +15,8 @@
  possible to query LSF what the limits on a queue are, we may as well also just
  ask the user to supply max memory, time and discspace per queue. We'll also ask
  for the default root directory in which we'll store STDOUT and STDERR files.
- And we'll ask for the global maximum number of simultaneous jobs we can have
- across all queues.
+ And we'll ask for the global maximum number of jobs we can have scheduled per-
+ user across all queues (default 0 for infinity).
 
  We'll also store MySQL access details in the config file. One of the details
  will be a database name prefix that any VertRes:: module wanting to create a
@@ -85,10 +85,15 @@
  # $self->persistent(). auto-restore works if the necessary keys have been
  # supplied to new(), or if new(id => $id) was called. A unique (auto-increment)
  # id is associated with every sub-class key set.
- 
+
+ # For consistency and speed, objects are cached, so in
+ # [$a = $class->new(id => 5); $b = $class->new(id => 5);], $a and $b point to
+ # the same location in memory.
+
  # All VertRes::Persistent-based classes will also have a last_updated()
  # auto-set during a save() which will be used to delete old 'rows' from the db
- # when expunge_old($num_of_days) is called.
+ # when expunge_old($num_of_days) is called. expunge_old() calls the class-only-
+ # method expunge($id), which children can overwrite.
 
 =head1 VertRes::FileTypeHandler*
 
@@ -329,10 +334,6 @@
  # make a new Requirements based on another with one or more attributes changed:
  my $new_req = $req->clone(time => 10);
 
-=head1 VertRes::JobManager::Scheduler*
-
- Scheduler 
-
 =head1 VertRes::JobManager::Submission
 
  This class describes information about a job submission, which is a request to
@@ -375,7 +376,7 @@
  # find out about and manipulate the submission:
  my $job = $sub->job;
  my $req = $sub->requirements;
- my $scheduler = $sub->scheduler;
+ my $sch = $sub->scheduler;
  my $retries = $sub->retries;
 
  # it provides get-only methods to all the requirements of our requirements
@@ -440,7 +441,8 @@
             $sub->extra_time(2);
             # now make your scheduler recalculate the appropriate queue of a job
             # that takes 2 extra hours, and if the queue changes, switch the
-            # queue
+            # queue:
+            $sub->scheduler->switch_queues($sub);
         }
     }
     elsif ($sub->job->finished) {
@@ -450,7 +452,7 @@
         # get-only boolean methods ->done and ->failed. It only does something
         # when ->job->finished. It also clears ->sid() using a special
         # internal-only method. scheduled() is still set though, so $sub remains
-        # unclaimable and so won't get resubmitted. prior to clearing sid() it
+        # unclaimable and so won't get resubmitted. Prior to clearing sid() it
         # also auto-calls the following 2 methods:
         
         $sub->sync_scheduler();
@@ -495,12 +497,14 @@
     if ($sub->claim) {
         # calling claim() sets a boolean in the db to true, which causes it
         # to return false on subsequent calls, but this call returns true.
-        my $req = $sub->req;
-        my $job = $sub->job;
-        my $scheduler = $sub->scheduler;
+        
         # based on the requirments, you submit the job to your scheduler and
-        # get back some kind of id from it, which you then store:
-        $sub->sid($my_sid);
+        # get back some kind of id from it, which is then stored:
+        my $received_sid = $sub->submit;
+        # this submit method is just a convienence pass-through to
+        # $sub->scheduler->submit(submission => $sub) which stores the id it
+        # gets from the job scheduling system like this:
+        $sub->sid($received_sid);
         # sid cannot be set to undef or '' or 0. When set, it calls ->release.
         # sid cannot be set unless we have the claim.
         
@@ -523,6 +527,195 @@
         # trusting that some other process will take care of this $sub.
     }
  }
+
+ # This class extends expunge() to delete the ->stdout and ->stderr files (and
+ # parent dirs if empty) prior to removal from the db.
+
+=head1 VertRes::JobManager::Array
+
+ This class represents an array of Submission objects that you want to submit
+ all at once to your Scheduler for efficiency reasons. Though it is
+ (deliberatly) not enforced, the idea is that you'd group together many
+ Submission objects that all share the same Requirements object, and submit
+ those as an array.
+ Infact, it will store a list of any VertRes::Persistent objects, and this
+ is implemented by storing the object ids and class in it's "table" in the
+ Persistent db against an auto-increment. It can even store other Array
+ objects.
+
+ # create one using a required array ref of Persistent objects:
+ my $array = VertRes::JobManager::Array->new(members => [$sub1, $sub2...]);
+ # or by id:
+ $array = VertRes::JobManager::Array->new(id => $a_valid_array_id);
+
+ # get a reference to the array entry in the db:
+ my $array_id = $array->id;
+ # gives us a unique id that other systems and dbs can refer to or store. The
+ # id auto-increments every time new(members => []) is called, so if called
+ # twice in a row with the exact same list of persistents it will give back
+ # 2 different Array objects with 2 different ids.
+
+ # get a list of Persistent objects from the Array:
+ my @persistents = $array->members;
+ # (this is read-only)
+
+ # get an individual Persistent object from the Array:
+ my $persistent = $array->member($index);
+
+=head1 VertRes::JobManager::Scheduler*
+
+ A Scheduler is a class that presents a simple consistent interface to a
+ particular job scheduler, such as LSF. There will also be a Scheduler called
+ 'Local', implementing the interface for a single-CPU system that has no job
+ scheduling system - useful for running tests.
+
+ # create; no options necessary since it will take defaults from SiteConfig, but
+ # the key args are:
+ my $sch = VertRes::JobManager::Scheduler->new(type => 'LSF',
+                                               output_root => '/abs/path');
+ # or by id:
+ $sch = VertRes::JobManager::Scheduler->new(id => $a_valid_scheduler_id);
+ # these new() calls create VertRes::JobManager::Schedulers::LSF objects
+
+ # get a reference to the scheduler entry in the db:
+ my $sch_id = $sch->id;
+ # gives us a unique id that other systems and dbs can refer to or store. The
+ # same id is always returned for every Scheduler object created with the
+ # same type and output_root. Unlike most other persistent methods, these are
+ # the only 2 variables we store persistently; most methods are more like class
+ # methods and you supply all the data needed by them yourself from other
+ # objects, and results are stored in those objects.
+
+ # get info about a scheduler:
+ my $type = $sch->type; # eg. the string 'LSF'
+ my $output_root = $sch->output_root; # the absolute path to the root directory
+                                      # that the user wants STDOUT & STDERR of
+                                      # this scheduler stored
+
+ # submit one or more jobs to the scheduler (queue them to be run):
+ my $scheduled_id = $sch->submit(submission => $vertres_jobmanager_submission);
+ # this gets requirements from the Submission object. It also auto-sets
+ # $submission->sid() to $scheduled_id (the return value, which is the value
+ # returned by the scheduler).
+ $scheduled_id = $sch->submit(array => $vertres_jobmanager_array,
+                              requirements => $vertres_jobmanager_requirements);
+ # for running more than one job in an array, you pass an Array object and a
+ # Requirments object (ie. where you have arranged that all the Submission
+ # objects in the array share this same Requirements). It gets each Submission
+ # object from the Array and auto-sets $submission->sid() to the $scheduled_id
+ # with the Array id and index suffixed in a special format understood by other
+ # Scheduler methods.
+
+ # submit() uses the Requirements object to decide on a queue to submit to:
+ my $queue = $sch->queue($vertres_jobmanager_requirements);
+ # and it figures out exactly where STDOUT & STDERR should go based on hashing
+ # an id (the ->id of the Submission or Array object):
+ my $output_dir = $sch->output_dir($id); # a dir within ->output_root()
+ # and it generates whatever command-line args correspond to the Requirements,
+ # queue and output_dir:
+ my $args_string = $sch->args($vertres_jobmanager_requirements);
+ # When dealing with an Array, each Submission will get its own output files in
+ # the output_dir() based on which index it was in the Array. You access a
+ # particular Submission's output files with:
+ my $o_file = $sch->stdout($vertres_jobmanager_submission);
+ # and likewise with ->stderr. It works out the hashing-id and index from the
+ # Submission->sid (for Array submits) or Submission->id (for single
+ # Submission submits). Having dealt with the output files, you can delete
+ # them:
+ $sch->unlink_output($vertres_jobmanager_submission);
+ # this also prunes empy dirs.
+
+ # the command that submit() actually schedules in the scheduler is a little
+ # perl -e that takes the referenced Submission id (working it out from the
+ # Array object and index if this was an Array submit), pulls out the Job and
+ # does ->run on that.
+
+ # though some schedulers may have some kind of limit in place on the maximum
+ # number of jobs a user or the system as a whole can keep scheduled at once,
+ # we deliberatly don't model or support that limit here. If we do go over the
+ # limit we treat it as any other error from the scheduler: ->submit would just
+ # return false and ->last_submit_error would give the error as a string. The
+ # user is then free to try the submit again later. To help the user decide if
+ # we're under the limit or not before attempting a submit:
+ my $max_jobs = $sch->max_jobs;
+ # this is the get-only max jobs as set in SiteConfig
+ my $current_jobs = $sch->queued_jobs;
+ # this is the total number of jobs being tracked in the scheduling system for
+ # the current user.
+ # For testing purposes, VertRes::JobManager::Schedulers::Local will accept
+ # a practically-infinite-sized list (max_jobs is v.high), and handle tracking
+ # and serially running the jobs one-at-a-time itself.
+
+ # query and manipulate a particular submission (these methods access the
+ # scheduler itself, so should normally be avoided; use Submission and Job
+ # methods to track state instead):
+ if ($sub->scheduled) {
+    # $sub->scheduled means that $sub has a ->sid, which is what the following
+    # methods extract to work the answers out. It does intellegent caching of
+    # data extracted from the scheduler for a given sid, so all these repeated
+    # calls may only result in ~1 system call.
+    
+    if ($sch->pending($sub)) {
+        my $current_queue = $sch->queue($sub);
+    }
+    elsif ($sch->running($sub)) {
+        # perhaps you want to clear out a submission that you know from the
+        # job itself has already finished, but the scheduler has gotten
+        # 'stuck':
+        $sch->kill($sub);
+        # this tries a normal kill and waits for the ->sid to be cleared, and
+        # failing that tries again with a more severe kill/clear if the
+        # scheduler supports such a thing. Eventually it will return boolean
+        # depending on if the kill was successful (->sid is no longer visible
+        # in the list of sids presented by the scheduler).
+        
+        # or perhaps you've noticed the run time is approaching the limit you
+        # set in Requirments, and you want to switch queues before the
+        # scheduler kills your job:
+        $sch->switch_queues($sub);
+        # this method recalcluates the queue given the current Requirments
+        # object associated with $sub, and if this is different from ->queue,
+        # then it will attempt a queue switch and return 1 if successful, 0 if
+        # no switch was necessary, and -1 if the switch failed.
+    }
+    elsif ($sch->finished($sub)) {
+        # these methods fall back on reading the output files on disc if the
+        # scheduler has forgotten about the sid in question:
+        if ($sch->done($sub)) { ... }
+        elsif ($sch->failed($sub)) {
+            my $exit_code = $sch->exit_code($sub);
+            if ($sch->ran_out_of_memory) { ... }
+            elsif ($sch->ran_out_of_time) { ... }
+            elsif ($sch->killed) {
+                # Submission finished due to something like ->kill being called;
+                # ie. the user killed the job deliberly, so a resubmission could
+                # work
+            }
+            else {
+                # Submission ended due to the Job crashing for some other
+                # unknown reason. You should make sure $sub->update_status() got
+                # called, and then use Submission methods to investigate the
+                # STDOUT and STDERR files.
+            }
+        }
+    }
+ }
+
+=head1 VertRes::PipelineManager*
+
+ A "pipeline" is a series of "actions" (specified in a VertRes::Pipelines::*
+ module) that are run on some part of the dataset, and PipelineManager* modules
+ exist to make it easy supply the correct data to the pipeline, run multiple
+ instances of the pipeline at once on every part of the whole dataset at once
+ (where actual running of commands makes use of VertRes::JobManager*), keep
+ track of progress and make sure that everything completes successfully.
+
+ A pipeline essentially boils down to an ordered series of
+ VertRes::JobManager::Submission objects where each one will only run once...
+
+=head1 VertRes::PipelineManager::Pipeline
+
+ This class describes a pipeline run on a certain dataset with certain settings.
 
 =cut
 
