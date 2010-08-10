@@ -1,4 +1,13 @@
-=head1 NAME
+=head1 Overview
+
+ This document describes all the modules and methods necessary to build a new
+ database-driven pipeline system. We go from the fundamental building blocks
+ at the start up to the modules and methods you're more likely to use yourself
+ on a daily-basis by the end of this document. Later modules assume knowledge of
+ earlier ones in the POD (and most likely use or inherit from them in the code),
+ so it is recommended to read this document in the order presented.
+
+ On overview diagram is available here: ...
 
 =head1 VertRes::SiteConfig & VertRes::Utils::Config & Build.pl
 
@@ -79,6 +88,12 @@
                       # AUTOLOAD, which passes to:
  $self->value($attribute, $value); # which passes to the Persistent object
 
+ # we can get/set arbitrarily complex data structures (mixtures of arrays and
+ # hashes and scalars only... perhaps even no code refs?).
+ # most likely implemented by simple string concatenation with special
+ # seperators, and automatically turned back into the right structure (if a list
+ # goes in to a set, a list comes out during the get).
+
  # Does an auto-save on every value set. Does an auto-restore during object
  # creation. Does not bother wrapping any of the other Persistent methods.
  # If you really need them, provides access to the the Persistent object with
@@ -88,7 +103,8 @@
 
  # For consistency and speed, objects are cached, so in
  # [$a = $class->new(id => 5); $b = $class->new(id => 5);], $a and $b point to
- # the same location in memory.
+ # the same location in memory. To protect against multiple processes accessing
+ # the same id, gets are never cached.
 
  # All VertRes::Persistent-based classes will also have a last_updated()
  # auto-set during a save() which will be used to delete old 'rows' from the db
@@ -531,35 +547,35 @@
  # This class extends expunge() to delete the ->stdout and ->stderr files (and
  # parent dirs if empty) prior to removal from the db.
 
-=head1 VertRes::JobManager::Array
+=head1 VertRes::PersistentArray
 
- This class represents an array of Submission objects that you want to submit
+ This class represents an array of Persistent objects. It is implemented by
+ storing the object ids and class in it's "table" in the Persistent db against
+ an auto-increment self id. It can even store other PersistentArray objects.
+
+ An example usage is a list of Submission objects that you want to submit
  all at once to your Scheduler for efficiency reasons. Though it is
  (deliberatly) not enforced, the idea is that you'd group together many
  Submission objects that all share the same Requirements object, and submit
  those as an array.
- Infact, it will store a list of any VertRes::Persistent objects, and this
- is implemented by storing the object ids and class in it's "table" in the
- Persistent db against an auto-increment. It can even store other Array
- objects.
 
  # create one using a required array ref of Persistent objects:
- my $array = VertRes::JobManager::Array->new(members => [$sub1, $sub2...]);
+ my $array = VertRes::PersistentArray->new(members => [$sub1, $sub2...]);
  # or by id:
- $array = VertRes::JobManager::Array->new(id => $a_valid_array_id);
+ $array = VertRes::PersistentArray->new(id => $a_valid_array_id);
 
  # get a reference to the array entry in the db:
  my $array_id = $array->id;
  # gives us a unique id that other systems and dbs can refer to or store. The
  # id auto-increments every time new(members => []) is called, so if called
  # twice in a row with the exact same list of persistents it will give back
- # 2 different Array objects with 2 different ids.
+ # 2 different PersistentArray objects with 2 different ids.
 
- # get a list of Persistent objects from the Array:
+ # get a list of Persistent objects from the PersistentArray:
  my @persistents = $array->members;
  # (this is read-only)
 
- # get an individual Persistent object from the Array:
+ # get an individual Persistent object from the PersistentArray:
  my $persistent = $array->member($index);
 
 =head1 VertRes::JobManager::Scheduler*
@@ -568,6 +584,7 @@
  particular job scheduler, such as LSF. There will also be a Scheduler called
  'Local', implementing the interface for a single-CPU system that has no job
  scheduling system - useful for running tests.
+ (This class is implemented using VertRes::Persistent.)
 
  # create; no options necessary since it will take defaults from SiteConfig, but
  # the key args are:
@@ -597,29 +614,29 @@
  # this gets requirements from the Submission object. It also auto-sets
  # $submission->sid() to $scheduled_id (the return value, which is the value
  # returned by the scheduler).
- $scheduled_id = $sch->submit(array => $vertres_jobmanager_array,
+ $scheduled_id = $sch->submit(array => $vertres_persistentarray,
                               requirements => $vertres_jobmanager_requirements);
- # for running more than one job in an array, you pass an Array object and a
- # Requirments object (ie. where you have arranged that all the Submission
+ # for running more than one job in an array, you pass an PersistentArray object
+ # and a Requirments object (ie. where you have arranged that all the Submission
  # objects in the array share this same Requirements). It gets each Submission
- # object from the Array and auto-sets $submission->sid() to the $scheduled_id
- # with the Array id and index suffixed in a special format understood by other
- # Scheduler methods.
+ # object from the PersistentArray and auto-sets $submission->sid() to the
+ # $scheduled_id with the PersistentArray id and index suffixed in a special
+ # format understood by other Scheduler methods.
 
  # submit() uses the Requirements object to decide on a queue to submit to:
  my $queue = $sch->queue($vertres_jobmanager_requirements);
  # and it figures out exactly where STDOUT & STDERR should go based on hashing
- # an id (the ->id of the Submission or Array object):
+ # an id (the ->id of the Submission or PersistentArray object):
  my $output_dir = $sch->output_dir($id); # a dir within ->output_root()
  # and it generates whatever command-line args correspond to the Requirements,
  # queue and output_dir:
  my $args_string = $sch->args($vertres_jobmanager_requirements);
- # When dealing with an Array, each Submission will get its own output files in
- # the output_dir() based on which index it was in the Array. You access a
- # particular Submission's output files with:
+ # When dealing with an PersistentArray, each Submission will get its own output
+ # files in the output_dir() based on which index it was in the PersistentArray.
+ # You access a particular Submission's output files with:
  my $o_file = $sch->stdout($vertres_jobmanager_submission);
  # and likewise with ->stderr. It works out the hashing-id and index from the
- # Submission->sid (for Array submits) or Submission->id (for single
+ # Submission->sid (for PersistentArray submits) or Submission->id (for single
  # Submission submits). Having dealt with the output files, you can delete
  # them:
  $sch->unlink_output($vertres_jobmanager_submission);
@@ -627,8 +644,8 @@
 
  # the command that submit() actually schedules in the scheduler is a little
  # perl -e that takes the referenced Submission id (working it out from the
- # Array object and index if this was an Array submit), pulls out the Job and
- # does ->run on that.
+ # PersistentArray object and index if this was an PersistentArray submit),
+ # pulls out the Job and does ->run on that.
 
  # though some schedulers may have some kind of limit in place on the maximum
  # number of jobs a user or the system as a whole can keep scheduled at once,
@@ -704,18 +721,171 @@
 =head1 VertRes::PipelineManager*
 
  A "pipeline" is a series of "actions" (specified in a VertRes::Pipelines::*
- module) that are run on some part of the dataset, and PipelineManager* modules
- exist to make it easy supply the correct data to the pipeline, run multiple
+ module) that are run on some part of a dataset, and PipelineManager* modules
+ exist to make it easy to supply the correct data to the pipeline, run multiple
  instances of the pipeline at once on every part of the whole dataset at once
  (where actual running of commands makes use of VertRes::JobManager*), keep
  track of progress and make sure that everything completes successfully.
 
  A pipeline essentially boils down to an ordered series of
- VertRes::JobManager::Submission objects where each one will only run once...
+ VertRes::JobManager::Submission objects where each one will only run once
+ certain other Submissions have completed and input files are available etc.
+
+=head1 VertRes::PipelineManager::DataSource
+
+ This class describes a source of data that a VertRes::Pipelines::* module
+ could be run on. A datasource is ultimately comprised of a list of things
+ (directories, files, database keys, whatever), and a particular instance of
+ a VertRes::Pipelines::* module will run on a single element from that list.
+ An instance of this class holds the information and methods necessary to
+ generate these elements as required. (It is implemented using
+ VertRes::Persistent.)
+
+ # create; there are 3 required args 'type', 'source', and 'method', and an
+ # optional 'options' hash that can be set:
+ my $dat = VertRes::PipelineManager::DataSource->new(type => 'VRTrack',
+                source => 'a_vrtrack_database_name',
+                method => 'unmapped_lanes',
+                options => {platforms => ['SLX', '454']});
+ # another example:
+ $dat = VertRes::PipelineManager::DataSource->new(type => 'Fofn',
+                source => '/abs/path/to/my.fofn',
+                method => 'all_files');
+ # These create, respectively, a VertRes::PipelineManager::DataSources::VRTrack
+ # object and a VertRes::PipelineManager::DataSources::Fofn object.
+ # Or create using an id:
+ $dat = VertRes::PipelineManager::DataSource->new(id => $a_valid_datasource_id);
+
+ # get a reference to the datasource entry in the db:
+ my $dat_id = $pip->id;
+ # gives us a unique id that other systems and dbs can refer to or store. The
+ # same id is always returned for every DataSource object created with the
+ # same type, source and method.
+
+ # get the core info on this pipeline (these are get-only):
+ my $type = $dat->type;
+ my $source = $dat->source; # this might be a database name string or a file
+                            # path etc.
+ my $method = $dat->method; # this is a string corresponding to the name of a
+                            # method defined in $dat's class, and are therefore
+                            # $type specific
+
+ # get/set the optional arbitrary settings that control how the desired method
+ # will behave:
+ $dat->options(platforms => ['SLX', '454'], ...); # you set a hash
+ my %options = $dat->options; # and get back a hash
+
+ # get the list of data inputs:
+ my @data_inputs = $dat->data;
+ # this method causes $dat->$method($source, %options) to be run, and by
+ # interface convention, these methods return a list of things, where each thing
+ # can be used as the instance-specific-input to at least 1
+ # VertRes::Pipelines::* module.
 
 =head1 VertRes::PipelineManager::Pipeline
 
  This class describes a pipeline run on a certain dataset with certain settings.
+ The settings are stored in a db (implemented using VertRes::Persistent).
+
+ # create; there are 3 required key-forming options 'name', 'module' and
+ # 'data_source', and new() will also accept an abitrary set of key => value
+ # pairs that describe the configuration needed by the pipline module in
+ # question:
+ my $pip = VertRes::PipelineManager::Pipeline->new(name => 'chimp_mapping',
+                module => 'VertRes::Pipelines::Mapping',
+                data_source => $vertres_pipelinemanager_datasource,
+                reference => 'chimp_ref.fa',
+                other_mapping_config => 'other_mapping_value',
+                list_config => ['val1', 'val2'],
+                hash_config => { key1 => 'val1', key2 => 'val2' }, ...);
+ # or by id:
+ $pip = VertRes::PipelineManager::Pipeline->new(id => $a_valid_pipeline_id);
+
+ # get a reference to the pipeline entry in the db:
+ my $pip_id = $pip->id;
+ # gives us a unique id that other systems and dbs can refer to or store. The
+ # same id is always returned for every Pipeline object created with the
+ # same name, module and data_source.
+
+ # get the core info on this pipeline (these are get-only):
+ my $name = $pip->name; # (a string)
+ my $module = $pip->module; # (a string)
+ my $data_source = $pip->data_source; # (a VertRes::PipelineManager::DataSource)
+
+ # deal with config options:
+ my $ref = $pip->get('reference');
+ $pip->set('reference', 'newchimp_ref.fa'); # overwrite or create as appropriate
+ $pip->unset('reference'); # the reference key and any value is removed from the
+                           # db entirely
+
+ # set a list/hash of values:
+ $pip->set('samples', ['NA01', 'NA02']);
+ $pip->set('platforms', {'NA01' => 'SLX', 'NA02' => '454'});
+ # and get back:
+ my @samples = $pip->get('samples');
+ my %sample_to_platform = $pip->get('platforms');
+
+ # copy the arbitrary config settings of one Pipeline into another:
+ $pip->copy($pip2);
+ # this does a "union" preferring $pip2 values, leaving $pip values for keys
+ # not found in $pip2 untouched.
+
+ # a Pipeline can store on itself the concept of being 'active'; when inactive
+ # other systems can choose to ignore this pipeline (this is not enforced in
+ # any way):
+ $pip->active($boolean); # set
+ if ($pip->active) { # true by default }
+
+ #*** some kind of turning on of 'capture' so we can store all persistents
+ # accessed while we run...
+
+=head1 VertRes::Pipeline*
+
+ VertRes::Pipeline is the base class of the modules (VertRes::Pipelines::*) that
+ actually define the work to be done to go from raw input to final output, as
+ a series of 'actions'. These modules do not directly store any persistent data.
+ The base class provides the following implemented methods:
+
+ # get an ordered list of action names:
+ my @actions = $obj->actions;
+
+ # deal with an action:
+ foreach my $action_name (@actions) {
+    my @required_files = $obj->required_files($action_name);
+    my @provided_files = $obj->provided_files($action_name);
+    my @not_yet_provided = $obj->
+ }
+ 
+ # child classes don't override actions(), required_files() etc., they just
+ # define a class array ref called $actions which contains hash refs which
+ # contain name, action, requires and provides keys, with the last 3 having
+ # values of subroutine refs.
+
+=head1 VertRes::PipelineManager::Manager
+
+ The high-level manager interface for script and end-user use.
+
+ # create:
+ my $man = VertRes::PipelineManager::Manager->new;
+
+ # get a list of all VertRes::PipelineManager::Pipeline objects:
+ my @pipelines = $man->pipelines;
+ # limited to those for a certain module:
+ @pipelines = $man->pipelines(module => 'VertRes::Pipelines::Mapping');
+
+ # do stuff with the pipelines:
+ foreach my $pip (@pipelines) {
+    if ($pip->active) {
+        
+    }
+    elsif (time() - $pip->last_updated > 7776000) {
+        # it's been inactive for ~3months; perhaps we want to trash old stuff?
+        $man->expunge($pip);
+        # expunges all Persistent entries in the Peristent db that were created
+        # during the course of this pipeline, that are not used by another
+        # pipeline
+    }
+ }
 
 =cut
 
