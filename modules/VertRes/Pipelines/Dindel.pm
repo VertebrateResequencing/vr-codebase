@@ -383,12 +383,46 @@ sub _check_all_windows_files {
     }
     
     # the number of lines in variants.txt should match the number of column 4+
-    # entries in all window files
+    # entries in all window files...
+    # actually, when there are multiple samples, they may share indels, and so
+    # this won't be true.
+    # Instead we'll compare the number of variants in the variants file
+    # (> lines) to the STDERR output of makeWindows.py, which says how many
+    # variants it read. If that matches, then we'll trust the number of
+    # candidates it reports as the expected, and make sure the window files
+    # match that.
+    
     my $var_file = $self->{fsu}->catfile($lane_path, 'variants.txt');
     my $window_dir = $self->{fsu}->catfile($lane_path, 'windows');
+    my $e_file = $self->{fsu}->catfile($window_dir, 'dindel_make_windows.e');
     
-    if (-d $window_dir) {
-        my $expected = $self->{io}->new(file => $var_file)->num_lines;
+    if (-d $window_dir && -s $e_file) {
+        my ($read_variants, $num_candidates) = (0, 0);
+        open(my $efh, $e_file) || $self->throw("Could not open error file '$e_file'");
+        while (<$efh>) {
+            if (/Total variants read: (\d+)/) {
+                $read_variants = $1;
+            }
+            elsif (/Number of candidates: (\d+)/) {
+                $num_candidates = $1;
+            }
+        }
+        close($efh);
+        unless ($read_variants && $num_candidates && $num_candidates <= $read_variants) {
+            return 0;
+        }
+        
+        my $num_variants = 0;
+        open(my $vfh, $var_file) || $self->throw("Could not open variants file '$var_file'");
+        while (<$vfh>) {
+            my ($after_hash) = $_ =~ /# (.+)$/;
+            my @n = split(" ", $after_hash);
+            $num_variants += @n;
+        }
+        close($vfh);
+        unless ($num_variants == $read_variants) {
+            $self->throw("read $read_variants variants, but there are $num_variants variants in total!");
+        }
         
         my $actual = 0;
         opendir(my $windowfh, $window_dir) || $self->throw("Could not open dir $window_dir");
@@ -405,7 +439,8 @@ sub _check_all_windows_files {
             }
         }
         
-        if ($actual >= $expected) {
+        
+        if ($actual >= $num_candidates) {
             open(my $dfh, '>', $done_file) || $self->throw("Could not write to $done_file");
             foreach my $window_file (@window_files) {
                 print $dfh $window_file, "\n";
@@ -415,7 +450,7 @@ sub _check_all_windows_files {
             return 1;
         }
         else {
-            warn "$actual entries in window files < $expected\n";
+            warn "$actual entries in window files < $num_candidates\n";
         }
     }
     
@@ -523,7 +558,7 @@ sub realign_windows {
     my @window_files = $self->_get_windows_files($lane_path);
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = ' -M3000000 -R \'select[mem>3000] rusage[mem=3000]\'';
+    $self->{bsub_opts} = ' -q long -M3000000 -R \'select[mem>3000] rusage[mem=3000]\'';
     
     my $jobs = 0;
     foreach my $window_file (@window_files) {
