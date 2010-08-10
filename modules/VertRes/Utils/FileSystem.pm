@@ -681,7 +681,7 @@ sub set_stripe_dir_tree {
            no_check => boolean (do not check the disk if the file had previously
                                 been found not to exist; still checks the disk
                                 if the file isn't in the database at all)
-           clear => boolean (empty the db of all past results before doing
+           empty => boolean (empty the db of all past results before doing
                              anything else)
 
 =cut
