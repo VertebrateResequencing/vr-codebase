@@ -622,6 +622,16 @@ sub unified_genotyper {
     $self->register_output_file_to_check($out_vcf);
     $self->_set_params_and_switches_from_args(%params);
     
+    # *** should check the metrics file output for the last line which says how
+    # many lines of output there should be excluding header:
+    #Visited bases                                3001
+    #Callable bases                               2996
+    #Confidently called bases                     74
+    #% callable bases of all loci                 99.833
+    #% confidently called bases of all loci       2.466
+    #% confidently called bases of callable loci  2.466
+    #Actual calls made                            15
+    
     return $self->run(@file_args);
 }
 
@@ -932,6 +942,69 @@ sub analyze_covariates {
     
     $self->exe($orig_exe);
     return @return;
+}
+
+=head2 combine_variants
+
+ Title   : variant_eval
+ Usage   : $wrapper->combine_variants('merged.vcf',
+                                      ['in1.vcf', 'in2.vcf'],
+                                      'UNION');
+ Function: Merges VCF files together.
+ Returns : n/a
+ Args    : path to output file, array ref of input files (in priority order),
+           the type of merge (the string 'UNION' or 'INTERSECT').
+           Optionally, supply the R options (as a hash), as understood by
+           GATK, along with the other options like genotypemergeoption (1000
+           genomes defaults exist).
+
+=cut
+
+sub combine_variants {
+    my ($self, $out_file, $in_files, $type, @params) = @_;
+    
+    #java -jar GenomeAnalysisTK.jar \
+    #    -R ref.fasta \
+    #    -T CombineVariants \
+    #    -variantMergeOptions UNION \
+    #    -B foo,VCF,foo.vcf \
+    #    -B bar,VCF,bar.vcf \
+    #    -priority foo,bar \
+    #    -o merged.vcf
+    
+    $self->switches([qw(quiet_output_mode printComplexMerges filteredAreUncalled)]);
+    $self->params([qw(R T genotypemergeoption)]);
+    
+    my @priority;
+    my @bs;
+    my %prev_names;
+    my $ui = 0;
+    foreach my $in (@{$in_files}) {
+        my $base = basename($in);
+        my $name = $base;
+        $name =~ s/\.vcf.*//g;
+        if (exists $prev_names{$name}) {
+            $name .= ++$ui;
+        }
+        $prev_names{$name} = 1;
+        
+        push(@bs, $name.',VCF,'.$in);
+        push(@priority, $name);
+    }
+    my $priority = join(',', @priority);
+    $self->set_b(@bs);
+    my $bs = $self->get_b();
+    
+    my @file_args = (" $bs -variantMergeOptions $type -priority $priority -o $out_file");
+    
+    my %params = (@params);
+    $params{T} = 'CombineVariants';
+    $self->_handle_common_params(\%params);
+    
+    $self->register_output_file_to_check($out_file);
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
 }
 
 =head2 variant_eval
