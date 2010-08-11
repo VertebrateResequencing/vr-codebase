@@ -558,7 +558,7 @@ sub realign_windows {
     my @window_files = $self->_get_windows_files($lane_path);
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = ' -q long -M3000000 -R \'select[mem>3000] rusage[mem=3000]\'';
+    $self->{bsub_opts} = ' -q long -M7900000 -R \'select[mem>7900] rusage[mem=7900]\'';
     
     my $jobs = 0;
     foreach my $window_file (@window_files) {
