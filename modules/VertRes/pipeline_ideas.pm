@@ -80,16 +80,18 @@
 
   $self->add_attribute(...);
   # passes through to Persistent, doing the eval dance internally within
-  # VertRes::Persistent.
+  # VertRes::Persistent. Regardless of the underlying system, there is some
+  # mechanism for saying which attributes form the unique key
  }
 
  # get/set:
  $self->$attribute(); # if not overriden, passes through to VertRes::Persistent
                       # AUTOLOAD, which passes to:
  $self->value($attribute, $value); # which passes to the Persistent object
+ # unique key attributes cannot be set
 
  # we can get/set arbitrarily complex data structures (mixtures of arrays and
- # hashes and scalars only... perhaps even no code refs?).
+ # hashes and scalars only... perhaps even code refs?).
  # most likely implemented by simple string concatenation with special
  # seperators, and automatically turned back into the right structure (if a list
  # goes in to a set, a list comes out during the get).
@@ -97,19 +99,28 @@
  # Does an auto-save on every value set. Does an auto-restore during object
  # creation. Does not bother wrapping any of the other Persistent methods.
  # If you really need them, provides access to the the Persistent object with
- # $self->persistent(). auto-restore works if the necessary keys have been
+ # $self->persistent(). Auto-restore works if the necessary keys have been
  # supplied to new(), or if new(id => $id) was called. A unique (auto-increment)
  # id is associated with every sub-class key set.
 
  # For consistency and speed, objects are cached, so in
  # [$a = $class->new(id => 5); $b = $class->new(id => 5);], $a and $b point to
  # the same location in memory. To protect against multiple processes accessing
- # the same id, gets are never cached.
+ # the same id, gets are never cached. You can store a list of all the
+ # Persistent objects created like this:
+ my @object_array;
+ VertRes::Persistent::capture_start(\@object_array);
+ # ... use classes that inherit from VertRes::Persistent ...
+ VertRes::Persistent::capture_stop;
+ # @object_array now contains every Persistent-based object that was created
+ # between start and stop.
 
  # All VertRes::Persistent-based classes will also have a last_updated()
  # auto-set during a save() which will be used to delete old 'rows' from the db
  # when expunge_old($num_of_days) is called. expunge_old() calls the class-only-
- # method expunge($id), which children can overwrite.
+ # method expunge($id), which children can overwrite. A touch() method updates
+ # last_updated() without having to set anything else (so stuff you're reading
+ # from but aren't writing to don't get expunged by expunge_old).
 
 =head1 VertRes::FileTypeHandler*
 
@@ -141,8 +152,10 @@
 =head1 VertRes::File
 
  This class describes a file-on-disc, storing information about it in our
- database. The idea is to minimise accessing the filesystem as much as possible.
- It is implemented using VertRes::Persistent.
+ database. The idea is to minimise accessing the filesystem as much as possible;
+ VertRes::File would be used pervasively every single time any kind of file
+ access is done in all VertRes::* code. It is implemented using
+ VertRes::Persistent.
 
  # create: at minimum we need to know the path and type
  my $file_obj = VertRes::File->new(path => '/abs/path/filename.bam',
@@ -252,7 +265,9 @@
  my $cmd = $job->cmd; # $job also stringifies to the cmd
  my $dir = $job->dir;
 
- if ($job->pending) { # no attempt has been made to run the cmd yet }
+ if ($job->pending) {
+    # no attempt has been made to run the cmd yet, or we were reset
+ }
  elsif ($job->running) {
     # the cmd is running right now
     my $start_time = $job->start_time; # in seconds since the epoch
@@ -400,7 +415,7 @@
  my $memory = $sub->memory;
  # however we also have extra_* methods for time, memory, cpus, tmp_space and
  # local_space which ->requirements->clone($time => $current_time + $extra) each
- # time they're called, then associating us with the new Requirements object:
+ # time they're called, then associate us with the new Requirements object:
  my $time = $sub->time; # eg. 4, == $sub->requirements->time
  $sub->extra_time(2);
  $sub->extra_time(3);
@@ -412,7 +427,7 @@
  # switch the queue for this submission. You might call extra_memory() for a
  # submission that failed due to running out of memory, so that a second attempt
  # running the submission might work.
- 
+
  if ($sub->failed) {
     # we're currently scheduled, we had been run to ->job->finished status,
     # but the job died.
@@ -573,10 +588,15 @@
 
  # get a list of Persistent objects from the PersistentArray:
  my @persistents = $array->members;
- # (this is read-only)
+ my @submissions = $array->members('VertRes::JobManager::Submission');
+ # (members is read-only)
 
  # get an individual Persistent object from the PersistentArray:
  my $persistent = $array->member($index);
+ 
+ # merge a list of Persistent objects with an old PersistentArray, creating
+ # a new PersistentArray and expunging the old one:
+ my $new_array = $old_array->merge(@obj_list);
 
 =head1 VertRes::JobManager::Scheduler*
 
@@ -616,12 +636,15 @@
  # returned by the scheduler).
  $scheduled_id = $sch->submit(array => $vertres_persistentarray,
                               requirements => $vertres_jobmanager_requirements);
- # for running more than one job in an array, you pass an PersistentArray object
+ # for running more than one job in an array, you pass a PersistentArray object
  # and a Requirments object (ie. where you have arranged that all the Submission
  # objects in the array share this same Requirements). It gets each Submission
  # object from the PersistentArray and auto-sets $submission->sid() to the
  # $scheduled_id with the PersistentArray id and index suffixed in a special
  # format understood by other Scheduler methods.
+ # In both cases, it claims all Submission objects prior to interacting with
+ # the scheduler, and if the scheduler has a problem and the submission fails,
+ # we release all the Submission objects.
 
  # submit() uses the Requirements object to decide on a queue to submit to:
  my $queue = $sch->queue($vertres_jobmanager_requirements);
@@ -631,7 +654,7 @@
  # and it generates whatever command-line args correspond to the Requirements,
  # queue and output_dir:
  my $args_string = $sch->args($vertres_jobmanager_requirements);
- # When dealing with an PersistentArray, each Submission will get its own output
+ # When dealing with a PersistentArray, each Submission will get its own output
  # files in the output_dir() based on which index it was in the PersistentArray.
  # You access a particular Submission's output files with:
  my $o_file = $sch->stdout($vertres_jobmanager_submission);
@@ -687,7 +710,7 @@
         # in the list of sids presented by the scheduler).
         
         # or perhaps you've noticed the run time is approaching the limit you
-        # set in Requirments, and you want to switch queues before the
+        # set in Requirements, and you want to switch queues before the
         # scheduler kills your job:
         $sch->switch_queues($sub);
         # this method recalcluates the queue given the current Requirments
@@ -698,7 +721,7 @@
     elsif ($sch->finished($sub)) {
         # these methods fall back on reading the output files on disc if the
         # scheduler has forgotten about the sid in question:
-        if ($sch->done($sub)) { ... }
+        if ($sch->done($sub)) { # yay! }
         elsif ($sch->failed($sub)) {
             my $exit_code = $sch->exit_code($sub);
             if ($sch->ran_out_of_memory) { ... }
@@ -740,6 +763,11 @@
  An instance of this class holds the information and methods necessary to
  generate these elements as required. (It is implemented using
  VertRes::Persistent.)
+ For example, a datasource might be a list of 1000 bam files, and the
+ information stored an in instance of this class might be the path to a file
+ that contains the list of those 1000 bam files. An element might be 1 of those
+ bam files, and a particular VertRes::Pipelines::* module might be capable of
+ doing something with a single bam file.
 
  # create; there are 3 required args 'type', 'source', and 'method', and an
  # optional 'options' hash that can be set:
@@ -767,7 +795,7 @@
  my $source = $dat->source; # this might be a database name string or a file
                             # path etc.
  my $method = $dat->method; # this is a string corresponding to the name of a
-                            # method defined in $dat's class, and are therefore
+                            # method defined in $dat's class, and is therefore
                             # $type specific
 
  # get/set the optional arbitrary settings that control how the desired method
@@ -775,12 +803,14 @@
  $dat->options(platforms => ['SLX', '454'], ...); # you set a hash
  my %options = $dat->options; # and get back a hash
 
- # get the list of data inputs:
- my @data_inputs = $dat->data;
+ # get the list of data elements:
+ my @data_elements = $dat->data_elements;
  # this method causes $dat->$method($source, %options) to be run, and by
- # interface convention, these methods return a list of things, where each thing
- # can be used as the instance-specific-input to at least 1
- # VertRes::Pipelines::* module.
+ # interface convention, these methods return a list of hash refs, where each
+ # hash_ref has at least the key 'dataelement_key' (with a value unique to all
+ # elements in the source, that will stay unique as the source grows) and can be
+ # used as the instance-specific-input to at least 1 VertRes::Pipelines::*
+ # module.
 
 =head1 VertRes::PipelineManager::Pipeline
 
@@ -789,11 +819,12 @@
 
  # create; there are 3 required key-forming options 'name', 'module' and
  # 'data_source', and new() will also accept an abitrary set of key => value
- # pairs that describe the configuration needed by the pipline module in
+ # pairs that describe the configuration needed by the pipeline module in
  # question:
  my $pip = VertRes::PipelineManager::Pipeline->new(name => 'chimp_mapping',
                 module => 'VertRes::Pipelines::Mapping',
                 data_source => $vertres_pipelinemanager_datasource,
+                root => '/abs/working/dir',
                 reference => 'chimp_ref.fa',
                 other_mapping_config => 'other_mapping_value',
                 list_config => ['val1', 'val2'],
@@ -825,10 +856,14 @@
  my @samples = $pip->get('samples');
  my %sample_to_platform = $pip->get('platforms');
 
- # copy the arbitrary config settings of one Pipeline into another:
+ # copy the arbitrary config options of one Pipeline into another:
  $pip->copy($pip2);
  # this does a "union" preferring $pip2 values, leaving $pip values for keys
  # not found in $pip2 untouched.
+
+ # pull out all the config options into a hash ref, for passing into a
+ # VertRes::Pipelines::* module:
+ my $config_options = $pip->config;
 
  # a Pipeline can store on itself the concept of being 'active'; when inactive
  # other systems can choose to ignore this pipeline (this is not enforced in
@@ -836,8 +871,39 @@
  $pip->active($boolean); # set
  if ($pip->active) { # true by default }
 
- #*** some kind of turning on of 'capture' so we can store all persistents
- # accessed while we run...
+ # it can also store on itself a PersistentArray, which can be used
+ # to describe its "children" (objects created in order to run this pipeline):
+ my $vertres_persistentarray = $pip->children($vertres_persistentarray);
+ # the primary purpose of doing this is to be able to later clean out the db
+ # of all objects created for this pipeline, and easily access all associated
+ # Submission objects.
+
+=head1 VertRes::ResultStore
+
+ This class makes it very easy to store (a small amount of) data from the output
+ of some job in the database, instead of in a file on disc. Implemented using
+ VertRes::Persistent.
+
+ # create; 'name' being required and you'll have to arrange that your name is
+ # going to be globally unique across all pipelines, configs and data sources
+ # (*** how?!):
+ my $res = VertRes::ResultStore->new(name => '/abs/path/to/file');
+ # or by id:
+ $res = VertRes::ResultStore->new(id => $a_valid_resultstore_id);
+
+ # get a reference to the pipeline entry in the db:
+ my $res_id = $res->id;
+ # gives us a unique id that other systems and dbs can refer to or store. The
+ # same id is always returned for every ResultStore object created with the
+ # same name.
+
+ # store something:
+ $res->store($my_resultfile_contents_as_one_big_string);
+ $res->store(%my_results_as_a_hash);
+ $res->store(@my_results_as_a_list);
+ 
+ # get it back:
+ my $string = $res->retrieve;
 
 =head1 VertRes::Pipeline*
 
@@ -846,6 +912,11 @@
  a series of 'actions'. These modules do not directly store any persistent data.
  The base class provides the following implemented methods:
 
+ # find out what VertRes::PipelineManager::DataSource types and methods are
+ # supported:
+ my @valid = $obj->valid_datasources; # a list of array refs, each ref being a
+                                      # type,method tuple.
+
  # get an ordered list of action names:
  my @actions = $obj->actions;
 
@@ -853,17 +924,172 @@
  foreach my $action_name (@actions) {
     my @required_files = $obj->required_files($action_name);
     my @provided_files = $obj->provided_files($action_name);
-    my @not_yet_provided = $obj->
+    
+    # if you want to run the action, you'll check your own records to see what
+    # the state of this action is for this particular pipeline config and
+    # datasource element. You won't check if the required files exist, since you
+    # want to be able to skip past this action if it has completed but you since
+    # deleted its required (or provided) files because they were only temporary
+    # to make a later action work. If your records say we haven't started
+    # running this action, we do:
+    $obj->run_action($action_name);
+    
+    # prior to derefrencing and running the action subroutine, run_action does:
+    my @missing = $obj->missing_required_files($action_name);
+    # if any files are missing, then run_action returns false and does nothing.
+    # Otherwise it runs the desired subroutine. If the subroutine returns true,
+    # that means the action completed and we can move on to the finish_action
+    # step. If it returned false, it probably used dispatch() (see below) so we
+    # see what it dispatched:
+    my @dispatches = $obj->dispatched($action_name);
+    # this returns a list of [$cmd_line_string, $requirements_object] refs that
+    # you could use to create VertRes::JobManager::Submission objects and
+    # eventually actually get the cmd_line to run. You'll keep records on how
+    # those Submissions do, and when they're all successfull you'll do:
+    $obj->finish_action($action_name);
+    # this runs a post-processing method for the action (that is not allowed
+    # to do any more dispatching) and returns true if the post-process was fine.
+    # finish_action appends its own auto-check that all the provided files
+    # exist. So if finish_action returns true you record in your system that
+    # this action (on this pipeline config and datasource element) finished, so
+    # the next time you come to this loop you'll skip and try the following
+    # action. (VertRes::PipelineManager::Manager does all this sort of stuff for
+    # you.)
  }
- 
+
  # child classes don't override actions(), required_files() etc., they just
  # define a class array ref called $actions which contains hash refs which
  # contain name, action, requires and provides keys, with the last 3 having
- # values of subroutine refs.
+ # values of subroutine refs. 'finish' is another optional key, which also has a
+ # subroutine ref as a value. valid_datasources() gets its info from a different
+ # class array ref called $valid_datasources.
+
+ # when you create a new instance of a VertRes::Pipeline subclass, you must
+ # suppy the following:
+ my $subclass = VertRes::Pipelines::subclass->new(
+                    input => $hashref_from_a_datasource_element,
+                    config => $hashref_from_pipelinemanager_pipeline_config);
+ # given this information the subclass should then be able to work out what its
+ # required files are, where it will write its provided files, and be able to
+ # proceed with doing work when run_action($name) is called.
+
+
+ # The action, requires, provides and finish subroutines of a subclass (which
+ # receive no arguments directly) are implemented with the help of some
+ # VertRes::Pipeline methods:
+
+ # get the root working directory:
+ my $root_dir = $self->root_dir; # == $self->{config}->{root} || cwd
+ # if you work in a subdirectory of the root, perhaps elements from your
+ # datasource are hashrefs with a 'rel_path' key pointing to the relative
+ # directory; set that:
+ $self->relative_dir($self->{input}->{rel_path});
+ my $working_dir = $self->working_dir; # root_dir and relative_dir combined
+ my $out_file = $self->working_file('my.out.file');
+ # $out_file is a VertRes::File with the absolute path to my.out.file in
+ # working_dir(). Whenever dealing with files generally you'll use
+ # VertRes::File.
+
+ # inside an action subroutine, when you want to do something that takes more
+ # than a few seconds, you make a VertRes::JobManager::Requirements object
+ # that describes the needs of what you want to do, and come up with a command
+ # line that would actually do what you want to do. These get passed to:
+ $self->dispatch(cmd => $cmd_line_string, requirments => $requirements_object);
+ # nothing actually happens as a direct result of doing that. The caller must
+ # subsequently get all the dispatched things using ->dispatched and do
+ # something with the cmd and requirements.
+ # if you dispatched things you return false, otherwise if you successfully
+ # completed everything your action needed to do, you return true.
+
+ # if an action needs to carry out some post-processing after the things it
+ # dispached have actually been run, it can setup another subroutine and include
+ # a ref to it under the 'finish' key of the $actions class ref.
+
+ # you could make use of VertRes::ResultStore to store (small) final output
+ # instead of writing to disc.
+
+
+ # NB: compared to the original VertRes::Pipeline* system, this is deliberatly
+ # very lightweight: no checking of file existance is done here to determine
+ # if an action is complete, there is no accessing of LSF, there is no locking
+ # on-disc, and there is no actual running of code. Higher-level
+ # VertRes::PipelineManager* stuff is supposed to handle all that. These modules
+ # just define what should be done and try and do as little work themselves as
+ # possible.
+
+=head1 VertRes::PipelineManager::Action
+
+ This class provides state tracking for running a particular
+ VertRes::Pipelines::* module action with a certain pipeline configuration
+ against a specific VertRes::PipelineManager::DataSource->data_elements element.
+ State is stored persistently thanks to implementing with VertRes::Persistent.
+
+ # create; there are 4 required key-forming options:
+ my $act = VertRes::PipelineManager::Action->new(action => 'name_of_action',
+                module => 'VertRes::Pipelines::Mapping',
+                dataelement_key => $dataelement_key,
+                pipeline => $vertres_pipelinemanager_pipeline_obj);
+ # (where $dataelement_key is the value of the 'dataelement_key' key in one of
+ # the hash refs returned by the data_elements() method on an instance of a
+ # VertRes::PipelineManager::DataSource object)
+ # or by id:
+ $act = VertRes::PipelineManager::Action->new(id => $a_valid_action_id);
+
+ # get a reference to the action entry in the db:
+ my $act_id = $act->id;
+ # gives us a unique id that other systems and dbs can refer to or store. The
+ # same id is always returned for every Action object created with the
+ # same action, module, dataelement_key and pipeline.
+
+ # get the core info on this Action (these are get-only):
+ my $module = $act->module;
+ my $action = $act->action; # a string name of an action in $module
+ my $dataelement_key = $act->dataelement_key;
+ my $pipeline = $act->pipeline; # a VertRes::PipelineManager::Pipeline instance
+
+ # do stuff depending on the overall state of the Action:
+ if ($act->complete) {
+    # at some point we decided that this action completed fully successfully.
+    # maybe we changed our minds and want to force it to restart?
+    $act->reset;
+    # this attempts reset() on every associated Submission (killing etc. first
+    # if necessary), and then sets the complete boolean back to false. This
+    # reset() can actually be called at any point, letting us force-stop an
+    # action that we realised was doing something wrong, for example.
+ }
+ else {
+    # get the Submission objects for this Action:
+    my @submissions = $act->submissions;
+    if (@submissions) {
+        if ($act->all_ok) {
+            # all_ok returns true when every Submission object says that it
+            # completed ok. Now you can do whatever post-processing the action
+            # might need, and finally:
+            $act->complete(1);
+        }
+        else {
+            # take a look at your Submission objects yourself and do stuff...
+            # most likely they're some still running, so you just wait
+        }
+    }
+    else {
+        # you didn't yet run your action, get the ->dispatched things, turn them
+        # into VertRes::JobManager::Submission objects and associate them with
+        # $act yet. Do that now:
+        $act->submissions(@submission_objects);
+        # this turns the submission objects into a VertRes::PersistentArray
+        # and stores that on itself, ready to turn them back into a list of
+        # objects when submissions() is called.
+    }
+ }
 
 =head1 VertRes::PipelineManager::Manager
 
- The high-level manager interface for script and end-user use.
+ The high-level manager interface for script and end-user use. It does need to
+ store one bit of persistent data, but it isn't instance-specific, so while this
+ module makes use of VertRes::Persistent, it isn't like all the others that
+ inherit from it. (Infact, it probably implements its persistent storage by
+ abusing VertRes::ResultStore ?)
 
  # create:
  my $man = VertRes::PipelineManager::Manager->new;
@@ -873,10 +1099,78 @@
  # limited to those for a certain module:
  @pipelines = $man->pipelines(module => 'VertRes::Pipelines::Mapping');
 
- # do stuff with the pipelines:
+ # trigger/find out about the pipelines:
  foreach my $pip (@pipelines) {
     if ($pip->active) {
+        # run the pipeline (if it is complete, nothing happens; since new data
+        # could have turned up, there is no general concept of a pipeline ever
+        # automatically being considered 'complete' so there is no "first check
+        # we haven't already completed" method at this level):
+        my $num_of_jobs_still_to_go = $man->run($pip);
+        # This first does VertRes::Persistent::capture_start and when done will
+        # call capture_stop, and will turn the array into a PersistentArray
+        # which it will store in $pip->children, merging the array with any
+        # existing PersistentArray. This capture_stop&merge code will also run
+        # during destruction of $man to protect against being killed before
+        # run() completes normally. Under normal circumstances it will also
+        # touch() every child of $pip, to prevent expunge_old destroying our
+        # lives.
+        # It also calls $self->running(1) which sets a boolean to true in the
+        # persistent storage, along with the time we called this. Before
+        # returning from run(), or on destruction, we set running(0) if the
+        # timestamp was ours. If another process comes along and calls ->run
+        # while we are running(), then the other process will block for some
+        # reasonable amount of time until running is 0. If it takes too long,
+        # then it will stop blocking and update the timestamp on running() and
+        # continue with its own run().
+        #
+        # Next, it uses $pip->data_source (having checked it is one of the
+        # $pip->module's valid ones) to loop through each data input. For each
+        # data_source element it creates an instance of the $pip->module. It
+        # uses the ->actions method on that to set up
+        # VertRes::PipelineManager::Action objects and uses those to track state
+        # as it does ->run_action($name) etc. Note that this process is only
+        # creating Action and Submission objects; we are not calling ->submit
+        # on the Submissions, so run() doesn't itself directly cause anything
+        # to be executed on the farm.
+        #
+        # As it loops through everything it keeps track of various things like
+        # number of data_source elements, actions completed and still to go per
+        # element and overall, and number of jobs
+        # completed/running/to-be-run/failed per action, per element and
+        # overall. It returns the total number of jobs still to go (those
+        # currently running, or scheduled to run later), so if this is 0 then
+        # this pipeline is finished for now at least.
+        #
+        # If run($pip, stdout => 1) is called, then it outputs this kind of
+        # stuff in a pretty way to STDOUT as it goes along. Otherwise this info
+        # is queryable after run($pip) returns:
+        my %status = $man->status($pip);
         
+        # calling run() should be very cheap, since for the most part it will
+        # just be doing lookups into the Persistent db where our state is
+        # stored. However, if an action method has to actually run, then it may
+        # not be fast enough for constructing a live-updated status webpage. For
+        # that purpose, ->status($pip) can be called without calling ->run($pip)
+        # first, in which case it will get all the stats it can by going through
+        # the same loops as run(), except that it won't call ->run_action (so
+        # will be able to say that an action has not yet started, but not how
+        # many jobs there are to go for that action). ->status($pip,
+        # overall_jobs_only => 1) takes a shortcut and just directly grabs the
+        # Submission objects from $pip->children and generates a simple set of
+        # completed/running/to-be-run/failed overall stats. NB: we never know
+        # about actions that we haven't gotten to, so the total number of jobs
+        # is never accurate until the last action has been run on all data
+        # elements.
+        
+        #*** a simple hash from status not powerful/easy enough to allow things
+        #    like showing failed jobs and error messages in a web-frontend??
+        
+        # perhaps something really stupid and wrong happened with a pipeline and
+        # you just want to start over from scratch:
+        $man->reset($pip);
+        # this grabs all the Action objects from $pip->children and does ->reset
+        # on them.
     }
     elsif (time() - $pip->last_updated > 7776000) {
         # it's been inactive for ~3months; perhaps we want to trash old stuff?
@@ -886,6 +1180,46 @@
         # pipeline
     }
  }
+
+ # Having ->run at least 1 pipeline, we'll have a bunch of Submission objects
+ # in the Persistent db, but none of them will have been submitted. We deal with
+ # submitting, coping with failed Submissions, retrying Submissions etc. in the
+ # following few methods, which don't need to know anything about the pipelines
+ # that spawned them. This is completly generic, and you could imagine running
+ # a script that calls these methods every 10mins in a cron job or something.
+
+ # get all Submissions that have not completed ok (used internally by the
+ # subsequent methods, answer cached once per instance of Manager):
+ my @incomplete_submissions = $man->submissions();
+ # again, this is all incomplete Submission objects, regardless of what pipeline
+ # or action or process spawned them. submissions() will block if the running()
+ # boolean is true, to give a run() time to finish, so we'll see all of its
+ # Submission objects. After a reasonable amount of time it will stop blocking
+ # though, incase a run() went bad and failed to turn off running().
+
+ # deal with failed Submissions:
+ $man->resubmit_failures(max_retries => 3);
+ # this checks all the ->submissions for ones that failed, and uses the standard
+ # Submission and Job methods to work out why and resubmit them as appropriate,
+ # potentially with updated Requirements. max_retries defaults to 3.
+
+ $man->check_running;
+ # this does the dance of checking if any of the currently running ->submissions
+ # are approaching their time limit, and switching queues as appropriate. It
+ # also checks that all running Jobs have had a recent heartbeat, and if not
+ # will do the kill dance and resubmit.
+
+ # batch Submissions into arrays and submit them:
+ $man->submit;
+ # this groups all the non-permanently-failed ->submissions into lists based
+ # on shared Requirements objects, creates [PersistentArray, Requirements] for
+ # each group, and uses those to do a Scheduler->submit for each group. If a
+ # group consists of only 1 Submission, then it won't bother with the creating
+ # a PersistentArray step.
+ 
+ # expunge all the PersistentArray objects that submit() has made in the past,
+ # but are now defunct (they reference Submissions that have all finished OK):
+ $man->cleanup;
 
 =cut
 
