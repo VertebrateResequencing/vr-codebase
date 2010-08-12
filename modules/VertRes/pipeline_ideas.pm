@@ -917,6 +917,12 @@
  my @valid = $obj->valid_datasources; # a list of array refs, each ref being a
                                       # type,method tuple.
 
+ # what are the required and optional config settings for this particular
+ # VertRes::Pipelines::* module?
+ my %configurable_options = $obj->valid_options;
+ # configurable_options is some hash with required and optional keys and then
+ # some data structure to describe what is valid
+
  # get an ordered list of action names:
  my @actions = $obj->actions;
 
@@ -962,7 +968,8 @@
  # contain name, action, requires and provides keys, with the last 3 having
  # values of subroutine refs. 'finish' is another optional key, which also has a
  # subroutine ref as a value. valid_datasources() gets its info from a different
- # class array ref called $valid_datasources.
+ # class array ref called $valid_datasources. valid_options() gets its info from
+ # a class hash ref called $valid_options;
 
  # when you create a new instance of a VertRes::Pipeline subclass, you must
  # suppy the following:
