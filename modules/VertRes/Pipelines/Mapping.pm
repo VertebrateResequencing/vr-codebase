@@ -965,7 +965,7 @@ sub recalibrate {
     my $verbose = $self->verbose;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M6800000 -R \'select[mem>6800] rusage[mem=6800]\'';
+    $self->{bsub_opts} = '-q long -M6800000 -R \'select[mem>6800] rusage[mem=6800]\'';
     
     my $build = $self->{assembly_name};
     
