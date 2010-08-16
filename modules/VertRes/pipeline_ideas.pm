@@ -1076,13 +1076,16 @@
         }
         else {
             # take a look at your Submission objects yourself and do stuff...
-            # most likely they're some still running, so you just wait
+            # most likely there's still some running, so you just wait. For
+            # convience, you can grab just the ones that are having problems:
+            my @fails = $act->failed_submissions;
         }
     }
     else {
         # you didn't yet run your action, get the ->dispatched things, turn them
         # into VertRes::JobManager::Submission objects and associate them with
         # $act yet. Do that now:
+        # ...
         $act->submissions(@submission_objects);
         # this turns the submission objects into a VertRes::PersistentArray
         # and stores that on itself, ready to turn them back into a list of
@@ -1181,11 +1184,10 @@
             # meta-information (like the dataelement_key) can be extracted in
             # the normal way from an Action for display
             
-            my %outputs = $man->outputs($action);
+            my %outputs = $man->failed_outputs($action);
             # this gets the last STDOUT and STDERR from every failed Submission
             # associated with $action and returns a hash with Submission->id
-            # keys and {stdout => 'the output string', stderr => 'string'}
-            # values.
+            # keys and {stdout => 'string', stderr => 'string'} values.
             
             # you could imagine that a web-frontend would have a button that
             # called:
@@ -1194,14 +1196,22 @@
             # the problem.
         }
         
-        # perhaps the user fixed a problem and now wants to reset the actions
-        # that faile
+        # perhaps the user fixed a problem and now wants to reset all the
+        # actions that failed in one go:
+        $man->reset(@failed_actions);
         
         # perhaps something really stupid and wrong happened with a pipeline and
-        # you just want to start over from scratch:
+        # you just want to start everything over completely from scratch:
         $man->reset($pip);
         # this grabs all the Action objects from $pip->children and does ->reset
         # on them.
+        
+        # run-time/memory-usage summary stats can be found on a per-action
+        # basis, averaged over every pipeline that ran that action, and also
+        # per pipeline:
+        my %stats = $man->action_stats(); # averaged over all pipelines
+        %stats = $man->action_stats($pip); # for just this pipeline config
+        # %stats == (action_name => { walltime => $seconds, memory => $mb });
     }
     elsif (time() - $pip->last_updated > 7776000) {
         # it's been inactive for ~3months; perhaps we want to trash old stuff?
