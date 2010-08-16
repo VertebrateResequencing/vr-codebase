@@ -1170,8 +1170,32 @@
         # is never accurate until the last action has been run on all data
         # elements.
         
-        #*** a simple hash from status not powerful/easy enough to allow things
-        #    like showing failed jobs and error messages in a web-frontend??
+        # a simple hash from status isn't powerful/easy enough to allow things
+        # like showing failed jobs and error messages in a web-frontend. For
+        # that purpose, we have a set of methods that would let a user drill
+        # down and discover what's going wrong with their pipeline:
+        my @failed_actions = $man->failed_actions($pip);
+        # a 'failed' action is one that has submissions that have finished but
+        # not ok.
+        foreach my $action (@failed_actions) {
+            # meta-information (like the dataelement_key) can be extracted in
+            # the normal way from an Action for display
+            
+            my %outputs = $man->outputs($action);
+            # this gets the last STDOUT and STDERR from every failed Submission
+            # associated with $action and returns a hash with Submission->id
+            # keys and {stdout => 'the output string', stderr => 'string'}
+            # values.
+            
+            # you could imagine that a web-frontend would have a button that
+            # called:
+            $action->reset;
+            # that the user might use if they looked at the outputs and fixed
+            # the problem.
+        }
+        
+        # perhaps the user fixed a problem and now wants to reset the actions
+        # that faile
         
         # perhaps something really stupid and wrong happened with a pipeline and
         # you just want to start over from scratch:
