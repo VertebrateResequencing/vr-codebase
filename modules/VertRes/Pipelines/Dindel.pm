@@ -83,30 +83,31 @@ use base qw(VertRes::Pipeline);
 
 our $actions = [{ name     => 'extract_indels',
                   action   => \&extract_indels,
-                  requires => \&extract_indels_requires, 
+                  requires => \&extract_indels_requires,
                   provides => \&extract_indels_provides },
                 { name     => 'concat_libvar',
                   action   => \&concat_libvar,
-                  requires => \&extract_indels_provides, 
+                  requires => \&extract_indels_provides,
                   provides => \&concat_libvar_provides },
                 { name     => 'make_windows',
                   action   => \&make_windows,
-                  requires => \&concat_libvar_provides, 
+                  requires => \&concat_libvar_provides,
                   provides => \&make_windows_provides },
                 { name     => 'realign_windows',
                   action   => \&realign_windows,
-                  requires => \&realign_windows_requires, 
+                  requires => \&realign_windows_requires,
                   provides => \&realign_windows_provides },
                 { name     => 'merge',
                   action   => \&merge,
-                  requires => \&realign_windows_provides, 
+                  requires => \&realign_windows_provides,
                   provides => \&merge_provides }];
-                
+
 my $dindel_base = $ENV{DINDEL_SCRIPTS} || die "DINDEL_SCRIPTS environment variable not set\n";
 our %options = (simultaneous_jobs => 100,
                 dindel_scripts => $dindel_base,
                 dindel_bin => 'dindel',
                 dindel_args => '--maxRead 5000',
+                make_windows_bsub_opts => ' -M7900000 -R \'select[mem>7900] rusage[mem=7900]\'',
                 bsub_opts => '');
 
 =head2 new
@@ -128,6 +129,8 @@ our %options = (simultaneous_jobs => 100,
            dindel_args => '--maxRead 5000' (specify special non-default
                                             settings to the dindel window
                                             realignment call)
+           make_windows_bsub_opts => ' -M7900000 -R \'select[mem>7900] rusage[mem=7900]\'',
+                                      (specify bsub options to make_windows)
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -135,17 +138,17 @@ our %options = (simultaneous_jobs => 100,
 sub new {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(%options, actions => $actions, @args);
-    
+
     $self->{lane_path} || $self->throw("lane_path (misnomer; actually dindel group output) directory not supplied, can't continue");
     $self->{ref} || $self->throw("ref not supplied, can't continue");
     #-x $self->{dindel_bin} || $self->throw("bad dindel_bin $self->{dindel_bin}");
     -d $self->{dindel_scripts} || $self->throw("bad dindel_scripts $self->{dindel_scripts}");
     $self->{bam_fofn} || $self->throw("bam_fofn not supplied, can't continue");
-    
+
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
-    
-    my @bams = $self->{io}->parse_fofn($self->{bam_fofn});
+
+    my @bams = $self->{io}->parse_fofn($self->{bam_fofn}, "/");
     $self->{bam_files} = \@bams;
     my @bais;
     my %bam_to_sample;
@@ -153,30 +156,30 @@ sub new {
         push(@bais, $bam.'.bai');
     }
     $self->{bai_files} = \@bais;
-    
+
     $self->{type} ||= 'diploid';
-    
+
     return $self;
 }
 
 sub _get_bam_to_sample {
     my $self = shift;
-    
+
     return if defined $self->{bam_to_sample};
-    
+
     my %bam_to_sample;
     foreach my $bam (@{$self->{bam_files}}) {
         my $pars = VertRes::Parser::sam->new(file => $bam);
         my @samples = $pars->samples();
         $pars->close;
-        
+
         if (@samples > 1) {
             $self->throw("The bam '$bam' was for more than 1 sample (@samples)");
         }
         elsif (@samples < 1) {
             $self->throw("Could not detect what sample '$bam' was for");
         }
-        
+
         $bam_to_sample{$bam} = $samples[0];
     }
     $self->{bam_to_sample} = \%bam_to_sample;
@@ -212,22 +215,22 @@ sub extract_indels_requires {
 
 sub extract_indels_provides {
     my ($self, $lane_path) = @_;
-    
+
     my $out_dir = $self->{fsu}->catfile($lane_path, 'extract_indels');
     my @bam_files = @{$self->{bam_files}};
     $self->_get_bam_to_sample;
-    
+
     my @lib_var_files;
     foreach my $bam (@bam_files) {
         my $sample = $self->{bam_to_sample}->{$bam} || $self->throw("No sample for bam '$bam'!");
         my $out_base = $self->{fsu}->catfile($out_dir, $sample.'.dindel_extract_indels');
-        
+
         foreach my $type ('libraries', 'variants') {
             my $out_file = $out_base.".$type.txt";
             push(@lib_var_files, $out_file);
         }
     }
-    
+
     return \@lib_var_files;
 }
 
@@ -244,20 +247,20 @@ sub extract_indels_provides {
 
 sub extract_indels {
     my ($self, $lane_path, $action_lock) = @_;
-    
+
     my $out_dir = $self->{fsu}->catfile($lane_path, 'extract_indels');
     unless (-d $out_dir) {
         mkdir($out_dir) || $self->throw("Could not create directory '$out_dir'");
     }
-    
+
     my @bam_files = @{$self->{bam_files}};
     $self->_get_bam_to_sample;
-    
+
     foreach my $bam (@bam_files) {
         my $sample = $self->{bam_to_sample}->{$bam} || $self->throw("No sample for bam '$bam'!");
         my $out_base = $self->{fsu}->catfile($out_dir, $sample.'.dindel_extract_indels');
         my $running_base = $out_base.'.running';
-        
+
         my $done = 0;
         foreach my $type ('libraries', 'variants') {
             my $out_file = $out_base.".$type.txt";
@@ -266,11 +269,11 @@ sub extract_indels {
             }
         }
         next if $done == 2;
-        
+
         my $job_base_name = $sample.'.dindel_extract_indels';
         my $job_name = $self->{fsu}->catfile($out_dir, $job_base_name);
         my $lock_file = $job_name.'.jids';
-        
+
         my $is_running = LSF::is_job_running($lock_file);
         if ($is_running & $LSF::Error) {
             warn "$job_name failed!\n";
@@ -291,12 +294,12 @@ sub extract_indels {
         }
         else {
             $self->archive_bsub_files($out_dir, $job_base_name);
-            
+
             LSF::run($lock_file, $out_dir, $job_base_name, $self,
                      qq{$self->{dindel_bin} --analysis getCIGARindels --bamFile $bam --ref $self->{ref} --outputFile $running_base});
         }
     }
-    
+
     return $self->{No};
 }
 
@@ -319,12 +322,12 @@ sub concat_libvar_provides {
 
 sub concat_libvar {
     my ($self, $lane_path, $action_lock) = @_;
-    
+
     my $var_out = $self->{fsu}->catfile($lane_path, 'variants.txt.running');
     my $lib_out = $self->{fsu}->catfile($lane_path, 'libraries.txt.running');
     open(my $vofh, '>', $var_out) || $self->throw("Could not write to $var_out");
     open(my $lofh, '>', $lib_out) || $self->throw("Could not write to $lib_out");
-    
+
     my ($v_exp, $l_exp) = (0, 0);
     foreach my $file (@{$self->extract_indels_provides($lane_path)}) {
         my ($ofh, $counter);
@@ -336,7 +339,7 @@ sub concat_libvar {
             $ofh = $lofh;
             $counter = \$l_exp;
         }
-        
+
         open(my $fh, $file) || $self->throw("Could not open $file");
         while (<$fh>) {
             $$counter++;
@@ -346,7 +349,7 @@ sub concat_libvar {
     }
     close($vofh);
     close($lofh);
-    
+
     # check the cat files are complete
     my $v_lines = VertRes::IO->new(file => $var_out)->num_lines;
     my $l_lines = VertRes::IO->new(file => $lib_out)->num_lines;
@@ -356,32 +359,32 @@ sub concat_libvar {
     if ($l_lines != $l_exp) {
         $self->throw("$lib_out ended up with $l_lines instead of $l_exp lines");
     }
-    
+
     move($var_out, $self->{fsu}->catfile($lane_path, 'variants.txt'));
     move($lib_out, $self->{fsu}->catfile($lane_path, 'libraries.txt'));
-    
+
     return $self->{Yes};
 }
 
 sub make_windows_provides {
     my ($self, $lane_path) = @_;
-    
+
     # we don't know how many windows files there will be, but we can work out
     # how many lines should be found across all the window files, and once we
     # pass that check we'll make a .made_windows file listing all the window
     # files
-    
+
     return ['.made_windows'];
 }
 
 sub _check_all_windows_files {
     my ($self, $lane_path) = @_;
-    
+
     my $done_file = $self->{fsu}->catfile($lane_path, '.made_windows');
     if ($self->{fsu}->file_exists($done_file)) {
         return 1;
     }
-    
+
     # the number of lines in variants.txt should match the number of column 4+
     # entries in all window files...
     # actually, when there are multiple samples, they may share indels, and so
@@ -391,11 +394,11 @@ sub _check_all_windows_files {
     # variants it read. If that matches, then we'll trust the number of
     # candidates it reports as the expected, and make sure the window files
     # match that.
-    
+
     my $var_file = $self->{fsu}->catfile($lane_path, 'variants.txt');
     my $window_dir = $self->{fsu}->catfile($lane_path, 'windows');
     my $e_file = $self->{fsu}->catfile($window_dir, 'dindel_make_windows.e');
-    
+
     if (-d $window_dir && -s $e_file) {
         my ($read_variants, $num_candidates) = (0, 0);
         open(my $efh, $e_file) || $self->throw("Could not open error file '$e_file'");
@@ -411,7 +414,7 @@ sub _check_all_windows_files {
         unless ($read_variants && $num_candidates && $num_candidates <= $read_variants) {
             return 0;
         }
-        
+
         my $num_variants = 0;
         open(my $vfh, $var_file) || $self->throw("Could not open variants file '$var_file'");
         while (<$vfh>) {
@@ -423,7 +426,7 @@ sub _check_all_windows_files {
         unless ($num_variants == $read_variants) {
             $self->throw("read $read_variants variants, but there are $num_variants variants in total!");
         }
-        
+
         my $actual = 0;
         opendir(my $windowfh, $window_dir) || $self->throw("Could not open dir $window_dir");
         my @window_files = ();
@@ -438,8 +441,8 @@ sub _check_all_windows_files {
                 }
             }
         }
-        
-        
+
+
         if ($actual >= $num_candidates) {
             open(my $dfh, '>', $done_file) || $self->throw("Could not write to $done_file");
             foreach my $window_file (@window_files) {
@@ -453,17 +456,17 @@ sub _check_all_windows_files {
             warn "$actual entries in window files < $num_candidates\n";
         }
     }
-    
+
     return 0;
 }
 
 sub _get_windows_files {
     my ($self, $lane_path) = @_;
-    
+
     if (defined $self->{windows_files}) {
         return @{$self->{windows_files}};
     }
-    
+
     my $done_file = $self->{fsu}->catfile($lane_path, '.made_windows');
     if ($self->{fsu}->file_exists($done_file)) {
         open(my $fh, $done_file) || $self->throw("Could not open $done_file");
@@ -493,26 +496,27 @@ sub _get_windows_files {
 
 sub make_windows {
     my ($self, $lane_path, $action_lock) = @_;
-    
+
     my $var_file = $self->{fsu}->catfile($lane_path, 'variants.txt');
     my $window_dir = $self->{fsu}->catfile($lane_path, 'windows');
     unless (-d $window_dir) {
         mkdir($window_dir) || $self->throw("Could not create directory '$window_dir'");
     }
-    
+
     return $self->{Yes} if $self->_check_all_windows_files($lane_path);
-    
+
     my $job_name = $self->{fsu}->catfile($window_dir, 'dindel_make_windows');
     $self->archive_bsub_files($window_dir, 'dindel_make_windows');
-    
+
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = ' -M7900000 -R \'select[mem>7900] rusage[mem=7900]\'';
+    #$self->{bsub_opts} = ' -M7900000 -R \'select[mem>7900] rusage[mem=7900]\'';
+    $self->{bsub_opts} = $self->{make_windows_bsub_opts};
 
     LSF::run($action_lock, $window_dir, $job_name, $self,
              qq{python $self->{dindel_scripts}/makeWindows.py --inputVarFile $lane_path/variants.txt --windowFilePrefix $window_dir/window --numWindowsPerFile 1000});
-    
+
     $self->{bsub_opts} = $orig_bsub_opts;
-    
+
     return $self->{No};
 }
 
@@ -525,18 +529,18 @@ sub realign_windows_requires {
 
 sub realign_windows_provides {
     my ($self, $lane_path) = @_;
-    
+
     my @window_files = $self->_get_windows_files($lane_path);
-    
+
     my @glfs;
     foreach my $window_file (@window_files) {
         my $glf = $window_file;
         $glf =~ s/\.txt$/.glf.txt/;
         push(@glfs, $glf);
     }
-    
+
     @glfs > 1 || $self->throw("Surely too few glfs?!");
-    
+
     return \@glfs;
 }
 
@@ -552,29 +556,29 @@ sub realign_windows_provides {
 
 sub realign_windows {
     my ($self, $lane_path, $action_lock) = @_;
-    
+
     my $lib_file = $self->{fsu}->catfile($lane_path, 'libraries.txt');
     my $window_dir = $self->{fsu}->catfile($lane_path, 'windows');
     my @window_files = $self->_get_windows_files($lane_path);
-    
+
     my $orig_bsub_opts = $self->{bsub_opts};
     $self->{bsub_opts} = ' -q long -M7900000 -R \'select[mem>7900] rusage[mem=7900]\'';
-    
+
     my $jobs = 0;
     foreach my $window_file (@window_files) {
         my $glf = $window_file;
         $glf =~ s/\.txt$/.glf.txt/;
-        
+
         next if $self->{fsu}->file_exists($glf);
-        
+
         my $running_base = $glf;
         $running_base =~ s/\.glf\.txt/.running/;
-        
+
         my $job_base_name = basename($running_base);
         $job_base_name =~ s/\.running//;
         my $job_name = $self->{fsu}->catfile($window_dir, $job_base_name);
         my $lock_file = $job_name.'.jids';
-        
+
         my $is_running = LSF::is_job_running($lock_file);
         if ($is_running & $LSF::Error) {
             warn "$job_name failed!\n";
@@ -587,7 +591,7 @@ sub realign_windows {
         }
         elsif ($is_running & $LSF::Done) {
             my $running_file = $running_base.".glf.txt";
-            
+
             # to check the glf file for completion properly, the number of lines
             # should match the number of lines in the window file * number of
             # variants on that line (cols 4+) * number of samples, or something
@@ -602,7 +606,7 @@ sub realign_windows {
                 (undef, $last_index) = split;
             }
             close($rfh);
-            
+
             if ($last_index == $expected_index) {
                 move($running_file, $glf) || $self->throw("failed to move $running_file to $glf");
             }
@@ -610,16 +614,16 @@ sub realign_windows {
                 $self->warn("Made a glf file $glf, but it ended on window file index $last_index instead of $expected_index; moving it to .bad");
                 move($running_file, "$running_file.bad");
             }
-            
+
             unlink($lock_file);
             next;
         }
         else {
             $jobs++;
             last if $jobs > $self->{simultaneous_jobs};
-            
+
             $self->archive_bsub_files($window_dir, $job_base_name);
-            
+
             my $bam_mode_args = '';
             my @bam_files = @{$self->{bam_files}};
             if (@bam_files > 1) {
@@ -628,14 +632,14 @@ sub realign_windows {
             else {
                 $bam_mode_args = "--bamFile @bam_files --doDiploid";
             }
-            
+
             LSF::run($lock_file, $window_dir, $job_base_name, $self,
                      qq{$self->{dindel_bin} --analysis indels $bam_mode_args $self->{dindel_args} --ref $self->{ref} --varFile $window_file --libFile $lib_file --outputFile $running_base});
         }
     }
-    
+
     $self->{bsub_opts} = $orig_bsub_opts;
-    
+
     return $self->{No};
 }
 
@@ -656,7 +660,7 @@ sub merge_provides {
 
 sub merge {
     my ($self, $lane_path, $action_lock) = @_;
-    
+
     my $glf_fofn = $self->{fsu}->catfile($lane_path, 'glf.fofn');
     unless ($self->{fsu}->file_exists($glf_fofn)) {
         my @glf_files = @{$self->realign_windows_provides($lane_path)};
@@ -664,10 +668,10 @@ sub merge {
         print $ofh join("\n", @glf_files), "\n";
         close($ofh);
     }
-    
+
     my $job_name = $self->{fsu}->catfile($lane_path, 'dindel_merge');
     $self->archive_bsub_files($lane_path, 'dindel_merge');
-    
+
     my $bam_mode_args = '';
     my @bam_files = @{$self->{bam_files}};
     if (@bam_files > 1) {
@@ -676,30 +680,30 @@ sub merge {
     else {
         $bam_mode_args = "--bamFile @bam_files --type $self->{type}";
     }
-    
+
     my $running_out = $self->{fsu}->catfile($lane_path, 'calls.vcf.running');
-    
+
     LSF::run($action_lock, $lane_path, $job_name, $self,
              qq{python $self->{dindel_scripts}/mergeOutput.py $bam_mode_args --inputFiles $glf_fofn --outputFile $running_out --ref $self->{ref}});
-    
+
     return $self->{No};
 }
 
 sub is_finished {
     my ($self, $lane_path, $action) = @_;
-    
+
     my $action_name = $action->{name};
-    
+
     if ($action_name eq 'make_windows') {
         $self->_check_all_windows_files($lane_path);
     }
     if ($action_name eq 'merge') {
         my $vcf = $self->{fsu}->catfile($lane_path, 'calls.vcf');
         my $running = $vcf.'.running';
-        
+
         if (! $self->{fsu}->file_exists($vcf) && -s $running) {
             my $lock_file = $self->{fsu}->catfile($lane_path, $self->{prefix}.'merge.jids');
-            
+
             #*** checking is_running didn't work for some reason...
             #my $is_running = LSF::is_job_running($lock_file);
             #if ($is_running & $LSF::Error) {
@@ -713,7 +717,7 @@ sub is_finished {
             #}
         }
     }
-    
+
     return $self->SUPER::is_finished($lane_path, $action);
 }
 
@@ -725,7 +729,7 @@ sub running_status {
     if ($jids_file =~ /call/) {
         return $LSF::No;
     }
-    
+
     return $self->SUPER::running_status($jids_file);
 }
 
