@@ -255,6 +255,9 @@ sub run_in_parallel
     my $prefix = $self->common_prefix($bams);
     my %names;
     my @to_be_merged;
+    my $ntasks = 0;
+    my $max_jobs = $$self{max_jobs} ? $$self{max_jobs} : 0;
+    my $done = $LSF::Done;
 
     # Step 1, call the split_chunks command.
     for my $bam (@$bams)
@@ -302,17 +305,31 @@ sub run_in_parallel
 
             my $jids_file = "$work_dir/$outdir/_$chunk_name.jid";
             my $status = LSF::is_job_running($jids_file);
-            if ( $status&$LSF::Running ) { next; }
-            if ( $status&$LSF::Error ) { $self->warn("Some jobs failed: $jids_file\n"); }
+
+            $ntasks++;
+            if ( $max_jobs && $ntasks>$max_jobs )
+            {
+                $done |= $LSF::Running;
+                $self->debug("The limit reached, $max_jobs jobs are running.\n");
+                last;
+            }
+
+            if ( $status&$LSF::Running ) { $done |= $LSF::Running; next; }
+            if ( $status&$LSF::Error ) 
+            { 
+                $done |= $LSF::Error;
+                $self->warn("The command failed: $work_dir/$outdir .. perl -w $$self{prefix}$chunk_name.pl\n");
+            }
 
             # Now get the splitting command
             my $cmd = &{$$opts{split_chunks}}($self,$bam,$chunk_name,$chunk);
 
-            open(my $fh,'>',"$work_dir/$outdir/_$chunk_name.pl") or $self->throw("$work_dir/$outdir/_$chunk_name.pl: $!");
+            open(my $fh,'>',"$work_dir/$outdir/$$self{prefix}$chunk_name.pl") or $self->throw("$work_dir/$outdir/$$self{prefix}$chunk_name.pl: $!");
             print $fh $cmd;
             close($fh);
-            LSF::run($jids_file,"$work_dir/$outdir","_$chunk_name",$$opts{bsub_opts},qq[perl -w _$chunk_name.pl]);
-            $self->debug("Submitting $work_dir/$outdir .. _$chunk_name\n");
+            LSF::run($jids_file,"$work_dir/$outdir","$$self{prefix}$chunk_name",$$opts{bsub_opts},qq[perl -w $$self{prefix}$chunk_name.pl]);
+            $self->debug("Submitting $work_dir/$outdir .. perl -w $$self{prefix}$chunk_name.pl\n");
+            $done |= $LSF::Running;
         }
 
         # Some of the chunks is not ready
@@ -321,18 +338,26 @@ sub run_in_parallel
         # Now merge the chunks for one bam file into one VCF file.
         my $jids_file = "$work_dir/$outdir/_$name.jid";
         my $status = LSF::is_job_running($jids_file);
-        if ( $status&$LSF::Running ) { next; }
-        if ( $status&$LSF::Error ) { $self->warn("Some jobs failed: $jids_file\n"); }
+        if ( $status&$LSF::Running ) { $done |= $LSF::Running; next; }
+        if ( $status&$LSF::Error ) 
+        { 
+            $done |= $LSF::Error;
+            $self->warn("The command failed: $work_dir/$outdir .. perl -w $$self{prefix}$name.pl\n");
+        }
 
         # Get the merging command
         my $cmd = &{$$opts{merge_chunks}}($self,$chunks,$name);
 
-        open(my $fh,'>',"$work_dir/$outdir/_$name.pl") or $self->throw("$work_dir/$outdir/_$name.pl: $!");
+        open(my $fh,'>',"$work_dir/$outdir/_$name.pl") or $self->throw("$work_dir/$outdir/$$self{prefix}$name.pl: $!");
         print $fh $cmd;
         close($fh);
-        LSF::run($jids_file,"$work_dir/$outdir","_$name",$$opts{bsub_opts},qq[perl -w _$name.pl]);
-        $self->debug("Submitting $work_dir/$outdir .. _$name\n");
+        LSF::run($jids_file,"$work_dir/$outdir","$$self{prefix}$name",$$opts{bsub_opts},qq[perl -w $$self{prefix}$name.pl]);
+        $self->debug("Submitting $work_dir/$outdir .. $$self{prefix}$name\n");
     }
+
+    if ( $done&$LSF::Error ) { $self->throw("$$opts{job_type} failed for some of the files.\n"); }
+    if ( $done&$LSF::Running ) { $self->debug("Some files not finished...\n"); return $$self{No}; }
+
 
     # Some chunks still not done
     if ( !$is_finished ) { return; }
@@ -446,11 +471,15 @@ sub varfilter_merge_chunks
 {
     my ($self,$chunks,$name) = @_;
 
-    my $files;
+    my $concat  = qq[Utils::CMD("rm -f $name.pileup-tmp.gz.part");\n];
+    my $rmfiles = '';
     for my $chunk (@$chunks)
     {
         my $chunk_name = $name.'_'.$chunk;
-        $files .= " $chunk_name.pileup.gz";
+
+        # There are too many files, the argument list is often too long for the shell to accept
+        $concat  .= qq[Utils::CMD("zcat $chunk_name.pileup.gz | gzip -c >> $name.pileup-tmp.gz.part");\n];
+        $rmfiles .= qq[Utils::CMD("rm -f $chunk_name.pileup.gz");\n];
     }
 
     return qq[
@@ -460,9 +489,11 @@ use Utils;
 
 if ( ! -e "$name.pileup.gz" )
 {
-    Utils::CMD("zcat $files | sort -k1,1 -k2,2n | gzip -c > $name.pileup.gz.part");
+    $concat
+    Utils::CMD("zcat $name.pileup-tmp.gz.part | sort -k1,1 -k2,2n | gzip -c > $name.pileup.gz.part");
     rename("$name.pileup.gz.part","$name.pileup.gz") or Utils::error("rename $name.pileup.gz.part $name.pileup.gz: \$!");
-    Utils::CMD("rm -f $files");
+    $rmfiles
+    Utils::CMD("rm -f $name.pileup-tmp.gz.part");
 }
 if ( ! -e "$name.vcf.gz" )
 {
@@ -797,18 +828,26 @@ sub glue_vcf_chunks
 {
     my ($self,$vcfs,$name) = @_;
 
-    my $args = join(' ',@$vcfs);
-
     my $out = qq[
 use strict;
 use warnings;
 use Utils;
+];
+
+    $out .= qq[Utils::CMD("rm -f $name.vcf-tmp.gz.part");\n];
+    for my $vcf (@$vcfs)
+    {
+        # There are too many files, the argument list is often too long for the shell to accept
+        $out .= qq[Utils::CMD("zcat $vcf | gzip -c >> $name.vcf-tmp.gz.part");\n];
+    }
+
+    $out .= qq[
 # Take the VCF header from one file and sort the rest
-Utils::CMD(qq[(zcat $$vcfs[0] | grep ^#; zcat $args | grep -v ^# | $$self{sort_cmd} -k1,1 -k2,2n) | $$self{vcf_rmdup} | bgzip -c > $name.vcf.gz.part]);
+Utils::CMD(qq[(zcat $$vcfs[0] | grep ^#; zcat $name.vcf-tmp.gz.part | grep -v ^# | $$self{sort_cmd} -k1,1 -k2,2n) | $$self{vcf_rmdup} | bgzip -c > $name.vcf.gz.part]);
 Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
 rename('$name.vcf.gz.part','$name.vcf.gz') or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
 Utils::CMD(qq[tabix -p vcf $name.vcf.gz]);
-
+unlink('$name.vcf-tmp.gz.part');
 ];
 
     for my $file (@$vcfs)
