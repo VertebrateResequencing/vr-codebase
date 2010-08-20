@@ -244,7 +244,7 @@ sub next_result {
             # a sample column; we should already have seen the FORMAT column
             my %data;
             my @data = split(':', $value);
-            @data == @format_field_names || $self->throw("number of fields for sample $col_name did not match the format specification ([@format_field_names] vs [@data])");
+            @data <= @format_field_names || $self->throw("number of fields for sample $col_name did not match the format specification ([@format_field_names] vs [@data])");
             foreach my $i (0..$#format_field_names) {
                 $data{$format_field_names[$i]} = $data[$i];
             }
