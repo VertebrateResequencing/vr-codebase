@@ -379,7 +379,7 @@ sub move {
         File::Copy::move($tmp_dest, $dest) || $self->throw("Failed to rename successfully moved source '$tmp_dest' to '$dest'");
     }
     
-    unless ($self->directory_structure_same($source, $dest, consider_files => 1)) {
+    if (-d $source && ! $self->directory_structure_same($source, $dest, consider_files => 1)) {
         $self->throw("I thought I moved $source to $dest, but the contents aren't the same!");
     }
     
