@@ -180,7 +180,7 @@ sub aln {
         while ($pars->next_result()) {
             $seqs++;
         }
-        $seqs > 0 || $self->throw("failed to find the number of sequences in the fastq file '$fastq'");
+        $seqs > 0 || $self->warn("failed to find the number of sequences in the fastq file '$fastq'");
         
         open(my $efh, $error_file) || $self->throw("Could not open error file '$error_file'");
         my $max_processed = 0;
@@ -193,7 +193,7 @@ sub aln {
             }
         }
         
-        unless ($max_processed == $seqs) {
+        unless ($seqs > 0 && $max_processed == $seqs) {
             $self->warn("For creation of sai file '$out_sai' $max_processed sequences were processed, but there were $seqs sequences in the fastq file; unlinking the sai file");
             unlink($out_sai);
         }
