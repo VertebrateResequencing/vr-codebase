@@ -1256,7 +1256,11 @@
  # on shared Requirements objects, creates [PersistentArray, Requirements] for
  # each group, and uses those to do a Scheduler->submit for each group. If a
  # group consists of only 1 Submission, then it won't bother with the creating
- # a PersistentArray step.
+ # a PersistentArray step. Suppling ->submit($percent) makes it consider only
+ # that percentage of incomplete Submissions. This would be useful in a script
+ # that would be run by, say, 4 team members: the script would say ->submit(25),
+ # and the workload would be shared amongst the members, helpful when dealing
+ # with fair-share systems in schedulers.
  
  # expunge all the PersistentArray objects that submit() has made in the past,
  # but are now defunct (they reference Submissions that have all finished OK):
