@@ -1,10 +1,10 @@
-
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use DateTime;
 
 BEGIN {
-    use Test::Most tests => 396;
+    use Test::Most tests => 594;
 
     use_ok('VRTrack::VRTrack');
     use_ok('VRTrack::Request');
@@ -21,14 +21,18 @@ my $connection_details = { database => 'vrtrack_test',
 # drop, create and then populate our testing database with the VRTrack schema
 # *** need a better way of doing this...
 ok my @schema = VRTrack::VRTrack->schema(), 'schema() returned something';
-open(my $mysqlfh, "| mysql -h$connection_details->{host} -u$connection_details->{user} -p$connection_details->{password}") || die "could not connect to database for testing\n";
-print $mysqlfh "drop database if exists $connection_details->{database};\n";
-print $mysqlfh "create database $connection_details->{database};\n";
-print $mysqlfh "use $connection_details->{database};\n";
-foreach my $sql (@schema) {
-    print $mysqlfh $sql;
+new_test_db();
+
+sub new_test_db {
+    open(my $mysqlfh, "| mysql -h$connection_details->{host} -u$connection_details->{user} -p$connection_details->{password}") || die "could not connect to database for testing\n";
+    print $mysqlfh "drop database if exists $connection_details->{database};\n";
+    print $mysqlfh "create database $connection_details->{database};\n";
+    print $mysqlfh "use $connection_details->{database};\n";
+    foreach my $sql (@schema) {
+        print $mysqlfh $sql;
+    }
+    close($mysqlfh);
 }
-close($mysqlfh);
 
 # access the db as normal with new()
 ok my $vrtrack = VRTrack::VRTrack->new($connection_details), 'new() returned something';
@@ -530,5 +534,105 @@ ok $vrproj->is_latest(1), 'can set is_latest on non-latest object';
 ok $vrproj->update(), 'can update after resetting latest';
 $vrproj = VRTrack::Project->new($vrtrack, $proj_id,'latest');
 ok $vrproj, 'can retrieve latest version of object after resetting latest';
+
+# let's do a more in-depth overall test of history, to see if we can pull back
+# a whole hierarchy as it was before adding new stuff to the hierarchy:
+{
+    undef($vrtrack);
+    $hist->time_travel('latest');
+    new_test_db();
+    $vrtrack = VRTrack::VRTrack->new($connection_details);
+    
+    # setup the state we want to test being able to get back to:
+    my %hierarchy;
+    build_hierarchy($vrtrack, 2, \%hierarchy);
+    
+    sub build_hierarchy {
+        my ($vrtrack, $objs_per_level, $hash) = @_;
+        foreach my $p (1..$objs_per_level) {
+            my $p_name = "p$p";
+            my $project = $vrtrack->get_project_by_name($p_name) || $vrtrack->add_project($p_name);
+            
+            foreach my $s (1..$objs_per_level) {
+                my $s_name = "$p_name.s$s";
+                my $sample = $project->get_sample_by_name($s_name) || $project->add_sample($s_name);
+                
+                foreach my $l (1..$objs_per_level) {
+                    my $l_name = "$s_name.l$l";
+                    my $library = $sample->get_library_by_name($l_name) || $sample->add_library($l_name);
+                    
+                    foreach my $lane (1..$objs_per_level) {
+                        my $lane_name = "$l_name.$lane";
+                        $library->get_lane_by_name($lane_name) || $library->add_lane($lane_name);
+                        $hash->{$p_name}->{$s_name}->{$l_name}->{$lane_name} = 1;
+                    }
+                }
+            }
+        }
+    }
+    
+    is check_hierarchy($vrtrack, \%hierarchy), 30, 'initial state for time_travel test ok';
+    
+    sub check_hierarchy {
+        my ($vrtrack, $expected) = @_;
+        my $count = 0;
+        foreach my $project (@{$vrtrack->projects}) {
+            $count++;
+            foreach my $sample (@{$project->samples}) {
+                $count++;
+                foreach my $library (@{$sample->libraries}) {
+                    $count++;
+                    foreach my $lane (@{$library->lanes}) {
+                        $count++;
+                        ok exists $expected->{$project->name}->{$sample->name}->{$library->name}->{$lane->name}, '  lane '.$lane->name.' in the hierarchy was expected';
+                    }
+                }
+            }
+        }
+        return $count;
+    }
+    
+    # change the state by adding new projects, samples, libraries and lanes, and
+    # also doing a library swap, where all the lanes of one library move to a
+    # new library:
+    sleep(2);
+    my $datestamp = datestamp();
+    sleep(2);
+    my %new_hierarchy;
+    build_hierarchy($vrtrack, 3, \%new_hierarchy);
+    my $swap_lib = VRTrack::Library->new_by_name($vrtrack, 'p2.s2.l2');
+    my $old_lib = VRTrack::Library->new_by_name($vrtrack, 'p1.s1.l1');
+    foreach my $lane (@{$old_lib->lanes}) {
+        $lane->library_id($swap_lib->id);
+        $lane->update;
+        $new_hierarchy{'p2'}->{'p2.s2'}->{'p2.s2.l2'}->{$lane->name} = 1;
+        delete $new_hierarchy{'p1'}->{'p1.s1'}->{'p1.s1.l1'}->{$lane->name};
+    }
+    is check_hierarchy($vrtrack, \%new_hierarchy), 120, 'post state for time_travel test ok';
+    
+    # can we get back?
+    undef $vrtrack;
+    $hist->time_travel($datestamp);
+    $vrtrack = VRTrack::VRTrack->new($connection_details);
+    is check_hierarchy($vrtrack, \%hierarchy), 30, 'time travelling returned us to the initial state';
+    
+    # and following one more unrelated change, can we get back to the mid-state?
+    sleep(2);
+    $datestamp = datestamp();
+    sleep(2);
+    $hist->time_travel('latest');
+    VRTrack::Sample->create($vrtrack, 'p3.s4', 3);
+    undef $vrtrack;
+    $hist->time_travel($datestamp);
+    $vrtrack = VRTrack::VRTrack->new($connection_details);
+    is check_hierarchy($vrtrack, \%new_hierarchy), 120, 'time travelling returned us to the middle state';
+
+    
+    sub datestamp {
+        my $tz = DateTime::TimeZone->new(name => 'local');
+        my $dt = DateTime->now(time_zone => $tz);
+        return $dt->year.'-'.sprintf("%02d", $dt->month).'-'.sprintf("%02d", $dt->day).' '.sprintf("%02d", $dt->hour).':'.sprintf("%02d", $dt->minute).':'.sprintf("%02d", $dt->second);
+    }
+}
 
 exit;

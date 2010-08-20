@@ -85,7 +85,8 @@ sub new_by_name_project {
     confess "Need to call with a vrtrack handle, name, project_id" unless ($vrtrack && $name && $project_id);
     if ( $vrtrack->isa('DBI::db') ) { confess "The interface has changed, expected vrtrack reference.\n"; }
     my $dbh = $vrtrack->{_dbh};
-    my $sql = qq[select sample_id from sample where name = ? and project_id = ? and latest = true];
+    my $history_sql = $class->_history_sql;
+    my $sql = qq[select sample_id from sample where name = ? and project_id = ? $history_sql];
     my $sth = $dbh->prepare($sql);
     
     my $id;

@@ -191,7 +191,8 @@ sub project_ids {
     my ($self) = @_;
 
     unless ($self->{'project_ids'}){
-        my $sql = qq[select project_id from project where latest=true];
+        my $history_sql = VRTrack::Core_obj->_history_sql;
+        my $sql = qq[select distinct(project_id) from project where 1=1 $history_sql];
         my @projects;
         my $sth = $self->{_dbh}->prepare($sql);
 
@@ -203,7 +204,6 @@ sub project_ids {
         else{
             die(sprintf('Cannot retrieve projects: %s', $DBI::errstr));
         }
-
         $self->{'project_ids'} = \@projects;
     }
 

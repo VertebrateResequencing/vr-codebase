@@ -392,11 +392,17 @@ sub _get_child_objects {
     my $table = $child_class->_class_to_table;
     my $children_storage_key = $table.'s';
     my $ids_method = $table.'_ids';
+    my $childs_parent_id_method = $self->_class_to_table.'_id';
     
     unless ($self->{$children_storage_key}){
         my @objs;
         foreach my $id (@{$self->$ids_method()}){
             my $obj = $child_class->new($self->{vrtrack}, $id);
+            
+            # if we're time travelling, we need to check if this was really our
+            # child at that moment in the past
+            next if $obj->$childs_parent_id_method != $self->id;
+            
             push @objs, $obj;
         }
         $self->{$children_storage_key} = \@objs;
@@ -427,7 +433,7 @@ sub _get_child_ids {
     unless ($self->{$children_ids_storage_key}) {
 	my $history_sql = '';
 	if ($child_class->isa('VRTrack::Core_obj')) {
-	    $history_sql = ' and latest=true';
+	    $history_sql = $child_class->_history_sql;
 	}
 	
         my $sql = qq[select distinct($child_table_column) from $table where $child_parent_id_column=?$history_sql];
@@ -443,6 +449,7 @@ sub _get_child_ids {
             confess(sprintf('Cannot retrieve child instances: %s', $DBI::errstr));
         }
 	
+        
         $self->{$children_ids_storage_key} = \@objs;
     }
     
@@ -475,7 +482,7 @@ sub _add_child_object {
     
     if ($existing_method) {
 	@child_identifiers > 0 || confess "Must call with a child identifier";
-	
+        
 	my $obj = $child_class->$existing_method($self->{vrtrack}, @child_identifiers);
 	if ($obj) {
 	    cluck "$child_class (@child_identifiers) is already present in the database\n";
