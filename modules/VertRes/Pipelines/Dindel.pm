@@ -606,12 +606,17 @@ sub realign_windows {
                 (undef, $last_index) = split;
             }
             close($rfh);
-
-            if ($last_index == $expected_index) {
+            
+            if ("$last_index" ne "index" && $last_index == $expected_index) {
                 move($running_file, $glf) || $self->throw("failed to move $running_file to $glf");
             }
             else {
-                $self->warn("Made a glf file $glf, but it ended on window file index $last_index instead of $expected_index; moving it to .bad");
+                if ("$last_index" eq "index") {
+                    $self->warn("Made a glf file $glf, but it is just the header instead of $expected_index records; moving it to .bad");
+                }
+                else {
+                    $self->warn("Made a glf file $glf, but it ended on window file index $last_index instead of $expected_index; moving it to .bad");
+                }
                 move($running_file, "$running_file.bad");
             }
 
