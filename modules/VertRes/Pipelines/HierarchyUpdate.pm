@@ -240,10 +240,10 @@ sub fix_swaps {
         chdir(File::Spec->tmpdir) if $cwd eq $lane_path;
         
         # since deleting a whole lane dir is dangerous, double-check that
-        # lane_path is empty except for _job_status, and that old_path contains
-        # some fastqs at least
+        # lane_path is empty except for _job_status and Pipeline.lock, and that
+        # old_path contains some fastqs at least
         opendir(my $df, $lane_path) || $self->throw("Could not open dir $lane_path");
-        my @new_files = grep { !/^[\._]/ } readdir($df);
+        my @new_files = grep { !/^[\._]/ && !/^Pipeline.lock/ } readdir($df);
         if (@new_files) {
             $self->throw("Suspicious, the newly created $lane_path contains files (@new_files) and we expected it to be empty!");
         }
