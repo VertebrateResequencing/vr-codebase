@@ -394,6 +394,12 @@ sub update {
             $self->row_id($row_id);
             $success = 1;
         }
+        
+        # reinitialize so that changed() will return the correct value. Could
+        # probably shortcut and only grab the changed value, but calling
+        # _initialize is safer, incase some subclass needs to do something
+        # strange in its _initialize. _initialize also unsets dirty flag.
+        $self->_initialize($self->id);
     }
     
     return $success;

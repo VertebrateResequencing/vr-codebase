@@ -146,14 +146,20 @@ sub was_processed {
     my ($self, $core_obj, $flag) = @_;
     confess "A Core_obj that supports is_processed() is required" unless $core_obj && $core_obj->can('is_processed');
     
+    # we want the changed time of the oldest row in the most recent uninterupted
+    # block of rows that match our processed flag
     my @objs = reverse($self->historical_objects($core_obj));
     my $changed = 'latest';
+    my $block_started = 0;
     foreach my $obj (@objs) {
 	my $processed = $obj->is_processed($flag);
 	if ($processed) {
+            $block_started = 1;
 	    $changed = $obj->changed;
-	    last;
 	}
+        elsif ($block_started) {
+            last;
+        }
     }
     
     return $changed;

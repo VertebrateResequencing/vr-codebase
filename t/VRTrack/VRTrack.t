@@ -4,7 +4,7 @@ use warnings;
 use DateTime;
 
 BEGIN {
-    use Test::Most tests => 594;
+    use Test::Most tests => 600;
 
     use_ok('VRTrack::VRTrack');
     use_ok('VRTrack::Request');
@@ -602,13 +602,28 @@ ok $vrproj, 'can retrieve latest version of object after resetting latest';
     build_hierarchy($vrtrack, 3, \%new_hierarchy);
     my $swap_lib = VRTrack::Library->new_by_name($vrtrack, 'p2.s2.l2');
     my $old_lib = VRTrack::Library->new_by_name($vrtrack, 'p1.s1.l1');
+    my %lane_stamps;
     foreach my $lane (@{$old_lib->lanes}) {
+        # while we're here, we'll test that update() results in changed()
+        # changing
+        my $orig_changed = $lane->changed;
         $lane->library_id($swap_lib->id);
+        $lane->is_processed('swapped', 1);
         $lane->update;
+        my $new_changed = $lane->changed;
+        $lane_stamps{$lane->id} = $new_changed;
+        isnt $orig_changed, $new_changed, 'an update() causes changed() to change';
         $new_hierarchy{'p2'}->{'p2.s2'}->{'p2.s2.l2'}->{$lane->name} = 1;
         delete $new_hierarchy{'p1'}->{'p1.s1'}->{'p1.s1.l1'}->{$lane->name};
     }
     is check_hierarchy($vrtrack, \%new_hierarchy), 120, 'post state for time_travel test ok';
+    
+    # and do an extra update so we can later test was_processed works correctly:
+    sleep(2);
+    foreach my $lane (@{$old_lib->lanes}) {
+        $lane->storage_path('/tmp');
+        $lane->update;
+    }
     
     # can we get back?
     undef $vrtrack;
@@ -616,11 +631,16 @@ ok $vrproj, 'can retrieve latest version of object after resetting latest';
     $vrtrack = VRTrack::VRTrack->new($connection_details);
     is check_hierarchy($vrtrack, \%hierarchy), 30, 'time travelling returned us to the initial state';
     
+    # test was_processed
+    $hist->time_travel('latest');
+    foreach my $lane (@{$old_lib->lanes}) {
+        is $hist->was_processed($lane, 'swapped'), $lane_stamps{$lane->id};
+    }
+    
     # and following one more unrelated change, can we get back to the mid-state?
     sleep(2);
     $datestamp = datestamp();
     sleep(2);
-    $hist->time_travel('latest');
     VRTrack::Sample->create($vrtrack, 'p3.s4', 3);
     undef $vrtrack;
     $hist->time_travel($datestamp);
