@@ -50,8 +50,8 @@ sub new {
     # changed feb 3rd 2010
     # my $dbh = DBI->connect("DBI:mysql:host=psdp:port=3306;database=warehouse_production", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
     # changed Mar 31 2010
-#    my $dbh = DBI->connect("DBI:mysql:host=mcs7:port=3306;database=warehouse_production", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
-    my $dbh = DBI->connect("DBI:mysql:host=mcs6:port=3321;database=warehouse_staging", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
+    my $dbh = DBI->connect("DBI:mysql:host=mcs7:port=3306;database=warehouse_production", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
+#    my $dbh = DBI->connect("DBI:mysql:host=mcs6:port=3321;database=warehouse_staging", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
     $self->{_dbh} = $dbh;
 
     return $self;
