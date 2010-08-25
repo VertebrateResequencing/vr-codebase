@@ -541,6 +541,10 @@ sub import_fastqs {
         $precheck_file =~ s/\.(f(?:ast)?q)\.gz$/.precheck.$1.gz/i;
         my $fqc_file = $data_path.'.fastqcheck';
         
+        if ($precheck_file eq $data_path) {
+            $self->throw("Unexpected naming convention for '$data_path', can't cope!");
+        }
+        
         next if (-s $data_path && -s $fqc_file);
         $did_one++;
         
@@ -576,7 +580,7 @@ my \$fqc_file = '$fqc_file';
 my \$total_reads = $total_reads;
 my \$total_bases = $total_bases;
 
-unless (-s \$data_path) {
+unless (-s \$data_path && -s \$fqc_file) {
     unless (-s \$precheck_file) {
         my \$io = VertRes::IO->new;
         
