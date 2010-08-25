@@ -149,6 +149,12 @@ sub split_fastq {
 sub do_mapping {
     my ($self, %input_args) = @_;
     
+    if (defined $input_args{insert_size} && $input_args{insert_size} != 2000) {
+        # in bwa, the insert_size parameter is the maximum, not the average,
+        # so we multiply by 3
+        $input_args{insert_size} *= 3;
+    }
+    
     my @args = $self->_do_mapping_args(\%do_mapping_args, %input_args);
     
     my $error_file = delete $input_args{error_file};
@@ -182,12 +188,6 @@ sub do_mapping {
     my $aln_q = delete $input_args{aln_q};
     unless (defined $aln_q) {
         $aln_q = 15;
-    }
-    
-    if (defined $input_args{insert_size} && $input_args{insert_size} != 2000) {
-        # in bwa, the insert_size parameter is the maximum, not the average,
-        # so we multiply by 2
-        $input_args{insert_size} *= 2;
     }
     
     my $wrapper = $self->wrapper;
