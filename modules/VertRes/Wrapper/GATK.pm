@@ -188,7 +188,7 @@ sub count_covariates {
     #   -cov CycleCovariate \
     #   -cov DinucCovariate \
     #   -recalFile my_reads.recal_data.csv
-
+    
     $self->switches([qw(quiet_output_mode useOriginalQualities)]);
     $self->params([qw(R DBSNP l T max_reads_at_locus default_platform)]);
     
@@ -719,6 +719,9 @@ sub variant_filtration {
     #  -B mask,Bed,indels.mask.bed \
     #  --maskName InDel \
     #  --clusterWindowSize 10
+    #  --filterExpression "MQ0 >= 4 && (MQ0 / (1.0 * DP)) > 0.1" \
+    #  --filterName "HARD_TO_VALIDATE"
+
     
     $self->switches([qw(quiet_output_mode)]);
     $self->params([qw(R DBSNP T clusterSize clusterWindowSize maskName)]);
@@ -770,7 +773,7 @@ sub generate_variant_clusters {
     #   -l INFO \
     #   -mG 6 \  [--maxGaussians]
     #   -mI 10 \ [--maxIterations]
-    #   -an HaplotypeScore -an SB -an QD \
+    #   -an HaplotypeScore -an SB -an QD -an HRun \
     #   -clusterFile output.cluster \
     #   -resources R/ \
     #   -T GenerateVariantClusters
@@ -826,9 +829,12 @@ sub variant_recalibrator {
     #   --DBSNP resources/dbsnp_129_hg18.rod \
     #   -l INFO \
     #   -clusterFile output.cluster \
-    #   -output optimizer_output \
-    #   --target_titv 2.1 \
+    #   -o optimizer_output \
+    #   -tranchesFile path/to/output.dat.tranches \
+    #   -reportDatFile path/to/output.dat \
+    #   --target_titv 2.07 \
     #   -resources R/ \
+    #   --ignore_filter HARD_TO_VALIDATE \
     #   -T VariantRecalibrator
     
     $self->switches([qw(quiet_output_mode ignore_all_input_filters)]);
@@ -838,11 +844,11 @@ sub variant_recalibrator {
     
     my $bs = $self->get_b();
     $out_vcf =~ s/\.vcf//; # it adds .vcf
-    my @file_args = (" $bs -clusterFile $in_cluster -output $out_vcf",
+    my @file_args = (" $bs -clusterFile $in_cluster -reportDatFile $out_vcf.dat -tranchesFile $out_vcf.dat.tranches -o $out_vcf",
                      '-resources '.File::Spec->catdir($ENV{GATK}, 'resources'),
                      '-Rscript Rscript');
     
-    my %params = (target_titv => 2.1, ignore_filter => 'HARD_TO_VALIDATE', l => 'INFO', @params);
+    my %params = (target_titv => 2.07, ignore_filter => 'HARD_TO_VALIDATE', l => 'INFO', @params);
     $params{T} = 'VariantRecalibrator';
     $self->_handle_common_params(\%params);
     
@@ -877,18 +883,18 @@ sub apply_variant_cuts {
     #   -B input,VCF,recalibrator_output.vcf \
     #   --DBSNP resources/dbsnp_129_b36.rod \
     #   -l INFO \
-    #   --fdr_filter_level 12.5 \
-    #   --tranchesFile output.cluster.dat.tranches \
-    #   -outputVCF recalibrator_output.filtered.vcf \
+    #   --fdr_filter_level 10.0 \
+    #   -tranchesFile output.cluster.dat.tranches \
+    #   -o recalibrator_output.filtered.vcf \
     #   -T ApplyVariantCuts
     
     $self->switches([qw(quiet_output_mode)]);
     $self->params([qw(R DBSNP T l)]);
     
     my $bs = $self->get_b();
-    my @file_args = (" $bs --tranchesFile $in_cluster -outputVCF $out_vcf");
+    my @file_args = (" $bs -tranchesFile $in_cluster -o $out_vcf");
     
-    my %params = (fdr_filter_level => 12.5, l => 'INFO', @params);
+    my %params = (fdr_filter_level => 10.0, l => 'INFO', @params);
     $params{T} = 'ApplyVariantCuts';
     $self->_handle_common_params(\%params);
     
