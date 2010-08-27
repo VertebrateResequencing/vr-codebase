@@ -775,7 +775,6 @@ sub generate_variant_clusters {
     #   -mI 10 \ [--maxIterations]
     #   -an HaplotypeScore -an SB -an QD -an HRun \
     #   -clusterFile output.cluster \
-    #   -resources R/ \
     #   -T GenerateVariantClusters
     
     $self->switches([qw(quiet_output_mode ignore_all_input_filters)]);
@@ -785,9 +784,7 @@ sub generate_variant_clusters {
     
     my $bs = $self->get_b();
     my $ans = $self->get_annotations();
-    my @file_args = (" $bs $ans -clusterFile $out_cluster",
-                     '-resources '.File::Spec->catdir($ENV{GATK}, 'resources').'/',
-                     '-Rscript Rscript');
+    my @file_args = (" $bs $ans -clusterFile $out_cluster");
     
     my %params = (l => 'INFO', @params);
     $params{T} = 'GenerateVariantClusters';
@@ -843,7 +840,6 @@ sub variant_recalibrator {
                       quality_scale_factor)]);
     
     my $bs = $self->get_b();
-    $out_vcf =~ s/\.vcf//; # it adds .vcf
     my @file_args = (" $bs -clusterFile $in_cluster -reportDatFile $out_vcf.dat -tranchesFile $out_vcf.dat.tranches -o $out_vcf",
                      '-resources '.File::Spec->catdir($ENV{GATK}, 'resources'),
                      '-Rscript Rscript');
