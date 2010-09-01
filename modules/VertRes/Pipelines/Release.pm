@@ -406,6 +406,17 @@ sub lib_markdup {
         push(@markdup_bams, $markdup_bam);
         next if -s $markdup_bam;
         
+        # if a higher-level bam already exists, don't repeat making this level
+        # bam if we deleted it
+        my @dirs = File::Spec->splitdir($path);
+        pop(@dirs);
+        pop(@dirs);
+        my $higher_bam = File::Spec->catfile(@dirs, 'raw.bam');
+        if ($self->{fsu}->file_exists($higher_bam) && ! -l $higher_bam) {
+            next;
+        }
+        next unless -s $merge_bam;
+        
         my $single_ended = $basename =~ /^se_/ ? 1 : 0;
         
         my $job_name = $self->{prefix}.'lib_markdup';
@@ -685,11 +696,21 @@ sub merge_up_one_level {
         $markdup_bam =~ s/\.bam$/.markdup.bam/;
         next if -s $markdup_bam;
         
+        # if a higher-level bam already exists, don't repeat making this level
+        # bam if we deleted it
+        my (undef, $path) = fileparse($out_bam);
+        my @dirs = File::Spec->splitdir($path);
+        pop(@dirs);
+        pop(@dirs);
+        my $higher_bam = File::Spec->catfile(@dirs, 'raw.bam');
+        if ($self->{fsu}->file_exists($higher_bam) && ! -l $higher_bam) {
+            next;
+        }
+        
         # don't do more than desired merges at once, or we'll kill IO and jobs
         # will fail
         next if $jobs >= $self->{simultaneous_merges};
 	
-        my (undef, $path) = fileparse($out_bam);
         my $this_job_name = $self->{prefix}.$job_name;
         my $pathed_job_name = $self->{fsu}->catfile($path, $this_job_name);
         my $lock_file = $pathed_job_name.'.jids';
