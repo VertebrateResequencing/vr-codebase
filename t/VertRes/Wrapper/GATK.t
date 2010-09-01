@@ -68,7 +68,7 @@ $gatk->set_covs('CycleCovariate', 'PositionCovariate');
 is $gatk->get_covs, '-cov CycleCovariate -cov PositionCovariate ', 'correct -cov args set after calling set_covs';
 is $gatk->get_b, '', 'no vcfs by default';
 $gatk->set_b('1,VCF,1.vcf', '2,VCF,2.vcf');
-is $gatk->get_b, '-B 1,VCF,1.vcf -B 2,VCF,2.vcf ', 'correct -B args set after calling set_vcfs';
+is $gatk->get_b, '-B:1,VCF 1.vcf -B:2,VCF 2.vcf ', 'correct -B args set after calling set_vcfs';
 is $gatk->get_filters, '', 'filters are empty be default';
 $gatk->set_filters(filters => { StandardFilters => "MQ0 > 40 || SB > -0.10",
                                 HARD_TO_VALIDATE => "(MQ0 / (1.0 * DP)) > 0.1" });

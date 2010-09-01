@@ -55,7 +55,7 @@ use VertRes::Wrapper::samtools;
 our $DEFAULT_GATK_JAR = File::Spec->catfile($ENV{GATK}, 'GenomeAnalysisTK.jar');
 our $DEFAULT_LOGLEVEL = 'ERROR';
 our $DEFAULT_PLATFORM = 'ILLUMINA';
-our $DEFAULT_MAX_READS = 5000;
+our $DEFAULT_RG = 'RG';
 
 =head2 new
 
@@ -83,8 +83,8 @@ our $DEFAULT_MAX_READS = 5000;
                                 l option; default 'ERROR')
            default_platform => ILLUMINA (when not set in the RG header, this
                                          platform will be used)
-           max_reads_at_locus => int (prevent running out of memory when there
-                                      are lots of reads piled up)
+           default_readgroup => string (when not set in the bam records, this
+                                        readgroup will be used)
 
 =cut
 
@@ -95,7 +95,14 @@ sub new {
     
     my $java_mem = delete $self->{java_memory} || 2800;
     my $xss = 280; # int($java_mem / 10);
-    $self->exe("java -Xmx${java_mem}m -Xms${java_mem}m -Xss${xss}m -server -XX:+UseParallelGC -XX:ParallelGCThreads=2 -jar ".$self->exe);
+    if ($java_mem > 1000) {
+        $xss = "-Xss${xss}m";
+    }
+    else {
+        # login node with small memory limit doesn't like Xss option at all
+        $xss = '';
+    }
+    $self->exe("java -Xmx${java_mem}m -Xms${java_mem}m $xss -server -XX:+UseParallelGC -XX:ParallelGCThreads=2 -jar ".$self->exe);
     
     # our bsub jobs will get killed if we don't select high-mem machines
     $self->bsub_options(M => ($java_mem * 1000), R => "'select[mem>$java_mem] rusage[mem=$java_mem]'");
@@ -130,7 +137,7 @@ sub new {
     $self->set_b(@{delete $self->{bs} || $default_bs || []});
     $self->{_default_loglevel} = delete $self->{log_level} || $DEFAULT_LOGLEVEL;
     $self->{_default_platform} = delete $self->{default_platform} || $DEFAULT_PLATFORM;
-    $self->{_default_max_reads_at_locus} = delete $self->{max_reads_at_locus} || $DEFAULT_MAX_READS;
+    $self->{_default_read_group} = delete $self->{default_read_group} || $DEFAULT_RG;
     
     return $self;
 }
@@ -150,8 +157,8 @@ sub _handle_common_params {
     unless (defined $params->{default_platform}) {
         $params->{default_platform} = $self->{_default_platform};
     }
-    unless (defined $params->{max_reads_at_locus}) {
-        $params->{max_reads_at_locus} = $self->{_default_max_reads_at_locus};
+    unless (defined $params->{default_read_group}) {
+        $params->{default_read_group} = $self->{_default_read_group};
     }
     unless (defined $params->{quiet_output_mode}) {
         $params->{quiet_output_mode} = $self->quiet();
@@ -190,7 +197,7 @@ sub count_covariates {
     #   -recalFile my_reads.recal_data.csv
     
     $self->switches([qw(quiet_output_mode useOriginalQualities)]);
-    $self->params([qw(R DBSNP l T max_reads_at_locus default_platform)]);
+    $self->params([qw(R DBSNP l T default_platform default_read_group)]);
     
     # used to take a fileroot, but now takes an output file
     my $recal_file = $out_csv;
@@ -344,7 +351,13 @@ sub get_b {
     
     my $args = '';
     foreach my $b (@bs) {
-        $args .= "-B $b ";
+        # -B:variant,VCF snps.raw.vcf
+        # it used to be -B variant,VCF,snps.raw.vcf, so convert latter to former
+        my @b = split(',', $b);
+        if (@b == 2) {
+            ($b[1], $b[2]) = split(' ', $b[1]);
+        }
+        $args .= "-B:$b[0],$b[1] $b[2] ";
     }
     return $args;
 }
@@ -429,7 +442,7 @@ sub table_recalibration {
     #   -recalFile my_reads.recal_data.csv
     
     $self->switches([qw(quiet_output_mode useOriginalQualities fail_with_no_eof_marker)]);
-    $self->params([qw(R l T default_platform)]);
+    $self->params([qw(R l T default_platform default_read_group)]);
     
     my @file_args = (" -I $in_bam", " -recalFile $csv", " --output_bam $out_bam");
     
@@ -562,7 +575,7 @@ sub indel_genotyper {
     my @file_args = (" -I $in_bam", " -O $out_raw_bed -o $out_detailed_bed");
     
     my %params = (verbose => 1, minIndelCount => 2, minFraction => 0.03,
-                  minConsensusFraction => 0.6, maxNumberOfReads => $self->{_default_max_reads_at_locus},
+                  minConsensusFraction => 0.6,
                   window_size => 324, @params);
     $params{T} = 'IndelGenotyperV2';
     $self->_handle_common_params(\%params);
@@ -602,7 +615,7 @@ sub unified_genotyper {
     $self->switches([qw(quiet_output_mode genotype output_all_callable_bases
                         noSLOD)]);
     $self->params([qw(R DBSNP T L confidence genotype_model base_model
-                      heterozygosity max_reads_at_locus
+                      heterozygosity
                       standard_min_confidence_threshold_for_calling
                       standard_min_confidence_threshold_for_emitting
                       trigger_min_confidence_threshold_for_calling
@@ -666,7 +679,7 @@ sub variant_annotator {
     #    -D dbsnp.rod 
 
     $self->switches([qw(quiet_output_mode useAllAnnotations)]);
-    $self->params([qw(R DBSNP T L max_reads_at_locus G group
+    $self->params([qw(R DBSNP T L G group
                       rodToIntervalTrackName)]);
     
     my $bs = $self->get_b();
@@ -1056,6 +1069,91 @@ sub variant_eval {
     
     my %params = (reportType => 'grep', @params);
     $params{T} = 'VariantEval';
+    $self->_handle_common_params(\%params);
+    
+    $self->register_output_file_to_check($out_file);
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
+}
+
+=head2 produce_beagle_input
+
+ Title   : produce_beagle_input
+ Usage   : $wrapper->set_b('variant,VCF,snps.recal.vcf');
+           $wrapper->produce_beagle_input($file_for_beagle)
+ Function: Produce beagle input based on a GATK VCF file (that may have been
+           filtered, recalibrated etc.).
+ Returns : n/a
+ Args    : output file for giving to beagle
+           Optionally, supply R option (as a hash).
+           Before calling this, you should use set_b() to set the input
+           snps.filtered.vcf as produced by variant_filtration() or similar.
+
+=cut
+
+sub produce_beagle_input {
+    my ($self, $out_file, @params) = @_;
+    
+    #java -Xmx4000m -jar dist/GenomeAnalysisTK.jar -L 20 \
+    #   -R reffile.fasta -T ProduceBeagleInput \
+    #   -B:variant,VCF path_to_input_vcf/inputvcf.vcf
+    #   -beagle path_to_beagle_output/beagle_output
+    
+    $self->switches([qw(quiet_output_mode)]);
+    $self->params([qw(R T genotypes_file inserted_nocall_rate)]);
+    
+    my $bs = $self->get_b();
+    my @file_args = (" $bs -beagle $out_file");
+    
+    my %params = (@params);
+    $params{T} = 'ProduceBeagleInput';
+    $self->_handle_common_params(\%params);
+    
+    $self->register_output_file_to_check($out_file);
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
+}
+
+=head2 beagle_output_to_vcf
+
+ Title   : beagle_output_to_vcf
+ Usage   : $wrapper->set_b('inputvcf,VCF,snps.recal.vcf',
+                           'beagleR2,BEAGLE,beagle_out.r2',
+                           'beaglePhased,BEAGLE,beagle_out.phased',
+                           'beagleProbs,BEAGLE,beagle_out.gprobs');
+           $wrapper->beagle_output_to_vcf($out_vcf)
+ Function: Update an original GATK VCF with the beagle data from a beagle run
+           on the output of produce_beagle_input() on that same VCF.
+ Returns : n/a
+ Args    : output vcf
+           Optionally, supply R option (as a hash).
+           Before calling this, you should use set_b() to set the input
+           snps.filtered.vcf as produced by variant_filtration() or similar, and
+           to provide the 3 beagle output files.
+
+=cut
+
+sub beagle_output_to_vcf {
+    my ($self, $out_file, @params) = @_;
+    
+    #java -Xmx4000m -jar dist/GenomeAnalysisTK.jar \
+    #   -R reffile.fasta -T BeagleOutputToVCF \
+    #   -B:inputvcf,VCF input_vcf.vcf \
+    #   -B:beagleR2,BEAGLE /myrun.beagle_output.r2 \
+    #   -B:beaglePhased,BEAGLE /myrun.beagle_output.phased \
+    #   -B:beagleProbs,BEAGLE /myrun.beagle_output.gprobs \ 
+    #   -o output_vcf.vcf 
+    
+    $self->switches([qw(quiet_output_mode)]);
+    $self->params([qw(R T nocall_threshold)]);
+    
+    my $bs = $self->get_b();
+    my @file_args = (" $bs -o $out_file");
+    
+    my %params = (@params);
+    $params{T} = 'BeagleOutputToVCF';
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_file);
