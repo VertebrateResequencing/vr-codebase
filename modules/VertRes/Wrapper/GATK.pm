@@ -438,13 +438,13 @@ sub table_recalibration {
     #   -R resources/Homo_sapiens_assembly18.fasta \ 
     #   -T TableRecalibration \
     #   -I my_reads.bam \
-    #   -outputBAM my_reads.recal.bam \
+    #   -out my_reads.recal.bam \
     #   -recalFile my_reads.recal_data.csv
     
     $self->switches([qw(quiet_output_mode useOriginalQualities fail_with_no_eof_marker)]);
     $self->params([qw(R l T default_platform default_read_group)]);
     
-    my @file_args = (" -I $in_bam", " -recalFile $csv", " --output_bam $out_bam");
+    my @file_args = (" -I $in_bam", " -recalFile $csv", " --out $out_bam");
     
     my %params = (fail_with_no_eof_marker => 1, @params);
     $params{T} = 'TableRecalibration';
@@ -998,6 +998,12 @@ sub combine_variants {
         my $base = basename($in);
         my $name = $base;
         $name =~ s/\.vcf.*//g;
+        if ($name =~ /qcall/i) {
+            $name = 'QCALL';
+        }
+        elsif ($name =~ /gatk/i) {
+            $name = 'UG';
+        }
         if (exists $prev_names{$name}) {
             $name .= ++$ui;
         }
@@ -1029,16 +1035,16 @@ sub combine_variants {
            $wrapper->set_samples('NAxxxx', 'NAyyyyy');
            $wrapper->set_selects('name' => 'exp');
            $wrapper->set_eval_modules('', '');
-           $wrapper->variant_eval('out.grepable');
+           $wrapper->variant_eval('out.R');
  Function: Get lots of summary stats about a vcf in comparison to another.
  Returns : n/a
  Args    : path to output file.
            Optionally, supply R or DBSNP options (as a hash), as understood by
-           GATK, along with the other options like numGaussians etc (1000
+           GATK, along with the other options like reportType etc (1000
            genomes defaults exist).
            Before calling this, you should use set_b() to set the input
-           snps.filtered.vcf as produced by variant_filtration(), and the
-           annotations to look at with set_annotations().
+           vcf as produced by variant_filtration() or similar, and the
+           selects to use with set_selects().
 
 =cut
 
@@ -1055,7 +1061,7 @@ sub variant_eval {
     #   -o out.txt
     
     $self->switches([qw(quiet_output_mode indelCalls useNoModules)]);
-    $self->params([qw(R DBSNP T family_structure
+    $self->params([qw(R DBSNP T l family_structure
                       MendelianViolationQualThreshold InterestingSitesVCF
                       minPhredConfidenceScore minPhredConfidenceScoreForComp
                       rsID maxRsIDBuild reportType reportLocation nSamples)]);
@@ -1065,9 +1071,9 @@ sub variant_eval {
     my $bs = $self->get_b();
     my $selects = $self->get_selects();
     my $samples = $self->get_samples();
-    my @file_args = (" $bs $selects -o $out_file");
+    my @file_args = (" $bs $selects -reportLocation $out_file");
     
-    my %params = (reportType => 'grep', @params);
+    my %params = (reportType => 'R', l => 'INFO', @params);
     $params{T} = 'VariantEval';
     $self->_handle_common_params(\%params);
     
@@ -1119,7 +1125,7 @@ sub produce_beagle_input {
 =head2 beagle_output_to_vcf
 
  Title   : beagle_output_to_vcf
- Usage   : $wrapper->set_b('inputvcf,VCF,snps.recal.vcf',
+ Usage   : $wrapper->set_b('variant,VCF,snps.recal.vcf',
                            'beagleR2,BEAGLE,beagle_out.r2',
                            'beaglePhased,BEAGLE,beagle_out.phased',
                            'beagleProbs,BEAGLE,beagle_out.gprobs');
@@ -1140,7 +1146,7 @@ sub beagle_output_to_vcf {
     
     #java -Xmx4000m -jar dist/GenomeAnalysisTK.jar \
     #   -R reffile.fasta -T BeagleOutputToVCF \
-    #   -B:inputvcf,VCF input_vcf.vcf \
+    #   -B:variant,VCF input_vcf.vcf \
     #   -B:beagleR2,BEAGLE /myrun.beagle_output.r2 \
     #   -B:beaglePhased,BEAGLE /myrun.beagle_output.phased \
     #   -B:beagleProbs,BEAGLE /myrun.beagle_output.gprobs \ 
@@ -1165,11 +1171,11 @@ sub beagle_output_to_vcf {
 =head2 set_selects
 
  Title   : set_selects
- Usage   : $wrapper->set_selects('select_name' => 'select_exp', ...);
+ Usage   : $wrapper->set_selects('selectName' => 'select', ...);
  Function: Set which selects to use during variant_eval().
  Returns : hash (keys are select_names, values are select_exps)
- Args    : hash with keys as select_names (setting --select_names) and values as
-           select_exps (setting --select_exps)
+ Args    : hash with keys as select_names (setting -selectName) and values as
+           selects (setting -select)
 
 =cut
 
@@ -1199,7 +1205,7 @@ sub get_selects {
     
     my $args = '';
     while (my ($name, $exp) = each %selects) {
-        $args .= " --select_exps \"$exp\" --select_names \"$name\"";
+        $args .= qq[ -select '$exp' -selectName '$name'];
     }
     
     return $args;
