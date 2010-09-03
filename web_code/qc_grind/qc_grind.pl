@@ -762,7 +762,17 @@ sub displayLane
     
     my $status = $lane->qc_status;
     my $auto_qc_status = $lane->auto_qc_status();
-    my $mapstats = $lane->latest_mapping;
+    
+    #work out which mapstats has the QC data (i.e. check for images in the mapstats)
+    my @mappings = @{ $lane->mappings() };
+    my $mapstats;
+    foreach( sort {$a->row_id() <=> $b->row_id()} @mappings )
+    {
+        my $map = $_;
+        my $im = $map->images();
+        if( @{$im} > 0 ){$mapstats = $map;}
+    }
+    
     my $npg_qc = $lane->npg_qc_status;
     my ($error_rate, $adapter_perc, $reads_mapped, $bases_mapped, $reads_paired, $rmdup_reads_mapped, $rmdup_bases_mapped, $clip_bases,$adapter_reads);
     my $cycles = $lane->read_len;
@@ -1132,7 +1142,17 @@ sub displayQCLaneList {
         
         my $status = $lane->qc_status;
         my $name = $lane->name;
-        my $mapstats = $lane->latest_mapping;
+        
+        #work out which mapstats has the QC data (i.e. check for images in the mapstats)
+        my @mappings = @{ $lane->mappings() };
+        my $mapstats;
+        foreach( sort {$a->row_id() <=> $b->row_id()} @mappings )
+        {
+            my $map = $_;
+            my $im = $map->images();
+            if( @{$im} > 0 ){$mapstats = $map;}
+        }
+        
         my $npg_qc = $lane->npg_qc_status;
         my $imglist = [];
         my ($error_rate, $adapter_perc, $reads_mapped, $bases_mapped, $reads_paired, $rmdup_reads_mapped, $rmdup_bases_mapped, $clip_bases,$adapter_reads);
