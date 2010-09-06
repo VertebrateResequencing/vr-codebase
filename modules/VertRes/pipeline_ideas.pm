@@ -1036,6 +1036,13 @@
  # VertRes::PipelineManager* stuff is supposed to handle all that. These modules
  # just define what should be done and try and do as little work themselves as
  # possible.
+ # Also, the idea is to change each VertRes::Pipelines::* module so that it does
+ # a single well defined thing (so VertRes::Pipelines::Mapping does mapping
+ # only, not recalibration), and to chain different Setups together. So you'd
+ # create a Setup where module => 'VertRes::Pipelines::Mapping' and data_source
+ # => $a_datasource_with_type_vrtrack, and then you'd create another Setup where
+ # module => 'VertRes::Pipelines::Recalibration' and it's data_source would be
+ # of type 'chain' with a source of the first Setup. 
 
 =head1 VertRes::PipelineManager::Action
 
