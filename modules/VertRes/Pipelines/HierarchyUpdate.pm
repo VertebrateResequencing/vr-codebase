@@ -538,7 +538,10 @@ sub import_fastqs {
         my $data_path = $self->{fsu}->catfile($lane_path, $fastq);
         
         my $precheck_file = $data_path;
-        $precheck_file =~ s/\.(f(?:ast)?q)\.gz$/.precheck.$1.gz/i;
+        $precheck_file =~ s/\.(f(?:ast)?q)(\.gz)?$/.precheck.$1/i;
+        if ($2) {
+            $precheck_file .= $2;
+        }
         my $fqc_file = $data_path.'.fastqcheck';
         
         if ($precheck_file eq $data_path) {
