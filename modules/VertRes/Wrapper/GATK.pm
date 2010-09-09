@@ -462,13 +462,14 @@ sub table_recalibration {
 =head2 realignment_targets
 
  Title   : realignment_targets
- Usage   : $wrapper->realignment_targets('in.bam', 'out.intervals');
+ Usage   : $wrapper->set_b('indels,VCF,indel_calls.vcf');
+           $wrapper->realignment_targets('in.bam', 'out.intervals');
  Function: Finds target intervals in a quality-recalibrated bam that could be
            realigned with indel_realigner().
  Returns : n/a
  Args    : path to input .bam file, path to output intervals.
-           Optionally, supply R or DBSNP options (as a hash), as understood by
-           GATK.
+           Optionally, supply R or DBSNP options etc (as a hash), as understood
+           by GATK. Use set_b() if you have known snps/indels.
 
 =cut
 
@@ -480,12 +481,15 @@ sub realignment_targets {
     #   -I recalibrated.bam \
     #   -R resources/Homo_sapiens_assembly18.fasta \
     #   -o forRealigner.intervals \
-    #   -D resources/dbsnp_129_hg18.rod  (-D == DBSNP ??)
+    #   -B:indels,VCF /path/to/indel_calls.vcf \
+    #   -D resources/dbsnp_129_hg18.rod
     
-    $self->switches([qw(quiet_output_mode)]);
-    $self->params([qw(R DBSNP T)]);
+    $self->switches([qw(quiet_output_mode realignReadsWithBadMates)]);
+    $self->params([qw(R DBSNP T minReadsAtLocus maxIntervalSize
+                      mismatchFraction windowSize)]);
     
-    my @file_args = (" -I $in_bam", " -o $out_intervals");
+    my $bs = $self->get_b();
+    my @file_args = (" $bs -I $in_bam", " -o $out_intervals");
     
     my %params = @params;
     $params{T} = 'RealignerTargetCreator';
@@ -500,35 +504,48 @@ sub realignment_targets {
 =head2 indel_realigner
 
  Title   : indel_realigner
- Usage   : $wrapper->indel_realigner('in.bam', 'intervals', 'out.bam');
+ Usage   : $wrapper->set_b('indels,VCF,indel_calls.vcf');
+           $wrapper->indel_realigner('in.bam', 'intervals', 'out.bam');
  Function: Does local realignment around indels in intervals as determined by
            realignment_targets(), generating a "cleaned" bam suitable for
            calling SNPs on.
  Returns : n/a
  Args    : path to input .bam file, path to output of realignment_targets(),
            path to output bam.
-           Optionally, supply R or DBSNP options (as a hash), as understood by
-           GATK.
+           Optionally, supply R or DBSNP options etc (as a hash), as understood
+           by GATK. LODThresholdForCleaning and useOnlyKnownIndels are set by
+           default. Use set_b() if you have known snps/indels.
 
 =cut
 
 sub indel_realigner {
     my ($self, $in_bam, $intervals_file, $out_bam, @params) = @_;
     
-    # java -Djava.io.tmpdir=/path/to/tmpdir -jar GenomeAnalysisTK.jar \
-    #   -I recalibrated.bam \
-    #   -R resources/Homo_sapiens_assembly18.fasta \
-    #   -T IndelRealigner \
-    #   -targetIntervals forRealigner.intervals \
-    #   --output cleaned.bam \
-    #   -D resources/dbsnp_129_hg18.rod
+    #java -Xmx4g -Djava.io.tmpdir=/path/to/tmpdir \
+    #    -jar /path/to/GenomeAnalysisTK.jar \
+    #    -I <lane-level.bam> \
+    #    -R <ref.fasta> \
+    #    -T IndelRealigner \
+    #    -targetIntervals <intervalListFromStep1Above.intervals> \
+    #    -o <realignedBam.bam> \
+    #    -B:indels,VCF /path/to/indel_calls.vcf \
+    #    -D /path/to/dbsnp.rod \
+    #    -knownsOnly \
+    #    -LOD 0.4
     
-    $self->switches([qw(quiet_output_mode)]);
-    $self->params([qw(R DBSNP T)]);
+    $self->switches([qw(quiet_output_mode useOnlyKnownIndels
+                        noOriginalAlignmentTags realignReadsWithBadMates
+                        noPGTag targetIntervalsAreNotSorted
+                        sortInCoordinateOrderEvenThoughItIsHighlyUnsafe)]);
+    $self->params([qw(R DBSNP T maxReadsForConsensuses maxConsensuses
+                      entropyThreshold bam_compression
+                      maxReadsForRealignment
+                      LODThresholdForCleaning maxReadsInRam)]);
     
-    my @file_args = (" -I $in_bam", " -targetIntervals $intervals_file", " --output $out_bam");
+    my $bs = $self->get_b();
+    my @file_args = (" $bs -I $in_bam", " -targetIntervals $intervals_file", " -o $out_bam");
     
-    my %params = @params;
+    my %params = (useOnlyKnownIndels => 1, LODThresholdForCleaning => 0.4, @params);
     $params{T} = 'IndelRealigner';
     $self->_handle_common_params(\%params);
     
