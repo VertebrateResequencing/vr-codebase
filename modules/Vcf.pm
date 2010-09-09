@@ -749,7 +749,14 @@ sub _format_line_hash
             if ( $key eq 'AN' ) { $needs_an_ac=1; next; }
             if ( $key eq 'AC' ) { $needs_an_ac=1; next; }
         }
-        push @info, (defined $value ? "$key=$value" : $key);
+        if ( defined $value )
+        {
+            push @info, "$key=$value";
+        }
+        elsif ( $key ne '.' )
+        {
+            push @info, $key;
+        }
     }
     if ( $needs_an_ac )
     {
@@ -818,6 +825,20 @@ sub calc_an_ac
     return ($an,join(',',@ac));
 }
 
+sub _validate_alt_field
+{
+    my ($self,$values,$ref) = @_;
+
+    for (my $i=0; $i<@$values; $i++)
+    {
+        for (my $j=0; $j<$i; $j++)
+        {
+            if ( $$values[$i] eq $$values[$j] ) { return "The alleles not unique: $$values[$i]"; }
+        }
+        if ( $$values[$i] eq $ref ) { return "REF allele listed in the ALT field??"; }
+    }
+    return undef;
+}
 
 =head2 validate_alt_field
 
@@ -829,9 +850,12 @@ sub calc_an_ac
 
 sub validate_alt_field
 {
-    my ($self,$values) = @_;
+    my ($self,$values,$ref) = @_;
 
     if ( @$values == 1 && $$values[0] eq '.' ) { return undef; }
+
+    my $ret = $self->_validate_alt_field($values,$ref);
+    if ( $ret ) { return $ret; }
     
     my @err;
     for my $item (@$values)
@@ -1651,6 +1675,9 @@ sub Vcf4_0::validate_alt_field
     my ($self,$values,$ref) = @_;
 
     if ( @$values == 1 && $$values[0] eq '.' ) { return undef; }
+
+    my $ret = $self->_validate_alt_field($values,$ref);
+    if ( $ret ) { return $ret; }
 
     my $ref_len = length($ref);
     my $ref1 = substr($ref,0,1);
