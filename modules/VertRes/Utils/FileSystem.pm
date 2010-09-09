@@ -467,65 +467,95 @@ sub directory_structure_same {
     my $orig_path = delete $opts{orig_path};
     $orig_path ||= $root1;
     
-    opendir(my $dh1, $root1) || return 0;
-    opendir(my $dh2, $root2) || return 0;
+    -d $root1 || return 0;
+    -d $root2 || return 0;
+    $root1 =~ s/\/$//;
+    $root2 =~ s/\/$//;
     
-    my %checked_things;
-    my $had_subdirs = 0;
-    while (my $thing = readdir($dh1)) {
-        next if $thing =~ /^\.{1,2}$/;
-        my $this_path = File::Spec->catdir($root1, $thing);
-        
-        my $is_dir = -d $this_path ? 1 : 0;
-        my $other_path;
-        if ($is_dir) {
-            $had_subdirs++;
-            $other_path = File::Spec->catdir($root2, $thing);
-        }
-        elsif ($opts{consider_files}) {
-            $other_path = File::Spec->catfile($root2, $thing);
-            
-            if (-e $other_path) {
-                my @this_s = stat($this_path);
-                my @other_s = stat($other_path);
-                
-                if ($this_s[9] <= $other_s[9]) {
-                    $checked_things{$thing} = 1;
-                    next;
-                }
-                else {
-                    return 0;
-                }
-            }
-            else {
-                return 0;
-            }
-        }
-        else {
-            next;
-        }
-        
-        my $thing_same = $self->directory_structure_same($this_path, $other_path, %opts, orig_path => $orig_path);
-        if ($thing_same) {
-            $checked_things{$thing} = 1;
+    # on lustre 'find' is orders of magnitude faster than using 'ls' or perl
+    # 'opendir'&'readdir'.
+    my $type = $opts{consider_files} ? '' : '-type d';
+    open(my $dh1, "find $root1 $type |") || $self->throw("failed to open a pipe to find");
+    open(my $dh2, "find $root2 $type |") || $self->throw("failed to open a pipe to find");
+    my %root1;
+    while (<$dh1>) {
+        chomp;
+        s/^$root1\/?//;
+        next unless /\S/;
+        $root1{$_} = 1;
+    }
+    my %root2;
+    while (<$dh2>) {
+        chomp;
+        s/^$root2\/?//;
+        next unless /\S/;
+        $root2{$_} = 1;
+    }
+    close($dh1);
+    close($dh2);
+    
+    # compare the structures
+    foreach my $path (keys %root1) {
+        if (defined $root2{$path}) {
+            delete $root2{$path};
         }
         else {
             return 0;
         }
     }
-    
-    while (my $thing = readdir($dh2)) {
-        next if $thing =~ /^\.{1,2}$/;
-        my $this_path = File::Spec->catdir($root2, $thing);
-        next if (! $opts{consider_files} && ! -d $this_path);
-        next if exists $checked_things{$thing};
+    if (keys %root2) {
         return 0;
     }
     
-    if ($opts{leaf_mtimes} && ! $had_subdirs) {
-        # this is a leaf directory, store that fact and its mtime
-        my @s = stat($root1);
-        $opts{leaf_mtimes}->{$orig_path}->{basename($root1)} = $s[9];
+    # make sure root2 files aren't newer than root1 files
+    if ($opts{consider_files}) {
+        foreach my $path (keys %root1) {
+            my $this_path = File::Spec->catdir($root1, $path);
+            my $other_path = File::Spec->catdir($root2, $path);
+            
+            if (! -d $this_path) {
+                my @this_s = stat($this_path);
+                my @other_s = stat($other_path);
+                
+                unless ($this_s[9] <= $other_s[9]) {
+                    return 0;
+                }
+            }
+        }
+    }
+    
+    # get the leaf times
+    if ($opts{leaf_mtimes}) {
+        # pick out the dirs
+        my %dirs;
+        if ($opts{consider_files}) {
+            foreach my $path (keys %root1) {
+                if (-d $path) {
+                    $dirs{$path} = 1;
+                }
+            }
+        }
+        else {
+            %dirs = %root1;
+        }
+        
+        # figure out which ones are leaves and store their mtimes
+        my %leaves;
+        foreach my $path (keys %dirs) {
+            my $is_parent = 0;
+            foreach my $other_path (keys %dirs) {
+                next if $path eq $other_path;
+                if ($other_path =~ /^$path/) {
+                    $is_parent = 1;
+                    last;
+                }
+            }
+            
+            unless ($is_parent) {
+                my @s = stat(File::Spec->catdir($root1, $path));
+                $opts{leaf_mtimes}->{$root1}->{basename($path)} = $s[9];
+            }
+        }
     }
     
     return 1;
