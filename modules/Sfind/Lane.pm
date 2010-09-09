@@ -361,14 +361,24 @@ sub npg_qc {
     unless ($self->{'npg_qc'}){
         my $rl=npg::api::run_lane->new({id_run=>$self->run_name,position=>$self->run_lane}); 
         if ($rl){
-            if ($rl->manual_qc){    
-                $self->{'npg_qc'} = $rl->manual_qc;
+            my $qc;
+            if ($rl->manual_qc){
+                if ($rl->manual_qc =~ /^pass/){
+                    $qc = 'pass';
+                }
+                elsif ($rl->manual_qc =~ /^fail/){
+                    $qc = 'fail';
+                }
+                else {
+                    $qc = $rl->manual_qc; 
+                }
             }
             else {          
                 # if error in npg api, manual_qc can be '' which isn't valid,
                 # so set to 'pending' which is.
-                $self->{'npg_qc'} = 'pending';
+                $qc = 'pending';
             }
+            $self->{'npg_qc'} = $qc;
                 
         }
         else {
