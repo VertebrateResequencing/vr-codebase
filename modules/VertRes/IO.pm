@@ -325,7 +325,7 @@ sub parse_fofn {
         chomp;
         /\S/ || next;
         /^#/ && next;
-        -f $_ || -l $_ || $self->throw("fofn file contained a line that wasn't a file: $_");
+        #-f $_ || -l $_ || $self->throw("fofn file contained a line that wasn't a file: $_");
         my $file = defined $relative ? File::Spec->abs2rel($_, $relative) : abs_path($_);
         if ($relative && $relative eq '/') {
             $file = '/'.$file;
