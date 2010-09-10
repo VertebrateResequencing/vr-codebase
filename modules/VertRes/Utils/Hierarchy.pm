@@ -472,7 +472,7 @@ sub get_lanes {
         if (defined ($args{project})) {
             $ok = 0;
             foreach my $name (@{$args{project}}) {
-                if ($name eq $project->name || $name eq $project->hierarchy_name || $name eq $project->study->acc) {
+                if ($name eq $project->name || $name eq $project->hierarchy_name || ($project->study && $name eq $project->study->acc)) {
                     $ok = 1;
                     last;
                 }
