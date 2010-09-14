@@ -706,13 +706,17 @@ sub set_stripe_dir_tree {
  Returns : boolean
  Args    : absolute path to file
            Optionally, these hash args:
+           empty => boolean (empty the db of all past results before doing
+                             anything else)
            force_check => boolean (really check the disk and update the db,
                                    regardless of anything else)
            no_check => boolean (do not check the disk if the file had previously
                                 been found not to exist; still checks the disk
                                 if the file isn't in the database at all)
-           empty => boolean (empty the db of all past results before doing
-                             anything else)
+           recurse => boolean (works with wipe_out, removes all subdirectory 
+                               records as well)
+           wipe_out => boolean (remove the file from the db, don't check anything
+                                and return 0)
 
 =cut
 
@@ -739,6 +743,21 @@ sub file_exists {
             
             $file_exists_dbh = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 }) || $self->throw("Still couldn't connect to database $dbname; giving up");
         }
+    }
+
+    if ($opts{wipe_out}) 
+    {
+        if ( $opts{recurse} )
+        {
+            $file =~ s{/*$}{};
+            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path REGEXP '^$file/.*'});
+            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path REGEXP '^$file/?\$'});
+        }
+        else
+        {
+            $file_exists_dbh->do(qq{DELETE FROM file_status WHERE hash=? AND path=?},undef,$md5,$file);
+        }
+        return 0;
     }
     
     # empty db if asked
