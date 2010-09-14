@@ -589,7 +589,7 @@ sub indel_genotyper {
                       minFraction minConsensusFraction minIndelCount refseq
                       blacklistedLanes window_size maxNumberOfReads)]);
     
-    my @file_args = (" -I $in_bam", " -O $out_raw_bed -o $out_detailed_bed");
+    my @file_args = (" -I $in_bam", " -bed $out_raw_bed -o $out_detailed_bed");
     
     my %params = (verbose => 1, minIndelCount => 2, minFraction => 0.03,
                   minConsensusFraction => 0.6,
@@ -626,7 +626,7 @@ sub unified_genotyper {
     #   -T UnifiedGenotyper \
     #   -I cleaned.bam \
     #   -D resources/dbsnp_129_hg18.rod \
-    #   -varout snps.raw.vcf \
+    #   -o snps.raw.vcf \
     #   --standard_min_confidence_threshold_for_calling 10.0
     
     $self->switches([qw(quiet_output_mode genotype output_all_callable_bases
@@ -641,9 +641,10 @@ sub unified_genotyper {
                       min_base_quality_score min_mapping_quality_score
                       max_mismatches_in_40bp_window use_reads_with_bad_mates
                       max_deletion_fraction cap_base_quality_by_mapping_quality
-                      variant_output_format verbose_mode annotation group)]);
+                      variant_output_format verbose_mode annotation group
+                      downsample_to_coverage)]);
     
-    my @file_args = (" -I $in_bam", " -varout $out_vcf ");
+    my @file_args = (" -I $in_bam", " -o $out_vcf ");
     
     my %params = (standard_min_confidence_threshold_for_calling => 10.0, @params);
     $params{T} = 'UnifiedGenotyper';
