@@ -812,7 +812,7 @@ sub displayLane
 
         if ($bases_mapped)
         {   # sometimes the mapping fails
-            my $dupe_rate_perc       = sprintf("%.2f", ($rmdup_reads_mapped/$reads_mapped)*100); #($bases_mapped - $rmdup_bases_mapped)/$bases_mapped);
+            my $dupe_rate_perc       = sprintf("%.2f", (1-($rmdup_reads_mapped/$reads_mapped))*100); #($bases_mapped - $rmdup_bases_mapped)/$bases_mapped);
             my $reads_mapped_perc   = sprintf("%.1f", ($reads_mapped/$reads)*100);
             my $reads_paired_perc   = sprintf("%.1f", ($reads_paired/$reads)*100);
             my $bases_mapped_perc   = sprintf("%.1f", ($bases_mapped/$total_bases)*100);
