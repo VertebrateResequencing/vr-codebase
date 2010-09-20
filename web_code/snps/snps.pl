@@ -65,12 +65,14 @@ my $params =
 
     'mouseinfo' => {
         '129P2'       => { caption  => 'Commonly used to make embryonic stem cell lines.', 
+                            img=>'mouse-129p2.png',
                             bam=>'129P2.bam', },
         '129S1/SvImJ' => { caption  => 'Commonly used to make embryonic stem cell lines. 
                                               Progenitor strain of the collaborative cross.',
                             img=>'mouse-129S1_SvImJ.png',
                             bam=>'129S1.bam' },
         '129S5'       => { caption  => 'Commonly used to make embryonic stem cell lines.', 
+                            img=>'mouse-129s5.png',
                             bam=>'129S5.bam' },
         'A/J'         => { caption  => 'An asthma model. Progenitor strain of the collaborative cross and of the heterogeneous stock cross.', 
                             img=>'mouse-A_J.png', 
@@ -110,8 +112,10 @@ my $params =
                             img=>'mouse-NOD_ShiLtJ.png', 
                             bam=>'NOD.bam', },
         'NZO/HiLtJ'   => { caption  => 'New Zealand Obese. Susceptible to type II diabetes. Progenitor strain of the collaborative cross.', 
+                            img=>'mouse-nzo.png',
                             bam=>'NZO.bam', },
         'PWK/PhJ'     => { caption  => 'Susceptibility to type I diabetes and various behavioral traits. Progenitor strain of the collaborative cross.', 
+                            img=>'mouse-pwk.png',
                             bam=>'PWK.bam' },
         'Spretus/EiJ' => { caption  => 'Resistant to cancer and infections.', 
                             img=>'mouse-Spretus_EiJ.png',
