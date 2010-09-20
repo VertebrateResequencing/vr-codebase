@@ -1119,6 +1119,10 @@ sub dcc_filename {
     # picard merge may have tried to uniqueify the rg, so pluck off .\d
     $example_rg =~ s/\.\d+$//;
     
+    unless ($example_rg) {
+        $self->throw("The bam '$file' had no RG in the header!");
+    }
+    
     # instead of the srp (project code), we now have population and analysis
     # group in it's place. These things are not stored in the bam header, so
     # we must check the sequence.index file to figure this out. We assume that
