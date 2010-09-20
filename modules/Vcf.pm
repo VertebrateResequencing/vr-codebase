@@ -440,7 +440,9 @@ sub _next_header_line
 
 sub add_header_line
 {
-    my ($self,$rec) = @_;
+    my ($self,$rec,$args) = @_;
+
+    if ( !$args ) { $$args{silent}=0; }
 
     my $key = $$rec{key};
     if ( !$key ) { $self->throw("Missing the key\n"); }
@@ -466,7 +468,7 @@ sub add_header_line
         if ( !defined $id ) { $self->throw("Missing ID for the key $key: ",Dumper($rec)); }
         if ( exists($$self{header}{$key}{$id}) ) 
         {
-            $self->warn("The header tag $key:$id already exists, ignoring.\n");
+            $self->warn("The header tag $key:$id already exists, ignoring.\n") unless $$args{silent};
             return;
         }
         $$self{header}{$key}{$id} = $rec;
@@ -491,7 +493,7 @@ sub add_header_line
 
     if ( exists($$self{header}{$key}) ) 
     {
-        $self->warn("The header tag $key already exists, ignoring.\n");
+        $self->warn("The header tag $key already exists, ignoring.\n") unless $$args{silent};
         return;
     }
 
