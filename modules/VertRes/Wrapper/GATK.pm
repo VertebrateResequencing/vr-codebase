@@ -916,12 +916,12 @@ sub apply_variant_cuts {
     #   -T ApplyVariantCuts
     
     $self->switches([qw(quiet_output_mode)]);
-    $self->params([qw(R DBSNP T l)]);
+    $self->params([qw(R DBSNP T l fdr_filter_level)]);
     
     my $bs = $self->get_b();
     my @file_args = (" $bs -tranchesFile $in_cluster -o $out_vcf");
     
-    my %params = (fdr_filter_level => 10.0, l => 'INFO', @params);
+    my %params = (fdr_filter_level => '10.0', l => 'INFO', @params);
     $params{T} = 'ApplyVariantCuts';
     $self->_handle_common_params(\%params);
     
@@ -1022,6 +1022,10 @@ sub combine_variants {
         elsif ($name =~ /gatk/i) {
             $name = 'UG';
         }
+        else {
+            $self->throw("Only qcall and gatk are currently supported, by having those strings in the input vcf filenames");
+        }
+        
         if (exists $prev_names{$name}) {
             $name .= ++$ui;
         }
