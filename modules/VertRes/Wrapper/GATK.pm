@@ -293,8 +293,7 @@ sub set_annotations {
  Title   : get_annotations
  Usage   : my $ans_string = $wrapper->get_annotations();
  Function: Get the command line options defining which annotations will be used
-           (one or more -an options). If none have been set with
-           set_annotations(), defaults to 'HaplotypeScore', 'SB', 'QD'.
+           (one or more -an options). 
  Returns : string
  Args    : n/a
 
@@ -303,9 +302,11 @@ sub set_annotations {
 sub get_annotations {
     my $self = shift;
     my @ans = $self->set_annotations;
-    unless (@ans) {
-        @ans = ('HaplotypeScore', 'SB', 'QD', 'HRun');
-    }
+
+    # Let the user decide what annotations are needed. GATK sets its own defaults anyway.
+    # unless (@ans) {
+    #     @ans = ('HaplotypeScore', 'SB', 'QD', 'HRun');
+    # }
     
     my $args = '';
     foreach my $an (@ans) {
@@ -591,7 +592,7 @@ sub indel_genotyper {
     
     my @file_args = (" -I $in_bam", " -bed $out_raw_bed -o $out_detailed_bed");
     
-    my %params = (verbose => 1, minIndelCount => 2, minFraction => 0.03,
+    my %params = (minIndelCount => 2, minFraction => 0.03,
                   minConsensusFraction => 0.6,
                   window_size => 324, @params);
     $params{T} = 'IndelGenotyperV2';
