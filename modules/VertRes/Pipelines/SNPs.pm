@@ -6,6 +6,8 @@ use warnings;
 use LSF;
 use Utils;
 use VertRes::Parser::sam;
+use VertRes::Utils::FileSystem;
+use VertRes::Wrapper::GATK;
 
 our @actions =
 (
@@ -37,17 +39,18 @@ our $options =
     bsub_opts       => "-q normal -M6000000 -R 'select[type==X86_64 && mem>6000] rusage[mem=6000,thouio=1]'",
     bsub_opts_long  => "-q normal -M7000000 -R 'select[type==X86_64 && mem>7000] rusage[mem=7000,thouio=1]'",
     fai_chr_regex   => '\d+|x|y',
-    gatk_cmd        => 'java -Xmx6500m -jar /nfs/users/nfs_p/pd3/sandbox/call-snps/gatk/GenomeAnalysisTK/GenomeAnalysisTK.jar -T UnifiedGenotyper -hets 0.0001 -confidence 30 -mmq 25 -mc 1000 -mrl 10000000 --platform Solexa -U ALLOW_UNSET_BAM_SORT_ORDER',
+    gatk_opts       => { verbose=>1, java_memory=>2800, U=>'ALLOW_UNSET_BAM_SORT_ORDER' },
+    dbSNP_rod       => undef,
     max_jobs        => undef,
     merge_vcf       => 'merge-vcf -d',
     qcall_cmd       => 'QCALL -ct 0.01 -snpcan -pphet 0',
     sort_cmd        => 'sort',
     sam2vcf         => 'sam2vcf.pl',
-    split_size      => 1000000,
-    gatk_split_size => 10_000_000,
+    split_size      => 1_000_000,
+    gatk_split_size => 1_000_000,
     varfilter       => 'samtools.pl varFilter -S 20 -i 20',
     pileup_rmdup    => 'pileup-rmdup',
-    samtools_pileup_params => '-r 0.0001 -d 500',
+    samtools_pileup_params => '-d 500',   # mouse: '-r 0.0001 -d 500'
     vcf_rmdup       => 'vcf-rmdup',
     vcf_stats       => 'vcf-stats',
 };
@@ -59,12 +62,14 @@ our $options =
 
         Options    : See Pipeline.pm for general options and the code for default values.
 
+                    dbSNP_rod       .. The dbSNP file for GATK
                     file_list       .. File name containing a list of bam files (e.g. the 17 mouse strains). 
                     fa_ref          .. The reference sequence in fasta format
                     fai_ref         .. The reference fai file to read the chromosomes and lengths.
                     fai_chr_regex   .. The chromosomes to be processed.
-                    gatk_cmd        .. The command to launch GATK SNP caller
+                    gatk_opts       .. Options to pass to the GATK wrapper
                     gatk_split_size .. GATK seems to require more memory
+                    indel_mask      .. GATK precomputed indel mask for filtering SNPs [optional]
                     max_jobs        .. The maximum number of running jobs per task
                     merge_vcf       .. The merge-vcf script.
                     pileup_rmdup    .. The script to remove duplicate positions.
@@ -85,6 +90,7 @@ sub new
     $self->write_logs(1);
 
     if ( !$$self{file_list} ) { $self->throw("Missing the option file_list.\n"); }
+    $$self{fsu} = VertRes::Utils::FileSystem->new();
 
     return $self;
 }
@@ -136,6 +142,29 @@ sub common_prefix
     return join('/+',@common);
 }
 
+
+# Multiple BAM files can belong to the same sample and should be merged.
+sub bam_file_groups
+{
+    my ($self,$files) = @_;
+    my %groups;
+    for my $file (@$files)
+    {
+        my $pars = VertRes::Parser::sam->new(file => $file);
+        my @samples = $pars->samples();
+        $pars->close;
+
+        if ( @samples != 1 ) 
+        { 
+            warn("Multiple samples present, coalescing into one named \"$file\"\n");
+            $groups{$file} = $file; 
+        }
+        else { push @{$groups{$samples[0]}}, $file; }
+    }
+    return \%groups;
+}
+
+
 sub read_chr_lengths
 {
     my ($self,$fai) = @_;
@@ -182,6 +211,9 @@ sub chr_chunks
             #   depth.)
             $pos += $split_size - 250;
             if ( $pos<1 ) { $self->throw("The split size too small [$split_size]?\n"); }
+
+        # debug .. run for one file only
+        if ( @chunks>1 ) { return \@chunks; }
         }
     }
     return \@chunks;
@@ -193,10 +225,18 @@ sub clean_files
 {
     my ($self,$dir,$name,$outdir) = @_;
     if ( !-e $outdir ) { Utils::CMD("mkdir -p $outdir"); }
+
     if ( -e "$dir/_$name.pl" ) { rename("$dir/_$name.pl","$outdir/_$name.pl"); }
+    $$self{fsu}->file_exists("$dir/_$name.pl",wipe_out=>1);
+
     if ( -e "$dir/_$name.o" ) { rename("$dir/_$name.o","$outdir/_$name.o"); }
+    $$self{fsu}->file_exists("$dir/_$name.o",wipe_out=>1);
+
     if ( -e "$dir/_$name.e" ) { rename("$dir/_$name.e","$outdir/_$name.e"); }
+    $$self{fsu}->file_exists("$dir/_$name.e",wipe_out=>1);
+
     if ( -e "$dir/_$name.jid" ) { unlink("$dir/_$name.jid"); }
+    $$self{fsu}->file_exists("$dir/_$name.jid",wipe_out=>1);
 }
 
 
@@ -212,15 +252,19 @@ use Utils;
 Utils::CMD(qq[$$self{merge_vcf} $args | bgzip -c > $name.vcf.gz.part]);
 Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
 rename('$name.vcf.gz.part','$name.vcf.gz') or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
-Utils::CMD(qq[tabix -p vcf $name.vcf.gz]);
+Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz]);
     ];
 }
 
 
-# Runs varFilter, gatk and QCall jobs in parallel. All have the same structure: 
-#   1) For each bam file, get a list of chromosomes and split them into chunks ($$opts{split_chunks}).
-#   2) Then merge the parts into one VCF file and delete the intermediate chunks ($$opts{merge_chunks}).
-#   3) Finally, create one big VCF file with all the data, each column corresponds to one bam file ($$opts{merge_vcf_files}).
+# Runs jobs in parallel for each BAM file, splitting each chromosome into chunks.
+#   1) For each bam file, get a list of chromosomes and split them into chunks (calls $$opts{split_chunks}).
+#   2) Then merge the parts into one VCF file and delete the intermediate chunks (calls $$opts{merge_chunks}).
+#   3) Finally, create one big VCF file with all the data, each column corresponds to one bam file (calls $$opts{merge_vcf_files}).
+#
+# GATK and QCall run on populations and produce single VCF file straight away. Therefore the merge_chunks 
+#   step is the final one and merge_vcf_files is not called on them.
+#
 #
 # The parameters:
 #   work_dir .. the working directory, should be of the form dir/(varFilter|qcall|gatk)
@@ -230,9 +274,12 @@ Utils::CMD(qq[tabix -p vcf $name.vcf.gz]);
 #   must produce the file _$chunk_name.done, otherwise it will be run over and over again.
 #
 # merge_chunks function:
-#   parameters .. $chunks,$name
+#   parameters .. $chunks,$name,$dir
 #   must produce the file $name.vcf.gz out of the files from the $dir
 #
+# merge_vcf_files:
+#   parameters .. $vcfs,$name
+#   must produce the file $name.vcf.gz from the $vcfs 
 #
 sub run_in_parallel
 {
@@ -251,8 +298,7 @@ sub run_in_parallel
 
     my $is_finished = 1;
 
-    my $bams = $self->read_files($$self{file_list});
-    my $prefix = $self->common_prefix($bams);
+    my $prefix = $self->common_prefix($$opts{bams});
     my %names;
     my @to_be_merged;
     my $ntasks = 0;
@@ -260,7 +306,7 @@ sub run_in_parallel
     my $done = $LSF::Done;
 
     # Step 1, call the split_chunks command.
-    for my $bam (@$bams)
+    for my $bam (@{$$opts{bams}})
     {
         # Take from each bam file name a unique part 
         my ($outdir,$name,$suffix) = Utils::basename($bam);
@@ -275,13 +321,13 @@ sub run_in_parallel
 
         # If the merged file from step 2 is already in place, no need for splitting. Check however, if there 
         #   are any temp files left and move them into the _done directory. (There can be thousands of files.)
-        if ( -e "$work_dir/$outdir/$name.vcf.gz" ) 
+        if ( $$self{fsu}->file_exists("$work_dir/$outdir/$name.vcf.gz") ) 
         {
             $self->clean_files("$work_dir/$outdir",$name,"$work_dir/$outdir/_done"); 
             for my $chunk (@$chunks)
             {
                 my $chunk_name = $name.'_'.$chunk;
-                unlink("$work_dir/$outdir/_$chunk_name.done") unless !-e "$work_dir/$outdir/_$chunk_name.done";
+                unlink("$work_dir/$outdir/_$chunk_name.done") unless !$$self{fsu}->file_exists("$work_dir/$outdir/_$chunk_name.done");
             }
             next; 
         }
@@ -294,14 +340,13 @@ sub run_in_parallel
         for my $chunk (@$chunks)
         {
             my $chunk_name = $name.'_'.$chunk;
-            if ( -e "$work_dir/$outdir/_$chunk_name.done" || -e "$work_dir/$outdir/$name.vcf.gz" ) 
+            if ( $$self{fsu}->file_exists("$work_dir/$outdir/_$chunk_name.done") || $$self{fsu}->file_exists("$work_dir/$outdir/$name.vcf.gz") ) 
             { 
                 $self->clean_files("$work_dir/$outdir",$chunk_name,"$work_dir/$outdir/_done");
                 next; 
             }
             $chunks_finished = 0;
-            
-            Utils::CMD("mkdir -p $work_dir/$outdir") unless -e "$work_dir/$outdir";
+            Utils::CMD("mkdir -p $work_dir/$outdir") unless $$self{fsu}->file_exists("$work_dir/$outdir");
 
             my $jids_file = "$work_dir/$outdir/_$chunk_name.jid";
             my $status = LSF::is_job_running($jids_file);
@@ -346,7 +391,7 @@ sub run_in_parallel
         }
 
         # Get the merging command
-        my $cmd = &{$$opts{merge_chunks}}($self,$chunks,$name);
+        my $cmd = &{$$opts{merge_chunks}}($self,$chunks,$name,"$work_dir/$outdir");
 
         open(my $fh,'>',"$work_dir/$outdir/_$name.pl") or $self->throw("$work_dir/$outdir/$$self{prefix}$name.pl: $!");
         print $fh $cmd;
@@ -359,14 +404,28 @@ sub run_in_parallel
     if ( $done&$LSF::Running ) { $self->debug("Some files not finished...\n"); return $$self{No}; }
 
 
-    # Some chunks still not done
+    # Some chunks still not done?
     if ( !$is_finished ) { return; }
 
     # The big VCF file from the step 3. already exists.
-    if ( -e "$work_dir/$$opts{job_type}.vcf.gz" ) 
+    if ( $$self{fsu}->file_exists("$work_dir/$$opts{job_type}.vcf.gz") ) 
     { 
         Utils::CMD("touch $$opts{dir}/$$opts{job_type}.done");
         return; 
+    }
+
+    if ( !$$opts{merge_vcf_files} ) 
+    {
+        # GATK and QCall run on multiple BAMs and create a single VCF output file, no need to merge. 
+        if ( @to_be_merged != 1 ) { $self->throw("FIXME: [",join(' ',@to_be_merged), "] --> $work_dir/$$opts{job_type}.vcf.gz"); }
+        rename($to_be_merged[0],"$work_dir/$$opts{job_type}.vcf.gz") 
+            or $self->throw("rename $to_be_merged[0] $work_dir/$$opts{job_type}.vcf.gz: $!");
+        rename("$to_be_merged[0].tbi","$work_dir/$$opts{job_type}.vcf.gz.tbi") 
+            or $self->throw("rename $to_be_merged[0].tbi $work_dir/$$opts{job_type}.vcf.gz.tbi: $!");
+        rename("$to_be_merged[0].stats","$work_dir/$$opts{job_type}.vcf.gz.stats") 
+            or $self->throw("rename $to_be_merged[0].stats $work_dir/$$opts{job_type}.vcf.gz.stats: $!");
+        Utils::CMD("touch $$opts{dir}/$$opts{job_type}.done");
+        return;
     }
 
 
@@ -379,7 +438,6 @@ sub run_in_parallel
 
     # Get the VCF merging command
     my $cmd = &{$$opts{merge_vcf_files}}($self,\@to_be_merged,$$opts{job_type});
-
     open(my $fh,'>',"$work_dir/_merge.pl") or $self->throw("$work_dir/_merge.pl: $!");
     print $fh $cmd;
     close($fh);
@@ -388,6 +446,55 @@ sub run_in_parallel
     
     return;
 }
+
+sub dump_opts
+{
+    my ($self,@keys) = @_;
+    my %opts;
+    for my $key (@keys)
+    {
+        $opts{$key} = exists($$self{$key}) ? $$self{$key} : undef;
+    }
+    return Data::Dumper->Dump([\%opts],["opts"]);
+}
+
+
+sub glue_vcf_chunks
+{
+    my ($self,$chunks,$name,$work_dir) = @_;
+
+    my $out = qq[
+use strict;
+use warnings;
+use Utils;
+];
+
+    $out .= qq[Utils::CMD("rm -f $name.vcf-tmp.gz.part");\n];
+    for my $chunk (@$chunks)
+    {
+        # There are too many files, the argument list is often too long for the shell to accept
+        $out .= qq[Utils::CMD("zcat ${name}_$chunk.vcf.gz | gzip -c >> $name.vcf-tmp.gz.part");\n];
+    }
+
+    $out .= qq[
+# Take the VCF header from one file and sort the rest
+Utils::CMD(qq[(zcat ${name}_$$chunks[0].vcf.gz | grep ^#; zcat $name.vcf-tmp.gz.part | grep -v ^# | $$self{sort_cmd} -k1,1 -k2,2n) | $$self{vcf_rmdup} | bgzip -c > $name.vcf.gz.part]);
+Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
+rename('$name.vcf.gz.part','$name.vcf.gz') or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
+Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz]);
+unlink('$name.vcf-tmp.gz.part');
+];
+
+    for my $chunk (@$chunks)
+    {
+        $out .= qq[unlink('${name}_$chunk.vcf.gz');\n]; 
+        $out .= qq[unlink('$$self{prefix}$chunk.names');\n]; 
+        $$self{fsu}->file_exists("$work_dir/${name}_$chunk.vcf.gz",wipe_out=>1);
+    }
+
+    return $out;
+}
+
 
 
 #---------- varFilter ---------------------
@@ -415,12 +522,14 @@ sub varFilter
     if ( !$$self{varfilter} ) { $self->throw("Missing the option varfilter.\n"); }
     if ( !$$self{sam2vcf} ) { $self->throw("Missing the option sam2vcf.\n"); }
 
+    my $bams = $self->read_files($$self{file_list});
     my %opts = 
     (
         dir       => $dir,
         work_dir  => "$dir/varFilter",
         job_type  => 'varFilter',
         bsub_opts => {bsub_opts=>$$self{bsub_opts_long},dont_wait=>1,append=>0},
+        bams      => $bams,
 
         split_chunks    => \&varfilter_split_chunks,    
         merge_chunks    => \&varfilter_merge_chunks,
@@ -435,12 +544,12 @@ sub varFilter
 sub run_varfilter
 {
     my ($self,$bam,$name,$chunk) = @_;
-    if ( ! -e "$name.pileup.gz" )
+    if ( !-e "$name.pileup.gz" )
     {
         Utils::CMD(qq[samtools view -bh $bam $chunk | samtools pileup $$self{samtools_pileup_params} -c -f $$self{fa_ref} - | $$self{varfilter} | gzip -c > $name.pileup.gz.part],{verbose=>1});
         rename("$name.pileup.gz.part","$name.pileup.gz") or $self->throw("rename $name.pileup.gz.part $name.pileup.gz: $!");
-        Utils::CMD("touch _$name.done",{verbose=>1});
     }
+    Utils::CMD("touch _$name.done",{verbose=>1});
 }
 
 
@@ -486,8 +595,9 @@ sub varfilter_merge_chunks
 use strict;
 use warnings;
 use Utils;
+use VertRes::Utils::FileSystem;
 
-if ( ! -e "$name.pileup.gz" )
+if ( !-e "$name.pileup.gz" )
 {
     $concat
     Utils::CMD("zcat $name.pileup-tmp.gz.part | sort -k1,1 -k2,2n | gzip -c > $name.pileup.gz.part");
@@ -495,12 +605,12 @@ if ( ! -e "$name.pileup.gz" )
     $rmfiles
     Utils::CMD("rm -f $name.pileup-tmp.gz.part");
 }
-if ( ! -e "$name.vcf.gz" )
+if ( !-e "$name.vcf.gz" )
 {
     Utils::CMD("zcat $name.pileup.gz | $$self{pileup_rmdup} | $$self{sam2vcf} -s -t $name | bgzip -c > $name.vcf.gz.part",{verbose=>1});
     Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
     rename("$name.vcf.gz.part","$name.vcf.gz") or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
-    Utils::CMD(qq[tabix -p vcf $name.vcf.gz]);
+    Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz]);
 }
 
     ];
@@ -529,9 +639,11 @@ sub gatk
 {
     my ($self,$dir,$lock_file) = @_;
 
+    if ( !$$self{fa_ref} ) { $self->throw("Missing the option fa_ref.\n"); }
     if ( !$$self{fai_ref} ) { $self->throw("Missing the option fai_ref.\n"); }
-    if ( !$$self{gatk_cmd} ) { $self->throw("Missing the option gatk_cmd.\n"); }
+    if ( !$$self{gatk_opts} ) { $self->throw("Missing the option gatk_opts.\n"); }
 
+    my $bams = [ $$self{file_list} ];
     my %opts =
     (
         dir        => $dir,
@@ -539,10 +651,11 @@ sub gatk
         job_type   => 'gatk',
         bsub_opts  => {bsub_opts=>$$self{bsub_opts_long},dont_wait=>1,append=>0},
         split_size => $$self{gatk_split_size},
+        bams       => $bams,
 
         split_chunks    => \&gatk_split_chunks,
-        merge_chunks    => \&gatk_merge_chunks,
-        merge_vcf_files => \&merge_vcf_files,
+        merge_chunks    => \&glue_vcf_chunks,
+        merge_vcf_files => \&gatk_postprocess,
     );
 
     $self->run_in_parallel(\%opts);
@@ -555,66 +668,123 @@ sub gatk_split_chunks
 {
     my ($self,$bam,$chunk_name,$chunk) = @_;
 
+    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref sam2vcf gatk_opts dbSNP_rod indel_mask));
+
     return qq[
 use strict;
 use warnings;
 use VertRes::Pipelines::SNPs;
 
-my \$opts = {
-    file_list  => q[$$self{file_list}],
-    fa_ref     => q[$$self{fa_ref}],
-    fai_ref    => q[$$self{fai_ref}],
-    sam2vcf    => q[$$self{sam2vcf}],
-    gatk_cmd   => q[$$self{gatk_cmd}],
-};
+my $opts
+
 my \$snps = VertRes::Pipelines::SNPs->new(%\$opts);
-\$snps->run_gatk(q[$bam],q[$chunk_name],q[$chunk]);
+\$snps->run_gatk_chunk(q[$bam],q[$chunk_name],q[$chunk]);
     ];
 }
 
 
-sub gatk_merge_chunks
+sub run_gatk_chunk
 {
-    my ($self,$chunks,$name) = @_;
+    my ($self,$bam,$name,$chunk) = @_;
 
-    my $header;
-    my $files;
-    for my $chunk (@$chunks)
-    {
-        my $chunk_name = $name.'_'.$chunk;
-        $files .= " $chunk_name.vcf.gz";
-        if ( !$header ) { $header = "$chunk_name.vcf.gz"; }
+    my %opts = ( %{$$self{gatk_opts}} );
+    if ( $$self{dbSNP_rod} ) 
+    { 
+        $opts{dbsnp} = $$self{dbSNP_rod}; 
     }
+
+    my $gatk;
+
+    $gatk = VertRes::Wrapper::GATK->new(%opts);
+    $gatk->unified_genotyper($bam,"$name.vcf.gz",L=>$chunk);
+    Utils::CMD("tabix -f -p vcf $name.vcf.gz");
+    # $self->log("UnifiedGenotyper done: $name.vcf.gz\n");
+
+    if ( !$$self{indel_mask} or !-e $$self{indel_mask} )
+    {
+        $gatk = VertRes::Wrapper::GATK->new(%{$$self{gatk_opts}});
+        $gatk->indel_genotyper($bam, "$name.indels.raw.bed", "$name.indels.detailed.bed",L=>$chunk);
+        Utils::CMD("make_indel_mask.pl $name.indels.raw.bed 10 $name.indels.mask.bed",{verbose=>1});
+        #$self->log("IndelGenotyperV2 done: $name.indels.raw.bed\n");
+
+        $gatk = VertRes::Wrapper::GATK->new(%{$$self{gatk_opts}});
+        $gatk->set_b("variant,VCF,$name.vcf.gz", "mask,Bed,$name.indels.mask.bed");
+        $gatk->variant_filtration("$name.filtered.vcf.gz");
+        Utils::CMD("tabix -f -p vcf $name.filtered.vcf.gz");
+
+        unlink("$name.vcf.gz") or $self->throw("unlink $name.vcf.gz: $!");
+        rename("$name.filtered.vcf.gz","$name.vcf.gz") or $self->throw("rename $name.filtered.vcf.gz $name.vcf.gz: $!");
+        #$self->log("renamed: $name.filtered.vcf.gz -> $name.vcf.gz\n");
+    }
+
+    Utils::CMD("touch _$name.done",{verbose=>1});
+}
+
+
+sub gatk_postprocess
+{
+    my ($self,$vcfs,$name) = @_;
+
+    if ( scalar @$vcfs > 1 ) { $self->throw("FIXME: expected one file only\n"); }
+
+    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref sam2vcf gatk_opts dbSNP_rod indel_mask));
 
     return qq[
 use strict;
 use warnings;
-use Utils;
+use VertRes::Pipelines::SNPs;
 
-if ( ! -e "$name.vcf.gz" )
-{
-    # Take the VCF header from one file and sort the rest
-    Utils::CMD("(zcat $header | grep ^#; zcat $files | grep -v ^# | sort -k1,1 -k2,2n) | $$self{vcf_rmdup} -d DoC | bgzip -c > $name.vcf.gz.part");
-    Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
-    rename("$name.vcf.gz.part","$name.vcf.gz") or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
-    Utils::CMD("tabix -p vcf $name.vcf.gz");
-    Utils::CMD("rm -f $files");
-}
-    ];
+my $opts
+
+my \$snps = VertRes::Pipelines::SNPs->new(%\$opts);
+\$snps->run_gatk_postprocess(q[$$vcfs[0]],q[$name]);
+];
 }
 
-sub run_gatk
+
+sub run_gatk_postprocess
 {
-    my ($self,$bam,$name,$chunk) = @_;
-    if ( ! -e "$name.vcf.gz" )
+    my ($self,$vcf,$name) = @_;
+
+    my $basename = $vcf;
+    $basename =~ s/\.gz$//i;
+    $basename =~ s/\.vcf$//i;
+
+    my $gatk;
+
+    # Filter
+    if ( $$self{indel_mask} && -e $$self{indel_mask} )
     {
-        Utils::CMD("$$self{gatk_cmd} -R $$self{fa_ref} -I $bam -L $chunk | gzip -c > $name.vcf.gz.part",{verbose=>1});
-        rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
+        $gatk = VertRes::Wrapper::GATK->new(%{$$self{gatk_opts}});
+        $gatk->set_b("variant,VCF,$vcf", "mask,Bed,$$self{indel_mask}");
+        $gatk->variant_filtration("$basename.filtered.vcf.gz");
+        rename("$basename.filtered.vcf.gz","$basename.tmp.vcf.gz") or $self->throw("rename $basename.filtered.vcf.gz $basename.tmp.vcf.gz: $!");
+        Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
+        #$self->log("VariantFiltration: $basename.filtered.vcf.gz -> $basename.tmp.vcf.gz\n");
     }
-    if ( -e "$name.vcf.gz" )
+    else
     {
-        Utils::CMD("touch _$name.done",{verbose=>1});
+        Utils::CMD("cp $basename.vcf.gz $basename.tmp.vcf.gz");
+        Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
     }
+
+    # Recalibrate
+    $gatk = VertRes::Wrapper::GATK->new(%{$$self{gatk_opts}});
+    $gatk->set_b("input,VCF,$basename.tmp.vcf.gz");
+    $gatk->set_annotations('HaplotypeScore', 'SB', 'QD', 'HRun');
+    $gatk->generate_variant_clusters("$basename.filtered.clusters");
+    #$self->log("GenerateVariantClusters done\n");
+
+    $gatk = VertRes::Wrapper::GATK->new(%{$$self{gatk_opts}});
+    $gatk->set_b("input,VCF,$basename.tmp.vcf.gz");
+    $gatk->variant_recalibrator("$basename.filtered.clusters","$basename.recalibrated.vcf.gz");
+    rename("$basename.recalibrated.vcf.gz","$basename.tmp.vcf.gz") or $self->throw("rename $basename.recalibrated.vcf.gz $basename.tmp.vcf.gz: $!");
+    Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
+    #$self->log("VariantRecalibrator done: $basename.recalibrated.vcf.gz -> $basename.tmp.vcf.gz\n");
+
+    Utils::CMD(qq[zcat $basename.tmp.vcf.gz | $$self{vcf_stats} > $name.vcf.gz.stats]);
+    rename("$basename.tmp.vcf.gz.tbi","$name.vcf.gz.tbi") or Utils::error("rename $basename.tmp.vcf.gz.tbi $name.vcf.gz.tbi: \$!");
+    rename("$basename.tmp.vcf.gz","$name.vcf.gz") or Utils::error("rename $basename.tmp.vcf.gz $name.vcf.gz: \$!");
 }
 
 
@@ -646,127 +816,50 @@ sub qcall
     if ( !$$self{fai_ref} ) { $self->throw("Missing the option fai_ref.\n"); }
     if ( !$$self{qcall_cmd} ) { $self->throw("Missing the option qcall_cmd.\n"); }
 
-    my $files = $self->read_files($$self{file_list});
-    if ( @$files<3 ) { $self->throw("QCall is population-based algorithm, requires at least three samples (BAM files) to run.\n"); }
+    my ($count) = `cat $$self{file_list} | wc -l`;
+    chomp($count);
+    if ( $count<3 ) { $self->throw("QCall is population-based algorithm, requires at least three samples (BAM files) to run.\n"); }
 
-    my $work_dir = "$dir/qcall";
-    Utils::CMD("mkdir -p $work_dir") unless -e $work_dir;
+    my $bams = [ $$self{file_list} ];
+    my %opts =
+    (
+         dir       => $dir,
+         work_dir  => "$dir/qcall",
+         job_type  => 'qcall',
+         bsub_opts => {bsub_opts=>$$self{bsub_opts_long},dont_wait=>1,append=>0},
+         bams      => $bams,
 
-    # The big VCF file already exists
-    if ( -e "$work_dir/qcall.vcf.gz" )
-    {
-        Utils::CMD("touch $dir/qcall.done");
-        return;
-    }
+         split_chunks    => \&qcall_split_chunks,
+         merge_chunks    => \&glue_vcf_chunks,
+         merge_vcf_files => undef,
+    );
 
-    my $chunks = $self->chr_chunks($$self{fai_ref},$$self{split_size});
-
-    my $max_jobs = $$self{max_jobs} ? $$self{max_jobs} : 0;
-    my $done = $LSF::Done;
-    my @to_be_merged;
-    my $ntasks = 0;
-
-    # For all chromosomes create the 1Mb chunks and schedule them to LSF queue
-    for my $chunk (@$chunks)
-    {
-        # Add to the list of VCF files to be merged later
-        push @to_be_merged, "$work_dir/$chunk.vcf.gz";
-
-        if ( -e "$work_dir/$chunk.vcf.gz" )
-        {
-            $self->clean_files($work_dir,$chunk,"$work_dir/_done");
-            next;
-        }
-
-        my $jids_file = "$work_dir/$$self{prefix}$chunk.jid";
-        my $status = LSF::is_job_running($jids_file);
-
-        $ntasks++;
-        if ( $max_jobs && $ntasks>$max_jobs )
-        {
-            $done |= $LSF::Running;
-            $self->debug("The limit reached, $max_jobs jobs are running.\n");
-            last;
-        }
-
-        if ( $status&$LSF::Running ) { $done |= $LSF::Running; next; }
-        if ( $status&$LSF::Error ) 
-        { 
-            $done |= $LSF::Error;
-            $self->warn("The command failed: $work_dir .. perl -w $$self{prefix}$chunk.pl\n"); 
-        }
-
-        open(my $fh,'>',"$work_dir/$$self{prefix}$chunk.pl") or $self->throw("$work_dir/$$self{prefix}$chunk.pl: $!");
-        print $fh qq[
-use strict;
-use warnings;
-use VertRes::Pipelines::SNPs;
-
-my \$opts = {
-    file_list  => q[$$self{file_list}],
-    fa_ref     => q[$$self{fa_ref}],
-    fai_ref    => q[$$self{fai_ref}],
-    split_size => q[$$self{split_size}],
-    samtools_pileup_params => q[$$self{samtools_pileup_params}],
-    qcall_cmd  => q[$$self{qcall_cmd}],
-    sort_cmd   => q[$$self{sort_cmd}],
-    prefix     => q[$$self{prefix}],
-};
-my \$var = VertRes::Pipelines::SNPs->new(%\$opts);
-\$var->run_qcall_chunk(q[$chunk]);
-        \n];
-
-        close($fh);
-        LSF::run($jids_file,$work_dir,"$$self{prefix}$chunk",{%$self,bsub_opts=>$$self{bsub_opts_long},dont_wait=>1,append=>0},qq[perl -w $$self{prefix}$chunk.pl]);
-        $self->debug("Submitting $work_dir .. perl -w $$self{prefix}$chunk.pl\n");
-
-        $done |= $LSF::Running;
-    }
-
-    if ( $done&$LSF::Error ) { $self->throw("QCall failed for some of the files.\n"); }
-    if ( $done&$LSF::Running ) { $self->debug("Some files not finished...\n"); return $$self{No}; }
-
-    # Because this subroutine returns as if it has already finished, a custom jids_file must
-    #   be used: Pipeline.pm will delete the $lock_file.
-    my $jids_file = "$work_dir/$$self{prefix}qcall_merge.jid";
-    my $status = LSF::is_job_running($jids_file);
-    if ( $status&$LSF::Running ) { return; }
-    if ( $status&$LSF::Error ) { $self->warn("Some jobs failed: $jids_file\n"); }
-
-    # Get the VCF merging command
-    my $cmd = $self->glue_vcf_chunks(\@to_be_merged,'qcall');
-
-    open(my $fh,'>',"$work_dir/$$self{prefix}merge.pl") or $self->throw("$work_dir/$$self{prefix}merge.pl: $!");
-    print $fh $cmd;
-    close($fh);
-    LSF::run($jids_file,$work_dir,"$$self{prefix}merge",{%$self,bsub_opts=>$$self{bsub_opts_long},dont_wait=>1},qq[perl -w $$self{prefix}merge.pl]);
-    $self->debug("Submitting $work_dir $$self{prefix}merge\n");
+    $self->run_in_parallel(\%opts);
 
     return $$self{Yes};
 }
 
-# Multiple BAM files can belong to the same sample and should be merged.
-sub bam_file_groups
+sub qcall_split_chunks
 {
-    my ($self,$files) = @_;
-    my %groups;
-    for my $file (@$files)
-    {
-        my $pars = VertRes::Parser::sam->new(file => $file);
-        my @samples = $pars->samples();
-        $pars->close;
+    my ($self,$bam,$chunk_name,$chunk) = @_;
 
-        unless ( @samples == 1 ) { $groups{$file} = $file; }
-        else { push @{$groups{$samples[0]}}, $file; }
-    }
-    return \%groups;
+    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref split_size samtools_pileup_params qcall_cmd sort_cmd prefix));
+
+    return qq[
+use strict;
+use warnings;
+use VertRes::Pipelines::SNPs;
+
+my $opts
+
+my \$var = VertRes::Pipelines::SNPs->new(%\$opts);
+\$var->run_qcall_chunk(q[$bam],q[$chunk_name],q[$chunk]);
+    ];
 }
 
 sub run_qcall_chunk
 {
-    my ($self,$chunk) = @_;
-
-    if ( -e "$chunk.vcf.gz" ) { return; }
+    my ($self,$file_list,$chunk_name,$chunk) = @_;
 
     my $files  = $self->read_files($$self{file_list});
     my $groups = $self->bam_file_groups($files);
@@ -821,46 +914,9 @@ sub run_qcall_chunk
     Utils::CMD("cat $chunk.vcf.part | qcall-to-vcf | gzip -c > $chunk.vcf.gz.part",{verbose=>1});
     unlink("$chunk.vcf.part");
 
-    rename("$chunk.vcf.gz.part","$chunk.vcf.gz") or $self->throw("rename $chunk.vcf.gz.part $chunk.vcf.gz: $!");
+    rename("$chunk.vcf.gz.part","$chunk_name.vcf.gz") or $self->throw("rename $chunk.vcf.gz.part $chunk_name.vcf.gz: $!");
+    Utils::CMD("touch _$chunk_name.done");
 }
-
-sub glue_vcf_chunks
-{
-    my ($self,$vcfs,$name) = @_;
-
-    my $out = qq[
-use strict;
-use warnings;
-use Utils;
-];
-
-    $out .= qq[Utils::CMD("rm -f $name.vcf-tmp.gz.part");\n];
-    for my $vcf (@$vcfs)
-    {
-        # There are too many files, the argument list is often too long for the shell to accept
-        $out .= qq[Utils::CMD("zcat $vcf | gzip -c >> $name.vcf-tmp.gz.part");\n];
-    }
-
-    $out .= qq[
-# Take the VCF header from one file and sort the rest
-Utils::CMD(qq[(zcat $$vcfs[0] | grep ^#; zcat $name.vcf-tmp.gz.part | grep -v ^# | $$self{sort_cmd} -k1,1 -k2,2n) | $$self{vcf_rmdup} | bgzip -c > $name.vcf.gz.part]);
-Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
-rename('$name.vcf.gz.part','$name.vcf.gz') or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
-Utils::CMD(qq[tabix -p vcf $name.vcf.gz]);
-unlink('$name.vcf-tmp.gz.part');
-];
-
-    for my $file (@$vcfs)
-    {
-        if ( !($file=~/.vcf.gz$/) ) { $self->throw("Could not parse the chunk file name: $file"); }
-        my $chunk = $`;
-        $out .= qq[unlink('$file');\n]; 
-        $out .= qq[unlink('$$self{prefix}$chunk.names');\n]; 
-    }
-
-    return $out;
-}
-
 
 
 
