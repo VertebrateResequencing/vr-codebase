@@ -216,6 +216,47 @@ sub merge_and_check {
     return;
 }
 
+=head2 FixMateInformation
+
+ Title   : FixMateInformation
+ Usage   : $wrapper->FixMateInformation($in_bam, $out_bam, %options);
+ Function: Can take a bam of any sort order and make a coordinate-sorted bam
+           with the mate information fixed.
+ Returns : n/a
+ Args    : list of file paths (input bam, output bam), followed by a hash of
+           options understood by FixMateInformation, eg. VALIDATION_STRINGENCY
+           => 'SILENT'. (case matters: must be uppercase)
+
+=cut
+
+sub FixMateInformation {
+    my ($self, $in_bam, $out_bam, %args) = @_;
+    
+    #java -Djava.io.tmpdir=/path/to/tmpdir \  [this argument recommended when dealing with large input]
+    #   -jar FixMateInformation.jar \
+    #   INPUT=<input1.bam> \
+    #   OUTPUT=<fixedBam.bam> \
+    #   SO=coordinate \
+    #   VALIDATION_STRINGENCY=SILENT
+    
+    $self->exe($self->{base_exe}.$fsu->catfile($self->{picard_dir}, 'FixMateInformation.jar'));
+    
+    $self->switches([]);
+    $self->params([qw(TMP_DIR VERBOSITY QUIET VALIDATION_STRINGENCY
+                   COMPRESSION_LEVEL SORT_ORDER)]);
+    
+    my @file_args = (" I=$in_bam", " O=$out_bam");
+    $self->_handle_common_params(\%args);
+    unless (defined $args{SO} || defined $args{SORT_ORDER}) {
+        $args{SORT_ORDER} = 'coordinate';
+    }
+    
+    $self->register_output_file_to_check($out_bam);
+    $self->_set_params_and_switches_from_args(%args);
+    
+    return $self->run(@file_args);
+}
+
 =head2 MarkDuplicates
 
  Title   : MarkDuplicates
