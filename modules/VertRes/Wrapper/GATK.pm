@@ -468,7 +468,9 @@ sub table_recalibration {
  Function: Finds target intervals in a quality-recalibrated bam that could be
            realigned with indel_realigner().
  Returns : n/a
- Args    : path to input .bam file, path to output intervals.
+ Args    : path to input .bam file, path to output intervals. If doing
+           indel_realigner on a constant set of known indels only, input bam
+           is not required here, and should be set to undef.
            Optionally, supply R or DBSNP options etc (as a hash), as understood
            by GATK. Use set_b() if you have known snps/indels.
 
@@ -490,7 +492,8 @@ sub realignment_targets {
                       mismatchFraction windowSize)]);
     
     my $bs = $self->get_b();
-    my @file_args = (" $bs -I $in_bam", " -o $out_intervals");
+    my $I = $in_bam ? "-I $in_bam" : '';
+    my @file_args = (" $bs $I", " -o $out_intervals");
     
     my %params = @params;
     $params{T} = 'RealignerTargetCreator';
@@ -533,6 +536,7 @@ sub indel_realigner {
     #    -D /path/to/dbsnp.rod \
     #    -knownsOnly \
     #    -LOD 0.4
+    #    -compress 0
     
     $self->switches([qw(quiet_output_mode useOnlyKnownIndels
                         noOriginalAlignmentTags realignReadsWithBadMates
@@ -546,7 +550,8 @@ sub indel_realigner {
     my $bs = $self->get_b();
     my @file_args = (" $bs -I $in_bam", " -targetIntervals $intervals_file", " -o $out_bam");
     
-    my %params = (useOnlyKnownIndels => 1, LODThresholdForCleaning => 0.4, @params);
+    my %params = (useOnlyKnownIndels => 1, LODThresholdForCleaning => 0.4,
+                  bam_compression => 0, @params);
     $params{T} = 'IndelRealigner';
     $self->_handle_common_params(\%params);
     
@@ -874,7 +879,8 @@ sub variant_recalibrator {
     my $bs = $self->get_b();
     my @file_args = (" $bs -clusterFile $in_cluster -reportDatFile $out_vcf.dat -tranchesFile $out_vcf.dat.tranches -o $out_vcf",
                      '-resources '.File::Spec->catdir($ENV{GATK}, 'resources'),
-                     '-Rscript Rscript');
+                     '-Rscript Rscript',
+                     '-tranche 0.1 -tranche 1 -tranche 5 -tranche 10');
     
     my %params = (target_titv => 2.07, ignore_filter => 'HARD_TO_VALIDATE', l => 'INFO', @params);
     $params{T} = 'VariantRecalibrator';
@@ -922,7 +928,7 @@ sub apply_variant_cuts {
     my $bs = $self->get_b();
     my @file_args = (" $bs -tranchesFile $in_cluster -o $out_vcf");
     
-    my %params = (fdr_filter_level => '10.0', l => 'INFO', @params);
+    my %params = (fdr_filter_level => '0.1', l => 'INFO', @params);
     $params{T} = 'ApplyVariantCuts';
     $self->_handle_common_params(\%params);
     
