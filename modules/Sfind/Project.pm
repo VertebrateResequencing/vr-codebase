@@ -80,7 +80,7 @@ sub samples {
     unless ($self->{'samples'}){
 	my @samples;
     	foreach my $id (@{$self->sample_ids()}){
-	    if($id=~/^\d/){
+	    if($id && $id=~/^\d/){
 	        my $obj = Sfind::Sample->new($self->{_dbh},$id, $self->id);
 	        push @samples, $obj;
 	    }
