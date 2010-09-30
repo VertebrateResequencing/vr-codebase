@@ -38,11 +38,11 @@ use warnings;
 use DBI;
 use VRTrack::VRTrack;
 
-my $HOST = $ENV{VRTRACK_HOST} || 'mcs4a';
+my $HOST = $ENV{VRTRACK_HOST};
 my $PORT = $ENV{VRTRACK_PORT} || 3306;
-my $READ_USER = $ENV{VRTRACK_RO_USER} || 'vreseq_ro';
-my $WRITE_USER = $ENV{VRTRACK_RW_USER} || 'vreseq_rw';
-my $WRITE_PASS = $ENV{VRTRACK_PASSWORD} || 't3aml3ss';
+my $READ_USER = $ENV{VRTRACK_RO_USER};
+my $WRITE_USER = $ENV{VRTRACK_RW_USER};
+my $WRITE_PASS = $ENV{VRTRACK_PASSWORD};
 
 
 =head2 new
