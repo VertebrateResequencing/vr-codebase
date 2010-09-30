@@ -1360,7 +1360,7 @@ sub _pre_run {
     
     my $input_bam = $_[0];
     if ($input_bam =~ /\.bam$/) {
-        $input_bam =~ s/^ -I //;
+        $input_bam =~ s/.* -I\s+//;
         my $bai_file = $input_bam.'.bai';
         
         # check that the bai is older than the bam
