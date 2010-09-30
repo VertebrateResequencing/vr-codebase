@@ -181,6 +181,12 @@ sub _set_version
     {
         $self->warn(qq[The version "$$self{version}" not supported, assuming VCFv4.0\n]);
     }
+
+    # When changing version, change also the fileformat header line
+    if ( exists($$self{header_lines}) && exists($$self{header_lines}[0]{key}) && $$self{header_lines}[0]{key} eq 'fileformat' )
+    {
+        shift(@{$$self{header_lines}});
+    }
 }
 
 
@@ -476,7 +482,6 @@ sub add_header_line
         return;
     }
 
-    if ( $key eq 'format' ) { $key='fileformat'; }
     if ( $key eq 'fileformat' )
     {
         my $value = $$rec{value};
