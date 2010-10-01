@@ -439,7 +439,10 @@ sub _next_header_line
 
     Usage   : $vcf->add_header_line({key=>'INFO', ID=>'AC',Number=>-1,Type=>'Integer',Description=>'Allele count in genotypes'})
               $vcf->add_header_line({key=>'reference',value=>'1000GenomesPilot-NCBI36'})
-    Args    : 
+    Args    : Header line hash as in the example above
+              Hash with additional parameters [optional]
+                silent .. do not warn about existing header keys
+                append .. append timestamp to the name of the new one
     Returns : 
 
 =cut
@@ -496,6 +499,15 @@ sub add_header_line
         $$rec{key} = $key;
     }
 
+    if ( $$args{append} )
+    {
+        my @tm = gmtime(time);
+        $key = sprintf "%s_%d%.2d%.2d", $key,$tm[5]+1900,$tm[4],$tm[3];
+        my $i = 1;
+        while ( exists($$self{header}{$key.'.'.$i}) ) { $i++; }
+        $key = $key.'.'.$i;
+        $$rec{key} = $key;
+    }
     if ( exists($$self{header}{$key}) ) 
     {
         $self->warn("The header tag $key already exists, ignoring.\n") unless $$args{silent};
