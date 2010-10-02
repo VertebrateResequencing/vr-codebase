@@ -211,9 +211,6 @@ sub chr_chunks
             #   depth.)
             $pos += $split_size - 250;
             if ( $pos<1 ) { $self->throw("The split size too small [$split_size]?\n"); }
-
-        # debug .. run for one file only
-        if ( @chunks>1 ) { return \@chunks; }
         }
     }
     return \@chunks;
