@@ -211,6 +211,9 @@ sub chr_chunks
             #   depth.)
             $pos += $split_size - 250;
             if ( $pos<1 ) { $self->throw("The split size too small [$split_size]?\n"); }
+        
+            # Eearly exit for debugging: do two chunks for one chromosome only for testing.
+            #   if ( scalar @chunks>1 ) { return \@chunks; }
         }
     }
     return \@chunks;
@@ -467,19 +470,29 @@ use Utils;
 ];
 
     $out .= qq[Utils::CMD("rm -f $name.vcf-tmp.gz.part");\n];
+    $out .= qq[Utils::CMD("rm -f $name.columns");\n];
     for my $chunk (@$chunks)
     {
         # There are too many files, the argument list is often too long for the shell to accept
         $out .= qq[Utils::CMD("zcat ${name}_$chunk.vcf.gz | gzip -c >> $name.vcf-tmp.gz.part");\n];
+
+        # Check that the columns are ordered in the same order: collect the header line with column names
+        #   The head will return non-zero status if less than 200 lines are present.
+        $out .= qq[Utils::CMD("zcat ${name}_$chunk.vcf.gz | head -200 | grep ^#CHROM >> $name.columns",{exit_on_error=>0});\n];
     }
 
     $out .= qq[
+# Check that the columns are ordered in the same order
+my \@out=Utils::CMD(qq[cat $name.columns | uniq | wc -l]);
+if ( scalar \@out!=1 or !(\$out[0]=~/^1\$/) ) { Utils::error("FIXME, the column names do not agree: $name.columns\\n"); }
+
 # Take the VCF header from one file and sort the rest
 Utils::CMD(qq[(zcat ${name}_$$chunks[0].vcf.gz | grep ^#; zcat $name.vcf-tmp.gz.part | grep -v ^# | $$self{sort_cmd} -k1,1 -k2,2n) | $$self{vcf_rmdup} | bgzip -c > $name.vcf.gz.part]);
 Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
 rename('$name.vcf.gz.part','$name.vcf.gz') or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
 Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz]);
 unlink('$name.vcf-tmp.gz.part');
+unlink('$name.columns');
 ];
 
     for my $chunk (@$chunks)
