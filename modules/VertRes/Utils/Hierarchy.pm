@@ -561,6 +561,112 @@ sub get_lanes {
     return @active;
 }
 
+=head2 platform_level_status
+
+ Title   : platform_level_status
+ Usage   : my %platforms_status = $obj->platform_level_status(\@lanes,
+                                                         '2010-01-04 10:49:10');
+ Function: From the given list of VRTrack::Lane objects, find out which samples
+           (split by platform) have changed since the given datetime, and how
+           much has been sequenced under that platform.
+ Returns : hash with structure like:
+           $platforms_status{sample_name}->{platform} = {%status}
+           where the %status hash contains:
+           $status{changed} = boolean (true if any lane that comprises this
+                                       platform has been changed since the
+                                       specified datetime; if no datetime had
+                                       been supplied this will always be false)
+           $status{bases} = int (the number of raw bases sequenced for this
+                                 sample with this platform technology)
+           $status{lanes} = \@lanes (the list of lanes for this sample/platform;
+                                     a subset of your input lanes)
+ Args    : array ref of VRTrack::Lane objects, mysql datetime formatted string
+           (optional if you want the latest status)
+
+=cut
+
+sub platform_level_status {
+    my ($self, $lanes, $datetime) = @_;
+    
+    my $hist = VRTrack::History->new;
+    
+    # group lanes into sample->platform
+    my %platforms_status;
+    foreach my $lane (@{$lanes}) {
+        my %objects = $self->lane_hierarchy_objects($lane);
+        my $sample_name = $objects{sample}->name;
+        push(@{$platforms_status{$objects{sample}->name}->{$objects{platform}->name}->{lanes}}, $lane);
+    }
+    
+    # work out the status for each grouping
+    while (my ($sample, $plathash) = each %platforms_status) {
+        while (my ($platform, $stathash) = each %{$plathash}) {
+            my @lanes = @{$stathash->{lanes}};
+            my $changed = 0;
+            my $bases = 0;
+            foreach my $lane (@lanes) {
+                if ($datetime && ! $changed) {
+                    $changed = $hist->lane_changed($lane, $datetime);
+                }
+                
+                $bases += $lane->raw_bases;
+            }
+            
+            $stathash->{bases} = $bases;
+            $stathash->{changed} = $changed;
+        }
+    }
+    
+    return %platforms_status;
+}
+
+=head2 sample_level_status
+
+ Title   : sample_level_status
+ Usage   : my %samples_status = $obj->sample_level_status(\@lanes,
+                                                         '2010-01-04 10:49:10');
+ Function: Like platform_level_status, but not split by platform.
+ Returns : hash with structure like:
+           $samples_status{sample_name} = {%status}
+           where the %status hash contains:
+           $status{changed} = boolean (true if any lane that comprises this
+                                       sample has been changed since the
+                                       specified datetime; if no datetime had
+                                       been supplied this will always be false)
+           $status{bases} = int (the number of raw bases sequenced for this
+                                 sample)
+           $status{lanes} = \@lanes (the list of lanes for this sample;
+                                     a subset of your input lanes)
+ Args    : array ref of VRTrack::Lane objects, mysql datetime formatted string
+           (optional if you want the latest status)
+
+=cut
+
+sub sample_level_status {
+    my ($self, $lanes, $datetime) = @_;
+    
+    my %platforms_status = $self->platform_level_status($lanes, $datetime);
+    my %samples_status;
+    
+    # work out the status for each sample
+    while (my ($sample, $plathash) = each %platforms_status) {
+        my $changed = 0;
+        my $bases = 0;
+        my @lanes;
+        while (my ($platform, $stathash) = each %{$plathash}) {
+            $bases += $stathash->{bases} = $bases;
+            $changed ||= $stathash->{changed};
+            push(@lanes, @{$stathash->{lanes}});
+        }
+        
+        $samples_status{$sample} = { bases => $bases,
+                                     changed => $changed,
+                                     lanes => \@lanes };
+    }
+    
+    return %samples_status;
+}
+
 =head2 check_lanes_vs_database
 
  Title   : check_lanes_vs_database
