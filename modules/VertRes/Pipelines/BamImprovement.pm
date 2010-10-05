@@ -100,10 +100,10 @@ our $actions = [ { name     => 'realign',
 
 our %options = (slx_mapper => 'bwa',
                 '454_mapper' => 'ssaha',
-                dbsnp_rod => '',
-                indel_sites => '',
-                indel_intervals => '',
-                snp_sites => '',
+                dbsnp_rod => '/lustre/scratch102/projects/g1k/ref/broad_recal_data/dbsnp_129_b37.rod',
+                indel_sites => '/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/1kg.pilot_release.merged.indels.sites.hg19.vcf',
+                indel_intervals => '/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/indel.dbsnp_129_b37-vs-pilot.intervals',
+                snp_sites => '/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/pilot.snps.bed',
                 do_cleanup => 1);
 
 =head2 new
@@ -198,9 +198,9 @@ sub new {
         foreach my $possible (@{$mappings}) {
             # we're expecting it to have the correct assembly and mapper
             my $assembly = $possible->assembly() || next;
-            $assembly->name eq $args{assembly_name} || next;
+            $assembly->name eq $self->{assembly_name} || next;
             my $mapper = $possible->mapper() || next;
-            $mapper->name eq $args{$platform.'_mapper'} || next;
+            $mapper->name eq $self->{$platform.'_mapper'} || next;
             
             if ($possible->id > $highest_id) {
                 $mapstats = $possible;
@@ -234,7 +234,7 @@ sub new {
         my $source = $self->{fsu}->catfile($lane_path, "$mapstats_prefix.$ended.$type.sorted.bam");
         unless ($self->{fsu}->file_exists($source)) {
             $type = 'raw';
-            $source = $fsu->catfile($lane_path, "$mapstats_prefix.$ended.$type.sorted.bam");
+            $source = $self->{fsu}->catfile($lane_path, "$mapstats_prefix.$ended.$type.sorted.bam");
         }
         
         if ($self->{fsu}->file_exists($source)) {
@@ -319,7 +319,7 @@ sub realign {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q long -M3800000 -R \'select[mem>3800] rusage[mem=3800]\'';
+    $self->{bsub_opts} = '-q normal -M3800000 -R \'select[mem>3800] rusage[mem=3800]\'';
     my $verbose = $self->verbose;
     
     foreach my $in_bam (@{$self->{in_bams}}) {
@@ -328,6 +328,10 @@ sub realign {
         
         next if -s $rel_bam;
         
+        my $working_bam = $rel_bam;
+        $working_bam =~ s/\.bam$/.working.bam/;
+        my $done_file = $self->{fsu}->catfile($lane_path, '.realign_complete_'.$base);
+        
         # run realign in an LSF call to a temp script
         my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."realign_$base.pl");
         
@@ -335,9 +339,13 @@ sub realign {
         print $scriptfh qq{
 use strict;
 use VertRes::Wrapper::GATK;
+use VertRes::Utils::Sam;
+use File::Copy;
 
 my \$in_bam = '$in_bam';
 my \$rel_bam = '$rel_bam';
+my \$working_bam = '$working_bam';
+my \$done_file = '$done_file';
 my \$intervals_file = '$self->{indel_intervals}';
 
 my \$gatk = VertRes::Wrapper::GATK->new(verbose => $verbose,
@@ -348,7 +356,27 @@ my \$gatk = VertRes::Wrapper::GATK->new(verbose => $verbose,
 
 # do the realignment, generating an uncompressed, name-sorted bam
 unless (-s \$rel_bam) {
-    \$gatk->indel_realigner(\$in_bam, \$intervals_file, \$rel_bam);
+    \$gatk->indel_realigner(\$in_bam, \$intervals_file, \$working_bam);
+}
+
+# check for truncation
+if (-s \$working_bam) {
+    my \$su = VertRes::Utils::Sam->new;
+    my \$orig_records = \$su->num_bam_records(\$in_bam);
+    my \$new_records = \$su->num_bam_records(\$working_bam);
+    
+    if (\$orig_records == \$new_records && \$new_records > 10) {
+        move(\$working_bam, \$rel_bam) || die "Could not rename \$working_bam to \$rel_bam\n";
+        
+        # mark that we've completed
+        open(my \$dfh, '>', \$done_file) || die "Could not write to \$done_file";
+        print \$dfh "done\n";
+        close(\$dfh);
+    }
+    else {
+        move(\$working_bam, "\$rel_bam.bad");
+        die "\$working_bam is bad (\$new_records records vs \$orig_records), renaming to \$rel_bam.bad";
+    }
 }
 
 exit;
@@ -383,6 +411,8 @@ sub sort_requires {
     
     foreach my $in_bam (@{$self->{in_bams}}) {
         my ($rel_bam) = $self->_bam_name_conversion($in_bam);
+        my $done_file = $self->{fsu}->catfile($lane_path, '.sort_complete_'.basename($in_bam));
+        next if -s $done_file;
         push(@requires, $rel_bam);
     }
     
@@ -425,13 +455,17 @@ sub sort {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q long -M6800000 -R \'select[mem>6800] rusage[mem=6800]\'';
+    $self->{bsub_opts} = '-q normal -M6800000 -R \'select[mem>6800] rusage[mem=6800]\'';
     
     foreach my $in_bam (@{$self->{in_bams}}) {
         my $base = basename($in_bam);
         my ($rel_bam, $final_bam) = $self->_bam_name_conversion($in_bam);
         
         next if -s $final_bam;
+        
+        my $working_bam = $final_bam;
+        $working_bam =~ s/\.bam$/.working.bam/;
+        my $done_file = $self->{fsu}->catfile($lane_path, '.sort_complete_'.$base);
         
         # run sort in an LSF call to a temp script
         my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."sort_$base.pl");
@@ -440,13 +474,38 @@ sub sort {
         print $scriptfh qq{
 use strict;
 use VertRes::Wrapper::picard;
+use VertRes::Utils::Sam;
+use File::Copy;
 
+my \$in_bam = '$rel_bam';
 my \$final_bam = '$final_bam';
+my \$working_bam = '$working_bam';
+my \$done_file = '$done_file';
 
 # sort and fix mates
 unless (-s \$final_bam) {
     my \$picard = VertRes::Wrapper::picard->new();
-    \$picard->FixMateInformation('$rel_bam', \$final_bam);
+    \$picard->FixMateInformation(\$in_bam, \$working_bam, COMPRESSION_LEVEL => 0);
+}
+
+# check for truncation
+if (-s \$working_bam) {
+    my \$su = VertRes::Utils::Sam->new;
+    my \$orig_records = \$su->num_bam_records(\$in_bam);
+    my \$new_records = \$su->num_bam_records(\$working_bam);
+    
+    if (\$orig_records == \$new_records && \$new_records > 10) {
+        move(\$working_bam, \$final_bam) || die "Could not rename \$working_bam to \$final_bam\n";
+        
+        # mark that we've completed
+        open(my \$dfh, '>', \$done_file) || die "Could not write to \$done_file";
+        print \$dfh "done\n";
+        close(\$dfh);
+    }
+    else {
+        move(\$working_bam, "\$final_bam.bad");
+        die "\$working_bam is bad (\$new_records records vs \$orig_records), renaming to \$final_bam.bad";
+    }
 }
 
 exit;
@@ -558,7 +617,7 @@ my \$gatk = VertRes::Wrapper::GATK->new(verbose => $verbose,
                                         dbsnp => '$self->{dbsnp_rod}',
                                         reference => '$self->{reference}',
                                         build => '$self->{assembly_name}');
-\$gatk->set_b('mask,VCF,$self->{snp_sites}');
+\$gatk->set_b('mask,BED,$self->{snp_sites}');
 
 # do the recalibration
 unless (-s \$recal_bam) {
@@ -718,8 +777,7 @@ sub is_finished {
             my $base = basename($in_bam);
             my $done_file = $self->{fsu}->catfile($lane_path, '.realign_complete_'.$base);
             
-            my $done = $self->_check_bam_done($in_bam, $realign_bam, $done_file);
-            if ($done) {
+            if (-s $done_file && -s $in_bam && -s $realign_bam) {
                 unlink($in_bam);
                 unlink($in_bam.'.bai');
                 system("touch $in_bam");
@@ -733,8 +791,7 @@ sub is_finished {
             my $base = basename($in_bam);
             my $done_file = $self->{fsu}->catfile($lane_path, '.sort_complete_'.$base);
             
-            my $done = $self->_check_bam_done($in_bam, $sorted_bam, $done_file);
-            if ($done) {
+            if (-s $done_file && -s $realign_bam && -s $sorted_bam) {
                 unlink($realign_bam);
                 unlink($realign_bam.'.bai');
             }
@@ -743,7 +800,7 @@ sub is_finished {
     elsif ($action->{name} eq 'recalibrate') {
         foreach my $in_bam (@{$self->{in_bams}}) {
             my (undef, $sorted_bam, $recal_bam) = $self->_bam_name_conversion($in_bam);
-            if (-s $recal_bam) {
+            if (-s $recal_bam && -s $sorted_bam) {
                 # recal processes internally checks for truncation, so if this
                 # file exists it is OK
                 
@@ -759,34 +816,6 @@ sub is_finished {
     }
     
     return $self->SUPER::is_finished($lane_path, $action);
-}
-
-sub _check_bam_done {
-    my ($self, $in_bam, $final_bam, $done_file) = @_;
-    
-    if (-s $final_bam) {
-        # check for truncation
-        my $su = VertRes::Utils::Sam->new;
-        my $orig_records = $su->num_bam_records($in_bam);
-        my $new_records = $su->num_bam_records($final_bam);
-        
-        if ($orig_records == $new_records && $new_records > 10) {
-            # mark that we've completed
-            open(my $dfh, '>', $done_file) || $self->throw("Could not write to $done_file");
-            print $dfh "done\n";
-            close($dfh);
-            
-            return 1;
-        }
-        else {
-            $self->warn("$final_bam is bad ($new_records records vs $orig_records), moving to .bad");
-            move($final_bam, "$final_bam.bad");
-            
-            return 0;
-        }
-    }
-    
-    return 0;
 }
 
 1;
