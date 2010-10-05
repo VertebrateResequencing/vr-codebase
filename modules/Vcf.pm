@@ -1404,8 +1404,8 @@ sub run_validation
             $prev_pos  = $$x{POS};
         }
 
-        # Is the ID non-empty?
-        if ( $$x{ID}=~/^$/ ) { $self->warn("The ID should be set to . if unknown at $$x{CHROM}:$$x{POS}\n"); }
+        # Is the ID composed of alphanumeric chars
+        if ( !($$x{ID}=~/^[\w;\.]+$/) ) { $self->warn("Expected alphanumeric ID at $$x{CHROM}:$$x{POS}, but got [$$x{ID}]\n"); }
 
         # The reference base: one of A,C,G,T,N, non-empty.
         my $err = $self->validate_ref_field($$x{REF});
