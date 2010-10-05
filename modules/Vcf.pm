@@ -1337,6 +1337,7 @@ sub validate_float
     if ( $value =~ /^-?\d+(?:\.\d*)$/ ) { return undef; }
     if ( $value =~ /^-?\d*(?:\.\d+)$/ ) { return undef; }
     if ( $value =~ /^-?\d+$/ ) { return undef; }
+    if ( $value =~ /^-?\d*(?:\.\d+)(?:e-?\d+)?$/ ) { return undef; }
     return "Could not validate the float [$value]";
 }
 
