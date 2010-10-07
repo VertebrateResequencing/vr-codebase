@@ -4,7 +4,7 @@ use warnings;
 use DateTime;
 
 BEGIN {
-    use Test::Most tests => 600;
+    use Test::Most tests => 605;
 
     use_ok('VRTrack::VRTrack');
     use_ok('VRTrack::Request');
@@ -637,6 +637,17 @@ ok $vrproj, 'can retrieve latest version of object after resetting latest';
         is $hist->was_processed($lane, 'swapped'), $lane_stamps{$lane->id};
     }
     
+    # test 2 new methods related to working out if a lane "changed"
+    is $hist->datetime_cmp('2010-01-04 10:49:10', '2010-01-04 11:40:34'), -1, 'datetime_cmp test old -> recent';
+    is $hist->datetime_cmp('2010-02-04 10:49:10', '2010-01-04 11:40:34'), 1, 'datetime_cmp test recent -> old';
+    is $hist->datetime_cmp('2010-01-04 10:49:10', '2010-01-04 10:49:10'), 0, 'datetime_cmp test same';
+    
+    my ($swapped_lane) = @{$old_lib->lanes};
+    my $unchanged_lib = VRTrack::Library->new_by_name($vrtrack, 'p1.s2.l1');
+    my ($unchanged_lane) = @{$unchanged_lib->lanes};
+    is $hist->lane_changed($unchanged_lane, $datestamp), 0, 'lane_changed on an unchanged lane';
+    is $hist->lane_changed($swapped_lane, $datestamp), 1, 'lane_changed on a swapped lane';
+    
     # and following one more unrelated change, can we get back to the mid-state?
     sleep(2);
     $datestamp = datestamp();
@@ -646,7 +657,6 @@ ok $vrproj, 'can retrieve latest version of object after resetting latest';
     $hist->time_travel($datestamp);
     $vrtrack = VRTrack::VRTrack->new($connection_details);
     is check_hierarchy($vrtrack, \%new_hierarchy), 120, 'time travelling returned us to the middle state';
-
     
     sub datestamp {
         my $tz = DateTime::TimeZone->new(name => 'local');

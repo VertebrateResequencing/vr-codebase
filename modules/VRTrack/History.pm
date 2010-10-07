@@ -52,6 +52,7 @@ use strict;
 use warnings;
 use Carp qw(cluck confess);
 use VRTrack::Core_obj;
+use DateTime;
 
 
 =head2 new
@@ -181,6 +182,85 @@ sub was_processed {
 sub time_travel {
     my $self = shift;
     VRTrack::Core_obj->global_history_date(@_);
+}
+
+
+=head2 datetime_cmp
+
+  Arg [1]    : datetime string
+  Arg [2]    : datetime string
+  Example    : $obj = $class->datetime_cmp('2010-01-04 10:49:10', '2010-01-04 11:40:34');
+  Description: Compare two mysql datetime strings.
+  Returntype : int: -1 if first is earlier than second, 1 if it's later, and 0
+               if they are equal.
+
+=cut
+
+sub datetime_cmp {
+    my ($self, $first, $second) = @_;
+    
+    my @epochs;
+    foreach my $string ($first, $second) {
+        $string =~ /^(\d+)-(\d+)-(\d+)\s+(\d+):(\d+):(\d+)/;
+        
+        my $dt = DateTime->new(year => $1, month => $2, day => $3, hour => $4, minute => $5, second => $6);
+        
+        push(@epochs, $dt->epoch);
+    }
+    
+    return $epochs[0] <=> $epochs[1];
+}
+
+
+=head2 lane_changed
+
+ Title   : lane_changed
+ Usage   : if ($obj->lane_changed($vrlane, '2010-01-04 10:49:10')) { ... }
+ Function: Find out if a lane was changed (remapped, swapped, fastq changed,
+           improved, became unwithdrawn) or brand new since since the supplied
+           date.
+ Returns : boolean (true if the lane is new or changed since the date)
+ Args    : VRTrack::Lane object, mysql datetime formatted string
+
+=cut
+
+sub lane_changed {
+    my ($self, $lane, $datetime) = @_;
+    
+    my @versions = $self->historical_objects($lane);
+    my $hist_date = $lane->global_history_date();
+    
+    my $changed = 0;
+    my $was_mapped = 0;
+    my $saw_version = 0;
+    my $is_mapped = $lane->is_processed('mapped');
+    VERSION: foreach my $version (@versions) {
+        if ($hist_date ne 'latest' && $self->datetime_cmp($hist_date, $version->changed) == -1) {
+            last;
+        }
+        unless ($self->datetime_cmp($datetime, $version->changed) == -1) {
+            $was_mapped = $version->is_processed('mapped');
+            next;
+        }
+        $saw_version = 1;
+        
+        if (! $version->is_processed('mapped') && $was_mapped) {
+            $changed = 1;
+            last;
+        }
+        foreach my $status (qw(deleted swapped altered_fastq improved)) {
+            if ($version->is_processed($status)) {
+                $changed = 1;
+                last VERSION;
+            }
+        }
+    }
+    
+    unless ($saw_version) {
+        $was_mapped = $is_mapped;
+    }
+    
+    return ($was_mapped != $is_mapped || $changed) ? 1 : 0;
 }
 
 1;
