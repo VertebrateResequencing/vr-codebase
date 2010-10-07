@@ -356,7 +356,10 @@ my \$gatk = VertRes::Wrapper::GATK->new(verbose => $verbose,
 
 # do the realignment, generating an uncompressed, name-sorted bam
 unless (-s \$rel_bam) {
-    \$gatk->indel_realigner(\$in_bam, \$intervals_file, \$working_bam);
+    \$gatk->indel_realigner(\$in_bam, \$intervals_file, \$working_bam,
+                            useOnlyKnownIndels => 1,
+                            LODThresholdForCleaning => 0.4,
+                            bam_compression => 0);
 }
 
 # check for truncation
@@ -538,7 +541,8 @@ sub recalibrate_requires {
     # we need bams
     my @requires;
     foreach my $in_bam (@{$self->{in_bams}}) {
-        my (undef, $sort_bam) = $self->_bam_name_conversion($in_bam);
+        my (undef, $sort_bam, $recal_bam) = $self->_bam_name_conversion($in_bam);
+        next if -s $recal_bam;
         push(@requires, $sort_bam);
     }
     
