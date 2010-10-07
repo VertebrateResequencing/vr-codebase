@@ -688,7 +688,8 @@ sub allowed_processed_flags {
 		 stored => 8,
 		 deleted => 16,
 		 swapped => 32,
-		 altered_fastq => 64);
+		 altered_fastq => 64,
+                 improved => 128);
     return %flags;
 }
 
