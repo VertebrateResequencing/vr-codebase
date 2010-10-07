@@ -58,6 +58,7 @@ my %AUTH_USERS = (  'jws' => 1, # Jim Stalker
                     'sb10'=> 1, # Sendu Bala
                     'rd'  => 1, # Richard Durbin
                     'kb1' => 1, # Karen McLaren
+                    'ylx' => 1, #Yali Xue from Chris's group
                  );
 
 ###############################CSS Stuff#############################
