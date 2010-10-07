@@ -205,6 +205,10 @@ sub new {
         $self->{release_date} = "$time{'yyyymmdd'}"; 
     }
     
+    if ($self->{previous_release_root}) {
+        $self->throw("A previous_release_root of $self->{previous_release_root} was specified, but that is not a directory!") unless -d $self->{previous_release_root};
+    }
+    
     $self->{vrtrack} = VRTrack::VRTrack->new($self->{db});
     
     return $self;
@@ -264,7 +268,7 @@ sub create_release_hierarchy {
     # for releases we expect new lanes to be added after we start building, but
     # a release is a freeze and this is OK. release_lanes.pl, which makes our
     # list of lanes to include in the release, does this check.
-    $hu->check_lanes_vs_database(\@mapped_lanes, $self->{vrtrack}) || $self->throw("There was inconsistency between the mapped lanes and the database, can't continue");
+    #$hu->check_lanes_vs_database(\@mapped_lanes, $self->{vrtrack}) || $self->throw("There was inconsistency between the mapped lanes and the database, can't continue");
     
     my @bams_in_rel = $hu->create_release_hierarchy(\@mapped_lanes, $lane_path, %{$self});
     @bams_in_rel || $self->throw("Failed to create the release hierarchy");
@@ -404,7 +408,7 @@ sub lib_markdup {
         my $markdup_bam = $merge_bam;
         $markdup_bam =~ s/\.bam$/.markdup.bam/;
         push(@markdup_bams, $markdup_bam);
-        next if -s $markdup_bam;
+        next if -e $markdup_bam;
         
         # if a higher-level bam already exists, don't repeat making this level
         # bam if we deleted it
@@ -627,7 +631,9 @@ sub merge_up_one_level {
         # previous release
         if ($self->{previous_release_root}) {
             # directory_structure_same() might be very expensive on lustre?
-            # up to 50mins to complete?! Store its result
+            # up to 50mins to complete?! Store its result...
+            # directory_structure_same now sped up to a few seconds run time,
+            # but still create .dss files
             my $dss_file = $self->{fsu}->catfile($current_path, '.dss');
             unless (-s $dss_file) {
                 my $previous_path = $self->{fsu}->catfile($self->{previous_release_root}, $out_dir);
@@ -651,16 +657,63 @@ sub merge_up_one_level {
                     #}
                     
                     unless ($lanes_changed) {
-                        symlink($previous_bam, $out_bam);
+                        unlink($out_bam);
+                        symlink($previous_bam, $out_bam) if -s $previous_bam;
+                        
+                        # it may be a platform bam in the previous release that
+                        # we've since deleted because we only kept the splits,
+                        # so make a raw.bam that is just the header and first
+                        # record of chrom1 bam (so that we can calculate what
+                        # splits we expect in the create_release_files step)
+                        if ($job_name eq 'platform_merge' && ! -e $out_bam) {
+                            open(my $ls, "ls $previous_path/*chrom1.*.bam |") || $self->throw("Could not open a pipe to ls");
+                            my $chrom1 = <$ls>;
+                            close($ls);
+                            chomp($chrom1);
+                            
+                            if (-e $chrom1) {
+                                unlink($out_bam);
+                                system("touch $out_bam");
+                                system("bsub -q small -o /dev/null 'samtools view -H $chrom1 > $out_bam.header; samtools view $chrom1 | head -n 1 >> $out_bam.header; samtools view -bhS $out_bam.header > $out_bam; rm $out_bam.header'");
+                            }
+                            else {
+                                $self->throw("The previous platform bam $previous_bam does not exist, and neither does a chrom1 split!");
+                            }
+                        }
+                        
+                        # if our platform has a new library and we've deleted
+                        # the previous library bams, we'll need to recreate them
+                        # and so only create fake library bams when platform
+                        # has not changed.
+                        my $dss_result = 1;
+                        if ($job_name eq 'library_merge' && ! -e $out_bam) {
+                            my @dirs = File::Spec->splitdir($previous_path);
+                            my $previous_platform = File::Spec->catdir(@dirs);
+                            @dirs = File::Spec->splitdir($current_path);
+                            my $current_platform = File::Spec->catdir(@dirs);
+                            
+                            if ($self->{fsu}->directory_structure_same($previous_platform, $current_platform, leaf_mtimes => \%lane_paths)) {
+                                system("touch $out_bam");
+                            }
+                            else {
+                                $dss_result = 0;
+                            }
+                        }
                         
                         # symlink the other files we might have made from that bam
                         # in other actions
-                        my $prev_markdup_bam = $previous_bam;
-                        $prev_markdup_bam =~ s/\.bam$/.markdup.bam/;
-                        if (-s $prev_markdup_bam) {
+                        if ($job_name eq 'library_merge') {
+                            my $prev_markdup_bam = $previous_bam;
+                            $prev_markdup_bam =~ s/\.bam$/.markdup.bam/;
                             my $cur_markdup_bam = $out_bam;
                             $cur_markdup_bam =~ s/\.bam$/.markdup.bam/;
-                            symlink($prev_markdup_bam, $cur_markdup_bam);
+                            
+                            if (-s $prev_markdup_bam) {
+                                symlink($prev_markdup_bam, $cur_markdup_bam);
+                            }
+                            elsif ($dss_result == 1) {
+                                system("touch $cur_markdup_bam");
+                            }
                         }
                         
                         foreach my $suffix2 ('', '.md5') {
@@ -668,6 +721,7 @@ sub merge_up_one_level {
                                 my $prev = $previous_bam.$suffix.$suffix2;
                                 if (-s $prev) {
                                     my $cur = $out_bam.$suffix.$suffix2;
+                                    unlink($cur);
                                     symlink($prev, $cur);
                                 }
                             }
@@ -676,7 +730,7 @@ sub merge_up_one_level {
                         # we don't merge split bams; we merge the parent, and split
                         # the merge if we want to
                         
-                        print $fh "1\n";
+                        print $fh "$dss_result\n";
                     }
                     else {
                         print $fh "0\n";
@@ -868,6 +922,33 @@ sub create_release_files {
     my $orig_bsub_opts = $self->{bsub_opts};
     $self->{bsub_opts} = '-q long';
     
+    my $new_platform_fod = $self->{fsu}->catfile($lane_path, '.new_platforms');
+    my %new_platforms;
+    my $npfod_fh;
+    if (-s $new_platform_fod) {
+        open(my $fh, $new_platform_fod) || $self->throw("Could not open $new_platform_fod");
+        while (<$fh>) {
+            my ($bam, $int) = split;
+            $new_platforms{$bam} = $int;
+        }
+        close($fh);
+    }
+    else {
+        open($npfod_fh, '>', $new_platform_fod) || $self->throw("Could not write to $new_platform_fod");
+    }
+    
+    my $done_platform_fod = $self->{fsu}->catfile($lane_path, '.done_platforms');
+    my %done_platforms;
+    if (-s $done_platform_fod) {
+        open(my $fh, $done_platform_fod) || $self->throw("Could not open $done_platform_fod");
+        while (<$fh>) {
+            my ($bam, $release_file) = split;
+            push(@{$done_platforms{$bam}}, $release_file);
+        }
+        close($fh);
+    }
+    open(my $dpfod_fh, '>>', $done_platform_fod) || $self->throw("Could not write to $done_platform_fod");
+    
     my @release_files;
     my $skipped_some = 0;
     foreach my $bam (@in_bams) {
@@ -875,42 +956,68 @@ sub create_release_files {
         $bam = $self->{fsu}->catfile($lane_path, $bam);
         my ($basename, $path) = fileparse($bam);
         my $release_name = $self->{fsu}->catfile($path, 'release.bam');
+        print STDERR "$bam\n";
         
         my $symlink_from_previous = 0;
         if ($self->{previous_release_root}) {
-            my $dss_file = $self->{fsu}->catfile($path, '.dss');
-            if (-s $dss_file) {
-                open(my $fh, $dss_file) || $self->throw("Could not open $dss_file");
-                my $line = <$fh>;
-                close($fh);
-                chomp($line);
-                my $same = int($line);
-                if ($same) {
-                    my (undef, $rel_dir) = fileparse($rel_path);
-                    $symlink_from_previous = $self->{fsu}->catfile($self->{previous_release_root}, $rel_dir);
+            my $same;
+            if ($npfod_fh) {
+                my $dss_file = $self->{fsu}->catfile($path, '.dss');
+                if (-s $dss_file) {
+                    open(my $fh, $dss_file) || $self->throw("Could not open $dss_file");
+                    my $line = <$fh>;
+                    close($fh);
+                    chomp($line);
+                    $same = int($line);
+                    print $npfod_fh "$bam\t$same\n";
+                }
+                else {
+                    $self->throw("There was no dss file $dss_file\n");
                 }
             }
             else {
-                $self->throw("There was no dss file $dss_file\n");
+                if (defined $new_platforms{$bam}) {
+                    $same = $new_platforms{$bam};
+                }
+                else {
+                    $self->throw("There was no entry for $bam in $new_platform_fod\n");
+                }
+            }
+            
+            if ($same) {
+                my (undef, $rel_dir) = fileparse($rel_path);
+                $symlink_from_previous = $self->{fsu}->catfile($self->{previous_release_root}, $rel_dir);
             }
         }
         
+        #if ($symlink_from_previous) {
+        #    $skipped_some = 1;
+        #    next;
+        #}
+        #warn "  this is new!...\n";
+        
         my @these_release_files;
-        print STDERR '. ';
         my $done_file = $self->{fsu}->catfile($path, '.release_done');
-        if (-s $done_file) {
-            open(my $fh, $done_file) || $self->throw("Could not open $done_file");
-            while (<$fh>) {
-                chomp;
-                next unless /\S/;
-                push(@these_release_files, $_);
-            }
-            if (@these_release_files < 27) {
-                unlink($done_file);
-            }
-            else {
-                push(@release_files, @these_release_files);
-                next;
+        if (defined $done_platforms{$bam}) {
+            push(@release_files, @{$done_platforms{$bam}});
+            next;
+        }
+        else {
+            if (-s $done_file) {
+                open(my $fh, $done_file) || $self->throw("Could not open $done_file");
+                while (<$fh>) {
+                    chomp;
+                    next unless /\S/;
+                    push(@these_release_files, $_);
+                    print $dpfod_fh "$bam\t$_\n";
+                }
+                if (@these_release_files < 27) {
+                    unlink($done_file);
+                }
+                else {
+                    push(@release_files, @these_release_files);
+                    next;
+                }
             }
         }
         
@@ -1169,6 +1276,7 @@ sub _crf_symlink_previous {
     
     my $prev = $self->{fsu}->catfile($prev_dir, $basename);
     if ($self->{fsu}->file_exists($prev)) {
+        unlink($dest);
         symlink($prev, $dest);
     }
     else {
