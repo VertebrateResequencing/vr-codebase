@@ -920,8 +920,9 @@ sub run_qcall_chunk
     $cmd .= ") | $$self{sort_cmd} -k1,1n -k2,2n | $$self{qcall_cmd} -sn $$self{prefix}$chunk.names -co $chunk.vcf.part";
     Utils::CMD($cmd,{verbose=>1});
 
-    # Before it's fixed, convert to proper VCF
-    Utils::CMD("cat $chunk.vcf.part | qcall-to-vcf | gzip -c > $chunk.vcf.gz.part",{verbose=>1});
+    # used to go via qcall-to-vcf, but it doesn't like 1/1 genotypes, so skip
+    # it for now
+    Utils::CMD("cat $chunk.vcf.part | gzip -c > $chunk.vcf.gz.part",{verbose=>1});
     unlink("$chunk.vcf.part");
 
     rename("$chunk.vcf.gz.part","$chunk_name.vcf.gz") or $self->throw("rename $chunk.vcf.gz.part $chunk_name.vcf.gz: $!");
