@@ -570,7 +570,7 @@ sub get_lanes {
            (split by platform) have changed since the given datetime, and how
            much has been sequenced under that platform.
  Returns : hash with structure like:
-           $platforms_status{sample_name}->{platform} = {%status}
+           $platforms_status{project}->{sample_name}->{platform} = {%status}
            where the %status hash contains:
            $status{changed} = boolean (true if any lane that comprises this
                                        platform has been changed since the
@@ -593,27 +593,30 @@ sub platform_level_status {
     # group lanes into sample->platform
     my %platforms_status;
     foreach my $lane (@{$lanes}) {
+        next if $lane->is_withdrawn;
+        
         my %objects = $self->lane_hierarchy_objects($lane);
-        my $sample_name = $objects{sample}->name;
-        push(@{$platforms_status{$objects{sample}->name}->{$objects{platform}->name}->{lanes}}, $lane);
+        push(@{$platforms_status{$objects{project}->hierarchy_name}->{$objects{sample}->name}->{$objects{platform}->name}->{lanes}}, $lane);
     }
     
     # work out the status for each grouping
-    while (my ($sample, $plathash) = each %platforms_status) {
-        while (my ($platform, $stathash) = each %{$plathash}) {
-            my @lanes = @{$stathash->{lanes}};
-            my $changed = 0;
-            my $bases = 0;
-            foreach my $lane (@lanes) {
-                if ($datetime && ! $changed) {
-                    $changed = $hist->lane_changed($lane, $datetime);
+    while (my ($project, $samphash) = each %platforms_status) {
+        while (my ($sample, $plathash) = each %{$samphash}) {
+            while (my ($platform, $stathash) = each %{$plathash}) {
+                my @lanes = @{$stathash->{lanes}};
+                my $changed = 0;
+                my $bases = 0;
+                foreach my $lane (@lanes) {
+                    if ($datetime && ! $changed) {
+                        $changed = $hist->lane_changed($lane, $datetime);
+                    }
+                    
+                    $bases += $lane->raw_bases;
                 }
                 
-                $bases += $lane->raw_bases;
+                $stathash->{bases} = $bases;
+                $stathash->{changed} = $changed;
             }
-            
-            $stathash->{bases} = $bases;
-            $stathash->{changed} = $changed;
         }
     }
     
@@ -627,7 +630,7 @@ sub platform_level_status {
                                                          '2010-01-04 10:49:10');
  Function: Like platform_level_status, but not split by platform.
  Returns : hash with structure like:
-           $samples_status{sample_name} = {%status}
+           $samples_status{project_name}->{sample_name} = {%status}
            where the %status hash contains:
            $status{changed} = boolean (true if any lane that comprises this
                                        sample has been changed since the
@@ -649,19 +652,21 @@ sub sample_level_status {
     my %samples_status;
     
     # work out the status for each sample
-    while (my ($sample, $plathash) = each %platforms_status) {
-        my $changed = 0;
-        my $bases = 0;
-        my @lanes;
-        while (my ($platform, $stathash) = each %{$plathash}) {
-            $bases += $stathash->{bases} = $bases;
-            $changed ||= $stathash->{changed};
-            push(@lanes, @{$stathash->{lanes}});
+    while (my ($project, $samphash) = each %platforms_status) {
+        while (my ($sample, $plathash) = each %{$samphash}) {
+            my $changed = 0;
+            my $bases = 0;
+            my @lanes;
+            while (my ($platform, $stathash) = each %{$plathash}) {
+                $bases += $stathash->{bases} = $bases;
+                $changed ||= $stathash->{changed};
+                push(@lanes, @{$stathash->{lanes}});
+            }
+            
+            $samples_status{$project}->{$sample} = { bases => $bases,
+                                                     changed => $changed,
+                                                     lanes => \@lanes };
         }
-        
-        $samples_status{$sample} = { bases => $bases,
-                                     changed => $changed,
-                                     lanes => \@lanes };
     }
     
     return %samples_status;
