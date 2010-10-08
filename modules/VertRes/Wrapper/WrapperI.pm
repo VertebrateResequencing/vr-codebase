@@ -109,7 +109,7 @@ sub _set_params_and_switches_from_args {
         
         # now set the user's args
         $self->_set_from_args(\@args,
-                              methods => \@methods,
+                              #methods => \@methods,
                               create => 1,
                               case_sensitive => 1);
     }
@@ -492,6 +492,29 @@ sub switches {
     return $self->{_switches};
 }
 
+=head2 extras
+
+ Title   : extras
+ Usage   : $wrapper->extras(['--unusual_arg 3',
+                             '--new_unsupported_arg']);
+ Function: Get/set strings that will be appended to the command-line as-is with
+           no kind of parsing. This allows users to pass in unsupported args.
+ Returns : list of strings that were set
+ Args    : array ref of strings you want appended to the command-line
+
+=cut
+
+sub extras {
+    my $self = shift;
+    
+    if (@_) {
+        $self->{_extras} = \@_;
+        delete $self->{_params_string};
+    }
+    
+    return @{$self->{_extras} || []};
+}
+
 =head2  _set_params_string()
 
  Title   : _set_params_string
@@ -500,7 +523,8 @@ sub switches {
            suitable for sending to the program being wrapped. For each method
            name defined in params() and switches(), calls the method and adds
            the method name (as modified by optional things) along with its value
-           (unless a switch) to the parameter string.
+           (unless a switch) to the parameter string. Also appends extras()
+           joined by spaces.
  Example : $self->params([qw(window evalue_cutoff)]);
            $self->switches([qw(simple large all)]);
            $self->_set_params_string(-double_dash => 1,
@@ -556,6 +580,11 @@ sub _set_params_string {
             
             $param_string .= ' '.$method_out.(exists $switches->{$method} ? '' : $join.$value);
         }
+    }
+    
+    my @extras = $self->extras;
+    if (@extras) {
+        $param_string .= ' '.join(' ', @extras);
     }
     
     $self->{_params_string} = $param_string;

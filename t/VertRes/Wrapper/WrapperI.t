@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 6;
+    use Test::Most tests => 7;
     
     use_ok('VertRes::Wrapper::WrapperI');
 }
@@ -61,6 +61,9 @@ $wrapper->action1(baz => 1, foo => 'boo');
 is $wrapper->_get_params_string(), ' -foo boo -baz', '_get_params_string default test';
 $wrapper->action2(maz => 1, car => 'far');
 is $wrapper->_get_params_string(), ' car=far maz', '_get_params_string non-default test';
+
+$wrapper->extras('--unsupported woo', '-new goo');
+is $wrapper->_get_params_string(), ' -car far -maz --unsupported woo -new goo', '_get_params_string extras test, reverts to default behaviour too';
 
 # needs a zillion more tests!...
 TODO: {
