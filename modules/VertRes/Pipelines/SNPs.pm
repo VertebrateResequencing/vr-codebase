@@ -18,6 +18,13 @@ our @actions =
         'requires' => \&varFilter_requires, 
         'provides' => \&varFilter_provides,
     },
+    # Samtools mpileup
+    {
+        'name'     => 'mpileup',
+        'action'   => \&mpileup,
+        'requires' => \&mpileup_requires, 
+        'provides' => \&mpileup_provides,
+    },
     # GATK SNP calling
     {
         'name'     => 'gatk',
@@ -36,18 +43,25 @@ our @actions =
 
 our $options = 
 {
-    bsub_opts       => "-q normal -M6000000 -R 'select[type==X86_64 && mem>6000] rusage[mem=6000,thouio=1]'",
-    bsub_opts_long  => "-q normal -M7000000 -R 'select[type==X86_64 && mem>7000] rusage[mem=7000,thouio=1]'",
+    bcf_fix         => '/nfs/users/nfs_p/pd3/cvs/samtools/bcftools/bcf-fix.pl',
+    bcftools        => '/nfs/users/nfs_p/pd3/cvs/samtools/bcftools/bcftools',
+    bsub_opts_varfilter  => "-q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000,thouio=1]'",
+    bsub_opts_mpileup    => "-q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000,thouio=1]'",
+    bsub_opts_qcall      => "-q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000,thouio=1]'",
+    bsub_opts_gatk       => "-q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000,thouio=1]'",
     fai_chr_regex   => '\d+|x|y',
     gatk_opts       => { verbose=>1, java_memory=>2800, U=>'ALLOW_UNSET_BAM_SORT_ORDER' },
     dbSNP_rod       => undef,
     max_jobs        => undef,
     merge_vcf       => 'merge-vcf -d',
+    mpileup_cmd     => '/nfs/users/nfs_p/pd3/cvs/samtools/samtools mpileup -C50 -aug',
     qcall_cmd       => 'QCALL -ct 0.01 -snpcan', # mouse: -pphet 0',
     sort_cmd        => 'sort',
     sam2vcf         => 'sam2vcf.pl',
-    split_size      => 1_000_000,
-    gatk_split_size => 1_000_000,
+    split_size_varfilter => 1_000_000,
+    split_size_mpileup   => 1_000_000,
+    split_size_qcall     => 1_000_000,
+    split_size_gatk      => 1_000_000,
     varfilter       => 'samtools.pl varFilter -S 20 -i 20',
     pileup_rmdup    => 'pileup-rmdup',
     samtools_pileup_params => '-d 500',   # mouse: '-r 0.0001 -d 500'
@@ -62,22 +76,27 @@ our $options =
 
         Options    : See Pipeline.pm for general options and the code for default values.
 
+                    bcf_fix         .. Script to fix invalid VCF
+                    bcftools        .. The bcftools binary for mpileup task
                     dbSNP_rod       .. The dbSNP file for GATK
                     file_list       .. File name containing a list of bam files (e.g. the 17 mouse strains). 
                     fa_ref          .. The reference sequence in fasta format
                     fai_ref         .. The reference fai file to read the chromosomes and lengths.
                     fai_chr_regex   .. The chromosomes to be processed.
                     gatk_opts       .. Options to pass to the GATK wrapper
-                    gatk_split_size .. GATK seems to require more memory
                     indel_mask      .. GATK precomputed indel mask for filtering SNPs [optional]
                     max_jobs        .. The maximum number of running jobs per task
                     merge_vcf       .. The merge-vcf script.
+                    mpileup_cmd     .. The mpileup command.
                     pileup_rmdup    .. The script to remove duplicate positions.
                     qcall_cmd       .. The qcall command.
                     sam2vcf         .. The convertor from samtools pileup format to VCF.
                     samtools_pileup_params .. The options to samtools.pl varFilter (Used by Qcall and varFilter.)
                     sort_cmd        .. Change e.g. to 'sort -T /big/space'
-                    split_size      .. The size of the chunks (default is 1Mb).
+                    split_size_gatk       .. The size of the chunks.
+                    split_size_mpileup    .. The size of the chunks.
+                    split_size_qcall      .. The size of the chunks.
+                    split_size_varfilter  .. The size of the chunks.
                     varfilter       .. The samtools varFilter command (samtools.pl varFilter).
                     vcf_rmdup       .. The script to remove duplicate positions.
 
@@ -108,7 +127,7 @@ sub read_files
     while (my $line=<$fh>)
     {
         chomp($line);
-        if ( !-e $line ) { $self->throw("The file does not exist: [$line]\n"); }
+        if ( !$$self{fsu}->file_exists($line) ) { $self->throw("The file does not exist: [$line]\n"); }
         push @files,$line;
     }
     close($fh);
@@ -213,7 +232,7 @@ sub chr_chunks
             if ( $pos<1 ) { $self->throw("The split size too small [$split_size]?\n"); }
         
             # Eearly exit for debugging: do two chunks for one chromosome only for testing.
-            #   if ( scalar @chunks>1 ) { return \@chunks; }
+            if ( $$self{debug_chunks} && scalar @chunks>$$self{debug_chunks} ) { return \@chunks; }
         }
     }
     return \@chunks;
@@ -267,7 +286,7 @@ Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz]);
 #
 #
 # The parameters:
-#   work_dir .. the working directory, should be of the form dir/(varFilter|qcall|gatk)
+#   work_dir .. the working directory, should be of the form dir/(varFilter|mpileup|qcall|gatk)
 #
 # split_chunks function:
 #   parameters .. $bam,$chunk_name,$chunk
@@ -535,11 +554,12 @@ sub varFilter
     my $bams = $self->read_files($$self{file_list});
     my %opts = 
     (
-        dir       => $dir,
-        work_dir  => "$dir/varFilter",
-        job_type  => 'varFilter',
-        bsub_opts => {bsub_opts=>$$self{bsub_opts_long},dont_wait=>1,append=>0},
-        bams      => $bams,
+        dir        => $dir,
+        work_dir   => "$dir/varFilter",
+        job_type   => 'varFilter',
+        bsub_opts  => {bsub_opts=>$$self{bsub_opts_varfilter},dont_wait=>1,append=>0},
+        bams       => $bams,
+        split_size => $$self{split_size_varfilter},
 
         split_chunks    => \&varfilter_split_chunks,    
         merge_chunks    => \&varfilter_merge_chunks,
@@ -627,6 +647,83 @@ if ( !-e "$name.vcf.gz" )
 }
 
 
+#---------- mpileup ---------------------
+
+
+# Requires the bam files listed in the file
+sub mpileup_requires
+{
+    my ($self,$dir) = @_;
+    return [$$self{file_list}];
+}
+
+
+sub mpileup_provides
+{
+    my ($self,$dir) = @_;
+    my @provides = ('mpileup.done');
+    return \@provides;
+}
+
+sub mpileup
+{
+    my ($self,$dir,$lock_file) = @_;
+
+    if ( !$$self{mpileup_cmd} ) { $self->throw("Missing the option mpileup_cmd.\n"); }
+    if ( !$$self{bcftools} ) { $self->throw("Missing the option bcftools.\n"); }
+    if ( !$$self{bcf_fix} ) { $self->throw("Missing the option bcf_fix.\n"); }
+
+    my $bams = [ $$self{file_list} ];
+    my %opts = 
+    (
+        dir        => $dir,
+        work_dir   => "$dir/mpileup",
+        job_type   => 'mpileup',
+        bsub_opts  => {bsub_opts=>$$self{bsub_opts_mpileup},dont_wait=>1,append=>0},
+        bams       => $bams,
+        split_size => $$self{split_size_mpileup},
+
+        split_chunks    => \&mpileup_split_chunks,    
+        merge_chunks    => \&glue_vcf_chunks,
+        merge_vcf_files => undef,
+    );
+
+    $self->run_in_parallel(\%opts);
+
+    return $$self{Yes};
+}
+
+sub run_mpileup
+{
+    my ($self,$file_list,$name,$chunk) = @_;
+
+    Utils::CMD(qq[cat $file_list | xargs $$self{mpileup_cmd} -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -bgcv - | $$self{bcftools} view - | $$self{bcf_fix} | bgzip -c > $name.vcf.gz.part],{verbose=>1});
+    rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
+
+    Utils::CMD("touch _$name.done",{verbose=>1});
+}
+
+
+sub mpileup_split_chunks
+{
+    my ($self,$bam,$chunk_name,$chunk) = @_;
+
+    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd bcftools bcf_fix));
+
+    return qq[
+use strict;
+use warnings;
+use VertRes::Pipelines::SNPs;
+
+my $opts
+
+my \$snps = VertRes::Pipelines::SNPs->new(%\$opts);
+\$snps->run_mpileup(q[$bam],q[$chunk_name],q[$chunk]);
+
+    ];
+}
+
+
 #---------- gatk ---------------------
 
 
@@ -659,8 +756,8 @@ sub gatk
         dir        => $dir,
         work_dir   => "$dir/gatk",
         job_type   => 'gatk',
-        bsub_opts  => {bsub_opts=>$$self{bsub_opts_long},dont_wait=>1,append=>0},
-        split_size => $$self{gatk_split_size},
+        bsub_opts  => {bsub_opts=>$$self{bsub_opts_gatk},dont_wait=>1,append=>0},
+        split_size => $$self{split_size_gatk},
         bams       => $bams,
 
         split_chunks    => \&gatk_split_chunks,
@@ -833,15 +930,16 @@ sub qcall
     my $bams = [ $$self{file_list} ];
     my %opts =
     (
-         dir       => $dir,
-         work_dir  => "$dir/qcall",
-         job_type  => 'qcall',
-         bsub_opts => {bsub_opts=>$$self{bsub_opts_long},dont_wait=>1,append=>0},
-         bams      => $bams,
+        dir        => $dir,
+        work_dir   => "$dir/qcall",
+        job_type   => 'qcall',
+        bsub_opts  => {bsub_opts=>$$self{bsub_opts_qcall},dont_wait=>1,append=>0},
+        bams       => $bams,
+        split_size => $$self{split_size_qcall},
 
-         split_chunks    => \&qcall_split_chunks,
-         merge_chunks    => \&glue_vcf_chunks,
-         merge_vcf_files => undef,
+        split_chunks    => \&qcall_split_chunks,
+        merge_chunks    => \&glue_vcf_chunks,
+        merge_vcf_files => undef,
     );
 
     $self->run_in_parallel(\%opts);
@@ -920,9 +1018,8 @@ sub run_qcall_chunk
     $cmd .= ") | $$self{sort_cmd} -k1,1n -k2,2n | $$self{qcall_cmd} -sn $$self{prefix}$chunk.names -co $chunk.vcf.part";
     Utils::CMD($cmd,{verbose=>1});
 
-    # used to go via qcall-to-vcf, but it doesn't like 1/1 genotypes, so skip
-    # it for now
-    Utils::CMD("cat $chunk.vcf.part | gzip -c > $chunk.vcf.gz.part",{verbose=>1});
+    # Before it's fixed, convert to proper VCF
+    Utils::CMD("cat $chunk.vcf.part | qcall-to-vcf | gzip -c > $chunk.vcf.gz.part",{verbose=>1});
     unlink("$chunk.vcf.part");
 
     rename("$chunk.vcf.gz.part","$chunk_name.vcf.gz") or $self->throw("rename $chunk.vcf.gz.part $chunk_name.vcf.gz: $!");
