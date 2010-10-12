@@ -237,6 +237,9 @@ sub num_bam_lines {
                                     that the unmapped file contains all unmapped
                                     reads, potentially duplicating reads in
                                     different split files)
+           only => 'regex' to only makes splits for sequences that match the
+                    regex. This changes the default of make_unmapped to false,
+                    but you can turn it back on explicitly. non_chr is disabled.
            output_dir => 'path' to specify where the split bams are created;
                          default is the same dir as the input bam
            check => boolean (default false; when true, checks to see if the
@@ -266,7 +269,7 @@ sub split_bam_by_sequence {
         $output_dir =~ s/$basename$//;
     }
     unless (defined $opts{make_unmapped}) {
-        $opts{make_unmapped} = 1;
+        $opts{make_unmapped} = $opts{only} ? 0 : 1;
     }
     unless (defined $opts{non_chr}) {
         $opts{non_chr} = 1;
@@ -276,6 +279,9 @@ sub split_bam_by_sequence {
         unless (defined $opts{ignore}) {
             $opts{ignore} = '^(?:N[TC]_\d+|GL\d+)';
         }
+    }
+    if ($opts{only}) {
+        $opts{non_chr} = 0;
     }
     
     # find out what sequences there are
@@ -308,6 +314,10 @@ sub split_bam_by_sequence {
         }
         unless (scalar(@prefixes) || ($opts{ignore} && $seq =~ /$opts{ignore}/)) {
             @prefixes = ('chrom'.$seq);
+        }
+        
+        if ($opts{only}) {
+            next unless $seq =~ /$opts{only}/;
         }
         
         my $out_bam = File::Spec->catfile($output_dir, $seq.'.'.$basename);
