@@ -52,7 +52,8 @@ use VertRes::Utils::VRTrackFactory;
 
 use base qw(VertRes::Base);
 
-our $file_exists_dbh;
+our %cd = VertRes::Utils::VRTrackFactory->connection_details('rw');
+our $dbname = 'vrtrack_fsu_file_exists';
 
 
 =head2 new
@@ -722,41 +723,34 @@ sub set_stripe_dir_tree {
 
 sub file_exists {
     my ($self, $file, %opts) = @_;
-    #$file = abs_path($file);
     my $dmd5 = Digest::MD5->new();
     $dmd5->add($file);
     my $md5 = $dmd5->hexdigest;
     
-    unless (defined $file_exists_dbh) {
-        my %cd = VertRes::Utils::VRTrackFactory->connection_details('rw');
-        my $dbname = 'vrtrack_fsu_file_exists';
-        $file_exists_dbh = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 });
-        unless ($file_exists_dbh) {
-            $self->warn("Could not connect to database $dbname; will try to create it...\n");
-            
-            #*** need a better way of doing this...
-            open(my $mysqlfh, "| mysql -h$cd{host} --port $cd{port} -u$cd{user} -p$cd{password}") || $self->throw("Could not connect to mysql server $cd{host}");
-            print $mysqlfh "create database $dbname;\n";
-            print $mysqlfh "use $dbname;\n";
-            print $mysqlfh "CREATE TABLE `file_status` (`hash` char(32) NOT NULL, `path` varchar(1000) NOT NULL, `status` enum('0','1') not null, PRIMARY KEY (`hash`)) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n";
-            close($mysqlfh);
-            
-            $file_exists_dbh = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 }) || $self->throw("Still couldn't connect to database $dbname; giving up");
-        }
+    my $file_exists_dbh = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 });
+    unless ($file_exists_dbh) {
+        $self->warn("Could not connect to database $dbname; will try to create it...\n");
+        
+        #*** need a better way of doing this...
+        open(my $mysqlfh, "| mysql -h$cd{host} --port $cd{port} -u$cd{user} -p$cd{password}") || $self->throw("Could not connect to mysql server $cd{host}");
+        print $mysqlfh "create database $dbname;\n";
+        print $mysqlfh "use $dbname;\n";
+        print $mysqlfh "CREATE TABLE `file_status` (`hash` char(32) NOT NULL, `path` varchar(1000) NOT NULL, `status` enum('0','1') not null, PRIMARY KEY (`hash`)) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n";
+        close($mysqlfh);
+        
+        $file_exists_dbh = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 }) || $self->throw("Still couldn't connect to database $dbname; giving up");
     }
-
-    if ($opts{wipe_out}) 
-    {
-        if ( $opts{recurse} )
-        {
+    
+    if ($opts{wipe_out}) {
+        if ($opts{recurse}) {
             $file =~ s{/*$}{};
             $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path REGEXP '^$file/.*'});
             $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path REGEXP '^$file/?\$'});
         }
-        else
-        {
+        else {
             $file_exists_dbh->do(qq{DELETE FROM file_status WHERE hash=? AND path=?},undef,$md5,$file);
         }
+        $file_exists_dbh->disconnect;
         return 0;
     }
     
@@ -772,10 +766,12 @@ sub file_exists {
         my @row = $file_exists_dbh->selectrow_array($sql, undef, $md5);
         if (@row) {
             if ($row[2] && $row[2] == 1) {
+                $file_exists_dbh->disconnect;
                 return 1;
             }
             else {
                 if ($opts{no_check}) {
+                    $file_exists_dbh->disconnect;
                     return 0;
                 }
             }
@@ -789,6 +785,7 @@ sub file_exists {
     my $enum = $exists ? '1' : '0';
     my $sql = qq{insert into `file_status` (hash,path,status) values (?,?,?) ON DUPLICATE KEY UPDATE `status`=?};
     $file_exists_dbh->do($sql, undef, $md5, $file, $enum, $enum) || $self->throw($file_exists_dbh->errstr);
+    $file_exists_dbh->disconnect;
     
     return $exists;
 }
