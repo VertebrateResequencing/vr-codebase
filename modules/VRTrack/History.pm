@@ -217,8 +217,8 @@ sub datetime_cmp {
  Title   : lane_changed
  Usage   : if ($obj->lane_changed($vrlane, '2010-01-04 10:49:10')) { ... }
  Function: Find out if a lane was changed (remapped, swapped, fastq changed,
-           improved, became unwithdrawn) or brand new since since the supplied
-           date.
+           improved, changed withdrawn state) or brand new since since the
+           supplied date.
  Returns : boolean (true if the lane is new or changed since the date)
  Args    : VRTrack::Lane object, mysql datetime formatted string
 
@@ -232,14 +232,18 @@ sub lane_changed {
     
     my $changed = 0;
     my $was_mapped = 0;
+    my $was_withdrawn = 0;
     my $saw_version = 0;
     my $is_mapped = $lane->is_processed('mapped');
+    my $is_withdrawn = $lane->is_withdrawn;
     VERSION: foreach my $version (@versions) {
-        if ($hist_date ne 'latest' && $self->datetime_cmp($hist_date, $version->changed) == -1) {
+        my $changed = $version->changed;
+        if ($hist_date ne 'latest' && $self->datetime_cmp($hist_date, $changed) == -1) {
             last;
         }
-        unless ($self->datetime_cmp($datetime, $version->changed) == -1) {
+        unless ($self->datetime_cmp($datetime, $changed) == -1) {
             $was_mapped = $version->is_processed('mapped');
+            $was_withdrawn = $version->is_withdrawn;
             next;
         }
         $saw_version = 1;
@@ -258,9 +262,10 @@ sub lane_changed {
     
     unless ($saw_version) {
         $was_mapped = $is_mapped;
+        $was_withdrawn = $is_withdrawn;
     }
     
-    return ($was_mapped != $is_mapped || $changed) ? 1 : 0;
+    return ($was_mapped != $is_mapped || $was_withdrawn != $is_withdrawn || $changed) ? 1 : 0;
 }
 
 1;
