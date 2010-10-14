@@ -754,7 +754,7 @@ sub insert_size_ok
         if ( $max < $yval ) { $imaxpeak = $i; $max = $yval; }
     }
 
-    # See how many reads are within the median range
+    # See how many reads are within the median range (really the median? looks more like the max peak!)
     $maxpeak_range *= 0.01;
     $count = 0;
     for (my $i=0; $i<$ndata; $i++)
@@ -948,10 +948,16 @@ sub update_db
 
 #---------- Debugging and error reporting -----------------
 
+sub format_msg
+{
+    my ($self,@msg) = @_;
+    return '['. scalar gmtime() ."]\t". join('',@msg);
+}
+
 sub warn
 {
     my ($self,@msg) = @_;
-    my $msg = scalar gmtime() . "\n" . join('',@msg);
+    my $msg = $self->format_msg(@msg);
     if ($self->verbose > 0) 
     {
         print STDERR $msg;
@@ -967,7 +973,7 @@ sub debug
     my ($self,@msg) = @_;
     if ($self->verbose > 0) 
     {
-        my $msg = join('',@msg);
+        my $msg = $self->format_msg(@msg);
         print STDERR $msg;
         $self->log($msg);
     }
@@ -976,22 +982,23 @@ sub debug
 sub throw
 {
     my ($self,@msg) = @_;
-    Utils::error(scalar gmtime() . "\n", @msg);
+    my $msg = $self->format_msg(@msg);
+    Utils::error($msg);
 }
 
 sub log
 {
     my ($self,@msg) = @_;
 
-    my $msg_str = join('',@msg);
+    my $msg = $self->format_msg(@msg);
     my $status  = open(my $fh,'>>',$self->log_file);
     if ( !$status ) 
     {
-        print STDERR $msg_str;
+        print STDERR $msg;
     }
     else 
     { 
-        print $fh $msg_str; 
+        print $fh $msg; 
     }
     if ( $fh ) { close($fh); }
 }

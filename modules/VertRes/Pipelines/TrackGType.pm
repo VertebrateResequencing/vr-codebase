@@ -139,32 +139,60 @@ sub check_genotype
 
 #---------- Debugging and error reporting -----------------
 
+sub format_msg
+{
+    my ($self,@msg) = @_;
+    return '['. scalar gmtime() ."]\t". join('',@msg);
+}
+
 sub warn
 {
     my ($self,@msg) = @_;
+    my $msg = $self->format_msg(@msg);
     if ($self->verbose > 0) 
     {
-        print STDERR join('',@msg);
+        print STDERR $msg;
     }
-    $self->log(join('',@msg));
+    $self->log($msg);
 }
 
 sub debug
 {
+    # The granularity of verbose messaging does not make much sense
+    #   now, because verbose cannot be bigger than 1 (made Base.pm
+    #   throw on warn's).
     my ($self,@msg) = @_;
     if ($self->verbose > 0) 
     {
-        print STDERR join('',@msg);
-        $self->log(join('',@msg));
+        my $msg = $self->format_msg(@msg);
+        print STDERR $msg;
+        $self->log($msg);
     }
 }
 
 sub throw
 {
     my ($self,@msg) = @_;
-    Utils::error(@msg);
+    my $msg = $self->format_msg(@msg);
+    Utils::error($msg);
 }
 
+sub log
+{
+    my ($self,@msg) = @_;
+
+    my $msg = $self->format_msg(@msg);
+    my $status  = open(my $fh,'>>',$self->log_file);
+    if ( !$status ) 
+    {
+        print STDERR $msg;
+    }
+    else 
+    { 
+        print $fh $msg; 
+    }
+    if ( $fh ) { close($fh); }
+}
 
 1;
 
