@@ -136,6 +136,7 @@ sub backtrace
     Options  :
                 chomp         .. run chomp on all returned lines
                 exit_on_error .. should the encountered errors be ignored?
+                ignore_errno  .. ignore a particular error status (e.g. 141 for SIGPIPE, handy for commands like "zcat file.gz | head -1")
                 logfile       .. where should be the command and the output logged?
                 rpipe         .. the caller will read from the pipe and take care of checking the exit status
                 time          .. print the execution time
@@ -152,6 +153,7 @@ sub CMD
     $$options{'exit_on_error'} = 1 unless exists($$options{'exit_on_error'});
     $$options{'verbose'}       = 0 unless exists($$options{'verbose'});
     $$options{'time'}          = 0 unless exists($$options{'time'});
+    $$options{'ignore_errno'}  = 0 unless exists($$options{'ignore_errno'});
 
     print STDERR "$cmd\n" unless !$$options{'verbose'};
     log_msg($$options{'logfile'},"$cmd\n") unless !exists($$options{'logfile'});
@@ -178,10 +180,13 @@ sub CMD
     }
     if ( $$options{time} ) { $elapsed = tv_interval($time_start); }
 
-    if ( $? )
+    my $exit_status = $?;
+    if ( $exit_status==$$options{'ignore_errno'} ) { $exit_status=0; }
+
+    if ( $exit_status )
     {
         my @msg = ();
-        push @msg, "The command \"$cmd\" returned non-zero status $?";
+        push @msg, "The command \"$cmd\" returned non-zero status $exit_status";
         if ( $! ) 
         { 
             push @msg, ": $!\n"; 
