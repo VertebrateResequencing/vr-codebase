@@ -451,6 +451,9 @@ sub hierarchy_coverage {
            }
            -or-
            vrtrack => VRTrack::VRTrack object
+           
+           By default it won't return withdrawn lanes; change that:
+           return_withdrawn => bool
 
 =cut
 
@@ -551,14 +554,49 @@ sub get_lanes {
         }
     }
     
-    # filter out withdrawn lanes
-    my @active;
-    foreach my $lane (@good_lanes) {
-        next if $lane->is_withdrawn;
-        push(@active, $lane);
+    if ($args{return_withdrawn}) {
+        return @good_lanes;
     }
+    else {
+        # filter out withdrawn lanes
+        my @active;
+        foreach my $lane (@good_lanes) {
+            next if $lane->is_withdrawn;
+            push(@active, $lane);
+        }
+        return @active;
+    }
+}
 
-    return @active;
+=head2 new_platforms
+
+ Title   : new_platforms
+ Usage   : my @new_platforms = $obj->new_platforms('REL1/.release_hierarchy_made',
+                                                   'REL2/.release_hierarchy_made');
+ Function: Given 2 .release_hierarchy_made files made by running at least the
+           first action of the Release pipeline at two different points in time,
+           work out which platform-level directories in the second release are
+           new or updated (have fewer or more lanes) compared to the first.
+ Returns : list of platform directory strings
+ Args    : 2 .release_hierarchy_made files. NB: currently assumes that your
+
+=cut
+
+sub new_platforms {
+    my ($self, $rhm1, $rhm2) = @_;
+    
+    my @lane_arrays;
+    foreach my $file ($rhm1, $rhm2) {
+        open (my $fh, $file) || $self->throw("Could not open file $file");
+        my @lanes;
+        while (<$fh>) {
+            # /lustre/scratch101/g1k/REL-2010-09-01/ASW_low_coverage/NA19711/SLX/Solexa_16050/SRR032222/se.recal.sorted.bam
+            
+        }
+        close($fh);
+        
+        push(@lane_arrays, \@lanes);
+    }
 }
 
 =head2 platform_level_status
@@ -568,7 +606,11 @@ sub get_lanes {
                                                          '2010-01-04 10:49:10');
  Function: From the given list of VRTrack::Lane objects, find out which samples
            (split by platform) have changed since the given datetime, and how
-           much has been sequenced under that platform.
+           much has been sequenced under that platform. The lanes are only used
+           to determine which samples and platforms you're interested in; the
+           database is checked to get a full list of lanes for those samples/
+           platforms in order to find out the real status incase you missed out
+           some lanes.
  Returns : hash with structure like:
            $platforms_status{project}->{sample_name}->{platform} = {%status}
            where the %status hash contains:
@@ -603,7 +645,14 @@ sub platform_level_status {
     while (my ($project, $samphash) = each %platforms_status) {
         while (my ($sample, $plathash) = each %{$samphash}) {
             while (my ($platform, $stathash) = each %{$plathash}) {
-                my @lanes = @{$stathash->{lanes}};
+                # get all lanes for each project/sample/platform, not just the
+                # ones the user supplied (or else we won't be able to know if a
+                # platform changed because a lane got withdrawn, so is missing
+                # from the user's list of lanes)
+                my @lanes = $self->get_lanes(project => [$project],
+                                             sample => [$sample],
+                                             platform => [$platform],
+                                             return_withdrawn => 1);
                 my $changed = 0;
                 my $bases = 0;
                 foreach my $lane (@lanes) {
