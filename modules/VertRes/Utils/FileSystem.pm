@@ -52,10 +52,6 @@ use VertRes::Utils::VRTrackFactory;
 
 use base qw(VertRes::Base);
 
-our %cd = VertRes::Utils::VRTrackFactory->connection_details('rw');
-our $dbname = 'vrtrack_fsu_file_exists';
-
-
 =head2 new
 
  Title   : new
@@ -727,19 +723,7 @@ sub file_exists {
     $dmd5->add($file);
     my $md5 = $dmd5->hexdigest;
     
-    my $file_exists_dbh = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 });
-    unless ($file_exists_dbh) {
-        $self->warn("Could not connect to database $dbname; will try to create it...\n");
-        
-        #*** need a better way of doing this...
-        open(my $mysqlfh, "| mysql -h$cd{host} --port $cd{port} -u$cd{user} -p$cd{password}") || $self->throw("Could not connect to mysql server $cd{host}");
-        print $mysqlfh "create database $dbname;\n";
-        print $mysqlfh "use $dbname;\n";
-        print $mysqlfh "CREATE TABLE `file_status` (`hash` char(32) NOT NULL, `path` varchar(1000) NOT NULL, `status` enum('0','1') not null, PRIMARY KEY (`hash`)) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n";
-        close($mysqlfh);
-        
-        $file_exists_dbh = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 }) || $self->throw("Still couldn't connect to database $dbname; giving up");
-    }
+    my $file_exists_dbh = $self->_get_dbh;
     
     if ($opts{wipe_out}) {
         if ($opts{recurse}) {
@@ -750,14 +734,12 @@ sub file_exists {
         else {
             $file_exists_dbh->do(qq{DELETE FROM file_status WHERE hash=? AND path=?},undef,$md5,$file);
         }
-        $file_exists_dbh->disconnect;
         return 0;
     }
     
     # empty db if asked
     if ($opts{empty}) {
         my $sql = qq{truncate table file_status};
-        $file_exists_dbh->do($sql) || $self->throw($file_exists_dbh->errstr);
     }
     
     # check the db
@@ -766,12 +748,10 @@ sub file_exists {
         my @row = $file_exists_dbh->selectrow_array($sql, undef, $md5);
         if (@row) {
             if ($row[2] && $row[2] == 1) {
-                $file_exists_dbh->disconnect;
                 return 1;
             }
             else {
                 if ($opts{no_check}) {
-                    $file_exists_dbh->disconnect;
                     return 0;
                 }
             }
@@ -779,15 +759,45 @@ sub file_exists {
     }
     
     # check the disk
-    my $exists = -e $file;
+    my $exists = -e $file ? 1 : 0;
     
     # store result in db
-    my $enum = $exists ? '1' : '0';
     my $sql = qq{insert into `file_status` (hash,path,status) values (?,?,?) ON DUPLICATE KEY UPDATE `status`=?};
-    $file_exists_dbh->do($sql, undef, $md5, $file, $enum, $enum) || $self->throw($file_exists_dbh->errstr);
-    $file_exists_dbh->disconnect;
+    $file_exists_dbh->do($sql, undef, $md5, $file, $exists, $exists) || $self->throw($file_exists_dbh->errstr);
     
     return $exists;
+}
+
+sub _get_dbh {
+    my $self = shift;
+    
+    unless (defined $self->{_dbh}) {
+        my %cd = VertRes::Utils::VRTrackFactory->connection_details('rw');
+        my $dbname = 'vrtrack_fsu_file_exists';
+        $self->{_dbh} = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 });
+        
+        unless ($self->{_dbh}) {
+            $self->warn("Could not connect to database $dbname; will try to create it...\n");
+            
+            #*** need a better way of doing this...
+            open(my $mysqlfh, "| mysql -h$cd{host} --port $cd{port} -u$cd{user} -p$cd{password}") || $self->throw("Could not connect to mysql server $cd{host}");
+            print $mysqlfh "create database $dbname;\n";
+            print $mysqlfh "use $dbname;\n";
+            print $mysqlfh "CREATE TABLE `file_status` (`hash` char(32) NOT NULL, `path` varchar(1000) NOT NULL, `status` enum('0','1') not null, PRIMARY KEY (`hash`)) ENGINE=InnoDB DEFAULT CHARSET=latin1;\n";
+            close($mysqlfh);
+            
+            $self->{_dbh} = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 }) || $self->throw("Still couldn't connect to database $dbname; giving up");
+        }
+    }
+    
+    return $self->{_dbh};
+}
+
+sub DESTROY {
+    my $self = shift;
+    if (defined $self->{_dbh}) {
+        $self->{_dbh}->disconnect;
+    }
 }
 
 1;
