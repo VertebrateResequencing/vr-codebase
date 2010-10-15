@@ -781,11 +781,15 @@ sub is_finished {
             my $base = basename($in_bam);
             my $done_file = $self->{fsu}->catfile($lane_path, '.realign_complete_'.$base);
             
-            if (-s $done_file && -s $in_bam && -s $realign_bam) {
-                unlink($in_bam);
-                unlink($in_bam.'.bai');
-                system("touch $in_bam");
-            }
+            # to avoid doubling disc space requirements we want to delete the
+            # original bam (replacing it with an empty file to keep the first
+            # action happy), but GATK realigner had bugs and might still have
+            # bugs, so we want to be able to repeat - so don't delete for now.
+            #if (-s $done_file && -s $in_bam && -s $realign_bam) {
+                #unlink($in_bam);
+                #unlink($in_bam.'.bai');
+                #system("touch $in_bam");
+            #}
         }
     }
     elsif ($action->{name} eq 'sort') {
