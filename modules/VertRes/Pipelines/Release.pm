@@ -1427,10 +1427,15 @@ sub is_finished {
             if ($file =~ /md5$/) {
                 open(my $md5fh, $file) || $self->throw("Couldn't open $_");
                 my $line = <$md5fh>;
-                my ($md5, $path) = split(' ', $line);
-                $base =~ s/\.md5$//;
-                print $rmd5fh $md5, "\t", $base, "\n";
-                close($md5fh);
+                if ($line && $line =~ /\S/) {
+                    my ($md5, $path) = split(' ', $line);
+                    $base =~ s/\.md5$//;
+                    print $rmd5fh $md5, "\t", $base, "\n";
+                    close($md5fh);
+                }
+                else {
+                    warn "$file is empty!\n";
+                }
             }
             else {
                 print $rfofnfh $file, "\n";
