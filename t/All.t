@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/env perl
 # test basics of all perl modules and scripts in the distribution;
 use strict;
 use warnings;

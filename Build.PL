@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/env perl
 # Build script mainly used to run tests.
 #
 # Do this once, first:
