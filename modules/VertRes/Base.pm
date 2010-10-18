@@ -113,15 +113,15 @@ sub new {
 
 =head2 _set_from_args
 
- Usage     : $self->_set_from_args(\%args, -methods => \@methods);
+ Usage     : $self->_set_from_args(\%args, methods => \@methods);
  Purpose   : Takes a hash of user-supplied args whose keys match method names,
              and calls the method supplying it the corresponding value. If a
              key doesn't match a method name, and neither force and create are
              in effect, the key => value pair is set in the $self hash.
- Example   : $self->_set_from_args(\%args, -methods => [qw(sequence id desc)]);
-             Where %args = (-sequence    => $s,
-	                    -description => $d,
-	                    -ID          => $i);
+ Example   : $self->_set_from_args(\%args, methods => [qw(sequence id desc)]);
+             Where %args = (sequence    => $s,
+	                    description => $d,
+	                    ID          => $i);
 
              the above _set_from_args() calls the following methods:
              $self->sequence($s);
