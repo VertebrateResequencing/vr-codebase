@@ -168,16 +168,22 @@ sub bams_are_similar {
  Usage   : my $num_records = $obj->num_bam_records($bam_file);
  Function: Find the number of records (reads) in a bam file.
  Returns : int
- Args    : bam filename
+ Args    : bam filename, optionally these hash options:
+           only => 'regex' only count sequences that match the regex.
 
 =cut
 
 sub num_bam_records {
-    my ($self, $bam_file) = @_;
+    my ($self, $bam_file, %opts) = @_;
     my $pars = VertRes::Parser::sam->new(file => $bam_file);
     my $records = 0;
-    while (my @fields = $pars->get_fields('QNAME')) {
-        $records++;
+    while (my ($rname) = $pars->get_fields('RNAME')) {
+        if ($opts{only}) {
+            $records++ if $rname =~ /$opts{only}/;
+        }
+        else {
+            $records++;
+        }
     }
     return $records;
 }
