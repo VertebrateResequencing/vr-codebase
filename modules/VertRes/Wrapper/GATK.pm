@@ -843,7 +843,8 @@ sub generate_variant_clusters {
  Function: Recalibrates variant calls.
  Returns : n/a
  Args    : path to output of generate_variant_clusters(), path to output vcf
-           file.
+           file (which is also a prefix of other files generated, including
+           .dat.tranches file needed by apply_variant_cuts()).
            Optionally, supply R or DBSNP options (as a hash), as understood by
            GATK, along with the other options like numGaussians etc (1000
            genomes defaults exist).
@@ -886,7 +887,7 @@ sub variant_recalibrator {
     $params{T} = 'VariantRecalibrator';
     $self->_handle_common_params(\%params);
     
-    $self->register_output_file_to_check($out_vcf.'.vcf');
+    $self->register_output_file_to_check($out_vcf);
     $self->_set_params_and_switches_from_args(%params);
     
     return $self->run(@file_args);
@@ -899,13 +900,13 @@ sub variant_recalibrator {
            $wrapper->apply_variant_cuts('recal.dat.tranches', 'out.vcf');
  Function: Filteres recalibrated calls.
  Returns : n/a
- Args    : path to the .tranches output of variant_recalibrator(), path to
-           output vcf file.
-           Optionally, supply R or DBSNP options (as a hash), as understood by
-           GATK, along with the other options like fdr_filter_level etc (1000
-           genomes defaults exist).
-           Before calling this, you should use set_b() to set the input
-           recalibrator.output.vcf as produced by variant_recalibrator().
+ Args    : path to the .tranches output of variant_recalibrator() (the second
+           arg you supplied to that suffixed with .dat.traches), path to output
+           vcf file. Optionally, supply R or DBSNP options (as a hash), as
+           understood by GATK, along with the other options like
+           fdr_filter_level etc (1000 genomes defaults exist). Before calling
+           this, you should use set_b() to set the input recalibrator.output.vcf
+           as produced by variant_recalibrator().
 
 =cut
 
