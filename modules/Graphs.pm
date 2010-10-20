@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use Utils;
 
-our $R_CMD = '/software/R-2.9.0/bin/R';
+our $R_CMD = 'R';
 
 =pod
 
