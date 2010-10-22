@@ -49,7 +49,7 @@ use base qw(VertRes::Wrapper::MapperI);
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/smalt-0.2.8/smalt_x86-64');
+    my $self = $class->SUPER::new(@args, exe => 'smalt');
     
     return $self;
 }
@@ -90,10 +90,11 @@ sub setup_reference {
     }
     
     unless ($indexed == @suffixes) {
-        # we produce two sets of hashes, one for <70bp reads, one for >70bp
+        # we produce multiple sets of hashes, one for <70bp reads, one for >70bp,
+        # one for >=100bp and one for >500bp
         $self->simple_run("index -k 13 -s 4 $ref.small $ref");
-        $self->simple_run("index -k 13 -s 6 $ref.large $ref");
-        $self->simple_run("index -k 13 -s 13 $ref.vlarge $ref");
+        $self->simple_run("index -k 13 -s 6 $ref.medium $ref");
+        $self->simple_run("index -k 20 -s 13 $ref.large $ref");
         
         $indexed = 0;
         foreach my $suffix (@suffixes) {
@@ -175,11 +176,11 @@ sub generate_sam {
         if ($max_length < 70) {
             $hash_name = $ref.'.small';
         }
-        elsif ($max_length > 500) {
-            $hash_name = $ref.'.vlarge';
+        elsif ($max_length >= 100) {
+            $hash_name = $ref.'.large';
         }
         else {
-            $hash_name = $ref.'.large';
+            $hash_name = $ref.'.medium';
         }
         
         foreach my $fq (@fqs) {
