@@ -777,8 +777,10 @@ sub displayLane
     my $npg_qc = $lane->npg_qc_status;
     my ($error_rate, $adapter_perc, $reads_mapped, $bases_mapped, $reads_paired, $rmdup_reads_mapped, $rmdup_bases_mapped, $clip_bases,$adapter_reads);
     my $cycles = $lane->read_len;
-    my $reads = $lane->raw_reads;
-    my $bases = $lane->raw_bases;
+    my $raw_reads = $lane->raw_reads;
+    my $raw_bases = $lane->raw_bases;
+    my $reads = $raw_reads; # if no mapping
+    my $bases = $raw_bases; # if no mapping
     my $gt_status = $lane->genotype_status;
     my $total_bases = $bases;
     
@@ -829,6 +831,8 @@ sub displayLane
             $rmdup_bases_mapped = commify($rmdup_bases_mapped);
             $reads = commify($reads);
             $bases = commify($bases);
+            $raw_reads = commify($raw_reads);
+            $raw_bases = bp_to_nearest_unit($raw_bases);
             $clip_bases = commify($clip_bases) if $clip_bases;
             
             print qq[
@@ -907,7 +911,8 @@ sub displayLane
                 <table width="100%">
                 <tr>
                 <td><table>
-                <tr><td>Reads: </td><td>$reads</td></tr>
+                <tr><td>Total Reads: </td><td>$raw_reads</td></tr>
+                <tr><td>QC Reads: </td><td>$reads</td></tr>
                 <tr><td>Reads w/adapter</td><td>$adapter_str</td></tr>
                 <tr><td>Reads mapped: </td><td>$rmapped_str</td></tr>
                 <tr><td>Reads paired: </td><td>$rpaired_str</td></tr>
@@ -915,7 +920,8 @@ sub displayLane
                 </table>
                 </td>
                 <td><table>
-                <tr><td>Bases: </td><td>$bases</td></tr>
+                <tr><td>Total Bases: </td><td>$raw_bases</td></tr>
+                <tr><td>QC Bases: </td><td>$bases</td></tr>
                 <tr><td>Bases postclip: </td><td>$clip_str</td></tr>
                 <tr><td>Bases mapped: </td><td>$bmapped_str</td></tr>
                 <tr><td>&nbsp;</td><td>&nbsp;</td></tr>
@@ -923,6 +929,7 @@ sub displayLane
                 </table>
                 </td>
                 <td><table>
+                <tr><td>&nbsp;</td><td></td></tr>
                 <tr><td>Cycles: </td><td>$cycles</td></tr>
                 <tr><td>NPG QC: </td><td>$npg_qc</td></tr>
                 <tr><td>Error rate: </td><td>$error_rate_perc%</td></tr>
