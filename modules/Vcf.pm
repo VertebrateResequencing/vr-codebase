@@ -171,7 +171,9 @@ sub new
 
 sub _set_version
 {
-    my ($self) = @_;
+    my ($self,$version) = @_;
+
+    if ( defined $version ) { $$self{version}=$version; }
     if ( !$$self{version} ) { $$self{version}=$$self{default_version}; }
 
     if ( $$self{version} eq '3.2' ) { Vcf3_2->renew($self); }
@@ -1045,7 +1047,11 @@ sub format_genotype_strings
             if ( $al eq $ref or $al eq '0' or $al eq '*' ) { $al=0; }
             else
             {
-                if ( $al=~/^\d+$/ ) { $al = $$rec{ALT}[$al-1]; }
+                if ( $al=~/^\d+$/ ) 
+                { 
+                    if ( !exists($$rec{ALT}[$al-1]) ) { $self->throw("Broken ALT, index $al out of bounds\n"); }
+                    $al = $$rec{ALT}[$al-1]; 
+                }
 
                 if ( exists($alts{$al}) ) { $al = $alts{$al} }
                 elsif ( $al=~$$self{regex_snp} or $al=~$$self{regex_ins} or $al=~$$self{regex_del} )
@@ -1463,10 +1469,10 @@ sub get_chromosomes
 {
     my ($self) = @_;
     if ( !$$self{file} ) { $self->throw(qq[The parameter "file" not set.\n]); }
-    my (@out) = `tabix $$self{file} -l`;
+    my (@out) = `tabix -l $$self{file}`;
     if ( $? ) 
     { 
-        $self->throw(qq[The command "tabix $$self{file} -l" exited with an error. Is the file tabix indexed?\n]); 
+        $self->throw(qq[The command "tabix -l $$self{file}" exited with an error. Is the file tabix indexed?\n]); 
     }
     for (my $i=0; $i<@out; $i++) { chomp($out[$i]); }
     return \@out;
