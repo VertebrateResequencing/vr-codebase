@@ -404,7 +404,9 @@ sub lock_file
 {
     my ($lock_file,$block) = @_;
 
-    my $operation = $block ? LOCK_EX : LOCK_EX|LOCK_NB;
+    # A change was requested: never block.
+    #   my $operation = $block ? LOCK_EX : LOCK_EX|LOCK_NB;
+    my $operation = LOCK_EX|LOCK_NB;
 
     # check the disk isn't full (below sysopen doesn't fail when disk is full;
     # it just hangs instead)
