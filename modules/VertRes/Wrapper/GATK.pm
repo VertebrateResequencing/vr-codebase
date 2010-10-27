@@ -1140,7 +1140,7 @@ sub produce_beagle_input {
     $self->params([qw(R T genotypes_file inserted_nocall_rate)]);
     
     my $bs = $self->get_b();
-    my @file_args = (" $bs -beagle $out_file");
+    my @file_args = (" $bs -o $out_file");
     
     my %params = (@params);
     $params{T} = 'ProduceBeagleInput';
