@@ -442,7 +442,7 @@ sub select_candidates {
     my $min_count = $self->{min_count};
     
     if ($min_count == 0) {
-        cp($var_file, $sel_file) || $self->throw("Failed to cp $var_file to $sel_file");
+        copy($var_file, $sel_file) || $self->throw("Failed to cp $var_file to $sel_file");
         unless (-s $var_file == -s $sel_file) {
             unlink($sel_file);
             $self->throw("cp of $var_file to $sel_file was bad; $sel_file unlinked");
@@ -450,10 +450,11 @@ sub select_candidates {
         return $self->{Yes};
     }
     
-    my $job_name = $self->{fsu}->catfile($lane_path, 'select_candidates');
-    $self->archive_bsub_files($lane_path, 'select_candidates');
+    my $job_basename = 'select_candidates';
+    my $job_name = $self->{fsu}->catfile($lane_path, $job_basename);
+    $self->archive_bsub_files($lane_path, $job_basename);
     
-    LSF::run($action_lock, $lane_path, $job_name, $self,
+    LSF::run($action_lock, $lane_path, $job_basename, $self,
              qq{python $self->{dindel_scripts}/selectCandidates.py --minCount $min_count -i $var_file -o $sel_file.running});
     
     return $self->{No};
@@ -594,7 +595,7 @@ sub _get_windows_files {
 
 sub make_windows {
     my ($self, $lane_path, $action_lock) = @_;
-
+    
     my $var_base = $self->{retry_from_others} ? 'extra_variants.txt' : 'selected_variants.txt';;
     my $var_file = $self->{fsu}->catfile($lane_path, $var_base);
     my $window_base = $self->{retry_from_others} ? 'windows_retry' : 'windows';
@@ -602,20 +603,21 @@ sub make_windows {
     unless (-d $window_dir) {
         mkdir($window_dir) || $self->throw("Could not create directory '$window_dir'");
     }
-
+    
     return $self->{Yes} if $self->_check_all_windows_files($lane_path);
-
-    my $job_name = $self->{fsu}->catfile($window_dir, 'dindel_make_windows');
-    $self->archive_bsub_files($window_dir, 'dindel_make_windows');
+    
+    my $job_basename = 'dindel_make_windows';
+    my $job_name = $self->{fsu}->catfile($window_dir, $job_basename);
+    $self->archive_bsub_files($window_dir, $job_basename);
 
     my $orig_bsub_opts = $self->{bsub_opts};
     $self->{bsub_opts} = $self->{make_windows_bsub_opts};
-
-    LSF::run($action_lock, $window_dir, $job_name, $self,
+    
+    LSF::run($action_lock, $window_dir, $job_basename, $self,
              qq{python $self->{dindel_scripts}/makeWindows.py --inputVarFile $var_file --windowFilePrefix $window_dir/window --numWindowsPerFile 1000});
-
+    
     $self->{bsub_opts} = $orig_bsub_opts;
-
+    
     return $self->{No};
 }
 
@@ -628,18 +630,18 @@ sub realign_windows_requires {
 
 sub realign_windows_provides {
     my ($self, $lane_path) = @_;
-
+    
     my @window_files = $self->_get_windows_files($lane_path);
-
+    
     my @glfs;
     foreach my $window_file (@window_files) {
         my $glf = $window_file;
         $glf =~ s/\.txt$/.glf.txt/;
         push(@glfs, $glf);
     }
-
+    
     @glfs > 1 || $self->throw("Surely too few glfs?!");
-
+    
     return \@glfs;
 }
 
@@ -719,16 +721,16 @@ sub realign_windows {
                 }
                 move($running_file, "$running_file.bad");
             }
-
+            
             unlink($lock_file);
             next;
         }
         else {
             $jobs++;
             last if $jobs > $self->{simultaneous_jobs};
-
+            
             $self->archive_bsub_files($window_dir, $job_base_name);
-
+            
             my $bam_mode_args = '';
             my @bam_files = @{$self->{bam_files}};
             if (@bam_files > 1) {
@@ -738,14 +740,14 @@ sub realign_windows {
                 $bam_mode_args = "--bamFile @bam_files";
                 $bam_mode_args .= ' --doDiploid' if $self->{type} eq 'diploid';
             }
-
+            
             LSF::run($lock_file, $window_dir, $job_base_name, $self,
                      qq{$self->{dindel_bin} --analysis indels $bam_mode_args $self->{dindel_args} --ref $self->{ref} --varFile $window_file --libFile $lib_file --outputFile $running_base});
         }
     }
-
+    
     $self->{bsub_opts} = $orig_bsub_opts;
-
+    
     return $self->{No};
 }
 
@@ -775,8 +777,9 @@ sub merge {
         close($ofh);
     }
     
-    my $job_name = $self->{fsu}->catfile($lane_path, 'dindel_merge');
-    $self->archive_bsub_files($lane_path, 'dindel_merge');
+    my $job_basename = 'dindel_merge';
+    my $job_name = $self->{fsu}->catfile($lane_path, $job_basename);
+    $self->archive_bsub_files($lane_path, $job_basename);
     
     my $script = '';
     my @bam_files = @{$self->{bam_files}};
@@ -789,7 +792,7 @@ sub merge {
     
     my $running_out = $self->{fsu}->catfile($lane_path, 'calls.vcf.running');
     
-    LSF::run($action_lock, $lane_path, $job_name, $self,
+    LSF::run($action_lock, $lane_path, $job_basename, $self,
              qq{python $self->{dindel_scripts}/$script --inputFiles $glf_fofn --outputFile $running_out --ref $self->{ref}});
     
     return $self->{No};
@@ -797,11 +800,10 @@ sub merge {
 
 sub is_finished {
     my ($self, $lane_path, $action) = @_;
-
+    
     my $action_name = $action->{name};
     
     if ($action_name eq 'select_candidates') {
-        my $var_file = $self->{fsu}->catfile($lane_path, 'variants.txt');
         my $sel_file = $self->{fsu}->catfile($lane_path, 'selected_variants.txt');
         my $running = $sel_file.'.running';
         
@@ -840,7 +842,7 @@ sub is_finished {
             }
         }
     }
-
+    
     return $self->SUPER::is_finished($lane_path, $action);
 }
 
@@ -852,7 +854,7 @@ sub running_status {
     if ($jids_file =~ /call/) {
         return $LSF::No;
     }
-
+    
     return $self->SUPER::running_status($jids_file);
 }
 
@@ -860,7 +862,7 @@ sub running_status {
 # use, but is pretty much required here
 sub what_files_are_missing {
     my ($self, $path, $files) = @_;
-
+    
     my @missing = ();
     for my $file (@$files) {
         my $file_path = index($file, '/') == 0 ? $file : "$path/$file";
