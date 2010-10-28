@@ -27,6 +27,7 @@ use strict;
 use warnings;
 use VertRes::IO;
 use VertRes::Utils::FileSystem;
+use VertRes::Utils::Mapping;
 use File::Basename;
 use File::Spec;
 use File::Path;
@@ -571,32 +572,105 @@ sub get_lanes {
 =head2 new_platforms
 
  Title   : new_platforms
- Usage   : my @new_platforms = $obj->new_platforms('REL1/.release_hierarchy_made',
-                                                   'REL2/.release_hierarchy_made');
- Function: Given 2 .release_hierarchy_made files made by running at least the
-           first action of the Release pipeline at two different points in time,
-           work out which platform-level directories in the second release are
-           new or updated (have fewer or more lanes) compared to the first.
- Returns : list of platform directory strings
- Args    : 2 .release_hierarchy_made files. NB: currently assumes that your
+ Usage   : my %platforms = $obj->new_platforms('REL/.release_hierarchy_made',
+                                               'new_lanes.fofn',
+                                               vrtrack => $vrtrack,
+                                               slx_mapper => 'bwa',
+                                               '454_mapper' => 'ssaha',
+                                               assembly_name => 'NCBI37');
+ Function: Given a .release_hierarchy_made file (made by running the Release
+           pipeline) and lanes.fofn (eg. made by running release_lanes.pl prior
+           to starting a new release), work out which platform-level directories
+           in the new release are new or updated (have fewer or more lanes)
+           compared to the first. NB: it assumes the release directory structure
+           is the default project->sample->platform->library->lane->bam for both
+           releases.
+ Returns : hash with structure like:
+           $platforms{project}->{sample_name}->{platform} = {%status}
+           where the %status hash contains:
+           $status{changed} = boolean (true if the number or names of lane bams
+                                       for this level differs from the previous
+                                       release)
+           $status{bams} = \@bams (the list of bam files for this level)
+ Args    : .release_hierarchy_made file, lanes.fofn file. (the format of the
+           files is interchangable: either argument may be a list of lane
+           bam files, or a list of lane directories)
+           If either of the first two args is a list of lane directories, a
+           hash of vrtrack, slx_mapper, 454_mapper and assembly_name args is
+           also required.
 
 =cut
 
 sub new_platforms {
-    my ($self, $rhm1, $rhm2) = @_;
+    my ($self, $rhm1, $rhm2, %args) = @_;
     
-    my @lane_arrays;
+    # group bams by platform for both input files
+    my %data;
     foreach my $file ($rhm1, $rhm2) {
         open (my $fh, $file) || $self->throw("Could not open file $file");
-        my @lanes;
         while (<$fh>) {
-            # /lustre/scratch101/g1k/REL-2010-09-01/ASW_low_coverage/NA19711/SLX/Solexa_16050/SRR032222/se.recal.sorted.bam
+            chomp;
+            next if /^#/;
+            next unless /\S/;
             
+            # for now assume project->sample->platform->bam, but could check the
+            # env var used by VRTrack if necessary...
+            # /lustre/scratch101/g1k/REL-2010-09-01/ASW_low_coverage/NA19711/SLX/Solexa_16050/SRR032222/se.recal.sorted.bam
+            my $thing = $_;
+            my (@bams, $lane_dir);
+            if ($thing =~ /\.bam$/) {
+                # we want the lane_dir without following symlinks, but the real
+                # basename of the file
+                my $bam = abs_path($thing);
+                (undef, $lane_dir) = fileparse($thing);
+                @bams = (File::Spec->catfile($lane_dir, basename($bam)));
+            }
+            else {
+                # we have a lane directory; work out what bams are inside
+                $lane_dir = $thing;
+                @bams = $self->lane_bams($lane_dir, %args);
+            }
+            $lane_dir =~ s/\/$//;
+            my @parts = File::Spec->splitdir($lane_dir);
+            
+            push(@{$data{$file}->{$parts[-5]}->{$parts[-4]}->{$parts[-3]}->{bams}}, @bams);
         }
         close($fh);
-        
-        push(@lane_arrays, \@lanes);
     }
+    
+    # for the second file, note the changed status
+    my %result = %{$data{$rhm2}};
+    while (my ($project, $samples) = each %result) {
+        while (my ($sample, $platforms) = each %{$samples}) {
+            my $debug = $sample eq 'NA19711';
+            while (my ($platform, $status) = each %{$platforms}) {
+                my @prev_bams = sort @{$data{$rhm1}->{$project}->{$sample}->{$platform}->{bams} || []};
+                my @curr_bams = sort @{$status->{bams}};
+                my $changed = 0;
+                if (@curr_bams == @prev_bams) {
+                    # check the bam filenames match
+                    foreach my $i (0..$#prev_bams) {
+                        if ($prev_bams[$i] ne $curr_bams[$i]) {
+                            warn "$prev_bams[$i] ne $curr_bams[$i]\n" if $debug;
+                            $changed = 1;
+                            last;
+                        }
+                    }
+                }
+                else {
+                    if ($debug) {
+                        warn scalar(@prev_bams)." vs ".scalar(@curr_bams).":\n";
+                        warn join("\n", @prev_bams), "\n--\n", join("\n", @curr_bams), "\n";
+                    }
+                    $changed = 1;
+                }
+                
+                $status->{changed} = $changed;
+            }
+        }
+    }
+    
+    return %result;
 }
 
 =head2 platform_level_status
@@ -611,6 +685,12 @@ sub new_platforms {
            database is checked to get a full list of lanes for those samples/
            platforms in order to find out the real status incase you missed out
            some lanes.
+
+           NB: probably not a good idea to use this, because if you get the
+           date "wrong" (the db was updated before/after your date in an
+           unexpected way), the result will be wrong. Use new_platforms()
+           instead, if possible.
+
  Returns : hash with structure like:
            $platforms_status{project}->{sample_name}->{platform} = {%status}
            where the %status hash contains:
@@ -1082,32 +1162,6 @@ sub create_release_hierarchy {
     my @all_linked_bams;
     my @bad_lanes;
     foreach my $lane_path (@{$lane_paths}) {
-        # first get the mapstats object so we'll know the bam prefix
-        my $lane_name = basename($lane_path);
-        my $vrlane = VRTrack::Lane->new_by_hierarchy_name($args{vrtrack}, $lane_name) || $self->throw("Unable to get lane $lane_name from db");
-        my %objs = $self->lane_hierarchy_objects($vrlane);
-        my $platform = lc($objs{platform}->name);
-        my $mappings = $vrlane->mappings();
-        my $mapstats;
-        if ($mappings && @{$mappings}) {
-            # find the most recent mapstats that corresponds to our mapping
-            my $highest_id = 0;
-            foreach my $possible (@{$mappings}) {
-                # we're expecting it to have the correct assembly and mapper
-                my $assembly = $possible->assembly() || next;
-                $assembly->name eq $args{assembly_name} || next;
-                my $mapper = $possible->mapper() || next;
-                $mapper->name eq $args{$platform.'_mapper'} || next;
-                
-                if ($possible->id > $highest_id) {
-                    $mapstats = $possible;
-                    $highest_id = $possible->id;
-                }
-            }
-        }
-        $mapstats || $self->throw("Could not get a mapstats for lane $lane_name");
-        my $mapstats_prefix = $mapstats->id;
-        
         # setup release lane
         my @dirs = File::Spec->splitdir($lane_path);
         @dirs >= 5 || $self->throw("lane path '$lane_path' wasn't valid");
@@ -1115,79 +1169,17 @@ sub create_release_hierarchy {
         mkpath($release_lane_path);
         -d $release_lane_path || $self->throw("Unable to make release lane '$release_lane_path'");
         
-        # symlink bams; what ended are we supposed to have?
-        my $files = $vrlane->files();
-        my %ended;
-        foreach my $file (@{$files}) {
-            my $type = $file->type;
-            if (! $type) {
-                $ended{se} = 1;
-            }
-            else {
-                $ended{pe} = 1;
-            }
-        }
+        # symlink bams; what bams are we supposed to have?
+        my @bams = $self->lane_bams($lane_path, %args);
         
         my @linked_bams;
-        foreach my $ended (keys %ended) {
-            # prefer the recalibrated bam if it was made to the unrecalibrated
-            # raw bam
-            my $type = 'recal';
-            my $source = $fsu->catfile($lane_path, "$mapstats_prefix.$ended.$type.sorted.bam");
-            unless (-s $source) {
-                $type = 'raw';
-                $source = $fsu->catfile($lane_path, "$mapstats_prefix.$ended.$type.sorted.bam");
-            }
-            
-            if (-s $source) {
-                my $destination = $fsu->catfile($release_lane_path, "$ended.$type.sorted.bam");
-                symlink($source, $destination) || $self->throw("Couldn't symlink $source -> $destination");
-                push(@linked_bams, $destination);
-            }
-            else {
-                $self->warn("expected there to be a bam '$source' but it didn't exist!");
-            }
+        foreach my $bam (@bams) {
+            my ($ended) = $bam =~ /\.([ps]e)\./;
+            my $destination = $fsu->catfile($release_lane_path, "$ended.bam");
+            symlink($bam, $destination) || $self->throw("Couldn't symlink $bam -> $destination");
+            push(@linked_bams, $destination);
         }
-        
-        # old mapping pipeline didn't create pe/se bams
         unless (@linked_bams) {
-            my $legacy_bam_file = 'raw.sorted.bam';
-            my $source = $fsu->catfile($lane_path, $legacy_bam_file);
-            if (-s $source) {
-                # figure out if it was generated from paired or single ended reads
-                my $meta_file = $fsu->catfile($lane_path, 'meta.info');
-                if (-s $meta_file) {
-                    $io->file($meta_file);
-                    my $fh = $io->fh;
-                    my %reads;
-                    while (<$fh>) {
-                        if (/^read(\d)/) {
-                            $reads{$1} = 1;
-                        }
-                    }
-                    $io->close;
-                    
-                    my $ended;
-                    if ($reads{1} && $reads{2}) {
-                        $ended = 'pe';
-                    }
-                    elsif ($reads{0}) {
-                        $ended = 'se';
-                    }
-                    else {
-                        $self->throw("Couldn't determine if reads were single or paired end in lane '$lane_path'");
-                    }
-                    
-                    my $bam_file = "${ended}_raw.sorted.bam";
-                    my $destination = $fsu->catfile($release_lane_path, $bam_file);
-                    symlink($source, $destination) || $self->throw("Couldn't symlink $source -> $destination");
-                    push(@linked_bams, $destination);
-                }
-            }
-        }
-        
-        unless (@linked_bams) {
-            $self->warn("Mapping lane '$lane_path' contained no linkable bam files!");
             push(@bad_lanes, $lane_path);
         }
         
@@ -1201,6 +1193,105 @@ sub create_release_hierarchy {
     }
     
     return @all_linked_bams;
+}
+
+=head2 lane_bams
+
+ Title   : lane_bams
+ Usage   : my @bams = $obj->lane_bams('/abs/path/lane',
+                                      vrtrack => $vrtrack,
+                                      slx_mapper => 'bwa',
+                                      '454_mapper' => 'ssaha',
+                                      assembly_name => 'NCBI37');
+ Function: Given the absolute path to a lane, find out what the bam files are
+           called.
+ Returns : list of absolute paths to the bams in the given lane directory
+ Args :    absolute path of a lane directory, and a hash of the following
+           required options:
+           vrtrack => VRTrack::VRTrack object
+           slx_mapper => string
+           454_mapper => string
+           assembly_name => string
+
+=cut
+
+sub lane_bams {
+    my ($self, $lane_path, %args) = @_;
+    my $lane_name = basename($lane_path);
+    
+    # first get the mapstats object so we'll know the bam prefix
+    my $vrlane = VRTrack::Lane->new_by_hierarchy_name($args{vrtrack}, $lane_name) || $self->throw("Unable to get lane $lane_name from db");
+    my %objs = $self->lane_hierarchy_objects($vrlane);
+    my $platform = lc($objs{platform}->name);
+    my $mappings = $vrlane->mappings();
+    my $mapstats;
+    if ($mappings && @{$mappings}) {
+        # find the most recent mapstats that corresponds to our mapping
+        my $mapping_util = VertRes::Utils::Mapping->new(slx_mapper => $args{slx_mapper},
+                                                        '454_mapper' => $args{'454_mapper'});
+        my $mapper_class = $mapping_util->lane_to_module($lane_path);
+        $mapper_class || $self->throw("Lane '$lane_path' was for an unsupported technology");
+        eval "require $mapper_class;";
+        my $mapper_obj = $mapper_class->new;
+        my $mapper = $mapper_obj->exe;
+        $self->throw("no mapper from $mapper_class") unless $mapper;
+        
+        my $highest_id = 0;
+        foreach my $possible (@{$mappings}) {
+            my $pid = $possible->id;
+            
+            # we're expecting it to have the correct assembly and mapper
+            my $assembly = $possible->assembly() || next;
+            $assembly->name eq $args{assembly_name} || next;
+            my $this_mapper = $possible->mapper() || next;
+            $this_mapper->name eq $mapper || next;
+            
+            if ($pid > $highest_id) {
+                $mapstats = $possible;
+                $highest_id = $pid;
+            }
+        }
+    }
+    $mapstats || $self->throw("Could not get a mapstats for lane $lane_name");
+    my $mapstats_prefix = $mapstats->id;
+    
+    # what ended are we supposed to have?
+    my $files = $vrlane->files();
+    my %ended;
+    foreach my $file (@{$files}) {
+        my $type = $file->type;
+        if (! $type) {
+            $ended{se} = 1;
+        }
+        else {
+            $ended{pe} = 1;
+        }
+    }
+    
+    my $fsu = VertRes::Utils::FileSystem->new();
+    my @bams = ();
+    foreach my $ended (keys %ended) {
+        # prefer the recalibrated bam if it was made to the unrecalibrated
+        # raw bam
+        my $bam;
+        foreach my $type ('recal', 'raw') {
+            $bam = $fsu->catfile($lane_path, "$mapstats_prefix.$ended.$type.sorted.bam");
+            last if -e $bam;
+        }
+        
+        if (-e $bam) {
+            push(@bams, $bam);
+        }
+        else {
+            $self->warn("expected there to be a bam '$bam' but it didn't exist!");
+        }
+    }
+    
+    unless (@bams) {
+        $self->warn("Mapping lane '$lane_path' contained none of the expected bam files!");
+    }
+    
+    return @bams;
 }
 
 =head2 dcc_filename
