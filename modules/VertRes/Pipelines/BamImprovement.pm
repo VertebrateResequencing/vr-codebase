@@ -186,66 +186,18 @@ sub new {
     }
     $self->throw("assembly_name must be supplied in conf") unless $self->{assembly_name};
     
-    # first get the mapstats object so we'll know the bam prefix
-    my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
-    my %objs = $hu->lane_hierarchy_objects($self->{vrlane});
-    my $platform = lc($objs{platform}->name);
-    my $mappings = $self->{vrlane}->mappings();
-    my $mapstats;
-    if ($mappings && @{$mappings}) {
-        # find the most recent mapstats that corresponds to our mapping
-        my $highest_id = 0;
-        foreach my $possible (@{$mappings}) {
-            # we're expecting it to have the correct assembly and mapper
-            my $assembly = $possible->assembly() || next;
-            $assembly->name eq $self->{assembly_name} || next;
-            my $mapper = $possible->mapper() || next;
-            $mapper->name eq $self->{$platform.'_mapper'} || next;
-            
-            if ($possible->id > $highest_id) {
-                $mapstats = $possible;
-                $highest_id = $possible->id;
-            }
-        }
-    }
-    $mapstats || $self->throw("Could not get a mapstats for lane $lane");
-    my $mapstats_prefix = $mapstats->id;
-    $self->{mapstats_id} = $mapstats_prefix;
-    
     # get a list of bams in this lane we want to improve
+    my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
+    $self->{assembly_name} || $self->throw("no assembly_name!");
+    my @bams = $hu->lane_bams($lane_path, vrtrack => $self->{vrlane}->vrtrack,
+                                          assembly_name => $self->{assembly_name},
+                                          slx_mapper => $self->{slx_mapper},
+                                          '454_mapper' => $self->{'454_mapper'});
+    @bams || $self->throw("no bams to improve in lane $lane_path!");
+    $self->{in_bams} = \@bams;
+    
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
-    
-    my $files = $self->{vrlane}->files();
-    my %ended;
-    foreach my $file (@{$files}) {
-        my $type = $file->type;
-        if (! $type) {
-            $ended{se} = 1;
-        }
-        else {
-            $ended{pe} = 1;
-        }
-    }
-    
-    my @bams;
-    foreach my $ended (keys %ended) {
-        my $type = 'recal';
-        my $source = $self->{fsu}->catfile($lane_path, "$mapstats_prefix.$ended.$type.sorted.bam");
-        unless ($self->{fsu}->file_exists($source)) {
-            $type = 'raw';
-            $source = $self->{fsu}->catfile($lane_path, "$mapstats_prefix.$ended.$type.sorted.bam");
-        }
-        
-        if ($self->{fsu}->file_exists($source)) {
-            push(@bams, $source);
-        }
-        else {
-            $self->warn("expected there to be a bam '$source' but it didn't exist!");
-        }
-    }
-    
-    $self->{in_bams} = \@bams;
     
     return $self;
 }
@@ -319,7 +271,7 @@ sub realign {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M3800000 -R \'select[mem>3800] rusage[mem=3800]\'';
+    $self->{bsub_opts} = '-q normal -M4800000 -R \'select[mem>4800] rusage[mem=4800]\'';
     my $verbose = $self->verbose;
     
     foreach my $in_bam (@{$self->{in_bams}}) {
@@ -349,6 +301,7 @@ my \$done_file = '$done_file';
 my \$intervals_file = '$self->{indel_intervals}';
 
 my \$gatk = VertRes::Wrapper::GATK->new(verbose => $verbose,
+                                        java_memory => 3800,
                                         dbsnp => '$self->{dbsnp_rod}',
                                         reference => '$self->{reference}',
                                         build => '$self->{assembly_name}');
