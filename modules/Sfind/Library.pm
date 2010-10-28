@@ -68,6 +68,10 @@ sub new {
 
     $name =~ s/\s+$//;  # trim trailing whitespace
     $self->id($id);
+    # 2010-10-22 problem with warehouse - item_information is missing.
+    # So, let's put in a hack to at least create a library if there is no name
+    # hopefully it will get auto-fixed when the item_information comes back
+    $name ||= $id;
     $self->name($name);
 
     # get library creation status
