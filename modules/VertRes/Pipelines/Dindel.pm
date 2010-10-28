@@ -195,19 +195,32 @@ sub _get_bam_to_sample {
     return if defined $self->{bam_to_sample};
     
     my %bam_to_sample;
-    foreach my $bam (@{$self->{bam_files}}) {
-        my $pars = VertRes::Parser::sam->new(file => $bam);
-        my @samples = $pars->samples();
-        $pars->close;
-        
-        if (@samples > 1) {
-            $self->throw("The bam '$bam' was for more than 1 sample (@samples)");
+    my $bts_file = File::Spec->catfile($self->{lane_path}, 'bam_to_sample.txt');
+    if (-s $bts_file) {
+        open(my $fh, $bts_file) || $self->throw("Could not open $bts_file");
+        while (<$fh>) {
+            my ($bam, $sample) = split;
+            $bam_to_sample{$bam} = $sample;
         }
-        elsif (@samples < 1) {
-            $self->throw("Could not detect what sample '$bam' was for");
+    }
+    else {
+        open(my $ofh, '>', $bts_file) || $self->throw("Could not write to $bts_file");
+        foreach my $bam (@{$self->{bam_files}}) {
+            my $pars = VertRes::Parser::sam->new(file => $bam);
+            my @samples = $pars->samples();
+            $pars->close;
+            
+            if (@samples > 1) {
+                $self->throw("The bam '$bam' was for more than 1 sample (@samples)");
+            }
+            elsif (@samples < 1) {
+                $self->throw("Could not detect what sample '$bam' was for");
+            }
+            
+            print $ofh "$bam\t$samples[0]\n";
+            $bam_to_sample{$bam} = $samples[0];
         }
-        
-        $bam_to_sample{$bam} = $samples[0];
+        close($ofh);
     }
     
     $self->{bam_to_sample} = \%bam_to_sample;
@@ -228,6 +241,7 @@ sub _get_bam_to_sample {
 sub extract_indels_requires {
     my $self = shift;
     
+    warn "extract_indels_requires called!\n";
     my @reqs = ($self->{ref}, @{$self->{bam_files}}, @{$self->{bai_files}});
     
     if ($self->{retry_from_others}) {
@@ -263,19 +277,9 @@ sub extract_indels_provides {
                              File::Spec->catfile($lane_path, 'libraries.txt'));
     }
     else {
-        # we provide a library and variant file per bam
-        my @bam_files = @{$self->{bam_files}};
-        $self->_get_bam_to_sample;
-        
-        foreach my $bam (@bam_files) {
-            my $sample = $self->{bam_to_sample}->{$bam} || $self->throw("No sample for bam '$bam'!");
-            my $out_base = $self->{fsu}->catfile($out_dir, $sample.'.dindel_extract_indels');
-            
-            foreach my $type ('libraries', 'variants') {
-                my $out_file = $out_base.".$type.txt";
-                push(@lib_var_files, $out_file);
-            }
-        }
+        # we provide a library and variant file per bam, listed in the
+        # .extracts_done file
+        @lib_var_files = (File::Spec->catfile($lane_path, '.extracts_done'));
     }
     
     return \@lib_var_files;
@@ -378,7 +382,13 @@ sub concat_libvar {
     
     # concat
     my ($v_exp, $l_exp) = (0, 0);
-    foreach my $file (@{$self->extract_indels_provides($lane_path)}) {
+    my $ex_done_file = File::Spec->catfile($lane_path, '.extracts_done');
+    open(my $edffh, $ex_done_file) || $self->throw("Could not open $ex_done_file");
+    while (<$edffh>) {
+        chomp;
+        my $file = $_;
+        $file || next;
+        
         my ($ofh, $counter);
         if ($file =~ /variants\.txt$/) {
             $ofh = $vofh;
@@ -398,6 +408,7 @@ sub concat_libvar {
     }
     close($vofh);
     close($lofh);
+    close($edffh);
     
     # sort variants file
     system("sort -k1,1n -k2,2n $var_out > $var_out.sorted; mv $var_out.sorted $var_out");
@@ -803,7 +814,35 @@ sub is_finished {
     
     my $action_name = $action->{name};
     
-    if ($action_name eq 'select_candidates') {
+    if ($action_name eq 'extract_indels') {
+        my $done_file = $self->{fsu}->catfile($lane_path, '.extracts_done');
+        
+        unless ($self->{fsu}->file_exists($done_file)) {
+            my @bam_files = @{$self->{bam_files}};
+            $self->_get_bam_to_sample;
+            
+            my @lib_var_files;
+            my $have = 0;
+            foreach my $bam (@bam_files) {
+                my $sample = $self->{bam_to_sample}->{$bam} || $self->throw("No sample for bam '$bam'!");
+                my $out_dir = $self->{fsu}->catfile($lane_path, 'extract_indels');
+                my $out_base = $self->{fsu}->catfile($out_dir, $sample.'.dindel_extract_indels');
+                
+                foreach my $type ('libraries', 'variants') {
+                    my $out_file = $out_base.".$type.txt";
+                    $have++ if -e $out_file;
+                    push(@lib_var_files, $out_file);
+                }
+            }
+            
+            if ($have == @lib_var_files) {
+                open(my $ofh, '>', $done_file) || $self->throw("Could not write to $done_file");
+                print $ofh join("\n", @lib_var_files), "\n";
+                close($ofh);
+            }
+        }
+    }
+    elsif ($action_name eq 'select_candidates') {
         my $sel_file = $self->{fsu}->catfile($lane_path, 'selected_variants.txt');
         my $running = $sel_file.'.running';
         
