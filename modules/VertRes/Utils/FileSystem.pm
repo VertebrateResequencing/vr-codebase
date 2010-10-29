@@ -722,8 +722,28 @@ sub file_exists {
     my $dmd5 = Digest::MD5->new();
     $dmd5->add($file);
     my $md5 = $dmd5->hexdigest;
-    
-    my $file_exists_dbh = $self->_get_dbh;
+
+    # Check if the DB is responsive. If not, do not attempt to reconnect 300 times (5mins).
+    #   Works, but always stats, the DB not good.
+    #   Another change: always disconnect and reconnect if reconnect_db option is set. This works like charm!!
+    #
+    my $file_exists_dbh;
+    if ( !$$self{_dbh_failed} )
+    {
+        eval { $file_exists_dbh = $self->_get_dbh; };
+    }
+    if ( !$file_exists_dbh )
+    {
+        if ( ! $$self{_dbh_failed} ) 
+        { 
+            print STDERR "The file_exists DB not responding. For 5 mins will now stat instead, with 1s sleeps...\n";
+            $$self{_dbh_failed} = 300; 
+        }
+        else { $$self{_dbh_failed}--; }
+
+        sleep(1);
+        return -e $file ? 1 : 0;
+    }
     
     if ($opts{wipe_out}) {
         if ($opts{recurse}) {
@@ -733,6 +753,11 @@ sub file_exists {
         }
         else {
             $file_exists_dbh->do(qq{DELETE FROM file_status WHERE hash=? AND path=?},undef,$md5,$file);
+        }
+        if ( $$self{reconnect_db} )
+        {
+            $self->{_dbh}->disconnect; 
+            delete($$self{_dbh});
         }
         return 0;
     }
@@ -748,10 +773,20 @@ sub file_exists {
         my @row = $file_exists_dbh->selectrow_array($sql, undef, $md5);
         if (@row) {
             if ($row[2] && $row[2] == 1) {
+                if ( $$self{reconnect_db} )
+                {
+                    $self->{_dbh}->disconnect; 
+                    delete($$self{_dbh});
+                }
                 return 1;
             }
             else {
                 if ($opts{no_check}) {
+                    if ( $$self{reconnect_db} )
+                    {
+                        $self->{_dbh}->disconnect; 
+                        delete($$self{_dbh});
+                    }
                     return 0;
                 }
             }
@@ -764,6 +799,12 @@ sub file_exists {
     # store result in db
     my $sql = qq{insert into `file_status` (hash,path,status) values (?,?,?) ON DUPLICATE KEY UPDATE `status`=?};
     $file_exists_dbh->do($sql, undef, $md5, $file, $exists, $exists) || $self->throw($file_exists_dbh->errstr);
+
+    if ( $$self{reconnect_db} )
+    {
+        $self->{_dbh}->disconnect; 
+        delete($$self{_dbh});
+    }
     
     return $exists;
 }
