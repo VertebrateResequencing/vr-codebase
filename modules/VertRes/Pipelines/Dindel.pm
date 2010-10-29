@@ -672,7 +672,7 @@ sub realign_windows {
     my $lib_file = $self->{fsu}->catfile($lane_path, 'libraries.txt');
     my $window_base = $self->{retry_from_others} ? 'windows_retry' : 'windows';
     my $window_dir = $self->{fsu}->catfile($lane_path, $window_base);
-    my @window_files = $self->_get_windows_files($lane_path);
+    my @window_files = sort { my ($n1) = $a =~ /(\d+)\.txt/; my ($n2) = $b =~ /(\d+)\.txt/; $n1 <=> $n2 } $self->_get_windows_files($lane_path);
     
     my $orig_bsub_opts = $self->{bsub_opts};
     $self->{bsub_opts} = ' -q long -M7900000 -R \'select[mem>7900] rusage[mem=7900]\'';
