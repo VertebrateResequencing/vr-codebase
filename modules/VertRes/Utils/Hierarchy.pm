@@ -623,12 +623,12 @@ sub new_platforms {
                 # basename of the file
                 my $bam = abs_path($thing);
                 (undef, $lane_dir) = fileparse($thing);
-                @bams = (File::Spec->catfile($lane_dir, basename($bam)));
+                @bams = (basename($bam));
             }
             else {
                 # we have a lane directory; work out what bams are inside
                 $lane_dir = $thing;
-                @bams = $self->lane_bams($lane_dir, %args);
+                @bams = map { basename($_) } $self->lane_bams($lane_dir, %args);
             }
             $lane_dir =~ s/\/$//;
             my @parts = File::Spec->splitdir($lane_dir);
@@ -642,7 +642,6 @@ sub new_platforms {
     my %result = %{$data{$rhm2}};
     while (my ($project, $samples) = each %result) {
         while (my ($sample, $platforms) = each %{$samples}) {
-            my $debug = $sample eq 'NA19711';
             while (my ($platform, $status) = each %{$platforms}) {
                 my @prev_bams = sort @{$data{$rhm1}->{$project}->{$sample}->{$platform}->{bams} || []};
                 my @curr_bams = sort @{$status->{bams}};
@@ -651,17 +650,12 @@ sub new_platforms {
                     # check the bam filenames match
                     foreach my $i (0..$#prev_bams) {
                         if ($prev_bams[$i] ne $curr_bams[$i]) {
-                            warn "$prev_bams[$i] ne $curr_bams[$i]\n" if $debug;
                             $changed = 1;
                             last;
                         }
                     }
                 }
                 else {
-                    if ($debug) {
-                        warn scalar(@prev_bams)." vs ".scalar(@curr_bams).":\n";
-                        warn join("\n", @prev_bams), "\n--\n", join("\n", @curr_bams), "\n";
-                    }
                     $changed = 1;
                 }
                 
