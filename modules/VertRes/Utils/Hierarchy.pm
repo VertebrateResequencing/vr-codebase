@@ -1199,7 +1199,8 @@ sub create_release_hierarchy {
                                       assembly_name => 'NCBI37');
  Function: Given the absolute path to a lane, find out what the bam files are
            called.
- Returns : list of absolute paths to the bams in the given lane directory
+ Returns : list of absolute paths to the bams in the given lane directory.
+           $self->{mapper_class} and $self->{mapstats_obj} are also set
  Args :    absolute path of a lane directory, and a hash of the following
            required options:
            vrtrack => VRTrack::VRTrack object
@@ -1225,6 +1226,7 @@ sub lane_bams {
                                                         '454_mapper' => $args{'454_mapper'});
         my $mapper_class = $mapping_util->lane_to_module($lane_path);
         $mapper_class || $self->throw("Lane '$lane_path' was for an unsupported technology");
+        $self->{mapper_class} = $mapper_class;
         eval "require $mapper_class;";
         my $mapper_obj = $mapper_class->new;
         my $mapper = $mapper_obj->exe;
@@ -1247,6 +1249,7 @@ sub lane_bams {
         }
     }
     $mapstats || $self->throw("Could not get a mapstats for lane $lane_name");
+    $self->{mapstats_obj} = $mapstats;
     my $mapstats_prefix = $mapstats->id;
     
     # what ended are we supposed to have?
