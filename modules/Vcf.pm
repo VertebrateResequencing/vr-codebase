@@ -6,8 +6,9 @@ package Vcf;
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf3.3
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcfv3.2
 #
-# Authors: pd3
+# Authors: petr.danecek@sanger
 # for VCF v3.2, v3.3, v4.0
+#
 
 =head1 NAME
 
@@ -23,7 +24,7 @@ From the command line:
 From a script:
     use Vcf;
 
-    my $vcf = Vcf->new(file=>'example.vcf.gz');
+    my $vcf = Vcf->new(file=>'example.vcf.gz',region=>'1:1000-2000');
     $vcf->parse_header();
 
     # Do some simple parsing. Most thorough but slowest way how to get the data.
@@ -129,6 +130,7 @@ sub validate_v32
     Usage   : my $vcf = Vcf->new(file=>'my.vcf', version=>'3.2');
     Args    : 
                 file    .. The file name. If not given, STDIN is assumed.
+                region  .. Optional region to parse (requires tabix indexed VCF file)
                 silent  .. Unless set to 0, warning messages may be printed.
                 strict  .. Unless set to 0, the reader will die when the file violates the specification.
                 version .. If not given, '4.0' is assumed. The header information overrides this setting.
@@ -140,21 +142,13 @@ sub new
     my ($class,@args) = @_;
     my $self = {@args};
     bless $self, ref($class) || $class;
-    if ( !exists($$self{fh}) ) 
-    { 
-        if ( exists($$self{file}) ) 
-        {
-            if ( $$self{file}=~/\.gz$/i )
-            {
-                open($$self{fh},"zcat $$self{file} |") or $self->throw("$$self{file}: $!");
-            }
-            else
-            {
-                open($$self{fh},'<',$$self{file}) or $self->throw("$$self{file}: $!"); 
-            }
-        }
-        else { $$self{fh} = *STDIN; }
+
+    if ( exists($$self{region}) )
+    {
+        $self->open(region=>$$self{region},parse_header=>0);
     }
+    else { $self->open(parse_header=>0); }
+
     $$self{silent}    = 0 unless exists($$self{silent});
     $$self{strict}    = 0 unless exists($$self{strict});
     $$self{buffer}    = [];       # buffer stores the lines in the reverse order
@@ -188,6 +182,50 @@ sub _set_version
     if ( exists($$self{header_lines}) && exists($$self{header_lines}[0]{key}) && $$self{header_lines}[0]{key} eq 'fileformat' )
     {
         shift(@{$$self{header_lines}});
+    }
+}
+
+
+=head2 open
+
+    About   : (Re)Open file. No need to call this explicitly unless reading from a different 
+              region is requested.
+    Usage   : $vcf->open(); # Read from the start
+              $vcf->open(region=>'1:12345-92345');
+    Args    : region       .. Supported only for tabix indexed files
+              parse_header .. If unset, the header will not be parsed. (The default is to parse the header)
+
+=cut
+
+sub open
+{
+    my ($self,%args) = @_;
+    $self->close();
+
+    if ( !exists($$self{file}) ) 
+    {
+        $$self{fh} = *STDIN;
+    }
+    elsif ( !($$self{file}=~/\.gz$/i) )
+    {
+        open($$self{fh},'<',$$self{file}) or $self->throw("$$self{file}: $!");
+    }
+    else
+    {
+        if ( exists($args{region}) && defined($args{region}) )
+        {
+            open($$self{fh},"tabix $$self{file} $args{region} |") or $self->throw("tabix $$self{file}: $!");
+        }
+        else
+        {
+            open($$self{fh},"zcat $$self{file} |") or $self->throw("$$self{file}: $!");
+        }
+    }
+
+    if ( !exists($args{parse_header}) or $args{parse_header} )
+    {
+        delete($$self{header});
+        $self->parse_header();
     }
 }
 
@@ -1476,24 +1514,6 @@ sub get_chromosomes
     }
     for (my $i=0; $i<@out; $i++) { chomp($out[$i]); }
     return \@out;
-}
-
-
-=head2 open_tabix
-
-    About   : Open fh for reading from tabix
-    Usage   : my $vcf = Vcf->new(); $vcf->open_tabix('1:100-1000'); while (my $line=$vcf->next_line()) { ... }
-    Args    : Tabix command line argument
-
-=cut
-
-sub open_tabix
-{
-    my ($self,$arg) = @_;
-    if ( !$$self{file} ) { $self->throw(qq[The parameter "file" not set.\n]); }
-    $self->close();
-    open($$self{fh},"tabix $$self{file} $arg 2>/dev/null|");
-    $self->parse_header();
 }
 
 
