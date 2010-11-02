@@ -798,7 +798,7 @@ sub merge {
         $script = "mergeOutputPooled.py --bamFiles $self->{bam_fofn}";
     }
     else {
-        $script = "mergeOutputDiploid.py --bamFile @bam_files";
+        $script = "mergeOutputDiploid.py"; # no --bamFile @bam_files equivalent anymore?
     }
     
     my $running_out = $self->{fsu}->catfile($lane_path, 'calls.vcf.running');
