@@ -51,8 +51,9 @@ echo '<lanes.fod bamimprovement.conf' > bamimprovement.pipeline
 =head1 DESCRIPTION
 
 A module for "improving" bams. It uses GATK to realign reads around known indels
-and then recalibrates the quality scores. This should improve the quality of
-subsequent variant calling on the bam.
+and then recalibrates the quality scores. Optionally, it then does samtools
+calmd -r. This should improve the quality of subsequent variant calling on the
+bam.
 
 =head1 AUTHOR
 
@@ -73,6 +74,7 @@ use VRTrack::Lane;
 use VRTrack::File;
 use File::Basename;
 use File::Copy;
+use Time::Format;
 use LSF;
 
 use base qw(VertRes::Pipeline);
@@ -89,6 +91,14 @@ our $actions = [ { name     => 'realign',
                    action   => \&recalibrate,
                    requires => \&recalibrate_requires, 
                    provides => \&recalibrate_provides },
+                 { name     => 'calmd',
+                   action   => \&calmd,
+                   requires => \&calmd_requires, 
+                   provides => \&calmd_provides },
+                 { name     => 'statistics',
+                   action   => \&statistics,
+                   requires => \&statistics_requires, 
+                   provides => \&statistics_provides },
                  { name     => 'update_db',
                    action   => \&update_db,
                    requires => \&update_db_requires, 
@@ -104,6 +114,8 @@ our %options = (slx_mapper => 'bwa',
                 indel_sites => '/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/1kg.pilot_release.merged.indels.sites.hg19.vcf',
                 indel_intervals => '/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/indel.dbsnp_129_b37-vs-pilot.intervals',
                 snp_sites => '/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/pilot.snps.bed',
+                calmdr => 0,
+                calmde => 0,
                 do_cleanup => 1);
 
 =head2 new
@@ -135,6 +147,13 @@ our %options = (slx_mapper => 'bwa',
            snp_sites => '/path/to/snps.vcf' (known snps to mask out during
                                              quality score recalibration, in
                                              addition to those in the dbsnp_rod)
+           calmdr => boolean (default false; when running calmd, setting this
+                              to true will use -r option)
+           calmde => boolean (default false; when running calmd, setting this
+                              to true will use -e option)
+           release_date => 'yyyymmdd' (the release date to be included in the
+                                       .bas files made; not important - defaults
+                                       to today's date)
 
            other optional args as per VertRes::Pipeline
 
@@ -196,6 +215,10 @@ sub new {
     @bams || $self->throw("no bams to improve in lane $lane_path!");
     $self->{in_bams} = \@bams;
     
+    unless (defined $self->{release_date}) {
+        $self->{release_date} = "$time{'yyyymmdd'}"; 
+    }
+    
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     
@@ -254,7 +277,9 @@ sub _bam_name_conversion {
     $sorted_bam =~ s/\.bam$/.sorted.bam/;
     my $recal_bam = $sorted_bam;
     $recal_bam =~ s/\.bam$/.recal.bam/;
-    return ($rel_bam, $sorted_bam, $recal_bam);
+    my $calmd_bam = $recal_bam;
+    $calmd_bam =~ s/\.bam$/.calmd.bam/;
+    return ($rel_bam, $sorted_bam, $recal_bam, $calmd_bam);
 }
 
 =head2 realign
@@ -524,13 +549,13 @@ sub recalibrate_requires {
 sub recalibrate_provides {
     my ($self, $lane_path) = @_;
     
-    my @recal_bams;
-    foreach my $bam (@{$self->{in_bams}}) {
-        my (undef, undef, $recal_bam) = $self->_bam_name_conversion($bam);
-        push(@recal_bams, $recal_bam);
+    my @provides;
+    foreach my $in_bam (@{$self->{in_bams}}) {
+        my $base = basename($in_bam);
+        push(@provides, '.recalibrate_complete_'.$base);
     }
     
-    return \@recal_bams;
+    return \@provides;
 }
 
 =head2 recalibrate
@@ -556,6 +581,9 @@ sub recalibrate {
         my (undef, $in_bam, $out_bam) = $self->_bam_name_conversion($bam);
         
         next if -s $out_bam;
+        my $working_bam = $out_bam;
+        $working_bam =~ s/\.bam$/.working.bam/;
+        my $done_file = $self->{fsu}->catfile($lane_path, '.recalibrate_complete_'.$base);
         
         # run recal in an LSF call to a temp script
         my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."recalibrate_$base.pl");
@@ -567,6 +595,7 @@ use VertRes::Wrapper::GATK;
 
 my \$in_bam = '$in_bam';
 my \$recal_bam = '$out_bam';
+my \$done_file = '$done_file';
 my \$intervals_file = '$self->{indel_intervals}';
 
 my \$gatk = VertRes::Wrapper::GATK->new(verbose => $verbose,
@@ -581,6 +610,11 @@ unless (-s \$recal_bam) {
     \$gatk->recalibrate(\$in_bam, \$recal_bam);
     
     die "recalibration failed for \$in_bam\n" unless -s \$recal_bam;
+    
+    # mark that we've completed
+    open(my \$dfh, '>', \$done_file) || die "Could not write to \$done_file";
+    print \$dfh "done\n";
+    close(\$dfh);
 }
 
 exit;
@@ -597,6 +631,231 @@ exit;
     return $self->{No};
 }
 
+=head2 calmd_requires
+
+ Title   : statistics_requires
+ Usage   : my $required_files = $obj->calmd_requires('/path/to/lane');
+ Function: Find out what files the calmd action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub calmd_requires {
+    my ($self, $lane_path) = @_;
+    
+    my @recal_bams;
+    foreach my $bam (@{$self->{in_bams}}) {
+        my (undef, undef, $recal_bam, $calmd_bam) = $self->_bam_name_conversion($bam);
+        next if -s $calmd_bam;
+        push(@recal_bams, $recal_bam);
+    }
+    
+    return \@recal_bams;
+}
+
+=head2 calmd_provides
+
+ Title   : calmd_provides
+ Usage   : my $provided_files = $obj->calmd_provides('/path/to/lane');
+ Function: Find out what files the calmd action generates on
+           success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub calmd_provides {
+    my ($self, $lane_path) = @_;
+    
+    my @calmd_bams;
+    foreach my $bam (@{$self->{in_bams}}) {
+        my (undef, undef, undef, $calmd_bam) = $self->_bam_name_conversion($bam);
+        push(@calmd_bams, $calmd_bam);
+    }
+    
+    return \@calmd_bams;
+}
+
+=head2 calmd
+
+ Title   : calmd
+ Usage   : $obj->calmd('/path/to/lane', 'lock_filename');
+ Function: Recalculates the MD/NM tags, and optionally does read-independent
+           local realignment, altering quality values. Also optionally replaces
+           reference bases with '='.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub calmd {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    my $orig_bsub_opts = $self->{bsub_opts};
+    $self->{bsub_opts} = '-q normal -M3800000 -R \'select[mem>3800] rusage[mem=3800]\'';
+    
+    my $r = $self->{calmdr} ? 'r => 1' : 'r => 0';
+    my $e = $self->{calmde} ? 'e => 1' : 'e => 0';
+    
+    foreach my $in_bam (@{$self->{in_bams}}) {
+        my $base = basename($in_bam);
+        my (undef, undef, $recal_bam, $final_bam) = $self->_bam_name_conversion($in_bam);
+        
+        my $done_file = $self->{fsu}->catfile($lane_path, '.calmd_complete_'.$base);
+        next if -s $done_file;
+        
+        # run calmd in an LSF call to a temp script
+        my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."calmd_$base.pl");
+        
+        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+        print $scriptfh qq{
+use strict;
+use VertRes::Wrapper::sam;
+
+my \$in_bam = '$recal_bam';
+my \$final_bam = '$final_bam';
+my \$done_file = '$done_file';
+
+# run calmd
+unless (-s \$final_bam) {
+    my \$s = VertRes::Wrapper::samtools->new();
+    \$s->calmd_and_check(\$in_bam, '$self->{reference}', \$final_bam, $r, $e);
+    \$s->run_status() >= 1 || die "calmd failed\n";
+    
+    # mark that we've completed
+    open(my \$dfh, '>', \$done_file) || die "Could not write to \$done_file";
+    print \$dfh "done\n";
+    close(\$dfh);
+}
+
+exit;
+        };
+        close $scriptfh;
+        
+        my $job_name = $self->{prefix}.'sort_'.$base;
+        $self->archive_bsub_files($lane_path, $job_name);
+        
+        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+    }
+    
+    $self->{bsub_opts} = $orig_bsub_opts;
+    return $self->{No};
+}
+    
+
+=head2 statistics_requires
+
+ Title   : statistics_requires
+ Usage   : my $required_files = $obj->statistics_requires('/path/to/lane');
+ Function: Find out what files the statistics action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub statistics_requires {
+    my ($self, $lane_path) = @_;
+    
+    my @requires = @{$self->callmd_provides($lane_path)};
+    
+    @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
+    
+    return \@requires;
+}
+
+=head2 statistics_provides
+
+ Title   : statistics_provides
+ Usage   : my $provided_files = $obj->statistics_provides('/path/to/lane');
+ Function: Find out what files the statistics action generates on
+           success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub statistics_provides {
+    my ($self, $lane_path) = @_;
+    
+    my @provides;
+    foreach my $bam (@{$self->statistics_requires($lane_path)}) {
+        foreach my $suffix ('bas', 'flagstat') {
+            push(@provides, $bam.'.'.$suffix);
+        }
+    }
+    
+    @provides || $self->throw("Something went wrong; we don't seem to provide any stat files!");
+    
+    return \@provides;
+}
+
+=head2 statistics
+
+ Title   : statistics
+ Usage   : $obj->statistics('/path/to/lane', 'lock_filename');
+ Function: Creates statistic files for the bam files.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub statistics {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    # setup filenames etc. we'll use within our temp script
+    my $mapper_class = $self->{mapper_class};
+    my $verbose = $self->verbose;
+    my $release_date = $self->{release_date};
+    
+    # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
+    # independantly.
+    foreach my $bam_file (@{$self->statistics_requires($lane_path)}) {
+        my $basename = basename($bam_file);
+        $bam_file = $self->{fsu}->catfile($lane_path, $bam_file);
+        my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."statistics_$basename.pl");
+        
+        my @stat_files;
+        foreach my $suffix ('bas', 'flagstat') {
+            push(@stat_files, $bam_file.'.'.$suffix);
+        }
+        
+        # run this in an LSF call to a temp script
+        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+        print $scriptfh qq{
+use strict;
+use VertRes::Utils::Sam;
+
+my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
+
+my \$num_present = 0;
+foreach my \$stat_file (qw(@stat_files)) {
+    \$num_present++ if -s \$stat_file;
+}
+unless (\$num_present == ($#stat_files + 1)) {
+    my \$ok = \$sam_util->stats('$release_date', '$bam_file');
+    
+    unless (\$ok) {
+        foreach my \$stat_file (qw(@stat_files)) {
+            unlink(\$stat_file);
+        }
+        die "Failed to get stats for the bam '$bam_file'!\n";
+    }
+}
+
+exit;
+        };
+        close $scriptfh;
+        
+        my $job_name = $self->{prefix}.'statistics_'.$basename;
+        $self->archive_bsub_files($lane_path, $job_name);
+        
+        LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'statistics'), qq{perl -w $script_name});
+    }
+    
+    return $self->{No};
+}
+
 =head2 update_db_requires
 
  Title   : update_db_requires
@@ -609,7 +868,7 @@ exit;
 
 sub update_db_requires {
     my ($self, $lane_path) = @_;
-    return $self->recalibrate_provides($lane_path);
+    return $self->statistics_provides($lane_path);
 }
 
 =head2 update_db_provides
@@ -639,12 +898,69 @@ sub update_db_provides {
 sub update_db {
     my ($self, $lane_path, $action_lock) = @_;
     
+    # get the bas files that contain our mapping stats
+    my $files = $self->update_db_requires($lane_path);
+    my @bas_files;
+    foreach my $file (@{$files}) {
+        next unless $file =~ /\.bas$/;
+        push(@bas_files, $self->{fsu}->catfile($lane_path, $file));
+        -s $bas_files[-1] || $self->throw("Expected bas file $bas_files[-1] but it didn't exist!");
+    }
+    
+    @bas_files || $self->throw("There were no bas files!");
+    
     my $vrlane = $self->{vrlane};
     my $vrtrack = $vrlane->vrtrack;
     
     return $self->{Yes} if $vrlane->is_processed('improved');
     
     $vrtrack->transaction_start();
+    
+    # get the mapping stats from each bas file
+    my %stats;
+    foreach my $file (@bas_files) {
+        my $bp = VertRes::Parser::bas->new(file => $file);
+        my $rh = $bp->result_holder;
+        my $ok = $bp->next_result; # we'll only ever have one line, since this
+                                   # is only one read group
+        $ok || $self->throw("bas file '$file' had no entries, suggesting the bam file is empty, which should never happen!");
+        
+        # We can have up to 2 bas files, one representing single ended mapping,
+        # the other paired, so we add where appropriate and only set insert size
+        # for the paired
+        $stats{raw_reads} += $rh->[9];
+        $stats{raw_bases} += $rh->[7];
+        $stats{reads_mapped} += $rh->[10];
+        $stats{reads_paired} += $rh->[12];
+        $stats{bases_mapped} += $rh->[8];
+        $stats{mean_insert} = $rh->[15] if $rh->[15];
+        $stats{sd_insert} = $rh->[16] if $rh->[15];
+    }
+    
+    $stats{raw_bases} || $self->throw("bas file(s) for $lane_path indicate no raw bases; bam file must be empty, which should never happen!");
+    
+    # add mapping details to db (overwriting any existing values, but checking
+    # existing values so we can work out if we need to update())
+    my $mapping = $self->{mapstats_obj};
+    my $needs_update = 0;
+    foreach my $method (qw(raw_reads raw_bases reads_mapped reads_paired bases_mapped mean_insert sd_insert)) {
+        defined $stats{$method} || next;
+        my $existing = $mapping->$method;
+        if (! defined $existing || $existing != $stats{$method}) {
+            $needs_update = 1;
+            last;
+        }
+    }
+    if ($needs_update) {
+        $mapping->raw_reads($stats{raw_reads});
+        $mapping->raw_bases($stats{raw_bases});
+        $mapping->reads_mapped($stats{reads_mapped});
+        $mapping->reads_paired($stats{reads_paired});
+        $mapping->bases_mapped($stats{bases_mapped});
+        $mapping->mean_insert($stats{mean_insert}) if $stats{mean_insert};
+        $mapping->sd_insert($stats{sd_insert}) if $stats{sd_insert};
+        $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
+    }
     
     # set improved status
     $vrlane->is_processed('improved', 1);
@@ -707,7 +1023,7 @@ sub cleanup {
     foreach my $in_bam (@{$self->{in_bams}}) {
         my $base = basename($in_bam);
         
-        foreach my $action ('realign', 'sort', 'recalibrate') {
+        foreach my $action ('realign', 'sort', 'recalibrate', 'statistics') {
             foreach my $suffix (qw(o e pl)) {
                 my $job_name = $prefix.$action.'_'.$base;
                 if ($suffix eq 'o') {
@@ -769,6 +1085,34 @@ sub is_finished {
                 # recalibrating it
                 unlink($sorted_bam);
                 unlink($sorted_bam.'.bai');
+            }
+        }
+    }
+    elsif ($action->{name} eq 'calmd') {
+        foreach my $in_bam (@{$self->{in_bams}}) {
+            my (undef, undef, $recal_bam, $calmd_bam) = $self->_bam_name_conversion($in_bam);
+            if (-s $calmd_bam && -s $recal_bam) {
+                # calmd processe internally checks for truncation, so if this
+                # file exists it is OK
+                
+                # delete the temp sorted realigned bam now that we've finished
+                # recalibrating it
+                unlink($recal_bam);
+                unlink($recal_bam.'.bai');
+            }
+        }
+    }
+    elsif ($action->{name} eq 'statistics' && $self->{bam_symlink}) {
+        foreach my $file (@{$self->statistics_provides($lane_path)}) {
+            # Check if each file exists, if so symlink
+            my $fullpath = $self->{fsu}->catfile($lane_path, $file);
+            my @partnames = split(/\.bam/, $file);
+            my @mappers = split(/::/, $self->{mapper_class});
+            my $newname = $self->{fsu}->catfile($lane_path, $self->{assembly_name}.'_'.$mappers[-1].".bam".$partnames[-1]);
+            if (-e $fullpath) {
+                if (!-e $newname) {
+                    symlink $fullpath, $newname;
+                }
             }
         }
     }
