@@ -1200,7 +1200,7 @@ sub create_release_hierarchy {
  Function: Given the absolute path to a lane, find out what the bam files are
            called.
  Returns : list of absolute paths to the bams in the given lane directory.
-           $self->{mapper_class} and $self->{mapstats_obj} are also set
+           $self->{mapper_class} and $self->{mapstats_obj} are also set.
  Args :    absolute path of a lane directory, and a hash of the following
            required options:
            vrtrack => VRTrack::VRTrack object
