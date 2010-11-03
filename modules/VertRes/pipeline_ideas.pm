@@ -1289,4 +1289,8 @@
 
 =cut
 
+package pipeline_ideas;
+use strict;
+use warnings;
+
 1;
