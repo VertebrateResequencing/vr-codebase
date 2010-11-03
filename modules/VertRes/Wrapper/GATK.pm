@@ -872,6 +872,27 @@ sub variant_recalibrator {
     #   --ignore_filter HARD_TO_VALIDATE \
     #   -T VariantRecalibrator
     
+    my $tranches = '-tranche 0.1 -tranche 1 -tranche 5 -tranche 10';
+
+    # if it's there, check the tranches file for how many present and adjust -tranches
+    # options accordingly.  This is a workaround for the SNP pipeline to work: the 
+    # tranches file only has a line per tranche when SNPs fall into that tranche, so
+    # pipeline breaks on empty tranches.  It's a known bug in GATK, but for now
+    # this gets around it, since the pipeline will resubmit the job, pick up the tranches
+    # file (with some lines missing) and only use the tranches that contain SNPs
+    if (-e "$out_vcf.dat.tranches") {
+        open my $fh, "$out_vcf.dat.tranches" or $self->throw("$out_vcf.dat.tranches: $!");
+        my @lines = <$fh>;
+        close $fh;
+        $tranches = "";
+        foreach (@lines) {
+            chomp;
+            if (m/,FDRtranche.*to(.*)$/) {
+                $tranches .= " -tranche $1";
+            }
+        }
+    }
+
     $self->switches([qw(quiet_output_mode ignore_all_input_filters)]);
     $self->params([qw(R DBSNP T l target_titv backOff desired_num_variants
                       ignore_filter known_prior novel_prior
@@ -881,7 +902,7 @@ sub variant_recalibrator {
     my @file_args = (" $bs -clusterFile $in_cluster -reportDatFile $out_vcf.dat -tranchesFile $out_vcf.dat.tranches -o $out_vcf",
                      '-resources '.File::Spec->catdir($ENV{GATK}, 'resources'),
                      '-Rscript Rscript',
-                     '-tranche 0.1 -tranche 1 -tranche 5 -tranche 10');
+                     $tranches);
     
     my %params = (target_titv => 2.07, ignore_filter => 'HARD_TO_VALIDATE', l => 'INFO', @params);
     $params{T} = 'VariantRecalibrator';
