@@ -60,7 +60,7 @@ foreach my $lane_path ('mapping/proj1/ind1/SLX/lib1/lane1', # 1.pe.raw.sorted.ba
     $rel_path =~ s/^mapping\///;
     push(@expected_rel_paths, File::Spec->catfile($temp_dir, 'REL', $rel_path));
 }
-my @expected_rel_bams = ('pe.raw.sorted.bam', 'se.raw.sorted.bam', 'se.raw.sorted.bam', 'pe.raw.sorted.bam');
+my @expected_rel_bams = ('pe.bam', 'se.bam', 'se.bam', 'pe.bam');
 my @expected_rel_bam_paths;
 foreach my $rel_path (@expected_rel_paths) {
     my $expected_bam = shift @expected_rel_bams;
