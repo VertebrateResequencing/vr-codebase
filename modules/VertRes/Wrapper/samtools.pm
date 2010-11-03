@@ -43,6 +43,7 @@ use warnings;
 use File::Copy;
 use VertRes::IO;
 use VertRes::Utils::FileSystem;
+BEGIN { eval 'use VertRes::Utils::Sam'; }
 
 use base qw(VertRes::Wrapper::WrapperI);
 
@@ -202,23 +203,14 @@ sub merge_and_check {
     $self->throw("failed during the merge step, giving up for now") unless $self->run_status >= 1;
     
     # find out our expectation
-    $self->run_method('open');
+    my $su = VertRes::Utils::Sam->new;
     my $bam_count = 0;
     foreach my $bam_file (@{$in_bams}) {
-        my $fh = $self->view($bam_file);
-        while (<$fh>) {
-            $bam_count++;
-        }
-        close($fh);
+        $bam_count += $su->num_bam_records($bam_file);
     }
     
     # find out how many lines are in the merged bam file
-    my $merge_count = 0;
-    my $fh = $self->view($out_bam.'.tmp');
-    while (<$fh>) {
-        $merge_count++;
-    }
-    close($fh);
+    my $merge_count = $su->num_bam_records($out_bam.'.tmp');
     
     # check for truncation
     if ($merge_count >= $bam_count) {
@@ -280,7 +272,7 @@ sub fillmd {
     
     $self->exe($self->{base_exe}.' fillmd');
     
-    $self->switches([qw(e u b S)]);
+    $self->switches([qw(e u b S r)]);
     $self->params([]);
     $self->_set_params_and_switches_from_args(%options);
     
@@ -291,6 +283,52 @@ sub fillmd {
     }
     
     return $self->run(@files);
+}
+sub calmd; *calmd = \&fillmd; 
+
+=head2 calmd_and_check
+
+ Title   : calmd_and_check
+ Usage   : $wrapper->calmd_and_check('in.bam', 'ref.fa', 'out.bam', %ops);
+ Function: Runs calmd on a bam and checks the output bam
+           is complete.
+ Returns : n/a
+ Args    : in and out bam paths, optional args as understood by calmd, like
+           r => 1.
+
+=cut
+
+sub calmd_and_check {
+    my ($self, $in_bam, $ref, $out_bam, %options) = @_;
+    
+    my $orig_run_method = $self->run_method;
+    
+    # do the calmd
+    $self->run_method('system');
+    my $tmp_bam = $out_bam.'.tmp';
+    $self->fillmd($in_bam, $ref, $tmp_bam, %options);
+    $self->throw("failed during the calmd step, giving up for now") unless $self->run_status >= 1;
+    
+    # find out our expectation
+    my $su = VertRes::Utils::Sam->new;
+    my $bam_count = $su->num_bam_records($in_bam);
+    
+    # find out how many lines are in the merged bam file
+    my $merge_count = $su->num_bam_records($tmp_bam);
+    
+    # check for truncation
+    if ($merge_count >= $bam_count) {
+        move($tmp_bam, $out_bam) || $self->throw("Failed to move $tmp_bam to $out_bam: $!");
+        $self->_set_run_status(2);
+    }
+    else {
+        $self->warn("$tmp_bam is bad (only $merge_count lines vs $bam_count), will unlink it");
+        $self->_set_run_status(-1);
+        unlink($tmp_bam);
+    }
+    
+    $self->run_method($orig_run_method);
+    return;
 }
 
 =head2 index
