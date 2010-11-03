@@ -36,7 +36,6 @@ data => {
     '454_mapper' => 'ssaha',
     reference => '/abs/path/to/ref.fa',
     assembly_name => 'NCBI37',
-    do_recalibration => 1,
 },
 
 # Reference option can be replaced with male_reference and female_reference
@@ -73,9 +72,6 @@ data => {
 # that share the same individual as the candidate, that had passed QC, according
 # to the g1k_reseq database. The coverage would have to be 20x or higher or
 # the candidate would be rejected (and so not mapped).
-
-# recalibration is done by default; you can turn it off (if eg. you do not have
-# a rod file to recalibrate successfully with) with do_recalibration => 0
 
 # run the pipeline:
 run-pipeline -c pipeline.config -s 30
@@ -148,10 +144,6 @@ our $actions = [ { name     => 'split',
                    action   => \&merge,
                    requires => \&merge_requires, 
                    provides => \&merge_provides },
-                 { name     => 'recalibrate',
-                   action   => \&recalibrate,
-                   requires => \&recalibrate_requires, 
-                   provides => \&recalibrate_provides },
                  { name     => 'statistics',
                    action   => \&statistics,
                    requires => \&statistics_requires, 
@@ -168,7 +160,6 @@ our $actions = [ { name     => 'split',
 our %options = (local_cache => '',
                 slx_mapper => 'bwa',
                 '454_mapper' => 'ssaha',
-                do_recalibration => 1,
                 do_cleanup => 1);
 
 our $split_dir_name = 'split';
@@ -182,7 +173,6 @@ our $split_dir_name = 'split';
  Args    : lane => 'readgroup_id'
            lane_path => '/path/to/lane'
            local_cache => '/local/dir' (defaults to standard tmp space)
-           do_recalibration => boolean (default true: run the recalibration action)
            do_cleanup => boolean (default true: run the cleanup action)
            chunk_size => int (default depends on mapper)
            slx_mapper => 'bwa'|'maq' (default bwa; the mapper to use for mapping
@@ -714,7 +704,7 @@ sub merge_requires {
         my $recal_bam = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.recal.sorted.bam");
         if ($self->{vrlane}->is_processed('mapped') || $self->{fsu}->file_exists($recal_bam) || $self->{fsu}->file_exists($bam)) {
             next if -e $check_file;
-            if ($self->{do_recalibration}) {
+            if ($self->{fsu}->file_exists($recal_bam)) {
                 push(@requires, $recal_bam);
             }
             else {
@@ -758,17 +748,13 @@ sub merge_provides {
         my $file = "$self->{mapstats_id}.$ended.raw.sorted.bam";
         push(@provides, ".$file.checked");        
         
-        # if we're doing recalibration and that completed, our raw bam will
+        # we used to do recalibration; if that completed, our raw bam will
         # have been deleted so it will look like on subsequent pipeline runs
         # this action hasn't worked; detect that and say we provide recal
         # files instead
-        if ($self->{do_recalibration}) {
-            unless (-s $self->{fsu}->catfile($lane_path, $file)) {
-                my $recal_file = "$self->{mapstats_id}.$ended.recal.sorted.bam";
-                if (-s $self->{fsu}->catfile($lane_path, $recal_file)) {
-                    $file = $recal_file;
-                }
-            }
+        my $recal_file = "$self->{mapstats_id}.$ended.recal.sorted.bam";
+        if ($self->{fsu}->file_exists($recal_file) && ! -s $self->{fsu}->catfile($lane_path, $file)) {
+            $file = $recal_file;
         }
         
         push(@provides, $file);
@@ -805,10 +791,6 @@ sub merge {
         
         my $bam_file = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.raw.sorted.bam");
         my $double_check_file = $self->{fsu}->catfile($lane_path, ".$self->{mapstats_id}.$ended.raw.sorted.bam.checked");
-        my $recal_bam = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.recal.sorted.bam");
-        if ($self->{do_recalibration} && ($self->{vrlane}->is_processed('mapped') || $self->{fsu}->file_exists($recal_bam))) {
-            $bam_file = $recal_bam;
-        }
         next if -s $bam_file && -e $double_check_file;
         
         my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."merge_${ended}_$self->{mapstats_id}.pl");
@@ -891,110 +873,6 @@ exit;
     return $self->{No};
 }
 
-
-=head2 recalibrate_requires
-
- Title   : recalibrate_requires
- Usage   : my $required_files = $obj->recalibrate_requires('/path/to/lane');
- Function: Find out what files the recalibrate action needs before
-           it will run.
- Returns : array ref of file names
- Args    : lane path
-
-=cut
-
-sub recalibrate_requires {
-    my ($self, $lane_path) = @_;
-    
-    # we need bams
-    my @requires = @{$self->merge_provides($lane_path)};
-    
-    # and reference-related files
-    my $ref = $self->{reference};
-    my $dict = $ref;
-    $dict =~ s/\.[^\.]+$/.dict/;
-    push(@requires, $ref);
-    push(@requires, $dict);
-    push(@requires, $ref.'.rod');
-    
-    return \@requires;
-}
-
-=head2 recalibrate_provides
-
- Title   : recalibrate_provides
- Usage   : my $provided_files = $obj->recalibrate_provides('/path/to/lane');
- Function: Find out what files the recalibrate action generates on
-           success.
- Returns : array ref of file names
- Args    : lane path
-
-=cut
-
-sub recalibrate_provides {
-    my ($self, $lane_path) = @_;
-    
-    my @raw_bams = grep(!/\.checked$/,  @{$self->merge_provides($lane_path)});
-    my @recal_bams;
-    foreach my $bam (@raw_bams) {
-        my $recal_bam = $bam;
-        $recal_bam =~ s/\.raw\.sorted\.bam$/.recal.sorted.bam/;
-        push(@recal_bams, $recal_bam);
-    }
-    
-    return $self->{do_recalibration} ? \@recal_bams : \@raw_bams;
-}
-
-=head2 recalibrate
-
- Title   : recalibrate
- Usage   : $obj->recalibrate('/path/to/lane', 'lock_filename');
- Function: Recalibrate the quality values of bams. (Original quality values are
-           retained in the file.)
-           Doesn't run unless do_recalibration config option is true (default).
- Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
- Args    : lane path, name of lock file to use
-
-=cut
-
-sub recalibrate {
-    my ($self, $lane_path, $action_lock) = @_;
-    return $self->{Yes} unless $self->{do_recalibration};
-    
-    my @in_bams = grep(!/\.checked$/, @{$self->merge_provides($lane_path)});
-    my $verbose = $self->verbose;
-    
-    my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q long -M6800000 -R \'select[mem>6800] rusage[mem=6800]\'';
-    
-    my $build = $self->{assembly_name};
-    
-    my @out_bams;
-    foreach my $bam (@in_bams) {
-        $bam = $self->{fsu}->catfile($lane_path, $bam);
-        my $out_bam = $bam;
-        $out_bam =~ s/\.raw\.sorted\.bam$/.recal.sorted.bam/;
-        push(@out_bams, $out_bam);
-        
-        next if -s $out_bam;
-        
-        my $basename = basename($bam);
-        my $job_name = $self->{prefix}.'recalibrate_'.$basename;
-        $self->archive_bsub_files($lane_path, $job_name);
-        
-        # incase we ran without recalibration before, need to delete stat files
-        foreach my $suffix ('bas', 'flagstat') {
-            unlink($bam.'.'.$suffix);
-        }
-        
-        LSF::run($action_lock, $lane_path, $job_name, $self,
-                 qq{perl -MVertRes::Wrapper::GATK -Mstrict -e "VertRes::Wrapper::GATK->new(verbose => $verbose, java_memory => 6000, reference => qq[$self->{reference}], dbsnp => qq[$self->{reference}.rod], build => qq[$build])->recalibrate(qq[$bam], qq[$out_bam]); die qq[recalibration failed for $bam\n] unless -s qq[$out_bam];"});
-    }
-    
-    $self->{bsub_opts} = $orig_bsub_opts;
-    return $self->{No};
-}
-
 =head2 statistics_requires
 
  Title   : statistics_requires
@@ -1008,8 +886,7 @@ sub recalibrate {
 sub statistics_requires {
     my ($self, $lane_path) = @_;
     
-    # varies based on if we did recalibration
-    my @requires = @{$self->recalibrate_provides($lane_path)};
+    my @requires = grep(!/\.checked$/,  @{$self->merge_provides($lane_path)});
     
     @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
     
@@ -1274,8 +1151,7 @@ sub cleanup {
     foreach my $file (qw(log job_status store_nfs
                          split_se split_pe
                          map_se map_pe
-                         merge_se merge_pe
-                         recalibrate statistics)) {
+                         merge_se merge_pe statistics)) {
         
         unlink($self->{fsu}->catfile($lane_path, $prefix.$file));
         
@@ -1297,17 +1173,15 @@ sub cleanup {
             }
             
             my $job_name;
-            if ($file =~ /recalibrate|statistics/) {
+            if ($file =~ /statistics/) {
                 foreach my $ended ('pe', 'se') {
-                    foreach my $type ('raw', 'recal') {
-                        my $bam = join('.', $ended, $type, 'sorted.bam');
-                        
-                        $job_name = $prefix.$file.'_'.$self->{mapstats_id}.'.'.$bam;
-                        if ($suffix eq 'o') {
-                            $self->archive_bsub_files($lane_path, $job_name, 1);
-                        }
-                        unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
+                    my $bam = join('.', $ended, 'raw', 'sorted.bam');
+                    
+                    $job_name = $prefix.$file.'_'.$self->{mapstats_id}.'.'.$bam;
+                    if ($suffix eq 'o') {
+                        $self->archive_bsub_files($lane_path, $job_name, 1);
                     }
+                    unlink($self->{fsu}->catfile($lane_path, $job_name.'.'.$suffix));
                 }
             }
             else {
@@ -1387,21 +1261,6 @@ sub is_finished {
     }
     elsif ($action->{name} eq 'cleanup' || $action->{name} eq 'update_db') {
         return $self->{No};
-    }
-    elsif ($action->{name} eq 'recalibrate') {
-        if ($self->{do_recalibration}) {
-            my @raw_bams = @{$self->recalibrate_requires($lane_path)};
-            foreach my $bam (@raw_bams) {
-                my $bam_file = $self->{fsu}->catfile($lane_path, $bam);
-                my $recal_bam = $bam_file;
-                $recal_bam =~ s/\.raw\.sorted\.bam$/.recal.sorted.bam/;
-                next if $recal_bam eq $bam_file;
-                if (-s $recal_bam) {
-                    unlink($bam_file);
-                    unlink($bam_file.'.bai');
-                }
-            }
-        }
     }
     
     return $self->SUPER::is_finished($lane_path, $action);
