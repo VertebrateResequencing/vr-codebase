@@ -867,7 +867,7 @@ sub is_finished {
         my $running = $vcf.'.running';
         
         if (! $self->{fsu}->file_exists($vcf) && -s $running) {
-            my $lock_file = $self->{fsu}->catfile($lane_path, $self->{prefix}.'dindel_merge.jids');
+            my $lock_file = $self->{fsu}->catfile($lane_path, $self->{prefix}.'merge.jids');
             
             my $is_running = LSF::is_job_running($lock_file);
             if ($is_running & $LSF::Error) {
