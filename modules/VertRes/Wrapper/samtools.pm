@@ -259,7 +259,7 @@ sub pileup {
 =head2 fillmd
 
  Title   : fillmd
- Usage   : $wrapper->fillmd('in.bam', 'ref.fa', 'out.bam', %options);
+ Usage   : $wrapper->fillmd('in.bam', 'ref.fa', 'out.sam', %options);
  Function: fillmd...
  Returns : n/a
  Args    : list of file paths, options as a hash. If using the 'open' run_method
@@ -290,8 +290,8 @@ sub calmd; *calmd = \&fillmd;
 
  Title   : calmd_and_check
  Usage   : $wrapper->calmd_and_check('in.bam', 'ref.fa', 'out.bam', %ops);
- Function: Runs calmd on a bam and checks the output bam
-           is complete.
+ Function: Runs calmd on a bam and creates an output bam (as opposed to the
+           normal sam), checking the output bam is complete.
  Returns : n/a
  Args    : in and out bam paths, optional args as understood by calmd, like
            r => 1.
@@ -304,10 +304,15 @@ sub calmd_and_check {
     my $orig_run_method = $self->run_method;
     
     # do the calmd
-    $self->run_method('system');
+    $self->run_method('open');
     my $tmp_bam = $out_bam.'.tmp';
-    $self->fillmd($in_bam, $ref, $tmp_bam, %options);
+    my $fh = $self->fillmd($in_bam, $ref, undef, %options);
     $self->throw("failed during the calmd step, giving up for now") unless $self->run_status >= 1;
+    
+    # convert to bam
+    $self->run_method('open_to');
+    $self->view($fh, $tmp_bam, S => 1, b => 1);
+    $self->throw("failed during the view step, giving up for now") unless $self->run_status >= 1;
     
     # find out our expectation
     my $su = VertRes::Utils::Sam->new;
