@@ -214,6 +214,9 @@ sub new {
                                           '454_mapper' => $self->{'454_mapper'});
     @bams || $self->throw("no bams to improve in lane $lane_path!");
     $self->{in_bams} = \@bams;
+    $self->{mapper_class} = $hu->{mapper_class};
+    $self->{mapper_obj} = $hu->{mapper_obj};
+    $self->{mapstats_obj} = $hu->{mapstats_obj};
     
     unless (defined $self->{release_date}) {
         $self->{release_date} = "$time{'yyyymmdd'}"; 
@@ -702,8 +705,7 @@ sub calmd {
         my $base = basename($in_bam);
         my (undef, undef, $recal_bam, $final_bam) = $self->_bam_name_conversion($in_bam);
         
-        my $done_file = $self->{fsu}->catfile($lane_path, '.calmd_complete_'.$base);
-        next if -s $done_file;
+        next if -s $final_bam;
         
         # run calmd in an LSF call to a temp script
         my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."calmd_$base.pl");
@@ -711,29 +713,23 @@ sub calmd {
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
 use strict;
-use VertRes::Wrapper::sam;
+use VertRes::Wrapper::samtools;
 
 my \$in_bam = '$recal_bam';
 my \$final_bam = '$final_bam';
-my \$done_file = '$done_file';
 
 # run calmd
 unless (-s \$final_bam) {
-    my \$s = VertRes::Wrapper::samtools->new();
+    my \$s = VertRes::Wrapper::samtools->new(verbose => 1);
     \$s->calmd_and_check(\$in_bam, '$self->{reference}', \$final_bam, $r, $e);
     \$s->run_status() >= 1 || die "calmd failed\n";
-    
-    # mark that we've completed
-    open(my \$dfh, '>', \$done_file) || die "Could not write to \$done_file";
-    print \$dfh "done\n";
-    close(\$dfh);
 }
 
 exit;
         };
         close $scriptfh;
         
-        my $job_name = $self->{prefix}.'sort_'.$base;
+        my $job_name = $self->{prefix}.'calmd_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
         LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
@@ -742,7 +738,6 @@ exit;
     $self->{bsub_opts} = $orig_bsub_opts;
     return $self->{No};
 }
-    
 
 =head2 statistics_requires
 
@@ -757,7 +752,7 @@ exit;
 sub statistics_requires {
     my ($self, $lane_path) = @_;
     
-    my @requires = @{$self->callmd_provides($lane_path)};
+    my @requires = @{$self->calmd_provides($lane_path)};
     
     @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
     
@@ -812,7 +807,6 @@ sub statistics {
     # independantly.
     foreach my $bam_file (@{$self->statistics_requires($lane_path)}) {
         my $basename = basename($bam_file);
-        $bam_file = $self->{fsu}->catfile($lane_path, $bam_file);
         my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."statistics_$basename.pl");
         
         my @stat_files;
@@ -903,7 +897,7 @@ sub update_db {
     my @bas_files;
     foreach my $file (@{$files}) {
         next unless $file =~ /\.bas$/;
-        push(@bas_files, $self->{fsu}->catfile($lane_path, $file));
+        push(@bas_files, $file);
         -s $bas_files[-1] || $self->throw("Expected bas file $bas_files[-1] but it didn't exist!");
     }
     
