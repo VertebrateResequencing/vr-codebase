@@ -132,7 +132,9 @@ sub new {
     }
     
     $self->{_default_R} = delete $self->{reference} || $default_ref;
-    $self->{_default_DBSNP} = delete $self->{dbsnp} || $default_dbsnp;
+    # Allow overriding the default DBSNP by undef
+    #   $self->{_default_DBSNP} = delete $self->{dbsnp} || $default_dbsnp;
+    $self->{_default_DBSNP} = exists($$self{dbsnp}) ? $$self{dbsnp} : $default_dbsnp; delete($$self{dbsnp});
     $self->set_covs(@{delete $self->{covs} || $default_covs || []});
     $self->set_b(@{delete $self->{bs} || $default_bs || []});
     $self->{_default_loglevel} = delete $self->{log_level} || $DEFAULT_LOGLEVEL;
