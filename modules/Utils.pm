@@ -186,6 +186,7 @@ sub CMD
     if ( $exit_status )
     {
         my @msg = ();
+        unshift @msg, '['. scalar gmtime() ."]\n".
         push @msg, "The command \"$cmd\" returned non-zero status $exit_status";
         if ( $! ) 
         { 
