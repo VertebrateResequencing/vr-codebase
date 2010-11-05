@@ -60,7 +60,7 @@ sub _bsub_opts {
     my %bsub_opts = (bsub_opts => '');
     
     if ($action eq 'map') {
-        $bsub_opts{bsub_opts} = '-q long -M12000000 -R \'select[mem>12000] rusage[mem=12000]\'';
+        $bsub_opts{bsub_opts} = '-q long -M10000000 -R \'select[mem>10000] rusage[mem=10000]\'';
     }
     else {
         return $self->SUPER::_bsub_opts($lane_path, $action);
