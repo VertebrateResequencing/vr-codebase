@@ -26,7 +26,7 @@ sample_groups => {
 data => {
     ref => '/path/to/ref.fa',
     simultaneous_jobs => 100,
-    type => 'diploid',
+    type => 'pooled',
     dindel_args => '--maxRead 5000',
 }
 
@@ -40,14 +40,15 @@ run-pipeline -c dindel.pipeline -v
 
 =head1 DESCRIPTION
 
-A module for running Dindel on groups of bams. If a 'sample_group' specifies
-a fofn with only 1 bam, dindel will be run in diploid mode. If it has multiple
-bams, dindel will be run in pool mode.
+A module for running Dindel on groups of bams. A 'sample_group' may specify
+a fofn with only 1 bam or many, and in either case the 'type' option may be set
+to 'diploid' if you want to treat all bams as being for the same sample. If your
+bams are all for different samples, type should be set to 'pooled'.
 
-NB: Dindel is hard-coded to assume that different bams are for different
-samples (individuals), so if you have bams split by chr you should run multiple
-independant pipelines for each chr and manually merge the final VCFs together
-once all the pipelines complete.
+NB: Dindel in pooled mode is hard-coded to assume that different bams are for
+different samples (individuals), so if you have bams split by chr you should run
+multiple independant pipelines for each chr and manually merge the final VCFs
+together once all the pipelines complete.
 
 If you want to analyse across multiple populations it is recommended that your
 sample_groups consist of those multiple populations. However, if you want to
@@ -131,7 +132,8 @@ our %options = (simultaneous_jobs => 100,
            bam_fofn => '/path/to/bam.fofn' (REQUIRED, set by run-pipeline
                                             automatically)
            ref => '/path/to/ref.fa' (REQUIRED)
-           type => 'diploid'|'haploid' (default diploid)
+           type => 'diploid'|'pooled' (default diploid if 1 bam, pooled if many
+                                       bams)
            retry_from_others => \@vcfs (in group_groups mode, when calls are
                                         complete for this sample group and the
                                         other sample groups in the group_group,
@@ -180,7 +182,7 @@ sub new {
     }
     $self->{bai_files} = \@bais;
 
-    $self->{type} ||= 'diploid';
+    $self->{type} ||= @bams > 1 ? 'pooled' : 'diploid';
     $self->{min_count} ||= @bams > 1 ? 2 : 0;
     if ($self->{retry_from_others}) {
         $self->{min_count} = 0;
@@ -744,16 +746,11 @@ sub realign_windows {
             
             my $bam_mode_args = '';
             my @bam_files = @{$self->{bam_files}};
-            if (@bam_files > 1) {
-                $bam_mode_args = "--bamFiles $self->{bam_fofn} --doPooled";
-            }
-            else {
-                $bam_mode_args = "--bamFile @bam_files";
-                $bam_mode_args .= ' --doDiploid' if $self->{type} eq 'diploid';
-            }
+            my $mode = $self->{type} eq 'diploid' ? '--doDiploid' : '--doPooled';
+            my $files = @bam_files > 1 ? "--bamFiles $self->{bam_fofn}" : "--bamFile @bam_files";
             
             LSF::run($lock_file, $window_dir, $job_base_name, $self,
-                     qq{$self->{dindel_bin} --analysis indels $bam_mode_args $self->{dindel_args} --ref $self->{ref} --varFile $window_file --libFile $lib_file --outputFile $running_base});
+                     qq{$self->{dindel_bin} --analysis indels $files $mode $self->{dindel_args} --ref $self->{ref} --varFile $window_file --libFile $lib_file --outputFile $running_base});
         }
     }
     
@@ -793,12 +790,11 @@ sub merge {
     $self->archive_bsub_files($lane_path, $job_basename);
     
     my $script = '';
-    my @bam_files = @{$self->{bam_files}};
-    if (@bam_files > 1) {
+    if ($self->{type} eq 'pooled') {
         $script = "mergeOutputPooled.py --bamFiles $self->{bam_fofn}";
     }
     else {
-        $script = "mergeOutputDiploid.py"; # no --bamFile @bam_files equivalent anymore?
+        $script = "mergeOutputDiploid.py";
     }
     
     my $running_out = $self->{fsu}->catfile($lane_path, 'calls.vcf.running');
