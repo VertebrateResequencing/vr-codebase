@@ -602,7 +602,7 @@ sub parse_header_line
 =head2 _read_column_names
 
     About   : Stores the columns names as array $$self{columns} and hash $$self{has_column}{COL_NAME}=index.
-              The indexes goes from 1.
+              The indexes go from 1.
     Usage   : $vcf->_read_column_names();
     Args    : none
 
@@ -1206,6 +1206,42 @@ sub add_format_field
         if ( $key eq $field ) { return; } # already there
     }
     push @{$$rec{FORMAT}}, $field;
+}
+
+
+=head2 add_info_field
+
+    Usage   : $x=$vcf->next_data_array(); $$x[7]=$vcf->add_info_field($$x[7],'FOO'=>'value','BAR'=>undef,'BAZ'=>''); print join("\t",@$x)."\n";
+    Args    : The record obtained by next_data_array
+            : The INFO field name and value pairs. If value is undef and the key is present in $$x[7],
+                it will be removed. To add fields without a value, use empty string ''.
+    Returns : The formatted INFO.
+
+=cut
+
+sub add_info_field
+{
+    my ($self,$info,%fields) = @_;
+
+    my @out = ();
+
+    # First handle the existing values
+    for my $field (split(/;/,$info))
+    {
+        my ($key,$value) = split(/=/,$field);
+        if ( $key eq '.' ) { next; }
+        if ( !exists($fields{$key}) ) { push @out,$field; next; }
+    }
+
+    # Now add the new values
+    while (my ($key,$value)=each %fields)
+    {
+        if ( !defined($value) ) { next; }       # this one should be removed
+        if ( $value eq '' ) { push @out,$key; } # this one is of the form HM2 in contrast to DP=3
+        else { push @out,"$key=$value"; }       # this is the standard key=value pair
+    }
+    if ( !@out ) { push @out,'.'; }
+    return join(';',@out);
 }
 
 
