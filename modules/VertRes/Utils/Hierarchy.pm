@@ -1270,11 +1270,11 @@ sub lane_bams {
     my $fsu = VertRes::Utils::FileSystem->new();
     my @bams = ();
     foreach my $ended (keys %ended) {
-        # prefer the recalibrated bam if it was made to the unrecalibrated
+        # prefer the improved bam to the recalibrated bam to the unrecalibrated
         # raw bam
         my $bam;
-        foreach my $type ('recal', 'raw') {
-            $bam = $fsu->catfile($lane_path, "$mapstats_prefix.$ended.$type.sorted.bam");
+        foreach my $type ('recal.sorted', 'raw.sorted') { #'realigned.sorted.recal.calmd', 
+            $bam = $fsu->catfile($lane_path, "$mapstats_prefix.$ended.$type.bam");
             last if -e $bam;
         }
         
