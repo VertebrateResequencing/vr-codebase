@@ -214,6 +214,8 @@ sub new {
                                           '454_mapper' => $self->{'454_mapper'});
     @bams || $self->throw("no bams to improve in lane $lane_path!");
     $self->{in_bams} = \@bams;
+    
+    # set some stuff from the $hu we'll need in some actions later
     $self->{mapper_class} = $hu->{mapper_class};
     $self->{mapper_obj} = $hu->{mapper_obj};
     $self->{mapstats_obj} = $hu->{mapstats_obj};
