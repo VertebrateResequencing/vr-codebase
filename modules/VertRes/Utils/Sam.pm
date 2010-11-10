@@ -1895,6 +1895,7 @@ sub rewrite_bas_meta {
  Function: Takes a bam and makes a new bam file containing only those reads
            which overlap required intervals.  At least 1 base of a read needs to
            overlap an interval for it to be included.
+           Input bam file mut be sorted by reference position.
  Returns : boolean (true on success)
  Args    : in.bam = input bam file
            intervals_file = file specifying the positions to keep.
