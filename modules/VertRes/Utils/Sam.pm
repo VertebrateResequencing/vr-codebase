@@ -1887,4 +1887,194 @@ sub rewrite_bas_meta {
     }
 }
 
+
+=head2 extract_intervals_from_bam
+
+ Title   : extract_intervals_from_bam
+ Usage   : $obj->extract_intervals_from_bam('in.bam', 'intervals_file', 'out.bam');
+ Function: Takes a bam and makes a new bam file containing only those reads
+           which overlap required intervals.  At least 1 base of a read needs to
+           overlap an interval for it to be included.
+ Returns : boolean (true on success)
+ Args    : in.bam = input bam file
+           intervals_file = file specifying the positions to keep.
+           One line per interval, tab delimited: chromosome start end
+           out.bam = name of output bam file
+=cut
+
+sub extract_intervals_from_bam {
+    my ($self, $bam_in, $intervals_file, $bam_out) = @_;
+    my %intervals;  # chromosome => [[start1,end1], [start2, end2], ...]
+    my $lines_out_counter = 0;  # number of lines written to output file
+    my %cig_length_letters = ('I', 1, 'N', 1, 'M', 1); # letters that count to the length
+                                                       # in a cigar string
+    my $sw = VertRes::Wrapper::samtools->new(verbose => $self->verbose,
+                                             run_method => 'open',
+                                             quiet => 1);
+    
+    # fill intervals hash from file
+    open my $fh, $intervals_file or $self->throw("Cannot open $intervals_file: $!");
+    
+    while (my $line = <$fh>)
+    {
+        chomp $line;
+        my ($chr, $start, $end) = split /\t/, $line;
+        $intervals{$chr} = () unless (exists $intervals{$chr});
+        push @{$intervals{$chr}}, [$start, $end];
+    }
+    
+    close $fh;
+    
+    # sort each list and merge overlapping intervals
+    foreach my $chr (keys %intervals)
+    {
+        my $list = $intervals{$chr};
+        
+        # sort by positions, first by coord 1, then by coord 2,  e.g.
+        # [1,2] < [1,3] < [2,1] < [2,10]
+        @$list = sort {$a->[1] <=> $b->[1] || $a->[2] <=> $b->[2]} @$list;
+        
+        # merge overalapping intervals.  Also merge adjacent ones,
+        # e.g. [1,2], [3,4] becomes [1,4]
+        my $i = 0;
+        
+        while ($i < scalar  @$list - 1)
+        {
+            # if current interval overlaps next interval, or is adjacent to it
+            if ($list->[$i][1] >= $list->[$i+1][0] - 1)
+            {
+                $list->[$i + 1] = [$list->[$i][0], max($list->[$i][1], $list->[$i + 1][1])];
+                splice @$list, $i, 1;
+            }
+            else
+            {
+                $i++;
+            }
+        }
+    }
+    
+    # we must have a bam index file
+    $sw->run_method('system');
+    my $bai = $bam_in.'.bai';
+    my $created_bai = 0;
+    unless (-s $bai)
+    {
+        $sw->index($bam_in, $bai);
+        $sw->run_status >= 1 || $self->throw("Failed to create $bai");
+        $created_bai = 1;
+    }
+    
+    # now we have intervals in memory, parse the input bam and write output bam
+    open my $bam_in_fh, "samtools view -h $bam_in |" or self->throw("$bam_in: $!");
+    open my $bam_out_fh, "| samtools view -hSb - > $bam_out" or self->throw("$bam_out: $!");
+    my $current_chr = "";
+    my $current_interval_list;
+    my $current_interval_index; # stores index i in current list l of intervals such that the start
+                                # of current read s satisfies l[i][0] <= s < l[i+1][0]. Except when:
+                                # s <  l[0][0]          => i = -1
+                                # s >= l[last_index][0] => i = last_index
+    
+    while (my $line = <$bam_in_fh>)
+    {
+        # If it's a header line...
+        if ($line =~ m/^\@(\S+)\t/)
+        {
+            # don't use sequence header lines if the sequence wasn't in the interval file
+            if ($1 eq "SQ")
+            {
+                my @l = split /\t/, $line;
+                my @m = split /:/, $l[1];
+                next unless $intervals{$m[1]};
+            }
+            
+            print $bam_out_fh $line;
+            $lines_out_counter++;
+            next;
+        }
+        
+        # Decide if we want to keep this mapped read or not
+        my @data = split "\t", $line;
+        my $chr = $data[2];
+        my $read_start = $data[3];
+        my $cigar = $data[5];
+        my $unmapped = ($data[1] & 0x0004) == 0 ? 0 : 1;
+        my $keep_read = 0;
+        
+        # don't care about unmapped reads: don't just trust the flag.
+        # Also don't care about ref sequences not in the intervals file
+        next if ($unmapped or $cigar eq "*" or !(exists $intervals{$chr}));
+        
+        # figure out the ending position of the current read in the reference
+        my @numbers = split /[A-Z]/, $cigar;
+        my @letters = split /[0-9]+/, $cigar;
+        shift @letters;
+        my $read_end = $read_start - 1;
+        
+        foreach my $i (0 .. $#letters)
+        {
+            $read_end += $numbers[$i] if $cig_length_letters{$letters[$i]}
+        }
+        
+        # have we begun records in a new chromosome?
+        if ($current_chr ne $chr)
+        {
+            $current_chr = $chr;
+            $current_interval_list = $intervals{$current_chr};
+            $current_interval_index = -1;
+        }
+        
+        # update the current interval index and decide if we're keeping the read
+        if ($read_start >= $current_interval_list->[scalar @{$current_interval_list} - 1][0])
+        {
+            $current_interval_index = scalar @{$current_interval_list} - 1;
+            $keep_read = 1 if ($read_start <= $current_interval_list->[$current_interval_index][1]);
+        }
+        elsif ($read_start >= $current_interval_list->[0][0])
+        {
+            $current_interval_index = 0 if $current_interval_index == -1;
+            
+            for my $i ($current_interval_index .. scalar @{$current_interval_list} - 2)
+            {
+                if ($current_interval_list->[$i][0] <= $read_start and $read_start < $current_interval_list->[$i+1][0])
+                {
+                    $current_interval_index = $i;
+                    last;
+                }
+            }
+            
+            $keep_read = 1 if ($read_start <= $current_interval_list->[$current_interval_index][1] or $current_interval_list->[$current_interval_index + 1][0] <= $read_end);
+        }
+        else # $read_start < current_interval_list->[0][0]
+        {
+            $keep_read = 1 if ($current_interval_list->[0][0] <= $read_end);
+        }
+        
+        # does current read lie in an interval we want?
+        if ($keep_read)
+        {
+            print $bam_out_fh $line;
+            $lines_out_counter++;
+        } 
+    }
+    
+    close $bam_in_fh;
+    close $bam_out_fh;
+    
+    unlink $bai if $created_bai;
+    
+    # check the right number of lines got written
+    my $actual_lines = $self->num_bam_lines($bam_out);
+    
+    if ($actual_lines == $lines_out_counter)
+    {
+        return 1;
+    }
+    else
+    {
+        $self->warn("$bam_out is bad (only $actual_lines lines vs $lines_out_counter)");
+        unlink $bam_out;
+        return 0;
+    }
+}
+
 1;
