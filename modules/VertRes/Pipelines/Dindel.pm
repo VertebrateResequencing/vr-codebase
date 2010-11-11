@@ -119,6 +119,7 @@ our %options = (simultaneous_jobs => 100,
                 dindel_bin => 'dindel',
                 dindel_args => '--maxRead 5000',
                 make_windows_bsub_opts => ' -M7900000 -R \'select[mem>7900] rusage[mem=7900]\'',
+                realign_windows_bsub_opts => q[ -q long -M7900000 -R 'select[mem>7900] rusage[mem=7900]'];
                 bsub_opts => '');
 
 =head2 new
@@ -147,6 +148,7 @@ our %options = (simultaneous_jobs => 100,
            dindel_args => '--maxRead 5000' (specify special non-default
                                             settings to the dindel window
                                             realignment call)
+           realign_windows_bsub_opts => ' -M7900000 -R \'select[mem>7900] rusage[mem=7900]\'',
            make_windows_bsub_opts => ' -M7900000 -R \'select[mem>7900] rusage[mem=7900]\'',
                                       (specify bsub options to make_windows)
            min_count => int (default 2 in pooled mode (multiple bams supplied),
@@ -677,7 +679,7 @@ sub realign_windows {
     my @window_files = sort { my ($n1) = $a =~ /(\d+)\.txt/; my ($n2) = $b =~ /(\d+)\.txt/; $n1 <=> $n2 } $self->_get_windows_files($lane_path);
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = ' -q long -M7900000 -R \'select[mem>7900] rusage[mem=7900]\'';
+    $self->{bsub_opts} = $self->{realign_windows_bsub_opts};
     
     my $jobs = 0;
     foreach my $window_file (@window_files) {
