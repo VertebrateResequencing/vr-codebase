@@ -3,6 +3,7 @@ package LSF;
 use strict;
 use warnings;
 use Utils;
+use VertRes::Parser::LSF;
 
 our $Running = 1;
 our $Error   = 2;
@@ -111,7 +112,7 @@ sub job_in_bjobs
 {
     my ($jid) = @_;
 
-    # Expexting either
+    # Expecting either
     #   JOBID   USER    STAT  QUEUE      FROM_HOST   EXEC_HOST   JOB_NAME   SUBMIT_TIME
     #   735850  pd3     DONE  normal     sf-2-1-03   sf-1-4-14   mouse100   May 21 09:50
     #
@@ -128,6 +129,79 @@ sub job_in_bjobs
     if ( $out[1] =~ /^$jid\s+\S+\s+EXIT/ ) { return $Error; }
 
     return $Running;
+}
+
+
+# Check if the output file exists. If it is not there, return unchanged
+#   options. If the job failed due to memory or time, increase the requested
+#   memory or change queue.
+#
+# Performance: stat on non-existent files is very fast. Only failed jobs will slow
+#   things down. If it proves to be an issue, DB will be used instead.
+#
+sub adjust_bsub_options
+{
+    my ($opts, $output_file) = @_;
+
+    my $mem;
+    my $queue;
+
+    if ( !($opts=~/-M/) ) { $mem=1000; }    # if no mem specified, request 1GB only
+
+    if ( -e $output_file ) 
+    {
+        my $parser = VertRes::Parser::LSF->new(file=>$output_file);
+        my $n = $parser->nrecords();
+
+        for (my $i=0; $i<$n; $i++)
+        {
+            # Find out the reason of the failure. If the memory was too low, increase it.
+            if ( $parser->get('status',$i) eq 'MEMLIMIT' )
+            {
+                if ( !defined $mem or $mem<$parser->get('memory',$i) ) { $mem=$parser->get('memory',$i); }
+            }
+            elsif ( $parser->get('status',$i) eq 'RUNLIMIT' ) 
+            {
+                $queue = 'long';
+            }
+        }
+        if ( defined $mem ) { $mem += 1000; }  # increase by 1000MB
+    }
+
+    if ( defined $mem && $mem>8000 ) { Utils::error("FIXME: hardcoded max limit of 8GB"); }
+
+    # The kind of option line we are trying to produce
+    #   -q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000,thouio=1]'
+
+    if ( defined $mem )
+    {
+        warn("$output_file: Increasing memory to $mem\n");  # this should be logged in the future
+
+        $opts =~ s/-M\d+/-M${mem}000/;             # 3000MB -> -M3000000
+        $opts =~ s/(select[^]]+mem>)\d+/$1$mem/;
+        $opts =~ s/(rusage[^]]+mem=)\d+/$1$mem/;
+
+        # The lines above replaced existing values in $opts. If they are not present, add them
+        if ( !($opts=~/-M\d+/) ) { $opts .= " -M${mem}000" }
+        if ( !($opts=~/-R/) ) { $opts .= " -R 'select[mem>$mem] rusage[mem=$mem]'"; }
+        else
+        {
+            if ( !($opts=~/select/) ) { $opts .= " select[mem>$mem]"; }
+            elsif ( $opts=~/select\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/select\[/select[mem>$mem &&/ }
+            if ( !($opts=~/rusage/) ) { $opts .= " rusage[mem=$mem]" }
+            elsif ( $opts=~/rusage\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/rusage\[/rusage[mem=$mem,/ }
+        }
+    }
+
+    if ( defined $queue )
+    {
+        warn("$output_file: changing queue to long\n");     # this should be logged in the future
+
+        $opts =~ s/-q normal/-q long/;
+        if ( !($opts=~/-q/) ) { $opts .= ' -q long'; }
+    }
+
+    return $opts;
 }
 
 
@@ -159,6 +233,9 @@ sub run
     # The expected output:
     #   Job <771314> is submitted to queue <normal>.
     my $lsf_output_file = "$job_name.o";
+
+    # Check if memory or queue should be changed (and change it)
+    $bsub_opts = adjust_bsub_options($bsub_opts, $lsf_output_file);
     my $cmd = "bsub -J $job_name -e $job_name.e -o $lsf_output_file $bsub_opts '$bsub_cmd'";
 
     my @out = Utils::CMD($cmd,$options);
