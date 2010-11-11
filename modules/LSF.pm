@@ -168,7 +168,10 @@ sub adjust_bsub_options
         if ( defined $mem ) { $mem += 1000; }  # increase by 1000MB
     }
 
-    if ( defined $mem && $mem>8000 ) { Utils::error("FIXME: hardcoded max limit of 8GB"); }
+    if ( defined $mem && $mem>15900 ) 
+    { 
+        Utils::error("FIXME: This job cannot be run on the farm, more than 15.9GB of memory is required.");
+    }
 
     # The kind of option line we are trying to produce
     #   -q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000,thouio=1]'
