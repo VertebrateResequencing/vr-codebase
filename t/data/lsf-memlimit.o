@@ -1,0 +1,39 @@
+
+------------------------------------------------------------
+Sender: LSF System <lsfadmin@bc-16-3-05>
+Subject: Job 793683: <job29848> Exited
+
+Job <job29848> was submitted from host <bc-16-1-01> by user <pd3> in cluster <farm2>.
+Job was executed on host(s) <bc-16-3-05>, in queue <long>, as user <pd3> in cluster <farm2>.
+</nfs/users/nfs_p/pd3> was used as the home directory.
+</nfs/users/nfs_p/pd3/sandbox/call-snps/callable-regions> was used as the working directory.
+Started at Wed Feb 17 09:34:14 2010
+Results reported at Wed Feb 17 11:46:19 2010
+
+Your job looked like:
+
+------------------------------------------------------------
+# LSBATCH: User input
+~/cvs/samtools/samtools pileup -d 1000 -c -f /lustre/scratch102/projects/mouse/ref/NCBIM37_um.fa /nfs/users/nfs_p/pd3/sandbox/call-snps/REL-0912/NOD.bam | non-callable | gzip -c > NOD.nc.gz
+------------------------------------------------------------
+
+TERM_MEMLIMIT: job killed after reaching LSF memory usage limit.
+Exited with exit code 1.
+
+Resource usage summary:
+
+    CPU time   :  13782.10 sec.
+    Max Memory :      1935 MB
+    Max Swap   :      2012 MB
+
+    Max Processes  :         5
+    Max Threads    :         6
+
+The output (if any) is above this job summary.
+
+
+
+PS:
+
+Read file <_job29848.e> for stderr output of this job.
+

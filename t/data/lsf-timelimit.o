@@ -1,0 +1,77 @@
+
+------------------------------------------------------------
+Sender: LSF System <lsfadmin@bc-14-4-06>
+Subject: Job 863972: <_129P2_2:89997751-99997751> Exited
+
+Job <_129P2_2:89997751-99997751> was submitted from host <bc-16-1-01> by user <pd3> in cluster <farm2>.
+Job was executed on host(s) <bc-14-4-06>, in queue <normal>, as user <pd3> in cluster <farm2>.
+</nfs/users/nfs_p/pd3> was used as the home directory.
+</lustre/scratch102/user/pd3/call-snps/final-snps/varFilter> was used as the working directory.
+Started at Mon Feb  1 16:51:59 2010
+Results reported at Tue Feb  2 00:52:00 2010
+
+Your job looked like:
+
+------------------------------------------------------------
+# LSBATCH: User input
+perl -w _129P2_2:89997751-99997751.pl
+------------------------------------------------------------
+
+TERM_RUNLIMIT: job killed after reaching LSF run time limit.
+Exited with exit code 140.
+
+Resource usage summary:
+
+    CPU time   :  28765.00 sec.
+    Max Memory :      1407 MB
+    Max Swap   :      1493 MB
+
+    Max Processes  :         9
+    Max Threads    :        10
+
+The output (if any) is above this job summary.
+
+
+
+PS:
+
+Read file <_129P2_2:89997751-99997751.e> for stderr output of this job.
+
+
+------------------------------------------------------------
+Sender: LSF System <lsfadmin@bc-12-3-09>
+Subject: Job 887011: <_129P2_2:89997751-99997751> Done
+
+Job <_129P2_2:89997751-99997751> was submitted from host <bc-16-1-01> by user <pd3> in cluster <farm2>.
+Job was executed on host(s) <bc-12-3-09>, in queue <basement>, as user <pd3> in cluster <farm2>.
+</nfs/users/nfs_p/pd3> was used as the home directory.
+</lustre/scratch102/user/pd3/call-snps/final-snps/varFilter> was used as the working directory.
+Started at Tue Feb  2 02:09:57 2010
+Results reported at Tue Feb  2 22:07:47 2010
+
+Your job looked like:
+
+------------------------------------------------------------
+# LSBATCH: User input
+perl -w _129P2_2:89997751-99997751.pl
+------------------------------------------------------------
+
+Successfully completed.
+
+Resource usage summary:
+
+    CPU time   :  71791.51 sec.
+    Max Memory :      4752 MB
+    Max Swap   :      4885 MB
+
+    Max Processes  :         9
+    Max Threads    :        10
+
+The output (if any) is above this job summary.
+
+
+
+PS:
+
+Read file <_129P2_2:89997751-99997751.e> for stderr output of this job.
+
