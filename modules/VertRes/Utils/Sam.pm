@@ -2078,4 +2078,90 @@ sub extract_intervals_from_bam {
     }
 }
 
+=head2 tag_strip
+
+ Title   : tag_strip
+ Usage   : $obj->tag_strip('in.bam', 'out.bam', strip => [qw(OQ MD XM XG XO)]);
+ Function: Strips tags from bam records. By default all tags are stripped.
+ Returns : boolean (true on success, meaning the output bam was successfully
+           made)
+ Args    : paths to input and output bams, and optionally a keep|strip => []
+           tuple where the array ref contains a list of tags to keep or remove.
+           If strip is specified, everything other than those is kept, so keep
+           option becomes redundent (but will still override anything in
+           strip option).
+
+=cut
+
+sub tag_strip {
+    my ($self, $in_bam, $out_bam, %args) = @_;
+    my %keep = map { $_ => 1 } @{$args{keep} || []};
+    my %strip = map { $_ => 1 } @{$args{strip} || []};
+    my $strip_selected = keys %strip ? 1 : 0;
+    foreach my $tag (keys %keep) {
+        delete $strip{$tag};
+    }
+    
+    my $swi = VertRes::Wrapper::samtools->new(verbose => $self->verbose,
+                                              run_method => 'open',
+                                              quiet => 1);
+    my $ifh = $swi->view($in_bam, undef, h => 1);
+    my $swo = VertRes::Wrapper::samtools->new(verbose => $self->verbose,
+                                              run_method => 'write_to',
+                                              quiet => 1);
+    my $tmp_out = $out_bam.'.running';
+    my $ofh = $swo->view(undef, $tmp_out, S => 1, b => 1);
+    
+    my $lines = 0;
+    while (<$ifh>) {
+        $lines++;
+        if (/^@/) {
+            print $ofh $_;
+        }
+        else {
+            my @data = split(qr/\t/, $_);
+            @data || next;
+            
+            my @fields;
+            for my $i (0..$#data) {
+                chomp($data[$i]) if $i == $#data;
+                
+                my $keep = 0;
+                if ($i <= 10) {
+                    $keep = 1;
+                }
+                else {
+                    my ($tag) = split(":", $data[$i]);
+                    $tag || $self->throw("Unable to parse sam line:\n$_");
+                    
+                    if (exists $keep{$tag} || ($strip_selected && ! exists $strip{$tag})) {
+                        $keep = 1;
+                    }
+                }
+                
+                if ($keep) {
+                    push(@fields, $data[$i]);
+                }
+            }
+            
+            print $ofh join("\t", @fields), "\n";
+        }
+    }
+    close($ifh);
+    close($ofh);
+    
+    # check for truncation
+    my $actual_lines = $self->num_bam_lines($tmp_out);
+    
+    if ($actual_lines == $lines) {
+        move($tmp_out, $out_bam) || $self->throw("Failed to move $tmp_out to $out_bam");
+        return 1;
+    }
+    else {
+        $self->warn("$tmp_out is bad (only $actual_lines lines vs $lines)");
+        unlink $tmp_out;
+        return 0;
+    }
+}
+
 1;

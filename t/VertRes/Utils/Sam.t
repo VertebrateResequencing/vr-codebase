@@ -5,7 +5,7 @@ use File::Spec;
 use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 114;
+    use Test::Most tests => 120;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -362,6 +362,27 @@ ok $sam_util->extract_intervals_from_bam($intervals_all_bam, $intervals_to_extra
 my @expected_reads = get_bam_readnames($intervals_extracted_bam);
 my @extracted_reads = get_bam_readnames($temp_extracted_bam);
 is_deeply \@expected_reads, \@extracted_reads, 'extract_intervals_from_bam extracted the correct reads';
+
+# tag_strip
+my $lane_bam_orig = File::Spec->catfile('t', 'data', '1kg_lane.bam');
+my $lane_bam = File::Spec->catfile($temp_dir, '1kg_lane.bam');
+system("cp $lane_bam_orig $lane_bam");
+my $strip_bam = File::Spec->catfile($temp_dir, 'strip.bam');
+@records = ([qw(SRR035022.11486888 113 1 10003 0 76M 12 95704 0 ACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCC @>=>??;>;?=@4@>?5?=@A@<@=>A@>@AAA@@@@AA@@@AAA@A?AAA@=@AAAA@@>AAAA@;AAAAA=AA@)],
+            [qw(SRR035022.7899884 81 1 10021 0 22S54M 5 11065 0 CCTACCCCTACCCCTACCCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTA), '#######################>>=>>.?@@@?@A@?@>@AA@@@@<A@A@=AA@A@AAAA>@AA@A>A<>7;2;'],
+            [qw(SRR035022.16462491 99 1 10024 0 74M2S = 10317 327 CTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAA), '@B@B@AABAA?AABAA?AABAB?@@BAB>AAB@B?@@BAB?8@<AB>@@@@B<AA@<A??AB?A;A>::A8@?###']);
+ok $sam_util->tag_strip($lane_bam, $strip_bam, strip => [qw(OQ MD XM XG XO)]);
+is_deeply [get_bam_body($strip_bam)], [join("\t", @{$records[0]}, qw(X0:i:372 RG:Z:SRR035022 AM:i:0 NM:i:0 SM:i:0 MQ:i:0 XT:A:R)),
+                                       join("\t", @{$records[1]}, qw(X0:i:442 XC:i:54 RG:Z:SRR035022 AM:i:0 NM:i:0 SM:i:0 MQ:i:0 XT:A:R)),
+                                       join("\t", @{$records[2]}, qw(X0:i:377 XC:i:74 RG:Z:SRR035022 AM:i:0 NM:i:0 SM:i:0 MQ:i:23 XT:A:R))], 'tag_strip test with strip arg';
+ok $sam_util->tag_strip($lane_bam, $strip_bam, keep => [qw(NM RG)]);
+is_deeply [get_bam_body($strip_bam)], [join("\t", @{$records[0]}, qw(RG:Z:SRR035022 NM:i:0)),
+                                       join("\t", @{$records[1]}, qw(RG:Z:SRR035022 NM:i:0)),
+                                       join("\t", @{$records[2]}, qw(RG:Z:SRR035022 NM:i:0))], 'tag_strip test with keep arg';
+ok $sam_util->tag_strip($lane_bam, $strip_bam);
+is_deeply [get_bam_body($strip_bam)], [join("\t", @{$records[0]}),
+                                       join("\t", @{$records[1]}),
+                                       join("\t", @{$records[2]})], 'tag_strip test with no args';
 
 exit;
 
