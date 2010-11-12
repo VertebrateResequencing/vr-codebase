@@ -1157,11 +1157,7 @@ sub create_release_hierarchy {
     my @bad_lanes;
     foreach my $lane_path (@{$lane_paths}) {
         # setup release lane
-        my @dirs = File::Spec->splitdir($lane_path);
-        @dirs >= 5 || $self->throw("lane path '$lane_path' wasn't valid");
-        my $release_lane_path = $fsu->catfile($release_dir, @dirs[-5..-1]);
-        mkpath($release_lane_path);
-        -d $release_lane_path || $self->throw("Unable to make release lane '$release_lane_path'");
+        my $release_lane_path = $self->_create_lane_dir($lane_path, $release_dir);
         
         # symlink bams; what bams are we supposed to have?
         my @bams = $self->lane_bams($lane_path, %args);
@@ -1187,6 +1183,47 @@ sub create_release_hierarchy {
     }
     
     return @all_linked_bams;
+}
+
+sub _create_lane_dir {
+    my ($self, $lane_path, $new_root) = @_;
+    
+    $lane_path =~ s/\/$//;
+    my @dirs = File::Spec->splitdir($lane_path);
+    @dirs >= 5 || $self->throw("lane path '$lane_path' wasn't valid");
+    my $new_path = File::Spec->catdir($new_root, @dirs[-5..-1]);
+    mkpath($new_path);
+    -d $new_path || $self->throw("Unable to make lane dir '$new_path'");
+    
+    return $new_path;
+}
+
+=head2 lane_bam_link
+
+ Title   : lane_bam_link
+ Usage   : $obj->lane_bam_link('/abs/path/pe.lane.bam',
+                               '/abs/path/new_root');
+ Function: Symlink a particular lane bam into a new hierarchy path.
+ Returns : New absolute path of the bam (renamed [ps]e.lane.bam)
+ Args :    absolute path of a lane bam, absolute path of new root
+
+=cut
+
+sub lane_bam_link {
+    my ($self, $bam, $new_root) = @_;
+    
+    my ($base, $old) = fileparse($bam);
+    my ($ended) = $base =~ /\.([ps]e)\./;
+    unless ($ended) {
+        $self->throw("Input bam must have .pe. or .se. in the filename");
+    }
+    
+    my $new_path = $self->_create_lane_dir($old, $new_root);
+    my $new_bam = File::Spec->catfile($new_path, "$ended.lane.bam");
+    
+    symlink($bam, $new_bam) || $self->throw("Couldn't symlink $bam -> $new_bam");
+    
+    return $new_bam;
 }
 
 =head2 lane_bams
@@ -1267,13 +1304,20 @@ sub lane_bams {
         }
     }
     
+    # we'll check for and return improved bams only after improved is actually
+    # set in the db, so as to avoid breaking the BamImprovement pipeline when
+    # it has created the improved bams, but before it has finished all its
+    # actions. Otherwise we'll be backwards compatible with old Mapping pipeline
+    # and look for recal bams.
+    my $type_to_check = $vrlane->is_processed('improved') ? 'realigned.sorted.recal.calmd' : 'recal.sorted';
+    
     my $fsu = VertRes::Utils::FileSystem->new();
     my @bams = ();
     foreach my $ended (keys %ended) {
         # prefer the improved bam to the recalibrated bam to the unrecalibrated
         # raw bam
         my $bam;
-        foreach my $type ('recal.sorted', 'raw.sorted') { #'realigned.sorted.recal.calmd', 
+        foreach my $type ($type_to_check, 'raw.sorted') {
             $bam = $fsu->catfile($lane_path, "$mapstats_prefix.$ended.$type.bam");
             last if -e $bam;
         }
