@@ -5,7 +5,7 @@ use File::Spec;
 use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 109;
+    use Test::Most tests => 114;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -30,6 +30,13 @@ my $ref = File::Spec->catfile('t', 'data', 'S_suis_P17.fa');
 ok -s $ref, 'ref file ready to test with';
 my $dict = File::Spec->catfile('t', 'data', 'S_suis_P17.dict');
 ok -s $dict, 'dict file ready to test with';
+my $intervals_all_bam = File::Spec->catfile('t', 'data', 'extract_intervals_all.bam');
+ok -s $intervals_all_bam, 'extract intervals all records bam file ready to test with';
+my $intervals_extracted_bam = File::Spec->catfile('t', 'data', 'extract_intervals_extracted.bam');
+ok -s $intervals_extracted_bam, 'extracted intervals bam file ready to test with';
+my $intervals_to_extract = File::Spec->catfile('t', 'data', 'extract_intervals.txt');
+ok -s $intervals_to_extract, 'file of intervals to be extracted ready to test with';
+
 
 # bams_are_similar
 is $sam_util->bams_are_similar($bam1_file, $bam2_file), 1, 'bams are similar';
@@ -349,6 +356,13 @@ ok $sam_util->add_unmapped($om_sam, $om_1_fq, $om_2_fq), 'add_unmapped returned 
 @records = get_sam_body($om_sam);
 is @records, 10, 'after adding back unmapped we have 10 records';
 
+# extract_intervals_from_bam
+my $temp_extracted_bam = File::Spec->catfile($temp_dir, 'intervals_extracted.bam');
+ok $sam_util->extract_intervals_from_bam($intervals_all_bam, $intervals_to_extract, $temp_extracted_bam), 'extract_intervals_from_bam returned true';
+my @expected_reads = get_bam_readnames($intervals_extracted_bam);
+my @extracted_reads = get_bam_readnames($temp_extracted_bam);
+is_deeply \@expected_reads, \@extracted_reads, 'extract_intervals_from_bam extracted the correct reads';
+
 exit;
 
 sub get_sam_header {
@@ -400,4 +414,26 @@ sub get_bam_body {
         push(@records, $_);
     }
     return @records;
+}
+
+# Arg = bam filename.
+# Returns list of all read names in records, with
+# '/1' or '/2' appended, depending if read is first
+# or second of a pair respectively.
+# Appends nothing to the name of an unpaired read .
+sub get_bam_readnames {
+    my $bam_file = shift;
+    my @readnames;
+    my $pars = VertRes::Parser::sam->new(file => $bam_file);
+
+    while (my ($qname, $flag) = $pars->get_fields('QNAME', 'FLAG')) {
+        if ($pars->is_first($flag)){
+            $qname .= "/1";
+        }
+        elsif ($pars->is_second($flag)){
+            $qname .= "/2";
+        }
+        push @readnames, $qname;
+    }
+    return @readnames;
 }
