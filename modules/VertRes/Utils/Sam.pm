@@ -1895,12 +1895,13 @@ sub rewrite_bas_meta {
  Function: Takes a bam and makes a new bam file containing only those reads
            which overlap required intervals.  At least 1 base of a read needs to
            overlap an interval for it to be included.
-           Input bam file mut be sorted by reference position.
+           Input bam file must be sorted by reference position.
  Returns : boolean (true on success)
  Args    : in.bam = input bam file
            intervals_file = file specifying the positions to keep.
            One line per interval, tab delimited: chromosome start end
            out.bam = name of output bam file
+
 =cut
 
 sub extract_intervals_from_bam {
@@ -1909,9 +1910,7 @@ sub extract_intervals_from_bam {
     my $lines_out_counter = 0;  # number of lines written to output file
     my %cig_length_letters = ('I', 1, 'N', 1, 'M', 1); # letters that count to the length
                                                        # in a cigar string
-    my $sw = VertRes::Wrapper::samtools->new(verbose => $self->verbose,
-                                             run_method => 'open',
-                                             quiet => 1);
+    my $samtools = VertRes::Wrapper::samtools->new(verbose => $self->verbose, quiet => 1);
     
     # fill intervals hash from file
     open my $fh, $intervals_file or $self->throw("Cannot open $intervals_file: $!");
@@ -1955,19 +1954,21 @@ sub extract_intervals_from_bam {
     }
     
     # we must have a bam index file
-    $sw->run_method('system');
+    $samtools->run_method('system');
     my $bai = $bam_in.'.bai';
     my $created_bai = 0;
     unless (-s $bai)
     {
-        $sw->index($bam_in, $bai);
-        $sw->run_status >= 1 || $self->throw("Failed to create $bai");
+        $samtools->index($bam_in, $bai);
+        $samtools->run_status >= 1 || $self->throw("Failed to create $bai");
         $created_bai = 1;
     }
     
     # now we have intervals in memory, parse the input bam and write output bam
-    open my $bam_in_fh, "samtools view -h $bam_in |" or self->throw("$bam_in: $!");
-    open my $bam_out_fh, "| samtools view -hSb - > $bam_out" or self->throw("$bam_out: $!");
+    $samtools = VertRes::Wrapper::samtools->new(verbose => $self->verbose, quiet => 1, run_method => 'open');
+    my $bam_in_fh = $samtools->view($bam_in, undef, h => 1);
+    $samtools = VertRes::Wrapper::samtools->new(verbose => $self->verbose, quiet => 1, run_method => 'write_to');
+    my $bam_out_fh = $samtools->view(undef, "$bam_out.tmp", h => 1, S => 1, b => 1);
     my $current_chr = "";
     my $current_interval_list;
     my $current_interval_index; # stores index i in current list l of intervals such that the start
@@ -1993,17 +1994,17 @@ sub extract_intervals_from_bam {
             next;
         }
         
-        # Decide if we want to keep this mapped read or not
+        # Decide if we want to keep this read or not
         my @data = split "\t", $line;
         my $chr = $data[2];
         my $read_start = $data[3];
         my $cigar = $data[5];
-        my $unmapped = ($data[1] & 0x0004) == 0 ? 0 : 1;
+        my $mapped = VertRes::Parser::sam->is_mapped($data[1]);
         my $keep_read = 0;
         
         # don't care about unmapped reads: don't just trust the flag.
         # Also don't care about ref sequences not in the intervals file
-        next if ($unmapped or $cigar eq "*" or !(exists $intervals{$chr}));
+        next if (!($mapped) or $cigar eq "*" or !(exists $intervals{$chr}));
         
         # figure out the ending position of the current read in the reference
         my @numbers = split /[A-Z]/, $cigar;
@@ -2064,16 +2065,17 @@ sub extract_intervals_from_bam {
     unlink $bai if $created_bai;
     
     # check the right number of lines got written
-    my $actual_lines = $self->num_bam_lines($bam_out);
+    my $actual_lines = $self->num_bam_lines("$bam_out.tmp");
     
     if ($actual_lines == $lines_out_counter)
     {
+        rename "$bam_out.tmp", $bam_out;
         return 1;
     }
     else
     {
-        $self->warn("$bam_out is bad (only $actual_lines lines vs $lines_out_counter)");
-        unlink $bam_out;
+        $self->warn("$bam_out.tmp is bad, deleteing it (only $actual_lines lines vs $lines_out_counter)");
+        unlink "$bam_out.tmp";
         return 0;
     }
 }
