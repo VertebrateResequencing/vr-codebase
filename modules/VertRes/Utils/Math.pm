@@ -81,4 +81,36 @@ sub histogram_median {
     return $median;
 }
 
+=head2 compare_hash_keys
+
+ Title   : compare_hash_keys
+ Usage   : my $same = $obj->compare_hash_keys($hash1, $hash2);
+ Function: See if two hashes have the same set of keys.
+ Returns : boolean
+ Args    : 2 hash refs
+
+=cut
+
+sub compare_hash_keys {
+    my ($self, $hash1, $hash2) = @_;
+    my %hash1 = %{$hash1};
+    my %hash2 = %{$hash2};
+    
+    my $same = 1;
+    if (keys %hash1 != keys %hash2) {
+        $same = 0;
+    }
+    else {
+        foreach my $key (keys %hash1) {
+            last unless exists $hash2{$key};
+            delete $hash2{$key};
+        }
+        if (%hash2) {
+            $same = 0;
+        }
+    }
+    
+    return $same;
+}
+
 1;
