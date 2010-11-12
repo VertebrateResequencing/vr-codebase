@@ -118,8 +118,8 @@ our %options = (simultaneous_jobs => 100,
                 dindel_scripts => $dindel_base,
                 dindel_bin => 'dindel',
                 dindel_args => '--maxRead 5000',
-                make_windows_bsub_opts => ' -M7900000 -R \'select[mem>7900] rusage[mem=7900]\'',
-                realign_windows_bsub_opts => q[ -q long -M7900000 -R 'select[mem>7900] rusage[mem=7900]'];
+                make_windows_bsub_opts => ' -M1400000 -R \'select[mem>1400] rusage[mem=1400]\'',
+                realign_windows_bsub_opts => q[ -q long -M2800000 -R 'select[mem>2800] rusage[mem=2800]'];
                 bsub_opts => '');
 
 =head2 new
