@@ -2101,6 +2101,7 @@ sub tag_strip {
     foreach my $tag (keys %keep) {
         delete $strip{$tag};
     }
+    my @to_strip = keys %strip;
     
     my $swi = VertRes::Wrapper::samtools->new(verbose => $self->verbose,
                                               run_method => 'open',
@@ -2119,32 +2120,22 @@ sub tag_strip {
             print $ofh $_;
         }
         else {
-            my @data = split(qr/\t/, $_);
-            @data || next;
-            
-            my @fields;
-            for my $i (0..$#data) {
-                chomp($data[$i]) if $i == $#data;
-                
-                my $keep = 0;
-                if ($i <= 10) {
-                    $keep = 1;
+            if ($strip_selected) {
+                foreach my $tag (@to_strip) {
+                    s/\t$tag:\S+//;
                 }
-                else {
-                    my ($tag) = split(":", $data[$i]);
-                    $tag || $self->throw("Unable to parse sam line:\n$_");
-                    
-                    if (exists $keep{$tag} || ($strip_selected && ! exists $strip{$tag})) {
-                        $keep = 1;
-                    }
+            }
+            else {
+                my @to_remove;
+                while (/(\t([A-Z][A-Z0-9]):[AifZH]:\S+)/g) {
+                    push(@to_remove, $1) unless exists $keep{$2};
                 }
-                
-                if ($keep) {
-                    push(@fields, $data[$i]);
+                foreach my $field (@to_remove) {
+                    s/\Q$field\E//;
                 }
             }
             
-            print $ofh join("\t", @fields), "\n";
+            print $ofh $_;
         }
     }
     close($ifh);
