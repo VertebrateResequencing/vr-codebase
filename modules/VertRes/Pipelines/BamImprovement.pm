@@ -274,9 +274,15 @@ sub realign_provides {
 
 sub _bam_name_conversion {
     my ($self, $in_bam) = @_;
+    
+    # clean up the filename to something stripped-down
     my $rel_bam = $in_bam;
+    $rel_bam =~ s/.raw//;
     $rel_bam =~ s/.recal//;
     $rel_bam =~ s/.sorted//;
+    $rel_bam =~ s/.realigned//;
+    $rel_bam =~ s/.calmd//;
+    
     $rel_bam =~ s/\.bam$/.realigned.bam/;
     my $sorted_bam = $rel_bam;
     $sorted_bam =~ s/\.bam$/.sorted.bam/;
