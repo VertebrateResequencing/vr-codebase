@@ -145,8 +145,9 @@ sub adjust_bsub_options
 
     my $mem;
     my $queue;
-
-    if ( !($opts=~/-M/) ) { $mem=1000; }    # if no mem specified, request 1GB only
+    
+    my $no_warn = 0;
+    if ( !($opts=~/-M/) ) { $mem=500; $no_warn = 1; }    # if no mem specified, request 500MB only
 
     if ( -e $output_file ) 
     {
@@ -178,7 +179,7 @@ sub adjust_bsub_options
 
     if ( defined $mem )
     {
-        warn("$output_file: Increasing memory to $mem\n");  # this should be logged in the future
+        warn("$output_file: Increasing memory to $mem\n") unless $no_warn;  # this should be logged in the future
 
         $opts =~ s/-M\d+/-M${mem}000/;             # 3000MB -> -M3000000
         $opts =~ s/(select[^]]+mem>)\d+/$1$mem/;
