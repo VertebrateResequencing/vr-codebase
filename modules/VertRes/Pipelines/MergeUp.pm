@@ -908,7 +908,7 @@ sub is_finished {
                 $replace = 'strip';
             }
             
-            my @files = $self->{io}->parse_fofn($done_file, $lane_path);
+            my @files = $self->{io}->parse_fofn($done_file);
             foreach my $file (@files) {
                 my $previous = $file;
                 $previous =~ s/\.$replace.bam$/.bam/;
