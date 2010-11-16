@@ -307,7 +307,7 @@ sub realign {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M4800000 -R \'select[mem>4800] rusage[mem=4800]\'';
+    $self->{bsub_opts} = '-q normal -M3999000 -R \'select[mem>3999] rusage[mem=3999]\'';
     my $verbose = $self->verbose;
     
     foreach my $in_bam (@{$self->{in_bams}}) {
