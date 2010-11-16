@@ -18,7 +18,7 @@ prefix  => '_',
 lane_bams => 'lane_bams.fofn',
 previous_merge_root => '/path/to/previous/merge_root',
 data => {
-    tag_strip => { strip => [qw(OQ MD XM XG XO)] },
+    tag_strip => { strip => [qw(OQ XM XG XO)] },
     simultaneous_merges => 200,
     do_cleanup => 1
 }
@@ -110,7 +110,7 @@ our $actions = [{ name     => 'create_hierarchy',
 
 our %options = (do_cleanup => 0,
                 do_sample_merge => 0,
-                tag_strip => { strip => [qw(OQ MD XM XG XO)] },
+                tag_strip => { strip => [qw(OQ XM XG XO)] },
                 simultaneous_merges => 200,
                 bsub_opts => '',
                 dont_wait => 1);
@@ -125,7 +125,7 @@ our %options = (do_cleanup => 0,
            lane_bams => fofn (REQUIRED; a file listing all the bams you want
                               to merge)
            
-           tag_strip => { strip => [qw(OQ MD XM XG XO)] } (default as shown;
+           tag_strip => { strip => [qw(OQ XM XG XO)] } (default as shown;
                           args as per VertRes::Utils::Sam::tag_strip)
            do_cleanup => boolean (default false: don't do the cleanup action)
            simultaneous_merges => int (default 200; the number of merge jobs to
