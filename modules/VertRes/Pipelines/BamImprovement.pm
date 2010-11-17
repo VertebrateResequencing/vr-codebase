@@ -701,7 +701,7 @@ sub calmd {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M3800000 -R \'select[mem>3800] rusage[mem=3800]\'';
+    $self->{bsub_opts} = '-q normal -M1000000 -R \'select[mem>1000] rusage[mem=1000]\'';
     
     my $e = $self->{calmde} ? 'e => 1' : 'e => 0';
     
