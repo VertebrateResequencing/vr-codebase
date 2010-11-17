@@ -304,15 +304,11 @@ sub calmd_and_check {
     my $orig_run_method = $self->run_method;
     
     # do the calmd
-    $self->run_method('open');
+    $self->run_method('system');
     my $tmp_bam = $out_bam.'.tmp';
-    my $fh = $self->fillmd($in_bam, $ref, undef, %options);
+    $options{b} = 1;
+    $self->fillmd($in_bam, $ref, $tmp_bam, %options);
     $self->throw("failed during the calmd step, giving up for now") unless $self->run_status >= 1;
-    
-    # convert to bam
-    $self->run_method('open_to');
-    $self->view($fh, $tmp_bam, S => 1, b => 1);
-    $self->throw("failed during the view step, giving up for now") unless $self->run_status >= 1;
     
     # find out our expectation
     my $su = VertRes::Utils::Sam->new;
