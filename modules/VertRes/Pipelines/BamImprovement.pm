@@ -51,9 +51,9 @@ echo '<lanes.fod bamimprovement.conf' > bamimprovement.pipeline
 =head1 DESCRIPTION
 
 A module for "improving" bams. It uses GATK to realign reads around known indels
-and then recalibrates the quality scores. Optionally, it then does samtools
-calmd -r. This should improve the quality of subsequent variant calling on the
-bam.
+and then recalibrates the quality scores and uses samtools calmd -r to add a BQ
+tag of improved base qualities. This should improve the quality and speed of
+subsequent variant calling on the bam.
 
 =head1 AUTHOR
 
@@ -114,7 +114,6 @@ our %options = (slx_mapper => 'bwa',
                 indel_sites => '/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/1kg.pilot_release.merged.indels.sites.hg19.vcf',
                 indel_intervals => '/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/indel.dbsnp_129_b37-vs-pilot.intervals',
                 snp_sites => '/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/pilot.snps.bed',
-                calmdr => 0,
                 calmde => 0,
                 do_cleanup => 1);
 
@@ -147,8 +146,6 @@ our %options = (slx_mapper => 'bwa',
            snp_sites => '/path/to/snps.vcf' (known snps to mask out during
                                              quality score recalibration, in
                                              addition to those in the dbsnp_rod)
-           calmdr => boolean (default false; when running calmd, setting this
-                              to true will use -r option)
            calmde => boolean (default false; when running calmd, setting this
                               to true will use -e option)
            release_date => 'yyyymmdd' (the release date to be included in the
@@ -692,9 +689,9 @@ sub calmd_provides {
 
  Title   : calmd
  Usage   : $obj->calmd('/path/to/lane', 'lock_filename');
- Function: Recalculates the MD/NM tags, and optionally does read-independent
-           local realignment, altering quality values. Also optionally replaces
-           reference bases with '='.
+ Function: Recalculates the MD/NM tags, doing read-independent local realignment
+           storing Q diffs into BQ tag. Also optionally replaces reference bases
+           with '='.
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : lane path, name of lock file to use
 
@@ -706,7 +703,6 @@ sub calmd {
     my $orig_bsub_opts = $self->{bsub_opts};
     $self->{bsub_opts} = '-q normal -M3800000 -R \'select[mem>3800] rusage[mem=3800]\'';
     
-    my $r = $self->{calmdr} ? 'r => 1' : 'r => 0';
     my $e = $self->{calmde} ? 'e => 1' : 'e => 0';
     
     foreach my $in_bam (@{$self->{in_bams}}) {
@@ -729,7 +725,7 @@ my \$final_bam = '$final_bam';
 # run calmd
 unless (-s \$final_bam) {
     my \$s = VertRes::Wrapper::samtools->new(verbose => 1);
-    \$s->calmd_and_check(\$in_bam, '$self->{reference}', \$final_bam, $r, $e);
+    \$s->calmd_and_check(\$in_bam, '$self->{reference}', \$final_bam, r => 1, b => 1, $e);
     \$s->run_status() >= 1 || die "calmd failed\n";
 }
 
