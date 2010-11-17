@@ -29,6 +29,7 @@ use strict;
 use warnings;
 use Carp qw(cluck confess);
 use VRTrack::Lane;
+use VRTrack::Seq_request;
 use VRTrack::Library_type;
 use VRTrack::Seq_centre;
 use VRTrack::Seq_tech;
@@ -57,12 +58,17 @@ sub fields_dispatch {
                library_id        => sub { $self->id(@_)},
                sample_id         => sub { $self->sample_id(@_)},
                ssid              => sub { $self->ssid(@_)},
+	       library_request_id        => sub { $self->library_request_id(@_)},
                hierarchy_name    => sub { $self->hierarchy_name(@_)},
                prep_status       => sub { $self->prep_status(@_)},
                qc_status         => sub { $self->qc_status(@_)},
                auto_qc_status    => sub { $self->auto_qc_status(@_)},
-               insert_size       => sub { $self->insert_size(@_)},
+               fragment_size_from       => sub { $self->fragment_size_from(@_)},
+	       fragment_size_to       => sub { $self->fragment_size_to(@_)},
                library_type_id   => sub { $self->library_type_id(@_)},
+	       library_tag   	 => sub { $self->library_tag(@_)},
+	       library_tag_group => sub { $self->library_tag_group(@_)},
+	       library_tag_sequence  	 => sub { $self->library_tag_sequence(@_)},
                seq_centre_id     => sub { $self->seq_centre_id(@_)},
                seq_tech_id       => sub { $self->seq_tech_id(@_)},
                open              => sub { $self->open(@_)},
@@ -173,6 +179,21 @@ sub sample_id {
 =cut
 
 
+=head2 library_request_id
+
+  Arg [1]    : library_request_id (optional)
+  Example    : my $sample_id = $library->library_request_id();
+               $library->library_request_id(104);
+  Description: Get/Set for ID of a library_request_id
+  Returntype : Internal ID integer
+
+=cut
+
+sub library_request_id {
+    my $self = shift;
+    return $self->_get_set('library_request_id', 'number', @_);
+}
+
 =head2 hierarchy_name
 
   Arg [1]    : directory name (optional)
@@ -244,20 +265,55 @@ sub qc_status {
     return $self->_get_set('qc_status', 'string', @_);
 }
 
+=head2 fragment_size_from
+
+  Arg [1]    : fragment_size_from (optional)
+  Example    : my $fragment_size_from = $lib->fragment_size_from();
+               $lib->fragment_size_from(76);
+  Description: Get/Set for library fragment_size_from
+  Returntype : integer
+
+=cut
+
+sub fragment_size_from {
+    my $self = shift;
+    return $self->_get_set('fragment_size_from', 'number', @_);
+}
+
+
+=head2 fragment_size_to
+
+  Arg [1]    : fragment_size_to (optional)
+  Example    : my $fragment_size_to = $lib->fragment_size_to();
+               $lib->fragment_size_to(76);
+  Description: Get/Set for library fragment_size_to
+  Returntype : integer
+
+=cut
+
+sub fragment_size_to {
+    my $self = shift;
+    return $self->_get_set('fragment_size_to', 'number', @_);
+}
+
 
 =head2 insert_size
 
-  Arg [1]    : insert_size (optional)
+  Arg [1]    : None
   Example    : my $insert_size = $lib->insert_size();
-               $lib->insert_size(76);
-  Description: Get/Set for library insert_size
+  Description: Get library insert_size.  Note that this is for backward
+                compatibility only, and is the mean of fragment_size_from
+                and fragment_size_to.  Use these methods if possible.
   Returntype : integer
 
 =cut
 
 sub insert_size {
     my $self = shift;
-    return $self->_get_set('insert_size', 'number', @_);
+    my $f_from = $self->fragment_size_from();
+    my $f_to = $self->fragment_size_to();
+    my $insert_size = int(($f_from+$f_to)/2);
+    return $insert_size;
 }
 
 
@@ -277,11 +333,60 @@ sub library_type_id {
 }
 
 
+=head2 library_tag
+
+  Arg [1]    : library_tag (optional)
+  Example    : my $library_tag_id = $lib->library_tag();
+               $lib->library_tag(1);
+  Description: Get/Set for library library_tag
+  Return_tag : number
+
+=cut
+
+sub library_tag{
+    my $self = shift;
+    return $self->_get_set('library_tag', 'number', @_);
+}
+
+=head2 library_tag_group
+
+  Arg [1]    : library_tag_group (optional)
+  Example    : my $library_tag_group_id = $lib->library_tag_group();
+               $lib->library_tag_group(1);
+  Description: Get/Set for library library_tag_group
+  Return_tag_group : number
+
+=cut
+
+sub library_tag_group{
+    my $self = shift;
+    return $self->_get_set('library_tag_group', 'number', @_);
+}
+
+=head2 library_tag_sequence
+
+  Arg [1]    : library_tag_sequence (optional)
+  Example    : my $library_tag_sequence_id = $lib->library_tag_sequence();
+               $lib->library_tag_sequence(1);
+  Description: Get/Set for library library_tag_sequence
+  Return_tag_group : string
+
+=cut
+
+sub library_tag_sequence{
+    my $self = shift;
+    return $self->_get_set('library_tag_sequence', 'string', @_);
+}
+
+
+
+
+
 =head2 library_type
 
   Arg [1]    : library_type name (optional)
-  Example    : my $library_type = $samp->library_type();
-               $samp->library_type('DSS');
+  Example    : my $library_type = $library->library_type();
+               $library->library_type('DSS');
   Description: Get/Set for sample library_type.  Lazy-loads library_type object from $self->library_type_id.  If a library_type name is supplied, then library_type_id is set to the corresponding library_type in the database.  If no such library_type exists, returns undef.  Use add_library_type to add a library_type in this case.
   Returntype : VRTrack::Library_type object
 
@@ -296,7 +401,7 @@ sub library_type {
 =head2 add_library_type
 
   Arg [1]    : library_type name
-  Example    : my $library_type = $samp->add_library_type('DSS');
+  Example    : my $library_type = $library->add_library_type('DSS');
   Description: create a new library_type, and if successful, return the object
   Returntype : VRTrack::Library_type object
 
@@ -325,6 +430,79 @@ sub get_library_type_by_name {
     return VRTrack::Library_type->new_by_name($self->{vrtrack}, $name);
 }
 
+=head2 sequencing requests
+
+  Arg [1]    : None
+  Example    : my $seq_requests = $library->seq_requests();
+  Description: Returns a ref to an array of the Seq_Request objects that are associated with this sample.
+  Returntype : ref to array of VRTrack::Seq_Request objects
+
+=cut
+
+sub seq_requests {
+    my $self = shift;
+    return $self->_get_child_objects('VRTrack::Seq_request');
+}
+
+
+=head2 seq_request_ids
+
+  Arg [1]    : None
+  Example    : my $seq_request_ids = $library->seq_request_ids();
+  Description: Returns a ref to an array of the seq_request IDs that are associated with this sample
+  Returntype : ref to array of integer seq_request IDs
+
+=cut
+
+sub seq_request_ids {
+    my $self = shift;
+    return $self->_get_child_ids('VRTrack::Seq_request');
+}
+
+
+=head2 add_seq_request
+
+  Arg [1]    : sequencing request id
+  Example    : my $newseqrequest = $samp->add_seq_request('12121212');
+  Description: create a new seq_request , and if successful, return the object
+  Returntype : VRTrack::Seq_request object
+
+=cut
+
+sub add_seq_request {
+    my ($self,$ssid) = @_;
+    return $self->_add_child_object('new_by_ssid','VRTrack::Seq_request',$ssid);
+}
+
+
+=head2 get_seq_request_by_id
+
+  Arg [1]    : seq_request internal id
+  Example    : my $lseq_request = $sam->get_lseq_request_by_id(1930);
+  Description: retrieve seq_request  object by internal id
+  Returntype : VRTrack::seq_request object
+
+=cut
+
+sub get_seq_request_by_id {
+    my $self = shift;
+    return $self->_get_child_by_field_value('seq_requests', 'id', @_);
+}
+
+
+=head2 get_seq_request_by_ssid
+
+  Arg [1]    : seq_request sequencescape id
+  Example    : my $seq_request = $sam->get_seq_request_by_ssid(1930);
+  Description: retrieve seq_request object by sequencescape id
+  Returntype : VRTrack::Seq_request object
+
+=cut
+
+sub get_seq_request_by_ssid {
+    my $self = shift;
+    return $self->_get_child_by_field_value('seq_requests', 'ssid', @_);
+}
 
 =head2 seq_centre_id
 
@@ -345,8 +523,8 @@ sub seq_centre_id {
 =head2 seq_centre
 
   Arg [1]    : seq_centre name (optional)
-  Example    : my $seq_centre = $samp->seq_centre();
-               $samp->seq_centre('SC');
+  Example    : my $seq_centre = $library->seq_centre();
+               $library->seq_centre('SC');
   Description: Get/Set for sample seq_centre.  Lazy-loads seq_centre object from $self->seq_centre_id.  If a seq_centre name is supplied, then seq_centre_id is set to the corresponding seq_centre in the database.  If no such seq_centre exists, returns undef.  Use add_seq_centre to add a seq_centre in this case.
   Returntype : VRTrack::Seq_centre object
 
@@ -361,7 +539,7 @@ sub seq_centre {
 =head2 add_seq_centre
 
   Arg [1]    : seq_centre name
-  Example    : my $seq_centre = $samp->add_seq_centre('SC');
+  Example    : my $seq_centre = $library->add_seq_centre('SC');
   Description: create a new seq_centre, and if successful, return the object
   Returntype : VRTrack::Library object
 
@@ -376,7 +554,7 @@ sub add_seq_centre {
 =head2 get_seq_centre_by_name
 
   Arg [1]    : seq_centre_name
-  Example    : my $seq_centre = $samp->get_seq_centre_by_name('SC');
+  Example    : my $seq_centre = $library->get_seq_centre_by_name('SC');
   Description: Retrieve a VRTrack::Seq_centre object by name
                Note that the seq_centre object retrieved is not necessarily
                attached to this Library.  Use $lib->seq_centre for that.
@@ -409,8 +587,8 @@ sub seq_tech_id {
 =head2 seq_tech
 
   Arg [1]    : seq_tech name (optional)
-  Example    : my $seq_tech = $samp->seq_tech();
-               $samp->seq_tech('SLX');
+  Example    : my $seq_tech = $lib->seq_tech();
+               $lib->seq_tech('SLX');
   Description: Get/Set for sample seq_tech.  Lazy-loads seq_tech object from $self->seq_tech_id.  If a seq_tech name is supplied, then seq_tech_id is set to the corresponding seq_tech in the database.  If no such seq_tech exists, returns undef.  Use add_seq_tech to add a seq_tech in this case.
   Returntype : VRTrack::Seq_tech object
 
@@ -425,7 +603,7 @@ sub seq_tech {
 =head2 add_seq_tech
 
   Arg [1]    : seq_tech name
-  Example    : my $seq_tech = $samp->add_seq_tech('SLX');
+  Example    : my $seq_tech = $lib->add_seq_tech('SLX');
   Description: create a new seq_tech, and if successful, return the object
   Returntype : VRTrack::Library object
 
@@ -440,7 +618,7 @@ sub add_seq_tech {
 =head2 get_seq_tech_by_name
 
   Arg [1]    : seq_tech_name
-  Example    : my $seq_tech = $samp->get_seq_tech_by_name('SLX');
+  Example    : my $seq_tech = $lib->get_seq_tech_by_name('SLX');
   Description: Retrieve a VRTrack::Seq_tech object by name
                Note that the seq_tech object retrieved is not necessarily
                attached to this Library.  Use $lib->seq_tech for that.
@@ -479,6 +657,37 @@ sub open {
   Returntype : string
 
 =cut
+
+
+=head2 library_multiplex_pools
+
+  Arg [1]    : None
+  Example    : my $library_multiplex_pools = $library->library_multiplex_pools();
+  Description: Returns a ref to an array of the library_multiplex_pool objects that are associated with this library.
+  Returntype : ref to array of VRTrack::Library_Multiplex_pool objects
+
+=cut
+
+sub library_multiplex_pools {
+    my $self = shift;
+    return $self->_get_child_objects('VRTrack::Library_Multiplex_pool');
+}
+
+
+=head2 library_multiplex_pool_ids
+
+  Arg [1]    : None
+  Example    : my $library_multiplex_pool_ids = $library->library_multiplex_pool_ids();
+  Description: Returns a ref to an array of the library_multiplex_pool IDs that are associated with this library
+  Returntype : ref to array of integer library_multiplex_pool IDs
+
+=cut
+
+sub library_multiplex_pool_ids {
+    my $self = shift;
+    return $self->_get_child_ids('VRTrack::Library_Multiplex_pool');
+}
+
 
 
 =head2 lanes
@@ -566,9 +775,7 @@ sub get_lane_by_name {
 =cut
 
 sub _get_child_methods {
-    # Requests aren't linked into the API yet
-    # return qw(lanes requests);
-    return qw(lanes);
+    return qw(library_multiplex_pools seq_requests lanes);
 }
 
 

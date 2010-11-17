@@ -1,5 +1,4 @@
 package VRTrack::VRTrack;
-# author: jws
 =head1 NAME
 
 VRTrack::VRTrack - Sequence Tracking container
@@ -31,6 +30,7 @@ jws@sanger.ac.uk
 
 =cut
 
+# author: jws
 use strict;
 use warnings;
 use Carp;
@@ -40,11 +40,12 @@ use File::Spec;
 use VRTrack::Project;
 use VRTrack::Sample;
 use VRTrack::Library;
+use VRTrack::Seq_request;
 use VRTrack::Lane;
 use VRTrack::File;
 use VRTrack::Core_obj;
 
-use constant SCHEMA_VERSION => '11';
+use constant SCHEMA_VERSION => '12';
 
 our $DEFAULT_PORT = 3306;
 
@@ -340,7 +341,7 @@ sub hierarchy_path_of_lane_name {
 sub hierarchy_path_of_lane {
     my ($self, $lane, $template) = @_;
     ($lane && ref($lane) && $lane->isa('VRTrack::Lane')) || confess "A VRTrack::Lane must be supplied\n";
-    
+
     # For all acceptable terms, we generate the corresponding word, but for
     # others we just append the term itself to the hierarchy. This allows for
     # words like DATA or TRACKING to be injected into the hierarchy without much
@@ -802,7 +803,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (11);
+insert into schema_version(schema_version) values (12);
 
 --
 -- Table structure for table `assembly`
@@ -812,6 +813,7 @@ DROP TABLE IF EXISTS `assembly`;
 CREATE TABLE `assembly` (
   `assembly_id` smallint(5) unsigned NOT NULL auto_increment,
   `name` varchar(40) NOT NULL,
+   `reference_size` integer,
   PRIMARY KEY  (`assembly_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -878,6 +880,7 @@ CREATE TABLE `lane` (
   `row_id` int unsigned NOT NULL auto_increment key,
   `lane_id` mediumint(8) unsigned NOT NULL,
   `library_id` smallint(5) unsigned NOT NULL,
+  `seq_request_id` mediumint(8) unsigned NOT NULL,
   `name` varchar(255) NOT NULL default '',
   `hierarchy_name` varchar(255) NOT NULL default '',
   `acc` varchar(40) default NULL,
@@ -904,24 +907,6 @@ CREATE TABLE `lane` (
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 --
--- Table structure for table `request`
---
-
-DROP TABLE IF EXISTS `request`;
-CREATE TABLE `request` (
-  `row_id` int unsigned NOT NULL auto_increment key,
-  `request_id` mediumint(8) unsigned NOT NULL,
-  `library_id` smallint(5) unsigned NOT NULL,
-  `ssid` mediumint(8) unsigned default NULL,
-  `seq_status` enum('unknown','pending','started','passed','failed','cancelled') default 'unknown',
-  `note_id` mediumint(8) unsigned default NULL,
-  `changed` datetime NOT NULL,
-  `latest` tinyint(1) default '0',
-  KEY `request_id` (`request_id`),
-  KEY `ssid` (`ssid`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
---
 -- Table structure for table `library`
 --
 
@@ -929,15 +914,20 @@ DROP TABLE IF EXISTS `library`;
 CREATE TABLE `library` (
   `row_id` int unsigned NOT NULL auto_increment key,
   `library_id` smallint(5) unsigned NOT NULL,
+  `library_request_id` mediumint(8) unsigned NOT NULL,
   `sample_id` smallint(5) unsigned NOT NULL,
   `ssid` mediumint(8) unsigned default NULL,
   `name` varchar(255) NOT NULL default '',
   `hierarchy_name` varchar(255) NOT NULL default '',
-  `prep_status` enum('unknown','pending','started','passed','failed','cancelled') default 'unknown',
+  `prep_status` enum('unknown','pending','started','passed','failed','cancelled','hold') default 'unknown',
   `auto_qc_status` enum('no_qc','passed','failed') default NULL,
   `qc_status` enum('no_qc','pending','passed','failed') default 'no_qc',
-  `insert_size` mediumint(8) unsigned default NULL,
+  `fragment_size_from` mediumint(8) unsigned default NULL,
+  `fragment_size_to` mediumint(8) unsigned default NULL,
   `library_type_id` smallint(5) unsigned default NULL,
+  `library_tag` smallint(5) unsigned,
+  `library_tag_group` smallint(5) unsigned,
+  `library_tag_sequence` varchar(1024),
   `seq_centre_id` smallint(5) unsigned default NULL,
   `seq_tech_id` smallint(5) unsigned default NULL,
   `open` tinyint(1) default '1',
@@ -950,6 +940,70 @@ CREATE TABLE `library` (
   KEY `sample_id` (`sample_id`),
   KEY `library_id` (`library_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `multiplex_pool`
+--
+DROP TABLE IF EXISTS `multiplex_pool`;
+CREATE TABLE `multiplex_pool` (
+  `multiplex_pool_id` mediumint(8) unsigned NOT NULL auto_increment key,
+  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `name` varchar(255) NOT NULL default '',
+  `note_id` mediumint(8) unsigned DEFAULT NULL,
+  KEY `multiplex_pool_id` (`multiplex_pool_id`),
+  KEY `name` (`name`),
+  UNIQUE KEY `ssid` (`ssid`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `library_multiplex_pool`
+--
+DROP TABLE IF EXISTS `library_multiplex_pool`;
+CREATE TABLE `library_multiplex_pool` (
+  `library_multiplex_pool_id` mediumint(8) unsigned NOT NULL auto_increment key,
+  `multiplex_pool_id` smallint(5) unsigned NOT NULL,
+  `library_id` smallint(5) unsigned NOT NULL,
+  KEY `library_multiplex_pool_id` (`library_multiplex_pool_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+
+--
+-- Table structure for table `library_request`
+--
+DROP TABLE IF EXISTS `library_request`;
+CREATE TABLE `library_request` (
+  `row_id` int unsigned NOT NULL auto_increment key,
+  `library_request_id` mediumint(8) unsigned NOT NULL,
+  `sample_id` smallint(5) unsigned NOT NULL,
+  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `prep_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
+  `note_id` mediumint(8) unsigned DEFAULT NULL,
+  `changed` datetime NOT NULL,
+  `latest` tinyint(1) DEFAULT '0',
+  KEY `library_request_id` (`library_request_id`),
+  KEY `ssid` (`ssid`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `seq_request`
+--
+DROP TABLE IF EXISTS `seq_request`;
+CREATE TABLE `seq_request` (
+  `row_id` int unsigned NOT NULL auto_increment key,
+  `seq_request_id` mediumint(8) unsigned NOT NULL,
+  `library_id` smallint(5) unsigned,
+  `multiplex_pool_id` smallint(5) unsigned,
+  `ssid` mediumint(8) unsigned DEFAULT NULL,
+  `seq_type` enum('Single ended sequencing','Paired end sequencing','HiSeq Paired end sequencing') DEFAULT 'Single ended sequencing',
+  `seq_status` enum('unknown','pending','started','passed','failed','cancelled') DEFAULT 'unknown',
+  `note_id` mediumint(8) unsigned DEFAULT NULL,
+  `changed` datetime NOT NULL,
+  `latest` tinyint(1) DEFAULT '0',
+  KEY `seq_request_id` (`seq_request_id`),
+  KEY `ssid` (`ssid`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
 
 --
 -- Table structure for table `library_type`
@@ -1026,7 +1080,7 @@ CREATE TABLE `population` (
 DROP TABLE IF EXISTS `species`;
 CREATE TABLE `species` (
   `species_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL,
+  `name` varchar(255) NOT NULL,
   `taxon_id` mediumint(8) unsigned NOT NULL,
   PRIMARY KEY  (`species_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
@@ -1038,8 +1092,8 @@ CREATE TABLE `species` (
 DROP TABLE IF EXISTS `individual`;
 CREATE TABLE `individual` (
   `individual_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL,
-  `hierarchy_name` varchar(40) NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `hierarchy_name` varchar(255) NOT NULL,
   `alias` varchar(40) NOT NULL,
   `sex` enum('M','F','unknown') default 'unknown',
   `acc` varchar(40) default NULL,
@@ -1059,8 +1113,8 @@ CREATE TABLE `project` (
   `row_id` int unsigned NOT NULL auto_increment key,
   `project_id` smallint(5) unsigned NOT NULL,
   `ssid` mediumint(8) unsigned default NULL,
-  `name` varchar(40) NOT NULL default '',
-  `hierarchy_name` varchar(40) NOT NULL default '',
+  `name` varchar(255) NOT NULL default '',
+  `hierarchy_name` varchar(255) NOT NULL default '',
   `study_id` smallint(5) default NULL,
   `note_id` mediumint(8) unsigned default NULL,
   `changed` datetime NOT NULL,
@@ -1080,7 +1134,10 @@ CREATE TABLE `project` (
 DROP TABLE IF EXISTS `study`;
 CREATE TABLE `study` (
 `study_id` smallint(5) unsigned NOT NULL auto_increment,
+`name` varchar(40) NOT NULL default '',
 `acc` varchar(40) default NULL,
+`ssid` mediumint(8) unsigned default NULL,
+`note_id` mediumint(8) unsigned default NULL,
 PRIMARY KEY  (`study_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -1167,8 +1224,10 @@ DROP VIEW if EXISTS `latest_sample`;
 create view latest_sample as select * from sample where latest=true;
 DROP VIEW if EXISTS `latest_library`;
 create view latest_library as select * from library where latest=true;
-DROP VIEW if EXISTS `latest_request`;
-create view latest_request as select * from request where latest=true;
+DROP VIEW if EXISTS `latest_library_request`;
+create view latest_library_request as select * from library_request where latest=true;
+DROP VIEW if EXISTS `latest_seq_request`;
+create view latest_seq_request as select * from seq_request where latest=true;
 DROP VIEW if EXISTS `latest_lane`;
 create view latest_lane as select * from lane where latest=true;
 DROP VIEW if EXISTS `latest_file`;

@@ -29,6 +29,7 @@ use strict;
 use warnings;
 use Carp qw(cluck confess);
 use VRTrack::Library;
+use VRTrack::Library_request;
 use VRTrack::Individual;
 use VRTrack::Allocations;
 
@@ -86,7 +87,7 @@ sub new_by_name_project {
     if ( $vrtrack->isa('DBI::db') ) { confess "The interface has changed, expected vrtrack reference.\n"; }
     my $dbh = $vrtrack->{_dbh};
     my $history_sql = $class->_history_sql;
-    my $sql = qq[select sample_id from sample where name = ? and project_id = ? $history_sql];
+    my $sql = qq[select sample_id from sample where name=? and project_id = ? $history_sql];
     my $sth = $dbh->prepare($sql);
     
     my $id;
@@ -137,13 +138,6 @@ sub new_by_name_project {
 
 =cut
 
-sub is_name_in_database {
-    # with no create method in core objects, they all inherit from create in
-    # Core_obj, but that tests against is_name_in_database, which wasn't here
-    # before. Since old behaviour here was to not check the name, we just
-    # return 0
-    return 0;
-}
 
 
 ###############################################################################
@@ -374,6 +368,80 @@ sub get_library_by_name {
 }
 
 
+=head2 library requests
+
+  Arg [1]    : None
+  Example    : my $library_requests = $sample->library_requests();
+  Description: Returns a ref to an array of the Library_Reqest objects that are associated with this sample.
+  Returntype : ref to array of VRTrack::Library_Request objects
+
+=cut
+
+sub library_requests {
+    my $self = shift;
+    return $self->_get_child_objects('VRTrack::Library_request');
+}
+
+
+=head2 library_request_ids
+
+  Arg [1]    : None
+  Example    : my $library_request_ids = $sample->library_request_ids();
+  Description: Returns a ref to an array of the library request IDs that are associated with this sample
+  Returntype : ref to array of integer library request IDs
+
+=cut
+
+sub library_request_ids {
+    my $self = shift;
+    return $self->_get_child_ids('VRTrack::Library_request');
+}
+
+
+=head2 add_library_request
+
+  Arg [1]    : library request id
+  Example    : my $newlibrequest = $samp->add_library_request('1234');
+  Description: create a new library request , and if successful, return the object
+  Returntype : VRTrack::Library_Request object
+
+=cut
+
+sub add_library_request {
+    my ($self,$ssid) = @_;
+    return $self->_add_child_object('new_by_ssid','VRTrack::Library_request',$ssid);
+}
+
+
+=head2 get_library_request_by_id
+
+  Arg [1]    : library_request internal id
+  Example    : my $library_request = $sam->get_library_request_by_id(1930);
+  Description: retrieve library_request  object by internal id
+  Returntype : VRTrack::Library_Request object
+
+=cut
+
+sub get_library_request_by_id {
+    my $self = shift;
+    return $self->_get_child_by_field_value('library_requests', 'id', @_);
+}
+
+
+=head2 get_library_request_by_ssid
+
+  Arg [1]    : library_request sequencescape id
+  Example    : my $library_request = $sam->get_library_request_by_ssid(1930);
+  Description: retrieve library request object by sequencescape id
+  Returntype : VRTrack::Library_Request object
+
+=cut
+
+sub get_library_request_by_ssid {
+    my $self = shift;
+    return $self->_get_child_by_field_value('library_requests', 'ssid', @_);
+}
+
 =head2 get_allocated_seq_centres
 
   Arg [1]    : None
@@ -439,7 +507,7 @@ sub is_sanger_sample {
 =cut
 
 sub _get_child_methods {
-    return qw(libraries);
+    return qw(library_requests libraries);
 }
 
 1;

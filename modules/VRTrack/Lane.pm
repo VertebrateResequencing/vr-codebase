@@ -51,7 +51,8 @@ sub fields_dispatch {
     my %fields = %{$self->SUPER::fields_dispatch()};
     %fields = (%fields,
                lane_id           => sub { $self->id(@_)},
-               library_id        => sub { $self->library_id(@_)},
+	       library_id        => sub { $self->library_id(@_)},
+               seq_request_id    => sub { $self->seq_request_id(@_)},
                name              => sub { $self->name(@_)},
                hierarchy_name    => sub { $self->hierarchy_name(@_)},
                acc               => sub { $self->acc(@_)},
@@ -149,6 +150,21 @@ sub fields_dispatch {
 sub library_id {
     my $self = shift;
     return $self->_get_set('library_id', 'number', @_);
+}    
+
+=head2 seq_request_id
+
+  Arg [1]    : seq_request_id (optional)
+  Example    : my $seq_request_id = $lane->seq_request_id();
+	       $lane->seq_request_id('104');
+  Description: Get/Set for ID of a lane
+  Returntype : Internal ID
+
+=cut
+
+sub seq_request_id {
+    my $self = shift;
+    return $self->_get_set('seq_request_id', 'number', @_);
 }
 
 

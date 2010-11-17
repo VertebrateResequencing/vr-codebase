@@ -251,12 +251,33 @@ sub _get_id_by_field_value {
 =cut
 
 sub create {
-    my ($class, $vrtrack, $name) = @_;
+    my ($class, $vrtrack, $id) = @_;
     confess "Need to call with a vrtrack handle" unless $vrtrack;
     confess "The interface has changed, expected vrtrack reference." if $vrtrack->isa('DBI::db');
     
     my $dbh = $vrtrack->{_dbh};
     my $table = $class->_class_to_table;
+
+    # Small hack.  This sub assumes that if a 3rd param has been passed
+    # then it is a name, but create can be called by
+    # Table_obj->_add_child_object, which takes identifiers that are not
+    # necessarily names (e.g. ssid for library_request).  It would be nice
+    # for this create to Do The Right Thing for each type of identifier
+    # with explicit setting of identifier type, but for now we'll just
+    # assume that if we have an identifier and can->name, it's a name, if
+    # we can't name but can->ssid, it's an ssid, otherwise drop it.  jws
+    # 2010-09-30
+
+    my ($name, $ssid);
+    if ($class->can('name')){
+        $name = $id;
+    }
+    elsif ($class->can('ssid')){
+        $ssid = $id;
+    }
+    else {
+        # id gets ignored
+    }
     
     # prevent adding an object with an existing name, if name supplied. In case of mapstats, the name is void
     if ($name && $class->is_name_in_database($vrtrack, $name, $name)){
@@ -283,14 +304,21 @@ sub create {
             $hierarchy_name =~ s/\W+/_/g;
         }
 	
-        $name = qq[name='$name', ];
+        $name = qq[name='$name' ];
         if ($hierarchy_name) {
-            $name .= qq[hierarchy_name='$hierarchy_name', ];
+            $name .= qq[, hierarchy_name='$hierarchy_name' ];
         }
     }
-    $name ||= '';
     
-    $query = qq[UPDATE $table SET ${table}_id=$next_id, $name changed=now(), latest=true WHERE row_id=$next_id];
+    $query = qq[UPDATE $table SET ${table}_id=$next_id];
+    if ($name){
+        $query .= qq[, $name ];     # add name, hierarchy_name clause
+    }
+    elsif ($ssid){
+        $query .= qq[, ssid=$ssid ]; # add ssid clause
+    }
+
+    $query .= qq[, changed=now(), latest=true WHERE row_id=$next_id];
     $sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
     $sth->execute or confess qq[The query "$query" failed: $!];
     

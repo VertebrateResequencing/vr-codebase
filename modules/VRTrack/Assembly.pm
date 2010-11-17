@@ -9,6 +9,7 @@ VRTrack::Assembly - Sequence Tracking Assembly object
 
     my $id      = $assembly->id();
     my $name    = $assembly->name();
+    my $reference_size = $assembly->reference_size();
 
 =head1 DESCRIPTION
 
@@ -64,7 +65,8 @@ sub new {
 sub fields_dispatch {
     my $self = shift;
     return {assembly_id => sub { $self->id(@_)},
-            name        => sub { $self->name(@_)}};
+            name        => sub { $self->name(@_)},
+            reference_size => sub { $self->reference_size(@_)}};
 }
 
 
@@ -130,6 +132,20 @@ sub create {
 
 =cut
 
+=head2 reference_size
+
+    Arg [1]     : reference_size (optional)
+    Example     : my $reference_size = $spp->reference_size();
+                  $spp->reference_size(3000000);
+    Description : Get/Set the reference size for this species
+    Returntype  : integer
+
+=cut
+
+sub reference_size {
+    my $self = shift;
+    return $self->_get_set('reference_size', 'number', @_);
+}
 
 =head2 update
 
