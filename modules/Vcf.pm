@@ -202,24 +202,26 @@ sub open
     my ($self,%args) = @_;
     $self->close();
 
-    if ( !exists($$self{file}) ) 
+    if ( !exists($$self{file}) or !defined($$self{file}) ) 
     {
         $$self{fh} = *STDIN;
     }
-    elsif ( !($$self{file}=~/\.gz$/i) )
-    {
-        open($$self{fh},'<',$$self{file}) or $self->throw("$$self{file}: $!");
-    }
     else
     {
-        if ( exists($args{region}) && defined($args{region}) )
+        my $cmd = "<$$self{file}";
+        if ( -e $$self{file} && $$self{file}=~/\.gz/i )
         {
-            open($$self{fh},"tabix $$self{file} $args{region} |") or $self->throw("tabix $$self{file}: $!");
+            if ( exists($args{region}) && defined($args{region}) )
+            {
+                $cmd = "tabix $$self{file} $args{region} |";
+            }
+            else { $cmd = "zcat $$self{file} |"; } 
         }
-        else
+        elsif ( $$self{file}=~m{^(?:http|ftp)://} )
         {
-            open($$self{fh},"zcat $$self{file} |") or $self->throw("$$self{file}: $!");
+            $cmd = "tabix $$self{file} " . (defined($args{region})?$args{region}:'') .' |';
         }
+        open($$self{fh},$cmd) or $self->throw("$cmd: $!");
     }
 
     if ( !exists($args{parse_header}) or $args{parse_header} )
