@@ -79,14 +79,14 @@ our $actions = [{ name     => 'create_hierarchy',
                   action   => \&create_hierarchy,
                   requires => \&create_hierarchy_requires, 
                   provides => \&create_hierarchy_provides },
-                { name     => 'library_merge',
-                  action   => \&library_merge,
-                  requires => \&library_merge_requires, 
-                  provides => \&library_merge_provides },
                 { name     => 'tag_strip',
                   action   => \&tag_strip,
                   requires => \&tag_strip_requires, 
                   provides => \&tag_strip_provides },
+                { name     => 'library_merge',
+                  action   => \&library_merge,
+                  requires => \&library_merge_requires, 
+                  provides => \&library_merge_provides },
                 { name     => 'lib_markdup',
                   action   => \&lib_markdup,
                   requires => \&lib_markdup_requires, 
@@ -110,7 +110,6 @@ our $actions = [{ name     => 'create_hierarchy',
 
 our %options = (do_cleanup => 0,
                 do_sample_merge => 0,
-                tag_strip => { strip => [qw(OQ XM XG XO)] },
                 simultaneous_merges => 200,
                 bsub_opts => '',
                 dont_wait => 1);
@@ -125,8 +124,10 @@ our %options = (do_cleanup => 0,
            lane_bams => fofn (REQUIRED; a file listing all the bams you want
                               to merge)
            
-           tag_strip => { strip => [qw(OQ XM XG XO)] } (default as shown;
-                          args as per VertRes::Utils::Sam::tag_strip)
+           tag_strip => { strip => [qw(OQ XM XG XO)] } (default do not strip any
+                          tags; args as per VertRes::Utils::Sam::tag_strip;
+                          unlike that method, this pipeline does not allow you
+                          to specify no args and so you cannot strip all tags)
            do_cleanup => boolean (default false: don't do the cleanup action)
            simultaneous_merges => int (default 200; the number of merge jobs to
                                        do at once - limited to avoid IO
@@ -149,6 +150,11 @@ sub new {
     
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
+    
+    $self->{do_tag_strip} = 0;
+    if (defined $self->{tag_strip} && (defined $self->{tag_strip}->{strip} || defined $self->{tag_strip}->{keep})) {
+        $self->{do_tag_strip} = 1;
+    }
     
     return $self;
 }
@@ -228,6 +234,110 @@ sub create_hierarchy {
     return $self->{Yes};
 }
 
+=head2 tag_strip_requires
+
+ Title   : tag_strip_requires
+ Usage   : my $required_files = $obj->tag_strip_requires('/path/to/lane');
+ Function: Find out what files the tag_strip action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub tag_strip_requires {
+    my $self = shift;
+    return ['.hierarchy_made'];
+}
+
+=head2 tag_strip_provides
+
+ Title   : tag_strip_provides
+ Usage   : my $provided_files = $obj->tag_strip_provides('/path/to/lane');
+ Function: Find out what files the tag_strip action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub tag_strip_provides {
+    my $self = shift;
+    return $self->{do_tag_strip} ? ['.tag_strip_done'] : ['.hierarchy_made'];
+}
+
+=head2 tag_strip
+
+ Title   : tag_strip
+ Usage   : $obj->tag_strip('/path/to/lane', 'lock_filename');
+ Function: Strips unecessary tags from each record of the library level bam
+           file.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub tag_strip {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    my $fofn = $self->{fsu}->catfile($lane_path, '.hierarchy_made');
+    my @files = $self->{io}->parse_fofn($fofn, $lane_path);
+    my $verbose = $self->verbose();
+    
+    my $tag_strip_args = '';
+    foreach my $type ('strip', 'keep') {
+        my $vals = $self->{tag_strip}->{$type} || next;
+        $tag_strip_args .= " $type => [qw(@{$vals})]";
+    }
+    $tag_strip_args || $self->throw("No proper tag_strip args detected, is your config file OK?");
+    
+    my @strip_bams;
+    foreach my $lane_bam (@files) {
+        $lane_bam = $self->{fsu}->catfile($lane_path, $lane_bam);
+        my($basename, $path) = fileparse($lane_bam);
+        
+        my $strip_bam = $lane_bam;
+        $strip_bam =~ s/\.bam$/.strip.bam/;
+        push(@strip_bams, $strip_bam);
+        next if -e $strip_bam;
+        
+        # if a higher-level bam already exists, don't repeat making this level
+        # bam if we deleted it
+        next if $self->_skip_if_higher_level_bam_present($path);
+        next unless -s $lane_bam;
+        
+        my $job_name = $self->{prefix}.'tag_strip';
+        $self->archive_bsub_files($path, $job_name);
+        $job_name = $self->{fsu}->catfile($path, $job_name);
+        
+        LSF::run($action_lock, $lane_path, $job_name, $self,
+                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->tag_strip(qq[$lane_bam], qq[$strip_bam], $tag_strip_args) || die qq[tag_strip failed for $lane_bam\n];"});
+    }
+    
+    my $out_fofn = $self->{fsu}->catfile($lane_path, '.tag_strip_expected');
+    open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
+    foreach my $out_bam (@strip_bams) {
+        print $ofh $out_bam, "\n";
+    }
+    my $expected = @strip_bams;
+    print $ofh "# expecting $expected\n";
+    close($ofh);
+    
+    return $self->{No};
+}
+
+sub _skip_if_higher_level_bam_present {
+    my ($self, $path) = @_;
+    
+    my @dirs = File::Spec->splitdir($path);
+    pop(@dirs);
+    pop(@dirs);
+    my $higher_bam = File::Spec->catfile(@dirs, 'raw.bam'); #*** we should check the other possible names of library-level bams as well...
+    if ($self->{fsu}->file_exists($higher_bam) && ! -l $higher_bam) {
+        return 1;
+    }
+    
+    return 0;
+}
+
 =head2 library_merge_requires
 
  Title   : library_merge_requires
@@ -240,7 +350,7 @@ sub create_hierarchy {
 
 sub library_merge_requires {
     my $self = shift;
-    return ['.hierarchy_made'];
+    return $self->{do_tag_strip} ? ['.tag_strip_done'] : ['.hierarchy_made'];
 }
 
 =head2 library_merge_provides
@@ -273,117 +383,13 @@ sub library_merge {
     
     $self->merge_up_one_level($lane_path,
                               $action_lock,
-                              '.hierarchy_made',
+                              $self->{do_tag_strip} ? '.tag_strip_done' : '.hierarchy_made',
                               undef,
                               'library_merge',
                               '.library_merge_expected',
                               'long');
     
     return $self->{No};
-}
-
-
-=head2 tag_strip_requires
-
- Title   : tag_strip_requires
- Usage   : my $required_files = $obj->tag_strip_requires('/path/to/lane');
- Function: Find out what files the tag_strip action needs before it will run.
- Returns : array ref of file names
- Args    : lane path
-
-=cut
-
-sub tag_strip_requires {
-    my $self = shift;
-    return ['.library_merge_done'];
-}
-
-=head2 tag_strip_provides
-
- Title   : tag_strip_provides
- Usage   : my $provided_files = $obj->tag_strip_provides('/path/to/lane');
- Function: Find out what files the tag_strip action generates on success.
- Returns : array ref of file names
- Args    : lane path
-
-=cut
-
-sub tag_strip_provides {
-    my $self = shift;
-    return ['.tag_strip_done'];
-}
-
-=head2 tag_strip
-
- Title   : tag_strip
- Usage   : $obj->tag_strip('/path/to/lane', 'lock_filename');
- Function: Strips unecessary tags from each record of the library level bam
-           file.
- Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
- Args    : lane path, name of lock file to use
-
-=cut
-
-sub tag_strip {
-    my ($self, $lane_path, $action_lock) = @_;
-    
-    my $fofn = $self->{fsu}->catfile($lane_path, '.library_merge_done');
-    my @files = $self->{io}->parse_fofn($fofn, $lane_path);
-    my $verbose = $self->verbose();
-    
-    my $tag_strip_args = '';
-    foreach my $type ('strip', 'keep') {
-        my $vals = $self->{tag_strip}->{$type} || next;
-        $tag_strip_args .= " $type => [qw(@{$vals})]";
-    }
-    
-    my @strip_bams;
-    foreach my $merge_bam (@files) {
-        $merge_bam = $self->{fsu}->catfile($lane_path, $merge_bam);
-        my($basename, $path) = fileparse($merge_bam);
-        
-        my $strip_bam = $merge_bam;
-        $strip_bam =~ s/\.bam$/.strip.bam/;
-        push(@strip_bams, $strip_bam);
-        next if -e $strip_bam;
-        
-        # if a higher-level bam already exists, don't repeat making this level
-        # bam if we deleted it
-        next if $self->_skip_if_higher_level_bam_present($path);
-        next unless -s $merge_bam;
-        
-        my $job_name = $self->{prefix}.'tag_strip';
-        $self->archive_bsub_files($path, $job_name);
-        $job_name = $self->{fsu}->catfile($path, $job_name);
-        
-        LSF::run($action_lock, $lane_path, $job_name, $self,
-                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->tag_strip(qq[$merge_bam], qq[$strip_bam], $tag_strip_args) || die qq[tag_strip failed for $merge_bam\n];"});
-    }
-    
-    my $out_fofn = $self->{fsu}->catfile($lane_path, '.tag_strip_expected');
-    open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
-    foreach my $out_bam (@strip_bams) {
-        print $ofh $out_bam, "\n";
-    }
-    my $expected = @strip_bams;
-    print $ofh "# expecting $expected\n";
-    close($ofh);
-    
-    return $self->{No};
-}
-
-sub _skip_if_higher_level_bam_present {
-    my ($self, $path) = @_;
-    
-    my @dirs = File::Spec->splitdir($path);
-    pop(@dirs);
-    pop(@dirs);
-    my $higher_bam = File::Spec->catfile(@dirs, 'raw.bam');
-    if ($self->{fsu}->file_exists($higher_bam) && ! -l $higher_bam) {
-        return 1;
-    }
-    
-    return 0;
 }
 
 =head2 lib_markdup_requires
@@ -398,7 +404,7 @@ sub _skip_if_higher_level_bam_present {
 
 sub lib_markdup_requires {
     my $self = shift;
-    return ['.tag_strip_done'];
+    return ['.library_merge_done'];
 }
 
 =head2 lib_markdup_provides
@@ -429,7 +435,7 @@ sub lib_markdup_provides {
 sub lib_markdup {
     my ($self, $lane_path, $action_lock) = @_;
     
-    my $fofn = $self->{fsu}->catfile($lane_path, '.tag_strip_done');
+    my $fofn = $self->{fsu}->catfile($lane_path, '.library_merge_done');
     my @files = $self->{io}->parse_fofn($fofn, $lane_path);
     my $verbose = $self->verbose();
     
@@ -524,7 +530,7 @@ sub extract_intervals {
     
     my @extract_bams;
     
-    # ... makes .strip.markdup.intervals.bam
+    # ... makes *.markdup.intervals.bam files
     
     my $out_fofn = $self->{fsu}->catfile($lane_path, '.extract_intervals_done');
     open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
@@ -847,8 +853,7 @@ sub cleanup_provides {
 
  Title   : cleanup
  Usage   : $obj->cleanup('/path/to/lane', 'lock_filename');
- Function: Unlink all the pipeline-related files (_*) in a lane, as well
-           as the .sai files and split directory.
+ Function: Unlink all the pipeline-related files (_*) in a lane.
            NB: do_cleanup => 1 must have been supplied to new();
  Returns : $VertRes::Pipeline::Yes
  Args    : lane path, name of lock file to use
@@ -894,27 +899,36 @@ sub is_finished {
         my $done_file = $self->{fsu}->catfile($lane_path, ".${action_name}_done");
         $self->_merge_check($expected_file, $done_file, $lane_path);
         
-        if (($action_name eq 'lib_markdup' || $action_name eq 'extract_intervals' || $action_name eq 'tag_strip') && $not_yet_done && -s $done_file) {
-            # we've just completed a non-merge operation; delete the original
-            # bams to save space
-            my $replace;
-            if ($action_name eq 'lib_markdup') {
-                $replace = 'markdup';
+        if ($not_yet_done && -s $done_file) {
+            if ($action_name eq 'lib_markdup' || $action_name eq 'extract_intervals') {
+                # we've just completed a non-merge operation; delete the
+                # original bams to save space
+                my $replace;
+                if ($action_name eq 'lib_markdup') {
+                    $replace = 'markdup';
+                }
+                elsif ($action_name eq 'extract_intervals') {
+                    $replace = 'intervals';
+                }
+                
+                my @files = $self->{io}->parse_fofn($done_file);
+                foreach my $file (@files) {
+                    my $previous = $file;
+                    $previous =~ s/\.$replace.bam$/.bam/;
+                    if (-s $file && -s $previous) {
+                        #unlink($previous);
+                        move($previous, "$previous.deleted");
+                    }
+                }
             }
-            elsif ($action_name eq 'extract_intervals') {
-                $replace = 'intervals';
-            }
-            else {
-                $replace = 'strip';
-            }
-            
-            my @files = $self->{io}->parse_fofn($done_file);
-            foreach my $file (@files) {
-                my $previous = $file;
-                $previous =~ s/\.$replace.bam$/.bam/;
-                if (-s $file && -s $previous) {
-                    #unlink($previous);
-                    move($previous, "$previous.deleted");
+            elsif ($action_name eq 'library_merge') {
+                # we've just completed the library merge; delete the tag_strip
+                # bams
+                my $tag_done_file = $self->{fsu}->catfile($lane_path, ".tag_strip_done");
+                my @files = $self->{io}->parse_fofn($tag_done_file);
+                foreach my $file (@files) {
+                    #unlink($file);
+                    move($file, "$file.deleted");
                 }
             }
         }
