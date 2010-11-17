@@ -604,7 +604,7 @@ sub platform_merge {
 
 sub sample_merge_requires {
     my $self = shift;
-    return ['.create_release_files_done'];
+    return ['.platform_merge_done'];
 }
 
 =head2 sample_merge_provides
