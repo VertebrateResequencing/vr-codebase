@@ -24,7 +24,7 @@ use strict;
 use warnings;
 no warnings 'uninitialized';
 BEGIN { push(@INC,qw(/software/solexa/lib/site_perl/5.8.8)) }
-use npg::api::run_lane;
+use npg::api::run_lane; # for npg qc
 use Sfind::Fastq;
 
 =head2 new
@@ -282,6 +282,7 @@ sub run_lane {
     return $self->{'run_lane'};
 }
 
+
 =head2 fastq
 
   Arg [1]    : None
@@ -335,7 +336,7 @@ sub fastq_filenames {
 
   Arg [1]    : fastq filename, including path
   Example    : my $fastqfile = $lane->get_fastq_by_filename('/fuse/mpsafs/runs/1378/1378_s_1.fastq);
-  Description: retrieve Sfind::Fastq object by id
+  Description: retrieve Sfind::Fastq object by file location 
   Returntype : Sfind::Fastq object
 
 =cut

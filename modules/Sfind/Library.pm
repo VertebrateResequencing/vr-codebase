@@ -9,17 +9,9 @@ Sfind::Library - Sequence Tracking Library object
     #get arrayref of requests on a library
     my $reqs = $library->requests();
 
-    #get arrayref of lanes from a library
-    my $lanes = $library->lanes();
-    
-    Note that while the hierarchy should go library->request->lane
-    the link between request and lane is often broken, so the two
-    sets can't always be correlated.  This is why this object also
-    provides direct access to lanes.
-    
     my $id = $library->id();
     my $name = $library->name();
-    my $sequenced_bp = $library->sequenced_bases();
+
 
 =head1 DESCRIPTION
 
@@ -36,7 +28,7 @@ jws@sanger.ac.uk
 use strict;
 use warnings;
 no warnings 'uninitialized';
-use Sfind::Request;
+use Sfind::Seq_Request;
 use Sfind::Lane;
 
 =head2 new
@@ -56,83 +48,173 @@ sub new {
     bless ($self, $class);
     $self->{_dbh} = $dbh;
 
-    # get item_information values
-    my $sql = qq[select item_name, param, value from item_information where item_id = ?];
-    my $sth = $self->{_dbh}->prepare($sql);
-    $sth->execute($id);
-    my ($name, $param, $value);
-    $sth->bind_columns (\$name, \$param, \$value);
-    while ($sth->fetch) {
-	$self->{'_data'}{$param} = $value;
-    }
-
-    $name =~ s/\s+$//;  # trim trailing whitespace
     $self->id($id);
+    
+    # name
+    my $sql = qq[select name from assets where asset_id=?];
+    my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($id));
+    unless ($id_ref){
+        die "No name for asset $id";
+    }
+    my $name = $id_ref->{name};
+    $name =~ s/\s+$//;  # trim trailing whitespace
+
     # 2010-10-22 problem with warehouse - item_information is missing.
     # So, let's put in a hack to at least create a library if there is no name
     # hopefully it will get auto-fixed when the item_information comes back
     $name ||= $id;
+
     $self->name($name);
 
-    # get library creation status
-    $sql = qq[select state from requests where item_id=? and type = 'Library creation'];
-    my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($id));
-    $self->prep_status($id_ref->{state});
+    # prep_status
+    $sql = qq[select state from requests_new where target_asset_id=?];
+    $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($id));
+    if ($id_ref){
+        $self->prep_status($id_ref->{state});
+    }
+
+
+    # Are we a tagged library?
+    # If so, we should have two parents - a sample, and a taginstance.
+    # Check for taginstance
+    $sql = qq[  select count(*) as count
+                from assets 
+                join asset_links on (assets.asset_id=asset_links.parent_id)
+                where assets.asset_type='TagInstance'
+                and asset_links.child_id=?];
+
+    $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($id));
+    
+    if ($id_ref->{count}){
+        # This is a tagged library.
+        $self->is_tagged(1);
+
+        # retrieve multiplex assets, tag sequence, tag id and tag group
+        # (same tag id can be in multiple tag groups)
+        $sql = qq[select distinct asset_id,tag_id,tag_group_id,sequence from  multiplex_information where library_asset_id=?];
+ 	my $sth = $self->{_dbh}->prepare($sql);
+	$sth->execute($id);
+        my @mplex_assets;
+        while (my $mplex = $sth->fetchrow_hashref) {
+            push @mplex_assets, $mplex->{'asset_id'};
+            if ($self->tag_id){
+                unless ($self->tag_id == $mplex->{'tag_id'}){
+                    die "Library $id has multiple different tag ids";
+                }
+            }
+            else {
+                $self->tag_id($mplex->{'tag_id'});
+                $self->tag_group_id($mplex->{'tag_group_id'});
+                $self->tag_sequence($mplex->{'sequence'});
+            }
+        }
+        $self->multiplex_pool_asset_ids(\@mplex_assets);
+    }
+
+
+    # populate _data for things like type and fragment_size from the library
+    # creation request id in the property_information table:
+    # get request id
+    $sql = qq[select request_id from requests_new where target_asset_id=?];
+    #warn $id;
+    my $req_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($id));
+    my $req_id = $req_ref->{'request_id'};
+    if ($req_id){
+        # get property information
+        $sql = qq[select `key`, value from property_information where obj_type='request' and obj_id = ?];
+        my $sth = $self->{_dbh}->prepare($sql);
+        $sth->execute($req_id);
+        my ($key, $value);
+        $sth->bind_columns ( \$key, \$value);
+        while ($sth->fetch) {
+            $self->{'_data'}{$key} = $value;
+        }
+    }
+
+    # if the above hasn't returned anything (i.e. for some pulldown libraries
+    # ) fall back to getting the data from the asset_information table
+    unless ($self->{'_data'}){
+        $sql = qq[select param, value from asset_information where asset_id = ?];
+        my $sth = $self->{_dbh}->prepare($sql);
+        $sth->execute($id);
+        my ($key, $value);
+        $sth->bind_columns ( \$key, \$value);
+        while ($sth->fetch) {
+            $self->{'_data'}{$key} = $value;
+        }
+    }
+    
+
     return $self;
 }
 
 
 
-=head2 requests
+=head2 seq_requests
 
   Arg [1]    : None
-  Example    : my $requests = $library->requests();
-  Description: Returns a ref to an array of the request objects that are associated with this library.
-  Returntype : ref to array of Sfind::Request objects
+  Example    : my $seq_requests = $library->seq_requests();
+  Description: Returns a ref to an array of the seq_request objects that are associated with this library.
+  Returntype : ref to array of Sfind::Seq_Request objects
 
 =cut
 
-sub requests {
+sub seq_requests {
     my ($self) = @_;
     unless ($self->{'requests'}){
-	my @requests;
-    	foreach my $id (@{$self->request_ids()}){
-	    my $obj = $self->get_request_by_id($id);
-	    push @requests, $obj if $obj->status;
+	my @seq_requests;
+    	foreach my $id (@{$self->seq_request_ids()}){
+	    my $obj = $self->get_seq_request_by_id($id);
+	    push @seq_requests, $obj if $obj->status;
 	}
-	$self->{'requests'} = \@requests;
+	$self->{'seq_requests'} = \@seq_requests;
     }
 
-    return $self->{'requests'};
+    return $self->{'seq_requests'};
 }
 
 
-=head2 request_ids
+=head2 seq_request_ids
 
   Arg [1]    : None
-  Example    : my $request_ids = $library->request_ids();
-  Description: Returns a ref to an array of the request IDs that are associated with this library
-  Returntype : ref to array of integer request IDs
+  Example    : my $seq_request_ids = $library->seq_request_ids();
+  Description: Returns a ref to an array of the seq_request IDs that are associated with this library, including those on multiplexes that this library is in
+  Returntype : ref to array of integer seq request IDs
 
 =cut
 
-sub request_ids {
+sub seq_request_ids {
     my ($self) = @_;
-    unless ($self->{'request_ids'}){
-	my $sql = qq[select distinct(request_id) from requests where item_id=? and type in ('single ended sequencing','paired end sequencing')];
-	my @requests;
-	my $sth = $self->{_dbh}->prepare($sql);
+    unless ($self->{'seq_request_ids'}){
+        
+        # seq requests can be on this library or a multiplex that this library
+        # is in.
+        my @asset_ids = ($self->id);
 
-	$sth->execute($self->id);
-	foreach(@{$sth->fetchall_arrayref()}){
-	    push @requests, $_->[0];
-	}
-	@requests = sort {$a <=> $b} @requests;
+        if ($self->is_tagged){
+            push @asset_ids,@{$self->multiplex_pool_asset_ids};
+        }
+            
 
-	$self->{'request_ids'} = \@requests;
+        my $sql = qq[select distinct request_id 
+                from 
+                requests_new where asset_id=?
+                and type like '%sequencing'];
+
+        my @seq_requests;
+        my $sth = $self->{_dbh}->prepare($sql);
+            foreach my $asset_id(@asset_ids){
+                $sth->execute($asset_id);
+                foreach(@{$sth->fetchall_arrayref()}){
+                    push @seq_requests, $_->[0];
+                }
+            }
+        @seq_requests = sort {$a <=> $b} @seq_requests;
+
+        $self->{'seq_request_ids'} = \@seq_requests;
     }
  
-    return $self->{'request_ids'};
+    return $self->{'seq_request_ids'};
 }
 
 
@@ -148,7 +230,7 @@ sub request_ids {
 
 sub id {
     my ($self,$id) = @_;
-    if (defined $id and $id ne $self->{'id'}){
+    if (defined $id and $id != $self->{'id'}){
 	$self->{'id'} = $id;
     }
     return $self->{'id'};
@@ -167,35 +249,35 @@ sub id {
 
 sub sample_id {
     my ($self,$sample_id) = @_;
-    if (defined $sample_id and $sample_id ne $self->{'sample_id'}){
+    if (defined $sample_id and $sample_id != $self->{'sample_id'}){
 	$self->{'sample_id'} = $sample_id;
     }
     unless ($self->{'sample_id'}){
-	$self->_load_sample_project_id();
+	$self->_load_sample_study_id();
     }
     return $self->{'sample_id'};
 }
 
 
-=head2 project_id
+=head2 study_id
 
-  Arg [1]    : project_id (optional)
-  Example    : my $project_id = $lib->project_id();
-	       $lib->project_id('104');
-  Description: Get/Set for project ID of a library
+  Arg [1]    : study_id (optional)
+  Example    : my $study_id = $lib->study_id();
+	       $lib->study_id('104');
+  Description: Get/Set for study ID of a library
   Returntype : SequenceScape ID (usu. integer)
 
 =cut
 
-sub project_id {
-    my ($self,$project_id) = @_;
-    if (defined $project_id and $project_id ne $self->{'project_id'}){
-	$self->{'project_id'} = $project_id;
+sub study_id {
+    my ($self,$study_id) = @_;
+    if (defined $study_id and $study_id ne $self->{'study_id'}){
+	$self->{'study_id'} = $study_id;
     }
-    unless ($self->{'project_id'}){
-	$self->_load_sample_project_id();
+    unless ($self->{'study_id'}){
+	$self->_load_sample_study_id();
     }
-    return $self->{'project_id'};
+    return $self->{'study_id'};
 }
 
 
@@ -237,72 +319,20 @@ sub prep_status {
 }
 
 
-=head2 get_request_by_id
+=head2 get_seq_request_by_id
 
   Arg [1]    : request id from sequencescape
-  Example    : my $request = $lib->get_request_by_id(7447);
-  Description: retrieve request object by sequencescape id
-  Returntype : Sfind::Request object
+  Example    : my $seqrequest = $lib->get_seq_request_by_id(7447);
+  Description: retrieve seq_request object by sequencescape id
+  Returntype : Sfind::Seq_Request object
 
 =cut
 
-sub get_request_by_id {
+sub get_seq_request_by_id {
     my ($self, $id) = @_;
-    my $obj = Sfind::Request->new($self->{_dbh},$id);
+    my $obj = Sfind::Seq_Request->new($self->{_dbh},$id);
     return $obj;
 }
-
-
-=head2 lanes
-
-  Arg [1]    : None
-  Example    : my $lanes = $library->lanes();
-  Description: Returns a ref to an array of the lanes objects that have been generated from this library.
-  Returntype : ref to array of Sfind::Lane objects
-
-=cut
-
-sub lanes {
-    my ($self) = @_;
-    unless ($self->{'lanes'}){
-	my @lanes;
-    	foreach my $id (@{$self->lane_ids()}){
-	    push @lanes, $self->get_lane_by_id($id);
-	}
-	$self->{'lanes'} = \@lanes;
-    }
-    return $self->{'lanes'};
-}
-
-
-=head2 lane_ids
-
-  Arg [1]    : None
-  Example    : my $lane_ids = $library->lane_ids();
-  Description: Returns a ref to an array of the lane IDs that are associated with this library.
-  Returntype : ref to array of integer lane IDs
-
-=cut
-
-sub lane_ids {
-    my ($self) = @_;
-    unless ($self->{'lane_ids'}){
-	my $sql = qq[select id_npg_information from npg_information n, library l where l.item_id=? and l.batch_id =n.batch_id and l.position = n.position and (n.id_run_pair=0 or n.id_run_pair is null);];
-	my @lanes;
-	my $sth = $self->{_dbh}->prepare($sql);
-
-	$sth->execute($self->id);
-	foreach(@{$sth->fetchall_arrayref()}){
-	    push @lanes, $_->[0];
-	}
-	@lanes = sort {$a <=> $b} @lanes;
-
-	$self->{'lane_ids'} = \@lanes;
-    }
- 
-    return $self->{'lane_ids'};
-}
-
 
 =head2 get_lane_by_id
 
@@ -318,30 +348,6 @@ sub get_lane_by_id {
     my $obj = Sfind::Lane->new($self->{_dbh},$id);
     return $obj;
 }
-
-
-=head2 sequenced_bases
-
-  Arg [1]    : none
-  Example    : my $tot_bp = $lib->sequenced_bases();
-  Description: the total number of sequenced bases on this library.
-		This is the sum of the bases from the fastq files associated
-		with this library in NPG.
-  Returntype : integer
-
-=cut
-
-sub sequenced_bases {
-    my ($self, $id) = @_;
-    unless ($self->{'seq_bases'}){
-	$self->{'seq_bases'} = 0;
-	foreach my $lane(@{$self->lanes}){
-	    $self->{'seq_bases'} += $lane->basepairs;
-	}
-    }
-    return $self->{'seq_bases'};
-}
-
 
 =head2 fragment_size
 
@@ -382,15 +388,106 @@ sub type {
 }
 
 
-# Internal function to populate sample_id and project_id
-sub _load_sample_project_id {
+=head2 multiplex_pool_asset_ids
+
+  Arg [1]    : multiplex_tube_asset_ids
+  Description: Get/Set for multiplex_tube_asset_ids
+  Returntype : reference to a array
+
+=cut
+
+sub multiplex_pool_asset_ids{
+    my ($self,$multiplex_pool_asset_ids) = @_;
+    if (defined $multiplex_pool_asset_ids and $multiplex_pool_asset_ids ne $self->{'multiplex_pool_asset_ids'}){
+	$self->{'multiplex_pool_asset_ids'} = $multiplex_pool_asset_ids;
+    }
+    return $self->{'multiplex_pool_asset_ids'} || [];
+}
+
+=head2 is_tagged
+
+  Arg [1]    : boolean for whether library is tagged
+  Example    : my $tag = $lib->is_tagged();
+  Description: Get/Set for whether Library is tagged.  The tag is a short sequence tag added to each Library molecule so that it can be sequenced in a multiplex and the resulting mix resolved by the tag sequence.
+  Returntype : boolean
+
+=cut
+
+sub is_tagged {
+    my ($self,$is_tagged) = @_;
+    if (defined $is_tagged and $is_tagged ne $self->{'is_tagged'}){
+	$self->{'is_tagged'} = $is_tagged ? 1 : 0;
+    }
+    return $self->{'is_tagged'};
+}
+
+
+=head2 tag_id
+
+  Arg [1]    : tag_id (optional)
+  Example    : my $tag_id = $lib->tag_id();
+	       $lib->tag_id('104');
+  Description: Get/Set for tag ID of a library
+  Returntype : int
+
+=cut
+
+sub tag_id {
+    my ($self,$tag_id) = @_;
+    if (defined $tag_id and $tag_id != $self->{'tag_id'}){
+	$self->{'tag_id'} = $tag_id;
+    }
+    return $self->{'tag_id'};
+}
+
+
+=head2 tag_group_id
+
+  Arg [1]    : tag_group_id (optional)
+  Example    : my $tag_group_id = $lib->tag_group_id();
+	       $lib->tag_group_id('104');
+  Description: Get/Set for tag group ID.  Can have the same tag id in multiple tag groups.
+  Returntype : int
+
+=cut
+
+sub tag_group_id {
+    my ($self,$tag_group_id) = @_;
+    if (defined $tag_group_id and $tag_group_id != $self->{'tag_group_id'}){
+	$self->{'tag_group_id'} = $tag_group_id;
+    }
+    return $self->{'tag_group_id'};
+}
+
+
+=head2 tag_sequence
+
+  Arg [1]    : tag_sequence (optional)
+  Example    : my $tag_sequence = $lib->tag_sequence();
+	       $lib->tag_sequence('ACTGATCGT');
+  Description: Get/Set for tag sequence.
+  Returntype : string
+
+=cut
+
+sub tag_sequence {
+    my ($self,$tag_sequence) = @_;
+    if (defined $tag_sequence and $tag_sequence ne $self->{'tag_sequence'}){
+	$self->{'tag_sequence'} = $tag_sequence;
+    }
+    return $self->{'tag_sequence'};
+}
+
+
+# Internal function to populate sample_id and study_id
+sub _load_sample_study_id {
     my ($self) = @_;
 
-    my $sql = qq[select sample_id, project_id from requests where item_id = ? and type='Library creation'];
+    my $sql = qq[select sample_id, study_id from requests_new where target_asset_id = ?];
     my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
     if($id_ref){
 	$self->sample_id($id_ref->{sample_id});
-	$self->project_id($id_ref->{project_id});
+	$self->study_id($id_ref->{study_id});
     }
 }
 1;

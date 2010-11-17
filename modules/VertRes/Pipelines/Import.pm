@@ -34,7 +34,6 @@ our $options =
     # Executables
     'fastqcheck'      => 'fastqcheck',
     'mpsa'            => '/software/solexa/bin/mpsa_download',
-
     'bsub_opts'       => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
 };
 
@@ -84,7 +83,18 @@ sub get_fastqs_requires
 sub get_fastqs_provides
 {
     my ($self) = @_;
-    my @provides = ("$$self{lane}_1.fastq.gz");
+    my @provides;
+    
+    if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
+
+    my $vrtrack = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database\n");
+    my $vrlane  = VRTrack::Lane->new_by_name($vrtrack,$$self{lane}) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
+    my $vfiles=$vrlane->files;
+    for my $vfile(@$vfiles){
+        push @provides,$vfile->name.".gz";
+    }
+    
+    #my @provides = ("$$self{lane}_1.fastq.gz");
     return \@provides;
 }
 
@@ -144,8 +154,20 @@ sub get_files
     my @fastqcheck = ();    # to be fastqchecked .. only the new splitted files 
     for my $file (@{$$self{files}})
     {
+        # multiplexed fastq files
+        if ($file=~/#(\d+)/){
+            my $tag=$1;
+            my $realfile=$file;
+            $realfile=~s/#\d+//;
+            Utils::CMD(qq[$$self{mpsa} -c -f $realfile > $file]) unless ( (-e "$file.gz" && -s "$file.gz") || (-e $file && -s $file) );
+            my $extractedfile = $self->filter_fastq_on_tag($file,$tag);
+            Utils::CMD(qq[mv $extractedfile $file]);
+            Utils::CMD(qq[md5sum $file > $file.md5]);
+        }
+        else{
         Utils::CMD(qq[$$self{mpsa} -m -f $file > $file.md5]) unless (-e "$file.md5" && -s "$file.md5");
         Utils::CMD(qq[$$self{mpsa} -c -f $file > $file]) unless ( (-e "$file.gz" && -s "$file.gz") || (-e $file && -s $file) );
+        }
         if ( -e $file )
         {
             # This should always be true if everything goes alright. But if the subroutine is called
@@ -290,6 +312,44 @@ sub split_single_fastq
     return ($fname1,$fname2);
 }
 
+#  Filters the multiplex fastqs and extracts the sequences relevant to a particular tag
+sub filter_fastq_on_tag
+{
+    my ($self,$file,$tag) = @_;
+    my $fname = qq[$file.temp];
+    
+    if ( -e "$fname.gz" ) { return $fname; }
+
+    open(my $fh_in,'<',$file) or $self->throw("$file: $!");
+    open(my $fh_out,'>',$fname) or $self->throw("$fname: $!");
+    while (1)
+    {
+        #@IL5_4821:7:1:1154:8255#0/1
+        #AAAGATTTGCCTGAGTCAGGNTGCGCAAGNNNNANNNNNNNNGNGNATNAANNTTCANAAAATAAAAANNNNNNNN
+        #+
+        #BB@@@@B@@A@AA0@@A=B=&9A=?16@=%$$$5$#########($6)%48$$*/7'%&$'(6$'$&/#$$$$$#$
+        my $id   = <$fh_in> || last;
+        # extract only if the tag matches
+        if($id=~/#(\d+)/ && $1==$tag){
+        my $seq  = <$fh_in> || last;
+        my $sep  = <$fh_in> || last;
+        my $qual = <$fh_in> || last;            
+        print $fh_out $id;
+        print $fh_out $seq;
+        print $fh_out $sep;
+        print $fh_out $qual;
+        }
+        else{
+        # skip the next 3 lines    
+        foreach (1..3){<$fh_in>;}
+        }
+    }
+    close($fh_out);
+    close($fh_in);
+    return $fname;
+}
+
+
 
 sub get_hierarchy_path
 {
@@ -304,14 +364,24 @@ sub get_hierarchy_path
 sub update_db_requires
 {
     my ($self,$lane_path) = @_;
+    #my @requires = ();
+    #my $i = 1;
+    #while ( -e "$lane_path/$$self{lane}_$i.fastq.md5" )
+    #{
+    #    push @requires, "$$self{lane}_$i.fastq.gz";
+    #    $i++;
+    #}
+    #if ( !@requires ) { @requires = ("$$self{lane}_1.fastq.gz"); }
+    
+    
+    if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
     my @requires = ();
-    my $i = 1;
-    while ( -e "$lane_path/$$self{lane}_$i.fastq.md5" )
-    {
-        push @requires, "$$self{lane}_$i.fastq.gz";
-        $i++;
+    my $vrtrack = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database\n");
+    my $vrlane  = VRTrack::Lane->new_by_name($vrtrack,$$self{lane}) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
+    my $vfiles=$vrlane->files;
+    for my $vfile(@$vfiles){
+        push @requires,$vfile->name.".gz";
     }
-    if ( !@requires ) { @requires = ("$$self{lane}_1.fastq.gz"); }
     return \@requires;
 }
 
@@ -357,6 +427,19 @@ sub update_db
 
         $processed_files{$name} = $i;
     }
+    
+    # do the same for every _nonhuman.fastq files
+    $i=0;
+    while (1)
+    {
+        $i++;
+        my $name = "$$self{lane}_$i"."_nonhuman.fastq";
+
+        # Check what fastq files actually exist in the hierarchy
+        if ( ! -e "$lane_path/$name.gz" ) { last; }
+
+        $processed_files{$name} = $i;
+    }    
 
     my $nfiles = scalar keys %processed_files;
     while (my ($name,$type) = each %processed_files)
@@ -424,6 +507,20 @@ sub update_db
         $vrfile->is_latest(0);
         $vrfile->update();
     }
+    
+    # Update the lane stats
+    my $read_len=0;
+    my $raw_reads=0;
+    my $raw_bases=0;
+    my $vfiles=$vrlane->files;
+    for my $vfile(@$vfiles){
+        $raw_reads+=$vfile->raw_reads;
+        $raw_bases+=$vfile->raw_bases;
+        $read_len=$vfile->read_len;
+    }
+    $vrlane->raw_reads($raw_reads);
+    $vrlane->raw_bases($raw_bases);
+    $vrlane->read_len($read_len);
 
     # Finally, change the import status of the lane, so that it will not be picked up again
     #   by the run-pipeline script.

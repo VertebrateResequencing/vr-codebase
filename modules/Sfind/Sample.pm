@@ -28,34 +28,35 @@ use strict;
 use warnings;
 no warnings 'uninitialized';
 use Sfind::Library;
+use Sfind::Library_Request;
 
 =head2 new
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : sample id
-  Arg [3]    : project id
-  Example    : my $samp = Sfind::Sfind->new($dbh, $id, $pid)
-  Description: Returns Sample object by sample_id and project_id
+  Arg [3]    : study id
+  Example    : my $samp = Sfind::Sfind->new($dbh, $id, $sid)
+  Description: Returns Sample object by sample_id and study_id
   Returntype : Sfind::Sample object
 
 =cut
 
 sub new {
-    my ($class,$dbh, $id, $proj_id) = @_;
-    die "Need to call with a db handle, id and project id" unless ($dbh && $id && $proj_id);
+    my ($class,$dbh, $id, $study_id) = @_;
+    die "Need to call with a db handle, id and study id" unless ($dbh && $id && $study_id);
     my $self = {};
     bless ($self, $class);
     $self->{_dbh} = $dbh;
 
-    my $sql = qq[select distinct(sample_name) from requests where sample_id=? and project_id = ?];
-    my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($id, $proj_id));
+    my $sql = qq[select distinct(sample_name) from requests_new where sample_id=? and study_id = ?];
+    my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($id, $study_id));
     if ($id_ref){
 	my $name = $id_ref->{sample_name};
         $name =~ s/\s+$//;  # trim trailing whitespace
 	#warn "Sample name : $name\n";
 	$self->id($id);
 	$self->name($name);
-	$self->project_id($proj_id);
+	$self->study_id($study_id);
     }
     else {
 	return undef;
@@ -64,60 +65,56 @@ sub new {
 }
 
 
+=head2 library_requests
 
-=head2 libraries
-
-  Arg [1]    : None
-  Example    : my $libraries = $sample->libraries();
-  Description: Returns a ref to an array of the sample objects that are associated with this sample.
-  Returntype : ref to array of Sfind::Sample objects
+  Arg [1]    : library name from sequencescape
+  Example    : my $librequests = $sample->library_requests();
+  Description: Returns a ref to an array of the library_request objects that are associated with this sample.
+  Returntype : ref to array of Sfind::Library_Request objects
 
 =cut
 
-sub libraries {
-    my ($self) = @_;
+sub library_requests {
+   my ($self) = @_;
 
-    unless ($self->{'libraries'}){
-	my @libraries;
-    	foreach my $id (@{$self->library_ids()}){
-	    my $obj = Sfind::Library->new($self->{_dbh},$id);
-	    push @libraries, $obj; 
+    unless ($self->{'library_requests'}){
+	my @library_requests;
+    	foreach my $id (@{$self->library_request_ids()}){
+	    my $obj = Sfind::Library_Request->new($self->{_dbh},$id);
+	    push @library_requests, $obj; 
 	}
-	@libraries = sort {$a <=> $b} @libraries;
-	$self->{'libraries'} = \@libraries;
+	@library_requests = sort {$a <=> $b} @library_requests;
+	$self->{'library_requests'} = \@library_requests;
     }
 
-    return $self->{'libraries'};
+    return $self->{'library_requests'};
 }
 
 
-=head2 library_ids
+=head2 library_request_ids
 
   Arg [1]    : None
-  Example    : my $library_ids = $sample->library_ids();
-  Description: Returns a ref to an array of the library IDs that are associated with this sample
-  Returntype : ref to array of integer library IDs
+  Example    : my $library_request_ids = $sample->library_request_ids();
+  Description: Returns a ref to an array of the library request IDs that are associated with this sample
+  Returntype : ref to array of integer library request IDs
 
 =cut
 
-sub library_ids {
+sub library_request_ids {
     my ($self) = @_;
-
-    unless ($self->{'library_ids'}){
-	my $sql = qq[select distinct(item_id) from requests where sample_id=? and project_id = ?];
-	my @libraries;
+    unless ($self->{'library_request_ids'}){
+	my $sql = qq[select request_id as lib_request_id from requests_new where type like '%library creation%' and sample_id=? and study_id=?];
+	my @library_requests;
 	my $sth = $self->{_dbh}->prepare($sql);
-
-	$sth->execute($self->id, $self->project_id);
+	$sth->execute($self->id, $self->study_id);
 	foreach(@{$sth->fetchall_arrayref()}){
-	    push @libraries, $_->[0] if $_->[0];
+	    push @library_requests, $_->[0] if $_->[0];
 	}
-	$self->{'library_ids'} = \@libraries;
+	$self->{'library_request_ids'} = \@library_requests;
     }
     
-    return $self->{'library_ids'};
+    return $self->{'library_request_ids'};
 }
-
 
 =head2 id
 
@@ -138,22 +135,22 @@ sub id {
 }
 
 
-=head2 project_id
+=head2 study_id
 
-  Arg [1]    : project_id (optional)
-  Example    : my $project_id = $samp->project_id();
-	       $samp->project_id('104');
-  Description: Get/Set for Project ID of a sample
+  Arg [1]    : study_id (optional)
+  Example    : my $study_id = $samp->study_id();
+	       $samp->study_id('104');
+  Description: Get/Set for study ID of a sample
   Returntype : SequenceScape ID (usu. integer)
 
 =cut
 
-sub project_id {
-    my ($self,$project_id) = @_;
-    if ($project_id){
-	$self->{'project_id'} = $project_id;
+sub study_id {
+    my ($self,$study_id) = @_;
+    if ($study_id){
+	$self->{'study_id'} = $study_id;
     }
-    return $self->{'project_id'};
+    return $self->{'study_id'};
 }
 
 
@@ -175,47 +172,6 @@ sub name {
     return $self->{'name'};
 }
 
-
-=head2 get_library_by_id
-
-  Arg [1]    : library id from sequencescape
-  Example    : my $library = $sam->get_library_by_id(1930);
-  Description: retrieve library object by sequencescape id
-  Returntype : Sfind::Library object
-
-=cut
-
-sub get_library_by_id {
-    my ($self, $id) = @_;
-    my $obj = Sfind::Library->new($self->{_dbh},$id);
-    return $obj;
-}
-
-
-=head2 get_library_by_name
-
-  Arg [1]    : library name from sequencescape
-  Example    : my $library = $sam->get_library_by_name('NA18909-YRI-1');
-  Description: retrieve library object by sequencescape name
-  Returntype : Sfind::Library object
-
-=cut
-
-sub get_library_by_name {
-    my ($self, $name) = @_;
-    my $sql = qq[select distinct(item_id) from requests where item_name=? and sample_id = ? and project_id=?];
-    my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($name, $self->id, $self->project_id));
-    unless ($id_ref){
-	warn "No library with name $name\n";
-	return undef;
-    }
-
-    my $id = $id_ref->{item_id};
-    return $self->get_library_by_id($id);
-}
-
-
-
 =head2 get_organism_name
 
   Arg [1]    : None
@@ -234,6 +190,8 @@ sub get_organism_name {
 	return undef;
     }
     my $orgname = $org->{value};
+    $orgname =~ s/^\s+//; #remove leading spaces
+    $orgname =~ s/\s+$//; #remove trailing spaces
     return $orgname;
 }
 

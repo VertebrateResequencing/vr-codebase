@@ -1,17 +1,17 @@
-package Sfind::Request; 
+package Sfind::Seq_Request; 
 =head1 NAME
 
 Sfind::Request - Sequence Tracking Request object
 
 =head1 SYNOPSIS
-    my $request= Sfind::Request->new($dbh, $request_id);
+    my $seqrequest= Sfind::Seq_Request->new($dbh, $request_id);
 
-    my $id = $request->id();
-    my $status = $request->status();
+    my $id = $seqrequest->id();
+    my $status = $seqrequest->status();
 
 =head1 DESCRIPTION
 
-An object describing the tracked properties of a request.
+An object describing the tracked properties of a sequencing request.
 
 =head1 CONTACT
 
@@ -30,9 +30,9 @@ use Sfind::Lane;
 
   Arg [1]    : database handle to seqtracking database
   Arg [2]    : request id
-  Example    : my $request= Sfind::Sfind->new($dbh, $id)
-  Description: Returns Request object by request_id
-  Returntype : Sfind::Request object
+  Example    : my $seqrequest= Sfind::Sfind->new($dbh, $id)
+  Description: Returns Seq_Request object by request_id
+  Returntype : Sfind::Seq_Request object
 
 =cut
 
@@ -43,7 +43,9 @@ sub new {
     bless ($self, $class);
     $self->{_dbh} = $dbh;
 
-    my $sql = qq[select item_id, item_name, type, state, created_at, read_length from requests where request_id = ?];
+    my $sql = qq[select requests_new.asset_id,assets.name,requests_new.type,requests_new.state,requests_new.created_at,requests_new.read_length from 
+		    requests_new join assets on (requests_new.asset_id=assets.asset_id)
+		    where requests_new.request_id = ?];
     my $sth = $self->{_dbh}->prepare($sql);
 
     $sth->execute($id);
@@ -74,8 +76,8 @@ sub new {
 =head2 id
 
   Arg [1]    : id (optional)
-  Example    : my $id = $request->id();
-	       $request->id('104');
+  Example    : my $id = $seqrequest->id();
+	       $seqrequest->id('104');
   Description: Get/Set for ID of a request
   Returntype : SequenceScape ID (usu. integer)
 
@@ -93,8 +95,8 @@ sub id {
 =head2 created
 
   Arg [1]    : created (optional)
-  Example    : my $created = $request->created();
-	       $request->created('2008-10-24 11:40:59');
+  Example    : my $created = $seqrequest->created();
+	       $seqrequest->created('2008-10-24 11:40:59');
   Description: Get/Set for created timestamp
   Returntype : timestamp string
 
@@ -112,8 +114,8 @@ sub created {
 =head2 type
 
   Arg [1]    : type (optional)
-  Example    : my $type = $request->type();
-	       $request->type('Paired end sequencing');
+  Example    : my $type = $seqrequest->type();
+	       $seqrequest->type('Paired end sequencing');
   Description: Get/Set for type of request
   Returntype : sequencescape request type string
 
@@ -131,9 +133,12 @@ sub type {
 =head2 library_id
 
   Arg [1]    : library_id (optional)
-  Example    : my $library_id = $request->library_id();
-	       $request->library_id('104');
+  Example    : my $library_id = $seqrequest->library_id();
+	       $seqrequest->library_id('104');
   Description: Get/Set for library ID of a request
+		This is the multiplex_tube_asset_id if the library is a multiplex library
+		else
+		it is the library tube asset id
   Returntype : SequenceScape ID integer
 
 =cut
@@ -150,8 +155,8 @@ sub library_id {
 =head2 library_name
 
   Arg [1]    : library_name (optional)
-  Example    : my $library_name = $request->library_name();
-	       $request->library_name('foo');
+  Example    : my $library_name = $seqrequest->library_name();
+	       $seqrequest->library_name('foo');
   Description: Get/Set for library name of request
   Returntype : SequenceScape name
 
@@ -170,8 +175,8 @@ sub library_name {
 =head2 read_len
 
   Arg [1]    : read_len (optional)
-  Example    : my $read_len = $request->read_len();
-	       $request->read_len(54);
+  Example    : my $read_len = $seqrequest->read_len();
+	       $seqrequest->read_len(54);
   Description: Get/Set for request read_len
   Returntype : integer
 
@@ -189,8 +194,8 @@ sub read_len {
 =head2 status
 
   Arg [1]    : status (optional)
-  Example    : my $status = $request->status();
-	       $request->status('pending');
+  Example    : my $status = $seqrequest->status();
+	       $seqrequest->status('pending');
   Description: Get/Set for request status
   Returntype : string
 
@@ -209,7 +214,7 @@ sub status {
 =head2 lanes
 
   Arg [1]    : None
-  Example    : my $lanes = $request->lanes();
+  Example    : my $lanes = $seqrequest->lanes();
   Description: Returns a ref to an array of the file objects that are associated with this request.
   Returntype : ref to array of Sfind::File objects
 
@@ -233,7 +238,7 @@ sub lanes {
 =head2 lane_ids
 
   Arg [1]    : None
-  Example    : my $lane_ids = $request->lane_ids();
+  Example    : my $lane_ids = $seqrequest->lane_ids();
   Description: Returns a ref to an array of the file names that are associated with this request
   Returntype : ref to array of file names
 
@@ -241,26 +246,43 @@ sub lanes {
 
 sub lane_ids {
     my ($self) = @_;
-	# TODO: add this
-	die "Not implemented yet";
     unless ($self->{'lane_ids'}){
-	my $sql = qq[];
-	my @ids;
+	my $sql = qq[select id_npg_information from npg_information n, library l where l.request_id=? and l.batch_id =n.batch_id and l.position = n.position and (n.id_run_pair=0 or n.id_run_pair is null);];
+	my @lanes;
 	my $sth = $self->{_dbh}->prepare($sql);
 
-	if ($sth->execute($self->id)){
-	    foreach(@{$sth->fetchall_arrayref()}){
-		push @ids, $_->[0];
-	    }
+	$sth->execute($self->id);
+	foreach(@{$sth->fetchall_arrayref()}){
+	    push @lanes, $_->[0];
 	}
-	else{
-	    die(sprintf('Cannot retrieve ids: %s', $DBI::errstr));
-	}
+	@lanes = sort {$a <=> $b} @lanes;
 
-	$self->{'lane_ids'} = \@ids;
+	$self->{'lane_ids'} = \@lanes;
     }
  
     return $self->{'lane_ids'};
+}
+
+=head2 sequenced_bases
+
+  Arg [1]    : none
+  Example    : my $tot_bp = $lib->sequenced_bases();
+  Description: the total number of sequenced bases on this library.
+		This is the sum of the bases from the fastq files associated
+		with this library in NPG.
+  Returntype : integer
+
+=cut
+
+sub sequenced_bases {
+    my ($self, $id) = @_;
+    unless ($self->{'seq_bases'}){
+	$self->{'seq_bases'} = 0;
+	foreach my $lane(@{$self->lanes}){
+	    $self->{'seq_bases'} += $lane->basepairs;
+	}
+    }
+    return $self->{'seq_bases'};
 }
 
 

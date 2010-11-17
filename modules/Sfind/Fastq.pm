@@ -44,11 +44,12 @@ sub new {
     
     my($filename, $path, $suffix) = fileparse($file_loc, qr/\.[^.]*/);
     my $fastqcheck = "$path/$filename.fastqcheck";
-    if (-f $fastqcheck){
-        $self->fastqcheck_location($fastqcheck);
+    # there may not be fastqcheck files for _nonhuman.fastq files
+    if (-f $fastqcheck || $filename=~/nonhuman/){
+	$self->fastqcheck_location($fastqcheck);
     }
     else {
-        die "No fastqcheck file $fastqcheck";
+	die "No fastqcheck file $fastqcheck";
     }
     $self->location($file_loc);
     $self->name($filename.$suffix);
@@ -213,7 +214,16 @@ sub _get_fastqcheck_stats {
     my $readlen = 0;
     my $q_tot = 0;
     my $q_n = 0;
-
+    
+    # if theres no fastqcheck file return 0
+    unless(-f $fqc){
+    $self->{'reads'} = $read_tot;
+    $self->{'basepairs'} = $bp_tot;
+    $self->{'read_len'} = $readlen;
+    $self->{'mean_quality'} = sprintf("%.1f",$mean_q);
+    return;
+    }
+    
     open(my $FQC, $fqc) or die "Can't open $fqc to retrieve readcount: $!\n";
     my $header = <$FQC>;
     chomp $header;
