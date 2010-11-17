@@ -159,10 +159,12 @@ sub get_files
             my $tag=$1;
             my $realfile=$file;
             $realfile=~s/#\d+//;
-            Utils::CMD(qq[$$self{mpsa} -c -f $realfile > $file]) unless ( (-e "$file.gz" && -s "$file.gz") || (-e $file && -s $file) );
+            unless ( (-e "$file.gz" && -s "$file.gz") || (-e $file && -s $file) ){
+            Utils::CMD(qq[$$self{mpsa} -c -f $realfile > $file]); 
             my $extractedfile = $self->filter_fastq_on_tag($file,$tag);
             Utils::CMD(qq[mv $extractedfile $file]);
             Utils::CMD(qq[md5sum $file > $file.md5]);
+            }
         }
         else{
         Utils::CMD(qq[$$self{mpsa} -m -f $file > $file.md5]) unless (-e "$file.md5" && -s "$file.md5");
