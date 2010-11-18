@@ -25,7 +25,7 @@ data => {
 
 # other options you could add to the mergeup.conf data {} section include:
 # do_sample_merge => 1 (default is to platform level only)
-# extract_intervals => {}
+# extract_intervals => {'intervals_file' => 'filename'}
 
 # outside the data {} section you can also specify:
 # previous_merge_root => '/path/to/old/merge_root'
@@ -134,9 +134,11 @@ our %options = (do_cleanup => 0,
                                        problems)
            do_sample_merge => boolean (default false: don't create sample-level
                                        bams)
-           extract_intervals => {} (after marking duplicates, extract reads for
+           extract_intervals => {intervals_file => 'filename'}
+                                    (after marking duplicates, extract reads for
                                     only these intervals; default keep all
-                                    reads)
+                                    reads.  if this option used,
+                                    intervals_file is REQUIRED)
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -147,6 +149,10 @@ sub new {
     
     $self->{hierarchy_root} || $self->throw("hierarchy_root path not supplied, can't continue");
     $self->{lane_bams} || $self->throw("lane_bams fofn not supplied, can't continue");
+    
+    if ($self->{extract_intervals} && !($self->{extract_intervals}->{intervals_file})) {
+        $self->throw("extract_intervals must have intervals_file supplied, can't continue");
+    }
     
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
@@ -522,7 +528,8 @@ sub extract_intervals_provides {
 sub extract_intervals {
     my ($self, $lane_path, $action_lock) = @_;
     
-    $self->throw("extract_intervals not yet implemented");
+    #$self->throw("extract_intervals not yet implemented");
+    print "In sub extract_intervals...\n";
     
     my $fofn = $self->{fsu}->catfile($lane_path, '.lib_markdup_done');
     my @files = $self->{io}->parse_fofn($fofn, $lane_path);
@@ -530,7 +537,30 @@ sub extract_intervals {
     
     my @extract_bams;
     
-    # ... makes *.markdup.intervals.bam files
+    foreach my $markdup_bam (@files){
+        print "main loop, bam: $markdup_bam\n";
+        $markdup_bam = $self->{fsu}->catfile($lane_path, $markdup_bam); 
+        my($basename, $path) = fileparse($markdup_bam);
+        
+        my $extract_bam = $markdup_bam;
+        $extract_bam =~ s/\.bam$/.intervals.bam/;
+        push(@extract_bams, $extract_bam);
+        next if -e $extract_bam;
+        
+        # if a higher-level bam already exists, don't repeat making this level
+        # bam if we deleted it
+        print "higher-level bam exists?\n";
+        next if $self->_skip_if_higher_level_bam_present($path);
+        print "...no\nmarkdup_bam $markdup_bam empty?\n"; 
+        next unless -s $markdup_bam;
+        print "...no\n";
+        my $job_name = $self->{prefix}.'extract_intervals';
+        $self->archive_bsub_files($path, $job_name);
+        $job_name = $self->{fsu}->catfile($path, $job_name);
+        print "bsubbing job...\n"; 
+        LSF::run($action_lock, $lane_path, $job_name, $self,
+                 qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->extract_intervals_from_bam(qq[$markdup_bam], qq[$self->{extract_intervals}->{intervals_file}], qq[$extract_bam]) || die qq[extract_intervals failed for $markdup_bam\n];"~);
+    }
     
     my $out_fofn = $self->{fsu}->catfile($lane_path, '.extract_intervals_done');
     open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
