@@ -20,15 +20,20 @@
 
 use strict;
 use warnings;
-use Module::Build;
+use lib 'build_lib';
+use MyBuild;
 
-Module::Build->new(
+
+my $build = MyBuild->new(
     module_name          => 'VertRes',
     dist_version         => 0,
     license              => 'perl',
     recursive_test_files => 1,
     pm_files             => get_pm_files()
-)->create_build_script;
+);
+
+$build->create_vrconfig_file();
+$build->create_build_script;
 
 exit;
 
