@@ -936,7 +936,7 @@
  # configurable_settings is some hash with required and optional keys and then
  # some data structure to describe what is valid
 
- # get an ordered list of action names:
+ # get a reverse ordered list of action names:
  my @actions = $obj->actions;
 
  # deal with an action:
@@ -974,6 +974,10 @@
     # the next time you come to this loop you'll skip and try the following
     # action. (VertRes::PipelineManager::Manager does all this sort of stuff for
     # you.)
+    
+    # (since @actions are in reverse order, we don't waste time checking all
+    #  the actions if the last action completed - we'll only check the last
+    #  action and do nothing else)
  }
 
  # child classes don't override actions(), required_files() etc., they just
