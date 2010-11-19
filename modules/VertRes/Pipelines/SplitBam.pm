@@ -161,12 +161,6 @@ sub split {
     # specifying the ouptput directory.
     $self->{split_bam_by_sequence_opts}->{output_dir} = $out_dir;
 
-
-    # get the list of expected bams by temporarily changing the options
-    $self->{split_bam_by_sequence_opts}->{check} = 1;
-    my @expected_bams = VertRes::Utils::Sam->new()->split_bam_by_sequence($self->{bam}, %{$self->{split_bam_by_sequence_opts}});
-    $self->{split_bam_by_sequence_opts}->{check} = 0;
-
     # write and bsub perl script to do the split
     my $split_opts_dump = Data::Dumper->new([$self->{split_bam_by_sequence_opts}], ["opts"]);
 
