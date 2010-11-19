@@ -121,10 +121,30 @@ sub new {
     return $self;
 }
 
+=head2 merge_requires
+
+ Title   : merge_requires
+ Usage   : my $required_files = $obj->merge_requires('/path/to/lane');
+ Function: Find out what files the merge action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
 sub merge_requires {
     my $self = shift;
     return [];
 }
+
+=head2 merge_provides
+
+ Title   : merge_provides
+ Usage   : my $provided_files = $obj->merge_provides('/path/to/lane');
+ Function: Find out what files the merge action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
 
 sub merge_provides {
     my ($self, $lane_path) = @_;
