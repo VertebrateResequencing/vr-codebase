@@ -20,6 +20,7 @@ prefix  => '_',
 bams_fofn => 'bams.fofn'
 simultaneous_splits => 5,
 data => {
+    pretend => 0,
     split_bam_by_sequence_opts => {
         only => '^[0-9]',
         check => 1},
@@ -28,12 +29,20 @@ data => {
 #
 # 'root' can be anything, just there to keep run-pipeline happy
 #
-# Currently only option which can go in the data {} section is a
-# hash of options to be passed into VertRes::Utils::Sam::split_bam_by_sequence
-# For possible options, see the usage of this subroutine.
-# The only exception is that output_dir will be ignored; the output directory
-# corresponding to each bam /path/to/foo.bam to be split is
-# /path/to/foo.split
+# Option which can go in the data {} section are:
+
+# split_bam_by_sequence_opts => hash of options to be passed into
+#   VertRes::Utils::Sam::split_bam_by_sequence
+#    For possible options, see the usage of this subroutine.
+#    Exceptions:
+#     1) output_dir will be ignored; the output directory
+#        corresponding to each bam /path/to/foo.bam to be split is
+#        /path/to/foo.split
+#     2) pretend ignored; if you want this, use pretend option
+#        in the data section, not here.
+#
+# pretend => boolean (default false; if set to true, will print the
+#                     bam files which will be made, but not make them)
 #
 # make a pipeline file:
 echo "__SPLITBAM__ splitbam.conf" > splitbam.pipeline
@@ -160,6 +169,25 @@ sub split {
     # override the option output_dir to split_bam_by_sequence
     # specifying the ouptput directory.
     $self->{split_bam_by_sequence_opts}->{output_dir} = $out_dir;
+
+    # if we're only pretending, then just print the list of files
+    if ($self->{pretend}) {
+        my $samtools = VertRes::Utils::Sam->new();
+        $self->{split_bam_by_sequence_opts}->{pretend} = 1;
+        my @expected = $samtools->split_bam_by_sequence($self->{bam}, %{$self->{split_bam_by_sequence_opts}});
+        print "  Files which would be made from $self->{bam}\n";
+        print join "\n\t", @expected, "\n";
+
+        my $done_file = $self->{fsu}->catfile($out_dir, 'split.done');
+        Utils::CMD("touch $done_file");
+        return $self->{Yes};
+    }
+
+    # we override the pretend option to split_bam_by_sequence
+    if ($self->{split_bam_by_sequence_opts}->{pretend}) {
+        $self->{split_bam_by_sequence_opts}->{pretend} = 0;
+        $self->warn("'pretend' option in split_bam_by_sequence_opts must be false, changing to false and continuing...\n");
+    }
 
     # write and bsub perl script to do the split
     my $split_opts_dump = Data::Dumper->new([$self->{split_bam_by_sequence_opts}], ["opts"]);
