@@ -18,7 +18,7 @@ root    => '/abs/path/to/output/dir',
 module  => 'VertRes::Pipelines::MergeAcross',
 prefix  => '_',
 data => {
-    groups => {
+    group_merge => {
         group_1 => 'group_1.fofn',
         group_2 => 'group_2.fofn',
         group_3 => 'group_3.fofn',
@@ -26,6 +26,11 @@ data => {
 }
 # The result of this would be three merged bam files, one for each group.
 # /abs/path/to/output/dir/group_{1,2,3}.bam
+#
+# Merges can be done explicitly as above, or using one of these options
+# instead of group_merge:
+# regex_merge => 'bams.fofn',
+# population_merge => 'bams.fofn', (not yet implemented)
 #
 # Other options which can go in the data {} section are:
 # max_merges => int (default 5, the number of simultanous merges
@@ -43,8 +48,8 @@ run-pipeline -c mergeAcross.pipeline -v
 =head1 DESCRIPTION
 
 A module for merging groups of bam files into one file.  Each group is
-specified by a file of bam filenames.  One merged bam file will be made
-for each fofn, called group_name.bam
+specified by a file of bam filenames or by chromosome name in the
+bam files.
 
 =head1 AUTHOR
 
@@ -64,6 +69,7 @@ use File::Spec;
 use File::Copy;
 use Cwd 'abs_path';
 use LSF;
+use Data::Dumper;
 
 use base qw(VertRes::Pipeline);
 
@@ -86,10 +92,21 @@ our %options = (max_merges => 5,
  Args    : lane_path => '/path/to/dindel_group_dir' (REQUIRED, set by
                          run-pipeline automatically)
 
-           groups => {group1 => 'group1.fofn', ...}  (REQUIRED, specify
+           REQUIRED: one of groups or regex_merge (but not both)
+
+           groups => {group1 => 'group1.fofn', ...}  (specify
                       the bams which wil be grouped together to make merged
                       bam.  Result is one merged bam file per fofn)
                                
+           regex_merge => 'bams.fofn' (file of bam file names, bams will be
+                      merged by matches in basename of file,
+                      using regex_merge_regex option to define the groups.) 
+          
+           regex_merge_regex => 'regular expresion' (default '^chrom(.*?)\.';
+                                 files are grouped by those that match the regex.
+                                 Match is looked for in basename of each the bams.
+                                 Default works for bams made by splitBam pipeline)
+
            max_merges => int (default 5; the number of merges to do at once -
                                      limited to avoid IO problems)
 
@@ -104,20 +121,39 @@ sub new {
     my $self = $class->SUPER::new(%options, actions => $actions, @args);
 
     $self->{lane_path} || $self->throw("lane_path (misnomer; actually dindel group output) directory not supplied, can't continue");
-    $self->{groups} || $self->throw("groups hash not supplied, can't continue");
-    
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     
-    my %bams;
+    my %bam_groups; # will be filled with group_name => array of filenames
 
-    while (my ($group, $fofn) = each(%{$self->{groups}})) {
-        my @files = $self->{io}->parse_fofn($fofn, "/");
-        $bams{$group} = \@files;
+    # work out the bam grouping
+    if ($self->{groups}){
+        while (my ($group, $fofn) = each(%{$self->{groups}})) {
+            my @files = $self->{io}->parse_fofn($fofn, "/");
+            $bam_groups{$group} = \@files;
+        }
+    }
+    elsif ($self->{regex_merge}){
+        $self->{regex_merge_regex} or $self->{regex_merge_regex} = '^chrom(.*?)\.';
+        my @files = $self->{io}->parse_fofn($self->{regex_merge}, "/");
+        foreach my $file (@files) {
+            my ($basename, $path) = fileparse($file);
+            if ($basename =~ m/$self->{regex_merge_regex}/) {
+              unless ($bam_groups{$1}) {
+                  $bam_groups{$1} = ();
+              }
+              push @{$bam_groups{$1}}, $file;
+            }
+            else {
+                $self->throw("No match in regular expression $self->{regex_merge_regex} to bam file $file");
+            }
+        }
+    }
+    else {
+        $self->throw("One of groups, regex_merge must be supplied");
     }
 
-    $self->{bams_by_group} = \%bams;
-
+    $self->{bams_by_group} = \%bam_groups;
     return $self;
 }
 
@@ -189,7 +225,7 @@ sub merge {
         }
             
         if ($$self{max_merges} and $jobs_running >= $$self{max_merges}) {
-            print "Max job limit reached, $$self{max_merges} jobs are running.\n";
+            $self->debug("Max job limit reached, $$self{max_merges} jobs are running.");
             last;
         }
 
