@@ -528,9 +528,6 @@ sub extract_intervals_provides {
 sub extract_intervals {
     my ($self, $lane_path, $action_lock) = @_;
     
-    #$self->throw("extract_intervals not yet implemented");
-    print "In sub extract_intervals...\n";
-    
     my $fofn = $self->{fsu}->catfile($lane_path, '.lib_markdup_done');
     my @files = $self->{io}->parse_fofn($fofn, $lane_path);
     my $verbose = $self->verbose();
@@ -538,7 +535,6 @@ sub extract_intervals {
     my @extract_bams;
     
     foreach my $markdup_bam (@files){
-        print "main loop, bam: $markdup_bam\n";
         $markdup_bam = $self->{fsu}->catfile($lane_path, $markdup_bam); 
         my($basename, $path) = fileparse($markdup_bam);
         
@@ -549,20 +545,16 @@ sub extract_intervals {
         
         # if a higher-level bam already exists, don't repeat making this level
         # bam if we deleted it
-        print "higher-level bam exists?\n";
         next if $self->_skip_if_higher_level_bam_present($path);
-        print "...no\nmarkdup_bam $markdup_bam empty?\n"; 
         next unless -s $markdup_bam;
-        print "...no\n";
         my $job_name = $self->{prefix}.'extract_intervals';
         $self->archive_bsub_files($path, $job_name);
         $job_name = $self->{fsu}->catfile($path, $job_name);
-        print "bsubbing job...\n"; 
         LSF::run($action_lock, $lane_path, $job_name, $self,
                  qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->extract_intervals_from_bam(qq[$markdup_bam], qq[$self->{extract_intervals}->{intervals_file}], qq[$extract_bam]) || die qq[extract_intervals failed for $markdup_bam\n];"~);
     }
     
-    my $out_fofn = $self->{fsu}->catfile($lane_path, '.extract_intervals_done');
+    my $out_fofn = $self->{fsu}->catfile($lane_path, '.extract_intervals_expected');
     open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
     foreach my $out_bam (@extract_bams) {
         print $ofh $out_bam, "\n";
