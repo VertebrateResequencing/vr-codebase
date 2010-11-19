@@ -81,7 +81,11 @@ use base qw(VertRes::Pipeline);
 our $actions = [{ name     => 'split',
                   action   => \&split,
                   requires => \&split_requires,
-                  provides => \&split_provides } ];
+                  provides => \&split_provides },
+                { name     => 'cleanup',
+                  action   => \&cleanup,
+                  requires => \&cleanup_requires,
+                  provides => \&cleanup_provides }] ;
 
 our %options = (simultaneous_splits => 5,
                 bsub_opts => '',);
@@ -176,7 +180,7 @@ sub split {
         $self->{split_bam_by_sequence_opts}->{pretend} = 1;
         my @expected = $samtools->split_bam_by_sequence($self->{bam}, %{$self->{split_bam_by_sequence_opts}});
         print "  Files which would be made from $self->{bam}\n";
-        print join "\n\t", @expected, "\n";
+        print "\t", join "\n\t", @expected, "\n";
 
         my $done_file = $self->{fsu}->catfile($out_dir, 'split.done');
         Utils::CMD("touch $done_file");
@@ -218,9 +222,76 @@ close $ofh;
     return $self->{No};
 }
 
+=head2 cleanup_requires
+
+ Title   : cleanup_requires
+ Usage   : my $required_files = $obj->cleanup_requires('/path/to/lane');
+ Function: Find out what files the cleanup action needs before
+           it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub cleanup_requires {
+    my $self = shift;
+    return [];
+}
+
+=head2 cleanup_provides
+
+ Title   : cleanup_provides
+ Usage   : my $provided_files = $obj->cleanup_provides('/path/to/lane');
+ Function: Find out what files the cleanup action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub cleanup_provides {
+    my ($self, $lane_path) = @_;
+    return [];
+}
+
+=head2 cleanup
+
+ Title   : cleanup
+ Usage   : $obj->cleanup('/path/to/lane', 'lock_filename');
+ Function: Unlink all the pipeline-related files (_*) in a lane.
+           NB: do_cleanup => 1 must have been supplied to new();
+ Returns : $VertRes::Pipeline::Yes
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub cleanup {
+    my ($self, $lane_path, $action_lock) = @_;
+    return $self->{Yes} unless $self->{do_cleanup};
+    
+    my $prefix = $self->{prefix};
+
+    foreach my $file (qw(log job_status)) {
+        unlink($self->{fsu}->catfile($lane_path, $prefix.$file));
+    }
+
+    my $file_base = $self->{fsu}->catfile($lane_path, $prefix);
+
+    foreach my $job_base (qw(split.pl)) {
+        foreach my $suffix ('o', 'e') {
+            unlink("$file_base$job_base.$suffix");
+        }
+    }
+
+   return $self->{Yes};
+}
 
 sub is_finished {
     my ($self, $out_dir, $action) = @_;
+    my $action_name = $action->{name};
+
+    if ($action_name eq 'cleanup') {
+        return $self->{No};
+    }
 
     my $expected_file = $self->{fsu}->catfile($out_dir, '.split_expected');
     my $done_file = $self->{fsu}->catfile($out_dir, 'split.done');
