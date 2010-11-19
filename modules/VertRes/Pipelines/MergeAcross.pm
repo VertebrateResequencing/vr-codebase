@@ -10,7 +10,7 @@ VertRes::Pipelines::MergeAcross - pipeline for merging groups of bam files
 # give one fofn containing all the bam filenames.
 #
 # Make a conf file with root pointing to where you'd like the merged bams, and
-# that specifies the group => fofn mapping.
+# that specifies how to group the bam files.
 # Optional settings also go here.
 #
 # Example mergeAcross.conf:
@@ -18,17 +18,17 @@ root    => '/abs/path/to/output/dir',
 module  => 'VertRes::Pipelines::MergeAcross',
 prefix  => '_',
 data => {
-    group_merge => {
+    groups => {
         group_1 => 'group_1.fofn',
         group_2 => 'group_2.fofn',
         group_3 => 'group_3.fofn',
     },
 }
-# The result of this would be three merged bam files, one for each group.
+# The result of this would be three merged bam files, one for each group:
 # /abs/path/to/output/dir/group_{1,2,3}.bam
 #
 # Merges can be done explicitly as above, or using one of these options
-# instead of group_merge:
+# instead of groups:
 # regex_merge => 'bams.fofn',
 # population_merge => 'bams.fofn', (not yet implemented)
 #
