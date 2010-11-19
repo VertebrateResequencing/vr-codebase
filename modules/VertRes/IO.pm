@@ -442,4 +442,9 @@ sub get_remote_file {
     return $out_file;
 }
 
+sub DESTROY {
+    my $self = shift;
+    $self->close;
+}
+
 1;
