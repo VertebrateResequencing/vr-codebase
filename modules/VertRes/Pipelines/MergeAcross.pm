@@ -212,16 +212,16 @@ sub merge {
         my $jids_file = File::Spec->catfile($work_dir, "$self->{prefix}$group.jids");
         my $perl_out = File::Spec->catfile($work_dir, "$self->{prefix}$group.pl");
         my $status = LSF::is_job_running($jids_file);
-
-        if ($status & $LSF::Error) { 
-            $self->warn("The command failed: $perl_out\n");
-        }
-        elsif ($status & $LSF::Running) {
-            next;
-        } 
-        elsif ($status & $LSF::Done and $$self{fsu}->file_exists($bam_out)) {
+        if ($status & $LSF::Done and $$self{fsu}->file_exists($bam_out)) {
             $jobs_done++;
             next;
+        }
+        elsif ($status & $LSF::Running) {
+            $jobs_running++;
+            next;
+        } 
+        if ($status & $LSF::Error) { 
+            $self->warn("The command failed: $perl_out\n");
         }
             
         if ($$self{max_merges} and $jobs_running >= $$self{max_merges}) {
@@ -256,8 +256,10 @@ rename '$tmp_bam_out', '$bam_out';
 ];
         close $fh;
 
+        my $job_name = "$self->{prefix}$group.pl";
+
         $self->archive_bsub_files($work_dir, "$self->{prefix}$group.pl");
-        LSF::run($jids_file, $work_dir, $perl_out, $self, "perl -w $perl_out");
+        LSF::run($jids_file, $work_dir, $job_name, $self, "perl -w $perl_out");
         print STDERR "    Submitted $perl_out\n"
     }
 
