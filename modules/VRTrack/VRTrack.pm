@@ -996,7 +996,7 @@ CREATE TABLE `seq_request` (
   `multiplex_pool_id` smallint(5) unsigned,
   `ssid` mediumint(8) unsigned DEFAULT NULL,
   `seq_type` enum('Single ended sequencing','Paired end sequencing','HiSeq Paired end sequencing') DEFAULT 'Single ended sequencing',
-  `seq_status` enum('unknown','pending','started','passed','failed','cancelled') DEFAULT 'unknown',
+  `seq_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
   `note_id` mediumint(8) unsigned DEFAULT NULL,
   `changed` datetime NOT NULL,
   `latest` tinyint(1) DEFAULT '0',
