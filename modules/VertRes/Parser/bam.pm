@@ -937,7 +937,6 @@ void next_result(SV* self) {
         else {
             hv_delete(self_hash, "_iter", 5, G_DISCARD);
             hv_delete(self_hash, "_region", 7, G_DISCARD);
-            printf("deleted _iter and _region, next should be a bam_read1\n");
             
             // for some unknown reason just doing bam_read1 from the current
             // position behaves inconsistently and not as expected, so we seek
