@@ -4,9 +4,11 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 25;
+    use Test::Most tests => 32;
     
     use_ok('VertRes::Parser::bam');
+    use_ok('VertRes::Utils::FileSystem');
+    use_ok('VertRes::Wrapper::samtools');
 }
 
 my $pb = VertRes::Parser::bam->new();
@@ -68,6 +70,42 @@ foreach my $region ('Streptococcus_suis:29888-50000', 'Streptococcus_suis:80000-
 }
 is $c, 18, 'getting multiple regions test';
 
+# test writing
+my $fsu = VertRes::Utils::FileSystem->new();
+my $temp_dir = $fsu->tempdir();
+my $out_bam1 = File::Spec->catfile($temp_dir, 'out1.bam');
+my $out_bam2 = File::Spec->catfile($temp_dir, 'out2.bam');
+my $out_bam3 = File::Spec->catfile($temp_dir, 'out3.bam');
+$pb->region('');
+while ($pb->next_result) {
+    $pb->write_result($out_bam1);
+}
+$pb->close;
+is_deeply [get_bam_header($out_bam1)], [get_bam_header($b_file)], 'header of an output file matches the input file';
+is scalar(get_bam_body($out_bam1)), 2000, 'output bam has correct number of lines';
+
+$b_file = File::Spec->catfile('t', 'data', '1kg_lane.bam');
+ok -e $b_file, '1kg bam file we will test with exists';
+$pb = VertRes::Parser::bam->new(file => $b_file);
+my $count = 0;
+$pb->ignore_tags_on_write(qw(OQ XM XG XO));
+while ($pb->next_result) {
+    $count++;
+    if ($count == 1) {
+        $pb->write_result($out_bam2);
+    }
+    elsif ($count == 2) {
+        $pb->write_result($out_bam3);
+    }
+    else {
+        last;
+    }
+}
+undef $pb;
+my @g1k_lines = grep { s/\tOQ:\S+|\tXM:\S+|\tXG:\S+|\tXO:\S+//g } get_bam_body($b_file);
+is_deeply [get_bam_body($out_bam2)], [$g1k_lines[0]], 'ignore_tags_on_write has its effect';
+is_deeply [get_bam_body($out_bam3)], [$g1k_lines[1]], 'we can output multiple files in a single next_result loop';
+
 # hard/soft clipping seq length tests
 $b_file = File::Spec->catfile('t', 'data', 'hard_soft.bam');
 ok -e $b_file, 'hard/soft bam file we will test with exists';
@@ -78,3 +116,30 @@ $pb->next_result;
 is_deeply $rh, { SEQ => 'CCCATAGCCCTATCCCTAACCCTAACCCGAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAAC', SEQ_LENGTH => 76, MAPPED_SEQ_LENGTH => 72}, 'seq length correct both raw and clipped';
 
 exit;
+
+sub get_bam_header {
+    my $bam_file = shift;
+    my $samtools = VertRes::Wrapper::samtools->new(quiet => 1);
+    $samtools->run_method('open');
+    my $bamfh = $samtools->view($bam_file, undef, H => 1);
+    my @header_lines;
+    while (<$bamfh>) {
+        chomp;
+        push(@header_lines, $_);
+    }
+    return @header_lines;
+}
+
+sub get_bam_body {
+    my $bam_file = shift;
+    my $samtools = VertRes::Wrapper::samtools->new(quiet => 1);
+    $samtools->run_method('open');
+    my $bamfh = $samtools->view($bam_file);
+    my @records;
+    while (<$bamfh>) {
+        chomp;
+        next if /^@/;
+        push(@records, $_);
+    }
+    return @records;
+}

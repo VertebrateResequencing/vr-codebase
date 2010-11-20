@@ -17,24 +17,55 @@ my %readgroup_info = $pars->readgroup_info();
 # get the hash reference that will hold the most recently requested result
 my $result_holder = $pars->result_holder();
 
-# loop through the output, getting results
+# just count the number of alignments in the whole bam file:
+my $c = 0;
+while ($pars->next_result()) {
+    $c++;
+}
+
+# unlike other parsers, if you actually want to extract results, you need to
+# specify ahead of time which fields you're interested in:
+$pars->get_fields('QNAME', 'FLAG', 'RG');
 while ($pars->next_result()) {
     # check $result_holder for desired info, eg:
     my $flag = $result_holder->{FLAG};
-    
+
     # get info about a flag, eg:
     my $mapped = $pars->is_mapped($flag);
+
+    print "$result_holder->{QNAME} belongs to readgroup $result_holder->{RG}\n";
 }
 
-# or for speed critical situations, parsing bam records only:
-$pars = VertRes::Parser::sam->new(file => 'in.bam');
-while (my @fields = $pars->get_fields('QNAME', 'FLAG', 'RG')) {
-    # @fields contains the qname, flag and rg tag
-    if ($pars->is_mapped($fields[1])) {
-        # write mapped records out to a new bam, ignoring OQ tags to make the
-        # output smaller
-        $pars->ignore_tags_on_write("OQ");
-        $pars->write("mapped.bam");
+# do an efficient, fast stream through a bam, but only get results in regions of
+# interest:
+foreach my $region ('1:10000-20000', '3:400000-5000000') {
+    $pars->region($region);
+    while ($pars->next_result()) {
+        # ...
+    }
+}
+
+# while going through next_result, you can also write those alignments out to a
+# new bam file, optionally ignoring tags to reduce output file size (and
+# increase speed). Eg. write high quality chr20 reads where both mates of a pair
+# mapped to a new 'chr20.mapped.bam' file, where one of the pair is mapped to
+# a 'chr20.partial.bam' file, and where both are unmapped to a
+# 'chr20.unmapped.bam', ignoring the big OQ tags:
+$pars->region('20');
+$pars->get_fields('FLAG', 'MAPQ');
+$pars->ignore_tags_on_write('OQ');
+while ($pars->next_result) {
+    $rh->{MAPQ} >= 30 || next;
+
+    my $flag = $rh->{FLAG};
+    if ($pars->is_mapped_paired($flag)) {
+        $pars->write_result('chr20.mapped.bam');
+    }
+    elsif ($pars->is_mapped($flag) || $pars->is_mate_mapped($flag)) {
+       $pars->write_result('chr20.partial.bam');
+    }
+    else {
+        $pars->write_result('chr20.unmapped.bam');
     }
 }
 
@@ -83,6 +114,9 @@ sub new {
     
     # unlike normal parsers, our result holder is a hash ref
     $self->{_result_holder} = {};
+    
+    # we set up a hash to store write refs
+    $self->{_writes} = {};
     
     return $self;
 }
@@ -158,7 +192,7 @@ sub close {
         if (defined $self->{"_opened_$fh_id"}) {
             $self->_close_bam($self->{_cbam});
         }
-        while (my ($key, $val) = each %{$self->{writes} || {}}) {
+        while (my ($key, $val) = each %{$self->{_writes} || {}}) {
             $self->_close_bam($val);
         }
     }
@@ -702,8 +736,8 @@ sub get_fields {
  Function: Specify the chromosomal region that next_result() will get alignments
            from. The bam file must have previously been indexed to create a .bai
            file, and the bam must be coordinate sorted.
-           Subsequently setting this undef will make next_result start behaving
-           like normal, continuing from the end of the last specified region.
+           Subsequently setting this to '' will make next_result start behaving
+           like normal, starting from the first alignment.
  Returns : n/a
  Args    : A region specification string (as understood by samtools view)
 
@@ -725,10 +759,10 @@ sub region {
 
 =cut
 
-=head2 write
+=head2 write_result
 
- Title   : write
- Usage   : $obj->write("out.bam");
+ Title   : write_result
+ Usage   : $obj->write_result("out.bam");
  Function: Write the most recent result retrieved with next_result() (not
            just the fields you got - the whole thing) out to a new bam file
            (which will inherit its header from the input bam you're parsing).
@@ -739,26 +773,13 @@ sub region {
 
 =cut
 
-sub write {
-    my ($self, $out_bam) = @_;
-    
-    $self->{_cb} || $self->throw("get_fields() must be called before write()");
-    
-    unless (defined $self->{writes} && defined $self->{writes}->{$out_bam}) {
-        ($self->{writes}->{$out_bam}) = $self->_initialize_obam($out_bam);
-        $self->_write_header($self->{writes}->{$out_bam}, $self->{_chead});
-    }
-    
-    $self->_write($self->{writes}->{$out_bam}, $self->{_cb}, @{$self->{_ignore_tags} || []});
-}
-
 =head2 ignore_tags_on_write
 
  Title   : ignore_tags_on_write
  Usage   : $obj->ignore_tags_on_write(qw(OQ XM XG XO));
- Function: When using get_fields() and prior to calling write(), ignore the
-           given tags so that they will not be output. You only need to call
-           this once (don't put it in your get_fields loop).
+ Function: When using write(), ignore the given tags so that they will not be
+           output. You only need to call this once (don't put it in your
+           next_result loop).
  Returns : n/a
  Args    : list of tags to ignore
 
@@ -792,48 +813,68 @@ void _initialize_bam(SV* self, char* bamfile) {
     Inline_Stack_Done;
 }
 
-void _initialize_obam(SV* self, char* bamfile) {
-    bamFile *bam;
-    bam = bam_open(bamfile, "w");
-    
-    Inline_Stack_Vars;
-    Inline_Stack_Reset;
-    Inline_Stack_Push(newRV_noinc(newSViv(bam)));
-    Inline_Stack_Done;
-}
-
-void _write(SV* self, SV* bam_ref, SV* b_ref, ...) {
-    bamFile *bam;
-    bam = (bamFile*)SvIV(SvRV(bam_ref));
+void write_result(SV* self, char* bamfile) {
+    HV* self_hash;
+    self_hash = (HV*)SvRV(self);
+    if (! hv_exists(self_hash, "_cb", 3)) {
+        return;
+    }
+    SV* b_ref;
+    b_ref = *(hv_fetch(self_hash, "_cb", 3, 0));
     bam1_t *b;
     b = (bam1_t*)SvIV(SvRV(b_ref));
     
-    char *tag;
-    STRLEN tag_length;
-    uint8_t *tag_value;
-    int i;
+    int len;
+    len = strlen(bamfile);
+    if (! len >= 1) {
+        return;
+    }
     
-    Inline_Stack_Vars;
-    Inline_Stack_Reset;
-    for (i = 2; i < Inline_Stack_Items; i++) {
-        tag = SvPV(Inline_Stack_Item(i), tag_length);
-        tag_value = bam_aux_get(b, tag);
-        if (tag_value) {
-            bam_aux_del(b, tag_value);
+    SV* writes_ref;
+    writes_ref = *(hv_fetch(self_hash, "_writes", 7, 0));
+    HV* writes_hash;
+    writes_hash = (HV*)SvRV(writes_ref);
+    bamFile *obam;
+    if (! hv_exists(writes_hash, bamfile, len)) {
+        obam = bam_open(bamfile, "w");
+        hv_store(writes_hash, bamfile, len, newRV_noinc(newSViv(obam)), 0);
+        
+        SV* header_ref;
+        bam_header_t *header;
+        header_ref = *(hv_fetch(self_hash, "_chead", 6, 0));
+        header = (bam_header_t*)SvIV(SvRV(header_ref));
+        bam_header_write(obam, header);
+    }
+    else {
+        SV* obam_ref;
+        obam_ref = *(hv_fetch(writes_hash, bamfile, len, 0));
+        obam = (bamFile*)SvIV(SvRV(obam_ref));
+    }
+    
+    if (hv_exists(self_hash, "_ignore_tags", 12)) {
+        SV* ignore_ref;
+        ignore_ref = *(hv_fetch(self_hash, "_ignore_tags", 12, 0));
+        AV* ignore_array;
+        ignore_array = (AV*)SvRV(ignore_ref);
+        I32* ignore_maxi;
+        ignore_maxi = av_len(ignore_array);
+        
+        if (ignore_maxi >= 0) {
+            char *tag;
+            STRLEN tag_length;
+            uint8_t *tag_value;
+            int i;
+            for (i = 0; i <= ignore_maxi; i++) {
+                tag = SvPV(*(av_fetch(ignore_array, i, 0)), tag_length);
+                tag_value = bam_aux_get(b, tag);
+                if (tag_value) {
+                    bam_aux_del(b, tag_value);
+                }
+            }
         }
     }
-    Inline_Stack_Done;
     
-    bam_write1(bam, b);
-}
-
-void _write_header(SV* self, SV* bam_ref, SV* header_ref) {
-    bamFile *bam;
-    bam = (bamFile*)SvIV(SvRV(bam_ref));
-    bam_header_t *header;
-    header = (bam_header_t*)SvIV(SvRV(header_ref));
-    
-    bam_header_write(bam, header);
+    bam_write1(obam, b);
 }
 
 void _close_bam(SV* self, SV* bam_ref) {
@@ -847,7 +888,7 @@ void next_result(SV* self) {
     self_hash = (HV*)SvRV(self);
     
     if (! hv_exists(self_hash, "_cbam", 5)) {
-        return 0;
+        return;
     }
     SV* bam_ref;
     bam_ref = *(hv_fetch(self_hash, "_cbam", 5, 0));
@@ -894,9 +935,16 @@ void next_result(SV* self) {
             }
         }
         else {
-            ret = bam_read1(bam, b);
             hv_delete(self_hash, "_iter", 5, G_DISCARD);
             hv_delete(self_hash, "_region", 7, G_DISCARD);
+            printf("deleted _iter and _region, next should be a bam_read1\n");
+            
+            // for some unknown reason just doing bam_read1 from the current
+            // position behaves inconsistently and not as expected, so we seek
+            // to the start when region is unset by the user
+            bam_seek(bam,0,0);
+            bam_header_read(bam);
+            ret = bam_read1(bam, b);
         }
     }
     else if (hv_exists(self_hash, "_iter", 5)) {
