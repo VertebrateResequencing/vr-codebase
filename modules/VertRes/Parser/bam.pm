@@ -678,7 +678,6 @@ sub _get_header {
 
 sub get_fields {
     my ($self, @fields) = @_;
-    
     $self->{_fields} = [@fields];
 }
 
@@ -696,11 +695,30 @@ sub get_fields {
 
 =cut
 
+=head2 region
+
+ Title   : region
+ Usage   : $obj->region('3:10000-11000');
+ Function: Specify the chromosomal region that next_result() will get alignments
+           from. The bam file must have previously been indexed to create a .bai
+           file, and the bam must be coordinate sorted.
+           Subsequently setting this undef will make next_result start behaving
+           like normal, continuing from the end of the last specified region.
+ Returns : n/a
+ Args    : A region specification string (as understood by samtools view)
+
+=cut
+
+sub region {
+    my ($self, $region) = @_;
+    $self->{_region} = $region;
+}
+
 =head2 next_result
 
  Title   : next_result
  Usage   : while ($obj->next_result()) { # look in result_holder }
- Function: Access the next line from the bam file.
+ Function: Access the next alignment from the bam file.
  Returns : boolean (false at end of output; check the result_holder for the
            actual result information)
  Args    : n/a
@@ -748,7 +766,6 @@ sub write {
 
 sub ignore_tags_on_write {
     my ($self, @tags) = @_;
-    
     $self->{_ignore_tags} = [@tags];
 }
 
@@ -829,51 +846,94 @@ void next_result(SV* self) {
     HV* self_hash;
     self_hash = (HV*)SvRV(self);
     
-    U32* keylen;
-    keylen = 5;
-    if (! hv_exists(self_hash, "_cbam", keylen)) {
+    if (! hv_exists(self_hash, "_cbam", 5)) {
         return 0;
     }
     SV* bam_ref;
-    bam_ref = *(hv_fetch(self_hash, "_cbam", keylen, 0));
+    bam_ref = *(hv_fetch(self_hash, "_cbam", 5, 0));
     bamFile *bam;
     bam = (bamFile*)SvIV(SvRV(bam_ref));
     
     SV* b_ref;
-    keylen = 3;
-    b_ref = *(hv_fetch(self_hash, "_cb", keylen, 0));
+    b_ref = *(hv_fetch(self_hash, "_cb", 3, 0));
     bam1_t *b;
     b = (bam1_t*)SvIV(SvRV(b_ref));
     
+    int ret;
+    SV* header_ref;
+    bam_header_t *header;
+    bam_iter_t iter;
+    if (hv_exists(self_hash, "_region", 7)) {
+        char* region;
+        STRLEN str_len;
+        region = SvPV(*(hv_fetch(self_hash, "_region", 7, 0)), str_len);
+        if (str_len >= 1) {
+            char* filename;
+            filename = SvPV(*(hv_fetch(self_hash, "_filename", 9, 0)), str_len);
+            bam_index_t *idx = 0;
+            idx = bam_index_load(filename);
+            if (idx == 0) {
+                fprintf(stderr, "region() can only be used when there is a .bai file (none seen for %s).\n", filename);
+                ret = -1;
+            }
+            else {
+                header_ref = *(hv_fetch(self_hash, "_chead", 6, 0));
+                header = (bam_header_t*)SvIV(SvRV(header_ref));
+                int tid, beg, end;
+                bam_parse_region(header, region, &tid, &beg, &end);
+                if (tid < 0) {
+                    fprintf(stderr, "region \"%s\" specifies an unknown reference name. Can't continue.\n", region);
+                    ret = -1;
+                }
+                else {
+                    iter = bam_iter_query(idx, tid, beg, end);
+                    ret = bam_iter_read(bam, iter, b);
+                    hv_store(self_hash, "_iter", 5, newRV_noinc(newSViv(iter)), 0);
+                    hv_delete(self_hash, "_region", 7, G_DISCARD);
+                }
+            }
+        }
+        else {
+            ret = bam_read1(bam, b);
+            hv_delete(self_hash, "_iter", 5, G_DISCARD);
+            hv_delete(self_hash, "_region", 7, G_DISCARD);
+        }
+    }
+    else if (hv_exists(self_hash, "_iter", 5)) {
+        SV* iter_ref;
+        iter_ref = *(hv_fetch(self_hash, "_iter", 5, 0));
+        iter = (bam_iter_t*)SvIV(SvRV(iter_ref));
+        ret = bam_iter_read(bam, iter, b);
+    }
+    else {
+        ret = bam_read1(bam, b);
+    }
+    
+    
     Inline_Stack_Vars;
     Inline_Stack_Reset;
-    if (bam_read1(bam, b) >= 0) {
+    if (ret >= 0) {
         SV* rh_ref;
-        keylen = 14;
-        rh_ref = *(hv_fetch(self_hash, "_result_holder", keylen, 0));
+        rh_ref = *(hv_fetch(self_hash, "_result_holder", 14, 0));
         HV* rh_hash;
         rh_hash = (HV*)SvRV(rh_ref);
         hv_clear(rh_hash);
         
-        keylen = 7;
-        if (hv_exists(self_hash, "_fields", keylen)) {
+        if (hv_exists(self_hash, "_fields", 7)) {
             SV* fields_ref;
-            fields_ref = *(hv_fetch(self_hash, "_fields", keylen, 0));
+            fields_ref = *(hv_fetch(self_hash, "_fields", 7, 0));
             AV* fields_array;
             fields_array = (AV*)SvRV(fields_ref);
             I32* fields_maxi;
             fields_maxi = av_len(fields_array);
             
             if (fields_maxi >= 0) {
-                SV* header_ref;
-                keylen = 6;
-                header_ref = *(hv_fetch(self_hash, "_chead", keylen, 0));
+                header_ref = *(hv_fetch(self_hash, "_chead", 6, 0));
                 
                 uint8_t *tag_value;
                 int type;
                 
                 int32_t tid;
-                bam_header_t *header;
                 uint32_t  *cigar;
                 int cigar_loop;
                 AV *cigar_avref;
