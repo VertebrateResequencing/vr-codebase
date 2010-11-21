@@ -18,7 +18,7 @@ prefix  => '_',
 lane_bams => 'lane_bams.fofn',
 previous_merge_root => '/path/to/previous/merge_root',
 data => {
-    tag_strip => { strip => [qw(OQ XM XG XO)] },
+    tag_strip => [qw(OQ XM XG XO)],
     simultaneous_merges => 200,
     do_cleanup => 1
 }
@@ -112,6 +112,7 @@ our %options = (do_cleanup => 0,
                 do_sample_merge => 0,
                 simultaneous_merges => 200,
                 bsub_opts => '',
+                tag_strip => [],
                 dont_wait => 1);
 
 =head2 new
@@ -124,10 +125,9 @@ our %options = (do_cleanup => 0,
            lane_bams => fofn (REQUIRED; a file listing all the bams you want
                               to merge)
            
-           tag_strip => { strip => [qw(OQ XM XG XO)] } (default do not strip any
-                          tags; args as per VertRes::Utils::Sam::tag_strip;
-                          unlike that method, this pipeline does not allow you
-                          to specify no args and so you cannot strip all tags)
+           tag_strip => [qw(OQ XM XG XO)] (default do not strip any tags; supply
+                                           an array ref of tags to remove if
+                                           desired)
            do_cleanup => boolean (default false: don't do the cleanup action)
            simultaneous_merges => int (default 200; the number of merge jobs to
                                        do at once - limited to avoid IO
@@ -158,7 +158,7 @@ sub new {
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     
     $self->{do_tag_strip} = 0;
-    if (defined $self->{tag_strip} && (defined $self->{tag_strip}->{strip} || defined $self->{tag_strip}->{keep})) {
+    if (defined $self->{tag_strip} && ref($self->{tag_strip}) eq 'ARRAY' && @{$self->{tag_strip}} > 0) {
         $self->{do_tag_strip} = 1;
     }
     
@@ -288,13 +288,6 @@ sub tag_strip {
     my @files = $self->{io}->parse_fofn($fofn, $lane_path);
     my $verbose = $self->verbose();
     
-    my $tag_strip_args = '';
-    foreach my $type ('strip', 'keep') {
-        my $vals = $self->{tag_strip}->{$type} || next;
-        $tag_strip_args .= " $type => [qw(@{$vals})]";
-    }
-    $tag_strip_args || $self->throw("No proper tag_strip args detected, is your config file OK?");
-    
     my @strip_bams;
     foreach my $lane_bam (@files) {
         $lane_bam = $self->{fsu}->catfile($lane_path, $lane_bam);
@@ -315,7 +308,7 @@ sub tag_strip {
         $job_name = $self->{fsu}->catfile($path, $job_name);
         
         LSF::run($action_lock, $lane_path, $job_name, $self,
-                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->tag_strip(qq[$lane_bam], qq[$strip_bam], $tag_strip_args) || die qq[tag_strip failed for $lane_bam\n];"});
+                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->tag_strip(qq[$lane_bam], qq[$strip_bam], qw(@{$self->{tag_strip}})) || die qq[tag_strip failed for $lane_bam\n];"});
     }
     
     my $out_fofn = $self->{fsu}->catfile($lane_path, '.tag_strip_expected');

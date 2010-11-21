@@ -36,6 +36,7 @@ use HierarchyUtilities;
 use VertRes::Parser::dict;
 use VertRes::Parser::sequence_index;
 use VertRes::Parser::sam;
+use VertRes::Parser::bam;
 use VertRes::Utils::FastQ;
 use VertRes::Utils::Math;
 use VertRes::Utils::Hierarchy;
@@ -176,11 +177,18 @@ sub bams_are_similar {
 
 sub num_bam_records {
     my ($self, $bam_file, %opts) = @_;
-    my $pars = VertRes::Parser::sam->new(file => $bam_file);
+    my $pars = VertRes::Parser::bam->new(file => $bam_file);
+    my $rh = $pars->result_holder;
+    my $rname_regex;
+    if ($opts{only}) {
+        $pars->get_fields('RNAME');
+        $rname_regex = $opts{only};
+    }
+    
     my $records = 0;
-    while (my ($rname) = $pars->get_fields('RNAME')) {
-        if ($opts{only}) {
-            $records++ if $rname =~ /$opts{only}/;
+    while ($pars->next_result) {
+        if ($rname_regex) {
+            $records++ if $rh->{RNAME} =~ /$rname_regex/;
         }
         else {
             $records++;
@@ -793,7 +801,8 @@ sub bas {
     my ($self, $in_bam, $release_date, $out_bas, $seq_index) = @_;
     $release_date =~ /^\d{8}$/ || $self->throw("bad release date '$release_date'");
     
-    open(my $bas_fh, '>', $out_bas) || $self->throw("Couldn't write to '$out_bas': $!");
+    my $working_bas = $out_bas.'.working';
+    open(my $bas_fh, '>', $working_bas) || $self->throw("Couldn't write to '$working_bas': $!");
     
     my $expected_lines = 0;
     
@@ -836,19 +845,15 @@ sub bas {
     
     my $sip = VertRes::Parser::sequence_index->new(file => $seq_index) if $seq_index;
     
-    my $stw = VertRes::Wrapper::samtools->new(quiet => 1);
-    $stw->run_method('open');
-    my $view_fh = $stw->view($in_bam, undef, H => 1);
-    $view_fh || $self->throw("Failed to samtools view '$in_bam'");
-    my $ps = VertRes::Parser::sam->new(fh => $view_fh);
+    my $pb = VertRes::Parser::bam->new(file => $in_bam);
     
     # add in the meta data
     while (my ($rg, $data) = each %readgroup_data) {
         $readgroup_data{$rg}->{dcc_filename} = $dcc_filename;
-        $readgroup_data{$rg}->{study} = $ps->readgroup_info($rg, 'DS') || 'unknown_study';
-        $readgroup_data{$rg}->{sample} = $ps->readgroup_info($rg, 'SM') || 'unknown_sample';
-        $readgroup_data{$rg}->{platform} = $ps->readgroup_info($rg, 'PL') || 'unknown_platform';
-        $readgroup_data{$rg}->{library} = $ps->readgroup_info($rg, 'LB') || 'unknown_library';
+        $readgroup_data{$rg}->{study} = $pb->readgroup_info($rg, 'DS') || 'unknown_study';
+        $readgroup_data{$rg}->{sample} = $pb->readgroup_info($rg, 'SM') || 'unknown_sample';
+        $readgroup_data{$rg}->{platform} = $pb->readgroup_info($rg, 'PL') || 'unknown_platform';
+        $readgroup_data{$rg}->{library} = $pb->readgroup_info($rg, 'LB') || 'unknown_library';
         
         # fall back on the sequence.index if we have to
         if ($sip) {
@@ -897,13 +902,14 @@ sub bas {
     }
     close($bas_fh);
     
-    my $io = VertRes::IO->new(file => $out_bas);
+    my $io = VertRes::IO->new(file => $working_bas);
     my $actual_lines = $io->num_lines;
     if ($actual_lines == $expected_lines) {
+        move($working_bas, $out_bas) || $self->throw("Could not move $working_bas to $out_bas");
         return 1;
     }
     else {
-        unlink($out_bas);
+        unlink($working_bas);
         $self->warn("Wrote $expected_lines to $out_bas, but only read back $actual_lines! Deleted the output.");
         return 0;
     }
@@ -929,30 +935,35 @@ sub bam_statistics {
     my ($self, $bam) = @_;
     
     # go through the bam and accumulate all the raw stats in little memory
-    my $ps = VertRes::Parser::sam->new(file => $bam, verbose => -1);
+    my $pb = VertRes::Parser::bam->new(file => $bam);
+    $pb->get_fields('SEQ_LENGTH', 'MAPPED_SEQ_LENGTH', 'FLAG', 'QUAL', 'MAPQ', 'ISIZE', 'RG', 'NM');
+    my $rh = $pb->result_holder;
+    
     my $fqu = VertRes::Utils::FastQ->new();
     
     my %readgroup_data;
     my $previous_rg = 'unknown_readgroup';
-    while (my ($qname, $read_length, $mapped_length, $flag, $qual_str, $mapq, $isize, $rg, $nm) =
-           $ps->get_fields('QNAME', 'SEQ_LENGTH', 'MAPPED_SEQ_LENGTH', 'FLAG', 'QUAL', 'MAPQ', 'ISIZE', 'RG', 'NM')) {
+    while ($pb->next_result) {
+        my $rg = $rh->{RG};
+        my $flag = $rh->{FLAG};
+        
         unless ($rg) {
-            $self->warn("$qname had no RG tag, using previous RG tag '$previous_rg'");
+            $self->warn("a read had no RG tag, using previous RG tag '$previous_rg'");
             $rg = $previous_rg;
         }
         $previous_rg = $rg;
         
         my @this_rg_data = @{$readgroup_data{$rg} || []};
         $this_rg_data[0]++;
-        $this_rg_data[1] += $read_length;
+        $this_rg_data[1] += $rh->{SEQ_LENGTH};
         
-        if ($ps->is_mapped($flag)) {
+        if ($pb->is_mapped($flag)) {
             $this_rg_data[2]++;
-            $this_rg_data[3] += $mapped_length;
-            $this_rg_data[4]++ if $ps->is_sequencing_paired($flag);
+            $this_rg_data[3] += $rh->{MAPPED_SEQ_LENGTH};
+            $this_rg_data[4]++ if $pb->is_sequencing_paired($flag);
             
             # avg quality of mapped bases
-            foreach my $qual ($fqu->qual_to_ints($qual_str)) {
+            foreach my $qual ($fqu->qual_to_ints($rh->{QUAL})) {
                 $this_rg_data[5]++;
                 
                 if ($this_rg_data[5] == 1) {
@@ -965,12 +976,12 @@ sub bam_statistics {
             
             # avg insert size and keep track of 's' for later calculation of sd.
             # algorithm based on http://www.johndcook.com/standard_deviation.html
-            if ($ps->is_mapped_paired($flag)) {
+            if ($pb->is_mapped_paired($flag)) {
                 $this_rg_data[7]++;
                 
-                $isize ||= 0;
+                my $isize = $rh->{ISIZE} || 0;
                 
-                if ($mapq > 0) {
+                if ($rh->{MAPQ} > 0) {
                     if ($isize > 0) { # avoids counting the isize twice for a pair, since one will be negative
                         $this_rg_data[8]++;
                         
@@ -994,13 +1005,14 @@ sub bam_statistics {
             }
             
             # for later calculation of mismatch %
+            my $nm = $rh->{NM};
             if (defined $nm && $nm ne '*') {
-                $this_rg_data[12] += $read_length;
+                $this_rg_data[12] += $rh->{SEQ_LENGTH};
                 $this_rg_data[13] += $nm;
             }
         }
         
-        if ($ps->is_duplicate($flag)) {
+        if ($pb->is_duplicate($flag)) {
             $this_rg_data[14]++;
         }
         
@@ -1888,7 +1900,6 @@ sub rewrite_bas_meta {
     }
 }
 
-
 =head2 extract_intervals_from_bam
 
  Title   : extract_intervals_from_bam
@@ -2084,68 +2095,31 @@ sub extract_intervals_from_bam {
 =head2 tag_strip
 
  Title   : tag_strip
- Usage   : $obj->tag_strip('in.bam', 'out.bam', strip => [qw(OQ MD XM XG XO)]);
+ Usage   : $obj->tag_strip('in.bam', 'out.bam', qw(OQ XM XG XO));
  Function: Strips tags from bam records. By default all tags are stripped.
  Returns : boolean (true on success, meaning the output bam was successfully
            made)
- Args    : paths to input and output bams, and optionally a keep|strip => []
-           tuple where the array ref contains a list of tags to keep or remove.
-           If strip is specified, everything other than those is kept, so keep
-           option becomes redundent (but will still override anything in
-           strip option).
+ Args    : paths to input and output bams, list of tags to remove.
 
 =cut
 
 sub tag_strip {
-    my ($self, $in_bam, $out_bam, %args) = @_;
-    my %keep = map { $_ => 1 } @{$args{keep} || []};
-    my %strip = map { $_ => 1 } @{$args{strip} || []};
-    my $strip_selected = keys %strip ? 1 : 0;
-    foreach my $tag (keys %keep) {
-        delete $strip{$tag};
-    }
-    my @to_strip = keys %strip;
+    my ($self, $in_bam, $out_bam, @to_strip) = @_;
+    @to_strip > 0 || $self->throw("You must supply tags to strip");
     
-    my $swi = VertRes::Wrapper::samtools->new(verbose => $self->verbose,
-                                              run_method => 'open',
-                                              quiet => 1);
-    my $ifh = $swi->view($in_bam, undef, h => 1);
-    my $swo = VertRes::Wrapper::samtools->new(verbose => $self->verbose,
-                                              run_method => 'write_to',
-                                              quiet => 1);
+    my $pb = VertRes::Parser::bam->new(file => $in_bam);
+    $pb->ignore_tags_on_write(@to_strip);
     my $tmp_out = $out_bam.'.running';
-    my $ofh = $swo->view(undef, $tmp_out, S => 1, b => 1);
     
     my $lines = 0;
-    while (<$ifh>) {
+    while ($pb->next_result) {
         $lines++;
-        if (/^@/) {
-            print $ofh $_;
-        }
-        else {
-            if ($strip_selected) {
-                foreach my $tag (@to_strip) {
-                    s/\t$tag:\S+//;
-                }
-            }
-            else {
-                my @to_remove;
-                while (/(\t([A-Z][A-Z0-9]):[AifZH]:\S+)/g) {
-                    push(@to_remove, $1) unless exists $keep{$2};
-                }
-                foreach my $field (@to_remove) {
-                    s/\Q$field\E//;
-                }
-            }
-            
-            print $ofh $_;
-        }
+        $pb->write_result($tmp_out);
     }
-    close($ifh);
-    close($ofh);
+    $pb->close;
     
     # check for truncation
-    my $actual_lines = $self->num_bam_lines($tmp_out);
+    my $actual_lines = $self->num_bam_records($tmp_out);
     
     if ($actual_lines == $lines) {
         move($tmp_out, $out_bam) || $self->throw("Failed to move $tmp_out to $out_bam");
