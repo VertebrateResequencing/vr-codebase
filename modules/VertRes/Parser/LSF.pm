@@ -156,7 +156,7 @@ sub next_result {
     $dt = DateTime->new(year => 2010, month => $months{$emo}, day => $ed, hour => $eh, minute => $em, second => $es);
     my $et = $dt->epoch;
     my $wall = $et - $st;
-    my $idle = sprintf("%0.2f", $wall / $cpu);
+    my $idle = sprintf("%0.2f", $cpu / $wall);
     
     # fill in both the result_holder and maintain in memory all results in a
     # seperate data structure so get() will work the old way
