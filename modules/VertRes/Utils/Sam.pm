@@ -257,11 +257,6 @@ sub num_bam_lines {
                     but you can turn it back on explicitly. non_chr is disabled.
            output_dir => 'path' to specify where the split bams are created;
                          default is the same dir as the input bam
-           check => boolean (default false; when true, checks to see if the
-                             total number of reads in the split bams is the same
-                             as the number of reads in the original bam;
-                             depending on other settings this may or may not be
-                             expected)
            pretend => boolean (if true, don't actually do anything, just return
                                what files would be made)
 
@@ -269,10 +264,6 @@ sub num_bam_lines {
 
 sub split_bam_by_sequence {
     my ($self, $bam, %opts) = @_;
-    
-    my $sw = VertRes::Wrapper::samtools->new(verbose => $self->verbose,
-                                             run_method => 'open',
-                                             quiet => 1);
     
     my $basename = basename($bam);
     my $output_dir;
@@ -300,24 +291,12 @@ sub split_bam_by_sequence {
     }
     
     # find out what sequences there are
-    my $bamfh = $sw->view($bam, undef, H => 1);
-    my $sp = VertRes::Parser::sam->new(fh => $bamfh);
-    my %all_sequences = $sp->sequence_info();
+    my $pb = VertRes::Parser::bam->new(file => $bam);
+    my %all_sequences = $pb->sequence_info();
     
-    $sw->run_method('system');
-    
-    # we must have a bam index file
-    my $bai = $bam.'.bai';
-    my $created_bai = 0;;
-    unless (-s $bai || $opts{pretend}) {
-        $sw->index($bam, $bai);
-        $sw->run_status >= 1 || $self->throw("Failed to create $bai");
-        $created_bai = 1;
-    }
-    
-    # make a split for each sequence
-    my @out_bams;
-    my %merges;
+    # work out the output filenames for each sequence
+    my %seq_to_bam;
+    my %output_bams;
     foreach my $seq (keys %all_sequences) {
         my @prefixes;
         if (defined $opts{merge}) {
@@ -335,83 +314,90 @@ sub split_bam_by_sequence {
             next unless $seq =~ /$opts{only}/;
         }
         
-        my $out_bam = File::Spec->catfile($output_dir, $seq.'.'.$basename);
-        $self->register_for_unlinking($out_bam);
         foreach my $prefix (@prefixes) {
-            push(@{$merges{$prefix}}, $out_bam);
-        }
-        
-        push(@out_bams, $out_bam);
-        next if $opts{pretend};
-        
-        $sw->view($bam, $out_bam, regions => [$seq], h => 1, b => 1);
-        $sw->run_status >= 1 || $self->throw("Failed to create split $out_bam");
-    }
-    
-    # do merging (or just renaming if there is only 1 bam to merge)
-    my @merged_bams;
-    while (my ($prefix, $bams) = each %merges) {
-        my @bams = @{$bams};
-        my $out_bam = File::Spec->catfile($output_dir, $prefix.'.'.$basename);
-        
-        push(@merged_bams, $out_bam);
-        next if $opts{pretend};
-        
-        $out_bam .= '.unchecked' if $opts{check};
-        
-        if (@bams == 1) {
-            move($bams[0], $out_bam);
-        }
-        else {
-            $sw->merge_and_check($out_bam, $bams);
-            $sw->run_status >= 1 || $self->throw("Failed to merge the bams for $out_bam");
+            my $out_bam = File::Spec->catfile($output_dir, $prefix.'.'.$basename);
+            $output_bams{$out_bam} = 1;
+            next if -s $out_bam;
+            push(@{$seq_to_bam{$seq}}, $out_bam);
         }
     }
     
-    # make an unmapped bam
+    my @get_fields = ('RNAME');
+    my ($unmapped_bam, $skip_mate_mapped);
     if ($opts{make_unmapped}) {
-        my $out_bam = File::Spec->catfile($output_dir, 'unmapped.'.$basename);
-        push(@merged_bams, $out_bam);
-        
-        $out_bam .= '.unchecked' if $opts{check};
-        
-        unless ($opts{pretend}) {
-            my $skip_mate_mapped = $opts{all_unmapped} ? 0 : 1;
-            $self->make_unmapped_bam($bam, $out_bam, $skip_mate_mapped) || $self->throw("Failed to make an unmapped bam from $bam");
+        $unmapped_bam = File::Spec->catfile($output_dir, 'unmapped.'.$basename);
+        $output_bams{$unmapped_bam} = 1;
+        push(@get_fields, 'FLAG');
+        $skip_mate_mapped = $opts{all_unmapped} ? 0 : 1;
+        if (-s $unmapped_bam) {
+            undef $unmapped_bam;
         }
     }
     
-    if ($created_bai) {
-        unlink($bai);
-    }
-    foreach my $out_bam (@out_bams) {
-        # these should already be gone, but unlink anyway
-        unlink($out_bam);
+    if ($opts{pretend}) {
+        my @outs = sort keys %output_bams;
+        return @outs;
     }
     
-    if ($opts{check} && ! $opts{pretend}) {
-        my $total_reads = 0;
-        foreach my $split_bam (@merged_bams) {
-            $total_reads += $self->num_bam_records($split_bam.'.unchecked');
-        }
-        
-        my $expected_reads = $self->num_bam_records($bam);
-        
-        unless ($expected_reads == $total_reads) {
-            $self->warn("$bam was split, but ended up with $total_reads reads instead of $expected_reads; will delete all the split bams");
-            foreach my $split_bam (@merged_bams) {
-                unlink($split_bam.'.unchecked');
+    # stream through the bam, outputting all our desired files
+    $pb->get_fields(@get_fields);
+    my $rh = $pb->result_holder;
+    my %counts;
+    while ($pb->next_result) {
+        my $out_bams = $seq_to_bam{$rh->{RNAME}};
+        if ($out_bams) {
+            foreach my $out_bam (@{$out_bams}) {
+                $pb->write_result($out_bam.'.unchecked');
+                $counts{$out_bam}++;
             }
-            @merged_bams = ();
+        }
+        
+        if ($unmapped_bam) {
+            my $flag = $rh->{FLAG};
+            unless ($pb->is_mapped($flag)) {
+                if ($skip_mate_mapped && $pb->is_sequencing_paired($flag)) {
+                    next if $pb->is_mate_mapped($flag);
+                }
+                $pb->write_result($unmapped_bam.'.unchecked');
+                $counts{$unmapped_bam}++;
+            }
+        }
+    }
+    $pb->close;
+    
+    # check all the bams we created
+    my @outs;
+    foreach my $out_bam (sort keys %output_bams) {
+        if (-s $out_bam) {
+            push(@outs, $out_bam);
+            next;
+        }
+        
+        my $unchecked = $out_bam.'.unchecked';
+        # the input bam might not have had reads mapped to every sequence in the
+        # header, so we might not have created all the bams expected. Create
+        # a header-only bam in that case:
+        unless (-s $unchecked) {
+            $pb = VertRes::Parser::bam->new(file => $bam);
+            $pb->next_result;
+            $pb->_create_no_record_output_bam($unchecked);
+            $pb->close;
+        }
+        
+        my $actual_reads = $self->num_bam_records($unchecked);
+        my $expected_reads = $counts{$out_bam} || 0;
+        
+        if ($expected_reads == $actual_reads) {
+            move($unchecked, $out_bam) || $self->throw("Couldn't move $unchecked to $out_bam");
+            push(@outs, $out_bam);
         }
         else {
-            foreach my $split_bam (@merged_bams) {
-                move($split_bam.'.unchecked', $split_bam);
-            }
+            $self->warn("When attempting $bam -> $out_bam split, got $actual_reads reads instead of $expected_reads; will delete it");
+            unlink($unchecked);
         }
     }
     
-    return @merged_bams;
+    return @outs;
 }
 
 =head2 add_sam_header

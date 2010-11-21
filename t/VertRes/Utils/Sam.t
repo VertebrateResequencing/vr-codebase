@@ -5,7 +5,7 @@ use File::Spec;
 use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 117;
+    use Test::Most tests => 115;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -294,8 +294,7 @@ foreach my $split (@expected_splits) {
 is $actually_created, 25, 'split_bam_by_sequence with make_unmapped gives an unmapped bam as well';
 is $created_lines, 1998, 'and the unmapped gives us more entries';
 @splits = $sam_util->split_bam_by_sequence($headed_bam,
-                                           output_dir => $temp_dir,
-                                           check => 1);
+                                           output_dir => $temp_dir);
 push(@expected_splits, File::Spec->catfile($temp_dir, 'nonchrom.headed2.bam'));
 $actually_created = 0;
 $created_lines = 0;
@@ -304,7 +303,7 @@ foreach my $split (@expected_splits) {
     $created_lines += get_bam_body($split);
     unlink($split);
 }
-is $actually_created, 26, 'split_bam_by_sequence defaults + checking gives a nonchrom bam as well';
+is $actually_created, 26, 'split_bam_by_sequence defaults gives a nonchrom bam as well';
 is $created_lines, 2000, 'and the nonchrom gives us all entries';
 @splits = $sam_util->split_bam_by_sequence($headed_bam,
                                            output_dir => $temp_dir,
@@ -318,17 +317,6 @@ foreach my $split (@expected_splits) {
 }
 is $actually_created, 26, 'split_bam_by_sequence all_unmapped gives the same number of files as before';
 is $created_lines, 2014, 'but we now have duplicate reads entries';
-warning_like {@splits = $sam_util->split_bam_by_sequence($headed_bam,
-                                                         output_dir => $temp_dir,
-                                                         all_unmapped => 1,
-                                                         check => 1);}
-              {carped => qr/was split, but ended up with 2014 reads instead of 2000/}, 'split_bam_by_sequence all_unmapped + check warns about too many reads';
-$actually_created = 0;
-foreach my $split (@expected_splits) {
-    $actually_created += -s $split ? 1 : 0;
-    unlink($split);
-}
-is $actually_created, 0, 'split_bam_by_sequence all_unmapped + check gives no bams, since there are too many reads';
 @splits = $sam_util->split_bam_by_sequence($headed_bam,
                                            output_dir => $temp_dir,
                                            pretend => 1);

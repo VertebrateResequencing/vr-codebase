@@ -813,6 +813,28 @@ void _initialize_bam(SV* self, char* bamfile) {
     Inline_Stack_Done;
 }
 
+bamFile _initialize_obam(SV* self, char* bamfile) {
+    bamFile *obam;
+    obam = bam_open(bamfile, "w");
+    
+    HV* self_hash;
+    self_hash = (HV*)SvRV(self);
+    SV* header_ref;
+    bam_header_t *header;
+    header_ref = *(hv_fetch(self_hash, "_chead", 6, 0));
+    header = (bam_header_t*)SvIV(SvRV(header_ref));
+    bam_header_write(obam, header);
+    
+    return obam;
+}
+
+// create an output bam that is just the header of the input bam
+void _create_no_record_output_bam(SV* self, char* bamfile) {
+    bamFile *obam;
+    obam = _initialize_obam(self, bamfile);
+    bam_close(obam);
+}
+
 void write_result(SV* self, char* bamfile) {
     HV* self_hash;
     self_hash = (HV*)SvRV(self);
@@ -836,14 +858,8 @@ void write_result(SV* self, char* bamfile) {
     writes_hash = (HV*)SvRV(writes_ref);
     bamFile *obam;
     if (! hv_exists(writes_hash, bamfile, len)) {
-        obam = bam_open(bamfile, "w");
+        obam = _initialize_obam(self, bamfile);
         hv_store(writes_hash, bamfile, len, newRV_noinc(newSViv(obam)), 0);
-        
-        SV* header_ref;
-        bam_header_t *header;
-        header_ref = *(hv_fetch(self_hash, "_chead", 6, 0));
-        header = (bam_header_t*)SvIV(SvRV(header_ref));
-        bam_header_write(obam, header);
     }
     else {
         SV* obam_ref;
