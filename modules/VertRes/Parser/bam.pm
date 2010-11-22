@@ -207,6 +207,7 @@ sub close {
         
         if (defined $self->{_cbam}) {
             $self->_close_bam($self->{_cbam});
+            $self->_close_idx;
         }
         while (my ($key, $val) = each %{$self->{_writes} || {}}) {
             $self->_close_bam($val);
@@ -1093,6 +1094,17 @@ void _close_bam(SV* self, SV* bam_ref) {
     bam_close(bam);
 }
 
+void _close_idx(SV* self) {
+    HV* self_hash;
+    self_hash = (HV*)SvRV(self);
+    if (hv_exists(self_hash, "_cidx", 5)) {
+        bam_index_t *idx;
+        idx = (bam_index_t*)SvIV(SvRV(*(hv_fetch(self_hash, "_cidx", 5, 0))));
+        bam_index_destroy(idx);
+        hv_delete(self_hash, "_cidx", 5, G_DISCARD); 
+    }
+}
+
 // the main parsing method
 int next_result(SV* self) {
     HV* self_hash;
@@ -1123,15 +1135,25 @@ int next_result(SV* self) {
         if (g_do_region) {
             char* region;
             region = SvPV_nolen(*(hv_fetch(self_hash, "_region", 7, 0)));
-            char* filename;
-            filename = SvPV_nolen(*(hv_fetch(self_hash, "_filename", 9, 0)));
+            
             bam_index_t *idx = 0;
-            idx = bam_index_load(filename);
-            if (idx == 0) {
-                fprintf(stderr, "region() can only be used when there is a .bai file (none seen for %s).\n", filename);
-                ret = -1;
+            if (hv_exists(self_hash, "_cidx", 5)) {
+                idx = (bam_index_t*)SvIV(SvRV(*(hv_fetch(self_hash, "_cidx", 5, 0))));
             }
             else {
+                char* filename;
+                filename = SvPV_nolen(*(hv_fetch(self_hash, "_filename", 9, 0)));
+                idx = bam_index_load(filename);
+                if (idx == 0) {
+                    fprintf(stderr, "region() can only be used when there is a .bai file (none seen for %s).\n", filename);
+                    ret = -1;
+                }
+                else {
+                    hv_store(self_hash, "_cidx", 5, newRV_noinc(newSViv(idx)), 0);
+                }
+            }
+            
+            if (idx != 0) {
                 int tid, beg, end;
                 bam_parse_region(header, region, &tid, &beg, &end);
                 if (tid < 0) {
@@ -1142,15 +1164,12 @@ int next_result(SV* self) {
                     iter = bam_iter_query(idx, tid, beg, end);
                     ret = bam_iter_read(bam, iter, b);
                     
-                    // hv_delete(self_hash, "_iter", 5, G_DISCARD); 
                     hv_store(self_hash, "_iter", 5, newRV_noinc(newSViv(iter)), 0);
                     
                     g_do_region = 0;
                     g_do_iter = 1;
-                    Safefree(iter);
                 }
             }
-            bam_index_destroy(idx);
         }
         else if (g_do_iter) {
             iter = (bam_iter_t*)SvIV(SvRV(*(hv_fetch(self_hash, "_iter", 5, 0))));
