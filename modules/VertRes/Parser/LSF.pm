@@ -201,6 +201,7 @@ sub get {
         $self->_restore_position;
         $self->throw("No records in the LSF output file? [$$self{file}]") unless defined $self->{results};
     }
+    if ( !defined $key ) { return undef; }  # This can really happen, see nrecords().
     my $record = $$self{results}[$idx];
     if ( !defined $record ) { $self->throw("The index out of bounds: $idx [$$self{file}]"); }
     if ( !exists($$record{$key}) ) { $self->throw("The key '$key' not present for [$idx] in [$$self{file}]"); }
