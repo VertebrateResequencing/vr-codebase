@@ -269,6 +269,7 @@ sub split_bam_by_sequence {
     my $output_dir;
     if (defined $opts{output_dir}) {
         $output_dir = $opts{output_dir};
+        $self->throw("output_dir '$output_dir' does not exist") unless -d $output_dir;
     }
     else {
         $output_dir = $bam;
