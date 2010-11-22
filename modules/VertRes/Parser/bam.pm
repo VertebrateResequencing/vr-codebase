@@ -1141,16 +1141,19 @@ int next_result(SV* self) {
                 else {
                     iter = bam_iter_query(idx, tid, beg, end);
                     ret = bam_iter_read(bam, iter, b);
+                    
+                    // hv_delete(self_hash, "_iter", 5, G_DISCARD); 
                     hv_store(self_hash, "_iter", 5, newRV_noinc(newSViv(iter)), 0);
+                    
                     g_do_region = 0;
                     g_do_iter = 1;
+                    Safefree(iter);
                 }
             }
+            bam_index_destroy(idx);
         }
         else if (g_do_iter) {
-            SV* iter_ref;
-            iter_ref = *(hv_fetch(self_hash, "_iter", 5, 0));
-            iter = (bam_iter_t*)SvIV(SvRV(iter_ref));
+            iter = (bam_iter_t*)SvIV(SvRV(*(hv_fetch(self_hash, "_iter", 5, 0))));
             ret = bam_iter_read(bam, iter, b);
         }
         else {
