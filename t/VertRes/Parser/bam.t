@@ -159,26 +159,26 @@ while ($pb->next_result) {
 is $c, 1, 'filtering_flag gives the opposite subset of results';
 
 $pb = VertRes::Parser::bam->new(file => $b_file);
-$pb->flag_filter(mate_reverse => 1, '1st_in_pair' => 1);
+$pb->flag_selector(mate_reverse => 1, '1st_in_pair' => 1);
 $c = 0;
 while ($pb->next_result) {
     $c++;
 }
-is $c, 2, 'flag_filter worked with two true flag names';
+is $c, 2, 'flag_selector worked with two true flag names';
 $pb = VertRes::Parser::bam->new(file => $b_file);
-$pb->flag_filter(mate_reverse => 0, '1st_in_pair' => 0);
+$pb->flag_selector(mate_reverse => 0, '1st_in_pair' => 0);
 $c = 0;
 while ($pb->next_result) {
     $c++;
 }
-is $c, 0, 'flag_filter worked with two false flag names';
+is $c, 0, 'flag_selector worked with two false flag names';
 $pb = VertRes::Parser::bam->new(file => $b_file);
-$pb->flag_filter(mate_reverse => 0, '1st_in_pair' => 1);
+$pb->flag_selector(mate_reverse => 0, '1st_in_pair' => 1);
 $c = 0;
 while ($pb->next_result) {
     $c++;
 }
-is $c, 1, 'flag_filter worked with a mix of true and false flag names';
+is $c, 1, 'flag_selector worked with a mix of true and false flag names';
 
 $pb = VertRes::Parser::bam->new(file => $b_file);
 $pb->minimum_quality(30);

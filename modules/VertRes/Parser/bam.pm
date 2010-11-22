@@ -784,10 +784,10 @@ sub region {
     }
 }
 
-=head2 flag_filter
+=head2 flag_selector
 
- Title   : flag_filter
- Usage   : $obj->flag_filter(self_unmapped => 1, mate_unmapped => 1);
+ Title   : flag_selector
+ Usage   : $obj->flag_selector(self_unmapped => 1, mate_unmapped => 1);
  Function: Alter next_result() so that it only returns alignments with flags
            that match your settings. This method is just a convient way of
            calculating flags; ultimately it just sets required_flag() and
@@ -811,7 +811,7 @@ sub region {
 
 =cut
 
-sub flag_filter {
+sub flag_selector {
     my ($self, %args) = @_;
     
     my ($require, $filter) = (0, 0);
