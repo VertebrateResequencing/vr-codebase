@@ -11,9 +11,8 @@ my $parser = VertRes::Parser::LSF->new(file => 'job.o');
 # How many LSF reports are there in the file?
 my $n = $parser->nrecords();
 
-# Loop throught the records and get status and time
-for (my $i=0; $i<$n; $i++)
-{
+# Loop through the records and get status and memory
+for (my $i=0; $i<$n; $i++) {
     my $status = $parser->get('status',$i);
     my $memory = $parser->get('memory',$i);
 }
@@ -135,7 +134,14 @@ sub next_result {
             if (/^Started at \S+ (.+)$/) { $started = $1; }
             elsif (/^Results reported at \S+ (.+)$/) { $finished = $1; }
             elsif (/^# LSBATCH: User input/) { $next_is_cmd = 1; }
-            elsif ($next_is_cmd) { $next_is_cmd = 0; chomp; $cmd = $_; }
+            elsif ($next_is_cmd) {
+                if (/^-{60}$/) {
+                    $next_is_cmd = 0;
+                }
+                else {
+                    $cmd .= $_;
+                }
+            }
             elsif (/^Successfully completed/) { $status = 'OK'; }
             elsif (! $status && /^Exited with exit code/) { $status = 'exited'; }
             elsif (/^TERM_\S+ job killed by/) { $status = 'killed'; }
@@ -155,6 +161,8 @@ sub next_result {
         return;
     }
     
+    chomp($cmd);
+    
     # calculate wall time and idle factor
     my $date_regex = qr/(\w+)\s+(\d+) (\d+):(\d+):(\d+)/;
     my ($smo, $sd, $sh, $sm, $ss) = $started =~ /$date_regex/;
@@ -164,7 +172,7 @@ sub next_result {
     $dt = DateTime->new(year => 2010, month => $months{$emo}, day => $ed, hour => $eh, minute => $em, second => $es);
     my $et = $dt->epoch;
     my $wall = $et - $st;
-    my $idle = sprintf("%0.2f", $cpu / $wall);
+    my $idle = sprintf("%0.2f", ($cpu < 1 ? 1 : $cpu) / ($wall < 1 ? 1 : $wall));
     
     # fill in both the result_holder and maintain in memory all results in a
     # seperate data structure so get() will work the old way
