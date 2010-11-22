@@ -8,6 +8,17 @@ use VertRes::Parser::LSF;
 
 my $parser = VertRes::Parser::LSF->new(file => 'job.o');
 
+# How many LSF reports are there in the file?
+my $n = $parser->nrecords();
+
+# Loop throught the records and get status and time
+for (my $i=0; $i<$n; $i++)
+{
+    my $status = $parser->get('status',$i);
+    my $memory = $parser->get('memory',$i);
+}
+
+
 # shortcuts to get the most recent stats in the LSF file 
 my $status = $parser->status;     # the status of the last executed job
 my $wall_time = $parser->time;    # wall time (s)
@@ -24,9 +35,6 @@ while ($parser->next_result()) {
     my $time = $result_holder->[3];
     # etc.
 }
-
-# How many LSF reports are there in the file?
-my $n = $parser->nrecords();
 
 =head1 DESCRIPTION
 
