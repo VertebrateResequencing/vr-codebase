@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 32;
+    use Test::Most tests => 45;
     
     use_ok('VertRes::Parser::bam');
     use_ok('VertRes::Utils::FileSystem');
@@ -81,20 +81,20 @@ while ($pb->next_result) {
     $pb->write_result($out_bam1);
 }
 $pb->close;
-is_deeply [get_bam_header($out_bam1)], [get_bam_header($b_file)], 'header of an output file matches the input file';
+is_deeply [get_bam_header($out_bam1)], [get_bam_header($b_file)], 'having set input region to empty string, header of an output file matches the input file';
 is scalar(get_bam_body($out_bam1)), 2000, 'output bam has correct number of lines';
 
 $b_file = File::Spec->catfile('t', 'data', '1kg_lane.bam');
 ok -e $b_file, '1kg bam file we will test with exists';
 $pb = VertRes::Parser::bam->new(file => $b_file);
-my $count = 0;
+$c = 0;
 $pb->ignore_tags_on_write(qw(OQ XM XG XO));
 while ($pb->next_result) {
-    $count++;
-    if ($count == 1) {
+    $c++;
+    if ($c == 1) {
         $pb->write_result($out_bam2);
     }
-    elsif ($count == 2) {
+    elsif ($c == 2) {
         $pb->write_result($out_bam3);
     }
     else {
@@ -106,10 +106,100 @@ my @g1k_lines = grep { s/\tOQ:\S+|\tXM:\S+|\tXG:\S+|\tXO:\S+//g } get_bam_body($
 is_deeply [get_bam_body($out_bam2)], [$g1k_lines[0]], 'ignore_tags_on_write has its effect';
 is_deeply [get_bam_body($out_bam3)], [$g1k_lines[1]], 'we can output multiple files in a single next_result loop';
 
+# filtering methods
+$pb = VertRes::Parser::bam->new(file => $b_file);
+$pb->required_readgroup('SRR035022');
+$c = 0;
+while ($pb->next_result) {
+    $c++;
+}
+is $c, 3, 'required_readgroup with the correct RG gives all results';
+$pb = VertRes::Parser::bam->new(file => $b_file);
+$pb->required_readgroup('foo');
+$c = 0;
+while ($pb->next_result) {
+    $c++;
+}
+is $c, 0, 'required_readgroup with an unused RG gives no results';
+$pb = VertRes::Parser::bam->new(file => $b_file);
+$c = 0;
+while ($pb->next_result) {
+    $c++;
+}
+is $c, 3, 'no required_readgroup in a new instance gives us all results';
+
+$pb = VertRes::Parser::bam->new(file => $b_file);
+$pb->required_library('foo');
+$c = 0;
+while ($pb->next_result) {
+    $c++;
+}
+is $c, 0, 'required_library with an unused lib gives no results';
+$pb = VertRes::Parser::bam->new(file => $b_file);
+$pb->required_library('Solexa-16652');
+$c = 0;
+while ($pb->next_result) {
+    $c++;
+}
+is $c, 3, 'required_library with the correct lib gives all results';
+
+$pb = VertRes::Parser::bam->new(file => $b_file);
+$pb->required_flag(32);
+$c = 0;
+while ($pb->next_result) {
+    $c++;
+}
+is $c, 2, 'required_flag gives a subset of results';
+$pb = VertRes::Parser::bam->new(file => $b_file);
+$pb->filtering_flag(32);
+$c = 0;
+while ($pb->next_result) {
+    $c++;
+}
+is $c, 1, 'filtering_flag gives the opposite subset of results';
+
+$pb = VertRes::Parser::bam->new(file => $b_file);
+$pb->flag_filter(mate_reverse => 1, '1st_in_pair' => 1);
+$c = 0;
+while ($pb->next_result) {
+    $c++;
+}
+is $c, 2, 'flag_filter worked with two true flag names';
+$pb = VertRes::Parser::bam->new(file => $b_file);
+$pb->flag_filter(mate_reverse => 0, '1st_in_pair' => 0);
+$c = 0;
+while ($pb->next_result) {
+    $c++;
+}
+is $c, 0, 'flag_filter worked with two false flag names';
+$pb = VertRes::Parser::bam->new(file => $b_file);
+$pb->flag_filter(mate_reverse => 0, '1st_in_pair' => 1);
+$c = 0;
+while ($pb->next_result) {
+    $c++;
+}
+is $c, 1, 'flag_filter worked with a mix of true and false flag names';
+
+$pb = VertRes::Parser::bam->new(file => $b_file);
+$pb->minimum_quality(30);
+$c = 0;
+while ($pb->next_result) {
+    $c++;
+}
+is $c, 0, 'minimum_quality gives a subset of results';
+$pb = VertRes::Parser::bam->new(file => $b_file);
+$pb->minimum_quality(0);
+$c = 0;
+while ($pb->next_result) {
+    $c++;
+}
+is $c, 3, 'minimum_quality(0) gives all results';
+
+
 # hard/soft clipping seq length tests
 $b_file = File::Spec->catfile('t', 'data', 'hard_soft.bam');
 ok -e $b_file, 'hard/soft bam file we will test with exists';
-$pb = VertRes::Parser::bam->new(file => $b_file);
+ok $pb->file($b_file), 'we can set a new file without having to create a new instance';
 $pb->get_fields('SEQ', 'SEQ_LENGTH', 'MAPPED_SEQ_LENGTH');
 $rh = $pb->result_holder;
 $pb->next_result;

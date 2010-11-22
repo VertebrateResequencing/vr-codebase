@@ -97,6 +97,18 @@ use Inline C => Config => FILTERS => 'Strip_POD' =>
 
 use base qw(VertRes::Parser::ParserI);
 
+our %flags = (paired_tech    => 0x0001,
+              paired_map     => 0x0002,
+              self_unmapped  => 0x0004,
+              mate_unmapped  => 0x0008,
+              self_reverse   => 0x0010,
+              mate_reverse   => 0x0020,
+              '1st_in_pair'  => 0x0040,
+              '2nd_in_pair'  => 0x0080,
+              not_primary    => 0x0100,
+              failed_qc      => 0x0200,
+              duplicate      => 0x0400);
+
 =head2 new
 
  Title   : new
@@ -118,6 +130,9 @@ sub new {
     # we set up a hash to store write refs
     $self->{_writes} = {};
     
+    # reset all the C static vars
+    $self->_reset();
+    
     return $self;
 }
 
@@ -129,6 +144,8 @@ sub new {
            There is also read support for remote files like
            'ftp://ftp..../file.bam' and it will be downloaded to a temporary
            location and opened.
+           NB: setting a new input bam will close any existing input bam and any
+           output files being written to
  Returns : absolute path of file
  Args    : filename
 
@@ -138,6 +155,10 @@ sub file {
     my ($self, $filename) = @_;
     
     if ($filename) {
+        if (defined $self->{_filename}) {
+            $self->close;
+        }
+        
         if ($filename =~ /^ftp:|^http:/) {
             $filename = $self->get_remote_file($filename) || $self->throw("Could not download remote file '$filename'");
         }
@@ -156,11 +177,7 @@ sub file {
         $self->fh($fh);
         
         # open in the C API
-        my $fh_id = $self->_fh_id;
-        unless (defined $self->{"_opened_$fh_id"}) {
-            ($self->{_chead}, $self->{_cbam}, $self->{_cb}) = $self->_initialize_bam($filename);
-            $self->{"_opened_$fh_id"} = 1;
-        }
+        ($self->{_chead}, $self->{_cbam}, $self->{_cb}) = $self->_initialize_bam($filename);
     }
     
     return $self->{_filename};
@@ -188,8 +205,7 @@ sub close {
             next;
         }
         
-        my $fh_id = $self->_fh_id;
-        if (defined $self->{"_opened_$fh_id"}) {
+        if (defined $self->{_cbam}) {
             $self->_close_bam($self->{_cbam});
         }
         while (my ($key, $val) = each %{$self->{_writes} || {}}) {
@@ -713,6 +729,12 @@ sub _get_header {
 sub get_fields {
     my ($self, @fields) = @_;
     $self->{_fields} = [@fields];
+    if (@fields) {
+        $self->_do_fields(1);
+    }
+    else {
+        $self->_do_fields(0);
+    }
 }
 
 =head2 result_holder
@@ -736,8 +758,8 @@ sub get_fields {
  Function: Specify the chromosomal region that next_result() will get alignments
            from. The bam file must have previously been indexed to create a .bai
            file, and the bam must be coordinate sorted.
-           Subsequently setting this to '' will make next_result start behaving
-           like normal, starting from the first alignment.
+           Subsequently setting this to '' or undef will make next_result start
+           behaving like normal, starting from the first alignment.
  Returns : n/a
  Args    : A region specification string (as understood by samtools view)
 
@@ -745,8 +767,128 @@ sub get_fields {
 
 sub region {
     my ($self, $region) = @_;
-    $self->{_region} = $region;
+    
+    if (defined $region) {
+        if (length($region) > 0) {
+            $self->_do_region(1);
+            $self->{_region} = $region;
+        }
+        else {
+            $self->{_region} ? $self->_reset_region() : $self->_do_region(0);
+            delete $self->{_region};
+        }
+    }
+    else {
+        $self->{_region} ? $self->_reset_region() : $self->_do_region(0);
+        delete $self->{_region};
+    }
 }
+
+=head2 flag_filter
+
+ Title   : flag_filter
+ Usage   : $obj->flag_filter(self_unmapped => 1, mate_unmapped => 1);
+ Function: Alter next_result() so that it only returns alignments with flags
+           that match your settings. This method is just a convient way of
+           calculating flags; ultimately it just sets required_flag() and
+           filtering_flag().
+           It is recommended to use this instead of get_fields("FLAG") and
+           handling the flag yourself.
+ Returns : n/a
+ Args    : hash, where keys are amongst the following, and values are boolean,
+           true to require that flag, false to prohibit it:
+           paired_tech
+           paired_map
+           self_unmapped
+           mate_unmapped
+           self_reverse
+           mate_reverse
+           '1st_in_pair'
+           '2nd_in_pair'
+           not_primary
+           failed_qc
+           duplicate
+
+=cut
+
+sub flag_filter {
+    my ($self, %args) = @_;
+    
+    my ($require, $filter) = (0, 0);
+    while (my ($name, $bool) = each %args) {
+        my $flag = $flags{$name} || $self->throw("'$name' is not a valid flag name");
+        if ($bool) {
+            $require |= $flag;
+        }
+        else {
+            $filter |= $flag;
+        }
+    }
+    
+    $self->required_flag($require);
+    $self->filtering_flag($filter);
+}
+
+=head2 required_flag
+
+ Title   : required_flag
+ Usage   : $obj->required_flag(4);
+ Function: Require that the flag field of an alignment match the desired bitwise
+           flag. This alters what next_result() will return, and is faster than
+           using get_fields('FLAG') and working out the match yourself.
+ Returns : n/a
+ Args    : int (flag)
+
+=cut
+
+=head2 filtering_flag
+
+ Title   : filtering_flag
+ Usage   : $obj->filtering_flag(4);
+ Function: Require that the flag field of an alignment not match the desired
+           bitwise flag. This alters what next_result() will return, and is
+           faster than using get_fields('FLAG') and working out the match
+           yourself.
+ Returns : n/a
+ Args    : int (flag)
+
+=cut
+
+=head2 minimum_quality
+
+ Title   : minimum_quality
+ Usage   : $obj->minimum_quality(30);
+ Function: Require that the mapping quality field of an alignment be greater
+           than or equal to a desired quality. This alters what next_result()
+           will return, and is faster than using get_fields('MAPQ') and working
+           out the match yourself.
+ Returns : n/a
+ Args    : int (flag)
+
+=cut
+
+=head2 required_library
+
+ Title   : required_library
+ Usage   : $obj->required_library('my_library_name');
+ Function: Alters next_result() so that it will only return alignments for reads
+           that came from the given library.
+ Returns : n/a
+ Args    : int (flag)
+
+=cut
+
+=head2 required_readgroup
+
+ Title   : required_readgroup
+ Usage   : $obj->required_readgroup('my_readgroup_name');
+ Function: Alters next_result() so that it will only return alignments for reads
+           with the given RG tag. This is faster than using get_fields('RG') and
+           working out the match yourself.
+ Returns : n/a
+ Args    : int (flag)
+
+=cut
 
 =head2 next_result
 
@@ -788,26 +930,141 @@ sub region {
 sub ignore_tags_on_write {
     my ($self, @tags) = @_;
     $self->{_ignore_tags} = [@tags];
+    if (@tags) {
+        $self->_do_strip(1);
+    }
+    else {
+        $self->_do_strip(0);
+    }
 }
 
 use Inline C => <<'END_C';
 
 #include "bam.h"
 
+// vars and method for skipping things
+static int g_do_region = 0, g_do_iter = 0, g_do_fields = 0, g_do_strip = 0;
+static int g_call_skip = 0, g_min_mapQ = 0, g_flag_on = 0, g_flag_off = 0, g_try_library = 0, g_try_rg = 0;
+static inline int __g_skip_aln(SV* self, bam1_t *b, bam_header_t *header) {
+    // ripped from sam_view.c
+    if (b->core.qual < g_min_mapQ || ((b->core.flag & g_flag_on) != g_flag_on) || (b->core.flag & g_flag_off)) {
+        return 1;
+    }
+    
+    if (g_try_rg || g_try_library) {
+        HV* self_hash;
+        self_hash = (HV*)SvRV(self);
+        
+        if (g_try_rg) {
+            char *g_rg;
+            g_rg = SvPV_nolen(*(hv_fetch(self_hash, "_req_rg", 7, 0)));
+            
+            if (g_rg) {
+                uint8_t *s = bam_aux_get(b, "RG");
+                if (s) {
+                    return (strcmp(g_rg, (char*)(s + 1)) == 0)? 0 : 1;
+                }
+                
+                Safefree(g_rg);
+            }
+        }
+        if (g_try_library) {
+            char *g_library;
+            g_library = SvPV_nolen(*(hv_fetch(self_hash, "_req_lib", 8, 0)));
+            
+            if (g_library) {
+                const char *p = bam_get_library((bam_header_t*)header, b);
+                return (p && strcmp(p, g_library) == 0)? 0 : 1;
+                
+                Safefree(g_library);
+            }
+        }
+    }
+    
+    return 0;
+}
+
+// new() needs to reset all the static vars
+void _reset(SV* self) {
+    g_do_region = 0;
+    g_do_iter = 0;
+    g_do_fields = 0;
+    g_do_strip = 0;
+    g_call_skip = 0;
+    g_min_mapQ = 0;
+    g_flag_on = 0;
+    g_flag_off = 0;
+    g_try_library = 0;
+    g_try_rg = 0;
+}
+
+// methods to set what we'd like to require/filter
+void required_flag(SV* self, char* input) {
+    int flag;
+    flag = strtol(input, NULL, 0);
+    g_flag_on = flag;
+    g_call_skip = flag > 0 ? 1 : g_call_skip;
+}
+
+void filtering_flag(SV* self, char* input) {
+    int flag;
+    flag = strtol(input, NULL, 0);
+    g_flag_off = flag;
+    g_call_skip = flag > 0 ? 1 : g_call_skip;
+}
+
+void minimum_quality(SV* self, char* input) {
+    int qual;
+    qual = strtol(input, NULL, 0);
+    g_min_mapQ = qual;
+    g_call_skip = g_min_mapQ > 0 ? 1 : g_call_skip;
+}
+
+void required_library(SV* self, char* input) {
+    HV* self_hash;
+    self_hash = (HV*)SvRV(self);
+    int len;
+    len = strlen(input);
+    if (len > 0) {
+        hv_store(self_hash, "_req_lib", 8, newSVpv(input, len), 0);
+        g_call_skip = 1;
+        g_try_library = 1;
+    }
+    else {
+        g_try_library = 0;
+    }
+}
+
+void required_readgroup(SV* self, char* input) {
+    HV* self_hash;
+    self_hash = (HV*)SvRV(self);
+    int len;
+    len = strlen(input);
+    if (len > 0) {
+        hv_store(self_hash, "_req_rg", 7, newSVpv(input, len), 0);
+        g_call_skip = 1;
+        g_try_rg = 1;
+    }
+    else {
+        g_try_rg = 0;
+    }
+}
+
+// methods to open bams
 void _initialize_bam(SV* self, char* bamfile) {
     bamFile *bam;
     bam = bam_open(bamfile, "r");
+    bgzf_seek(bam, 0, 0);
     
     bam1_t *b;
     b = bam_init1();
     
-    bam_header_t *bh;
-    bgzf_seek(bam,0,0);
-    bh = bam_header_read(bam);
+    bam_header_t *header;
+    header = bam_header_read(bam);
     
     Inline_Stack_Vars;
     Inline_Stack_Reset;
-    Inline_Stack_Push(newRV_noinc(newSViv(bh)));
+    Inline_Stack_Push(newRV_noinc(newSViv(header)));
     Inline_Stack_Push(newRV_noinc(newSViv(bam)));
     Inline_Stack_Push(newRV_noinc(newSViv(b)));
     Inline_Stack_Done;
@@ -828,78 +1085,16 @@ bamFile _initialize_obam(SV* self, char* bamfile) {
     return obam;
 }
 
-// create an output bam that is just the header of the input bam
-void _create_no_record_output_bam(SV* self, char* bamfile) {
-    bamFile *obam;
-    obam = _initialize_obam(self, bamfile);
-    bam_close(obam);
-}
-
-void write_result(SV* self, char* bamfile) {
-    HV* self_hash;
-    self_hash = (HV*)SvRV(self);
-    if (! hv_exists(self_hash, "_cb", 3)) {
-        return;
-    }
-    SV* b_ref;
-    b_ref = *(hv_fetch(self_hash, "_cb", 3, 0));
-    bam1_t *b;
-    b = (bam1_t*)SvIV(SvRV(b_ref));
-    
-    int len;
-    len = strlen(bamfile);
-    if (! len >= 1) {
-        return;
-    }
-    
-    SV* writes_ref;
-    writes_ref = *(hv_fetch(self_hash, "_writes", 7, 0));
-    HV* writes_hash;
-    writes_hash = (HV*)SvRV(writes_ref);
-    bamFile *obam;
-    if (! hv_exists(writes_hash, bamfile, len)) {
-        obam = _initialize_obam(self, bamfile);
-        hv_store(writes_hash, bamfile, len, newRV_noinc(newSViv(obam)), 0);
-    }
-    else {
-        SV* obam_ref;
-        obam_ref = *(hv_fetch(writes_hash, bamfile, len, 0));
-        obam = (bamFile*)SvIV(SvRV(obam_ref));
-    }
-    
-    if (hv_exists(self_hash, "_ignore_tags", 12)) {
-        SV* ignore_ref;
-        ignore_ref = *(hv_fetch(self_hash, "_ignore_tags", 12, 0));
-        AV* ignore_array;
-        ignore_array = (AV*)SvRV(ignore_ref);
-        I32* ignore_maxi;
-        ignore_maxi = av_len(ignore_array);
-        
-        if (ignore_maxi >= 0) {
-            char *tag;
-            STRLEN tag_length;
-            uint8_t *tag_value;
-            int i;
-            for (i = 0; i <= ignore_maxi; i++) {
-                tag = SvPV(*(av_fetch(ignore_array, i, 0)), tag_length);
-                tag_value = bam_aux_get(b, tag);
-                if (tag_value) {
-                    bam_aux_del(b, tag_value);
-                }
-            }
-        }
-    }
-    
-    bam_write1(obam, b);
-}
-
+// called by ->close and during destruction, will apply to both input and
+// outputs
 void _close_bam(SV* self, SV* bam_ref) {
     bamFile *bam;
     bam = (bamFile*)SvIV(SvRV(bam_ref));
     bam_close(bam);
 }
 
-void next_result(SV* self) {
+// the main parsing method
+int next_result(SV* self) {
     HV* self_hash;
     self_hash = (HV*)SvRV(self);
     
@@ -916,17 +1111,20 @@ void next_result(SV* self) {
     bam1_t *b;
     b = (bam1_t*)SvIV(SvRV(b_ref));
     
-    int ret;
     SV* header_ref;
     bam_header_t *header;
+    header_ref = *(hv_fetch(self_hash, "_chead", 6, 0));
+    header = (bam_header_t*)SvIV(SvRV(header_ref));
+    
+    // loop to see if we can find a record that passes filters before eof
+    int ret;
     bam_iter_t iter;
-    if (hv_exists(self_hash, "_region", 7)) {
-        char* region;
-        STRLEN str_len;
-        region = SvPV(*(hv_fetch(self_hash, "_region", 7, 0)), str_len);
-        if (str_len >= 1) {
+    do {
+        if (g_do_region) {
+            char* region;
+            region = SvPV_nolen(*(hv_fetch(self_hash, "_region", 7, 0)));
             char* filename;
-            filename = SvPV(*(hv_fetch(self_hash, "_filename", 9, 0)), str_len);
+            filename = SvPV_nolen(*(hv_fetch(self_hash, "_filename", 9, 0)));
             bam_index_t *idx = 0;
             idx = bam_index_load(filename);
             if (idx == 0) {
@@ -934,8 +1132,6 @@ void next_result(SV* self) {
                 ret = -1;
             }
             else {
-                header_ref = *(hv_fetch(self_hash, "_chead", 6, 0));
-                header = (bam_header_t*)SvIV(SvRV(header_ref));
                 int tid, beg, end;
                 bam_parse_region(header, region, &tid, &beg, &end);
                 if (tid < 0) {
@@ -946,35 +1142,23 @@ void next_result(SV* self) {
                     iter = bam_iter_query(idx, tid, beg, end);
                     ret = bam_iter_read(bam, iter, b);
                     hv_store(self_hash, "_iter", 5, newRV_noinc(newSViv(iter)), 0);
-                    hv_delete(self_hash, "_region", 7, G_DISCARD);
+                    g_do_region = 0;
+                    g_do_iter = 1;
                 }
             }
         }
+        else if (g_do_iter) {
+            SV* iter_ref;
+            iter_ref = *(hv_fetch(self_hash, "_iter", 5, 0));
+            iter = (bam_iter_t*)SvIV(SvRV(iter_ref));
+            ret = bam_iter_read(bam, iter, b);
+        }
         else {
-            hv_delete(self_hash, "_iter", 5, G_DISCARD);
-            hv_delete(self_hash, "_region", 7, G_DISCARD);
-            
-            // for some unknown reason just doing bam_read1 from the current
-            // position behaves inconsistently and not as expected, so we seek
-            // to the start when region is unset by the user
-            bam_seek(bam,0,0);
-            bam_header_read(bam);
             ret = bam_read1(bam, b);
         }
-    }
-    else if (hv_exists(self_hash, "_iter", 5)) {
-        SV* iter_ref;
-        iter_ref = *(hv_fetch(self_hash, "_iter", 5, 0));
-        iter = (bam_iter_t*)SvIV(SvRV(iter_ref));
-        ret = bam_iter_read(bam, iter, b);
-    }
-    else {
-        ret = bam_read1(bam, b);
-    }
+    } while ( ret >= 0 && g_call_skip ? __g_skip_aln(self, b, header) : 0 );
     
-    
-    Inline_Stack_Vars;
-    Inline_Stack_Reset;
+    // parse out fields if requested, return if we got a record or not
     if (ret >= 0) {
         SV* rh_ref;
         rh_ref = *(hv_fetch(self_hash, "_result_holder", 14, 0));
@@ -982,7 +1166,7 @@ void next_result(SV* self) {
         rh_hash = (HV*)SvRV(rh_ref);
         hv_clear(rh_hash);
         
-        if (hv_exists(self_hash, "_fields", 7)) {
+        if (g_do_fields) {
             SV* fields_ref;
             fields_ref = *(hv_fetch(self_hash, "_fields", 7, 0));
             AV* fields_array;
@@ -991,8 +1175,6 @@ void next_result(SV* self) {
             fields_maxi = av_len(fields_array);
             
             if (fields_maxi >= 0) {
-                header_ref = *(hv_fetch(self_hash, "_chead", 6, 0));
-                
                 uint8_t *tag_value;
                 int type;
                 
@@ -1035,7 +1217,6 @@ void next_result(SV* self) {
                                 hv_store(rh_hash, field, field_length, newSVpv("*", 1), 0);
                             }
                             else {
-                                header = (bam_header_t*)SvIV(SvRV(header_ref));
                                 hv_store(rh_hash, field, field_length, newSVpv(header->target_name[b->core.tid], 0), 0);
                             }
                         }
@@ -1077,7 +1258,6 @@ void next_result(SV* self) {
                                 hv_store(rh_hash, field, field_length, newSVpv("*", 1), 0);
                             }
                             else {
-                                header = (bam_header_t*)SvIV(SvRV(header_ref));
                                 hv_store(rh_hash, field, field_length, newSVpv(header->target_name[b->core.mtid], 0), 0);
                             }
                         }
@@ -1199,12 +1379,115 @@ void next_result(SV* self) {
             }
         }
         
-        Inline_Stack_Push(sv_2mortal(newSVuv(1)));
+        return 1;
     }
     else {
-        Inline_Stack_Push(sv_2mortal(newSVuv(0)));
+        return 0;
     }
-    Inline_Stack_Done;
+}
+
+// create an output bam that is just the header of the input bam
+void _create_no_record_output_bam(SV* self, char* bamfile) {
+    bamFile *obam;
+    obam = _initialize_obam(self, bamfile);
+    bam_close(obam);
+}
+
+// write out the most recently read input bam record
+void write_result(SV* self, char* bamfile) {
+    HV* self_hash;
+    self_hash = (HV*)SvRV(self);
+    if (! hv_exists(self_hash, "_cb", 3)) {
+        return;
+    }
+    SV* b_ref;
+    b_ref = *(hv_fetch(self_hash, "_cb", 3, 0));
+    bam1_t *b;
+    b = (bam1_t*)SvIV(SvRV(b_ref));
+    
+    int len;
+    len = strlen(bamfile);
+    if (! len >= 1) {
+        return;
+    }
+    
+    SV* writes_ref;
+    writes_ref = *(hv_fetch(self_hash, "_writes", 7, 0));
+    HV* writes_hash;
+    writes_hash = (HV*)SvRV(writes_ref);
+    bamFile *obam;
+    if (! hv_exists(writes_hash, bamfile, len)) {
+        obam = _initialize_obam(self, bamfile);
+        hv_store(writes_hash, bamfile, len, newRV_noinc(newSViv(obam)), 0);
+    }
+    else {
+        SV* obam_ref;
+        obam_ref = *(hv_fetch(writes_hash, bamfile, len, 0));
+        obam = (bamFile*)SvIV(SvRV(obam_ref));
+    }
+    
+    if (g_do_strip) {
+        SV* ignore_ref;
+        ignore_ref = *(hv_fetch(self_hash, "_ignore_tags", 12, 0));
+        AV* ignore_array;
+        ignore_array = (AV*)SvRV(ignore_ref);
+        I32* ignore_maxi;
+        ignore_maxi = av_len(ignore_array);
+        
+        if (ignore_maxi >= 0) {
+            char *tag;
+            uint8_t *tag_value;
+            int i;
+            for (i = 0; i <= ignore_maxi; i++) {
+                tag = SvPV_nolen(*(av_fetch(ignore_array, i, 0)));
+                tag_value = bam_aux_get(b, tag);
+                if (tag_value) {
+                    bam_aux_del(b, tag_value);
+                }
+            }
+        }
+    }
+    
+    bam_write1(obam, b);
+}
+
+// methods to minimise hash lookups
+void _do_fields(SV* self, char* input) {
+    int boolean;
+    boolean = strtol(input, NULL, 0);
+    g_do_fields = boolean;
+}
+
+void _do_strip(SV* self, char* input) {
+    int boolean;
+    boolean = strtol(input, NULL, 0);
+    g_do_strip = boolean;
+}
+
+void _do_region(SV* self, char* input) {
+    int boolean;
+    boolean = strtol(input, NULL, 0);
+    g_do_region = boolean;
+    g_do_iter = 0;
+}
+
+void _reset_region(SV* self) {
+    // for some unknown reason just doing bam_read1 from the current
+    // position behaves inconsistently and not as expected, so we seek
+    // to the start when region is unset by the user
+    HV* self_hash;
+    self_hash = (HV*)SvRV(self);
+    if (hv_exists(self_hash, "_cbam", 5)) {
+        SV* bam_ref;
+        bam_ref = *(hv_fetch(self_hash, "_cbam", 5, 0));
+        bamFile *bam;
+        bam = (bamFile*)SvIV(SvRV(bam_ref));
+        bam_seek(bam,0,0);
+        bam_header_read(bam);
+    }
+    
+    g_do_region = 0;
+    g_do_iter = 0;
 }
 
 END_C
