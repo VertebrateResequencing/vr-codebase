@@ -1067,41 +1067,38 @@ sub bam_statistics {
 sub make_unmapped_bam {
     my ($self, $in_bam, $out_bam, $skip_mate_mapped) = @_;
     
-    # create a new sam file with just the header and unmapped reads
-    my $in = VertRes::Wrapper::samtools->new(file => $in_bam,
-                                             run_method => 'open',
-                                             verbose => $self->verbose);
-    my $in_fh = $in->view($in_bam, undef, h => 1);
-    my $filtered_sam = $in_bam.'.unmapped_sam';
-    $self->register_for_unlinking($filtered_sam);
-    my $out = VertRes::IO->new(file => ">$filtered_sam");
-    my $out_fh = $out->fh();
-    my $sp = VertRes::Parser::sam->new();
+    my $pb = VertRes::Parser::bam->new(file => $in_bam);
+    $pb->flag_selector(self_unmapped => 1);
+    if ($skip_mate_mapped) {
+        $pb->get_fields('FLAG');
+    }
+    my $rh = $pb->result_holder;
     
-    while (<$in_fh>) {
-        if (/^\@/) {
-            print $out_fh $_;
-        }
-        else {
-            my (undef, $flag) = split;
-            unless ($sp->is_mapped($flag)) {
-                if ($skip_mate_mapped && $sp->is_sequencing_paired($flag)) {
-                    next if $sp->is_mate_mapped($flag);
-                }
-                print $out_fh $_;
+    my $working_bam = $out_bam.'.working';
+    my $count = 0;
+    while ($pb->next_result) {
+        if ($skip_mate_mapped) {
+            my $flag = $rh->{FLAG};
+            if ($pb->is_sequencing_paired($flag)) {
+                next if $pb->is_mate_mapped($flag);
             }
         }
+        $pb->write_result($working_bam);
+        $count++;
     }
-    close($in_fh);
-    close($out_fh);
+    $pb->close;
     
-    # convert to a bam file
-    my $samtools = VertRes::Wrapper::samtools->new(verbose => $self->verbose);
-    $samtools->view($filtered_sam, $out_bam, b => 1, S => 1);
+    my $actual = $self->num_bam_records($working_bam);
     
-    unlink($filtered_sam);
-    
-    return $samtools->run_status() >= 1;
+    if ($actual == $count) {
+        move($working_bam, $out_bam) || $self->throw("Failed to move $working_bam to $out_bam");
+        return 1;
+    }
+    else {
+        $self->warn("Created an output bam, but it had $actual instead of $count records; will unlink it");
+        unlink($working_bam);
+        return 0;
+    }
 }
 
 =head2 add_unmapped
