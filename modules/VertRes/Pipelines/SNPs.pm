@@ -800,6 +800,8 @@ sub gatk
     if ( !$$self{fai_ref} ) { $self->throw("Missing the option fai_ref.\n"); }
     if ( !$$self{gatk_opts} ) { $self->throw("Missing the option gatk_opts.\n"); }
 
+    if ( !($$self{file_list}=~/\.list$/) ) { $self->throw("GATK requires .list extension for the file of file names: $$self{file_list}\n"); }
+
     if ( !exists($$self{gatk_opts}{all}) ) { $$self{gatk_opts}{all}={}; }
     my $gopts = $$self{gatk_opts}{all};
     if ( exists($$gopts{dbsnp}) && $$gopts{dbsnp} ne $$self{dbSNP_rod} )
