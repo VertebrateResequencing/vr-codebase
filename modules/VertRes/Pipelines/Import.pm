@@ -91,7 +91,9 @@ sub get_fastqs_provides
     my $vrlane  = VRTrack::Lane->new_by_name($vrtrack,$$self{lane}) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
     my $vfiles=$vrlane->files;
     for my $vfile(@$vfiles){
-        push @provides,$vfile->name.".gz";
+        my $gzstrippedfilename=$vfile->name;
+        $gzstrippedfilename=~s/\.gz//g;
+        push @provides,$gzstrippedfilename.".gz";
     }
     
     #my @provides = ("$$self{lane}_1.fastq.gz");
