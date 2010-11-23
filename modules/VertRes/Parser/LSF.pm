@@ -207,7 +207,10 @@ sub get {
             }
         }
         $self->_restore_position;
-        $self->throw("No records in the LSF output file? [$$self{file}]") unless defined $self->{results};
+        unless (defined $self->{results}) {
+            $self->warn("No records in the LSF output file? [$$self{file}]");
+            return;
+        }
     }
     if ( !defined $key ) { return undef; }  # This can really happen, see nrecords().
     my $record = $$self{results}[$idx];
