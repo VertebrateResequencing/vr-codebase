@@ -47,16 +47,15 @@ foreach my $region ('1:10000-20000', '3:400000-5000000') {
 
 # while going through next_result, you can also write those alignments out to a
 # new bam file, optionally ignoring tags to reduce output file size (and
-# increase speed). Eg. write high quality chr20 reads where both mates of a pair
+# increase speed). Eg. write Q30 chr20 reads where both mates of a pair
 # mapped to a new 'chr20.mapped.bam' file, where one of the pair is mapped to
 # a 'chr20.partial.bam' file, and where both are unmapped to a
 # 'chr20.unmapped.bam', ignoring the big OQ tags:
 $pars->region('20');
-$pars->get_fields('FLAG', 'MAPQ');
+$pars->minimum_quality(30);
+$pars->get_fields('FLAG');
 $pars->ignore_tags_on_write('OQ');
 while ($pars->next_result) {
-    $rh->{MAPQ} >= 30 || next;
-
     my $flag = $rh->{FLAG};
     if ($pars->is_mapped_paired($flag)) {
         $pars->write_result('chr20.mapped.bam');
@@ -160,6 +159,9 @@ sub file {
         }
         
         if ($filename =~ /^ftp:|^http:/) {
+            # *** this needs to be upgraded to the proper samtools C api support
+            #     for remote files, instead of copying local and losing the bai
+            #     file!
             $filename = $self->get_remote_file($filename) || $self->throw("Could not download remote file '$filename'");
         }
         
@@ -746,7 +748,7 @@ sub get_fields {
            next_result()
  Returns : hash ref, with keys corresponding to what you chose in get_fields().
            If you never called get_fields(), the hash will be empty.
-           If you requseted a tag and it wasn't present, the value will be set
+           If you requested a tag and it wasn't present, the value will be set
            to '*'.
  Args    : n/a
 
@@ -862,7 +864,7 @@ sub flag_selector {
  Function: Require that the mapping quality field of an alignment be greater
            than or equal to a desired quality. This alters what next_result()
            will return, and is faster than using get_fields('MAPQ') and working
-           out the match yourself.
+           out the comparison yourself.
  Returns : n/a
  Args    : int (flag)
 
