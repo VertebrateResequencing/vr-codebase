@@ -1,48 +1,57 @@
 =head1 NAME
 
-VertRes::Pipelines::SplitBam - pipeline for splitting bams into chromosome files
+VertRes::Pipelines::SplitBam - pipeline to split BAMs by reference sequence (wrapper for VertRes::Utils::Sam::split_bam_by_sequence())
 
 =head1 SYNOPSIS
 
 # *** To do: take care of 454 bams made with ssaha2 and our cigar->sam code.
 #
-# Make a file of bam filenames which you'd like split into chromosomes.
-# The output for each bam will be one bam per chromosome.
-# /path/to/foo.bam will have output files put in directory /path/to/foo.split
+# Make a file of BAM filenames. Each BAM file will be split into separate BAM
+# files in a manner specified in the config file.  Files can be split based
+# on the sequence to which each read was mapped, and also make an unmapped
+# reads file (plus anything else which
+# VertRes::Utils::Sam::split_bam_by_sequence() can do)
 #
-# Make a conf file with...
-# Optional settings also go here.
+# Make a config file specifying your BAM file of filenames, plus
+# other optional arguments.
 #
-# Example splitbam.conf:
+# An example config file is:
 root    => '/abs/path/to/output/dir',  
 module  => 'VertRes::Pipelines::SplitBam',
 prefix  => '_',
-bams_fofn => 'bams.fofn'
-simultaneous_splits => 5,
+bams_fofn => 'bams.fofn',
+output_dir => 'split',
+simultaneous_splits => 100,
 data => {
     pretend => 0,
     split_bam_by_sequence_opts => {
-        only => '^[0-9]',
-        check => 1},
+        only => '^[0-9]'},
     }
 }
 #
+# Options outside the data section include:
 # 'root' can be anything, just there to keep run-pipeline happy
 #
-# Option which can go in the data {} section are:
-
+# output_dir => string (Optional.  If not given, the output BAMs will be
+#                       in same directory as the original BAM to be split.
+#                       If given, e.g. output_dir => 'split', then the output
+#                       directory for /foo/in.bam will be /foo/split)
+#
+# Options which can go in the data {} section are:
+#
+# pretend => boolean (default false; if set to true, will print the
+#                     BAM files which will be made, but not make them)
+#
 # split_bam_by_sequence_opts => hash of options to be passed into
-#   VertRes::Utils::Sam::split_bam_by_sequence
+#    VertRes::Utils::Sam::split_bam_by_sequence
 #    For possible options, see the usage of this subroutine.
 #    Exceptions:
 #     1) output_dir will be ignored; the output directory
-#        corresponding to each bam /path/to/foo.bam to be split is
-#        /path/to/foo.split
+#        corresponding to each BAM to be split is
+#        specified by 'output_dir' outside the data section.
 #     2) pretend ignored; if you want this, use pretend option
 #        in the data section, not here.
 #
-# pretend => boolean (default false; if set to true, will print the
-#                     bam files which will be made, but not make them)
 #
 # make a pipeline file:
 echo "__SPLITBAM__ splitbam.conf" > splitbam.pipeline
@@ -54,9 +63,11 @@ run-pipeline -c splitbam.pipeline -v
 
 =head1 DESCRIPTION
 
-A module for splitting bam files into chromosome bams.  Essentially calls
-VertRes::Utils::split_bam_by_sequence on each input bam file.
-Input bam files specified by a file of bam filenames.
+A module for splitting BAM files into BAMs by reference sequence name,
+and also unmapped reads.  e.g. split one BAM into 1 new BAM for
+each reference sequence, plus a file of unmapped reads.
+Essentially calls VertRes::Utils::split_bam_by_sequence on each
+input BAM file. Input BAM files specified by a file of BAM filenames.
 
 =head1 AUTHOR
 
@@ -87,7 +98,7 @@ our $actions = [{ name     => 'split',
                   requires => \&cleanup_requires,
                   provides => \&cleanup_provides }] ;
 
-our %options = (simultaneous_splits => 5,
+our %options = (simultaneous_splits => 100,
                 bsub_opts => '',);
 
 
@@ -100,17 +111,23 @@ our %options = (simultaneous_splits => 5,
  Args    : lane_path => '/path/to/output_dir' (REQUIRED, set by
                          run-pipeline automatically)
 
-           bams_fofn => 'bams.fofn' (REQUIRED, file of bam filenames you want split)
+           bams_fofn => 'bams.fofn' (REQUIRED, file of BAM filenames you want split)
 
-           simultaneous_splits => int (default 5; the number of splits to do at once -
+           output_dir => 'outdir' (Optional.  For a BAM file /path/in.bam to be
+                                 split, will put the split BAMs in /path/outdir/.
+                                 If this option is not used, output BAMs in same
+                                 directory as input BAM, e.g. /path/ for /path/in.bam)
+
+
+           simultaneous_splits => int (default 100; the number of splits to do at once -
                                      limited to avoid IO problems)
 
            split_bam_by_sequence_opts => hash (optional; hash of options to be passed
                                 into VertRes::Utils::Sam::split_bam_by_sequence.
                                 For possible options, see the usage of this subroutine.
                                 output_dir will be ignored; the output directory
-                                corresponding to each bam /path/to/foo.bam to be split is
-                                /path/to/foo.split)
+                                corresponding to each BAM is specified by outpt_dir
+                                (see above))
 
            other optional args as per VertRes::Pipeline
 
@@ -160,7 +177,7 @@ sub split_provides {
 
  Title   : split
  Usage   : $obj->split('/path/to/lane', 'lock_filename');
- Function: Splits a bam file into bam files per sequence
+ Function: Splits a BAM file into BAM files per sequence
  Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
  Args    : Output directory of split bams, name of lock file
 
@@ -180,7 +197,12 @@ sub split {
         $self->{split_bam_by_sequence_opts}->{pretend} = 1;
         my @expected = $samtools->split_bam_by_sequence($self->{bam}, %{$self->{split_bam_by_sequence_opts}});
         print "  Files which would be made from $self->{bam}\n";
-        print "\t", join "\n\t", @expected, "\n";
+        foreach my $file (@expected){
+            my ($basename, $path) = fileparse($file);
+            my $up_dir = dirname($path);
+            my $outfile = File::Spec->catfile($up_dir, $basename);
+            print "    $outfile\n";
+        }
 
         my $done_file = $self->{fsu}->catfile($out_dir, 'split.done');
         Utils::CMD("touch $done_file");
@@ -198,8 +220,7 @@ sub split {
 
     open my $fh, '>', $perl_out  or $self->throw("Couldn't write to $perl_out");
 
-    print $fh qq[
-use strict;
+    print $fh qq[ use strict;
 use warnings;
 use VertRes::Utils::Sam;
 my \$o = VertRes::Utils::Sam->new();
@@ -277,6 +298,7 @@ sub cleanup {
     my $file_base = $self->{fsu}->catfile($lane_path, $prefix);
 
     foreach my $job_base (qw(split.pl)) {
+        unlink "$file_base$job_base";
         foreach my $suffix ('o', 'e') {
             unlink("$file_base$job_base.$suffix");
         }
@@ -321,6 +343,11 @@ sub is_finished {
         }
         
         if ($written_expected == $expected_bams && $done_bams == $expected_bams) {
+            foreach my $bam (@bams){
+                my ($bam_basename, $path) = fileparse($bam);
+                my $up_dir = dirname($path);
+                move($bam, $up_dir) || $self->throw("Failed to move $bam up one directory");
+            }
             move($expected_file, $done_file) || $self->throw("Failed to move $expected_file -> $done_file");
         }
     }
