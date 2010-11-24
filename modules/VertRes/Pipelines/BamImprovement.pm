@@ -304,7 +304,7 @@ sub realign {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M3999000 -R \'select[mem>3999] rusage[mem=3999]\'';
+    $self->{bsub_opts} = '-q normal -M3999000 -R \'select[mem>3999] rusage[mem=3999,tmp=16000]\'';
     my $verbose = $self->verbose;
     
     foreach my $in_bam (@{$self->{in_bams}}) {
@@ -444,7 +444,7 @@ sub sort {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M6800000 -R \'select[mem>6800] rusage[mem=6800]\'';
+    $self->{bsub_opts} = '-q normal -M6800000 -R \'select[mem>6800] rusage[mem=6800,tmp=16000]\'';
     
     foreach my $in_bam (@{$self->{in_bams}}) {
         my $base = basename($in_bam);
