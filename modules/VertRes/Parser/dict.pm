@@ -9,13 +9,13 @@ use VertRes::Parser::dict;
 # create object, supplying .dict file or filehandle
 my $pars = VertRes::Parser::dict->new(file => 'reference.dict');
 
-# get the array reference that will hold the most recently requested result
+# get the hash reference that will hold the most recently requested result
 my $result_holder = $pars->result_holder();
 
 # loop through the output, getting results
 while ($pars->next_result()) {
     # check $result_holder for desired info, eg:
-    my $md5 = $result_holder->[3]
+    my $md5 = $result_holder->{M5}
 }
 
 =head1 DESCRIPTION
@@ -51,6 +51,9 @@ sub new {
     
     my $self = $class->SUPER::new(@args);
     
+    # unlike normal parsers, our result holder is a hash ref
+    $self->{_result_holder} = {};
+    
     return $self;
 }
 
@@ -60,11 +63,15 @@ sub new {
  Usage   : my $result_holder = $obj->result_holder()
  Function: Get the data structure that will hold the last result requested by
            next_result().
- Returns : array ref, with the values:
-           [0] sequence identifier
-           [1] sequence length
-           [2] file:/... location of the fasta file this a is a .dict of
-           [3] md5 checksum of the uppercase-spaces-removed sequence
+ Returns : hash ref, with the keys:
+           SN (sequence identifier)
+           LN (sequence length)
+           UR (file:/... location of the fasta file this a is a .dict of)
+           M5 (md5 checksum of the uppercase-spaces-removed sequence)
+           AS (the assembly name)
+           SP (the species)
+           NB: some may not exist depending upon the completeness of the dict
+           file
  Args    : n/a
 
 =cut
@@ -89,6 +96,7 @@ sub next_result {
     
     #@HD     VN:1.0  SO:unsorted
     #@SQ     SN:1    LN:247249719    UR:file:/lustre/scratch103/sanger/team145/g1k/ref/human_b36_male.fa     M5:9ebc6df9496613f373e73396d5b3b6b6
+    #@SQ     SN:1    LN:249250621    AS:NCBI37       UR:ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v37.fasta.gz  M5:1b22b98cdeb4a9304cb5d48026a85128     SP:Human
     
     # ignore header and any other non SQ lines
     while (index($line, '@SQ') != 0) {
@@ -100,8 +108,15 @@ sub next_result {
     @data || return;
     
     my $result_holder = $self->{_result_holder};
-    foreach my $i (0..3) {
-        $result_holder->[$i] = substr($data[$i + 1], 3);
+    
+    foreach my $key (keys %{$result_holder}) {
+        delete $result_holder->{$key};
+    }
+    
+    shift(@data);
+    foreach my $tag (@data) {
+        my ($name, $value) = $tag =~ /^(\S\S):(\S+)/;
+        $result_holder->{$name} = $value;
     }
     
     return 1;
@@ -127,7 +142,7 @@ sub seq_lengths {
     
     my $rh = $self->result_holder;
     while ($self->next_result) {
-        $seq_lengths{$rh->[0]} = $rh->[1];
+        $seq_lengths{$rh->{SN}} = $rh->{LN};
     }
     
     $self->_restore_position();
@@ -154,7 +169,7 @@ sub seq_ids {
     
     my $rh = $self->result_holder;
     while ($self->next_result) {
-        push(@seq_ids, $rh->[0]);
+        push(@seq_ids, $rh->{SN});
     }
     
     $self->_restore_position();

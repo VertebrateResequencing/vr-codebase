@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 16;
+    use Test::Most tests => 18;
     
     use_ok('VertRes::Parser::dict');
 }
@@ -15,8 +15,8 @@ isa_ok $pd, 'VertRes::IO';
 isa_ok $pd, 'VertRes::Base';
 
 ok my $rh = $pd->result_holder(), 'result_holder returned something';
-is ref($rh), 'ARRAY', 'result_holder returns an array ref';
-is @{$rh}, 0, 'the result_holder starts off empty';
+is ref($rh), 'HASH', 'result_holder returns a hash ref';
+is keys %{$rh}, 0, 'the result_holder starts off empty';
 
 ok ! $pd->next_result, 'next_result returns false when we have no file set';
 
@@ -25,15 +25,15 @@ ok -e $d_file, 'file we will test with exists';
 ok $pd->file($d_file), 'file set into parser';
 
 ok $pd->next_result, 'next_result now works';
-is_deeply $rh, [1, 247249719, 'file:/lustre/scratch103/sanger/team145/g1k/ref/human_b36_male.fa', '9ebc6df9496613f373e73396d5b3b6b6'], 'result_holder contains correct info for first line';
+is_deeply $rh, {SN => 1, LN => 247249719, UR => 'file:/lustre/scratch103/sanger/team145/g1k/ref/human_b36_male.fa', M5 => '9ebc6df9496613f373e73396d5b3b6b6'}, 'result_holder contains correct info for first line';
 ok $pd->next_result, 'next_result worked again';
-is $rh->[3], 'b12c7373e3882120332983be99aeb18d', 'result_holder contains correct info for second line';
+is $rh->{M5}, 'b12c7373e3882120332983be99aeb18d', 'result_holder contains correct info for second line';
 
 # check the last line as well
 while ($pd->next_result) {
     next;
 }
-is_deeply $rh, ['NC_007605', 171823, 'file:/lustre/scratch103/sanger/team145/g1k/ref/human_b36_male.fa', '6743bd63b3ff2b5b8985d8933c53290a'], 'result_holder contains correct qname for last line';
+is_deeply $rh, {SN => 'NC_007605', LN => 171823, UR => 'file:/lustre/scratch103/sanger/team145/g1k/ref/human_b36_male.fa', M5 => '6743bd63b3ff2b5b8985d8933c53290a'}, 'result_holder contains correct qname for last line';
 
 # seq_lengths
 is_deeply {$pd->seq_lengths}, { qw(1	247249719
@@ -150,3 +150,10 @@ NT_113899	520332
 NT_113965	1005289
 NT_113898	1305230
 NC_007605	171823) }, 'seq_lengths worked';
+
+# try out a new dict file with more tags
+$d_file = File::Spec->catfile('t', 'data', 'ncbi37.dict');
+ok -e $d_file, 'file we will test with exists';
+$pd->file($d_file);
+$pd->next_result;
+is_deeply $rh, {SN => 1, LN => 249250621, AS => 'NCBI37', UR => 'ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v37.fasta.gz', M5 => '1b22b98cdeb4a9304cb5d48026a85128', SP => 'Human'}, 'result_holder contains correct info for first line of an ncbi37 dict';

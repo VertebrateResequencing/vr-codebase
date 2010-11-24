@@ -506,7 +506,11 @@ sub add_sam_header {
     my $dict_parser = VertRes::Parser::dict->new(file => $ref_dict);
     my $rh = $dict_parser->result_holder;
     while ($dict_parser->next_result) {
-        print $shfh "\@SQ\tSN:$rh->[0]\tLN:$rh->[1]\tAS:$ref_name\tM5:$rh->[3]\tUR:file:$ref_fa\n";
+        my $sp = $rh->{SP} || '';
+        $sp = "\t$sp" if $sp;
+        my $local_ref_name = $rh->{AS} || $ref_name;
+        my $local_ur = $rh->{UR} || $ref_fa;
+        print $shfh "\@SQ\tSN:$rh->{SN}\tLN:$rh->{LN}\tAS:$local_ref_name\tUR:$local_ur\tM5:$rh->{M5}$sp\n";
         $header_lines++;
     }
     

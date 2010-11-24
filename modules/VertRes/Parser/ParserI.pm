@@ -103,10 +103,10 @@ sub _save_position {
         $self->warn("this parsing method doesn't work on piped input");
         return;
     }
-    my @current_results = @{$self->{_result_holder}};
+    my $current_results = ref($self->{_result_holder}) eq 'ARRAY' ? [@{$self->{_result_holder}}] : {%{$self->{_result_holder}}};
     
     $self->{_tell} = $tell;
-    $self->{_current_results} = \@current_results;
+    $self->{_current_results} = $current_results;
     
     return 1;
 }
@@ -233,7 +233,6 @@ sub _restore_position {
     my $self = shift;
     
     $self->fh() || return;
-    my @current_results = @{$self->{_current_results}};
     
     if ($self->{_tell} == 0) {
         # we might have saved position before parsing the header, but now have
@@ -244,8 +243,16 @@ sub _restore_position {
     }
     
     $self->seek($self->{_tell}, 0);
-    for my $i (0..$#current_results) {
-        $self->{_result_holder}->[$i] = $current_results[$i];
+    if (ref($self->{_result_holder}) eq 'ARRAY') {
+        my @current_results = @{$self->{_current_results}};
+        for my $i (0..$#current_results) {
+            $self->{_result_holder}->[$i] = $current_results[$i];
+        }
+    }
+    else {
+        while (my ($key, $val) = each %{$self->{_current_results}}) {
+            $self->{_result_holder}->{$key} = $val;
+        }
     }
     
     return 1;

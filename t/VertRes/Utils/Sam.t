@@ -59,7 +59,7 @@ ok $sam_util->add_sam_header($temp_sam,
                              ref_name => 'SsP17',
                              study => 'SRP000001'), 'add_sam_header manual args test';
 my @expected = ("\@HD\tVN:1.0\tSO:coordinate",
-                "\@SQ\tSN:Streptococcus_suis\tLN:2007491\tAS:SsP17\tM5:c52b2f0394e12013e2573e9a38f51031\tUR:file:t/data/S_suis_P17.fa",
+                "\@SQ\tSN:Streptococcus_suis\tLN:2007491\tAS:SsP17\tUR:file:/nfs/users/nfs_s/sb10/src/vert_reseq/trunk/t/data/S_suis_P17.dna\tM5:c52b2f0394e12013e2573e9a38f51031",
                 "\@RG\tID:SRR00000\tLB:alib\tSM:NA00000\tPU:7563\tPI:2000\tCN:Sanger\tPL:ILLUMINA\tDS:SRP000001");
 is_deeply [get_sam_header($temp_sam)], \@expected, 'generated the correct header';
 my $wc = `wc -l $temp_sam`;
@@ -81,7 +81,7 @@ ok $sam_util->add_sam_header($temp_sam,
                              program => 'bwa',
                              program_version => '0.4.9'), 'add_sam_header manual args test';
 @expected = ("\@HD\tVN:1.0\tSO:coordinate",
-             "\@SQ\tSN:Streptococcus_suis\tLN:2007491\tAS:SsP17\tM5:c52b2f0394e12013e2573e9a38f51031\tUR:file:t/data/S_suis_P17.fa",
+             "\@SQ\tSN:Streptococcus_suis\tLN:2007491\tAS:SsP17\tUR:file:/nfs/users/nfs_s/sb10/src/vert_reseq/trunk/t/data/S_suis_P17.dna\tM5:c52b2f0394e12013e2573e9a38f51031",
              "\@RG\tID:SRR00001\tLB:alib\tSM:NA00001\tPU:7563\tPI:2000\tCN:Sanger\tPL:ILLUMINA\tDS:SRP000001",
              "\@PG\tID:bwa\tVN:0.4.9");
 my @header_lines = get_sam_header($temp_sam);
@@ -245,12 +245,12 @@ ok $sam_util->rewrite_bas_meta($given_bas, SRR00001 => { sample_name => 'NA00003
 open($tbfh, $given_bas);
 @given = <$tbfh>;
 close($tbfh);
-is_deeply \@given, [$expected[0], join("\t", qw(NA00003.LS454.bwa.unknown_population.unknown_analysisgroup.20100208 f203566d66a1751151823a36ff0cfc1d SRP000002 NA00003 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48 2))."\n"], 'rewrite_bas_meta actually changed the bas';
+is_deeply \@given, [$expected[0], join("\t", qw(NA00003.LS454.bwa.unknown_population.unknown_analysisgroup.20100208 d025918167ebe5b1917abb0909e3185e SRP000002 NA00003 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48 2))."\n"], 'rewrite_bas_meta actually changed the bas';
 ok $sam_util->rewrite_bas_meta($given_bas, SRR00001 => { sample_name => 'NA00004', filename => 'foo' }), 'rewrite_bas_meta ran ok again';
 open($tbfh, $given_bas);
 @given = <$tbfh>;
 close($tbfh);
-is_deeply \@given, [$expected[0], join("\t", qw(foo f203566d66a1751151823a36ff0cfc1d SRP000002 NA00004 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48 2))."\n"], 'rewrite_bas_meta actually changed the bas, and the filename option worked';
+is_deeply \@given, [$expected[0], join("\t", qw(foo d025918167ebe5b1917abb0909e3185e SRP000002 NA00004 LS454 clib SRR00001 115000 58583 2000 1084 1084 1070 2.05 23.32 286 74.10 275 48 2))."\n"], 'rewrite_bas_meta actually changed the bas, and the filename option worked';
 
 # stats method
 ok $sam_util->stats('20100208', $sorted_bam), 'stats test';
@@ -359,10 +359,10 @@ my $strip_bam = File::Spec->catfile($temp_dir, 'strip.bam');
 @records = ([qw(SRR035022.11486888 113 1 10003 0 76M 12 95704 0 ACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCC @>=>??;>;?=@4@>?5?=@A@<@=>A@>@AAA@@@@AA@@@AAA@A?AAA@=@AAAA@@>AAAA@;AAAAA=AA@)],
             [qw(SRR035022.7899884 81 1 10021 0 22S54M 5 11065 0 CCTACCCCTACCCCTACCCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTA), '#######################>>=>>.?@@@?@A@?@>@AA@@@@<A@A@=AA@A@AAAA>@AA@A>A<>7;2;'],
             [qw(SRR035022.16462491 99 1 10024 0 74M2S = 10317 327 CTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAA), '@B@B@AABAA?AABAA?AABAB?@@BAB>AAB@B?@@BAB?8@<AB>@@@@B<AA@<A??AB?A;A>::A8@?###']);
-ok $sam_util->tag_strip($lane_bam, $strip_bam, qw(OQ MD XM XG XO));
+ok $sam_util->tag_strip($lane_bam, $strip_bam, qw(OQ MD XM XG XO)), 'tag_strip returned ok';
 is_deeply [get_bam_body($strip_bam)], [join("\t", @{$records[0]}, qw(X0:i:372 RG:Z:SRR035022 AM:i:0 NM:i:0 SM:i:0 MQ:i:0 XT:A:R)),
                                        join("\t", @{$records[1]}, qw(X0:i:442 XC:i:54 RG:Z:SRR035022 AM:i:0 NM:i:0 SM:i:0 MQ:i:0 XT:A:R)),
-                                       join("\t", @{$records[2]}, qw(X0:i:377 XC:i:74 RG:Z:SRR035022 AM:i:0 NM:i:0 SM:i:0 MQ:i:23 XT:A:R))], 'tag_strip test';
+                                       join("\t", @{$records[2]}, qw(X0:i:377 XC:i:74 RG:Z:SRR035022 AM:i:0 NM:i:0 SM:i:0 MQ:i:23 XT:A:R))], 'tag_strip produced correct results';
 
 exit;
 
