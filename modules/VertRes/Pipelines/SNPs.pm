@@ -48,7 +48,7 @@ our $options =
     bsub_opts_varfilter  => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
     bsub_opts_mpileup    => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
     bsub_opts_qcall      => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
-    bsub_opts_gatk       => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
+    bsub_opts_gatk       => "-q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000,thouio=1]'",
     fai_chr_regex   => '\d+|x|y',
     gatk_opts       => { all=>{verbose=>1} },
     dbSNP_rod       => undef,
