@@ -2005,9 +2005,9 @@ sub extract_intervals_from_bam {
         foreach my $interval (@$list) {
             $bam_parser->region("$chr:$interval->[0]-$interval->[1]");
             while ($bam_parser->next_result) {
-                $lines_out_counter++;
                 next if $result_holder->{CIGAR} eq "*";
                 $bam_parser->write_result("$tmp_out");
+                $lines_out_counter++;
             }
         }
     }
