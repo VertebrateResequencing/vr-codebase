@@ -5,7 +5,7 @@ use File::Spec;
 use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 115;
+    use Test::Most tests => 116;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -327,6 +327,7 @@ foreach my $split (@expected_splits) {
 is @splits, 26, 'split_bam_by_sequence can pretend to make all splits';
 is $actually_created, 0, 'split_bam_by_sequence pretend doesn\'t actually make any splits';
 
+is $sam_util->num_bam_header_lines($headed_bam), 116, 'num_bam_header_lines works';
 is $sam_util->num_bam_records($headed_bam), 2000, 'num_bam_records works';
 is $sam_util->num_bam_records($headed_bam, only => '^12$'), 4, 'num_bam_records works with only option';
 is $sam_util->num_bam_lines($headed_bam), 2116, 'num_bam_lines works';
