@@ -938,12 +938,23 @@ sub is_finished {
             }
             elsif ($action_name eq 'library_merge') {
                 # we've just completed the library merge; delete the tag_strip
-                # bams
-                my $tag_done_file = $self->{fsu}->catfile($lane_path, ".tag_strip_done");
-                my @files = $self->{io}->parse_fofn($tag_done_file);
+                # bams unless the library merge bams are just symlinks to those
+                my $syms = 0;
+                my @files = $self->{io}->parse_fofn($done_file, '/');
                 foreach my $file (@files) {
-                    #unlink($file);
-                    move($file, "$file.deleted");
+                    if (-l $file) {
+                        $syms = 1;
+                        last;
+                    }
+                }
+                
+                unless ($syms) {
+                    my $tag_done_file = $self->{fsu}->catfile($lane_path, ".tag_strip_done");
+                    my @files = $self->{io}->parse_fofn($tag_done_file);
+                    foreach my $file (@files) {
+                        #unlink($file);
+                        move($file, "$file.deleted");
+                    }
                 }
             }
         }
