@@ -3,6 +3,8 @@ package LSF;
 use strict;
 use warnings;
 use Utils;
+use File::Basename;
+use File::Spec;
 use VertRes::Parser::LSF;
 
 our $Running = 1;
@@ -148,25 +150,33 @@ sub adjust_bsub_options
     
     my $no_warn = 0;
     if ( !($opts=~/-M/) ) { $mem=500; $no_warn = 1; }    # if no mem specified, request 500MB only
-
-    if ( -e $output_file ) 
-    {
-        my $parser = VertRes::Parser::LSF->new(file=>$output_file);
-        my $n = $parser->nrecords();
-
-        for (my $i=0; $i<$n; $i++)
+    
+    # some pipelines make use of VertRes::Pipeline::archive_bsub_files, which
+    # moves the output_file to two different possible files, so we need to check
+    # all 3 possible output_files
+    my $prev = $output_file.'.previous';
+    my ($base, $path) = fileparse($output_file);
+    my $arch = File::Spec->catfile($path, '.'.$base.'.archive');
+    foreach my $o ($output_file, $prev, $arch) {
+        if ( -e $o ) 
         {
-            # Find out the reason of the failure. If the memory was too low, increase it.
-            if ( $parser->get('status',$i) eq 'MEMLIMIT' )
+            my $parser = VertRes::Parser::LSF->new(file=>$o);
+            my $n = $parser->nrecords() || 0;
+            
+            for (my $i=0; $i<$n; $i++)
             {
-                if ( !defined $mem or $mem<$parser->get('memory',$i) ) { $mem=$parser->get('memory',$i); }
+                # Find out the reason of the failure. If the memory was too low, increase it.
+                if ( $parser->get('status',$i) eq 'MEMLIMIT' )
+                {
+                    if ( !defined $mem or $mem<$parser->get('memory',$i) ) { $mem=$parser->get('memory',$i); }
+                }
+                elsif ( $parser->get('status',$i) eq 'RUNLIMIT' ) 
+                {
+                    $queue = 'long';
+                }
             }
-            elsif ( $parser->get('status',$i) eq 'RUNLIMIT' ) 
-            {
-                $queue = 'long';
-            }
+            if ( defined $mem ) { $mem += 1000; }  # increase by 1000MB
         }
-        if ( defined $mem ) { $mem += 1000; }  # increase by 1000MB
     }
 
     if ( defined $mem && $mem>15900 ) 
