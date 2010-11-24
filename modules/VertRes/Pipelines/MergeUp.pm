@@ -34,7 +34,7 @@ data => {
 # since that previous merge. If a bam doesn't need to be made, the new
 # merge directory will be a symlink to the old merge directory.
 
-# make another config file that simply mentions the merge directory and the
+# make another config file that gives the special __MERGEUP__ keyword and the
 # previous config file:
 echo "__MERGEUP__ mergeup.conf" > mergeup.pipeline
 
@@ -50,7 +50,7 @@ run-pipeline -c mergeup.pipeline -v
 
 A pipeline module for merging lane bams to the platform (optionaly, sample)
 level, including marking of duplicates at the library level and optional
-interval extraction for exome work. It also strips most tags from each record
+interval extraction for exome work. It can also strip tags from each record
 to minimise final bam size.
 
 =head1 AUTHOR
