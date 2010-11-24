@@ -93,7 +93,7 @@ sub validate
 
     my $vcf;
     if ( $fh ) { $vcf = fileno($fh) ? Vcf->new(fh=>$fh) : Vcf->new(file=>$fh); }
-    else { $vcf = Vcf->new(); }
+    else { $vcf = Vcf->new(fh=>\*STDIN); }
 
     $vcf->run_validation();
 }
@@ -117,8 +117,8 @@ sub validate_v32
     my %params = ( version=>'3.2' );
 
     my $vcf;
-    if ( $fh ) { $vcf = fileno($fh) ? Vcf->new(fh=>$fh, %params) : Vcf->new(file=>$fh, %params); }
-    else { $vcf = Vcf->new(%params); }
+    if ( $fh ) { $vcf = fileno($fh) ? Vcf->new(%params, fh=>$fh) : Vcf->new(%params, file=>$fh); }
+    else { $vcf = Vcf->new(%params, fh=>\*STDIN); }
 
     $vcf->run_validation();
 }
@@ -129,7 +129,8 @@ sub validate_v32
     About   : Creates new VCF reader/writer. 
     Usage   : my $vcf = Vcf->new(file=>'my.vcf', version=>'3.2');
     Args    : 
-                file    .. The file name. If not given, STDIN is assumed.
+                fh      .. Open file handle. If neither file nor fh is given, open in write mode.
+                file    .. The file name. If neither file nor fh is given, open in write mode.
                 region  .. Optional region to parse (requires tabix indexed VCF file)
                 silent  .. Unless set to 0, warning messages may be printed.
                 strict  .. Unless set to 0, the reader will die when the file violates the specification.
@@ -143,12 +144,6 @@ sub new
     my $self = {@args};
     bless $self, ref($class) || $class;
 
-    if ( exists($$self{region}) )
-    {
-        $self->open(region=>$$self{region},parse_header=>0);
-    }
-    else { $self->open(parse_header=>0); }
-
     $$self{silent}    = 0 unless exists($$self{silent});
     $$self{strict}    = 0 unless exists($$self{strict});
     $$self{buffer}    = [];       # buffer stores the lines in the reverse order
@@ -158,55 +153,36 @@ sub new
     $$self{recalc_ac_an} = 1;
     $$self{has_header} = 0;
     $$self{default_version} = '4.0';
-
-    $self->_set_version();
-    return $self;
+    $$self{versions} = [ qw(Vcf3_2 Vcf3_3 Vcf4_0) ];
+    return $self->_open();
 }
 
-sub _set_version
+sub throw
 {
-    my ($self,$version) = @_;
-
-    if ( defined $version ) { $$self{version}=$version; }
-    if ( !$$self{version} ) { $$self{version}=$$self{default_version}; }
-
-    if ( $$self{version} eq '3.2' ) { Vcf3_2->renew($self); }
-    elsif ( $$self{version} eq '3.3' ) { Vcf3_3->renew($self); } 
-    elsif ( $$self{version} eq '4.0' ) { Vcf4_0->renew($self); }
-    else
-    {
-        $self->warn(qq[The version "$$self{version}" not supported, assuming VCFv4.0\n]);
-    }
-
-    # When changing version, change also the fileformat header line
-    if ( exists($$self{header_lines}) && exists($$self{header_lines}[0]{key}) && $$self{header_lines}[0]{key} eq 'fileformat' )
-    {
-        shift(@{$$self{header_lines}});
-    }
+    my ($self,@msg) = @_;
+    confess @msg,"\n";
 }
 
+sub warn
+{
+    my ($self,@msg) = @_;
+    if ( $$self{silent} ) { return; }
+    if ( $$self{strict} ) { $self->throw(@msg); }
+    warn @msg;
+}
 
-=head2 open
-
-    About   : (Re)Open file. No need to call this explicitly unless reading from a different 
-              region is requested.
-    Usage   : $vcf->open(); # Read from the start
-              $vcf->open(region=>'1:12345-92345');
-    Args    : region       .. Supported only for tabix indexed files
-              parse_header .. If unset, the header will not be parsed. (The default is to parse the header)
-
-=cut
-
-sub open
+sub _open
 {
     my ($self,%args) = @_;
-    $self->close();
 
-    if ( !exists($$self{file}) or !defined($$self{file}) ) 
+    if ( !exists($$self{fh}) && !exists($$self{file}) ) 
     {
-        $$self{fh} = *STDIN;
+        # Write mode, the version must be supplied by the user 
+        return $self->_set_version(exists($$self{version}) ? $$self{version} : $$self{default_version});
     }
-    else
+
+    # Open the file unless filehandle is provided
+    if ( !exists($$self{fh}) ) 
     {
         my $cmd = "<$$self{file}";
         if ( -e $$self{file} && $$self{file}=~/\.gz/i )
@@ -224,11 +200,34 @@ sub open
         open($$self{fh},$cmd) or $self->throw("$cmd: $!");
     }
 
-    if ( !exists($args{parse_header}) or $args{parse_header} )
-    {
-        delete($$self{header});
-        $self->parse_header();
+    # Set the correct VCF version, but only when called for the first time
+    my $vcf = $self;
+    if ( !$$self{_version_set} ) 
+    { 
+        my $first_line = $self->next_line();
+        $vcf = $self->_set_version($first_line);
+        $self->_unread_line($first_line);
     }
+    return $vcf;
+}
+
+
+
+=head2 open
+
+    About   : (Re)Open file. No need to call this explicitly unless reading from a different 
+              region is requested.
+    Usage   : $vcf->open(); # Read from the start
+              $vcf->open(region=>'1:12345-92345');
+    Args    : region       .. Supported only for tabix indexed files
+
+=cut
+
+sub open
+{
+    my ($self,%args) = @_;
+    $self->close();
+    $self->_open(%args);
 }
 
 
@@ -265,6 +264,14 @@ sub next_line
     return readline($$self{fh});
 }
 
+sub _unread_line
+{
+    my ($self,$line) = @_;
+    unshift @{$$self{buffer}}, $line;
+    return;
+}
+
+
 =head2 next_data_array
 
     About   : Reads next VCF line and splits it into an array. The last element is chomped.
@@ -288,6 +295,73 @@ sub next_data_array
     chomp($items[-1]);
     return \@items;
 }
+
+
+sub _set_version
+{
+    my ($self,$version_line) = @_;
+
+    if ( $$self{_version_set} ) { return $self; }
+    $$self{_version_set} = 1;
+
+    $$self{version} = $$self{default_version};
+    if ( $version_line )
+    {
+        if ( $version_line=~/^(\d+(?:\.\d+)?)$/ )
+        {
+            $$self{version} = $1;
+            undef $version_line;
+        }
+        elsif ( !($version_line=~/^##fileformat=/i) or !($version_line=~/(\d+(?:\.\d+)?)\s*$/i) ) 
+        { 
+            $self->warn("Could not parse the fileformat version string [$version_line], assuming VCFv$$self{default_version}\n"); 
+            undef $version_line;
+        }
+        else
+        {
+            $$self{version} = $1;
+        }
+    }
+
+    my $reader;
+    if ( $$self{version} eq '3.2' ) { $reader=Vcf3_2->new(%$self); }
+    elsif ( $$self{version} eq '3.3' ) { $reader=Vcf3_3->new(%$self); } 
+    elsif ( $$self{version} eq '4.0' ) { $reader=Vcf4_0->new(%$self); }
+    else 
+    { 
+        $self->warn(qq[The version "$$self{version}" not supported, assuming VCFv$$self{default_version}\n]);
+        $$self{version} = '4.0';
+        $reader = Vcf4_0->new(%$self);
+    }
+
+    $self = $reader;
+    # When changing version, change also the fileformat header line
+    if ( exists($$self{header_lines}) && exists($$self{header_lines}[0]{key}) && $$self{header_lines}[0]{key} eq 'fileformat' )
+    {
+        shift(@{$$self{header_lines}});
+    }
+
+    return $self;
+}
+
+
+#---------------------------------------
+
+package VcfReader;
+use base qw(Vcf);
+use strict;
+use warnings;
+use Carp;
+use Data::Dumper;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = {@args};
+    bless $self, ref($class) || $class;
+    return $self;
+}
+
 
 =head2 next_data_hash
 
@@ -411,42 +485,21 @@ sub next_data_hash
     return \%out;
 }
 
-sub _unread_line
-{
-    my ($self,$line) = @_;
-    unshift @{$$self{buffer}}, $line;
-    return;
-}
-
-sub throw
-{
-    my ($self,@msg) = @_;
-    confess @msg,"\n";
-}
-
-sub warn
-{
-    my ($self,@msg) = @_;
-    if ( $$self{silent} ) { return; }
-    if ( $$self{strict} ) { $self->throw(@msg); }
-    warn @msg;
-}
-
 
 =head2 parse_header
 
     About   : Reads (and stores) the VCF header.
     Usage   : my $vcf = Vcf->new(); $vcf->parse_header();
-    Args    : none
+    Args    : silent .. do not warn about duplicate header lines
 
 =cut
 
 sub parse_header
 {
-    my ($self) = @_;
+    my ($self,%args) = @_;
 
     # First come the header lines prefixed by ##
-    while ($self->_next_header_line()) { ; }
+    while ($self->_next_header_line(%args)) { ; }
 
     # Now comes the column names line prefixed by #
     $self->_read_column_names();
@@ -456,13 +509,13 @@ sub parse_header
 =head2 _next_header_line
 
     About   : Stores the header lines and meta information, such as fields types, etc.
-    Args    : none
+    Args    : silent .. do not warn about duplicate column names
 
 =cut
 
 sub _next_header_line
 {
-    my ($self) = @_;
+    my ($self,%args) = @_;
     my $line = $self->next_line();
     if ( !defined $line ) { return undef; }
     if ( substr($line,0,2) ne '##' )
@@ -472,7 +525,7 @@ sub _next_header_line
     }
 
     my $rec = $self->parse_header_line($line);
-    if ( $rec ) { $self->add_header_line($rec); }
+    if ( $rec ) { $self->add_header_line($rec,%args); }
 
     return $rec;
 }
@@ -491,9 +544,9 @@ sub _next_header_line
 
 sub add_header_line
 {
-    my ($self,$rec,$args) = @_;
+    my ($self,$rec,%args) = @_;
 
-    if ( !$args ) { $$args{silent}=0; }
+    if ( !%args ) { $args{silent}=0; }
 
     my $key = $$rec{key};
     if ( !$key ) { $self->throw("Missing the key\n"); }
@@ -519,7 +572,7 @@ sub add_header_line
         if ( !defined $id ) { $self->throw("Missing ID for the key $key: ",Dumper($rec)); }
         if ( exists($$self{header}{$key}{$id}) ) 
         {
-            $self->warn("The header tag $key:$id already exists, ignoring.\n") unless $$args{silent};
+            $self->warn("The header tag $key:$id already exists, ignoring.\n") unless $args{silent};
             return;
         }
         $$self{header}{$key}{$id} = $rec;
@@ -527,21 +580,7 @@ sub add_header_line
         return;
     }
 
-    if ( $key eq 'fileformat' )
-    {
-        my $value = $$rec{value};
-        if ( !($value=~/(\d+(?:\.\d+)?)\s*$/) )
-        {
-            $self->warn("Could not parse the fileformat version string [$value], assuming VCFv$$self{default_version}\n");
-            $$self{version} = $$self{default_version};
-        }
-        else { $$self{version} = $1; }
-        $self->_set_version();
-
-        $$rec{key} = $key;
-    }
-
-    if ( $$args{append} )
+    if ( $args{append} )
     {
         my @tm = gmtime(time);
         $key = sprintf "%s_%d%.2d%.2d", $key,$tm[5]+1900,$tm[4],$tm[3];
@@ -552,7 +591,7 @@ sub add_header_line
     }
     if ( exists($$self{header}{$key}) ) 
     {
-        $self->warn("The header tag $key already exists, ignoring.\n") unless $$args{silent};
+        $self->warn("The header tag $key already exists, ignoring.\n") unless $args{silent};
         return;
     }
 
@@ -573,7 +612,6 @@ sub parse_header_line
 {
     my ($self,$line) = @_;
 
-   
     chomp($line);
     $line =~ s/^##//;
     
@@ -936,7 +974,9 @@ sub validate_alt_field
     Usage   :   my $x = $vcf->next_data_hash(); 
                 my ($al1,$sep,$al2) = $vcf->parse_alleles($x,'NA00001'); 
                 my ($type,$len,$ht) = $vcf->event_type($x,$al1);
-    Args    : VCF data line parsed by next_data_hash
+              or
+                my ($type,$len,$ht) = $vcf->event_type($ref,$al);
+    Args    : VCF data line parsed by next_data_hash or the reference allele
             : Allele
     Returns :   's' for SNP and number of SNPs in the record
                 'i' for indel and a positive (resp. negative) number for the length of insertion (resp. deletion)
@@ -949,16 +989,30 @@ sub validate_alt_field
 sub event_type
 {
     my ($self,$rec,$allele) = @_;
-    if ( exists($$rec{_cached_events}{$allele}) ) { return (@{$$rec{_cached_events}{$allele}}); }
+
+    my $ref = $rec;
+    if ( ref($rec) eq 'HASH' ) 
+    { 
+        if ( exists($$rec{_cached_events}{$allele}) ) { return (@{$$rec{_cached_events}{$allele}}); }
+        $ref = $$rec{REF};
+    }
 
     my ($type,$len,$ht);
-    if ( $allele eq $$rec{REF} or $allele eq '.' ) { $len=0; $type='r'; $ht=$$rec{REF}; }
+    if ( $allele eq $ref or $allele eq '.' ) { $len=0; $type='r'; $ht=$ref; }
     elsif ( $allele=~/^[ACGT]$/ ) { $len=1; $type='s'; $ht=$allele; }
     elsif ( $allele=~/^I/ ) { $len=length($allele)-1; $type='i'; $ht=$'; }
     elsif ( $allele=~/^D(\d+)/ ) { $len=-$1; $type='i'; $ht=''; }
-    else { $self->throw("Eh?: $$rec{CHROM}:$$rec{POS} .. $$rec{REF} $allele\n"); }
+    else 
+    { 
+        my $chr = ref($rec) eq 'HASH' ? $$rec{CHROM} : 'undef';
+        my $pos = ref($rec) eq 'HASH' ? $$rec{POS} : 'undef';
+        $self->throw("Eh?: $chr:$pos .. $ref $allele\n");
+    }
 
-    $$rec{_cached_events}{$allele} = [$type,$len,$ht];
+    if ( ref($rec) eq 'HASH' ) 
+    {
+        $$rec{_cached_events}{$allele} = [$type,$len,$ht];
+    }
     return ($type,$len,$ht);
 }
 
@@ -1446,6 +1500,7 @@ sub run_validation
     my ($self) = @_;
 
     $self->parse_header();
+
     if ( !exists($$self{header}) ) { $self->warn(qq[The header not present.\n]); }
     elsif ( !exists($$self{header}{fileformat}) ) 
     {
@@ -1559,33 +1614,48 @@ sub get_chromosomes
 # Version 3.2 specific functions
 
 package Vcf3_2;
-use base qw(Vcf);
+use base qw(VcfReader);
 
-sub renew
+sub new
 {
-    my ($class,$ref) = @_;
-    my $self = $ref;
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
     bless $self, ref($class) || $class;
 
-    $$self{version} = '3.2';
-    $$self{drop_trailings} = 1;
-    $$self{filter_passed}  = 0;
+    $$self{_defaults} =
+    {
+        version => '3.2',
+        drop_trailings => 1,
+        filter_passed  => 0,
 
-    $$self{defaults}{QUAL}    = '-1';
-    $$self{defaults}{default} = '.';
-    $$self{defaults}{Flag}    = undef;
-    $$self{defaults}{GT}      = '.';
+        defaults =>
+        {
+            QUAL    => '-1',
+            default => '.',
+            Flag    => undef,
+            GT      => '.',
+        },
 
-    $$self{handlers}{Integer}   = \&Vcf::validate_int;
-    $$self{handlers}{Float}     = \&Vcf::validate_float;
-    $$self{handlers}{Character} = \&Vcf::validate_char;
+        handlers =>
+        {
+            Integer   => \&VcfReader::validate_int,
+            Float     => \&VcfReader::validate_float,
+            Character => \&VcfReader::validate_char,
+        },
 
-    $$self{regex_snp}   = qr/^[ACGTN]$/i;
-    $$self{regex_ins}   = qr/^I[ACGTN]+$/;
-    $$self{regex_del}   = qr/^D\d+$/;
-    $$self{regex_gtsep} = qr{[\\|/]};
-    $$self{regex_gt}    = qr{^(\.|\d+)([\\|/]?)(\.?|\d*)$};
-    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNIDacgtn]+)([\\|/]?)}; 
+        regex_snp   => qr/^[ACGTN]$/i,
+        regex_ins   => qr/^I[ACGTN]+$/,
+        regex_del   => qr/^D\d+$/,
+        regex_gtsep => qr{[\\|/]},
+        regex_gt    => qr{^(\.|\d+)([\\|/]?)(\.?|\d*)$},
+        regex_gt2   => qr{^(\.|[0-9ACGTNIDacgtn]+)([\\|/]?)}, 
+    };
+
+    for my $key (keys %{$$self{_defaults}}) 
+    { 
+        $$self{$key}=$$self{_defaults}{$key}; 
+    }
+
 
     return $self;
 }
@@ -1595,37 +1665,51 @@ sub renew
 # Version 3.3 specific functions
 
 package Vcf3_3;
-use base qw(Vcf);
+use base qw(VcfReader);
 
-sub renew
+sub new
 {
-    my ($class,$ref) = @_;
-    my $self = $ref;
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
     bless $self, ref($class) || $class;
 
-    $$self{version} = '3.3';
-    $$self{drop_trailings} = 0;
-    $$self{filter_passed}  = 0;
+    $$self{_defaults} = 
+    {
+        version => '3.3',
+        drop_trailings => 0,
+        filter_passed  => 0,
 
-    $$self{defaults}{QUAL}      = '-1';
-    $$self{defaults}{Integer}   = '-1';
-    $$self{defaults}{Float}     = '-1';
-    $$self{defaults}{Character} = '.';
-    $$self{defaults}{String}    = '.';
-    $$self{defaults}{Flag}      = undef;
-    $$self{defaults}{GT}        = './.';
-    $$self{defaults}{default}   = '.';
+        defaults =>
+        {
+            QUAL      => '-1',
+            Integer   => '-1',
+            Float     => '-1',
+            Character => '.',
+            String    => '.',
+            Flag      => undef,
+            GT        => './.',
+            default   => '.',
+        },
 
-    $$self{handlers}{Integer}   = \&Vcf::validate_int;
-    $$self{handlers}{Float}     = \&Vcf::validate_float;
-    $$self{handlers}{Character} = \&Vcf::validate_char;
+        handlers =>
+        {
+            Integer   => \&VcfReader::validate_int,
+            Float     => \&VcfReader::validate_float,
+            Character => \&VcfReader::validate_char,
+        },
 
-    $$self{regex_snp}   = qr/^[ACGTN]$/i;
-    $$self{regex_ins}   = qr/^I[ACGTN]+$/;
-    $$self{regex_del}   = qr/^D\d+$/;
-    $$self{regex_gtsep} = qr{[\\|/]};
-    $$self{regex_gt}    = qr{^(\.|\d+)([\\|/]?)(\.?|\d*)$};
-    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNIDacgtn]+)([\\|/]?)}; # . 0/1 0|1 A/A A|A D4/IACGT
+        regex_snp   => qr/^[ACGTN]$/i,
+        regex_ins   => qr/^I[ACGTN]+$/,
+        regex_del   => qr/^D\d+$/,
+        regex_gtsep => qr{[\\|/]},
+        regex_gt    => qr{^(\.|\d+)([\\|/]?)(\.?|\d*)$},
+        regex_gt2   => qr{^(\.|[0-9ACGTNIDacgtn]+)([\\|/]?)}, # . 0/1 0|1 A/A A|A D4/IACGT
+    };
+
+    for my $key (keys %{$$self{_defaults}}) 
+    { 
+        $$self{$key}=$$self{_defaults}{$key}; 
+    }
 
     return $self;
 }
@@ -1641,34 +1725,51 @@ VCFv4.0 specific functions
 =cut
 
 package Vcf4_0;
-use base qw(Vcf);
+use base qw(VcfReader);
 
-sub renew
+sub new
 {
-    my ($class,$ref) = @_;
-    my $self = $ref;
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
     bless $self, ref($class) || $class;
 
-    $$self{version} = '4.0';
-    $$self{drop_trailings} = 1;
-    $$self{filter_passed}  = 'PASS';
+    $$self{_defaults} = 
+    {
+        version => '4.0',
+        drop_trailings => 1,
+        filter_passed  => 'PASS',
 
-    $$self{defaults}{QUAL}    = '.';
-    $$self{defaults}{Flag}    = undef;
-    $$self{defaults}{GT}      = '.';
-    $$self{defaults}{default} = '.';
-    $$self{reserved}{FILTER}  = { 0=>1 };
+        defaults => 
+        {
+            QUAL    => '.',
+            Flag    => undef,
+            GT      => '.',
+            default => '.',
+        },
+        reserved => 
+        {
+            FILTER  => { 0=>1 },
+        },
 
-    $$self{handlers}{Integer}   = \&Vcf::validate_int;
-    $$self{handlers}{Float}     = \&Vcf::validate_float;
-    $$self{handlers}{Character} = \&Vcf::validate_char;
+        handlers =>
+        {
+            Integer    => \&VcfReader::validate_int,
+            Float      => \&VcfReader::validate_float,
+            Character  => \&VcfReader::validate_char,
+        },
 
-    $$self{regex_snp}   = qr/^[ACGTN]$|^<[\w:.]+>$/i;
-    $$self{regex_ins}   = qr/^[ACGTN]+$/;
-    $$self{regex_del}   = qr/^[ACGTN]+$/;
-    $$self{regex_gtsep} = qr{[|/]};                     # | /
-    $$self{regex_gt}    = qr{^(\.|\d+)([|/]?)(\.?|\d*)$};   # . ./. 0/1 0|1
-    $$self{regex_gt2}   = qr{^(\.|[0-9ACGTNacgtn]+|<[\w:.]+>)([|/]?)};   # . ./. 0/1 0|1 A/A A|A 0|<DEL:ME:ALU>
+        regex_snp   => qr/^[ACGTN]$|^<[\w:.]+>$/i,
+        regex_ins   => qr/^[ACGTN]+$/,
+        regex_del   => qr/^[ACGTN]+$/,
+        regex_gtsep => qr{[|/]},                     # | /
+        regex_gt    => qr{^(\.|\d+)([|/]?)(\.?|\d*)$},   # . ./. 0/1 0|1
+        regex_gt2   => qr{^(\.|[0-9ACGTNacgtn]+|<[\w:.]+>)([|/]?)},   # . ./. 0/1 0|1 A/A A|A 0|<DEL:ME:ALU>
+    };
+
+    for my $key (keys %{$$self{_defaults}}) 
+    { 
+        $$self{$key}=$$self{_defaults}{$key}; 
+    }
 
     return $self;
 }
@@ -1703,7 +1804,7 @@ sub Vcf4_0::format_header_line
 sub Vcf4_0::parse_header_line
 {
     my ($self,$line) = @_;
-    
+
     chomp($line);
     $line =~ s/^##//;
     
@@ -1791,7 +1892,8 @@ sub Vcf4_0::validate_alt_field
                     GT   GA
                     GT   GAA
                     GTC  G
-                my $map={G=>{GA=>1},GT=>{G=>1,GA=>1,GAA=>1},GTC=>{G=>}};   
+                    G    <DEL>
+                my $map={G=>{GA=>1},GT=>{G=>1,GA=>1,GAA=>1},GTC=>{G=>1},G=>{'<DEL>'=>1}};
                 my $new_ref=$vcf->fill_ref_alt_mapping($map);
                 
               The call returns GTC and $map is now
@@ -1800,6 +1902,7 @@ sub Vcf4_0::validate_alt_field
                     GT   GA     ->      GTC  GAC
                     GT   GAA    ->      GTC  GAAC
                     GTC  G      ->      GTC  G
+                    G    <DEL>  ->      GTC  <DEL>
     Args    : 
     Returns : New REF string and fills the hash with appropriate ALT.
 
@@ -1827,6 +1930,7 @@ sub Vcf4_0::fill_ref_alt_mapping
         if ( substr($new_ref,0,$rlen) ne $ref ) { $self->throw("The reference prefixes do not agree: $ref vs $new_ref\n"); }
         for my $alt (keys %{$$map{$ref}})
         {
+            if ( $alt=~/^<.+>$/ ) { $$map{$ref}{$alt} = $alt; next; }
             my $new = $alt;
             if ( $rlen<$max_len ) { $new .= substr($new_ref,$rlen); }
             $$map{$ref}{$alt} = $new;
@@ -1840,20 +1944,25 @@ sub Vcf4_0::fill_ref_alt_mapping
 sub Vcf4_0::event_type
 {
     my ($self,$rec,$allele) = @_;
-    if ( exists($$rec{_cached_events}{$allele}) ) { return (@{$$rec{_cached_events}{$allele}}); }
+
+    my $ref = $rec;
+    if ( ref($rec) eq 'HASH' ) 
+    { 
+        if ( exists($$rec{_cached_events}{$allele}) ) { return (@{$$rec{_cached_events}{$allele}}); }
+        $ref = $$rec{REF};
+    }
 
     if ( $allele=~/^<([^>]+)>$/ ) 
     { 
-        $$rec{_cached_events}{$allele} = ['u',0,$1];
+        if ( ref($rec) eq 'HASH' ) { $$rec{_cached_events}{$allele} = ['u',0,$1]; }
         return ('u',0,$1); 
     }
     if ( $allele eq '.' )
     {
-        $$rec{_cached_events}{$allele} = ['r',0,$$rec{REF}];
-        return ('r',0,$$rec{REF});
+        if ( ref($rec) eq 'HASH' ) { $$rec{_cached_events}{$allele} = ['r',0,$ref]; }
+        return ('r',0,$ref);
     }
 
-    my $ref = $$rec{REF};
     my $reflen = length($ref);
     my $len = length($allele);
     
@@ -1885,7 +1994,10 @@ sub Vcf4_0::event_type
         }
     }
 
-    $$rec{_cached_events}{$allele} = [$type,$len,$allele];
+    if ( ref($rec) eq 'HASH' )
+    {
+        $$rec{_cached_events}{$allele} = [$type,$len,$allele];
+    }
     return ($type,$len,$allele);
 }
 
