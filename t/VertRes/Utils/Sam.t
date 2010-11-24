@@ -5,7 +5,7 @@ use File::Spec;
 use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 116;
+    use Test::Most tests => 162;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -116,6 +116,9 @@ foreach my $record (@records) {
     $found_rgs++ if $record =~ /\tRG:Z:SRR00001/;
 }
 is $found_rgs, @records, 'correct RG tag still present on all records';
+
+my $sorted_bam_copy = File::Spec->catfile($temp_dir, 'sorted.copy.bam');
+copy($sorted_bam, $sorted_bam_copy);
 
 # rewrite_bam_header
 ok $sam_util->rewrite_bam_header($sorted_bam, invalid => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI' }), 'rewrite_bam_header ran ok with an invalid readgroup';
@@ -257,6 +260,90 @@ ok $sam_util->stats('20100208', $sorted_bam), 'stats test';
 foreach my $file (File::Spec->catfile($temp_dir, 'sorted.bam.flagstat'), File::Spec->catfile($temp_dir, 'sorted.bam.bas')) {
     ok -s $file, 'stats output file exists';
 }
+
+
+# change_header_lines - RG
+ok $sam_util->change_header_lines($sorted_bam_copy, (RG => {invalid => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI' }})), 'change_header_lines ran ok with an invalid readgroup';
+@header_lines = get_bam_header($sorted_bam_copy);
+is $header_lines[2], "\@RG\tID:SRR00001\tLB:alib\tSM:NA00001\tPU:7563\tPI:2000\tCN:Sanger\tPL:ILLUMINA\tDS:SRP000001", 'change_header_lines didn\'t change the header when readgroup not in the bam';
+%new_header_args = (SRR00001 => { sample_name => 'NA00002', library => 'blib', centre => 'NCBI', study => 'SRP000009' });
+is $sam_util->header_rewrite_required($sorted_bam_copy, (RG => \%new_header_args)), 1, 'before rewriting header, check returns true';
+ok $sam_util->change_header_lines($sorted_bam_copy, (RG => \%new_header_args)), 'rewrite_bam_header ran ok';
+@header_lines = get_bam_header($sorted_bam_copy);
+is $header_lines[2], "\@RG\tID:SRR00001\tLB:blib\tSM:NA00002\tPU:7563\tPI:2000\tCN:NCBI\tPL:ILLUMINA\tDS:SRP000009", 'change_header_lines actually changed the header';
+@records = get_bam_body($sorted_bam_copy);
+is @records, 2000, 'rewrite_bam_header didn\'t change the number of records';
+is $sam_util->header_rewrite_required($sorted_bam_copy, (RG => \%new_header_args)), 0, 'after rewriting header, check returns false';
+
+
+# change_header_lines - PG
+ok $sam_util->change_header_lines($sorted_bam_copy, (PG => {invalid => { command => '-q 98', version => '1.234' }})), 'change_header_lines ran ok with an invalid program id';
+@header_lines = get_bam_header($sorted_bam_copy);
+is $header_lines[3], "\@PG\tID:bwa\tVN:0.4.9", 'change_header_lines didn\'t change the header when program id not in the bam';
+%new_header_args = (bwa => { version => '0.5.3', command => '-q 98' });
+is $sam_util->header_rewrite_required($sorted_bam_copy, (PG => \%new_header_args)), 1, 'before rewriting header, check returns true';
+ok $sam_util->change_header_lines($sorted_bam_copy, (PG => \%new_header_args)), 'rewrite_bam_header ran ok';
+@header_lines = get_bam_header($sorted_bam_copy);
+is $header_lines[3], "\@PG\tID:bwa\tVN:0.5.3\tCL:-q 98", 'change_header_lines actually changed the header';
+@records = get_bam_body($sorted_bam_copy);
+is @records, 2000, 'rewrite_bam_header didn\'t change the number of records';
+is $sam_util->header_rewrite_required($sorted_bam_copy, (PG => \%new_header_args)), 0, 'after rewriting header, check returns false';
+# Change it back
+%new_header_args = (bwa => { version => '0.4.9', command => '' });
+$sam_util->change_header_lines($sorted_bam_copy, (PG => \%new_header_args));
+@header_lines = get_bam_header($sorted_bam_copy);
+is $header_lines[3], "\@PG\tID:bwa\tVN:0.4.9", 'change_header_lines successfully deleted at tag';
+$sam_util->change_header_lines($sorted_bam_copy, (PG => \%new_header_args));
+
+
+# test change_header_lines - remove_unique
+my $non_unique_header = File::Spec->catfile('t', 'data', 'non_unique_header.txt');
+ok -s $non_unique_header, 'non unique header file ready to test with';
+ok $sam_util->replace_bam_header($sorted_bam_copy, $non_unique_header), "replace bam header ran successfully";
+@header_lines = get_bam_header($sorted_bam_copy);
+is $header_lines[3], "\@PG\tID:GATK IndelRealigner\tVN:1.0.4487\tCL:SNPsFileForDebugging=null targetIntervals=/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/indel.dbsnp_129_b37-vs-pilot.intervals output=null useOnlyKnownIndels=true maxReadsForConsensuses=120 maxConsensuses=30 entropyThreshold=0.15 out=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@761eec35 bam_compression=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@761eec35 index_output_bam_on_the_fly=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@761eec35 indelsFileForDebugging=null noOriginalAlignmentTags=false realignReadsWithBadMates=false maxReadsForRealignment=20000 noPGTag=false LODThresholdForCleaning=0.4 maxReadsInRam=500000 targetIntervalsAreNotSorted=false sortInCoordinateOrderEvenThoughItIsHighlyUnsafe=false statisticsFileForDebugging=null", "non unique header first line added";
+is $header_lines[5], "\@PG\tID:GATK TableRecalibration\tVN:1.0.4487\tCL:out=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@31ad98ef bam_compression=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@31ad98ef index_output_bam_on_the_fly=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@31ad98ef output_bam=null window_size_nqs=5 force_read_group=null smoothing=1 default_platform=ILLUMINA exception_if_no_tile=false homopolymer_nback=7 recal_file=/lustre/scratch103/sanger/team145/projects/g1k_main/META/CEU_low_coverage/NA06984/SLX/Solexa_16652/SRR035022/219188.pe.realigned.sorted.bam.recal_data.csv no_pg_tag=false skipUQUpdate=false default_read_group=RG max_quality_score=40 fail_with_no_eof_marker=true solid_recal_mode=SET_Q_ZERO solid_nocall_strategy=THROW_EXCEPTION force_platform=null preserve_qscores_less_than=5 Covariates=[ReadGroupCovariate, QualityScoreCovariate, CycleCovariate, DinucCovariate] pQ=5 maxQ=40 smoothing=1", "non unique header second line added";
+is $sam_util->header_rewrite_required($sorted_bam_copy, (PG => {remove_unique => 1})), 1, 'rewrite of header required';
+ok $sam_util->change_header_lines($sorted_bam_copy, (PG => {remove_unique => 1})), "remove unique ran ok";
+@header_lines = get_bam_header($sorted_bam_copy);
+is $header_lines[3], "\@PG\tID:GATK IndelRealigner\tVN:1.0.4487\tCL:SNPsFileForDebugging=null targetIntervals=/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/indel.dbsnp_129_b37-vs-pilot.intervals output=null useOnlyKnownIndels=true maxReadsForConsensuses=120 maxConsensuses=30 entropyThreshold=0.15 indelsFileForDebugging=null noOriginalAlignmentTags=false realignReadsWithBadMates=false maxReadsForRealignment=20000 noPGTag=false LODThresholdForCleaning=0.4 maxReadsInRam=500000 targetIntervalsAreNotSorted=false sortInCoordinateOrderEvenThoughItIsHighlyUnsafe=false statisticsFileForDebugging=null", "line one uniquified";
+is $header_lines[5], "\@PG\tID:GATK TableRecalibration\tVN:1.0.4487\tCL:output_bam=null window_size_nqs=5 force_read_group=null smoothing=1 default_platform=ILLUMINA exception_if_no_tile=false homopolymer_nback=7 no_pg_tag=false skipUQUpdate=false default_read_group=RG max_quality_score=40 fail_with_no_eof_marker=true solid_recal_mode=SET_Q_ZERO solid_nocall_strategy=THROW_EXCEPTION force_platform=null preserve_qscores_less_than=5 Covariates=[ReadGroupCovariate, QualityScoreCovariate, CycleCovariate, DinucCovariate] pQ=5 maxQ=40 smoothing=1", "line two uniquified";
+is $sam_util->header_rewrite_required($sorted_bam_copy, (PG => {remove_unique => 1})), 0, 'after rewriting header, rewrite no longer required';
+@records = get_bam_body($sorted_bam_copy);
+is @records, 2000, 'remove unique didn\'t change the number of records';
+
+# test again for new GATK output - remove_unique
+$non_unique_header = File::Spec->catfile('t', 'data', 'non_unique_header2.txt');
+ok -s $non_unique_header, 'second non unique header file ready to test with';
+ok $sam_util->replace_bam_header($sorted_bam_copy, $non_unique_header), "replace bam header ran successfully";
+@header_lines = get_bam_header($sorted_bam_copy);
+is $header_lines[3], "\@PG	ID:GATK IndelRealigner	VN:1.0.4487	CL:SNPsFileForDebugging=null targetIntervals=/lustre/scratch105/projects/g1k/ref/broad_recal_data/pilot_data/indel.dbsnp_129_b37-vs-pilot.intervals output=null useOnlyKnownIndels=true maxReadsForConsensuses=120 maxConsensuses=30 entropyThreshold=0.15 out=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@7a0d85cc bam_compression=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@7a0d85cc index_output_bam_on_the_fly=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@7a0d85cc indelsFileForDebugging=null noOriginalAlignmentTags=false realignReadsWithBadMates=false maxReadsForRealignment=20000 noPGTag=false LODThresholdForCleaning=0.4 maxReadsInRam=500000 targetIntervalsAreNotSorted=false sortInCoordinateOrderEvenThoughItIsHighlyUnsafe=false statisticsFileForDebugging=null", "non unique header first line added";
+is $header_lines[5], "\@PG	ID:GATK TableRecalibration	VN:1.0.4702	CL:default_read_group=RG default_platform=ILLUMINA force_read_group=null force_platform=null window_size_nqs=5 homopolymer_nback=7 exception_if_no_tile=false solid_recal_mode=SET_Q_ZERO solid_nocall_strategy=THROW_EXCEPTION recal_file=/lustre/scratch105/projects/g1k/META_II/FIN_low_coverage/HG00273/SLX/HUMgfvRBBDIAAPE/ERR016229/238457.pe.realigned.sorted.bam.recal_data.csv output_bam=null preserve_qscores_less_than=5 smoothing=1 max_quality_score=40 no_pg_tag=false fail_with_no_eof_marker=true skipUQUpdate=false Covariates=[ReadGroupCovariate, QualityScoreCovariate, CycleCovariate, DinucCovariate] pQ=5 maxQ=40 smoothing=1", "non unique header second line added";
+is $sam_util->header_rewrite_required($sorted_bam_copy, (PG => {remove_unique => 1})), 1, 'rewrite of header required';
+ok $sam_util->change_header_lines($sorted_bam_copy, (PG => {remove_unique => 1})), "remove unique ran ok";
+@header_lines = get_bam_header($sorted_bam_copy);
+is $header_lines[3], "\@PG\tID:GATK IndelRealigner\tVN:1.0.4487\tCL:SNPsFileForDebugging=null targetIntervals=/lustre/scratch105/projects/g1k/ref/broad_recal_data/pilot_data/indel.dbsnp_129_b37-vs-pilot.intervals output=null useOnlyKnownIndels=true maxReadsForConsensuses=120 maxConsensuses=30 entropyThreshold=0.15 indelsFileForDebugging=null noOriginalAlignmentTags=false realignReadsWithBadMates=false maxReadsForRealignment=20000 noPGTag=false LODThresholdForCleaning=0.4 maxReadsInRam=500000 targetIntervalsAreNotSorted=false sortInCoordinateOrderEvenThoughItIsHighlyUnsafe=false statisticsFileForDebugging=null", "line one uniquified";
+is $header_lines[5], "\@PG	ID:GATK TableRecalibration	VN:1.0.4702	CL:default_read_group=RG default_platform=ILLUMINA force_read_group=null force_platform=null window_size_nqs=5 homopolymer_nback=7 exception_if_no_tile=false solid_recal_mode=SET_Q_ZERO solid_nocall_strategy=THROW_EXCEPTION output_bam=null preserve_qscores_less_than=5 smoothing=1 max_quality_score=40 no_pg_tag=false fail_with_no_eof_marker=true skipUQUpdate=false Covariates=[ReadGroupCovariate, QualityScoreCovariate, CycleCovariate, DinucCovariate] pQ=5 maxQ=40 smoothing=1", "line two uniquified";
+is $sam_util->header_rewrite_required($sorted_bam_copy, (PG => {remove_unique => 1})), 0, 'after rewriting header, rewrite no longer required';
+@records = get_bam_body($sorted_bam_copy);
+is @records, 2000, 'remove unique didn\'t change the number of records';
+
+# test from_dict and remove_unique
+$non_unique_header = File::Spec->catfile('t', 'data', 'non_unique_header.txt');
+ok -s $non_unique_header, 'second non unique header file ready to test with';
+ok $sam_util->replace_bam_header($sorted_bam_copy, $non_unique_header), "replace bam header ran successfully";
+@header_lines = get_bam_header($sorted_bam_copy);
+is $header_lines[1], "\@SQ\tSN:GL000192.1\tLN:547496\tAS:NCBI37\tUR:file:/lustre/scratch102/projects/g1k/ref/main_project/human_g1k_v37.fasta\tM5:325ba9e808f669dfeee210fdd7b470ac";
+is $header_lines[3], "\@PG\tID:GATK IndelRealigner\tVN:1.0.4487\tCL:SNPsFileForDebugging=null targetIntervals=/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/indel.dbsnp_129_b37-vs-pilot.intervals output=null useOnlyKnownIndels=true maxReadsForConsensuses=120 maxConsensuses=30 entropyThreshold=0.15 out=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@761eec35 bam_compression=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@761eec35 index_output_bam_on_the_fly=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@761eec35 indelsFileForDebugging=null noOriginalAlignmentTags=false realignReadsWithBadMates=false maxReadsForRealignment=20000 noPGTag=false LODThresholdForCleaning=0.4 maxReadsInRam=500000 targetIntervalsAreNotSorted=false sortInCoordinateOrderEvenThoughItIsHighlyUnsafe=false statisticsFileForDebugging=null", "non unique header first line added";
+is $header_lines[5], "\@PG\tID:GATK TableRecalibration\tVN:1.0.4487\tCL:out=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@31ad98ef bam_compression=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@31ad98ef index_output_bam_on_the_fly=org.broadinstitute.sting.gatk.io.stubs.SAMFileWriterStub\@31ad98ef output_bam=null window_size_nqs=5 force_read_group=null smoothing=1 default_platform=ILLUMINA exception_if_no_tile=false homopolymer_nback=7 recal_file=/lustre/scratch103/sanger/team145/projects/g1k_main/META/CEU_low_coverage/NA06984/SLX/Solexa_16652/SRR035022/219188.pe.realigned.sorted.bam.recal_data.csv no_pg_tag=false skipUQUpdate=false default_read_group=RG max_quality_score=40 fail_with_no_eof_marker=true solid_recal_mode=SET_Q_ZERO solid_nocall_strategy=THROW_EXCEPTION force_platform=null preserve_qscores_less_than=5 Covariates=[ReadGroupCovariate, QualityScoreCovariate, CycleCovariate, DinucCovariate] pQ=5 maxQ=40 smoothing=1", "non unique header second line added";
+is $sam_util->header_rewrite_required($sorted_bam_copy, (SQ => {from_dict => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.dict.new'}, PG => {remove_unique => 1})), 1, 'rewrite of header required';
+ok $sam_util->change_header_lines($sorted_bam_copy, (SQ => {from_dict => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.dict.new'}, PG => {remove_unique => 1})), "remove unique ran ok";
+@header_lines = get_bam_header($sorted_bam_copy);
+is $header_lines[86], "\@PG\tID:GATK IndelRealigner\tVN:1.0.4487\tCL:SNPsFileForDebugging=null targetIntervals=/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/indel.dbsnp_129_b37-vs-pilot.intervals output=null useOnlyKnownIndels=true maxReadsForConsensuses=120 maxConsensuses=30 entropyThreshold=0.15 indelsFileForDebugging=null noOriginalAlignmentTags=false realignReadsWithBadMates=false maxReadsForRealignment=20000 noPGTag=false LODThresholdForCleaning=0.4 maxReadsInRam=500000 targetIntervalsAreNotSorted=false sortInCoordinateOrderEvenThoughItIsHighlyUnsafe=false statisticsFileForDebugging=null", "line one uniquified";
+is $header_lines[88], "\@PG\tID:GATK TableRecalibration\tVN:1.0.4487\tCL:output_bam=null window_size_nqs=5 force_read_group=null smoothing=1 default_platform=ILLUMINA exception_if_no_tile=false homopolymer_nback=7 no_pg_tag=false skipUQUpdate=false default_read_group=RG max_quality_score=40 fail_with_no_eof_marker=true solid_recal_mode=SET_Q_ZERO solid_nocall_strategy=THROW_EXCEPTION force_platform=null preserve_qscores_less_than=5 Covariates=[ReadGroupCovariate, QualityScoreCovariate, CycleCovariate, DinucCovariate] pQ=5 maxQ=40 smoothing=1", "line two uniquified";
+is $sam_util->header_rewrite_required($sorted_bam_copy, ( PG => {remove_unique => 1})), 0, 'after rewriting header, rewrite no longer required';
+@records = get_bam_body($sorted_bam_copy);
+is @records, 2000, 'remove unique didn\'t change the number of records';
 
 # split_bam_by_sequence method
 my @splits = $sam_util->split_bam_by_sequence($headed_bam,

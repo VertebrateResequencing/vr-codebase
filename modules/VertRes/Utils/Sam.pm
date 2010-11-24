@@ -1533,6 +1533,366 @@ sub calculate_flag {
     return $result;
 }
 
+=head2 header_rewrite_required
+
+ Title   : header_rewrite_required
+ Usage   : if ($obj->header_rewrite_required('a.bam', 'RG', 
+                                    readgroup1 => { sample_name => 'NA000001' })
+ Function: Prior to calling change_header_lines() with the same arguments, just
+           check that a rewrite is even necessary.
+ Returns : boolean - true if changes will be made, false otherwise.
+ Args    : as per change_header_lines()
+
+=cut
+
+sub header_rewrite_required {
+    my ($self, $bam, %changes) = @_;
+    
+    keys %changes || return 1;
+    my %arg_to_tag = (RG => {sample_name => 'SM',
+                      	library => 'LB',
+                      	platform => 'PL',
+                      	centre => 'CN',
+                      	insert_size => 'PI',
+                      	study => 'DS',
+                      	project => 'DS'},
+                      PG => {program => 'PN',
+                      	command => 'CL',
+                      	version => 'VN'},
+                      SQ => {seq_name => 'SN',
+                      	ref_length => 'LN',
+                      	assembler => 'AS',
+                      	md5 => 'M5',
+                      	species => 'SP',
+                      	uri => 'UR'});
+
+    my $remove_unique = 0;
+    if (exists $changes{'PG'}{'remove_unique'}) {
+    	$remove_unique = $changes{'PG'}{'remove_unique'};
+    }
+
+    my $dict;
+    if (exists $changes{'SQ'}{'from_dict'}) {
+		$dict = $changes{'SQ'}{'from_dict'};
+    }
+    
+	return 1 if $dict;
+
+    if (defined $changes{platform}) {
+        $changes{platform} = $tech_to_platform{$changes{platform}} || $self->throw("Bad platform '$changes{platform}'");
+    }
+    
+	my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+        
+    # Parse original header and grab the lane id
+    my $lane;
+    if ($remove_unique) {
+		my $pars = VertRes::Parser::sam->new(file => $bam);
+		my %read_info = $pars->readgroup_info();
+		my @lane_ids = keys %read_info;
+		$self->throw("$bam does not have a single lane id.") unless (scalar @lane_ids == 1);
+		$lane = $lane_ids[0];
+    }
+    
+	# Write new header
+    my $made_changes = 0;
+	my $bamfh = $stin->view($bam, undef, H => 1);
+    $bamfh || $self->throw("Could not read header from '$bam'");
+	my $sq_from_dict_done = 0;
+    while (<$bamfh>) {
+    	foreach my $line_tag (keys %changes) {
+    		my $id_tag = $line_tag eq 'SQ' ? 'SN' : 'ID';
+	        if (/^\@$line_tag.+$id_tag:([^\t]+)/) {
+	            my $id = $1;
+	            if (exists $changes{$line_tag}{$id}) {
+	                while (my ($arg, $value) = each %{$changes{$line_tag}{$id}}) {
+	                    next unless defined $value;
+	                    my $tag = $arg_to_tag{$line_tag}{$arg} || next;
+	                    
+	                    if (/\t$tag:([^\t\n]+)/) {
+	                        if ($1 ne $value) {
+	                            $made_changes = 1;
+	                        }
+	                    }
+	                    else {
+	                        $made_changes = 1;
+	                    }
+	                }
+	            }
+
+	            if (exists $changes{$line_tag}{ all }) {
+	                while (my ($arg, $value) = each %{$changes{$line_tag}{all}}) {
+	                    next unless defined $value;
+	                    my $tag = $arg_to_tag{$line_tag}{$arg} || next;
+	                    
+	                    if (/\t$tag:([^\t\n]+)/) {
+	                        if ($1 ne $value) {
+	                            $made_changes = 1;
+	                        }
+	                    }
+	                    else {
+	                        $made_changes = 1;
+	                    }
+	                }
+	            }
+	            
+	            if ($remove_unique) {
+					if (/\tCL:([^\t]+)/) {
+			        	if ($1 =~ /\@|$lane/) {
+							$made_changes = 1;
+						}
+			        }
+				}
+			}
+        }
+    }
+    close($bamfh);
+
+    return $made_changes;
+}
+
+
+=head2 replace_bam_header
+
+ Title   : replace_bam_header
+ Usage   : $obj->replace_bam_header('a.bam', 'sam.header');
+ Function: Replaces the header of a given bam with the given header in sam format.
+ Returns : boolean (true on success, meaning a change was made and the bam has
+           been confirmed OK, or no change was necessary and the bam was
+           untouched)
+ Args    : path to bam, path to new header.
+
+=cut
+
+sub replace_bam_header {
+    my ($self, $bam, $new_header) = @_;
+    
+    # Setup temporary output bam
+    my $temp_bam = $bam.'.reheader.tmp.bam';
+    $self->register_for_unlinking($temp_bam);
+	
+	# Run samtools reheader
+	my $sw = VertRes::Wrapper::samtools->new(run_method => 'system');
+	$sw->reheader($new_header, $bam, $temp_bam);
+		
+    # Check for trunction in the number of bam records (headers may have different number of lines)
+    my $old_bam_records = num_bam_records($bam);
+    my $new_bam_records = num_bam_records($temp_bam);
+	    
+    if ( $old_bam_records == $new_bam_records ) {
+        unlink($bam);
+        move($temp_bam, $bam) || $self->throw("Failed to move $temp_bam to $bam: $!");
+        return 1;
+    }
+    else {
+        $self->warn("$temp_bam is bad, will unlink it");
+        unlink($temp_bam);
+        return 0;
+    }
+}
+
+=head2 change_header_lines
+
+ Title   : change_header_lines
+ Usage   : $obj->change_header_lines('a.bam', (RG => readgroup1 => { sample_name => 'NA000001' }));
+           $obj->change_header_lines('a.bam', (PG => 'PG ID' => { version => '1.0.34' }));
+           $obj->change_header_lines('a.bam', (PG => { remove_unique => 1}));
+           $obj->change_header_lines('a.bam', (SQ => { from_dict => '/path/to/dict/'}));
+           $obj->change_header_lines('a.bam', (SQ => { all => { uri => 'ftp://something.awesome.com/huzzah.fasta'}}));
+           $obj->change_header_lines('a.bam', (PG => {'PG ID' => { command => {'foo' => 'bar'} })); # NOT YET IMPLEMENTED
+ Function: Changes @RG or @PG or @SQ header lines as specified. Option 'remove_unique => 1' for @PG 
+           tags will remove any labels which contain lane specific information or which 
+           contain random elements generated by GATK (which look like label=something@random).
+           Option 'from_dict => 'path/to/dict' for @SQ will load @SQ as specified in a dict file.
+           Using all => {tag => value} will do the replacement for all not, sot just a specified
+           readgroup or id.
+           Only intended to be run on lane level bams. 
+           ** Deprecates functionality of rewrite_bam_header and standardise_pg_header_lines. 
+ Returns : boolean (true on success, meaning a change was made and the bam has
+           been confirmed OK, or no change was necessary and the bam was
+           untouched)
+ Args    : path to bam, string 'RG' or 'PG' according to which types of header lines you 
+           want to edit and a hash of changes to be made. Keys are readgroup or program 
+           identifiers and values are hash refs with at least one of the following:
+           For @RG changes:
+           	sample_name => string, eg. 'NA00000';
+           	library => string
+           	platform => string
+           	centre => string
+           	insert_size => int
+           	study => string, the study id, eg. 'SRP000001' (overwrites DS)
+           For @PG changes:
+           	version => string, eg. '0.5.5';
+           	command => string, eg. '-q 0.9 out=some_file
+           	program => string, eg. 'bwa' (overwrites PN tag)
+           For @PG, there is the added option 'remove_unique => 1' which will 
+           perform as specified above.
+           For @SQ changes:
+           	seq_name => string
+           	ref_length => int
+           	assembler => string
+           	md5 => string
+           	species => string
+           	uri => string
+           For @SQ, there is the added option 'dict => /path/to/dict' which will 
+           perform as specified above.
+
+=cut
+
+sub change_header_lines {
+    my ($self, $bam, %changes) = @_;
+    
+    keys %changes || return 1;
+    my %arg_to_tag = (RG => {sample_name => 'SM',
+                      	library => 'LB',
+                      	platform => 'PL',
+                      	centre => 'CN',
+                      	insert_size => 'PI',
+                      	study => 'DS',
+                      	project => 'DS'},
+                      PG => {program => 'PN',
+                      	command => 'CL',
+                      	version => 'VN'},
+                      SQ => {seq_name => 'SN',
+                      	ref_length => 'LN',
+                      	assembler => 'AS',
+                      	md5 => 'M5',
+                      	species => 'SP',
+                      	uri => 'UR'});
+
+    my $remove_unique = 0;
+    if (exists $changes{'PG'}{'remove_unique'}) {
+    	$remove_unique = $changes{'PG'}{'remove_unique'};
+    }
+
+    my $dict;
+    if (exists $changes{'SQ'}{'from_dict'}) {
+		$dict = $changes{'SQ'}{'from_dict'};
+    }
+    
+    if (defined $changes{platform}) {
+        $changes{platform} = $tech_to_platform{$changes{platform}} || $self->throw("Bad platform '$changes{platform}'");
+    }
+    
+	my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+    
+    my $new_header = $bam.'.new_header';
+    $self->register_for_unlinking($new_header);
+    
+    # Parse original header and grab the lane id
+    my $lane;
+    if ($remove_unique) {
+		my $pars = VertRes::Parser::sam->new(file => $bam);
+		my %read_info = $pars->readgroup_info();
+		my @lane_ids = keys %read_info;
+		$self->throw("$bam does not have a single lane id.") unless (scalar @lane_ids == 1);
+		$lane = $lane_ids[0];
+    }
+    
+	open my $hfh, ">$new_header";
+    $hfh || $self->throw("failed to get a filehandle for writing to '$new_header'");
+
+	# Write new header
+    my $made_changes = 0;
+	my $bamfh = $stin->view($bam, undef, H => 1);
+    $bamfh || $self->throw("Could not read header from '$bam'");
+	my $sq_from_dict_done = 0;
+    while (<$bamfh>) {
+    	
+		if (/^\@SQ/ && $dict) {
+			$made_changes = 1;
+        	unless ( $sq_from_dict_done ) {
+        		open my $dictfh, "<$dict" || $self->throw("Could not open dictionary, $dict");
+        		while (<$dictfh>) {
+        			next unless /^\@SQ/;
+					print $hfh $_;
+        		}
+		
+        		close $dictfh;
+        		$sq_from_dict_done = 1;
+        	}
+        	next;
+        }
+
+    	foreach my $line_tag (keys %changes) {
+    		my $id_tag = $line_tag eq 'SQ' ? 'SN' : 'ID';
+	        if (/^\@$line_tag.+$id_tag:([^\t]+)/) {
+	            my $id = $1;
+	            if (exists $changes{$line_tag}{$id}) {
+	                while (my ($arg, $value) = each %{$changes{$line_tag}{$id}}) {
+	                    next unless defined $value;
+	                    my $tag = $arg_to_tag{$line_tag}{$arg} || next;
+	                    
+	                    if (/\t$tag:([^\t\n]+)/) {
+	                        if ($1 ne $value) {
+	                            $made_changes = 1;
+	                            if ($value eq '') {
+									s/\t$tag:[^\t\n]+//;
+	                            } else {
+	                            	s/\t$tag:[^\t\n]+/\t$tag:$value/;
+	                            }
+	                        }
+	                    }
+	                    else {
+	                        $made_changes = 1;
+	                        s/\n/\t$tag:$value\n/;
+	                    }
+	                }
+	            }
+
+	            if (exists $changes{$line_tag}{ all }) {
+	                while (my ($arg, $value) = each %{$changes{$line_tag}{all}}) {
+	                    next unless defined $value;
+	                    my $tag = $arg_to_tag{$line_tag}{$arg} || next;
+	                    
+	                    if (/\t$tag:([^\t\n]+)/) {
+	                        if ($1 ne $value) {
+	                            $made_changes = 1;
+	                            if ($value eq '') {
+									s/\t$tag:[^\t\n]+//;
+	                            } else {
+	                            	s/\t$tag:[^\t\n]+/\t$tag:$value/;
+	                            }
+	                        }
+	                    }
+	                    else {
+	                        $made_changes = 1;
+	                        s/\n/\t$tag:$value\n/;
+	                    }
+	                }
+	            }
+	            
+	            if ($remove_unique) {
+					if (/\tCL:([^\t]+)/) {
+			        	if ($1 =~ /\@|$lane/) {
+							$made_changes = 1;
+							s/[^\s\:]+=[^\s]+$lane[^\s]+//g;
+							s/[^\s\:]+=[^\s]+\@[^\s]+//g;
+							s/:\s+/:/;
+							s/[^\S\n\t]+/ /g;
+						}
+			        }
+				}
+			}
+        }
+        print $hfh $_;
+    }
+    close($bamfh);
+    close($hfh);
+    
+    # Exit with true if no changes were necessary
+    unless ($made_changes) {
+        unlink($new_header);
+        return 1;
+    }
+    
+    # Otherwise do the replacement and return its status
+	my $status = $self->replace_bam_header($bam, $new_header);
+	unlink($new_header);
+	
+	return $status;
+}
+
 =head2 check_bam_header
 
  Title   : check_bam_header

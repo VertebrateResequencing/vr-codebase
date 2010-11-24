@@ -433,6 +433,32 @@ sub fixmate {
     return $self->run($in_bam, $out_bam);
 }
 
+=head2 reheader
+
+ Title   : reheader
+ Usage   : $wrapper->reheader('new.header', 'old.bam', 'new.bam');
+ Function: reheader...
+ Returns : n/a
+ Args    : Replaces the header of old.bam with new.header, outputing 
+           new.bam.
+
+=cut
+
+sub reheader {
+    my ($self, $new_header, $in_bam, $out_bam) = @_;
+    
+    $self->exe($self->{base_exe}.' reheader');
+    
+    my @files = ($new_header, $in_bam);
+    if ($out_bam) {
+        push(@files, ' > '.$out_bam);
+        $self->register_output_file_to_check($out_bam);
+    }
+    
+    return $self->run(@files);
+}
+
+
 =head2 rmdup
 
  Title   : rmdup
