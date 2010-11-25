@@ -4,12 +4,11 @@ VertRes::Pipelines::MergeAcross - pipeline for merging groups of bam files
 
 =head1 SYNOPSIS
 
-# Make one file of filenames for each group of bam files you'd like merged into
-# one file.  All the files named in one fofn will be merged into one bam file.
-# e.g. if you want to merge all your bams into one new bam file, then just
-# give one fofn containing all the bam filenames.
+# Make one file of filenames for each group of bam files you'd like merged.
+# The BAMs in a given fofn will be merged either into one file, or 
+# merged in other ways depending on the options chosen.
 #
-# Make a conf file with root pointing to where you'd like the merged bams, and
+# Make a conf file with root pointing to where you'd like the merged bams and
 # that specifies how to group the bam files.
 # Optional settings also go here.
 #
@@ -21,19 +20,40 @@ data => {
     groups => {
         group_1 => 'group_1.fofn',
         group_2 => 'group_2.fofn',
-        group_3 => 'group_3.fofn',
     },
 }
 # The result of this would be three merged bam files, one for each group:
-# /abs/path/to/output/dir/group_{1,2,3}.bam
+# /abs/path/to/output/dir/group_1.bam (merge of all files in group_1.fofn)
+# /abs/path/to/output/dir/group_2.bam (merge of all files in group_2.fofn)
 #
-# Merges can be done explicitly as above, or using one of these options
-# instead of groups:
-# regex_merge => 'bams.fofn',
-# population_merge => 'bams.fofn', (not yet implemented)
+# In addition to merging above, files within a group can be subgrouped
+# according to their basename using
+common_prefix_merge => 1
+# in the data section.  By default everything up to the first dot in the
+# basename is used to determine the groups (can be changed with the 
+# option common_prefix_regex).  For example, with
+# groups => {...} as above, if group_1.fofn had these files:
+#
+# /path_a/chrom1.bam
+# /path_a/chrom2.bam
+# /path_b/chrom1.bam
+# /path_b/chrom2.bam
+#
+# and group_2.fofn had these:
+#
+# /path_x/chrom1.bam
+# /path_x/chrom2.bam
+# /path_y/chrom1.bam
+# /path_y/chrom2.bam
+#
+# then the resulting output files would be:
+# /abs/path/to/output/dir/group_1/chrom1.bam  (merge of /path_{a,b}/chrom1.bam)
+# /abs/path/to/output/dir/group_1/chrom2.bam  (merge of /path_{a,b}/chrom2.bam)
+# /abs/path/to/output/dir/group_2/chrom1.bam  (merge of /path_{x,y}/chrom1.bam)
+# /abs/path/to/output/dir/group_2/chrom2.bam  (merge of /path_{x,y}/chrom2.bam)
 #
 # Other options which can go in the data {} section are:
-# max_merges => int (default 5, the number of simultanous merges
+# max_merges => int (default 10, the number of simultanous merges
 #                    to be run.  Limited to avoid IO problems)
 # run_index => bool (default false, run samtools index on the merged bams)
 #
@@ -47,9 +67,7 @@ run-pipeline -c mergeAcross.pipeline -v
 
 =head1 DESCRIPTION
 
-A module for merging groups of bam files into one file.  Each group is
-specified by a file of bam filenames or by chromosome name in the
-bam files.
+A module for merging groups of BAM files into one file per group.
 
 =head1 AUTHOR
 
@@ -78,7 +96,7 @@ our $actions = [{ name     => 'merge',
                   requires => \&merge_requires,
                   provides => \&merge_provides } ];
 
-our %options = (max_merges => 5,
+our %options = (max_merges => 10,
                 bsub_opts => '',
                 run_index => 0);
 
@@ -92,22 +110,25 @@ our %options = (max_merges => 5,
  Args    : lane_path => '/path/to/dindel_group_dir' (REQUIRED, set by
                          run-pipeline automatically)
 
-           REQUIRED: one of groups or regex_merge (but not both)
+           groups => {group1 => 'group1.fofn', ...}  (REQUIRED; specify
+                      the BAMs which wil be grouped together to make merged
+                      BAMs.  Grouping depends on common_prefix_merge)
+  
+           common_prefix_merge => bool (default false; if true, then BAMs which
+                                        are in the same group.fofn file
+                                        and share a common prefix in their
+                                        basename will be merged together.
+                                        Definiton of prefix can be changed with
+                                        common_prefix_regex option.
+                                        See synopsis for an example.)
 
-           groups => {group1 => 'group1.fofn', ...}  (specify
-                      the bams which wil be grouped together to make merged
-                      bam.  Result is one merged bam file per fofn)
-                               
-           regex_merge => 'bams.fofn' (file of bam file names, bams will be
-                      merged by matches in basename of file,
-                      using regex_merge_regex option to define the groups.) 
-          
-           regex_merge_regex => 'regular expresion' (default '^chrom(.*?)\.';
-                                 files are grouped by those that match the regex.
-                                 Match is looked for in basename of each the bams.
-                                 Default works for bams made by splitBam pipeline)
+           common_prefix_regex => 'regular expression' (default '^(.*?)\.', which
+                                        gets everything before the first . in the name.
+                                        BAMs will be put in the same group when the match
+                                        to this regular expression ($1) is the same.
+                                        See synopsis for an example with the default.)
 
-           max_merges => int (default 5; the number of merges to do at once -
+           max_merges => int (default 10; the number of merges to do at once -
                                      limited to avoid IO problems)
 
            run_index => bool (default false; index the merged bam file) 
@@ -120,37 +141,34 @@ sub new {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(%options, actions => $actions, @args);
 
-    $self->{lane_path} || $self->throw("lane_path (misnomer; actually dindel group output) directory not supplied, can't continue");
+    $self->{lane_path} || $self->throw("lane_path (misnomer; actually mergeAcross group output) directory not supplied, can't continue");
+    $self->{groups} || $self->throw("groups hash not supplied in data => {} hash, can't continue");
+    $self->{common_prefix_regex} = '^(.*?)\.' unless $self->{common_prefix_regex};
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     
-    my %bam_groups; # will be filled with group_name => array of filenames
+    my %bam_groups; # will be filled with group output directory => array of filenames
 
     # work out the bam grouping
-    if ($self->{groups}){
-        while (my ($group, $fofn) = each(%{$self->{groups}})) {
-            my @files = $self->{io}->parse_fofn($fofn, "/");
-            $bam_groups{$group} = \@files;
+    while (my ($group, $fofn) = each(%{$self->{groups}})) {
+        my @files = $self->{io}->parse_fofn($fofn, "/");
+        my $group_key = $group;
+
+        foreach my $bam (@files) {
+            if ($self->{common_prefix_merge}) {
+                my ($bam_base, $bam_path) = fileparse($bam);
+
+                if ($bam_base =~ m/$self->{common_prefix_regex}/){
+                    $group_key = File::Spec->catfile($group, $1);
+                }
+                else {
+                    $self->throw("No match to regular expression '$self->{common_prefix_regex}' in bam file $bam");
+                }
+            } 
+
+            $bam_groups{$group_key} = () unless defined $bam_groups{$group_key};
+            push @{$bam_groups{$group_key}}, $bam;
         }
-    }
-    elsif ($self->{regex_merge}){
-        $self->{regex_merge_regex} or $self->{regex_merge_regex} = '^chrom(.*?)\.';
-        my @files = $self->{io}->parse_fofn($self->{regex_merge}, "/");
-        foreach my $file (@files) {
-            my ($basename, $path) = fileparse($file);
-            if ($basename =~ m/$self->{regex_merge_regex}/) {
-              unless ($bam_groups{$1}) {
-                  $bam_groups{$1} = ();
-              }
-              push @{$bam_groups{$1}}, $file;
-            }
-            else {
-                $self->throw("No match in regular expression $self->{regex_merge_regex} to bam file $file");
-            }
-        }
-    }
-    else {
-        $self->throw("One of groups, regex_merge must be supplied");
     }
 
     $self->{bams_by_group} = \%bam_groups;
@@ -206,12 +224,21 @@ sub merge {
     # (subject to max_jobs constraint)
     while (my ($group, $bams) = each(%{$self->{bams_by_group}})) {
         my $bam_out = File::Spec->catfile($work_dir, "$group.bam");
-        my $tmp_bam_out = File::Spec->catfile($work_dir, "$self->{prefix}tmp.$group.bam");
+        my ($bam_out_base, $bam_out_dir) = fileparse($bam_out);
+        my $prefix = $bam_out_base;
+        $prefix =~ s/\.bam$//;
+        $prefix = File::Spec->catfile($bam_out_dir, "$self->{prefix}$prefix");
+        my $tmp_bam_out = "$prefix.tmp.bam";
         my $bai = "$bam_out.bai";
         my $tmp_bai = "$tmp_bam_out.bai";
-        my $jids_file = File::Spec->catfile($work_dir, "$self->{prefix}$group.jids");
-        my $perl_out = File::Spec->catfile($work_dir, "$self->{prefix}$group.pl");
+        my $jids_file = "$prefix.jids";
+        my $perl_out = "$prefix.pl";
         my $status = LSF::is_job_running($jids_file);
+
+        unless (-d $bam_out_dir) {
+            mkdir($bam_out_dir) || $self->throw("Error making directory '$bam_out_dir'");
+        }
+
         if ($status & $LSF::Done and $$self{fsu}->file_exists($bam_out)) {
             $jobs_done++;
             next;
