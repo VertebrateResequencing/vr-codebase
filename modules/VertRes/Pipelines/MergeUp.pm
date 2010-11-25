@@ -936,7 +936,7 @@ sub is_finished {
                     }
                 }
             }
-            elsif ($action_name eq 'library_merge') {
+            elsif ($action_name eq 'library_merge' && $self->{do_tag_strip}) {
                 # we've just completed the library merge; delete the tag_strip
                 # bams unless the library merge bams are just symlinks to those
                 my $syms = 0;
