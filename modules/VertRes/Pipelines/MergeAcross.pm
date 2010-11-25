@@ -22,7 +22,7 @@ data => {
         group_2 => 'group_2.fofn',
     },
 }
-# The result of this would be three merged bam files, one for each group:
+# The result of this would be two merged bam files, one for each group:
 # /abs/path/to/output/dir/group_1.bam (merge of all files in group_1.fofn)
 # /abs/path/to/output/dir/group_2.bam (merge of all files in group_2.fofn)
 #
