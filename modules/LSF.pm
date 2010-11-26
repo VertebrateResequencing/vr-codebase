@@ -148,8 +148,12 @@ sub adjust_bsub_options
     my $mem;
     my $queue;
     
+    my $orig_mem = 0;
     my $no_warn = 0;
-    if ( !($opts=~/-M/) ) { $mem=500; $no_warn = 1; }    # if no mem specified, request 500MB only
+    if ( !($opts=~/-M/) ) { $mem = -500; $no_warn = 1; }  # if no mem specified, force a reservation of 500MB
+    elsif ($opts =~ /select\[mem[^\]\d]+(\d+)/) {
+        $orig_mem = $1;
+    }
     
     # some pipelines make use of VertRes::Pipeline::archive_bsub_files, which
     # moves the output_file to two different possible files, so we need to check
@@ -175,35 +179,40 @@ sub adjust_bsub_options
                     $queue = 'long';
                 }
             }
-            if ( defined $mem ) { $mem += 1000; }  # increase by 1000MB
         }
     }
-
-    if ( defined $mem && $mem>15900 ) 
-    { 
-        Utils::error("FIXME: This job cannot be run on the farm, more than 15.9GB of memory is required.");
-    }
-
-    # The kind of option line we are trying to produce
-    #   -q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000,thouio=1]'
-
-    if ( defined $mem )
-    {
-        warn("$output_file: Increasing memory to $mem\n") unless $no_warn;  # this should be logged in the future
-
-        $opts =~ s/-M\d+/-M${mem}000/;             # 3000MB -> -M3000000
-        $opts =~ s/(select[^]]+mem>)\d+/$1$mem/;
-        $opts =~ s/(rusage[^]]+mem=)\d+/$1$mem/;
-
-        # The lines above replaced existing values in $opts. If they are not present, add them
-        if ( !($opts=~/-M\d+/) ) { $opts .= " -M${mem}000" }
-        if ( !($opts=~/-R/) ) { $opts .= " -R 'select[mem>$mem] rusage[mem=$mem]'"; }
-        else
-        {
-            if ( !($opts=~/select/) ) { $opts .= " -R 'select[mem>$mem]'"; }
-            elsif ( $opts=~/select\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/select\[/select[mem>$mem &&/ }
-            if ( !($opts=~/rusage/) ) { $opts .= " -R 'rusage[mem=$mem]'" }
-            elsif ( $opts=~/rusage\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/rusage\[/rusage[mem=$mem,/ }
+    
+    if (defined $mem) {
+        # at some point an attempt to run this failed due to MEMLIMIT, using
+        # $mem max memory; increase by 1000MB
+        $mem += 1000;
+        
+        if ($mem>15900) {
+            Utils::error("FIXME: This job cannot be run on the farm, more than 15.9GB of memory is required.");
+        }
+        
+        # adjust the command line to include higher memory reservation, but only
+        # if the user hasn't since increased the memory manually to higher than
+        # our +1000 value
+        if ($mem > $orig_mem) {
+            # The kind of option line we are trying to produce
+            #   -q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000,thouio=1]'
+            warn("$output_file: Increasing memory to $mem\n") unless $no_warn;  # this should be logged in the future
+            
+            $opts =~ s/-M\d+/-M${mem}000/;             # 3000MB -> -M3000000
+            $opts =~ s/(select[^]]+mem>)\d+/$1$mem/;
+            $opts =~ s/(rusage[^]]+mem=)\d+/$1$mem/;
+            
+            # The lines above replaced existing values in $opts. If they are not present, add them
+            if ( !($opts=~/-M\d+/) ) { $opts .= " -M${mem}000" }
+            if ( !($opts=~/-R/) ) { $opts .= " -R 'select[mem>$mem] rusage[mem=$mem]'"; }
+            else
+            {
+                if ( !($opts=~/select/) ) { $opts .= " -R 'select[mem>$mem]'"; }
+                elsif ( $opts=~/select\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/select\[/select[mem>$mem &&/ }
+                if ( !($opts=~/rusage/) ) { $opts .= " -R 'rusage[mem=$mem]'" }
+                elsif ( $opts=~/rusage\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/rusage\[/rusage[mem=$mem,/ }
+            }
         }
     }
 
