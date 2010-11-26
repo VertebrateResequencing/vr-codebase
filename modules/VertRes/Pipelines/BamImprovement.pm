@@ -35,6 +35,9 @@ data => {
 # indel_intervals is the file produced by GATK RealignerTargetCreator on the
 # same reference, dnsbp and indel_sites files as you're using here
 
+# in the data section you can also supply the tmp_dir option to specify the
+# root that will be used to create tmp directories
+
 # run the pipeline:
 run-pipeline -c bamimprovement.pipeline -s 30
 
@@ -148,6 +151,8 @@ our %options = (slx_mapper => 'bwa',
                                              addition to those in the dbsnp_rod)
            calmde => boolean (default false; when running calmd, setting this
                               to true will use -e option)
+           tmp_dir => '/tmp' (specify the tmp directory to be used by some java
+                              commands; defaults to the system default)
            release_date => 'yyyymmdd' (the release date to be included in the
                                        .bas files made; not important - defaults
                                        to today's date)
@@ -304,8 +309,11 @@ sub realign {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M3999000 -R \'select[mem>3999] rusage[mem=3999,tmp=16000]\'';
+    $self->{bsub_opts} = '-q normal -M3999000 -R \'select[mem>3999] rusage[mem=3999]\'';
     my $verbose = $self->verbose;
+    
+    my $tmp_dir = $self->{tmp_dir} || '';
+    $tmp_dir = ", tmp_dir => q[$tmp_dir]" if $tmp_dir;
     
     foreach my $in_bam (@{$self->{in_bams}}) {
         my $base = basename($in_bam);
@@ -337,7 +345,7 @@ my \$gatk = VertRes::Wrapper::GATK->new(verbose => $verbose,
                                         java_memory => 3800,
                                         dbsnp => '$self->{dbsnp_rod}',
                                         reference => '$self->{reference}',
-                                        build => '$self->{assembly_name}');
+                                        build => '$self->{assembly_name}'$tmp_dir);
 \$gatk->set_b('indels,VCF,$self->{indel_sites}');
 
 # do the realignment, generating an uncompressed, name-sorted bam
@@ -444,7 +452,10 @@ sub sort {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M6800000 -R \'select[mem>6800] rusage[mem=6800,tmp=16000]\'';
+    $self->{bsub_opts} = '-q normal -M6800000 -R \'select[mem>6800] rusage[mem=6800]\'';
+    
+    my $tmp_dir = $self->{tmp_dir} || '';
+    $tmp_dir = "tmp_dir => q[$tmp_dir]" if $tmp_dir;
     
     foreach my $in_bam (@{$self->{in_bams}}) {
         my $base = basename($in_bam);
@@ -473,8 +484,8 @@ my \$done_file = '$done_file';
 
 # sort and fix mates
 unless (-s \$final_bam) {
-    my \$picard = VertRes::Wrapper::picard->new();
-    \$picard->FixMateInformation(\$in_bam, \$working_bam, COMPRESSION_LEVEL => 0);
+    my \$picard = VertRes::Wrapper::picard->new($tmp_dir);
+    \$picard->FixMateInformation(\$in_bam, \$working_bam, COMPRESSION_LEVEL => 0, java_memory => 5000);
 }
 
 # check for truncation
@@ -584,6 +595,9 @@ sub recalibrate {
     $self->{bsub_opts} = '-q long -M6800000 -R \'select[mem>6800] rusage[mem=6800]\'';
     my $verbose = $self->verbose;
     
+    my $tmp_dir = $self->{tmp_dir} || '';
+    $tmp_dir = ", tmp_dir => q[$tmp_dir]" if $tmp_dir;
+    
     foreach my $bam (@{$self->{in_bams}}) {
         my $base = basename($bam);
         my (undef, $in_bam, $out_bam) = $self->_bam_name_conversion($bam);
@@ -610,7 +624,7 @@ my \$gatk = VertRes::Wrapper::GATK->new(verbose => $verbose,
                                         java_memory => 6000,
                                         dbsnp => '$self->{dbsnp_rod}',
                                         reference => '$self->{reference}',
-                                        build => '$self->{assembly_name}');
+                                        build => '$self->{assembly_name}'$tmp_dir);
 \$gatk->set_b('mask,BED,$self->{snp_sites}');
 
 # do the recalibration
