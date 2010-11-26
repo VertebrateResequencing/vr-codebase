@@ -200,9 +200,9 @@ sub adjust_bsub_options
         if ( !($opts=~/-R/) ) { $opts .= " -R 'select[mem>$mem] rusage[mem=$mem]'"; }
         else
         {
-            if ( !($opts=~/select/) ) { $opts .= " select[mem>$mem]"; }
+            if ( !($opts=~/select/) ) { $opts .= " -R 'select[mem>$mem]'"; }
             elsif ( $opts=~/select\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/select\[/select[mem>$mem &&/ }
-            if ( !($opts=~/rusage/) ) { $opts .= " rusage[mem=$mem]" }
+            if ( !($opts=~/rusage/) ) { $opts .= " -R 'rusage[mem=$mem]'" }
             elsif ( $opts=~/rusage\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/rusage\[/rusage[mem=$mem,/ }
         }
     }
