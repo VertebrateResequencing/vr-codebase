@@ -51,11 +51,13 @@ use File::Copy;
 
 use base qw(VertRes::Wrapper::WrapperI);
 use VertRes::Wrapper::samtools;
+use VertRes::Utils::FileSystem;
 
 our $DEFAULT_GATK_JAR = File::Spec->catfile($ENV{GATK}, 'GenomeAnalysisTK.jar');
 our $DEFAULT_LOGLEVEL = 'ERROR';
 our $DEFAULT_PLATFORM = 'ILLUMINA';
 our $DEFAULT_RG = 'RG';
+my $fsu = VertRes::Utils::FileSystem->new();
 
 =head2 new
 
@@ -85,6 +87,9 @@ our $DEFAULT_RG = 'RG';
                                          platform will be used)
            default_readgroup => string (when not set in the bam records, this
                                         readgroup will be used)
+           tmp_dir => /tmp/dir (VertRes::Utils::FileSystem->tempdir by default;
+                                Any supplied directory is used as the root for a
+                                new directory that will be auto-deleted)
 
 =cut
 
@@ -92,6 +97,9 @@ sub new {
     my ($class, @args) = @_;
     
     my $self = $class->SUPER::new(exe => $DEFAULT_GATK_JAR, @args);
+    
+    my $temp_dir = delete $self->{tmp_dir};
+    $temp_dir = $fsu->tempdir($temp_dir ? (DIR => $temp_dir) : ());
     
     my $java_mem = delete $self->{java_memory} || 2800;
     my $xss = 280; # int($java_mem / 10);
@@ -102,7 +110,7 @@ sub new {
         # login node with small memory limit doesn't like Xss option at all
         $xss = '';
     }
-    $self->exe("java -Xmx${java_mem}m -Xms${java_mem}m $xss -server -XX:+UseParallelGC -XX:ParallelGCThreads=2 -jar ".$self->exe);
+    $self->exe("java -Xmx${java_mem}m -Xms${java_mem}m $xss -Djava.io.tmpdir=$temp_dir -server -XX:+UseParallelGC -XX:ParallelGCThreads=2 -jar ".$self->exe);
     
     # our bsub jobs will get killed if we don't select high-mem machines
     $self->bsub_options(M => ($java_mem * 1000), R => "'select[mem>$java_mem] rusage[mem=$java_mem]'");

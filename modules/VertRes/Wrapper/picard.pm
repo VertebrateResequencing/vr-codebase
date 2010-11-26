@@ -67,7 +67,9 @@ our $DEFAULT_PICARD_DIR = $ENV{PICARD} || die "PICARD environment variable not s
                                     directly in any other method call)
            tmp_dir => /tmp/dir (VertRes::Utils::FileSystem->tempdir by default,
                                 overriden if TMP_DIR is set directly in any
-                                other method call)
+                                other method call. Any supplied directory is
+                                used as the root for a new directory that will
+                                be auto-deleted)
 
 =cut
 
@@ -86,7 +88,8 @@ sub new {
     my $stringency = delete $self->{validation_stringency} || 'silent';
     $self->{_default_validation_stringency} = uc($stringency);
     
-    my $temp_dir = delete $self->{tmp_dir} || $fsu->tempdir;
+    my $temp_dir = delete $self->{tmp_dir};
+    $temp_dir = $fsu->tempdir($temp_dir ? (DIR => $temp_dir) : ());
     $self->{_default_tmp_dir} = $temp_dir;
     
     return $self;
@@ -104,6 +107,9 @@ sub _handle_common_params {
     }
     unless (defined $params->{TMP_DIR}) {
         $params->{TMP_DIR} = $self->{_default_tmp_dir};
+    }
+    else {
+        $params->{TMP_DIR} = $fsu->tempdir(DIR => $params->{TMP_DIR});
     }
 }
 
