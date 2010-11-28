@@ -526,11 +526,17 @@ use warnings;
 use Utils;
 
 Utils::CMD("rm -f $name.vcf-tmp.gz.part");
-Utils::CMD("vcf-concat -f $name.chunks.list | $$self{vcf_rmdup} | bgzip -c > $name.vcf.gz.part");
+Utils::CMD("vcf-concat -s 3 -f $name.chunks.list | $$self{vcf_rmdup} | bgzip -c > $name.vcf.gz.part");
+
+# Simple sanity check, to be removed
+my \@out1 = Utils::CMD("(head -1 $name.chunks.list | xargs zcat | head -1000 | grep ^#; cat $name.chunks.list | xargs zcat | grep -v ^# | sort -k 1,1d -k 2,2n) | vcf-rmdup | grep -v ^# |wc -l");
+my \@out2 = Utils::CMD("zcat $name.vcf.gz.part | grep -v ^# | sort -k 1,1d -k 2,2n | $$self{vcf_rmdup} |wc -l");
+if ( \@out1 != \@out2 or \$out1[0] ne \$out2[0] ) { Utils::error("Uh: \$out1[0] ne \$out2[0]\\n"); }
+
 Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
+Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz.part]);
+rename('$name.vcf.gz.part.tbi','$name.vcf.gz.tbi') or Utils::error("rename $name.vcf.gz.part.tbi $name.vcf.gz.tbi: \$!");
 rename('$name.vcf.gz.part','$name.vcf.gz') or Utils::error("rename $name.vcf.gz.part $name.vcf.gz: \$!");
-Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz]);
-unlink('$name.vcf-tmp.gz.part');
 
 ];
 
@@ -647,7 +653,7 @@ use Utils;
 if ( !-e "$name.pileup.gz" )
 {
     # Make sure xargs does not split the arguments to multiple commands: check using `sort -c`
-    Utils::CMD("cat $name.chunks.list | xargs sort -k1,1 -k2,2n -m | sort -c -k1,1 -k2,2n | gzip -c > $name.pileup.gz.part");
+    Utils::CMD("cat $name.chunks.list | xargs sort -k1,1 -k2,2n -m | sort -c -k1,1 -k2,2n | bgzip -c > $name.pileup.gz.part");
     rename("$name.pileup.gz.part","$name.pileup.gz") or Utils::error("rename $name.pileup.gz.part $name.pileup.gz: \$!");
     Utils::CMD("cat $name.chunks.list | xargs rm -f");
     Utils::CMD("rm -f $name.chunks.list");
@@ -715,6 +721,8 @@ sub run_mpileup
     my ($self,$file_list,$name,$chunk) = @_;
 
     Utils::CMD(qq[$$self{mpileup_cmd} -b $file_list -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -gcv - | $$self{bcf_fix} | bgzip -c > $name.vcf.gz.part],{verbose=>1});
+    Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz.part],{verbose=>1});
+    rename("$name.vcf.gz.part.tbi","$name.vcf.gz.tbi") or $self->throw("rename $name.vcf.gz.part.tbi $name.vcf.gz.tbi: $!");
     rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
 
     Utils::CMD("touch _$name.done",{verbose=>1});
@@ -921,6 +929,8 @@ sub run_gatk_chunk
         unlink("$name.indels.mask.bed.idx");
         unlink("$name.indels.raw.bed");
 
+        Utils::CMD("tabix -f -p vcf $name.filtered.vcf.gz");
+        rename("$name.filtered.vcf.gz.tbi","$name.vcf.gz.tbi") or $self->throw("rename $name.filtered.vcf.gz.tbi $name.vcf.gz.tbi: $!");
         rename("$name.filtered.vcf.gz","$name.vcf.gz") or $self->throw("rename $name.filtered.vcf.gz $name.vcf.gz: $!");
     }
 
@@ -1093,11 +1103,13 @@ sub run_qcall_chunk
     Utils::CMD(qq[samtools mpileup -b $file_list -D -g -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -Q - | $$self{qcall_cmd} -sn $$self{prefix}$chunk.names -co $chunk.vcf.part],{verbose=>1});
 
     # Compress the VCF file
-    Utils::CMD("cat $chunk.vcf.part | gzip -c > $chunk.vcf.gz.part",{verbose=>1});
+    Utils::CMD("cat $chunk.vcf.part | bgzip -c > $chunk.vcf.gz.part",{verbose=>1});
     unlink("$chunk.vcf.part");
+    Utils::CMD("tabix -p vcf -f $chunk.vcf.gz.part");
 
     # Clean
     unlink("$$self{prefix}$chunk.names");
+    rename("$chunk.vcf.gz.part.tbi","$chunk_name.vcf.gz.tbi") or $self->throw("rename $chunk.vcf.gz.part.tbi $chunk_name.vcf.gz.tbi: $!");
     rename("$chunk.vcf.gz.part","$chunk_name.vcf.gz") or $self->throw("rename $chunk.vcf.gz.part $chunk_name.vcf.gz: $!");
     Utils::CMD("touch _$chunk_name.done");
 }
