@@ -5,7 +5,7 @@ use File::Spec;
 use File::Copy;
 
 BEGIN {
-    use Test::Most tests => 162;
+    use Test::Most tests => 163;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -339,9 +339,10 @@ is $header_lines[5], "\@PG\tID:GATK TableRecalibration\tVN:1.0.4487\tCL:out=org.
 is $sam_util->header_rewrite_required($sorted_bam_copy, (SQ => {from_dict => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.dict.new'}, PG => {remove_unique => 1})), 1, 'rewrite of header required';
 ok $sam_util->change_header_lines($sorted_bam_copy, (SQ => {from_dict => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.dict.new'}, PG => {remove_unique => 1})), "remove unique ran ok";
 @header_lines = get_bam_header($sorted_bam_copy);
+is $header_lines[1], "\@SQ\tSN:1\tLN:249250621\tAS:NCBI37\tUR:ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v37.fasta.gz\tM5:1b22b98cdeb4a9304cb5d48026a85128\tSP:Human";
 is $header_lines[86], "\@PG\tID:GATK IndelRealigner\tVN:1.0.4487\tCL:SNPsFileForDebugging=null targetIntervals=/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/indel.dbsnp_129_b37-vs-pilot.intervals output=null useOnlyKnownIndels=true maxReadsForConsensuses=120 maxConsensuses=30 entropyThreshold=0.15 indelsFileForDebugging=null noOriginalAlignmentTags=false realignReadsWithBadMates=false maxReadsForRealignment=20000 noPGTag=false LODThresholdForCleaning=0.4 maxReadsInRam=500000 targetIntervalsAreNotSorted=false sortInCoordinateOrderEvenThoughItIsHighlyUnsafe=false statisticsFileForDebugging=null", "line one uniquified";
 is $header_lines[88], "\@PG\tID:GATK TableRecalibration\tVN:1.0.4487\tCL:output_bam=null window_size_nqs=5 force_read_group=null smoothing=1 default_platform=ILLUMINA exception_if_no_tile=false homopolymer_nback=7 no_pg_tag=false skipUQUpdate=false default_read_group=RG max_quality_score=40 fail_with_no_eof_marker=true solid_recal_mode=SET_Q_ZERO solid_nocall_strategy=THROW_EXCEPTION force_platform=null preserve_qscores_less_than=5 Covariates=[ReadGroupCovariate, QualityScoreCovariate, CycleCovariate, DinucCovariate] pQ=5 maxQ=40 smoothing=1", "line two uniquified";
-is $sam_util->header_rewrite_required($sorted_bam_copy, ( PG => {remove_unique => 1})), 0, 'after rewriting header, rewrite no longer required';
+is $sam_util->header_rewrite_required($sorted_bam_copy, (SQ => {from_dict => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.dict.new'}, PG => {remove_unique => 1})), 0, 'after rewriting header, rewrite no longer required';
 @records = get_bam_body($sorted_bam_copy);
 is @records, 2000, 'remove unique didn\'t change the number of records';
 

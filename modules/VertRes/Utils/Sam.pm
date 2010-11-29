@@ -37,11 +37,13 @@ use VertRes::Parser::dict;
 use VertRes::Parser::sequence_index;
 use VertRes::Parser::sam;
 use VertRes::Parser::bam;
+use VertRes::Parser::dict;
 use VertRes::Utils::FastQ;
 use VertRes::Utils::Math;
 use VertRes::Utils::Hierarchy;
 use Digest::MD5;
 use List::Util qw(max);
+use Test::Deep::NoTest;
 
 use base qw(VertRes::Base);
 
@@ -1566,6 +1568,8 @@ sub header_rewrite_required {
                       	species => 'SP',
                       	uri => 'UR'});
 
+	my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+
     my $remove_unique = 0;
     if (exists $changes{'PG'}{'remove_unique'}) {
     	$remove_unique = $changes{'PG'}{'remove_unique'};
@@ -1576,13 +1580,37 @@ sub header_rewrite_required {
 		$dict = $changes{'SQ'}{'from_dict'};
     }
     
-	return 1 if $dict;
-
+    # Compare the SQ lines of the bam and the dict file
+	if ($dict) {
+		my $bfh = $stin->view($bam, undef, H => 1);
+    	$bfh || $self->throw("Could not read header from '$bam'");
+    	my @bheader;
+    	while (<$bfh>) {
+    		chomp;
+    		next unless /\@SQ/;
+    		push @bheader, $_;
+    	}
+    	close $bfh;
+    	
+        open my $dfh, "<$dict" || $self->throw("Could not open dictionary, $dict");
+    	my @dheader;
+    	while (<$dfh>) {
+    		chomp;
+    		next unless /\@SQ/;
+    		push @dheader, $_;
+    	}
+    	close $bfh;
+    	
+    	my $dict_header = join "\n", @dheader;
+    	my $bam_header = join "\n", @bheader;
+    	
+    	return 1 unless ($dict_header eq $bam_header);
+	}
+	
     if (defined $changes{platform}) {
         $changes{platform} = $tech_to_platform{$changes{platform}} || $self->throw("Bad platform '$changes{platform}'");
     }
     
-	my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
         
     # Parse original header and grab the lane id
     my $lane;
@@ -1760,6 +1788,8 @@ sub change_header_lines {
                       	species => 'SP',
                       	uri => 'UR'});
 
+	my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+
     my $remove_unique = 0;
     if (exists $changes{'PG'}{'remove_unique'}) {
     	$remove_unique = $changes{'PG'}{'remove_unique'};
@@ -1770,11 +1800,36 @@ sub change_header_lines {
 		$dict = $changes{'SQ'}{'from_dict'};
     }
     
+	# Compare the SQ lines of the bam and the dict file
+	if ($dict) {
+		my $bfh = $stin->view($bam, undef, H => 1);
+    	$bfh || $self->throw("Could not read header from '$bam'");
+    	my @bheader;
+    	while (<$bfh>) {
+    		chomp;
+    		next unless /\@SQ/;
+    		push @bheader, $_;
+    	}
+    	close $bfh;
+    	
+        open my $dfh, "<$dict" || $self->throw("Could not open dictionary, $dict");
+    	my @dheader;
+    	while (<$dfh>) {
+    		chomp;
+    		next unless /\@SQ/;
+    		push @dheader, $_;
+    	}
+    	close $bfh;
+    	
+    	my $dict_header = join "\n", @dheader;
+    	my $bam_header = join "\n", @bheader;
+    	
+    	$dict = "" if ($dict_header eq $bam_header);
+	}
+    
     if (defined $changes{platform}) {
         $changes{platform} = $tech_to_platform{$changes{platform}} || $self->throw("Bad platform '$changes{platform}'");
     }
-    
-	my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
     
     my $new_header = $bam.'.new_header';
     $self->register_for_unlinking($new_header);
