@@ -58,6 +58,12 @@ and then recalibrates the quality scores and uses samtools calmd -r to add a BQ
 tag of improved base qualities. This should improve the quality and speed of
 subsequent variant calling on the bam.
 
+NB: if your input bams are large (over 10GB), you may run into problems with
+too little memory, too little tmp space, or too few file descriptors. You can
+solve the first two problems by supplying memory (eg. 12000) and tmp_dir options
+in the data section of your config file. The later problem can be solved by
+increasing your descriptors ulimit to eg. 131072 prior to running the pipeline.
+
 =head1 AUTHOR
 
 Sendu Bala: bix@sendu.me.uk
