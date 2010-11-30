@@ -154,7 +154,10 @@ sub new
     $$self{has_header} = 0;
     $$self{default_version} = '4.0';
     $$self{versions} = [ qw(Vcf3_2 Vcf3_3 Vcf4_0) ];
-    return $self->_open();
+    my %open_args = ();
+    if ( exists($$self{region}) ) { $open_args{region}=$$self{region}; }
+    if ( exists($$self{print_header}) ) { $open_args{print_header}=$$self{print_header}; }
+    return $self->_open(%open_args);
 }
 
 sub throw
@@ -185,17 +188,23 @@ sub _open
     if ( !exists($$self{fh}) ) 
     {
         my $cmd = "<$$self{file}";
+
+        my $tabix_args = '';
+        if ( exists($args{print_header}) && $args{print_header} ) { $tabix_args .= ' -h '; }
+        $tabix_args .= $$self{file};
+        if ( exists($args{region}) && defined($args{region}) ) { $tabix_args .= ' '.$args{region}; }
+
         if ( -e $$self{file} && $$self{file}=~/\.gz/i )
         {
             if ( exists($args{region}) && defined($args{region}) )
             {
-                $cmd = "tabix $$self{file} $args{region} |";
+                $cmd = "tabix $tabix_args |";
             }
             else { $cmd = "zcat $$self{file} |"; } 
         }
         elsif ( $$self{file}=~m{^(?:http|ftp)://} )
         {
-            $cmd = "tabix $$self{file} " . (defined($args{region})?$args{region}:'') .' |';
+            $cmd = "tabix $tabix_args |";
         }
         open($$self{fh},$cmd) or $self->throw("$cmd: $!");
     }
@@ -1100,6 +1109,26 @@ sub parse_haplotype
     }
     return (\@alleles,\@seps,$is_phased,$is_empty);
 }
+
+=head2 format_haplotype
+
+    Usage   : my ($alleles,$seps,$is_phased,$is_empty) = $vcf->parse_haplotype($x,'NA00001'); print $vcf->format_haplotype($alleles,$seps);
+
+=cut
+
+sub format_haplotype
+{
+    my ($self,$alleles,$seps) = @_;
+    if ( @$alleles != @$seps+1 ) { $self->throw(sprintf "Uh: %d vs %d\n",scalar @$alleles,scalar @$seps); }
+    my $out = $$alleles[0];
+    for (my $i=1; $i<@$alleles; $i++)
+    {
+        $out .= $$seps[$i-1];
+        $out .= $$alleles[$i];
+    }
+    return $out;
+}
+
 
 =head2 format_genotype_strings
 
