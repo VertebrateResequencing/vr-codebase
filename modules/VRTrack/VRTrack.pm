@@ -812,7 +812,7 @@ insert into schema_version(schema_version) values (12);
 DROP TABLE IF EXISTS `assembly`;
 CREATE TABLE `assembly` (
   `assembly_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL,
+  `name` varchar(255) NOT NULL,
    `reference_size` integer,
   PRIMARY KEY  (`assembly_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
