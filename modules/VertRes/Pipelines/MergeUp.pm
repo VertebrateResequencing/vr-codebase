@@ -916,8 +916,8 @@ sub is_finished {
         
         if ($not_yet_done && -s $done_file) {
             if ($action_name eq 'lib_markdup' || $action_name eq 'extract_intervals') {
-                # we've just completed a non-merge operation; delete the
-                # original bams to save space
+                # we've just completed a non-merge library operation; delete the
+                # previous bam in the chain
                 my $replace;
                 if ($action_name eq 'lib_markdup') {
                     $replace = 'markdup';
@@ -931,29 +931,7 @@ sub is_finished {
                     my $previous = $file;
                     $previous =~ s/\.$replace.bam$/.bam/;
                     if (-s $file && -s $previous) {
-                        #unlink($previous);
-                        move($previous, "$previous.deleted");
-                    }
-                }
-            }
-            elsif ($action_name eq 'library_merge' && $self->{do_tag_strip}) {
-                # we've just completed the library merge; delete the tag_strip
-                # bams unless the library merge bams are just symlinks to those
-                my $syms = 0;
-                my @files = $self->{io}->parse_fofn($done_file, '/');
-                foreach my $file (@files) {
-                    if (-l $file) {
-                        $syms = 1;
-                        last;
-                    }
-                }
-                
-                unless ($syms) {
-                    my $tag_done_file = $self->{fsu}->catfile($lane_path, ".tag_strip_done");
-                    my @files = $self->{io}->parse_fofn($tag_done_file);
-                    foreach my $file (@files) {
-                        #unlink($file);
-                        move($file, "$file.deleted");
+                        unlink($previous);
                     }
                 }
             }
