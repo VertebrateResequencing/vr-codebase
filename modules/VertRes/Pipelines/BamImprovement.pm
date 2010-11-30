@@ -153,6 +153,9 @@ our %options = (slx_mapper => 'bwa',
                               to true will use -e option)
            tmp_dir => '/tmp' (specify the tmp directory to be used by some java
                               commands; defaults to the system default)
+           memory => int (a default and minimum memory applies to each action;
+                          if this is supplied and higher than the minimum it will
+                          be used)
            release_date => 'yyyymmdd' (the release date to be included in the
                                        .bas files made; not important - defaults
                                        to today's date)
@@ -308,8 +311,17 @@ sub _bam_name_conversion {
 sub realign {
     my ($self, $lane_path, $action_lock) = @_;
     
+    my $memory = $self->{memory};
+    my $java_mem;
+    if (! defined $memory || $memory < 3999) {
+        $memory = 3999;
+        $java_mem = 3800;
+    }
+    $java_mem ||= int($memory * 0.9);
+    my $queue = $memory >= 16000 ? "hugemem" : "normal";
+    
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M3999000 -R \'select[mem>3999] rusage[mem=3999]\'';
+    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
     my $verbose = $self->verbose;
     
     my $tmp_dir = $self->{tmp_dir} || '';
@@ -342,7 +354,7 @@ my \$done_file = '$done_file';
 my \$intervals_file = '$self->{indel_intervals}';
 
 my \$gatk = VertRes::Wrapper::GATK->new(verbose => $verbose,
-                                        java_memory => 3800,
+                                        java_memory => $java_mem,
                                         dbsnp => '$self->{dbsnp_rod}',
                                         reference => '$self->{reference}',
                                         build => '$self->{assembly_name}'$tmp_dir);
@@ -450,9 +462,18 @@ sub sort_provides {
 
 sub sort {
     my ($self, $lane_path, $action_lock) = @_;
+
+    my $memory = $self->{memory};
+    my $java_mem;
+    if (! defined $memory || $memory < 6800) {
+        $memory = 6800;
+        $java_mem = 5000;
+    }
+    $java_mem ||= int($memory * 0.9);
+    my $queue = $memory >= 16000 ? "hugemem" : "normal";
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M6800000 -R \'select[mem>6800] rusage[mem=6800]\'';
+    $self->{bsub_opts} = "-q hugemem -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
     
     my $tmp_dir = $self->{tmp_dir} || '';
     $tmp_dir = "tmp_dir => q[$tmp_dir]" if $tmp_dir;
@@ -485,7 +506,7 @@ my \$done_file = '$done_file';
 # sort and fix mates
 unless (-s \$final_bam) {
     my \$picard = VertRes::Wrapper::picard->new($tmp_dir);
-    \$picard->FixMateInformation(\$in_bam, \$working_bam, COMPRESSION_LEVEL => 0, java_memory => 5000);
+    \$picard->FixMateInformation(\$in_bam, \$working_bam, COMPRESSION_LEVEL => 0, java_memory => $java_mem);
 }
 
 # check for truncation
@@ -590,9 +611,18 @@ sub recalibrate_provides {
 
 sub recalibrate {
     my ($self, $lane_path, $action_lock) = @_;
+
+    my $memory = $self->{memory};
+    my $java_mem;
+    if (! defined $memory || $memory < 6800) {
+        $memory = 6800;
+        $java_mem = 6000;
+    }
+    $java_mem ||= int($memory * 0.9);
+    my $queue = $memory >= 16000 ? "hugemem" : "long";
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q long -M6800000 -R \'select[mem>6800] rusage[mem=6800]\'';
+    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
     my $verbose = $self->verbose;
     
     my $tmp_dir = $self->{tmp_dir} || '';
@@ -621,7 +651,7 @@ my \$done_file = '$done_file';
 my \$intervals_file = '$self->{indel_intervals}';
 
 my \$gatk = VertRes::Wrapper::GATK->new(verbose => $verbose,
-                                        java_memory => 6000,
+                                        java_memory => $java_mem,
                                         dbsnp => '$self->{dbsnp_rod}',
                                         reference => '$self->{reference}',
                                         build => '$self->{assembly_name}'$tmp_dir);
