@@ -456,7 +456,7 @@ sub lib_markdup {
         next if $self->_skip_if_higher_level_bam_present($path);
         next unless -s $merge_bam;
         
-        my $job_name = $self->{prefix}.'lib_markdup';
+        my $job_name = $self->{prefix}.'lib_markdup_'.$basename;
         $self->archive_bsub_files($path, $job_name);
         $job_name = $self->{fsu}->catfile($path, $job_name);
         
@@ -765,7 +765,7 @@ sub merge_up_one_level {
         my (undef, $path) = fileparse($out_bam);
         next if $self->_skip_if_higher_level_bam_present($path);
 	
-        my $this_job_name = $self->{prefix}.$job_name;
+        my $this_job_name = $self->{prefix}.$job_name.'_'.$out_bam_name;
         my $pathed_job_name = $self->{fsu}->catfile($path, $this_job_name);
         my $lock_file = $pathed_job_name.'.jids';
         
