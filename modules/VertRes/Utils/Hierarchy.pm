@@ -439,6 +439,12 @@ sub hierarchy_coverage {
            Valid key levels are project, sample, individual, population,
            platform, centre and library. (With no options at all, all active
            lanes in the database will be returned)
+           Alternatively to supplying hierarchy level keys and array refs of
+           allowed values, you can supply *_regex keys with regex string values
+           to select all members of that hierarchy level that match the regex,
+           eg. project_regex => 'low_coverage' to limit to projects with
+           "low_coverage" in the name. _regex only applies to project, sample
+           and library.
 
            Optionally, a hash with key db OR vrtrack to provide the database
            connection info (defaults depend on the VRTRACK_* environment
@@ -473,7 +479,7 @@ sub get_lanes {
     my @good_lanes;
     foreach my $project (@{$vrtrack->projects}) {
         my $ok = 1;
-        if (defined ($args{project})) {
+        if (defined $args{project}) {
             $ok = 0;
             foreach my $name (@{$args{project}}) {
                 if ($name eq $project->name || $name eq $project->hierarchy_name || ($project->study && $name eq $project->study->acc)) {
@@ -483,6 +489,9 @@ sub get_lanes {
             }
         }
         $ok || next;
+        if (defined $args{project_regex}) {
+            $project->name =~ /$args{project_regex}/ || next;
+        }
         
         foreach my $sample (@{$project->samples}) {
             my $ok = 1;
@@ -496,6 +505,9 @@ sub get_lanes {
                 }
             }
             $ok || next;
+            if (defined $args{sample_regex}) {
+                $sample->name =~ /$args{sample_regex}/ || next;
+            }
             
             my %objs;
             $objs{individual} = $sample->individual;
@@ -529,6 +541,9 @@ sub get_lanes {
                     }
                 }
                 $ok || next;
+                if (defined $args{library_regex}) {
+                    $library->name =~ /$args{library_regex}/ || next;
+                }
                 
                 my %objs;
                 $objs{centre} = $library->seq_centre;
