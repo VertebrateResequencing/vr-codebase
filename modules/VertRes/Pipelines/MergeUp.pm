@@ -18,9 +18,9 @@ module  => 'VertRes::Pipelines::MergeUp',
 prefix  => '_',
 lane_bams => 'lane_bams.fofn',
 previous_merge_root => '/path/to/previous/merge_root',
+simultaneous_samples => 200,
 data => {
     tag_strip => [qw(OQ XM XG XO)],
-    simultaneous_merges => 200,
     do_cleanup => 1
 }
 
@@ -111,7 +111,6 @@ our $actions = [{ name     => 'create_hierarchy',
 
 our %options = (do_cleanup => 0,
                 do_sample_merge => 0,
-                simultaneous_merges => 200,
                 bsub_opts => '',
                 tag_strip => [],
                 dont_wait => 1);
@@ -130,9 +129,6 @@ our %options = (do_cleanup => 0,
                                            an array ref of tags to remove if
                                            desired)
            do_cleanup => boolean (default false: don't do the cleanup action)
-           simultaneous_merges => int (default 200; the number of merge jobs to
-                                       do at once - limited to avoid IO
-                                       problems)
            do_sample_merge => boolean (default false: don't create sample-level
                                        bams)
            extract_intervals => {intervals_file => 'filename'}
@@ -723,7 +719,6 @@ sub merge_up_one_level {
     
     my @out_bams;
     my %lane_paths;
-    my $jobs = 0;
     while (my ($group, $bams) = each %grouped_bams) {
         my @bams = @{$bams};
         @bams || next;
@@ -741,10 +736,6 @@ sub merge_up_one_level {
         my $current_path = $self->{fsu}->catfile($lane_path, $out_dir);
         my $out_bam = $self->{fsu}->catfile($current_path, $out_bam_name);
         push(@out_bams, $out_bam);
-        
-        # don't do more than desired merges at once, or we'll kill IO and jobs
-        # will fail
-        next if $jobs >= $self->{simultaneous_merges};
         
         # skip if we've already handled this group, or have created downstream
         # files from it and deleted the original
@@ -770,22 +761,18 @@ sub merge_up_one_level {
         my $pathed_job_name = $self->{fsu}->catfile($path, $this_job_name);
         my $lock_file = $pathed_job_name.'.jids';
         
-        # keep simultaneous_merges jobs running all the time
+        # keep all the jobs running all the time
         my $is_running = LSF::is_job_running($lock_file);
         if ($is_running & $LSF::Error) {
             next;
         }
         elsif ($is_running & $LSF::Running) {
-            $jobs++;
             next;
         }
         elsif ($is_running & $LSF::Done) {
             next;
         }
         else {
-            $jobs++;
-            next if $jobs > $self->{simultaneous_merges};
-            
             $self->archive_bsub_files($path, $this_job_name);
             
             LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
