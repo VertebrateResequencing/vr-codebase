@@ -5,9 +5,10 @@ VertRes::Pipelines::MergeUp - pipeline for creating sample bams from lane bams
 =head1 SYNOPSIS
 
 # make a file of absolute paths to the lane bams, eg:
-lane_bams.pl --root /abs/META --db g1k_meta --all_samples
-             --slx_mapper bwa --454_mapper ssaha2 --assembly_name NCBI37
-             --ignore_platform SOLID --improved > lane_bams.fofn
+lane_bams.pl --root /abs/META --db g1k_meta --all_samples \
+             --slx_mapper bwa --454_mapper ssaha --assembly_name NCBI37 \
+             --ignore_platform SOLID --improved --project_regex "low_coverage" \
+             > lane_bams.fofn
 
 # make a conf file with root pointing to where you want the merged bams built,
 # and setting the lanes, mapper and assembly_name options. Optional settings
