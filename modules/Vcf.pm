@@ -908,9 +908,13 @@ sub _format_line_hash
 
 sub calc_an_ac
 {
-    my ($self,$gtypes) = @_;
+    my ($self,$gtypes,$nalleles) = @_;
     my $sep_re = $$self{regex_gtsep};
     my ($an,%ac_counts);
+    if ( defined $nalleles )
+    {
+        for (my $i=1; $i<=$nalleles; $i++) { $ac_counts{$i}=0; }
+    }
     $an = 0;
     for my $gt (keys %$gtypes)
     {
@@ -1603,7 +1607,9 @@ sub run_validation
 
         if ( scalar keys %{$$x{gtypes}} && (exists($$x{INFO}{AN}) || exists($$x{INFO}{AC})) )
         {
-            my ($an,$ac) = $self->calc_an_ac($$x{gtypes});
+            my $nalt = scalar @{$$x{ALT}};
+            if ( $nalt==1 && $$x{ALT}[0] eq '.' ) { $nalt=0; }
+            my ($an,$ac) = $self->calc_an_ac($$x{gtypes},$nalt);    # Allow alleles in ALT which are absent in samples
             if ( exists($$x{INFO}{AN}) && $an ne $$x{INFO}{AN} ) 
             { 
                 $self->warn("$$x{CHROM}:$$x{POS} .. AN is $$x{INFO}{AN}, should be $an\n"); 
