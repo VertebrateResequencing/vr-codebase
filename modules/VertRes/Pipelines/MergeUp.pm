@@ -726,8 +726,8 @@ sub merge_up_one_level {
     unlink($out_fofn);
     
     my $memory = $self->{memory};
-    if (! defined $memory || $memory < 5000) {
-        $memory = 5000;
+    if (! defined $memory || $memory < 5556) {
+        $memory = 5556;
     }
     my $java_mem = int($memory * 0.9);
     $queue ||= 'normal';
@@ -800,7 +800,7 @@ sub merge_up_one_level {
             $self->archive_bsub_files($path, $this_job_name);
             
             LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
-                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->merge(qq[$out_bam], qw(@bams)) || die qq[merge failed for (@bams) -> $out_bam\n];"});
+                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose, java_memory => $java_mem)->merge(qq[$out_bam], qw(@bams)) || die qq[merge failed for (@bams) -> $out_bam\n];"});
         }
     }
     
