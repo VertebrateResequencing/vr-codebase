@@ -65,6 +65,7 @@ our $DEFAULT_PICARD_DIR = $ENV{PICARD} || die "PICARD environment variable not s
            validation_stringency => STRICT|LENIENT|SILENT (silent by default,
                                     overriden if VALIDATION_STRINGENCY is set
                                     directly in any other method call)
+           max_records_in_ram => int (default 100x java_memory)
            tmp_dir => /tmp/dir (VertRes::Utils::FileSystem->tempdir by default,
                                 overriden if TMP_DIR is set directly in any
                                 other method call. Any supplied directory is
@@ -92,6 +93,8 @@ sub new {
     $temp_dir = $fsu->tempdir($temp_dir ? (DIR => $temp_dir) : ());
     $self->{_default_tmp_dir} = $temp_dir;
     
+    $self->{_default_max_records_in_ram} = delete $self->{max_records_in_ram} || ($java_mem * 100);
+    
     return $self;
 }
 
@@ -105,6 +108,11 @@ sub _handle_common_params {
     unless (defined $params->{VALIDATION_STRINGENCY}) {
         $params->{VALIDATION_STRINGENCY} = $self->{_default_validation_stringency};
     }
+    
+    unless (defined $params->{MAX_RECORDS_IN_RAM}) {
+        $params->{MAX_RECORDS_IN_RAM} = $self->{_default_max_records_in_ram};
+    }
+    
     unless (defined $params->{TMP_DIR}) {
         $params->{TMP_DIR} = $self->{_default_tmp_dir};
     }
@@ -132,7 +140,8 @@ sub MergeSamFiles {
     
     $self->switches([]);
     $self->params([qw(SORT_ORDER SO ASSUME_SORTED AS TMP_DIR VERBOSITY QUIET
-                      VALIDATION_STRINGENCY COMPRESSION_LEVEL OPTIONS_FILE)]);
+                      VALIDATION_STRINGENCY COMPRESSION_LEVEL OPTIONS_FILE
+                      MAX_RECORDS_IN_RAM)]);
     
     my (@in_bams, @params);
     foreach my $arg (@args) {
@@ -249,7 +258,7 @@ sub FixMateInformation {
     
     $self->switches([]);
     $self->params([qw(TMP_DIR VERBOSITY QUIET VALIDATION_STRINGENCY
-                   COMPRESSION_LEVEL SORT_ORDER)]);
+                   COMPRESSION_LEVEL SORT_ORDER MAX_RECORDS_IN_RAM)]);
     
     my @file_args = (" I=$in_bam", " O=$out_bam");
     $self->_handle_common_params(\%args);
@@ -283,7 +292,8 @@ sub MarkDuplicates {
     
     $self->switches([]);
     $self->params([qw(METRICS_FILE M TMP_DIR VERBOSITY QUIET
-                      VALIDATION_STRINGENCY COMPRESSION_LEVEL OPTIONS_FILE)]);
+                      VALIDATION_STRINGENCY COMPRESSION_LEVEL OPTIONS_FILE
+                      MAX_RECORDS_IN_RAM)]);
     
     my @file_args = (" I=$in_bam", " O=$out_bam");
     $self->_handle_common_params(\%args);
