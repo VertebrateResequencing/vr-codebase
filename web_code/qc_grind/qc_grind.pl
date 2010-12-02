@@ -12,6 +12,8 @@ use strict;
 use warnings;
 use URI;
 
+use lib '.';
+
 #use SangerPaths qw(core team145);
 use SangerPaths qw(core);
 use lib '.';
@@ -200,7 +202,8 @@ my $SCRIPT_NAME = $cgi->url(-relative=>1);
 #decide on the entry point
 my $mode = $cgi->param('mode');
 
-if( $mode == $ERROR_DISPLAY ) {
+if( defined( $mode ) && $mode == $ERROR_DISPLAY ) 
+{
     my $message = $cgi->param('error_msg');
     
     print $sw->header();
