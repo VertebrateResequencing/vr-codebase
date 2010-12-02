@@ -54,6 +54,11 @@ level, including marking of duplicates at the library level and optional
 interval extraction for exome work. It can also strip tags from each record
 to minimise final bam size.
 
+NB: if you are working on many samples at once, you may run into problems with
+too many tmp files being created, taking you over your quota and killing your
+jobs. You can help avoid this by supplying the 'memory' option (eg. 12000)
+in the data section of your config file.
+
 =head1 AUTHOR
 
 Sendu Bala: bix@sendu.me.uk
@@ -136,6 +141,9 @@ our %options = (do_cleanup => 0,
                                     only these intervals; default keep all
                                     reads.  if this option used,
                                     intervals_file is REQUIRED)
+           memory => int (a default and minimum memory applies to each action;
+                          if this is supplied and higher than the minimum it
+                          will be used)
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -435,8 +443,17 @@ sub lib_markdup {
     my @files = $self->{io}->parse_fofn($fofn, $lane_path);
     my $verbose = $self->verbose();
     
+    my $memory = $self->{memory};
+    my $java_mem;
+    if (! defined $memory || $memory < 6100) {
+        $memory = 6100;
+        $java_mem = 5000;
+    }
+    $java_mem ||= int($memory * 0.9);
+    my $queue = $memory >= 16000 ? "hugemem" : "long";
+    
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q long -M6100000 -R \'select[mem>6100] rusage[mem=6100]\'';
+    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
     
     my @markdup_bams;
     foreach my $merge_bam (@files) {
@@ -458,7 +475,7 @@ sub lib_markdup {
         $job_name = $self->{fsu}->catfile($path, $job_name);
         
         LSF::run($action_lock, $lane_path, $job_name, $self,
-                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->markdup(qq[$merge_bam], qq[$markdup_bam]) || die qq[markdup failed for $merge_bam\n];"});
+                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->markdup(qq[$merge_bam], qq[$markdup_bam], java_memory => $java_mem) || die qq[markdup failed for $merge_bam\n];"});
     }
     
     my $out_fofn = $self->{fsu}->catfile($lane_path, '.lib_markdup_expected');
@@ -708,9 +725,16 @@ sub merge_up_one_level {
     
     unlink($out_fofn);
     
-    my $orig_bsub_opts = $self->{bsub_opts};
+    my $memory = $self->{memory};
+    if (! defined $memory || $memory < 5000) {
+        $memory = 5000;
+    }
+    my $java_mem = int($memory * 0.9);
     $queue ||= 'normal';
-    $self->{bsub_opts} = '-q '.$queue.' -M5000000 -R \'select[mem>5000] rusage[mem=5000]\'';
+    $queue = $memory >= 16000 ? "hugemem" : $queue;
+    
+    my $orig_bsub_opts = $self->{bsub_opts};
+    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
     
     my $group_by_basename = ! defined $output_basename;
     my %grouped_bams = $self->_fofn_to_bam_groups($lane_path, $fofn, $group_by_basename);
