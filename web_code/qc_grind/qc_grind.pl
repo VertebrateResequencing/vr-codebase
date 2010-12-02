@@ -12,7 +12,9 @@ use strict;
 use warnings;
 use URI;
 
-use SangerPaths qw(core team145);
+#use SangerPaths qw(core team145);
+use SangerPaths qw(core);
+use lib '.';
 use VRTrack::VRTrack;
 use VRTrack::Project;
 use VRTrack::Sample;
