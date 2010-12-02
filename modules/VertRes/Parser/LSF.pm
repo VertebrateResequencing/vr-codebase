@@ -120,7 +120,8 @@ sub next_result {
     # prefaced by an unlimited amount of output from the program that LSF ran,
     # so we go line-by-line to find our little report
     my ($found_report_start, $found_report_end, $next_is_cmd);
-    my ($started, $finished, $cmd, $cpu, $mem, $status);
+    my ($started, $finished, $cmd, $mem, $status);
+    my $cpu = 0;
     while (<$fh>) {
         if (/^Sender: LSF System/) {
             $found_report_start = 1;
@@ -143,6 +144,7 @@ sub next_result {
                 }
             }
             elsif (/^Successfully completed/) { $status = 'OK'; }
+            elsif (/^Cannot open your job file/) { $status = 'unknown'; }
             elsif (! $status && /^Exited with exit code/) { $status = 'exited'; }
             elsif (/^TERM_\S+ job killed by/) { $status = 'killed'; }
             elsif (/^TERM_([^:]+):/) { $status = $1; }
@@ -160,8 +162,11 @@ sub next_result {
         $self->{"saw_last_record_$fh_id"} = 1;
         return;
     }
+    unless ($status) {
+        warn "a status was not parsed out of a result in ".$self->file."\n";
+    }
     
-    chomp($cmd);
+    chomp($cmd) if $cmd;
     
     # calculate wall time and idle factor
     my $date_regex = qr/(\w+)\s+(\d+) (\d+):(\d+):(\d+)/;

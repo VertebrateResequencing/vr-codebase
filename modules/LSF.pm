@@ -169,12 +169,13 @@ sub adjust_bsub_options
             
             for (my $i=0; $i<$n; $i++)
             {
+                my $status = $parser->get('status',$i) || next;
                 # Find out the reason of the failure. If the memory was too low, increase it.
-                if ( $parser->get('status',$i) eq 'MEMLIMIT' )
+                if ($status  eq 'MEMLIMIT')
                 {
                     if ( !defined $mem or $mem<$parser->get('memory',$i) ) { $mem=$parser->get('memory',$i); }
                 }
-                elsif ( $parser->get('status',$i) eq 'RUNLIMIT' ) 
+                elsif ($status eq 'RUNLIMIT') 
                 {
                     $queue = 'long';
                 }
