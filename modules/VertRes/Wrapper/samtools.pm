@@ -148,10 +148,11 @@ sub sort {
     
     $self->exe($self->{base_exe}.' sort');
     
-    $self->switches([qw(n)]);
+    $self->switches([qw(o n)]);
     $self->params([qw(m)]);
     $self->_set_params_and_switches_from_args(%options);
     
+    $out_prefix =~ s/\.bam$//;
     $self->register_output_file_to_check($out_prefix.'.bam');
     
     return $self->run($in_bam, $out_prefix);
