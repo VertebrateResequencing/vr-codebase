@@ -110,6 +110,7 @@ sub new {
         # login node with small memory limit doesn't like Xss option at all
         $xss = '';
     }
+    $self->{java_memory} = $java_mem;
     $self->exe("java -Xmx${java_mem}m -Xms${java_mem}m $xss -Djava.io.tmpdir=$temp_dir -server -XX:+UseParallelGC -XX:ParallelGCThreads=2 -jar ".$self->exe);
     
     # our bsub jobs will get killed if we don't select high-mem machines
@@ -528,7 +529,8 @@ sub realignment_targets {
            path to output bam.
            Optionally, supply R or DBSNP options etc (as a hash), as understood
            by GATK. LODThresholdForCleaning and useOnlyKnownIndels are set by
-           default. Use set_b() if you have known snps/indels.
+           default. Use set_b() if you have known snps/indels. maxReadsInRam is
+           set to 100x java_memory, minimum 500000 by default.
 
 =cut
 
@@ -551,7 +553,8 @@ sub indel_realigner {
     $self->switches([qw(quiet_output_mode useOnlyKnownIndels
                         noOriginalAlignmentTags realignReadsWithBadMates
                         noPGTag targetIntervalsAreNotSorted
-                        sortInCoordinateOrderEvenThoughItIsHighlyUnsafe)]);
+                        sortInCoordinateOrderEvenThoughItIsHighlyUnsafe
+                        doNotSortEvenThoughItIsHighlyUnsafe)]);
     $self->params([qw(R DBSNP T maxReadsForConsensuses maxConsensuses
                       entropyThreshold bam_compression
                       maxReadsForRealignment
@@ -562,6 +565,9 @@ sub indel_realigner {
     
     my %params = (useOnlyKnownIndels => 1, LODThresholdForCleaning => 0.4,
                   bam_compression => 0, @params);
+    if (! defined $params{maxReadsInRam} && ! $params{doNotSortEvenThoughItIsHighlyUnsafe}) {
+        $params{maxReadsInRam} = 100 * ($self->{java_memory} >= 5000 ? $self->{java_memory} : 5000);
+    }
     $params{T} = 'IndelRealigner';
     $self->_handle_common_params(\%params);
     
