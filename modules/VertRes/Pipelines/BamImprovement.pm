@@ -481,7 +481,7 @@ sub sort {
     my $queue = $memory >= 16000 ? "hugemem" : "normal";
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q hugemem -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
     
     my $tmp_dir = $self->{tmp_dir} || '';
     $tmp_dir = "tmp_dir => q[$tmp_dir]" if $tmp_dir;
