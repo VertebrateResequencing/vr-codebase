@@ -521,7 +521,7 @@ unless (-s \$final_bam) {
     unless (-s \$namesort_bam) {
         my \$samtools = VertRes::Wrapper::samtools->new();
         \$samtools->sort(\$in_bam, \$namesort_bam, n => 1, m => $java_mem);
-        unless (\$samtools>run_status >= 1) {
+        unless (\$samtools->run_status >= 1) {
             unlink(\$namesort_bam);
             die "samtools name sort failed for \$in_bam\n";
         }
