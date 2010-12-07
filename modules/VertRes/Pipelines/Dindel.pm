@@ -100,6 +100,10 @@ our $actions = [{ name     => 'extract_indels',
                   action   => \&select_candidates,
                   requires => \&concat_libvar_provides,
                   provides => \&select_candidates_provides },
+                { name     => 'filter_candidates',
+                  action   => \&filter_candidates,
+                  requires => \&concat_libvar_provides,
+                  provides => \&filter_candidates_provides },
                 { name     => 'make_windows',
                   action   => \&make_windows,
                   requires => \&select_candidates_provides,
@@ -473,6 +477,61 @@ sub select_candidates {
              qq{python $self->{dindel_scripts}/selectCandidates.py --minCount $min_count -i $var_file -o $sel_file.running});
     
     return $self->{No};
+}
+
+sub filter_candidates_provides {
+    my ($self, $lane_dir) = @_;
+    my $varfile = '.filter_candidates_done';
+    return [$self->{fsu}->catfile($lane_dir, $varfile)];
+}
+
+=head2 filter_candidates
+
+ Title   : filter_candidates
+ Usage   : $obj->filter_candidates('/path/to/lane', 'lock_filename');
+ Function: Filter candidate variants from the previous step, exclude variants not present in the 'candidate_filter' VCF.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub filter_candidates {
+    my ($self, $lane_path, $action_lock) = @_;
+
+    my $done_file = File::Spec->catfile($lane_path, '.filter_candidates_done');
+    if ( !exists($$self{filter_candidates}) ) 
+    { 
+        system("touch $done_file"); 
+        return $$self{Yes};
+    }
+
+    my $candidates = $self->{fsu}->catfile($lane_path, 'selected_variants.txt');
+    my $filter = $$self{filter_candidates};
+    my $win    = exists($$self{filter_window}) ? $$self{filter_window} : 0;
+
+    my $job_basename = 'filter_candidates';
+    my $job_name = $self->{fsu}->catfile($lane_path, $job_basename);
+    $self->archive_bsub_files($lane_path, $job_basename);
+
+    LSF::run($action_lock, $lane_path, $job_basename, $self,
+            qq{perl -MVertRes::Pipelines::Dindel -e '\\''VertRes::Pipelines::Dindel->filter_candidates_run(q[$win],q[$candidates],q[$filter],q[$done_file])'\\''});
+    
+    return $self->{No};
+}
+
+sub filter_candidates_run
+{
+    my ($self,$win,$candidates,$filter,$done_file) = @_;
+
+    use Utils;
+    Utils::CMD("cat $candidates | sed 's,\\s\\s*,\\t,g' | bgzip -c > $candidates.unfiltered.tab.gz",{verbose=>1});
+    Utils::CMD("tabix -f -s 1 -b 2 -e 2 $candidates.unfiltered.tab.gz",{verbose=>1});
+    Utils::CMD("vcf-isec -w $win -n =2 -t 1:2:$candidates.unfiltered.tab.gz -t 1:2:$filter | sed 's,\\t, ,g' > $candidates.out",{verbose=>1});
+    Utils::CMD("vcf-isec -w $win -c -t 1:2:$candidates.unfiltered.tab.gz -t 1:2:$filter > $candidates.dindel-only",{verbose=>1});
+    Utils::CMD("vcf-isec -w $win -c -t 1:2:$filter -t 1:2:$candidates.unfiltered.tab.gz > $candidates.filter-only",{verbose=>1});
+    rename($candidates,"$candidates.unfiltered") or $self->throw("rename $candidates $candidates.unfiltered");
+    rename("$candidates.out",$candidates) or $self->throw("rename $candidates.out $candidates");
+    Utils::CMD("touch $done_file",{verbose=>1});
 }
 
 sub make_windows_provides {
