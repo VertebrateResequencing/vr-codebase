@@ -366,14 +366,12 @@ my \$gatk = VertRes::Wrapper::GATK->new(verbose => $verbose,
                                         build => '$self->{assembly_name}'$tmp_dir);
 \$gatk->set_b('indels,VCF,$self->{indel_sites}');
 
-# do the realignment, generating an uncompressed, unsorted bam (the name sort
-# can lead to excess memory and disc and open file usage)
+# do the realignment, generating an uncompressed, name-sorted bam
 unless (-s \$rel_bam) {
     \$gatk->indel_realigner(\$in_bam, \$intervals_file, \$working_bam,
                             useOnlyKnownIndels => 1,
                             LODThresholdForCleaning => 0.4,
-                            bam_compression => 0,
-                            doNotSortEvenThoughItIsHighlyUnsafe => 1);
+                            bam_compression => 0);
 }
 
 # check for truncation
@@ -494,8 +492,6 @@ sub sort {
         
         my $working_bam = $final_bam;
         $working_bam =~ s/\.bam$/.working.bam/;
-        my $namesort_bam = $final_bam;
-        $namesort_bam =~ s/\.bam$/.namesort.bam/;
         my $done_file = $self->{fsu}->catfile($lane_path, '.sort_complete_'.$base);
         
         # run sort in an LSF call to a temp script
@@ -505,29 +501,18 @@ sub sort {
         print $scriptfh qq{
 use strict;
 use VertRes::Wrapper::picard;
-use VertRes::Wrapper::samtools;
 use VertRes::Utils::Sam;
 use File::Copy;
 
 my \$in_bam = '$rel_bam';
 my \$final_bam = '$final_bam';
-my \$namesort_bam = '$namesort_bam';
 my \$working_bam = '$working_bam';
 my \$done_file = '$done_file';
 
-# name sort using samtools, since picard uses too much mem/opens too many files,
-# then fix mates and coordinate sort with picard
+# sort and fix mates
 unless (-s \$final_bam) {
-    unless (-s \$namesort_bam) {
-        my \$samtools = VertRes::Wrapper::samtools->new();
-        \$samtools->sort(\$in_bam, \$namesort_bam, n => 1, m => $java_mem);
-        unless (\$samtools->run_status >= 1) {
-            unlink(\$namesort_bam);
-            die "samtools name sort failed for \$in_bam\n";
-        }
-    }
     my \$picard = VertRes::Wrapper::picard->new($tmp_dir);
-    \$picard->FixMateInformation(\$namesort_bam, \$working_bam, COMPRESSION_LEVEL => 0, java_memory => $java_mem);
+    \$picard->FixMateInformation(\$in_bam, \$working_bam, COMPRESSION_LEVEL => 0, java_memory => $java_mem);
 }
 
 # check for truncation
@@ -537,7 +522,6 @@ if (-s \$working_bam) {
     my \$new_records = \$su->num_bam_records(\$working_bam);
     
     if (\$orig_records == \$new_records && \$new_records > 10) {
-        unlink(\$namesort_bam);
         move(\$working_bam, \$final_bam) || die "Could not rename \$working_bam to \$final_bam\n";
         
         # mark that we've completed
