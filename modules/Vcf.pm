@@ -69,6 +69,7 @@ use warnings;
 use Carp;
 use Exporter;
 use Data::Dumper;
+use POSIX ":sys_wait_h";
 
 use vars qw/@ISA @EXPORT/;
 @ISA = qw/Exporter/;
@@ -201,10 +202,12 @@ sub _open
                 $cmd = "tabix $tabix_args |";
             }
             else { $cmd = "zcat $$self{file} |"; } 
+            $$self{check_exit_status} = 1;
         }
         elsif ( $$self{file}=~m{^(?:http|ftp)://} )
         {
             $cmd = "tabix $tabix_args |";
+            $$self{check_exit_status} = 1;
         }
         open($$self{fh},$cmd) or $self->throw("$cmd: $!");
     }
@@ -270,7 +273,16 @@ sub next_line
 {
     my ($self) = @_;
     if ( @{$$self{buffer}} ) { return shift(@{$$self{buffer}}); }
-    return readline($$self{fh});
+    my $line = readline($$self{fh});
+    if ( !defined $line && $$self{check_exit_status} )
+    {
+        my $pid = waitpid(-1, WNOHANG);
+        if ( $pid!=0 && $pid!=-1 && $? !=0 )
+        {
+            $self->throw("Error reading VCF file.\n");
+        }
+    }
+    return $line;
 }
 
 sub _unread_line
@@ -1085,13 +1097,15 @@ sub parse_haplotype
     my ($self,$rec,$column) = @_;
     if ( !exists($$rec{gtypes}{$column}{GT}) ) { $self->throw("The column not present: '$column'\n"); }
 
+    my $gtype = $$rec{gtypes}{$column}{GT};
+    if ( exists($$rec{_cached_haplotypes}{$gtype}) ) { return (@{$$rec{_cached_haplotypes}{$gtype}}); }
+
     my @alleles   = ();
     my @seps      = ();
     my $is_phased = 1;
     my $is_empty  = 1;
 
-    my $gtype = $$rec{gtypes}{$column}{GT};
-    my $buf   = $gtype;
+    my $buf = $gtype;
     while ($buf ne '')
     {
         if ( !($buf=~m{^(\.|\d+)([|/]?)}) ) { $self->throw("Could not parse gtype string [$gtype] .. $$rec{CHROM}:$$rec{POS} $column\n"); }
@@ -1111,7 +1125,8 @@ sub parse_haplotype
             push @seps,$2;
         }
     }
-    return (\@alleles,\@seps,$is_phased,$is_empty);
+    $$rec{_cached_haplotypes}{$gtype} = [\@alleles,\@seps,$is_phased,$is_empty];
+    return (@{$$rec{_cached_haplotypes}{$gtype}});
 }
 
 =head2 format_haplotype
