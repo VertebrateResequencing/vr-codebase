@@ -225,6 +225,43 @@ sub CMD
     return (@out);
 }
 
+sub CMD_check_status 
+{
+    my ($cmd,$options)  = @_;
+
+    use POSIX ":sys_wait_h";
+    my $pid = waitpid(-1, WNOHANG);
+    if ( $pid==0 or $pid==-1 ) { return; }
+
+    my $ignore_errno = (defined $options && exists($$options{'ignore_errno'})) ? $$options{'ignore_errno'} : 0;
+
+    # Code repetition with CMD, unify if time allows
+    my $exit_status = $?;
+    if ( $exit_status==$ignore_errno ) { $exit_status=0; }
+
+    if ( $exit_status )
+    {
+        my @msg = ();
+        unshift @msg, '['. scalar gmtime() ."]\n";
+        push @msg, "$cmd\nNon-zero status was returned $exit_status";
+        if ( $! )
+        {
+            push @msg, ": $!\n";
+        }
+        else
+        {
+            push @msg, ".\n";
+        }
+
+        my $bt = Utils::backtrace();
+        my $msg = join('',@$bt) . "\n" . join('',@msg) . "\n";
+        log_msg($$options{'logfile'},$msg) unless !exists($$options{'logfile'});
+
+        Utils::error(@msg) unless !$$options{'exit_on_error'};
+        print STDERR $msg;
+    }
+}
+
 
 =head2 create_dir
 
