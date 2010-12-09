@@ -43,7 +43,7 @@ use warnings;
 use File::Copy;
 use VertRes::IO;
 use VertRes::Utils::FileSystem;
-BEGIN { eval 'use VertRes::Utils::Sam'; }
+BEGIN { eval 'use VertRes::Utils::Sam'; if ($@) { die "$@\n"; } }
 
 use base qw(VertRes::Wrapper::WrapperI);
 
