@@ -2350,7 +2350,7 @@ sub extract_intervals_from_bam {
     my $bam_parser = VertRes::Parser::bam->new(file => $bam_in);
     my $result_holder = $bam_parser->result_holder();
     $bam_parser->flag_selector(self_unmapped => 0);
-    $bam_parser->get_fields('CIGAR', 'QNAME', 'FLAG', 'POS');
+    $bam_parser->get_fields('CIGAR', 'QNAME', 'FLAG');
    
     $opts{max_read_length} = 200 unless $opts{max_read_length};
 
@@ -2434,10 +2434,10 @@ sub extract_intervals_from_bam {
             while ($bam_parser->next_result) {
                 next if $result_holder->{CIGAR} eq "*";
 
-                unless ($reads_written{$result_holder->{QNAME}}){
+                unless ($reads_written{$result_holder->{QNAME} . $result_holder->{FLAG}}){
                     $bam_parser->write_result("$tmp_out");
                     $lines_out_counter++;
-                    $reads_written{$result_holder->{QNAME}} = 1;
+                    $reads_written{$result_holder->{QNAME} . $result_holder->{FLAG}} = 1;
                 }
             }
         }
