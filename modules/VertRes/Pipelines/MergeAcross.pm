@@ -227,6 +227,7 @@ sub merge {
         my ($bam_out_base, $bam_out_dir) = fileparse($bam_out);
         my $prefix = $bam_out_base;
         $prefix =~ s/\.bam$//;
+        my $job_name = $self->{prefix} . $prefix. '.pl';
         $prefix = File::Spec->catfile($bam_out_dir, "$self->{prefix}$prefix");
         my $tmp_bam_out = "$prefix.tmp.bam";
         my $bai = "$bam_out.bai";
@@ -269,11 +270,11 @@ my ];
         print $fh $d->Dump;
         print $fh qq[
 \$o->merge_and_check('$tmp_bam_out', \$bams);
-\$o = VertRes::Wrapper::samtools->new();
 ];
 
         if ($self->{run_index}) {
             print $fh qq[
+\$o = VertRes::Wrapper::samtools->new();
 \$o->index('$tmp_bam_out', '$tmp_bai');
 rename '$tmp_bai', '$bai';
 ];
@@ -283,10 +284,8 @@ rename '$tmp_bam_out', '$bam_out';
 ];
         close $fh;
 
-        my $job_name = "$self->{prefix}$group.pl";
-
         $self->archive_bsub_files($work_dir, "$self->{prefix}$group.pl");
-        LSF::run($jids_file, $work_dir, $job_name, $self, "perl -w $perl_out");
+        LSF::run($jids_file, $bam_out_dir, $job_name, $self, "perl -w $perl_out");
         print STDERR "    Submitted $perl_out\n"
     }
 
