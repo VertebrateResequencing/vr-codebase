@@ -2337,11 +2337,12 @@ sub rewrite_bas_meta {
              10 190 300
              would be merged into one interval 100-300 on chromosome 10.
            out.bam = name of output bam file (will be sorted by coordinate)
-
+           opts = hash of optional options:
+             max_read_length => int (default 200; length of longest read)
 =cut
 
 sub extract_intervals_from_bam {
-    my ($self, $bam_in, $intervals_file, $bam_out) = @_;
+    my ($self, $bam_in, $intervals_file, $bam_out, %opts) = @_;
     my $tmp_out = $bam_out . ".tmp";
     my %intervals;  # chromosome => [[start1,end1], [start2, end2], ...]
     my $lines_out_counter = 0;  # number of lines written to output file
@@ -2349,8 +2350,10 @@ sub extract_intervals_from_bam {
     my $bam_parser = VertRes::Parser::bam->new(file => $bam_in);
     my $result_holder = $bam_parser->result_holder();
     $bam_parser->flag_selector(self_unmapped => 0);
-    $bam_parser->get_fields("CIGAR");
+    $bam_parser->get_fields('CIGAR', 'QNAME', 'FLAG', 'POS');
    
+    $opts{max_read_length} = 200 unless $opts{max_read_length};
+
     # fill intervals hash from file
     open my $fh, $intervals_file or $self->throw("Cannot open $intervals_file: $!");
     
@@ -2416,13 +2419,26 @@ sub extract_intervals_from_bam {
                 $i++;
             }
         }
+
+        my %reads_written;
+        my $pos = 0;
+
         # make/append to the output bam file
         foreach my $interval (@$list) {
+            if ($interval->[0] - $pos > $opts{max_read_length}) {
+                %reads_written = ();
+                $pos = $interval->[1];
+            }
+
             $bam_parser->region("$chr:$interval->[0]-$interval->[1]");
             while ($bam_parser->next_result) {
                 next if $result_holder->{CIGAR} eq "*";
-                $bam_parser->write_result("$tmp_out");
-                $lines_out_counter++;
+
+                unless ($reads_written{$result_holder->{QNAME}}){
+                    $bam_parser->write_result("$tmp_out");
+                    $lines_out_counter++;
+                    $reads_written{$result_holder->{QNAME}} = 1;
+                }
             }
         }
     }
