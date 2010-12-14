@@ -227,7 +227,7 @@ sub get {
 sub nrecords {
     my ($self) = @_;
     if ( !exists($$self{results}) ) { $self->get(); }
-    return scalar @{$$self{results}};
+    return scalar @{$self->{results} || []};
 }
 
 =head2 status
