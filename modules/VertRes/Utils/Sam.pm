@@ -2427,9 +2427,9 @@ sub extract_intervals_from_bam {
         foreach my $interval (@$list) {
             if ($interval->[0] - $pos > $opts{max_read_length}) {
                 %reads_written = ();
-                $pos = $interval->[1];
             }
 
+            $pos = $interval->[1];
             $bam_parser->region("$chr:$interval->[0]-$interval->[1]");
             while ($bam_parser->next_result) {
                 next if $result_holder->{CIGAR} eq "*";
