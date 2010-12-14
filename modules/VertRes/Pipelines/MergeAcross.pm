@@ -133,6 +133,10 @@ our %options = (max_merges => 10,
 
            run_index => bool (default false; index the merged bam file) 
 
+           memory => int (default 500; Memory in MB to reserve for merge jobs.)
+           queue => string (default 'normal'; bsub queue to use for merge jobs.  This
+                            is forced to 'hugemem' if memory > 16000)
+
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -143,6 +147,8 @@ sub new {
 
     $self->{lane_path} || $self->throw("lane_path (misnomer; actually mergeAcross group output) directory not supplied, can't continue");
     $self->{groups} || $self->throw("groups hash not supplied in data => {} hash, can't continue");
+    $self->{queue} = 'normal' unless $self->{queue};
+    $self->{memory} = 500 unless $self->{memory};
     $self->{common_prefix_regex} = '^(.*?)\.' unless $self->{common_prefix_regex};
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
@@ -219,6 +225,11 @@ sub merge {
     my ($self, $work_dir, $action_lock) = @_;
     my $jobs_running = 0;
     my $jobs_done = 0;
+    my $memory = $self->{memory}; 
+    my $java_mem = int($memory * 0.9);
+    my $queue = $memory >= 16000 ? "hugemem" : $self->{queue};
+    my $orig_bsub_opts = $self->{bsub_opts};
+    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
 
     # for each group of bam files, run the merge if not done already
     # (subject to max_jobs constraint)
@@ -265,7 +276,7 @@ sub merge {
         open my $fh, ">", $perl_out or $self->throw("$perl_out: $!");
         print $fh qq[use VertRes::Wrapper::picard;
 use VertRes::Wrapper::samtools;
-my \$o = VertRes::Wrapper::picard->new();
+my \$o = VertRes::Wrapper::picard->new(java_memory => $java_mem);
 my ];
         print $fh $d->Dump;
         print $fh qq[
@@ -288,6 +299,8 @@ rename '$tmp_bam_out', '$bam_out';
         LSF::run($jids_file, $bam_out_dir, $job_name, $self, "perl -w $perl_out");
         print STDERR "    Submitted $perl_out\n"
     }
+
+    $self->{bsub_opts} = $orig_bsub_opts;
 
     # all jobs successfully completed?
     if ($jobs_done == scalar keys %{$self->{bams_by_group}}) {
