@@ -28,11 +28,11 @@ sub error
         "   unexpected results.\n",
         "Usage: vcf-isec [OPTIONS] file1.vcf file2.vcf ...\n",
         "Options:\n",
-        "   -a, --report-all                    By default only entries from the left-most file will be reported with -w.\n",
         "   -C, --chromosomes <list|file>       Process the given chromosomes (comma-separated list or one chromosome per line in a file).\n",
         "   -c, --complement                    Output positions present in A but missing from the other files.\n",
         "   -d, --debug                         Debugging information\n",
         "   -f, --force                         Continue even if the script complains about differing columns.\n",
+        "   -o, --one-file-only                 Print only entries from the left-most file. Without -o, all unique positions will be printed.\n",
         "   -n, --nfiles [+-=]<int>             Output positions present in this many (=), this many or more (+), or this many or fewer (-) files.\n",
         "   -p, --prefix <path>                 If present, multiple files will be created with all possible isec combinations. (Suitable for Venn Diagram analysis.)\n",
         "   -t, --tab <chr:pos:file>            Tab-delimited file with indexes of chromosome and position columns. (1-based indexes)\n",
@@ -48,7 +48,7 @@ sub error
 
 sub parse_params
 {
-    my $opts = { positions=>0, args=>[$0, @ARGV], force=>0, split=>0 };
+    my $opts = { positions=>0, args=>[$0, @ARGV], force=>0, split=>0, report_from_all=>1 };
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '-p' || $arg eq '--prefix' ) 
@@ -60,7 +60,7 @@ sub parse_params
         }
         if ( $arg eq '-f' || $arg eq '--force' ) { $$opts{force}=1; next; }
         if ( $arg eq '-C' || $arg eq '--chromosomes' ) { $$opts{chromosomes}=shift(@ARGV); next; }
-        if ( $arg eq '-a' || $arg eq '--report-all' ) { $$opts{report_all}=1; next; }
+        if ( $arg eq '-o' || $arg eq '--one-file-only' ) { $$opts{report_from_all}=0; next; }
         if ( $arg eq '-c' || $arg eq '--complement' ) { $$opts{complement}=1; next; }
         if ( $arg eq '-n' || $arg eq '--nfiles' )
         {
@@ -266,7 +266,7 @@ sub do_chrm_isec
     my $debug = $$opts{debug} ? 1 : 0;
     my $win   = $$opts{win} ? $$opts{win} : 0;
     my $complement = $$opts{complement} ? 1 : 0;
-    my $report_all = $$opts{report_all} ? 1 : 0;
+    my $report_from_all = $$opts{report_from_all} ? 1 : 0;
     my $nfiles = scalar @{$$opts{files}};
     my $isec_nfiles = $nfiles;
     my $isec_op     = '=';
@@ -323,9 +323,11 @@ sub do_chrm_isec
         elsif ( $isec_op eq '-' && $isec_nfiles<$nmatches ) { next; }
 
         # The hits are sorted by position in @$grp
+        my ($prev_chr,$prev_pos,$prev_id);
         for my $rec (@$grp) 
         { 
-            if ( !$report_all && $$rec{vcf}{vcf_isec_ID}!=0 ) { next; }
+            if ( !$report_from_all && $$rec{vcf}{vcf_isec_ID}!=0 ) { next; }
+            elsif ( defined $prev_chr && $prev_chr eq $$rec{chr} && $prev_pos eq $$rec{pos} && $prev_id ne $$rec{vcf}{vcf_isec_ID} ) { next; }
 
             if ( !$$rec{vcf}{delim} )
             {
@@ -344,6 +346,10 @@ sub do_chrm_isec
             {
                 print $$rec{line};
             }
+
+            $prev_chr = $$rec{chr};
+            $prev_pos = $$rec{pos};
+            $prev_id  = $$rec{vcf}{vcf_isec_ID};
         }
     }
 }
