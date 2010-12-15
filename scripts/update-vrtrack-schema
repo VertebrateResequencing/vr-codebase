@@ -1,0 +1,121 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Carp;
+use VRTrack::Lane;
+use VertRes::Utils::VRTrackFactory;
+
+my $opts = parse_params();
+my @dbs  = VertRes::Utils::VRTrackFactory->databases(1, $$opts{'old'});
+my $sqls = read_sqls($$opts{sql});
+for my $db (@dbs) {
+    next if $db eq 'test';
+    run_sqls($db,$sqls);
+}
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg )
+    {
+        if ($opts->{warn}) {
+            carp @msg;
+        }
+        else {
+            croak @msg;
+        }
+    }
+    die
+        "Usage: update-vrtrack-schema [OPTIONS]\n",
+        "Options:\n",
+        "   -s, --sql <file>                 File with SQL commands to be performed for each of the database.\n",
+        "   -o, --old                        Only try to update databases that have old schema version numbers.\n",
+        "   -w, --warn                       Only warn on execute errors, don't die.\n",
+        "   -h, -?, --help                   This help message.\n",
+        "\n" unless $opts->{warn};
+}
+
+
+sub parse_params
+{
+    my $opts = {};
+    while (my $arg=shift(@ARGV))
+    {
+        if ( $arg eq '-s' || $arg eq '--sql' ) { $$opts{'sql'} = shift(@ARGV); next }
+        if ( $arg eq '-o' || $arg eq '--old' ) { $$opts{'old'} = 1; next }
+        if ( $arg eq '-w' || $arg eq '--warn' ) { $$opts{'warn'} = 1; next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+    }
+    if ( !exists($$opts{'sql'}) ) { error("Missing the -s option.\n") }
+    return $opts;
+}
+
+sub init_db
+{
+    my ($dbname) = @_;
+    my %cd = VertRes::Utils::VRTrackFactory->connection_details('rw');
+    my $dbh = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 });
+    if ( !$dbh ) { error("Unable to connect.\n"); }
+    return $dbh;
+}
+
+sub mysql_query
+{
+    my ($args,$query) = @_;
+
+    if ( $args && $$args{'verbose'} ) { print STDERR "$query\n"; }
+
+    my $sth = $$args{dbh}->prepare($query);
+    if ( !$sth ) { error("$query:\n", $!) }
+    $sth->execute or error("$query:\n", $!);
+    return $sth;
+}
+
+
+# empty lines are ignored, multilines can be escaped by \
+sub read_sqls
+{
+    my ($fname) = @_;
+
+    open(my $fh,'<',$fname) or error("$fname: $!"); 
+    my @sqls;
+    my $buf;
+    while (my $line=<$fh>)
+    {
+        if ( $line=~/^\s*$/ ) { next; }
+        chomp($line);
+        if ( $line =~m{\\\s*$} )
+        {
+            $buf .= $`;
+            next;
+        }
+        if ( $buf ) 
+        { 
+            $line = $buf . $line; 
+            $buf=undef; 
+        }
+        push @sqls,$line;
+    }
+    close($fh);
+    return \@sqls;
+}
+
+
+sub run_sqls
+{
+    my ($db,$sqls) = @_;
+
+    print STDERR "$db\n";
+    my $dbh = init_db($db);
+    for my $sql (@$sqls)
+    {
+        mysql_query({dbh=>$dbh, verbose=>1}, $sql);
+    }
+}
+
+

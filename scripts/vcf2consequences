@@ -1,0 +1,229 @@
+#!/usr/bin/env perl
+#
+# Author: thomas.keane@sanger, petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use DBI;
+use Data::Dumper; 
+use Getopt::Long;
+
+BEGIN{
+    my $ROOT = '/software/vertres/lib/all';
+    my $VERSION = '59';
+    unshift(@INC, "$ROOT/bioperl-1.2.3/lib/site_perl/5.8.8");
+    unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl/modules");
+    unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-variation/modules");
+    unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-functgenomics/modules");
+}
+
+use Bio::EnsEMBL::Registry;
+use Bio::EnsEMBL::Utils::TranscriptAlleles qw(get_all_ConsequenceType);
+use Bio::EnsEMBL::Variation::AlleleFeature;
+use Bio::EnsEMBL::Variation::VariationFeature;
+
+use Vcf;
+=pod
+foreach( keys( %INC ) )
+{
+	print qq[$_ - $INC{$_}\n];
+}
+=cut
+
+my ($input_vcf, $complement, $species, $help);
+
+GetOptions
+(
+	"v|vcf=s"   	=> \$input_vcf,
+	"s|species=s"	=> \$species,
+	"h|help"		=> \$help
+);
+
+my $missing = 0;
+if( ! $species || $help ){$missing = 1;}
+
+if( $missing )
+{
+	print qq[
+This is a script to call consequences on a set of SNPs in a VCf file
+by querying Ensembl
+Usage:
+    -v --vcf <string>       VCF input file
+    -s --species            e.g. Homo_sapiens, Mus_musculus
+    -h --help               Print this message
+];
+	exit;
+}
+
+croak qq[Invalid species: $species\n]  unless $species eq qq[Mus_musculus] || $species eq qq[Homo_sapiens];
+
+
+my $ensembl = init_ensembl($species);
+parse_vcf($ensembl,$input_vcf);
+
+exit;
+
+#------------------------------
+
+sub init_ensembl
+{
+    my ($species) = @_;
+
+    print STDERR "New Ensembl called...\n";
+    my $registry = 'Bio::EnsEMBL::Registry';
+    $registry->load_registry_from_db (	
+    	-host => 'ensdb-archive', -user => 'ensro', -port => 5304,
+    );
+    print STDERR "registry loaded...\n";
+    
+    my $slice = $registry->get_adaptor($species, "core", "Slice");
+    my ($highest_cs) = @{ $slice->db->get_CoordSystemAdaptor->fetch_all() };
+    my $assembly = $highest_cs->version();
+    print STDERR "Using assembly: $assembly\n";
+
+    my $variation = $registry->get_adaptor($species, "variation", "variationfeature");
+    my $gene = $registry->get_adaptor($species, "core", "Gene");
+
+    return {registry=>$registry, slice=>$slice, variation=>$variation, gene=>$gene};
+}
+
+
+sub parse_vcf
+{
+    my ($ensembl,$input_vcf) = @_;
+
+    my $vcf = defined $input_vcf ? Vcf->new(file=>$input_vcf) : Vcf->new(fh=>\*STDIN);
+    $vcf->parse_header();
+    $vcf->add_header_line({key=>'INFO',ID=>'CSQ',Number=>-1,Type=>'String',Description=>'Consequence of the ALT alleles'});
+    print $vcf->format_header();
+
+    my $lines = 0;
+    my %variantsH;
+    my $lastChr;
+    while( my $rec = $vcf->next_data_array() )
+    {
+        my $chr  = $$rec[0];
+        my $pos  = $$rec[1];
+        my $ref  = $$rec[3];
+        my $alts = $$rec[4];
+
+	    # This is should be improved - remembering locations of a list of genes for a region and reducing the number of
+        #   Ensembl queries
+        if ( !$$ensembl{chrslice} or $lastChr ne $chr )
+        {
+            $$ensembl{chrslice} = $$ensembl{slice}->fetch_by_region('chromosome',$chr);
+            if ( !$$ensembl{chrslice} )
+            {
+                print join("\t",@$rec) . "\n";
+                next;
+            }
+        }
+
+        # Call consequence for each ALT allele of the VCF file.
+        my @conseqs = ();
+        for my $alt (split(/,/,$alts))
+        {
+            my ($type,$len,$ht) = $vcf->event_type({REF=>$ref},$alt);
+            my $conseq;
+        
+            if ( $type eq 's' ) 
+            {
+                $conseq = call_conseqs($ensembl,$ref,$pos,$pos,"$ref/$ht");
+            }
+            elsif ( $type eq 'i' ) 
+            {
+                if ( $len<0 )
+                {
+                    # deletion
+                    $conseq = call_conseqs($ensembl,$ref,$pos,$pos-$len-1,"$ht/-");
+                }
+                else
+                {
+                    # insertion
+                    $conseq = call_conseqs($ensembl,$ref,$pos,$pos-1,"-/$ht");
+                }
+            }
+            elsif ( $type eq 'r' ) 
+            {
+                $conseq = {};
+            }
+            else 
+            {
+                warn("Unknown event type: $type .. $chr $pos $ref $alt\n");
+                $conseq = {}; 
+            }
+
+            if ( scalar %$conseq )
+            {
+                push @conseqs, join('+',sort(keys %$conseq));
+            }
+        }
+        if ( scalar @conseqs )
+        {
+            $$rec[7] = $vcf->add_info_field($$rec[7],'CSQ'=>join(',',@conseqs));
+        }
+        print join("\t",@$rec) . "\n";
+
+        $lastChr = $$rec[0];
+    }
+}
+
+
+sub call_conseqs
+{
+    my ($ensembl,$ref,$from,$to,$allele) = @_;
+
+    my %out;
+
+    # No consequence for the reference allele
+    if ( $allele eq $ref ) 
+    { 
+        $out{'.'} = 1;  
+        return \%out; 
+    }
+
+    my $vf =  Bio::EnsEMBL::Variation::VariationFeature->new(
+            -start   => $from,
+            -end     => $to,
+            -strand  => 1,
+            -slice   => $$ensembl{chrslice},
+            -allele_string => $allele,
+            -variation_name => 'test',
+            -adaptor => $$ensembl{variation},
+            );
+
+    # Get the consequence types
+    my $cons = $vf->get_all_TranscriptVariations();
+
+    # No consequence - intergenic
+    if (!defined $cons)
+    { 
+        $out{'.'} = 1;  
+        return \%out; 
+    }
+
+    foreach my $con (@$cons) 
+    {
+        my $transcript = $con->transcript();
+        next unless defined $transcript;
+        my $trans_id  = $transcript->stable_id;
+        my $gene      = $$ensembl{gene}->fetch_by_transcript_stable_id($trans_id);
+        my $gene_name = $gene->external_name||$gene->stable_id;
+        my $gene_id   = $gene->stable_id;
+        my $strand    = $con->transcript->strand();
+
+        foreach my $type (@{$con->consequence_type}) 
+        {
+            if ( $type eq 'DOWNSTREAM' ) { next; }
+            if ( $type eq 'UPSTREAM' ) { next; }
+            if ( $type eq 'INTERGENIC' ) { next; }
+             
+            $out{"$type\@$gene_name"} = 1;
+            #print qq[$items[ 0 ]\t$items[ 1 ]\t$items[ 3 ]\t$items[ 4 ]\t$type\t$gene_name\t$gene_id\t$trans_id\t$strand\n];
+        }
+    }
+    return \%out;
+}
+

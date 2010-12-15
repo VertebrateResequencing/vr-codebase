@@ -1,0 +1,160 @@
+#!/usr/bin/env perl
+#
+# support: pd3@sanger
+
+use strict;
+use warnings;
+use Carp;
+use Vcf;
+
+my $opts = parse_params();
+fill_rsids($opts,$$opts{rsids_file});
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    die
+        "Usage: cat in.vcf | fill-rsIDs [OPTIONS] > out.vcf\n",
+        "Options:\n",
+        "   -a, --alleles-mismatch          Print sites with non-matching alternate alleles sites to STDERR.\n",
+        "   -c, --chr-pos                   Use chrNUM:POS for missing IDs.\n",
+        "   -d  --dots                      Use dots for missing IDs.\n",
+        "   -f, --force                     Replace all existing IDs, even when they do not conflict with rsIDs.\n",
+        "   -r, --rsIDs <file.gz>           The file with IDs: CHR\\tPOS\\tID\\tREF\\tALT.\n",
+        "   -h, -?, --help                  This help message.\n",
+        "Example:\n",
+        "   (zcat file.vcf | grep ^#; zcat file.vcf | grep -v ^# | sort -k 1,1d -k 2,2n;) | fill-rsIDs -r dbSNP_ids_129.txt.bgz | gzip -c >out.vcf.gz \n",
+        "\n";
+}
+
+sub parse_params
+{
+    my $opts = { dots=>1 };
+    while (my $arg=shift(@ARGV))
+    {
+        if ( $arg eq '-a' || $arg eq '--alleles-mismatch' ) { $$opts{alt_mismatch} = 1; next }
+        if ( $arg eq '-d' || $arg eq '--dots' ) { $$opts{dots}=1; $$opts{chrpos}=0; next }
+        if ( $arg eq '-c' || $arg eq '--chr-pos' ) { $$opts{chrpos}=1; $$opts{dots}=0; next }
+        if ( $arg eq '-f' || $arg eq '--force' ) { $$opts{replace_all} = 1; next }
+        if ( $arg eq '-r' || $arg eq '--rsIDs' ) { $$opts{rsids_file} = shift(@ARGV); next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    if ( !exists($$opts{rsids_file}) ) { error("Missing the -r option.\n") }
+    if ( !$$opts{dots} && !$$opts{chrpos} ) { error("Missing one of the -c or -d option.\n") }
+    return $opts;
+}
+
+
+sub fill_rsids
+{
+    my ($opts,$rs_fname) = @_;
+
+    my $vcf = Vcf->new(fh=>\*STDIN);
+    $vcf->parse_header();
+    print $vcf->format_header();
+
+    my $dots = $$opts{dots} ? 1 : 0;
+    my $report_alt_mismatch = $$opts{alt_mismatch} ? 1 : 0;
+    my $replace_all = $$opts{replace_all};
+
+    my $n_unknown = 0;
+    my $n_rsids   = 0;
+    my $n_ref_match = 0;
+    my $n_ref_mismatch = 0;
+    my $n_alt_match = 0;
+    my $n_alt_mismatch = 0;
+
+    my ($rs_fh,$prev_chr,$prev_pos);
+    my ($rs_read,$rs_chr,$rs_pos,$rs_id,$rs_ref,$rs_alt);
+    while (my $line = $vcf->next_line())
+    {
+        if ( !($line=~/^(\S+)\t(\S+)\t(\S+)\t(\S+)\t(\S+)\t/) ) { error("Could not parse the VCF line: $line"); }
+        my $chr = $1;
+        my $pos = $2;
+        my $id  = $3;
+        my $ref = $4;
+        my $alt = $5;
+        my $rest = $';
+
+        # Check if the current tabix reader has the right chromosome
+        if ( !$prev_chr || $prev_chr ne $chr )
+        {
+            if ( $rs_fh ) 
+            { 
+                if ( !$rs_read ) { warn("No data for $prev_chr in $rs_fname.\n"); }
+                close($rs_fh); 
+            }
+            open($rs_fh,"tabix $rs_fname $chr 2>&1 |") or error("tabix $rs_fname $chr 2>&1 |: $!");
+            $rs_read = 0;
+            undef $rs_pos;
+        }
+        else
+        {
+            # Still on the same chromosome, check the order
+            if ( $pos<$prev_pos ) { error("The VCF file not sorted, $chr:$pos comes after $prev_pos\n"); }
+        }
+
+        # Get the corresponding rs position, the order is guaranteed by tabix
+        while (!defined($rs_pos) or $rs_pos<$pos)
+        {
+            my $rs = <$rs_fh>;
+            if ( !$rs ) { last; }
+
+            $rs_read = 1;
+
+            chomp($rs);
+            ($rs_chr,$rs_pos,$rs_id,$rs_ref,$rs_alt) = split(/\t/,$rs);
+        }
+
+        if ( defined($rs_pos) && $rs_pos eq $pos )
+        {
+            print "$chr\t$pos\t$rs_id\t$ref\t$alt\t$rest";
+            
+            # Some stats
+            $n_rsids++;
+            if ( $ref eq $rs_ref ) { $n_ref_match++; }
+            else { $n_ref_mismatch++; warn("ref mismatch: $ref,$rs_ref  $chr:$pos\n"); }
+
+            # Check if the alternate alleles match in both files. VCF keeps them separated with comma and
+            #   the SNPChrPosAllele_b129.txt has occasionally also multiple alleles separated with slash.
+            my %alts = map { $_=>1 } split(/,/,$alt);
+            my @rs_alts = split(m{/},$rs_alt);
+            my $do_match=0;
+            for my $_alt (@rs_alts) { if ( $alts{$_alt} ) { $do_match=1; last; } }
+            if ( $do_match ) { $n_alt_match++; }
+            else 
+            { 
+                $n_alt_mismatch++; 
+                if ( $report_alt_mismatch )
+                {
+                    warn("alt mismatch: [$ref,$alt],[$rs_ref,$rs_alt]  $chr:$pos\n");
+                }
+            }
+        }
+        else
+        {
+            my $new_id = $id;
+            if ( $replace_all || $id=~/^rs\d+$/ ) { $new_id = $dots ? '.' : "chr$chr:$pos"; }
+            print "$chr\t$pos\t$new_id\t$ref\t$alt\t$rest";
+            $n_unknown++;
+        }
+
+        $prev_chr = $chr;
+        $prev_pos = $pos;
+    }
+
+    warn("No rsIDs        .. $n_unknown\n",
+         "rsIDs filled    .. $n_rsids\n",
+         "   ref match    .. $n_ref_match\n",
+         "   ref mismatch .. $n_ref_mismatch\n",
+         "   alt match    .. $n_alt_match\n",
+         "   alt mismatch .. $n_alt_mismatch\n");
+}
+
+

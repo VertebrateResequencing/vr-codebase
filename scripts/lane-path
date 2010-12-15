@@ -1,0 +1,105 @@
+#!/usr/bin/env perl
+#
+# Author: pd3
+
+use strict;
+use warnings;
+use Carp;
+use VRTrack::VRTrack;
+use VertRes::Utils::VRTrackFactory;
+use VRTrack::Lane;
+
+my $opts = parse_params();
+
+for my $lane (@{$$opts{lanes}})
+{
+    my $paths = find_lane($lane);
+    for my $path (@$paths)
+    {
+        print "$path\n";
+    }
+}
+exit;
+
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg )
+    {
+        croak @msg;
+    }
+    die
+        "Usage: lane-path [OPTIONS] <lane|run>\n",
+        "Options:\n",
+        "   -h, -?, --help                   This help message.\n",
+        "\n";
+}
+
+
+sub parse_params
+{
+    my $opts = {};
+    while (my $arg=shift(@ARGV))
+    {
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        push @{$$opts{lanes}}, $arg;
+    }
+    return $opts;
+}
+
+
+
+sub find_lane
+{
+    my ($lane) = @_;
+
+    my $db_opts = { VertRes::Utils::VRTrackFactory->connection_details('rw') };
+    my %dbs = (
+            g1k_track => '/lustre/scratch102/projects/g1k/TRACKING/',
+            g1k_meta  => '/lustre/scratch102/projects/g1k/META/',
+            mouse_reseq_track => '/lustre/scratch102/projects/mouse/TRACKING/'
+            );
+
+    my ($vrtrack,$db,@paths);
+    for $db (keys %dbs)
+    {
+        $$db_opts{database} = $db;
+        $vrtrack = VRTrack::VRTrack->new($db_opts);
+        my $path = $vrtrack->hierarchy_path_of_lane_name($lane);
+        if ( $path )
+        {
+            push @paths, "$dbs{$db}/$path";
+            last;
+        }
+    }
+    if ( scalar @paths ) { return \@paths; }
+
+    # Try to find a run
+    for $db (keys %dbs)
+    {
+        $$db_opts{database} = $db;
+        $vrtrack = VRTrack::VRTrack->new($db_opts);
+        
+        my $query = "SELECT name FROM latest_lane WHERE name LIKE '${lane}\\_%'";
+        my $sth = $vrtrack->{_dbh}->prepare($query);
+        if ( !$sth ) { error("$query:\n", $!) }
+        $sth->execute or error("$query:\n", $!);
+        if ( !$sth->rows ) { next; }
+
+        while (my @row=$sth->fetchrow_array)
+        {
+            my $path = $vrtrack->hierarchy_path_of_lane_name($row[0]);
+            if ( $path )
+            {
+                push @paths, "$dbs{$db}/$path";
+            }
+        }
+    }
+
+    return \@paths;
+}
+
+

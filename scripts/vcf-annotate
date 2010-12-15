@@ -1,0 +1,336 @@
+#!/usr/bin/env perl
+#
+# support: pd3@sanger
+
+use strict;
+use warnings;
+use Carp;
+use Vcf;
+
+my $opts = parse_params();
+annotate($opts);
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    die
+        "About: Add custom annotations to a VCF file. Requires tabix indexed file with annotations.\n",
+        "   Currently annotates only the INFO column, but it will be extended on demand.\n",
+        "Usage: cat in.vcf | vcf-annotate [OPTIONS] > out.vcf\n",
+        "Options:\n",
+        "   -a, --annotations <file.gz>         The tabix indexed file with the annotations: CHR\\tFROM[\\tTO][\\tVALUE]+.\n",
+        "   -c, --columns <list>                The list of columns in the annotation file, e.g. CHROM,FROM,TO,-,INFO/STR,INFO/GN. The dash\n",
+        "                                           in this example indicates that the third column should be ignored. If TO is not\n",
+        "                                           present, it is assumed that TO equals to FROM.\n",
+        "   -d, --description <file|string>     Header annotation, e.g. key=INFO,ID=HM2,Number=0,Type=Flag,Description='HapMap2 membership'.\n",
+        "                                           The descriptions can be read from a file, one annotation per line.\n",
+        "   -h, -?, --help                      This help message.\n",
+        "Example:\n",
+        "   zcat in.vcf.gz | vcf-annotate -a annotations.gz -d descriptions.txt | bgzip -c >out.vcf.gz \n",
+        "Where descriptions.txt contains:\n",
+        "   key=INFO,ID=GN,Number=1,Type=String,Description='Gene Name'\n",
+        "   key=INFO,ID=STR,Number=1,Type=Integer,Description='Strand'\n",
+        "\n";
+}
+
+sub parse_params
+{
+    my $opts = {};
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-d' || $arg eq '--description' ) 
+        { 
+            my $desc = shift(@ARGV);
+            if ( -e $desc )
+            {
+                open(my $fh,'<',$desc) or error("$desc: $!");
+                while (my $line=<$fh>)
+                {
+                    if ( $line=~/^\s*$/ or $line=~/^#/ ) { next; }
+                    chomp($line);
+                    push @{$$opts{desc}}, $line;
+                }
+                close($fh);
+            }
+            else
+            {
+                push @{$$opts{desc}}, $desc; 
+            }
+            next;
+        }
+        if ( $arg eq '-c' || $arg eq '--columns' ) 
+        { 
+            my $cols = shift(@ARGV);
+            $$opts{cols} = [ split(/,/,$cols) ];
+            next; 
+        }
+        if ( $arg eq '-a' || $arg eq '--annotations' ) { $$opts{annotations} = shift(@ARGV); next }
+        if ( $arg eq '-t' || $arg eq '--tag' ) { $$opts{tag} = shift(@ARGV); next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        if ( -e $arg ) { $$opts{file}=$arg; next; }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    if ( !exists($$opts{desc}) ) { error("Missing the -d option.\n") }
+    if ( !exists($$opts{annotations}) ) { error("Missing the -a option.\n") }
+    return $opts;
+}
+
+# Convert text descriptions given on command line to hashes which will be 
+#   passed to Vcf::add_header_line
+sub parse_descriptions
+{
+    my ($descs) = @_;
+    my @out;
+    for my $str (@$descs)
+    {
+        my $desc = {};
+        my $tmp = $str;
+        while ($tmp)
+        {
+            my ($key,$value);
+            if ( $tmp=~/^([^=]+)=["']([^\"]+)["']/ ) { $key=$1; $value=$2; }
+            elsif ( $tmp=~/^([^=]+)=([^,"]+)/ && $1 eq 'Description' ) 
+            {
+                # The command line eats the quotes
+                $key=$1; $value=$2.$';
+                $$desc{$key} = $value;
+                last;
+            }
+            elsif ( $tmp=~/^([^=]+)=([^,"]+)/ ) 
+            { 
+                $key=$1; $value=$2; 
+            }
+            else { error(qq[Could not parse the description: [$str]\n]); }
+            $$desc{$key} = $value;
+
+            $tmp = $';
+            if ( $tmp=~/^,/ ) { $tmp = $'; }
+
+        }
+        if ( !exists($$desc{ID}) ) { error("No ID in description? [$str]\n"); }
+        push @out, $desc;
+    }
+    return \@out;
+}
+
+# Create mapping from the annotation IDs to column indexes. The following structure
+#   is returned:
+#       { 
+#           CHROM => col_idx,
+#           FROM  => col_idx,
+#           TO    => col_idx,
+#           annots => 
+#           [
+#               { col=>col_idx, id=>annot_id, vcf_col=>vcf_column, is_flag=>0 },
+#           ]
+#       }
+#   If {annots}{is_flag} is nonzero, "annot_id" will be written to VCF instead of "annot_id=value".
+#   Currently only one VCF columns (INFO) is supported.
+#
+sub parse_columns
+{
+    my ($cols,$descriptions) = @_;
+
+    my %desc = ();
+    for my $d (@$descriptions)
+    {
+        $desc{$$d{key}.'/'.$$d{ID}} = $d;
+    }
+
+    my %out = ();
+    for (my $i=0; $i<@$cols; $i++)
+    {
+        my $col = $$cols[$i];
+
+        if ( $col eq '-' ) { next; }
+        elsif ( exists($desc{$col}) ) 
+        {
+            if ( !($col=~m{^(.+)/(.+)$}) ) { error("Could not parse the column [$col].\n"); }
+            my $key = $1;
+            my $id  = $2;
+            my $rec = { col=>$i, id=>$id, vcf_col=>$key, is_flag=>($desc{$col}{Type} eq 'Flag' ? 1 : 0) };
+            push @{$out{annots}}, $rec;
+            if ( $key ne 'INFO' ) { error("TODO: other than INFO columns\n"); }
+        }
+        elsif ( $col eq 'CHROM' ) { $out{$col}=$i; }
+        elsif ( $col eq 'FROM' ) { $out{$col}=$i; }
+        elsif ( $col eq 'TO' ) { $out{$col}=$i; }
+        else { error("Missing the -d parameter for the column [$col]\n"); }
+    }
+    if ( !exists($out{CHROM}) ) { $out{CHROM}=0; }
+    if ( !exists($out{FROM}) ) { $out{FROM}=1; }
+    if ( !exists($out{TO}) ) { $out{TO}=$out{FROM}; }
+    return \%out;
+}
+
+sub annotate
+{
+    my ($opts) = @_;
+
+    my $descs = parse_descriptions($$opts{desc});
+    my $cols  = parse_columns($$opts{cols},$descs);
+
+    my $vcf = exists($$opts{file}) ? Vcf->new(file=>$$opts{file}) : Vcf->new(fh=>\*STDIN);
+    $vcf->parse_header();
+    for my $desc (@$descs)
+    {
+        $vcf->add_header_line($desc,silent=>1);
+    }
+    print $vcf->format_header();
+
+    my $reader = Reader->new(file=>$$opts{annotations});
+
+    my ($prev_chr,$prev_pos,$annot_from,$annot_to,$annot_line);
+    my @annots = @{$$cols{annots}};
+
+    while (my $line = $vcf->next_line())
+    {
+        my @rec = split(/\t/,$line);
+        my $chr = $rec[0];
+        my $pos = $rec[1];
+        chomp($rec[-1]);
+
+        # Check if the current annotation reader has the right chromosome
+        if ( !$prev_chr || $prev_chr ne $chr )
+        {
+            $reader->open(region=>$chr);
+            undef $annot_line;
+        }
+        else
+        {
+            # Still on the same chromosome, check the order
+            if ( $pos<$prev_pos ) { error("The VCF file not sorted, $chr:$pos comes after $prev_pos\n"); }
+        }
+
+        # Get the corresponding annotation, the order is guaranteed by tabix
+        while (1)
+        {
+            if ( defined $annot_line && $annot_from<=$pos && $annot_to>=$pos ) 
+            { 
+                # The VCF matches the annotation
+                last; 
+            }
+
+            $annot_line = $reader->next_line();
+            if ( !defined $annot_line ) { last; }
+
+            $annot_from = $$annot_line[ $$cols{FROM} ];
+            $annot_to   = $$annot_line[ $$cols{TO} ];
+
+            if ( $annot_from>$pos )
+            {
+                # The annotation file is ahead of VCF
+                $reader->unread_line($annot_line);
+                undef $annot_line;
+                last;
+            }
+            # The VCF is ahead or it matches the annotation. The latter will be checked at 
+            #   the beginning of this loop
+        }
+
+        # Is there a record in the annotation file which describes the VCF record $chr:$pos?
+        if ( defined($annot_line) )
+        {
+            # Sanity check, this should be always true
+            if ( $annot_from>$pos or $annot_to<$pos ) { error("FIXME: Annotation $chr:$annot_from-$annot_to vs VCF $chr:$pos??\n"); }
+
+            # Existing annotations will be overwritten if they have the same name
+            my %values = ();
+            for my $info (@annots)
+            {
+                my $val = $$annot_line[$$info{col}];
+                chomp($val);
+
+                if ( $val eq '' or $val eq '.' ) { $val=undef; }       # Existing annotation should be removed
+                elsif ( $$info{is_flag} )
+                {
+                    if ( $val ) { $val=''; }            # Flag annotation should be added
+                    else { $val=undef; }                # Flag annotation should be removed
+                }
+                $values{$$info{id}} = $val;
+            }
+
+            $rec[7] = $vcf->add_info_field($rec[7],%values);
+        }
+
+        print join("\t",@rec) . "\n";
+
+        $prev_chr = $chr;
+        $prev_pos = $pos;
+    }
+}
+
+
+#---------------------------------
+
+package Reader;
+
+use strict;
+use warnings;
+use Carp;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = @args ? {@args} : {};
+    bless $self, ref($class) || $class;
+    if ( !$$self{file} ) { $self->throw("Expected the file option.\n"); }
+    if ( !$$self{delim} ) { $$self{delim} = qr/\t/; }
+    if ( !$$self{chr} ) { $$self{chr} = 0; }        # the index of the chromosome column (indexed from 0)
+    if ( !$$self{from} ) { $$self{from} = 1; }      # the index of the from column 
+    if ( !$$self{to} ) { $$self{to} = 2; }          # the index of the to column 
+    return $self;
+}
+
+sub throw
+{
+    my ($self,@msg) = @_;
+    confess @msg;
+}
+
+sub open
+{
+    my ($self,%args) = @_;
+    if ( !$$self{file} ) { $self->throw(qq[The parameter "file" not set.\n]); }
+    $self->close();
+    open($$self{fh},"tabix $$self{file} $args{region} |") or $self->throw("tabix $$self{file}: $!");
+}
+
+sub close
+{
+    my ($self) = @_;
+    if ( !$$self{fh} ) { return; }
+    close($$self{fh});
+    delete($$self{fh});
+    delete($$self{buffer});
+}
+
+sub unread_line
+{
+    my ($self,$line) = @_;
+    unshift @{$$self{buffer}}, $line;
+    return;
+}
+
+sub next_line
+{
+    my ($self) = @_;
+    if ( $$self{buffer} && @{$$self{buffer}} ) { return shift(@{$$self{buffer}}); }
+    my $line;
+    # Skip comments
+    while (1)
+    {
+        $line = readline($$self{fh});
+        if ( !defined $line ) { return undef; }
+        if ( $line=~/^#/ ) { next; }
+        last;
+    }
+    my @items = split($$self{delim},$line);
+    return \@items;
+}
+

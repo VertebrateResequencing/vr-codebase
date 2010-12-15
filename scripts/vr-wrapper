@@ -1,0 +1,30 @@
+#!/bin/sh
+#
+# This script sets the environment variables necessary for running LSF jobs and
+#   vertreseq software.
+#
+# Usage: 
+#   vr-wrapper - 'set > variables.txt'
+#   vr-wrapper /path/to/optional/profile 'set > variables.txt'
+#
+
+# This is not necessary and so is not badger and oracle below, added just to keep Sendu happy.
+. /etc/profile
+
+PACKAGES="badger oracle vertres lsf"
+
+for package in $PACKAGES; do
+    if [ -e  /software/$package/etc/profile.$package ]; then
+        . /software/$package/etc/profile.$package
+    fi
+done
+
+if [ "$1" != '-' ]; then 
+    . $1
+fi
+
+shift 1
+
+umask 002
+eval $@
+

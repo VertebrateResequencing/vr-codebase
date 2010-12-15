@@ -1,0 +1,55 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Carp;
+use FindBin;
+use lib "$FindBin::Bin";
+use SamTools;
+
+my $opts = parse_params();
+SamTools::print_flags($$opts{bam_file});
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg )
+    {
+        croak join('',@msg);
+    }
+    die
+        "Usage: bam-flags [OPTIONS] [file.bam]\n",
+        "Options:\n",
+        "   -e, --explain <int>             Eplain the flag.\n",
+        "   -r, --region <chr:pos-pos>      Show only this region of the bam file.",
+        "   -h, -?, --help                  This help message.\n",
+        "\n";
+}
+
+
+sub parse_params
+{
+    my $opts = {};
+    while (my $arg=shift(@ARGV))
+    {
+        if ( -e $arg ) { $$opts{bam_file}=$arg; next; }
+        if ( $arg eq '-r' || $arg eq '--region' ) { $$opts{region}=shift(@ARGV); next; }
+        if ( $arg eq '-e' || $arg eq '--explain' ) 
+        { 
+            my $flag = shift(@ARGV);
+            print SamTools::debug_flag($flag);
+            exit;
+        }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    if ( !exists($$opts{'bam_file'}) ) { error("No bam file given?\n") }
+    if ( exists($$opts{region}) ) { $$opts{'bam_file'} .= ' '.$$opts{region}; }
+    return $opts;
+}
+
+

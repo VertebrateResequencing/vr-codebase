@@ -1,0 +1,57 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Carp;
+use VertRes::Utils::FileSystem;
+
+my $opts = parse_params();
+my $fsu  = VertRes::Utils::FileSystem->new();
+
+for my $file (@{$$opts{files}})
+{
+    if ( $$opts{rm} )
+    {
+        $fsu->file_exists($file,wipe_out=>1,recurse=>$$opts{recurse});
+    }
+}
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    die
+        "About: Provides a means for removing records from the VertRes::Utils::FileSystem\n",
+        "   database of existing files, which was set up to minimize the number of stat calls\n",
+        "   on lustre FS.\n",
+        "Usage: file-exists [OPTIONS] [COMMAND] <file>\n",
+        "Commands:\n",
+        "   rm                      Remove record from the DB\n",
+        "Options:\n",
+        "   -r, --recursive         Remove recursively.\n",
+        "   -h, -?, --help          This help message.\n",
+        "Examples:\n",
+        "   file-exists rm -r /path/to/some/directory\n",
+        "\n";
+}
+
+
+sub parse_params
+{
+    my $opts = { recurse=>0 };
+    while (my $arg=shift(@ARGV))
+    {
+        if ( $arg eq 'rm' ) { $$opts{rm}=1; next; }
+        if ( $arg eq '-r' || $arg eq '--recursive' ) { $$opts{recurse}=1; next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        push @{$$opts{files}},$arg;
+    }
+    if ( !exists($$opts{files}) ) { error(); }
+    return $opts;
+}
+
+

@@ -1,0 +1,126 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Carp;
+use Getopt::Long;
+
+use Vcf;
+
+my ($input_vcf, $positions, $complement, $chromosome, $help);
+
+GetOptions
+(
+	"v|vcf=s"   	    => \$input_vcf,
+	"c|complement"      => \$complement,
+    "chr|chromosome=s"  => \$chromosome,
+	"p|positions=s"	    => \$positions,
+	"h|help"		    => \$help
+);
+
+my $missing = 0;
+if( ! $input_vcf || ! ( $positions || $chromosome ) || $help ){$missing = 1;}
+
+if( $missing )
+{
+	print qq[
+	This is a script to take a list of tab delimited (chr pos OR chr start_pos end_pos) positions and select
+	these from a VCF file (if they appear as variants). The -c option does the opposite - excludes
+	those positions (if they appear as variants).
+	Usage:
+        -v --vcf <string>			VCF input file
+        -c --complement
+        -chr --chromosome           select all entries from the specified chromosome (overrides a positions file if supplied)
+        -p --positions <string>		File of chr<tab>position pairs
+        -h --help					Print this message
+	];
+	exit;
+}
+
+my $vcf = Vcf->new(file=>$input_vcf);
+
+$vcf->parse_header();
+print $vcf->format_header();
+
+my $lines = 0;
+my %variantsH;
+while( my $line = $vcf->next_line() )
+{
+	chomp( $line );
+	if ( $line=~/^#/ ) { print qq[$line\n]; next; }
+	my @items = split(/\t/,$line);
+	
+	$variantsH{ $items[ 0 ] }{ $items[ 1 ] } = $line;
+	$lines ++;
+}
+
+if( $chromosome )
+{
+    foreach( sort( keys( %variantsH ) ) )
+    {
+        my $k = $_;
+
+        if( $k eq $chromosome || ( $complement && $k ne $chromosome ) )
+        {
+            foreach( sort { $a <=> $b }( keys( %{ $variantsH{ $_ } } ) ) )
+            {
+                print $variantsH{ $k }{ $_ }.qq[\n];
+            }
+        }
+    }
+    exit;
+}
+
+#read the positions file
+my $ifh;
+if( $positions =~ /.*\.gz$/ ){open( $ifh, qq[gunzip -c $positions |] ) or die $!;}else{open( $ifh, $positions ) or die $!;}
+while( <$ifh> )
+{
+	chomp;
+	my @pos = split( /\t/, $_ );
+	
+	if( defined( $pos[ 2 ] ) && $pos[ 2 ] =~ /\d+/ )
+	{
+		for(my $i = $pos[ 1 ]; $i < $pos[ 2 ]; $i ++ )
+		{
+			if( $variantsH{ $pos[ 0 ] }{ $i } )
+			{
+				if( ! $complement )
+				{
+					print $variantsH{ $pos[ 0 ] }{ $i }.qq[\n];
+				}
+				else
+				{
+					delete( $variantsH{ $pos[ 0 ] }{ $i } );
+				}
+			}
+		}
+	}
+	else
+	{
+		if( $variantsH{ $pos[ 0 ] }{ $pos[ 1 ] } )
+		{
+			if( ! $complement )
+			{
+				print $variantsH{ $pos[ 0 ] }{ $pos[ 1 ] }.qq[\n];
+			}
+			else
+			{
+				delete( $variantsH{ $pos[ 0 ] }{ $pos[ 1 ] } );
+			}
+		}
+	}
+}
+close( $ifh );
+
+if( $complement )
+{
+	foreach( sort( keys( %variantsH ) ) )
+	{
+		my $k = $_;
+		foreach( sort { $a <=> $b }( keys( %{ $variantsH{ $_ } } ) ) )
+		{
+			print $variantsH{ $k }{ $_ }.qq[\n];
+		}
+	}
+}

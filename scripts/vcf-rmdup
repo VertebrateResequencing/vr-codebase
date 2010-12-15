@@ -1,0 +1,109 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Carp;
+use Vcf;
+
+my $opts  = parse_params();
+do_rmdup($opts);
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg )
+    {
+        croak @msg;
+    }
+    die
+        "About: If DP info field is present, the row with higher depth will be preserved.\n",
+        "   Otherwise the first row will be preserved and the following discarded.\n",
+        "Usage: vcf-rmdup [OPTIONS] file.vcf.gz\n",
+        "Options:\n",
+        "   -d, --depth <string>            Interpret this INFO tag as the depth.\n",
+        "   -l, --last                      If the INFO tag not present, take the last row.\n",
+        "   -h, -?, --help                  This help message.\n",
+        "\n";
+}
+
+
+sub parse_params
+{
+    my $opts = { INFO=>'DP', last_row=>0 };
+    while (my $arg=shift(@ARGV))
+    {
+        if ( -e $arg ) { $$opts{file}=$arg; next; }
+        if ( $arg eq '-d' || $arg eq '--depth' ) { $$opts{INFO}=shift(@ARGV); next; }
+        if ( $arg eq '-l' || $arg eq '--last' ) { $$opts{last_row}=1; next; }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    return $opts;
+}
+
+sub do_rmdup
+{
+    my ($opts) = @_;
+
+    my $vcf  = $$opts{file} ? Vcf->new(file=>$$opts{file}) : Vcf->new(fh=>\*STDIN);
+    my $fh   = $$vcf{fh};
+    my $INFO = $$opts{INFO};
+    my $last_row = $$opts{last_row};
+
+    # Clear VCF buffer
+    while ( @{$$vcf{buffer}} ) 
+    { 
+        print shift(@{$$vcf{buffer}});
+    }
+
+    my @buf;
+    while (my $line=<$fh>)
+    {
+        if ( $line=~/^#/ ) { print $line; next; }
+        my @items = split(/\t/,$line);
+
+        my ($value);
+        if ( $items[7]=~/$INFO=(\d+)/ ) { $value=$1; }
+
+        # A record with different position. Select the best position from the buffer.
+        if ( @buf && ($buf[0][0] ne $items[0] || $buf[0][1] ne $items[1] ) ) 
+        { 
+            output_buf(\@buf,$last_row); 
+            @buf=(); 
+        }
+
+        # If the @buf is non-empty, it contains only rows with the same position
+        push @buf, [$items[0],$items[1],$value,$line];
+    }
+    output_buf(\@buf,$last_row);
+}
+
+sub output_buf
+{
+    my ($buf,$last_row) = @_;
+
+    if ( !scalar @$buf ) { return; }
+
+    if ( scalar @$buf == 1 ) 
+    {
+        print $$buf[0][3];
+        return;
+    }
+
+    my $i=0;
+    my $imax = $last_row ? scalar @$buf - 1 : 0;
+    my $max=0;
+    for my $line (@$buf)
+    {
+        if ( defined $$line[2] && $$line[2] > $max ) { $imax=$i; $max=$$line[2]; }
+        $i++;
+    }
+    print $$buf[$imax][3];
+}
+
+
+

@@ -1,0 +1,66 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Carp;
+
+my $opts = parse_params();
+parse_index($$opts{index},$$opts{species},$$opts{tax},$$opts{genders});
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg )
+    {
+        croak @msg;
+    }
+    die
+        "Usage: fake-samples [OPTIONS] | sort | uniq \n",
+        "Options:\n",
+        "   -i, --index <file>               Index.\n",
+        "   -h, -?, --help                   This help message.\n",
+        "\n";
+}
+
+
+sub parse_params
+{
+    my $opts = 
+    {
+        species => 'Homo sapiens',
+        tax     => 9606,
+        genders => '/lustre/scratch102/projects/g1k/ref/pilot/genders.txt',
+    };
+    while (my $arg=shift(@ARGV))
+    {
+        if ( $arg eq '-i' || $arg eq '--index' ) { $$opts{'index'} = shift(@ARGV); next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    if ( !exists($$opts{'index'}) ) { error("Missing the -i option.\n") }
+    return $opts;
+}
+
+
+sub parse_index
+{
+    my ($index_file,$species,$tax,$genders) = @_;
+
+    open(my $fh,'<',$index_file) or error("$index_file: $!"); 
+    <$fh>; # header
+    while (my $line=<$fh>)
+    {
+        my @items = split(/\t/,$line);
+        my ($sex) = $genders ? `grep $items[9] $genders | sed 's,^\\S*\\s*,,'` : ('?');
+        chomp($sex);
+        my @out = ($items[9],$items[9],$items[9],$items[9],'UNK',$species,$tax,$sex);
+        print join("\t",@out), "\n";
+    }
+    close($fh);
+}
+
+

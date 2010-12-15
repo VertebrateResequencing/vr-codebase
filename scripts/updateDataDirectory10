@@ -1,0 +1,13 @@
+#!/bin/sh
+
+for n in 0 1 2 3 4 5 6 7 8 9
+  do 
+  updateDataDirectory.pl $* -v -n $n -o udd.$n.log 2>udd.$n.err &
+  while true
+    do
+    sleep 10
+    if [ -s udd.$n.log -a -n "`grep -w done udd.$n.log`" ]
+      then break
+    fi
+    done
+  done

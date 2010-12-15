@@ -1,0 +1,89 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Carp;
+
+my $opts  = parse_params();
+do_rmdup($$opts{file});
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg )
+    {
+        croak @msg;
+    }
+    die
+        "About: Preserve the row with higher depth. In the current version, only SNP\n",
+        "   lines are treated, indel lines are discarded.\n",
+        "Usage: cat inp.pileup | pileup-rmdup [OPTIONS] > out.pileup\n",
+        "Options:\n",
+        "   -h, -?, --help                  This help message.\n",
+        "\n";
+}
+
+
+sub parse_params
+{
+    my $opts = {};
+    while (my $arg=shift(@ARGV))
+    {
+        if ( -e $arg ) { $$opts{file}=$arg; next; }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    return $opts;
+}
+
+sub do_rmdup
+{
+    my ($file) = @_;
+
+    my @buf;
+    while (my $line=<STDIN>)
+    {
+        my @items = split(/\t/,$line);
+
+        if ( $items[2] eq '*' ) { next; }
+
+        # A record with different position, select the best one
+        if ( @buf && ($buf[0][0] ne $items[0] || $buf[0][1] ne $items[1]) ) 
+        { 
+            output_buf(\@buf); 
+            @buf=(); 
+        }
+
+        # If the @buf is non-empty, it contains only rows with the same position
+        push @buf, [$items[0],$items[1],$items[7],$line];
+    }
+    output_buf(\@buf);
+}
+
+sub output_buf
+{
+    my ($buf) = @_;
+
+    if ( scalar @$buf == 1 ) 
+    {
+        print $$buf[0][3];
+        return;
+    }
+
+    my $i=0;
+    my $imax=0;
+    my $max=0;
+    for my $line (@$buf)
+    {
+        if ( $$line[2] > $max ) { $imax=$i; $max=$$line[2]; }
+        $i++;
+    }
+    print $$buf[$imax][3];
+}
+
+
+

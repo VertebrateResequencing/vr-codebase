@@ -1,0 +1,85 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Carp;
+use Vcf;
+
+my $opts = parse_params();
+if ( $$opts{v2} )
+{
+    qcall2_to_vcf($opts);
+}
+else
+{
+    qcall_to_vcf($opts);
+}
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    die
+        "About: This is a temporary hack to fix QCall's malformatted VCFs.\n",
+        "Usage: qcall-to-vcf [OPTIONS]\n",
+        "Options:\n",
+        "   -v2                             Broken VCF version 2.\n",
+        "   -h, -?, --help                  This help message.\n",
+        "\n";
+}
+
+
+sub parse_params
+{
+    my $opts = {};
+    while (my $arg=shift(@ARGV))
+    {
+        if ( $arg eq '-v2' ) { $$opts{v2}=1; next; }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    return $opts;
+}
+
+
+sub qcall_to_vcf
+{
+    my $vcf = Vcf->new();
+    $vcf->parse_header();
+
+    print $vcf->format_header();
+
+    while (my $line=$vcf->next_line())
+    {
+        my $x = $vcf->next_data_hash($line);
+        $$x{ALT} = [];
+        $vcf->format_genotype_strings($x);
+        print $vcf->format_line($x);
+    }
+}
+
+
+sub qcall2_to_vcf
+{
+    my $vcf = Vcf->new();
+    $vcf->parse_header();
+    $vcf->_set_version('4.0');
+
+    print $vcf->format_header();
+
+    while (my $line=$vcf->next_line())
+    {
+        my $x = $vcf->next_data_hash($line);
+        if ( $$x{QUAL}=~/^-/ ) { $$x{QUAL}=2147483647; }
+        $$x{FILTER} = ['PASS'];
+        $vcf->format_genotype_strings($x);  # this fixes missing ALT, for example 0/1 -> 0/.
+        print $vcf->format_line($x);
+    }
+}
+
+
+
