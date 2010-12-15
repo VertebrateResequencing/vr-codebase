@@ -5,6 +5,6 @@ use warnings;
 
 use Test::Strict;
 
-all_perl_files_ok('modules', 'bin');
+all_perl_files_ok('modules', 'scripts');
 
 exit;

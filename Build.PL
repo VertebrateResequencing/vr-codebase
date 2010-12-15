@@ -27,9 +27,12 @@ use MyBuild;
 my $build = MyBuild->new(
     module_name          => 'VertRes',
     dist_version         => 0,
+    dist_author          => 'Vertebrate Resequencing group at the Sanger Institute',
+    dist_abstract        => 'A collection of modules and scripts for processing and analysing large quantities of sequencing data',
     license              => 'perl',
     recursive_test_files => 1,
-    pm_files             => get_pm_files()
+    pm_files             => get_pm_files(),
+    script_files         => 'scripts'
 );
 
 $build->create_vrconfig_file();
