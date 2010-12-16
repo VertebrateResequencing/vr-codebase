@@ -526,9 +526,9 @@ sub filter_candidates_run
     use Utils;
     Utils::CMD("cat $candidates | sed 's,\\s\\s*,\\t,g' | bgzip -c > $candidates.unfiltered.tab.gz",{verbose=>1});
     Utils::CMD("tabix -f -s 1 -b 2 -e 2 $candidates.unfiltered.tab.gz",{verbose=>1});
-    Utils::CMD("vcf-isec -w $win -n =2 -t 1:2:$candidates.unfiltered.tab.gz -t 1:2:$filter | sed 's,\\t, ,g' > $candidates.out",{verbose=>1});
-    Utils::CMD("vcf-isec -w $win -c -t 1:2:$candidates.unfiltered.tab.gz -t 1:2:$filter > $candidates.dindel-only",{verbose=>1});
-    Utils::CMD("vcf-isec -w $win -c -t 1:2:$filter -t 1:2:$candidates.unfiltered.tab.gz > $candidates.filter-only",{verbose=>1});
+    Utils::CMD("vcf-isec -o -w $win -n =2 -t 1:2:$candidates.unfiltered.tab.gz -t 1:2:$filter | sed 's,\\t, ,g' > $candidates.out",{verbose=>1});
+    Utils::CMD("vcf-isec -o -w $win -c -t 1:2:$candidates.unfiltered.tab.gz -t 1:2:$filter > $candidates.dindel-only",{verbose=>1});
+    Utils::CMD("vcf-isec -o -w $win -c -t 1:2:$filter -t 1:2:$candidates.unfiltered.tab.gz > $candidates.filter-only",{verbose=>1});
     rename($candidates,"$candidates.unfiltered") or $self->throw("rename $candidates $candidates.unfiltered");
     rename("$candidates.out",$candidates) or $self->throw("rename $candidates.out $candidates");
     Utils::CMD("touch $done_file",{verbose=>1});
