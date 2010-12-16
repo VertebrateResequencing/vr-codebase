@@ -1,0 +1,11 @@
+previously.txt
+MYMETA.yml
+modules/VRTrack/Testconfig.pm
+.*~
+*~
+.#*
+.DS_Store
+.DS_Store?
+_build
+blib
+Build
