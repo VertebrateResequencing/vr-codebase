@@ -12,15 +12,15 @@ date="`date +'%y%m%d'`"
 mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST  vrtrack_mouse | gzip -c > "$PROJ_ROOT/sql_dumps/vrtrack_mouse_$date.sql.gz"
 
 #update the individuals and samples files
-/software/vertres/bin/generateIndividualSamplesMap.pl -s $PROJ_ROOT/meta-data/studies.fofn -m $PROJ_ROOT/meta-data/individuals2Samples.tab -spe Mus_musculus -t 10090 -nm $PROJ_ROOT/meta-data/new_individuals2Samples.tab -ns $PROJ_ROOT/meta-data/samples.tab 2> "$ROOT/log/sample_map_vrtrack_mouse.out"
+/software/vertres/scripts/generateIndividualSamplesMap.pl -s $PROJ_ROOT/meta-data/studies.fofn -m $PROJ_ROOT/meta-data/individuals2Samples.tab -spe Mus_musculus -t 10090 -nm $PROJ_ROOT/meta-data/new_individuals2Samples.tab -ns $PROJ_ROOT/meta-data/samples.tab 2> "$ROOT/log/sample_map_vrtrack_mouse.out"
 
 mv $PROJ_ROOT/meta-data/individuals2Samples.tab $PROJ_ROOT/meta-data/individuals2Samples.tab_old
 mv $PROJ_ROOT/meta-data/new_individuals2Samples.tab $PROJ_ROOT/meta-data/individuals2Samples.tab
 
 #load the individuals (if there are new ones)
-/software/vertres/bin/load_vrtrack_individuals.pl --indiv $PROJ_ROOT/meta-data/samples.tab -db vrtrack_mouse 2> "$ROOT/log/load_ind_vrtrack_mouse.out"
+/software/vertres/scripts/load_vrtrack_individuals.pl --indiv $PROJ_ROOT/meta-data/samples.tab -db vrtrack_mouse 2> "$ROOT/log/load_ind_vrtrack_mouse.out"
 
 #update the database
-/software/vertres/bin/update_vrtrack.pl --projects $PROJ_ROOT/meta-data/studies.fofn --database vrtrack_mouse --sample_map $PROJ_ROOT/meta-data/individuals2Samples.tab 2> "$ROOT/log/update_vrtrack_mouse.out"
+/software/vertres/scripts/update_vrtrack.pl --projects $PROJ_ROOT/meta-data/studies.fofn --database vrtrack_mouse --sample_map $PROJ_ROOT/meta-data/individuals2Samples.tab 2> "$ROOT/log/update_vrtrack_mouse.out"
 
-#/software/vertres/bin/update_vrtrack.pl --spp mouse --projects $DISK_ROOT/conf/mouse_projects  > "$DISK_ROOT/log/vrtrack_update_mouse.log" 2> "$DISK_ROOT/log/vrtrack_update_mouse.err"
+#/software/vertres/scripts/update_vrtrack.pl --spp mouse --projects $DISK_ROOT/conf/mouse_projects  > "$DISK_ROOT/log/vrtrack_update_mouse.log" 2> "$DISK_ROOT/log/vrtrack_update_mouse.err"
