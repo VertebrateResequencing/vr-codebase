@@ -14,7 +14,7 @@ my $origin_base = "$base/git/origin";
 foreach my $repo ("$origin_base/vr-bin-external", "$origin_base/vr-codebase") {
     chdir($repo);
     warn "\nsyncing $repo\n";
-    system("git svn rebase; git svn dcommit");
+    system("git checkout master; git svn rebase; git svn dcommit; git checkout allow_push");
 }
 
 # update the checkouts that PATH and PERL5LIB point to
