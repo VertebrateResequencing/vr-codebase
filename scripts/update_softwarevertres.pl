@@ -13,14 +13,14 @@ my $base = '/software/vertres';
 my $origin_base = "$base/git/origin";
 foreach my $repo ("$origin_base/vr-bin-external", "$origin_base/vr-codebase") {
     chdir($repo);
-    warn "syncing $repo\n";
+    warn "\nsyncing $repo\n";
     system("git svn rebase; git svn dcommit");
 }
 
 # update the checkouts that PATH and PERL5LIB point to
 foreach my $repo ("$base/bin-git", "$base/codebase") {
     chdir($repo);
-    warn "updating $repo\n";
+    warn "\nupdating $repo\n";
     system("git pull");
 }
 
@@ -28,7 +28,7 @@ foreach my $repo ("$base/bin-git", "$base/codebase") {
 # using
 foreach my $repo ("$base/bin", "$base/scripts", "$base/modules") {
     chdir($repo);
-    warn "updating $repo\n";
+    warn "\nupdating $repo\n";
     system("svn up");
 }
 
