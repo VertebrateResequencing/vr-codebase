@@ -11,7 +11,7 @@ my $cwd = getcwd;
 # keep svn and git in sync
 my $base = '/software/vertres';
 my $origin_base = "$base/git/origin";
-foreach my $repo ("$origin_base/vr-bin-external", "$origin_base/vr-codebase-svn") {
+foreach my $repo ("$origin_base/vr-bin-external", "$origin_base/vr-codebase") {
     chdir($repo);
     warn "syncing $repo\n";
     system("git svn rebase; git svn dcommit");
