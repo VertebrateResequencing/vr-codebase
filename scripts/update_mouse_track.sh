@@ -9,7 +9,7 @@ export PATH=/software/bin:/usr/local/bin:/usr/bin:/bin
 export PERL5LIB=/software/vertres/modules:/software/vertres/lib/all
 
 date="`date +'%y%m%d'`"
-mysqldump -u vreseq_rw -pt3aml3ss -P3306 -hmcs4a vrtrack_mouse | gzip -c > "$PROJ_ROOT/sql_dumps/vrtrack_mouse_$date.sql.gz"
+mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST  vrtrack_mouse | gzip -c > "$PROJ_ROOT/sql_dumps/vrtrack_mouse_$date.sql.gz"
 
 #update the individuals and samples files
 /software/vertres/bin/generateIndividualSamplesMap.pl -s $PROJ_ROOT/meta-data/studies.fofn -m $PROJ_ROOT/meta-data/individuals2Samples.tab -spe Mus_musculus -t 10090 -nm $PROJ_ROOT/meta-data/new_individuals2Samples.tab -ns $PROJ_ROOT/meta-data/samples.tab 2> "$ROOT/log/sample_map_vrtrack_mouse.out"

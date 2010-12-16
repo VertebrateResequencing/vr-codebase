@@ -69,10 +69,10 @@ sub default_options {
         'pipeline_name' => 'hive_generic',
         
         'pipeline_db'   => {
-            -host   => 'mcs4a',
-            -port   => 3306,
-            -user   => 'vreseq_rw',
-            -pass   => 't3aml3ss', #$self->o('password'),
+            -host   => $ENV{VRTRACK_HOST},
+            -port   => $ENV{VRTRACK_PORT},
+            -user   => $ENV{VRTRACK_RW_USER},
+            -pass   => $ENV{VRTRACK_PASSWORD}, #$self->o('password'),
             -dbname => 'ehive_'.$self->o('pipeline_name'),  # $ENV{'USER'} example of a linked definition (resolved via saturation)
         },
     };

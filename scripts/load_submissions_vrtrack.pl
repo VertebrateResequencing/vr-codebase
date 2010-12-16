@@ -41,10 +41,10 @@ Note that this script only updates unaccessioned lanes that have a submission id
 
 USAGE
 
-my $vrtrack = VRTrack::VRTrack->new({ host => 'mcs4a',
-                                    port => 3306,
-                                    user => 'vreseq_rw',
-                                    password => 't3aml3ss',
+my $vrtrack = VRTrack::VRTrack->new({ host => $ENV{VRTRACK_HOST},
+                                    port => $ENV{VRTRACK_PORT},
+                                    user => $ENV{VRTRACK_RW_USER},
+                                    password => $ENV{VRTRACK_PASSWORD},
                                     database => 'g1k_track',
                                    });
 

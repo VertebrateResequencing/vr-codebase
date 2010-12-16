@@ -20,7 +20,7 @@ my $bam_file = File::Spec->catfile('t', 'data', 'headed1.bam');
 ok -s $bam_file, 'bam file ready to test with';
 my $fsu = VertRes::Utils::FileSystem->new();
 my $temp_dir = $fsu->tempdir();
-ok my $vrtrack = VRTrack::VRTrack->new({database => 'g1k_meta', host => 'mcs4a', port => 3306, user => 'vreseq_ro'}), 'setup vrtrack accessing g1k_meta';
+ok my $vrtrack = VRTrack::VRTrack->new({database => 'g1k_meta', host => $ENV{VRTRACK_HOST}, port => $ENV{VRTRACK_PORT}, user => $ENV{VRTRACK_RO_USER}}), 'setup vrtrack accessing g1k_meta';
 
 my $lane_path = '/path/to/META/CEU_low_coverage/NA06986/SLX/Solexa-5459/SRR003670';
 is_deeply {$h_util->parse_lane($lane_path)}, {study => 'CEU_low_coverage',
@@ -36,13 +36,13 @@ ok $h_util->check_lanes_vs_database([$lane_path], $vrtrack), 'check_lanes_vs_dat
 
 # setup for and test create_release_hierarchy()
 # *** probably need to drop the test database and recreate it each time...
-# mysql -hmcs4a -uvreseq_rw -pt3aml3ss
+# mysql -h$VRTRACK_HOST -u$VRTRACK_RW_USER -p$VRTRACK_PASSWORD
 # > create database vrtrack_vertres_test;
 # > exit
-# mysql -hmcs4a -uvreseq_rw -pt3aml3ss vrtrack_vertres_test < ~/src/vert_reseq/Docs/schema/VRtrack.schema
+# mysql -h$VRTRACK_HOST -uvrtrack_vertres_test -p$VRTRACK_PASSWORD vrtrack_vertres_test < ~/src/vert_reseq/Docs/schema/VRtrack.schema
 # update_vrmeta.pl --database vrtrack_vertres_test --samples t/data/vrtrack_vertres_test.samples --index t/data/vrtrack_vertres_test.si
-# perl -MVRTrack::VRTrack -MVRTrack::Lane -Mstrict -we 'my $vrtrack = VRTrack::VRTrack->new({host => "mcs4a", port => 3306, user => "vreseq_rw", password => "t3aml3ss", database => "vrtrack_vertres_test"}); my $all_lanes = $vrtrack->processed_lane_hnames(); my $count = 0; foreach my $lane_hname (sort @{$all_lanes}) { my $lane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane_hname); $lane->is_processed("import", 1); $lane->is_processed("mapped", 1); foreach my $file (@{$lane->files()}) { $file->is_processed("import", 1); $file->update; } my $mapping = $lane->add_mapping(); my $assembly = $mapping->assembly("NCBI37"); if ( ! $assembly) { $assembly = $mapping->add_assembly("NCBI37"); } my $exe; $count++; if ($count <= 2) { $exe = "bwa"; } else { $exe = "ssaha"; } my $mapper = $mapping->mapper($exe, "1.5"); if ( ! $mapper) { $mapper = $mapping->add_mapper($exe, "1.5"); } $mapping->update; $lane->update; }'
-ok $vrtrack = VRTrack::VRTrack->new({database => 'vrtrack_vertres_test', host => 'mcs4a', port => 3306, user => 'vreseq_ro'}), 'setup vrtrack accessing vrtrack_vertres_test';
+# perl -MVRTrack::VRTrack -MVRTrack::Lane -Mstrict -we 'my $vrtrack = VRTrack::VRTrack->new({host => $ENV{VRTRACK_HOST}, port => $ENV{VRTRACK_PORT}, user => $ENV{VRTRACK_RW_USER}, password => $ENV{VRTRACK_PASSWORD}, database => "vrtrack_vertres_test"}); my $all_lanes = $vrtrack->processed_lane_hnames(); my $count = 0; foreach my $lane_hname (sort @{$all_lanes}) { my $lane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane_hname); $lane->is_processed("import", 1); $lane->is_processed("mapped", 1); foreach my $file (@{$lane->files()}) { $file->is_processed("import", 1); $file->update; } my $mapping = $lane->add_mapping(); my $assembly = $mapping->assembly("NCBI37"); if ( ! $assembly) { $assembly = $mapping->add_assembly("NCBI37"); } my $exe; $count++; if ($count <= 2) { $exe = "bwa"; } else { $exe = "ssaha"; } my $mapper = $mapping->mapper($exe, "1.5"); if ( ! $mapper) { $mapper = $mapping->add_mapper($exe, "1.5"); } $mapping->update; $lane->update; }'
+ok $vrtrack = VRTrack::VRTrack->new({database => 'vrtrack_vertres_test', host => $ENV{VRTRACK_HOST}, port => $ENV{VRTRACK_PORT}, user => $ENV{VRTRACK_RO_USER}}), 'setup vrtrack accessing vrtrack_vertres_test';
 my $release_dir = File::Spec->catfile($temp_dir, 'REL');
 my $mapping_tar_gz = File::Spec->catfile($temp_dir, 'mapping.tar.gz');
 copy(File::Spec->catfile('t', 'data', 'mapping_hierarchy_with_bams.tar.gz'), $mapping_tar_gz);
@@ -80,7 +80,7 @@ foreach my $link (@expected_rel_bam_paths) {
 is $created_links, 4, 'create_release_hierarchy created the correct bam symlinks';
 
 # lane_info test
-my $mouse_reseq_track_db = { host => 'mcs4a', port => 3306, user => 'vreseq_ro', database => 'mouse_reseq_track' };
+my $mouse_reseq_track_db = { host => $ENV{VRTRACK_HOST}, port => $ENV{VRTRACK_PORT}, user => $ENV{VRTRACK_RO_USER}, database => 'mouse_reseq_track' };
 ok my %info = $h_util->lane_info('3034_8', db => $mouse_reseq_track_db, qc_passed => 1, mapped => 1), 'lane_info ran ok';
 is_deeply [$info{technology}, $info{seq_tech}, $info{project}, $info{study}, $info{sample}], ['ILLUMINA', 'SLX', '129P2 Mouse Genome', 'ERP000034', '129P2_1'], 'lane_info gave correct technology and seq_tech, project, study and sample';
 cmp_ok $info{individual_coverage}, '>=', 22.39, 'lane_info had the correct individual_coverage';
