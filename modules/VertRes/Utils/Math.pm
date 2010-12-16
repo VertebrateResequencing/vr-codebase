@@ -81,6 +81,64 @@ sub histogram_median {
     return $median;
 }
 
+=head2 histogram_mean
+
+ Title   : histogram_mean
+ Usage   : my $mean = $obj->histogram_mean($histogram_hash_ref);
+ Function: Get the mean of a histogram
+ Returns : float
+ Args    : hash ref where keys are bins and values are frequencies
+           NB: assumes equal sized bins
+
+=cut
+
+sub histogram_mean {
+    my ($self, $hash) = @_;
+    my $total;
+    my $count;
+
+    while (my ($k, $v) = each(%$hash)) {
+        $total += $k * $v;
+        $count += $v;
+    }
+
+    return defined $count ? $total / $count : undef;
+}
+
+=head2 histogram_stats
+
+ Title   : histogram_stats
+ Usage   : my $mean = $obj->histogram_stats($histogram_hash_ref, $mean);
+ Function: Get the standard deviation of a histogram
+ Returns : hash of statistics, keys are:
+           mean, standard_deviation, median, total (=sum of values)
+ Args    : hash ref where keys are bins and values are frequencies
+           NB: assumes equal sized bins
+           Optional mean of histogram, to save calculating it.
+
+=cut
+
+sub histogram_stats {
+    my ($self, $hash, $mean) = @_;
+    my %stats;
+    my $sd = 0;
+    my $total = 0;
+    $mean = $self->histogram_mean($hash) unless $mean;
+    $stats{mean} = $mean;
+
+    # we use the formula
+    # sd^2 = 1/(n-1) * sum( (x_i - mean)^2 )
+    while (my ($num, $freq) = each %{$hash}) {
+        $sd += $freq * ( ($mean - $num) ** 2);
+        $total += $freq;
+    }
+
+    $stats{standard_deviation} = ($sd / ($total - 1)) ** 0.5;
+    $stats{total} = $total;
+    $stats{median} = $self->histogram_median($hash);
+    return %stats;
+}
+
 =head2 compare_hash_keys
 
  Title   : compare_hash_keys
