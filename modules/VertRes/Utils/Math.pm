@@ -162,16 +162,17 @@ sub histogram_stats {
     my $sd = 0;
     my $total = 0;
     $mean = $self->histogram_mean($hash) unless $mean;
+    return undef unless defined $mean;
     $stats{mean} = $mean;
 
     # we use the formula
-    # sd^2 = 1/(n-1) * sum( (x_i - mean)^2 )
+    # sd^2 = sum( (x_i - mean)^2 ) / n
     while (my ($num, $freq) = each %{$hash}) {
         $sd += $freq * ( ($mean - $num) ** 2);
         $total += $freq;
     }
 
-    $stats{standard_deviation} = ($sd / ($total - 1)) ** 0.5;
+    $stats{standard_deviation} = ($sd / $total) ** 0.5;
     $stats{total} = $total;
     my %quartiles = $self->histogram_quartiles($hash);
     foreach (qw[q1 q2 q3]){
