@@ -136,10 +136,11 @@ sub split_fastq {
 sub do_mapping {
     my ($self, %input_args) = @_;
     
-    my @args = $self->_do_mapping_args(%input_args);
+#    my @args = $self->_do_mapping_args(%input_args);
     
     my $wrapper = $self->wrapper;
-    $wrapper->do_mapping(@args);
+    $wrapper->do_mapping(%input_args);
+#    $wrapper->do_mapping(@args);
     
     # bwa directly generates sam files, so nothing futher to do
     
