@@ -25,6 +25,7 @@ package VertRes::Utils::Math;
 use strict;
 use warnings;
 
+use List::Util qw(sum);
 use base qw(VertRes::Base);
 
 
@@ -81,6 +82,43 @@ sub histogram_median {
     return $median;
 }
 
+=head2 histogram_quartiles
+
+ Title   : histogram_quartiles
+ Usage   : my $median = $obj->histogram_median($histogram_hash_ref);
+ Function: Get the quartliles of a histogram.
+ Returns : hash with keys q1, q2, q3
+ Args    : hash ref where keys are bins and values are frequencies
+           NB: assumes equal sized bins
+
+=cut
+
+sub histogram_quartiles {
+    my ($self, $hash) = @_;
+    my %quartiles;
+    my $total_freq = sum 0, values %{$hash};
+    my $freq = 0;
+    foreach my $key (sort { $a <=> $b } keys %{$hash}) {
+        $freq += $hash->{$key};
+        
+        if ($freq >= 0.75 * $total_freq ){ 
+            $quartiles{q3} = $key;
+            $quartiles{q2} = $key unless defined $quartiles{q2};
+            $quartiles{q1} = $key unless defined $quartiles{q1};
+            last;
+        }
+        elsif ($freq >= 0.5 * $total_freq and !(defined $quartiles{q2})) {
+            $quartiles{q2} = $key;
+            $quartiles{q1} = $key unless defined $quartiles{q1};
+        }
+        elsif ($freq >= 0.25 * $total_freq and !(defined $quartiles{q1})) {
+            $quartiles{q1} = $key;
+        }
+    }
+ 
+    return %quartiles;
+}
+
 =head2 histogram_mean
 
  Title   : histogram_mean
@@ -111,7 +149,7 @@ sub histogram_mean {
  Usage   : my $mean = $obj->histogram_stats($histogram_hash_ref, $mean);
  Function: Get the standard deviation of a histogram
  Returns : hash of statistics, keys are:
-           mean, standard_deviation, median, total (=sum of values)
+           mean, standard_deviation, q1, q2, q3, total (=sum of values)
  Args    : hash ref where keys are bins and values are frequencies
            NB: assumes equal sized bins
            Optional mean of histogram, to save calculating it.
@@ -135,7 +173,10 @@ sub histogram_stats {
 
     $stats{standard_deviation} = ($sd / ($total - 1)) ** 0.5;
     $stats{total} = $total;
-    $stats{median} = $self->histogram_median($hash);
+    my %quartiles = $self->histogram_quartiles($hash);
+    foreach (qw[q1 q2 q3]){
+        $stats{$_} = $quartiles{$_};
+    }
     return %stats;
 }
 
