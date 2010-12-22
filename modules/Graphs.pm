@@ -3,6 +3,8 @@ package Graphs;
 use strict;
 use warnings;
 use Utils;
+use VertRes::Utils::Math;
+use List::Util qw(min max);
 
 our $R_CMD = 'R';
 
@@ -154,6 +156,91 @@ yrange <- range($yrange)
 
     Utils::CMD("cat $$stats{'outfile'}.R | $R_CMD --slave --vanilla");
     return;
+}
+
+=head2 plot_histograms_distributions
+
+        Description: Create plot from an array of histograms, showing quartiles and means
+        Arg [1]    : Hash reference with thhe following keys:
+                            outfile            .. file types supported by R: png, pdf, or jpg
+                            title              .. title of graph
+                            desc_xvals         .. the x-axis label 
+                            desc_yvals         .. the y-axis label
+                            y_min              .. lower range of y-axis.  Default is min value over all
+                                                  lines which are plotted.
+                            y_max              .. upper range of y-axis.  Default is max value over all
+                                                  lines which are plotted.
+                            r_plot             .. extra R statements to plot(), such as e.g. "xlim=c(0,10)"
+                            ydata => array_ref .. reference to array of data to be plotted.  Each element of the array
+                                                  should be a histogram stored as a hash of {value => frequency}
+                            xdata => array_ref .. reference to array of x coords of data points
+        Returntype : None
+
+=cut
+
+sub plot_histograms_distributions {
+    my $hash_in = shift;
+
+    my @quartiles1;
+    my @quartiles2;
+    my @quartiles3;
+    my @means;
+    my $filetype;
+    my $r_plot = defined $hash_in->{r_plot} ? ", $hash_in->{r_plot}" : '';
+    my $xlab = defined $hash_in->{desc_xvals} ? $hash_in->{desc_xvals} : '';
+    my $ylab = defined $hash_in->{desc_yvals} ? $hash_in->{desc_yvals} : '';
+    my $title = defined $hash_in->{title} ? $hash_in->{title} : '';
+    my @xvals;
+
+    if ($hash_in->{outfile} =~ /([^.]+)$/ ) { 
+        $filetype = $1;
+    }
+    else {
+        Utils::error("Could not determine the filetype of $hash_in->{outfile}\n");
+    }
+
+    # calculate the coords of the lines to be plotted
+    foreach my $i (0 .. (scalar @{$hash_in->{xdata}} - 1)) {
+        next unless (scalar keys %{$hash_in->{ydata}->[$i]});
+        my %stats = VertRes::Utils::Math->new()->histogram_stats($hash_in->{ydata}->[$i]);
+        if (defined $stats{mean}) {
+            push @quartiles1, $stats{q1};
+            push @quartiles2, $stats{q2};
+            push @quartiles3, $stats{q3};
+            push @means, $stats{mean};
+            push @xvals, $hash_in->{xdata}[$i];
+        }
+
+    }
+
+    # calculate y axis range
+    my $y_min = defined $hash_in->{y_min} ? $hash_in->{y_min} : min @quartiles1, @means;
+    my $y_max = defined $hash_in->{y_max} ? $hash_in->{y_max} : max @quartiles3, @means;
+
+    # write and run the R script
+    my $q1_string = 'c(' . (join ', ', @quartiles1) . ')';
+    my $q2_string = 'c(' . (join ', ', @quartiles2) . ')';
+    my $q3_string = 'c(' . (join ', ', @quartiles3) . ')';
+    my $means_string = 'c(' . (join ', ', @means) . ')';
+    my $xvals_string = 'c(' . (join ', ', @xvals) . ')';
+
+    open my $fh, '>', "$hash_in->{outfile}.R" or Utils::error("$hash_in->{outfile}.R: $!");
+
+    print $fh <<R_SCRIPT;
+$filetype("$hash_in->{outfile}")
+q1 = $q1_string
+q2 = $q2_string
+q3 = $q3_string
+polygon_xvals = c(0:$#means, $#means:0)
+plot(1, type="n", xlim=c(0,$#means), ylim=c($y_min, $y_max), xlab="$xlab", ylab="$ylab", main="$title", $r_plot)
+  polygon(polygon_xvals, c(q1, rev(q3)), border="grey", col="grey")
+  lines(c(0:$#means), $q2_string, col="black")
+  lines(c(0:$#means), $means_string, col="red")
+dev.off()
+R_SCRIPT
+
+    close $fh;
+    Utils::CMD("cat $hash_in->{outfile}.R | $R_CMD --slave --vanilla");
 }
 
 
