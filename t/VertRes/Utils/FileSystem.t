@@ -116,7 +116,7 @@ ok ! $fsu->verify_md5($test_file, '6fd5c2f7f105b15d44ed374916d0cd35'), 'verify_m
 
 # hashed path and the other disk-related methods
 is $fsu->hashed_path('/abs/path/to/lane'), '6/2/9/0/lane', 'hashed_path test';
-cmp_ok $fsu->disk_usage($fsu->catfile('t', 'data')), '>=', 46069393, 'disk_usage seemed to work on t/data';
+cmp_ok $fsu->disk_usage($fsu->catfile('t', 'data')), '>=', 38500000, 'disk_usage seemed to work on t/data';
 cmp_ok $fsu->disk_available($fsu->catfile('t', 'data')), '>=', 1, 'disk_available seemed to work on t/data';
 ok $fsu->can_be_copied($fsu->catfile('t', 'data'), File::Spec->tmpdir), 'can_be_moved positive test';
 #*** impossible to have a decent can_be_moved negative test?
