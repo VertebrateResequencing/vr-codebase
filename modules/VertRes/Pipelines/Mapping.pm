@@ -617,19 +617,19 @@ my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
 open(my \$samfh, '$sam_file') || \$mapper->throw("Unable to open sam file '$sam_file'");
 my \$head = <\$samfh>;
 close(\$samfh);
-my \$ok = \$sam_util->add_sam_header('$sam_file',
-                                     sample_name => '$info{sample}',
-                                     library => '$info{library_true}',
-                                     platform => '$info{technology}',
-                                     centre => '$info{centre}',
-                                     insert_size => $insert_size_for_samheader,
-                                     study => '$info{study}',
-                                     lane => '$info{lane}',
-                                     ref_fa => '$ref_fa',
-                                     ref_dict => '$ref_fa.dict',
-                                     ref_name => '$self->{assembly_name}',
-                                     program => \$mapper->exe,
-                                     program_version => \$mapper->version);
+\$ok = \$sam_util->add_sam_header('$sam_file',
+                                  sample_name => '$info{sample}',
+                                  library => '$info{library_true}',
+                                  platform => '$info{technology}',
+                                  centre => '$info{centre}',
+                                  insert_size => $insert_size_for_samheader,
+                                  study => '$info{study}',
+                                  lane => '$info{lane}',
+                                  ref_fa => '$ref_fa',
+                                  ref_dict => '$ref_fa.dict',
+                                  ref_name => '$self->{assembly_name}',
+                                  program => \$mapper->exe,
+                                  program_version => \$mapper->version);
 \$sam_util->throw("Failed to add sam header!") unless \$ok;
 
 # convert to mate-fixed sorted bam
