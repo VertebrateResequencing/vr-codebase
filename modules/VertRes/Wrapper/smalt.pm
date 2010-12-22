@@ -167,12 +167,12 @@ sub setup_fastqs {
 =cut
 
 sub generate_sam {
-    my ($self, $out, $ref, @fqs) = @_;
+    my ($self, $out, $ref, $fq1, $fq2, %other_args) = @_;
     
     unless (-s $out) {
         # settings change depending on read length
         my $max_length = 0;
-        foreach my $fq (@fqs) {
+        foreach my $fq ($fq1, $fq2) {
             $fq || next;
             if (-s "$fq.fastqcheck") {
                 my $pars = VertRes::Parser::fastqcheck->new(file => "$fq.fastqcheck");
@@ -196,12 +196,17 @@ sub generate_sam {
             $hash_name = $ref.'.medium';
         }
         
-        foreach my $fq (@fqs) {
+        foreach my $fq ($fq1, $fq2) {
             $fq || next;
             $fq =~ s/\.gz$//;
         }
         
-        $self->simple_run("map -f samsoft -o $out $hash_name @fqs");
+        my $insert_size_arg = '';
+        if (defined $other_args{i}) {
+            $insert_size_arg = " -i $other_args{i}";
+        }
+        
+        $self->simple_run("map -f samsoft$insert_size_arg -o $out $hash_name $fq1 $fq2");
     }
     
     return -s $out ? 1 : 0;

@@ -35,6 +35,9 @@ use VertRes::Wrapper::smalt;
 use base qw(VertRes::Utils::Mapping);
 
 
+our %do_mapping_args = (insert_size => 'i');
+
+
 =head2 new
 
  Title   : new
@@ -136,7 +139,13 @@ sub split_fastq {
 sub do_mapping {
     my ($self, %input_args) = @_;
     
-    my @args = $self->_do_mapping_args(%input_args);
+    if (defined $input_args{insert_size} && $input_args{insert_size} != 2000) {
+        # in samlt, the insert_size parameter is the maximum, not the average,
+        # so we multiply by 3
+        $input_args{insert_size} *= 3;
+    }
+    
+    my @args = $self->_do_mapping_args(\%do_mapping_args, %input_args);
     
     my $wrapper = $self->wrapper;
     $wrapper->do_mapping(@args);
