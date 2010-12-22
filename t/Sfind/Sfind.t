@@ -1,14 +1,23 @@
-
-#!/software/bin/perl
+#!/usr/bin/env perl
 use strict;
 use warnings;
 no warnings 'uninitialized';
 
-use Getopt::Long;
-use Sfind::Sfind;
-use Test::More qw( no_plan );
+BEGIN {
+    use Test::Most;
+    eval {
+        require VRTrack::Testconfig;
+    };
+    if ($@) {
+        plan skip_all => "Skipping all tests because db tests have not been requested";
+    }
+    else {
+        plan tests => 2;
+    }
+    
+    use_ok('Sfind::Sfind');
+}
 
-use_ok('Sfind::Sfind'); 
 
 ok(testStudyTree(),'Sfind study->sample->library_request->library->sequencing_request->lane->fastq');
 
@@ -19,7 +28,8 @@ sub testStudyTree{
 my $strack = Sfind::Sfind->new();
 
 unless ($strack){
-    die "Can't connect to warehouse database! \n";
+    warn "Can't connect to warehouse database!\n";
+    return;
 }    
 
 #GET the following studies

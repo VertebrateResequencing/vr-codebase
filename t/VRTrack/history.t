@@ -3,14 +3,22 @@ use strict;
 use warnings;
 
 BEGIN {
-    use Test::Most tests => 259;
+    use Test::Most;
+    eval {
+        require VRTrack::Testconfig;
+    };
+    if ($@) {
+        plan skip_all => "Skipping all tests because VRTrack tests have not been configured";
+    }
+    else {
+        plan tests => 259;
+    }
 
     use_ok('VRTrack::VRTrack');
     use_ok('VRTrack::History');
     use_ok('VRTrack::Library');
     use_ok('VRTrack::Lane');
 }
-use VRTrack::Testconfig;
 
 my $connection_details = { database => VRTrack::Testconfig->config('test_db'),
                            host     => VRTrack::Testconfig->config('host'),
