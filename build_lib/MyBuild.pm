@@ -12,7 +12,7 @@ use VRTrack::VRTrack;
 sub create_vrconfig_file {
     my $self     = shift;
     
-    my $configure_vrdb = $self->prompt('Do you wish to setup a test db for VRTrack? [y/n]: ', 'y');
+    my $configure_vrdb = $self->prompt('Do you wish to run tests for VRTrack (requires a mysql db)? [y/n]: ', 'y');
     
     if ($configure_vrdb eq 'y') {
         my $config   =
@@ -75,5 +75,13 @@ sub ACTION_test {
     }
     $self->SUPER::ACTION_test( @_ );
 }
+
+sub ACTION_realclean {
+    my $self = shift;
+    my $testconfig = catfile(qw(modules VRTrack Testconfig.pm));
+    unlink($testconfig);
+    $self->SUPER::ACTION_realclean( @_ );
+}
+
 1;
 
