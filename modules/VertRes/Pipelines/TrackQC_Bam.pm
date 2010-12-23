@@ -336,7 +336,7 @@ sub check_genotype
     $$options{'fa_ref'}        = $$self{'fa_ref'};
     $$options{'glf'}           = $$self{'glf'};
     $$options{'snps'}          = $$self{'snps'};
-    $$options{'samtools'}      = $$self{'samtools'};
+    $$options{'samtools'}      = exists($$self{samtools_glf}) ? $$self{samtools_glf} : $$self{'samtools'};
     $$options{'genotype'}      = $self->lane_info('genotype');
     $$options{'min_glf_ratio'} = $self->lane_info('gtype_confidence');
     $$options{'prefix'}        = $$self{'prefix'};
