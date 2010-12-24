@@ -4,7 +4,8 @@ use strict;
 use warnings;
 use Utils;
 use VertRes::Utils::Math;
-use List::Util qw(min max);
+use List::Util qw(min max sum);
+use Data::Dumper;
 
 our $R_CMD = 'R';
 
@@ -166,6 +167,12 @@ yrange <- range($yrange)
                             title              .. title of graph
                             desc_xvals         .. the x-axis label 
                             desc_yvals         .. the y-axis label
+                            x_scale            .. boolean.  If true, x coords of plotted points are scaled by percentile
+                                                  of total values which are plottd.  (Total = sum of all
+                                                  values of histograms given in ydata).
+                            x_scale_values     .. array of numbers. Default none.  If x_scale used, these numbers
+                                                  are used to plot vertical lines on the graph
+                            desc_xvals_top     .. top x-axis label, used when x_scale_values is used
                             y_min              .. lower range of y-axis.  Default is min value over all
                                                   lines which are plotted.
                             y_max              .. upper range of y-axis.  Default is max value over all
@@ -180,7 +187,6 @@ yrange <- range($yrange)
 
 sub plot_histograms_distributions {
     my $hash_in = shift;
-
     my @quartiles1;
     my @quartiles2;
     my @quartiles3;
@@ -188,6 +194,7 @@ sub plot_histograms_distributions {
     my $filetype;
     my $r_plot = defined $hash_in->{r_plot} ? ", $hash_in->{r_plot}" : '';
     my $xlab = defined $hash_in->{desc_xvals} ? $hash_in->{desc_xvals} : '';
+    my $xlab_top = defined $hash_in->{desc_xvals_top} ? $hash_in->{desc_xvals_top} : '';
     my $ylab = defined $hash_in->{desc_yvals} ? $hash_in->{desc_yvals} : '';
     my $title = defined $hash_in->{title} ? $hash_in->{title} : '';
     my @xvals;
@@ -199,16 +206,54 @@ sub plot_histograms_distributions {
         Utils::error("Could not determine the filetype of $hash_in->{outfile}\n");
     }
 
+    my $sum = 0;
+    my $total = 0;
+    my %vline_values;
+    my %vline_positions;
+
+    if ($hash_in->{x_scale}){
+        foreach my $h (@{$hash_in->{ydata}}){
+            $total += sum 0, values %{$h};
+        }
+   
+        foreach (@{$hash_in->{x_scale_values}}) {
+            $vline_values{$_} = 1;
+        }
+    }
+
     # calculate the coords of the lines to be plotted
     foreach my $i (0 .. (scalar @{$hash_in->{xdata}} - 1)) {
+      
+        if (exists $hash_in->{x_scale_values}){
+            my @found;
+            foreach my $v (keys %vline_values) {
+                if ($v < $hash_in->{xdata}[$i]) {
+                    $vline_positions{$v} = $sum/$total;
+                    push @found, $v;
+                }
+            }
+
+            foreach (@found) {delete $vline_values{$_}}
+        }
+      
         next unless (scalar keys %{$hash_in->{ydata}->[$i]});
         my %stats = VertRes::Utils::Math->new()->histogram_stats($hash_in->{ydata}->[$i]);
+        $sum += sum 0, values %{$hash_in->{ydata}->[$i]};
+    
+        
+
         if (defined $stats{mean}) {
             push @quartiles1, $stats{q1};
             push @quartiles2, $stats{q2};
             push @quartiles3, $stats{q3};
             push @means, $stats{mean};
-            push @xvals, $hash_in->{xdata}[$i];
+
+            if ($hash_in->{x_scale}){
+                push @xvals, $sum / $total;
+            }
+            else {
+                push @xvals, $hash_in->{xdata}[$i];
+            }
         }
 
     }
@@ -223,19 +268,45 @@ sub plot_histograms_distributions {
     my $q3_string = 'c(' . (join ', ', @quartiles3) . ')';
     my $means_string = 'c(' . (join ', ', @means) . ')';
     my $xvals_string = 'c(' . (join ', ', @xvals) . ')';
+    my $par = '';
+    my $draw_vlines = '';
 
+    # if we're adding vertical lines, then R script will be a bit different...
+    if ($hash_in->{x_scale_values}){
+        # have to do x axes manually, since we're adding in a top axis
+        $r_plot .= ', xaxt="n"';
+        $par = 'par(mar=c(5, 4, 9, 2) + 0.1)';
+        my @xcoords;
+        my @xlabs;
+        
+        for my $k (keys %vline_positions){
+            push @xlabs, $k;
+            push @xcoords, $vline_positions{$k};
+        }
+
+        my $xcoords_string =  'c(' . (join ', ', @xcoords) . ')';
+
+        $draw_vlines = "  abline(v=$xcoords_string, lty=2)\n" . 
+                       "  axis(3, at=$xcoords_string, labels=c(". (join ', ', @xlabs) . "))\n" .
+                       "  axis(1, at=c(0:10)/10, labels=c(0:10)*10)\n" . 
+                       qq[  mtext("$xlab_top", line = 2,  side = 3)\n];
+    }
+
+    # write and run the R script
     open my $fh, '>', "$hash_in->{outfile}.R" or Utils::error("$hash_in->{outfile}.R: $!");
-
     print $fh <<R_SCRIPT;
 $filetype("$hash_in->{outfile}")
 q1 = $q1_string
 q2 = $q2_string
 q3 = $q3_string
-polygon_xvals = c(0:$#means, $#means:0)
-plot(1, type="n", xlim=c(0,$#means), ylim=c($y_min, $y_max), xlab="$xlab", ylab="$ylab", main="$title", $r_plot)
+x = $xvals_string
+polygon_xvals = c(x, rev(x))
+$par
+plot(1, type="n", xlim=c(min(x),max(x)), ylim=c($y_min, $y_max), xlab="$xlab", ylab="$ylab", main="$title", $r_plot)
   polygon(polygon_xvals, c(q1, rev(q3)), border="grey", col="grey")
-  lines(c(0:$#means), $q2_string, col="black")
-  lines(c(0:$#means), $means_string, col="red")
+  lines(x, $q2_string, col="black")
+  lines(x, $means_string, col="red")
+$draw_vlines
 dev.off()
 R_SCRIPT
 
