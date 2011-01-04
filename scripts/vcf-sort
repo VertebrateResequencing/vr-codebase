@@ -50,7 +50,7 @@ sub sort_vcf
     {
         if ( $$opts{file}=~/\.gz$/i )
         {
-            open($fh,"zcat $$opts{file} |") or error("$$opts{file}: $!");
+            open($fh,"gunzip -c $$opts{file} |") or error("$$opts{file}: $!");
         }
         else
         {

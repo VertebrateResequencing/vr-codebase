@@ -557,7 +557,7 @@ sub open
         }
         else
         {
-            open($$self{fh},"zcat $$self{file} |") or $self->throw("zcat $$self{file} |: $!"); 
+            open($$self{fh},"gunzip -c $$self{file} |") or $self->throw("gunzip -c $$self{file} |: $!"); 
         }
     }
     else
