@@ -201,7 +201,7 @@ sub _open
             {
                 $cmd = "tabix $tabix_args |";
             }
-            else { $cmd = "zcat $$self{file} |"; } 
+            else { $cmd = "gunzip -c $$self{file} |"; } 
             $$self{check_exit_status} = 1;
         }
         elsif ( $$self{file}=~m{^(?:http|ftp)://} )
@@ -1329,7 +1329,7 @@ sub add_info_field
 
     my @out = ();
 
-    # First handle the existing values
+    # First handle the existing values, keep everything unless in %fields
     for my $field (split(/;/,$info))
     {
         my ($key,$value) = split(/=/,$field);
@@ -1337,7 +1337,7 @@ sub add_info_field
         if ( !exists($fields{$key}) ) { push @out,$field; next; }
     }
 
-    # Now add the new values
+    # Now add the new values and remove the unwanted ones
     while (my ($key,$value)=each %fields)
     {
         if ( !defined($value) ) { next; }       # this one should be removed
@@ -1345,6 +1345,39 @@ sub add_info_field
         else { push @out,"$key=$value"; }       # this is the standard key=value pair
     }
     if ( !@out ) { push @out,'.'; }
+    return join(';',@out);
+}
+
+
+=head2 add_filter
+
+    Usage   : $x=$vcf->next_data_array(); $$x[6]=$vcf->add_filter($$x[6],'SnpCluster'=>1,'q10'=>0); print join("\t",@$x)."\n";
+    Args    : The record obtained by next_data_array
+            : The key-value pairs for filter to be added. If value is 1, the filter will be added. If 0, the filter will be removed.
+    Returns : The formatted filter field.
+
+=cut
+
+sub add_filter
+{
+    my ($self,$filter,%filters) = @_;
+
+    my @out = ();
+
+    # First handle the existing filters, keep everything unless in %filters
+    for my $key (split(/;/,$filter))
+    {
+        if ( $key eq '.' or $key eq 'PASS' ) { next; }
+        if ( !exists($filters{$key}) ) { push @out,$key; next; }
+    }
+
+    # Now add the new filters and remove the unwanted ones
+    while (my ($key,$value)=each %filters)
+    {
+        if ( !$value ) { next; }                # this one should be removed
+        push @out,$key;                         # this one should be added
+    }
+    if ( !@out ) { push @out,'PASS'; }
     return join(';',@out);
 }
 
