@@ -258,6 +258,8 @@ sub plot_histograms_distributions {
 
     }
 
+    return unless (scalar @xvals > 0);
+
     # calculate y axis range
     my $y_min = defined $hash_in->{y_min} ? $hash_in->{y_min} : min @quartiles1, @means;
     my $y_max = defined $hash_in->{y_max} ? $hash_in->{y_max} : max @quartiles3, @means;
