@@ -18,6 +18,7 @@ General utility functions for working on or with sam/bam files.
 =head1 AUTHOR
 
 Sendu Bala: bix@sendu.me.uk
+petr.danecek@sanger
 
 =cut
 
@@ -42,6 +43,7 @@ use VertRes::Utils::FastQ;
 use VertRes::Utils::Math;
 use VertRes::Utils::Hierarchy;
 use Digest::MD5;
+use VertRes::Parser::bam;
 use List::Util qw(max);
 use Test::Deep::NoTest;
 
@@ -2501,6 +2503,70 @@ sub tag_strip {
         unlink $tmp_out;
         return 0;
     }
+}
+
+=head2 filter_readgroups
+
+ Title   : filter_readgroups
+ Usage   : $obj->filter_readgroups('in.bam','out.bam',include=>[{SM=>'HG01522',PL=>'ILLUMINA'}]);
+ Function: Given a bam file, generates another bam file that contains only the
+           requested read groups. Currently only 'include' logic implemented; it is trivial to add 'exclude' though.
+           Note: The header is not modified.
+ Returns : 1 on success or 0 when the filters would not exclude any reads
+ Args    : starting bam file, output name for bam file and filter specification
+
+=cut
+
+sub filter_readgroups
+{
+    my ($self, $in_bam, $out_bam, %opts) = @_;
+
+    if ( !exists($opts{include}) ) { $self->throw("Missing the 'include' parameter.\n"); }
+    if ( ! -e $in_bam ) { $self->throw("No such file: $in_bam\n"); }
+
+    my $pars = VertRes::Parser::bam->new(file=>$in_bam);
+    my $tmp  = $out_bam.'.part';
+
+    # Init the read groups: loop through all RG records of the BAM file and see if they pass
+    #   any of the filters.
+    #
+    my %include;
+    my %rg_info = $pars->readgroup_info();
+    while (my ($rg,$info) = each %rg_info)
+    {
+        # Will the RG pass any of these filters?
+        for my $inc (@{$opts{include}})
+        {
+            # All requested tags must match
+            my $match = 0;
+            while (my ($tag,$value) = each %$inc)
+            {
+                if ( exists($$info{$tag}) && $$info{$tag} eq $value ) { $match++; }
+            }
+            if ( $match == scalar keys %$inc ) 
+            {
+                # All tags match the criteria, include this RG
+                $include{$rg} = 1;
+                last;
+            }
+        }
+    }
+
+    if ( !scalar keys %include ) { $self->throw("The filter is too strict, no read group passes the criteria.\n"); }
+    if ( scalar keys %include == scalar keys %rg_info ) { $self->warn("The filter matches all read groups, use cp instead..."); return 0; }
+
+    $pars->get_fields('RG');
+    my $rh = $pars->result_holder();
+    
+    while ($pars->next_result()) 
+    {
+        if (exists $include{$rh->{RG}}) 
+        {
+            $pars->write_result($tmp);
+        }
+    }
+
+    rename($tmp,$out_bam) or $self->throw("rename $tmp $out_bam: $!");
 }
 
 1;
