@@ -184,6 +184,8 @@ sub reset_import
 {
     my ($vrtrack,$path,$lane,$opts) = @_;
 
+    die "FIXME: fastq->bams??\n";
+
     $vrtrack->transaction_start();
 
     # Get the list of vrtrack files and unset the latest status
@@ -205,6 +207,7 @@ sub reset_import
         # If this does not work, check if update_vrtrack.pl does the same
         vrfile_from_sfile($vrlane,Sfind::Fastq->new($sfile));
     }
+
     $vrlane->is_processed('import',0);
     $vrlane->update();
     $vrtrack->transaction_commit();
