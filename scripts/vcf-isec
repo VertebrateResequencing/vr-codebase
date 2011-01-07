@@ -148,7 +148,9 @@ sub check_columns
                 my @icols = @{$$vcfs[$ivcf]{columns}};
                 my @jcols = @{$$vcfs[$jvcf]{columns}};
                 warn("Warning: The number of columns is different:\n",
+                    scalar @icols - 9, ": ",
                     join(',',@icols[9..$#icols]),"\n",
+                    scalar @jcols - 9, ": ",
                     join(',',@jcols[9..$#jcols]),"\n",
                     );
                 return;
@@ -160,7 +162,7 @@ sub check_columns
                 { 
                     my @icols = @{$$vcfs[$ivcf]{columns}};
                     my @jcols = @{$$vcfs[$jvcf]{columns}};
-                    warn("Warning: The column names do not match:\n",
+                    warn("Warning: The column names do not match (e.g. $cname):\n",
                         join(',',@icols[9..$#icols]),"\n",
                         join(',',@jcols[9..$#jcols]),"\n",
                         );
@@ -173,7 +175,7 @@ sub check_columns
                 { 
                     my @icols = @{$$vcfs[$ivcf]{columns}};
                     my @jcols = @{$$vcfs[$jvcf]{columns}};
-                    warn("Warning: The column names do not match:\n",
+                    warn("Warning: The column names do not match (e.g. $cname):\n",
                         join(',',@icols[9..$#icols]),"\n",
                         join(',',@jcols[9..$#jcols]),"\n",
                         );
