@@ -409,7 +409,7 @@ sub plot_gc_depth
 {
     my ($opts) = @_;
 
-    my $args = get_defaults($opts,"$$opts{prefix}gc-depth2.png");
+    my $args = get_defaults($opts,"$$opts{prefix}gc-depth.png");
 
     # Read the file solely to find percentiles for 30,40, and 50% GC content to draw x2tics.
     my @tics = ( {gc=>30},{gc=>40},{gc=>50} );

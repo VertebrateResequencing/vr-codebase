@@ -4,7 +4,9 @@
 
     Assumptions and approximations:
         - GC content % calculation assumes that all reads have the same length (this can be fixed quite easily)
-        - GC-depth does not split reads, the starting position determines which bin is incremented
+        - GC-depth 
+            - does not split reads, the starting position determines which bin is incremented
+            - GC content calculation is based on all reads in the bin, not just unique sequence (pro: reference is not needed)
 */
 
 #define _ISOC99_SOURCE
@@ -14,8 +16,7 @@
 #include <string.h>
 #include <math.h>
 #include "sam.h"
-
-#define GC_DEPTH 1
+#include "kstring.h"
 
 #define BWA_MIN_RDLEN 35
 #define IS_PAIRED(bam) ((bam)->core.flag&BAM_FPAIRED && !((bam)->core.flag&BAM_FUNMAP) && !((bam)->core.flag&BAM_FMUNMAP))
@@ -70,6 +71,7 @@ typedef struct
 
     // Auxiliary data
     double sum_qual;            // For calculation average quality value 
+    samfile_t *sam;             // Unused
 }
 stats_t;
 
@@ -190,11 +192,10 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
 
         stats->nbases_mapped += seq_len;
 
-#if GC_DEPTH
         // GC-depth graph
         if ( stats->tid==-1 || stats->tid != bam_line->core.tid || bam_line->core.pos - stats->pos > stats->gcd_bin_size )
         {
-            // First pass or new chromosome
+            // First pass or a new chromosome
             stats->tid = bam_line->core.tid;
             stats->pos = bam_line->core.pos;
             stats->igcd++;
@@ -203,6 +204,13 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
             error("The genome too long?? [%ud]\n", stats->igcd);
         stats->gcd[ stats->igcd ].gc += (float) gc_count / seq_len;
         stats->gcd[ stats->igcd ].depth++;
+#if 0
+        if ( stats->igcd==45913  )
+        {
+            kstring_t str;
+            kputs(stats->sam->header->target_name[stats->tid] , &str);
+            fprintf(stderr,"tid=%d chr=%s %d igcd=%d gc=%.1f depth=%d\n",stats->tid,str.s,stats->pos,stats->igcd,stats->gcd[ stats->igcd ].gc*100. / stats->gcd[ stats->igcd ].depth,stats->gcd[ stats->igcd ].depth);
+        }
 #endif
     }
 
@@ -319,7 +327,6 @@ void output_stats(stats_t *stats)
             break;
     }
 
-#if GC_DEPTH
     // Calculate average GC content, then sort by GC and depth
     printf("# GC-depth. Use `grep ^GCD | cut -f 2-` to extract this part. The columns are: GC%%, unique sequence percentiles, 10th, 25th, 50th, 75th and 90th depth percentile\n");
     uint32_t igcd;
@@ -328,6 +335,8 @@ void output_stats(stats_t *stats)
         if ( stats->gcd[igcd].depth ) 
             stats->gcd[igcd].gc = round(100. * stats->gcd[igcd].gc / stats->gcd[igcd].depth);
     }
+    // for (igcd=0; igcd<stats->igcd; igcd++)
+    //     printf("uns_GCD\t%d\t%d\t%f\n",igcd,stats->gcd[igcd].depth,stats->gcd[igcd].gc);
     qsort(stats->gcd, stats->igcd+1, sizeof(gc_depth_t), gcd_cmp);
     // for (igcd=0; igcd<stats->igcd; igcd++)
     //     printf("raw_GCD\t%d\t%f\n",stats->gcd[igcd].depth,stats->gcd[igcd].gc);
@@ -342,7 +351,7 @@ void output_stats(stats_t *stats)
             nbins++;
             itmp++;
         }
-        printf("GCD\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\n", gc, (igcd+nbins+1)*100./(stats->igcd+1),
+        printf("GCD\t%.1f\t%.3f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\n", gc, (igcd+nbins+1)*100./(stats->igcd+1),
                 gcd_percentile(&(stats->gcd[igcd]),nbins,10), 
                 gcd_percentile(&(stats->gcd[igcd]),nbins,25), 
                 gcd_percentile(&(stats->gcd[igcd]),nbins,50), 
@@ -351,7 +360,6 @@ void output_stats(stats_t *stats)
               );
         igcd += nbins;
     }
-#endif
 }
 
 void error(const char *format, ...)
@@ -439,13 +447,14 @@ int main(int argc, char *argv[])
     // Init structures
     if ((sam = samopen(bam_fname, in_mode, NULL)) == 0) 
         error("Failed to open: %s\n", bam_fname);
+    stats.sam = sam;
     bam1_t *bam_line = bam_init1();
-    stats.quals_1st = calloc(stats.nquals*stats.nbases,sizeof(uint64_t));
-    stats.quals_2nd = calloc(stats.nquals*stats.nbases,sizeof(uint64_t));
-    stats.gc_1st    = calloc(stats.nbases,sizeof(uint64_t));
-    stats.gc_2nd    = calloc(stats.nbases,sizeof(uint64_t));
-    stats.isize     = calloc(stats.nisize,sizeof(uint64_t));
-    stats.gcd       = calloc(stats.ngcd,sizeof(gc_depth_t));
+    stats.quals_1st  = calloc(stats.nquals*stats.nbases,sizeof(uint64_t));
+    stats.quals_2nd  = calloc(stats.nquals*stats.nbases,sizeof(uint64_t));
+    stats.gc_1st     = calloc(stats.nbases,sizeof(uint64_t));
+    stats.gc_2nd     = calloc(stats.nbases,sizeof(uint64_t));
+    stats.isize      = calloc(stats.nisize,sizeof(uint64_t));
+    stats.gcd        = calloc(stats.ngcd,sizeof(gc_depth_t));
 
     // Collect statistics
     while (samread(sam,bam_line) >= 0) 
