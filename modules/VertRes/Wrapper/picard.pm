@@ -456,4 +456,36 @@ sub run {
     }
 }
 
+=head2 CalculateHsMetrics
+
+ Title   : CalculateHsMetrics
+ Usage   : $wrapper->CalculateHsMetrics($in_bam, $bait_file, $target_file, $outfile, %options);
+ Function: Calculates a set of Hybrid Selection specific metrics from an aligned BMA file
+ Returns : n/a
+ Args    : list of file paths (input bam, baits interval file, targets interval file,
+           stats output file), followed by a hash of options understood by
+           CalculateHsMetrics, eg.
+           VALIDATION_STRINGENCY => 'SILENT'. (case matters: must be uppercase)
+
+=cut
+
+sub CalculateHsMetrics {
+    my ($self, $in_bam, $bait_file, $target_file, $outfile, %args) = @_;
+    
+    $self->exe($self->{base_exe}.$fsu->catfile($self->{picard_dir}, 'CalculateHsMetrics.jar'));
+    $self->run_method('system');
+    
+    $self->switches([]);
+    $self->params([qw(TMP_DIR VERBOSITY QUIET VALIDATION_STRINGENCY
+                   COMPRESSION_LEVEL SORT_ORDER MAX_RECORDS_IN_RAM)]);
+    
+    my @file_args = (" I=$in_bam", " BAIT_INTERVALS=$bait_file", " TARGET_INTERVALS=$target_file", " O=$outfile");
+    $self->_handle_common_params(\%args);
+    
+    $self->register_output_file_to_check($outfile);
+    $self->_set_params_and_switches_from_args(%args);
+
+    return $self->run(@file_args);
+}
+
 1;
