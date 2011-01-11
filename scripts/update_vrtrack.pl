@@ -34,12 +34,12 @@ use VRTrack::Library_Multiplex_pool;
 my ($projfile, $spp, $update_files, $samplemap, $help, $database,$create_individuals);
 
 GetOptions(
-    'studies|p|projects=s'  =>  \$projfile,
+    'p|projects=s'  =>  \$projfile,
     's|spp=s'       =>  \$spp,
     'f|files'       =>  \$update_files,
     'd|database=s'  =>  \$database,
-    'c|create_individuals' =>  \$create_individuals,
-    'm|sample_map=s'   =>  \$samplemap,
+    'c|create_individuals'          =>  \$create_individuals,
+    'm|sample_map'   =>  \$samplemap,
     'h|help'        =>  \$help,
     );
 
@@ -64,10 +64,10 @@ else
 
 ($projfile && $db && !$help) or die <<USAGE;
     Usage: $0   
-                --studies   <study name or file of SequenceScape study names>
+                --projects  <project name or file of SequenceScape project names>
                 --spp       <species, i.e. g1k or mouse>
-                [--database <vrtrack database name override>]
-                [--files    <force update of files (usually skipped as doesn't change, and is slow)>]
+                [--database  <vrtrack database name override>]
+                [--files     <force update of files (usually skipped as doesn't change, and is slow)>]
                 [--create_individuals  <if set, generates an individual for each new sample name>]
                 [--sample_map  <a file of individual -> samplename mappings. Cannot be used with --create_individuals>]
                 --help      <this message>
@@ -413,40 +413,56 @@ foreach my $pname (keys %projects){
                     }
         
                     foreach my $lane (@$lanes){
-                        ###############################################################
-                        # Don't add lanes without fastq.  These are either cancelled
-                        # (and will never have fastq), or have not been archived yet,
-                        # so will get added later
-                        ###############################################################
+                        ########################################################
+                        # Don't add lanes without resulting files.  These are
+                        # either cancelled (and will never have files), or have
+                        # not been archived yet, so will get added later
+                        ########################################################
         
-                        my $fastq;
+                        my $tag_id=$lib->tag_id();
+
+                        # Check for BAM first, then fastq
+                        my $files;
                         eval {
-                            $fastq = $lane->fastq;
+                            $files = $lane->bam;
                         };
                         if ($@){
-                            print "Error getting fastq off ",$lane->name," : ",$@,".  Skipping\n";
+                            print "Error getting bam from ",$lane->name," : ",$@,".  Skipping\n";
                             next;
                         }
+                        else {
+                            # have the bam, but if this is multiplexed, we'll have them all, so filter on the tag
+                            # should maybe do this in Wrapper::iRODS?
+                            if ($is_multiplexed_seq_request){
+                                #print $lane->name, " $tag_id files:\n\t";
+                                #print $_->name."\n\t" foreach @$files;
 
-                        # TODO: check for bam then fastq
-                        #$fastq = $lane->bam();
-                        #foreach (@$fastq){
-                        #    print "BAM: $_\n";
-                        #}
-                        unless(@$fastq){
+                                @$files = grep($_->name =~ /#$tag_id\.bam$/, @$files);
+                            }
+                        }
+
+
+                        unless (@$files){
+                            eval {
+                                $files = $lane->fastq;
+                            };
+                            if ($@){
+                                print "Error getting fastq from ",$lane->name," : ",$@,".  Skipping\n";
+                                next;
+                            }
+                        }
+
+                        unless(@$files){
                             print $lane->name, " has no files\n";
                             next;
                         }
 
                         my $vlane = $vlib->get_lane_by_name($lane->name);
-                        my $tag_group_id=$lib->tag_group_id();
-                        my $tag_id=$lib->tag_id();
-                        my $tag_sequence=$lib->tag_sequence();
                         my $deplexed_lane;
                         
                         if($is_multiplexed_seq_request){
-                                $deplexed_lane=$lane->name."#".$tag_id;
-                                $vlane = $vlib->get_lane_by_name($deplexed_lane);
+                            $deplexed_lane=$lane->name."#".$tag_id;
+                            $vlane = $vlib->get_lane_by_name($deplexed_lane);
                         }
                         if ($vlane){
                             # Don't do file stuff - it should all have been done when
@@ -514,7 +530,7 @@ foreach my $pname (keys %projects){
                         print "Lane ",$vlane->name," updating\n" if $vlane->dirty;
                         $vlane->update;
                         
-                        foreach my $fq(@$fastq){
+                        foreach my $file(@$files){
                             # OK, so file names in tracking get changed as the file
                             # is imported, possibly split (for old _s_ files), and 
                             # compressed.  Need to check for the likely names this file
@@ -522,7 +538,7 @@ foreach my $pname (keys %projects){
                             # check in reverse order of processing to speed things up -
                             # i.e. it's most likely that a file is present in the 
                             # compressed form, so check for that first
-                            my $fqname = $fq->name;
+                            my $filename = $file->name;
                             my $vfile;
                             my @check_names;
         
@@ -531,110 +547,94 @@ foreach my $pname (keys %projects){
                             # splitting into _1.fastq and _2.fastq files.
                             # We'll assume the file is in the db if we hit either fwd
                             # or reverse split files, or the _s_ file.
+
+                            my $deplex_filename;    # need this later if we have to add the file
                             if($is_multiplexed_seq_request){
                                 # handle s files
-                                if ($fqname =~ /(\d+)_s_(\d).fastq/){
-                                    die "Shouldn't have multiplexed _s_ files: $fqname on ".$vlane->name."\n";
+                                if ($filename =~ /(\d+)_s_(\d)\.fastq$/){
+                                    die "Shouldn't have multiplexed _s_ files: $filename on ".$vlane->name."\n";
                                 }
-                                # handle other files
-                                elsif($fqname =~ /(\d+_\d)_(1.fastq)/){
-                                        my $deplexed_file=$1.'#'.$tag_id.'_'.$2;
-                                        push @check_names, ("$deplexed_file.gz",$deplexed_file);
+
+                                if ($filename =~ /\.bam$/){
+                                    # should already be deplexed, so no problem
+                                    $deplex_filename = $filename;
                                 }
-                                elsif ($fqname =~ /(\d+_\d)_(2.fastq)/){
-                                        my $deplexed_file=$1.'#'.$tag_id.'_'.$2;
-                                        push @check_names, ("$deplexed_file.gz",$deplexed_file);
+                                else {  # presumably fastq
+                                    $deplex_filename = deplex_name_from_fastq_tag($filename, $tag_id);
+                                    next unless $deplex_filename;
                                 }
-                                elsif ($fqname =~ /(\d+)_(\d.fastq)/){
-                                        my $deplexed_file=$1.'#'.$tag_id.'_'.$2;
-                                        push @check_names, ("$deplexed_file.gz",$deplexed_file);
-                                }
-                                else {
-                                    print "Can't determine type of file $fqname\n";
-                                    next;
-                                }
-                                
+                                push @check_names, $deplex_filename;
                             }
                             # non multiplexed requests
                             else{
                                 # handle s files
-                                if ($fqname =~ /(\d+)_s_(\d).fastq/){
+                                if ($filename =~ /(\d+)_s_(\d).fastq/){
                                     my $splitfwd;
                                     my $splitrev;
                                     $splitfwd = "$1_$2_1.fastq";
                                     $splitrev = "$1_$2_2.fastq";
-                                    @check_names = ("$splitfwd.gz","$splitrev.gz",
-                                                    $splitfwd,$splitrev,
-                                                    );
+                                    @check_names = ($splitfwd,$splitrev);
                                 }
                                 # handle other files
                                 else{
-                                   push @check_names, ("$fqname.gz",$fqname);
+                                   push @check_names, $filename;   
                                 }   
                             }
+
+                            # Right, now check if we already have either .gz or not .gz files
                             foreach my $check_name (@check_names){
                                 last if $vfile;
                                 $vfile = $vlane->get_file_by_name($check_name);
+                                unless ($vfile){
+                                    $vfile = $vlane->get_file_by_name("$check_name.gz");
+                                }
                             }
+
                             if ($vfile){
-                                # don't update unless forced by --update_files.  It's slow, and shouldn't change.
+                                # we already have the file in the vrtrack database.
+                                # Don't update unless forced by --update_files.  It's slow, and shouldn't change.
                                 unless ($update_files){
                                     next;
                                 }
                             }
                             else {
+                                # We have a new file that isn't in the vrtrack db, so add new one
                                 if($is_multiplexed_seq_request){
-                                my $deplexed_file;
-                                    if ($fqname =~ /(\d+_s)_(\d.fastq)/){
-                                        $deplexed_file=$1.'#'.$tag_id.'_'.$2;
-                                    }
-                                    elsif ($fqname =~ /(\d+_\d)_(1.fastq)/){
-                                        $deplexed_file=$1.'#'.$tag_id.'_'.$2;
-                                    }
-                                    elsif ($fqname =~ /(\d+_\d)_(2.fastq)/){
-                                         $deplexed_file=$1.'#'.$tag_id.'_'.$2;
-                                    }
-                                    elsif ($fqname =~ /(\d+)_(\d.fastq)/){
-                                         $deplexed_file=$1.'#'.$tag_id.'_'.$2;
-                                    }
-                                    else {
-                                        print "Can't determine type of file $fqname\n";
-                                        next;
-                                    }
-                                print "New file: ",$deplexed_file,"\n"; 
-                                $vfile = $vlane->add_file($deplexed_file);
-				$vfile->hierarchy_name($deplexed_file);
+                                    print "New file: ",$deplex_filename,"\n"; 
+                                    $vfile = $vlane->add_file($deplex_filename);
+                                    $vfile->hierarchy_name($deplex_filename);
                                 }
                                 else{
-                                print "New file: ",$fq->name,"\n"; 
-                                $vfile = $vlane->add_file($fq->name);
+                                    print "New file: ",$filename,"\n"; 
+                                    $vfile = $vlane->add_file($filename);
                                 }
                             }
-                            $vfile->raw_reads($fq->reads);
-                            $vfile->raw_bases($fq->basepairs);
-                            $vfile->read_len($fq->read_len);
-                            $vfile->mean_q($fq->mean_quality);
-                            $vfile->md5($fq->md5);
+                            $vfile->raw_reads($file->reads);
+                            $vfile->raw_bases($file->basepairs);
+                            $vfile->read_len($file->read_len);
+                            $vfile->mean_q($file->mean_quality);
+                            $vfile->md5($file->md5);
                             print "File ",$vfile->name," updating\n" if $vfile->dirty;
                             # determine type
                             #   0 is single-end
                             #   1 fwd
                             #   2 rev
                             #   3 is for _s_ files
-                            if ($fqname =~ /^\d+_s_\d.fastq/){
+                            #   4 is for bam files
+                            if ($filename =~ /^\d+_s_\d.fastq/){
                                 $vfile->type(3);
                             }
-                            elsif ($fqname =~ /^\d+_\d_1.fastq/){
+                            elsif ($filename =~ /^\d+_\d_1.fastq/){
                                 $vfile->type(1);
                             }
-                            elsif ($fqname =~ /^\d+_\d_2.fastq/){
+                            elsif ($filename =~ /^\d+_\d_2.fastq/){
                                 $vfile->type(2);
                             }
-                            elsif ($fqname =~ /^\d+_\d.fastq/){
+                            elsif ($filename =~ /^\d+_\d.fastq/){
                                 $vfile->type(0);
                             }
                             else {
-                                print "Can't determine type of file $fqname\n";
+                                print "Can't determine type of file $filename\n";
                             }
         
                             $vfile->update;
@@ -660,30 +660,30 @@ sub get_core_object {
 
     # Right, try and get an existing object with the same sequencescape id
     my $obj = $parent->$get_ssid_method($ss_obj->id);
+    #print "$parent $get_ssid_method, $ss_obj:", $ss_obj->id,"\n";
     if(!($type eq 'library_request' || $type eq 'seq_request' || $type eq 'multiplex_seq_request')){
+        if ($obj){
+            if ($obj->name ne $ss_obj->name){
+                print "$class ",$ss_obj->id," name has changed (",$obj->name," to ",$ss_obj->name,")\n";
+                $obj->name($ss_obj->name);
+            }
+        }
+        else {
+            # No obj with this ssid belongs to this parent, but let's see if we
+            # have an obj with this ssid that we've swapped due to genotype changes
+            $obj = "VRTrack::$class"->new_by_ssid($parent->vrtrack,$ss_obj->id);
             if ($obj){
-                if ($obj->name ne $ss_obj->name){
-                    print "$class ",$ss_obj->id," name has changed (",$obj->name," to ",$ss_obj->name,")\n";
-                    $obj->name($ss_obj->name);
-                }
+                # TODO: if lane, check genotype for swap.  What to do if library
+                # or sample?
+                print "$class ",$obj->name," exists (by ssid) but does not belong to sequencescape parent ",$parent->id,"\n";
             }
-            else {
-                # No obj with this ssid belongs to this parent, but let's see if we
-                # have an obj with this ssid that we've swapped due to genotype changes
-                $obj = "VRTrack::$class"->new_by_ssid($parent->vrtrack,$ss_obj->id);
-                if ($obj){
-                    # TODO: if lane, check genotype for swap.  What to do if library
-                    # or sample?
-                    print "$class ",$obj->name," exists (by ssid) but does not belong to sequencescape parent ",$parent->id,"\n";
-                }
-            }
+        }
     }
     unless ($obj) {
         # no obj by ssid, so make new one by name, but first check if it
         # already exists by name
         my $nameobj;
         my $name;
-        #if (!($class eq 'Library' || $class eq 'Library_request' || $class eq 'Seq_request' )) {
         if (!($class eq 'Library_request' || $class eq 'Seq_request' )) {
             $name=$ss_obj->name;
             if ($class eq 'Sample'){    
@@ -699,15 +699,37 @@ sub get_core_object {
         }
         else {
             print "New $type $name\n";
-                if($type eq 'library_request' || $type eq 'seq_request' ){
-                    $obj = $parent->$add_method($ss_obj->id);
-                }
-                else{
-                    $obj = $parent->$add_method($name);
-                }
-                $obj->ssid($ss_obj->id);
+            if($type eq 'library_request' || $type eq 'seq_request' ){
+                $obj = $parent->$add_method($ss_obj->id);
             }
+            else{
+                $obj = $parent->$add_method($name);
+            }
+            $obj->ssid($ss_obj->id);
         }
+    }
 
-        return $obj;
+    return $obj;
+}
+
+
+# sub to work out what the deplexed filename should be for a given fastq file
+# and library tag
+sub deplex_name_from_fastq_tag {
+    my ($filename, $tag_id) = @_;
+    my $deplex_name;
+
+    if($filename =~ /^(\d+_\d)_(1.fastq)$/){
+        $deplex_name = $1.'#'.$tag_id.'_'.$2;
+    }
+    elsif ($filename =~ /^(\d+_\d)_(2.fastq)$/){
+        $deplex_name = $1.'#'.$tag_id.'_'.$2;
+    }
+    elsif ($filename =~ /^(\d+)_(\d.fastq)$/){
+        $deplex_name = $1.'#'.$tag_id.'_'.$2;
+    }
+    else {
+        print "Can't parse multiplex fastq name to generate deplexed filename from $filename\n";
+    }
+    return $deplex_name;
 }
