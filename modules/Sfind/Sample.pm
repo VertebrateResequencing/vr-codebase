@@ -48,7 +48,13 @@ sub new {
     bless ($self, $class);
     $self->{_dbh} = $dbh;
 
-    my $sql = qq[select distinct(sample_name) from requests_new where sample_id=? and study_id = ?];
+    # jws 2011-01-05
+    # Changed
+    # from: get sample_name from requests_new table on this study
+    # to: get sample_name from samples table
+
+    my $sql = qq[select s.name as sample_name from study_sample_reports ssr, samples s where ssr.sample_id = ? and ssr.study_id = ? and ssr.sample_id = s.sample_id];
+
     my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($id, $study_id));
     if ($id_ref){
 	my $name = $id_ref->{sample_name};

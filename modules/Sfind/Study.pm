@@ -104,9 +104,16 @@ sub samples {
 sub sample_ids {
     my ($self) = @_;
 
-    # multiplex projects have sequencing requests with sample_id=0 ignore them
+    # jws 2011-01-05
+    # Changed this subroutine
+    # from:  get distinct sample_ids from requests table
+    # to: get sample_ids from study_sample_reports table
+    # this is cleaner, and gives the current set of samples associated
+    # with a study, rather than any samples which may have been associated in
+    # the past, and are presumably no longer wanted (e.g. sample moves)
+
     unless ($self->{'sample_ids'}){
-	my $sql = qq[select distinct(sample_id) from requests where study_id=? and sample_id!=0];
+	my $sql = qq[select distinct(sample_id) from study_sample_reports where study_id=? order by sample_id];
 	my @samples;
 	my $sth = $self->{_dbh}->prepare($sql);
 
@@ -114,7 +121,6 @@ sub sample_ids {
 	foreach(@{$sth->fetchall_arrayref()}){
 	    push @samples, $_->[0];
 	}
-	@samples = sort {$a <=> $b} @samples;
 	$self->{'sample_ids'} = \@samples;
     }
  

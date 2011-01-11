@@ -239,7 +239,7 @@ sub is_processed {
 	       $file->type(1);
   Description: Get/Set for file type - 0 is single-end, 1 fwd, 2 rev
                 3 is for _s_ files, i.e. fwd & rev concatenated on one
-                line
+                line, 4 is for bam files containing both fwd & rev
   Returntype : integer
 
 =cut

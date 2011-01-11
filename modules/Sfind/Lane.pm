@@ -25,7 +25,9 @@ use warnings;
 no warnings 'uninitialized';
 BEGIN { push(@INC,qw(/software/solexa/lib/site_perl/5.8.8)) }
 use npg::api::run_lane; # for npg qc
+use VertRes::Wrapper::iRODS; # for finding bam files
 use Sfind::Fastq;
+use Sfind::BAM;
 
 =head2 new
 
@@ -348,6 +350,66 @@ sub get_fastq_by_filename {
 }
 
 
+=head2 bam
+
+  Arg [1]    : None
+  Example    : my $bam = $lane->bam();
+  Description: Returns a ref to an array of the bam objects that have been generated from this lane.
+  Returntype : ref to array of Sfind::BAM objects
+
+=cut
+
+sub bam {
+    my ($self) = @_;
+    unless ($self->{'bam'}){
+	my @bam;
+    	foreach my $name (@{$self->bam_filenames()}){
+	    push @bam, $self->get_bam_by_filename($name);
+	}
+	$self->{'bam'} = \@bam;
+    }
+    return $self->{'bam'};
+}
+
+
+=head2 bam_filenames
+
+  Arg [1]    : none
+  Example    : my $bam_files = $lane->bam_filenames();
+  Description: fetch array ref of irods bam files for this lane
+  Returntype : array ref of irods file locations
+
+=cut
+
+sub bam_filenames {
+    my ($self) = @_;
+    unless ($self->{'bam_filenames'}){
+	my $run = $self->run_name;
+	my $lane = $self->run_lane;
+        my $irods = VertRes::Wrapper::iRODS->new();
+        my @bam = @{$irods->find_files_by_run_lane($run,$lane)};
+	$self->{'bam_filenames'} = \@bam;
+    }
+    return $self->{'bam_filenames'};
+}
+
+
+=head2 get_bam_by_filename
+
+  Arg [1]    : bam irods location
+  Example    : my $bamfile = $lane->get_bam_by_filename('/seq/5322/5322_1.bam');
+  Description: retrieve Sfind::BAM object by irods location
+  Returntype : Sfind::BAM object
+
+=cut
+
+sub get_bam_by_filename {
+    my ($self, $filename) = @_;
+    my $obj = Sfind::BAM->new($filename);
+    return $obj;
+}
+
+
 =head2 npg_qc
 
   Arg [1]    : none
@@ -446,6 +508,7 @@ sub basepairs {
 
 # Internal function to populate basepairs, reads, and mean_quality from
 # fastqcheck
+# TODO change to get BAM stats instead if appropriate
 sub _get_fastq_stats {
     my ($self) = @_;
     my $fastq = $self->fastq;

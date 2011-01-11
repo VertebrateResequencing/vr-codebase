@@ -19,6 +19,9 @@ use VertRes::Utils::GTypeCheck;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::Mapstats;
+use VertRes::Parser::bamcheck;
+use VertRes::Parser::bam;
+use VertRes::Parser::dict;
 
 our @actions =
 (
@@ -28,6 +31,14 @@ our @actions =
         'action'   => \&rename_and_merge,
         'requires' => \&rename_and_merge_requires, 
         'provides' => \&rename_and_merge_provides,
+    },
+
+    # Check sanity, namely the reference sequence
+    {
+        'name'     => 'check_sanity',
+        'action'   => \&check_sanity,
+        'requires' => \&check_sanity_requires, 
+        'provides' => \&check_sanity_provides,
     },
 
     # Runs glf to check the genotype.
@@ -66,6 +77,7 @@ our @actions =
 our $options = 
 {
     # Executables
+    'bamcheck'        => 'bamcheck -q 20',
     'blat'            => '/software/pubseq/bin/blat',
     'gcdepth_R'       => '/software/vertres/bin/gcdepth.R',
     'glf'             => '/nfs/sf8/G1K/bin/glf',
@@ -76,14 +88,12 @@ our $options =
     'adapters'        => '/software/pathogen/projects/protocols/ext/solexa-adapters.fasta',
     'bsub_opts'       => "-q normal -M5000000 -R 'select[type==X86_64 && mem>5000] rusage[mem=5000,thouio=1]'",
     'bsub_opts_merge' => "-q normal -M5000000 -R 'select[type==X86_64 && mem>5000] rusage[mem=5000,thouio=5]'",
-    'bwa_clip'        => 20,
     'gc_depth_bin'    => 20000,
     'gtype_confidence'=> 5.0,
     'mapstat_id'      => 'mapstat_id.txt',
     'sample_dir'      => 'qc-sample',
     'stats'           => '_stats',
     'stats_detailed'  => '_detailed-stats.txt',
-    'stats_dump'      => '_stats.dump',
     'chr_regex'       => '^(?:\d+|X|Y)$',
 
     auto_qc =>
@@ -105,6 +115,7 @@ our $options =
         Options    : See Pipeline.pm for general options.
 
                     # Executables
+                    bamcheck        .. bamcheck executable with parameters
                     blat            .. blat executable
                     gcdepth_R       .. gcdepth R script
                     glf             .. glf executable
@@ -116,7 +127,6 @@ our $options =
                     assembly        .. e.g. NCBI36
                     bsub_opts       .. LSF bsub options for jobs
                     bsub_opts_merge .. LSF bsub options for the rename_and_merge task (thouio=50)
-                    bwa_clip        .. The value to the 'bwa aln -q ' command.
                     bwa_ref         .. the prefix to reference files, as required by bwa
                     clean_fastqs    .. If set, .fastq files will be deleted as the last step in update_db
                     fa_ref          .. the reference sequence in fasta format
@@ -132,7 +142,7 @@ our $options =
 
 =cut
 
-sub VertRes::Pipelines::TrackQC_Bam::new 
+sub new 
 {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(%$options,'actions'=>\@actions,@args);
@@ -267,6 +277,17 @@ sub rename_and_merge
         elsif ( $file=~m{(\d+)\.[ps]e\.raw\.sorted\.bam} ) { push @{$mapstat_ids{$1}},$file; }
     }
 
+    # We can also get BAM files from iRODS. In that case the naming convention is different.
+    #   If there is one BAM file only, proceed, otherwise throw an error.
+    if ( ! scalar keys %mapstat_ids ) 
+    {
+        if ( scalar @files==1 )
+        {
+            Utils::relative_symlink("$files[0]","$work_dir/$name.bam") unless -e "$work_dir/$name.bam";
+            return $$self{'Yes'};
+        }
+    }
+
     my @ids = sort { $b<=>$a } keys %mapstat_ids;
     if ( ! scalar @ids ) { $self->throw("No bam files in $lane_path?"); }
 
@@ -302,6 +323,69 @@ rename("x$name.bam","$name.bam") or Utils::error("rename x$name.bam $name.bam: \
     return $$self{'No'};
 }
 
+
+
+#----------- check_sanity ---------------------
+
+sub check_sanity_requires
+{
+    my ($self) = @_;
+    my $sample_dir = $$self{'sample_dir'};
+    my @requires = ("$sample_dir/$$self{lane}.bam");
+    return \@requires;
+}
+
+sub check_sanity_provides
+{
+    my ($self) = @_;
+    return exists($$self{dict_ref}) ? ['_check_sanity.done'] : [];
+}
+
+sub check_sanity
+{
+    my ($self,$lane_path,$lock_file) = @_;
+
+    if ( !$$self{dict_ref} ) { $self->throw("FIXME: this should not happen"); }
+
+    # Get all reference sequences and their MD5
+    my $dict = VertRes::Parser::dict->new(file=>$$self{dict_ref});
+    my $result_holder = $dict->result_holder();
+    my %seqs;
+    while ($dict->next_result()) 
+    {
+        my $seq = $result_holder->{SN};
+        my $md5 = $result_holder->{M5};
+        $seqs{$seq} = $md5;
+    }
+    undef $dict;
+
+    my $bam = VertRes::Parser::bam->new(file=>"$$self{lane_path}/$$self{sample_dir}/$$self{lane}.bam");
+    my %bam_seq_info = $bam->sequence_info();
+    my @missing  = ();
+    my @mismatch = ();
+    while (my ($seq,$info) = each %bam_seq_info)
+    {
+        if ( !exists($seqs{$seq}) ) { push @missing, $seq; next; }
+        if ( $seqs{$seq} ne $$info{M5} ) { push @mismatch, $seq; next; }
+    }
+    undef $bam;
+
+    my $err_msg;
+    if ( @missing ) { $err_msg .= sprintf("\t%d sequence name(s) are not present in the dictionary: %s\n", scalar @missing, join(',',@missing)); }
+    if ( @mismatch ) { $err_msg .= sprintf("\t%d sequence name(s) have different MD5 sum: %s\n", scalar @mismatch, join(',',@mismatch)); }
+    if ( $err_msg )
+    {
+        $self->throw("The bam file does not match the reference.\n" 
+            . "Sanity check failed: $$self{lane_path}/$$self{sample_dir}/$$self{lane}.bam\n"
+            . "The ref dict was: $$self{dict_ref}\n"
+            . $err_msg 
+            );
+    }
+
+    `touch $$self{lane_path}/$$self{sample_dir}/_check_sanity.done`;
+
+    return $$self{'Yes'};
+}
 
 
 #----------- check_genotype ---------------------
@@ -363,7 +447,7 @@ sub stats_and_graphs_provides
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @provides = ("$sample_dir/chrom-distrib.png","$sample_dir/gc-content.png","$sample_dir/gc-depth.png");
+    my @provides = ("$sample_dir/_graphs.done");
     return \@provides;
 }
 
@@ -394,8 +478,8 @@ my \%params =
     'fa_ref'       => q[$$self{fa_ref}],
     'fai_ref'      => q[$$self{fai_ref}],
     'stats_ref'    => q[$stats_ref],
-    'bwa_clip'     => q[$$self{bwa_clip}],
     'chr_regex'    => q[$$self{chr_regex}],
+    'bamcheck'     => q[$$self{bamcheck}],
 );
 
 my \$qc = VertRes::Pipelines::TrackQC_Bam->new(\%params);
@@ -429,163 +513,82 @@ sub run_graphs
     my $gc_depth_bin = $$self{'gc_depth_bin'};
     my $bindepth     = "$outdir/gc-depth.bindepth";
     my $gcdepth_R    = $$self{'gcdepth_R'};
+    my $stats_file   = "$outdir/$$self{stats_detailed}";
 
-    my $stats_file  = "$outdir/$$self{stats}";
-    my $other_stats = "$outdir/$$self{stats_detailed}";
-    my $dump_file   = "$outdir/$$self{stats_dump}";
+    # Run bamcheck
+    if ( ! -e "$bam_file.bc" )
+    {
+        Utils::CMD(qq[$$self{bamcheck} $bam_file > $bam_file.bc.tmp]);
+        rename("$bam_file.bc.tmp","$bam_file.bc") or $self->throw("rename $bam_file.bc.tmp $bam_file.bc: $!");
+    }
+    if ( ! -e "$bam_file.rmdup.bc" )
+    {
+        Utils::CMD(qq[samtools rmdup $bam_file - | $$self{bamcheck} > $bam_file.rmdup.bc.tmp]);
+        rename("$bam_file.rmdup.bc.tmp","$bam_file.rmdup.bc") or $self->throw("rename $bam_file.rmdup.bc.tmp $bam_file.rmdup.bc: $!");
+    }
 
+    # Plot bamcheck graphs
+    my $stats_ref = $$self{stats_ref} ? "-r $$self{stats_ref}" : '';
+    Utils::CMD("plot-bamcheck -p $outdir/ $stats_ref $bam_file.bc");
+
+    # Get and report the stats
+    report_detailed_stats($lane_path,$bam_file,$stats_file);
 
     # The GC-depth graphs
-    if ( ! -e "$outdir/gc-depth.png" || Utils::file_newer($bam_file,$bindepth) )
+    if ( ! -e "$outdir/gc-depth-ori.png" || (-e $bindepth && Utils::file_newer($bam_file,$bindepth)) )
     {
-        Utils::CMD("$samtools view $bam_file | $mapview $refseq -b=$gc_depth_bin > $bindepth");
-        Graphs::create_gc_depth_graph($bindepth,$gcdepth_R,qq[$outdir/gc-depth.png]);
+        Utils::CMD("$samtools view $bam_file | $mapview $refseq -b=$gc_depth_bin > $bindepth",{verbose=>1});
+        Graphs::create_gc_depth_graph($bindepth,$gcdepth_R,qq[$outdir/gc-depth-ori.png]);
     }
 
-
-    # Get stats from the BAM file
-    my %opts = (do_clipped=>$$self{bwa_clip});
-    if ( exists($$self{chr_regex}) ) { $opts{do_chrm} = $$self{chr_regex}; }
-    my $all_stats = SamTools::collect_detailed_bam_stats($bam_file,$fai_ref,\%opts);
-    my $stats = $$all_stats{'total'};
-    report_detailed_stats($stats,$lane_path,$other_stats);
-    dump_detailed_stats($stats,$dump_file);
-
-    # Insert size graph
-    my ($x,$y);
-    if ( exists($$stats{insert_size}) )
-    {
-        $x = $$stats{'insert_size'}{'max'}{'x'};
-        $y = $$stats{'insert_size'}{'max'}{'y'};
-
-        # This is a very simple method of dynamic display range and will not work always. Should be done better if time allows.
-        my $insert_size  = $$stats{insert_size}{main_bulk};
-        Graphs::plot_stats({
-                'outfile'    => qq[$outdir/insert-size.png],
-                'title'      => 'Insert Size',
-                'desc_yvals' => 'Frequency',
-                'desc_xvals' => 'Insert Size',
-                'data'       => [ $$stats{'insert_size'} ],
-                'r_cmd'      => qq[text($x,$y,'$x',pos=4,col='darkgreen')\n],
-                'r_plot'     => "xlim=c(0," . ($insert_size*1.5) . ")",
-                });
-    }
-
-    # GC content graph
-    $y = 0;
-    my $normalize = 0; 
-    my @gc_data   = ();
-    if ( $$self{stats_ref} ) 
-    {
-        # Plot also the GC content of the reference sequence
-        my ($gc_freqs,@xvals,@yvals);
-        eval `cat $$self{stats_ref}`;
-        if ( $@ ) { $self->throw($@); }
-
-        for my $bin (sort {$a<=>$b} keys %$gc_freqs)
-        {
-            push @xvals,$bin;
-            push @yvals,$$gc_freqs{$bin};
-        }
-        push @gc_data, { xvals=>\@xvals, yvals=>\@yvals, lines=>',lty=4', legend=>'ref' };
-        $normalize = 1;
-    }
-    if ( $$stats{'gc_content_forward'} ) 
-    {
-        if ( $y < $$stats{'gc_content_forward'}{'max'}{'y'} )
-        {
-            $x = $$stats{'gc_content_forward'}{'max'}{'x'};
-            $y = $$stats{'gc_content_forward'}{'max'}{'y'};
-        }
-        push @gc_data, { %{$$stats{'gc_content_forward'}}, legend=>'fwd' }; 
-    }
-    if ( $$stats{'gc_content_reverse'} ) 
-    { 
-        if ( $y < $$stats{'gc_content_reverse'}{'max'}{'y'} )
-        {
-            $x = $$stats{'gc_content_reverse'}{'max'}{'x'};
-            $y = $$stats{'gc_content_reverse'}{'max'}{'y'};
-        }
-        push @gc_data, { %{$$stats{'gc_content_reverse'}}, legend=>'rev' }; 
-    }
-    if ( $$stats{'gc_content_single'} ) 
-    { 
-        if ( $y < $$stats{'gc_content_single'}{'max'}{'y'} )
-        {
-            $x = $$stats{'gc_content_single'}{'max'}{'x'};
-            $y = $$stats{'gc_content_single'}{'max'}{'y'};
-        }
-        push @gc_data, { %{$$stats{'gc_content_single'}}, legend=>'single' }; 
-    }
-    if ( $normalize ) { $y=1; }
-    Graphs::plot_stats({
-            'outfile'    => qq[$outdir/gc-content.png],
-            'title'      => 'GC Content (both mapped and unmapped)',
-            'desc_yvals' => 'Frequency',
-            'desc_xvals' => 'GC Content [%]',
-            'data'       => \@gc_data,
-            'r_cmd'      => sprintf("text($x,$y,'%.1f',pos=4,col='darkgreen')\n",$x),
-            'normalize'  => $normalize,
-            });
-
-    # Chromosome distribution graph
-    Graphs::plot_stats({
-            'barplot'    => 1,
-            'outfile'    => qq[$outdir/chrom-distrib.png],
-            'title'      => 'Chromosome Coverage',
-            'desc_yvals' => 'Frequency/Length',
-            'desc_xvals' => 'Chromosome',
-            'data'       => [ $$stats{'reads_chrm_distrib'}, ],
-            });
+    `touch $outdir/_graphs.done`;
 }
 
 
 
 sub report_detailed_stats
 {
-    my ($stats,$lane_path,$outfile) = @_;
+    my ($lane_path,$bamfile,$outfile) = @_;
+
+    my $bc = VertRes::Parser::bamcheck->new(file=>"$bamfile.bc");
+    my $reads_total    = $bc->get('sequences');
+    my $reads_mapped   = $bc->get('reads_mapped');
+    my $reads_paired   = $bc->get('reads_paired');
+    my $bases_total    = $bc->get('total_length');
+    my $bases_trimmed  = $bc->get('bases_trimmed');
+    my $bases_mapped   = $bc->get('bases_mapped');
+    my $bases_mapped_c = $bc->get('bases_mapped_cigar');
+    my $error_rate     = $bc->get('error_rate');
+    my $avg_isize      = $bc->get('avg_insert_size');
+    my $sd_insert_size = $bc->get('sd_insert_size');
+
+    $bc = VertRes::Parser::bamcheck->new(file=>"$bamfile.rmdup.bc");
+    my $rmdup_reads_total    = $bc->get('sequences');
+    my $rmdup_reads_mapped   = $bc->get('reads_mapped');
+    my $rmdup_bases_mapped_c = $bc->get('bases_mapped_cigar');
+    my $rmdup_bases_total    = $bc->get('total_length');
+    my $rmdup_bases_trimmed  = $bc->get('bases_trimmed');
 
     open(my $fh,'>',$outfile) or Utils::error("$outfile: $!");
 
-    printf $fh "reads total .. %d\n", $$stats{'reads_total'};
-    printf $fh "     mapped .. %d (%.1f%%)\n", $$stats{'reads_mapped'}, 100*($$stats{'reads_mapped'}/$$stats{'reads_total'});
-    printf $fh "     paired .. %d (%.1f%%)\n", $$stats{'reads_paired'}, 100*($$stats{'reads_paired'}/$$stats{'reads_total'});
-    printf $fh "bases total .. %d\n", $$stats{'bases_total'};
-    printf $fh "    clip bases     .. %d (%.1f%%)\n", $$stats{'clip_bases'}, 100*($$stats{'clip_bases'}/$$stats{'bases_total'});
-    printf $fh "    mapped (read)  .. %d (%.1f%%)\n", $$stats{'bases_mapped_read'}, 100*($$stats{'bases_mapped_read'}/$$stats{'clip_bases'});
-    printf $fh "    mapped (cigar) .. %d (%.1f%%)\n", $$stats{'bases_mapped_cigar'}, 100*($$stats{'bases_mapped_cigar'}/$$stats{'clip_bases'});
-    printf $fh "error rate  .. %f\n", $$stats{error_rate};
+    printf $fh "reads total .. %d\n", $reads_total;
+    printf $fh "     mapped .. %d (%.1f%%)\n", $reads_mapped, $reads_mapped*100./$reads_total;
+    printf $fh "     paired .. %d (%.1f%%)\n", $reads_paired, $reads_paired*100./$reads_total;
+    printf $fh "bases total .. %d\n", $bases_total;
+    printf $fh "    clip bases     .. %d (%.1f%%)\n", ($bases_total-$bases_trimmed),($bases_total-$bases_trimmed)*100./$bases_total;
+    printf $fh "    mapped (read)  .. %d (%.1f%%)\n", $bases_mapped, $bases_mapped*100./$bases_total;
+    printf $fh "    mapped (cigar) .. %d (%.1f%%)\n", $bases_mapped_c, $bases_mapped_c*100./($bases_total-$bases_trimmed);
+    printf $fh "error rate  .. %f\n", $error_rate;
     printf $fh "rmdup\n";
-    printf $fh "     reads total  .. %d (%.1f%%)\n", $$stats{'rmdup_reads_total'}, 100*($$stats{'rmdup_reads_total'}/$$stats{'reads_total'});
-    printf $fh "     reads mapped .. %d (%.1f%%)\n", $$stats{'rmdup_reads_mapped'}, 100*($$stats{'rmdup_reads_mapped'}/$$stats{'rmdup_reads_total'});
-    printf $fh "     bases mapped (cigar) .. %d (%.1f%%)\n", $$stats{'rmdup_bases_mapped_cigar'}, 
-           100*($$stats{'rmdup_bases_mapped_cigar'}/$$stats{'rmdup_bases_total'});
-    printf $fh "duplication .. %f\n", $$stats{'duplication'};
+    printf $fh "     reads total  .. %d (%.1f%%)\n", $rmdup_reads_total, $rmdup_reads_total*100./$reads_total;
+    printf $fh "     reads mapped .. %d (%.1f%%)\n", $rmdup_reads_mapped, $rmdup_reads_mapped*100./$rmdup_reads_total;
+    printf $fh "     bases mapped (cigar) .. %d (%.1f%%)\n", $rmdup_bases_mapped_c, $rmdup_bases_mapped_c*100./($rmdup_bases_total-$rmdup_bases_trimmed);
+    printf $fh "duplication .. %f\n", 1-$rmdup_reads_mapped/$reads_mapped;
     printf $fh "\n";
     printf $fh "insert size        \n";
-    if ( exists($$stats{insert_size}) )
-    {
-        printf $fh "    average .. %.1f\n", $$stats{insert_size}{average};
-        printf $fh "    std dev .. %.1f\n", $$stats{insert_size}{std_dev};
-    }
-    else
-    {
-        printf $fh "    N/A\n";
-    }
+    printf $fh "    average .. %.1f\n", $avg_isize;
+    printf $fh "    std dev .. %.1f\n", $sd_insert_size;
     printf $fh "\n";
-    printf $fh "chrm distrib dev .. %f\n", $$stats{'reads_chrm_distrib'}{'scaled_dev'};
-
-    close $fh;
-}
-
-
-sub dump_detailed_stats
-{
-    my ($stats,$outfile) = @_;
-
-    use Data::Dumper;
-    open(my $fh,'>',$outfile) or Utils::error("$outfile: $!");
-    print $fh Dumper($stats);
     close $fh;
 }
 
@@ -597,7 +600,7 @@ sub auto_qc_requires
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
     my $name = $$self{lane};
-    my @requires = ("$sample_dir/gc-content.png","$sample_dir/${name}.gtype","$sample_dir/$$self{stats_dump}");
+    my @requires = ("$sample_dir/_graphs.done");
     return \@requires;
 }
 
@@ -626,9 +629,8 @@ sub auto_qc
 
     if ( !$vrlane->is_processed('import') ) { return $$self{Yes}; }
 
-    # Get the stats dump
-    my $stats = do "$sample_dir/$$self{stats_dump}";
-    if ( !$stats ) { $self->throw("Could not read $sample_dir/$$self{stats_dump}\n"); }
+    # Init the bamcheck parser
+    my $bc = VertRes::Parser::bamcheck->new(file=>"$sample_dir/$name.bam.bc");
 
     my @qc_status = ();
     my ($test,$status,$reason);
@@ -654,9 +656,11 @@ sub auto_qc
         my $min = $$self{auto_qc}{mapped_bases};
         $test   = 'Mapped bases';
         $status = 1;
-        my $value = 100.*$$stats{'bases_mapped_cigar'}/$$stats{'clip_bases'};
-        $reason = "At least $min% bases mapped after clipping ($value%).";
-        if ( $value < $min ) { $status=0; $reason="Less than $min% bases mapped after clipping ($value%)."; }
+        my $clip_bases = $bc->get('total_length') - $bc->get('bases_trimmed');
+        my $bases_mapped_c = $bc->get('bases_mapped_cigar');
+        my $value = 100. * $bases_mapped_c / $clip_bases;
+        $reason = sprintf "At least %.1f%% bases mapped after clipping (%.2f%%).",$min,$value;
+        if ( $value < $min ) { $status=0; $reason = sprintf "Less than %.1f%% bases mapped after clipping (%.2f%%).",$min,$value; }
         push @qc_status, { test=>$test, status=>$status, reason=>$reason };
     }
 
@@ -666,8 +670,9 @@ sub auto_qc
         my $min = $$self{auto_qc}{error_rate};
         $test   = 'Error rate';
         $status = 1;
-        $reason = "The error rate smaller than $min ($$stats{error_rate}).";
-        if ( $$stats{error_rate} > $min ) { $status=0; $reason="The error rate higher than $min ($$stats{error_rate})."; }
+        my $error_rate = $bc->get('error_rate');
+        $reason = "The error rate smaller than $min ($error_rate).";
+        if ( $error_rate > $min ) { $status=0; $reason="The error rate higher than $min ($error_rate)."; }
         push @qc_status, { test=>$test, status=>$status, reason=>$reason };
     }
 
@@ -677,7 +682,8 @@ sub auto_qc
     if ( $vrlane->is_paired() && exists($$self{auto_qc}{inserts_peak_win}) && exists($$self{auto_qc}{inserts_within_peak}) )
     {
         $test = 'Insert size';
-        if ( !exists($$stats{insert_size}) ) 
+        my $isizes = $bc->get('insert_size');
+        if ( !defined $isizes ) 
         { 
             push @qc_status, { test=>$test, status=>0, reason=>'The insert size not available, yet flagged as paired' };
         }
@@ -690,18 +696,18 @@ sub auto_qc
             my $within_peak = $$self{auto_qc}{inserts_within_peak};
 
             $status = 1;
-            my ($amount,$range) = insert_size_ok($$stats{insert_size}{xvals},$$stats{insert_size}{yvals},$peak_win,$within_peak);
-            $reason = "There are $within_peak% or more inserts within $peak_win% of max peak ($amount).";
+            my ($amount,$range) = insert_size_ok($isizes,$peak_win,$within_peak);
+            $reason = sprintf "There are %.1f%% or more inserts within %.1f%% of max peak (%.2f%%).",$within_peak,$peak_win,$amount;
             if ( $amount<$within_peak ) 
             { 
-                $status=0; $reason="Fail library, less than $within_peak% of the inserts are within $peak_win% of max peak ($amount)."; 
+                $status=0; $reason = sprintf "Fail library, less than %.1f%% of the inserts are within %.1f%% of max peak (%.2f%%).",$within_peak,$peak_win,$amount; 
             }
             push @qc_status, { test=>$test, status=>1, reason=>$reason };
 
-            $reason = "$within_peak% of inserts are contained within $peak_win% of the max peak ($range).";
+            $reason = sprintf "%.1f%% of inserts are contained within %.1f%% of the max peak (%.2f%%).",$within_peak,$peak_win,$range;
             if ( $range>$peak_win )
             {
-                $status=0; $reason="Fail library, $within_peak% of inserts are not within $peak_win% of the max peak ($range).";
+                $status=0; $reason = sprintf "Fail library, %.1f%% of inserts are not within %.1f%% of the max peak (%.2f%%).",$within_peak,$peak_win,$range;
             }
             push @qc_status, { test=>'Insert size (rev)', status=>1, reason=>$reason };
 
@@ -732,38 +738,38 @@ sub auto_qc
 }
 
 
-# xvals, yvals, calculates 
+# vals, calculates 
 #   1) what percentage of the data lies within the allowed range from the max peak (e.g. [mpeak*(1-0.25),mpeak*(1+0.25)])
 #   2) how wide is the distribution - how wide has to be the range to accomodate the given amount of data (e.g. 80% of the reads) 
 sub insert_size_ok
 {
-    my ($xvals,$yvals,$maxpeak_range,$data_amount) = @_;
+    my ($vals,$maxpeak_range,$data_amount) = @_;
 
     # Determine the max peak
     my $count     = 0;
     my $imaxpeak  = 0;
-    my $ndata     = scalar @$xvals;
+    my $ndata     = scalar @$vals;
     my $total_count = 0;
     my $max = 0;
     for (my $i=0; $i<$ndata; $i++)
     {
-        my $xval = $$xvals[$i];
-        my $yval = $$yvals[$i];
+        my $xval = $$vals[$i][0];
+        my $yval = $$vals[$i][1];
 
         $total_count += $yval;
         if ( $max < $yval ) { $imaxpeak = $i; $max = $yval; }
     }
 
-    # See how many reads are within the median range (really the median? looks more like the max peak!)
+    # See how many reads are within the max peak range
     $maxpeak_range *= 0.01;
     $count = 0;
     for (my $i=0; $i<$ndata; $i++)
     {
-        my $xval = $$xvals[$i];
-        my $yval = $$yvals[$i];
+        my $xval = $$vals[$i][0];
+        my $yval = $$vals[$i][1];
 
-        if ( $xval<$$xvals[$imaxpeak]*(1-$maxpeak_range) ) { next; }
-        if ( $xval>$$xvals[$imaxpeak]*(1+$maxpeak_range) ) { next; }
+        if ( $xval<$$vals[$imaxpeak][0]*(1-$maxpeak_range) ) { next; }
+        if ( $xval>$$vals[$imaxpeak][0]*(1+$maxpeak_range) ) { next; }
         $count += $yval;
     }
     my $out_amount = 100.0*$count/$total_count;
@@ -771,20 +777,20 @@ sub insert_size_ok
     # How big must be the range in order to accomodate the requested amount of data
     $data_amount *= 0.01;
     my $idiff = 0;
-    $count = $$yvals[$imaxpeak];
+    $count = $$vals[$imaxpeak][1];
     while ( $count/$total_count < $data_amount )
     {
         $idiff++;
-        if ( $idiff<=$imaxpeak ) { $count += $$yvals[$imaxpeak-$idiff]; }
-        if ( $idiff+$imaxpeak<$ndata ) { $count += $$yvals[$imaxpeak+$idiff]; }
+        if ( $idiff<=$imaxpeak ) { $count += $$vals[$imaxpeak-$idiff][1]; }
+        if ( $idiff+$imaxpeak<$ndata ) { $count += $$vals[$imaxpeak+$idiff][1]; }
 
         # This should never happen, unless $data_range is bigger than 100%
         if ( $idiff>$imaxpeak && $idiff+$imaxpeak>=$ndata ) { last; }
     }
-    my $out_range  = $idiff<=$imaxpeak ? $$xvals[$imaxpeak]-$$xvals[$imaxpeak-$idiff] : $$xvals[$imaxpeak];
-    my $out_range2 = $idiff+$imaxpeak<$ndata ? $$xvals[$imaxpeak+$idiff]-$$xvals[$imaxpeak] : $$xvals[-1]-$$xvals[$imaxpeak];
+    my $out_range  = $idiff<=$imaxpeak ? $$vals[$imaxpeak][0]-$$vals[$imaxpeak-$idiff][0] : $$vals[$imaxpeak][0];
+    my $out_range2 = $idiff+$imaxpeak<$ndata ? $$vals[$imaxpeak+$idiff][0]-$$vals[$imaxpeak][0] : $$vals[-1][0]-$$vals[$imaxpeak][0];
     if ( $out_range2 > $out_range ) { $out_range=$out_range2; }
-    $out_range = 100.0*$out_range/$$xvals[$imaxpeak];
+    $out_range = 100.0*$out_range/$$vals[$imaxpeak][0];
 
     return ($out_amount,$out_range);
 }
@@ -797,8 +803,7 @@ sub update_db_requires
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
     my $name = $$self{lane};
-    my @requires = ("$sample_dir/chrom-distrib.png","$sample_dir/gc-content.png",
-        "$sample_dir/gc-depth.png","$sample_dir/${name}.gtype","$sample_dir/$$self{stats_dump}");
+    my @requires = ("$sample_dir/_graphs.done");
     return \@requires;
 }
 
@@ -836,11 +841,25 @@ sub update_db
 
     if ( !$vrlane->is_processed('import') ) { return $$self{Yes}; }
 
-    # Get the stats dump
-    my $stats = do "$sample_dir/$$self{stats_dump}";
-    if ( !$stats ) { $self->throw("Could not read $sample_dir/$$self{stats_dump}\n"); }
+    # Get the stats
+    my $bc = VertRes::Parser::bamcheck->new(file=>"$sample_dir/$name.bam.bc");
+    my $reads_total    = $bc->get('sequences');
+    my $reads_mapped   = $bc->get('reads_mapped');
+    my $reads_paired   = $bc->get('reads_paired');
+    my $bases_total    = $bc->get('total_length');
+    my $bases_trimmed  = $bc->get('bases_trimmed');
+    my $bases_mapped   = $bc->get('bases_mapped');
+    my $bases_mapped_c = $bc->get('bases_mapped_cigar');
+    my $error_rate     = $bc->get('error_rate');
+    my $avg_isize      = $bc->get('avg_insert_size');
+    my $sd_isize       = $bc->get('sd_insert_size');
 
-    my $read_length = $$stats{bases_total} / $$stats{reads_total};
+    $bc = VertRes::Parser::bamcheck->new(file=>"$sample_dir/$name.bam.rmdup.bc");
+    my $rmdup_reads_total    = $bc->get('sequences');
+    my $rmdup_reads_mapped   = $bc->get('reads_mapped');
+    my $rmdup_bases_mapped_c = $bc->get('bases_mapped_cigar');
+    my $rmdup_bases_total    = $bc->get('total_length');
+    my $rmdup_bases_trimmed  = $bc->get('bases_trimmed');
 
     my $gtype = VertRes::Utils::GTypeCheck::get_status("$sample_dir/${name}.gtype");
 
@@ -852,6 +871,9 @@ sub update_db
     if ( -e "$sample_dir/fastqcheck_1.png" ) { $images{'fastqcheck_1.png'} = 'FastQ Check 1'; }
     if ( -e "$sample_dir/fastqcheck_2.png" ) { $images{'fastqcheck_2.png'} = 'FastQ Check 2'; }
     if ( -e "$sample_dir/fastqcheck.png" ) { $images{'fastqcheck.png'} = 'FastQ Check'; }
+    if ( -e "$sample_dir/quals2.png" ) { $images{'quals2.png'} = 'Qualities'; }
+    if ( -e "$sample_dir/quals3.png" ) { $images{'quals3.png'} = 'Qualities'; }
+    if ( -e "$sample_dir/quals-hm.png" ) { $images{'quals-hm.png'} = 'Qualities'; }
 
     my $nadapters = 0;
     if ( -e "$sample_dir/${name}_1.nadapters" ) { $nadapters += do "$sample_dir/${name}_1.nadapters"; }
@@ -875,19 +897,19 @@ sub update_db
     if ( !$mapping ) { $mapping = $vrlane->add_mapping(); }
 
     # Fill the values in
-    $mapping->raw_reads($$stats{reads_total});
-    $mapping->raw_bases($$stats{bases_total});
-    $mapping->reads_mapped($$stats{reads_mapped});
-    $mapping->reads_paired($$stats{reads_paired});
-    $mapping->bases_mapped($$stats{bases_mapped_cigar});
-    $mapping->error_rate($$stats{error_rate});
-    $mapping->rmdup_reads_mapped($$stats{rmdup_reads_mapped});
-    $mapping->rmdup_bases_mapped($$stats{rmdup_bases_mapped_cigar});
+    $mapping->raw_reads($reads_total);
+    $mapping->raw_bases($bases_total);
+    $mapping->reads_mapped($reads_mapped);
+    $mapping->reads_paired($reads_paired);
+    $mapping->bases_mapped($bases_mapped_c);
+    $mapping->error_rate($error_rate);
+    $mapping->rmdup_reads_mapped($rmdup_reads_mapped);
+    $mapping->rmdup_bases_mapped($rmdup_bases_mapped_c);
     $mapping->adapter_reads($nadapters);
-    $mapping->clip_bases($$stats{clip_bases});
+    $mapping->clip_bases($bases_total-$bases_trimmed);
 
-    $mapping->mean_insert($$stats{insert_size}{average});
-    $mapping->sd_insert($$stats{insert_size}{std_dev});
+    $mapping->mean_insert($avg_isize);
+    $mapping->sd_insert($sd_isize);
 
     $mapping->genotype_expected($$gtype{expected});
     $mapping->genotype_found($$gtype{found});
@@ -896,6 +918,29 @@ sub update_db
 
     if ( !$has_mapstats )
     {
+        # If there is no mapstats present, the mapper and assembly must be filled in.
+        #   First rely on the config file and if the info is not present there, make a guess
+        #   from the bam file header.
+        my $parser;
+        if ( !$$self{mapper} or !$$self{assembly} or !$$self{mapper_version} ) 
+        {
+            $parser = VertRes::Parser::bam->new(file=>"$sample_dir/$$self{lane}.bam");
+        }
+        if ( !$$self{assembly} ) 
+        {
+            my @info = $parser->sequence_info();
+            if ( @info ) { $$self{assembly} = $info[1]{AS}; }
+        }
+        if ( !$$self{mapper} or !$$self{mapper_version} )
+        {
+            $$self{mapper} = $parser->program();
+            if ( $$self{mapper} )
+            {
+                my %prgs = $parser->program_info();
+                $$self{mapper_version} = $prgs{$$self{mapper}}{VN};
+            }
+        }
+
         if ( !$$self{assembly} ) { $self->throw("Expected the assembly key.\n"); }
         if ( !$$self{mapper} ) { $self->throw("Expected the mapper key.\n"); }
         if ( !$$self{mapper_version} ) { $self->throw("Expected the mapper_version key.\n"); }

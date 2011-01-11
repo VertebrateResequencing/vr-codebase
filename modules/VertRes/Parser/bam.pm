@@ -473,12 +473,23 @@ sub _guess_mapping_program {
         return $programs[0];
     }
     else {
-        foreach my $program (@programs) {
-            if ($program =~ /bwa|maq|ssha|bfast|stampy/ || $program !~ /GATK/) {
-                return $program;
-            }
-        }
+        # This does not work for UK10K bams
+        # foreach my $program (@programs) {
+        #     if ($program =~ /bwa|maq|ssha|bfast|stampy/ || $program !~ /GATK/) {
+        #         return $program;
+        #     }
+        # }
         
+        my (@known_prg,@unknown_prg);
+        for my $program (@programs)
+        {
+            if ( $program =~ /bwa|maq|ssha|bfast|stampy/ ) { push @known_prg, $program; }
+            elsif ( $program !~ /GATK/ ) { push @unknown_prg, $program; }
+        }
+
+        if ( @known_prg ) { return $known_prg[0]; }
+        elsif ( @unknown_prg ) { return $unknown_prg[0]; }
+
         # guess randomly
         return $programs[0];
     }
