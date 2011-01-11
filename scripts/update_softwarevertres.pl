@@ -8,28 +8,13 @@ $ENV{PERL5LIB} = '';
 
 my $cwd = getcwd;
 
-# keep svn and git in sync
 my $base = '/software/vertres';
-my $origin_base = "$base/git/origin";
-foreach my $repo ("$origin_base/vr-bin-external", "$origin_base/vr-codebase") {
-    chdir($repo);
-    warn "\nsyncing $repo\n";
-    system("git checkout master; git svn rebase; git svn dcommit; git checkout allow_push");
-}
 
 # update the checkouts that PATH and PERL5LIB point to
-foreach my $repo ("$base/bin-git", "$base/codebase") {
+foreach my $repo ("$base/external-bin", "$base/codebase") {
     chdir($repo);
     warn "\nupdating $repo\n";
     system("git pull");
-}
-
-# for now, we'll also update the defunct svn checkouts that nothing should be
-# using
-foreach my $repo ("$base/bin", "$base/scripts", "$base/modules") {
-    chdir($repo);
-    warn "\nupdating $repo\n";
-    system("svn up");
 }
 
 chdir($cwd);
