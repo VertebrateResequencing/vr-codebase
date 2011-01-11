@@ -1,0 +1,3 @@
+[submodule "bin"]
+	path = bin
+	url = /software/vertres/git/origin/vr-bin-external
