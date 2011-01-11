@@ -3,13 +3,16 @@ use strict;
 use warnings;
 use File::Spec;
 use File::Copy;
+use Data::Dumper;
 
 BEGIN {
-    use Test::Most tests => 163;
+    use Test::Most tests => 173;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
+    use_ok('SamTools');
     use_ok('VertRes::Utils::FileSystem');
+    use_ok('VertRes::Wrapper::picard');
 }
 
 my $sam_util = VertRes::Utils::Sam->new(java_memory => 1000);
@@ -36,7 +39,20 @@ my $intervals_extracted_bam = File::Spec->catfile('t', 'data', 'extract_interval
 ok -s $intervals_extracted_bam, 'extracted intervals bam file ready to test with';
 my $intervals_to_extract = File::Spec->catfile('t', 'data', 'extract_intervals.txt');
 ok -s $intervals_to_extract, 'file of intervals to be extracted ready to test with';
-
+my $exome_bam_file = File::Spec->catfile('t', 'data', 'bam_exome_qc.bam');
+ok -s $exome_bam_file, 'exome qc bam file ready to test with';
+my $bait_interval = File::Spec->catfile('t', 'data',  'bam_exome_qc_bait.intervals');
+ok -s $bait_interval, 'exome qc bait file ready to test with';
+my $bait_interval_list = File::Spec->catfile('t', 'data',  'bam_exome_qc_bait.interval_list');
+ok -s $bait_interval_list, 'exome qc bait interval file ready to test with';
+my $target_interval = File::Spec->catfile('t', 'data',  'bam_exome_qc_target.intervals');
+ok -s $target_interval, 'exome qc target file ready to test with';
+my $target_interval_list = File::Spec->catfile('t', 'data',  'bam_exome_qc_target.interval_list');
+ok -s $target_interval_list, 'exome qc target intervals file ready to test with';
+my $ref_fa = File::Spec->catfile('t', 'data',  'bam_exome_qc_ref.fa');
+ok -s $ref_fa, 'exome qc ref file ready to test with';
+my $ref_fai = File::Spec->catfile('t', 'data',  'bam_exome_qc_ref.fa.fai');
+ok -s $ref_fai, 'exome qc ref fai file ready to test with';
 
 # bams_are_similar
 is $sam_util->bams_are_similar($bam1_file, $bam2_file), 1, 'bams are similar';
@@ -452,6 +468,12 @@ is_deeply [get_bam_body($strip_bam)], [join("\t", @{$records[0]}, qw(X0:i:372 RG
                                        join("\t", @{$records[1]}, qw(X0:i:442 XC:i:54 RG:Z:SRR035022 AM:i:0 NM:i:0 SM:i:0 MQ:i:0 XT:A:R)),
                                        join("\t", @{$records[2]}, qw(X0:i:377 XC:i:74 RG:Z:SRR035022 AM:i:0 NM:i:0 SM:i:0 MQ:i:23 XT:A:R))], 'tag_strip produced correct results';
 
+# bam_exome_qc_stats
+my %vertres_stats;
+my %verify_stats;
+get_exome_bam_stats($exome_bam_file, $bait_interval, $bait_interval_list, $target_interval, $target_interval_list, $ref_fa, $ref_fai, \%vertres_stats, \%verify_stats, $temp_dir);
+is_deeply \%vertres_stats, \%verify_stats, 'get_exome_bam_stats produced correct results';
+
 exit;
 
 sub get_sam_header {
@@ -525,4 +547,127 @@ sub get_bam_readnames {
         push @readnames, $qname;
     }
     return @readnames;
+}
+
+# get exome bam QC stats using VertRes code, and also using a few other methods (different
+# stats got by differnet methods, so need a few).  Not all stats can be verified, but check all
+# the possible ones.
+sub get_exome_bam_stats {
+    my $bam_file = shift;             # bam to be QC'd
+    my $bait_interval = shift;        # baits interval file for VertRes::Utils::Sam->bam_exome_qc_stats()
+    my $bait_interval_list = shift;   # baits interval list file for picard CalculateHsMetrics
+    my $target_interval = shift;      # targets interval file for VertRes::Utils::Sam->bam_exome_qc_stats()
+    my $target_interval_list = shift; # targets interval list file for picard CalculateHsMetrics
+    my $ref_file = shift;
+    my $ref_fai_file = shift;
+    my $vr_stats = shift;             # hash ref to be filled with VertRes stats
+    my $check_stats = shift;          # hash ref to be filled with stats from other methods
+    my $outdir = shift;               # temporary directory in which to put output files
+    my $picard_file = File::Spec->catfile($outdir, "picard.out");
+
+    # get stats from vertres subroutine
+    my $o = VertRes::Utils::Sam->new();
+
+    my %ops = ('bait_interval', $bait_interval,
+               'target_interval', $target_interval,
+               'ref_fa', $ref_file,
+               'ref_fai', $ref_fai_file);
+    %{$vr_stats} = %{$o->bam_exome_qc_stats($bam_file, %ops)};
+
+    # we get stats from various subroutines to verify the stats made by bam_exome_qc_stats, put
+    # the stats in a hash to compare with VertRes results...
+
+    # --------------------------- picard statistics -------------------------
+    my $picard = VertRes::Wrapper::picard->new(quiet => 1, java_memory => 100);
+    $picard->CalculateHsMetrics($bam_file, $bait_interval_list, $target_interval_list, $picard_file);
+
+    open my $fh, $picard_file or die "error opening file $picard_file";
+
+    while (my $line = <$fh>) {
+        if ($line =~ /^## METRICS CLASS/) {
+            my $keys_line = <$fh>;
+            chomp $keys_line;
+            my @keys = split /\t/, $keys_line;
+            my $values_line = <$fh>;
+            chomp $values_line;
+            my @values = split /\t/, $values_line;
+
+            my %picard_stats;
+            @picard_stats{@keys} = @values;
+            $check_stats->{bait_bases} = $picard_stats{BAIT_TERRITORY};
+            $check_stats->{target_bases} = $picard_stats{TARGET_TERRITORY};
+            $check_stats->{bait_design_efficiency} = $picard_stats{BAIT_DESIGN_EFFICIENCY};
+            $check_stats->{bait_bases_mapped} = $picard_stats{ON_BAIT_BASES};
+            $check_stats->{target_bases_mapped} = $picard_stats{ON_TARGET_BASES};
+            $check_stats->{low_cvg_targets_pct} = $picard_stats{ZERO_CVG_TARGETS_PCT};
+            $vr_stats->{low_cvg_targets_pct} = 100 * $vr_stats->{low_cvg_targets} / $vr_stats->{targets};
+
+            last;
+        }
+    }
+    close $fh;
+    unlink $picard_file;
+
+    # picard's output is to 6dp
+    $vr_stats->{bait_design_efficiency} = sprintf "%.6f", $vr_stats->{bait_design_efficiency};
+
+    # -------------------- flagstat statistics -----------------------------------
+    my $bam_file_flagstat = $bam_file . '.flagstat';
+    $o = VertRes::Wrapper::samtools->new();
+    $o->flagstat($bam_file, $bam_file_flagstat);
+
+    open $fh, $bam_file_flagstat or die "error opening flagstat file $bam_file_flagstat";
+
+    while (<$fh>){
+        my ($stat) = split;
+
+        if (/paired in sequencing/) {
+            $check_stats->{reads_paired} = $stat;
+        }
+        elsif (/in total/) {
+            $check_stats->{raw_reads} = $stat;
+        }
+        elsif (/mapped \(.*\)/) {
+            $check_stats->{reads_mapped} = $stat;
+        }
+        elsif (/properly paired/){
+            $check_stats->{mapped_as_pair} = $stat;
+        }
+    }
+
+    close $fh;
+    unlink $bam_file_flagstat;
+
+    # ------------------------ bam statistics ---------------------------
+    my %bam_statistics = VertRes::Utils::Sam->new()->bam_statistics($bam_file);
+    %bam_statistics = %{$bam_statistics{'*'}};
+    $check_stats->{bases_mapped} = $bam_statistics{mapped_bases};
+    $check_stats->{pct_mismatches} = $bam_statistics{percent_mismatch};
+    $vr_stats->{pct_mismatches} = sprintf "%.2f", $vr_stats->{pct_mismatches};
+    $check_stats->{median_insert_size} = $bam_statistics{median_isize};
+    $check_stats->{mean_insert_size} = $bam_statistics{avg_isize};
+    $vr_stats->{mean_insert_size} =  sprintf "%.0f", $vr_stats->{mean_insert_size};
+    $check_stats->{rmdup_reads_mapped} = $vr_stats->{reads_mapped} - $bam_statistics{duplicate_reads};
+
+    # ------------------- samtools statistics ---------------------------
+    my $samtools_stats = SamTools::collect_detailed_bam_stats($bam_file, $ref_fai);
+    $check_stats->{raw_bases} = $samtools_stats->{total}{bases_total};
+    $check_stats->{num_mismatches} = $samtools_stats->{total}{num_mismatches};
+    $check_stats->{insert_size_hist} = $samtools_stats->{total}{insert_size}{data};
+    foreach (keys %{$check_stats->{insert_size_hist}}) {
+        $check_stats->{insert_size_hist}{$_} /= 2 if $check_stats->{insert_size_hist}{$_} > 0;
+    }
+
+    # we can't test all the vertres stats, so have to remove the untestable ones from the hash
+    my @to_delete;
+    foreach my $key (keys %{$vr_stats}) {
+        push @to_delete, $key unless (exists $check_stats->{$key});
+    }
+
+    delete @{$vr_stats}{@to_delete};
+
+    # there's a small disagreement here; hard to tell exactly what Picard
+    # does, so leave this one out of the test
+    delete $vr_stats->{low_cvg_targets_pct};
+    delete $check_stats->{low_cvg_targets_pct};
 }

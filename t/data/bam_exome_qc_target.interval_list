@@ -1,0 +1,14 @@
+@SQ	SN:1	LN:3900
+@SQ	SN:2	LN:4620
+@SQ	SN:3	LN:3540
+@SQ	SN:4	LN:4620
+@SQ	SN:X	LN:4620
+@SQ	SN:Y	LN:3060
+1	500	550	+	target_1
+1	560	600	+	target_2
+1	570	590	+	target_3
+1	601	620	+	target_4
+1	2100	2200	+	target_5
+1	3500	3600	+	target_6
+2	3000	3100	+	target_7
+X	1500	1550	+	target_8

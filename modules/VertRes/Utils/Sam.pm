@@ -19,6 +19,7 @@ General utility functions for working on or with sam/bam files.
 
 Sendu Bala: bix@sendu.me.uk
 petr.danecek@sanger
+Martin Hunt: mh12@sanger.ac.uk
 
 =cut
 
@@ -39,13 +40,16 @@ use VertRes::Parser::sequence_index;
 use VertRes::Parser::sam;
 use VertRes::Parser::bam;
 use VertRes::Parser::dict;
+use VertRes::Parser::fasta;
 use VertRes::Utils::FastQ;
 use VertRes::Utils::Math;
 use VertRes::Utils::Hierarchy;
 use Digest::MD5;
 use VertRes::Parser::bam;
-use List::Util qw(max);
+use List::Util qw(min max sum);
 use Test::Deep::NoTest;
+use Graphs;
+use Data::Dumper;
 
 use base qw(VertRes::Base);
 
@@ -2341,6 +2345,7 @@ sub rewrite_bas_meta {
            out.bam = name of output bam file (will be sorted by coordinate)
            opts = hash of optional options:
              max_read_length => int (default 200; length of longest read)
+
 =cut
 
 sub extract_intervals_from_bam {
@@ -2353,28 +2358,14 @@ sub extract_intervals_from_bam {
     my $result_holder = $bam_parser->result_holder();
     $bam_parser->flag_selector(self_unmapped => 0);
     $bam_parser->get_fields('CIGAR', 'QNAME', 'FLAG');
-   
+    %intervals = %{$self->_intervals_file2hash($intervals_file)};
     $opts{max_read_length} = 200 unless $opts{max_read_length};
-
-    # fill intervals hash from file
-    open my $fh, $intervals_file or $self->throw("Cannot open $intervals_file: $!");
-    
-    while (my $line = <$fh>)
-    {
-        chomp $line;
-        my ($chr, $start, $end) = split /\t/, $line;
-        $intervals{$chr} = () unless (exists $intervals{$chr});
-        push @{$intervals{$chr}}, [$start, $end];
-    }
-    
-    close $fh;
 
     # we must have a bam index file
     $samtools->run_method('system');
     my $bai = $bam_in.'.bai';
     my $created_bai = 0;
-    unless (-s $bai)
-    {
+    unless (-s $bai) {
         $samtools->index($bam_in, $bai);
         $samtools->run_status >= 1 || $self->throw("Failed to create $bai");
         $created_bai = 1;
@@ -2384,7 +2375,7 @@ sub extract_intervals_from_bam {
     # order the reference sequence names from intervals file to be
     # same as in the input bam header
     $samtools = VertRes::Wrapper::samtools->new(verbose => $self->verbose, quiet => 1, run_method => 'open');
-    $fh = $samtools->view($bam_in, undef, H => 1);
+    my $fh = $samtools->view($bam_in, undef, H => 1);
     my @ordered_ref_seqs;
 
     while (my $line = <$fh>) {
@@ -2395,38 +2386,13 @@ sub extract_intervals_from_bam {
 
     close $fh;
 
-    # sort each list and merge overlapping intervals, then extract intervals
-    foreach my $chr (@ordered_ref_seqs)
-    {
-        my $list = $intervals{$chr};
-        
-        # sort by positions, first by coord 1, then by coord 2,  e.g.
-        # [1,2] < [1,3] < [2,1] < [2,10]
-        @$list = sort {$a->[0] <=> $b->[0] || $a->[1] <=> $b->[1]} @$list;
-        
-        # merge overalapping intervals.  Also merge adjacent ones,
-        # e.g. [1,2], [3,4] becomes [1,4]
-        my $i = 0;
-        
-        while ($i < scalar  @$list - 1)
-        {
-            # if current interval overlaps next interval, or is adjacent to it
-            if ($list->[$i][1] >= $list->[$i+1][0] - 1)
-            {
-                $list->[$i + 1] = [$list->[$i][0], max($list->[$i][1], $list->[$i + 1][1])];
-                splice @$list, $i, 1;
-            }
-            else
-            {
-                $i++;
-            }
-        }
-
+    # extract intervals from input bam
+    foreach my $chr (@ordered_ref_seqs) {
         my %reads_written;
         my $pos = 0;
 
         # make/append to the output bam file
-        foreach my $interval (@$list) {
+        foreach my $interval (@{$intervals{$chr}}) {
             if ($interval->[0] - $pos > $opts{max_read_length}) {
                 %reads_written = ();
             }
@@ -2452,13 +2418,11 @@ sub extract_intervals_from_bam {
     $lines_out_counter += $self->num_bam_header_lines("$bam_in");
     my $actual_lines = $self->num_bam_lines("$tmp_out");
     
-    if ($actual_lines == $lines_out_counter)
-    {
+    if ($actual_lines == $lines_out_counter) {
         rename "$tmp_out", $bam_out;
         return 1;
     }
-    else
-    {
+    else {
         $self->warn("$tmp_out is bad, deleteing it (only $actual_lines lines vs $lines_out_counter)");
         unlink "$tmp_out";
         return 0;
@@ -2567,6 +2531,744 @@ sub filter_readgroups
     }
 
     rename($tmp,$out_bam) or $self->throw("rename $tmp $out_bam: $!");
+}
+
+=head2 bam_exome_qc_stats
+
+ Title   : bam_exome_qc_stats
+ Usage   : $obj->bam_exome_qc_stats('in.bam', %options);
+ Function: calculates QC statistics from a BAM file of exome reads.
+ Returns : reference to hash of statistics, contents of which are: 
+               readlen                  = length of first read (we assume all reads same length)
+               bait_bases               = number of bases in the baits (after merging)
+               bait_bases_mapped        = number of bases mapped onto a bait
+               bait_near_bases          = number of bases near to, but not in, a bait
+               bait_near_bases_mapped   = number of bases mapped near to, but not on, a bait
+               baits                    = total number of baits (after merging)
+               bait_design_efficiency   = target_bases / bait_bases.  (1 => perfectly efficient,
+                                          0.5 => half of baited bases not on target)
+               mean_bait_coverage       = bait_bases_mapped / bait_bases
+               mean_target_coverage     = target_bases_mapped / target_bases
+               off_bait_bases           = number of bases not mapped on or near to a bait
+               bases_mapped             = number of bases mapped (to anything)
+               bases_mapped_reads       = total length of mapped reads
+               clip_bases               = number of clipped bases (S or H in cigar string)
+               mapped_as_pair           = number of reads mapped as a proper pair (0x0002 in flag)
+               num_mismatches           = number of mismatches (total of NM:i:.. values)
+               pct_mismatches           = 100 * num_mismatches / bases_mapped_reads
+               reads_paired             = number of paired reads (0x00001 in flag)
+               raw_reads                = number of records in the input bam file
+               reads_mapped             = number of reads mapped (0x0004 not in flag)
+               rmdup_reads_mapped       = number of reads mapped excluding duplicates
+                                          (i.e. don't count reads with 0x0400 in flag)
+               rmdup_bases_mapped       = as previous, but bases
+               target_bases             = total number of target bases (after merging)
+               target_bases_mapped      = number of bases mapped on a target
+               target_near_bases        = total number of bases near to, but not on, a target
+               target_near_bases_mapped = total number of bases mapped near to, but not on a target
+               targets                  = total number of targets (after merging)
+               raw_bases                = total number of bases of all reads in bam file
+               reads_on_target          = number of reads mapped to a target (at least 1 base
+                                          mapped onto a target)
+               reads_on_target_near     = as above, but mapped near to, not on, a target
+               reads_on_bait            = as reads_on_target, but for baits
+               reads_on_bait_near       = as above, but mapped near to, not on, a bait
+               low_cvg_targets          = % targets that didn't reach a minimum coverage over
+                                          any base.  Minimum coverage is set by low_cvg in
+                                          options hash.
+               mean_insert_size         = mean insert size of all read pairs
+               median_insert_size       = median insert size of all read pairs
+               insert_size_sd           = standard deviation of insert size
+
+               gc_hist_unmapped_1 = array of length readlen + 1, i'th element is the number
+                                    of unmapped reads with i bases equal to G or C.
+               gc_hist_unmapped_2 = same as gc_hist_unmapped_1, but for 2nd of pair
+               gc_hist_mapped_1   = same as gc_hist_unmapped, but for mapped reads, 1st of pair
+               gc_hist_mapped_2   = same as gc_hist_unmapped, but for mapped reads, 2nd of pair
+  
+               qual_scores_1      = an array of hashes.  i'th hash stores quality values of the
+                                    (i+1)'th base of each read which is first of a pair.
+                                    hash: quality => count.
+                                    e.g. qual_box_data[3]{30} = 42 means that the 4th base of
+                                    42 reads had quality score 30.
+                                    Empty if no reads in the input bam have flag 0x0040.
+               qual_scores_2      = same as qual_box_data_1, but reads which are second of a pair,
+                                    i.e. those with 0x0080 in the flag.
+               qual_scores_up     = same as for qual_box_data_1, but reads which are not paired,
+                                    i.e. those without 0x0001 in the flag.
+               gc_vs_bait_cvg     = hash to see how coverage varies with GC content.
+                                    %GC (nearest int) => {mean coverage (nearest int) => count}
+               gc_vs_target_cvg   = as for gc_vs_bait_cvg, but for targets instead of baits
+               insert_size_hist   = hash of insert size -> count of read pairs
+               bait_cumultative_coverage = hash of coverage => number of bait bases achieving
+                                           at least that coverage
+ Args    : prefix of output files.
+           Options in a hash:
+             MANDATORY: either all four of:
+                          - bait_interval, target_interval, ref_fa, ref_fai
+                        or this:
+                          - load_intervals_dump_file
+                        must be given in the options hash.   Info about baits/targets and reference
+                        is calulcated prior to parsing the BAM file.  This info can be dumped
+                        to a file to save calculating it more than once, by running first with
+                        -dump_intervals, then do the QC with -load_intervals_dump_file.
+
+             bait_interval   => filename of baits intervals file, of the form 1 bait per line, tab
+                                separated:
+                                reference_seq start end
+                                Order doesn't matter, and baits can overlap.  This will be dealt with.
+             target_interval => filename of targets intervals file, same format as bait_interval.
+             ref_fa          => filename of reference fasta file
+             ref_fai         => fai file of reference fasta file
+             dump_intervals  => name of file to dump info to.  If this is used, the BAM is NOT QC'd.
+             load_intervals_dump_file => name of file made when dump_intervals was used.  This will
+                                         load all reference/bait/target info from the dump file, which
+                                         is faster than creating it from scratch
+             bam             => name of bam file to be QC'd.
+                                 MANDATORY, unless the dump_intervals option is used
+             low_cvg         => int (default 2).  Used to make the statistic low_cvg_targets.
+                                Any target with all its bases' coverage less than this value will
+                                be counted as low coverage.  e.g. default means that a target
+                                must have coverage of at least 2 at one base to not count as a
+                                low coverage target.
+             near_length     => int (default 100)
+                                Distance to count as 'near' to a bait or a target
+             max_insert      => int (default 2000) Ignore insert sizes > this number
+
+=cut
+
+sub bam_exome_qc_stats {
+    my ($self, $bam_in, %opts) = @_;
+    my $intervals;
+    my $ref_lengths; 
+    my $current_rname;
+    $opts{near_length} = 100 unless $opts{near_length};
+    $opts{low_cvg} = 2 unless $opts{low_cvg};
+    $opts{max_insert} = 1000 unless $opts{max_insert};
+    my $first_sam_record = 1;
+
+    my %stats = ('bait_bases', 0,
+                 'bait_bases_mapped', 0,
+                 'bait_near_bases_mapped', 0,
+                 'bait_near_bases', 0,
+                 'bases_mapped', 0,
+                 'bases_mapped_reads', 0,
+                 'clip_bases', 0,
+                 'low_cvg_targets', 0,
+                 'mapped_as_pair', 0,
+                 'num_mismatches', 0,
+                 'off_bait_bases', 0,
+                 'raw_bases', 0,
+                 'raw_reads', 0,
+                 'reads_mapped', 0,
+                 'reads_on_target', 0,
+                 'reads_on_target_near', 0,
+                 'reads_on_bait', 0,
+                 'reads_on_bait_near', 0,
+                 'reads_paired', 0,
+                 'rmdup_reads_mapped', 0,
+                 'rmdup_bases_mapped', 0,
+                 'target_bases', 0,
+                 'target_bases_mapped', 0,
+                 'target_near_bases', 0,
+                 'target_near_bases_mapped', 0);
+
+    my %pileup; # for the current reference sequence in the bam file ($current_rname), this
+                # will store pileup info of the target bases, near target bases, bait bases and
+                # near bait bases.  One hash for each.  reference position => number of reads
+                # covering that position.  'near' does *not* include on, i.e. a given position
+                # cannot be both near to a target and in a target (similarly for baits).
+
+    # Need to get the target/bait info.  Either it was precomputed and dumped
+    # to a file we need to load, or we need to calculate it all now.
+    # (Calulcating the GC of each interval is slow)
+    if ($opts{load_intervals_dump_file}) {
+        $intervals = do $opts{load_intervals_dump_file} or $self->throw("Error loading data from load_intervals_dump_file file $opts{load_intervals_dump_file}");
+    }
+    # parse the interval files and get gc from reference fasta
+    elsif ($opts{bait_interval} and $opts{target_interval} and $opts{ref_fa} and $opts{ref_fai}) {
+        $ref_lengths = Utils::fai_chromosome_lengths($opts{ref_fai});
+        $intervals->{target} = $self->_intervals_file2hash($opts{target_interval});
+        $intervals->{target_near} = $self->_intervals_file2hash($opts{target_interval}, ('expand_intervals' => $opts{near_length}));
+        $intervals->{bait} = $self->_intervals_file2hash($opts{bait_interval});
+        $intervals->{bait_near} = $self->_intervals_file2hash($opts{bait_interval}, ('expand_intervals' => $opts{near_length}));
+        
+
+        foreach my $bait_or_target qw(bait target) {
+            my $pars = VertRes::Parser::fasta->new(file => $opts{ref_fa});
+            my $result_holder = $pars->result_holder();
+
+            while ($pars->next_result(1)) {
+                my $id = \$result_holder->[0];
+                my $seq = \$result_holder->[1];
+                exists $intervals->{$bait_or_target}{$$id} || next;
+
+                foreach my $interval (@{$intervals->{$bait_or_target}{$$id}}) {
+                    my $length = $interval->[1] - $interval->[0] + 1;
+                    # coords of fasta sequence are zero-based, interval coords are 1-based
+                    my $gc_count = substr($$seq, $interval->[0] - 1, $length) =~ tr/cgCG//;
+                    push @{$interval}, int(100 * $gc_count / $length);
+                } 
+            }
+        }
+
+        if ($opts{dump_intervals}) {
+            open my $fh, '>', $opts{dump_intervals} or self->throw("Error opening file $opts{dump_intervals}");
+            print $fh Dumper($intervals);
+            close $fh;
+            return %stats;
+        }
+    }
+    else {
+        $self->throw("Error. must use either intervals_dump_file, or give all four of ref_fa, ref_fai, bait_interval and target_interval\n");
+    }
+
+    print STDERR "Intervals etc sorted. Parse BAM file...\n" if $opts{verbose};
+
+    # Everything is initialised.  It's time to parse the bam file to get the stats
+    my $bam_parser = VertRes::Parser::bam->new(file => $bam_in);
+    my $result_holder = $bam_parser->result_holder();
+    $bam_parser->get_fields('FLAG', 'RNAME', 'POS', 'CIGAR', 'ISIZE', 'SEQ', 'QUAL', 'SEQ_LENGTH', 'MAPPED_SEQ_LENGTH', 'NM');
+
+    while ($bam_parser->next_result()) {
+        my $flag = $result_holder->{FLAG};
+        my $rname = $result_holder->{RNAME};
+        my $pos = $result_holder->{POS};
+        my $cigar = $result_holder->{CIGAR};
+        my $isize = $result_holder->{ISIZE};
+        my $seq = $result_holder->{SEQ};
+        my $qual = $result_holder->{QUAL};
+        my $seq_length = $result_holder->{SEQ_LENGTH};
+        my $mapped_seq_length = $result_holder->{MAPPED_SEQ_LENGTH};
+        my $num_mismatches = $result_holder->{NM};
+        my $gc_array = $stats{gc_hist_unmapped_1};
+        my $qual_array = $stats{qual_scores_up};
+        
+        # if first line of SAM, initlalize hashes/lists etc
+        if ($first_sam_record) {
+            $stats{readlen} = length $qual;
+            $stats{paired} = $bam_parser->is_sequencing_paired($flag);
+            $stats{gc_hist_unmapped_1} = [(0) x ($stats{readlen} + 1)];
+            $stats{gc_hist_unmapped_2} = [(0) x ($stats{readlen} + 1)];
+            $stats{gc_hist_mapped_1} = [(0) x ($stats{readlen} + 1)];
+            $stats{gc_hist_mapped_2} = [(0) x ($stats{readlen} + 1)];
+            
+            foreach my $a qw(gc_vs_bait_cvg gc_vs_target_cvg) {
+                $stats{$a} = ();
+                foreach (0 .. 100) {
+                    push @{$stats{$a}}, {};
+                }
+            }
+
+            foreach my $a qw(qual_scores_1 qual_scores_2 qual_scores_up) {
+                $stats{$a} = ();
+                foreach (1 .. $stats{readlen}) {
+                    push @{$stats{$a}}, {};
+                }
+            }
+
+            $first_sam_record = 0;
+        }
+
+        $stats{raw_reads}++; 
+        $stats{raw_bases} += length $qual;
+        $stats{reads_paired}++ if $bam_parser->is_sequencing_paired($flag);
+        $stats{num_mismatches} += $num_mismatches unless $num_mismatches eq '*';
+        
+        if ($bam_parser->is_mapped($flag)) {
+            $stats{reads_mapped}++;
+            $stats{bases_mapped} += $mapped_seq_length;
+            $stats{mapped_as_pair}++ if $bam_parser->is_mapped_paired($flag);
+            $stats{insert_size_hist}{$isize}++ if ($bam_parser->is_sequencing_paired($flag) and $isize > 0 and $isize < $opts{max_insert});
+            $stats{bases_mapped_reads}+= $seq_length;
+            
+            unless ($bam_parser->is_duplicate($flag)) {
+                $stats{rmdup_reads_mapped}++;
+                $stats{rmdup_bases_mapped} += $mapped_seq_length;
+            }
+            
+            if ($bam_parser->is_first($flag)) {
+                $gc_array = $stats{gc_hist_mapped_1};
+            }
+            else {
+                $gc_array = $stats{gc_hist_mapped_2}; 
+            }
+        }
+        elsif ($bam_parser->is_second($flag)) {
+            $gc_array = $stats{gc_hist_unmapped_2};
+        }
+            
+        $gc_array->[$seq =~ tr/cgCG/cgCG/]++;
+
+        # update quality scores arrays
+        $qual_array = $stats{qual_scores_1} if $bam_parser->is_first($flag);
+        $qual_array = $stats{qual_scores_2} if $bam_parser->is_second($flag);
+        my @qual_ints = VertRes::Utils::FastQ->qual_to_ints($qual); 
+        @qual_ints = reverse @qual_ints if $bam_parser->is_reverse_strand($flag);
+        foreach my $i (0 .. $#qual_ints){
+            $qual_array->[$i]{$qual_ints[$i]}++;
+        }
+
+        print STDERR "$stats{raw_reads} reads processed\n" if ($opts{verbose} && $stats{raw_reads} % 1000000 == 0);
+
+        # nothing left to do if the read is unmapped...
+        next unless $bam_parser->is_mapped($flag);
+
+        # if current reference sequence doesn't have any baits or targets...
+        unless (exists $intervals->{target}{$rname} or exists $intervals->{bait}{$rname}) {
+            $stats{off_bait_bases} += $mapped_seq_length; 
+            $stats{off_target_bases} += $mapped_seq_length;
+            next;
+        }
+
+        # have we just reached a new reference sequence?
+        if ((!defined $current_rname) or $current_rname ne $rname) {
+            # sort out stats etc for the ref sequence we just finished
+            if (defined $current_rname) {
+                $self->_update_bam_exome_qc_stats($intervals, \%pileup, \%stats, $current_rname, \%opts);
+            }
+
+            $current_rname = $rname;
+
+            # initialize the pileup hashes for the new reference sequence, which
+            # means setting the value of each position to be zero
+            foreach (keys %{$intervals}) {
+                $pileup{$_} = {};
+            }  
+            foreach my $interval_type ('bait', 'target') {
+                foreach my $interval_array ($intervals->{$interval_type}{$current_rname}) {
+                    foreach my $interval (@{$interval_array}) {
+                        foreach my $i ($interval->[0] .. $interval->[1]) {
+                            $pileup{$interval_type}{$i} = 0;
+                        }
+                    }
+                }
+            }
+
+            # That's baits/targets initialized.  Now need to do the near bases.
+            # We don't want a 'near base' to be actually in a target/bait, since doing so
+            # would mean we're recording the same information twice, using extra memory
+            foreach my $interval_type ('bait', 'target') {
+                foreach my $interval_array ($intervals->{$interval_type . '_near'}{$current_rname}) {
+                    foreach my $interval (@{$interval_array}) {
+                        foreach my $i ($interval->[0] .. $interval->[1]) {
+                            $pileup{$interval_type . '_near'}{$i} = 0 unless exists $pileup{$interval_type}{$i};
+                        }
+                    }
+                }
+            }
+        }
+
+        # only gather bait/target stats for reads which are not duplicates
+        next if $bam_parser->is_duplicate($flag);
+
+        # update the number of reads hitting targets/baits and the target/bait coverage
+        my $ref_pos = $pos;  
+        my @numbers = split /[A-Z]/, $cigar;
+        my @letters = split /[0-9]+/, $cigar;
+        shift @letters;
+        my %read_hits;
+        
+        foreach my $letter_index (0 ..  $#letters) {
+            if ($letters[$letter_index] eq 'M') {
+
+                foreach my $i ($ref_pos .. $ref_pos + $numbers[$letter_index] - 1) {
+                    foreach my $key ('bait', 'target') {
+                        if (exists $pileup{$key}{$i}) {
+                            $pileup{$key}{$i}++;
+                            $read_hits{$key} = 1;
+                            $read_hits{$key . '_near'} = 1;
+                        }
+                        elsif (exists $pileup{$key . '_near'}{$i}) {
+                            $pileup{$key . '_near'}{$i}++;
+                            $read_hits{$key . '_near'} = 1;
+                        }
+                    }
+
+                    $stats{off_bait_bases}++ unless (exists $pileup{bait}{$i} or exists $pileup{bait_near}{$i});
+                    $stats{off_target_bases}++ unless (exists $pileup{target}{$i} or exists $pileup{target_near}{$i});
+                } 
+
+                $ref_pos += $numbers[$letter_index];
+            }
+            elsif ($letters[$letter_index] eq 'D' or $letters[$letter_index] eq 'N') {
+                $ref_pos += $numbers[$letter_index];
+            }
+            elsif ($letters[$letter_index] eq 'S' or $letters[$letter_index] eq 'H') {
+                $stats{clip_bases} += $numbers[$letter_index];
+            }
+        }
+
+        delete $read_hits{bait_near} if $read_hits{bait};
+        delete $read_hits{target_near} if $read_hits{target};
+
+        foreach (keys %read_hits) {
+            $stats{'reads_on_' . $_}++;
+        }
+    } 
+
+    $bam_parser->close();
+    print STDERR "Finished parsing BAM file\n" if $opts{verbose};
+
+    # sort out stats for the last ref sequence in the bam file
+    $self->_update_bam_exome_qc_stats($intervals, \%pileup, \%stats, $current_rname, \%opts);
+    undef %pileup;
+    undef $intervals;
+
+    # sort out other global stats
+    $stats{bait_design_efficiency} = $stats{bait_bases} != 0 ? $stats{target_bases} / $stats{bait_bases} : 'NA';
+    $stats{pct_mismatches} = 100 * $stats{num_mismatches} / $stats{bases_mapped_reads};
+    my %qual_stats = VertRes::Utils::Math->new()->histogram_stats($stats{insert_size_hist});
+    $stats{median_insert_size} = $qual_stats{q2};
+    $stats{mean_insert_size} = $qual_stats{mean};
+    $stats{insert_size_sd} = $qual_stats{standard_deviation};
+    $stats{mean_bait_coverage} = $stats{bait_bases_mapped} / $stats{bait_bases};
+    $stats{mean_target_coverage} = $stats{target_bases_mapped} / $stats{target_bases};
+
+    # calculate cumulative coverage of baits and targets
+    foreach my $bait_or_target qw(bait target) {
+        my $base_count = 0;
+        my $total_bases = $stats{$bait_or_target . '_bases'};
+
+        foreach my $cov (reverse sort {$a <=> $b} keys %{$stats{$bait_or_target . '_cvg_hist'}}) {
+            $base_count += $stats{$bait_or_target . '_cvg_hist'}{$cov};
+            $stats{$bait_or_target . '_cumulative_coverage'}{$cov} = $base_count;
+            $stats{$bait_or_target . '_cumulative_coverage_pct'}{$cov} = $base_count / $stats{$bait_or_target . '_bases'};
+        }
+    }
+    
+    # work out % bases coverage above certain values
+    foreach my $bait_or_target qw(bait target) { 
+        my @vals = (1, 2, 5, 10, 20, 50, 100);
+        foreach (@vals) {
+            $stats{$bait_or_target . '_bases_' . $_ . 'X_pc'} = 0;
+        }
+
+        foreach my $cov (sort {$a <=> $b} keys %{$stats{$bait_or_target . '_cumulative_coverage_pct'}}) {
+            while ((0 < scalar @vals) and $cov >= $vals[0]) {
+                $stats{$bait_or_target . '_bases_' . $cov . 'X_pc'} = $stats{$bait_or_target . '_cumulative_coverage_pct'}{$cov};
+                shift @vals;
+            }
+            last if (0 == scalar @vals);
+        }
+    }
+
+    return \%stats;
+}
+
+=head2 bam_exome_qc_make_plots
+
+ Title   : bam_exome_qc_make_plots
+ Usage   : $obj->bam_exome_qc_make_plots(\%stats, 'outfiles_prefix', 'plot_type');
+ Function: Makes exome QC plots using data gathered by bam_exome_qc_stats
+ Returns : nothing (makes plots)
+ Args    : reference to hash (returned by bam_exome_qc_stats)
+           prefix of output plot files to be made
+           plot type (must be recognised by R, e.g. 'pdf', 'png', ...)
+
+=cut
+
+sub bam_exome_qc_make_plots {
+    my ($self, $stats, $outfiles_prefix, $plot_type) = @_;
+
+    # Plot: mean coverage distribution of baits/targets
+    # This info is in the gc vs coverage info, so extract it then plot
+    my %coverage;
+    my %plot_data;
+
+    foreach my $bait_or_target qw(bait target) {
+        foreach my $hash (@{$stats->{'gc_vs_' . $bait_or_target . '_cvg'}}) {
+            while (my ($cov, $freq) = each(%{$hash})) {
+                $coverage{$bait_or_target}{$cov} += $freq;
+            }
+        }
+        my %cov_stats = VertRes::Utils::Math->new()->histogram_stats($coverage{$bait_or_target});
+        
+        # plot 4 standard devations away from the mean
+        my $xmin = max (0, $cov_stats{mean} - 4 * $cov_stats{standard_deviation});
+        my $xmax = $cov_stats{mean} + 4 * $cov_stats{standard_deviation};
+
+        $plot_data{$bait_or_target}{x} = [];
+        $plot_data{$bait_or_target}{y} = [];
+
+        foreach my $i ($xmin .. $xmax) {
+            if (exists $coverage{$bait_or_target}{$i}) {
+                push @{$plot_data{$bait_or_target}{x}}, $i;
+                push @{$plot_data{$bait_or_target}{y}}, $coverage{$bait_or_target}{$i};
+            }
+        }
+    }
+    my @data = ({xvals => $plot_data{bait}{x}, yvals => $plot_data{bait}{y}, legend => 'baits'},
+                {xvals => $plot_data{target}{x}, yvals => $plot_data{target}{y}, legend => 'targets'},);
+
+    Graphs::plot_stats({outfile=>"$outfiles_prefix.mean_coverage.$plot_type",
+                        title => "Mean coverage distribution of baits targets",
+                        desc_xvals => 'Mean coverage',
+                        desc_yvals => 'Frequency',
+                        data => \@data});
+
+    # Coverage plots
+    %plot_data = ();
+
+    foreach my $bait_or_target qw(bait target) {
+        my %cov_stats = VertRes::Utils::Math->new()->histogram_stats($stats->{$bait_or_target . '_cvg_hist'});
+        my $xmin = max (0, $cov_stats{mean} - 4 * $cov_stats{standard_deviation});
+        my $xmax = $cov_stats{mean} + 4 * $cov_stats{standard_deviation};
+
+        $plot_data{$bait_or_target}{x_per_base} = [];
+        $plot_data{$bait_or_target}{y_per_base} = [];
+        $plot_data{$bait_or_target}{x_norm} = [];
+        $plot_data{$bait_or_target}{y_norm} = [];
+        $plot_data{$bait_or_target}{x_cumulative} = [];
+        $plot_data{$bait_or_target}{y_cumulative} = [];
+
+        # get the per-base coverage data
+        foreach my $i ($xmin .. $xmax) {
+            if (exists $stats->{$bait_or_target . '_cvg_hist'}{$i}) {
+                push @{$plot_data{$bait_or_target}{x_per_base}}, $i;
+                push @{$plot_data{$bait_or_target}{y_per_base}}, $stats->{$bait_or_target . '_cvg_hist'}{$i};
+            }
+        }
+
+        foreach my $cov (sort {$a <=> $b} keys %{$stats->{$bait_or_target . '_cumulative_coverage_pct'}}) {
+            push @{$plot_data{$bait_or_target}{x_cumulative}}, $cov;
+            push @{$plot_data{$bait_or_target}{y_cumulative}}, $stats->{$bait_or_target . '_cumulative_coverage_pct'}{$cov};
+            last if $cov >= 2 * $stats->{mean_target_coverage};
+        }
+
+        # work out the normalised coverage plot data
+        foreach my $cov (sort {$a <=> $b} keys %{$stats->{$bait_or_target . '_cumulative_coverage'}}) {
+            my $bases_fraction = $stats->{$bait_or_target . '_cumulative_coverage'}{$cov} / $stats->{$bait_or_target . '_bases'};
+            my $normalised_cov = $cov / $stats->{'mean_' . $bait_or_target . '_coverage'};
+            push @{$plot_data{$bait_or_target}{x_norm}}, $normalised_cov;
+            push @{$plot_data{$bait_or_target}{y_norm}}, $bases_fraction;
+            last if $normalised_cov > 1;
+        }
+    }
+
+    @data = ({xvals => $plot_data{bait}{x_per_base}, yvals => $plot_data{bait}{y_per_base}, legend => 'baits'},
+                {xvals => $plot_data{target}{x_per_base}, yvals => $plot_data{target}{y_per_base}, legend => 'targets'},);
+
+    Graphs::plot_stats({outfile=>"$outfiles_prefix.coverage_per_base.$plot_type",
+                        title => "Bait and target coverage per base",
+                        desc_xvals => 'Coverage',
+                        desc_yvals => 'Frequency',
+                        data => \@data});
+
+    @data = ({xvals => $plot_data{bait}{x_norm}, yvals => $plot_data{bait}{y_norm}, legend => 'baits'},
+                {xvals => $plot_data{target}{x_norm}, yvals => $plot_data{target}{y_norm}, legend => 'targets'},);
+
+    Graphs::plot_stats({outfile=>"$outfiles_prefix.normalised_coverage.$plot_type",
+                        title => "Bait and target normalised coverage",
+                        desc_xvals => 'Normalised coverage',
+                        desc_yvals => 'Fraction of bases',
+                        r_plot => 'ylim=c(0,1)', 
+                        data => \@data});
+
+    @data = ({xvals => $plot_data{bait}{x_cumulative}, yvals => $plot_data{bait}{y_cumulative}, legend => 'baits'},
+                {xvals => $plot_data{target}{x_cumulative}, yvals => $plot_data{target}{y_cumulative}, legend => 'targets'},);
+
+    Graphs::plot_stats({outfile=>"$outfiles_prefix.cumulative_coverage.$plot_type",
+                        title => "Bait and target cumulative coverage",
+                        desc_xvals => 'Coverage',
+                        desc_yvals => 'Fraction of bases',
+                        r_plot => 'ylim=c(0,1)', 
+                        data => \@data});
+
+    # Plot: GC of baits/targets vs mean, quartiles coverage
+    foreach (qw(bait target)) {
+        Graphs::plot_histograms_distributions({outfile=>"$outfiles_prefix.$_" . "_gc_vs_cvg.$plot_type",
+                                               title => "Coverage vs GC plot of $_" . 's',
+                                               desc_xvals => 'GC (%)',
+                                               desc_yvals => 'Mapped depth',
+                                               xdata => [(0..100)],
+                                               ydata => $stats->{"gc_vs_$_" . '_cvg'}});
+        Graphs::plot_histograms_distributions({outfile=>"$outfiles_prefix.$_" . "_gc_vs_cvg.scaled.$plot_type",
+                                               title => "Coverage vs GC plot of $_" . 's',
+                                               x_scale => 1, 
+                                               x_scale_values => [(30,40,50)],
+                                               desc_xvals => 'Percentile of target sequence ordered by GC content',
+                                               desc_xvals_top => '%GC',
+                                               desc_yvals => 'Mapped depth',
+                                               xdata => [(0..100)],
+                                               ydata => $stats->{"gc_vs_$_" . '_cvg'}});
+    }
+
+    # Plot: Quality scores by cycle
+    foreach (qw(1 2 up)) {
+
+        my %key2string = (1, 'first of pair', 2, 'second of pair', 'up', 'unpaired');
+        Graphs::plot_histograms_distributions({outfile=>"$outfiles_prefix.quality_scores_$_.$plot_type",
+                                               xdata => [(0 .. $stats->{readlen} - 1)],
+                                               ydata => $stats->{'qual_scores_' . $_},
+                                               title => "Quality scores distribution, $key2string{$_}",
+                                               desc_xvals => 'Cycle',
+                                               desc_yvals => 'Quality score',
+                                               y_min => 0,
+                                               y_max => 41});
+    }
+
+    # Plot: reads GC content
+    my @xvals = (0..$stats->{readlen});
+    foreach(@xvals){$_ = 100 * $_ / $stats->{readlen}}
+
+    foreach my $type ('unmapped', 'mapped') {
+        my @yvals_1 = @{$stats->{"gc_hist_$type" . '_1'}};
+        my @yvals_2 = @{$stats->{"gc_hist_$type" . '_2'}};
+        my @data = ({xvals => \@xvals, yvals => \@yvals_1, legend => '_1'},
+                    {xvals => \@xvals, yvals => \@yvals_2, legend => '_2'},);
+        Graphs::plot_stats({outfile=>"$outfiles_prefix.gc_$type.$plot_type",
+                            normalize => 1,
+                            title => "GC Plot $type reads",
+                            desc_xvals => '%GC',
+                            desc_yvals => 'Frequency',
+                            data => \@data});
+    }
+
+    # Plot: insert size
+    my %insert_stats = VertRes::Utils::Math->new()->histogram_stats($stats->{insert_size_hist});
+
+    # plot 4 standard devations away from the mean
+    my $xmin = max (0, $insert_stats{mean} - 4 * $insert_stats{standard_deviation});
+    my $xmax = $insert_stats{mean} + 4 * $insert_stats{standard_deviation};
+    @xvals = ();
+    my @yvals = ();
+
+    foreach my $i ($xmin .. $xmax) {
+        if (exists $stats->{insert_size_hist}{$i}) {
+            push @xvals, $i;
+            push @yvals, $stats->{insert_size_hist}{$i};
+        }
+    }
+
+    Graphs::plot_stats({outfile=>"$outfiles_prefix.insert_size.$plot_type",
+                        title => "Insert Size Distribution",
+                        desc_xvals => 'Insert Size',
+                        desc_yvals => 'Number of read pairs',
+                        data => [{xvals => \@xvals, yvals =>\@yvals}]});
+}
+
+sub _update_bam_exome_qc_stats {
+    my ($self, $intervals, $pileup, $stats, $ref_id, $opts) = @_;
+    $stats->{per_ref_sequence}{$ref_id} = {};
+    my $ref_id_hash = $stats->{per_ref_sequence}{$ref_id};
+
+    # update stats specific to the given reference sequence
+    $ref_id_hash->{bait_bases} = scalar keys %{$pileup->{bait}};
+    $ref_id_hash->{bait_near_bases} = scalar keys %{$pileup->{bait_near}};
+    $ref_id_hash->{target_bases} = scalar keys %{$pileup->{target}};
+    $ref_id_hash->{target_near_bases} = scalar keys %{$pileup->{target_near}};
+    $ref_id_hash->{targets} = scalar @{$intervals->{target}->{$ref_id}};
+    $ref_id_hash->{baits} = scalar @{$intervals->{bait}->{$ref_id}};
+
+    $ref_id_hash->{bait_bases_mapped} = sum 0, values %{$pileup->{bait}};
+    $ref_id_hash->{bait_near_bases_mapped} = sum 0, values %{$pileup->{bait_near}};
+    $ref_id_hash->{target_bases_mapped} = sum 0, values %{$pileup->{target}};
+    $ref_id_hash->{target_near_bases_mapped} = sum 0, values %{$pileup->{target_near}};
+
+    $ref_id_hash->{target_coverage_mean} = $ref_id_hash->{target_bases_mapped} / $ref_id_hash->{target_bases};
+    $ref_id_hash->{bait_coverage_mean} = $ref_id_hash->{bait_bases_mapped} / $ref_id_hash->{bait_bases};
+
+    # update global stats (combination of all reference sequences)
+    foreach (qw(bait_bases bait_near_bases target_bases target_near_bases bait_bases_mapped bait_near_bases_mapped target_bases_mapped target_near_bases_mapped targets baits)) {
+        $stats->{$_} += $ref_id_hash->{$_};
+    }
+
+    # update the per base coverage data
+    foreach my $bait_or_target (qw(bait target)) {
+        foreach my $cov (values %{$pileup->{$bait_or_target}}) {
+            $stats->{$bait_or_target . '_cvg_hist'}{$cov}++;
+        }
+    }
+
+    # for each bait and target, we want to know:
+    # 1) the mean coverage and the %GC
+    # 2) whether the min coverage was achieved over the whole target.
+    foreach my $bait_or_target qw(bait target) {
+        foreach my $interval (@{$intervals->{$bait_or_target}->{$ref_id}}) {
+            my $cov_sum = int( 0.5 + sum @{$pileup->{$bait_or_target}}{($interval->[0] .. $interval->[1])} );
+            my $mean_cov = int(0.5 + $cov_sum / ($interval->[1] - $interval->[0] + 1) );
+            my $gc = int(0.5 + $interval->[2]);        
+            $stats->{'gc_vs_' . $bait_or_target . '_cvg'}->[$gc]->{$mean_cov}++;
+            my $low_cvg = 1;
+
+            foreach my $i ($interval->[0] .. $interval->[1]) {
+                if ($pileup->{$bait_or_target}{$i} >= $opts->{low_cvg}) {
+                    $low_cvg = 0;
+                    last;
+                }                
+            } 
+            $stats->{'low_cvg_' . $bait_or_target . 's'}++ if $low_cvg;
+        }
+    }
+}
+
+# reads a file of intervals, each line tab delimited:
+# reference_id start end
+# where start/end coordinates are 1-based
+# and returns a hash of the form
+# reference_id => ((start1, end1), (start2, end2) ... )
+# where each array is sorted according to start position, e.g.
+# Order of intervals in input file doesn't matter.  Overlapping
+# or adjcent intervals are merged together. e.g.
+# 10 100 200
+# 10 120 170
+# 10 190 250
+# 10 251 300
+# would be merged into one interval 100-300 on chromosome 10.
+#
+# Arg1: file of intervals
+# Arg2: optional, hash of options.  Currently only option is
+# expand_intervals => int. Default = 0.  Adds N bases to the
+#                     start and end of each interval.
+sub _intervals_file2hash {
+    my ($self, $intervals_file, %opts) = @_;
+    my %intervals;
+    
+    $opts{expand_intervals} = 0 unless $opts{expand_intervals};
+
+
+    # get the all intervals into a hash
+    open my $fh, $intervals_file or $self->throw("Cannot open $intervals_file: $!");
+    
+    while (my $line = <$fh>) { 
+        chomp $line;
+        my ($ref_id, $start, $end) = split /\t/, $line;
+        $intervals{$ref_id} = () unless (exists $intervals{$ref_id});
+
+        $start = max(0, $start - $opts{expand_intervals});
+        $end += $opts{expand_intervals};
+
+        push @{$intervals{$ref_id}}, [$start, $end];
+    }
+    
+    close $fh;
+
+    # sort each array and merge overlaps
+    foreach my $ref_id (keys %intervals) {
+        my $list = $intervals{$ref_id};
+        
+        # sort by positions, first by coord 1, then by coord 2,  e.g.
+        # [1,2] < [1,3] < [2,1] < [2,10]
+        @$list = sort {$a->[0] <=> $b->[0] || $a->[1] <=> $b->[1]} @$list;
+        
+        # merge overalapping intervals.  Also merge adjacent ones,
+        # e.g. [1,2], [3,4] becomes [1,4]
+        my $i = 0;
+        
+        while ($i < scalar @$list - 1) {
+            # if current interval overlaps next interval, or is adjacent to it
+            if ($list->[$i][1] >= $list->[$i+1][0] - 1) {
+                $list->[$i + 1] = [$list->[$i][0], max($list->[$i][1], $list->[$i + 1][1])];
+                splice @$list, $i, 1;
+            }
+            else {
+                $i++;
+            }
+        }
+    }
+
+    return \%intervals;
 }
 
 1;
