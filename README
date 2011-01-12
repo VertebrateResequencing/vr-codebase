@@ -1,2 +1,38 @@
-This repository contains the internally-developed software used by the Vertebrate Resequencing group a the Sanger Institute.
-test sm15
+This repository contains the internally-developed software used by the
+Vertebrate Resequencing group a the Sanger Institute.
+
+It comprises mostly self-documented Perl code. There are both scripts and 
+modules within subfolders.
+
+Each module has its own POD, so please use perldoc or similar for further help.
+Eg:
+$ perldoc VertRes::Utils::Sam
+
+An overview, guides and how-tos are available on the github wiki:
+https://github.com/VertebrateResequencing/vr-codebase/wiki
+
+
+
+INSTALLATION
+------------
+
+You will need the source version of samtools compiled with -fPIC and -m64 in the
+CFLAGS, and the environment variable SAMTOOLs pointing to that source directory
+(which should now contain bam.h and libbam.a).
+It is also recommended that you set PERL_INLINE_DIRECTORY to ~/.Inline
+
+
+$ perl Build.PL
+
+If this says you have "ERRORS/WARNINGS FOUND IN PREREQUISITES" try:
+$ ./Build installdeps
+to install missing prerequisites from CPAN.
+
+To test the code prior to use:
+
+$ perl Build.PL
+$ ./Build test
+
+To install:
+$ ./Build install
+(or just point your PERL5LIB to the modules subdirectory)
