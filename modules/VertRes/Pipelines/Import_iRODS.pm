@@ -121,34 +121,33 @@ sub get_files
     # Get files and run bamcheck on them
     for my $file (@{$$self{files}})
     {
-        my $ifiles = $irods->find_files_by_name($file);
-        for my $ifile (@$ifiles)
-        {
-            if ( !($ifile=~m{([^/]+)$}) ) { $self->throw("FIXME: [$ifile]"); }
-            my $outfile = $1;
-            if ( -e $outfile ) { next; }
+        my $ifile = $irods->find_file_by_name($file);
+        if ( !defined $ifile ) { $self->warn("No such file in iRODS? [$file]\n"); next; }
 
-            # Get the file from iRods
-            $irods->get_file($ifile,"$outfile.tmp");
+        if ( !($ifile=~m{([^/]+)$}) ) { $self->throw("FIXME: [$ifile]"); }
+        my $outfile = $1;
+        if ( -e $outfile ) { next; }
 
-            # Get the md5sum and check
-            my $md5 = $irods->get_file_md5($ifile);
-            open(my $fh,'>',"$outfile.md5") or $self->throw("$outfile.md5: $!");
-            print $fh "$md5  $outfile.tmp\n";
-            close($fh);
+        # Get the file from iRods
+        $irods->get_file($ifile,"$outfile.tmp");
 
-            # Check that everything went alright. Although iRODS is supposed to check, local IO failures went unnoticed the other day...
-            Utils::CMD(qq[md5sum --status -c $outfile.md5]);
+        # Get the md5sum and check
+        my $md5 = $irods->get_file_md5($ifile);
+        open(my $fh,'>',"$outfile.md5") or $self->throw("$outfile.md5: $!");
+        print $fh "$md5  $outfile.tmp\n";
+        close($fh);
 
-            # Recreate the checksum file to contain the correct file name
-            open($fh,'>',"$outfile.md5") or $self->throw("$outfile.md5: $!");
-            print $fh "$md5  $outfile\n";
-            close($fh);
+        # Check that everything went alright. Although iRODS is supposed to check, local IO failures went unnoticed the other day...
+        Utils::CMD(qq[md5sum --status -c $outfile.md5]);
 
-            Utils::CMD(qq[$$self{bamcheck} $outfile.tmp > $outfile.tmp.bc]);
-            rename("$outfile.tmp.bc","$outfile.bc") or $self->throw("rename $outfile.tmp.bc $outfile.bc: $!");
-            rename("$outfile.tmp",$outfile) or $self->throw("rename $outfile.tmp $outfile: $!");
-        }
+        # Recreate the checksum file to contain the correct file name
+        open($fh,'>',"$outfile.md5") or $self->throw("$outfile.md5: $!");
+        print $fh "$md5  $outfile\n";
+        close($fh);
+
+        Utils::CMD(qq[$$self{bamcheck} $outfile.tmp > $outfile.tmp.bc]);
+        rename("$outfile.tmp.bc","$outfile.bc") or $self->throw("rename $outfile.tmp.bc $outfile.bc: $!");
+        rename("$outfile.tmp",$outfile) or $self->throw("rename $outfile.tmp $outfile: $!");
     }
 }
 
