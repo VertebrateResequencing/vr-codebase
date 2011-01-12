@@ -1,0 +1,80 @@
+This repository contains the internally-developed software used by the
+Vertebrate Resequencing group a the Sanger Institute.
+
+It comprises mostly self-documented Perl code. There are both scripts and 
+modules within subfolders.
+
+Each module has its own POD, so please use perldoc or similar for further help.
+Eg:
+$ perldoc VertRes::Utils::Sam
+
+An overview, guides and how-tos are available on the github wiki:
+https://github.com/VertebrateResequencing/vr-codebase/wiki
+
+
+
+INSTALLATION
+------------
+
+You will need the source version of samtools compiled with -fPIC and -m64 in the
+CFLAGS, and the environment variable SAMTOOLs pointing to that source directory
+(which should now contain bam.h and libbam.a).
+It is also recommended that you set PERL_INLINE_DIRECTORY to ~/.Inline
+
+
+$ perl Build.PL
+
+If this says you have "ERRORS/WARNINGS FOUND IN PREREQUISITES" try:
+$ ./Build installdeps
+to install missing prerequisites from CPAN.
+
+To test the code prior to use:
+
+$ perl Build.PL
+$ ./Build test
+
+To install:
+$ ./Build install
+(or just point your PERL5LIB to the modules subdirectory, and include the
+scripts subdirectory in your PATH)
+
+
+EXTERNAL SOFTWARE
+-----------------
+
+Most likely some of the tests will fail due to you not having certain external
+software installed. If you don't plan on making use of that software, just
+ignore it when a test script for that software fails. Some software also need
+environment variables setup (using setenv in csh or export in bash). The
+following list shows the name of the software, the environment variable you need
+to set, and the value you should set it to, separated by commas.
+
+samtools,SAMTOOLS,/path/to/samtools/source_directory
+GATK,GATK,/path/to/gatk_jar_files
+GATK,STING_DIR,/path/to/gatk_source_code_checkout
+GATK,GATK_RESOURCES,/path/to/resource_files_like_reference_etc
+picard,PICARD,/path/to/picard_jar_files
+beagle,BEAGLE,/path/to/beagle_install_directory
+
+eg. to have picard work properly in our pipelines you might do:
+setenv PICARD /path/to/picard_jar_files
+or
+export PICARD=/path/to/picard_jar_files
+depending on what shell you are using.
+
+
+VRTRACK DATABASE
+----------------
+
+Tracking of meta-data, required for many of our pipelines, occurs in a mysql
+database. We use more environement variables to define how to access the mysql
+database:
+
+VRTRACK_HOST
+VRTRACK_PORT
+VRTRACK_RO_USER
+VRTRACK_RW_USER
+VRTRACK_PASSWORD
+
+The RW user you setup should have permissions to create and alter databases. We
+assume that the RO user does not require a password.

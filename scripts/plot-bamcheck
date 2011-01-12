@@ -441,7 +441,7 @@ set output "] . $$args{img} . q["
 
 set grid back lc rgb "#aaaaaa"
 set ylabel "Mapped depth" 
-set xlabel "Percentile of unique sequence ordered by GC content"
+set xlabel "Percentile of mapped sequence ordered by GC content"
 set x2label "GC Content [%]"
 set title "] . $$args{title} . q["
 set x2tics (] . join(',',@x2tics) . q[)
