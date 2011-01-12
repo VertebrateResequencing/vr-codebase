@@ -8,7 +8,7 @@ Each module has its own POD, so please use perldoc or similar for further help.
 Eg:
 $ perldoc VertRes::Utils::Sam
 
-An overview, guides and how-tos are available on the github wiki:
+An overview, guides and how-tos will soon be available on the github wiki:
 https://github.com/VertebrateResequencing/vr-codebase/wiki
 
 
