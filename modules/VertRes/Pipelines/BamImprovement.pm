@@ -511,8 +511,8 @@ my \$done_file = '$done_file';
 
 # sort and fix mates
 unless (-s \$final_bam) {
-    my \$picard = VertRes::Wrapper::picard->new($tmp_dir);
-    \$picard->FixMateInformation(\$in_bam, \$working_bam, COMPRESSION_LEVEL => 0, java_memory => $java_mem);
+    my \$picard = VertRes::Wrapper::picard->new($tmp_dir, COMPRESSION_LEVEL => 0, java_memory => $java_mem);
+    \$picard->FixMateInformation(\$in_bam, \$working_bam);
 }
 
 # check for truncation
