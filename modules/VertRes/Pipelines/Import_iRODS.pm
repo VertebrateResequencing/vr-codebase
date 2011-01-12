@@ -128,8 +128,9 @@ sub get_files
         my $outfile = $1;
         if ( -e $outfile ) { next; }
 
-        # Get the file from iRods
+        # Get the file from iRODS. From some reasons, some of the files have wrong permissions
         $irods->get_file($ifile,"$outfile.tmp");
+        chmod 0664,"$outfile.tmp";
 
         # Get the md5sum and check
         my $md5 = $irods->get_file_md5($ifile);
@@ -194,15 +195,15 @@ sub update_db
         my ($avg_len,$tot_len,$num_seq,$avg_qual,$nfirst,$nlast,$is_mapped,$ok);
         eval {
             my $pars = VertRes::Parser::bamcheck->new(file => "$lane_path/$file.bc");
-            $num_seq  = $pars->num_sequences();
-            $tot_len  = $pars->total_length();
-            $avg_len  = $pars->avg_length();
-            $avg_qual = $pars->avg_qual();
-            $nfirst   = $pars->num_1st_fragments();
-            $nlast    = $pars->num_last_fragments();
+            $num_seq  = $pars->get('sequences');
+            $tot_len  = $pars->get('total_length');
+            $avg_len  = $pars->get('avg_length');
+            $avg_qual = $pars->get('avg_qual');
+            $nfirst   = $pars->get('1st_fragments');
+            $nlast    = $pars->get('last_fragments');
 
             # One sequence without BAM_FUNMAP flag (0x0004) is enough to say that the BAM file is mapped.
-            my $unmapped = $pars->num_reads_unmapped();
+            my $unmapped = $pars->get('reads_unmapped');
             $is_mapped = ( $nfirst+$nlast-$unmapped>0 ) ? 1 : 0;
 
             $ok = 1;
