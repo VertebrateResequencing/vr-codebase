@@ -1151,7 +1151,7 @@ sub format_haplotype
 
 =head2 format_genotype_strings
 
-    Usage   : my $x = { REF=>'A', gtypes=>{'NA00001'=>'A/C'}, FORMAT=>['GT'], CHROM=>1, POS=>1, FILTER=>['.'], QUAL=>-1 };
+    Usage   : my $x = { REF=>'A', gtypes=>{'NA00001'=>{'GT'=>'A/C'}}, FORMAT=>['GT'], CHROM=>1, POS=>1, FILTER=>['.'], QUAL=>-1 };
               $vcf->format_genotype_strings($x); 
               print $vcf->format_line($x);
     Args 1  : VCF data line in the format as if parsed by next_data_hash with alleles written as letters.
@@ -1693,6 +1693,22 @@ sub get_chromosomes
 }
 
 
+=head2 get_samples
+
+    About   : Get list of samples.
+    Usage   : my $vcf = Vcf->new(); $vcf->parse_header(); my (@samples) = $vcf->get_samples();
+    Args    : none
+
+=cut
+
+sub get_samples
+{
+    my ($self) = @_;
+    my $n = @{$$self{columns}} - 1;
+    return (@{$$self{columns}}[9..$n]);
+}
+
+
 #------------------------------------------------
 # Version 3.2 specific functions
 
@@ -1801,7 +1817,7 @@ sub new
 #------------------------------------------------
 # Version 4.0 specific functions
 
-=head1 SYNOPSIS
+=head1 VCFv4.0
 
 VCFv4.0 specific functions
 
