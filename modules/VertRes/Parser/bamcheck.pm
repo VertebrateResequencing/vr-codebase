@@ -140,6 +140,7 @@ sub _get_header {
         'GCF'   => 'first_fragment_gc',
         'GCL'   => 'last_fragment_gc',
         'IS'    => 'insert_size',
+        'GCD'   => 'gc_depth',
     );
     
     while (my $line=<$fh>) 
