@@ -877,8 +877,6 @@ sub get_improvement_jobs_from_vrtrack {
         warn "got ", scalar(@lanes), " lanes that passed your limits\n";
     }
     
-    die;
-    
     my $count = 0;
     foreach my $lane_name (@lanes) {
         my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane_name);
