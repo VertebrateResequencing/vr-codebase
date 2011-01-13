@@ -331,9 +331,10 @@ sub get_annotations {
 
  Title   : set_b
  Usage   : $wrapper->set_b('pilot1,VCF,file1.vcf', 'pilot2,VCF,file2.vcf');
- Function: Set which vcf files to use (for setting B option).
+ Function: Set which variant files (VCF, BED, dnSNP) to use (for setting B
+           option).
  Returns : list currently set
- Args    : list of vcf strings (name,type,filename)
+ Args    : list of variant strings (name,type,filename)
 
 =cut
 
@@ -343,6 +344,25 @@ sub set_b {
         $self->{bs} = [@_];
     }
     return @{$self->{bs} || []};
+}
+
+=head2 add_b
+
+ Title   : add_b
+ Usage   : $wrapper->add_b('pilot1,VCF,file1.vcf', 'pilot2,VCF,file2.vcf');
+ Function: Add more variant files to use (having previously used set_b or the bs
+           option to new()).
+ Returns : n/a
+ Args    : list of variant strings (name,type,filename)
+
+=cut
+
+sub add_b {
+    my $self = shift;
+    if (@_) {
+        my @current_bs = $self->set_b;
+        $self->set_b(@current_bs, @_);
+    }
 }
 
 =head2 get_b
