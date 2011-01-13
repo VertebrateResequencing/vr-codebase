@@ -206,7 +206,7 @@ sub spawn
     if ( $$self{_run_locally} ) 
     {
         my $cmd = qq[$0 +run $tmp_file];
-        $self->debugln($cmd);
+        $self->debugln("$call:\t$cmd");
         system($cmd);
     }
 
@@ -249,7 +249,7 @@ sub _spawn_to_farm
 
     # Run the job
     my $cmd = qq[$0 +run $freeze_file];
-    $self->debugln($cmd);
+    $self->debugln("$$self{_store}{call}:\t$cmd");
     $farm->can('run')->($farm_jobs_ids,'.',$prefix,{bsub_opts=>''},$cmd);
 }
 
