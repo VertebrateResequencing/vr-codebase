@@ -98,6 +98,10 @@ sub get_defaults
     if ( !($$opts{bamcheck}=~m{([^/]+?)(?:\.bam)?(?:\.bc)?$}i) ) { error("FIXME: Could not determine the title from [$img_fname]\n"); }
     my $title = $1;
 
+    my $dir = $gp_file;
+    $dir =~ s{/[^/]+$}{};
+    if ( $dir ) { `mkdir -p $dir`; }
+
     return { title=>$title, gp=>$gp_file, img=>$img_fname };
 }
 
@@ -446,6 +450,7 @@ set x2label "GC Content [%]"
 set title "] . $$args{title} . q["
 set x2tics (] . join(',',@x2tics) . q[)
 set xtics nomirror
+set xrange [0.1:99.9]
 
 plot '< grep ^GCD ] . $$opts{bamcheck} . q[ | cut -f 2-' using 2:3:7 with filledcurve lt 1 lc rgb "#dedede" t '10-90th percentile' , \\
     '' using 2:4:6 with filledcurve lt 1 lc rgb "#bbdeff" t '25-75th percentile' , \\
