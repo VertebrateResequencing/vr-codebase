@@ -134,7 +134,7 @@ sub new {
         #               'pilot1_YRI,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'YRI.2and3_way.vcf')];
     }
     elsif ($build eq 'NCBIM37') {
-        $self->throw("mouse .rod not available; suggest not attempting recalibration on mouse at the moment...");
+        # no defaults yet, could set them up if desired...
     }
     elsif ($build) {
         $self->throw("bad build option '$build'");
