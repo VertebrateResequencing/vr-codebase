@@ -85,6 +85,7 @@ sub new {
                 'first_fragment_gc',
                 'last_fragment_gc',
                 'insert_size',
+                'gc_depth',
 
 =cut
 
