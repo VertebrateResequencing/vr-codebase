@@ -117,7 +117,7 @@ sub new {
     $self->bsub_options(M => ($java_mem * 1000), R => "'select[mem>$java_mem] rusage[mem=$java_mem]'");
     
     # default settings
-    my $build = delete $self->{build} || 'NCBI37';
+    my $build = delete $self->{build};
     my ($default_ref, $default_dbsnp, $default_covs, $default_bs);
     if ($build eq 'NCBI36') {
         $default_ref = File::Spec->catfile($ENV{GATK_RESOURCES}, 'human_b36_both.fasta');
