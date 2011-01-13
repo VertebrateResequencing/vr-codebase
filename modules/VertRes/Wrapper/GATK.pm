@@ -117,7 +117,7 @@ sub new {
     $self->bsub_options(M => ($java_mem * 1000), R => "'select[mem>$java_mem] rusage[mem=$java_mem]'");
     
     # default settings
-    my $build = delete $self->{build} || 'NCBI37';
+    my $build = delete $self->{build} || '';
     my ($default_ref, $default_dbsnp, $default_covs, $default_bs);
     if ($build eq 'NCBI36') {
         $default_ref = File::Spec->catfile($ENV{GATK_RESOURCES}, 'human_b36_both.fasta');
@@ -134,9 +134,9 @@ sub new {
         #               'pilot1_YRI,VCF,'.File::Spec->catfile($ENV{GATK_RESOURCES}, 'vcfs', 'YRI.2and3_way.vcf')];
     }
     elsif ($build eq 'NCBIM37') {
-        $self->throw("mouse .rod not available; suggest not attempting recalibration on mouse at the moment...");
+        # no defaults yet, could set them up if desired...
     }
-    else {
+    elsif ($build) {
         $self->throw("bad build option '$build'");
     }
     
@@ -331,9 +331,10 @@ sub get_annotations {
 
  Title   : set_b
  Usage   : $wrapper->set_b('pilot1,VCF,file1.vcf', 'pilot2,VCF,file2.vcf');
- Function: Set which vcf files to use (for setting B option).
+ Function: Set which variant files (VCF, BED, dnSNP) to use (for setting B
+           option).
  Returns : list currently set
- Args    : list of vcf strings (name,type,filename)
+ Args    : list of variant strings (name,type,filename)
 
 =cut
 
@@ -343,6 +344,25 @@ sub set_b {
         $self->{bs} = [@_];
     }
     return @{$self->{bs} || []};
+}
+
+=head2 add_b
+
+ Title   : add_b
+ Usage   : $wrapper->add_b('pilot1,VCF,file1.vcf', 'pilot2,VCF,file2.vcf');
+ Function: Add more variant files to use (having previously used set_b or the bs
+           option to new()).
+ Returns : n/a
+ Args    : list of variant strings (name,type,filename)
+
+=cut
+
+sub add_b {
+    my $self = shift;
+    if (@_) {
+        my @current_bs = $self->set_b;
+        $self->set_b(@current_bs, @_);
+    }
 }
 
 =head2 get_b

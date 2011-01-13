@@ -851,6 +851,11 @@ sub get_improvement_jobs_from_vrtrack {
     my @lanes = @{$vrtrack->processed_lane_hnames(mapped => 1, improved => 0) || []};
     warn "got ", scalar(@lanes), " lanes that were mapped and not improved\n";
     
+    if (defined $config_data->{limits}) {
+        @lanes = filter_lanes($config_data->{limits}, \@lanes, $vrtrack, $config);
+        warn "got ", scalar(@lanes), " lanes that passed your limits\n";
+    }
+    
     my $count = 0;
     foreach my $lane_name (@lanes) {
         my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane_name);
@@ -1142,9 +1147,13 @@ sub get_mergeup_jobs {
     # first work out which samples changed and which didn't; record the results
     # and create hierarchy of directories/symlinks
     my $s_file = File::Spec->catfile($root, 'samples.txt');
+    my $p_file = File::Spec->catfile($root, 'expected_platform_bams.fofn');
     unless (-s $s_file) {
         my $tmp_s = $s_file.'.working';
         open(my $sfh, '>', $tmp_s) || die "Could not write to $tmp_s\n";
+
+        my $tmp_p = $p_file.'.working';
+        open(my $pfh, '>', $tmp_p) || die "Could not write to $tmp_p\n";
         
         # parse lane_bams.fofn to group bams by hierarchy level
         open(my $lfh, $lane_bams_fofn) || die "Could not open $lane_bams_fofn\n";
@@ -1233,6 +1242,12 @@ sub get_mergeup_jobs {
                         die "wrote a fofn file '$this_fofn', but there was something wrong with it, so deleted it\n";
                     }
                     
+                    # create fofn of the raw platform bams created, not symlinked
+                    if ($level eq 'platforms') {
+                        my $expected_raw_bam = File::Spec->catfile($this_path, 'raw.bam');
+                        print $pfh "$expected_raw_bam\n";
+                    }
+                    
                     if ($level eq 'samples') {
                         print $sfh "$this_path\t1\n";
                     }
@@ -1242,6 +1257,9 @@ sub get_mergeup_jobs {
         
         close($sfh);
         move($tmp_s, $s_file) || die "Could not move $tmp_s to $s_file\n";
+
+        close($pfh);
+        move($tmp_p, $p_file) || die "Could not move $tmp_p to $p_file\n";
     }
     
     # note which samples we have to deal with
