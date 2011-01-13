@@ -79,8 +79,8 @@ our $options =
     # Executables
     'bamcheck'        => 'bamcheck -q 20',
     'blat'            => '/software/pubseq/bin/blat',
-    'gcdepth_R'       => '/software/vertres/bin/gcdepth.R',
-    'glf'             => '/nfs/sf8/G1K/bin/glf',
+    'gcdepth_R'       => '/software/vertres/bin-external/gcdepth.R',
+    'glf'             => 'glf',
     'mapviewdepth'    => 'mapviewdepth_sam',
     'samtools'        => 'samtools',
     'clean_fastqs'    => 0,
@@ -515,12 +515,11 @@ sub run_graphs
     my $gcdepth_R    = $$self{'gcdepth_R'};
     my $stats_file   = "$outdir/$$self{stats_detailed}";
 
-    # Run bamcheck
-    if ( ! -e "$bam_file.bc" )
-    {
-        Utils::CMD(qq[$$self{bamcheck} $bam_file > $bam_file.bc.tmp]);
-        rename("$bam_file.bc.tmp","$bam_file.bc") or $self->throw("rename $bam_file.bc.tmp $bam_file.bc: $!");
-    }
+    # Run bamcheck even if bamcheck output already exists. The import pipeline does not have
+    #   the reference sequence and bamcheck only approximates the GC depth graph. It takes 8 minutes
+    #   to run 17GB file, no big overhead.
+    Utils::CMD(qq[$$self{bamcheck} -r $refseq $bam_file > $bam_file.bc.tmp]);
+    rename("$bam_file.bc.tmp","$bam_file.bc") or $self->throw("rename $bam_file.bc.tmp $bam_file.bc: $!");
     if ( ! -e "$bam_file.rmdup.bc" )
     {
         Utils::CMD(qq[samtools rmdup $bam_file - | $$self{bamcheck} > $bam_file.rmdup.bc.tmp]);
