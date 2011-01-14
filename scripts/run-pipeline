@@ -878,13 +878,12 @@ sub get_improvement_jobs_from_vrtrack {
     }
     
     my $count = 0;
-    foreach my $lane_name (@lanes) {
-        my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane_name);
+    foreach my $vrlane (@lanes) {
         next if $vrlane->is_withdrawn;
         $count++;
         
-        my $path = $vrtrack->hierarchy_path_of_lane_name($lane_name);
-        if ( !$path ) { croak("No path for [$lane_name]?\n"); }
+        my $path = $vrtrack->hierarchy_path_of_lane($vrlane);
+        if ( !$path ) { croak("No path for [$vrlane->name]?\n"); }
         my $lane_info = lane_info($path);
         
         $lane_info->{vrlane} = $vrlane;
