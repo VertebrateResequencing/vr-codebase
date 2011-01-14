@@ -867,9 +867,11 @@ sub update_db
     if ( -e "$sample_dir/gc-content.png" ) { $images{'gc-content.png'} = 'GC Content'; }
     if ( -e "$sample_dir/insert-size.png" ) { $images{'insert-size.png'} = 'Insert Size'; }
     if ( -e "$sample_dir/gc-depth.png" ) { $images{'gc-depth.png'} = 'GC Depth'; }
+    if ( -e "$sample_dir/gc-depth-ori.png" ) { $images{'gc-depth-ori.png'} = 'GC Depth'; }
     if ( -e "$sample_dir/fastqcheck_1.png" ) { $images{'fastqcheck_1.png'} = 'FastQ Check 1'; }
     if ( -e "$sample_dir/fastqcheck_2.png" ) { $images{'fastqcheck_2.png'} = 'FastQ Check 2'; }
     if ( -e "$sample_dir/fastqcheck.png" ) { $images{'fastqcheck.png'} = 'FastQ Check'; }
+    if ( -e "$sample_dir/quals.png" ) { $images{'quals.png'} = 'Qualities'; }
     if ( -e "$sample_dir/quals2.png" ) { $images{'quals2.png'} = 'Qualities'; }
     if ( -e "$sample_dir/quals3.png" ) { $images{'quals3.png'} = 'Qualities'; }
     if ( -e "$sample_dir/quals-hm.png" ) { $images{'quals-hm.png'} = 'Qualities'; }
