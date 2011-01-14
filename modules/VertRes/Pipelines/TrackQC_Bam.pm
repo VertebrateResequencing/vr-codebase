@@ -914,6 +914,8 @@ sub update_db
     $mapping->genotype_found($$gtype{found});
     $mapping->genotype_ratio($$gtype{ratio});
     $vrlane->genotype_status($$gtype{status});
+    $vrlane->raw_reads($reads_total);
+    $vrlane->raw_bases($bases_total);
 
     if ( !$has_mapstats )
     {
