@@ -589,8 +589,6 @@ sub get_storage_jobs_from_vrtrack {
 }
 
 
-
-
 =head2 filter_lanes
 
   Arg [1]    : A hash of properties to filter on
@@ -601,30 +599,53 @@ sub get_storage_jobs_from_vrtrack {
 
 =cut
 
-sub filter_lanes
-{
+sub filter_lanes {
     my ($limits, $hnames, $vrtrack, $config) = @_;
+    
+    my %valid_limits;
+    foreach my $limit_type (qw(project sample individual population technology seq_tech centre library lane)) {
+        if (defined $limits->{$limit_type}) {
+            my $array = $limits->{$limit_type};
+            unless (ref($array) && ref($array) eq 'ARRAY') {
+                die "In your config file, the limits->$limit_type is supposed to be an array ref\n";
+            }
+            
+            # we will be treating all input strings as regexs, and so will force
+            # ^ and $ on to the begining and end of regexs to avoid unexpected
+            # matches if the input is a substring of a different id
+            my @regexs;
+            foreach my $regex (@{$array}) {
+                $regex =~ s/^\^//;
+                $regex =~ s/\$$//;
+                push(@regexs, qr/^$regex$/);
+            }
+            
+            $valid_limits{$limit_type} = \@regexs;
+        }
+    }
     
     my @lanes;
     my $hu = VertRes::Utils::Hierarchy->new();
-    foreach my $hname (@{$hnames})
-    {
+    HNAME: foreach my $hname (@{$hnames}) {
 	my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$hname) or croak("Could not get lane for $hname: $config\n");
-
         my $path   = $vrtrack->hierarchy_path_of_lane_hname($vrlane->name);
-	
-	if (defined $limits->{'project'}) {
-	    my %linfo = $hu->lane_info($vrlane);
-	    my @lImits = $limits->{'project'};
-	    if ($limits->{'project'}[0] ne $linfo{'project'}) {
-		next;
-	    }
+        my %lane_info = $hu->lane_info($vrlane, no_coverage => 1);
+        
+        keys %valid_limits; # reset the hash counter, since we may have nexted out of a while loop
+        while (my ($limit_type, $allowed_regexes) = each %valid_limits) {
+	    my $actual_value = $lane_info{$limit_type};
+            
+            foreach my $regex (@{$allowed_regexes}) {
+                unless ($actual_value =~ /$regex/) {
+                    next HNAME;
+                }
+            }
 	}
+        
 	push @lanes, $vrlane;
     }
-
-return @lanes;
-
+    
+    return @lanes;
 }
 
 
@@ -857,13 +878,12 @@ sub get_improvement_jobs_from_vrtrack {
     }
     
     my $count = 0;
-    foreach my $lane_name (@lanes) {
-        my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane_name);
+    foreach my $vrlane (@lanes) {
         next if $vrlane->is_withdrawn;
         $count++;
         
-        my $path = $vrtrack->hierarchy_path_of_lane_name($lane_name);
-        if ( !$path ) { croak("No path for [$lane_name]?\n"); }
+        my $path = $vrtrack->hierarchy_path_of_lane($vrlane);
+        if ( !$path ) { croak("No path for [$vrlane->name]?\n"); }
         my $lane_info = lane_info($path);
         
         $lane_info->{vrlane} = $vrlane;
