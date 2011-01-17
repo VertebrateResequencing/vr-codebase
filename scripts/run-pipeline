@@ -626,24 +626,37 @@ sub filter_lanes {
     
     my @lanes;
     my $hu = VertRes::Utils::Hierarchy->new();
-    HNAME: foreach my $hname (@{$hnames}) {
+    foreach my $hname (@{$hnames}) {
 	my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$hname) or croak("Could not get lane for $hname: $config\n");
         my $path   = $vrtrack->hierarchy_path_of_lane_hname($vrlane->name);
         my %lane_info = $hu->lane_info($vrlane, no_coverage => 1);
         
-        keys %valid_limits; # reset the hash counter, since we may have nexted out of a while loop
-        while (my ($limit_type, $allowed_regexes) = each %valid_limits) {
+        # we require that it pass all limit types ('AND')
+        my $all_passed = 1;
+        foreach my $limit_type (keys %valid_limits) {
 	    my $actual_value = $lane_info{$limit_type};
             
-            foreach my $regex (@{$allowed_regexes}) {
-                unless ($actual_value =~ /$regex/) {
-                    next HNAME;
+            # we require that at least one of the limits for this type is
+            # matched ('OR')
+            my $one_passed = 0;
+            foreach my $regex (@{$valid_limits{$limit_type}}) {
+                if ($actual_value =~ /$regex/) {
+                    $one_passed = 1;
+                    last;
                 }
             }
+            
+            unless ($one_passed) {
+                $all_passed = 0;
+                last;
+            }
 	}
+        next unless $all_passed;
         
 	push @lanes, $vrlane;
     }
+    
+    die scalar(@lanes), "\n";
     
     return @lanes;
 }
