@@ -92,8 +92,8 @@ our $options =
     # Executables
     'blat'            => '/software/pubseq/bin/blat',
     'bwa_exec'        => 'bwa-0.5.3',
-    'gcdepth_R'       => '/software/vertres/bin/gcdepth.R',
-    'glf'             => '/nfs/sf8/G1K/bin/glf',
+    'gcdepth_R'       => '/software/vertres/bin-external/gcdepth.R',
+    'glf'             => 'glf',
     'mapviewdepth'    => 'mapviewdepth_sam',
     'samtools'        => 'samtools',
 

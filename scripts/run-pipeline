@@ -1236,12 +1236,14 @@ sub get_mergeup_jobs {
                     $previous_path = File::Spec->catdir($previous_root, $dir);
                     my $previous_fofn = File::Spec->catfile($previous_path, 'lane_bams.fofn');
                     my %previous_bams;
-                    open(my $pfh, $previous_fofn) || die "Could not open $previous_fofn\n";
-                    while (<$pfh>) {
-                        chomp;
-                        $previous_bams{$_} = 1;
+                    # no need to read previous fofn if path did not exist in previous hierarchy
+					if (-d $previous_path) {
+	                    open(my $pfh, $previous_fofn) || die "Could not open $previous_fofn\n";
+	                    while (<$pfh>) {
+	                        chomp;
+	                        $previous_bams{$_} = 1;
+	                    }
                     }
-                    
                     $symlink = $mu->compare_hash_keys(\%these_bams, \%previous_bams);
                 }
                 
