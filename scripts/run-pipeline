@@ -656,8 +656,6 @@ sub filter_lanes {
 	push @lanes, $vrlane;
     }
     
-    die scalar(@lanes), "\n";
-    
     return @lanes;
 }
 
