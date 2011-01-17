@@ -239,11 +239,11 @@ sub _spawn_to_farm
         $nfailures =~ s/\s+.+$//;
         if ( $nfailures >= 3 )
         {   
-            $self->throw("The job failed repeatedly: $$self{_store}{call}(" .join('',@{$$self{_store}{args}}). "), $prefix.[oer]\n");
+            $self->throw("The job failed repeatedly: $prefix.[oer], $$self{_store}{call}(" .join('',@{$$self{_store}{args}}). ")\n(Remove $prefix.jid to clean the status.)\n");
         }
         else
         {
-            $self->warn("Running again, the previous attempt failed: $$self{_store}{call}(" .join('',@{$$self{_store}{args}}). "), $prefix.[oer]\n");
+            $self->warn("Running again, the previous attempt failed: $prefix.[oer], $$self{_store}{call}(" .join('',@{$$self{_store}{args}}). ")\n");
         }
     }
 
