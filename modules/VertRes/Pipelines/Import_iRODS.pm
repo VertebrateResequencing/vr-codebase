@@ -238,6 +238,7 @@ sub update_db
     # Finally, change the import status of the lane, so that it will not be picked up again
     #   by the run-pipeline script.
     $vrlane->is_processed('import',1);
+    $vrlane->is_withdrawn(0);
     $vrlane->update();
     $vrtrack->transaction_commit();
 
