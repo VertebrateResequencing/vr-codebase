@@ -495,13 +495,10 @@ foreach my $pname (keys %projects){
                                 next;
                             }
                                                                     
-                            # another check - don't import anything with empty fastq
-                            if ($lane->basepairs && !$is_multiplexed_seq_request){
-                                print "New lane ",$lane->name,"\n";
-                                #$vlane = $vlib->add_lane($lane->name);
-                                $vlane = $vseq_request->add_lane($lane->name);
-                            }
-                            elsif($is_multiplexed_seq_request){
+                            # jws 2011-01-18 removed check for basepairs.  This is 0 for bam as 
+                            # there currently is no bamcheck in place in irods
+                            #if ($lane->basepairs && !$is_multiplexed_seq_request){
+                            if ($is_multiplexed_seq_request){
                                 print "New lane ",$deplexed_lane,"\n";
                                 #$vlane = $vlib->add_lane($deplexed_lane);
                                 $vlane = $vseq_request->add_lane($deplexed_lane);
@@ -510,7 +507,9 @@ foreach my $pname (keys %projects){
                                 $vlane->update;
                             }
                             else {
-                                next;
+                                print "New lane ",$lane->name,"\n";
+                                #$vlane = $vlib->add_lane($lane->name);
+                                $vlane = $vseq_request->add_lane($lane->name);
                             }
                         }
                         $vlane->npg_qc_status($lane->npg_qc);
