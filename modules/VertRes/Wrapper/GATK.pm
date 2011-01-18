@@ -226,8 +226,6 @@ sub count_covariates {
     }
     $self->_handle_common_params(\%params);
     
-    $self->throw("Non-existant rod file '$params{DBSNP}'") unless -s $params{DBSNP};
-    
     $self->register_output_file_to_check($recal_file);
     $self->_set_params_and_switches_from_args(%params);
     
