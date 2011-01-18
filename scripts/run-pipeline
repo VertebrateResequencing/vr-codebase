@@ -1179,7 +1179,7 @@ sub get_mergeup_jobs {
     # and create hierarchy of directories/symlinks
     my $s_file = File::Spec->catfile($root, 'samples.txt');
     my $p_file = File::Spec->catfile($root, 'expected_platform_bams.fofn');
-    unless (-s $s_file) {
+	unless (-s $s_file) {	
         my $tmp_s = $s_file.'.working';
         open(my $sfh, '>', $tmp_s) || die "Could not write to $tmp_s\n";
 
@@ -1295,14 +1295,105 @@ sub get_mergeup_jobs {
         move($tmp_p, $p_file) || die "Could not move $tmp_p to $p_file\n";
     }
     
-    # note which samples we have to deal with
+	# note which samples we have to deal with	
     my %new_samples;
     open(my $sfh, $s_file) || die "Could not open $s_file\n";
     while (<$sfh>) {
         my ($sample, $new) = split;
         $new_samples{$sample} = 1 if $new;
     }
-    
+	close $sfh;
+	
+	# Record the files expected from the platform and sample merges
+	my $platform_merges_expected_file = File::Spec->catfile($root, '.platform_merges_expected');
+	my $sample_merges_expected_file = File::Spec->catfile($root, '.sample_merges_expected');
+	my $platform_merges_done_file = File::Spec->catfile($root, '.platform_merges_done');
+	my $sample_merges_done_file = File::Spec->catfile($root, '.sample_merges_done');
+	
+	unless ( -s $platform_merges_expected_file || -e $platform_merges_done_file ) {
+		open(my $ofh, '>', $platform_merges_expected_file) || die "Couldn't write to $platform_merges_expected_file";
+	    foreach my $sample (keys %new_samples) {
+			my $expected_file = File::Spec->catfile($sample, ".platform_merge_done");
+	        print $ofh $expected_file, "\n";
+	    }
+	    my $expected = keys %new_samples;
+	    print $ofh "# expecting $expected\n";
+	    close($ofh);
+	}
+	
+	if ( $config_data->{data}->{do_sample_merge} ) {
+		unless ( -s $sample_merges_expected_file || -e $sample_merges_done_file ) {
+			open(my $ofh, '>', $sample_merges_expected_file) || die "Couldn't write to $sample_merges_expected_file";
+		    foreach my $sample (keys %new_samples) {
+				my $expected_file = File::Spec->catfile($sample, ".sample_merge_done");
+		        print $ofh $expected_file, "\n";
+		    }
+		    my $expected = keys %new_samples;
+		    print $ofh "# expecting $expected\n";
+		    close($ofh);
+		}
+	}
+	
+	# Check for done files. 
+	my %done_merges;
+	foreach my $level ('platform', 'sample') {
+		next if ( $level eq 'sample' && ! $config_data->{data}->{do_sample_merge} );
+		
+		my $expected_file = $level eq 'platform' ? $platform_merges_expected_file : $sample_merges_expected_file;
+		my $done_file = $level eq 'platform' ? $platform_merges_done_file : $sample_merges_done_file;
+		
+		if (-s $expected_file && ! -e $done_file) {
+	        my $done_count = 0;
+	        my $expected_merges = 0;
+	        my $written_expected;
+	        open(my $efh, $expected_file) || die "Couldn't open $expected_file";
+	        my @merged;
+	        my @skipped;
+	        while (<$efh>) {
+	            chomp;
+	            /\S/ || next;
+	            if (/^# expecting (\d+)/) {
+	                $written_expected = $1;
+	                next;
+	            }
+	            $expected_merges++;
+			
+	            if ( -e $_ ) {
+	                $done_count++;
+	                push(@merged, $_);
+					my $sample = dirname($_);
+					$done_merges{$sample}++;
+	            }
+	            else {
+	                push(@skipped, $_);
+	            }
+	        }
+	        
+	        if ($written_expected == $expected_merges && scalar @merged == $expected_merges) {
+	            move($expected_file, $done_file) || die "Failed to move $expected_file -> $done_file";
+	        }
+	    }
+	}
+	
+	# Exit if pipeline complete - i.e. merges_done files are present
+	if ( -s $platform_merges_done_file ) {
+		if ( $config_data->{data}->{do_sample_merge} ) {
+			if ( -s $sample_merges_done_file ) {
+				debug($config_data,"done. All sample merges complete.\n");
+				return;
+			}
+		} else {
+			debug($config_data,"done. All platform merges complete.\n");
+			return;
+		}
+	}
+	
+	# Remove from new samples hash if done for both platform and sample merges (if required)
+	my $done_count = $config_data->{data}->{do_sample_merge} ? 2 : 1;
+	while ( my ($sample, $count) = each %done_merges ) {
+		delete $new_samples{$sample} if ($count == $done_count);
+	}
+	
     # now actually create the jobs
     my @samples = sort keys %new_samples;
     my $sample_count = 0;
@@ -1318,7 +1409,7 @@ sub get_mergeup_jobs {
         }
     }
     
-    debug($config_data,"done\n");
+    debug($config_data,"done $sample_count\n");
     return;
 }
 
