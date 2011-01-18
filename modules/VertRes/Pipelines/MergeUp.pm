@@ -835,6 +835,7 @@ sub _fofn_to_bam_groups {
         my $basename = pop @parts;
         pop @parts;
         my $parent = $self->{fsu}->catfile(@parts);
+		$parent = './' unless ($parent);
         
         my $group;
         if ($group_by_basename) {
@@ -844,8 +845,6 @@ sub _fofn_to_bam_groups {
         else {
             $group = $parent;
         }
-
-#        if ( !defined $group ) { $self->throw("FIXME: this should not happen.\n"); }
 
         push(@{$bams_groups{$group}}, $self->{fsu}->catfile($lane_path, $path));
     }
