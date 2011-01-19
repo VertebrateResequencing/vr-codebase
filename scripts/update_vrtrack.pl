@@ -31,7 +31,7 @@ use VRTrack::Individual;
 use VRTrack::Multiplex_pool;
 use VRTrack::Library_Multiplex_pool;
 
-my ($projfile, $spp, $update_files, $samplemap, $help, $database,$create_individuals);
+my ($projfile, $spp, $update_files, $samplemap, $help, $database,$create_individuals, $no_fastq);
 
 GetOptions(
     'studies|p|projects=s'  =>  \$projfile,
@@ -40,6 +40,7 @@ GetOptions(
     'd|database=s'  =>  \$database,
     'c|create_individuals'          =>  \$create_individuals,
     'm|sample_map=s'=>  \$samplemap,
+    'no_fastq'      =>  \$no_fastq,
     'h|help'        =>  \$help,
     );
 
@@ -69,6 +70,7 @@ else
                 [--database  <vrtrack database name override>]
                 [--files     <force update of files (usually skipped as doesn't change, and is slow)>]
                 [--create_individuals  <if set, generates an individual for each new sample name>]
+                [--no_fastq  <don't attempt to find fastq files, only find bam files>]
                 [--sample_map  <a file of individual -> samplename mappings. Cannot be used with --create_individuals>]
                 --help      <this message>
 
@@ -92,6 +94,10 @@ sample and individual name up to the first non-word or underscore character
 NOD_mouse).  To override this behaviour, --sample_map takes a filename of
 tab-separated individual, sample names which explicitly sets the mapping.  This
 cannot be used in conjunction with --create_individuals.
+
+Files are pulled from iRODS(bam) or MPSA (fastq) in the order of preference.
+Supplying --no_fastq prevents the check of MPSA, which is useful if you know
+your project is bam only and don't wish to accidentally pull in fastq.
 
 USAGE
 
@@ -442,13 +448,15 @@ foreach my $pname (keys %projects){
                         }
 
 
-                        unless (@$files){
-                            eval {
-                                $files = $lane->fastq;
-                            };
-                            if ($@){
-                                print "Error getting fastq from ",$lane->name," : ",$@,".  Skipping\n";
-                                next;
+                        unless (@$files){   # didn't find bam
+                            unless ($no_fastq){ # don't want fastq
+                                eval {
+                                    $files = $lane->fastq;
+                                };
+                                if ($@){
+                                    print "Error getting fastq from ",$lane->name," : ",$@,".  Skipping\n";
+                                    next;
+                                }
                             }
                         }
 
