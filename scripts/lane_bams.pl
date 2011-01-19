@@ -140,11 +140,18 @@ foreach my $lane (@lanes) {
 # output good lane bams
 while (my ($sample, $lanes) = each %lanes_by_sample) {
     foreach my $path (@{$lanes}) {
-        my @bams = $hu->lane_bams($path,
+        # Allow to skip bad lanes
+        my @bams;
+        eval { @bams = $hu->lane_bams($path,
                                   vrtrack => $vrtrack,
                                   slx_mapper => $mapper_slx,
                                   '454_mapper' => $mapper_454,
                                   assembly_name => $assembly);
+        };
+        if ( $@ ) {
+            warn "$path:\n\t$@\n";
+            next;
+        }
         
         foreach my $bam (@bams) {
             print $bam, "\n";
