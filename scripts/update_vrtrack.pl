@@ -34,7 +34,7 @@ use VRTrack::Library_Multiplex_pool;
 my ($projfile, $spp, $update_files, $samplemap, $help, $database,$create_individuals);
 
 GetOptions(
-    'p|projects=s'  =>  \$projfile,
+    'studies|p|projects=s'  =>  \$projfile,
     's|spp=s'       =>  \$spp,
     'f|files'       =>  \$update_files,
     'd|database=s'  =>  \$database,
@@ -64,7 +64,7 @@ else
 
 ($projfile && $db && !$help) or die <<USAGE;
     Usage: $0   
-                --projects  <project name or file of SequenceScape project names>
+                --studies  <study name or file of SequenceScape study names>
                 --spp       <species, i.e. g1k or mouse>
                 [--database  <vrtrack database name override>]
                 [--files     <force update of files (usually skipped as doesn't change, and is slow)>]
