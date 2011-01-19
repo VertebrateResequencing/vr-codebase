@@ -39,7 +39,7 @@ GetOptions(
     'f|files'       =>  \$update_files,
     'd|database=s'  =>  \$database,
     'c|create_individuals'          =>  \$create_individuals,
-    'm|sample_map'   =>  \$samplemap,
+    'm|sample_map=s'=>  \$samplemap,
     'h|help'        =>  \$help,
     );
 
