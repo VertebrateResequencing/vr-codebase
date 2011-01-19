@@ -94,6 +94,7 @@ sub new
     $$self{_status_codes}{DONE} = 1;
     $$self{_farm} = 'LSF';
     $$self{usage} = 
+        "Runner.pm arguments:\n" .
         "   +help           Summary of commands\n" .
         "   +local          Do not submit jobs to LSF, but run serially\n" .
         "   +loop <int>     Run in daemon mode with <int> sleep intervals\n" .
@@ -239,11 +240,11 @@ sub _spawn_to_farm
         $nfailures =~ s/\s+.+$//;
         if ( $nfailures >= 3 )
         {   
-            $self->throw("The job failed repeatedly: $prefix.[oer], $$self{_store}{call}(" .join('',@{$$self{_store}{args}}). ")\n(Remove $prefix.jid to clean the status.)\n");
+            $self->throw("The job failed repeatedly: $prefix.[oer], $$self{_store}{call}(" .join(',',@{$$self{_store}{args}}). ")\n(Remove $prefix.jid to clean the status.)\n");
         }
         else
         {
-            $self->warn("Running again, the previous attempt failed: $prefix.[oer], $$self{_store}{call}(" .join('',@{$$self{_store}{args}}). ")\n");
+            $self->warn("Running again, the previous attempt failed: $prefix.[oer], $$self{_store}{call}(" .join(',',@{$$self{_store}{args}}). ")\n");
         }
     }
 
