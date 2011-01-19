@@ -295,7 +295,6 @@ sub new {
         }
         
         $self->{snp_sites} = join(', ', map { "'$_'" } @gatk_args);
-        $self->{snp_sites} = "[$self->{snp_sites}]";
         $self->{snp_files} = \@snp_site_files;
     }
     
@@ -405,7 +404,7 @@ sub realign {
         $snp_line = "dbsnp => '$self->{dbsnp_rod}',\n";
     }
     else {
-        $snp_line = "bs => $self->{snp_sites},\n";
+        $snp_line = "bs => [$self->{snp_sites}],\n";
     }
     
     foreach my $in_bam (@{$self->{in_bams}}) {

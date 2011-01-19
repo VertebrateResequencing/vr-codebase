@@ -890,6 +890,9 @@ sub get_improvement_jobs_from_vrtrack {
     
     my $count = 0;
     foreach my $vrlane (@lanes) {
+        unless (ref($vrlane)) {
+            $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $vrlane);
+        }
         next if $vrlane->is_withdrawn;
         $count++;
         

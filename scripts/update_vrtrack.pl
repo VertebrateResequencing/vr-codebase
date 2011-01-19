@@ -34,12 +34,12 @@ use VRTrack::Library_Multiplex_pool;
 my ($projfile, $spp, $update_files, $samplemap, $help, $database,$create_individuals);
 
 GetOptions(
-    'p|projects=s'  =>  \$projfile,
+    'studies|p|projects=s'  =>  \$projfile,
     's|spp=s'       =>  \$spp,
     'f|files'       =>  \$update_files,
     'd|database=s'  =>  \$database,
     'c|create_individuals'          =>  \$create_individuals,
-    'm|sample_map'   =>  \$samplemap,
+    'm|sample_map=s'=>  \$samplemap,
     'h|help'        =>  \$help,
     );
 
@@ -64,7 +64,7 @@ else
 
 ($projfile && $db && !$help) or die <<USAGE;
     Usage: $0   
-                --projects  <project name or file of SequenceScape project names>
+                --studies  <study name or file of SequenceScape study names>
                 --spp       <species, i.e. g1k or mouse>
                 [--database  <vrtrack database name override>]
                 [--files     <force update of files (usually skipped as doesn't change, and is slow)>]
@@ -495,13 +495,10 @@ foreach my $pname (keys %projects){
                                 next;
                             }
                                                                     
-                            # another check - don't import anything with empty fastq
-                            if ($lane->basepairs && !$is_multiplexed_seq_request){
-                                print "New lane ",$lane->name,"\n";
-                                #$vlane = $vlib->add_lane($lane->name);
-                                $vlane = $vseq_request->add_lane($lane->name);
-                            }
-                            elsif($is_multiplexed_seq_request){
+                            # jws 2011-01-18 removed check for basepairs.  This is 0 for bam as 
+                            # there currently is no bamcheck in place in irods
+                            #if ($lane->basepairs && !$is_multiplexed_seq_request){
+                            if ($is_multiplexed_seq_request){
                                 print "New lane ",$deplexed_lane,"\n";
                                 #$vlane = $vlib->add_lane($deplexed_lane);
                                 $vlane = $vseq_request->add_lane($deplexed_lane);
@@ -510,7 +507,9 @@ foreach my $pname (keys %projects){
                                 $vlane->update;
                             }
                             else {
-                                next;
+                                print "New lane ",$lane->name,"\n";
+                                #$vlane = $vlib->add_lane($lane->name);
+                                $vlane = $vseq_request->add_lane($lane->name);
                             }
                         }
                         $vlane->npg_qc_status($lane->npg_qc);
