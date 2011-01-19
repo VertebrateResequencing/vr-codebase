@@ -556,7 +556,7 @@ sub sort {
     $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
     
     my $tmp_dir = $self->{tmp_dir} || '';
-    $tmp_dir = "tmp_dir => q[$tmp_dir]" if $tmp_dir;
+    $tmp_dir = ", tmp_dir => q[$tmp_dir]" if $tmp_dir;
     
     foreach my $in_bam (@{$self->{in_bams}}) {
         my $base = basename($in_bam);
@@ -585,7 +585,7 @@ my \$done_file = '$done_file';
 
 # sort and fix mates
 unless (-s \$final_bam) {
-    my \$picard = VertRes::Wrapper::picard->new($tmp_dir, COMPRESSION_LEVEL => 0, java_memory => $java_mem);
+    my \$picard = VertRes::Wrapper::picard->new(COMPRESSION_LEVEL => 0, java_memory => $java_mem$tmp_dir);
     \$picard->FixMateInformation(\$in_bam, \$working_bam);
 }
 
