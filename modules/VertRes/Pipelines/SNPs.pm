@@ -64,10 +64,10 @@ our $options =
     split_size_gatk      => 1_000_000,
     varfilter       => 'samtools.pl varFilter -S 20 -i 20',
     pileup_rmdup    => 'pileup-rmdup',
-    samtools_pileup_params => '-d 500',   # mouse: '-r 0.0001 -d 500'
+    samtools_pileup_params => '-d 500',   # homozygous: '-r 0.0001 -d 500'
     vcf_rmdup       => 'vcf-rmdup',
     vcf_stats       => 'vcf-stats',
-    vcfutils        => 'vcfutils.pl',
+    filter4vcf      => 'vcfutils.pl filter4vcf',
 };
 
 
@@ -101,7 +101,7 @@ our $options =
                     tmp_dir         .. Big space for QCall pileup sorting.
                     varfilter       .. The samtools varFilter command (samtools.pl varFilter).
                     vcf_rmdup       .. The script to remove duplicate positions.
-                    vcfutils        .. vcfutils.pl from bcftools package (filter4vcf)
+                    filter4vcf      .. vcfutils.pl filter4vcf from bcftools package
 
 =cut
 
@@ -727,7 +727,7 @@ sub mpileup_split_chunks
 {
     my ($self,$bam,$chunk_name,$chunk) = @_;
 
-    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd bcftools bcf_fix vcfutils));
+    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd bcftools bcf_fix filter4vcf));
 
     return qq[
 use strict;
@@ -766,7 +766,7 @@ if ( -e "$basename.vcf.gz" )
     rename("$basename.vcf.gz","$name.unfilt.vcf.gz") or Utils::error("rename $basename.vcf.gz $name.unfilt.vcf.gz: \$!");
 }
 
-Utils::CMD("zcat $name.unfilt.vcf.gz | $$self{vcfutils} filter4vcf | bgzip -c > $basename.filt.vcf.gz");
+Utils::CMD("zcat $name.unfilt.vcf.gz | $$self{filter4vcf} | bgzip -c > $basename.filt.vcf.gz");
 Utils::CMD("zcat $basename.filt.vcf.gz | $$self{vcf_stats} > $name.vcf.gz.stats");
 Utils::CMD("tabix -f -p vcf $basename.filt.vcf.gz");
 rename("$basename.filt.vcf.gz.tbi","$name.vcf.gz.tbi") or Utils::error("rename $basename.filt.vcf.gz.tbi $name.vcf.gz.tbi: \$!");
