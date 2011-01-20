@@ -369,6 +369,7 @@ sub fragment_size {
             $_ = $_ * 1000;
         }
     }
+    ($from, $to) = ($to, $from) if $from > $to; # swap if necessary
     return [$from, $to];
 }
 
