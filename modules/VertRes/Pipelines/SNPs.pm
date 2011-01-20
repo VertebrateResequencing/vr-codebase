@@ -527,12 +527,6 @@ use Utils;
 
 Utils::CMD("rm -f $name.vcf-tmp.gz.part");
 Utils::CMD("vcf-concat -s 3 -f $name.chunks.list | $$self{vcf_rmdup} | bgzip -c > $name.vcf.gz.part");
-
-# Simple sanity check, to be removed
-my \@out1 = Utils::CMD("(head -1 $name.chunks.list | xargs zcat | head -1000 | grep ^#; cat $name.chunks.list | xargs zcat | grep -v ^# | sort -k 1,1d -k 2,2n) | vcf-rmdup | grep -v ^# |wc -l");
-my \@out2 = Utils::CMD("zcat $name.vcf.gz.part | grep -v ^# | sort -k 1,1d -k 2,2n | $$self{vcf_rmdup} |wc -l");
-if ( \@out1 != \@out2 or \$out1[0] ne \$out2[0] ) { Utils::error("Uh: \$out1[0] ne \$out2[0]\\n"); }
-
 Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
 Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz.part]);
 rename('$name.vcf.gz.part.tbi','$name.vcf.gz.tbi') or Utils::error("rename $name.vcf.gz.part.tbi $name.vcf.gz.tbi: \$!");
