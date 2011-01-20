@@ -919,6 +919,7 @@ sub run_gatk_chunk
         unlink("$name.vcf.gz");
         unlink("$name.vcf.gz.tbi");
         unlink("$name.indels.detailed.bed");
+        unlink("$name.indels.detailed.bed.idx");
         unlink("$name.indels.mask.bed");
         unlink("$name.indels.mask.bed.idx");
         unlink("$name.indels.raw.bed");
