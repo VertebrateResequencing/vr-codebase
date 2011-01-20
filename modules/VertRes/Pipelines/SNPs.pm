@@ -1093,6 +1093,8 @@ sub run_qcall_chunk
     }
     close($fh);
 
+    if ( scalar keys %$groups < 2 ) { $self->throw("QCall is a population based caller and must be run with at least 2 samples.\n"); }
+
     # Execute mpileup with QCall
     Utils::CMD(qq[samtools mpileup -b $file_list -D -g -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -Q - | $$self{qcall_cmd} -sn $$self{prefix}$chunk.names -co $chunk.vcf.part],{verbose=>1});
 
