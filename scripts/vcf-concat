@@ -138,6 +138,12 @@ sub concat_merge
             print $line;
         }
     }
+    if ( !$header_printed )
+    {
+        my $vcf = Vcf->new(file=>$$opts{files}[0]);
+        $vcf->parse_header();
+        print $vcf->format_header();
+    }
 }
 
 #---------------------------------
