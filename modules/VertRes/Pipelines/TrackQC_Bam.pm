@@ -536,7 +536,8 @@ sub run_graphs
     # The GC-depth graphs
     if ( ! -e "$outdir/gc-depth-ori.png" || (-e $bindepth && Utils::file_newer($bam_file,$bindepth)) )
     {
-        Utils::CMD("$samtools view $bam_file | $mapview $refseq -b=$gc_depth_bin > $bindepth",{verbose=>1});
+        # Mapviewdepth_sam sometimes does not read the bam till the end. Ignore SIGPIPE signal. This program will be removed soon anyway.
+        Utils::CMD("$samtools view $bam_file | $mapview $refseq -b=$gc_depth_bin > $bindepth",{verbose=>1,ignore_errno=>141});
         Graphs::create_gc_depth_graph($bindepth,$gcdepth_R,qq[$outdir/gc-depth-ori.png]);
     }
 
