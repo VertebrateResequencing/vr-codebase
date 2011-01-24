@@ -14,7 +14,7 @@ export PERL5LIB=/software/vertres/modules:/software/vertres/lib/all
 date="`date +'%y%m%d'`"
 mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST  vrtrack_mouse | gzip -c > "$WGS_PROJ_ROOT/sql_dumps/vrtrack_mouse_$date.sql.gz"
 mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST  vrtrack_mouse_exome | gzip -c > "$EXOME_PROJ_ROOT/sql_dumps/vrtrack_mouse_exome_$date.sql.gz"
-mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST  vrtrack_mouse_exome | gzip -c > "$HUMAN_EXOME_PROJ_ROOT/sql_dumps/vrtrack_human_exome_$date.sql.gz"
+mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST  vrtrack_human_exome | gzip -c > "$HUMAN_EXOME_PROJ_ROOT/sql_dumps/vrtrack_human_exome_$date.sql.gz"
 
 #WGS update the individuals and samples files
 /software/vertres/scripts/generateIndividualSamplesMap.pl -s $WGS_PROJ_ROOT/meta-data/studies.fofn -m $WGS_PROJ_ROOT/meta-data/individuals2Samples.tab -spe Mus_musculus -t 10090 -nm $WGS_PROJ_ROOT/meta-data/new_individuals2Samples.tab -ns $WGS_PROJ_ROOT/meta-data/samples.tab 2> "$ROOT/log/sample_map_vrtrack_mouse.out"
