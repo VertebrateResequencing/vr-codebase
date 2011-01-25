@@ -48,7 +48,7 @@ sub new {
 
     # id_run_pair = 0 means this is the first of any pair
     # which is what the srf, fastq & fastqcheck files are named for
-    my $sql = qq[select batch_id, id_run, position, run_complete, cycles, paired_read, has_two_runfolders from npg_information where id_npg_information = ? and (id_run_pair=0 or id_run_pair is null)];
+    my $sql = qq[select batch_id, id_run, position, run_complete, cycles, paired_read, has_two_runfolders,cancelled from npg_information where id_npg_information = ? and (id_run_pair=0 or id_run_pair is null)];
     my $sth = $self->{_dbh}->prepare($sql);
 
     $sth->execute($id);
@@ -61,6 +61,7 @@ sub new {
     $self->run_name($data->[1]);
     $self->run_lane($data->[2]);
     $self->created($data->[3]);
+    $self->is_cancelled($data->[7]);
     $self->is_paired($data->[5]);
     if ($data->[5] &! $data->[6]){
         # if paired, and only one runfolder, then cycles is total cycles (i.e.
@@ -205,6 +206,25 @@ sub run_name {
 sub name {
     my ($self) = @_;
     return join "_", ($self->run_name, $self->run_lane);
+}
+
+
+=head2 is_cancelled
+
+  Arg [1]    : boolean for whether lane is cancelled (optional)
+  Example    : my $cancelled = $lane->is_cancelled();
+	       $lane->is_cancelled('1');
+  Description: Get/Set for whether lane is cancelled during run
+  Returntype : boolean
+
+=cut
+
+sub is_cancelled {
+    my ($self,$is_cancelled) = @_;
+    if (defined $is_cancelled and $is_cancelled ne $self->{'is_cancelled'}){
+	$self->{'is_cancelled'} = $is_cancelled ? 1 : 0;
+    }
+    return $self->{'is_cancelled'};
 }
 
 
