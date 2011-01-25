@@ -424,6 +424,7 @@ foreach my $pname (keys %projects){
                         # either cancelled (and will never have files), or have
                         # not been archived yet, so will get added later
                         ########################################################
+                        next if $lane->is_cancelled;
         
                         my $tag_id=$lib->tag_id();
 
