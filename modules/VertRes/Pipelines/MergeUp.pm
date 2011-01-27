@@ -26,6 +26,7 @@ data => {
 
 # other options you could add to the mergeup.conf data {} section include:
 # do_sample_merge => 1 (default is to platform level only)
+# do_index_bams => 1 (default is not to index bams)
 # extract_intervals => {'intervals_file' => 'filename'}
 
 # outside the data {} section you can also specify:
@@ -109,6 +110,10 @@ our $actions = [{ name     => 'create_hierarchy',
                   action   => \&sample_merge,
                   requires => \&sample_merge_requires, 
                   provides => \&sample_merge_provides },
+                { name     => 'index_bams',
+                  action   => \&index_bams,
+                  requires => \&index_bams_requires, 
+                  provides => \&index_bams_provides },
                 { name     => 'cleanup',
                   action   => \&cleanup,
                   requires => \&cleanup_requires, 
@@ -830,6 +835,7 @@ sub _fofn_to_bam_groups {
         my $basename = pop @parts;
         pop @parts;
         my $parent = $self->{fsu}->catfile(@parts);
+		$parent = './' unless ($parent);
         
         my $group;
         if ($group_by_basename) {
@@ -839,11 +845,66 @@ sub _fofn_to_bam_groups {
         else {
             $group = $parent;
         }
-        
+
         push(@{$bams_groups{$group}}, $self->{fsu}->catfile($lane_path, $path));
     }
-    
     return %bams_groups;
+}
+
+sub index_bams_requires {
+    my ($self, $lane_path) = @_;
+    return [];
+}
+
+sub index_bams_provides {
+    my ($self, $lane_path) = @_;
+    return ["$$self{hierarchy_root}/all_bams_done.list"];
+}
+
+=head2 index_bams
+
+ Title   : index_bams
+ Usage   : $obj->index_bams('/path/to/lane', 'lock_filename');
+ Function: Check if all bam files are done for this hierarchy_root (not just this lane) and index bam files.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub index_bams {
+    my ($self, $lane_path, $action_lock) = @_;
+
+    my $done_file = "$$self{hierarchy_root}/all_bams_done.list";
+
+    # Check if all bams are done
+    my $bams = VertRes::Pipelines::MergeUp->pipeline_finished($$self{hierarchy_root});
+    if ( !@$bams ) { return $self->{No}; }
+
+    # Create the list of all bams
+    my @need_idx;
+    open(my $fh,'>',"$done_file.part") or $self->throw("$done_file.part: $!");
+    for my $bam (@$bams)
+    {
+        print $fh "$bam\n";
+        if ( ! -e "$bam.bai" ) { push @need_idx, $bam; }
+    }
+    close($fh);
+
+    # Do we need to index the bams?
+    if ( !$self->{do_index_bams} ) 
+    { 
+        rename("$done_file.part",$done_file); 
+        return $self->{Yes};
+    }
+
+    my $verbose  = $self->verbose();
+    my $job_name = $self->{prefix}.'index_bams';
+print STDERR qq~about to run: perl -MVertRes::Utils::Sam -Mstrict -e "(VertRes::Utils::Sam->new(verbose => $verbose)->index_bams(fofn=>q[$done_file.part]) && rename(q[$done_file.part],q[$done_file])) || die qq[index_bams failed for $done_file.part\n];" ~;
+
+    LSF::run($action_lock, $lane_path, $job_name, $self,
+                     qq~perl -MVertRes::Utils::Sam -Mstrict -e "(VertRes::Utils::Sam->new(verbose => $verbose)->index_bams(fofn=>q[$done_file.part]) && rename(q[$done_file.part],q[$done_file])) || die qq[index_bams failed for $done_file.part\n];"~);
+
+    return $self->{No};
 }
 
 =head2 cleanup_requires
@@ -889,6 +950,7 @@ sub cleanup_provides {
 
 sub cleanup {
     my ($self, $lane_path, $action_lock) = @_;
+
     return $self->{Yes} unless $self->{do_cleanup};
     
     my $prefix = $self->{prefix};
@@ -997,6 +1059,33 @@ sub running_status {
     }
     
     return $self->SUPER::running_status($jids_file);
+}
+
+=head2 pipeline_finished
+
+ Title   : pipeline_finished
+ Usage   : my $bams = VertRes::Pipelines::MergeUp->pipeline_finished('/path/to/pipeline/root_dir');
+ Function: Check if the pipeline finished and return list of produced BAMs.
+ Returns : array ref of file names or undef when pipeline has not finished
+ Args    : pipeline root directory
+
+=cut
+
+sub pipeline_finished
+{
+    my ($class, $root) = @_;
+    if ( ! -e "$root/samples.txt" ) { return []; }
+    my $io = VertRes::IO->new;
+    my @lanes = $io->parse_fofn("$root/samples.txt");
+    my @out;
+    for my $lane (@lanes)
+    {
+        $lane =~ s/\s+\S+$//;
+        if ( ! -e "$lane/lane_bams.fofn" ) { die("FIXME, assumption wrong: ! -e $lane/lane_bams.fofn\n"); }
+        my @bams = $io->parse_fofn("$lane/lane_bams.fofn");
+        push @out,@bams;
+    }
+    return \@out;
 }
 
 1;

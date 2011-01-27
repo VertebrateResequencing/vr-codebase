@@ -121,6 +121,7 @@ sub find_lane
     {
         $$db_opts{database} = $db;
         $vrtrack = VRTrack::VRTrack->new($db_opts);
+        if ( !$vrtrack ) { error("No value from VRTrack::VRTrack->new()? [db=$$db_opts{database}]\n"); }
         $path = $vrtrack->hierarchy_path_of_lane_name($lane);
         if ( $path ) 
         { 

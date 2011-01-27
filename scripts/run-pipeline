@@ -626,21 +626,32 @@ sub filter_lanes {
     
     my @lanes;
     my $hu = VertRes::Utils::Hierarchy->new();
-    HNAME: foreach my $hname (@{$hnames}) {
+    foreach my $hname (@{$hnames}) {
 	my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$hname) or croak("Could not get lane for $hname: $config\n");
         my $path   = $vrtrack->hierarchy_path_of_lane_hname($vrlane->name);
         my %lane_info = $hu->lane_info($vrlane, no_coverage => 1);
         
-        keys %valid_limits; # reset the hash counter, since we may have nexted out of a while loop
-        while (my ($limit_type, $allowed_regexes) = each %valid_limits) {
+        # we require that it pass all limit types ('AND')
+        my $all_passed = 1;
+        foreach my $limit_type (keys %valid_limits) {
 	    my $actual_value = $lane_info{$limit_type};
             
-            foreach my $regex (@{$allowed_regexes}) {
-                unless ($actual_value =~ /$regex/) {
-                    next HNAME;
+            # we require that at least one of the limits for this type is
+            # matched ('OR')
+            my $one_passed = 0;
+            foreach my $regex (@{$valid_limits{$limit_type}}) {
+                if ($actual_value =~ /$regex/) {
+                    $one_passed = 1;
+                    last;
                 }
             }
+            
+            unless ($one_passed) {
+                $all_passed = 0;
+                last;
+            }
 	}
+        next unless $all_passed;
         
 	push @lanes, $vrlane;
     }
@@ -878,13 +889,15 @@ sub get_improvement_jobs_from_vrtrack {
     }
     
     my $count = 0;
-    foreach my $lane_name (@lanes) {
-        my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane_name);
+    foreach my $vrlane (@lanes) {
+        unless (ref($vrlane)) {
+            $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $vrlane);
+        }
         next if $vrlane->is_withdrawn;
         $count++;
         
-        my $path = $vrtrack->hierarchy_path_of_lane_name($lane_name);
-        if ( !$path ) { croak("No path for [$lane_name]?\n"); }
+        my $path = $vrtrack->hierarchy_path_of_lane($vrlane);
+        if ( !$path ) { croak("No path for [$vrlane->name]?\n"); }
         my $lane_info = lane_info($path);
         
         $lane_info->{vrlane} = $vrlane;
@@ -1169,7 +1182,7 @@ sub get_mergeup_jobs {
     # and create hierarchy of directories/symlinks
     my $s_file = File::Spec->catfile($root, 'samples.txt');
     my $p_file = File::Spec->catfile($root, 'expected_platform_bams.fofn');
-    unless (-s $s_file) {
+	unless (-s $s_file) {	
         my $tmp_s = $s_file.'.working';
         open(my $sfh, '>', $tmp_s) || die "Could not write to $tmp_s\n";
 
@@ -1224,12 +1237,14 @@ sub get_mergeup_jobs {
                     $previous_path = File::Spec->catdir($previous_root, $dir);
                     my $previous_fofn = File::Spec->catfile($previous_path, 'lane_bams.fofn');
                     my %previous_bams;
-                    open(my $pfh, $previous_fofn) || die "Could not open $previous_fofn\n";
-                    while (<$pfh>) {
-                        chomp;
-                        $previous_bams{$_} = 1;
+                    # no need to read previous fofn if path did not exist in previous hierarchy
+					if (-d $previous_path) {
+	                    open(my $pfh, $previous_fofn) || die "Could not open $previous_fofn\n";
+	                    while (<$pfh>) {
+	                        chomp;
+	                        $previous_bams{$_} = 1;
+	                    }
                     }
-                    
                     $symlink = $mu->compare_hash_keys(\%these_bams, \%previous_bams);
                 }
                 
@@ -1283,14 +1298,105 @@ sub get_mergeup_jobs {
         move($tmp_p, $p_file) || die "Could not move $tmp_p to $p_file\n";
     }
     
-    # note which samples we have to deal with
+	# note which samples we have to deal with	
     my %new_samples;
     open(my $sfh, $s_file) || die "Could not open $s_file\n";
     while (<$sfh>) {
         my ($sample, $new) = split;
         $new_samples{$sample} = 1 if $new;
     }
-    
+	close $sfh;
+	
+	# Record the files expected from the platform and sample merges
+	my $platform_merges_expected_file = File::Spec->catfile($root, '.platform_merges_expected');
+	my $sample_merges_expected_file = File::Spec->catfile($root, '.sample_merges_expected');
+	my $platform_merges_done_file = File::Spec->catfile($root, '.platform_merges_done');
+	my $sample_merges_done_file = File::Spec->catfile($root, '.sample_merges_done');
+	
+	unless ( -s $platform_merges_expected_file || -e $platform_merges_done_file ) {
+		open(my $ofh, '>', $platform_merges_expected_file) || die "Couldn't write to $platform_merges_expected_file";
+	    foreach my $sample (keys %new_samples) {
+			my $expected_file = File::Spec->catfile($sample, ".platform_merge_done");
+	        print $ofh $expected_file, "\n";
+	    }
+	    my $expected = keys %new_samples;
+	    print $ofh "# expecting $expected\n";
+	    close($ofh);
+	}
+	
+	if ( $config_data->{data}->{do_sample_merge} ) {
+		unless ( -s $sample_merges_expected_file || -e $sample_merges_done_file ) {
+			open(my $ofh, '>', $sample_merges_expected_file) || die "Couldn't write to $sample_merges_expected_file";
+		    foreach my $sample (keys %new_samples) {
+				my $expected_file = File::Spec->catfile($sample, ".sample_merge_done");
+		        print $ofh $expected_file, "\n";
+		    }
+		    my $expected = keys %new_samples;
+		    print $ofh "# expecting $expected\n";
+		    close($ofh);
+		}
+	}
+	
+	# Check for done files. 
+	my %done_merges;
+	foreach my $level ('platform', 'sample') {
+		next if ( $level eq 'sample' && ! $config_data->{data}->{do_sample_merge} );
+		
+		my $expected_file = $level eq 'platform' ? $platform_merges_expected_file : $sample_merges_expected_file;
+		my $done_file = $level eq 'platform' ? $platform_merges_done_file : $sample_merges_done_file;
+		
+		if (-s $expected_file && ! -e $done_file) {
+	        my $done_count = 0;
+	        my $expected_merges = 0;
+	        my $written_expected;
+	        open(my $efh, $expected_file) || die "Couldn't open $expected_file";
+	        my @merged;
+	        my @skipped;
+	        while (<$efh>) {
+	            chomp;
+	            /\S/ || next;
+	            if (/^# expecting (\d+)/) {
+	                $written_expected = $1;
+	                next;
+	            }
+	            $expected_merges++;
+			
+	            if ( -e $_ ) {
+	                $done_count++;
+	                push(@merged, $_);
+					my $sample = dirname($_);
+					$done_merges{$sample}++;
+	            }
+	            else {
+	                push(@skipped, $_);
+	            }
+	        }
+	        
+	        if ($written_expected == $expected_merges && scalar @merged == $expected_merges) {
+	            move($expected_file, $done_file) || die "Failed to move $expected_file -> $done_file";
+	        }
+	    }
+	}
+	
+	# Exit if pipeline complete - i.e. merges_done files are present
+	if ( -s $platform_merges_done_file ) {
+		if ( $config_data->{data}->{do_sample_merge} ) {
+			if ( -s $sample_merges_done_file ) {
+				debug($config_data,"done. All sample merges complete.\n");
+				return;
+			}
+		} else {
+			debug($config_data,"done. All platform merges complete.\n");
+			return;
+		}
+	}
+	
+	# Remove from new samples hash if done for both platform and sample merges (if required)
+	my $done_count = $config_data->{data}->{do_sample_merge} ? 2 : 1;
+	while ( my ($sample, $count) = each %done_merges ) {
+		delete $new_samples{$sample} if ($count == $done_count);
+	}
+	
     # now actually create the jobs
     my @samples = sort keys %new_samples;
     my $sample_count = 0;
@@ -1306,7 +1412,7 @@ sub get_mergeup_jobs {
         }
     }
     
-    debug($config_data,"done\n");
+    debug($config_data,"done $sample_count\n");
     return;
 }
 

@@ -719,6 +719,12 @@ sub set_stripe_dir_tree {
 
 sub file_exists {
     my ($self, $file, %opts) = @_;
+
+    # Strip multiple and trailing slashes (/path//xx/ to /path/xx)
+    $file =~ s{/+}{/}g;
+    $file =~ s{/$}{};
+    if ( $file =~ m{^$} ) { $file='/'; }    # we never expect the root directory, but just in case..
+
     my $dmd5 = Digest::MD5->new();
     $dmd5->add($file);
     my $md5 = $dmd5->hexdigest;
@@ -747,7 +753,6 @@ sub file_exists {
     
     if ($opts{wipe_out}) {
         if ($opts{recurse}) {
-            $file =~ s{/*$}{};
             $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path REGEXP '^$file/.*'});
             $file_exists_dbh->do(qq{DELETE FROM file_status WHERE path REGEXP '^$file/?\$'});
         }

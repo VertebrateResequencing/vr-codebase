@@ -116,14 +116,16 @@ void error(const char *format, ...);
 // Calculate the number of bases in the read trimmed by BWA
 int bwa_trim_read(int trim_qual, uint8_t *quals, int len, int reverse) 
 {
-    if ( len<=BWA_MIN_RDLEN ) return 0;
+    if ( len<BWA_MIN_RDLEN ) return 0;
 
-    int max_trimmed = len-BWA_MIN_RDLEN;
+    // Although the name implies that the read cannot be trimmed to more than BWA_MIN_RDLEN,
+    //  the calculation can in fact trim it to (BWA_MIN_RDLEN-1). (bwa_trim_read in bwa/bwaseqio.c).
+    int max_trimmed = len - BWA_MIN_RDLEN + 1;
     int l, sum=0, max_sum=0, max_l=0;
 
     for (l=0; l<max_trimmed; l++)
     {
-        sum += trim_qual - quals[ reverse ? len-1-l : l];
+        sum += trim_qual - quals[ reverse ? l : len-1-l ];
         if ( sum<0 ) break;
         if ( sum>max_sum )
         {
@@ -155,7 +157,7 @@ float fai_gc_content(faidx_t *fai,char *chr,int from, int to)
         error("FIXME: %s:%d-%d\n", chr,from,to);
     if (from > 0) from--;
     if (from >= val.len)
-        error("FIXME: the index too big? [%s:%d-%d .. %d]\n", chr,from+1,to,val.len);
+        error("Was the bam file mapped with the reference sequence supplied? A read mapped beyond the chromosome (%s:%d, chromosome length %d).\n", chr,from+1,val.len);
     if (to >= val.len) to = val.len;
 
     // Position the razf reader
@@ -218,7 +220,7 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
         stats->gc_1st[gc_count]++;
     }
     int reverse = IS_REVERSE(bam_line);
-    if ( stats->trim_qual ) 
+    if ( stats->trim_qual>0 ) 
         stats->nbases_trimmed += bwa_trim_read(stats->trim_qual, bam_quals, seq_len, reverse);
 
     // Quality histogram and average quality
