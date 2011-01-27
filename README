@@ -1,7 +1,5 @@
 This repository contains the internally-developed software used by the
-Vertebrate Resequencing group a the Sanger Institute. The canonical
-externally-accessble origin is:
-https://github.com/VertebrateResequencing/vr-codebase
+Vertebrate Resequencing group a the Sanger Institute.
 
 It comprises mostly self-documented Perl code. There are both scripts and 
 modules within subfolders.
