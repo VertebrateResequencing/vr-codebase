@@ -1110,6 +1110,7 @@ sub get_splitbam_jobs {
     # we make a job to run through the whole pipeline one bam at a time, but
     # don't exceed the maximum jobs limit
     foreach my $bam (@bams) {
+    	next unless (-s $bam);
         my ($bam_basename, $path) = fileparse($bam);
         my $prefix = $bam_basename;
         $prefix =~ s/\.bam$//;
@@ -1230,7 +1231,10 @@ sub get_mergeup_jobs {
                     # previous_root
                     foreach my $symlinked (keys %symlinked) {
                         if ($this_path =~ /^$symlinked/) {
-                            next DIR;
+							if ($level eq 'samples') {
+								print $sfh "$this_path\t0\n";
+							}
+							next DIR;
                         }
                     }
                     
