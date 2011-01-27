@@ -41,6 +41,12 @@ sub check_genotype
     my ($dir,$name,$suff) = Utils::basename($bam);
     if ( !$dir ) { $dir = '.'; }
 
+    my $bam2glf_cmd = "$glf checkGenotype $snps $name.glf > $name.gtypey";
+
+    if (exists $self->{'snp_sites'} ) {
+        $bam2glf_cmd = "";
+    }
+
     # Dynamic script to be run by LSF.
     open(my $fh, '>', "$dir/${prefix}genotype.pl") or $self->throw("$dir/${prefix}genotype.pl: $!");
     print $fh
@@ -56,7 +62,7 @@ if ( ! -e "$bam.bai" || Utils::file_newer("$bam","$bam.bai") )
 }
 if ( ! -e "$name.glf" || Utils::file_newer("$bam","$name.glf") )
 {
-    Utils::CMD("$samtools pileup -g -f $fa_ref $bam > $name.glfx");
+    Utils::CMD($bam2glf_cmd);
     rename("$name.glfx", "$name.glf") or Utils::CMD("rename $name.glfx $name.glf: \$!");
 }
 if ( ! -e "$name.gtypex" || Utils::file_newer("$name.glf","$name.gtypex") )
