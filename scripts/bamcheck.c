@@ -17,7 +17,6 @@
 #include "sam.h"
 #include "faidx.h"
 #include "khash.h"
-#include "kstring.h"
 
 #define BWA_MIN_RDLEN 35
 #define IS_PAIRED(bam) ((bam)->core.flag&BAM_FPAIRED && !((bam)->core.flag&BAM_FUNMAP) && !((bam)->core.flag&BAM_FMUNMAP))
@@ -295,11 +294,7 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
                     error("The genome too long?? [%ud]\n", stats->igcd);
 
                 if ( stats->fai )
-                {
-                    kstring_t chr_name = {0,0,0};
-                    kputs(stats->sam->header->target_name[stats->tid],&chr_name);
-                    stats->gcd[ stats->igcd ].gc = fai_gc_content(stats->fai,chr_name.s,stats->pos,stats->pos+stats->gcd_bin_size);
-                }
+                    stats->gcd[ stats->igcd ].gc = fai_gc_content(stats->fai,stats->sam->header->target_name[stats->tid],stats->pos,stats->pos+stats->gcd_bin_size);
             }
             stats->gcd[ stats->igcd ].depth++;
             // When no reference sequence is given, approximate the GC graph but determinig GC from each bin
