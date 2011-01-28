@@ -180,14 +180,15 @@ sub CMD
     }
     if ( $$options{time} ) { $elapsed = tv_interval($time_start); }
 
+    my $exit_status_ori = $?;
     my $exit_status = $? >> 8;
     if ( $exit_status==$$options{'ignore_errno'} ) { $exit_status=0; }
 
     if ( $exit_status )
     {
         my @msg = ();
-        unshift @msg, '['. scalar gmtime() ."]\n".
-        push @msg, "The command \"$cmd\" returned non-zero status $exit_status [signal ",$exit_status&127,"]";
+        unshift @msg, '['. scalar gmtime() ."]\n";
+        push @msg, "The command \"$cmd\" returned non-zero status $exit_status [signal ",$exit_status&127,", $exit_status_ori]";
         if ( $! ) 
         { 
             push @msg, ": $!\n"; 
