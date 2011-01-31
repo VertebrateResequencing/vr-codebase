@@ -115,6 +115,14 @@ our $actions = [{ name     => 'create_hierarchy',
                   action   => \&sample_merge,
                   requires => \&sample_merge_requires, 
                   provides => \&sample_merge_provides },
+                { name     => 'index_platform_bams',
+                  action   => \&index_platform_bams,
+                  requires => \&index_platform_bams_requires, 
+                  provides => \&index_platform_bams_provides },
+                { name     => 'index_sample_bam',
+                  action   => \&index_sample_bam,
+                  requires => \&index_sample_bam_requires, 
+                  provides => \&index_sample_bam_provides },
                 { name     => 'cleanup',
                   action   => \&cleanup,
                   requires => \&cleanup_requires, 
@@ -126,6 +134,7 @@ our %options = (do_cleanup => 0,
                 tag_strip => [],
                 remove_tag_strip_bams => 0,
                 remove_library_level_bams => 0,
+                do_index_bams => 0,
 				force_check => 0,
                 dont_wait => 1);
 
@@ -149,6 +158,7 @@ our %options = (do_cleanup => 0,
                                  level bams after a platform merge unless merged 
                                  bams are symlinks to the library level bams)
            do_cleanup => boolean (default false: don't do the cleanup action)
+           do_index_bams => boolean (default false: don't index bams)
            do_sample_merge => boolean (default false: don't create sample-level
                                        bams)
            extract_intervals => {intervals_file => 'filename'}
@@ -615,7 +625,7 @@ sub extract_intervals {
         # bam if we deleted it
         next if $self->_downstream_bam_present($extract_bam);
         next unless -s $markdup_bam;
-        my $job_name = $self->{prefix}.'extract_intervals';
+        my $job_name = $self->{prefix}.'extract_intervals_'.$basename;
         $self->archive_bsub_files($path, $job_name);
         $job_name = $self->{fsu}->catfile($path, $job_name);
         LSF::run($action_lock, $lane_path, $job_name, $self,
@@ -894,6 +904,152 @@ sub _fofn_to_bam_groups {
     return %bams_groups;
 }
 
+=head2 index_platform_bams_requires
+
+ Title   : index_platform_bams_requires
+ Usage   : my $required_files = $obj->index_platform_bams_requires('/path/to/lane');
+ Function: Find out what files the index_platform_bams action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub index_platform_bams_requires {
+    my ($self, $lane_path) = @_;
+	return $self->{do_index_bams} ? ['.platform_merge_done'] : [];
+}
+
+=head2 index_platform_bams_provides
+
+ Title   : index_platform_bams_provides
+ Usage   : my $provided_files = $obj->index_platform_bams_provides('/path/to/lane');
+ Function: Find out what files the index_platform_bams action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub index_platform_bams_provides {
+    my ($self, $lane_path) = @_;
+	return $self->{do_index_bams} ? ['.index_platform_bams_done'] : [];
+}
+
+=head2 index_platform_bams
+
+ Title   : index_platform_bams
+ Usage   : $obj->index_platform_bams('/path/to/lane', 'lock_filename');
+ Function: Index platform bams.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub index_platform_bams {
+    my ($self, $lane_path, $action_lock) = @_;
+
+	return $self->{Yes} unless $self->{do_index_bams};
+	
+	my $fofn = $self->{fsu}->catfile($lane_path, '.platform_merge_done');
+    my @bams = $self->{io}->parse_fofn($fofn, '/');
+	
+	my $out_fofn = $self->{fsu}->catfile($lane_path, '.index_platform_bams_expected');
+	open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
+	foreach my $bam (@bams) {
+	    print $ofh "$bam.bai\n";
+	}
+	my $expected = @bams;
+	print $ofh "# expecting $expected\n";
+	close($ofh);
+	
+	my $sample = dirname(shift @bams);
+	my $verbose = $self->verbose();
+    my $job_name = $self->{prefix}.'index_platform_bams';
+    $self->archive_bsub_files($sample, $job_name);
+    $job_name = $self->{fsu}->catfile($sample, $job_name);
+	LSF::run($action_lock, $lane_path, $job_name, $self,
+qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->index_bams(fofn=>q[$fofn]) || die qq[index_bams failed for $fofn\n];"~);
+
+    return $self->{No};
+}
+
+=head2 index_sample_bam_requires
+
+ Title   : index_sample_bam_requires
+ Usage   : my $required_files = $obj->index_sample_bam_requires('/path/to/lane');
+ Function: Find out what files the index_sample_bam action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub index_sample_bam_requires {
+    my ($self, $lane_path) = @_;
+	return ( $self->{do_index_bams} && $self->{do_sample_merge} ) ? ['.index_platform_bams_done', '.sample_merge_done'] : [];
+}
+
+=head2 index_sample_bam_provides
+
+ Title   : index_sample_bam_provides
+ Usage   : my $provided_files = $obj->index_sample_bam_provides('/path/to/lane');
+ Function: Find out what files the index_sample_bam action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub index_sample_bam_provides {
+    my ($self, $lane_path) = @_;
+	return ( $self->{do_index_bams} && $self->{do_sample_merge} ) ? ['.index_sample_bam_done'] : [];
+}
+
+=head2 index_sample_bam
+
+ Title   : index_sample_bam
+ Usage   : $obj->index_sample_bam('/path/to/lane', 'lock_filename');
+ Function: Index sample bam.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub index_sample_bam {
+    my ($self, $lane_path, $action_lock) = @_;
+
+	return $self->{Yes} unless ( $self->{do_index_bams} && $self->{do_sample_merge} );
+	
+	my $fofn = $self->{fsu}->catfile($lane_path, '.sample_merge_done');
+    my @bams = $self->{io}->parse_fofn($fofn, '/');
+	$self->throw("More than one bam in sample merge fofn, $fofn\n") unless (scalar @bams == 1);
+	my $bam = shift @bams;
+
+	my $out_fofn = $self->{fsu}->catfile($lane_path, '.index_sample_bam_expected');
+	open(my $ofh, '>', $out_fofn) || $self->throw("Couldn't write to $out_fofn");
+	print $ofh "$bam.bai\n";
+	print $ofh "# expecting 1\n";
+	close($ofh);
+	
+	# create symlink to platform index file if the bam is a symlink
+	if (-l $bam) {
+		my $slink = readlink $bam;
+		unless ( $self->{fsu}->file_exists("$slink.bai", force_check => $self->{force_check}) ) {
+			$self->throw("Trying to create symlink to $slink.bai, but it doesn't exist\n");
+		}
+		symlink "$slink.bai", "$bam.bai" || $self->throw("Could not create symlink $slink.bai -> $bam.bai");
+		my $done_fofn = $self->{fsu}->catfile($lane_path, '.index_sample_bam_done');
+		move($out_fofn, $done_fofn);
+		return $self->{Yes};
+	}
+	
+	my $verbose = $self->verbose();
+    my $job_name = $self->{prefix}.'index_sample_bam';
+    $self->archive_bsub_files($lane_path, $job_name);
+    $job_name = $self->{fsu}->catfile($lane_path, $job_name);
+	LSF::run($action_lock, $lane_path, $job_name, $self,
+qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->index_bams(fof=>q[$fofn]) || die qq[index_sample_bam failed for $bam\n];"~);
+
+    return $self->{No};
+}
+
 =head2 cleanup_requires
 
  Title   : cleanup_requires
@@ -968,14 +1124,17 @@ sub is_finished {
            $action_name eq 'tag_strip' || 
            $action_name eq 'library_merge' ||
            $action_name eq 'platform_merge' ||
-           $action_name eq 'sample_merge') {
+           $action_name eq 'sample_merge' ||
+           $action_name eq 'index_platform_bams' ||
+           $action_name eq 'index_sample_bam') {
         my $expected_file = $self->{fsu}->catfile($lane_path, ".${action_name}_expected");
         my $not_yet_done = -e $expected_file;
         my $done_file = $self->{fsu}->catfile($lane_path, ".${action_name}_done");
         $self->_merge_check($expected_file, $done_file, $lane_path);
         
         if ($not_yet_done && -s $done_file) {
-            if ($action_name eq 'lib_markdup' || $action_name eq 'extract_intervals') {
+            if ($action_name eq 'lib_markdup' || $action_name eq 'extract_intervals') 
+			{
                 # we've just completed a non-merge library operation; delete the
                 # previous bam in the chain
                 my $replace;
@@ -998,7 +1157,9 @@ sub is_finished {
                         unlink($previous);
                     }
                 }
-            } elsif ($action_name eq 'library_merge' && $self->{remove_tag_strip_bams}) {
+            } 
+			elsif ($action_name eq 'library_merge' && $self->{remove_tag_strip_bams}) 
+			{
 				# we've just completed the library merge; delete the tag_strip
 				# bams unless the library merge bams are just symlinks to those
 				my $tag_done_file = $self->{fsu}->catfile($lane_path, ".tag_strip_done");
@@ -1012,7 +1173,26 @@ sub is_finished {
 						unlink $tag_strip_bam;
 					}
 				}
-			} elsif ($action_name eq 'platform_merge' && $self->{remove_library_level_bams}) {
+			} 
+			elsif ($action_name eq 'platform_merge' && $self->{remove_library_level_bams}) 
+			{
+				# we've just completed the platform merge; delete the library level
+				# bams unless the platform level bams are just symlinks to those
+				my $markdup_done_file = $self->{fsu}->catfile($lane_path, ".lib_markdup_done");
+				my $extract_intervals_done_file = $self->{fsu}->catfile($lane_path, ".extract_intervals_done");
+				my $done_file = $self->{extract_intervals} ? $extract_intervals_done_file : $markdup_done_file;
+				my @files = $self->{io}->parse_fofn($done_file);
+				foreach my $bam (@files) {
+					my (undef, $path) = fileparse($bam);
+					$path = dirname($path);
+					my $platform_bam = File::Spec->catfile($path, 'raw.bam');
+					if ($self->{fsu}->file_exists($platform_bam, force_check => $self->{force_check})) {
+						unlink $bam unless (-l $platform_bam);
+					}
+				}
+			}
+			elsif ($action_name eq 'index_platform_bams' && $self->{remove_library_level_bams}) 
+			{
 				# we've just completed the platform merge; delete the library level
 				# bams unless the platform level bams are just symlinks to those
 				my $markdup_done_file = $self->{fsu}->catfile($lane_path, ".lib_markdup_done");
@@ -1054,19 +1234,9 @@ sub _merge_check {
                 next;
             }
             $expected_bams++;
-
-			my $downstream_exists = $fsu->file_exists($_, force_check => $force_check) ? 1 : 0;
-			my $markdup_bam = $_;
-	        $markdup_bam =~ s/\.bam$/.markdup.bam/;
-	        $downstream_exists = 1 if $fsu->file_exists($markdup_bam, force_check => $force_check);
-
-	        if ($self->{extract_intervals}) {
-				my $intervals_bam = $markdup_bam;
-		        $intervals_bam =~ s/\.bam$/.intervals.bam/;
-	            $downstream_exists = 1 if $fsu->file_exists($intervals_bam, force_check => $force_check);
-	        }
-	
-            if ( $downstream_exists ) {
+			
+			# If the file exists or one of the downstream bams exist, we can condider
+            if ( $fsu->file_exists($_, force_check => $force_check) || $self->_downstream_bam_present($_) ) {
                 $done_bams++;
                 push(@bams, $_);
             }

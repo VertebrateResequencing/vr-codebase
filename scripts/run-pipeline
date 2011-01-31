@@ -1174,7 +1174,7 @@ sub get_mergeup_jobs {
         copy($config_data->{lane_bams}, $lane_bams_fofn) || die "Could not copy '$config_data->{lane_bams}' to '$lane_bams_fofn'\n";
     }
     
-    # We will make a job (instance of MergeUp) for each sample, suplying it the
+    # We will make a job (instance of MergeUp) for each sample, supplying it the
     # subset of lanes in the input lane_bams fofn for that sample. We'll create
     # the whole hierarchy; if we have been given previous_merge_root, we'll have
     # symlinks to dirs at levels that haven't changed.
@@ -1182,14 +1182,13 @@ sub get_mergeup_jobs {
     # first work out which samples changed and which didn't; record the results
     # and create hierarchy of directories/symlinks
     my $s_file = File::Spec->catfile($root, 'samples.txt');
-    my $p_file = File::Spec->catfile($root, 'expected_platform_bams.fofn');
+    my $p_fofn = File::Spec->catfile($root, 'expected_platform_bams.fofn');
 	unless (-s $s_file) {	
         my $tmp_s = $s_file.'.working';
         open(my $sfh, '>', $tmp_s) || die "Could not write to $tmp_s\n";
 
-        my $tmp_p = $p_file.'.working';
-        open(my $pfh, '>', $tmp_p) || die "Could not write to $tmp_p\n";
-        
+        open(my $pfh, '>', $p_fofn) || die "Could not write to $p_fofn\n";
+
         # parse lane_bams.fofn to group bams by hierarchy level
         open(my $lfh, $lane_bams_fofn) || die "Could not open $lane_bams_fofn\n";
         my %lane_bams;
@@ -1261,8 +1260,10 @@ sub get_mergeup_jobs {
                     }
                 }
                 else {
-                    mkdir($this_path) || die "Could not mkdir $this_path\n";
-                    
+					unless (-d $this_path) {
+	                    mkdir($this_path) || die "Could not mkdir $this_path\n";
+                    }
+					
                     my $this_fofn = File::Spec->catfile($this_path, 'lane_bams.fofn');
                     open(my $ofh, '>', $this_fofn) || die "Could not write to $this_fofn\n";
                     print $ofh join("\n", @{$bams}), "\n";
@@ -1299,62 +1300,69 @@ sub get_mergeup_jobs {
         move($tmp_s, $s_file) || die "Could not move $tmp_s to $s_file\n";
 
         close($pfh);
-        move($tmp_p, $p_file) || die "Could not move $tmp_p to $p_file\n";
     }
     
+	
+	# what is the final non-cleanup action that will complete?
+	my $final_task = 'platform_merges';
+	$final_task = 'sample_merges' if $config_data->{data}->{do_sample_merge};
+	$final_task = 'index_platform_bams' if ($config_data->{data}->{do_index_bams});
+	$final_task = 'index_sample_bam' if ($config_data->{data}->{do_sample_merge} && $config_data->{data}->{do_index_bams});
+
 	# note which samples we have to deal with	
     my %new_samples;
     open(my $sfh, $s_file) || die "Could not open $s_file\n";
     while (<$sfh>) {
         my ($sample, $new) = split;
-        $new_samples{$sample} = 1 if $new;
+		if ( $new ) {
+	        $new_samples{$sample} = 1;
+		} elsif ( $config_data->{previous_merge_root} ) {
+			# If previous root hierarchy was not completed to same level as we wish for this
+			# hierarchy, then we must deal with the old samples too.
+			my $previous_done_file = File::Spec->catfile($config_data->{previous_merge_root}, ".$final_task\_done");
+	        $new_samples{$sample} = 1 unless (-s $previous_done_file);
+		}
     }
 	close $sfh;
 	
-	# Record the files expected from the platform and sample merges
-	my $platform_merges_expected_file = File::Spec->catfile($root, '.platform_merges_expected');
-	my $sample_merges_expected_file = File::Spec->catfile($root, '.sample_merges_expected');
-	my $platform_merges_done_file = File::Spec->catfile($root, '.platform_merges_done');
-	my $sample_merges_done_file = File::Spec->catfile($root, '.sample_merges_done');
-	
-	unless ( -s $platform_merges_expected_file || -e $platform_merges_done_file ) {
-		open(my $ofh, '>', $platform_merges_expected_file) || die "Couldn't write to $platform_merges_expected_file";
+	# Create expected_sample_bams.fofn
+    my $s_fofn = File::Spec->catfile($root, 'expected_sample_bams.fofn');
+	if ( $config_data->{data}->{do_sample_merge} && ! -s $s_fofn ) {
+		open(my $sfh, '>', $s_fofn) || die "Couldn't write to $s_fofn";
 	    foreach my $sample (keys %new_samples) {
-			my $expected_file = File::Spec->catfile($sample, ".platform_merge_done");
-	        print $ofh $expected_file, "\n";
+			my $expected_bam = File::Spec->catfile($sample, "raw.bam");
+	        print $sfh $expected_bam, "\n";
 	    }
-	    my $expected = keys %new_samples;
-	    print $ofh "# expecting $expected\n";
-	    close($ofh);
+		close($sfh);
 	}
 	
-	if ( $config_data->{data}->{do_sample_merge} ) {
-		unless ( -s $sample_merges_expected_file || -e $sample_merges_done_file ) {
-			open(my $ofh, '>', $sample_merges_expected_file) || die "Couldn't write to $sample_merges_expected_file";
+	my %done_tasks;
+	foreach my $task ('platform_merge', 'sample_merge', 'index_platform_bams', 'index_sample_bam') {
+		next if ( $task eq 'sample_merges' && ! $config_data->{data}->{do_sample_merge} );
+		next if ( $task =~ /index/ && ! $config_data->{data}->{do_index_bams} );
+		
+		my $expected_file = File::Spec->catfile($root, ".${task}_expected");
+		my $done_file = File::Spec->catfile($root, ".${task}_done");
+		
+		# Record the files expected
+		unless ( -s $expected_file || -e $done_file ) {
+			open(my $ofh, '>', $expected_file) || die "Couldn't write to $expected_file";
 		    foreach my $sample (keys %new_samples) {
-				my $expected_file = File::Spec->catfile($sample, ".sample_merge_done");
-		        print $ofh $expected_file, "\n";
+				my $expected_done_file = File::Spec->catfile($sample, ".${task}_done");
+		        print $ofh $expected_done_file, "\n";
 		    }
 		    my $expected = keys %new_samples;
 		    print $ofh "# expecting $expected\n";
 		    close($ofh);
 		}
-	}
-	
-	# Check for done files. 
-	my %done_merges;
-	foreach my $level ('platform', 'sample') {
-		next if ( $level eq 'sample' && ! $config_data->{data}->{do_sample_merge} );
 		
-		my $expected_file = $level eq 'platform' ? $platform_merges_expected_file : $sample_merges_expected_file;
-		my $done_file = $level eq 'platform' ? $platform_merges_done_file : $sample_merges_done_file;
-		
-		if (-s $expected_file && ! -e $done_file) {
+		# Check for done files. 
+		if ( -s $expected_file && ! -e $done_file ) {
 	        my $done_count = 0;
-	        my $expected_merges = 0;
+	        my $expected_done = 0;
 	        my $written_expected;
 	        open(my $efh, $expected_file) || die "Couldn't open $expected_file";
-	        my @merged;
+	        my @done;
 	        my @skipped;
 	        while (<$efh>) {
 	            chomp;
@@ -1363,42 +1371,33 @@ sub get_mergeup_jobs {
 	                $written_expected = $1;
 	                next;
 	            }
-	            $expected_merges++;
+	            $expected_done++;
 			
 	            if ( -e $_ ) {
-	                $done_count++;
-	                push(@merged, $_);
+	                push(@done, $_);
 					my $sample = dirname($_);
-					$done_merges{$sample}++;
+					$done_tasks{$sample} = $task;
 	            }
 	            else {
 	                push(@skipped, $_);
 	            }
 	        }
 	        
-	        if ($written_expected == $expected_merges && scalar @merged == $expected_merges) {
+	        if ($written_expected == $expected_done && scalar @done == $expected_done) {
 	            move($expected_file, $done_file) || die "Failed to move $expected_file -> $done_file";
 	        }
 	    }
-	}
-	
-	# Exit if pipeline complete - i.e. merges_done files are present
-	if ( -s $platform_merges_done_file ) {
-		if ( $config_data->{data}->{do_sample_merge} ) {
-			if ( -s $sample_merges_done_file ) {
-				debug($config_data,"done. All sample merges complete.\n");
-				return;
-			}
-		} else {
-			debug($config_data,"done. All platform merges complete.\n");
+		
+		# Exit if pipeline complete - i.e. final task file is present
+		if ( $task eq $final_task && -s $done_file ) {
+			debug($config_data,"done. All tasks complete.\n");
 			return;
 		}
 	}
 	
-	# Remove from new samples hash if done for both platform and sample merges (if required)
-	my $done_count = $config_data->{data}->{do_sample_merge} ? 2 : 1;
-	while ( my ($sample, $count) = each %done_merges ) {
-		delete $new_samples{$sample} if ($count == $done_count);
+	# Remove from new samples hash if final task has completed
+	while ( my ($sample, $task) = each %done_tasks ) {
+		delete $new_samples{$sample} if ($task eq $final_task);
 	}
 	
     # now actually create the jobs
@@ -1411,7 +1410,8 @@ sub get_mergeup_jobs {
         debug($config_data,".");
         
         $sample_count++;
-        if ($sample_count >= $max_samples) {
+        if ($sample_count > $max_samples) {
+            debug($config_data, "jobs limit $config_data->{simultaneous_samples} reached... ");
             last;
         }
     }

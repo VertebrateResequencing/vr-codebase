@@ -818,6 +818,8 @@ sub index_bams
         while (my $line=<$fh>)
         {
             chomp($line);
+			/\S/ || next;
+			/^#/ && next;
             push @bams,$line;
         }
         close($fh);
@@ -825,9 +827,11 @@ sub index_bams
     my $samtools = VertRes::Wrapper::samtools->new(verbose => $self->verbose, quiet => 1);
     for my $bam (@bams)
     {
+    	my $bai = $bam.'.bai';
+    	next if (-s $bai);
         $samtools->run_method('system');
-        $samtools->index($bam, $bam.'.bai');
-        $samtools->run_status >= 1 || $self->throw("Failed to create $bam.bai");
+        $samtools->index($bam, $bai);
+        $samtools->run_status >= 1 || $self->throw("Failed to create $bai");
     }
     return 1;
 }
