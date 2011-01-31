@@ -458,7 +458,7 @@ foreach my $pname (keys %projects){
                             }
                         }
 
-                        if( !$files || length( @$files )==0 ){   # didn't find bam
+                        if( !$files || scalar( @$files )==0 ){   # didn't find bam
                             unless ($no_fastq){ # don't want fastq
                                 eval {
                                     $files = $lane->fastq;
@@ -470,7 +470,7 @@ foreach my $pname (keys %projects){
                             }
                         }
                         
-                        if( !$files || length( @$files )==0 ){
+                        if( !$files || scalar( @$files )==0 ){
                             print $lane->name, " has no files\n";
                             next;
                         }
