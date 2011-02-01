@@ -880,8 +880,16 @@ sub get_improvement_jobs_from_vrtrack {
     
     my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
     
-    my @lanes = @{$vrtrack->processed_lane_hnames(mapped => 1, improved => 0) || []};
-    warn "got ", scalar(@lanes), " lanes that were mapped and not improved\n";
+    my %filter  = ( mapped => 1, improved => 0 );
+    my @lanes;
+    if ( exists $config_data->{qc} && $config_data->{qc} ) { 
+        $filter{qc} = $config_data{qc}; 
+        @lanes = @{$vrtrack->processed_lane_hnames(%filter) || []};
+        warn "got ", scalar(@lanes), " lanes that were mapped, passed qc and not improved\n";
+    } else {
+        @lanes = @{$vrtrack->processed_lane_hnames(%filter) || []};
+        warn "got ", scalar(@lanes), " lanes that were mapped and not improved\n";
+    } 
     
     if (defined $config_data->{limits}) {
         @lanes = filter_lanes($config_data->{limits}, \@lanes, $vrtrack, $config);
