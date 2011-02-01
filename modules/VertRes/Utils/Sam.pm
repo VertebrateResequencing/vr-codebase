@@ -2974,6 +2974,15 @@ sub bam_exome_qc_stats {
     $bam_parser->close();
     print STDERR "Finished parsing BAM file\n" if $opts{verbose};
 
+    # add bait/target gc histogram to qc dump hash
+    for my $b_or_t ('bait', 'target'){
+        foreach my $chr (keys %{$intervals->{$b_or_t}}) {
+            foreach my $a (@{$intervals->{$b_or_t}{$chr}}) {
+                $stats{$b_or_t . '_gc_hist'}[$a->[2]]++;
+            }
+        }
+    }
+
     # sort out stats for the last ref sequence in the bam file
     $self->_update_bam_exome_qc_stats($intervals, \%pileup, \%stats, $current_rname, \%opts);
     undef %pileup;
@@ -3003,7 +3012,7 @@ sub bam_exome_qc_stats {
             $stats{$bait_or_target . '_cumulative_coverage_pct'}{$cov} = $base_count / $stats{$bait_or_target . '_bases'};
         }
     }
-    
+
     # work out % bases coverage above certain values
     foreach my $bait_or_target qw(bait target) { 
         my @vals = (1, 2, 5, 10, 20, 50, 100);
@@ -3175,15 +3184,20 @@ sub bam_exome_qc_make_plots {
                                                y_max => 41});
     }
 
-    # Plot: reads GC content
-    my @xvals = (0..$stats->{readlen});
-    foreach(@xvals){$_ = 100 * $_ / $stats->{readlen}}
+    # Plot: reads/targets/baits GC content
+    my @read_xvals = (0..$stats->{readlen});
+    foreach(@read_xvals){$_ = 100 * $_ / $stats->{readlen}}
+
+    my @zero_to_100 = (0..100);
+    
 
     foreach my $type ('unmapped', 'mapped') {
         my @yvals_1 = @{$stats->{"gc_hist_$type" . '_1'}};
         my @yvals_2 = @{$stats->{"gc_hist_$type" . '_2'}};
-        my @data = ({xvals => \@xvals, yvals => \@yvals_1, legend => '_1'},
-                    {xvals => \@xvals, yvals => \@yvals_2, legend => '_2'},);
+        my @data = ({xvals => \@read_xvals, yvals => \@yvals_1, legend => '_1'},
+                    {xvals => \@read_xvals, yvals => \@yvals_2, legend => '_2'},
+                    {xvals => \@zero_to_100, yvals => $stats->{bait_gc_hist}, legend => 'bait'},
+                    {xvals => \@zero_to_100, yvals => $stats->{target_gc_hist}, legend => 'target'},);
         Graphs::plot_stats({outfile=>"$outfiles_prefix.gc_$type.$plot_type",
                             normalize => 1,
                             title => "GC Plot $type reads",
@@ -3198,7 +3212,7 @@ sub bam_exome_qc_make_plots {
     # plot 4 standard devations away from the mean
     my $xmin = max (0, $insert_stats{mean} - 4 * $insert_stats{standard_deviation});
     my $xmax = $insert_stats{mean} + 4 * $insert_stats{standard_deviation};
-    @xvals = ();
+    my @xvals = ();
     my @yvals = ();
 
     foreach my $i ($xmin .. $xmax) {

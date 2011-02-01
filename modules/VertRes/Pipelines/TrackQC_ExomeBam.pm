@@ -153,8 +153,8 @@ sub VertRes::Pipelines::TrackQC_ExomeBam::new {
     if ( !$$self{sample_dir} ) { $self->throw("Missing the option sample_dir.\n"); }
 ##    if ( !$$self{sample_size} ) { $self->throw("Missing the option sample_size.\n"); }
     if ( !$self->{exome_design} ) { $self->throw("Missing the option exome_design.\n"); }
-    if ( !$self->{snps_vcf} ) { $self->throw("Missing the option snps_vcf\n"); }
-    if ( !$self->{snps_ped} ) { $self->throw("Missing the option snps_ped\n"); }
+    #if ( !$self->{snps_vcf} ) { $self->throw("Missing the option snps_vcf\n"); }
+    #if ( !$self->{snps_ped} ) { $self->throw("Missing the option snps_ped\n"); }
 
     # try to figure out the exome_ccords file from the exome_design
     if ( !$self->{exome_coords} ) {
@@ -192,37 +192,37 @@ sub check_genotype_provides {
 sub check_genotype {
 my ($pwd) = qx/pwd/; 
     my ($self,$lane_path,$lock_file) = @_;
-    my $snps_vcf = $self->{snps_vcf};
-    my $snps_ped = $self->{snps_ped};
+    #my $snps_vcf = $self->{snps_vcf};
+    #my $snps_ped = $self->{snps_ped};
     my $fa_ref = $self->{fa_ref};
     my $sample_dir = $self->{'sample_dir'};
     my $outdir = File::Spec->catdir($lane_path, $sample_dir);
-    my $bam = File::Spec->catfile($outdir, $lane . '.bam');
+    #my $bam = File::Spec->catfile($outdir, $lane . '.bam');
     my $outfile = File::Spec->catfile($lane_path, $sample_dir, "$self->{lane}.gtype");
 
-    # make dynamic perl script to be run by lsf
-    my $script = File::Spec->catfile($lane_path, $sample_dir, "_check_genotype.pl");
-    open my $fh, '>', $script or Utils::error("$script: $!");
-    print $fh 
-qq[
-use strict;
-use warnings;
-use VertRes::Utils::GTypeCheckMpileup;
-use Data::Dumper;
-
-my \%reults = \$o->check_genotype(q[$bam], q[$snps_vcf], q[$snps_ped], q[$fa_ref]);
-open my \$fh, '>', q[$outfile] or die "error opening q[$outfile]";
-print \$fh  Dumper \$results;
-close \$fh;
-];
-
-    close $fh;
-
-    LSF::run($lock_file,$outdir,"_${lane}_stats_and_graphs", $self, qq{perl -w _stats_and_graphs.pl});
+#    # make dynamic perl script to be run by lsf
+#    my $script = File::Spec->catfile($lane_path, $sample_dir, "_check_genotype.pl");
+#    open my $fh, '>', $script or Utils::error("$script: $!");
+#    print $fh 
+#qq[
+#use strict;
+#use warnings;
+#use VertRes::Utils::GTypeCheckMpileup;
+#use Data::Dumper;
+#
+#my \%reults = \$o->check_genotype(q[$bam], q[$snps_vcf], q[$snps_ped], q[$fa_ref]);
+#open my \$fh, '>', q[$outfile] or die "error opening q[$outfile]";
+#print \$fh  Dumper \$results;
+#close \$fh;
+#];
+#
+#    close $fh;
+#
+#    LSF::run($lock_file,$outdir,"_${lane}_stats_and_graphs", $self, qq{perl -w _stats_and_graphs.pl});
     # this is not yet implemented, so just make an empty file
-    #my $cmd = "touch $outfile";
-    #$self->debug("In sub check_genotype.  making dummy gtype file...\n$cmd\n");
-    return $$self{'No'};
+    my $cmd = "touch $outfile";
+    $self->debug("In sub check_genotype.  making dummy gtype file...\n$cmd\n");
+    return $$self{'Yes'};
 }
 
 

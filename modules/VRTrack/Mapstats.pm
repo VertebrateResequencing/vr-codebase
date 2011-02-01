@@ -847,7 +847,7 @@ sub exome_design_id {
 
   Arg [1]    : exome design name (optional)
   Example    : my $exome_design = $mapstats->exome_design();
-               $mapstats->assembly('Mm37.1');
+               $mapstats->exome_design('Mm37.1');
   Description: Get/Set for mapping exome design. Lazy-loads exome_design object from $self->exome_design_id. If an exome_design name is supplied, then exome_design_id is set to the corresponding exome_design in the database. If no such exome_design exists, returns undef. Use add_exome_design to add an exome_design in this case.
   Returntype : VRTrack::Exome_design object
 
