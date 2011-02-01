@@ -16,6 +16,8 @@ VertRes::Parser::bamcheck - parse bamcheck files
     my $num_of_sequences = $pars->get('sequences');
     my $average_quality  = $pars->get('avg_qual');
     my $unmapped_reads   = $pars->get('reads_unmapped');
+    my $is_sorted        = $pars->get('is_sorted');
+    my $is_paired        = $pars->get('is_paired');
 
 =head1 DESCRIPTION
 
@@ -60,32 +62,34 @@ sub new {
  Function: Get the number of sequences that the bamcheck file is summarising.
  Returns : Numeric value or array pointer
  Args    : One of the following numeric values:
-                'sequences',
                 '1st_fragments',
+                'avg_insert_size',
+                'avg_length',
+                'avg_qual',
+                'bases_mapped',
+                'bases_mapped_cigar',
+                'bases_trimmed',
+                'error_rate',
+                'is_paired',
+                'is_sorted',
                 'last_fragments',
+                'max_length',
+                'mismatches',
                 'reads_mapped',
                 'reads_unmapped',
                 'reads_unpaired',
                 'reads_paired,
-                'total_length',
-                'bases_mapped',
-                'bases_mapped_cigar',
-                'bases_trimmed',
-                'mismatches',
-                'error_rate',
-                'avg_length',
-                'max_length',
-                'avg_qual',
-                'avg_insert_size',
                 'sd_insert_size',
+                'sequences',
+                'total_length',
 
             or one of the arrays:
-                'first_fragment_qualities',
-                'last_fragment_qualities',
                 'first_fragment_gc',
-                'last_fragment_gc',
-                'insert_size',
+                'first_fragment_qualities',
                 'gc_depth',
+                'insert_size',
+                'last_fragment_gc',
+                'last_fragment_qualities',
 
 =cut
 
@@ -133,6 +137,8 @@ sub _get_header {
         'average quality'   => 'avg_qual',
         'insert size average' => 'avg_insert_size',
         'insert size standard deviation' => 'sd_insert_size',
+        'is sorted'         => 'is_sorted',
+        'is paired'         => 'is_paired',
     );
     my %mapping = 
     (

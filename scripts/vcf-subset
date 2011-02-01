@@ -27,7 +27,8 @@ sub error
         "Options:\n",
         "   -c, --columns <string>           File or comma-separated list of columns to keep in the vcf file. If file, one column per row\n",
         "   -e, --exclude-ref                Exclude rows not containing variants.\n",
-        "   -r, --replace-with-ref           Replace the excluded types with reference allele insteaf of dot.\n",
+        "   -p, --private                    Print only rows where only the subset columns carry an alternate allele.\n",
+        "   -r, --replace-with-ref           Replace the excluded types with reference allele instead of dot.\n",
         "   -t, --type <list>                Comma-separated list of variant types to include: SNPs,indels.\n",
         "   -u, --keep-uncalled              Do not exclude rows without calls.\n",
         "   -h, -?, --help                   This help message.\n",
@@ -39,7 +40,7 @@ sub error
 
 sub parse_params
 {
-    my $opts = { exclude_ref=>0, keep_uncalled=>0, replace_with_ref=>0 };
+    my $opts = { exclude_ref=>0, keep_uncalled=>0, replace_with_ref=>0, private=>0, args=>[$0, @ARGV] };
     while (my $arg=shift(@ARGV))
     {
         if ( $arg eq '-t' || $arg eq '--type' ) 
@@ -54,6 +55,7 @@ sub parse_params
             next;
         }
         if ( $arg eq '-e' || $arg eq '--exclude-ref' ) { $$opts{'exclude_ref'} = 1; next }
+        if ( $arg eq '-p' || $arg eq '--private' ) { $$opts{'private'} = 1; next }
         if ( $arg eq '-r' || $arg eq '--replace-with-ref' ) { $$opts{'replace_with_ref'} = 1; next }
         if ( $arg eq '-u' || $arg eq '--keep-uncalled' ) { $$opts{'keep_uncalled'} = 1; next }
         if ( $arg eq '-c' || $arg eq '--columns' ) { $$opts{'columns_file'} = shift(@ARGV); next }
@@ -113,19 +115,29 @@ sub vcf_subset
     }
     my %has_col = map { $_ => 1 } @$columns;
 
+    $vcf->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
     print $vcf->format_header($columns);
+
+    my $check_private = $$opts{private};
     while (my $x=$vcf->next_data_hash())
     {
         my $site_has_call   = 0;
         my $site_has_nonref = 0;
+        my $site_is_private = 1;
         my $ref = $$x{REF};
 
         for my $col (keys %{$$x{gtypes}})
         {
-            if ( !$has_col{$col} ) { delete($$x{gtypes}{$col}); next; }
+            if ( !$has_col{$col} && ($site_is_private==0 || !$check_private) ) 
+            { 
+                # This column is not to be printed
+                delete($$x{gtypes}{$col}); 
+                next;
+            }
 
             my ($alleles,$seps,$is_phased,$is_empty) = $vcf->parse_haplotype($x,$col);
             my $sample_has_call = 0;
+            my $sample_has_nonref = 0;
 
             for (my $i=0; $i<@$alleles; $i++)
             {
@@ -142,7 +154,13 @@ sub vcf_subset
                     $sample_has_call = 1;
                 }
                 elsif ( !$is_empty ) { $sample_has_call = 1; }
-                if ( $type ne 'r' ) { $site_has_nonref = 1; }
+                if ( $type ne 'r' ) { $site_has_nonref = 1; $sample_has_nonref = 1; }
+            }
+            if ( $check_private && !$has_col{$col} )
+            {
+                if ( $sample_has_nonref ) { $site_is_private=0; }
+                delete($$x{gtypes}{$col});
+                next;
             }
             if ( !$sample_has_call )
             {
@@ -164,6 +182,7 @@ sub vcf_subset
 
         if ( !$site_has_call && !$$opts{keep_uncalled} ) { next; }
         if ( !$site_has_nonref && $$opts{exclude_ref} ) { next; }
+        if ( $check_private && !$site_is_private ) { next; }
 
         $vcf->format_genotype_strings($x);
         print $vcf->format_line($x,$columns);

@@ -266,10 +266,23 @@ sub rename_and_merge
     my $work_dir = "$lane_path/$$self{sample_dir}";
     Utils::create_dir("$work_dir");
 
-    # This is a hack: The bam files produced by the mapping pipeline are named
-    #   as MAPSTAT_ID.pe.raw.sorted.bam. In such a case, use the mapstat id to
-    #   update the mapstats, so that the mapper and assembly information is preserved.
-    #
+    # First try to use the bam recommended by VertRes::Utils::Hierarchy->lane_bams. For this,
+    #   db, slx_mapper, 454_mapper and assembly_name must be given
+    if ( exists($$self{db}) && exists($$self{slx_mapper}) && exists($$self{'454_mapper'}) && exists($$self{assembly_name}) )
+    {
+        my $vrtrack = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
+        my $hu = VertRes::Utils::Hierarchy->new();
+        my @bams;
+        eval { 
+            @bams = $hu->lane_bams($lane_path,vrtrack=>$vrtrack,slx_mapper=>$$self{slx_mapper},'454_mapper'=>$$self{'454_mapper'},assembly_name=>$$self{assembly_name});
+        };
+        if ( @bams && -e "$lane_path/$bams[0]" ) { @files = @bams; }
+    }
+
+    # The bam files produced by the mapping pipeline are named as
+    #   MAPSTAT_ID.pe.raw.sorted.bam. In such a case, use the mapstat id to
+    #   update the mapstats, so that the mapper and assembly information is
+    #   preserved.
     my %mapstat_ids;
     for my $file (@files)
     {
@@ -879,19 +892,20 @@ sub update_db
 
     my $nadapters = 0;
     if ( -e "$sample_dir/${name}_1.nadapters" ) { $nadapters += do "$sample_dir/${name}_1.nadapters"; }
-    if ( -e "$sample_dir/${name}_2.nadapters" ) { $nadapters += do "$sample_dir/${name}_1.nadapters"; }
+    if ( -e "$sample_dir/${name}_2.nadapters" ) { $nadapters += do "$sample_dir/${name}_2.nadapters"; }
 
     $vrtrack->transaction_start();
 
     # Now call the database API and fill the mapstats object with values
     my $mapping;
     my $has_mapstats = 0;
+    my $mapstats_id;
 
     if ( -e "$sample_dir/$$self{mapstat_id}" )
     {
         # When run on bam files created by the mapping pipeline, reuse existing
         #   mapstats, so that the mapper and assembly information is not overwritten.
-        my ($mapstats_id) = `cat $sample_dir/$$self{mapstat_id}`;
+        ($mapstats_id) = `cat $sample_dir/$$self{mapstat_id}`;
         chomp($mapstats_id);
         $mapping = VRTrack::Mapstats->new($vrtrack, $mapstats_id);
         if ( $mapping ) { $has_mapstats=1; }
@@ -949,6 +963,13 @@ sub update_db
         Utils::CMD("rm -f $lane_path/$$self{lane}*.fastq.gz");
     }
 
+    # Rename the sample dir by mapstats ID, cleaning existing one
+    if ( $has_mapstats && $mapstats_id )
+    {
+        Utils::CMD("rm -rf $sample_dir.$mapstats_id");
+        rename($sample_dir,"$sample_dir.$mapstats_id");
+    }
+ 
     return $$self{'Yes'};
 }
 
