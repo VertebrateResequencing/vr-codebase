@@ -1117,7 +1117,12 @@ sub get_splitbam_jobs {
     
     # we make a job to run through the whole pipeline one bam at a time, but
     # don't exceed the maximum jobs limit
+    my $skipped;
     foreach my $bam (@bams) {
+    	unless (-s $bam) {
+    	    $skipped++;
+    	    next;
+    	}
         my ($bam_basename, $path) = fileparse($bam);
         my $prefix = $bam_basename;
         $prefix =~ s/\.bam$//;
@@ -1152,7 +1157,8 @@ sub get_splitbam_jobs {
         $jobs_running++;
     }
 
-    debug($config_data,"done\n");
+    debug($config_data, " $skipped bams skipped...") if ( $skipped );
+    debug($config_data, " done $jobs_running\n");
     return;
 }
 
