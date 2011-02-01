@@ -64,10 +64,10 @@ our $options =
     split_size_gatk      => 1_000_000,
     varfilter       => 'samtools.pl varFilter -S 20 -i 20',
     pileup_rmdup    => 'pileup-rmdup',
-    samtools_pileup_params => '-d 500',   # mouse: '-r 0.0001 -d 500'
+    samtools_pileup_params => '-d 500',   # homozygous: '-r 0.0001 -d 500'
     vcf_rmdup       => 'vcf-rmdup',
     vcf_stats       => 'vcf-stats',
-    vcfutils        => 'vcfutils.pl',
+    filter4vcf      => 'vcfutils.pl filter4vcf',
 };
 
 
@@ -101,7 +101,7 @@ our $options =
                     tmp_dir         .. Big space for QCall pileup sorting.
                     varfilter       .. The samtools varFilter command (samtools.pl varFilter).
                     vcf_rmdup       .. The script to remove duplicate positions.
-                    vcfutils        .. vcfutils.pl from bcftools package (filter4vcf)
+                    filter4vcf      .. vcfutils.pl filter4vcf from bcftools package
 
 =cut
 
@@ -527,12 +527,6 @@ use Utils;
 
 Utils::CMD("rm -f $name.vcf-tmp.gz.part");
 Utils::CMD("vcf-concat -s 3 -f $name.chunks.list | $$self{vcf_rmdup} | bgzip -c > $name.vcf.gz.part");
-
-# Simple sanity check, to be removed
-my \@out1 = Utils::CMD("(head -1 $name.chunks.list | xargs zcat | head -1000 | grep ^#; cat $name.chunks.list | xargs zcat | grep -v ^# | sort -k 1,1d -k 2,2n) | vcf-rmdup | grep -v ^# |wc -l");
-my \@out2 = Utils::CMD("zcat $name.vcf.gz.part | grep -v ^# | sort -k 1,1d -k 2,2n | $$self{vcf_rmdup} |wc -l");
-if ( \@out1 != \@out2 or \$out1[0] ne \$out2[0] ) { Utils::error("Uh: \$out1[0] ne \$out2[0]\\n"); }
-
 Utils::CMD(qq[zcat $name.vcf.gz.part | $$self{vcf_stats} > $name.vcf.gz.stats]);
 Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz.part]);
 rename('$name.vcf.gz.part.tbi','$name.vcf.gz.tbi') or Utils::error("rename $name.vcf.gz.part.tbi $name.vcf.gz.tbi: \$!");
@@ -733,7 +727,7 @@ sub mpileup_split_chunks
 {
     my ($self,$bam,$chunk_name,$chunk) = @_;
 
-    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd bcftools bcf_fix vcfutils));
+    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd bcftools bcf_fix filter4vcf));
 
     return qq[
 use strict;
@@ -772,7 +766,7 @@ if ( -e "$basename.vcf.gz" )
     rename("$basename.vcf.gz","$name.unfilt.vcf.gz") or Utils::error("rename $basename.vcf.gz $name.unfilt.vcf.gz: \$!");
 }
 
-Utils::CMD("zcat $name.unfilt.vcf.gz | $$self{vcfutils} filter4vcf | bgzip -c > $basename.filt.vcf.gz");
+Utils::CMD("zcat $name.unfilt.vcf.gz | $$self{filter4vcf} | bgzip -c > $basename.filt.vcf.gz");
 Utils::CMD("zcat $basename.filt.vcf.gz | $$self{vcf_stats} > $name.vcf.gz.stats");
 Utils::CMD("tabix -f -p vcf $basename.filt.vcf.gz");
 rename("$basename.filt.vcf.gz.tbi","$name.vcf.gz.tbi") or Utils::error("rename $basename.filt.vcf.gz.tbi $name.vcf.gz.tbi: \$!");
@@ -925,6 +919,7 @@ sub run_gatk_chunk
         unlink("$name.vcf.gz");
         unlink("$name.vcf.gz.tbi");
         unlink("$name.indels.detailed.bed");
+        unlink("$name.indels.detailed.bed.idx");
         unlink("$name.indels.mask.bed");
         unlink("$name.indels.mask.bed.idx");
         unlink("$name.indels.raw.bed");
@@ -1098,6 +1093,8 @@ sub run_qcall_chunk
         print $fh "$grp\n";
     }
     close($fh);
+
+    if ( scalar keys %$groups < 2 ) { $self->throw("QCall is a population based caller and must be run with at least 2 samples.\n"); }
 
     # Execute mpileup with QCall
     Utils::CMD(qq[samtools mpileup -b $file_list -D -g -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -Q - | $$self{qcall_cmd} -sn $$self{prefix}$chunk.names -co $chunk.vcf.part],{verbose=>1});

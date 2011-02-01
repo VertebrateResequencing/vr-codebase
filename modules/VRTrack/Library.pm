@@ -33,6 +33,7 @@ use VRTrack::Seq_request;
 use VRTrack::Library_type;
 use VRTrack::Seq_centre;
 use VRTrack::Seq_tech;
+use VRTrack::Library_Multiplex_pool;
 
 use base qw(VRTrack::Core_obj
             VRTrack::Hierarchy_obj

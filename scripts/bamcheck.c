@@ -4,9 +4,7 @@
 
     Assumptions and approximations:
         - GC content % calculation assumes that all reads have the same length (this can be fixed quite easily)
-        - GC-depth 
-            - does not split reads, the starting position determines which bin is incremented
-            - GC content calculation is based on all reads in the bin, not just unique sequence (pro: reference is not needed)
+        - GC-depth does not split reads, the starting position determines which bin is incremented
 */
 
 #define _ISOC99_SOURCE
@@ -15,13 +13,49 @@
 #include <stdarg.h>
 #include <string.h>
 #include <math.h>
+#include <ctype.h>
 #include "sam.h"
-#include "kstring.h"
+#include "faidx.h"
+#include "khash.h"
 
 #define BWA_MIN_RDLEN 35
 #define IS_PAIRED(bam) ((bam)->core.flag&BAM_FPAIRED && !((bam)->core.flag&BAM_FUNMAP) && !((bam)->core.flag&BAM_FMUNMAP))
 #define IS_UNMAPPED(bam) ((bam)->core.flag&BAM_FUNMAP)
 #define IS_REVERSE(bam) ((bam)->core.flag&BAM_FREVERSE)
+
+typedef struct 
+{
+    uint64_t len:32, line_len:16, line_blen:16;
+    uint64_t offset;
+} 
+faidx1_t;
+KHASH_MAP_INIT_STR(s, faidx1_t)
+
+#ifndef _NO_RAZF
+#include "razf.h"
+#else
+#ifdef _WIN32
+#define ftello(fp) ftell(fp)
+#define fseeko(fp, offset, whence) fseek(fp, offset, whence)
+#else
+extern off_t ftello(FILE *stream);
+extern int fseeko(FILE *stream, off_t offset, int whence);
+#endif
+#define RAZF FILE
+#define razf_read(fp, buf, size) fread(buf, 1, size, fp)
+#define razf_open(fn, mode) fopen(fn, mode)
+#define razf_close(fp) fclose(fp)
+#define razf_seek(fp, offset, whence) fseeko(fp, offset, whence)
+#define razf_tell(fp) ftello(fp)
+#endif
+
+struct __faidx_t {
+    RAZF *rz;
+    int n, m;
+    char **name;
+    khash_t(s) *hash;
+};
+
 
 typedef struct
 {
@@ -50,6 +84,7 @@ typedef struct
     int max_len;            // Maximum read length
     int max_qual;           // Maximum quality
     float isize_main_bulk;  // There are always some unrealistically big insert sizes, report only the main part
+    int is_sorted;
 
     // Summary numbers
     uint64_t total_len;
@@ -72,6 +107,7 @@ typedef struct
     // Auxiliary data
     double sum_qual;            // For calculation average quality value 
     samfile_t *sam;             // Unused
+    faidx_t *fai;               // Reference sequence for GC-depth graph
 }
 stats_t;
 
@@ -80,22 +116,71 @@ void error(const char *format, ...);
 // Calculate the number of bases in the read trimmed by BWA
 int bwa_trim_read(int trim_qual, uint8_t *quals, int len, int reverse) 
 {
-    if ( len<=BWA_MIN_RDLEN ) return 0;
+    if ( len<BWA_MIN_RDLEN ) return 0;
 
-    int max_trimmed = len-BWA_MIN_RDLEN;
+    // Although the name implies that the read cannot be trimmed to more than BWA_MIN_RDLEN,
+    //  the calculation can in fact trim it to (BWA_MIN_RDLEN-1). (bwa_trim_read in bwa/bwaseqio.c).
+    int max_trimmed = len - BWA_MIN_RDLEN + 1;
     int l, sum=0, max_sum=0, max_l=0;
 
     for (l=0; l<max_trimmed; l++)
     {
-        sum += trim_qual - quals[ reverse ? len-1-l : l];
+        sum += trim_qual - quals[ reverse ? l : len-1-l ];
         if ( sum<0 ) break;
         if ( sum>max_sum )
         {
             max_sum = sum;
-            max_l   = l+1;
+            // This is the correct way, but bwa clips from some reason one base less
+            // max_l   = l+1;
+            max_l   = l;
         }
     }
     return max_l;
+}
+
+float fai_gc_content(faidx_t *fai,char *chr,int from, int to)
+{
+    khash_t(s) *h;
+    khiter_t iter;
+    faidx1_t val;
+    uint32_t gc,count;
+    char c;
+
+    h = fai->hash;
+
+    // ID of the sequence name
+    iter = kh_get(s, h, chr);
+    if (iter == kh_end(h)) 
+        error("No such reference sequence [%s]?\n", chr);
+    val = kh_value(h, iter);
+
+    // Check the boundaries
+    if (from > to ) 
+        error("FIXME: %s:%d-%d\n", chr,from,to);
+    if (from > 0) from--;
+    if (from >= val.len)
+        error("Was the bam file mapped with the reference sequence supplied? A read mapped beyond the chromosome (%s:%d, chromosome length %d).\n", chr,from+1,val.len);
+    if (to >= val.len) to = val.len;
+
+    // Position the razf reader
+    razf_seek(fai->rz, val.offset + from / val.line_blen * val.line_len + from % val.line_blen, SEEK_SET);
+
+    // Count GC content
+    gc = count = 0;
+    while (razf_read(fai->rz, &c, 1)==1 && count<to-from && !fai->rz->z_err)
+    {
+        if (isgraph(c))
+        {
+            if ( c=='G' || c=='g' || c=='C' || c=='C' )
+            {
+                gc++;
+                count++;
+            }
+            else if ( c=='A' || c=='a' || c=='T' || c=='t' )
+                count++;
+        }
+    }
+    return (float)gc/count;
 }
 
 void collect_stats(bam1_t *bam_line, stats_t *stats)
@@ -137,7 +222,7 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
         stats->gc_1st[gc_count]++;
     }
     int reverse = IS_REVERSE(bam_line);
-    if ( stats->trim_qual ) 
+    if ( stats->trim_qual>0 ) 
         stats->nbases_trimmed += bwa_trim_read(stats->trim_qual, bam_quals, seq_len, reverse);
 
     // Quality histogram and average quality
@@ -184,7 +269,7 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
         for (i=0; i<bam_line->core.n_cigar; i++) 
         {
             // Conversion from uint32_t to MIDNSHP
-            //  01-----
+            //  01--4--
             //  MIDNSHP
             if ( (bam1_cigar(bam_line)[i]&BAM_CIGAR_MASK)==0 || (bam1_cigar(bam_line)[i]&BAM_CIGAR_MASK)==1 )
                 stats->nbases_mapped_cigar += bam1_cigar(bam_line)[i]>>BAM_CIGAR_SHIFT;
@@ -192,26 +277,30 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
 
         stats->nbases_mapped += seq_len;
 
-        // GC-depth graph
-        if ( stats->tid==-1 || stats->tid != bam_line->core.tid || bam_line->core.pos - stats->pos > stats->gcd_bin_size )
+        if ( stats->tid==bam_line->core.tid && bam_line->core.pos<stats->pos )
+            stats->is_sorted = 0;
+
+        if ( stats->is_sorted )
         {
-            // First pass or a new chromosome
-            stats->tid = bam_line->core.tid;
-            stats->pos = bam_line->core.pos;
-            stats->igcd++;
+            // GC-depth graph
+            if ( stats->tid==-1 || stats->tid != bam_line->core.tid || bam_line->core.pos - stats->pos > stats->gcd_bin_size )
+            {
+                // First pass or a new chromosome. Initialize the positions and get the reference GC content for this bin
+                stats->tid = bam_line->core.tid;
+                stats->pos = bam_line->core.pos;
+                stats->igcd++;
+
+                if ( stats->igcd >= stats->ngcd )
+                    error("The genome too long?? [%ud]\n", stats->igcd);
+
+                if ( stats->fai )
+                    stats->gcd[ stats->igcd ].gc = fai_gc_content(stats->fai,stats->sam->header->target_name[stats->tid],stats->pos,stats->pos+stats->gcd_bin_size);
+            }
+            stats->gcd[ stats->igcd ].depth++;
+            // When no reference sequence is given, approximate the GC graph but determinig GC from each bin
+            if ( !stats->fai )
+                stats->gcd[ stats->igcd ].gc += (float) gc_count / seq_len;
         }
-        if ( stats->igcd >= stats->ngcd )
-            error("The genome too long?? [%ud]\n", stats->igcd);
-        stats->gcd[ stats->igcd ].gc += (float) gc_count / seq_len;
-        stats->gcd[ stats->igcd ].depth++;
-#if 0
-        if ( stats->igcd==45913  )
-        {
-            kstring_t str;
-            kputs(stats->sam->header->target_name[stats->tid] , &str);
-            fprintf(stderr,"tid=%d chr=%s %d igcd=%d gc=%.1f depth=%d\n",stats->tid,str.s,stats->pos,stats->igcd,stats->gcd[ stats->igcd ].gc*100. / stats->gcd[ stats->igcd ].depth,stats->gcd[ stats->igcd ].depth);
-        }
-#endif
     }
 
     stats->total_len += seq_len;
@@ -227,6 +316,7 @@ static int gcd_cmp(const void *a, const void *b)
     if ( GCD_t(a)->depth > GCD_t(b)->depth ) return 1;
     return 0;
 }
+#undef GCD_t
 
 float gcd_percentile(gc_depth_t *gcd, int N, int p)
 {
@@ -264,6 +354,8 @@ void output_stats(stats_t *stats)
     printf("# This file was generated by bamcheck.\n");
     printf("# Summary Numbers. Use `grep ^SN | cut -f 2-` to extract this part.\n");
     printf("SN\tsequences:\t%ld\n", stats->nreads_1st+stats->nreads_2nd);
+    printf("SN\tis paired:\t%d\n", stats->nreads_1st&&stats->nreads_2nd ? 1 : 0);
+    printf("SN\tis sorted:\t%d\n", stats->is_sorted ? 1 : 0);
     printf("SN\t1st fragments:\t%ld\n", stats->nreads_1st);
     printf("SN\tlast fragments:\t%ld\n", stats->nreads_2nd);
     printf("SN\treads mapped:\t%ld\n", stats->nreads_paired+stats->nreads_unpaired);
@@ -332,8 +424,11 @@ void output_stats(stats_t *stats)
     uint32_t igcd;
     for (igcd=0; igcd<stats->igcd; igcd++)
     {
-        if ( stats->gcd[igcd].depth ) 
-            stats->gcd[igcd].gc = round(100. * stats->gcd[igcd].gc / stats->gcd[igcd].depth);
+        if ( stats->fai )
+            stats->gcd[igcd].gc = round(100. * stats->gcd[igcd].gc);
+        else
+            if ( stats->gcd[igcd].depth ) 
+                stats->gcd[igcd].gc = round(100. * stats->gcd[igcd].gc / stats->gcd[igcd].depth);
     }
     // for (igcd=0; igcd<stats->igcd; igcd++)
     //     printf("uns_GCD\t%d\t%d\t%f\n",igcd,stats->gcd[igcd].depth,stats->gcd[igcd].gc);
@@ -370,6 +465,7 @@ void error(const char *format, ...)
         printf("Options:\n");
         printf("    -i, --insert-size <int>         Maximum insert size [8000]\n");
         printf("    -q, --trim-quality <int>        The BWA trimming parameter [0]\n");
+        printf("    -r, --ref-seq <file>            Reference sequence (required for GC-depth calculation).\n");
     }
     else
     {
@@ -411,12 +507,23 @@ int main(int argc, char *argv[])
     stats.ngcd         = 3e5;     // 300k of 20k bins is enough to hold a genome 6Gbp big
     stats.tid = stats.pos = -1;
     stats.igcd = 0;
+    stats.fai  = NULL;
+    stats.is_sorted = 1;
 
     strcpy(in_mode, "rb");
 
     // Parse command line arguments
     for (i=1; i<argc; i++)
     {
+        if ( !strcmp(argv[i],"-r") || !strcmp(argv[i],"--ref-seq") )
+        {
+            if ( ++i>=argc )
+                error(NULL);
+            stats.fai = fai_load(argv[i]);
+            if ( stats.fai==0 )
+                error("");
+            continue;
+        }
         if ( !strcmp(argv[i],"-i") || !strcmp(argv[i],"--insert-size") )
         {
             if ( ++i>=argc )

@@ -796,6 +796,43 @@ sub stats {
     return $all_ok;
 }
 
+=head2 index_bams
+
+ Title   : index_bams
+ Usage   : $obj->index_bams(files=>['file.bam',...]);
+           $obj->index_bams(fofn=>'bam_files.list');
+ Function: Index one or more BAM files, optionally reading the file names from a file.
+ Returns : boolean (true on success)
+ Args    : bam file names or file with a list of bam files
+
+=cut
+
+sub index_bams 
+{
+    my ($self, %args) = @_;
+    my @bams;
+    if ( exists($args{files}) ) { @bams = @{$args{files}} }
+    if ( exists($args{fofn}) )
+    {
+        open(my $fh,'<',$args{fofn}) or $self->throw("$args{fofn}: $!");
+        while (my $line=<$fh>)
+        {
+            chomp($line);
+            push @bams,$line;
+        }
+        close($fh);
+    }
+    my $samtools = VertRes::Wrapper::samtools->new(verbose => $self->verbose, quiet => 1);
+    for my $bam (@bams)
+    {
+        $samtools->run_method('system');
+        $samtools->index($bam, $bam.'.bai');
+        $samtools->run_status >= 1 || $self->throw("Failed to create $bam.bai");
+    }
+    return 1;
+}
+
+
 =head2 bas
 
  Title   : bas

@@ -31,15 +31,17 @@ use VRTrack::Individual;
 use VRTrack::Multiplex_pool;
 use VRTrack::Library_Multiplex_pool;
 
-my ($projfile, $spp, $update_files, $samplemap, $help, $database,$create_individuals);
+my ($projfile, $spp, $update_files, $samplemap, $help, $database,$create_individuals, $no_fastq, $no_bam);
 
 GetOptions(
-    'p|projects=s'  =>  \$projfile,
+    'studies|p|projects=s'  =>  \$projfile,
     's|spp=s'       =>  \$spp,
     'f|files'       =>  \$update_files,
     'd|database=s'  =>  \$database,
     'c|create_individuals'          =>  \$create_individuals,
-    'm|sample_map'   =>  \$samplemap,
+    'm|sample_map=s'=>  \$samplemap,
+    'no_fastq'      =>  \$no_fastq,
+    'no_bam'        =>  \$no_bam,
     'h|help'        =>  \$help,
     );
 
@@ -64,11 +66,12 @@ else
 
 ($projfile && $db && !$help) or die <<USAGE;
     Usage: $0   
-                --projects  <project name or file of SequenceScape project names>
+                --studies  <study name or file of SequenceScape study names>
                 --spp       <species, i.e. g1k or mouse>
                 [--database  <vrtrack database name override>]
                 [--files     <force update of files (usually skipped as doesn't change, and is slow)>]
                 [--create_individuals  <if set, generates an individual for each new sample name>]
+                [--no_fastq  <don't attempt to find fastq files, only find bam files>]
                 [--sample_map  <a file of individual -> samplename mappings. Cannot be used with --create_individuals>]
                 --help      <this message>
 
@@ -93,7 +96,17 @@ NOD_mouse).  To override this behaviour, --sample_map takes a filename of
 tab-separated individual, sample names which explicitly sets the mapping.  This
 cannot be used in conjunction with --create_individuals.
 
+Files are pulled from iRODS(bam) or MPSA (fastq) in the order of preference.
+Supplying --no_fastq prevents the check of MPSA, which is useful if you know
+your project is bam only and don't wish to accidentally pull in fastq.
+
 USAGE
+
+if( $no_bam && $no_fastq )
+{
+    print qq[You cant select no bam and no fastq!\n];
+    exit;
+}
 
 print "Database: $db\n";
 my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => $db,
@@ -418,41 +431,46 @@ foreach my $pname (keys %projects){
                         # either cancelled (and will never have files), or have
                         # not been archived yet, so will get added later
                         ########################################################
+                        next if $lane->is_cancelled;
         
                         my $tag_id=$lib->tag_id();
 
-                        # Check for BAM first, then fastq
                         my $files;
-                        eval {
-                            $files = $lane->bam;
-                        };
-                        if ($@){
-                            print "Error getting bam from ",$lane->name," : ",$@,".  Skipping\n";
-                            next;
-                        }
-                        else {
-                            # have the bam, but if this is multiplexed, we'll have them all, so filter on the tag
-                            # should maybe do this in Wrapper::iRODS?
-                            if ($is_multiplexed_seq_request){
-                                #print $lane->name, " $tag_id files:\n\t";
-                                #print $_->name."\n\t" foreach @$files;
-
-                                @$files = grep($_->name =~ /#$tag_id\.bam$/, @$files);
-                            }
-                        }
-
-
-                        unless (@$files){
+                        unless( $no_bam )
+                        {
+                            # Check for BAM first, then fastq
                             eval {
-                                $files = $lane->fastq;
+                                $files = $lane->bam;
                             };
                             if ($@){
-                                print "Error getting fastq from ",$lane->name," : ",$@,".  Skipping\n";
+                                print "Error getting bam from ",$lane->name," : ",$@,".  Skipping\n";
                                 next;
+                            }
+                            else {
+                                # have the bam, but if this is multiplexed, we'll have them all, so filter on the tag
+                                # should maybe do this in Wrapper::iRODS?
+                                if ($is_multiplexed_seq_request){
+                                    #print $lane->name, " $tag_id files:\n\t";
+                                    #print $_->name."\n\t" foreach @$files;
+
+                                    @$files = grep($_->name =~ /#$tag_id\.bam$/, @$files);
+                                }
                             }
                         }
 
-                        unless(@$files){
+                        if( !$files || scalar( @$files )==0 ){   # didn't find bam
+                            unless ($no_fastq){ # don't want fastq
+                                eval {
+                                    $files = $lane->fastq;
+                                };
+                                if ($@){
+                                    print "Error getting fastq from ",$lane->name," : ",$@,".  Skipping\n";
+                                    next;
+                                }
+                            }
+                        }
+                        
+                        if( !$files || scalar( @$files )==0 ){
                             print $lane->name, " has no files\n";
                             next;
                         }
@@ -495,13 +513,10 @@ foreach my $pname (keys %projects){
                                 next;
                             }
                                                                     
-                            # another check - don't import anything with empty fastq
-                            if ($lane->basepairs && !$is_multiplexed_seq_request){
-                                print "New lane ",$lane->name,"\n";
-                                #$vlane = $vlib->add_lane($lane->name);
-                                $vlane = $vseq_request->add_lane($lane->name);
-                            }
-                            elsif($is_multiplexed_seq_request){
+                            # jws 2011-01-18 removed check for basepairs.  This is 0 for bam as 
+                            # there currently is no bamcheck in place in irods
+                            #if ($lane->basepairs && !$is_multiplexed_seq_request){
+                            if ($is_multiplexed_seq_request){
                                 print "New lane ",$deplexed_lane,"\n";
                                 #$vlane = $vlib->add_lane($deplexed_lane);
                                 $vlane = $vseq_request->add_lane($deplexed_lane);
@@ -510,7 +525,9 @@ foreach my $pname (keys %projects){
                                 $vlane->update;
                             }
                             else {
-                                next;
+                                print "New lane ",$lane->name,"\n";
+                                #$vlane = $vlib->add_lane($lane->name);
+                                $vlane = $vseq_request->add_lane($lane->name);
                             }
                         }
                         $vlane->npg_qc_status($lane->npg_qc);

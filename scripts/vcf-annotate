@@ -29,6 +29,7 @@ sub error
         "                                           present, it is assumed that TO equals to FROM.\n",
         "   -d, --description <file|string>     Header annotation, e.g. key=INFO,ID=HM2,Number=0,Type=Flag,Description='HapMap2 membership'.\n",
         "                                           The descriptions can be read from a file, one annotation per line.\n",
+        "       --SnpCluster <count,win>        Set filter for clusters of 'count' or more SNPs within a run of 'win' bases.\n",
         "   -h, -?, --help                      This help message.\n",
         "Example:\n",
         "   zcat in.vcf.gz | vcf-annotate -a annotations.gz -d descriptions.txt | bgzip -c >out.vcf.gz \n",
@@ -40,7 +41,7 @@ sub error
 
 sub parse_params
 {
-    my $opts = {};
+    my $opts = { args=>[$0, @ARGV] };
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '-d' || $arg eq '--description' ) 
@@ -63,6 +64,19 @@ sub parse_params
             }
             next;
         }
+        if ( $arg eq '--SnpCluster' ) 
+        {
+            my $tmp = shift(@ARGV);
+            ($$opts{SnpCluster_count},$$opts{SnpCluster_win}) = split(/,/,$tmp);
+            # Simple sanity check
+            if ( $$opts{SnpCluster_count}>$$opts{SnpCluster_win} ) 
+            { 
+                error("Did you really mean --SnpCluster $tmp or --SnpCluster $tmp $$opts{SnpCluster_win},$$opts{SnpCluster_count}?"); 
+            }
+            $$opts{SnpCluster_buffer} = [];
+            push @{$$opts{desc}}, "key=FILTER,ID=SnpCluster,Description='SNPs found in clusters (win=$$opts{SnpCluster_win},count=$$opts{SnpCluster_count})'";
+            next;
+        }
         if ( $arg eq '-c' || $arg eq '--columns' ) 
         { 
             my $cols = shift(@ARGV);
@@ -75,8 +89,11 @@ sub parse_params
         if ( -e $arg ) { $$opts{file}=$arg; next; }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
-    if ( !exists($$opts{desc}) ) { error("Missing the -d option.\n") }
-    if ( !exists($$opts{annotations}) ) { error("Missing the -a option.\n") }
+    if ( !exists($$opts{SnpCluster_count}) )
+    {
+        if ( !exists($$opts{desc}) ) { error("Missing the -d or --SnpCluster option.\n") }
+        if ( !exists($$opts{annotations}) ) { error("Missing the -a option.\n") }
+    }
     return $opts;
 }
 
@@ -118,8 +135,9 @@ sub parse_descriptions
     return \@out;
 }
 
-# Create mapping from the annotation IDs to column indexes. The following structure
-#   is returned:
+# Create mapping from the annotation IDs to column indexes. The mapping is used
+#   to determine which columns should be used from the annotation file. The
+#   following structure is returned:
 #       { 
 #           CHROM => col_idx,
 #           FROM  => col_idx,
@@ -130,19 +148,22 @@ sub parse_descriptions
 #           ]
 #       }
 #   If {annots}{is_flag} is nonzero, "annot_id" will be written to VCF instead of "annot_id=value".
-#   Currently only one VCF columns (INFO) is supported.
+#   Currently only one VCF column (INFO) is supported. 
 #
 sub parse_columns
 {
     my ($cols,$descriptions) = @_;
 
     my %desc = ();
+    my %out  = ( annots=>[] );
+
+    if ( !defined $cols ) { return \%out; }
+
     for my $d (@$descriptions)
     {
         $desc{$$d{key}.'/'.$$d{ID}} = $d;
     }
 
-    my %out = ();
     for (my $i=0; $i<@$cols; $i++)
     {
         my $col = $$cols[$i];
@@ -172,15 +193,18 @@ sub annotate
 {
     my ($opts) = @_;
 
+    # Init the variables
     my $descs = parse_descriptions($$opts{desc});
     my $cols  = parse_columns($$opts{cols},$descs);
 
-    my $vcf = exists($$opts{file}) ? Vcf->new(file=>$$opts{file}) : Vcf->new(fh=>\*STDIN);
+    # Open VCF file and add all required header lines
+    my $vcf = $$opts{vcf} = exists($$opts{file}) ? Vcf->new(file=>$$opts{file}) : Vcf->new(fh=>\*STDIN);
     $vcf->parse_header();
     for my $desc (@$descs)
     {
         $vcf->add_header_line($desc,silent=>1);
     }
+    $vcf->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
     print $vcf->format_header();
 
     my $reader = Reader->new(file=>$$opts{annotations});
@@ -188,6 +212,8 @@ sub annotate
     my ($prev_chr,$prev_pos,$annot_from,$annot_to,$annot_line);
     my @annots = @{$$cols{annots}};
 
+
+    # Process the file
     while (my $line = $vcf->next_line())
     {
         my @rec = split(/\t/,$line);
@@ -258,12 +284,119 @@ sub annotate
             $rec[7] = $vcf->add_info_field($rec[7],%values);
         }
 
-        print join("\t",@rec) . "\n";
+        # Output the line
+        output_line($opts,$chr,$pos,\@rec);
 
         $prev_chr = $chr;
         $prev_pos = $pos;
     }
+
+    # Output any lines left in the buffer
+    output_line($opts);
 }
+
+
+# Stage the lines and then apply filtering if requested, otherwise just print the line
+sub output_line
+{
+    my ($opts,$chr,$pos,$line) = @_;
+
+    # No filtering requested, print the line
+    if ( !exists($$opts{SnpCluster_count}) )
+    {
+        print_line($line);
+        return;
+    }
+
+    my $buffer = $$opts{SnpCluster_buffer};
+    my $n = @$buffer;
+
+    # The buffer is empty and the line contains only reference alleles, print directly
+    if ( $n==0 && defined $line && $$line[4] eq '.' )
+    {
+        $$line[6] = $$opts{vcf}->add_filter($$line[6],'SnpCluster'=>0); 
+        print_line($line);
+        return;
+    }
+
+    # Store the line in buffer and check how many lines can be printed
+    my $to;     # All the lines up to and including this index will be printed
+    my $win = $$opts{SnpCluster_win};
+    if ( defined $line )
+    {
+        my $is_ref = $$line[4] eq '.' ? 1 : 0; 
+        push @$buffer, { line=>$line, chr=>$chr, pos=>$pos, is_ref=>$is_ref, in_cluster=>0 };
+        $n++;
+
+        # Does the buffer hold enough lines now?
+        my $last_chr = $$buffer[-1]{chr};
+        my $last_pos = $$buffer[-1]{pos};
+        for (my $i=$n-1; $i>=0; $i--)
+        {
+            my $buf = $$buffer[$i];
+            if ( $$buf{chr} ne $last_chr ) { $to=$i; last; }
+            if ( $last_pos - $$buf{pos} >= $win ) { $to=$i; last; }
+        }
+
+        if ( !defined $to ) { return; }
+    }
+    if ( !defined $to ) { $to=$n-1; }
+
+    # Calculate the number of variants within the window
+    my $count = 0;
+    my $max_count = $$opts{SnpCluster_count};
+    my $start_chr = $$buffer[0]{chr};
+    my $start_pos = $$buffer[0]{pos};
+    my $idx;
+    for ($idx=0; $idx<$n; $idx++)
+    {
+        my $buf = $$buffer[$idx];
+        if ( $$buf{chr} ne $start_chr ) { last; }
+        if ( $$buf{pos} - $win >= $start_pos ) { last; }
+        if ( !$$buf{is_ref} ) { $count++; }
+    }
+
+    # If a SNP cluster was found, set the in_cluster flag for all relevant sites. 
+    #   The buffer will be flushed and the orphans would pass unnoticed.
+    if ( $count>=$max_count )
+    {
+        for (my $i=0; $i<$idx; $i++)
+        {
+            if ( !$$buffer[$i]{is_ref} ) { $$buffer[$i]{in_cluster}=1; }
+        }
+    }
+
+    # Now output the lines, adding or removing the filter
+    for (my $i=0; $i<=$to; $i++)
+    {
+        my $buf = shift(@$buffer);
+        if ( $$buf{in_cluster} )
+        {
+            $$buf{line}[6] = $$opts{vcf}->add_filter($$buf{line}[6],'SnpCluster'=>1); 
+        }
+        else
+        { 
+            $$buf{line}[6] = $$opts{vcf}->add_filter($$buf{line}[6],'SnpCluster'=>0); 
+        }
+        print_line($$buf{line});
+    }
+
+    # Output all non-variant lines at the beggining of the buffer
+    while (@$buffer)
+    {
+        if ( !$$buffer[0]{is_ref} ) { last; }
+        my $buf = shift(@$buffer);
+        $$buf{line}[6] = $$opts{vcf}->add_filter($$buf{line}[6],'SnpCluster'=>0);
+        print_line($$buf{line});
+    }
+}
+
+sub print_line
+{
+    my ($line) = @_;
+    if ( defined $line ) { print join("\t",@$line) . "\n"; }
+}
+
 
 
 #---------------------------------
@@ -279,7 +412,6 @@ sub new
     my ($class,@args) = @_;
     my $self = @args ? {@args} : {};
     bless $self, ref($class) || $class;
-    if ( !$$self{file} ) { $self->throw("Expected the file option.\n"); }
     if ( !$$self{delim} ) { $$self{delim} = qr/\t/; }
     if ( !$$self{chr} ) { $$self{chr} = 0; }        # the index of the chromosome column (indexed from 0)
     if ( !$$self{from} ) { $$self{from} = 1; }      # the index of the from column 
@@ -296,7 +428,7 @@ sub throw
 sub open
 {
     my ($self,%args) = @_;
-    if ( !$$self{file} ) { $self->throw(qq[The parameter "file" not set.\n]); }
+    if ( !$$self{file} ) { return; }
     $self->close();
     open($$self{fh},"tabix $$self{file} $args{region} |") or $self->throw("tabix $$self{file}: $!");
 }
@@ -320,6 +452,7 @@ sub unread_line
 sub next_line
 {
     my ($self) = @_;
+    if ( !$$self{fh} ) { return undef; }    # Run in dummy mode
     if ( $$self{buffer} && @{$$self{buffer}} ) { return shift(@{$$self{buffer}}); }
     my $line;
     # Skip comments

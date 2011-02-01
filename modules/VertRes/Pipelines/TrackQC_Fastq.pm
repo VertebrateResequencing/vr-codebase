@@ -92,8 +92,8 @@ our $options =
     # Executables
     'blat'            => '/software/pubseq/bin/blat',
     'bwa_exec'        => 'bwa-0.5.3',
-    'gcdepth_R'       => '/software/vertres/bin/gcdepth.R',
-    'glf'             => '/nfs/sf8/G1K/bin/glf',
+    'gcdepth_R'       => '/software/vertres/bin-external/gcdepth.R',
+    'glf'             => 'glf',
     'mapviewdepth'    => 'mapviewdepth_sam',
     'samtools'        => 'samtools',
 
@@ -449,7 +449,7 @@ use Utils;
 
 Utils::CMD(q[zcat ${name}_$i.fastq.gz | awk '{print ">"substr(\$1,2,length(\$1)); getline; print; getline; getline}' > ${name}_$i.fa ]);
 Utils::CMD(q[$$self{blat} adapters.fa ${name}_$i.fa ${name}_$i.blat -out=blast8]);
-Utils::CMD(q[cat ${name}_$i.blat | awk '{if (\$2 ~ /^ADAPTER/) print}' | sort -u | wc -l > ${name}_$i.nadapters]);
+Utils::CMD(q[cat ${name}_$i.blat | awk '{if (\$2 ~ /^ADAPTER/) print \$1}' | sort -u | wc -l > ${name}_$i.nadapters]);
 unlink("${name}_$i.fa", "${name}_$i.blat");
 ];
         close($fh);

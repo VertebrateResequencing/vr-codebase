@@ -1,0 +1,196 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $opts = parse_params();
+run_lane_bams($opts);
+create_mergeup_config($opts);
+create_snps_config($opts);
+create_main_config($opts);
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    die
+        "About: Set up config files for MergeUp and SNPs pipelines.\n",
+        "Usage: setup-snps-pipeline [OPTIONS]\n",
+        "Options:\n",
+        "   <All options accepted by lane_bams.pl>\n",
+        "   -o, --outdir <dir>              Where to put output files\n",
+        "   -r, --refseq <file>             Reference sequence\n",
+        "   -h, -?, --help                  This help message.\n",
+        "Examples:\n",
+        "   setup-snps-pipeline -o outdir    \\ \n",
+        "       -o outdir                    \\ \n",
+        "       -r refseq.fa                 \\ \n",
+        "       --root /some/path/           \\ \n",
+        "       --db vrtrack_db_name         \\ \n",
+        "       --assembly_name NCBI37       \\ \n",
+        "       --project_regex Furry_Animal \\ \n",
+        "       --all_samples                \\ \n",
+        "\n";
+}
+
+
+sub parse_params
+{
+    my $opts = 
+    { 
+        lane_bams_defaults => '--slx_mapper bwa --454_mapper ssaha',
+    };
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-o' || $arg eq '--outdir' ) { $$opts{outdir}=shift(@ARGV); next }
+        if ( $arg eq '-r' || $arg eq '--refseq' ) { $$opts{refseq}=shift(@ARGV); next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        push @{$$opts{lane_bams}},$arg;
+    }
+    if ( !exists($$opts{outdir}) ) { error("Missing the -o option.\n") }
+    if ( !exists($$opts{refseq}) ) { error("Missing the -r option.\n") }
+    if ( !exists($$opts{lane_bams}) ) { error("No options to lane_bams.pl??\n") }
+
+    $$opts{outdir} = absolute_path($$opts{outdir});
+    return $opts;
+}
+
+sub absolute_path
+{
+    my ($path) = @_;
+    if ( $path=~m{^/} ) { return $path; }
+    chomp(my $cwd = `pwd`);
+    return $cwd .'/'. $path;
+}
+
+sub print_file
+{
+    my ($file,$mode,@txt) = @_;
+    open(my $fh,$mode,$file) or error("$file: $!");
+    print $fh @txt;
+    close($fh);
+}
+
+sub run_lane_bams
+{
+    my ($opts) = @_;
+
+    Utils::CMD("mkdir -p $$opts{outdir}");
+
+    my $cmd = 'lane_bams.pl ' . join(' ',$$opts{lane_bams_defaults},@{$$opts{lane_bams}});
+    Utils::CMD("$cmd >$$opts{outdir}/bams.list 2>$$opts{outdir}/bams.list.e");
+
+    if ( ! -s "$$opts{outdir}/bams.list.e" ) { unlink("$$opts{outdir}/bams.list.e"); }
+    else 
+    { 
+        print_file("$$opts{outdir}/bams.list.e",'>>',"\n\nThe command was\n\t$cmd\n\n");
+        warn("Warning: the lane_bams.pl script found some problems, please check the output\n\t$$opts{outdir}/bams.list.e\n\n");
+    }
+}
+
+sub create_mergeup_config
+{
+    my ($opts) = @_;
+    print_file("$$opts{outdir}/mergeup.conf",'>',
+                "root        => '$$opts{outdir}/mergeup',       \n",
+                "module      => 'VertRes::Pipelines::MergeUp',  \n",
+                "prefix      => '_',                            \n",
+                "lane_bams   => '$$opts{outdir}/bams.list',     \n",
+                "simultaneous_samples => 200,                   \n",
+                "data =>                                        \n",
+                "{                                              \n",
+                "    do_sample_merge => 1,                      \n",
+                "    do_index_bams => 1,                        \n",
+                "    do_cleanup => 1,                           \n",
+                "    tag_strip => [qw(OQ XM XG XO)],            \n",
+                "}                                              \n",
+            );
+    Utils::CMD("mkdir -p $$opts{outdir}/mergeup");
+}
+
+sub ask
+{
+    my (@msg) = @_;
+    print @msg, "\n> ";
+    my $answer = <STDIN>;
+    chomp($answer);
+    return $answer;
+}
+
+sub create_snps_config
+{
+    my ($opts) = @_;
+
+    my $ref_fai = -e "$$opts{refseq}.fai" ? "$$opts{refseq}.fai" : ask("Where is located the reference sequence .fai file? ($$opts{refseq}.fai does not exist)");
+    my $dbSNP_rod  = ask("Location of dbSNP rod file to be used for GATK SNP calling (enter to skip):");
+    my $indel_mask = ask("Location of indel mask file to be used for GATK SNP calling (enter to skip):");
+    $dbSNP_rod  = $dbSNP_rod ? "dbSNP_rod => '$dbSNP_rod'" : "# dbSNP_rod  => ''";
+    $indel_mask = $indel_mask ? "indel_mask => '$indel_mask'" : "# indel_mask => ''";
+
+    print_file("$$opts{outdir}/snps.conf",'>',
+                "root        => '$$opts{outdir}/snps',          \n",
+                "module      => 'VertRes::Pipelines::SNPs',     \n",
+                "prefix      => '_',                            \n",
+                "data =>                                        \n",
+                "{                                              \n",
+                "    max_jobs => 20,                            \n",
+                "    task => 'mpileup,qcall,gatk',              \n",
+                "                                               \n",
+                "    split_size_gatk      => 5_000_000,         \n",
+                "    split_size_qcall     => 5_000_000,         \n",
+                "    split_size_mpileup   => 5_000_000,         \n",
+                "                                               \n",
+                "    file_list   => '$$opts{outdir}/mergeup/all_bams_done.list',       \n",
+                "                                               \n",
+                "    fa_ref        => '$$opts{refseq}',         \n",
+                "    fai_ref       => '$ref_fai',               \n",
+                "    $dbSNP_rod,                                \n",
+                "    $indel_mask,                               \n",
+                "                                                                       \n",
+                "    qcall_cmd  => 'QCALL -ct 0.01 -snpcan',                            \n",
+                "                                                                       \n",
+                "    samtools_pileup_params => '-d 500',                                \n",
+                "    mpileup_cmd => 'samtools mpileup -d 500 -C50 -m3 -F0.0002 -aug',   \n",
+                "                                                                       \n",
+                "    gatk_opts =>                                                       \n",
+                "    {                                                                  \n",
+                "        all =>                                                         \n",
+                "        {                                                              \n",
+                "            verbose => 1,                                              \n",
+                "            _extras => [ '-U ALLOW_UNSET_BAM_SORT_ORDER' ],            \n",
+                "        },                                                             \n",
+                "        variant_filtration =>                                          \n",
+                "        {                                                              \n",
+                "            filters => { HARD_TO_VALIDATE => 'MQ0 >= 4 && (MQ0 / (1.0 * DP)) > 0.1' }, \n",
+                "            maskName => 'InDel',                                       \n",
+                "            clusterWindowSize => 11,                                   \n",
+                "        },                                                             \n",
+                "        variant_recalibrator =>                                        \n",
+                "        {                                                              \n",
+                "            target_titv => 2.08,                                       \n",
+                "            ignore_filter => 'HARD_TO_VALIDATE',                       \n",
+                "        },                                                             \n",
+                "        apply_variant_cuts =>                                          \n",
+                "        {                                                              \n",
+                "            fdr_filter_level => '0.11',                                \n",
+                "        },                                                             \n",
+                "    },                                         \n",
+                "},                                             \n"
+        );
+}
+
+sub create_main_config
+{
+    my ($opts) = @_;
+    print_file("$$opts{outdir}/main.conf",'>',"__MERGEUP__  $$opts{outdir}/mergeup.conf\n","$$opts{outdir}/snps $$opts{outdir}/snps.conf\n");
+}
+

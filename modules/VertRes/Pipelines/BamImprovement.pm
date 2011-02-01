@@ -29,11 +29,15 @@ data => {
     dbsnp_rod => '/abs/path/to/dbsnp.rod',
     indel_sites => '/abs/path/to/indels.vcf',
     indel_intervals => '/abs/path/to/intervals.file',
-    snp_sites => '/bas/path/to/snps.vcf'
+    snp_sites => '/abs/path/to/snps.vcf'
 },
 
 # indel_intervals is the file produced by GATK RealignerTargetCreator on the
 # same reference, dnsbp and indel_sites files as you're using here
+
+# snp_sites can be in BED, VCF or dbSNP format. You can also specify multiple
+# of them for different purposes like this:
+# snp_sites => ['snps,VCF,/path/to/snps.vcf', 'mask,BED,/path/to/mask.bed']
 
 # in the data section you can also supply the tmp_dir option to specify the
 # root that will be used to create tmp directories
@@ -119,10 +123,9 @@ our $actions = [ { name     => 'realign',
 
 our %options = (slx_mapper => 'bwa',
                 '454_mapper' => 'ssaha',
-                dbsnp_rod => '/lustre/scratch102/projects/g1k/ref/broad_recal_data/dbsnp_129_b37.rod',
-                indel_sites => '/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/1kg.pilot_release.merged.indels.sites.hg19.vcf',
-                indel_intervals => '/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/indel.dbsnp_129_b37-vs-pilot.intervals',
-                snp_sites => '/lustre/scratch102/projects/g1k/ref/broad_recal_data/pilot_data/pilot.snps.bed',
+                indel_sites => '',
+                indel_intervals => '',
+                snp_sites => '',
                 calmde => 0,
                 do_cleanup => 1);
 
@@ -145,16 +148,23 @@ our %options = (slx_mapper => 'bwa',
                         supplied)
            assembly_name => 'NCBI37' (no default, must be set to the name of
                                       the reference)
-           dbsnp_rod => '/path/to/dbsnp.rod' (defaults to dnsnp129_b37)
+           dbsnp_rod => '/path/to/dbsnp.rod' (no default; if not set snp_sites
+                                              is required)
            indel_sites => '/path/to/indels.vcf' (known indels VCF, defaults to
                                                  1000 genomes pilot dindel calls)
            indel_intervals => '/path/to/intervals' (file produced by GATK
                               RealignerTargetCreator using the above indel_sites
                               dbsnp_rod and reference; default for 1000 genomes
                               exists)
-           snp_sites => '/path/to/snps.vcf' (known snps to mask out during
-                                             quality score recalibration, in
-                                             addition to those in the dbsnp_rod)
+           snp_sites => '/path/to/snps.vcf'    (known snps to mask out during
+                        [pilot1,VCF,file1.vcf]  quality score recalibration, in
+                                                addition to those in the
+                                                dbsnp_rod. Can be specified as
+                                                just a string path to the VCF,
+                                                or in the form understood by
+                                                VertRes::Wrapper::GATK->set_b,
+                                                with multiple files put in an
+                                                array ref)
            calmde => boolean (default false; when running calmd, setting this
                               to true will use -e option)
            tmp_dir => '/tmp' (specify the tmp directory to be used by some java
@@ -235,6 +245,59 @@ sub new {
         $self->{release_date} = "$time{'yyyymmdd'}"; 
     }
     
+    if (! defined $self->{dbsnp_rod} && ! defined $self->{snp_sites}) {
+        $self->throw("At least one of dbsnp_rod or snp_sites is required in your config file");
+    }
+    
+    # convert the snp_sites option to a simple string suitable for use by GATK,
+    # and an array for checking the files exist
+    if (defined $self->{snp_sites}) {
+        my @snp_site_files;
+        my $snp_sites = $self->{snp_sites};
+        my @snp_args;
+        if (ref $snp_sites && ref $snp_sites eq 'ARRAY') {
+            @snp_args = @{$snp_sites};
+        }
+        else {
+            @snp_args = ($snp_sites);
+        }
+        
+        my @gatk_args;
+        foreach my $snp_arg (@snp_args) {
+            if ($snp_arg =~ /,/) {
+                my @parts = split(',', $snp_arg);
+                if (@parts == 3) {
+                    push(@gatk_args, $snp_arg);
+                    push(@snp_site_files, $parts[2]);
+                }
+                else {
+                    $self->throw("Bad snp_sites arg '$snp_arg'");
+                }
+            }
+            else {
+                my ($type) = $snp_arg =~ /\.([^\.]+)$/;
+                if ($type =~ /vcf/i) {
+                    $type = 'VCF';
+                }
+                elsif ($type =~ /bed/i) {
+                    $type = 'BED';
+                }
+                elsif ($type =~ /dbsnp/i) {
+                    $type = 'dbSNP';
+                }
+                else {
+                    $self->throw("Could not determine a valid snp file type from '$snp_arg'");
+                }
+                
+                push(@gatk_args, "snps,$type,$snp_arg");
+                push(@snp_site_files, $snp_arg);
+            }
+        }
+        
+        $self->{snp_sites} = join(', ', map { "'$_'" } @gatk_args);
+        $self->{snp_files} = \@snp_site_files;
+    }
+    
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     
@@ -253,9 +316,12 @@ sub new {
 
 sub realign_requires {
     my $self = shift;
+    
+    my @snps = defined $self->{dbsnp_rod} ? ($self->{dbsnp_rod}) : @{$self->{snp_files}};
+    
     return [@{$self->{in_bams}},
             $self->{indel_sites},
-            $self->{dbsnp_rod},
+            @snps,
             $self->{reference},
             $self->{indel_intervals}];
 }
@@ -333,6 +399,14 @@ sub realign {
     my $tmp_dir = $self->{tmp_dir} || '';
     $tmp_dir = ", tmp_dir => q[$tmp_dir]" if $tmp_dir;
     
+    my $snp_line = '';
+    if (defined $self->{dbsnp_rod}) {
+        $snp_line = "dbsnp => '$self->{dbsnp_rod}',\n";
+    }
+    else {
+        $snp_line = "bs => [$self->{snp_sites}],\n";
+    }
+    
     foreach my $in_bam (@{$self->{in_bams}}) {
         my $base = basename($in_bam);
         my ($rel_bam) = $self->_bam_name_conversion($in_bam);
@@ -361,10 +435,10 @@ my \$intervals_file = '$self->{indel_intervals}';
 
 my \$gatk = VertRes::Wrapper::GATK->new(verbose => $verbose,
                                         java_memory => $java_mem,
-                                        dbsnp => '$self->{dbsnp_rod}',
+                                        $snp_line
                                         reference => '$self->{reference}',
                                         build => '$self->{assembly_name}'$tmp_dir);
-\$gatk->set_b('indels,VCF,$self->{indel_sites}');
+\$gatk->add_b('indels,VCF,$self->{indel_sites}');
 
 # do the realignment, generating an uncompressed, name-sorted bam
 unless (-s \$rel_bam) {
@@ -482,7 +556,7 @@ sub sort {
     $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
     
     my $tmp_dir = $self->{tmp_dir} || '';
-    $tmp_dir = "tmp_dir => q[$tmp_dir]" if $tmp_dir;
+    $tmp_dir = ", tmp_dir => q[$tmp_dir]" if $tmp_dir;
     
     foreach my $in_bam (@{$self->{in_bams}}) {
         my $base = basename($in_bam);
@@ -511,7 +585,7 @@ my \$done_file = '$done_file';
 
 # sort and fix mates
 unless (-s \$final_bam) {
-    my \$picard = VertRes::Wrapper::picard->new($tmp_dir, COMPRESSION_LEVEL => 0, java_memory => $java_mem);
+    my \$picard = VertRes::Wrapper::picard->new(COMPRESSION_LEVEL => 0, java_memory => $java_mem$tmp_dir);
     \$picard->FixMateInformation(\$in_bam, \$working_bam);
 }
 
@@ -576,8 +650,8 @@ sub recalibrate_requires {
     $dict =~ s/\.[^\.]+$/.dict/;
     push(@requires, $ref);
     push(@requires, $dict);
-    push(@requires, $self->{dbsnp_rod});
-    push(@requires, $self->{snp_sites});
+    push(@requires, $self->{dbsnp_rod}) if defined $self->{dbsnp_rod};
+    push(@requires, @{$self->{snp_files}});
     
     return \@requires;
 }
@@ -634,6 +708,11 @@ sub recalibrate {
     my $tmp_dir = $self->{tmp_dir} || '';
     $tmp_dir = ", tmp_dir => q[$tmp_dir]" if $tmp_dir;
     
+    my $snp_line = '';
+    if (defined $self->{dbsnp_rod}) {
+        $snp_line = "\ndbsnp => '$self->{dbsnp_rod}',\n";
+    }
+    
     foreach my $bam (@{$self->{in_bams}}) {
         my $base = basename($bam);
         my (undef, $in_bam, $out_bam) = $self->_bam_name_conversion($bam);
@@ -657,11 +736,10 @@ my \$done_file = '$done_file';
 my \$intervals_file = '$self->{indel_intervals}';
 
 my \$gatk = VertRes::Wrapper::GATK->new(verbose => $verbose,
-                                        java_memory => $java_mem,
-                                        dbsnp => '$self->{dbsnp_rod}',
+                                        java_memory => $java_mem,$snp_line
                                         reference => '$self->{reference}',
                                         build => '$self->{assembly_name}'$tmp_dir);
-\$gatk->set_b('mask,BED,$self->{snp_sites}');
+\$gatk->set_b($self->{snp_sites});
 
 # do the recalibration
 unless (-s \$recal_bam) {

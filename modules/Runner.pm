@@ -5,7 +5,7 @@ Runner.pm   - A simple module for quick development of scripts and pipelines whi
 =head1 SYNOPSIS
 
     # The code "test-runner" below shows a simple pipeline which creates
-    # three files in your home directory (named "xxx-a", "xxx-b", and "xxx-c").
+    # three files in your home directory (named "Hello.1", "Hello.2", and "Hello.3").
     # When all files are created, the message "All done!" will be printed. The
     # pipeline can be run in
     #   - crontab mode (exits at checkpoints when some of the files are not finished)
@@ -38,18 +38,18 @@ Runner.pm   - A simple module for quick development of scripts and pipelines whi
     sub main
     {
         my ($self) = @_;
-        for my $file qw(a b c)
+        for my $file qw(1 2 3)
         {
             # When run in parallel mode (default), the jobs will be submitted
             #   to farm by the spawn call. The arguments are: 
-            #   - done_file .. the file to be created by the method
             #   - method    .. subroutine to be called (defined by the user)
+            #   - done_file .. the file to be created by the method
             #   - params    .. arbitrary number of arguments which will be passsed to the method
 
-            my $done_file = "$ENV{HOME}/xxx-$file";
             my $method    = "touch";
-            my @params    = ($done_file);
-            $self->spawn($done_file,$method,@params);
+            my $done_file = "$ENV{HOME}/Hello.$file";
+            my @params    = ();
+            $self->spawn($method,$done_file,@params);
         }
         # Checkpoint, wait until all the above files are finished
         $self->wait();
@@ -94,6 +94,7 @@ sub new
     $$self{_status_codes}{DONE} = 1;
     $$self{_farm} = 'LSF';
     $$self{usage} = 
+        "Runner.pm arguments:\n" .
         "   +help           Summary of commands\n" .
         "   +local          Do not submit jobs to LSF, but run serially\n" .
         "   +loop <int>     Run in daemon mode with <int> sleep intervals\n" .
@@ -172,11 +173,11 @@ sub run
 
     About : Schedule a job for execution.
     Usage : $self->spawn($done_file,"method",@params);
-    Args  : <file>
+    Args  : <func_name>
+                The method to be run
+            <file>
                 The file to be created by the method. If exists, the task is completed and
                 spawn returns immediately.
-            <func_name>
-                The method to be run
             <array>
                 Arbitrary number of parameters to be passed to the method
                 
@@ -184,11 +185,12 @@ sub run
 
 sub spawn
 {
-    my ($self,$done_file,$call,@args) = @_;
+    my ($self,$call,@args) = @_;
 
     if ( !$self->can($call) ) { $self->throw("No such method: [$call]\n"); }
 
     # Register the file for the next checkpoint
+    my $done_file = $args[0];
     push @{$$self{_checkpoints}}, $done_file;
 
     # If the file is there, no need to run anything
@@ -205,7 +207,7 @@ sub spawn
     if ( $$self{_run_locally} ) 
     {
         my $cmd = qq[$0 +run $tmp_file];
-        $self->debugln($cmd);
+        $self->debugln("$call:\t$cmd");
         system($cmd);
     }
 
@@ -238,17 +240,17 @@ sub _spawn_to_farm
         $nfailures =~ s/\s+.+$//;
         if ( $nfailures >= 3 )
         {   
-            $self->throw("The job failed repeatedly: $$self{_store}{call}(" .join('',@{$$self{_store}{args}}). "), $prefix.[oer]\n");
+            $self->throw("The job failed repeatedly: $prefix.[oer], $$self{_store}{call}(" .join(',',@{$$self{_store}{args}}). ")\n(Remove $prefix.jid to clean the status.)\n");
         }
         else
         {
-            $self->warn("Running again, the previous attempt failed: $$self{_store}{call}(" .join('',@{$$self{_store}{args}}). "), $prefix.[oer]\n");
+            $self->warn("Running again, the previous attempt failed: $prefix.[oer], $$self{_store}{call}(" .join(',',@{$$self{_store}{args}}). ")\n");
         }
     }
 
     # Run the job
     my $cmd = qq[$0 +run $freeze_file];
-    $self->debugln($cmd);
+    $self->debugln("$$self{_store}{call}:\t$cmd");
     $farm->can('run')->($farm_jobs_ids,'.',$prefix,{bsub_opts=>''},$cmd);
 }
 
@@ -285,6 +287,7 @@ sub wait
 sub all_done
 {
     my ($self) = @_;
+    $self->debugln("All done!");
     exit $$self{_status_codes}{DONE};
 }
 

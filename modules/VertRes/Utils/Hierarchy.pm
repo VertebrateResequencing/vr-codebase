@@ -1236,7 +1236,16 @@ sub lane_bam_link {
     my $new_path = $self->_create_lane_dir($old, $new_root);
     my $new_bam = File::Spec->catfile($new_path, "$ended.lane.bam");
     
-    symlink($bam, $new_bam) || $self->throw("Couldn't symlink $bam -> $new_bam");
+    if (-l $new_bam) {
+    	my $slink = readlink($new_bam);
+    	if ($bam eq $slink) {
+	    	return $new_bam;
+	    } else {
+	    	$self->throw("Symlink $new_bam already exists, but points to $slink not $bam");
+	    }
+    } else {
+    	symlink($bam, $new_bam) || $self->throw("Couldn't symlink $bam -> $new_bam");
+    }
     
     return $new_bam;
 }
