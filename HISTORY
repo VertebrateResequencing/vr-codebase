@@ -3,3 +3,4 @@ This document describes the different releases (git tags).
 Version  Description
 -------  -----------
 0.01     Initial public release on github
+0.02     Nice stable point, prior to an upcoming exome-related schema changes
