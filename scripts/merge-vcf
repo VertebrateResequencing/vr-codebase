@@ -293,13 +293,29 @@ sub merge_vcf_files
             }
             # Do the REF,ALT conversion only when necessary
             my $new_ref; 
-            if ( scalar keys %ref_alt_map > 1 ) { $new_ref = $vcf_out->fill_ref_alt_mapping(\%ref_alt_map); }
+            if ( scalar keys %ref_alt_map > 1 ) 
+            { 
+                $new_ref = $vcf_out->fill_ref_alt_mapping(\%ref_alt_map); 
+                if ( !$have_samples )
+                {
+                    # Do not loose information from the ALT column when samples are not present
+                    my %alts;
+                    for my $vcf (@vcfs)
+                    {
+                        my $line = $$vcf{last_line};
+                        if ( !$line or $pos ne $$line{POS} ) { next; }
+                        my $ref = $$line{REF};
+                        for my $alt (@{$$line{ALT}}) { $alts{$ref_alt_map{$ref}{$alt}}=1; }
+                        $out{ALT} = [ keys %alts ];
+                    }
+                }
+            }
             for (my $ivcf=0; $ivcf<@vcfs; $ivcf++)
             {
                 my $vcf  = $vcfs[$ivcf];
                 my $line = $$vcf{last_line};
 
-                # If this file does not have a record for this position, than for all its columns output undef gtype
+                # If this file does not have a record for this position, then for all its columns output undef gtype
                 if ( !$line or $pos ne $$line{POS} )
                 {
                     for (my $i=0; $i<@{$$vcf{__col_names}}; $i++)
@@ -408,11 +424,6 @@ sub merge_vcf_files
             if ( $have_samples )
             {
                 $vcf_out->format_genotype_strings(\%out);
-            }
-            else
-            {
-                # Do not loose information from the ALT column when samples are not present
-                $out{ALT} = [ keys %{$ref_alt_map{$out{REF}}} ];
             }
             print $vcf_out->format_line(\%out);
         }
