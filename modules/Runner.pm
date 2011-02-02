@@ -272,7 +272,12 @@ sub wait
 
     for my $file (@{$$self{_checkpoints}},@files)
     {
-        if ( ! $self->is_finished($file) ) { exit; }
+        if ( ! $self->is_finished($file) ) 
+        { 
+            my $prefix = $self->_get_temp_prefix($file);
+            $self->debugln("The job not finished: $prefix.*");
+            exit; 
+        }
     }
     $$self{_checkpoints} = [];
 }
