@@ -172,7 +172,7 @@ sub run
 =head2 spawn
 
     About : Schedule a job for execution.
-    Usage : $self->spawn($done_file,"method",@params);
+    Usage : $self->spawn("method",$done_file,@params);
     Args  : <func_name>
                 The method to be run
             <file>
@@ -257,18 +257,20 @@ sub _spawn_to_farm
 =head2 wait
 
     About : Checkpoint, wait for all tasks to finish. 
-    Usage : $self->spawn($done_file1,"method",@params1); 
-            $self->spawn($done_file2,"method",@params2);
+    Usage : $self->spawn("method",$done_file1,@params1); 
+            $self->spawn("method",$done_file2,@params2);
             $self->wait();
-    Args  : None
-                
+    Args  : <none>
+                Without arguments, waits for files registered by previous spawn calls.
+            <@files>
+                Extra files to wait for, in addition to those registered by spawn.
 =cut
 
 sub wait
 {
-    my ($self) = @_;
+    my ($self,@files) = @_;
 
-    for my $file (@{$$self{_checkpoints}})
+    for my $file (@{$$self{_checkpoints}},@files)
     {
         if ( ! $self->is_finished($file) ) { exit; }
     }
