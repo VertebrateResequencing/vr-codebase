@@ -289,25 +289,25 @@ sub merge_vcf_files
                 my $line = $$vcf{last_line};
                 if ( !$line or $pos ne $$line{POS} ) { next; }
                 my $ref = $$line{REF};
-                for my $alt (@{$$line{ALT}}) { $ref_alt_map{$ref}{$alt}=1; }
+                for my $alt (@{$$line{ALT}}) { $ref_alt_map{$ref}{$alt}=$alt; }
             }
             # Do the REF,ALT conversion only when necessary
             my $new_ref; 
             if ( scalar keys %ref_alt_map > 1 ) 
             { 
                 $new_ref = $vcf_out->fill_ref_alt_mapping(\%ref_alt_map); 
-                if ( !$have_samples )
+            }
+            if ( !$have_samples )
+            {
+                # Do not loose information from the ALT column when samples are not present
+                my %alts;
+                for my $vcf (@vcfs)
                 {
-                    # Do not loose information from the ALT column when samples are not present
-                    my %alts;
-                    for my $vcf (@vcfs)
-                    {
-                        my $line = $$vcf{last_line};
-                        if ( !$line or $pos ne $$line{POS} ) { next; }
-                        my $ref = $$line{REF};
-                        for my $alt (@{$$line{ALT}}) { $alts{$ref_alt_map{$ref}{$alt}}=1; }
-                        $out{ALT} = [ keys %alts ];
-                    }
+                    my $line = $$vcf{last_line};
+                    if ( !$line or $pos ne $$line{POS} ) { next; }
+                    my $ref = $$line{REF};
+                    for my $alt (@{$$line{ALT}}) { $alts{$ref_alt_map{$ref}{$alt}}=1; }
+                    $out{ALT} = [ keys %alts ];
                 }
             }
             for (my $ivcf=0; $ivcf<@vcfs; $ivcf++)
