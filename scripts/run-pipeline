@@ -880,8 +880,16 @@ sub get_improvement_jobs_from_vrtrack {
     
     my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
     
-    my @lanes = @{$vrtrack->processed_lane_hnames(mapped => 1, improved => 0) || []};
-    warn "got ", scalar(@lanes), " lanes that were mapped and not improved\n";
+    my %filter  = ( mapped => 1, improved => 0 );
+    my @lanes;
+    if ( exists $config_data->{qc} && $config_data->{qc} ) { 
+        $filter{qc} = $config_data->{qc}; 
+        @lanes = @{$vrtrack->processed_lane_hnames(%filter) || []};
+        warn "got ", scalar(@lanes), " lanes that were mapped, passed qc and not improved\n";
+    } else {
+        @lanes = @{$vrtrack->processed_lane_hnames(%filter) || []};
+        warn "got ", scalar(@lanes), " lanes that were mapped and not improved\n";
+    } 
     
     if (defined $config_data->{limits}) {
         @lanes = filter_lanes($config_data->{limits}, \@lanes, $vrtrack, $config);
@@ -1109,7 +1117,12 @@ sub get_splitbam_jobs {
     
     # we make a job to run through the whole pipeline one bam at a time, but
     # don't exceed the maximum jobs limit
+    my $skipped;
     foreach my $bam (@bams) {
+    	unless (-s $bam) {
+    	    $skipped++;
+    	    next;
+    	}
         my ($bam_basename, $path) = fileparse($bam);
         my $prefix = $bam_basename;
         $prefix =~ s/\.bam$//;
@@ -1144,7 +1157,8 @@ sub get_splitbam_jobs {
         $jobs_running++;
     }
 
-    debug($config_data,"done\n");
+    debug($config_data, " $skipped bams skipped...") if ( $skipped );
+    debug($config_data, " done $jobs_running\n");
     return;
 }
 
