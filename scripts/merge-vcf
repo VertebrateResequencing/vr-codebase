@@ -247,12 +247,12 @@ sub merge_vcf_files
     $vcf_out->add_header_line({key=>'sourceFiles',value=>$source},append=>'timestamp');
     $vcf_out->add_header_line({key=>'INFO',ID=>'SF',Number=>-1,Type=>'String',Description=>'Source File (index to sourceFiles, f when filtered)'});
 
-    $vcf_out->recalc_ac_an(2);
+    my $have_samples = @{$$vcf_out{columns}}>9 ? 1 : 0; 
+
+    $vcf_out->recalc_ac_an($have_samples ? 2 : 0);
     $vcf_out->add_header_line({key=>'INFO',ID=>'AC',Number=>-1,Type=>'Integer',Description=>'Allele count in genotypes'});
     $vcf_out->add_header_line({key=>'INFO',ID=>'AN',Number=>1,Type=>'Integer',Description=>'Total number of alleles in called genotypes'});
     print $vcf_out->format_header();
-
-    my $have_samples = @{$$vcf_out{columns}}>9 ? 1 : 0; 
 
     # Go through all VCF files simultaneously and output each line, one chromosome at a time.
     for my $chr (@chroms)
@@ -280,7 +280,7 @@ sub merge_vcf_files
             my %info;
             my @src_files;
             my %filters;
-            my (@quals,@qual_weights,$qual_weights_sum);
+            my (@quals,@qual_weights,$qual_weights_sum,%ac,$an);
 
             my %ref_alt_map = ();
             # Find out the REFs and ALTs: in VCFv4.0, the REFs can differ and ALTs must be converted
@@ -362,6 +362,21 @@ sub merge_vcf_files
                 # Remember the FORMAT fields
                 for my $field (@{$$line{FORMAT}}) { $format{$field} = 1; }
 
+                # VCF without genotypes: calculate AC,AN if present
+                if ( !$have_samples )
+                {
+                    if ( exists($$line{INFO}{AN}) ) { $an += $$line{INFO}{AN}; }
+                    if ( exists($$line{INFO}{AC}) ) 
+                    { 
+                        my (@acs) = split(/,/,$$line{INFO}{AC});
+                        for (my $i=0; $i<@acs; $i++) 
+                        { 
+                            my $alt = $ref_alt_map{$$line{REF}}{$$line{ALT}[$i]};
+                            $ac{$alt} += $acs[$i];
+                        }
+                    }
+                }
+
                 # Join the INFO field
                 for my $inf (keys %{$$line{INFO}}) 
                 {
@@ -424,6 +439,20 @@ sub merge_vcf_files
             if ( $have_samples )
             {
                 $vcf_out->format_genotype_strings(\%out);
+            }
+            else
+            {
+                if ( defined $an ) { $out{INFO}{AN}=$an; }
+                if ( scalar keys %ac ) 
+                { 
+                    my @acs;
+                    for my $alt (@{$out{ALT}})
+                    {
+                        # Some of the files may not have AC, the AC count can be undefined in such a case.
+                        push @acs, exists($ac{$alt}) ? $ac{$alt} : 0; 
+                    }
+                    $out{INFO}{AC} = join(',',@acs);
+                }
             }
             print $vcf_out->format_line(\%out);
         }
