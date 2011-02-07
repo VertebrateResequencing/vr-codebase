@@ -439,6 +439,10 @@ sub check_genotype
     $$options{'prefix'}        = $$self{'prefix'};
     $$options{'lock_file'}     = $lock_file;
 
+    if (exists $self->{snp_sites}) {
+        $options->{snp_sites} = $self->{snp_sites};
+    }
+
     my $gtc = VertRes::Utils::GTypeCheck->new(%$options);
     $gtc->check_genotype();
 

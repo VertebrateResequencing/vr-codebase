@@ -37,12 +37,12 @@ our @actions =
         'provides' => \&VertRes::Pipelines::TrackQC_Bam::check_sanity_provides,
     },
 
-    # Check the genotype, using Sequenom SNPs
+    # Check the genotype. Inherited from TrackQC_Bam
     {
         'name'     => 'check_genotype',
-        'action'   => \&check_genotype,
-        'requires' => \&check_genotype_requires, 
-        'provides' => \&check_genotype_provides,
+        'action'   => \&VertRes::Pipelines::TrackQC_Bam::check_genotype,
+        'requires' => \&VertRes::Pipelines::TrackQC_Bam::check_genotype_requires, 
+        'provides' => \&VertRes::Pipelines::TrackQC_Bam::check_genotype_provides,
     },
 
     # Creates some QC graphs and generate some statistics.
@@ -54,7 +54,7 @@ our @actions =
     },
 
     # Checks the generated stats and attempts to auto pass or fail the lane.  NOT YET IMPLEMENTED:
-    # we'll ahve to see what exome data look like
+    # we'll have to see what exome data look like
     {
         'name'     => 'auto_qc',
         'action'   => \&auto_qc,
@@ -130,10 +130,9 @@ our $options = {
                                        file containing info on targets and baits, made by script...
                     exome_design    .. name of exome design.  Will be used to look up exome_coords file,
                                        if exome_coords not given.
-                    snps_vcf        .. Vcf file of SNPs, whose sites will be used for genotyping.
-                                       Each SNP must have an ID and the IDs must match those in the snps_ped file.
-                    snps_ped        .. ped file of known genotypes, against which the BAM file being QC'd is compared.
-                                       IDs of these SNPs must match the IDs in the snps_vcf file.
+                    snps            .. file made by hapmap2bin to be used for genotyping
+                    snp_sites       .. file containing locations of SNPs to be used for genotyping. 
+                                       One site per line, tab separated:  chromosome<tab>position
 
 =cut
 
@@ -143,20 +142,20 @@ sub VertRes::Pipelines::TrackQC_ExomeBam::new {
     $self->write_logs(1);
 #    if ( !$$self{bwa_exec} ) { $self->throw("Missing the option bwa_exec.\n"); }
 #    if ( !$$self{gcdepth_R} ) { $self->throw("Missing the option gcdepth_R.\n"); }
-#    if ( !$$self{glf} ) { $self->throw("Missing the option glf.\n"); }
+    if ( !$$self{glf} ) { $self->throw("Missing the option glf.\n"); }
 #    if ( !$$self{mapviewdepth} ) { $self->throw("Missing the option mapviewdepth.\n"); }
     if ( !$$self{samtools} ) { $self->throw("Missing the option samtools.\n"); }
     if ( !$$self{fa_ref} ) { $self->throw("Missing the option fa_ref.\n"); }
     if ( !$$self{fai_ref} ) { $self->throw("Missing the option fai_ref.\n"); }
 #    if ( !$$self{gc_depth_bin} ) { $self->throw("Missing the option gc_depth_bin.\n"); }
-#    if ( !$$self{gtype_confidence} ) { $self->throw("Missing the option gtype_confidence.\n"); }
+    if ( !$$self{gtype_confidence} ) { $self->throw("Missing the option gtype_confidence.\n"); }
     if ( !$$self{sample_dir} ) { $self->throw("Missing the option sample_dir.\n"); }
 ##    if ( !$$self{sample_size} ) { $self->throw("Missing the option sample_size.\n"); }
     if ( !$self->{exome_design} ) { $self->throw("Missing the option exome_design.\n"); }
-    #if ( !$self->{snps_vcf} ) { $self->throw("Missing the option snps_vcf\n"); }
-    #if ( !$self->{snps_ped} ) { $self->throw("Missing the option snps_ped\n"); }
+    if ( !$self->{snps} ) { $self->throw("Missing the option snps\n"); }
+    if ( !$self->{snp_sites} ) { $self->throw("Missing the option snp_sites\n"); }
 
-    # try to figure out the exome_ccords file from the exome_design
+    # try to figure out the exome_coords file from the exome_design
     if ( !$self->{exome_coords} ) {
         my %known_designs = ('uk10k.20110120', '/lustre/scratch103/sanger/mh12/Exome_qc_files/uk10k.qc_dump.20110120');
 
@@ -170,64 +169,6 @@ sub VertRes::Pipelines::TrackQC_ExomeBam::new {
 
     return $self;
 }
-
-
-
-
-
-sub check_genotype_requires {
-    my ($self) = @_;
-    my $sample_dir = $$self{'sample_dir'};
-    my @requires = (File::Spec->catfile($sample_dir, "$$self{lane}.bam"));
-    return \@requires;
-}
-
-sub check_genotype_provides {
-    my ($self) = @_;
-    my $sample_dir = $$self{'sample_dir'};
-    my @provides = (File::Spec->catfile($sample_dir, "$$self{lane}.gtype"));
-    return \@provides;
-}
-
-sub check_genotype {
-my ($pwd) = qx/pwd/; 
-    my ($self,$lane_path,$lock_file) = @_;
-    #my $snps_vcf = $self->{snps_vcf};
-    #my $snps_ped = $self->{snps_ped};
-    my $fa_ref = $self->{fa_ref};
-    my $sample_dir = $self->{'sample_dir'};
-    my $outdir = File::Spec->catdir($lane_path, $sample_dir);
-    #my $bam = File::Spec->catfile($outdir, $lane . '.bam');
-    my $outfile = File::Spec->catfile($lane_path, $sample_dir, "$self->{lane}.gtype");
-
-#    # make dynamic perl script to be run by lsf
-#    my $script = File::Spec->catfile($lane_path, $sample_dir, "_check_genotype.pl");
-#    open my $fh, '>', $script or Utils::error("$script: $!");
-#    print $fh 
-#qq[
-#use strict;
-#use warnings;
-#use VertRes::Utils::GTypeCheckMpileup;
-#use Data::Dumper;
-#
-#my \%reults = \$o->check_genotype(q[$bam], q[$snps_vcf], q[$snps_ped], q[$fa_ref]);
-#open my \$fh, '>', q[$outfile] or die "error opening q[$outfile]";
-#print \$fh  Dumper \$results;
-#close \$fh;
-#];
-#
-#    close $fh;
-#
-#    LSF::run($lock_file,$outdir,"_${lane}_stats_and_graphs", $self, qq{perl -w _stats_and_graphs.pl});
-    # this is not yet implemented, so just make an empty file
-    my $cmd = "touch $outfile";
-    $self->debug("In sub check_genotype.  making dummy gtype file...\n$cmd\n");
-    return $$self{'Yes'};
-}
-
-
-
-
 
 
 sub stats_and_graphs_requires
@@ -410,10 +351,11 @@ sub update_db {
     $mapping->mean_insert($stats->{mean_insert_size});
     $mapping->sd_insert($stats->{insert_size_sd});
     # TODO: genotyping
-    #    $mapping->genotype_expected($$gtype{expected});
-    #    $mapping->genotype_found($$gtype{found});
-    #    $mapping->genotype_ratio($$gtype{ratio});
-    #    $vrlane->genotype_status($$gtype{status});
+    my $gtype = VertRes::Utils::GTypeCheck::get_status("$sample_dir/${name}.gtype");
+    $mapping->genotype_expected($$gtype{expected});
+    $mapping->genotype_found($$gtype{found});
+    $mapping->genotype_ratio($$gtype{ratio});
+    $vrlane->genotype_status($$gtype{status});
     $mapping->bait_near_bases_mapped($stats->{bait_near_bases_mapped});
     $mapping->target_near_bases_mapped($stats->{target_near_bases_mapped});
     $mapping->bait_bases_mapped($stats->{bait_bases_mapped});

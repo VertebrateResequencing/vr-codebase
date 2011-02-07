@@ -41,10 +41,25 @@ sub check_genotype
     my ($dir,$name,$suff) = Utils::basename($bam);
     if ( !$dir ) { $dir = '.'; }
 
-    my $bam2glf_cmd = "$glf checkGenotype $snps $name.glf > $name.gtypey";
+    my $pileup_out = "$name.glf";
+    my $pileup_cmd = "$samtools pileup -g -f $fa_ref $bam > $name.tmp.pileup && mv $name.tmp.pileup $pileup_out";
+    my $checkGenotype_cmd = "$glf checkGenotype $snps $pileup_out > $name.gtypey";
 
     if (exists $self->{'snp_sites'} ) {
-        $bam2glf_cmd = "";
+        my $snp_sites_string;
+        open my $f, $self->{'snp_sites'} or $self->throw("Error opening file ". $self->{'snp_sites'});
+
+        while (<$f>) {
+            chomp;
+            my @a = split /\t/;
+            $snp_sites_string .= "$a[0]:$a[1]-$a[1] ";
+        }
+
+        close $f;
+        my $gtype_bam = "$name.gtype.tmp.sort";
+        $pileup_out = "$name.bcf";
+        $pileup_cmd = "$samtools view -bh $bam $snp_sites_string > $name.gtype.tmp.bam && $samtools sort $name.gtype.tmp.bam $gtype_bam && $samtools index $gtype_bam.bam && $samtools mpileup -ug -l " . $self->{'snp_sites'} . " -f $fa_ref $gtype_bam.bam > $name.gtype.tmp.pileup && mv $name.gtype.tmp.pileup $pileup_out && rm $name.gtype.tmp.bam";
+        $checkGenotype_cmd = "$glf checkGenotype -s - $snps $pileup_out > $name.gtypey";
     }
 
     # Dynamic script to be run by LSF.
@@ -62,15 +77,15 @@ if ( ! -e "$bam.bai" || Utils::file_newer("$bam","$bam.bai") )
 }
 if ( ! -e "$name.glf" || Utils::file_newer("$bam","$name.glf") )
 {
-    Utils::CMD($bam2glf_cmd);
-    rename("$name.glfx", "$name.glf") or Utils::CMD("rename $name.glfx $name.glf: \$!");
+    Utils::CMD(q[$pileup_cmd]);
+    #rename("$name.glfx", "$name.glf") or Utils::CMD("rename $name.glfx $name.glf: \$!");
 }
-if ( ! -e "$name.gtypex" || Utils::file_newer("$name.glf","$name.gtypex") )
+if ( ! -e "$name.gtypex" || Utils::file_newer(q[$pileup_out],"$name.gtypex") )
 {
-    Utils::CMD("$glf checkGenotype $snps $name.glf > $name.gtypey");
+    Utils::CMD(q[$checkGenotype_cmd]);
     if ( ! -s "$name.gtypey" ) 
     { 
-        \$base->throw("FIXME: this should not happen, what's wrong with:\n\t$glf checkGenotype $snps $name.glf > $name.gtypey\n???\n");
+        \$base->throw("FIXME: this should not happen, what's wrong with:\n\t$checkGenotype_cmd\n???\n");
     }
     rename("$name.gtypey", "$name.gtypex") or Utils::CMD("rename $name.gtypey $name.gtypex: \$!");
     if ( ! -s "$name.gtypex" ) 
