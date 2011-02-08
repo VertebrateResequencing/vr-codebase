@@ -42,6 +42,9 @@ data => {
 # in the data section you can also supply the tmp_dir option to specify the
 # root that will be used to create tmp directories
 
+# qc => 1 can be supplied outside the data section to only improve lanes which 
+# have passed qc
+
 # run the pipeline:
 run-pipeline -c bamimprovement.pipeline -s 30
 
