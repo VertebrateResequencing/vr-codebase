@@ -1238,7 +1238,7 @@ sub is_finished {
 					my $path = dirname($bam);
 					$path = dirname($path);
 					my $platform_bam = File::Spec->catfile($path, 'raw.bam');
-					if ($fsu->file_exists($platform_bam && ! -l $platform_bam)) {
+					if ($fsu->file_exists($platform_bam) && ! -l $platform_bam) {
 						unlink $bam;
 						$fsu->file_exists($bam, wipe_out => 1);
 					}

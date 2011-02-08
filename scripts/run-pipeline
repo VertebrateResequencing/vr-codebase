@@ -1308,7 +1308,7 @@ sub get_mergeup_jobs {
 		}
         close($rpfh);
 
-		my $new_platform_fofn = File::Spec->catfile($root, '.platform_bams_expected');
+		my $new_platform_fofn = File::Spec->catfile($root, '.new_platform_bams');
 		open(my $npfh, '>', $new_platform_fofn) || die "Could not open $new_platform_fofn\n";
 		foreach my $path (keys %new_platform) {
 			my $raw_bam = File::Spec->catfile($path, 'raw.bam');
@@ -1364,7 +1364,7 @@ sub get_mergeup_jobs {
 	}
 
 	# Create .sample_bams_expected fofn
-    my $new_sample_fofn = File::Spec->catfile($root, '.sample_bams_expected');
+    my $new_sample_fofn = File::Spec->catfile($root, '.new_sample_bams');
 	if ( $config_data->{data}->{do_sample_merge} && ! -s $new_sample_fofn ) {
 		open(my $sfh, '>', $new_sample_fofn) || die "Couldn't write to $new_sample_fofn";
 	    foreach my $sample (keys %new_samples) {
