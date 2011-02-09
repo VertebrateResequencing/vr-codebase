@@ -1187,6 +1187,11 @@ sub get_mergeup_jobs {
         copy($config_data->{lane_bams}, $lane_bams_fofn) || die "Could not copy '$config_data->{lane_bams}' to '$lane_bams_fofn'\n";
     }
     
+	my $platform_expected = File::Spec->catfile($root, 'raw_platform_bams.fofn_expected');
+	my $platform_done = File::Spec->catfile($root, 'raw_platform_bams.fofn');
+	my $sample_expected = File::Spec->catfile($root, 'raw_sample_bams.fofn_expected');
+	my $sample_done = File::Spec->catfile($root, 'raw_sample_bams.fofn');
+
     # We will make a job (instance of MergeUp) for each sample, supplying it the
     # subset of lanes in the input lane_bams fofn for that sample. We'll create
     # the whole hierarchy; if we have been given previous_merge_root, we'll have
@@ -1313,8 +1318,7 @@ sub get_mergeup_jobs {
         }
         close($sfh);
         
-		my $raw_platform_fofn = File::Spec->catfile($root, 'raw_platform_bams.fofn');
-		open(my $rpfh, '>', $raw_platform_fofn) || die "Could not open $raw_platform_fofn\n";
+		open(my $rpfh, '>', $platform_expected) || die "Could not open $platform_expected\n";
 		foreach my $path (keys %old_platform, keys %new_platform) {
 			my $raw_bam = File::Spec->catfile($path, 'raw.bam');
 			print $rpfh "$raw_bam\n";
@@ -1365,10 +1369,9 @@ sub get_mergeup_jobs {
     }
 	close $sfh;
 
-	# Create raw_sample_bams.fofn
-    my $raw_sample_fofn = File::Spec->catfile($root, 'raw_sample_bams.fofn');
-	if ( $config_data->{data}->{do_sample_merge} && ! -s $raw_sample_fofn ) {
-		open(my $sfh, '>', $raw_sample_fofn) || die "Couldn't write to $raw_sample_fofn";
+	# Create raw_sample_bams.fofn_expected
+	if ( $config_data->{data}->{do_sample_merge} && ! (-s $sample_expected || -s $sample_done ) ) {
+		open(my $sfh, '>', $sample_expected) || die "Couldn't write to $sample_expected";
 	    foreach my $sample (keys %old_samples, keys %new_samples) {
 			my $raw_bam = File::Spec->catfile($sample, "raw.bam");
 	        print $sfh $raw_bam, "\n";
@@ -1441,6 +1444,38 @@ sub get_mergeup_jobs {
 	    } elsif (-s $done_file) {
 			foreach my $sample (keys %new_samples) {
 				$done_tasks{$sample} = $task;
+			}
+		}
+	}
+	
+	my $final_done_file = File::Spec->catfile($root, ".${final_task}_done");
+	if (-s $final_done_file) {
+		foreach my $merge ('platform', 'sample') {
+			next if ( $merge eq 'sample' && ! $config_data->{data}->{do_sample_merge} );
+
+			my $expected_file = File::Spec->catfile($root, "raw_${merge}_bams.fofn_expected");
+			my $done_file = File::Spec->catfile($root, "raw_${merge}_bams.fofn");
+			
+			if ( -s $expected_file && ! -e $done_file ) {
+		        my $done_count = 0;
+		        my $expected_done = 0;
+		        open(my $efh, $expected_file) || die "Couldn't open $expected_file";
+		        my @done;
+		        while (<$efh>) {
+		            chomp;
+		            /\S/ || next;
+		            $expected_done++;
+		            if ( -e $_ ) {
+		                push(@done, $_);
+						my $sample = dirname($_);
+		            }
+		        }
+
+		        if (scalar @done == $expected_done) {
+		            move($expected_file, $done_file) || die "Failed to move $expected_file -> $done_file";
+		        } else {
+					warn "Not all the expected $merge bams are present!\n";
+				}
 			}
 		}
 	}
