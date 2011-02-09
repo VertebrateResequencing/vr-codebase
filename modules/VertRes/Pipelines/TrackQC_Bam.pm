@@ -892,7 +892,7 @@ sub update_db
 
     my $nadapters = 0;
     if ( -e "$sample_dir/${name}_1.nadapters" ) { $nadapters += do "$sample_dir/${name}_1.nadapters"; }
-    if ( -e "$sample_dir/${name}_2.nadapters" ) { $nadapters += do "$sample_dir/${name}_1.nadapters"; }
+    if ( -e "$sample_dir/${name}_2.nadapters" ) { $nadapters += do "$sample_dir/${name}_2.nadapters"; }
 
     $vrtrack->transaction_start();
 
