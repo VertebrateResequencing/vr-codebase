@@ -93,6 +93,7 @@ sub new
     bless $self, ref($class) || $class;
     $$self{_status_codes}{DONE} = 1;
     $$self{_farm} = 'LSF';
+    $$self{_farm_options} = { time=>600 };
     $$self{usage} = 
         "Runner.pm arguments:\n" .
         "   +help           Summary of commands\n" .
@@ -168,6 +169,24 @@ sub run
         sleep($$self{_loop});
     }
 }
+
+=head2 set_limits
+
+    About : Set time and memory requirements for computing farm
+    Usage : $self->set_limits(memory=>1_000, time=>24*60);
+    Args  : <memory>
+                Expected memory requirements [MB] or undef to unset
+            <time>
+                Expected running time [minutes] or undef to unset
+                
+=cut
+
+sub set_limits
+{
+    my ($self,%args) = @_;
+    $$self{_farm_options} = { %args };
+}
+
 
 =head2 spawn
 
@@ -251,7 +270,7 @@ sub _spawn_to_farm
     # Run the job
     my $cmd = qq[$0 +run $freeze_file];
     $self->debugln("$$self{_store}{call}:\t$cmd");
-    $farm->can('run')->($farm_jobs_ids,'.',$prefix,{bsub_opts=>''},$cmd);
+    $farm->can('run')->($farm_jobs_ids,'.',$prefix,$$self{_farm_options},$cmd);
 }
 
 =head2 wait
