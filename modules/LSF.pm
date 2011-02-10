@@ -240,7 +240,7 @@ sub adjust_bsub_options
                         dont_wait   .. if set, don't wait until the job appears in bjobs list
                         memory      .. expected memory requirements (MB) [ignored if bsub_opts present]
                         queue       .. computing farm queue [ignored if bsub_opts present]
-                        time        .. expected running time (minutes) [ignored if bsub_opts or queue present]
+                        runtime     .. expected running time (minutes) [ignored if bsub_opts or queue present]
     Arg [5]     : the command to run
     Description : Executes bsub with the given parameters.
     Returntype  : none
@@ -254,9 +254,9 @@ sub run
     my %opts = (%$options);
     if ( !exists($opts{bsub_opts}) )
     {
-        if ( !defined($opts{queue}) && defined($opts{time}) ) 
+        if ( !defined($opts{queue}) && defined($opts{runtime}) ) 
         { 
-            if ( $opts{time} <= 720.0 ) { $opts{queue} = 'normal'; }
+            if ( $opts{runtime} <= 720.0 ) { $opts{queue} = 'normal'; }
             else { $opts{queue} = 'long'; }
         }
         else 

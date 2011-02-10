@@ -93,7 +93,7 @@ sub new
     bless $self, ref($class) || $class;
     $$self{_status_codes}{DONE} = 1;
     $$self{_farm} = 'LSF';
-    $$self{_farm_options} = { time=>600 };
+    $$self{_farm_options} = { runtime=>600 };
     $$self{usage} = 
         "Runner.pm arguments:\n" .
         "   +help           Summary of commands\n" .
@@ -173,10 +173,10 @@ sub run
 =head2 set_limits
 
     About : Set time and memory requirements for computing farm
-    Usage : $self->set_limits(memory=>1_000, time=>24*60);
+    Usage : $self->set_limits(memory=>1_000, runtime=>24*60);
     Args  : <memory>
                 Expected memory requirements [MB] or undef to unset
-            <time>
+            <runtime>
                 Expected running time [minutes] or undef to unset
                 
 =cut
@@ -184,7 +184,7 @@ sub run
 sub set_limits
 {
     my ($self,%args) = @_;
-    $$self{_farm_options} = { %args };
+    $$self{_farm_options} = { %{$$self{_farm_options}}, %args };
 }
 
 
