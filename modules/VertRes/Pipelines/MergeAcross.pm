@@ -81,7 +81,6 @@ use strict;
 use warnings;
 use VertRes::IO;
 use VertRes::Utils::FileSystem;
-use VertRes::Parser::sam;
 use File::Basename;
 use File::Spec;
 use File::Copy;

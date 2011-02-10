@@ -906,7 +906,7 @@ sub variant_recalibrator {
     #   --ignore_filter HARD_TO_VALIDATE \
     #   -T VariantRecalibrator
     
-    my $tranches = '-tranche 0.1 -tranche 1 -tranche 5 -tranche 10';
+    my $tranches = '-tranche 10 -tranche 5 -tranche 1 -tranche 0.1';
 
     # if it's there, check the tranches file for how many present and adjust -tranches
     # options accordingly.  This is a workaround for the SNP pipeline to work: the 
@@ -925,6 +925,9 @@ sub variant_recalibrator {
                 $tranches .= " -tranche $1";
             }
         }
+        if ($tranches eq "") {
+             $tranches = '-tranche 10 -tranche 5 -tranche 1 -tranche 0.1';
+        }
     }
 
     $self->switches([qw(quiet_output_mode ignore_all_input_filters)]);
@@ -933,7 +936,7 @@ sub variant_recalibrator {
                       quality_scale_factor)]);
     
     my $bs = $self->get_b();
-    my @file_args = (" $bs -clusterFile $in_cluster -reportDatFile $out_vcf.dat -tranchesFile $out_vcf.dat.tranches -o $out_vcf",
+    my @file_args = (" $bs -clusterFile $in_cluster -tranchesFile $out_vcf.dat.tranches -o $out_vcf",
                      '-resources '.File::Spec->catdir($ENV{GATK}, 'resources'),
                      '-Rscript Rscript',
                      $tranches);
