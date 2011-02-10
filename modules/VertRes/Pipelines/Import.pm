@@ -159,8 +159,23 @@ sub get_files
     my @fastqcheck = ();    # to be fastqchecked .. only the new splitted files 
     for my $file (@{$$self{files}})
     {
+	# multiplexed fastq files
+	if ($file=~/#(\d+)/){
+	    my $tag=$1;
+	    my $realfile=$file;
+	    $realfile=~s/#\d+//;
+	    unless ( (-e "$file.gz" && -s "$file.gz") || (-e $file && -s $file) ){
+	    Utils::CMD(qq[$$self{mpsa} -c -f $realfile > $file]);
+	    my $extractedfile = $self->filter_fastq_on_tag($file,$tag);
+	    Utils::CMD(qq[mv $extractedfile $file]);
+	    Utils::CMD(qq[md5sum $file > $file.md5]);
+	    }
+	}
+	else{
         Utils::CMD(qq[$$self{mpsa} -m -f $file > $file.md5]) unless (-e "$file.md5" && -s "$file.md5");
         Utils::CMD(qq[$$self{mpsa} -c -f $file > $file]) unless ( (-e "$file.gz" && -s "$file.gz") || (-e $file && -s $file) );
+	}
+
         if ( -e $file )
         {
             # This should always be true if everything goes alright. But if the subroutine is called
@@ -303,6 +318,43 @@ sub split_single_fastq
     close($fh_in);
 
     return ($fname1,$fname2);
+}
+
+#  Filters the multiplex fastqs and extracts the sequences relevant to a particular tag	 
+sub filter_fastq_on_tag
+{
+    my ($self,$file,$tag) = @_;
+    my $fname = qq[$file.temp];
+
+    if ( -e "$fname.gz" ) { return $fname; }
+
+    open(my $fh_in,'<',$file) or $self->throw("$file: $!");
+    open(my $fh_out,'>',$fname) or $self->throw("$fname: $!");
+    while (1)
+    {
+	#@IL5_4821:7:1:1154:8255#0/1
+	#AAAGATTTGCCTGAGTCAGGNTGCGCAAGNNNNANNNNNNNNGNGNATNAANNTTCANAAAATAAAAANNNNNNNN	 
+	#+
+	#BB@@@@B@@A@AA0@@A=B=&9A=?16@=%$$$5$#########($6)%48$$*/7'%&$'(6$'$&/#$$$$$#$
+	my $id   = <$fh_in> || last;
+	# extract only if the tag matches 
+	if($id=~/#(\d+)/ && $1==$tag){
+	my $seq  = <$fh_in> || last; 
+	my $sep  = <$fh_in> || last; 
+	my $qual = <$fh_in> || last; 
+	print $fh_out $id;
+	print $fh_out $seq;
+	print $fh_out $sep;
+	print $fh_out $qual;
+	}
+	else{
+	# skip the next 3 lines	 
+	foreach (1..3){<$fh_in>;}	 
+	}
+    }
+    close($fh_out);	 
+    close($fh_in);	 
+    return $fname;	 
 }
 
 
