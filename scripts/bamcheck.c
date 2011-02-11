@@ -480,11 +480,14 @@ void error(const char *format, ...)
 {
     if ( !format )
     {
-        printf("Usage: bamcheck [OPTIONS] file.bam\n\n");
+        printf("Usage: bamcheck [OPTIONS] file.bam\n");
         printf("Options:\n");
+        printf("    -h, --help                      This help message\n");
         printf("    -i, --insert-size <int>         Maximum insert size [8000]\n");
+        printf("    -m, --most-inserts <float>      Report only the main part of inserts [0.99]\n");
         printf("    -q, --trim-quality <int>        The BWA trimming parameter [0]\n");
         printf("    -r, --ref-seq <file>            Reference sequence (required for GC-depth calculation).\n");
+        printf("\n");
     }
     else
     {
@@ -520,7 +523,7 @@ int main(int argc, char *argv[])
     stats.nbases_mapped_cigar = 0;
     stats.nmismatches     = 0;
     stats.sum_qual = 0;
-    stats.isize_main_bulk = 0.99;
+    stats.isize_main_bulk = 0.99;   // There are always outliers at the far end
     stats.trim_qual = 0;
     stats.nbases_trimmed = 0;
     stats.gcd_bin_size = 20000;
@@ -535,6 +538,8 @@ int main(int argc, char *argv[])
     // Parse command line arguments
     for (i=1; i<argc; i++)
     {
+        if ( !strcmp(argv[i],"-h") || !strcmp(argv[i],"--help") )
+            error(NULL);
         if ( !strcmp(argv[i],"-r") || !strcmp(argv[i],"--ref-seq") )
         {
             if ( ++i>=argc )
@@ -550,6 +555,14 @@ int main(int argc, char *argv[])
                 error(NULL);
             if ( sscanf(argv[i],"%d",&(stats.nisize)) != 1 )
                 error("Expected integer after -i, got [%s]\n", argv[i]);
+            continue;
+        }
+        if ( !strcmp(argv[i],"-m") || !strcmp(argv[i],"--most-inserts") )
+        {
+            if ( ++i>=argc )
+                error(NULL);
+            if ( sscanf(argv[i],"%f",&(stats.isize_main_bulk)) != 1 )
+                error("Expected float after -m, got [%s]\n", argv[i]);
             continue;
         }
         if ( !strcmp(argv[i],"-q") || !strcmp(argv[i],"--trim-quality") )
