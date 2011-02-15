@@ -35,7 +35,7 @@ our $THREE_PRIME_REGION = 200;
 =head2 new
 
  Title   : new
- Usage   : my $obj = VertRes::Utils::dbSNP->new(handle=>'myhandle',strain_tag=>'myStrainTag',pop_handle=>'myPopHandle',species=>'Mouse');
+ Usage   : my $obj = VertRes::Utils::dbSNP->new(handle=>'myhandle',strain_tag=>'myStrainTag',pop_handle=>'myPopHandle',species=>'Mouse',chromosomes=>20);
  Function: Create a new VertRes::Utils::dbSNP object.
  Returns : VertRes::Utils::dbSNP object
  Args    : n/a
@@ -47,6 +47,8 @@ sub new
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(@args);
 	
+    if ( !exists($$self{chromosomes}) ) { $$self{chromosomes}=19; }
+
 	_checkFields( $self );
 	
     return $self;
@@ -251,7 +253,7 @@ TYPE:       SNPASSAY
 HANDLE:     $self->{handle}
 BATCH:      $batch_name
 MOLTYPE:    Genomic
-SAMPLESIZE: 19
+SAMPLESIZE: $self->{chromosomes}
 STRAIN: 	$self->{strain_tag}
 METHOD:     $self->{method_id}
 ORGANISM:   Mus musculus
@@ -372,7 +374,7 @@ sub write_snp_records
 		# computed location of the SNP (ACCESSION + LOCATION)
 		# flanking sequence (200 bp 5' and 200 bp 3' of the variant position)
 		
-		my $snp_id = $self->{handle}.'_'.$self->{strain_tag}.'_'.$snpcnt;
+		my $snp_id = $self->{handle}.'_'.$self->{strain_tag}.'_'.$chromosome.'_'.$position;
 		
 		my $phred_entry = '';
 		if( length( $phred_quality ) > 0 )
@@ -396,3 +398,45 @@ LOCATION:   $start_pos
 	close( $ofh );
 	close( $sfh );
 }
+
+
+=head2 write_snpinduse_records
+
+ Title   : write_snpinduse_records
+ Usage   : my $write = $obj->write_snpinduse_records($out_file,$inp_file);
+ Function: 
+ Returns : 
+ Args    : 
+
+=cut
+
+sub write_snpinduse_records
+{
+	my ($self, $outputFile, $inputFile,$batch) = @_;
+	
+	$self->throw("You must call the write_header function first to define the title!") unless defined( $self->{title} );
+
+    open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
+    print $ofh qq[
+TYPE:       SNPINDUSE
+HANDLE:     $self->{handle}
+BATCH:      $batch
+METHOD:     $self->{method_id}
+||
+ID:$self->{handle}|$self->{pop_handle}:$self->{strain_tag}
+];
+
+    open(my $ifh,'<',$inputFile) or $self->throw("$inputFile: $!");
+    while (my $line=<$ifh>)
+    {
+        if ( $line=~/^\s*$/ ) { next; }
+        my ($chr,$pos,$ref,$alt,$qual,$dp) = split(/\t/,$line);
+        chomp($dp);
+        print $ofh qq[SNP:$self->{handle}|$$self{handle}_$$self{strain_tag}_$chr\_$pos:$ref/$alt|SS_STRAND_FWD\n];
+    }
+    print $ofh "||\n";
+    close($ifh);
+	close( $ofh );
+}
+
+
