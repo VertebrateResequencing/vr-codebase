@@ -1595,7 +1595,7 @@ sub run_validation
 
     my $default_qual = $$self{defaults}{QUAL};
     my $warn_sorted=1;
-    my $warn_duplicates=1;
+    my $warn_duplicates = exists($$self{warn_duplicates}) ? $$self{warn_duplicates} : 1;
     my ($prev_chrm,$prev_pos);
     while (my $x=$self->next_data_hash()) 
     {
