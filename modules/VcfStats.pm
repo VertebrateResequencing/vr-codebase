@@ -112,6 +112,7 @@ sub select_stats
             else { $self->throw("TODO: $key...\n"); }
 
             if ( !exists($$self{stats}{$stat_key}) ) { $$self{stats}{$stat_key}={}; }
+            push @out, $$self{stats}{$stat_key};
         }
     }
     return \@out;
