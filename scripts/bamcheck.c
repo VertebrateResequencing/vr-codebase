@@ -3,7 +3,6 @@
     gcc -Wall -g -O2 -I ~/cvs/samtools bamcheck.c -o bamcheck -lm -lz -L ~/cvs/samtools -lbam
 
     Assumptions and approximations:
-        - GC content % calculation assumes that all reads have the same length (this can be fixed quite easily)
         - GC-depth does not split reads, the starting position determines which bin is incremented
 */
 
@@ -74,6 +73,7 @@ typedef struct
     int nquals;         // The number of quality bins 
     int nbases;         // The maximum sequence length the allocated array can hold
     int nisize;         // The maximum insert size that the allocated array can hold
+    int ngc;            // The size of gc_1st and gc_2nd
 
     // Arrays for the histogram data
     uint64_t *quals_1st, *quals_2nd;
@@ -183,12 +183,30 @@ float fai_gc_content(faidx_t *fai,char *chr,int from, int to)
     return (float)gc/count;
 }
 
+
+void realloc_buffers(stats_t *stats, int seq_len)
+{
+    int n = 2*(1 + seq_len - stats->nbases) + stats->nbases;
+
+    stats->quals_1st = realloc(stats->quals_1st, n*stats->nquals*sizeof(uint64_t));
+    if ( !stats->quals_1st )
+        error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,n*stats->nquals*sizeof(uint64_t));
+    memset(stats->quals_1st + stats->nbases*stats->nquals, 0, (n-stats->nbases)*stats->nquals*sizeof(uint64_t));
+
+    stats->quals_2nd = realloc(stats->quals_2nd, n*stats->nquals*sizeof(uint64_t));
+    if ( !stats->quals_2nd )
+        error("Could not realloc buffers, the sequence too long: %d (2x%ld)\n", seq_len,n*stats->nquals*sizeof(uint64_t));
+    memset(stats->quals_1st + stats->nbases*stats->nquals, 0, (n-stats->nbases)*stats->nquals*sizeof(uint64_t));
+
+    stats->nbases = n;
+}
+
 void collect_stats(bam1_t *bam_line, stats_t *stats)
 {
     int seq_len = bam_line->core.l_qseq;
     if ( !seq_len ) return;
     if ( seq_len >= stats->nbases )
-        error("TODO: read length too long %d>=%d\n",seq_len,stats->nbases);
+        realloc_buffers(stats,seq_len);
     if ( stats->max_len<seq_len )
         stats->max_len = seq_len;
 
@@ -203,6 +221,7 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
         //      =ACMGRSVTWYHKDBN
         if ( bam1_seqi(seq,i)==2 || bam1_seqi(seq,i)==4 ) gc_count++;
     }
+    int gc_idx = gc_count*(stats->ngc-1)/seq_len;
 
     // Determine which array (1st or 2nd read) will these stats go to,
     //  trim low quality bases from end the same way BWA does, 
@@ -213,13 +232,13 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
     {
         quals  = stats->quals_2nd;
         stats->nreads_2nd++;
-        stats->gc_2nd[gc_count]++;
+        stats->gc_2nd[gc_idx]++;
     }
     else
     {
         quals = stats->quals_1st;
         stats->nreads_1st++;
-        stats->gc_1st[gc_count]++;
+        stats->gc_1st[gc_idx]++;
     }
     int reverse = IS_REVERSE(bam_line);
     if ( stats->trim_qual>0 ) 
@@ -400,14 +419,18 @@ void output_stats(stats_t *stats)
         printf("\n");
     }
     printf("# GC Content of first fragments. Use `grep ^GCF | cut -f 2-` to extract this part.\n");
-    for (ibase=0; ibase<stats->max_len; ibase++)
+    for (ibase=0; ibase<stats->ngc; ibase++)
     {
-        printf("GCF\t%.2f\t%ld\n", (float)ibase*100./stats->max_len,stats->gc_1st[ibase]);
+        // Skip the zero-values. The discrete read length leaves unpleasent saw pattern in the graphs
+        if ( !stats->gc_1st[ibase] ) continue;
+        printf("GCF\t%.2f\t%ld\n", ibase*100./(stats->ngc-1),stats->gc_1st[ibase]);
     }
     printf("# GC Content of last fragments. Use `grep ^GCL | cut -f 2-` to extract this part.\n");
-    for (ibase=0; ibase<stats->max_len; ibase++)
+    for (ibase=0; ibase<stats->ngc; ibase++)
     {
-        printf("GCL\t%.2f\t%ld\n", (float)ibase*100./stats->max_len,stats->gc_2nd[ibase]);
+        // Skip the zero-values. The discrete read length leaves unpleasent saw pattern in the graphs
+        if ( !stats->gc_1st[ibase] ) continue;
+        printf("GCL\t%.2f\t%ld\n", ibase*100./(stats->ngc-1),stats->gc_2nd[ibase]);
     }
     printf("# Insert sizes. Use `grep ^IS | cut -f 2-` to extract this part.\n");
     double bulk = 0;
@@ -430,11 +453,7 @@ void output_stats(stats_t *stats)
             if ( stats->gcd[igcd].depth ) 
                 stats->gcd[igcd].gc = round(100. * stats->gcd[igcd].gc / stats->gcd[igcd].depth);
     }
-    // for (igcd=0; igcd<stats->igcd; igcd++)
-    //     printf("uns_GCD\t%d\t%d\t%f\n",igcd,stats->gcd[igcd].depth,stats->gcd[igcd].gc);
     qsort(stats->gcd, stats->igcd+1, sizeof(gc_depth_t), gcd_cmp);
-    // for (igcd=0; igcd<stats->igcd; igcd++)
-    //     printf("raw_GCD\t%d\t%f\n",stats->gcd[igcd].depth,stats->gcd[igcd].gc);
     igcd = 0;
     while ( igcd < stats->igcd )
     {
@@ -461,11 +480,14 @@ void error(const char *format, ...)
 {
     if ( !format )
     {
-        printf("Usage: bamcheck [OPTIONS] file.bam\n\n");
+        printf("Usage: bamcheck [OPTIONS] file.bam\n");
         printf("Options:\n");
+        printf("    -h, --help                      This help message\n");
         printf("    -i, --insert-size <int>         Maximum insert size [8000]\n");
+        printf("    -m, --most-inserts <float>      Report only the main part of inserts [0.99]\n");
         printf("    -q, --trim-quality <int>        The BWA trimming parameter [0]\n");
         printf("    -r, --ref-seq <file>            Reference sequence (required for GC-depth calculation).\n");
+        printf("\n");
     }
     else
     {
@@ -485,8 +507,9 @@ int main(int argc, char *argv[])
     int i;
 
     stats_t stats;
+    stats.ngc    = 1000+1;
     stats.nquals = 95;
-    stats.nbases = 200;
+    stats.nbases = 300;
     stats.nisize = 8000;
     stats.max_len   = 30;
     stats.max_qual  = 40;
@@ -500,7 +523,7 @@ int main(int argc, char *argv[])
     stats.nbases_mapped_cigar = 0;
     stats.nmismatches     = 0;
     stats.sum_qual = 0;
-    stats.isize_main_bulk = 0.99;
+    stats.isize_main_bulk = 0.99;   // There are always outliers at the far end
     stats.trim_qual = 0;
     stats.nbases_trimmed = 0;
     stats.gcd_bin_size = 20000;
@@ -515,6 +538,8 @@ int main(int argc, char *argv[])
     // Parse command line arguments
     for (i=1; i<argc; i++)
     {
+        if ( !strcmp(argv[i],"-h") || !strcmp(argv[i],"--help") )
+            error(NULL);
         if ( !strcmp(argv[i],"-r") || !strcmp(argv[i],"--ref-seq") )
         {
             if ( ++i>=argc )
@@ -530,6 +555,14 @@ int main(int argc, char *argv[])
                 error(NULL);
             if ( sscanf(argv[i],"%d",&(stats.nisize)) != 1 )
                 error("Expected integer after -i, got [%s]\n", argv[i]);
+            continue;
+        }
+        if ( !strcmp(argv[i],"-m") || !strcmp(argv[i],"--most-inserts") )
+        {
+            if ( ++i>=argc )
+                error(NULL);
+            if ( sscanf(argv[i],"%f",&(stats.isize_main_bulk)) != 1 )
+                error("Expected float after -m, got [%s]\n", argv[i]);
             continue;
         }
         if ( !strcmp(argv[i],"-q") || !strcmp(argv[i],"--trim-quality") )
@@ -558,8 +591,8 @@ int main(int argc, char *argv[])
     bam1_t *bam_line = bam_init1();
     stats.quals_1st  = calloc(stats.nquals*stats.nbases,sizeof(uint64_t));
     stats.quals_2nd  = calloc(stats.nquals*stats.nbases,sizeof(uint64_t));
-    stats.gc_1st     = calloc(stats.nbases,sizeof(uint64_t));
-    stats.gc_2nd     = calloc(stats.nbases,sizeof(uint64_t));
+    stats.gc_1st     = calloc(stats.ngc,sizeof(uint64_t));
+    stats.gc_2nd     = calloc(stats.ngc,sizeof(uint64_t));
     stats.isize      = calloc(stats.nisize,sizeof(uint64_t));
     stats.gcd        = calloc(stats.ngcd,sizeof(gc_depth_t));
 

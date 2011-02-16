@@ -34,6 +34,7 @@ use VertRes::IO;
 use VertRes::Utils::FileSystem;
 use VertRes::Wrapper::samtools;
 use VertRes::Wrapper::picard;
+use VertRes::Wrapper::fastqcheck;
 use HierarchyUtilities;
 use VertRes::Parser::dict;
 use VertRes::Parser::sequence_index;
@@ -45,7 +46,8 @@ use VertRes::Utils::FastQ;
 use VertRes::Utils::Math;
 use VertRes::Utils::Hierarchy;
 use Digest::MD5;
-use VertRes::Parser::bam;
+use VertRes::Parser::bamcheck;
+use VertRes::Parser::fastqcheck;
 use List::Util qw(min max sum);
 use Test::Deep::NoTest;
 use Graphs;
@@ -2503,6 +2505,118 @@ sub tag_strip {
         $self->warn("$tmp_out is bad (only $actual_lines lines vs $lines)");
         unlink $tmp_out;
         return 0;
+    }
+}
+
+=head2 bam2fastq
+
+ Title   : bam2fastq
+ Usage   : $obj->bam2fastq('in.bam', 'fastq_base');
+ Function: Converts bam to fastq and runs fastqcheck on the result. 
+           bamcheck will be run, if a bamcheck file does not already exist.
+ Returns : boolean (true on success, meaning the output bam was successfully
+           made)
+ Args    : paths to input and output bams, list of tags to remove.
+
+=cut
+
+sub bam2fastq {
+    my ($self, $bam, $fastq_base) = @_;
+
+	# read bam info from bamcheck file - create if necessary
+	my $bamcheck = $bam.'.bc';
+	unless (-s $bamcheck) {
+        Utils::CMD(qq[bamcheck $bam > $bamcheck.tmp]);
+        move("$bamcheck.tmp", $bamcheck) || $self->throw("Could not rename '$bamcheck.tmp' to '$bamcheck'\n");
+	}
+	my $bc_parser = VertRes::Parser::bamcheck->new(file => $bamcheck);
+    my $total_reads = $bc_parser->get('sequences');
+    my $total_bases = $bc_parser->get('total_length');
+	my $is_paired = $bc_parser->get('is_paired');
+	$self->throw("failed to parse $bamcheck\n") unless ($total_reads && $total_bases);
+	
+    my $fsu = VertRes::Utils::FileSystem->new();
+    my (undef, $path) = fileparse($bam);
+	my @out_fastq;
+	if ($is_paired) {
+		push @out_fastq, $fsu->catfile($path, "${fastq_base}_1.fastq");
+		push @out_fastq, $fsu->catfile($path, "${fastq_base}_2.fastq");
+	} else {
+		push @out_fastq, "${fastq_base}.fastq";
+	}
+	
+	my @tmp_fastq = map("$_.tmp.fastq", @out_fastq);
+    
+	# picard needs a tmp dir, but we don't use /tmp because it's likely to fill up
+    my $tmp_dir = $fsu->tempdir('_bam2fastq_tmp_XXXXXX', DIR => $path);
+    
+    my $verbose = $self->verbose();
+    my $picard = VertRes::Wrapper::picard->new(verbose => $verbose,
+                                                quiet => $verbose ? 0 : 1,
+                                                $self->{java_memory} ? (java_memory => $self->{java_memory}) : (),
+                                                validation_stringency => 'silent',
+                                                tmp_dir => $tmp_dir);
+    
+    $picard->SamToFastq($bam, @tmp_fastq);
+	$self->throw("SamToFastq of $bam failed\n") unless $picard->run_status >= 1;
+	
+	# run fastqcheck on all of the fastq files made record total length and number of reads
+	my $num_bases = 0;
+	my $num_sequences = 0;
+	foreach my $precheck_fq (@tmp_fastq) {
+		my $fqc_file = $precheck_fq;
+		$fqc_file =~ s/\.tmp\.fastq$/.fastqcheck/;
+		unless (-s $fqc_file) {
+		    # make the fqc file
+		    my $fqc = VertRes::Wrapper::fastqcheck->new();
+		    $fqc->run($precheck_fq, $fqc_file.'.temp');
+		    $self->throw("fastqcheck on $precheck_fq failed - try again?") unless $fqc->run_status >= 1;
+		    $self->throw("fastqcheck failed to make the file $fqc_file.temp") unless -s $fqc_file.'.temp';
+	    
+		    # check it is parsable
+		    my $parser = VertRes::Parser::fastqcheck->new(file => $fqc_file.'.temp');
+		    my $num_seq = $parser->num_sequences();
+		    if ($num_seq) {
+		        move($fqc_file.'.temp', $fqc_file) || $self->throw("failed to rename '$fqc_file.temp' to '$fqc_file'");
+		    }
+		    else {
+				unlink $fqc_file.'.temp';
+		        $self->throw("fastqcheck file '$fqc_file.temp' was created, but doesn't seem valid\n");
+		    }
+		}
+	    
+	    if (-s $fqc_file) {
+		    my $parser = VertRes::Parser::fastqcheck->new(file => $fqc_file);
+		    $num_sequences += $parser->num_sequences();
+		    $num_bases += $parser->total_length();		    
+		}
+	}
+	
+    # check fastqcheck output against expectation
+    my $ok = 0;
+	if ($num_sequences == $total_reads) {
+	    $ok++;
+	} else {
+	    $self->warn("fastqcheck reports number of reads as $num_sequences, not the expected $total_reads\n");
+	}
+	if ($num_bases == $total_bases) {
+	    $ok++;
+	} else {
+	    $self->warn("fastqcheck reports number of bases as $num_bases, not the expected $total_bases\n");
+	}
+	
+	# if everything checks out rename the tmp fastqs, otherwise unlink created files
+    if ($ok == 2) {
+		foreach my $tmp_fq (@tmp_fastq) {
+			my $fq = $tmp_fq;
+			$fq =~ s/\.tmp\.fastq$//;
+	        move($tmp_fq, $fq) || $self->throw("Could not rename '$tmp_fq' to '$fq'\n");
+		}
+    } else {
+		foreach my $tmp_fq (@tmp_fastq) {
+			unlink $tmp_fq;
+		}
+        $self->throw("fastqcheck of fastq file doesn't match expectations\n");
     }
 }
 
