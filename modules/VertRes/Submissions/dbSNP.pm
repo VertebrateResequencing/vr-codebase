@@ -300,19 +300,21 @@ sub write_snp_records
 	while ( <$sfh> )
 	{
 		# ignore any blank lines
-		if ( /\^\n/ ) 
+		if ( /^\s*$/ ) 
 		{
 			next;
 		}
-		chomp;
 		
-		# create a simple hash record of the current snp
-		my @s = split( /\t/, $_ );
-		$self->throw("Cannot create $outputFile: $!") unless @s == 6;
-		
-		my ($chromosome, $position, $reference_base, $consensus_base, $phred_quality, $read_depth ) = @s;
-		
-		$self->throw("Invalid SNP entry in file: $_") unless @s == 6; #do more sanity checks here.....
+        if ( !(/^([^\t]+)\t([^\t]+)\t([^\t]+)\t([^\t]+)\t([^\t]*)\t(\S*)$/) ) 
+        { 
+            $self->throw("Could not parse the line, one of the fields is missing: chr,pos,ref,alt [$_]"); 
+        }
+        my $chromosome     = $1;
+        my $position       = $2;
+        my $reference_base = $3;
+        my $consensus_base = $4;
+        my $phred_quality  = defined $5 ? $5 : '';
+        my $read_depth     = defined $6 ? $6 : '';
 		
 		# grab the entire sequence once instead of having to make
 		# multiple accesses to the db i.e. for upstream and downstream say
@@ -374,22 +376,30 @@ sub write_snp_records
 		# computed location of the SNP (ACCESSION + LOCATION)
 		# flanking sequence (200 bp 5' and 200 bp 3' of the variant position)
 		
-		my $snp_id = $self->{handle}.'_'.$self->{strain_tag}.'_'.$chromosome.'_'.$position;
+		my $snp_id = $self->{pop_handle}.'_'.$chromosome.'_'.$position;
 		
 		my $phred_entry = '';
 		if( length( $phred_quality ) > 0 )
 		{
 			$phred_entry = "snp quality: $phred_quality\n";
 		}
+
+        my $comment = '';
+        if ( $phred_quality ne '' or $read_depth ne '' )
+        {
+            $comment = "\nCOMMENT:\n";
+            if ( $phred_quality ne '' ) { $comment .= "quality: $phred_quality"; }
+            if ( $read_depth ne '' ) { $comment .= "read_depth: $read_depth"; }
+            $comment .= "\n";
+        }
+
 		print $ofh qq[
 SNP:        $snp_id
 ACCESSION:  $supercontig
 LENGTH:     1
 5'_FLANK:   $five_prime_seq
 OBSERVED:   $reference_base/$consensus_base
-3'_FLANK:   $three_prime_seq
-COMMENT:
-$phred_quality read_depth: $read_depth
+3'_FLANK:   $three_prime_seq$comment
 LOCATION:   $start_pos
 ||
 ];
@@ -432,7 +442,7 @@ ID:$self->{handle}|$self->{pop_handle}:$self->{strain_tag}
         if ( $line=~/^\s*$/ ) { next; }
         my ($chr,$pos,$ref,$alt,$qual,$dp) = split(/\t/,$line);
         chomp($dp);
-        print $ofh qq[SNP:$self->{handle}|$$self{handle}_$$self{strain_tag}_$chr\_$pos:$ref/$alt|SS_STRAND_FWD\n];
+        print $ofh qq[SNP:$self->{handle}|$$self{pop_handle}_$chr\_$pos:$ref/$alt|SS_STRAND_FWD\n];
     }
     print $ofh "||\n";
     close($ifh);
