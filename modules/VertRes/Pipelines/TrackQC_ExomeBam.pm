@@ -4,7 +4,51 @@ VertRes::Pipelines::TrackQC_ExomeBam - pipeline for QC of exome BAM files, inher
 
 =head1 SYNOPSIS
 
-Fill in...
+# Make a conf file with database information and mapping/snp info.
+
+# A template conf file is:
+root    => '/path/to/data/hirearchy/root',
+module  => 'VertRes::Pipelines::TrackQC_ExomeBam',
+prefix  => '_',
+log     => '/path/to/file.log',
+max_failures => 20,
+
+db  => 
+{
+    database => 'dbname',
+    host     => 'dbhost',
+    port     => 3306,
+    user     => 'dbuser',
+},
+
+data => 
+{
+    exit_on_errors=>0,
+    #bamcheck => 'bamcheck -q 20',
+
+    db  => 
+    {
+        database => 'dbname',
+        host     => 'dbhost',
+        port     => 3306,
+        user     => 'dbuser',
+        password => 'xxx',
+    },
+
+    bwa_ref => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
+    fa_ref  => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
+    fai_ref => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
+    
+    glf              => '/path/to/glf',
+    snps             => '/foo/genotype.bin',
+    snp_sites        => '/foo/genotype.snp_sites',
+    gtype_confidence => 1.2,
+    exome_design => 'uk10k.20110120',
+},
+
+# Make a pipeline file:
+echo '
+
 
 
 =cut
@@ -216,12 +260,18 @@ my \%opts = (
     bam => q[$bam],
     verbose => 1,
 );
-my \$stats = \$o->bam_exome_qc_stats(\%opts);
-\$o->bam_exome_qc_make_plots(\$stats, q[$qc_files_prefix], q[png]);
 my \$dump_file = q[$qc_files_prefix] . q[.dump];
-open my \$fh, '>', \$dump_file or die "error opening \$dump_file";
-print \$fh  Dumper \$stats;
-close \$fh;
+my \$stats;
+
+if (-e \$dump_file) {
+    $stats = do \$dump_file or die("Could not load stats from file \$dump_file");
+else {
+    \$stats = \$o->bam_exome_qc_stats(\%opts);
+    open my \$fh, '>', \$dump_file or die "error opening \$dump_file";
+    print \$fh  Dumper \$stats;
+    close \$fh;
+}
+\$o->bam_exome_qc_make_plots(\$stats, q[$qc_files_prefix], q[png]);
 die "error touching done file" if (system "touch _stats_and_graphs.done");
 ];
 

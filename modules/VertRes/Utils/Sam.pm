@@ -3088,6 +3088,9 @@ sub bam_exome_qc_stats {
     $bam_parser->close();
     print STDERR "Finished parsing BAM file\n" if $opts{verbose};
 
+    $stats{'bait_gc_hist'} = [(0) x 101 ];
+    $stats{'target_gc_hist'} = [(0) x 101];
+
     # add bait/target gc histogram to qc dump hash
     for my $b_or_t ('bait', 'target'){
         foreach my $chr (keys %{$intervals->{$b_or_t}}) {
