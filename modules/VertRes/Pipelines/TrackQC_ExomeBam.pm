@@ -47,9 +47,16 @@ data =>
 },
 
 # Make a pipeline file:
-echo '
+echo '__VRTrack_QC__  exome_qc.conf' > exome_qc.pipeline
 
+# run the pipeline:
+run-pipeline -c exome_qc.pipeline
 
+# (and make sure it keeps running by adding that last to a regular cron job)
+
+=head1 AUTHOR
+
+Martin Hunt: mh12@sanger.ac.uk
 
 =cut
 
@@ -171,10 +178,13 @@ our $options = {
 
                     # exome options
                     exome_coords    .. Required if exome_design not given
-                                       file containing info on targets and baits, made by script...
+                                       file containing info on targets and baits, made by
+                                       VertRes::Utils::Sam::bam_exome_qc_stats() with the
+                                       'dump_intervals' option
                     exome_design    .. name of exome design.  Will be used to look up exome_coords file,
                                        if exome_coords not given.
-                    snps            .. file made by hapmap2bin to be used for genotyping
+                    snps            .. file made by hapmap2bin to be used for genotyping, containing
+                                       genotypes of all the samples
                     snp_sites       .. file containing locations of SNPs to be used for genotyping. 
                                        One site per line, tab separated:  chromosome<tab>position
 
@@ -264,7 +274,8 @@ my \$dump_file = q[$qc_files_prefix] . q[.dump];
 my \$stats;
 
 if (-e \$dump_file) {
-    $stats = do \$dump_file or die("Could not load stats from file \$dump_file");
+    \$stats = do \$dump_file or die("Could not load stats from file \$dump_file");
+}
 else {
     \$stats = \$o->bam_exome_qc_stats(\%opts);
     open my \$fh, '>', \$dump_file or die "error opening \$dump_file";
@@ -430,12 +441,10 @@ sub update_db {
 
     # update the exome_design
     my $exome_design = $mapping->exome_design($self->{exome_design});
-    if (!$exome_design) {
-        $exome_design = $mapping->add_exome_design($self->{exome_design});
-        $exome_design->bait_bases($stats->{bait_bases});
-        $exome_design->target_bases($stats->{target_bases});
-        $exome_design->update();
-    }
+    unless ($exome_design) { $exome_design = $mapping->add_exome_design($self->{exome_design}) }
+    $exome_design->bait_bases($stats->{bait_bases});
+    $exome_design->target_bases($stats->{target_bases});
+    $exome_design->update();
 
     # If there is no mapstats present, the mapper and assembly must be filled in.
     #$self->_update_mapper_and_assembly($sample_dir, $mapping) unless $has_mapstats;
