@@ -29,8 +29,17 @@ sub error
         "   -i, --include-columns <col1,col2,..>        Include only these columns in comparison\n",
         "   -p, --prefix <dir/string>                   Prefix of output files. If slashes are present, directories will be created.\n",
         "   -h, -?, --help                              This help message.\n",
+        "\n",
         "Examples:\n",
+        "   # Calculate stats separately for the filter field, quality and non-indels\n",
         "   vcf-stats file.vcf.gz -f FILTER,QUAL=10:200,INFO/INDEL=False -p out/\n",
+        "\n",
+        "   # Calculate stats for all samples\n",
+        "   vcf-stats file.vcf.gz -f FORMAT/DP=10:200 -p out/\n",
+        "\n",
+        "   # Calculate stats only for the sample NA00001\n",
+        "   vcf-stats file.vcf.gz -f SAMPLE/NA00001/DP=1:200 -p out/\n",
+        "\n",
         "   vcf-stats file.vcf.gz > perl.dump\n",
         "\n";
 }

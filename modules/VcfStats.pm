@@ -53,6 +53,40 @@ sub parse_header
     $self->SUPER::parse_header(@args);
 }
 
+=head2 create_stats_hash
+
+    About   : Creates relevant stats hash, used by select_stats
+    Usage   : 
+    Args [1]: Stats ($$self{stats} by default, $$self{stats}{samples}{ID} for samples)
+         [2]: Hash with filter definition (value to match, range, etc.)
+         [3]: Prefix of the stat
+         [4]: Value of the filter
+
+=cut
+
+sub create_stats_hash
+{
+    my ($self,$stats,$filter,$key,$value) = @_;
+
+    my $stat_key;
+    if ( $$filter{exact} )
+    {
+        if ( $value ne $$filter{value} ) { next; }
+        $stat_key = $key.'/'.$value;
+    }
+    elsif ( $value eq '.' ) { $stat_key = $key.'/.'; }
+    elsif ( $$filter{any} ) { $stat_key = $key.'/'.$value; }
+    elsif ( $$filter{bin} )
+    {
+        my $bin = int($value/$$filter{bin_size}) * $$filter{bin_size};
+        if ( $bin>$$filter{max} ) { $bin=">$$filter{max}"; }
+        $stat_key = $key.'/'.$bin;
+    }
+    else { $self->throw("TODO: $key...\n"); }
+
+    if ( !exists($$stats{$stat_key}) ) { $$stats{$stat_key}={}; }
+    return $$stats{$stat_key};
+}
 
 =head2 select_stats
 
@@ -71,49 +105,50 @@ sub select_stats
     my @out = ( $$self{stats}{all} );
     if ( !defined $filters ) { return \@out; }
 
-    while (my ($key,$val) = each %$filters)
+    while (my ($key,$filter) = each %$filters)
     {
-        my @values;
-        if ( $key eq 'FILTER' ) { @values=@{$$rec{FILTER}}; }
-        elsif ( $key eq 'QUAL' ) { @values=($$rec{QUAL}); }
+        if ( $key eq 'FILTER' ) 
+        { 
+            for my $value (@{$$rec{FILTER}})
+            {
+                push @out, $self->create_stats_hash($$self{stats},$filter,$key,$value);
+            }
+        }
+        elsif ( $key eq 'QUAL' ) 
+        { 
+            push @out, $self->create_stats_hash($$self{stats},$filter,$key,$$rec{QUAL}); 
+        }
         elsif ( $key=~m{^INFO/} ) 
         { 
-            if ( $$val{is_flag} )
+            if ( $$filter{is_flag} )
             {
-                if ( $$val{value} && !exists($$rec{INFO}{$$val{tag}}) ) { next; }
-                elsif ( !$$val{value} && exists($$rec{INFO}{$$val{tag}}) ) { next; }
+                if ( $$filter{value} && !exists($$rec{INFO}{$$filter{tag}}) ) { next; }
+                elsif ( !$$filter{value} && exists($$rec{INFO}{$$filter{tag}}) ) { next; }
                 if ( !exists($$self{stats}{$key}) ) { $$self{stats}{$key}={}; }
                 push @out, $$self{stats}{$key};
                 next;
             }
-            elsif ( exists($$rec{INFO}{$$val{tag}}) )
+            elsif ( exists($$rec{INFO}{$$filter{tag}}) )
             {
-                @values=($$rec{INFO}{$$val{tag}});
+                push @out, $self->create_stats_hash($$self{stats},$filter,$key,$$rec{INFO}{$$filter{tag}});
             }
         }
-        else { $self->throw("TODO: $key.\n"); } 
-
-        for my $item (@values)
+        elsif ( $key=~m{^FORMAT/([^/]+)$} )
         {
-            my $stat_key;
-            if ( $$val{exact} )
+            while (my ($sample,$hash) = each %{$$rec{gtypes}})
             {
-                if ( $item ne $$val{value} ) { next; }
-                $stat_key = $key.'/'.$item;
+                if ( !exists($$hash{$1}) ) { next; }
+                if ( !exists($$self{stats}{samples}{$sample}{user}) ) { $$self{stats}{samples}{$sample}{user}={} }
+                push @out, $self->create_stats_hash($$self{stats}{samples}{$sample}{user},$filter,$1,$$hash{$1});
             }
-            elsif ( $item eq '.' ) { $stat_key = $key.'/.'; }
-            elsif ( $$val{any} ) { $stat_key = $key.'/'.$item; }
-            elsif ( $$val{bin} )
-            {
-                my $bin = int($item/$$val{bin_size}) * $$val{bin_size};
-                if ( $bin>$$val{max} ) { $bin=">$$val{max}"; }
-                $stat_key = $key.'/'.$bin;
-            }
-            else { $self->throw("TODO: $key...\n"); }
-
-            if ( !exists($$self{stats}{$stat_key}) ) { $$self{stats}{$stat_key}={}; }
-            push @out, $$self{stats}{$stat_key};
         }
+        elsif ( $key=~m{^SAMPLE/([^/]+)/([^/]+)$} )
+        {
+            if ( !exists($$rec{gtypes}{$1}{$2}) ) { next; }
+            if ( !exists($$self{stats}{samples}{$1}{user}) ) { $$self{stats}{samples}{$1}{user}={} }
+            push @out, $self->create_stats_hash($$self{stats}{samples}{$1}{user},$filter,$2,$$rec{gtypes}{$1}{$2});
+        }
+        else { $self->throw("The feature currently not recognised: $key.\n"); } 
     }
     return \@out;
 }
