@@ -439,6 +439,10 @@ sub check_genotype
     $$options{'prefix'}        = $$self{'prefix'};
     $$options{'lock_file'}     = $lock_file;
 
+    if (exists $self->{snp_sites}) {
+        $options->{snp_sites} = $self->{snp_sites};
+    }
+
     my $gtc = VertRes::Utils::GTypeCheck->new(%$options);
     $gtc->check_genotype();
 
@@ -934,41 +938,8 @@ sub update_db
     $vrlane->raw_reads($reads_total);
     $vrlane->raw_bases($bases_total);
 
-    if ( !$has_mapstats )
-    {
-        # If there is no mapstats present, the mapper and assembly must be filled in.
-        #   First rely on the config file and if the info is not present there, make a guess
-        #   from the bam file header.
-        my $parser;
-        if ( !$$self{mapper} or !$$self{assembly} or !$$self{mapper_version} ) 
-        {
-            $parser = VertRes::Parser::bam->new(file=>"$sample_dir/$$self{lane}.bam");
-        }
-        if ( !$$self{assembly} ) 
-        {
-            my @info = $parser->sequence_info();
-            if ( @info ) { $$self{assembly} = $info[1]{AS}; }
-        }
-        if ( !$$self{mapper} or !$$self{mapper_version} )
-        {
-            $$self{mapper} = $parser->program();
-            if ( $$self{mapper} )
-            {
-                my %prgs = $parser->program_info();
-                $$self{mapper_version} = $prgs{$$self{mapper}}{VN};
-            }
-        }
-
-        if ( !$$self{assembly} ) { $self->throw("Expected the assembly key.\n"); }
-        if ( !$$self{mapper} ) { $self->throw("Expected the mapper key.\n"); }
-        if ( !$$self{mapper_version} ) { $self->throw("Expected the mapper_version key.\n"); }
-
-        my $assembly = $mapping->assembly($$self{assembly});
-        if (!$assembly) { $assembly = $mapping->add_assembly($$self{assembly}); }
-
-        my $mapper = $mapping->mapper($$self{mapper},$$self{mapper_version});
-        if (!$mapper) { $mapper = $mapping->add_mapper($$self{mapper},$$self{mapper_version}); }
-    }
+    # If there is no mapstats present, the mapper and assembly must be filled in.
+    $self->_update_mapper_and_assembly($sample_dir, $mapping) unless $has_mapstats;
 
     # Do the images
     while (my ($imgname,$caption) = each %images)
@@ -978,20 +949,11 @@ sub update_db
         $img->update;
     }
 
-    # Write the QC status. Never overwrite a QC status set previously by human. Only NULL or no_qc can be overwritten.
     $mapping->update;
-    $vrlane->is_processed('qc',1);
-    my $qc_status = $vrlane->qc_status();
-    if ( !$qc_status || $qc_status eq 'no_qc' ) { $vrlane->qc_status('pending'); } # Never change status which was set manually
-    $vrlane->update;
 
-    my $vrlibrary = VRTrack::Library->new($vrtrack,$vrlane->library_id()) or $self->throw("No such library in the DB: lane=[$name]\n");
-    $qc_status = $vrlibrary->qc_status();
-    if ( !$qc_status || $qc_status eq 'no_qc' ) 
-    { 
-        $vrlibrary->qc_status('pending'); 
-        $vrlibrary->update(); 
-    }
+    # Write the QC status. Never overwrite a QC status set previously by human. Only NULL or no_qc can be overwritten.
+    $self->_write_QC_status($vrtrack, $vrlane, $name);
+
     $vrtrack->transaction_commit();
 
     # Clean the big files
@@ -1073,6 +1035,59 @@ sub log
     if ( $fh ) { close($fh); }
 }
 
+
+sub _update_mapper_and_assembly {
+    my ($self, $sample_dir, $mapping) = @_;
+    my $parser;
+
+    #   First rely on the config file and if the info is not present there, make a guess
+    #   from the bam file header.
+    if ( !$$self{mapper} or !$$self{assembly} or !$$self{mapper_version} ) 
+    {
+        $parser = VertRes::Parser::bam->new(file=>"$sample_dir/$$self{lane}.bam");
+    }
+    if ( !$$self{assembly} ) 
+    {
+        my @info = $parser->sequence_info();
+        if ( @info ) { $$self{assembly} = $info[1]{AS}; }
+    }
+    if ( !$$self{mapper} or !$$self{mapper_version} )
+    {
+        $$self{mapper} = $parser->program();
+        if ( $$self{mapper} )
+        {
+            my %prgs = $parser->program_info();
+            $$self{mapper_version} = $prgs{$$self{mapper}}{VN};
+        }
+    }
+
+    if ( !$$self{assembly} ) { $self->throw("Expected the assembly key.\n"); }
+    if ( !$$self{mapper} ) { $self->throw("Expected the mapper key.\n"); }
+    if ( !$$self{mapper_version} ) { $self->throw("Expected the mapper_version key.\n"); }
+
+    my $assembly = $mapping->assembly($$self{assembly});
+    if (!$assembly) { $assembly = $mapping->add_assembly($$self{assembly}); }
+
+    my $mapper = $mapping->mapper($$self{mapper},$$self{mapper_version});
+    if (!$mapper) { $mapper = $mapping->add_mapper($$self{mapper},$$self{mapper_version}); }
+}
+
+
+sub _write_QC_status {
+    my ($self, $vrtrack, $vrlane, $name) = @_;
+    $vrlane->is_processed('qc',1);
+    my $qc_status = $vrlane->qc_status();
+    if ( !$qc_status || $qc_status eq 'no_qc' ) { $vrlane->qc_status('pending'); } # Never change status which was set manually
+    $vrlane->update;
+
+    my $vrlibrary = VRTrack::Library->new($vrtrack,$vrlane->library_id()) or $self->throw("No such library in the DB: lane=[$name]\n");
+    $qc_status = $vrlibrary->qc_status();
+    if ( !$qc_status || $qc_status eq 'no_qc' ) 
+    { 
+        $vrlibrary->qc_status('pending'); 
+        $vrlibrary->update(); 
+    }
+}
 
 1;
 
