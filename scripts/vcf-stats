@@ -28,6 +28,7 @@ sub error
         "   -f, --filters <filter1,filter2>             List of filters such as column/field (any value), column/field=bin:max (cluster in bins),column/field=value (exact value)\n",
         "   -i, --include-columns <col1,col2,..>        Include only these columns in comparison\n",
         "   -p, --prefix <dir/string>                   Prefix of output files. If slashes are present, directories will be created.\n",
+        "   -s, --samples <list>                        Process only the listed samples, - for none. Excluding unwanted samples may increase performance considerably.\n",
         "   -h, -?, --help                              This help message.\n",
         "\n",
         "Examples:\n",
@@ -52,6 +53,12 @@ sub parse_params
     {
         if ( $arg eq '-f' || $arg eq '--filters'  ) { $$opts{filter_param}=shift(@ARGV); next; }
         if ( $arg eq '-p' || $arg eq '--prefix'  ) { $$opts{prefix}=shift(@ARGV); next; }
+        if ( $arg eq '-s' || $arg eq '--samples'  ) 
+        { 
+            my $samples = shift(@ARGV);
+            $$opts{samples} = [ split(/,/,$samples) ];
+            next;
+        }
         if ( $arg eq '-i' || $arg eq '--include-columns'  ) 
         { 
             my @cols = split(/,/,shift(@ARGV));
@@ -124,6 +131,18 @@ sub vcf_stats
     my $vcf = $$opts{file} ? VcfStats->new(file=>$$opts{file}) : VcfStats->new(fh=>\*STDIN);
     $vcf->parse_header();
     init_filters($opts,$vcf);
+
+    # Include only requested samples
+    if ( exists $$opts{samples} )
+    {   
+        my @include = ();
+        if ( scalar @{$$opts{samples}}>1 or $$opts{samples}[0] ne '-' ) 
+        { 
+            for my $sample (@{$$opts{samples}}) { push @include,$sample; }
+        }
+        $vcf->set_samples(include=>\@include); 
+    }
+
 
     if ( !exists($$opts{include_cols}) )
     {
