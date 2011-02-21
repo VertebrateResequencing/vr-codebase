@@ -49,6 +49,7 @@ our $options =
     bsub_opts_mpileup    => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
     bsub_opts_qcall      => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
     bsub_opts_gatk       => "-q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000,thouio=1]'",
+    chunks_overlap  => 250,
     fai_chr_regex   => '\d+|x|y',
     gatk_opts       => { all=>{verbose=>1} },
     dbSNP_rod       => undef,
@@ -80,6 +81,7 @@ our $options =
                     bcf_fix         .. Script to fix invalid VCF
                     bcftools        .. The bcftools binary for mpileup task
                     dbSNP_rod       .. The dbSNP file for GATK
+                    chunks_overlap  .. Allow small overlap between chunks
                     file_list       .. File name containing a list of bam files (e.g. the 17 mouse strains). 
                     fa_ref          .. The reference sequence in fasta format
                     fai_ref         .. The reference fai file to read the chromosomes and lengths.
@@ -90,7 +92,7 @@ our $options =
                     merge_vcf       .. The merge-vcf script.
                     mpileup_cmd     .. The mpileup command.
                     pileup_rmdup    .. The script to remove duplicate positions.
-                    qcall_cmd       .. The qcall command.
+                    qcall_cmd       .. The qcall command
                     sam2vcf         .. The convertor from samtools pileup format to VCF.
                     samtools_pileup_params .. The options to samtools.pl varFilter (Used by Qcall and varFilter.)
                     sort_cmd        .. Change e.g. to 'sort -T /big/space'
@@ -258,7 +260,7 @@ sub chr_chunks
             #   and it would be hard to decide which of the SNPs should be kept. This way,
             #   all covering reads should be there and the SNPs should have similar/identical 
             #   depth.)
-            $pos += $split_size - 250;
+            $pos += $split_size - $$self{chunks_overlap};
             if ( $pos<1 ) { $self->throw("The split size too small [$split_size]?\n"); }
         
             # Eearly exit for debugging: do two chunks for one chromosome only for testing.
@@ -699,26 +701,80 @@ sub mpileup
         bsub_opts  => {bsub_opts=>$$self{bsub_opts_mpileup},dont_wait=>1,append=>0},
         bams       => $bams,
         split_size => $$self{split_size_mpileup},
+        bcf_based  => $$self{bcf_based},
 
         split_chunks    => \&mpileup_split_chunks,    
         merge_chunks    => \&glue_vcf_chunks,
         merge_vcf_files => \&mpileup_postprocess,
     );
+    if ( exists($$self{mpileup_samples}) ) { $opts{mpileup_samples} = $$self{mpileup_samples}; }
+    if ( $$self{bcf_based} )
+    {
+        $opts{merge_chunks}    = \&glue_bcf_chunks;
+        $opts{merge_vcf_files} = \&merge_bcf_files;
+    }
 
     $self->run_in_parallel(\%opts);
 
     return $$self{Yes};
 }
 
+sub glue_bcf_chunks
+{
+    my ($self,$chunks,$name,$work_dir) = @_;
+    return qq[ `touch $name.vcf.gz` ];
+}
+
+sub merge_bcf_files
+{
+    my ($self,$vcfs,$name) = @_;
+    return qq[ `touch $name.vcf.gz` ];
+}
+
 sub run_mpileup
 {
     my ($self,$file_list,$name,$chunk) = @_;
 
-    Utils::CMD(qq[$$self{mpileup_cmd} -b $file_list -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -gcv - | $$self{bcf_fix} | bgzip -c > $name.vcf.gz.part],{verbose=>1});
-    Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz.part],{verbose=>1});
-    rename("$name.vcf.gz.part.tbi","$name.vcf.gz.tbi") or $self->throw("rename $name.vcf.gz.part.tbi $name.vcf.gz.tbi: $!");
-    rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
+    if ( $$self{bcf_based} )
+    {
+        # Produce BCFs instead of VCFs
+        if ( ! -e "$name.bcf" )
+        {
+            Utils::CMD(qq[$$self{mpileup_cmd} -g -b $file_list -r $chunk -f $$self{fa_ref} > $name.bcf.part],{verbose=>1});
+            rename("$name.bcf.part","$name.bcf") or $self->throw("rename $name.bcf.part $name.bcf: $!");
+        }
 
+        Utils::CMD("touch _$name.done",{verbose=>1});
+        return;
+    }
+    
+    if ( -e "$name.bcf" && exists($$self{mpileup_samples}) )
+    {
+        # Take existing BCF and create a population subsample
+        if ( ! -e "$name.pop.bcf" ) 
+        {
+            Utils::CMD(qq[$$self{bcftools} view -p 0.99 -bvcg -s $$self{mpileup_samples} $name.bcf > $name.pop.bcf.part],{verbose=>1});
+            rename("$name.pop.bcf.part","$name.pop.bcf") or $self->throw("$name.pop.bcf.part $name.pop.bcf: $!");
+        }
+        if ( ! -e "$name.vcf.gz" )
+        {
+            Utils::CMD(qq[$$self{bcftools} view $name.pop.bcf | bgzip -c > $name.vcf.gz.part],{verbose=>1});
+            Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz.part],{verbose=>1});
+            rename("$name.vcf.gz.part.tbi","$name.vcf.gz.tbi") or $self->throw("rename $name.vcf.gz.part.tbi $name.vcf.gz.tbi: $!");
+            rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
+        }
+    }
+    else
+    {
+        # Original code which does not save BCFs and pipes mpileup directly through bcftools to produce VCFs 
+        if ( ! -e "$name.vcf.gz" )
+        {
+            Utils::CMD(qq[$$self{mpileup_cmd} -b $file_list -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -gcv - | $$self{bcf_fix} | bgzip -c > $name.vcf.gz.part],{verbose=>1});
+            Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz.part],{verbose=>1});
+            rename("$name.vcf.gz.part.tbi","$name.vcf.gz.tbi") or $self->throw("rename $name.vcf.gz.part.tbi $name.vcf.gz.tbi: $!");
+            rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
+        }
+    }
     Utils::CMD("touch _$name.done",{verbose=>1});
 }
 
@@ -727,7 +783,7 @@ sub mpileup_split_chunks
 {
     my ($self,$bam,$chunk_name,$chunk) = @_;
 
-    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd bcftools bcf_fix filter4vcf));
+    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd bcftools bcf_based bcf_fix filter4vcf));
 
     return qq[
 use strict;
@@ -766,7 +822,7 @@ if ( -e "$basename.vcf.gz" )
     rename("$basename.vcf.gz","$name.unfilt.vcf.gz") or Utils::error("rename $basename.vcf.gz $name.unfilt.vcf.gz: \$!");
 }
 
-Utils::CMD("zcat $name.unfilt.vcf.gz | $$self{filter4vcf} | bgzip -c > $basename.filt.vcf.gz");
+Utils::CMD("zcat $name.unfilt.vcf.gz | awk '/^#/||\$6>=3' | $$self{filter4vcf} | bgzip -c > $basename.filt.vcf.gz");
 Utils::CMD("zcat $basename.filt.vcf.gz | $$self{vcf_stats} > $name.vcf.gz.stats");
 Utils::CMD("tabix -f -p vcf $basename.filt.vcf.gz");
 rename("$basename.filt.vcf.gz.tbi","$name.vcf.gz.tbi") or Utils::error("rename $basename.filt.vcf.gz.tbi $name.vcf.gz.tbi: \$!");
