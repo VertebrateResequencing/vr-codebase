@@ -803,7 +803,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (12);
+insert into schema_version(schema_version) values (13);
 
 --
 -- Table structure for table `assembly`
