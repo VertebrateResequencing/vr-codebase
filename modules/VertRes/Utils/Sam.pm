@@ -2700,6 +2700,8 @@ sub filter_readgroups
                                           0.5 => half of baited bases not on target)
                mean_bait_coverage       = bait_bases_mapped / bait_bases
                mean_target_coverage     = target_bases_mapped / target_bases
+               bait_coverage_sd         = standard deviation of coverage distribution of bait bases
+               target_coverage_sd       = standard deviation of coverage distribution of target bases
                off_bait_bases           = number of bases not mapped on or near to a bait
                bases_mapped             = number of bases mapped (to anything)
                bases_mapped_reads       = total length of mapped reads
@@ -2707,7 +2709,7 @@ sub filter_readgroups
                mapped_as_pair           = number of reads mapped as a proper pair (0x0002 in flag)
                num_mismatches           = number of mismatches (total of NM:i:.. values)
                pct_mismatches           = 100 * num_mismatches / bases_mapped_reads
-               reads_paired             = number of paired reads (0x00001 in flag)
+               reads_paired             = number of paired reads (0x0001 in flag)
                raw_reads                = number of records in the input bam file
                reads_mapped             = number of reads mapped (0x0004 not in flag)
                rmdup_reads_mapped       = number of reads mapped excluding duplicates
@@ -2747,14 +2749,23 @@ sub filter_readgroups
                                     i.e. those with 0x0080 in the flag.
                qual_scores_up     = same as for qual_box_data_1, but reads which are not paired,
                                     i.e. those without 0x0001 in the flag.
+               bait_cvg_hist      = hash of coverage => number of bait bases with that coverage
+               target_cvg_hist    = hash of coverage => number of target bases with that coverage
                gc_vs_bait_cvg     = hash to see how coverage varies with GC content.
                                     %GC (nearest int) => {mean coverage (nearest int) => count}
                gc_vs_target_cvg   = as for gc_vs_bait_cvg, but for targets instead of baits
                insert_size_hist   = hash of insert size -> count of read pairs
-               bait_cumultative_coverage = hash of coverage => number of bait bases achieving
-                                           at least that coverage
- Args    : prefix of output files.
-           Options in a hash:
+               bait_cumulative_coverage = hash of coverage => number of bait bases achieving
+               target_cumulative_coverage = as previous, but targets instead of baits
+               target_bases_1X   = fraction of target bases with >= 1X coverage
+               target_bases_2X   = fraction of target bases with >= 2X coverage
+               target_bases_5X   = fraction of target bases with >= 5X coverage
+               target_bases_10X  = fraction of target bases with >= 10X coverage
+               target_bases_20X  = fraction of target bases with >= 20X coverage
+               target_bases_50X  = fraction of target bases with >= 50X coverage
+               target_bases_100X = fraction of target bases with >= 100X coverage
+
+ Args    : Options in a hash:
              MANDATORY: either all four of:
                           - bait_interval, target_interval, ref_fa, ref_fai
                         or this:
@@ -2776,7 +2787,8 @@ sub filter_readgroups
                                          load all reference/bait/target info from the dump file, which
                                          is faster than creating it from scratch
              bam             => name of bam file to be QC'd.
-                                 MANDATORY, unless the dump_intervals option is used
+                                MANDATORY, unless the dump_intervals option is used (in which case
+                                the BAM file is ignored)
              low_cvg         => int (default 2).  Used to make the statistic low_cvg_targets.
                                 Any target with all its bases' coverage less than this value will
                                 be counted as low coverage.  e.g. default means that a target
@@ -2784,12 +2796,15 @@ sub filter_readgroups
                                 low coverage target.
              near_length     => int (default 100)
                                 Distance to count as 'near' to a bait or a target
-             max_insert      => int (default 2000) Ignore insert sizes > this number
+             max_insert      => int (default 2000) Ignore insert sizes > this number.  Sometimes
+                                (depending on the mapper) BAM files can have unrealisticly large
+                                insert sizes.  This option removes the outliers, so calculated
+                                mean insert size is more realistic.
 
 =cut
 
 sub bam_exome_qc_stats {
-    my ($self, $bam_in, %opts) = @_;
+    my ($self, %opts) = @_;
     my $intervals;
     my $ref_lengths; 
     my $current_rname;
@@ -2797,6 +2812,17 @@ sub bam_exome_qc_stats {
     $opts{low_cvg} = 2 unless $opts{low_cvg};
     $opts{max_insert} = 1000 unless $opts{max_insert};
     my $first_sam_record = 1;
+
+    if ($opts{fake_it}) {  # top-secret(!) option for quick pipeline debugging
+        my $s = do $opts{fake_it} or $self->throw("Error loading data from file $opts{fake_it}");
+        print STDERR "VertRes::Utils::Sam->bam_exome_qc_stats using fake file $opts{fake_it}\n";
+        return $s;
+    }
+
+    if (!($opts{dump_intervals}) and !($opts{bam})) {
+        $self->throw("If dump_intervals not used, then a BAM file must be given");
+    }
+
 
     my %stats = ('bait_bases', 0,
                  'bait_bases_mapped', 0,
@@ -2877,7 +2903,7 @@ sub bam_exome_qc_stats {
     print STDERR "Intervals etc sorted. Parse BAM file...\n" if $opts{verbose};
 
     # Everything is initialised.  It's time to parse the bam file to get the stats
-    my $bam_parser = VertRes::Parser::bam->new(file => $bam_in);
+    my $bam_parser = VertRes::Parser::bam->new(file => $opts{bam});
     my $result_holder = $bam_parser->result_holder();
     $bam_parser->get_fields('FLAG', 'RNAME', 'POS', 'CIGAR', 'ISIZE', 'SEQ', 'QUAL', 'SEQ_LENGTH', 'MAPPED_SEQ_LENGTH', 'NM');
 
@@ -2977,6 +3003,7 @@ sub bam_exome_qc_stats {
             # sort out stats etc for the ref sequence we just finished
             if (defined $current_rname) {
                 $self->_update_bam_exome_qc_stats($intervals, \%pileup, \%stats, $current_rname, \%opts);
+                print STDERR "Chromosome $current_rname stats done\n" if $opts{verbose};
             }
 
             $current_rname = $rname;
@@ -3061,6 +3088,18 @@ sub bam_exome_qc_stats {
     $bam_parser->close();
     print STDERR "Finished parsing BAM file\n" if $opts{verbose};
 
+    $stats{'bait_gc_hist'} = [(0) x 101 ];
+    $stats{'target_gc_hist'} = [(0) x 101];
+
+    # add bait/target gc histogram to qc dump hash
+    for my $b_or_t ('bait', 'target'){
+        foreach my $chr (keys %{$intervals->{$b_or_t}}) {
+            foreach my $a (@{$intervals->{$b_or_t}{$chr}}) {
+                $stats{$b_or_t . '_gc_hist'}[$a->[2]]++;
+            }
+        }
+    }
+
     # sort out stats for the last ref sequence in the bam file
     $self->_update_bam_exome_qc_stats($intervals, \%pileup, \%stats, $current_rname, \%opts);
     undef %pileup;
@@ -3078,6 +3117,9 @@ sub bam_exome_qc_stats {
 
     # calculate cumulative coverage of baits and targets
     foreach my $bait_or_target qw(bait target) {
+        my %cov_stats = VertRes::Utils::Math->new()->histogram_stats($stats{$bait_or_target . '_cvg_hist'});
+        $stats{$bait_or_target . '_coverage_sd'} = $cov_stats{standard_deviation};
+
         my $base_count = 0;
         my $total_bases = $stats{$bait_or_target . '_bases'};
 
@@ -3087,17 +3129,17 @@ sub bam_exome_qc_stats {
             $stats{$bait_or_target . '_cumulative_coverage_pct'}{$cov} = $base_count / $stats{$bait_or_target . '_bases'};
         }
     }
-    
+
     # work out % bases coverage above certain values
     foreach my $bait_or_target qw(bait target) { 
         my @vals = (1, 2, 5, 10, 20, 50, 100);
         foreach (@vals) {
-            $stats{$bait_or_target . '_bases_' . $_ . 'X_pc'} = 0;
+            $stats{$bait_or_target . '_bases_' . $_ . 'X'} = 0;
         }
 
         foreach my $cov (sort {$a <=> $b} keys %{$stats{$bait_or_target . '_cumulative_coverage_pct'}}) {
             while ((0 < scalar @vals) and $cov >= $vals[0]) {
-                $stats{$bait_or_target . '_bases_' . $cov . 'X_pc'} = $stats{$bait_or_target . '_cumulative_coverage_pct'}{$cov};
+                $stats{$bait_or_target . '_bases_' . $cov . 'X'} = $stats{$bait_or_target . '_cumulative_coverage_pct'}{$cov};
                 shift @vals;
             }
             last if (0 == scalar @vals);
@@ -3153,7 +3195,7 @@ sub bam_exome_qc_make_plots {
                 {xvals => $plot_data{target}{x}, yvals => $plot_data{target}{y}, legend => 'targets'},);
 
     Graphs::plot_stats({outfile=>"$outfiles_prefix.mean_coverage.$plot_type",
-                        title => "Mean coverage distribution of baits targets",
+                        title => "Mean coverage distribution of baits and targets",
                         desc_xvals => 'Mean coverage',
                         desc_yvals => 'Frequency',
                         data => \@data});
@@ -3238,7 +3280,7 @@ sub bam_exome_qc_make_plots {
                                                title => "Coverage vs GC plot of $_" . 's',
                                                x_scale => 1, 
                                                x_scale_values => [(30,40,50)],
-                                               desc_xvals => 'Percentile of target sequence ordered by GC content',
+                                               desc_xvals => "Percentile of $_ sequence ordered by GC content",
                                                desc_xvals_top => '%GC',
                                                desc_yvals => 'Mapped depth',
                                                xdata => [(0..100)],
@@ -3259,15 +3301,20 @@ sub bam_exome_qc_make_plots {
                                                y_max => 41});
     }
 
-    # Plot: reads GC content
-    my @xvals = (0..$stats->{readlen});
-    foreach(@xvals){$_ = 100 * $_ / $stats->{readlen}}
+    # Plot: reads/targets/baits GC content
+    my @read_xvals = (0..$stats->{readlen});
+    foreach(@read_xvals){$_ = 100 * $_ / $stats->{readlen}}
+
+    my @zero_to_100 = (0..100);
+    
 
     foreach my $type ('unmapped', 'mapped') {
         my @yvals_1 = @{$stats->{"gc_hist_$type" . '_1'}};
         my @yvals_2 = @{$stats->{"gc_hist_$type" . '_2'}};
-        my @data = ({xvals => \@xvals, yvals => \@yvals_1, legend => '_1'},
-                    {xvals => \@xvals, yvals => \@yvals_2, legend => '_2'},);
+        my @data = ({xvals => \@read_xvals, yvals => \@yvals_1, legend => '_1'},
+                    {xvals => \@read_xvals, yvals => \@yvals_2, legend => '_2'},
+                    {xvals => \@zero_to_100, yvals => $stats->{bait_gc_hist}, legend => 'bait'},
+                    {xvals => \@zero_to_100, yvals => $stats->{target_gc_hist}, legend => 'target'},);
         Graphs::plot_stats({outfile=>"$outfiles_prefix.gc_$type.$plot_type",
                             normalize => 1,
                             title => "GC Plot $type reads",
@@ -3282,7 +3329,7 @@ sub bam_exome_qc_make_plots {
     # plot 4 standard devations away from the mean
     my $xmin = max (0, $insert_stats{mean} - 4 * $insert_stats{standard_deviation});
     my $xmax = $insert_stats{mean} + 4 * $insert_stats{standard_deviation};
-    @xvals = ();
+    my @xvals = ();
     my @yvals = ();
 
     foreach my $i ($xmin .. $xmax) {
