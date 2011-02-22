@@ -1142,7 +1142,7 @@ sub parse_haplotype
 
     my @alleles   = ();
     my @seps      = ();
-    my $is_phased = 1;
+    my $is_phased = 0;
     my $is_empty  = 1;
 
     my $buf = $gtype;
@@ -1161,7 +1161,7 @@ sub parse_haplotype
         }
         if ( $2 )
         {
-            if ( $2 ne '|' ) { $is_phased=0; }
+            if ( $2 eq '|' ) { $is_phased=1; }
             push @seps,$2;
         }
     }
