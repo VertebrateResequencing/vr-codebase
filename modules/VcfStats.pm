@@ -53,20 +53,19 @@ sub parse_header
     $self->SUPER::parse_header(@args);
 }
 
-=head2 create_stats_hash
+=head2 get_stats_key
 
-    About   : Creates relevant stats hash, used by select_stats
+    About   : Creates relevant stats hash key, used by select_stats
     Usage   : 
-    Args [1]: Stats ($$self{stats} by default, $$self{stats}{samples}{ID} for samples)
-         [2]: Hash with filter definition (value to match, range, etc.)
-         [3]: Prefix of the stat
-         [4]: Value of the filter
+    Args [1]: Hash with filter definition (value to match, range, etc.)
+         [2]: Prefix of the stat
+         [3]: Value of the filter
 
 =cut
 
-sub create_stats_hash
+sub get_stats_key
 {
-    my ($self,$stats,$filter,$key,$value) = @_;
+    my ($self,$filter,$key,$value) = @_;
 
     my $stat_key;
     if ( $$filter{exact} )
@@ -83,9 +82,7 @@ sub create_stats_hash
         $stat_key = $key.'/'.$bin;
     }
     else { $self->throw("TODO: $key...\n"); }
-
-    if ( !exists($$stats{$stat_key}) ) { $$stats{$stat_key}={}; }
-    return $$stats{$stat_key};
+    return $stat_key;
 }
 
 =head2 select_stats
@@ -102,8 +99,19 @@ sub select_stats
     my ($self,$rec,$filters) = @_;
 
     if ( !exists($$self{stats}{all}) ) { $$self{stats}{all}={}; }
-    my @out = ( $$self{stats}{all} );
-    if ( !defined $filters ) { return \@out; }
+    my @mandatory = ( $$self{stats}{all} );
+
+    my %samples;
+    for my $sample (keys %{$$rec{gtypes}})
+    {
+        if ( !exists($$self{stats}{samples}{$sample}) ) 
+        { 
+            $$self{stats}{samples}{$sample} = {}; 
+        }
+        push @{$samples{$sample}}, $$self{stats}{samples}{$sample};
+    }
+
+    if ( !defined $filters ) { return (\@mandatory,\%samples); }
 
     while (my ($key,$filter) = each %$filters)
     {
@@ -111,12 +119,16 @@ sub select_stats
         { 
             for my $value (@{$$rec{FILTER}})
             {
-                push @out, $self->create_stats_hash($$self{stats},$filter,$key,$value);
+                my $stats_key = $self->get_stats_key($filter,$key,$value);
+                if ( !exists($$self{stats}{$stats_key}) ) { $$self{stats}{$stats_key}={}; }
+                push @mandatory, $$self{stats}{$stats_key};
             }
         }
         elsif ( $key eq 'QUAL' ) 
         { 
-            push @out, $self->create_stats_hash($$self{stats},$filter,$key,$$rec{QUAL}); 
+            my $stats_key = $self->get_stats_key($filter,$key,$$rec{QUAL});
+            if ( !exists($$self{stats}{$stats_key}) ) { $$self{stats}{$stats_key}={}; }
+            push @mandatory, $$self{stats}{$stats_key};
         }
         elsif ( $key=~m{^INFO/} ) 
         { 
@@ -125,12 +137,14 @@ sub select_stats
                 if ( $$filter{value} && !exists($$rec{INFO}{$$filter{tag}}) ) { next; }
                 elsif ( !$$filter{value} && exists($$rec{INFO}{$$filter{tag}}) ) { next; }
                 if ( !exists($$self{stats}{$key}) ) { $$self{stats}{$key}={}; }
-                push @out, $$self{stats}{$key};
+                push @mandatory, $$self{stats}{$key};
                 next;
             }
             elsif ( exists($$rec{INFO}{$$filter{tag}}) )
             {
-                push @out, $self->create_stats_hash($$self{stats},$filter,$key,$$rec{INFO}{$$filter{tag}});
+                my $stats_key = $self->get_stats_key($filter,$key,$$rec{INFO}{$$filter{tag}});
+                if ( !exists($$self{stats}{$key}) ) { $$self{stats}{$key}={}; }
+                push @mandatory, $$self{stats}{$key};
             }
         }
         elsif ( $key=~m{^FORMAT/([^/]+)$} )
@@ -138,19 +152,21 @@ sub select_stats
             while (my ($sample,$hash) = each %{$$rec{gtypes}})
             {
                 if ( !exists($$hash{$1}) ) { next; }
-                if ( !exists($$self{stats}{samples}{$sample}{user}) ) { $$self{stats}{samples}{$sample}{user}={} }
-                push @out, $self->create_stats_hash($$self{stats}{samples}{$sample}{user},$filter,$1,$$hash{$1});
+                my $stats_key = $self->get_stats_key($filter,$1,$$hash{$1});
+                if ( !exists($$self{stats}{samples}{$sample}{user}{$stats_key}) ) { $$self{stats}{samples}{$sample}{user}{$stats_key}={}; }
+                push @{$samples{$sample}}, $$self{stats}{samples}{$sample}{user}{$stats_key};
             }
         }
         elsif ( $key=~m{^SAMPLE/([^/]+)/([^/]+)$} )
         {
             if ( !exists($$rec{gtypes}{$1}{$2}) ) { next; }
-            if ( !exists($$self{stats}{samples}{$1}{user}) ) { $$self{stats}{samples}{$1}{user}={} }
-            push @out, $self->create_stats_hash($$self{stats}{samples}{$1}{user},$filter,$2,$$rec{gtypes}{$1}{$2});
+            my $stats_key = $self->get_stats_key($filter,$2,$$rec{gtypes}{$1}{$2});
+            if ( !exists($$self{stats}{samples}{$1}{user}{$stats_key}) ) { $$self{stats}{samples}{$1}{user}{$stats_key}={} }
+            push @{$samples{$1}}, $$self{stats}{samples}{$1}{user}{$stats_key};
         }
         else { $self->throw("The feature currently not recognised: $key.\n"); } 
     }
-    return \@out;
+    return (\@mandatory,\%samples);
 }
 
 =head2 collect_stats
@@ -166,17 +182,13 @@ sub collect_stats
     my ($self,$rec,$filters) = @_;
 
     # Ts/Tv and custom numbers based on INFO, QUAL etc. for the mandatory columns
-    my $stats = $self->select_stats($rec,$filters);
-    $self->collect_stats_mandatory($rec,$stats);
+    my ($mandatory_stats,$sample_stats) = $self->select_stats($rec,$filters);
+    $self->collect_stats_mandatory($rec,$mandatory_stats);
 
     # Ts/Tv for samples
-    for my $sample (keys %{$$rec{gtypes}})
+    while (my ($sample,$stats) = each %$sample_stats)
     {
-        if ( !exists($$self{stats}{samples}{$sample}) ) 
-        { 
-            $$self{stats}{samples}{$sample} = {}; 
-        }
-        $self->collect_stats_sample($rec,$sample,[$$self{stats}{samples}{$sample}]);
+        $self->collect_stats_sample($rec,$sample,$stats);
     }
 
     my %type_keys = ( r=>'ref', s=>'snp', i=>'indel' );
@@ -187,7 +199,7 @@ sub collect_stats
     #   - there is a non-empty call (samples->sample_name->count)
     my $shared = 0;
     my $sample_name;
-    for my $sample (keys %{$$rec{gtypes}})
+    while (my ($sample,$stats) = each %$sample_stats)
     {
         my ($alleles,$seps,$is_phased,$is_empty) = $self->parse_haplotype($rec,$sample);
         if ( $is_empty ) { next; }
@@ -203,11 +215,13 @@ sub collect_stats
             if ( $type eq 'r' ) { next; }
             $is_ref = 0;
         }
-        $$self{stats}{samples}{$sample}{count}++;
+        for my $stat (@$stats) { $$stat{count}++; }
+
         for my $type (keys %types)
         {
             my $key = exists($type_keys{$type}) ? $type_keys{$type} : 'other';
-            $$self{stats}{samples}{$sample}{$key.'_count'}++;
+            $key .= '_count';
+            for my $stat (@$stats) { $$stat{$key}++; }
         }
         my $key;
         if ( exists($types{r}) ) 
@@ -217,9 +231,12 @@ sub collect_stats
         }
         elsif ( $is_hom ) { $key='hom_AA'; }
         else { $key='het_AA'; }
-        $$self{stats}{samples}{$sample}{$key.'_count'}++;
+        $key .= '_count';
+        for my $stat (@$stats) { $$stat{$key}++; }
 
-        if ( $is_phased ) { $$self{stats}{samples}{$sample}{phased}++; } else { $$self{stats}{samples}{$sample}{unphased}++; }
+        $key = $is_phased ? 'phased' : 'unphased';
+        for my $stat (@$stats) { $$stat{$key}++; }
+
         if ( $is_ref ) { next; }
         $shared++;
         if ( !defined $sample_name ) { $sample_name = $sample; }
@@ -227,7 +244,7 @@ sub collect_stats
     $$self{stats}{all}{shared}{$shared}++;
     if ( $shared==1 )
     {
-        $$self{stats}{samples}{$sample_name}{private}++;
+        for my $stat (@{$$sample_stats{$sample_name}}) { $$stat{private}++; }
     }
 }
 
