@@ -617,6 +617,7 @@ sub filter_lanes {
             foreach my $regex (@{$array}) {
                 $regex =~ s/^\^//;
                 $regex =~ s/\$$//;
+		$regex = quotemeta $regex;
                 push(@regexs, qr/^$regex$/);
             }
             
