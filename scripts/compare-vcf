@@ -204,8 +204,8 @@ sub report_stats
                 if ( !exists($$opts{hapls}{$id}{$key.'gtype_mismatch'}) ) { $$opts{hapls}{$id}{$key.'gtype_mismatch'}=0; }
                 $$opts{hapls}{$id}{total_gtype_mismatch} += $$opts{hapls}{$id}{$key.'gtype_mismatch'};
 
-                if ( !exists($$opts{hapls}{$id}{$key.'match'}) ) { $$opts{hapls}{$id}{$key.'match'}=0; }
-                $$opts{hapls}{$id}{total_match} += $$opts{hapls}{$id}{$key.'match'};
+                if ( !exists($$opts{hapls}{$id}{$key.'gtype_match'}) ) { $$opts{hapls}{$id}{$key.'gtype_match'}=0; }
+                $$opts{hapls}{$id}{total_gtype_match} += $$opts{hapls}{$id}{$key.'gtype_match'};
 
                 if ( !exists($$opts{hapls}{$id}{$key.'gtype_lost'}) ) { $$opts{hapls}{$id}{$key.'gtype_lost'}=0; }
                 $$opts{hapls}{$id}{total_gtype_lost} += $$opts{hapls}{$id}{$key.'gtype_lost'};
@@ -227,16 +227,18 @@ sub report_stats
 
             printf "\tGtypes lost:  %d %d %d %d %d \t (total, hom_RR, hom_AA, het_RA, het_AA)\n",
                 $$opts{hapls}{$id}{total_gtype_lost}, $$opts{hapls}{$id}{hom_RR_gtype_lost}, $$opts{hapls}{$id}{hom_AA_gtype_lost}, $$opts{hapls}{$id}{het_RA_gtype_lost}, $$opts{hapls}{$id}{het_AA_gtype_lost};
-            printf "\tGtypes gained:  %d %d \t (total, phased)\n", 
-                $$opts{hapls}{$id}{gtype_gained} ? $$opts{hapls}{$id}{gtype_gained} : 0, 
-                $$opts{hapls}{$id}{phased_gtype_gained} ? $$opts{hapls}{$id}{phased_gtype_gained} : 0;
+            if ( !exists($$opts{hapls}{$id}{gtype_gained}) ) { $$opts{hapls}{$id}{gtype_gained}=0; }
+            if ( !exists($$opts{hapls}{$id}{phased_gtype_gained}) ) { $$opts{hapls}{$id}{phased_gtype_gained}=0; }
+            printf "\tGtypes gained:  %d %d \t (total, phased)\n", $$opts{hapls}{$id}{gtype_gained}, $$opts{hapls}{$id}{phased_gtype_gained};
 
             printf "\tPhase lost:  %d %d %d \t (total, het_RA, het_AA)\n",
                 $$opts{hapls}{$id}{total_phase_lost}, $$opts{hapls}{$id}{het_RA_phase_lost}, $$opts{hapls}{$id}{het_AA_phase_lost};
-            printf "\tPhase gained:  %d\n", $$opts{hapls}{$id}{phase_gained} ? $$opts{hapls}{$id}{phase_gained} : 0;
+            if ( !exists($$opts{hapls}{$id}{phase_gained}) ) { $$opts{hapls}{$id}{phase_gained}=0; }
+            printf "\tPhase gained:  %d\n", $$opts{hapls}{$id}{phase_gained};
 
             printf "\tMatching sites:  %d %d %d %d %d \t (total, hom_RR, hom_AA, het_RA, het_AA)\n",
-                $$opts{hapls}{$id}{total_match}, $$opts{hapls}{$id}{hom_RR_match}, $$opts{hapls}{$id}{hom_AA_match}, $$opts{hapls}{$id}{het_RA_match}, $$opts{hapls}{$id}{het_AA_match};
+                $$opts{hapls}{$id}{total_gtype_match}, $$opts{hapls}{$id}{hom_RR_gtype_match}, $$opts{hapls}{$id}{hom_AA_gtype_match}, 
+                $$opts{hapls}{$id}{het_RA_gtype_match}, $$opts{hapls}{$id}{het_AA_gtype_match};
 
             printf "\t\tPhased matches:    %d %d %d \t (total, het_RA, het_AA)\n",
                 $$opts{hapls}{$id}{total_phase_match}, $$opts{hapls}{$id}{het_RA_phase_match}, $$opts{hapls}{$id}{het_AA_phase_match};
@@ -249,15 +251,23 @@ sub report_stats
             "# Haplotype comparison. Use `grep ^#HC | cut -f 2-` to extract this part. The columns are:\n",
             "#      1     .. Sample\n",
             "#      2-6   .. Mismatches: total hom_RR hom_AA het_RA het_AA \n",
-            "#      7-11  .. Matching sites: total hom_RR hom_AA het_RA het_AA \n",
-            "#      12-14 .. Phased matches: total het_RA het_AA \n",
-            "#      15-17 .. Misphased matches: total het_RA het_AA \n";
+            "#      7-9   .. Gtype lost: total het_RA het_AA \n",
+            "#      10    .. Gtype gained\n",
+            "#      11-13 .. Phase lost: total het_RA het_AA \n",
+            "#      14    .. Phase gained\n",
+            "#      15-19 .. Matching sites: total hom_RR hom_AA het_RA het_AA \n",
+            "#      20-22 .. Phased matches: total het_RA het_AA \n",
+            "#      23-25 .. Misphased matches: total het_RA het_AA \n";
 
         for my $id (keys %{$$opts{hapls}})
         {
             print "#HC\t$id";
             for my $key qw(total_ hom_RR_ hom_AA_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'gtype_mismatch'}; }
-            for my $key qw(total_ hom_RR_ hom_AA_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'match'}; }
+            for my $key qw(total_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'gtype_lost'}; }
+            print "\t",$$opts{hapls}{$id}{gtype_gained};
+            for my $key qw(total_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'phase_lost'}; }
+            print "\t",$$opts{hapls}{$id}{phase_gained};
+            for my $key qw(total_ hom_RR_ hom_AA_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'gtype_match'}; }
             for my $key qw(total_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'phase_match'}; }
             for my $key qw(total_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'phase_mismatch'}; }
             print "\n";
