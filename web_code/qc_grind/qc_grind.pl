@@ -547,6 +547,19 @@ sub displayProjectPage
     my $samples = $project->samples();
     displayError( "Cant get samples for project: $projectID" ) unless $samples;
     
+    my %individuals2Samples;
+    foreach( @{ $samples } )
+    {
+        my $sample = $_;
+        my $ind = $sample->individual();
+        my $indname = $ind->name();
+        if( $individuals2Samples{ $indname } )
+        {
+            push( @{ $individuals2Samples{ $indname } }, $sample );
+        }
+        else{$individuals2Samples{ $indname } = [ $sample ];}
+    }
+    
     my $pname = $project->name;
     print qq[
     <h2 align="center" style="font: normal 900 1.5em arial"><a href="$SCRIPT_NAME">QC Grind</a></h2>
@@ -559,7 +572,7 @@ sub displayProjectPage
         <legend>$pname</legend>
         <table RULES=GROUPS width="100%">
         <tr>
-        <th>Sample</th>
+        <th>Individual</th>
         <th>Sanger</th>
         <th>Library</th>
         <th>Lanes</th>
@@ -575,13 +588,15 @@ sub displayProjectPage
     my $grandTotalDepth = 0;
     my $grandTotalNoQC = 0;
     my $grandTotalSamples = 0;
-    foreach( sort { $a->ssid() <=> $b->ssid() } @$samples){
-        my $sample = $_;
-        my $sname = $sample->name;
+    foreach( sort( keys( %individuals2Samples ) ) )
+    {
+        my $iname = $_;
+        my @samples = @{$individuals2Samples{ $_ }};
+        
         my $is_ours = 1;
         if( defined( $project->study() ) )
         {
-                $is_ours = $sample->is_sanger_sample();
+            $is_ours = $samples[ 0 ]->is_sanger_sample(); #check the first sample is ours
         }
         
         print qq[
@@ -591,25 +606,30 @@ sub displayProjectPage
         if( ! $is_ours && $database =~ '.*g1k.*' )
         {
             print qq[
-                <td bgcolor="red">$sname</td>
+                <td bgcolor="red">$iname</td>
                 <td bgcolor="red">NO</td>
             ];
         }
         else
         {
             print qq[
-                <td>$sname</td>
+                <td>$iname</td>
                 <td></td>
             ];
         }
-        
-        my @libraries = sort {$a->name cmp $b->name} @{$sample->libraries()};
-        my $firstL = 1;
+
         my $sampleLanes = 0;
         my $sampleDepth = 0;
         my $samplePassed = 0;
         my $samplePassseq = 0;
         my $sample_no_qcLanes = 0;
+        my $firstL = 1;
+        foreach( @samples )
+        {
+#    foreach( sort { $a->ssid() <=> $b->ssid() } @$samples){
+        my $sample = $_;        
+        
+        my @libraries = sort {$a->name cmp $b->name} @{$sample->libraries()};
         foreach( @libraries )
         {
             my $library = $_;
@@ -677,6 +697,8 @@ sub displayProjectPage
             $firstL = 0;
             $sample_no_qcLanes += $lib_no_qcLanes;
         }
+        }
+        
         $samplePassseq = bp_to_nearest_unit($samplePassseq, 1);
         print qq[<tr><th></th><th></th><th></th><th>$sampleLanes</th><th>$samplePassed</th><th>$samplePassseq</th><th>$sampleDepth].qq[x</th>];
         
@@ -694,7 +716,7 @@ sub displayProjectPage
         $grandTotalPassed += $samplePassed;
         $grandTotalDepth += $sampleDepth;
         $grandTotalNoQC += $sample_no_qcLanes;
-                $grandTotalSamples ++;
+        $grandTotalSamples ++;
     }
     
     print qq[<tr><tfoot><th>$grandTotalSamples</th><th></th><th></th><th>$grandTotalLanes</th><th>$grandTotalPassed</th><th>$grandTotalDepth].qq[x];
