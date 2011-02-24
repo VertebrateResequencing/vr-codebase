@@ -280,6 +280,7 @@ sub update_db
         Utils::CMD(qq[echo "$md5  $new_fn" > $lane_path/$new_fn.md5]);
         
         $vrfile->hierarchy_name($new_fn);
+        $vrfile->update();
 
         $tot_num_seq += $num_seq;
         $tot_tot_len += $tot_len;
