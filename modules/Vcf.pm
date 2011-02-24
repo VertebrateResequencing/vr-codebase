@@ -206,6 +206,7 @@ sub _open
         }
         elsif ( $$self{file}=~m{^(?:http|ftp)://} )
         {
+            if ( !exists($args{region}) ) { $tabix_args .= ' .'; }
             $cmd = "tabix $tabix_args |";
             $$self{check_exit_status} = 1;
         }
