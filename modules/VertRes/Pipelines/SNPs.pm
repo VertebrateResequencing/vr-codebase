@@ -783,7 +783,7 @@ sub mpileup_split_chunks
 {
     my ($self,$bam,$chunk_name,$chunk) = @_;
 
-    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd bcftools bcf_based bcf_fix filter4vcf));
+    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd mpileup_samples bcftools bcf_based bcf_fix filter4vcf));
 
     return qq[
 use strict;
@@ -822,7 +822,7 @@ if ( -e "$basename.vcf.gz" )
     rename("$basename.vcf.gz","$name.unfilt.vcf.gz") or Utils::error("rename $basename.vcf.gz $name.unfilt.vcf.gz: \$!");
 }
 
-Utils::CMD("zcat $name.unfilt.vcf.gz | awk '/^#/||\$6>=3' | $$self{filter4vcf} | bgzip -c > $basename.filt.vcf.gz");
+Utils::CMD("zcat $name.unfilt.vcf.gz | awk '/^#/||\\\$6>=3' | $$self{filter4vcf} | bgzip -c > $basename.filt.vcf.gz");
 Utils::CMD("zcat $basename.filt.vcf.gz | $$self{vcf_stats} > $name.vcf.gz.stats");
 Utils::CMD("tabix -f -p vcf $basename.filt.vcf.gz");
 rename("$basename.filt.vcf.gz.tbi","$name.vcf.gz.tbi") or Utils::error("rename $basename.filt.vcf.gz.tbi $name.vcf.gz.tbi: \$!");
