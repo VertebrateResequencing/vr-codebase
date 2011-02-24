@@ -94,14 +94,16 @@ sub new
     $$self{_status_codes}{DONE} = 1;
     $$self{_farm} = 'LSF';
     $$self{_farm_options} = { runtime=>600 };
+    $$self{_running_jobs} = {};
     $$self{usage} = 
         "Runner.pm arguments:\n" .
-        "   +help           Summary of commands\n" .
-        "   +local          Do not submit jobs to LSF, but run serially\n" .
-        "   +loop <int>     Run in daemon mode with <int> sleep intervals\n" .
-        "   +run <file>     Run the freezed object created by spawn\n" .
-        "   +show <file>    Print the content of the freezed object created by spawn\n" .
-        "   +verbose        Print debugging messages\n" .
+        "   +help               Summary of commands\n" .
+        "   +local              Do not submit jobs to LSF, but run serially\n" .
+        "   +loop <int>         Run in daemon mode with <int> sleep intervals\n" .
+        "   +maxjobs <int>      Maximum number of simultaneously running jobs\n" .
+        "   +run <file>         Run the freezed object created by spawn\n" .
+        "   +show <file>        Print the content of the freezed object created by spawn\n" .
+        "   +verbose            Print debugging messages\n" .
         "\n";
     return $self;
 }
@@ -116,6 +118,8 @@ sub new
                     Do not submit jobs to LSF, but run serially
                 +loop <int>
                     Run in daemon mode with <int> sleep intervals
+                +maxjobs <int>
+                    Maximum number of simultaneously running jobs
                 +run <file>
                     Run the freezed object created by spawn
                 +show <file>
@@ -134,6 +138,7 @@ sub run
     {
         if ( $arg eq '+help' ) { $self->throw(); }
         if ( $arg eq '+loop' ) { $$self{_loop}=shift(@ARGV); next; }
+        if ( $arg eq '+maxjobs' ) { $$self{_maxjobs}=shift(@ARGV); next; }
         if ( $arg eq '+verbose' ) { $$self{_verbose}=1; next; }
         if ( $arg eq '+local' ) { $$self{_run_locally}=1; next; }
         if ( $arg eq '+show' ) 
@@ -230,9 +235,17 @@ sub spawn
         system($cmd);
     }
 
-    # Otherwise submit to farm
+    # Otherwise submit to farm 
     else
     {
+        # Check if the number of running jobs should be kept low. In case there are too many jobs already, let through
+        #   only jobs which previously failed, i.e. are registered as running.
+        if ( exists($$self{_maxjobs}) && scalar keys %{$$self{_running_jobs}} >= $$self{_maxjobs} && !exists($$self{_running_jobs}{$done_file}) )
+        {
+            return;
+        }
+        $$self{_running_jobs}{$done_file} = 1;
+
         $self->_spawn_to_farm($tmp_file);
     }
 }
@@ -331,7 +344,9 @@ sub all_done
 sub is_finished
 {
     my ($self,$file) = @_;
-    return -e $file;
+    my $is_finished = -e $file;
+    if ( $is_finished && exists($$self{_running_jobs}{$file}) ) { delete($$self{_running_jobs}{$file}); }
+    return $is_finished;
 }
 
 # Run the freezed object created by spawn
