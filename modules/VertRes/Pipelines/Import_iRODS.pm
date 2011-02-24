@@ -278,6 +278,8 @@ sub update_db
         rename("$lane_path/$file.bai","$lane_path/$new_fn.bai");
         rename("$lane_path/$file.md5","$lane_path/$new_fn.md5");
         Utils::CMD(qq[echo "$md5  $new_fn" > $lane_path/$new_fn.md5]);
+        
+        $vrfile->hierarchy_name($new_fn);
 
         $tot_num_seq += $num_seq;
         $tot_tot_len += $tot_len;
