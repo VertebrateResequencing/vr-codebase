@@ -1841,6 +1841,7 @@ sub change_header_lines {
     my $dict;
     if (exists $changes{'SQ'}{'from_dict'}) {
 		$dict = $changes{'SQ'}{'from_dict'};
+		$self->throw("dict file, '$dict', supplied does not exist\n") unless -s $dict;
     }
     
 	# Compare the SQ lines of the bam and the dict file
@@ -1855,19 +1856,20 @@ sub change_header_lines {
     	}
     	close $bfh;
     	
-        open my $dfh, "<$dict" || $self->throw("Could not open dictionary, $dict");
+        open my $dfh, "<$dict";
+        $dfh || $self->throw("Could not open dictionary, $dict");
     	my @dheader;
     	while (<$dfh>) {
     		chomp;
     		next unless /\@SQ/;
     		push @dheader, $_;
     	}
-    	close $bfh;
+    	close $dfh;
     	
     	my $dict_header = join "\n", @dheader;
     	my $bam_header = join "\n", @bheader;
     	
-    	$dict = "" if ($dict_header eq $bam_header);
+    	$dict = '' if ($dict_header eq $bam_header);
 	}
     
     if (defined $changes{platform}) {
@@ -1896,11 +1898,11 @@ sub change_header_lines {
     $bamfh || $self->throw("Could not read header from '$bam'");
 	my $sq_from_dict_done = 0;
     while (<$bamfh>) {
-    	
 		if (/^\@SQ/ && $dict) {
 			$made_changes = 1;
         	unless ( $sq_from_dict_done ) {
-        		open my $dictfh, "<$dict" || $self->throw("Could not open dictionary, $dict");
+        		open my $dictfh, "<$dict";
+        		$dictfh || $self->throw("Could not open dictionary, $dict");
         		while (<$dictfh>) {
         			next unless /^\@SQ/;
 					print $hfh $_;
