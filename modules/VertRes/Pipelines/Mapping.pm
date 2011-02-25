@@ -105,7 +105,8 @@ can be created with update_vrmeta.pl, using meta information held in a
 NB: there is an expectation that read fastqs are named [readgroup]_[1|2].*
 for paired end sequencing, and [readgroup].* for single ended. Failing this
 the forward/reverse/single-ended information about a fastq must be stored in
-the database.
+the database. Failing that, a bam must be described in the database, from which
+fastq files will be generated.
 
 =head1 AUTHOR
 
@@ -132,7 +133,11 @@ use LSF;
 
 use base qw(VertRes::Pipeline);
 
-our $actions = [ { name     => 'split',
+our $actions = [ { name     => 'bam_to_fastq',
+                   action   => \&bam_to_fastq,
+                   requires => \&bam_to_fastq_requires, 
+                   provides => \&bam_to_fastq_provides },
+                 { name     => 'split',
                    action   => \&split,
                    requires => \&split_requires, 
                    provides => \&split_provides },
@@ -299,6 +304,136 @@ sub new {
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     
     return $self;
+}
+
+=head2 bam_to_fastq_requires
+
+ Title   : bam_to_fastq_requires
+ Usage   : my $required_files = $obj->bam_to_fastq_requires('/path/to/lane');
+ Function: Find out what files the bam_to_fastq action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub bam_to_fastq_requires {
+    my $self = shift;
+    
+    my @files = @{$self->{files} || []};
+    
+    if (@files) {
+        return [];
+    }
+    else {
+        my @vrfiles = @{$self->{vrlane}->files};
+        my $bam;
+        foreach my $vrfile (@vrfiles) {
+            my $type = $vrfile->type;
+            if ($type == 4) {
+                $bam = $vrfile->hierarchy_name;
+                last;
+            }
+        }
+        
+        # bam name in the db or on disc might be one of original name or
+        # renamed to mapping-pipeline-style mapstats id name
+        if ($bam && -e$self->{fsu}->catfile($self->{lane_path}, $bam)) {
+            return [$bam];
+        }
+        elsif ($bam) {
+            # get the latest mapstats id that isn't our own mapstats id
+            my $mapstats;
+            my $mappings = $self->{vrlane}->mappings();
+            if ($mappings && @{$mappings}) {
+                my @sorted_mappings = sort { $a->changed cmp $b->changed 
+                                             ||
+                                             $a->row_id <=> $b->row_id} 
+                                             @{$mappings };
+                
+                my $own_mapstats_id = $self->{mapstats_id};
+                foreach my $possible (@sorted_mappings) {
+                    next if $possible->id == $own_mapstats_id;
+                    $mapstats = $possible;
+                }
+            }
+            $self->throw("No fastqs were found, and the lane has not been mapped previously: no data to map!") unless $mapstats;
+            
+            $bam = sprintf "%d.pe.raw.sorted.bam", $mapstats->id();
+            return [$bam];
+        }
+        else {
+            $self->throw("Neither fastq nor bam files were found: no data to map!");
+        }
+    }
+}
+
+=head2 bam_to_fastq_provides
+
+ Title   : bam_to_fastq_provides
+ Usage   : my $provided_files = $obj->bam_to_fastq_provides('/path/to/lane');
+ Function: Find out what files the bam_to_fastq action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub bam_to_fastq_provides {
+    my ($self, $lane_path) = @_;
+    my @files = @{$self->{files} || []};
+    return @files ? [] : ["$self->{lane}_1.fastq.gz", "$self->{lane}_2.fastq.gz", "$self->{lane}_1.fastq.gz.fastqcheck", "$self->{lane}_2.fastq.gz.fastqcheck"];
+}
+
+=head2 bam_to_fastq
+
+ Title   : bam_to_fastq
+ Usage   : $obj->bam_to_fastq('/path/to/lane', 'lock_filename');
+ Function: If there are no fastqs, convert bam to fastq files
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub bam_to_fastq {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    my ($bam) = @{$self->bam_to_fastq_requires};
+    
+    my $in_bam = $self->{fsu}->catfile($lane_path, $bam);
+    my $fastq_base = $self->{lane};
+    
+    # (bam2fastq itself does full sanity checking and safe result file creation)
+    my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."bam2fastq.pl");
+    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+    print $scriptfh qq{
+use strict;
+use VertRes::Utils::Sam;
+use File::Spec;
+
+my \$dir = '$lane_path';
+my \@fastqs = (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq"), File::Spec->catfile(\$dir, "$self->{lane}_2.fastq"));
+
+# convert to fastq
+unless (-e \$fastqs[0] && -e \$fastqs[1]) {
+    my \$worked = VertRes::Utils::Sam->new(verbose => 1, quiet => 0)->bam2fastq(qq[$in_bam], qq[$fastq_base]);
+    die "bam2fastq failed\n" unless \$worked;
+}
+
+foreach my \$fastq (\@fastqs) {
+    # compress & checksum fastq and rename the fastqcheck file made by bam2fastq
+    system("gzip \$fastq; md5sum \$fastq.gz > \$fastq.gz.md5; mv \$fastq.fastqcheck \$fastq.gz.fastqcheck");
+}
+
+exit;
+    };
+    close $scriptfh;
+    
+    my $job_name = $self->{prefix}.'bam2fastq';
+    $self->archive_bsub_files($lane_path, $job_name);
+    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => '-M3900000 -R \'select[mem>3900] rusage[mem=3900]\''}, qq{perl -w $script_name});
+    
+    # we've only submitted to LSF, so it won't have finished; we always return
+    # that we didn't complete
+    return $self->{No};
 }
 
 =head2 split_requires
@@ -1256,6 +1391,46 @@ sub is_finished {
 	  }
 	}
       }
+    }
+    elsif ($action->{name} eq 'bam_to_fastq') {
+        my @files = @{$self->{files} || []};
+        unless (@files) {
+            my @fastqs = ($self->{fsu}->catfile($self->{lane_path}, "$self->{lane}_1.fastq.gz"), $self->{fsu}->catfile($self->{lane_path}, "$self->{lane}_2.fastq.gz"));
+            my $type = 0;
+            foreach my $fastq (@fastqs) {
+                $type++;
+                next unless -s $fastq;
+                my $fq_base = basename($fastq);
+                
+                my $vrlane = $self->{vrlane};
+                my $file = $vrlane->get_file_by_name($fq_base);
+                next if $file;
+                
+                # add a new file entry to the database
+                my $pars = VertRes::Parser::fastqcheck->new(file => "$fastq.fastqcheck");
+                my $num_of_sequences = $pars->num_sequences();
+                my $raw_bases = $pars->total_length();
+                my $average_length_of_a_sequence = $pars->avg_length();
+                my $mean_q = $pars->avg_qual();
+                open(my $fh, "$fastq.md5") || $self->throw("Could not open $fastq.md5");
+                my $line = <$fh>;
+                my ($md5) = split(" ", $line);
+                
+                $file = $vrlane->add_file($fq_base);
+                $file->raw_bases($raw_bases);
+                $file->raw_reads($num_of_sequences);
+                $file->mean_q($mean_q);
+                $file->read_len($average_length_of_a_sequence);
+                $file->md5($md5);
+                $file->type($type);
+                $file->is_processed(import => 1);
+                
+                $file->update;
+                $vrlane->update;
+            }
+            
+            $self->{files} = \@files;
+        }
     }
     elsif ($action->{name} eq 'cleanup' || $action->{name} eq 'update_db') {
         return $self->{No};
