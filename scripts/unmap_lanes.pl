@@ -21,7 +21,7 @@ my ($help, $fofn, $single_lane, $lanes_file, $database, $reset_improvement);
 my $spinner = 0;
 GetOptions('fofn=s'     => \$fofn,
            'lane=s'     => \$single_lane,
-           'lane=s'     => \$lanes_file,
+           'lanes=s'     => \$lanes_file,
            'database=s' => \$database,
            'reset_improvement' => \$reset_improvement,
            'h|help'     => \$help);
