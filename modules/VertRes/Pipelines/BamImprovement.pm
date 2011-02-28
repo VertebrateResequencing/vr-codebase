@@ -115,6 +115,10 @@ our $actions = [ { name     => 'realign',
                    action   => \&statistics,
                    requires => \&statistics_requires, 
                    provides => \&statistics_provides },
+                 { name     => 'extract_intervals',
+                   action   => \&extract_intervals,
+                   requires => \&extract_intervals_requires, 
+                   provides => \&extract_intervals_provides },
                  { name     => 'update_db',
                    action   => \&update_db,
                    requires => \&update_db_requires, 
@@ -178,6 +182,14 @@ our %options = (slx_mapper => 'bwa',
            release_date => 'yyyymmdd' (the release date to be included in the
                                        .bas files made; not important - defaults
                                        to today's date)
+
+           extract_intervals => {intervals_file => 'filename'}
+                                    (after calmd, extract reads for only these
+                                     intervals; default keep all reads. if this
+                                     option used, intervals_file is REQUIRED, and
+                                     of the form one interval per line:
+                                     chromosome start end
+                                     fields separated with a tab)
 
            other optional args as per VertRes::Pipeline
 
@@ -251,6 +263,12 @@ sub new {
     if (! defined $self->{dbsnp_rod} && ! defined $self->{snp_sites}) {
         $self->throw("At least one of dbsnp_rod or snp_sites is required in your config file");
     }
+
+    if ($self->{extract_intervals} && !($self->{extract_intervals}->{intervals_file})) {
+        $self->throw("extract_intervals must have intervals_file supplied, can't continue");
+    }
+
+
     
     # convert the snp_sites option to a simple string suitable for use by GATK,
     # and an array for checking the files exist
@@ -362,6 +380,7 @@ sub _bam_name_conversion {
     $rel_bam =~ s/.sorted//;
     $rel_bam =~ s/.realigned//;
     $rel_bam =~ s/.calmd//;
+    $rel_bam =~ s/.intervals//;
     
     $rel_bam =~ s/\.bam$/.realigned.bam/;
     my $sorted_bam = $rel_bam;
@@ -370,7 +389,9 @@ sub _bam_name_conversion {
     $recal_bam =~ s/\.bam$/.recal.bam/;
     my $calmd_bam = $recal_bam;
     $calmd_bam =~ s/\.bam$/.calmd.bam/;
-    return ($rel_bam, $sorted_bam, $recal_bam, $calmd_bam);
+    my $intervals_bam = $calmd_bam;
+    $intervals_bam =~ s/\.bam/.intervals.bam/;
+    return ($rel_bam, $sorted_bam, $recal_bam, $calmd_bam, $intervals_bam);
 }
 
 =head2 realign
@@ -985,6 +1006,83 @@ exit;
     return $self->{No};
 }
 
+
+=head2 extract_intervals_requires
+
+Title   : extract_intervals_requires
+Usage   : my $required_files = $obj->extract_intervals_requires('/path/to/lane');
+Function: Find out what files the extract_intervals action needs before it will run.
+Returns : array ref of file names
+Args    : lane path
+
+=cut
+
+sub extract_intervals_requires {
+    my ($self, $lane_path) = @_;
+    my @requires = @{$self->statistics_provides($lane_path)};
+    @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
+    return \@requires;
+}
+
+=head2 extract_intervals_provides
+
+Title   : extract_intervals_provides
+Usage   : my $provided_files = $obj->extract_intervals_provides('/path/to/lane');
+Function: Find out what files the extract_intervals action generates on success.
+Returns : array ref of file names
+Args    : lane path
+
+=cut
+
+sub extract_intervals_provides {
+    my ($self, $lane_path) = @_;
+
+    if ($self->{extract_intervals}){
+        my @interval_bams;
+        foreach my $bam (@{$self->{in_bams}}) {
+            my (undef, undef, undef, undef, $interval_bam) = $self->_bam_name_conversion($bam);
+            push(@interval_bams, $interval_bam);
+        }
+
+        return \@interval_bams;
+    }
+    else {
+        my @requires = @{$self->extract_intervals_requires($lane_path)};
+        @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
+        return \@requires;
+    }
+}
+
+=head2 extract_intervals
+
+Title   : extract_intervals
+Usage   : $obj->extract_intervals('/path/to/lane', 'lock_filename');
+Function: Extracts intervals at the library level, post markdup.
+Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+Args    : lane path, name of lock file to use
+
+=cut
+
+sub extract_intervals {
+    my ($self, $lane_path, $action_lock) = @_;
+
+    foreach my $in_bam (@{$self->{in_bams}}) {
+        my $base = basename($in_bam);
+        my (undef, undef, undef, $calmd_bam, $final_bam) = $self->_bam_name_conversion($in_bam);
+        
+        next if -s $final_bam;
+        
+        my $job_name =  $self->{prefix}.'extract_intervals_'.$base;
+        $self->archive_bsub_files($lane_path, $job_name);
+
+        LSF::run($action_lock, $lane_path, $job_name, $self,
+                 qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new()->extract_intervals_from_bam(qq[$calmd_bam], qq[$self->{extract_intervals}->{intervals_file}], qq[$final_bam]) || die qq[extract_intervals failed for $calmd_bam\n];"~);
+    }
+
+    return $self->{No};
+}
+
+
 =head2 update_db_requires
 
  Title   : update_db_requires
@@ -997,7 +1095,7 @@ exit;
 
 sub update_db_requires {
     my ($self, $lane_path) = @_;
-    return $self->statistics_provides($lane_path);
+    return $self->extract_intervals_provides($lane_path);  # or extract_intervals done...
 }
 
 =head2 update_db_provides
@@ -1024,11 +1122,13 @@ sub update_db_provides {
 
 =cut
 
+
+
 sub update_db {
     my ($self, $lane_path, $action_lock) = @_;
     
     # get the bas files that contain our mapping stats
-    my $files = $self->update_db_requires($lane_path);
+    my $files = $self->statistics_provides($lane_path);
     my @bas_files;
     foreach my $file (@{$files}) {
         next unless $file =~ /\.bas$/;
@@ -1099,6 +1199,7 @@ sub update_db {
     
     return $self->{Yes};
 }
+
 
 =head2 cleanup_requires
 
@@ -1245,7 +1346,13 @@ sub is_finished {
             }
         }
     }
-    elsif ($action->{name} eq 'cleanup' || $action->{name} eq 'update_db') {
+    elsif ($action->{name} eq 'extract_intervals') {
+        # extract_intervals processes internally checks for truncation, so
+        # if this file exists, it is OK
+
+        # for now, don't delete the previous bam (we might want it?),
+    }
+    elsif ($action->{name} eq 'cleanup' || $action->{name} eq 'update_db_stats') {
         return $self->{No};
     }
     
