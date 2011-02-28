@@ -270,6 +270,7 @@ sub fix_swaps {
         opendir(my $dfh, $lane_path) || $self->throw("Could not open dir '$lane_path'");
         my (@bams, @bass);
         foreach (readdir($dfh)) {
+            next if /^\./;
             if (/\.bam$/) {
                 push(@bams, $self->{fsu}->catfile($lane_path, $_));
             }
