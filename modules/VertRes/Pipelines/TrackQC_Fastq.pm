@@ -623,8 +623,7 @@ sub stats_and_graphs_provides
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @provides = ("$sample_dir/chrom-distrib.png","$sample_dir/gc-content.png",
-                        "$sample_dir/gc-depth.png","$sample_dir/fastqcheck.png");
+    my @provides = ("$sample_dir/_graphs.done");
     return \@provides;
 }
 
@@ -742,11 +741,6 @@ sub run_graphs
                 });
     }
 
-    my $stats = do $dump_file;
-    if ( $total_reads != $$stats{reads_total} )
-    {
-        $self->throw("Sanity check failed, different number of reads in fastq files and $bam_file ($total_reads .. $$stats{reads_total})\n");
-    }
 }
 
 
