@@ -263,9 +263,6 @@ sub rename_and_merge
     my @files    = glob("$lane_path/*.bam");
     if ( !scalar @files ) { $self->throw("No BAM files in [$lane_path]?"); }
 
-    my $work_dir = "$lane_path/$$self{sample_dir}";
-    Utils::create_dir("$work_dir");
-
     # First try to use the bam recommended by VertRes::Utils::Hierarchy->lane_bams. For this,
     #   db, slx_mapper, 454_mapper and assembly_name must be given
     if ( exists($$self{db}) && exists($$self{slx_mapper}) && exists($$self{'454_mapper'}) && exists($$self{assembly_name}) )
@@ -290,6 +287,24 @@ sub rename_and_merge
         elsif ( $file=~m{(\d+)\.[ps]e\.raw\.sorted\.bam} ) { push @{$mapstat_ids{$1}},$file; }
     }
 
+    # Reuse existing qc-sample.$mapstat_id directory
+    my $work_dir = "$lane_path/$$self{sample_dir}";
+    my $mapstat_id;
+    if ( scalar keys %mapstat_ids )
+    {
+        my @ids = sort { $b<=>$a } keys %mapstat_ids;
+        if ( ! scalar @ids ) { $self->throw("No bam files in $lane_path?"); }
+
+        # Take the bam file with the highest mapstat_id
+        $mapstat_id = $ids[0];
+
+        if ( ! -e $work_dir && -e "$lane_path/$$self{sample_dir}.$mapstat_id" )
+        {
+            Utils::relative_symlink("$lane_path/$$self{sample_dir}.$mapstat_id",$work_dir);
+        }
+    }
+    Utils::create_dir($work_dir) unless -e $work_dir;
+
     # We can also get BAM files from iRODS. In that case the naming convention is different.
     #   If there is one BAM file only, proceed, otherwise throw an error.
     if ( ! scalar keys %mapstat_ids ) 
@@ -300,12 +315,6 @@ sub rename_and_merge
             return $$self{'Yes'};
         }
     }
-
-    my @ids = sort { $b<=>$a } keys %mapstat_ids;
-    if ( ! scalar @ids ) { $self->throw("No bam files in $lane_path?"); }
-
-    # Take the bam file with the highest mapstat_id
-    my $mapstat_id = $ids[0];
 
     # Remember the id for later
     open(my $fh,'>',"$work_dir/$$self{mapstat_id}") or $self->throw("$work_dir/$$self{mapstat_id}: $!");
@@ -970,8 +979,19 @@ sub update_db
     # Rename the sample dir by mapstats ID, cleaning existing one
     if ( $has_mapstats && $mapstats_id )
     {
-        Utils::CMD("rm -rf $sample_dir.$mapstats_id");
-        rename($sample_dir,"$sample_dir.$mapstats_id");
+        # Check if the sample dir is a symlink to reused $sample_dir.$mapstats_id directory.
+        #   In that case keep the .id directory and remove $sample_dir. Otherwise rename
+        #   $sample_dir to the .id dir.
+        my $link;
+        if ( -l $sample_dir && ($link==readlink($sample_dir)) && $link=~/\.$mapstats_id$/ )
+        {
+            unlink($sample_dir);
+        }
+        else
+        {
+            Utils::CMD("rm -rf $sample_dir.$mapstats_id");
+            rename($sample_dir,"$sample_dir.$mapstats_id");
+        }
     }
  
     return $$self{'Yes'};
