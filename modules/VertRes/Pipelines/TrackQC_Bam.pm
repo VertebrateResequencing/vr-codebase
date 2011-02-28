@@ -432,6 +432,10 @@ sub check_genotype
 {
     my ($self,$lane_path,$lock_file) = @_;
 
+    # Skip Genotype Check
+    if(exists $$self{'skip_genotype'} && $$self{'skip_genotype'})
+    { $self->debug("Skipping genotype check.\n"); return $$self{'Yes'}; }
+
     if ( !$$self{snps} ) { $self->throw("Missing the option snps.\n"); }
 
     my $name = $$self{lane};
@@ -662,7 +666,7 @@ sub auto_qc
     my ($test,$status,$reason);
 
     # Genotype check results
-    if ( exists($$self{auto_qc}{gtype_regex}) )
+    if ( exists($$self{auto_qc}{gtype_regex}) && !(exists $$self{'skip_genotype'} && $$self{'skip_genotype'}) )
     {
         my $gtype  = VertRes::Utils::GTypeCheck::get_status("$sample_dir/${name}.gtype");
         $test   = 'Genotype check';
@@ -887,7 +891,22 @@ sub update_db
     my $rmdup_bases_total    = $bc->get('total_length');
     my $rmdup_bases_trimmed  = $bc->get('bases_trimmed');
 
-    my $gtype = VertRes::Utils::GTypeCheck::get_status("$sample_dir/${name}.gtype");
+    my $gtype;
+    unless(exists $$self{'skip_genotype'} && $$self{'skip_genotype'})
+    {
+	# Get genotype results
+	$gtype = VertRes::Utils::GTypeCheck::get_status("$sample_dir/${name}.gtype");
+    }
+    else
+    {
+	# Skip genotype results
+	$gtype = {
+	    status   => 'unchecked',
+	    expected => undef,
+	    found    => undef,
+	    ratio    => undef,
+	};
+    }
 
     my %images = ();
     if ( -e "$sample_dir/chrom-distrib.png" ) { $images{'chrom-distrib.png'} = 'Chromosome Coverage'; }
