@@ -54,6 +54,14 @@ our @actions =
         'provides' => \&map_sample_provides,
     },
 
+    # Check sanity, namely the reference sequence. Inherited from TrackQC_Bam.
+    {
+        'name'     => 'check_sanity',
+        'action'   => \&VertRes::Pipelines::TrackQC_Bam::check_sanity,
+        'requires' => \&VertRes::Pipelines::TrackQC_Bam::check_sanity_requires, 
+        'provides' => \&VertRes::Pipelines::TrackQC_Bam::check_sanity_provides,
+    },
+
     # Runs glf to check the genotype. Inherited from TrackQC_Bam.
     {
         'name'     => 'check_genotype',
