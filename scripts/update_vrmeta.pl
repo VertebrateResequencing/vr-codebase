@@ -630,11 +630,11 @@ sub main_loop {
     my $sample = $object_cache{sample}->{"$rh->[3].$rh->[9]"} || $project->get_sample_by_name($rh->[9]);
     unless ($sample) {
         $sample = $project->add_sample($rh->[9]);
-        if (exists $sample_data{$sample_lookup}) {
-            unless ($sample_data{$sample_lookup}->{acc} eq $rh->[8]) {
-                die "$sample_to_population_map_file and $si_file disagree on the accession for $rh->[9] ([".$sample_data{$sample_lookup}->{acc}."] vs [$$rh[8]])\n";
-            }
-        }
+#         if (exists $sample_data{$sample_lookup}) {
+#             unless ($sample_data{$sample_lookup}->{acc} eq $rh->[8]) {
+#                 die "$sample_to_population_map_file and $si_file disagree on the accession for $rh->[9] ([".$sample_data{$sample_lookup}->{acc}."] vs [$$rh[8]])\n";
+#             }
+#         }
         $sample->update;
         
         $project->update;
@@ -652,7 +652,7 @@ sub main_loop {
             $individual->alias($sample_data{$sample_lookup}->{alias});
             $individual->sex($sample_data{$sample_lookup}->{sex});
         }
-        $individual->acc($rh->[8]);
+#         $individual->acc($rh->[8]);
         
         my $population = $individual->population;
         unless ($population) {
@@ -699,12 +699,14 @@ sub main_loop {
     # describing the same physical sample and library.
     $rh->[14] || die "fastq $rh->[0] had no library name!\n";
     my $old_library_name = $rh->[14].'|'.$rh->[5];
-    my $library_name = $rh->[14].'|'.$rh->[5].'|'.$rh->[3];
+    my $newer_library_name = $rh->[14].'|'.$rh->[5].'|'.$rh->[3];
+    my $library_name = $rh->[14].'|'.$rh->[5].'|'.$rh->[3].'|'.$rh->[9];
     my $library = $object_cache{library}->{"$rh->[3].$rh->[9].$library_name"} || $sample->get_library_by_name($library_name);
     my $tech_name = $platform_to_tech{uc($rh->[12])} || die "Could not map platform '$rh->[12]' to a technology\n";
     unless ($library) {
         # conversion of old pre-project_id-concat to new form
         $library = $sample->get_library_by_name($old_library_name);
+        $library ||= $sample->get_library_by_name($newer_library_name);
         if ($library) {
             $library->name($library_name);
             $library->update || die "Could not update library name";
