@@ -116,6 +116,7 @@ sub vcf_subset
     my %has_col = map { $_ => 1 } @$columns;
 
     $vcf->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
+    $vcf->set_samples(include=>$columns) unless $$opts{private};
     print $vcf->format_header($columns);
 
     my $check_private = $$opts{private};
