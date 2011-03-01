@@ -921,7 +921,9 @@ sub _format_line_hash
     }
     if ( $needs_an_ac )
     {
-        my ($an,$ac) = $self->calc_an_ac($gtypes);
+        my $nalt = scalar @{$$record{$$cols[4]}};
+        if ( $nalt==1 && $$record{$$cols[4]}[0] eq '.' ) { $nalt=0; } 
+        my ($an,$ac) = $self->calc_an_ac($gtypes,$nalt);
         push @info, "AN=$an","AC=$ac";
     }
     if ( !@info ) { push @info, '.'; }
