@@ -206,6 +206,7 @@ sub _open
         }
         elsif ( $$self{file}=~m{^(?:http|ftp)://} )
         {
+            if ( !exists($args{region}) ) { $tabix_args .= ' .'; }
             $cmd = "tabix $tabix_args |";
             $$self{check_exit_status} = 1;
         }
@@ -318,6 +319,45 @@ sub next_data_array
 }
 
 
+=head2 set_samples
+
+    About   : Parsing big VCF files with many sample columns is slow, not parsing unwanted samples may speed things a bit.
+    Usage   : my $vcf = Vcf->new(); 
+              $vcf->set_samples(include=>['NA0001']);   # Exclude all but this sample. When the array is empty, all samples will be excluded.
+              $vcf->set_samples(exclude=>['NA0003']);   # Include only this sample. When the array is empty, all samples will be included.
+              my $x = $vcf->next_data_hash();
+    Args    : Optional line to parse
+
+=cut
+
+sub set_samples
+{
+    my ($self,%args) = @_;
+
+    if ( exists($args{include}) )
+    {
+        for (my $i=0; $i<@{$$self{columns}}; $i++) { $$self{samples_to_parse}[$i] = 0; }
+        for my $sample (@{$args{include}})
+        {
+            if ( !exists($$self{has_column}{$sample}) ) { $self->throw("The sample not present in the VCF file: [$sample]\n"); }
+            my $idx = $$self{has_column}{$sample} - 1;
+            $$self{samples_to_parse}[$idx]  = 1;
+        }
+    }
+    
+    if ( exists($args{exclude}) )
+    {
+        for (my $i=0; $i<@{$$self{columns}}; $i++) { $$self{samples_to_parse} = 1; }
+        for my $sample (@{$args{exclude}})
+        {
+            if ( !exists($$self{has_column}{$sample}) ) { $self->throw("The sample not present in the VCF file: [$sample]\n"); }
+            my $idx = $$self{has_column}{$sample} - 1;
+            $$self{samples_to_parse}[$idx]  = 0;
+        }
+    }
+}
+
+
 sub _set_version
 {
     my ($self,$version_line) = @_;
@@ -413,7 +453,7 @@ sub next_data_hash
     chomp($items[-1]);
 
     my $cols = $$self{columns};
-    if ( !$$self{columns} ) 
+    if ( !$cols ) 
     { 
         $self->_fake_column_names(scalar @items - 9); 
         $cols = $$self{columns};
@@ -485,6 +525,7 @@ sub next_data_hash
     for (my $icol=9; $icol<@items; $icol++)
     {
         if ( $items[$icol] eq '' ) { $self->warn("Empty column $$cols[$icol] at $items[0]:$items[1]\n"); next; }
+        if ( exists($$self{samples_to_parse}) && !$$self{samples_to_parse}[$icol] ) { next; }
 
         my @fields = split(/:/, $items[$icol]);
         if ( $check_nformat && @fields != @$format ) 
@@ -1102,7 +1143,7 @@ sub parse_haplotype
 
     my @alleles   = ();
     my @seps      = ();
-    my $is_phased = 1;
+    my $is_phased = 0;
     my $is_empty  = 1;
 
     my $buf = $gtype;
@@ -1121,7 +1162,7 @@ sub parse_haplotype
         }
         if ( $2 )
         {
-            if ( $2 ne '|' ) { $is_phased=0; }
+            if ( $2 eq '|' ) { $is_phased=1; }
             push @seps,$2;
         }
     }
@@ -1554,7 +1595,7 @@ sub validate_float
     if ( $value =~ /^-?\d+(?:\.\d*)$/ ) { return undef; }
     if ( $value =~ /^-?\d*(?:\.\d+)$/ ) { return undef; }
     if ( $value =~ /^-?\d+$/ ) { return undef; }
-    if ( $value =~ /^-?\d*(?:\.?\d+)(?:e-?\d+)?$/ ) { return undef; }
+    if ( $value =~ /^-?\d*(?:\.?\d+)(?:[Ee][-+]?\d+)?$/ ) { return undef; }
     return "Could not validate the float [$value]";
 }
 
@@ -1595,7 +1636,7 @@ sub run_validation
 
     my $default_qual = $$self{defaults}{QUAL};
     my $warn_sorted=1;
-    my $warn_duplicates=1;
+    my $warn_duplicates = exists($$self{warn_duplicates}) ? $$self{warn_duplicates} : 1;
     my ($prev_chrm,$prev_pos);
     while (my $x=$self->next_data_hash()) 
     {

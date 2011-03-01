@@ -35,7 +35,7 @@ our $THREE_PRIME_REGION = 200;
 =head2 new
 
  Title   : new
- Usage   : my $obj = VertRes::Utils::dbSNP->new(handle=>'myhandle',strain_tag=>'myStrainTag',pop_handle=>'myPopHandle',species=>'Mouse');
+ Usage   : my $obj = VertRes::Utils::dbSNP->new(handle=>'myhandle',strain_tag=>'myStrainTag',pop_handle=>'myPopHandle',species=>'Mouse',chromosomes=>20);
  Function: Create a new VertRes::Utils::dbSNP object.
  Returns : VertRes::Utils::dbSNP object
  Args    : n/a
@@ -47,6 +47,8 @@ sub new
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(@args);
 	
+    if ( !exists($$self{chromosomes}) ) { $$self{chromosomes}=19; }
+
 	_checkFields( $self );
 	
     return $self;
@@ -251,7 +253,7 @@ TYPE:       SNPASSAY
 HANDLE:     $self->{handle}
 BATCH:      $batch_name
 MOLTYPE:    Genomic
-SAMPLESIZE: 19
+SAMPLESIZE: $self->{chromosomes}
 STRAIN: 	$self->{strain_tag}
 METHOD:     $self->{method_id}
 ORGANISM:   Mus musculus
@@ -298,19 +300,21 @@ sub write_snp_records
 	while ( <$sfh> )
 	{
 		# ignore any blank lines
-		if ( /\^\n/ ) 
+		if ( /^\s*$/ ) 
 		{
 			next;
 		}
-		chomp;
 		
-		# create a simple hash record of the current snp
-		my @s = split( /\t/, $_ );
-		$self->throw("Cannot create $outputFile: $!") unless @s == 6;
-		
-		my ($chromosome, $position, $reference_base, $consensus_base, $phred_quality, $read_depth ) = @s;
-		
-		$self->throw("Invalid SNP entry in file: $_") unless @s == 6; #do more sanity checks here.....
+        if ( !(/^([^\t]+)\t([^\t]+)\t([^\t]+)\t([^\t]+)\t([^\t]*)\t(\S*)$/) ) 
+        { 
+            $self->throw("Could not parse the line, one of the fields is missing: chr,pos,ref,alt [$_]"); 
+        }
+        my $chromosome     = $1;
+        my $position       = $2;
+        my $reference_base = $3;
+        my $consensus_base = $4;
+        my $phred_quality  = defined $5 ? $5 : '';
+        my $read_depth     = defined $6 ? $6 : '';
 		
 		# grab the entire sequence once instead of having to make
 		# multiple accesses to the db i.e. for upstream and downstream say
@@ -372,22 +376,30 @@ sub write_snp_records
 		# computed location of the SNP (ACCESSION + LOCATION)
 		# flanking sequence (200 bp 5' and 200 bp 3' of the variant position)
 		
-		my $snp_id = $self->{handle}.'_'.$self->{strain_tag}.'_'.$snpcnt;
+		my $snp_id = $self->{pop_handle}.'_'.$chromosome.'_'.$position;
 		
 		my $phred_entry = '';
 		if( length( $phred_quality ) > 0 )
 		{
 			$phred_entry = "snp quality: $phred_quality\n";
 		}
+
+        my $comment = '';
+        if ( $phred_quality ne '' or $read_depth ne '' )
+        {
+            $comment = "\nCOMMENT:\n";
+            if ( $phred_quality ne '' ) { $comment .= "quality: $phred_quality"; }
+            if ( $read_depth ne '' ) { $comment .= "read_depth: $read_depth"; }
+            $comment .= "\n";
+        }
+
 		print $ofh qq[
 SNP:        $snp_id
 ACCESSION:  $supercontig
 LENGTH:     1
 5'_FLANK:   $five_prime_seq
 OBSERVED:   $reference_base/$consensus_base
-3'_FLANK:   $three_prime_seq
-COMMENT:
-$phred_quality read_depth: $read_depth
+3'_FLANK:   $three_prime_seq$comment
 LOCATION:   $start_pos
 ||
 ];
@@ -396,3 +408,45 @@ LOCATION:   $start_pos
 	close( $ofh );
 	close( $sfh );
 }
+
+
+=head2 write_snpinduse_records
+
+ Title   : write_snpinduse_records
+ Usage   : my $write = $obj->write_snpinduse_records($out_file,$inp_file);
+ Function: 
+ Returns : 
+ Args    : 
+
+=cut
+
+sub write_snpinduse_records
+{
+	my ($self, $outputFile, $inputFile,$batch) = @_;
+	
+	$self->throw("You must call the write_header function first to define the title!") unless defined( $self->{title} );
+
+    open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
+    print $ofh qq[
+TYPE:       SNPINDUSE
+HANDLE:     $self->{handle}
+BATCH:      $batch
+METHOD:     $self->{method_id}
+||
+ID:$self->{handle}|$self->{pop_handle}:$self->{strain_tag}
+];
+
+    open(my $ifh,'<',$inputFile) or $self->throw("$inputFile: $!");
+    while (my $line=<$ifh>)
+    {
+        if ( $line=~/^\s*$/ ) { next; }
+        my ($chr,$pos,$ref,$alt,$qual,$dp) = split(/\t/,$line);
+        chomp($dp);
+        print $ofh qq[SNP:$self->{handle}|$$self{pop_handle}_$chr\_$pos:$ref/$alt|SS_STRAND_FWD\n];
+    }
+    print $ofh "||\n";
+    close($ifh);
+	close( $ofh );
+}
+
+

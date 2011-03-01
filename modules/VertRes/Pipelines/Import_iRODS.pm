@@ -128,7 +128,13 @@ sub get_files
         my $outfile = $1;
         if ( -e $outfile ) { next; }
 
-        # Get the file from iRODS. From some reasons, some of the files have wrong permissions
+        # Get the BAM index
+        my $bai = $ifile;
+        $bai =~ s/\.bam$/.bai/i;
+        $irods->get_file($bai,"$outfile.bai");
+        chmod 0664,"$outfile.bai";
+
+        # Get the BAM file from iRODS. From some reasons, some of the files have wrong permissions
         $irods->get_file($ifile,"$outfile.tmp");
         chmod 0664,"$outfile.tmp";
 
@@ -189,18 +195,21 @@ sub update_db
 
     $vrtrack->transaction_start();
 
+    my ($tot_tot_len,$tot_num_seq);
     for my $file (@{$$self{files}})
     {
         # Hm, this must be evaled, otherwise it dies without rollback
-        my ($avg_len,$tot_len,$num_seq,$avg_qual,$nfirst,$nlast,$is_mapped,$ok);
+        my ($avg_len,$tot_len,$num_seq,$avg_qual,$nfirst,$nlast,$is_mapped,$is_sorted,$is_paired,$ok);
         eval {
             my $pars = VertRes::Parser::bamcheck->new(file => "$lane_path/$file.bc");
-            $num_seq  = $pars->get('sequences');
-            $tot_len  = $pars->get('total_length');
-            $avg_len  = $pars->get('avg_length');
-            $avg_qual = $pars->get('avg_qual');
-            $nfirst   = $pars->get('1st_fragments');
-            $nlast    = $pars->get('last_fragments');
+            $num_seq   = $pars->get('sequences');
+            $tot_len   = $pars->get('total_length');
+            $avg_len   = $pars->get('avg_length');
+            $avg_qual  = $pars->get('avg_qual');
+            $nfirst    = $pars->get('1st_fragments');
+            $nlast     = $pars->get('last_fragments');
+            $is_sorted = $pars->get('is_sorted');
+            $is_paired = $pars->get('is_paired');
 
             # One sequence without BAM_FUNMAP flag (0x0004) is enough to say that the BAM file is mapped.
             my $unmapped = $pars->get('reads_unmapped');
@@ -233,12 +242,56 @@ sub update_db
             $vrlane->is_processed('mapped',1);
         }
         $vrfile->update();
+
+        # Create mapstats, fill in mapper and assembly and rename the files by mapstat ID
+        my $assembly = 'Unknown';
+        my $mapper   = 'Unknown';
+        my $mapper_version = 'Unknown';
+
+        my $parser = VertRes::Parser::bam->new(file=>"$lane_path/$file");
+        my @info = $parser->sequence_info();
+        if ( @info ) { $assembly = $info[1]{AS}; }
+
+        my $prg = $parser->program();
+        if ( $prg )
+        {
+            $mapper = $prg;
+            my %prgs = $parser->program_info();
+            $mapper_version = $prgs{$mapper}{VN};
+        }
+
+        my $vrmapping  = $vrlane->add_mapping();
+        my $vrassembly = $vrmapping->assembly($assembly);
+        if ( !$vrassembly ) { $vrassembly = $vrmapping->add_assembly($assembly); }
+
+        my $vrmapper = $vrmapping->mapper($mapper,$mapper_version);
+        if ( !$vrmapper ) { $vrmapper = $vrmapping->add_mapper($mapper,$mapper_version); }
+
+        # Now rename everything to '1234.pe.raw.sorted.*'
+        my $new_fn = sprintf "%d.%s.raw%s.bam", 
+            $vrmapping->id(), 
+            $is_paired ? 'pe' : 'se',
+            $is_sorted ? '.sorted' : '';
+
+        rename("$lane_path/$file","$lane_path/$new_fn");
+        rename("$lane_path/$file.bc","$lane_path/$new_fn.bc");
+        rename("$lane_path/$file.bai","$lane_path/$new_fn.bai");
+        rename("$lane_path/$file.md5","$lane_path/$new_fn.md5");
+        Utils::CMD(qq[echo "$md5  $new_fn" > $lane_path/$new_fn.md5]);
+        
+        $vrfile->hierarchy_name($new_fn);
+        $vrfile->update();
+
+        $tot_num_seq += $num_seq;
+        $tot_tot_len += $tot_len;
     }
 
     # Finally, change the import status of the lane, so that it will not be picked up again
     #   by the run-pipeline script.
     $vrlane->is_processed('import',1);
     $vrlane->is_withdrawn(0);
+    $vrlane->raw_bases($tot_tot_len);
+    $vrlane->raw_reads($tot_num_seq);
     $vrlane->update();
     $vrtrack->transaction_commit();
 

@@ -1,9 +1,12 @@
 #!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
 
 use strict;
 use warnings;
 use Carp;
-use Vcf;
+use VcfStats;
 
 my $opts = parse_params();
 vcf_stats($opts);
@@ -22,269 +25,141 @@ sub error
     die
         "Usage: vcf-stats [OPTIONS] file.vcf.gz\n",
         "Options:\n",
+        "   -f, --filters <filter1,filter2>             List of filters such as column/field (any value), column/field=bin:max (cluster in bins),column/field=value (exact value)\n",
         "   -i, --include-columns <col1,col2,..>        Include only these columns in comparison\n",
+        "   -p, --prefix <dir/string>                   Prefix of output files. If slashes are present, directories will be created.\n",
+        "   -s, --samples <list>                        Process only the listed samples, - for none. Excluding unwanted samples may increase performance considerably.\n",
         "   -h, -?, --help                              This help message.\n",
+        "\n",
+        "Examples:\n",
+        "   # Calculate stats separately for the filter field, quality and non-indels\n",
+        "   vcf-stats file.vcf.gz -f FILTER,QUAL=10:200,INFO/INDEL=False -p out/\n",
+        "\n",
+        "   # Calculate stats for all samples\n",
+        "   vcf-stats file.vcf.gz -f FORMAT/DP=10:200 -p out/\n",
+        "\n",
+        "   # Calculate stats only for the sample NA00001\n",
+        "   vcf-stats file.vcf.gz -f SAMPLE/NA00001/DP=1:200 -p out/\n",
+        "\n",
+        "   vcf-stats file.vcf.gz > perl.dump\n",
         "\n";
 }
 
 
 sub parse_params
 {
-    my $opts = {};
+    my $opts = { filters=>{}, filter_param=>'' };
     while (my $arg=shift(@ARGV))
     {
+        if ( $arg eq '-f' || $arg eq '--filters'  ) { $$opts{filter_param}=shift(@ARGV); next; }
+        if ( $arg eq '-p' || $arg eq '--prefix'  ) { $$opts{prefix}=shift(@ARGV); next; }
+        if ( $arg eq '-s' || $arg eq '--samples'  ) 
+        { 
+            my $samples = shift(@ARGV);
+            $$opts{samples} = [ split(/,/,$samples) ];
+            next;
+        }
         if ( $arg eq '-i' || $arg eq '--include-columns'  ) 
         { 
             my @cols = split(/,/,shift(@ARGV));
             for my $col (@cols) { $$opts{include_cols}{$col} = 1; }
             next;
         }
-        if ( -e $arg or $arg=~m{^(?:ftp|http)://} ) { $$opts{file} = $arg; next }
+        if ( -e $arg ) { $$opts{file} = $arg; next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         error("Unknown parameter or nonexistent file: \"$arg\". Run -h for help.\n");
     }
     return $opts;
 }
 
+
+sub init_filters
+{
+    my ($opts,$vcf) = @_;
+
+    for my $filter (split(/,/,$$opts{filter_param}))
+    {
+        my ($key,$value) = split(/=/,$filter);
+
+        my $rec = { value=>$value, exact=>0, any=>0, bin=>0, is_flag=>0 };
+        if ( $key=~m{^INFO/} )
+        {
+            my $tag = $';
+            $$rec{tag} = $tag;
+            if ( exists($$vcf{header}{'INFO'}) && exists($$vcf{header}{'INFO'}{$tag}) && $$vcf{header}{'INFO'}{$tag}{Type} eq 'Flag' )
+            {
+                $$rec{is_flag} = 1;
+                $$rec{value} = $value eq 'False' ? 0 : 1;
+                $key = "INFO/$tag=". ($$rec{value} ? 'True':'False');
+            }
+        }
+        elsif ( $key eq 'INFO' )
+        {
+            # All INFO flags should be counted
+            for my $tag (keys %{$$vcf{header}{'INFO'}})
+            {
+                if ( $$vcf{header}{'INFO'}{$tag}{Type} ne 'Flag' ) { next; }
+                $$opts{filters}{"INFO/$tag=True"} = { %$rec, is_flag=>1, value=>1, tag=>$tag };
+            }
+            next;
+        }
+
+        if ( ! defined $value )
+        {
+            $$rec{any} = 1;
+        }
+        elsif ( $value=~/^(.+):(.+)$/ ) 
+        {
+            $$rec{bin}      = 1;
+            $$rec{bin_size} = $1;
+            $$rec{max}      = $2;
+        }
+        else
+        {
+            $$rec{exact} = 1;
+        }
+        $$opts{filters}{$key} = $rec;
+    }
+}
+
+
 sub vcf_stats
 {
     my ($opts) = @_;
 
     # Open the VCF file
-    my $vcf = $$opts{file} ? Vcf->new(file=>$$opts{file}) : Vcf->new(fh=>\*STDIN);
+    my $vcf = $$opts{file} ? VcfStats->new(file=>$$opts{file}) : VcfStats->new(fh=>\*STDIN);
     $vcf->parse_header();
+    init_filters($opts,$vcf);
 
-    my %ncols_isec;
-    my $nrows = 0;
-    my $genotypes_called = 0;
-    my %mutation_types = ( AG=>0, GA=>0, CT=>0, TC=>0, AC=>0, CA=>0, GT=>0, TG=>0, AT=>0, TA=>0, GC=>0, CG=>0);
-    my %gt_ref_homs;
-    my %gt_ref_hets;
-    my %gt_nonref_homs;
-    my %gt_nonref_hets;
-    my %gts;
-    my %gt_indels;
-    my %gt_snps;
-    my %gt_other;
-    my %gt_rows;
-    my $include_cols = $$opts{include_cols};
-
-    while (my $rec = $vcf->next_data_hash())
-    {
-        my $ref = $$rec{REF};
-        if ( $ref=~/^N+$/ ) { next; }
-
-        my $nmatches=0;
-        for my $gt (keys %{$$rec{gtypes}})
-        {
-            if ( $include_cols && !exists($$include_cols{$gt}) ) { next; }
-            $gts{$gt} = 1;
-
-            my ($al1,$sep,$al2) = $vcf->parse_alleles($rec,$gt);
-            if ( $al1 eq '.' ) { next; }
-
-            $nmatches++;
-            $genotypes_called++;
-            $gt_rows{$gt}++;
-
-            my ($type1,$len1) = $vcf->event_type($rec,$al1);
-
-            if ( $type1 eq 's' ) { $gt_snps{$gt}+=$len1; }
-            elsif ( $type1 eq 'i' ) { $gt_indels{$gt}{$len1}++; }
-            elsif ( $type1 eq 'o' ) { $gt_other{$gt}{$len1}++; }
-
-            my @trs;
-            if ( $al2 )
-            {
-                my ($type2,$len2) = $vcf->event_type($rec,$al2);
-
-                if ( $type2 eq 's' ) { $gt_snps{$gt}+=$len2; }
-                elsif ( $type2 eq 'i' ) { $gt_indels{$gt}{$len2}++; }
-                elsif ( $type2 eq 'o' ) { $gt_other{$gt}{$len2}++; }
-
-                if ( $al1 eq $al2 )
-                {
-                    if ( $type1 eq 'r' ) { $gt_ref_homs{$gt}++; }
-                    else 
-                    { 
-                        $gt_nonref_homs{$gt}++;
-                        $mutation_types{$ref.$al1}++; 
-                    }
-                }
-                elsif ( $type1 eq 'r' )
-                {
-                    $gt_ref_hets{$gt}++;
-                    if ( $type2 eq 's' && $len2==1 ) { $mutation_types{$ref.$al2}++; }
-                }
-                elsif ( $type2 eq 'r' )
-                {
-                    $gt_ref_hets{$gt}++;
-                    if ( $type1 eq 's' && $len1==1 ) { $mutation_types{$ref.$al1}++; }
-                }
-                elsif ( $type1 eq 's' && $type2 eq 's' && $len1==1 && $len2==1 )
-                {
-                    $gt_nonref_hets{$gt}++;
-                    $mutation_types{$ref.$al1}++;
-                    $mutation_types{$ref.$al2}++;
-                }
-            }
-            else
-            {
-                if ( $type1 eq 'r' ) { $gt_ref_homs{$gt}++; }
-                else 
-                { 
-                    $gt_nonref_homs{$gt}++; 
-                    if ( $type1 eq 's' && $len1==1 ) { $mutation_types{$ref.$al1}++; }
-                }
-            }
+    # Include only requested samples
+    if ( exists $$opts{samples} )
+    {   
+        my @include = ();
+        if ( scalar @{$$opts{samples}}>1 or $$opts{samples}[0] ne '-' ) 
+        { 
+            for my $sample (@{$$opts{samples}}) { push @include,$sample; }
         }
-        if ( $nmatches>0 ) { $nrows++; }
-        $ncols_isec{$nmatches}++;
+        $vcf->set_samples(include=>\@include); 
     }
 
-    my ($ref_homs)    = sum_all(\%gt_ref_homs);
-    my ($ref_hets)    = sum_all(\%gt_ref_hets);
-    my ($nonref_homs) = sum_all(\%gt_nonref_homs);
-    my ($nonref_hets) = sum_all(\%gt_nonref_hets);
-    my ($nsnps)       = sum_all(\%gt_snps);
-    my ($nindels,$flat_indels) = sum_all(\%gt_indels);
-    my ($nother,$flat_other)   = sum_all(\%gt_other);
 
-    printf "Rows with a call  .. %d\n", $nrows;
-    printf "Genotypes total   .. %d\n", $genotypes_called;
-    printf "SNP alleles       .. %d\n", $nsnps;
-    printf "Indel alleles     .. %d\n", $nindels;
-    printf "Other events      .. %d\n", $nother;
-    printf "Ref homs          .. %d\n", $ref_homs;
-    printf "Nonref homs       .. %d\n", $nonref_homs;
-    printf "Ref hets          .. %d\n", $ref_hets;
-    printf "Nonref hets       .. %d\n", $nonref_hets;
-
-    my $n_gt_ca = $mutation_types{GT} + $mutation_types{CA};
-    my $n_gc_cg = $mutation_types{GC} + $mutation_types{CG};
-    my $n_ga_ct = $mutation_types{GA} + $mutation_types{CT};
-    my $n_at_ta = $mutation_types{AT} + $mutation_types{TA};
-    my $n_ag_tc = $mutation_types{AG} + $mutation_types{TC};
-    my $n_ac_tg = $mutation_types{AC} + $mutation_types{TG};
-
-    my $ntransitions   = $n_ag_tc + $n_ga_ct;
-    my $ntransversions = $n_ac_tg + $n_gt_ca + $n_at_ta + $n_gc_cg;
-
-    printf "Transitions/Transversions .. %.2f (%d/%d)\n",$ntransversions ? $ntransitions/$ntransversions : 0,$ntransitions,$ntransversions;
-    if ( !$ntransversions && !$ntransitions ) { $ntransversions=1; }
-    printf "    A>G/T>C .. %d (%.1f%%)\n", $n_ag_tc, $n_ag_tc*100./($ntransitions+$ntransversions);
-    printf "    G>A/C>T .. %d (%.1f%%)\n", $n_ga_ct, $n_ga_ct*100./($ntransitions+$ntransversions);
-    printf "    A>C/T>G .. %d (%.1f%%)\n", $n_ac_tg, $n_ac_tg*100./($ntransitions+$ntransversions);
-    printf "    G>T/C>A .. %d (%.1f%%)\n", $n_gt_ca, $n_gt_ca*100./($ntransitions+$ntransversions);
-    printf "    A>T/T>A .. %d (%.1f%%)\n", $n_at_ta, $n_at_ta*100./($ntransitions+$ntransversions);
-    printf "    G>C/C>G .. %d (%.1f%%)\n", $n_gc_cg, $n_gc_cg*100./($ntransitions+$ntransversions);
-
-    if ( scalar keys %gt_indels )
+    if ( !exists($$opts{include_cols}) )
     {
-        print "Indels:\n";
-        for my $len (sort {$a<=>$b} keys %$flat_indels)
-        {
-            printf "\t% d\t%d\n",$len,$$flat_indels{$len};
-        }
-    }
-    if ( scalar keys %gt_other)
-    {
-        print "Other events:\n";
-        for my $len (sort {$a<=>$b} keys %$flat_other)
-        {
-            printf "\t% d\t%d\n",$len,$$flat_other{$len};
+        for (my $i=9; $i<@{$$vcf{columns}}; $i++) 
+        { 
+            my $col = $$vcf{columns}[$i];
+            $$opts{include_cols}{$col} = 1; 
         }
     }
 
-    print  "Sites shared by N cols:\n";
-    for my $key (sort {$a<=>$b} keys %ncols_isec)
+    while (my $rec=$vcf->next_data_hash())
     {
-        printf "\t %d .. %d\n", $key,$ncols_isec{$key};
+       $vcf->collect_stats($rec,$$opts{filters});
     }
-    for my $gt (sort keys %gts)
-    {
-        my $nhoms = $gt_ref_homs{$gt} ? $gt_ref_homs{$gt} : 0;
-        my $nhets = $gt_ref_hets{$gt} ? $gt_ref_hets{$gt} : 0;
-        my $nnonref_homs = $gt_nonref_homs{$gt} ? $gt_nonref_homs{$gt} : 0;
-        my $nnonref_hets = $gt_nonref_hets{$gt} ? $gt_nonref_hets{$gt} : 0;
-        my $n = $gt_rows{$gt} ? $gt_rows{$gt} : 0;
-        my $nsnps     = $gt_snps{$gt} ? $gt_snps{$gt} : 0;
-        my ($nindels) = sum_all($gt_indels{$gt});
-        my ($nother)  = sum_all($gt_other{$gt});
 
-        printf "$gt:\n";
-        printf "\tRows with a call  %d\n", $n;
-        printf "\tSNP alleles       %d\n", $nsnps;
-        printf "\tindel alleles     %d\n", $nindels;
-        printf "\tother events      %d\n", $nother;
-
-        if ( !$n ) { $n=1; }
-        printf "\tref homs    %d (%.1f%%)\n", $nhoms, 100.*$nhoms/$n;
-        printf "\tnonref homs %d (%.1f%%)\n", $nnonref_homs, 100.*$nnonref_homs/$n;
-        printf "\tref hets    %d (%.1f%%)\n", $nhets, 100.*$nhets/$n;
-        printf "\tnonref hets %d (%.1f%%)\n", $nnonref_hets, 100.*$nnonref_hets/$n;
-    }
+    $vcf->save_stats($$opts{prefix});
 }
 
 
-
-sub advance_position
-{
-    my ($vcf) = @_;
-
-    if ( exists($$vcf{last_line}) && !$$vcf{last_line} ) { return; }
-
-    my $line = $vcf->next_line();
-    if ( !$line ) 
-    {
-        $$vcf{last_line} = $line;
-        return;
-    }
-
-    if ( !($line=~/^(\S+)\t(\S+)/) ) { error("Could not parse the line: [$line]\n"); }
-    my $chr = $1;
-    my $pos = $2;
-    if ( exists($$vcf{last_line}) )
-    {
-        if ( $chr eq $$vcf{last_line}{CHROM} && $pos<$$vcf{last_line}{POS} )
-        {
-            error("Wrong order: $$vcf{file} .. $chr:$pos comes after $$vcf{last_line}{CHROM}:$$vcf{last_line}{POS}\n");
-        }
-        if ( $chr ne $$vcf{last_line}{CHROM} && exists($$vcf{chrms_hash}{$chr}) )
-        {
-            error("Non-continuous chromosome blocks: $chr - ... - $$vcf{last_line}{CHROM}:$$vcf{last_line}{POS} - $chr:$pos\n");
-        }
-    }
-
-    $$vcf{last_line}{CHROM} = $chr;
-    $$vcf{last_line}{POS}   = $pos;
-
-    if ( !$$vcf{chrms} || $$vcf{chrms}->[-1] ne $chr ) { push @{$$vcf{chrms}},$chr; }
-    $$vcf{chrms_hash}{$chr} = 1;
-
-    return;
-}
-
-sub sum_all
-{
-    my ($hash) = @_;
-    my $sum = 0;
-    my %flat;
-    for my $value (values %$hash)
-    {
-        if ( ref($value) eq 'HASH' )
-        {
-            while (my ($key2,$value2) = each %$value)
-            {
-                $sum += $value2;
-                $flat{$key2} += $value2;
-            }
-        }
-        else
-        {
-            $sum += $value;
-        }
-    }
-    return ($sum,\%flat);
-}
 

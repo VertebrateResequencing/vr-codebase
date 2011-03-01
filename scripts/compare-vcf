@@ -26,10 +26,12 @@ sub error
         "About: Compare bgzipped and tabix indexed VCF files. (E.g. bgzip file.vcf; tabix -p vcf file.vcf.gz)\n",
         "Usage: compare-vcf [OPTIONS] file1.vcf file2.vcf ...\n",
         "Options:\n",
-        "   -c, --chromosomes <list|file>       Process the given chromosomes (comma-separated list or one chromosome per line in a file).\n",
+        "   -c, --chromosomes <list|file>       Same as -r, left for backward compatibility. Please do not use as it will be dropped in the future.\n",
         "   -d, --debug                         Debugging information\n",
         "   -H, --cmp-haplotypes                Compare haplotypes, not only positions\n",
         "   -h, -?, --help                      This help message.\n",
+        "   -r, --regions <list|file>           Process the given regions (comma-separated list or one region per line in a file).\n",
+        "   -s, --samples <list>                Process only the listed samples. Excluding unwanted samples may increase performance considerably.\n",
         "   -w, --win <int>                     In repetitive sequences, the same indel can be called at different positions. Consider\n",
         "                                           records this far apart as matching (be it a SNP or an indel).\n",
         "\n";
@@ -41,8 +43,15 @@ sub parse_params
     my $opts = { positions=>0 };
     while (my $arg=shift(@ARGV))
     {
-        if ( $arg eq '-c' || $arg eq '--chromosomes' ) { $$opts{chromosomes}=shift(@ARGV); next; }
+        if ( $arg eq '-c' || $arg eq '--chromosomes' ) { $$opts{regions_list}=shift(@ARGV); next; }
+        if ( $arg eq '-r' || $arg eq '--regions' ) { $$opts{regions_list}=shift(@ARGV); next; }
         if ( $arg eq '-H' || $arg eq '--cmp-haplotypes' ) { $$opts{cmp_haplotypes}=1; next; }
+        if ( $arg eq '-s' || $arg eq '--samples'  ) 
+        { 
+            my $samples = shift(@ARGV);
+            $$opts{samples} = [ split(/,/,$samples) ];
+            next;
+        }
         if ( $arg eq '-d' || $arg eq '--debug' ) { $$opts{debug}=1; next; }
         if ( $arg eq '-w' || $arg eq '--win' ) { $$opts{win}=shift(@ARGV); next; }
         if ( -e $arg ) { push @{$$opts{files}}, $arg; next }
@@ -53,25 +62,25 @@ sub parse_params
     return $opts;
 }
 
-sub read_chrom_list
+sub read_regions_list
 {
     my ($fname) = @_;
-    my @chroms;
+    my @regions;
     if ( -e $fname )
     {
-        open(my $chrms,'<',$fname) or error("$fname: $!");
-        while (my $line=<$chrms>)
+        open(my $rgs,'<',$fname) or error("$fname: $!");
+        while (my $line=<$rgs>)
         {
             chomp($line);
-            push @chroms, $line;
+            push @regions, $line;
         }
-        close($chrms);
+        close($rgs);
     }
     else
     {
-        @chroms = split(/,/,$fname);
+        @regions = split(/,/,$fname);
     }
-    return (@chroms);
+    return (@regions);
 }
 
 sub compare_vcfs
@@ -83,41 +92,44 @@ sub compare_vcfs
 
     # Open the VCF files and initialize the list of chromosomes
     my @vcfs;
-    my (@chroms,%has_chrom);
-    if ( exists($$opts{chromosomes}) ) { @chroms = read_chrom_list($$opts{chromosomes}); }
+    my (@regions,%has_chrom);
+    if ( exists($$opts{regions_list}) ) { @regions = read_regions_list($$opts{regions_list}); }
 
+    my $ifile = 0;
     for my $file (@{$$opts{files}})
     {
         my $vcf = Vcf->new(file=>$file);
+        $$vcf{vcf_compare_ID} = $ifile++;
         $vcf->parse_header();
+        if ( exists $$opts{samples} ) { $vcf->set_samples(include=>$$opts{samples}); }
         $vcf->close();
         $$vcf{nread} = 0;
         push @vcfs, $vcf;
 
         # Update the list of known chromosomes
-        if ( !exists($$opts{chromosomes}) )
+        if ( !exists($$opts{regions_list}) )
         {
             my $chrms = $vcf->get_chromosomes();
             for my $chr (@$chrms)
             {
                 if ( exists($has_chrom{$chr}) ) { next; }
                 $has_chrom{$chr} = 1;
-                push @chroms, $chr;
+                push @regions, $chr;
             }
         }
     }
 
     # Go through all the files simultaneously and get the stats.
-    for my $chr (@chroms)
+    for my $region (@regions)
     {
         # Open files
         for my $vcf (@vcfs)
         {
             delete($$vcf{last_line});
-            $vcf->open(region=>$chr,parse_header=>1);
+            $vcf->open(region=>$region,parse_header=>1);
             delete($$vcf{eof});
         }
-        do_chrm_stats($opts,\@vcfs);
+        do_region_stats($opts,\@vcfs);
     }
 
     report_stats($opts,\@vcfs);
@@ -179,22 +191,91 @@ sub report_stats
         print $out;
     }
 
+
     if ( $$opts{cmp_haplotypes} )
     {
+        #use Data::Dumper; print Dumper($opts);
+
         print "Haplotype comparison:\n";
-        printf "\t%d .. sites compared\n", $$opts{hapls_ncmp};
         for my $id (keys %{$$opts{hapls}})
         {
-            print "$id:\n";
-            printf "\t%d .. non-empty sites\n", $$opts{hapls}{$id}{ncmp} ? $$opts{hapls}{$id}{ncmp} : 0;
-            printf "\t%d .. matching sites\n", $$opts{hapls}{$id}{match} ? $$opts{hapls}{$id}{match} : 0;
-            printf "\t\t%d .. phased matches\n", $$opts{hapls}{$id}{phase_match} ? $$opts{hapls}{$id}{phase_match} : 0;
-            printf "\t\t%d .. misphased matches\n", $$opts{hapls}{$id}{phase_mismatch} ? $$opts{hapls}{$id}{phase_mismatch} : 0;
+            for my $key qw(hom_RR_ het_RA_ hom_AA_ het_AA_)
+            { 
+                if ( !exists($$opts{hapls}{$id}{$key.'gtype_mismatch'}) ) { $$opts{hapls}{$id}{$key.'gtype_mismatch'}=0; }
+                $$opts{hapls}{$id}{total_gtype_mismatch} += $$opts{hapls}{$id}{$key.'gtype_mismatch'};
+
+                if ( !exists($$opts{hapls}{$id}{$key.'gtype_match'}) ) { $$opts{hapls}{$id}{$key.'gtype_match'}=0; }
+                $$opts{hapls}{$id}{total_gtype_match} += $$opts{hapls}{$id}{$key.'gtype_match'};
+
+                if ( !exists($$opts{hapls}{$id}{$key.'gtype_lost'}) ) { $$opts{hapls}{$id}{$key.'gtype_lost'}=0; }
+                $$opts{hapls}{$id}{total_gtype_lost} += $$opts{hapls}{$id}{$key.'gtype_lost'};
+            }
+            for my $key qw(het_RA_ het_AA_)
+            { 
+                if ( !exists($$opts{hapls}{$id}{$key.'phase_match'}) ) { $$opts{hapls}{$id}{$key.'phase_match'}=0; }
+                $$opts{hapls}{$id}{total_phase_match} += $$opts{hapls}{$id}{$key.'phase_match'};
+
+                if ( !exists($$opts{hapls}{$id}{$key.'phase_mismatch'}) ) { $$opts{hapls}{$id}{$key.'phase_mismatch'}=0; }
+                $$opts{hapls}{$id}{total_phase_mismatch} += $$opts{hapls}{$id}{$key.'phase_mismatch'};
+
+                if ( !exists($$opts{hapls}{$id}{$key.'phase_lost'}) ) { $$opts{hapls}{$id}{$key.'phase_lost'}=0; }
+                $$opts{hapls}{$id}{total_phase_lost} += $$opts{hapls}{$id}{$key.'phase_lost'};
+            }
+            print  "$id:\n";
+            printf "\tMismatches: %d %d %d %d %d \t (total, hom_RR, hom_AA, het_RA, het_AA)\n",
+                $$opts{hapls}{$id}{total_gtype_mismatch}, $$opts{hapls}{$id}{hom_RR_gtype_mismatch}, $$opts{hapls}{$id}{hom_AA_gtype_mismatch}, $$opts{hapls}{$id}{het_RA_gtype_mismatch}, $$opts{hapls}{$id}{het_AA_gtype_mismatch};
+
+            printf "\tGtypes lost:  %d %d %d %d %d \t (total, hom_RR, hom_AA, het_RA, het_AA)\n",
+                $$opts{hapls}{$id}{total_gtype_lost}, $$opts{hapls}{$id}{hom_RR_gtype_lost}, $$opts{hapls}{$id}{hom_AA_gtype_lost}, $$opts{hapls}{$id}{het_RA_gtype_lost}, $$opts{hapls}{$id}{het_AA_gtype_lost};
+            if ( !exists($$opts{hapls}{$id}{gtype_gained}) ) { $$opts{hapls}{$id}{gtype_gained}=0; }
+            if ( !exists($$opts{hapls}{$id}{phased_gtype_gained}) ) { $$opts{hapls}{$id}{phased_gtype_gained}=0; }
+            printf "\tGtypes gained:  %d %d \t (total, phased)\n", $$opts{hapls}{$id}{gtype_gained}, $$opts{hapls}{$id}{phased_gtype_gained};
+
+            printf "\tPhase lost:  %d %d %d \t (total, het_RA, het_AA)\n",
+                $$opts{hapls}{$id}{total_phase_lost}, $$opts{hapls}{$id}{het_RA_phase_lost}, $$opts{hapls}{$id}{het_AA_phase_lost};
+            if ( !exists($$opts{hapls}{$id}{phase_gained}) ) { $$opts{hapls}{$id}{phase_gained}=0; }
+            printf "\tPhase gained:  %d\n", $$opts{hapls}{$id}{phase_gained};
+
+            printf "\tMatching sites:  %d %d %d %d %d \t (total, hom_RR, hom_AA, het_RA, het_AA)\n",
+                $$opts{hapls}{$id}{total_gtype_match}, $$opts{hapls}{$id}{hom_RR_gtype_match}, $$opts{hapls}{$id}{hom_AA_gtype_match}, 
+                $$opts{hapls}{$id}{het_RA_gtype_match}, $$opts{hapls}{$id}{het_AA_gtype_match};
+
+            printf "\t\tPhased matches:    %d %d %d \t (total, het_RA, het_AA)\n",
+                $$opts{hapls}{$id}{total_phase_match}, $$opts{hapls}{$id}{het_RA_phase_match}, $$opts{hapls}{$id}{het_AA_phase_match};
+
+            printf "\t\tMisphased matches: %d %d %d \t (total, het_RA, het_AA)\n",
+                $$opts{hapls}{$id}{total_phase_mismatch}, $$opts{hapls}{$id}{het_RA_phase_mismatch}, $$opts{hapls}{$id}{het_AA_phase_mismatch};
+        }
+        print 
+            "\n",
+            "# Haplotype comparison. Use `grep ^#HC | cut -f 2-` to extract this part. The columns are:\n",
+            "#      1     .. Sample\n",
+            "#      2-6   .. Mismatches: total hom_RR hom_AA het_RA het_AA \n",
+            "#      7-9   .. Gtype lost: total het_RA het_AA \n",
+            "#      10    .. Gtype gained\n",
+            "#      11-13 .. Phase lost: total het_RA het_AA \n",
+            "#      14    .. Phase gained\n",
+            "#      15-19 .. Matching sites: total hom_RR hom_AA het_RA het_AA \n",
+            "#      20-22 .. Phased matches: total het_RA het_AA \n",
+            "#      23-25 .. Misphased matches: total het_RA het_AA \n";
+
+        for my $id (keys %{$$opts{hapls}})
+        {
+            print "#HC\t$id";
+            for my $key qw(total_ hom_RR_ hom_AA_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'gtype_mismatch'}; }
+            for my $key qw(total_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'gtype_lost'}; }
+            print "\t",$$opts{hapls}{$id}{gtype_gained};
+            for my $key qw(total_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'phase_lost'}; }
+            print "\t",$$opts{hapls}{$id}{phase_gained};
+            for my $key qw(total_ hom_RR_ hom_AA_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'gtype_match'}; }
+            for my $key qw(total_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'phase_match'}; }
+            for my $key qw(total_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'phase_mismatch'}; }
+            print "\n";
         }
     }
 }
 
-sub do_chrm_stats
+sub do_region_stats
 {
     my ($opts,$vcfs) = @_;
 
@@ -228,6 +309,7 @@ sub do_chrm_stats
             my $present = 0;
             for (my $i=0; $i<@$grp; $i++)
             {
+                if ( ! defined $$vcfs[$i] ) { last; }
                 if ( $$grp[$i]{vcf} ne $$vcfs[$i] ) { last; }
                 $present++;
             }
@@ -252,57 +334,110 @@ sub cmp_haplotypes
         $$grp_rec{rec} = $$grp_rec{vcf}->next_data_hash($$grp_rec{line});
     }
 
+    if ( $$grp[0]{vcf}{vcf_compare_ID} != 0 ) { error("FIXME: different order than expected: $$grp[0]{vcf}{vcf_compare_ID}\n"); }
+    my $ref = $$grp[0]{rec}{REF};
+
     for my $id (keys %{$$grp[0]{rec}{gtypes}})
     {
-        my ($als1,$seps1,$is_phased1,$is_empty1) = $$grp[0]{vcf}->parse_haplotype($$grp[0]{rec},$id);
-        if ( $is_empty1 ) 
-        {
-            $$hapls{$id}{not_avail}++;
-            next;
-        }
-        my @sorted_als1 = sort @$als1;
-        my $nploid = scalar @sorted_als1;
+        my (@sorted_als1,$nploid,$type);
 
-        my $ncmp  = 1;
-        my $match = 1;
-        my $phase = $is_phased1 ? 1 : -1;  # 1 .. they are phased and the phase agrees; 0 phased and the phase disagrees; -1 not phased
+        my ($als1,$seps1,$is_phased1,$is_empty1) = $$grp[0]{vcf}->parse_haplotype($$grp[0]{rec},$id);
+        if ( !$is_empty1 ) 
+        {
+            @sorted_als1 = sort @$als1;
+            $nploid = scalar @sorted_als1;
+
+            # Determine SNP type: hom(RR),het(RA),hom(AA) or het(AA)
+            if ( $$als1[0] eq $$als1[1] )
+            {
+                if ( $$als1[0] eq $ref ) { $type = 'hom_RR_'; }
+                else { $type = 'hom_AA_'; }
+            }
+            else
+            {
+                if ( $$als1[0] eq $ref or $$als1[1] eq $ref ) { $type = 'het_RA_'; }
+                else { $type = 'het_AA_'; }
+            }
+        }
+
+        # There may be multiple files entering the comparison. Report match only if all are present and all match. 
+        #   Report mismatch if all are present and they do not match. Otherwise report lost/gained event.
+        my $phase_match  = 1;
+        my $gtype_match  = 1;
+        my $gtype_lost   = 0;
+        my $gtype_gained = 0;
+        my $phase_lost   = 0;
+        my $phase_gained = 0;
         for (my $i=1; $i<$nrecs; $i++)
         {
             my ($als2,$seps2,$is_phased2,$is_empty2) = $$grp[$i]{vcf}->parse_haplotype($$grp[$i]{rec},$id);
-            if ( $is_empty2 ) { $match = 0; last; }
-            if ( !$is_phased2 ) { $phase=-1; }
+            if ( $is_empty1 ) 
+            { 
+                $gtype_match = 0;
+                if ( !$is_empty2 ) { $gtype_gained = 1; }
+                if ( !$is_phased1 && $is_phased2 ) { $phase_gained = 1; }
+                last; 
+            }
+            elsif ( $is_empty2 ) 
+            { 
+                $gtype_match = 0;
+                $gtype_lost = 1;
+                last; 
+            }
+            if ( $is_phased1 ) 
+            { 
+                if ( !$is_phased2 ) { $phase_lost = 1; }
+            }
+            elsif ( $is_phased2 )
+            {
+                $phase_gained = 1;
+            }
             
-            # Evaluate different number of alleles as mismatch (C vs C/C)
-            if ( scalar @$als1 != scalar @$als2 ) { $match=0; $ncmp++; next; }
+            # Consider different number of alleles as mismatch (C vs C/C) 
+            if ( scalar @$als1 != scalar @$als2 ) 
+            { 
+                $gtype_match = 0; 
+                last; 
+            }
             
             my @sorted_als2 = sort @$als2;
             for (my $ial=0; $ial<$nploid; $ial++)
             {
-                if ( $sorted_als1[$ial] ne $sorted_als2[$ial] ) { $match=0; last; }
+                if ( $sorted_als1[$ial] ne $sorted_als2[$ial] ) 
+                {
+                    $gtype_match  = 0;
+                    last;
+                }
             }
 
+            if ( !$gtype_match ) { last; }
+
             # They match, check also if their phase agrees
-            if ( $phase==1 && $is_phased1 && $is_phased2 )
+            if ( $phase_match && $is_phased1 && $is_phased2 )
             {
                 for (my $ial=0; $ial<$nploid; $ial++)
                 {
-                    if ( $$als1[$ial] ne $$als2[$ial] ) { $phase=0; last; }
+                    if ( $$als1[$ial] ne $$als2[$ial] ) { $phase_match=0; last; }
                 }
             }
-            $ncmp++;
         }
-        if ( $ncmp!=$nrecs )
-        {
-            $$hapls{$id}{not_avail}++;
-            next;
-        }
-        if ($match) 
+        if ( $gtype_gained ) 
         { 
-            $$hapls{$id}{match}++; 
-            if ( $phase==1 ) { $$hapls{$id}{phase_match}++ }
-            elsif ( $phase==0 ) { $$hapls{$id}{phase_mismatch}++ }
+            $$hapls{$id}{gtype_gained}++; 
+            if ( $phase_gained ) { $$hapls{$id}{phased_gtype_gained}++ }
+            next; 
         }
-        $$hapls{$id}{ncmp}++;
+        if ( $gtype_lost ) { $$hapls{$id}{$type.'gtype_lost'}++; next; }
+
+        if ( $phase_gained ) { $$hapls{$id}{phase_gained}++ }
+        elsif ( $phase_lost ) { $$hapls{$id}{$type.'phase_lost'}++ }
+
+        if ( $gtype_match ) 
+        { 
+            $$hapls{$id}{$type.'gtype_match'}++;
+            if ( $phase_match ) { $$hapls{$id}{$type.'phase_match'}++ }
+        }
+        elsif ( defined $type ) { $$hapls{$id}{$type.'gtype_mismatch'}++ }
     }
     $$opts{hapls_ncmp}++;
 }

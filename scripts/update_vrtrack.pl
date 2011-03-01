@@ -31,7 +31,7 @@ use VRTrack::Individual;
 use VRTrack::Multiplex_pool;
 use VRTrack::Library_Multiplex_pool;
 
-my ($projfile, $spp, $update_files, $samplemap, $help, $database,$create_individuals, $no_fastq);
+my ($projfile, $spp, $update_files, $samplemap, $help, $database,$create_individuals, $no_fastq, $no_bam);
 
 GetOptions(
     'studies|p|projects=s'  =>  \$projfile,
@@ -41,6 +41,7 @@ GetOptions(
     'c|create_individuals'          =>  \$create_individuals,
     'm|sample_map=s'=>  \$samplemap,
     'no_fastq'      =>  \$no_fastq,
+    'no_bam'        =>  \$no_bam,
     'h|help'        =>  \$help,
     );
 
@@ -100,6 +101,12 @@ Supplying --no_fastq prevents the check of MPSA, which is useful if you know
 your project is bam only and don't wish to accidentally pull in fastq.
 
 USAGE
+
+if( $no_bam && $no_fastq )
+{
+    print qq[You cant select no bam and no fastq!\n];
+    exit;
+}
 
 print "Database: $db\n";
 my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => $db,
@@ -424,31 +431,34 @@ foreach my $pname (keys %projects){
                         # either cancelled (and will never have files), or have
                         # not been archived yet, so will get added later
                         ########################################################
+                        next if $lane->is_cancelled;
         
                         my $tag_id=$lib->tag_id();
 
-                        # Check for BAM first, then fastq
                         my $files;
-                        eval {
-                            $files = $lane->bam;
-                        };
-                        if ($@){
-                            print "Error getting bam from ",$lane->name," : ",$@,".  Skipping\n";
-                            next;
-                        }
-                        else {
-                            # have the bam, but if this is multiplexed, we'll have them all, so filter on the tag
-                            # should maybe do this in Wrapper::iRODS?
-                            if ($is_multiplexed_seq_request){
-                                #print $lane->name, " $tag_id files:\n\t";
-                                #print $_->name."\n\t" foreach @$files;
+                        unless( $no_bam )
+                        {
+                            # Check for BAM first, then fastq
+                            eval {
+                                $files = $lane->bam;
+                            };
+                            if ($@){
+                                print "Error getting bam from ",$lane->name," : ",$@,".  Skipping\n";
+                                next;
+                            }
+                            else {
+                                # have the bam, but if this is multiplexed, we'll have them all, so filter on the tag
+                                # should maybe do this in Wrapper::iRODS?
+                                if ($is_multiplexed_seq_request){
+                                    #print $lane->name, " $tag_id files:\n\t";
+                                    #print $_->name."\n\t" foreach @$files;
 
-                                @$files = grep($_->name =~ /#$tag_id\.bam$/, @$files);
+                                    @$files = grep($_->name =~ /#$tag_id\.bam$/, @$files);
+                                }
                             }
                         }
 
-
-                        unless (@$files){   # didn't find bam
+                        if( !$files || scalar( @$files )==0 ){   # didn't find bam
                             unless ($no_fastq){ # don't want fastq
                                 eval {
                                     $files = $lane->fastq;
@@ -459,8 +469,8 @@ foreach my $pname (keys %projects){
                                 }
                             }
                         }
-
-                        unless(@$files){
+                        
+                        if( !$files || scalar( @$files )==0 ){
                             print $lane->name, " has no files\n";
                             next;
                         }

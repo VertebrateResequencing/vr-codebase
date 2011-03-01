@@ -45,7 +45,7 @@ use VRTrack::Lane;
 use VRTrack::File;
 use VRTrack::Core_obj;
 
-use constant SCHEMA_VERSION => '12';
+use constant SCHEMA_VERSION => '13';
 
 our $DEFAULT_PORT = 3306;
 
@@ -803,7 +803,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (12);
+insert into schema_version(schema_version) values (13);
 
 --
 -- Table structure for table `assembly`
@@ -815,6 +815,19 @@ CREATE TABLE `assembly` (
   `name` varchar(255) NOT NULL,
    `reference_size` integer,
   PRIMARY KEY  (`assembly_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `exome_design`
+--
+
+DROP TABLE IF EXISTS `exome_design`;
+CREATE TABLE `exome_design` (
+  `exome_design_id` smallint(5) unsigned NOT NULL auto_increment,
+  `name` varchar(255) NOT NULL,
+  `bait_bases` bigint(20) unsigned default NULL,
+  `target_bases` bigint(20) unsigned default NULL,
+  PRIMARY KEY (`exome_design_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 --
@@ -1055,6 +1068,27 @@ CREATE TABLE `mapstats` (
   `gt_expected` varchar(40) default NULL,
   `gt_found` varchar(40) default NULL,
   `gt_ratio` float unsigned default NULL,
+  `bait_near_bases_mapped` bigint(20) unsigned default NULL,
+  `target_near_bases_mapped` bigint(20) unsigned default NULL,
+  `bait_bases_mapped` bigint(20) unsigned default NULL,
+  `mean_bait_coverage` float unsigned default NULL,
+  `bait_coverage_sd` float unsigned default NULL,
+  `off_bait_bases` bigint(20) unsigned default NULL,
+  `reads_on_bait` bigint(20) unsigned default NULL,
+  `reads_on_bait_near` bigint(20) unsigned default NULL,
+  `reads_on_target` bigint(20) unsigned default NULL,
+  `reads_on_target_near` bigint(20) unsigned default NULL,
+  `target_bases_mapped` bigint(20) unsigned default NULL,
+  `mean_target_coverage` float unsigned default NULL,
+  `target_coverage_sd` float unsigned default NULL,
+  `target_bases_1X` float unsigned default NULL,
+  `target_bases_2X` float unsigned default NULL,
+  `target_bases_5X` float unsigned default NULL,
+  `target_bases_10X` float unsigned default NULL,
+  `target_bases_20X` float unsigned default NULL,
+  `target_bases_50X` float unsigned default NULL,
+  `target_bases_100X` float unsigned default NULL,
+  `exome_design_id` smallint(5) unsigned default NULL,
   `note_id` mediumint(8) unsigned default NULL,
   `changed` datetime NOT NULL,
   `latest` tinyint(1) default '0',

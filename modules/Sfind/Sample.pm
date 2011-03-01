@@ -109,7 +109,7 @@ sub library_requests {
 sub library_request_ids {
     my ($self) = @_;
     unless ($self->{'library_request_ids'}){
-	my $sql = qq[select request_id as lib_request_id from requests_new where type like '%library creation%' and sample_id=? and study_id=?];
+	my $sql = qq[select request_id as lib_request_id from requests_new where (type like '%library creation' or type like '%library preparation') and sample_id=? and study_id=?];
 	my @library_requests;
 	my $sth = $self->{_dbh}->prepare($sql);
 	$sth->execute($self->id, $self->study_id);

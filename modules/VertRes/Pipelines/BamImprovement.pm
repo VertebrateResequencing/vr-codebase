@@ -50,6 +50,9 @@ header_changes => {
     SQ => { from_dict => '/path/to/new/dictfile.dict' }
 }
 
+# qc => 1 can be supplied outside the data section to only improve lanes which 
+# have passed qc
+
 # run the pipeline:
 run-pipeline -c bamimprovement.pipeline -s 30
 

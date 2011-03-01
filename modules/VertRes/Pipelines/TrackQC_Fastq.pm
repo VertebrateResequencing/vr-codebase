@@ -449,7 +449,7 @@ use Utils;
 
 Utils::CMD(q[zcat ${name}_$i.fastq.gz | awk '{print ">"substr(\$1,2,length(\$1)); getline; print; getline; getline}' > ${name}_$i.fa ]);
 Utils::CMD(q[$$self{blat} adapters.fa ${name}_$i.fa ${name}_$i.blat -out=blast8]);
-Utils::CMD(q[cat ${name}_$i.blat | awk '{if (\$2 ~ /^ADAPTER/) print}' | sort -u | wc -l > ${name}_$i.nadapters]);
+Utils::CMD(q[cat ${name}_$i.blat | awk '{if (\$2 ~ /^ADAPTER/) print \$1}' | sort -u | wc -l > ${name}_$i.nadapters]);
 unlink("${name}_$i.fa", "${name}_$i.blat");
 ];
         close($fh);
@@ -623,8 +623,7 @@ sub stats_and_graphs_provides
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @provides = ("$sample_dir/chrom-distrib.png","$sample_dir/gc-content.png",
-                        "$sample_dir/gc-depth.png","$sample_dir/fastqcheck.png");
+    my @provides = ("$sample_dir/_graphs.done");
     return \@provides;
 }
 
@@ -742,11 +741,6 @@ sub run_graphs
                 });
     }
 
-    my $stats = do $dump_file;
-    if ( $total_reads != $$stats{reads_total} )
-    {
-        $self->throw("Sanity check failed, different number of reads in fastq files and $bam_file ($total_reads .. $$stats{reads_total})\n");
-    }
 }
 
 
