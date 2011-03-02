@@ -209,6 +209,12 @@ sub report_stats
         print "\n";
     }
 
+    print "\n";
+    printf "Number of REF matches:\t%d\n", exists($$opts{ref_match}) ? $$opts{ref_match} : 0;
+    printf "Number of ALT matches:\t%d\n", exists($$opts{alt_match}) ? $$opts{alt_match} : 0;
+    printf "Number of REF mismatches:\t%d\n", exists($$opts{ref_mismatch}) ? $$opts{ref_mismatch} : 0;
+    printf "Number of ALT mismatches:\t%d\n", exists($$opts{alt_mismatch}) ? $$opts{alt_mismatch} : 0;
+
     my $out;
     for my $vcf (@$vcfs)
     {
@@ -348,6 +354,11 @@ sub do_region_stats
         my $key = join(' ',sort(keys %files));
         $$match{$key}++;
 
+        if ( scalar keys %files == $nvcfs )
+        {
+            ref_alt_stats($opts,$grp);
+        }
+
         if ( $$opts{cmp_haplotypes} )
         {
             # Check that in the group there is one record for each file
@@ -364,6 +375,35 @@ sub do_region_stats
             }
         }
     }
+}
+
+sub ref_alt_stats
+{
+    my ($opts,$grp) = @_;
+
+    my $ref = $$grp[0]{ref};
+    my $alt = join(',',sort split(/,/,$$grp[0]{alt}));
+
+    my $alt_mismatch = 0;
+    for (my $i=1; $i<@$grp; $i++)
+    {
+        my $rec = $$grp[$i];
+
+        if ( $ref ne $$rec{ref} ) 
+        { 
+            $$opts{ref_mismatch}++;
+            return; 
+        }
+
+        my $tmp = join(',',sort split(/,/,$$rec{alt}));
+        if ( $alt ne $tmp ) 
+        { 
+            $alt_mismatch = 1;
+        }
+    }
+    if ( $alt_mismatch ) { $$opts{alt_mismatch}++; }
+    else { $$opts{alt_match}++; }
+    $$opts{ref_match}++;
 }
 
 
