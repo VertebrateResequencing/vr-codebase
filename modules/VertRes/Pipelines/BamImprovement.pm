@@ -1263,7 +1263,7 @@ Args    : lane path
 
 sub index_provides {
     my ($self, $lane_path) = @_;
-    my @provideses = @{$self->index_requires($lane_path)};
+    my @provides = @{$self->index_requires($lane_path)};
 
     if ($self->{do_index}){
         for my $i (0..$#provides) {
