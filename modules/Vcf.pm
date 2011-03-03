@@ -1127,11 +1127,12 @@ sub parse_alleles
 
 =head2 parse_haplotype
 
-    About   : Similar to parse_alleles, supports also multiploid VCFs.
+    About   : Similar to parse_alleles, supports also multiploid VCFs. 
     Usage   : my $x = $vcf->next_data_hash(); my ($alleles,$seps,$is_phased,$is_empty) = $vcf->parse_haplotype($x,'NA00001');
     Args    : VCF data line parsed by next_data_hash
             : The genotype column name
-    Returns : Two array refs and two boolean flags: List of alleles, list of separators, and is_phased/empty flags.
+    Returns : Two array refs and two boolean flags: List of alleles, list of separators, and is_phased/empty flags. The values
+                can be cashed and must be therefore considered read only!
 
 =cut
 

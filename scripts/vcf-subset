@@ -139,17 +139,19 @@ sub vcf_subset
             my ($alleles,$seps,$is_phased,$is_empty) = $vcf->parse_haplotype($x,$col);
             my $sample_has_call = 0;
             my $sample_has_nonref = 0;
+            my @out_alleles;
 
             for (my $i=0; $i<@$alleles; $i++)
             {
                 my ($type,$len,$ht) = $vcf->event_type($ref,$$alleles[$i]);
+                $out_alleles[$i] = $$alleles[$i];
 
                 # Exclude unwanted variant types if requested
                 if ( exists($$opts{types}) )
                 {
                     if ( !exists($$opts{types}{$type}) )
                     {
-                        $$alleles[$i] = $$opts{replace_with_ref} ? $ref : '.';
+                        $out_alleles[$i] = $$opts{replace_with_ref} ? $ref : '.';
                         next;
                     }
                     $sample_has_call = 1;
@@ -167,18 +169,18 @@ sub vcf_subset
             {
                 if ( $$opts{replace_with_ref} )
                 {
-                    for (my $i=0; $i<@$alleles; $i++) { $$alleles[$i] = $ref; }
+                    for (my $i=0; $i<@$alleles; $i++) { $out_alleles[$i] = $ref; }
                 }
                 else
                 {
-                    for (my $i=0; $i<@$alleles; $i++) { $$alleles[$i] = '.'; }
+                    for (my $i=0; $i<@$alleles; $i++) { $out_alleles[$i] = '.'; }
                 }
             }
             else
             {
                 $site_has_call = 1;
             }
-            $$x{gtypes}{$col}{GT} = $vcf->format_haplotype($alleles,$seps);
+            $$x{gtypes}{$col}{GT} = $vcf->format_haplotype(\@out_alleles,$seps);
         }
 
         if ( !$site_has_call && !$$opts{keep_uncalled} ) { next; }
