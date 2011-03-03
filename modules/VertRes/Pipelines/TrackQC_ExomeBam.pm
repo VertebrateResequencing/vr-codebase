@@ -437,7 +437,6 @@ sub update_db {
     $mapping->target_bases_20X($stats->{target_bases_20X});
     $mapping->target_bases_50X($stats->{target_bases_50X});
     $mapping->target_bases_100X($stats->{target_bases_100X});
-    $mapping->update;
 
     # update the exome_design
     my $exome_design = $mapping->exome_design($self->{exome_design});
@@ -445,6 +444,8 @@ sub update_db {
     $exome_design->bait_bases($stats->{bait_bases});
     $exome_design->target_bases($stats->{target_bases});
     $exome_design->update();
+    $mapping->exome_design_id($exome_design->id());
+    $mapping->update;
 
     # If there is no mapstats present, the mapper and assembly must be filled in.
     #$self->_update_mapper_and_assembly($sample_dir, $mapping) unless $has_mapstats;
