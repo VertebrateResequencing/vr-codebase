@@ -211,7 +211,8 @@ sub VertRes::Pipelines::TrackQC_ExomeBam::new {
 
     # try to figure out the exome_coords file from the exome_design
     if ( !$self->{exome_coords} ) {
-        my %known_designs = ('uk10k.20110120', '/lustre/scratch103/sanger/mh12/Exome_qc_files/uk10k.qc_dump.20110120');
+        my %known_designs = ('uk10k.20110120', '/lustre/scratch105/projects/g1k/ref/Exomes/uk10k.qc_dump.20110120',
+                             'Mm37.20110303', '/lustre/scratch102/projects/mouse/ref/Exomes/Mm37.qc_dump.20110303');
 
         if ($known_designs{$self->{exome_design}}) {
             $self->{exome_coords} = $known_designs{$self->{exome_design}};
