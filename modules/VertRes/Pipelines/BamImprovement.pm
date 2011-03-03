@@ -42,6 +42,9 @@ data => {
 # in the data section you can also supply the tmp_dir option to specify the
 # root that will be used to create tmp directories
 
+# do_index => 1 can be supplied in the data section to run samtools index
+# on the final bams made by the pipeline
+
 # qc => 1 can be supplied outside the data section to only improve lanes which 
 # have passed qc
 
@@ -119,6 +122,10 @@ our $actions = [ { name     => 'realign',
                    action   => \&extract_intervals,
                    requires => \&extract_intervals_requires, 
                    provides => \&extract_intervals_provides },
+                 { name     => 'index',
+                   action   => \&index,
+                   requires => \&index_requires, 
+                   provides => \&index_provides },
                  { name     => 'update_db',
                    action   => \&update_db,
                    requires => \&update_db_requires, 
@@ -134,6 +141,7 @@ our %options = (slx_mapper => 'bwa',
                 indel_intervals => '',
                 snp_sites => '',
                 calmde => 0,
+                do_index => 0,
                 do_cleanup => 1);
 
 =head2 new
@@ -190,6 +198,9 @@ our %options = (slx_mapper => 'bwa',
                                      of the form one interval per line:
                                      chromosome start end
                                      fields separated with a tab)
+
+           do_index => boolean (default false; if true, the final bams made by
+                             the pipeline will be indexed with samtools index)
 
            other optional args as per VertRes::Pipeline
 
@@ -267,8 +278,6 @@ sub new {
     if ($self->{extract_intervals} && !($self->{extract_intervals}->{intervals_file})) {
         $self->throw("extract_intervals must have intervals_file supplied, can't continue");
     }
-
-
     
     # convert the snp_sites option to a simple string suitable for use by GATK,
     # and an array for checking the files exist
@@ -1083,6 +1092,94 @@ sub extract_intervals {
 }
 
 
+=head2 index_requires
+
+Title   : index_requires
+Usage   : my $required_files = $obj->index_requires('/path/to/lane');
+Function: Find out what files the index action needs before it will run.
+Returns : array ref of file names
+Args    : lane path
+
+=cut
+
+sub index_requires {
+    my ($self, $lane_path) = @_;
+    my @requires = @{$self->extract_intervals_provides($lane_path)};
+    @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
+    return \@requires;
+}
+
+=head2 index_provides
+
+Title   : index_provides
+Usage   : my $provided_files = $obj->index_provides('/path/to/lane');
+Function: Find out what files the index action generates on success.
+Returns : array ref of file names
+Args    : lane path
+
+=cut
+
+sub index_provides {
+    my ($self, $lane_path) = @_;
+    my @requires = @{$self->index_requires($lane_path)};
+
+    if ($self->{do_index}){
+        for my $i (0..$#requires) {
+            $requires[$i] = $requires[$i] . '.bai';
+        }
+    }
+
+    @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
+    return \@requires;
+}
+
+=head2 index
+
+Title   : index
+Usage   : $obj->index('/path/to/lane', 'lock_filename');
+Function: Extracts intervals at the library level, post markdup.
+Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+Args    : lane path, name of lock file to use
+
+=cut
+
+sub index {
+    my ($self, $lane_path, $action_lock) = @_;
+
+    foreach my $in_bam (@{$self->{in_bams}}) {
+        my $base = basename($in_bam);
+        my (undef, undef, undef, undef, $final_bam) = $self->_bam_name_conversion($in_bam);
+        my $bam_index = "$final_bam.bai";
+        next if -s $bam_index;
+
+        # run indexing in an LSF call to a temp script
+        my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."index_$base.pl");
+        
+        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+
+        print $scriptfh qq[
+use strict;
+use warnings;
+use VertRes::Wrapper::samtools;
+
+my \$samtools = VertRes::Wrapper::samtools->new();
+\$samtools->index(qq{$final_bam}, qq{$bam_index});
+\$samtools->run_status >= 1 || die "Failed to create $bam_index";
+];
+
+        close $scriptfh;
+        my $job_name =  $self->{prefix}.'index_'.$base;
+        $self->archive_bsub_files($lane_path, $job_name);
+
+        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+    }
+
+    # we've only submitted to LSF, so it won't have finished; we always return
+    # that we didn't complete
+    return $self->{No};
+}
+
+
 =head2 update_db_requires
 
  Title   : update_db_requires
@@ -1095,7 +1192,7 @@ sub extract_intervals {
 
 sub update_db_requires {
     my ($self, $lane_path) = @_;
-    return $self->extract_intervals_provides($lane_path);  # or extract_intervals done...
+    return $self->index_provides($lane_path);
 }
 
 =head2 update_db_provides
@@ -1200,7 +1297,6 @@ sub update_db {
     return $self->{Yes};
 }
 
-
 =head2 cleanup_requires
 
  Title   : cleanup_requires
@@ -1253,7 +1349,7 @@ sub cleanup {
     foreach my $in_bam (@{$self->{in_bams}}) {
         my $base = basename($in_bam);
         
-        foreach my $action ('realign', 'sort', 'recalibrate', 'statistics') {
+        foreach my $action ('realign', 'sort', 'recalibrate', 'calmd', 'extract_intervals', 'index', 'statistics') {
             foreach my $suffix (qw(o e pl)) {
                 my $job_name = $prefix.$action.'_'.$base;
                 if ($suffix eq 'o') {
@@ -1352,7 +1448,7 @@ sub is_finished {
 
         # for now, don't delete the previous bam (we might want it?),
     }
-    elsif ($action->{name} eq 'cleanup' || $action->{name} eq 'update_db_stats') {
+    elsif ($action->{name} eq 'cleanup' || $action->{name} eq 'update_db') {
         return $self->{No};
     }
     
