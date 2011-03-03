@@ -45,6 +45,14 @@ data => {
 # do_index => 1 can be supplied in the data section to run samtools index
 # on the final bams made by the pipeline
 
+# Changes to the header can be made by setting the header_changes option in
+# the data => {} section of the conf file. This takes the same arguments as the 
+# VertRes::Utils::Sam->change_header_lines() method, e.g.:
+header_changes => {
+    PG => { remove_unique => 1 },
+    SQ => { from_dict => '/path/to/new/dictfile.dict' }
+}
+
 # qc => 1 can be supplied outside the data section to only improve lanes which 
 # have passed qc
 
@@ -114,6 +122,10 @@ our $actions = [ { name     => 'realign',
                    action   => \&calmd,
                    requires => \&calmd_requires, 
                    provides => \&calmd_provides },
+                 { name     => 'rewrite_header',
+                   action   => \&rewrite_header,
+                   requires => \&rewrite_header_requires, 
+                   provides => \&rewrite_header_provides },
                  { name     => 'statistics',
                    action   => \&statistics,
                    requires => \&statistics_requires, 
@@ -331,6 +343,10 @@ sub new {
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     
+    if (exists $self->{header_changes}->{dict}) {
+        $self->throw("Supplied dict file does not exist!\n") unless (-s $self->{header_changes}->{dict});
+    }
+    
     return $self;
 }
 
@@ -492,7 +508,7 @@ if (-s \$working_bam) {
         
         # mark that we've completed
         open(my \$dfh, '>', \$done_file) || die "Could not write to \$done_file";
-        print \$dfh "done\n";
+        print \$dfh "done\\n";
         close(\$dfh);
     }
     else {
@@ -633,7 +649,7 @@ if (-s \$working_bam) {
         
         # mark that we've completed
         open(my \$dfh, '>', \$done_file) || die "Could not write to \$done_file";
-        print \$dfh "done\n";
+        print \$dfh "done\\n";
         close(\$dfh);
     }
     else {
@@ -782,7 +798,7 @@ unless (-s \$recal_bam) {
     
     # mark that we've completed
     open(my \$dfh, '>', \$done_file) || die "Could not write to \$done_file";
-    print \$dfh "done\n";
+    print \$dfh "done\\n";
     close(\$dfh);
 }
 
@@ -904,6 +920,132 @@ exit;
     return $self->{No};
 }
 
+=head2 rewrite_header_requires
+
+ Title   : rewrite_header_requires
+ Usage   : my $required_files = $obj->rewrite_header_requires('/path/to/lane');
+ Function: Find out what files the rewrite_header action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub rewrite_header_requires {
+    my ($self, $lane_path) = @_;
+    
+    my @requires = @{$self->calmd_provides($lane_path)};
+    
+    @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
+    
+    return \@requires;
+}
+
+=head2 rewrite_header_provides
+
+ Title   : rewrite_header_provides
+ Usage   : my $provided_files = $obj->rewrite_header_provides('/path/to/lane');
+ Function: Find out what files the rewrite_header action generates on
+           success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub rewrite_header_provides {
+    my ($self, $lane_path) = @_;
+    
+    my @provides = @{$self->calmd_provides($lane_path)};
+    
+    @provides || $self->throw("Something went wrong; we don't seem to provide any bams!");
+
+    if ( $self->{header_changes} ) {
+        foreach my $in_bam (@{$self->{in_bams}}) {
+            my $base = basename($in_bam);
+            my $done_file = $self->{fsu}->catfile($lane_path, '.rewrite_header_complete_'.$base);
+            push @provides, $done_file;
+        }
+    }
+    
+    return \@provides;
+}
+
+=head2 rewrite_header
+
+ Title   : rewrite_header
+ Usage   : $obj->rewrite_header('/path/to/lane', 'lock_filename');
+ Function: Rewrites the BAM headers by removing lane specific and random values 
+           introduced by GATK (however, random values should no longer be produced
+           thanks to an udpate to GATK). Also reads from a dict file to replace the 
+           @SQ lines if necessary.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub rewrite_header {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    return $self->{Yes} unless $self->{header_changes};
+    
+    my $orig_bsub_opts = $self->{bsub_opts};
+    $self->{bsub_opts} = '-q normal -M1000000 -R \'select[mem>1000] rusage[mem=1000]\'';
+    
+    my $job_submitted = 0;
+    foreach my $in_bam (@{$self->{in_bams}}) {
+        my $base = basename($in_bam);
+        my (undef, undef, undef, $bam) = $self->_bam_name_conversion($in_bam);
+        
+        my $done_file = $self->{fsu}->catfile($lane_path, '.rewrite_header_complete_'.$base);
+        
+        # If a header rewrite is not required, mark as complete and move on to the next bam
+        my $su = VertRes::Utils::Sam->new();
+        if ( ! $su->header_rewrite_required( $bam, %{$self->{header_changes}} ) ) {
+            open(my $dfh, '>', $done_file) || $self->throw("Could not write to $done_file");
+            print $dfh "done\n";
+            close($dfh);
+            next;
+        }
+        
+        # If a header rewrite is required, run change_header_lines in an LSF call to a temp script
+        my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."rewrite_header_$base.pl");
+        
+        my $d = Data::Dumper->new([$self->{header_changes}], ["header_changes"]);
+        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+        print $scriptfh qq[
+use strict;
+use VertRes::Utils::Sam;
+
+my \$bam = '$bam';
+my \$done_file = '$done_file';
+my ];
+        print $scriptfh $d->Dump;
+        print $scriptfh qq[
+
+# run change header
+my \$su = VertRes::Utils::Sam->new();
+\$su->change_header_lines( \$bam, \%{\$header_changes} ) || die("reheader of \$bam failed");
+
+# mark that we've completed
+open(my \$dfh, '>', \$done_file) || die "Could not write to \$done_file";
+print \$dfh "done\\n";
+close(\$dfh);
+
+exit;
+        ];
+        close $scriptfh;
+        
+        my $job_name = $self->{prefix}.'rewrite_header_'.$base;
+        $self->archive_bsub_files($lane_path, $job_name);
+        
+        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        $job_submitted = 1;
+    }
+    
+    $self->{bsub_opts} = $orig_bsub_opts;
+    
+    $job_submitted ? return $self->{No} : return $self->{Yes};
+}
+
 =head2 statistics_requires
 
  Title   : statistics_requires
@@ -917,7 +1059,7 @@ exit;
 sub statistics_requires {
     my ($self, $lane_path) = @_;
     
-    my @requires = @{$self->calmd_provides($lane_path)};
+    my @requires = @{$self->rewrite_header_provides($lane_path)};
     
     @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
     
@@ -939,7 +1081,7 @@ sub statistics_provides {
     my ($self, $lane_path) = @_;
     
     my @provides;
-    foreach my $bam (@{$self->statistics_requires($lane_path)}) {
+    foreach my $bam (@{$self->calmd_provides($lane_path)}) {
         foreach my $suffix ('bas', 'flagstat') {
             push(@provides, $bam.'.'.$suffix);
         }
@@ -970,7 +1112,7 @@ sub statistics {
     
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
     # independantly.
-    foreach my $bam_file (@{$self->statistics_requires($lane_path)}) {
+    foreach my $bam_file (@{$self->calmd_provides($lane_path)}) {
         my $basename = basename($bam_file);
         my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."statistics_$basename.pl");
         
@@ -1056,9 +1198,9 @@ sub extract_intervals_provides {
         return \@interval_bams;
     }
     else {
-        my @requires = @{$self->extract_intervals_requires($lane_path)};
-        @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
-        return \@requires;
+        my @provides = @{$self->extract_intervals_requires($lane_path)};
+        @provides || $self->throw("Something went wrong; we don't seem to provide any bams!");
+        return \@provides;
     }
 }
 
@@ -1121,16 +1263,16 @@ Args    : lane path
 
 sub index_provides {
     my ($self, $lane_path) = @_;
-    my @requires = @{$self->index_requires($lane_path)};
+    my @provideses = @{$self->index_requires($lane_path)};
 
     if ($self->{do_index}){
-        for my $i (0..$#requires) {
-            $requires[$i] = $requires[$i] . '.bai';
+        for my $i (0..$#provides) {
+            $provides[$i] = $provides[$i] . '.bai';
         }
     }
 
-    @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
-    return \@requires;
+    @provides || $self->throw("Something went wrong; we don't seem to provide any bams!");
+    return \@provides;
 }
 
 =head2 index
@@ -1218,8 +1360,6 @@ sub update_db_provides {
  Args    : lane path, name of lock file to use
 
 =cut
-
-
 
 sub update_db {
     my ($self, $lane_path, $action_lock) = @_;
