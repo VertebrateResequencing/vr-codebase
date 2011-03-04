@@ -22,6 +22,7 @@ my %filters =
     MapQualBias  => { dflt=>0, usage=>'FLOAT', desc=>"Min P-value for mapQ bias", nick=>'3' },
     EndDistBias  => { dflt=>1e-4, usage=>'FLOAT', desc=>"Min P-value for end distance bias", nick=>'4' },
     RefN         => { dflt=>'', usage=>'', desc=>"Reference base is N", nick=>'r' },
+    Qual         => { dflt=>'10', usage=>'INT', desc=>"Minimum value of the QUAL field", nick=>'Q' },
 );
 
 my $opts = parse_params();
@@ -456,6 +457,10 @@ sub apply_local_filters
     if ( exists($$filters{RefN}) )
     {
         $apply{RefN} = $$line[3] eq 'N' ? 1 : 0;
+    }
+    if ( exists($$filters{Qual}) && $$line[5] ne '.' )
+    {
+        $apply{Qual} = $$line[5] < $$filters{Qual} ? 1 : 0;
     }
     if ( defined $dp_alt )
     {
