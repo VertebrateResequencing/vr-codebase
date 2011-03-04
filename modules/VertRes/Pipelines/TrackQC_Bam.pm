@@ -564,12 +564,14 @@ sub run_graphs
     report_detailed_stats($lane_path,$bam_file,$stats_file);
 
     # The GC-depth graphs
-    if ( ! -e "$outdir/gc-depth-ori.png" || (-e $bindepth && Utils::file_newer($bam_file,$bindepth)) )
-    {
+    # Removed 2011-03-04 jws:  R was throwing errors, and this is covered by
+    # the plot-bamcheck GC plot
+    # if ( ! -e "$outdir/gc-depth-ori.png" || (-e $bindepth && Utils::file_newer($bam_file,$bindepth)) )
+    # {
         # Mapviewdepth_sam sometimes does not read the bam till the end. Ignore SIGPIPE signal. This program will be removed soon anyway.
-        Utils::CMD("$samtools view $bam_file | $mapview $refseq -b=$gc_depth_bin > $bindepth",{verbose=>1,ignore_errno=>141});
-        Graphs::create_gc_depth_graph($bindepth,$gcdepth_R,qq[$outdir/gc-depth-ori.png]);
-    }
+    #     Utils::CMD("$samtools view $bam_file | $mapview $refseq -b=$gc_depth_bin > $bindepth",{verbose=>1,ignore_errno=>141});
+    #     Graphs::create_gc_depth_graph($bindepth,$gcdepth_R,qq[$outdir/gc-depth-ori.png]);
+    # }
 
     `touch $outdir/_graphs.done`;
 }
