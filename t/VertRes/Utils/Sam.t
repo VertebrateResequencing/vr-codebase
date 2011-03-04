@@ -6,7 +6,7 @@ use File::Copy;
 use Data::Dumper;
 
 BEGIN {
-    use Test::Most tests => 173;
+    use Test::Most tests => 174;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -474,6 +474,26 @@ my %verify_stats;
 get_exome_bam_stats($exome_bam_file, $bait_interval, $bait_interval_list, $target_interval, $target_interval_list, $ref_fa, $ref_fai, \%vertres_stats, \%verify_stats, $temp_dir);
 is_deeply \%vertres_stats, \%verify_stats, 'get_exome_bam_stats produced correct results';
 
+# bam_refnames
+my @expected_refnames = qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X MT
+                  NT_113887 NT_113947 NT_113903 NT_113908 NT_113940 NT_113917
+                  NT_113963 NT_113876 NT_113950 NT_113946 NT_113920 NT_113911
+                  NT_113907 NT_113937 NT_113941 NT_113909 NT_113921 NT_113919
+                  NT_113960 NT_113945 NT_113879 NT_113938 NT_113928 NT_113906
+                  NT_113904 NT_113873 NT_113966 NT_113943 NT_113914 NT_113948
+                  NT_113886 NT_113932 NT_113929 NT_113878 NT_113927 NT_113900
+                  NT_113918 NT_113875 NT_113942 NT_113926 NT_113934 NT_113954
+                  NT_113953 NT_113874 NT_113883 NT_113924 NT_113933 NT_113884
+                  NT_113890 NT_113870 NT_113881 NT_113939 NT_113956 NT_113951
+                  NT_113902 NT_113913 NT_113958 NT_113949 NT_113889 NT_113936
+                  NT_113957 NT_113961 NT_113925 NT_113882 NT_113916 NT_113930
+                  NT_113955 NT_113944 NT_113901 NT_113905 NT_113872 NT_113952
+                  NT_113912 NT_113935 NT_113880 NT_113931 NT_113923 NT_113915
+                  NT_113885 NT_113888 NT_113871 NT_113964 NT_113877 NT_113910
+                  NT_113962 NT_113899 NT_113965 NT_113898 NC_007605);
+my $got_names = $sam_util->bam_refnames($headed_bam);
+is_deeply \@expected_refnames, $got_names, 'bam_refnames produced correct results';
+
 exit;
 
 sub get_sam_header {
@@ -568,11 +588,12 @@ sub get_exome_bam_stats {
     # get stats from vertres subroutine
     my $o = VertRes::Utils::Sam->new();
 
-    my %ops = ('bait_interval', $bait_interval,
+    my %ops = ('bam', $bam_file,
+               'bait_interval', $bait_interval,
                'target_interval', $target_interval,
                'ref_fa', $ref_file,
                'ref_fai', $ref_fai_file);
-    %{$vr_stats} = %{$o->bam_exome_qc_stats($bam_file, %ops)};
+    %{$vr_stats} = %{$o->bam_exome_qc_stats(%ops)};
 
     # we get stats from various subroutines to verify the stats made by bam_exome_qc_stats, put
     # the stats in a hash to compare with VertRes results...

@@ -35,15 +35,16 @@ data =>
         password => 'xxx',
     },
 
-    bwa_ref => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
-    fa_ref  => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
-    fai_ref => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
+    bwa_ref => '/abs/path/to/bwa_ref.fasta',
+    fa_ref  => '/abs/path/to/ref.fasta',
+    fai_ref => '/abs/path/to/ref.fasta.fai',
     
     glf              => '/path/to/glf',
     snps             => '/foo/genotype.bin',
     snp_sites        => '/foo/genotype.snp_sites',
     gtype_confidence => 1.2,
-    exome_design => 'uk10k.20110120',
+    exome_design => 'name of exome design',
+    exome_coords => '/abs/path/to/coords/file',
 },
 
 # Make a pipeline file:
@@ -177,15 +178,14 @@ our $options = {
 
 
                     # exome options
-                    exome_coords    .. Required if exome_design not given
-                                       file containing info on targets and baits, made by
+                    exome_coords    .. REQUIRED. File containing info on targets and baits, made by
                                        VertRes::Utils::Sam::bam_exome_qc_stats() with the
                                        'dump_intervals' option
-                    exome_design    .. name of exome design.  Will be used to look up exome_coords file,
-                                       if exome_coords not given.
-                    snps            .. file made by hapmap2bin to be used for genotyping, containing
+                    exome_design    .. REQUIRED. Name of exome design.  This is what will appear in the 
+                                       exome_design table in the database
+                    snps            .. REQUIRED. File made by hapmap2bin to be used for genotyping, containing
                                        genotypes of all the samples
-                    snp_sites       .. file containing locations of SNPs to be used for genotyping. 
+                    snp_sites       .. REQUIRED. File containing locations of SNPs to be used for genotyping. 
                                        One site per line, tab separated:  chromosome<tab>position
 
 =cut
@@ -194,32 +194,16 @@ sub VertRes::Pipelines::TrackQC_ExomeBam::new {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new(%$options,'actions'=>\@actions,@args);
     $self->write_logs(1);
-#    if ( !$$self{bwa_exec} ) { $self->throw("Missing the option bwa_exec.\n"); }
-#    if ( !$$self{gcdepth_R} ) { $self->throw("Missing the option gcdepth_R.\n"); }
     if ( !$$self{glf} ) { $self->throw("Missing the option glf.\n"); }
-#    if ( !$$self{mapviewdepth} ) { $self->throw("Missing the option mapviewdepth.\n"); }
     if ( !$$self{samtools} ) { $self->throw("Missing the option samtools.\n"); }
     if ( !$$self{fa_ref} ) { $self->throw("Missing the option fa_ref.\n"); }
     if ( !$$self{fai_ref} ) { $self->throw("Missing the option fai_ref.\n"); }
-#    if ( !$$self{gc_depth_bin} ) { $self->throw("Missing the option gc_depth_bin.\n"); }
     if ( !$$self{gtype_confidence} ) { $self->throw("Missing the option gtype_confidence.\n"); }
     if ( !$$self{sample_dir} ) { $self->throw("Missing the option sample_dir.\n"); }
-##    if ( !$$self{sample_size} ) { $self->throw("Missing the option sample_size.\n"); }
-    if ( !$self->{exome_design} ) { $self->throw("Missing the option exome_design.\n"); }
     if ( !$self->{snps} ) { $self->throw("Missing the option snps\n"); }
     if ( !$self->{snp_sites} ) { $self->throw("Missing the option snp_sites\n"); }
-
-    # try to figure out the exome_coords file from the exome_design
-    if ( !$self->{exome_coords} ) {
-        my %known_designs = ('uk10k.20110120', '/lustre/scratch103/sanger/mh12/Exome_qc_files/uk10k.qc_dump.20110120');
-
-        if ($known_designs{$self->{exome_design}}) {
-            $self->{exome_coords} = $known_designs{$self->{exome_design}};
-        }
-        else {
-            $self->throw("Couldn't determine exome_coords file from exome_design $self->{exome_design}.\n");
-        }
-    }
+    if ( !$self->{exome_coords} ) { $self->throw("Missing the option exome_coords.\n"); }
+    if ( !$self->{exome_design} ) { $self->throw("Missing the option exome_design.\n"); }
 
     return $self;
 }
