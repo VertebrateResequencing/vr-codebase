@@ -2930,6 +2930,32 @@ sub bam_exome_qc_stats {
         $self->throw("Error. must use either intervals_dump_file, or give all four of ref_fa, ref_fai, bait_interval and target_interval\n");
     }
 
+    # sanity check that the reference sequence names in the intervals hash have
+    # a non-empty intersection with the names in the header of the bam file.  Maybe
+    # not an ideal check, but we can't expect either to be a subset of the other, so
+    # intersection non-empty will have to do.
+    unless ($opts{skip_name_check}) {
+        my %bam_ref_names = map {$_ => 1} @{$self->bam_refnames($opts{bam})};
+        my $names_ok = 0;
+
+        foreach (keys %bam_ref_names) {
+            if (exists $intervals->{target}{$_}) {
+                $names_ok = 1;
+                last;
+            }
+        }
+
+        # Unfortunately, we have 'MT' in masked and unmasked versions of the same
+        # genome.  In this case, the previous test doesn't work.
+        # These have chromosomes named chr1, chr2, ...etc , or 1,2,... etc.
+        # Check this for chromosome 1: it's a reasonable assumption that
+        # there is at least one target in chromosome 1.
+        if ($names_ok and ( ($bam_ref_names{1} and $intervals->{targets}{chr1}) or ($bam_ref_names{chr1} and $intervals->{targets}{1}) ) ) {
+            $names_ok = 0;
+        }
+        $names_ok or $self->throw("Mismatch in reference sequence names in BAM file vs ref sequences containing targets."); 
+    }
+
     print STDERR "Intervals etc sorted. Parse BAM file...\n" if $opts{verbose};
 
     # Everything is initialised.  It's time to parse the bam file to get the stats
