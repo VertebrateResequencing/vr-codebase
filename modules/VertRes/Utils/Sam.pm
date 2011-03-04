@@ -207,6 +207,34 @@ sub num_bam_records {
     return $records;
 }
 
+
+
+=head2 bam_refnames
+
+ Title   : bam_refnames
+ Usage   : my $ref_names = $obj->bam_refnames($bam_file);
+ Function: Get the reference sequnce names from the header of a bam file
+ Returns : reference to array of names.  names will be same order as in header
+ Args    : bam filename
+
+=cut
+
+sub bam_refnames {
+    my ($self, $bam_file) = @_;
+    
+    my @names;
+    my $st = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+    my $fh = $st->view($bam_file, undef, H => 1);
+    while (<$fh>){
+        if (/^\@SQ\t.*SN:(\w+)/) {
+            push @names, $1;
+        }
+    }
+
+    return \@names;
+}
+
+
 =head2 num_bam_header_lines
 
  Title   : num_bam_header_lines
