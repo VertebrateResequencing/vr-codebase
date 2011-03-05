@@ -336,17 +336,22 @@ sub all_done
 #   
 #       About : Check if the file is finished.
 #       Usage : $self->is_finished('some/file');
-#       Args  : <file>
+#       Args  : <file list>
 #                   The name of the file to check the existence of
 #                   
 #   =cut
 
 sub is_finished
 {
-    my ($self,$file) = @_;
-    my $is_finished = -e $file;
-    if ( $is_finished && exists($$self{_running_jobs}{$file}) ) { delete($$self{_running_jobs}{$file}); }
-    return $is_finished;
+    my ($self,@files) = @_;
+    my $all_finished = 1;
+    for my $file (@files)
+    {
+        my $is_finished = -e $file;
+        if ( !$is_finished ) { $all_finished=0; }
+        elsif ( exists($$self{_running_jobs}{$file}) ) { delete($$self{_running_jobs}{$file}); }
+    }
+    return $all_finished;
 }
 
 # Run the freezed object created by spawn
