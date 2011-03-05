@@ -274,7 +274,24 @@ sub next_line
 {
     my ($self) = @_;
     if ( @{$$self{buffer}} ) { return shift(@{$$self{buffer}}); }
-    my $line = readline($$self{fh});
+    # my $line = readline($$self{fh});
+    # Temporary fix to work around a samtools/bcftools bug:
+    my $line;
+    while (1)
+    {
+        $line = readline($$self{fh});
+        if ( !defined $line ) { last; }
+    
+        my $len = length($line);
+        if ( $len>500_000 ) 
+        { 
+            $line=~/^([^\t]+)\t([^\t]+)/;
+            print STDERR "Ignoring line: $1 $2 .. len=$len\n"; 
+            next;
+        }
+    
+        last;
+    }
     if ( !defined $line && $$self{check_exit_status} )
     {
         my $pid = waitpid(-1, WNOHANG);
