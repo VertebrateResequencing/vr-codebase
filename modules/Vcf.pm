@@ -289,6 +289,12 @@ sub next_line
             print STDERR "Ignoring line: $1 $2 .. len=$len\n"; 
             next;
         }
+        if ( $line=~/GT:GT/ )
+        {
+            $line=~/^([^\t]+)\t([^\t]+)/;
+            print STDERR "Ignoring line (GT:GT): $1 $2\n"; 
+            next;
+        }
     
         last;
     }
@@ -324,11 +330,7 @@ sub _unread_line
 sub next_data_array
 {
     my ($self,$line) = @_;
-    if ( !$line )
-    {
-        if ( @{$$self{buffer}} ) { $line = shift(@{$$self{buffer}}); }
-        else { $line = readline($$self{fh}); }
-    }
+    if ( !$line ) { $line = $self->next_line(); }
     if ( !$line ) { return undef; }
     my @items = split(/\t/,$line);
     chomp($items[-1]);
@@ -458,11 +460,7 @@ sub new
 sub next_data_hash
 {
     my ($self,$line) = @_;
-    if ( !$line )
-    {
-        if ( @{$$self{buffer}} ) { $line = shift(@{$$self{buffer}}); }
-        else { $line = readline($$self{fh}); }
-    }
+    if ( !$line ) { $line = $self->next_line(); }
     if ( !$line ) { return undef; }
     my @items;
     if ( ref($line) eq 'ARRAY' ) { @items = @$line; }
@@ -1117,7 +1115,7 @@ sub parse_alleles
     if ( !exists($$rec{gtypes}) || !exists($$rec{gtypes}{$column}) ) { $self->throw("The column not present: '$column'\n"); }
 
     my $gtype = $$rec{gtypes}{$column}{GT};
-    if ( !($gtype=~$$self{regex_gt}) ) { $self->throw("Could not parse gtype string [$gtype]\n"); }
+    if ( !($gtype=~$$self{regex_gt}) ) { $self->throw("Could not parse gtype string [$gtype] [$$rec{CHROM}:$$rec{POS}]\n"); }
     my $al1 = $1;
     my $sep = $2;
     my $al2 = $3;
