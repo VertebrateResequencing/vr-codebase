@@ -266,6 +266,7 @@ sub update_db
 
         my $vrmapper = $vrmapping->mapper($mapper,$mapper_version);
         if ( !$vrmapper ) { $vrmapper = $vrmapping->add_mapper($mapper,$mapper_version); }
+        $vrmapping->update();
 
         # Now rename everything to '1234.pe.raw.sorted.*'
         my $new_fn = sprintf "%d.%s.raw%s.bam", 
