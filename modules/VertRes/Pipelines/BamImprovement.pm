@@ -170,6 +170,11 @@ our %options = (slx_mapper => 'bwa',
            '454_mapper' => 'ssaha', (default ssaha; the mapper you used for
                                      mapping 454 lanes)
            
+           slx_mapper_alias => ['bwa','bwa_aln'] (optional; alternative names 
+                         that may have been used for the slx_mapper specified)
+           '454_mapper_alias' => ['ssaha', 'ssaha_1.3'], (optional; alternative names 
+                         that may have been used for the 454_mapper specified)
+
            reference => '/path/to/ref.fa' (no default, either this or the
                         male_reference and female_reference pair of args must be
                         supplied)
@@ -267,10 +272,14 @@ sub new {
     # get a list of bams in this lane we want to improve
     my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
     $self->{assembly_name} || $self->throw("no assembly_name!");
+    $self->{slx_mapper_alias} = [$self->{slx_mapper}] unless (defined $self->{slx_mapper_alias});
+    $self->{'454_mapper_alias'} = [$self->{'454_mapper'}] unless (defined $self->{'454_mapper_alias'});
     my @bams = $hu->lane_bams($lane_path, vrtrack => $self->{vrlane}->vrtrack,
                                           assembly_name => $self->{assembly_name},
                                           slx_mapper => $self->{slx_mapper},
-                                          '454_mapper' => $self->{'454_mapper'});
+                                          '454_mapper' => $self->{'454_mapper'},
+                                          slx_mapper_alias => $self->{slx_mapper_alias},
+                                          '454_mapper_alias' => $self->{'454_mapper_alias'});
     @bams || $self->throw("no bams to improve in lane $lane_path!");
     $self->{in_bams} = \@bams;
     
