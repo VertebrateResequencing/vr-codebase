@@ -175,7 +175,7 @@ sub parse_filters
     }
     for my $key (keys %{$$opts{filters}})
     {
-        push @{$$opts{desc}}, "key=FILTER,ID=$key,Description='$filters{$key}{desc}" . ($$opts{filters}{$key} ne '' ? " [$$opts{filters}{$key}]'" : '');
+        push @{$$opts{desc}}, "key=FILTER,ID=$key,Description='$filters{$key}{desc}" . (defined $$opts{filters}{$key} ? " [$$opts{filters}{$key}]'" : "'");
     }
     if ( !$has_filters && !scalar keys %{$$opts{filters}} ) { delete($$opts{filters}); }
 }
@@ -528,29 +528,24 @@ sub apply_snpgap_filter
         # There may be multiple variants, look for an indel. Anything what is not ref can be filtered.
         my $is_indel = 0;
         my $can_be_filtered = 0;
-        my $len;
         for my $alt (split(/,/,$$line[4]))
         {
-            my ($type,$ht);
-            ($type,$len,$ht) = $vcf->event_type($$line[3],$alt);
+            my ($type,$len,$ht) = $vcf->event_type($$line[3],$alt);
             if ( $type eq 'i' ) 
             { 
                 $is_indel = 1; 
                 $indel_chr = $$line[0];
-                $indel_pos = $$line[1] + 1;
+                $indel_pos = $$line[1]+1;
             }
             elsif ( $type ne 'r' ) { $can_be_filtered = 1; }
         }
-
-        $to = $is_indel && $len<0 ? $$line[1]-$len : $$line[1];
-        push @$buffer, { line=>$line, chr=>$$line[0], from=>$$line[1], to=>$to, exclude=>0, can_be_filtered=>$can_be_filtered, is_indel=>$is_indel };
-
-        if ( $$buffer[0]{chr} eq $$buffer[-1]{chr} && $win+$$buffer[0]{to}>=$$buffer[-1]{from} )
-        {
-            # There are not enough rows in the buffer: the SnpGap window spans them all. Wait until there is more rows
-            #   or a new chromosome
-            return ();
-        }
+        # The indel boundaries are based on REF (POS+1,POS+rlen-1). This is not
+        #   correct as the indel can begin anywhere in the VCF4.x record with
+        #   respect to POS. Specifically mpileup likes to write REF=CAGAGAGAGA
+        #   ALT=CAGAGAGAGAGA. Thus this filtering is more strict and may remove
+        #   some valid SNPs.
+        $to = $is_indel ? $$line[1]+length($$line[3])-1 : $$line[1];
+        push @$buffer, { line=>$line, chr=>$$line[0], from=>defined $indel_pos ? $indel_pos : $$line[1], to=>$to, exclude=>0, can_be_filtered=>$can_be_filtered, is_indel=>$is_indel };
     }
 
     my $n = @$buffer;
@@ -566,6 +561,13 @@ sub apply_snpgap_filter
             if ( $$buf{is_indel} ) { next; }
             if ( $$buf{to}>=$indel_pos-$win ) { $$buf{exclude}=1; }
         }
+    }
+
+    if ( defined $line && $$buffer[0]{chr} eq $$buffer[-1]{chr} && $win+$$buffer[0]{to}>=$$buffer[-1]{from} )
+    {
+        # There are not enough rows in the buffer: the SnpGap window spans them all. Wait until there is more rows
+        #   or a new chromosome
+        return ();
     }
 
     # 'Look-behind' filtering was done above, now comes 'look-ahead' filtering
@@ -626,11 +628,9 @@ sub apply_gapwin_filter
     {
         # There may be multiple variants, only indels can be filtered
         my $is_indel = 0;
-        my $len;
         for my $alt (split(/,/,$$line[4]))
         {
-            my ($type,$ht);
-            ($type,$len,$ht) = $vcf->event_type($$line[3],$alt);
+            my ($type,$len,$ht) = $vcf->event_type($$line[3],$alt);
             if ( $type eq 'i' ) 
             { 
                 $is_indel = 1; 
@@ -638,16 +638,13 @@ sub apply_gapwin_filter
                 $indel_pos = $$line[1] + 1;
             }
         }
-
-        $to = $is_indel && $len<0 ? $$line[1]-$len : $$line[1];
-        push @$buffer, { line=>$line, chr=>$$line[0], from=>$$line[1], to=>$to, exclude=>0, is_indel=>$is_indel };
-
-        if ( $$buffer[0]{chr} eq $$buffer[-1]{chr} && $win+$$buffer[0]{to}>=$$buffer[-1]{from} )
-        {
-            # There are not enough rows in the buffer: the GapWin window spans them all. Wait until there is more rows
-            #   or a new chromosome
-            return ();
-        }
+        # The indel boundaries are based on REF (POS+1,POS+rlen-1). This is not
+        #   correct as the indel can begin anywhere in the VCF4.x record with
+        #   respect to POS. Specifically mpileup likes to write REF=CAGAGAGAGA
+        #   ALT=CAGAGAGAGAGA. Thus this filtering is more strict and may remove
+        #   some valid SNPs.
+        $to = $is_indel ? $$line[1]+length($$line[3])-1 : $$line[1];
+        push @$buffer, { line=>$line, chr=>$$line[0], from=>defined $indel_pos ? $indel_pos : $$line[1], to=>$to, exclude=>0, is_indel=>$is_indel };
     }
 
     my $n = @$buffer;
@@ -662,6 +659,13 @@ sub apply_gapwin_filter
             if ( !$$buf{is_indel} ) { next; }
             if ( $$buf{to}>=$indel_pos-$win ) { $$buf{exclude}=1; $$buffer[-1]{exclude}=1; }
         }
+    }
+
+    if ( defined $line && $$buffer[0]{chr} eq $$buffer[-1]{chr} && $win+$$buffer[0]{to}>=$$buffer[-1]{from} )
+    {
+        # There are not enough rows in the buffer: the GapWin window spans them all. Wait until there is more rows
+        #   or a new chromosome
+        return ();
     }
 
     # Output. If no $line was given, output everything
@@ -707,7 +711,7 @@ sub apply_snpcluster_filter
     if ( defined $line )
     {
         # Exclude REF (and maybe also other filters?) form SnpCluster
-        my $can_be_filtered = $$line[4] eq '.' ? 1 : 0;
+        my $can_be_filtered = $$line[4] eq '.' ? 0 : 1;
         push @$buffer, { line=>$line, chr=>$$line[0], pos=>$$line[1], can_be_filtered=>$can_be_filtered, in_cluster=>0 };
         $n++;
 
@@ -736,7 +740,7 @@ sub apply_snpcluster_filter
         my $buf = $$buffer[$idx];
         if ( $$buf{chr} ne $start_chr ) { last; }
         if ( $$buf{pos} - $win >= $start_pos ) { last; }
-        if ( !$$buf{can_be_filtered} ) { $count++; }
+        if ( $$buf{can_be_filtered} ) { $count++; }
     }
 
     # If a SNP cluster was found, set the in_cluster flag for all relevant sites. 
@@ -745,7 +749,7 @@ sub apply_snpcluster_filter
     {
         for (my $i=0; $i<$idx; $i++)
         {
-            if ( !$$buffer[$i]{can_be_filtered} ) { $$buffer[$i]{in_cluster}=1; }
+            if ( $$buffer[$i]{can_be_filtered} ) { $$buffer[$i]{in_cluster}=1; }
         }
     }
 
@@ -768,7 +772,7 @@ sub apply_snpcluster_filter
     # Output all non-variant lines at the beggining of the buffer
     while (@$buffer)
     {
-        if ( !$$buffer[0]{can_be_filtered} ) { last; }
+        if ( $$buffer[0]{can_be_filtered} ) { last; }
         my $buf = shift(@$buffer);
         $$buf{line}[6] = $$opts{vcf}->add_filter($$buf{line}[6],'SnpCluster'=>0);
         push @out,$$buf{line};
