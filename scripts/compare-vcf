@@ -248,6 +248,9 @@ sub report_stats
 
             if ( !exists($$opts{hapls}{$id}{$key.'gtype_lost'}) ) { $$opts{hapls}{$id}{$key.'gtype_lost'}=0; }
             $$opts{hapls}{$id}{total_gtype_lost} += $$opts{hapls}{$id}{$key.'gtype_lost'};
+
+            if ( !exists($$opts{hapls}{$id}{$key.'gtype_gained'}) ) { $$opts{hapls}{$id}{$key.'gtype_gained'}=0; }
+            $$opts{hapls}{$id}{total_gtype_gained} += $$opts{hapls}{$id}{$key.'gtype_gained'};
         }
         for my $key qw(het_RA_ het_AA_)
         { 
@@ -266,9 +269,10 @@ sub report_stats
 
         printf "\tGtypes lost:  %d %d %d %d %d \t (total, hom_RR, hom_AA, het_RA, het_AA)\n",
             $$opts{hapls}{$id}{total_gtype_lost}, $$opts{hapls}{$id}{hom_RR_gtype_lost}, $$opts{hapls}{$id}{hom_AA_gtype_lost}, $$opts{hapls}{$id}{het_RA_gtype_lost}, $$opts{hapls}{$id}{het_AA_gtype_lost};
-        if ( !exists($$opts{hapls}{$id}{gtype_gained}) ) { $$opts{hapls}{$id}{gtype_gained}=0; }
         if ( !exists($$opts{hapls}{$id}{phased_gtype_gained}) ) { $$opts{hapls}{$id}{phased_gtype_gained}=0; }
-        printf "\tGtypes gained:  %d %d \t (total, phased)\n", $$opts{hapls}{$id}{gtype_gained}, $$opts{hapls}{$id}{phased_gtype_gained};
+        printf "\tGtypes gained:  %d %d %d %d %d %d \t (total, hom_RR, hom_AA, het_RA, het_AA, phased)\n", 
+            $$opts{hapls}{$id}{total_gtype_gained}, $$opts{hapls}{$id}{hom_RR_gtype_gained}, $$opts{hapls}{$id}{hom_AA_gtype_gained}, $$opts{hapls}{$id}{het_RA_gtype_gained}, 
+            $$opts{hapls}{$id}{het_AA_gtype_gained}, $$opts{hapls}{$id}{phased_gtype_gained};
 
         printf "\tPhase lost:  %d %d %d \t (total, het_RA, het_AA)\n",
             $$opts{hapls}{$id}{total_phase_lost}, $$opts{hapls}{$id}{het_RA_phase_lost}, $$opts{hapls}{$id}{het_AA_phase_lost};
@@ -291,19 +295,19 @@ sub report_stats
         "#      1     .. Sample\n",
         "#      2-6   .. Gtype mismatches: total hom_RR hom_AA het_RA het_AA \n",
         "#      7-9   .. Gtype lost: total het_RA het_AA \n",
-        "#      10    .. Gtype gained\n",
-        "#      11-13 .. Phase lost: total het_RA het_AA \n",
-        "#      14    .. Phase gained\n",
-        "#      15-19 .. Matching sites: total hom_RR hom_AA het_RA het_AA \n",
-        "#      20-22 .. Phased matches: total het_RA het_AA \n",
-        "#      23-25 .. Misphased matches: total het_RA het_AA \n";
+        "#      10-14 .. Gtype gained: total hom_RR hom_AA het_RA het_AA \n",
+        "#      15-17 .. Phase lost: total het_RA het_AA \n",
+        "#      18    .. Phase gained\n",
+        "#      19-23 .. Matching sites: total hom_RR hom_AA het_RA het_AA \n",
+        "#      24-26 .. Phased matches: total het_RA het_AA \n",
+        "#      27-29 .. Misphased matches: total het_RA het_AA \n";
 
     for my $id (keys %{$$opts{hapls}})
     {
         print "#HC\t$id";
         for my $key qw(total_ hom_RR_ hom_AA_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'gtype_mismatch'}; }
         for my $key qw(total_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'gtype_lost'}; }
-        print "\t",$$opts{hapls}{$id}{gtype_gained};
+        for my $key qw(total_ hom_RR_ hom_AA_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'gtype_gained'}; }
         for my $key qw(total_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'phase_lost'}; }
         print "\t",$$opts{hapls}{$id}{phase_gained};
         for my $key qw(total_ hom_RR_ hom_AA_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'gtype_match'}; }
@@ -407,6 +411,23 @@ sub ref_alt_stats
 }
 
 
+sub snp_type
+{
+    my ($als,$ref) = @_;
+
+    # Determine SNP type: hom(RR),het(RA),hom(AA) or het(AA)
+    if ( $$als[0] eq $$als[1] )
+    {
+        if ( $$als[0] eq $ref ) { return 'hom_RR_'; }
+        else { return 'hom_AA_'; }
+    }
+    else
+    {
+        if ( $$als[0] eq $ref or $$als[1] eq $ref ) { return 'het_RA_'; }
+        else { return 'het_AA_'; }
+    }
+}
+
 sub cmp_haplotypes
 {
     my ($opts,$grp) = @_;
@@ -435,18 +456,7 @@ sub cmp_haplotypes
         {
             @sorted_als1 = sort @$als1;
             $nploid = scalar @sorted_als1;
-
-            # Determine SNP type: hom(RR),het(RA),hom(AA) or het(AA)
-            if ( $$als1[0] eq $$als1[1] )
-            {
-                if ( $$als1[0] eq $ref ) { $type = 'hom_RR_'; }
-                else { $type = 'hom_AA_'; }
-            }
-            else
-            {
-                if ( $$als1[0] eq $ref or $$als1[1] eq $ref ) { $type = 'het_RA_'; }
-                else { $type = 'het_AA_'; }
-            }
+            $type = snp_type($als1,$ref);
         }
 
         # There may be multiple files entering the comparison. Report match only if all are present and all match. 
@@ -463,7 +473,11 @@ sub cmp_haplotypes
             if ( $is_empty1 ) 
             { 
                 $gtype_match = 0;
-                if ( !$is_empty2 ) { $gtype_gained = 1; }
+                if ( !$is_empty2 ) 
+                { 
+                    $gtype_gained = 1;
+                    $type = snp_type($als2,$ref);
+                }
                 if ( !$is_phased1 && $is_phased2 ) { $phase_gained = 1; }
                 last; 
             }
@@ -518,7 +532,7 @@ sub cmp_haplotypes
         }
         if ( $gtype_gained ) 
         { 
-            $$hapls{$id}{gtype_gained}++; 
+            $$hapls{$id}{$type.'gtype_gained'}++; 
             if ( $phase_gained ) { $$hapls{$id}{phased_gtype_gained}++ }
             next; 
         }
