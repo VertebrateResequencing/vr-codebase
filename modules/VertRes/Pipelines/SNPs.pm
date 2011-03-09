@@ -20,6 +20,7 @@ echo '__VRTrack_SNPs__ snps.conf' > snps.pipeline
 root    => '/abs/path/to/root/data/dir',
 module => 'VertRes::Pipelines::SNPs',
 log     => '/abs/path/to/logfile/foo.log',
+max_lanes => 10,
 
 db  => 
 {
@@ -32,7 +33,7 @@ db  =>
 
 data =>
 {
-    task => 'mpileup,gatk,update_db',
+    task => 'mpileup,gatk,update_db,cleanup',
    
     bsub_opts       => "-q normal -M3500000 -R 'select[type==X86_64 && mem>3500] rusage[mem=3500,thouio=1,tmp=16000]'",
     bsub_opts_long  => "-q normal -M3500000 -R 'select[type==X86_64 && mem>3500] rusage[mem=3500,thouio=1,tmp=16000]'",
@@ -82,6 +83,24 @@ data =>
 }
 
 
+# max_lanes outside the data section limits the number of lanes
+# which can have SNP calling run on them simultaneously, and
+# is only applicable when running off a database.
+# max_jobs inside the data section is the max number of jobs allowed
+# to run per caller.
+# The max grand total of jobs which could be running is:
+# max_lanes * (number of callers) * max_jobs.
+
+# The possible SNP callers are mpileup, gatk, varFilter and qcall.
+# Those which are specified in task => '...' will be used.
+#
+# Add 'cleanup' to the list of tasks to cleanup all files made
+# by the pipeline, leaving you with:
+# caller.vcf.gz, caller.vcf.gz.stats, caller.vcf.gz.tbi
+# for each caller.  In the case of mpileup, you also get
+# mpileup.unfilt.vcf.gz*, which are unfiltered calls.
+# The mpileup.vcf.gz* files are the filtered calls.
+
 # If you want to supply a list of BAM files instead of running off
 # a database, then
 #  1) don't provide db => {...}.  Instead, provide a file of
@@ -91,6 +110,7 @@ data =>
 #  2) Don't include update_db in the 'task' option. e.g. use
 #     task => 'mpileup,qcall,gatk',
 #     instead.
+#  3) max_lanes outside the data section will be ignored
 # If calling on many SNP files, it is sensible to make the
 # split_size_* opions smaller, in the region of
 # 1_000_000 to 5_000_000.  The numbers in the above exmaple
@@ -117,6 +137,7 @@ use Utils;
 use VertRes::Parser::sam;
 use VertRes::Utils::FileSystem;
 use VertRes::Wrapper::GATK;
+use File::Copy;
 
 our @actions =
 (
@@ -147,6 +168,13 @@ our @actions =
         'action'   => \&qcall,
         'requires' => \&qcall_requires, 
         'provides' => \&qcall_provides,
+    },
+    # clean up all files after SNP calling
+    {
+        'name'     => 'cleanup',
+        'action'   => \&cleanup,
+        'requires' => \&cleanup_requires, 
+        'provides' => \&cleanup_provides,
     },
     # when getting jobs from a database, update the finished lanes
     {
@@ -1291,6 +1319,102 @@ sub run_qcall_chunk
 }
 
 
+=head2 cleanup_requires
+
+ Title   : cleanup_requires
+ Usage   : my $required_files = $obj->cleanup_requires('/path/to/lane');
+ Function: Find out what files the cleanup action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub cleanup_requires {
+    my ($self, $lane_path) = @_;
+    my @requires;
+
+    # need a done file from each caller
+    for my $task (keys %{$self->{task}}) {
+        next if ($task eq "update_db" or $task eq "cleanup");
+        push @requires, "$task.done";
+    }
+
+    return \@requires;
+}
+
+
+=head2 cleanup_provides
+
+ Title   : cleanup_provides
+ Usage   : my $provided_files = $obj->cleanup_provides('/path/to/lane');
+ Function: Find out what files the cleanup action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub cleanup_provides {
+    my ($self, $lane_path) = @_;
+    my @provides;
+
+    if ($self->{task}{cleanup}){
+        push @provides, 'cleanup.done';
+    }
+    else {
+        @provides = @{$self->cleanup_requires($lane_path)};
+        @provides or $self->throw("Something went wrong; cleanup action doesn't seem to require any files");
+    }
+
+    return \@provides;
+}
+
+
+=head2 cleanup
+
+ Title   : cleanup
+ Usage   : $obj->cleanup('/path/to/lane', 'lock_filename');
+ Function: Cleans up files made by pipeline
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub cleanup {
+    my ($self, $lane_path, $action_lock) = @_;
+    my $fs = VertRes::Utils::FileSystem->new();
+
+    # for each caller, we move the files we want to keep to the root directory
+    # and the delete that caller's directory
+    for my $task (keys %{$self->{task}}) {
+        next if ($task eq "update_db" or $task eq "cleanup");
+         
+        my @suffixes = qw(vcf.gz vcf.gz.stats vcf.gz.tbi);
+
+        # keep the unfiltered files from mpileup as well as filtered
+        if ($task eq 'mpileup') {
+            push @suffixes, qw(unfilt.vcf.gz unfilt.vcf.gz.stats unfilt.vcf.gz.tbi);
+        }
+
+        # move the files
+        for my $suff (@suffixes) {
+            my $old_file = File::Spec->catfile($lane_path, $task, "$task.$suff");
+            my $new_file = File::Spec->catfile($lane_path, "$task.$suff");
+            $fs->copy($old_file, $new_file) or $self->throw("Error copying files:\nold: $old_file\nnew: $new_file");
+        }
+
+        # cleanup files in the root of the snps output directory
+        Utils::CMD("rm " . File::Spec->catfile($lane_path, "$task.done"));
+
+        # delete the caller directory
+        Utils::CMD("rm -r " . File::Spec->catdir($lane_path, $task));
+    } 
+
+    Utils::CMD("rm " . File::Spec->catfile($lane_path, 'file.list'));
+    Utils::CMD("touch " . File::Spec->catfile($lane_path, 'cleanup.done'));
+    return $$self{'Yes'};
+}
+
+
 =head2 update_db_requires
 
  Title   : update_db_requires
@@ -1303,15 +1427,8 @@ sub run_qcall_chunk
 
 sub update_db_requires {
     my ($self, $lane_path) = @_;
-    my @tasks = split /,/, $self->{task};
-    my @requires;
-
-    # need a done file from each caller
-    for my $task (keys %{$self->{task}}) {
-        next if ($task eq "update_db");
-        push @requires, "$task.done";
-    }
-
+    my @requires = @{$self->cleanup_provides($lane_path)};
+    @requires or $self->throw("Something went wrong; update_db action doesn't seem to require any files");
     return \@requires;
 }
 
@@ -1354,6 +1471,7 @@ sub update_db {
     $vrlane->is_processed('snp_called',1);
     $vrlane->update() || $self->throw("Unable to set improved status on lane $lane_path");
     $vrtrack->transaction_commit();
+    Utils::CMD("rm " . File::Spec->catfile($lane_path, 'cleanup.done'));
     return $$self{'Yes'};
 }
 
