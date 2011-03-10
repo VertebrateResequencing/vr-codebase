@@ -26,11 +26,25 @@ use MyBuild;
 
 my $build = MyBuild->new(
     module_name          => 'VertRes',
-    dist_version         => 0,
+    dist_version         => 0.02,
     dist_author          => 'Vertebrate Resequencing group at the Sanger Institute',
     dist_abstract        => 'A collection of modules and scripts for processing and analysing large quantities of sequencing data.',
     license              => 'perl',
     recursive_test_files => 1,
+    build_requires       => {
+                              'Test::Strict' => 0,
+                              'Test::Most' => 0
+                            },
+    requires             => {
+                              'Filesys::DfPortable' => 0,
+                              'Filesys::DiskUsage' => 0,
+                              'File::Fetch' => 0,
+                              'File::Rsync' => 0,
+                              'File::Temp' => 0,
+                              'Net::FTP::Robust' => 0,
+                              'Time::Format' => 0,
+                              'IO::Capture::Stderr' => 0,
+                            },
     pm_files             => get_pm_files(),
     script_files         => 'scripts'
 );

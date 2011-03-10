@@ -235,9 +235,12 @@ sub adjust_bsub_options
     Arg [2]     : before bsub will be called, chdir to the working dir
     Arg [3]     : job name - the output will be redirected to $job.o and $job.e
     Arg [4]     : options
+                        append      .. unless explicitly set to zero, the lock file will be opened in the append mode
                         bsub_opts   .. command line options
                         dont_wait   .. if set, don't wait until the job appears in bjobs list
-                        append      .. unless explicitly set to zero, the lock file will be opened in the append mode
+                        memory      .. expected memory requirements (MB) [ignored if bsub_opts present]
+                        queue       .. computing farm queue [ignored if bsub_opts present]
+                        runtime     .. expected running time (minutes) [ignored if bsub_opts or queue present]
     Arg [5]     : the command to run
     Description : Executes bsub with the given parameters.
     Returntype  : none
@@ -248,8 +251,26 @@ sub run
 {
     my ($jids_file,$work_dir,$job_name,$options,$bsub_cmd) = @_;
 
-    if ( !exists($$options{'bsub_opts'}) ) { Utils::error("No 'bsub_opts' given.\n") }
-    my $bsub_opts = $$options{'bsub_opts'};
+    my %opts = (%$options);
+    if ( !exists($opts{bsub_opts}) )
+    {
+        if ( !defined($opts{queue}) && defined($opts{runtime}) ) 
+        { 
+            if ( $opts{runtime} <= 720.0 ) { $opts{queue} = 'normal'; }
+            else { $opts{queue} = 'long'; }
+        }
+        else 
+        { 
+            $opts{queue} = 'normal';
+        }
+        $opts{bsub_opts} = "-q $opts{queue}";
+        if ( defined($opts{memory}) ) 
+        {
+            $opts{bsub_opts} .= sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $opts{memory}*1000,$opts{memory},$opts{memory};
+        }
+    }
+    if ( !exists($opts{'bsub_opts'}) ) { Utils::error("No 'bsub_opts' given.\n") }
+    my $bsub_opts = $opts{'bsub_opts'};
 
     chomp(my ($cwd) = Utils::CMD("pwd"));
     if ( $work_dir ) { chdir($work_dir) or Utils::error("chdir \"$work_dir\": $!") }

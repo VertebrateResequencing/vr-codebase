@@ -81,7 +81,6 @@ use strict;
 use warnings;
 use VertRes::IO;
 use VertRes::Utils::FileSystem;
-use VertRes::Parser::sam;
 use File::Basename;
 use File::Spec;
 use File::Copy;
@@ -248,7 +247,7 @@ sub merge {
         my $status = LSF::is_job_running($jids_file);
 
         unless (-d $bam_out_dir) {
-            mkdir($bam_out_dir) || $self->throw("Error making directory '$bam_out_dir'");
+            File::Path::make_path($bam_out_dir) || $self->throw("Error making directory '$bam_out_dir'");
         }
 
         if ($status & $LSF::Done and $$self{fsu}->file_exists($bam_out)) {

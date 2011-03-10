@@ -488,4 +488,55 @@ sub CalculateHsMetrics {
     return $self->run(@file_args);
 }
 
+=head2 SamToFastq
+
+ Title   : SamToFastq
+ Usage   : $wrapper->SamToFastq('in_bam', $out_fastq, %options);
+ Function: SamToFastq... 
+ Returns : n/a
+ Args    : list of file paths (input bam, output fastq), followed by file path 
+           for mate pair fastq if mate paired and then followed by a hash of
+           options understood by SamToFastq, eg. VALIDATION_STRINGENCY =>
+           'SILENT'. (case matters: must be uppercase)
+
+=cut
+
+sub SamToFastq {
+    my ($self, $bam, $fastq, @args) = @_;
+    
+    $self->exe($self->{base_exe}.$fsu->catfile($self->{picard_dir}, 'SamToFastq.jar'));
+    $self->run_method('system');
+    
+    $self->switches([]);
+    $self->params([qw(OUTPUT_PER_RG OUTPUT_DIR RE_REVERSE INCLUDE_NON_PF_READS 
+	               CLIPPING_ATTRIBUTE CLIPPING_ACTION TMP_DIR 
+	               VERBOSITY QUIET VALIDATION_STRINGENCY 
+                   COMPRESSION_LEVEL SORT_ORDER MAX_RECORDS_IN_RAM)]);
+    
+    my (@fastqs, @params, @check);
+	push @fastqs, " FASTQ=$fastq";
+	push @check, $fastq;
+    foreach my $arg (@args) {
+        if (( $arg =~ /\.fastq$/ || $arg =~ /\.fq$/) && ! @params) {
+            push(@fastqs, " SECOND_END_FASTQ=$arg");
+			push @check, $arg;
+        }
+        else {
+            push(@params, $arg);
+        }
+    }
+	$self->throw("Too many fastq files supplied, @fastqs\n") if (scalar @fastqs > 2);
+    my @file_args = (" INPUT=$bam", @fastqs);
+    
+    my %params = @params;
+    $self->_handle_common_params(\%params);
+    
+    foreach my $fq (@check) {
+	    $self->register_output_file_to_check($fq);
+	}
+    $self->_set_params_and_switches_from_args(%params);
+    
+    return $self->run(@file_args);
+}
+
 1;

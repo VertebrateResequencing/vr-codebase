@@ -1,3 +1,112 @@
+=head1 NAME
+
+VertRes::Pipelines::SNPs - pipeline for calling SNPs from BAM files
+
+=head1 SYNOPSIS
+
+# Can either provide a list of BAM files, or provide a database from
+# which improved BAM files will be found and have SNPs called.
+# If using a database, the calls are made independently on
+# each BAM file.
+# Either way, make a .conf file and .pipeline file.
+
+# The .pipeline file depends on how the BAM files are provided.
+# If providing a list of BAMs:
+echo '/path/to/root/dir/of/output/files/ snps.conf' > snps.pipeline
+# If using a database:
+echo '__VRTrack_SNPs__ snps.conf' > snps.pipeline
+
+# The .conf file (for running off a database) may look like:
+root    => '/abs/path/to/root/data/dir',
+module => 'VertRes::Pipelines::SNPs',
+log     => '/abs/path/to/logfile/foo.log',
+
+db  => 
+{
+    database => 'db_name',
+    host     => 'db_host',
+    port     => 42,
+    user     => 'db_user',
+    password => 'db_password',
+},
+
+data =>
+{
+    task => 'mpileup,gatk,update_db',
+   
+    bsub_opts       => "-q normal -M3500000 -R 'select[type==X86_64 && mem>3500] rusage[mem=3500,thouio=1,tmp=16000]'",
+    bsub_opts_long  => "-q normal -M3500000 -R 'select[type==X86_64 && mem>3500] rusage[mem=3500,thouio=1,tmp=16000]'",
+    bsub_opts_qcall  => "-q normal -M3500000 -R 'select[type==X86_64 && mem>3500 && tmp>17000] rusage[mem=3500,thouio=1, tmp=17000]'",
+    bsub_opts_mpileup    => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
+ 
+    split_size_mpileup   => 300_000_000,
+    split_size_gatk      => 100_000_000,         
+    split_size_qcall     => 100_000_000,         
+ 
+    tmp_dir => '/abs/path/to/tmp/dir',
+ 
+    mpileup_cmd => 'samtools mpileup -d 500 -C50 -m3 -F0.0002 -aug',
+    qcall_cmd       => 'QCALL -ct 0.01 -snpcan',
+    gatk_opts =>
+    {
+        all =>
+        {
+            verbose => 1,
+            #_extras => [ '-U ALLOW_UNSET_BAM_SORT_ORDER --platform Solexa' ],
+            _extras => [ '-U ALLOW_UNSET_BAM_SORT_ORDER ' ],
+        },
+        variant_filtration =>
+        {
+            filters => { HARD_TO_VALIDATE => 'MQ0 >= 4 && (MQ0 / (1.0 * DP)) > 0.1' },
+            maskName => 'InDel',
+            clusterWindowSize => 11,
+        },
+        variant_recalibrator =>
+        {
+            target_titv => 2.08,
+            ignore_filter => 'HARD_TO_VALIDATE',
+        },
+        apply_variant_cuts =>
+        {
+            fdr_filter_level => '0.11',
+        },
+    },
+ 
+    # max number of running jobs per task
+    max_jobs => 25,
+ 
+    dbSNP_rod   => '/abs/path/to/dbsnp/rod/file',
+    indel_mask  => '/abs/path/to/indel/mask/file',
+    fa_ref => '/abs/path/to/ref.fasta',
+    fai_ref => '/abs/path/to/ref.fasta.fai',
+}
+
+
+# If you want to supply a list of BAM files instead of running off
+# a database, then
+#  1) don't provide db => {...}.  Instead, provide a file of
+#     filenames in the data section with
+#     file_list => '/abs/path/to/file.list',
+#     The extension must be .list to stop gatk complaining.
+#  2) Don't include update_db in the 'task' option. e.g. use
+#     task => 'mpileup,qcall,gatk',
+#     instead.
+# If calling on many SNP files, it is sensible to make the
+# split_size_* opions smaller, in the region of
+# 1_000_000 to 5_000_000.  The numbers in the above exmaple
+# work well for a single lane of exome data.
+
+# Note that QCALL is not designed to be run on one sample,
+# so there's no point in adding it to the task list when
+# getting the BAMs from a database.  The pipeline will complain.
+
+=head1 DESCRIPTION
+
+A module for calling SNPs from BAM files using any of
+the callers mpileup, GATK, QCALL and varFilter.
+
+=cut
+
 package VertRes::Pipelines::SNPs;
 use base qw(VertRes::Pipeline);
 
@@ -39,6 +148,13 @@ our @actions =
         'requires' => \&qcall_requires, 
         'provides' => \&qcall_provides,
     },
+    # when getting jobs from a database, update the finished lanes
+    {
+        'name'     => 'update_db',
+        'action'   => \&update_db,
+        'requires' => \&update_db_requires, 
+        'provides' => \&update_db_provides,
+    },
 );
 
 our $options = 
@@ -49,6 +165,7 @@ our $options =
     bsub_opts_mpileup    => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
     bsub_opts_qcall      => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
     bsub_opts_gatk       => "-q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000,thouio=1]'",
+    chunks_overlap  => 250,
     fai_chr_regex   => '\d+|x|y',
     gatk_opts       => { all=>{verbose=>1} },
     dbSNP_rod       => undef,
@@ -68,6 +185,7 @@ our $options =
     vcf_rmdup       => 'vcf-rmdup',
     vcf_stats       => 'vcf-stats',
     filter4vcf      => 'vcfutils.pl filter4vcf',
+    bam_suffix       => 'intervals.bam',
 };
 
 
@@ -77,9 +195,16 @@ our $options =
 
         Options    : See Pipeline.pm for general options and the code for default values.
 
+                    bam_suffix      .. when getting jobs from a database (db =>... used outside the 
+                                       data section in config) which have been improved by
+                                       the bamImprovement pipeline, only consider bams whose name
+                                       end in the given suffix.  This is likely to be 'calmd.bam'
+                                       or 'intervals.bam', depending on how BamImprovement was run.
+                                       Default: 'intervals.bam'.
                     bcf_fix         .. Script to fix invalid VCF
                     bcftools        .. The bcftools binary for mpileup task
                     dbSNP_rod       .. The dbSNP file for GATK
+                    chunks_overlap  .. Allow small overlap between chunks
                     file_list       .. File name containing a list of bam files (e.g. the 17 mouse strains). 
                     fa_ref          .. The reference sequence in fasta format
                     fai_ref         .. The reference fai file to read the chromosomes and lengths.
@@ -90,7 +215,7 @@ our $options =
                     merge_vcf       .. The merge-vcf script.
                     mpileup_cmd     .. The mpileup command.
                     pileup_rmdup    .. The script to remove duplicate positions.
-                    qcall_cmd       .. The qcall command.
+                    qcall_cmd       .. The qcall command
                     sam2vcf         .. The convertor from samtools pileup format to VCF.
                     samtools_pileup_params .. The options to samtools.pl varFilter (Used by Qcall and varFilter.)
                     sort_cmd        .. Change e.g. to 'sort -T /big/space'
@@ -258,7 +383,7 @@ sub chr_chunks
             #   and it would be hard to decide which of the SNPs should be kept. This way,
             #   all covering reads should be there and the SNPs should have similar/identical 
             #   depth.)
-            $pos += $split_size - 250;
+            $pos += $split_size - $$self{chunks_overlap};
             if ( $pos<1 ) { $self->throw("The split size too small [$split_size]?\n"); }
         
             # Eearly exit for debugging: do two chunks for one chromosome only for testing.
@@ -699,26 +824,80 @@ sub mpileup
         bsub_opts  => {bsub_opts=>$$self{bsub_opts_mpileup},dont_wait=>1,append=>0},
         bams       => $bams,
         split_size => $$self{split_size_mpileup},
+        bcf_based  => $$self{bcf_based},
 
         split_chunks    => \&mpileup_split_chunks,    
         merge_chunks    => \&glue_vcf_chunks,
         merge_vcf_files => \&mpileup_postprocess,
     );
+    if ( exists($$self{mpileup_samples}) ) { $opts{mpileup_samples} = $$self{mpileup_samples}; }
+    if ( $$self{bcf_based} )
+    {
+        $opts{merge_chunks}    = \&glue_bcf_chunks;
+        $opts{merge_vcf_files} = \&merge_bcf_files;
+    }
 
     $self->run_in_parallel(\%opts);
 
     return $$self{Yes};
 }
 
+sub glue_bcf_chunks
+{
+    my ($self,$chunks,$name,$work_dir) = @_;
+    return qq[ `touch $name.vcf.gz` ];
+}
+
+sub merge_bcf_files
+{
+    my ($self,$vcfs,$name) = @_;
+    return qq[ `touch $name.vcf.gz` ];
+}
+
 sub run_mpileup
 {
     my ($self,$file_list,$name,$chunk) = @_;
 
-    Utils::CMD(qq[$$self{mpileup_cmd} -b $file_list -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -gcv - | $$self{bcf_fix} | bgzip -c > $name.vcf.gz.part],{verbose=>1});
-    Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz.part],{verbose=>1});
-    rename("$name.vcf.gz.part.tbi","$name.vcf.gz.tbi") or $self->throw("rename $name.vcf.gz.part.tbi $name.vcf.gz.tbi: $!");
-    rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
+    if ( $$self{bcf_based} )
+    {
+        # Produce BCFs instead of VCFs
+        if ( ! -e "$name.bcf" )
+        {
+            Utils::CMD(qq[$$self{mpileup_cmd} -g -b $file_list -r $chunk -f $$self{fa_ref} > $name.bcf.part],{verbose=>1});
+            rename("$name.bcf.part","$name.bcf") or $self->throw("rename $name.bcf.part $name.bcf: $!");
+        }
 
+        Utils::CMD("touch _$name.done",{verbose=>1});
+        return;
+    }
+    
+    if ( -e "$name.bcf" && exists($$self{mpileup_samples}) )
+    {
+        # Take existing BCF and create a population subsample
+        if ( ! -e "$name.pop.bcf" ) 
+        {
+            Utils::CMD(qq[$$self{bcftools} view -p 0.99 -bvcg -s $$self{mpileup_samples} $name.bcf > $name.pop.bcf.part],{verbose=>1});
+            rename("$name.pop.bcf.part","$name.pop.bcf") or $self->throw("$name.pop.bcf.part $name.pop.bcf: $!");
+        }
+        if ( ! -e "$name.vcf.gz" )
+        {
+            Utils::CMD(qq[$$self{bcftools} view $name.pop.bcf | bgzip -c > $name.vcf.gz.part],{verbose=>1});
+            Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz.part],{verbose=>1});
+            rename("$name.vcf.gz.part.tbi","$name.vcf.gz.tbi") or $self->throw("rename $name.vcf.gz.part.tbi $name.vcf.gz.tbi: $!");
+            rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
+        }
+    }
+    else
+    {
+        # Original code which does not save BCFs and pipes mpileup directly through bcftools to produce VCFs 
+        if ( ! -e "$name.vcf.gz" )
+        {
+            Utils::CMD(qq[$$self{mpileup_cmd} -b $file_list -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -gcv - | $$self{bcf_fix} | bgzip -c > $name.vcf.gz.part],{verbose=>1});
+            Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz.part],{verbose=>1});
+            rename("$name.vcf.gz.part.tbi","$name.vcf.gz.tbi") or $self->throw("rename $name.vcf.gz.part.tbi $name.vcf.gz.tbi: $!");
+            rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
+        }
+    }
     Utils::CMD("touch _$name.done",{verbose=>1});
 }
 
@@ -727,7 +906,7 @@ sub mpileup_split_chunks
 {
     my ($self,$bam,$chunk_name,$chunk) = @_;
 
-    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd bcftools bcf_fix filter4vcf));
+    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd mpileup_samples bcftools bcf_based bcf_fix filter4vcf));
 
     return qq[
 use strict;
@@ -766,7 +945,7 @@ if ( -e "$basename.vcf.gz" )
     rename("$basename.vcf.gz","$name.unfilt.vcf.gz") or Utils::error("rename $basename.vcf.gz $name.unfilt.vcf.gz: \$!");
 }
 
-Utils::CMD("zcat $name.unfilt.vcf.gz | $$self{filter4vcf} | bgzip -c > $basename.filt.vcf.gz");
+Utils::CMD("zcat $name.unfilt.vcf.gz | awk '/^#/||\\\$6>=3' | $$self{filter4vcf} | bgzip -c > $basename.filt.vcf.gz");
 Utils::CMD("zcat $basename.filt.vcf.gz | $$self{vcf_stats} > $name.vcf.gz.stats");
 Utils::CMD("tabix -f -p vcf $basename.filt.vcf.gz");
 rename("$basename.filt.vcf.gz.tbi","$name.vcf.gz.tbi") or Utils::error("rename $basename.filt.vcf.gz.tbi $name.vcf.gz.tbi: \$!");
@@ -1109,6 +1288,84 @@ sub run_qcall_chunk
     rename("$chunk.vcf.gz.part.tbi","$chunk_name.vcf.gz.tbi") or $self->throw("rename $chunk.vcf.gz.part.tbi $chunk_name.vcf.gz.tbi: $!");
     rename("$chunk.vcf.gz.part","$chunk_name.vcf.gz") or $self->throw("rename $chunk.vcf.gz.part $chunk_name.vcf.gz: $!");
     Utils::CMD("touch _$chunk_name.done");
+}
+
+
+=head2 update_db_requires
+
+ Title   : update_db_requires
+ Usage   : my $required_files = $obj->update_db_requires('/path/to/lane');
+ Function: Find out what files the update_db action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub update_db_requires {
+    my ($self, $lane_path) = @_;
+    my @tasks = split /,/, $self->{task};
+    my @requires;
+
+    # need a done file from each caller
+    for my $task (keys %{$self->{task}}) {
+        next if ($task eq "update_db");
+        push @requires, "$task.done";
+    }
+
+    return \@requires;
+}
+
+=head2 update_db_provides
+
+ Title   : update_db_provides
+ Usage   : my $provided_files = $obj->update_db_provides('/path/to/lane');
+ Function: Find out what files the update_db action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub update_db_provides {
+    return [];
+}
+
+=head2 update_db
+
+ Title   : update_db
+ Usage   : $obj->update_db('/path/to/lane', 'lock_filename');
+ Function: Records in the database that the lane has been improved.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+
+
+sub update_db {
+    my ($self, $lane_path, $action_lock) = @_;
+
+    # all the done files are there, so just need to update the processed
+    # flag in the database (if not already updated)
+    my $vrlane = $self->{vrlane};
+    my $vrtrack = $vrlane->vrtrack;
+    return $$self{'Yes'} if $vrlane->is_processed('snp_called');
+    
+    $vrtrack->transaction_start();
+    $vrlane->is_processed('snp_called',1);
+    $vrlane->update() || $self->throw("Unable to set improved status on lane $lane_path");
+    $vrtrack->transaction_commit();
+    return $$self{'Yes'};
+}
+
+
+sub is_finished {
+    my ($self, $lane_path, $action) = @_;
+
+    if ($action->{name} eq 'update_db') {
+        return $self->{No};
+    }
+
+    return $self->SUPER::is_finished($lane_path, $action);
 }
 
 

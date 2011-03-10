@@ -23,10 +23,11 @@ sub error
         "About: Merge the bgzipped and tabix indexed VCF files. (E.g. bgzip file.vcf; tabix -p vcf file.vcf.gz)\n",
         "Usage: merge-vcf [OPTIONS] file1.vcf file2.vcf.gz ... > out.vcf\n",
         "Options:\n",
-        "   -c, --chromosomes <list|file>           Do only the given chromosomes (comma-separated list or one chromosome per line in a file).\n",
+        "   -c, --chromosomes <list|file>           Same as -r, left for backward compatibility. Please do not use as it will be dropped in the future.\n",
         "   -d, --remove-duplicates                 If there should be two consecutive rows with the same chr:pos, print only the first one.\n",
         "   -H, --vcf-header <file>                 Use the VCF header\n",
         "   -h, -?, --help                          This help message.\n",
+        "   -r, --regions <list|file>               Do only the given regions (comma-separated list or one region per line in a file).\n",
         "   -s, --silent                            Try to be a bit more silent, no warnings about duplicate lines.\n",
         "\n";
 }
@@ -40,7 +41,8 @@ sub parse_params
         if ( $arg eq '-d' || $arg eq '--remove-duplicates' ) { $$opts{rm_dups}=1; next; }
         if ( $arg eq '-s' || $arg eq '--silent' ) { $$opts{silent_dups}=1; next; }
         if ( $arg eq '-H' || $arg eq '--vcf-header' ) { $$opts{vcf_header}=shift(@ARGV); next; }
-        if ( $arg eq '-c' || $arg eq '--chromosomes' ) { $$opts{chromosomes}=shift(@ARGV); next; }
+        if ( $arg eq '-c' || $arg eq '--chromosomes' ) { $$opts{regions_list}=shift(@ARGV); next; }
+        if ( $arg eq '-r' || $arg eq '--regions' ) { $$opts{regions_list}=shift(@ARGV); next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         if ( -e $arg ) { push @{$$opts{files}},$arg; next; }
         error("Unknown parameter or non-existent file \"$arg\". Run -? for help.\n");
@@ -77,29 +79,29 @@ sub common_prefix
 }
 
 
-sub read_chrom_list
+sub read_region_list
 {
     my ($opts) = @_;
 
-    my @chroms = ();
-    if ( exists($$opts{chromosomes}) ) 
+    my @regions = ();
+    if ( exists($$opts{regions_list}) ) 
     { 
-        if ( -e $$opts{chromosomes} )
+        if ( -e $$opts{regions_list} )
         {
-            open(my $chrms,'<',$$opts{chromosomes}) or error("$$opts{chromosomes}: $!");
-            while (my $line=<$chrms>)
+            open(my $rgs,'<',$$opts{regions_list}) or error("$$opts{regions_list}: $!");
+            while (my $line=<$rgs>)
             {
                 chomp($line);
-                push @chroms, $line;
+                push @regions, $line;
             }
-            close($chrms);
+            close($rgs);
         }
         else
         {
-            @chroms = split(/,/,$$opts{chromosomes}); 
+            @regions = split(/,/,$$opts{regions_list}); 
         }
     }
-    return (@chroms);
+    return (@regions);
 }
 
 
@@ -108,7 +110,7 @@ sub init_cols
     my ($opts,$vcf_out) = @_;
 
     my $prefix;
-    my @chroms = read_chrom_list($opts);
+    my @regions = read_region_list($opts);
     my @vcfs;
     my @cols;
     my %has_chrom;
@@ -134,14 +136,14 @@ sub init_cols
         $ncols_total += $ncols;
 
         # Update the list of known chromosomes
-        if ( !exists($$opts{chromosomes}) )
+        if ( !exists($$opts{regions_list}) )
         {
             my $chrms = $vcf->get_chromosomes();
             for my $chr (@$chrms)
             {
                 if ( exists($has_chrom{$chr}) ) { next; }
                 $has_chrom{$chr} = 1;
-                push @chroms, $chr;
+                push @regions, $chr;
             }
         }
 
@@ -195,7 +197,7 @@ sub init_cols
 
     $$opts{vcfs} = \@vcfs;
     $$opts{cols} = \@cols;
-    $$opts{chroms} = \@chroms;
+    $$opts{regions} = \@regions;
 }
 
 
@@ -217,9 +219,9 @@ sub merge_vcf_files
     }
 
     init_cols($opts,$vcf_out);
-    my @chroms = @{$$opts{chroms}};
-    my @cols   = @{$$opts{cols}};
-    my @vcfs   = @{$$opts{vcfs}};
+    my @regions = @{$$opts{regions}};
+    my @cols    = @{$$opts{cols}};
+    my @vcfs    = @{$$opts{vcfs}};
 
     # Get the header of the output VCF ready
     $vcf_out->add_columns(@cols);
@@ -247,21 +249,21 @@ sub merge_vcf_files
     $vcf_out->add_header_line({key=>'sourceFiles',value=>$source},append=>'timestamp');
     $vcf_out->add_header_line({key=>'INFO',ID=>'SF',Number=>-1,Type=>'String',Description=>'Source File (index to sourceFiles, f when filtered)'});
 
-    $vcf_out->recalc_ac_an(2);
+    my $have_samples = @{$$vcf_out{columns}}>9 ? 1 : 0; 
+
+    $vcf_out->recalc_ac_an($have_samples ? 2 : 0);
     $vcf_out->add_header_line({key=>'INFO',ID=>'AC',Number=>-1,Type=>'Integer',Description=>'Allele count in genotypes'});
     $vcf_out->add_header_line({key=>'INFO',ID=>'AN',Number=>1,Type=>'Integer',Description=>'Total number of alleles in called genotypes'});
     print $vcf_out->format_header();
 
-    my $have_samples = @{$$vcf_out{columns}}>9 ? 1 : 0; 
-
-    # Go through all VCF files simultaneously and output each line, one chromosome at a time.
-    for my $chr (@chroms)
+    # Go through all VCF files simultaneously and output each line, one region at a time.
+    for my $region (@regions)
     {
         # Open files
         for my $vcf (@vcfs) 
         { 
             delete($$vcf{last_line});
-            $vcf->open(region=>$chr,parse_header=>1); 
+            $vcf->open(region=>$region,parse_header=>1); 
             advance_position($vcf);
         }
 
@@ -271,7 +273,6 @@ sub merge_vcf_files
             if ( !defined $pos ) { last; }
 
             my %out;
-            $out{CHROM}  = $chr;
             $out{POS}    = $pos;
             $out{ID}     = '.';
             $out{ALT}    = [];
@@ -280,7 +281,7 @@ sub merge_vcf_files
             my %info;
             my @src_files;
             my %filters;
-            my (@quals,@qual_weights,$qual_weights_sum);
+            my (@quals,@qual_weights,$qual_weights_sum,%ac,$an);
 
             my %ref_alt_map = ();
             # Find out the REFs and ALTs: in VCFv4.0, the REFs can differ and ALTs must be converted
@@ -288,18 +289,35 @@ sub merge_vcf_files
             {
                 my $line = $$vcf{last_line};
                 if ( !$line or $pos ne $$line{POS} ) { next; }
+                if ( !exists($out{CHROM}) ) { $out{CHROM} = $$line{CHROM}; }
                 my $ref = $$line{REF};
-                for my $alt (@{$$line{ALT}}) { $ref_alt_map{$ref}{$alt}=1; }
+                for my $alt (@{$$line{ALT}}) { $ref_alt_map{$ref}{$alt}=$alt; }
             }
             # Do the REF,ALT conversion only when necessary
             my $new_ref; 
-            if ( scalar keys %ref_alt_map > 1 ) { $new_ref = $vcf_out->fill_ref_alt_mapping(\%ref_alt_map); }
+            if ( scalar keys %ref_alt_map > 1 ) 
+            { 
+                $new_ref = $vcf_out->fill_ref_alt_mapping(\%ref_alt_map); 
+            }
+            if ( !$have_samples )
+            {
+                # Do not loose information from the ALT column when samples are not present
+                my %alts;
+                for my $vcf (@vcfs)
+                {
+                    my $line = $$vcf{last_line};
+                    if ( !$line or $pos ne $$line{POS} ) { next; }
+                    my $ref = $$line{REF};
+                    for my $alt (@{$$line{ALT}}) { $alts{$ref_alt_map{$ref}{$alt}}=1; }
+                    $out{ALT} = [ keys %alts ];
+                }
+            }
             for (my $ivcf=0; $ivcf<@vcfs; $ivcf++)
             {
                 my $vcf  = $vcfs[$ivcf];
                 my $line = $$vcf{last_line};
 
-                # If this file does not have a record for this position, than for all its columns output undef gtype
+                # If this file does not have a record for this position, then for all its columns output undef gtype
                 if ( !$line or $pos ne $$line{POS} )
                 {
                     for (my $i=0; $i<@{$$vcf{__col_names}}; $i++)
@@ -345,6 +363,21 @@ sub merge_vcf_files
 
                 # Remember the FORMAT fields
                 for my $field (@{$$line{FORMAT}}) { $format{$field} = 1; }
+
+                # VCF without genotypes: calculate AC,AN if present
+                if ( !$have_samples )
+                {
+                    if ( exists($$line{INFO}{AN}) ) { $an += $$line{INFO}{AN}; }
+                    if ( exists($$line{INFO}{AC}) ) 
+                    { 
+                        my (@acs) = split(/,/,$$line{INFO}{AC});
+                        for (my $i=0; $i<@acs; $i++) 
+                        { 
+                            my $alt = $ref_alt_map{$$line{REF}}{$$line{ALT}[$i]};
+                            $ac{$alt} += $acs[$i];
+                        }
+                    }
+                }
 
                 # Join the INFO field
                 for my $inf (keys %{$$line{INFO}}) 
@@ -411,8 +444,17 @@ sub merge_vcf_files
             }
             else
             {
-                # Do not loose information from the ALT column when samples are not present
-                $out{ALT} = [ keys %{$ref_alt_map{$out{REF}}} ];
+                if ( defined $an ) { $out{INFO}{AN}=$an; }
+                if ( scalar keys %ac ) 
+                { 
+                    my @acs;
+                    for my $alt (@{$out{ALT}})
+                    {
+                        # Some of the files may not have AC, the AC count can be undefined in such a case.
+                        push @acs, exists($ac{$alt}) ? $ac{$alt} : 0; 
+                    }
+                    $out{INFO}{AC} = join(',',@acs);
+                }
             }
             print $vcf_out->format_line(\%out);
         }

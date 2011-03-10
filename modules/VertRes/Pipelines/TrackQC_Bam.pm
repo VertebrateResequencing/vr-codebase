@@ -263,9 +263,6 @@ sub rename_and_merge
     my @files    = glob("$lane_path/*.bam");
     if ( !scalar @files ) { $self->throw("No BAM files in [$lane_path]?"); }
 
-    my $work_dir = "$lane_path/$$self{sample_dir}";
-    Utils::create_dir("$work_dir");
-
     # First try to use the bam recommended by VertRes::Utils::Hierarchy->lane_bams. For this,
     #   db, slx_mapper, 454_mapper and assembly_name must be given
     if ( exists($$self{db}) && exists($$self{slx_mapper}) && exists($$self{'454_mapper'}) && exists($$self{assembly_name}) )
@@ -290,6 +287,24 @@ sub rename_and_merge
         elsif ( $file=~m{(\d+)\.[ps]e\.raw\.sorted\.bam} ) { push @{$mapstat_ids{$1}},$file; }
     }
 
+    # Reuse existing qc-sample.$mapstat_id directory
+    my $work_dir = "$lane_path/$$self{sample_dir}";
+    my $mapstat_id;
+    if ( scalar keys %mapstat_ids )
+    {
+        my @ids = sort { $b<=>$a } keys %mapstat_ids;
+        if ( ! scalar @ids ) { $self->throw("No bam files in $lane_path?"); }
+
+        # Take the bam file with the highest mapstat_id
+        $mapstat_id = $ids[0];
+
+        if ( ! -e $work_dir && -e "$lane_path/$$self{sample_dir}.$mapstat_id" )
+        {
+            Utils::relative_symlink("$lane_path/$$self{sample_dir}.$mapstat_id",$work_dir);
+        }
+    }
+    Utils::create_dir($work_dir) unless -e $work_dir;
+
     # We can also get BAM files from iRODS. In that case the naming convention is different.
     #   If there is one BAM file only, proceed, otherwise throw an error.
     if ( ! scalar keys %mapstat_ids ) 
@@ -300,12 +315,6 @@ sub rename_and_merge
             return $$self{'Yes'};
         }
     }
-
-    my @ids = sort { $b<=>$a } keys %mapstat_ids;
-    if ( ! scalar @ids ) { $self->throw("No bam files in $lane_path?"); }
-
-    # Take the bam file with the highest mapstat_id
-    my $mapstat_id = $ids[0];
 
     # Remember the id for later
     open(my $fh,'>',"$work_dir/$$self{mapstat_id}") or $self->throw("$work_dir/$$self{mapstat_id}: $!");
@@ -423,6 +432,10 @@ sub check_genotype
 {
     my ($self,$lane_path,$lock_file) = @_;
 
+    # Skip Genotype Check
+    if(exists $$self{'skip_genotype'} && $$self{'skip_genotype'})
+    { $self->debug("Skipping genotype check.\n"); return $$self{'Yes'}; }
+
     if ( !$$self{snps} ) { $self->throw("Missing the option snps.\n"); }
 
     my $name = $$self{lane};
@@ -438,6 +451,10 @@ sub check_genotype
     $$options{'min_glf_ratio'} = $self->lane_info('gtype_confidence');
     $$options{'prefix'}        = $$self{'prefix'};
     $$options{'lock_file'}     = $lock_file;
+
+    if (exists $self->{snp_sites}) {
+        $options->{snp_sites} = $self->{snp_sites};
+    }
 
     my $gtc = VertRes::Utils::GTypeCheck->new(%$options);
     $gtc->check_genotype();
@@ -547,12 +564,14 @@ sub run_graphs
     report_detailed_stats($lane_path,$bam_file,$stats_file);
 
     # The GC-depth graphs
-    if ( ! -e "$outdir/gc-depth-ori.png" || (-e $bindepth && Utils::file_newer($bam_file,$bindepth)) )
-    {
+    # Removed 2011-03-04 jws:  R was throwing errors, and this is covered by
+    # the plot-bamcheck GC plot
+    # if ( ! -e "$outdir/gc-depth-ori.png" || (-e $bindepth && Utils::file_newer($bam_file,$bindepth)) )
+    # {
         # Mapviewdepth_sam sometimes does not read the bam till the end. Ignore SIGPIPE signal. This program will be removed soon anyway.
-        Utils::CMD("$samtools view $bam_file | $mapview $refseq -b=$gc_depth_bin > $bindepth",{verbose=>1,ignore_errno=>141});
-        Graphs::create_gc_depth_graph($bindepth,$gcdepth_R,qq[$outdir/gc-depth-ori.png]);
-    }
+    #     Utils::CMD("$samtools view $bam_file | $mapview $refseq -b=$gc_depth_bin > $bindepth",{verbose=>1,ignore_errno=>141});
+    #     Graphs::create_gc_depth_graph($bindepth,$gcdepth_R,qq[$outdir/gc-depth-ori.png]);
+    # }
 
     `touch $outdir/_graphs.done`;
 }
@@ -649,7 +668,7 @@ sub auto_qc
     my ($test,$status,$reason);
 
     # Genotype check results
-    if ( exists($$self{auto_qc}{gtype_regex}) )
+    if ( exists($$self{auto_qc}{gtype_regex}) && !(exists $$self{'skip_genotype'} && $$self{'skip_genotype'}) )
     {
         my $gtype  = VertRes::Utils::GTypeCheck::get_status("$sample_dir/${name}.gtype");
         $test   = 'Genotype check';
@@ -874,7 +893,22 @@ sub update_db
     my $rmdup_bases_total    = $bc->get('total_length');
     my $rmdup_bases_trimmed  = $bc->get('bases_trimmed');
 
-    my $gtype = VertRes::Utils::GTypeCheck::get_status("$sample_dir/${name}.gtype");
+    my $gtype;
+    unless(exists $$self{'skip_genotype'} && $$self{'skip_genotype'})
+    {
+	# Get genotype results
+	$gtype = VertRes::Utils::GTypeCheck::get_status("$sample_dir/${name}.gtype");
+    }
+    else
+    {
+	# Skip genotype results
+	$gtype = {
+	    status   => 'unchecked',
+	    expected => undef,
+	    found    => undef,
+	    ratio    => undef,
+	};
+    }
 
     my %images = ();
     if ( -e "$sample_dir/chrom-distrib.png" ) { $images{'chrom-distrib.png'} = 'Chromosome Coverage'; }
@@ -934,41 +968,8 @@ sub update_db
     $vrlane->raw_reads($reads_total);
     $vrlane->raw_bases($bases_total);
 
-    if ( !$has_mapstats )
-    {
-        # If there is no mapstats present, the mapper and assembly must be filled in.
-        #   First rely on the config file and if the info is not present there, make a guess
-        #   from the bam file header.
-        my $parser;
-        if ( !$$self{mapper} or !$$self{assembly} or !$$self{mapper_version} ) 
-        {
-            $parser = VertRes::Parser::bam->new(file=>"$sample_dir/$$self{lane}.bam");
-        }
-        if ( !$$self{assembly} ) 
-        {
-            my @info = $parser->sequence_info();
-            if ( @info ) { $$self{assembly} = $info[1]{AS}; }
-        }
-        if ( !$$self{mapper} or !$$self{mapper_version} )
-        {
-            $$self{mapper} = $parser->program();
-            if ( $$self{mapper} )
-            {
-                my %prgs = $parser->program_info();
-                $$self{mapper_version} = $prgs{$$self{mapper}}{VN};
-            }
-        }
-
-        if ( !$$self{assembly} ) { $self->throw("Expected the assembly key.\n"); }
-        if ( !$$self{mapper} ) { $self->throw("Expected the mapper key.\n"); }
-        if ( !$$self{mapper_version} ) { $self->throw("Expected the mapper_version key.\n"); }
-
-        my $assembly = $mapping->assembly($$self{assembly});
-        if (!$assembly) { $assembly = $mapping->add_assembly($$self{assembly}); }
-
-        my $mapper = $mapping->mapper($$self{mapper},$$self{mapper_version});
-        if (!$mapper) { $mapper = $mapping->add_mapper($$self{mapper},$$self{mapper_version}); }
-    }
+    # If there is no mapstats present, the mapper and assembly must be filled in.
+    $self->_update_mapper_and_assembly($sample_dir, $mapping) unless $has_mapstats;
 
     # Do the images
     while (my ($imgname,$caption) = each %images)
@@ -978,20 +979,11 @@ sub update_db
         $img->update;
     }
 
-    # Write the QC status. Never overwrite a QC status set previously by human. Only NULL or no_qc can be overwritten.
     $mapping->update;
-    $vrlane->is_processed('qc',1);
-    my $qc_status = $vrlane->qc_status();
-    if ( !$qc_status || $qc_status eq 'no_qc' ) { $vrlane->qc_status('pending'); } # Never change status which was set manually
-    $vrlane->update;
 
-    my $vrlibrary = VRTrack::Library->new($vrtrack,$vrlane->library_id()) or $self->throw("No such library in the DB: lane=[$name]\n");
-    $qc_status = $vrlibrary->qc_status();
-    if ( !$qc_status || $qc_status eq 'no_qc' ) 
-    { 
-        $vrlibrary->qc_status('pending'); 
-        $vrlibrary->update(); 
-    }
+    # Write the QC status. Never overwrite a QC status set previously by human. Only NULL or no_qc can be overwritten.
+    $self->_write_QC_status($vrtrack, $vrlane, $name);
+
     $vrtrack->transaction_commit();
 
     # Clean the big files
@@ -1008,8 +1000,19 @@ sub update_db
     # Rename the sample dir by mapstats ID, cleaning existing one
     if ( $has_mapstats && $mapstats_id )
     {
-        Utils::CMD("rm -rf $sample_dir.$mapstats_id");
-        rename($sample_dir,"$sample_dir.$mapstats_id");
+        # Check if the sample dir is a symlink to reused $sample_dir.$mapstats_id directory.
+        #   In that case keep the .id directory and remove $sample_dir. Otherwise rename
+        #   $sample_dir to the .id dir.
+        my $link;
+        if ( -l $sample_dir && ($link==readlink($sample_dir)) && $link=~/\.$mapstats_id$/ )
+        {
+            unlink($sample_dir);
+        }
+        else
+        {
+            Utils::CMD("rm -rf $sample_dir.$mapstats_id");
+            rename($sample_dir,"$sample_dir.$mapstats_id");
+        }
     }
  
     return $$self{'Yes'};
@@ -1073,6 +1076,59 @@ sub log
     if ( $fh ) { close($fh); }
 }
 
+
+sub _update_mapper_and_assembly {
+    my ($self, $sample_dir, $mapping) = @_;
+    my $parser;
+
+    #   First rely on the config file and if the info is not present there, make a guess
+    #   from the bam file header.
+    if ( !$$self{mapper} or !$$self{assembly} or !$$self{mapper_version} ) 
+    {
+        $parser = VertRes::Parser::bam->new(file=>"$sample_dir/$$self{lane}.bam");
+    }
+    if ( !$$self{assembly} ) 
+    {
+        my @info = $parser->sequence_info();
+        if ( @info ) { $$self{assembly} = $info[1]{AS}; }
+    }
+    if ( !$$self{mapper} or !$$self{mapper_version} )
+    {
+        $$self{mapper} = $parser->program();
+        if ( $$self{mapper} )
+        {
+            my %prgs = $parser->program_info();
+            $$self{mapper_version} = $prgs{$$self{mapper}}{VN};
+        }
+    }
+
+    if ( !$$self{assembly} ) { $self->throw("Expected the assembly key.\n"); }
+    if ( !$$self{mapper} ) { $self->throw("Expected the mapper key.\n"); }
+    if ( !$$self{mapper_version} ) { $self->throw("Expected the mapper_version key.\n"); }
+
+    my $assembly = $mapping->assembly($$self{assembly});
+    if (!$assembly) { $assembly = $mapping->add_assembly($$self{assembly}); }
+
+    my $mapper = $mapping->mapper($$self{mapper},$$self{mapper_version});
+    if (!$mapper) { $mapper = $mapping->add_mapper($$self{mapper},$$self{mapper_version}); }
+}
+
+
+sub _write_QC_status {
+    my ($self, $vrtrack, $vrlane, $name) = @_;
+    $vrlane->is_processed('qc',1);
+    my $qc_status = $vrlane->qc_status();
+    if ( !$qc_status || $qc_status eq 'no_qc' ) { $vrlane->qc_status('pending'); } # Never change status which was set manually
+    $vrlane->update;
+
+    my $vrlibrary = VRTrack::Library->new($vrtrack,$vrlane->library_id()) or $self->throw("No such library in the DB: lane=[$name]\n");
+    $qc_status = $vrlibrary->qc_status();
+    if ( !$qc_status || $qc_status eq 'no_qc' ) 
+    { 
+        $vrlibrary->qc_status('pending'); 
+        $vrlibrary->update(); 
+    }
+}
 
 1;
 

@@ -93,14 +93,19 @@ sub new
     bless $self, ref($class) || $class;
     $$self{_status_codes}{DONE} = 1;
     $$self{_farm} = 'LSF';
+    $$self{_farm_options} = { runtime=>600 };
+    $$self{_running_jobs} = {};
+    $$self{_nretries} = 1;
     $$self{usage} = 
         "Runner.pm arguments:\n" .
-        "   +help           Summary of commands\n" .
-        "   +local          Do not submit jobs to LSF, but run serially\n" .
-        "   +loop <int>     Run in daemon mode with <int> sleep intervals\n" .
-        "   +run <file>     Run the freezed object created by spawn\n" .
-        "   +show <file>    Print the content of the freezed object created by spawn\n" .
-        "   +verbose        Print debugging messages\n" .
+        "   +help               Summary of commands\n" .
+        "   +local              Do not submit jobs to LSF, but run serially\n" .
+        "   +loop <int>         Run in daemon mode with <int> sleep intervals\n" .
+        "   +maxjobs <int>      Maximum number of simultaneously running jobs\n" .
+        "   +retries <int>      Maximum number of retries\n" .
+        "   +run <file>         Run the freezed object created by spawn\n" .
+        "   +show <file>        Print the content of the freezed object created by spawn\n" .
+        "   +verbose            Print debugging messages\n" .
         "\n";
     return $self;
 }
@@ -115,6 +120,10 @@ sub new
                     Do not submit jobs to LSF, but run serially
                 +loop <int>
                     Run in daemon mode with <int> sleep intervals
+                +maxjobs <int>
+                    Maximum number of simultaneously running jobs
+                +retries <int>
+                    Maximum number of retries
                 +run <file>
                     Run the freezed object created by spawn
                 +show <file>
@@ -133,6 +142,8 @@ sub run
     {
         if ( $arg eq '+help' ) { $self->throw(); }
         if ( $arg eq '+loop' ) { $$self{_loop}=shift(@ARGV); next; }
+        if ( $arg eq '+maxjobs' ) { $$self{_maxjobs}=shift(@ARGV); next; }
+        if ( $arg eq '+retries' ) { $$self{_nretries}=shift(@ARGV); next; }
         if ( $arg eq '+verbose' ) { $$self{_verbose}=1; next; }
         if ( $arg eq '+local' ) { $$self{_run_locally}=1; next; }
         if ( $arg eq '+show' ) 
@@ -169,10 +180,28 @@ sub run
     }
 }
 
+=head2 set_limits
+
+    About : Set time and memory requirements for computing farm
+    Usage : $self->set_limits(memory=>1_000, runtime=>24*60);
+    Args  : <memory>
+                Expected memory requirements [MB] or undef to unset
+            <runtime>
+                Expected running time [minutes] or undef to unset
+                
+=cut
+
+sub set_limits
+{
+    my ($self,%args) = @_;
+    $$self{_farm_options} = { %{$$self{_farm_options}}, %args };
+}
+
+
 =head2 spawn
 
     About : Schedule a job for execution.
-    Usage : $self->spawn($done_file,"method",@params);
+    Usage : $self->spawn("method",$done_file,@params);
     Args  : <func_name>
                 The method to be run
             <file>
@@ -211,9 +240,17 @@ sub spawn
         system($cmd);
     }
 
-    # Otherwise submit to farm
+    # Otherwise submit to farm 
     else
     {
+        # Check if the number of running jobs should be kept low. In case there are too many jobs already, let through
+        #   only jobs which previously failed, i.e. are registered as running.
+        if ( exists($$self{_maxjobs}) && scalar keys %{$$self{_running_jobs}} >= $$self{_maxjobs} && !exists($$self{_running_jobs}{$done_file}) )
+        {
+            return;
+        }
+        $$self{_running_jobs}{$done_file} = 1;
+
         $self->_spawn_to_farm($tmp_file);
     }
 }
@@ -238,7 +275,7 @@ sub _spawn_to_farm
     { 
         my ($nfailures) = `wc -l $farm_jobs_ids`;
         $nfailures =~ s/\s+.+$//;
-        if ( $nfailures >= 3 )
+        if ( $nfailures > $$self{_nretries} )
         {   
             $self->throw("The job failed repeatedly: $prefix.[oer], $$self{_store}{call}(" .join(',',@{$$self{_store}{args}}). ")\n(Remove $prefix.jid to clean the status.)\n");
         }
@@ -251,26 +288,33 @@ sub _spawn_to_farm
     # Run the job
     my $cmd = qq[$0 +run $freeze_file];
     $self->debugln("$$self{_store}{call}:\t$cmd");
-    $farm->can('run')->($farm_jobs_ids,'.',$prefix,{bsub_opts=>''},$cmd);
+    $farm->can('run')->($farm_jobs_ids,'.',$prefix,$$self{_farm_options},$cmd);
 }
 
 =head2 wait
 
     About : Checkpoint, wait for all tasks to finish. 
-    Usage : $self->spawn($done_file1,"method",@params1); 
-            $self->spawn($done_file2,"method",@params2);
+    Usage : $self->spawn("method",$done_file1,@params1); 
+            $self->spawn("method",$done_file2,@params2);
             $self->wait();
-    Args  : None
-                
+    Args  : <none>
+                Without arguments, waits for files registered by previous spawn calls.
+            <@files>
+                Extra files to wait for, in addition to those registered by spawn.
 =cut
 
 sub wait
 {
-    my ($self) = @_;
+    my ($self,@files) = @_;
 
-    for my $file (@{$$self{_checkpoints}})
+    for my $file (@{$$self{_checkpoints}},@files)
     {
-        if ( ! $self->is_finished($file) ) { exit; }
+        if ( ! $self->is_finished($file) ) 
+        { 
+            my $prefix = $self->_get_temp_prefix($file);
+            $self->debugln("The job not finished: $prefix.*");
+            exit; 
+        }
     }
     $$self{_checkpoints} = [];
 }
@@ -297,15 +341,22 @@ sub all_done
 #   
 #       About : Check if the file is finished.
 #       Usage : $self->is_finished('some/file');
-#       Args  : <file>
+#       Args  : <file list>
 #                   The name of the file to check the existence of
 #                   
 #   =cut
 
 sub is_finished
 {
-    my ($self,$file) = @_;
-    return -e $file;
+    my ($self,@files) = @_;
+    my $all_finished = 1;
+    for my $file (@files)
+    {
+        my $is_finished = -e $file;
+        if ( !$is_finished ) { $all_finished=0; }
+        elsif ( exists($$self{_running_jobs}{$file}) ) { delete($$self{_running_jobs}{$file}); }
+    }
+    return $all_finished;
 }
 
 # Run the freezed object created by spawn

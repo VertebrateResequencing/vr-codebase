@@ -206,6 +206,7 @@ sub _open
         }
         elsif ( $$self{file}=~m{^(?:http|ftp)://} )
         {
+            if ( !exists($args{region}) ) { $tabix_args .= ' .'; }
             $cmd = "tabix $tabix_args |";
             $$self{check_exit_status} = 1;
         }
@@ -273,7 +274,30 @@ sub next_line
 {
     my ($self) = @_;
     if ( @{$$self{buffer}} ) { return shift(@{$$self{buffer}}); }
-    my $line = readline($$self{fh});
+    # my $line = readline($$self{fh});
+    # Temporary fix to work around a samtools/bcftools bug:
+    my $line;
+    while (1)
+    {
+        $line = readline($$self{fh});
+        if ( !defined $line ) { last; }
+    
+        my $len = length($line);
+        if ( $len>500_000 ) 
+        { 
+            $line=~/^([^\t]+)\t([^\t]+)/;
+            print STDERR "Ignoring line: $1 $2 .. len=$len\n"; 
+            next;
+        }
+        if ( $line=~/GT:GT/ )
+        {
+            $line=~/^([^\t]+)\t([^\t]+)/;
+            print STDERR "Ignoring line (GT:GT): $1 $2\n"; 
+            next;
+        }
+    
+        last;
+    }
     if ( !defined $line && $$self{check_exit_status} )
     {
         my $pid = waitpid(-1, WNOHANG);
@@ -306,15 +330,50 @@ sub _unread_line
 sub next_data_array
 {
     my ($self,$line) = @_;
-    if ( !$line )
-    {
-        if ( @{$$self{buffer}} ) { $line = shift(@{$$self{buffer}}); }
-        else { $line = readline($$self{fh}); }
-    }
+    if ( !$line ) { $line = $self->next_line(); }
     if ( !$line ) { return undef; }
     my @items = split(/\t/,$line);
     chomp($items[-1]);
     return \@items;
+}
+
+
+=head2 set_samples
+
+    About   : Parsing big VCF files with many sample columns is slow, not parsing unwanted samples may speed things a bit.
+    Usage   : my $vcf = Vcf->new(); 
+              $vcf->set_samples(include=>['NA0001']);   # Exclude all but this sample. When the array is empty, all samples will be excluded.
+              $vcf->set_samples(exclude=>['NA0003']);   # Include only this sample. When the array is empty, all samples will be included.
+              my $x = $vcf->next_data_hash();
+    Args    : Optional line to parse
+
+=cut
+
+sub set_samples
+{
+    my ($self,%args) = @_;
+
+    if ( exists($args{include}) )
+    {
+        for (my $i=0; $i<@{$$self{columns}}; $i++) { $$self{samples_to_parse}[$i] = 0; }
+        for my $sample (@{$args{include}})
+        {
+            if ( !exists($$self{has_column}{$sample}) ) { $self->throw("The sample not present in the VCF file: [$sample]\n"); }
+            my $idx = $$self{has_column}{$sample} - 1;
+            $$self{samples_to_parse}[$idx]  = 1;
+        }
+    }
+    
+    if ( exists($args{exclude}) )
+    {
+        for (my $i=0; $i<@{$$self{columns}}; $i++) { $$self{samples_to_parse} = 1; }
+        for my $sample (@{$args{exclude}})
+        {
+            if ( !exists($$self{has_column}{$sample}) ) { $self->throw("The sample not present in the VCF file: [$sample]\n"); }
+            my $idx = $$self{has_column}{$sample} - 1;
+            $$self{samples_to_parse}[$idx]  = 0;
+        }
+    }
 }
 
 
@@ -401,11 +460,7 @@ sub new
 sub next_data_hash
 {
     my ($self,$line) = @_;
-    if ( !$line )
-    {
-        if ( @{$$self{buffer}} ) { $line = shift(@{$$self{buffer}}); }
-        else { $line = readline($$self{fh}); }
-    }
+    if ( !$line ) { $line = $self->next_line(); }
     if ( !$line ) { return undef; }
     my @items;
     if ( ref($line) eq 'ARRAY' ) { @items = @$line; }
@@ -413,7 +468,7 @@ sub next_data_hash
     chomp($items[-1]);
 
     my $cols = $$self{columns};
-    if ( !$$self{columns} ) 
+    if ( !$cols ) 
     { 
         $self->_fake_column_names(scalar @items - 9); 
         $cols = $$self{columns};
@@ -485,6 +540,7 @@ sub next_data_hash
     for (my $icol=9; $icol<@items; $icol++)
     {
         if ( $items[$icol] eq '' ) { $self->warn("Empty column $$cols[$icol] at $items[0]:$items[1]\n"); next; }
+        if ( exists($$self{samples_to_parse}) && !$$self{samples_to_parse}[$icol] ) { next; }
 
         my @fields = split(/:/, $items[$icol]);
         if ( $check_nformat && @fields != @$format ) 
@@ -880,7 +936,9 @@ sub _format_line_hash
     }
     if ( $needs_an_ac )
     {
-        my ($an,$ac) = $self->calc_an_ac($gtypes);
+        my $nalt = scalar @{$$record{$$cols[4]}};
+        if ( $nalt==1 && $$record{$$cols[4]}[0] eq '.' ) { $nalt=0; } 
+        my ($an,$ac) = $self->calc_an_ac($gtypes,$nalt);
         push @info, "AN=$an","AC=$ac";
     }
     if ( !@info ) { push @info, '.'; }
@@ -1057,7 +1115,7 @@ sub parse_alleles
     if ( !exists($$rec{gtypes}) || !exists($$rec{gtypes}{$column}) ) { $self->throw("The column not present: '$column'\n"); }
 
     my $gtype = $$rec{gtypes}{$column}{GT};
-    if ( !($gtype=~$$self{regex_gt}) ) { $self->throw("Could not parse gtype string [$gtype]\n"); }
+    if ( !($gtype=~$$self{regex_gt}) ) { $self->throw("Could not parse gtype string [$gtype] [$$rec{CHROM}:$$rec{POS}]\n"); }
     my $al1 = $1;
     my $sep = $2;
     my $al2 = $3;
@@ -1084,11 +1142,12 @@ sub parse_alleles
 
 =head2 parse_haplotype
 
-    About   : Similar to parse_alleles, supports also multiploid VCFs.
+    About   : Similar to parse_alleles, supports also multiploid VCFs. 
     Usage   : my $x = $vcf->next_data_hash(); my ($alleles,$seps,$is_phased,$is_empty) = $vcf->parse_haplotype($x,'NA00001');
     Args    : VCF data line parsed by next_data_hash
             : The genotype column name
-    Returns : Two array refs and two boolean flags: List of alleles, list of separators, and is_phased/empty flags.
+    Returns : Two array refs and two boolean flags: List of alleles, list of separators, and is_phased/empty flags. The values
+                can be cashed and must be therefore considered read only!
 
 =cut
 
@@ -1102,7 +1161,7 @@ sub parse_haplotype
 
     my @alleles   = ();
     my @seps      = ();
-    my $is_phased = 1;
+    my $is_phased = 0;
     my $is_empty  = 1;
 
     my $buf = $gtype;
@@ -1121,7 +1180,7 @@ sub parse_haplotype
         }
         if ( $2 )
         {
-            if ( $2 ne '|' ) { $is_phased=0; }
+            if ( $2 eq '|' ) { $is_phased=1; }
             push @seps,$2;
         }
     }
@@ -1595,7 +1654,7 @@ sub run_validation
 
     my $default_qual = $$self{defaults}{QUAL};
     my $warn_sorted=1;
-    my $warn_duplicates=1;
+    my $warn_duplicates = exists($$self{warn_duplicates}) ? $$self{warn_duplicates} : 1;
     my ($prev_chrm,$prev_pos);
     while (my $x=$self->next_data_hash()) 
     {

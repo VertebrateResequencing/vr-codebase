@@ -195,6 +195,7 @@ sub update_db
 
     $vrtrack->transaction_start();
 
+    my ($tot_tot_len,$tot_num_seq);
     for my $file (@{$$self{files}})
     {
         # Hm, this must be evaled, otherwise it dies without rollback
@@ -265,6 +266,7 @@ sub update_db
 
         my $vrmapper = $vrmapping->mapper($mapper,$mapper_version);
         if ( !$vrmapper ) { $vrmapper = $vrmapping->add_mapper($mapper,$mapper_version); }
+        $vrmapping->update();
 
         # Now rename everything to '1234.pe.raw.sorted.*'
         my $new_fn = sprintf "%d.%s.raw%s.bam", 
@@ -277,12 +279,20 @@ sub update_db
         rename("$lane_path/$file.bai","$lane_path/$new_fn.bai");
         rename("$lane_path/$file.md5","$lane_path/$new_fn.md5");
         Utils::CMD(qq[echo "$md5  $new_fn" > $lane_path/$new_fn.md5]);
+        
+        $vrfile->hierarchy_name($new_fn);
+        $vrfile->update();
+
+        $tot_num_seq += $num_seq;
+        $tot_tot_len += $tot_len;
     }
 
     # Finally, change the import status of the lane, so that it will not be picked up again
     #   by the run-pipeline script.
     $vrlane->is_processed('import',1);
     $vrlane->is_withdrawn(0);
+    $vrlane->raw_bases($tot_tot_len);
+    $vrlane->raw_reads($tot_num_seq);
     $vrlane->update();
     $vrtrack->transaction_commit();
 
