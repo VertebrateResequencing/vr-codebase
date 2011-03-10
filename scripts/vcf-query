@@ -208,6 +208,7 @@ sub read_data
                 while (my ($colname,$idx) = each %{$$opts{repeat}{idx}})
                 {
                     if ( exists($$x{gtypes}{$col}{$colname}) ) { $out[$idx] = $$x{gtypes}{$col}{$colname}; }
+                    elsif ( exists($$x{$colname}) ) { $out[$idx] = $$x{$colname}; }
                 }
                 if ( exists($$opts{repeat}{idx}{SAMPLE}) ) { $out[$$opts{repeat}{idx}{SAMPLE}] = $col; }
                 if ( exists($$opts{repeat}{idx}{GT}) ) 
