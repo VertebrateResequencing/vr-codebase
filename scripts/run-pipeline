@@ -1069,6 +1069,8 @@ sub get_snps_jobs_from_vrtrack {
 
     debug($config_data, "found " . (scalar @lanes) . " lanes improved but not SNP called");
 
+    my $lanes_count = 0;
+
     # For big data sets, this loop takes suprisingly long.
     foreach my $vrlane (@lanes)
     {
@@ -1137,6 +1139,13 @@ sub get_snps_jobs_from_vrtrack {
         $lane_info->{lane_path} = $path;
         my $job = Job->new({lane_info=>$lane_info, %$config_data, path=>$snp_dir, config=>$config, mtime=>$mtime});
         push @$jobs, $job;
+
+        $lanes_count++;
+        if ($config_data->{max_lanes} and $lanes_count == $config_data->{max_lanes}){
+            debug($config_data, ".max lanes limit of " . $config_data->{max_lanes} . " reached...");
+            last;
+        }
+
         debug($config_data,".");
     }
 

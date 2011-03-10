@@ -151,6 +151,7 @@ sub parse_filters
         if ( $key eq '+' ) { next; }
         my $to_be_deleted = 0;
         if ( $key=~/^-(.+)$/ ) { $to_be_deleted=1; $key = $1; }
+        if ( !exists($filters{$key}) ) { $key = $mapping{$key}; }
         if ( !exists($filters{$key}) && !exists($mapping{$key}) ) { error("The filter [$key] not recognised.\n"); }
         if ( $to_be_deleted ) { delete($$opts{filters}{$key}); next; }
 
@@ -169,7 +170,6 @@ sub parse_filters
             next;
         }
 
-        if ( !exists($filters{$key}) ) { $key = $mapping{$key}; }
         $$opts{filters}{$key} = $val;
         $has_filters = 1;
     }
