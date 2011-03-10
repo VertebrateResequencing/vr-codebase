@@ -27,7 +27,7 @@ sub error
         "Usage: compare-vcf [OPTIONS] file1.vcf file2.vcf ...\n",
         "Options:\n",
         "   -c, --chromosomes <list|file>       Same as -r, left for backward compatibility. Please do not use as it will be dropped in the future.\n",
-        "   -d, --debug                         Debugging information\n",
+        "   -d, --debug                         Debugging information. Giving the option multiple times increases verbosity\n",
         "   -H, --cmp-haplotypes                Compare haplotypes, not only positions\n",
         "   -h, -?, --help                      This help message.\n",
         "   -r, --regions <list|file>           Process the given regions (comma-separated list or one region per line in a file).\n",
@@ -52,7 +52,7 @@ sub parse_params
             $$opts{samples} = [ split(/,/,$samples) ];
             next;
         }
-        if ( $arg eq '-d' || $arg eq '--debug' ) { $$opts{debug}=1; next; }
+        if ( $arg eq '-d' || $arg eq '--debug' ) { $$opts{debug}++; next; }
         if ( $arg eq '-w' || $arg eq '--win' ) { $$opts{win}=shift(@ARGV); next; }
         if ( -e $arg ) { push @{$$opts{files}}, $arg; next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
@@ -335,7 +335,7 @@ sub do_region_stats
     my ($opts,$vcfs) = @_;
 
     my $nvcfs = scalar @$vcfs;
-    my $debug = $$opts{debug} ? 1 : 0;
+    my $debug = $$opts{debug} ? $$opts{debug} : 0;
     my $match = $$opts{match};
     my $win   = $$opts{win} ? $$opts{win} : 0;
     while (1)
@@ -343,7 +343,7 @@ sub do_region_stats
         my $grp = read_next_group($vcfs,$win);
         if ( !$grp || !scalar @$grp ) { last }
 
-        if ( $debug )
+        if ( $debug>1 )
         {
             print "Group:\n";
             for my $rec (@$grp) { print "$$rec{chr}\t$$rec{pos}\t$$rec{vcf}{file}\n"; }
@@ -557,10 +557,15 @@ sub cmp_haplotypes
 
     if ( $row_gtype_match or $row_gtype_mismatch )
     {
-        my $row_discordance = sprintf "%.2f", int($row_gtype_mismatch/($row_gtype_match+$row_gtype_mismatch)/0.05)*0.05;
+        my $row_discordance = $row_gtype_mismatch/($row_gtype_match+$row_gtype_mismatch);
         my $af;
         for my $n (split(/,/,$ac)) { $af += $n; }
-        $af = sprintf "%.2f", int($af/$an/0.05)*0.05;
+        $af = $af/$an;
+
+        if ( $$opts{debug} ) { print "#RD\t$$grp[0]{rec}{CHROM}\t$$grp[0]{rec}{POS}\t$row_discordance\t$af\n"; }
+
+        $row_discordance = sprintf "%.2f", int($row_discordance/0.05)*0.05;
+        $af = sprintf "%.2f", int($af/0.05)*0.05;
         $$opts{row_discordance}{$af}{$row_discordance}++;
     }
 }
