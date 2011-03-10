@@ -392,21 +392,26 @@ sub merge_vcf_files
                 # Now fill in the genotype information for each column
                 for (my $i=0; $i<@{$$vcf{__col_names}}; $i++)
                 {
-                    my $gt = $$vcf{columns}->[$i+9];
+                    my $ori_name = $$vcf{columns}->[$i+9];
+                    my $out_name = $$vcf{__col_names}->[$i];
+
+                    $out{gtypes}{$out_name} = $$line{gtypes}{$ori_name};
 
                     # This is to convert 0/1 to G/C
-                    my ($a,$sep,$b) = $vcf->parse_alleles($line,$gt);
+                    my ($alleles,$seps,$is_phased,$is_empty) = $vcf->parse_haplotype($line,$ori_name);
                     if ( defined $new_ref )
                     {
-                        $a = $ref_alt_map{$ref}{$a};
-                        $b = $ref_alt_map{$ref}{$b};
+                        my @als;
+                        for my $al (@$alleles) 
+                        { 
+                            push @als, exists($ref_alt_map{$ref}{$al}) ? $ref_alt_map{$ref}{$al} : '.';
+                        }
+                        $out{gtypes}{$out_name}{GT} = $vcf->format_haplotype(\@als,$seps);
                     }
-                    if ( !defined $a ) { $a=''; }
-                    if ( !defined $b ) { $b=''; }
-
-                    my $name = $$vcf{__col_names}->[$i];
-                    $out{gtypes}{$name} = $$line{gtypes}{$$vcf{columns}->[$i+9]};
-                    $out{gtypes}{$name}{GT}  = $a.$sep.$b;
+                    else
+                    {
+                        $out{gtypes}{$out_name}{GT} = $vcf->format_haplotype($alleles,$seps);
+                    }
                 }
                 $out{REF} = defined $new_ref ? $new_ref : $ref;
                 advance_position($vcf,$opts);
