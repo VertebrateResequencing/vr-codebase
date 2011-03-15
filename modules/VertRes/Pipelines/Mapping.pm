@@ -222,7 +222,7 @@ sub new {
         
         my $files = $vrlane->files();
         foreach my $file (@{$files}) {
-            push @{$self->{files}}, $file->hierarchy_name;
+            push @{$self->{files}}, $file->hierarchy_name if $file->type =~ /0|1|2/;
         }
     }
     $self->{vrlane} || $self->throw("vrlane object missing");
@@ -557,8 +557,13 @@ sub _get_read_args {
     foreach my $vrfile (@vrfiles) {
         my $fastq = $vrfile->hierarchy_name;
         my $type = $vrfile->type;
-        if (defined $type && $type =~ /^(0|1|2)$/) {
-            $fastq_info[$type]->[0] = $fastq;
+        if (defined $type && $type != 3) {
+            if ($type =~ /^(0|1|2)$/) {
+                $fastq_info[$type]->[0] = $fastq;
+            }
+            else {
+                next;
+            }
         }
         else {
             if ($fastq =~ /${lane}_(\d)\./) {
