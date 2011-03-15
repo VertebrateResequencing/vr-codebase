@@ -337,7 +337,7 @@ sub bam_to_fastq_requires {
         
         # bam name in the db or on disc might be one of original name or
         # renamed to mapping-pipeline-style mapstats id name
-        if ($bam && -e$self->{fsu}->catfile($self->{lane_path}, $bam)) {
+        if ($bam && -e $self->{fsu}->catfile($self->{lane_path}, $bam)) {
             return [$bam];
         }
         elsif ($bam) {
