@@ -1422,6 +1422,7 @@ sub is_finished {
                 my ($md5) = split(" ", $line);
                 
                 $file = $vrlane->add_file($fq_base);
+                $file->hierarchy_name($fq_base);
                 $file->raw_bases($raw_bases);
                 $file->raw_reads($num_of_sequences);
                 $file->mean_q($mean_q);
