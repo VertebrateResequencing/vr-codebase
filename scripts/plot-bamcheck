@@ -342,8 +342,8 @@ set output "] . $$args{img} . q["
 
 unset key
 
-isize_max = `grep ^IS ] . $$opts{bamcheck} . q[ | cut -f 2- | awk '{if($2>max){max=$2;isize=$1}}END{print isize}'`
-isize_cnt = `grep ^IS ] . $$opts{bamcheck} . q[ | cut -f 2- | awk '{if($2>max){max=$2;isize=$1}}END{print max}'`
+isize_max = `grep ^IS ] . $$opts{bamcheck} . q[ | cut -f 2- | awk 'BEGIN{max=0;isize=0}{if($2>max){max=$2;isize=$1}}END{print isize}'`
+isize_cnt = `grep ^IS ] . $$opts{bamcheck} . q[ | cut -f 2- | awk 'BEGIN{max=0;isize=0}{if($2>max){max=$2;isize=$1}}END{print max}'`
 set label sprintf("%d",isize_max) at isize_max+10,isize_cnt
 
 set ylabel "Frequency" 
