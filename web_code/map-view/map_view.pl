@@ -341,7 +341,7 @@ sub displayProjectLanesPage
         my %lane_mappers;
         foreach my $mapstat ( @mappings )
         {
-            if( $mapstat->mapper() )
+            if( $mapstat->mapper() && $mapstat->raw_bases() && $mapstat->raw_bases() > 0 )
             {
                 my $mapper = $mapstat->mapper();
                 $lane_mappers{ $mapper->name().qq[_].$mapper->version().qq[_].$mapper->id() } = 1;
