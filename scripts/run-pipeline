@@ -796,6 +796,20 @@ sub get_mapping_jobs_from_vrtrack {
     
     my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
     
+    # a limit on lane is not valid for VertRes::Utils::Hierarchy->get_lanes, but
+    # for consistency allow it
+    my %requested_lanes;
+    my $limit_by_lane_name = 0;
+    if (defined $config_data->{limits}) {
+        my $lanes = delete $config_data->{limits}->{lane};
+        if ($lanes) {
+            $limit_by_lane_name = 1;
+            foreach my $lane (@{$lanes}) {
+                $requested_lanes{$lane} = 1;
+            }
+        }
+    }
+    
     # if no limits have been specified, or if it's only platform => ['SLX',
     # '454'] which is what you'd get anyway given that the import doesn't import
     # SOLID, then don't use VertRes::Utils::Hierarchy->get_lanes which is slow
@@ -837,9 +851,11 @@ sub get_mapping_jobs_from_vrtrack {
         next if $vrlane->is_withdrawn;
         next unless $vrlane->is_processed('import');
         next if $vrlane->is_processed('mapped');
-        $count++;
-        
         my $lane_name = $vrlane->name;
+        if ($limit_by_lane_name) {
+            next unless exists $requested_lanes{$lane_name};
+        }
+        $count++;
         
         if ($coverage_opts) {
             my $coverage = $hu->hierarchy_coverage(lane => $lane_name, %{$coverage_opts->{pass_through}});
@@ -855,7 +871,7 @@ sub get_mapping_jobs_from_vrtrack {
         
         my $files = $vrlane->files();
         foreach my $file (@{$files}) {
-            push @{$lane_info->{files}}, $file->hierarchy_name;
+            push @{$lane_info->{files}}, $file->hierarchy_name if $file->type =~ /0|1|2/;
         }
         
         my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
