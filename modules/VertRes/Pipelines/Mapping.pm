@@ -1399,7 +1399,7 @@ sub is_finished {
     }
     elsif ($action->{name} eq 'bam_to_fastq') {
         my @files = @{$self->{files} || []};
-        unless (@files) {
+        unless (@files >= 2) {
             my @fastqs = ($self->{fsu}->catfile($self->{lane_path}, "$self->{lane}_1.fastq.gz"), $self->{fsu}->catfile($self->{lane_path}, "$self->{lane}_2.fastq.gz"));
             my $type = 0;
             foreach my $fastq (@fastqs) {
