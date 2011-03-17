@@ -1404,7 +1404,7 @@ sub is_finished {
             my $type = 0;
             foreach my $fastq (@fastqs) {
                 $type++;
-                next unless -s $fastq;
+                next unless -s "$fastq.fastqcheck";
                 my $fq_base = basename($fastq);
                 
                 my $vrlane = $self->{vrlane};
