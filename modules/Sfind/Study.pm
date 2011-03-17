@@ -4,13 +4,14 @@ package Sfind::Study;
 Sfind::Study - Sequence Tracking Study object
 
 =head1 SYNOPSIS
-    my $study = Sfind::Study->new($dbh, $study_id);
+    my $study = Sfind::Study->new({dbh => $dbh, id=>$study_id});
 
     #get arrayref of sample objects in a study
     my $samples = $study->samples();
     
     my $id = $study->id();
     my $name = $study->name();
+    my $uuid = $study->uuid();
 
 =head1 DESCRIPTION
 
@@ -18,50 +19,252 @@ An object describing the tracked properties of a study.
 
 =head1 CONTACT
 
-nds@sanger.ac.uk
+jws@sanger.ac.uk
 
 =head1 METHODS
 
 =cut
 
-use strict;
-use warnings;
-no warnings 'uninitialized';
+use Moose;
 use Sfind::Sample;
-use DBI;
+use namespace::autoclean;
 
 
-=head2 new
+has '_dbh'  => (
+    is          => 'ro',
+    isa         => 'DBI::db',
+    required    => 1,
+    init_arg    => 'dbh',
+);
 
-  Arg [1]    : database handle to seqtracking database
-  Arg [2]    : study id
-  Example    : my $study = Sfind::Sfind->new($dbh, $id)
-  Description: Returns Study object by study_id
-  Returntype : Sfind::Study object
+has 'id'    => (
+    is          => 'ro',
+    isa         => 'Int',
+    required    => 1,
+);
 
-=cut
+has 'name'  => (
+    is          => 'ro',
+    isa         => 'Str',
+    required    => 1,
+);
 
-sub new {
-    my ($class,$dbh, $id) = @_;    
-    die "Need to call with a db handle and id" unless ($dbh && $id);
-    my $self = {};
-    bless ($self, $class);
-    $self->{_dbh} = $dbh;
-    my $sql = qq[select study_name from study_information where study_id=?];
-    my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($id));
+has 'uuid'  => (
+    is          => 'ro',
+    isa         => 'Str',
+);
+
+has 'description'  => (
+    is          => 'ro',
+    isa         => 'Str',
+);
+
+has 'abstract'  => (
+    is          => 'ro',
+    isa         => 'Str',
+);
+
+has 'sponsor'  => (
+    is          => 'ro',
+    isa         => 'Str',
+    init_arg    => 'faculty_sponsor',
+);
+
+has 'accession'  => (
+    is          => 'ro',
+    isa         => 'Str',
+    init_arg    => 'accession_number',
+);
+
+has 'abbreviation'  => (
+    is          => 'ro',
+    isa         => 'Str',
+);
+
+has 'study_type'    => (
+    is          => 'ro',
+    isa         => 'Str',
+);
+
+has 'ref_genome'=> (
+    is          => 'ro',
+    isa         => 'Str',
+    init_arg    => 'reference_genome',
+);
+
+has 'ethically_approved'=> (
+    is          => 'ro',
+    isa         => 'Bool',
+);
+
+# Add these when fields appear from Andrew Page.
+# Might need coercion of yes/no to bool? 
+#has 'contains_human_dna'=> (
+#    is          => 'ro',
+#    isa         => 'Bool',
+#);
+
+#has 'contaminated_with_human_dna'=> (
+#    is          => 'ro',
+#    isa         => 'Bool',
+#    init_arg    => 'contaminated_human_dna',
+#);
+
+#has 'visibility'=> (
+#    is          => 'ro',
+#    isa         => 'Str',
+#    init_arg    => 'sra_study_hold',
+#);
+
+#has 'title'=> (
+#    is          => 'ro',
+#    isa         => 'Str',
+#    init_arg    => 'study_title',
+#);
+
+#has 'sra_project_id'=> (
+#    is          => 'ro',
+#    isa         => 'Str',
+#);
+
+has 'sample_ids'=> (
+    is          => 'ro',
+    isa         => 'ArrayRef[Int]',
+    lazy        => 1,
+    builder     => '_get_sample_ids',
+);
+
+has 'samples'=> (
+    is          => 'ro',
+    isa         => 'ArrayRef[Sfind::Study]',
+    lazy        => 1,
+    builder     => '_get_samples',
+);
+
+
+# Populate the parameters from the database
+around BUILDARGS => sub {
+    my $orig  = shift;
+    my $class = shift;
+    
+    my $argref = $class->$orig(@_);
+
+    my $sql = qq[select * from studies where internal_id=? and is_current=1];
+    my $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
     if ($id_ref){
-	my $name = $id_ref->{study_name};
-        $name =~ s/\s+$//;  # trim trailing whitespace
-	$self->id($id);
-	$self->name($name);
-    }
-    else {
-	return undef;
-    }
+        foreach my $field(keys %$id_ref){
+            $argref->{$field} = $id_ref->{$field};
+        }
+    };
+    return $argref;
+};
 
-    return $self;
-}
 
+=head2 id
+
+  Arg [1]    : id (optional)
+  Example    : my $id = $study->id();
+	       $study->id('104');
+  Description: Return ID of a study
+  Returntype : SequenceScape ID (usu. integer)
+
+
+=head2 name
+
+  Arg [1]    : name (optional)
+  Example    : my $name = $study->name();
+	       $study->name('1000Genomes-A1-CEU');
+  Description: Return study name
+  Returntype : string
+
+
+=head2 uuid
+
+  Arg [1]    : uuid (optional)
+  Example    : my $uuid = $study->uuid();
+	       $study->uuid('60f676b2-dd7f-11df-a1d2-00144f206e2e');
+  Description: Return study uuid
+  Returntype : string
+
+
+=head2 description
+
+  Arg [1]    : description (optional)
+  Example    : my $description = $study->description();
+	       $study->description($big_long_description_text);
+  Description: Return study description
+  Returntype : string
+
+
+=head2 abstract
+
+  Arg [1]    : abstract (optional)
+  Example    : my $abstract = $study->abstract();
+	       $study->abstract($big_long_abstract_text);
+  Description: Return study abstract
+  Returntype : string
+
+
+=head2 sponsor
+
+  Arg [1]    : sponsor (optional)
+  Example    : my $sponsor = $study->sponsor();
+	       $study->sponsor('Richard Durbin');
+  Description: Return study Faculty/SAC sponsor
+  Returntype : string
+
+
+=head2 accession
+
+  Arg [1]    : accession (optional)
+  Example    : my $accession = $study->accession();
+	       $study->accession('SRP000542');
+  Description: Return study SRA/ERA accession
+  Returntype : string
+
+
+=head2 study_type
+
+  Arg [1]    : study_type (optional)
+  Example    : my $study_type = $study->study_type();
+	       $study->study_type('Whole Genome Sequencing');
+  Description: Return study type
+  Returntype : string
+
+
+=head2 abbreviation
+
+  Arg [1]    : abbreviation (optional)
+  Example    : my $abbreviation = $study->abbreviation();
+	       $study->abbreviation('UK10K_MUIR');
+  Description: Return study abbreviation.
+  Returntype : string
+
+
+=head2 ref_genome
+
+  Arg [1]    : ref_genome (optional)
+  Example    : my $ref_genome = $study->ref_genome();
+	       $study->ref_genome('Homo_sapiens (NCBI36)');
+  Description: Return reference genome to align this study to
+  Returntype : string
+
+
+=head2 ethically_approved
+
+  Arg [1]    : ethically_approved (optional)
+  Example    : my $ethically_approved = $study->ethically_approved();
+	       $study->ethically_approved(0);
+  Description: Return ethical approval status
+  Returntype : string
+
+
+=head2 sample_ids
+
+  Arg [1]    : None
+  Example    : my $sample_ids = $study->sample_ids();
+  Description: Returns a ref to an array of the sample IDs that are associated with this study
+  Returntype : arrayref of sorted integer sample IDs
 
 
 =head2 samples
@@ -71,98 +274,76 @@ sub new {
   Description: Returns a ref to an array of the sample objects that are associated with this study
   Returntype : ref to array of Sfind::Sample objects
 
-=cut
 
-sub samples {
-    my ($self) = @_;
-
-    unless ($self->{'samples'}){
-	my @samples;
-    	foreach my $id (@{$self->sample_ids()}){
-
-	    if($id && $id=~/^\d/){
-	        my $obj = Sfind::Sample->new($self->{_dbh},$id, $self->id);
-	        push @samples, $obj;
-	    }
-	}
-	$self->{'samples'} = \@samples;
-    }
-
-    return $self->{'samples'};
-}
-
-
-=head2 sample_ids
+=head2 contains_human_dna
 
   Arg [1]    : None
-  Example    : my $sample_ids = $study->sample_ids();
-  Description: Returns a ref to an array of the sample IDs that are associated with this study
-  Returntype : ref to sorted array of integer sample IDs
+  Example    : my $chd = $study->contains_human_dna();
+  Description: Returns the value in the 'contains_human_dna' field for this study
+  Returntype : bool
 
+
+=head2 contaminated_with_human_dna
+
+  Arg [1]    : None
+  Example    : my $chd = $study->contaminated_with_human_dna();
+  Description: Returns the value in the 'contaminated_human_dna' field for this study
+  Returntype : bool
+
+
+=head2 visibility
+
+  Arg [1]    : None
+  Example    : my $vis = $study->visibility();
+  Description: Public archive visibility of this study
+  Returntype : String
+
+
+=head2 title
+
+  Arg [1]    : None
+  Example    : my $title = $study->title();
+  Description: Public archive title of this study
+  Returntype : String
+
+
+=head2 sra_project_id
+
+  Arg [1]    : None
+  Example    : my $sra_id = $study->sra_project_id();
+  Description: Public archive project ID for this study
+  Returntype : String
 =cut
 
-sub sample_ids {
+
+# builder to retrieve samples
+sub _get_samples {
     my ($self) = @_;
-
-    # jws 2011-01-05
-    # Changed this subroutine
-    # from:  get distinct sample_ids from requests table
-    # to: get sample_ids from study_sample_reports table
-    # this is cleaner, and gives the current set of samples associated
-    # with a study, rather than any samples which may have been associated in
-    # the past, and are presumably no longer wanted (e.g. sample moves)
-
-    unless ($self->{'sample_ids'}){
-	my $sql = qq[select distinct(sample_id) from study_sample_reports where study_id=? order by sample_id];
-	my @samples;
-	my $sth = $self->{_dbh}->prepare($sql);
-
-	$sth->execute($self->id);
-	foreach(@{$sth->fetchall_arrayref()}){
-	    push @samples, $_->[0];
-	}
-	$self->{'sample_ids'} = \@samples;
+    my @samples;
+    foreach my $id (@{$self->sample_ids()}){
+        if($id && $id=~/^\d/){
+            my $obj = $self->get_sample_by_id($id);
+            push @samples, $obj if $obj;
+        }
     }
- 
-    return $self->{'sample_ids'};
+    return \@samples;
 }
 
 
-=head2 id
 
-  Arg [1]    : id (optional)
-  Example    : my $id = $study->id();
-	       $study->id('104');
-  Description: Get/Set for ID of a study
-  Returntype : SequenceScape ID (usu. integer)
+# builder to retrieve sample ids
+sub _get_sample_ids {
+    my ($self) = @_;
+    my $sql = qq[select distinct(sample_internal_id) from study_samples  where study_internal_id=? and is_current=1 order by sample_internal_id];
+    my @samples;
+    my $sth = $self->_dbh->prepare($sql);
 
-=cut
-
-sub id {
-    my ($self,$id) = @_;
-    if ($id){
-	$self->{'id'} = $id;
+    $sth->execute($self->id);
+    foreach(@{$sth->fetchall_arrayref()}){
+        push @samples, $_->[0];
     }
-    return $self->{'id'};
-}
-
-
-=head2 name
-
-  Arg [1]    : name (optional)
-  Example    : my $name = $study->name();
-	       $study->name('1000Genomes-A1-CEU');
-  Description: Get/Set for study name
-  Returntype : string
-
-=cut
-
-sub name {
-    my ($self,$name) = @_;
-    if ($name){
-	$self->{'name'} = $name;
-    }
-    return $self->{'name'};
+     
+    return \@samples;
 }
 
 
@@ -177,7 +358,9 @@ sub name {
 
 sub get_sample_by_id {
     my ($self, $id) = @_;
-    my $obj = Sfind::Sample->new($self->{_dbh},$id,$self->id);
+    my $obj = Sfind::Sample->new({      dbh => $self->_dbh,
+                                        id  => $id, 
+                                  study_id  => $self->id});
     return $obj;
 }
 
@@ -193,14 +376,14 @@ sub get_sample_by_id {
 
 sub get_sample_by_name {
     my ($self, $name) = @_;
-    my $sql = qq[select distinct(sample_id) from requests where sample_name=? and study_id=?];
-    my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($name, $self->id));
+    my $sql = qq[select css.sample_internal_id from current_samples cs, current_study_samples css where cs.internal_id = css.sample_internal_id and cs.name=? and css.study_internal_id=?];
+    my $id_ref = $self->_dbh->selectrow_hashref($sql, undef, ($name, $self->id));
     unless ($id_ref){
 	warn "No sample with name $name\n";
 	return undef;
     }
 
-    my $id = $id_ref->{sample_id};
+    my $id = $id_ref->{sample_internal_id};
     return $self->get_sample_by_id($id);
 }
 
@@ -209,63 +392,121 @@ sub get_sample_by_name {
 
   Arg [1]    : None
   Example    : my $acc = $study->get_accession();
-  Description: retrieve EBI accession number from given study ID
+  Description: retrieve EBI accession.  Deprecated - use $study->accession() instead.
   Returntype : string
 
 =cut
 
 sub get_accession {
     my ($self) = @_;
-    my $sql = qq[select value from study_information where `param` like 'study_ebi_accession_number' and study_information.study_id=?];
-    my $acc = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
-    unless ($acc){
-	warn "No accession ", $self->id,"\n";
-	return undef;
-    }
-    my $acc_name = $acc->{value};
-    return $acc_name;
+    return $self->accession();
 }
+
 
 =head2 get_SAC_sponsor
 
   Arg [1]    : None
   Example    : my $acc = $study->get_SAC_sponsor();
-  Description: retrieve SAC sponsor from given study ID
+  Description: retrieve SAC sponsor.  Deprecated - use $study->sponsor() instead.
   Returntype : string
 
 =cut
 
 sub get_SAC_sponsor {
     my ($self) = @_;
-    my $sql = qq[select value from study_information where `param` like "sac_sponsor" and study_information.study_id=?];
-    my $acc = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
-    unless ($acc){
-	warn "No sponsor", $self->id,"\n";
-	return undef;
-    }
-    my $acc_name = $acc->{value};
-    return $acc_name;
+    return $self->sponsor();
 }
+
 
 =head2 get_study_description
 
   Arg [1]    : None
   Example    : my $desc = $study->get_study_description();
-  Description: retrieve study description from given study ID
+  Description: retrieve study description.  Deprecated - use $study->description instead.
   Returntype : string
 
 =cut
 
 sub get_study_description {
     my ($self) = @_;
-    my $sql = qq[select value from study_information where `param` like "study_description" and study_information.study_id=?];
-    my $acc = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
-    unless ($acc){
-	warn "No description", $self->id,"\n";
-	return undef;
-    }
-    my $acc_name = $acc->{value};
-    return $acc_name;
+    return $self->description();
+}
+
+
+
+=head2 get_study_type
+
+  Arg [1]    : None
+  Example    : my $type = $study->get_study_type();
+  Description: Returns the study_type.  Deprecated: use $study->study_type instead
+  Returntype : string
+
+=cut
+
+sub get_study_type {
+    my ($self) = @_;
+    return $self->study_type();
+}
+
+=head2 get_SRA_study_id
+
+  Arg [1]    : None
+  Example    : my $sra_ids = $study->get_SRA_study_id();
+  Description: Returns the SRA id of this study
+                Deprecated: use $self->sra_project_id instead
+  Returntype : string
+
+=cut
+
+sub get_SRA_study_id {
+    my ($self) = @_;
+    return $self->sra_project_id;
+}
+
+=head2 get_study_title
+
+  Arg [1]    : None
+  Example    : my $title = $study->get_study_title();
+  Description: Returns the title of this study
+                Deprecated: use $study->title instead.
+  Returntype : string
+
+=cut
+
+sub get_study_title {
+    my ($self) = @_;
+    return $self->title;
+}
+
+=head2 get_study_abstract
+
+  Arg [1]    : None
+  Example    : my $abstract = $study->get_study_abstract();
+  Description: Returns the abstract of this study.  
+                Deprecated: use $study->abstract instead.
+  Returntype : string
+
+=cut
+
+sub get_study_abstract {
+    my ($self) = @_;
+    return $self->abstract;
+}
+
+
+=head2 get_study_visibility
+
+  Arg [1]    : None
+  Example    : my $visibility = $study->get_study_visibility();
+  Description: Returns the sra visibility for this study
+                Deprecated, use $study->visibility instead
+  Returntype : string
+
+=cut
+
+sub get_study_visibility {
+    my ($self) = @_;
+    return $self->visibility;
 }
 
 
@@ -285,7 +526,7 @@ sub get_organism_names {
     my %organisms;
     foreach my $id (@{$self->sample_ids()}){
 	    if($id=~/^\d/){
-	        my $sample = Sfind::Sample->new($self->{_dbh},$id, $self->id);
+	        my $sample = Sfind::Sample->new($self->_dbh,$id, $self->id);
 	        my $org_name = $sample->get_organism_name();
 		if($org_name and $org_name!~/^\s*$/){ #If defined and not empty string
 		    if (exists $organisms{$org_name}){
@@ -300,159 +541,6 @@ sub get_organism_names {
     return %organisms;
 }
 
-=head2 get_study_type
 
-  Arg [1]    : None
-  Example    : my $type = $study->get_study_type();
-  Description: Returns the value for 'study_study_type' in the database for this study
-  Returntype : string
-
-=cut
-
-sub get_study_type {
-    my ($self) = @_;
-    my $sql = qq[select value from study_information where `param` like "study_study_type" and study_information.study_id=?];
-    my $type_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
-    unless ($type_ref){
-	warn "No study type", $self->id,"\n";
-	return undef;
-    }
-    my $type = $type_ref->{value};
-    return $type;
-}
-
-=head2 get_SRA_study_id
-
-  Arg [1]    : None
-  Example    : my $sra_ids = $study->get_SRA_study_id();
-  Description: Returns the SRA id of this study
-  Returntype : string
-
-=cut
-
-sub get_SRA_study_id {
-    my ($self) = @_;
-    my $sql = qq[select value from study_information where `param` like "study_study_id" and study_information.study_id=?];
-    my $id_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
-    unless ($id_ref){
-	warn "No SRA id", $self->id,"\n";
-	return undef;
-    }
-    my $id = $id_ref->{value};
-    return $id;
-}
-
-=head2 get_study_title
-
-  Arg [1]    : None
-  Example    : my $title = $study->get_study_title();
-  Description: Returns the title of this study
-  Returntype : string
-
-=cut
-
-sub get_study_title {
-    my ($self) = @_;
-    my $sql = qq[select value from study_information where `param` like "study_study_title" and study_information.study_id=?];
-    my $title_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
-    unless ($title_ref){
-	
-	return undef;
-    }
-    my $title = $title_ref->{value};
-    return $title;
-}
-
-=head2 get_study_abstract
-
-  Arg [1]    : None
-  Example    : my $abstract = $study->get_study_abstract();
-  Description: Returns the abstract of this study
-  Returntype : string
-
-=cut
-
-sub get_study_abstract {
-    my ($self) = @_;
-    my $sql = qq[select value from study_information where `param` like "study_abstract" and study_information.study_id=?];
-    my $abstract_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
-    unless ($abstract_ref){
-	return undef;
-    }
-    my $abstract = $abstract_ref->{value};
-    return $abstract;
-}
-
-
-=head2 get_study_visibility
-
-  Arg [1]    : None
-  Example    : my $visibility = $study->get_study_visibility();
-  Description: Returns the sra visibility for this study
-  Returntype : string
-
-=cut
-
-sub get_study_visibility {
-    my ($self) = @_;
-    my $sql = qq[select value from study_information where `param` like "study_sra_hold" and study_information.study_id=?];
-    my $vis_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
-    unless ($vis_ref){
-	return undef;
-    }
-    my $visibility = $vis_ref->{value};
-    return $visibility;
-}
-
-
-
-=head2 contains_human_dna
-
-  Arg [1]    : None
-  Example    : my $chd = $study->contains_human_dna();
-  Description: Returns the value in the 'contains_human_dna' field for this study
-  Returntype : string
-
-=cut
-
-sub contains_human_dna {
-    my ($self) = @_;
-    my $sql = qq[select value from study_information where `param` like "contains_human_dna" and study_information.study_id=?];
-    my $chd_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
-    unless ($chd_ref){
-	return undef;
-    }
-    my $chd = $chd_ref->{value};
-    return $chd;
-}
-
-
-=head2 contaminated_with_human_dna
-
-  Arg [1]    : None
-  Example    : my $chd = $study->contaminated_with_human_dna();
-  Description: Returns the value in the 'contaminated_human_dna' field for this study
-  Returntype : string
-
-=cut
-
-sub contaminated_with_human_dna {
-    my ($self) = @_;
-    my $sql = qq[select value from study_information where `param` like "contaminated_human_dna" and study_information.study_id=?];
-    my $chd_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
-    unless ($chd_ref){
-	return undef;
-    }
-    my $chd = $chd_ref->{value};
-    return $chd;
-}
-
-
-
-
-
-
-
-
-
+__PACKAGE__->meta->make_immutable;
 1;
