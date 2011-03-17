@@ -97,6 +97,7 @@ has 'ethically_approved'=> (
     isa         => 'Bool',
 );
 
+
 # Add these when fields appear from Andrew Page.
 # Might need coercion of yes/no to bool? 
 #has 'contains_human_dna'=> (
@@ -141,6 +142,12 @@ has 'samples'=> (
     builder     => '_get_samples',
 );
 
+has 'organism_names'=> (
+    is          => 'ro',
+    isa         => 'HashRef',
+    lazy        => 1,
+    builder     => '_get_organism_names',
+);
 
 # Populate the parameters from the database
 around BUILDARGS => sub {
@@ -313,9 +320,23 @@ around BUILDARGS => sub {
   Example    : my $sra_id = $study->sra_project_id();
   Description: Public archive project ID for this study
   Returntype : String
+
+
+=head2 organism_names
+
+  Arg [1]    : None
+  Example    : my $orghash = $study->organism_names();
+  Description: Convenient method to get all the organism names associated with
+                this study. The hash will also give the number of samples for 
+                a particular organism (if needed later on)
+  Returntype : hashref of strings
+
 =cut
 
 
+###############################################################################
+# BUILDERS
+###############################################################################
 # builder to retrieve samples
 sub _get_samples {
     my ($self) = @_;
@@ -346,6 +367,27 @@ sub _get_sample_ids {
     return \@samples;
 }
 
+
+# builder for orgs
+sub _get_organism_names {
+    my ($self) = @_;
+    my %organisms;
+
+    my $sql = qq[select common_name, count(*) from current_samples cs, current_study_samples css where css.study_internal_id=? and css.sample_internal_id = cs.internal_id group by cs.common_name];
+    my $sth = $self->_dbh->prepare($sql);
+
+    $sth->execute($self->id);
+    foreach(@{$sth->fetchall_arrayref()}){
+        next unless $_->[0];
+        $organisms{$_->[0]} = $_->[1];
+    }
+    return \%organisms;
+}
+
+
+###############################################################################
+# Additional methods
+###############################################################################
 
 =head2 get_sample_by_id
 
@@ -388,159 +430,78 @@ sub get_sample_by_name {
 }
 
 
-=head2 get_accession
-
-  Arg [1]    : None
-  Example    : my $acc = $study->get_accession();
-  Description: retrieve EBI accession.  Deprecated - use $study->accession() instead.
-  Returntype : string
-
-=cut
-
+###############################################################################
+# DEPRECATED CALLS
+###############################################################################
 sub get_accession {
     my ($self) = @_;
+    warnings::warnif("deprecated",
+    "get_accession is deprecated, use accession instead");
     return $self->accession();
 }
 
 
-=head2 get_SAC_sponsor
-
-  Arg [1]    : None
-  Example    : my $acc = $study->get_SAC_sponsor();
-  Description: retrieve SAC sponsor.  Deprecated - use $study->sponsor() instead.
-  Returntype : string
-
-=cut
-
 sub get_SAC_sponsor {
     my ($self) = @_;
+    warnings::warnif("deprecated",
+    "get_SAC_sponsor is deprecated, use sponsor instead");
     return $self->sponsor();
 }
 
 
-=head2 get_study_description
-
-  Arg [1]    : None
-  Example    : my $desc = $study->get_study_description();
-  Description: retrieve study description.  Deprecated - use $study->description instead.
-  Returntype : string
-
-=cut
-
 sub get_study_description {
     my ($self) = @_;
+    warnings::warnif("deprecated",
+    "get_study_description is deprecated, use description instead");
     return $self->description();
 }
 
 
-
-=head2 get_study_type
-
-  Arg [1]    : None
-  Example    : my $type = $study->get_study_type();
-  Description: Returns the study_type.  Deprecated: use $study->study_type instead
-  Returntype : string
-
-=cut
-
 sub get_study_type {
     my ($self) = @_;
+    warnings::warnif("deprecated",
+    "get_study_type is deprecated, use study_type instead");
     return $self->study_type();
 }
 
-=head2 get_SRA_study_id
-
-  Arg [1]    : None
-  Example    : my $sra_ids = $study->get_SRA_study_id();
-  Description: Returns the SRA id of this study
-                Deprecated: use $self->sra_project_id instead
-  Returntype : string
-
-=cut
 
 sub get_SRA_study_id {
     my ($self) = @_;
+    warnings::warnif("deprecated",
+    "get_SRA_study_id is deprecated, use sra_project_id instead");
     return $self->sra_project_id;
 }
 
-=head2 get_study_title
-
-  Arg [1]    : None
-  Example    : my $title = $study->get_study_title();
-  Description: Returns the title of this study
-                Deprecated: use $study->title instead.
-  Returntype : string
-
-=cut
 
 sub get_study_title {
     my ($self) = @_;
+    warnings::warnif("deprecated",
+    "get_study_title is deprecated, use title instead");
     return $self->title;
 }
 
-=head2 get_study_abstract
-
-  Arg [1]    : None
-  Example    : my $abstract = $study->get_study_abstract();
-  Description: Returns the abstract of this study.  
-                Deprecated: use $study->abstract instead.
-  Returntype : string
-
-=cut
 
 sub get_study_abstract {
     my ($self) = @_;
+    warnings::warnif("deprecated",
+    "get_study_abstract is deprecated, use abstract instead");
     return $self->abstract;
 }
 
 
-=head2 get_study_visibility
-
-  Arg [1]    : None
-  Example    : my $visibility = $study->get_study_visibility();
-  Description: Returns the sra visibility for this study
-                Deprecated, use $study->visibility instead
-  Returntype : string
-
-=cut
-
 sub get_study_visibility {
     my ($self) = @_;
+    warnings::warnif("deprecated",
+    "get_study_visibility is deprecated, use visibility instead");
     return $self->visibility;
 }
 
-
-=head2 get_organism_names
-
-  Arg [1]    : None
-  Example    : my %orgs = $study->get_organism_name();
-  Description: Convenient method to get all the organism names associated with 
-               this study, undef if no organism. The hash will also give the
-               number of samples for a particular organism (if needed later on)
-  Returntype : hash of strings
-
-=cut
-
 sub get_organism_names {
     my ($self) = @_;
-    my %organisms;
-    foreach my $id (@{$self->sample_ids()}){
-	    if($id=~/^\d/){
-	        my $sample = Sfind::Sample->new($self->_dbh,$id, $self->id);
-	        my $org_name = $sample->get_organism_name();
-		if($org_name and $org_name!~/^\s*$/){ #If defined and not empty string
-		    if (exists $organisms{$org_name}){
-	        	$organisms{$org_name} = $organisms{$org_name}++;
-		    }else{
-	        	$organisms{$org_name} = 1;	
-		    }
-		}
-
-	    }
-    }
-    return %organisms;
+    warnings::warnif("deprecated",
+    "get_organism_names is deprecated, use organism_names instead");
+    return %{$self->organism_names};
 }
-
 
 __PACKAGE__->meta->make_immutable;
 1;
