@@ -52,6 +52,7 @@ has 'name'  => (
 has 'uuid'  => (
     is          => 'ro',
     isa         => 'Str',
+    required    => 1,
 );
 
 has 'description'  => (
@@ -72,7 +73,7 @@ has 'sponsor'  => (
 
 has 'accession'  => (
     is          => 'ro',
-    isa         => 'Str',
+    isa         => 'Maybe[Str]',
     init_arg    => 'accession_number',
 );
 
@@ -88,7 +89,7 @@ has 'study_type'    => (
 
 has 'ref_genome'=> (
     is          => 'ro',
-    isa         => 'Str',
+    isa         => 'Maybe[Str]',
     init_arg    => 'reference_genome',
 );
 
@@ -137,7 +138,7 @@ has 'sample_ids'=> (
 
 has 'samples'=> (
     is          => 'ro',
-    isa         => 'ArrayRef[Sfind::Study]',
+    isa         => 'ArrayRef[Sfind::Sample]',
     lazy        => 1,
     builder     => '_get_samples',
 );
@@ -155,6 +156,7 @@ around BUILDARGS => sub {
     my $class = shift;
     
     my $argref = $class->$orig(@_);
+    die "Need to call with a study id" unless $argref->{id};
 
     my $sql = qq[select * from studies where internal_id=? and is_current=1];
     my $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));

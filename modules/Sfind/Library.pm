@@ -116,7 +116,7 @@ sub new {
     # creation request id in the property_information table:
     # get request id
     $sql = qq[select request_id from requests_new where target_asset_id=?];
-    #warn $id;
+    warn "LIB: $id";
     my $req_ref = $self->{_dbh}->selectrow_hashref($sql, undef, ($id));
     my $req_id = $req_ref->{'request_id'};
     if ($req_id){
