@@ -1004,7 +1004,7 @@ sub update_db
         #   In that case keep the .id directory and remove $sample_dir. Otherwise rename
         #   $sample_dir to the .id dir.
         my $link;
-        if ( -l $sample_dir && ($link==readlink($sample_dir)) && $link=~/\.$mapstats_id$/ )
+        if ( -l $sample_dir && ($link=readlink($sample_dir)) && $link=~m{\.$mapstats_id/*$} )
         {
             unlink($sample_dir);
         }
