@@ -719,6 +719,10 @@ sub auto_qc
         { 
             push @qc_status, { test=>$test, status=>0, reason=>'The insert size not available, yet flagged as paired' };
         }
+        elsif ($bc->get('reads_paired') == 0)
+        { 
+            push @qc_status, { test=>$test, status=>0, reason=>'Zero paired reads, yet flagged as paired' };
+        }
         else
         {
             # Only libraries can be failed based on wrong insert size. The lanes are always passed as

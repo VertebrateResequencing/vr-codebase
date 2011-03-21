@@ -42,6 +42,14 @@ data => {
 # in the data section you can also supply the tmp_dir option to specify the
 # root that will be used to create tmp directories
 
+# After recalibration, to make a BAM file with just on target (or whatever
+# parts of the genome you like), use this in the data section:
+# extract_intervals => {'intervals_file' => 'filename'}
+# Additionally, specifiying
+# extract_intervals_only => 1
+# will skip all the previous tasks (from realign to statistics).  Use this
+# if you just want to make intervals bam files for each lane.
+
 # do_index => 1 can be supplied in the data section to run samtools index
 # on the final bams made by the pipeline
 
@@ -302,7 +310,7 @@ sub new {
     
     # convert the snp_sites option to a simple string suitable for use by GATK,
     # and an array for checking the files exist
-    if (defined $self->{snp_sites}) {
+    if (defined $self->{snp_sites} and !($self->{extract_intervals_only})) {
         my @snp_site_files;
         my $snp_sites = $self->{snp_sites};
         my @snp_args;
@@ -371,7 +379,7 @@ sub new {
 
 sub realign_requires {
     my $self = shift;
-    
+    return [] if ($self->{extract_intervals_only});
     my @snps = defined $self->{dbsnp_rod} ? ($self->{dbsnp_rod}) : @{$self->{snp_files}};
     
     return [@{$self->{in_bams}},
@@ -393,6 +401,7 @@ sub realign_requires {
 
 sub realign_provides {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @provides;
     
@@ -407,6 +416,15 @@ sub realign_provides {
 sub _bam_name_conversion {
     my ($self, $in_bam) = @_;
     
+    if ($self->{extract_intervals_only}) {
+        if ($in_bam =~ m/^(.*)\.bam/){
+            return ($in_bam, $in_bam, $in_bam, $in_bam, "$1.intervals.bam");
+        }
+        else {
+            $self->throw("Error, bam file $in_bam doesn't end in .bam?");
+        }
+    }
+
     # clean up the filename to something stripped-down
     my $rel_bam = $in_bam;
     $rel_bam =~ s/.raw//;
@@ -553,6 +571,7 @@ exit;
 
 sub sort_requires {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @requires;
     
@@ -578,6 +597,7 @@ sub sort_requires {
 
 sub sort_provides {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @provides;
     foreach my $in_bam (@{$self->{in_bams}}) {
@@ -693,6 +713,7 @@ exit;
 
 sub recalibrate_requires {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     # we need bams
     my @requires;
@@ -726,6 +747,7 @@ sub recalibrate_requires {
 
 sub recalibrate_provides {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @provides;
     foreach my $in_bam (@{$self->{in_bams}}) {
@@ -837,6 +859,7 @@ exit;
 
 sub calmd_requires {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @recal_bams;
     foreach my $bam (@{$self->{in_bams}}) {
@@ -861,6 +884,7 @@ sub calmd_requires {
 
 sub calmd_provides {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @calmd_bams;
     foreach my $bam (@{$self->{in_bams}}) {
@@ -941,6 +965,7 @@ exit;
 
 sub rewrite_header_requires {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @requires = @{$self->calmd_provides($lane_path)};
     
@@ -962,6 +987,7 @@ sub rewrite_header_requires {
 
 sub rewrite_header_provides {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @provides = @{$self->calmd_provides($lane_path)};
     
@@ -1067,6 +1093,7 @@ exit;
 
 sub statistics_requires {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @requires = @{$self->rewrite_header_provides($lane_path)};
     
@@ -1088,6 +1115,7 @@ sub statistics_requires {
 
 sub statistics_provides {
     my ($self, $lane_path) = @_;
+    return [] if ($self->{extract_intervals_only});
     
     my @provides;
     foreach my $bam (@{$self->calmd_provides($lane_path)}) {
@@ -1179,9 +1207,15 @@ Args    : lane path
 
 sub extract_intervals_requires {
     my ($self, $lane_path) = @_;
-    my @requires = @{$self->statistics_provides($lane_path)};
-    @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
-    return \@requires;
+
+    if ($self->{extract_intervals_only}) {
+        return [@{$self->{in_bams}}];
+    }
+    else {
+        my @requires = @{$self->statistics_provides($lane_path)};
+        @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
+        return \@requires;
+    }
 }
 
 =head2 extract_intervals_provides
@@ -1227,16 +1261,15 @@ sub extract_intervals {
     my ($self, $lane_path, $action_lock) = @_;
 
     foreach my $in_bam (@{$self->{in_bams}}) {
-        my $base = basename($in_bam);
-        my (undef, undef, undef, $calmd_bam, $final_bam) = $self->_bam_name_conversion($in_bam);
-        
+        my (undef, undef, undef, $penultimate_bam, $final_bam) = $self->_bam_name_conversion($in_bam);
         next if -s $final_bam;
         
+        my $base = basename($in_bam);
         my $job_name =  $self->{prefix}.'extract_intervals_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
 
         LSF::run($action_lock, $lane_path, $job_name, $self,
-                 qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new()->extract_intervals_from_bam(qq[$calmd_bam], qq[$self->{extract_intervals}->{intervals_file}], qq[$final_bam]) || die qq[extract_intervals failed for $calmd_bam\n];"~);
+                 qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new()->extract_intervals_from_bam(qq[$penultimate_bam], qq[$self->{extract_intervals}->{intervals_file}], qq[$final_bam]) || die qq[extract_intervals failed for $penultimate_bam\n];"~);
     }
 
     return $self->{No};
@@ -1373,6 +1406,17 @@ sub update_db_provides {
 sub update_db {
     my ($self, $lane_path, $action_lock) = @_;
     
+    if ($self->{extract_intervals_only} ) {
+        my $vrlane = $self->{vrlane};
+        my $vrtrack = $vrlane->vrtrack;
+        return $self->{Yes} if $vrlane->is_processed('improved');
+        $vrtrack->transaction_start();
+        $vrlane->is_processed('improved', 1);
+        $vrlane->update() || $self->throw("Unable to set improved status on lane $lane_path");
+        $vrtrack->transaction_commit();
+        return $self->{Yes};
+    }
+
     # get the bas files that contain our mapping stats
     my $files = $self->statistics_provides($lane_path);
     my @bas_files;
@@ -1518,7 +1562,7 @@ sub is_finished {
     my ($self, $lane_path, $action) = @_;
     
     # so that we can delete the temp bams as we go along, and not redo actions
-    if ($action->{name} eq 'realign') {
+    if ($action->{name} eq 'realign' and !($self->{extract_intervals_only})) {
         foreach my $in_bam (@{$self->{in_bams}}) {
             my ($realign_bam) = $self->_bam_name_conversion($in_bam);
             
@@ -1536,7 +1580,7 @@ sub is_finished {
             #}
         }
     }
-    elsif ($action->{name} eq 'sort') {
+    elsif ($action->{name} eq 'sort' and !($self->{extract_intervals_only})) {
         foreach my $in_bam (@{$self->{in_bams}}) {
             my ($realign_bam, $sorted_bam) = $self->_bam_name_conversion($in_bam);
             
@@ -1549,7 +1593,7 @@ sub is_finished {
             }
         }
     }
-    elsif ($action->{name} eq 'recalibrate') {
+    elsif ($action->{name} eq 'recalibrate' and !($self->{extract_intervals_only})) {
         foreach my $in_bam (@{$self->{in_bams}}) {
             my (undef, $sorted_bam, $recal_bam) = $self->_bam_name_conversion($in_bam);
             if (-s $recal_bam && -s $sorted_bam) {
@@ -1563,7 +1607,7 @@ sub is_finished {
             }
         }
     }
-    elsif ($action->{name} eq 'calmd') {
+    elsif ($action->{name} eq 'calmd' and !($self->{extract_intervals_only})) {
         foreach my $in_bam (@{$self->{in_bams}}) {
             my (undef, undef, $recal_bam, $calmd_bam) = $self->_bam_name_conversion($in_bam);
             if (-s $calmd_bam && -s $recal_bam) {

@@ -1471,7 +1471,13 @@ sub update_db {
     $vrlane->is_processed('snp_called',1);
     $vrlane->update() || $self->throw("Unable to set improved status on lane $lane_path");
     $vrtrack->transaction_commit();
-    Utils::CMD("rm " . File::Spec->catfile($lane_path, 'cleanup.done'));
+
+    if ($self->{task}{cleanup}) {
+        Utils::CMD("rm " . File::Spec->catfile($lane_path, 'cleanup.done'));
+        my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
+        Utils::CMD("rm $job_status") if (-e $job_status);
+    }
+
     return $$self{'Yes'};
 }
 
