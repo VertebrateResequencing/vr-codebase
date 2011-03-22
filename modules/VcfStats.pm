@@ -261,16 +261,42 @@ sub collect_stats_mandatory
 {
     my ($self,$rec,$stats) = @_;
 
+    # How many mono,bi,tri-allelic etc sites are there
+    my $nalt = 0;
+    if ( !scalar keys %{$$rec{gtypes}} ) 
+    { 
+        $nalt = scalar @{$$rec{ALT}};
+        if ( $nalt==1 && $$rec{ALT}[0] eq '.' ) { $nalt=0 }
+    }
+    elsif ( exists($$rec{INFO}{AC}) )
+    {
+        for my $ac (split(/,/,$$rec{INFO}{AC})) 
+        { 
+            if ( $ac ) { $nalt++; } 
+        }
+    }
+    else
+    {
+        my ($an,$ac,$acs) = $self->calc_an_ac($$rec{gtypes});
+        for my $ac (@$acs)
+        {
+            if ( $ac ) { $nalt++; }
+        }
+    }
+
     my %types;
     for my $alt (@{$$rec{ALT}})
     {
+        if ( $alt eq '.' ) { $alt=$$rec{REF}; }
         my $type = $self->add_variant($rec,$alt,$stats);
         $types{$type} = 1;
     }
 
-    # Count rows
+
+    # Increment counters
     for my $stat (@$stats)
     {
+        $$stat{'nalt_'.$nalt}++;
         $$stat{count}++;
         for my $type (keys %types)
         {
@@ -326,33 +352,40 @@ sub add_variant
     my ($self,$ref,$alt,$stats) = @_;
     my $key_type = 'other';
     my %key_subt;
-    my ($type,$len,$ht) = $self->event_type($ref,$alt);
-    if ( $type eq 's' ) 
-    { 
-        $key_type = 'snp';
+    if ( $alt eq '.' )
+    {
+        $key_type = 'missing';
+    }
+    else
+    {
+        my ($type,$len,$ht) = $self->event_type($ref,$alt);
+        if ( $type eq 's' ) 
+        { 
+            $key_type = 'snp';
 
-        # The SNP can be encoded for example as GTTTTTTT>CTTTTTTT
-        my $ref_str = ref($ref) eq 'HASH' ? $$ref{REF} : $ref;
-        my $ref_len = length($ref_str);
-        if ( $ref_len>1 )
-        {
-            for (my $i=0; $i<$ref_len; $i++)
+            # The SNP can be encoded for example as GTTTTTTT>CTTTTTTT
+            my $ref_str = ref($ref) eq 'HASH' ? $$ref{REF} : $ref;
+            my $ref_len = length($ref_str);
+            if ( $ref_len>1 )
             {
-                my $ref_nt = substr($ref_str,$i,1);
-                my $alt_nt = substr($alt,$i,1);
-                if ( $ref_nt ne $alt_nt )
+                for (my $i=0; $i<$ref_len; $i++)
                 {
-                    $key_subt{$ref_nt.'>'.$alt_nt}++;
+                    my $ref_nt = substr($ref_str,$i,1);
+                    my $alt_nt = substr($alt,$i,1);
+                    if ( $ref_nt ne $alt_nt )
+                    {
+                        $key_subt{$ref_nt.'>'.$alt_nt}++;
+                    }
                 }
             }
+            else
+            {
+                $key_subt{$ref_str.'>'.$alt}++;
+            }
         }
-        else
-        {
-            $key_subt{$ref_str.'>'.$alt}++;
-        }
+        elsif ( $type eq 'i' ) { $key_type = 'indel'; $key_subt{$len}++; }
+        elsif ( $type eq 'r' ) { $key_type = 'ref'; }
     }
-    if ( $type eq 'i' ) { $key_type = 'indel'; $key_subt{$len}++; }
-    if ( $type eq 'r' ) { $key_type = 'ref';   }
     for my $stat (@$stats)
     {
         if ( %key_subt )
@@ -575,6 +608,28 @@ sub _init_path
     return $prefix;
 }
 
+sub legend
+{
+    my ($self) = @_;
+    return q[
+count
+    Number of positions with known genotype
+
+nalt_X
+    Number of monoallelic (X=0), biallelic (X=1), etc. sites
+    
+ref, ref_count
+    Number of sites containing reference allele
+
+shared
+    Number of sites having a non-reference allele in 0,1,2,etc samples
+
+snp_count
+    Number of positions with SNPs
+    ];
+}
+
+
 
 =head2 save_stats
 
@@ -596,6 +651,7 @@ sub save_stats
     }
 
     my $path = $self->_init_path($prefix);
+    $self->_write_file($path.'.legend', $self->legend());
     $self->_write_file($path.'.dump', $self->dump());
     $self->_write_file($path.'.tstv', $self->dump_tstv($$self{stats}));
     $self->_write_file($path.'.counts', $self->dump_counts());
