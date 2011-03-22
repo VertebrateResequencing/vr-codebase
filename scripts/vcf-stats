@@ -27,7 +27,6 @@ sub error
         "Options:\n",
         "   -d, --dump <file>                           Take an existing dump file and recreate the files (works with -p)\n",
         "   -f, --filters <filter1,filter2>             List of filters such as column/field (any value), column/field=bin:max (cluster in bins),column/field=value (exact value)\n",
-        "   -i, --include-columns <col1,col2,..>        Include only these columns in comparison\n",
         "   -p, --prefix <dir/string>                   Prefix of output files. If slashes are present, directories will be created.\n",
         "   -s, --samples <list>                        Process only the listed samples, - for none. Excluding unwanted samples may increase performance considerably.\n",
         "   -h, -?, --help                              This help message.\n",
@@ -59,12 +58,6 @@ sub parse_params
         { 
             my $samples = shift(@ARGV);
             $$opts{samples} = [ split(/,/,$samples) ];
-            next;
-        }
-        if ( $arg eq '-i' || $arg eq '--include-columns'  ) 
-        { 
-            my @cols = split(/,/,shift(@ARGV));
-            for my $col (@cols) { $$opts{include_cols}{$col} = 1; }
             next;
         }
         if ( -e $arg ) { $$opts{file} = $arg; next }
@@ -153,16 +146,6 @@ sub vcf_stats
             for my $sample (@{$$opts{samples}}) { push @include,$sample; }
         }
         $vcf->set_samples(include=>\@include); 
-    }
-
-
-    if ( !exists($$opts{include_cols}) )
-    {
-        for (my $i=9; $i<@{$$vcf{columns}}; $i++) 
-        { 
-            my $col = $$vcf{columns}[$i];
-            $$opts{include_cols}{$col} = 1; 
-        }
     }
 
     while (my $rec=$vcf->next_data_hash())
