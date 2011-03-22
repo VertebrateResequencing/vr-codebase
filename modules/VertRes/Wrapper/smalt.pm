@@ -140,14 +140,26 @@ sub setup_fastqs {
             
             unless (-s $fq_new) {
                 my $i = VertRes::IO->new(file => $fq);
-                my $o = VertRes::IO->new(file => ">$fq_new");
+                my $o = VertRes::IO->new(file => ">$fq_new.tmp");
                 my $ifh = $i->fh;
                 my $ofh = $o->fh;
+                my $lines = 0;
                 while (<$ifh>) {
+                    $lines++;
                     print $ofh $_;
                 }
                 $i->close;
                 $o->close;
+                
+                # check the decompressed fastq isn't truncated
+                $i = VertRes::IO->new(file => "$fq_new.tmp");
+                my $actual_lines = $i->num_lines;
+                if ($actual_lines == $lines) {
+                    move("$fq_new.tmp", $fq_new);
+                }
+                else {
+                    $self->throw("Made $fq_new.tmp, but it only had $actual_lines instead of $lines lines");
+                }
             }
         }
     }

@@ -274,7 +274,30 @@ sub next_line
 {
     my ($self) = @_;
     if ( @{$$self{buffer}} ) { return shift(@{$$self{buffer}}); }
-    my $line = readline($$self{fh});
+    # my $line = readline($$self{fh});
+    # Temporary fix to work around a samtools/bcftools bug:
+    my $line;
+    while (1)
+    {
+        $line = readline($$self{fh});
+        if ( !defined $line ) { last; }
+    
+        my $len = length($line);
+        if ( $len>500_000 ) 
+        { 
+            $line=~/^([^\t]+)\t([^\t]+)/;
+            print STDERR "Ignoring line: $1 $2 .. len=$len\n"; 
+            next;
+        }
+        if ( $line=~/GT:GT/ )
+        {
+            $line=~/^([^\t]+)\t([^\t]+)/;
+            print STDERR "Ignoring line (GT:GT): $1 $2\n"; 
+            next;
+        }
+    
+        last;
+    }
     if ( !defined $line && $$self{check_exit_status} )
     {
         my $pid = waitpid(-1, WNOHANG);
@@ -307,11 +330,7 @@ sub _unread_line
 sub next_data_array
 {
     my ($self,$line) = @_;
-    if ( !$line )
-    {
-        if ( @{$$self{buffer}} ) { $line = shift(@{$$self{buffer}}); }
-        else { $line = readline($$self{fh}); }
-    }
+    if ( !$line ) { $line = $self->next_line(); }
     if ( !$line ) { return undef; }
     my @items = split(/\t/,$line);
     chomp($items[-1]);
@@ -441,11 +460,7 @@ sub new
 sub next_data_hash
 {
     my ($self,$line) = @_;
-    if ( !$line )
-    {
-        if ( @{$$self{buffer}} ) { $line = shift(@{$$self{buffer}}); }
-        else { $line = readline($$self{fh}); }
-    }
+    if ( !$line ) { $line = $self->next_line(); }
     if ( !$line ) { return undef; }
     my @items;
     if ( ref($line) eq 'ARRAY' ) { @items = @$line; }
@@ -921,7 +936,9 @@ sub _format_line_hash
     }
     if ( $needs_an_ac )
     {
-        my ($an,$ac) = $self->calc_an_ac($gtypes);
+        my $nalt = scalar @{$$record{$$cols[4]}};
+        if ( $nalt==1 && $$record{$$cols[4]}[0] eq '.' ) { $nalt=0; } 
+        my ($an,$ac) = $self->calc_an_ac($gtypes,$nalt);
         push @info, "AN=$an","AC=$ac";
     }
     if ( !@info ) { push @info, '.'; }
@@ -1098,7 +1115,7 @@ sub parse_alleles
     if ( !exists($$rec{gtypes}) || !exists($$rec{gtypes}{$column}) ) { $self->throw("The column not present: '$column'\n"); }
 
     my $gtype = $$rec{gtypes}{$column}{GT};
-    if ( !($gtype=~$$self{regex_gt}) ) { $self->throw("Could not parse gtype string [$gtype]\n"); }
+    if ( !($gtype=~$$self{regex_gt}) ) { $self->throw("Could not parse gtype string [$gtype] [$$rec{CHROM}:$$rec{POS}]\n"); }
     my $al1 = $1;
     my $sep = $2;
     my $al2 = $3;
@@ -1125,11 +1142,12 @@ sub parse_alleles
 
 =head2 parse_haplotype
 
-    About   : Similar to parse_alleles, supports also multiploid VCFs.
+    About   : Similar to parse_alleles, supports also multiploid VCFs. 
     Usage   : my $x = $vcf->next_data_hash(); my ($alleles,$seps,$is_phased,$is_empty) = $vcf->parse_haplotype($x,'NA00001');
     Args    : VCF data line parsed by next_data_hash
             : The genotype column name
-    Returns : Two array refs and two boolean flags: List of alleles, list of separators, and is_phased/empty flags.
+    Returns : Two array refs and two boolean flags: List of alleles, list of separators, and is_phased/empty flags. The values
+                can be cashed and must be therefore considered read only!
 
 =cut
 

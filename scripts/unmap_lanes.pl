@@ -13,6 +13,7 @@ use warnings;
 use Getopt::Long;
 use VertRes::IO;
 use VertRes::Utils::VRTrackFactory;
+use VertRes::Utils::Sam;
 use File::Basename;
 use File::Spec;
 
@@ -64,7 +65,7 @@ if ($fofn) {
     my $vio = VertRes::IO->new;
     my @lanes = $vio->parse_fod($fofn);
     
-    my $su = Vertres::Utils::Sam->new;
+    my $su = VertRes::Utils::Sam->new;
     
     foreach my $lane_dir (@lanes) {
         my $lane_name = basename($lane_dir);

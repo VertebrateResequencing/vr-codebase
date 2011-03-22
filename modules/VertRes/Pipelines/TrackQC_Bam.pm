@@ -564,12 +564,14 @@ sub run_graphs
     report_detailed_stats($lane_path,$bam_file,$stats_file);
 
     # The GC-depth graphs
-    if ( ! -e "$outdir/gc-depth-ori.png" || (-e $bindepth && Utils::file_newer($bam_file,$bindepth)) )
-    {
+    # Removed 2011-03-04 jws:  R was throwing errors, and this is covered by
+    # the plot-bamcheck GC plot
+    # if ( ! -e "$outdir/gc-depth-ori.png" || (-e $bindepth && Utils::file_newer($bam_file,$bindepth)) )
+    # {
         # Mapviewdepth_sam sometimes does not read the bam till the end. Ignore SIGPIPE signal. This program will be removed soon anyway.
-        Utils::CMD("$samtools view $bam_file | $mapview $refseq -b=$gc_depth_bin > $bindepth",{verbose=>1,ignore_errno=>141});
-        Graphs::create_gc_depth_graph($bindepth,$gcdepth_R,qq[$outdir/gc-depth-ori.png]);
-    }
+    #     Utils::CMD("$samtools view $bam_file | $mapview $refseq -b=$gc_depth_bin > $bindepth",{verbose=>1,ignore_errno=>141});
+    #     Graphs::create_gc_depth_graph($bindepth,$gcdepth_R,qq[$outdir/gc-depth-ori.png]);
+    # }
 
     `touch $outdir/_graphs.done`;
 }
@@ -716,6 +718,10 @@ sub auto_qc
         if ( !defined $isizes ) 
         { 
             push @qc_status, { test=>$test, status=>0, reason=>'The insert size not available, yet flagged as paired' };
+        }
+        elsif ($bc->get('reads_paired') == 0)
+        { 
+            push @qc_status, { test=>$test, status=>0, reason=>'Zero paired reads, yet flagged as paired' };
         }
         else
         {
@@ -1002,7 +1008,7 @@ sub update_db
         #   In that case keep the .id directory and remove $sample_dir. Otherwise rename
         #   $sample_dir to the .id dir.
         my $link;
-        if ( -l $sample_dir && ($link==readlink($sample_dir)) && $link=~/\.$mapstats_id$/ )
+        if ( -l $sample_dir && ($link=readlink($sample_dir)) && $link=~m{\.$mapstats_id/*$} )
         {
             unlink($sample_dir);
         }

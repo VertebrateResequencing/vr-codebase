@@ -1,3 +1,132 @@
+=head1 NAME
+
+VertRes::Pipelines::SNPs - pipeline for calling SNPs from BAM files
+
+=head1 SYNOPSIS
+
+# Can either provide a list of BAM files, or provide a database from
+# which improved BAM files will be found and have SNPs called.
+# If using a database, the calls are made independently on
+# each BAM file.
+# Either way, make a .conf file and .pipeline file.
+
+# The .pipeline file depends on how the BAM files are provided.
+# If providing a list of BAMs:
+echo '/path/to/root/dir/of/output/files/ snps.conf' > snps.pipeline
+# If using a database:
+echo '__VRTrack_SNPs__ snps.conf' > snps.pipeline
+
+# The .conf file (for running off a database) may look like:
+root    => '/abs/path/to/root/data/dir',
+module => 'VertRes::Pipelines::SNPs',
+log     => '/abs/path/to/logfile/foo.log',
+max_lanes => 10,
+
+db  => 
+{
+    database => 'db_name',
+    host     => 'db_host',
+    port     => 42,
+    user     => 'db_user',
+    password => 'db_password',
+},
+
+data =>
+{
+    task => 'mpileup,gatk,update_db,cleanup',
+   
+    bsub_opts       => "-q normal -M3500000 -R 'select[type==X86_64 && mem>3500] rusage[mem=3500,thouio=1,tmp=16000]'",
+    bsub_opts_long  => "-q normal -M3500000 -R 'select[type==X86_64 && mem>3500] rusage[mem=3500,thouio=1,tmp=16000]'",
+    bsub_opts_qcall  => "-q normal -M3500000 -R 'select[type==X86_64 && mem>3500 && tmp>17000] rusage[mem=3500,thouio=1, tmp=17000]'",
+    bsub_opts_mpileup    => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
+ 
+    split_size_mpileup   => 300_000_000,
+    split_size_gatk      => 100_000_000,         
+    split_size_qcall     => 100_000_000,         
+ 
+    tmp_dir => '/abs/path/to/tmp/dir',
+ 
+    mpileup_cmd => 'samtools mpileup -d 500 -C50 -m3 -F0.0002 -aug',
+    qcall_cmd       => 'QCALL -ct 0.01 -snpcan',
+    gatk_opts =>
+    {
+        all =>
+        {
+            verbose => 1,
+            #_extras => [ '-U ALLOW_UNSET_BAM_SORT_ORDER --platform Solexa' ],
+            _extras => [ '-U ALLOW_UNSET_BAM_SORT_ORDER ' ],
+        },
+        variant_filtration =>
+        {
+            filters => { HARD_TO_VALIDATE => 'MQ0 >= 4 && (MQ0 / (1.0 * DP)) > 0.1' },
+            maskName => 'InDel',
+            clusterWindowSize => 11,
+        },
+        variant_recalibrator =>
+        {
+            target_titv => 2.08,
+            ignore_filter => 'HARD_TO_VALIDATE',
+        },
+        apply_variant_cuts =>
+        {
+            fdr_filter_level => '0.11',
+        },
+    },
+ 
+    # max number of running jobs per task
+    max_jobs => 25,
+ 
+    dbSNP_rod   => '/abs/path/to/dbsnp/rod/file',
+    indel_mask  => '/abs/path/to/indel/mask/file',
+    fa_ref => '/abs/path/to/ref.fasta',
+    fai_ref => '/abs/path/to/ref.fasta.fai',
+}
+
+
+# max_lanes outside the data section limits the number of lanes
+# which can have SNP calling run on them simultaneously, and
+# is only applicable when running off a database.
+# max_jobs inside the data section is the max number of jobs allowed
+# to run per caller.
+# The max grand total of jobs which could be running is:
+# max_lanes * (number of callers) * max_jobs.
+
+# The possible SNP callers are mpileup, gatk, varFilter and qcall.
+# Those which are specified in task => '...' will be used.
+#
+# Add 'cleanup' to the list of tasks to cleanup all files made
+# by the pipeline, leaving you with:
+# caller.vcf.gz, caller.vcf.gz.stats, caller.vcf.gz.tbi
+# for each caller.  In the case of mpileup, you also get
+# mpileup.unfilt.vcf.gz*, which are unfiltered calls.
+# The mpileup.vcf.gz* files are the filtered calls.
+
+# If you want to supply a list of BAM files instead of running off
+# a database, then
+#  1) don't provide db => {...}.  Instead, provide a file of
+#     filenames in the data section with
+#     file_list => '/abs/path/to/file.list',
+#     The extension must be .list to stop gatk complaining.
+#  2) Don't include update_db in the 'task' option. e.g. use
+#     task => 'mpileup,qcall,gatk',
+#     instead.
+#  3) max_lanes outside the data section will be ignored
+# If calling on many SNP files, it is sensible to make the
+# split_size_* opions smaller, in the region of
+# 1_000_000 to 5_000_000.  The numbers in the above exmaple
+# work well for a single lane of exome data.
+
+# Note that QCALL is not designed to be run on one sample,
+# so there's no point in adding it to the task list when
+# getting the BAMs from a database.  The pipeline will complain.
+
+=head1 DESCRIPTION
+
+A module for calling SNPs from BAM files using any of
+the callers mpileup, GATK, QCALL and varFilter.
+
+=cut
+
 package VertRes::Pipelines::SNPs;
 use base qw(VertRes::Pipeline);
 
@@ -8,6 +137,7 @@ use Utils;
 use VertRes::Parser::sam;
 use VertRes::Utils::FileSystem;
 use VertRes::Wrapper::GATK;
+use File::Copy;
 
 our @actions =
 (
@@ -39,6 +169,20 @@ our @actions =
         'requires' => \&qcall_requires, 
         'provides' => \&qcall_provides,
     },
+    # clean up all files after SNP calling
+    {
+        'name'     => 'cleanup',
+        'action'   => \&cleanup,
+        'requires' => \&cleanup_requires, 
+        'provides' => \&cleanup_provides,
+    },
+    # when getting jobs from a database, update the finished lanes
+    {
+        'name'     => 'update_db',
+        'action'   => \&update_db,
+        'requires' => \&update_db_requires, 
+        'provides' => \&update_db_provides,
+    },
 );
 
 our $options = 
@@ -69,6 +213,7 @@ our $options =
     vcf_rmdup       => 'vcf-rmdup',
     vcf_stats       => 'vcf-stats',
     filter4vcf      => 'vcfutils.pl filter4vcf',
+    bam_suffix       => 'intervals.bam',
 };
 
 
@@ -78,6 +223,12 @@ our $options =
 
         Options    : See Pipeline.pm for general options and the code for default values.
 
+                    bam_suffix      .. when getting jobs from a database (db =>... used outside the 
+                                       data section in config) which have been improved by
+                                       the bamImprovement pipeline, only consider bams whose name
+                                       end in the given suffix.  This is likely to be 'calmd.bam'
+                                       or 'intervals.bam', depending on how BamImprovement was run.
+                                       Default: 'intervals.bam'.
                     bcf_fix         .. Script to fix invalid VCF
                     bcftools        .. The bcftools binary for mpileup task
                     dbSNP_rod       .. The dbSNP file for GATK
@@ -1165,6 +1316,180 @@ sub run_qcall_chunk
     rename("$chunk.vcf.gz.part.tbi","$chunk_name.vcf.gz.tbi") or $self->throw("rename $chunk.vcf.gz.part.tbi $chunk_name.vcf.gz.tbi: $!");
     rename("$chunk.vcf.gz.part","$chunk_name.vcf.gz") or $self->throw("rename $chunk.vcf.gz.part $chunk_name.vcf.gz: $!");
     Utils::CMD("touch _$chunk_name.done");
+}
+
+
+=head2 cleanup_requires
+
+ Title   : cleanup_requires
+ Usage   : my $required_files = $obj->cleanup_requires('/path/to/lane');
+ Function: Find out what files the cleanup action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub cleanup_requires {
+    my ($self, $lane_path) = @_;
+    my @requires;
+
+    # need a done file from each caller
+    for my $task (keys %{$self->{task}}) {
+        next if ($task eq "update_db" or $task eq "cleanup");
+        push @requires, "$task.done";
+    }
+
+    return \@requires;
+}
+
+
+=head2 cleanup_provides
+
+ Title   : cleanup_provides
+ Usage   : my $provided_files = $obj->cleanup_provides('/path/to/lane');
+ Function: Find out what files the cleanup action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub cleanup_provides {
+    my ($self, $lane_path) = @_;
+    my @provides;
+
+    if ($self->{task}{cleanup}){
+        push @provides, 'cleanup.done';
+    }
+    else {
+        @provides = @{$self->cleanup_requires($lane_path)};
+        @provides or $self->throw("Something went wrong; cleanup action doesn't seem to require any files");
+    }
+
+    return \@provides;
+}
+
+
+=head2 cleanup
+
+ Title   : cleanup
+ Usage   : $obj->cleanup('/path/to/lane', 'lock_filename');
+ Function: Cleans up files made by pipeline
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub cleanup {
+    my ($self, $lane_path, $action_lock) = @_;
+    my $fs = VertRes::Utils::FileSystem->new();
+
+    # for each caller, we move the files we want to keep to the root directory
+    # and the delete that caller's directory
+    for my $task (keys %{$self->{task}}) {
+        next if ($task eq "update_db" or $task eq "cleanup");
+         
+        my @suffixes = qw(vcf.gz vcf.gz.stats vcf.gz.tbi);
+
+        # keep the unfiltered files from mpileup as well as filtered
+        if ($task eq 'mpileup') {
+            push @suffixes, qw(unfilt.vcf.gz unfilt.vcf.gz.stats unfilt.vcf.gz.tbi);
+        }
+
+        # move the files
+        for my $suff (@suffixes) {
+            my $old_file = File::Spec->catfile($lane_path, $task, "$task.$suff");
+            my $new_file = File::Spec->catfile($lane_path, "$task.$suff");
+            $fs->copy($old_file, $new_file) or $self->throw("Error copying files:\nold: $old_file\nnew: $new_file");
+        }
+
+        # cleanup files in the root of the snps output directory
+        Utils::CMD("rm " . File::Spec->catfile($lane_path, "$task.done"));
+
+        # delete the caller directory
+        Utils::CMD("rm -r " . File::Spec->catdir($lane_path, $task));
+    } 
+
+    Utils::CMD("rm " . File::Spec->catfile($lane_path, 'file.list'));
+    Utils::CMD("touch " . File::Spec->catfile($lane_path, 'cleanup.done'));
+    return $$self{'Yes'};
+}
+
+
+=head2 update_db_requires
+
+ Title   : update_db_requires
+ Usage   : my $required_files = $obj->update_db_requires('/path/to/lane');
+ Function: Find out what files the update_db action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub update_db_requires {
+    my ($self, $lane_path) = @_;
+    my @requires = @{$self->cleanup_provides($lane_path)};
+    @requires or $self->throw("Something went wrong; update_db action doesn't seem to require any files");
+    return \@requires;
+}
+
+=head2 update_db_provides
+
+ Title   : update_db_provides
+ Usage   : my $provided_files = $obj->update_db_provides('/path/to/lane');
+ Function: Find out what files the update_db action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub update_db_provides {
+    return [];
+}
+
+=head2 update_db
+
+ Title   : update_db
+ Usage   : $obj->update_db('/path/to/lane', 'lock_filename');
+ Function: Records in the database that the lane has been improved.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+
+
+sub update_db {
+    my ($self, $lane_path, $action_lock) = @_;
+
+    # all the done files are there, so just need to update the processed
+    # flag in the database (if not already updated)
+    my $vrlane = $self->{vrlane};
+    my $vrtrack = $vrlane->vrtrack;
+    return $$self{'Yes'} if $vrlane->is_processed('snp_called');
+    
+    $vrtrack->transaction_start();
+    $vrlane->is_processed('snp_called',1);
+    $vrlane->update() || $self->throw("Unable to set improved status on lane $lane_path");
+    $vrtrack->transaction_commit();
+
+    if ($self->{task}{cleanup}) {
+        Utils::CMD("rm " . File::Spec->catfile($lane_path, 'cleanup.done'));
+        my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
+        Utils::CMD("rm $job_status") if (-e $job_status);
+    }
+
+    return $$self{'Yes'};
+}
+
+
+sub is_finished {
+    my ($self, $lane_path, $action) = @_;
+
+    if ($action->{name} eq 'update_db') {
+        return $self->{No};
+    }
+
+    return $self->SUPER::is_finished($lane_path, $action);
 }
 
 

@@ -95,12 +95,14 @@ sub new
     $$self{_farm} = 'LSF';
     $$self{_farm_options} = { runtime=>600 };
     $$self{_running_jobs} = {};
+    $$self{_nretries} = 1;
     $$self{usage} = 
         "Runner.pm arguments:\n" .
         "   +help               Summary of commands\n" .
         "   +local              Do not submit jobs to LSF, but run serially\n" .
         "   +loop <int>         Run in daemon mode with <int> sleep intervals\n" .
         "   +maxjobs <int>      Maximum number of simultaneously running jobs\n" .
+        "   +retries <int>      Maximum number of retries\n" .
         "   +run <file>         Run the freezed object created by spawn\n" .
         "   +show <file>        Print the content of the freezed object created by spawn\n" .
         "   +verbose            Print debugging messages\n" .
@@ -120,6 +122,8 @@ sub new
                     Run in daemon mode with <int> sleep intervals
                 +maxjobs <int>
                     Maximum number of simultaneously running jobs
+                +retries <int>
+                    Maximum number of retries
                 +run <file>
                     Run the freezed object created by spawn
                 +show <file>
@@ -139,6 +143,7 @@ sub run
         if ( $arg eq '+help' ) { $self->throw(); }
         if ( $arg eq '+loop' ) { $$self{_loop}=shift(@ARGV); next; }
         if ( $arg eq '+maxjobs' ) { $$self{_maxjobs}=shift(@ARGV); next; }
+        if ( $arg eq '+retries' ) { $$self{_nretries}=shift(@ARGV); next; }
         if ( $arg eq '+verbose' ) { $$self{_verbose}=1; next; }
         if ( $arg eq '+local' ) { $$self{_run_locally}=1; next; }
         if ( $arg eq '+show' ) 
@@ -270,7 +275,7 @@ sub _spawn_to_farm
     { 
         my ($nfailures) = `wc -l $farm_jobs_ids`;
         $nfailures =~ s/\s+.+$//;
-        if ( $nfailures >= 3 )
+        if ( $nfailures > $$self{_nretries} )
         {   
             $self->throw("The job failed repeatedly: $prefix.[oer], $$self{_store}{call}(" .join(',',@{$$self{_store}{args}}). ")\n(Remove $prefix.jid to clean the status.)\n");
         }
@@ -336,17 +341,22 @@ sub all_done
 #   
 #       About : Check if the file is finished.
 #       Usage : $self->is_finished('some/file');
-#       Args  : <file>
+#       Args  : <file list>
 #                   The name of the file to check the existence of
 #                   
 #   =cut
 
 sub is_finished
 {
-    my ($self,$file) = @_;
-    my $is_finished = -e $file;
-    if ( $is_finished && exists($$self{_running_jobs}{$file}) ) { delete($$self{_running_jobs}{$file}); }
-    return $is_finished;
+    my ($self,@files) = @_;
+    my $all_finished = 1;
+    for my $file (@files)
+    {
+        my $is_finished = -e $file;
+        if ( !$is_finished ) { $all_finished=0; }
+        elsif ( exists($$self{_running_jobs}{$file}) ) { delete($$self{_running_jobs}{$file}); }
+    }
+    return $all_finished;
 }
 
 # Run the freezed object created by spawn

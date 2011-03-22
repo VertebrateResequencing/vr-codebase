@@ -143,8 +143,8 @@ sub select_stats
             elsif ( exists($$rec{INFO}{$$filter{tag}}) )
             {
                 my $stats_key = $self->get_stats_key($filter,$key,$$rec{INFO}{$$filter{tag}});
-                if ( !exists($$self{stats}{$key}) ) { $$self{stats}{$key}={}; }
-                push @mandatory, $$self{stats}{$key};
+                if ( !exists($$self{stats}{$stats_key}) ) { $$self{stats}{$stats_key}={}; }
+                push @mandatory, $$self{stats}{$stats_key};
             }
         }
         elsif ( $key=~m{^FORMAT/([^/]+)$} )

@@ -483,7 +483,7 @@ sub _guess_mapping_program {
         my (@known_prg,@unknown_prg);
         for my $program (@programs)
         {
-            if ( $program =~ /bwa|maq|ssha|bfast|stampy/ ) { push @known_prg, $program; }
+            if ( $program =~ /bwa|maq|ssaha|bfast|stampy/ ) { push @known_prg, $program; }
             elsif ( $program !~ /GATK/ ) { push @unknown_prg, $program; }
         }
 

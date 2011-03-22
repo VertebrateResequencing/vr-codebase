@@ -382,6 +382,12 @@ sub get_jobs
                 next;
             }
             
+            if ($action=~/^__VRTrack_SNPs__$/ )
+            {
+                get_snps_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
+                next;
+            }
+
             if ( $action=~/^__DINDEL__$/ )
             {
                 get_dindel_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
@@ -865,7 +871,7 @@ sub get_mapping_jobs_from_vrtrack {
         
         my $files = $vrlane->files();
         foreach my $file (@{$files}) {
-            push(@{$lane_info->{files}}, $file->hierarchy_name) if $file->type =~ /0|1|2/;
+            push @{$lane_info->{files}}, $file->hierarchy_name if $file->type =~ /0|1|2/;
         }
         
         my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
@@ -1060,6 +1066,105 @@ sub get_hierarchy_update_jobs_from_vrtrack {
     }
     
     _make_jobs_from_vrtrack_lanes($jobs, $config, $mtime, $config_data, \%lanes_to_run);
+    debug($config_data,"done\n");
+    return;
+}
+
+sub get_snps_jobs_from_vrtrack {
+    my ($jobs,$config,$mtime,$config_data) = @_;
+
+    if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
+    debug($config_data,"$config\tget_snps_jobs_from_vrtrack...");
+
+    my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+    my %filter  = ('improved'=>1, 'snp_called' => 0);
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
+
+    my $hnames = $vrtrack->processed_lane_hnames(%filter);
+    my @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config);
+
+    debug($config_data, "found " . (scalar @lanes) . " lanes improved but not SNP called");
+
+    my $lanes_count = 0;
+
+    # For big data sets, this loop takes suprisingly long.
+    foreach my $vrlane (@lanes)
+    {
+        my $path   = $vrtrack->hierarchy_path_of_lane($vrlane);
+        if ( !$path ) { croak("No path for [$vrlane->name]?\n"); }
+        if ( $vrlane->is_withdrawn() ) { next; }
+        my $lane_info = lane_info($path);
+        my $bam;
+        my $lane_path = File::Spec->catfile($config_data->{root}, $path);
+        my %mapstat_ids;
+        my $mapstat;
+
+        # Get all the possible BAMs from the current lane.
+        my @bam_files = glob("$lane_path/*.bam");
+        if ( !scalar @bam_files ) {die "No BAM files in [$lane_path]?"; };
+                 
+        my $regex = $config_data->{data}{bam_suffix};
+        $regex =~ s/\.bam/\\\.bam/;
+        $regex = '^(\d+)\.[ps]e\..*' . $regex . '$';
+
+        for my $file (@bam_files) {
+            my ($basename, $path) = fileparse($file);
+            if ($basename =~ m/$regex/){
+                push @{$mapstat_ids{$1}}, $file;
+            }
+        }
+
+        unless (scalar keys %mapstat_ids){
+            debug($config_data,"Didn't find an improved bam for snp calling in $lane_path\n");
+            next;
+        }
+
+        # work out which is the latest bam to use for snp calling: the
+        # one with the largest mapstats id.
+        my @ids = sort {$b<=>$a} keys %mapstat_ids;
+        my $mapstat_id = $ids[0];
+        if (1 < scalar @{$mapstat_ids{$ids[0]}}) {
+            # There can be only one...
+            debug($config_data, "Found more than one bam matching regex with mapstats id $ids[0], don't know which to use, in lane $lane_path\n");
+            next;
+        }
+
+        my $bam_for_calling = $mapstat_ids{$ids[0]}[0];
+        my $snp_dir = $bam_for_calling;
+        if ($snp_dir =~ m/^(.*)\.bam$/){
+            $snp_dir = "$1.snp";
+        }
+        else {
+            die "Fixme: couldn't work out snp dir name, bam $bam_for_calling doesn't end with .bam?\n";
+        }
+
+        unless (-d $snp_dir) {
+            mkdir $snp_dir or die "Could not mkdir $snp_dir\n";
+        }     
+
+        # make the file list file for the pipeline
+        my $file_list = File::Spec->catfile($snp_dir, 'file.list');
+        unless (-e $file_list){
+            open my $fh, '>', $file_list or debug($config_data, "Error opening $file_list\n");
+            print $fh $bam_for_calling, "\n";
+            close $fh;
+        }
+
+        $config_data->{data}{file_list} = $file_list;
+        $lane_info->{vrlane} = $vrlane;
+        $lane_info->{lane_path} = $path;
+        my $job = Job->new({lane_info=>$lane_info, %$config_data, path=>$snp_dir, config=>$config, mtime=>$mtime});
+        push @$jobs, $job;
+
+        $lanes_count++;
+        if ($config_data->{max_lanes} and $lanes_count == $config_data->{max_lanes}){
+            debug($config_data, ".max lanes limit of " . $config_data->{max_lanes} . " reached...");
+            last;
+        }
+
+        debug($config_data,".");
+    }
+
     debug($config_data,"done\n");
     return;
 }

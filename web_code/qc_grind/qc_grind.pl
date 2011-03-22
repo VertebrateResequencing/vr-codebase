@@ -12,18 +12,16 @@ use strict;
 use warnings;
 use URI;
 
-use lib '.';
-
 #use SangerPaths qw(core team145);
 use SangerPaths qw(core);
-use lib '..';
-use lib '../head';
 use lib './modules';
 use VRTrack::VRTrack;
 use VRTrack::Project;
 use VRTrack::Sample;
 use VRTrack::Library;
 use VRTrack::Lane;
+use VRTrack::Mapper;
+use VRTrack::Mapstats;
 use VertRes::Utils::VRTrackFactory;
 use Data::Dumper;
 
@@ -64,6 +62,7 @@ my %AUTH_USERS = (  'jws' => 1, # Jim Stalker
                     'rd'  => 1, # Richard Durbin
                     'kb1' => 1, # Karen McLaren
                     'ylx' => 1, #Yali Xue from Chris's group
+                    'ak6' => 1, # Anja Kolb-Kokocinski (kuusamo)
                  );
 
 ###############################CSS Stuff#############################
@@ -843,6 +842,14 @@ sub displayLane
             $adapter_reads = $mapstats->adapter_reads;
             $adapter_perc = sprintf("%.1f",($adapter_reads/$reads)*100);
         }
+
+        #get the aligner
+        my $mapper = $mapstats->mapper();
+        my $mapper_string = qq[None found];
+        if( $mapper )
+        {
+            $mapper_string = $mapper->name().qq[ ].$mapper->version();
+        }
         
         # genotypes
         my $gt_found = $mapstats->genotype_found;
@@ -1054,7 +1061,7 @@ sub displayLane
                 </table>
                 </td>
                 <td><table>
-                <tr><td>&nbsp;</td><td></td></tr>
+                <tr><td>Mapper: </td><td>$mapper_string</td></tr>
                 <tr><td>Cycles: </td><td>$cycles</td></tr>
                 <tr><td>NPG QC: </td><td>$npg_qc</td></tr>
                 <tr><td>Error rate: </td><td>$error_rate_perc%</td></tr>

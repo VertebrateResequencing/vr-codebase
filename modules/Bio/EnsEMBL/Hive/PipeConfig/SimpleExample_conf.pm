@@ -138,6 +138,7 @@ sub pipeline_analyses {
                 2 => [ 'append' ],
                 1 => [ 'cat' ]
             },
+            -hive_capacity => -1
         },
         
         {   -logic_name => 'append',
@@ -147,6 +148,7 @@ sub pipeline_analyses {
                 # (jobs for this analysis will be flown_into via branch-2 from
                 #  'split' jobs)
             ],
+            -hive_capacity => -1
         },
         
         {   -logic_name => 'cat',

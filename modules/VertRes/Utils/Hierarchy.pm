@@ -55,7 +55,7 @@ our $DEFAULT_DB_SETTINGS = {host => $ENV{VRTRACK_HOST},
                             user => $ENV{VRTRACK_RO_USER},
                             database => 'g1k_meta'};
 
-our $nfs_disc_basename = '/nfs/vertreseq';
+our $nfs_disc_basename = '/nfs/vertres';
 
 
 =head2 new
@@ -1269,6 +1269,10 @@ sub lane_bam_link {
            slx_mapper => string
            454_mapper => string
            assembly_name => string
+           
+           the following optionally give aliases for the mapper names read fom the database
+           slx_mapper_alias => ['bwa', 'bwa_aln']
+           454_mapper_alias => ['ssaha', 'ssaha_1.4']
 
 =cut
 
@@ -1303,8 +1307,23 @@ sub lane_bams {
             my $assembly = $possible->assembly() || next;
             $assembly->name eq $args{assembly_name} || next;
             my $this_mapper = $possible->mapper() || next;
-            $this_mapper->name eq $mapper || next;
-            
+            my $this_mapper_name = $this_mapper->name || next;
+
+            if (exists $args{slx_mapper_alias}) {
+                foreach my $mapper_alt (@{$args{slx_mapper_alias}}) {
+                    next unless $mapper_alt eq $this_mapper_name;
+                    $this_mapper_name = $args{slx_mapper};
+                    last;
+                }
+            }
+            if (exists $args{'454_mapper_alias'}) {
+                foreach my $mapper_alt (@{$args{'454_mapper_alias'}}) {
+                    next unless $mapper_alt eq $this_mapper_name;
+                    $this_mapper_name = $args{'454_mapper'};
+                    last;
+                }
+            }
+            $this_mapper_name eq $mapper || next;
             if ($pid > $highest_id) {
                 $mapstats = $possible;
                 $highest_id = $pid;
