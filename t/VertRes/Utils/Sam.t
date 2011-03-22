@@ -474,8 +474,6 @@ my %verify_stats;
 get_exome_bam_stats($exome_bam_file, $bait_interval, $bait_interval_list, $target_interval, $target_interval_list, $ref_fa, $ref_fai, \%vertres_stats, \%verify_stats, $temp_dir);
 is_deeply \%vertres_stats, \%verify_stats, 'get_exome_bam_stats produced correct results';
 
-<<<<<<< HEAD
-
 # filter_readgroups
 my $multi_rg_bam = File::Spec->catfile('t', 'data', 'multi_readgroup.bam');
 ok -s $multi_rg_bam, 'multi readgroup test bam is present';
@@ -491,7 +489,7 @@ $sam_util->filter_readgroups($multi_rg_bam, $exclude_bam, exclude => [{ID => 'SR
 ok -s $exclude_bam, 'bam created with exclude filter';
 @records = get_bam_body($exclude_bam);
 is @records, 268, 'bam filtered with \'exclude\' has 268 records';
-=======
+
 # bam_refnames
 my @expected_refnames = qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X MT
                   NT_113887 NT_113947 NT_113903 NT_113908 NT_113940 NT_113917
@@ -511,7 +509,6 @@ my @expected_refnames = qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21
                   NT_113962 NT_113899 NT_113965 NT_113898 NC_007605);
 my $got_names = $sam_util->bam_refnames($headed_bam);
 is_deeply \@expected_refnames, $got_names, 'bam_refnames produced correct results';
->>>>>>> cf02f32645b3fac145c6ba3c7df04b417fff2e15
 
 exit;
 
@@ -612,11 +609,7 @@ sub get_exome_bam_stats {
                'target_interval', $target_interval,
                'ref_fa', $ref_file,
                'ref_fai', $ref_fai_file);
-<<<<<<< HEAD
-    %{$vr_stats} = %{$o->bam_exome_qc_stats('bam', $bam_file, %ops)};
-=======
     %{$vr_stats} = %{$o->bam_exome_qc_stats(%ops)};
->>>>>>> cf02f32645b3fac145c6ba3c7df04b417fff2e15
 
     # we get stats from various subroutines to verify the stats made by bam_exome_qc_stats, put
     # the stats in a hash to compare with VertRes results...
