@@ -6,7 +6,7 @@ use File::Copy;
 use Data::Dumper;
 
 BEGIN {
-    use Test::Most tests => 174;
+    use Test::Most tests => 180;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -473,6 +473,22 @@ my %vertres_stats;
 my %verify_stats;
 get_exome_bam_stats($exome_bam_file, $bait_interval, $bait_interval_list, $target_interval, $target_interval_list, $ref_fa, $ref_fai, \%vertres_stats, \%verify_stats, $temp_dir);
 is_deeply \%vertres_stats, \%verify_stats, 'get_exome_bam_stats produced correct results';
+
+# filter_readgroups
+my $multi_rg_bam = File::Spec->catfile('t', 'data', 'multi_readgroup.bam');
+ok -s $multi_rg_bam, 'multi readgroup test bam is present';
+@records = get_bam_body($multi_rg_bam);
+is @records, 407, 'multi read group bam initially has 407 records';
+my $include_bam = File::Spec->catfile($temp_dir, 'include.bam');
+my $exclude_bam = File::Spec->catfile($temp_dir, 'exclude.bam');
+$sam_util->filter_readgroups($multi_rg_bam, $include_bam, include => [{SM => 'HG01619'}, {SM => 'HG01625'}]);
+ok -s $include_bam, 'bam created with include filter';
+@records = get_bam_body($include_bam);
+is @records, 209, 'bam filtered with \'include\' has 209 records';
+$sam_util->filter_readgroups($multi_rg_bam, $exclude_bam, exclude => [{ID => 'SRR071227'}]);
+ok -s $exclude_bam, 'bam created with exclude filter';
+@records = get_bam_body($exclude_bam);
+is @records, 268, 'bam filtered with \'exclude\' has 268 records';
 
 # bam_refnames
 my @expected_refnames = qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X MT

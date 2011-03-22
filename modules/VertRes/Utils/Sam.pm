@@ -2654,8 +2654,10 @@ sub bam2fastq {
 
  Title   : filter_readgroups
  Usage   : $obj->filter_readgroups('in.bam','out.bam',include=>[{SM=>'HG01522',PL=>'ILLUMINA'}]);
+           $obj->filter_readgroups('in.bam','out.bam',exclude=>[{ID=>'ERR001503'}]);
  Function: Given a bam file, generates another bam file that contains only the
-           requested read groups. Currently only 'include' logic implemented; it is trivial to add 'exclude' though.
+           requested read groups. Contains both 'include' and 'exclude' logic. If both are supplied,
+           the include filter is parsed first, followed by the exclude filter.
            Note: The header is not modified.
  Returns : 1 on success or 0 when the filters would not exclude any reads
  Args    : starting bam file, output name for bam file and filter specification
@@ -2666,7 +2668,7 @@ sub filter_readgroups
 {
     my ($self, $in_bam, $out_bam, %opts) = @_;
 
-    if ( !exists($opts{include}) ) { $self->throw("Missing the 'include' parameter.\n"); }
+    if ( !exists($opts{include}) && !exists($opts{exclude}) ) { $self->throw("Must supply 'include' and/or 'exclude' parameter.\n"); }
     if ( ! -e $in_bam ) { $self->throw("No such file: $in_bam\n"); }
 
     my $pars = VertRes::Parser::bam->new(file=>$in_bam);
@@ -2679,20 +2681,45 @@ sub filter_readgroups
     my %rg_info = $pars->readgroup_info();
     while (my ($rg,$info) = each %rg_info)
     {
+        $$info{ID}=$rg; # add id to rg info hash
+
         # Will the RG pass any of these filters?
-        for my $inc (@{$opts{include}})
-        {
-            # All requested tags must match
-            my $match = 0;
-            while (my ($tag,$value) = each %$inc)
+        if (exists($opts{include})) {
+            for my $inc (@{$opts{include}})
             {
-                if ( exists($$info{$tag}) && $$info{$tag} eq $value ) { $match++; }
+                # All requested tags must match
+                my $match = 0;
+                while (my ($tag,$value) = each %$inc)
+                {
+                    if ( exists($$info{$tag}) && $$info{$tag} eq $value ) { $match++; }
+                }
+                if ( $match == scalar keys %$inc ) 
+                {
+                    # All tags match the criteria, include this RG
+                    $include{$rg} = 1;
+                    last;
+                }
             }
-            if ( $match == scalar keys %$inc ) 
+        } else {
+            # Include all if no specific include option given
+            $include{$rg} = 1;
+        }
+
+        if (exists($opts{exclude})) {
+            for my $exc (@{$opts{exclude}})
             {
-                # All tags match the criteria, include this RG
-                $include{$rg} = 1;
-                last;
+                # All requested tags must match
+                my $match = 0;
+                while (my ($tag,$value) = each %$exc)
+                {
+                    if ( exists($$info{$tag}) && $$info{$tag} eq $value ) { $match++; }
+                }
+                if ( $match == scalar keys %$exc ) 
+                {
+                    # All tags match the criteria, exclude this RG
+                    delete $include{$rg} if (exists $include{$rg});
+                    last;
+                }
             }
         }
     }
