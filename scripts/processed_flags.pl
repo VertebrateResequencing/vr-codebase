@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+use strict;
 use VRTrack::Core_obj;
 
 my $val = shift;
