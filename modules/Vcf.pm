@@ -531,7 +531,7 @@ sub next_data_hash
     if ( $$cols[8] || $items[8] )
     {
         $format = $out{$$cols[8]} = [ split(/:/,$items[8]) ];
-        if ( !$$format[0] || $$format[0] ne 'GT' ) { $self->warn("Expected GT as the first genotype field at $items[0]:$items[1]\n"); } 
+        if ( (!$$format[0] || $$format[0] ne 'GT') && !$$self{ignore_missing_GT} ) { $self->warn("Expected GT as the first genotype field at $items[0]:$items[1]\n"); } 
     }
 
     # Genotype fields
@@ -1004,7 +1004,7 @@ sub calc_an_ac
     my @ac;
     for my $ac ( sort { $a <=> $b } keys %ac_counts) { push @ac, $ac_counts{$ac}; }
     if ( !@ac ) { @ac = ('0'); }
-    return ($an,join(',',@ac));
+    return ($an,join(',',@ac),\@ac);
 }
 
 sub _validate_alt_field
@@ -1369,6 +1369,30 @@ sub add_format_field
         if ( $key eq $field ) { return; } # already there
     }
     push @{$$rec{FORMAT}}, $field;
+}
+
+
+=head2 remove_format_field
+
+    Usage   : $x=$vcf->next_data_hash(); $vcf->remove_format_field($x,'FOO'); print $vcf->format_line($x);
+    Args    : The record obtained by next_data_hash
+            : The field name
+    Returns : 
+
+=cut
+
+sub remove_format_field
+{
+    my ($self,$rec,$field) = @_;
+
+    if ( !$$rec{FORMAT} ) { $$rec{FORMAT}=[]; }
+
+    my $i = 0;
+    for my $key (@{$$rec{FORMAT}})
+    {
+        if ( $key eq $field ) { splice @{$$rec{FORMAT}},$i,1; }
+        $i++;
+    }
 }
 
 
