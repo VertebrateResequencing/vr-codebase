@@ -181,10 +181,8 @@ sub clean
     if ( $$self{'mrProper'} ) 
     { 
         my $qc_dir = qq[$$self{'lane_path'}/$$self{'sample_dir'}];
-        if ( ! -d $qc_dir ) { return; }
-
-        $self->debug("rm -rf $qc_dir\n");
-        Utils::CMD(qq[rm -rf $qc_dir]);
+        $self->debug("rm -rf $qc_dir $qc_dir*\n");
+        Utils::CMD(qq[rm -rf $qc_dir $qc_dir.*]);
         return;
     }
 }
