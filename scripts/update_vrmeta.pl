@@ -288,7 +288,7 @@ sub add_file {
     my $file;
     foreach my $obj (@{$lane->files || []}) {
         my $this_md5 = $obj->md5;
-        if ($this_md5 eq $md5 || $obj->hierarchy_name eq $fastq_filename) {
+        if ($md5 && $this_md5 eq $md5 || $obj->hierarchy_name eq $fastq_filename) {
             $file = $obj;
             last;
         }
