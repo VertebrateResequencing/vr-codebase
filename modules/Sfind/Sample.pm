@@ -24,11 +24,140 @@ jws@sanger.ac.uk
 
 =head1 METHODS
 
+=head2 new
+
+  Arg [1]    : hashref: dbh => database handle to seqtracking database
+                        id  => sample id
+                        study_id  => study id
+  Example    : my $sample = Sfind::Sample->new({dbh=>$dbh, id=>$id};)
+  Description: Returns Sample object by sample id
+  Returntype : Sfind::Sample object
+
+
+=head2 id
+
+  Arg [1]    : none
+  Example    : my $id = $samp->id();
+  Description: Retrieve ID of a sample
+  Returntype : Integer
+
+
+=head2 study_id
+
+  Arg [1]    : none
+  Example    : my $study_id = $samp->study_id();
+  Description: Retrieve study ID of a sample
+  Returntype : Integer
+
+
+=head2 name
+
+  Arg [1]    : none
+  Example    : my $name = $samp->name();
+  Description: Retrieve sample name
+  Returntype : string
+
+ 
+=head2 uuid
+
+  Arg [1]    : none
+  Example    : my $uuid = $samp->uuid();
+  Description: Retrieve sample uuid
+  Returntype : string
+
+
+=head2 description
+
+  Arg [1]    : none
+  Example    : my $description = $samp->description();
+  Description: Retrieve sample description
+  Returntype : string
+
+
+=head2 organism
+
+  Arg [1]    : none
+  Example    : my $organism = $samp->organism();
+  Description: Retrieve sample organism
+  Returntype : string
+
+
+=head2 common_name
+
+  Arg [1]    : none
+  Example    : my $common_name = $samp->common_name();
+  Description: Retrieve sample common_name
+  Returntype : string
+
+
+=head2 taxon_id
+
+  Arg [1]    : none
+  Example    : my $taxon_id = $samp->taxon_id();
+  Description: Retrieve sample taxon_id
+  Returntype : int
+
+
+=head2 accession
+
+  Arg [1]    : none
+  Example    : my $accession = $samp->accession();
+  Description: Retrieve sample accession
+  Returntype : string
+
+
+=head2 gender
+
+  Arg [1]    : none
+  Example    : my $gender = $samp->gender();
+  Description: Retrieve sample gender
+  Returntype : string
+
+
+=head2 sanger_sample_id
+
+  Arg [1]    : none
+  Example    : my $sanger_sample_id = $samp->sanger_sample_id();
+  Description: Retrieve sample sanger_sample_id
+  Returntype : string
+
+
+=head2 supplier_name
+
+  Arg [1]    : none
+  Example    : my $supplier_name = $samp->supplier_name();
+  Description: Retrieve sample supplier_name
+  Returntype : string
+
+
+=head2 created
+
+  Arg [1]    : none
+  Example    : my $sample_when = $sample->created();
+  Description: Retrieves sample creation datetime
+  Returntype : DateTime object
+
+
+=head2 library_requests
+
+  Arg [1]    : none
+  Example    : my $librequests = $sample->library_requests();
+  Description: Returns a ref to an array of the library_request objects that are associated with this sample.
+  Returntype : ref to array of Sfind::Library_Request objects
+
+
+=head2 library_request_ids
+
+  Arg [1]    : none
+  Example    : my $librequestids = $sample->library_request_ids();
+  Description: Returns an arrayref of the library_request ids on this sample
+  Returntype : ref to array of Sfind::Library_Request IDs
+
 =cut
 
 use Moose;
+use Sfind::Types qw(MysqlDateTime);
 use namespace::autoclean;
-use Sfind::Library;
 use Sfind::Library_Request;
 
 has '_dbh'  => (
@@ -104,6 +233,21 @@ has 'supplier_name'	=> (
 );
 
 
+has 'created' => (
+    is          => 'ro',
+    isa         => MysqlDateTime,
+    coerce      => 1,   # accept mysql dates
+);
+# Add these when fields appear from Andrew Page.
+#has 'strain'=> (
+#    is          => 'ro',
+#    isa         => 'Maybe[Str]',
+#);
+#has 'public_name'=> (
+#    is          => 'ro',
+#    isa         => 'Maybe[Str]',
+#);
+
 has 'library_request_ids'=> (
     is          => 'ro',
     isa         => 'ArrayRef[Int]',
@@ -111,7 +255,7 @@ has 'library_request_ids'=> (
     builder     => '_get_library_request_ids',
 );
 
-has 'library_requests'=> (
+has 'library_requests' => (
     is          => 'ro',
     isa         => 'ArrayRef[Sfind::Library_Request]',
     lazy        => 1,
@@ -139,22 +283,18 @@ around BUILDARGS => sub {
 };
 
 
- 
-=head2 library_requests
 
-  Arg [1]    : library name from sequencescape
-  Example    : my $librequests = $sample->library_requests();
-  Description: Returns a ref to an array of the library_request objects that are associated with this sample.
-  Returntype : ref to array of Sfind::Library_Request objects
-
-=cut
-
+###############################################################################
+# BUILDERS
+###############################################################################
 sub _get_library_requests {
     my ($self) = @_;
 
     my @library_requests;
     foreach my $id (@{$self->library_request_ids()}){
-        my $obj = Sfind::Library_Request->new($self->{_dbh},$id);
+        my $obj = Sfind::Library_Request->new({ dbh => $self->_dbh,
+                                                id  => $id, 
+                                                });
         push @library_requests, $obj; 
     }
     @library_requests = sort {$a <=> $b} @library_requests;
@@ -162,15 +302,6 @@ sub _get_library_requests {
     return \@library_requests;
 }
  
- 
-=head2 library_request_ids
- 
-   Arg [1]    : None
-   Example    : my $library_request_ids = $sample->library_request_ids();
-   Description: Returns a ref to an array of the library request IDs that are associated with this sample
-   Returntype : ref to array of integer library request IDs
- 
-=cut
  
 sub _get_library_request_ids {
     my ($self) = @_;
@@ -184,152 +315,42 @@ sub _get_library_request_ids {
     return \@library_requests;
 }
 
+###############################################################################
+# Additional methods
+###############################################################################
 
-# =head2 id
-# 
-#   Arg [1]    : id (optional)
-#   Example    : my $id = $samp->id();
-# 	       $samp->id('104');
-#   Description: Get/Set for ID of a sample
-#   Returntype : SequenceScape ID (usu. integer)
-# 
-# =cut
-# 
-# sub id {
-#     my ($self,$id) = @_;
-#     if ($id){
-# 	$self->{'id'} = $id;
-#     }
-#     return $self->{'id'};
-# }
-# 
-# 
-# =head2 study_id
-# 
-#   Arg [1]    : study_id (optional)
-#   Example    : my $study_id = $samp->study_id();
-# 	       $samp->study_id('104');
-#   Description: Get/Set for study ID of a sample
-#   Returntype : SequenceScape ID (usu. integer)
-# 
-# =cut
-# 
-# sub study_id {
-#     my ($self,$study_id) = @_;
-#     if ($study_id){
-# 	$self->{'study_id'} = $study_id;
-#     }
-#     return $self->{'study_id'};
-# }
-# 
-# 
-# =head2 name
-# 
-#   Arg [1]    : name (optional)
-#   Example    : my $name = $samp->name();
-# 	       $samp->name('104');
-#   Description: Get/Set for sample name
-#   Returntype : string
-# 
-# =cut
-# 
-# sub name {
-#     my ($self,$name) = @_;
-#     if ($name){
-# 	$self->{'name'} = $name;
-#     }
-#     return $self->{'name'};
-# }
-# 
-# =head2 get_organism_name
-# 
-#   Arg [1]    : None
-#   Example    : my $organism = $sample->get_organism_name();
-#   Description: retrieve organism name from sample_common_name key for given sample ID
-#   Returntype : string
-# 
-# =cut
-# 
-# sub get_organism_name {
-#     my ($self) = @_;
-#     my $sql = qq[select value from property_information where `key` like "sample_common_name" and property_information.obj_id=?];
-#     my $org = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
-#     unless ($org){
-# 	warn "No organism ", $self->id,"\n";
-# 	return undef;
-#     }
-#     my $orgname = $org->{value};
-#     $orgname =~ s/^\s+//; #remove leading spaces
-#     $orgname =~ s/\s+$//; #remove trailing spaces
-#     return $orgname;
-# }
-# 
-# 
-# 
-# 
-# 
-# =head2 get_strain_name
-# 
-#   Arg [1]    : None
-#   Example    : my $strain = $sample->get_strain_name();
-#   Description: retrieve strain information from given sample ID
-#   Returntype : string
-# 
-# =cut
-# 
-# sub get_strain_name {
-#     my ($self) = @_;
-#     my $sql = qq[select value from property_information where `key` like "sample_strain_att" and property_information.obj_id=?];
-#     my $strain = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
-#     unless ($strain){
-# 	warn "No strain ", $self->id,"\n";
-# 	return undef;
-#     }
-#     my $strain_name = $strain->{value};
-#     return $strain_name;
-# }
-# 
-# =head2 get_accession
-# 
-#   Arg [1]    : None
-#   Example    : my $acc = $sample->get_accession();
-#   Description: retrieve EBI accession number from given sample ID
-#   Returntype : string
-# 
-# =cut
-# 
-# sub get_accession {
-#     my ($self) = @_;
-#     my $sql = qq[select value from property_information where `key` like "sample_ebi_accession_number" and property_information.obj_id=?];
-#     my $acc = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
-#     unless ($acc){
-# 	warn "No accession ", $self->id,"\n";
-# 	return undef;
-#     }
-#     my $acc_name = $acc->{value};
-#     return $acc_name;
-# }
-# 
-# =head2 get_public_name
-# 
-#   Arg [1]    : None
-#   Example    : my $pubname = $sample->get_public_name();
-#   Description: retrieve sample public name from given sample ID
-#   Returntype : string
-# 
-# =cut
-# 
-# sub get_public_name {
-#     my ($self) = @_;
-#     my $sql = qq[select value from property_information where `key` like "sample_public_name" and property_information.obj_id=?];
-#     my $pub = $self->{_dbh}->selectrow_hashref($sql, undef, ($self->id));
-#     unless ($pub){
-# 	warn "No public name ", $self->id,"\n";
-# 	return undef;
-#     }
-#     my $pub_name = $pub->{value};
-#     return $pub_name;
-# }
-# 
+
+
+###############################################################################
+# DEPRECATED CALLS
+###############################################################################
+sub get_organism_name {
+    my ($self) = @_;
+    warnings::warnif("deprecated",
+    "get_organism_name is deprecated, use organism instead");
+    return $self->organism();
+}
+
+sub get_strain_name {
+    my ($self) = @_;
+    warnings::warnif("deprecated",
+    "get_strain_name is deprecated, use strain instead");
+    return $self->strain();
+}
+
+sub get_accession {
+    my ($self) = @_;
+    warnings::warnif("deprecated",
+    "get_accession is deprecated, use accession instead");
+    return $self->accession();
+}
+
+sub get_public_name {
+    my ($self) = @_;
+    warnings::warnif("deprecated",
+    "get_public_name is deprecated, use public_name instead");
+    return $self->public_name();
+}
+
 __PACKAGE__->meta->make_immutable;
 1;

@@ -23,9 +23,180 @@ jws@sanger.ac.uk
 
 =head1 METHODS
 
+=head2 new
+
+  Arg [1]    : hashref: dbh => database handle to seqtracking database
+                        id  => study id
+  Example    : my $study = Sfind::Study->new({dbh=>$dbh, id=>$id};)
+  Description: Returns Study object by study id
+  Returntype : Sfind::Study object
+
+
+=head2 id
+
+  Arg [1]    : none
+  Example    : my $id = $study->id();
+  Description: Return ID of a study
+  Returntype : SequenceScape ID (usu. integer)
+
+
+=head2 name
+
+  Arg [1]    : none
+  Example    : my $name = $study->name();
+  Description: Return study name
+  Returntype : string
+
+
+=head2 uuid
+
+  Arg [1]    : none
+  Example    : my $uuid = $study->uuid();
+  Description: Return study uuid
+  Returntype : string
+
+
+=head2 description
+
+  Arg [1]    : none
+  Example    : my $description = $study->description();
+  Description: Return study description
+  Returntype : string
+
+
+=head2 abstract
+
+  Arg [1]    : none
+  Example    : my $abstract = $study->abstract();
+  Description: Return study abstract
+  Returntype : string
+
+
+=head2 sponsor
+
+  Arg [1]    : none
+  Example    : my $sponsor = $study->sponsor();
+  Description: Return study Faculty/SAC sponsor
+  Returntype : string
+
+
+=head2 accession
+
+  Arg [1]    : none
+  Example    : my $accession = $study->accession();
+  Description: Return study SRA/ERA accession
+  Returntype : string
+
+
+=head2 study_type
+
+  Arg [1]    : none
+  Example    : my $study_type = $study->study_type();
+  Description: Return study type
+  Returntype : string
+
+
+=head2 abbreviation
+
+  Arg [1]    : none
+  Example    : my $abbreviation = $study->abbreviation();
+  Description: Return study abbreviation.
+  Returntype : string
+
+
+=head2 ref_genome
+
+  Arg [1]    : none
+  Example    : my $ref_genome = $study->ref_genome();
+  Description: Return reference genome to align this study to
+  Returntype : string
+
+
+=head2 ethically_approved
+
+  Arg [1]    : none
+  Example    : my $ethically_approved = $study->ethically_approved();
+  Description: Return ethical approval status
+  Returntype : string
+
+
+=head2 sample_ids
+
+  Arg [1]    : none
+  Example    : my $sample_ids = $study->sample_ids();
+  Description: Returns a ref to an array of the sample IDs that are associated with this study
+  Returntype : arrayref of sorted integer sample IDs
+
+
+=head2 samples
+
+  Arg [1]    : none
+  Example    : my $samples = $study->samples();
+  Description: Returns a ref to an array of the sample objects that are associated with this study
+  Returntype : ref to array of Sfind::Sample objects
+
+
+=head2 contains_human_dna
+
+  Arg [1]    : none
+  Example    : my $chd = $study->contains_human_dna();
+  Description: Returns the value in the 'contains_human_dna' field for this study
+  Returntype : bool
+
+
+=head2 contaminated_with_human_dna
+
+  Arg [1]    : none
+  Example    : my $chd = $study->contaminated_with_human_dna();
+  Description: Returns the value in the 'contaminated_human_dna' field for this study
+  Returntype : bool
+
+
+=head2 visibility
+
+  Arg [1]    : none
+  Example    : my $vis = $study->visibility();
+  Description: Public archive visibility of this study
+  Returntype : String
+
+
+=head2 title
+
+  Arg [1]    : none
+  Example    : my $title = $study->title();
+  Description: Public archive title of this study
+  Returntype : String
+
+
+=head2 sra_project_id
+
+  Arg [1]    : none
+  Example    : my $sra_id = $study->sra_project_id();
+  Description: Public archive project ID for this study
+  Returntype : String
+
+
+=head2 organism_names
+
+  Arg [1]    : none
+  Example    : my $orghash = $study->organism_names();
+  Description: Convenient method to get all the organism names associated with
+                this study. The hash will also give the number of samples for 
+                a particular organism (if needed later on)
+  Returntype : hashref of strings
+
+
+=head2 created
+
+  Arg [1]    : none
+  Example    : my $study_when = $study->created();
+  Description: Retrieves study creation datetime
+  Returntype : DateTime object
+
 =cut
 
 use Moose;
+use Sfind::Types qw(MysqlDateTime YesNoBool);
 use Sfind::Sample;
 use namespace::autoclean;
 
@@ -98,36 +269,41 @@ has 'ethically_approved'=> (
     isa         => 'Bool',
 );
 
+has 'created' => (
+    is          => 'ro',
+    isa         => MysqlDateTime,
+    coerce      => 1,   # accept mysql dates
+);
 
-# Add these when fields appear from Andrew Page.
-# Might need coercion of yes/no to bool? 
-#has 'contains_human_dna'=> (
-#    is          => 'ro',
-#    isa         => 'Bool',
-#);
+has 'contains_human_dna'=> (
+    is          => 'ro',
+    isa         => 'YesNoBool',
+    coerce      => 1,   # accept yes/no
+);
 
-#has 'contaminated_with_human_dna'=> (
-#    is          => 'ro',
-#    isa         => 'Bool',
-#    init_arg    => 'contaminated_human_dna',
-#);
+has 'contaminated_with_human_dna'=> (
+    is          => 'ro',
+    isa         => 'YesNoBool',
+    coerce      => 1,   # accept yes/no
+    init_arg    => 'contaminated_human_dna',
+);
 
-#has 'visibility'=> (
-#    is          => 'ro',
-#    isa         => 'Str',
-#    init_arg    => 'sra_study_hold',
-#);
+has 'visibility'=> (
+    is          => 'ro',
+    isa         => 'Str',
+    init_arg    => 'study_visibility',
+);
 
-#has 'title'=> (
-#    is          => 'ro',
-#    isa         => 'Str',
-#    init_arg    => 'study_title',
-#);
+has 'title'=> (
+    is          => 'ro',
+    isa         => 'Str',
+    init_arg    => 'study_title',
+);
 
-#has 'sra_project_id'=> (
-#    is          => 'ro',
-#    isa         => 'Str',
-#);
+has 'ena_project_id'=> (
+    is          => 'ro',
+    isa         => 'Str',
+);
 
 has 'sample_ids'=> (
     is          => 'ro',
@@ -168,172 +344,6 @@ around BUILDARGS => sub {
     return $argref;
 };
 
-
-=head2 id
-
-  Arg [1]    : id (optional)
-  Example    : my $id = $study->id();
-	       $study->id('104');
-  Description: Return ID of a study
-  Returntype : SequenceScape ID (usu. integer)
-
-
-=head2 name
-
-  Arg [1]    : name (optional)
-  Example    : my $name = $study->name();
-	       $study->name('1000Genomes-A1-CEU');
-  Description: Return study name
-  Returntype : string
-
-
-=head2 uuid
-
-  Arg [1]    : uuid (optional)
-  Example    : my $uuid = $study->uuid();
-	       $study->uuid('60f676b2-dd7f-11df-a1d2-00144f206e2e');
-  Description: Return study uuid
-  Returntype : string
-
-
-=head2 description
-
-  Arg [1]    : description (optional)
-  Example    : my $description = $study->description();
-	       $study->description($big_long_description_text);
-  Description: Return study description
-  Returntype : string
-
-
-=head2 abstract
-
-  Arg [1]    : abstract (optional)
-  Example    : my $abstract = $study->abstract();
-	       $study->abstract($big_long_abstract_text);
-  Description: Return study abstract
-  Returntype : string
-
-
-=head2 sponsor
-
-  Arg [1]    : sponsor (optional)
-  Example    : my $sponsor = $study->sponsor();
-	       $study->sponsor('Richard Durbin');
-  Description: Return study Faculty/SAC sponsor
-  Returntype : string
-
-
-=head2 accession
-
-  Arg [1]    : accession (optional)
-  Example    : my $accession = $study->accession();
-	       $study->accession('SRP000542');
-  Description: Return study SRA/ERA accession
-  Returntype : string
-
-
-=head2 study_type
-
-  Arg [1]    : study_type (optional)
-  Example    : my $study_type = $study->study_type();
-	       $study->study_type('Whole Genome Sequencing');
-  Description: Return study type
-  Returntype : string
-
-
-=head2 abbreviation
-
-  Arg [1]    : abbreviation (optional)
-  Example    : my $abbreviation = $study->abbreviation();
-	       $study->abbreviation('UK10K_MUIR');
-  Description: Return study abbreviation.
-  Returntype : string
-
-
-=head2 ref_genome
-
-  Arg [1]    : ref_genome (optional)
-  Example    : my $ref_genome = $study->ref_genome();
-	       $study->ref_genome('Homo_sapiens (NCBI36)');
-  Description: Return reference genome to align this study to
-  Returntype : string
-
-
-=head2 ethically_approved
-
-  Arg [1]    : ethically_approved (optional)
-  Example    : my $ethically_approved = $study->ethically_approved();
-	       $study->ethically_approved(0);
-  Description: Return ethical approval status
-  Returntype : string
-
-
-=head2 sample_ids
-
-  Arg [1]    : None
-  Example    : my $sample_ids = $study->sample_ids();
-  Description: Returns a ref to an array of the sample IDs that are associated with this study
-  Returntype : arrayref of sorted integer sample IDs
-
-
-=head2 samples
-
-  Arg [1]    : None
-  Example    : my $samples = $study->samples();
-  Description: Returns a ref to an array of the sample objects that are associated with this study
-  Returntype : ref to array of Sfind::Sample objects
-
-
-=head2 contains_human_dna
-
-  Arg [1]    : None
-  Example    : my $chd = $study->contains_human_dna();
-  Description: Returns the value in the 'contains_human_dna' field for this study
-  Returntype : bool
-
-
-=head2 contaminated_with_human_dna
-
-  Arg [1]    : None
-  Example    : my $chd = $study->contaminated_with_human_dna();
-  Description: Returns the value in the 'contaminated_human_dna' field for this study
-  Returntype : bool
-
-
-=head2 visibility
-
-  Arg [1]    : None
-  Example    : my $vis = $study->visibility();
-  Description: Public archive visibility of this study
-  Returntype : String
-
-
-=head2 title
-
-  Arg [1]    : None
-  Example    : my $title = $study->title();
-  Description: Public archive title of this study
-  Returntype : String
-
-
-=head2 sra_project_id
-
-  Arg [1]    : None
-  Example    : my $sra_id = $study->sra_project_id();
-  Description: Public archive project ID for this study
-  Returntype : String
-
-
-=head2 organism_names
-
-  Arg [1]    : None
-  Example    : my $orghash = $study->organism_names();
-  Description: Convenient method to get all the organism names associated with
-                this study. The hash will also give the number of samples for 
-                a particular organism (if needed later on)
-  Returntype : hashref of strings
-
-=cut
 
 
 ###############################################################################
@@ -393,7 +403,7 @@ sub _get_organism_names {
 
 =head2 get_sample_by_id
 
-  Arg [1]    : sample id from sequencescape
+  Arg [1]    : none
   Example    : my $sample = $study->get_sample_by_id(1154);
   Description: retrieve sample object by sequencescape id
   Returntype : Sfind::Sample object
@@ -411,7 +421,7 @@ sub get_sample_by_id {
 
 =head2 get_sample_by_name
 
-  Arg [1]    : sample name from sequencescape
+  Arg [1]    : none
   Example    : my $sample = $study->get_sample_by_name('NA12878')
   Description: retrieve sample object by sequencescape name
   Returntype : Sfind::Sample object
@@ -470,7 +480,7 @@ sub get_study_type {
 sub get_SRA_study_id {
     my ($self) = @_;
     warnings::warnif("deprecated",
-    "get_SRA_study_id is deprecated, use sra_project_id instead");
+    "get_SRA_study_id is deprecated, use ena_project_id instead");
     return $self->sra_project_id;
 }
 

@@ -4,7 +4,7 @@ package Sfind::Library;
 Sfind::Library - Sequence Tracking Library object
 
 =head1 SYNOPSIS
-    my $lib = Sfind::Library->new($dbh, $library_id);
+    my $lib = Sfind::Library->new({dbh => $dbh, id => $library_id});
 
     #get arrayref of requests on a library
     my $reqs = $library->requests();
@@ -23,24 +23,39 @@ jws@sanger.ac.uk
 
 =head1 METHODS
 
-=cut
-
-use strict;
-use warnings;
-no warnings 'uninitialized';
-use Sfind::Seq_Request;
-use Sfind::Lane;
-
 =head2 new
 
-  Arg [1]    : database handle to seqtracking database
-  Arg [2]    : library id
-  Example    : my $lib = Sfind::Sfind->new($dbh, $id)
+  Arg [1]    : hashref: dbh => database handle to seqtracking database
+                        id  => library id
+  Example    : my $lib = Sfind::Library->new({dbh=>$dbh, id=>$id};)
   Description: Returns Library object by library_id
   Returntype : Sfind::Library object
 
 =cut
 
+use Moose;
+use namespace::autoclean;
+use Sfind::Types qw(MysqlDateTime);
+use Sfind::Seq_Request;
+use Sfind::Lane;
+
+# Populate the parameters from the database
+around BUILDARGS => sub {
+    my $orig  = shift;
+    my $class = shift;
+    
+    my $argref = $class->$orig(@_);
+
+    die "Need to call with a library id" unless $argref->{id};
+    my $sql = qq[select * from requests where internal_id = ? and is_current=1];
+    my $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
+    if ($id_ref){
+        foreach my $field(keys %$id_ref){
+            $argref->{$field} = $id_ref->{$field};
+        }
+    };
+    return $argref;
+};
 sub new {
     my ($class,$dbh, $id) = @_;
     die "Need to call with a db handle and id" unless ($dbh && $id);
