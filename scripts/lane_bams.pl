@@ -99,6 +99,8 @@ my @lanes = $hu->get_lanes(db => { %cd },
                            $project_regex ? (project_regex => $project_regex) : (),
                            platform => [@platforms]);
 
+if ( !@lanes ) { die "No lanes found??\n"; }
+
 # get the paths of all lanes, and determine which samples are fully mapped
 # (now, not at $date)
 $hist->time_travel('latest');
