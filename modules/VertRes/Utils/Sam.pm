@@ -2541,17 +2541,18 @@ sub tag_strip {
 =head2 bam2fastq
 
  Title   : bam2fastq
- Usage   : $obj->bam2fastq('in.bam', 'fastq_base');
+ Usage   : $obj->bam2fastq('in.bam', 'fastq_base', 'outdir');
  Function: Converts bam to fastq and runs fastqcheck on the result. 
            bamcheck will be run, if a bamcheck file does not already exist.
  Returns : boolean (true on success, meaning the output bam was successfully
            made)
- Args    : paths to input and output bams, list of tags to remove.
+ Args    : path to input bam, basename of the fastq files to create, 
+           path of output directory (optional).
 
 =cut
 
 sub bam2fastq {
-    my ($self, $bam, $fastq_base) = @_;
+    my ($self, $bam, $fastq_base, $outdir) = @_;
 
     # read bam info from bamcheck file - create if necessary
     my $bamcheck = $bam.'.bc';
@@ -2567,6 +2568,7 @@ sub bam2fastq {
     
     my $fsu = VertRes::Utils::FileSystem->new();
     my (undef, $path) = fileparse($bam);
+    $path = $outdir if ($outdir);
     my @out_fastq;
     if ($is_paired) {
         push @out_fastq, $fsu->catfile($path, "${fastq_base}_1.fastq");
