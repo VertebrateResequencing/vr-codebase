@@ -967,8 +967,6 @@ sub update_db
     $mapping->genotype_found($$gtype{found});
     $mapping->genotype_ratio($$gtype{ratio});
     $vrlane->genotype_status($$gtype{status});
-    $vrlane->raw_reads($reads_total);
-    $vrlane->raw_bases($bases_total);
 
     # If there is no mapstats present, the mapper and assembly must be filled in.
     $self->_update_mapper_and_assembly($sample_dir, $mapping) unless $has_mapstats;
