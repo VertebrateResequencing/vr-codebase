@@ -429,7 +429,7 @@ exit;
     
     my $job_name = $self->{prefix}.'bam2fastq';
     $self->archive_bsub_files($lane_path, $job_name);
-    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => '-M3900000 -R \'select[mem>3900] rusage[mem=3900]\''}, qq{perl -w $script_name});
+    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => '-M5900000 -R \'select[mem>5900] rusage[mem=5900]\''}, qq{perl -w $script_name});
     
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete
