@@ -7,6 +7,7 @@ use strict;
 use warnings;
 use Carp;
 use Vcf;
+use FaSlice;
 
 my $opts = parse_params();
 compare_vcfs($opts);
@@ -29,11 +30,12 @@ sub error
         "   -c, --chromosomes <list|file>       Same as -r, left for backward compatibility. Please do not use as it will be dropped in the future.\n",
         "   -d, --debug                         Debugging information. Giving the option multiple times increases verbosity\n",
         "   -H, --cmp-haplotypes                Compare haplotypes, not only positions\n",
-        "   -h, -?, --help                      This help message.\n",
+        "   -R, --refseq <file>                 Compare the actual sequence, not just positions. Use with -w to compare indels.\n",
         "   -r, --regions <list|file>           Process the given regions (comma-separated list or one region per line in a file).\n",
         "   -s, --samples <list>                Process only the listed samples. Excluding unwanted samples may increase performance considerably.\n",
         "   -w, --win <int>                     In repetitive sequences, the same indel can be called at different positions. Consider\n",
         "                                           records this far apart as matching (be it a SNP or an indel).\n",
+        "   -h, -?, --help                      This help message.\n",
         "\n";
 }
 
@@ -43,6 +45,7 @@ sub parse_params
     my $opts = { positions=>0 };
     while (my $arg=shift(@ARGV))
     {
+        if ( $arg eq '-R' || $arg eq '--refseq' ) { $$opts{refseq}=shift(@ARGV); next; }
         if ( $arg eq '-c' || $arg eq '--chromosomes' ) { $$opts{regions_list}=shift(@ARGV); next; }
         if ( $arg eq '-r' || $arg eq '--regions' ) { $$opts{regions_list}=shift(@ARGV); next; }
         if ( $arg eq '-H' || $arg eq '--cmp-haplotypes' ) { $$opts{cmp_haplotypes}=1; next; }
@@ -209,6 +212,20 @@ sub report_stats
         print "\n";
     }
 
+    if ( $$opts{refseq} && $$opts{indels} )
+    {
+        print "\nNumber of matching indel haplotypes shared across:\n";
+        while (my ($file,$stat) = each %{$$opts{indels}})
+        {
+            print "\t$file\n";
+            my $match    = $$stat{match} ? $$stat{match} : 0;
+            my $mismatch = $$stat{mismatch} ? $$stat{mismatch} : 0;
+            printf "\t\tNumber of matches: %d\n", $match;
+            printf "\t\t       mismatches: %d\n", $mismatch;
+            printf "\t\t       error rate: %.1f%%\n", 100*$mismatch/($match+$mismatch);
+        }
+    }
+
     print "\n";
     printf "Number of REF matches:\t%d\n", exists($$opts{ref_match}) ? $$opts{ref_match} : 0;
     printf "Number of ALT matches:\t%d\n", exists($$opts{alt_match}) ? $$opts{alt_match} : 0;
@@ -334,6 +351,9 @@ sub do_region_stats
 {
     my ($opts,$vcfs) = @_;
 
+    my $refseq;
+    if ( $$opts{refseq} ) { $refseq = FaSlice->new(file=>$$opts{refseq}, size=>1_000_000); }
+
     my $nvcfs = scalar @$vcfs;
     my $debug = $$opts{debug} ? $$opts{debug} : 0;
     my $match = $$opts{match};
@@ -358,26 +378,140 @@ sub do_region_stats
         my $key = join(' ',sort(keys %files));
         $$match{$key}++;
 
-        if ( scalar keys %files == $nvcfs )
-        {
-            ref_alt_stats($opts,$grp);
+        my $npresent = scalar keys %files;
+        if ( $npresent == $nvcfs ) 
+        { 
+            ref_alt_stats($opts,$grp); 
+        }
+
+        if ( $npresent>1 && defined $refseq ) 
+        { 
+            cmp_sequence($opts,$grp,$refseq);
         }
 
         if ( $$opts{cmp_haplotypes} )
         {
             # Check that in the group there is one record for each file
-            my $present = 0;
-            for (my $i=0; $i<@$grp; $i++)
-            {
-                if ( ! defined $$vcfs[$i] ) { last; }
-                if ( $$grp[$i]{vcf} ne $$vcfs[$i] ) { last; }
-                $present++;
-            }
-            if ( $present==$nvcfs && scalar @$grp==$nvcfs )
+            if ( $npresent==$nvcfs && scalar @$grp==$nvcfs )
             {
                 cmp_haplotypes($opts,$grp);
             }
         }
+    }
+}
+
+sub cmp_sequence
+{
+    my ($opts,$grp,$fa_refseq) = @_;
+
+    # Detailed comparison will be performed only if there are indels or complex
+    # substitutions, SNPs are interesting only in their presence. There can be
+    # more events from the same file present simultaneously and at multiple
+    # positions. They all are treated as separate variants and if any of them
+    # yields a haplotype present in all files, match is reported.
+    # Note that the original version of the code expected all alternate
+    # variants to be present on a single VCF line and was able to compare
+    # consecutive non-overlapping events as one sequence. However, because the
+    # the major producer of indel calls (Dindel) does report one variant per
+    # line, this idea was abandoned.
+
+    # Check if there are any interesting events.
+    my %has_indels;
+    my %events_per_file;
+    my $vcf = $$grp[0]{vcf};
+    for (my $igrp=0; $igrp<@$grp; $igrp++)
+    {
+        my $rec = $$grp[$igrp];
+        my $ifile = $$rec{vcf}{vcf_compare_ID};
+
+        my $ref_len = length($$rec{ref});
+        my @alts = split(/,/,$$rec{alt});
+        for my $alt (@alts)
+        {
+            if ( $alt eq '.' ) { next; }
+            if ( $alt=~/^</ ) { next; }
+            my $alt_len = length($alt);
+            push @{$events_per_file{$ifile}}, { pos=>$$rec{pos}, alt=>$alt, ref_len=>$ref_len };
+
+            # Do complex checking of event type only if it is still not certain if this is waste of time or not
+            if ( exists($has_indels{$ifile}) ) { next; }
+
+            if ( $ref_len!=$alt_len ) { $has_indels{$ifile} = $$rec{vcf}{file}; }
+            elsif ( $ref_len>1 )
+            {
+                my ($type,$len,$ht) = $vcf->event_type($$rec{ref},$alt);
+                if ( $type eq 'o' ) { $has_indels{$ifile} = $$rec{vcf}{file}; }
+            }
+        }
+    }
+
+    # Return if there is nothing interesting
+    if ( scalar keys %has_indels < 2 ) { return; }
+
+    for my $ifile (keys %events_per_file)
+    {
+        if ( !exists($has_indels{$ifile}) ) { delete($events_per_file{$ifile}); }
+    }
+
+    # Cache the reference sequence chunk
+    my $ref_from  = $$grp[0]{pos} - $$opts{win};
+    my $ref_to    = $$grp[-1]{pos} + $$opts{win};
+    my $refseq    = $fa_refseq->get_slice($$grp[0]{chr},$ref_from,$ref_to);
+
+    # For each file get all possible sequences
+    for my $events (values %events_per_file)
+    {
+        for my $variant (@$events)
+        {
+            my $pos = $$variant{pos};
+            my $len = $pos - $ref_from;
+            my $seq = $len>0 ? substr($refseq,0,$len) : '';
+            $seq .= $$variant{alt};
+
+            $pos += $$variant{ref_len};
+            if ( $pos<=$ref_to )
+            { 
+                $seq .= substr($refseq,$pos-$ref_from);
+            }
+
+            $$variant{seq} = $seq;
+            $$variant{length} = length($seq);
+        }
+    }
+
+    # Now compare the variants: is there a sequence shared across all files?
+    my $match = 1;
+    my @keys  = keys %events_per_file;
+    for (my $ikey=0; $ikey<@keys; $ikey++)
+    {
+        my $ivars = $events_per_file{$ikey};
+        for (my $jkey=0; $jkey<$ikey; $jkey++)
+        {
+            my $jvars = $events_per_file{$jkey};
+            my $found = 0;
+            for my $ivar (@$ivars)
+            {
+                for my $jvar (@$jvars)
+                {
+                    if ( $$ivar{length} != $$jvar{length} ) { next; }
+                    if ( $$ivar{seq} ne $$jvar{seq} ) { next; }
+                    $found=1;
+                    last;
+                }
+            }
+            if ( !$found ) { $match=0; last; }
+        }
+        if ( !$match ) { last; }
+    }
+    
+    my $key = join(' ',sort(values %has_indels));
+    if ( $match )
+    {
+        $$opts{indels}{$key}{match}++;
+    }
+    else
+    {
+        $$opts{indels}{$key}{mismatch}++;
     }
 }
 
@@ -649,8 +783,8 @@ sub read_line
     if ( !($line=~/^(\S+)\t(\S+)\t\S+\t(\S+)\t(\S+)/) ) { error("Could not parse the line: [$line]\n"); }
     my $chr = $1;
     my $pos = $2;
-    my $ref = $3;
-    my $alt = $4;
+    my $ref = uc($3);
+    my $alt = uc($4);
     if ( $$vcf{buf} && @{$$vcf{buf}} )
     {
         my $prev = $$vcf{buf}[-1];

@@ -389,6 +389,19 @@ sub merge_vcf_files
 
                 my $ref = $$line{REF};
 
+                # The ALT column may change after the merge, take care of ALT dependent tags such as GL.
+                if ( $have_samples )
+                {
+                    if ( defined $new_ref )
+                    {
+                        $vcf->parse_AGtags($line,\%ref_alt_map,$new_ref);
+                    }
+                    else
+                    {
+                        $vcf->parse_AGtags($line);
+                    }
+                }
+
                 # Now fill in the genotype information for each column
                 for (my $i=0; $i<@{$$vcf{__col_names}}; $i++)
                 {

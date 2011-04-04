@@ -1,5 +1,7 @@
 package Vcf;
 
+# http://vcftools.sourceforge.net/specs.html
+# http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:variant_call_format
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf4.0
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf_4.0_sv
@@ -7,13 +9,13 @@ package Vcf;
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcfv3.2
 #
 # Authors: petr.danecek@sanger
-# for VCF v3.2, v3.3, v4.0
+# for VCF v3.2, v3.3, v4.0, v4.1
 #
 
 =head1 NAME
 
 Vcf.pm.  Module for validation, parsing and creating VCF files. 
-         Supported versions: 3.2, 3.3, 4.0
+         Supported versions: 3.2, 3.3, 4.0, 4.1
 
 =head1 SYNOPSIS
 
@@ -154,7 +156,7 @@ sub new
     $$self{recalc_ac_an} = 1;
     $$self{has_header} = 0;
     $$self{default_version} = '4.0';
-    $$self{versions} = [ qw(Vcf3_2 Vcf3_3 Vcf4_0) ];
+    $$self{versions} = [ qw(Vcf3_2 Vcf3_3 Vcf4_0 Vcf4_1) ];
     my %open_args = ();
     if ( exists($$self{region}) ) { $open_args{region}=$$self{region}; }
     if ( exists($$self{print_header}) ) { $open_args{print_header}=$$self{print_header}; }
@@ -366,7 +368,7 @@ sub set_samples
     
     if ( exists($args{exclude}) )
     {
-        for (my $i=0; $i<@{$$self{columns}}; $i++) { $$self{samples_to_parse} = 1; }
+        for (my $i=0; $i<@{$$self{columns}}; $i++) { $$self{samples_to_parse}[$i] = 1; }
         for my $sample (@{$args{exclude}})
         {
             if ( !exists($$self{has_column}{$sample}) ) { $self->throw("The sample not present in the VCF file: [$sample]\n"); }
@@ -407,6 +409,7 @@ sub _set_version
     if ( $$self{version} eq '3.2' ) { $reader=Vcf3_2->new(%$self); }
     elsif ( $$self{version} eq '3.3' ) { $reader=Vcf3_3->new(%$self); } 
     elsif ( $$self{version} eq '4.0' ) { $reader=Vcf4_0->new(%$self); }
+    elsif ( $$self{version} eq '4.1' ) { $reader=Vcf4_1->new(%$self); }
     else 
     { 
         $self->warn(qq[The version "$$self{version}" not supported, assuming VCFv$$self{default_version}\n]);
@@ -495,15 +498,15 @@ sub next_data_hash
     my %out;
 
     # Mandatory fields
-    for my $i (0..3,5) { $out{$$cols[$i]} = $items[$i]; }
+    $out{CHROM}  = $items[0];
+    $out{POS}    = $items[1];
+    $out{ID}     = $items[2];
+    $out{REF}    = $items[3];
+    $out{ALT}    = [ split(/,/,$items[4]) ];
+    $out{QUAL}   = $items[5];
+    $out{FILTER} = [ split(/;/,$items[6]) ];
 
-    # ALT field
-    $out{$$cols[4]} = [ split(/,/,$items[4]) ];
-
-    # FILTER field
-    $out{$$cols[6]} = [ split(/;/,$items[6]) ];
-
-    # Info, e.g. NS=58;DP=258;AF=0.786;DB;H2
+    # INFO, e.g. NS=58;DP=258;AF=0.786;DB;H2
     if ( defined $items[7] )
     {
         my %hash;
@@ -514,23 +517,23 @@ sub next_data_hash
             {
                 $hash{$key} = $val;
             }
-            elsif ( exists($$self{header}{$$cols[7]}{$key}) )
+            elsif ( exists($$self{header}{INFO}{$key}) )
             {
-                $hash{$key} = $$self{header}{$$cols[7]}{$key}{default};
+                $hash{$key} = $$self{header}{INFO}{$key}{default};
             }
             else
             {
                 $hash{$key} = undef;
             }
         }
-        $out{$$cols[7]} = \%hash;
+        $out{INFO} = \%hash;
     }
 
-    # The format field may not be present. GT:GQ:DP:HQ
+    # The FORMAT field may not be present. GT:GQ:DP:HQ
     my $format;
     if ( $$cols[8] || $items[8] )
     {
-        $format = $out{$$cols[8]} = [ split(/:/,$items[8]) ];
+        $format = $out{FORMAT} = [ split(/:/,$items[8]) ];
         if ( (!$$format[0] || $$format[0] ne 'GT') && !$$self{ignore_missing_GT} ) { $self->warn("Expected GT as the first genotype field at $items[0]:$items[1]\n"); } 
     }
 
@@ -556,8 +559,6 @@ sub next_data_hash
         $gtypes{$$cols[$icol]} = \%hash;
     }
     $out{gtypes} = \%gtypes;
-    # Was this required? Does not seem so...
-    #   $out{format} = $format;
 
     return \%out;
 }
@@ -607,6 +608,52 @@ sub _next_header_line
     return $rec;
 }
 
+=head2 get_header_line
+
+    Usage   : $vcf->get_header_line(key=>'INFO', ID=>'AC')
+              $vcf->get_header_line(key=>'FILTER', ID=>'q10')
+              $vcf->get_header_line(key=>'reference')
+              $vcf->get_header_line(key=>'contig',ID=>'20')
+    Args    : Header line filter as in the example above
+    Returns : List ref of header line hashes matching the filter
+
+=cut
+
+sub get_header_line
+{
+    my ($self,%filter) = @_;
+
+    my $key = $filter{key};
+    delete($filter{key});
+
+    my $id = $filter{ID};
+
+    my @out;
+    while (my ($hline_key,$hline_hash) = each %{$$self{header}})
+    {
+        if ( $key ne $hline_key ) { next; }
+
+        if ( defined $id ) 
+        { 
+            if ( !exists($$hline_hash{$id}) ) { next; }
+            $hline_hash = $$hline_hash{$id};
+        }
+
+        my $match = 1;
+        while (my ($fkey,$fval) = each %filter)
+        {
+            if ( !exists($$hline_hash{$fkey}) or $$hline_hash{$fkey} ne $fval ) 
+            { 
+                $match=0; 
+                last; 
+            }
+        }
+        if ( $match ) { push @out,$hline_hash }
+    }
+    return \@out;
+}
+
+
 =head2 add_header_line
 
     Usage   : $vcf->add_header_line({key=>'INFO', ID=>'AC',Number=>-1,Type=>'Integer',Description=>'Allele count in genotypes'})
@@ -626,7 +673,7 @@ sub add_header_line
     if ( !%args ) { $args{silent}=0; }
 
     my $key = $$rec{key};
-    if ( !$key ) { $self->throw("Missing the key\n"); }
+    if ( !$key ) { $self->throw("Missing key: ",Dumper($rec)); }
 
     if ( exists($$rec{Type}) )
     {
@@ -643,15 +690,10 @@ sub add_header_line
         }
     }
 
-    if ( $key eq 'INFO' or $key eq 'FILTER' or $key eq 'FORMAT' or $key eq 'ALT' )
+    if ( exists($$rec{ID}) )
     {
         my $id = $$rec{ID};
-        if ( !defined $id ) { $self->throw("Missing ID for the key $key: ",Dumper($rec)); }
-        if ( exists($$self{header}{$key}{$id}) ) 
-        {
-            $self->warn("The header tag $key:$id already exists, ignoring.\n") unless $args{silent};
-            return;
-        }
+        if ( exists($$self{header}{$key}{$id}) ) { $self->remove_header_line(%$rec); }
         $$self{header}{$key}{$id} = $rec;
         push @{$$self{header_lines}}, $rec;
         return;
@@ -666,15 +708,49 @@ sub add_header_line
         $key = $key.'.'.$i;
         $$rec{key} = $key;
     }
-    if ( exists($$self{header}{$key}) ) 
-    {
-        $self->warn("The header tag $key already exists, ignoring.\n") unless $args{silent};
-        return;
-    }
+
+    if ( exists($$self{header}{$key}) ) { $self->remove_header_line(%$rec); }
 
     $$self{header}{$key} = $rec;
-    push @{$$self{header_lines}}, $rec;
+    if ( $$rec{key} eq 'fileformat' ) 
+    { 
+        unshift @{$$self{header_lines}}, $rec; 
+    }
+    else
+    {
+        push @{$$self{header_lines}}, $rec;
+    }
 }
+
+=head2 remove_header_line
+
+    Usage   : $vcf->remove_header_line(key=>'INFO', ID=>'AC')
+    Args    : 
+    Returns : 
+
+=cut
+
+sub remove_header_line
+{
+    my ($self,%args) = @_;
+    my $key = $args{key};
+    for (my $i=0; $i<@{$$self{header_lines}}; $i++)
+    {
+        my $line = $$self{header_lines}[$i];
+        if ( $$line{key} ne $key ) { next; }
+        if ( exists($args{ID}) )
+        {
+            if ( $args{ID} ne $$line{ID} ) { next; }
+            delete($$self{header}{$key}{$args{ID}});
+        }
+        else
+        {
+            delete($$self{header}{$key});
+        }
+        splice(@{$$self{header_lines}},$i,1);
+    }
+}
+
 
 =head2 parse_header_line
 
@@ -718,7 +794,7 @@ sub parse_header_line
 
 =head2 _read_column_names
 
-    About   : Stores the columns names as array $$self{columns} and hash $$self{has_column}{COL_NAME}=index.
+    About   : Stores the column names as array $$self{columns} and hash $$self{has_column}{COL_NAME}=index.
               The indexes go from 1.
     Usage   : $vcf->_read_column_names();
     Args    : none
@@ -729,12 +805,7 @@ sub _read_column_names
 {
     my ($self) = @_;
     my $line = $self->next_line();
-    if ( !defined $line ) { return undef; }
-    if ( substr($line,0,1) ne '#' || substr($line,1,1) eq '#' )
-    {
-        $self->_unread_line($line);
-        return undef;
-    }
+    if ( !defined $line or substr($line,0,1) ne '#' ) { $self->throw("Broken VCF header, no column names?"); }
     $$self{column_line} = $line;
 
     chomp($line);
@@ -891,16 +962,19 @@ sub _format_line_hash
 
     # CHROM  POS     ID      REF
     my $out;
-    for my $i (0..3) { $out .= ($$record{$$cols[$i]} ? $$record{$$cols[$i]} : '.') ."\t";  }
+    $out .= $$record{CHROM} . "\t";
+    $out .= $$record{POS} . "\t";
+    $out .= (defined $$record{ID} ? $$record{ID} : '.') . "\t";
+    $out .= $$record{REF} . "\t";
 
     # ALT
-    $out .= join(',',@{$$record{$$cols[4]}} ? @{$$record{$$cols[4]}} : '.');
+    $out .= join(',',@{$$record{ALT}} ? @{$$record{ALT}} : '.');
 
     # QUAL
-    $out .= "\t". $$record{$$cols[5]};
+    $out .= "\t". $$record{QUAL};
 
     # FILTER
-    $out .= "\t". join(';',$$record{$$cols[6]} ? @{$$record{$$cols[6]}} : '.');
+    $out .= "\t". join(';',$$record{FILTER} ? @{$$record{FILTER}} : '.');
 
     # Collect the gtypes of interest
     my $gtypes;
@@ -918,7 +992,7 @@ sub _format_line_hash
     # .. calculate NS, AN and AC, but only if recalc_ac_an is set
     my $needs_an_ac = $$self{recalc_ac_an}==2 ? 1 : 0;
     my @info;
-    while (my ($key,$value) = each %{$$record{$$cols[7]}})
+    while (my ($key,$value) = each %{$$record{INFO}})
     {
         if ( $$self{recalc_ac_an}>0 )
         {
@@ -936,8 +1010,8 @@ sub _format_line_hash
     }
     if ( $needs_an_ac )
     {
-        my $nalt = scalar @{$$record{$$cols[4]}};
-        if ( $nalt==1 && $$record{$$cols[4]}[0] eq '.' ) { $nalt=0; } 
+        my $nalt = scalar @{$$record{ALT}};
+        if ( $nalt==1 && $$record{ALT}[0] eq '.' ) { $nalt=0; } 
         my ($an,$ac) = $self->calc_an_ac($gtypes,$nalt);
         push @info, "AN=$an","AC=$ac";
     }
@@ -945,14 +1019,14 @@ sub _format_line_hash
     $out .= "\t". join(';', sort @info);
 
     # FORMAT, the column is not required, it may not be present when there are no genotypes
-    if ( exists($$cols[8]) && $$record{$$cols[8]} )
+    if ( exists($$cols[8]) && defined $$record{FORMAT} )
     {
-        $out .= "\t". join(':',@{$$record{$$cols[8]}});
+        $out .= "\t". join(':',@{$$record{FORMAT}});
     }
 
     # Genotypes: output all columns or only a selection?
     my @col_names = $columns ? @$columns : @$cols[9..@$cols-1];
-    my $nformat = $$record{FORMAT} ? @{$$record{FORMAT}} : 0;
+    my $nformat = defined $$record{FORMAT} ? @{$$record{FORMAT}} : 0;
     for my $col (@col_names)
     {
         my $gt = $$gtypes{$col};
@@ -963,7 +1037,19 @@ sub _format_line_hash
             my $field = $$record{FORMAT}[$i];
             if ( $i==0 ) { $can_drop=0; }
 
-            if ( exists($$gt{$field}) ) { unshift @gtype,$$gt{$field}; $can_drop=0; }
+            if ( exists($$gt{$field}) ) 
+            {
+                $can_drop = 0;
+                if ( ref($$gt{$field}) eq 'HASH' ) 
+                {
+                    # Special treatment for Number=[AG] tags
+                    unshift @gtype, $self->format_AGtag($record,$$gt{$field},$field);
+                }
+                else
+                { 
+                    unshift @gtype,$$gt{$field}; 
+                }
+            }
             elsif ( $can_drop ) { next; }
             elsif ( exists($$self{header}{FORMAT}{$field}{default}) ) { unshift @gtype,$$self{header}{FORMAT}{$field}{default}; $can_drop=0; }
             else { $self->throw(qq[No value for the field "$field" and no default available, column "$col" at $$record{CHROM}:$$record{POS}.\n]); }
@@ -973,7 +1059,6 @@ sub _format_line_hash
 
     $out .= "\n";
     return $out;
-
 }
 
 sub calc_an_ac
@@ -1100,8 +1185,174 @@ sub event_type
 }
 
 
+=head2 parse_AGtags
+
+    About   : Breaks tags with variable number of fields (that is where Number is set to 'A' or 'G', such as GL) into hashes
+    Usage   : my $x = $vcf->next_data_hash(); my $values = $vcf->parse_AGtags($x);
+    Args    : VCF data line parsed by next_data_hash
+            : Mapping between ALT representations based on different REFs [optional]
+            : New REF [optional]
+    Returns : Hash {Allele=>Value}
+
+=cut
+
+sub parse_AGtags
+{
+    my ($self,$rec,$ref_alt_map,$new_ref) = @_;
+
+    if ( !exists($$rec{gtypes}) ) { return; }
+
+    my (@atags,@gtags);
+    for my $fmt (@{$$rec{FORMAT}})
+    {
+        if ( $fmt eq 'GL' or $fmt eq 'PL' ) { push @gtags,$fmt; next; }
+        if ( !exists($$self{header}{FORMAT}{$fmt}) ) { next; }
+        if ( $$self{header}{FORMAT}{$fmt}{Number} eq 'A' ) { push @atags,$fmt; next; }
+        if ( $$self{header}{FORMAT}{$fmt}{Number} eq 'G' ) { push @gtags,$fmt; next; }
+    }
+    my $missing = $$self{defaults}{default};
+    if ( @atags )
+    {
+        # Parse Number=A tags
+        my $alts;
+        if ( defined $ref_alt_map )
+        {
+            $alts = [];
+            for my $alt (@{$$rec{ALT}})
+            {
+                if ( !exists($$ref_alt_map{$new_ref}{$alt}) ) { $self->throw("FIXME: $new_ref $alt...?\n"); }
+                push @$alts, $$ref_alt_map{$new_ref}{$alt};
+            }
+        }
+        else
+        {
+            $alts = $$rec{ALT};
+        }
+        for my $tag (@atags)
+        {
+            for my $sample (values %{$$rec{gtypes}})
+            {
+                if ( !exists($$sample{$tag}) or $$sample{$tag} eq $missing ) { next; }
+                my @values = split(/,/,$$sample{$tag});
+                $$sample{$tag} = {};
+                for (my $i=0; $i<@values; $i++)
+                {
+                    $$sample{$tag}{$$alts[$i]} = $values[$i];
+                }
+            }
+        }
+    }
+    if ( @gtags )
+    {
+        # Parse Number=G tags
+        my @alleles;
+        if ( defined $ref_alt_map ) 
+        {
+            push @alleles, $new_ref;
+            for my $alt (@{$$rec{ALT}})
+            {
+                if ( !exists($$ref_alt_map{$new_ref}{$alt}) ) { $self->throw("FIXME: [$new_ref] [$alt]...?\n", Dumper($ref_alt_map)); }
+                push @alleles, $$ref_alt_map{$new_ref}{$alt};
+            }
+        }
+        else
+        {
+            @alleles = ($$rec{REF},@{$$rec{ALT}});
+        }
+        my @gtypes;
+        for (my $i=0; $i<@alleles; $i++)
+        {
+            for (my $j=0; $j<=$i; $j++)
+            {
+                push @gtypes, $alleles[$i].'/'.$alleles[$j];
+            }
+        }
+        for my $tag (@gtags)
+        {
+            for my $sample (values %{$$rec{gtypes}})
+            {
+                if ( !exists($$sample{$tag}) or $$sample{$tag} eq $missing ) { next; }
+                my @values = split(/,/,$$sample{$tag});
+                $$sample{$tag} = {};
+                for (my $i=0; $i<@values; $i++)
+                {
+                    $$sample{$tag}{$gtypes[$i]} = $values[$i];
+                }
+            }
+        }
+    }
+}
+
+=head2 format_AGtag
+
+    About   : Format tag with variable number of fields (that is where Number is set to 'A' or 'G', such as GL)
+    Usage   : 
+    Args    : 
+            : 
+            : 
+    Returns : 
+
+=cut
+
+sub format_AGtag
+{
+    my ($self,$record,$tag_data,$tag) = @_;
+
+    # The FORMAT field is checked only once and the results are cached.
+    if ( !exists($$record{_atags}) )
+    {
+        $$record{_atags} = {};
+
+        # Check if there are any A,G tags
+        for my $fmt (@{$$record{FORMAT}})
+        {
+            if ( $fmt eq 'GL' or $fmt eq 'PL' ) { $$record{_gtags}{$fmt}=1; next; }
+            if ( !exists($$self{header}{FORMAT}{$fmt}) ) { next; }
+            if ( $$self{header}{FORMAT}{$fmt}{Number} eq 'A' ) { $$record{_atags}{$fmt}=1; next; }
+            if ( $$self{header}{FORMAT}{$fmt}{Number} eq 'G' ) { $$record{_gtags}{$fmt}=1; next; }
+        }
+    }
+
+    my @out;
+    if ( exists($$record{_atags}{$tag}) )
+    {
+        for my $alt (@{$$record{ALT}})
+        {
+            push @out, exists($$tag_data{$alt}) ? $$tag_data{$alt} : $$self{defaults}{default};    
+        }
+    }
+
+    if ( exists($$record{_gtags}{$tag}) )
+    {
+        my $gtypes = $$record{_gtypes};
+        if ( !defined $gtypes )
+        {
+            $gtypes = [];
+
+            my @alleles = ( $$record{REF}, @{$$record{ALT}} );
+            for (my $i=0; $i<@alleles; $i++)
+            {
+                for (my $j=0; $j<=$i; $j++)
+                {
+                    push @$gtypes, $alleles[$i].'/'.$alleles[$j];
+                }
+            }
+            
+            $$record{_gtypes} = $gtypes;
+        }
+
+        for my $gt (@$gtypes)
+        {
+            push @out, exists($$tag_data{$gt}) ? $$tag_data{$gt} : $$self{defaults}{default};
+        }
+    }
+
+    return join(',',@out);
+}
+
 =head2 parse_alleles
 
+    About   : Deprecated, use parse_haplotype instead.
     Usage   : my $x = $vcf->next_data_hash(); my ($al1,$sep,$al2) = $vcf->parse_alleles($x,'NA00001');
     Args    : VCF data line parsed by next_data_hash
             : The genotype column name
@@ -1502,10 +1753,38 @@ sub _add_unknown_field
     $self->add_header_line({key=>$field,ID=>$key,Number=>$nargs,Type=>'String',Description=>'No description'});
 }
 
+=head2 validate_header
+
+    About   : Version specific header validation code.
+    Usage   : my $vcf = Vcf->new(); $vcf->parse_header(); $vcf->validate_header();
+    Args    :
+
+=cut
+
+sub validate_header
+{
+    my ($self) = @_;
+}
+
+=head2 validate_line
+
+    About   : Version specific line validation code.
+    Usage   : my $vcf = Vcf->new(); $vcf->parse_header(); $x = $vcf->next_data_hash; $vcf->validate_line($x);
+    Args    :
+
+=cut
+
+sub validate_line
+{
+    my ($self,$x) = @_;
+
+    # Is the ID composed of alphanumeric chars
+    if ( !($$x{ID}=~/^[\w;\.]+$/) ) { $self->warn("Expected alphanumeric ID at $$x{CHROM}:$$x{POS}, but got [$$x{ID}]\n"); }
+}
 
 =head2 validate_info_field
 
-    Usage   : my $x = $vcf->next_data_hash(); $vcf->validate_info_field($$x{INFO});
+    Usage   : my $x = $vcf->next_data_hash(); $vcf->validate_info_field($$x{INFO},$$x{ALT});
     Args    : The INFO hashref
     Returns : Error message in case of an error.
 
@@ -1513,12 +1792,25 @@ sub _add_unknown_field
 
 sub validate_info_field
 {
-    my ($self,$values) = @_;
+    my ($self,$values,$alts) = @_;
 
     if ( !defined $values ) { return 'Empty INFO field.'; }
 
     # First handle the empty INFO field (.)
     if ( scalar keys %$values == 1 && exists($$values{'.'}) ) { return undef; }
+
+    # Expected numbers
+    my $ng = -1;
+    my $na = -1;
+    if ( $$self{version}>4.0 )
+    {
+        if ( $$alts[0] eq '.' ) { $ng=1; $na=1; }
+        else
+        {
+            $na = @$alts;
+            $ng = (1+$na+1)*($na+1)/2;
+        }
+    }
 
     my @errs;
     while (my ($key,$value) = each %$values)
@@ -1531,14 +1823,22 @@ sub validate_info_field
             next;
         }
         my $type = $$self{header}{INFO}{$key};
-        if ( $$type{Number}==0 ) 
+
+        my @vals = defined $value ? split(/,/, $value) : ();
+        if ( $$type{Number} eq 'G' )
+        {
+            if ( $ng != @vals && !(@vals==1 && $vals[0] eq '.') ) { push @errs, "INFO tag [$key=$value] expected different number of values (expected $ng, found ".scalar @vals.")"; }
+        }
+        elsif ( $$type{Number} eq 'A' )
+        {
+            if ( $na != @vals && !(@vals==1 && $vals[0] eq '.') ) { push @errs, "INFO tag [$key=$value] expected different number of values (expected $na, found ".scalar @vals.")"; }
+        }
+        elsif ( $$type{Number}==0 ) 
         {
             if ( defined($value) ) { push @errs, "INFO tag [$key] did not expect any parameters, got [$value]"; }
             next; 
         }
-
-        my @vals = split(/,/, $value);
-        if ( $$type{Number}!=-1 && @vals!=$$type{Number} )
+        elsif ( $$type{Number}!=-1 && @vals!=$$type{Number} )
         {
             push @errs, "INFO tag [$key=$value] expected different number of values ($$type{Number})";
         }
@@ -1553,11 +1853,9 @@ sub validate_info_field
     return join(',',@errs);
 }
 
-
-
 =head2 validate_gtype_field
 
-    Usage   : my $x = $vcf->next_data_hash(); $vcf->validate_gtype_field($$x{FORMAT},$$x{gtypes}{NA00001});
+    Usage   : my $x = $vcf->next_data_hash(); $vcf->validate_gtype_field($$x{gtypes}{NA00001},$$x{ALT},$$x{FORMAT});
     Args    : The genotype data hashref
               The ALT arrayref
     Returns : Error message in case of an error.
@@ -1567,6 +1865,19 @@ sub validate_info_field
 sub validate_gtype_field
 {
     my ($self,$data,$alts,$format) = @_;
+
+    # Expected numbers
+    my $ng = -1;
+    my $na = -1;
+    if ( $$self{version}>4.0 )
+    {
+        if ( $$alts[0] eq '.' ) { $ng=1; $na=1; }
+        else
+        {
+            $na = @$alts;
+            $ng = (1+$na+1)*($na+1)/2;
+        }
+    }
 
     my @errs;
     while (my ($key,$value) = each %$data)
@@ -1580,7 +1891,15 @@ sub validate_gtype_field
         my $type = $$self{header}{FORMAT}{$key};
 
         my @vals = split(/,/, $value);
-        if ( $$type{Number}!=-1 && @vals!=$$type{Number} )
+        if ( $$type{Number} eq 'G' )
+        {
+            if ( $ng != @vals && !(@vals==1 && $vals[0] eq '.') ) { push @errs, "FORMAT tag [$key] expected different number of values (expected $ng, found ".scalar @vals.")"; }
+        }
+        elsif ( $$type{Number} eq 'A' )
+        {
+            if ( $na != @vals && !(@vals==1 && $vals[0] eq '.') ) { push @errs, "FORMAT tag [$key] expected different number of values (expected $na, found ".scalar @vals.")"; }
+        }
+        elsif ( $$type{Number}!=-1 && @vals!=$$type{Number} )
         {
             push @errs, "FORMAT tag [$key] expected different number of values ($$type{Number})";
         }
@@ -1591,7 +1910,7 @@ sub validate_gtype_field
             if ( $err ) { push @errs, $err; }
         }
     }
-    if ( !exists($$data{GT}) ) { push @errs, "The mandatory tag GT not present."; }
+    if ( !exists($$data{GT}) ) { push @errs, "The mandatory tag GT not present." unless $$self{ignore_missing_GT}; }
     elsif ( !($$data{GT} =~ $$self{regex_gt}) ) { push @errs, "Unable to parse the GT field [$$data{GT}]."; } 
     else
     {
@@ -1664,6 +1983,7 @@ sub run_validation
     my ($self) = @_;
 
     $self->parse_header();
+    $self->validate_header();
 
     if ( !exists($$self{header}) ) { $self->warn(qq[The header not present.\n]); }
     elsif ( !exists($$self{header}{fileformat}) ) 
@@ -1682,6 +2002,8 @@ sub run_validation
     my ($prev_chrm,$prev_pos);
     while (my $x=$self->next_data_hash()) 
     {
+        $self->validate_line($x);
+
         # Is the position numeric?
         if ( !($$x{POS}=~/^\d+$/) ) { $self->warn("Expected integer for the position at $$x{CHROM}:$$x{POS}\n"); }
 
@@ -1706,9 +2028,6 @@ sub run_validation
             $prev_pos  = $$x{POS};
         }
 
-        # Is the ID composed of alphanumeric chars
-        if ( !($$x{ID}=~/^[\w;\.]+$/) ) { $self->warn("Expected alphanumeric ID at $$x{CHROM}:$$x{POS}, but got [$$x{ID}]\n"); }
-
         # The reference base: one of A,C,G,T,N, non-empty.
         my $err = $self->validate_ref_field($$x{REF});
         if ( $err ) { $self->warn("$$x{CHROM}:$$x{POS} .. $err\n"); }
@@ -1727,13 +2046,13 @@ sub run_validation
         if ( $err ) { $self->warn("FILTER field at $$x{CHROM}:$$x{POS} .. $err\n"); }
 
         # The INFO field
-        $err = $self->validate_info_field($$x{INFO});
+        $err = $self->validate_info_field($$x{INFO},$$x{ALT});
         if ( $err ) { $self->warn("INFO field at $$x{CHROM}:$$x{POS} .. $err\n"); } 
 
         while (my ($gt,$data) = each %{$$x{gtypes}})
         {
             $err = $self->validate_gtype_field($data,$$x{ALT},$$x{FORMAT});
-            if ( $err ) { $self->warn("$gt column at $$x{CHROM}:$$x{POS} .. $err\n"); }
+            if ( $err ) { $self->warn("column $gt at $$x{CHROM}:$$x{POS} .. $err\n"); }
         }
 
         if ( scalar keys %{$$x{gtypes}} && (exists($$x{INFO}{AN}) || exists($$x{INFO}{AC})) )
@@ -1960,17 +2279,25 @@ sub Vcf4_0::format_header_line
 {
     my ($self,$rec) = @_;
 
-    my $number = exists($$rec{Number}) && $$rec{Number}==-1 ? '.' : $$rec{Number};
+    my %tmp_rec = ( %$rec );
+    if ( exists($tmp_rec{Number}) && $tmp_rec{Number} eq '-1' ) { $tmp_rec{Number} = '.' }
+    my $value;
+    if ( exists($tmp_rec{ID}) )
+    {
+        my %has = ( key=>1, handler=>1, default=>1 );   # Internal keys not to be output
+        my @items;
+        for my $key (qw(ID Number Type Description), sort keys %tmp_rec)
+        {
+            if ( !exists($tmp_rec{$key}) or $has{$key} ) { next; }
+            my $quote = ($key eq 'Description' or $tmp_rec{$key}=~/\s/) ? '"' : '';
+            push @items, "$key=$quote$tmp_rec{$key}$quote";
+            $has{$key}=1;
+        }
+        $value = '<' .join(',',@items). '>';
+    }
+    else { $value = $tmp_rec{value}; }
 
-    my $line = "##$$rec{key}=";
-    $line .= $$rec{value} unless !exists($$rec{value});
-    $line .= '<' if (exists($$rec{ID}) or $$rec{key} eq 'ALT');
-    $line .= "ID=$$rec{ID}" if exists($$rec{ID});
-    $line .= ",Number=$number" if defined $number;
-    $line .= ",Type=$$rec{Type}" if (exists($$rec{Type}) && $$rec{key} ne 'ALT' );
-    $line .= ",Description=\"$$rec{Description}\"" if exists($$rec{Description});
-    $line .= ">" if (exists($$rec{ID}) or $$rec{key} eq 'ALT');
-    $line .= "\n";
+    my $line = "##$tmp_rec{key}=".$value."\n";
     return $line;
 }
 
@@ -2032,7 +2359,7 @@ sub Vcf4_0::validate_ref_field
     {
         my $offending = $ref;
         $offending =~ s/[ACGTN]+//g;
-        return "Expected combination of A,C,G,T,N, got [$ref], the offending chars were [$offending]\n"; 
+        return "Expected combination of A,C,G,T,N for REF, got [$ref], the offending chars were [$offending]\n"; 
     }
     return undef;
 }
@@ -2134,10 +2461,10 @@ sub Vcf4_0::event_type
         $ref = $$rec{REF};
     }
 
-    if ( $allele=~/^<([^>]+)>$/ ) 
+    if ( $allele=~/^<[^>]+>$/ ) 
     { 
-        if ( ref($rec) eq 'HASH' ) { $$rec{_cached_events}{$allele} = ['u',0,$1]; }
-        return ('u',0,$1); 
+        if ( ref($rec) eq 'HASH' ) { $$rec{_cached_events}{$allele} = ['u',0,$allele]; }
+        return ('u',0,$allele); 
     }
     if ( $allele eq '.' )
     {
@@ -2225,6 +2552,129 @@ sub is_indel
     if ( $iright+$ileft<=$len ) { return (0,''); }
 
     return ($del*($LEN-$len),substr($seq2,$ileft,$LEN-$len));
+}
+
+
+#------------------------------------------------
+# Version 4.1 specific functions
+
+=head1 VCFv4.1
+
+VCFv4.1 specific functions
+
+=cut
+
+package Vcf4_1;
+use base qw(Vcf4_0);
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+    bless $self, ref($class) || $class;
+
+    $$self{_defaults} = 
+    {
+        version => '4.1',
+        drop_trailings => 1,
+        filter_passed  => 'PASS',
+
+        defaults => 
+        {
+            QUAL    => '.',
+            Flag    => undef,
+            GT      => '.',
+            default => '.',
+        },
+        reserved => 
+        {
+            FILTER  => { 0=>1 },
+        },
+
+        handlers =>
+        {
+            Integer    => \&VcfReader::validate_int,
+            Float      => \&VcfReader::validate_float,
+            Character  => \&VcfReader::validate_char,
+        },
+
+        regex_snp   => qr/^[ACGTN]$|^<[\w:.]+>$/i,
+        regex_ins   => qr/^[ACGTN]+$/i,
+        regex_del   => qr/^[ACGTN]+$/i,
+        regex_gtsep => qr{[|/]},                     # | /
+        regex_gt    => qr{^(\.|\d+)([|/]?)(\.?|\d*)$},   # . ./. 0/1 0|1
+        regex_gt2   => qr{^(\.|[0-9ACGTNacgtn]+|<[\w:.]+>)([|/]?)},   # . ./. 0/1 0|1 A/A A|A 0|<DEL:ME:ALU>
+    };
+
+    $$self{ignore_missing_GT} = 1;
+
+    for my $key (keys %{$$self{_defaults}}) 
+    { 
+        $$self{$key}=$$self{_defaults}{$key}; 
+    }
+
+    return $self;
+}
+
+sub Vcf4_1::validate_header
+{
+    my ($self) = @_;
+    my $lines = $self->get_header_line(key=>'reference');
+    if ( !@$lines ) { $self->warn("The header tag 'reference' not present. (Not required but highly recommended.)\n"); }
+}
+
+sub Vcf4_1::validate_line
+{
+    my ($self,$line) = @_;
+
+    if ( !$$self{_contig_validated}{$$line{CHROM}} )
+    {
+        my $lines = $self->get_header_line(key=>'contig',ID=>$$line{CHROM});
+        if ( !@$lines ) { $self->warn("The header tag 'contig' not present for CHROM=$$line{CHROM}. (Not required but highly recommended.)\n"); }
+        $$self{_contig_validated}{$$line{CHROM}} = 1;
+    }
+
+    # Is the ID composed of alphanumeric chars
+    if ( !($$line{ID}=~/^\S+$/) ) { $self->warn("Expected non-whitespace ID at $$line{CHROM}:$$line{POS}, but got [$$line{ID}]\n"); }
+}
+
+sub Vcf4_1::next_data_hash
+{
+    my ($self,@args) = @_;
+
+    my $out = $self->SUPER::next_data_hash(@args);
+    if ( !defined $out ) { return $out; }
+
+    # Case-insensitive ALT and REF bases
+    $$out{REF} = uc($$out{REF});
+    my $nalt = @{$$out{ALT}};
+    for (my $i=0; $i<$nalt; $i++)
+    {
+        if ( $$out{ALT}[$i]=~/^</ ) { next; }
+        $$out{ALT}[$i] = uc($$out{ALT}[$i]);
+    }
+
+    return $out;
+}
+
+sub Vcf4_1::next_data_array
+{
+    my ($self,@args) = @_;
+
+    my $out = $self->SUPER::next_data_array(@args);
+    if ( !defined $out ) { return $out; }
+
+    # Case-insensitive ALT and REF bases
+    $$out[3] = uc($$out[3]);
+    my $alt = $$out[4];
+    while ($alt=~/^([^<>]+)/)
+    {
+        $$out[4] .= uc($&);
+        $alt = $';
+        if ( $alt=~/^(<[^<>]+>)/ ) { $$out[4] .= $&; $alt=$'; }
+    }
+
+    return $out;
 }
 
 1;
