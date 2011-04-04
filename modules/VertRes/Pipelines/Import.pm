@@ -492,6 +492,20 @@ sub update_db
         $vrfile->update();
     }
 
+    # Update the lane stats
+    my $read_len=0;
+    my $raw_reads=0;
+    my $raw_bases=0;
+    my $vfiles=$vrlane->files;
+    for my $vfile(@$vfiles){
+	$raw_reads+=$vfile->raw_reads;
+	$raw_bases+=$vfile->raw_bases;
+	$read_len=$vfile->read_len;
+    }
+    $vrlane->raw_reads($raw_reads);
+    $vrlane->raw_bases($raw_bases);
+    $vrlane->read_len($read_len);
+
     # Finally, change the import status of the lane, so that it will not be picked up again
     #   by the run-pipeline script.
     $vrlane->is_processed('import',1);

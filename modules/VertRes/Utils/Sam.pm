@@ -1625,61 +1625,61 @@ sub header_rewrite_required {
     
     keys %changes || return 1;
     my %arg_to_tag = (RG => {sample_name => 'SM',
-                      	library => 'LB',
-                      	platform => 'PL',
-                      	centre => 'CN',
-                      	insert_size => 'PI',
-                      	study => 'DS',
-                      	project => 'DS'},
+                        library => 'LB',
+                        platform => 'PL',
+                        centre => 'CN',
+                        insert_size => 'PI',
+                        study => 'DS',
+                        project => 'DS'},
                       PG => {program => 'PN',
-                      	command => 'CL',
-                      	version => 'VN'},
+                        command => 'CL',
+                        version => 'VN'},
                       SQ => {seq_name => 'SN',
-                      	ref_length => 'LN',
-                      	assembler => 'AS',
-                      	md5 => 'M5',
-                      	species => 'SP',
-                      	uri => 'UR'});
+                        ref_length => 'LN',
+                        assembler => 'AS',
+                        md5 => 'M5',
+                        species => 'SP',
+                        uri => 'UR'});
 
-	my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+    my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
 
     my $remove_unique = 0;
     if (exists $changes{'PG'}{'remove_unique'}) {
-    	$remove_unique = $changes{'PG'}{'remove_unique'};
+        $remove_unique = $changes{'PG'}{'remove_unique'};
     }
 
     my $dict;
     if (exists $changes{'SQ'}{'from_dict'}) {
-		$dict = $changes{'SQ'}{'from_dict'};
+        $dict = $changes{'SQ'}{'from_dict'};
     }
     
     # Compare the SQ lines of the bam and the dict file
-	if ($dict) {
-		my $bfh = $stin->view($bam, undef, H => 1);
-    	$bfh || $self->throw("Could not read header from '$bam'");
-    	my @bheader;
-    	while (<$bfh>) {
-    		chomp;
-    		next unless /\@SQ/;
-    		push @bheader, $_;
-    	}
-    	close $bfh;
-    	
+    if ($dict) {
+        my $bfh = $stin->view($bam, undef, H => 1);
+        $bfh || $self->throw("Could not read header from '$bam'");
+        my @bheader;
+        while (<$bfh>) {
+            chomp;
+            next unless /\@SQ/;
+            push @bheader, $_;
+        }
+        close $bfh;
+        
         open my $dfh, "<$dict" || $self->throw("Could not open dictionary, $dict");
-    	my @dheader;
-    	while (<$dfh>) {
-    		chomp;
-    		next unless /\@SQ/;
-    		push @dheader, $_;
-    	}
-    	close $bfh;
-    	
-    	my $dict_header = join "\n", @dheader;
-    	my $bam_header = join "\n", @bheader;
-    	
-    	return 1 unless ($dict_header eq $bam_header);
-	}
-	
+        my @dheader;
+        while (<$dfh>) {
+            chomp;
+            next unless /\@SQ/;
+            push @dheader, $_;
+        }
+        close $bfh;
+        
+        my $dict_header = join "\n", @dheader;
+        my $bam_header = join "\n", @bheader;
+        
+        return 1 unless ($dict_header eq $bam_header);
+    }
+    
     if (defined $changes{platform}) {
         $changes{platform} = $tech_to_platform{$changes{platform}} || $self->throw("Bad platform '$changes{platform}'");
     }
@@ -1688,63 +1688,63 @@ sub header_rewrite_required {
     # Parse original header and grab the lane id
     my $lane;
     if ($remove_unique) {
-		my $pars = VertRes::Parser::sam->new(file => $bam);
-		my %read_info = $pars->readgroup_info();
-		my @lane_ids = keys %read_info;
-		$self->throw("$bam does not have a single lane id.") unless (scalar @lane_ids == 1);
-		$lane = $lane_ids[0];
+        my $pars = VertRes::Parser::sam->new(file => $bam);
+        my %read_info = $pars->readgroup_info();
+        my @lane_ids = keys %read_info;
+        $self->throw("$bam does not have a single lane id.") unless (scalar @lane_ids == 1);
+        $lane = $lane_ids[0];
     }
     
-	# Write new header
+    # Write new header
     my $made_changes = 0;
-	my $bamfh = $stin->view($bam, undef, H => 1);
+    my $bamfh = $stin->view($bam, undef, H => 1);
     $bamfh || $self->throw("Could not read header from '$bam'");
-	my $sq_from_dict_done = 0;
+    my $sq_from_dict_done = 0;
     while (<$bamfh>) {
-    	foreach my $line_tag (keys %changes) {
-    		my $id_tag = $line_tag eq 'SQ' ? 'SN' : 'ID';
-	        if (/^\@$line_tag.+$id_tag:([^\t]+)/) {
-	            my $id = $1;
-	            if (exists $changes{$line_tag}{$id}) {
-	                while (my ($arg, $value) = each %{$changes{$line_tag}{$id}}) {
-	                    next unless defined $value;
-	                    my $tag = $arg_to_tag{$line_tag}{$arg} || next;
-	                    
-	                    if (/\t$tag:([^\t\n]+)/) {
-	                        if ($1 ne $value) {
-	                            $made_changes = 1;
-	                        }
-	                    }
-	                    else {
-	                        $made_changes = 1;
-	                    }
-	                }
-	            }
+        foreach my $line_tag (keys %changes) {
+            my $id_tag = $line_tag eq 'SQ' ? 'SN' : 'ID';
+            if (/^\@$line_tag.+$id_tag:([^\t]+)/) {
+                my $id = $1;
+                if (exists $changes{$line_tag}{$id}) {
+                    while (my ($arg, $value) = each %{$changes{$line_tag}{$id}}) {
+                        next unless defined $value;
+                        my $tag = $arg_to_tag{$line_tag}{$arg} || next;
+                        
+                        if (/\t$tag:([^\t\n]+)/) {
+                            if ($1 ne $value) {
+                                $made_changes = 1;
+                            }
+                        }
+                        else {
+                            $made_changes = 1;
+                        }
+                    }
+                }
 
-	            if (exists $changes{$line_tag}{ all }) {
-	                while (my ($arg, $value) = each %{$changes{$line_tag}{all}}) {
-	                    next unless defined $value;
-	                    my $tag = $arg_to_tag{$line_tag}{$arg} || next;
-	                    
-	                    if (/\t$tag:([^\t\n]+)/) {
-	                        if ($1 ne $value) {
-	                            $made_changes = 1;
-	                        }
-	                    }
-	                    else {
-	                        $made_changes = 1;
-	                    }
-	                }
-	            }
-	            
-	            if ($remove_unique) {
-					if (/\tCL:([^\t]+)/) {
-			        	if ($1 =~ /\@|$lane/) {
-							$made_changes = 1;
-						}
-			        }
-				}
-			}
+                if (exists $changes{$line_tag}{ all }) {
+                    while (my ($arg, $value) = each %{$changes{$line_tag}{all}}) {
+                        next unless defined $value;
+                        my $tag = $arg_to_tag{$line_tag}{$arg} || next;
+                        
+                        if (/\t$tag:([^\t\n]+)/) {
+                            if ($1 ne $value) {
+                                $made_changes = 1;
+                            }
+                        }
+                        else {
+                            $made_changes = 1;
+                        }
+                    }
+                }
+                
+                if ($remove_unique) {
+                    if (/\tCL:([^\t]+)/) {
+                        if ($1 =~ /\@|$lane/) {
+                            $made_changes = 1;
+                        }
+                    }
+                }
+            }
         }
     }
     close($bamfh);
@@ -1771,15 +1771,15 @@ sub replace_bam_header {
     # Setup temporary output bam
     my $temp_bam = $bam.'.reheader.tmp.bam';
     $self->register_for_unlinking($temp_bam);
-	
-	# Run samtools reheader
-	my $sw = VertRes::Wrapper::samtools->new(run_method => 'system');
-	$sw->reheader($new_header, $bam, $temp_bam);
-		
+    
+    # Run samtools reheader
+    my $sw = VertRes::Wrapper::samtools->new(run_method => 'system');
+    $sw->reheader($new_header, $bam, $temp_bam);
+        
     # Check for trunction in the number of bam records (headers may have different number of lines)
     my $old_bam_records = num_bam_records($bam);
     my $new_bam_records = num_bam_records($temp_bam);
-	    
+        
     if ( $old_bam_records == $new_bam_records ) {
         unlink($bam);
         move($temp_bam, $bam) || $self->throw("Failed to move $temp_bam to $bam: $!");
@@ -1816,25 +1816,25 @@ sub replace_bam_header {
            want to edit and a hash of changes to be made. Keys are readgroup or program 
            identifiers and values are hash refs with at least one of the following:
            For @RG changes:
-           	sample_name => string, eg. 'NA00000';
-           	library => string
-           	platform => string
-           	centre => string
-           	insert_size => int
-           	study => string, the study id, eg. 'SRP000001' (overwrites DS)
+            sample_name => string, eg. 'NA00000';
+            library => string
+            platform => string
+            centre => string
+            insert_size => int
+            study => string, the study id, eg. 'SRP000001' (overwrites DS)
            For @PG changes:
-           	version => string, eg. '0.5.5';
-           	command => string, eg. '-q 0.9 out=some_file
-           	program => string, eg. 'bwa' (overwrites PN tag)
+            version => string, eg. '0.5.5';
+            command => string, eg. '-q 0.9 out=some_file
+            program => string, eg. 'bwa' (overwrites PN tag)
            For @PG, there is the added option 'remove_unique => 1' which will 
            perform as specified above.
            For @SQ changes:
-           	seq_name => string
-           	ref_length => int
-           	assembler => string
-           	md5 => string
-           	species => string
-           	uri => string
+            seq_name => string
+            ref_length => int
+            assembler => string
+            md5 => string
+            species => string
+            uri => string
            For @SQ, there is the added option 'dict => /path/to/dict' which will 
            perform as specified above.
 
@@ -1845,62 +1845,62 @@ sub change_header_lines {
     
     keys %changes || return 1;
     my %arg_to_tag = (RG => {sample_name => 'SM',
-                      	library => 'LB',
-                      	platform => 'PL',
-                      	centre => 'CN',
-                      	insert_size => 'PI',
-                      	study => 'DS',
-                      	project => 'DS'},
+                        library => 'LB',
+                        platform => 'PL',
+                        centre => 'CN',
+                        insert_size => 'PI',
+                        study => 'DS',
+                        project => 'DS'},
                       PG => {program => 'PN',
-                      	command => 'CL',
-                      	version => 'VN'},
+                        command => 'CL',
+                        version => 'VN'},
                       SQ => {seq_name => 'SN',
-                      	ref_length => 'LN',
-                      	assembler => 'AS',
-                      	md5 => 'M5',
-                      	species => 'SP',
-                      	uri => 'UR'});
+                        ref_length => 'LN',
+                        assembler => 'AS',
+                        md5 => 'M5',
+                        species => 'SP',
+                        uri => 'UR'});
 
-	my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+    my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
 
     my $remove_unique = 0;
     if (exists $changes{'PG'}{'remove_unique'}) {
-    	$remove_unique = $changes{'PG'}{'remove_unique'};
+        $remove_unique = $changes{'PG'}{'remove_unique'};
     }
 
     my $dict;
     if (exists $changes{'SQ'}{'from_dict'}) {
-		$dict = $changes{'SQ'}{'from_dict'};
-		$self->throw("dict file, '$dict', supplied does not exist\n") unless -s $dict;
+        $dict = $changes{'SQ'}{'from_dict'};
+        $self->throw("dict file, '$dict', supplied does not exist\n") unless -s $dict;
     }
     
-	# Compare the SQ lines of the bam and the dict file
-	if ($dict) {
-		my $bfh = $stin->view($bam, undef, H => 1);
-    	$bfh || $self->throw("Could not read header from '$bam'");
-    	my @bheader;
-    	while (<$bfh>) {
-    		chomp;
-    		next unless /\@SQ/;
-    		push @bheader, $_;
-    	}
-    	close $bfh;
-    	
+    # Compare the SQ lines of the bam and the dict file
+    if ($dict) {
+        my $bfh = $stin->view($bam, undef, H => 1);
+        $bfh || $self->throw("Could not read header from '$bam'");
+        my @bheader;
+        while (<$bfh>) {
+            chomp;
+            next unless /\@SQ/;
+            push @bheader, $_;
+        }
+        close $bfh;
+        
         open my $dfh, "<$dict";
         $dfh || $self->throw("Could not open dictionary, $dict");
-    	my @dheader;
-    	while (<$dfh>) {
-    		chomp;
-    		next unless /\@SQ/;
-    		push @dheader, $_;
-    	}
-    	close $dfh;
-    	
-    	my $dict_header = join "\n", @dheader;
-    	my $bam_header = join "\n", @bheader;
-    	
-    	$dict = '' if ($dict_header eq $bam_header);
-	}
+        my @dheader;
+        while (<$dfh>) {
+            chomp;
+            next unless /\@SQ/;
+            push @dheader, $_;
+        }
+        close $dfh;
+        
+        my $dict_header = join "\n", @dheader;
+        my $bam_header = join "\n", @bheader;
+        
+        $dict = '' if ($dict_header eq $bam_header);
+    }
     
     if (defined $changes{platform}) {
         $changes{platform} = $tech_to_platform{$changes{platform}} || $self->throw("Bad platform '$changes{platform}'");
@@ -1912,98 +1912,98 @@ sub change_header_lines {
     # Parse original header and grab the lane id
     my $lane;
     if ($remove_unique) {
-		my $pars = VertRes::Parser::sam->new(file => $bam);
-		my %read_info = $pars->readgroup_info();
-		my @lane_ids = keys %read_info;
-		$self->throw("$bam does not have a single lane id.") unless (scalar @lane_ids == 1);
-		$lane = $lane_ids[0];
+        my $pars = VertRes::Parser::sam->new(file => $bam);
+        my %read_info = $pars->readgroup_info();
+        my @lane_ids = keys %read_info;
+        $self->throw("$bam does not have a single lane id.") unless (scalar @lane_ids == 1);
+        $lane = $lane_ids[0];
     }
     
-	open my $hfh, ">$new_header";
+    open my $hfh, ">$new_header";
     $hfh || $self->throw("failed to get a filehandle for writing to '$new_header'");
 
-	# Write new header
+    # Write new header
     my $made_changes = 0;
-	my $bamfh = $stin->view($bam, undef, H => 1);
+    my $bamfh = $stin->view($bam, undef, H => 1);
     $bamfh || $self->throw("Could not read header from '$bam'");
-	my $sq_from_dict_done = 0;
+    my $sq_from_dict_done = 0;
     while (<$bamfh>) {
-		if (/^\@SQ/ && $dict) {
-			$made_changes = 1;
-        	unless ( $sq_from_dict_done ) {
-        		open my $dictfh, "<$dict";
-        		$dictfh || $self->throw("Could not open dictionary, $dict");
-        		while (<$dictfh>) {
-        			next unless /^\@SQ/;
-					print $hfh $_;
-        		}
-		
-        		close $dictfh;
-        		$sq_from_dict_done = 1;
-        	}
-        	next;
+        if (/^\@SQ/ && $dict) {
+            $made_changes = 1;
+            unless ( $sq_from_dict_done ) {
+                open my $dictfh, "<$dict";
+                $dictfh || $self->throw("Could not open dictionary, $dict");
+                while (<$dictfh>) {
+                    next unless /^\@SQ/;
+                    print $hfh $_;
+                }
+        
+                close $dictfh;
+                $sq_from_dict_done = 1;
+            }
+            next;
         }
 
-    	foreach my $line_tag (keys %changes) {
-    		my $id_tag = $line_tag eq 'SQ' ? 'SN' : 'ID';
-	        if (/^\@$line_tag.+$id_tag:([^\t]+)/) {
-	            my $id = $1;
-	            if (exists $changes{$line_tag}{$id}) {
-	                while (my ($arg, $value) = each %{$changes{$line_tag}{$id}}) {
-	                    next unless defined $value;
-	                    my $tag = $arg_to_tag{$line_tag}{$arg} || next;
-	                    
-	                    if (/\t$tag:([^\t\n]+)/) {
-	                        if ($1 ne $value) {
-	                            $made_changes = 1;
-	                            if ($value eq '') {
-									s/\t$tag:[^\t\n]+//;
-	                            } else {
-	                            	s/\t$tag:[^\t\n]+/\t$tag:$value/;
-	                            }
-	                        }
-	                    }
-	                    else {
-	                        $made_changes = 1;
-	                        s/\n/\t$tag:$value\n/;
-	                    }
-	                }
-	            }
+        foreach my $line_tag (keys %changes) {
+            my $id_tag = $line_tag eq 'SQ' ? 'SN' : 'ID';
+            if (/^\@$line_tag.+$id_tag:([^\t]+)/) {
+                my $id = $1;
+                if (exists $changes{$line_tag}{$id}) {
+                    while (my ($arg, $value) = each %{$changes{$line_tag}{$id}}) {
+                        next unless defined $value;
+                        my $tag = $arg_to_tag{$line_tag}{$arg} || next;
+                        
+                        if (/\t$tag:([^\t\n]+)/) {
+                            if ($1 ne $value) {
+                                $made_changes = 1;
+                                if ($value eq '') {
+                                    s/\t$tag:[^\t\n]+//;
+                                } else {
+                                    s/\t$tag:[^\t\n]+/\t$tag:$value/;
+                                }
+                            }
+                        }
+                        else {
+                            $made_changes = 1;
+                            s/\n/\t$tag:$value\n/;
+                        }
+                    }
+                }
 
-	            if (exists $changes{$line_tag}{ all }) {
-	                while (my ($arg, $value) = each %{$changes{$line_tag}{all}}) {
-	                    next unless defined $value;
-	                    my $tag = $arg_to_tag{$line_tag}{$arg} || next;
-	                    
-	                    if (/\t$tag:([^\t\n]+)/) {
-	                        if ($1 ne $value) {
-	                            $made_changes = 1;
-	                            if ($value eq '') {
-									s/\t$tag:[^\t\n]+//;
-	                            } else {
-	                            	s/\t$tag:[^\t\n]+/\t$tag:$value/;
-	                            }
-	                        }
-	                    }
-	                    else {
-	                        $made_changes = 1;
-	                        s/\n/\t$tag:$value\n/;
-	                    }
-	                }
-	            }
-	            
-	            if ($remove_unique) {
-					if (/\tCL:([^\t]+)/) {
-			        	if ($1 =~ /\@|$lane/) {
-							$made_changes = 1;
-							s/[^\s\:]+=[^\s]+$lane[^\s]+//g;
-							s/[^\s\:]+=[^\s]+\@[^\s]+//g;
-							s/:\s+/:/;
-							s/[^\S\n\t]+/ /g;
-						}
-			        }
-				}
-			}
+                if (exists $changes{$line_tag}{ all }) {
+                    while (my ($arg, $value) = each %{$changes{$line_tag}{all}}) {
+                        next unless defined $value;
+                        my $tag = $arg_to_tag{$line_tag}{$arg} || next;
+                        
+                        if (/\t$tag:([^\t\n]+)/) {
+                            if ($1 ne $value) {
+                                $made_changes = 1;
+                                if ($value eq '') {
+                                    s/\t$tag:[^\t\n]+//;
+                                } else {
+                                    s/\t$tag:[^\t\n]+/\t$tag:$value/;
+                                }
+                            }
+                        }
+                        else {
+                            $made_changes = 1;
+                            s/\n/\t$tag:$value\n/;
+                        }
+                    }
+                }
+                
+                if ($remove_unique) {
+                    if (/\tCL:([^\t]+)/) {
+                        if ($1 =~ /\@|$lane/) {
+                            $made_changes = 1;
+                            s/[^\s\:]+=[^\s]+$lane[^\s]+//g;
+                            s/[^\s\:]+=[^\s]+\@[^\s]+//g;
+                            s/:\s+/:/;
+                            s/[^\S\n\t]+/ /g;
+                        }
+                    }
+                }
+            }
         }
         print $hfh $_;
     }
@@ -2017,10 +2017,10 @@ sub change_header_lines {
     }
     
     # Otherwise do the replacement and return its status
-	my $status = $self->replace_bam_header($bam, $new_header);
-	unlink($new_header);
-	
-	return $status;
+    my $status = $self->replace_bam_header($bam, $new_header);
+    unlink($new_header);
+    
+    return $status;
 }
 
 =head2 check_bam_header
@@ -2541,43 +2541,45 @@ sub tag_strip {
 =head2 bam2fastq
 
  Title   : bam2fastq
- Usage   : $obj->bam2fastq('in.bam', 'fastq_base');
+ Usage   : $obj->bam2fastq('in.bam', 'fastq_base', 'outdir');
  Function: Converts bam to fastq and runs fastqcheck on the result. 
            bamcheck will be run, if a bamcheck file does not already exist.
  Returns : boolean (true on success, meaning the output bam was successfully
            made)
- Args    : paths to input and output bams, list of tags to remove.
+ Args    : path to input bam, basename of the fastq files to create, 
+           path of output directory (optional).
 
 =cut
 
 sub bam2fastq {
-    my ($self, $bam, $fastq_base) = @_;
+    my ($self, $bam, $fastq_base, $outdir) = @_;
 
-	# read bam info from bamcheck file - create if necessary
-	my $bamcheck = $bam.'.bc';
-	unless (-s $bamcheck) {
+    # read bam info from bamcheck file - create if necessary
+    my $bamcheck = $bam.'.bc';
+    unless (-s $bamcheck) {
         Utils::CMD(qq[bamcheck $bam > $bamcheck.tmp]);
         move("$bamcheck.tmp", $bamcheck) || $self->throw("Could not rename '$bamcheck.tmp' to '$bamcheck'\n");
-	}
-	my $bc_parser = VertRes::Parser::bamcheck->new(file => $bamcheck);
+    }
+    my $bc_parser = VertRes::Parser::bamcheck->new(file => $bamcheck);
     my $total_reads = $bc_parser->get('sequences');
     my $total_bases = $bc_parser->get('total_length');
-	my $is_paired = $bc_parser->get('is_paired');
-	$self->throw("failed to parse $bamcheck\n") unless ($total_reads && $total_bases);
-	
+    my $is_paired = $bc_parser->get('is_paired');
+    $self->throw("failed to parse $bamcheck\n") unless ($total_reads && $total_bases);
+    
     my $fsu = VertRes::Utils::FileSystem->new();
     my (undef, $path) = fileparse($bam);
-	my @out_fastq;
-	if ($is_paired) {
-		push @out_fastq, $fsu->catfile($path, "${fastq_base}_1.fastq");
-		push @out_fastq, $fsu->catfile($path, "${fastq_base}_2.fastq");
-	} else {
-		push @out_fastq, "${fastq_base}.fastq";
-	}
-	
-	my @tmp_fastq = map("$_.tmp.fastq", @out_fastq);
+    $path = $outdir if ($outdir);
+    my @out_fastq;
+    if ($is_paired) {
+        push @out_fastq, $fsu->catfile($path, "${fastq_base}_1.fastq");
+        push @out_fastq, $fsu->catfile($path, "${fastq_base}_2.fastq");
+    } else {
+        push @out_fastq, "${fastq_base}.fastq";
+    }
     
-	# picard needs a tmp dir, but we don't use /tmp because it's likely to fill up
+    my @tmp_fastq = map("$_.tmp.fastq", @out_fastq);
+    
+    # picard needs a tmp dir, but we don't use /tmp because it's likely to fill up
     my $tmp_dir = $fsu->tempdir('_bam2fastq_tmp_XXXXXX', DIR => $path);
     
     my $verbose = $self->verbose();
@@ -2588,64 +2590,64 @@ sub bam2fastq {
                                                 tmp_dir => $tmp_dir);
     
     $picard->SamToFastq($bam, @tmp_fastq);
-	$self->throw("SamToFastq of $bam failed\n") unless $picard->run_status >= 1;
-	
-	# run fastqcheck on all of the fastq files made record total length and number of reads
-	my $num_bases = 0;
-	my $num_sequences = 0;
-	foreach my $precheck_fq (@tmp_fastq) {
-		my $fqc_file = $precheck_fq;
-		$fqc_file =~ s/\.tmp\.fastq$/.fastqcheck/;
-		unless (-s $fqc_file) {
-		    # make the fqc file
-		    my $fqc = VertRes::Wrapper::fastqcheck->new();
-		    $fqc->run($precheck_fq, $fqc_file.'.temp');
-		    $self->throw("fastqcheck on $precheck_fq failed - try again?") unless $fqc->run_status >= 1;
-		    $self->throw("fastqcheck failed to make the file $fqc_file.temp") unless -s $fqc_file.'.temp';
-	    
-		    # check it is parsable
-		    my $parser = VertRes::Parser::fastqcheck->new(file => $fqc_file.'.temp');
-		    my $num_seq = $parser->num_sequences();
-		    if ($num_seq) {
-		        move($fqc_file.'.temp', $fqc_file) || $self->throw("failed to rename '$fqc_file.temp' to '$fqc_file'");
-		    }
-		    else {
-				unlink $fqc_file.'.temp';
-		        $self->throw("fastqcheck file '$fqc_file.temp' was created, but doesn't seem valid\n");
-		    }
-		}
-	    
-	    if (-s $fqc_file) {
-		    my $parser = VertRes::Parser::fastqcheck->new(file => $fqc_file);
-		    $num_sequences += $parser->num_sequences();
-		    $num_bases += $parser->total_length();		    
-		}
-	}
-	
+    $self->throw("SamToFastq of $bam failed\n") unless $picard->run_status >= 1;
+    
+    # run fastqcheck on all of the fastq files made record total length and number of reads
+    my $num_bases = 0;
+    my $num_sequences = 0;
+    foreach my $precheck_fq (@tmp_fastq) {
+        my $fqc_file = $precheck_fq;
+        $fqc_file =~ s/\.tmp\.fastq$/.fastqcheck/;
+        unless (-s $fqc_file) {
+            # make the fqc file
+            my $fqc = VertRes::Wrapper::fastqcheck->new();
+            $fqc->run($precheck_fq, $fqc_file.'.temp');
+            $self->throw("fastqcheck on $precheck_fq failed - try again?") unless $fqc->run_status >= 1;
+            $self->throw("fastqcheck failed to make the file $fqc_file.temp") unless -s $fqc_file.'.temp';
+        
+            # check it is parsable
+            my $parser = VertRes::Parser::fastqcheck->new(file => $fqc_file.'.temp');
+            my $num_seq = $parser->num_sequences();
+            if ($num_seq) {
+                move($fqc_file.'.temp', $fqc_file) || $self->throw("failed to rename '$fqc_file.temp' to '$fqc_file'");
+            }
+            else {
+                unlink $fqc_file.'.temp';
+                $self->throw("fastqcheck file '$fqc_file.temp' was created, but doesn't seem valid\n");
+            }
+        }
+        
+        if (-s $fqc_file) {
+            my $parser = VertRes::Parser::fastqcheck->new(file => $fqc_file);
+            $num_sequences += $parser->num_sequences();
+            $num_bases += $parser->total_length();          
+        }
+    }
+    
     # check fastqcheck output against expectation
     my $ok = 0;
-	if ($num_sequences == $total_reads) {
-	    $ok++;
-	} else {
-	    $self->warn("fastqcheck reports number of reads as $num_sequences, not the expected $total_reads\n");
-	}
-	if ($num_bases == $total_bases) {
-	    $ok++;
-	} else {
-	    $self->warn("fastqcheck reports number of bases as $num_bases, not the expected $total_bases\n");
-	}
-	
-	# if everything checks out rename the tmp fastqs, otherwise unlink created files
-    if ($ok == 2) {
-		foreach my $tmp_fq (@tmp_fastq) {
-			my $fq = $tmp_fq;
-			$fq =~ s/\.tmp\.fastq$//;
-	        move($tmp_fq, $fq) || $self->throw("Could not rename '$tmp_fq' to '$fq'\n");
-		}
+    if ($num_sequences == $total_reads) {
+        $ok++;
     } else {
-		foreach my $tmp_fq (@tmp_fastq) {
-			unlink $tmp_fq;
-		}
+        $self->warn("fastqcheck reports number of reads as $num_sequences, not the expected $total_reads\n");
+    }
+    if ($num_bases == $total_bases) {
+        $ok++;
+    } else {
+        $self->warn("fastqcheck reports number of bases as $num_bases, not the expected $total_bases\n");
+    }
+    
+    # if everything checks out rename the tmp fastqs, otherwise unlink created files
+    if ($ok == 2) {
+        foreach my $tmp_fq (@tmp_fastq) {
+            my $fq = $tmp_fq;
+            $fq =~ s/\.tmp\.fastq$//;
+            move($tmp_fq, $fq) || $self->throw("Could not rename '$tmp_fq' to '$fq'\n");
+        }
+    } else {
+        foreach my $tmp_fq (@tmp_fastq) {
+            unlink $tmp_fq;
+        }
         $self->throw("fastqcheck of fastq file doesn't match expectations\n");
     }
 }
