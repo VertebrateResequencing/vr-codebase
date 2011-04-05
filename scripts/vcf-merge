@@ -394,7 +394,7 @@ sub merge_vcf_files
                 {
                     if ( defined $new_ref )
                     {
-                        $vcf->parse_AGtags($line,\%ref_alt_map,$new_ref);
+                        $vcf->parse_AGtags($line,\%ref_alt_map,$$line{REF});
                     }
                     else
                     {
