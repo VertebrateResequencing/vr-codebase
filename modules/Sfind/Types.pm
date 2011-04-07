@@ -39,4 +39,12 @@ coerce MysqlDateTime,
     from Str,
     via { DateTime::Format::MySQL->parse_datetime($_) };
 
+subtype YesNoBool, 
+      as Bool;
+
+coerce YesNoBool,
+    from Str,
+    via { /^yes|^true/i ? 1 : 0 };
+
+
 1;

@@ -277,13 +277,13 @@ has 'created' => (
 
 has 'contains_human_dna'=> (
     is          => 'ro',
-    isa         => 'YesNoBool',
+    isa         => YesNoBool,
     coerce      => 1,   # accept yes/no
 );
 
 has 'contaminated_with_human_dna'=> (
     is          => 'ro',
-    isa         => 'YesNoBool',
+    isa         => YesNoBool,
     coerce      => 1,   # accept yes/no
     init_arg    => 'contaminated_human_dna',
 );

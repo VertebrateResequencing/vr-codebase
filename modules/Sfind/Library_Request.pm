@@ -49,6 +49,22 @@ jws@sanger.ac.uk
   Returntype : string
 
 
+=head2 fragment_size_from
+
+  Arg [1]    : none
+  Example    : my $frag_from = $request->fragment_size_from();
+  Description: Retrieve fragment size from on request
+  Returntype : integer
+
+
+=head2 fragment_size_to
+
+  Arg [1]    : none
+  Example    : my $frag_to = $request->fragment_size_to();
+  Description: Retrieve fragment size to on request
+  Returntype : integer
+
+
 =head2 created
 
   Arg [1]    : none
@@ -64,6 +80,7 @@ jws@sanger.ac.uk
   Description: Returns a ref to an array of the library objects that are associated with this library_request.
   Returntype : ref to array of Sfind::Library objects
 
+
 =head2 library_ids
 
   Arg [1]    : none
@@ -77,6 +94,7 @@ use Moose;
 use namespace::autoclean;
 use Sfind::Types qw(MysqlDateTime);
 use Sfind::Library;
+use Sfind::Well_Library;
 
 has '_dbh'  => (
     is          => 'ro',
@@ -105,12 +123,12 @@ has 'type'  => (
 
 has 'fragment_size_from'  => (
     is          => 'ro',
-    isa         => 'Int',
+    isa         => 'Maybe[Int]',
 );
 
 has 'fragment_size_to'  => (
     is          => 'ro',
-    isa         => 'Int',
+    isa         => 'Maybe[Int]',
 );
 
 has 'status'  => (
@@ -166,10 +184,15 @@ sub _get_libraries {
     my ($self) = @_;
     my @libraries;
     foreach my $id (@{$self->library_ids()}){
-        my $obj = Sfind::Library->new({dbh=>$self->{_dbh},id=>$id});
+        my $obj;
+        if ($self->type eq "Pulldown Multiplex Library Preparation"){
+            $obj = Sfind::Well_Library->new({dbh=>$self->{_dbh},id=>$id});
+        }
+        else {
+            $obj = Sfind::Library->new({dbh=>$self->{_dbh},id=>$id});
+        }
         push @libraries, $obj; 
     }
-    @libraries = sort {$a <=> $b} @libraries;
 
     return \@libraries;
 }
@@ -178,26 +201,45 @@ sub _get_libraries {
 sub _get_library_ids {
     my ($self) = @_;
 
-    # check if this is a multiplex library creation request
-    # return the asset_ids as as library_ids
-    die "NOT IMPLEMENTED";
-  
-    # select all library_tube asset ids associated with this request
-    my $sql= qq[select target_asset_id from requests_new where request_id=?];
-          
-    my @libraries;
-    my $sth = $self->{_dbh}->prepare($sql);
+    # If this request is "normal" then the library ids will be library_tube
+    # asset ids If this is a cherrypick pulldown request, then the library is
+    # in a well on a plate so the warehouse queries are different and the
+    # library_ids aren't for library_tubes but for wells
+    my @lib_ids;
 
-    $sth->execute($self->id);
-    foreach(@{$sth->fetchall_arrayref()}){
-        push @libraries, $_->[0] if $_->[0];
+    if ($self->type eq "Pulldown Multiplex Library Preparation"){
+        my $sql= qq[select descendant_internal_id from asset_links, requests where requests.source_asset_internal_id = asset_links.ancestor_internal_id and descendant_type="wells" and requests.internal_id=? and requests.is_current=1 and asset_links.is_current=1];
+        my $sth = $self->{_dbh}->prepare($sql);
+
+        $sth->execute($self->id);
+        foreach(@{$sth->fetchall_arrayref()}){
+            if ($_->[0]){
+                push @lib_ids, $_->[0];
+            }
+        }
+    }
+    else {
+        # the target of the request should be either a standard library tube
+        # for a non-multiplex request, or the indexed library tube that will be
+        # pooled for a multiplexed request
+
+        my $sql= qq[select target_asset_internal_id, target_asset_type from requests where internal_id=? and is_current=1];
+          
+        my $sth = $self->{_dbh}->prepare($sql);
+
+        $sth->execute($self->id);
+        foreach(@{$sth->fetchall_arrayref()}){
+            if ($_->[0]){
+                die "Unexpected target type ".$_->[1] unless $_->[1] eq 'library_tubes';
+                push @lib_ids, $_->[0];
+            }
+        }
     }
     
-    return \@libraries;
+    return \@lib_ids;
 }
 
 
 __PACKAGE__->meta->make_immutable;
 1;
 
-1;
