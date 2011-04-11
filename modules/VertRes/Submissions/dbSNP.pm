@@ -4,7 +4,7 @@ VertRes::Submissons::dbSNP - dbSNP submission utility functions
 
 =head1 SYNOPSIS
 
-use VertRes::Utils::dbSNP;
+use VertRes::Submissions::dbSNP;
 
 my $dbsnp_util = VertRes::Submissions::dbSNP->new();
 
@@ -18,13 +18,15 @@ Thomas Keane: thomas.keane@sanger.ac.uk
 
 =cut
 
-package VertRes::Utils::dbSNP;
+package VertRes::Submissions::dbSNP;
 
 use strict;
 use warnings;
 use Bio::EnsEMBL::Registry;
 use Getopt::Long;
 use VertRes::IO;
+
+use Vcf;
 
 use base qw(VertRes::Base);
 
@@ -35,9 +37,9 @@ our $THREE_PRIME_REGION = 200;
 =head2 new
 
  Title   : new
- Usage   : my $obj = VertRes::Utils::dbSNP->new(handle=>'myhandle',strain_tag=>'myStrainTag',pop_handle=>'myPopHandle',species=>'Mouse',chromosomes=>20);
- Function: Create a new VertRes::Utils::dbSNP object.
- Returns : VertRes::Utils::dbSNP object
+ Usage   : my $obj = VertRes::Submissions::dbSNP->new(handle=>'myhandle',strain_tag=>'myStrainTag',pop_handle=>'myPopHandle',species=>'Mouse',chromosomes=>20);
+ Function: Create a new VertRes::Submissions::dbSNP object.
+ Returns : VertRes::Submissions::dbSNP object
  Args    : n/a
 
 =cut
@@ -78,7 +80,7 @@ sub _checkFields
 		$self->throw("You must pass in a species name at object creation!");
 	}
 	
-	if( $self->{species} ne 'Mus musculus' )
+	if( $self->{species} !~ '^Mus ' )
 	{
 		$self->throw( "Sorry - only valid species at the moment is Mouse: $self->{species}");
 	}
@@ -254,7 +256,7 @@ HANDLE:     $self->{handle}
 BATCH:      $batch_name
 MOLTYPE:    Genomic
 SAMPLESIZE: $self->{chromosomes}
-STRAIN: 	$self->{strain_tag}
+STRAIN:     $self->{strain_tag}
 METHOD:     $self->{method_id}
 ORGANISM:   Mus musculus
 CITATION:   $self->{title}
@@ -449,4 +451,140 @@ ID:$self->{handle}|$self->{pop_handle}:$self->{strain_tag}
 	close( $ofh );
 }
 
+=head2 write_indel_records
 
+ Title   : write_indel_records
+ Usage   : my $write = $obj->write_indel_records($outputFile, $indel_vcf_file, $sample );
+ Function: Write out the indel entries for the genotype specified for the dbsnp submission
+           Note this only writes out a single genotype dbsnp entry.
+ Returns : none
+ Args    : 
+
+=cut
+
+sub write_indel_records
+{
+	my ($self, $outputFile, $indel_vcf, $sample ) = @_;
+	
+	if( ! -f $indel_vcf ){$self->throw("Cannot find indel VCF file $indel_vcf");}
+	
+	open( my $ofh, ">>$outputFile" ) or $self->throw("Cannot create $outputFile: $!");
+	
+	# grab a connection to an EnsEMBL mouse db
+	my $registry = 'Bio::EnsEMBL::Registry';
+	
+	$registry->load_registry_from_db(
+		-host    => 'ensdb-archive',
+		-user    => 'ensro',
+		-port    => '5304',
+		-verbose => 0
+	);
+	
+	my $slice_adaptor = $registry->get_adaptor( $self->{species}, 'Core', 'Slice' );
+	
+	my $vcf = Vcf->new(file=>$indel_vcf);
+    $vcf->parse_header;
+    while (my $rec=$vcf->next_data_hash)
+    {
+        my $chromosome     = $$rec{CHROM};
+        my $position       = $$rec{POS};
+        my $reference_seq = $$rec{REF};
+        my $consensus_base = $4;
+        
+        #get the alt for the sample
+        my @alts = @{$$rec{ALT}};
+        if( ! defined( $$rec{gtypes}{$sample} ) ){$self->throw("Cant find sample genotype for entry $chromosome:$position\n");}
+        my $genotype = $$rec{gtypes}{$sample}{GT};
+        my $sequence;
+        
+        next if( $genotype eq '.' ); #not called in this strain
+        if( $genotype =~ /^(\d+)\/(\d+)$/ )
+        {
+            $sequence = $alts[ $1 - 1 ];
+        }
+        
+        my $deletion = length( $reference_seq ) == 1 ? 1 : 0;
+        
+        # grab the entire sequence once instead of having to make
+		# multiple accesses to the db i.e. for upstream and downstream say
+		my $start_pos = $position - $FIVE_PRIME_REGION;
+		my $end_pos;
+		if( $deletion )
+		{
+		    $end_pos = $position + length( $reference_seq ) + $THREE_PRIME_REGION;
+		}
+		else
+		{
+		    $end_pos = $position + $THREE_PRIME_REGION;
+		}
+		
+		# grab the SNP and surrounding genomic region based on its 
+		# chromosomal location
+		my $slice = $slice_adaptor->fetch_by_region( 'chromosome',
+					      $chromosome,
+					      $start_pos,
+					      $end_pos,
+					      1,
+					      $REFERENCE_ASSEMBLY);
+		my $full_seq = $slice->seq();
+		
+		# determine the supercontig
+		my $supercontig_projection = $slice->project('supercontig', $REFERENCE_ASSEMBLY);
+		
+		# really there should be only 1 supercontig but check for multiples just 
+		# in case
+		
+		my $number_of_supercontigs = scalar @$supercontig_projection;
+		
+		if ( $number_of_supercontigs == 0 ) 
+		{
+			$self->throw("No supercontigs found for $_\n");
+		}
+		elsif ( $number_of_supercontigs < 1 ) 
+		{
+			$self->throw("Multiple supercontigs found for $_\n");
+		}
+		
+		my $contig;
+		my $supercontig;
+		foreach my $curr_superc ( @$supercontig_projection ) 
+		{
+			$contig = $curr_superc->to_Slice();
+			$supercontig = $contig->seq_region_name;
+		}
+		
+		# a quick sanity check that the base in the defined snp position
+		# is the identical to one defined in the read in data file
+		
+		my $indel_seq = substr($full_seq,$FIVE_PRIME_REGION,length($reference_seq));
+		
+		if ( $indel_seq ne $reference_seq ) 
+		{
+			$self->throw("Snp reference_base does not match sequence retrieved from EnsEMBL: $_\n");
+		}
+		
+		# extract the upstream and downstream sequences
+		my $five_prime_seq = substr($full_seq,0,$FIVE_PRIME_REGION);
+		
+		# indexing from zero so add a 1 to the starting position
+		my $three_prime_seq = substr($full_seq,length($full_seq)-$THREE_PRIME_REGION,$THREE_PRIME_REGION);
+		
+		# local ID for marker: concatenation of handle, strain, count
+		# computed location of the SNP (ACCESSION + LOCATION)
+		# flanking sequence (200 bp 5' and 200 bp 3' of the variant position)
+		
+		my $indel_id = $sample.'_'.$chromosome.'_'.$position;
+		
+		print $ofh qq[
+SNP:        $indel_id
+ACCESSION:  $supercontig
+LENGTH:     ?
+5'_FLANK:   $five_prime_seq
+OBSERVED:   $sequence/-
+3'_FLANK:   $three_prime_seq
+LOCATION:   $start_pos
+||
+];
+    }
+	close( $ofh );
+}

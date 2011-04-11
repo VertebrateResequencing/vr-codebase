@@ -317,13 +317,14 @@ elsif( $mode == $LANES_UPDATE ) {
 elsif( $mode == $FILTER_LANES ) {
     my $projID = $cgi->param('proj_id');
     my $filter = $cgi->param('filter');
+    my $individual = defined( $cgi->param('individual') ) ? $cgi->param('individual') : undef;
     unless ( defined $projID  && defined $filter )
     {
         redirectErrorScreen( $cgi, "Must provide a project ID & filter" );
         exit;
     }
     print $sw->header();
-    displayFilteredLanes( $cgi, $vrtrack, $db, $projID,$filter);
+    displayFilteredLanes( $cgi, $vrtrack, $db, $projID, $individual, $filter);
     print $sw->footer();
     exit;
 }
@@ -498,7 +499,7 @@ sub displayProjectsPage
 }
 
 sub displayFilteredLanes {
-    my ($cgi, $vrtrack, $database, $projectID, $filter) = @_;
+    my ($cgi, $vrtrack, $database, $projectID, $individual, $filter) = @_;
     
     my $project = VRTrack::Project->new( $vrtrack, $projectID );
     displayError( "Cant get project: $projectID" ) unless $project;
@@ -517,8 +518,11 @@ sub displayFilteredLanes {
     
     my @filtlanes;
 
-    foreach( sort { $a->ssid() <=> $b->ssid() } @$samples){
-        my @libraries = sort {$a->name cmp $b->name} @{$_->libraries()};
+    foreach my $sample ( sort { $a->ssid() <=> $b->ssid() } @$samples)
+    {
+        if( ! $individual || ( $individual && $sample->individual()->name() eq $individual ) )
+        {
+        my @libraries = sort {$a->name cmp $b->name} @{$sample->libraries()};
         foreach( @libraries ) {
             my $library = $_;
             my $lanes = $library->lanes();
@@ -531,6 +535,7 @@ sub displayFilteredLanes {
                 }
                 push @filtlanes, $lane;
             }
+        }
         }
     }
     my $current_url = $cgi->url(-query=>1,-relative=>1);
@@ -704,7 +709,7 @@ sub displayProjectPage
         
         if( $sample_no_qcLanes > 0 )
         {
-            print qq[<th>$sample_no_qcLanes</th>];
+            print qq[<th><a href="$SCRIPT_NAME?mode=$FILTER_LANES&amp;filter=$PENDING&amp;proj_id=$projectID&amp;db=$database&amp;individual=$iname">$sample_no_qcLanes</a></th>];
         }
         else
         {
