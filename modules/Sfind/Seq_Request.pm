@@ -19,197 +19,81 @@ jws@sanger.ac.uk
 
 =head1 METHODS
 
-=cut
-
-use strict;
-use warnings;
-no warnings 'uninitialized';
-use Sfind::Lane;
 
 =head2 new
 
-  Arg [1]    : database handle to seqtracking database
+  Arg [1]    : None
   Arg [2]    : request id
   Example    : my $seqrequest= Sfind::Sfind->new($dbh, $id)
   Description: Returns Seq_Request object by request_id
   Returntype : Sfind::Seq_Request object
 
-=cut
-
-sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
-    my $self = {};
-    bless ($self, $class);
-    $self->{_dbh} = $dbh;
-
-    my $sql = qq[select requests_new.asset_id,assets.name,requests_new.type,requests_new.state,requests_new.created_at,requests_new.read_length from 
-		    requests_new join assets on (requests_new.asset_id=assets.asset_id)
-		    where requests_new.request_id = ?];
-    my $sth = $self->{_dbh}->prepare($sql);
-
-    $sth->execute($id);
-    # note, while-ing over this array would give all attempts
-    my $data = $sth->fetchall_arrayref()->[0];
-    unless ($data){
-	return undef;
-    }
-    $self->id($id);
-    $self->library_id($data->[0]);
-    $self->library_name($data->[1]);
-    $self->type($data->[2]);
-    $self->created($data->[4]);
-    $self->read_len($data->[5]);
-
-    # cancelled requests are currently in the database with no status
-    if ($data->[3]){
-        $self->status($data->[3]);
-    }
-    else {
-        $self->status('cancelled');
-    }
-
-    return $self;
-}
-
 
 =head2 id
 
-  Arg [1]    : id (optional)
+  Arg [1]    : None
   Example    : my $id = $seqrequest->id();
-	       $seqrequest->id('104');
-  Description: Get/Set for ID of a request
+  Description: Returns ID of a request
   Returntype : SequenceScape ID (usu. integer)
-
-=cut
-
-sub id {
-    my ($self,$id) = @_;
-    if (defined $id and $id ne $self->{'id'}){
-	$self->{'id'} = $id;
-    }
-    return $self->{'id'};
-}
 
 
 =head2 created
 
-  Arg [1]    : created (optional)
+  Arg [1]    : None
   Example    : my $created = $seqrequest->created();
-	       $seqrequest->created('2008-10-24 11:40:59');
-  Description: Get/Set for created timestamp
+  Description: Returns created timestamp
   Returntype : timestamp string
-
-=cut
-
-sub created {
-    my ($self,$created) = @_;
-    if (defined $created and $created ne $self->{'created'}){
-	$self->{'created'} = $created;
-    }
-    return $self->{'created'};
-}
 
 
 =head2 type
 
-  Arg [1]    : type (optional)
+  Arg [1]    : None
   Example    : my $type = $seqrequest->type();
-	       $seqrequest->type('Paired end sequencing');
-  Description: Get/Set for type of request
+  Description: Returns type of request
   Returntype : sequencescape request type string
-
-=cut
-
-sub type {
-    my ($self,$type) = @_;
-    if (defined $type and $type ne $self->{'type'}){
-	$self->{'type'} = $type;
-    }
-    return $self->{'type'};
-}
 
 
 =head2 library_id
 
-  Arg [1]    : library_id (optional)
+  Arg [1]    : None
   Example    : my $library_id = $seqrequest->library_id();
-	       $seqrequest->library_id('104');
-  Description: Get/Set for library ID of a request
-		This is the multiplex_tube_asset_id if the library is a multiplex library
-		else
-		it is the library tube asset id
+  Description: Returns library ID of a request
+                This is the multiplex_tube_asset_id if the library is a
+                multiplex library else it is the library tube asset id
   Returntype : SequenceScape ID integer
-
-=cut
-
-sub library_id {
-    my ($self,$library_id) = @_;
-    if (defined $library_id and $library_id ne $self->{'library_id'}){
-	$self->{'library_id'} = $library_id;
-    }
-    return $self->{'library_id'};
-}
 
 
 =head2 library_name
 
-  Arg [1]    : library_name (optional)
+  Arg [1]    : None
   Example    : my $library_name = $seqrequest->library_name();
-	       $seqrequest->library_name('foo');
-  Description: Get/Set for library name of request
+  Description: Returns library name of request
   Returntype : SequenceScape name
-
-=cut
-
-sub library_name {
-    my ($self,$library_name) = @_;
-    if (defined $library_name and $library_name ne $self->{'library_name'}){
-	$self->{'library_name'} = $library_name;
-    }
-    return $self->{'library_name'};
-}
-
 
 
 =head2 read_len
 
-  Arg [1]    : read_len (optional)
+  Arg [1]    : None
   Example    : my $read_len = $seqrequest->read_len();
 	       $seqrequest->read_len(54);
-  Description: Get/Set for request read_len
+  Description: Returns request read_len
   Returntype : integer
-
-=cut
-
-sub read_len {
-    my ($self,$read_len) = @_;
-    if (defined $read_len and $read_len ne $self->{'read_len'}){
-	$self->{'read_len'} = $read_len;
-    }
-    return $self->{'read_len'};
-}
 
 
 =head2 status
 
-  Arg [1]    : status (optional)
+  Arg [1]    : None
   Example    : my $status = $seqrequest->status();
-	       $seqrequest->status('pending');
-  Description: Get/Set for request status
+  Description: Returns request status
   Returntype : string
 
-=cut
 
-sub status {
-    my ($self,$status) = @_;
-    if (defined $status and $status ne $self->{'status'}){
-	$self->{'status'} = $status;
-    }
-    return $self->{'status'};
-}
+=head2 lane_ids
 
-
+  Arg [1]    : None
+  Example    : my $lane_ids = $seqrequest->lane_ids();
+  Description: Returns a ref to an array of the file names that are associated with this request
+  Returntype : ref to array of file names
 
 =head2 lanes
 
@@ -218,7 +102,101 @@ sub status {
   Description: Returns a ref to an array of the file objects that are associated with this request.
   Returntype : ref to array of Sfind::File objects
 
+=head2 sequenced_bases
+
+  Arg [1]    : None
+  Example    : my $tot_bp = $lib->sequenced_bases();
+  Description: the total number of sequenced bases on this library.
+		This is the sum of the bases from the fastq files associated
+		with this library in NPG.
+  Returntype : integer
+
 =cut
+
+use Moose;
+use namespace::autoclean;
+use Sfind::Types qw(MysqlDateTime);
+use Sfind::Lane;
+
+has '_dbh'  => (
+    is          => 'ro',
+    isa         => 'DBI::db',
+    required    => 1,
+    init_arg    => 'dbh',
+);
+
+has 'id'    => (
+    is          => 'ro',
+    isa         => 'Int',
+    required    => 1,
+);
+
+has 'uuid'    => (
+    is          => 'ro',
+    isa         => 'Str',
+    required    => 1,
+);
+
+has 'type' => (
+    is          => 'ro',
+    isa         => 'Str',
+);
+
+has 'library_id'    => (
+    is          => 'ro',
+    isa         => 'Int',
+    init_arg    => 'source_asset_internal_id',
+);
+
+has 'library_name'    => (
+    is          => 'ro',
+    isa         => 'Str',
+    init_arg    => 'source_asset_name',
+);
+
+has 'read_len'    => (
+    is          => 'ro',
+    isa         => 'Int',
+    init_arg    => 'read_length',
+);
+
+has 'status'    => (
+    is          => 'ro',
+    isa         => 'Str',
+    init_arg    => 'state',
+);
+
+has 'created' => (
+    is          => 'ro',
+    isa         => MysqlDateTime,
+    coerce      => 1,   # accept mysql dates
+);
+
+# Populate the parameters from the database
+around BUILDARGS => sub {
+    my $orig  = shift;
+    my $class = shift;
+    
+    my $argref = $class->$orig(@_);
+
+    die "Need to call with a seq_request id" unless $argref->{id};
+    my $sql = qq[select * from requests where internal_id = ? and is_current=1];
+    my $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
+    if ($id_ref){
+        foreach my $field(keys %$id_ref){
+            $argref->{$field} = $id_ref->{$field};
+        }
+    };
+    return $argref;
+};
+
+
+###############################################################################
+# BUILDERS
+###############################################################################
+
+
+
 
 sub lanes {
     my ($self) = @_;
@@ -235,14 +213,7 @@ sub lanes {
 }
 
 
-=head2 lane_ids
 
-  Arg [1]    : None
-  Example    : my $lane_ids = $seqrequest->lane_ids();
-  Description: Returns a ref to an array of the file names that are associated with this request
-  Returntype : ref to array of file names
-
-=cut
 
 sub lane_ids {
     my ($self) = @_;
@@ -263,16 +234,7 @@ sub lane_ids {
     return $self->{'lane_ids'};
 }
 
-=head2 sequenced_bases
 
-  Arg [1]    : none
-  Example    : my $tot_bp = $lib->sequenced_bases();
-  Description: the total number of sequenced bases on this library.
-		This is the sum of the bases from the fastq files associated
-		with this library in NPG.
-  Returntype : integer
-
-=cut
 
 sub sequenced_bases {
     my ($self, $id) = @_;

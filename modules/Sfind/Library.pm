@@ -187,6 +187,12 @@ has 'id'    => (
     required    => 1,
 );
 
+has 'uuid'    => (
+    is          => 'ro',
+    isa         => 'Str',
+    required    => 1,
+);
+
 has 'name'  => (
     is          => 'ro',
     isa         => 'Str',
@@ -304,6 +310,9 @@ around BUILDARGS => sub {
 };
 
 
+###############################################################################
+# BUILDERS
+###############################################################################
 sub _get_seq_reqs {
     my ($self) = @_;
     my @seq_requests;
@@ -353,22 +362,6 @@ sub _get_seq_req_ids {
     return \@seq_requests;
 }
 
-
-sub get_seq_request_by_id {
-    my ($self, $id) = @_;
-    my $obj = Sfind::Seq_Request->new({dbh=>$self->{_dbh},id=>$id});
-    return $obj;
-}
-
-
-sub get_lane_by_id {
-    die "NOT IMPLEMENTED\n";
-    my ($self, $id) = @_;
-    my $obj = Sfind::Lane->new($self->{_dbh},$id);
-    return $obj;
-}
-
-
 sub _get_mplex_pool_ids{
     my ($self) = @_;
     my @mplex_ids;
@@ -397,5 +390,24 @@ sub _get_is_tagged {
     my $tag = $self->tag_id ? 1 : 0;
     return $tag;
 }
+
+###############################################################################
+# Additional Methods
+###############################################################################
+
+sub get_seq_request_by_id {
+    my ($self, $id) = @_;
+    my $obj = Sfind::Seq_Request->new({dbh=>$self->{_dbh},id=>$id});
+    return $obj;
+}
+
+
+sub get_lane_by_id {
+    die "NOT IMPLEMENTED\n";
+    my ($self, $id) = @_;
+    my $obj = Sfind::Lane->new($self->{_dbh},$id);
+    return $obj;
+}
+
 
 1;
