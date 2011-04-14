@@ -202,9 +202,12 @@ sub _get_library_ids {
     my ($self) = @_;
 
     # If this request is "normal" then the library ids will be library_tube
-    # asset ids If this is a cherrypick pulldown request, then the library is
+    # asset ids.
+    
+    # If this is a cherrypick pulldown request, then the library is
     # in a well on a plate so the warehouse queries are different and the
     # library_ids aren't for library_tubes but for wells
+
     my @lib_ids;
 
     if ($self->type eq "Pulldown Multiplex Library Preparation"){

@@ -330,7 +330,7 @@ sub _get_seq_req_ids {
     # There are three cases:
     # 1 non mplex lib, requests are on this lib as source_asset
     # 2 mplex lib, requests are on the mplexes this lib is in
-    # 3 cherrypick mplex, handled in Well_Library
+    # 3 cherrypick mplex, handled in Well_Library::multiplex_pool_asset_ids
 
         
     # seq requests can be on this library or a multiplex that this library

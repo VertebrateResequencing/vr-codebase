@@ -140,6 +140,7 @@ has 'uuid'    => (
 has 'type' => (
     is          => 'ro',
     isa         => 'Str',
+    init_arg    => 'request_type',
 );
 
 has 'library_id'    => (
