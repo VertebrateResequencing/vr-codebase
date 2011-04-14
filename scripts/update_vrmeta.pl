@@ -630,6 +630,9 @@ sub main_loop {
     my $sample = $object_cache{sample}->{"$rh->[3].$rh->[9]"} || $project->get_sample_by_name($rh->[9]);
     unless ($sample) {
         $sample = $project->add_sample($rh->[9]);
+        # With the introduction of multiplex data, sample accessions in the sequence 
+        # index may not necessarily correspond to the actual sample accessions. 
+        # Comment out the check below.
 #         if (exists $sample_data{$sample_lookup}) {
 #             unless ($sample_data{$sample_lookup}->{acc} eq $rh->[8]) {
 #                 die "$sample_to_population_map_file and $si_file disagree on the accession for $rh->[9] ([".$sample_data{$sample_lookup}->{acc}."] vs [$$rh[8]])\n";
@@ -652,6 +655,8 @@ sub main_loop {
             $individual->alias($sample_data{$sample_lookup}->{alias});
             $individual->sex($sample_data{$sample_lookup}->{sex});
         }
+        # No longer set individual accession due to multiplex issue described above.
+        # Correct accessions should be imported by load_vrtrack_allocations.pl
 #         $individual->acc($rh->[8]);
         
         my $population = $individual->population;
