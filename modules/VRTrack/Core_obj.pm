@@ -251,7 +251,7 @@ sub _get_id_by_field_value {
 =cut
 
 sub create {
-    my ($class, $vrtrack, $id) = @_;
+    my ($class, $vrtrack, $id, $pid) = @_;
     confess "Need to call with a vrtrack handle" unless $vrtrack;
     confess "The interface has changed, expected vrtrack reference." if $vrtrack->isa('DBI::db');
     
@@ -280,7 +280,7 @@ sub create {
     }
     
     # prevent adding an object with an existing name, if name supplied. In case of mapstats, the name is void
-    if ($name && $class->is_name_in_database($vrtrack, $name, $name)){
+    if ($name && $class->is_name_in_database($vrtrack, $name, $name, $pid)){
         confess "Already a $table entry with value $name";
     }
     
