@@ -23,7 +23,9 @@ sub error
     my (@msg) = @_;
     if ( scalar @msg ) { confess @msg; }
     die
-        "Usage: lift-over [OPTIONS]\n",
+        "About: Calls liftOver to modify coordinates of tab-delimited files. Only the first and second column (chromosome and position)\n",
+        "   are modified, the rest of the line and comment lines (starting with #) are left unchanged.\n",
+        "Usage: lift-over [OPTIONS] > out_file\n",
         "Options:\n",
         "   -c, --chain-file <file>         The liftover chain file.\n",
         "   -i, --in <file>                 The file to be lift-overed\n",
@@ -103,8 +105,8 @@ sub compare
 
     if ( !$$opts{ori_ref} or !$$opts{new_ref} ) { return; }
 
-    my $fa_ori  = FaSlice->new(file=>$$opts{ori_ref}, size=>1_000_000);
-    my $fa_new  = FaSlice->new(file=>$$opts{new_ref}, size=>1_000_000);
+    my $fa_ori  = FaSlice->new(file=>$$opts{ori_ref}, size=>1_000_000, oob=>'N');
+    my $fa_new  = FaSlice->new(file=>$$opts{new_ref}, size=>1_000_000, oob=>'N');
     my $pos_unm = Reader->new(file=>$$opts{unmapped});
     my $pos_ori = Reader->new(file=>$$opts{ori_bed});
     my $pos_map = Reader->new(file=>$$opts{mapped});
@@ -139,7 +141,17 @@ sub compare
 
         my $ref_ori = $fa_ori->get_slice($$ori[0],$$ori[1]+1-$win,$$ori[1]+1+$win);
         my $ref_new = $fa_new->get_slice($$map[0],$$map[1]+1-$win,$$map[1]+1+$win);
-        if ( !$ref_ori || !$ref_new ) { error(sprintf "FIXME: Nothing there? %s %d\n",$$ori[0],$$ori[1]+1); }
+        if ( !$ref_ori || !$ref_new ) 
+        { 
+            error(
+                sprintf("Error: the chain file suggests that $$ori[0]:%d is transformed to $$map[0]:%d, but the sequence is not accessible: \n", $$ori[1]+1,$$map[1]+1),
+                $ref_ori ? '' : sprintf("\t$$opts{ori_ref} $$ori[0]:%d (%d-%d)\n",$$ori[1]+1,$$ori[1]+1-$win,$$ori[1]+1+$win),
+                $ref_new ? '' : sprintf("\t$$opts{new_ref} $$map[0]:%d (%d-%d)\n",$$map[1]+1,$$map[1]+1-$win,$$map[1]+1+$win)
+                );
+        }
+
+        $ref_ori = uc($ref_ori);
+        $ref_new = uc($ref_new);
 
         if ( substr($ref_new,$win,1) ne substr($ref_ori,$win,1) ) { $rmismatch++; }
         for (my $i=0; $i<2*$win+1; $i++)
@@ -151,11 +163,16 @@ sub compare
     close($tlog_fh);
 
     open(my $fh,'>',"$$opts{prefix}/liftover.stats") or error("$$opts{prefix}/liftover.stats: $!");
-    printf $fh "unmapped                             .. %.1f%% (%d)\n", $skipped*100./$nlines,$skipped;
-    printf $fh "reference mismatches                 .. %.1f%% (%d)\n", $rmismatch*100./$nlines, $rmismatch;
-    printf $fh "flanking sequence matches (%dbp win) .. %.1f%% (%d)\n", 2*$win+1, $match*100./($match+$mismatch),$match/(2*$win+1);
-    printf $fh "                  mismatches         .. %.1f%% (%d)\n", $mismatch*100./($match+$mismatch), $mismatch/(2*$win+1);
+    printf $fh "unmapped                                .. %.1f%% (%d)\n", $skipped*100./$nlines,$skipped;
+    printf $fh "reference mismatches (1bp)              .. %.1f%% (%d)\n", $rmismatch*100./$nlines, $rmismatch;
+    printf $fh "flanking sequence mismatches (%dbp win) .. %.1f%% (%d)\n", 2*$win+1, $mismatch*100./($match+$mismatch),$mismatch/(2*$win+1);
+    printf $fh "                  matches               .. %.1f%% (%d)\n", $match*100./($match+$mismatch), $match/(2*$win+1);
     close($fh);
+
+    print STDERR "Check sanity of the transform: $$opts{prefix}/liftover.stats\n";
+
+    printf STDERR "FaSlice ori: calls %d, cached %d (%d%%)\n", $$fa_ori{nqueries},$$fa_ori{nqueries}-$$fa_ori{ncache_missed},($$fa_ori{nqueries}-$$fa_ori{ncache_missed})*100./$$fa_ori{nqueries};
+    printf STDERR "FaSlice new: calls %d, cached %d (%d%%)\n", $$fa_new{nqueries},$$fa_new{nqueries}-$$fa_new{ncache_missed},($$fa_new{nqueries}-$$fa_new{ncache_missed})*100./$$fa_new{nqueries};
 }
 
 
@@ -190,7 +207,6 @@ sub apply_tlog
         if ( !($ori=~/^(\S+)\t(\d+)/) ) { error("Could not parse data on input: $ori"); }
         my $ori_chr = $1;
         my $ori_pos = $2;
-        if ( $ori_chr=~/^chr/ ) { $new_chr="chr$new_chr"; }
         print "$new_chr\t$new_pos$'";
     }
     close($tlog_fh);
