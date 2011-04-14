@@ -171,8 +171,8 @@ sub compare
 
     print STDERR "Check sanity of the transform: $$opts{prefix}/liftover.stats\n";
 
-    printf STDERR "FaSlice ori: calls %d, cached %d (%d%%)\n", $$fa_ori{nqueries},$$fa_ori{nqueries}-$$fa_ori{ncache_missed},($$fa_ori{nqueries}-$$fa_ori{ncache_missed})*100./$$fa_ori{nqueries};
-    printf STDERR "FaSlice new: calls %d, cached %d (%d%%)\n", $$fa_new{nqueries},$$fa_new{nqueries}-$$fa_new{ncache_missed},($$fa_new{nqueries}-$$fa_new{ncache_missed})*100./$$fa_new{nqueries};
+    # printf STDERR "FaSlice ori: calls %d, cached %d (%d%%)\n", $$fa_ori{nqueries},$$fa_ori{nqueries}-$$fa_ori{ncache_missed},($$fa_ori{nqueries}-$$fa_ori{ncache_missed})*100./$$fa_ori{nqueries};
+    # printf STDERR "FaSlice new: calls %d, cached %d (%d%%)\n", $$fa_new{nqueries},$$fa_new{nqueries}-$$fa_new{ncache_missed},($$fa_new{nqueries}-$$fa_new{ncache_missed})*100./$$fa_new{nqueries};
 }
 
 
