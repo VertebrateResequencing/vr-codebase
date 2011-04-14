@@ -95,8 +95,9 @@ sub parse_vcf
     my ($ensembl,$input_vcf) = @_;
 
     my $vcf = defined $input_vcf ? Vcf->new(file=>$input_vcf) : Vcf->new(fh=>\*STDIN);
+    my $ensembl_version = $ensembl->{registry}->software_version();
     $vcf->parse_header();
-    $vcf->add_header_line({key=>'INFO',ID=>'CSQ',Number=>-1,Type=>'String',Description=>'Consequence of the ALT alleles'});
+    $vcf->add_header_line({key=>'INFO',ID=>'CSQ',Number=>-1,Type=>'String',Description=>"Consequence of the ALT alleles from Ensembl v$ensembl_version"});
     print $vcf->format_header();
 
     my $lines = 0;
@@ -157,7 +158,7 @@ sub parse_vcf
 
             if ( scalar %$conseq )
             {
-                push @conseqs, join('+',sort(keys %$conseq));
+                push @conseqs, join(',',sort(keys %$conseq));
             }
         }
         if ( scalar @conseqs )
@@ -213,6 +214,14 @@ sub call_conseqs
         my $gene_name = $gene->external_name||$gene->stable_id;
         my $gene_id   = $gene->stable_id;
         my $strand    = $con->transcript->strand();
+        my $aa_change = $con->pep_allele_string();
+        # decided we prefer A>A rather than A/A
+        if ($aa_change && $aa_change =~ m|/|){ # have alt alleles
+            $aa_change =~ s|/|>|;
+        }
+        else { # no alt alleles, so skip
+            $aa_change = undef;
+        }
 
         foreach my $type (@{$con->consequence_type}) 
         {
@@ -220,8 +229,14 @@ sub call_conseqs
             if ( $type eq 'UPSTREAM' ) { next; }
             if ( $type eq 'INTERGENIC' ) { next; }
              
-            $out{"$type\@$gene_name"} = 1;
-            #print qq[$items[ 0 ]\t$items[ 1 ]\t$items[ 3 ]\t$items[ 4 ]\t$type\t$gene_name\t$gene_id\t$trans_id\t$strand\n];
+            my @data = ($trans_id, $gene_name,$type);
+            push @data, $aa_change if $aa_change;
+
+            my $con_str = join ":",@data;
+            #warn "$con_str\n";
+            #$out{"$type\@$gene_name"} = 1;
+
+            $out{$con_str} = 1;
         }
     }
     return \%out;

@@ -30,6 +30,9 @@ sub error
         "   -c, --chromosomes <list|file>       Same as -r, left for backward compatibility. Please do not use as it will be dropped in the future.\n",
         "   -d, --debug                         Debugging information. Giving the option multiple times increases verbosity\n",
         "   -H, --cmp-haplotypes                Compare haplotypes, not only positions\n",
+        "   -m, --name-mapping <list|file>      Use with -H when comparing files with differing column names. The argument to this options is a\n",
+        "                                           comma-separated list or one mapping per line in a file. The names are colon separated and must\n",
+        "                                           appear in the same order as the files on the command line.\n",
         "   -R, --refseq <file>                 Compare the actual sequence, not just positions. Use with -w to compare indels.\n",
         "   -r, --regions <list|file>           Process the given regions (comma-separated list or one region per line in a file).\n",
         "   -s, --samples <list>                Process only the listed samples. Excluding unwanted samples may increase performance considerably.\n",
@@ -45,6 +48,7 @@ sub parse_params
     my $opts = { positions=>0 };
     while (my $arg=shift(@ARGV))
     {
+        if ( $arg eq '-m' || $arg eq '--name-mapping' ) { $$opts{mappings_list}=shift(@ARGV); next; }
         if ( $arg eq '-R' || $arg eq '--refseq' ) { $$opts{refseq}=shift(@ARGV); next; }
         if ( $arg eq '-c' || $arg eq '--chromosomes' ) { $$opts{regions_list}=shift(@ARGV); next; }
         if ( $arg eq '-r' || $arg eq '--regions' ) { $$opts{regions_list}=shift(@ARGV); next; }
@@ -86,6 +90,24 @@ sub read_regions_list
     return (@regions);
 }
 
+sub read_mappings_list
+{
+    my ($fname,$files) = @_;
+    my @maps = read_regions_list($fname);
+    my %mapping;
+    for my $map (@maps)
+    {
+        my @items = split(/:/,$map);
+        if ( scalar @items != scalar @$files ) { error(sprintf "Expected %d column names, found [$map].\n", scalar @$files); }
+        for (my $i=1; $i<@$files; $i++)
+        {
+            $mapping{$$files[$i]}{$items[$i]} = $items[0];
+            warn("Using column name '$items[0]' for $$files[$i]:$items[$i]\n");
+        }
+    }
+    return \%mapping;
+}
+
 sub compare_vcfs
 {
     my ($opts) = @_;
@@ -95,8 +117,9 @@ sub compare_vcfs
 
     # Open the VCF files and initialize the list of chromosomes
     my @vcfs;
-    my (@regions,%has_chrom);
+    my (@regions,%has_chrom,$mappings);
     if ( exists($$opts{regions_list}) ) { @regions = read_regions_list($$opts{regions_list}); }
+    if ( exists($$opts{mappings_list}) ) { $mappings = read_mappings_list($$opts{mappings_list},$$opts{files}); }
 
     my $ifile = 0;
     for my $file (@{$$opts{files}})
@@ -119,6 +142,18 @@ sub compare_vcfs
                 push @regions, $chr;
             }
         }
+
+        # Check if column names need to be renamed
+        if ( defined $mappings && exists($$mappings{$$vcf{file}}) ) 
+        { 
+            $$vcf{_col_mapping} = $$mappings{$$vcf{file}}; 
+            for my $name (keys %{$$vcf{_col_mapping}})
+            {
+                if ( !exists($$vcf{has_column}{$name}) ) { error("No such column [$name] in the file $$vcf{file}\n"); }
+                my $new_name = $$vcf{_col_mapping}{$name};
+                $$vcf{_col_mapping_rev}{$new_name} = $name;
+            }
+        }
     }
 
     # Include only matching samples in haplotype comparison
@@ -131,13 +166,18 @@ sub compare_vcfs
             { 
                 for my $sample (@{$$opts{samples}}) 
                 { 
+                    if ( exists($$vcf{_col_mapping}) && exists($$vcf{_col_mapping}{$sample}) ) { $sample = $$vcf{_col_mapping}{$sample}; }
                     if ( exists($$vcf{has_column}{$sample}) ) { $all_samples{$sample}++ }
                 }
             }
             else
             {
                 my @samples = $vcf->get_samples();
-                for my $sample (@samples) { $all_samples{$sample}++ }
+                for my $sample (@samples) 
+                { 
+                    if ( exists($$vcf{_col_mapping}) && exists($$vcf{_col_mapping}{$sample}) ) { $sample = $$vcf{_col_mapping}{$sample}; }
+                    $all_samples{$sample}++ 
+                }
             }
         }
         my @include_samples;
@@ -153,7 +193,16 @@ sub compare_vcfs
         print STDERR "Including ",scalar @include_samples," sample(s) in haplotype comparison.\n";
         for my $vcf (@vcfs)
         {
-            $vcf->set_samples(include=>\@include_samples);
+            my @include;
+            if ( !exists($$vcf{_col_mapping}) ) { @include=@include_samples; }
+            else
+            {
+                for my $sample (@include_samples)
+                {
+                    push @include, exists($$vcf{_col_mapping_rev}{$sample}) ? $$vcf{_col_mapping_rev}{$sample} : $sample
+                }
+            }
+            $vcf->set_samples(include=>\@include);
         }
     }
 
@@ -572,6 +621,19 @@ sub cmp_haplotypes
     for my $grp_rec (@$grp)
     {
         $$grp_rec{rec} = $$grp_rec{vcf}->next_data_hash($$grp_rec{line});
+        if ( exists($$grp_rec{vcf}{_col_mapping}) )
+        {
+            my %new_cols;
+            while (my ($name_ori,$name_new) = each %{$$grp_rec{vcf}{_col_mapping}})
+            {
+                $new_cols{$name_new} = $$grp_rec{rec}{gtypes}{$name_ori};
+                delete($$grp_rec{rec}{gtypes}{$name_ori});
+            }
+            while (my ($name,$hash) = each %new_cols)
+            {
+                $$grp_rec{rec}{gtypes}{$name} = $hash;
+            }
+        }
     }
 
     if ( $$grp[0]{vcf}{vcf_compare_ID} != 0 ) { error("FIXME: different order than expected: $$grp[0]{vcf}{vcf_compare_ID}\n"); }
