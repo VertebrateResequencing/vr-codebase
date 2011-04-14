@@ -121,12 +121,91 @@ sub new_by_name_project {
   
   Arg [1]    : vrtrack handle to seqtracking database
   Arg [2]    : name
-  Example    : my $file = VRTrack::Sample->create($vrtrack, $name)
+  Arg [3]    : project id (optional)
+  Example    : my $file = VRTrack::Sample->create($vrtrack, $name, $project_id)
   Description: Class method.  Creates new Sample object in the database.
+               Overrides Core_obj method to allow allow creating samples with the 
+               same name, but different project ids  .
   Returntype : VRTrack::Sample object
    
 =cut
 
+sub create {
+    my ($class, $vrtrack, $id, $pid) = @_;
+    confess "Need to call with a vrtrack handle" unless $vrtrack;
+    confess "The interface has changed, expected vrtrack reference." if $vrtrack->isa('DBI::db');
+    
+    my $dbh = $vrtrack->{_dbh};
+    my $table = $class->_class_to_table;
+    
+    # Small hack.  This sub assumes that if a 3rd param has been passed
+    # then it is a name, but create can be called by
+    # Table_obj->_add_child_object, which takes identifiers that are not
+    # necessarily names (e.g. ssid for library_request).  It would be nice
+    # for this create to Do The Right Thing for each type of identifier
+    # with explicit setting of identifier type, but for now we'll just
+    # assume that if we have an identifier and can->name, it's a name, if
+    # we can't name but can->ssid, it's an ssid, otherwise drop it.  jws
+    # 2010-09-30
+    
+    my ($name, $ssid);
+    if ($class->can('name')){
+        $name = $id;
+    }
+    elsif ($class->can('ssid')){
+        $ssid = $id;
+    }
+    else {
+        # id gets ignored
+    }
+    
+    # prevent adding an object with an existing name, if name supplied. In case of mapstats, the name is void
+    if ($name && $class->is_name_in_database($vrtrack, $name, $name, $pid)){
+        confess "Already a $table entry with value $name";
+    }
+    
+    $vrtrack->transaction_start();
+    
+    # insert a fake record to obtain a unique id (row_id)
+    my $query = qq[INSERT INTO $table SET ${table}_id=0];
+    my $sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
+    my $rv    = $sth->execute or confess qq[The query "$query" failed: $!];
+    
+    # now update the inserted record
+    my $next_id = $dbh->last_insert_id(undef, undef, $table, 'row_id') or confess "No last_insert_id? $!";
+    
+    if ($name) {
+        my $hierarchy_name;
+        
+        my $fieldsref = $class->fields_dispatch();
+        if ( exists($fieldsref->{hierarchy_name}) )
+        {
+            $hierarchy_name = $name;
+            $hierarchy_name =~ s/\W+/_/g;
+        }
+        
+        $name = qq[name='$name' ];
+        if ($hierarchy_name) {
+            $name .= qq[, hierarchy_name='$hierarchy_name' ];
+        }
+    }
+    
+    $query = qq[UPDATE $table SET ${table}_id=$next_id];
+    if ($name){
+        $query .= qq[, $name ];     # add name, hierarchy_name clause
+    }
+    elsif ($ssid){
+        $query .= qq[, ssid=$ssid ]; # add ssid clause
+    }
+    
+    $query .= qq[, changed=now(), latest=true WHERE row_id=$next_id];
+    $sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
+    $sth->execute or confess qq[The query "$query" failed: $!];
+    
+    $vrtrack->transaction_commit();
+    
+    return $class->new($vrtrack, $next_id);
+}
 
 =head2 is_name_in_database
 
