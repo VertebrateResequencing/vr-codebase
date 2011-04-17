@@ -4,7 +4,7 @@ package Sfind::Seq_Request;
 Sfind::Request - Sequence Tracking Request object
 
 =head1 SYNOPSIS
-    my $seqrequest= Sfind::Seq_Request->new($dbh, $request_id);
+    my $seqrequest= Sfind::Seq_Request->new({dbh => $dbh, id => $req_id});
 
     my $id = $seqrequest->id();
     my $status = $seqrequest->status();
@@ -22,9 +22,9 @@ jws@sanger.ac.uk
 
 =head2 new
 
-  Arg [1]    : None
-  Arg [2]    : request id
-  Example    : my $seqrequest= Sfind::Sfind->new($dbh, $id)
+  Arg [1]    : hashref: dbh => database handle to seqtracking database
+                        id  => sequencescape request id
+  Example    : my $req = Sfind::Seq_Request->new({dbh=>$dbh, id=>$id};)
   Description: Returns Seq_Request object by request_id
   Returntype : Sfind::Seq_Request object
 
@@ -167,6 +167,20 @@ has 'status'    => (
     init_arg    => 'state',
 );
 
+has 'lane_ids'=> (
+    is          => 'ro',
+    isa         => 'ArrayRef[Int]',
+    lazy        => 1,
+    builder     => '_get_lane_ids',
+);
+
+has 'lanes'=> (
+    is          => 'ro',
+    isa         => 'ArrayRef[Sfind::Lane]',
+    lazy        => 1,
+    builder     => '_get_lanes',
+);
+
 has 'created' => (
     is          => 'ro',
     isa         => MysqlDateTime,
@@ -197,45 +211,40 @@ around BUILDARGS => sub {
 ###############################################################################
 
 
-
-
-sub lanes {
+sub _get_lanes {
     my ($self) = @_;
-    unless ($self->{'lanes'}){
-	my @lanes;
-    	foreach my $id (@{$self->lane_ids()}){
-	    my $obj = Sfind::Lane->new($self->{_dbh},$id);
-	    push @lanes, $obj;
-	}
-	$self->{'lanes'} = \@lanes;
+    my @lanes;
+    foreach my $id (@{$self->lane_ids()}){
+        my $obj = Sfind::Lane->new({dbh=>$self->{_dbh},id=>$id});
+        push @lanes, $obj;
     }
 
-    return $self->{'lanes'};
+    return \@lanes
 }
 
 
-
-
-sub lane_ids {
+sub _get_lane_ids {
     my ($self) = @_;
-    unless ($self->{'lane_ids'}){
-	my $sql = qq[select id_npg_information from npg_information n, library l where l.request_id=? and l.batch_id =n.batch_id and l.position = n.position and (n.id_run_pair=0 or n.id_run_pair is null);];
-	my @lanes;
-	my $sth = $self->{_dbh}->prepare($sql);
+    my $sql = qq[select id_npg_information 
+                from npg_information 
+                where request_id = ? and
+                (id_run_pair=0 or id_run_pair is null);];
+    my @lane_ids;
+    my $sth = $self->{_dbh}->prepare($sql);
 
-	$sth->execute($self->id);
-	foreach(@{$sth->fetchall_arrayref()}){
-	    push @lanes, $_->[0];
-	}
-	@lanes = sort {$a <=> $b} @lanes;
-
-	$self->{'lane_ids'} = \@lanes;
+    $sth->execute($self->id);
+    foreach(@{$sth->fetchall_arrayref()}){
+        push @lane_ids, $_->[0];
     }
+    @lane_ids = sort {$a <=> $b} @lane_ids;
  
-    return $self->{'lane_ids'};
+    return \@lane_ids;
 }
 
 
+###############################################################################
+# Additional Methods
+###############################################################################
 
 sub sequenced_bases {
     my ($self, $id) = @_;

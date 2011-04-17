@@ -4,7 +4,7 @@ package Sfind::Lane;
 Sfind::Lane - Sequence Tracking Lane object
 
 =head1 SYNOPSIS
-    my $lane= Sfind::Lane->new($dbh, $lane_id);
+    my $lane= Sfind::Lane->new({dbh => $dbh, id => $lane_id});
 
     my $id = $lane->id();
 
@@ -18,180 +18,46 @@ jws@sanger.ac.uk
 
 =head1 METHODS
 
-=cut
-
-use strict;
-use warnings;
-no warnings 'uninitialized';
-BEGIN { push(@INC,qw(/software/solexa/lib/site_perl/5.8.8)) }
-use npg::api::run_lane; # for npg qc
-use VertRes::Wrapper::iRODS; # for finding bam files
-use Sfind::Fastq;
-use Sfind::BAM;
-
 =head2 new
 
-  Arg [1]    : database handle to seqtracking database
-  Arg [2]    : lane id
-  Example    : my $lane= Sfind::Sfind->new($dbh, $id)
+  Arg [1]    : hashref: dbh => database handle to seqtracking database
+                        id  => id_npg_information 
+  Example    : my $lane = Sfind::Lane->new({dbh=>$dbh, id=>$id};)
   Description: Returns Lane object by lane_id
   Returntype : Sfind::Lane object
-
-=cut
-
-sub new {
-    my ($class,$dbh, $id) = @_;
-    die "Need to call with a db handle and id" unless ($dbh && $id);
-    my $self = {};
-    bless ($self, $class);
-    $self->{_dbh} = $dbh;
-
-    # id_run_pair = 0 means this is the first of any pair
-    # which is what the srf, fastq & fastqcheck files are named for
-    my $sql = qq[select batch_id, id_run, position, run_complete, cycles, paired_read, has_two_runfolders,cancelled from npg_information where id_npg_information = ? and (id_run_pair=0 or id_run_pair is null)];
-    my $sth = $self->{_dbh}->prepare($sql);
-
-    $sth->execute($id);
-    my $data = $sth->fetchall_arrayref()->[0];	# only one row for each id
-    unless ($data){
-	return undef;
-    }
-    $self->id($id);
-    $self->batch_id($data->[0]);
-    $self->run_name($data->[1]);
-    $self->run_lane($data->[2]);
-    $self->created($data->[3]);
-    $self->is_cancelled($data->[7]);
-    $self->is_paired($data->[5]);
-    if ($data->[5] &! $data->[6]){
-        # if paired, and only one runfolder, then cycles is total cycles (i.e.
-        # fwd+rev) rather than one end.  Need to divide by two.
-        $self->read_len(int($data->[4]/2));
-    }
-    else {
-        $self->read_len($data->[4]);
-    }
-    $self->_load_pair_info();
-    return $self;
-}
-
-
-=head2 new_by_run_lane
-
-  Arg [1]    : database handle to seqtracking database
-  Arg [2]    : lane id
-  Example    : my $lane= Sfind::Sfind->new_by_run_lane($dbh, '2064', '3')
-  Description: Returns Lane object from a run and lane
-  Returntype : Sfind::Lane object
-
-=cut
-
-sub new_by_run_lane {
-    my ($class,$dbh, $run, $lane) = @_;
-    die "Need to call with a db handle, run and lane" unless ($dbh && $run && $lane);
-    my $self = {};
-    bless ($self, $class);
-    $self->{_dbh} = $dbh;
-
-    # id_run_pair = 0 means this is the first of any pair
-    # which is what the srf, fastq & fastqcheck files are named for
-    my $sql = qq[select batch_id, id_run, position, run_complete, cycles, paired_read, id_npg_information from npg_information where id_run = ? and position = ? and id_run_pair=0];
-    my $sth = $self->{_dbh}->prepare($sql);
-
-    $sth->execute($run, $lane);
-    my $data = $sth->fetchall_arrayref()->[0];	# only one row for each id
-    unless ($data){
-	return undef;
-    }
-    $self->batch_id($data->[0]);
-    $self->run_name($data->[1]);
-    $self->run_lane($data->[2]);
-    $self->created($data->[3]);
-    $self->read_len($data->[4]);
-    $self->is_paired($data->[5]);
-    $self->id($data->[6]);
-
-    $self->_load_pair_info();
-    return $self;
-}
 
 
 =head2 id
 
-  Arg [1]    : id (optional)
+  Arg [1]    : None
   Example    : my $id = $lane->id();
-	       $lane->id('104');
-  Description: Get/Set for ID of a lane
+  Description: Returns ID of a lane
   Returntype : SequenceScape ID (usu. integer)
-
-=cut
-
-sub id {
-    my ($self,$id) = @_;
-    if (defined $id and $id ne $self->{'id'}){
-	$self->{'id'} = $id;
-    }
-    return $self->{'id'};
-}
 
 
 =head2 created
 
-  Arg [1]    : created (optional)
+  Arg [1]    : None
   Example    : my $created = $lane->created();
-	       $lane->created('2008-10-24 11:40:59');
-  Description: Get/Set for created timestamp.  This is the 'run complete' timestamp from NPG
-  Returntype : timestamp string
-
-=cut
-
-sub created {
-    my ($self,$created) = @_;
-    if (defined $created and $created ne $self->{'created'}){
-	$self->{'created'} = $created;
-    }
-    return $self->{'created'};
-}
+  Description: Returns created timestamp.  This is the 'run complete' timestamp from NPG
+  Returntype : DateTime object
 
 
 =head2 batch_id
 
-  Arg [1]    : batch_id (optional)
+  Arg [1]    : None
   Example    : my $batch_id = $lane->batch_id();
-	       $lane->batch_id('104');
-  Description: Get/Set for batch ID of a lane
+  Description: Returns batch ID of a lane
   Returntype : SequenceScape ID integer
-
-=cut
-
-sub batch_id {
-    my ($self,$batch_id) = @_;
-    if (defined $batch_id and $batch_id ne $self->{'batch_id'}){
-	$self->{'batch_id'} = $batch_id;
-    }
-    return $self->{'batch_id'};
-}
-
 
 
 =head2 run_name
 
-  Arg [1]    : run_name (optional)
+  Arg [1]    : None
   Example    : my $run_name = $lane->run_name();
-	       $lane->run_name('1234');
-  Description: Get/Set for run name of lane.  This is the name of the forward
+  Description: Returns run name of lane.  This is the name of the forward
 		run for a paired-end lane
   Returntype : run name
-
-=cut
-
-sub run_name {
-    my ($self,$run_name) = @_;
-    if (defined $run_name and $run_name ne $self->{'run_name'}){
-	$self->{'run_name'} = $run_name;
-    }
-    return $self->{'run_name'};
-}
 
 
 =head2 name
@@ -201,108 +67,45 @@ sub run_name {
   Description: 'name' of lane.  This is the concatenation of run_name with run_lane, e.g. '1234_1'
   Returntype : common name for lane
 
-=cut
-
-sub name {
-    my ($self) = @_;
-    return join "_", ($self->run_name, $self->run_lane);
-}
-
 
 =head2 is_cancelled
 
-  Arg [1]    : boolean for whether lane is cancelled (optional)
+  Arg [1]    : None
   Example    : my $cancelled = $lane->is_cancelled();
-	       $lane->is_cancelled('1');
-  Description: Get/Set for whether lane is cancelled during run
+  Description: Returns whether lane is cancelled during run
   Returntype : boolean
-
-=cut
-
-sub is_cancelled {
-    my ($self,$is_cancelled) = @_;
-    if (defined $is_cancelled and $is_cancelled ne $self->{'is_cancelled'}){
-	$self->{'is_cancelled'} = $is_cancelled ? 1 : 0;
-    }
-    return $self->{'is_cancelled'};
-}
 
 
 =head2 is_paired
 
-  Arg [1]    : boolean for whether lane is paired (optional)
+  Arg [1]    : None
   Example    : my $paired = $lane->is_paired();
-	       $lane->is_paired('1');
-  Description: Get/Set for whether lane is paired-end read
+  Description: Returns whether lane is paired-end read
   Returntype : boolean
-
-=cut
-
-sub is_paired {
-    my ($self,$is_paired) = @_;
-    if (defined $is_paired and $is_paired ne $self->{'is_paired'}){
-	$self->{'is_paired'} = $is_paired ? 1 : 0;
-    }
-    return $self->{'is_paired'};
-}
 
 
 =head2 pair_run_name
 
-  Arg [1]    : pair_run_name (optional)
+  Arg [1]    : None
   Example    : my $pair_run_name = $lane->pair_run_name();
-	       $lane->pair_run_name('1234');
-  Description: Get/Set for run name of reverse run for a paired-end run
+  Description: Returns run name of reverse run for a paired-end run, if it has one.  Only old runs had separate run names for each direction.
   Returntype : run name
-
-=cut
-
-sub pair_run_name {
-    my ($self,$pair_run_name) = @_;
-    if (defined $pair_run_name and $pair_run_name ne $self->{'pair_run_name'}){
-	$self->{'pair_run_name'} = $pair_run_name;
-    }
-    return $self->{'pair_run_name'};
-}
-
 
 
 =head2 read_len
 
-  Arg [1]    : read_len (optional)
+  Arg [1]    : None
   Example    : my $read_len = $lane->read_len();
-	       $lane->read_len(54);
-  Description: Get/Set for lane read_len
+  Description: Returns lane read_len
   Returntype : integer
-
-=cut
-
-sub read_len {
-    my ($self,$read_len) = @_;
-    if (defined $read_len and $read_len ne $self->{'read_len'}){
-	$self->{'read_len'} = $read_len;
-    }
-    return $self->{'read_len'};
-}
 
 
 =head2 run_lane
 
-  Arg [1]    : run_lane (optional)
+  Arg [1]    : None
   Example    : my $run_lane = $lane->run_lane();
-	       $run_lane->lane(7);
-  Description: Get/Set for run_lane of Lane
+  Description: Returns run_lane of Lane
   Returntype : integer
-
-=cut
-
-sub run_lane {
-    my ($self,$run_lane) = @_;
-    if (defined $run_lane and $run_lane ne $self->{'run_lane'}){
-	$self->{'run_lane'} = $run_lane;
-    }
-    return $self->{'run_lane'};
-}
 
 
 =head2 fastq
@@ -312,62 +115,21 @@ sub run_lane {
   Description: Returns a ref to an array of the fastq objects that have been generated from this lane.
   Returntype : ref to array of Sfind::Fastq objects
 
-=cut
-
-sub fastq {
-    my ($self) = @_;
-    unless ($self->{'fastq'}){
-	my @fastq;
-    	foreach my $name (@{$self->fastq_filenames()}){
-	    push @fastq, $self->get_fastq_by_filename($name);
-	}
-	$self->{'fastq'} = \@fastq;
-    }
-    return $self->{'fastq'};
-}
-
 
 =head2 fastq_filenames
 
-  Arg [1]    : none
+  Arg [1]    : None
   Example    : my $fastq_files = $lane->fastq_filenames();
   Description: fetch array ref of mpsa fastq files for this lane
   Returntype : array ref of mpsa fuse file locations
 
-=cut
-
-sub fastq_filenames {
-    my ($self) = @_;
-    unless ($self->{'fastq_filenames'}){
-	my $run = $self->run_name;
-	my $lane = $self->run_lane;
-	open(my $FASTQ, "/software/solexa/bin/dfind -run $run -lane $lane -filetype fastq |grep fuse |") or die "Can't run dfind to locate fastq: $!\n";
-	my @fastq;
-	while (my $fq = <$FASTQ>){
-	    chomp $fq;
-	    push @fastq, $fq;
-	}
-	close $FASTQ;
-	$self->{'fastq_filenames'} = \@fastq;
-    }
-    return $self->{'fastq_filenames'};
-}
-
 
 =head2 get_fastq_by_filename
 
-  Arg [1]    : fastq filename, including path
+  Arg [1]    : None
   Example    : my $fastqfile = $lane->get_fastq_by_filename('/fuse/mpsafs/runs/1378/1378_s_1.fastq);
   Description: retrieve Sfind::Fastq object by file location 
   Returntype : Sfind::Fastq object
-
-=cut
-
-sub get_fastq_by_filename {
-    my ($self, $filename) = @_;
-    my $obj = Sfind::Fastq->new($filename);
-    return $obj;
-}
 
 
 =head2 bam
@@ -377,51 +139,289 @@ sub get_fastq_by_filename {
   Description: Returns a ref to an array of the bam objects that have been generated from this lane.
   Returntype : ref to array of Sfind::BAM objects
 
-=cut
-
-sub bam {
-    my ($self) = @_;
-    unless ($self->{'bam'}){
-	my @bam;
-    	foreach my $name (@{$self->bam_filenames()}){
-	    push @bam, $self->get_bam_by_filename($name);
-	}
-	$self->{'bam'} = \@bam;
-    }
-    return $self->{'bam'};
-}
-
 
 =head2 bam_filenames
 
-  Arg [1]    : none
+  Arg [1]    : None
   Example    : my $bam_files = $lane->bam_filenames();
   Description: fetch array ref of irods bam files for this lane
   Returntype : array ref of irods file locations
 
-=cut
-
-sub bam_filenames {
-    my ($self) = @_;
-    unless ($self->{'bam_filenames'}){
-	my $run = $self->run_name;
-	my $lane = $self->run_lane;
-        my $irods = VertRes::Wrapper::iRODS->new();
-        my @bam = @{$irods->find_files_by_run_lane($run,$lane)};
-	$self->{'bam_filenames'} = \@bam;
-    }
-    return $self->{'bam_filenames'};
-}
-
 
 =head2 get_bam_by_filename
 
-  Arg [1]    : bam irods location
+  Arg [1]    : None
   Example    : my $bamfile = $lane->get_bam_by_filename('/seq/5322/5322_1.bam');
   Description: retrieve Sfind::BAM object by irods location
   Returntype : Sfind::BAM object
 
+
+=head2 npg_qc
+
+  Arg [1]    : None
+  Example    : my $npg_qc = $lane->npg_qc();
+  Description: get npg manual qc ('pass','fail','pending') for this lane.
+  Returntype : npg_qc status string
+
+
+=head2 mean_quality
+
+  Arg [1]    : None
+  Example    : my $mean_quality = $lane->mean_quality();
+  Description: get mean_quality (from fastqcheck) in resulting fastq.  Note that this is the mean of the mean_qualities in the fastqcheck.
+  Returntype : mean_quality to 1dp
+
+
+=head2 reads
+
+  Arg [1]    : None
+  Example    : my $reads = $lane->reads();
+  Description: get total number of reads in resulting fastq
+  Returntype : integer count of reads
+
+
+=head2 basepairs
+
+  Arg [1]    : None
+  Example    : my $basepairs = $lane->basepairs();
+  Description: get total number of basepairs in resulting fastq
+  Returntype : integer count of basepairs
+
 =cut
+
+use Moose;
+use namespace::autoclean;
+use Sfind::Types qw(MaybeMysqlDateTime);
+use Sfind::Fastq;
+use Sfind::BAM;
+use VertRes::Wrapper::iRODS; # for finding bam files
+
+has '_dbh'  => (
+    is          => 'ro',
+    isa         => 'DBI::db',
+    required    => 1,
+    init_arg    => 'dbh',
+);
+
+has 'id'    => (
+    is          => 'ro',
+    isa         => 'Int',
+    required    => 1,
+);
+
+has 'run_name'=> (
+    is          => 'ro',
+    isa         => 'Str',
+    required    => 1,
+    init_arg    => 'id_run',
+);
+
+has 'pair_run_name'=> (
+    is          => 'ro',
+    isa         => 'Str',
+    required    => 0,
+    init_arg    => 'pair_id_run',
+);
+
+has 'run_lane'=> (
+    is          => 'ro',
+    isa         => 'Str',
+    required    => 1,
+    init_arg    => 'position',
+);
+
+has 'name'    => (
+    is          => 'ro',
+    isa         => 'Str',
+    lazy        => 1,
+    default     => sub {
+            my $self = shift;
+            return join "_", ($self->run_name, $self->run_lane);
+                        },
+);
+
+has 'is_cancelled'  => (
+    is          => 'ro',
+    isa         => 'Bool',
+    required    => 0,
+    init_arg    => 'cancelled',
+);
+
+has 'is_paired'  => (
+    is          => 'ro',
+    isa         => 'Bool',
+    required    => 0,
+    init_arg    => 'paired_read',
+);
+
+has 'read_len'    => (
+    is          => 'ro',
+    isa         => 'Int',
+    required    => 0,
+);
+
+has 'batch_id'    => (
+    is          => 'ro',
+    isa         => 'Int',
+    required    => 0,
+);
+
+has 'npg_qc'    => (
+    is          => 'ro',
+    isa         => 'Str',
+    required    => 1,
+);
+
+has 'created' => (
+    is          => 'ro',
+    isa         => MaybeMysqlDateTime,
+    coerce      => 1,   # accept mysql dates
+    init_arg    => 'run_complete',
+);
+
+has 'fastq'=> (
+    is          => 'ro',
+    isa         => 'ArrayRef[Sfind::Fastq]',
+    lazy        => 1,
+    builder     => '_get_fastq',
+);
+
+has 'fastq_filenames'=> (
+    is          => 'ro',
+    isa         => 'ArrayRef[Str]',
+    lazy        => 1,
+    builder     => '_get_fastq_filenames',
+);
+
+has 'bam'=> (
+    is          => 'ro',
+    isa         => 'ArrayRef[Sfind::BAM]',
+    lazy        => 1,
+    builder     => '_get_bam',
+);
+
+has 'bam_filenames'=> (
+    is          => 'ro',
+    isa         => 'ArrayRef[Str]',
+    lazy        => 1,
+    builder     => '_get_bam_filenames',
+);
+# Populate the parameters from the database
+around BUILDARGS => sub {
+    my $orig  = shift;
+    my $class = shift;
+    
+    my $argref = $class->$orig(@_);
+
+    die "Need to call with a npg_information id" unless $argref->{id};
+    # id_run_pair = 0 means this is the first of any pair
+    # which is what the srf, fastq & fastqcheck files are named for
+    my $sql = qq[select * from npg_information 
+                 where id_npg_information = ? 
+                 and (id_run_pair=0 or id_run_pair is null)
+                 ];
+    my $row_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
+    if ($row_ref){
+        foreach my $field(keys %$row_ref){
+            $argref->{$field} = $row_ref->{$field};
+        }
+    };
+    # hacks
+
+    # if paired, and only one runfolder, then cycles is total cycles (i.e.
+    # fwd+rev) rather than one end.  Need to divide by two.
+    if($row_ref->{paired_read} &! $row_ref->{has_two_runfolders}){
+        $argref->{read_len} = int($row_ref->{cycles}/2);
+    }
+    else {
+        $argref->{read_len} = $row_ref->{cycles};
+    }
+
+    # NPG manual qc
+    if($row_ref->{manual_qc} == 1){
+        $argref->{npg_qc} = 'pass';
+    }
+    elsif ($row_ref->{manual_qc} == 0){
+        $argref->{npg_qc} = 'fail';
+    }
+    else {
+        $argref->{npg_qc} = 'pending';
+    }
+
+
+    # populate pair-end information if it exists
+    $sql = qq[select id_run, run_complete 
+              from npg_information 
+              where batch_id = ? 
+              and position = ? 
+              and id_run_pair = ?];
+
+    $row_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{batch_id},$argref->{position},$argref->{id_run}));
+    if (keys %$row_ref){
+        $argref->{pair_id_run} = $row_ref->{id_run};
+        # the 'lane' was finished when the second end completed
+        $argref->{run_complete} = $row_ref->{run_complete}; 
+    }
+
+    return $argref;
+};
+
+
+###############################################################################
+# BUILDERS
+###############################################################################
+
+
+sub _get_fastq {
+    my ($self) = @_;
+    my @fastq;
+    foreach my $name (@{$self->fastq_filenames()}){
+        push @fastq, $self->get_fastq_by_filename($name);
+    }
+    return \@fastq;
+}
+
+sub _get_fastq_filenames {
+    my ($self) = @_;
+    my $run = $self->run_name;
+    my $lane = $self->run_lane;
+    open(my $FASTQ, "/software/solexa/bin/dfind -run $run -lane $lane -filetype fastq |grep fuse |") or die "Can't run dfind to locate fastq: $!\n";
+    my @fastq;
+    while (my $fq = <$FASTQ>){
+        chomp $fq;
+        push @fastq, $fq;
+    }
+    close $FASTQ;
+    return \@fastq;
+}
+
+
+sub get_fastq_by_filename {
+    my ($self, $filename) = @_;
+    my $obj = Sfind::Fastq->new($filename);
+    return $obj;
+}
+
+
+sub _get_bam {
+    my ($self) = @_;
+    my @bam;
+    foreach my $name (@{$self->bam_filenames()}){
+        push @bam, $self->get_bam_by_filename($name);
+    }
+    return \@bam;
+}
+
+
+sub _get_bam_filenames {
+    my ($self) = @_;
+    my $run = $self->run_name;
+    my $lane = $self->run_lane;
+    my $irods = VertRes::Wrapper::iRODS->new();
+    my @bam = @{$irods->find_files_by_run_lane($run,$lane)};
+    return \@bam;
+}
+
 
 sub get_bam_by_filename {
     my ($self, $filename) = @_;
@@ -429,57 +429,6 @@ sub get_bam_by_filename {
     return $obj;
 }
 
-
-=head2 npg_qc
-
-  Arg [1]    : none
-  Example    : my $npg_qc = $lane->npg_qc();
-  Description: get npg manual qc for this lane.
-  Returntype : npg_qc status string
-
-=cut
-
-sub npg_qc {
-    my ($self) = @_;
-    unless ($self->{'npg_qc'}){
-        my $rl=npg::api::run_lane->new({id_run=>$self->run_name,position=>$self->run_lane}); 
-        if ($rl){
-            my $qc;
-            if ($rl->manual_qc){
-                if ($rl->manual_qc =~ /^pass/){
-                    $qc = 'pass';
-                }
-                elsif ($rl->manual_qc =~ /^fail/){
-                    $qc = 'fail';
-                }
-                else {
-                    $qc = $rl->manual_qc; 
-                }
-            }
-            else {          
-                # if error in npg api, manual_qc can be '' which isn't valid,
-                # so set to 'pending' which is.
-                $qc = 'pending';
-            }
-            $self->{'npg_qc'} = $qc;
-                
-        }
-        else {
-            warn "Can't get NPG run_lane for ",$self->run_name,"_",$self->run_lane,"\n";
-        }
-    }
-    return $self->{'npg_qc'};
-}
-
-
-=head2 mean_quality
-
-  Arg [1]    : none
-  Example    : my $mean_quality = $lane->mean_quality();
-  Description: get mean_quality (from fastqcheck) in resulting fastq.  Note that this is the mean of the mean_qualities in the fastqcheck.
-  Returntype : mean_quality to 1dp
-
-=cut
 
 sub mean_quality {
     my ($self) = @_;
@@ -490,14 +439,7 @@ sub mean_quality {
 }
 
 
-=head2 reads
 
-  Arg [1]    : none
-  Example    : my $reads = $lane->reads();
-  Description: get total number of reads in resulting fastq
-  Returntype : integer count of reads
-
-=cut
 
 sub reads {
     my ($self) = @_;
@@ -508,14 +450,6 @@ sub reads {
 }
 
 
-=head2 basepairs
-
-  Arg [1]    : none
-  Example    : my $basepairs = $lane->basepairs();
-  Description: get total number of basepairs in resulting fastq
-  Returntype : integer count of basepairs
-
-=cut
 
 sub basepairs {
     my ($self) = @_;
@@ -552,21 +486,4 @@ sub _get_fastq_stats {
     $self->{'mean_quality'} = sprintf("%.1f",$mean_q);
 }
 
-
-# Internal function to populate pair-end information if it exists
-
-sub _load_pair_info {
-    my ($self) = @_;
-
-    my $sql = qq[select id_run, run_complete, cycles from npg_information where batch_id = ? and position = ? and id_run_pair = ?];
-    my $sth = $self->{_dbh}->prepare($sql);
-
-    $sth->execute($self->batch_id, $self->run_lane, $self->run_name);
-    my $data = $sth->fetchall_arrayref()->[0];	# only one row for each id
-    if ($data){
-	$self->pair_run_name($data->[0]);
-	$self->created($data->[1]);    # the 'lane' was finished when the
-					    # second end completed
-    }
-}
 1;

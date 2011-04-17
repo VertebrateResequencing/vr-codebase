@@ -26,8 +26,8 @@ jws@sanger.ac.uk
 
 =cut
 
-use MooseX::Types -declare => [qw( MysqlDateTime YesNoBool)];
-use MooseX::Types::Moose qw(Str Bool);
+use MooseX::Types -declare => [qw( MysqlDateTime MaybeMysqlDateTime YesNoBool)];
+use MooseX::Types::Moose qw(Str Bool Maybe);
 use DateTime;
 use DateTime::Format::MySQL;
 use strict;
@@ -36,6 +36,13 @@ use warnings;
 class_type MysqlDateTime, { class => 'DateTime' };
 
 coerce MysqlDateTime,
+    from Str,
+    via { DateTime::Format::MySQL->parse_datetime($_) };
+
+
+subtype MaybeMysqlDateTime, as Maybe[class_type('DateTime')];
+
+coerce MaybeMysqlDateTime,
     from Str,
     via { DateTime::Format::MySQL->parse_datetime($_) };
 

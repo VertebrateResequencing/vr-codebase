@@ -6,8 +6,8 @@ Sfind::Well_Library - Sequence Tracking for a library in a well not a library_tu
 =head1 SYNOPSIS
     my $lib = Sfind::Well_Library->new({dbh => $dbh, id => $library_id});
 
-    #get arrayref of requests on a library
-    my $reqs = $library->requests();
+    #get arrayref of sequencing requests on a library
+    my $reqs = $library->seq_requests();
 
     my $id = $library->id();
     my $name = $library->name();
@@ -68,7 +68,8 @@ jws@sanger.ac.uk
 
   Arg [1]    : None
   Example    : my $name = $lib->name();
-  Description: Retrieve library name
+  Description: Retrieve library name.  NB Well_Libraries aren't library_tubes
+                and the name provided might not be in sequencescape  
   Returntype : string
 
 
@@ -237,6 +238,9 @@ around BUILDARGS => sub {
 };
 
 
+###############################################################################
+# BUILDERS
+###############################################################################
 
 # this works differently for Well_Libraries
 # Get the pulldown mplex tubes that have the samplewell of this well.
