@@ -306,6 +306,8 @@ has 'bam_filenames'=> (
     lazy        => 1,
     builder     => '_get_bam_filenames',
 );
+
+
 # Populate the parameters from the database
 around BUILDARGS => sub {
     my $orig  = shift;
@@ -463,6 +465,8 @@ sub basepairs {
 # Internal function to populate basepairs, reads, and mean_quality from
 # fastqcheck
 # TODO change to get BAM stats instead if appropriate
+# 2011-04-17 - Might pull this entirely, and the associated stat methods.
+# No way of getting this for bam yet, and with MPSA going, this is obsolete.
 sub _get_fastq_stats {
     my ($self) = @_;
     my $fastq = $self->fastq;
