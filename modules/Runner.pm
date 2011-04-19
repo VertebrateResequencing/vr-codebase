@@ -82,7 +82,7 @@ package Runner;
 use strict;
 use warnings;
 use Carp;
-use Storable qw(nstore retrieve);
+use Storable qw(nstore retrieve dclone);
 use File::Temp;
 use Data::Dumper;
 
@@ -99,6 +99,7 @@ sub new
     $$self{usage} = 
         "Runner.pm arguments:\n" .
         "   +help               Summary of commands\n" .
+        "   +config <file>      Configuration file\n" .
         "   +local              Do not submit jobs to LSF, but run serially\n" .
         "   +loop <int>         Run in daemon mode with <int> sleep intervals\n" .
         "   +maxjobs <int>      Maximum number of simultaneously running jobs\n" .
@@ -116,6 +117,8 @@ sub new
     Args  : The system command line options are prefixed by "+" to distinguish from user-module options and must come first, before the user-module options 
                 +help
                     Summary of commands
+                +config <file>
+                    Optional configuration file for overriding defaults
                 +local
                     Do not submit jobs to LSF, but run serially
                 +loop <int>
@@ -141,6 +144,7 @@ sub run
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '+help' ) { $self->throw(); }
+        if ( $arg eq '+config' ) { $self->_read_config(shift(@ARGV)); next; }
         if ( $arg eq '+loop' ) { $$self{_loop}=shift(@ARGV); next; }
         if ( $arg eq '+maxjobs' ) { $$self{_maxjobs}=shift(@ARGV); next; }
         if ( $arg eq '+retries' ) { $$self{_nretries}=shift(@ARGV); next; }
@@ -180,6 +184,23 @@ sub run
     }
 }
 
+
+# Read the user config file, the values set there will override variables set in the user's clone of Runner.
+sub _read_config
+{
+    my ($self,$config) = @_;
+    my %x = do "$config";
+    while (my ($key,$value) = each %x)
+    {
+        if ( !ref($value) ) 
+        { 
+            $$self{$key} = $value;
+            next;
+        }
+        $$self{$key} = dclone($value);
+    }
+}
+
 =head2 set_limits
 
     About : Set time and memory requirements for computing farm
@@ -195,6 +216,21 @@ sub set_limits
 {
     my ($self,%args) = @_;
     $$self{_farm_options} = { %{$$self{_farm_options}}, %args };
+}
+
+
+=head2 get_limits
+
+    About : get limits set for computing farm
+    Usage : $self->get_limits(memory);
+    Args  : See set_limits
+                
+=cut
+
+sub get_limits
+{
+    my ($self,$arg) = @_;
+    return exists($$self{_farm_options}{$arg}) ? $$self{_farm_options}{$arg} : undef;
 }
 
 
