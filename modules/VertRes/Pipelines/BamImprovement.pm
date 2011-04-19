@@ -42,6 +42,13 @@ data => {
 # in the data section you can also supply the tmp_dir option to specify the
 # root that will be used to create tmp directories
 
+# The alias options may be set if there are alternative names for the same 
+# mapper in the db.
+slx_mapper_alias => ['bwa','bwa_aln'] (optional; alternative names 
+              that may have been used for the slx_mapper specified)
+'454_mapper_alias' => ['ssaha', 'ssaha_1.3'], (optional; alternative names 
+              that may have been used for the 454_mapper specified)
+
 # After recalibration, to make a BAM file with just on target (or whatever
 # parts of the genome you like), use this in the data section:
 # extract_intervals => {'intervals_file' => 'filename'}
@@ -157,6 +164,8 @@ our $actions = [ { name     => 'realign',
 
 our %options = (slx_mapper => 'bwa',
                 '454_mapper' => 'ssaha',
+                slx_mapper_alias => [],
+                '454_mapper_alias' => [],
                 indel_sites => '',
                 indel_intervals => '',
                 snp_sites => '',
@@ -280,8 +289,6 @@ sub new {
     # get a list of bams in this lane we want to improve
     my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
     $self->{assembly_name} || $self->throw("no assembly_name!");
-    $self->{slx_mapper_alias} = [$self->{slx_mapper}] unless (defined $self->{slx_mapper_alias});
-    $self->{'454_mapper_alias'} = [$self->{'454_mapper'}] unless (defined $self->{'454_mapper_alias'});
     my @bams = $hu->lane_bams($lane_path, vrtrack => $self->{vrlane}->vrtrack,
                                           assembly_name => $self->{assembly_name},
                                           slx_mapper => $self->{slx_mapper},

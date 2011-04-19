@@ -21,7 +21,8 @@ use VRTrack::History;
 
 # get user input
 my ($help, $database, $all_samples, @ignore_platforms, @samples, $root, $qc,
-    $improved, $date, $mapper_slx, $mapper_454, $assembly, $project_regex);
+    $improved, $date, $mapper_slx, $mapper_454, @mapper_alias_slx, @mapper_alias_454, 
+    $assembly, $project_regex);
 my $spinner = 0;
 GetOptions('db=s'              => \$database,
            'all_samples'       => \$all_samples,
@@ -29,6 +30,8 @@ GetOptions('db=s'              => \$database,
            'root=s'            => \$root,
            'slx_mapper=s'      => \$mapper_slx,
            '454_mapper=s'      => \$mapper_454,
+           'slx_mapper_alias:s{1,}'      => \@mapper_alias_slx,
+           '454_mapper_alias:s{1,}'      => \@mapper_alias_454,
            'assembly_name=s'   => \$assembly,
            'ignore_platform=s' => \@ignore_platforms,
            'project_regex=s'   => \$project_regex,
@@ -58,6 +61,9 @@ Required:
         --assembly_name    <assembly name> eg. NCBI37
 
 Optional:
+        --slx_mapper_alias alternate mapper names eg. bwa_aln (can supply more 
+                                           than one - separate by space)
+        --454_mapper_alias as with slx_mapper_alias
         --improved         choose bams that have been run through the
                            BamImprovement pipeline
         --qc               consider only lanes that are set as qc passed
@@ -76,7 +82,6 @@ if ($all_samples && @samples) {
     warn "Both --all_samples and --samples were set; ignoring the --all_samples request\n";
     $all_samples = 0;
 }
-
 
 # travel back in time?
 my $hist = VRTrack::History->new();
@@ -148,6 +153,8 @@ while (my ($sample, $lanes) = each %lanes_by_sample) {
                                   vrtrack => $vrtrack,
                                   slx_mapper => $mapper_slx,
                                   '454_mapper' => $mapper_454,
+                                  slx_mapper_alias => [@mapper_alias_slx],
+                                  '454_mapper_alias' => [@mapper_alias_454],
                                   assembly_name => $assembly);
         };
         if ( $@ ) {
