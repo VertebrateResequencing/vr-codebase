@@ -81,7 +81,23 @@ sub _bsub_opts {
 
 sub wrapper {
     my $self = shift;
-    return VertRes::Wrapper::maq->new(verbose => $self->verbose);
+    my $exe = $self->{exe} || 'maq';
+    return VertRes::Wrapper::maq->new(verbose => $self->verbose, exe => $exe);
+}
+
+=head2 name
+
+ Title   : name
+ Usage   : my $name = $obj->name();
+ Function: Returns the program name.
+ Returns : string representing name of the program 
+ Args    : n/a
+
+=cut
+
+sub name {
+    my $self = shift;
+    return 'maq';
 }
 
 =head2 split_fastq

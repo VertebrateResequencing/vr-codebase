@@ -41,6 +41,13 @@ data => {
 # Reference option can be replaced with male_reference and female_reference
 # if you have 2 different references.
 
+# In the data section, there is an option to explicitly set the executable 
+# for the mappers. Will be the first occurrence in your path. Default to 
+# bwa and ssaha2 for the slx and 454 mappers respectively.
+
+slx_mapper_exe => 'bwa-0.5.5' (optional - defaults to slx_mapper)
+'454_mapper_exe' => 'ssaha2', (optional - defaults to 454_mapper)
+
 # By default it will map all unmapped lanes in a random order. You can limit
 # it to only mapping certain lanes by suppling the limits key with a hash ref
 # as a value. The hash ref should contain options understood by
@@ -185,6 +192,9 @@ our $split_dir_name = 'split';
            '454_mapper' => 'ssaha', (default ssaha; the mapper to use for
                                      mapping 454 lanes)
            
+           slx_mapper_exe => 'bwa-0.5.5' (optional - defaults to slx_mapper)
+           '454_mapper_exe' => 'ssaha2', (optional - defaults to 454_mapper)
+           
            reference => '/path/to/ref.fa' (no default, either this or the
                         male_reference and female_reference pair of args must be
                         supplied)
@@ -204,13 +214,24 @@ sub new {
     # lane we're in, which lets us choose which mapper module to use.
     my $lane = $self->{lane} || $self->throw("lane readgroup not supplied, can't continue");
     my $lane_path = $self->{lane_path} || $self->throw("lane path not supplied, can't continue");
+    
+    $self->{slx_mapper_exe} ||= $self->{slx_mapper};
+    $self->{'454_mapper_exe'} ||= $self->{'454_mapper'};
+    
     my $mapping_util = VertRes::Utils::Mapping->new(slx_mapper => $self->{slx_mapper},
-                                                    '454_mapper' => $self->{'454_mapper'});
+                                                    '454_mapper' => $self->{'454_mapper'},
+                                                    slx_mapper_exe => $self->{slx_mapper_exe},
+                                                    '454_mapper_exe' => $self->{'454_mapper_exe'});
     my $mapper_class = $mapping_util->lane_to_module($lane_path);
     $mapper_class || $self->throw("Lane '$lane_path' was for an unsupported technology");
+    my $mapper_exe = $mapping_util->lane_to_exe($lane_path);
+    $mapper_exe || $self->throw("Lane '$lane_path' was for an unsupported technology");
     eval "require $mapper_class;";
     $self->{mapper_class} = $mapper_class;
-    $self->{mapper_obj} = $mapper_class->new();
+    $self->{mapper_obj} = $mapper_class->new(exe => $mapper_exe);
+    
+    my $mapper_name = $self->{mapper_obj}->name;
+    $self->throw('Mapper class and exe do not match') unless ($self->{mapper_obj}->exe =~ /$mapper_name/);
     
     # if we've been supplied a list of lane paths to work with, instead of
     # getting the lanes from the db, we won't have a vrlane object; make one
@@ -268,7 +289,7 @@ sub new {
             my $assembly = $possible->assembly() || next;
             $assembly->name eq $self->{assembly_name} || next;
             my $mapper = $possible->mapper() || next;
-            $mapper->name eq $self->{mapper_obj}->exe || next;
+            $mapper->name eq $self->{mapper_obj}->name || next;
             $mapper->version eq $self->{mapper_obj}->version || next;
             
             $mapping = $possible;
@@ -286,9 +307,9 @@ sub new {
         }
         
         # associate with a mapper, creating that if necessary
-        my $mapper = $mapping->mapper($self->{mapper_obj}->exe, $self->{mapper_obj}->version);
+        my $mapper = $mapping->mapper($self->{mapper_obj}->name, $self->{mapper_obj}->version);
         if (!$mapper) {
-            $mapper = $mapping->add_mapper($self->{mapper_obj}->exe, $self->{mapper_obj}->version);
+            $mapper = $mapping->add_mapper($self->{mapper_obj}->name, $self->{mapper_obj}->version);
         }
         
         $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
@@ -494,6 +515,7 @@ sub split {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $mapper_class = $self->{mapper_class};
+    my $mapper_exe = $self->{mapper_obj}->exe;
     my $verbose = $self->verbose;
     my $chunk_size = $self->{chunk_size} || 0; # if 0, will get set to mapper's default size
     
@@ -514,7 +536,7 @@ use strict;
 use $mapper_class;
 use VertRes::IO;
 
-my \$mapper = $mapper_class->new(verbose => $verbose);
+my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe]);
 
 # split
 my \$splits = \$mapper->split_fastq(@these_read_args,
@@ -694,6 +716,7 @@ sub map {
     my $insert_size_for_samheader = $info{insert_size} || 0;
     
     my $mapper_class = $self->{mapper_class};
+    my $mapper_exe = $self->{mapper_obj}->exe;
     my $verbose = $self->verbose;
     
     # run mapping of each split in LSF calls to temp scripts;
@@ -737,7 +760,7 @@ use strict;
 use $mapper_class;
 use VertRes::Utils::Sam;
 
-my \$mapper = $mapper_class->new(verbose => $verbose);
+my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe]);
 
 # mapping won't get repeated if mapping works the first time but subsequent
 # steps fail
@@ -768,7 +791,7 @@ close(\$samfh);
                                   ref_fa => '$ref_fa',
                                   ref_dict => '$ref_fa.dict',
                                   ref_name => '$self->{assembly_name}',
-                                  program => \$mapper->exe,
+                                  program => \$mapper->name,
                                   program_version => \$mapper->version);
 \$sam_util->throw("Failed to add sam header!") unless \$ok;
 
