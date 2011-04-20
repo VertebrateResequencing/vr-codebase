@@ -850,6 +850,7 @@ sub get_mapping_jobs_from_vrtrack {
         }
         next if $vrlane->is_withdrawn;
         next unless $vrlane->is_processed('import');
+        next if $vrlane->is_processed('swapped');
         next if $vrlane->is_processed('mapped');
         my $lane_name = $vrlane->name;
         if ($limit_by_lane_name) {
