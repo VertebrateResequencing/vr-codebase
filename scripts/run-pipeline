@@ -1052,6 +1052,7 @@ sub get_hierarchy_update_jobs_from_vrtrack {
         
         my $path = $vrtrack->hierarchy_path_of_lane_hname($lname);
         next if $path =~ /\/SOLID\//;
+        next if (exists $$config_data{skip_exomes} && $$config_data{skip_exomes} && $path =~ /\_exome\//);
         
         $lanes_to_run{$path}{is_paired} = $lane->is_paired();
         $lanes_to_run{$path}{vrlane}    = $lane;

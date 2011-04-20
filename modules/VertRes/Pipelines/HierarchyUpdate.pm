@@ -26,6 +26,10 @@ db  => {
 # (the ftp_limit option is the maximum number of lanes worth of fastqs to
 #  download at once)
 
+# set the skip_exomes option to skip projects with exome in their hierarchy 
+# name.
+skip_exomes => 1,
+
 # run the pipeline:
 run-pipeline -c pipeline.config -s 1
 
