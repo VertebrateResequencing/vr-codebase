@@ -235,10 +235,6 @@ sub fix_swaps {
         # old_path to lane_path. We can't just move the contents of old_path
         # to inside lane_path, because old_path may be a symlink to contents
         # on an archival disc, and must remain there.
-        my $ok = $self->{fsu}->copy($lane_path, $old_path);
-        unless ($ok) {
-            $self->throw("Could not copy contents of $lane_path to $old_path\n");
-        }
         
         my $cwd = cwd();
         chdir(File::Spec->tmpdir) if $cwd eq $lane_path;
