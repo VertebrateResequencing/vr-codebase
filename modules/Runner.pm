@@ -105,6 +105,7 @@ sub new
         "   +maxjobs <int>      Maximum number of simultaneously running jobs\n" .
         "   +retries <int>      Maximum number of retries [$$self{_nretries}]\n" .
         "   +run <file>         Run the freezed object created by spawn\n" .
+        "   +sampleconf         Print a working configuration example\n" .
         "   +show <file>        Print the content of the freezed object created by spawn\n" .
         "   +verbose            Print debugging messages\n" .
         "\n";
@@ -129,6 +130,8 @@ sub new
                     Maximum number of retries
                 +run <file>
                     Run the freezed object created by spawn
+                +sampleconf
+                    Print a working config file example
                 +show <file>
                      Print the content of the freezed object created by spawn
                 +verbose   
@@ -145,6 +148,7 @@ sub run
     {
         if ( $arg eq '+help' ) { $self->throw(); }
         if ( $arg eq '+config' ) { $self->_read_config(shift(@ARGV)); next; }
+        if ( $arg eq '+sampleconf' ) { $self->_sample_config(); next; }
         if ( $arg eq '+loop' ) { $$self{_loop}=shift(@ARGV); next; }
         if ( $arg eq '+maxjobs' ) { $$self{_maxjobs}=shift(@ARGV); next; }
         if ( $arg eq '+retries' ) { $$self{_nretries}=shift(@ARGV); next; }
@@ -186,9 +190,16 @@ sub run
 
 
 # Read the user config file, the values set there will override variables set in the user's clone of Runner.
+# Note that developers could be easily forced to document *all* options if desired.
 sub _read_config
 {
     my ($self,$config) = @_;
+
+    if ( !exists($$self{_sampleconf}) or !length($$self{_sampleconf}) )
+    {
+        $self->throw("No config file parameters are accepted by this script.");
+    }
+
     my %x = do "$config";
     while (my ($key,$value) = each %x)
     {
@@ -199,6 +210,22 @@ sub _read_config
         }
         $$self{$key} = dclone($value);
     }
+}
+
+sub _sample_config
+{
+    my ($self) = @_;
+    if ( !exists($$self{_sampleconf}) )
+    {
+        $self->throw("Sample config not available, the '_sampleconf' key not set. This should be fixed!\n");
+    }
+    if ( !length($$self{_sampleconf}) )
+    {
+        print "# No config file parameters accepted by this script.\n";
+        $self->all_done;
+    }
+    print $$self{_sampleconf};
+    $self->all_done;
 }
 
 =head2 set_limits
