@@ -456,7 +456,7 @@ sub apply_local_filters
 
     if ( exists($$filters{RefN}) )
     {
-        $apply{RefN} = $$line[3] eq 'N' ? 1 : 0;
+        $apply{RefN} = ($$line[3]=~/N/) ? 1 : 0;
     }
     if ( exists($$filters{Qual}) && $$line[5] ne '.' )
     {
