@@ -103,7 +103,7 @@ sub new
         "   +local              Do not submit jobs to LSF, but run serially\n" .
         "   +loop <int>         Run in daemon mode with <int> sleep intervals\n" .
         "   +maxjobs <int>      Maximum number of simultaneously running jobs\n" .
-        "   +retries <int>      Maximum number of retries\n" .
+        "   +retries <int>      Maximum number of retries [$$self{_nretries}]\n" .
         "   +run <file>         Run the freezed object created by spawn\n" .
         "   +show <file>        Print the content of the freezed object created by spawn\n" .
         "   +verbose            Print debugging messages\n" .
@@ -313,7 +313,8 @@ sub _spawn_to_farm
         $nfailures =~ s/\s+.+$//;
         if ( $nfailures > $$self{_nretries} )
         {   
-            $self->throw("The job failed repeatedly: $prefix.[oer], $$self{_store}{call}(" .join(',',@{$$self{_store}{args}}). ")\n(Remove $prefix.jid to clean the status.)\n");
+            $self->throw("The job failed repeatedly: $prefix.[oer], $$self{_store}{call}(" .join(',',@{$$self{_store}{args}}). ")"
+                ."\n(Remove $prefix.jid to clean the status or increase +retries.)\n");
         }
         else
         {
