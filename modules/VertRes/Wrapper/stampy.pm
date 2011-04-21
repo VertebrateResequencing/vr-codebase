@@ -42,7 +42,9 @@ use base qw(VertRes::Wrapper::MapperI);
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => 'stampy');
+    my $self = $class->SUPER::new(exe => 'stampy', @args);
+    
+    $self->{orig_exe} = $self->exe;
     
     return $self;
 }
@@ -60,7 +62,7 @@ sub new {
 sub version {
     my $self = shift;
     
-    my $exe = $self->exe;
+    my $exe = $self->{orig_exe};
     open(my $fh, "$exe |");
     my $line = <$fh>;
     while (<$fh>) {

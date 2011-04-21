@@ -78,7 +78,9 @@ use base qw(VertRes::Wrapper::WrapperI);
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => 'bwa');
+    my $self = $class->SUPER::new(exe => 'bwa', @args);
+    
+    $self->{orig_exe} = $self->exe;
     
     return $self;
 }
@@ -96,7 +98,7 @@ sub new {
 sub version {
     my $self = shift;
     
-    my $exe = $self->exe;
+    my $exe = $self->{orig_exe};
     open(my $fh, "$exe 2>&1 |") || $self->throw("Could not start $exe");
     my $version = 0;
     while (<$fh>) {
@@ -125,7 +127,7 @@ sub version {
 sub index {
     my ($self, $in_fa, %opts) = @_;
     
-    $self->exe('bwa index');
+    $self->exe($self->{orig_exe}.' index');
     
     $self->switches([qw(c)]);
     $self->params([qw(a p)]);
@@ -152,7 +154,7 @@ sub index {
 sub aln {
     my ($self, $ref, $fastq, $out_sai, %opts) = @_;
     
-    $self->exe('bwa aln');
+    $self->exe($self->{orig_exe}.' aln');
     
     $self->switches([qw(c L N)]);
     $self->params([qw(n o e i d l k m t M O E R q)]);
@@ -222,7 +224,7 @@ sub aln {
 sub sampe {
     my ($self, $ref, $sai1, $sai2, $fq1, $fq2, $out_sam, %opts) = @_;
     
-    $self->exe('bwa sampe');
+    $self->exe($self->{orig_exe}.' sampe');
     
     $self->switches([qw(s)]);
     $self->params([qw(a o)]);
@@ -249,7 +251,7 @@ sub sampe {
 sub samse {
     my ($self, $ref, $sai1, $fq1, $out_sam, %opts) = @_;
     
-    $self->exe('bwa samse');
+    $self->exe($self->{orig_exe}.' samse');
     
     $self->switches([]);
     $self->params([qw(n)]);

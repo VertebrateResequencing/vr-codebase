@@ -850,6 +850,7 @@ sub get_mapping_jobs_from_vrtrack {
         }
         next if $vrlane->is_withdrawn;
         next unless $vrlane->is_processed('import');
+        next if $vrlane->is_processed('swapped');
         next if $vrlane->is_processed('mapped');
         my $lane_name = $vrlane->name;
         if ($limit_by_lane_name) {
@@ -902,7 +903,7 @@ sub get_improvement_jobs_from_vrtrack {
     
     my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
     
-    my %filter  = ( mapped => 1, improved => 0 );
+    my %filter  = ( mapped => 1, improved => 0, swapped => 0 );
     my @lanes;
     if ( exists $config_data->{qc} && $config_data->{qc} ) { 
         $filter{qc} = $config_data->{qc}; 
@@ -1052,6 +1053,7 @@ sub get_hierarchy_update_jobs_from_vrtrack {
         
         my $path = $vrtrack->hierarchy_path_of_lane_hname($lname);
         next if $path =~ /\/SOLID\//;
+        next if (exists $$config_data{skip_exomes} && $$config_data{skip_exomes} && $path =~ /\_exome\//);
         
         $lanes_to_run{$path}{is_paired} = $lane->is_paired();
         $lanes_to_run{$path}{vrlane}    = $lane;

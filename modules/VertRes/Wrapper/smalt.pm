@@ -49,7 +49,8 @@ use base qw(VertRes::Wrapper::MapperI);
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => 'smalt');
+    my $self = $class->SUPER::new(exe => 'smalt', @args);
+    $self->{orig_exe} = $self->exe;
     
     return $self;
 }
@@ -67,7 +68,7 @@ sub new {
 sub version {
     my $self = shift;
     
-    my $exe = $self->exe;
+    my $exe = $self->{orig_exe};
     open(my $fh, "$exe version 2>&1 |") || $self->throw("Could not start $exe");
     my $version = 0;
     while (<$fh>) {

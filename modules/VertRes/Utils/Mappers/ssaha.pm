@@ -83,8 +83,25 @@ sub _bsub_opts {
 
 sub wrapper {
     my $self = shift;
+    my $exe = $self->{exe} || 'ssaha2';
     return VertRes::Wrapper::ssaha->new(verbose => $self->verbose,
-                                        quiet => $self->verbose > 0 ? 0 : 1);
+                                        quiet => $self->verbose > 0 ? 0 : 1,
+                                        exe => $exe);
+}
+
+=head2 name
+
+ Title   : name
+ Usage   : my $name = $obj->name();
+ Function: Returns the program name.
+ Returns : string representing name of the program 
+ Args    : n/a
+
+=cut
+
+sub name {
+    my $self = shift;
+    return 'ssaha2';
 }
 
 =head2 split_fastq

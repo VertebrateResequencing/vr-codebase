@@ -1280,6 +1280,12 @@ sub lane_bams {
     my ($self, $lane_path, %args) = @_;
     my $lane_name = basename($lane_path);
     
+    my ($mapper_slx, $mapper_454) = ($args{slx_mapper}, $args{'454_mapper'});
+    my $mapper_alias_slx = $args{slx_mapper_alias} || [ $mapper_slx ];
+    my $mapper_alias_454 = $args{'454_mapper_alias'} || [ $mapper_454 ];
+    push @{$mapper_alias_slx}, $mapper_slx unless grep {/^$mapper_slx$/} @{$mapper_alias_slx};
+    push @{$mapper_alias_454}, $mapper_454 unless grep {/^$mapper_454$/} @{$mapper_alias_454};
+    
     # first get the mapstats object so we'll know the bam prefix
     my $vrlane = VRTrack::Lane->new_by_hierarchy_name($args{vrtrack}, $lane_name) || $self->throw("Unable to get lane $lane_name from db");
     my %objs = $self->lane_hierarchy_objects($vrlane);
@@ -1288,15 +1294,15 @@ sub lane_bams {
     my $mapstats;
     if ($mappings && @{$mappings}) {
         # find the most recent mapstats that corresponds to our mapping
-        my $mapping_util = VertRes::Utils::Mapping->new(slx_mapper => $args{slx_mapper},
-                                                        '454_mapper' => $args{'454_mapper'});
+        my $mapping_util = VertRes::Utils::Mapping->new(slx_mapper => $mapper_slx,
+                                                        '454_mapper' => $mapper_454);
         my $mapper_class = $mapping_util->lane_to_module($lane_path);
         $mapper_class || $self->throw("Lane '$lane_path' was for an unsupported technology");
         $self->{mapper_class} = $mapper_class;
         eval "require $mapper_class;";
         my $mapper_obj = $mapper_class->new;
         $self->{mapper_obj} = $mapper_obj;
-        my $mapper = $mapper_obj->exe;
+        my $mapper = $mapper_obj->name;
         $self->throw("no mapper from $mapper_class") unless $mapper;
         
         my $highest_id = 0;
@@ -1308,20 +1314,16 @@ sub lane_bams {
             $assembly->name eq $args{assembly_name} || next;
             my $this_mapper = $possible->mapper() || next;
             my $this_mapper_name = $this_mapper->name || next;
-
-            if (exists $args{slx_mapper_alias}) {
-                foreach my $mapper_alt (@{$args{slx_mapper_alias}}) {
-                    next unless $mapper_alt eq $this_mapper_name;
-                    $this_mapper_name = $args{slx_mapper};
-                    last;
-                }
+            
+            foreach my $mapper_alt (@{$mapper_alias_slx}) {
+                next unless $mapper_alt eq $this_mapper_name;
+                $this_mapper_name = $mapper_slx;
+                last;
             }
-            if (exists $args{'454_mapper_alias'}) {
-                foreach my $mapper_alt (@{$args{'454_mapper_alias'}}) {
-                    next unless $mapper_alt eq $this_mapper_name;
-                    $this_mapper_name = $args{'454_mapper'};
-                    last;
-                }
+            foreach my $mapper_alt (@{$mapper_alias_454}) {
+                next unless $mapper_alt eq $this_mapper_name;
+                $this_mapper_name = $mapper_454;
+                last;
             }
             $this_mapper_name eq $mapper || next;
             if ($pid > $highest_id) {
@@ -1330,7 +1332,7 @@ sub lane_bams {
             }
         }
     }
-    $mapstats || $self->throw("Could not get a mapstats for lane $lane_name");
+    $mapstats || $self->throw("Could not get a mapstats for lane $lane_name. Perhaps try setting a mapper alias");
     $self->{mapstats_obj} = $mapstats;
     my $mapstats_prefix = $mapstats->id;
     
