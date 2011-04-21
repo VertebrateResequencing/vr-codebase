@@ -21,6 +21,7 @@
 #define IS_PAIRED(bam) ((bam)->core.flag&BAM_FPAIRED && !((bam)->core.flag&BAM_FUNMAP) && !((bam)->core.flag&BAM_FMUNMAP))
 #define IS_UNMAPPED(bam) ((bam)->core.flag&BAM_FUNMAP)
 #define IS_REVERSE(bam) ((bam)->core.flag&BAM_FREVERSE)
+#define IS_DUP(bam) ((bam)->core.flag&BAM_FDUP)
 
 typedef struct 
 {
@@ -88,8 +89,10 @@ typedef struct
 
     // Summary numbers
     uint64_t total_len;
+    uint64_t total_len_dup;
     uint64_t nreads_1st;
     uint64_t nreads_2nd;
+    uint64_t nreads_dup;
     uint64_t nreads_unmapped;
     uint64_t nreads_unpaired;
     uint64_t nreads_paired;
@@ -323,6 +326,11 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
     }
 
     stats->total_len += seq_len;
+    if ( IS_DUP(bam_line) )
+    {
+        stats->total_len_dup += seq_len;
+        stats->nreads_dup++;
+    }
 }
 
 // Sort by GC and depth
@@ -374,7 +382,7 @@ void output_stats(stats_t *stats)
             break;
         }
     }
-    avg_isize /= nisize;
+    avg_isize /= nisize ? nisize : 1;
     for (isize=1; isize<ibulk; isize++)
         sd_isize += stats->isize[isize] * (isize-avg_isize)*(isize-avg_isize) / nisize;
     sd_isize = sqrt(sd_isize);
@@ -391,13 +399,16 @@ void output_stats(stats_t *stats)
     printf("SN\treads unmapped:\t%ld\n", stats->nreads_unmapped);
     printf("SN\treads unpaired:\t%ld\n", stats->nreads_unpaired);
     printf("SN\treads paired:\t%ld\n", stats->nreads_paired);
+    printf("SN\treads duplicated:\t%ld\n", stats->nreads_dup);
     printf("SN\ttotal length:\t%ld\n", stats->total_len);
     printf("SN\tbases mapped:\t%ld\n", stats->nbases_mapped);
     printf("SN\tbases mapped (cigar):\t%ld\n", stats->nbases_mapped_cigar);
     printf("SN\tbases trimmed:\t%ld\n", stats->nbases_trimmed);
+    printf("SN\tbases duplicated:\t%ld\n", stats->total_len_dup);
     printf("SN\tmismatches:\t%ld\n", stats->nmismatches);
     printf("SN\terror rate:\t%e\n", (float)stats->nmismatches/stats->nbases_mapped_cigar);
-    printf("SN\taverage length:\t%ld\n", (stats->nreads_1st+stats->nreads_2nd)?stats->total_len/(stats->nreads_1st+stats->nreads_2nd):0);
+    float avg_read_length = (stats->nreads_1st+stats->nreads_2nd)?stats->total_len/(stats->nreads_1st+stats->nreads_2nd):0;
+    printf("SN\taverage length:\t%.0f\n", avg_read_length);
     printf("SN\tmaximum length:\t%d\n", stats->max_len);
     printf("SN\taverage quality:\t%.1f\n", stats->total_len?stats->sum_qual/stats->total_len:0);
     printf("SN\tinsert size average:\t%.1f\n", avg_isize);
@@ -469,12 +480,12 @@ void output_stats(stats_t *stats)
             nbins++;
             itmp++;
         }
-        printf("GCD\t%.1f\t%.3f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\n", gc, (igcd+nbins+1)*100./(stats->igcd+1),
-                gcd_percentile(&(stats->gcd[igcd]),nbins,10), 
-                gcd_percentile(&(stats->gcd[igcd]),nbins,25), 
-                gcd_percentile(&(stats->gcd[igcd]),nbins,50), 
-                gcd_percentile(&(stats->gcd[igcd]),nbins,75), 
-                gcd_percentile(&(stats->gcd[igcd]),nbins,90) 
+        printf("GCD\t%.1f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", gc, (igcd+nbins+1)*100./(stats->igcd+1),
+                gcd_percentile(&(stats->gcd[igcd]),nbins,10) *avg_read_length/stats->gcd_bin_size,
+                gcd_percentile(&(stats->gcd[igcd]),nbins,25) *avg_read_length/stats->gcd_bin_size, 
+                gcd_percentile(&(stats->gcd[igcd]),nbins,50) *avg_read_length/stats->gcd_bin_size, 
+                gcd_percentile(&(stats->gcd[igcd]),nbins,75) *avg_read_length/stats->gcd_bin_size, 
+                gcd_percentile(&(stats->gcd[igcd]),nbins,90) *avg_read_length/stats->gcd_bin_size 
               );
         igcd += nbins;
     }
@@ -491,6 +502,7 @@ void error(const char *format, ...)
         printf("    -m, --most-inserts <float>      Report only the main part of inserts [0.99]\n");
         printf("    -q, --trim-quality <int>        The BWA trimming parameter [0]\n");
         printf("    -r, --ref-seq <file>            Reference sequence (required for GC-depth calculation).\n");
+        printf("    -s, --sam                       Input is SAM\n");
         printf("\n");
     }
     else
@@ -518,8 +530,10 @@ int main(int argc, char *argv[])
     stats.max_len   = 30;
     stats.max_qual  = 40;
     stats.total_len = 0;
+    stats.total_len_dup = 0;
     stats.nreads_1st = 0;
     stats.nreads_2nd = 0;
+    stats.nreads_dup = 0;
     stats.nreads_unmapped = 0;
     stats.nreads_unpaired = 0;
     stats.nreads_paired   = 0;
@@ -542,6 +556,11 @@ int main(int argc, char *argv[])
     // Parse command line arguments
     for (i=1; i<argc; i++)
     {
+        if ( !strcmp(argv[i],"-s") || !strcmp(argv[i],"--sam") )
+        {
+            strcpy(in_mode, "r");
+            continue;
+        }
         if ( !strcmp(argv[i],"-h") || !strcmp(argv[i],"--help") )
             error(NULL);
         if ( !strcmp(argv[i],"-r") || !strcmp(argv[i],"--ref-seq") )
