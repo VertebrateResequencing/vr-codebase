@@ -32,7 +32,7 @@ bcftools => '/nfs/users/nfs_p/pd3/cvs/samtools/bcftools/bcftools view -p 0.99',
 
 bams    => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
 fa_ref  => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
-mysql   => 'mysql -sN -uXXX -pXXX -hmcs4a -P 3306 g1k_meta',   # to get the sex
+mysql   => 'mysql -sN -uXXX -pXXX -hmcs4a -P 3306 g1k_meta',   # To get the sex. Optional with assumed_sex below.
 
 ploidy  =>
 {
@@ -50,7 +50,7 @@ ploidy  =>
     ],
 },
 
-chroms => [ qw(X) ],
+chroms => [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y) ],
 pops   =>
 {
     # With no populations, at least 'pooled' must be given
@@ -63,10 +63,12 @@ pops   =>
 
 },
 
-chunk_size      => 1_000_000,
-debug_chunks    => 0,
-keep_bcfs       => 1,
-chunks_overlap  => 0,
+chunk_size        => 1_000_000,
+debug_chunks      => 0,
+keep_bcfs         => 1,
+chunks_overlap    => 0,
+whole_genome_bams => 0,         # Set to 1 if BAMs are not splitted by chromosome
+assumed_sex       => undef,     # Set to 'F' for females, 'M' males and undef if the DB should be used.
 
 ];
 
@@ -91,7 +93,7 @@ sub parse_args
 
     # This lengthy code checks if mandatory parameters are present and fills the defaults issuing warnings when doing so.
     if ( !exists($$self{bams}) ) { $self->throw("The 'bams' config key not present\n"); }
-    if ( !exists($$self{mysql}) ) { $self->throw("The 'mysql' config key not present\n"); }
+    if ( !exists($$self{mysql}) && !$$self{assumed_sex} ) { $self->throw("Neither 'mysql' nor 'assumed_sex' config keys present\n"); }
     if ( !exists($$self{chroms}) ) 
     { 
         $$self{chroms} = [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y) ];
@@ -276,11 +278,12 @@ sub open_file
 sub population_group_bams_list
 {
     my ($self,$outfile,$bam_list,$chr,$pops) = @_;
+
     open(my $in,'<',$bam_list) or $self->throw("$bam_list: $!");
     my $out = $self->open_file("$outfile.part");
     while (my $line=<$in>)
     {
-        if ( !($line=~/chrom$chr.bam/) ) { next; }
+        if ( !($line=~/chrom$chr.bam/) && !$$self{whole_genome_bams} ) { next; }
         for my $pop (@$pops)
         {
             if ( !($line=~/$pop/) ) { next; }
@@ -290,6 +293,15 @@ sub population_group_bams_list
     }
     close($out);
     close($in);
+
+    if ( !-s "$outfile.part" ) 
+    { 
+        if ( !$$self{whole_genome_bams} ) 
+        {
+            $self->throw("The BAMs not named as chrom$chr.bam, please set whole_genome_bams=>1 in your config file.\n");
+        }
+        $self->throw("No matching BAMs found: $chr; ",join(',',@$pops),"\n");
+    }
 
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
@@ -319,10 +331,17 @@ sub sample_list
     open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
     for my $sample (sort keys %samples)
     {
-        my @sex = $self->cmd(qq[$$self{mysql} -e 'SELECT sex FROM individual WHERE name="$sample"']);
-        if ( !@sex ) { $self->throw("No info for $sample?\n"); }
-        if ( !($sex[0]=~/^[MF]$/) ) { $self->throw("Neither male nor female? [$sex[0]]?"); }
-        print $out "$sample\t$sex[0]";
+        my $sex;
+        if ( !$$self{mysql} ) { $sex = $$self{assumed_sex}; }
+        else
+        {
+            my @sex = $self->cmd(qq[$$self{mysql} -e 'SELECT sex FROM individual WHERE name="$sample"']);
+            if ( !@sex ) { $self->throw("No info for $sample?\n"); }
+            $sex = $sex[0];
+            chomp($sex);
+        }
+        if ( !($sex=~/^[MF]$/) ) { $self->throw("Neither male nor female? Expected 'F' or 'M', got '$sex'."); }
+        print $out "$sample\t$sex\n";
     }
     close($out);
 
