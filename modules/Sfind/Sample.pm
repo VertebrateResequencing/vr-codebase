@@ -305,7 +305,7 @@ sub _get_library_requests {
  
 sub _get_library_request_ids {
     my ($self) = @_;
-    my $sql = qq[select internal_id from requests where (request_type like '%library creation' or request_type like '%library preparation') and source_asset_sample_internal_id=? and study_internal_id=? and is_current=1];
+    my $sql = qq[select internal_id from current_requests where (request_type like '%library creation' or request_type like '%library preparation') and source_asset_sample_internal_id=? and study_internal_id=? ];
     my @library_requests;
     my $sth = $self->{_dbh}->prepare($sql);
     $sth->execute($self->id, $self->study_id);

@@ -165,7 +165,7 @@ around BUILDARGS => sub {
     my $argref = $class->$orig(@_);
 
     die "Need to call with a library_request id" unless $argref->{id};
-    my $sql = qq[select * from requests where internal_id = ? and is_current=1];
+    my $sql = qq[select * from current_requests where internal_id = ?];
     my $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
     if ($id_ref){
         foreach my $field(keys %$id_ref){
@@ -211,7 +211,7 @@ sub _get_library_ids {
     my @lib_ids;
 
     if ($self->type eq "Pulldown Multiplex Library Preparation"){
-        my $sql= qq[select descendant_internal_id from asset_links, requests where requests.source_asset_internal_id = asset_links.ancestor_internal_id and descendant_type="wells" and requests.internal_id=? and requests.is_current=1 and asset_links.is_current=1];
+        my $sql= qq[select descendant_internal_id from asset_links, current_requests where current_requests.source_asset_internal_id = asset_links.ancestor_internal_id and descendant_type="wells" and current_requests.internal_id=? and asset_links.is_current=1];
         my $sth = $self->{_dbh}->prepare($sql);
 
         $sth->execute($self->id);
@@ -226,7 +226,7 @@ sub _get_library_ids {
         # for a non-multiplex request, or the indexed library tube that will be
         # pooled for a multiplexed request
 
-        my $sql= qq[select target_asset_internal_id, target_asset_type from requests where internal_id=? and is_current=1];
+        my $sql= qq[select target_asset_internal_id, target_asset_type from current_requests where internal_id=? ];
           
         my $sth = $self->{_dbh}->prepare($sql);
 

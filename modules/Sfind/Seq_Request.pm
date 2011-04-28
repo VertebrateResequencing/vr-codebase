@@ -195,7 +195,7 @@ around BUILDARGS => sub {
     my $argref = $class->$orig(@_);
 
     die "Need to call with a seq_request id" unless $argref->{id};
-    my $sql = qq[select * from requests where internal_id = ? and is_current=1];
+    my $sql = qq[select * from current_requests where internal_id = ?];
     my $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
     if ($id_ref){
         foreach my $field(keys %$id_ref){

@@ -302,7 +302,7 @@ around BUILDARGS => sub {
     my $argref = $class->$orig(@_);
 
     die "Need to call with a librarytube asset id" unless $argref->{id};
-    my $sql = qq[select * from library_tubes where internal_id = ? and is_current=1];
+    my $sql = qq[select * from current_library_tubes where internal_id = ? ];
     my $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
     if ($id_ref){
         foreach my $field(keys %$id_ref){
@@ -347,9 +347,8 @@ sub _get_seq_req_ids {
         
     my $sql = qq[select distinct internal_id 
             from 
-            requests where source_asset_internal_id=? 
+            current_requests where source_asset_internal_id=? 
             and request_type like '%sequencing'
-            and is_current = 1
             ];
 
     my @seq_requests;
@@ -374,7 +373,8 @@ sub _get_mplex_pool_ids{
                 where ancestor_type="library_tubes" 
                 and ancestor_internal_id=?
                 and descendant_type="multiplexed_library_tubes"
-                and is_current=1];
+                and is_current=1
+                ];
 
     my $sth = $self->_dbh->prepare($sql);
     $sth->execute($self->id);

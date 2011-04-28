@@ -189,7 +189,7 @@ around BUILDARGS => sub {
     my $argref = $class->$orig(@_);
 
     die "Need to call with a well internal id" unless $argref->{id};
-    my $sql = qq[select * from wells where internal_id = ? and is_current=1];
+    my $sql = qq[select * from current_wells where internal_id = ?];
     my $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
     if ($id_ref){
         foreach my $field(keys %$id_ref){
