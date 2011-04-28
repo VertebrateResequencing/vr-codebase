@@ -340,15 +340,18 @@ around BUILDARGS => sub {
     }
 
     # NPG manual qc
-    if($row_ref->{manual_qc} == 1){
-        $argref->{npg_qc} = 'pass';
+    
+    #uninitialise error in .err files
+    $argref->{npg_qc} = 'pending';
+    if ($row_ref->{manual_qc}) {
+	    if($row_ref->{manual_qc} == 1){
+    	    $argref->{npg_qc} = 'pass';
+    	}
+    	elsif ($row_ref->{manual_qc} == 0){
+        	$argref->{npg_qc} = 'fail';
+    	}
     }
-    elsif ($row_ref->{manual_qc} == 0){
-        $argref->{npg_qc} = 'fail';
-    }
-    else {
-        $argref->{npg_qc} = 'pending';
-    }
+
 
 
     # populate pair-end information if it exists

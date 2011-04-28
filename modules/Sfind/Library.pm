@@ -229,7 +229,10 @@ has 'fragment_size'  => (
     lazy        => 1,
     default => sub {
         my $self = shift;
-        return [$self->fragment_size_from(), $self->fragment_size_to()];
+        if ($self->fragment_size_from() && $self->fragment_size_to()) {
+        	return [$self->fragment_size_from(), $self->fragment_size_to()];
+        }
+        return [0,0];	
     },
 );
 
@@ -248,19 +251,19 @@ has 'is_tagged'  => (
 
 has 'tag_id'  => (
     is          => 'ro',
-    isa         => 'Int',
+    isa         => 'Maybe[Int]',
     init_arg    => 'tag_internal_id',
 );
 
 has 'tag_group_id'  => (
     is          => 'ro',
-    isa         => 'Int',
+    isa         => 'Maybe[Int]',
     init_arg    => 'tag_group_internal_id',
 );
 
 has 'tag_sequence'  => (
     is          => 'ro',
-    isa         => 'Str',
+    isa         => 'Maybe[Str]',
     init_arg    => 'expected_sequence',
 );
 
@@ -303,7 +306,7 @@ around BUILDARGS => sub {
     my $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
     if ($id_ref){
         foreach my $field(keys %$id_ref){
-            $argref->{$field} = $id_ref->{$field};
+        	$argref->{$field} = $id_ref->{$field};
         }
     };
     return $argref;
