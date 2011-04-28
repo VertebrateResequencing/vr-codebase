@@ -1251,7 +1251,7 @@ sub parse_AGtags
             push @alleles, $new_ref;
             for my $alt (@{$$rec{ALT}})
             {
-                if ( !exists($$ref_alt_map{$new_ref}{$alt}) ) { $self->throw("FIXME: [$new_ref] [$alt]...?\n", Dumper($ref_alt_map)); }
+                if ( !exists($$ref_alt_map{$new_ref}{$alt}) ) { $self->throw("FIXME: [$new_ref] [$alt]...?\n", Dumper($ref_alt_map,$rec)); }
                 push @alleles, $$ref_alt_map{$new_ref}{$alt};
             }
         }
@@ -1405,7 +1405,8 @@ sub parse_alleles
 sub parse_haplotype
 {
     my ($self,$rec,$column) = @_;
-    if ( !exists($$rec{gtypes}{$column}{GT}) ) { $self->throw("The column not present: '$column'\n"); }
+    if ( !exists($$rec{gtypes}{$column}) ) { $self->throw("The column not present: '$column'\n"); }
+    if ( !exists($$rec{gtypes}{$column}{GT}) ) { return (['.'],[],0,1); }
 
     my $gtype = $$rec{gtypes}{$column}{GT};
     if ( exists($$rec{_cached_haplotypes}{$gtype}) ) { return (@{$$rec{_cached_haplotypes}{$gtype}}); }
