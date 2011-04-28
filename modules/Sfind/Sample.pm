@@ -272,7 +272,7 @@ around BUILDARGS => sub {
     die "Need to call with a sample id" unless $argref->{id};
     die "Need to call with a study id" unless $argref->{study_id};
     # note this retrieves samples limited to a particular study.
-    my $sql = qq[select s.* from samples s, study_samples ss where ss.sample_internal_id = ? and ss.study_internal_id = ? and s.internal_id=ss.sample_internal_id and s.is_current=1 and ss.is_current=1];
+    my $sql = qq[select s.* from current_samples s, current_study_samples ss where ss.sample_internal_id = ? and ss.study_internal_id = ? and s.internal_id=ss.sample_internal_id];
     my $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id},$argref->{study_id}));
     if ($id_ref){
         foreach my $field(keys %$id_ref){

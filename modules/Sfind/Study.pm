@@ -367,7 +367,7 @@ sub _get_samples {
 # builder to retrieve sample ids
 sub _get_sample_ids {
     my ($self) = @_;
-    my $sql = qq[select distinct(sample_internal_id) from study_samples  where study_internal_id=? and is_current=1 order by sample_internal_id];
+    my $sql = qq[select distinct(ss.sample_internal_id) from current_study_samples ss, current_samples s where ss.study_internal_id=? and ss.sample_internal_id = s.internal_id order by ss.sample_internal_id];
     my @samples;
     my $sth = $self->_dbh->prepare($sql);
 
