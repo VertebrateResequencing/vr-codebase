@@ -302,7 +302,7 @@ has 'title'=> (
 
 has 'ena_project_id'=> (
     is          => 'ro',
-    isa         => 'Str',
+    isa         => 'Maybe[Str]',
 );
 
 has 'sample_ids'=> (
