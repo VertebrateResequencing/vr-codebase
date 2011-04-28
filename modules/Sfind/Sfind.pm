@@ -78,7 +78,7 @@ sub get_study_by_id {
 
 sub get_study_by_name {
     my ($self, $name) = @_;
-    my $sql = qq[select internal_id from studies where name=? and is_current=1];
+    my $sql = qq[select internal_id from current_studies where name=? ];
     my $id_ref = $self->_dbh->selectrow_hashref($sql, undef, ($name));
     unless ($id_ref){
 	warn "No study with name $name\n";
@@ -104,7 +104,7 @@ sub study_names {
     my ($self) = @_;
 
     unless ($self->{'study_names'}){
-	my $sql = qq[select distinct name from studies where is_current=1];
+	my $sql = qq[select distinct name from current_studies ];
 	my @studies;
 	my $sth = $self->_dbh->prepare($sql);
 
@@ -262,7 +262,7 @@ sub get_sample_by_id_study {
 sub get_studies_by_organism {
     my ($self, $org) = @_;
     $org ="%$org%";   
-    my $sql = qq[select distinct studies.name from studies join study_samples on studies.internal_id = study_samples.study_internal_id join samples on study_samples.sample_internal_id= samples.internal_id where samples.common_name like ? and samples.is_current=1 and studies.is_current=1 and study_samples.is_current=1];
+    my $sql = qq[select distinct current_studies.name from current_studies join current_study_samples on current_studies.internal_id = current_study_samples.study_internal_id join current_samples on current_study_samples.sample_internal_id= current_samples.internal_id where current_samples.common_name like ? ];
 
     my @studies;
     my $sth = $self->_dbh->prepare($sql);

@@ -334,7 +334,7 @@ around BUILDARGS => sub {
     my $argref = $class->$orig(@_);
     die "Need to call with a study id" unless $argref->{id};
 
-    my $sql = qq[select * from studies where internal_id=? and is_current=1];
+    my $sql = qq[select * from current_studies where internal_id=? ];
     my $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
     if ($id_ref){
         foreach my $field(keys %$id_ref){
@@ -367,7 +367,7 @@ sub _get_samples {
 # builder to retrieve sample ids
 sub _get_sample_ids {
     my ($self) = @_;
-    my $sql = qq[select distinct(sample_internal_id) from study_samples  where study_internal_id=? and is_current=1 order by sample_internal_id];
+    my $sql = qq[select distinct(sample_internal_id) from current_study_samples  where study_internal_id=? order by sample_internal_id];
     my @samples;
     my $sth = $self->_dbh->prepare($sql);
 
