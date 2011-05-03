@@ -2668,12 +2668,14 @@ sub Vcf4_1::next_data_array
 
     # Case-insensitive ALT and REF bases
     $$out[3] = uc($$out[3]);
-    my $alt = $$out[4];
-    while ($alt=~/^([^<>]+)/)
+    my $alt  = $$out[4];
+    $$out[4] = '';
+    while ($alt=~/[^<>]+/)
     {
-        $$out[4] .= uc($&);
+        $$out[4] .= $`;
+        $$out[4] .= (length($`) && substr($`,-1,1) eq '<' ) ? $& : uc($&);
         $alt = $';
-        if ( $alt=~/^(<[^<>]+>)/ ) { $$out[4] .= $&; $alt=$'; }
+        if ( $alt=~/^<[^<>]+>/ ) { $$out[4] .= $&; $alt=$'; }
     }
 
     return $out;
