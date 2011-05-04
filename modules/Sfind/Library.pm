@@ -252,7 +252,8 @@ has 'is_tagged'  => (
 has 'tag_id'  => (
     is          => 'ro',
     isa         => 'Maybe[Int]',
-    init_arg    => 'tag_internal_id',
+    #init_arg    => 'tag_internal_id', # this is the actual tag int id, not the id in the bamfile name
+    init_arg    => 'tag_map_id',
 );
 
 has 'tag_group_id'  => (
