@@ -199,7 +199,7 @@ around BUILDARGS => sub {
     # hacks to make a well look like a library
     $argref->{name} = $argref->{sample_name}.' '.$argref->{id} unless $argref->{name};
 
-    $argref->{type} = "well";   # all we have, really
+    $argref->{library_type} = "well";   # all we have, really
 
     # other info (tag, pool, etc) is keyed off the samplewell asset id
     $sql = qq[select source_asset_internal_id 
@@ -217,7 +217,8 @@ around BUILDARGS => sub {
         $argref->{sample_well_asset} = $id_ref->{source_asset_internal_id};
 
         # get tag info
-        $sql = qq[select tag_internal_id,tag_group_internal_id,tag_expected_sequence as expected_sequence 
+        $sql = qq[select tag_map_id, tag_internal_id,tag_group_internal_id, 
+                        tag_expected_sequence as expected_sequence 
                     from current_tag_instances t, 
                          asset_links a 
                     where a.ancestor_internal_id = ?
@@ -233,7 +234,7 @@ around BUILDARGS => sub {
             }
         }
     }
-    
+
     return $argref;
 };
 
