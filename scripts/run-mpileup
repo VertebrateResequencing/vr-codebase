@@ -247,13 +247,17 @@ sub main
     }
     $self->wait;
 
+    # Create whole genome file: concat all chromosomes
+    for my $pop (keys %{$$self{pops}})
+    {
+        $self->spawn('concat_chroms',"$outdir/$pop.vcf.gz",$pop);
+    }
+    $self->wait;
+
     # Run summary stats
     for my $pop (keys %{$$self{pops}})
     {
-        for my $chr (@chroms)
-        {
-            $self->spawn('vcf_stats',"$outdir/$pop/$chr.vcf.gz.stats","$outdir/$pop/$chr.vcf.gz",q[awk '/^#/||$7=="PASS"']);
-        }
+        $self->spawn('vcf_stats',"$outdir/$pop.vcf.gz.stats","$outdir/$pop.vcf.gz",q[awk '/^#/||$7=="PASS"']);
     }
     $self->wait;
 
@@ -264,7 +268,7 @@ sub main
 sub cmd
 {
     my ($self,$cmd) = @_;
-    return Utils::CMD($cmd,{verbose=>$$self{verbose}});
+    return Utils::CMD($cmd,{verbose=>$$self{_verbose}});
 }
 
 sub open_file
@@ -300,7 +304,7 @@ sub population_group_bams_list
         {
             $self->throw("The BAMs not named as chrom$chr.bam, please set whole_genome_bams=>1 in your config file.\n");
         }
-        $self->throw("No matching BAMs found: $chr; ",join(',',@$pops),"\n");
+        $self->throw("No matching BAMs found: chr$chr; ",join(',',@$pops),"\n");
     }
 
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
@@ -534,6 +538,24 @@ sub concat_vcfs
         my $from = $$chunk{from};
         my $to   = $$chunk{to};
         print $fh "$outdir/$pop/$chr/$chr:$from-$to.vcf.gz\n";
+    }
+    close($fh);
+
+    $self->cmd("vcf-concat -f $chunks_list | vcf-annotate -f + | bgzip -c > $outfile.part");
+    $self->tabix_part($outfile);
+}
+
+sub concat_chroms
+{
+    my ($self,$outfile,$pop) = @_;
+
+    my $outdir = $$self{outdir};
+    my $chunks_list = "$outdir/$pop/concat.list";
+
+    open(my $fh,'>',$chunks_list) or $self->throw("$chunks_list: $!");
+    for my $chr (@{$$self{chroms}})
+    {
+        print $fh "$outdir/$pop/$chr.vcf.gz\n";
     }
     close($fh);
 
