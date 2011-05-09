@@ -271,7 +271,9 @@ sub get_limits
                 The file to be created by the method. If exists, the task is completed and
                 spawn returns immediately.
             <array>
-                Arbitrary number of parameters to be passed to the method
+                Arbitrary number of parameters to be passed to the method. Note that these
+                are stored by Storable and thus the same limitations apply. Passing for example,
+                complex objects with CODE refs will not work.
                 
 =cut
 
