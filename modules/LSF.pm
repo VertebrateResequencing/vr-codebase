@@ -151,6 +151,10 @@ sub adjust_bsub_options
     my $orig_mem = 0;
     my $no_warn = 0;
     if ( !($opts=~/-M/) ) { $mem = -500; $no_warn = 1; }  # if no mem specified, force a reservation of 500MB
+    elsif ( $opts =~ /-M(\d+)/ )
+    {
+        $orig_mem = $1*1e-3;
+    }
     elsif ($opts =~ /select\[mem[^\]\d]+(\d+)/) {
         $orig_mem = $1;
     }
