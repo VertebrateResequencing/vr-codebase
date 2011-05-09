@@ -93,13 +93,24 @@ sub get_fastqs_requires
     return \@requires;
 }
 
-# It may provide also _2.fastq.gz, but we assume that if
-#   there is _1.fastq.gz but _2 is missing, it is OK.
-#
+# Check database for import filenames and set @provides to 
+# list of gzipped filenames.
 sub get_fastqs_provides
 {
     my ($self) = @_;
-    my @provides = ("$$self{lane}_1.fastq.gz");
+
+    my @provides = ();
+    if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
+
+    my $vrtrack = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database\n");
+    my $vrlane  = VRTrack::Lane->new_by_name($vrtrack,$$self{lane}) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
+    my $vfiles=$vrlane->files;
+    for my $vfile(@$vfiles){
+        my $gzstrippedfilename=$vfile->name;
+        $gzstrippedfilename=~s/\.gz//g;
+        push @provides,$gzstrippedfilename.".gz";
+    }
+
     return \@provides;
 }
 
@@ -367,18 +378,22 @@ sub get_hierarchy_path
 
 #---------- update_db ---------------------
 
-# Requires the gzipped fastq files. How many? Find out how many .md5 files there are.
+# Requires the gzipped fastq files.
 sub update_db_requires
 {
     my ($self,$lane_path) = @_;
+
+    if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
     my @requires = ();
-    my $i = 1;
-    while ( -e "$lane_path/$$self{lane}_$i.fastq.md5" )
-    {
-        push @requires, "$$self{lane}_$i.fastq.gz";
-        $i++;
+    my $vrtrack = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database\n");
+    my $vrlane  = VRTrack::Lane->new_by_name($vrtrack,$$self{lane}) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
+    my $vfiles=$vrlane->files;
+    for my $vfile(@$vfiles){
+        my $gzstrippedfilename=$vfile->name;
+        $gzstrippedfilename=~s/\.gz//g;        
+        push @requires,$gzstrippedfilename.".gz";
     }
-    if ( !@requires ) { @requires = ("$$self{lane}_1.fastq.gz"); }
+
     return \@requires;
 }
 
@@ -423,6 +438,19 @@ sub update_db
         if ( ! -e "$lane_path/$name.gz" ) { last; }
 
         $processed_files{$name} = $i;
+    }
+
+    # do the same for every _nonhuman.fastq files
+    $i=0;
+    while (1)
+    {
+	$i++;
+	my $name = "$$self{lane}_$i"."_nonhuman.fastq";
+
+	# Check what fastq files actually exist in the hierarchy
+	if ( ! -e "$lane_path/$name.gz" ) { last; }
+
+	$processed_files{$name} = $i;
     }
 
     my $nfiles = scalar keys %processed_files;
@@ -492,6 +520,7 @@ sub update_db
         $vrfile->update();
     }
 
+
     # Update the lane stats
     my $read_len=0;
     my $raw_reads=0;
@@ -505,6 +534,7 @@ sub update_db
     $vrlane->raw_reads($raw_reads);
     $vrlane->raw_bases($raw_bases);
     $vrlane->read_len($read_len);
+
 
     # Finally, change the import status of the lane, so that it will not be picked up again
     #   by the run-pipeline script.
