@@ -553,7 +553,9 @@ sub run_graphs
         Utils::CMD(qq[samtools rmdup $bam_file - | $$self{bamcheck} > $bam_file.rmdup.bc.tmp]);
         rename("$bam_file.rmdup.bc.tmp","$bam_file.rmdup.bc") or $self->throw("rename $bam_file.rmdup.bc.tmp $bam_file.rmdup.bc: $!");
     }
-
+    my $bc = VertRes::Parser::bamcheck->new(file=>"$bam_file.bc");
+    if ($bc->get('sequences') > 0 && $bc->get('total_length') > 0)
+    {
     # Plot bamcheck graphs
     my $stats_ref = $$self{stats_ref} ? "-r $$self{stats_ref}" : '';
     Utils::CMD("plot-bamcheck -p $outdir/ $stats_ref $bam_file.bc");
@@ -570,7 +572,7 @@ sub run_graphs
     #     Utils::CMD("$samtools view $bam_file | $mapview $refseq -b=$gc_depth_bin > $bindepth",{verbose=>1,ignore_errno=>141});
     #     Graphs::create_gc_depth_graph($bindepth,$gcdepth_R,qq[$outdir/gc-depth-ori.png]);
     # }
-
+    }
     `touch $outdir/_graphs.done`;
 }
 
@@ -664,7 +666,17 @@ sub auto_qc
 
     my @qc_status = ();
     my ($test,$status,$reason);
-
+    my $bam_has_seq = 1;
+    #Checking to see if the Bam file contains any reads as this crashes other parts of auto_qc 
+    if ($bc->get('sequences') == 0 && $bc->get('total_length') == 0)
+    {
+    	$test   = 'Empty bamfile check';
+    	$status = 0;
+    	$reason = "The Bam file provided for this lane contains no sequences.";
+    	$bam_has_seq = 0;
+    	push @qc_status, { test=>$test, status=>$status, reason=>$reason };
+    }
+    
     # Genotype check results
     if ( exists($$self{auto_qc}{gtype_regex}) && !(exists $$self{'skip_genotype'} && $$self{'skip_genotype'}) )
     {
@@ -681,14 +693,14 @@ sub auto_qc
     }
 
     # Mapped bases
-    if ( exists($$self{auto_qc}{mapped_bases}) )
+    if ( exists($$self{auto_qc}{mapped_bases}) && $bam_has_seq )
     {
         my $min = $$self{auto_qc}{mapped_bases};
         $test   = 'Mapped bases';
         $status = 1;
         my $clip_bases = $bc->get('total_length') - $bc->get('bases_trimmed');
         my $bases_mapped_c = $bc->get('bases_mapped_cigar');
-        my $value = 100. * $bases_mapped_c / $clip_bases;
+        my $value = 100. * $bases_mapped_c / $clip_bases ;
         $reason = sprintf "At least %.1f%% bases mapped after clipping (%.2f%%).",$min,$value;
         if ( $value < $min ) { $status=0; $reason = sprintf "Less than %.1f%% bases mapped after clipping (%.2f%%).",$min,$value; }
         push @qc_status, { test=>$test, status=>$status, reason=>$reason };
@@ -709,10 +721,12 @@ sub auto_qc
     $vrtrack->transaction_start();
 
     # Insert size. 
-    if ( $vrlane->is_paired() && exists($$self{auto_qc}{inserts_peak_win}) && exists($$self{auto_qc}{inserts_within_peak}) )
+    if ( $vrlane->is_paired() && exists($$self{auto_qc}{inserts_peak_win}) && exists($$self{auto_qc}{inserts_within_peak}) && $bam_has_seq )
     {
-        $test = 'Insert size';
-        my $isizes = $bc->get('insert_size');
+    	$test = 'Insert size';
+
+    	my $isizes = $bc->get('insert_size');	
+    	
         if ( !defined $isizes ) 
         { 
             push @qc_status, { test=>$test, status=>0, reason=>'The insert size not available, yet flagged as paired' };
