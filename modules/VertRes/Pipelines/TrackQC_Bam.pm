@@ -652,6 +652,10 @@ sub auto_qc
 {
     my ($self,$lane_path,$lock_file) = @_;
 
+    # Skip Auto QC
+    if(exists $$self{'skip_auto_qc'} && $$self{'skip_auto_qc'})
+    { $self->debug("Skipping auto_qc.\n"); return $$self{'Yes'}; }
+
     my $sample_dir = "$lane_path/$$self{sample_dir}";
     if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
 
