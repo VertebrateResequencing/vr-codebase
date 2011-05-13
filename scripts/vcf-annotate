@@ -61,7 +61,7 @@ sub error
         sprintf("\t-X %-25s\t\tExclude the filter X\n",''),
         join('',@filters),
         "Example:\n",
-        "   zcat in.vcf.gz | vcf-annotate -a annotations.gz -d descriptions.txt | bgzip -c >out.vcf.gz \n",
+        "   zcat in.vcf.gz | vcf-annotate -a annotations.gz -d descriptions.txt -c FROM,TO,CHROM,ID,INFO/DP | bgzip -c >out.vcf.gz \n",
         "   zcat in.vcf.gz | vcf-annotate -f +/-a/c=3,10/q=3/d=5/-D -a annotations.gz -d descriptions.txt | bgzip -c >out.vcf.gz \n",
         "Where descriptions.txt contains:\n",
         "   key=INFO,ID=GN,Number=1,Type=String,Description='Gene Name'\n",
@@ -265,6 +265,7 @@ sub parse_columns
         elsif ( $col eq 'CHROM' ) { $out{$col}=$i; }
         elsif ( $col eq 'FROM' ) { $out{$col}=$i; }
         elsif ( $col eq 'TO' ) { $out{$col}=$i; }
+        elsif ( $col eq 'ID' ) { $out{$col}=$i; }
         else { error("Missing the -d parameter for the column [$col]\n"); }
     }
     if ( !exists($out{CHROM}) ) { $out{CHROM}=0; }
@@ -295,7 +296,7 @@ sub annotate
 
     my ($prev_chr,$prev_pos,$annot_from,$annot_to,$annot_line);
     my @annots = @{$$cols{annots}};
-
+    my $id_col = exists($$cols{ID}) ? $$cols{ID} : undef;
 
     # Process the file
     while (my $line = $vcf->next_line())
@@ -364,8 +365,9 @@ sub annotate
                 }
                 $values{$$info{id}} = $val;
             }
-
             $rec[7] = $vcf->add_info_field($rec[7],%values);
+
+            if ( defined $id_col && $$annot_line[$id_col] ne '' ) { $rec[2] = $$annot_line[$id_col]; }
         }
 
         # Output the line
