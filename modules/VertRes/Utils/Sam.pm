@@ -1630,7 +1630,9 @@ sub header_rewrite_required {
                         centre => 'CN',
                         insert_size => 'PI',
                         study => 'DS',
-                        project => 'DS'},
+                        project => 'DS',
+                        date => 'DT',
+                        platform_unit => 'PU'},
                       PG => {program => 'PN',
                         command => 'CL',
                         version => 'VN'},
@@ -1795,8 +1797,8 @@ sub replace_bam_header {
 =head2 change_header_lines
 
  Title   : change_header_lines
- Usage   : $obj->change_header_lines('a.bam', (RG => readgroup1 => { sample_name => 'NA000001' }));
-           $obj->change_header_lines('a.bam', (PG => 'PG ID' => { version => '1.0.34' }));
+ Usage   : $obj->change_header_lines('a.bam', (RG => {'readgroup1' => { sample_name => 'NA000001' }}));
+           $obj->change_header_lines('a.bam', (PG => {'PG ID' => { version => '1.0.34' }}));
            $obj->change_header_lines('a.bam', (PG => { remove_unique => 1}));
            $obj->change_header_lines('a.bam', (SQ => { from_dict => '/path/to/dict/'}));
            $obj->change_header_lines('a.bam', (SQ => { all => { uri => 'ftp://something.awesome.com/huzzah.fasta'}}));
@@ -1850,7 +1852,9 @@ sub change_header_lines {
                         centre => 'CN',
                         insert_size => 'PI',
                         study => 'DS',
-                        project => 'DS'},
+                        project => 'DS',
+                        date => 'DT',
+                        platform_unit => 'PU'},
                       PG => {program => 'PN',
                         command => 'CL',
                         version => 'VN'},
@@ -1869,7 +1873,7 @@ sub change_header_lines {
     }
 
     my $dict;
-    if (exists $changes{'SQ'}{'from_dict'}) {
+    if (exists $changes{'SQ'}{'from_dict'} && $changes{'SQ'}{'from_dict'}) {
         $dict = $changes{'SQ'}{'from_dict'};
         $self->throw("dict file, '$dict', supplied does not exist\n") unless -s $dict;
     }
@@ -2741,6 +2745,78 @@ sub filter_readgroups
     }
 
     rename($tmp,$out_bam) or $self->throw("rename $tmp $out_bam: $!");
+}
+
+=head2 replace_readgroup_id
+
+ Title   : replace_readgroup_id
+ Usage   : $obj->replace_readgroup_id('in.bam', 'rgid');
+ Function: Replaces the @RG ID tag in the given BAM.
+ Returns : boolean (true on success, meaning the output bam was successfully
+           made)
+ Args    : path to input bam, string of the new ID tag.
+
+=cut
+
+sub replace_readgroup_id {
+    my ($self, $bam, $rgid) = @_;
+    
+    $self->throw(qq['$rgid' is not a valid id tag]) unless ($rgid =~ /^[ !-~]+$/);
+    
+    my $bp = VertRes::Parser::bam->new(file => $bam);
+    my %rg_info = $bp->readgroup_info();
+    my $count = 0;
+    while ($bp->next_result()) {
+        $count++;
+    }
+    $bp->close;
+    
+    my @rgs = keys %rg_info;
+    $self->throw("$bam does not contain a single readgroup") unless (scalar @rgs == 1);
+    my $rg = $rgs[0];
+    
+    return(1) if ($rg eq $rgid);
+    
+    my %args = ( RGID => qq[$rgid] );
+    foreach my $tag (keys %{$rg_info{$rg}}) {
+        $args{"RG$tag"} = qq['$rg_info{$rg}{$tag}'];
+    }
+    $args{RGPU} ||= $args{$rgid}; # set platform unit to to id if not already set
+    
+    my $tmp_bam = qq[$bam.working];
+    
+    my $fsu = VertRes::Utils::FileSystem->new();
+    # picard needs a tmp dir, but we don't use /tmp because it's likely to fill up
+    my $tmp_dir = $fsu->tempdir('_changeReadGroupID_tmp_XXXXXX', DIR => dirname($bam));
+    
+    my $verbose = $self->verbose();
+    my $picard = VertRes::Wrapper::picard->new( verbose => $verbose,
+                                                quiet => $verbose ? 0 : 1,
+                                                $self->{java_memory} ? (java_memory => $self->{java_memory}) : (),
+                                                validation_stringency => 'silent',
+                                                tmp_dir => $tmp_dir);
+    
+    $picard->AddOrReplaceReadGroups($bam, $tmp_bam, %args);
+    $self->throw(qq[AddOrReplaceReadGroups failed for '$bam']) unless ($picard->run_status >= 1);
+    
+    # check for truncation
+    my $tmp_bp = VertRes::Parser::bam->new(file => $tmp_bam);
+    my $tmp_count = 0;
+    while ($tmp_bp->next_result()) {
+        $tmp_count++;
+    }
+    $tmp_bp->close;
+    
+    # if everything checks out replace original bam with new bam
+    if ($count == $tmp_count) {
+        unlink $bam;
+        move($tmp_bam, $bam) || $self->throw(qq[Could not rename '$tmp_bam' to '$bam']);
+    } else {
+        unlink $tmp_bam;
+        $self->throw(qq[Readgroup replacement for '$bam' does not meet expectations]);
+    }
+    
+    return 1;
 }
 
 =head2 bam_exome_qc_stats

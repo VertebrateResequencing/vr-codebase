@@ -35,7 +35,7 @@ use File::Copy;
 use Cwd qw(abs_path cwd);
 use VertRes::Parser::sequence_index;
 use VertRes::Wrapper::samtools;
-use VertRes::Parser::sam;
+use VertRes::Parser::bam;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::Library;
@@ -1417,20 +1417,17 @@ sub dcc_filename {
         $algorithm = $self->{algorithm}->{$file};
     }
     else {
-        my $stw = VertRes::Wrapper::samtools->new(quiet => 1);
-        $stw->run_method('open');
-        my $view_fh = $stw->view($file, undef, H => 1);
-        $view_fh || $self->throw("Failed to samtools view '$file'");
-        
-        my $ps = VertRes::Parser::sam->new(fh => $view_fh);
-        %readgroup_info = $ps->readgroup_info();
+        my $bp = VertRes::Parser::bam->new(file => $file);
+        %readgroup_info = $bp->readgroup_info();
+        $algorithm = $bp->program;
+        $bp->close;
         $self->{rginfo}->{$file} = \%readgroup_info;
-        $algorithm = $ps->program;
         $self->{algorithm}->{$file} = $algorithm;
     }
     
     my $sample;
     my $platform = 'unknown_platform';
+    my $project;
     my %techs;
     my $example_rg;
     while (my ($rg, $info) = each %readgroup_info) {
@@ -1452,6 +1449,8 @@ sub dcc_filename {
             $platform = 'LS454';
         }
         $techs{$platform}++;
+        
+        $project ||= $info->{DS};
     }
     $sample ||= 'unknown_sample';
     
