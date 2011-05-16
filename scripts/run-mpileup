@@ -459,7 +459,7 @@ sub all_sites_bcf
     my $bam_list = "$outdir/lists/chr$chr-$pop.list";
 
     `mkdir -p $outdir/$pop/$chr/` unless -d "$outdir/$pop/$chr";
-    my $cmd = "$$self{mpileup} -aug -r $chr:$from-$to -b $bam_list -f $$self{fa_ref} > $outfile.part";
+    my $cmd = "$$self{mpileup} -g -r $chr:$from-$to -b $bam_list -f $$self{fa_ref} > $outfile.part";
     $self->cmd($cmd);
 
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
@@ -502,7 +502,7 @@ sub run_mpileup
     else
     {
         my $bam_list = "$outdir/lists/chr$chr-$pop.list";
-        $cmd = "$$self{mpileup} -aug -r $chr:$from-$to -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -vcgN -s $sample_list -";
+        $cmd = "$$self{mpileup} -ug -r $chr:$from-$to -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -vcgN -s $sample_list -";
     }
     $self->cmd("$cmd | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
