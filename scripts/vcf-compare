@@ -302,6 +302,7 @@ sub report_stats
     if ( !$$opts{cmp_haplotypes} ) { return; }
 
     print "\nHaplotype comparison:\n";
+    my %summary;
     for my $id (keys %{$$opts{hapls}})
     {
         for my $key qw(hom_RR_ het_RA_ hom_AA_ het_AA_)
@@ -317,6 +318,9 @@ sub report_stats
 
             if ( !exists($$opts{hapls}{$id}{$key.'gtype_gained'}) ) { $$opts{hapls}{$id}{$key.'gtype_gained'}=0; }
             $$opts{hapls}{$id}{total_gtype_gained} += $$opts{hapls}{$id}{$key.'gtype_gained'};
+
+            $summary{$key}{match} += $$opts{hapls}{$id}{$key.'gtype_match'};
+            $summary{$key}{mismatch} += $$opts{hapls}{$id}{$key.'gtype_mismatch'};
         }
         for my $key qw(het_RA_ het_AA_)
         { 
@@ -355,6 +359,29 @@ sub report_stats
         printf "\t\tMisphased matches: %d %d %d \t (total, het_RA, het_AA)\n",
             $$opts{hapls}{$id}{total_phase_mismatch}, $$opts{hapls}{$id}{het_RA_phase_mismatch}, $$opts{hapls}{$id}{het_AA_phase_mismatch};
     }
+    print 
+        "\n",
+        "# Haplotype comparison summary. Use `grep ^#HS | cut -f 2-` to extract this part. The columns are:\n",
+        "#      1  .. Type\n",
+        "#      2  .. Mismatches\n",
+        "#      3  .. Matches\n",
+        "#      4  .. Discordance\n";
+    my ($ndr_ms,$ndr_m);
+    for my $key qw(hom_RR het_RA hom_AA het_AA)
+    {
+        my $m   = $summary{"${key}_"}{match};
+        my $ms  = $summary{"${key}_"}{mismatch};
+        if ( !$m ) { $m=0; }
+        if ( !$ms ) { $ms=0; }
+        printf "#HS\t$key\t%d\t%d\t%.2f%%\n", $ms,$m,$m?$ms*100./($m+$ms):0;
+        $ndr_ms += $ms;
+        $ndr_m  += $key eq 'hom_RR' ? 0 : $m;
+    }
+    print 
+        "\n",
+        "# Nonreference Discordance Rate. Use `grep ^#NDR | cut -f 2-` to extract this part.\n";
+    printf 
+        "#NDR %.2f\n", $ndr_ms*100./($ndr_m+$ndr_ms);
     print 
         "\n",
         "# Haplotype comparison. Use `grep ^#HC | cut -f 2-` to extract this part. The columns are:\n",
@@ -407,6 +434,7 @@ sub do_region_stats
     my $debug = $$opts{debug} ? $$opts{debug} : 0;
     my $match = $$opts{match};
     my $win   = $$opts{win} ? $$opts{win} : 0;
+
     while (1)
     {
         my $grp = read_next_group($vcfs,$win);

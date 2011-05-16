@@ -1251,7 +1251,7 @@ sub parse_AGtags
             push @alleles, $new_ref;
             for my $alt (@{$$rec{ALT}})
             {
-                if ( !exists($$ref_alt_map{$new_ref}{$alt}) ) { $self->throw("FIXME: [$new_ref] [$alt]...?\n", Dumper($ref_alt_map)); }
+                if ( !exists($$ref_alt_map{$new_ref}{$alt}) ) { $self->throw("FIXME: [$new_ref] [$alt]...?\n", Dumper($ref_alt_map,$rec)); }
                 push @alleles, $$ref_alt_map{$new_ref}{$alt};
             }
         }
@@ -1405,7 +1405,8 @@ sub parse_alleles
 sub parse_haplotype
 {
     my ($self,$rec,$column) = @_;
-    if ( !exists($$rec{gtypes}{$column}{GT}) ) { $self->throw("The column not present: '$column'\n"); }
+    if ( !exists($$rec{gtypes}{$column}) ) { $self->throw("The column not present: '$column'\n"); }
+    if ( !exists($$rec{gtypes}{$column}{GT}) ) { return (['.'],[],0,1); }
 
     my $gtype = $$rec{gtypes}{$column}{GT};
     if ( exists($$rec{_cached_haplotypes}{$gtype}) ) { return (@{$$rec{_cached_haplotypes}{$gtype}}); }
@@ -1686,7 +1687,7 @@ sub add_info_field
 =head2 add_filter
 
     Usage   : $x=$vcf->next_data_array(); $$x[6]=$vcf->add_filter($$x[6],'SnpCluster'=>1,'q10'=>0); print join("\t",@$x)."\n";
-    Args    : The record obtained by next_data_array
+    Args    : The record obtained by next_data_array or next_data_hash
             : The key-value pairs for filter to be added. If value is 1, the filter will be added. If 0, the filter will be removed.
     Returns : The formatted filter field.
 
@@ -1697,9 +1698,10 @@ sub add_filter
     my ($self,$filter,%filters) = @_;
 
     my @out = ();
+    my @filters = ref($filter) eq 'ARRAY' ? @$filter : split(/;/,$filter);
 
     # First handle the existing filters, keep everything unless in %filters
-    for my $key (split(/;/,$filter))
+    for my $key (@filters)
     {
         if ( $key eq '.' or $key eq 'PASS' ) { next; }
         if ( !exists($filters{$key}) ) { push @out,$key; next; }
@@ -1712,7 +1714,7 @@ sub add_filter
         push @out,$key;                         # this one should be added
     }
     if ( !@out ) { push @out,'PASS'; }
-    return join(';',@out);
+    return ref($filter) eq 'ARRAY' ? return \@out : join(';',@out);
 }
 
 
@@ -2666,12 +2668,14 @@ sub Vcf4_1::next_data_array
 
     # Case-insensitive ALT and REF bases
     $$out[3] = uc($$out[3]);
-    my $alt = $$out[4];
-    while ($alt=~/^([^<>]+)/)
+    my $alt  = $$out[4];
+    $$out[4] = '';
+    while ($alt=~/[^<>]+/)
     {
-        $$out[4] .= uc($&);
+        $$out[4] .= $`;
+        $$out[4] .= (length($`) && substr($`,-1,1) eq '<' ) ? $& : uc($&);
         $alt = $';
-        if ( $alt=~/^(<[^<>]+>)/ ) { $$out[4] .= $&; $alt=$'; }
+        if ( $alt=~/^<[^<>]+>/ ) { $$out[4] .= $&; $alt=$'; }
     }
 
     return $out;
