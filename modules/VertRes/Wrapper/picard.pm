@@ -539,4 +539,43 @@ sub SamToFastq {
     return $self->run(@file_args);
 }
 
+=head2 AddOrReplaceReadGroups
+
+ Title   : AddOrReplaceReadGroups
+ Usage   : $wrapper->AddOrReplaceReadGroups('in_bam', '$out_bam', %options);
+ Function: AddOrReplaceReadGroups... Replaces all read groups in the 'in_bam' 
+           file with a new read group and assigns all reads to this read group 
+           in the 'out_bam'.
+ Returns : n/a
+ Args    : list of file paths (input bam, output bam), followed by a hash of
+           options understood by AddOrReplaceReadGroups, 
+           eg. VALIDATION_STRINGENCY => 'SILENT'. (case matters: must be uppercase)
+
+=cut
+
+sub AddOrReplaceReadGroups {
+    my ($self, $in_bam, $out_bam, %args) = @_;
+    
+    $self->exe($self->{base_exe}.$fsu->catfile($self->{picard_dir}, 'AddOrReplaceReadGroups.jar '));
+    $self->run_method('system');
+    
+    $self->switches([]);
+    $self->params([qw(RGID RGLB RGPL RGPU RGSM RGCN RGDS 
+                   TMP_DIR VERBOSITY QUIET VALIDATION_STRINGENCY 
+                   COMPRESSION_LEVEL SORT_ORDER MAX_RECORDS_IN_RAM)]);
+    
+    unless ($args{RGLB} && $args{RGPL} && $args{RGPU} && $args{RGSM}) {
+        $self->throw("Picard requires that readgroup tags LB, PL, PU and SM must all be supplied");
+    }
+    
+    my @file_args = (" INPUT=$in_bam", " OUTPUT=$out_bam");
+    
+    $self->_handle_common_params(\%args);
+    
+    $self->register_output_file_to_check($out_bam);
+    $self->_set_params_and_switches_from_args(%args);
+    
+    return $self->run(@file_args);
+}
+
 1;
