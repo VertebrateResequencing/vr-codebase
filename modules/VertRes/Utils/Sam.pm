@@ -2781,7 +2781,10 @@ sub replace_readgroup_id {
     foreach my $tag (keys %{$rg_info{$rg}}) {
         $args{"RG$tag"} = qq['$rg_info{$rg}{$tag}'];
     }
-    $args{RGPU} ||= $args{$rgid}; # set platform unit to to id if not already set
+    $args{RGSM} ||= 'unknown_sample'; # set unknown sample as default
+    $args{RGPL} ||= 'unknown_platform'; # set unknown platform as default
+    $args{RGLB} ||= 'unknown_library'; # set unknown library as default
+    $args{RGPU} ||= 'unknown_platform_unit'; # set unknown platform unit as default
     
     my $tmp_bam = qq[$bam.working];
     
