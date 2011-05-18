@@ -908,15 +908,15 @@ sub get_improvement_jobs_from_vrtrack {
     if ( exists $config_data->{qc} && $config_data->{qc} ) { 
         $filter{qc} = $config_data->{qc}; 
         @lanes = @{$vrtrack->processed_lane_hnames(%filter) || []};
-        warn "got ", scalar(@lanes), " lanes that were mapped, passed qc and not improved\n";
+        debug($config_data, "got ", scalar(@lanes), " lanes that were mapped, passed qc and not improved...");
     } else {
         @lanes = @{$vrtrack->processed_lane_hnames(%filter) || []};
-        warn "got ", scalar(@lanes), " lanes that were mapped and not improved\n";
+        debug($config_data, "got ", scalar(@lanes), " lanes that were mapped and not improved...");
     } 
     
     if (defined $config_data->{limits}) {
         @lanes = filter_lanes($config_data->{limits}, \@lanes, $vrtrack, $config);
-        warn "got ", scalar(@lanes), " lanes that passed your limits\n";
+        debug($config_data, "got ", scalar(@lanes), " lanes that passed your limits...");
     }
     
     my $count = 0;
@@ -1068,7 +1068,7 @@ sub get_hierarchy_update_jobs_from_vrtrack {
     }
     
     _make_jobs_from_vrtrack_lanes($jobs, $config, $mtime, $config_data, \%lanes_to_run);
-    debug($config_data,"done\n");
+    debug($config_data, "done ", scalar keys %lanes_to_run, "\n");
     return;
 }
 
