@@ -379,7 +379,7 @@ sub new {
     $self->{header_changes}->{SQ}->{from_dict} ||= '';
     
     if ($self->{header_changes}->{SQ}->{from_dict}) {
-        $self->throw("Supplied dict file does not exist!\n") unless (-s $self->{header_changes}->{SQ}->{dict});
+        $self->throw("Supplied dict file does not exist!\n") unless (-s $self->{header_changes}->{SQ}->{from_dict});
     }
     
     return $self;

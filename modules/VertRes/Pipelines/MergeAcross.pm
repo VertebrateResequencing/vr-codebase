@@ -82,7 +82,6 @@ use warnings;
 use VertRes::IO;
 use VertRes::Utils::FileSystem;
 use File::Basename;
-use File::Spec;
 use File::Copy;
 use Cwd 'abs_path';
 use LSF;
@@ -93,11 +92,16 @@ use base qw(VertRes::Pipeline);
 our $actions = [{ name     => 'merge',
                   action   => \&merge,
                   requires => \&merge_requires,
-                  provides => \&merge_provides } ];
+                  provides => \&merge_provides },
+                { name     => 'cleanup',
+                  action   => \&cleanup,
+                  requires => \&cleanup_requires,
+                  provides => \&cleanup_provides } ];
 
 our %options = (max_merges => 10,
                 bsub_opts => '',
-                run_index => 0);
+                run_index => 0,
+                do_cleanup => 0);
 
 
 =head2 new
@@ -136,6 +140,9 @@ our %options = (max_merges => 10,
            queue => string (default 'normal'; bsub queue to use for merge jobs.  This
                             is forced to 'hugemem' if memory > 16000)
 
+           do_cleanup => bool (cleanup pipeline related files upon completion; 
+                               default false)
+
            other optional args as per VertRes::Pipeline
 
 =cut
@@ -164,7 +171,7 @@ sub new {
                 my ($bam_base, $bam_path) = fileparse($bam);
 
                 if ($bam_base =~ m/$self->{common_prefix_regex}/){
-                    $group_key = File::Spec->catfile($group, $1);
+                    $group_key = $self->{fsu}->catfile($group, $1);
                 }
                 else {
                     $self->throw("No match to regular expression '$self->{common_prefix_regex}' in bam file $bam");
@@ -233,25 +240,38 @@ sub merge {
     # for each group of bam files, run the merge if not done already
     # (subject to max_jobs constraint)
     while (my ($group, $bams) = each(%{$self->{bams_by_group}})) {
-        my $bam_out = File::Spec->catfile($work_dir, "$group.bam");
+        my $bam_out = $self->{fsu}->catfile($work_dir, "$group.bam");
         my ($bam_out_base, $bam_out_dir) = fileparse($bam_out);
         my $prefix = $bam_out_base;
         $prefix =~ s/\.bam$//;
         my $job_name = $self->{prefix} . $prefix. '.pl';
-        $prefix = File::Spec->catfile($bam_out_dir, "$self->{prefix}$prefix");
+        $prefix = $self->{fsu}->catfile($bam_out_dir, "$self->{prefix}$prefix");
         my $tmp_bam_out = "$prefix.tmp.bam";
         my $bai = "$bam_out.bai";
         my $tmp_bai = "$tmp_bam_out.bai";
         my $jids_file = "$prefix.jids";
         my $perl_out = "$prefix.pl";
         my $status = LSF::is_job_running($jids_file);
+        
+        # Check that all BAMs are present before proceeding
+        if ($status & $LSF::No) {
+            my $ready = 1;
+            foreach my $bam (@{$bams}) {
+                unless ($$self{fsu}->file_exists($bam)) {
+                    $ready = 0;
+                    $self->debug(qq[All BAMs for group $group are not present... skipping]);
+                    last;
+                }
+            }
+            next unless $ready;
+        }
 
         unless (-d $bam_out_dir) {
             File::Path::make_path($bam_out_dir) || $self->throw("Error making directory '$bam_out_dir'");
         }
 
         if ($status & $LSF::Done and $$self{fsu}->file_exists($bam_out)) {
-            $jobs_done++;
+            ++$jobs_done;
             next;
         }
         elsif ($status & $LSF::Running) {
@@ -300,11 +320,104 @@ rename '$tmp_bam_out', '$bam_out';
     }
 
     $self->{bsub_opts} = $orig_bsub_opts;
-
-    # all jobs successfully completed?
-    if ($jobs_done == scalar keys %{$self->{bams_by_group}}) {
-        Utils::CMD("touch $work_dir/merge.done");
-    }
+    
+    return $self->{No};
 }
+
+=head2 cleanup_requires
+
+ Title   : cleanup_requires
+ Usage   : my $required_files = $obj->cleanup_requires('/path/to/lane');
+ Function: Find out what files the cleanup action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub cleanup_requires {
+    my $self = shift;
+    return ['merge.done'];
+}
+
+=head2 cleanup_provides
+
+ Title   : cleanup_provides
+ Usage   : my $provided_files = $obj->cleanup_provides('/path/to/lane');
+ Function: Find out what files the cleanup action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub cleanup_provides {
+    my ($self, $lane_path) = @_;
+    return [];
+}
+
+=head2 cleanup
+
+ Title   : cleanup
+ Usage   : $obj->cleanup('/path/to/lane', 'lock_filename');
+ Function: Unlink all the pipeline-related files (_*) in a lane.
+           NB: do_cleanup => 1 must have been supplied to new();
+ Returns : $VertRes::Pipeline::Yes
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub cleanup {
+    my ($self, $work_dir, $action_lock) = @_;
+    return $self->{Yes} unless $self->{do_cleanup};
+    
+    my $prefix = $self->{prefix};
+    my $fsu = $self->{fsu};
+    
+    foreach my $file (qw(log job_status)) {
+        $self->clean_file($fsu->catfile($work_dir, $prefix.$file));
+    }
+
+    
+    foreach my $group (keys %{$self->{bams_by_group}}) {
+        my $grp_base = $fsu->catfile($work_dir, $group);
+        my ($base, $dir) = fileparse($grp_base);
+        $base = $fsu->catfile($dir, $prefix.$base);
+        
+        foreach my $suffix (qw(.pl.o .pl.e .jids .pl)) {
+            $self->clean_file($base.$suffix);
+        }
+    }
+    return $self->{Yes};
+}
+
+sub clean_file
+{
+    my ($self, $file) = @_;
+    if ( -e $file ) { unlink($file); }
+    $self->{fsu}->file_exists($file, wipe_out => 1);
+}
+
+
+
+sub is_finished {
+    my ($self, $work_dir, $action) = @_;
+    
+    # all merges successfully completed?
+    if ($action->{name} eq 'merge') {
+        my $jobs_done = 0;
+        foreach my $group (keys %{$self->{bams_by_group}}) {
+            my $bam = $self->{fsu}->catfile($work_dir, "$group.bam");
+            $jobs_done++ if $self->{fsu}->file_exists($bam);
+        }
+        if ( $jobs_done == scalar keys %{$self->{bams_by_group}} ) {
+            Utils::CMD("touch $work_dir/merge.done");
+        }
+    }
+    elsif ($action->{name} eq 'cleanup') {
+        return $self->{No};
+    }
+    
+    return $self->SUPER::is_finished($work_dir, $action);
+}
+
 
 1;
