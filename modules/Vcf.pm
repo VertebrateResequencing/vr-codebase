@@ -1150,6 +1150,7 @@ sub validate_alt_field
                 'i' for indel and a positive (resp. negative) number for the length of insertion (resp. deletion)
                 'r' identical to the reference, length 0
                 'o' for other (complex events) and the number of affected bases
+                'b' breakend
                 'u' unknown
 
 =cut
@@ -1205,7 +1206,9 @@ sub parse_AGtags
     my (@atags,@gtags);
     for my $fmt (@{$$rec{FORMAT}})
     {
+        # These have been listed explicitly for proper merging of v4.0  VCFs
         if ( $fmt eq 'GL' or $fmt eq 'PL' ) { push @gtags,$fmt; next; }
+        if ( $fmt eq 'AC' or $fmt eq 'AF'  ) { push @atags,$fmt; next; }
         if ( !exists($$self{header}{FORMAT}{$fmt}) ) { next; }
         if ( $$self{header}{FORMAT}{$fmt}{Number} eq 'A' ) { push @atags,$fmt; next; }
         if ( $$self{header}{FORMAT}{$fmt}{Number} eq 'G' ) { push @gtags,$fmt; next; }
@@ -1306,7 +1309,9 @@ sub format_AGtag
         # Check if there are any A,G tags
         for my $fmt (@{$$record{FORMAT}})
         {
+            # These have been listed explicitly for proper merging of v4.0  VCFs
             if ( $fmt eq 'GL' or $fmt eq 'PL' ) { $$record{_gtags}{$fmt}=1; next; }
+            if ( $fmt eq 'AC' or $fmt eq 'AF'  ) { $$record{_atags}{$fmt}=1; next; }
             if ( !exists($$self{header}{FORMAT}{$fmt}) ) { next; }
             if ( $$self{header}{FORMAT}{$fmt}{Number} eq 'A' ) { $$record{_atags}{$fmt}=1; next; }
             if ( $$self{header}{FORMAT}{$fmt}{Number} eq 'G' ) { $$record{_gtags}{$fmt}=1; next; }
@@ -2348,7 +2353,12 @@ sub Vcf4_0::parse_header_line
         if ( $tmp=~/^,/ ) { $tmp = $'; }
     }
 
-    if ( !exists($$rec{ID}) ) { $self->throw("Missing the ID tag in the $value\n"); }
+    if ( !exists($$rec{ID}) ) { $self->throw("Missing the ID tag in $line\n"); }
+    if ( $key eq 'INFO' or $key eq 'FILTER' or $key eq 'FORMAT' )
+    {
+        if ( !exists($$rec{Description}) ) { $self->throw("Missing the Description tag in $line\n"); }
+    }
+    if ( exists($$rec{Number}) && $$rec{Number} eq '-1' ) { $self->warn("The use of -1 for unknown number of values is deprecated, please use '.' instead.\n\t$line\n"); }
     if ( exists($$rec{Number}) && $$rec{Number} eq '.' ) { $$rec{Number}=-1; }
 
     return $rec;
@@ -2441,7 +2451,8 @@ sub Vcf4_0::fill_ref_alt_mapping
         if ( substr($new_ref,0,$rlen) ne $ref ) { $self->throw("The reference prefixes do not agree: $ref vs $new_ref\n"); }
         for my $alt (keys %{$$map{$ref}})
         {
-            if ( $alt=~/^<.+>$/ ) { $$map{$ref}{$alt} = $alt; next; }
+            # The second part of the regex is for VCF>4.0, but does no harm for v<=4.0
+            if ( $alt=~/^<.+>$/ or $alt=~/\[|\]/ ) { $$map{$ref}{$alt} = $alt; next; }
             my $new = $alt;
             if ( $rlen<$max_len ) { $new .= substr($new_ref,$rlen); }
             $$map{$ref}{$alt} = $new;
@@ -2640,6 +2651,52 @@ sub Vcf4_1::validate_line
     if ( !($$line{ID}=~/^\S+$/) ) { $self->warn("Expected non-whitespace ID at $$line{CHROM}:$$line{POS}, but got [$$line{ID}]\n"); }
 }
 
+sub Vcf4_1::validate_alt_field
+{
+    my ($self,$values,$ref) = @_;
+
+    if ( @$values == 1 && $$values[0] eq '.' ) { return undef; }
+
+    my $ret = $self->_validate_alt_field($values,$ref);
+    if ( $ret ) { return $ret; }
+
+    my $ref_len = length($ref);
+    my $ref1 = substr($ref,0,1);
+
+    my @err;
+    my $msg = '';
+    for my $item (@$values)
+    {
+        if ( $item=~/^(.*)\[(.+)\[(.*)$/ or $item=~/^(.*)\](.+)\](.*)$/ )
+        {
+            if ( $1 ne '' && $3 ne '' ) { $msg=', two replacement strings given (expected one)'; push @err,$item; next; }
+            my $rpl;
+            if ( $1 ne '' )
+            {
+                $rpl  = $1;
+                my $rref = substr($rpl,0,1);
+                if ( $rref ne $ref1 ) { $msg=', the first base of the replacement string does not match the reference'; push @err,$item; next; }
+            }
+            else
+            {
+                $rpl  = $3;
+                my $rref = substr($rpl,-1,1);
+                if ( $rref ne $ref1 ) { $msg=', the last base of the replacement string does not match the reference'; push @err,$item; next; }
+            }
+            my $pos = $2;
+            if ( !($rpl=~/^[ACTGNacgtn]+$/) ) { $msg=', replacement string not valid (expected [ACTGNacgtn]+)'; push @err,$item; next; }
+            if ( !($pos=~/^\S+:\d+$/) ) { $msg=', cannot parse sequence:position'; push @err,$item; next; }
+            next;
+        }
+        if ( !($item=~/^[ACTGN]+$|^<[^<>\s]+>$/) ) { push @err,$item; next; }
+        if ( $item=~/^<[^<>\s]+>$/ ) { next; }
+        if ( $ref_len==length($item) ) { next; }
+        if ( substr($item,0,1) ne $ref1 ) { $msg=', first base does not match the reference'; push @err,$item; next; }
+    }
+    if ( !@err ) { return undef; }
+    return 'Could not parse the allele(s) [' .join(',',@err). ']' . $msg;
+}
+
 sub Vcf4_1::next_data_hash
 {
     my ($self,@args) = @_;
@@ -2679,6 +2736,13 @@ sub Vcf4_1::next_data_array
     }
 
     return $out;
+}
+
+sub Vcf4_1::event_type
+{
+    my ($self,$rec,$allele) = @_;
+    if ( $allele=~/\[|\]/ ) { return 'b'; }
+    return $self->SUPER::event_type($rec,$allele);
 }
 
 1;

@@ -408,19 +408,58 @@ sub report_stats
         for my $key qw(total_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'phase_mismatch'}; }
         print "\n";
     }
+
     print 
         "\n",
-        "# Site discordance vs ALT frequency. Use `^#SD | cut -f 2-` to extract this part. The columns are:\n",
-        "#      1  .. ALT frequency\n",
-        "#      2  .. Site discordance: mismatches/(matches+mismatches) per site\n",
-        "#      3  .. Count\n";
-    for my $af (sort {$a<=>$b} keys %{$$opts{row_discordance}})
+        "# Genotype concordance vs non-ref allele count. Use `^#GC | cut -f 2-` to extract this part. The columns are:\n",
+        "#      1  .. Non-ref allele count\n",
+        "#      2  .. Hom(RR) concordance\n",
+        "#      3  .. Het(RA) concordance\n",
+        "#      4  .. Hom(AA) concordance\n",
+        "#      5  .. Het(AA) concordance\n",
+        "#      6  .. Fraction of genotypes Hom(RR)\n",
+        "#      7  .. Fraction of genotypes Het(RA)\n",
+        "#      8  .. Fraction of genotypes Hom(AA)\n",
+        "#      9  .. Fraction of genotypes Het(AA)\n";
+    for my $ac (sort {$a<=>$b} keys %{$$opts{counts_by_ac}})
     {
-        for my $disc (sort {$a<=>$b} keys %{$$opts{row_discordance}{$af}})
+        for my $key qw(hom_RR_ het_RA_ hom_AA_ het_AA_)
         {
-            print "#SD\t$af\t$disc\t$$opts{row_discordance}{$af}{$disc}\n";
+            if ( !exists($$opts{counts_by_ac}{$ac}{$key}{mismatches}) ) { $$opts{counts_by_ac}{$ac}{$key}{mismatches}=0; }
+            if ( !exists($$opts{counts_by_ac}{$ac}{$key}{matches}) ) { $$opts{counts_by_ac}{$ac}{$key}{matches}=0; }
         }
+
+        print "#GC\t$ac";
+        for my $key qw(hom_RR_ het_RA_ hom_AA_ het_AA_)
+        {
+            my $conc = -1;
+            if ( $$opts{counts_by_ac}{$ac}{$key}{mismatches} or $$opts{counts_by_ac}{$ac}{$key}{matches} )
+            {
+                $conc = 1 - $$opts{counts_by_ac}{$ac}{$key}{mismatches}/($$opts{counts_by_ac}{$ac}{$key}{mismatches}+$$opts{counts_by_ac}{$ac}{$key}{matches});
+            }
+            printf "\t%.3f",$conc;
+        }
+        for my $key qw(hom_RR_ het_RA_ hom_AA_ het_AA_)
+        {
+            my $frac = ($$opts{counts_by_ac}{$ac}{$key}{mismatches} + $$opts{counts_by_ac}{$ac}{$key}{matches}) / $$opts{gtypes_cmp_total};
+            printf "\t%.5f",$frac;
+        }
+        print "\n";
     }
+
+    #   print 
+    #       "\n",
+    #       "# Site discordance vs ALT frequency. Use `^#SD | cut -f 2-` to extract this part. The columns are:\n",
+    #       "#      1  .. ALT frequency\n",
+    #       "#      2  .. Site discordance: mismatches/(matches+mismatches) per site\n",
+    #       "#      3  .. Count\n";
+    #   for my $af (sort {$a<=>$b} keys %{$$opts{row_discordance}})
+    #   {
+    #       for my $disc (sort {$a<=>$b} keys %{$$opts{row_discordance}{$af}})
+    #       {
+    #           print "#SD\t$af\t$disc\t$$opts{row_discordance}{$af}{$disc}\n";
+    #       }
+    #   }
 }
 
 sub do_region_stats
@@ -667,9 +706,8 @@ sub cmp_haplotypes
     if ( $$grp[0]{vcf}{vcf_compare_ID} != 0 ) { error("FIXME: different order than expected: $$grp[0]{vcf}{vcf_compare_ID}\n"); }
     my $ref = $$grp[0]{rec}{REF};
 
-    my ($an,$ac) = $$grp[0]{vcf}->calc_an_ac($$grp[0]{rec}{gtypes});
-    my $row_gtype_match = 0;
-    my $row_gtype_mismatch = 0;
+    my %gtype_matches = ();
+    my %gtype_mismatches = ();
 
     for my $id (keys %{$$grp[0]{rec}{gtypes}})
     {
@@ -769,29 +807,46 @@ sub cmp_haplotypes
         { 
             $$hapls{$id}{$type.'gtype_match'}++;
             if ( $phase_match ) { $$hapls{$id}{$type.'phase_match'}++ }
-            $row_gtype_match++;
+            $gtype_matches{$type}++;
         }
         elsif ( defined $type ) 
         { 
             $$hapls{$id}{$type.'gtype_mismatch'}++;
-            $row_gtype_mismatch++;
+            $gtype_mismatches{$type}++;
         }
     }
     $$opts{hapls_ncmp}++;
 
-    if ( $row_gtype_match or $row_gtype_mismatch )
+    # Store the number of matching types by AC
+    my $ac = 0;
+    if ( exists($gtype_matches{hom_AA_}) ) { $ac += 2*$gtype_matches{hom_AA_}; }
+    if ( exists($gtype_mismatches{hom_AA_}) ) { $ac += 2*$gtype_mismatches{hom_AA_}; }
+    if ( exists($gtype_matches{hom_RA_}) ) { $ac += $gtype_matches{hom_RA_}; }
+    if ( exists($gtype_mismatches{hom_RA_}) ) { $ac += $gtype_mismatches{hom_RA_}; }
+    for my $type (keys %gtype_matches)
     {
-        my $row_discordance = $row_gtype_mismatch/($row_gtype_match+$row_gtype_mismatch);
-        my $af;
-        for my $n (split(/,/,$ac)) { $af += $n; }
-        $af = $af/$an;
-
-        if ( $$opts{debug} ) { print "#RD\t$$grp[0]{rec}{CHROM}\t$$grp[0]{rec}{POS}\t$row_discordance\t$af\n"; }
-
-        $row_discordance = sprintf "%.2f", int($row_discordance/0.05)*0.05;
-        $af = sprintf "%.2f", int($af/0.05)*0.05;
-        $$opts{row_discordance}{$af}{$row_discordance}++;
+        $$opts{counts_by_ac}{$ac}{$type}{matches} += $gtype_matches{$type};
+        $$opts{gtypes_cmp_total} += $gtype_matches{$type};
     }
+    for my $type (keys %gtype_mismatches)
+    {
+        $$opts{counts_by_ac}{$ac}{$type}{mismatches} += $gtype_mismatches{$type};
+        $$opts{gtypes_cmp_total} += $gtype_mismatches{$type};
+    }
+
+    #   if ( $row_gtype_match or $row_gtype_mismatch )
+    #   {
+    #       my $row_discordance = $row_gtype_mismatch/($row_gtype_match+$row_gtype_mismatch);
+    #       my $af;
+    #       for my $n (split(/,/,$ac)) { $af += $n; }
+    #       $af = $af/$an;
+    #
+    #       if ( $$opts{debug} ) { print "#RD\t$$grp[0]{rec}{CHROM}\t$$grp[0]{rec}{POS}\t$row_discordance\t$af\n"; }
+    #
+    #       $row_discordance = sprintf "%.2f", int($row_discordance/0.05)*0.05;
+    #       $af = sprintf "%.2f", int($af/0.05)*0.05;
+    #       $$opts{row_discordance}{$af}{$row_discordance}++;
+    #   }
 }
 
 
