@@ -319,7 +319,7 @@ sub displayProjectLanesPage
                     if( $mapstat->mapper() )
                     {
                         my $mapper = $mapstat->mapper();
-                        $mappers{ $mapper->name().qq[_].$mapper->version().qq[_].$mapper->id() } = 1;
+                        $mappers{ $mapper->name().qq[ v].$mapper->version() } = 1;
                     }
                 }
             }
@@ -346,7 +346,7 @@ sub displayProjectLanesPage
             if( $mapstat->mapper() && $mapstat->raw_bases() && $mapstat->raw_bases() > 0 )
             {
                 my $mapper = $mapstat->mapper();
-                $lane_mappers{ $mapper->name().qq[ v].$mapper->version().qq[_].$mapper->id() } = 1;
+                $lane_mappers{ $mapper->name().qq[ v].$mapper->version() } = 1;
             }
         }
         foreach my $mapper ( sort( keys( %mappers ) ) )
