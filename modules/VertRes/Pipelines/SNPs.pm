@@ -187,7 +187,6 @@ our @actions =
 
 our $options = 
 {
-    bcf_fix         => 'bcf-fix.pl',
     bcftools        => 'bcftools',
     bsub_opts_varfilter  => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
     bsub_opts_mpileup    => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
@@ -229,7 +228,6 @@ our $options =
                                        end in the given suffix.  This is likely to be 'calmd.bam'
                                        or 'intervals.bam', depending on how BamImprovement was run.
                                        Default: 'intervals.bam'.
-                    bcf_fix         .. Script to fix invalid VCF
                     bcftools        .. The bcftools binary for mpileup task
                     dbSNP_rod       .. The dbSNP file for GATK
                     chunks_overlap  .. Allow small overlap between chunks
@@ -841,7 +839,6 @@ sub mpileup
 
     if ( !$$self{mpileup_cmd} ) { $self->throw("Missing the option mpileup_cmd.\n"); }
     if ( !$$self{bcftools} ) { $self->throw("Missing the option bcftools.\n"); }
-    if ( !$$self{bcf_fix} ) { $self->throw("Missing the option bcf_fix.\n"); }
 
     my $bams = [ $$self{file_list} ];
     my %opts = 
@@ -920,7 +917,7 @@ sub run_mpileup
         # Original code which does not save BCFs and pipes mpileup directly through bcftools to produce VCFs 
         if ( ! -e "$name.vcf.gz" )
         {
-            Utils::CMD(qq[$$self{mpileup_cmd} -b $file_list -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -gcv - | $$self{bcf_fix} | bgzip -c > $name.vcf.gz.part],{verbose=>1});
+            Utils::CMD(qq[$$self{mpileup_cmd} -b $file_list -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -gcv - | bgzip -c > $name.vcf.gz.part],{verbose=>1});
             Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz.part],{verbose=>1});
             rename("$name.vcf.gz.part.tbi","$name.vcf.gz.tbi") or $self->throw("rename $name.vcf.gz.part.tbi $name.vcf.gz.tbi: $!");
             rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
@@ -934,7 +931,7 @@ sub mpileup_split_chunks
 {
     my ($self,$bam,$chunk_name,$chunk) = @_;
 
-    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd mpileup_samples bcftools bcf_based bcf_fix filter4vcf));
+    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref mpileup_cmd mpileup_samples bcftools bcf_based filter4vcf));
 
     return qq[
 use strict;
