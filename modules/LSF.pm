@@ -30,7 +30,7 @@ Utilities for manipulating LSF jobs.
 
     Arg [1]     : lock file containing LSF job ID's.
     Returntype  : $LSF::Running if at least one of the jobs is still in the queue and/or running.
-                  $LSF::No if none of the jobs is present in the queue.
+                  $LSF::No if none of the jobs is present in the queue and there are no records about the job.
                   $LSF::Error if some of the jobs failed.
                   $LSF::Done if at least one job finished OK (so you should check for $LSF:Error first)
                   If the lock file is empty, $LSF::No is returned.
