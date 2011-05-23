@@ -66,6 +66,8 @@ sub is_job_running
     }
     close($fh);
 
+    if ( $job_running & (~$No) ) { $job_running = $job_running & (~$No) }
+
     return $job_running;
 }
 
@@ -181,7 +183,9 @@ sub adjust_bsub_options
                 }
                 elsif ($status eq 'RUNLIMIT') 
                 {
-                    $queue = 'long';
+                    $queue = $parser->get('queue',$i);
+                    if ( $queue eq 'normal' ) { $queue='long' }
+                    else { $queue = 'basement'; }
                 }
             }
         }
@@ -261,7 +265,8 @@ sub run
         if ( !defined($opts{queue}) && defined($opts{runtime}) ) 
         { 
             if ( $opts{runtime} <= 720.0 ) { $opts{queue} = 'normal'; }
-            else { $opts{queue} = 'long'; }
+            elsif ( $opts{runtime} <= 60*24*2 ) { $opts{queue} = 'long'; }
+            else { $opts{queue} = 'basement'; }
         }
         else 
         { 
