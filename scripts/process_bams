@@ -65,6 +65,13 @@ Example:
 
     $$self{_sampleconf} = qq[# Sample config file for $0
 
+operations => [qw(bai bas md5 bai.md5 bas.md5)],
+merge_bas_files => '20101123.alignment.index.bas',
+only => qq[chrom20|(un)?mapped],
+release_date => 20101123,
+sequence_index => '20101123.sequence.index',
+fofn => 'by_sample_chromosome_bams.fofn',
+
 ];
     
     $$self{release_date} = $time{'yyyymmdd'};
@@ -206,7 +213,7 @@ sub md5
     $self->cmd(qq[mv $md5.tmp $md5]);
 }
 
-# 
+# Create BAM index file
 sub index 
 {
     my ($self, $bai, $bam) = @_;    
@@ -217,6 +224,7 @@ sub index
     $self->cmd(qq[mv $bai.tmp $bai]);
 }
 
+# Create BAM statistics (bas) file
 sub bas 
 {
     my ($self, $bas, $bam) = @_;
@@ -226,6 +234,7 @@ sub bas
     $self->cmd(qq[mv $bas.tmp $bas]);
 }
 
+# Create bamcheck file
 sub bc 
 {
     my ($self, $bc, $bam) = @_;
@@ -234,6 +243,7 @@ sub bc
     $self->cmd(qq[mv $bc.tmp $bc]);
 }
 
+# Merge all bas files
 sub merge_bas_files 
 {
     my ($self) = @_;
