@@ -193,6 +193,14 @@ jws@sanger.ac.uk
   Description: Retrieves study creation datetime
   Returntype : DateTime object
 
+
+=head2 state
+
+  Arg [1]    : none
+  Example    : my $study_state = $study->state();
+  Description: Retrieves study state
+  Returntype : string
+
 =cut
 
 use Moose;
@@ -303,6 +311,11 @@ has 'title'=> (
 has 'ena_project_id'=> (
     is          => 'ro',
     isa         => 'Maybe[Str]',
+);
+
+has 'state'=> (
+    is          => 'ro',
+    isa         => 'Str',
 );
 
 has 'sample_ids'=> (
