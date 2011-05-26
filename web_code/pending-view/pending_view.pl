@@ -161,7 +161,7 @@ my $sw  = SangerWeb->new({
 #script name for self links
 my $cgi = $sw->cgi();
 my $SCRIPT_NAME = $cgi->url(-relative=>1);
-my $qc_grind = "../qc_grind/qc_grind2.pl";
+my $qc_grind = "../qc_grind/qc_grind.pl";
 
 #decide on the entry point
 my $mode = $cgi->param('mode');
