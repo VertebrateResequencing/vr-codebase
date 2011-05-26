@@ -1,0 +1,275 @@
+#!/usr/bin/env perl
+
+#
+# output_stats --db dbname (optional:  --study UK10K_XXXX_CCCC  -- out <xxxx-stats.txt> --from DD-MM-YYYY 
+# --to DD-MM-YYYY --months x
+# (default values --study ALL_STUDIES_IN_DB --out db_date.stats --from Not_set --to TODAY --months Not_set)
+#
+# For example:
+# 1. output_stats --db vrtrack_uk10k_cohort > cohort_output.tsv
+# Output historical data:
+# 2. output_stats --db vrtrack_uk10k_neuro --study UK10K_NEURO_MUIR,UK10K_NEURO_ASD_SKUSE --from 10-01-2011 
+# --to 10-04-2011 > neuro_studies.tsv
+# Output the last month's data:
+# 3. output_stats --db vrtrack_uk10k_obesity --study 1706 --months 1 > obesity_study.tsv
+#
+# Note: the study details can be a names or ids (or a mixture) and the user can only specify months and to or from
+# but not all three. Dates are only accepted in the UK/European format.
+#
+# Produces a dump of the statistics for each lane (currently) for the projects/studies specified (or the whole
+# database, sorted by project) between the dates specified (or all if not).
+#
+# Author: John Maslen <jm23@sanger.ac.uk>
+#
+
+
+use strict;
+use warnings;
+no warnings 'uninitialized';
+
+use Getopt::Long;
+use VertRes::Utils::VRTrackFactory;
+use VRTrack::Lane;
+use Scalar::Util qw(looks_like_number);
+use Date::Calc qw( Add_Delta_YMD );
+use POSIX qw(strftime); 
+
+my ($db, $study, $from, $to, $months, $head, $nocol, $help); #$out, $from, $to, $help, $verbose);
+
+GetOptions(
+    'd|db=s'        =>  \$db,
+    's|study=s'		=>  \$study,
+#   'o|out=s'		=>  \$out,
+    'f|from=s'		=>  \$from,
+    't|to=s'		=>  \$to,
+    'm|months=i'    =>  \$months,
+    'e|head'		=>  \$head,
+    'n|nocol'		=>  \$nocol,
+    'h|help'	    =>  \$help,
+    );
+
+($db && !$help) or die <<USAGE;
+    Usage: $0   
+                --db        <specify db name>
+                --study     [studies/project ids or names (individual or comma-separated) can be given]
+                --from      [date for stats collection to start can be given, NB format: DD-MM-YYYY]
+                --to        [date for stats collection to end can be given, NB format: DD-MM-YYYY]
+                --months    [specify the number of months worth of stats to retrieve - CAN NOT be used with --to and --from]
+                --head      [prints a header on the output file displaying database and study names]
+                --nocol     [use this flag to produce output with no column headers e.g. for concatenation]
+                --help      <this message>
+
+Generates lane statistics file for a database or study (if specified).
+
+Examples:
+--------
+1. output_stats --db vrtrack_uk10k_cohort --out cohort_out.stats
+
+2. output_stats --db vrtrack_uk10k_neuro --study UK10K_NEURO_MUIR,UK10K_NEURO_ASD_SKUSE --from 10-01-2011 
+--to 10-04-2011
+
+3. output_stats --db vrtrack_uk10k_obesity --study 1706 --months 3
+
+NOTES:
+The --study can use study names or ids (or a mixture). 
+The user can specify --months as well as --to or --from, but NOT all three.
+
+USAGE
+#               --out       [output file can be specified, otherwise db_date.stats OR study_date.stats]
+
+my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => $db,
+                                                          mode => 'rw');
+unless ($vrtrack){
+    die "Can't connect to tracking database\n";
+}
+
+#From/To: check in correct format, check if real dates?, check To is not earlier than From.
+if (($to && $from) && $months) {
+	die "You cannot specify exact dates and a value for months.\n";
+}
+
+my $dateregex = '^(0[1-9]|[12][0-9]|3[01])[-](0[1-9]|1[012])[-](19|20)\d\d$';
+my $human_genome_size = 3e9;
+my $end_analysis = strftime "%d-%m-%Y", localtime;
+my $start_analysis;
+if ($to) {
+	if ( $to !~ $dateregex ) {
+		die "You have not specified the --to date in the correct format: DD-MM-YYYY.\n";
+	}
+	else {
+		$end_analysis = $to;
+	}
+}
+
+if ( $months ) {
+	if ( looks_like_number($months) && $months >= 1 ) {
+		my ($y,$m,$d) = Add_Delta_YMD((split(/-/,$end_analysis))[2,1,0], 0, -($months), 1);
+		$start_analysis = sprintf( "%02d-%02d-%04d", $d,$m,$y );
+	}
+	else {
+		die "You must specify months as a positive or non-zero integer!\n";
+	}
+}
+
+if ($from) {
+	if ( $from !~ $dateregex ) {
+		die "You have not specified the --from date in the correct format: DD-MM-YYYY.\n";	
+	}
+	else {
+		$start_analysis = $from;
+		if ( ! checkEarlierDate($start_analysis, $end_analysis) ) {
+		print $start_analysis, ", ", $end_analysis, "\n";
+			die "You have specified --from date that is either the same or later than the --to date.\n";
+		}
+	}
+	if ($months && looks_like_number($months)) {
+		my ($y,$m,$d) = Add_Delta_YMD((split(/-/,$start_analysis))[2,1,0], 0, $months, -1);
+		$end_analysis = sprintf( "%02d-%02d-%04d", $d,$m,$y );
+	}	
+}
+
+my $headerdates = " Dates for statistics collection:".($start_analysis ? " from $start_analysis " : " all data " )."up to $end_analysis.";
+
+my $projects;
+
+if ($study) {
+	my %study_hash   = ();
+	my @studies = split(/,/, $study);
+	for my $study_input (@studies) {
+		my $project; #Not needed, but keep for now in case I decide to go with just names or ids later on
+		if (looks_like_number($study_input)) {
+			$project = $vrtrack->get_project_by_id($study_input);
+		}
+		else {
+			$project = $vrtrack->get_project_by_name(uc($study_input));
+		}
+		unless ($project){
+			warn "Unable to retrieve project $study_input\n";
+        	next;
+     	}
+     	$study_hash{$project->name} = $project; 
+	}
+	#get unique projects from list
+	for my $proj (keys %study_hash) {
+		push @$projects, $study_hash{$proj};
+	}
+}
+else {
+	$projects = $vrtrack->projects();
+}
+
+unless ($projects) {
+	die "No projects found for studies or database given.\n";
+}
+
+if ($head) { printHeader($db, $projects, $headerdates); }
+printColumns() unless ($nocol);
+
+for my $project (@$projects) {
+	my $name = $project->name();
+	my $samples = $project->samples();
+	for my $sample ( @{ $samples } ) {
+		my $sample_name = $sample->name();
+		my $libraries = $sample->libraries();
+		for my $library  ( @{$libraries} ) {
+			my $lanes = $library->lanes();
+			for my $lane ( @{$lanes} ) {
+				my $mapstats = $lane->latest_mapping();
+				#Are dates important - if so what to use?? $lane->run_date()?
+				my $run_date = convertIsoTimestamp($lane->run_date);
+				if (checkEarlierDate($start_analysis, $run_date) && checkEarlierDate($run_date, $end_analysis)) {
+					my @lineout = ($sample_name, $lane->name, $name, $run_date);
+					#Values for reads and mappings
+					my $raw_reads = $mapstats->raw_reads;
+					my $raw_bases = $mapstats->raw_bases;
+					my $reads_mapped = $mapstats->reads_mapped;
+					my $bases_mapped = $mapstats->bases_mapped;
+					my $target_bases_mapped = $mapstats->target_bases_mapped;
+					my $num_reads = $mapstats->rmdup_reads_mapped;
+					my $gt_ratio = $mapstats->genotype_ratio();
+					my $gt_status = $lane->genotype_status();
+					my $mean_target_coverage = $mapstats->mean_target_coverage();
+					my $target_bases_1X = $mapstats->target_bases_1X();
+					my $target_bases_10X = $mapstats->target_bases_10X();
+					my $target_bases_20X = $mapstats->target_bases_20X();
+					my $target_bases_100X = $mapstats->target_bases_100X();
+					
+					my $percent_mapping_to_ref = ($raw_reads ? sprintf('%.2f', ($reads_mapped/$raw_reads)*100) : '-' );
+					my $percent_duplicates = ($reads_mapped ? sprintf('%.2f', (($reads_mapped-$num_reads)/$reads_mapped)*100) : '-' );
+					my $percent_unique_mapping = ($raw_reads ? sprintf('%.2f', ($num_reads/$raw_reads)*100) : '-');
+				
+					#To calculate mean-depth need to get mean_target_coverage for exome, for whole genome, raw_bases/3Gigabases (X coverage)
+					my $mean_depth = ($mean_target_coverage ? $mean_target_coverage :  sprintf('%.2f', $raw_bases/$human_genome_size));
+					my $percent_mapping_capture = '-';
+					if ($target_bases_mapped && $bases_mapped) { $percent_mapping_capture = sprintf('%.2f',  (($target_bases_mapped/$bases_mapped)*100 )); }
+				
+					push @lineout, (($raw_reads ? $raw_reads : '-'), ($raw_bases ? $raw_bases : '-'), $percent_mapping_to_ref, $percent_duplicates, $percent_unique_mapping, ($gt_ratio ? $gt_ratio : '-'), ($gt_status ? $gt_status : '-'), ($target_bases_1X ? $target_bases_1X : '-'), ($target_bases_10X ? $target_bases_10X : '-'), ($target_bases_20X ? $target_bases_20X : '-'), ($target_bases_100X ? $target_bases_100X : '-'), $mean_depth, $percent_mapping_capture);
+				
+					print join("\t", @lineout), "\n";
+				}
+			}
+		}
+	}
+}
+
+sub convertIsoTimestamp
+{	
+	my ($time) = @_;
+	my $isodateregex = '^(19|20)\d\d[-](0[1-9]|1[012])[-](0[1-9]|[12][0-9]|3[01])';
+	if ( $time !~ $isodateregex ) {
+		warn "The date supplied is not in the expected format YYYY-MM-DD.\n";
+		return $time;
+	}	
+	return sprintf("%02d-%02d-%04d", ((split(/-/, (split(/ /, $time))[0]))) [2,1,0]);
+}
+
+sub revertIsoTimestamp
+{	
+	my ($time) = @_;
+	my $dateregex = '^(0[1-9]|[12][0-9]|3[01])[-](0[1-9]|1[012])[-](19|20)\d\d';
+	if ( $time !~ $dateregex ) {
+		warn "The date supplied is not in the expected format YYYY-MM-DD.\n";
+		return $time;
+	}	
+	return sprintf("%04d-%02d-%02d", ((split(/-/, (split(/ /, $time))[0]))) [2,1,0]);
+}
+
+sub checkEarlierDate
+{
+ 	my ($date1,$date2) = @_;
+ 	return 1 unless $date1;
+ 	my $compdate1 = revertIsoTimestamp($date1);
+ 	my $compdate2 = revertIsoTimestamp($date2);
+ 	return ( $compdate1 le $compdate2 );
+}
+
+sub printHeader 
+{
+ 	my ($db,$projects,$dates) = @_;
+ 	
+ 	my $width = 90;
+ 	$db = ' Database: '.$db;
+ 	my $studytag = ' Studies:';
+ 	my $dbhead = '##'.$db.' ' x ($width-(length($db)+4)).'##'."\n"; 
+ 	my $studyhead = '##'.$studytag.' ' x ($width-(length($studytag)+4)).'##'."\n"; 
+ 	my $datehead = '##'.$dates.' ' x ($width-(length($dates)+4)).'##'."\n";
+ 	my $fullwidth = '#' x $width."\n";
+ 	my $partwidth = '##'.' ' x ($width-4).'##'."\n";
+ 	print $fullwidth, $partwidth, $dbhead, $studyhead;
+ 	for my $project (@$projects) {
+ 		my $name = $project->name;
+		print '##    ', $name, ' ' x ($width-(length($name)+8)), '##', "\n";
+	}
+ 	print $datehead, $partwidth, $fullwidth; 	
+
+}
+
+sub printColumns
+{
+	my @columns = ('sample', 'lane', 'projectname', 'analysis_complete_date', 'raw_reads', 'raw_bases', '%_map_reference', '%_duplicates', '%_uniq_mapping', 'gt_ratio', 'gt_status', '%_1x', '%_10x', '%_20x', '%_100x', 'mean_depth', 'percent_mapping_to_capture_target');
+	print join("\t", @columns), "\n";
+}
+
+
+#Columns in spreadsheet -  we don't have all of this data (e.g. readblock_id)
+# sample	readblock_id	readblock_name	import_date	duvet_projectname	analysis_complete_date	Is_merged	Raw cluster density (P50 per lane - clusters/mm^2) 	PF cluster density (P50 per lane - clusters/mm^2)	Yield (reads)	Yield (bases)	Bases >= q20	Bases >= q30	% mapping to reference	% duplicates	% unique mapping	% 1x	% 10x	% 25x	% 200x	Mean depth	% mapping to capture target
