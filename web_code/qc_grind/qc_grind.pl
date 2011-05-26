@@ -197,7 +197,7 @@ my $USER = $sw->username();
 my $cgi = $sw->cgi();
 #script name for self links
 my $SCRIPT_NAME = $cgi->url(-relative=>1);
-my $pending_view = "../pending-view/pending_view2.pl";
+my $pending_view = "../pending-view/pending_view.pl";
 
 
 
