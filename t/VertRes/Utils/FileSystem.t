@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 
 BEGIN {
-    use Test::Most tests => 53;
+    use Test::Most tests => 55;
     
     use_ok('VertRes::Utils::FileSystem');
 }
@@ -113,6 +113,13 @@ ok -s $test_file, "test file present for md5 tests";
 is $fsu->calculate_md5($test_file), '6fd5c2f7f105b15d44ed374916d0cd34', 'calculate_md5 worked';
 ok $fsu->verify_md5($test_file, '6fd5c2f7f105b15d44ed374916d0cd34'), 'verify_md5 worked in a positive test';
 ok ! $fsu->verify_md5($test_file, '6fd5c2f7f105b15d44ed374916d0cd35'), 'verify_md5 worked in a negative test';
+
+($fh, $file) = $fsu->tempfile;
+close($fh);
+$fsu->calculate_md5($test_file, $file);
+ok -s $file, 'calculate_md5 created file containing the md5';
+is $fsu->md5_from_file($file),  '6fd5c2f7f105b15d44ed374916d0cd34', 'getting md5_from_file worked';
+unlink $file;
 
 # hashed path and the other disk-related methods
 is $fsu->hashed_path('/abs/path/to/lane'), '6/2/9/0/lane', 'hashed_path test';

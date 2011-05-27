@@ -239,18 +239,37 @@ sub stats_and_graphs
 {
     my ($self,$lane_path,$lock_file) = @_;
     my $sample_dir = $self->{'sample_dir'};
-    my $lane  = $self->{lane};
+    my $lane = $self->{lane};
     my $outdir = File::Spec->catdir($lane_path, $sample_dir);
     my $bam = File::Spec->catfile($outdir, $lane . '.bam');
     my $qc_files_prefix = 'exomeQC';
-    #my $stats_ref = exists($$self{stats_ref}) ? $$self{stats_ref} : '';
+    
+    #Get current bc file
+	my $bcfile;
+	if ( -e "$outdir/$$self{mapstat_id}" )
+    {
+        my $mapstats_id = `cat $outdir/$$self{mapstat_id}`;
+        chomp $mapstats_id;
+    	my @bcfiles = glob("$lane_path/$mapstats_id*.bam.bc");
+    	for my $file ( @bcfiles ) {
+    		if ( $file=~m{$mapstats_id\.[ps]e\.raw\.sorted\.bam\.bc} ) {
+    			$bcfile = $file;
+    		}
+    	}
+    }
+	#what if $bcfile is uninitialised - can it ever be at this stage? Run bamcheck?
+	my $bc = VertRes::Parser::bamcheck->new(file=>"$bcfile");
+	print STDERR "CHECK: ", $bc->get('sequences'), ", ", $bc->get('total_length'), ", ", $bc->get('reads_mapped'), "\n";
+    if ( $bc->get('sequences') > 0 && $bc->get('total_length') > 0 && $bc->get('reads_mapped') > 0 )
+    {
+    	#my $stats_ref = exists($$self{stats_ref}) ? $$self{stats_ref} : '';
 
-    # Dynamic script to be run by LSF.
-    my $script = File::Spec->catfile($lane_path, $sample_dir, "_stats_and_graphs.pl");
-    #my $fakefile = '/nfs/users/nfs_m/mh12/Random/fake_exome_qc_dump';
-    open my $fh, '>', $script or Utils::error("$script: $!");
-    print $fh 
-qq[
+    	# Dynamic script to be run by LSF.
+    	my $script = File::Spec->catfile($lane_path, $sample_dir, "_stats_and_graphs.pl");
+    	#my $fakefile = '/nfs/users/nfs_m/mh12/Random/fake_exome_qc_dump';
+    	open my $fh, '>', $script or Utils::error("$script: $!");
+    	print $fh 
+	qq[
 use strict;
 use warnings;
 use VertRes::Utils::Sam;
@@ -278,18 +297,18 @@ else {
 die "error touching done file" if (system "touch _stats_and_graphs.done");
 ];
 
-    close $fh;
+    	close $fh;
 
-    my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = $self->{bsub_opts_stats};
-    LSF::run($lock_file,$outdir,"_${lane}_stats_and_graphs", $self, qq{perl -w _stats_and_graphs.pl});
-    $self->{bsub_opts} = $orig_bsub_opts;
+    	my $orig_bsub_opts = $self->{bsub_opts};
+    	$self->{bsub_opts} = $self->{bsub_opts_stats};
+    	LSF::run($lock_file,$outdir,"_${lane}_stats_and_graphs", $self, qq{perl -w _stats_and_graphs.pl});
+    	$self->{bsub_opts} = $orig_bsub_opts;
+    }
+    else {
+    	`touch $outdir/_stats_and_graphs.done`;
+    }
     return $$self{'No'};
 }
-
-
-
-
 
 sub auto_qc_requires
 {
@@ -370,7 +389,6 @@ sub update_db {
     if ( !$vrlane->is_processed('import') ) { return $$self{Yes}; }
 
     my $stats_file = File::Spec->catfile($sample_dir, 'exomeQC.dump');
-    my $stats = do $stats_file or $self->throw("Could not load stats from file $stats_file");
 
     $vrtrack->transaction_start();
 
@@ -386,7 +404,7 @@ sub update_db {
         ($mapstats_id) = `cat $sample_dir/$$self{mapstat_id}`;
         chomp($mapstats_id);
         $mapping = VRTrack::Mapstats->new($vrtrack, $mapstats_id);
-        if ( $mapping and !($mapping->assembly_id()) ) { $has_mapstats=1; }
+        if ( $mapping )  { $has_mapstats=1; }
     }
     if ( !$mapping ) { $mapping = $vrlane->add_mapping(); }
 
@@ -404,56 +422,59 @@ sub update_db {
         };
     }
 
-    # Write the mapstats values
-    $mapping->raw_reads($stats->{raw_reads});
-    $mapping->raw_bases($stats->{raw_bases});
-    $mapping->reads_mapped($stats->{reads_mapped});
-    $mapping->reads_paired($stats->{reads_paired});
-    $mapping->bases_mapped($stats->{bases_mapped});
-    $mapping->error_rate($stats->{pct_mismatches} / 100); # keep value in [0,1] to be consistent with standard QC
-    $mapping->rmdup_reads_mapped($stats->{rmdup_reads_mapped});
-    $mapping->rmdup_bases_mapped($stats->{rmdup_bases_mapped});
-    # TODO: need adapter search from BAM file. $mapping->adapter_reads($nadapters);
-    $mapping->clip_bases($stats->{raw_bases} - $stats->{clip_bases});
-    $mapping->mean_insert($stats->{mean_insert_size});
-    $mapping->sd_insert($stats->{insert_size_sd});
+	if ( -e $stats_file ) {
+		my $stats = do $stats_file or $self->throw("Could not load stats from file $stats_file");
+
+    	# Write the mapstats values
+    	$mapping->raw_reads($stats->{raw_reads});
+    	$mapping->raw_bases($stats->{raw_bases});
+    	$mapping->reads_mapped($stats->{reads_mapped});
+    	$mapping->reads_paired($stats->{reads_paired});
+    	$mapping->bases_mapped($stats->{bases_mapped});
+    	$mapping->error_rate($stats->{pct_mismatches} / 100); # keep value in [0,1] to be consistent with standard QC
+    	$mapping->rmdup_reads_mapped($stats->{rmdup_reads_mapped});
+    	$mapping->rmdup_bases_mapped($stats->{rmdup_bases_mapped});
+    	# TODO: need adapter search from BAM file. $mapping->adapter_reads($nadapters);
+    	$mapping->clip_bases($stats->{raw_bases} - $stats->{clip_bases});
+    	$mapping->mean_insert($stats->{mean_insert_size});
+    	$mapping->sd_insert($stats->{insert_size_sd});
+    	$mapping->bait_near_bases_mapped($stats->{bait_near_bases_mapped});
+    	$mapping->target_near_bases_mapped($stats->{target_near_bases_mapped});
+    	$mapping->bait_bases_mapped($stats->{bait_bases_mapped});
+    	$mapping->mean_bait_coverage($stats->{mean_bait_coverage});
+    	$mapping->bait_coverage_sd($stats->{bait_coverage_sd});
+    	$mapping->off_bait_bases($stats->{off_bait_bases});
+    	$mapping->reads_on_bait($stats->{reads_on_bait});
+    	$mapping->reads_on_bait_near($stats->{reads_on_bait_near});
+    	$mapping->reads_on_target($stats->{reads_on_target});
+    	$mapping->reads_on_target_near($stats->{reads_on_target_near});
+    	$mapping->target_bases_mapped($stats->{target_bases_mapped});
+    	$mapping->mean_target_coverage($stats->{mean_target_coverage});
+    	$mapping->target_coverage_sd($stats->{target_coverage_sd});
+    	$mapping->target_bases_1X($stats->{target_bases_1X});
+    	$mapping->target_bases_2X($stats->{target_bases_2X});
+    	$mapping->target_bases_5X($stats->{target_bases_5X});
+    	$mapping->target_bases_10X($stats->{target_bases_10X});
+    	$mapping->target_bases_20X($stats->{target_bases_20X});
+    	$mapping->target_bases_50X($stats->{target_bases_50X});
+    	$mapping->target_bases_100X($stats->{target_bases_100X});
+		# update the exome_design		
+		my $exome_design = $mapping->exome_design($self->{exome_design});
+    	unless ($exome_design) { $exome_design = $mapping->add_exome_design($self->{exome_design}) }
+    	$exome_design->bait_bases($stats->{bait_bases});
+    	$exome_design->target_bases($stats->{target_bases});
+    	$exome_design->update();
+    	$mapping->exome_design_id($exome_design->id());
+    }
     # TODO: genotyping
     $mapping->genotype_expected($$gtype{expected});
     $mapping->genotype_found($$gtype{found});
     $mapping->genotype_ratio($$gtype{ratio});
     $vrlane->genotype_status($$gtype{status});
-    $mapping->bait_near_bases_mapped($stats->{bait_near_bases_mapped});
-    $mapping->target_near_bases_mapped($stats->{target_near_bases_mapped});
-    $mapping->bait_bases_mapped($stats->{bait_bases_mapped});
-    $mapping->mean_bait_coverage($stats->{mean_bait_coverage});
-    $mapping->bait_coverage_sd($stats->{bait_coverage_sd});
-    $mapping->off_bait_bases($stats->{off_bait_bases});
-    $mapping->reads_on_bait($stats->{reads_on_bait});
-    $mapping->reads_on_bait_near($stats->{reads_on_bait_near});
-    $mapping->reads_on_target($stats->{reads_on_target});
-    $mapping->reads_on_target_near($stats->{reads_on_target_near});
-    $mapping->target_bases_mapped($stats->{target_bases_mapped});
-    $mapping->mean_target_coverage($stats->{mean_target_coverage});
-    $mapping->target_coverage_sd($stats->{target_coverage_sd});
-    $mapping->target_bases_1X($stats->{target_bases_1X});
-    $mapping->target_bases_2X($stats->{target_bases_2X});
-    $mapping->target_bases_5X($stats->{target_bases_5X});
-    $mapping->target_bases_10X($stats->{target_bases_10X});
-    $mapping->target_bases_20X($stats->{target_bases_20X});
-    $mapping->target_bases_50X($stats->{target_bases_50X});
-    $mapping->target_bases_100X($stats->{target_bases_100X});
-
-    # update the exome_design
-    my $exome_design = $mapping->exome_design($self->{exome_design});
-    unless ($exome_design) { $exome_design = $mapping->add_exome_design($self->{exome_design}) }
-    $exome_design->bait_bases($stats->{bait_bases});
-    $exome_design->target_bases($stats->{target_bases});
-    $exome_design->update();
-    $mapping->exome_design_id($exome_design->id());
 
     # If there is no mapstats present, the mapper and assembly must be filled in.
     $self->_update_mapper_and_assembly($sample_dir, $mapping) unless $has_mapstats;
-    $mapping->update;
+	$mapping->update;
 
     # Write the images
     my %images;
@@ -481,6 +502,17 @@ sub update_db {
     # Write the QC status. Never overwrite a QC status set previously by human. Only NULL or no_qc can be overwritten.
     $self->_write_QC_status($vrtrack, $vrlane, $name);
     $vrtrack->transaction_commit();
+
+    # Clean the big files
+    for my $file ('gc-depth.bindepth',"$$self{lane}.bam.bai","$$self{lane}*.sai","$$self{lane}*.fastq.gz","$$self{lane}.bam","$$self{lane}.glf")
+    {
+        Utils::CMD("rm -f $sample_dir/$file");
+    }
+
+    if ( $$self{clean_fastqs} )
+    {
+        Utils::CMD("rm -f $lane_path/$$self{lane}*.fastq.gz");
+    }
 
     # Rename the sample dir by mapstats ID, cleaning existing one
     if ( $has_mapstats && $mapstats_id )

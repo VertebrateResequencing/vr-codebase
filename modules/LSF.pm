@@ -30,7 +30,7 @@ Utilities for manipulating LSF jobs.
 
     Arg [1]     : lock file containing LSF job ID's.
     Returntype  : $LSF::Running if at least one of the jobs is still in the queue and/or running.
-                  $LSF::No if none of the jobs is present in the queue.
+                  $LSF::No if none of the jobs is present in the queue and there are no records about the job.
                   $LSF::Error if some of the jobs failed.
                   $LSF::Done if at least one job finished OK (so you should check for $LSF:Error first)
                   If the lock file is empty, $LSF::No is returned.
@@ -65,6 +65,8 @@ sub is_job_running
         if ( $status == $Done ) { $job_running |= $Done; }
     }
     close($fh);
+
+    if ( $job_running & (~$No) ) { $job_running = $job_running & (~$No) }
 
     return $job_running;
 }
@@ -151,6 +153,10 @@ sub adjust_bsub_options
     my $orig_mem = 0;
     my $no_warn = 0;
     if ( !($opts=~/-M/) ) { $mem = -500; $no_warn = 1; }  # if no mem specified, force a reservation of 500MB
+    elsif ( $opts =~ /-M(\d+)/ )
+    {
+        $orig_mem = $1*1e-3;
+    }
     elsif ($opts =~ /select\[mem[^\]\d]+(\d+)/) {
         $orig_mem = $1;
     }
@@ -177,7 +183,9 @@ sub adjust_bsub_options
                 }
                 elsif ($status eq 'RUNLIMIT') 
                 {
-                    $queue = 'long';
+                    $queue = $parser->get('queue',$i);
+                    if ( $queue eq 'normal' ) { $queue='long' }
+                    else { $queue = 'basement'; }
                 }
             }
         }
@@ -257,7 +265,8 @@ sub run
         if ( !defined($opts{queue}) && defined($opts{runtime}) ) 
         { 
             if ( $opts{runtime} <= 720.0 ) { $opts{queue} = 'normal'; }
-            else { $opts{queue} = 'long'; }
+            elsif ( $opts{runtime} <= 60*24*2 ) { $opts{queue} = 'long'; }
+            else { $opts{queue} = 'basement'; }
         }
         else 
         { 

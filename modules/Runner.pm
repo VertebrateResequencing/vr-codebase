@@ -52,10 +52,10 @@ Runner.pm   - A simple module for quick development of scripts and pipelines whi
             $self->spawn($method,$done_file,@params);
         }
         # Checkpoint, wait until all the above files are finished
-        $self->wait();
+        $self->wait;
 
         print STDERR "All done!\n";
-        $self->all_done();
+        $self->all_done;
     }
 
     sub touch
@@ -263,7 +263,7 @@ sub get_limits
 
 =head2 spawn
 
-    About : Schedule a job for execution.
+    About : Schedule a job for execution. When +maxjobs limit is exceeded, the runner will exit via self->wait call.
     Usage : $self->spawn("method",$done_file,@params);
     Args  : <func_name>
                 The method to be run
@@ -271,7 +271,13 @@ sub get_limits
                 The file to be created by the method. If exists, the task is completed and
                 spawn returns immediately.
             <array>
-                Arbitrary number of parameters to be passed to the method
+                Arbitrary number of parameters to be passed to the method. Note that these
+                are stored by Storable and thus the same limitations apply. Passing for example,
+                complex objects with CODE refs will not work.
+    Returns : 0
+                Job is finished
+              1
+                Job was submitted to farm
                 
 =cut
 
@@ -286,7 +292,7 @@ sub spawn
     push @{$$self{_checkpoints}}, $done_file;
 
     # If the file is there, no need to run anything
-    if ( $self->is_finished($done_file) ) { return; }
+    if ( $self->is_finished($done_file) ) { return 1; }
 
     # Store all necessary information to run the task in a temp file
     $$self{_store}{call} = $call;
@@ -301,6 +307,7 @@ sub spawn
         my $cmd = qq[$0 +run $tmp_file];
         $self->debugln("$call:\t$cmd");
         system($cmd);
+        return 1;
     }
 
     # Otherwise submit to farm 
@@ -310,11 +317,13 @@ sub spawn
         #   only jobs which previously failed, i.e. are registered as running.
         if ( exists($$self{_maxjobs}) && scalar keys %{$$self{_running_jobs}} >= $$self{_maxjobs} && !exists($$self{_running_jobs}{$done_file}) )
         {
-            return;
+            $self->wait;
+            return 1;
         }
         $$self{_running_jobs}{$done_file} = 1;
 
         $self->_spawn_to_farm($tmp_file);
+        return 0;
     }
 }
 

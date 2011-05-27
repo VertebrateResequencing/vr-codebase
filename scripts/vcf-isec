@@ -29,7 +29,7 @@ sub error
         "Usage: vcf-isec [OPTIONS] file1.vcf file2.vcf ...\n",
         "Options:\n",
         "   -C, --chromosomes <list|file>       Process the given chromosomes (comma-separated list or one chromosome per line in a file).\n",
-        "   -c, --complement                    Output positions present in A but missing from the other files.\n",
+        "   -c, --complement                    Output positions present in the first file but missing from the other files.\n",
         "   -d, --debug                         Debugging information\n",
         "   -f, --force                         Continue even if the script complains about differing columns.\n",
         "   -o, --one-file-only                 Print only entries from the left-most file. Without -o, all unique positions will be printed.\n",
@@ -305,7 +305,7 @@ sub do_chrm_isec
             {
                 # This is a VCF, check filters
                 my $fltr = $$rec{line}[6];
-                if ( $fltr ne $$vcf{filter_passed} && $fltr ne $$vcf{defaults}{default} ) { $src .= 'f'; }
+                if ( !$split && $fltr ne $$vcf{filter_passed} && $fltr ne $$vcf{defaults}{default} ) { $src .= 'f'; }
             }
         }
         if ( $split )

@@ -63,10 +63,16 @@ slx_mapper_alias => ['bwa','bwa_aln'] (optional; alternative names
 # Changes to the header can be made by setting the header_changes option in
 # the data => {} section of the conf file. This takes the same arguments as the 
 # VertRes::Utils::Sam->change_header_lines() method, e.g.:
-header_changes => {
-    PG => { remove_unique => 1 },
-    SQ => { from_dict => '/path/to/new/dictfile.dict' }
-}
+    header_changes => {
+        PG => { remove_unique => 1 },
+        SQ => { from_dict => '/path/to/new/dictfile.dict' }
+    }
+Additionally, if one sets 
+    header_changes => { RG => { match_db => 1 } }
+the @RG tags will be set to match the database values, overwriting other 
+values supplied, while 
+    header_changes => { RG => { rgid_fix => 1 } }
+will set the @RG ID tag to the lane hierarchy name.
 
 # qc => 1 can be supplied outside the data section to only improve lanes which 
 # have passed qc
@@ -367,8 +373,13 @@ sub new {
     $self->{io} = VertRes::IO->new;
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     
-    if (exists $self->{header_changes}->{dict}) {
-        $self->throw("Supplied dict file does not exist!\n") unless (-s $self->{header_changes}->{dict});
+    $self->{header_changes}->{RG}->{rgid_fix} ||= 0;
+    $self->{header_changes}->{RG}->{match_db} ||= 0;
+    $self->{header_changes}->{SQ}->{remove_unique} ||= 0;
+    $self->{header_changes}->{SQ}->{from_dict} ||= '';
+    
+    if ($self->{header_changes}->{SQ}->{from_dict}) {
+        $self->throw("Supplied dict file does not exist!\n") unless (-s $self->{header_changes}->{SQ}->{from_dict});
     }
     
     return $self;
@@ -1029,8 +1040,10 @@ sub rewrite_header {
     
     return $self->{Yes} unless $self->{header_changes};
     
+    my %header_changes = %{$self->{header_changes}};
+    
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M1000000 -R \'select[mem>1000] rusage[mem=1000]\'';
+    $self->{bsub_opts} = '-q normal -M5000000 -R \'select[mem>5000] rusage[mem=5000]\'';
     
     my $job_submitted = 0;
     foreach my $in_bam (@{$self->{in_bams}}) {
@@ -1039,33 +1052,70 @@ sub rewrite_header {
         
         my $done_file = $self->{fsu}->catfile($lane_path, '.rewrite_header_complete_'.$base);
         
+        # Get the @RG ID tag from the header
+        my $bp = VertRes::Parser::bam->new(file => $bam);
+        my %rg_info = $bp->readgroup_info();
+        $bp->close;
+        my @rgs = keys %rg_info;
+        $self->throw("$bam does not contain a single readgroup") unless (scalar @rgs == 1);
+        my $rg = $rgs[0];
+        
+        # Check if we need to change the @RG ID tag
+        my $fix_rgid = 0;
+        if ($header_changes{RG}->{rgid_fix} && $self->{vrlane}->name ne $rg) {
+            $fix_rgid = 1;
+            # picard does not support DT tag so have to add it back in afterwards
+            $header_changes{RG}->{$self->{vrlane}->name}->{date} = $rg_info{$rg}{DT} || '';
+            $rg = $self->{vrlane}->name;
+        }
+        
+        # Match @RG info with the database lane info
+        if ($header_changes{RG}->{match_db}) {
+            my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
+            my %lane_info = $hu->lane_info($self->{vrlane});
+            $header_changes{RG}->{$rg}->{sample_name} = $lane_info{sample};
+            $header_changes{RG}->{$rg}->{project} = $lane_info{project};
+            $header_changes{RG}->{$rg}->{library} = $lane_info{library_true};
+            $header_changes{RG}->{$rg}->{centre} = $lane_info{centre};
+            $header_changes{RG}->{$rg}->{platform} = $lane_info{technology};
+        }
+        
         # If a header rewrite is not required, mark as complete and move on to the next bam
         my $su = VertRes::Utils::Sam->new();
-        if ( ! $su->header_rewrite_required( $bam, %{$self->{header_changes}} ) ) {
+        unless ( $su->header_rewrite_required( $bam, %header_changes) || $fix_rgid) {
             open(my $dfh, '>', $done_file) || $self->throw("Could not write to $done_file");
             print $dfh "done\n";
             close($dfh);
             next;
         }
         
-        # If a header rewrite is required, run change_header_lines in an LSF call to a temp script
+        # If a header rewrite is required, run temp script to do the rewrite in an LSF call
         my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."rewrite_header_$base.pl");
         
-        my $d = Data::Dumper->new([$self->{header_changes}], ["header_changes"]);
+        my $d = Data::Dumper->new([\%header_changes], ["header_changes"]);
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq[
 use strict;
 use VertRes::Utils::Sam;
 
-my \$bam = '$bam';
-my \$done_file = '$done_file';
+my \$bam = qq[$bam];
+my \$done_file = qq[$done_file];
+my \$fix_rgid = qq[$fix_rgid];
 my ];
         print $scriptfh $d->Dump;
         print $scriptfh qq[
 
-# run change header
 my \$su = VertRes::Utils::Sam->new();
-\$su->change_header_lines( \$bam, \%{\$header_changes} ) || die("reheader of \$bam failed");
+
+# replace readgroup ID if necessary
+if (\$fix_rgid) {
+    \$su->replace_readgroup_id(\$bam, qq[$rg]) || die ("replace RG ID tag of \$bam failed\\n");
+}
+
+# run change_header_lines
+if (\$su->header_rewrite_required( \$bam, \%{\$header_changes} )) {
+    \$su->change_header_lines( \$bam, \%{\$header_changes} ) || die("reheader of \$bam failed\\n");
+}
 
 # mark that we've completed
 open(my \$dfh, '>', \$done_file) || die "Could not write to \$done_file";
@@ -1073,7 +1123,7 @@ print \$dfh "done\\n";
 close(\$dfh);
 
 exit;
-        ];
+];
         close $scriptfh;
         
         my $job_name = $self->{prefix}.'rewrite_header_'.$base;
@@ -1549,7 +1599,7 @@ sub cleanup {
     foreach my $in_bam (@{$self->{in_bams}}) {
         my $base = basename($in_bam);
         
-        foreach my $action ('realign', 'sort', 'recalibrate', 'calmd', 'extract_intervals', 'index', 'statistics') {
+        foreach my $action ('realign', 'sort', 'recalibrate', 'calmd', 'rewrite_header', 'extract_intervals', 'index', 'statistics') {
             foreach my $suffix (qw(o e pl)) {
                 my $job_name = $prefix.$action.'_'.$base;
                 if ($suffix eq 'o') {
