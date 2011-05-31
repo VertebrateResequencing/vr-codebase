@@ -197,6 +197,8 @@ my $USER = $sw->username();
 my $cgi = $sw->cgi();
 #script name for self links
 my $SCRIPT_NAME = $cgi->url(-relative=>1);
+my $pending_view = "../pending-view/pending_view.pl";
+
 
 
 #decide on the entry point
@@ -483,10 +485,13 @@ sub displayProjectsPage
         my $pid = $project->id();
         
         my $name = $project->name;
+
         print qq[
             <tr>
                 <td><a href="$SCRIPT_NAME?db=$database&amp;mode=$PROJ_VIEW&amp;proj_id=$pid">$name</a></td>
                 <td>$acc</td>
+
+
             </tr>
         ];
     }
@@ -569,7 +574,8 @@ sub displayProjectPage
     print qq[
     <h2 align="center" style="font: normal 900 1.5em arial"><a href="$SCRIPT_NAME">QC Grind</a></h2>
     <h3 style="font: normal 700 1.5em arial"><a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;db=$database">].
-    ucfirst($database).qq{</a> : $pname </h3><br/>};
+    ucfirst($database).qq{</a> : $pname </h3>
+    <h5 style="font: arial"><a href="$pending_view?mode=2&amp;db=$database">Pending Requests</a></h5><br/>};
     
     print qq[
         <div class="centerFieldset">
