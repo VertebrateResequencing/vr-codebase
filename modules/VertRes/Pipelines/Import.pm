@@ -9,6 +9,7 @@ use VRTrack::Lane;
 use VRTrack::File;
 use VertRes::Parser::fastqcheck;
 use VertRes::Pipelines::Import_iRODS;
+use File::Spec;
 
 our @actions =
 (
@@ -34,8 +35,8 @@ our $options =
     # Executables
     'fastqcheck'      => 'fastqcheck',
     'mpsa'            => '/software/solexa/bin/mpsa_download',
-
     'bsub_opts'       => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
+    'local_bam_dir'     => '',
 };
 
 
@@ -61,14 +62,24 @@ sub new
     {
         # This should be always true
         my $bams_requested = 1;
+        my $bams_local = 0;
         for my $file (@{$args{files}})
         {
             if ( !($file=~/\.bam$/i) ) { $bams_requested=0; last; }
+            if ( $args{local_bam_dir} ) { $file = File::Spec($args{local_bam_dir}, $file); }
+            if ( -s $file ) { $bams_local=1; last; }
         }
         if ( $bams_requested )
         {
             # Not sure if this is going to work and most certainly is not clean.
-            return VertRes::Pipelines::Import_iRODS->new(%args);
+            if ($bams_local)
+            {
+                return VertRes::Pipelines::Import_Bam->new(%args);
+            }
+            else
+            {
+                return VertRes::Pipelines::Import_iRODS->new(%args);
+            }
         }
     }
 
