@@ -9,6 +9,7 @@ use VRTrack::Lane;
 use VertRes::Utils::FileSystem;
 use VertRes::Parser::bamcheck;
 use VertRes::Wrapper::samtools;
+use VertRes::Pipelines::Import_iRODS;
 
 our @actions =
 (
@@ -23,7 +24,7 @@ our @actions =
     # If all files were downloaded OK, update the VRTrack database.
     {
         'name'     => 'update_db',
-        'action'   => \&VertRes::Pipelines::Import_iRods::update_db,
+        'action'   => \&VertRes::Pipelines::Import_iRODS::update_db,
         'requires' => \&update_db_requires, 
         'provides' => \&update_db_provides,
     },
