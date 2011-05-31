@@ -722,7 +722,7 @@ sub get_qc_jobs_from_vrtrack
         $jobs_running-- if ($job_state eq 'failed');
         debug($config_data,".");
 
-        if (exists($$config_data{max_qc_jobs}) && $$config_data{max_qc_jobs} && ($$config_data{max_qc_jobs} >= $jobs_running)) {
+        if (exists($$config_data{max_qc_jobs}) && $$config_data{max_qc_jobs} && ($jobs_running >= $$config_data{max_qc_jobs})) {
             debug($config_data, "jobs limit $$config_data{max_qc_jobs} reached...");
             last;
         }
