@@ -241,7 +241,7 @@ has 'description'  => (
 
 has 'abstract'  => (
     is          => 'ro',
-    isa         => 'Str',
+    isa         => 'Maybe[Str]',
 );
 
 has 'sponsor'  => (
@@ -304,7 +304,7 @@ has 'visibility'=> (
 
 has 'title'=> (
     is          => 'ro',
-    isa         => 'Str',
+    isa         => 'Maybe[Str]',
     init_arg    => 'study_title',
 );
 
