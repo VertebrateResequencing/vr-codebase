@@ -75,7 +75,7 @@ if ( ! -e "$bam.bai" || Utils::file_newer("$bam","$bam.bai") )
 { 
     Utils::CMD("$samtools index $bam"); 
 }
-if ( ! -e $pileup_out || Utils::file_newer("$bam",$pileup_out) )
+if ( ! -e "$pileup_out" || Utils::file_newer("$bam","$pileup_out") )
 {
     Utils::CMD(q[$pileup_cmd]);
 }
