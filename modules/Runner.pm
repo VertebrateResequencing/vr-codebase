@@ -275,9 +275,9 @@ sub get_limits
                 are stored by Storable and thus the same limitations apply. Passing for example,
                 complex objects with CODE refs will not work.
     Returns : 0
-                Job is finished
-              1
                 Job was submitted to farm
+              1
+                Job is finished
                 
 =cut
 
