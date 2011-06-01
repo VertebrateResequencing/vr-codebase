@@ -41,9 +41,9 @@ sub check_genotype
     my ($dir,$name,$suff) = Utils::basename($bam);
     if ( !$dir ) { $dir = '.'; }
 
-    my $pileup_out = "$name.glf";
-    my $pileup_cmd = "$samtools pileup -g -f $fa_ref $bam > $name.tmp.pileup && mv $name.tmp.pileup $pileup_out";
-    my $checkGenotype_cmd = "$glf checkGenotype $snps $pileup_out > $name.gtypey";
+    my $pileup_out = "$name.bcf";
+    my $pileup_cmd = "$samtools mpileup -ugDI -d 1000 -f $fa_ref $bam > $name.tmp.pileup && mv $name.tmp.pileup $pileup_out";
+    my $checkGenotype_cmd = "$glf checkGenotype -s - $snps $pileup_out > $name.gtypey";
 
     if (exists $self->{'snp_sites'} ) {
         my $snp_sites_string;
@@ -75,10 +75,9 @@ if ( ! -e "$bam.bai" || Utils::file_newer("$bam","$bam.bai") )
 { 
     Utils::CMD("$samtools index $bam"); 
 }
-if ( ! -e "$name.glf" || Utils::file_newer("$bam","$name.glf") )
+if ( ! -e $pileup_out || Utils::file_newer("$bam",$pileup_out) )
 {
     Utils::CMD(q[$pileup_cmd]);
-    #rename("$name.glfx", "$name.glf") or Utils::CMD("rename $name.glfx $name.glf: \$!");
 }
 if ( ! -e "$name.gtypex" || Utils::file_newer(q[$pileup_out],"$name.gtypex") )
 {
