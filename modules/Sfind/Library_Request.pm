@@ -133,7 +133,7 @@ has 'fragment_size_to'  => (
 
 has 'status'  => (
     is          => 'ro',
-    isa         => 'Str',
+    isa         => 'Maybe[Str]',
     init_arg    => 'state',
 );
 

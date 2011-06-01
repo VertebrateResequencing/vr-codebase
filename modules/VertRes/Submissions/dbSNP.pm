@@ -31,8 +31,8 @@ use Vcf;
 use base qw(VertRes::Base);
 
 our $REFERENCE_ASSEMBLY = 'NCBIM37';
-our $FIVE_PRIME_REGION = 200;
-our $THREE_PRIME_REGION = 200;
+our $FIVE_PRIME_REGION = 50;
+our $THREE_PRIME_REGION = 50;
 
 =head2 new
 
@@ -78,6 +78,11 @@ sub _checkFields
 	if( ! defined( $self->{species} ) )
 	{
 		$self->throw("You must pass in a species name at object creation!");
+	}
+	
+	if( ! defined( $self->{ref_species} ) )
+	{
+		$self->throw("You must pass in a ref_species name at object creation!");
 	}
 	
 	if( $self->{species} !~ '^Mus ' )
@@ -296,7 +301,7 @@ sub write_snp_records
 		-verbose => 0
 	);
 	
-	my $slice_adaptor = $registry->get_adaptor( $self->{species}, 'Core', 'Slice' );
+	my $slice_adaptor = $registry->get_adaptor( $self->{ref_species}, 'Core', 'Slice' );
 	
 	#loop over the SNPs and write out the sequence
 	while ( <$sfh> )
@@ -473,14 +478,20 @@ sub write_indel_records
 	# grab a connection to an EnsEMBL mouse db
 	my $registry = 'Bio::EnsEMBL::Registry';
 	
-	$registry->load_registry_from_db(
-		-host    => 'ensdb-archive',
-		-user    => 'ensro',
-		-port    => '5304',
-		-verbose => 0
-	);
-	
-	my $slice_adaptor = $registry->get_adaptor( $self->{species}, 'Core', 'Slice' );
+	my $slice_adaptor = $registry->get_adaptor( $self->{ref_species}, 'Core', 'Slice' );
+	if( ! $slice_adaptor )
+	{
+	    #only needs to be loaded once - so only do it if you have to
+	   	$registry->load_registry_from_db(
+	   	    -host    => 'ensdb-archive',
+	   	    -user    => 'ensro',
+	   	    -port    => '5304',
+	   	    -verbose => 0
+	   	);
+	   	$slice_adaptor = $registry->get_adaptor( $self->{ref_species}, 'Core', 'Slice' );
+	   	
+	   	die qq[Species slice call returned undefined slice adapter: ].$self->{species} unless $slice_adaptor;
+	}
 	
 	my $vcf = Vcf->new(file=>$indel_vcf);
     $vcf->parse_header;
@@ -489,7 +500,6 @@ sub write_indel_records
         my $chromosome     = $$rec{CHROM};
         my $position       = $$rec{POS};
         my $reference_seq = $$rec{REF};
-        my $consensus_base = $4;
         
         #get the alt for the sample
         my @alts = @{$$rec{ALT}};
@@ -503,20 +513,15 @@ sub write_indel_records
             $sequence = $alts[ $1 - 1 ];
         }
         
-        my $deletion = length( $reference_seq ) == 1 ? 1 : 0;
+        #compute the indel start and end (5' and 3' of the indel)
+        my $indel_start = $position; #VCF is the position prior to the indel start
+        my $indel_end = $indel_start + length( $reference_seq ) - 1; #3' base of the indel (same pos for insertions then)
         
         # grab the entire sequence once instead of having to make
 		# multiple accesses to the db i.e. for upstream and downstream say
 		my $start_pos = $position - $FIVE_PRIME_REGION;
 		my $end_pos;
-		if( $deletion )
-		{
-		    $end_pos = $position + length( $reference_seq ) + $THREE_PRIME_REGION;
-		}
-		else
-		{
-		    $end_pos = $position + $THREE_PRIME_REGION;
-		}
+		$end_pos = $position + length( $reference_seq ) + $THREE_PRIME_REGION;
 		
 		# grab the SNP and surrounding genomic region based on its 
 		# chromosomal location
@@ -540,7 +545,7 @@ sub write_indel_records
 		{
 			$self->throw("No supercontigs found for $_\n");
 		}
-		elsif ( $number_of_supercontigs < 1 ) 
+		elsif ( $number_of_supercontigs > 1 ) 
 		{
 			$self->throw("Multiple supercontigs found for $_\n");
 		}
@@ -553,27 +558,14 @@ sub write_indel_records
 			$supercontig = $contig->seq_region_name;
 		}
 		
-		# a quick sanity check that the base in the defined snp position
-		# is the identical to one defined in the read in data file
-		
-		my $indel_seq = substr($full_seq,$FIVE_PRIME_REGION,length($reference_seq));
-		
-		if ( $indel_seq ne $reference_seq ) 
-		{
-			$self->throw("Snp reference_base does not match sequence retrieved from EnsEMBL: $_\n");
-		}
-		
 		# extract the upstream and downstream sequences
 		my $five_prime_seq = substr($full_seq,0,$FIVE_PRIME_REGION);
 		
 		# indexing from zero so add a 1 to the starting position
 		my $three_prime_seq = substr($full_seq,length($full_seq)-$THREE_PRIME_REGION,$THREE_PRIME_REGION);
 		
-		# local ID for marker: concatenation of handle, strain, count
-		# computed location of the SNP (ACCESSION + LOCATION)
-		# flanking sequence (200 bp 5' and 200 bp 3' of the variant position)
-		
-		my $indel_id = $sample.'_'.$chromosome.'_'.$position;
+		# local ID for marker: concatenation of sample, chr, indel start, indel end
+		my $indel_id = $sample.'_'.$chromosome.'_'.$indel_start.'_'.$indel_end;
 		
 		print $ofh qq[
 SNP:        $indel_id

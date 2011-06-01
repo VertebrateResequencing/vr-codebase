@@ -296,6 +296,7 @@ sub displayProjectLanesPage
     <table width="60%">
     <tr>
     <th>Library</th>
+    <th>Improved</th>
     <th>Name</th>
     ];
     
@@ -318,7 +319,7 @@ sub displayProjectLanesPage
                     if( $mapstat->mapper() )
                     {
                         my $mapper = $mapstat->mapper();
-                        $mappers{ $mapper->name().qq[_].$mapper->version().qq[_].$mapper->id() } = 1;
+                        $mappers{ $mapper->name().qq[ v].$mapper->version() } = 1;
                     }
                 }
             }
@@ -336,7 +337,8 @@ sub displayProjectLanesPage
         print qq[<tr>];
         my $id = $lane->id();
         my $library = VRTrack::Library->new($vrtrack, $lane->library_id());my $libName = $library->name();
-        print qq[<td>$libName</td><td><a href="http://intwebdev.sanger.ac.uk/cgi-bin/teams/team145/qc_grind/qc_grind.pl?mode=0&lane_id=$id&db=$database">].$lane->name().qq[</a></td>];
+        my $improved = $lane->is_processed('improved') ? 'yes' : 'no';
+        print qq[<td>$libName</td><td>$improved</td><td><a href="http://intwebdev.sanger.ac.uk/cgi-bin/teams/team145/qc_grind/qc_grind.pl?mode=0&lane_id=$id&db=$database">].$lane->name().qq[</a></td>];
         my @mappings = @{ $lane->mappings() };
         my %lane_mappers;
         foreach my $mapstat ( @mappings )
@@ -344,7 +346,7 @@ sub displayProjectLanesPage
             if( $mapstat->mapper() && $mapstat->raw_bases() && $mapstat->raw_bases() > 0 )
             {
                 my $mapper = $mapstat->mapper();
-                $lane_mappers{ $mapper->name().qq[_].$mapper->version().qq[_].$mapper->id() } = 1;
+                $lane_mappers{ $mapper->name().qq[ v].$mapper->version() } = 1;
             }
         }
         foreach my $mapper ( sort( keys( %mappers ) ) )
