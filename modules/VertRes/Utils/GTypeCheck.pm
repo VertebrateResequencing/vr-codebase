@@ -42,7 +42,7 @@ sub check_genotype
     if ( !$dir ) { $dir = '.'; }
 
     my $pileup_out = "$name.bcf";
-    my $pileup_cmd = "$samtools mpileup -ugDI -d 1000 -f $fa_ref $bam > $name.tmp.pileup && mv $name.tmp.pileup $pileup_out";
+    my $pileup_cmd = "bin2hapmap -l $snps > $name.tmp.sites && $samtools mpileup -ugDI -d 1000 -l $name.tmp.sites -f $fa_ref $bam > $name.tmp.pileup && mv $name.tmp.pileup $pileup_out";
     my $checkGenotype_cmd = "$glf checkGenotype -s - $snps $pileup_out > $name.gtypey";
 
     if (exists $self->{'snp_sites'} ) {
