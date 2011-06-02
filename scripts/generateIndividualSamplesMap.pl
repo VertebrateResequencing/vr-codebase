@@ -62,6 +62,9 @@ while( <$ifh> )
     my $study = $sfind->get_study_by_name( $sname );
     
     my $samples = $study->samples();
+
+    if( ! $samples ){print qq[ERROR: Please check study exists - no samples found: $sname\n];next}
+
     foreach( @{ $samples } )
     {
         my $sam_name = $_->name();
