@@ -717,7 +717,8 @@ sub get_qc_jobs_from_vrtrack
         push @$jobs, $job;
 
         $jobs_running++;
-        my $job_state = $job->pipeline_state();
+        #my $job_state = $job->pipeline_state();
+        my $job_state = $job->state();
         # Don't count failed jobs towards job count to prevent remaining jobs being stalled indefinitely.
         $jobs_running-- if ($job_state eq 'failed');
         debug($config_data,".");
