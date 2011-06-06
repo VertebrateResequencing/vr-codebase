@@ -552,7 +552,7 @@ sub run_graphs
     rename("$bam_file.bc.tmp","$bam_file.bc") or $self->throw("rename $bam_file.bc.tmp $bam_file.bc: $!");
     if ( ! -e "$bam_file.rmdup.bc" )
     {
-        my $cmd = $$self{do_samtools_rmdup} ? qq[samtools rmdup $bam_file - | $$self{bamcheck}] : qq[samtools rmdup $bam_file - | $$self{bamcheck} -d];
+        my $cmd = $$self{do_samtools_rmdup} ? qq[samtools rmdup $bam_file - | $$self{bamcheck}] : qq[$$self{bamcheck} -d $bam_file];
         Utils::CMD(qq[$cmd > $bam_file.rmdup.bc.tmp]);
         rename("$bam_file.rmdup.bc.tmp","$bam_file.rmdup.bc") or $self->throw("rename $bam_file.rmdup.bc.tmp $bam_file.rmdup.bc: $!");
     }
