@@ -709,9 +709,9 @@ sub add_header_line
         $$rec{key} = $key;
     }
 
-    if ( exists($$self{header}{$key}) ) { $self->remove_header_line(%$rec); }
+    if ( $self->_header_line_exists($key,$rec) ) { $self->remove_header_line(%$rec); }
 
-    $$self{header}{$key} = $rec;
+    push @{$$self{header}{$key}}, $rec;
     if ( $$rec{key} eq 'fileformat' ) 
     { 
         unshift @{$$self{header_lines}}, $rec; 
@@ -720,6 +720,23 @@ sub add_header_line
     {
         push @{$$self{header_lines}}, $rec;
     }
+}
+
+sub _header_line_exists
+{
+    my ($self,$key,$rec) = @_;
+    if ( !exists($$self{header}{$key}) ) { return 0; }
+    for my $hrec (@{$$self{header}{$key}})
+    {
+        my $differ = 0;
+        for my $item (keys %$rec)
+        {
+            if ( !exists($$hrec{$item}) ) { $differ=1; last; }
+            if ( $$hrec{$item} ne $$rec{$item} ) { $differ=1; last; }
+        }
+        if ( !$differ ) { return $hrec; }
+    }
+    return 0;
 }
 
 =head2 remove_header_line
@@ -742,12 +759,18 @@ sub remove_header_line
         {
             if ( $args{ID} ne $$line{ID} ) { next; }
             delete($$self{header}{$key}{$args{ID}});
+            splice(@{$$self{header_lines}},$i,1);
         }
         else
         {
-            delete($$self{header}{$key});
+            my $to_be_removed = $self->_header_line_exists($key,\%args);
+            if ( !$to_be_removed ) { next; }
+            for (my $j=0; $j<@{$$self{header}{$key}}; $j++)
+            {
+                if ( $$self{header}{$key}[$j] eq $to_be_removed ) { splice(@{$$self{header}{$key}},$j,1); last; }
+            }
+            splice(@{$$self{header_lines}},$i,1);
         }
-        splice(@{$$self{header_lines}},$i,1);
     }
 }
 
