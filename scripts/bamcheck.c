@@ -68,6 +68,7 @@ typedef struct
 {
     // Parameters
     int trim_qual;      // bwa trim quality
+    int rmdup;          // Exclude reads marked as duplicates from the stats
 
     // Dimensions of the quality histogram holder (quals_1st,quals_2nd), GC content holder (gc_1st,gc_2nd),
     //  insert size histogram holder
@@ -206,6 +207,9 @@ void realloc_buffers(stats_t *stats, int seq_len)
 
 void collect_stats(bam1_t *bam_line, stats_t *stats)
 {
+    if ( stats->rmdup && IS_DUP(bam_line) )
+        return;
+
     int seq_len = bam_line->core.l_qseq;
     if ( !seq_len ) return;
     if ( seq_len >= stats->nbases )
@@ -497,6 +501,7 @@ void error(const char *format, ...)
     {
         printf("Usage: bamcheck [OPTIONS] file.bam\n");
         printf("Options:\n");
+        printf("    -d, --remove-dups               Exlude from statistics reads marked as duplicates\n");
         printf("    -h, --help                      This help message\n");
         printf("    -i, --insert-size <int>         Maximum insert size [8000]\n");
         printf("    -m, --most-inserts <float>      Report only the main part of inserts [0.99]\n");
@@ -550,12 +555,18 @@ int main(int argc, char *argv[])
     stats.igcd = 0;
     stats.fai  = NULL;
     stats.is_sorted = 1;
+    stats.rmdup = 0;
 
     strcpy(in_mode, "rb");
 
     // Parse command line arguments
     for (i=1; i<argc; i++)
     {
+        if ( !strcmp(argv[i],"-d") || !strcmp(argv[i],"--remove-dups") )
+        {
+            stats.rmdup = 1;
+            continue;
+        }
         if ( !strcmp(argv[i],"-s") || !strcmp(argv[i],"--sam") )
         {
             strcpy(in_mode, "r");
