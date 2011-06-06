@@ -197,7 +197,8 @@ sub next_result {
                                    memory => $mem,
                                    time => $wall,
                                    cpu_time => $cpu,
-                                   idle_factor => $idle});
+                                   idle_factor => $idle,
+                                   queue => $queue});
     }
     
     return 1;
