@@ -29,7 +29,7 @@ sub error
         "   -h, -?, --help                      This help message.\n",
         "Examples:\n",
         "   query-vcf file.vcf.gz 1:1000-2000 -c NA001,NA002,NA003\n",
-        "   query-vcf file.vcf.gz -r 1:1000-2000 -f '%CHROM:%POS\\t%REF[\\t%SAMPLE:%*=,]\\n'\n",
+        "   query-vcf file.vcf.gz -r 1:1000-2000 -f '%CHROM:%POS\\t%REF\\t%ALT[\\t%SAMPLE:%*=,]\\n'\n",
         "   query-vcf file.vcf.gz -f '[%GT\\t]%LINE\\n'\n",
         "   query-vcf file.vcf.gz -f '%CHROM\\t%POS\\t%INFO/DP\\t%FILTER\\n'\n",
         "\n";
