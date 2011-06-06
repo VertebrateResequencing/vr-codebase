@@ -81,8 +81,13 @@ sub get_bams_requires
 
 sub get_bams_provides
 {
-    my ($self) = @_;
-    return $$self{files};
+    my ($self, $lane_path) = @_;
+    my @provides;
+    foreach my $file (@{$$self{files}}) {
+        push @provides, File::Basename::basename($file);
+    }
+    @provides || $self->throw("Something went wrong; we don't seem to provide any bams!");
+    return \@provides;
 }
 
 sub get_bams
@@ -129,18 +134,19 @@ sub get_files
     # Get files and run bamcheck on them
     for my $file (@{$$self{files}})
     {
+        my $file_path = $file;
         if ($$self{local_bam_dir}) {
-            $file = $fsu->catfile($$self{local_bam_dir}, $file);
+            $file_path = $fsu->catfile($$self{local_bam_dir}, $file);
         }
-        unless ( -s $file ) { $self->warn("No such file on disk? [$file]\n"); next; }
+        unless ( -s $file_path ) { $self->throw("No such file on disk? [$file_path]\n"); next; }
         
         if ( !($file=~m{([^/]+)$}) ) { $self->throw("FIXME: [$file]"); }
         my $outfile = $1;
         if ( -s $outfile ) { next; }
         
         # Copy the BAM file over.
-        $fsu->copy($file, "$outfile.tmp");
-        $self->throw("FIXME: could not copy file $file to $outfile.tmp") unless (-s "$outfile.tmp");
+        $fsu->copy($file_path, "$outfile.tmp");
+        $self->throw("FIXME: could not copy file $file_path to $outfile.tmp") unless (-s "$outfile.tmp");
         chmod 0664,"$outfile.tmp";
         
         # Get the md5sum and check
@@ -174,7 +180,9 @@ sub get_files
 sub update_db_requires
 {
     my ($self,$lane_path) = @_;
-    return $$self{files};
+    my @requires = @{$self->get_bams_provides($lane_path)};
+    @requires || $self->throw("Something went wrong; we don't seem to require any bams!");
+    return \@requires;
 }
 
 # This subroutine will check existence of the key 'db'. If present, it is assumed

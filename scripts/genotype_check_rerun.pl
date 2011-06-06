@@ -23,7 +23,7 @@ use VertRes::Utils::VRTrackFactory;
 use VRTrack::Lane;
 
 my ($db, $root, $help, $verbose);
-my @filetypes = ('.gtype', '.gtypex');
+my @filetypes = ('.gtype', '.gtypex','.gtypey','.glf');
 
 GetOptions(
     'd|db=s'        =>  \$db,
@@ -78,6 +78,15 @@ while (<>){
     		print "Deleted: ", $filepath, "\n" if ($verbose);
     	}
     }
+    # also remove error and output files
+    for my $outfile ('_glf.o','_glf.e'){
+    	my $filepath = $qcdir.'_'.$lanename.$outfile;
+    	if ( -e $filepath ) {
+            unlink $filepath || die "Unable to delete $filepath, error = $!\n"; 
+            print "Deleted: ", $filepath, "\n" if ($verbose);
+    	}
+    }
+
     #update database
     $lane->is_processed(qc => 0);
     $lane->update;

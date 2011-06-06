@@ -574,7 +574,6 @@ LENGTH:     ?
 5'_FLANK:   $five_prime_seq
 OBSERVED:   $sequence/-
 3'_FLANK:   $three_prime_seq
-LOCATION:   $start_pos
 ||
 ];
     }
