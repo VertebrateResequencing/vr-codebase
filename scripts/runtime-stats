@@ -38,9 +38,10 @@ sub parse_params
     my $opts = { suffix=>'.o' };
     while (defined(my $arg=shift(@ARGV)))
     {
-        if ( $arg eq '-d' || $arg eq '--dir' ) { $$opts{dir}=shift(@ARGV); next }
+        if ( $arg eq '-d' || $arg eq '--dir' ) { push @{$$opts{dir}},shift(@ARGV); next }
         if ( $arg eq '-s' || $arg eq '--suffix' ) { $$opts{suffix}=shift(@ARGV); next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        if ( -d $arg ) { push @{$$opts{dir}},$arg; next; }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
     if ( !exists($$opts{dir}) ) { error("Missing the -d option.\n") }
@@ -50,8 +51,13 @@ sub parse_params
 sub crawl
 {
     my ($opts) = @_;
-    my $cmd = qq[find $$opts{dir} -name \\*$$opts{suffix}];
-    my @files = grep { chomp } `$cmd`;
+    my @files;
+    for my $dir (@{$$opts{dir}})
+    {
+        my $cmd = qq[find $dir -name \\*$$opts{suffix}];
+        my @tmp = grep { chomp } `$cmd`;
+        push @files,@tmp;
+    }
 
     my ($kid_in,$kid_out,$kid_err);
     my $pid = open3($kid_in,$kid_out,$kid_err,'-');
@@ -102,6 +108,7 @@ sub get_stats
     my $n = $parser->nrecords();
     if ( !$n ) { return; }
 
+    push @{$$opts{stats}{attempts}},$n;
     for my $key qw(memory time cpu_time idle_factor)
     {
         my $value = $parser->get($key,$n-1);
