@@ -450,6 +450,7 @@ sub split_bam_by_sequence {
             unlink($unchecked);
         }
     }
+    $self->throw("Number of correct output files not equal to number of expected output files") unless (scalar @outs == scalar(keys %output_bams));
     
     return @outs;
 }
