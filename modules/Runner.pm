@@ -103,7 +103,7 @@ sub new
         "   +local              Do not submit jobs to LSF, but run serially\n" .
         "   +loop <int>         Run in daemon mode with <int> sleep intervals\n" .
         "   +maxjobs <int>      Maximum number of simultaneously running jobs\n" .
-        "   +retries <int>      Maximum number of retries [$$self{_nretries}]\n" .
+        "   +retries <int>      Maximum number of retries. When negative, the runner eventually skips the task rather than exiting completely. [$$self{_nretries}]\n" .
         "   +run <file>         Run the freezed object created by spawn\n" .
         "   +sampleconf         Print a working configuration example\n" .
         "   +show <file>        Print the content of the freezed object created by spawn\n" .
@@ -294,11 +294,21 @@ sub spawn
     # If the file is there, no need to run anything
     if ( $self->is_finished($done_file) ) { return 1; }
 
+    # If the file needs to be skipped, then skip it
+    my $basename = $self->_get_temp_prefix($done_file);
+    if ( -e $basename . '.s' )
+    {
+        # This is currently the only way to clean the skip files: run with +retries set to positive value
+        if ( $$self{_nretries}<0 ) { return 1; }
+        $self->debugln("Cleaning skip file: $basename.s");
+        unlink($basename . '.s');
+    }
+
     # Store all necessary information to run the task in a temp file
     $$self{_store}{call} = $call;
     $$self{_store}{args} = \@args;
     $$self{_store}{done_file} = $done_file;
-    my $tmp_file = $self->_get_temp_prefix($$self{_store}{done_file}) . '.r';
+    my $tmp_file = $basename . '.r';
     nstore($self,$tmp_file);
 
     # With '+local', the jobs will be run serially
@@ -347,10 +357,18 @@ sub _spawn_to_farm
     { 
         my ($nfailures) = `wc -l $farm_jobs_ids`;
         $nfailures =~ s/\s+.+$//;
-        if ( $nfailures > $$self{_nretries} )
+        if ( $nfailures > abs($$self{_nretries}) )
         {   
-            $self->throw("The job failed repeatedly: $prefix.[oer], $$self{_store}{call}(" .join(',',@{$$self{_store}{args}}). ")"
-                ."\n(Remove $prefix.jid to clean the status or increase +retries.)\n");
+            my $msg = "The job failed repeatedly: $prefix.[oers], $$self{_store}{call}(" .join(',',@{$$self{_store}{args}}). ")"
+                ."\n(Remove $prefix.jid to clean the status, increase +retries or run with negative value of +retries to skip this task.)\n";
+
+            if ( $$self{_nretries}>=0 )
+            {
+                $self->throw($msg);
+            }
+            $self->warn($msg,"This was last attempt, excluding from normal flow. (Remove $prefix.s to clean the status.)\n");
+            system("touch $prefix.s");
+            return;
         }
         else
         {
@@ -362,6 +380,7 @@ sub _spawn_to_farm
     my $cmd = qq[$0 +run $freeze_file];
     $self->debugln("$$self{_store}{call}:\t$cmd");
     $farm->can('run')->($farm_jobs_ids,'.',$prefix,$$self{_farm_options},$cmd);
+    return;
 }
 
 =head2 wait
