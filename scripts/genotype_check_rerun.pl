@@ -9,7 +9,7 @@
 # --db vrtrack_uk10k_cohort --verbose lanes.txt
 #
 # Sets up the lanes that need to have the genotype checking performed again. It deletes the gtype and 
-# gtypex files and resets the processed flag on the lane table to 1.
+# gtypex files and resets the lane processed flag for qc to 0 ($lane->is_processed(qc => 0)).
 #
 # Author: John Maslen <jm23@sanger.ac.uk>
 #
@@ -69,6 +69,11 @@ while (<>){
     my $lanedir = $root.$vrtrack->hierarchy_path_of_lane_name($lane->name);
     my @mapping_ids = sort { $b<=>$a } @{$lane->mapping_ids()};
     my $qcdir = $lanedir.'/qc-sample.'.$mapping_ids[0].'/'; 
+    #if $qcdir does not exist, use /qc-sample/
+    unless (-d $qcdir) {
+    	$qcdir = $lanedir.'/qc-sample/'; 
+    }
+    
     #Get file names and delete if they exist
     for my $filetype ( @filetypes ) {
     	my $filepath = $qcdir.$lanename.$filetype;
