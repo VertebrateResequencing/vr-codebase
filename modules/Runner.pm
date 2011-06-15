@@ -427,6 +427,25 @@ sub all_done
     exit $$self{_status_codes}{DONE};
 }
 
+=head2 clean
+
+    About : Clean all system files (in .jobs directories)
+    Usage : $self->clean($dir);
+    Args  : <@dirs>
+                Directories to recursively clean from all .jobs subdirs
+=cut
+
+sub clean
+{
+    my ($self,@dirs) = @_;
+    for my $dir (@dirs)
+    {
+        my $cmd = "find $dir -name .jobs | xargs rm -rf";
+        $self->debugln($cmd);
+        system($cmd);
+    }
+}
+
 # Do not advertise this method, the user module should not need it
 #
 #   =head2 is_finished

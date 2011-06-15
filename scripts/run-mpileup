@@ -75,6 +75,7 @@ assumed_sex       => undef,     # Set to 'F' for females, 'M' males and undef if
     $$self{usage} .= 
         "Usage: run-mpileup\n" .
         "Options:\n" .
+        "   -c, --clean             Clean all temporary files\n" .
         "   -o, --outdir <dir>      Output directory\n" .
         "\n";
 
@@ -86,6 +87,7 @@ sub parse_args
     my ($self) = @_;
     while (defined(my $arg=shift(@ARGV)))
     {
+        if ( $arg eq '-c' or $arg eq '--clean' ) { $$self{clean}=1; next; }
         if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
         $self->throw();
     }
@@ -153,6 +155,11 @@ sub parse_args
     { 
         $$self{keep_bcfs} = 1;
         $self->warn("The 'keep_bcfs' config key not present, assuming: $$self{keep_bcfs}\n"); 
+    }
+    if ( $$self{clean} ) 
+    { 
+        $self->clean($$self{outdir});
+        $self->all_done;
     }
 }
 
@@ -264,6 +271,26 @@ sub main
     $self->all_done;
 }
 
+sub clean
+{
+    my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
+    my $chunks = $self->get_chunks;
+    for my $pop (keys %{$$self{pops}})
+    {
+        for my $chunk (@$chunks)
+        {
+            my $chr  = $$chunk{chr};
+            my $from = $$chunk{from};
+            my $to   = $$chunk{to};
+            for my $suffix qw(samples vcf.gz vcf.gz.tbi)
+            {
+                my $file = "$outdir/$pop/$chr/$chr:$from-$to.$suffix";
+                unlink($file) unless !-e $file;
+            }
+        }
+    }
+}
 
 sub cmd
 {
