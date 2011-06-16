@@ -379,7 +379,21 @@ sub _spawn_to_farm
     # Run the job
     my $cmd = qq[$0 +run $freeze_file];
     $self->debugln("$$self{_store}{call}:\t$cmd");
-    $farm->can('run')->($farm_jobs_ids,'.',$prefix,$$self{_farm_options},$cmd);
+    my $ok;
+    eval {
+        $farm->can('run')->($farm_jobs_ids,'.',$prefix,$$self{_farm_options},$cmd);
+        $ok = 1;
+    };
+    if ( !$ok )
+    {
+        if ( $$self{_nretries}<0 )
+        {
+            $self->warn($@,"This was last attempt, excluding from normal flow. (Remove $prefix.s to clean the status.)\n");
+            system("touch $prefix.s");
+            return;
+        }
+        $self->throw($@);
+    }
     return;
 }
 
