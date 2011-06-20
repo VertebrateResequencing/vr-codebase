@@ -27,50 +27,58 @@ sub new
 
     $$self{debug_chunks} = 0;
     $$self{_sampleconf} = q[
-mpileup  => '/nfs/users/nfs_p/pd3/cvs/samtools/samtools mpileup -DS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA',
-bcftools => '/nfs/users/nfs_p/pd3/cvs/samtools/bcftools/bcftools view -p 0.99',
+            mpileup  => '/nfs/users/nfs_p/pd3/cvs/samtools/samtools mpileup -DS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA',
+            bcftools => '/nfs/users/nfs_p/pd3/cvs/samtools/bcftools/bcftools view -p 0.99',
+            
+            bams    => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
+            fa_ref  => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
+            mysql   => 'mysql -sN -uXXX -pXXX -hmcs4a -P 3306 g1k_meta',   # To get the sex. Optional with assumed_sex below.
 
-bams    => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
-fa_ref  => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
-mysql   => 'mysql -sN -uXXX -pXXX -hmcs4a -P 3306 g1k_meta',   # To get the sex. Optional with assumed_sex below.
+            ploidy  =>
+            {
+                default => 2,
+                X =>
+                [
+                    # These are pseudoautosomal: 60001-2699520, 154931044-155270560, call with ploidy 2
+                    { region=>'1-60000', M=>1 },
+                    { region=>'2699521-154931043', M=>1 },
+                ],
+                Y =>
+                [
+                    # No chrY in females and one copy in males
+                    { region=>'1-59373566', M=>1, F=>0 },
+                ],
+            },
+            
+            chroms => [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y) ],
+            pops   =>
+            {
+                # With no populations, at least 'pooled' must be given
+                pooled => [ '.' ],
+            
+                AMR => [ qw(MXL CLM PUR) ],
+                AFR => [ qw(YRI LWK ASW) ],
+                ASN => [ qw(CHB CHS JPT) ],
+                EUR => [ qw(CEU TSI FIN GBR IBS) ],
+            
+            },
+            
+            chunk_size        => 1_000_000,
+            debug_chunks      => 0,
+            keep_bcfs         => 1,
+            chunks_overlap    => 0,
+            whole_genome_bams => 0,         # Set to 1 if BAMs are not splitted by chromosome
+            assumed_sex       => undef,     # Set to 'F' for females, 'M' males and undef if the DB should be used.
 
-ploidy  =>
-{
-    default => 2,
-    X =>
-    [
-        # These are pseudoautosomal: 60001-2699520, 154931044-155270560, call with ploidy 2
-        { region=>'1-60000', M=>1 },
-        { region=>'2699521-154931043', M=>1 },
-    ],
-    Y =>
-    [
-        # No chrY in females and one copy in males
-        { region=>'1-59373566', M=>1, F=>0 },
-    ],
-},
+            # Do specific regions only (whitespace delimited file with the columns CHR,FROM,TO)
+            #   regions => 'regions.list',
 
-chroms => [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y) ],
-pops   =>
-{
-    # With no populations, at least 'pooled' must be given
-    pooled => [ '.' ],
+            # Chunk-specific options will be applied to chunks with a non-zero overlap
+            #   chunk_options => { 
+            #       '10:42000001-43000000' => { mpileup=>'...'  } 
+            #   },
 
-    AMR => [ qw(MXL CLM PUR) ],
-    AFR => [ qw(YRI LWK ASW) ],
-    ASN => [ qw(CHB CHS JPT) ],
-    EUR => [ qw(CEU TSI FIN GBR IBS) ],
-
-},
-
-chunk_size        => 1_000_000,
-debug_chunks      => 0,
-keep_bcfs         => 1,
-chunks_overlap    => 0,
-whole_genome_bams => 0,         # Set to 1 if BAMs are not splitted by chromosome
-assumed_sex       => undef,     # Set to 'F' for females, 'M' males and undef if the DB should be used.
-
-];
+    ]."\n";
 
     $$self{usage} .= 
         "Usage: run-mpileup\n" .
@@ -383,7 +391,7 @@ sub get_chunks
 {
     my ($self) = @_;
 
-    my $regions = $self->read_regions("$$self{fa_ref}.fai",$$self{chroms});
+    my $regions = $$self{regions} ? $self->read_regions($$self{regions}) : $self->read_fai("$$self{fa_ref}.fai",$$self{chroms});
 
     my @chunks;
     for my $region (@$regions)
@@ -409,6 +417,20 @@ sub get_chunks
 }
 
 sub read_regions
+{
+    my ($self,$file) = @_;
+    open(my $fh,'<',$file) or $self->throw("$file: $!"); 
+    my @regions;
+    while (my $line=<$fh>)
+    {
+        chomp($line);
+        if ( !($line=~/^(\S+)\s+(\d+)\s+(\d+)\s*$/) ) { $self->throw("Could not parse the regions file $file: [$line]"); }
+        push @regions, { chr=>$1, from=>$2, to=>$3 };
+    }
+    return \@regions;
+}
+
+sub read_fai
 {
     my ($self,$fai,$regexs) = @_;
 
@@ -474,6 +496,46 @@ sub ploidy_defaults
     return ($mploidy,$fploidy);
 }
 
+sub set_chunk_options
+{
+    my ($self,$chr,$from,$to) = @_;
+    if ( !exists($$self{chunk_options}) ) { return; }
+    my $hit;
+    for my $chunk (keys %{$$self{chunk_options}})
+    {
+        if ( !($chunk=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the chunk_options: [$chunk]"); }
+        if ( $chr ne $1 ) { next; }
+        if ( $2>$to ) { next; }
+        if ( $3<$from ) { next; }
+        $hit = $chunk;
+        last;
+    }
+    if ( !defined $hit )
+    {
+        if ( exists($$self{ori_chunk_options}) ) 
+        {
+            $self->set_options($$self{ori_chunk_options},$self);
+        }
+        return;
+    }
+    if ( !exists($$self{ori_chunk_options}) )
+    {
+        $$self{ori_chunk_options} = {};
+        $self->set_options($self,$$self{ori_chunk_options},keys %{$$self{chunk_options}{$hit}});
+    }
+    $self->set_options($$self{chunk_options}{$hit},$self);
+}
+
+sub set_options
+{
+    my ($self,$src,$tgt,@keys) = @_;
+    if ( !scalar @keys ) { @keys = keys %$src }
+    for my $key (@keys)
+    {
+        $$tgt{$key} = $$src{$key};
+    }
+}
+
 sub all_sites_bcf
 {
     my ($self,$outfile,$pop,$chunk) = @_;
@@ -481,6 +543,8 @@ sub all_sites_bcf
     my $chr  = $$chunk{chr};
     my $from = $$chunk{from};
     my $to   = $$chunk{to};
+
+    $self->set_chunk_options($chr,$from,$to);
 
     my $outdir = $$self{outdir};
     my $bam_list = "$outdir/lists/chr$chr-$pop.list";
@@ -492,14 +556,17 @@ sub all_sites_bcf
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
 
+# This should be renamed to e.g. 'call_variants', the subroutine name is no longer accurate and rather confusing...
 sub run_mpileup
 {
     my ($self,$outfile,$pop,$chunk) = @_;
-    
+
     my $outdir = $$self{outdir};
     my $chr  = $$chunk{chr};
     my $from = $$chunk{from};
     my $to   = $$chunk{to};
+
+    $self->set_chunk_options($chr,$from,$to);
 
     `mkdir -p $outdir/$pop/$chr/` unless -d "$outdir/$pop/$chr";
 
