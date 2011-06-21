@@ -513,6 +513,11 @@ sub next_data_hash
         for my $info (split(/;/,$items[7]))
         {
             my ($key,$val) = split(/=/,$info);
+            if ( !defined $key ) 
+            { 
+                $self->warn("Broken VCF file, empty INFO field at $items[0]:$items[1]\n");
+                next;
+            }
             if ( defined $val )
             {
                 $hash{$key} = $val;
