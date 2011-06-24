@@ -1,9 +1,14 @@
 /* 
     Author: petr.danecek@sanger
-    gcc -Wall -g -O2 -I ~/cvs/samtools bamcheck.c -o bamcheck -lm -lz -L ~/cvs/samtools -lbam
+    gcc -Wall -Winline -g -O2 -I ~/cvs/samtools bamcheck.c -o bamcheck -lm -lz -L ~/cvs/samtools -lbam
 
-    Assumptions and approximations:
+    Assumptions, approximations and other issues:
         - GC-depth does not split reads, the starting position determines which bin is incremented
+        - coverage distribution ignores softclips and deletions
+        - some stats require sorted BAMs
+        - GC content graph can have saw-like pattern when BAM contains multiple read lengths. This is 
+            unavoidable, consider for example uneven mixture of reads with lengths 3 and 4: 50% GC bin cannot 
+            be accessed with the read length of 3 and 25% bin cannot be accessed with the read length of 4.
 */
 
 #define _ISOC99_SOURCE
@@ -64,6 +69,14 @@ typedef struct
 }
 gc_depth_t;
 
+typedef struct 
+{
+    int64_t pos;
+    int size, start;
+    int *buffer;
+} 
+round_buffer_t;
+
 typedef struct
 {
     // Parameters
@@ -108,6 +121,12 @@ typedef struct
     int gcd_bin_size;           // The size of GC-depth bin
     int32_t tid, pos;           // Position of the current bin
 
+    // Coverage distribution related data
+    int ncov;                       // The number of coverage bins
+    uint64_t *cov;                  // The coverage frequencies
+    int cov_min,cov_max,cov_step;   // Minimum, maximum coverage and size of the coverage bins
+    round_buffer_t cov_rbuf;        // Pileup round buffer
+
     // Auxiliary data
     double sum_qual;            // For calculation average quality value 
     samfile_t *sam;             // Unused
@@ -116,6 +135,96 @@ typedef struct
 stats_t;
 
 void error(const char *format, ...);
+
+// Coverage distribution methods
+inline int coverage_idx(int min, int max, int n, int step, int depth)
+{
+    if ( depth < min )
+        return 0;
+
+    if ( depth > max )
+        return n-1;
+
+    return 1 + (depth - min) / step;
+}
+
+inline int round_buffer_lidx2ridx(int offset, int size, int64_t refpos, int64_t pos)
+{
+    return (offset + (pos-refpos) % size) % size;
+}
+
+void round_buffer_flush(stats_t *stats, int64_t pos)
+{
+    int ibuf,idp;
+
+    if ( pos==stats->cov_rbuf.pos ) 
+        return;
+
+    if ( pos<0 || pos - stats->cov_rbuf.pos >= stats->cov_rbuf.size )
+    {
+        // flush the whole buffer
+        for (ibuf=0; ibuf<stats->cov_rbuf.size; ibuf++)
+        {
+            if ( !stats->cov_rbuf.buffer[ibuf] ) 
+                continue;
+
+            idp = coverage_idx(stats->cov_min,stats->cov_max,stats->ncov,stats->cov_step,stats->cov_rbuf.buffer[ibuf]);
+            stats->cov[idp]++;
+            stats->cov_rbuf.buffer[ibuf] = 0;
+        }
+        stats->cov_rbuf.start = 0;
+        stats->cov_rbuf.pos   = pos;
+        return;
+    }
+
+    if ( pos < stats->cov_rbuf.pos ) 
+        error("Expected coordinates in ascending order, got %ld after %ld\n", pos,stats->cov_rbuf.pos);
+
+    int ifrom = stats->cov_rbuf.start;
+    int ito = round_buffer_lidx2ridx(stats->cov_rbuf.start,stats->cov_rbuf.size,stats->cov_rbuf.pos,pos-1);
+    if ( ifrom>ito )
+    {
+        for (ibuf=ifrom; ibuf<stats->cov_rbuf.size; ibuf++)
+        {
+            if ( !stats->cov_rbuf.buffer[ibuf] )
+                continue;
+            idp = coverage_idx(stats->cov_min,stats->cov_max,stats->ncov,stats->cov_step,stats->cov_rbuf.buffer[ibuf]);
+            stats->cov[idp]++;
+            stats->cov_rbuf.buffer[ibuf] = 0;
+        }
+        ifrom = 0;
+    }
+    for (ibuf=ifrom; ibuf<=ito; ibuf++)
+    {
+        if ( !stats->cov_rbuf.buffer[ibuf] )
+            continue;
+        idp = coverage_idx(stats->cov_min,stats->cov_max,stats->ncov,stats->cov_step,stats->cov_rbuf.buffer[ibuf]);
+        stats->cov[idp]++;
+        stats->cov_rbuf.buffer[ibuf] = 0;
+    }
+    stats->cov_rbuf.start = round_buffer_lidx2ridx(stats->cov_rbuf.start,stats->cov_rbuf.size,stats->cov_rbuf.pos,pos);
+    stats->cov_rbuf.pos   = pos;
+}
+
+void round_buffer_insert_read(round_buffer_t *rbuf, int64_t from, int64_t to)
+{
+    if ( to-from >= rbuf->size )
+        error("The read length too big (%d), please increase the buffer length (currently %d)\n", to-from+1,rbuf->size);
+    if ( from < rbuf->pos )
+        error("The reads are not sorted (%ld comes after %ld).\n", from,rbuf->pos);
+
+    int ifrom,ito,ibuf;
+    ifrom = round_buffer_lidx2ridx(rbuf->start,rbuf->size,rbuf->pos,from);
+    ito   = round_buffer_lidx2ridx(rbuf->start,rbuf->size,rbuf->pos,to);
+    if ( ifrom>ito )
+    {
+        for (ibuf=ifrom; ibuf<rbuf->size; ibuf++)
+            rbuf->buffer[ibuf]++;
+        ifrom = 0;
+    }
+    for (ibuf=ifrom; ibuf<=ito; ibuf++)
+        rbuf->buffer[ibuf]++;
+}
 
 // Calculate the number of bases in the read trimmed by BWA
 int bwa_trim_read(int trim_qual, uint8_t *quals, int len, int reverse) 
@@ -203,6 +312,16 @@ void realloc_buffers(stats_t *stats, int seq_len)
     memset(stats->quals_1st + stats->nbases*stats->nquals, 0, (n-stats->nbases)*stats->nquals*sizeof(uint64_t));
 
     stats->nbases = n;
+
+    // Realloc the coverage distribution buffer
+    int *rbuffer = calloc(sizeof(int),seq_len*10);
+    n = stats->cov_rbuf.size-stats->cov_rbuf.start;
+    memcpy(rbuffer,stats->cov_rbuf.buffer+stats->cov_rbuf.start,n);
+    if ( stats->cov_rbuf.start>1 )
+        memcpy(rbuffer+n,stats->cov_rbuf.buffer,stats->cov_rbuf.start);
+    stats->cov_rbuf.start = 0;
+    free(stats->cov_rbuf.buffer);
+    stats->cov_rbuf.buffer = rbuffer;
 }
 
 void collect_stats(bam1_t *bam_line, stats_t *stats)
@@ -321,11 +440,17 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
 
                 if ( stats->fai )
                     stats->gcd[ stats->igcd ].gc = fai_gc_content(stats->fai,stats->sam->header->target_name[stats->tid],stats->pos,stats->pos+stats->gcd_bin_size);
+
+                round_buffer_flush(stats,-1);
             }
             stats->gcd[ stats->igcd ].depth++;
             // When no reference sequence is given, approximate the GC graph but determinig GC from each bin
             if ( !stats->fai )
                 stats->gcd[ stats->igcd ].gc += (float) gc_count / seq_len;
+
+            // Coverage distribution graph
+            round_buffer_flush(stats,bam_line->core.pos);
+            round_buffer_insert_read(&(stats->cov_rbuf),bam_line->core.pos,bam_line->core.pos+seq_len-1);
         }
     }
 
@@ -461,6 +586,15 @@ void output_stats(stats_t *stats)
     for (isize=1; isize<ibulk; isize++)
         printf("IS\t%d\t%ld\n", isize,stats->isize[isize]);
 
+
+    printf("# Coverage distribution. Use `grep ^COV | cut -f 2-` to extract this part.\n");
+    printf("COV\t[<%d]\t%d\t%ld\n",stats->cov_min,stats->cov_min-1,stats->cov[0]);
+    int icov;
+    for (icov=1; icov<stats->ncov-1; icov++)
+        printf("COV\t[%d-%d]\t%d\t%ld\n",stats->cov_min + (icov-1)*stats->cov_step, stats->cov_min + icov*stats->cov_step-1,stats->cov_min + icov*stats->cov_step-1,stats->cov[icov]);
+    printf("COV\t[%d<]\t%d\t%ld\n",stats->cov_min + (stats->ncov-2)*stats->cov_step-1,stats->cov_min + (stats->ncov-2)*stats->cov_step-1,stats->cov[stats->ncov-1]);
+
+
     // Calculate average GC content, then sort by GC and depth
     printf("# GC-depth. Use `grep ^GCD | cut -f 2-` to extract this part. The columns are: GC%%, unique sequence percentiles, 10th, 25th, 50th, 75th and 90th depth percentile\n");
     uint32_t igcd;
@@ -501,13 +635,14 @@ void error(const char *format, ...)
     {
         printf("Usage: bamcheck [OPTIONS] file.bam\n");
         printf("Options:\n");
-        printf("    -d, --remove-dups               Exlude from statistics reads marked as duplicates\n");
-        printf("    -h, --help                      This help message\n");
-        printf("    -i, --insert-size <int>         Maximum insert size [8000]\n");
-        printf("    -m, --most-inserts <float>      Report only the main part of inserts [0.99]\n");
-        printf("    -q, --trim-quality <int>        The BWA trimming parameter [0]\n");
-        printf("    -r, --ref-seq <file>            Reference sequence (required for GC-depth calculation).\n");
-        printf("    -s, --sam                       Input is SAM\n");
+        printf("    -c, --coverage <int>,<int>,<int>    Coverage distribution min,max,step [1,1000,1]\n");
+        printf("    -d, --remove-dups                   Exlude from statistics reads marked as duplicates\n");
+        printf("    -h, --help                          This help message\n");
+        printf("    -i, --insert-size <int>             Maximum insert size [8000]\n");
+        printf("    -m, --most-inserts <float>          Report only the main part of inserts [0.99]\n");
+        printf("    -q, --trim-quality <int>            The BWA trimming parameter [0]\n");
+        printf("    -r, --ref-seq <file>                Reference sequence (required for GC-depth calculation).\n");
+        printf("    -s, --sam                           Input is SAM\n");
         printf("\n");
     }
     else
@@ -556,6 +691,9 @@ int main(int argc, char *argv[])
     stats.fai  = NULL;
     stats.is_sorted = 1;
     stats.rmdup = 0;
+    stats.cov_min  = 1;
+    stats.cov_max  = 1000;
+    stats.cov_step = 1;
 
     strcpy(in_mode, "rb");
 
@@ -580,7 +718,15 @@ int main(int argc, char *argv[])
                 error(NULL);
             stats.fai = fai_load(argv[i]);
             if ( stats.fai==0 )
-                error("");
+                error(NULL);
+            continue;
+        }
+        if ( !strcmp(argv[i],"-c") || !strcmp(argv[i],"--coverage") )
+        {
+            if ( ++i>=argc )
+                error(NULL);
+            if ( sscanf(argv[i],"%d,%d,%d",&(stats.cov_min),&(stats.cov_max),&(stats.cov_step)) != 3 )
+                error(NULL);
             continue;
         }
         if ( !strcmp(argv[i],"-i") || !strcmp(argv[i],"--insert-size") )
@@ -619,10 +765,26 @@ int main(int argc, char *argv[])
 
 
     // Init structures
+    //  .. coverage bins and round buffer
+    if ( stats.cov_step > stats.cov_max - stats.cov_min + 1 )
+    {
+        stats.cov_step = stats.cov_max-stats.cov_min;
+        if ( stats.cov_step <= 0 )
+            stats.cov_step = 1;
+    }
+    stats.ncov = 3 + (stats.cov_max-stats.cov_min) / stats.cov_step;
+    stats.cov_max = stats.cov_min + ((stats.cov_max-stats.cov_min)/stats.cov_step +1)*stats.cov_step - 1;
+    stats.cov = calloc(sizeof(uint64_t),stats.ncov);
+    stats.cov_rbuf.size = stats.nbases;
+    stats.cov_rbuf.buffer = calloc(sizeof(int32_t),stats.cov_rbuf.size);
+    stats.cov_rbuf.pos = 0;
+    stats.cov_rbuf.start = 0;
+    // .. bam
     if ((sam = samopen(bam_fname, in_mode, NULL)) == 0) 
         error("Failed to open: %s\n", bam_fname);
     stats.sam = sam;
     bam1_t *bam_line = bam_init1();
+    // .. arrays
     stats.quals_1st  = calloc(stats.nquals*stats.nbases,sizeof(uint64_t));
     stats.quals_2nd  = calloc(stats.nquals*stats.nbases,sizeof(uint64_t));
     stats.gc_1st     = calloc(stats.ngc,sizeof(uint64_t));
@@ -635,6 +797,7 @@ int main(int argc, char *argv[])
     {
         collect_stats(bam_line,&stats);
     }
+    round_buffer_flush(&stats,-1);
 
     output_stats(&stats);
 
