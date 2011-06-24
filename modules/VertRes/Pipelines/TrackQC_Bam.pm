@@ -943,6 +943,7 @@ sub update_db
     if ( -e "$sample_dir/quals2.png" ) { $images{'quals2.png'} = 'Qualities'; }
     if ( -e "$sample_dir/quals3.png" ) { $images{'quals3.png'} = 'Qualities'; }
     if ( -e "$sample_dir/quals-hm.png" ) { $images{'quals-hm.png'} = 'Qualities'; }
+    if ( -e "$sample_dir/coverage.png" ) { $images{'coverage.png'} = 'Coverage'; }
 
     my $nadapters = 0;
     if ( -e "$sample_dir/${name}_1.nadapters" ) { $nadapters += do "$sample_dir/${name}_1.nadapters"; }
