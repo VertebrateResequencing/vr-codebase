@@ -23,7 +23,7 @@ use VertRes::Utils::VRTrackFactory;
 use VRTrack::Lane;
 
 my ($db, $root, $help, $verbose);
-my @filetypes = ('.gtype', '.gtypex','.gtypey','.glf');
+my @filetypes = ('.gtype', '.gtypex','.gtypey','.glf','.bcf');
 
 GetOptions(
     'd|db=s'        =>  \$db,
