@@ -48,6 +48,11 @@ data => {
 slx_mapper_exe => 'bwa-0.5.5' (optional - defaults to slx_mapper)
 '454_mapper_exe' => 'ssaha2', (optional - defaults to 454_mapper)
 
+# In the data section, there is an option to generate a BAM index file for the 
+# mapping by adding the following line:
+
+add_index => 1,
+
 # By default it will map all unmapped lanes in a random order. You can limit
 # it to only mapping certain lanes by suppling the limits key with a hash ref
 # as a value. The hash ref should contain options understood by
@@ -976,6 +981,8 @@ sub merge {
         $total_reads > 0 || $self->throw("From looking at the fastqcheck files for $lane_path $ended, didn't get any reads!");
         
         my $copy_instead_of_merge = @bams > 1 ? 0 : 1;
+
+	my $add_index_option = $$self{'add_index'} ? 1 : 0; # Add index option
         
         # run this in an LSF call to a temp script
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -1016,6 +1023,9 @@ if (-s '$bam_file') {
             move('$bam_file', \$bad_bam);
             die "Merged bam created OK, yet contains too few reads - moved to \$bad_bam\n";
         }
+	if ($add_index_option){
+	    \$su->index_bams(files=>['$bam_file']);
+	}
     }
 }
 
