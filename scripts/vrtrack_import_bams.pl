@@ -157,10 +157,10 @@ close $ifh;
 
 unless ($do_updates) {
     foreach my $bam (keys %data) {
-        print join "\t", ($bam, $data{$bam}{md5}, 
+        print join "\t", ($data{$bam}{md5}, $bam,
             $data{$bam}{sample}, $data{$bam}{population}, $data{$bam}{project}, 
-            $data{$bam}{lane}, $data{$bam}{library}, $data{$bam}{seq_centre}, 
-            $data{$bam}{seq_tech}, $data{$bam}{insert_size}, $data{$bam}{alias});
+            $data{$bam}{library}, $data{$bam}{seq_centre}, $data{$bam}{seq_tech}, 
+            $data{$bam}{lane}, $data{$bam}{insert_size}, $data{$bam}{alias});
             print "\n";
     }
     exit;
