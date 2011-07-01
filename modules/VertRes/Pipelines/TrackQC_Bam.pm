@@ -949,6 +949,10 @@ sub update_db
     if ( -e "$sample_dir/${name}_1.nadapters" ) { $nadapters += do "$sample_dir/${name}_1.nadapters"; }
     if ( -e "$sample_dir/${name}_2.nadapters" ) { $nadapters += do "$sample_dir/${name}_2.nadapters"; }
 
+    # Length of reference sequence mapped (for TrackQC_Fasta pipeline.)
+    my $sequence_mapped = undef;
+    if ( -e "$sample_dir/${name}.cover" ) { $sequence_mapped = do "$sample_dir/${name}.cover"; }
+
     $vrtrack->transaction_start();
 
     # Now call the database API and fill the mapstats object with values
@@ -997,6 +1001,10 @@ sub update_db
         $img->caption($caption);
         $img->update;
     }
+
+    # Length of reference sequence mapped
+    if(defined $sequence_mapped)
+    { $mapping->target_bases_mapped($sequence_mapped); }
 
     $mapping->update;
 
