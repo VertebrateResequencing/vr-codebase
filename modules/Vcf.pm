@@ -1102,6 +1102,7 @@ sub calc_an_ac
     for my $gt (keys %$gtypes)
     {
         my $value = $$gtypes{$gt}{GT};
+        if ( !defined $value ) { next; } # GT may not be present
         my ($al1,$al2) = split($sep_re,$value);
         if ( defined($al1) && $al1 ne '.' )
         {
