@@ -291,26 +291,28 @@ sub do_chrm_isec
             print "\n";
         }
 
-        my %files;  # Look up the file names and assign all records from this group
-        my $src;    # For the VCF SF tag: in what files was the record found
+        my %files; 
+        my %srcs;
         for my $rec (@$grp)
         {
             my $vcf  = $$rec{vcf};
             my $file = $$vcf{file};
+
             push @{$files{$file}}, $rec;
 
-            if ( defined $src ) { $src .= ','; }
-            $src .= $$vcf{vcf_isec_ID};
+            my $src = $$vcf{vcf_isec_ID};
             if ( !$$vcf{delim} )
             {
                 # This is a VCF, check filters
                 my $fltr = $$rec{line}[6];
                 if ( !$split && $fltr ne $$vcf{filter_passed} && $fltr ne $$vcf{defaults}{default} ) { $src .= 'f'; }
             }
+
+            $srcs{$$rec{line}[1]}{$src} = $rec;
         }
         if ( $split )
         {
-            write_line($opts,$grp,\%files,$src);
+            write_line($opts,$grp,\%srcs);
             next;
         }
         my $nmatches = scalar keys %files;
@@ -340,6 +342,7 @@ sub do_chrm_isec
                 {
                     if ( $tags[$i] eq '.' or $tags[$i]=~/^SF=/ ) { last; }
                 }
+                my $src = join(',',sort keys %{$srcs{$$rec{line}[1]}});
                 $tags[$i] = 'SF='.$src;
                 $$rec{line}[7] = join(';',@tags);
                 print join("\t",@{$$rec{line}}) . "\n";
@@ -358,36 +361,40 @@ sub do_chrm_isec
 
 sub write_line
 {
-    my ($opts,$grp,$files,$src) = @_;
+    my ($opts,$grp,$srcs) = @_;
 
     my $vcf  = $$grp[0]{vcf};
     my $file = $$vcf{file};
-    my $rec  = $$files{$file}[0];
+    my $rec  = $$grp[0];
 
-    if ( !exists($$opts{out_files}{$src}) )
+    for my $hash (values %$srcs)
     {
-        my $fname = $src;
-        $fname =~ s/,/_/g;
-        open($$opts{out_files}{$src},"| bgzip -c > $$opts{prefix}$fname.vcf.gz") or error("| bgzip -c > $$opts{prefix}$fname.vcf.gz: $!");
+        my $src = join('_',sort keys %$hash);
+        if ( !exists($$opts{out_files}{$src}) )
+        {
+            open($$opts{out_files}{$src},"| bgzip -c > $$opts{prefix}$src.vcf.gz") or error("| bgzip -c > $$opts{prefix}$src.vcf.gz: $!");
 
-        print "Using file '$$opts{prefix}$fname.vcf.gz' for records present in:\n";
-        for my $file (sort keys %$files)
-        {
-            print "\t$file\n";
-        }
-        if ( !$$vcf{delim} )
-        {
-            my $fnames = join(',',sort keys %$files);
-            $vcf->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
-            $vcf->add_header_line({key=>'sourceFiles',value=>$fnames},append=>'timestamp');
-            print {$$opts{out_files}{$src}} $vcf->format_header();
+            print "Using file '$$opts{prefix}$src.vcf.gz' for records present in:\n";
+            for my $rec (sort values %$hash)
+            {
+                print "\t$$rec{vcf}{file}\n";
+            }
+            if ( !$$vcf{delim} )
+            {
+                my $fnames = join(',',sort values %$hash);
+                $vcf->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
+                $vcf->add_header_line({key=>'sourceFiles',value=>$fnames},append=>'timestamp');
+                print {$$opts{out_files}{$src}} $vcf->format_header();
+            }
         }
     }
 
-    my $fh = $$opts{out_files}{$src};
-
-    for my $rec (@{$$files{$file}})
+    for my $pos (keys %$srcs)
     {
+        my $rec = (values %{$$srcs{$pos}})[0];
+        my $src = join('_',sort keys %{$$srcs{$pos}});
+        my $fh  = $$opts{out_files}{$src};
+
         if ( !$$vcf{delim} )
         {
             print $fh join("\t",@{$$rec{line}}) . "\n";
