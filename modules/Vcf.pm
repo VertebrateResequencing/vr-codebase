@@ -1102,6 +1102,7 @@ sub calc_an_ac
     for my $gt (keys %$gtypes)
     {
         my $value = $$gtypes{$gt}{GT};
+        if ( !defined $value ) { next; } # GT may not be present
         my ($al1,$al2) = split($sep_re,$value);
         if ( defined($al1) && $al1 ne '.' )
         {
@@ -1357,10 +1358,12 @@ sub format_AGtag
 
     if ( exists($$record{_gtags}{$tag}) )
     {
-        my $gtypes = $$record{_gtypes};
+        my $gtypes  = $$record{_gtypes};
+        my $gtypes2 = $$record{_gtypes2};
         if ( !defined $gtypes )
         {
-            $gtypes = [];
+            $gtypes  = [];
+            $gtypes2 = [];
 
             my @alleles = ( $$record{REF}, @{$$record{ALT}} );
             for (my $i=0; $i<@alleles; $i++)
@@ -1368,14 +1371,18 @@ sub format_AGtag
                 for (my $j=0; $j<=$i; $j++)
                 {
                     push @$gtypes, $alleles[$i].'/'.$alleles[$j];
+                    push @$gtypes2, $alleles[$j].'/'.$alleles[$i];
                 }
             }
             
-            $$record{_gtypes} = $gtypes;
+            $$record{_gtypes}  = $gtypes;
+            $$record{_gtypes2} = $gtypes2;
         }
 
-        for my $gt (@$gtypes)
+        for (my $i=0; $i<@$gtypes; $i++)
         {
+            my $gt = $$gtypes[$i];
+            if ( !exists($$tag_data{$gt}) ) { $gt = $$gtypes2[$i]; }
             push @out, exists($$tag_data{$gt}) ? $$tag_data{$gt} : $$self{defaults}{default};
         }
     }
