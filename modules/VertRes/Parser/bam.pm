@@ -623,7 +623,7 @@ sub _handle_multi_line_header_types {
         $all_info{$this_id} = \%this_data;
     }
     
-    if ($id) {
+    if (defined $id) {
         my $id_info = $all_info{$id} || return;
         if ($tag) {
             return $id_info->{$tag};
