@@ -305,11 +305,14 @@ while (<>){
 				}
 			}
 		
-			#update database
+			#update database for lane
 			for my $reset_obj (@reset_objects) {
     			for my $flag (@reset_flags) {
     				unless ($test) {
     					$reset_obj->is_processed($flag => 0);
+    					if ( ($stage eq 'qc' || $stage eq 'all') && $reset_obj->isa('VRTrack::Lane')) {
+    						$reset_obj->genotype_status('unchecked');
+    					}	
     					$reset_obj->update;
     				}
     			}
