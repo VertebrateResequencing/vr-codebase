@@ -58,7 +58,7 @@ sub check_genotype
         close $f;
         my $gtype_bam = "$name.gtype.tmp.sort";
         $pileup_out = "$name.bcf";
-        $pileup_cmd = "$samtools view -bh $bam $snp_sites_string > $name.gtype.tmp.bam && $samtools sort $name.gtype.tmp.bam $gtype_bam && $samtools index $gtype_bam.bam && $samtools mpileup -ug -l " . $self->{'snp_sites'} . " -f $fa_ref $gtype_bam.bam > $name.gtype.tmp.pileup && mv $name.gtype.tmp.pileup $pileup_out && rm $name.gtype.tmp.bam";
+        $pileup_cmd = "$samtools view -bh $bam $snp_sites_string > $name.gtype.tmp.bam && $samtools sort $name.gtype.tmp.bam $gtype_bam && $samtools index $gtype_bam.bam && $samtools mpileup -ugDI -d 1000 -l " . $self->{'snp_sites'} . " -f $fa_ref $gtype_bam.bam > $name.gtype.tmp.pileup && mv $name.gtype.tmp.pileup $pileup_out && rm $name.gtype.tmp.bam";
         $checkGenotype_cmd = "$glf checkGenotype -s - $snps $pileup_out > $name.gtypey";
     }
 
