@@ -794,8 +794,8 @@ sub database_params {
 
   Arg [1]    : None
   Example    : my @assemblies = $vrtrack->assembly_names();
-  Description: Returns an array of the names in the assembly table sorted by name
-  Returntype : array of strings
+  Description: Returns a reference to an array of the names in the assembly table sorted by name
+  Returntype : reference to array of strings
 
 =cut
 
@@ -808,8 +808,8 @@ sub assembly_names {
 
   Arg [1]    : None
   Example    : my @species = $vrtrack->species_names();
-  Description: Returns an array of the names in the species table sorted by name
-  Returntype : array of strings
+  Description: Returns a reference to an array of the names in the species table sorted by name
+  Returntype : reference to array of strings
 
 =cut
 
@@ -822,8 +822,8 @@ sub species_names {
 
   Arg [1]    : None
   Example    : my @mappers = $vrtrack->mapper_names();
-  Description: Returns an array of the distinct names in the species table
-  Returntype : array of strings
+  Description: Returns a reference to an array of the distinct names in the species table
+  Returntype : reference to array of strings
 
 =cut
 
@@ -832,9 +832,8 @@ sub mapper_names {
     return $self->_list_names('mapper');
 }
 
-# Returns array of names contained in the name column of a table
-# Tables are restricted to tables contained in hash %permitted_table
-# within the function.
+# Returns reference to an array of names contained in the name column of a table
+# Tables are restricted to tables contained in hash %permitted_table within the function.
 sub _list_names {
     my ($self,$table) = @_;
 
@@ -860,7 +859,7 @@ sub _list_names {
         die(sprintf('Cannot retrieve $table names: %s', $DBI::errstr));
     }
 
-    return @names;
+    return \@names;
 }
 
 1;
