@@ -60,12 +60,12 @@ Generates lane statistics file for a database or study (if specified).
 
 Examples:
 --------
-1. output_stats --db vrtrack_uk10k_cohort --out cohort_out.stats
+1. stats-file-output --db vrtrack_uk10k_cohort --out cohort_out.stats
 
-2. output_stats --db vrtrack_uk10k_neuro --study UK10K_NEURO_MUIR,UK10K_NEURO_ASD_SKUSE --from 10-01-2011 
+2. stats-file-output --db vrtrack_uk10k_neuro --study UK10K_NEURO_MUIR,UK10K_NEURO_ASD_SKUSE --from 10-01-2011 
 --to 10-04-2011
 
-3. output_stats --db vrtrack_uk10k_obesity --study 1706 --months 3
+3. stats-file-output --db vrtrack_uk10k_obesity --study 1706 --months 3
 
 NOTES:
 The --study can use study names or ids (or a mixture). 
