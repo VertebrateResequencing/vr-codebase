@@ -94,6 +94,7 @@ while (<>){
 
     #update database
     $lane->is_processed(qc => 0);
+    $lane->genotype_status('unchecked');
     $lane->update;
     print "Processed flag for qc has been reset to 0 for lane ", $lanename, "\n" if ($verbose);
 }
