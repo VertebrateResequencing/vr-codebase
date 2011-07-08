@@ -18,6 +18,7 @@ vrtracking_tool
     -pipeline stages:  
       import
       qc
+      genotype
       improvement
       snp_called
     -database/file objects:  
@@ -29,26 +30,29 @@ vrtracking_tool
     Examples of use:
       Re-do pipeline stages:
          > Reimport bam files for a set of lanes:	
-         vrtracking_tool -c $CONF/my_db.conf -s import <file of lane names/ids to reimport> 
+         vrtracking_tool -c $CONF/my_db.conf -s import <file of lane names to reimport> 
          
-         > Recalculate qc/genotyping for a set of lanes:
-         vrtracking_tool -c $CONF/my_db.conf -s qc <file of lane names/ids to redo qc>
+         > Recalculate the complete genotyping and qc for a set of lanes:
+         vrtracking_tool -c $CONF/my_db.conf -s qc <file of lane names to redo qc>
+          
+         > Recalculate the genotyping only for a set of lanes:
+         vrtracking_tool -c $CONF/my_db.conf -s genotype <file of lane names to redo genotype> 
           
          > Re-perform bam improvement for a set of lanes:
-         vrtracking_tool -c $CONF/my_db.conf -s improvement <file of lane names/ids>
+         vrtracking_tool -c $CONF/my_db.conf -s improvement <file of lane names>
           
          > Re-perform snp_calling for a set of lanes:
-         vrtracking_tool -c $CONF/my_db.conf -s snp_calling <file of lane names/ids>      
+         vrtracking_tool -c $CONF/my_db.conf -s snp_calling <file of lane names>      
       
       Delete or reset pipeline objects:
          > Reset all db flags and remove all files on disk for a lane:
-         vrtracking_tool -c $CONF/my_db.conf -s lane <file of lane names/ids to reimport>
+         vrtracking_tool -c $CONF/my_db.conf -s lane <file of lane names to reimport>
     
          > Delete the lane and file from the database and delete the lane directory from disk:
          vrtracking_tool --config $CONF/my_db.conf --stage lane --delete <file of lane names to delete>
 
          > Reset all db flags and remove all lane-related files linked to a library from disk:
-         vrtracking_tool -c $CONF/my_db.conf -s library <file of library hierarchy names/ids to reimport>
+         vrtracking_tool -c $CONF/my_db.conf -s library <file of library hierarchy names to reimport>
          
          > Delete the library and all downstream objects (e.g. lanes and files) from the database and delete the library directory from disk:
          vrtracking_tool --config $CONF/my_db.conf --stage library --delete <file of library hierarchy names to delete>
@@ -68,10 +72,10 @@ vrtracking_tool
  		(If the -v or --verbose flag is used, the information concerning the files/directories deleted and the 
  		database objects deleted/flags reset will be written to the log file if specified in the config file.)
  
- 	Note- the tool can use names or id numbers for lanes and studies, hierarchy names or id numbers for libraries, but only id numbers for samples, 
- 	e.g. it can accept the lane name 5659_2 or its lane id 490.
+ 	NOTE- the tool currently uses names for lanes and studies, hierarchy names or id numbers for libraries, but only id numbers for samples, 
+ 	e.g. it can accept the lane name 5659_2.
  	
-    There are 2 modes of operation. You can either provide a file of lane names/ids or library hierarchy names/ids 
+    There are 2 modes of operation. You can either provide a file of lane names or library hierarchy names 
     (one per line), or enter the interactive mode by omitting the file name from the command and enter the 
     names or ids individually, 
     e.g.       
@@ -109,13 +113,14 @@ use Data::Dumper;
 use File::Path qw(remove_tree);
 use Getopt::Long;
 use Log::Log4perl qw(:easy);
+use Scalar::Util qw(looks_like_number);
 use VertRes::Utils::VRTrackFactory;
 use VRTrack::Lane;
 use Carp;
 
 my ($config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test);
 #values for $stage that involve *resetting* db flags and file deletion
-my @stages =  ('import', 'qc', 'improvement', 'snp_called');
+my @stages =  ('import', 'qc', 'genotype', 'improvement', 'snp_called');
 #values for $stage that can EITHER have flags reset as above, OR have VRTrack objects and whole directories deleted, depending on whether the --delete/-del flag is set)
 my @entities = ('lane', 'library', 'sample', 'study');
 
@@ -123,6 +128,7 @@ my %reset_stages = ();
 foreach (@stages) {
 	$reset_stages{$_} = $_;
 }
+$reset_stages{'genotype'} = 'qc';
 foreach (@entities) {
 	$reset_stages{$_} = 'all';
 }
@@ -142,8 +148,6 @@ GetOptions(
 my $stage_op = grep{$_ eq $stage}@stages;
 my $entity_op = grep{$_ eq $stage}@entities;
 my $reset_stage = $reset_stages{$stage};
-
-#my $test = 1;
 
 ((($root&&$db)||$config) && $stage && ($stage_op||$entity_op) && !$help) or die <<USAGE;
     Usage: $0 <file of studies/libraries/lanes that need to be reimported or pipeline rerun>  
@@ -175,6 +179,7 @@ my $reset_stage = $reset_stages{$stage};
     -pipeline stages:  
       import
       qc
+      genotype
       improvement
       snp_called
     -database/file objects:  
@@ -272,17 +277,18 @@ while (<>){
     		}
     		my %files_deleted = (
     			import => ["^$mapstats_id\.[ps]e\.raw\.sorted\.bam", "^$mapstats_id\.[ps]e\.recalc\.sorted\.bam"],
-				qc => ["^$vrinput\.gtype\$", "^$vrinput\.gtypex\$", "^$vrinput\.gtypey\$", "^$vrinput\.glf\$", "^_$vrinput\_glf\.o\$", "^_$vrinput\_glf\.e\$"],
+				qc => ["^qc-sample\.$mapstats_id\$"],
+				genotype => ["^$vrinput\.gtype\$", "^$vrinput\.gtypex\$", "^$vrinput\.gtypey\$", "^$vrinput\.glf\$", "^_$vrinput\_glf\.o\$", "^_$vrinput\_glf\.e\$"],
 				improvement => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.bam\.recal_data\.csv\$", "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.bam", "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.(?!snp\$)"],
 				snp_called => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.snp\$"],
 				all => ["^[\\w]+"],
     		);
     		
-    		my @files_del = @{$files_deleted{$reset_stage}};	
-    		my $file_dir = ( $stage eq 'qc' ? $qcdir : $vrdirectory );
+    		my @files_del = $entity_op ? @{$files_deleted{$reset_stage}} : @{$files_deleted{$stage}};	
+    		my $file_dir = ( $stage eq 'genotype' ? $qcdir : $vrdirectory );
     		
     		my %allowed_processed_flags = $vrobject->allowed_processed_flags();
-    		my @reset_flags = ( $reset_stage eq 'all' ? keys %allowed_processed_flags : $stage );
+    		my @reset_flags = ( $reset_stage eq 'all' ? keys %allowed_processed_flags : $reset_stage );
     		my @reset_objects = ($vrobject);
      		push @reset_objects, get_reset_flag_objects($vrtrack, $reset_stage, $vrobject);
      	
@@ -329,10 +335,7 @@ sub get_vrtrack_objects
 	my $object;
 	my @lanearray;
 	if ( $stage eq 'study' ) {
-		$object = VRTrack::Project->new($vrtrack,$vrinput);
-		unless ( $object ) {
-			$object = VRTrack::Project->new_by_name($vrtrack,$vrinput);
-		}
+		$object = $object = VRTrack::Project->new_by_name($vrtrack,$vrinput);
 		my $samples = $object->samples();
 		for my $sample ( @{$samples} ) {
 			my $libraries = $sample->libraries();
@@ -349,17 +352,11 @@ sub get_vrtrack_objects
 		}			
 	}
 	elsif ( $stage eq 'library' ) {
-		$object = VRTrack::Library->new($vrtrack,$vrinput);
-		unless ( $object ) {
-			$object = VRTrack::Library->new_by_hierarchy_name($vrtrack,$vrinput);
-		}
+		$object = VRTrack::Library->new_by_hierarchy_name($vrtrack,$vrinput);
 		push @lanearray, @{$object->lanes()};
 	}
 	else {
-		$object = VRTrack::Lane->new($vrtrack,$vrinput);
-		unless ( $object ) {
-			$object = VRTrack::Lane->new_by_name($vrtrack,$vrinput);
-		}
+		$object = VRTrack::Lane->new_by_name($vrtrack,$vrinput);
 		push @lanearray, $object;
 	}
 	if ($delete) {
