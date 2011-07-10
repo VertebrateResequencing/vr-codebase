@@ -241,4 +241,3 @@ sub call_conseqs
     }
     return \%out;
 }
-

@@ -16,6 +16,7 @@ use strict;
 use warnings;
 use LSF;
 use VertRes::Utils::GTypeCheck;
+use VertRes::Utils::GTypeCheckGLF;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::Mapstats;
@@ -456,7 +457,8 @@ sub check_genotype
         $options->{snp_sites} = $self->{snp_sites};
     }
 
-    my $gtc = VertRes::Utils::GTypeCheck->new(%$options);
+	my $glf_bcf = exists($$self{glf_or_bcf}) ? $$self{glf_or_bcf} : 'bcf' ;
+    my $gtc = $glf_bcf eq 'glf' ? VertRes::Utils::GTypeCheckGLF->new(%$options) : VertRes::Utils::GTypeCheck->new(%$options);
     $gtc->check_genotype();
 
     return $$self{'No'};
