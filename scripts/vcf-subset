@@ -186,7 +186,7 @@ sub vcf_subset
 
         if ( !$site_has_call && !$$opts{keep_uncalled} ) { next; }
         if ( !$site_has_nonref && $$opts{exclude_ref} ) { next; }
-        if ( $check_private && !$site_is_private ) { next; }
+        if ( $check_private && (!$site_is_private || !$site_has_nonref) ) { next; }
 
         $vcf->format_genotype_strings($x);
         print $vcf->format_line($x,$columns);
