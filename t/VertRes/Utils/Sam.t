@@ -6,7 +6,7 @@ use File::Copy;
 use Data::Dumper;
 
 BEGIN {
-    use Test::Most tests => 180;
+    use Test::Most tests => 184;
     
     use_ok('VertRes::Utils::Sam');
     use_ok('VertRes::Wrapper::samtools');
@@ -249,12 +249,26 @@ ok $sam_util->bas($sorted_bam, '20100208', $given_bas), 'bas() ran ok';
 my $expected_bas = File::Spec->catfile('t', 'data', 'example.bas');
 ok open(my $ebfh, $expected_bas), 'opened expected .bas';
 @expected = <$ebfh>;
+close($ebfh);
 ok open(my $tbfh, $given_bas), 'opened result .bas';
 my @given = <$tbfh>;
 close($tbfh);
 is_deeply \@given, \@expected, 'bas output was as expected';
 
+# test making a bas file from a bam with RG in PU instead of ID
+$given_bas = File::Spec->catfile($temp_dir, 'test2.bas');
+ok $sam_util->bas(File::Spec->catfile(qw(t data rg_pu.bam)), '20110521', $given_bas, undef, 1), 'bas() with rg_from_pu ran ok';
+$expected_bas = File::Spec->catfile('t', 'data', 'example3.bas');
+ok open($ebfh, $expected_bas), 'opened expected .bas';
+my @expected2 = <$ebfh>;
+close($ebfh);
+ok open($tbfh, $given_bas), 'opened result .bas';
+@given = <$tbfh>;
+close($tbfh);
+is_deeply \@given, \@expected2, 'bas output was as expected when converting RG PU to ID';
+
 # rewrite_bas_meta
+$given_bas = File::Spec->catfile($temp_dir, 'test.bas');
 ok $sam_util->rewrite_bas_meta($given_bas, invalid => { sample_name => 'NA00003', library => 'clib', centre => 'FOO' }), 'rewrite_bas_meta ran ok with an invalid readgroup';
 open($tbfh, $given_bas);
 @given = <$tbfh>;

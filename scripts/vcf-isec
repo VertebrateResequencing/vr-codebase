@@ -31,7 +31,7 @@ sub error
         "   -C, --chromosomes <list|file>       Process the given chromosomes (comma-separated list or one chromosome per line in a file).\n",
         "   -c, --complement                    Output positions present in the first file but missing from the other files.\n",
         "   -d, --debug                         Debugging information\n",
-        "   -f, --force                         Continue even if the script complains about differing columns.\n",
+        "   -f, --force                         Continue even if the script complains about differing columns or VCF versions.\n",
         "   -o, --one-file-only                 Print only entries from the left-most file. Without -o, all unique positions will be printed.\n",
         "   -n, --nfiles [+-=]<int>             Output positions present in this many (=), this many or more (+), or this many or fewer (-) files.\n",
         "   -p, --prefix <path>                 If present, multiple files will be created with all possible isec combinations. (Suitable for Venn Diagram analysis.)\n",
@@ -198,6 +198,8 @@ sub vcf_isec
     if ( exists($$opts{chromosomes}) ) { @chroms = read_chrom_list($$opts{chromosomes}); }
 
     my $source;
+    my $vcf_version;
+    my $vcf_version_warned;
     for (my $ifile=0; $ifile<@{$$opts{files}}; $ifile++)
     {
         my $file = $$opts{files}[$ifile];
@@ -206,6 +208,17 @@ sub vcf_isec
         $vcf->close();
         $$vcf{nread} = 0;
         push @vcfs, $vcf;
+
+        # Check if the VCF versions are identical
+        if ( ref($file) eq '' )
+        {
+            if ( !defined $vcf_version ) { $vcf_version = $$vcf{version} }
+            if ( $vcf_version ne $$vcf{version} && !$vcf_version_warned )
+            {
+                warn("Warning: Mixed VCF format versions, use vcf-convert to unify.\n");
+                $vcf_version_warned = 1;
+            }
+        }
 
         # Update the list of known chromosomes
         if ( !exists($$opts{chromosomes}) )
@@ -291,26 +304,28 @@ sub do_chrm_isec
             print "\n";
         }
 
-        my %files;  # Look up the file names and assign all records from this group
-        my $src;    # For the VCF SF tag: in what files was the record found
+        my %files; 
+        my %srcs;
         for my $rec (@$grp)
         {
             my $vcf  = $$rec{vcf};
             my $file = $$vcf{file};
+
             push @{$files{$file}}, $rec;
 
-            if ( defined $src ) { $src .= ','; }
-            $src .= $$vcf{vcf_isec_ID};
+            my $src = $$vcf{vcf_isec_ID};
             if ( !$$vcf{delim} )
             {
                 # This is a VCF, check filters
                 my $fltr = $$rec{line}[6];
                 if ( !$split && $fltr ne $$vcf{filter_passed} && $fltr ne $$vcf{defaults}{default} ) { $src .= 'f'; }
             }
+
+            $srcs{$$rec{line}[1]}{$src} = $rec;
         }
         if ( $split )
         {
-            write_line($opts,$grp,\%files,$src);
+            write_line($opts,$grp,\%srcs);
             next;
         }
         my $nmatches = scalar keys %files;
@@ -340,6 +355,7 @@ sub do_chrm_isec
                 {
                     if ( $tags[$i] eq '.' or $tags[$i]=~/^SF=/ ) { last; }
                 }
+                my $src = join(',',sort keys %{$srcs{$$rec{line}[1]}});
                 $tags[$i] = 'SF='.$src;
                 $$rec{line}[7] = join(';',@tags);
                 print join("\t",@{$$rec{line}}) . "\n";
@@ -358,36 +374,40 @@ sub do_chrm_isec
 
 sub write_line
 {
-    my ($opts,$grp,$files,$src) = @_;
+    my ($opts,$grp,$srcs) = @_;
 
     my $vcf  = $$grp[0]{vcf};
     my $file = $$vcf{file};
-    my $rec  = $$files{$file}[0];
+    my $rec  = $$grp[0];
 
-    if ( !exists($$opts{out_files}{$src}) )
+    for my $hash (values %$srcs)
     {
-        my $fname = $src;
-        $fname =~ s/,/_/g;
-        open($$opts{out_files}{$src},"| bgzip -c > $$opts{prefix}$fname.vcf.gz") or error("| bgzip -c > $$opts{prefix}$fname.vcf.gz: $!");
+        my $src = join('_',sort keys %$hash);
+        if ( !exists($$opts{out_files}{$src}) )
+        {
+            open($$opts{out_files}{$src},"| bgzip -c > $$opts{prefix}$src.vcf.gz") or error("| bgzip -c > $$opts{prefix}$src.vcf.gz: $!");
 
-        print "Using file '$$opts{prefix}$fname.vcf.gz' for records present in:\n";
-        for my $file (sort keys %$files)
-        {
-            print "\t$file\n";
-        }
-        if ( !$$vcf{delim} )
-        {
-            my $fnames = join(',',sort keys %$files);
-            $vcf->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
-            $vcf->add_header_line({key=>'sourceFiles',value=>$fnames},append=>'timestamp');
-            print {$$opts{out_files}{$src}} $vcf->format_header();
+            print "Using file '$$opts{prefix}$src.vcf.gz' for records present in:\n";
+            for my $rec (sort values %$hash)
+            {
+                print "\t$$rec{vcf}{file}\n";
+            }
+            if ( !$$vcf{delim} )
+            {
+                my $fnames = join(',',sort values %$hash);
+                $vcf->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
+                $vcf->add_header_line({key=>'sourceFiles',value=>$fnames},append=>'timestamp');
+                print {$$opts{out_files}{$src}} $vcf->format_header();
+            }
         }
     }
 
-    my $fh = $$opts{out_files}{$src};
-
-    for my $rec (@{$$files{$file}})
+    for my $pos (keys %$srcs)
     {
+        my $rec = (values %{$$srcs{$pos}})[0];
+        my $src = join('_',sort keys %{$$srcs{$pos}});
+        my $fh  = $$opts{out_files}{$src};
+
         if ( !$$vcf{delim} )
         {
             print $fh join("\t",@{$$rec{line}}) . "\n";

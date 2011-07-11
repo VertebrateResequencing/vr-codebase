@@ -1397,12 +1397,15 @@ sub lane_bams {
            the path to the sequence.index file. Optionally a chrom string if the
            supplied bam is unsplit, but you want to work out what the dcc
            filename of a certain chromosmal split of that bam would be prior to
-           actually making the split bam.
+           actually making the split bam. A final option is a boolean which if
+           true means that RG ids are taken to be meaningless, with the true
+           read group identifier being in the PU field of the RG line(s) in the
+           header
 
 =cut
 
 sub dcc_filename {
-    my ($self, $file, $date_string, $sequence_index, $given_chrom) = @_;
+    my ($self, $file, $date_string, $sequence_index, $given_chrom, $rg_from_pu) = @_;
     $date_string || $self->throw("release date string must be supplied");
     
     # NAXXXXX.[chromN].technology.[center].algorithm.population.analysis_group.YYYYMMDD.bam
@@ -1433,7 +1436,7 @@ sub dcc_filename {
     while (my ($rg, $info) = each %readgroup_info) {
         # there should only be one sample, so we just pick the first
         $sample ||= $info->{SM};
-        $example_rg ||= $rg;
+        $example_rg ||= $rg_from_pu ? $info->{PU} : $rg;
         
         # might be more than one of these if we're a sample-level bam. We
         # standardise on the DCC nomenclature for the 3 platforms; they should
@@ -1457,7 +1460,7 @@ sub dcc_filename {
     # picard merge may have tried to uniqueify the rg, so pluck off .\d
     $example_rg =~ s/\.\d+$//;
     
-    unless ($example_rg) {
+    unless (defined $example_rg) {
         $self->throw("The bam '$file' had no RG in the header!");
     }
     
