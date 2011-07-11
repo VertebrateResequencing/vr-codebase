@@ -31,7 +31,7 @@ sub error
         "   -C, --chromosomes <list|file>       Process the given chromosomes (comma-separated list or one chromosome per line in a file).\n",
         "   -c, --complement                    Output positions present in the first file but missing from the other files.\n",
         "   -d, --debug                         Debugging information\n",
-        "   -f, --force                         Continue even if the script complains about differing columns.\n",
+        "   -f, --force                         Continue even if the script complains about differing columns or VCF versions.\n",
         "   -o, --one-file-only                 Print only entries from the left-most file. Without -o, all unique positions will be printed.\n",
         "   -n, --nfiles [+-=]<int>             Output positions present in this many (=), this many or more (+), or this many or fewer (-) files.\n",
         "   -p, --prefix <path>                 If present, multiple files will be created with all possible isec combinations. (Suitable for Venn Diagram analysis.)\n",
@@ -198,6 +198,8 @@ sub vcf_isec
     if ( exists($$opts{chromosomes}) ) { @chroms = read_chrom_list($$opts{chromosomes}); }
 
     my $source;
+    my $vcf_version;
+    my $vcf_version_warned;
     for (my $ifile=0; $ifile<@{$$opts{files}}; $ifile++)
     {
         my $file = $$opts{files}[$ifile];
@@ -206,6 +208,17 @@ sub vcf_isec
         $vcf->close();
         $$vcf{nread} = 0;
         push @vcfs, $vcf;
+
+        # Check if the VCF versions are identical
+        if ( ref($file) eq '' )
+        {
+            if ( !defined $vcf_version ) { $vcf_version = $$vcf{version} }
+            if ( $vcf_version ne $$vcf{version} && !$vcf_version_warned )
+            {
+                warn("Warning: Mixed VCF format versions, use vcf-convert to unify.\n");
+                $vcf_version_warned = 1;
+            }
+        }
 
         # Update the list of known chromosomes
         if ( !exists($$opts{chromosomes}) )
