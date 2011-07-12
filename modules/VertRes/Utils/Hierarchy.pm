@@ -1677,9 +1677,8 @@ sub store_lane {
     
     if ($do_move) {
         symlink($storage_path, $source_dir) || $self->throw("Failed to create symlink from $storage_path to $source_dir");
-        chdir($cwd);
-        
         File::Copy::move($storage_path_temp, $storage_path) || $self->throw("Could not rename $storage_path_temp to $storage_path");
+        chdir($cwd) || $self->throw("Could not change directory to $cwd");
     }
     
     $lane->storage_path($storage_path);
