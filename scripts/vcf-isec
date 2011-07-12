@@ -320,8 +320,7 @@ sub do_chrm_isec
                 my $fltr = $$rec{line}[6];
                 if ( !$split && $fltr ne $$vcf{filter_passed} && $fltr ne $$vcf{defaults}{default} ) { $src .= 'f'; }
             }
-
-            $srcs{$$rec{line}[1]}{$src} = $rec;
+            $srcs{$$rec{pos}}{$src} = $rec;
         }
         if ( $split )
         {
@@ -349,13 +348,13 @@ sub do_chrm_isec
             if ( !$$rec{vcf}{delim} )
             {
                 # This is a VCF file, add annotation
-                my @tags = split(/;/,$$rec{line}[7]);
+                my @tags = split(/;/,$$rec{pos});
                 my $i;
                 for ($i=0; $i<@tags; $i++)
                 {
                     if ( $tags[$i] eq '.' or $tags[$i]=~/^SF=/ ) { last; }
                 }
-                my $src = join(',',sort keys %{$srcs{$$rec{line}[1]}});
+                my $src = join(',',sort keys %{$srcs{$$rec{pos}}});
                 $tags[$i] = 'SF='.$src;
                 $$rec{line}[7] = join(';',@tags);
                 print join("\t",@{$$rec{line}}) . "\n";
