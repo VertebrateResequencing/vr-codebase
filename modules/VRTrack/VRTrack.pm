@@ -789,6 +789,80 @@ sub database_params {
     return $self->{_db_params};
 }
 
+
+=head2 assembly_names
+
+  Arg [1]    : None
+  Example    : my @assemblies = $vrtrack->assembly_names();
+  Description: Returns a reference to an array of the names in the assembly table sorted by name
+  Returntype : reference to array of strings
+
+=cut
+
+sub assembly_names {
+    my $self = shift;
+    return $self->_list_names('assembly');
+}
+
+=head2 species_names
+
+  Arg [1]    : None
+  Example    : my @species = $vrtrack->species_names();
+  Description: Returns a reference to an array of the names in the species table sorted by name
+  Returntype : reference to array of strings
+
+=cut
+
+sub species_names {
+    my $self = shift;
+    return $self->_list_names('species');
+}
+
+=head2 mapper_names
+
+  Arg [1]    : None
+  Example    : my @mappers = $vrtrack->mapper_names();
+  Description: Returns a reference to an array of the distinct names in the species table
+  Returntype : reference to array of strings
+
+=cut
+
+sub mapper_names {
+    my $self = shift;
+    return $self->_list_names('mapper');
+}
+
+# Returns reference to an array of names contained in the name column of a table
+# Tables are restricted to tables contained in hash %permitted_table within the function.
+sub _list_names {
+    my ($self,$table) = @_;
+
+    # List of permitted tables
+    my %permitted_table = (assembly => 0, species => 0, mapper => 1);
+
+    unless(exists $permitted_table{$table}){croak qq[The listing names for '$table' not permitted];}
+    my $distinct = $permitted_table{$table} ? 'distinct' : '';
+
+    my @names;
+    my $sql =qq[select $distinct $table.name 
+                from $table
+                order by $table.name;];
+
+    my $sth = $self->{_dbh}->prepare($sql);
+	
+    my $tmpname;
+    if ($sth->execute()){
+        $sth->bind_columns ( \$tmpname );
+        push @names, $tmpname while $sth->fetchrow_arrayref;
+    }
+    else{
+        die(sprintf('Cannot retrieve $table names: %s', $DBI::errstr));
+    }
+
+    return \@names;
+}
+
+
 1;
 
 
