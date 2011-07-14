@@ -2363,7 +2363,15 @@ sub Vcf4_0::parse_header_line
     my $key   = $1;
     my $value = $';
 
-    if ( !($value=~/^<(.+)>\s*$/) ) { return { key=>$key, value=>$value }; }
+    if ( !($value=~/^<(.+)>\s*$/) ) 
+    { 
+        # Simple sanity check for subtle typos
+        if ( $key eq 'INFO' or $key eq 'FILTER' or $key eq 'FORMAT' or $key eq 'ALT' )
+        {
+            $self->throw("Hmm, is this a typo? [$key] [$value]");
+        }
+        return { key=>$key, value=>$value }; 
+    }
 
     my $rec = { key=>$key };
     my $tmp = $1;
