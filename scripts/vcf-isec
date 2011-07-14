@@ -348,7 +348,7 @@ sub do_chrm_isec
             if ( !$$rec{vcf}{delim} )
             {
                 # This is a VCF file, add annotation
-                my @tags = split(/;/,$$rec{pos});
+                my @tags = split(/;/,$$rec{line}[7]);
                 my $i;
                 for ($i=0; $i<@tags; $i++)
                 {
