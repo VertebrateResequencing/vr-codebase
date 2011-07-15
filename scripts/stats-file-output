@@ -75,7 +75,7 @@ Generates lane statistics file for a database or study (if specified).
 Examples:
 --------
 Retrieve all stats for a database:
-1. stats-file-output --db vrtrack_uk10k_cohort --out cohort_out.stats
+1. stats-file-output --db vrtrack_uk10k_cohort
 
 Retrieve stats for 2 projects between certain dates:
 2. stats-file-output --db vrtrack_uk10k_neuro --study UK10K_NEURO_MUIR,UK10K_NEURO_ASD_SKUSE --from 2011-01-25
@@ -212,9 +212,9 @@ if (@totaloutput) {
 		$worksheet->write(0, $i,  $columns[$i]);
 	}
 	
-	for my $x (1 .. $#totaloutput+1) {
+	for my $x (0 .. $#totaloutput) {
 		for my $y (0 .. $#columns) {
-			$worksheet->write($x, $y,  ($totaloutput[$x][$y]));
+			$worksheet->write($x+1, $y,  ($totaloutput[$x][$y]));
 		}
 	}
 
