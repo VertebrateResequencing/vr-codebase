@@ -72,7 +72,7 @@ vrtracking_tool
  		(If the -v or --verbose flag is used, the information concerning the files/directories deleted and the 
  		database objects deleted/flags reset will be written to the log file if specified in the config file.)
  
- 	NOTE- the tool currently uses names for lanes and studies, hierarchy names or id numbers for libraries, but only id numbers for samples, 
+ 	NOTE- the tool currently uses names for lanes and studies, hierarchy names for libraries, but only id numbers for samples, 
  	e.g. it can accept the lane name 5659_2.
  	
     There are 2 modes of operation. You can either provide a file of lane names or library hierarchy names 
@@ -277,7 +277,7 @@ while (<>){
     		}
     		my %files_deleted = (
     			import => ["^$mapstats_id\.[ps]e\.raw\.sorted\.bam", "^$mapstats_id\.[ps]e\.recalc\.sorted\.bam"],
-				qc => ["^qc-sample\.$mapstats_id\$"],
+				qc => ["^qc-sample\.$mapstats_id\$", "^qc-sample\$"],
 				genotype => ["^$vrinput\.gtype\$", "^$vrinput\.gtypex\$", "^$vrinput\.gtypey\$", "^$vrinput\.glf\$", "^_$vrinput\_glf\.o\$", "^_$vrinput\_glf\.e\$"],
 				improvement => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.bam\.recal_data\.csv\$", "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.bam", "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.(?!snp\$)"],
 				snp_called => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.snp\$"],
