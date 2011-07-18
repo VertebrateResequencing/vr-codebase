@@ -407,7 +407,10 @@ sub plot_gc
         
         gcf_max = `grep ^GCF ] . $$opts{bamcheck} . q[ | cut -f 2- | awk '{if($2>max)max=$2}END{print max}'`
         gcl_max = `grep ^GCL ] . $$opts{bamcheck} . q[ | cut -f 2- | awk '{if($2>max)max=$2}END{print max}'`
-        
+
+        peak = `grep ^GC\[FL\] ] . $$opts{bamcheck} . q[ | cut -f 2- | awk '{if($2>max){max=$2;pos=$1}}END{print pos}'`
+        set label sprintf("%.1f",peak) at peak,1 front offset 1,0
+
         set ylabel "Normalized Frequency" 
         set xlabel "GC Content [%]"
         set yrange [0:1.1]
