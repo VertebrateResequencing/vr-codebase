@@ -731,6 +731,7 @@ sub _header_line_exists
 {
     my ($self,$key,$rec) = @_;
     if ( !exists($$self{header}{$key}) ) { return 0; }
+    if ( $key eq 'fileformat' ) { return 1; }
     for my $hrec (@{$$self{header}{$key}})
     {
         my $differ = 0;
