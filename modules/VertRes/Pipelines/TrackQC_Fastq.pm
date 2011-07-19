@@ -623,7 +623,7 @@ sub stats_and_graphs_provides
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @provides = ("$sample_dir/_graphs.done");
+    my @provides = ("$sample_dir/_graphs.done","$sample_dir/$$self{lane}.cover");
     return \@provides;
 }
 
@@ -673,74 +673,17 @@ sub run_graphs
 
     $self->SUPER::run_graphs($lane_path);
 
-    use Graphs;
     use Utils;
-    use FastQ;
 
     # Set the variables
+    my $samtools     = $$self{'samtools'};
     my $sample_dir   = $$self{'sample_dir'};
-    my $name         = $$self{lane};
+    my $name         = $$self{'lane'};
     my $outdir       = "$lane_path/$sample_dir/";
-    my $bam_file     = "$outdir/$name.bam";
-    my $dump_file    = "$outdir/$$self{stats_dump}";
 
-    # Create the multiline fastqcheck files
-    my @fastq_legend = ();
-    my @fastq_quals  = ();
-    my $fastq_files  = existing_fastq_files("$lane_path/$name");
-    my $total_reads  = 0;    # this is for integrity check of the bam file
-    for (my $i=1; $i<=scalar @$fastq_files; $i++)
-    {
-        my $fastqcheck = "$lane_path/${name}_$i.fastq.gz.fastqcheck";
-        if ( !-e $fastqcheck )
-        {
-            # This can happen when the lane was not imported by the Import.pm pipeline.
-            if ( ! -e "$lane_path/${name}_$i.fastq.gz" ) { next; }
-
-            Utils::CMD(qq[zcat $lane_path/${name}_$i.fastq.gz | fastqcheck > $fastqcheck.part]);
-            if ( -s "$fastqcheck.part" )
-            {
-                rename("$fastqcheck.part","$fastqcheck") or $self->throw("rename $fastqcheck.part $fastqcheck: $!");
-            }
-            else { next; }
-        }
-
-        my $data = FastQ::parse_fastqcheck($fastqcheck);
-        $$data{'outfile'}    = "$outdir/fastqcheck_$i.png";
-        $$data{'title'}      = "FastQ Check $i";
-        $$data{'desc_xvals'} = 'Sequencing Quality';
-        $$data{'desc_yvals'} = '1000 x Frequency / nBases';
-
-        # Draw the 'Total' line as the last one and somewhat thicker
-        my $total = shift(@{$$data{'data'}});
-        $$total{'lines'} = ',lwd=3';
-        push @{$$data{'data'}}, $total;
-
-        Graphs::plot_stats($data);
-
-        my $pars = VertRes::Parser::fastqcheck->new(file => $fastqcheck);
-        my ($bases,$quals) = $pars->avg_base_quals();
-        push @fastq_quals, { xvals=>$bases, yvals=>$quals, legend=>"FQ $i" };
-
-        # To check the integrity of the BAM file
-        open(my $fh,"zcat $outdir/${name}_$i.fastq.gz | fastqcheck |") or $self->throw("zcat $outdir/${name}_$i.fastq.gz | fastqcheck |: $!");
-        $pars = VertRes::Parser::fastqcheck->new(fh => $fh);
-        $total_reads += $pars->num_sequences();
-        close($fh);
-    }
-
-    if ( scalar @fastq_quals )
-    {
-        Graphs::plot_stats({
-                outfile     => qq[$outdir/fastqcheck.png],
-                title       => 'fastqcheck base qualities',
-                desc_yvals  => 'Quality',
-                desc_xvals  => 'Base',
-                data        => \@fastq_quals,
-                r_plot      => "ylim=c(0,50)",
-                });
-    }
-
+    # Genome covered 
+    Utils::CMD("$samtools pileup $outdir/$name.bam | wc -l > $outdir/$name.cover");
+    
 }
 
 

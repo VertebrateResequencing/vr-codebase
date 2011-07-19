@@ -51,7 +51,8 @@ Options:
        --bamcheck_cmd <cmd>            bamcheck command to use; defaults to 'bamcheck -q 20'
        --release_date  YYYYMMDD        release date to be used in bas file, format YYYYMMDD;
                                             defaults to current day
-       --merge_bas_files <file>        file to create with with a merged bas file (optional)
+       --sequence_index <file>         path to sequence index (optional)
+       --merge_bas_files <file>        file to create with a merged bas file (optional)
    -h  --help                          display this help message
 
 Example:

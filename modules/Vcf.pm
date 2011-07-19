@@ -155,7 +155,7 @@ sub new
     $$self{reserved}{cols} = {CHROM=>1,POS=>1,ID=>1,REF=>1,ALT=>1,QUAL=>1,FILTER=>1,INFO=>1,FORMAT=>1} unless exists($$self{reserved_cols});
     $$self{recalc_ac_an} = 1;
     $$self{has_header} = 0;
-    $$self{default_version} = '4.0';
+    $$self{default_version} = '4.1';
     $$self{versions} = [ qw(Vcf3_2 Vcf3_3 Vcf4_0 Vcf4_1) ];
     my %open_args = ();
     if ( exists($$self{region}) ) { $open_args{region}=$$self{region}; }
@@ -413,8 +413,8 @@ sub _set_version
     else 
     { 
         $self->warn(qq[The version "$$self{version}" not supported, assuming VCFv$$self{default_version}\n]);
-        $$self{version} = '4.0';
-        $reader = Vcf4_0->new(%$self);
+        $$self{version} = '4.1';
+        $reader = Vcf4_1->new(%$self);
     }
 
     $self = $reader;
@@ -513,6 +513,11 @@ sub next_data_hash
         for my $info (split(/;/,$items[7]))
         {
             my ($key,$val) = split(/=/,$info);
+            if ( !defined $key ) 
+            { 
+                $self->warn("Broken VCF file, empty INFO field at $items[0]:$items[1]\n");
+                next;
+            }
             if ( defined $val )
             {
                 $hash{$key} = $val;
@@ -709,9 +714,9 @@ sub add_header_line
         $$rec{key} = $key;
     }
 
-    if ( exists($$self{header}{$key}) ) { $self->remove_header_line(%$rec); }
+    if ( $self->_header_line_exists($key,$rec) ) { $self->remove_header_line(%$rec); }
 
-    $$self{header}{$key} = $rec;
+    push @{$$self{header}{$key}}, $rec;
     if ( $$rec{key} eq 'fileformat' ) 
     { 
         unshift @{$$self{header_lines}}, $rec; 
@@ -720,6 +725,23 @@ sub add_header_line
     {
         push @{$$self{header_lines}}, $rec;
     }
+}
+
+sub _header_line_exists
+{
+    my ($self,$key,$rec) = @_;
+    if ( !exists($$self{header}{$key}) ) { return 0; }
+    for my $hrec (@{$$self{header}{$key}})
+    {
+        my $differ = 0;
+        for my $item (keys %$rec)
+        {
+            if ( !exists($$hrec{$item}) ) { $differ=1; last; }
+            if ( $$hrec{$item} ne $$rec{$item} ) { $differ=1; last; }
+        }
+        if ( !$differ ) { return $hrec; }
+    }
+    return 0;
 }
 
 =head2 remove_header_line
@@ -742,12 +764,18 @@ sub remove_header_line
         {
             if ( $args{ID} ne $$line{ID} ) { next; }
             delete($$self{header}{$key}{$args{ID}});
+            splice(@{$$self{header_lines}},$i,1);
         }
         else
         {
-            delete($$self{header}{$key});
+            my $to_be_removed = $self->_header_line_exists($key,\%args);
+            if ( !$to_be_removed ) { next; }
+            for (my $j=0; $j<@{$$self{header}{$key}}; $j++)
+            {
+                if ( $$self{header}{$key}[$j] eq $to_be_removed ) { splice(@{$$self{header}{$key}},$j,1); last; }
+            }
+            splice(@{$$self{header_lines}},$i,1);
         }
-        splice(@{$$self{header_lines}},$i,1);
     }
 }
 
@@ -1074,6 +1102,7 @@ sub calc_an_ac
     for my $gt (keys %$gtypes)
     {
         my $value = $$gtypes{$gt}{GT};
+        if ( !defined $value ) { next; } # GT may not be present
         my ($al1,$al2) = split($sep_re,$value);
         if ( defined($al1) && $al1 ne '.' )
         {
@@ -1329,10 +1358,12 @@ sub format_AGtag
 
     if ( exists($$record{_gtags}{$tag}) )
     {
-        my $gtypes = $$record{_gtypes};
+        my $gtypes  = $$record{_gtypes};
+        my $gtypes2 = $$record{_gtypes2};
         if ( !defined $gtypes )
         {
-            $gtypes = [];
+            $gtypes  = [];
+            $gtypes2 = [];
 
             my @alleles = ( $$record{REF}, @{$$record{ALT}} );
             for (my $i=0; $i<@alleles; $i++)
@@ -1340,14 +1371,18 @@ sub format_AGtag
                 for (my $j=0; $j<=$i; $j++)
                 {
                     push @$gtypes, $alleles[$i].'/'.$alleles[$j];
+                    push @$gtypes2, $alleles[$j].'/'.$alleles[$i];
                 }
             }
             
-            $$record{_gtypes} = $gtypes;
+            $$record{_gtypes}  = $gtypes;
+            $$record{_gtypes2} = $gtypes2;
         }
 
-        for my $gt (@$gtypes)
+        for (my $i=0; $i<@$gtypes; $i++)
         {
+            my $gt = $$gtypes[$i];
+            if ( !exists($$tag_data{$gt}) ) { $gt = $$gtypes2[$i]; }
             push @out, exists($$tag_data{$gt}) ? $$tag_data{$gt} : $$self{defaults}{default};
         }
     }
@@ -2328,7 +2363,15 @@ sub Vcf4_0::parse_header_line
     my $key   = $1;
     my $value = $';
 
-    if ( !($value=~/^<(.+)>\s*$/) ) { return { key=>$key, value=>$value }; }
+    if ( !($value=~/^<(.+)>\s*$/) ) 
+    { 
+        # Simple sanity check for subtle typos
+        if ( $key eq 'INFO' or $key eq 'FILTER' or $key eq 'FORMAT' or $key eq 'ALT' )
+        {
+            $self->throw("Hmm, is this a typo? [$key] [$value]");
+        }
+        return { key=>$key, value=>$value }; 
+    }
 
     my $rec = { key=>$key };
     my $tmp = $1;
