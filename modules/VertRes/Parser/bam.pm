@@ -481,17 +481,30 @@ sub _guess_mapping_program {
         # }
         
         my (@known_prg,@unknown_prg);
-        for my $program (@programs)
-        {
-            if ( $program =~ /bwa|maq|ssaha|bfast|stampy/ ) { push @known_prg, $program; }
-            elsif ( $program !~ /GATK/ ) { push @unknown_prg, $program; }
+        for my $program (@programs) {
+            if ($program =~ /bwa|maq|ssaha|bfast|stampy/) {
+                push @known_prg, $program;
+            }
+            elsif ($program !~ /GATK/) {
+                push @unknown_prg, $program;
+            }
         }
 
-        if ( @known_prg ) { return $known_prg[0]; }
-        elsif ( @unknown_prg ) { return $unknown_prg[0]; }
+        if (@known_prg) {
+            return $known_prg[0];
+        }
+        elsif (@unknown_prg) {
+            return $unknown_prg[0];
+        }
 
         # guess randomly
-        return $programs[0];
+        if (@programs) {
+            return $programs[0];
+        }
+        else {
+            # OMG, there's no PG lines in this bam file!
+            return 'unknown_algorithm';
+        }
     }
 }
 

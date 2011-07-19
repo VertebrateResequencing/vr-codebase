@@ -19,7 +19,7 @@ vrtracking_tool
       import
       qc
       genotype
-      improvement
+      improved
       snp_called
     -database/file objects:  
       lane
@@ -39,7 +39,7 @@ vrtracking_tool
          vrtracking_tool -c $CONF/my_db.conf -s genotype <file of lane names to redo genotype> 
           
          > Re-perform bam improvement for a set of lanes:
-         vrtracking_tool -c $CONF/my_db.conf -s improvement <file of lane names>
+         vrtracking_tool -c $CONF/my_db.conf -s improved <file of lane names>
           
          > Re-perform snp_calling for a set of lanes:
          vrtracking_tool -c $CONF/my_db.conf -s snp_calling <file of lane names>      
@@ -72,7 +72,7 @@ vrtracking_tool
  		(If the -v or --verbose flag is used, the information concerning the files/directories deleted and the 
  		database objects deleted/flags reset will be written to the log file if specified in the config file.)
  
- 	NOTE- the tool currently uses names for lanes and studies, hierarchy names or id numbers for libraries, but only id numbers for samples, 
+ 	NOTE- the tool currently uses names for lanes and studies, hierarchy names for libraries, but only id numbers for samples, 
  	e.g. it can accept the lane name 5659_2.
  	
     There are 2 modes of operation. You can either provide a file of lane names or library hierarchy names 
@@ -120,7 +120,7 @@ use Carp;
 
 my ($config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test);
 #values for $stage that involve *resetting* db flags and file deletion
-my @stages =  ('import', 'qc', 'genotype', 'improvement', 'snp_called');
+my @stages =  ('import', 'qc', 'genotype', 'improved', 'snp_called');
 #values for $stage that can EITHER have flags reset as above, OR have VRTrack objects and whole directories deleted, depending on whether the --delete/-del flag is set)
 my @entities = ('lane', 'library', 'sample', 'study');
 
@@ -180,7 +180,7 @@ my $reset_stage = $reset_stages{$stage};
       import
       qc
       genotype
-      improvement
+      improved
       snp_called
     -database/file objects:  
       lane
@@ -277,9 +277,10 @@ while (<>){
     		}
     		my %files_deleted = (
     			import => ["^$mapstats_id\.[ps]e\.raw\.sorted\.bam", "^$mapstats_id\.[ps]e\.recalc\.sorted\.bam"],
-				qc => ["^qc-sample\.$mapstats_id\$"],
+				qc => ["^qc-sample\.$mapstats_id\$", "^qc-sample\$"],
 				genotype => ["^$vrinput\.gtype\$", "^$vrinput\.gtypex\$", "^$vrinput\.gtypey\$", "^$vrinput\.glf\$", "^_$vrinput\_glf\.o\$", "^_$vrinput\_glf\.e\$"],
-				improvement => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.bam\.recal_data\.csv\$", "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.bam", "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.(?!snp\$)"],
+				improved => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.bam\.recal_data\.csv\$", "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.bam", "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.(?!snp\$)",
+				            "^\.realign\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.recalibrate\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.sort\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.rewrite\_header\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$"],
 				snp_called => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.snp\$"],
 				all => ["^[\\w]+"],
     		);
