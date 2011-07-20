@@ -543,6 +543,7 @@ sub apply_local_filters
         my ($rr,$ra);
         $rr = $1; 
         $ra = $2; 
+        $apply{HWE} = 0;
         if ( $$line[7]=~/HWE=([^;\t]+)/ && $1<$$filters{HWE} ) 
         {
             my $p = 2*$rr + $ra;
@@ -589,15 +590,15 @@ sub apply_local_filters
         }
         if ( exists($$filters{BaseQualBias}) ) 
         { 
-            $apply{BaseQualBias} = $1 < $$filters{BaseQualBias} ? 1 : 0;
+            $apply{BaseQualBias} = $2 < $$filters{BaseQualBias} ? 1 : 0;
         }
         if ( exists($$filters{MapQualBias}) ) 
         { 
-            $apply{MapQualBias} = $1 < $$filters{MapQualBias} ? 1 : 0;
+            $apply{MapQualBias} = $3 < $$filters{MapQualBias} ? 1 : 0;
         }
         if ( exists($$filters{EndDistBias}) ) 
         { 
-            $apply{EndDistBias} = $1 < $$filters{EndDistBias} ? 1 : 0;
+            $apply{EndDistBias} = $4 < $$filters{EndDistBias} ? 1 : 0;
         }
     }
     if ( scalar keys %apply )
