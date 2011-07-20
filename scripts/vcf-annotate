@@ -427,7 +427,7 @@ sub annotate
                 }
                 if ( defined $id_col && $$annot_line[$id_col] ne '' ) { $ids{$$annot_line[$id_col]} = 1; }
             }
-            if ( scalar keys %ids ) { $rec[2] = join(',', keys %ids); }
+            if ( scalar keys %ids ) { $rec[2] = join(';', keys %ids); }
             if ( scalar keys %values )
             {
                 for my $key (keys %values)
