@@ -24,6 +24,7 @@ my %filters =
     RefN         => { dflt=>'', usage=>'', desc=>"Reference base is N", nick=>'r' },
     Qual         => { dflt=>'10', usage=>'INT', desc=>"Minimum value of the QUAL field", nick=>'Q' },
     VDB          => { dflt=>'0.005', usage=>'FLOAT', desc=>"Minimum Variant Distance Bias (INFO/VCD)", nick=>'v' },
+    HWE          => { dflt=>1e-4, usage=>'FLOAT', desc=>"Minimum P-value for HWE (plus F<0)", nick=>'H' },
 );
 
 my $opts = parse_params();
@@ -536,6 +537,20 @@ sub apply_local_filters
     if ( exists($$filters{Qual}) && $$line[5] ne '.' )
     {
         $apply{Qual} = $$line[5] < $$filters{Qual} ? 1 : 0;
+    }
+    if ( exists($$filters{HWE}) && $$line[7]=~/G3=([^,]+),([^,]+),/ )
+    {
+        my ($rr,$ra);
+        $rr = $1; 
+        $ra = $2; 
+        if ( $$line[7]=~/HWE=([^;\t]+)/ && $1<$$filters{HWE} ) 
+        {
+            my $p = 2*$rr + $ra;
+            if ( $p>0 && $p<1 && $ra/($p*(1-$p))>1 )
+            {
+                $apply{HWE} = 1;
+            }
+        }
     }
     if ( defined $dp_alt )
     {
