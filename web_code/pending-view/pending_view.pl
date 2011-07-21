@@ -18,6 +18,7 @@ use VRTrack::Project;
 use VRTrack::Sample;
 use VRTrack::Library;
 use VRTrack::Lane;
+use VRTrack::Multiplex_pool;
 use VertRes::Utils::VRTrackFactory;
 use Data::Dumper;
 
@@ -152,7 +153,7 @@ left: -480px; /*position where enlarged image should offset horizontally */
 CSS
 
 my $sw  = SangerWeb->new({
-    'title'   => q(Pending View v1),
+    'title'   => q(Pending View v2),
     'banner'  => q(),
     'inifile' => SangerWeb->document_root() . q(/Info/header.ini),
     'style'   => $css,
@@ -260,8 +261,10 @@ sub displayPendingRequestsPage
 
 	my @libpendings;
 	my @seqpendings;
+	my @mplexpendings;
 	my $lib_type = "library";
 	my $seq_type = "sequence";
+	my $plex_type = "multiplex sequence";
 
 	print qq[
     	<h2 align="center" style="font: normal 900 1.5em arial"><a href="$SCRIPT_NAME">Pending Requests</a></h2>
@@ -306,11 +309,25 @@ sub displayPendingRequestsPage
 					push @seqpendings, [$projectID, $pname, $sname, $seq_status, $seq_date, $ssid];
 				}
 			}
+			foreach ( @{$library->library_multiplex_pools}){
+				my $mplex = VRTrack::Multiplex_pool->new($vrtrack, $_->multiplex_pool_id);
+                foreach ( @{ $mplex->seq_requests } ){
+                	my $seqrequest = $_;
+                	my $seq_status = $seqrequest->seq_status();
+					if ($seq_status eq $pendingflag) {
+						my $seq_date = $seqrequest->changed();
+						my $ssid = $seqrequest->ssid();
+						push @mplexpendings, [$projectID, $pname, $sname, $seq_status, $seq_date, $ssid];
+					}                	
+                }
+            }
 		}
     }
 	}
+	my @sort_mplexpendings = sort {$a->[5] <=> $b->[5]} @mplexpendings;
 	printPendingRows(\@libpendings, $lib_type, $db, $cgi);
 	printPendingRows(\@seqpendings, $seq_type, $db, $cgi);
+	printPendingRows(\@sort_mplexpendings, $plex_type, $db, $cgi);
     print qq[
     	</div>
     ];
