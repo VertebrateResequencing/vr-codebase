@@ -2325,7 +2325,7 @@ sub Vcf4_0::format_header_line
     my %tmp_rec = ( %$rec );
     if ( exists($tmp_rec{Number}) && $tmp_rec{Number} eq '-1' ) { $tmp_rec{Number} = '.' }
     my $value;
-    if ( exists($tmp_rec{ID}) )
+    if ( exists($tmp_rec{ID}) or $tmp_rec{key} eq 'PEDIGREE' )
     {
         my %has = ( key=>1, handler=>1, default=>1 );   # Internal keys not to be output
         my @items;
@@ -2376,28 +2376,36 @@ sub Vcf4_0::parse_header_line
 
     my $rec = { key=>$key };
     my $tmp = $1;
-    while ($tmp)
+    my ($attr_key,$attr_value,$quoted);
+    while ($tmp ne '')
     {
-        my ($key,$value);
-        if ( $tmp=~/^([^=]+)="([^\"]+)"/ ) { $key=$1; $value=$2; }
-        elsif ( $tmp=~/^([^=]+)=([^,"]+)/ ) 
-        { 
-            $key=$1; $value=$2; 
-            if ( $key eq 'Description' ) { $self->warn(qq[Expected double quotes (Description="$value") .. $line\n]); }
+        if ( !defined $attr_key )
+        {
+            if ( $tmp=~/^([^=]+)="/ ) { $attr_key=$1; $quoted=1; $tmp=$'; next; }
+            elsif ( $tmp=~/^([^=]+)=/ ) { $attr_key=$1; $quoted=0; $tmp=$'; next; }
+            else { $self->throw(qq[Could not parse header line: $line\nStopped at [$tmp].\n]); }
         }
-        else { $self->throw(qq[Could not parse header line: $line\n]); }
 
-        if ( $key=~/^\s+/ or $key=~/\s+$/ or $value=~/^\s+/ or $value=~/\s+$/ ) 
-        { 
-            $self->throw("Leading or trailing space in key-value pairs is discouraged:\n\t[$key] [$value]\n\t$line\n"); 
+        if ( $tmp=~/^[^,\\"]+/ ) { $attr_value .= $&; $tmp = $'; }
+        if ( $tmp=~/^\\\\/ ) { $attr_value .= '\\\\'; $tmp = $'; next; }
+        if ( $tmp=~/^\\"/ ) { $attr_value .= '\\"'; $tmp = $'; next; }
+        if ( $tmp eq '' or ($tmp=~/^,/ && !$quoted) or $tmp=~/^"/ )
+        {
+            if ( $attr_key=~/^\s+/ or $attr_key=~/\s+$/ or $attr_value=~/^\s+/ or $attr_value=~/\s+$/ ) 
+            { 
+                $self->throw("Leading or trailing space in attr_key-attr_value pairs is discouraged:\n\t[$attr_key] [$attr_value]\n\t$line\n"); 
+            }
+            $$rec{$attr_key} = $attr_value;
+            $tmp = $';
+            if ( $quoted && $tmp=~/^,/ ) { $tmp = $'; }
+            $attr_key = $attr_value = $quoted = undef;
+            next;
         }
-        $$rec{$key} = $value;
-
-        $tmp = $';
-        if ( $tmp=~/^,/ ) { $tmp = $'; }
+        if ( $tmp=~/^,/ ) { $attr_value .= $&; $tmp = $'; next; }
+        $self->throw(qq[Could not parse header line: $line\nStopped at [$tmp].\n]);
     }
 
-    if ( !exists($$rec{ID}) ) { $self->throw("Missing the ID tag in $line\n"); }
+    if ( $key ne 'PEDIGREE' && !exists($$rec{ID}) ) { $self->throw("Missing the ID tag in $line\n"); }
     if ( $key eq 'INFO' or $key eq 'FILTER' or $key eq 'FORMAT' )
     {
         if ( !exists($$rec{Description}) ) { $self->throw("Missing the Description tag in $line\n"); }
