@@ -16,6 +16,8 @@ use strict;
 use warnings;
 use LSF;
 use VertRes::Parser::fastqcheck;
+use VertRes::Wrapper::bwa;
+
 
 our @actions =
 (
@@ -163,6 +165,11 @@ sub VertRes::Pipelines::TrackQC_Fastq::new
     if ( !$$self{gtype_confidence} ) { $self->throw("Missing the option gtype_confidence.\n"); }
     if ( !$$self{sample_dir} ) { $self->throw("Missing the option sample_dir.\n"); }
     if ( !$$self{sample_size} ) { $self->throw("Missing the option sample_size.\n"); }
+
+    # Set mapper + version 
+    my $mapper = VertRes::Wrapper::bwa->new(exe => $self->{'bwa_exec'});
+    $self->{mapper} = 'bwa';
+    $self->{mapper_version} = $mapper->version;
 
     return $self;
 }
@@ -655,6 +662,7 @@ my \%params =
     'stats_ref'    => q[$stats_ref],
     'bwa_clip'     => q[$$self{bwa_clip}],
     'chr_regex'    => q[$$self{chr_regex}],
+    'bwa_exec'     => q[$$self{bwa_exec}],
 );
 
 my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
