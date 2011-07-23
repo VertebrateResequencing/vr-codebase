@@ -1389,7 +1389,18 @@ sub index {
 
     foreach my $in_bam (@{$self->{in_bams}}) {
         my $base = basename($in_bam);
-        my (undef, undef, undef, undef, $final_bam) = $self->_bam_name_conversion($in_bam);
+        
+        #work out if the final bam is the intervals bam OR the calmd bam
+        my $final_bam = undef;
+        if( $self->{extract_intervals} )
+        {
+            (undef, undef, undef, undef, $final_bam) = $self->_bam_name_conversion($in_bam);
+        }
+        else 
+        {
+            #no interval extraction - so get the calmd bam
+            (undef, undef, undef, $final_bam, undef) = $self->_bam_name_conversion($in_bam);
+        }
         my $bam_index = "$final_bam.bai";
         next if -s $bam_index;
 
