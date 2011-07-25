@@ -120,6 +120,16 @@ data =>
 # so there's no point in adding it to the task list when
 # getting the BAMs from a database.  The pipeline will complain.
 
+# If you don't want to use the database, but also want to call 
+# separately on each of bams, can also use the config file above
+# without the db section, and in the pipeline file, this instead:
+echo '__SNPs__ snps.conf' > snps.pipeline
+
+# Additional options in the data section are new_root to rebase
+# output location by replacing root in the bam files with new_root.
+# Also, outdir may be set to put output into a common subdir at its
+# destination.
+
 =head1 DESCRIPTION
 
 A module for calling SNPs from BAM files using any of
@@ -211,7 +221,7 @@ our $options =
     samtools_pileup_params => '-d 500',   # homozygous: '-r 0.0001 -d 500'
     vcf_rmdup       => 'vcf-rmdup',
     vcf_stats       => 'vcf-stats',
-    filter4vcf      => 'vcfutils.pl filter4vcf',
+    filter4vcf      => q[awk '/^#/||\\\$6>=3' | vcfutils.pl filter4vcf],
     bam_suffix       => 'intervals.bam',
 };
 
@@ -853,7 +863,7 @@ sub mpileup
 
         split_chunks    => \&mpileup_split_chunks,    
         merge_chunks    => \&glue_vcf_chunks,
-        merge_vcf_files => \&mpileup_postprocess,
+        merge_vcf_files => $$self{filter4vcf} ? \&mpileup_postprocess : undef,
     );
     if ( exists($$self{mpileup_samples}) ) { $opts{mpileup_samples} = $$self{mpileup_samples}; }
     if ( $$self{bcf_based} )
@@ -917,7 +927,7 @@ sub run_mpileup
         # Original code which does not save BCFs and pipes mpileup directly through bcftools to produce VCFs 
         if ( ! -e "$name.vcf.gz" )
         {
-            Utils::CMD(qq[$$self{mpileup_cmd} -b $file_list -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -gcv - | bgzip -c > $name.vcf.gz.part],{verbose=>1});
+            Utils::CMD(qq[$$self{mpileup_cmd} -b $file_list -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -p 0.99 -gcv - | bgzip -c > $name.vcf.gz.part],{verbose=>1});
             Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz.part],{verbose=>1});
             rename("$name.vcf.gz.part.tbi","$name.vcf.gz.tbi") or $self->throw("rename $name.vcf.gz.part.tbi $name.vcf.gz.tbi: $!");
             rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
@@ -970,7 +980,7 @@ if ( -e "$basename.vcf.gz" )
     rename("$basename.vcf.gz","$name.unfilt.vcf.gz") or Utils::error("rename $basename.vcf.gz $name.unfilt.vcf.gz: \$!");
 }
 
-Utils::CMD("zcat $name.unfilt.vcf.gz | awk '/^#/||\\\$6>=3' | $$self{filter4vcf} | bgzip -c > $basename.filt.vcf.gz");
+Utils::CMD("zcat $name.unfilt.vcf.gz | $$self{filter4vcf} | bgzip -c > $basename.filt.vcf.gz");
 Utils::CMD("zcat $basename.filt.vcf.gz | $$self{vcf_stats} > $name.vcf.gz.stats");
 Utils::CMD("tabix -f -p vcf $basename.filt.vcf.gz");
 rename("$basename.filt.vcf.gz.tbi","$name.vcf.gz.tbi") or Utils::error("rename $basename.filt.vcf.gz.tbi $name.vcf.gz.tbi: \$!");
@@ -1355,7 +1365,7 @@ sub cleanup_provides {
     my @provides;
 
     if ($self->{task}{cleanup}){
-        push @provides, 'cleanup.done';
+        push @provides, '.snps_done';
     }
     else {
         @provides = @{$self->cleanup_requires($lane_path)};
@@ -1396,6 +1406,7 @@ sub cleanup {
         for my $suff (@suffixes) {
             my $old_file = File::Spec->catfile($lane_path, $task, "$task.$suff");
             my $new_file = File::Spec->catfile($lane_path, "$task.$suff");
+            next unless (-s $old_file);
             $fs->copy($old_file, $new_file) or $self->throw("Error copying files:\nold: $old_file\nnew: $new_file");
         }
 
@@ -1406,8 +1417,15 @@ sub cleanup {
         Utils::CMD("rm -r " . File::Spec->catdir($lane_path, $task));
     } 
 
-    Utils::CMD("rm " . File::Spec->catfile($lane_path, 'file.list'));
-    Utils::CMD("touch " . File::Spec->catfile($lane_path, 'cleanup.done'));
+    unless ($self->{task}{update_db})
+    {
+        my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
+        Utils::CMD("rm $job_status") if (-e $job_status);
+    }
+    
+    my $file_list = File::Spec->catfile($lane_path, 'file.list');
+    Utils::CMD("rm $file_list") if (-e $file_list);
+    Utils::CMD("touch " . File::Spec->catfile($lane_path, '.snps_done'));
     return $$self{'Yes'};
 }
 
@@ -1470,7 +1488,6 @@ sub update_db {
     $vrtrack->transaction_commit();
 
     if ($self->{task}{cleanup}) {
-        Utils::CMD("rm " . File::Spec->catfile($lane_path, 'cleanup.done'));
         my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
         Utils::CMD("rm $job_status") if (-e $job_status);
     }
