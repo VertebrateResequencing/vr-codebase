@@ -65,8 +65,7 @@ my $fsu = VertRes::Utils::FileSystem->new();
  Usage   : my $wrapper = VertRes::Wrapper::GATK->new();
  Function: Create a VertRes::Wrapper::GATK object.
  Returns : VertRes::Wrapper::GATK object
- Args    : quiet => boolean
-           exe   => string (full path to GenomeAnalysisTK.jar; a TEAM145 default
+ Args    : exe   => string (full path to GenomeAnalysisTK.jar; a TEAM145 default
                             exists)
            java_memory => int (the amount of memory in MB to give java; default
                                2800)
@@ -171,9 +170,32 @@ sub _handle_common_params {
     unless (defined $params->{default_read_group}) {
         $params->{default_read_group} = $self->{_default_read_group};
     }
-    unless (defined $params->{quiet_output_mode}) {
-        $params->{quiet_output_mode} = $self->quiet();
+}
+
+=head2 version
+
+ Title   : version
+ Usage   : $wrapper->version();
+ Function: Get the version of GATK.
+ Returns : string of GATK version
+ Args    : n/a
+
+=cut
+
+sub version {
+    my $self = shift;
+    
+    open(my $fh, "java -jar $DEFAULT_GATK_JAR -h 2>&1 |") || $self->throw("Could not start $DEFAULT_GATK_JAR");
+    my $version = 0;
+    while (<$fh>) {
+        if (/v([\d\.]+)/) {
+            $version = $1;
+            last;
+        }
     }
+    close $fh ;
+    
+    return $version;
 }
 
 =head2 count_covariates
@@ -207,7 +229,17 @@ sub count_covariates {
     #   -cov DinucCovariate \
     #   -recalFile my_reads.recal_data.csv
     
-    $self->switches([qw(quiet_output_mode useOriginalQualities)]);
+    # CycleCovariate: The machine cycle for this base (different definition for the various technologies and therefore platform [@PL tag] is pulled out of the read's read group).
+    # DinucCovariate: The combination of this base and the previous base.
+    # HomopolymerCovariate: The number of consecutive previous bases that match the current base.
+    # MappingQualityCovariate: The mapping quality assigned to this read by the aligner.
+    # MinimumNQSCovariate: The minimum base quality score in a small window in the read around this base.
+    # PositionCovariate: The position along the length of the read. For Illumina this is the same as machine cycle but that is not the case for the other platforms.
+    # PrimerRoundCovariate: The primer round for this base (only meaningful for SOLiD reads).
+    # QualityScoreCovariate: The reported base quality score for this base.
+    # ReadGroupCovariate: The read group this read is a member of.
+    
+    $self->switches([qw(useOriginalQualities)]);
     $self->params([qw(R DBSNP l T default_platform default_read_group)]);
     
     # used to take a fileroot, but now takes an output file
@@ -382,12 +414,14 @@ sub get_b {
     my $args = '';
     foreach my $b (@bs) {
         # -B:variant,VCF snps.raw.vcf
+        # -B:hapmap,VCF,known=false,training=true,truth=true,prior=15.0 hapmap_3.3.b37.sites.vcf
         # it used to be -B variant,VCF,snps.raw.vcf, so convert latter to former
         my @b = split(',', $b);
-        if (@b == 2) {
-            ($b[1], $b[2]) = split(' ', $b[1]);
+        my $last = pop @b;
+        if ($last =~ /\s/) {
+            ($b[++$#b], $last) = split(/\s/, $last);
         }
-        $args .= "-B:$b[0],$b[1] $b[2] ";
+        $args .= "-B:".(join ',', @b)." $last";
     }
     return $args;
 }
@@ -471,12 +505,14 @@ sub table_recalibration {
     #   -out my_reads.recal.bam \
     #   -recalFile my_reads.recal_data.csv
     
-    $self->switches([qw(quiet_output_mode useOriginalQualities fail_with_no_eof_marker)]);
+    $self->switches([qw(useOriginalQualities fail_with_no_eof_marker
+                        doNotWriteOriginalQuals disable_bam_indexing
+                        generate_md5 simplifyBAM)]);
     $self->params([qw(R l T default_platform default_read_group)]);
     
     my @file_args = (" -I $in_bam", " -recalFile $csv", " --out $out_bam");
     
-    my %params = (fail_with_no_eof_marker => 1, @params);
+    my %params = (fail_with_no_eof_marker => 1, disable_bam_indexing => 1, @params);
     $params{T} = 'TableRecalibration';
     unless (defined $params{useOriginalQualities}) {
         $params{useOriginalQualities} = 1;
@@ -516,7 +552,7 @@ sub realignment_targets {
     #   -B:indels,VCF /path/to/indel_calls.vcf \
     #   -D resources/dbsnp_129_hg18.rod
     
-    $self->switches([qw(quiet_output_mode realignReadsWithBadMates)]);
+    $self->switches([]);
     $self->params([qw(R DBSNP T minReadsAtLocus maxIntervalSize
                       mismatchFraction windowSize)]);
     
@@ -547,7 +583,7 @@ sub realignment_targets {
            path to output bam.
            Optionally, supply R or DBSNP options etc (as a hash), as understood
            by GATK. LODThresholdForCleaning and useOnlyKnownIndels are set by
-           default. Use set_b() if you have known snps/indels. maxReadsInRam is
+           default. Use set_b() if you have known snps/indels. maxReadsInMemory is
            set to 100x java_memory, minimum 500000 by default.
 
 =cut
@@ -564,27 +600,26 @@ sub indel_realigner {
     #    -o <realignedBam.bam> \
     #    -B:indels,VCF /path/to/indel_calls.vcf \
     #    -D /path/to/dbsnp.rod \
-    #    -knownsOnly \
     #    -LOD 0.4
     #    -compress 0
     
-    $self->switches([qw(quiet_output_mode useOnlyKnownIndels
-                        noOriginalAlignmentTags realignReadsWithBadMates
-                        noPGTag targetIntervalsAreNotSorted
-                        sortInCoordinateOrderEvenThoughItIsHighlyUnsafe
-                        doNotSortEvenThoughItIsHighlyUnsafe)]);
+    $self->switches([qw(noOriginalAlignmentTags
+                        disable_bam_indexing generate_md5 simplifyBAM
+                        noPGTag targetIntervalsAreNotSorted)]);
     $self->params([qw(R DBSNP T maxReadsForConsensuses maxConsensuses
-                      entropyThreshold bam_compression
+                      entropyThreshold bam_compression 
+                      consensusDeterminationModel
+                      maxIsizeForMovement maxPositionalMoveAllowed
                       maxReadsForRealignment
-                      LODThresholdForCleaning maxReadsInRam)]);
+                      LODThresholdForCleaning maxReadsInMemory)]);
     
     my $bs = $self->get_b();
     my @file_args = (" $bs -I $in_bam", " -targetIntervals $intervals_file", " -o $out_bam");
     
-    my %params = (useOnlyKnownIndels => 1, LODThresholdForCleaning => 0.4,
-                  bam_compression => 0, @params);
-    if (! defined $params{maxReadsInRam} && ! $params{doNotSortEvenThoughItIsHighlyUnsafe}) {
-        $params{maxReadsInRam} = 100 * ($self->{java_memory} >= 5000 ? $self->{java_memory} : 5000);
+    my %params = (LODThresholdForCleaning => 0.4, bam_compression => 0, disable_bam_indexing => 1, 
+                    consensusDeterminationModel => 'KNOWNS_ONLY', @params);
+    if (! defined $params{maxReadsInMemory}) {
+        $params{maxReadsInMemory} = 100 * ($self->{java_memory} >= 5000 ? $self->{java_memory} : 5000);
     }
     $params{T} = 'IndelRealigner';
     $self->_handle_common_params(\%params);
@@ -624,7 +659,7 @@ sub indel_genotyper {
     #   -minConsensusFraction 0.6 \
     #   -mnr 1000000  (maxNumberOfReads)
     
-    $self->switches([qw(quiet_output_mode verbose)]);
+    $self->switches([qw(verbose)]);
     $self->params([qw(R DBSNP T L 1kg_format minCoverage minNormalCoverage
                       minFraction minConsensusFraction minIndelCount refseq
                       blacklistedLanes window_size maxNumberOfReads)]);
@@ -634,7 +669,7 @@ sub indel_genotyper {
     my %params = (minIndelCount => 2, minFraction => 0.03,
                   minConsensusFraction => 0.6,
                   window_size => 324, @params);
-    $params{T} = 'IndelGenotyperV2';
+    $params{T} = 'SomaticIndelDetector';
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_raw_bed);
@@ -669,20 +704,15 @@ sub unified_genotyper {
     #   -o snps.raw.vcf \
     #   --standard_min_confidence_threshold_for_calling 10.0
     
-    $self->switches([qw(quiet_output_mode genotype output_all_callable_bases
-                        noSLOD)]);
-    $self->params([qw(R DBSNP T L confidence genotype_model base_model
-                      heterozygosity
+    $self->switches([qw(noSLOD)]);
+    $self->params([qw(R DBSNP T L confidence genotype_likelihoods_model heterozygosity
                       standard_min_confidence_threshold_for_calling
                       standard_min_confidence_threshold_for_emitting
-                      trigger_min_confidence_threshold_for_calling
-                      trigger_min_confidence_threshold_for_emitting
-                      assume_single_sample_reads platform
+                      assume_single_sample_reads platform metrics_file
+                      genotyping_mode output_mode pcr_error_rate
+                      min_indel_count_for_genotyping indel_heterozygosity
                       min_base_quality_score min_mapping_quality_score
-                      max_mismatches_in_40bp_window use_reads_with_bad_mates
-                      max_deletion_fraction cap_base_quality_by_mapping_quality
-                      variant_output_format verbose_mode annotation group
-                      downsample_to_coverage)]);
+                      max_deletion_fraction debug_file annotation group)]);
     
     my @file_args = (" -I $in_bam", " -o $out_vcf ");
     
@@ -736,7 +766,7 @@ sub variant_annotator {
     #    -BTI variant \      [speeds up the runtime]
     #    -D dbsnp.rod 
 
-    $self->switches([qw(quiet_output_mode useAllAnnotations)]);
+    $self->switches([qw(useAllAnnotations)]);
     $self->params([qw(R DBSNP T L G group
                       rodToIntervalTrackName)]);
     
@@ -792,10 +822,9 @@ sub variant_filtration {
     #  --clusterWindowSize 10
     #  --filterExpression "MQ0 >= 4 && (MQ0 / (1.0 * DP)) > 0.1" \
     #  --filterName "HARD_TO_VALIDATE"
-
     
-    $self->switches([qw(quiet_output_mode)]);
-    $self->params([qw(R DBSNP T clusterSize clusterWindowSize maskName)]);
+    $self->switches([qw(missingValuesInExpressionsShouldEvaluateAsFailing)]);
+    $self->params([qw(R DBSNP T clusterSize clusterWindowSize maskExtension maskName)]);
     
     my $bs = $self->get_b();
     my $filters = $self->get_filters();
@@ -811,60 +840,6 @@ sub variant_filtration {
     
     $self->register_output_file_to_check($out_vcf);
     $self->_set_params_and_switches_from_args(%params);
-    
-    return $self->run(@file_args);
-}
-
-=head2 generate_variant_clusters
-
- Title   : generate_variant_clusters
- Usage   : $wrapper->set_b('input,VCF,snps.filtered.vcf');
-           $wrapper->set_annotations('HaplotypeScore', 'SB', 'QD');
-           $wrapper->generate_variant_clusters('cluster.out');
- Function: Clusters variants for later variant recalibration.
- Returns : n/a
- Args    : path to output cluster file.
-           Optionally, supply R or DBSNP options (as a hash), as understood by
-           GATK, along with the other options like maxGaussians etc (1000
-           genomes defaults exist).
-           Before calling this, you should use set_b() to set the input
-           snps.filtered.vcf as produced by variant_filtration(), and the
-           annotations to look at with set_annotations().
-
-=cut
-
-sub generate_variant_clusters {
-    my ($self, $out_cluster, @params) = @_;
-    
-    #java -Xmx4g -jar GenomeAnalysisTK.jar \
-    #   -R /broad/1KG/reference/human_b36_both.fasta \
-    #   -B input,VCF,snps.filtered.vcf \
-    #   -B input2,VCF,another.snps.filtered.vcf \
-    #   --DBSNP resources/dbsnp_129_hg18.rod \
-    #   -l INFO \
-    #   -mG 6 \  [--maxGaussians]
-    #   -mI 10 \ [--maxIterations]
-    #   -an HaplotypeScore -an SB -an QD -an HRun \
-    #   -clusterFile output.cluster \
-    #   -T GenerateVariantClusters
-    
-    $self->switches([qw(quiet_output_mode ignore_all_input_filters)]);
-    $self->params([qw(R DBSNP T l maxGaussians maxIterations ignore_filter
-                      minVarInCluster weightKnowns weightHapMap
-                      weight1000Genomes weightMQ1)]);
-    
-    my $bs = $self->get_b();
-    my $ans = $self->get_annotations();
-    my @file_args = (" $bs $ans -clusterFile $out_cluster");
-    
-    my %params = (l => 'INFO', @params);
-    $params{T} = 'GenerateVariantClusters';
-    $self->_handle_common_params(\%params);
-    
-    $self->register_output_file_to_check($out_cluster);
-    $self->_set_params_and_switches_from_args(%params);
-    
-    #*** after completion, remove $out_cluster.1 .. $out_cluster.$numIterations
     
     return $self->run(@file_args);
 }
@@ -889,7 +864,7 @@ sub generate_variant_clusters {
 =cut
 
 sub variant_recalibrator {
-    my ($self, $in_cluster, $out_vcf, @params) = @_;
+    my ($self, $out_recal_file, $out_tranches_file, @params) = @_;
     
     #java -Xmx4g -jar GenomeAnalysisTK.jar \
     #   -R /broad/1KG/reference/human_b36_both.fasta \
@@ -906,7 +881,7 @@ sub variant_recalibrator {
     #   --ignore_filter HARD_TO_VALIDATE \
     #   -T VariantRecalibrator
     
-    my $tranches = '-tranche 10 -tranche 5 -tranche 1 -tranche 0.1';
+    my $tranches = ' -tranche 10 -tranche 5 -tranche 1 -tranche 0.1';
 
     # if it's there, check the tranches file for how many present and adjust -tranches
     # options accordingly.  This is a workaround for the SNP pipeline to work: the 
@@ -914,48 +889,51 @@ sub variant_recalibrator {
     # pipeline breaks on empty tranches.  It's a known bug in GATK, but for now
     # this gets around it, since the pipeline will resubmit the job, pick up the tranches
     # file (with some lines missing) and only use the tranches that contain SNPs
-    if (-e "$out_vcf.dat.tranches") {
-        open my $fh, "$out_vcf.dat.tranches" or $self->throw("$out_vcf.dat.tranches: $!");
-        my @lines = <$fh>;
-        close $fh;
-        $tranches = "";
-        foreach (@lines) {
-            chomp;
-            if (m/,FDRtranche.*to(.*)$/) {
-                $tranches .= " -tranche $1";
-            }
-        }
-        if ($tranches eq "") {
-             $tranches = '-tranche 10 -tranche 5 -tranche 1 -tranche 0.1';
-        }
-    }
+    # if (-e "$out_vcf.dat.tranches") {
+    #     open my $fh, "$out_vcf.dat.tranches" or $self->throw("$out_vcf.dat.tranches: $!");
+    #     my @lines = <$fh>;
+    #     close $fh;
+    #     $tranches = "";
+    #     foreach (@lines) {
+    #         chomp;
+    #         if (m/,FDRtranche.*to(.*)$/) {
+    #             $tranches .= " -tranche $1";
+    #         }
+    #     }
+    #     if ($tranches eq "") {
+    #          $tranches = '-tranche 10 -tranche 5 -tranche 1 -tranche 0.1';
+    #     }
+    # }
 
-    $self->switches([qw(quiet_output_mode ignore_all_input_filters)]);
-    $self->params([qw(R DBSNP T l target_titv backOff desired_num_variants
-                      ignore_filter known_prior novel_prior
-                      quality_scale_factor)]);
+    $self->switches([]);
+    $self->params([qw(R DBSNP T l mode maxGaussians maxIterations numKMeans stdThreshold
+                        qualThreshold shrinkage dirichlet priorCounts percentBadVariants
+                        minNumBadVariants target_titv ignore_filter path_to_resources
+                        ts_filter_level)]);
     
     my $bs = $self->get_b();
-    my @file_args = (" $bs -clusterFile $in_cluster -tranchesFile $out_vcf.dat.tranches -o $out_vcf",
+    my $ans = $self->get_annotations();
+    my @file_args = (" $bs -tranchesFile $out_tranches_file -recal_file $out_recal_file",
                      '-resources '.File::Spec->catdir($ENV{GATK}, 'resources'),
-                     '-Rscript Rscript',
+                     '-Rscript Rscript', " -rscriptFile XXXXXX",
                      $tranches);
     
     my %params = (target_titv => 2.07, ignore_filter => 'HARD_TO_VALIDATE', l => 'INFO', @params);
     $params{T} = 'VariantRecalibrator';
     $self->_handle_common_params(\%params);
     
-    $self->register_output_file_to_check($out_vcf);
+    $self->register_output_file_to_check($out_recal_file);
+    $self->register_output_file_to_check($out_tranches_file);
     $self->_set_params_and_switches_from_args(%params);
     
     return $self->run(@file_args);
 }
 
-=head2 apply_variant_cuts
+=head2 apply_recalibration
 
- Title   : apply_variant_cuts
+ Title   : apply_recalibration
  Usage   : $wrapper->set_b('input,VCF,recalibrator.output.vcf');
-           $wrapper->apply_variant_cuts('recal.dat.tranches', 'out.vcf');
+           $wrapper->apply_recalibration('recal.dat.tranches', 'out.vcf');
  Function: Filteres recalibrated calls.
  Returns : n/a
  Args    : path to the .tranches output of variant_recalibrator() (the second
@@ -968,27 +946,27 @@ sub variant_recalibrator {
 
 =cut
 
-sub apply_variant_cuts {
-    my ($self, $in_cluster, $out_vcf, @params) = @_;
+sub apply_recalibration {
+    my ($self, $in_recal_file, $in_tranches, $out_vcf, @params) = @_;
     
     #java -Xmx6g -jar GenomeAnalysisTK.jar \
     #   -R /broad/1KG/reference/human_b36_both.fasta \
     #   -B input,VCF,recalibrator_output.vcf \
     #   --DBSNP resources/dbsnp_129_b36.rod \
     #   -l INFO \
-    #   --fdr_filter_level 10.0 \
+    #   --ts_filter_level 10.0 \
     #   -tranchesFile output.cluster.dat.tranches \
     #   -o recalibrator_output.filtered.vcf \
-    #   -T ApplyVariantCuts
+    #   -T ApplyRecalibration
     
-    $self->switches([qw(quiet_output_mode)]);
-    $self->params([qw(R DBSNP T l fdr_filter_level)]);
+    $self->switches([]);
+    $self->params([qw(R DBSNP T l ts_filter_level mode ignore_filter)]);
     
     my $bs = $self->get_b();
-    my @file_args = (" $bs -tranchesFile $in_cluster -o $out_vcf");
+    my @file_args = (" $bs -recalFile $in_recal_file -tranchesFile $in_tranches -o $out_vcf");
     
-    my %params = (fdr_filter_level => '0.1', l => 'INFO', @params);
-    $params{T} = 'ApplyVariantCuts';
+    my %params = (ts_filter_level => '0.1', ignore_filter => 'HARD_TO_VALIDATE', l => 'INFO', @params);
+    $params{T} = 'ApplyRecalibration';
     $self->_handle_common_params(\%params);
     
     $self->register_output_file_to_check($out_vcf);
@@ -1071,7 +1049,7 @@ sub combine_variants {
     #    -priority foo,bar \
     #    -o merged.vcf
     
-    $self->switches([qw(quiet_output_mode printComplexMerges filteredAreUncalled)]);
+    $self->switches([qw(printComplexMerges filteredAreUncalled)]);
     $self->params([qw(R T genotypemergeoption)]);
     
     my @priority;
@@ -1088,8 +1066,11 @@ sub combine_variants {
         elsif ($name =~ /gatk/i) {
             $name = 'UG';
         }
+        elsif ($name =~ /mpileup/i) {
+            $name = 'MPILEUP';
+        }
         else {
-            $self->throw("Only qcall and gatk are currently supported, by having those strings in the input vcf filenames");
+            $self->throw("Only qcall, mpileup and gatk are currently supported, by having those strings in the input vcf filenames");
         }
         
         if (exists $prev_names{$name}) {
@@ -1148,7 +1129,7 @@ sub variant_eval {
     #   -E DbSNPPercentage
     #   -o out.txt
     
-    $self->switches([qw(quiet_output_mode indelCalls useNoModules)]);
+    $self->switches([qw(indelCalls useNoModules)]);
     $self->params([qw(R DBSNP T l family_structure
                       MendelianViolationQualThreshold InterestingSitesVCF
                       minPhredConfidenceScore minPhredConfidenceScoreForComp
@@ -1194,7 +1175,7 @@ sub produce_beagle_input {
     #   -B:variant,VCF path_to_input_vcf/inputvcf.vcf
     #   -beagle path_to_beagle_output/beagle_output
     
-    $self->switches([qw(quiet_output_mode)]);
+    $self->switches([]);
     $self->params([qw(R T genotypes_file inserted_nocall_rate)]);
     
     my $bs = $self->get_b();
@@ -1240,7 +1221,7 @@ sub beagle_output_to_vcf {
     #   -B:beagleProbs,BEAGLE /myrun.beagle_output.gprobs \ 
     #   -o output_vcf.vcf 
     
-    $self->switches([qw(quiet_output_mode)]);
+    $self->switches([]);
     $self->params([qw(R T nocall_threshold)]);
     
     my $bs = $self->get_b();

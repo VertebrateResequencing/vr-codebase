@@ -35,7 +35,7 @@ is $count, 2, 'next_result gives the correct count';
 is $parser->nrecords, 2, 'nrecords still works after using next_result';
 
 my $rh = $parser->result_holder;
-is_deeply $rh, ['perl -w _129P2_2:89997751-99997751.pl', 'OK', 4752, 71870, 71791.51, '1.00'], 'result_holder contains correct data for last result';
+is_deeply $rh, ['perl -w _129P2_2:89997751-99997751.pl', 'OK', 4752, 71870, 71791.51, '1.00', 'basement'], 'result_holder contains correct data for last result';
 
 is $parser->status, 'OK', 'status() test';
 is $parser->time, 71870, 'time() test';

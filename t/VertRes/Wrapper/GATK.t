@@ -29,7 +29,7 @@ my $out_csv_prefix = File::Spec->catfile($temp_dir, 'in.bam');
 my $out_csv = $out_csv_prefix.'.recal_data.csv';
 my $rod = File::Spec->catfile('t', 'data', 'S_suis_P17.rod');
 
-my $gatk = VertRes::Wrapper::GATK->new(quiet => 1, dbsnp => $rod, java_memory => 500);
+my $gatk = VertRes::Wrapper::GATK->new(dbsnp => $rod, java_memory => 500);
 isa_ok $gatk, 'VertRes::Wrapper::WrapperI';
 
 # individual method tests
@@ -45,13 +45,10 @@ unlink($out_csv);
 my $debug = 0;
 my @args;
 if ($debug) {
-    @args = (quiet => 0, verbose => 1, build => 'NCBI37');
+    @args = (verbose => 1, build => 'NCBI37');
     # since vcf references chromosomes not present in S suis this would fail...
     # really need some proper g1k tests with build NCBI37 to ensure default
     # vcf files are used and work...
-}
-else {
-    @args = (quiet => 1);
 }
 $gatk = VertRes::Wrapper::GATK->new(reference => $ref, dbsnp => $rod, java_memory => 500, @args);
 my @orig_qs = get_qualities($in_bam);

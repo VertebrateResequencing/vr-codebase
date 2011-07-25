@@ -1100,26 +1100,26 @@ sub get_gatk_opts
 sub run_gatk_chunk
 {
     my ($self,$bam,$name,$chunk) = @_;
-
+    
     my $gatk;
     my %opts = $self->get_gatk_opts(qw(all unified_genotyper));
-
+    
     $gatk = VertRes::Wrapper::GATK->new(%opts);
-    $gatk->unified_genotyper($bam,"$name.vcf.gz",L=>$chunk);
+    $gatk->unified_genotyper($bam,"$name.vcf.gz",L=>$chunk,%opts);
     Utils::CMD("tabix -f -p vcf $name.vcf.gz");
-
+    
     if ( !$$self{indel_mask} or !-e $$self{indel_mask} )
     {
         %opts = $self->get_gatk_opts(qw(all indel_genotyper));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
-        $gatk->indel_genotyper($bam, "$name.indels.raw.bed", "$name.indels.detailed.bed",L=>$chunk);
+        $gatk->indel_genotyper($bam, "$name.indels.raw.bed", "$name.indels.detailed.bed",L=>$chunk,%opts);
         Utils::CMD("make_indel_mask.pl $name.indels.raw.bed 10 $name.indels.mask.bed",{verbose=>1});
-
+    
         %opts = $self->get_gatk_opts(qw(all variant_filtration));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
-        $gatk->set_b("variant,VCF,$name.vcf.gz", "mask,Bed,$name.indels.mask.bed");
-        $gatk->variant_filtration("$name.filtered.vcf.gz");
-
+        $gatk->set_b("variant,VCF,$name.vcf.gz","mask,Bed,$name.indels.mask.bed");
+        $gatk->variant_filtration("$name.filtered.vcf.gz",%opts);
+    
         unlink("$name.vcf.gz");
         unlink("$name.vcf.gz.tbi");
         unlink("$name.indels.detailed.bed");
@@ -1127,12 +1127,12 @@ sub run_gatk_chunk
         unlink("$name.indels.mask.bed");
         unlink("$name.indels.mask.bed.idx");
         unlink("$name.indels.raw.bed");
-
+    
         Utils::CMD("tabix -f -p vcf $name.filtered.vcf.gz");
         rename("$name.filtered.vcf.gz.tbi","$name.vcf.gz.tbi") or $self->throw("rename $name.filtered.vcf.gz.tbi $name.vcf.gz.tbi: $!");
         rename("$name.filtered.vcf.gz","$name.vcf.gz") or $self->throw("rename $name.filtered.vcf.gz $name.vcf.gz: $!");
     }
-
+    
     Utils::CMD("touch _$name.done",{verbose=>1});
 }
 
@@ -1174,7 +1174,7 @@ sub run_gatk_postprocess
         %opts = $self->get_gatk_opts(qw(all variant_filtration));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
         $gatk->set_b("variant,VCF,$vcf", "mask,Bed,$$self{indel_mask}");
-        $gatk->variant_filtration("$basename.filtered.vcf.gz");
+        $gatk->variant_filtration("$basename.filtered.vcf.gz", %opts);
         rename("$basename.filtered.vcf.gz","$basename.tmp.vcf.gz") or $self->throw("rename $basename.filtered.vcf.gz $basename.tmp.vcf.gz: $!");
         Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
     }
@@ -1187,25 +1187,20 @@ sub run_gatk_postprocess
     if ( $$self{dbSNP_rod} )
     {
         # Recalibrate
-        %opts = $self->get_gatk_opts(qw(all generate_variant_clusters));
-        $gatk = VertRes::Wrapper::GATK->new(%opts);
-        $gatk->set_b("input,VCF,$basename.tmp.vcf.gz");
-        $gatk->set_annotations('HaplotypeScore', 'SB', 'QD', 'HRun');
-        $gatk->generate_variant_clusters("$basename.filtered.clusters");
-
         %opts = $self->get_gatk_opts(qw(all variant_recalibrator));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
         $gatk->set_b("input,VCF,$basename.tmp.vcf.gz");
-        $gatk->variant_recalibrator("$basename.filtered.clusters","$basename.recalibrated.vcf.gz");
-        rename("$basename.recalibrated.vcf.gz","$basename.tmp.vcf.gz") or $self->throw("rename $basename.recalibrated.vcf.gz $basename.tmp.vcf.gz: $!");
-
+        ##### SET TRAINING SETS ETC #####
+        $gatk->set_annotations('HaplotypeScore', 'SB', 'QD', 'HRun');
+        $gatk->variant_recalibrator("$basename.recal", "$basename.tranches", %opts);
+        
         # Filter the calls down to an implied 10.0% novel false discovery rate
-        %opts = $self->get_gatk_opts(qw(all apply_variant_cuts));
+        %opts = $self->get_gatk_opts(qw(all apply_recalibration));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
         $gatk->set_b("input,VCF,$basename.tmp.vcf.gz");
         Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
-        $gatk->apply_variant_cuts("$basename.recalibrated.vcf.gz.dat.tranches","$basename.cutted.vcf.gz");
-        rename("$basename.cutted.vcf.gz","$basename.tmp.vcf.gz") or $self->throw("rename $basename.cutted.vcf.gz $basename.tmp.vcf.gz: $!");
+        $gatk->apply_recalibration("$basename.recal", "$basename.tranches","$basename.recalibrated.vcf.gz", %opts);
+        rename("$basename.recalibrated.vcf.gz","$basename.tmp.vcf.gz") or $self->throw("rename $basename.recalibrated.vcf.gz $basename.tmp.vcf.gz: $!");
         Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
     }
 
