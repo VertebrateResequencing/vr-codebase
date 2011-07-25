@@ -546,7 +546,7 @@ sub add_sam_header {
     my $rh = $dict_parser->result_holder;
     while ($dict_parser->next_result) {
         my $sp = $rh->{SP} || '';
-        $sp = "\t$sp" if $sp;
+        $sp = "\tSP:$sp" if $sp;
         my $local_ref_name = $rh->{AS} || $ref_name;
         my $local_ur = $rh->{UR} || $ref_fa;
         print $shfh "\@SQ\tSN:$rh->{SN}\tLN:$rh->{LN}\tAS:$local_ref_name\tUR:$local_ur\tM5:$rh->{M5}$sp\n";

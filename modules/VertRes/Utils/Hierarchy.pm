@@ -1430,6 +1430,7 @@ sub dcc_filename {
     
     my $sample;
     my $platform = 'unknown_platform';
+    my $raw_pl;
     my $project;
     my %techs;
     my $example_rg;
@@ -1442,6 +1443,7 @@ sub dcc_filename {
         # standardise on the DCC nomenclature for the 3 platforms; they should
         # be in this form anyway, so this is just-in-case
         $platform = $info->{PL};
+        $raw_pl = $platform;
         if ($platform =~ /illumina|slx/i) {
             $platform = 'ILLUMINA';
         }
@@ -1515,6 +1517,9 @@ sub dcc_filename {
         }
         elsif ($platform =~ /454/) {
             $algorithm = 'ssaha2';
+        }
+        elsif ($raw_pl eq 'solid') {
+            $algorithm = 'mosaik';
         }
         elsif ($platform =~ /SOLID/) {
             $algorithm = 'bfast';

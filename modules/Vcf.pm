@@ -155,7 +155,7 @@ sub new
     $$self{reserved}{cols} = {CHROM=>1,POS=>1,ID=>1,REF=>1,ALT=>1,QUAL=>1,FILTER=>1,INFO=>1,FORMAT=>1} unless exists($$self{reserved_cols});
     $$self{recalc_ac_an} = 1;
     $$self{has_header} = 0;
-    $$self{default_version} = '4.0';
+    $$self{default_version} = '4.1';
     $$self{versions} = [ qw(Vcf3_2 Vcf3_3 Vcf4_0 Vcf4_1) ];
     my %open_args = ();
     if ( exists($$self{region}) ) { $open_args{region}=$$self{region}; }
@@ -413,8 +413,8 @@ sub _set_version
     else 
     { 
         $self->warn(qq[The version "$$self{version}" not supported, assuming VCFv$$self{default_version}\n]);
-        $$self{version} = '4.0';
-        $reader = Vcf4_0->new(%$self);
+        $$self{version} = '4.1';
+        $reader = Vcf4_1->new(%$self);
     }
 
     $self = $reader;
@@ -731,6 +731,7 @@ sub _header_line_exists
 {
     my ($self,$key,$rec) = @_;
     if ( !exists($$self{header}{$key}) ) { return 0; }
+    if ( $key eq 'fileformat' ) { return 1; }
     for my $hrec (@{$$self{header}{$key}})
     {
         my $differ = 0;
@@ -2363,7 +2364,15 @@ sub Vcf4_0::parse_header_line
     my $key   = $1;
     my $value = $';
 
-    if ( !($value=~/^<(.+)>\s*$/) ) { return { key=>$key, value=>$value }; }
+    if ( !($value=~/^<(.+)>\s*$/) ) 
+    { 
+        # Simple sanity check for subtle typos
+        if ( $key eq 'INFO' or $key eq 'FILTER' or $key eq 'FORMAT' or $key eq 'ALT' )
+        {
+            $self->throw("Hmm, is this a typo? [$key] [$value]");
+        }
+        return { key=>$key, value=>$value }; 
+    }
 
     my $rec = { key=>$key };
     my $tmp = $1;
