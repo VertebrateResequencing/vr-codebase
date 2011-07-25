@@ -22,7 +22,7 @@ use VRTrack::History;
 # get user input
 my ($help, $database, $all_samples, @ignore_platforms, @samples, $root, $qc,
     $improved, $date, $mapper_slx, $mapper_454, @mapper_alias_slx, @mapper_alias_454, 
-    $assembly, $project_regex);
+    $assembly, $project_regex, $coverage_threshold, $fai);
 my $spinner = 0;
 GetOptions('db=s'              => \$database,
            'all_samples'       => \$all_samples,
@@ -37,6 +37,8 @@ GetOptions('db=s'              => \$database,
            'project_regex=s'   => \$project_regex,
            'improved'          => \$improved,
            'qc'                => \$qc,
+           'coverage=f'        => \$coverage_threshold,
+           'fai=s'             => \$fai,
            'date=s'            => \$date,
            'h|help'            => \$help);
 
@@ -67,6 +69,10 @@ Optional:
         --improved         choose bams that have been run through the
                            BamImprovement pipeline
         --qc               consider only lanes that are set as qc passed
+        --coverage         <float> minimum coverage per sample to consider 
+                             (requires fai option to also be set)
+        --fai              <fai_file> path to reference fai index file 
+                             (required of --coverage option set)
         --ignore_platform  <SLX|454|SOLID> ignore lanes sequenced with this
                                            platform (this whole option can be
                                            specified more than once)
@@ -77,6 +83,14 @@ Optional:
         --help             this message
 
 USAGE
+
+if ($coverage_threshold && !$fai) {
+    die "Must supply fai option if coverage option is set\n";
+}
+
+if ($fai && !(-s $fai)) {
+    die "Could not find reference index fai, $fai\n";
+}
 
 if ($all_samples && @samples) {
     warn "Both --all_samples and --samples were set; ignoring the --all_samples request\n";
@@ -126,9 +140,9 @@ foreach my $lane (@lanes) {
     
     # are we mapped/improved?
     unless ($lane->is_processed('mapped') && $improved ? $lane->is_processed('improved') : 1) {
-	my $lane_name = $lane->name;
+        my $lane_name = $lane->name;
         my $problem = $improved ? 'mapped/improved' : 'mapped';
-	warn "$lane_name was not $problem!\n";
+        warn "$lane_name was not $problem!\n";
         $bad_samples{$sample} = 1;
         delete $lanes_by_sample{$sample};
         warn "Not all the lanes under sample '$sample' were $problem; they will all be excluded\n";
@@ -142,6 +156,18 @@ foreach my $lane (@lanes) {
     }
     $seen_paths{$path} = 1;
     push(@{$lanes_by_sample{$sample}}, $path);
+}
+
+# samples exceed coverage threshold?
+if ($coverage_threshold) {
+    my $genome_size = genome_size($fai);
+    foreach my $sample (keys %lanes_by_sample) {
+        my $coverage = $hu->hierarchy_coverage(sample => [$sample], genome_size => $genome_size, qc_passed => $qc, vrtrack => $vrtrack);
+        next unless ($coverage < $coverage_threshold);
+        $bad_samples{$sample} = 1;
+        delete $lanes_by_sample{$sample};
+        warn "'$sample' did not exceed coverage threshold ($coverage < $coverage_threshold) and will be excluded\n";
+    }
 }
 
 # output good lane bams
@@ -169,3 +195,20 @@ while (my ($sample, $lanes) = each %lanes_by_sample) {
 }
 
 exit;
+
+
+sub genome_size {
+    my ($fai) = @_;
+    
+    my $genome_size = 0;
+    open my $fh,'<',$fai || die("$fai: $!"); 
+    while (<$fh>)
+    {
+        my (undef, $length, undef) = split /\t/;
+        next unless $length;
+        $genome_size += $length;
+    }
+    close $fh;
+    return $genome_size;
+}
+
