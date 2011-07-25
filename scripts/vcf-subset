@@ -61,6 +61,7 @@ sub parse_params
         if ( $arg eq '-c' || $arg eq '--columns' ) { $$opts{'columns_file'} = shift(@ARGV); next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         if ( -e $arg ) { $$opts{file} = $arg; next }
+        if ( -e $arg or $arg=~m{^(?:ftp|http)://} ) { $$opts{file}=$arg; next; }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
     if ( !$$opts{exclude_ref} && !$$opts{'columns_file'} && !exists($$opts{'types'}) ) { error("Missing the -c or -t or -r option.\n") }
@@ -185,7 +186,7 @@ sub vcf_subset
 
         if ( !$site_has_call && !$$opts{keep_uncalled} ) { next; }
         if ( !$site_has_nonref && $$opts{exclude_ref} ) { next; }
-        if ( $check_private && !$site_is_private ) { next; }
+        if ( $check_private && (!$site_is_private || !$site_has_nonref) ) { next; }
 
         $vcf->format_genotype_strings($x);
         print $vcf->format_line($x,$columns);

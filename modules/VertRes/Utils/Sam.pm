@@ -546,7 +546,7 @@ sub add_sam_header {
     my $rh = $dict_parser->result_holder;
     while ($dict_parser->next_result) {
         my $sp = $rh->{SP} || '';
-        $sp = "\t$sp" if $sp;
+        $sp = "\tSP:$sp" if $sp;
         my $local_ref_name = $rh->{AS} || $ref_name;
         my $local_ur = $rh->{UR} || $ref_fa;
         print $shfh "\@SQ\tSN:$rh->{SN}\tLN:$rh->{LN}\tAS:$local_ref_name\tUR:$local_ur\tM5:$rh->{M5}$sp\n";
@@ -875,12 +875,15 @@ sub index_bams
            are accurate NM tags for each record), YYYYMMDD string describing the
            date of the release, output filename, sequence.index file (optional
            if your bam headers are good and you don't care about column 1 of the
-           bas file, which is the DCC filename)
+           bas file, which is the DCC filename), and finally an optional
+           boolean which if true means that RG ids are taken to be meaningless,
+           with the true read group identifier being in the PU field of the RG
+           line(s) in the header
 
 =cut
 
 sub bas {
-    my ($self, $in_bam, $release_date, $out_bas, $seq_index) = @_;
+    my ($self, $in_bam, $release_date, $out_bas, $seq_index, $rg_from_pu) = @_;
     $release_date =~ /^\d{8}$/ || $self->throw("bad release date '$release_date'");
     
     my $working_bas = $out_bas.'.working';
@@ -908,7 +911,7 @@ sub bas {
     
     # get the meta data
     my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
-    my $dcc_filename = $hu->dcc_filename($in_bam, $release_date, $seq_index);
+    my $dcc_filename = $hu->dcc_filename($in_bam, $release_date, $seq_index, undef, $rg_from_pu);
     
     my $md5;
     my $md5_file = $in_bam.'.md5';
@@ -929,13 +932,30 @@ sub bas {
     
     my $pb = VertRes::Parser::bam->new(file => $in_bam);
     
+    # if necessary, convert from arbitrary RG ids to the lane identifier stored
+    # in PU
+    my %orig_rgs;
+    if ($rg_from_pu) {
+        while (my ($rg, $data) = each %readgroup_data) {
+            my $new_rg = $pb->readgroup_info($rg, 'PU');
+            $orig_rgs{$new_rg} = $rg;
+        }
+        while (my ($new_rg, $old_rg) = each %orig_rgs) {
+            my $data = delete $readgroup_data{$old_rg};
+            $readgroup_data{$new_rg} = $data;
+        }
+    }
+    else {
+        %orig_rgs = map { $_ => $_ } keys %readgroup_data;
+    }
+    
     # add in the meta data
     while (my ($rg, $data) = each %readgroup_data) {
         $readgroup_data{$rg}->{dcc_filename} = $dcc_filename;
-        $readgroup_data{$rg}->{study} = $pb->readgroup_info($rg, 'DS') || 'unknown_study';
-        $readgroup_data{$rg}->{sample} = $pb->readgroup_info($rg, 'SM') || 'unknown_sample';
-        $readgroup_data{$rg}->{platform} = $pb->readgroup_info($rg, 'PL') || 'unknown_platform';
-        $readgroup_data{$rg}->{library} = $pb->readgroup_info($rg, 'LB') || 'unknown_library';
+        $readgroup_data{$rg}->{study} = $pb->readgroup_info($orig_rgs{$rg}, 'DS') || 'unknown_study';
+        $readgroup_data{$rg}->{sample} = $pb->readgroup_info($orig_rgs{$rg}, 'SM') || 'unknown_sample';
+        $readgroup_data{$rg}->{platform} = $pb->readgroup_info($orig_rgs{$rg}, 'PL') || 'unknown_platform';
+        $readgroup_data{$rg}->{library} = $pb->readgroup_info($orig_rgs{$rg}, 'LB') || 'unknown_library';
         
         # fall back on the sequence.index if we have to
         if ($sip) {
@@ -1029,7 +1049,7 @@ sub bam_statistics {
         my $rg = $rh->{RG};
         my $flag = $rh->{FLAG};
         
-        unless ($rg) {
+        unless (defined $rg) {
             $self->warn("a read had no RG tag, using previous RG tag '$previous_rg'");
             $rg = $previous_rg;
         }

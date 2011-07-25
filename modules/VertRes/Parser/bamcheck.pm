@@ -86,6 +86,7 @@ sub new {
                 'total_length',
 
             or one of the arrays:
+                'coverage',
                 'first_fragment_gc',
                 'first_fragment_qualities',
                 'gc_depth',
@@ -152,6 +153,7 @@ sub _get_header {
         'GCL'   => 'last_fragment_gc',
         'IS'    => 'insert_size',
         'GCD'   => 'gc_depth',
+        'COV'   => 'coverage',
     );
     
     while (my $line=<$fh>) 

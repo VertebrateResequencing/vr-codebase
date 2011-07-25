@@ -16,6 +16,7 @@ use strict;
 use warnings;
 use LSF;
 use VertRes::Utils::GTypeCheck;
+use VertRes::Utils::GTypeCheckGLF;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::Mapstats;
@@ -456,7 +457,8 @@ sub check_genotype
         $options->{snp_sites} = $self->{snp_sites};
     }
 
-    my $gtc = VertRes::Utils::GTypeCheck->new(%$options);
+	my $glf_bcf = exists($$self{glf_or_bcf}) ? $$self{glf_or_bcf} : 'bcf' ;
+    my $gtc = $glf_bcf eq 'glf' ? VertRes::Utils::GTypeCheckGLF->new(%$options) : VertRes::Utils::GTypeCheck->new(%$options);
     $gtc->check_genotype();
 
     return $$self{'No'};
@@ -943,10 +945,15 @@ sub update_db
     if ( -e "$sample_dir/quals2.png" ) { $images{'quals2.png'} = 'Qualities'; }
     if ( -e "$sample_dir/quals3.png" ) { $images{'quals3.png'} = 'Qualities'; }
     if ( -e "$sample_dir/quals-hm.png" ) { $images{'quals-hm.png'} = 'Qualities'; }
+    if ( -e "$sample_dir/coverage.png" ) { $images{'coverage.png'} = 'Coverage'; }
 
     my $nadapters = 0;
     if ( -e "$sample_dir/${name}_1.nadapters" ) { $nadapters += do "$sample_dir/${name}_1.nadapters"; }
     if ( -e "$sample_dir/${name}_2.nadapters" ) { $nadapters += do "$sample_dir/${name}_2.nadapters"; }
+
+    # Length of reference sequence mapped (for TrackQC_Fasta pipeline.)
+    my $sequence_mapped = undef;
+    if ( -e "$sample_dir/${name}.cover" ) { $sequence_mapped = do "$sample_dir/${name}.cover"; }
 
     $vrtrack->transaction_start();
 
@@ -996,6 +1003,10 @@ sub update_db
         $img->caption($caption);
         $img->update;
     }
+
+    # Length of reference sequence mapped
+    if(defined $sequence_mapped)
+    { $mapping->target_bases_mapped($sequence_mapped); }
 
     $mapping->update;
 
