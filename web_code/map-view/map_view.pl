@@ -297,6 +297,7 @@ sub displayProjectLanesPage
     <tr>
     <th>Library</th>
     <th>Improved</th>
+    <th>Called</th>
     <th>Name</th>
     ];
     
@@ -338,7 +339,8 @@ sub displayProjectLanesPage
         my $id = $lane->id();
         my $library = VRTrack::Library->new($vrtrack, $lane->library_id());my $libName = $library->name();
         my $improved = $lane->is_processed('improved') ? 'yes' : 'no';
-        print qq[<td>$libName</td><td>$improved</td><td><a href="http://intwebdev.sanger.ac.uk/cgi-bin/teams/team145/qc_grind/qc_grind.pl?mode=0&lane_id=$id&db=$database">].$lane->name().qq[</a></td>];
+        my $called = $lane->is_processed('snp_called') ? 'yes' : 'no';
+        print qq[<td>$libName</td><td>$improved</td><td>$called</td><td><a href="http://intwebdev.sanger.ac.uk/cgi-bin/teams/team145/qc_grind/qc_grind.pl?mode=0&lane_id=$id&db=$database">].$lane->name().qq[</a></td>];
         my @mappings = @{ $lane->mappings() };
         my %lane_mappers;
         foreach my $mapstat ( @mappings )

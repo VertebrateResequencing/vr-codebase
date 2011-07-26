@@ -1065,7 +1065,7 @@ sub rewrite_header {
         if ($header_changes{RG}->{rgid_fix} && $self->{vrlane}->name ne $rg) {
             $fix_rgid = 1;
             # picard does not support DT tag so have to add it back in afterwards
-            $header_changes{RG}->{$self->{vrlane}->name}->{date} = $rg_info{$rg}{DT} || '';
+            $header_changes{RG}->{all}->{date} = $rg_info{$rg}{DT} || '';
             $rg = $self->{vrlane}->name;
         }
         
@@ -1073,11 +1073,11 @@ sub rewrite_header {
         if ($header_changes{RG}->{match_db}) {
             my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
             my %lane_info = $hu->lane_info($self->{vrlane});
-            $header_changes{RG}->{$rg}->{sample_name} = $lane_info{sample};
-            $header_changes{RG}->{$rg}->{project} = $lane_info{project};
-            $header_changes{RG}->{$rg}->{library} = $lane_info{library_true};
-            $header_changes{RG}->{$rg}->{centre} = $lane_info{centre};
-            $header_changes{RG}->{$rg}->{platform} = $lane_info{technology};
+            $header_changes{RG}->{all}->{sample_name} = $lane_info{sample};
+            $header_changes{RG}->{all}->{project} = $lane_info{project};
+            $header_changes{RG}->{all}->{library} = $lane_info{library_true};
+            $header_changes{RG}->{all}->{centre} = $lane_info{centre};
+            $header_changes{RG}->{all}->{platform} = $lane_info{technology};
         }
         
         # If a header rewrite is not required, mark as complete and move on to the next bam
@@ -1389,7 +1389,18 @@ sub index {
 
     foreach my $in_bam (@{$self->{in_bams}}) {
         my $base = basename($in_bam);
-        my (undef, undef, undef, undef, $final_bam) = $self->_bam_name_conversion($in_bam);
+        
+        #work out if the final bam is the intervals bam OR the calmd bam
+        my $final_bam = undef;
+        if( $self->{extract_intervals} )
+        {
+            (undef, undef, undef, undef, $final_bam) = $self->_bam_name_conversion($in_bam);
+        }
+        else 
+        {
+            #no interval extraction - so get the calmd bam
+            (undef, undef, undef, $final_bam, undef) = $self->_bam_name_conversion($in_bam);
+        }
         my $bam_index = "$final_bam.bai";
         next if -s $bam_index;
 
