@@ -346,6 +346,11 @@ sub get_jobs
                 next;
             }
             
+            if ($action =~ /^__Storing__$/) {
+                get_storage_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
+                next;
+            }
+            
             if ( $action=~/^__VRTrack_QC__$/ )
             {
                 get_qc_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
@@ -387,7 +392,7 @@ sub get_jobs
                 get_snps_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-
+            
             if ( $action=~/^__DINDEL__$/ )
             {
                 get_dindel_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
@@ -594,6 +599,64 @@ sub get_storage_jobs_from_vrtrack {
     return;
 }
 
+=head2 get_storage_jobs
+
+  Arg [1]    : Pointer to array of jobs
+  Arg [2]    : The config file name
+  Arg [3]    : The mtime of the config file
+  Arg [4]    : The config data.
+  Description: Obtains the directory list from a file.
+
+=cut
+
+sub get_storage_jobs {
+    my ($jobs,$config,$mtime,$config_data) = @_;
+    
+    if ( !$$config_data{fod} ) { croak("Expected fod key in the config $config.\n"); }
+    debug($config_data,"$config\tget_storage_jobs...");
+    
+    my @paths;
+    open(my $fh,'<',$$config_data{fod}) or croak("$$config_data{fod}: $!");
+    while (<$fh>)
+    {
+        chomp;
+        if ( /^\s*$/ ) { next; }
+        if ( /^#/ ) { next; }
+        my ($path) = split /\t/;
+        croak("Path does not exists, $path") unless (-e $path);
+        push @paths, $path;
+    }
+    close($fh);
+    debug($config_data,"found ".scalar(@paths)." paths to store...");
+    
+    my $jobs_running = 0;
+    my $jobs_failed = 0;
+    my $jobs_done = 0;
+    my $max_jobs = $$config_data{limit} || 50;
+    foreach my $path (@paths) 
+    {
+        my $lane_info = { lane_path => $path, root => $$config_data{root} };
+        my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
+        push @$jobs, $job;
+        $jobs_running++;
+        my $job_state = $job->state();
+        if ($job_state eq 'failed') { $jobs_running--; $jobs_failed++; };
+        if (-e File::Spec->catfile($path, '.store_nfs_done')) { $jobs_running--; $jobs_done++; }
+        debug($config_data,".");
+        # to stop us crushing io, we limit the number of simultaneous jobs
+        if ($jobs_running >= $max_jobs)
+        {
+            debug($config_data,"max number of jobs reached...");
+            last;
+        }
+    }
+    debug($config_data,"failed $jobs_failed...") if $jobs_failed;
+    debug($config_data,"completed $jobs_done...") if $jobs_done;
+    debug($config_data,"running $jobs_running...") if $jobs_running;
+    debug($config_data,"done\n");
+
+    return;
+}
 
 =head2 filter_lanes
 
@@ -633,14 +696,14 @@ sub filter_lanes {
     my @lanes;
     my $hu = VertRes::Utils::Hierarchy->new();
     foreach my $hname (@{$hnames}) {
-	my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$hname) or croak("Could not get lane for $hname: $config\n");
+    my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$hname) or croak("Could not get lane for $hname: $config\n");
         my $path   = $vrtrack->hierarchy_path_of_lane_hname($vrlane->name);
         my %lane_info = $hu->lane_info($vrlane, no_coverage => 1);
         
         # we require that it pass all limit types ('AND')
         my $all_passed = 1;
         foreach my $limit_type (keys %valid_limits) {
-	    my $actual_value = $lane_info{$limit_type};
+        my $actual_value = $lane_info{$limit_type};
             
             # we require that at least one of the limits for this type is
             # matched ('OR')
@@ -656,10 +719,10 @@ sub filter_lanes {
                 $all_passed = 0;
                 last;
             }
-	}
+    }
         next unless $all_passed;
         
-	push @lanes, $vrlane;
+    push @lanes, $vrlane;
     }
     
     return @lanes;
@@ -717,7 +780,8 @@ sub get_qc_jobs_from_vrtrack
         push @$jobs, $job;
 
         $jobs_running++;
-        my $job_state = $job->pipeline_state();
+        #my $job_state = $job->pipeline_state();
+        my $job_state = $job->state();
         # Don't count failed jobs towards job count to prevent remaining jobs being stalled indefinitely.
         $jobs_running-- if ($job_state eq 'failed');
         debug($config_data,".");
@@ -764,8 +828,8 @@ sub get_pathimport_jobs_from_vrtrack {
 
         my $lane_info = lane_info($path);
         $$lane_info{paired} = $vrlane->is_paired();
-	$$lane_info{vrlane} = $vrlane;
-	$$lane_info{root} = $config_data->{root};
+    $$lane_info{vrlane} = $vrlane;
+    $$lane_info{root} = $config_data->{root};
 
         if ( exists($$config_data{data}{known_genders}) )
         {
@@ -1253,10 +1317,10 @@ sub get_splitbam_jobs {
     # don't exceed the maximum jobs limit
     my $skipped;
     foreach my $bam (@bams) {
-    	unless (-s $bam) {
-    	    $skipped++;
-    	    next;
-    	}
+        unless (-s $bam) {
+            $skipped++;
+            next;
+        }
         my ($bam_basename, $path) = fileparse($bam);
         my $prefix = $bam_basename;
         $prefix =~ s/\.bam$//;
@@ -1321,10 +1385,10 @@ sub get_mergeup_jobs {
         copy($config_data->{lane_bams}, $lane_bams_fofn) || die "Could not copy '$config_data->{lane_bams}' to '$lane_bams_fofn'\n";
     }
     
-	my $platform_expected = File::Spec->catfile($root, 'raw_platform_bams.fofn_expected');
-	my $platform_done = File::Spec->catfile($root, 'raw_platform_bams.fofn');
-	my $sample_expected = File::Spec->catfile($root, 'raw_sample_bams.fofn_expected');
-	my $sample_done = File::Spec->catfile($root, 'raw_sample_bams.fofn');
+    my $platform_expected = File::Spec->catfile($root, 'raw_platform_bams.fofn_expected');
+    my $platform_done = File::Spec->catfile($root, 'raw_platform_bams.fofn');
+    my $sample_expected = File::Spec->catfile($root, 'raw_sample_bams.fofn_expected');
+    my $sample_done = File::Spec->catfile($root, 'raw_sample_bams.fofn');
 
     # We will make a job (instance of MergeUp) for each sample, supplying it the
     # subset of lanes in the input lane_bams fofn for that sample. We'll create
@@ -1334,12 +1398,12 @@ sub get_mergeup_jobs {
     # first work out which samples changed and which didn't; record the results
     # and create hierarchy of directories/symlinks
     my $s_file = File::Spec->catfile($root, 'samples.txt');
-	unless (-s $s_file) {	
+    unless (-s $s_file) {   
         my $tmp_s = $s_file.'.working';
         open(my $sfh, '>', $tmp_s) || die "Could not write to $tmp_s\n";
-		
-		my %new_platform; my %old_platform;
-		
+        
+        my %new_platform; my %old_platform;
+        
         # parse lane_bams.fofn to group bams by hierarchy level
         open(my $lfh, $lane_bams_fofn) || die "Could not open $lane_bams_fofn\n";
         my %lane_bams;
@@ -1381,26 +1445,26 @@ sub get_mergeup_jobs {
                     # previous_root
                     foreach my $symlinked (keys %symlinked) {
                         if ($this_path =~ /^$symlinked/) {
-							if ($level eq 'platforms') {
-								$old_platform{$this_path} = 1;
-							}
-							if ($level eq 'samples') {
-								print $sfh "$this_path\t0\n";
-							}
-							next DIR;
+                            if ($level eq 'platforms') {
+                                $old_platform{$this_path} = 1;
+                            }
+                            if ($level eq 'samples') {
+                                print $sfh "$this_path\t0\n";
+                            }
+                            next DIR;
                         }
                     }
                     
                     $previous_path = File::Spec->catdir($previous_root, $dir);
                     my $previous_fofn = File::Spec->catfile($previous_path, 'lane_bams.fofn');
                     my %previous_bams;
-                    # no need to read previous fofn if path did not exist in previous hierarchy
-					if (-d $previous_path) {
-	                    open(my $pfh, $previous_fofn) || die "Could not open $previous_fofn\n";
-	                    while (<$pfh>) {
-	                        chomp;
-	                        $previous_bams{$_} = 1;
-	                    }
+                    # no need to read previous fofn if path or file does not exist in previous hierarchy
+                    if (-s $previous_fofn) {
+                        open(my $pfh, $previous_fofn) || die "Could not open $previous_fofn\n";
+                        while (<$pfh>) {
+                            chomp;
+                            $previous_bams{$_} = 1;
+                        }
                     }
                     $symlink = $mu->compare_hash_keys(\%these_bams, \%previous_bams);
                 }
@@ -1409,18 +1473,18 @@ sub get_mergeup_jobs {
                     symlink($previous_path, $this_path);
                     $symlinked{$this_path} = 1;
                     
-					if ($level eq 'platforms') {
-						$old_platform{$this_path} = 1;
-					}
+                    if ($level eq 'platforms') {
+                        $old_platform{$this_path} = 1;
+                    }
                     if ($level eq 'samples') {
                         print $sfh "$this_path\t0\n";
                     }
                 }
                 else {
-					unless (-d $this_path) {
-	                    mkdir($this_path) || die "Could not mkdir $this_path\n";
+                    unless (-d $this_path) {
+                        mkdir($this_path) || die "Could not mkdir $this_path\n";
                     }
-					
+                    
                     my $this_fofn = File::Spec->catfile($this_path, 'lane_bams.fofn');
                     open(my $ofh, '>', $this_fofn) || die "Could not write to $this_fofn\n";
                     print $ofh join("\n", @{$bams}), "\n";
@@ -1440,9 +1504,9 @@ sub get_mergeup_jobs {
                         die "wrote a fofn file '$this_fofn', but there was something wrong with it, so deleted it\n";
                     }
                     
-					if ($level eq 'platforms') {
-						$new_platform{$this_path} = 1;
-					}
+                    if ($level eq 'platforms') {
+                        $new_platform{$this_path} = 1;
+                    }
                     
                     if ($level eq 'samples') {
                         print $sfh "$this_path\t1\n";
@@ -1452,180 +1516,184 @@ sub get_mergeup_jobs {
         }
         close($sfh);
         
-		open(my $rpfh, '>', $platform_expected) || die "Could not open $platform_expected\n";
-		foreach my $path (keys %old_platform, keys %new_platform) {
-			my $raw_bam = File::Spec->catfile($path, 'raw.bam');
-			print $rpfh "$raw_bam\n";
-		}
+        open(my $rpfh, '>', $platform_expected) || die "Could not open $platform_expected\n";
+        foreach my $path (keys %old_platform, keys %new_platform) {
+            my $raw_bam = File::Spec->catfile($path, 'raw.bam');
+            print $rpfh "$raw_bam\n";
+        }
         close($rpfh);
 
-		my $new_platform_fofn = File::Spec->catfile($root, '.new_platform_bams');
-		open(my $npfh, '>', $new_platform_fofn) || die "Could not open $new_platform_fofn\n";
-		foreach my $path (keys %new_platform) {
-			my $raw_bam = File::Spec->catfile($path, 'raw.bam');
-			print $npfh "$raw_bam\n";
-		}
+        my $new_platform_fofn = File::Spec->catfile($root, '.new_platform_bams');
+        open(my $npfh, '>', $new_platform_fofn) || die "Could not open $new_platform_fofn\n";
+        foreach my $path (keys %new_platform) {
+            my $raw_bam = File::Spec->catfile($path, 'raw.bam');
+            print $npfh "$raw_bam\n";
+        }
         close($npfh);
 
         move($tmp_s, $s_file) || die "Could not move $tmp_s to $s_file\n";
     }
     
-	
-	my @tasks = qw(platform_merge sample_merge index_platform_bams index_sample_bam);
-	
-	# what is the final non-cleanup action that will complete?
-	my $final_task = 'platform_merge';
-	$final_task = 'sample_merge' if $config_data->{data}->{do_sample_merge};
-	$final_task = 'index_platform_bams' if ($config_data->{data}->{do_index_bams});
-	$final_task = 'index_sample_bam' if ($config_data->{data}->{do_sample_merge} && $config_data->{data}->{do_index_bams});
-	
-	my $cleanup = 0;
-	if (exists $config_data->{data}->{do_cleanup} && $config_data->{data}->{do_cleanup}) {
-		$cleanup = 1;
-	}
-	
-	# note which samples we have to deal with	
+    
+    my @tasks = qw(platform_merge sample_merge index_platform_bams index_sample_bam);
+    
+    # what is the final non-cleanup action that will complete?
+    my $final_task = 'platform_merge';
+    $final_task = 'sample_merge' if $config_data->{data}->{do_sample_merge};
+    $final_task = 'index_platform_bams' if ($config_data->{data}->{do_index_bams});
+    $final_task = 'index_sample_bam' if ($config_data->{data}->{do_sample_merge} && $config_data->{data}->{do_index_bams});
+    
+    my $cleanup = 0;
+    if (exists $config_data->{data}->{do_cleanup} && $config_data->{data}->{do_cleanup}) {
+        $cleanup = 1;
+    }
+    
+    # note which samples we have to deal with   
     my %new_samples;
-	my %old_samples;
+    my %old_samples;
     open(my $sfh, $s_file) || die "Could not open $s_file\n";
     while (<$sfh>) {
         my ($sample, $new) = split;
-		if ( $new ) {
-	        $new_samples{$sample} = 1;
-		} elsif ( $config_data->{previous_merge_root} ) {
-			# If previous root hierarchy was not completed to same level as we wish for this
-			# hierarchy, then we must deal with the old samples too.
-			my $previous_done_file = File::Spec->catfile($config_data->{previous_merge_root}, ".$final_task\_done");
-	        (-s $previous_done_file) ? $old_samples{$sample} = 1 : $new_samples{$sample} = 1;
-		} else {
-			$old_samples{$sample} = 1;
-		}
+        if ( $new ) {
+            $new_samples{$sample} = 1;
+        } elsif ( $config_data->{previous_merge_root} ) {
+            # If previous root hierarchy was not completed to same level as we wish for this
+            # hierarchy, then we must deal with the old samples too.
+            my $previous_done_file = File::Spec->catfile($config_data->{previous_merge_root}, ".$final_task\_done");
+            (-s $previous_done_file) ? $old_samples{$sample} = 1 : $new_samples{$sample} = 1;
+        } else {
+            $old_samples{$sample} = 1;
+        }
     }
-	close $sfh;
+    close $sfh;
 
-	# Create raw_sample_bams.fofn_expected
-	if ( $config_data->{data}->{do_sample_merge} && ! (-s $sample_expected || -s $sample_done ) ) {
-		open(my $sfh, '>', $sample_expected) || die "Couldn't write to $sample_expected";
-	    foreach my $sample (keys %old_samples, keys %new_samples) {
-			my $raw_bam = File::Spec->catfile($sample, "raw.bam");
-	        print $sfh $raw_bam, "\n";
-	    }
-		close($sfh);
-	}
+    # Create raw_sample_bams.fofn_expected
+    if ( $config_data->{data}->{do_sample_merge} && ! (-s $sample_expected || -s $sample_done ) ) {
+        open(my $sfh, '>', $sample_expected) || die "Couldn't write to $sample_expected";
+        foreach my $sample (keys %old_samples, keys %new_samples) {
+            my $raw_bam = File::Spec->catfile($sample, "raw.bam");
+            print $sfh $raw_bam, "\n";
+        }
+        close($sfh);
+    }
 
-	# Create .sample_bams_expected fofn
+    # Create .sample_bams_expected fofn
     my $new_sample_fofn = File::Spec->catfile($root, '.new_sample_bams');
-	if ( $config_data->{data}->{do_sample_merge} && ! -s $new_sample_fofn ) {
-		open(my $sfh, '>', $new_sample_fofn) || die "Couldn't write to $new_sample_fofn";
-	    foreach my $sample (keys %new_samples) {
-			my $raw_bam = File::Spec->catfile($sample, "raw.bam");
-	        print $sfh $raw_bam, "\n";
-	    }
-		close($sfh);
-	}
+    if ( $config_data->{data}->{do_sample_merge} && ! -s $new_sample_fofn ) {
+        open(my $sfh, '>', $new_sample_fofn) || die "Couldn't write to $new_sample_fofn";
+        foreach my $sample (keys %new_samples) {
+            my $raw_bam = File::Spec->catfile($sample, "raw.bam");
+            print $sfh $raw_bam, "\n";
+        }
+        close($sfh);
+    }
 
-	
-	my %done_tasks; foreach my $sample (keys %new_samples) { $done_tasks{$sample} = '' };
-	foreach my $task (@tasks) {
-		next if ( $task =~ /sample/ && ! $config_data->{data}->{do_sample_merge} );
-		next if ( $task =~ /index/ && ! $config_data->{data}->{do_index_bams} );
+    
+    my %done_tasks; foreach my $sample (keys %new_samples) { $done_tasks{$sample} = '' };
+    foreach my $task (@tasks) {
+        next if ( $task =~ /sample/ && ! $config_data->{data}->{do_sample_merge} );
+        next if ( $task =~ /index/ && ! $config_data->{data}->{do_index_bams} );
 
-		my $expected_file = File::Spec->catfile($root, ".${task}_expected");
-		my $done_file = File::Spec->catfile($root, ".${task}_done");
-		
-		# Record the files expected
-		unless ( -s $expected_file || -e $done_file ) {
-			open(my $ofh, '>', $expected_file) || die "Couldn't write to $expected_file";
-		    foreach my $sample (keys %new_samples) {
-				my $expected_done_file = File::Spec->catfile($sample, ".${task}_done");
-		        print $ofh $expected_done_file, "\n";
-		    }
-		    my $expected = keys %new_samples;
-		    print $ofh "# expecting $expected\n";
-		    close($ofh);
-		}
-		
-		# Check for done files. 
-		if ( -s $expected_file && ! -e $done_file ) {
-	        my $done_count = 0;
-	        my $expected_done = 0;
-	        my $written_expected;
-	        open(my $efh, $expected_file) || die "Couldn't open $expected_file";
-	        my @done;
-	        my @skipped;
-	        while (<$efh>) {
-	            chomp;
-	            /\S/ || next;
-	            if (/^# expecting (\d+)/) {
-	                $written_expected = $1;
-	                next;
-	            }
-	            $expected_done++;
-			
-	            if ( -e $_ ) {
-	                push(@done, $_);
-					my $sample = dirname($_);
-					$done_tasks{$sample} = $task;
-	            }
-	            else {
-	                push(@skipped, $_);
-	            }
-	        }
-	        
-	        if ($written_expected == $expected_done && scalar @done == $expected_done) {
-	            move($expected_file, $done_file) || die "Failed to move $expected_file -> $done_file";
-	        }
-	    } elsif (-s $done_file) {
-			foreach my $sample (keys %new_samples) {
-				$done_tasks{$sample} = $task;
-			}
-		}
-	}
-	
-	my $final_done_file = File::Spec->catfile($root, ".${final_task}_done");
-	if (-s $final_done_file) {
-		foreach my $merge ('platform', 'sample') {
-			next if ( $merge eq 'sample' && ! $config_data->{data}->{do_sample_merge} );
+        my $expected_file = File::Spec->catfile($root, ".${task}_expected");
+        my $done_file = File::Spec->catfile($root, ".${task}_done");
+        
+        # Record the files expected
+        unless ( -s $expected_file || -e $done_file ) {
+            open(my $ofh, '>', $expected_file) || die "Couldn't write to $expected_file";
+            foreach my $sample (keys %new_samples) {
+                my $expected_done_file = File::Spec->catfile($sample, ".${task}_done");
+                print $ofh $expected_done_file, "\n";
+            }
+            my $expected = keys %new_samples;
+            print $ofh "# expecting $expected\n";
+            close($ofh);
+        }
+        
+        # Check for done files. 
+        if ( -s $expected_file && ! -e $done_file ) {
+            my $done_count = 0;
+            my $expected_done = 0;
+            my $written_expected;
+            open(my $efh, $expected_file) || die "Couldn't open $expected_file";
+            my @done;
+            my @skipped;
+            while (<$efh>) {
+                chomp;
+                /\S/ || next;
+                if (/^# expecting (\d+)/) {
+                    $written_expected = $1;
+                    next;
+                }
+                $expected_done++;
+            
+                if ( -e $_ ) {
+                    push(@done, $_);
+                    my $sample = dirname($_);
+                    $done_tasks{$sample} = $task;
+                }
+                else {
+                    push(@skipped, $_);
+                }
+            }
+            
+            if ($written_expected == $expected_done && scalar @done == $expected_done) {
+                move($expected_file, $done_file) || die "Failed to move $expected_file -> $done_file";
+            }
+        } elsif (-s $done_file) {
+            foreach my $sample (keys %new_samples) {
+                $done_tasks{$sample} = $task;
+            }
+        }
+    }
+    
+    my $final_done_file = File::Spec->catfile($root, ".${final_task}_done");
+    if (-s $final_done_file) {
+        foreach my $merge ('platform', 'sample') {
+            next if ( $merge eq 'sample' && ! $config_data->{data}->{do_sample_merge} );
 
-			my $expected_file = File::Spec->catfile($root, "raw_${merge}_bams.fofn_expected");
-			my $done_file = File::Spec->catfile($root, "raw_${merge}_bams.fofn");
-			
-			if ( -s $expected_file && ! -e $done_file ) {
-		        my $done_count = 0;
-		        my $expected_done = 0;
-		        open(my $efh, $expected_file) || die "Couldn't open $expected_file";
-		        my @done;
-		        while (<$efh>) {
-		            chomp;
-		            /\S/ || next;
-		            $expected_done++;
-		            if ( -e $_ ) {
-		                push(@done, $_);
-						my $sample = dirname($_);
-		            }
-		        }
+            my $expected_file = File::Spec->catfile($root, "raw_${merge}_bams.fofn_expected");
+            my $done_file = File::Spec->catfile($root, "raw_${merge}_bams.fofn");
+            
+            if ( -s $expected_file && ! -e $done_file ) {
+                my $done_count = 0;
+                my $expected_done = 0;
+                open(my $efh, $expected_file) || die "Couldn't open $expected_file";
+                my @done;
+                while (<$efh>) {
+                    chomp;
+                    /\S/ || next;
+                    $expected_done++;
+                    if ( -e $_ ) {
+                        push(@done, $_);
+                        my $sample = dirname($_);
+                    }
+                }
 
-		        if (scalar @done == $expected_done) {
-		            move($expected_file, $done_file) || die "Failed to move $expected_file -> $done_file";
-		        } else {
-					warn "Not all the expected $merge bams are present!\n";
-				}
-			}
-		}
-	}
-	
-	# Unless cleanup action will be run, remove from new samples hash if final 
-	# task has completed
-	unless ($cleanup) {
-		while ( my ($sample, $task) = each(%done_tasks) ) {
-			delete $new_samples{$sample} if ( $task eq $final_task );
-		}
-	}
-	
+                if (scalar @done == $expected_done) {
+                    move($expected_file, $done_file) || die "Failed to move $expected_file -> $done_file";
+                } else {
+                    warn "Not all the expected $merge bams are present!\n";
+                }
+            }
+            
+            if (-s $done_file) {
+                system("cp $done_file " . File::Spec->catfile($root, '.mergeup_done'));
+            }
+        }
+    }
+    
+    # Unless cleanup action will be run, remove from new samples hash if final 
+    # task has completed
+    unless ($cleanup) {
+        while ( my ($sample, $task) = each(%done_tasks) ) {
+            delete $new_samples{$sample} if ( $task eq $final_task );
+        }
+    }
+    
     # now actually create the jobs
     my @samples = sort keys %new_samples;
     my $sample_count = 0;
-	my $cleanup_count = 0;
+    my $cleanup_count = 0;
     my $max_samples = $config_data->{simultaneous_samples} || @samples;
     foreach my $sample_path (@samples) {
         my $job = Job->new({lane_info => { lane_bams => File::Spec->catfile($sample_path, 'lane_bams.fofn'), hierarchy_root => $root }, %$config_data, path => $sample_path, config => $config, mtime => $mtime});
@@ -1633,22 +1701,22 @@ sub get_mergeup_jobs {
         debug($config_data,".");
         
         if ( $cleanup && $done_tasks{$sample_path} eq $final_task ) {
-			$cleanup_count++;
-		} else {
-			$sample_count++;
-		}
-		
+            $cleanup_count++;
+        } else {
+            $sample_count++;
+        }
+        
         if ($sample_count > $max_samples) {
             debug($config_data, "jobs limit $config_data->{simultaneous_samples} reached... ");
             last;
         }
     }
     
-	if ($cleanup && $cleanup_count) {
-	    debug($config_data,"done $sample_count, $cleanup_count in cleanup mode\n");
-	} else {
-		debug($config_data,"done $sample_count\n");
-	}
+    if ($cleanup && $cleanup_count) {
+        debug($config_data,"done $sample_count, $cleanup_count in cleanup mode\n");
+    } else {
+        debug($config_data,"done $sample_count\n");
+    }
     return;
 }
 

@@ -1,26 +1,38 @@
 #!/usr/bin/env perl
 
-# This script produces an Excel file of statistics for all lanes in a database or set of studies if specified
-#
-# stats-file-output --db dbname (optional:  --study UK10K_XXXX_CCCC --from DD-MM-YYYY --to DD-MM-YYYY --months x
-# (default values --study ALL_STUDIES_IN_DB --from Not_set --to TODAY --months Not_set)
-#
-# For example:
-# 1. stats-file-output --db vrtrack_uk10k_cohort (creates vrtrack_uk10k_cohort_DD-MM-YYYY.xls)
-# Output historical data:
-# 2. stats-file-output --db vrtrack_uk10k_neuro --study UK10K_NEURO_MUIR,UK10K_NEURO_ASD_SKUSE --from 10-01-2011 
-# --to 10-04-2011
-# Output the last month's data:
-# 3. stats-file-output --db vrtrack_uk10k_obesity --study 1706 --months 1
-#
-# Note: the study details can be a names or ids (or a mixture) and the user can only specify months and to or from
-# but not all three. Dates are only accepted in the UK/European format.
-#
-# Produces an Excel file of the statistics for each lane (currently) for the projects/studies specified (or the 
-# whole database, sorted by project) between the dates specified (or all if not).
-#
-# Author: John Maslen <jm23@sanger.ac.uk>
-#
+=head1 NAME
+
+stats-file-output
+
+=head1 SYNOPSIS
+
+This script produces an Excel file of statistics for all lanes in a database or set of studies if specified
+
+stats-file-output --db dbname (optional:  --study UK10K_XXXX_CCCC --from YYYY-MM-DD --to YYYY-MM-DD --months x
+(default values --study ALL_STUDIES_IN_DB --from Not_set --to TODAY --months Not_set)
+
+For example:
+1. stats-file-output --db vrtrack_uk10k_cohort (creates vrtrack_uk10k_cohort_YYYY-MM-DD.xls)
+Output historical data:
+2. stats-file-output --db vrtrack_uk10k_neuro --study UK10K_NEURO_MUIR,UK10K_NEURO_ASD_SKUSE --from 2011-04-22 
+--to 2011-06-18
+Output the last month's data:
+3. stats-file-output --db vrtrack_uk10k_obesity --study 1706 --months 1
+
+Note: the study details can be a names or ids (or a mixture) and the user can only specify months and to or from
+but not all three. Dates are only accepted in the UK/European format.
+
+Produces an Excel file of the statistics for each lane (currently) for the projects/studies specified (or the 
+whole database, sorted by project) between the dates specified (or all if not).
+
+Author: John Maslen <jm23@sanger.ac.uk>
+
+
+=head1 AUTHOR
+
+John Maslen, jm23@sanger.ac.uk, Team 145
+
+=cut
 
 use strict;
 use warnings;
@@ -31,16 +43,18 @@ use VertRes::Utils::VRTrackFactory;
 use VRTrack::Lane;
 use Spreadsheet::WriteExcel;
 use Scalar::Util qw(looks_like_number);
-use Date::Calc qw( Add_Delta_YMD );
+use Date::Calc qw( Add_Delta_YMD Add_Delta_Days );
 use POSIX qw(strftime); 
+use Date::Manip;
+use Carp;
 
-my ($db, $study, $from, $to, $months, $nocol, $help);
+my ($db, $study, $fromdate, $todate, $months, $nocol, $help);
 
 GetOptions(
     'd|db=s'        =>  \$db,
     's|study=s'		=>  \$study,
-    'f|from=s'		=>  \$from,
-    't|to=s'		=>  \$to,
+    'f|from=s'		=>  \$fromdate,
+    't|to=s'		=>  \$todate,
     'm|months=i'    =>  \$months,
     'n|nocol'		=>  \$nocol,
     'h|help'	    =>  \$help,
@@ -60,12 +74,16 @@ Generates lane statistics file for a database or study (if specified).
 
 Examples:
 --------
-1. output_stats --db vrtrack_uk10k_cohort --out cohort_out.stats
+Retrieve all stats for a database:
+1. stats-file-output --db vrtrack_uk10k_cohort
 
-2. output_stats --db vrtrack_uk10k_neuro --study UK10K_NEURO_MUIR,UK10K_NEURO_ASD_SKUSE --from 10-01-2011 
---to 10-04-2011
+Retrieve stats for 2 projects between certain dates:
+2. stats-file-output --db vrtrack_uk10k_neuro --study UK10K_NEURO_MUIR,UK10K_NEURO_ASD_SKUSE --from 2011-01-25
+--to 2011-04-25
+(NB, date format is YYYY-MM-DD)
 
-3. output_stats --db vrtrack_uk10k_obesity --study 1706 --months 3
+Retrieve stats for 1 project for the previous 3 mojnt
+3. stats-file-output --db vrtrack_uk10k_obesity --study 1706 --months 3
 
 NOTES:
 The --study can use study names or ids (or a mixture). 
@@ -79,55 +97,37 @@ unless ($vrtrack){
     die "Can't connect to tracking database\n";
 }
 
-if (($to && $from) && $months) {
+if (($todate && $fromdate) && $months) {
 	die "You cannot specify exact dates and a value for months.\n";
 }
-
-my $dateregex = '^(0[1-9]|[12][0-9]|3[01])[-](0[1-9]|1[012])[-](19|20)\d\d$';
+my $dateregex = '^(19|20)\d\d[-](0[1-9]|1[012])[-](0[1-9]|[12][0-9]|3[01])$';
 my $human_genome_size = 3e9;
-my $end_analysis = strftime "%d-%m-%Y", localtime;
+my $end_analysis_date = strftime "%Y-%m-%d", localtime;
+my $outfile = $db."_".$end_analysis_date."_stats.xls";
+my $start_analysis_date;
 
-my $outfile = $db."_".$end_analysis."_stats.xls";
-my $workbook  = Spreadsheet::WriteExcel->new($outfile);
-my $worksheet = $workbook->add_worksheet();
-
-my $start_analysis;
-if ($to) {
-	if ( $to !~ $dateregex ) {
-		die "You have not specified the --to date in the correct format: DD-MM-YYYY.\n";
-	}
-	else {
-		$end_analysis = $to;
-	}
+if ($todate) {
+	$todate =~ $dateregex ? $end_analysis_date = $todate : croak "You have not specified the --to date in the correct format: YYYY-MM-DD.\n";
+    my ($y,$m,$d) = Add_Delta_Days((split(/-/,$end_analysis_date))[0,1,2], 1);
+	$end_analysis_date = sprintf( "%04d-%02d-%02d", $y,$m,$d );	
 }
-
 if ( $months ) {
-	if ( looks_like_number($months) && $months >= 1 ) {
-		my ($y,$m,$d) = Add_Delta_YMD((split(/-/,$end_analysis))[2,1,0], 0, -($months), 1);
-		$start_analysis = sprintf( "%02d-%02d-%04d", $d,$m,$y );
-	}
-	else {
-		die "You must specify months as a positive or non-zero integer!\n";
-	}
+    croak "You must specify months as a positive or non-zero integer!\n" unless ( looks_like_number($months) && $months >= 1 );
+    my ($y,$m,$d) = Add_Delta_YMD((split(/-/,$end_analysis_date))[0,1,2], 0, -($months), 1);
+	$start_analysis_date = sprintf( "%04d-%02d-%02d", $y,$m,$d );
 }
 
-if ($from) {
-	if ( $from !~ $dateregex ) {
-		die "You have not specified the --from date in the correct format: DD-MM-YYYY.\n";	
-	}
-	else {
-		$start_analysis = $from;
-		if ( ! checkEarlierDate($start_analysis, $end_analysis) ) {
-		print $start_analysis, ", ", $end_analysis, "\n";
-			die "You have specified --from date that is either the same or later than the --to date.\n";
-		}
-	}
-	if ($months && looks_like_number($months)) {
-		my ($y,$m,$d) = Add_Delta_YMD((split(/-/,$start_analysis))[2,1,0], 0, $months, -1);
-		$end_analysis = sprintf( "%02d-%02d-%04d", $d,$m,$y );
+if ($fromdate) {
+	$fromdate =~ $dateregex ? $start_analysis_date = $fromdate : croak "You have not specified the --from date in the correct format: YYYY-MM-DD.\n";
+	croak "You have specified --from date that is either the same or later than the --to date.\n" if (Date_Cmp($start_analysis_date, $end_analysis_date) >= 0);
+	if ( $months ) {   
+		my ($y,$m,$d) = Add_Delta_YMD((split(/-/,$start_analysis_date))[0,1,2], 0, $months, -1);
+		$end_analysis_date = sprintf( "%04d-%02d-%02d", $y,$m,$d );
 	}	
 }
 
+my $workbook  = Spreadsheet::WriteExcel->new($outfile);
+my $worksheet = $workbook->add_worksheet();
 my $projects;
 
 if ($study) {
@@ -171,8 +171,8 @@ for my $project (@$projects) {
 			my $lanes = $library->lanes();
 			for my $lane ( @{$lanes} ) {
 				my $mapstats = $lane->latest_mapping();
-				my $run_date = convertIsoTimestamp($lane->run_date);
-				if (checkEarlierDate($start_analysis, $run_date) && checkEarlierDate($run_date, $end_analysis)) {
+				my $run_date = $lane->run_date;
+				if (Date_Cmp($run_date, $start_analysis_date)>=1 && Date_Cmp($end_analysis_date, $run_date)>=1) {
 					my @lineout = ($sample_name, $lane->name, $name, $run_date);
 					my $raw_reads = $mapstats->raw_reads;
 					my $raw_bases = $mapstats->raw_bases;
@@ -212,41 +212,10 @@ if (@totaloutput) {
 		$worksheet->write(0, $i,  $columns[$i]);
 	}
 	
-	for my $x (1 .. $#totaloutput+1) {
+	for my $x (0 .. $#totaloutput) {
 		for my $y (0 .. $#columns) {
-			$worksheet->write($x, $y,  ($totaloutput[$x][$y]));
+			$worksheet->write($x+1, $y,  ($totaloutput[$x][$y]));
 		}
 	}
 
-}
-
-sub convertIsoTimestamp
-{	
-	my ($time) = @_;
-	my $isodateregex = '^(19|20)\d\d[-](0[1-9]|1[012])[-](0[1-9]|[12][0-9]|3[01])';
-	if ( $time !~ $isodateregex ) {
-		warn "The date supplied is not in the expected format YYYY-MM-DD.\n";
-		return $time;
-	}	
-	return sprintf("%02d-%02d-%04d", ((split(/-/, (split(/ /, $time))[0]))) [2,1,0]);
-}
-
-sub revertIsoTimestamp
-{	
-	my ($time) = @_;
-	my $dateregex = '^(0[1-9]|[12][0-9]|3[01])[-](0[1-9]|1[012])[-](19|20)\d\d';
-	if ( $time !~ $dateregex ) {
-		warn "The date supplied is not in the expected format YYYY-MM-DD.\n";
-		return $time;
-	}	
-	return sprintf("%04d-%02d-%02d", ((split(/-/, (split(/ /, $time))[0]))) [2,1,0]);
-}
-
-sub checkEarlierDate
-{
- 	my ($date1,$date2) = @_;
- 	return 1 unless $date1;
- 	my $compdate1 = revertIsoTimestamp($date1);
- 	my $compdate2 = revertIsoTimestamp($date2);
- 	return ( $compdate1 le $compdate2 );
 }
