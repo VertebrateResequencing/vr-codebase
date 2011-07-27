@@ -172,8 +172,21 @@ sub bam_to_fastq_requires
 }
 
 sub bam_to_fastq_provides {
-    my ($self, $lane_path) = @_;
+  my ($self, $lane_path) = @_;
+   
+  if( $self->is_paired )
+  {
     return ["$self->{lane}_1.fastq.gz", "$self->{lane}_2.fastq.gz", "$self->{lane}_1.fastq.gz.fastqcheck", "$self->{lane}_2.fastq.gz.fastqcheck"];
+  }
+  else
+  {
+    return ["$self->{lane}.fastq.gz", "$self->{lane}.fastq.gz.fastqcheck"];
+  }
+}
+
+sub is_paired {
+  my ($self) = @_;
+  return $self->{vrlane}->{is_paired};
 }
 
 # Adapted from Mapping.pm 
@@ -185,6 +198,16 @@ sub bam_to_fastq {
 
     my $in_bam = $self->{fsu}->catfile($lane_path, $bam);
     my $fastq_base = $self->{lane};
+   
+    my $fastqs_str ; 
+    if( $self->is_paired )
+    {
+      $fastqs_str  = qq{ (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq"), File::Spec->catfile(\$dir, "$self->{lane}_2.fastq")) };
+    }
+    else
+    {
+      $fastqs_str  = qq{ (File::Spec->catfile(\$dir, "$self->{lane}.fastq")) };
+    }
     
     # Script to be run by LSF to convert bam to fastq
     # bam2fastq does full sanity checking and safe result file creation
@@ -196,7 +219,7 @@ use VertRes::Utils::Sam;
 use File::Spec;
 
 my \$dir = '$lane_path';
-my \@fastqs = (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq"), File::Spec->catfile(\$dir, "$self->{lane}_2.fastq"));
+my \@fastqs = $fastqs_str;
 
 # convert to fastq
 VertRes::Utils::Sam->new(verbose => 1, quiet => 0)->bam2fastq(qq[$in_bam], qq[$fastq_base]);
