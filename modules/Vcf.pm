@@ -692,6 +692,7 @@ sub add_header_line
         {
             my $type = $$rec{Type};
             if ( exists($$self{handlers}{$type}) ) { $$rec{handler}=$$self{handlers}{$type}; }
+            else { $self->throw("Unknown type [$type].\n"); }
         }
     }
 
@@ -2185,6 +2186,8 @@ sub new
             Integer   => \&VcfReader::validate_int,
             Float     => \&VcfReader::validate_float,
             Character => \&VcfReader::validate_char,
+            String    => undef,
+            Flag      => undef,
         },
 
         regex_snp   => qr/^[ACGTN]$/i,
@@ -2240,6 +2243,8 @@ sub new
             Integer   => \&VcfReader::validate_int,
             Float     => \&VcfReader::validate_float,
             Character => \&VcfReader::validate_char,
+            String    => undef,
+            Flag      => undef,
         },
 
         regex_snp   => qr/^[ACGTN]$/i,
@@ -2300,6 +2305,8 @@ sub new
             Integer    => \&VcfReader::validate_int,
             Float      => \&VcfReader::validate_float,
             Character  => \&VcfReader::validate_char,
+            String     => undef,
+            Flag      => undef,
         },
 
         regex_snp   => qr/^[ACGTN]$|^<[\w:.]+>$/i,
@@ -2661,6 +2668,8 @@ sub new
             Integer    => \&VcfReader::validate_int,
             Float      => \&VcfReader::validate_float,
             Character  => \&VcfReader::validate_char,
+            String     => undef,
+            Flag      => undef,
         },
 
         regex_snp   => qr/^[ACGTN]$|^<[\w:.]+>$/i,
