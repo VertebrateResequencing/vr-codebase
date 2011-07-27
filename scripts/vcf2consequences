@@ -13,10 +13,11 @@ use Benchmark;
 
 BEGIN{
     my $ROOT = '/software/vertres/lib/all';
-    my $VERSION = '61';
+    my $VERSION = '62';
     unshift(@INC, "$ROOT/bioperl-1.2.3/lib/site_perl/5.8.8");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl/modules");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-variation/modules");
+    unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-compara/modules");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-functgenomics/modules");
 }
 
@@ -26,6 +27,7 @@ use Bio::EnsEMBL::Variation::AlleleFeature;
 use Bio::EnsEMBL::Variation::VariationFeature;
 
 use Vcf;
+use GranthamMatrix;
 =pod
 foreach( keys( %INC ) )
 {
@@ -33,7 +35,7 @@ foreach( keys( %INC ) )
 }
 =cut
 
-my ($input_vcf, $complement, $species, $index_vcf, $help, $buffer_size);
+my ($input_vcf, $complement, $species, $index_vcf, $help, $buffer_size, $gerp, $grantham);
 
 GetOptions
 (
@@ -41,6 +43,8 @@ GetOptions
     "s|species=s"   => \$species,
     "i|index=s"     => \$index_vcf,
     "b|buffer=i"    => \$buffer_size,
+    "g|gerp"    => \$gerp,
+    "r|grantham"    => \$grantham,
     "h|help"        => \$help
 );
 
@@ -58,6 +62,8 @@ Usage:
     -s --species            e.g. Homo_sapiens, Mus_musculus
     -i --index              OPTIONAL: Compressed annotated VCF file, indexed using tabix
     -b --buffer             OPTIONAL: Number of rows of the vcf file to buffer (default = 500)
+    -g --gerp               OPTIONAL: Add GERP score to consequences
+    -r --grantham           OPTIONAL: Add Grantham matrix score to consequences for nsSNPS
     -h --help               Print this message
 ];
     exit;
@@ -68,6 +74,8 @@ croak qq[Invalid species: $species\n]  unless $species eq qq[Mus_musculus] || $s
 
 my $t0 = Benchmark->new;
 my $ensembl = init_ensembl($species);
+our $grantham_matrix = GranthamMatrix->new() if $grantham;
+
 parse_vcf($ensembl,$input_vcf,$index_vcf);
 my $t1 = Benchmark->new;
 my $td = timediff($t1, $t0);
@@ -99,9 +107,12 @@ sub init_ensembl
 
     my $reader = EnsemblReader->new(slice=>$slice);
 
-    return {registry=>$registry, slice=>$slice, variation=>$variation, gene=>$gene, reader=>$reader};
-}
+	my $mlss_adaptor = $registry->get_adaptor("Multi", "compara", "MethodLinkSpeciesSet");
+	my $mlss = $mlss_adaptor->fetch_by_method_link_type_species_set_name("GERP_CONSERVATION_SCORE", "mammals");
+	my $cs_adaptor = $registry->get_adaptor("Multi", 'compara', 'ConservationScore');
 
+    return {registry=>$registry, slice=>$slice, variation=>$variation, gene=>$gene, reader=>$reader, mlss=>$mlss, cs_adaptor=>$cs_adaptor};
+}
 
 sub parse_vcf
 {
@@ -356,15 +367,84 @@ sub call_conseqs
             push @data, $aa_change if $aa_change;
 
             my $con_str = join ":",@data;
+
+            if ( $type eq 'NON_SYNONYMOUS_CODING' && $species eq 'Homo_sapiens') {
+				$con_str .= get_nssnp_annotations($con);
+			}
+
             #warn "$con_str\n";
             #$out{"$type\@$gene_name"} = 1;
 
             $out{$con_str} = 1;
         }
     }
+
+	if ($gerp && $allele !~ '-') {	# ignore indels
+
+		my $gerp_text = "GERP=";
+
+		# minimum slice size 2 for gerp scores
+		my $gerp_slice = $ensembl->{slice}->fetch_by_region('chromosome', $vf->seq_region_name, $vf->start, $vf->start+1);
+		my $scores = $ensembl->{cs_adaptor}->fetch_all_by_MethodLinkSpeciesSet_Slice($ensembl->{mlss}, $gerp_slice);
+
+		if ($$scores[0] ) {
+			$gerp_text .= sprintf ("%.2f", $$scores[0]->diff_score);
+		}
+		else {
+			$gerp_text .= "undef";
+		}
+		$out{$gerp_text} = 1;
+	}
+
     return \%out;
 }
 
+sub get_nssnp_annotations
+{
+    my ($tv) = @_;
+    my $pred_text = ":";
+
+	return if !($tv->affects_transcript);
+
+	foreach my $tva(@{$tv->get_all_alternate_TranscriptVariationAlleles}) {
+
+		foreach my $tool (qw(SIFT PolyPhen Condel)) {
+			my $lc_tool = lc($tool);
+
+			my $pred_meth   = $lc_tool.'_prediction';
+			my $score_meth  = $lc_tool.'_score';
+
+			my $pred = $tva->$pred_meth;
+
+			if($pred) {
+				$pred_text .= "$tool=";
+
+				$pred =~ s/\s+/\_/;
+				$pred_text .= $pred;
+
+				my $score = $tva->$score_meth;
+
+				if(defined $score) {
+					$pred_text .= "($score)";
+				}
+				$pred_text .= ':';
+			}
+		}
+		$pred_text =~ s/\:$//g;
+
+		# Use first alternate_TranscriptVariationAllele with predictions
+		if ($pred_text) {
+			if ($grantham) {
+				my $ref_aa = $tv->get_reference_TranscriptVariationAllele()->peptide();
+				my $var_aa = $tva->peptide();
+				$pred_text .= ":Grantham=" . $grantham_matrix->score($ref_aa,$var_aa);
+			}
+			last;
+		}
+	}
+
+    return $pred_text;
+}
 
 #Should/can this be added to Vcf.pm??
 sub return_info_field
