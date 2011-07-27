@@ -224,7 +224,7 @@ foreach my $bam (keys %data)
         my $population = $individual->population();
         unless ($population)  {
             $population = $individual->population($population_name);
-            $individual->add_population($population_name) unless $population;
+            $population = $individual->add_population($population_name) unless $population;
             print "adding population $population_name\n" if $verbose;
         }
         $population->update;
