@@ -56,6 +56,10 @@ data =>
             #_extras => [ '-U ALLOW_UNSET_BAM_SORT_ORDER --platform Solexa' ],
             _extras => [ '-U ALLOW_UNSET_BAM_SORT_ORDER ' ],
         },
+        unified_genotyper => 
+        {
+            genotype_likelihoods_model => 'BOTH',         # Call both SNPs and INDELs
+        },
         variant_filtration =>
         {
             filters => { HARD_TO_VALIDATE => 'MQ0 >= 4 && (MQ0 / (1.0 * DP)) > 0.1' },
@@ -64,12 +68,19 @@ data =>
         },
         variant_recalibrator =>
         {
-            target_titv => 2.08,
+            mode => 'BOTH',         # recalibrate SNPs and INDELs
+            target_titv => 2.08,    # only for plotting
             ignore_filter => 'HARD_TO_VALIDATE',
+            percentBadVariants => 0.05,
+            maxGaussians => 4,
+            training_sets => ['dbsnp,VCF,known=true,training=false,truth=false,prior=8.0,/path/to/dbsnp_123.b37.vcf.gz',
+                              'hapmap,VCF,known=false,training=true,truth=true,prior=15.0,/path/to/hapmap_3.3.b37.sites.vcf.gz',
+                              'omni,VCF,known=false,training=true,truth=false,prior=12.0,/path/to/1000G_omni2.5.b37.sites.vcf.gz'],
         },
         apply_variant_cuts =>
         {
-            fdr_filter_level => '0.11',
+            fs_filter_level => 99.0,
+            mode => 'BOTH',
         },
     },
  
@@ -129,6 +140,9 @@ echo '__SNPs__ snps.conf' > snps.pipeline
 # output location by replacing root in the bam files with new_root.
 # Also, outdir may be set to put output into a common subdir at its
 # destination.
+
+# for GATK, can mow supply the option dbSNP_vcf instead of dbSNP_rod
+# if your snp sites are in vcf format rather than rod format.
 
 =head1 DESCRIPTION
 
@@ -1036,7 +1050,10 @@ sub gatk
         $$gopts{reference} = $$self{fa_ref};
     }
     if ( !exists($$gopts{reference}) ) { $$gopts{reference} = $$self{fa_ref}; }
-
+    if ( !exists($$gopts{bs}) && exists($$self{dbSNP_vcf}) && $$self{dbSNP_vcf}) 
+    {
+        $$gopts{bs} = ["dbsnp,VCF $$self{dbSNP_vcf}"];
+    }
     my $bams = [ $$self{file_list} ];
     my %opts =
     (
@@ -1193,15 +1210,15 @@ sub run_gatk_postprocess
         Utils::CMD("cp $basename.vcf.gz $basename.tmp.vcf.gz");
         Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
     }
-
+    
     if ( $$self{dbSNP_rod} )
     {
         # Recalibrate
         %opts = $self->get_gatk_opts(qw(all variant_recalibrator));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
         $gatk->set_b("input,VCF,$basename.tmp.vcf.gz");
-        ##### SET TRAINING SETS ETC #####
-        $gatk->set_annotations('HaplotypeScore', 'SB', 'QD', 'HRun');
+        $gatk->add_b(@{$opts{training_sets}});
+        $gatk->set_annotations('HaplotypeScore', 'MQRankSum', 'ReadPosRankSum', 'HRun');
         $gatk->variant_recalibrator("$basename.recal", "$basename.tranches", %opts);
         
         # Filter the calls down to an implied 10.0% novel false discovery rate

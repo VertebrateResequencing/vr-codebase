@@ -239,8 +239,10 @@ sub count_covariates {
     # QualityScoreCovariate: The reported base quality score for this base.
     # ReadGroupCovariate: The read group this read is a member of.
     
-    $self->switches([qw(useOriginalQualities)]);
-    $self->params([qw(R DBSNP l T default_platform default_read_group)]);
+    $self->switches([qw(useOriginalQualities run_without_dbsnp_potentially_ruining_quality 
+                        dont_sort_output standard_covs exception_if_no_tile)]);
+    $self->params([qw(R DBSNP l T default_platform default_read_group
+                        window_size_nqs homopolymer_nback solid_recal_mode)]);
     
     # used to take a fileroot, but now takes an output file
     my $recal_file = $out_csv;
@@ -255,6 +257,9 @@ sub count_covariates {
     $params{T} = 'CountCovariates';
     unless (defined $params{useOriginalQualities}) {
         $params{useOriginalQualities} = 1;
+    }
+    unless ($covs || defined($params{standard_covs})) {
+        $params{standard_covs} = 1;
     }
     $self->_handle_common_params(\%params);
     
@@ -421,7 +426,7 @@ sub get_b {
         if ($last =~ /\s/) {
             ($b[++$#b], $last) = split(/\s/, $last);
         }
-        $args .= "-B:".(join ',', @b)." $last";
+        $args .= " -B:".(join ',', @b)." $last ";
     }
     return $args;
 }
@@ -507,8 +512,11 @@ sub table_recalibration {
     
     $self->switches([qw(useOriginalQualities fail_with_no_eof_marker
                         doNotWriteOriginalQuals disable_bam_indexing
-                        generate_md5 simplifyBAM)]);
-    $self->params([qw(R l T default_platform default_read_group)]);
+                        generate_md5 simplifyBAM exception_if_no_tile)]);
+    $self->params([qw(R l T default_platform default_read_group
+                        max_quality_score smoothing preserve_qscores_less_than
+                        bam_compression solid_nocall_strategy
+                        solid_recal_mode homopolymer_nback window_size_nqs)]);
     
     my @file_args = (" -I $in_bam", " -recalFile $csv", " --out $out_bam");
     
@@ -630,10 +638,10 @@ sub indel_realigner {
     return $self->run(@file_args);
 }
 
-=head2 indel_genotyper
+=head2 somatic_indel_detector
 
- Title   : indel_genotyper
- Usage   : $wrapper->indel_genotyper('in.bam', 'out.raw.bed', 'out.detailed.bed');
+ Title   : somatic_indel_detector
+ Usage   : $wrapper->somatic_indel_detector('in.bam', 'out.raw.bed', 'out.detailed.bed');
  Function: Call indels on a bam file (preferably one that has been output by
            indel_realigner()).
  Returns : n/a
@@ -644,11 +652,11 @@ sub indel_realigner {
 
 =cut
 
-sub indel_genotyper {
+sub somatic_indel_detector {
     my ($self, $in_bam, $out_raw_bed, $out_detailed_bed, @params) = @_;
     
     # java -jar GenomeAnalysisTK.jar \
-    #   -T IndelGenotyperV2 \
+    #   -T SomaticIndelDetector \
     #   -R resources/Homo_sapiens_assembly18.fasta \
     #   -I cleaned.bam \
     #   -O indels.raw.bed \
@@ -659,10 +667,11 @@ sub indel_genotyper {
     #   -minConsensusFraction 0.6 \
     #   -mnr 1000000  (maxNumberOfReads)
     
-    $self->switches([qw(verbose)]);
-    $self->params([qw(R DBSNP T L 1kg_format minCoverage minNormalCoverage
+    $self->switches([qw(indel_debug somatic)]);
+    $self->params([qw(R DBSNP T L minCoverage minNormalCoverage
                       minFraction minConsensusFraction minIndelCount refseq
-                      blacklistedLanes window_size maxNumberOfReads)]);
+                      blacklistedLanes window_size maxNumberOfReads 
+                      metrics_file verboseOutput)]);
     
     my @file_args = (" -I $in_bam", " -bed $out_raw_bed -o $out_detailed_bed");
     
@@ -714,7 +723,8 @@ sub unified_genotyper {
                       min_base_quality_score min_mapping_quality_score
                       max_deletion_fraction debug_file annotation group)]);
     
-    my @file_args = (" -I $in_bam", " -o $out_vcf ");
+    my $bs = $self->get_b();
+    my @file_args = (" $bs -I $in_bam", " -o $out_vcf ");
     
     my %params = (standard_min_confidence_threshold_for_calling => 10.0, @params);
     $params{T} = 'UnifiedGenotyper';
@@ -881,30 +891,8 @@ sub variant_recalibrator {
     #   --ignore_filter HARD_TO_VALIDATE \
     #   -T VariantRecalibrator
     
-    my $tranches = ' -tranche 10 -tranche 5 -tranche 1 -tranche 0.1';
-
-    # if it's there, check the tranches file for how many present and adjust -tranches
-    # options accordingly.  This is a workaround for the SNP pipeline to work: the 
-    # tranches file only has a line per tranche when SNPs fall into that tranche, so
-    # pipeline breaks on empty tranches.  It's a known bug in GATK, but for now
-    # this gets around it, since the pipeline will resubmit the job, pick up the tranches
-    # file (with some lines missing) and only use the tranches that contain SNPs
-    # if (-e "$out_vcf.dat.tranches") {
-    #     open my $fh, "$out_vcf.dat.tranches" or $self->throw("$out_vcf.dat.tranches: $!");
-    #     my @lines = <$fh>;
-    #     close $fh;
-    #     $tranches = "";
-    #     foreach (@lines) {
-    #         chomp;
-    #         if (m/,FDRtranche.*to(.*)$/) {
-    #             $tranches .= " -tranche $1";
-    #         }
-    #     }
-    #     if ($tranches eq "") {
-    #          $tranches = '-tranche 10 -tranche 5 -tranche 1 -tranche 0.1';
-    #     }
-    # }
-
+    my $tranches = ' -tranche 100.0 -tranche 99.9 -tranche 99.0 -tranche 90.0';
+    
     $self->switches([]);
     $self->params([qw(R DBSNP T l mode maxGaussians maxIterations numKMeans stdThreshold
                         qualThreshold shrinkage dirichlet priorCounts percentBadVariants
@@ -913,9 +901,9 @@ sub variant_recalibrator {
     
     my $bs = $self->get_b();
     my $ans = $self->get_annotations();
-    my @file_args = (" $bs -tranchesFile $out_tranches_file -recal_file $out_recal_file",
+    my @file_args = (" $bs -tranchesFile $out_tranches_file -recalFile $out_recal_file $ans",
                      '-resources '.File::Spec->catdir($ENV{GATK}, 'resources'),
-                     '-Rscript Rscript', " -rscriptFile XXXXXX",
+                     '-Rscript Rscript', " -rscriptFile $out_recal_file.r",
                      $tranches);
     
     my %params = (target_titv => 2.07, ignore_filter => 'HARD_TO_VALIDATE', l => 'INFO', @params);
@@ -1049,8 +1037,9 @@ sub combine_variants {
     #    -priority foo,bar \
     #    -o merged.vcf
     
-    $self->switches([qw(printComplexMerges filteredAreUncalled)]);
-    $self->params([qw(R T genotypemergeoption)]);
+    $self->switches([qw(printComplexMerges filteredAreUncalled assumeIdenticalSamples
+                        minimalVCF)]);
+    $self->params([qw(R T genotypemergeoption minimumN setKey filteredrecordsmergetype)]);
     
     my @priority;
     my @bs;
@@ -1085,9 +1074,9 @@ sub combine_variants {
     $self->set_b(@bs);
     my $bs = $self->get_b();
     
-    my @file_args = (" $bs -variantMergeOptions $type -priority $priority -o $out_file");
+    my @file_args = (" $bs -genotypeMergeOptions $type -priority $priority -o $out_file");
     
-    my %params = (@params);
+    my %params = (filteredrecordsmergetype => 'KEEP_IF_ANY_UNFILTERED', @params);
     $params{T} = 'CombineVariants';
     $self->_handle_common_params(\%params);
     
@@ -1130,7 +1119,7 @@ sub variant_eval {
     #   -o out.txt
     
     $self->switches([qw(indelCalls useNoModules)]);
-    $self->params([qw(R DBSNP T l family_structure
+    $self->params([qw(R DBSNP T l family_structure ancestralAlignments
                       MendelianViolationQualThreshold InterestingSitesVCF
                       minPhredConfidenceScore minPhredConfidenceScoreForComp
                       rsID maxRsIDBuild reportType reportLocation nSamples)]);
