@@ -143,14 +143,14 @@ while (<$ifh>) {
     
     $data{$bam}{path}        = $bam_path;
     $data{$bam}{md5}         = $md5;
-    $data{$bam}{sample}      = $sample      || $rg_info{$rg}{SM};
-    $data{$bam}{population}  = $population  || $rg_info{$rg}{DS};
-    $data{$bam}{project}     = $project     || $rg_info{$rg}{DS};
-    $data{$bam}{lane}        = $lane        || $lane_name;
-    $data{$bam}{library}     = $library     || $rg_info{$rg}{LB};
-    $data{$bam}{seq_centre}  = $seq_centre  || $rg_info{$rg}{CN};
-    $data{$bam}{seq_tech}    = $seq_tech    || $platform_to_tech{ $rg_info{$rg}{PL} };
-    $data{$bam}{insert_size} = $insert_size || $rg_info{$rg}{PI};
+    $data{$bam}{sample}      = $sample      || $rg_info{$rg}{SM} || 'default_sample';
+    $data{$bam}{population}  = $population  || $rg_info{$rg}{DS} || 'default_population';
+    $data{$bam}{project}     = $project     || $rg_info{$rg}{DS} || 'default_project';
+    $data{$bam}{lane}        = $lane        || $lane_name || 'default_lane';
+    $data{$bam}{library}     = $library     || $rg_info{$rg}{LB} || 'default_library';
+    $data{$bam}{seq_centre}  = $seq_centre  || $rg_info{$rg}{CN} || 'default_seq_centre';
+    $data{$bam}{seq_tech}    = $seq_tech    || $platform_to_tech{ $rg_info{$rg}{PL} } || 'default_seq_tech';
+    $data{$bam}{insert_size} = $insert_size || $rg_info{$rg}{PI} || 'default_insert_size';
     $data{$bam}{alias}       = $alias       || $data{$bam}{sample};
 }
 close $ifh;
@@ -224,7 +224,7 @@ foreach my $bam (keys %data)
         my $population = $individual->population();
         unless ($population)  {
             $population = $individual->population($population_name);
-            $individual->add_population($population_name) unless $population;
+            $population = $individual->add_population($population_name) unless $population;
             print "adding population $population_name\n" if $verbose;
         }
         $population->update;
