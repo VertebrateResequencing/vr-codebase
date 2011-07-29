@@ -29,7 +29,7 @@ my $out_csv_prefix = File::Spec->catfile($temp_dir, 'in.bam');
 my $out_csv = $out_csv_prefix.'.recal_data.csv';
 my $rod = File::Spec->catfile('t', 'data', 'S_suis_P17.rod');
 
-my $gatk = VertRes::Wrapper::GATK->new(quiet => 1, dbsnp => $rod, java_memory => 500);
+my $gatk = VertRes::Wrapper::GATK->new(dbsnp => $rod, java_memory => 500);
 isa_ok $gatk, 'VertRes::Wrapper::WrapperI';
 
 # individual method tests
@@ -45,13 +45,10 @@ unlink($out_csv);
 my $debug = 0;
 my @args;
 if ($debug) {
-    @args = (quiet => 0, verbose => 1, build => 'NCBI37');
+    @args = (verbose => 1, build => 'NCBI37');
     # since vcf references chromosomes not present in S suis this would fail...
     # really need some proper g1k tests with build NCBI37 to ensure default
     # vcf files are used and work...
-}
-else {
-    @args = (quiet => 1);
 }
 $gatk = VertRes::Wrapper::GATK->new(reference => $ref, dbsnp => $rod, java_memory => 500, @args);
 my @orig_qs = get_qualities($in_bam);
@@ -68,7 +65,7 @@ $gatk->set_covs('CycleCovariate', 'PositionCovariate');
 is $gatk->get_covs, '-cov CycleCovariate -cov PositionCovariate ', 'correct -cov args set after calling set_covs';
 is $gatk->get_b, '', 'no vcfs by default';
 $gatk->set_b('1,VCF,1.vcf', '2,VCF,2.vcf');
-is $gatk->get_b, '-B:1,VCF 1.vcf -B:2,VCF 2.vcf ', 'correct -B args set after calling set_vcfs';
+is $gatk->get_b, ' -B:1,VCF 1.vcf  -B:2,VCF 2.vcf ', 'correct -B args set after calling set_vcfs';
 is $gatk->get_filters, '', 'filters are empty be default';
 $gatk->set_filters(filters => { StandardFilters => "MQ0 > 40 || SB > -0.10",
                                 HARD_TO_VALIDATE => "(MQ0 / (1.0 * DP)) > 0.1" });

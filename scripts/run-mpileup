@@ -63,6 +63,8 @@ sub new
             
             },
             
+            filter => 'vcf-annotate -f +',
+            
             chunk_size        => 1_000_000,
             debug_chunks      => 0,
             keep_bcfs         => 1,
@@ -163,6 +165,11 @@ sub parse_args
     { 
         $$self{keep_bcfs} = 1;
         $self->warn("The 'keep_bcfs' config key not present, assuming: $$self{keep_bcfs}\n"); 
+    }
+    if ( !exists($$self{filter}) )
+    {
+        $$self{filter} = 'vcf-annotate -f +';
+        $self->warn("The 'filter' config key not present, assuming: $$self{filter}\n"); 
     }
     if ( $$self{clean} ) 
     { 
@@ -635,7 +642,7 @@ sub concat_vcfs
     }
     close($fh);
 
-    $self->cmd("vcf-concat -f $chunks_list | vcf-annotate -f + | bgzip -c > $outfile.part");
+    $self->cmd("vcf-concat -f $chunks_list | $$self{filter} | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
 }
 
