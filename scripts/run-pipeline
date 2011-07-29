@@ -393,6 +393,12 @@ sub get_jobs
                 next;
             }
             
+            if ($action=~/^__SNPs__$/ )
+            {
+                get_snps_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
+                next;
+            }
+            
             if ( $action=~/^__DINDEL__$/ )
             {
                 get_dindel_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
@@ -1246,6 +1252,94 @@ sub get_snps_jobs_from_vrtrack {
     return;
 }
 
+=head2 get_snps_jobs
+
+  Arg [1]    : Pointer to array of jobs
+  Arg [2]    : The config file name
+  Arg [3]    : The mtime of the config file
+  Arg [4]    : The config data.
+  Description: Obtains the directory list and bam fofns from the config file.
+
+=cut
+
+sub get_snps_jobs {
+    my ($jobs,$config,$mtime,$config_data) = @_;
+    
+    croak("Expected bams_fofn key in the config $config.\n") unless defined $$config_data{bams_fofn};
+    croak("Expected root key in the config $config.\n") unless defined $$config_data{root};
+    debug($config_data,"$config\tget_snps_jobs...");
+    
+    $$config_data{new_root} ||= $$config_data{root};
+    Utils::CMD("mkdir -p $$config_data{new_root}") unless (-d $$config_data{new_root});
+    
+    my $bams_fofn = File::Spec->catfile($$config_data{new_root}, 'bams.fofn');
+    unless (-s $bams_fofn) 
+    {
+        copy($$config_data{bams_fofn}, $bams_fofn) || die "Could not copy '$$config_data{bams_fofn}' to '$bams_fofn'\n";
+    }
+    
+    my @bams = VertRes::IO->new()->parse_fofn($bams_fofn, $$config_data{root});
+    debug($config_data, "found " . (scalar @bams) . " bams to be SNP called...");
+    
+    my $jobs_running = 0;
+    my $jobs_failed = 0;
+    my $jobs_done = 0;
+    foreach my $bam (@bams)
+    {
+        my $bam_for_calling = File::Spec->catfile($$config_data{root}, $bam);
+        my $snp_dir = File::Spec->catdir($$config_data{new_root}, $bam);
+        if ($snp_dir =~ m/^(.*)\.bam$/)
+        {
+            $snp_dir = "$1.snp";
+        }
+        else 
+        {
+            die "Fixme: couldn't work out snp dir name, bam $bam doesn't end with .bam?\n";
+        }
+        
+        if (exists $$config_data{outdir})
+        {
+            $snp_dir = File::Spec->catdir($snp_dir, $$config_data{outdir});
+        }
+        
+        unless (-d $snp_dir) 
+        {
+            Utils::CMD("mkdir -p $snp_dir");
+        }     
+        
+        if (-e File::Spec->catfile($snp_dir, '.snps_done')) { $jobs_done++; next; }
+        
+        # make the file list file for the pipeline
+        my $file_list = File::Spec->catfile($snp_dir, "file.list");
+        unless (-e $file_list)
+        {
+            open my $fh, '>', $file_list or die($config_data, "Error opening $file_list\n");
+            print $fh $bam_for_calling, "\n";
+            close $fh;
+        }
+        
+        $$config_data{data}{file_list} = $file_list;
+        my $job = Job->new({lane_info => {}, %$config_data, path => $snp_dir, config => $config, mtime => $mtime});
+        push @$jobs, $job;
+        $jobs_running++;
+        my $job_state = $job->state();
+        if ($job_state eq 'failed') { $jobs_running--; $jobs_failed++; };
+        debug($config_data,".");
+        if ($$config_data{max_simultaneous} && $jobs_running >= $$config_data{max_simultaneous})
+        {
+            debug($config_data,"max number of jobs reached...");
+            last;
+        }
+    }
+    
+    debug($config_data,"failed $jobs_failed...") if $jobs_failed;
+    debug($config_data,"completed $jobs_done...") if $jobs_done;
+    debug($config_data,"running $jobs_running...") if $jobs_running;
+    debug($config_data,"done\n");
+    
+    return;
+}
+
 =head2 get_dindel_jobs
 
   Arg [1]    : Pointer to array of jobs
@@ -1674,10 +1768,6 @@ sub get_mergeup_jobs {
                 } else {
                     warn "Not all the expected $merge bams are present!\n";
                 }
-            }
-            
-            if (-s $done_file) {
-                system("cp $done_file " . File::Spec->catfile($root, '.mergeup_done'));
             }
         }
     }

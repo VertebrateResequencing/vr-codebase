@@ -130,14 +130,14 @@ sub compare
             if ( !defined $ori ) { error("Run out of ori lines?\n"); }
             if ( $$ori[0] eq $$unm[0] && $$ori[1] eq $$unm[1] && $$ori[2] eq $$unm[2] )
             {
-                print $tlog_fh "# skip\n";
+                print $tlog_fh "# skip\t$$ori[0]\t",$$ori[1]+1,"\n";
                 $skipped++;
                 next;
             }
             $pos_unm->unread_line($unm);
         }
         my $map = $pos_map->next_line();
-        printf $tlog_fh "%s\t%d\n",$$map[0],$$map[1]+1;
+        printf $tlog_fh "%s\t%d\t->\t%s\t%d\n",$$ori[0],$$ori[1]+1,$$map[0],$$map[1]+1;
 
         my $ref_ori = $fa_ori->get_slice($$ori[0],$$ori[1]+1-$win,$$ori[1]+1+$win);
         my $ref_new = $fa_new->get_slice($$map[0],$$map[1]+1-$win,$$map[1]+1+$win);
@@ -200,8 +200,8 @@ sub apply_tlog
         if ( !$ori && !$tlog ) { last; }
         if ( !$ori && $tlog or $ori && !$tlog ) { error("FIXME: Different lengths?\n"); }
 
-        if ( $tlog eq "# skip\n" ) { next; }
-        if ( !($tlog=~/^(\S+)\t(\d+)/) ) { error("Could not parse $$opts{tlog}: $tlog"); }
+        if ( $tlog=~/^# skip\t\S+\t\d+$/ ) { next; }
+        if ( !($tlog=~/^\S+\t\d+\t->\t(\S+)\t(\d+)/) ) { error("Could not parse $$opts{tlog}: $tlog"); }
         my $new_chr = $1;
         my $new_pos = $2;
         if ( !($ori=~/^(\S+)\t(\d+)/) ) { error("Could not parse data on input: $ori"); }

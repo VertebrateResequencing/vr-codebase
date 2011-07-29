@@ -23,6 +23,8 @@ my %filters =
     EndDistBias  => { dflt=>1e-4, usage=>'FLOAT', desc=>"Min P-value for end distance bias", nick=>'4' },
     RefN         => { dflt=>'', usage=>'', desc=>"Reference base is N", nick=>'r' },
     Qual         => { dflt=>'10', usage=>'INT', desc=>"Minimum value of the QUAL field", nick=>'Q' },
+    VDB          => { dflt=>'0.005', usage=>'FLOAT', desc=>"Minimum Variant Distance Bias (INFO/VCD)", nick=>'v' },
+    HWE          => { dflt=>1e-4, usage=>'FLOAT', desc=>"Minimum P-value for HWE (plus F<0)", nick=>'H' },
 );
 
 my $opts = parse_params();
@@ -51,7 +53,8 @@ sub error
         "   -a, --annotations <file.gz>         The tabix indexed file with the annotations: CHR\\tFROM[\\tTO][\\tVALUE]+.\n",
         "   -c, --columns <list>                The list of columns in the annotation file, e.g. CHROM,FROM,TO,-,INFO/STR,INFO/GN. The dash\n",
         "                                           in this example indicates that the third column should be ignored. If TO is not\n",
-        "                                           present, it is assumed that TO equals to FROM.\n",
+        "                                           present, it is assumed that TO equals to FROM. When REF and ALT columns are present, only\n",
+        "                                           matching lines are annotated.\n",
         "   -d, --description <file|string>     Header annotation, e.g. key=INFO,ID=HM2,Number=0,Type=Flag,Description='HapMap2 membership'.\n",
         "                                           The descriptions can be read from a file, one annotation per line.\n",
         "   -f, --filter <list>                 Apply filters, list is in the format flt1=value/flt2/flt3=value/etc.\n",
@@ -136,6 +139,7 @@ sub parse_filters
     my %mapping;
     for my $flt (keys %filters)
     {
+        if ( exists($mapping{$filters{$flt}{nick}}) ) { error("FIXME: the nick $filters{$flt}{nick} is not unique.\n"); }
         $mapping{$filters{$flt}{nick}} = $flt;
 
         if ( !defined($filters{$flt}{dflt}) ) { next; }
@@ -266,11 +270,14 @@ sub parse_columns
         elsif ( $col eq 'FROM' ) { $out{$col}=$i; }
         elsif ( $col eq 'TO' ) { $out{$col}=$i; }
         elsif ( $col eq 'ID' ) { $out{$col}=$i; }
+        elsif ( $col eq 'REF' ) { $out{$col}=$i; }
+        elsif ( $col eq 'ALT' ) { $out{$col}=$i; }
         else { error("Missing the -d parameter for the column [$col]\n"); }
     }
     if ( !exists($out{CHROM}) ) { $out{CHROM}=0; }
     if ( !exists($out{FROM}) ) { $out{FROM}=1; }
     if ( !exists($out{TO}) ) { $out{TO}=$out{FROM}; }
+    if ( exists($out{REF}) && !exists($out{ALT}) or !exists($out{REF}) && exists($out{ALT}) ) { error("Expected both REF and ALT columns in the annotation file.\n"); }
     return \%out;
 }
 
@@ -292,89 +299,155 @@ sub annotate
     $vcf->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
     print $vcf->format_header();
 
-    my $reader = Reader->new(file=>$$opts{annotations});
-
     my ($prev_chr,$prev_pos,$annot_from,$annot_to,$annot_line);
-    my @annots = @{$$cols{annots}};
-    my $id_col = exists($$cols{ID}) ? $$cols{ID} : undef;
+    my @annots  = @{$$cols{annots}};
+    my $id_col  = exists($$cols{ID}) ? $$cols{ID} : undef;
+    my $from_col = $$cols{FROM};
+    my $to_col   = $$cols{TO};
+    my $ref_col  = exists($$cols{REF}) ? $$cols{REF} : undef;
+    my $alt_col  = exists($$cols{ALT}) ? $$cols{ALT} : undef;
 
-    # Process the file
-    while (my $line = $vcf->next_line())
+    # Initialize the annotation reader
+    my $reader;
+    if ( exists($$opts{annotations}) )
     {
-        my @rec = split(/\t/,$line);
-        my $chr = $rec[0];
-        my $pos = $rec[1];
-        chomp($rec[-1]);
-
-        # Check if the current annotation reader has the right chromosome
-        if ( !$prev_chr || $prev_chr ne $chr )
+        $reader = Reader->new(file=>$$opts{annotations});
+        my $line = $vcf->next_line();
+        if ( !defined $line ) 
         {
-            $reader->open(region=>$chr);
-            undef $annot_line;
+            # VCF file is empty
+            undef $reader;
         }
         else
         {
-            # Still on the same chromosome, check the order
-            if ( $pos<$prev_pos ) { error("The VCF file not sorted, $chr:$pos comes after $prev_pos\n"); }
+            my @rec = split(/\t/,$line);
+            $prev_chr = $rec[0];
+            $prev_pos = $rec[1];
+            $vcf->_unread_line($line);
+            $reader->open(region=>$prev_chr);
+        }
+    }
+
+    while (defined $reader)
+    {
+        # Read next annotation group, i.e. all records with the same position (or overlapping in case of intervals)
+        my (@annot_lines,$annot_prev_from,$annot_prev_to);
+        while ($reader)
+        {
+            my $annot_line = $reader->next_line();
+            if ( !defined $annot_line ) { last; }
+            my $annot_from = $$annot_line[$from_col];
+            my $annot_to   = $$annot_line[$to_col];
+            if ( !@annot_lines )
+            {
+                push @annot_lines, $annot_line;
+                $annot_prev_from = $annot_from;
+                $annot_prev_to   = $annot_to;
+                next;
+            }
+            if ( $annot_from <= $annot_prev_to or $annot_to <= $annot_prev_to )
+            {
+                push @annot_lines, $annot_line;
+                if ( $annot_prev_to < $annot_to ) { $annot_prev_to = $annot_to; }
+                next;
+            }
+            $reader->unread_line($annot_line);
+            last;
         }
 
-        # Get the corresponding annotation, the order is guaranteed by tabix
-        while (1)
+        # Now loop through the VCF records
+        my $line;
+        while ($line = $vcf->next_line())
         {
-            if ( defined $annot_line && $annot_from<=$pos && $annot_to>=$pos ) 
-            { 
-                # The VCF matches the annotation
-                last; 
-            }
+            my @rec = split(/\t/,$line);
+            my $chr = $rec[0];
+            my $pos = $rec[1];
+            chomp($rec[-1]);
 
-            $annot_line = $reader->next_line();
-            if ( !defined $annot_line ) { last; }
-
-            $annot_from = $$annot_line[ $$cols{FROM} ];
-            $annot_to   = $$annot_line[ $$cols{TO} ];
-
-            if ( $annot_from>$pos )
+            if ( $chr ne $prev_chr )
             {
-                # The annotation file is ahead of VCF
-                $reader->unread_line($annot_line);
-                undef $annot_line;
+                $vcf->_unread_line($line);
+                $prev_chr = $chr;
+                $reader->open(region=>$prev_chr);
                 last;
             }
-            # The VCF is ahead or it matches the annotation. The latter will be checked at 
-            #   the beginning of this loop
-        }
 
-        # Is there a record in the annotation file which describes the VCF record $chr:$pos?
-        if ( defined($annot_line) )
-        {
-            # Sanity check, this should be always true
-            if ( $annot_from>$pos or $annot_to<$pos ) { error("FIXME: Annotation $chr:$annot_from-$annot_to vs VCF $chr:$pos??\n"); }
-
-            # Existing annotations will be overwritten if they have the same name
-            my %values = ();
-            for my $info (@annots)
+            # Quick position-based check: Is there an annotation for this record?
+            if ( !defined $annot_prev_from or $pos < $annot_prev_from )
             {
-                my $val = $$annot_line[$$info{col}];
-                chomp($val);
-
-                if ( $val eq '' or $val eq '.' ) { $val=undef; }       # Existing annotation should be removed
-                elsif ( $$info{is_flag} )
-                {
-                    if ( $val ) { $val=''; }            # Flag annotation should be added
-                    else { $val=undef; }                # Flag annotation should be removed
-                }
-                $values{$$info{id}} = $val;
+                output_line($opts,\@rec);
+                next;
             }
-            $rec[7] = $vcf->add_info_field($rec[7],%values);
+            if ( $pos > $annot_prev_to )
+            {
+                $vcf->_unread_line($line);
+                last;
+            }
+            
+            # Initialize the REF,ALT-based check
+            my ($ref,%alt);
+            if ( defined $alt_col )
+            {
+                $ref = $rec[3];
+                %alt = map { $_=>1 } split(/,/,$rec[4]);
+            }
 
-            if ( defined $id_col && $$annot_line[$id_col] ne '' ) { $rec[2] = $$annot_line[$id_col]; }
+            # Now fill the annotations; Existing annotations with the same tag will be overwritten 
+            my %values = ();
+            my %ids = ();
+            for my $annot_line (@annot_lines)
+            {
+                # Skip annotation lines which are not relevant to this VCF record
+                if ( $$annot_line[$from_col] > $pos or $$annot_line[$to_col] < $pos ) { next; }
+                if ( defined $alt_col && $$annot_line[$ref_col] ne '.' )
+                {
+                    if ( $$annot_line[$ref_col] ne $ref ) { next; }
+                    if ( !exists($alt{$$annot_line[$alt_col]}) ) { next; }
+                }
+                for my $info (@annots)
+                {
+                    my $val = $$annot_line[$$info{col}];
+                    chomp($val);
+
+                    if ( $val eq '' or $val eq '.' ) { $val=undef; }       # Existing annotation should be removed
+                    elsif ( $$info{is_flag} )
+                    {
+                        if ( $val ) { $val=''; }            # Flag annotation should be added
+                        else { $val=undef; }                # Flag annotation should be removed
+                    }
+
+                    # Only single undef values can be present are overriden if defined in other records
+                    if ( !defined $val && exists($values{$$info{id}}) ) { next; }
+                    elsif ( exists($values{$$info{id}}) && !defined $values{$$info{id}}[0] )
+                    {
+                        $values{$$info{id}}[0] = $val;
+                        next;
+                    }
+                    push @{$values{$$info{id}}}, $val;
+                }
+                if ( defined $id_col && $$annot_line[$id_col] ne '' ) { $ids{$$annot_line[$id_col]} = 1; }
+            }
+            if ( scalar keys %ids ) { $rec[2] = join(';', keys %ids); }
+            if ( scalar keys %values )
+            {
+                for my $key (keys %values)
+                {
+                    # Cannot use join on undef values
+                    $values{$key} = scalar @{$values{$key}} == 1 ? $values{$key}[0] : join(',', @{$values{$key}});
+                }
+                $rec[7] = $vcf->add_info_field($rec[7],%values);
+            }
+            output_line($opts,\@rec);
         }
+        if ( !defined $line ) { last; }
+    }
 
-        # Output the line
+    # Finish the VCF, no annotations for this part
+    while (my $line=$vcf->next_line)
+    {
+        my @rec = split(/\t/,$line);
+        chomp($rec[-1]);
         output_line($opts,\@rec);
-
-        $prev_chr = $chr;
-        $prev_pos = $pos;
     }
 
     # Output any lines left in the buffer
@@ -447,7 +520,7 @@ sub apply_local_filters
     my $filters = $$opts{filters};
     my %apply;
 
-    my ($dp,$dp_alt,$mq);
+    my ($dp,$dp_alt,$mq,$vdb);
     if ( $$line[7]=~/DP4=(\d+),(\d+),(\d+),(\d+)/i )
     {
         $dp = $1 + $2 + $3 + $4;
@@ -455,6 +528,7 @@ sub apply_local_filters
     }
     if ( $$line[7]=~/DP=(\d+)/i ) { $dp = $1; }
     if ( $$line[7]=~/MQ=(\d+)/i ) { $mq = $1; }
+    if ( $$line[7]=~/VDB=([^;\t]+)/i ) { $vdb = $1; }
 
     if ( exists($$filters{RefN}) )
     {
@@ -464,12 +538,31 @@ sub apply_local_filters
     {
         $apply{Qual} = $$line[5] < $$filters{Qual} ? 1 : 0;
     }
+    if ( exists($$filters{HWE}) && $$line[7]=~/G3=([^,]+),([^,]+),/ )
+    {
+        my ($rr,$ra);
+        $rr = $1; 
+        $ra = $2; 
+        $apply{HWE} = 0;
+        if ( $$line[7]=~/HWE=([^;\t]+)/ && $1<$$filters{HWE} ) 
+        {
+            my $p = 2*$rr + $ra;
+            if ( $p>0 && $p<1 && $ra/($p*(1-$p))>1 )
+            {
+                $apply{HWE} = 1;
+            }
+        }
+    }
     if ( defined $dp_alt )
     {
         if ( exists($$filters{MinAB}) )
         {
             $apply{MinAB} = $dp_alt < $$filters{MinAB} ? 1 : 0;
         }
+    }
+    if ( defined $vdb )
+    {
+        $apply{VDB} = $vdb < $$filters{VDB} ? 1 : 0;
     }
     if ( defined $dp ) 
     {
@@ -497,15 +590,15 @@ sub apply_local_filters
         }
         if ( exists($$filters{BaseQualBias}) ) 
         { 
-            $apply{BaseQualBias} = $1 < $$filters{BaseQualBias} ? 1 : 0;
+            $apply{BaseQualBias} = $2 < $$filters{BaseQualBias} ? 1 : 0;
         }
         if ( exists($$filters{MapQualBias}) ) 
         { 
-            $apply{MapQualBias} = $1 < $$filters{MapQualBias} ? 1 : 0;
+            $apply{MapQualBias} = $3 < $$filters{MapQualBias} ? 1 : 0;
         }
         if ( exists($$filters{EndDistBias}) ) 
         { 
-            $apply{EndDistBias} = $1 < $$filters{EndDistBias} ? 1 : 0;
+            $apply{EndDistBias} = $4 < $$filters{EndDistBias} ? 1 : 0;
         }
     }
     if ( scalar keys %apply )

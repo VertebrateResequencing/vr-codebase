@@ -56,6 +56,10 @@ data =>
             #_extras => [ '-U ALLOW_UNSET_BAM_SORT_ORDER --platform Solexa' ],
             _extras => [ '-U ALLOW_UNSET_BAM_SORT_ORDER ' ],
         },
+        unified_genotyper => 
+        {
+            genotype_likelihoods_model => 'BOTH',         # Call both SNPs and INDELs
+        },
         variant_filtration =>
         {
             filters => { HARD_TO_VALIDATE => 'MQ0 >= 4 && (MQ0 / (1.0 * DP)) > 0.1' },
@@ -64,12 +68,19 @@ data =>
         },
         variant_recalibrator =>
         {
-            target_titv => 2.08,
+            mode => 'BOTH',         # recalibrate SNPs and INDELs
+            target_titv => 2.08,    # only for plotting
             ignore_filter => 'HARD_TO_VALIDATE',
+            percentBadVariants => 0.05,
+            maxGaussians => 4,
+            training_sets => ['dbsnp,VCF,known=true,training=false,truth=false,prior=8.0,/path/to/dbsnp_123.b37.vcf.gz',
+                              'hapmap,VCF,known=false,training=true,truth=true,prior=15.0,/path/to/hapmap_3.3.b37.sites.vcf.gz',
+                              'omni,VCF,known=false,training=true,truth=false,prior=12.0,/path/to/1000G_omni2.5.b37.sites.vcf.gz'],
         },
         apply_variant_cuts =>
         {
-            fdr_filter_level => '0.11',
+            fs_filter_level => 99.0,
+            mode => 'BOTH',
         },
     },
  
@@ -119,6 +130,19 @@ data =>
 # Note that QCALL is not designed to be run on one sample,
 # so there's no point in adding it to the task list when
 # getting the BAMs from a database.  The pipeline will complain.
+
+# If you don't want to use the database, but also want to call 
+# separately on each of bams, can also use the config file above
+# without the db section, and in the pipeline file, this instead:
+echo '__SNPs__ snps.conf' > snps.pipeline
+
+# Additional options in the data section are new_root to rebase
+# output location by replacing root in the bam files with new_root.
+# Also, outdir may be set to put output into a common subdir at its
+# destination.
+
+# for GATK, can mow supply the option dbSNP_vcf instead of dbSNP_rod
+# if your snp sites are in vcf format rather than rod format.
 
 =head1 DESCRIPTION
 
@@ -211,7 +235,7 @@ our $options =
     samtools_pileup_params => '-d 500',   # homozygous: '-r 0.0001 -d 500'
     vcf_rmdup       => 'vcf-rmdup',
     vcf_stats       => 'vcf-stats',
-    filter4vcf      => 'vcfutils.pl filter4vcf',
+    filter4vcf      => q[awk '/^#/||\\\$6>=3' | vcfutils.pl filter4vcf],
     bam_suffix       => 'intervals.bam',
 };
 
@@ -853,7 +877,7 @@ sub mpileup
 
         split_chunks    => \&mpileup_split_chunks,    
         merge_chunks    => \&glue_vcf_chunks,
-        merge_vcf_files => \&mpileup_postprocess,
+        merge_vcf_files => $$self{filter4vcf} ? \&mpileup_postprocess : undef,
     );
     if ( exists($$self{mpileup_samples}) ) { $opts{mpileup_samples} = $$self{mpileup_samples}; }
     if ( $$self{bcf_based} )
@@ -917,7 +941,7 @@ sub run_mpileup
         # Original code which does not save BCFs and pipes mpileup directly through bcftools to produce VCFs 
         if ( ! -e "$name.vcf.gz" )
         {
-            Utils::CMD(qq[$$self{mpileup_cmd} -b $file_list -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -gcv - | bgzip -c > $name.vcf.gz.part],{verbose=>1});
+            Utils::CMD(qq[$$self{mpileup_cmd} -b $file_list -r $chunk -f $$self{fa_ref} | $$self{bcftools} view -p 0.99 -gcv - | bgzip -c > $name.vcf.gz.part],{verbose=>1});
             Utils::CMD(qq[tabix -f -p vcf $name.vcf.gz.part],{verbose=>1});
             rename("$name.vcf.gz.part.tbi","$name.vcf.gz.tbi") or $self->throw("rename $name.vcf.gz.part.tbi $name.vcf.gz.tbi: $!");
             rename("$name.vcf.gz.part","$name.vcf.gz") or $self->throw("rename $name.vcf.gz.part $name.vcf.gz: $!");
@@ -970,7 +994,7 @@ if ( -e "$basename.vcf.gz" )
     rename("$basename.vcf.gz","$name.unfilt.vcf.gz") or Utils::error("rename $basename.vcf.gz $name.unfilt.vcf.gz: \$!");
 }
 
-Utils::CMD("zcat $name.unfilt.vcf.gz | awk '/^#/||\\\$6>=3' | $$self{filter4vcf} | bgzip -c > $basename.filt.vcf.gz");
+Utils::CMD("zcat $name.unfilt.vcf.gz | $$self{filter4vcf} | bgzip -c > $basename.filt.vcf.gz");
 Utils::CMD("zcat $basename.filt.vcf.gz | $$self{vcf_stats} > $name.vcf.gz.stats");
 Utils::CMD("tabix -f -p vcf $basename.filt.vcf.gz");
 rename("$basename.filt.vcf.gz.tbi","$name.vcf.gz.tbi") or Utils::error("rename $basename.filt.vcf.gz.tbi $name.vcf.gz.tbi: \$!");
@@ -1026,7 +1050,10 @@ sub gatk
         $$gopts{reference} = $$self{fa_ref};
     }
     if ( !exists($$gopts{reference}) ) { $$gopts{reference} = $$self{fa_ref}; }
-
+    if ( !exists($$gopts{bs}) && exists($$self{dbSNP_vcf}) && $$self{dbSNP_vcf}) 
+    {
+        $$gopts{bs} = ["dbsnp,VCF $$self{dbSNP_vcf}"];
+    }
     my $bams = [ $$self{file_list} ];
     my %opts =
     (
@@ -1100,26 +1127,26 @@ sub get_gatk_opts
 sub run_gatk_chunk
 {
     my ($self,$bam,$name,$chunk) = @_;
-
+    
     my $gatk;
     my %opts = $self->get_gatk_opts(qw(all unified_genotyper));
-
+    
     $gatk = VertRes::Wrapper::GATK->new(%opts);
-    $gatk->unified_genotyper($bam,"$name.vcf.gz",L=>$chunk);
+    $gatk->unified_genotyper($bam,"$name.vcf.gz",L=>$chunk,%opts);
     Utils::CMD("tabix -f -p vcf $name.vcf.gz");
-
+    
     if ( !$$self{indel_mask} or !-e $$self{indel_mask} )
     {
         %opts = $self->get_gatk_opts(qw(all indel_genotyper));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
-        $gatk->indel_genotyper($bam, "$name.indels.raw.bed", "$name.indels.detailed.bed",L=>$chunk);
+        $gatk->indel_genotyper($bam, "$name.indels.raw.bed", "$name.indels.detailed.bed",L=>$chunk,%opts);
         Utils::CMD("make_indel_mask.pl $name.indels.raw.bed 10 $name.indels.mask.bed",{verbose=>1});
-
+    
         %opts = $self->get_gatk_opts(qw(all variant_filtration));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
-        $gatk->set_b("variant,VCF,$name.vcf.gz", "mask,Bed,$name.indels.mask.bed");
-        $gatk->variant_filtration("$name.filtered.vcf.gz");
-
+        $gatk->set_b("variant,VCF,$name.vcf.gz","mask,Bed,$name.indels.mask.bed");
+        $gatk->variant_filtration("$name.filtered.vcf.gz",%opts);
+    
         unlink("$name.vcf.gz");
         unlink("$name.vcf.gz.tbi");
         unlink("$name.indels.detailed.bed");
@@ -1127,12 +1154,12 @@ sub run_gatk_chunk
         unlink("$name.indels.mask.bed");
         unlink("$name.indels.mask.bed.idx");
         unlink("$name.indels.raw.bed");
-
+    
         Utils::CMD("tabix -f -p vcf $name.filtered.vcf.gz");
         rename("$name.filtered.vcf.gz.tbi","$name.vcf.gz.tbi") or $self->throw("rename $name.filtered.vcf.gz.tbi $name.vcf.gz.tbi: $!");
         rename("$name.filtered.vcf.gz","$name.vcf.gz") or $self->throw("rename $name.filtered.vcf.gz $name.vcf.gz: $!");
     }
-
+    
     Utils::CMD("touch _$name.done",{verbose=>1});
 }
 
@@ -1174,7 +1201,7 @@ sub run_gatk_postprocess
         %opts = $self->get_gatk_opts(qw(all variant_filtration));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
         $gatk->set_b("variant,VCF,$vcf", "mask,Bed,$$self{indel_mask}");
-        $gatk->variant_filtration("$basename.filtered.vcf.gz");
+        $gatk->variant_filtration("$basename.filtered.vcf.gz", %opts);
         rename("$basename.filtered.vcf.gz","$basename.tmp.vcf.gz") or $self->throw("rename $basename.filtered.vcf.gz $basename.tmp.vcf.gz: $!");
         Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
     }
@@ -1183,29 +1210,24 @@ sub run_gatk_postprocess
         Utils::CMD("cp $basename.vcf.gz $basename.tmp.vcf.gz");
         Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
     }
-
+    
     if ( $$self{dbSNP_rod} )
     {
         # Recalibrate
-        %opts = $self->get_gatk_opts(qw(all generate_variant_clusters));
-        $gatk = VertRes::Wrapper::GATK->new(%opts);
-        $gatk->set_b("input,VCF,$basename.tmp.vcf.gz");
-        $gatk->set_annotations('HaplotypeScore', 'SB', 'QD', 'HRun');
-        $gatk->generate_variant_clusters("$basename.filtered.clusters");
-
         %opts = $self->get_gatk_opts(qw(all variant_recalibrator));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
         $gatk->set_b("input,VCF,$basename.tmp.vcf.gz");
-        $gatk->variant_recalibrator("$basename.filtered.clusters","$basename.recalibrated.vcf.gz");
-        rename("$basename.recalibrated.vcf.gz","$basename.tmp.vcf.gz") or $self->throw("rename $basename.recalibrated.vcf.gz $basename.tmp.vcf.gz: $!");
-
+        $gatk->add_b(@{$opts{training_sets}});
+        $gatk->set_annotations('HaplotypeScore', 'MQRankSum', 'ReadPosRankSum', 'HRun');
+        $gatk->variant_recalibrator("$basename.recal", "$basename.tranches", %opts);
+        
         # Filter the calls down to an implied 10.0% novel false discovery rate
-        %opts = $self->get_gatk_opts(qw(all apply_variant_cuts));
+        %opts = $self->get_gatk_opts(qw(all apply_recalibration));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
         $gatk->set_b("input,VCF,$basename.tmp.vcf.gz");
         Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
-        $gatk->apply_variant_cuts("$basename.recalibrated.vcf.gz.dat.tranches","$basename.cutted.vcf.gz");
-        rename("$basename.cutted.vcf.gz","$basename.tmp.vcf.gz") or $self->throw("rename $basename.cutted.vcf.gz $basename.tmp.vcf.gz: $!");
+        $gatk->apply_recalibration("$basename.recal", "$basename.tranches","$basename.recalibrated.vcf.gz", %opts);
+        rename("$basename.recalibrated.vcf.gz","$basename.tmp.vcf.gz") or $self->throw("rename $basename.recalibrated.vcf.gz $basename.tmp.vcf.gz: $!");
         Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
     }
 
@@ -1355,7 +1377,7 @@ sub cleanup_provides {
     my @provides;
 
     if ($self->{task}{cleanup}){
-        push @provides, 'cleanup.done';
+        push @provides, '.snps_done';
     }
     else {
         @provides = @{$self->cleanup_requires($lane_path)};
@@ -1396,6 +1418,7 @@ sub cleanup {
         for my $suff (@suffixes) {
             my $old_file = File::Spec->catfile($lane_path, $task, "$task.$suff");
             my $new_file = File::Spec->catfile($lane_path, "$task.$suff");
+            next unless (-s $old_file);
             $fs->copy($old_file, $new_file) or $self->throw("Error copying files:\nold: $old_file\nnew: $new_file");
         }
 
@@ -1406,8 +1429,15 @@ sub cleanup {
         Utils::CMD("rm -r " . File::Spec->catdir($lane_path, $task));
     } 
 
-    Utils::CMD("rm " . File::Spec->catfile($lane_path, 'file.list'));
-    Utils::CMD("touch " . File::Spec->catfile($lane_path, 'cleanup.done'));
+    unless ($self->{task}{update_db})
+    {
+        my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
+        Utils::CMD("rm $job_status") if (-e $job_status);
+    }
+    
+    my $file_list = File::Spec->catfile($lane_path, 'file.list');
+    Utils::CMD("rm $file_list") if (-e $file_list);
+    Utils::CMD("touch " . File::Spec->catfile($lane_path, '.snps_done'));
     return $$self{'Yes'};
 }
 
@@ -1470,7 +1500,6 @@ sub update_db {
     $vrtrack->transaction_commit();
 
     if ($self->{task}{cleanup}) {
-        Utils::CMD("rm " . File::Spec->catfile($lane_path, 'cleanup.done'));
         my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
         Utils::CMD("rm $job_status") if (-e $job_status);
     }
