@@ -393,6 +393,11 @@ sub bam_to_fastq_requires {
     }
 }
 
+sub is_paired {
+  my ($self) = @_;
+  return $self->{vrlane}->{is_paired};
+}
+
 =head2 bam_to_fastq_provides
 
  Title   : bam_to_fastq_provides
@@ -403,11 +408,21 @@ sub bam_to_fastq_requires {
 
 =cut
 
+
 sub bam_to_fastq_provides {
-    my ($self, $lane_path) = @_;
-    my @files = @{$self->{files} || []};
+  my ($self, $lane_path) = @_;
+  my @files = @{$self->{files} || []};
+   
+  if( $self->is_paired )
+  {
     return @files ? [] : ["$self->{lane}_1.fastq.gz", "$self->{lane}_2.fastq.gz", "$self->{lane}_1.fastq.gz.fastqcheck", "$self->{lane}_2.fastq.gz.fastqcheck"];
+  }
+  else
+  {
+    return @files ? [] : ["$self->{lane}.fastq.gz", "$self->{lane}.fastq.gz.fastqcheck"];
+  }
 }
+
 
 =head2 bam_to_fastq
 
@@ -427,6 +442,18 @@ sub bam_to_fastq {
     my $in_bam = $self->{fsu}->catfile($lane_path, $bam);
     my $fastq_base = $self->{lane};
     
+    
+    my $fastqs_str ; 
+    if( $self->is_paired )
+    {
+      $fastqs_str  = qq{ (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq"), File::Spec->catfile(\$dir, "$self->{lane}_2.fastq")) };
+    }
+    else
+    {
+      $fastqs_str  = qq{ (File::Spec->catfile(\$dir, "$self->{lane}.fastq")) };
+    }
+    
+    
     # (bam2fastq itself does full sanity checking and safe result file creation)
     my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."bam2fastq.pl");
     open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -436,7 +463,7 @@ use VertRes::Utils::Sam;
 use File::Spec;
 
 my \$dir = '$lane_path';
-my \@fastqs = (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq"), File::Spec->catfile(\$dir, "$self->{lane}_2.fastq"));
+my \@fastqs = $fastqs_str;
 
 # convert to fastq
 unless (-e \$fastqs[0] && -e \$fastqs[1]) {
