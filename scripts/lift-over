@@ -12,7 +12,14 @@ use lib "$FindBin::Bin";
 use FaSlice;
 
 my $opts = parse_params();
-run_liftover($opts);
+if ( exists($$opts{tlog}) )
+{
+    apply_tlog($opts);
+}
+else
+{
+    run_liftover($opts);
+}
 
 exit;
 
@@ -27,8 +34,9 @@ sub error
         "   are modified, the rest of the line and comment lines (starting with #) are left unchanged.\n",
         "Usage: lift-over [OPTIONS] > out_file\n",
         "Options:\n",
+        "   -a, --apply-log <file>          Apply log file from previous run, do not lift-over nor check the reference again.\n",
         "   -c, --chain-file <file>         The liftover chain file.\n",
-        "   -i, --in <file>                 The file to be lift-overed\n",
+        "   -i, --in <file>                 The file to be lifted over\n",
         "   -n, --new-ref <file>            The reference of the output file\n",
         "   -o, --ori-ref <file>            The reference of the input file\n",
         "   -p, --prefix <dir>              Output files prefix\n",
@@ -45,6 +53,7 @@ sub parse_params
     my $opts = {};
     while (defined(my $arg=shift(@ARGV)))
     {
+        if ( $arg eq '-a' || $arg eq '--apply-log' ) { $$opts{tlog}=shift(@ARGV); next }
         if ( $arg eq '-n' || $arg eq '--new-ref' ) { $$opts{new_ref}=shift(@ARGV); next }
         if ( $arg eq '-o' || $arg eq '--ori-ref' ) { $$opts{ori_ref}=shift(@ARGV); next }
         if ( $arg eq '-p' || $arg eq '--prefix' ) { $$opts{prefix}=shift(@ARGV); next }
@@ -53,11 +62,14 @@ sub parse_params
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
-    if ( !exists($$opts{chain}) ) { error("Missing the -c option.\n") }
-    if ( !exists($$opts{prefix}) ) { error("Missing the -p option.\n") }
     if ( !exists($$opts{in_file}) ) { error("Missing the -i option.\n") }
-    if ( !exists($$opts{new_ref}) ) { error("Missing the -n option.\n") }
-    if ( !exists($$opts{ori_ref}) ) { error("Missing the -o option.\n") }
+    if ( !exists($$opts{tlog}) ) 
+    {
+        if ( !exists($$opts{chain}) ) { error("Missing the -c option.\n") }
+        if ( !exists($$opts{prefix}) ) { error("Missing the -p option.\n") }
+        if ( !exists($$opts{new_ref}) ) { error("Missing the -n option.\n") }
+        if ( !exists($$opts{ori_ref}) ) { error("Missing the -o option.\n") }
+    }
     return $opts;
 }
 
@@ -116,6 +128,7 @@ sub compare
     my $mismatch  = 0;
     my $rmismatch = 0;
     my $skipped   = 0;
+    my $ignored   = 0;
     my $nlines    = 0;
     my $win = 10;
     while (1)
@@ -137,7 +150,6 @@ sub compare
             $pos_unm->unread_line($unm);
         }
         my $map = $pos_map->next_line();
-        printf $tlog_fh "%s\t%d\t->\t%s\t%d\n",$$ori[0],$$ori[1]+1,$$map[0],$$map[1]+1;
 
         my $ref_ori = $fa_ori->get_slice($$ori[0],$$ori[1]+1-$win,$$ori[1]+1+$win);
         my $ref_new = $fa_new->get_slice($$map[0],$$map[1]+1-$win,$$map[1]+1+$win);
@@ -153,26 +165,35 @@ sub compare
         $ref_ori = uc($ref_ori);
         $ref_new = uc($ref_new);
 
-        if ( substr($ref_new,$win,1) ne substr($ref_ori,$win,1) ) { $rmismatch++; }
+        my $ok = 1;
+        if ( substr($ref_new,$win,1) ne substr($ref_ori,$win,1) ) { $ok=0; $rmismatch++; }
         for (my $i=0; $i<2*$win+1; $i++)
         {
             if ( substr($ref_new,$i,1) eq substr($ref_ori,$i,1) ) { $match++; }
-            else { $mismatch++; }
+            else { $ok=0; $mismatch++; }
+        }
+
+        if ( $ok )
+        {
+            printf $tlog_fh "%s\t%d\t->\t%s\t%d\n",$$ori[0],$$ori[1]+1,$$map[0],$$map[1]+1;
+        }
+        else
+        {
+            $ignored++;
+            print $tlog_fh "# ignored\t$$ori[0]\t",$$ori[1]+1,"\n";
         }
     }
     close($tlog_fh);
 
     open(my $fh,'>',"$$opts{prefix}/liftover.stats") or error("$$opts{prefix}/liftover.stats: $!");
     printf $fh "unmapped                                .. %.1f%% (%d)\n", $skipped*100./$nlines,$skipped;
+    printf $fh "ignored because of mismatches           .. %.1f%% (%d)\n", $ignored*100./$nlines,$ignored;
     printf $fh "reference mismatches (1bp)              .. %.1f%% (%d)\n", $rmismatch*100./$nlines, $rmismatch;
     printf $fh "flanking sequence mismatches (%dbp win) .. %.1f%% (%d)\n", 2*$win+1, $mismatch*100./($match+$mismatch),$mismatch/(2*$win+1);
     printf $fh "                  matches               .. %.1f%% (%d)\n", $match*100./($match+$mismatch), $match/(2*$win+1);
     close($fh);
 
     print STDERR "Check sanity of the transform: $$opts{prefix}/liftover.stats\n";
-
-    # printf STDERR "FaSlice ori: calls %d, cached %d (%d%%)\n", $$fa_ori{nqueries},$$fa_ori{nqueries}-$$fa_ori{ncache_missed},($$fa_ori{nqueries}-$$fa_ori{ncache_missed})*100./$$fa_ori{nqueries};
-    # printf STDERR "FaSlice new: calls %d, cached %d (%d%%)\n", $$fa_new{nqueries},$$fa_new{nqueries}-$$fa_new{ncache_missed},($$fa_new{nqueries}-$$fa_new{ncache_missed})*100./$$fa_new{nqueries};
 }
 
 
@@ -201,12 +222,16 @@ sub apply_tlog
         if ( !$ori && $tlog or $ori && !$tlog ) { error("FIXME: Different lengths?\n"); }
 
         if ( $tlog=~/^# skip\t\S+\t\d+$/ ) { next; }
-        if ( !($tlog=~/^\S+\t\d+\t->\t(\S+)\t(\d+)/) ) { error("Could not parse $$opts{tlog}: $tlog"); }
-        my $new_chr = $1;
-        my $new_pos = $2;
+        if ( $tlog=~/^# ignored\t\S+\t\d+$/ ) { next; }
+        if ( !($tlog=~/^(\S+)\t(\d+)\t->\t(\S+)\t(\d+)/) ) { error("Could not parse $$opts{tlog}: $tlog"); }
+        my $exp_chr = $1;
+        my $exp_pos = $2;
+        my $new_chr = $3;
+        my $new_pos = $4;
         if ( !($ori=~/^(\S+)\t(\d+)/) ) { error("Could not parse data on input: $ori"); }
         my $ori_chr = $1;
         my $ori_pos = $2;
+        if ( $exp_chr ne $ori_chr or $exp_pos ne $ori_pos ) { error("Out of sync, expected $exp_chr:$exp_pos got $ori_chr:$ori_pos\n"); }
         print "$new_chr\t$new_pos$'";
     }
     close($tlog_fh);
