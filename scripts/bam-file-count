@@ -12,15 +12,19 @@ bam-file-count --db dbname (optional:  --study UK10K_XXX_CCC,UK10K_XXX_BBB --fil
 
 For example:
 Quick count of the bam file totals for projects ONLY:
+
 1. bam-file-count --db vrtrack_uk10k_cohort
 
 Calculate the counts for projects AND samples:
+
 2. bam-file-count --db vrtrack_uk10k_cohort --samples
 
 Compare the actual file names and show any files missing from iRods and/or the database for projects ONLY:
+
 3. bam-file-count --db vrtrack_uk10k_cohort --files
 
 Show missing files for projects AND samples:
+
 4. bam-file-count --db vrtrack_uk10k_cohort --files --samples
 
 Any of the above queries can be performed for particuar studies only by adding ths study flag followed by a comma-separated list of study names or ids,
