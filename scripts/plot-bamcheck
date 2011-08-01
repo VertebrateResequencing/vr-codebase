@@ -375,7 +375,7 @@ sub plot_isize
     my $isize_max = `grep ^IS  $$opts{bamcheck} | cut -f 2- | awk 'BEGIN{max=0;isize=0}{if($2>max){max=$2;isize=$1}}END{print isize}'`;
     my $isize_cnt = `grep ^IS  $$opts{bamcheck} | cut -f 2- | awk 'BEGIN{max=0;isize=0}{if($2>max){max=$2;isize=$1}}END{print max}'`;
     
-    return if(  (!(defined $isize_max)) || (!(defined $isize_cnt)) ||  ($isize_max <= 0) || ($isize_cnt <=0))
+    return if(  (!(defined $isize_max)) || (!(defined $isize_cnt)) ||  ($isize_max <= 0) || ($isize_cnt <=0));
     
     # Create the gnuplot script. Quick solution: the script relies on backticks and unix commands, may be changed in future
     open(my $fh,'>',$$args{gp}) or error("$$args{gp}: $!");
