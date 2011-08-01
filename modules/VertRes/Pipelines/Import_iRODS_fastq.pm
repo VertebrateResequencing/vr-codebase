@@ -198,7 +198,8 @@ sub bam_to_fastq {
 
     my $in_bam = $self->{fsu}->catfile($lane_path, $bam);
     my $fastq_base = $self->{lane};
-   
+
+
     my $fastqs_str ; 
     if( $self->is_paired )
     {
@@ -220,7 +221,6 @@ use File::Spec;
 
 my \$dir = '$lane_path';
 my \@fastqs = $fastqs_str;
-
 # convert to fastq
 VertRes::Utils::Sam->new(verbose => 1, quiet => 0)->bam2fastq(qq[$in_bam], qq[$fastq_base]);
 
@@ -252,7 +252,15 @@ exit;
 sub update_db_requires
 {
     my ($self, $lane_path) = @_;
-    return ["$self->{lane}_1.fastq.gz", "$self->{lane}_2.fastq.gz", "$self->{lane}_1.fastq.gz.fastqcheck", "$self->{lane}_2.fastq.gz.fastqcheck"];
+    
+    if( $self->is_paired )
+    {
+      return ["$self->{lane}_1.fastq.gz", "$self->{lane}_2.fastq.gz", "$self->{lane}_1.fastq.gz.fastqcheck", "$self->{lane}_2.fastq.gz.fastqcheck"];
+    }
+    else
+    {
+      return ["$self->{lane}.fastq.gz", "$self->{lane}.fastq.gz.fastqcheck"];
+    }
 }
 
 # This subroutine will check existence of the key 'db'. If present, it is assumed
