@@ -249,10 +249,11 @@ sub rename_files
         {
             Utils::relative_symlink("$file.fastqcheck","$lane_path/${name}_$i.fastq.gz.fastqcheck");
         }
-        if ( -e "$file.md5" && ! -e "$lane_path/${name}_$i.fastq.md5" )
+        if ( -e "$file.md5" && ! -e "$lane_path/${name}_$i.fastq.gz.md5" )
         {
-            Utils::relative_symlink("$file.md5","$lane_path/${name}_$i.fastq.md5");
+            Utils::relative_symlink("$file.md5","$lane_path/${name}_$i.fastq.gz.md5");
         }
+        
         $i++;
     }
     return $$self{'Yes'};
