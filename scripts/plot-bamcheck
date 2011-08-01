@@ -372,8 +372,8 @@ sub plot_isize
 
     my $args = get_defaults($opts,"$$opts{prefix}insert-size.png");
     
-    my $isize_max = `grep ^IS  $$opts{bamcheck} | cut -f 2- | awk 'BEGIN{max=0;isize=0}{if($2>max){max=$2;isize=$1}}END{print isize}'`;
-    my $isize_cnt = `grep ^IS  $$opts{bamcheck} | cut -f 2- | awk 'BEGIN{max=0;isize=0}{if($2>max){max=$2;isize=$1}}END{print max}'`;
+    my $isize_max = `grep ^IS  $$opts{bamcheck} | cut -f 2- | awk 'BEGIN{max=0;isize=0}{if(\$2>max){max=\$2;isize=\$1}}END{print isize}'`;
+    my $isize_cnt = `grep ^IS  $$opts{bamcheck} | cut -f 2- | awk 'BEGIN{max=0;isize=0}{if(\$2>max){max=\$2;isize=\$1}}END{print max}'`;
     
     return if(  (!(defined $isize_max)) || (!(defined $isize_cnt)) ||  ($isize_max <= 0) || ($isize_cnt <=0));
     
@@ -426,6 +426,19 @@ sub plot_gc
         close($fh);
         $ref_stats = qq['$tmp_file' with lines lt 0 title 'Reference', ];
     }
+
+    my $gcf_max = `grep ^GCF  $$opts{bamcheck}  | cut -f 2- | awk '{if(\$2>max)max=\$2}END{print max}'`;
+    
+    # if its single ended dont plot the reverse reads
+    my $gcl_max_plot ='';
+    my $plot_reverse_str = '';
+    my $gcl_max = `grep ^GCL  $$opts{bamcheck}  | cut -f 2- | awk '{if(\$2>max)max=\$2}END{print max}'`;
+
+    if((defined $gcl_max) && $gcl_max > 0))
+    {
+      $gcl_max_plot = 'gcl_max = ' . $gcl_max ;
+      $plot_reverse_str = q[, '< grep ^GCL ] . $$opts{bamcheck} . q[ | cut -f 2-' using 1:($2/gcl_max) with lines title 'Last fragments' lc 2 ];
+    }
     
     # Create the gnuplot script. Quick solution: the script relies on backticks and unix commands, may be changed in future
     open(my $fh,'>',$$args{gp}) or error("$$args{gp}: $!");
@@ -433,8 +446,8 @@ sub plot_gc
         set terminal png size 600,500 truecolor font "DejaVuSansMono,9"
         set output "] . $$args{img} . q["
         
-        gcf_max = `grep ^GCF ] . $$opts{bamcheck} . q[ | cut -f 2- | awk '{if($2>max)max=$2}END{print max}'`
-        gcl_max = `grep ^GCL ] . $$opts{bamcheck} . q[ | cut -f 2- | awk '{if($2>max)max=$2}END{print max}'`
+        gcf_max = ] . $gcf_max . q[
+        ] . $gcl_max_plot . q[
 
         peak = `grep ^GC\[FL\] ] . $$opts{bamcheck} . q[ | cut -f 2- | awk '{if($2>max){max=$2;pos=$1}}END{print pos}'`
         set label sprintf("%.1f",peak) at peak,1 front offset 1,0
@@ -444,7 +457,7 @@ sub plot_gc
         set yrange [0:1.1]
         
         set title "] . $$args{title} . q["
-        plot ] . $ref_stats . q[ '< grep ^GCF ] . $$opts{bamcheck} . q[ | cut -f 2-' using 1:($2/gcf_max) with lines lc 1 title 'First fragments', '< grep ^GCL ] . $$opts{bamcheck} . q[ | cut -f 2-' using 1:($2/gcl_max) with lines title 'Last fragments' lc 2
+        plot ] . $ref_stats . q[ '< grep ^GCF ] . $$opts{bamcheck} . q[ | cut -f 2-' using 1:($2/gcf_max) with lines lc 1 title 'First fragments']. $plot_reverse_str. q[
     ];
     close($fh);
 
