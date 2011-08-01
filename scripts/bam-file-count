@@ -205,7 +205,8 @@ sub get_irods_files
 	my @irods_proj_files = `/software/irods/icommands/bin/imeta -z seq qu -d $source = "$name" | grep dataObj | sed s/'dataObj: '//`;
 	foreach ( sort(@irods_proj_files) ) {
 	    chomp;
-		push ( @{ ${$hashref}{$name} }, $_);
+            next if /#0.bam$/;  # skip unassigned deplexed reads
+	    push ( @{ ${$hashref}{$name} }, $_);
 	}
 }
 
