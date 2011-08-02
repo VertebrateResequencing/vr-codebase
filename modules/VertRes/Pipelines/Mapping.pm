@@ -744,8 +744,16 @@ sub map {
     
     # get all the meta info about the lane
     my %info = VertRes::Utils::Hierarchy->new->lane_info($self->{vrlane});
-    my $insert_size_for_mapping = $info{insert_size} || 2000;
+    my $insert_size_for_mapping = 0;
     my $insert_size_for_samheader = $info{insert_size} || 0;
+    my $insert_size_str = '';
+    if($self->{vrlane}->{is_paired})
+    {
+       $insert_size_for_mapping = $info{insert_size} || 2000;
+       $insert_size_str =  qq{insert_size => $insert_size_for_mapping, };
+    }
+    
+    
     
     my $mapper_class = $self->{mapper_class};
     my $mapper_exe = $self->{mapper_obj}->exe;
@@ -799,7 +807,7 @@ my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe]);
 my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
                                @split_read_args
                                output => '$sam_file',
-                               insert_size => $insert_size_for_mapping,
+                               $insert_size_str
                                read_group => '$info{lane}',
                                error_file => '$prev_error_file');
 
