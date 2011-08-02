@@ -18,6 +18,7 @@ use VRTrack::Project;
 use VRTrack::Sample;
 use VRTrack::Library;
 use VRTrack::Lane;
+use VRTrack::Multiplex_pool;
 use VertRes::Utils::VRTrackFactory;
 use Data::Dumper;
 
@@ -152,7 +153,7 @@ left: -480px; /*position where enlarged image should offset horizontally */
 CSS
 
 my $sw  = SangerWeb->new({
-    'title'   => q(Pending View v1),
+    'title'   => q(Pending View v2),
     'banner'  => q(),
     'inifile' => SangerWeb->document_root() . q(/Info/header.ini),
     'style'   => $css,
@@ -259,9 +260,14 @@ sub displayPendingRequestsPage
 	my @projects = @{ $vrtrack->projects() };
 
 	my @libpendings;
+	my @libstarted;
 	my @seqpendings;
+	my @seqstarted;
+	my @mplexpendings;
+	my @mplexstarted;
 	my $lib_type = "library";
 	my $seq_type = "sequence";
+	my $plex_type = "multiplex sequence";
 
 	print qq[
     	<h2 align="center" style="font: normal 900 1.5em arial"><a href="$SCRIPT_NAME">Pending Requests</a></h2>
@@ -277,7 +283,8 @@ sub displayPendingRequestsPage
      
     my $pname = $project->name;
 
-    my $pendingflag = "pending";
+    my $pendingflag = 'pending';
+    my $startedflag = 'started';
 
     foreach( @{$samples} ) 
     {	
@@ -287,11 +294,10 @@ sub displayPendingRequestsPage
 		foreach ( @{$library_requests}) {
 			my $librequest = $_;
 			my $lib_status = $librequest->prep_status();
-			if ($lib_status eq $pendingflag) {
-				my $lib_date = $librequest->changed();
-				my $ssid = $librequest->ssid();
-				push @libpendings, [$projectID, $pname, $sname, $lib_status, $lib_date, $ssid];
-			}
+			my $lib_date = $librequest->changed();
+			my $ssid = $librequest->ssid();
+			if ($lib_status eq $pendingflag) { push @libpendings, [$projectID, $pname, $sname, $lib_status, $lib_date, $ssid]; }
+			elsif ($lib_status eq $startedflag) { push @libstarted, [$projectID, $pname, $sname, $lib_status, $lib_date, $ssid]; }
 		}
 		my $libraries = $sample->libraries();
 		foreach ( @{$libraries}) {
@@ -300,17 +306,33 @@ sub displayPendingRequestsPage
 			foreach ( @{$seq_requests} ) {
 				my $seqrequest = $_;
 				my $seq_status = $seqrequest->seq_status();
-				if ($seq_status eq $pendingflag) {
-					my $seq_date = $seqrequest->changed();
-					my $ssid = $seqrequest->ssid();
-					push @seqpendings, [$projectID, $pname, $sname, $seq_status, $seq_date, $ssid];
-				}
+				my $seq_date = $seqrequest->changed();
+				my $ssid = $seqrequest->ssid();				
+				if ($seq_status eq $pendingflag) { push @seqpendings, [$projectID, $pname, $sname, $seq_status, $seq_date, $ssid];}
+				elsif ($seq_status eq $startedflag) { push @seqstarted, [$projectID, $pname, $sname, $seq_status, $seq_date, $ssid];}
 			}
+			foreach ( @{$library->library_multiplex_pools}){
+				my $mplex = VRTrack::Multiplex_pool->new($vrtrack, $_->multiplex_pool_id);
+                foreach ( @{ $mplex->seq_requests } ){
+                	my $seqrequest = $_;
+                	my $seq_status = $seqrequest->seq_status();
+                	my $seq_date = $seqrequest->changed();
+					my $ssid = $seqrequest->ssid();
+					if ($seq_status eq $pendingflag) { push @mplexpendings, [$projectID, $pname, $sname, $seq_status, $seq_date, $ssid]; }
+					if ($seq_status eq $startedflag) { push @mplexstarted, [$projectID, $pname, $sname, $seq_status, $seq_date, $ssid]; }
+                }
+            }
+            @mplexpendings = sort {$a->[5] <=> $b->[5]} @mplexpendings;
+            @mplexstarted = sort {$a->[5] <=> $b->[5]} @mplexstarted;
 		}
     }
 	}
-	printPendingRows(\@libpendings, $lib_type, $db, $cgi);
-	printPendingRows(\@seqpendings, $seq_type, $db, $cgi);
+	my @libtotal = (@libpendings, @libstarted);
+	my @seqtotal = (@seqpendings, @seqstarted);
+	my @mplextotal = (@mplexpendings, @mplexstarted);
+	printPendingRows(\@libtotal, $lib_type, $db, $cgi);
+	printPendingRows(\@seqtotal, $seq_type, $db, $cgi);
+	printPendingRows(\@mplextotal, $plex_type, $db, $cgi);
     print qq[
     	</div>
     ];

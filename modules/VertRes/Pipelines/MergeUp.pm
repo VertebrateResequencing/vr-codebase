@@ -1113,11 +1113,11 @@ sub cleanup {
     }
     
 	my @suffixes = qw(.o .e .jids .o.previous .e.previous);
-	my @basenames = ('', '_raw.bam', '_pe.bam', '_se.bam');
+	my @basenames = ('', '_raw.bam', '_pe.bam', '_se.bam', '_pe.markdup.bam', '_se.markdup.bam');
 	my @jobs = qw(tag_strip library_merge lib_markdup extract_intervals platform_merge 
 					sample_merge index_platform_bams index_sample_bam);
 	
-	my @dirs;
+	my @dirs = ($lane_path);
     foreach my $job_base (@jobs) {
 		my $done_file = $fsu->catfile($lane_path, ".$job_base\_done");
 		next unless -e $done_file;
