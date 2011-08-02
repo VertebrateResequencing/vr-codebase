@@ -303,6 +303,11 @@ sub _do_mapping_args {
     
     $out_hash{ref} = $args{ref};
     $out_hash{output} = $args{output};
+    if($args{is_paired})
+    {
+      $out_hash{is_paired} = $args{is_paired};
+    }
+    
     
     foreach my $arg (keys %do_mapping_args) {
         if (defined $args{$arg}) {
