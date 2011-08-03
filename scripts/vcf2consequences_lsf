@@ -35,7 +35,7 @@ GetOptions
 );
 
 my $missing = 0;
-if( ! ($species && $input_vcf &&  $nodes) || $help ){$missing = 1;}
+if( ! ($species && $input_vcf && $nodes) || $help ){$missing = 1;}
 $buffer_size = 500 unless ($buffer_size);
 
 if( $missing )
@@ -96,6 +96,7 @@ sub process_vcf
 		}
 
 		my $vcf_tmp = "$input_vcf.$$.$filenum";
+		$vcf_tmp =~ s/\.gz//i;
 		open(VCF, ">$vcf_tmp") or die $!;
     	print VCF $vcf->format_header();
 
@@ -154,8 +155,8 @@ sub start_bsub_thread {
 	$cmd_line .= " -gerp" if $gerp;
 	$cmd_line .= " -grantham" if $grantham;
 
-	print "Starting $fn\n";
+	print STDERR "Starting $fn\n";
 	system($cmd_line);
-	print "$fn finished\n";
+	print STDERR "$fn finished\n";
 }
 
