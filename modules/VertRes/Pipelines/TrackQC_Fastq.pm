@@ -681,7 +681,7 @@ sub transposon
      ];
      close $fh;
 
-     LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_transposon", $self, qq{perl -w _transposon.pl});
+     LSF::run($lock_file,"$lane_path/$sample_dir","_$$self{lane}_transposon", $self, qq{perl -w _transposon.pl});
    }
    return $$self{'No'};
 }
