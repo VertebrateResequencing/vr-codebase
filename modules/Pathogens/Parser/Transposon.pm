@@ -60,8 +60,8 @@ sub _build_percentage_reads_with_tag
   my $tag = $self->has_tag ? $self->tag : $self->inferred_tag;
   my $count = 0;
   my $tag_count = 0;
-  
-  open(INPUT_FILE, '-|', 'gzcat', $self->filename) or die 'Couldnt open input file';
+
+  open(INPUT_FILE, "-|",'gunzip -c '.$self->filename) or die 'Couldnt open input file';
   while(<INPUT_FILE>)
   {
     my $line = $_;
@@ -82,7 +82,7 @@ sub _build_inferred_tag
    my %tag_frequency;
    my $count = 0;
    
-   open(INPUT_FILE, '-|', 'gzcat', $self->filename) or die 'Couldnt open input file';
+   open(INPUT_FILE, "-|",'gunzip -c '.$self->filename) or die 'Couldnt open input file';
    while(<INPUT_FILE>)
    {
      my $line = $_;
