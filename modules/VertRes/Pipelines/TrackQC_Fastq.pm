@@ -655,7 +655,7 @@ sub transposon
    if(( defined $$self{reads_contain_transposon}) && $$self{reads_contain_transposon})
    {
      my $tag_length = $$self{transposon_length} || 7;
-     my $output_file = "$lane_path/$sample_dir/".$$self{lane}."transposon";
+     my $output_file = "$lane_path/$sample_dir/".$$self{lane}.".transposon";
      
      my $transposon_sequence_str;
      if(defined $$self{transposon_sequence})
@@ -671,11 +671,11 @@ sub transposon
           use warnings;
           use Pathogens::Parser::Transposon;
           my \$transposon = Pathogens::Parser::Transposon->new(
-            'filename'   => 'q[$$self{lane}_1.fastq.gz]',
-            'tag_length' => q[$tag_length],
+            'filename'   => '$$self{lane}_1.fastq.gz',
+            'tag_length' => $tag_length,
             $transposon_sequence_str
           );
-          open(OUT,'+>',"q[$output_file]") or die "couldnt open transposon output file \$!";
+          open(OUT,'+>','$output_file') or die "couldnt open transposon output file \$!";
           print OUT \$transposon->percentage_reads_with_tag;
           close(OUT);
      ];
