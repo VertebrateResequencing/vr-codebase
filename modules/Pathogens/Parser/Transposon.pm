@@ -1,12 +1,12 @@
 =head1 NAME
 
-Transposon.pm - Parse a fastq file to find the percentage of tags that are present in reads
+Transposon.pm - Parse a fastq.gz file to find the percentage of tags that are present in reads
 
 =head1 SYNOPSIS
 
 use Pathogens::Parser::Transposon;
 my $tradis_transposon = Pathogens::Parser::Transposon->new(
-  filename   => 'myfile.fastq',
+  filename   => 'myfile.fastq.gz',
   tag_length => 7,
 );
 $tradis_transposon->percentage_reads_with_tag ;
@@ -20,12 +20,12 @@ If the tag is unknown, work it out by sampling the file and taking the most freq
 
 =head2 new
 
-  Arg [1]    : filename   => fastq file
+  Arg [1]    : filename   => fastq.gz file
                tag_length => integer with the tag length
                tag => user provided tag (optional)
                num_reads_to_sample => if a tag isnt provided, subsample this number of reads to find the most common tag, defaults to 1000, 0 samples whole file
   Example    :   my $tradis_transposon = Pathogens::Parser::Transposon->new(
-                 filename   => 'myfile.fastq',
+                 filename   => 'myfile.fastq.gz',
                  tag_length => 7,
                  tag => 'ACGT');
   Description: returns Transposon object
@@ -61,7 +61,7 @@ sub _build_percentage_reads_with_tag
   my $count = 0;
   my $tag_count = 0;
   
-  open(INPUT_FILE, $self->filename) or die 'Couldnt open input file';
+  open(INPUT_FILE, '-|', 'gzcat', $self->filename) or die 'Couldnt open input file';
   while(<INPUT_FILE>)
   {
     my $line = $_;
@@ -82,7 +82,7 @@ sub _build_inferred_tag
    my %tag_frequency;
    my $count = 0;
    
-   open(INPUT_FILE, $self->filename) or die 'Couldnt open input file';
+   open(INPUT_FILE, '-|', 'gzcat', $self->filename) or die 'Couldnt open input file';
    while(<INPUT_FILE>)
    {
      my $line = $_;
