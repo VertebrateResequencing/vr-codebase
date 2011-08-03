@@ -88,7 +88,7 @@ sub fields_dispatch {
                target_bases_20X         => sub { $self->target_bases_20X(@_)},
                target_bases_50X         => sub { $self->target_bases_50X(@_)},
                target_bases_100X        => sub { $self->target_bases_100X(@_)},
-               exome_design_id          => sub { $self->exome_design_id(@_)});
+               exome_design_id          => sub { $self->exome_design_id(@_)}),
                percentage_reads_with_transposon => sub { $self->percentage_reads_with_transposon(@_)};
 
     return \%fields;
