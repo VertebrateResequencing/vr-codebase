@@ -1,11 +1,11 @@
 =head1 NAME
 
-TraDISTransposon.pm - Parse a fastq file to find the percentage of tags that are present in reads
+Transposon.pm - Parse a fastq file to find the percentage of tags that are present in reads
 
 =head1 SYNOPSIS
 
-use Pathogens::Parser::TraDISTransposon;
-my $tradis_transposon = Pathogens::Parser::TraDISTransposon->new(
+use Pathogens::Parser::Transposon;
+my $tradis_transposon = Pathogens::Parser::Transposon->new(
   filename   => 'myfile.fastq',
   tag_length => 7,
 );
@@ -24,12 +24,12 @@ If the tag is unknown, work it out by sampling the file and taking the most freq
                tag_length => integer with the tag length
                tag => user provided tag (optional)
                num_reads_to_sample => if a tag isnt provided, subsample this number of reads to find the most common tag, defaults to 1000, 0 samples whole file
-  Example    :   my $tradis_transposon = Pathogens::Parser::TraDISTransposon->new(
+  Example    :   my $tradis_transposon = Pathogens::Parser::Transposon->new(
                  filename   => 'myfile.fastq',
                  tag_length => 7,
                  tag => 'ACGT');
-  Description: returns TraDISTransposon object
-  Returntype : Pathogens::Parser::TraDISTransposon object
+  Description: returns Transposon object
+  Returntype : Pathogens::Parser::Transposon object
 
 
 =head2 percentage_reads_with_tag
@@ -41,7 +41,7 @@ If the tag is unknown, work it out by sampling the file and taking the most freq
 
 =cut
 
-package Pathogens::Parser::TraDISTransposon;
+package Pathogens::Parser::Transposon;
 
 use Moose;
 
