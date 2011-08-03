@@ -235,8 +235,8 @@ our $options =
     samtools_pileup_params => '-d 500',   # homozygous: '-r 0.0001 -d 500'
     vcf_rmdup       => 'vcf-rmdup',
     vcf_stats       => 'vcf-stats',
-    filter4vcf      => q[awk '/^#/||\\\$6>=3' | vcfutils.pl filter4vcf],
-    bam_suffix       => 'intervals.bam',
+    filter4vcf      => qq[awk '/^#/||\\\$6>=3' | vcfutils.pl filter4vcf],
+    bam_suffix      => 'intervals.bam',
 };
 
 
