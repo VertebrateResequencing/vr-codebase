@@ -954,6 +954,10 @@ sub update_db
     # Length of reference sequence mapped (for TrackQC_Fasta pipeline.)
     my $sequence_mapped = undef;
     if ( -e "$sample_dir/${name}.cover" ) { $sequence_mapped = do "$sample_dir/${name}.cover"; }
+    
+    
+    my $percentage_reads_with_transposon = undef;
+    if ( -e "$sample_dir/${name}.transposon" ) { $percentage_reads_with_transposon = do "$sample_dir/${name}.transposon"; }
 
     $vrtrack->transaction_start();
 
@@ -984,6 +988,7 @@ sub update_db
     $mapping->rmdup_bases_mapped($rmdup_bases_mapped_c);
     $mapping->adapter_reads($nadapters);
     $mapping->clip_bases($bases_total-$bases_trimmed);
+    $mapping->percentage_reads_with_transposon($percentage_reads_with_transposon);
 
     $mapping->mean_insert($avg_isize);
     $mapping->sd_insert($sd_isize);
