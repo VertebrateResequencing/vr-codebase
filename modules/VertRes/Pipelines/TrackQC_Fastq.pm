@@ -669,14 +669,14 @@ sub transposon
      qq[ 
           use strict;
           use warnings;
-          use Pathogens::Parser::TraDISTransposon;
-          my \$tradis_transposon = Pathogens::Parser::TraDISTransposon->new(
+          use Pathogens::Parser::Transposon;
+          my \$transposon = Pathogens::Parser::Transposon->new(
             'filename'   => 'q[$$self{lane}_1.fastq.gz]',
             'tag_length' => q[$tag_length],
             $transposon_sequence_str
           );
           open(OUT,'+>',"q[$output_file]") or die "couldnt open transposon output file \$!";
-          print OUT \$tradis_transposon->percentage_reads_with_tag;
+          print OUT \$transposon->percentage_reads_with_tag;
           close(OUT);
      ];
      close $fh;
