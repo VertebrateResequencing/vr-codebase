@@ -287,7 +287,7 @@ sub process_conseqs
 
         if ( scalar %$conseq )
         {
-            push @conseqs, join('+',sort(keys %$conseq));
+            push @conseqs, join(',',sort(keys %$conseq));
         }
     }
     if ( scalar @conseqs )
