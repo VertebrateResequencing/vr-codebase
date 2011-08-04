@@ -846,7 +846,7 @@ sub _get_dbh {
     
     unless (defined $self->{_dbh}) {
         my %cd = VertRes::Utils::VRTrackFactory->connection_details('rw');
-        my $dbname = 'vrtrack_fsu_file_exists';
+        my $dbname = 'vrtrack_fsu_file_exists_v2';
         $self->{_dbh} = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 });
         
         unless ($self->{_dbh}) {
