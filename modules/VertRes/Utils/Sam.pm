@@ -3654,4 +3654,51 @@ sub _intervals_file2hash {
     return \%intervals;
 }
 
+
+=head2 coverage
+
+ Title   : coverage
+ Usage   : my @bases_covered = $obj->coverage($bam_file,@coverage_depth);
+ Function: Uses samtools pileup to find the number of bases covered to specified depths.
+           If coverage depth is not supplied then function returns 1X coverage.
+ Returns : array of int. 
+ Args    : Bam filename and optional list of coverage depths eg (1,2,5,10,20,50,100)
+
+=cut
+
+sub coverage
+{
+    my ($self, $bam, @bin) = @_;
+
+    unless(@bin){ @bin = (1); } # Default to 1X coverage.
+
+    # Sort coverage depths into ascending order.
+    # Zero base count.
+    my @sorted_bin;
+    my @cover;
+    for(my $i=0; $i < @bin; $i++)
+    {
+	$sorted_bin[$i][0] = $i;
+	$sorted_bin[$i][1] = $bin[$i];
+	$cover[$i] = 0;
+    }
+    @sorted_bin = sort {my @a = @{$a}; my @b = @{$b}; $a[1] <=> $b[1];} @sorted_bin;
+
+    # Run pileup. 
+    my $sam = VertRes::Wrapper::samtools->new(verbose => $self->verbose, run_method => 'open', quiet => 1);
+    my $fh = $sam->pileup($bam, undef); 
+    while(my $inp = <$fh>)
+    {
+	my @col = split(/\s+/,$inp,5);
+	for(my $i=0; $i < @bin; $i++)
+	{
+	    if($sorted_bin[$i][1] <= $col[3]){ $cover[$sorted_bin[$i][0]]++; }
+	    else{ last; }
+	} 
+    }
+    close $fh;
+
+    return @cover;
+}
+
 1;
