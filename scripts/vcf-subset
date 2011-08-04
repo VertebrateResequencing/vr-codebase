@@ -27,6 +27,7 @@ sub error
         "Options:\n",
         "   -c, --columns <string>           File or comma-separated list of columns to keep in the vcf file. If file, one column per row\n",
         "   -e, --exclude-ref                Exclude rows not containing variants.\n",
+        "   -f, --force                      Proceed anyway even if VCF does not contain some of the samples.\n",
         "   -p, --private                    Print only rows where only the subset columns carry an alternate allele.\n",
         "   -r, --replace-with-ref           Replace the excluded types with reference allele instead of dot.\n",
         "   -t, --type <list>                Comma-separated list of variant types to include: SNPs,indels.\n",
@@ -55,6 +56,7 @@ sub parse_params
             next;
         }
         if ( $arg eq '-e' || $arg eq '--exclude-ref' ) { $$opts{'exclude_ref'} = 1; next }
+        if ( $arg eq '-f' || $arg eq '--force' ) { $$opts{'force'} = 1; next }
         if ( $arg eq '-p' || $arg eq '--private' ) { $$opts{'private'} = 1; next }
         if ( $arg eq '-r' || $arg eq '--replace-with-ref' ) { $$opts{'replace_with_ref'} = 1; next }
         if ( $arg eq '-u' || $arg eq '--keep-uncalled' ) { $$opts{'keep_uncalled'} = 1; next }
@@ -92,12 +94,21 @@ sub read_columns
 
 sub check_columns
 {
-    my ($vcf,$columns) = @_;
+    my ($opts,$vcf,$columns) = @_;
+    my @out;
     for my $col (@$columns)
     {
-        if ( exists($$vcf{has_column}{$col}) ) { next; }
-        error(qq[No such column in the VCF file: "$col"\n]);
+        if ( exists($$vcf{has_column}{$col}) ) 
+        { 
+            push @out, $col;
+            next; 
+        }
+
+        my $msg = qq[No such column in the VCF file: "$col"\n];
+        if ( $$opts{force} ) { warn($msg); }
+        else { error($msg); }
     }
+    return \@out;
 }
 
 sub vcf_subset
@@ -109,7 +120,7 @@ sub vcf_subset
 
     # Init requested column info. If not present, include all columns.
     my $columns = exists($$opts{columns_file}) ? read_columns($$opts{columns_file}) : [];
-    check_columns($vcf,$columns);
+    $columns = check_columns($opts,$vcf,$columns);
     if ( !@$columns && (my $ncols=@{$$vcf{columns}})>9 )
     {
         push @$columns, @{$$vcf{columns}}[9..($ncols-1)];
