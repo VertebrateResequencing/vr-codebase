@@ -61,7 +61,11 @@ sub parse_args
         $self->throw();
     }
     if ( !exists($$self{in_vcf}) ) { $self->throw("Expected the -i option.\n"); }
-    if ( !exists($$self{known_vcf}) ) { $self->throw("Missing the known_vcf config key.\n"); }
+    if ( !exists($$self{known_vcf}) ) 
+    { 
+        $$self{known_vcf} = '--';
+        $self->warn("The 'known_vcf' config key not present, running without reference panel.\n"); 
+    }
     if ( !exists($$self{outdir}) ) { $self->throw("Expected the -o option.\n"); }
     if ( !exists($$self{gen_map}) ) 
     {
@@ -197,7 +201,8 @@ sub impute2
     my $genmap = $$self{gen_map};
     $genmap =~ s/\{CHROM\}/$chr/;
     if ( ! -e $genmap ) { $self->throw("The genmap [$genmap] does not exist.\n"); }
-    $self->cmd(qq[impute2 -g $outdir/01.impute_haps -sample_g $outdir/01.impute_samples -known_haps_g $outdir/01.known_haps -sample_known_haps_g $outdir/01.known_samples -m $genmap -int $from $to $$self{impute2_args} -prob_g -pgs_prob -o_gz -o $outdir/02.impute2.$chunk >$outdir/02.impute2.$chunk.o 2>$outdir/02.impute2.$chunk.e]);
+    my $known = $$self{known_vcf} eq '--' ? '' : "-known_haps_g $outdir/01.known_haps -sample_known_haps_g $outdir/01.known_samples";
+    $self->cmd(qq[impute2 -g $outdir/01.impute_haps -sample_g $outdir/01.impute_samples $known -m $genmap -int $from $to $$self{impute2_args} -prob_g -pgs_prob -o_gz -o $outdir/02.impute2.$chunk >$outdir/02.impute2.$chunk.o 2>$outdir/02.impute2.$chunk.e]);
 
     $self->cmd(qq[touch $outfile]);
 }
@@ -210,6 +215,11 @@ sub impute2_to_vcf
     if ( -e "$outdir/02.impute2.$chunk.gz" )
     {
         $self->cmd(qq[vcf-impute2 -r $chunk -i $$self{in_vcf} -o $outdir/02.impute2.$chunk 2>$outfile.e | bgzip -c > $outfile.part]);
+    }
+    elsif ( -z "$outdir/02.impute2.$chunk.e" )
+    {
+        $self->cmd(qq[touch $outfile]);
+        return;
     }
     else
     {
@@ -228,7 +238,11 @@ sub concat_vcfs
 {
     my ($self,$outfile,@files) = @_;
     open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
-    print $fh join("\n",@files), "\n";
+    for my $file (@files)
+    {
+        if ( -z $file ) { next; }
+        print $fh $file, "\n";
+    }
     close($fh);
     $self->cmd(qq[vcf-concat -f $outfile.list | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
