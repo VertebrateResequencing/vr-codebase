@@ -1,0 +1,285 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+bam-file-count
+
+=head1 SYNOPSIS
+
+This script checks the bam files contained in iRods with those in the tracking database specified, either for all the studies on that database or just those specified
+
+bam-file-count --db dbname (optional:  --study UK10K_XXX_CCC,UK10K_XXX_BBB --files --samples)
+
+For example:
+Quick count of the bam file totals for projects ONLY:
+
+1. bam-file-count --db vrtrack_uk10k_cohort
+
+Calculate the counts for projects AND samples:
+
+2. bam-file-count --db vrtrack_uk10k_cohort --samples
+
+Compare the actual file names and show any files missing from iRods and/or the database for projects ONLY:
+
+3. bam-file-count --db vrtrack_uk10k_cohort --files
+
+Show missing files for projects AND samples:
+
+4. bam-file-count --db vrtrack_uk10k_cohort --files --samples
+
+Any of the above queries can be performed for particuar studies only by adding ths study flag followed by a comma-separated list of study names or ids,
+e.g. bam-file-count --db vrtrack_uk10k_neuro --study UK10K_NEURO_MUIR,UK10K_NEURO_UKSCZ,UK10K_NEURO_FSZ --samples
+
+Author: John Maslen <jm23@sanger.ac.uk>
+
+
+=head1 AUTHOR
+
+John Maslen, jm23@sanger.ac.uk, Team 145
+
+=cut
+
+use strict;
+use warnings;
+no warnings 'uninitialized';
+
+use Getopt::Long;
+use VertRes::Utils::VRTrackFactory;
+use VRTrack::Lane;
+use Scalar::Util qw(looks_like_number);
+use Test::Deep::NoTest qw(eq_deeply);
+use Carp;
+
+my ($db, $study, $show_files, $show_samples, $help);
+
+GetOptions(
+    'db=s'        =>  \$db,
+    'study=s'		=>  \$study,
+    'files'		=>  \$show_files,
+    'samples'		=>  \$show_samples,
+    'help'	    =>  \$help,
+    );
+
+($db && !$help) or die <<USAGE;
+    Usage: $0   
+                --db        <specify db name>
+                --study     [studies/project ids or names (individual or comma-separated) can be given]
+                --files     [this will display ALL file names of any missing bam files, otherwise counts only are shown]
+                --samples   [this will show all information for samples as well as projects]
+                --help      <this message>
+
+bam-file-count --db dbname (optional:  --study UK10K_XXX_CCC,UK10K_XXX_BBB --files --samples)
+
+(see perldoc for more info)
+
+Examples:
+
+1. bam-file-count --db vrtrack_uk10k_cohort
+
+2. bam-file-count --db vrtrack_uk10k_cohort --samples
+
+3. bam-file-count --db vrtrack_uk10k_cohort --files
+
+4. bam-file-count --db vrtrack_uk10k_cohort --files --samples
+
+Any of the above queries can be performed for particuar studies only by adding ths study flag followed by a comma-separated list of study names or ids,
+e.g. bam-file-count --db vrtrack_uk10k_neuro --study UK10K_NEURO_MUIR,UK10K_NEURO_UKSCZ,UK10K_NEURO_FSZ --samples
+
+USAGE
+
+my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => $db,
+                                                          mode => 'rw');
+unless ($vrtrack){
+    die "Can't connect to tracking database\n";
+}
+my $projects;
+my $project_names = ();
+my $sample_names = ();
+
+print "Database: $db\n";
+
+if ($study) {
+	my %study_hash   = ();
+	my @studies = split(/,/, $study);
+	for my $study_input (@studies) {
+		my $project;
+		if (looks_like_number($study_input)) {
+			$project = $vrtrack->get_project_by_id($study_input);
+		}
+		else {
+			$project = $vrtrack->get_project_by_name(uc($study_input));
+		}
+		unless ($project){
+			warn "Unable to retrieve project $study_input\n";
+        	next;
+     	}
+     	$study_hash{$project->name} = $project; 
+	}
+	for my $proj (keys %study_hash) {
+		push @$projects, $study_hash{$proj};
+	}
+}
+else {
+	$projects = $vrtrack->projects();
+}
+
+unless ($projects) {
+	die "No projects found for studies or database given.\n";
+}
+
+
+my $sql_proj = qq[SELECT f.name FROM latest_file f, latest_lane l, latest_library b, latest_sample s where s.project_id = ? and s.sample_id = b.sample_id and b.library_id = l.library_id and l.lane_id = f.lane_id];
+
+my $sql_samp = qq[SELECT s.name, f.name FROM latest_file f, latest_lane l, latest_library b, latest_sample s where s.project_id = ? and s.sample_id = b.sample_id and b.library_id = l.library_id and l.lane_id = f.lane_id];
+
+my $sth_proj = $vrtrack->{_dbh}->prepare($sql_proj);
+my $sth_samp = $vrtrack->{_dbh}->prepare($sql_samp);
+
+for my $project (@$projects) {
+	my %irods_files;
+	my %db_files;
+	
+	my $name = $project->name();
+	push @{ $project_names }, $name;
+	my $proj_id = $project->id();
+	print "\tProject: $name\n";
+	get_irods_files(\%irods_files, $name, 'study');
+	
+	if ($sth_proj->execute($proj_id)) {
+		my ($col1);
+		$sth_proj->bind_col(1, \$col1);
+		while ($sth_proj->fetch) {
+			push ( @{ $db_files{$name} }, $col1);
+		}
+	}
+	
+	my $irods_counts = hash_total_counts(\%irods_files);
+	my $db_counts = hash_total_counts(\%db_files);
+	print "\t\tThere are ", $irods_counts," bam files in iRods.\n";
+	print "\t\tThere are ", $db_counts," bam files in $db.\n";	
+
+	if ($show_samples) {
+		if ($sth_samp->execute($proj_id)) {		
+			my ($sample_name, $file_name);
+			$sth_samp->bind_columns(undef, \$sample_name, \$file_name);
+			while ($sth_samp->fetch) {
+				if (!$db_files{$sample_name}) { push @$sample_names, $sample_name; }		
+				push ( @{ $db_files{$sample_name} }, $file_name);
+			}
+		}	
+		foreach (@{$sample_names}) { get_irods_files(\%irods_files, $_, 'sample') };
+		if ( !$show_files ) {
+			print "\t\t[Columns: 1=Sample, 2=# in iRods, 3=# in db]\n";
+			foreach ( @{$sample_names} ) {
+				print "\t\t", $_, "\t", ($irods_files{$_} ? scalar @{ $irods_files{$_} } : '0'), "\t", ($db_files{$_} ? scalar @{ $db_files{$_} } : '0'), "\n";
+			}
+		}		
+	}
+	my %irods_files_sort;
+	my %db_files_sort;
+	
+
+	if ($show_files) {
+	
+		sort_hash_array(\%db_files, \%db_files_sort);
+		sort_hash_array(\%irods_files, \%irods_files_sort);
+	
+		my $files_equal = eq_deeply(\%irods_files_sort, \%db_files_sort);
+				
+		if ( $files_equal && ( $irods_counts > 0 && $db_counts > 0 ) ) {
+			print "\t\tAll of the bam files are found in both iRods and the database ".($study ? "for all samples in the study $study." : "$db for all projects".($show_samples ? " and samples.\n" : ".\n"));
+		}				
+		else{
+			my (%db_missing_files, %irods_missing_files); 
+			my @all_names = ($sample_names ? ( @{$sample_names}, @{$project_names} ) : (@{$project_names}) );
+			array_differences(\@all_names, \%db_files_sort, \%irods_files_sort, \%db_missing_files, \%irods_missing_files); 
+    		show_missing_files(\%db_missing_files, $project_names, $sample_names, 1);	
+    		show_missing_files(\%irods_missing_files, $project_names, $sample_names, 0);
+		}
+	}
+}
+
+sub get_irods_files
+{
+	my ($hashref, $name, $source) = @_;
+	my @irods_proj_files = `/software/irods/icommands/bin/imeta -z seq qu -d $source = "$name" | grep dataObj | sed s/'dataObj: '//`;
+	foreach ( sort(@irods_proj_files) ) {
+	    chomp;
+            next if /#0.bam$/;  # skip unassigned deplexed reads
+	    push ( @{ ${$hashref}{$name} }, $_);
+	}
+}
+
+sub sort_hash_array
+{
+	my ($hash2sort, $sorthash) = @_;
+	my @keys = sort ( keys %{$hash2sort} );
+	for my $key (@keys) {
+		my @arrayvals = sort @{ ${$hash2sort}{$key} };
+		push ( @{ ${$sorthash}{$key} }, @arrayvals );
+	}
+}
+
+sub hash_total_counts
+{
+	(my $hashref) = @_;
+	my @keys = keys %{$hashref};
+	my $sum = 0;
+	foreach ( @keys ) {
+		$sum += scalar @{ ${$hashref}{$_} };
+	}
+	return $sum;
+}
+
+sub array_differences
+{
+	my ($names, $hash1, $hash2, $miss1, $miss2) = @_;
+	for my $name ( @{ $names } ) {
+		my %in_arr1 = ();
+		next unless ( ${$hash1}{$name} && ${$hash2}{$name} );
+		my @arr1 = @{${$hash1}{$name}};
+		my @arr2 = @{${$hash2}{$name}};
+		my @diff1;
+		my @diff2;
+		for my $file (@arr1) { $in_arr1{$file} = 1; }
+		my %in_arr2 = ();
+		for my $file (@arr2) {
+			$in_arr2{$file} = 1;
+			if (!$in_arr1{$file}) { push (@diff1, $file); }
+		}	 
+		for my $file (@arr1) {
+			if (!$in_arr2{$file}) { push (@diff2, $file); }
+		}
+		if (@diff1) { push ( @{ ${$miss1}{$name} }, @diff1 ) };
+		if (@diff2) { push ( @{ ${$miss2}{$name} }, @diff2 ) };	
+	}	
+}
+ 
+sub show_missing_files
+{
+	my ($missing, $proj, $samp, $flag) = @_;
+	return unless scalar %{ $missing };	
+	$flag ? print "\t\tThe following Bam files are in iRods, but not in the database:\n" : print "The following Bam files are in the database, but not in iRods:\n";
+	foreach (@{ $proj }) {
+		if ( ${$missing}{$_} ) {
+			my @files = @{ ${$missing}{$_} };
+			if (@files) {
+				print "\t\t".($samp ? "\tWhole project: " : '');
+				for (my $i=1;$i<=scalar @files; $i++) {
+					if ($i == 1) { print "\t$files[$i-1]";}
+					elsif ($i % 4 != 0) {print "\t$files[$i-1]";}
+					else {print "\t$files[$i-1]\n\t\t";}
+				}
+				print "\n";	
+			}
+		}	
+	}	 
+	foreach (@{ $samp }) {
+		if ( ${$missing}{$_} ) {
+			my @files = @{ ${$missing}{$_} };
+			if (@files) {
+				print "\t\t\tSample: $_ ".join(', ',@files),"\n";
+			}
+		}
+	}
+}
