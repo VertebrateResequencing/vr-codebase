@@ -262,16 +262,21 @@ sub run
     my %opts = (%$options);
     if ( !exists($opts{bsub_opts}) )
     {
-        if ( !defined($opts{queue}) && defined($opts{runtime}) ) 
-        { 
-            if ( $opts{runtime} <= 720.0 ) { $opts{queue} = 'normal'; }
-            elsif ( $opts{runtime} <= 60*24*2 ) { $opts{queue} = 'long'; }
-            else { $opts{queue} = 'basement'; }
+        if ( !defined($opts{queue}) ) 
+        {            
+            if( defined($opts{runtime}) ) 
+            { 
+                if ( $opts{runtime} <= 720.0 ) { $opts{queue} = 'normal'; }
+                elsif ( $opts{runtime} <= 60*24*2 ) { $opts{queue} = 'long'; }
+                else { $opts{queue} = 'basement'; }
+            }
+            else 
+            { 
+                $opts{queue} = 'normal';
+            }
         }
-        else 
-        { 
-            $opts{queue} = 'normal';
-        }
+        Utils::error("Invalid queue specified: $opts{queue}\n") if( $opts{queue} ne 'normal' && $opts{queue} ne 'long' && $opts{queue} ne 'basement' && $opts{queue} ne 'yesterday' );
+        
         $opts{bsub_opts} = "-q $opts{queue}";
         if ( defined($opts{memory}) ) 
         {
