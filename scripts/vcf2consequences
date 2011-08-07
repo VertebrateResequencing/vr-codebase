@@ -287,12 +287,16 @@ sub process_conseqs
 
         if ( scalar %$conseq )
         {
-            push @conseqs, join(',',sort(keys %$conseq));
+
+            # jws 2011-08-07 changed this back to + so the GERP/PolyPhen/etc
+            # sep can be ',' instead of '=' which is invalid VCF.
+
+            push @conseqs, join('+',sort(keys %$conseq));
         }
     }
     if ( scalar @conseqs )
     {
-        $info = $vcf->add_info_field($info,'CSQ'=>join(',',@conseqs));
+        $info = $vcf->add_info_field($info,'CSQ'=>join('+',@conseqs));
     }
     return $info;
 }
@@ -381,7 +385,10 @@ sub call_conseqs
 
 	if ($gerp && $allele !~ '-') {	# ignore indels
 
-		my $gerp_text = "GERP=";
+                # jws 2011-08-07 Can't have "GERP=", as '=' is
+                # not allowed with an INFO string.  Use ','
+                # instead.
+		my $gerp_text = "GERP,";
 
 		# minimum slice size 2 for gerp scores
 		my $gerp_slice = $ensembl->{slice}->fetch_by_region('chromosome', $vf->seq_region_name, $vf->start, $vf->start+1);
@@ -417,7 +424,11 @@ sub get_nssnp_annotations
 			my $pred = $tva->$pred_meth;
 
 			if($pred) {
-				$pred_text .= "$tool=";
+
+                                # jws 2011-08-07 Can't have "$tool=", as '=' is
+                                # not allowed with an INFO string.  Use ','
+                                # instead.
+				$pred_text .= "$tool,";
 
 				$pred =~ s/\s+/\_/;
 				$pred_text .= $pred;
@@ -437,7 +448,7 @@ sub get_nssnp_annotations
 			if ($grantham) {
 				my $ref_aa = $tv->get_reference_TranscriptVariationAllele()->peptide();
 				my $var_aa = $tva->peptide();
-				$pred_text .= ":Grantham=" . $grantham_matrix->score($ref_aa,$var_aa);
+				$pred_text .= ":Grantham," . $grantham_matrix->score($ref_aa,$var_aa);
 			}
 			last;
 		}
