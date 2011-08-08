@@ -1045,6 +1045,18 @@ sub get_import_jobs_from_vrtrack
     my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
     my $fnames  = $vrtrack->processed_file_hnames('import'=>0);
 
+    my @lanes = @{$vrtrack->processed_lane_hnames() || []};
+    if (defined $config_data->{limits}) {
+        @lanes = filter_lanes($config_data->{limits}, \@lanes, $vrtrack, $config);
+        debug($config_data, "got ", scalar(@lanes), " lanes that passed your limits...");
+    }
+
+    my %filtered_lanes = ();
+    foreach my $vrlane (@lanes)
+    {
+        $filtered_lanes{$vrlane->name} = 1;
+    }
+    
     my %lanes_to_run = ();
     foreach my $fname (@$fnames)
     {
@@ -1055,6 +1067,7 @@ sub get_import_jobs_from_vrtrack
 
         my $file = VRTrack::File->new_by_hierarchy_name($vrtrack,$fname) or croak("Could not get File for $fname: $config\n");
         my $lane = VRTrack::Lane->new($vrtrack, $file->lane_id());
+        unless (exists $filtered_lanes{$lane->name}) { next; }
         if ( $lane->is_withdrawn() ) { next; }
 
         my $path = $vrtrack->hierarchy_path_of_lane_hname($lane->name);
