@@ -30,13 +30,13 @@ use VertRes::Parser::bam;
 use VertRes::Parser::sam;
 
 my $RETROSEQ_BIN = qq[/nfs/users/nfs_t/tk2/code/RetroSeqCheckouts/master/RetroSeq/bin/retroseq.pl];
-my $CHUNKS_PER_JOB = 6;
+my $CHUNKS_PER_JOB = 7;
 my $MAX_RETRIES = 3;
 my $DEFAULT_DISCOVERY_MEMORY = 2000;
-my $DEFAULT_CALLING_MEMORY = 5000;
+my $DEFAULT_CALLING_MEMORY = 4000;
 my $DEFAULT_SLEEP_SECS = 1800;
 my $DEFAULT_ITERATIONS = 50;
-my $DEFAULT_CALLING_WINDOW = 5000000;
+my $DEFAULT_CALLING_WINDOW = 1000000;
 
 my ($discover, $call, $horizontal, $vertical, $bams, $noclean, $terefs, $dir, $len, $iterations, $chr_sizes, $granularity, $ref, $hets, $depth, $memory, $chr, $help);
 
@@ -246,6 +246,8 @@ USAGE
                 close( $cfh );
                 
                 _runAndCheckCalling( $bam_fofn, $can_fofn, \%sizes, $memory, $chr, $granularity, $hets, $depth, $ref );
+                
+                chdir( qq[../..] ) or die qq[Failed to chdir];
             }
         }
         elsif( $vertical )
@@ -271,6 +273,8 @@ USAGE
             
             #all of the bams are inputted to calling
             _runAndCheckCalling( $bams, $can_fofn, \%sizes, $memory, $chr, $granularity, $hets, $depth, $ref );
+
+            chdir( qq[..] ) or die qq[Failed to chdir];
         }
         print qq[sleeping...\n];
         sleep( $DEFAULT_SLEEP_SECS );
@@ -353,7 +357,7 @@ sub _runAndCheckCalling
             else
             {
                 my $newOffset = $offset + $gran;
-                $cmd .= qq[perl $RETROSEQ_BIN -call -bam $bamsFofn -input $candidatesFile -ref $reference -output $chr:$offset-$newOffset.vcf $hetsParam -region $chr:$offset-$newOffset $depthParam > $chr:$offset-$newOffset.out &\n];
+                $cmd .= qq[perl $RETROSEQ_BIN -call -bam $bamsFofn -input $candidatesFile -ref $reference -output $chr:$offset-$newOffset.vcf $hetsParam -region $chr:$offset-$newOffset $depthParam > $chr:$offset-$newOffset.out &\nsleep 120\n];
                 $offset = $newOffset;
                 $chunks ++;
             }
@@ -401,7 +405,7 @@ sub _runAndCheckCalling
                 while( $offset < $size )
                 {
                     my $newOffset = $offset + $gran;
-                    my $output = qq[$chr:$offset-$newOffset.out];
+                    my $output = qq[$chr/$chr:$offset-$newOffset.out];
                     if( ! -f $output )
                     {
                         die qq[ERROR: Cant find output file: $output\n];
@@ -410,7 +414,7 @@ sub _runAndCheckCalling
                     if( ! $done || length( $done ) == 0 )
                     {
                         print qq[Found unfinished process];
-                        $cmd .= qq[perl $RETROSEQ_BIN -call -bam $bamsFofn -input $candidatesFile -ref $reference -output $chr:$offset-$newOffset.vcf $hetsParam -region $chr:$offset-$newOffset $depthParam > $chr:$offset-$newOffset.out &\n];
+                        $cmd .= qq[cd $chr;perl $RETROSEQ_BIN -call -bam $bamsFofn -input $candidatesFile -ref $reference -output $chr:$offset-$newOffset.vcf $hetsParam -region $chr:$offset-$newOffset $depthParam > $chr:$offset-$newOffset.out &;cd ..\nsleep 120\n];
                         $incomplete ++;
                     }
                 }
