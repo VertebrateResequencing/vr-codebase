@@ -1,0 +1,468 @@
+#!/usr/bin/env perl
+# 
+# Author:       tk2
+# Maintainer:   tk2
+# Created:      Fri Sep 10 14:07:53 BST 2010 @588 /Internet Time/
+# Updated:      Fri Sep 10 14:08:03 BST 2010 @588 /Internet Time/
+$| = 1;#disable print buffering
+
+=pod
+Status: 
+Should work and compile
+Test: validation and genotyping steps
+
+Issues/improvements:
+Genotyping
+    - test it
+    - should dump out genotype likelihoods also
+=cut
+
+use Carp;
+use strict;
+use warnings;
+use Getopt::Long;
+use Cwd;
+use File::Basename;
+use File::Path qw(make_path);
+
+use LSF;
+use VertRes::Parser::bam;
+use VertRes::Parser::sam;
+
+my $RETROSEQ_BIN = qq[/nfs/users/nfs_t/tk2/code/RetroSeqCheckouts/master/RetroSeq/bin/retroseq.pl];
+my $CHUNKS_PER_JOB = 6;
+my $MAX_RETRIES = 3;
+my $DEFAULT_DISCOVERY_MEMORY = 2000;
+my $DEFAULT_CALLING_MEMORY = 5000;
+my $DEFAULT_SLEEP_SECS = 1800;
+my $DEFAULT_ITERATIONS = 50;
+my $DEFAULT_CALLING_WINDOW = 5000000;
+
+my ($discover, $call, $horizontal, $vertical, $bams, $noclean, $terefs, $dir, $len, $iterations, $chr_sizes, $granularity, $ref, $hets, $depth, $memory, $chr, $help);
+
+GetOptions
+(
+    #actions
+    'discover'      => \$discover,
+    'call'          => \$call,
+    'horizontal'    => \$horizontal,
+    'vertical'      => \$vertical,
+    
+    'bams=s'        => \$bams,
+    'noclean'       => \$noclean,
+    'terefs=s'      => \$terefs,
+    'dir=s'         => \$dir,
+    'len=s'         => \$len,
+    'horiztonal'    => \$horizontal,
+    'vertical'      => \$vertical,
+    'chr_sizes=s'   => \$chr_sizes,
+    'granularity=s' => \$granularity,
+    'ref=s'         => \$ref,
+    'hets'          => \$hets,
+    'depth=s'       => \$depth,
+    'memory=s'      => \$memory,
+    'chr=s'         => \$chr,
+    
+    'iterations=s'  => \$iterations,
+    
+    'h|help'        =>  \$help,
+);
+
+my $USAGE = <<USAGE;
+A basic LSF manager for running mulitple samples through retroseq TE calling
+
+-discover
+-call
+
+USAGE
+
+( $discover || $call || $help) or die $USAGE;
+
+if( $memory ){die qq[Incorrect memory parameter: $memory\n] if $memory !~ /^\d+$/;}
+
+if( $iterations && $iterations !~ /^\d+$/ )
+{die qq[iterations parameter must be an integer\n];}
+else{$iterations = $DEFAULT_ITERATIONS;}
+
+if( $dir ){chdir( $dir ) or die qq[Cant go to dir: $dir];}else{$dir = getcwd();}
+
+#check the BAM files all exist on disk
+
+if( $discover )
+{
+    ( $bams && $terefs ) or die <<USAGE;
+Usage: $0 -discover -bams <string> -teref <string>
+    
+    -bams       BAM files of paired reads mapped to reference genome
+    -terefs     Tab file with list of transposon types and the corresponding fasta file of reference sequences (e.g. SINE   /home/me/refs/SINE.fasta)
+    -iterations Number of iterations of checking to do before quitting. Default is 50; Sleep for 30mins.
+    [-dir        Directory where the calling should happen. Default is cwd.] 
+    [-noclean   Do not remove intermediate output files. Default is to cleanup.]
+    [-len       Min hit length for candidates. Default is 34bp.]
+    [-memory    Memory to request in jobs (Mb). Default is 5000.]
+USAGE
+
+    my $i = 0;
+    my %retries;
+    while( $i < $iterations )
+    {
+        if( ! $len ){$len = 34;}
+        
+        my $totalJobs = 0;
+        my $jobsDone = 0;
+        
+        open( my $bfh, $bams ) or die qq[Failed to open bams file: $bams];
+        while ( my $bam = <$bfh> )
+        {
+            chomp( $bam );
+            
+            -f $bam || die qq[Cant find bam file: $bam];
+            
+            my $sample = _getBAMSampleName( $bam );
+            print qq[Sample: $sample\n];
+            
+            if( ! -d $sample ){mkdir $sample or die qq[Failed to mkdir: $sample];}
+            
+            chdir( $sample ) or die qq[Failed to chdir $sample];
+            
+            my @rgs = @{ _getBAMtoRGs( $bam ) };
+            
+            foreach my $rg ( @rgs )
+            {
+                $totalJobs ++;
+                print qq[$rg];
+                my $job_lock = qq[$rg.jids];
+                my $job_name = $rg.qq[.discovery];
+                my $is_running = LSF::is_job_running($job_lock);
+                if ($is_running & $LSF::Error) 
+                {
+                    $retries{$job_lock} ++;
+                    if( $retries{$job_lock} > $MAX_RETRIES )
+                    {
+                        print qq[ ERROR: $sample $rg $job_name - $MAX_RETRIES retries failed\n];
+                        next;
+                    }
+                }
+                elsif ($is_running & $LSF::Running) 
+                {
+                    print qq[ running\n];
+                    next; #ok its running still
+                }
+                elsif ($is_running & $LSF::Done) 
+                {
+                    #job has completed
+                    print qq[ complete\n];
+                    $jobsDone ++;
+                    next;
+                }
+                
+                #run the job
+                my $cwd = getcwd;
+                if( ! $memory ){$memory=$DEFAULT_DISCOVERY_MEMORY;}
+                my %reqs = (memory=>$memory,queue=>'long');
+                print qq[Starting job: $job_lock\n];
+                LSF::run($job_lock, $cwd, $job_name, \%reqs, 
+                    qq[perl $RETROSEQ_BIN -discover -bam $bam -eref $terefs -output $sample.candidates.$rg -len $len -rgs $rg] );
+            }
+            chdir( qq[..] ) or die qq[Failed to chdir to parent dir];
+        }
+        close( $bfh );
+        
+        if( $jobsDone == $totalJobs )
+        {
+            print qq[ALL DONE!\n];exit;
+        }
+        
+        print qq[$jobsDone out of $totalJobs completed\n];
+        print qq[sleeping...\n];
+        sleep( $DEFAULT_SLEEP_SECS );
+        $i ++;
+    }
+}
+elsif( $call )
+{
+        ( $bams && ($horizontal || $vertical) && $ref && $chr_sizes ) or die <<USAGE;
+Usage: $0 -call -bams <string> -terefs <string> -chr_sizes -horizontal|vertical
+    
+    -bams                   BAM files of paired reads mapped to reference genome
+    -chr_sizes              File of entried: chr<space>size
+    -horiztonal|vertical    Specify which type of calling to do - per sample OR across samples
+    -iterations             Number of iterations of checking to do before quitting. Default is 50; Sleep for 30mins.
+    -ref                    Fasta of the reference
+    [-granularity           Chunk size to use for calling. Default is 5000000bp.]
+    [-dir                   Directory where the calling should happen. Default is cwd.]
+    [-noclean               Do not remove intermediate output files. Default is to cleanup.]
+    [-memory                Memory to request in jobs (Mb). Default is $DEFAULT_CALLING_MEMORY Mb.]
+    [-chr                   Only call this chromosome. Default is all.]
+USAGE
+    
+    if( $hets ){$hets = qq[-hets];}else{$hets='';}
+    
+    ( $horizontal || $vertical ) or die qq[Must specify either horizontal or vertical calling mode\n];
+    
+    ( $ref && -f $ref && -f $ref.qq[.fai] ) or die qq[Check the ref parameter];
+    
+    if( $depth ){$depth = qq[-depth $depth];}else{$depth = '';}
+    
+    if( $granularity ){$granularity =~ /^\d+$/ or die qq[Check granularity parameter: $granularity\n];}else{$granularity = $DEFAULT_CALLING_WINDOW;}
+    
+    my %sizes;
+    open( my $cfh, $chr_sizes ) or die qq[Failed to open chr sizes file: $chr_sizes];
+    while( my $l = <$cfh> )
+    {
+        chomp( $l );
+        my ($chr, $size) = split( /\s+/, $l );
+        $sizes{ $chr } = $size;
+    }
+    
+    my $i = 0;
+    while( $i < $iterations )
+    {
+        if( $horizontal )
+        {
+            open( my $bfh, $bams ) or die qq[Failed to open bams file: $bams];
+            while ( my $bam = <$bfh> )
+            {
+                chomp( $bam );
+                
+                -f $bam || die qq[Cant find bam file: $bam];
+                
+                my $sample = _getBAMSampleName( $bam );
+                print qq[Sample: $sample\n];
+                
+                if( ! -d $sample ){die qq[Failed to find sample directory: $sample];}
+                chdir( $sample ) or die qq[Failed to chdir $sample];
+                
+                my @candidates = glob(getcwd.qq[/$sample.candidates.*]);
+                
+                if( ! -d qq[Calling] ){mkdir( qq[Calling] or die qq[Failed to make calling directory] );}
+                chdir( qq[Calling] ) or die qq[Failed to chdir Calling];
+                
+                my $bam_fofn = getcwd.qq[/$$.bam.fofn];
+                open( my $bfh, qq[>$bam_fofn] ) or die $!;print $bfh qq[$bam\n];close( $bfh );
+                my $can_fofn = getcwd.qq[/$$.cand.fofn];
+                open( my $cfh, qq[>$can_fofn] ) or die $!;
+                foreach my $f( @candidates ){print $cfh qq[$f\n];}
+                close( $cfh );
+                
+                _runAndCheckCalling( $bam_fofn, $can_fofn, \%sizes, $memory, $chr, $granularity, $hets, $depth, $ref );
+            }
+        }
+        elsif( $vertical )
+        {
+            if( ! -d qq[Calling] ){mkdir( qq[Calling] or die qq[Failed to make calling directory] );}
+            chdir( qq[Calling] );
+            
+            my @samples;
+            open( my $bfh, $bams ) or die $!;
+            while( my $bam = <$bfh> ){chomp( $bam );-f $bam || die qq[Cant find bam file: $bam];my $sample = _getBAMSampleName( $bam );push( @samples, $sample);}
+
+            my @candidates;
+            foreach my $sam ( @samples )
+            {
+                my @c = glob($dir.qq[/$sam/$sam.candidates.*]);
+                @candidates = (@candidates, @c);
+            }
+            
+            my $can_fofn = getcwd.qq[/$$.cand.fofn];
+            open( my $cfh, qq[>$can_fofn] ) or die $!;
+            foreach my $f( @candidates ){print $cfh qq[$f\n];}
+            close( $cfh );
+            
+            #all of the bams are inputted to calling
+            _runAndCheckCalling( $bams, $can_fofn, \%sizes, $memory, $chr, $granularity, $hets, $depth, $ref );
+        }
+        print qq[sleeping...\n];
+        sleep( $DEFAULT_SLEEP_SECS );
+        $i ++;
+    }
+}
+else
+{
+    print $USAGE;
+}
+
+sub _runAndCheckCalling
+{
+    die qq[incorrect number of args] unless @_ == 9;
+    my $bamsFofn = shift;
+    my $candidatesFile = shift;
+    my %sizes = %{ $_[ 0 ] };shift;
+    my $mem = shift;
+    my $chrOnly = shift;
+    my $gran = shift;
+    my $hetsParam = shift;
+    my $depthParam = shift;
+    my $reference = shift;
+    
+    my $offset = 0;
+    my $cmd;
+    my $chunks = 0;
+    my $setID = 0;
+    my $jobsDone = 0;
+    my %retries;
+    foreach my $chr ( sort( keys( %sizes ) ) )
+    {
+        if( $chrOnly && $chr ne $chrOnly ){print qq[Skipping $chr\n];next;}
+        
+        #make seperate dirs for each chr (lots of files created)
+        if( ! -d $chr ){mkdir( $chr ) or die qq[Failed to mkdir: $chr\n];}
+        chdir( $chr );
+        
+        my $size = $sizes{ $chr };
+        $offset = 0;
+        while()
+        {
+            #have enough chunks to make a job OR at the end of the chr
+            if( $chunks >= $CHUNKS_PER_JOB || $offset > $size )
+            {
+                my $job_lock = qq[call.$setID.jids];
+                #check the job status
+                my $is_running = LSF::is_job_running($job_lock);
+                if ($is_running & $LSF::Error) 
+                {
+                    print qq[Error in job: $job_lock\n];
+                    next; #what to do?
+                }
+                elsif ($is_running & $LSF::Running)
+                {
+                    next; #ok its running still
+                }
+                elsif ($is_running & $LSF::Done)
+                {
+                    #job has completed
+                    $jobsDone ++;
+                }
+                else
+                {
+                    #run the job
+                    my $cwd = getcwd;
+                    if( ! $mem ){$mem=$DEFAULT_CALLING_MEMORY;}
+                    my %reqs = (memory=>$mem,queue=>'long');
+                    print qq[Starting job: $job_lock\n];
+                    open( my $sfh, qq[>call.$setID.sh] ) or die $!;print $sfh qq[$cmd\nwait\n];close( $sfh );
+                    LSF::run($job_lock, $cwd, qq[call.$setID], \%reqs, 
+                                  qq[sh call.$setID.sh] );
+                }
+                $setID ++;
+                $cmd = '';
+                $chunks = 0;
+                
+                last if( $offset > $size ); #loop termination condition
+            }
+            else
+            {
+                my $newOffset = $offset + $gran;
+                $cmd .= qq[perl $RETROSEQ_BIN -call -bam $bamsFofn -input $candidatesFile -ref $reference -output $chr:$offset-$newOffset.vcf $hetsParam -region $chr:$offset-$newOffset $depthParam > $chr:$offset-$newOffset.out &\n];
+                $offset = $newOffset;
+                $chunks ++;
+            }
+        }
+        chdir( qq[..] );
+    }
+    
+    if( $jobsDone == $setID )
+    {
+        print qq[ALL JOBS DONE! Checking individual retroseq outputs...\n];
+        
+        my $job_lock = qq[incomplete.jids];
+        if( -f $job_lock )
+        {
+            my $is_running = LSF::is_job_running($job_lock);
+            if ($is_running & $LSF::Error) 
+            {
+                $retries{$job_lock} ++;
+                if( $retries{$job_lock} > $MAX_RETRIES )
+                {
+                    die qq[ERROR: Failed to run the outstanding calling processes job\n];
+                    next;
+                }
+            }
+            elsif ($is_running & $LSF::Running) 
+            {
+                next; #ok its running still
+            }
+            elsif ($is_running & $LSF::Done) 
+            {
+                #job has completed
+                print qq[OUTSTANDING JOBS RUN - ALL DONE\n];
+                exit;
+            }
+        }
+        else
+        {
+            #now check that each output file from retroseq has the EOF
+            $offset = 0;
+            my $incomplete = 0;
+            my $cmd = '';
+            foreach my $chr ( sort( keys( %sizes ) ) )
+            {
+                my $size = $sizes{ $chr };
+                while( $offset < $size )
+                {
+                    my $newOffset = $offset + $gran;
+                    my $output = qq[$chr:$offset-$newOffset.out];
+                    if( ! -f $output )
+                    {
+                        die qq[ERROR: Cant find output file: $output\n];
+                    }
+                    my $done = `tail -50 $output | grep "^RetroSeq finished successfully"`;
+                    if( ! $done || length( $done ) == 0 )
+                    {
+                        print qq[Found unfinished process];
+                        $cmd .= qq[perl $RETROSEQ_BIN -call -bam $bamsFofn -input $candidatesFile -ref $reference -output $chr:$offset-$newOffset.vcf $hetsParam -region $chr:$offset-$newOffset $depthParam > $chr:$offset-$newOffset.out &\n];
+                        $incomplete ++;
+                    }
+                }
+            }
+            
+            print qq[Incomplete jobs: $incomplete\n];
+            
+            if( $incomplete == 0 )
+            {
+                print qq[HORRAY! ALL CALLING JOBS AND PROCESSES COMPLETED\n];
+                exit;
+            }
+            
+            #run the job
+            my $cwd = getcwd;
+            if( ! $mem ){$mem=$DEFAULT_CALLING_MEMORY;}
+            my %reqs = (memory=>$mem,queue=>'long');
+            print qq[Starting job: $job_lock\n];
+            open( my $sfh, qq[>call.incomplete.sh] ) or die $!;print $sfh qq[$cmd\nwait];close( $sfh );
+            LSF::run($job_lock, $cwd, qq[call.incomplete], \%reqs, 
+                                    qq[sh call.incomplete.sh] );
+            print qq[$cmd\n];
+        }
+    }
+}
+
+sub _getBAMSampleName
+{
+    my $bam = shift;
+    
+    my $pars = VertRes::Parser::sam->new(file => $bam);
+    my @samples = $pars->samples();
+    $pars->close;
+    if( @samples < 1 ){print ("Could not open figure out sample for bam: $bam");}
+    my $s;
+    foreach my $sam ( @samples ){$s = $s ? $s.qq[_$sam] : $sam;}
+    
+    return $s;
+}
+
+sub _getBAMtoRGs
+{
+    my $bam = shift;
+    
+    my $pars = VertRes::Parser::bam->new(file => $bam);
+    my %readgroup_info = $pars->readgroup_info();
+    my %readgroups;
+    foreach my $rg ( keys( %readgroup_info ) )
+    {
+        if( $readgroups{ $rg } ){die qq[Found duplicate readgroup: $rg];}
+        $readgroups{ $rg } = 1;
+    }
+    my @rgs = keys( %readgroups );
+    return \@rgs;
+}
