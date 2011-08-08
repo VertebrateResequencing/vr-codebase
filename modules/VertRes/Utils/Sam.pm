@@ -2506,6 +2506,16 @@ sub extract_intervals_from_bam {
     }
 
     $bam_parser->close();
+
+    # check that some reads were written for the final chromosome
+    my $final_chr = $ordered_ref_seqs[-1];
+    my $tmp_parser = VertRes::Parser::bam->new(file => $tmp_out);
+    $tmp_parser->region($final_chr);
+    unless ($tmp_parser->next_result()) {
+        $self->warn("$tmp_out is bad, deleting it -- no reads written for chrom $final_chr");
+        return 1;
+    };
+
     unlink $bai if $created_bai;
 
     # check the right number of lines got written
@@ -2513,7 +2523,7 @@ sub extract_intervals_from_bam {
     my $actual_lines = $self->num_bam_lines("$tmp_out");
     
     if ($actual_lines == $lines_out_counter) {
-        rename "$tmp_out", $bam_out;
+        rename($tmp_out, $bam_out) || $self->throw("Could not rename $tmp_out to $bam_out");
         return 1;
     }
     else {
