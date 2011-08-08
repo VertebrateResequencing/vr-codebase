@@ -71,6 +71,8 @@ Usage:
 
 croak qq[Invalid species: $species\n]  unless $species eq qq[Mus_musculus] || $species eq qq[Homo_sapiens];
 
+my $CACHE_HIT = 0;
+my $CACHE_MISS = 0;
 
 my $t0 = Benchmark->new;
 my $ensembl = init_ensembl($species);
@@ -80,6 +82,11 @@ parse_vcf($ensembl,$input_vcf,$index_vcf);
 my $t1 = Benchmark->new;
 my $td = timediff($t1, $t0);
 print STDERR "The consequences calculations took:",timestr($td),"\n";
+if ($index_vcf){
+    print STDERR "$CACHE_HIT cache hits\n";
+    print STDERR "$CACHE_MISS from Ensembl\n";
+}
+    
 exit;
 
 #------------------------------
@@ -199,6 +206,7 @@ sub process_batch
                     my @vcfinput = $vcf2process->{$indexkey};
                     my $rec = \@{$vcfinput[0]};
                     $$rec[7] = $vcf->add_info_field($$rec[7],'CSQ'=>$info_csq);
+                    $CACHE_HIT++;
                     push @vcffound, $indexkey;
                 }
             }
@@ -221,6 +229,7 @@ sub process_batch
         my $rec2 = \@{$grett2[0]};
         if (grep $_ eq $vcfkey, @difference) 
         {
+            $CACHE_MISS++;
             $$rec2[7] = process_conseqs($vcfkey, $ensembl, $vcf, $$rec2[7]);
         }
         print join("\t",@$rec2)."\n";
