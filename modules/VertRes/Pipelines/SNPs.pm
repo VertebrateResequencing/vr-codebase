@@ -88,6 +88,7 @@ data =>
     max_jobs => 25,
  
     dbSNP_rod   => '/abs/path/to/dbsnp/rod/file',
+    [or dbSNP_vcf   => '/abs/path/to/dbsnp/vcf/file',]
     indel_mask  => '/abs/path/to/indel/mask/file',
     fa_ref => '/abs/path/to/ref.fasta',
     fai_ref => '/abs/path/to/ref.fasta.fai',
@@ -220,6 +221,7 @@ our $options =
     fai_chr_regex   => '\d+|x|y',
     gatk_opts       => { all=>{verbose=>1} },
     dbSNP_rod       => undef,
+    dbSNP_vcf       => undef,
     max_jobs        => undef,
     merge_vcf       => 'merge-vcf -d',
     mpileup_cmd     => 'samtools mpileup -C50 -aug',
@@ -235,8 +237,8 @@ our $options =
     samtools_pileup_params => '-d 500',   # homozygous: '-r 0.0001 -d 500'
     vcf_rmdup       => 'vcf-rmdup',
     vcf_stats       => 'vcf-stats',
-    filter4vcf      => q[awk '/^#/||\\\$6>=3' | vcfutils.pl filter4vcf],
-    bam_suffix       => 'intervals.bam',
+    filter4vcf      => qq[awk '/^#/||\\\$6>=3' | vcfutils.pl filter4vcf],
+    bam_suffix      => 'intervals.bam',
 };
 
 
@@ -254,6 +256,7 @@ our $options =
                                        Default: 'intervals.bam'.
                     bcftools        .. The bcftools binary for mpileup task
                     dbSNP_rod       .. The dbSNP file for GATK
+                    dbSNP_vcf       .. The dbSNP vcf for GATK.  This or dbSNP_rod.
                     chunks_overlap  .. Allow small overlap between chunks
                     file_list       .. File name containing a list of bam files (e.g. the 17 mouse strains). 
                     fa_ref          .. The reference sequence in fasta format
@@ -1034,26 +1037,48 @@ sub gatk
 
     if ( !exists($$self{gatk_opts}{all}) ) { $$self{gatk_opts}{all}={}; }
     my $gopts = $$self{gatk_opts}{all};
-    if ( exists($$gopts{dbsnp}) && $$gopts{dbsnp} ne $$self{dbSNP_rod} )
-    {
-        $self->throw("Conflicting options for dbSNP, which one to use: $$gopts{dbsnp} or $$self{dbSNP_rod}?\n");
+
+    # dbSNP options - bit of a mess.
+    # if gatk_opts{all}{dbsnp} is set, use that (dbSNP rod file)
+    # if dbSNP_rod is set, set dbsnp to that (dbSNP rod file)
+    # if dbSNP_vcf is set, set_b for that (dbSNP vcf file)
+    # --DBSNP is deprecated, but keep dbsnp & dbSNP_rod around for those rod files.
+    # should now be using vcf format dbsnp files, and specifying with dbSNP_vcf
+    #  
+    # Use $self->{have_dbSNP} as flag to pass around that we're using dbSNP (used to use dbSNP_rod)
+
+    $$self{have_dbSNP} = 0;
+    # old style dbSNP rod file
+    if ( exists($$gopts{dbsnp})){
+        $$self{have_dbSNP} = 1;
+        if ($$gopts{dbsnp} ne $$self{dbSNP_rod} ) {
+            $self->throw("Conflicting options for dbSNP, which one to use: $$gopts{dbsnp} or $$self{dbSNP_rod}?\n");
+        }
     }
     if ( !exists($$gopts{dbsnp}) )
     {
-        if ( exists($$self{dbSNP_rod}) ) { $$gopts{dbsnp} = $$self{dbSNP_rod}; }
-        else { $$gopts{dbsnp} = undef; }  # undef the default dbSNP rod file explicitly
+        if ( exists($$self{dbSNP_rod}) ) { 
+            $$gopts{dbsnp} = $$self{dbSNP_rod}; 
+            $$self{have_dbSNP} = 1;
+        }
+        else { 
+            $$gopts{dbsnp} = undef; # undef the default dbSNP rod file explicitly
+        }  
+    }
+
+    # new style vcf dbSNP file
+    if ( exists($$self{dbSNP_vcf}) && $$self{dbSNP_vcf}){
+        push @{$gopts->{bs}}, "dbsnp,VCF $$self{dbSNP_vcf}";
+        # override any old rod file
+        $$gopts{dbsnp} = undef;
+        $$self{have_dbSNP} = 1;
     }
 
     if ( exists($$gopts{reference}) && $$gopts{reference} ne $$self{fa_ref} )
     {
         $self->throw("Conflicting options for reference, which one to use: $$gopts{reference} or $$self{fa_ref}?\n");
-        $$gopts{reference} = $$self{fa_ref};
     }
     if ( !exists($$gopts{reference}) ) { $$gopts{reference} = $$self{fa_ref}; }
-    if ( !exists($$gopts{bs}) && exists($$self{dbSNP_vcf}) && $$self{dbSNP_vcf}) 
-    {
-        $$gopts{bs} = ["dbsnp,VCF $$self{dbSNP_vcf}"];
-    }
     my $bams = [ $$self{file_list} ];
     my %opts =
     (
@@ -1080,7 +1105,7 @@ sub gatk_split_chunks
 {
     my ($self,$bam,$chunk_name,$chunk) = @_;
 
-    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref sam2vcf gatk_opts dbSNP_rod indel_mask));
+    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref sam2vcf gatk_opts have_dbSNP indel_mask));
 
     return qq[
 use strict;
@@ -1170,7 +1195,7 @@ sub gatk_postprocess
 
     if ( scalar @$vcfs > 1 ) { $self->throw("FIXME: expected one file only\n"); }
 
-    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref sam2vcf gatk_opts dbSNP_rod indel_mask));
+    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref sam2vcf gatk_opts have_dbSNP indel_mask));
 
     return qq[
 use strict;
@@ -1211,7 +1236,7 @@ sub run_gatk_postprocess
         Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
     }
     
-    if ( $$self{dbSNP_rod} )
+    if ( $$self{have_dbSNP} )
     {
         # Recalibrate
         %opts = $self->get_gatk_opts(qw(all variant_recalibrator));
