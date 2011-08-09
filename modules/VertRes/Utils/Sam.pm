@@ -2508,6 +2508,10 @@ sub extract_intervals_from_bam {
     $bam_parser->close();
 
     # check that some reads were written for the final chromosome
+    $samtools->run_method('system');
+    my $tmp_bai = $tmp_out.'.bai';
+    $samtools->index($tmp_out, $tmp_bai);
+    $samtools->run_status >= 1 || $self->throw("Failed to create $tmp_bai");
     my $final_chr = $ordered_ref_seqs[-1];
     my $tmp_parser = VertRes::Parser::bam->new(file => $tmp_out);
     $tmp_parser->region($final_chr);
@@ -2515,7 +2519,8 @@ sub extract_intervals_from_bam {
         $self->warn("$tmp_out is bad, deleting it -- no reads written for chrom $final_chr");
         return 1;
     };
-
+    
+    unlink $tmp_bai;
     unlink $bai if $created_bai;
 
     # check the right number of lines got written
