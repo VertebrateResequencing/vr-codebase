@@ -122,6 +122,13 @@ sub is_genotype_ok
     #   sample C57BL_6J likelihood 9863 over 2583 sites, avg depth 1.05
     #   sample C57BLKS_J likelihood 16203 over 2469 sites, avg depth 1.05
 
+	# We also need to take account of examples where the top 2 records have an equal likelihood
+	# and one of them is the expected sample, but as it is listed second it is recorded as unconfirmed
+	# e.g. sample UK10K_CIL5062115 lane 6436_7#5:
+	#	entropy 0.1, hets included 1
+	#	sample UK10K_CIL5002407 likelihood 0 over 26 sites, score 0.000000, avg depth 30.192308
+	#	sample UK10K_CIL5062115 likelihood 0 over 26 sites, score 0.000000, avg depth 30.192308
+
     my $has_data = 0;
     my ($hit1,$hit2,$gtype1,$lhood1,$gtype2,$lhood2);
 
@@ -156,17 +163,23 @@ sub is_genotype_ok
     }
     close $fh;
 
+	# need to take account of special circumstance above where the 'correct' sample is listed second, but has 
+	# the same likelihood as that reported first->  $expected eq $gtype2 and $lhood1==$lhood2
+    my $expected_gtype2 = ($expected eq $gtype2 && $lhood1 == $lhood2) ? 1 : 0; 
+     
     if ( $expected && !$has_data ) { $expected = 0; }
 
     my $ratio = $lhood1!=0 ? $lhood2/$lhood1 : $lhood2/1e-6;
+
+	if ( $expected_gtype2 ) { return "status=confirmed expected=$expected found=$gtype2 ratio=$ratio\n"; }
 
     if ( $ratio<$min_ratio ) 
     { 
         if ( $expected ) { return "status=unconfirmed expected=$expected found=$gtype1 ratio=$ratio\n"; }
         return "status=unknown expected=none found=$gtype1 ratio=$ratio\n";
     }
-    if ( !$expected ) { return "status=candidate expected=none found=$gtype1 ratio=$ratio\n" }
-    if ( $expected eq $gtype1 ) { return "status=confirmed expected=$expected found=$gtype1 ratio=$ratio\n" }
+    if ( !$expected ) { return "status=candidate expected=none found=$gtype1 ratio=$ratio\n"; }
+    if ( $expected eq $gtype1 ) { return "status=confirmed expected=$expected found=$gtype1 ratio=$ratio\n"; }
     return "status=wrong expected=$expected found=$gtype1 ratio=$ratio\n";
 }
 

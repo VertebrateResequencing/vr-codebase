@@ -23,7 +23,7 @@ my %filters =
     EndDistBias  => { dflt=>1e-4, usage=>'FLOAT', desc=>"Min P-value for end distance bias", nick=>'4' },
     RefN         => { dflt=>'', usage=>'', desc=>"Reference base is N", nick=>'r' },
     Qual         => { dflt=>'10', usage=>'INT', desc=>"Minimum value of the QUAL field", nick=>'Q' },
-    VDB          => { dflt=>'0.005', usage=>'FLOAT', desc=>"Minimum Variant Distance Bias (INFO/VCD)", nick=>'v' },
+    VDB          => { dflt=>'0.015', usage=>'FLOAT', desc=>"Minimum Variant Distance Bias (INFO/VDB)", nick=>'v' },
     HWE          => { dflt=>1e-4, usage=>'FLOAT', desc=>"Minimum P-value for HWE (plus F<0)", nick=>'H' },
 );
 
@@ -117,8 +117,7 @@ sub parse_params
     }
     if ( !exists($$opts{filters}) )
     {
-        if ( !exists($$opts{desc}) ) { error("Missing the -d option and no filters given? (Check the -f option.)\n") }
-        if ( !exists($$opts{annotations}) ) { error("Missing the -a option.\n") }
+        if ( !exists($$opts{annotations}) ) { error("Missing the -a or -f option.\n") }
     }
     if ( exists($$opts{annotations}) && !exists($$opts{cols}) ) { error("Missing the -c option.\n"); }
     return $opts;
@@ -268,6 +267,7 @@ sub parse_columns
         }
         elsif ( $col eq 'CHROM' ) { $out{$col}=$i; }
         elsif ( $col eq 'FROM' ) { $out{$col}=$i; }
+        elsif ( $col eq 'POS' ) { $out{'FROM'}=$i; }
         elsif ( $col eq 'TO' ) { $out{$col}=$i; }
         elsif ( $col eq 'ID' ) { $out{$col}=$i; }
         elsif ( $col eq 'REF' ) { $out{$col}=$i; }
@@ -528,7 +528,7 @@ sub apply_local_filters
     }
     if ( $$line[7]=~/DP=(\d+)/i ) { $dp = $1; }
     if ( $$line[7]=~/MQ=(\d+)/i ) { $mq = $1; }
-    if ( $$line[7]=~/VDB=([^;\t]+)/i ) { $vdb = $1; }
+    if ( $$line[7]=~/VDB=([^;,\t]+)/i ) { $vdb = $1; }
 
     if ( exists($$filters{RefN}) )
     {

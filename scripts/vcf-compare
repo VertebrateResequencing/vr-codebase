@@ -821,8 +821,8 @@ sub cmp_haplotypes
     my $ac = 0;
     if ( exists($gtype_matches{hom_AA_}) ) { $ac += 2*$gtype_matches{hom_AA_}; }
     if ( exists($gtype_mismatches{hom_AA_}) ) { $ac += 2*$gtype_mismatches{hom_AA_}; }
-    if ( exists($gtype_matches{hom_RA_}) ) { $ac += $gtype_matches{hom_RA_}; }
-    if ( exists($gtype_mismatches{hom_RA_}) ) { $ac += $gtype_mismatches{hom_RA_}; }
+    if ( exists($gtype_matches{het_RA_}) ) { $ac += $gtype_matches{het_RA_}; }
+    if ( exists($gtype_mismatches{het_RA_}) ) { $ac += $gtype_mismatches{het_RA_}; }
     for my $type (keys %gtype_matches)
     {
         $$opts{counts_by_ac}{$ac}{$type}{matches} += $gtype_matches{$type};
@@ -839,7 +839,10 @@ sub cmp_haplotypes
         my $match = '?';
         if ( scalar keys %gtype_mismatches ) { $match = '-' }
         elsif ( scalar keys %gtype_matches ) { $match = '+' }
-        print "#SC\t$match\t$$grp[0]{rec}{CHROM}\t$$grp[0]{rec}{POS}\n";
+        my $hom_rr_mm = $gtype_mismatches{hom_RR_} ? $gtype_mismatches{hom_RR_} : 0;
+        my $het_ra_mm = $gtype_mismatches{het_RA_} ? $gtype_mismatches{het_RA_} : 0;
+        my $hom_aa_mm = $gtype_mismatches{hom_AA_} ? $gtype_mismatches{hom_AA_} : 0;
+        print "#SC\t$match\t$hom_rr_mm\t$het_ra_mm\t$hom_aa_mm\t$$grp[0]{rec}{CHROM}\t$$grp[0]{rec}{POS}\n";
     }
 
     #   if ( $row_gtype_match or $row_gtype_mismatch )

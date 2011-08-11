@@ -1366,7 +1366,10 @@ sub index_provides {
 
     if ($self->{do_index}){
         for my $i (0..$#provides) {
-            $provides[$i] = $provides[$i] . '.bai';
+            if( $provides[ $i ] =~ /\.bam$/ )
+            {
+                $provides[$i] = $provides[$i] . '.bai';
+            }
         }
     }
 

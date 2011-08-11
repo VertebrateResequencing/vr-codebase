@@ -56,6 +56,10 @@ data =>
             #_extras => [ '-U ALLOW_UNSET_BAM_SORT_ORDER --platform Solexa' ],
             _extras => [ '-U ALLOW_UNSET_BAM_SORT_ORDER ' ],
         },
+        unified_genotyper => 
+        {
+            genotype_likelihoods_model => 'BOTH',         # Call both SNPs and INDELs
+        },
         variant_filtration =>
         {
             filters => { HARD_TO_VALIDATE => 'MQ0 >= 4 && (MQ0 / (1.0 * DP)) > 0.1' },
@@ -64,12 +68,19 @@ data =>
         },
         variant_recalibrator =>
         {
-            target_titv => 2.08,
+            mode => 'BOTH',         # recalibrate SNPs and INDELs
+            target_titv => 2.08,    # only for plotting
             ignore_filter => 'HARD_TO_VALIDATE',
+            percentBadVariants => 0.05,
+            maxGaussians => 4,
+            training_sets => ['dbsnp,VCF,known=true,training=false,truth=false,prior=8.0,/path/to/dbsnp_123.b37.vcf.gz',
+                              'hapmap,VCF,known=false,training=true,truth=true,prior=15.0,/path/to/hapmap_3.3.b37.sites.vcf.gz',
+                              'omni,VCF,known=false,training=true,truth=false,prior=12.0,/path/to/1000G_omni2.5.b37.sites.vcf.gz'],
         },
         apply_variant_cuts =>
         {
-            fdr_filter_level => '0.11',
+            fs_filter_level => 99.0,
+            mode => 'BOTH',
         },
     },
  
@@ -77,6 +88,7 @@ data =>
     max_jobs => 25,
  
     dbSNP_rod   => '/abs/path/to/dbsnp/rod/file',
+    [or dbSNP_vcf   => '/abs/path/to/dbsnp/vcf/file',]
     indel_mask  => '/abs/path/to/indel/mask/file',
     fa_ref => '/abs/path/to/ref.fasta',
     fai_ref => '/abs/path/to/ref.fasta.fai',
@@ -129,6 +141,9 @@ echo '__SNPs__ snps.conf' > snps.pipeline
 # output location by replacing root in the bam files with new_root.
 # Also, outdir may be set to put output into a common subdir at its
 # destination.
+
+# for GATK, can mow supply the option dbSNP_vcf instead of dbSNP_rod
+# if your snp sites are in vcf format rather than rod format.
 
 =head1 DESCRIPTION
 
@@ -206,6 +221,7 @@ our $options =
     fai_chr_regex   => '\d+|x|y',
     gatk_opts       => { all=>{verbose=>1} },
     dbSNP_rod       => undef,
+    dbSNP_vcf       => undef,
     max_jobs        => undef,
     merge_vcf       => 'merge-vcf -d',
     mpileup_cmd     => 'samtools mpileup -C50 -aug',
@@ -221,8 +237,8 @@ our $options =
     samtools_pileup_params => '-d 500',   # homozygous: '-r 0.0001 -d 500'
     vcf_rmdup       => 'vcf-rmdup',
     vcf_stats       => 'vcf-stats',
-    filter4vcf      => q[awk '/^#/||\\\$6>=3' | vcfutils.pl filter4vcf],
-    bam_suffix       => 'intervals.bam',
+    filter4vcf      => qq[awk '/^#/||\\\$6>=3' | vcfutils.pl filter4vcf],
+    bam_suffix      => 'intervals.bam',
 };
 
 
@@ -240,6 +256,7 @@ our $options =
                                        Default: 'intervals.bam'.
                     bcftools        .. The bcftools binary for mpileup task
                     dbSNP_rod       .. The dbSNP file for GATK
+                    dbSNP_vcf       .. The dbSNP vcf for GATK.  This or dbSNP_rod.
                     chunks_overlap  .. Allow small overlap between chunks
                     file_list       .. File name containing a list of bam files (e.g. the 17 mouse strains). 
                     fa_ref          .. The reference sequence in fasta format
@@ -1020,23 +1037,48 @@ sub gatk
 
     if ( !exists($$self{gatk_opts}{all}) ) { $$self{gatk_opts}{all}={}; }
     my $gopts = $$self{gatk_opts}{all};
-    if ( exists($$gopts{dbsnp}) && $$gopts{dbsnp} ne $$self{dbSNP_rod} )
-    {
-        $self->throw("Conflicting options for dbSNP, which one to use: $$gopts{dbsnp} or $$self{dbSNP_rod}?\n");
+
+    # dbSNP options - bit of a mess.
+    # if gatk_opts{all}{dbsnp} is set, use that (dbSNP rod file)
+    # if dbSNP_rod is set, set dbsnp to that (dbSNP rod file)
+    # if dbSNP_vcf is set, set_b for that (dbSNP vcf file)
+    # --DBSNP is deprecated, but keep dbsnp & dbSNP_rod around for those rod files.
+    # should now be using vcf format dbsnp files, and specifying with dbSNP_vcf
+    #  
+    # Use $self->{have_dbSNP} as flag to pass around that we're using dbSNP (used to use dbSNP_rod)
+
+    $$self{have_dbSNP} = 0;
+    # old style dbSNP rod file
+    if ( exists($$gopts{dbsnp})){
+        $$self{have_dbSNP} = 1;
+        if ($$gopts{dbsnp} ne $$self{dbSNP_rod} ) {
+            $self->throw("Conflicting options for dbSNP, which one to use: $$gopts{dbsnp} or $$self{dbSNP_rod}?\n");
+        }
     }
     if ( !exists($$gopts{dbsnp}) )
     {
-        if ( exists($$self{dbSNP_rod}) ) { $$gopts{dbsnp} = $$self{dbSNP_rod}; }
-        else { $$gopts{dbsnp} = undef; }  # undef the default dbSNP rod file explicitly
+        if ( exists($$self{dbSNP_rod}) ) { 
+            $$gopts{dbsnp} = $$self{dbSNP_rod}; 
+            $$self{have_dbSNP} = 1;
+        }
+        else { 
+            $$gopts{dbsnp} = undef; # undef the default dbSNP rod file explicitly
+        }  
+    }
+
+    # new style vcf dbSNP file
+    if ( exists($$self{dbSNP_vcf}) && $$self{dbSNP_vcf}){
+        push @{$gopts->{bs}}, "dbsnp,VCF $$self{dbSNP_vcf}";
+        # override any old rod file
+        $$gopts{dbsnp} = undef;
+        $$self{have_dbSNP} = 1;
     }
 
     if ( exists($$gopts{reference}) && $$gopts{reference} ne $$self{fa_ref} )
     {
         $self->throw("Conflicting options for reference, which one to use: $$gopts{reference} or $$self{fa_ref}?\n");
-        $$gopts{reference} = $$self{fa_ref};
     }
     if ( !exists($$gopts{reference}) ) { $$gopts{reference} = $$self{fa_ref}; }
-
     my $bams = [ $$self{file_list} ];
     my %opts =
     (
@@ -1063,7 +1105,7 @@ sub gatk_split_chunks
 {
     my ($self,$bam,$chunk_name,$chunk) = @_;
 
-    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref sam2vcf gatk_opts dbSNP_rod indel_mask));
+    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref sam2vcf gatk_opts have_dbSNP indel_mask));
 
     return qq[
 use strict;
@@ -1110,26 +1152,26 @@ sub get_gatk_opts
 sub run_gatk_chunk
 {
     my ($self,$bam,$name,$chunk) = @_;
-
+    
     my $gatk;
     my %opts = $self->get_gatk_opts(qw(all unified_genotyper));
-
+    
     $gatk = VertRes::Wrapper::GATK->new(%opts);
-    $gatk->unified_genotyper($bam,"$name.vcf.gz",L=>$chunk);
+    $gatk->unified_genotyper($bam,"$name.vcf.gz",L=>$chunk,%opts);
     Utils::CMD("tabix -f -p vcf $name.vcf.gz");
-
+    
     if ( !$$self{indel_mask} or !-e $$self{indel_mask} )
     {
         %opts = $self->get_gatk_opts(qw(all indel_genotyper));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
-        $gatk->indel_genotyper($bam, "$name.indels.raw.bed", "$name.indels.detailed.bed",L=>$chunk);
+        $gatk->indel_genotyper($bam, "$name.indels.raw.bed", "$name.indels.detailed.bed",L=>$chunk,%opts);
         Utils::CMD("make_indel_mask.pl $name.indels.raw.bed 10 $name.indels.mask.bed",{verbose=>1});
-
+    
         %opts = $self->get_gatk_opts(qw(all variant_filtration));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
-        $gatk->set_b("variant,VCF,$name.vcf.gz", "mask,Bed,$name.indels.mask.bed");
-        $gatk->variant_filtration("$name.filtered.vcf.gz");
-
+        $gatk->set_b("variant,VCF,$name.vcf.gz","mask,Bed,$name.indels.mask.bed");
+        $gatk->variant_filtration("$name.filtered.vcf.gz",%opts);
+    
         unlink("$name.vcf.gz");
         unlink("$name.vcf.gz.tbi");
         unlink("$name.indels.detailed.bed");
@@ -1137,12 +1179,12 @@ sub run_gatk_chunk
         unlink("$name.indels.mask.bed");
         unlink("$name.indels.mask.bed.idx");
         unlink("$name.indels.raw.bed");
-
+    
         Utils::CMD("tabix -f -p vcf $name.filtered.vcf.gz");
         rename("$name.filtered.vcf.gz.tbi","$name.vcf.gz.tbi") or $self->throw("rename $name.filtered.vcf.gz.tbi $name.vcf.gz.tbi: $!");
         rename("$name.filtered.vcf.gz","$name.vcf.gz") or $self->throw("rename $name.filtered.vcf.gz $name.vcf.gz: $!");
     }
-
+    
     Utils::CMD("touch _$name.done",{verbose=>1});
 }
 
@@ -1153,7 +1195,7 @@ sub gatk_postprocess
 
     if ( scalar @$vcfs > 1 ) { $self->throw("FIXME: expected one file only\n"); }
 
-    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref sam2vcf gatk_opts dbSNP_rod indel_mask));
+    my $opts = $self->dump_opts(qw(file_list fa_ref fai_ref sam2vcf gatk_opts have_dbSNP indel_mask));
 
     return qq[
 use strict;
@@ -1184,7 +1226,7 @@ sub run_gatk_postprocess
         %opts = $self->get_gatk_opts(qw(all variant_filtration));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
         $gatk->set_b("variant,VCF,$vcf", "mask,Bed,$$self{indel_mask}");
-        $gatk->variant_filtration("$basename.filtered.vcf.gz");
+        $gatk->variant_filtration("$basename.filtered.vcf.gz", %opts);
         rename("$basename.filtered.vcf.gz","$basename.tmp.vcf.gz") or $self->throw("rename $basename.filtered.vcf.gz $basename.tmp.vcf.gz: $!");
         Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
     }
@@ -1193,29 +1235,24 @@ sub run_gatk_postprocess
         Utils::CMD("cp $basename.vcf.gz $basename.tmp.vcf.gz");
         Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
     }
-
-    if ( $$self{dbSNP_rod} )
+    
+    if ( $$self{have_dbSNP} )
     {
         # Recalibrate
-        %opts = $self->get_gatk_opts(qw(all generate_variant_clusters));
-        $gatk = VertRes::Wrapper::GATK->new(%opts);
-        $gatk->set_b("input,VCF,$basename.tmp.vcf.gz");
-        $gatk->set_annotations('HaplotypeScore', 'SB', 'QD', 'HRun');
-        $gatk->generate_variant_clusters("$basename.filtered.clusters");
-
         %opts = $self->get_gatk_opts(qw(all variant_recalibrator));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
         $gatk->set_b("input,VCF,$basename.tmp.vcf.gz");
-        $gatk->variant_recalibrator("$basename.filtered.clusters","$basename.recalibrated.vcf.gz");
-        rename("$basename.recalibrated.vcf.gz","$basename.tmp.vcf.gz") or $self->throw("rename $basename.recalibrated.vcf.gz $basename.tmp.vcf.gz: $!");
-
+        $gatk->add_b(@{$opts{training_sets}});
+        $gatk->set_annotations('HaplotypeScore', 'MQRankSum', 'ReadPosRankSum', 'HRun');
+        $gatk->variant_recalibrator("$basename.recal", "$basename.tranches", %opts);
+        
         # Filter the calls down to an implied 10.0% novel false discovery rate
-        %opts = $self->get_gatk_opts(qw(all apply_variant_cuts));
+        %opts = $self->get_gatk_opts(qw(all apply_recalibration));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
         $gatk->set_b("input,VCF,$basename.tmp.vcf.gz");
         Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
-        $gatk->apply_variant_cuts("$basename.recalibrated.vcf.gz.dat.tranches","$basename.cutted.vcf.gz");
-        rename("$basename.cutted.vcf.gz","$basename.tmp.vcf.gz") or $self->throw("rename $basename.cutted.vcf.gz $basename.tmp.vcf.gz: $!");
+        $gatk->apply_recalibration("$basename.recal", "$basename.tranches","$basename.recalibrated.vcf.gz", %opts);
+        rename("$basename.recalibrated.vcf.gz","$basename.tmp.vcf.gz") or $self->throw("rename $basename.recalibrated.vcf.gz $basename.tmp.vcf.gz: $!");
         Utils::CMD("tabix -f -p vcf $basename.tmp.vcf.gz");
     }
 

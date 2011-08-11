@@ -978,7 +978,7 @@ CREATE TABLE `lane` (
   `npg_qc_status` enum('pending','pass','fail','-') default 'pending',
   `processed` int(10) default 0,
   `auto_qc_status` enum('no_qc','passed','failed') default 'no_qc',
-  `qc_status` enum('no_qc','pending','passed','failed') default 'no_qc',
+  `qc_status` enum('no_qc','pending','passed','failed','gt_pending','investigate') default 'no_qc',
   `gt_status` enum('unchecked','confirmed','wrong','unconfirmed','candidate','unknown','swapped') default 'unchecked',
   `submission_id` smallint(5) unsigned default NULL,
   `withdrawn` tinyint(1) default NULL,
