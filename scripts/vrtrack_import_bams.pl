@@ -48,6 +48,7 @@ use VertRes::Parser::bam;
 use VertRes::Utils::FileSystem;
 use VertRes::Utils::VRTrackFactory;
 use VRTrack::Library;
+use Time::Format;
 
 my ($index, $database, $local_bam_dir, $do_updates, $verbose, $strict, $help);
 GetOptions('index=s'          => \$index,
@@ -123,7 +124,7 @@ while (<$ifh>) {
     chomp;
     /\S/ || next;
     /^#/ && next;
-    my ($md5, $bam, $sample, $population, $project, $library, $seq_centre, $seq_tech, $lane, $insert_size, $alias) = split /\t/;
+    my ($md5, $bam, $sample, $population, $project, $library, $seq_centre, $seq_tech, $lane, $insert_size, $alias, $date) = split /\t/;
     die "Index file must contain at least two columns containing md5 and the bam file" unless ($md5 && $bam);
     die "$md5 does not appear to be a md5sum\n" unless ($md5 =~ /^[0-9a-z]{32}$/);
     die "$bam does not appear to be a bam file\n" unless ($bam =~ /.bam$/);
@@ -141,6 +142,8 @@ while (<$ifh>) {
     # Set lane name to @RG->ID unless this is '1', in which case try to set it to @RG->PU
     my $lane_name = ($rg eq '1' && exists($rg_info{$rg}{PU})) ? $rg_info{$rg}{PU} : $rg;
     
+    my $run_date = $date || $data{$bam}{DT}  || $time{'yyyy-mm-dd hh:mm:ss'};
+    
     $data{$bam}{path}        = $bam_path;
     $data{$bam}{md5}         = $md5;
     $data{$bam}{sample}      = $sample      || $rg_info{$rg}{SM};
@@ -152,6 +155,7 @@ while (<$ifh>) {
     $data{$bam}{seq_tech}    = $seq_tech    || $platform_to_tech{ $rg_info{$rg}{PL} };
     $data{$bam}{insert_size} = $insert_size || $rg_info{$rg}{PI};
     $data{$bam}{alias}       = $alias       || $data{$bam}{sample};
+    $data{$bam}{run_date}    = Time::Format::time_format('yyyy-mm-dd hh:mm:ss', $run_date);
 }
 close $ifh;
 
@@ -160,7 +164,8 @@ unless ($do_updates) {
         print join "\t", ($data{$bam}{md5}, $bam,
             $data{$bam}{sample}, $data{$bam}{population}, $data{$bam}{project}, 
             $data{$bam}{library}, $data{$bam}{seq_centre}, $data{$bam}{seq_tech}, 
-            $data{$bam}{lane}, $data{$bam}{insert_size}, $data{$bam}{alias});
+            $data{$bam}{lane}, $data{$bam}{insert_size}, $data{$bam}{alias}, 
+            $data{$bam}{run_date});
             print "\n";
     }
     exit;
@@ -188,6 +193,7 @@ foreach my $bam (keys %data)
     
     my $md5 = $data{$bam}{md5};
     my $insert_size = $data{$bam}{insert_size};
+    my $run_date = $data{$bam}{run_date};
     
     # Create project if necessary
     my $project = $object_cache{$project_name} || $vrtrack->get_project_by_name($project_name);
@@ -298,6 +304,7 @@ foreach my $bam (keys %data)
         $lane = $library->add_lane($lane_name);
         print "adding lane $lane_name\n" if $verbose;
         $lane->hierarchy_name($lane_name);
+        $lane->run_date($run_date);
         $lane->update;
         ++$lanes;
         
