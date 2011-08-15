@@ -238,7 +238,7 @@ has 'fragment_size'  => (
 
 has 'type'  => (
     is          => 'ro',
-    isa         => 'Str',
+    isa         => 'Maybe[Str]',
     init_arg    => 'library_type',
 );
 
