@@ -123,12 +123,14 @@ has 'type'  => (
 
 has 'fragment_size_from'  => (
     is          => 'ro',
-    isa         => 'Maybe[Int]',
+#    isa         => 'Maybe[Int]',
+    isa         => 'Maybe[Str]',
 );
 
 has 'fragment_size_to'  => (
     is          => 'ro',
-    isa         => 'Maybe[Int]',
+#    isa         => 'Maybe[Int]',
+    isa         => 'Maybe[Str]',
 );
 
 has 'status'  => (

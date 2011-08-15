@@ -1071,6 +1071,7 @@ sub get_import_jobs_from_vrtrack
         if ( $lane->is_withdrawn() ) { next; }
 
         my $path = $vrtrack->hierarchy_path_of_lane_hname($lane->name);
+        next unless $path;
         
         $lanes_to_run{$path}{is_paired} = $lane->is_paired();
         $lanes_to_run{$path}{vrlane}    = $lane;

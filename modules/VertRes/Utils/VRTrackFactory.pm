@@ -43,6 +43,7 @@ my $PORT = $ENV{VRTRACK_PORT} || 3306;
 my $READ_USER = $ENV{VRTRACK_RO_USER};
 my $WRITE_USER = $ENV{VRTRACK_RW_USER};
 my $WRITE_PASS = $ENV{VRTRACK_PASSWORD};
+my $FSU_FILE_EXISTS_DB_NAME = $ENV{FSU_FILE_EXISTS_DB_NAME} || 'vrtrack_fsu_file_exists';
 
 
 =head2 new
@@ -168,5 +169,20 @@ sub databases {
     
     return @vr_dbs;
 }
+
+=head2 fsu_file_exists_db_name
+
+ Title   : fsu_file_exists_db_name
+ Usage   : my @db_names = VertRes::Utils::VRTrackFactory->fsu_file_exists_db_name();
+ Function: Name of database where details of files on disk exist
+ Returns : name of database
+
+=cut
+
+sub fsu_file_exists_db_name
+{
+  return $FSU_FILE_EXISTS_DB_NAME;
+}
+
 
 1;
