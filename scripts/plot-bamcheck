@@ -297,7 +297,7 @@ sub plot_qualities
         unset ylabel
     ];
   
-    unless($is_paired)
+    if($is_paired)
     {
       print $fh qq[
           set xlabel "Cycle (rev reads)"
@@ -333,7 +333,7 @@ sub plot_qualities
         set xlabel "Quality"
     ];
     
-    unless($is_paired)
+    if($is_paired)
     {
       print $fh qq[
           set ylabel "Frequency (rev reads)" 
