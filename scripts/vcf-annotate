@@ -10,21 +10,21 @@ use Vcf;
 
 my %filters =
 (
-    MinAB        => { dflt=>2, usage=>'INT', desc=>'Minimum number of alternate bases', nick=>'a' },
+    MinAB        => { dflt=>2, usage=>'INT', desc=>'Minimum number of alternate bases (INFO/DP4)', nick=>'a' },
     SnpCluster   => { dflt=>undef, usage=>'INT1,INT2', desc=>"Filters clusters of 'INT1' or more SNPs within a run of 'INT2' bases", nick=>'c' },
-    MinDP        => { dflt=>2, usage=>'INT', desc=>"Minimum read depth", nick=>'d' },
-    MaxDP        => { dflt=>10_000_000, usage=>'INT', desc=>"Maximum read depth", nick=>'D' },
-    MinMQ        => { dflt=>10, usage=>'INT', desc=>"Minimum RMS mapping quality for SNPs", nick=>'q' },
+    MinDP        => { dflt=>2, usage=>'INT', desc=>"Minimum read depth (INFO/DP or INFO/DP4)", nick=>'d' },
+    MaxDP        => { dflt=>10_000_000, usage=>'INT', desc=>"Maximum read depth (INFO/DP or INFO/DP4)", nick=>'D' },
+    MinMQ        => { dflt=>10, usage=>'INT', desc=>"Minimum RMS mapping quality for SNPs (INFO/MQ)", nick=>'q' },
     SnpGap       => { dflt=>10, usage=>'INT', desc=>"SNP within INT bp around a gap to be filtered", nick=>'w' },
     GapWin       => { dflt=>10, usage=>'INT', desc=>"Window size for filtering adjacent gaps", nick=>'W' },
-    StrandBias   => { dflt=>1e-4, usage=>'FLOAT', desc=>"Min P-value for strand bias (given PV4)", nick=>'1' },
-    BaseQualBias => { dflt=>1e-100, usage=>'FLOAT', desc=>"Min P-value for baseQ bias", nick=>'2' },
-    MapQualBias  => { dflt=>0, usage=>'FLOAT', desc=>"Min P-value for mapQ bias", nick=>'3' },
-    EndDistBias  => { dflt=>1e-4, usage=>'FLOAT', desc=>"Min P-value for end distance bias", nick=>'4' },
+    StrandBias   => { dflt=>1e-4, usage=>'FLOAT', desc=>"Min P-value for strand bias (INFO/PV4)", nick=>'1' },
+    BaseQualBias => { dflt=>1e-100, usage=>'FLOAT', desc=>"Min P-value for baseQ bias (INFO/PV4)", nick=>'2' },
+    MapQualBias  => { dflt=>0, usage=>'FLOAT', desc=>"Min P-value for mapQ bias (INFO/PV4)", nick=>'3' },
+    EndDistBias  => { dflt=>1e-4, usage=>'FLOAT', desc=>"Min P-value for end distance bias (INFO/PV4)", nick=>'4' },
     RefN         => { dflt=>'', usage=>'', desc=>"Reference base is N", nick=>'r' },
     Qual         => { dflt=>'10', usage=>'INT', desc=>"Minimum value of the QUAL field", nick=>'Q' },
-    VDB          => { dflt=>'0.005', usage=>'FLOAT', desc=>"Minimum Variant Distance Bias (INFO/VCD)", nick=>'v' },
-    HWE          => { dflt=>1e-4, usage=>'FLOAT', desc=>"Minimum P-value for HWE (plus F<0)", nick=>'H' },
+    VDB          => { dflt=>'0.015', usage=>'FLOAT', desc=>"Minimum Variant Distance Bias (INFO/VDB)", nick=>'v' },
+    HWE          => { dflt=>1e-4, usage=>'FLOAT', desc=>"Minimum P-value for HWE (plus F<0) (INFO/HWE and INFO/G3)", nick=>'H' },
 );
 
 my $opts = parse_params();
@@ -47,7 +47,7 @@ sub error
 
     die
         "About: Annotates VCF file, adding filters or custom annotations. Requires tabix indexed file with annotations.\n",
-        "   Currently annotates only the INFO column, but it will be extended on demand.\n",
+        "   Currently annotates only the ID and INFO column, but it will be extended on popular demand.\n",
         "Usage: cat in.vcf | vcf-annotate [OPTIONS] > out.vcf\n",
         "Options:\n",
         "   -a, --annotations <file.gz>         The tabix indexed file with the annotations: CHR\\tFROM[\\tTO][\\tVALUE]+.\n",
@@ -57,18 +57,57 @@ sub error
         "                                           matching lines are annotated.\n",
         "   -d, --description <file|string>     Header annotation, e.g. key=INFO,ID=HM2,Number=0,Type=Flag,Description='HapMap2 membership'.\n",
         "                                           The descriptions can be read from a file, one annotation per line.\n",
-        "   -f, --filter <list>                 Apply filters, list is in the format flt1=value/flt2/flt3=value/etc.\n",
+        "   -f, --filter <file|list>            Apply filters, list is in the format flt1=value/flt2/flt3=value/etc. If argument to -f is a file,\n",
+        "                                           user-defined filters be applied. See User Defined Filters below.\n",
         "   -h, -?, --help                      This help message.\n",
         "Filters:\n",
         sprintf("\t+  %-25s\t\tApply all filters with default values (can be overriden, see the example below).\n",''),
         sprintf("\t-X %-25s\t\tExclude the filter X\n",''),
         join('',@filters),
-        "Example:\n",
+        "Examples:\n",
         "   zcat in.vcf.gz | vcf-annotate -a annotations.gz -d descriptions.txt -c FROM,TO,CHROM,ID,INFO/DP | bgzip -c >out.vcf.gz \n",
         "   zcat in.vcf.gz | vcf-annotate -f +/-a/c=3,10/q=3/d=5/-D -a annotations.gz -d descriptions.txt | bgzip -c >out.vcf.gz \n",
+        "   zcat in.vcf.gz | vcf-annotate -a dbSNPv132.tab.gz -c CHROM,FROM,REF,ALT,ID,-,-,- | bgzip -c >out.vcf.gz \n",
         "Where descriptions.txt contains:\n",
         "   key=INFO,ID=GN,Number=1,Type=String,Description='Gene Name'\n",
         "   key=INFO,ID=STR,Number=1,Type=Integer,Description='Strand'\n",
+        "The file dbSNPv132.tab.gz with dbSNP IDs can be downloaded from\n",
+        "   ftp://ftp.sanger.ac.uk/pub/1000genomes/pd3/dbSNP/\n",
+        "\n",
+        "User-defined filters:\n",
+        "    # The examples below are self-explanatory. Notice the use of the predefined        \n",
+        "    #  variables (\$MATCH, \$PASS, \$FAIL) and methods (error).                        \n",
+        "    #                                                                                  \n",
+        "    # In this example, a minimum value of AF1=0.1 is required                          \n",
+        "    {                                                                                  \n",
+        "       tag  => 'INFO/AF1',                       # The VCF tag to apply this filter on \n",
+        "       name => 'MinAF',                          # The filter ID                       \n",
+        "       desc => 'Minimum AF1 [0.01]',             # Description for the VCF header      \n",
+        "       test => sub { return \$MATCH < 0.01 ? \$FAIL : \$PASS },                        \n",
+        "    },                                                                                 \n",
+        "    # Filter all indels (presence of INDEL tag is tested)                              \n",
+        "    {                                                                                  \n",
+        "       tag      => 'INFO/INDEL',                                                       \n",
+        "       apply_to => 'indels',         # Can be one of SNPs, indels, all. Default: [All] \n",
+        "       name     => 'Indel',                                                            \n",
+        "       desc     => 'INDEL tag present',                                                \n",
+        "       test     => sub { return \$FAIL },                                              \n",
+        "    },                                                                                 \n",
+        "    # Only loci with enough reads supporting the variant will pass the filter\n",
+        "    {                                                                        \n",
+        "       tag      => 'INFO/DP4',                                               \n",
+        "       name     => 'FewAlts',                                                \n",
+        "       desc     => 'Too few reads supporting the variant',                   \n",
+        "       apply_to => 'SNPs',                                                   \n",
+        "       test     => sub {                                                     \n",
+        "           if ( !(\$MATCH =~ /^([^,]+),([^,]+),([^,]+),(.+)\$/) )            \n",
+        "           {                                                                 \n",
+        "               error(\"Could not parse INFO/DP4: \$CHROM:\$POS [\$MATCH]\"); \n",
+        "           }                                                                 \n",
+        "           if ( 0.1*(\$1+\$2) > \$3+\$4  ) { return \$PASS; }                \n",
+        "           return \$FAIL;                                                    \n",
+        "       },                                                                    \n",
+        "    },                                                                       \n",
         "\n";
 }
 
@@ -115,18 +154,59 @@ sub parse_params
         if ( -e $arg ) { $$opts{file}=$arg; next; }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
-    if ( !exists($$opts{filters}) )
+    if ( !exists($$opts{filters}) && !exists($$opts{udef_filters}) )
     {
-        if ( !exists($$opts{desc}) ) { error("Missing the -d option and no filters given? (Check the -f option.)\n") }
-        if ( !exists($$opts{annotations}) ) { error("Missing the -a option.\n") }
+        if ( !exists($$opts{annotations}) ) { error("Missing the -a or -f option.\n") }
     }
     if ( exists($$opts{annotations}) && !exists($$opts{cols}) ) { error("Missing the -c option.\n"); }
     return $opts;
 }
 
+sub parse_user_defined_filters
+{
+    my ($opts,$str) = @_;
+    my $filters = [ do $str ];
+    for my $filter (@$filters)
+    {
+        if ( !exists($$filter{tag}) ) { error("Missing 'tag' key for one of the filters in $str\n"); }
+        if ( !($$filter{tag}=~m{^INFO/(.+)$}) ) { error("Currently only INFO tags supported. Could not parse the tag [$$filter{tag}]\n"); }
+        my $ID = $1;
+
+        $$filter{ID} = $ID;
+        $$filter{tag_re} = qr{$ID=?([^\t;]*)};
+
+        if ( !exists($$filter{name}) ) { error("Missing 'name' key for the filter [$$filter{tag}]\n"); }
+        if ( !exists($$filter{desc}) ) { error("Missing 'desc' key for the filter [$$filter{tag}]\n"); }
+        push @{$$opts{desc}}, "key=FILTER,ID=$$filter{ID},Description='$$filter{desc}";
+
+        if ( !exists($$filter{apply_to}) or lc($$filter{apply_to}) eq 'all' ) 
+        {
+            $$opts{udef_filters}{'all'}{$ID} = $filter;
+            $$opts{udef_filters}{'s'}{$ID}   = $filter;
+            $$opts{udef_filters}{'i'}{$ID}   = $filter;
+        }
+        elsif ( exists($$filter{apply_to}) and lc($$filter{apply_to}) eq 'snps' )
+        {
+            $$opts{udef_filters}{'s'}{$ID}   = $filter;
+            $$opts{udef_filters_typecheck_needed} = 1;
+        }
+        elsif ( exists($$filter{apply_to}) and lc($$filter{apply_to}) eq 'indels' )
+        {
+            $$opts{udef_filters}{'i'}{$ID}   = $filter;
+            $$opts{udef_filters_typecheck_needed} = 1;
+        }
+    }
+}
+
 sub parse_filters
 {
     my ($opts,$str) = @_;
+
+    if ( -e $str )
+    {
+        parse_user_defined_filters($opts,$str);
+        return;
+    }
 
     my $has_filters = 0;
     my $set_defaults = 0;
@@ -268,6 +348,7 @@ sub parse_columns
         }
         elsif ( $col eq 'CHROM' ) { $out{$col}=$i; }
         elsif ( $col eq 'FROM' ) { $out{$col}=$i; }
+        elsif ( $col eq 'POS' ) { $out{'FROM'}=$i; }
         elsif ( $col eq 'TO' ) { $out{$col}=$i; }
         elsif ( $col eq 'ID' ) { $out{$col}=$i; }
         elsif ( $col eq 'REF' ) { $out{$col}=$i; }
@@ -460,17 +541,24 @@ sub output_line
 {
     my ($opts,$line) = @_;
 
-    if ( !exists($$opts{filters}) )
+    if ( !exists($$opts{filters}) && !exists($$opts{udef_filters}) )
     {
         # No filters requested, print the line
         print_line($line);
         return;
     }
 
-    if ( defined $line && scalar keys %{$$opts{filters}} )
+    if ( defined $line )
     {
         # Local filters return the line back immediately
-        $line = apply_local_filters($opts,$line);
+        if ( scalar keys %{$$opts{filters}} )
+        {
+            $line = apply_local_filters($opts,$line);
+        }
+        if ( exists($$opts{udef_filters}) )
+        {
+            $line = apply_user_defined_filters($opts,$line);
+        }
     }
 
     # Staging filters may return nothing or multiple lines. If $line is not defined, they will
@@ -511,6 +599,51 @@ sub output_line
     }
 }
 
+sub apply_user_defined_filters
+{
+    my ($opts,$line) = @_;
+
+    our($MATCH,$CHROM,$POS,$FAIL,$PASS);
+    $CHROM = $$line[0];
+    $POS   = $$line[1];
+    $FAIL  = 1;
+    $PASS  = 0;
+
+    my %filters = ();
+    if ( $$opts{udef_filters_typecheck_needed} )
+    {
+        # Check if the line has an indel, SNP or both
+        for my $alt (split(/,/,$$line[4]))
+        {
+            my ($type,$len,$ht) = $$opts{vcf}->event_type($$line[3],$alt);
+            if ( exists($$opts{udef_filters}{$type}) ) 
+            {
+                %filters = ( %filters, %{$$opts{udef_filters}{$type}} );
+            }
+        }
+        # Return if the line does not have the wanted variant type
+        if ( !scalar %filters ) { return $line; }
+    }
+    else
+    {
+        %filters = %{$$opts{udef_filters}{all}};
+    }
+
+    my %apply;
+    for my $filter (values %filters)
+    {
+        if ( !($$line[7]=~$$filter{tag_re}) ) { next; }
+        $MATCH = $1;
+        $apply{ $$filter{name} } = &{$$filter{test}} == $PASS ? 0 : 1;
+    }
+    if ( scalar keys %apply )
+    {
+        $$line[6] = $$opts{vcf}->add_filter($$line[6],%apply);
+    }
+
+    return $line;
+}
+
 sub apply_local_filters
 {
     my ($opts,$line) = @_;
@@ -528,7 +661,7 @@ sub apply_local_filters
     }
     if ( $$line[7]=~/DP=(\d+)/i ) { $dp = $1; }
     if ( $$line[7]=~/MQ=(\d+)/i ) { $mq = $1; }
-    if ( $$line[7]=~/VDB=([^;\t]+)/i ) { $vdb = $1; }
+    if ( $$line[7]=~/VDB=([^;,\t]+)/i ) { $vdb = $1; }
 
     if ( exists($$filters{RefN}) )
     {
