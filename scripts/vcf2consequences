@@ -35,7 +35,7 @@ foreach( keys( %INC ) )
 }
 =cut
 
-my ($input_vcf, $complement, $species, $index_vcf, $help, $buffer_size, $gerp, $grantham);
+my ($input_vcf, $complement, $species, $index_vcf, $help, $buffer_size, $gerp, $grantham,$passonly);
 
 GetOptions
 (
@@ -45,6 +45,7 @@ GetOptions
     "b|buffer=i"    => \$buffer_size,
     "g|gerp"    => \$gerp,
     "r|grantham"    => \$grantham,
+    "p|pass"    => \$passonly,
     "h|help"        => \$help
 );
 
@@ -71,6 +72,8 @@ Usage:
 
 croak qq[Invalid species: $species\n]  unless $species eq qq[Mus_musculus] || $species eq qq[Homo_sapiens];
 
+my $CACHE_HIT = 0;
+my $CACHE_MISS = 0;
 
 my $t0 = Benchmark->new;
 my $ensembl = init_ensembl($species);
@@ -80,6 +83,11 @@ parse_vcf($ensembl,$input_vcf,$index_vcf);
 my $t1 = Benchmark->new;
 my $td = timediff($t1, $t0);
 print STDERR "The consequences calculations took:",timestr($td),"\n";
+if ($index_vcf){
+    print STDERR "$CACHE_HIT cache hits\n";
+    print STDERR "$CACHE_MISS from Ensembl\n";
+}
+    
 exit;
 
 #------------------------------
@@ -133,6 +141,7 @@ sub parse_vcf
     
     while( my $rec = $vcf->next_data_array() )
     {
+
         if (($lastChr && $$rec[0] ne $lastChr) || $lines >= $buffer_size) 
         {
             process_batch($index_vcf, "$minpos-$maxpos", \%vcf2process, \@linearray, $vcf);       
@@ -175,12 +184,22 @@ sub parse_vcf
     print STDERR "Loading consequences data took:",timestr($tpd),"\n";    
 }
 
+
+# Process batch
+# Handle a bunch of lines simultaneously to cut down on index-file fetches
+# args - 
+# index_vcf : file to use as a cache of called consequences
+# chr_location: min-max location string
+# vcf2process: hash of lines to annotate by key of chr:pos:ref:alt
+# linearray: ordered list of vcf2process keys so we put them back in the right order
+# vcf: Vcf.pm object of vcf we're annotating
 sub process_batch
 {
     my ($index_vcf, $chr_location, $vcf2process, $linearray, $vcf) = @_;
-    my @vcffound;
-    if ($index_vcf) 
-    {
+
+    my %vcf_cache;
+    if ($index_vcf){
+        # build a hash of cache lines
         my $chr = $$vcf2process{$$linearray[0]}[0];
 
         #Make call to tabix using parameters generated above
@@ -196,34 +215,30 @@ sub process_batch
                 my $indexkey = join(":", $line[0],$line[1],$line[3],$line[4]);
                 if (exists $vcf2process->{$indexkey}) 
                 {
-                    my @vcfinput = $vcf2process->{$indexkey};
-                    my $rec = \@{$vcfinput[0]};
-                    $$rec[7] = $vcf->add_info_field($$rec[7],'CSQ'=>$info_csq);
-                    push @vcffound, $indexkey;
+                    $vcf_cache{$indexkey} = $info_csq;
                 }
             }
         }
     }
-    my @union = my @intersection = my @difference = ();
-    my %count = ();
-    foreach my $element (@vcffound, keys %$vcf2process) { 
-        $count{$element}++ 
-    }
-
-    foreach my $element2 (keys %count) {
-        push @union, $element2;
-        push @{ $count{$element2} > 1 ? \@intersection : \@difference }, $element2;
-    }
             
     foreach my $vcfkey ( @$linearray ) 
     {
-        my @grett2 = $vcf2process->{$vcfkey};
-        my $rec2 = \@{$grett2[0]};
-        if (grep $_ eq $vcfkey, @difference) 
-        {
-            $$rec2[7] = process_conseqs($vcfkey, $ensembl, $vcf, $$rec2[7]);
+        my $rec = $vcf2process->{$vcfkey};
+        if ($passonly && $$rec[6] ne 'PASS' ){
+            # want to skip consequences
+            # so do nothing
         }
-        print join("\t",@$rec2)."\n";
+        else { # it's passonly and a PASS record, or not passonly.  Get consequence!
+            if (exists $vcf_cache{$vcfkey}){
+                $CACHE_HIT++;
+                $$rec[7] = $vcf->add_info_field($$rec[7],'CSQ'=>$vcf_cache{$vcfkey});
+            }
+            else {
+                $CACHE_MISS++;
+                $$rec[7] = process_conseqs($vcfkey, $ensembl, $vcf, $$rec[7]);
+            }
+        }
+        print join("\t",@$rec)."\n";
     }
 }
 
@@ -287,12 +302,16 @@ sub process_conseqs
 
         if ( scalar %$conseq )
         {
-            push @conseqs, join(',',sort(keys %$conseq));
+
+            # jws 2011-08-07 changed this back to + so the GERP/PolyPhen/etc
+            # sep can be ',' instead of '=' which is invalid VCF.
+
+            push @conseqs, join('+',sort(keys %$conseq));
         }
     }
     if ( scalar @conseqs )
     {
-        $info = $vcf->add_info_field($info,'CSQ'=>join(',',@conseqs));
+        $info = $vcf->add_info_field($info,'CSQ'=>join('+',@conseqs));
     }
     return $info;
 }
@@ -381,7 +400,10 @@ sub call_conseqs
 
 	if ($gerp && $allele !~ '-') {	# ignore indels
 
-		my $gerp_text = "GERP=";
+                # jws 2011-08-07 Can't have "GERP=", as '=' is
+                # not allowed with an INFO string.  Use ','
+                # instead.
+		my $gerp_text = "GERP,";
 
 		# minimum slice size 2 for gerp scores
 		my $gerp_slice = $ensembl->{slice}->fetch_by_region('chromosome', $vf->seq_region_name, $vf->start, $vf->start+1);
@@ -417,7 +439,11 @@ sub get_nssnp_annotations
 			my $pred = $tva->$pred_meth;
 
 			if($pred) {
-				$pred_text .= "$tool=";
+
+                                # jws 2011-08-07 Can't have "$tool=", as '=' is
+                                # not allowed with an INFO string.  Use ','
+                                # instead.
+				$pred_text .= "$tool,";
 
 				$pred =~ s/\s+/\_/;
 				$pred_text .= $pred;
@@ -437,7 +463,7 @@ sub get_nssnp_annotations
 			if ($grantham) {
 				my $ref_aa = $tv->get_reference_TranscriptVariationAllele()->peptide();
 				my $var_aa = $tva->peptide();
-				$pred_text .= ":Grantham=" . $grantham_matrix->score($ref_aa,$var_aa);
+				$pred_text .= ":Grantham," . $grantham_matrix->score($ref_aa,$var_aa);
 			}
 			last;
 		}

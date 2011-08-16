@@ -1171,8 +1171,11 @@ sub validate_alt_field
 =head2 event_type
 
     Usage   :   my $x = $vcf->next_data_hash(); 
-                my ($al1,$sep,$al2) = $vcf->parse_alleles($x,'NA00001'); 
-                my ($type,$len,$ht) = $vcf->event_type($x,$al1);
+                my ($alleles,$seps,$is_phased,$is_empty) = $vcf->parse_haplotype($x,'NA00001');
+                for my $allele (@$alleles)
+                {
+                    my ($type,$len,$ht) = $vcf->event_type($x,$allele);
+                }
               or
                 my ($type,$len,$ht) = $vcf->event_type($ref,$al);
     Args    : VCF data line parsed by next_data_hash or the reference allele
@@ -2735,21 +2738,37 @@ sub Vcf4_1::validate_alt_field
             if ( $1 ne '' )
             {
                 $rpl  = $1;
-                my $rref = substr($rpl,0,1);
-                if ( $rref ne $ref1 ) { $msg=', the first base of the replacement string does not match the reference'; push @err,$item; next; }
+                if ( $rpl ne '.' )
+                {
+                    my $rref = substr($rpl,0,1);
+                    if ( $rref ne $ref1 ) { $msg=', the first base of the replacement string does not match the reference'; push @err,$item; next; }
+                }
             }
             else
             {
                 $rpl  = $3;
-                my $rref = substr($rpl,-1,1);
-                if ( $rref ne $ref1 ) { $msg=', the last base of the replacement string does not match the reference'; push @err,$item; next; }
+                if ( $rpl ne '.' )
+                {
+                    my $rref = substr($rpl,-1,1);
+                    if ( $rref ne $ref1 ) { $msg=', the last base of the replacement string does not match the reference'; push @err,$item; next; }
+                }
             }
             my $pos = $2;
-            if ( !($rpl=~/^[ACTGNacgtn]+$/) ) { $msg=', replacement string not valid (expected [ACTGNacgtn]+)'; push @err,$item; next; }
+            if ( !($rpl=~/^[ACTGNacgtn]+$/) && $rpl ne '.' ) { $msg=', replacement string not valid (expected [ACTGNacgtn]+)'; push @err,$item; next; }
             if ( !($pos=~/^\S+:\d+$/) ) { $msg=', cannot parse sequence:position'; push @err,$item; next; }
             next;
         }
-        if ( !($item=~/^[ACTGN]+$|^<[^<>\s]+>$/) ) { push @err,$item; next; }
+        if ( $item=~/^\.([ACTGNactgn])[ACTGNactgn]*$/ )
+        {
+            if ( $ref1 ne $1 ) { $msg=', first base does not match the reference'; push @err,$item; }
+            next; 
+        }
+        elsif ( $item=~/^[ACTGNactgn]*([ACTGNactgn])\.$/ )
+        {
+            if ( substr($ref,-1,1) ne $1 ) { $msg=', last base does not match the reference'; push @err,$item; }
+            next; 
+        }
+        if ( !($item=~/^[ACTGNactgn]+$|^<[^<>\s]+>$/) ) { push @err,$item; next; }
         if ( $item=~/^<[^<>\s]+>$/ ) { next; }
         if ( $ref_len==length($item) ) { next; }
         if ( substr($item,0,1) ne $ref1 ) { $msg=', first base does not match the reference'; push @err,$item; next; }
@@ -2802,7 +2821,7 @@ sub Vcf4_1::next_data_array
 sub Vcf4_1::event_type
 {
     my ($self,$rec,$allele) = @_;
-    if ( $allele=~/\[|\]/ ) { return 'b'; }
+    if ( $allele=~/\[|\]|^\..+|.+\.$/ ) { return 'b'; }
     return $self->SUPER::event_type($rec,$allele);
 }
 
