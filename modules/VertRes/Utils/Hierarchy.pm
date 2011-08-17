@@ -130,6 +130,7 @@ sub parse_lane {
                                       and library_raw)
            lane           => string, (aka read group)
            centre         => string, (the sequencing centre name)
+           species        => string,
            insert_size    => int, (can be undef if this lane is single-ended)
            withdrawn      => boolean,
            imported       => boolean,
@@ -226,6 +227,7 @@ sub lane_info {
     }
     $info{sample} = $objs{sample}->name || $self->throw("sample name wasn't known for $rg");
     $info{individual} = $objs{individual}->name || $self->throw("individual name wasn't known for $rg");
+    $info{species} =  $objs{species}->name || $self->throw("species name wasn't known for $rg");
     $info{individual_acc} = $objs{individual}->acc; # || $self->throw("sample accession wasn't known for $rg");
     unless ($args{no_coverage}) {
         $info{individual_coverage} = $self->hierarchy_coverage(individual => [$info{individual}],
@@ -259,6 +261,7 @@ sub lane_info {
            platform => VRTrack::Seq_tech object
            centre => VRTrack::Seq_centre object
            library => VRTrack::Library object
+           species => VRTrack::Species object
  Args    : VRTrack::Lane object
 
 =cut
@@ -272,6 +275,7 @@ sub lane_hierarchy_objects {
     my $st = $lib->seq_tech;
     my $sample = VRTrack::Sample->new($vrtrack, $lib->sample_id);
     my $individual = $sample->individual;
+    my $species = $individual->species;
     my $pop = $individual->population;
     my $project_obj = VRTrack::Project->new($vrtrack, $sample->project_id);
     my $study_obj = VRTrack::Study->new($vrtrack, $project_obj->study_id) if $project_obj->study_id;
@@ -283,7 +287,8 @@ sub lane_hierarchy_objects {
             population => $pop,
             platform => $st,
             centre => $sc,
-            library => $lib);
+            library => $lib,
+            species => $species);
 }
 
 =head2 hierarchy_coverage
