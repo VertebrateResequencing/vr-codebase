@@ -309,6 +309,14 @@ around BUILDARGS => sub {
         foreach my $field(keys %$id_ref){
         	$argref->{$field} = $id_ref->{$field};
         }
+
+        # 2011-08-17 jws: state on a library doesn't mean anything now; the
+        # prep status is actually the status of the library creation request.
+        # We should remove this, but for now, let's settle for not breaking
+        # vrtrack by returning null or empty string.
+        unless ($argref->{state}){
+            $argref->{state} = 'unknown';
+        }
     };
     return $argref;
 };
