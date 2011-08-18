@@ -53,6 +53,10 @@ slx_mapper_exe => 'bwa-0.5.5' (optional - defaults to slx_mapper)
 
 add_index => 1,
 
+# And an option for finding the percentage genome mapped by adding the line:
+
+get_genome_coverage => 1,
+
 # By default it will map all unmapped lanes in a random order. You can limit
 # it to only mapping certain lanes by suppling the limits key with a hash ref
 # as a value. The hash ref should contain options understood by
@@ -393,6 +397,11 @@ sub bam_to_fastq_requires {
     }
 }
 
+sub is_paired {
+  my ($self) = @_;
+  return $self->{vrlane}->{is_paired};
+}
+
 =head2 bam_to_fastq_provides
 
  Title   : bam_to_fastq_provides
@@ -403,11 +412,21 @@ sub bam_to_fastq_requires {
 
 =cut
 
+
 sub bam_to_fastq_provides {
-    my ($self, $lane_path) = @_;
-    my @files = @{$self->{files} || []};
+  my ($self, $lane_path) = @_;
+  my @files = @{$self->{files} || []};
+   
+  if( $self->is_paired )
+  {
     return @files ? [] : ["$self->{lane}_1.fastq.gz", "$self->{lane}_2.fastq.gz", "$self->{lane}_1.fastq.gz.fastqcheck", "$self->{lane}_2.fastq.gz.fastqcheck"];
+  }
+  else
+  {
+    return @files ? [] : ["$self->{lane}.fastq.gz", "$self->{lane}.fastq.gz.fastqcheck"];
+  }
 }
+
 
 =head2 bam_to_fastq
 
@@ -427,6 +446,18 @@ sub bam_to_fastq {
     my $in_bam = $self->{fsu}->catfile($lane_path, $bam);
     my $fastq_base = $self->{lane};
     
+    
+    my $fastqs_str ; 
+    if( $self->is_paired )
+    {
+      $fastqs_str  = qq{ (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq"), File::Spec->catfile(\$dir, "$self->{lane}_2.fastq")) };
+    }
+    else
+    {
+      $fastqs_str  = qq{ (File::Spec->catfile(\$dir, "$self->{lane}.fastq")) };
+    }
+    
+    
     # (bam2fastq itself does full sanity checking and safe result file creation)
     my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."bam2fastq.pl");
     open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -436,7 +467,7 @@ use VertRes::Utils::Sam;
 use File::Spec;
 
 my \$dir = '$lane_path';
-my \@fastqs = (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq"), File::Spec->catfile(\$dir, "$self->{lane}_2.fastq"));
+my \@fastqs = $fastqs_str;
 
 # convert to fastq
 unless (-e \$fastqs[0] && -e \$fastqs[1]) {
@@ -720,6 +751,7 @@ sub map {
     my $insert_size_for_mapping = $info{insert_size} || 2000;
     my $insert_size_for_samheader = $info{insert_size} || 0;
     
+    
     my $mapper_class = $self->{mapper_class};
     my $mapper_exe = $self->{mapper_obj}->exe;
     my $verbose = $self->verbose;
@@ -774,6 +806,7 @@ my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
                                output => '$sam_file',
                                insert_size => $insert_size_for_mapping,
                                read_group => '$info{lane}',
+                               is_paired => $self->{vrlane}->{is_paired},
                                error_file => '$prev_error_file');
 
 # (it will only return ok and create output if the sam file was created and not
@@ -1079,12 +1112,17 @@ sub statistics_provides {
     my ($self, $lane_path) = @_;
     
     my @provides;
+
+    my @stats_methods = ('bas', 'flagstat');
+    if(exists $$self{'get_genome_coverage'} && $$self{'get_genome_coverage'})
+    { push(@stats_methods, 'cover'); }
+
     foreach my $bam (@{$self->statistics_requires($lane_path)}) {
-        foreach my $suffix ('bas', 'flagstat') {
+        foreach my $suffix (@stats_methods) {
             push(@provides, $bam.'.'.$suffix);
         }
     }
-    
+
     @provides || $self->throw("Something went wrong; we don't seem to provide any stat files!");
     
     return \@provides;
@@ -1142,7 +1180,18 @@ unless (\$num_present == ($#stat_files + 1)) {
         die "Failed to get stats for the bam '$bam_file'!\n";
     }
 }
-
+        };
+	if(exists $$self{'get_genome_coverage'} && $$self{'get_genome_coverage'})
+	{
+	    # Generate genome coverage file.
+	    print $scriptfh qq{
+my \@cover = \$sam_util->coverage('$bam_file',1,2,5,10,20,50,100);
+open(my \$fh, '> $bam_file.cover') || die "Failed to open file '$bam_file.cover'";
+print \$fh "[",join(',',\@cover),"]\n";
+close \$fh;
+            };
+	}
+        print $scriptfh qq{
 exit;
         };
         close $scriptfh;
@@ -1264,7 +1313,53 @@ sub update_db {
         $mapping->sd_insert($stats{sd_insert}) if $stats{sd_insert};
         $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
     }
-    
+ 
+    # Get Genome Coverage Option
+    if($needs_update && exists $$self{'get_genome_coverage'} && $$self{'get_genome_coverage'})
+    {
+	my @cover_files;
+	foreach my $file (@{$files}) {
+	    next unless $file =~ /\.cover$/;
+	    push(@cover_files, $self->{fsu}->catfile($lane_path, $file));
+	    -s $cover_files[-1] || $self->throw("Expected coverage file $cover_files[-1] but it didn't exist!");
+	}
+
+	# Get reference size
+	my $reference_size = $mapping->assembly->reference_size();
+	unless($reference_size){ $self->throw("Failed to find reference genome size for lane $lane_path"); }
+
+	# For more than one file, pick best coverage.
+	foreach my $file (@cover_files){
+	    my $coverage = do $file || $self->throw("Could not parse: $file");
+	    $stats{target_bases_1X}   = $$coverage[0] if !$stats{target_bases_1X}   || $$coverage[0] > $stats{target_bases_1X};
+	    $stats{target_bases_2X}   = $$coverage[1] if !$stats{target_bases_2X}   || $$coverage[1] > $stats{target_bases_2X};
+	    $stats{target_bases_5X}   = $$coverage[2] if !$stats{target_bases_5X}   || $$coverage[2] > $stats{target_bases_5X};
+	    $stats{target_bases_10X}  = $$coverage[3] if !$stats{target_bases_10X}  || $$coverage[3] > $stats{target_bases_10X};
+	    $stats{target_bases_20X}  = $$coverage[4] if !$stats{target_bases_20X}  || $$coverage[4] > $stats{target_bases_20X};
+	    $stats{target_bases_50X}  = $$coverage[5] if !$stats{target_bases_50X}  || $$coverage[5] > $stats{target_bases_50X};
+	    $stats{target_bases_100X} = $$coverage[6] if !$stats{target_bases_100X} || $$coverage[6] > $stats{target_bases_100X};
+	}
+
+	# Get percentage cover
+	$stats{target_bases_1X}   = sprintf("%.2f",$stats{target_bases_1X}   * 100 / $reference_size);
+	$stats{target_bases_2X}   = sprintf("%.2f",$stats{target_bases_2X}   * 100 / $reference_size);
+	$stats{target_bases_5X}   = sprintf("%.2f",$stats{target_bases_5X}   * 100 / $reference_size);
+	$stats{target_bases_10X}  = sprintf("%.2f",$stats{target_bases_10X}  * 100 / $reference_size);
+	$stats{target_bases_20X}  = sprintf("%.2f",$stats{target_bases_20X}  * 100 / $reference_size);
+	$stats{target_bases_50X}  = sprintf("%.2f",$stats{target_bases_50X}  * 100 / $reference_size);
+	$stats{target_bases_100X} = sprintf("%.2f",$stats{target_bases_100X} * 100 / $reference_size);
+
+	# Update mapstats
+	$mapping->target_bases_1X($stats{target_bases_1X});
+	$mapping->target_bases_2X($stats{target_bases_2X});
+	$mapping->target_bases_5X($stats{target_bases_5X});
+	$mapping->target_bases_10X($stats{target_bases_10X});
+	$mapping->target_bases_20X($stats{target_bases_20X});
+	$mapping->target_bases_50X($stats{target_bases_50X});
+	$mapping->target_bases_100X($stats{target_bases_100X});
+	$mapping->update || $self->throw("Unable to set mapping genome coverage on lane $lane_path");
+    }
+
     # set mapped status
     $vrlane->is_processed('mapped', 1);
     $vrlane->update() || $self->throw("Unable to set mapped status on lane $lane_path");

@@ -130,6 +130,7 @@ sub compare
     my $skipped   = 0;
     my $ignored   = 0;
     my $nlines    = 0;
+    my $nlifted   = 0;
     my $win = 10;
     while (1)
     {
@@ -176,6 +177,7 @@ sub compare
         if ( $ok )
         {
             printf $tlog_fh "%s\t%d\t->\t%s\t%d\n",$$ori[0],$$ori[1]+1,$$map[0],$$map[1]+1;
+            $nlifted++;
         }
         else
         {
@@ -186,6 +188,7 @@ sub compare
     close($tlog_fh);
 
     open(my $fh,'>',"$$opts{prefix}/liftover.stats") or error("$$opts{prefix}/liftover.stats: $!");
+    printf $fh "lifted over                             .. %.1f%% (%d)\n", $nlifted*100./$nlines,$nlifted;
     printf $fh "unmapped                                .. %.1f%% (%d)\n", $skipped*100./$nlines,$skipped;
     printf $fh "ignored because of mismatches           .. %.1f%% (%d)\n", $ignored*100./$nlines,$ignored;
     printf $fh "reference mismatches (1bp)              .. %.1f%% (%d)\n", $rmismatch*100./$nlines, $rmismatch;

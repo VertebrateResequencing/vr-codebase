@@ -215,7 +215,9 @@ sub generate_sam {
         }
         
         my $insert_size_arg = '';
-        if (defined $other_args{i}) {
+        if((defined $other_args{is_paired}) && ! $other_args{is_paired})
+        {}
+        elsif(defined $other_args{i}) {
             $insert_size_arg = " -i $other_args{i}";
         }
         
