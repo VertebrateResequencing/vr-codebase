@@ -139,7 +139,7 @@ foreach my $lane (@lanes) {
     next if( $qc && ( !$lane->qc_status() || $lane->qc_status() ne 'passed' ) );
     
     # are we mapped/improved?
-    unless ($lane->is_processed('mapped') && $improved ? $lane->is_processed('improved') : 1) {
+    unless ($lane->is_processed('mapped') && ($improved ? $lane->is_processed('improved') : 1)) {
         my $lane_name = $lane->name;
         my $problem = $improved ? 'mapped/improved' : 'mapped';
         warn "$lane_name was not $problem!\n";
