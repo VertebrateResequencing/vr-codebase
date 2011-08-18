@@ -63,6 +63,14 @@ our @actions =
         'requires' => \&VertRes::Pipelines::TrackQC_Bam::check_genotype_requires, 
         'provides' => \&VertRes::Pipelines::TrackQC_Bam::check_genotype_provides,
     },
+    
+    # Finds percentage of transposons in reads if applicable
+    {
+      'name'     => 'transposon',
+      'action'   => \&transposon,
+      'requires' => \&transposon_requires, 
+      'provides' => \&transposon_provides,
+    },
 
     # Creates some QC graphs and generate some statistics.
     {
@@ -249,10 +257,11 @@ sub rename_files
         {
             Utils::relative_symlink("$file.fastqcheck","$lane_path/${name}_$i.fastq.gz.fastqcheck");
         }
-        if ( -e "$file.md5" && ! -e "$lane_path/${name}_$i.fastq.md5" )
+        if ( -e "$file.md5" && ! -e "$lane_path/${name}_$i.fastq.gz.md5" )
         {
-            Utils::relative_symlink("$file.md5","$lane_path/${name}_$i.fastq.md5");
+            Utils::relative_symlink("$file.md5","$lane_path/${name}_$i.fastq.gz.md5");
         }
+        
         $i++;
     }
     return $$self{'Yes'};
@@ -613,7 +622,69 @@ rename("x$name.bam","$name.bam") or Utils::error("rename x$name.bam $name.bam: \
     return $$self{'No'};
 }
 
+#----------- transposon ---------------------
 
+sub transposon_requires
+{
+  my ($self) = @_;
+
+  my $sample_dir = $$self{'sample_dir'};
+  my @requires = ("$sample_dir/$$self{lane}_1.fastq.gz");
+  return \@requires;
+}
+
+sub transposon_provides
+{
+  my ($self) = @_;
+  my @provides = ();
+  
+  if(( defined $$self{reads_contain_transposon}) && $$self{reads_contain_transposon})
+  {
+    my $sample_dir = $$self{'sample_dir'};
+    @provides = ("$sample_dir/$$self{lane}.transposon");
+  }
+  
+  return \@provides;
+}
+
+sub transposon
+{
+   my ($self,$lane_path,$lock_file) = @_;
+   my $sample_dir = $$self{'sample_dir'};
+   
+   if(( defined $$self{reads_contain_transposon}) && $$self{reads_contain_transposon})
+   {
+     my $tag_length = $$self{transposon_length} || 7;
+     my $output_file = "$lane_path/$sample_dir/".$$self{lane}.".transposon";
+     
+     my $transposon_sequence_str;
+     if(defined $$self{transposon_sequence})
+     { 
+       $transposon_sequence_str = 'tag => "'.$$self{transposon_sequence}.'"';
+     }
+   
+     # Dynamic script to be run by LSF.
+     open(my $fh, '>', "$lane_path/$sample_dir/_transposon.pl") or Utils::error("$lane_path/$sample_dir/_transposon.pl: $!");
+     print $fh 
+     qq[ 
+          use strict;
+          use warnings;
+          use Pathogens::Parser::Transposon;
+          my \$transposon = Pathogens::Parser::Transposon->new(
+            'filename'   => '$$self{lane}_1.fastq.gz',
+            'tag_length' => $tag_length,
+            $transposon_sequence_str
+          );
+          open(OUT,'+>','$output_file') or die "couldnt open transposon output file \$!";
+          print OUT \$transposon->percentage_reads_with_tag;
+          close(OUT);
+     ];
+     close $fh;
+
+     LSF::run($lock_file,"$lane_path/$sample_dir","_$$self{lane}_transposon", $self, qq{perl -w _transposon.pl});
+   }
+   return $$self{'No'};
+}
 
 
 #----------- stats_and_graphs ---------------------

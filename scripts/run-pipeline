@@ -678,7 +678,7 @@ sub filter_lanes {
     my ($limits, $hnames, $vrtrack, $config) = @_;
     
     my %valid_limits;
-    foreach my $limit_type (qw(project sample individual population technology seq_tech centre library lane)) {
+    foreach my $limit_type (qw(project sample individual population technology seq_tech centre library lane species)) {
         if (defined $limits->{$limit_type}) {
             my $array = $limits->{$limit_type};
             unless (ref($array) && ref($array) eq 'ARRAY') {
@@ -1071,6 +1071,7 @@ sub get_import_jobs_from_vrtrack
         if ( $lane->is_withdrawn() ) { next; }
 
         my $path = $vrtrack->hierarchy_path_of_lane_hname($lane->name);
+        next unless $path;
         
         $lanes_to_run{$path}{is_paired} = $lane->is_paired();
         $lanes_to_run{$path}{vrlane}    = $lane;
