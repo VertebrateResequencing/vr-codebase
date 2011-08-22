@@ -1958,21 +1958,28 @@ sub validate_gtype_field
         }
     }
     if ( !exists($$data{GT}) ) { push @errs, "The mandatory tag GT not present." unless $$self{ignore_missing_GT}; }
-    elsif ( !($$data{GT} =~ $$self{regex_gt}) ) { push @errs, "Unable to parse the GT field [$$data{GT}]."; } 
     else
     {
-        my $nalts = @$alts==1 && $$alts[0] eq '.' ? 0 : @$alts;
-
-        my $a = $1;
-        my $b = $3;
-        my $err = $self->validate_int($a,'.');
-        if ( $err ) { push @errs,$err; }
-        elsif ( $a ne '.' && ($a<0 || $a>$nalts) ) { push @errs, "Bad ALT value in the GT field [$$data{GT}]."; }
-        if ( $b ne '' )
+        my $buf = $$data{GT};
+        while ($buf ne '')
         {
-            $err = $self->validate_int($b,'.');
-            if ( $err ) { push @errs,$err; }
-            elsif ( $b ne '.' && ($b<0 || $b>$nalts) ) { push @errs, "Bad ALT value in the GT field [$$data{GT}]."; }
+            my $al = $buf;
+            if ( $buf=~$$self{regex_gtsep} )
+            {
+                $al  = $`;
+                $buf = $';
+                if ( $buf eq '' ) { push @errs, "Unable to parse the GT field [$$data{GT}]."; last; }
+            }
+            else
+            {
+                $buf = '';
+            }
+
+            if ( !defined $al ) { push @errs, "Unable to parse the GT field [$$data{GT}]."; last; }
+            if ( $al eq '.' ) { next; }
+            if ( $al eq '0' ) { next; }
+            if ( !($al=~/^[0-9]+$/) ) { push @errs, "Unable to parse the GT field [$$data{GT}], expected integer."; last; }
+            if ( !exists($$alts[$al-1]) ) { push @errs, "Bad ALT value in the GT field, the index [$al] out of bounds [$$data{GT}]."; last; }
         }
     }
     if ( !@errs ) { return undef; }
@@ -2403,7 +2410,11 @@ sub Vcf4_0::parse_header_line
         {
             if ( $attr_key=~/^\s+/ or $attr_key=~/\s+$/ or $attr_value=~/^\s+/ or $attr_value=~/\s+$/ ) 
             { 
-                $self->throw("Leading or trailing space in attr_key-attr_value pairs is discouraged:\n\t[$attr_key] [$attr_value]\n\t$line\n"); 
+                $self->warn("Leading or trailing space in attr_key-attr_value pairs is discouraged:\n\t[$attr_key] [$attr_value]\n\t$line\n"); 
+                $attr_key =~ s/^\s+//;
+                $attr_key =~ s/\s+$//;
+                $attr_value =~ s/^\s+//;
+                $attr_value =~ s/\s+$//;
             }
             $$rec{$attr_key} = $attr_value;
             $tmp = $';
