@@ -2410,7 +2410,11 @@ sub Vcf4_0::parse_header_line
         {
             if ( $attr_key=~/^\s+/ or $attr_key=~/\s+$/ or $attr_value=~/^\s+/ or $attr_value=~/\s+$/ ) 
             { 
-                $self->throw("Leading or trailing space in attr_key-attr_value pairs is discouraged:\n\t[$attr_key] [$attr_value]\n\t$line\n"); 
+                $self->warn("Leading or trailing space in attr_key-attr_value pairs is discouraged:\n\t[$attr_key] [$attr_value]\n\t$line\n"); 
+                $attr_key =~ s/^\s+//;
+                $attr_key =~ s/\s+$//;
+                $attr_value =~ s/^\s+//;
+                $attr_value =~ s/\s+$//;
             }
             $$rec{$attr_key} = $attr_value;
             $tmp = $';
