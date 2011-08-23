@@ -130,7 +130,7 @@ sub parse_lane {
                                       and library_raw)
            lane           => string, (aka read group)
            centre         => string, (the sequencing centre name)
-           species        => string,
+           species        => string, (may be undef)
            insert_size    => int, (can be undef if this lane is single-ended)
            withdrawn      => boolean,
            imported       => boolean,
@@ -227,7 +227,7 @@ sub lane_info {
     }
     $info{sample} = $objs{sample}->name || $self->throw("sample name wasn't known for $rg");
     $info{individual} = $objs{individual}->name || $self->throw("individual name wasn't known for $rg");
-    $info{species} =  $objs{species}->name || $self->throw("species name wasn't known for $rg");
+    $info{species} =  $objs{species}->name if $objs{species};#|| $self->throw("species name wasn't known for $rg");
     $info{individual_acc} = $objs{individual}->acc; # || $self->throw("sample accession wasn't known for $rg");
     unless ($args{no_coverage}) {
         $info{individual_coverage} = $self->hierarchy_coverage(individual => [$info{individual}],
