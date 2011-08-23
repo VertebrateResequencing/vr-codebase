@@ -239,10 +239,11 @@ sub get_file {
 
 sub get_total_reads {
   my ($self, $file) = @_;
-  my $cmd = join "/",($self->{icommands},"imeta ls -d $file total_reads | grep value | awk '{ print $2 }'");
+  my $cmd = join "/",($self->{icommands},"imeta ls -d $file total_reads | grep value");
 
-  my $total_reads = `$cmd`;
-  chomp $total_reads;
-  return $total_reads;
+  my $total_reads_value = `$cmd`;
+  my @total_reads = split(/ /,$total_reads_value);
+  chomp $total_reads[1];
+  return $total_reads[1];
 }
 
