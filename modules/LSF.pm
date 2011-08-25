@@ -294,9 +294,9 @@ sub run
     chomp(my ($cwd) = Utils::CMD("pwd"));
     if ( $work_dir ) { chdir($work_dir) or Utils::error("chdir \"$work_dir\": $!") }
 
-    if($options{logfile_output_directory})
+    if($$options{logfile_output_directory})
     {
-      my $log_dir = $options{logfile_output_directory}."/$job_name";
+      my $log_dir = $$options{logfile_output_directory}."/$job_name";
       if ( !-e $log_dir ) { Utils::CMD("mkdir -p $log_dir"); }
       $lsf_output_file .= $log_dir;
       $lsf_error_file  .= $log_dir;
