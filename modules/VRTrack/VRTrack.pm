@@ -45,7 +45,7 @@ use VRTrack::Lane;
 use VRTrack::File;
 use VRTrack::Core_obj;
 
-use constant SCHEMA_VERSION => '13';
+use constant SCHEMA_VERSION => '14';
 
 our $DEFAULT_PORT = 3306;
 
@@ -877,7 +877,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (13);
+insert into schema_version(schema_version) values (14);
 
 --
 -- Table structure for table `assembly`
@@ -887,7 +887,9 @@ DROP TABLE IF EXISTS `assembly`;
 CREATE TABLE `assembly` (
   `assembly_id` smallint(5) unsigned NOT NULL auto_increment,
   `name` varchar(255) NOT NULL,
-   `reference_size` integer,
+  `reference_size` integer,
+  `taxon_id` mediumint(8) unsigned DEFAULT NULL,
+  `translation_table` smallint(5) unsigned DEFAULT NULL,
   PRIMARY KEY  (`assembly_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
