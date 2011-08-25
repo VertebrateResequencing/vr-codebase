@@ -296,10 +296,10 @@ sub run
 
     if($$options{logfile_output_directory})
     {
-      my $log_dir = $$options{logfile_output_directory}."/$job_name";
+      my $log_dir = $$options{logfile_output_directory}."/".time().'_'.int( rand(1000));
       if ( !-e $log_dir ) { Utils::CMD("mkdir -p $log_dir"); }
-      $lsf_output_file .= $log_dir;
-      $lsf_error_file  .= $log_dir;
+      $lsf_output_file = $log_dir.'/'.$lsf_output_file;
+      $lsf_error_file  = $log_dir.'/'.$lsf_error_file;
     }
 
     # Check if memory or queue should be changed (and change it)
