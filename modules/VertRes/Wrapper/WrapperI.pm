@@ -83,9 +83,7 @@ sub new {
     $self->_set_params_and_switches_from_args(@args);
     
     $self->_set_run_status(-2);
-
-    $self->{command_list} = []; # List of commands
-
+    
     return $self;
 }
 
@@ -205,10 +203,7 @@ sub _run {
     $run_method = '_'.$run_method.'_run';
     $self->_set_run_status(0);
     my @result = $self->$run_method($exe, $params, @extra_args);
-
-    # Record commands run.
-    push((@{$self->{command_list}}), "$exe $params @extra_args");
-
+    
     return @result;
 }
 
