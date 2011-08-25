@@ -258,6 +258,11 @@ sub adjust_bsub_options
 sub run
 {
     my ($jids_file,$work_dir,$job_name,$options,$bsub_cmd) = @_;
+    
+    # The expected output:
+    #   Job <771314> is submitted to queue <normal>.
+    my $lsf_output_file = "$job_name.o";
+    my $lsf_error_file = "$job_name.e";
 
     my %opts = (%$options);
     if ( !exists($opts{bsub_opts}) )
@@ -289,13 +294,17 @@ sub run
     chomp(my ($cwd) = Utils::CMD("pwd"));
     if ( $work_dir ) { chdir($work_dir) or Utils::error("chdir \"$work_dir\": $!") }
 
-    # The expected output:
-    #   Job <771314> is submitted to queue <normal>.
-    my $lsf_output_file = "$job_name.o";
+    if($options{logfile_output_directory})
+    {
+      my $log_dir = $options{logfile_output_directory}."/$job_name";
+      if ( !-e $log_dir ) { Utils::CMD("mkdir -p $log_dir"); }
+      $lsf_output_file .= $log_dir;
+      $lsf_error_file  .= $log_dir;
+    }
 
     # Check if memory or queue should be changed (and change it)
     $bsub_opts = adjust_bsub_options($bsub_opts, $lsf_output_file);
-    my $cmd = "bsub -J $job_name -e $job_name.e -o $lsf_output_file $bsub_opts '$bsub_cmd'";
+    my $cmd = "bsub -J $job_name -e $lsf_error_file -o $lsf_output_file $bsub_opts '$bsub_cmd'";
 
     my @out = Utils::CMD($cmd,$options);
     if ( scalar @out!=1 || !($out[0]=~/^Job <(\d+)> is submitted/) ) 
