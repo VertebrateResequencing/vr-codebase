@@ -494,6 +494,7 @@ sub split_bam_by_sequence {
            program_version => version of the program
            run_name => string, the platform unit - the original accession before
                        DCC gave it the [ES]RR id
+           comments => refarray, ref to array of lines for comments section of file.
 
 =cut
 
@@ -570,6 +571,17 @@ sub add_sam_header {
         $header_lines++;
     }
     
+    # Add comments lines
+    if (exists $args{comment}) {
+	foreach my $comment_line (@{$args{comment}}) {
+	    chomp $comment_line;
+	    unless($comment_line eq '') {
+		print $shfh "\@CO\t",$comment_line,"\n";
+		$header_lines++;
+	    }
+	}
+    }
+
     # combine the header with the raw sam file, adding/correcting RG tag if
     # necessary, ignoring existing header
     open(my $rsfh, '<', $raw_sam_file) or $self->throw("Couldn't open raw sam file '$raw_sam_file'");

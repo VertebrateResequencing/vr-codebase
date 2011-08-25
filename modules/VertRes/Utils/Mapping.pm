@@ -72,7 +72,8 @@ sub new {
     my ($class, @args) = @_;
     
     my $self = $class->SUPER::new(@args);
-    
+    $self->{command_list} = []; # List of commands run.
+
     return $self;
 }
 

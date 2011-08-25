@@ -162,10 +162,12 @@ sub do_mapping {
     }
     
     my @args = $self->_do_mapping_args(\%do_mapping_args, %input_args);
-    
+
     my $wrapper = $self->wrapper;
     $wrapper->do_mapping(@args);
     
+    push((@{$self->{command_list}}), @{$wrapper->{command_list}});
+
     # smalt directly generates sam files, so nothing futher to do
     
     return $wrapper->run_status >= 1;
