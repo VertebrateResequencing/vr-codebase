@@ -57,18 +57,6 @@ add_index => 1,
 
 get_genome_coverage => 1,
 
-# The commands run by the mapper can be added to the comments section of the 
-# BAM header by adding the following line to the data section: 
-
-sam_comment => 1,
-
-# Mapper parameters can also be set by adding them to the data section of the 
-# conf file. For example: 
-
-mapper_params => { aln_q => 20, insert_size => 500 },
-
-# At the moment only insert_size and aln_q (bwa) can be set by the user.
-
 # By default it will map all unmapped lanes in a random order. You can limit
 # it to only mapping certain lanes by suppling the limits key with a hash ref
 # as a value. The hash ref should contain options understood by
@@ -800,21 +788,6 @@ sub map {
                 push(@split_read_args, $split_read_arg);
             }
             
-	    my $mapper_param_string = ''; # Add params from conf file.
-	    if(exists $self->{mapper_params})
-	    {
-		my $insert_size_from_conf = delete $self->{mapper_params}->{insert_size};
-		if( defined $insert_size_from_conf && $insert_size_from_conf =~ /^\d+$/){
-		    $insert_size_for_mapping   = $insert_size_from_conf;
-		    $insert_size_for_samheader = $insert_size_from_conf;
-		}
-		while (my ($key, $val) = each %{$self->{mapper_params}}) {
-		    $mapper_param_string = "'$key' => '$val',";
-		}
-	    }
-
-	    my $comment_flag = $self->{sam_comment} ? 1 : 0; # Add command lines to sam comments.
-
             my $job_name = $self->{prefix}.'map_'.$ended.'_'.$self->{mapstats_id}.'_'.$split;
             my $prev_error_file = $self->archive_bsub_files($lane_path, $job_name) || '';
             
@@ -834,8 +807,7 @@ my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
                                insert_size => $insert_size_for_mapping,
                                read_group => '$info{lane}',
                                is_paired => $self->{vrlane}->{is_paired},
-                               error_file => '$prev_error_file',
-                               $mapper_param_string);
+                               error_file => '$prev_error_file');
 
 # (it will only return ok and create output if the sam file was created and not
 #  truncated)
@@ -846,10 +818,6 @@ my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
 open(my \$samfh, '$sam_file') || \$mapper->throw("Unable to open sam file '$sam_file'");
 my \$head = <\$samfh>;
 close(\$samfh);
-
-# Add comment lines
-my \$comments = $comment_flag ? \$mapper->{command_list} : [];
-
 \$ok = \$sam_util->add_sam_header('$sam_file',
                                   sample_name => '$info{sample}',
                                   library => '$info{library_true}',
@@ -862,8 +830,7 @@ my \$comments = $comment_flag ? \$mapper->{command_list} : [];
                                   ref_dict => '$ref_fa.dict',
                                   ref_name => '$self->{assembly_name}',
                                   program => \$mapper->name,
-                                  program_version => \$mapper->version,
-                                  comment => \$comments);
+                                  program_version => \$mapper->version);
 \$sam_util->throw("Failed to add sam header!") unless \$ok;
 
 # convert to mate-fixed sorted bam
