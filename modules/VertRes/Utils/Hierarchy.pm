@@ -55,7 +55,7 @@ our $DEFAULT_DB_SETTINGS = {host => $ENV{VRTRACK_HOST},
                             user => $ENV{VRTRACK_RO_USER},
                             database => 'g1k_meta'};
 
-our $nfs_disc_basename = '/nfs/vertres';
+our $nfs_disc_basename = VertRes::Utils::VRTrackFactory->nfs_disc_basename();
 
 
 =head2 new

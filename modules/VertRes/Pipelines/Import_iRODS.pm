@@ -129,6 +129,13 @@ sub get_files
         my $outfile = $1;
         if ( -e $outfile ) { next; }
 
+        # Check if the BAM contains any reads.
+        if( $irods->get_total_reads($ifile) == 0)
+        {
+          $self->log("No reads in BAM file");
+          next;
+        }
+
         # Get the BAM index
         my $bai = $ifile;
         $bai =~ s/\.bam$/.bai/i;
