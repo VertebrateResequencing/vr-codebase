@@ -227,3 +227,23 @@ sub get_file {
     return system(@args);
 }
 
+
+=head2 get_total_reads
+
+    Description : returns the total nubmer of reads in the bam file
+    Arg [1]     : irods file location
+    Example     : my $total_reads = $irods->get_total_reads('/seq/1234/1234_5.bam');
+    Returntype  : integer number of reads
+
+=cut
+
+sub get_total_reads {
+  my ($self, $file) = @_;
+  my $cmd = join "/",($self->{icommands},"imeta ls -d $file total_reads | grep value");
+
+  my $total_reads_value = `$cmd`;
+  my @total_reads = split(/ /,$total_reads_value);
+  chomp $total_reads[1];
+  return $total_reads[1];
+}
+
