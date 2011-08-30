@@ -179,20 +179,21 @@ sub parse_user_defined_filters
         if ( !exists($$filter{desc}) ) { error("Missing 'desc' key for the filter [$$filter{tag}]\n"); }
         push @{$$opts{desc}}, "key=FILTER,ID=$$filter{ID},Description='$$filter{desc}";
 
+        my $name = $$filter{name};
         if ( !exists($$filter{apply_to}) or lc($$filter{apply_to}) eq 'all' ) 
         {
-            $$opts{udef_filters}{'all'}{$ID} = $filter;
-            $$opts{udef_filters}{'s'}{$ID}   = $filter;
-            $$opts{udef_filters}{'i'}{$ID}   = $filter;
+            $$opts{udef_filters}{'all'}{$name} = $filter;
+            $$opts{udef_filters}{'s'}{$name}   = $filter;
+            $$opts{udef_filters}{'i'}{$name}   = $filter;
         }
         elsif ( exists($$filter{apply_to}) and lc($$filter{apply_to}) eq 'snps' )
         {
-            $$opts{udef_filters}{'s'}{$ID}   = $filter;
+            $$opts{udef_filters}{'s'}{$name}   = $filter;
             $$opts{udef_filters_typecheck_needed} = 1;
         }
         elsif ( exists($$filter{apply_to}) and lc($$filter{apply_to}) eq 'indels' )
         {
-            $$opts{udef_filters}{'i'}{$ID}   = $filter;
+            $$opts{udef_filters}{'i'}{$name}   = $filter;
             $$opts{udef_filters_typecheck_needed} = 1;
         }
     }
