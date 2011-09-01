@@ -275,7 +275,7 @@ float fai_gc_content(faidx_t *fai,char *chr,int from, int to)
                 count++;
         }
     }
-    return (float)gc/count;
+    return count ? (float)gc/count : 0;
 }
 
 
