@@ -16,9 +16,9 @@ my %filters =
     MaxDP        => { dflt=>10_000_000, usage=>'INT', desc=>"Maximum read depth (INFO/DP or INFO/DP4)", nick=>'D' },
     MinMQ        => { dflt=>10, usage=>'INT', desc=>"Minimum RMS mapping quality for SNPs (INFO/MQ)", nick=>'q' },
     SnpGap       => { dflt=>10, usage=>'INT', desc=>"SNP within INT bp around a gap to be filtered", nick=>'w' },
-    GapWin       => { dflt=>10, usage=>'INT', desc=>"Window size for filtering adjacent gaps", nick=>'W' },
+    GapWin       => { dflt=>3, usage=>'INT', desc=>"Window size for filtering adjacent gaps", nick=>'W' },
     StrandBias   => { dflt=>1e-4, usage=>'FLOAT', desc=>"Min P-value for strand bias (INFO/PV4)", nick=>'1' },
-    BaseQualBias => { dflt=>1e-100, usage=>'FLOAT', desc=>"Min P-value for baseQ bias (INFO/PV4)", nick=>'2' },
+    BaseQualBias => { dflt=>0, usage=>'FLOAT', desc=>"Min P-value for baseQ bias (INFO/PV4)", nick=>'2' },
     MapQualBias  => { dflt=>0, usage=>'FLOAT', desc=>"Min P-value for mapQ bias (INFO/PV4)", nick=>'3' },
     EndDistBias  => { dflt=>1e-4, usage=>'FLOAT', desc=>"Min P-value for end distance bias (INFO/PV4)", nick=>'4' },
     RefN         => { dflt=>'', usage=>'', desc=>"Reference base is N", nick=>'r' },
@@ -179,20 +179,21 @@ sub parse_user_defined_filters
         if ( !exists($$filter{desc}) ) { error("Missing 'desc' key for the filter [$$filter{tag}]\n"); }
         push @{$$opts{desc}}, "key=FILTER,ID=$$filter{ID},Description='$$filter{desc}";
 
+        my $name = $$filter{name};
         if ( !exists($$filter{apply_to}) or lc($$filter{apply_to}) eq 'all' ) 
         {
-            $$opts{udef_filters}{'all'}{$ID} = $filter;
-            $$opts{udef_filters}{'s'}{$ID}   = $filter;
-            $$opts{udef_filters}{'i'}{$ID}   = $filter;
+            $$opts{udef_filters}{'all'}{$name} = $filter;
+            $$opts{udef_filters}{'s'}{$name}   = $filter;
+            $$opts{udef_filters}{'i'}{$name}   = $filter;
         }
         elsif ( exists($$filter{apply_to}) and lc($$filter{apply_to}) eq 'snps' )
         {
-            $$opts{udef_filters}{'s'}{$ID}   = $filter;
+            $$opts{udef_filters}{'s'}{$name}   = $filter;
             $$opts{udef_filters_typecheck_needed} = 1;
         }
         elsif ( exists($$filter{apply_to}) and lc($$filter{apply_to}) eq 'indels' )
         {
-            $$opts{udef_filters}{'i'}{$ID}   = $filter;
+            $$opts{udef_filters}{'i'}{$name}   = $filter;
             $$opts{udef_filters_typecheck_needed} = 1;
         }
     }
