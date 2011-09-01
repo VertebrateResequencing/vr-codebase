@@ -177,7 +177,7 @@ sub plot
         set xlabel '$label'
         set ytics nomirror
         set y2tics
-        plot '-' with linespoints notitle, '-' axes x1y2  with linespoints notitle
+        plot '-' with linespoints pt 12 ps 0.5 notitle, '-' axes x1y2  with linespoints pt 12 ps 0.5 notitle
         ];
 
     my %data;
