@@ -12,6 +12,7 @@ use IO::Select;
 
 my $opts = parse_params();
 crawl($opts);
+plot_stats($opts);
 
 exit;
 
@@ -27,6 +28,7 @@ sub error
         "Usage: runtime-stats [OPTIONS]\n",
         "Options:\n",
         "   -d, --dir <dir>                 Where to look for output files.\n",
+        "   -p, --plot <prefix>             Create plots\n",
         "   -s, --suffix <string>           How to recognise LSF output files [.o]\n",
         "   -h, -?, --help                  This help message.\n",
         "\n";
@@ -39,9 +41,10 @@ sub parse_params
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '-d' || $arg eq '--dir' ) { push @{$$opts{dir}},shift(@ARGV); next }
+        if ( $arg eq '-p' || $arg eq '--plot' ) { $$opts{plot}=shift(@ARGV); next }
         if ( $arg eq '-s' || $arg eq '--suffix' ) { $$opts{suffix}=shift(@ARGV); next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
-        if ( -d $arg ) { push @{$$opts{dir}},$arg; next; }
+        if ( -e $arg ) { push @{$$opts{dir}},$arg; next; }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
     if ( !exists($$opts{dir}) ) { error("Missing the -d option.\n") }
@@ -148,4 +151,59 @@ sub report_stats
     }
 }
 
+sub plot_stats
+{
+    my ($opts) = @_;
+    if ( !exists($$opts{plot}) ) { return; }
+
+    plot($opts,'memory','Memory [MB]');
+    plot($opts,'time','Time [s]');
+    plot($opts,'attempts','Attempts');
+}
+
+sub plot
+{
+    my ($opts,$key,$label) = @_;
+
+    if ( !exists($$opts{stats}{$key}) ) { return; }
+
+    my $prefix = "$$opts{plot}-$key";
+    open(my $fh,'>',"$prefix.gp") or error("$prefix.gp: $!");
+    print $fh qq[
+        set terminal png size 600,400 truecolor font "DejaVuSansMono,9"
+        set output "$prefix.png"
+        set ylabel 'Number of jobs'
+        set y2label 'Cumulative number of jobs [%]'
+        set xlabel '$label'
+        set ytics nomirror
+        set y2tics
+        plot '-' with linespoints notitle, '-' axes x1y2  with linespoints notitle
+        ];
+
+    my %data;
+    my $bin_size = 1;
+    for my $val (@{$$opts{stats}{$key}})
+    {
+        my $bin = int($val/$bin_size);
+        $data{$bin}++;
+    }
+
+    my $nvals = @{$$opts{stats}{$key}};
+    for my $i (sort {$a<=>$b} keys %data)
+    {
+        print $fh $i*$bin_size,"\t",$data{$i},"\n";
+    }
+    print $fh "end\n";
+
+    my $sum;
+    for my $i (sort {$a<=>$b} keys %data)
+    {
+        $sum += $data{$i};
+        print $fh $i*$bin_size,"\t",$sum*100./$nvals,"\n";
+    }
+    print $fh "end\n";
+    close($fh);
+
+    system("GDFONTPATH=/usr/share/fonts/truetype/ttf-dejavu/ gnuplot $prefix.gp");
+}
 
