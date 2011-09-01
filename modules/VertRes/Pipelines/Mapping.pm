@@ -830,7 +830,8 @@ close(\$samfh);
                                   ref_dict => '$ref_fa.dict',
                                   ref_name => '$self->{assembly_name}',
                                   program => \$mapper->name,
-                                  program_version => \$mapper->version);
+                                  program_version => \$mapper->version,
+                                  command_line => [\$mapper->command_line]);
 \$sam_util->throw("Failed to add sam header!") unless \$ok;
 
 # convert to mate-fixed sorted bam
