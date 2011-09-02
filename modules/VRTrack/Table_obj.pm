@@ -525,7 +525,7 @@ sub _get_child_by_field_value {
     my ($self, $get_children_method, $field, $value) = @_;
     $value || confess "Must call with a child identifier";
     
-    my @match = grep {$_->$field eq $value} @{$self->$get_children_method};
+    my @match = grep {$_->$field && ($_->$field eq $value)} @{$self->$get_children_method};
     
     if (@match == 1) {
         return $match[0];

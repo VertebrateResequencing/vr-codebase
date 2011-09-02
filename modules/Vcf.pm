@@ -157,6 +157,7 @@ sub new
     $$self{has_header} = 0;
     $$self{default_version} = '4.1';
     $$self{versions} = [ qw(Vcf3_2 Vcf3_3 Vcf4_0 Vcf4_1) ];
+    if ( !exists($$self{max_line_len}) && exists($ENV{MAX_VCF_LINE_LEN}) ) { $$self{max_line_len} = $ENV{MAX_VCF_LINE_LEN} }
     my %open_args = ();
     if ( exists($$self{region}) ) { $open_args{region}=$$self{region}; }
     if ( exists($$self{print_header}) ) { $open_args{print_header}=$$self{print_header}; }
@@ -276,29 +277,28 @@ sub next_line
 {
     my ($self) = @_;
     if ( @{$$self{buffer}} ) { return shift(@{$$self{buffer}}); }
-    # my $line = readline($$self{fh});
-    # Temporary fix to work around a samtools/bcftools bug:
+
     my $line;
-    while (1)
+    if ( !exists($$self{max_line_len}) ) 
     {
         $line = readline($$self{fh});
-        if ( !defined $line ) { last; }
-    
-        my $len = length($line);
-        if ( $len>500_000 ) 
-        { 
-            $line=~/^([^\t]+)\t([^\t]+)/;
-            print STDERR "Ignoring line: $1 $2 .. len=$len\n"; 
-            next;
-        }
-        if ( $line=~/GT:GT/ )
+    }
+    else
+    {
+        while (1)
         {
-            $line=~/^([^\t]+)\t([^\t]+)/;
-            print STDERR "Ignoring line (GT:GT): $1 $2\n"; 
-            next;
+            $line = readline($$self{fh});
+            if ( !defined $line ) { last; }
+
+            my $len = length($line);
+            if ( $len>$$self{max_line_len} && !($line=~/^#/) ) 
+            { 
+                if ( !($line=~/^([^\t]+)\t([^\t]+)/) ) { $self->throw("Could not parse the line: $line"); }
+                $self->warn("The VCF line too long, ignoring: $1 $2 .. len=$len\n"); 
+                next;
+            }
+            last;
         }
-    
-        last;
     }
     if ( !defined $line && $$self{check_exit_status} )
     {
@@ -1958,21 +1958,28 @@ sub validate_gtype_field
         }
     }
     if ( !exists($$data{GT}) ) { push @errs, "The mandatory tag GT not present." unless $$self{ignore_missing_GT}; }
-    elsif ( !($$data{GT} =~ $$self{regex_gt}) ) { push @errs, "Unable to parse the GT field [$$data{GT}]."; } 
     else
     {
-        my $nalts = @$alts==1 && $$alts[0] eq '.' ? 0 : @$alts;
-
-        my $a = $1;
-        my $b = $3;
-        my $err = $self->validate_int($a,'.');
-        if ( $err ) { push @errs,$err; }
-        elsif ( $a ne '.' && ($a<0 || $a>$nalts) ) { push @errs, "Bad ALT value in the GT field [$$data{GT}]."; }
-        if ( $b ne '' )
+        my $buf = $$data{GT};
+        while ($buf ne '')
         {
-            $err = $self->validate_int($b,'.');
-            if ( $err ) { push @errs,$err; }
-            elsif ( $b ne '.' && ($b<0 || $b>$nalts) ) { push @errs, "Bad ALT value in the GT field [$$data{GT}]."; }
+            my $al = $buf;
+            if ( $buf=~$$self{regex_gtsep} )
+            {
+                $al  = $`;
+                $buf = $';
+                if ( $buf eq '' ) { push @errs, "Unable to parse the GT field [$$data{GT}]."; last; }
+            }
+            else
+            {
+                $buf = '';
+            }
+
+            if ( !defined $al ) { push @errs, "Unable to parse the GT field [$$data{GT}]."; last; }
+            if ( $al eq '.' ) { next; }
+            if ( $al eq '0' ) { next; }
+            if ( !($al=~/^[0-9]+$/) ) { push @errs, "Unable to parse the GT field [$$data{GT}], expected integer."; last; }
+            if ( !exists($$alts[$al-1]) ) { push @errs, "Bad ALT value in the GT field, the index [$al] out of bounds [$$data{GT}]."; last; }
         }
     }
     if ( !@errs ) { return undef; }
@@ -2403,7 +2410,11 @@ sub Vcf4_0::parse_header_line
         {
             if ( $attr_key=~/^\s+/ or $attr_key=~/\s+$/ or $attr_value=~/^\s+/ or $attr_value=~/\s+$/ ) 
             { 
-                $self->throw("Leading or trailing space in attr_key-attr_value pairs is discouraged:\n\t[$attr_key] [$attr_value]\n\t$line\n"); 
+                $self->warn("Leading or trailing space in attr_key-attr_value pairs is discouraged:\n\t[$attr_key] [$attr_value]\n\t$line\n"); 
+                $attr_key =~ s/^\s+//;
+                $attr_key =~ s/\s+$//;
+                $attr_value =~ s/^\s+//;
+                $attr_value =~ s/\s+$//;
             }
             $$rec{$attr_key} = $attr_value;
             $tmp = $';
