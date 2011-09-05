@@ -50,7 +50,6 @@ sub new {
     my ($class, @args) = @_;
     
     my $self = $class->SUPER::new(@args);
-    
     return $self;
 }
 
@@ -208,6 +207,7 @@ sub do_mapping {
     
     my $wrapper = $self->wrapper;
     $wrapper->do_mapping(@args, aln_q => $aln_q);
+    $self->_add_command_line($wrapper->command_line());
     
     # bwa directly generates sam files, so nothing futher to do
     

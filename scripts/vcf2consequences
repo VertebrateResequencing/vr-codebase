@@ -528,6 +528,10 @@ sub EnsemblReader::read_transcripts
         $$self{transcripts} = [];
 
         my $slice = $$self{slice}->fetch_by_region('chromosome',$$self{chr},$$self{from},$$self{to});
+        unless ($slice){
+            $self->throw("No genome slice found for ".$$self{chr}.":".$$self{from}."-".$$self{to});
+        }
+            
         my @genes = @{$slice->get_all_Genes()};
         for my $gene (@genes)
         {

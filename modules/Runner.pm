@@ -210,6 +210,24 @@ sub _read_config
         }
         $$self{$key} = dclone($value);
     }
+    
+    $$self{_mtime} = $self->mtime($config);
+}
+
+=head2 mtime
+
+    About : Stat the mtime of a file
+    Usage : $self->mtime('/path/to/file');
+    Args  : path to file
+
+=cut
+
+sub mtime
+{
+    my ($self, $file) = @_;
+    my $mtime = (stat($file))[9];
+    $mtime || $self->throw("Could not stat mtime for file $file\n");
+    return $mtime;
 }
 
 sub _sample_config

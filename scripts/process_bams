@@ -249,7 +249,15 @@ sub merge_bas_files
 {
     my ($self) = @_;
     my @bas_files = map { qq[$_.bas] } @{$$self{bams}};
-    $self->cmd(qq[awk '( NR == 1 || FNR > 1 )' @bas_files > $$self{merge_bas_files}.tmp]);
+    open my $fh, qq[>$$self{merge_bas_files}.tmp];
+    $fh || $self->throw("Could not open $$self{merge_bas_files}.tmp");
+    my $first_bas = shift @bas_files;
+    print $fh `cat $first_bas`;
+    foreach my $bas (@bas_files)
+    {
+        print $fh `awk 'NR>1' $bas`;
+    }
+    close $fh;
     $self->throw(qq[merge of bas files failed\n]) unless -s qq[$$self{merge_bas_files}.tmp];
     $self->cmd(qq[mv $$self{merge_bas_files}.tmp $$self{merge_bas_files}]);
 }

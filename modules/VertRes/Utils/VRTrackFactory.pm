@@ -44,6 +44,7 @@ my $READ_USER = $ENV{VRTRACK_RO_USER};
 my $WRITE_USER = $ENV{VRTRACK_RW_USER};
 my $WRITE_PASS = $ENV{VRTRACK_PASSWORD};
 my $FSU_FILE_EXISTS_DB_NAME = $ENV{FSU_FILE_EXISTS_DB_NAME} || 'vrtrack_fsu_file_exists';
+my $NFS_DISC_BASENAME = $ENV{NFS_DISC_BASENAME} || '/nfs/vertres';
 
 
 =head2 new
@@ -182,6 +183,21 @@ sub databases {
 sub fsu_file_exists_db_name
 {
   return $FSU_FILE_EXISTS_DB_NAME;
+}
+
+
+=head2 nfs_disc_basename
+
+ Title   : nfs_disc_basename
+ Usage   : my $nfs_disk_basename = VertRes::Utils::VRTrackFactory->nfs_disc_basename();
+ Function: Base directory name for archived data
+ Returns : directory name
+
+=cut
+
+sub nfs_disc_basename
+{
+  return $NFS_DISC_BASENAME;
 }
 
 
