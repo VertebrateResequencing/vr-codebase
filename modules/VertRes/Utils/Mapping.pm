@@ -72,7 +72,8 @@ sub new {
     my ($class, @args) = @_;
     
     my $self = $class->SUPER::new(@args);
-    
+    $self->{_command_line} = []; # List of commands run.
+
     return $self;
 }
 
@@ -562,6 +563,45 @@ sub get_mapping_stats {
     $stats{percent_properly_paired} = $stats{total_reads} ? sprintf("%0.2f", ((100 / $stats{total_reads}) * $stats{mapped_reads_in_proper_pairs})) : 0;
     
     return %stats;
+}
+
+=head2 command_line
+
+ Title   : command_line
+ Usage   : $mapper->command_line();
+           $self->command_line(@my_command_lines);
+ Function: Get/set list of commands executed by wrapper
+ Example : $self->command_line($wrapper->command_line());
+ Returns : list of command line strings executed by the wrapper
+ Args    : list of strings
+
+=cut
+
+sub command_line
+{
+    my $self = shift;
+    $self->{_command_line} = \@_ if @_; 
+    return @{$self->{_command_line}};
+}
+
+=head2 _add_command_line
+
+ Title   : _add_command_line
+ Usage   : $self->_add_command_line($my_command_line);
+           $self->_add_command_line(@my_command_lines);
+ Function: Internal method to add command line strings to record of command lines 
+           executed by wrapper.
+ Example : $self->_add_command_line($wrapper->command_line());
+ Returns : n/a
+ Args    : list of strings
+
+=cut
+
+sub _add_command_line
+{
+    my $self = shift;
+    push((@{$self->{_command_line}}),@_) if @_;
+    return @{$self->{_command_line}};
 }
 
 1;

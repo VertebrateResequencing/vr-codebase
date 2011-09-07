@@ -25,6 +25,7 @@ sub new
     my ($class,@args) = @_;
     my $self = $class->SUPER::new(@args);
 
+    $$self{limits} = { memory=>5_500, runtime=>3*24*60 };
     $$self{_sampleconf} = q[
         gen_map   => '/nfs/users/nfs_p/pd3/sandbox/impute2/genetic_maps_b37/genetic_map_chr{CHROM}_combined_b37.txt',
         fai_ref   => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
@@ -33,6 +34,8 @@ sub new
         impute2_args => '-Ne 15000 -k 100',
         chunk_size   => 3_000_000,
         chromosomes  => [qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22)],
+
+        limits  => { memory=>5_500, runtime=>3*24*60 },
     ]."\n";
 
     $$self{chunks_overlap} = 0;
@@ -121,7 +124,7 @@ sub main
     
 
     # Run impute2 on chunks
-    $self->set_limits(memory=>10_000,runtime=>3*24*60,verbose=>1);
+    $self->set_limits(%{$$self{limits}}) unless !exists($$self{limits});
     for my $region (@$regions)
     {
         if ( !$self->is_finished("$outdir/$region/02.impute2.done") )

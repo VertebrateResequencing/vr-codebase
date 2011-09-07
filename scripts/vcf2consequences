@@ -13,7 +13,7 @@ use Benchmark;
 
 BEGIN{
     my $ROOT = '/software/vertres/lib/all';
-    my $VERSION = '62';
+    my $VERSION = '63';
     unshift(@INC, "$ROOT/bioperl-1.2.3/lib/site_perl/5.8.8");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl/modules");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-variation/modules");
@@ -528,6 +528,10 @@ sub EnsemblReader::read_transcripts
         $$self{transcripts} = [];
 
         my $slice = $$self{slice}->fetch_by_region('chromosome',$$self{chr},$$self{from},$$self{to});
+        unless ($slice){
+            $self->throw("No genome slice found for ".$$self{chr}.":".$$self{from}."-".$$self{to});
+        }
+            
         my @genes = @{$slice->get_all_Genes()};
         for my $gene (@genes)
         {

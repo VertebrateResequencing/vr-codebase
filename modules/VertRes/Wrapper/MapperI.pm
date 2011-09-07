@@ -336,6 +336,7 @@ sub simple_run {
     $cmd = $exe.' '.$cmd;
     $self->debug("[$time{'yyyy/mm/dd hh:mm:ss'}] will run command '$cmd'");
     system($cmd) && $self->throw("command '$cmd' failed");
+    $self->_add_command_line($cmd);
 }
 
 1;
