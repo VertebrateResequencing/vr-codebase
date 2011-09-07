@@ -180,7 +180,7 @@ sub bam_to_fastq_provides {
   }
   else
   {
-    return ["$self->{lane}.fastq.gz", "$self->{lane}.fastq.gz.fastqcheck"];
+    return ["$self->{lane}_1.fastq.gz", "$self->{lane}_1.fastq.gz.fastqcheck"];
   }
 }
 
@@ -207,7 +207,7 @@ sub bam_to_fastq {
     }
     else
     {
-      $fastqs_str  = qq{ (File::Spec->catfile(\$dir, "$self->{lane}.fastq")) };
+      $fastqs_str  = qq{ (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq")) };
     }
     
     # Script to be run by LSF to convert bam to fastq
@@ -223,7 +223,15 @@ my \$dir = '$lane_path';
 my \@fastqs = $fastqs_str;
 # convert to fastq
 VertRes::Utils::Sam->new(verbose => 1, quiet => 0)->bam2fastq(qq[$in_bam], qq[$fastq_base]);
-
+};
+    unless($self->is_paired){
+    print $scriptfh qq{
+# rename single-ended fastqs
+system("mv $self->{lane}.fastq $self->{lane}_1.fastq");
+system("mv $self->{lane}.fastq.fastqcheck $self->{lane}_1.fastq.fastqcheck");
+};
+    }
+    print $scriptfh qq{
 # delete bam files
 unlink("$bam", "$bam.bai", "$bam.bc", "$bam.md5");
 
@@ -259,7 +267,7 @@ sub update_db_requires
     }
     else
     {
-      return ["$self->{lane}.fastq.gz", "$self->{lane}.fastq.gz.fastqcheck"];
+      return ["$self->{lane}_1.fastq.gz", "$self->{lane}_1.fastq.gz.fastqcheck"];
     }
 }
 
