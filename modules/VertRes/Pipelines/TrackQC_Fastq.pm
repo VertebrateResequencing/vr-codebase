@@ -761,7 +761,7 @@ sub run_graphs
     my $outdir       = "$lane_path/$sample_dir/";
 
     # Genome covered 
-    Utils::CMD("$samtools pileup $outdir/$name.bam | wc -l > $outdir/$name.cover");
+    Utils::CMD("$samtools mpileup $outdir/$name.bam | wc -l > $outdir/$name.cover");
     
 }
 
