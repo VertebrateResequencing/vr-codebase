@@ -494,6 +494,7 @@ sub split_bam_by_sequence {
            program_version => version of the program
            run_name => string, the platform unit - the original accession before
                        DCC gave it the [ES]RR id
+           command_line => refarray, ref to array of command lines.
 
 =cut
 
@@ -564,10 +565,36 @@ sub add_sam_header {
     $header_lines++;
     
     if ($args{program}) {
-        print $shfh "\@PG\tID:$args{program}";
-        print $shfh "\tVN:$args{program_version}" if (defined $args{program_version});
-        print $shfh "\n";
-        $header_lines++;
+	unless(scalar @{$args{command_line}})
+	{
+	    # Add single PG line without CL tag 
+	    print $shfh "\@PG\tID:$args{program}";
+	    print $shfh "\tVN:$args{program_version}" if (defined $args{program_version});
+	    print $shfh "\n";
+	    $header_lines++;
+	}
+	else
+	{
+	    # Add PG lines with CL tags
+	    my $id = $args{program};
+	    my $pp = '';
+	    my $linecount = 1;
+	    foreach my $cl (@{$args{command_line}})
+	    {
+		chomp $cl;
+		$cl =~ s/\/\S+\///g; # remove file paths
+
+		print $shfh "\@PG\tID:$id";
+		print $shfh "\tVN:$args{program_version}" if (defined $args{program_version});
+		print $shfh "\tPP:$pp" if $pp;
+		print $shfh "\tCL:$cl" if $cl;
+		print $shfh "\n";
+		$header_lines++;
+		
+		$pp=$id;
+		$id=$linecount++;
+	    }
+	}
     }
     
     # combine the header with the raw sam file, adding/correcting RG tag if

@@ -1446,7 +1446,7 @@ sub displayQCLaneList {
                 <td>$reads_paired_perc%</td>
                 <td>$rmdup_reads_mapped_perc%</td>
                 <td>$error_rate_perc%</td>
-                <td>$gt_status ($gt_ratio)</td>
+                <td>$gt_status ($gt_found:$gt_ratio)</td>
                 ];
                 
                 #print the images
