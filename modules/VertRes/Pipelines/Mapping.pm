@@ -1242,19 +1242,19 @@ sub mark_duplicates_requires {
 
 sub mark_duplicates_provides {
     my ($self, $lane_path) = @_;
+    my @provides = ();
     
-    my @provides;
-    
-    if config option sent in to mark duplicates, do it, otherwise return []
-    
-    foreach my $ended ('se', 'pe') {
-        $self->_get_read_args($lane_path, $ended) || next;
+    if(( defined $$self{mark_duplicates}) && $$self{mark_duplicates})
+    {
+      foreach my $ended ('se', 'pe') {
+          $self->_get_read_args($lane_path, $ended) || next;
         
-        my $file = "$self->{mapstats_id}.$ended.markdup.bam";
-        push(@provides, $file);
-    }
+          my $file = "$self->{mapstats_id}.$ended.markdup.bam";
+          push(@provides, $file);
+      }
     
-    @provides || $self->throw("Something went wrong; we don't seem to provide any marked duplicate bams!");
+      @provides || $self->throw("Something went wrong; we don't seem to provide any marked duplicate bams!");
+    }
     
     return \@provides;
 }
@@ -1325,8 +1325,8 @@ sub mark_duplicates {
 
 sub update_db_requires {
     my ($self, $lane_path) = @_;
-    my @bams = @{$self->statistics_requires($lane_path)};
-    my @stats = @{$self->statistics_provides($lane_path)};
+    my @stats = @{$self->mark_duplicates_requires($lane_path)};
+    my @bams = @{$self->mark_duplicates_provides($lane_path)};
     return [@bams, @stats];
 }
 
