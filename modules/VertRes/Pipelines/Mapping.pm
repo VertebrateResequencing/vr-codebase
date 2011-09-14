@@ -32,6 +32,7 @@ coverage_limit => {
 },
 
 data => {
+    mark_duplicates => 1,
     slx_mapper => 'bwa',
     '454_mapper' => 'ssaha',
     reference => '/abs/path/to/ref.fa',
@@ -1277,6 +1278,7 @@ sub mark_duplicates {
       foreach my $ended ('se', 'pe') {
         my $bam_file = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.raw.sorted.bam");
         next if( -l $bam_file);
+        next unless( -e $bam_file);
         my $mark_dup_bam_file = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.markdup.bam");
         next if( -e $mark_dup_bam_file);
 
@@ -1294,9 +1296,9 @@ sub mark_duplicates {
 
   my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
  
-  \$sam_util->markdup($bam_file, $mark_dup_bam_file);
-  unlink($bam_file);
-  symlink($mark_dup_bam_file, $bam_file);
+  \$sam_util->markdup('$bam_file', '$mark_dup_bam_file');
+  unlink('$bam_file');
+  symlink('$mark_dup_bam_file', '$bam_file');
 
   exit;
               };
