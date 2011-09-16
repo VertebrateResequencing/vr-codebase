@@ -45,7 +45,7 @@ sub error
         push @filters, sprintf("\t%s, %-25s\t\t%s [%s]\n", $filters{$key}{nick},$key.'  '.$filters{$key}{usage},$filters{$key}{desc},defined($filters{$key}{dflt})? $filters{$key}{dflt} : '');
     }
 
-    die
+    print
         "About: Annotates VCF file, adding filters or custom annotations. Requires tabix indexed file with annotations.\n",
         "   Currently annotates only the ID and INFO column, but it will be extended on popular demand.\n",
         "Usage: cat in.vcf | vcf-annotate [OPTIONS] > out.vcf\n",
@@ -109,6 +109,7 @@ sub error
         "       },                                                                    \n",
         "    },                                                                       \n",
         "\n";
+    exit -1;
 }
 
 sub parse_params
@@ -338,15 +339,6 @@ sub parse_columns
         my $col = $$cols[$i];
 
         if ( $col eq '-' ) { next; }
-        elsif ( exists($desc{$col}) ) 
-        {
-            if ( !($col=~m{^(.+)/(.+)$}) ) { error("Could not parse the column [$col].\n"); }
-            my $key = $1;
-            my $id  = $2;
-            my $rec = { col=>$i, id=>$id, vcf_col=>$key, is_flag=>($desc{$col}{Type} eq 'Flag' ? 1 : 0) };
-            push @{$out{annots}}, $rec;
-            if ( $key ne 'INFO' ) { error("TODO: other than INFO columns\n"); }
-        }
         elsif ( $col eq 'CHROM' ) { $out{$col}=$i; }
         elsif ( $col eq 'FROM' ) { $out{$col}=$i; }
         elsif ( $col eq 'POS' ) { $out{'FROM'}=$i; }
@@ -354,7 +346,21 @@ sub parse_columns
         elsif ( $col eq 'ID' ) { $out{$col}=$i; }
         elsif ( $col eq 'REF' ) { $out{$col}=$i; }
         elsif ( $col eq 'ALT' ) { $out{$col}=$i; }
-        else { error("Missing the -d parameter for the column [$col]\n"); }
+        else
+        {
+            if ( !exists($desc{$col}) && exists($desc{"INFO/$col"}) )
+            {
+               print STDERR qq[The description for "$col" does not exist, assuming "INFO/$col"\n];
+               $col = "INFO/$col";
+            }
+            else { error("Missing the -d parameter for the column [$col]\n"); }
+            if ( !($col=~m{^(.+)/(.+)$}) ) { error("Could not parse the column [$col].\n"); }
+            my $key = $1;
+            my $id  = $2;
+            my $rec = { col=>$i, id=>$id, vcf_col=>$key, is_flag=>($desc{$col}{Type} eq 'Flag' ? 1 : 0) };
+            push @{$out{annots}}, $rec;
+            if ( $key ne 'INFO' ) { error("TODO: other than INFO columns\n"); }
+        }
     }
     if ( !exists($out{CHROM}) ) { $out{CHROM}=0; }
     if ( !exists($out{FROM}) ) { $out{FROM}=1; }
