@@ -353,7 +353,11 @@ sub parse_columns
                print STDERR qq[The description for "$col" does not exist, assuming "INFO/$col"\n];
                $col = "INFO/$col";
             }
-            else { error("Missing the -d parameter for the column [$col]\n"); }
+
+            if ( !exists($desc{$col}))
+            { 
+                error("Missing the -d parameter for the column [$col]\n"); 
+            }
             if ( !($col=~m{^(.+)/(.+)$}) ) { error("Could not parse the column [$col].\n"); }
             my $key = $1;
             my $id  = $2;
