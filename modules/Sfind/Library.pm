@@ -377,7 +377,7 @@ sub _get_mplex_pool_ids{
     my ($self) = @_;
     my @mplex_ids;
 
-    my $sql = qq[select descendant_internal_id as mplex_id
+    my $sql = qq[select distinct descendant_internal_id as mplex_id
                 from asset_links 
                 where ancestor_type="library_tubes" 
                 and ancestor_internal_id=?
