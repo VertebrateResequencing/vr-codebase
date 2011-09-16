@@ -259,15 +259,12 @@ sub plot_qualities
     push @lines, sprintf "'' using 1:%d with lines lw 2 lc rgb '#4affda' t ''",$nrows+2;
     my $lines = join(',', @lines);
     
-    # Set single-ended or paired based on last fragment qualities
-    my $is_paired = 0;
-    IS_PAIRED: foreach my $cycle (@lvals)
+    my $is_paired = 1;
+    if(@lf <= 1)
     {
-	foreach (@{$cycle})
-	{
-	    if($_){ $is_paired = 1; last IS_PAIRED; }
-	}
+      $is_paired = 0;
     }
+
     
     # Create the gnuplot script. Quick solution: the script relies on backticks and unix commands, may be changed in future
     open(my $fh,'>',$$args{gp}) or error("$$args{gp}: $!");
