@@ -1164,7 +1164,7 @@ sub run_gatk_chunk
     {
         %opts = $self->get_gatk_opts(qw(all indel_genotyper));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
-        $gatk->indel_genotyper($bam, "$name.indels.raw.bed", "$name.indels.detailed.bed",L=>$chunk,%opts);
+        $gatk->somatic_indel_detector($bam, "$name.indels.raw.bed", "$name.indels.detailed.bed",L=>$chunk,%opts);
         Utils::CMD("make_indel_mask.pl $name.indels.raw.bed 10 $name.indels.mask.bed",{verbose=>1});
     
         %opts = $self->get_gatk_opts(qw(all variant_filtration));
