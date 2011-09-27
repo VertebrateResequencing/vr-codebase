@@ -1,19 +1,19 @@
 #
+# Author:		John Maslen  (jm23@sanger.ac.uk)   Team 145
 # Author:    	Petr Danecek (pd3@sanger.ac.uk)    Team 145
-# Modified:		John Maslen  (jm23@sanger.ac.uk)   Team 145
 #
-#--------------- QueryIndelsData ---------------------------------
+#--------------- QueryIndelsDataCSV ---------------------------------
 #
-# Takes the cached data and creates a tab-delimited output file. Same as QuerySNPsData, but for Indels
+# Takes the cached data and creates a cvs-delimited output file. Same as QuerySNPsDataCSV, but for Indels
 #
 
-package SNPs::QueryIndelsData;
+package SNPs::QueryIndelsDataCSV;
 
 use strict;
 use warnings;
 
 use POSIX qw(strftime);
-use base qw(SNPs::QuerySNPsData);
+use base qw(SNPs::QuerySNPsDataCSV);
 
 sub new
 {
@@ -24,7 +24,7 @@ sub new
     my $date = strftime "%Y-%m-%d", localtime;
 	my $str_count =  scalar keys %{$$self{selected_strains}};
 	my $loc = '['.$$self{chrm}.':'.$$self{from}.'-'.$$self{to}.']';
-	my $file = 'Indels'.$str_count."_mouse_strains_".$loc."_".$date.".tab";
+	my $file = 'Indels'.$str_count."_mouse_strains_".$loc."_".$date.".csv";
     $$self{writer}->fname($file);
     return $self;
 }
@@ -62,10 +62,10 @@ sub print_header
     {
         $html->out($$self{display_dload_params});
     }
-    $html->out("Gene\tChromosome\tPosition\tReference");
+    $html->out("Gene,Chromosome,Position,Reference");
     for my $str (sort {$$strains{$a}<=>$$strains{$b}} keys %$strains)
     {
-        $html->out("\t$str\tConsequence");
+        $html->out(",$str,Consequence");
     }
     $html->out("\n");
     return;
@@ -80,7 +80,7 @@ sub print_row
 
     my ($pos,$chr,$ref,$gene_name) = $self->nonzero_column_data($row);
 
-    $html->out("$gene_name\t$chr\t$pos\t$ref");
+    $html->out("$gene_name,$chr,$pos,$ref");
 
     my $ncols = scalar keys %{$$self{'selected_strains'}};
     for (my $i=0; $i<$ncols; $i++)
@@ -92,7 +92,18 @@ sub print_row
             $$conseqs{$type} = 1;
         }
         
-        $$row[$i]->{'sequence'} ? $html->out("\t" . $$row[$i]->{'sequence'} . "\t" . join(',',sort keys %$conseqs)) : $html->out("\t-\t-");
+        if ($$row[$i]->{'sequence'}) {
+        	my @alts = split('/', $$row[$i]->{'alt_index'});
+        	my $seq_out;
+        	foreach (@alts) {
+        		$seq_out = $seq_out ? $seq_out.'/' : '';
+        		$seq_out = $seq_out.$$row[$i]->{'alt_sequences'}{$_};
+        	}
+        	$html->out("," . $seq_out . "," . join(';',sort keys %$conseqs));
+        } 
+        else {
+        	$html->out(",-,-");
+        }	
     }
     $html->out("\n");
 }
