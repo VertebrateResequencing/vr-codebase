@@ -1297,8 +1297,11 @@ sub mark_duplicates {
   my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
  
   \$sam_util->markdup('$bam_file', '$mark_dup_bam_file');
+  \$sam_util->index_bams(files=>['$mark_dup_bam_file']);
   unlink('$bam_file');
+  unlink('$bam_file.bai');
   symlink('$mark_dup_bam_file', '$bam_file');
+  symlink('$mark_dup_bam_file.bai', '$bam_file.bai');
 
   exit;
               };
