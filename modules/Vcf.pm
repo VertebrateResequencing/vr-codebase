@@ -1507,7 +1507,7 @@ sub parse_haplotype
 sub format_haplotype
 {
     my ($self,$alleles,$seps) = @_;
-    if ( @$alleles != @$seps+1 ) { $self->throw(sprintf "Uh: %d vs %d\n",scalar @$alleles,scalar @$seps); }
+    if ( @$alleles != @$seps+1 ) { $self->throw(sprintf("Uh: %d vs %d\n",scalar @$alleles,scalar @$seps),Dumper($alleles,$seps)); }
     my $out = $$alleles[0];
     for (my $i=1; $i<@$alleles; $i++)
     {

@@ -75,39 +75,39 @@ sub error
         "   ftp://ftp.sanger.ac.uk/pub/1000genomes/pd3/dbSNP/\n",
         "\n",
         "User-defined filters:\n",
-        "    # The examples below are self-explanatory. Notice the use of the predefined        \n",
-        "    #  variables (\$MATCH, \$PASS, \$FAIL) and methods (error).                        \n",
-        "    #                                                                                  \n",
-        "    # In this example, a minimum value of AF1=0.1 is required                          \n",
-        "    {                                                                                  \n",
-        "       tag  => 'INFO/AF1',                       # The VCF tag to apply this filter on \n",
-        "       name => 'MinAF',                          # The filter ID                       \n",
-        "       desc => 'Minimum AF1 [0.01]',             # Description for the VCF header      \n",
-        "       test => sub { return \$MATCH < 0.01 ? \$FAIL : \$PASS },                        \n",
-        "    },                                                                                 \n",
-        "    # Filter all indels (presence of INDEL tag is tested)                              \n",
-        "    {                                                                                  \n",
-        "       tag      => 'INFO/INDEL',                                                       \n",
-        "       apply_to => 'indels',         # Can be one of SNPs, indels, all. Default: [All] \n",
-        "       name     => 'Indel',                                                            \n",
-        "       desc     => 'INDEL tag present',                                                \n",
-        "       test     => sub { return \$FAIL },                                              \n",
-        "    },                                                                                 \n",
+        "    # The examples below are self-explanatory. Notice the use of the predefined\n",
+        "    #  variables (\$MATCH, \$PASS, \$FAIL) and methods (error).\n",
+        "    #\n",
+        "    # In this example, a minimum value of AF1=0.1 is required\n",
+        "    {\n",
+        "       tag  => 'INFO/AF1',                       # The VCF tag to apply this filter on\n",
+        "       name => 'MinAF',                          # The filter ID\n",
+        "       desc => 'Minimum AF1 [0.01]',             # Description for the VCF header\n",
+        "       test => sub { return \$MATCH < 0.01 ? \$FAIL : \$PASS },\n",
+        "    },\n",
+        "    # Filter all indels (presence of INDEL tag is tested)\n",
+        "    {\n",
+        "       tag      => 'INFO/INDEL',\n",
+        "       apply_to => 'indels',         # Can be one of SNPs, indels, all. Default: [All]\n",
+        "       name     => 'Indel',\n",
+        "       desc     => 'INDEL tag present',\n",
+        "       test     => sub { return \$FAIL },\n",
+        "    },\n",
         "    # Only loci with enough reads supporting the variant will pass the filter\n",
-        "    {                                                                        \n",
-        "       tag      => 'INFO/DP4',                                               \n",
-        "       name     => 'FewAlts',                                                \n",
-        "       desc     => 'Too few reads supporting the variant',                   \n",
-        "       apply_to => 'SNPs',                                                   \n",
-        "       test     => sub {                                                     \n",
-        "           if ( !(\$MATCH =~ /^([^,]+),([^,]+),([^,]+),(.+)\$/) )            \n",
-        "           {                                                                 \n",
-        "               error(\"Could not parse INFO/DP4: \$CHROM:\$POS [\$MATCH]\"); \n",
-        "           }                                                                 \n",
-        "           if ( 0.1*(\$1+\$2) > \$3+\$4  ) { return \$PASS; }                \n",
-        "           return \$FAIL;                                                    \n",
-        "       },                                                                    \n",
-        "    },                                                                       \n",
+        "    {\n",
+        "       tag      => 'INFO/DP4',\n",
+        "       name     => 'FewAlts',\n",
+        "       desc     => 'Too few reads supporting the variant',\n",
+        "       apply_to => 'SNPs',\n",
+        "       test     => sub {\n",
+        "           if ( !(\$MATCH =~ /^([^,]+),([^,]+),([^,]+),(.+)\$/) )\n",
+        "           {\n",
+        "               error(\"Could not parse INFO/DP4: \$CHROM:\$POS [\$MATCH]\");\n",
+        "           }\n",
+        "           if ( 0.1*(\$1+\$2) > \$3+\$4  ) { return \$PASS; }\n",
+        "           return \$FAIL;\n",
+        "       },\n",
+        "    },\n",
         "\n";
     exit -1;
 }
@@ -178,9 +178,9 @@ sub parse_user_defined_filters
 
         if ( !exists($$filter{name}) ) { error("Missing 'name' key for the filter [$$filter{tag}]\n"); }
         if ( !exists($$filter{desc}) ) { error("Missing 'desc' key for the filter [$$filter{tag}]\n"); }
-        push @{$$opts{desc}}, "key=FILTER,ID=$$filter{ID},Description='$$filter{desc}";
 
         my $name = $$filter{name};
+        push @{$$opts{desc}}, "key=FILTER,ID=$name,Description='$$filter{desc}";
         if ( !exists($$filter{apply_to}) or lc($$filter{apply_to}) eq 'all' ) 
         {
             $$opts{udef_filters}{'all'}{$name} = $filter;
@@ -614,11 +614,13 @@ sub apply_user_defined_filters
 {
     my ($opts,$line) = @_;
 
-    our($MATCH,$CHROM,$POS,$FAIL,$PASS);
-    $CHROM = $$line[0];
-    $POS   = $$line[1];
-    $FAIL  = 1;
-    $PASS  = 0;
+    our($MATCH,$CHROM,$POS,$FAIL,$PASS,$RECORD,$VCF);
+    $CHROM  = $$line[0];
+    $POS    = $$line[1];
+    $FAIL   = 1;
+    $PASS   = 0;
+    $RECORD = $line;
+    $VCF    = $$opts{vcf};
 
     my %filters = ();
     if ( $$opts{udef_filters_typecheck_needed} )
