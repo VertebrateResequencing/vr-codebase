@@ -953,7 +953,7 @@ sub apply_recalibration {
     my $bs = $self->get_b();
     my @file_args = (" $bs -recalFile $in_recal_file -tranchesFile $in_tranches -o $out_vcf");
     
-    my %params = (ts_filter_level => '0.1', ignore_filter => 'HARD_TO_VALIDATE', l => 'INFO', @params);
+    my %params = (ts_filter_level => '99.0', ignore_filter => 'HARD_TO_VALIDATE', l => 'INFO', @params);
     $params{T} = 'ApplyRecalibration';
     $self->_handle_common_params(\%params);
     

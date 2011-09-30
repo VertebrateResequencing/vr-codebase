@@ -261,12 +261,10 @@ sub plot_qualities
     push @lines, sprintf "'' using 1:%d with lines lw 2 lc rgb '#4affda' t ''",$nrows+2;
     my $lines = join(',', @lines);
     
-    my $is_paired = 1;
-    if(@lf <= 1)
-    {
-      $is_paired = 0;
-    }
-
+    # Set single-ended or paired based on paired flag
+    my $is_paired = `grep '^SN\tis paired:' $$opts{bamcheck} | cut -f 3-3`;
+    chomp $is_paired;
+    error("$$opts{bamcheck}: Paired flag not found.") if $is_paired eq '';
     
     # Create the gnuplot script. Quick solution: the script relies on backticks and unix commands, may be changed in future
     open(my $fh,'>',$$args{gp}) or error("$$args{gp}: $!");

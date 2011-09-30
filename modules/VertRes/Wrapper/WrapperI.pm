@@ -207,7 +207,10 @@ sub _run {
     my @result = $self->$run_method($exe, $params, @extra_args);
 
     # Record commands run.
-    $self->_add_command_line("$exe $params @extra_args");
+    my @to_add = ($exe);
+    push(@to_add, $params) if $params;
+    push(@to_add, grep { defined $_ } @extra_args) if @extra_args;
+    $self->_add_command_line(join(' ', @to_add));
 
     return @result;
 }

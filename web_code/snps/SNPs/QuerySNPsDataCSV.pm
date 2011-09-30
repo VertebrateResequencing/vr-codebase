@@ -1,19 +1,19 @@
 #
-# Author:    Petr Danecek (pd3@sanger.ac.uk)    Team 145
-# Modified:		John Maslen  (jm23@sanger.ac.uk)   Team 145
+# Author:   Petr Danecek (pd3@sanger.ac.uk)    Team 145
+# Author:	John Maslen  (jm23@sanger.ac.uk)   Team 145
 #
 #--------------- QuerySNPsData ---------------------------------------
 #
-# Takes the cached data and creates a tab-delimited output file.
+# Takes the cached data and creates a csv-delimited output file.
 #
 
-package SNPs::QuerySNPsData;
+package SNPs::QuerySNPsDataCSV;
 
 use strict;
 use warnings;
 use base qw(SNPs::QuerySNPs);
-use CGI::Carp qw(fatalsToBrowser);
 use POSIX qw(strftime);
+use CGI::Carp qw(fatalsToBrowser);
 
 sub new
 {
@@ -25,7 +25,7 @@ sub new
     my $date = strftime "%Y-%m-%d", localtime;
 	my $str_count =  scalar keys %{$$self{selected_strains}};
 	my $loc = '['.$$self{chrm}.':'.$$self{from}.'-'.$$self{to}.']';
-	my $file = 'SNPs'.$str_count."_mouse_strains_".$loc."_".$date.".tab";
+	my $file = 'SNPs'.$str_count."_mouse_strains_".$loc."_".$date.".csv";
     $$self{writer}->fname($file);
     return $self;
 }
@@ -34,7 +34,7 @@ sub new
 sub run
 {
     my ($self) = @_;
-    $self->print_header();
+	$self->print_header();
     while (my $pos=$self->cache_get_next())
     {
         $self->print_row($pos);
@@ -53,15 +53,15 @@ sub print_header
         $html->out($$self{display_dload_params});
     }
     $html->out("#\tBase calling key (first column for each strain):
-#\t\t'A,C,G,T'\t= High confidence SNP
+#\t\t'A C G T'\t= High confidence SNP
 #\t\t'-' (hyphen)\t= High confidence reference
-#\t\t'a,c,t,g'\t= Low confidence SNP
+#\t\t'a c t g'\t= Low confidence SNP
 #\t\t'~' (tilde)\t= Low confidence reference
 #\t\t'.' (period)\t= Genotype not called\n");
-    $html->out("Gene\tChromosome\tPosition\tReference");
+    $html->out("Gene,Chromosome,Position,Reference");
     for my $str (sort {$$strains{$a}<=>$$strains{$b}} keys %$strains)
     {
-        $html->out("\t$str\tConsequence");
+        $html->out(",$str,Consequence");
     }
     $html->out("\n");
 
@@ -94,7 +94,7 @@ sub print_row
 
     my ($pos,$chr,$base,$gene_name) = $self->nonzero_column_data($row);
 
-    $html->out("$gene_name\t$chr\t$pos\t$base");
+    $html->out("$gene_name,$chr,$pos,$base");
 
     my $ncols = scalar keys %{$$self{'selected_strains'}};
     for (my $i=0; $i<$ncols; $i++)
@@ -121,12 +121,12 @@ sub print_row
         	if ($atg_qual != 1) {
             	$strain_out = lc($strain_out);
             } 
-            $html->out("\t$strain_out");
-            $html->out("\t" . join(',',sort keys %$conseqs));
+            $html->out(",$strain_out");
+            $html->out("," . join(';',sort keys %$conseqs));
         }
         else
         {
-            $html->out("\t$strain_out\t-");
+            $html->out(",$strain_out,-");
         }
     }
     $html->out("\n");
