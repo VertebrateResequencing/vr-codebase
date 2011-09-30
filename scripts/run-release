@@ -43,16 +43,6 @@ use File::Basename;
 use Time::Format;
 use Data::Compare;
 
-=head2 new
-
- Title   : new
- Usage   : 
- Function: 
- Returns : 
- Args    : 
-
-=cut
-
 sub new
 {
     my ($class,@args) = @_;
@@ -90,7 +80,7 @@ all_callers =>
     bsub_opts_long  => "-q normal -M3500000 -R 'select[type==X86_64 && mem>3500] rusage[mem=3500,thouio=1,tmp=16000]'",
     fa_ref => '/path/to/ref.fasta',
     fai_ref => '/path/to/ref.fasta.fai',
-}
+},
 
 mpileup => 
 {
@@ -147,7 +137,7 @@ gatk =>
             },
             apply_recalibration =>
             {
-                fs_filter_level => 99.0,
+                ts_filter_level => 99.0,
                 mode => 'BOTH',
             },
         },
@@ -171,16 +161,6 @@ gatk =>
     
     return $self;
 }
-
-=head2 parse_args
-
- Title   : parse_args
- Usage   : 
- Function: 
- Returns : 
- Args    : 
-
-=cut
 
 sub parse_args
 {
@@ -223,17 +203,9 @@ sub parse_args
         %{$$self{mpileup}{data}} = ( %{$$self{mpileup}{data}}, %{$snps_data} );
         %{$$self{gatk}{data}} = ( %{$$self{gatk}{data}}, %{$snps_data} );
     }
+    
+    $$self{max_snps_samples} ||= 5;
 }
-
-=head2 find_release_dirs
-
- Title   : find_release_dirs
- Usage   : 
- Function: 
- Returns : 
- Args    : 
-
-=cut
 
 sub find_release_dirs 
 {
@@ -304,16 +276,6 @@ sub setup_release
     rename("$lane_bams_fofn.tmp", $lane_bams_fofn) || $self->throw("Could not rename $lane_bams_fofn.tmp to $lane_bams_fofn");
 }
 
-=head2 main
-
- Title   : main
- Usage   : 
- Function: 
- Returns : 
- Args    : 
-
-=cut
-
 sub main
 {
     my ($self) = @_;
@@ -329,7 +291,7 @@ sub main
     
     # Run MergeUp pipeline
     $self->spawn('merge_up', "$$self{root}/.merge_up_done");
-    unless (-s "$$self{root}/release_bams.fofn") { $self->wait; }
+    $self->wait unless (-s "$$self{root}/release_bams.fofn");
     
     # Post-process merged bams
     $self->spawn('process_bams', "$$self{root}/alignment_stats.bas", "$$self{root}/release_bams.fofn");
@@ -340,11 +302,12 @@ sub main
         $self->spawn('split_bam', "$$self{root}/.split_bam_done"); # TODO: index split bams
     }
     
+    # Only do variant calling on a frozen release
     # Exome calling
     if (exists $$self{mpileup} && exists $$self{gatk})
     {
-        $self->spawn('create_snps_hierarchy', "$$self{root}/calling/snps");
-        $self->wait;
+        $self->spawn('create_snps_hierarchy', "$$self{root}/calling");
+        $self->wait unless (-d "$$self{root}/calling");
         
         # Run SNPs pipeline for each caller
         foreach my $caller (qw(mpileup gatk)) 
@@ -356,12 +319,12 @@ sub main
         # TODO: Merge variants across callers
         # TODO: G1K and dbSNP annotations
         # TODO: vcf2consequences
+        # TODO: stats
         
         $self->wait;
     }
     $self->wait;
-    
-    # Only do variant calling on a frozen release
+        
     if ($$self{frozen})
     {
         # Whole genome calling
@@ -396,16 +359,6 @@ sub main
 }
 
 
-=head2 create_calling_hierarchy
-
- Title   : create_calling_hierarchy
- Usage   : 
- Function: 
- Returns : 
- Args    : 
-
-=cut
-
 sub create_snps_hierarchy 
 {
     my ($self, $calling_path) = @_;
@@ -425,9 +378,9 @@ sub create_snps_hierarchy
         my ($basename, $release_dir) = fileparse($bam);
         $release_dir =~ s/\/$//;
         my @parts = File::Spec->splitdir($release_dir);
-        my $project = $parts[-5];
-        my $sample = File::Spec->catdir($project, $parts[-4]);
-        my $platform = File::Spec->catdir($sample, $parts[-3]);
+        my $project = $parts[-3];
+        my $sample = File::Spec->catdir($project, $parts[-2]);
+        my $platform = File::Spec->catdir($sample, $parts[-1]);
         
         push(@{$samples{projects}->{$project}}, $bam);
         push(@{$samples{samples}->{$sample}}, $bam);
@@ -441,7 +394,7 @@ sub create_snps_hierarchy
         {
             my $this_merge_path = "$$self{root}/by-sample/$dir";
             my $this_calling_path = "$calling_path_tmp/$dir";
-            my $previous_calling_path = $$self{previous_root} ? "$$self{previous_root}/calling/snps/$dir" : '';
+            my $previous_calling_path = $$self{previous_root} ? "$$self{previous_root}/calling/$dir" : '';
             
             foreach my $symlinked (keys %symlinked)
             {
@@ -451,7 +404,7 @@ sub create_snps_hierarchy
                 }
             }
             
-            if (-l $this_merge_path && -e $previous_calling_path)
+            if (-l $this_merge_path && $previous_calling_path && -e $previous_calling_path)
             {
                 symlink $previous_calling_path, $this_calling_path;
                 $symlinked{$this_calling_path} = 1;
@@ -465,16 +418,6 @@ sub create_snps_hierarchy
     
     rename $calling_path_tmp, $calling_path;
 }
-
-=head2 mergeup
-
- Title   : mergeup
- Usage   : 
- Function: 
- Returns : 
- Args    : 
-
-=cut
 
 sub merge_up 
 {
@@ -528,7 +471,7 @@ sub process_bams
     my $release_date = $$self{release};
     $release_date =~ s/[REL-]//g;
     my $bas = qq[$$self{root}/by-sample/alignment_stats.bas];
-    $self->cmd(qq[~sm15/vr-git/vr-release/scripts/process_bams +verbose --fofn $fofn --operations bas bc --merge_bas_files $bas --release_date $release_date]);
+    $self->cmd(qq[process_bams +verbose --fofn $fofn --operations bas bc --merge_bas_files $bas --release_date $release_date]);
     system(qq[cp $bas $outfile]) if (-s $bas);
 }
 
@@ -625,22 +568,12 @@ sub merge_across
 #     return %groups;
 # }
 
-=head2 snps
-
- Title   : snps
- Usage   : 
- Function: 
- Returns : 
- Args    : 
-
-=cut
-
 sub snps 
 {
     my ($self, $done_file, $caller) = @_;
     
     my $version = delete $$self{$caller}{version};
-    my $caller_vcfs_fofn = "$$self{root}/calling/snps/${caller}_${version}_vcf.fofn";
+    my $caller_vcfs_fofn = "$$self{root}/calling/${caller}_${version}_vcf.fofn";
     
     unless (-s $caller_vcfs_fofn)
     {
@@ -649,7 +582,7 @@ sub snps
         foreach my $bam (@release_bams)
         {
             my $vcf = $bam;
-            $vcf =~ s/by-sample/calling\/snps/;
+            $vcf =~ s/by-sample/calling/;
             $vcf =~ s/bam$/snp/;
             $vcf .= "/$caller/$version/$caller.vcf.gz";
             print $fh "$vcf\n";
@@ -666,6 +599,8 @@ sub snps
         
         bams_fofn => qq[$$self{root}/release_bams.fofn],
         new_root => qq[$$self{root}/calling],
+        
+        max_simultaneous => $$self{max_snps_samples},
     );
     
     $snps_data{outdir} = qq[$caller/$version];
@@ -712,15 +647,16 @@ sub filter
 
 sub merge
 {
-    my ($self, $outfile, $gatk, $mpileup);    
-    $self->cmd("vcf-isec -n +1 $gatk $mpileup | bgzip -c > $outfile.part");
+    my ($self, $outfile, @vcfs);
+    my $cmd = "vcf-isec -n +1 " . join ' ', @vcfs . " | bgzip -c > $outfile.part";
+    $self->cmd($cmd);
     $self->tabix_part($outfile);
 }
 
 sub annotate
 {
     my ($self, $outfile, $vcf);
-    $self->cmd("zcat $vcf | vcf-annotate -a $$self{annotations} -d $$self{descriptions} -c CHROM,FROM,REF,ALT,-,-,INFO/KGPilot123,INFO/dbSNP | bgzip -c > $outfile.part");
+    $self->cmd("zcat $vcf | vcf-annotate -a $$self{annotations} -d $$self{descriptions} -c CHROM,FROM,REF,ALT,ID,-,INFO/KGPilot123,INFO/dbSNP | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
 }
 
@@ -764,17 +700,26 @@ sub store_path
     $self->create_config($config, %store_path_data);
     $self->create_pipeline($pipeline, '__Storing__', $config);
     $self->run_pipeline($pipeline);    
+    
+    my @samples;
+    my $all_finished = 1;
+    open(my $fh,'<',$store_path_data{fod}) || $self->throw("Could not open file $store_path_data{fod}\n");
+    while (<$fh>)
+    {
+        chomp;
+        if ( /^\s*$/ ) { next; }
+        if ( /^#/ ) { next; }
+        my ($sample) = split /\t/;
+        unless (-e "$sample/.store_nfs_done") { $all_finished = 0; last; }
+    }
+    close($fh);
+    
+    if ($all_finished)
+    {
+        system("touch $outfile");
+    }
+
 }
-
-=head2 consolidate_hierarchies
-
- Title   : consolidate_hierarchies
- Usage   : 
- Function: Strip out lane_bams.fofn files below the platform level in the MergeUp hierarchy
- Returns : 
- Args    : 
-
-=cut
 
 sub consolidate_hierarchies 
 {
@@ -816,7 +761,7 @@ sub consolidate_hierarchies
         }
     }
     
-    # consolidate merge_up hierarchies
+    # consolidate merge_up and calling hierarchies
     # don't consolidate if the previous release hierarchy is frozen
     if ($previous_root && !$previous_release_frozen) 
     {
@@ -827,6 +772,8 @@ sub consolidate_hierarchies
             {
                 my $this_merge_path = "$$self{root}/by-sample/$dir";
                 my $previous_merge_path = "$$self{previous_root}/by-sample/$dir";
+                my $this_calling_path = "$$self{root}/calling/$dir";
+                my $previous_calling_path = "$$self{previous_root}/calling/$dir";
                 
                 foreach my $symlinked (keys %symlinked)
                 {
@@ -836,12 +783,16 @@ sub consolidate_hierarchies
                     }
                 }
                 
+                # Move previous mergup hierarchy path into current hierarchy
                 next unless (-l $this_merge_path && -e $previous_merge_path);
-                
-                # Move previous hierarchy path into current hierarchy
                 unlink $this_merge_path;
                 rename $previous_merge_path, $this_merge_path;
                 $symlinked{$this_merge_path} = 1;
+                
+                # Move previous calling hierarchy path into current hierarchy
+                next unless (-l $this_calling_path && -e $previous_calling_path);
+                unlink $this_calling_path;
+                rename $previous_calling_path, $this_calling_path;
             }
         }
         
@@ -863,6 +814,7 @@ sub consolidate_hierarchies
         if ($ok)
         {
             $self->cmd("rm -r $previous_root.tmp");
+            # TODO: add safe mode to move this to a temp dir instead of removing
         }
         else
         {
