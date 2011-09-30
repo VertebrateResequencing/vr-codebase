@@ -157,6 +157,8 @@ sub new
     $$self{has_header} = 0;
     $$self{default_version} = '4.1';
     $$self{versions} = [ qw(Vcf3_2 Vcf3_3 Vcf4_0 Vcf4_1) ];
+    if ( !exists($$self{max_line_len}) && exists($ENV{MAX_VCF_LINE_LEN}) ) { $$self{max_line_len} = $ENV{MAX_VCF_LINE_LEN} }
+    $$self{fix_v40_AGtags} = $ENV{DONT_FIX_VCF40_AG_TAGS} ? 0 : 1;
     my %open_args = ();
     if ( exists($$self{region}) ) { $open_args{region}=$$self{region}; }
     if ( exists($$self{print_header}) ) { $open_args{print_header}=$$self{print_header}; }
@@ -276,29 +278,28 @@ sub next_line
 {
     my ($self) = @_;
     if ( @{$$self{buffer}} ) { return shift(@{$$self{buffer}}); }
-    # my $line = readline($$self{fh});
-    # Temporary fix to work around a samtools/bcftools bug:
+
     my $line;
-    while (1)
+    if ( !exists($$self{max_line_len}) ) 
     {
         $line = readline($$self{fh});
-        if ( !defined $line ) { last; }
-    
-        my $len = length($line);
-        if ( $len>500_000 ) 
-        { 
-            $line=~/^([^\t]+)\t([^\t]+)/;
-            print STDERR "Ignoring line: $1 $2 .. len=$len\n"; 
-            next;
-        }
-        if ( $line=~/GT:GT/ )
+    }
+    else
+    {
+        while (1)
         {
-            $line=~/^([^\t]+)\t([^\t]+)/;
-            print STDERR "Ignoring line (GT:GT): $1 $2\n"; 
-            next;
+            $line = readline($$self{fh});
+            if ( !defined $line ) { last; }
+
+            my $len = length($line);
+            if ( $len>$$self{max_line_len} && !($line=~/^#/) ) 
+            { 
+                if ( !($line=~/^([^\t]+)\t([^\t]+)/) ) { $self->throw("Could not parse the line: $line"); }
+                $self->warn("The VCF line too long, ignoring: $1 $2 .. len=$len\n"); 
+                next;
+            }
+            last;
         }
-    
-        last;
     }
     if ( !defined $line && $$self{check_exit_status} )
     {
@@ -691,6 +692,12 @@ sub add_header_line
         if ( !exists($$rec{handler}) )
         {
             my $type = $$rec{Type};
+            if ( !exists($$self{handlers}{$type}) ) 
+            { 
+                $self->warn("Unknown type [$type]\n"); 
+                $type = 'String';
+                $$rec{Type} = $type;
+            }
             if ( exists($$self{handlers}{$type}) ) { $$rec{handler}=$$self{handlers}{$type}; }
             else { $self->throw("Unknown type [$type].\n"); }
         }
@@ -1241,8 +1248,11 @@ sub parse_AGtags
     for my $fmt (@{$$rec{FORMAT}})
     {
         # These have been listed explicitly for proper merging of v4.0  VCFs
-        if ( $fmt eq 'GL' or $fmt eq 'PL' ) { push @gtags,$fmt; next; }
-        if ( $fmt eq 'AC' or $fmt eq 'AF'  ) { push @atags,$fmt; next; }
+        if ( $$self{fix_v40_AGtags} )
+        {
+            if ( $fmt eq 'GL' or $fmt eq 'PL' ) { push @gtags,$fmt; next; }
+            if ( $fmt eq 'AC' or $fmt eq 'AF'  ) { push @atags,$fmt; next; }
+        }
         if ( !exists($$self{header}{FORMAT}{$fmt}) ) { next; }
         if ( $$self{header}{FORMAT}{$fmt}{Number} eq 'A' ) { push @atags,$fmt; next; }
         if ( $$self{header}{FORMAT}{$fmt}{Number} eq 'G' ) { push @gtags,$fmt; next; }
@@ -1344,8 +1354,11 @@ sub format_AGtag
         for my $fmt (@{$$record{FORMAT}})
         {
             # These have been listed explicitly for proper merging of v4.0  VCFs
-            if ( $fmt eq 'GL' or $fmt eq 'PL' ) { $$record{_gtags}{$fmt}=1; next; }
-            if ( $fmt eq 'AC' or $fmt eq 'AF'  ) { $$record{_atags}{$fmt}=1; next; }
+            if ( $$self{fix_v40_AGtags} )
+            {
+                if ( $fmt eq 'GL' or $fmt eq 'PL' ) { $$record{_gtags}{$fmt}=1; next; }
+                if ( $fmt eq 'AC' or $fmt eq 'AF'  ) { $$record{_atags}{$fmt}=1; next; }
+            }
             if ( !exists($$self{header}{FORMAT}{$fmt}) ) { next; }
             if ( $$self{header}{FORMAT}{$fmt}{Number} eq 'A' ) { $$record{_atags}{$fmt}=1; next; }
             if ( $$self{header}{FORMAT}{$fmt}{Number} eq 'G' ) { $$record{_gtags}{$fmt}=1; next; }
@@ -2812,7 +2825,7 @@ sub Vcf4_1::next_data_array
     my ($self,@args) = @_;
 
     my $out = $self->SUPER::next_data_array(@args);
-    if ( !defined $out ) { return $out; }
+    if ( !defined $out or $$self{assume_uppercase} ) { return $out; }
 
     # Case-insensitive ALT and REF bases
     $$out[3] = uc($$out[3]);

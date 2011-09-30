@@ -309,6 +309,14 @@ around BUILDARGS => sub {
         foreach my $field(keys %$id_ref){
         	$argref->{$field} = $id_ref->{$field};
         }
+
+        # 2011-08-17 jws: state on a library doesn't mean anything now; the
+        # prep status is actually the status of the library creation request.
+        # We should remove this, but for now, let's settle for not breaking
+        # vrtrack by returning null or empty string.
+        unless ($argref->{state}){
+            $argref->{state} = 'unknown';
+        }
     };
     return $argref;
 };
@@ -369,7 +377,7 @@ sub _get_mplex_pool_ids{
     my ($self) = @_;
     my @mplex_ids;
 
-    my $sql = qq[select descendant_internal_id as mplex_id
+    my $sql = qq[select distinct descendant_internal_id as mplex_id
                 from asset_links 
                 where ancestor_type="library_tubes" 
                 and ancestor_internal_id=?

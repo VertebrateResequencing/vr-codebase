@@ -104,6 +104,29 @@ sub read_region_list
     return (@regions);
 }
 
+sub check_AGtags_definition
+{
+    my ($vcf) = @_;
+    if ( $$vcf{version} >= 4.1 ) { return; }
+
+    # Whatever is the value set to, the user takes the responsibility for the merging strategy used
+    if ( exists($ENV{DONT_FIX_VCF40_AG_TAGS}) ) { return; }
+
+    my @tags;
+    if ( exists($$vcf{header}{INFO}{PL}) && $$vcf{header}{INFO}{PL}{Number} ne '.' ) { push @tags, 'PL'; }
+    if ( exists($$vcf{header}{INFO}{GL}) && $$vcf{header}{INFO}{GL}{Number} ne '.' ) { push @tags, 'GL'; }
+    if ( exists($$vcf{header}{INFO}{AC}) && $$vcf{header}{INFO}{AC}{Number} ne '.' ) { push @tags, 'AC'; }
+    if ( exists($$vcf{header}{INFO}{AF}) && $$vcf{header}{INFO}{AF}{Number} ne '.' ) { push @tags, 'AF'; }
+
+    if ( !@tags ) { return; }
+
+    $ENV{DONT_FIX_VCF40_AG_TAGS} = 1;
+    my $tags = join(',',@tags);
+    print STDERR 
+        "Warning: The $tags tag(s) will not be merged correctly for multiallelic sites.\n",
+        "   To be handled correctly, please redefine with Number=. or set the environment\n",
+        "   variable DONT_FIX_VCF40_AG_TAGS=0.\n";
+}
 
 sub init_cols
 {
@@ -126,6 +149,7 @@ sub init_cols
     {
         my $vcf = Vcf->new(file=>$file);
         $vcf->parse_header();
+        check_AGtags_definition($vcf);
         $vcf->close();
         push @vcfs, $vcf;
 

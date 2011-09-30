@@ -83,7 +83,9 @@ sub new {
     $self->_set_params_and_switches_from_args(@args);
     
     $self->_set_run_status(-2);
-    
+
+    $self->{_command_line} = []; # Record of command lines executed by wrapper.
+
     return $self;
 }
 
@@ -203,7 +205,13 @@ sub _run {
     $run_method = '_'.$run_method.'_run';
     $self->_set_run_status(0);
     my @result = $self->$run_method($exe, $params, @extra_args);
-    
+
+    # Record commands run.
+    my @to_add = ($exe);
+    push(@to_add, $params) if $params;
+    push(@to_add, grep { defined $_ } @extra_args) if @extra_args;
+    $self->_add_command_line(join(' ', @to_add));
+
     return @result;
 }
 
@@ -717,5 +725,41 @@ sub DESTROY {
         waitpid $pid, 0;
     }
 }
+
+=head2 command_line
+
+ Title   : command_line
+ Usage   : $wrapper->command_line();
+ Function: Get/set command line strings
+ Returns : list of command line strings executed by the wrapper
+ Args    : list of strings
+
+=cut
+
+sub command_line
+{
+    my $self = shift;
+    $self->{_command_line} = \@_ if scalar @_; 
+    return @{$self->{_command_line}};
+}
+
+=head2 _add_command_line
+
+ Title   : _add_command_line
+ Usage   : $self->_add_command_line($my_command_line);
+           $self->_add_command_line(@my_command_lines);
+ Function: Internal method to add command line string to record of command lines 
+           executed by wrapper
+ Returns : n/a
+ Args    : list of strings
+
+=cut
+
+sub _add_command_line
+{
+    my $self = shift;
+    push((@{$self->{_command_line}}),@_) if scalar @_;
+}
+
 
 1;
