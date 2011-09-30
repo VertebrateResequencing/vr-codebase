@@ -1446,6 +1446,13 @@ sub cleanup {
             next unless (-s $old_file);
             $fs->copy($old_file, $new_file) or $self->throw("Error copying files:\nold: $old_file\nnew: $new_file");
         }
+        
+        if ($task eq 'gatk') {
+            my $tranches = File::Spec->catfile($lane_path, $task, "file.tranches");
+            if (-s $tranches) {
+                $fs->copy($tranches, File::Spec->catfile($lane_path, "gatk.tranches")) or $self->throw("Error copying files:\nold: $tranches\n");
+            }
+        }
 
         # cleanup files in the root of the snps output directory
         Utils::CMD("rm " . File::Spec->catfile($lane_path, "$task.done"));
