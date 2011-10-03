@@ -748,7 +748,7 @@ sub consolidate_hierarchies
     
     my $root = $$self{root};
     my $previous_root = $$self{previous_root} || '';
-    my $previous_release_frozen = $previous_root && ((-e "$previous_root/.freeze") || (-e "$previous_root/calling") || (-e "$previous_root/cross-sample"));
+    my $previous_release_frozen = $previous_root && ((-e "$previous_root/.freeze") || (-e "$previous_root/cross-sample"));
     
     # strip merge_up hierarchy below sample level
     # find -L $$self{root}/by-sample -mindepth 4 -type f -name lane_bams.fofn
