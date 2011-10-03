@@ -61,6 +61,7 @@ sub parse_params
         if (                 $arg eq '--all-samples-af' ) { $$opts{all_samples_af}=1; next; }
         if (                 $arg eq '--INFO/AF1-af' ) { $$opts{INFO_AF1_af}=1; next; }
         if (                 $arg eq '--ignore-indels' ) { $$opts{ignore_indels}=1; next; }
+        if (                 $arg eq '--high-conf-gls' ) { $$opts{high_confidence_gls}=shift(@ARGV); next; }
         if ( $arg eq '-m' || $arg eq '--name-mapping' ) { $$opts{mappings_list}=shift(@ARGV); next; }
         if ( $arg eq '-R' || $arg eq '--refseq' ) { $$opts{refseq}=shift(@ARGV); next; }
         if ( $arg eq '-c' || $arg eq '--chromosomes' ) { $$opts{regions_list}=shift(@ARGV); next; }
@@ -907,6 +908,14 @@ sub cmp_genotypes
             @sorted_als1 = sort @$als1;
             $nploid = scalar @sorted_als1;
             $type = snp_type($als1,$ref);
+        }
+
+        if ( exists($$opts{high_confidence_gls}) )
+        {
+            my @gls = split(/,/,$$grp[1]{rec}{gtypes}{$id}{GL});
+            if ( @gls!=3 or $gls[0] eq '.' ) { next; }
+            @gls = sort {$b<=>$a} @gls;
+            if ( abs($gls[0]-$gls[1])<$$opts{high_confidence_gls} ) { next; }
         }
 
         # There may be multiple files entering the comparison. Report match only if all are present and all match. 

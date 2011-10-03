@@ -71,11 +71,14 @@ sub new {
                 'bases_mapped_cigar',
                 'bases_trimmed',
                 'error_rate',
+                'inward_pairs',
                 'is_paired',
                 'is_sorted',
                 'last_fragments',
                 'max_length',
                 'mismatches',
+                'other_pairs',
+                'outward_pairs',
                 'reads_duplicated',
                 'reads_mapped',
                 'reads_unmapped',
@@ -90,9 +93,11 @@ sub new {
                 'first_fragment_gc',
                 'first_fragment_qualities',
                 'gc_depth',
+                'gc_content_per_cycle',
                 'insert_size',
                 'last_fragment_gc',
                 'last_fragment_qualities',
+                'mismatches_per_cycle',
 
 =cut
 
@@ -144,6 +149,9 @@ sub _get_header {
         'insert size standard deviation' => 'sd_insert_size',
         'is sorted'         => 'is_sorted',
         'is paired'         => 'is_paired',
+        'inward oriented pairs'         => 'inward_pairs',
+        'outward oriented pairs'        => 'outward_pairs',
+        'pairs with other orientation'  => 'other_pairs',
     );
     my %mapping = 
     (
@@ -154,6 +162,8 @@ sub _get_header {
         'IS'    => 'insert_size',
         'GCD'   => 'gc_depth',
         'COV'   => 'coverage',
+        'MPC'   => 'mismatches_per_cycle',
+        'GCC'   => 'gc_content_per_cycle',
     );
     
     while (my $line=<$fh>) 

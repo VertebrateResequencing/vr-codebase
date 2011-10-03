@@ -166,23 +166,28 @@ sub compare
         $ref_ori = uc($ref_ori);
         $ref_new = uc($ref_new);
 
+        my $_match=0;
+        my $_rmismatch=0;
         my $ok = 1;
-        if ( substr($ref_new,$win,1) ne substr($ref_ori,$win,1) ) { $ok=0; $rmismatch++; }
+        if ( substr($ref_new,$win,1) ne substr($ref_ori,$win,1) ) { $ok=0; $_rmismatch=1; }
         for (my $i=0; $i<2*$win+1; $i++)
         {
-            if ( substr($ref_new,$i,1) eq substr($ref_ori,$i,1) ) { $match++; }
+            if ( substr($ref_new,$i,1) eq substr($ref_ori,$i,1) ) { $_match++; }
             else { $ok=0; $mismatch++; }
         }
+        $rmismatch += $_rmismatch;
+        $match += $_match;
+        $_match = sprintf "%.2f%%", $_match*100./(2*$win+1);
 
         if ( $ok )
         {
-            printf $tlog_fh "%s\t%d\t->\t%s\t%d\n",$$ori[0],$$ori[1]+1,$$map[0],$$map[1]+1;
+            printf $tlog_fh "%s\t%d\t->\t%s\t%d\t%s\n",$$ori[0],$$ori[1]+1,$$map[0],$$map[1]+1,$_match;
             $nlifted++;
         }
         else
         {
+            printf $tlog_fh "# ignored\t%s\t%d\t->\t%s\t%d\t%s\t%s\n",$$ori[0],$$ori[1]+1,$$map[0],$$map[1]+1,$_match,$_rmismatch?'-r':'+r';
             $ignored++;
-            print $tlog_fh "# ignored\t$$ori[0]\t",$$ori[1]+1,"\n";
         }
     }
     close($tlog_fh);
@@ -225,7 +230,7 @@ sub apply_tlog
         if ( !$ori && $tlog or $ori && !$tlog ) { error("FIXME: Different lengths?\n"); }
 
         if ( $tlog=~/^# skip\t\S+\t\d+$/ ) { next; }
-        if ( $tlog=~/^# ignored\t\S+\t\d+$/ ) { next; }
+        if ( $tlog=~/^# ignored\t\S+\t\d+/ ) { next; }
         if ( !($tlog=~/^(\S+)\t(\d+)\t->\t(\S+)\t(\d+)/) ) { error("Could not parse $$opts{tlog}: $tlog"); }
         my $exp_chr = $1;
         my $exp_pos = $2;
