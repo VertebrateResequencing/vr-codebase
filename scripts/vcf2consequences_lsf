@@ -20,7 +20,7 @@ foreach( keys( %INC ) )
 }
 =cut
 
-my ($input_vcf, $species, $index_vcf, $help, $buffer_size, $gerp, $grantham, $nodes);
+my ($input_vcf, $species, $index_vcf, $help, $buffer_size, $gerp, $grantham, $passonly, $nodes);
 
 GetOptions
 (
@@ -31,6 +31,7 @@ GetOptions
     "b|buffer=i"    => \$buffer_size,
     "g|gerp"    => \$gerp,
     "r|grantham"    => \$grantham,
+    "p|pass"    => \$passonly,
     "h|help"        => \$help
 );
 
@@ -44,12 +45,13 @@ if( $missing )
 This is a wrapper script to split vcf2consequences processing across lsf nodes.
 Usage:
     -v --vcf <string>       VCF input file
-    -n --nodes <integer>    Number of LSF nodes to use
+    -n --nodes <integer>    Number of LSF nodes to use, suggest a max of 50 or so to prevent db connect errors
     -s --species            Homo_sapiens or Mus_musculus
     -i --index              OPTIONAL: Compressed annotated VCF file, indexed using tabix
     -b --buffer             OPTIONAL: Number of rows of the vcf file to buffer (default = 500)
     -g --gerp               OPTIONAL: Add GERP score to consequences
     -r --grantham           OPTIONAL: Add Grantham matrix score to consequences for nsSNPS
+    -p --pass               OPTIONAL: Only annotate FILTER=PASS variants
     -h --help               Print this message
 ];
     exit;
@@ -150,13 +152,13 @@ sub process_vcf
 sub start_bsub_thread {
 	my ($fn) = @_;
 
-	my $cmd_line = "bsub -I -q long -o $fn.out -e $fn.err vcf2consequences -v $fn -s Homo_sapiens -b $buffer_size";
+	my $cmd_line = "bsub -I -q long -o $fn.out -e $fn.err vcf2consequences -v $fn -s $species -b $buffer_size";
 	$cmd_line .= " -i $index_vcf" if $index_vcf;
+	$cmd_line .= " -pass" if $passonly;
 	$cmd_line .= " -gerp" if $gerp;
 	$cmd_line .= " -grantham" if $grantham;
 
-	print STDERR "Starting $fn\n";
+	print STDERR `date`, "Running: $cmd_line\n";
 	system($cmd_line);
-	print STDERR "$fn finished\n";
+	print STDERR `date`, " $fn finished\n";
 }
-
