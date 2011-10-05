@@ -482,11 +482,19 @@ sub _guess_mapping_program {
         
         my (@known_prg,@unknown_prg);
         for my $program (@programs) {
-            if ($program =~ /bwa|maq|ssaha|bfast|stampy/) {
-                push @known_prg, $program;
+            if ($program =~ /bwa|maq|ssaha|bfast|stampy/i) {
+                if (exists $info{$program}{PN}){
+                    push @known_prg, $info{$program}{PN};
+                } else {
+                    push @known_prg, $program;
+                }
             }
             elsif ($program !~ /GATK/) {
-                push @unknown_prg, $program;
+                if (exists $info{$program}{PN}){
+                    push @unknown_prg, $info{$program}{PN};
+                } else {
+                    push @unknown_prg, $program;
+                }
             }
         }
 
