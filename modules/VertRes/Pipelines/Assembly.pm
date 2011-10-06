@@ -130,7 +130,7 @@ sub pool_fastqs
    my $pool_count = 1;
    for my $lane_pool (@$self->{pools})
    {
-    my $lane_names_str = '("'.join('.fastq.gz","',@{%{$lane_pool}{lanes}}).'.fastq.gz")';
+    my $lane_names_str = '("'.join('.fastq.gz","',@{$lane_pool->{lanes}}).'.fastq.gz")';
     print $scriptfh qq{
       my \@lane_names = $lane_names_str;
       concat_fastq_gz_files($lane_names, "pool_$pool_count.fastq.gz", $output_directory, $output_directory);
@@ -142,7 +142,7 @@ sub pool_fastqs
   exit;
       };
       close $scriptfh;
-      my $action_lock = "$output_directory/$$self{'prefix'}$$action{'name'}.jids";
+      my $action_lock = "$output_directory/$$self{'prefix'}pool_fastqs.jids";
       my $job_name = $self->{prefix}.'pool_fastqs';
       
       LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M500000 -R \'select[mem>500] rusage[mem=500]\''}, qq{perl -w $script_name});
@@ -169,7 +169,7 @@ sub get_all_lane_names
   
   for my $lane_pool (@$pooled_lanes)
   {
-    for my $lane_name (@{%$lane_pool{lanes}})
+    for my $lane_name (@{$lane_pool->{lanes}})
     {
       push(@all_lane_names, $lane_name);
     }
