@@ -124,21 +124,21 @@ sub pool_fastqs
    for my $lane_name ( @$lane_names)
    {
      my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
-     qq{shuffle_sequences_fastq_gz($lane_name, $lane_path, $output_directory); };
+     print $scriptfh qq{shuffle_sequences_fastq_gz($lane_name, $lane_path, $output_directory); };
    }
    
    my $pool_count = 1;
    for my $lane_pool (@$self->{pools})
    {
-    my $lane_names_str = '("'.join('.fastq.gz","',@{%$lane_pool{lanes}}).'.fastq.gz")';
-    qq{
+    my $lane_names_str = '("'.join('.fastq.gz","',@{%{$lane_pool}{lanes}}).'.fastq.gz")';
+    print $scriptfh qq{
       my \@lane_names = $lane_names_str;
       concat_fastq_gz_files($lane_names, "pool_$pool_count.fastq.gz", $output_directory, $output_directory);
      };
      $pool_count++;
    }
  
-   qq{
+   print $scriptfh qq{
   exit;
       };
       close $scriptfh;
