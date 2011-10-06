@@ -98,6 +98,7 @@ sub new {
   
   my $self = $class->SUPER::new(%options, actions => $actions, @args);
   if(defined($self->{db}))
+  {
     $self->{vrtrack} = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
   }
   $self->{fsu} = VertRes::Utils::FileSystem->new;
@@ -126,7 +127,8 @@ sub pool_fastqs
    for my $lane_name ( @$lane_names)
    {
      my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
-     print $scriptfh qq{\$assembly->shuffle_sequences_fastq_gz("$lane_name", "$lane_path", "$output_directory"); };
+     print $scriptfh qq{\$assembly->shuffle_sequences_fastq_gz("$self->{root}/$lane_name", "$lane_path", "$output_directory"); 
+     };
    }
    
    my $pool_count = 1;
@@ -135,7 +137,7 @@ sub pool_fastqs
     my $lane_names_str = '("'.join('.fastq.gz","',@{$lane_pool->{lanes}}).'.fastq.gz")';
     print $scriptfh qq{
       my \@lane_names = $lane_names_str;
-      \$assembly->concat_fastq_gz_files(\$lane_names, "pool_$pool_count.fastq.gz", "$output_directory", "$output_directory");
+      \$assembly->concat_fastq_gz_files(\@lane_names, "pool_$pool_count.fastq.gz", "$output_directory", "$output_directory");
      };
      $pool_count++;
    }
