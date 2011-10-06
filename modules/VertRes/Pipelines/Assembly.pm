@@ -92,12 +92,21 @@ our $actions = [ { name     => 'pool_fastqs',
 our %options = (
                 do_cleanup => 1);
 
+sub new {
+  my ($class, @args) = @_;
+  
+  my $self = $class->SUPER::new(%options, actions => $actions, @args);
+  $self->throw("db option was not supplied in config") unless $self->{db};
+  my $vrtrack = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
+}
+
 
 sub pool_fastqs
 {
       my ($self, $build_path, $action_lock) = @_;
     
-      my $lane_names = get_all_lane_names($pooled_lanes);
+      my $lane_names = get_all_lane_names($self->{pools});
+      my $output_directory = $self->{root};
       
 
       my $script_name = $self->{fsu}->catfile($build_path, $self->{prefix}."pool_fastqs.pl");
@@ -119,7 +128,7 @@ sub pool_fastqs
     qq{
       my \@lane_names = $lane_names_str;
       concat_fastq_gz_files($lane_names, "pool_$pool_count.fastq.gz", $output_directory, $output_directory);
-     }
+     };
      $pool_count++;
    }
  
@@ -144,13 +153,6 @@ sub pool_fastqs_requires
 sub pool_fastqs_provides
 {
   [];
-}
-
-sub pool_lanes
-{
-  my ($self, $output_directory) = @_;
-  my $pooled_lanes = read_in_pooled_lanes($output_directory);
-  concat_fastq_gz_files   my ($filenames, $outputname, $output_directory, $output_directory) = @_;
 }
 
 sub get_all_lane_names
@@ -186,13 +188,13 @@ sub shuffle_sequences_fastq_gz
 {
   my ($self, $name, $input_directory, $output_directory) = @_;
   
-  $filenameA = $name."_1.fastq.gz";
-  $filenameB = $name."_2.fastq.gz";
-  $filenameOut = $name.".fastq.gz";
+  my $filenameA = $name."_1.fastq.gz";
+  my $filenameB = $name."_2.fastq.gz";
+  my $filenameOut = $name.".fastq.gz";
 
-  open( $FILEA, "-|",'gunzip -c '.$input_directory.'/'.$filenameA) ;
-  open( $FILEB, "-|",'gunzip -c '.$input_directory.'/'.$filenameB) ;
-  open( $OUTFILE, "|-", "gzip -c  > $output_directory".'/'."$filenameOut");
+  open( my $FILEA, "-|",'gunzip -c '.$input_directory.'/'.$filenameA) ;
+  open( my $FILEB, "-|",'gunzip -c '.$input_directory.'/'.$filenameB) ;
+  open( my $OUTFILE, "|-", "gzip -c  > $output_directory".'/'."$filenameOut");
 
   while(<$FILEA>) {
     print $OUTFILE $_;
