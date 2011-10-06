@@ -143,7 +143,8 @@ sub pool_fastqs
       };
       close $scriptfh;
       my $action_lock = "$output_directory/$$self{'prefix'}$$action{'name'}.jids";
-      my $job_name = "$output_directory/$self->{prefix}.'pool_fastqs';
+      my $job_name = $self->{prefix}.'pool_fastqs';
+      
       LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M500000 -R \'select[mem>500] rusage[mem=500]\''}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
