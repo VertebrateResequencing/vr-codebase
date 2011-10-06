@@ -100,13 +100,16 @@ sub new {
   my $vrtrack = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
   $self->{vrtrack} = $vrtrack;
   $self->{fsu} = VertRes::Utils::FileSystem->new;
+  
+
+  
   return $self;
 }
 
 
 sub pool_fastqs
 {
-      my ($self, $build_path, $action_lock) = @_;
+      my ($self, $build_path) = @_;
     
       my $lane_names = get_all_lane_names($self->{pools});
       my $output_directory = $self->{root};
@@ -127,7 +130,7 @@ sub pool_fastqs
    my $pool_count = 1;
    for my $lane_pool (@$self->{pools})
    {
-    my $lane_names_str = '("'.join('.fastq.gz","',%$lane_pool{lanes}).'.fastq.gz")';
+    my $lane_names_str = '("'.join('.fastq.gz","',@{%$lane_pool{lanes}}).'.fastq.gz")';
     qq{
       my \@lane_names = $lane_names_str;
       concat_fastq_gz_files($lane_names, "pool_$pool_count.fastq.gz", $output_directory, $output_directory);
@@ -139,8 +142,8 @@ sub pool_fastqs
   exit;
       };
       close $scriptfh;
-
-      my $job_name = $self->{prefix}.'pool_fastqs';
+      my $action_lock = "$output_directory/$$self{'prefix'}$$action{'name'}.jids";
+      my $job_name = "$output_directory/$self->{prefix}.'pool_fastqs';
       LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M500000 -R \'select[mem>500] rusage[mem=500]\''}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
