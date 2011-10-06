@@ -50,7 +50,7 @@ data => {
 path-help@sanger.ac.uk
 
 =cut
-package VertRes::Pipelines::Mapping;
+package VertRes::Pipelines::Assembly;
 
 use strict;
 use warnings;
@@ -72,22 +72,22 @@ our $actions = [ { name     => 'pool_fastqs',
                    action   => \&pool_fastqs,
                    requires => \&pool_fastqs_requires, 
                    provides => \&pool_fastqs_provides },
-                 { name     => 'optimise_parameters',
-                   action   => \&optimise_parameters,
-                   requires => \&optimise_parameters_requires, 
-                   provides => \&optimise_parameters_provides },
-                 { name     => 'run_assembler',
-                   action   => \&run_assembler,
-                   requires => \&run_assembler_requires, 
-                   provides => \&run_assembler_provides },
-                 { name     => 'statistics',
-                   action   => \&statistics,
-                   requires => \&statistics_requires, 
-                   provides => \&statistics_provides },
-                 { name     => 'cleanup',
-                   action   => \&cleanup,
-                   requires => \&cleanup_requires, 
-                   provides => \&cleanup_provides } ];
+                # { name     => 'optimise_parameters',
+                #   action   => \&optimise_parameters,
+                #   requires => \&optimise_parameters_requires, 
+                #   provides => \&optimise_parameters_provides },
+                # { name     => 'run_assembler',
+                #   action   => \&run_assembler,
+                #   requires => \&run_assembler_requires, 
+                #   provides => \&run_assembler_provides },
+                # { name     => 'statistics',
+                #   action   => \&statistics,
+                #   requires => \&statistics_requires, 
+                #   provides => \&statistics_provides },
+                # { name     => 'cleanup',
+                #   action   => \&cleanup,
+                #   requires => \&cleanup_requires, 
+                #   provides => \&cleanup_provides } ];
 
 our %options = (
                 do_cleanup => 1);
