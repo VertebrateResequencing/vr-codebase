@@ -98,6 +98,9 @@ sub new {
   my $self = $class->SUPER::new(%options, actions => $actions, @args);
   $self->throw("db option was not supplied in config") unless $self->{db};
   my $vrtrack = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
+  $self->{vrtrack} = $vrtrack;
+  $self->{fsu} = VertRes::Utils::FileSystem->new;
+  return $self;
 }
 
 
@@ -117,14 +120,14 @@ sub pool_fastqs
 
    for my $lane_name ( @$lane_names)
    {
-     my $lane_path = $vrtrack->hierarchy_path_of_lane_name($lane_name);
+     my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
      qq{shuffle_sequences_fastq_gz($lane_name, $lane_path, $output_directory); };
    }
    
    my $pool_count = 1;
    for my $lane_pool (@$self->{pools})
    {
-    my $lane_names_str = '("'.join('.fastq.gz","',$lane_pool{lanes}).'.fastq.gz")';
+    my $lane_names_str = '("'.join('.fastq.gz","',%$lane_pool{lanes}).'.fastq.gz")';
     qq{
       my \@lane_names = $lane_names_str;
       concat_fastq_gz_files($lane_names, "pool_$pool_count.fastq.gz", $output_directory, $output_directory);
@@ -162,7 +165,7 @@ sub get_all_lane_names
   
   for my $lane_pool (@$pooled_lanes)
   {
-    for my $lane_name (@{$lane_pool{lanes}})
+    for my $lane_name (@{%$lane_pool{lanes}})
     {
       push(@all_lane_names, $lane_name);
     }
