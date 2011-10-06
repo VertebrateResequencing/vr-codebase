@@ -388,7 +388,7 @@ sub call_conseqs
 
             my $con_str = join ":",@data;
 
-            if ( $type eq 'NON_SYNONYMOUS_CODING' && $species eq 'Homo_sapiens') {
+			if ( $type eq 'NON_SYNONYMOUS_CODING' && $species eq 'Homo_sapiens' && $allele !~ '-') { # ignore indels
 				$con_str .= get_nssnp_annotations($con);
 			}
 
@@ -412,11 +412,8 @@ sub call_conseqs
 
 		if ($$scores[0] ) {
 			$gerp_text .= sprintf ("%.2f", $$scores[0]->diff_score);
+			$out{$gerp_text} = 1;
 		}
-		else {
-			$gerp_text .= "undef";
-		}
-		$out{$gerp_text} = 1;
 	}
 
     return \%out;
@@ -425,7 +422,7 @@ sub call_conseqs
 sub get_nssnp_annotations
 {
     my ($tv) = @_;
-    my $pred_text = ":";
+    my $pred_text = "";
 
 	return if !($tv->affects_transcript);
 
@@ -440,11 +437,10 @@ sub get_nssnp_annotations
 			my $pred = $tva->$pred_meth;
 
 			if($pred) {
-
                                 # jws 2011-08-07 Can't have "$tool=", as '=' is
                                 # not allowed with an INFO string.  Use ','
                                 # instead.
-				$pred_text .= "$tool,";
+				$pred_text .= ":$tool,";
 
 				$pred =~ s/\s+/\_/;
 				$pred_text .= $pred;
@@ -454,10 +450,8 @@ sub get_nssnp_annotations
 				if(defined $score) {
 					$pred_text .= "($score)";
 				}
-				$pred_text .= ':';
 			}
 		}
-		$pred_text =~ s/\:$//g;
 
 		# Use first alternate_TranscriptVariationAllele with predictions
 		if ($pred_text) {

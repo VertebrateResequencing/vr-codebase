@@ -256,7 +256,7 @@ sub find_release_dirs
     {
         $$self{previous_root} = $$self{fsu}->catfile($$self{build_root}, $$self{db}, $$self{previous_release});
     }
-    $$self{frozen} = (!$$self{rolling_release}) || (-e "$$self{root}/.freeze") || (-e "$$self{root}/calling") || (-e "$$self{root}/calling");
+    $$self{frozen} = (!$$self{rolling_release}) || (-e "$$self{root}/.freeze");
 }
 
 sub setup_release
@@ -748,7 +748,7 @@ sub consolidate_hierarchies
     
     my $root = $$self{root};
     my $previous_root = $$self{previous_root} || '';
-    my $previous_release_frozen = $previous_root && ((-e "$previous_root/.freeze") || (-e "$previous_root/calling") || (-e "$previous_root/cross-sample"));
+    my $previous_release_frozen = $previous_root && ((-e "$previous_root/.freeze") || (-e "$previous_root/cross-sample"));
     
     # strip merge_up hierarchy below sample level
     # find -L $$self{root}/by-sample -mindepth 4 -type f -name lane_bams.fofn
