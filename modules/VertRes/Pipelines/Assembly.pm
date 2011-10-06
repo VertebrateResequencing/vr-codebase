@@ -87,7 +87,8 @@ our $actions = [ { name     => 'pool_fastqs',
                 # { name     => 'cleanup',
                 #   action   => \&cleanup,
                 #   requires => \&cleanup_requires, 
-                #   provides => \&cleanup_provides } ];
+                #   provides => \&cleanup_provides } 
+                ];
 
 our %options = (
                 do_cleanup => 1);
@@ -96,12 +97,10 @@ sub new {
   my ($class, @args) = @_;
   
   my $self = $class->SUPER::new(%options, actions => $actions, @args);
-  $self->throw("db option was not supplied in config") unless $self->{db};
-  my $vrtrack = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
-  $self->{vrtrack} = $vrtrack;
+  if(defined($self->{db}))
+    $self->{vrtrack} = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
+  }
   $self->{fsu} = VertRes::Utils::FileSystem->new;
-  
-
   
   return $self;
 }
@@ -111,34 +110,39 @@ sub pool_fastqs
 {
       my ($self, $build_path) = @_;
     
-      my $lane_names = get_all_lane_names($self->{pools});
-      my $output_directory = $self->{root};
+      my $lane_names = $self->get_all_lane_names($self->{pools});
+      my $output_directory = '.';
       
 
       my $script_name = $self->{fsu}->catfile($build_path, $self->{prefix}."pool_fastqs.pl");
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
   use strict;
+  use VertRes::Pipelines::Assembly;
+  my \$assembly= VertRes::Pipelines::Assembly->new();
+  
 };
 
    for my $lane_name ( @$lane_names)
    {
      my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
-     print $scriptfh qq{shuffle_sequences_fastq_gz($lane_name, $lane_path, $output_directory); };
+     print $scriptfh qq{\$assembly->shuffle_sequences_fastq_gz("$lane_name", "$lane_path", "$output_directory"); };
    }
    
    my $pool_count = 1;
-   for my $lane_pool (@$self->{pools})
+   for my $lane_pool (@{$self->{pools}})
    {
     my $lane_names_str = '("'.join('.fastq.gz","',@{$lane_pool->{lanes}}).'.fastq.gz")';
     print $scriptfh qq{
       my \@lane_names = $lane_names_str;
-      concat_fastq_gz_files($lane_names, "pool_$pool_count.fastq.gz", $output_directory, $output_directory);
+      \$assembly->concat_fastq_gz_files(\$lane_names, "pool_$pool_count.fastq.gz", "$output_directory", "$output_directory");
      };
      $pool_count++;
    }
  
    print $scriptfh qq{
+     
+     system("touch _pool_fastqs_done");
   exit;
       };
       close $scriptfh;
@@ -159,7 +163,8 @@ sub pool_fastqs_requires
 
 sub pool_fastqs_provides
 {
-  [];
+   my $self = shift;
+   ["_pool_fastqs_done"];
 }
 
 sub get_all_lane_names
