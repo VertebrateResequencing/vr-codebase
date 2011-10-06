@@ -416,6 +416,12 @@ sub get_jobs
                 get_splitbam_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
+            
+            if ($action=~/^__Assembly__$/ )
+            {
+                get_assembly_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
+                next;
+            }
 
             if ( $action=~/^\<(\S+)$/ )
             {
