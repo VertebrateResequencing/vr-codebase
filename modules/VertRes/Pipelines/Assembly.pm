@@ -112,7 +112,8 @@ sub pool_fastqs
       my ($self, $build_path) = @_;
     
       my $lane_names = $self->get_all_lane_names($self->{pools});
-      my $output_directory = '.';
+      my $output_directory = $self->{lane_path};
+      my $base_path = $self->{root}.'/..';
       
 
       my $script_name = $self->{fsu}->catfile($build_path, $self->{prefix}."pool_fastqs.pl");
@@ -127,7 +128,7 @@ sub pool_fastqs
    for my $lane_name ( @$lane_names)
    {
      my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
-     print $scriptfh qq{\$assembly->shuffle_sequences_fastq_gz("$self->{root}/$lane_name", "$lane_path", "$output_directory"); 
+     print $scriptfh qq{\$assembly->shuffle_sequences_fastq_gz("$base_path/$lane_name", "$lane_path", "$output_directory"); 
      };
    }
    
@@ -144,7 +145,7 @@ sub pool_fastqs
  
    print $scriptfh qq{
      
-     system("touch _pool_fastqs_done");
+     system("touch $output_directory/_pool_fastqs_done");
   exit;
       };
       close $scriptfh;
@@ -166,7 +167,7 @@ sub pool_fastqs_requires
 sub pool_fastqs_provides
 {
    my $self = shift;
-   ["_pool_fastqs_done"];
+   [$self->{lane_path}."/_pool_fastqs_done"];
 }
 
 sub get_all_lane_names
