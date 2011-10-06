@@ -79,7 +79,6 @@ sub plot
     if ( $? ) { error("The command exited with non-zero status $?:\n\t$cmd\n\n"); }
 }
 
-
 sub clean
 {
     my ($opts) = @_;
@@ -126,10 +125,22 @@ sub get_defaults
     return { title=>$title, gp=>$gp_file, img=>$img_fname };
 }
 
+sub has_values
+{
+    my ($opts,@tags) = @_;
+    for my $tag (@tags)
+    {
+        my (@lines) = `cat $$opts{bamcheck} | grep ^$tag`;
+        if ( !@lines ) { return 0; }
+    }
+    return 1;
+}
 
 sub plot_heatmap_qualities
 {
     my ($opts) = @_;
+
+    if ( !has_values($opts,'FFQ','LFQ') ) { return; }
 
     my $args = get_defaults($opts,"$$opts{prefix}quals-hm.png");
     
@@ -190,6 +201,8 @@ sub plot_heatmap_qualities
 sub plot_qualities
 {
     my ($opts) = @_;
+
+    if ( !has_values($opts,'FFQ','LFQ') ) { return; }
 
     my $args  = get_defaults($opts,"$$opts{prefix}quals.png");
     my $args2 = get_defaults($opts,"$$opts{prefix}quals2.png");
@@ -372,6 +385,8 @@ sub plot_isize
 {
     my ($opts) = @_;
 
+    if ( !has_values($opts,'IS') ) { return; }
+
     my $args = get_defaults($opts,"$$opts{prefix}insert-size.png");
     
     my $out = `grep ^IS  $$opts{bamcheck} | cut -f 2- | awk 'BEGIN{max=0;isize=0}{if(\$2>max){max=\$2;isize=\$1}}END{print isize,max}'`;
@@ -412,6 +427,8 @@ sub plot_isize
 sub plot_gc
 {
     my ($opts) = @_;
+
+    if ( !has_values($opts,'GCF','GCL') ) { return; }
 
     my $args = get_defaults($opts,"$$opts{prefix}gc-content.png");
 
@@ -478,6 +495,8 @@ sub plot_gc_depth
 {
     my ($opts) = @_;
 
+    if ( !has_values($opts,'GCD') ) { return; }
+
     my $args = get_defaults($opts,"$$opts{prefix}gc-depth.png");
 
     # Read the file solely to find percentiles for 30,40, and 50% GC content to draw x2tics.
@@ -530,6 +549,8 @@ sub plot_coverage
 {
     my ($opts) = @_;
 
+    if ( !has_values($opts,'COV') ) { return; }
+
     my $args = get_defaults($opts,"$$opts{prefix}coverage.png");
 
     my @values = grep { chomp } `cat $$opts{bamcheck} | grep ^COV | cut -f 4`;
@@ -558,6 +579,8 @@ sub plot_coverage
 sub plot_mismatches_per_cycle
 {
     my ($opts) = @_;
+
+    if ( !has_values($opts,'MPC') ) { return; }
 
     my $args = get_defaults($opts,"$$opts{prefix}mism-per-cycle.png");
     my ($nquals)  = `grep ^MPC $$opts{bamcheck} | awk '\$2==1' | sed 's,\\t,\\n,g' | wc -l`;
@@ -599,6 +622,8 @@ sub plot_mismatches_per_cycle
 sub plot_acgt_cycles
 {
     my ($opts) = @_;
+
+    if ( !has_values($opts,'GCC') ) { return; }
 
     my $args = get_defaults($opts,"$$opts{prefix}acgt-cycles.png");
 
