@@ -153,7 +153,7 @@ sub optimise_parameters
   use $assembler_class;
 
   my \$assember = $assembler_class->new(
-    assembler_exec => qq[$assembler_exe], 
+    assembler => qq[$self->{assembler}], 
     optimiser_exec => qq[$optimiser_exec],
     min_kmer => $self->{min_kmer}, 
     max_kmer => $self->{max_kmer},
@@ -168,7 +168,6 @@ sub optimise_parameters
               close $scriptfh;
 
       my $action_lock = "$output_directory/$$self{'prefix'}optimise_parameters.jids";
-      my $job_name = $self->{prefix}.'optimise_parameters';
        
       LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M500000 -R \'select[mem>500] rusage[mem=500]\''}, qq{perl -w $script_name});
 
