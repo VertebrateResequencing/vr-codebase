@@ -119,18 +119,17 @@ sub pool_fastqs
       my $script_name = $self->{fsu}->catfile($build_path, $self->{prefix}."pool_fastqs.pl");
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
-  use strict;
-  use VertRes::Pipelines::Assembly;
-  my \$assembly= VertRes::Pipelines::Assembly->new();
-  my \@lane_names;
-  
+use strict;
+use VertRes::Pipelines::Assembly;
+my \$assembly= VertRes::Pipelines::Assembly->new();
+my \@lane_names;
 };
 
    for my $lane_name ( @$lane_names)
    {
      my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
      print $scriptfh qq{\$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory"); 
-     };
+};
    }
    
    my $pool_count = 1;
@@ -138,16 +137,22 @@ sub pool_fastqs
    {
     my $lane_names_str = '("'.join('.fastq.gz","',@{$lane_pool->{lanes}}).'.fastq.gz")';
     print $scriptfh qq{
-      \@lane_names = $lane_names_str;
-      \$assembly->concat_fastq_gz_files(\\\@lane_names, "pool_$pool_count.fastq.gz", "$output_directory", "$output_directory");
-     };
+\@lane_names = $lane_names_str;
+\$assembly->concat_fastq_gz_files(\\\@lane_names, "pool_$pool_count.fastq.gz", "$output_directory", "$output_directory");
+};
+     for my $lane_name (  @{$lane_pool->{lanes}}  )
+     {
+        print $scriptfh qq{
+unlink("$output_directory/$lane_name.fastq.gz");
+};
+     }
+     
      $pool_count++;
    }
  
    print $scriptfh qq{
-     
-     system("touch $output_directory/_pool_fastqs_done");
-  exit;
+system("touch $output_directory/_pool_fastqs_done");
+exit;
       };
       close $scriptfh;
       my $action_lock = "$output_directory/$$self{'prefix'}pool_fastqs.jids";
@@ -222,7 +227,7 @@ sub shuffle_sequences_fastq_gz
     $_ = <$FILEA>;
     print $OUTFILE $_;
 
-    $file_b_line = <$FILEB>;
+    my $file_b_line = <$FILEB>;
     next unless(defined($file_b_line)); 
     print $OUTFILE $file_b_line;
     $_ = <$FILEB>;
