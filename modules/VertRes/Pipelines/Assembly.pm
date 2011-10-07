@@ -139,7 +139,7 @@ sub pool_fastqs
     my $lane_names_str = '("'.join('.fastq.gz","',@{$lane_pool->{lanes}}).'.fastq.gz")';
     print $scriptfh qq{
       \@lane_names = $lane_names_str;
-      \$assembly->concat_fastq_gz_files(\@lane_names, "pool_$pool_count.fastq.gz", "$output_directory", "$output_directory");
+      \$assembly->concat_fastq_gz_files(\\\@lane_names, "pool_$pool_count.fastq.gz", "$output_directory", "$output_directory");
      };
      $pool_count++;
    }
@@ -212,6 +212,7 @@ sub shuffle_sequences_fastq_gz
   open( my $FILEB, "-|",'gunzip -c '.$input_directory.'/'.$filenameB) ;
   open( my $OUTFILE, "|-", "gzip -c  > $output_directory".'/'."$filenameOut");
 
+  # FIXME: if FileB contains more reads than fileA they will get missed! This is also a bug in Velvets shuffleSequences_fastq.pl
   while(<$FILEA>) {
     print $OUTFILE $_;
     $_ = <$FILEA>;
@@ -221,8 +222,9 @@ sub shuffle_sequences_fastq_gz
     $_ = <$FILEA>;
     print $OUTFILE $_;
 
-    $_ = <$FILEB>;
-    print $OUTFILE $_;
+    $file_b_line = <$FILEB>;
+    next unless(defined($file_b_line)); 
+    print $OUTFILE $file_b_line;
     $_ = <$FILEB>;
     print $OUTFILE $_;
     $_ = <$FILEB>;
