@@ -236,13 +236,14 @@ sub merge_and_check {
  Returns : n/a
  Args    : list of file paths, options as a hash. If using the 'open' run_method
            you should set the second arg to undef.
+ Note    : pileup was removed from samtools using mpileup instead.
 
 =cut
 
 sub pileup {
     my ($self, $in_file, $out_file, %options) = @_;
     
-    $self->exe($self->{base_exe}.' pileup');
+    $self->exe($self->{base_exe}.' mpileup');
     
     $self->switches([qw(s i c g S a 2)]);
     $self->params([qw(m M t l f T N r G I)]);
