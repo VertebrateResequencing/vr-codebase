@@ -127,7 +127,7 @@ sub get_parameters
      my $line = $_;
      if($found_final_assembly_details == 0 && $line =~ m/Final optimised assembly details/)
      {
-       $found_final_assembly_details == 1;
+       $found_final_assembly_details = 1;
        next;
      }
      
