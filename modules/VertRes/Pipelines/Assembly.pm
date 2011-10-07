@@ -80,10 +80,10 @@ our $actions = [ { name     => 'pool_fastqs',
                    action   => \&optimise_parameters,
                    requires => \&optimise_parameters_requires, 
                    provides => \&optimise_parameters_provides },
-                # { name     => 'run_assembler',
-                #   action   => \&run_assembler,
-                #   requires => \&run_assembler_requires, 
-                #   provides => \&run_assembler_provides },
+                 { name     => 'run_assembler',
+                   action   => \&run_assembler,
+                   requires => \&run_assembler_requires, 
+                   provides => \&run_assembler_provides },
                 # { name     => 'statistics',
                 #   action   => \&statistics,
                 #   requires => \&statistics_requires, 
@@ -114,6 +114,68 @@ sub new {
   
   return $self;
 }
+
+###########################
+# Begin run_assembler
+###########################
+
+sub run_assembler
+{
+  my ($self, $build_path) = @_;
+  
+  my $output_directory = $self->{lane_path};
+  my $base_path = $self->{lane_path}.'/..';
+  
+  my $assembler_class = $self->{assembler_class};
+  
+  my $job_name = $self->{prefix}.'run_assembler';
+  my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}."run_assembler.pl");
+  
+  open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+  print $scriptfh qq{
+  use strict;
+  use $assembler_class;
+
+  my \$assember = $assembler_class->new(
+    assembler      => qq[$self->{assembler}], 
+    assembler_exec => qq[$self->{assembler_exec}],
+    output_directory => qq[$output_directory]
+    );
+
+  my \$ok = \$assember->do_assembly();
+
+  \$assember->throw("optimising parameters for assembler failed - try again?") unless \$ok;
+  exit;
+                };
+  close $scriptfh;
+
+  my $action_lock = "$output_directory/$$self{'prefix'}run_assembler.jids";
+
+  LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M8000000 -R \'select[mem>8000] rusage[mem=8000]\''}, qq{perl -w $script_name});
+
+  # we've only submitted to LSF, so it won't have finished; we always return
+  # that we didn't complete
+  return $self->{No};
+}
+
+sub run_assembler_requires
+{
+  my $self = shift;
+  return $self->optimise_parameters_provides();
+}
+
+sub run_assembler_provides
+{
+  my $self = shift;
+  [$self->{lane_path}."/".$self->{prefix}.'run_assembler_done'];
+}
+
+
+###########################
+# End run_assembler
+###########################
+
+
 
 ###########################
 # Begin optimise
@@ -151,21 +213,21 @@ sub optimise_parameters
 
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
-  use strict;
-  use $assembler_class;
+use strict;
+use $assembler_class;
 
-  my \$assember = $assembler_class->new(
-    assembler => qq[$self->{assembler}], 
-    optimiser_exec => qq[$optimiser_exec],
-    min_kmer => $self->{min_kmer}, 
-    max_kmer => $self->{max_kmer},
-    files_str => qq[$files_str]
-    );
+my \$assember = $assembler_class->new(
+  assembler => qq[$self->{assembler}], 
+  optimiser_exec => qq[$optimiser_exec],
+  min_kmer => $self->{min_kmer}, 
+  max_kmer => $self->{max_kmer},
+  files_str => qq[$files_str]
+  );
 
-  my \$ok = \$assember->optimise_parameters();
+my \$ok = \$assember->optimise_parameters();
 
-  \$assember->throw("optimising parameters for assembler failed - try again?") unless \$ok;
-  exit;
+\$assember->throw("optimising parameters for assembler failed - try again?") unless \$ok;
+exit;
               };
               close $scriptfh;
 
@@ -336,9 +398,17 @@ sub shuffle_sequences_fastq_gz
 
 sub cleanup
 {
+ # files
  #_pool_fastqs.o
  #_pool_fastqs.e
  #_pool_fastqs.pl
  #_pool_fastqs.jids
+ #_optimise_parameters.pl
+ #_optimise_parameters.jids
+ #_optimise_parameters.o
+ #_optimise_parameters.e
+ 
+ # directories
+ #_optimised_parameters_data_31
 }
 

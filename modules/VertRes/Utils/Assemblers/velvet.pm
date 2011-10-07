@@ -85,4 +85,64 @@ sub generate_files_str
   return $files_str;
 }
 
+=head2 do_assembly
+
+ Title   : do_assembly
+ Usage   : my $module = $obj->do_assembly();
+ Function: run the assembler
+ Returns : 1 if successful
+
+=cut
+sub do_assembly
+{
+  my $self = shift;
+  
+  # get parameters from file
+  my %assembler_parameters = $self->get_parameters();
+  my $assembly_name = 'assembly_'.time();
+  `$self->{assembler_exec}h $assembly_name $assembler_parameters->{velveth}`;
+  `$self->{assembler_exec}g $assembly_name $assembler_parameters->{velvetg}`;
+
+  1;
+}
+
+
+=head2 get_parameters
+
+ Title   : get_parameters
+ Usage   : my $params = $obj->get_parameters();
+ Function: get parameters for the assembler programs. This comes from velvet optimiser
+ Returns : hash containing parameters for each program to be run
+
+=cut
+sub get_parameters
+{
+   my $self = shift;
+   open(PARAM_FILE, $self->{output_directory}.'/_optimised_parameters_logfile.txt') or die "Couldnt open optimised parameters file";
+   
+   my %parameters;
+   my $found_final_assembly_details = 0; 
+   while(<PARAM_FILE>)
+   {
+     $line = $_;
+     if($found_final_assembly_details == 0 && $line =~ m/Final optimised assembly details/)
+     {
+       $found_final_assembly_details == 1;
+       next;
+     }
+     
+     if( $found_final_assembly_details == 1 && $line =~ m/Velveth parameter string: _optimised_parameters_data_[\d]+ ([\d]+ .+$)/)
+     {
+       $parameters{velveth} = $1;
+     }
+     
+     if( $found_final_assembly_details == 1 && $line =~ m/Velvetg parameter string: _optimised_parameters_data_[\d]+ (.+$)/)
+     {
+       $parameters{velvetg} = $1;
+     }
+   }
+   return \%parameters;
+}
+
+
 1;

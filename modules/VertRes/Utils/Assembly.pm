@@ -74,4 +74,18 @@ sub generate_files_str
 }
 
 
+=head2 do_assembly
+
+ Title   : do_assembly
+ Usage   : my $module = $obj->do_assembly();
+ Function: run the assembler
+ Returns : 1 if successful
+
+=cut
+sub do_assembly
+{
+  my $self = shift;
+  $self->throw("This is supposed to be overriden");
+}
+
 1;
