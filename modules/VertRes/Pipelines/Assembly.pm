@@ -233,7 +233,7 @@ exit;
 
       my $action_lock = "$output_directory/$$self{'prefix'}optimise_parameters.jids";
        
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M500000 -R \'select[mem>500] rusage[mem=500]\''}, qq{perl -w $script_name});
+      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M8000000 -R \'select[mem>8000] rusage[mem=8000]\''}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
@@ -407,8 +407,13 @@ sub cleanup
  #_optimise_parameters.jids
  #_optimise_parameters.o
  #_optimise_parameters.e
+ #_run_assembler.e
+ #_run_assembler.pl
+ #_run_assembler.jids
+ #_run_assembler.o
  
  # directories
  #_optimised_parameters_data_31
+ # some files in assembly_xxxxxxxxxxx
 }
 
