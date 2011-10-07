@@ -34,7 +34,6 @@ package VertRes::Utils::Assemblers::velvet;
 
 use strict;
 use warnings;
-use VertRes::Wrapper::velvet;
 
 use base qw(VertRes::Utils::Assembly);
 

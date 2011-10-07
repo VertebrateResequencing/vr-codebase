@@ -68,6 +68,7 @@ use Time::Format;
 use LSF;
 use Data::Dumper;
 use FileHandle;
+use VertRes::Utils::Assembly;
 
 use base qw(VertRes::Pipeline);
 
