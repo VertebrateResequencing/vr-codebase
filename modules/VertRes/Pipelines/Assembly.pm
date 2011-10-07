@@ -142,7 +142,8 @@ sub optimise_parameters
       my $assembler_class = $self->{assembler_class};
       my $optimiser_exec = $self->{optimiser_exec};
       
-      my $assembler_util= eval("$assembler_class->new()");
+      eval("use $assembler_class; ");
+      my $assembler_util= $assembler_class->new();
       my $files_str = $assembler_util->generate_files_str($self->{pools}, $output_directory);
 
       my $job_name = $self->{prefix}.'optimise_parameters';
@@ -158,7 +159,7 @@ sub optimise_parameters
     optimiser_exec => qq[$optimiser_exec],
     min_kmer => $self->{min_kmer}, 
     max_kmer => $self->{max_kmer},
-    files_str => $files_str;
+    files_str => qq[$files_str]
     );
 
   my \$ok = \$assember->optimise_parameters();

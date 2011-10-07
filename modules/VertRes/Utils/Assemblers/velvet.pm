@@ -58,7 +58,7 @@ sub new {
 sub optimise_parameters
 {
   my ($self, @args) = @_;
-  `perl $self->{optimiser_exec} -s $self->{min_kmer} -e $self->{max_kmer} -p '_optimised_parameters' -f $self->{files_str} `;
+  `perl $self->{optimiser_exec} -s $self->{min_kmer} -e $self->{max_kmer} -p '_optimised_parameters' -f '$self->{files_str}' `;
   
   return 1;
 }
