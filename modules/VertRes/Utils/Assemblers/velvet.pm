@@ -98,7 +98,7 @@ sub do_assembly
   my $self = shift;
   
   # get parameters from file
-  my %assembler_parameters = $self->get_parameters();
+  my $assembler_parameters = $self->get_parameters();
   my $assembly_name = 'assembly_'.time();
   `$self->{assembler_exec}h $assembly_name $assembler_parameters->{velveth}`;
   `$self->{assembler_exec}g $assembly_name $assembler_parameters->{velvetg}`;
@@ -124,7 +124,7 @@ sub get_parameters
    my $found_final_assembly_details = 0; 
    while(<PARAM_FILE>)
    {
-     $line = $_;
+     my $line = $_;
      if($found_final_assembly_details == 0 && $line =~ m/Final optimised assembly details/)
      {
        $found_final_assembly_details == 1;
