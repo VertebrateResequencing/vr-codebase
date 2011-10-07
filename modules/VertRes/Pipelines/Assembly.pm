@@ -29,6 +29,9 @@ data => {
 
     assembler => 'velvet',
     assembler_exec => '',
+    optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
+    min_kmer => 35,
+    max_kmer => 49,
     pools => [
         {
             lanes => ['123_4','456_7#8'],
@@ -72,10 +75,10 @@ our $actions = [ { name     => 'pool_fastqs',
                    action   => \&pool_fastqs,
                    requires => \&pool_fastqs_requires, 
                    provides => \&pool_fastqs_provides },
-                # { name     => 'optimise_parameters',
-                #   action   => \&optimise_parameters,
-                #   requires => \&optimise_parameters_requires, 
-                #   provides => \&optimise_parameters_provides },
+                 { name     => 'optimise_parameters',
+                   action   => \&optimise_parameters,
+                   requires => \&optimise_parameters_requires, 
+                   provides => \&optimise_parameters_provides },
                 # { name     => 'run_assembler',
                 #   action   => \&run_assembler,
                 #   requires => \&run_assembler_requires, 
@@ -103,8 +106,84 @@ sub new {
   }
   $self->{fsu} = VertRes::Utils::FileSystem->new;
   
+  my $assembly_util = VertRes::Utils::Assembly->new(assembler => $self->{assembler});
+  my $assembler_class = $assembly_util->find_module();
+  eval "require $assembler_class;";
+  $self->{assembler_class} = $assembler_class;
+  
   return $self;
 }
+
+###########################
+# Begin optimise
+###########################
+
+sub optimise_parameters_provides
+{
+  my $self = shift;
+  [ $self->{lane_path}."/".$self->{prefix}.'optimised_parameters_logfile.txt'];
+}
+
+sub optimise_parameters_requires
+{
+  my $self = shift;
+  return $self->pool_fastqs_provides(); 
+}
+
+sub optimise_parameters
+{
+      my ($self, $build_path) = @_;
+    
+      my $lane_names = $self->get_all_lane_names($self->{pools});
+      my $output_directory = $self->{lane_path};
+      my $base_path = $self->{lane_path}.'/..';
+
+      my $assembler_class = $self->{assembler_class};
+      my $optimiser_exec = $self->{optimiser_exec};
+      
+      my $assembler_util= eval("$assembler_class->new()");
+      my $files_str = $assembler_util->generate_files_str($self->{pools}, $output_directory);
+
+      my $job_name = $self->{prefix}.'optimise_parameters';
+      my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}."optimise_parameters.pl");
+
+      open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+      print $scriptfh qq{
+  use strict;
+  use $assembler_class;
+
+  my \$assember = $assembler_class->new(
+    assembler_exec => qq[$assembler_exe], 
+    optimiser_exec => qq[$optimiser_exec],
+    min_kmer => $self->{min_kmer}, 
+    max_kmer => $self->{max_kmer},
+    files_str => $files_str;
+    );
+
+  my \$ok = \$assember->optimise_parameters();
+
+  \$assember->throw("optimising parameters for assembler failed - try again?") unless \$ok;
+  exit;
+              };
+              close $scriptfh;
+
+      my $action_lock = "$output_directory/$$self{'prefix'}optimise_parameters.jids";
+      my $job_name = $self->{prefix}.'optimise_parameters';
+       
+      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M500000 -R \'select[mem>500] rusage[mem=500]\''}, qq{perl -w $script_name});
+
+      # we've only submitted to LSF, so it won't have finished; we always return
+      # that we didn't complete
+      return $self->{No};
+}
+###########################
+# End optimise
+###########################
+
+
+###########################
+# Begin pool fastqs
+###########################
 
 
 sub pool_fastqs
@@ -114,7 +193,6 @@ sub pool_fastqs
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
       my $base_path = $self->{lane_path}.'/..';
-      
 
       my $script_name = $self->{fsu}->catfile($build_path, $self->{prefix}."pool_fastqs.pl");
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -173,7 +251,16 @@ sub pool_fastqs_requires
 sub pool_fastqs_provides
 {
    my $self = shift;
-   [$self->{lane_path}."/_pool_fastqs_done"];
+   my @provided_files ;
+   push(@provided_files, $self->{lane_path}.'/'.$self->{prefix}."pool_fastqs_done");
+   
+   my $pool_count = 1;
+   for my $lane_pool (@{$self->{pools}})
+   {
+     push(@provided_files, $self->{lane_path}."/pool_$pool_count.fastq.gz");
+   }
+   
+   return \@provided_files;
 }
 
 sub get_all_lane_names
@@ -240,5 +327,17 @@ sub shuffle_sequences_fastq_gz
   close($FILEA);
   close($FILEB);
   close($OUTFILE);
+}
+
+###########################
+# End pool fastqs
+###########################
+
+sub cleanup
+{
+ #_pool_fastqs.o
+ #_pool_fastqs.e
+ #_pool_fastqs.pl
+ #_pool_fastqs.jids
 }
 
