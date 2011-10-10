@@ -153,17 +153,23 @@ sub get_parameters
  Function: estimate the momory required for the assembler in KB
  Returns : integer in kb of memory requirement
  Ram required for velvetg = -109635 + 18977*ReadSize + 86326*GenomeSize + 233353*NumReads - 51092*K
+ http://listserver.ebi.ac.uk/pipermail/velvet-users/2009-July/000474.html
 =cut
 sub estimate_memory_required
 {
   my ($self, $input_params) = @_;
   my $optimised_params = $self->get_parameters();
   
-  my $memory_required = -109635 + (18977*$input_params->{read_length}) + (86326*$input_params->{genome_size}) + (233353*$input_params->{total_number_of_reads}) - (51092*$optimised_params->{kmer});
+  my $memory_required = -109635 + (18977*$input_params->{read_length}) + (86326*$input_params->{genome_size}/1000000) + (233353*$input_params->{total_number_of_reads}/1000000) - (51092*$optimised_params->{kmer});
   if($memory_required < 2000000)
   {
     $memory_required = 2000000;
   }
+  elsif($memory_required > 400000000)
+  {
+    $memory_required = 400000000;
+  }
+  
   return $memory_required;
 }
 
