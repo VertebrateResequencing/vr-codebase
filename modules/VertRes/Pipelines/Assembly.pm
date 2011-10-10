@@ -30,8 +30,8 @@ data => {
     assembler => 'velvet',
     assembler_exec => '',
     optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
-    min_kmer => 35,
-    max_kmer => 49,
+    # rough estimate so we know how much RAM to request
+    genome_size => 10000000,
     pools => [
         {
             lanes => ['123_4','456_7#8'],
@@ -74,24 +74,28 @@ use base qw(VertRes::Pipeline);
 
 our $actions = [ { name     => 'pool_fastqs',
                    action   => \&pool_fastqs,
-                   requires => \&pool_fastqs_requires, 
+                   requires => \&pool_fastqs_requires,
                    provides => \&pool_fastqs_provides },
                  { name     => 'optimise_parameters',
                    action   => \&optimise_parameters,
-                   requires => \&optimise_parameters_requires, 
+                   requires => \&optimise_parameters_requires,
                    provides => \&optimise_parameters_provides },
                  { name     => 'run_assembler',
                    action   => \&run_assembler,
-                   requires => \&run_assembler_requires, 
+                   requires => \&run_assembler_requires,
                    provides => \&run_assembler_provides },
+                #{ name     => 'map',
+                #  action   => \&map,
+                #  requires => \&map_requires, 
+                #  provides => \&map_provides },
                 # { name     => 'statistics',
                 #   action   => \&statistics,
-                #   requires => \&statistics_requires, 
+                #   requires => \&statistics_requires,
                 #   provides => \&statistics_provides },
                 # { name     => 'cleanup',
                 #   action   => \&cleanup,
-                #   requires => \&cleanup_requires, 
-                #   provides => \&cleanup_provides } 
+                #   requires => \&cleanup_requires,
+                #   provides => \&cleanup_provides }
                 ];
 
 our %options = (
@@ -99,21 +103,45 @@ our %options = (
 
 sub new {
   my ($class, @args) = @_;
-  
+
   my $self = $class->SUPER::new(%options, actions => $actions, @args);
   if(defined($self->{db}))
   {
     $self->{vrtrack} = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
   }
   $self->{fsu} = VertRes::Utils::FileSystem->new;
-  
+
   my $assembly_util = VertRes::Utils::Assembly->new(assembler => $self->{assembler});
   my $assembler_class = $assembly_util->find_module();
   eval "require $assembler_class;";
   $self->{assembler_class} = $assembler_class;
-  
+
   return $self;
 }
+
+###########################
+# Begin map
+###########################
+
+sub map_requires
+{
+  
+}
+
+sub map_provides
+{
+  
+}
+
+sub map
+{
+  
+}
+
+###########################
+# End map
+###########################
+
 
 ###########################
 # Begin run_assembler
@@ -122,22 +150,24 @@ sub new {
 sub run_assembler
 {
   my ($self, $build_path) = @_;
-  
+
   my $output_directory = $self->{lane_path};
   my $base_path = $self->{lane_path}.'/..';
-  
+
   my $assembler_class = $self->{assembler_class};
-  
+
   my $job_name = $self->{prefix}.'run_assembler';
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}."run_assembler.pl");
   
+  
+
   open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
   print $scriptfh qq{
   use strict;
   use $assembler_class;
 
   my \$assember = $assembler_class->new(
-    assembler      => qq[$self->{assembler}], 
+    assembler      => qq[$self->{assembler}],
     assembler_exec => qq[$self->{assembler_exec}],
     output_directory => qq[$output_directory]
     );
@@ -151,7 +181,18 @@ sub run_assembler
 
   my $action_lock = "$output_directory/$$self{'prefix'}run_assembler.jids";
 
-  LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M8000000 -R \'select[mem>8000] rusage[mem=8000]\''}, qq{perl -w $script_name});
+  my $memory_required_mb = $self->estimate_memory_required()/1000;
+  my $queue = 'long';
+  if($memory_required_mb > 35000)
+  {
+    $queue = 'hugemem';
+  }
+  elsif($memory_required_mb < 3000)
+  {
+    $queue = 'normal';
+  }
+
+  LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
 
   # we've only submitted to LSF, so it won't have finished; we always return
   # that we didn't complete
@@ -168,6 +209,38 @@ sub run_assembler_provides
 {
   my $self = shift;
   [$self->{lane_path}."/".$self->{prefix}.'run_assembler_done'];
+}
+
+sub total_number_of_reads
+{
+  my $self = shift;
+  my $lane_names = $self->get_all_lane_names($self->{pools});
+  my $total_reads = 0;
+
+  for $lane_name (@$lane_names)
+  {
+    my $vrlane  = VRTrack::Lane->new_by_name($vrtrack, $lane_name) or $self->throw("No such lane in the DB: [".$lane_names[0]."]");
+    $total_reads += $vrlane->raw_reads();
+  }
+  return $total_reads;
+}
+
+
+#Gives the answer in kb.
+sub estimate_memory_required
+{
+  my $self = shift;
+
+  my %memory_params ;
+  $memory_params{total_number_of_reads} = $self->total_number_of_reads();
+  $memory_params{genome_size}           = $self->{genome_size};
+  $memory_params{read_length}           = $self->lane_read_length();
+
+  my $assembler_class = $self->{assembler_class};
+  eval("use $assembler_class; ");
+  my $assembler_util= $assembler_class->new(output_directory => $output_directory);
+  my $memory_required_in_kb = $assembler_util->estimate_memory_required(%memory_params);
+  return $memory_required_in_kb;
 }
 
 
@@ -190,20 +263,20 @@ sub optimise_parameters_provides
 sub optimise_parameters_requires
 {
   my $self = shift;
-  return $self->pool_fastqs_provides(); 
+  return $self->pool_fastqs_provides();
 }
 
 sub optimise_parameters
 {
       my ($self, $build_path) = @_;
-    
+
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
       my $base_path = $self->{lane_path}.'/..';
 
       my $assembler_class = $self->{assembler_class};
       my $optimiser_exec = $self->{optimiser_exec};
-      
+
       eval("use $assembler_class; ");
       my $assembler_util= $assembler_class->new();
       my $files_str = $assembler_util->generate_files_str($self->{pools}, $output_directory);
@@ -211,16 +284,18 @@ sub optimise_parameters
       my $job_name = $self->{prefix}.'optimise_parameters';
       my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}."optimise_parameters.pl");
 
+      my $kmer = $self->calculate_kmer_size();
+
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
 use strict;
 use $assembler_class;
 
 my \$assember = $assembler_class->new(
-  assembler => qq[$self->{assembler}], 
+  assembler => qq[$self->{assembler}],
   optimiser_exec => qq[$optimiser_exec],
-  min_kmer => $self->{min_kmer}, 
-  max_kmer => $self->{max_kmer},
+  min_kmer => $kmer->{min},
+  max_kmer => $kmer->{max},
   files_str => qq[$files_str]
   );
 
@@ -232,13 +307,36 @@ exit;
               close $scriptfh;
 
       my $action_lock = "$output_directory/$$self{'prefix'}optimise_parameters.jids";
-       
+
       LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M8000000 -R \'select[mem>8000] rusage[mem=8000]\''}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
       return $self->{No};
 }
+
+sub lane_read_length
+{
+  my ($self) = @_;
+  my $lane_names = $self->get_all_lane_names($self->{pools});
+  my $vrlane  = VRTrack::Lane->new_by_name($vrtrack, $lane_names[0]) or $self->throw("No such lane in the DB: [".$lane_names[0]."]");
+  my $read_length = $vrlane->readlen() || 75;
+  return $read_length;
+}
+
+# check kmers between 66% and 90% of read size. Choose lane and find out read size
+sub calculate_kmer_size
+{
+  my ($self) = @_;
+  my %kmer_size;
+  $read_length = $self->lane_read_length();
+
+  $kmer_size{min} = int($read_length*0.66);
+  $kmer_size{max} = int($read_length*0.90);
+
+  return \%kmer_size;
+}
+
 ###########################
 # End optimise
 ###########################
@@ -252,7 +350,7 @@ exit;
 sub pool_fastqs
 {
       my ($self, $build_path) = @_;
-    
+
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
       my $base_path = $self->{lane_path}.'/..';
@@ -269,10 +367,10 @@ my \@lane_names;
    for my $lane_name ( @$lane_names)
    {
      my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
-     print $scriptfh qq{\$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory"); 
+     print $scriptfh qq{\$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory");
 };
    }
-   
+
    my $pool_count = 1;
    for my $lane_pool (@{$self->{pools}})
    {
@@ -287,10 +385,10 @@ my \@lane_names;
 unlink("$output_directory/$lane_name.fastq.gz");
 };
      }
-     
+
      $pool_count++;
    }
- 
+
    print $scriptfh qq{
 system("touch $output_directory/_pool_fastqs_done");
 exit;
@@ -298,7 +396,7 @@ exit;
       close $scriptfh;
       my $action_lock = "$output_directory/$$self{'prefix'}pool_fastqs.jids";
       my $job_name = $self->{prefix}.'pool_fastqs';
-      
+
       LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M500000 -R \'select[mem>500] rusage[mem=500]\''}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
@@ -316,13 +414,13 @@ sub pool_fastqs_provides
    my $self = shift;
    my @provided_files ;
    push(@provided_files, $self->{lane_path}.'/'.$self->{prefix}."pool_fastqs_done");
-   
+
    my $pool_count = 1;
    for my $lane_pool (@{$self->{pools}})
    {
      push(@provided_files, $self->{lane_path}."/pool_$pool_count.fastq.gz");
    }
-   
+
    return \@provided_files;
 }
 
@@ -330,7 +428,7 @@ sub get_all_lane_names
 {
   my ($self, $pooled_lanes) = @_;
   my @all_lane_names ;
-  
+
   for my $lane_pool (@$pooled_lanes)
   {
     for my $lane_name (@{$lane_pool->{lanes}})
@@ -344,7 +442,7 @@ sub get_all_lane_names
 sub concat_fastq_gz_files
 {
   my ($self, $filenames, $outputname, $input_directory, $output_directory) = @_;
-  
+
   my $filenames_with_paths = '';
   for my $filename (@$filenames)
   {
@@ -358,7 +456,7 @@ sub concat_fastq_gz_files
 sub shuffle_sequences_fastq_gz
 {
   my ($self, $name, $input_directory, $output_directory) = @_;
-  
+
   my $filenameA = $name."_1.fastq.gz";
   my $filenameB = $name."_2.fastq.gz";
   my $filenameOut = $name.".fastq.gz";
@@ -378,7 +476,7 @@ sub shuffle_sequences_fastq_gz
     print $OUTFILE $_;
 
     my $file_b_line = <$FILEB>;
-    next unless(defined($file_b_line)); 
+    next unless(defined($file_b_line));
     print $OUTFILE $file_b_line;
     $_ = <$FILEB>;
     print $OUTFILE $_;
@@ -411,7 +509,7 @@ sub cleanup
  #_run_assembler.pl
  #_run_assembler.jids
  #_run_assembler.o
- 
+
  # directories
  #_optimised_parameters_data_31
  # some files in assembly_xxxxxxxxxxx

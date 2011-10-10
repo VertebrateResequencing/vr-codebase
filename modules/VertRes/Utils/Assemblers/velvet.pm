@@ -131,9 +131,10 @@ sub get_parameters
        next;
      }
      
-     if( $found_final_assembly_details == 1 && $line =~ m/Velveth parameter string: _optimised_parameters_data_[\d]+ ([\d]+ .+$)/)
+     if( $found_final_assembly_details == 1 && $line =~ m/Velveth parameter string: _optimised_parameters_data_([\d]+) ([\d]+ .+$)/)
      {
-       $parameters{velveth} = $1;
+       $parameters{kmer} = $1;
+       $parameters{velveth} = $2;
      }
      
      if( $found_final_assembly_details == 1 && $line =~ m/Velvetg parameter string: _optimised_parameters_data_[\d]+ (.+$)/)
@@ -142,6 +143,28 @@ sub get_parameters
      }
    }
    return \%parameters;
+}
+
+
+=head2 estimate_memory_required
+
+ Title   : estimate_memory_required
+ Usage   : my $memory_required_in_kb = $obj->estimate_memory_required();
+ Function: estimate the momory required for the assembler in KB
+ Returns : integer in kb of memory requirement
+ Ram required for velvetg = -109635 + 18977*ReadSize + 86326*GenomeSize + 233353*NumReads - 51092*K
+=cut
+sub estimate_memory_required
+{
+  my ($self, $input_params) = @_;
+  my $optimised_params = $self->get_parameters();
+  
+  my $memory_required = -109635 + (18977*$input_params->{read_length}) + (86326*$input_params->{genome_size}) + (233353*$input_params->{total_number_of_reads}) - (51092*$optimised_params->{kmer});
+  if($memory_required < 2000000)
+  {
+    $memory_required = 2000000;
+  }
+  return $memory_required;
 }
 
 

@@ -88,4 +88,18 @@ sub do_assembly
   $self->throw("This is supposed to be overriden");
 }
 
+=head2 estimate_memory_required
+
+ Title   : estimate_memory_required
+ Usage   : my $memory_required_in_kb = $obj->estimate_memory_required();
+ Function: estimate the momory required for the assembler in KB
+ Returns : integer in kb of memory requirement
+
+=cut
+sub estimate_memory_required
+{
+  my $self = shift;
+  $self->throw("This is supposed to be overriden");
+}
+
 1;
