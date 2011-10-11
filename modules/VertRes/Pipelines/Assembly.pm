@@ -297,14 +297,15 @@ my \$assembler = $assembler_class->new(
   optimiser_exec => qq[$optimiser_exec],
   min_kmer => $kmer->{min},
   max_kmer => $kmer->{max},
-  files_str => qq[$files_str]
+  files_str => qq[$files_str],
+  output_directory => qq[$output_directory],
   );
 
 my \$ok = \$assembler->optimise_parameters();
 
 for my \$directory (\@{\$assembler->assembly_directories()} )
 {
-  next unless(-d \$directory/_assembly_done);
+  next unless(-d "\$directory/_assembly_done");
   \$assembler->generate_stats(\$directory);
 }
 
