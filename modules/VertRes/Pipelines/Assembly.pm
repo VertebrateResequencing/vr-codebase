@@ -172,8 +172,6 @@ sub run_assembler
     );
 
   my \$ok = \$assembler->do_assembly();
-  unlink();
-  
 
   \$assembler->throw("optimising parameters for assembler failed - try again?") unless \$ok;
   exit;
@@ -240,7 +238,7 @@ sub estimate_memory_required
   my $assembler_class = $self->{assembler_class};
   eval("use $assembler_class; ");
   my $assembler_util= $assembler_class->new(output_directory => $output_directory);
-  my $memory_required_in_kb = $assembler_util->estimate_memory_required(%memory_params);
+  my $memory_required_in_kb = $assembler_util->estimate_memory_required(\%memory_params);
   return $memory_required_in_kb;
 }
 
@@ -258,7 +256,7 @@ sub estimate_memory_required
 sub optimise_parameters_provides
 {
   my $self = shift;
-  [ $self->{lane_path}."/".$self->{prefix}.'optimise_parameters_logfile.txt'];
+  [ $self->{lane_path}."/".$self->{prefix}.'optimise_parameters_logfile.txt', $self->{lane_path}."/".$self->{prefix}.'optimise_parameters_done'];
 }
 
 sub optimise_parameters_requires
@@ -310,6 +308,8 @@ for my \$directory (\@{\$assembler->assembly_directories()} )
 }
 
 \$assembler->throw("optimising parameters for assembler failed - try again?") unless \$ok;
+touch("_optimise_parameters_done");
+
 exit;
               };
               close $scriptfh;
