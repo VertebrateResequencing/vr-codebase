@@ -167,13 +167,13 @@ sub estimate_memory_required
   my $optimised_params = $self->get_parameters();
   
   my $memory_required = -109635 + (18977*($input_params->{read_length})) + (86326*($input_params->{genome_size})/1000000) + (233353*($input_params->{total_number_of_reads})/1000000) - (51092*$optimised_params->{kmer});
-  if($memory_required < 2)
+  if($memory_required < 2000000)
   {
-    $memory_required = 2;
+    $memory_required = 2000000;
   }
-  elsif($memory_required > 400)
+  elsif($memory_required > 400000000)
   {
-    $memory_required = 400;
+    $memory_required = 400000000;
   }
   
   return int($memory_required);

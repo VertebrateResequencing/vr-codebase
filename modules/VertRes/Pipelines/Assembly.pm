@@ -308,7 +308,7 @@ for my \$directory (\@{\$assembler->assembly_directories()} )
 }
 
 \$assembler->throw("optimising parameters for assembler failed - try again?") unless \$ok;
-touch("_optimise_parameters_done");
+system("touch $output_directory/_optimise_parameters_done");
 
 exit;
               };
