@@ -58,7 +58,7 @@ sub new {
 sub optimise_parameters
 {
   my ($self, @args) = @_;
-  `perl $self->{optimiser_exec} -s $self->{min_kmer} -e $self->{max_kmer} -p '_optimised_parameters' -f '$self->{files_str}' `;
+  `perl $self->{optimiser_exec} -s $self->{min_kmer} -e $self->{max_kmer} -p '_optimise_parameters' -f '$self->{files_str}' `;
   
   return 1;
 }
@@ -118,7 +118,7 @@ sub do_assembly
 sub get_parameters
 {
    my $self = shift;
-   open(PARAM_FILE, $self->{output_directory}.'/_optimised_parameters_logfile.txt') or die "Couldnt open optimised parameters file";
+   open(PARAM_FILE, $self->{output_directory}.'/_optimise_parameters_logfile.txt') or die "Couldnt open optimised parameters file";
    
    my %parameters;
    my $found_final_assembly_details = 0; 
@@ -131,13 +131,13 @@ sub get_parameters
        next;
      }
      
-     if( $found_final_assembly_details == 1 && $line =~ m/Velveth parameter string: _optimised_parameters_data_([\d]+) ([\d]+ .+$)/)
+     if( $found_final_assembly_details == 1 && $line =~ m/Velveth parameter string: _optimise_parameters_data_([\d]+) ([\d]+ .+$)/)
      {
        $parameters{kmer} = $1;
        $parameters{velveth} = $2;
      }
      
-     if( $found_final_assembly_details == 1 && $line =~ m/Velvetg parameter string: _optimised_parameters_data_[\d]+ (.+$)/)
+     if( $found_final_assembly_details == 1 && $line =~ m/Velvetg parameter string: _optimise_parameters_data_[\d]+ (.+$)/)
      {
        $parameters{velvetg} = $1;
      }

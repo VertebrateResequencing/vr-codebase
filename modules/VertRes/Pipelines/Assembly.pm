@@ -181,7 +181,7 @@ sub run_assembler
 
   my $action_lock = "$output_directory/$$self{'prefix'}run_assembler.jids";
 
-  my $memory_required_mb = $self->estimate_memory_required()/1000;
+  my $memory_required_mb = $self->estimate_memory_required($output_directory)/1000;
   my $queue = 'long';
   if($memory_required_mb > 35000)
   {
@@ -201,25 +201,25 @@ sub run_assembler
 
 sub run_assembler_requires
 {
-  my $self = shift;
+  my ($self) = @_;
   return $self->optimise_parameters_provides();
 }
 
 sub run_assembler_provides
 {
-  my $self = shift;
+  my ($self) = @_;
   [$self->{lane_path}."/".$self->{prefix}.'run_assembler_done'];
 }
 
 sub total_number_of_reads
 {
-  my $self = shift;
+  my ($self) = @_;
   my $lane_names = $self->get_all_lane_names($self->{pools});
   my $total_reads = 0;
 
-  for $lane_name (@$lane_names)
+  for my $lane_name (@{$lane_names})
   {
-    my $vrlane  = VRTrack::Lane->new_by_name($vrtrack, $lane_name) or $self->throw("No such lane in the DB: [".$lane_names[0]."]");
+    my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, $lane_name) or $self->throw("No such lane in the DB: [".@$lane_names[0]."]");
     $total_reads += $vrlane->raw_reads();
   }
   return $total_reads;
@@ -229,7 +229,7 @@ sub total_number_of_reads
 #Gives the answer in kb.
 sub estimate_memory_required
 {
-  my $self = shift;
+  my ($self, $output_directory) = @_;
 
   my %memory_params ;
   $memory_params{total_number_of_reads} = $self->total_number_of_reads();
@@ -257,7 +257,7 @@ sub estimate_memory_required
 sub optimise_parameters_provides
 {
   my $self = shift;
-  [ $self->{lane_path}."/".$self->{prefix}.'optimised_parameters_logfile.txt'];
+  [ $self->{lane_path}."/".$self->{prefix}.'optimise_parameters_logfile.txt'];
 }
 
 sub optimise_parameters_requires
@@ -319,7 +319,7 @@ sub lane_read_length
 {
   my ($self) = @_;
   my $lane_names = $self->get_all_lane_names($self->{pools});
-  my $vrlane  = VRTrack::Lane->new_by_name($vrtrack, $lane_names[0]) or $self->throw("No such lane in the DB: [".$lane_names[0]."]");
+  my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, $lane_names[0]) or $self->throw("No such lane in the DB: [".@$lane_names[0]."]");
   my $read_length = $vrlane->readlen() || 75;
   return $read_length;
 }
@@ -329,7 +329,7 @@ sub calculate_kmer_size
 {
   my ($self) = @_;
   my %kmer_size;
-  $read_length = $self->lane_read_length();
+  my $read_length = $self->lane_read_length();
 
   $kmer_size{min} = int($read_length*0.66);
   $kmer_size{max} = int($read_length*0.90);
@@ -511,7 +511,7 @@ sub cleanup
  #_run_assembler.o
 
  # directories
- #_optimised_parameters_data_31
- # some files in assembly_xxxxxxxxxxx
+ #_optimise_parameters_data_31
+ # some files in assembly_xxxxxxxxxxx   Sequences PreGraph Graph2
 }
 
