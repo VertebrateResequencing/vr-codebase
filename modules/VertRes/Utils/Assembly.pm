@@ -102,4 +102,43 @@ sub estimate_memory_required
   $self->throw("This is supposed to be overriden");
 }
 
+
+=head2 assembly_directories
+
+ Title   : assembly_directories
+ Usage   : my $module = $obj->assembly_directories();
+ Function: Find out where the assemlbies are located
+ Returns : array of paths
+
+=cut
+sub assembly_directories
+{
+  my $self = shift;
+  $self->throw("This is supposed to be overriden");
+}
+
+
+=head2 generate_stats
+
+ Title   : generate_stats
+ Usage   : my $module = $obj->generate_stats($directory);
+ Function: Generate stats for each fa file in the directory
+
+=cut
+sub generate_stats
+{
+  my ($self, $directory) = @_;
+  my @output_files;
+  opendir(DIR, $directory);
+  my @files = grep {/\.fa$/} readdir(DIR);
+  for my $file(@files)
+  {
+    next unless(-e $file);
+    system("stats $directory/$file > $directory/$file.stats");
+    # Use the GC plots from the QC pipeline instead
+    system("~mh12/git/python/fastn2gc.py $directory/$file $directory/$file.png")
+  }
+}
+
+
 1;

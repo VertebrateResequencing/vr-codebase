@@ -159,22 +159,23 @@ sub run_assembler
   my $job_name = $self->{prefix}.'run_assembler';
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}."run_assembler.pl");
   
-  
 
   open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
   print $scriptfh qq{
   use strict;
   use $assembler_class;
 
-  my \$assember = $assembler_class->new(
+  my \$assembler = $assembler_class->new(
     assembler      => qq[$self->{assembler}],
     assembler_exec => qq[$self->{assembler_exec}],
     output_directory => qq[$output_directory]
     );
 
-  my \$ok = \$assember->do_assembly();
+  my \$ok = \$assembler->do_assembly();
+  unlink();
+  
 
-  \$assember->throw("optimising parameters for assembler failed - try again?") unless \$ok;
+  \$assembler->throw("optimising parameters for assembler failed - try again?") unless \$ok;
   exit;
                 };
   close $scriptfh;
@@ -219,7 +220,7 @@ sub total_number_of_reads
 
   for my $lane_name (@{$lane_names})
   {
-    my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, $lane_name) or $self->throw("No such lane in the DB: [".@$lane_names[0]."]");
+    my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, $lane_name) or $self->throw("No such lane in the DB: [".$lane_name."]");
     $total_reads += $vrlane->raw_reads();
   }
   return $total_reads;
@@ -291,7 +292,7 @@ sub optimise_parameters
 use strict;
 use $assembler_class;
 
-my \$assember = $assembler_class->new(
+my \$assembler = $assembler_class->new(
   assembler => qq[$self->{assembler}],
   optimiser_exec => qq[$optimiser_exec],
   min_kmer => $kmer->{min},
@@ -299,9 +300,15 @@ my \$assember = $assembler_class->new(
   files_str => qq[$files_str]
   );
 
-my \$ok = \$assember->optimise_parameters();
+my \$ok = \$assembler->optimise_parameters();
 
-\$assember->throw("optimising parameters for assembler failed - try again?") unless \$ok;
+for my \$directory (\@{\$assembler->assembly_directories()} )
+{
+  next unless(-d \$directory/_assembly_done);
+  \$assembler->generate_stats(\$directory);
+}
+
+\$assembler->throw("optimising parameters for assembler failed - try again?") unless \$ok;
 exit;
               };
               close $scriptfh;
@@ -319,8 +326,8 @@ sub lane_read_length
 {
   my ($self) = @_;
   my $lane_names = $self->get_all_lane_names($self->{pools});
-  my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, $lane_names[0]) or $self->throw("No such lane in the DB: [".@$lane_names[0]."]");
-  my $read_length = $vrlane->readlen() || 75;
+  my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, @$lane_names[0]) or $self->throw("No such lane in the DB: [".@$lane_names[0]."]");
+  my $read_length = $vrlane->read_len() || 75;
   return $read_length;
 }
 

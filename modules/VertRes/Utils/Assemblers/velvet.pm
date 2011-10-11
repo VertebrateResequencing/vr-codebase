@@ -99,9 +99,15 @@ sub do_assembly
   
   # get parameters from file
   my $assembler_parameters = $self->get_parameters();
-  my $assembly_name = 'assembly_'.time();
+  my $assembly_name = 'velvet_assembly_'.$assembler_parameters->{kmer};
   `$self->{assembler_exec}h $assembly_name $assembler_parameters->{velveth}`;
   `$self->{assembler_exec}g $assembly_name $assembler_parameters->{velvetg}`;
+  
+  unlink("$assembly_name/Sequences") if(-e "$assembly_name/Sequences");
+  unlink("$assembly_name/PreGraph") if(-e "$assembly_name/PreGraph");
+  unlink("$assembly_name/Graph2") if(-e "$assembly_name/Graph2");
+  
+  system("touch $assembly_name/_assembly_done");
 
   1;
 }
@@ -172,6 +178,29 @@ sub estimate_memory_required
   
   return $memory_required;
 }
+
+=head2 assembly_directories
+
+ Title   : assembly_directories
+ Usage   : my $module = $obj->assembly_directories();
+ Function: Find out where the assemblies are located
+ Returns : array of paths
+
+=cut
+sub assembly_directories
+{
+  my ($self) = @_;
+  my @output_files ;
+  opendir(DIR,$self->{output_directory});
+  my @files = grep {/^velvet_assembly_[\d]+$/} readdir(DIR);
+  
+  for my $file (@files)
+  {
+    push(@output_files, $self->{output_directory}.'/'.$file) if(-d $self->{output_directory}.'/'.$file);
+  }
+  return \@output_files;
+}
+
 
 
 1;
