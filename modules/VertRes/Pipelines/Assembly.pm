@@ -359,6 +359,21 @@ sub optimise_parameters
       my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_optimise_parameters.pl");
 
       my $kmer = $self->calculate_kmer_size();
+      
+      my $action_lock = "$output_directory/$$self{'prefix'}".$self->{assembler}."_optimise_parameters.jids";
+      
+      my $memory_required_mb = $self->estimate_memory_required($output_directory, $kmer->{min})/1000;
+      my $queue = 'long';
+      if($memory_required_mb > 35000)
+      {
+        $queue = 'hugemem';
+      }
+      elsif($memory_required_mb < 3000)
+      {
+        $queue = 'normal';
+      }
+
+      my $num_threads = $self->number_of_threads($memory_required_mb);
 
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
@@ -374,7 +389,7 @@ my \$assembler = $assembler_class->new(
   output_directory => qq[$output_directory],
   );
 
-my \$ok = \$assembler->optimise_parameters();
+my \$ok = \$assembler->optimise_parameters($num_threads);
 
 for my \$directory (\@{\$assembler->assembly_directories()} )
 {
@@ -388,18 +403,7 @@ exit;
               };
               close $scriptfh;
 
-      my $action_lock = "$output_directory/$$self{'prefix'}".$self->{assembler}."_optimise_parameters.jids";
-      
-      my $memory_required_mb = $self->estimate_memory_required($output_directory, $kmer->{min})/1000;
-      my $queue = 'long';
-      if($memory_required_mb > 35000)
-      {
-        $queue = 'hugemem';
-      }
-      elsif($memory_required_mb < 3000)
-      {
-        $queue = 'normal';
-      }
+
       
 
       LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
@@ -439,6 +443,18 @@ sub calculate_kmer_size
   }
 
   return \%kmer_size;
+}
+
+sub number_of_threads
+{
+  my ($self, $memory_required_mb) = @_;
+  my $normal_queue_mem_limit = 35000;
+  my $num_threads = 1;
+  if($memory_required_mb/$normal_queue_mem_limit > 2)
+  {
+    $num_threads = int($memory_required_mb/$normal_queue_mem_limit);
+  }
+  return $num_threads;
 }
 
 ###########################

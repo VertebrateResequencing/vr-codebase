@@ -57,8 +57,8 @@ sub new {
 
 sub optimise_parameters
 {
-  my ($self, @args) = @_;
-  `perl $self->{optimiser_exec} -t 1 -s $self->{min_kmer} -e $self->{max_kmer} -p 'velvet_assembly' -f '$self->{files_str}' `;
+  my ($self, $num_threads) = @_;
+  `perl $self->{optimiser_exec} -t $num_threads -s $self->{min_kmer} -e $self->{max_kmer} -p 'velvet_assembly' -f '$self->{files_str}' `;
   my $params = $self->get_parameters();
   system("touch $params->{assembly_directory}/_velvet_optimise_parameters_done");
   
