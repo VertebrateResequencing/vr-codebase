@@ -155,7 +155,6 @@ sub map_back
   my $output_directory = $self->{lane_path};
   eval("use $assembler_class; ");
   my $assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
-  my $output_directory = $self->{lane_path};
   my $base_path = $self->{lane_path}.'/../seq-pipelines';
   
   my $job_name = $self->{prefix}.$self->{assembler}."_map_back";
@@ -167,7 +166,7 @@ sub map_back
   {
     push(@lane_paths,$base_path.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_name).'/'.$lane_name);
   }
-  my @lane_paths_str = '("'.join('","', @lane_paths).'")';
+  my $lane_paths_str = '("'.join('","', @lane_paths).'")';
 
   open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
   print $scriptfh qq{
@@ -206,9 +205,9 @@ sub map_back
   close $scriptfh;
   
   my $action_lock = "$output_directory/$$self{'prefix'}$self->{assembler}_map_back.jids";
+  my $memory_required_mb = 5000;
 
-
-  LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
+  LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
 
   # we've only submitted to LSF, so it won't have finished; we always return
   # that we didn't complete
@@ -389,7 +388,7 @@ exit;
               };
               close $scriptfh;
 
-      my $action_lock = "$output_directory/$$self{'prefix'}".$self->{assembler}"._optimise_parameters.jids";
+      my $action_lock = "$output_directory/$$self{'prefix'}".$self->{assembler}."_optimise_parameters.jids";
       
       my $memory_required_mb = $self->estimate_memory_required($output_directory, $kmer->{min})/1000;
       my $queue = 'long';
