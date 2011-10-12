@@ -332,20 +332,8 @@ sub estimate_memory_required
 sub optimise_parameters_provides
 {
   my $self = shift;
-  
-  my ($self) = @_;
-  my $assembler_class = $self->{assembler_class};
-  eval("use $assembler_class; ");
-  my $assembler_util= $assembler_class->new(output_directory => $self->{lane_path});
-  my @required_files;
-  
-  for my $directory (@{$assembler_util->assembly_directories()} )
-  {
-    next unless(-d "$directory/_$self->{assembler}_optimise_parameters_done");
-    push(@required_files, "$directory/_$self->{assembler}_optimise_parameters_done");
-  }
-  
-  return \@required_files;
+
+  return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_optimise_parameters_done"];
 }
 
 sub optimise_parameters_requires
@@ -411,7 +399,7 @@ for my \$directory (\@{\$assembler->assembly_directories()} )
 }
 
 \$assembler->throw("optimising parameters for assembler failed - try again?") unless \$ok;
-
+system('touch _$self->{assembler}_optimise_parameters_done');
 exit;
               };
               close $scriptfh;
