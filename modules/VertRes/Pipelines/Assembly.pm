@@ -204,6 +204,8 @@ sub map_back
 
     `bamcheck \$directory/contigs.mapped.sorted.bam >  \$directory/contigs.mapped.sorted.bam.bc`;
     `plot-bamcheck -p \$directory/qc_graphs/ \$directory/contigs.mapped.sorted.bam.bc`;
+    unlink("\$directory/contigs.mapped.bam");
+    unlink("\$directory/contigs.mapped.sam");
     system("touch \$directory/_plot_bamcheck_done");
   }
   system("touch _plot_bamcheck_done");
