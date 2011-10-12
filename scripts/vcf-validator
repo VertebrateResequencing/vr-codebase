@@ -42,7 +42,7 @@ sub parse_params
         if ( $arg eq '-d' || $arg eq '--duplicates' ) { $$opts{duplicates}=1; next; }
         if ( $arg eq '-u' || $arg eq '--unique-messages' ) { $$opts{unique}=1; next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
-        if ( -e $arg && !exists($$opts{file}) ) { $$opts{file}=$arg; next; }
+        if ( (-e $arg or $arg=~m{^(?:ftp|http)://}) && !exists($$opts{file}) ) { $$opts{file}=$arg; next; }
         error("Unknown parameter or non-existent file: \"$arg\". Run -h for help.\n");
     }
     return $opts;
