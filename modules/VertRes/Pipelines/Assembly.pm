@@ -145,7 +145,8 @@ sub map_back_requires
 
 sub map_back_provides
 {
-  return [];
+   my ($self) = @_;
+   return [$self->{lane_path}."/".$self->{prefix}.'plot_bamcheck_done'];
 }
 
 sub map_back
@@ -161,7 +162,7 @@ sub map_back
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_map_back.pl");
   
   my $lane_names = $self->get_all_lane_names($self->{pools});
-  my @lane_paths = '';
+  my @lane_paths;
   for my $lane_name (@$lane_names)
   {
     push(@lane_paths,$base_path.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_name).'/'.$lane_name);
@@ -200,6 +201,7 @@ sub map_back
     `plot-bamcheck \$directory/contigs.mapped.bam.bc`;
     system("touch \$directory/_plot_bamcheck_done");
   }
+  system("touch _plot_bamcheck_done");
   exit;
                 };
   close $scriptfh;
