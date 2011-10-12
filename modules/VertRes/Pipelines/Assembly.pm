@@ -80,14 +80,16 @@ our $actions = [ { name     => 'pool_fastqs',
                    action   => \&optimise_parameters,
                    requires => \&optimise_parameters_requires,
                    provides => \&optimise_parameters_provides },
-                 { name     => 'run_assembler',
-                   action   => \&run_assembler,
-                   requires => \&run_assembler_requires,
-                   provides => \&run_assembler_provides },
-                #{ name     => 'map',
-                #  action   => \&map,
-                #  requires => \&map_requires, 
-                #  provides => \&map_provides },
+                  
+                  
+                #{ name     => 'run_assembler',
+                #  action   => \&run_assembler,
+                #  requires => \&run_assembler_requires,
+                #  provides => \&run_assembler_provides },
+                { name     => 'map_back',
+                  action   => \&map_back,
+                  requires => \&map_back_requires, 
+                  provides => \&map_back_provides },
                 # { name     => 'statistics',
                 #   action   => \&statistics,
                 #   requires => \&statistics_requires,
@@ -120,26 +122,102 @@ sub new {
 }
 
 ###########################
-# Begin map
+# Begin map_back
 ###########################
 
-sub map_requires
+sub map_back_requires
 {
+  my ($self) = @_;
+  my $assembler_class = $self->{assembler_class};
+  eval("use $assembler_class; ");
+  my $assembler_util= $assembler_class->new(output_directory => $self->{lane_path});
+  my @required_files;
   
+  for my $directory (@{$assembler_util->assembly_directories()} )
+  {
+    next unless(-d "$directory/_$self->{assembler}_optimise_parameters_done");
+    push(@required_files, "$directory/_$self->{assembler}_optimise_parameters_done");
+    
+  }
+  
+  return \@required_files;
 }
 
-sub map_provides
+sub map_back_provides
 {
-  
+  return [];
 }
 
-sub map
+sub map_back
 {
+  my ($self, $build_path) = @_;
+  my $assembler_class = $self->{assembler_class};
+  my $output_directory = $self->{lane_path};
+  eval("use $assembler_class; ");
+  my $assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
+  my $output_directory = $self->{lane_path};
+  my $base_path = $self->{lane_path}.'/../seq-pipelines';
+  
+  my $job_name = $self->{prefix}.$self->{assembler}."_map_back";
+  my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_map_back.pl");
+  
+  my $lane_names = $self->get_all_lane_names($self->{pools});
+  my @lane_paths = '';
+  for my $lane_name (@$lane_names)
+  {
+    push(@lane_paths,$base_path.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_name).'/'.$lane_name);
+  }
+  my @lane_paths_str = '("'.join('","', @lane_paths).'")';
+
+  open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+  print $scriptfh qq{
+  use strict;
+  use $assembler_class;
+    
+  my \$forward_fastq = '';
+  my \$reverse_fastq = '';
+  my \@lane_paths = $lane_paths_str;
+  
+  my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
+
+  for my \$lane_path ( \@lane_paths)
+  {
+    \$forward_fastq .= \$lane_path.'_1.fastq.gz ';
+    \$reverse_fastq .= \$lane_path.'_2.fastq.gz ';
+  }
+  
+  `gzip -cd \$forward_fastq  > $output_directory/forward.fastq`;
+  `gzip -cd \$reverse_fastq  > $output_directory/reverse.fastq`;
+  
+  for my \$directory (@{\$assembler_util->assembly_directories()} )
+  {
+    next unless(-d "\$directory/_$self->{assembler}_optimise_parameters_done");
+    \$mapper = VertRes::Wrapper::smalt->new();
+    \$mapper->setup_reference("\$directory/contigs.fa");
+    `smalt map -i 3000 -f samsoft -o \$directory/contigs.mapped.sam \$directory/contigs.fa.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
+    my \$sam_util = VertRes::Utils::Sam->new();
+    my \$ok = \$sam_util->sam_to_fixed_sorted_bam("\$directory/contigs.mapped.sam", "\$directory/contigs.mapped.bam", "\$directory/contigs.fa.small");
+    `bamcheck \$directory/contigs.mapped.bam`;
+    `plot-bamcheck \$directory/contigs.mapped.bam.bc`;
+    system("touch \$directory/_plot_bamcheck_done");
+  }
+  exit;
+                };
+  close $scriptfh;
+  
+  my $action_lock = "$output_directory/$$self{'prefix'}$self->{assembler}_map_back.jids";
+
+
+  LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
+
+  # we've only submitted to LSF, so it won't have finished; we always return
+  # that we didn't complete
+  return $self->{No};
   
 }
 
 ###########################
-# End map
+# End map_back
 ###########################
 
 
@@ -152,8 +230,6 @@ sub run_assembler
   my ($self, $build_path) = @_;
 
   my $output_directory = $self->{lane_path};
-  my $base_path = $self->{lane_path}.'/..';
-
   my $assembler_class = $self->{assembler_class};
 
   my $job_name = $self->{prefix}.'run_assembler';
@@ -228,12 +304,13 @@ sub total_number_of_reads
 #Gives the answer in kb.
 sub estimate_memory_required
 {
-  my ($self, $output_directory) = @_;
+  my ($self, $output_directory, $kmer_size) = @_;
 
   my %memory_params ;
   $memory_params{total_number_of_reads} = $self->total_number_of_reads();
   $memory_params{genome_size}           = $self->{genome_size};
   $memory_params{read_length}           = $self->lane_read_length();
+  $memory_params{kmer_size}             = $kmer_size;
 
   my $assembler_class = $self->{assembler_class};
   eval("use $assembler_class; ");
@@ -256,7 +333,7 @@ sub estimate_memory_required
 sub optimise_parameters_provides
 {
   my $self = shift;
-  [ $self->{lane_path}."/".$self->{prefix}.'optimise_parameters_logfile.txt', $self->{lane_path}."/".$self->{prefix}.'optimise_parameters_done'];
+  [$self->{lane_path}."/".$self->{prefix}.$self->{assembler}.'_optimise_parameters_done'];
 }
 
 sub optimise_parameters_requires
@@ -271,7 +348,6 @@ sub optimise_parameters
 
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
-      my $base_path = $self->{lane_path}.'/..';
 
       my $assembler_class = $self->{assembler_class};
       my $optimiser_exec = $self->{optimiser_exec};
@@ -280,8 +356,8 @@ sub optimise_parameters
       my $assembler_util= $assembler_class->new();
       my $files_str = $assembler_util->generate_files_str($self->{pools}, $output_directory);
 
-      my $job_name = $self->{prefix}.'optimise_parameters';
-      my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}."optimise_parameters.pl");
+      my $job_name = $self->{prefix}.$self->{assembler}.'_optimise_parameters';
+      my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_optimise_parameters.pl");
 
       my $kmer = $self->calculate_kmer_size();
 
@@ -303,20 +379,31 @@ my \$ok = \$assembler->optimise_parameters();
 
 for my \$directory (\@{\$assembler->assembly_directories()} )
 {
-  next unless(-d "\$directory/_assembly_done");
+  next unless(-d "\$directory/_$self->{assembler}_optimise_parameters_done");
   \$assembler->generate_stats(\$directory);
 }
 
 \$assembler->throw("optimising parameters for assembler failed - try again?") unless \$ok;
-system("touch $output_directory/_optimise_parameters_done");
 
 exit;
               };
               close $scriptfh;
 
-      my $action_lock = "$output_directory/$$self{'prefix'}optimise_parameters.jids";
+      my $action_lock = "$output_directory/$$self{'prefix'}".$self->{assembler}"._optimise_parameters.jids";
+      
+      my $memory_required_mb = $self->estimate_memory_required($output_directory, $kmer->{min})/1000;
+      my $queue = 'long';
+      if($memory_required_mb > 35000)
+      {
+        $queue = 'hugemem';
+      }
+      elsif($memory_required_mb < 3000)
+      {
+        $queue = 'normal';
+      }
+      
 
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M8000000 -R \'select[mem>8000] rusage[mem=8000]\''}, qq{perl -w $script_name});
+      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
@@ -361,7 +448,7 @@ sub pool_fastqs
 
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
-      my $base_path = $self->{lane_path}.'/..';
+      my $base_path = $self->{lane_path}.'/../seq-pipelines';
 
       my $script_name = $self->{fsu}->catfile($build_path, $self->{prefix}."pool_fastqs.pl");
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");

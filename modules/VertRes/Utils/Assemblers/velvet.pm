@@ -58,7 +58,9 @@ sub new {
 sub optimise_parameters
 {
   my ($self, @args) = @_;
-  `perl $self->{optimiser_exec} -s $self->{min_kmer} -e $self->{max_kmer} -p '_optimise_parameters' -f '$self->{files_str}' `;
+  `perl $self->{optimiser_exec} -t 1 -s $self->{min_kmer} -e $self->{max_kmer} -p 'velvet_assembly' -f '$self->{files_str}' `;
+  my $params = $self->get_parameters();
+  system("touch $params->{assembly_directory}/_velvet_optimise_parameters_done");
   
   return 1;
 }
@@ -124,7 +126,7 @@ sub do_assembly
 sub get_parameters
 {
    my $self = shift;
-   open(PARAM_FILE, $self->{output_directory}.'/_optimise_parameters_logfile.txt') or die "Couldnt open optimised parameters file";
+   open(PARAM_FILE, $self->{output_directory}.'/velvet_assembly_logfile.txt') or die "Couldnt open optimised parameters file";
    
    my %parameters;
    my $found_final_assembly_details = 0; 
@@ -137,13 +139,14 @@ sub get_parameters
        next;
      }
      
-     if( $found_final_assembly_details == 1 && $line =~ m/Velveth parameter string: _optimise_parameters_data_([\d]+) ([\d]+ .+$)/)
+     if( $found_final_assembly_details == 1 && $line =~ m/Velveth parameter string: (velvet_assembly_data_([\d]+)) ([\d]+ .+$)/)
      {
-       $parameters{kmer} = $1;
-       $parameters{velveth} = $2;
+       $parameters{assembly_directory} = $1;
+       $parameters{kmer} = $2;
+       $parameters{velveth} = $3;
      }
      
-     if( $found_final_assembly_details == 1 && $line =~ m/Velvetg parameter string: _optimise_parameters_data_[\d]+ (.+$)/)
+     if( $found_final_assembly_details == 1 && $line =~ m/Velvetg parameter string: velvet_assembly_data_[\d]+ (.+$)/)
      {
        $parameters{velvetg} = $1;
      }
@@ -165,8 +168,9 @@ sub estimate_memory_required
 {
   my ($self, $input_params) = @_;
   my $optimised_params = $self->get_parameters();
+  my $kmer_size = $input_params->{kmer_size}  || $optimised_params->{kmer};
   
-  my $memory_required = -109635 + (18977*($input_params->{read_length})) + (86326*($input_params->{genome_size})/1000000) + (233353*($input_params->{total_number_of_reads})/1000000) - (51092*$optimised_params->{kmer});
+  my $memory_required = -109635 + (18977*($input_params->{read_length})) + (86326*($input_params->{genome_size})/1000000) + (233353*($input_params->{total_number_of_reads})/1000000) - (51092*$kmer_size);
   $memory_required *= 1.5;
   if($memory_required < 2000000)
   {
@@ -200,6 +204,12 @@ sub assembly_directories
     push(@output_files, $self->{output_directory}.'/'.$file) if(-d $self->{output_directory}.'/'.$file);
   }
   return \@output_files;
+}
+
+sub name
+{
+  my ($self) = @_;
+  return 'velvet';
 }
 
 
