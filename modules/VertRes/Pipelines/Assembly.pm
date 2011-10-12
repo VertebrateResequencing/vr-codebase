@@ -173,6 +173,7 @@ sub map_back
   print $scriptfh qq{
   use strict;
   use $assembler_class;
+  use VertRes::Wrapper::smalt;
     
   my \$forward_fastq = '';
   my \$reverse_fastq = '';
@@ -192,7 +193,7 @@ sub map_back
   for my \$directory (\@{\$assembler_util->assembly_directories()} )
   {
     next unless(-d "\$directory/_$self->{assembler}_optimise_parameters_done");
-    \$mapper = VertRes::Wrapper::smalt->new();
+    my \$mapper = VertRes::Wrapper::smalt->new();
     \$mapper->setup_reference("\$directory/contigs.fa");
     `smalt map -i 3000 -f samsoft -o \$directory/contigs.mapped.sam \$directory/contigs.fa.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
     my \$sam_util = VertRes::Utils::Sam->new();
