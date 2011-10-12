@@ -406,7 +406,7 @@ exit;
 
       
 
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'", dont_wait=>1}, qq{perl -w $script_name});
+      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
@@ -454,6 +454,11 @@ sub number_of_threads
   {
     $num_threads = int($normal_queue_mem_limit/$memory_required_mb);
   }
+  if($num_threads  > 8)
+  {
+    $num_threads = 8;
+  }
+  
   return $num_threads;
 }
 
