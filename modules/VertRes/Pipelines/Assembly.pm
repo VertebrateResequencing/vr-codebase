@@ -192,14 +192,18 @@ sub map_back
   
   for my \$directory (\@{\$assembler_util->assembly_directories()} )
   {
-    next unless(-d "\$directory/_$self->{assembler}_optimise_parameters_done");
+    next unless(-e "\$directory/_$self->{assembler}_optimise_parameters_done");
     my \$mapper = VertRes::Wrapper::smalt->new();
     \$mapper->setup_reference("\$directory/contigs.fa");
+    
     `smalt map -i 3000 -f samsoft -o \$directory/contigs.mapped.sam \$directory/contigs.fa.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
-    my \$sam_util = VertRes::Utils::Sam->new();
-    my \$ok = \$sam_util->sam_to_fixed_sorted_bam("\$directory/contigs.mapped.sam", "\$directory/contigs.mapped.bam", "\$directory/contigs.fa.small");
-    `bamcheck \$directory/contigs.mapped.bam`;
-    `plot-bamcheck \$directory/contigs.mapped.bam.bc`;
+    `samtools faidx \$directory/contigs.fa`;
+    `samtools view -bt \$directory/contigs.fa.fai \$directory/contigs.mapped.sam > \$directory/contigs.mapped.bam`;
+    `samtools sort \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted.bam`;
+   ` samtools index \$directory/contigs.mapped.sorted.bam`;
+
+    `bamcheck \$directory/contigs.mapped.sorted.bam`;
+    `plot-bamcheck \$directory/contigs.mapped.sorted.bam.bc`;
     system("touch \$directory/_plot_bamcheck_done");
   }
   system("touch _plot_bamcheck_done");
