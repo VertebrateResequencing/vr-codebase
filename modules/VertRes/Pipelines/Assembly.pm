@@ -401,7 +401,7 @@ my \$ok = \$assembler->optimise_parameters($num_threads);
 
 for my \$directory (\@{\$assembler->assembly_directories()} )
 {
-  next unless(-d "\$directory/_$self->{assembler}_optimise_parameters_done");
+  next unless(-e "\$directory/_$self->{assembler}_optimise_parameters_done");
   \$assembler->generate_stats(\$directory);
 }
 
