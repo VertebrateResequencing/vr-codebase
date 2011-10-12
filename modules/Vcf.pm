@@ -482,7 +482,12 @@ sub next_data_hash
     if ( scalar @items != scalar @$cols )  
     { 
         if ( $line=~/^\s*$/ ) { $self->throw("Sorry, empty lines not allowed.\n"); }
-        if ( $line=~/^#/ ) { $self->throw("FIXME: parse_header must be called before next_data_hash.\n"); }
+        my $c = substr($line,0,1);
+        if ( $c eq '#' ) 
+        { 
+            if ( !$$self{header_parsed} ) { $self->throw("FIXME: parse_header must be called before next_data_hash.\n"); }
+            else { $self->throw("Multiple header blocks (^#) not allowed.\n"); }
+        }
 
         $self->warn("Different number of columns at $items[0]:$items[1] (expected ".scalar @$cols.", got ".scalar @items.")\n");
         while ( $items[-1] eq '' ) { pop(@items); }
@@ -587,6 +592,8 @@ sub parse_header
 
     # Now comes the column names line prefixed by #
     $self->_read_column_names();
+
+    $$self{header_parsed} = 1;
 }
 
 
