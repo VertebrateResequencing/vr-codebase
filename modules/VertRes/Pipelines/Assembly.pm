@@ -332,7 +332,20 @@ sub estimate_memory_required
 sub optimise_parameters_provides
 {
   my $self = shift;
-  [$self->{lane_path}."/".$self->{prefix}.$self->{assembler}.'_optimise_parameters_done'];
+  
+  my ($self) = @_;
+  my $assembler_class = $self->{assembler_class};
+  eval("use $assembler_class; ");
+  my $assembler_util= $assembler_class->new(output_directory => $self->{lane_path});
+  my @required_files;
+  
+  for my $directory (@{$assembler_util->assembly_directories()} )
+  {
+    next unless(-d "$directory/_$self->{assembler}_optimise_parameters_done");
+    push(@required_files, "$directory/_$self->{assembler}_optimise_parameters_done");
+  }
+  
+  return \@required_files;
 }
 
 sub optimise_parameters_requires
@@ -403,10 +416,10 @@ exit;
               };
               close $scriptfh;
 
-
+      my $total_memory_mb = $num_threads*$memory_required_mb;
       
 
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
+      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb}000 -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
