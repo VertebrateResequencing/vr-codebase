@@ -13,7 +13,7 @@
             the read length of 4.
 */
 
-#define BAMCHECK_VERSION "2011-09-18"
+#define BAMCHECK_VERSION "2011-10-05"
 
 #define _ISOC99_SOURCE
 #include <stdio.h>
@@ -101,6 +101,7 @@ typedef struct
     uint64_t nreads_unmapped;
     uint64_t nreads_unpaired;
     uint64_t nreads_paired;
+    uint64_t nreads_mq0;
     uint64_t nbases_mapped;
     uint64_t nbases_mapped_cigar;
     uint64_t nbases_trimmed;  // bwa trimmed bases
@@ -512,6 +513,9 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
         stats->nreads_unmapped++;
     else
     {
+        if ( !bam_line->core.qual )
+            stats->nreads_mq0++;
+
         // The insert size is tricky, because for long inserts the libraries are
         // prepared differently and the pairs point in other direction. BWA does
         // not set the paired flag for them.  Similar thing is true also for 454
@@ -713,6 +717,7 @@ void output_stats(stats_t *stats)
     printf("SN\treads unpaired:\t%ld\n", stats->nreads_unpaired);
     printf("SN\treads paired:\t%ld\n", stats->nreads_paired);
     printf("SN\treads duplicated:\t%ld\n", stats->nreads_dup);
+    printf("SN\treads MQ0:\t%ld\n", stats->nreads_mq0);
     printf("SN\ttotal length:\t%ld\n", stats->total_len);
     printf("SN\tbases mapped:\t%ld\n", stats->nbases_mapped);
     printf("SN\tbases mapped (cigar):\t%ld\n", stats->nbases_mapped_cigar);
@@ -885,6 +890,7 @@ int main(int argc, char *argv[])
     stats.nreads_unmapped = 0;
     stats.nreads_unpaired = 0;
     stats.nreads_paired   = 0;
+    stats.nreads_mq0      = 0;
     stats.nbases_mapped   = 0;
     stats.nbases_mapped_cigar = 0;
     stats.nmismatches     = 0;

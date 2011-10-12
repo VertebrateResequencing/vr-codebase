@@ -35,7 +35,15 @@ sub error
 
 sub parse_params
 {
-    my $opts = { args=>[$0, @ARGV] };
+    my $opts = 
+    { 
+        args => [$0, @ARGV],
+        joiner => 
+        {
+            'DP4' => \&joiner_dp4,
+            'DP'  => \&joiner_sum,
+        },
+    };
     while (my $arg=shift(@ARGV))
     {
         if ( $arg eq '-d' || $arg eq '--remove-duplicates' ) { $$opts{rm_dups}=1; next; }
@@ -406,8 +414,15 @@ sub merge_vcf_files
                 # Join the INFO field
                 for my $inf (keys %{$$line{INFO}}) 
                 {
-                    # When conflicting INFO fields are present, use the first one
-                    if ( exists($info{$inf}) ) { next; }
+                    # When conflicting INFO fields are present, use the first one, unless a joining method exists
+                    if ( exists($info{$inf}) )
+                    {
+                        if ( exists($$opts{joiner}{$inf}) )
+                        {
+                            &{$$opts{joiner}{$inf}}(\$info{$inf},$$line{INFO}{$inf});
+                        }
+                        next;
+                    }
                     $info{$inf} = $$line{INFO}{$inf};
                 }
 
@@ -572,6 +587,26 @@ sub get_min_position
         }
     }
     return $pos;
+}
+
+# Field joiner methods
+sub joiner_sum
+{
+    my ($ori,$new) = @_;
+    $$ori += $new;
+}
+
+sub joiner_dp4
+{
+    my ($ori,$new) = @_;
+    my @vals1 = split(/,/,$$ori);
+    my @vals2 = split(/,/,$new);
+    if ( @vals1 != @vals2 ) { error("Cannot join: $$ori vs $new\n"); }
+    for (my $i=0; $i<@vals1; $i++)
+    {
+        $vals1[$i] += $vals2[$i];
+    }
+    $$ori = join(',',@vals1);
 }
 
 

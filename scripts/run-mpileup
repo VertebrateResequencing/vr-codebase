@@ -32,7 +32,7 @@ sub new
             
             bams    => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
             fa_ref  => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
-            mysql   => 'mysql -sN -uXXX -pXXX -hmcs4a -P 3306 g1k_meta',   # To get the sex. Optional with assumed_sex below.
+            mysql   => 'mysql -sN -uXXX -pXXX -hmcs4a -P 3306 g1k_meta',   # To get the sex. Optional when assumed_sex is defined below.
 
             ploidy  =>
             {
@@ -70,7 +70,7 @@ sub new
             keep_bcfs         => 1,
             chunks_overlap    => 0,
             whole_genome_bams => 0,         # Set to 1 if BAMs are not splitted by chromosome
-            assumed_sex       => undef,     # Set to 'F' for females, 'M' males and undef if the DB should be used.
+            assumed_sex       => undef,     # Set to 'F' for females, 'M' males and undef mysql key above if the DB shouldn't be used.
 
             # Do specific regions only (whitespace delimited file with the columns CHR,FROM,TO)
             #   regions => 'regions.list',

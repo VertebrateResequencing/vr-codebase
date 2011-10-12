@@ -256,7 +256,7 @@ sub find_release_dirs
     {
         $$self{previous_root} = $$self{fsu}->catfile($$self{build_root}, $$self{db}, $$self{previous_release});
     }
-    $$self{frozen} = (!$$self{rolling_release}) || (-e "$$self{root}/.freeze") || (-e "$$self{root}/calling") || (-e "$$self{root}/calling");
+    $$self{frozen} = (!$$self{rolling_release}) || (-e "$$self{root}/.freeze");
 }
 
 sub setup_release
