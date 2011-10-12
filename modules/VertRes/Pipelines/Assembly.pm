@@ -450,9 +450,9 @@ sub number_of_threads
   my ($self, $memory_required_mb) = @_;
   my $normal_queue_mem_limit = 35000;
   my $num_threads = 1;
-  if($memory_required_mb/$normal_queue_mem_limit > 2)
+  if($normal_queue_mem_limit/$memory_required_mb > 2)
   {
-    $num_threads = int($memory_required_mb/$normal_queue_mem_limit);
+    $num_threads = int($normal_queue_mem_limit/$memory_required_mb);
   }
   return $num_threads;
 }
