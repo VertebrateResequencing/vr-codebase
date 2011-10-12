@@ -80,8 +80,6 @@ our $actions = [ { name     => 'pool_fastqs',
                    action   => \&optimise_parameters,
                    requires => \&optimise_parameters_requires,
                    provides => \&optimise_parameters_provides },
-                  
-                  
                 #{ name     => 'run_assembler',
                 #  action   => \&run_assembler,
                 #  requires => \&run_assembler_requires,
@@ -90,6 +88,10 @@ our $actions = [ { name     => 'pool_fastqs',
                   action   => \&map_back,
                   requires => \&map_back_requires, 
                   provides => \&map_back_provides },
+                { name     => 'optimise_parameters_with_reference',
+                  action   => \&optimise_parameters_with_reference,
+                  requires => \&optimise_parameters_with_reference_requires,
+                  provides => \&optimise_parameters_with_reference_provides },
                 # { name     => 'statistics',
                 #   action   => \&statistics,
                 #   requires => \&statistics_requires,
@@ -122,6 +124,97 @@ sub new {
 }
 
 ###########################
+# Begin optimise_parameters_with_reference
+###########################
+
+sub optimise_parameters_with_reference_provides
+{
+  my $self = shift;
+  return  [$self->{lane_path}."/".$self->{prefix}."optimise_parameters_with_reference_done"];
+}
+
+sub optimise_parameters_with_reference_requires
+{
+  my ($self) = @_;
+  my $assembler_class = $self->{assembler_class};
+  eval("use $assembler_class; ");
+  my $assembler_util= $assembler_class->new(output_directory => $self->{lane_path});
+  my @required_files;
+  push(@required_files, $self->{lane_path}."/".$self->{prefix}."$self->{assembler}_plot_bamcheck_done");
+
+  for my $directory (@{$assembler_util->assembly_directories()} )
+  {
+    next unless(-e "$directory/_plot_bamcheck_done");
+    push(@required_files, "$directory/contigs.mapped.sorted.bam");
+    push(@required_files, "$directory/contigs.fa");
+  }
+
+  return \@required_files;
+}
+
+sub optimise_parameters_with_reference
+{
+      my ($self, $build_path) = @_;
+
+      my $lane_names = $self->get_all_lane_names($self->{pools});
+      my $output_directory = $self->{lane_path};
+
+      my $assembler_class = $self->{assembler_class};
+      my $optimiser_exec = $self->{optimiser_exec};
+      
+      my $kmer = $self->calculate_kmer_size();
+      my $memory_required_mb = $self->estimate_memory_required($output_directory, $kmer->{min})/1000;
+      my $queue = 'long';
+      if($memory_required_mb > 35000)
+      {
+        $queue = 'hugemem';
+      }
+      elsif($memory_required_mb < 3000)
+      {
+        $queue = 'normal';
+      }
+
+      my $num_threads = $self->number_of_threads($memory_required_mb);
+      my $total_memory_mb = $num_threads*$memory_required_mb;
+      
+      
+      my $assembler_util= $assembler_class->new(output_directory => $self->{lane_path});
+      my $count = 0;
+      for my $directory (@{$assembler_util->assembly_directories()} )
+      {
+        next unless(-e "$directory/_plot_bamcheck_done");
+        push(@required_files, "$directory/contigs.mapped.sorted.bam");
+        push(@required_files, "$directory/contigs.fa");
+        
+        my $job_name = $self->{prefix}.$self->{assembler}.'_optimise_parameters_'.$count;
+        my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_optimise_parameters_$count.pl");
+        my $action_lock = "$output_directory/$$self{'prefix'}".$self->{assembler}."_optimise_parameters_$count.jids";
+        
+        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+        print $scriptfh qq{
+        use strict;
+        use $assembler_class;
+        `perl $self->{optimiser_exec} -t $num_threads -s $kmer->{min} -e $kmer->{max} -p 'velvet_assembly_${count}_with_reference' -f '-reference -fasta $directory/contigs.fa -shortPaired -bam $directory/contigs.mapped.sorted.bam' `; 
+
+        system('touch _optimise_parameters_with_reference_done');
+        exit;
+        };
+        close $scriptfh;
+        
+
+        LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb}000 -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
+        $count++;
+      }
+      # we've only submitted to LSF, so it won't have finished; we always return
+      # that we didn't complete
+      return $self->{No};
+}
+
+###########################
+# End optimise_parameters_with_reference
+###########################
+
+###########################
 # Begin map_back
 ###########################
 
@@ -135,9 +228,8 @@ sub map_back_requires
   
   for my $directory (@{$assembler_util->assembly_directories()} )
   {
-    next unless(-d "$directory/_$self->{assembler}_optimise_parameters_done");
+    next unless(-e "$directory/_$self->{assembler}_optimise_parameters_done");
     push(@required_files, "$directory/_$self->{assembler}_optimise_parameters_done");
-    
   }
   
   return \@required_files;
@@ -208,7 +300,7 @@ sub map_back
     unlink("\$directory/contigs.mapped.sam");
     system("touch \$directory/_plot_bamcheck_done");
   }
-  system("touch _plot_bamcheck_done");
+  system("touch _$self->{assembler}_plot_bamcheck_done");
   exit;
                 };
   close $scriptfh;
