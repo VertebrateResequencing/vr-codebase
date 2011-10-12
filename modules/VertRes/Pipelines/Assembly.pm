@@ -189,7 +189,7 @@ sub map_back
   `gzip -cd \$forward_fastq  > $output_directory/forward.fastq`;
   `gzip -cd \$reverse_fastq  > $output_directory/reverse.fastq`;
   
-  for my \$directory (@{\$assembler_util->assembly_directories()} )
+  for my \$directory (\@{\$assembler_util->assembly_directories()} )
   {
     next unless(-d "\$directory/_$self->{assembler}_optimise_parameters_done");
     \$mapper = VertRes::Wrapper::smalt->new();
