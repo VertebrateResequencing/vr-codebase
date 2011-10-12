@@ -167,9 +167,14 @@ sub get_parameters
 sub estimate_memory_required
 {
   my ($self, $input_params) = @_;
-  my $optimised_params = $self->get_parameters();
-  my $kmer_size = $input_params->{kmer_size}  || $optimised_params->{kmer};
-  
+  my $optimised_params;
+  my $kmer_size = $input_params->{kmer_size};
+  unless(defined($kmer_size))
+  {
+    $optimised_params = $self->get_parameters();
+    $kmer_size = $optimised_params->{kmer};
+  }
+
   my $memory_required = -109635 + (18977*($input_params->{read_length})) + (86326*($input_params->{genome_size})/1000000) + (233353*($input_params->{total_number_of_reads})/1000000) - (51092*$kmer_size);
   $memory_required *= 1.5;
   if($memory_required < 2000000)
