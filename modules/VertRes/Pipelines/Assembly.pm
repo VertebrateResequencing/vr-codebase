@@ -155,7 +155,7 @@ sub map_back
   my $output_directory = $self->{lane_path};
   eval("use $assembler_class; ");
   my $assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
-  my $base_path = $self->{lane_path}.'/../seq-pipelines';
+  my $base_path = $self->{lane_path}.'/../../seq-pipelines';
   
   my $job_name = $self->{prefix}.$self->{assembler}."_map_back";
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_map_back.pl");
@@ -427,6 +427,16 @@ sub calculate_kmer_size
 
   $kmer_size{min} = int($read_length*0.66);
   $kmer_size{max} = int($read_length*0.90);
+  
+  if($kmer_size{min} % 2 == 0)
+  {
+    $kmer_size{min}--;
+  }
+  
+  if($kmer_size{max} % 2 == 0)
+  {
+    $kmer_size{max}--;
+  }
 
   return \%kmer_size;
 }
@@ -447,7 +457,7 @@ sub pool_fastqs
 
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
-      my $base_path = $self->{lane_path}.'/../seq-pipelines';
+      my $base_path = $self->{lane_path}.'/../../seq-pipelines';
 
       my $script_name = $self->{fsu}->catfile($build_path, $self->{prefix}."pool_fastqs.pl");
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
