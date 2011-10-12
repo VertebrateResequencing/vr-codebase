@@ -199,11 +199,11 @@ sub map_back
     `smalt map -i 3000 -f samsoft -o \$directory/contigs.mapped.sam \$directory/contigs.fa.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
     `samtools faidx \$directory/contigs.fa`;
     `samtools view -bt \$directory/contigs.fa.fai \$directory/contigs.mapped.sam > \$directory/contigs.mapped.bam`;
-    `samtools sort \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted.bam`;
+    `samtools sort \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
    ` samtools index \$directory/contigs.mapped.sorted.bam`;
 
-    `bamcheck \$directory/contigs.mapped.sorted.bam`;
-    `plot-bamcheck \$directory/contigs.mapped.sorted.bam.bc`;
+    `bamcheck \$directory/contigs.mapped.sorted.bam >  \$directory/contigs.mapped.sorted.bam.bc`;
+    `plot-bamcheck -p \$directory/qc_graphs/ \$directory/contigs.mapped.sorted.bam.bc`;
     system("touch \$directory/_plot_bamcheck_done");
   }
   system("touch _plot_bamcheck_done");
