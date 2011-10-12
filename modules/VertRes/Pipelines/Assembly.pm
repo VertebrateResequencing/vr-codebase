@@ -92,6 +92,10 @@ our $actions = [ { name     => 'pool_fastqs',
                   action   => \&optimise_parameters_with_reference,
                   requires => \&optimise_parameters_with_reference_requires,
                   provides => \&optimise_parameters_with_reference_provides },
+                { name     => 'map_back',
+                  action   => \&map_back,
+                  requires => \&map_back_requires, 
+                  provides => \&map_back_provides },
                 # { name     => 'statistics',
                 #   action   => \&statistics,
                 #   requires => \&statistics_requires,
@@ -196,6 +200,13 @@ sub optimise_parameters_with_reference
         use $assembler_class;
         `perl $self->{optimiser_exec} -t $num_threads -s $kmer->{min} -e $kmer->{max} -p 'velvet_assembly_${count}_with_reference' -f '-reference -fasta $directory/contigs.fa -shortPaired -bam $directory/contigs.mapped.sorted.bam' `; 
 
+        for my \$directory (\@{\$assembler->assembly_directories()} )
+        {
+          next if(-e "\$directory/_$self->{assembler}_optimise_parameters_done");
+          \$assembler->generate_stats(\$directory);
+          system("touch \$directory/_$self->{assembler}_optimise_parameters_done");
+        }
+
         system('touch _optimise_parameters_with_reference_done');
         exit;
         };
@@ -238,7 +249,15 @@ sub map_back_requires
 sub map_back_provides
 {
    my ($self) = @_;
-   return [$self->{lane_path}."/".$self->{prefix}.'plot_bamcheck_done'];
+
+   if(-e $self->{lane_path}."/".$self->{prefix}.'plot_bamcheck_done')
+   {
+      return [$self->{lane_path}."/".$self->{prefix}.'plot_bamcheck_with_reference_done'];
+   }
+   else
+   {
+      return [$self->{lane_path}."/".$self->{prefix}.'plot_bamcheck_done'];
+   }
 }
 
 sub map_back
@@ -279,12 +298,19 @@ sub map_back
     \$reverse_fastq .= \$lane_path.'_2.fastq.gz ';
   }
   
-  `gzip -cd \$forward_fastq  > $output_directory/forward.fastq`;
-  `gzip -cd \$reverse_fastq  > $output_directory/reverse.fastq`;
+  unless( -e $output_directory/forward.fastq)
+  {
+    `gzip -cd \$forward_fastq  > $output_directory/forward.fastq`;
+  }
+  unless(-e $output_directory/reverse.fastq)
+  {
+    `gzip -cd \$reverse_fastq  > $output_directory/reverse.fastq`;
+  }
   
   for my \$directory (\@{\$assembler_util->assembly_directories()} )
   {
     next unless(-e "\$directory/_$self->{assembler}_optimise_parameters_done");
+    next if("\$directory/_plot_bamcheck_done");
     my \$mapper = VertRes::Wrapper::smalt->new();
     \$mapper->setup_reference("\$directory/contigs.fa");
     
@@ -300,7 +326,14 @@ sub map_back
     unlink("\$directory/contigs.mapped.sam");
     system("touch \$directory/_plot_bamcheck_done");
   }
-  system("touch _$self->{assembler}_plot_bamcheck_done");
+  if(-e "_$self->{assembler}_plot_bamcheck_done")
+  {
+    system("touch _$self->{assembler}_plot_bamcheck_with_reference_done");
+  }
+  else
+  {
+    system("touch _$self->{assembler}_plot_bamcheck_done");
+  }
   exit;
                 };
   close $scriptfh;

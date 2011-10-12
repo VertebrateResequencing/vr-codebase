@@ -202,7 +202,7 @@ sub assembly_directories
   my ($self) = @_;
   my @output_files ;
   opendir(DIR,$self->{output_directory});
-  my @files = grep {/^velvet_assembly_data_[\d]+$/} readdir(DIR);
+  my @files = grep {/^velvet_assembly_/} readdir(DIR);
   for my $file (@files)
   {
     push(@output_files, $self->{output_directory}.'/'.$file) if(-d $self->{output_directory}.'/'.$file);
