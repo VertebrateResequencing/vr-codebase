@@ -185,7 +185,7 @@ sub map_back
     `gzip -cd \$reverse_fastq  > $output_directory/reverse.fastq`;
   }
   
-  \$directory = \$assembler_util->optimised_directory();
+  my \$directory = \$assembler_util->optimised_directory();
  
   next unless(-e "\$directory/_$self->{assembler}_optimise_parameters_done");
   next if( -e "\$directory/_$self->{assembler}_plot_bamcheck_done");
