@@ -217,7 +217,7 @@ sub map_back
   `samtools index \$directory/contigs.mapped.sorted.bam`;
   \$assembler_util->throw("Couldnt index the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam.bai");
  
-  `bamcheck \$directory/contigs.mapped.sorted.bam >  \$directory/contigs.mapped.sorted.bam.bc`;
+  `bamcheck -r \$directory/contigs.fa \$directory/contigs.mapped.sorted.bam >  \$directory/contigs.mapped.sorted.bam.bc`;
   
   `plot-bamcheck -p \$directory/qc_graphs/ \$directory/contigs.mapped.sorted.bam.bc`;
   \$assembler_util->generate_stats(\$directory);
@@ -335,7 +335,7 @@ sub map_back_with_reference
   `samtools index \$directory/contigs.mapped.sorted.bam`;
   \$assembler_util->throw("Couldnt index the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam.bai");
  
-  `bamcheck \$directory/contigs.mapped.sorted.bam >  \$directory/contigs.mapped.sorted.bam.bc`;
+  `bamcheck -r \$directory/contigs.fa \$directory/contigs.mapped.sorted.bam >  \$directory/contigs.mapped.sorted.bam.bc`;
   
   `plot-bamcheck -p \$directory/qc_graphs/ \$directory/contigs.mapped.sorted.bam.bc`;
   \$assembler_util->generate_stats(\$directory);
