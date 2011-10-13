@@ -60,9 +60,16 @@ sub optimise_parameters
   my ($self, $num_threads) = @_;
   `perl $self->{optimiser_exec} -t $num_threads -s $self->{min_kmer} -e $self->{max_kmer} -p 'velvet_assembly' -f '$self->{files_str}' `;
   my $params = $self->get_parameters();
-  system("touch $params->{assembly_directory}/_velvet_optimise_parameters_done");
-  
+  system("mv  $params->{assembly_directory} ".$self->optimised_directory());
+  system("touch ".$self->optimised_directory()."/_velvet_optimise_parameters_done");
+
   return 1;
+}
+
+sub optimised_directory
+{
+  my ($self) = @_;
+  return "$output_directory/velvet_assembly";
 }
 
 
@@ -215,7 +222,5 @@ sub name
   my ($self) = @_;
   return 'velvet';
 }
-
-
 
 1;
