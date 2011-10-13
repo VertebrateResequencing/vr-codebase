@@ -2813,7 +2813,7 @@ sub Vcf4_1::next_data_hash
     my ($self,@args) = @_;
 
     my $out = $self->SUPER::next_data_hash(@args);
-    if ( !defined $out ) { return $out; }
+    if ( !defined $out or $$self{assume_uppercase} ) { return $out; }
 
     # Case-insensitive ALT and REF bases
     $$out{REF} = uc($$out{REF});
