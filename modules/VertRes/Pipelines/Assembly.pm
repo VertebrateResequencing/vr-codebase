@@ -200,6 +200,7 @@ sub map_back
   
   `samtools view -bt \$directory/contigs.fa.fai \$directory/contigs.mapped.sam > \$directory/contigs.mapped.bam`;
   \$assembler_util->throw("Couldnt convert from sam to BAM") unless(-e "\$directory/contigs.mapped.bam");
+  unlink("\$directory/contigs.mapped.sam");
   
   `samtools sort \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
   \$assembler_util->throw("Couldnt sort the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam");
@@ -210,8 +211,10 @@ sub map_back
   `bamcheck \$directory/contigs.mapped.sorted.bam >  \$directory/contigs.mapped.sorted.bam.bc`;
   
   `plot-bamcheck -p \$directory/qc_graphs/ \$directory/contigs.mapped.sorted.bam.bc`;
+  \$assembler_util->generate_stats(\$directory);
+  
   unlink("\$directory/contigs.mapped.bam");
-  unlink("\$directory/contigs.mapped.sam");
+  
   system("touch \$directory/_$self->{assembler}_plot_bamcheck_done");
  
   system("touch _$self->{assembler}_plot_bamcheck_done");
