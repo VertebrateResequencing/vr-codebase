@@ -3708,6 +3708,8 @@ sub coverage
 {
     my ($self, $bam, @bin) = @_;
 
+    if( ! -e $bam ){ $self->throw("Input file not found: $bam\n"); }
+
     unless(@bin){ @bin = (1); } # Default to 1X coverage.
 
     # Sort coverage depths into ascending order.
@@ -3735,6 +3737,7 @@ sub coverage
 	} 
     }
     close $fh;
+    unless( $sam->run_status() ){ $self->throw("Samtools pileup failed for: $bam\n"); }
 
     return @cover;
 }
