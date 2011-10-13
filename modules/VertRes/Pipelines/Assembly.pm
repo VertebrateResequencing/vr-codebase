@@ -149,7 +149,7 @@ sub map_back_provides
 
 sub map_back
 {
-  my ($self, $build_path) = @_;
+  my ($self, $build_path, $action_lock) = @_;
   my $assembler_class = $self->{assembler_class};
   my $output_directory = $self->{lane_path};
   eval("use $assembler_class; ");
@@ -211,7 +211,7 @@ sub map_back
   \$assembler_util->throw("Couldnt convert from sam to BAM") unless(-e "\$directory/contigs.mapped.bam");
   unlink("\$directory/contigs.mapped.sam");
   
-  `samtools sort \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
+  `samtools sort -m 4000000000 \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
   \$assembler_util->throw("Couldnt sort the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam");
   
   `samtools index \$directory/contigs.mapped.sorted.bam`;
@@ -231,7 +231,6 @@ sub map_back
                 };
   close $scriptfh;
   
-  my $action_lock = "$output_directory/$$self{'prefix'}$self->{assembler}_map_back.jids";
   my $memory_required_mb = 5000;
 
   LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
@@ -268,7 +267,7 @@ sub map_back_with_reference_provides
 
 sub map_back_with_reference
 {
-  my ($self, $build_path) = @_;
+  my ($self, $build_path, $action_lock) = @_;
   my $assembler_class = $self->{assembler_class};
   my $output_directory = $self->{lane_path};
   eval("use $assembler_class; ");
@@ -330,7 +329,7 @@ sub map_back_with_reference
   \$assembler_util->throw("Couldnt convert from sam to BAM") unless(-e "\$directory/contigs.mapped.bam");
   unlink("\$directory/contigs.mapped.sam");
   
-  `samtools sort \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
+  `samtools sort -m 4000000000 \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
   \$assembler_util->throw("Couldnt sort the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam");
   
   `samtools index \$directory/contigs.mapped.sorted.bam`;
@@ -350,7 +349,6 @@ sub map_back_with_reference
                 };
   close $scriptfh;
   
-  my $action_lock = "$output_directory/$$self{'prefix'}$self->{assembler}_map_back_with_reference.jids";
   my $memory_required_mb = 5000;
 
   LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
@@ -386,7 +384,7 @@ sub optimise_parameters_requires
 
 sub optimise_parameters
 {
-      my ($self, $build_path) = @_;
+      my ($self, $build_path,$action_lock) = @_;
 
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
@@ -402,8 +400,6 @@ sub optimise_parameters
       my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_optimise_parameters.pl");
 
       my $kmer = $self->calculate_kmer_size();
-      
-      my $action_lock = "$output_directory/$$self{'prefix'}".$self->{assembler}."_optimise_parameters.jids";
       
       my $memory_required_mb = $self->estimate_memory_required($output_directory, $kmer->{min})/1000;
       my $queue = 'long';
@@ -523,7 +519,7 @@ sub optimise_parameters_with_reference_requires
 
 sub optimise_parameters_with_reference
 {
-      my ($self, $build_path) = @_;
+      my ($self, $build_path, $action_lock) = @_;
 
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
@@ -539,8 +535,7 @@ sub optimise_parameters_with_reference
       my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_optimise_parameters_with_reference.pl");
 
       my $kmer = $self->calculate_kmer_size();
-      
-      my $action_lock = "$output_directory/$$self{'prefix'}".$self->{assembler}."_optimise_parameters_with_reference.jids";
+
       
       my $memory_required_mb = $self->estimate_memory_required($output_directory, $kmer->{min})/1000;
       my $queue = 'long';
@@ -571,7 +566,7 @@ my \$assembler = $assembler_class->new(
 
 my \$ok = \$assembler->optimise_parameters_with_reference($num_threads);
 
-\$assembler->throw("optimising parameters for assembler failed - try again?") unless( -e \$assembler->optimise_parameters_with_reference()."/_$self->{assembler}_optimise_parameters_with_reference_done");
+\$assembler->throw("optimising parameters for assembler failed - try again?") unless( -e \$assembler->optimised_with_reference_directory()."/_$self->{assembler}_optimise_parameters_with_reference_done");
 system('touch _$self->{assembler}_optimise_parameters_with_reference_done');
 exit;
               };
@@ -599,7 +594,7 @@ exit;
 
 sub pool_fastqs
 {
-      my ($self, $build_path) = @_;
+      my ($self, $build_path,$action_lock) = @_;
 
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
@@ -644,7 +639,6 @@ system("touch $output_directory/_pool_fastqs_done");
 exit;
       };
       close $scriptfh;
-      my $action_lock = "$output_directory/$$self{'prefix'}pool_fastqs.jids";
       my $job_name = $self->{prefix}.'pool_fastqs';
 
       LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M500000 -R \'select[mem>500] rusage[mem=500]\''}, qq{perl -w $script_name});
