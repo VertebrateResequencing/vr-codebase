@@ -107,6 +107,11 @@ sub new {
   }
   $self->{fsu} = VertRes::Utils::FileSystem->new;
 
+  unless(defined($self->{max_threads}))
+  {
+    $self->{max_threads} = 8;
+  }
+
   my $assembly_util = VertRes::Utils::Assembly->new(assembler => $self->{assembler});
   my $assembler_class = $assembly_util->find_module();
   eval "require $assembler_class;";
@@ -383,13 +388,14 @@ sub number_of_threads
   my ($self, $memory_required_mb) = @_;
   my $normal_queue_mem_limit = 35000;
   my $num_threads = 1;
+  
   if($normal_queue_mem_limit/$memory_required_mb > 2)
   {
     $num_threads = int($normal_queue_mem_limit/$memory_required_mb);
   }
-  if($num_threads  > 8)
+  if($num_threads  > $self->{max_threads})
   {
-    $num_threads = 8;
+    $num_threads = $self->{max_threads};
   }
   
   return $num_threads;
