@@ -84,6 +84,15 @@ our $actions = [ { name     => 'pool_fastqs',
                   action   => \&map_back,
                   requires => \&map_back_requires, 
                   provides => \&map_back_provides },
+                { name     => 'optimise_parameters_with_reference',
+                  action   => \&optimise_parameters_with_reference,
+                  requires => \&optimise_parameters_with_reference_requires,
+                  provides => \&optimise_parameters_with_reference_provides },
+                { name     => 'map_back_with_reference',
+                  action   => \&map_back_with_reference,
+                  requires => \&map_back_with_reference_requires, 
+                  provides => \&map_back_with_reference_provides },
+                  
                 # { name     => 'statistics',
                 #   action   => \&statistics,
                 #   requires => \&statistics_requires,
@@ -237,38 +246,124 @@ sub map_back
 # End map_back
 ###########################
 
-sub total_number_of_reads
+
+
+###########################
+# Begin map_back_with_reference
+###########################
+
+sub map_back_with_reference_requires
 {
   my ($self) = @_;
-  my $lane_names = $self->get_all_lane_names($self->{pools});
-  my $total_reads = 0;
-
-  for my $lane_name (@{$lane_names})
-  {
-    my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, $lane_name) or $self->throw("No such lane in the DB: [".$lane_name."]");
-    $total_reads += $vrlane->raw_reads();
-  }
-  return $total_reads;
+  return $self->optimise_parameters_with_reference_provides();
 }
 
-
-#Gives the answer in kb.
-sub estimate_memory_required
+sub map_back_with_reference_provides
 {
-  my ($self, $output_directory, $kmer_size) = @_;
+   my ($self) = @_;
 
-  my %memory_params ;
-  $memory_params{total_number_of_reads} = $self->total_number_of_reads();
-  $memory_params{genome_size}           = $self->{genome_size};
-  $memory_params{read_length}           = $self->lane_read_length();
-  $memory_params{kmer_size}             = $kmer_size;
+   return [$self->{lane_path}."/".$self->{prefix}.$self->{assembler}.'_plot_bamcheck_with_reference_done'];
 
-  my $assembler_class = $self->{assembler_class};
-  eval("use $assembler_class; ");
-  my $assembler_util= $assembler_class->new(output_directory => $output_directory);
-  my $memory_required_in_kb = $assembler_util->estimate_memory_required(\%memory_params);
-  return $memory_required_in_kb;
 }
+
+sub map_back_with_reference
+{
+  my ($self, $build_path) = @_;
+  my $assembler_class = $self->{assembler_class};
+  my $output_directory = $self->{lane_path};
+  eval("use $assembler_class; ");
+  my $assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
+  my $base_path = $self->{lane_path}.'/../../seq-pipelines';
+  
+  my $job_name = $self->{prefix}.$self->{assembler}."_map_back_with_reference";
+  my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_map_back_with_reference.pl");
+  
+  my $lane_names = $self->get_all_lane_names($self->{pools});
+  my @lane_paths;
+  for my $lane_name (@$lane_names)
+  {
+    push(@lane_paths,$base_path.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_name).'/'.$lane_name);
+  }
+  my $lane_paths_str = '("'.join('","', @lane_paths).'")';
+
+  open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+  print $scriptfh qq{
+  use strict;
+  use $assembler_class;
+  use VertRes::Wrapper::smalt;
+    
+  my \$forward_fastq = '';
+  my \$reverse_fastq = '';
+  my \@lane_paths = $lane_paths_str;
+  
+  my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
+
+  for my \$lane_path ( \@lane_paths)
+  {
+    \$forward_fastq .= \$lane_path.'_1.fastq.gz ';
+    \$reverse_fastq .= \$lane_path.'_2.fastq.gz ';
+  }
+  
+  unless( -e "$output_directory/forward.fastq")
+  {
+    `gzip -cd \$forward_fastq  > $output_directory/forward.fastq`;
+  }
+  unless(-e "$output_directory/reverse.fastq")
+  {
+    `gzip -cd \$reverse_fastq  > $output_directory/reverse.fastq`;
+  }
+  
+  my \$directory = \$assembler_util->optimised_with_reference_directory();
+ 
+  next unless(-e "\$directory/_$self->{assembler}_optimise_parameters_with_reference_done");
+  next if( -e "\$directory/_$self->{assembler}_plot_bamcheck_with_reference_done");
+  my \$mapper = VertRes::Wrapper::smalt->new();
+  \$mapper->setup_reference("\$directory/contigs.fa");
+  
+  `smalt map -x -i 3000 -f samsoft -o \$directory/contigs.mapped.sam \$directory/contigs.fa.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
+  \$assembler_util->throw("Sam file not created") unless(-e "\$directory/contigs.mapped.sam");
+  
+  `samtools faidx \$directory/contigs.fa`;
+  \$assembler_util->throw("Reference index file not created") unless(-e "\$directory/contigs.fa.fai");
+  
+  `samtools view -bt \$directory/contigs.fa.fai \$directory/contigs.mapped.sam > \$directory/contigs.mapped.bam`;
+  \$assembler_util->throw("Couldnt convert from sam to BAM") unless(-e "\$directory/contigs.mapped.bam");
+  unlink("\$directory/contigs.mapped.sam");
+  
+  `samtools sort \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
+  \$assembler_util->throw("Couldnt sort the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam");
+  
+  `samtools index \$directory/contigs.mapped.sorted.bam`;
+  \$assembler_util->throw("Couldnt index the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam.bai");
+ 
+  `bamcheck \$directory/contigs.mapped.sorted.bam >  \$directory/contigs.mapped.sorted.bam.bc`;
+  
+  `plot-bamcheck -p \$directory/qc_graphs/ \$directory/contigs.mapped.sorted.bam.bc`;
+  \$assembler_util->generate_stats(\$directory);
+  
+  unlink("\$directory/contigs.mapped.bam");
+  
+  system("touch \$directory/_$self->{assembler}_plot_bamcheck_with_reference_done");
+ 
+  system("touch _$self->{assembler}_plot_bamcheck_with_reference_done");
+  exit;
+                };
+  close $scriptfh;
+  
+  my $action_lock = "$output_directory/$$self{'prefix'}$self->{assembler}_map_back_with_reference.jids";
+  my $memory_required_mb = 5000;
+
+  LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
+
+  # we've only submitted to LSF, so it won't have finished; we always return
+  # that we didn't complete
+  return $self->{No};
+  
+}
+
+###########################
+# End map_back_with_reference
+###########################
 
 
 
@@ -406,6 +501,94 @@ sub number_of_threads
 
 ###########################
 # End optimise
+###########################
+
+
+
+###########################
+# Begin optimise_parameters_with_reference
+###########################
+
+sub optimise_parameters_with_reference_provides
+{
+  my $self = shift;
+  return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_optimise_parameters_with_reference_done"];
+}
+
+sub optimise_parameters_with_reference_requires
+{
+  my $self = shift;
+  return $self->map_back_provides();
+}
+
+sub optimise_parameters_with_reference
+{
+      my ($self, $build_path) = @_;
+
+      my $lane_names = $self->get_all_lane_names($self->{pools});
+      my $output_directory = $self->{lane_path};
+
+      my $assembler_class = $self->{assembler_class};
+      my $optimiser_exec = $self->{optimiser_exec};
+
+      eval("use $assembler_class; ");
+      my $assembler_util= $assembler_class->new();
+      my $files_str = $assembler_util->generate_files_str($self->{pools}, $output_directory);
+
+      my $job_name = $self->{prefix}.$self->{assembler}.'_optimise_parameters_with_reference';
+      my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_optimise_parameters_with_reference.pl");
+
+      my $kmer = $self->calculate_kmer_size();
+      
+      my $action_lock = "$output_directory/$$self{'prefix'}".$self->{assembler}."_optimise_parameters_with_reference.jids";
+      
+      my $memory_required_mb = $self->estimate_memory_required($output_directory, $kmer->{min})/1000;
+      my $queue = 'long';
+      if($memory_required_mb > 35000)
+      {
+        $queue = 'hugemem';
+      }
+      elsif($memory_required_mb < 3000)
+      {
+        $queue = 'normal';
+      }
+
+      my $num_threads = $self->number_of_threads($memory_required_mb);
+
+      open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+      print $scriptfh qq{
+use strict;
+use $assembler_class;
+
+my \$assembler = $assembler_class->new(
+  assembler => qq[$self->{assembler}],
+  optimiser_exec => qq[$optimiser_exec],
+  min_kmer => $kmer->{min},
+  max_kmer => $kmer->{max},
+  files_str => qq[$files_str],
+  output_directory => qq[$output_directory],
+  );
+
+my \$ok = \$assembler->optimise_parameters_with_reference($num_threads);
+
+\$assembler->throw("optimising parameters for assembler failed - try again?") unless( -e \$assembler->optimise_parameters_with_reference()."/_$self->{assembler}_optimise_parameters_with_reference_done");
+system('touch _$self->{assembler}_optimise_parameters_with_reference_done');
+exit;
+              };
+              close $scriptfh;
+
+      my $total_memory_mb = $num_threads*$memory_required_mb;
+      
+      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb}000 -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
+
+      # we've only submitted to LSF, so it won't have finished; we always return
+      # that we didn't complete
+      return $self->{No};
+}
+
+
+###########################
+# End optimise_parameters_with_reference
 ###########################
 
 
@@ -560,6 +743,44 @@ sub shuffle_sequences_fastq_gz
 ###########################
 # End pool fastqs
 ###########################
+
+
+
+sub total_number_of_reads
+{
+  my ($self) = @_;
+  my $lane_names = $self->get_all_lane_names($self->{pools});
+  my $total_reads = 0;
+
+  for my $lane_name (@{$lane_names})
+  {
+    my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, $lane_name) or $self->throw("No such lane in the DB: [".$lane_name."]");
+    $total_reads += $vrlane->raw_reads();
+  }
+  return $total_reads;
+}
+
+
+#Gives the answer in kb.
+sub estimate_memory_required
+{
+  my ($self, $output_directory, $kmer_size) = @_;
+
+  my %memory_params ;
+  $memory_params{total_number_of_reads} = $self->total_number_of_reads();
+  $memory_params{genome_size}           = $self->{genome_size};
+  $memory_params{read_length}           = $self->lane_read_length();
+  $memory_params{kmer_size}             = $kmer_size;
+
+  my $assembler_class = $self->{assembler_class};
+  eval("use $assembler_class; ");
+  my $assembler_util= $assembler_class->new(output_directory => $output_directory);
+  my $memory_required_in_kb = $assembler_util->estimate_memory_required(\%memory_params);
+  return $memory_required_in_kb;
+}
+
+
+
 
 sub cleanup
 {

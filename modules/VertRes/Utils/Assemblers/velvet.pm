@@ -59,7 +59,7 @@ sub optimise_parameters
 {
   my ($self, $num_threads) = @_;
   `perl $self->{optimiser_exec} -t $num_threads -s $self->{min_kmer} -e $self->{max_kmer} -p 'velvet_assembly' -f '$self->{files_str}' `;
-  my $params = $self->get_parameters();
+  my $params = $self->get_parameters("velvet_assembly_logfile.txt");
   system("mv  $params->{assembly_directory} ".$self->optimised_directory());
   system("touch ".$self->optimised_directory()."/_velvet_optimise_parameters_done");
   
@@ -70,6 +70,29 @@ sub optimise_parameters
 
   return 1;
 }
+
+sub optimise_parameters_with_reference
+{
+  my ($self, $num_threads,$reference_directory) = @_;
+  `perl $self->{optimiser_exec} -t $num_threads -s $kmer->{min} -e $kmer->{max} -p 'velvet_optimised_with_reference' -f '-reference -fasta $directory/contigs.fa -shortPaired -bam $directory/contigs.mapped.sorted.bam`;
+  my $params = $self->get_parameters("velvet_optimised_with_reference_logfile.txt");
+  system("mv  $params->{assembly_directory} ".$self->optimised_with_reference_directory());
+  system("touch ".$self->optimised_with_reference_directory()."/_velvet_optimised_with_reference_done");
+  unlink($self->optimised_with_reference_directory()."/Sequences");
+  unlink($self->optimised_with_reference_directory()."/PreGraph");
+  unlink($self->optimised_with_reference_directory()."/Graph");
+  unlink($self->optimised_with_reference_directory()."/Graph2");
+  return 1;
+}
+
+
+
+sub optimised_with_reference_directory
+{
+  my ($self) = @_;
+  return "$self->{output_directory}/velvet_assembly_with_reference";
+}
+
 
 sub optimised_directory
 {
@@ -99,33 +122,6 @@ sub generate_files_str
   return $files_str;
 }
 
-=head2 do_assembly
-
- Title   : do_assembly
- Usage   : my $module = $obj->do_assembly();
- Function: run the assembler
- Returns : 1 if successful
-
-=cut
-sub do_assembly
-{
-  my $self = shift;
-  
-  # get parameters from file
-  my $assembler_parameters = $self->get_parameters();
-  my $assembly_name = 'velvet_assembly_'.$assembler_parameters->{kmer};
-  `$self->{assembler_exec}h $assembly_name $assembler_parameters->{velveth}`;
-  `$self->{assembler_exec}g $assembly_name $assembler_parameters->{velvetg}`;
-  
-  unlink("$assembly_name/Sequences") if(-e "$assembly_name/Sequences");
-  unlink("$assembly_name/PreGraph") if(-e "$assembly_name/PreGraph");
-  unlink("$assembly_name/Graph2") if(-e "$assembly_name/Graph2");
-  
-  system("touch $assembly_name/_assembly_done");
-
-  1;
-}
-
 
 =head2 get_parameters
 
@@ -137,8 +133,8 @@ sub do_assembly
 =cut
 sub get_parameters
 {
-   my $self = shift;
-   open(PARAM_FILE, $self->{output_directory}.'/velvet_assembly_logfile.txt') or die "Couldnt open optimised parameters file";
+   my ($self, $filename) = @_;
+   open(PARAM_FILE, $self->{output_directory}.'/'.$filename) or die "Couldnt open optimised parameters file";
    
    my %parameters;
    my $found_final_assembly_details = 0; 
@@ -151,14 +147,14 @@ sub get_parameters
        next;
      }
      
-     if( $found_final_assembly_details == 1 && $line =~ m/Velveth parameter string: (velvet_assembly_data_([\d]+)) ([\d]+ .+$)/)
+     if( $found_final_assembly_details == 1 && $line =~ m/Velveth parameter string: ([a-z_]+_([\d]+)) ([\d]+ .+$)/)
      {
        $parameters{assembly_directory} = $1;
        $parameters{kmer} = $2;
        $parameters{velveth} = $3;
      }
      
-     if( $found_final_assembly_details == 1 && $line =~ m/Velvetg parameter string: velvet_assembly_data_[\d]+ (.+$)/)
+     if( $found_final_assembly_details == 1 && $line =~ m/Velvetg parameter string: [a-z_]+_[\d]+ (.+$)/)
      {
        $parameters{velvetg} = $1;
      }
@@ -183,7 +179,7 @@ sub estimate_memory_required
   my $kmer_size = $input_params->{kmer_size};
   unless(defined($kmer_size))
   {
-    $optimised_params = $self->get_parameters();
+    $optimised_params = $self->get_parameters("velvet_assembly_logfile.txt");
     $kmer_size = $optimised_params->{kmer};
   }
 
