@@ -62,6 +62,11 @@ sub optimise_parameters
   my $params = $self->get_parameters();
   system("mv  $params->{assembly_directory} ".$self->optimised_directory());
   system("touch ".$self->optimised_directory()."/_velvet_optimise_parameters_done");
+  
+  unlink($self->optimised_directory()."/Sequences");
+  unlink($self->optimised_directory()."/PreGraph");
+  unlink($self->optimised_directory()."/Graph");
+  unlink($self->optimised_directory()."/Graph2");
 
   return 1;
 }

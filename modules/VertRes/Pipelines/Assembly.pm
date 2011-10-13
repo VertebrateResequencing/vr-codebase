@@ -176,11 +176,11 @@ sub map_back
     \$reverse_fastq .= \$lane_path.'_2.fastq.gz ';
   }
   
-  unless( -e $output_directory/forward.fastq)
+  unless( -e "$output_directory/forward.fastq")
   {
     `gzip -cd \$forward_fastq  > $output_directory/forward.fastq`;
   }
-  unless(-e $output_directory/reverse.fastq)
+  unless(-e "$output_directory/reverse.fastq")
   {
     `gzip -cd \$reverse_fastq  > $output_directory/reverse.fastq`;
   }
