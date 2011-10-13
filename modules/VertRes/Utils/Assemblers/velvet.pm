@@ -69,7 +69,7 @@ sub optimise_parameters
 sub optimised_directory
 {
   my ($self) = @_;
-  return "$output_directory/velvet_assembly";
+  return "$self->{output_directory}/velvet_assembly";
 }
 
 
