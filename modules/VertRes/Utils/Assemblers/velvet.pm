@@ -73,8 +73,9 @@ sub optimise_parameters
 
 sub optimise_parameters_with_reference
 {
-  my ($self, $num_threads,$reference_directory) = @_;
-  `perl $self->{optimiser_exec} -t $num_threads -s $kmer->{min} -e $kmer->{max} -p 'velvet_optimised_with_reference' -f '-reference -fasta $directory/contigs.fa -shortPaired -bam $directory/contigs.mapped.sorted.bam`;
+  my ($self, $num_threads) = @_;
+  my $reference_directory = $self->optimised_directory();
+  `perl $self->{optimiser_exec} -t $num_threads -s $self->{min_kmer} -e $self->{max_kmer} -p 'velvet_optimised_with_reference' -f '-reference -fasta $reference_directory/contigs.fa -shortPaired -bam $reference_directory/contigs.mapped.sorted.bam`;
   my $params = $self->get_parameters("velvet_optimised_with_reference_logfile.txt");
   system("mv  $params->{assembly_directory} ".$self->optimised_with_reference_directory());
   system("touch ".$self->optimised_with_reference_directory()."/_velvet_optimised_with_reference_done");
@@ -84,8 +85,6 @@ sub optimise_parameters_with_reference
   unlink($self->optimised_with_reference_directory()."/Graph2");
   return 1;
 }
-
-
 
 sub optimised_with_reference_directory
 {
