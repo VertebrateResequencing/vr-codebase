@@ -314,13 +314,23 @@ sub map_back
     my \$mapper = VertRes::Wrapper::smalt->new();
     \$mapper->setup_reference("\$directory/contigs.fa");
     
-    `smalt map -i 3000 -f samsoft -o \$directory/contigs.mapped.sam \$directory/contigs.fa.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
+    `smalt map -x -i 3000 -f samsoft -o \$directory/contigs.mapped.sam \$directory/contigs.fa.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
+    \$assembler_util->throw("Sam file not created") unless(-e "\$directory/contigs.mapped.sam");
+    
     `samtools faidx \$directory/contigs.fa`;
+    \$assembler_util->throw("Reference index file not created") unless(-e "\$directory/contigs.fa.fai");
+    
     `samtools view -bt \$directory/contigs.fa.fai \$directory/contigs.mapped.sam > \$directory/contigs.mapped.bam`;
+    \$assembler_util->throw("Couldnt convert from sam to BAM") unless(-e "\$directory/contigs.mapped.bam");
+    
     `samtools sort \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
-   ` samtools index \$directory/contigs.mapped.sorted.bam`;
+    \$assembler_util->throw("Couldnt sort the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam");
+    
+    `samtools index \$directory/contigs.mapped.sorted.bam`;
+    \$assembler_util->throw("Couldnt index the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam.bai");
 
     `bamcheck \$directory/contigs.mapped.sorted.bam >  \$directory/contigs.mapped.sorted.bam.bc`;
+    
     `plot-bamcheck -p \$directory/qc_graphs/ \$directory/contigs.mapped.sorted.bam.bc`;
     unlink("\$directory/contigs.mapped.bam");
     unlink("\$directory/contigs.mapped.sam");
