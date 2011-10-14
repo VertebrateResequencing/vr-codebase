@@ -211,7 +211,7 @@ sub map_back
   \$assembler_util->throw("Couldnt convert from sam to BAM") unless(-e "\$directory/contigs.mapped.bam");
   unlink("\$directory/contigs.mapped.sam");
   
-  `samtools sort -n -m 4000000000 \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
+  `samtools sort -m 4000000000 \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
   \$assembler_util->throw("Couldnt sort the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam");
   
   `samtools index \$directory/contigs.mapped.sorted.bam`;
@@ -329,7 +329,7 @@ sub map_back_with_reference
   \$assembler_util->throw("Couldnt convert from sam to BAM") unless(-e "\$directory/contigs.mapped.bam");
   unlink("\$directory/contigs.mapped.sam");
   
-  `samtools sort -n -m 4000000000 \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
+  `samtools sort -m 4000000000 \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
   \$assembler_util->throw("Couldnt sort the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam");
   
   `samtools index \$directory/contigs.mapped.sorted.bam`;
