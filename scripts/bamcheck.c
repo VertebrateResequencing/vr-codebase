@@ -13,7 +13,7 @@
             the read length of 4.
 */
 
-#define BAMCHECK_VERSION "2011-10-05"
+#define BAMCHECK_VERSION "2011-10-14"
 
 #define _ISOC99_SOURCE
 #include <stdio.h>
@@ -162,21 +162,11 @@ void round_buffer_flush(stats_t *stats, int64_t pos)
     if ( pos==stats->cov_rbuf.pos ) 
         return;
 
-    if ( pos<0 || pos - stats->cov_rbuf.pos >= stats->cov_rbuf.size )
+    int64_t new_pos = pos;
+    if ( pos==-1 || pos - stats->cov_rbuf.pos >= stats->cov_rbuf.size )
     {
-        // flush the whole buffer
-        for (ibuf=0; ibuf<stats->cov_rbuf.size; ibuf++)
-        {
-            if ( !stats->cov_rbuf.buffer[ibuf] ) 
-                continue;
-
-            idp = coverage_idx(stats->cov_min,stats->cov_max,stats->ncov,stats->cov_step,stats->cov_rbuf.buffer[ibuf]);
-            stats->cov[idp]++;
-            stats->cov_rbuf.buffer[ibuf] = 0;
-        }
-        stats->cov_rbuf.start = 0;
-        stats->cov_rbuf.pos   = pos;
-        return;
+        // Flush the whole buffer, but in sequential order, 
+        pos = stats->cov_rbuf.pos + stats->cov_rbuf.size - 1;
     }
 
     if ( pos < stats->cov_rbuf.pos ) 
@@ -204,8 +194,8 @@ void round_buffer_flush(stats_t *stats, int64_t pos)
         stats->cov[idp]++;
         stats->cov_rbuf.buffer[ibuf] = 0;
     }
-    stats->cov_rbuf.start = round_buffer_lidx2ridx(stats->cov_rbuf.start,stats->cov_rbuf.size,stats->cov_rbuf.pos,pos);
-    stats->cov_rbuf.pos   = pos;
+    stats->cov_rbuf.start = (new_pos==-1) ? 0 : round_buffer_lidx2ridx(stats->cov_rbuf.start,stats->cov_rbuf.size,stats->cov_rbuf.pos,pos);
+    stats->cov_rbuf.pos   = new_pos;
 }
 
 void round_buffer_insert_read(round_buffer_t *rbuf, int64_t from, int64_t to)
@@ -581,6 +571,9 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
 
         if ( stats->is_sorted )
         {
+            if ( stats->tid==-1 || stats->tid!=bam_line->core.tid )
+                round_buffer_flush(stats,-1);
+
             // Mismatches per cycle and GC-depth graph
             if ( stats->fai )
             {
@@ -599,8 +592,6 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
                         error("The genome too long or the GCD bin overlaps too big [%ud]\n", stats->igcd);
 
                     stats->gcd[ stats->igcd ].gc = fai_gc_content(stats);
-
-                    round_buffer_flush(stats,-1);
                 }
                 count_mismatches_per_cycle(stats,bam_line);
             }
@@ -613,9 +604,8 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
 
                 if ( stats->igcd >= stats->ngcd )
                     error("The genome too long?? [%ud]\n", stats->igcd);
-
-                round_buffer_flush(stats,-1);
             }
+
             stats->gcd[ stats->igcd ].depth++;
             // When no reference sequence is given, approximate the GC from the read (much shorter window, but otherwise OK)
             if ( !stats->fai )

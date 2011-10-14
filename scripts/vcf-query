@@ -27,6 +27,14 @@ sub error
         "   -l, --list-columns                  List columns.\n",
         "   -r, --region chr:from-to            Retrieve the region. (Runs tabix.)\n",
         "   -h, -?, --help                      This help message.\n",
+        "Expressions:\n",
+        "   %CHROM          The CHROM column (similarly also other columns)\n",
+        "   %GT             Translated genotype (e.g. C/A)\n",
+        "   %GTR            Raw genotype (e.g. 0/1)\n",
+        "   %INFO/TAG       Any tag in the INFO column\n",
+        "   %LINE           Prints the whole line\n",
+        "   %SAMPLE         Sample name\n",
+        "   []              The brackets stand for repetition on each sample\n",
         "Examples:\n",
         "   query-vcf file.vcf.gz 1:1000-2000 -c NA001,NA002,NA003\n",
         "   query-vcf file.vcf.gz -r 1:1000-2000 -f '%CHROM:%POS\\t%REF\\t%ALT[\\t%SAMPLE:%*=,]\\n'\n",
@@ -211,6 +219,10 @@ sub read_data
                     elsif ( exists($$x{$colname}) ) { $out[$idx] = $$x{$colname}; }
                 }
                 if ( exists($$opts{repeat}{idx}{SAMPLE}) ) { $out[$$opts{repeat}{idx}{SAMPLE}] = $col; }
+                if ( exists($$opts{repeat}{idx}{GTR}) ) 
+                { 
+                    $out[$$opts{repeat}{idx}{GTR}] = $$x{gtypes}{$col}{GT};
+                }
                 if ( exists($$opts{repeat}{idx}{GT}) ) 
                 { 
                     my $tmp = $$alleles[0];
