@@ -1,0 +1,222 @@
+#!/usr/bin/env perl
+=head1 NAME
+
+vcf-filter
+
+=head1 SYNOPSIS
+
+=head1 DESCRIPTION
+
+Apply custom filters to a vcf file.
+
+=head1 AUTHOR
+
+jws@sanger.ac.uk
+
+=cut
+use strict;
+use warnings;
+no warnings 'uninitialized';
+
+use Carp;
+use Getopt::Long;
+use File::Basename;
+use Vcf;
+
+my ($filterfile, $vcffile, $help);
+ 
+GetOptions(
+        'f|filter=s'    =>  \$filterfile,
+        'h|help'        =>  \$help,
+        );
+ 
+$vcffile = $ARGV[0];
+
+my $appname=basename($0);
+(-s $filterfile && !$help) or die <<USAGE;
+    Usage: $appname   --filter my_filter_file vcf_to_filter
+                
+                --filter <file specifying filters to apply>
+                --help   <this message>
+
+Applies user-specified filters to a vcf file.
+
+These are soft filters, and just mark-up the FILTER column in the vcf.
+
+Filter file is specified as tab-separated fields:
+type (snp,indel, or all)
+info field to filter
+operator (<,>,<=,>=,=, !=)
+threshold
+FILTER tag (e.g. DP)
+Description for header
+
+NB filter file specifies what FAIL the filter, i.e. are filtered out, e.g.
+DP < 4.0 would be filtered if DP == 5.
+
+USAGE
+ 
+# dispatch table for filter operations
+my %do_filter = (
+                    '<'     => sub { $_[0] < $_[1] },
+                    '>'     => sub { $_[0] > $_[1] },
+                    '<='    => sub { $_[0] <= $_[1] },
+                    '>='    => sub { $_[0] >= $_[1] },
+                    '!='    => sub { $_[0] != $_[1] },
+                    '='     => sub { $_[0] == $_[1] },
+                    '=='    => sub { $_[0] == $_[1] },
+                );
+my $vcf = $vcffile ? Vcf->new(file=>$vcffile) : Vcf->new(fh=>\*STDIN);
+
+my @desc;
+my $filters = parse_filters($filterfile,\@desc);
+my $source_header = "$appname -f ".basename($filterfile);
+$source_header .= " ".basename($vcffile) if $vcffile;
+
+write_header($vcf, \@desc, $source_header);
+apply_filters($vcf, $filters);
+
+exit;
+
+###############################################################################
+###############################################################################
+###############################################################################
+
+sub error {
+    my (@msg) = @_;
+    confess @msg;
+}
+
+
+sub write_header {
+    my ($vcf, $descs, $source) = @_;
+    $vcf->parse_header();
+    for my $desc (@$descs)
+    {
+        $vcf->add_header_line($desc,silent=>1);
+    }
+    $vcf->add_header_line({key=>'source',value=>$source},append=>'timestamp');
+    print $vcf->format_header();
+}
+
+
+sub parse_filters {
+    my ($filterfile, $descs) = @_;
+    open (my $FILT, "$filterfile") or error("Can't open filterfile: $filterfile");
+    my %filters;
+    while (<$FILT>){
+        chomp;
+        my ($type, $field, $operator, $threshold, $key, $desc) = split "\t", $_;
+        # e.g. SNP    DP    <    4.0    MinDP    Minimum read depth allowed at locus
+
+        $type = lc($type);
+        $type =~ s/\s+//g;
+        $operator =~ s/\s+//g;
+        unless ($type){
+            $type = 'all';
+        }
+        unless ($type eq 'all' or $type eq 'snp' or $type eq 'indel'){
+            error ("Don't recognise filter type $type");
+        }
+        unless ($key){
+            error("Can't recognise filter line: $_");
+        }
+        unless (exists $do_filter{$operator}){
+            error ("Operator '$operator' not recognised");
+        }
+
+        # commented out, as need to implement this as field/operator not just
+        # field so can have min and max filters on same field
+        #if (exists($filters{'all'}{$field}) || exists($filters{$type}{$field})){
+        #    error ("More than one filter specified for $field");
+        #}
+        push@{$filters{$type}{$field}}, {   op => $operator,
+                                            value => $threshold,
+                                            key => $key
+                                        };
+
+        push @$descs, {key=>'FILTER',ID=>$key,Description=>"$desc [$field $operator $threshold]"};
+    }
+    close ($FILT);
+    return \%filters;
+}
+
+
+
+sub apply_filters {
+    my ($vcf, $filters) = @_;
+
+    while (my $line = $vcf->next_line()) {
+        chomp $line;
+        my @rec = split(/\t/,$line);
+        my %fields = map { my($key,$val) = split(/=/, $_);$key=>$val;}
+                                            split(/;/, $rec[7]);
+        # add in QUAL
+        $fields{'QUAL'} = $rec[5];
+
+        # add in Genotype fields:
+        my @format = map { "GENOTYPE/$_"} split (":",$rec[8]);
+        my @gtvals = split (":", $rec[9]);
+        @fields{@format} = @gtvals;
+        #use Data::Dumper;
+        #die Dumper (\%fields);
+
+        my $ref = $rec[3];
+        my $alt = $rec[4];
+        my $is_snp = 0;
+        my $is_indel = 0;
+
+        # handle tri-allelic loci
+        foreach my $allele (split ',', $alt){
+            my ($type,$len,$ht) = $vcf->event_type($ref,$allele);
+            if ($type eq 'i'){
+                $is_indel++;
+            } elsif ($type eq 's'){
+                $is_snp++;
+            }
+            elsif ($type eq 'o'){
+                warn "event type o: $line\n";
+            }
+        }
+
+        my %apply;
+        
+        # let Vcf.pm identify the type of variant
+        if ( ! $is_snp && ! $is_indel){
+            # do nothing - this is reference
+            next;
+        }
+        # we have a variant, so:
+        filter_line(\%fields, $filters->{'all'},\%apply);
+
+        if ($is_indel){
+            filter_line(\%fields, $filters->{'indel'}, \%apply);
+        }
+
+        if ($is_snp){
+            # all the snp, unknown, other stuff - filter away!
+            filter_line(\%fields, $filters->{'snp'}, \%apply);
+        }
+
+        if ( scalar keys %apply ){
+            $rec[6] = $vcf->add_filter($rec[6],%apply);
+        }
+        # output
+        print join("\t",@rec) . "\n";
+    }
+
+}
+
+
+sub filter_line {
+    my ($fields, $filters, $filterstate) = @_;
+    foreach my $field (keys %$filters){
+        # skip if no such field to filter on?
+        next unless exists $fields->{$field};
+        foreach my $filt (@{$filters->{$field}}){
+            #print $filt->{key},":",$field,"(",$fields->{$field},") ",$filt->{op}," ",$filt->{value}," : ";
+            $filterstate->{$filt->{key}} = $do_filter{$filt->{op}}->($fields->{$field},$filt->{value});
+        }
+    }
+}
+

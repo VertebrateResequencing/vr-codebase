@@ -5,15 +5,10 @@ BEGIN{
     my $ROOT = '/software/vertres/lib/all';
     my $VERSION = '64';
     unshift(@INC, "$ROOT/bioperl-1.2.3/lib/site_perl/5.8.8");
-# no vertres 64
-    unshift(@INC, "/lustre/scratch106/user/cj5/ensembl_64/ensembl/modules");
-    unshift(@INC, "/lustre/scratch106/user/cj5/ensembl_64/ensembl-variation/modules");
-    unshift(@INC, "/lustre/scratch106/user/cj5/ensembl_64/ensembl-compara/modules");
-    unshift(@INC, "/lustre/scratch106/user/cj5/ensembl_64/ensembl-functgenomics/modules");
-#    unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl/modules");
-#    unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-variation/modules");
-#    unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-compara/modules");
-#    unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-functgenomics/modules");
+    unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl/modules");
+    unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-variation/modules");
+    unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-compara/modules");
+    unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-functgenomics/modules");
 }
 
 =head1 LICENSE

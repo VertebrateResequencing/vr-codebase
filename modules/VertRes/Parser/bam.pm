@@ -449,10 +449,14 @@ sub program_info {
 =head2 program
 
  Title   : program
- Usage   : my $program = $obj->program();
- Function: Return the program used to do the mapping, as given in the header.
+ Usage   : my $program_id = $obj->program();
+ Function: Return the ID of the program used to do the mapping, as given in
+           the header.
            If there is more than 1 PG header line, tries to guess which one is
            for the mapping program.
+           If you want the program name, use program_info, find the PG line
+           with the program id from this function, then pull out PN from the
+           hash.
  Returns : string (undef if no header or not given in header)
  Args    : n/a
 
@@ -482,19 +486,11 @@ sub _guess_mapping_program {
         
         my (@known_prg,@unknown_prg);
         for my $program (@programs) {
-            if ($program =~ /bwa|maq|ssaha|bfast|stampy/i) {
-                if (exists $info{$program}{PN}){
-                    push @known_prg, $info{$program}{PN};
-                } else {
-                    push @known_prg, $program;
-                }
+            if ($program =~ /bwa|maq|ssaha|bfast|stampy/) {
+                push @known_prg, $program;
             }
             elsif ($program !~ /GATK/) {
-                if (exists $info{$program}{PN}){
-                    push @unknown_prg, $info{$program}{PN};
-                } else {
-                    push @unknown_prg, $program;
-                }
+                push @unknown_prg, $program;
             }
         }
 

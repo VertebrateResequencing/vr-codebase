@@ -5,15 +5,11 @@
 use strict;
 use warnings;
 use Carp;
-use DBI;
 use Data::Dumper; 
 use Getopt::Long;
 use Benchmark;
-
 use Vcf;
 use GranthamMatrix;
-use DB_File;
-$DB_HASH->{'cachesize'}=2000000000;
 
 =pod
 foreach( keys( %INC ) )
@@ -22,19 +18,22 @@ foreach( keys( %INC ) )
 }
 =cut
 
-my ($input_vcf, $complement, $index_vcf, $help, $vep_input, $gerp_cache_dir, $grantham, $passonly);
+my ($input_vcf, $index_vcf, $help, $vep_input, $gerp_cache_dir, $buffer_size, $grantham);
 
 GetOptions
 (
     "v|vcf=s"       => \$input_vcf,
     "i|vep=s"    => \$vep_input,
     "g|gerp=s"    => \$gerp_cache_dir,
+    "b|buffer=i"    => \$buffer_size,
     "r|grantham"    => \$grantham,
     "h|help"        => \$help
 );
 
 my $missing = 0;
 if( ! $vep_input || $help ){$missing = 1;}
+
+$buffer_size = 1000 unless ($buffer_size);
 
 if( $missing )
 {
@@ -43,8 +42,9 @@ This is a script to call consequences on a set of SNPs in a VCf file
 by querying Ensembl
 Usage:
     -v --vcf <string>       VCF input file
-    -i --vep                Input from Ensembl VEP
-    -g --gerp               OPTIONAL: location of DB_File cached gerp scores
+    -i --vep                Text Input file from Ensembl VEP
+    -g --gerp               OPTIONAL: If GERP scores required, location of cached gerp score bed files
+    -b --buffer             OPTIONAL: Number of rows of the gerp scores bed file to buffer (default = 1000)
     -r --grantham           OPTIONAL: Add Grantham matrix score to consequences for nsSNPS
     -h --help               Print this message
 ];
@@ -53,12 +53,20 @@ Usage:
 
 my $t0 = Benchmark->new;
 my $grantham_matrix = GranthamMatrix->new() if $grantham;
-my $vep_cache = { chr=>'0', pos=>'0', conseq=>{}};
-my $gerp_cache = { blocksize => 10000000, chr=>'', block=>'', scores=>{}};
+my $current_chr='';
+my $vep_cache = {};
+my $gerp_cache = {chr=>'', block=>'', scores=>{}};
 
 open VEP_FILE, $vep_input or die $!;
 our $vep_rec = <VEP_FILE>;
+our ($vep_version,$api_version);
 while ($vep_rec =~ /^#/) {
+	if ($vep_rec =~ /## ENSEMBL VARIANT EFFECT PREDICTOR (\S+)$/) {
+		 $vep_version=$1;
+	}
+	if ($vep_rec =~ /## Using API version (\d+),/) {
+		 $api_version=$1;
+	}
 	$vep_rec = <VEP_FILE>;
 }
 
@@ -70,8 +78,6 @@ close(VEP_FILE);
     
 exit;
 
-#------------------------------
-
 sub parse_vcf
 {
     my $tp0 = Benchmark->new;
@@ -79,7 +85,7 @@ sub parse_vcf
 
     my $vcf = defined $input_vcf ? Vcf->new(file=>$input_vcf) : Vcf->new(fh=>\*STDIN);
     $vcf->parse_header();
-    $vcf->add_header_line({key=>'INFO',ID=>'CSQ',Number=>-1,Type=>'String',Description=>"Consequence of the ALT alleles from Ensembl VEP"});
+    $vcf->add_header_line({key=>'INFO',ID=>'CSQ',Number=>-1,Type=>'String',Description=>"Consequence of the ALT alleles from Ensembl $api_version VEP $vep_version"});
     print $vcf->format_header();
 
     my $lines = 0;
@@ -87,7 +93,7 @@ sub parse_vcf
     while( my $rec = $vcf->next_data_array() )
     {
         #print STDERR "CHR: ", $$rec[0], ", POS: ", $$rec[1], ", REF: ", $$rec[3], ", ALTS: ", $$rec[4], "\n";
-		process_rec($vcf,$rec);
+		process_vcf_rec($vcf,$rec);
         
         $lines ++;
     }
@@ -95,10 +101,10 @@ sub parse_vcf
     my $tp1 = Benchmark->new;
     my $tpd = timediff($tp1, $tp0);
     print STDERR "Processing $lines lines took:",timestr($tpd),"\n";    
+	$vcf->close();
 }
 
-
-sub process_rec
+sub process_vcf_rec
 {
     my ($vcf,$rec) = @_;
 	my $chr = $$rec[0];
@@ -106,75 +112,89 @@ sub process_rec
 	my $alleles = join("/",$$rec[3],$$rec[4]);
     my $vcfkey = join("_", $chr,$pos,$alleles);
 
-	if ($chr ne $vep_cache->{chr} or $pos != $vep_cache->{pos}) {
-		fetch_vep_conseq($vcfkey);
+	my $var_key;
+	if ($$rec[2] ne '.') { # rs id
+		$var_key = $$rec[2];
+	}
+	else { # novel variant
+		$var_key = $alleles;
+		$var_key =~ s/,/\//g;	#  A/T,G = A/T/G in vep output
+	}
+
+	if ($chr ne $current_chr) {
+    	print STDERR "Processing chr $chr\n";    
+		load_vep_cache($chr);
+		$current_chr=$chr;
+	}
+
+	# Search for novel indels offset in vep output eg CAA/CNNNNNNNAA at 10108 in vcf is reported as AA/NNNNNNNAA at 10109 by vep
+	if ($$rec[7] =~ '^INDEL' && $$rec[2] eq '.') {
+
+		$alleles =~ s/,/\//g;	#  NT  N,NTCT keyed by vep as T/-/TCT
+		my @indel_alleles;
+		foreach (split(/\//,$alleles)) {
+			$_ =  substr($_,1) or $_ = '-';
+			push (@indel_alleles, $_);
+
+		}
+		my $indel_alleles = join("/",@indel_alleles);
+
+		if ($vep_cache->{$pos+1}{$indel_alleles}) {
+			push (@{$vep_cache->{$pos}{$var_key}},@{$vep_cache->{$pos+1}{$indel_alleles}});
+		}
 	}
 
 	if ($gerp_cache_dir && $$rec[7] !~ '^INDEL') {
-			my $gerp_csq;
-			if ($chr ne $gerp_cache->{chr} or int($pos/$gerp_cache->{blocksize}) != $gerp_cache->{block}) {
-				$gerp_cache->{chr} = $chr;
-				$gerp_cache->{block} = int($pos/$gerp_cache->{blocksize});
+		if ($chr ne $gerp_cache->{chr} or int($pos/$buffer_size) != $gerp_cache->{block}) {
 
-				# eg "<dir>/gerp.X.1.dbf";
-				my $dbf = join('.', "$gerp_cache_dir/gerp", $gerp_cache->{chr}, $gerp_cache->{block}, "dbf");
+			$gerp_cache->{chr} = $chr;
+			$gerp_cache->{block} = int($pos/$buffer_size);
+			$gerp_cache->{scores} = ();
 
-				%{$gerp_cache->{scores}}=();
-				my $db = tie %{$gerp_cache->{scores}}, "DB_File", $dbf, O_RDONLY, 0666, $DB_HASH or die "Cannot tie $dbf: $!\n";
+			# eg "<dir>/gerp_score.22.bed.gz"
+			my $bed = join('.', "$gerp_cache_dir/gerp_score", $gerp_cache->{chr}, "bed.gz");
+			my $from = $gerp_cache->{block} * $buffer_size;
+			my $to = (1+$gerp_cache->{block}) * $buffer_size;
+			my @index_search = `tabix -p bed $bed $chr:${from}-${to}`;
+			for (@index_search) {
+				my @line = split("\t", $_);
+				$gerp_cache->{scores}->{$line[1]} = $line[3];
 			}
-			my $score = $gerp_cache->{scores}->{$pos};
-			if ($score) {
-				$gerp_csq = sprintf ("GERP,%.2f", $score);
-			}
-			else {
-				$gerp_csq = "GERP,undef";
-			}
-			push (@{$vep_cache->{conseq}{$alleles}},$gerp_csq);
+		}
+		my $score = $gerp_cache->{scores}->{$pos};
+		if ($score) {
+			my $gerp_csq = sprintf ("GERP,%.2f", $score);
+			push (@{$vep_cache->{$pos}{$var_key}},$gerp_csq);
+		}
 	}
 
-	if ($vep_cache->{conseq}{$alleles}) {
-		my $conseqences = join('+',sort @{$vep_cache->{conseq}{$alleles}});
+	if ($vep_cache->{$pos}{$var_key}) {
+		my $conseqences = join('+',sort @{$vep_cache->{$pos}{$var_key}});
     	$$rec[7] = $vcf->add_info_field($$rec[7],'CSQ'=>$conseqences);
 	}
 
 	print join("\t",@$rec)."\n";
 }
 
-sub fetch_vep_conseq
+sub load_vep_cache
 {
-    my ($vcfkey) = @_;
-	my ($chr,$pos,$alleles) = split("_",$vcfkey);
-	#print "fetch_vep_conseq for: $chr,$pos,$alleles, vep_rec=$vep_rec\n";
+    my ($chr) = @_;
+	$vep_cache = ();
 
-	$vep_cache->{chr}=$chr;
-	$vep_cache->{pos}=$pos;
-	$vep_cache->{conseq} = ();
+	return if !$vep_rec;
+	my $rec = parse_rec($vep_rec);
 
-	chomp $vep_rec;
-	my ($vep_key, $Location, $Allele, $Gene, $Feature, $Feature_type, $Consequence, $cDNA_position, $CDS_position, $Protein_position, $Amino_acids, $Codons, $Existing_variation, $Extra) = split("\t",$vep_rec);
-
-	my ($vep_chr,$vep_pos,$vep_alleles) = split("_", $vep_key);
-	
-	while ($vep_chr ne $chr or $vep_pos < $pos) {
+	while ($rec && $rec->{vep_chr} ne $chr) {
 		$vep_rec = <VEP_FILE>;
-		($vep_key, $Location, $Allele, $Gene, $Feature, $Feature_type, $Consequence, $cDNA_position, $CDS_position, $Protein_position, $Amino_acids, $Codons, $Existing_variation, $Extra) = split("\t",$vep_rec);
-		($vep_chr,$vep_pos,$vep_alleles) = split("_", $vep_key);
+		last if !$vep_rec;
+		$rec = parse_rec($vep_rec);
 	}
 
-	while ($vep_chr eq $chr && $vep_pos == $pos) {
+	while ($rec && $rec->{vep_chr} eq $chr) {
 
-		if ( $Consequence eq 'DOWNSTREAM' or $Consequence eq 'UPSTREAM' or $Consequence eq 'INTERGENIC' ) {
-			$vep_rec = <VEP_FILE>;
-			last if !$vep_rec;
-			chomp $vep_rec;
-			($vep_key, $Location, $Allele, $Gene, $Feature, $Feature_type, $Consequence, $cDNA_position, $CDS_position, $Protein_position, $Amino_acids, $Codons, $Existing_variation, $Extra) = split("\t",$vep_rec);
-			($vep_chr,$vep_pos,$vep_alleles) = split("_", $vep_key);
-			next;
-		}
-
-		my $gene_name="";
+		my $gene_name=$rec->{Gene}; # Default to ENSG id
 		my ($sift_pred,$polyphen_pred,$condel_pred);
-		my @extra_cols = split(/;/, $Extra);	# eg PolyPhen=unknown(0);SIFT=tolerated(0.56);HGNC=RERE
+		my @extra_cols = split(/;/, $rec->{Extra});	# eg PolyPhen=unknown(0);SIFT=tolerated(0.56);HGNC=RERE
 		foreach (@extra_cols) {
 			my ($key,$val) = split(/=/);
 			$gene_name = $val if $key eq 'HGNC';
@@ -183,43 +203,55 @@ sub fetch_vep_conseq
 			$condel_pred = "$key,$val" if $key eq 'Condel';
 		}
 
-		my $consequence = "$Feature";
-		$consequence .= ":$gene_name" if $gene_name;
-		$consequence .= ":$Consequence";
+		my $consequence = $rec->{Feature};
+		$consequence .= ":$gene_name";
+		$consequence .= ":" . $rec->{Consequence};
 
-		if ( $Consequence eq 'NON_SYNONYMOUS_CODING') {
+		if ( $rec->{Consequence} eq 'NON_SYNONYMOUS_CODING') {
 			my $protein_pred="";
 			$protein_pred .= ":$sift_pred" if $sift_pred;
 			$protein_pred .= ":$polyphen_pred" if $polyphen_pred;
 			$protein_pred .= ":$condel_pred" if $condel_pred;
 
-			if ($grantham) {
-				my ($ref_aa,$var_aa) = split(/\//,$Amino_acids);
-				print STDERR "[GERP:$vep_key,$Amino_acids,$ref_aa,$var_aa]\n";
-				$protein_pred .= ":Grantham," . $grantham_matrix->score($ref_aa,$var_aa);
+			if ($grantham && $rec->{Amino_acids} !~ '-') {
+				my ($ref_aa,$var_aa) = split(/\//,$rec->{Amino_acids});
+				if (length($ref_aa) == 1 && length($var_aa) == 1) {
+					$protein_pred .= ":Grantham," . $grantham_matrix->score($ref_aa,$var_aa);
+				}
 			}
-			$Amino_acids =~ s/\//>/;
+			$rec->{Amino_acids} =~ s/\//>/;
 
-			$consequence .= ":$Amino_acids" if $Amino_acids ne '-';
+			$consequence .= ":" . $rec->{Amino_acids} if $rec->{Amino_acids} ne '-';
 			$consequence .= $protein_pred if $protein_pred ne "";
 		}
 
-		# Fix to split WITHIN_NON_CODING_GENE,INTRONIC ?
-#		if ($consequence =~ 'WITHIN_NON_CODING_GENE,INTRONIC') {
-#			$consequence =~ s/WITHIN_NON_CODING_GENE,INTRONIC/WITHIN_NON_CODING_GENE/;
-#			push (@{$vep_cache->{conseq}{$vep_alleles}},$consequence);
-#			$consequence =~ s/WITHIN_NON_CODING_GENE/INTRONIC/;
-#		}
-
-		push (@{$vep_cache->{conseq}{$vep_alleles}},$consequence);
+		push (@{$vep_cache->{$rec->{vep_pos}}{$rec->{variant_id}}},$consequence);
 
 		$vep_rec = <VEP_FILE>;
 		last if !$vep_rec;
-		chomp $vep_rec;
-		($vep_key, $Location, $Allele, $Gene, $Feature, $Feature_type, $Consequence, $cDNA_position, $CDS_position, $Protein_position, $Amino_acids, $Codons, $Existing_variation, $Extra) = split("\t",$vep_rec);
-		($vep_chr,$vep_pos,$vep_alleles) = split("_", $vep_key);
+		$rec = parse_rec($vep_rec);
 	}
+	#print "CACHE $chr:", Dumper(sort $vep_cache);
+}
 
-	#print "CACHE $chr:$pos ", Dumper($vep_cache->{conseq});
+sub parse_rec {
+	# parse vep output record into a hash of fields
+
+	my ($vep_rec) = @_;
+	return  if !$vep_rec;
+
+	my %rec;
+	chomp $vep_rec;
+	($rec{vep_key}, $rec{Location}, $rec{Allele}, $rec{Gene}, $rec{Feature}, $rec{Feature_type}, $rec{Consequence}, $rec{cDNA_position}, $rec{CDS_position}, $rec{Protein_position}, $rec{Amino_acids}, $rec{Codons}, $rec{Existing_variation}, $rec{Extra}) = split("\t",$vep_rec);
+
+	# vep key is either rs id or format 1_8482797_T/C
+	if ($rec{vep_key} =~ /^rs/) {
+		$rec{variant_id} = $rec{vep_key};
+		($rec{vep_chr},$rec{vep_pos}) = split(":",$rec{Location});
+	}
+	else {
+		($rec{vep_chr},$rec{vep_pos},$rec{variant_id}) = split("_", $rec{vep_key});
+	}
+	return \%rec;
 }
 
