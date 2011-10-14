@@ -139,7 +139,9 @@ sub find_files_by_run_lane {
             $path = $1;
         }
         if (/^dataObj: (.+)$/){
-            push @out, "$path/$1";
+            my $bamfile = $1;
+            next if ($bamfile =~ m/_phix/);
+            push @out, "$path/$bamfile";
         }
     }
     close $irods;
