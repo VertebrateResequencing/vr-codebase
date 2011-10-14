@@ -401,7 +401,7 @@ sub optimise_parameters
 
       my $kmer = $self->calculate_kmer_size();
       
-      my $memory_required_mb = $self->estimate_memory_required($output_directory, $kmer->{min})/1000;
+      my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer->{min})/1000);
       my $queue = 'long';
       if($memory_required_mb > 35000)
       {
@@ -536,7 +536,7 @@ sub optimise_parameters_with_reference
       my $kmer = $self->calculate_kmer_size();
 
       
-      my $memory_required_mb = $self->estimate_memory_required($output_directory, $kmer->{min})/1000;
+      my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer->{min})/1000);
       my $queue = 'long';
       if($memory_required_mb > 35000)
       {
