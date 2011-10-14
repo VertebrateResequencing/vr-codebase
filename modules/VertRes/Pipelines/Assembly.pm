@@ -211,7 +211,7 @@ sub map_back
   \$assembler_util->throw("Couldnt convert from sam to BAM") unless(-e "\$directory/contigs.mapped.bam");
   unlink("\$directory/contigs.mapped.sam");
   
-  `samtools sort -m 4000000000 \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
+  `samtools sort -n -m 4000000000 \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
   \$assembler_util->throw("Couldnt sort the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam");
   
   `samtools index \$directory/contigs.mapped.sorted.bam`;
@@ -329,7 +329,7 @@ sub map_back_with_reference
   \$assembler_util->throw("Couldnt convert from sam to BAM") unless(-e "\$directory/contigs.mapped.bam");
   unlink("\$directory/contigs.mapped.sam");
   
-  `samtools sort -m 4000000000 \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
+  `samtools sort -n -m 4000000000 \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
   \$assembler_util->throw("Couldnt sort the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam");
   
   `samtools index \$directory/contigs.mapped.sorted.bam`;
@@ -430,7 +430,6 @@ my \$assembler = $assembler_class->new(
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
 
-\$assembler->throw("optimising parameters for assembler failed - try again?") unless( -e \$assembler->optimised_directory()."/_$self->{assembler}_optimise_parameters_done");
 system('touch _$self->{assembler}_optimise_parameters_done');
 exit;
               };
@@ -566,7 +565,6 @@ my \$assembler = $assembler_class->new(
 
 my \$ok = \$assembler->optimise_parameters_with_reference($num_threads);
 
-\$assembler->throw("optimising parameters for assembler failed - try again?") unless( -e \$assembler->optimised_with_reference_directory()."/_$self->{assembler}_optimise_parameters_with_reference_done");
 system('touch _$self->{assembler}_optimise_parameters_with_reference_done');
 exit;
               };

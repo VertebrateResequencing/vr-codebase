@@ -54,7 +54,7 @@ sub new {
 =cut
 
 sub find_module {
-    my ($self, $arg) = @_;
+    my ($self) = @_;
     return "VertRes::Utils::Assemblers::".$self->{assembler};
 }
 
@@ -120,7 +120,7 @@ sub generate_stats
   my @files = grep {/\.fa$/} readdir(DIR);
   for my $file(@files)
   {
-    next unless(-e $file);
+    next unless(-e $directory.'/'.$file);
     system("stats $directory/$file > $directory/$file.stats");
     # Use the GC plots from the QC pipeline instead
     system("~mh12/git/python/fastn2gc.py $directory/$file $directory/$file.png")
