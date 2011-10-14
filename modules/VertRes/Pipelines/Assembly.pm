@@ -196,8 +196,8 @@ sub map_back
   
   my \$directory = \$assembler_util->optimised_directory();
  
-  next unless(-e "\$directory/_$self->{assembler}_optimise_parameters_done");
-  next if( -e "\$directory/_$self->{assembler}_plot_bamcheck_done");
+  if( (-e "\$directory/_$self->{assembler}_optimise_parameters_done") && !( -e "\$directory/_$self->{assembler}_plot_bamcheck_done")
+  {
   my \$mapper = VertRes::Wrapper::smalt->new();
   \$mapper->setup_reference("\$directory/contigs.fa");
   
@@ -227,6 +227,7 @@ sub map_back
   system("touch \$directory/_$self->{assembler}_plot_bamcheck_done");
  
   system("touch _$self->{assembler}_plot_bamcheck_done");
+}
   exit;
                 };
   close $scriptfh;
@@ -314,8 +315,8 @@ sub map_back_with_reference
   
   my \$directory = \$assembler_util->optimised_with_reference_directory();
  
-  next unless(-e "\$directory/_$self->{assembler}_optimise_parameters_with_reference_done");
-  next if( -e "\$directory/_$self->{assembler}_plot_bamcheck_with_reference_done");
+  if((-e "\$directory/_$self->{assembler}_optimise_parameters_with_reference_done") && !( -e "\$directory/_$self->{assembler}_plot_bamcheck_with_reference_done"))
+  {
   my \$mapper = VertRes::Wrapper::smalt->new();
   \$mapper->setup_reference("\$directory/contigs.fa");
   
@@ -345,6 +346,7 @@ sub map_back_with_reference
   system("touch \$directory/_$self->{assembler}_plot_bamcheck_with_reference_done");
  
   system("touch _$self->{assembler}_plot_bamcheck_with_reference_done");
+}
   exit;
                 };
   close $scriptfh;
