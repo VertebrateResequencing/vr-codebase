@@ -314,8 +314,8 @@ sub map_back_with_reference
   }
   
   my \$directory = \$assembler_util->optimised_with_reference_directory();
- 
-  if((-e "\$directory/_$self->{assembler}_optimise_parameters_with_reference_done") && !( -e "\$directory/_$self->{assembler}_plot_bamcheck_with_reference_done"))
+
+  if((-e "\$directory/_$self->{assembler}_optimised_with_reference_done") && !( -e "\$directory/_$self->{assembler}_plot_bamcheck_with_reference_done"))
   {
   my \$mapper = VertRes::Wrapper::smalt->new();
   \$mapper->setup_reference("\$directory/contigs.fa");
