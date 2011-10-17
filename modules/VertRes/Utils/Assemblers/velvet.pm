@@ -34,6 +34,7 @@ package VertRes::Utils::Assemblers::velvet;
 
 use strict;
 use warnings;
+use VertRes::Wrapper::smalt;
 
 use base qw(VertRes::Utils::Assembly);
 
@@ -103,6 +104,57 @@ sub optimised_directory
   return "$self->{output_directory}/velvet_assembly";
 }
 
+
+sub map_and_generate_stats
+{
+   my ($self, $directory, $output_directory, $lane_paths) = @_;
+   
+   my $forward_fastq = '';
+   my $reverse_fastq = '';
+   
+   for my $lane_path ( @$lane_paths)
+   {
+     $forward_fastq .= $lane_path.'_1.fastq.gz ';
+     $reverse_fastq .= $lane_path.'_2.fastq.gz ';
+   }
+
+   unless( -e "$output_directory/forward.fastq")
+   {
+     `gzip -cd $forward_fastq  > $output_directory/forward.fastq`;
+   }
+   unless(-e "$output_directory/reverse.fastq")
+   {
+     `gzip -cd $reverse_fastq  > $output_directory/reverse.fastq`;
+   }
+
+   my $mapper = VertRes::Wrapper::smalt->new();
+   $mapper->setup_reference("$directory/contigs.fa");
+
+   `smalt map -x -i 3000 -f samsoft -y 0.95 -o $directory/contigs.mapped.sam $directory/contigs.fa.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
+   $self->throw("Sam file not created") unless(-e "$directory/contigs.mapped.sam");
+
+   `ref-stats -r $directory/contigs.fa > $directory/contigs.fa.refstats`;
+   `samtools faidx $directory/contigs.fa`;
+   $self->throw("Reference index file not created") unless(-e "$directory/contigs.fa.fai");
+
+   `samtools view -bt $directory/contigs.fa.fai $directory/contigs.mapped.sam > $directory/contigs.mapped.bam`;
+   $self->throw("Couldnt convert from sam to BAM") unless(-e "$directory/contigs.mapped.bam");
+   unlink("$directory/contigs.mapped.sam");
+
+   `samtools sort -m 4000000000 $directory/contigs.mapped.bam $directory/contigs.mapped.sorted`;
+   $self->throw("Couldnt sort the BAM") unless(-e "$directory/contigs.mapped.sorted.bam");
+
+   `samtools index $directory/contigs.mapped.sorted.bam`;
+   $self->throw("Couldnt index the BAM") unless(-e "$directory/contigs.mapped.sorted.bam.bai");
+
+   `bamcheck -r $directory/contigs.fa $directory/contigs.mapped.sorted.bam >  $directory/contigs.mapped.sorted.bam.bc`;
+
+   `plot-bamcheck -p $directory/qc_graphs/ -r $directory/contigs.fa.refstats $directory/contigs.mapped.sorted.bam.bc`;
+   $self->generate_stats($directory);
+   unlink("$directory/contigs.mapped.bam");
+  
+  
+}
 
 =head2 generate_files_str
 

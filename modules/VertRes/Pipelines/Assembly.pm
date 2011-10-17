@@ -143,104 +143,18 @@ sub map_back_provides
 {
    my ($self) = @_;
 
-   return [$self->{lane_path}."/".$self->{prefix}.$self->{assembler}.'_plot_bamcheck_done'];
+   return [$self->{lane_path}."/".$self->{prefix}.$self->{assembler}.'_map_back_done'];
 
 }
 
 sub map_back
 {
   my ($self, $build_path, $action_lock) = @_;
-  my $assembler_class = $self->{assembler_class};
-  my $output_directory = $self->{lane_path};
-  eval("use $assembler_class; ");
-  my $assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
-  my $base_path = $self->{lane_path}.'/../../seq-pipelines';
+  $self->mapping_and_generate_stats($build_path, $action_lock, "optimised_directory", "map_back");
   
-  my $job_name = $self->{prefix}.$self->{assembler}."_map_back";
-  my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_map_back.pl");
-  
-  my $lane_names = $self->get_all_lane_names($self->{pools});
-  my @lane_paths;
-  for my $lane_name (@$lane_names)
-  {
-    push(@lane_paths,$base_path.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_name).'/'.$lane_name);
-  }
-  my $lane_paths_str = '("'.join('","', @lane_paths).'")';
-
-  open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
-  print $scriptfh qq{
-  use strict;
-  use $assembler_class;
-  use VertRes::Wrapper::smalt;
-    
-  my \$forward_fastq = '';
-  my \$reverse_fastq = '';
-  my \@lane_paths = $lane_paths_str;
-  
-  my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
-
-  for my \$lane_path ( \@lane_paths)
-  {
-    \$forward_fastq .= \$lane_path.'_1.fastq.gz ';
-    \$reverse_fastq .= \$lane_path.'_2.fastq.gz ';
-  }
-  
-  unless( -e "$output_directory/forward.fastq")
-  {
-    `gzip -cd \$forward_fastq  > $output_directory/forward.fastq`;
-  }
-  unless(-e "$output_directory/reverse.fastq")
-  {
-    `gzip -cd \$reverse_fastq  > $output_directory/reverse.fastq`;
-  }
-  
-  my \$directory = \$assembler_util->optimised_directory();
- 
-  if( (-e "\$directory/_$self->{assembler}_optimise_parameters_done") && !( -e "\$directory/_$self->{assembler}_plot_bamcheck_done"))
-  {
-  my \$mapper = VertRes::Wrapper::smalt->new();
-  \$mapper->setup_reference("\$directory/contigs.fa");
-  
-  `smalt map -x -i 3000 -f samsoft -o \$directory/contigs.mapped.sam \$directory/contigs.fa.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
-  \$assembler_util->throw("Sam file not created") unless(-e "\$directory/contigs.mapped.sam");
-  
-  `samtools faidx \$directory/contigs.fa`;
-  \$assembler_util->throw("Reference index file not created") unless(-e "\$directory/contigs.fa.fai");
-  
-  `samtools view -bt \$directory/contigs.fa.fai \$directory/contigs.mapped.sam > \$directory/contigs.mapped.bam`;
-  \$assembler_util->throw("Couldnt convert from sam to BAM") unless(-e "\$directory/contigs.mapped.bam");
-  unlink("\$directory/contigs.mapped.sam");
-  
-  `samtools sort -m 4000000000 \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
-  \$assembler_util->throw("Couldnt sort the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam");
-  
-  `samtools index \$directory/contigs.mapped.sorted.bam`;
-  \$assembler_util->throw("Couldnt index the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam.bai");
- 
-  `bamcheck -r \$directory/contigs.fa \$directory/contigs.mapped.sorted.bam >  \$directory/contigs.mapped.sorted.bam.bc`;
-  
-  `plot-bamcheck -p \$directory/qc_graphs/ \$directory/contigs.mapped.sorted.bam.bc`;
-  \$assembler_util->generate_stats(\$directory);
-  
-  unlink("\$directory/contigs.mapped.bam");
-  
-  system("touch \$directory/_$self->{assembler}_plot_bamcheck_done");
- 
-  system("touch _$self->{assembler}_plot_bamcheck_done");
-}
-  exit;
-                };
-  close $scriptfh;
-  
-  my $memory_required_mb = 5000;
-
-  LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
-
-  # we've only submitted to LSF, so it won't have finished; we always return
-  # that we didn't complete
   return $self->{No};
-  
 }
+
 
 ###########################
 # End map_back
@@ -262,21 +176,31 @@ sub map_back_with_reference_provides
 {
    my ($self) = @_;
 
-   return [$self->{lane_path}."/".$self->{prefix}.$self->{assembler}.'_plot_bamcheck_with_reference_done'];
+   return [$self->{lane_path}."/".$self->{prefix}.$self->{assembler}.'_map_back_with_reference_done'];
 
 }
 
 sub map_back_with_reference
 {
   my ($self, $build_path, $action_lock) = @_;
+  $self->mapping_and_generate_stats($build_path, $action_lock, "optimised_with_reference_directory", "map_back_with_reference");
+  
+  return $self->{No};
+  
+}
+
+sub mapping_and_generate_stats
+{
+  my ($self, $build_path, $action_lock, $working_directory_method_name, $action_name_suffix) = @_;
+  
   my $assembler_class = $self->{assembler_class};
   my $output_directory = $self->{lane_path};
   eval("use $assembler_class; ");
   my $assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
   my $base_path = $self->{lane_path}.'/../../seq-pipelines';
   
-  my $job_name = $self->{prefix}.$self->{assembler}."_map_back_with_reference";
-  my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_map_back_with_reference.pl");
+  my $job_name = $self->{prefix}.$self->{assembler}."_$action_name_suffix";
+  my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_$action_name_suffix.pl");
   
   my $lane_names = $self->get_all_lane_names($self->{pools});
   my @lane_paths;
@@ -290,63 +214,18 @@ sub map_back_with_reference
   print $scriptfh qq{
   use strict;
   use $assembler_class;
-  use VertRes::Wrapper::smalt;
     
-  my \$forward_fastq = '';
-  my \$reverse_fastq = '';
   my \@lane_paths = $lane_paths_str;
   
   my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
-
-  for my \$lane_path ( \@lane_paths)
-  {
-    \$forward_fastq .= \$lane_path.'_1.fastq.gz ';
-    \$reverse_fastq .= \$lane_path.'_2.fastq.gz ';
-  }
   
-  unless( -e "$output_directory/forward.fastq")
-  {
-    `gzip -cd \$forward_fastq  > $output_directory/forward.fastq`;
-  }
-  unless(-e "$output_directory/reverse.fastq")
-  {
-    `gzip -cd \$reverse_fastq  > $output_directory/reverse.fastq`;
-  }
+  my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
+  my \$directory = \$assembler_util->${working_directory_method_name}();
+  \$assembler_util->map_and_generate_stats(\$directory,qq[$output_directory], \\\@lane_paths );
   
-  my \$directory = \$assembler_util->optimised_with_reference_directory();
-
-  if((-e "\$directory/_$self->{assembler}_optimised_with_reference_done") && !( -e "\$directory/_$self->{assembler}_plot_bamcheck_with_reference_done"))
-  {
-  my \$mapper = VertRes::Wrapper::smalt->new();
-  \$mapper->setup_reference("\$directory/contigs.fa");
-  
-  `smalt map -x -i 3000 -f samsoft -o \$directory/contigs.mapped.sam \$directory/contigs.fa.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
-  \$assembler_util->throw("Sam file not created") unless(-e "\$directory/contigs.mapped.sam");
-  
-  `samtools faidx \$directory/contigs.fa`;
-  \$assembler_util->throw("Reference index file not created") unless(-e "\$directory/contigs.fa.fai");
-  
-  `samtools view -bt \$directory/contigs.fa.fai \$directory/contigs.mapped.sam > \$directory/contigs.mapped.bam`;
-  \$assembler_util->throw("Couldnt convert from sam to BAM") unless(-e "\$directory/contigs.mapped.bam");
-  unlink("\$directory/contigs.mapped.sam");
-  
-  `samtools sort -m 4000000000 \$directory/contigs.mapped.bam \$directory/contigs.mapped.sorted`;
-  \$assembler_util->throw("Couldnt sort the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam");
-  
-  `samtools index \$directory/contigs.mapped.sorted.bam`;
-  \$assembler_util->throw("Couldnt index the BAM") unless(-e "\$directory/contigs.mapped.sorted.bam.bai");
+  system("touch \$directory/_$self->{assembler}_${action_name_suffix}_done");
  
-  `bamcheck -r \$directory/contigs.fa \$directory/contigs.mapped.sorted.bam >  \$directory/contigs.mapped.sorted.bam.bc`;
-  
-  `plot-bamcheck -p \$directory/qc_graphs/ \$directory/contigs.mapped.sorted.bam.bc`;
-  \$assembler_util->generate_stats(\$directory);
-  
-  unlink("\$directory/contigs.mapped.bam");
-  
-  system("touch \$directory/_$self->{assembler}_plot_bamcheck_with_reference_done");
- 
-  system("touch _$self->{assembler}_plot_bamcheck_with_reference_done");
-}
+  system("touch _$self->{assembler}_${action_name_suffix}_done");
   exit;
                 };
   close $scriptfh;
@@ -354,12 +233,10 @@ sub map_back_with_reference
   my $memory_required_mb = 5000;
 
   LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
-
-  # we've only submitted to LSF, so it won't have finished; we always return
-  # that we didn't complete
-  return $self->{No};
   
 }
+
+
 
 ###########################
 # End map_back_with_reference
