@@ -152,7 +152,7 @@ USAGE
                 my $job_lock = qq[$rg.jids];
                 my $job_name = $rg.qq[.discovery];
                 my $is_running = LSF::is_job_running($job_lock);
-                if ($is_running & $LSF::Error) 
+                if ($is_running & $LSF::Error)
                 {
                     $retries{$job_lock} ++;
                     if( $retries{$job_lock} > $MAX_RETRIES )

@@ -7,7 +7,7 @@ use Getopt::Long;
 
 use Vcf;
 
-my ($input_vcf, $positions, $complement, $chromosome, $help);
+my ($input_vcf, $positions, $complement, $chromosome, $pass, $help);
 
 GetOptions
 (
@@ -15,6 +15,7 @@ GetOptions
 	"c|complement"      => \$complement,
     "chr|chromosome=s"  => \$chromosome,
 	"p|positions=s"	    => \$positions,
+	"pass|passed"		=> \$pass,
 	"h|help"		    => \$help
 );
 
@@ -48,8 +49,11 @@ while( my $line = $vcf->next_line() )
 {
 	chomp( $line );
 	if ( $line=~/^#/ ) { print qq[$line\n]; next; }
+
 	my @items = split(/\t/,$line);
 	
+	if( $pass && $items[ 6 ] !~ /PASS/){next;}
+
 	$variantsH{ $items[ 0 ] }{ $items[ 1 ] } = $line;
 	$lines ++;
 }

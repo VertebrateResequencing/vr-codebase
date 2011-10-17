@@ -153,6 +153,7 @@ sub process_vcf_rec
 
 			# eg "<dir>/gerp_score.22.bed.gz"
 			my $bed = join('.', "$gerp_cache_dir/gerp_score", $gerp_cache->{chr}, "bed.gz");
+			die "Cannot find $bed" unless -e $bed;
 			my $from = $gerp_cache->{block} * $buffer_size;
 			my $to = (1+$gerp_cache->{block}) * $buffer_size;
 			my @index_search = `tabix -p bed $bed $chr:${from}-${to}`;
