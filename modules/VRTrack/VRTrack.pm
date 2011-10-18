@@ -1172,7 +1172,7 @@ CREATE TABLE `mapstats` (
   PRIMARY KEY (`row_id`),
   KEY `mapstats_id` (`mapstats_id`),
   KEY `lane_id` (`lane_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 --
 -- Table structure for table `population`
