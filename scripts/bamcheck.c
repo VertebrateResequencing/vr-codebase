@@ -13,7 +13,7 @@
             the read length of 4.
 */
 
-#define BAMCHECK_VERSION "2011-10-14"
+#define BAMCHECK_VERSION "2011-10-17"
 
 #define _ISOC99_SOURCE
 #include <stdio.h>
@@ -603,7 +603,13 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
                 stats->igcd++;
 
                 if ( stats->igcd >= stats->ngcd )
-                    error("The genome too long?? [%ud]\n", stats->igcd);
+                {
+                    uint32_t n = 2*(1 + stats->ngcd);
+                    stats->gcd = realloc(stats->gcd, n*sizeof(gc_depth_t));
+                    if ( !stats->gcd )
+                        error("Could not realloc GCD buffer, too many chromosomes or the genome too long?? [%u %u]\n", stats->ngcd,n);
+                    memset(&(stats->gcd[stats->ngcd]),0,(n-stats->ngcd)*sizeof(gc_depth_t));
+                }
             }
 
             stats->gcd[ stats->igcd ].depth++;
@@ -750,17 +756,20 @@ void output_stats(stats_t *stats)
         }
         printf("\n");
     }
-    printf("# Mismatches per cycle and quality. Use `grep ^MPC | cut -f 2-` to extract this part.\n");
-    printf("# Columns correspond to qualities, rows to cycles. First column is the cycle number, the rest\n");
-    printf("# is the number of mismatches\n");
-    for (ibase=0; ibase<stats->max_len; ibase++)
+    if ( stats->mpc_buf )
     {
-        printf("MPC\t%d",ibase+1);
-        for (iqual=0; iqual<=stats->max_qual; iqual++)
+        printf("# Mismatches per cycle and quality. Use `grep ^MPC | cut -f 2-` to extract this part.\n");
+        printf("# Columns correspond to qualities, rows to cycles. First column is the cycle number, the rest\n");
+        printf("# is the number of mismatches\n");
+        for (ibase=0; ibase<stats->max_len; ibase++)
         {
-            printf("\t%ld", stats->mpc_buf[ibase*stats->nquals+iqual]);
+            printf("MPC\t%d",ibase+1);
+            for (iqual=0; iqual<=stats->max_qual; iqual++)
+            {
+                printf("\t%ld", stats->mpc_buf[ibase*stats->nquals+iqual]);
+            }
+            printf("\n");
         }
-        printf("\n");
     }
     printf("# GC Content of first fragments. Use `grep ^GCF | cut -f 2-` to extract this part.\n");
     for (ibase=0; ibase<stats->ngc; ibase++)
@@ -1003,7 +1012,7 @@ int main(int argc, char *argv[])
     stats.isize_other   = calloc(stats.nisize,sizeof(uint64_t));
     stats.gcd           = calloc(stats.ngcd,sizeof(gc_depth_t));
     stats.rseq_buf      = calloc(stats.nref_seq,sizeof(uint8_t));
-    stats.mpc_buf       = calloc(stats.nquals*stats.nbases,sizeof(uint64_t));
+    stats.mpc_buf       = stats.fai ? calloc(stats.nquals*stats.nbases,sizeof(uint64_t)) : NULL;
     stats.acgt_cycles   = calloc(4*stats.nbases,sizeof(uint64_t));
 
     // Collect statistics
