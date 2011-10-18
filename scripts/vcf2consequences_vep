@@ -128,7 +128,16 @@ sub process_vcf_rec
 	}
 
 	# Search for novel indels offset in vep output eg CAA/CNNNNNNNAA at 10108 in vcf is reported as AA/NNNNNNNAA at 10109 by vep
-	if ($$rec[7] =~ '^INDEL' && $$rec[2] eq '.') {
+
+	my $is_indel=0;
+	foreach my $allele (split ',', $$rec[4]){
+		my ($type,$len,$ht) = $vcf->event_type($$rec[3],$allele);
+		if ($type eq 'i'){
+			$is_indel++;
+		}
+	}
+
+	if ($is_indel > 0 && $$rec[2] eq '.') {
 
 		$alleles =~ s/,/\//g;	#  NT  N,NTCT keyed by vep as T/-/TCT
 		my @indel_alleles;
