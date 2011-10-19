@@ -153,7 +153,7 @@ sub process_vcf_rec
 		}
 	}
 
-	if ($gerp_cache_dir && $$rec[7] !~ '^INDEL') {
+	if ($gerp_cache_dir && $is_indel == 0) {
 		if ($chr ne $gerp_cache->{chr} or int($pos/$buffer_size) != $gerp_cache->{block}) {
 
 			$gerp_cache->{chr} = $chr;
