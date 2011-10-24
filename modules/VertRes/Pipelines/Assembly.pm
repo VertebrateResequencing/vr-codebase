@@ -165,7 +165,7 @@ sub scaffold_provides
 sub scaffold
 {
   my ($self, $build_path, $action_lock) = @_;
-  $self->scaffold_with_sspace($build_path, $action_lock, "optimised_directory_with_reference", "scaffold");
+  $self->scaffold_with_sspace($build_path, $action_lock, "optimised_with_reference_directory", "scaffold");
   
   return $self->{No};
 }
