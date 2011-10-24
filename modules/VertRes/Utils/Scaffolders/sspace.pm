@@ -66,7 +66,7 @@ sub scaffold
    my $config_file = $self->{output_directory}."/_scaffolder.config";
    $self->run_sspace($self->{assembled_file_directory}, $self->{assembled_file}, $config_file, shift(@{$self->{merge_sizes}}), 31, 0);
    
-   for my $merge_size ($self->{merge_sizes})
+   for my $merge_size (@{$self->{merge_sizes}})
    {
       $self->run_sspace($self->{output_directory}, 'intermediate.scaffolded.fasta', $config_file, $merge_size, 31, 0);
    }
@@ -77,7 +77,7 @@ sub scaffold
 sub run_sspace
 {
    my ($self, $source_directory, $source_name, $config_file, $k, $n, $x) = @_;
-   `perl $self->{scaffold_exec} -l $config_file -n $n -s $source_directory/$source_name -x $x -k $k -b scaffolded`;
+   `perl $self->{scaffolder_exec} -l $config_file -n $n -s $source_directory/$source_name -x $x -k $k -b scaffolded`;
    system("mv scaffolded.fasta intermediate.scaffolded.fasta");
    $self->cleanup();
 }
