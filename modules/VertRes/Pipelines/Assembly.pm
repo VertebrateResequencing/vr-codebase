@@ -34,7 +34,7 @@ data => {
     genome_size => 10000000,
     num_threads => 4,
     scaffolder => 'sspace',
-    scaffolder_exec => '',
+    scaffolder_exec => '/software/pathogen/external/apps/usr/local/SSPACE-1.2_linux-x86_64/SSPACE_v1-2.pl',
     
     pools => [
         {
@@ -73,6 +73,7 @@ use LSF;
 use Data::Dumper;
 use FileHandle;
 use VertRes::Utils::Assembly;
+use VertRes::Utils::Scaffold;
 
 use base qw(VertRes::Pipeline);
 
