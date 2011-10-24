@@ -158,7 +158,7 @@ sub scaffold_requires
 sub scaffold_provides
 {
    my ($self) = @_;
-   return [$self->{lane_path}."/scaffolding_results/scaffolded_contigs.fa"];
+   return [$self->{lane_path}."/scaffolding_results/contigs.fa"];
 
 }
 
