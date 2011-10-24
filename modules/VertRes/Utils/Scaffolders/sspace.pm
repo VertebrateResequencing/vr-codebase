@@ -62,7 +62,7 @@ sub create_lib_file
 sub scaffold
 {
    my ($self) = @_;
-   
+   $self->create_lib_file();
    my $config_file = $self->{output_directory}."/_scaffolder.config";
    $self->run_sspace($self->{assembled_file_directory}, $self->{assembled_file}, $config_file, shift(@{$self->{merge_sizes}}), 31, 0);
    
