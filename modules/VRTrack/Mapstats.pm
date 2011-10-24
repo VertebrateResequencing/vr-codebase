@@ -88,7 +88,8 @@ sub fields_dispatch {
                target_bases_20X         => sub { $self->target_bases_20X(@_)},
                target_bases_50X         => sub { $self->target_bases_50X(@_)},
                target_bases_100X        => sub { $self->target_bases_100X(@_)},
-               exome_design_id          => sub { $self->exome_design_id(@_)});
+               exome_design_id          => sub { $self->exome_design_id(@_)},
+               percentage_reads_with_transposon => sub { $self->percentage_reads_with_transposon(@_)});
 
     return \%fields;
 }
@@ -976,6 +977,21 @@ sub image_ids {
 
 sub _get_child_methods {
     return qw(images);
+}
+
+=head2 percentage_reads_with_transposon
+
+  Arg [1]    : percentage_reads_with_transposon
+  Example    : my $exome_design_id = $mapstats->percentage_reads_with_transposon(73.23);
+               $mapstats->percentage_reads_with_transposon();
+  Description: Get/Set the percetage of reads with a transposon for a lane
+  ReturnType : Float
+
+=cut
+
+sub percentage_reads_with_transposon {
+    my $self = shift;
+    return $self->_get_set('percentage_reads_with_transposon', 'number', @_);
 }
 
 1;

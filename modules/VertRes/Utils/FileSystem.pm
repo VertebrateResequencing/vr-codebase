@@ -506,6 +506,7 @@ sub directory_structure_same {
         chomp;
         s/^$root1\/?//;
         next unless /\S/;
+        next if /^_/;
         $root1{$_} = 1;
     }
     my %root2;
@@ -513,6 +514,7 @@ sub directory_structure_same {
         chomp;
         s/^$root2\/?//;
         next unless /\S/;
+        next if /^_/;
         $root2{$_} = 1;
     }
     close($dh1);
