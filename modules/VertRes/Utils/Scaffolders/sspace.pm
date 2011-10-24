@@ -63,7 +63,7 @@ sub scaffold
 {
    my ($self) = @_;
    
-   $config_file = $self->{output_directory}."/_scaffolder.config"
+   $config_file = $self->{output_directory}."/_scaffolder.config";
    $self->run_sspace($self->{assembled_file_directory}, $self->{assembled_file}, $config_file, shift($self->{merge_sizes}), 31, 0);
    
    for my $merge_size ($self->{merge_sizes})
