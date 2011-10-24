@@ -201,7 +201,7 @@ sub scaffold_with_sspace
     assembled_file_directory => qq[$working_directory],
     scaffolder_exec => qq[$self->{scaffolder_exec}],
     input_files => \\\@input_files,
-    merge_sizes = \\\@merge_sizes
+    merge_sizes => \\\@merge_sizes
   );
   
   \$scaffolder_util->scaffold();
