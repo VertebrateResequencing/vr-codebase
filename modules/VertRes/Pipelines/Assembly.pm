@@ -105,15 +105,10 @@ our $actions = [ { name     => 'pool_fastqs',
                    action   => \&map_back_scaffolded,
                    requires => \&map_back_scaffolded_requires, 
                    provides => \&map_back_scaffolded_provides },
-                  
-                # { name     => 'statistics',
-                #   action   => \&statistics,
-                #   requires => \&statistics_requires,
-                #   provides => \&statistics_provides },
-                # { name     => 'cleanup',
-                #   action   => \&cleanup,
-                #   requires => \&cleanup_requires,
-                #   provides => \&cleanup_provides }
+                 { name     => 'cleanup',
+                   action   => \&cleanup,
+                   requires => \&cleanup_requires,
+                   provides => \&cleanup_provides }
                 ];
 
 our %options = (
@@ -785,26 +780,62 @@ sub estimate_memory_required
 }
 
 
+=head2 cleanup_requires
 
+ Title   : cleanup_requires
+ Usage   : my $required_files = $obj->cleanup_requires('/path/to/lane');
+ Function: Find out what files the cleanup action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
 
-sub cleanup
-{
- # files
- #_pool_fastqs.o
- #_pool_fastqs.e
- #_pool_fastqs.pl
- #_pool_fastqs.jids
- #_optimise_parameters.pl
- #_optimise_parameters.jids
- #_optimise_parameters.o
- #_optimise_parameters.e
- #_run_assembler.e
- #_run_assembler.pl
- #_run_assembler.jids
- #_run_assembler.o
+=cut
 
- # directories
- #_optimise_parameters_data_31
- # some files in assembly_xxxxxxxxxxx   Sequences PreGraph Graph2
+sub cleanup_requires {
+  my ($self) = @_;
+  return $self->map_back_scaffolded_provides();
+}
+
+=head2 cleanup_provides
+
+ Title   : cleanup_provides
+ Usage   : my $provided_files = $obj->cleanup_provides('/path/to/lane');
+ Function: Find out what files the cleanup action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub cleanup_provides {
+    return [];
+}
+
+=head2 cleanup
+
+ Title   : cleanup
+ Usage   : $obj->cleanup('/path/to/lane', 'lock_filename');
+ Function: Unlink all the pipeline-related files (_*) in a lane, as well
+           as the split directory.
+ Returns : $VertRes::Pipeline::Yes
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub cleanup {
+  my ($self, $lane_path, $action_lock) = @_;
+  return $self->{Yes} unless $self->{do_cleanup};
+  
+  my $prefix = $self->{prefix};
+  
+  foreach my $file (qw(pool_fastqs 
+    velvet_optimise_parameters 
+    velvet_map_back 
+    velvet_optimise_parameters_with_reference 
+    velvet_map_back_with_reference)) {
+      foreach my $suffix (qw(o e pl)) {
+                  unlink($self->{fsu}->catfile($lane_path, $prefix.$file.'.'.$suffix));
+          }
+
+  }
+  return $self->{Yes};
 }
 
