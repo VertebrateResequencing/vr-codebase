@@ -53,7 +53,7 @@ sub new {
 sub create_lib_file
 {
   my ($self) = @_;
-  my $input_files = join(' ', $self->{input_files} );
+  my $input_files = join(' ', @{$self->{input_files}} );
   open(LIB_FILE, "+>".$self->{output_directory}."/_scaffolder.config");
   print LIB_FILE "LIB ".$input_files." ".$self->get_insert_size()." 0.3 0";
   close(LIB_FILE);
@@ -103,7 +103,7 @@ sub get_insert_size
 sub cleanup
 {
   my ($self) = @_;
-  system("rm -r reads/ bowtieoutput/"); 
+  system("rm -rf reads/ bowtieoutput/"); 
 }
 
 sub name
