@@ -78,7 +78,7 @@ sub run_sspace
 {
    my ($self, $source_directory, $source_name, $config_file, $k, $n, $x) = @_;
    `perl $self->{scaffolder_exec} -l $config_file -n $n -s $source_directory/$source_name -x $x -k $k -b scaffolded`;
-   system("mv scaffolded.fasta intermediate.scaffolded.fasta");
+   system("mv scaffolded.final.scaffolds.fasta intermediate.scaffolded.fasta");
    $self->cleanup();
 }
 

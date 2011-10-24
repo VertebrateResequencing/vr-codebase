@@ -826,16 +826,25 @@ sub cleanup {
   
   my $prefix = $self->{prefix};
   
+  # remove job files
   foreach my $file (qw(pool_fastqs 
     velvet_optimise_parameters 
     velvet_map_back 
     velvet_optimise_parameters_with_reference 
-    velvet_map_back_with_reference)) {
-      foreach my $suffix (qw(o e pl)) {
-                  unlink($self->{fsu}->catfile($lane_path, $prefix.$file.'.'.$suffix));
-          }
-
+    velvet_map_back_with_reference)) 
+    {
+      foreach my $suffix (qw(o e pl)) 
+      {
+        unlink($self->{fsu}->catfile($lane_path, $prefix.$file.'.'.$suffix));
+      }
   }
+  
+  # remove files
+  foreach my $file (qw(.RData contigs.fa.png.Rout scaffolded.summaryfile.txt scaffolded.logfile.txt _scaffolder.config scaffolded.final.evidence)) 
+  {
+    unlink($self->{fsu}->catfile($lane_path, $file));
+  }
+  
   return $self->{Yes};
 }
 
