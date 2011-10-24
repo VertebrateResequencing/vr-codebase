@@ -128,6 +128,12 @@ sub generate_stats
   }
 }
 
+sub scaffolded_directory
+{
+  my ($self) = @_;
+  return "$self->{output_directory}/scaffolding_results";
+}
+
 
 
 

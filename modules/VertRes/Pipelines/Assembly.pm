@@ -32,6 +32,10 @@ data => {
     optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
     # rough estimate so we know how much RAM to request
     genome_size => 10000000,
+    num_threads => 4,
+    scaffolder => 'sspace',
+    scaffolder_exec => '',
+    
     pools => [
         {
             lanes => ['123_4','456_7#8'],
@@ -80,18 +84,26 @@ our $actions = [ { name     => 'pool_fastqs',
                    action   => \&optimise_parameters,
                    requires => \&optimise_parameters_requires,
                    provides => \&optimise_parameters_provides },
-                { name     => 'map_back',
-                  action   => \&map_back,
-                  requires => \&map_back_requires, 
-                  provides => \&map_back_provides },
-                { name     => 'optimise_parameters_with_reference',
-                  action   => \&optimise_parameters_with_reference,
-                  requires => \&optimise_parameters_with_reference_requires,
-                  provides => \&optimise_parameters_with_reference_provides },
-                { name     => 'map_back_with_reference',
-                  action   => \&map_back_with_reference,
-                  requires => \&map_back_with_reference_requires, 
-                  provides => \&map_back_with_reference_provides },
+                 { name     => 'map_back',
+                   action   => \&map_back,
+                   requires => \&map_back_requires, 
+                   provides => \&map_back_provides },
+                 { name     => 'optimise_parameters_with_reference',
+                   action   => \&optimise_parameters_with_reference,
+                   requires => \&optimise_parameters_with_reference_requires,
+                   provides => \&optimise_parameters_with_reference_provides },
+                 { name     => 'map_back_with_reference',
+                   action   => \&map_back_with_reference,
+                   requires => \&map_back_with_reference_requires, 
+                   provides => \&map_back_with_reference_provides },
+                 { name     => 'scaffold',
+                   action   => \&scaffold,
+                   requires => \&scaffold_requires, 
+                   provides => \&scaffold_provides },
+                 { name     => 'map_back_scaffolded',
+                   action   => \&map_back_scaffolded,
+                   requires => \&map_back_scaffolded_requires, 
+                   provides => \&map_back_scaffolded_provides },
                   
                 # { name     => 'statistics',
                 #   action   => \&statistics,
@@ -125,9 +137,132 @@ sub new {
   my $assembler_class = $assembly_util->find_module();
   eval "require $assembler_class;";
   $self->{assembler_class} = $assembler_class;
+  
+  
+  my $scaffolder_util = VertRes::Utils::Scaffold->new(scaffolder => $self->{scaffolder});
+  my $scaffolder_class = $scaffolder_util->find_module();
+  eval "require $scaffolder_class;";
+  $self->{scaffolder_class} = $scaffolder_class;
+  
 
   return $self;
 }
+
+
+###########################
+# Begin scaffold
+###########################
+
+sub scaffold_requires
+{
+  my ($self) = @_;
+  return $self->map_back_provides();
+}
+
+sub scaffold_provides
+{
+   my ($self) = @_;
+   return [$self->{lane_path}."/scaffolding_results/scaffolded_contigs.fa"];
+
+}
+
+sub scaffold
+{
+  my ($self, $build_path, $action_lock) = @_;
+  $self->scaffold_with_sspace($build_path, $action_lock, "optimised_directory_with_reference", "scaffold");
+  
+  return $self->{No};
+}
+
+sub scaffold_with_sspace
+{
+  my ($self, $build_path, $action_lock, $working_directory_method_name, $action_name_suffix) = @_;
+  
+  my $scaffold_class = $self->{scaffolder_class};
+  my $scaffold_exec = $self->{scaffolder_exec};
+  my $output_directory = $self->{lane_path};
+  my $assembler_class = $self->{assembler_class};
+  
+  eval("use $assembler_class;");
+  my $assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
+  my $working_directory = $assembler_util->${working_directory_method_name}();
+
+  
+  my $job_name = $self->{prefix}.$self->{assembler}."_$action_name_suffix";
+  my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_$action_name_suffix.pl");
+  
+  # TODO: clean up output files, estimate memory usage
+  
+  open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+  print $scriptfh qq{
+  use strict;
+  use $scaffold_class;
+  
+  my \@input_files = ('forward.fastq', 'reverse.fastq');
+  my \@merge_sizes = (40, 30 ,20 ,10 ,10 ,7 ,7 ,5 ,5, 5 );
+  my \$scaffolder_util= $scaffold_class->new( output_directory => qq[$output_directory],
+    assembled_file => qq[contigs.fa],
+    assembled_file_directory => qq[$working_directory],
+    scaffolder_exec => qq[$self->{scaffolder_exec}],
+    input_files => \\\@input_files,
+    merge_sizes = \\\@merge_sizes
+  );
+  
+  \$scaffolder_util->scaffold();
+  system("mkdir scaffolding_results");
+  system("mv scaffolded_contigs.fa scaffolding_results/contigs.fa");
+  
+  exit;
+                };
+  close $scriptfh;
+  
+  my $memory_required_mb = 10000;
+
+  LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
+  
+}
+
+
+
+
+###########################
+# End scaffold
+###########################
+
+
+###########################
+# Begin map_back
+###########################
+
+sub map_back_scaffolded_requires
+{
+  my ($self) = @_;
+  return $self->scaffold_provides();
+}
+
+sub map_back_scaffolded_provides
+{
+   my ($self) = @_;
+
+   return [$self->{lane_path}."/".$self->{prefix}.$self->{assembler}.'_map_back_scaffolded_done'];
+
+}
+
+sub map_back_scaffolded
+{
+  my ($self, $build_path, $action_lock) = @_;
+  $self->mapping_and_generate_stats($build_path, $action_lock, "scaffolded_directory", "map_back_scaffolded");
+  
+  return $self->{No};
+}
+
+
+###########################
+# End map_back
+###########################
+
+
+
 
 ###########################
 # Begin map_back
@@ -216,8 +351,6 @@ sub mapping_and_generate_stats
   use $assembler_class;
     
   my \@lane_paths = $lane_paths_str;
-  
-  my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
   
   my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
   my \$directory = \$assembler_util->${working_directory_method_name}();
