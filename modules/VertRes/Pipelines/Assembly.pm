@@ -195,7 +195,7 @@ sub scaffold_with_sspace
   use $scaffold_class;
   
   my \@input_files = ('forward.fastq', 'reverse.fastq');
-  my \@merge_sizes = (50, 45, 40, 35, 30, 25, 20, 15, 10, 10, 10, 7, 7, 7, 5, 5, 5, 5 );
+  my \@merge_sizes = (90, 80, 70, 60, 50, 40, 30, 25, 20, 15, 10, 10, 10, 7, 7, 7, 5, 5, 5, 5 );
   my \$scaffolder_util= $scaffold_class->new( output_directory => qq[$output_directory],
     assembled_file => qq[contigs.fa],
     assembled_file_directory => qq[$working_directory],

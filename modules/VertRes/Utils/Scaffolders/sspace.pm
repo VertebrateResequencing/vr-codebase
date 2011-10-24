@@ -103,7 +103,7 @@ sub get_insert_size
 sub cleanup
 {
   my ($self) = @_;
-  system("rm -rf reads/ bowtieoutput/"); 
+  system("rm -rf reads/ bowtieoutput/ pairinfo/ intermediate_results/"); 
 }
 
 sub name
