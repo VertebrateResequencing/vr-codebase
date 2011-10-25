@@ -205,7 +205,17 @@ sub vcf_isec
     for (my $ifile=0; $ifile<@{$$opts{files}}; $ifile++)
     {
         my $file = $$opts{files}[$ifile];
-        my $vcf  = ref($file) eq '' ? Vcf->new(file=>$file) : $file;
+        my ($vcf,$file_name);
+        if ( ref($file) eq '' )
+        {
+            $vcf = Vcf->new(file=>$file);
+            $file_name = $file;
+        }
+        else
+        {
+            $vcf = $file;
+            $file_name = $$file{file};
+        }
         $vcf->parse_header();
         $vcf->close();
         $$vcf{nread} = 0;
@@ -243,7 +253,7 @@ sub vcf_isec
             }
             $source .= ',';
         }
-        $source .= "$ifile:$file";
+        $source .= "$ifile:$file_name";
         $$vcf{vcf_isec_ID} = $ifile;
     }
     check_columns($opts,\@vcfs);
