@@ -40,6 +40,7 @@ sub error
         "   -n, --new-ref <file>            The reference of the output file\n",
         "   -o, --ori-ref <file>            The reference of the input file\n",
         "   -p, --prefix <dir>              Output files prefix\n",
+        "   -w, --win <int>                 Length of flanking sequence for sanity check of the transform (2*win+1) [10]\n",
         "   -h, -?, --help                  This help message.\n",
         "Chain files:\n",
         "   http://hgdownload.cse.ucsc.edu/downloads.html\n",
@@ -50,7 +51,7 @@ sub error
 
 sub parse_params
 {
-    my $opts = {};
+    my $opts = { win=>10 };
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '-a' || $arg eq '--apply-log' ) { $$opts{tlog}=shift(@ARGV); next }
@@ -59,6 +60,7 @@ sub parse_params
         if ( $arg eq '-p' || $arg eq '--prefix' ) { $$opts{prefix}=shift(@ARGV); next }
         if ( $arg eq '-i' || $arg eq '--in' ) { $$opts{in_file}=shift(@ARGV); next }
         if ( $arg eq '-c' || $arg eq '--chain' ) { $$opts{chain}=shift(@ARGV); next }
+        if ( $arg eq '-w' || $arg eq '--win' ) { $$opts{win}=shift(@ARGV); next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
@@ -110,6 +112,41 @@ sub run_liftover
     apply_tlog($opts);
 }
 
+sub match
+{
+    my ($ref_ori,$ref_new,$win) = @_;
+    my $rmismatch = 0;
+    my $match     = 0;
+    my $mismatch  = 0;
+    if ( substr($ref_new,$win,1) ne substr($ref_ori,$win,1) ) { $rmismatch=1; }
+    for (my $i=0; $i<2*$win+1; $i++)
+    {
+        if ( substr($ref_new,$i,1) eq substr($ref_ori,$i,1) ) { $match++; }
+        else { $mismatch++; }
+    }
+    return ($rmismatch,$match,$mismatch);
+}
+
+sub strand_aware_match
+{
+    my ($ref_ori,$ref_new,$win) = @_;
+
+    my ($fwd_rmismatch,$fwd_match,$fwd_mismatch) = match($ref_ori,$ref_new,$win);
+
+    my %map = ( A=>'T', C=>'G', G=>'C', T=>'A', N=>'N' );
+    my $rev_new;
+    my $len = length($ref_new);
+    for (my $i=$len-1; $i>=0; $i--)
+    {
+        my $base = substr($ref_new,$i,1);
+        if ( !exists($map{$base}) ) { error("Uh: $base?"); }
+        $rev_new .= $map{$base};
+    }
+    my ($rev_rmismatch,$rev_match,$rev_mismatch) = match($ref_ori,$rev_new,$win);
+
+    if ( $fwd_match>$rev_match ) { return ($fwd_rmismatch,$fwd_match,$fwd_mismatch); }
+    return ($rev_rmismatch,$rev_match,$rev_mismatch);
+}
 
 sub compare
 {
@@ -131,7 +168,7 @@ sub compare
     my $ignored   = 0;
     my $nlines    = 0;
     my $nlifted   = 0;
-    my $win = 10;
+    my $win = $$opts{win};
     while (1)
     {
         my $ori = $pos_ori->next_line();
@@ -166,19 +203,14 @@ sub compare
         $ref_ori = uc($ref_ori);
         $ref_new = uc($ref_new);
 
-        my $_match=0;
-        my $_rmismatch=0;
+        my ($_rmismatch,$_matches,$_mismatches) = strand_aware_match($ref_ori,$ref_new,$win);
         my $ok = 1;
-        if ( substr($ref_new,$win,1) ne substr($ref_ori,$win,1) ) { $ok=0; $_rmismatch=1; }
-        for (my $i=0; $i<2*$win+1; $i++)
-        {
-            if ( substr($ref_new,$i,1) eq substr($ref_ori,$i,1) ) { $_match++; }
-            else { $ok=0; $mismatch++; }
-        }
+        if ( $_rmismatch or $_mismatches ) { $ok=0; }
         $rmismatch += $_rmismatch;
-        $match += $_match;
-        $_match = sprintf "%.2f%%", $_match*100./(2*$win+1);
+        $match     += $_matches;
+        $mismatch  += $_mismatches;
 
+        my $_match = sprintf "%.2f%%", $_matches*100./(2*$win+1);
         if ( $ok )
         {
             printf $tlog_fh "%s\t%d\t->\t%s\t%d\t%s\n",$$ori[0],$$ori[1]+1,$$map[0],$$map[1]+1,$_match;
