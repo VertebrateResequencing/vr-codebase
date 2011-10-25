@@ -152,8 +152,6 @@ sub map_and_generate_stats
    `plot-bamcheck -p $directory/qc_graphs/ -r $directory/contigs.fa.refstats $directory/contigs.mapped.sorted.bam.bc`;
    $self->generate_stats($directory);
    unlink("$directory/contigs.mapped.bam");
-   unlink("$output_directory/forward.fastq");
-   unlink("$output_directory/reverse.fastq");
 }
 
 =head2 generate_files_str
