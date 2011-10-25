@@ -990,6 +990,72 @@ sub recalc_ac_an
     return;
 }
 
+#   =head2 get_tag_index
+#   
+#       About   : Will this improve performance?
+#       Usage   : my $idx = $vcf->get_tag_index('GT:PL:DP:SP:GQ','PL',':');
+#       Arg 1   : Field
+#           2   : The tag to find
+#           3   : Tag separator
+#       Returns : Index of the tag or -1 when not found
+#   
+#   =cut
+sub get_tag_index
+{
+    my ($self,$field,$tag,$sep) = @_;
+    my $idx = 0;
+    my $prev_isep = 0;
+    my $isep = 0;
+    while (1)
+    {
+        $isep = index($field,':',$prev_isep);
+        if ( $isep==-1 ) 
+        {
+            if ( substr($field,$prev_isep) eq $tag ) { return $idx; }
+            else { return -1; }
+        }
+        if ( substr($field,$prev_isep,$isep-$prev_isep) eq $tag ) { return $idx; }
+        $prev_isep = $isep+1;
+        $idx++;
+    }
+}
+sub get_sample_field
+{
+    my ($self,$cols,$idx) = @_;
+    my @out;
+    my $n = @$cols;
+    for (my $icol=9; $icol<$n; $icol++)
+    {
+        my $col = $$cols[$icol];
+        my $isep = 0;
+        my $prev_isep = 0;
+        my $itag = 0;
+        while (1)
+        {
+            $isep = index($col,':',$prev_isep);
+            if ( $itag==$idx ) { last; }
+            if ( $isep==-1 ) { $self->throw("The index out of range: $col:$isep .. $idx"); }
+            $prev_isep = $isep+1;
+            $itag++;
+        }
+        my $val = $isep<0 ? substr($col,$prev_isep) : substr($col,$prev_isep,$isep-$prev_isep);
+        push @out,$val;
+    }
+    return \@out;
+}
+sub split_gt
+{
+    my ($self,$gt) = @_;
+    my $isep = index($gt,'/');
+    if ( $isep<0 ) 
+    { 
+        $isep = index($gt,'|'); 
+        if ( $isep<0 ) { $self->throw("No separator? [$gt]"); }
+    }
+    my $a1 = substr($gt,0,$isep);
+    my $a2 = substr($gt,$isep+1);
+    return ($a1,$a2);
+}
 
 
 sub _format_line_hash
