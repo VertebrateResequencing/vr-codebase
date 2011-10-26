@@ -984,6 +984,12 @@ sub mpileup_postprocess
     my $basename = $$vcfs[0];
     $basename =~ s/\.gz$//i;
     $basename =~ s/\.vcf$//i;
+    my $mapstat_id = $basename;
+    $mapstat_id =~  s/^.+\/([\d]+)\.[^\/]+\/[^\/]+$/$1/;
+    if( $mapstat_id =~ /[\D]+/)
+    {
+      $mapstat_id = time();
+    }
 
     return qq[
 use strict;
@@ -1002,6 +1008,14 @@ Utils::CMD("zcat $basename.filt.vcf.gz | $$self{vcf_stats} > $name.vcf.gz.stats"
 Utils::CMD("tabix -f -p vcf $basename.filt.vcf.gz");
 rename("$basename.filt.vcf.gz.tbi","$name.vcf.gz.tbi") or Utils::error("rename $basename.filt.vcf.gz.tbi $name.vcf.gz.tbi: \$!");
 rename("$basename.filt.vcf.gz","$name.vcf.gz") or Utils::error("rename $basename.filt.vcf.gz $name.vcf.gz: \$!");
+
+symlink("$name.vcf.gz.tbi", "$mapstat_id.vcf.gz.tbi");
+symlink("$name.vcf.gz.stats", "$mapstat_id.vcf.gz.stats");
+symlink("$name.vcf.gz", "$mapstat_id.vcf.gz");
+
+symlink("$name.unfilt.vcf.gz.tbi", "$mapstat_id.unfilt.vcf.gz.tbi");
+symlink("$name.unfilt.vcf.gz.stats", "$mapstat_id.unfilt.vcf.gz.stats");
+symlink("$name.unfilt.vcf.gz", "$mapstat_id.unfilt.vcf.gz");
 
 ];
 }
