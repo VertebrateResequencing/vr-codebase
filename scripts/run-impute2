@@ -27,9 +27,10 @@ sub new
 
     $$self{limits} = { memory=>5_500, runtime=>3*24*60 };
     $$self{_sampleconf} = q[
-        gen_map   => '/nfs/users/nfs_p/pd3/sandbox/impute2/genetic_maps_b37/genetic_map_chr{CHROM}_combined_b37.txt',
-        fai_ref   => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
-        known_vcf => '/nfs/users/nfs_p/pd3/sandbox/gtypes/UK10k-twins/uk10k-twins.ref.vcf.gz',
+        impute2_bin => 'impute2',
+        gen_map     => '/nfs/users/nfs_p/pd3/sandbox/impute2/genetic_maps_b37/genetic_map_chr{CHROM}_combined_b37.txt',
+        fai_ref     => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
+        known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/gtypes/UK10k-twins/uk10k-twins.ref.vcf.gz',
 
         impute2_args => '-Ne 15000 -k 100',
         chunk_size   => 3_000_000,
@@ -219,7 +220,7 @@ sub impute2
     $genmap =~ s/\{CHROM\}/$chr/;
     if ( ! -e $genmap ) { $self->throw("The genmap [$genmap] does not exist.\n"); }
     my $known = $$self{known_vcf} eq '--' ? '' : "-known_haps_g $outdir/01.known_haps -sample_known_haps_g $outdir/01.known_samples";
-    $self->cmd(qq[impute2 -g $outdir/01.impute_haps -sample_g $outdir/01.impute_samples $known -m $genmap -int $from $to $$self{impute2_args} -prob_g -pgs_prob -o_gz -o $outdir/02.impute2.$chunk >$outdir/02.impute2.$chunk.o 2>$outdir/02.impute2.$chunk.e]);
+    $self->cmd(qq[$$self{impute2_bin} -g $outdir/01.impute_haps -sample_g $outdir/01.impute_samples $known -m $genmap -int $from $to $$self{impute2_args} -prob_g -pgs_prob -o_gz -o $outdir/02.impute2.$chunk >$outdir/02.impute2.$chunk.o 2>$outdir/02.impute2.$chunk.e]);
 
     $self->cmd(qq[touch $outfile]);
 }
