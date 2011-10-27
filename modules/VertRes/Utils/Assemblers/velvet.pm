@@ -147,7 +147,7 @@ sub map_and_generate_stats
    `samtools index $directory/contigs.mapped.sorted.bam`;
    $self->throw("Couldnt index the BAM") unless(-e "$directory/contigs.mapped.sorted.bam.bai");
 
-   `bamcheck -r $directory/contigs.fa $directory/contigs.mapped.sorted.bam >  $directory/contigs.mapped.sorted.bam.bc`;
+   `bamcheck -c 1,20000,5 -r $directory/contigs.fa $directory/contigs.mapped.sorted.bam >  $directory/contigs.mapped.sorted.bam.bc`;
 
    `plot-bamcheck -p $directory/qc_graphs/ -r $directory/contigs.fa.refstats $directory/contigs.mapped.sorted.bam.bc`;
    $self->generate_stats($directory);
