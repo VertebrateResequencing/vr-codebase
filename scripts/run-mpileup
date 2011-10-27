@@ -691,7 +691,7 @@ sub vcf_stats
 sub apply_filter
 {
     my ($self,$outfile,$vcf) = @_;
-    $self->cmd(qq[zcat $vcf | awk '/^#/||$7=="PASS"' | bgzip -c > $outfile.part]);
+    $self->cmd(qq[zcat $vcf | awk '/^#/||\$7=="PASS"' | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
 }
 
