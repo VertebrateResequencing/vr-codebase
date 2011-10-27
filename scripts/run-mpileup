@@ -281,7 +281,7 @@ sub main
     for my $pop (keys %{$$self{pops}})
     {
         $self->spawn('vcf_stats',"$outdir/$pop.vcf.gz.stats","$outdir/$pop.vcf.gz",q[awk '/^#/||$7=="PASS"']);
-        $self->spawn('apply_filter',"$outdir/$pop.filt.vcf.gz","outdir/$pop.vcf.gz");
+        $self->spawn('apply_filter',"$outdir/$pop.filt.vcf.gz","$outdir/$pop.vcf.gz");
     }
     $self->wait;
 
