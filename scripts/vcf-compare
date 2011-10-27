@@ -39,6 +39,7 @@ sub error
         "   -c, --chromosomes <list|file>       Same as -r, left for backward compatibility. Please do not use as it will be dropped in the future.\n",
         "   -d, --debug                         Debugging information. Giving the option multiple times increases verbosity\n",
         "   -g, --cmp-genotypes                 Compare genotypes, not only positions\n",
+        "       --ignore-indels                 Exclude sites containing indels from genotype comparison\n",
         "   -m, --name-mapping <list|file>      Use with -g when comparing files with differing column names. The argument to this options is a\n",
         "                                           comma-separated list or one mapping per line in a file. The names are colon separated and must\n",
         "                                           appear in the same order as the files on the command line.\n",
@@ -543,6 +544,27 @@ sub read_stats
     close($fh);
 }
 
+sub make_dir
+{
+    my ($prefix) = @_;
+    if ( $prefix=~m{/} )
+    {
+        # A directory should be created. This will populate dir and prefix, for example
+        #   prefix  -> dir      prefix
+        #   ----------------------------
+        #   out                 out.dump
+        #   out/       out/     out/out.dump
+        #   out/xxx    out/     out/xxx.dump 
+        #
+        my $dir = '';
+        if ( $prefix=~m{/[^/]+$} ) { $dir=$`; }
+        elsif ( $prefix=~m{/([^/]+)/$} ) { $dir = $`.'/'.$1; $prefix = $dir.'/'.$1; }
+        elsif ( $prefix=~m{([^/]+)/?$} ) { $dir=$1; $prefix=$dir.'/'.$1; }
+        if ( $dir ) { `mkdir -p $dir`; }
+    }
+    return $prefix;
+}
+
 sub plot_stats
 {
     my ($opts) = @_;
@@ -551,6 +573,7 @@ sub plot_stats
     {
         read_stats($stats,$file);
     }
+    make_dir($$opts{plot});
     plot_dp($opts,$$stats{dp});
     plot_af($opts,$$stats{af});
     print_gs($opts,$$stats{gs});
