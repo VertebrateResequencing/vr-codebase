@@ -27,7 +27,7 @@ sub new
 
     $$self{debug_chunks} = 0;
     $$self{_sampleconf} = q[
-            mpileup  => '/nfs/users/nfs_p/pd3/cvs/samtools/samtools mpileup -DS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA',
+            mpileup  => '/nfs/users/nfs_p/pd3/cvs/samtools/samtools mpileup -EDS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA',
             bcftools => '/nfs/users/nfs_p/pd3/cvs/samtools/bcftools/bcftools view -p 0.99',
             
             bams    => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
@@ -63,6 +63,7 @@ sub new
             
             },
             
+            # Set the depth filter (+/D=N) to about twice the average depth.
             filter => 'vcf-annotate -f +',
             
             chunk_size        => 1_000_000,
@@ -280,6 +281,7 @@ sub main
     for my $pop (keys %{$$self{pops}})
     {
         $self->spawn('vcf_stats',"$outdir/$pop.vcf.gz.stats","$outdir/$pop.vcf.gz",q[awk '/^#/||$7=="PASS"']);
+        $self->spawn('apply_filter',"$outdir/$pop.filt.vcf.gz","outdir/$pop.vcf.gz");
     }
     $self->wait;
 
@@ -685,4 +687,12 @@ sub vcf_stats
     $self->cmd($cmd);
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
+
+sub apply_filter
+{
+    my ($self,$outfile,$vcf) = @_;
+    $self->cmd(qq[zcat $vcf | awk '/^#/||$7=="PASS"' | bgzip -c > $outfile.part]);
+    $self->tabix_part($outfile);
+}
+
 
