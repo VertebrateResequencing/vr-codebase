@@ -54,6 +54,9 @@ Runner.pm   - A simple module for quick development of scripts and pipelines whi
         # Checkpoint, wait until all the above files are finished
         $self->wait;
 
+        # Clean temporary files
+        $self->clean;
+
         print STDERR "All done!\n";
         $self->all_done;
     }

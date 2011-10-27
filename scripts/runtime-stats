@@ -92,6 +92,7 @@ sub crawl
             get_stats($opts,$f);
         }
         report_stats($opts);
+        if ( !scalar @files ) { warn("No LSF output files found.\n"); }
     }
 }
 
