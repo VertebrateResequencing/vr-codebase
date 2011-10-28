@@ -26,6 +26,7 @@ sub new
     my $self = $class->SUPER::new(@args);
 
     $$self{limits} = { memory=>5_500, runtime=>3*24*60 };
+    $$self{impute2_bin} = 'impute2';
     $$self{_sampleconf} = q[
         impute2_bin => 'impute2',
         gen_map     => '/nfs/users/nfs_p/pd3/sandbox/impute2/genetic_maps_b37/genetic_map_chr{CHROM}_combined_b37.txt',
