@@ -990,16 +990,16 @@ sub recalc_ac_an
     return;
 }
 
-#   =head2 get_tag_index
-#   
-#       About   : Will this improve performance?
-#       Usage   : my $idx = $vcf->get_tag_index('GT:PL:DP:SP:GQ','PL',':');
-#       Arg 1   : Field
-#           2   : The tag to find
-#           3   : Tag separator
-#       Returns : Index of the tag or -1 when not found
-#   
-#   =cut
+=head2 get_tag_index
+
+    Usage   : my $idx = $vcf->get_tag_index('GT:PL:DP:SP:GQ','PL',':');
+    Arg 1   : Field
+        2   : The tag to find
+        3   : Tag separator
+    Returns : Index of the tag or -1 when not found
+
+=cut
+
 sub get_tag_index
 {
     my ($self,$field,$tag,$sep) = @_;
@@ -1019,6 +1019,54 @@ sub get_tag_index
         $idx++;
     }
 }
+
+=head2 remove_field
+
+    Usage   : my $field = $vcf->remove_field('GT:PL:DP:SP:GQ',1,':');    # returns 'GT:DP:SP:GQ'
+    Arg 1   : Field
+        2   : The index of the field to remove
+        3   : Field separator
+    Returns : Modified string
+
+=cut
+
+sub remove_field
+{
+    my ($self,$string,$idx,$sep) = @_;
+    my $isep = -1;
+    my $prev_isep = 0;
+    my $itag = 0;
+    while ($itag!=$idx)
+    {
+        $isep = index($string,$sep,$prev_isep);
+        if ( $isep==-1 ) { $self->throw("The index out of range: $string:$isep .. $idx"); }
+        $prev_isep = $isep+1;
+        $itag++;
+    }
+    my $out;
+    if ( $isep>=0 ) { $out = substr($string,0,$isep); }
+    my $ito=index($string,$sep,$isep+1);
+    if ( $ito!=-1 ) 
+    { 
+        if ( $isep>=0 ) { $out .= ':' }
+        $out .= substr($string,$ito+1); 
+    }
+    if ( !defined $out ) { return '.'; }
+    return $out;
+}
+
+=head2 get_sample_field
+
+    Usage   : my $line  = $vcf->next_line;
+              my @items = split(/\t/,$line); 
+              my $idx = $vcf->get_tag_index($$line[8],'PL',':'); 
+              my $pls = $vcf->get_sample_field(\@items,$idx) unless $idx==-1;
+    Arg 1   : The VCF line broken into an array
+        2   : The index of the field to retrieve
+    Returns : Array of values
+
+=cut
+
 sub get_sample_field
 {
     my ($self,$cols,$idx) = @_;
@@ -1043,6 +1091,16 @@ sub get_sample_field
     }
     return \@out;
 }
+
+=head2 split_gt
+
+    About   : Faster alternative to regexs, diploid GT assumed
+    Usage   : my ($a1,$a2) = $vcf->split_gt('0/0'); # returns (0,0)
+    Arg     : Diploid genotype to split into alleles
+    Returns : Array of values
+
+=cut
+
 sub split_gt
 {
     my ($self,$gt) = @_;

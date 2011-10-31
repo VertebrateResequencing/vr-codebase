@@ -59,6 +59,7 @@ sub error
         "                                           The descriptions can be read from a file, one annotation per line.\n",
         "   -f, --filter <file|list>            Apply filters, list is in the format flt1=value/flt2/flt3=value/etc. If argument to -f is a file,\n",
         "                                           user-defined filters be applied. See User Defined Filters below.\n",
+        "   -r, --remove <list>                 Comma-separated list of tags to be removed (e.g. INFO/DP,FORMAT/DP). (Currently only removing from INFO and FORMAT is supported.)\n",
         "   -h, -?, --help                      This help message.\n",
         "Filters:\n",
         sprintf("\t+  %-25s\t\tApply all filters with default values (can be overriden, see the example below).\n",''),
@@ -149,6 +150,25 @@ sub parse_params
             $$opts{cols} = [ split(/,/,$cols) ];
             next; 
         }
+        if ( $arg eq '-r' || $arg eq '--remove' ) 
+        { 
+            my $tags = shift(@ARGV);
+            my @tags = split(/,/,$tags);
+            for my $tag (@tags)
+            {
+                my ($col,$tag) = split(m{/},$tag);
+                if ( !defined $tag )
+                {
+                    $$opts{remove}{INFO}{$col}   = 1;
+                    $$opts{remove}{FORMAT}{$col} = 1;
+                }
+                else
+                {
+                    $$opts{remove}{$col}{$tag} = 1;
+                }
+            }
+            next;
+        }
         if ( $arg eq '-a' || $arg eq '--annotations' ) { $$opts{annotations} = shift(@ARGV); next }
         if ( $arg eq '-t' || $arg eq '--tag' ) { $$opts{tag} = shift(@ARGV); next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
@@ -157,7 +177,7 @@ sub parse_params
     }
     if ( !exists($$opts{filters}) && !exists($$opts{udef_filters}) )
     {
-        if ( !exists($$opts{annotations}) ) { error("Missing the -a or -f option.\n") }
+        if ( !exists($$opts{annotations}) && !exists($$opts{remove}) ) { error("Missing one of the -a, -f or -r options.\n") }
     }
     if ( exists($$opts{annotations}) && !exists($$opts{cols}) ) { error("Missing the -c option.\n"); }
     return $opts;
@@ -552,6 +572,11 @@ sub output_line
 {
     my ($opts,$line) = @_;
 
+    if ( exists($$opts{remove}) && defined $line )
+    {
+        remove_tags($opts,$line);
+    }
+
     if ( !exists($$opts{filters}) && !exists($$opts{udef_filters}) )
     {
         # No filters requested, print the line
@@ -607,6 +632,59 @@ sub output_line
     for my $line (@lines)
     {
         print_line($line);
+    }
+}
+
+sub remove_tags
+{
+    my ($opts,$line) = @_;
+
+    # Remove INFO tags
+    for my $tag (keys %{$$opts{remove}{INFO}})
+    {
+        my $ifrom=0;
+        my $ito;
+        my $tag_len = length($tag);
+        while (1)
+        {
+            $ifrom = index($$line[7],$tag,$ifrom);
+            if ( $ifrom==-1 ) { last; }
+            if ( $ifrom!=0 && substr($$line[7],$ifrom-1,1) ne ';' )
+            { 
+                $ifrom++;
+                next; 
+            }
+            if ( length($$line[7])!=$ifrom+$tag_len )
+            {
+                my $c = substr($$line[7],$ifrom+$tag_len,1);
+                if ( $c ne ';' && $c ne '=' ) { $ifrom+=$tag_len; next; }
+            }
+            $ito = index($$line[7],';',$ifrom+1);
+            last;
+        }
+        if ( !defined $ito ) { next; }  # not found
+        my $out;
+        if ( $ifrom>0 )
+        {
+            $out .= substr($$line[7],0,$ifrom-1);
+            if ( $ito!=-1 ) { $out .= ';'; }
+        }
+        if ( $ito!=-1 )
+        {
+            $out .= substr($$line[7],$ito+1);
+        }
+        $$line[7] = defined $out ? $out : '.';
+    }
+
+    # Remove FORMAT tags
+    for my $tag (keys %{$$opts{remove}{FORMAT}})
+    {
+        my $idx = $$opts{vcf}->get_tag_index($$line[8],$tag,':');
+        if ( $idx==-1 ) { next; }
+        for (my $i=8; $i<@$line; $i++)
+        {
+            $$line[$i] = $$opts{vcf}->remove_field($$line[$i],$idx,':');
+        }
     }
 }
 
