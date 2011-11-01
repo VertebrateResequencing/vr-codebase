@@ -179,13 +179,12 @@ sub main
 sub mrProper
 {
     my ($self,$outdir) = @_;
-    $self->SUPER::clean($outdir);
-
     my $regions = $self->regions();
     for my $region (@$regions)
     {
         $self->cmd("rm -rf $outdir/$region");
     }
+    $self->SUPER::clean($outdir);
 }
 
 
