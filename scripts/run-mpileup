@@ -303,11 +303,11 @@ sub main
 sub mrProper
 {
     my ($self,$outdir) = @_;
-    $self->clean($outdir);
     for my $pop (keys %{$$self{pops}})
     {
         $self->cmd("rm -rf $outdir/$pop");
     }
+    $self->clean($outdir);
 }
 
 sub clean
