@@ -87,6 +87,7 @@ sub new
         "Usage: run-mpileup\n" .
         "Options:\n" .
         "   -c, --clean             Clean all temporary files\n" .
+        "   -m, --mrProper          Clean all temporary files, including the population directories and BCFs, leaving only toplevel VCFs\n" .
         "   -o, --outdir <dir>      Output directory\n" .
         "\n";
 
@@ -99,6 +100,7 @@ sub parse_args
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '-c' or $arg eq '--clean' ) { $$self{clean}=1; next; }
+        if ( $arg eq '-m' or $arg eq '--mrProper' ) { $$self{mrProper}=1; next; }
         if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
         $self->throw();
     }
@@ -175,6 +177,11 @@ sub parse_args
     if ( $$self{clean} ) 
     { 
         $self->clean($$self{outdir});
+        $self->all_done;
+    }
+    if ( $$self{mrProper} )
+    {
+        $self->mrProper($$self{outdir});
         $self->all_done;
     }
 }
@@ -291,6 +298,16 @@ sub main
     $self->clean($outdir);
 
     $self->all_done;
+}
+
+sub mrProper
+{
+    my ($self,$outdir) = @_;
+    $self->clean($outdir);
+    for my $pop (keys %{$$self{pops}})
+    {
+        $self->cmd("rm -rf $outdir/$pop");
+    }
 }
 
 sub clean

@@ -43,10 +43,11 @@ sub new
     $$self{chunks_overlap} = 0;
 
     $$self{usage} .= 
-        "Usage: scripte\n" .
+        "Usage: run-impute2 [OPTIONS]\n" .
         "Options:\n" .
         "   -i, --impute-vcf <file>             The target VCF file to be imputed or genotypes refined\n" .
         "   -l, --list-chunks                   List chunks and exit\n" .
+        "   -m, --mrProper                      Clean all intermediate files, including Impute2 output files, leaving only top-level VCFs\n" .
         "   -o, --outdir <dir>                  Output directory\n" .
         "   -r, --region <chr|chr:from-to>      Run imputation in the given region only\n" .
         "\n";
@@ -60,18 +61,24 @@ sub parse_args
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '-r' or $arg eq '--region' ) { push @{$$self{region}},shift(@ARGV); next; }
+        if ( $arg eq '-m' or $arg eq '--mrProper' ) { $$self{mrProper}=1; next; }
         if ( $arg eq '-l' or $arg eq '--list-chunks' ) { $$self{list_chunks}=1; next; }
         if ( $arg eq '-i' or $arg eq '--impute-vcf' ) { $$self{in_vcf}=shift(@ARGV); next; }
         if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
         $self->throw();
     }
     if ( !exists($$self{in_vcf}) ) { $self->throw("Expected the -i option.\n"); }
+    if ( !exists($$self{outdir}) ) { $self->throw("Expected the -o option.\n"); }
+    if ( $$self{mrProper} )
+    {
+        $self->mrProper($$self{outdir});
+        $self->all_done;
+    }
     if ( !exists($$self{known_vcf}) ) 
     { 
         $$self{known_vcf} = '--';
         $self->warn("The 'known_vcf' config key not present, running without reference panel.\n"); 
     }
-    if ( !exists($$self{outdir}) ) { $self->throw("Expected the -o option.\n"); }
     if ( !exists($$self{gen_map}) ) 
     {
         $$self{gen_map} = '/nfs/users/nfs_p/pd3/sandbox/impute2/genetic_maps_b37/genetic_map_chr{CHROM}_combined_b37.txt';
@@ -168,6 +175,19 @@ sub main
 
     $self->all_done;
 }
+
+sub mrProper
+{
+    my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
+
+    my $regions = $self->regions();
+    for my $region (@$regions)
+    {
+        $self->cmd("rm -rf $outdir/$region");
+    }
+}
+
 
 sub runtime_stats
 {
