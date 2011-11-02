@@ -1,0 +1,437 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+create-primer-sequences
+
+=head1 SYNOPSIS
+
+ This tool can create primer sequences using primer3 to make the primer sequences based on the fasta supplied and exonerate to find alignments between the primer sequences and fasta to allow removal of duplicate alignments.
+ 
+ The input needs to have chromosome and position in a tab-separated form (ref and alt sequences are optional):
+    CHROMOSOME\tPOSITION\tREF\tALT
+    e.g.
+    X	39007429	A	G
+    X	69690631	T	C
+    
+  The eventual output is currently in the form of a tab-delimited file (subject to change!)
+  e.g.
+    #ID	Left_primer	Right_primer	Melting_temperatures	Product_length
+    1_X_39007429	CGCAGAGCCATCTGTGTTTA	CGACAACAAAATGCATCAGG	60.011,60.111	252
+    2_X_69690631	ACAAAGGCATAACAGACGGC	TCTCACCATGACCACCTTGA	60.140,60.088	83
+
+  The script has 3 mandatory inputs and 3 optional ones:
+  
+  -s, --sites <file>                      The file containing the sites data to produce primers for.
+  -f, --flanking-length <int>-<int>       The length of the flanking sequence.
+  -r, --ref <file>                        The reference sequence.
+  -e, --edits <vcf>                       [OPTIONAL] To locate snps and indels within the flanking sequences.
+  -l, --length <int>                      [OPTIONAL] The length of the pcr site (DEFAULT = 1)
+  -n, --notidy                            [OPTIONAL - for debugging] Do not delete the temporary files created.
+  
+  also:
+  -h, -?, --help                          The help message.
+
+=head1 AUTHORS
+
+John Maslen, jm23@sanger.ac.uk, Team 145
+
+methods by Petr Danacek, pd3@sanger.ac.uk, Team145
+
+=cut
+
+use strict;
+use warnings;
+no warnings 'uninitialized';
+
+use Data::Dumper;
+use Getopt::Long;
+use File::Basename;
+use Carp;
+use FaSlice;
+
+my ($help);
+my $opts = {};
+
+GetOptions(
+    's|sites=s'                  =>  \$$opts{sites},
+    'f|flanking-length=s'        =>  \$$opts{flank},
+    'r|ref=s'		             =>  \$$opts{refseq},
+    'e|edits=s'		             =>  \$$opts{edits},
+	'l|length=i'                 =>  \$$opts{pcrlen},
+    'n|notidy'					 =>  \$$opts{notidy},
+    'h|?|help'	                 =>  \$help,
+    );
+
+
+
+&error() unless $$opts{sites} && $$opts{flank} && $$opts{refseq} && !$help;
+$$opts{pcrlen} = 1 unless $$opts{pcrlen};
+
+($$opts{input_name}, $$opts{directory}) = fileparse($$opts{sites}, qr/\.[^.]*/);
+my $random_key = get_random_key();
+my $tmp_file = $$opts{directory}."tmp_$$opts{input_name}.".$random_key;
+
+##Primer 3 options
+$$opts{prmr3_input} = "$tmp_file.prmr3.in";
+$$opts{prmr3_output} = "$tmp_file.prmrs.txt";
+$$opts{prmr3_exec} = "/software/vertres/bin-external/primer3_core";
+
+##Exonerate options
+$$opts{prmrs_fa} = "$tmp_file.prmrs.fa";
+$$opts{exonerate_output} = "$tmp_file.prmrs.exn";
+$$opts{exonerate_exec} = "/software/vertres/bin-external/exonerate";
+
+##Unique primer stage options
+$$opts{unique_primers} = "$tmp_file.prmrs.uniq.txt";
+
+##Writing output stage options
+$$opts{primers_tab} = $$opts{directory}."$$opts{input_name}.primers.tab";
+
+my @delete_tmp_files = ( $$opts{unique_primers}, $$opts{prmr3_input}, $$opts{prmr3_output}, $$opts{prmrs_fa}, $$opts{exonerate_output} );
+
+run_primer3($opts);
+
+run_exonerate($opts);
+
+make_unique_primers($opts);
+
+write_primers_output($opts);
+
+if ( !$$opts{notidy} ) {
+	`rm $tmp_file*`;
+}	
+
+exit;
+
+#=======================================
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    die <<USAGE;
+ Usage: 
+ 	$0 -s <file of sites> -f <int>-<int> -r <reference fasta> [OPTIONAL -e <vcf> -o <output file>] 
+ 	$0 --sites <file of sites> --flanking-length <int>-<int> --ref <reference fasta> [OPTIONAL --edits <vcf> --output <output file>] 
+    
+  Parameters:  
+  -s, --sites <file>                      The file containing the sites data to produce primers for.
+  -f, --flanking-length <int>-<int>       The length of the flanking sequence.
+  -r, --ref <file>                        The reference genome fasta sequence.
+  -e, --edits <vcf>                       [OPTIONAL] To locate snps and indels within the flanking sequences.
+  -l, --length <int>                      [OPTIONAL] The length of the pcr site (DEFAULT = 1)
+  -n, --notidy                            [OPTIONAL - for debugging] Do not delete the temporary files created.
+  -h, -?, --help                          The help message.
+  
+  See perldoc for more information on the usage of this script.
+   
+USAGE
+}
+
+sub run_primer3
+{
+    my ($opts) = @_;
+
+    if ( !($$opts{flank}=~/^(\d+)-(\d+)$/) ) { error("Could not parse [$$opts{flank}]"); }
+    my $range_min = int($1/2);
+    my $range_max = int($2/2);
+
+    my $fa = FaSlice->new(file=>$$opts{refseq}); 
+ 
+    open (PRMR3_FILE, ">", $$opts{prmr3_input}) or error ("Unable to create $$opts{prmr3_input}");
+    open (SITES_FILE, "<", $$opts{sites}) or error ("Unable to open $$opts{sites}");
+	while (<SITES_FILE>) {
+		my $line = $_;
+		chomp $line;
+		if ( !($line=~/^(\S+)\s+(\d+)/) ) { error("Could not parse: $line"); }
+        my $chr = $1;
+        my $pos = $2;
+        my $ref = $3 ? $3 : '';
+        my $alt = $4 ? $4 : '';
+
+        my $from = $pos - $range_max;
+     	my $to   = $pos + $range_max;
+    	
+    	my @positions;
+    	if ($$opts{edits}) {
+    		my @query_out  = grep { chomp } `query-vcf $$opts{edits} $chr:$from-$to -f '%CHROM\t%POS\t%REF\t%ALT\n'`;
+    		for my $vcf_line ( @query_out ) {
+    			my @vcf_items = split("\t", $vcf_line);
+    			push @positions, { pos=>$vcf_items[1], ref=>$vcf_items[2] };
+    		}	
+    	}
+    	
+    	my $seq  = $fa->get_slice($chr,$from,$to);
+    	my @seqarray = split('', $seq);
+    	for my $vcfpos ( @positions ) {
+    		#print "POS: $pos, SIPOS: $$vcfpos{pos}, REF: $$vcfpos{ref}, SIREF: $seqarray[$$vcfpos{pos}-$from]\n";
+    		$seqarray[$$vcfpos{pos}-$from] = 'N';
+    	}
+    	$seq  = join('', @seqarray);	
+    		
+    	my $pcr_from = $pos-$from;
+          print PRMR3_FILE "SEQUENCE_ID=${chr}_$pos\n";
+          print PRMR3_FILE "SEQUENCE_TEMPLATE=$seq\n";
+          print PRMR3_FILE "SEQUENCE_TARGET=$pcr_from,$$opts{pcrlen}\n";
+          print PRMR3_FILE "PRIMER_MAX_NS_ACCEPTED=0\n";
+          print PRMR3_FILE "PRIMER_TASK=pick_pcr_primers\n";
+          print PRMR3_FILE "=\n";
+    }
+    close (SITES_FILE);
+    close (PRMR3_FILE);
+    my $prmr3_msg = `$$opts{prmr3_exec} -output $$opts{prmr3_output} $$opts{prmr3_input}`;
+    if ( $prmr3_msg )  { 
+		error("Appears to be an error with executing primer3:\n$$opts{prmr3_exec} -output $$opts{prmr3_output} $$opts{prmr3_input}"); 
+   }
+}
+
+sub run_exonerate
+{
+    my ($opts) = @_;
+    my $id;
+    
+    open (FA_FILE, ">", $$opts{prmrs_fa}) or error ("Unable to create $$opts{prmrs_fa}");
+    open (PRMR3_FILE, "<", $$opts{prmr3_output}) or error ("Unable to open $$opts{prmr3_output}");
+    while (<PRMR3_FILE>) {
+		my $line = $_;
+		chomp $line;
+        # SEQUENCE_ID=MATCH_DEL_RAW_1_1088554_220_221bp
+        if ( $line=~/^SEQUENCE_ID=/ )
+        {
+            $id = $';
+            next;
+        }
+        if ( $line=~/^PRIMER_LEFT_(\d+)_SEQUENCE=/ )
+        {
+            print FA_FILE ">${id}_L$1\n$'\n";
+            next;
+        }
+        if ( $line=~/^PRIMER_RIGHT_(\d+)_SEQUENCE=/ )
+        {
+            print FA_FILE ">${id}_R$1\n$'\n";
+            next;
+        }
+    }
+    close (PRMR3_FILE);
+    close (FA_FILE);
+    
+    my $exn_msg = `$$opts{exonerate_exec} $$opts{prmrs_fa} $$opts{refseq} > $$opts{exonerate_output}`;
+    if ( $exn_msg )  { 
+    	error("Appears to be an error with executing exonerate:\n$$$opts{exonerate_exec} $$opts{prmrs_fa} $$opts{refseq} > $$opts{exonerate_output}"); 
+    }    
+}
+
+sub make_unique_primers
+{
+    my ($opts) = @_;
+    my $hit;
+    open (EXN_FILE, "<", $$opts{exonerate_output}) or error ("Unable to open $$opts{exonerate_output}");
+    while (<EXN_FILE>)
+    {
+        # vulgar: MATCH_DEL_RAW_19_46278660_1026_1027bp_R4 0 20 + 1 6081126 6081106 - 100 M 20 20
+        my $line = $_;
+        if ( $line=~/^vulgar: (\S+)/ )
+        {
+            $$hit{$1}++;
+        }
+    }
+    while (my ($exn_id,$val)=each %$hit)
+    {
+        # X_39007429_L1	1 captures 1. X_39007429, 2. L, 3. 1, 4. 1
+        if ( !($exn_id=~/^(\S+)_([LR])(\d+)$/) ) { error("Could not parse: $exn_id"); }
+        my $id    = $1;
+        my $lr    = $2;
+        my $pair  = $3;
+        my $count = $4;
+        $$opts{dat}{$id}{$pair} += $val;
+    }
+    close(EXN_FILE);
+    
+    open (PRMR3_FILE, "<", $$opts{prmr3_output}) or error ("Unable to open $$opts{prmr3_output}");
+    open (UNIQ_FILE, ">", $$opts{unique_primers}) or error ("Unable to create $$opts{unique_primers}");
+    my $id;
+    my $eat = 0;
+    my $eaten_rec = 0;
+    while (<PRMR3_FILE>)
+    {
+        my $line = $_;
+        chomp($line);
+        if ( $line=~/^SEQUENCE_ID=/ ) {
+            $eat = 0;
+            $id = $';
+            if ( !has_uniq($$opts{dat}{$id},$id) ) {
+                $eat = 1;
+                $eaten_rec++;
+                next;
+            }
+        }
+        if ( $eat ) { next; }
+
+        if ( $line=~/^PRIMER_PAIR_(\d+)/ or $line=~/^PRIMER_LEFT_(\d+)/ or $line=~/^PRIMER_RIGHT_(\d+)/ ) {
+            my $pair = $1;
+            if ( $$opts{dat}{$id}{$pair}>2 ) { 
+                print UNIQ_FILE "# non-unique ($$opts{dat}{$id}{$pair}x) \t"; 
+            }
+        }
+        print UNIQ_FILE "$line\n";
+    }
+    #print STDERR "Excluded records: $eaten_rec\n";
+    close(PRMR3_FILE);
+    close(UNIQ_FILE);
+}
+
+sub write_primers_output
+{ 
+	my ($opts) = @_;
+	
+    open (UNIQ_FILE, "<", $$opts{unique_primers}) or error ("Unable to open $$opts{unique_primers}");
+    open (TAB_FILE, ">", $$opts{primers_tab}) or error ("Unable to create $$opts{primers_tab}");	
+	print TAB_FILE "#ID\tLeft_primer\tRight_primer\tMelting_temperatures\tProduct_length\n";
+	close TAB_FILE;
+	
+    my ($id,$sid,$seq,@lprimer,@rprimer,@lpos,@rpos,@ltm,@rtm,$chr,$pos);
+    while (<UNIQ_FILE>)
+    {
+        my $line = $_;
+        chomp($line);
+
+        # SEQUENCE_ID=1_133922278
+        if ( $line=~/^SEQUENCE_ID=/ ) 
+        { 
+            if ( $id ) { output_primer($opts,$sid,$seq,$lprimer[0],$rprimer[0],$lpos[0],$rpos[0],$ltm[0],$rtm[0],$chr,$pos); }
+            $id = $';
+            if ( !($id=~/(\S+)_(\d+)$/) ) { error("weird id: $id\n"); }
+            $chr = $1;
+            $pos = $2;
+            $sid++;
+
+            @lprimer = ();
+            @rprimer = ();
+            @lpos = ();
+            @rpos = ();
+            @ltm  = ();
+            @rtm  = ();
+
+            next;
+        }
+        if ( !defined $id ) { next; }
+
+        if ( $line=~/^SEQUENCE_TEMPLATE=/ )
+        {
+            $seq = $';
+            next;
+        }
+        if ( $line=~/^PRIMER_LEFT_\d+_SEQUENCE=/ )
+        {
+            push @lprimer, $';
+            next;
+        }
+        if ( $line=~/^PRIMER_RIGHT_\d+_SEQUENCE=/ )
+        {
+            push @rprimer, $';
+            next;
+        }
+
+        if ( $line=~/^PRIMER_RIGHT_\d+=/ )
+        {
+            push @rpos, $';
+            next;
+        }
+
+        if ( $line=~/^PRIMER_LEFT_\d+=/ )
+        {
+            push @lpos, $';
+            next;
+        }
+
+        if ( $line=~/^PRIMER_RIGHT_\d+_TM=/ )
+        {
+            push @rtm, $';
+            next;
+        }
+
+        if ( $line=~/^PRIMER_LEFT_\d+_TM=/ )
+        {
+            push @ltm, $';
+            next;
+        }
+    }
+    if ( $id ) { output_primer($opts,$sid,$seq,$lprimer[0],$rprimer[0],$lpos[0],$rpos[0],$ltm[0],$rtm[0],$chr,$pos); }
+
+}
+
+sub output_primer
+{
+    my ($opts,$sid,$seq,$lprimer,$rprimer,$lpos,$rpos,$ltm,$rtm,$chr,$pos) = @_;
+    
+    open (TAB_FILE, ">>", $$opts{primers_tab}) or error ("Unable to create $$opts{primers_tab}");	
+	my $id = sprintf "%s_%s_%s", $sid,$chr,$pos;
+
+    # Sanity check the positions
+    my ($ppos,$len) = split(/,/,$lpos);
+    if ( length($lprimer) != $len ) { error("Different length: $lprimer $len\n"); }
+    my $lidx = index($seq,$lprimer);
+    if ( $lidx==-1 ) { error("Not found: $id .. $lprimer in $seq"); }
+    
+    ($ppos,$len) = split(/,/,$rpos);
+    if ( length($rprimer) != $len ) { error("Different length: $rprimer $len\n"); }
+    my $rrprimer = rev_strand(1,$rprimer);
+    my $ridx = index($seq,$rrprimer);
+    if ( $ridx ==-1 ) { error("Not found: $id .. $rprimer ($rrprimer)"); }
+
+    my $span = $ridx - $lidx + 1;
+
+    print TAB_FILE "$id\t$lprimer\t$rprimer\t$ltm,$rtm\t$span\n";
+    close TAB_FILE;
+}
+
+sub rev_strand
+{
+    my ($reverse,$seq) = @_;
+
+    my %map = (A=>'T',C=>'G',G=>'C',T=>'A',U=>'A',a=>'t',c=>'g',g=>'c',t=>'a',u=>'a');
+    my $rev;
+    my $len = length($seq);
+
+    if ( $reverse )
+    {
+        for (my $i=$len-1; $i>=0; $i--)
+        {
+            my $base = substr($seq,$i,1);
+            $rev .= exists($map{$base}) ? $map{$base} : $base;
+        }
+    }
+    else
+    {
+        for (my $i=0; $i<$len; $i++)
+        {
+            my $base = substr($seq,$i,1);
+            $rev .= exists($map{$base}) ? $map{$base} : $base;
+        }
+    }
+    return $rev;
+}
+
+sub has_uniq
+{
+    my ($rec,$id) = @_;
+    for my $i (0..4)
+    {
+        if ( !exists($$rec{$i}) ) { warn("No such key: $i $id\n"); return 0; }
+        if ( $$rec{$i}==2 ) { return 1; }
+    }
+    return 0;
+}
+
+sub get_random_key
+{
+	my @letters = ('a'..'z');
+	my $range = 10;
+	my $rand_key;
+	for (my $i = 1; $i<4; $i++) {
+		$rand_key .= $letters[int rand @letters];
+		$rand_key .= int(rand($range));
+	}
+	return $rand_key;
+}
