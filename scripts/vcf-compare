@@ -338,11 +338,11 @@ sub report_stats
         my $diff  = $$vcf{nread}-$totals{$$vcf{file}};
         my $reported = $totals{$$vcf{file}};
         my $total = $$vcf{nread};
-        $out .= sprintf "SN\t%d (%.1f%%) .. read %d, reported %d\t%s\n", $diff,$diff*100./$total,$total,$reported,$$vcf{file};
+        $out .= sprintf "SN\tNumber of lost sites:\t%d\t%.1f%%\t%d\t%d\t%s\n", $diff,$diff*100./$total,$total,$reported,$$vcf{file};
     }
     if ( $out )
     {
-        print "SN\tNumber of sites lost due to grouping (e.g. duplicate sites)\n";
+        print "# Number of sites lost due to grouping (e.g. duplicate sites): lost, %lost, read, reported, file\n";
         print $out;
     }
 
