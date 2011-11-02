@@ -94,7 +94,7 @@ sub new
     my ($class,@args) = @_;
     my $self = @args ? {@args} : {};
     bless $self, ref($class) || $class;
-    $$self{_status_codes}{DONE} = 1;
+    $$self{_status_codes}{DONE} = 0;
     $$self{_farm} = 'LSF';
     $$self{_farm_options} = { runtime=>600 };
     $$self{_running_jobs} = {};
