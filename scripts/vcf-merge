@@ -295,7 +295,7 @@ sub merge_vcf_files
         for my $vcf (@vcfs) 
         { 
             delete($$vcf{last_line});
-            $vcf->open(region=>$region,parse_header=>1); 
+            $vcf->open(region=>$region); 
             advance_position($vcf);
         }
 

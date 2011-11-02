@@ -35,7 +35,7 @@ sub error
         "Usage: vcf-compare [OPTIONS] file1.vcf file2.vcf ...\n",
         "       vcf-compare -p plots chr1.cmp chr2.cmp ...\n",
         "Options:\n",
-        "   -a, --apply-filters                 Ignore lines where FILTER column is anything else than PASS\n",
+        "   -a, --apply-filters                 Ignore lines where FILTER column is anything else than PASS or '.'\n",
         "   -c, --chromosomes <list|file>       Same as -r, left for backward compatibility. Please do not use as it will be dropped in the future.\n",
         "   -d, --debug                         Debugging information. Giving the option multiple times increases verbosity\n",
         "   -g, --cmp-genotypes                 Compare genotypes, not only positions\n",
@@ -253,7 +253,7 @@ sub compare_vcfs
         for my $vcf (@vcfs)
         {
             delete($$vcf{last_line});
-            $vcf->open(region=>$region,parse_header=>1);
+            $vcf->open(region=>$region);
             delete($$vcf{eof});
         }
         do_region_stats($opts,\@vcfs);
@@ -1212,7 +1212,7 @@ sub read_line
         @items = split(/\t/,$line);
         if ( $$opts{apply_filters} )
         {
-            if ( $items[6] ne 'PASS' )
+            if ( $items[6] ne 'PASS' && $items[6] ne '.' )
             {
                 $line = undef;
                 next;
