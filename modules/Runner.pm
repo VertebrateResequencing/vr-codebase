@@ -185,7 +185,9 @@ sub run
             $SIG{TERM} = $SIG{INT} = sub { kill 9,$pid; die "Signal caught, killing the child $pid.\n"; };
         }
         wait();
-        if ( !$$self{_loop} or $? ) { return; }
+        # Exit with the correct status immediately if the user module fails. Note that +retries applies only to spawned jobs.
+        if ( $? ) { die "\n"; }
+        if ( !$$self{_loop} ) { return; }
         $self->debugln("sleeping...");
         sleep($$self{_loop});
     }
