@@ -28,7 +28,7 @@ sub error
         "   unexpected results.\n",
         "Usage: vcf-isec [OPTIONS] file1.vcf file2.vcf ...\n",
         "Options:\n",
-        "   -a, --apply-filters                 Ignore lines where FILTER column is anything else than PASS\n",
+        "   -a, --apply-filters                 Ignore lines where FILTER column is anything else than PASS or '.'\n",
         "   -C, --chromosomes <list|file>       Process the given chromosomes (comma-separated list or one chromosome per line in a file).\n",
         "   -c, --complement                    Output positions present in the first file but missing from the other files.\n",
         "   -d, --debug                         Debugging information\n",
@@ -273,7 +273,7 @@ sub vcf_isec
         for my $vcf (@vcfs)
         {
             delete($$vcf{last_line});
-            $vcf->open(region=>$chr,parse_header=>1);
+            $vcf->open(region=>$chr);
             delete($$vcf{eof});
         }
         do_chrm_isec($opts,\@vcfs);
@@ -529,7 +529,7 @@ sub read_line
     {
         # We are reading VCF, not a tab-delimited file. Apply filters when requested.
         my @items = split(/\t/,$line);
-        while ( $$opts{apply_filters} && $items[6] ne 'PASS' )
+        while ( $$opts{apply_filters} && $items[6] ne 'PASS' && $items[6] ne '.' )
         {
             $line = $vcf->next_line();
             if ( !$line )
