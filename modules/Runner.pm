@@ -94,7 +94,7 @@ sub new
     my ($class,@args) = @_;
     my $self = @args ? {@args} : {};
     bless $self, ref($class) || $class;
-    $$self{_status_codes}{DONE} = 0;
+    $$self{_status_codes}{DONE} = 111;
     $$self{_farm} = 'LSF';
     $$self{_farm_options} = { runtime=>600 };
     $$self{_running_jobs} = {};
@@ -177,16 +177,22 @@ sub run
     # Run the user's module once or multiple times
     while (1)
     {
+        # The parent loops and forks, the childs run main() in user's module
         my $pid = fork();
-        if ( !$pid ) { $self->main(); }
+        if ( !$pid ) { $self->main(); return; }
         else
         {
-            # If killed, killed the child process too.
+            # If killed, kill the child process too.
             $SIG{TERM} = $SIG{INT} = sub { kill 9,$pid; die "Signal caught, killing the child $pid.\n"; };
         }
         wait();
-        # Exit with the correct status immediately if the user module fails. Note that +retries applies only to spawned jobs.
-        if ( $? ) { die "\n"; }
+        my $status = $?>>8;
+        if ( $status ) 
+        { 
+            if ( $status==$$self{_status_codes}{DONE} ) { exit 0; }
+            # Exit with the correct status immediately if the user module fails. Note that +retries applies only to spawned jobs.
+            die "\n"; 
+        }
         if ( !$$self{_loop} ) { return; }
         $self->debugln("sleeping...");
         sleep($$self{_loop});
