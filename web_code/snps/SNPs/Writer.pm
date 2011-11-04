@@ -19,6 +19,9 @@ sub new
     my ($class,$args) = @_;
 
     my $self = $args ? $args : {};
+    
+    die ("Service Temporarily Unavailable ;;; The Mouse Genome Project SNP/Indel/SV viewer is currently being updated. We apologise for any inconvenience caused.\n") unless $$self{'available'};
+    
     if ( !exists($$self{'sw'}) )
     {
         my $opts =  {
@@ -144,10 +147,15 @@ sub print_error
 
     my $msg = scalar @msg ? join('',@msg) : $self->param('error');
     if ( !$msg ) { return; }
-
+	my @head = split(';;;', $msg);
+	my $header = 'A problem occurred';
+	if (scalar @head == 2) {
+		$header = $head[0];
+		$msg = $head[1];
+	}
     $self->out(qq[
         <div class="error">
-        <h3>A problem occurred</h3>
+        <h3>$header</h3>
         <div style="padding-top:1em;">$msg</div>
         </div>
     ]);
@@ -194,10 +202,15 @@ sub print_help_divs
     my $divs =
     {
         'help_loc' => q[
-            The location can only be given e.g. as
+            The location can be given e.g. as
             <ul class="example">
             <li>1:10,000,000-10,040,000 </li>
             <li>1: 10000000 - 10040000 </li>
+            </ul>
+            or as a gene name (case-independent)
+            <ul class="example">
+            <li>Cops5 </li>
+            <li>Cspp1 </li>
             </ul>
             ],
     };
@@ -292,6 +305,7 @@ sub print_form
             <tr><td>.. in the region] .$self->help_link('#help_loc') . qq[<br />e.g. 2:10000000-10500000</td>
                 <td> <input type="text" class="inputbox" name="location" size="25" value="$def_loc" /> </td>
                 <td style="text-align:right;"><input type="submit" class="button_submit" style="padding:0.2em 0.5em 0.1em 0.5em;margin-left:1.5em;" value="Submit" name="get" /> </td></tr>
+                <tr><td colspan="2">Examples: 2:10000000-10500000, Cops5</td><td></td></tr>
         </table>
         </fieldset>
 

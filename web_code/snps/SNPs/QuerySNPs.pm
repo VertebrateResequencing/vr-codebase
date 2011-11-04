@@ -13,7 +13,9 @@ use strict;
 use warnings;
 
 use SNPs::Session;
+use SNPs::Writer;
 use POSIX;
+use DBI;
 use Storable qw(freeze thaw);
 use CGI::Carp qw(fatalsToBrowser);
 use Data::Dumper;
@@ -35,6 +37,9 @@ sub new
 
         $$self{'session'} = SNPs::Session->new($args); 
     }
+    
+	#$$self{'writer'}->error_exit("Service Temporarily Unavailable ;;; The Mouse Genome Project SNP/Indel/SV viewer is currently being updated. We apologise for any inconvenience caused.\n") unless $$self{'available'};    
+    
     if ( !$self->cache_exists() ) 
     { 
         $self->validate_cgi_params(); 
@@ -43,12 +48,7 @@ sub new
     $$self{title}        = 'SNPs' unless exists($$self{'title'});
     $$self{print_legend} = 1 unless exists($$self{'print_legend'});
     $$self{'action'}     = 'snps';
-
-    # Why was this here?
-    #   $$self{writer}->get_cookies('rows');
-    #   $$self{'cache_page_size'} = $self->validate_int($$self{writer}->param('rows'));
-    #   $$self{writer}->set_cookies('rows');
-
+    
     # The cache_page_size can be overriden by pg_size - user can browse his old results with different 
     #   page size than the new ones.
     if ( $$self{writer}{cgi}->param('pg_size') )
@@ -100,16 +100,16 @@ sub validate_location
         }
         elsif ($chrm ne 'X') { $chrm=0; }
 
-        if ( !$chrm ) { die("Sorry, only the chromosomes 1-19,X are available.\n"); }
+        if ( !$chrm ) { die("Chromosome not available ;;; Chromosomes 1-19 and X are available for searching.\n"); }
 
         if ( $to < $from )
         {
-            die ("Is this a typo? The end coordinate ($to) is smaller than the start coordinate ($from).\n");
+            die ("Error in search coordinates ;;; The end coordinate ($to) is smaller than the start coordinate ($from).\n");
         }
 
-        if ( $to - $from > 10_000_000 )
+        if ( $to - $from > 20_000_000 )
         {
-            die (qq[We are sorry, the search limit of the web interface is 10Mb regions. For larger queries - the raw data can be obtained from our <a href=&quot;ftp://ftp-mouse.sanger.ac.uk/&quot;>ftp site</a>.\n]);
+            die (qq[Search region too large ;;; The current maximum region search limit is 20Mb. For larger queries - the raw data can be obtained from our <a href=&quot;ftp://ftp-mouse.sanger.ac.uk/&quot;>ftp site</a>.\n]);
         }
 
         $$self{chrm}    = $chrm;
@@ -118,11 +118,40 @@ sub validate_location
         $$self{loc}		= $chrm.':'.$from.'-'.$to;	
         return "$chrm:$from-$to";
     }
-    elsif ( !($loc=~/^[A-Za-z0-9.\-_]+$/) )
+    elsif ( $loc=~/^[A-Za-z0-9.\-_]+$/ )
+    {
+        my $dbfile = $$self{'gene_db_location'};
+		my $dbh = DBI->connect(
+			"dbi:SQLite:dbname=$dbfile", # DSN: dbi, driver, database file
+			"",                          # no user
+			"",                          # no password
+			{ RaiseError => 1 },         # complain if something goes wrong
+		) or die "ERROR\n".$DBI::errstr;
+		my $select_sql = "select chromosome, from_pos, to_pos, ensembl_id from gene_position where lower(gene_name) = ?";
+		my $sth = $dbh->prepare($select_sql);
+  		my $location;
+		my ($chrm, $from, $to, $ensembl);
+		$sth->execute(lc($loc)) 
+			or die "Couldn't execute statement: " . $sth->errstr;
+		$sth->bind_columns(undef, \$chrm, \$from, \$to, \$ensembl);
+  		while ($sth->fetch) {
+  	    	$location = $chrm.':'.$from.'-'.$to;
+  	    	$$self{chrm}    = $chrm;
+        	$$self{from}    = $from;
+        	$$self{to}      = $to;
+        	$$self{ens_id}  = $ensembl;
+        	$$self{loc}		= $location;	
+		}	
+		$sth->finish;
+    	$dbh->disconnect;
+    	$location ? return $location : $$self{'writer'}->error_exit("Gene name not found ;;; No chromosome location could be found for $loc.\n");
+    }
+	else
     {
         die(qq[Sorry, could not parse the region '$location'.\n]);
     }
 }
+
 
 # Validate strains:
 #   1) if none strain selected, all will be selected.
@@ -192,7 +221,9 @@ sub validate_cgi_params
     my ($self) = @_;
 
     my $cgi = $$self{'writer'}->{'cgi'};
-
+	
+	$$self{'writer'}->error_exit("Service Temporarily Unavailable ;;; The Mouse Genome Project SNP/Indel/SV viewer is currently being updated. We apologise for any inconvenience caused.\n") unless $$self{'available'};
+    
     my @strains = ();
     for my $strain (keys %{$$self{mouseinfo}})
     {
@@ -421,24 +452,30 @@ sub print_legend
 
     # TODO: position taken from the first result on the page??
     my $html = $$self{'writer'};
-    my $lookseq_win = $$self{to}-$$self{from};
-    if ($lookseq_win > 100000) {
-    	$lookseq_win = 100000;
-    }
-    my $lookseq_params = 
-        "show=$$self{chrm}:$$self{from}-$$self{to},paired_pileup" .
-        "&amp;win=$lookseq_win" .
-        "&amp;width=$$self{lseq_width}" .
-        "&amp;$$self{lseq_display}" .
-        "&amp;lane=DBA.bam";
+
     $html->out(qq[<div id="legend">
             <b>Try:</b>
                 <div style="margin-left:1em;"> <a href="$$self{'myself'}">New search</a> </div>
                 <div style="margin-left:1em;"> <a href="http://www.ensembl.org/Mus_musculus/Location/View?db=core;r=$$self{chrm}:$$self{from}-$$self{to};" target="_ensembl_snp">View in Ensembl</a> </div>
-                <div style="margin-left:1em;"> <a href="$$self{'lookseq'}?$lookseq_params" target="_lookseq_snp">View in LookSeq</a> </div>
                 <div style="margin-left:1em;"> Click on SNPs for details</div>
             <div style="padding-top:1em;"><b>Download:</b></div>
         ]);
+        
+#lookseq details removed from above:
+#        
+#     my $lookseq_win = $$self{to}-$$self{from};
+#     if ($lookseq_win > 100000) {
+#     	$lookseq_win = 100000;
+#     }
+#     my $lookseq_params = 
+#         "show=$$self{chrm}:$$self{from}-$$self{to},paired_pileup" .
+#         "&amp;win=$lookseq_win" .
+#         "&amp;width=$$self{lseq_width}" .
+#         "&amp;$$self{lseq_display}" .
+#         "&amp;lane=DBA.bam";
+#link to lookseq:
+#   <div style="margin-left:1em;"> <a href="$$self{'lookseq'}?$lookseq_params" target="_lookseq_snp">View in LookSeq</a> </div>
+                
 
     my $session = $$self{session}->id();
     $html->out(qq[<div style="margin-left:1em;">Formats: <a href="$$self{'myself'}?cache=$session&action=$$self{action}_dload">tab</a> or <a href="$$self{'myself'}?cache=$session&action=$$self{action}_dload_csv">csv</a>.\n </div>]);
@@ -474,7 +511,7 @@ sub print_legend
 sub print_no_match
 {
     my ($self) = @_;
-    die("Sorry, no matching SNPs.\n");
+    die("SNPs not found ;;; Sorry, unable to find SNPs for $$self{loc}.\n");
 }
 
 
@@ -505,10 +542,8 @@ sub print_header
         my $img_name = lc($str);
         $img_name =~ s{/}{_}g;
         $html->out(qq[<th class="results"><img src="$url_imgs/$img_name.png" alt="$str" /></th>]);
-        # $session->append("\t$str");
     }
     $html->out("</tr></thead><tbody>\n");
-    # $session->append("\n");
 }
 
 sub print_footer
@@ -577,7 +612,15 @@ sub print_row
 
     my $html = $$self{writer};
     $html->out("<tr><td $style>");
-    if ( $print_gene ) { $html->out(sprintf qq[<a href="http://www.ensembl.org/Mus_musculus/Gene/Summary?g=$gene_name" target="_ensembl_snp">$gene_name</a>]); }
+    if ( $print_gene ) { 
+        if ($$self{ens_id}) {
+        	my $ens_id = $$self{ens_id};
+        	$html->out(sprintf qq[<a href="http://www.ensembl.org/Mus_musculus/Gene/Summary?g=$ens_id" target="_ensembl_snp">$gene_name</a>]); 
+        }
+        else {
+        	$html->out(sprintf qq[<a href="http://www.ensembl.org/Mus_musculus/Gene/Summary?g=$gene_name" target="_ensembl_snp">$gene_name</a>]); 
+        }	
+    }
     $html->out(qq[</td><td $style>$chr</td><td $style>$pos</td><td class="resultsbar">$base</td>]);
 
     my $ncols = scalar keys %{$$self{'selected_strains'}};
@@ -593,6 +636,8 @@ sub print_row
         my $atg_qual = $$row[$i]->{'atg_qual'};
         for my $type (@{$$row[$i]->{'consequence'}})
         {
+            #my $type = $$cons{'consequence'};
+
             if ( !$type || $type eq 'SPLICE_SITE' ) { next }  # ignore these - according to Dave these are rubbish
 
             if ( exists($$reported{$type}) ) { next } # report each type only once
@@ -656,12 +701,12 @@ sub print_row
             $onclick = qq[onclick="toggle_one_element('#$id')" ];
             $div = qq[
                 <div class="hidden" id="$id">
-
+                <div style="text-align:right;font-size:smaller;margin-top:-0.5em; margin-right:-0.5em;">
+					<span class="button">[x]</span></div>
                 <table class="details">
                     $details
                 </table>
                 </div>];
-
             if ( !$$row[$i]->{'snp_base'} ) { die "FIXME: yes, it can happen\n"; }
             $snp1 = $$row[$i]->{'snp_base'};
             if ( keys %$reported > 1 ) { $snp1 .= '<sup>+</sup>'; }
@@ -832,6 +877,13 @@ sub run
     {
         my %store = ();
 
+        # We are given variable number of rows for each position.
+        #   The subroutine get_next_position collects all data for one position
+        #   and the last item is stored in the buffer which is reused upon subsequent
+        #   call.
+        #
+        #my $buffer = [];
+        #while (my $pos=$self->get_next_position($result,$buffer))
         my @resultsort = sort { $a <=> $b } keys %{ $result };
         my $irow = 0;
         for my $row ( @resultsort )

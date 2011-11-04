@@ -30,7 +30,7 @@ sub new
 sub run_tabix_command
 {
 	my ($self) = @_;
-	my $tabix_cmd = 'cd '.$$self{'index_directory'}.' ; '.$$self{'tabix_location'}.' '.$$self{'svs_location'}.'  '.$$self{'pos_str'};
+	my $tabix_cmd = "cd $$self{'index_directory'} ; $$self{'tabix_location'} -h $$self{'svs_location'}  $$self{'pos_str'}";
 	my $mouse_strains = $$self{'vcf_strain_order'};
 	my $strains = $$self{'selected_strains'};	
 	my @sort_strains = (sort {$$strains{$a}<=>$$strains{$b}} keys %$strains);	
@@ -112,7 +112,7 @@ sub run_tabix_command
 sub print_no_match
 {
     my ($self) = @_;
-    die("Sorry, no matching structural variations.\n");
+    die("SVs not found ;;; Sorry, unable to find SVs for $$self{loc}.\n");
 }
 
 sub print_legend
@@ -123,22 +123,10 @@ sub print_legend
 
     # TODO: position taken from the first result on the page??
     my $html = $$self{'writer'};
-    my $lookseq_win = $$self{to}-$$self{from};
-    if ($lookseq_win > 100000) {
-    	$lookseq_win = 100000;
-    }
-    my $lookseq_params = 
-        "show=$$self{chrm}:$$self{from}-$$self{to},indel" .
-        "&amp;win=$lookseq_win" .
-        "&amp;width=$$self{lseq_width}" .
-        "&amp;$$self{lseq_display}" .
-        "&amp;lane=DBA.bam";
-
     $html->out(qq[<div id="legend">
             <b>Try:</b>
                 <div style="margin-left:1em;"> <a href="$$self{'myself'}">New search</a> </div>
                 <div style="margin-left:1em;"> <a href="http://www.ensembl.org/Mus_musculus/Location/View?db=core;r=$$self{chrm}:$$self{from}-$$self{to};" target="_ensembl_snp">View in Ensembl</a> </div>
-                <div style="margin-left:1em;"> <a href="$$self{'lookseq'}?$lookseq_params" target="_lookseq_snp">View in LookSeq</a> </div>
                 <div style="margin-left:1em;"> Click on SVs for details</div>
             <div style="padding-top:1em;"><b>Download:</b></div>
         ]);
