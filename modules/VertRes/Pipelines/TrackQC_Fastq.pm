@@ -734,6 +734,7 @@ my \%params =
     'bwa_clip'     => q[$$self{bwa_clip}],
     'chr_regex'    => q[$$self{chr_regex}],
     'bwa_exec'     => q[$$self{bwa_exec}],
+    'do_samtools_rmdup' => q[$$self{do_samtools_rmdup}]
 );
 
 my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
