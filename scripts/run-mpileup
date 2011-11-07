@@ -25,21 +25,21 @@ sub new
     my ($class,@args) = @_;
     my $self = $class->SUPER::new(@args);
 
-    $$self{clean} = 1;
+    $$self{do_clean} = 1;
     $$self{limits} = { runtime=>24*60 };
     $$self{debug_chunks} = 0;
     $$self{_sampleconf} = q[
             mpileup  => '/nfs/users/nfs_p/pd3/cvs/samtools/samtools mpileup -EDS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA',
             bcftools => '/nfs/users/nfs_p/pd3/cvs/samtools/bcftools/bcftools view -p 0.99',
             
-            bams    => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
-            fa_ref  => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
-            mysql   => 'mysql -sN -uXXX -pXXX -hmcs4a -P 3306 g1k_meta',   # To get the sex. Optional when assumed_sex or sample_list is defined below.
+            bams     => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
+            fa_ref   => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
+            mysql    => 'mysql -sN -uXXX -pXXX -hmcs4a -P 3306 g1k_meta',   # To get the sex. Optional when assumed_sex or sample_list is defined below.
 
-            limits  => { runtime=>24*60 },
-            clean   => 1,         # Remove runner's temporary files
+            limits   => { runtime=>24*60 },
+            do_clean => 1,         # Remove runner's temporary files
 
-            ploidy  =>
+            ploidy   =>
             {
                 default => 2,
                 X =>
@@ -301,7 +301,7 @@ sub main
     # Run performance stats and clean
     $self->spawn('runtime_stats',"$outdir/runtime");
     $self->wait;
-    $self->clean($outdir) unless !$$self{clean};
+    $self->clean($outdir) unless !$$self{do_clean};
 
     $self->all_done;
 }
