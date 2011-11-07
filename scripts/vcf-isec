@@ -143,8 +143,8 @@ sub check_columns
 
         for (my $jvcf=0; $jvcf<$ivcf; $jvcf++)
         {
-            if ( !exists($$vcfs[$ivcf]{has_column}) ) { next; }
-            
+            if ( !exists($$vcfs[$jvcf]{has_column}) ) { next; }
+
             if ( scalar @{$$vcfs[$ivcf]{columns}} != scalar @{$$vcfs[$jvcf]{columns}} ) 
             {
                 my @icols = @{$$vcfs[$ivcf]{columns}};
@@ -247,9 +247,12 @@ sub vcf_isec
         if ( $ifile )
         {
             # To get the missig fields filled by the default values
-            for my $hline (@{$$vcf{header_lines}})
+            if ( !$vcfs[0]{delim} )
             {
-                $vcfs[0]->add_header_line($hline,silent=>1);
+                for my $hline (@{$$vcf{header_lines}})
+                {
+                    $vcfs[0]->add_header_line($hline,silent=>1);
+                }
             }
             $source .= ',';
         }
