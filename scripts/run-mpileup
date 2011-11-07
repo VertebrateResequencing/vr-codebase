@@ -705,7 +705,7 @@ sub concat_chroms
     }
     close($fh);
 
-    $self->cmd("vcf-concat -f $chunks_list | vcf-annotate -f + | bgzip -c > $outfile.part");
+    $self->cmd("vcf-concat -f $chunks_list | $$self{filter} | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
 }
 
