@@ -331,11 +331,8 @@ around BUILDARGS => sub {
         library_tube.scanned_in_date,
         library_tube.public_name from current_library_tubes  as library_tube
     join aliquots as aliquot on aliquot.receptacle_type = "library_tube" and aliquot.library_internal_id = library_tube.internal_id
-    where library_tube.internal_id = ?;];
-    
+    where library_tube.internal_id = ? order by aliquot.tag_internal_id desc limit 1];
 
-    
-    
     my $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
     if ($id_ref){
         foreach my $field(keys %$id_ref){
