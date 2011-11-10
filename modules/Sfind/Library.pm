@@ -253,7 +253,7 @@ has 'tag_id'  => (
     is          => 'ro',
     isa         => 'Maybe[Int]',
     #init_arg    => 'tag_internal_id', # this is the actual tag int id, not the id in the bamfile name
-    init_arg    => 'tag_map_id',
+    init_arg    => 'tag_id',
 );
 
 has 'tag_group_id'  => (
@@ -303,7 +303,37 @@ around BUILDARGS => sub {
     my $argref = $class->$orig(@_);
 
     die "Need to call with a librarytube asset id" unless $argref->{id};
-    my $sql = qq[select * from current_library_tubes where internal_id = ? ];
+    my $sql = qq[select     library_tube.uuid,
+        library_tube.internal_id,
+        library_tube.name,
+        library_tube.barcode,
+        library_tube.barcode_prefix,
+        library_tube.closed,
+        library_tube.state,
+        library_tube.two_dimensional_barcode,
+        aliquot.sample_uuid,
+        aliquot.sample_internal_id,
+        library_tube.volume,
+        library_tube.concentration,
+        aliquot.tag_uuid,
+        aliquot.tag_internal_id,
+        library_tube.expected_sequence,
+        tags.map_id as tag_id,
+        library_tube.tag_group_name,
+        library_tube.tag_group_uuid,
+        library_tube.tag_group_internal_id,
+        library_tube.source_request_internal_id,
+        library_tube.source_request_uuid,
+        library_tube.library_type,
+        aliquot.insert_size_from as fragment_size_required_from,
+        aliquot.insert_size_to as fragment_size_required_to,
+        library_tube.sample_name,
+        library_tube.scanned_in_date,
+        library_tube.public_name from current_library_tubes  as library_tube
+    join aliquots as aliquot on aliquot.receptacle_type = "library_tube" and aliquot.library_internal_id = library_tube.internal_id
+    left join current_tags as tags on tags.internal_id = aliquot.tag_internal_id
+    where library_tube.internal_id = ? order by aliquot.tag_internal_id desc limit 1];
+
     my $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
     if ($id_ref){
         foreach my $field(keys %$id_ref){
@@ -399,7 +429,7 @@ sub _get_mplex_pool_ids{
 
 sub _get_is_tagged {
     my ($self) = @_;
-    my $tag = $self->tag_id ? 1 : 0;
+    my $tag = ($self->tag_id && $self->tag_id >= 0) ? 1 : 0;
     return $tag;
 }
 
