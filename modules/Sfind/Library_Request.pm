@@ -228,14 +228,14 @@ sub _get_library_ids {
         # for a non-multiplex request, or the indexed library tube that will be
         # pooled for a multiplexed request
 
-        my $sql= qq[select target_asset_internal_id, target_asset_type from current_requests where internal_id=? ];
-          
+        my $sql= qq[select distinct aliquot.library_internal_id as target_asset_internal_id, aliquot.receptacle_type as target_asset_type  from aliquots as aliquot join current_requests as request on request.target_asset_internal_id = aliquot.receptacle_internal_id where request.internal_id = ?];
+
         my $sth = $self->{_dbh}->prepare($sql);
 
         $sth->execute($self->id);
         foreach(@{$sth->fetchall_arrayref()}){
             if ($_->[0]){
-                die "Unexpected target type ".$_->[1] unless $_->[1] eq 'library_tubes';
+                die "Unexpected target type ".$_->[1] unless $_->[1] eq 'library_tube';
                 push @lib_ids, $_->[0];
             }
         }
