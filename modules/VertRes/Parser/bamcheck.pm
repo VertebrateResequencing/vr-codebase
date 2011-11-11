@@ -99,6 +99,7 @@ sub new {
                 'last_fragment_gc',
                 'last_fragment_qualities',
                 'mismatches_per_cycle',
+                'read_lengths',
 
 =cut
 
@@ -166,6 +167,7 @@ sub _get_header {
         'COV'   => 'coverage',
         'MPC'   => 'mismatches_per_cycle',
         'GCC'   => 'gc_content_per_cycle',
+        'RL'    => 'read_lengths',
     );
     
     while (my $line=<$fh>) 
