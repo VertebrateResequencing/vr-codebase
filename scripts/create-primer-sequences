@@ -25,11 +25,12 @@ create-primer-sequences
   -f, --flanking-length <int>-<int>       The length of the flanking sequence.
   -r, --ref <file>                        The reference sequence.
   -s, --sites <file>                      The file containing the sites data to produce primers for.
-  -c, --cluster                           [OPTIONAL] Group sites into clusters if they are within the minimum range of the -f option. 
+  -c, --cluster <int>                     [OPTIONAL] Group sites into clusters if they are within <int> from each other
   -d, --tmp-dir                           [OPTIONAL] Where to put temporary files.
   -e, --edits <vcf>                       [OPTIONAL] To locate snps and indels within the flanking sequences.
   -n, --notidy                            [OPTIONAL - for debugging] Do not delete the temporary files created.
-  -t, --transcripts                       [OPTIONAL] Design primers also for all transcripts (queries Ensembl).
+      --npairs <int>                      [OPTIONAL] The number of primer pairs to be considered for each product [10]
+  -t, --transcripts <species>             [OPTIONAL] Design primers also for all transcripts (queries Ensembl). Species e.g. Homo_sapiens, Mus_musculus.
   -v, --verbose
   
   also:
@@ -68,14 +69,15 @@ my $opts = {};
 
 GetOptions(
     's|sites=s'                  =>  \$$opts{sites},
-    'c|cluster'                  =>  \$$opts{cluster},
+    'c|cluster=i'                =>  \$$opts{cluster},
     'f|flanking-length=s'        =>  \$$opts{flank},
     'r|ref=s'		             =>  \$$opts{refseq},
     'e|edits=s'		             =>  \$$opts{edits},
     'n|notidy'					 =>  \$$opts{notidy},
     'd|tmp-dir=s'                =>  \$$opts{outdir},
-    't|transcripts'			     =>  \$$opts{transcripts},
+    't|transcripts=s'		     =>  \$$opts{transcripts},
     'v|verbose' 		         =>  \$$opts{verbose},
+    'npairs=i' 		             =>  \$$opts{npairs},
     'h|?|help'	                 =>  \$help,
     );
 
@@ -83,11 +85,10 @@ GetOptions(
 
 &error() unless $$opts{sites} && $$opts{flank} && $$opts{refseq} && !$help;
 
-init_paths($opts);
+init($opts);
 run_primer3($opts);
 run_exonerate($opts);
-make_unique_primers($opts);
-write_primers_output($opts);
+select_unique_primers($opts);
 clean($opts);
 
 exit;
@@ -107,11 +108,12 @@ sub error
   -f, --flanking-length <int>-<int>       The length of the flanking sequence.
   -r, --ref <file>                        The reference sequence.
   -s, --sites <file>                      The file containing the sites data to produce primers for.
-  -c, --cluster                           [OPTIONAL] Group sites into clusters if they are within the minimum range of the -f option. 
+  -c, --cluster <int>                     [OPTIONAL] Group sites into clusters if they are within <int> from each other
   -d, --tmp-dir                           [OPTIONAL] Where to put temporary files.
   -e, --edits <vcf>                       [OPTIONAL] To locate snps and indels within the flanking sequences.
   -n, --notidy                            [OPTIONAL - for debugging] Do not delete the temporary files created.
-  -t, --transcripts                       [OPTIONAL] Design primers also for all transcripts (queries Ensembl).
+  -t, --transcripts <species>             [OPTIONAL] Design primers also for all transcripts (queries Ensembl). Species e.g. Homo_sapiens, Mus_musculus.
+      --npairs <int>                      [OPTIONAL] The number of primer pairs to be considered for each product [10]
   -v, --verbose
   -h, -?, --help                          The help message.
   
@@ -119,6 +121,42 @@ sub error
    
 USAGE
 }
+
+sub init
+{
+    my ($opts) = @_;
+
+    if ( !$$opts{npairs} ) { $$opts{npairs}=10; }
+
+    my ($tmp_file);
+    if ( $$opts{outdir} )
+    {
+        $tmp_file = "$$opts{outdir}/";
+        `mkdir -p $$opts{outdir}`;
+    }
+    else
+    {
+        ($$opts{input_name}, $$opts{directory}) = fileparse($$opts{sites}, qr/\.[^.]*/);
+        my $random_key = get_random_key();
+        $tmp_file = $$opts{directory}."tmp_$$opts{input_name}.".$random_key;
+    }
+
+    ##Primer 3 options
+    $$opts{prmr3_input} = "${tmp_file}1-primer3.in";
+    $$opts{prmr3_output} = "${tmp_file}1-primer3.out";
+    $$opts{prmr3_exec} = "/software/vertres/bin-external/primer3_core";
+
+    ##Exonerate options
+    $$opts{prmrs_fa} = "${tmp_file}2-exonerate.fa";
+    $$opts{exonerate_output} = "${tmp_file}2-exonerate.out";
+    $$opts{exonerate_exec} = "/software/vertres/bin-external/exonerate --verbose 0 --showalignment no --showvulgar yes";
+
+    $$opts{files_to_remove} = [ $$opts{prmr3_input}, $$opts{prmr3_output}, $$opts{prmrs_fa}, $$opts{exonerate_output} ];
+
+    $SIG{TERM} = sub { clean($opts); exit; };
+    $SIG{INT}  = sub { clean($opts); exit; };
+}
+
 
 sub run_primer3
 {
@@ -139,7 +177,7 @@ sub run_primer3
         if ( $line=~/^#/ ) { next; }
         my @items = split(/\s+/,$line);
         chomp($items[-1]);
-		if ( @items<2 or !($items[1]=~/^\d+$/) ) { error("Could not parse: $line"); }
+		if ( @items<2 or !($items[1]=~/^\d+$/) ) { error("Could not parse $$opts{sites}: $line"); }
         push @sites, { chr=>$items[0], pos=>$items[1], ref=>$items[2] ? $items[2] : '', alt=>$items[3] ? $items[3] : '' };
         flush_sites($opts,$fh_prm,\@sites);
     }
@@ -164,7 +202,7 @@ sub flush_sites
         }
 
         # Check if the last site is still within a cluster
-        if ( $$sites[0]{chr} eq $$sites[-1]{chr} && $$sites[-1]{pos}-$$sites[0]{pos}<$$opts{span_min} ) { return; }
+        if ( $$sites[0]{chr} eq $$sites[-1]{chr} && $$sites[-1]{pos}-$$sites[-2]{pos}<$$opts{cluster} ) { return; }
 
         @sites = splice(@$sites,0,@$sites-1);
     }
@@ -174,7 +212,7 @@ sub flush_sites
     }
 
     # Find the center
-    my $pos = ($sites[0]{pos}+$sites[-1]{pos})/2;
+    my $pos = int(($sites[0]{pos}+$sites[-1]{pos})/2);
     my $chr = $sites[0]{chr};
 
     my $range_min = int($$opts{span_min}/2);
@@ -196,6 +234,7 @@ sub flush_sites
 
     my $seq = $$opts{fa}->get_slice($chr,$from,$to);
     my $ref = substr($seq,$range_max,1); # For sanity check in the transcripts
+
     for my $vcfpos (@mask_positions) 
     {
         # Alternative way would be to replace REF by ALT. However, this might not be possible 
@@ -218,6 +257,8 @@ sub flush_sites
         print $fh "SEQUENCE_TARGET=$pcr_from,$pcr_len\n";
         print $fh "PRIMER_MAX_NS_ACCEPTED=0\n";
         print $fh "PRIMER_TASK=pick_pcr_primers\n";
+        print $fh "PRIMER_NUM_RETURN=$$opts{npairs}\n";
+        print $fh "PRIMER_EXPLAIN_FLAG=1\n";
         print $fh "=\n";
     }
 }
@@ -227,7 +268,7 @@ sub query_transcripts
     my ($opts,%args) = @_;
     if ( !exists($$opts{registry}) ) 
     {
-        $$opts{species} = 'Mus_musculus';
+        $$opts{species} = $$opts{transcripts};
         warn("ToDo: Using hardwired species for Ensembl: $$opts{species}\n");
 
         $$opts{registry} = 'Bio::EnsEMBL::Registry';
@@ -246,41 +287,53 @@ sub query_transcripts
     
     my $slice = $$opts{slice}->fetch_by_region('chromosome',$chr,$pos,$pos);
     my $transcripts = $$opts{transcript}->fetch_all_by_Slice($slice);
-    while ( my $tr = shift @{$transcripts} ) 
+    #while ( my $tr = shift @{$transcripts} ) 
+    for my $tr (@$transcripts) 
     {
         my $tr = $$opts{transcript}->fetch_by_stable_id($tr->stable_id);
         my $strand    = $tr->strand();
         my $stable_id = $tr->stable_id();
-        my $cpos      = ($tr->genomic2cdna($pos,$pos,1))[0]->start - 1;   # Ensembl uses 1-based coordinates
+        my @cpos      = $tr->genomic2cdna($pos,$pos,1);
+        if ( ref($cpos[0]) ne 'Bio::EnsEMBL::Mapper::Coordinate' ) { next; }
+        my $cpos      = $cpos[0]->start - 1;   # Ensembl uses 1-based coordinates
         my $seq       = $tr->seq->seq;
+        my $type      = $tr->biotype;
 
         # Apply known variant mask
         for my $mpos (@{$args{mask}})
         {
-            my $cmpos = ($tr->genomic2cdna($mpos,$mpos,1))[0]->start - 1;
+            my @cmpos = $tr->genomic2cdna($mpos,$mpos,1);
+            if ( ref($cmpos[0]) ne 'Bio::EnsEMBL::Mapper::Coordinate' ) { next; }
+            my $cmpos = $cmpos[0]->start - 1;
             substr($seq,$cmpos,1,'N');
+            print STDERR "masking: $chr $pos .. $mpos\n";
         }
 
-        # Chop the sequence or extend with N's 
         if ( $cpos > $range ) 
         { 
+            # Chop the sequence
+            if ( $cpos-$range >= length($seq) ) { error("Outside the range: $chr:$pos $stable_id $type $strand .. $cpos-$range ",length($seq)); }
             $seq = substr($seq,$cpos-$range); 
         }
         elsif ( $cpos < $range ) 
-        { 
+        {
+            # Extend with N's
             $seq = ('N' x ($range-$cpos)) . $seq; 
         }
         my $seq_len = length($seq);
         if ( $seq_len > 2*$range+1 ) 
         { 
+            # Chop the sequence
             $seq = substr($seq,0,2*$range+1); 
         }
         elsif ( $seq_len < 2*$range+1 )
         {
+            # Extend with N's
             $seq .= 'N' x (2*$range+1-$seq_len);
         }
+        if ( $strand==-1 ) { $seq = reverse_strand(1,$seq); }
         my $base = substr($seq,$range,1);
-        if ( $base ne $args{ref} ) { error("Sanity check failed: expected $args{ref}, got $base\n"); }
+        if ( $base ne $args{ref} ) { error("Sanity check failed for the transcript $stable_id: expected $args{ref} at $chr:$pos, got $base\n"); }
 
         my $has_seq = 0;
         for my $stored (@seqs)
@@ -303,10 +356,10 @@ sub run_exonerate
     my ($opts) = @_;
     my $id;
     
-    open (FA_FILE, ">", $$opts{prmrs_fa}) or error ("Unable to create $$opts{prmrs_fa}");
-    open (PRMR3_FILE, "<", $$opts{prmr3_output}) or error ("Unable to open $$opts{prmr3_output}");
-    while (<PRMR3_FILE>) {
-		my $line = $_;
+    open (my $fa_fh, ">", $$opts{prmrs_fa}) or error ("Unable to create $$opts{prmrs_fa}");
+    open (my $prm_fh, "<", $$opts{prmr3_output}) or error ("Unable to open $$opts{prmr3_output}");
+    while (my $line = <$prm_fh>) 
+    {
 		chomp $line;
         # SEQUENCE_ID=MATCH_DEL_RAW_1_1088554_220_221bp
         if ( $line=~/^SEQUENCE_ID=/ )
@@ -316,30 +369,31 @@ sub run_exonerate
         }
         if ( $line=~/^PRIMER_LEFT_(\d+)_SEQUENCE=/ )
         {
-            print FA_FILE ">${id}_L$1\n$'\n";
+            print $fa_fh ">${id}_L$1\n$'\n";
             next;
         }
         if ( $line=~/^PRIMER_RIGHT_(\d+)_SEQUENCE=/ )
         {
-            print FA_FILE ">${id}_R$1\n$'\n";
+            print $fa_fh ">${id}_R$1\n$'\n";
             next;
         }
     }
-    close (PRMR3_FILE);
-    close (FA_FILE);
+    close ($prm_fh);
+    close ($fa_fh);
     
-    cmd($opts,"$$opts{exonerate_exec} $$opts{prmrs_fa} $$opts{refseq} > $$opts{exonerate_output}");
+    cmd($opts,"$$opts{exonerate_exec} -n 3 $$opts{prmrs_fa} $$opts{refseq} > $$opts{exonerate_output}");
 }
 
-sub make_unique_primers
+sub select_unique_primers
 {
     my ($opts) = @_;
-    my $hit;
-    open (EXN_FILE, "<", $$opts{exonerate_output}) or error ("Unable to open $$opts{exonerate_output}");
-    while (<EXN_FILE>)
+
+    # Parse exonerate output and collect the vulgar strings
+    my ($hit,$exn);
+    open(my $exn_fh, "<", $$opts{exonerate_output}) or error ("Unable to open $$opts{exonerate_output}");
+    while (my $line = <$exn_fh>)
     {
         # vulgar: MATCH_DEL_RAW_19_46278660_1026_1027bp_R4 0 20 + 1 6081126 6081106 - 100 M 20 20
-        my $line = $_;
         if ( $line=~/^vulgar: (\S+)/ )
         {
             $$hit{$1}++;
@@ -347,132 +401,101 @@ sub make_unique_primers
     }
     while (my ($exn_id,$val)=each %$hit)
     {
-        # X_39007429_L1	1 captures 1. X_39007429, 2. L, 3. 1, 4. 1
-        if ( !($exn_id=~/^(\S+)_([LR])(\d+)$/) ) { error("Could not parse: $exn_id"); }
+        # X_39007429_L1	1 captures id=X_39007429, lr=L, pair=1
+        if ( !($exn_id=~/^(\S+)_([LR])(\d+)$/) ) { error("Could not parse $$opts{exonerate_output}: $exn_id"); }
         my $id    = $1;
         my $lr    = $2;
         my $pair  = $3;
-        my $count = $4;
-        $$opts{dat}{$id}{$pair} += $val;
+        $$exn{$id}{$pair}{$lr} += $val;
     }
-    close(EXN_FILE);
+    close($exn_fh);
     
-    open (PRMR3_FILE, "<", $$opts{prmr3_output}) or error ("Unable to open $$opts{prmr3_output}");
-    open (UNIQ_FILE, ">", $$opts{unique_primers}) or error ("Unable to create $$opts{unique_primers}");
-    my $id;
-    my $eat = 0;
-    my $eaten_rec = 0;
-    while (<PRMR3_FILE>)
+    # Parse the Primer3 output
+    open(my $prm_fh, "<", $$opts{prmr3_output}) or error ("Unable to open $$opts{prmr3_output}: $!");
+    my ($eat,$dat);
+    while (my $line = <$prm_fh>)
     {
-        my $line = $_;
         chomp($line);
-        if ( $line=~/^SEQUENCE_ID=/ ) {
+        if ( $line=~/^SEQUENCE_ID=/ ) 
+        {
+            if ( !$eat && defined $dat ) { output_primer($opts,$exn,$dat); }
+            $dat = { id=> $' };
             $eat = 0;
-            $id = $';
-            if ( !has_uniq($$opts{dat}{$id},$id) ) {
-                $eat = 1;
-                $eaten_rec++;
-                next;
-            }
+            next;
         }
         if ( $eat ) { next; }
-
-        if ( $line=~/^PRIMER_PAIR_(\d+)/ or $line=~/^PRIMER_LEFT_(\d+)/ or $line=~/^PRIMER_RIGHT_(\d+)/ ) {
-            my $pair = $1;
-            if ( $$opts{dat}{$id}{$pair}>2 ) { 
-                print UNIQ_FILE "# non-unique ($$opts{dat}{$id}{$pair}x) \t"; 
+        if ( $line=~/^PRIMER_PAIR_NUM_RETURNED=(\d+)/ )
+        {
+            if ( $1==0 ) 
+            { 
+                warn("No primers offered by primer3: $$dat{id}\n");
+                $eat = 1; 
             }
+            next;
         }
-        print UNIQ_FILE "$line\n";
+        if ( $line=~/^SEQUENCE_TEMPLATE=/ ) { $$dat{seq} = $'; next; }
+        if ( $line=~/^PRIMER_LEFT_(\d+)_SEQUENCE=/ ) { $$dat{primer}{$1}{L} = $'; next; }
+        if ( $line=~/^PRIMER_RIGHT_(\d+)_SEQUENCE=/ ) { $$dat{primer}{$1}{R} = $'; next; }
+        if ( $line=~/^PRIMER_LEFT_(\d+)=/ ) { $$dat{pos}{$1}{L} = $'; next; }
+        if ( $line=~/^PRIMER_RIGHT_(\d+)=/ ) { $$dat{pos}{$1}{R} = $'; next; }
+        if ( $line=~/^PRIMER_LEFT_(\d+)_TM=/ ) { $$dat{tm}{$1}{L} = $'; next; }
+        if ( $line=~/^PRIMER_RIGHT_(\d+)_TM=/ ) { $$dat{tm}{$1}{R} = $'; next; }
     }
-    #print STDERR "Excluded records: $eaten_rec\n";
-    close(PRMR3_FILE);
-    close(UNIQ_FILE);
-}
-
-sub write_primers_output
-{ 
-	my ($opts) = @_;
-
-    open (UNIQ_FILE, "<", $$opts{unique_primers}) or error ("Unable to open $$opts{unique_primers}");
-	print "#ID\tLeft_primer\tRight_primer\tMelting_temperagures\tProduct_length\tTarget_ID\tTarget_Sequence\n";
-	
-    my ($id,$sid,$seq,@lprimer,@rprimer,@lpos,@rpos,@ltm,@rtm,$chr,$pos);
-    while (<UNIQ_FILE>)
+    close($prm_fh);
+    if ( !$eat && defined $dat ) 
     {
-        my $line = $_;
-        chomp($line);
-
-        # SEQUENCE_ID=1_133922278
-        if ( $line=~/^SEQUENCE_ID=/ ) 
-        { 
-            if ( $id ) { output_primer($opts,$id,$sid,$seq,$lprimer[0],$rprimer[0],$lpos[0],$rpos[0],$ltm[0],$rtm[0],$chr,$pos); }
-            $id = $';
-            if ( !($id=~/(\S+)_(\d+)(_.+)?$/) ) { error("weird id: $id\n"); }
-            $chr = $1;
-            $pos = $2;
-            $sid++;
-
-            @lprimer = ();
-            @rprimer = ();
-            @lpos = ();
-            @rpos = ();
-            @ltm  = ();
-            @rtm  = ();
-
-            next;
-        }
-        if ( !defined $id ) { next; }
-
-        if ( $line=~/^SEQUENCE_TEMPLATE=/ )
-        {
-            $seq = $';
-            next;
-        }
-        if ( $line=~/^PRIMER_LEFT_\d+_SEQUENCE=/ )
-        {
-            push @lprimer, $';
-            next;
-        }
-        if ( $line=~/^PRIMER_RIGHT_\d+_SEQUENCE=/ )
-        {
-            push @rprimer, $';
-            next;
-        }
-
-        if ( $line=~/^PRIMER_RIGHT_\d+=/ )
-        {
-            push @rpos, $';
-            next;
-        }
-
-        if ( $line=~/^PRIMER_LEFT_\d+=/ )
-        {
-            push @lpos, $';
-            next;
-        }
-
-        if ( $line=~/^PRIMER_RIGHT_\d+_TM=/ )
-        {
-            push @rtm, $';
-            next;
-        }
-
-        if ( $line=~/^PRIMER_LEFT_\d+_TM=/ )
-        {
-            push @ltm, $';
-            next;
-        }
+        output_primer($opts,$exn,$dat);
     }
-    if ( $id ) { output_primer($opts,$id,$sid,$seq,$lprimer[0],$rprimer[0],$lpos[0],$rpos[0],$ltm[0],$rtm[0],$chr,$pos); }
-
 }
 
 sub output_primer
 {
-    my ($opts,$id,$sid,$seq,$lprimer,$rprimer,$lpos,$rpos,$ltm,$rtm,$chr,$pos) = @_;
-    
-	my $pair_id = sprintf "%s_%s_%s", $sid,$chr,$pos;
+    my ($opts,$exn,$dat) = @_;
+
+    my $id = $$dat{id};
+    # use Data::Dumper; print STDERR Dumper($exn,$dat);
+
+    # Check the uniqueness of exonerate hits
+    my $pair_to_use;
+    if ( exists($$exn{$id}) ) 
+    {
+        for my $pair (sort {$a<=>$b} keys %{$$exn{$id}})
+        {
+            if ( exists($$exn{$id}{$pair}{L}) && $$exn{$id}{$pair}{L}!=1 ) { next; }
+            if ( exists($$exn{$id}{$pair}{R}) && $$exn{$id}{$pair}{R}!=1 ) { next; }
+            $pair_to_use = $pair;
+        }
+        if ( !$pair_to_use )
+        {
+            warn("No usable primers selected by exonerate: $id\n");
+            return;
+        }
+    }
+    else
+    {
+        $pair_to_use = (sort {$a<=>$b} keys %{$$dat{primer}})[0];
+        warn("No hit from exonerate (splice site overlap?), using first pair: $id\n");
+    }
+    if ( !exists($$dat{primer}{$pair_to_use}) ) { error("FIXME: no such pair $id:$pair_to_use in primer3 output?"); }
+
+    if ( !$$opts{header_printed} )
+    {
+        $$opts{header_printed} = 1;
+        print "#ID\tLeft_primer\tRight_primer\tMelting_temperagures\tProduct_length\tTarget_ID\tTarget_Sequence\n";
+    }
+
+    if ( !($id=~/^([^_]+)_(\d+)_.+$/) ) { error("Could not parse the pair ID: $id\n"); }
+    my $chr = $1;
+    my $pos = $2;
+	my $short_pair_id = sprintf "%s_%s_%s", ++$$opts{nprinted},$chr,$pos;
+
+    my $lprimer = $$dat{primer}{$pair_to_use}{L};
+    my $rprimer = $$dat{primer}{$pair_to_use}{R};
+    my $lpos    = $$dat{pos}{$pair_to_use}{L};
+    my $rpos    = $$dat{pos}{$pair_to_use}{R};
+    my $ltm     = $$dat{tm}{$pair_to_use}{L};
+    my $rtm     = $$dat{tm}{$pair_to_use}{R};
+    my $seq     = $$dat{seq};
 
     # Sanity check the positions
     my ($ppos,$len) = split(/,/,$lpos);
@@ -482,19 +505,32 @@ sub output_primer
     
     ($ppos,$len) = split(/,/,$rpos);
     if ( length($rprimer) != $len ) { error("Different length: $rprimer $len\n"); }
-    my $rrprimer = rev_strand(1,$rprimer);
+    my $rrprimer = reverse_strand(1,$rprimer);
     my $ridx = index($seq,$rrprimer);
     if ( $ridx ==-1 ) { error("Not found: $id .. $rprimer ($rrprimer)"); }
 
     my $span = $ridx - $lidx - length($lprimer);
     my $span_seq = substr($seq,$lidx,$span+length($rprimer)+length($lprimer));
-    if ( $span<$$opts{span_min} or $span>$$opts{span_max} ) { error("The primer $pair_id not within requested range <$$opts{span_min},$$opts{span_max}>: $span\n"); }
+    if ( $span<$$opts{span_min} or $span>$$opts{span_max} ) { error("The primer $id not within requested range <$$opts{span_min},$$opts{span_max}>: $span\n"); }
+
+    my $printed_id = $lprimer.'-'.$rprimer;
+    if ( exists($$opts{printed}{$printed_id}) )
+    {
+        my $msg = "The pair $id is identical to $$opts{printed}{$printed_id}{id}, skipping\n";
+        if ( abs($span-$$opts{printed}{$printed_id}{span})>20 )
+        {
+            $msg = "The pair $id is identical to $$opts{printed}{$printed_id}{id} except for product length ($span vs $$opts{printed}{$printed_id}{span}), skipping...\n";
+        }
+        warn($msg);
+        return; 
+    }
+    $$opts{printed}{$printed_id} = { id=>$id, span=>$span };
 
     $id =~ s/^\S+_\d+_//;
-    print "$pair_id\t$lprimer\t$rprimer\t$ltm,$rtm\t$span\t$id\t$span_seq\n";
+    print "$short_pair_id\t$lprimer\t$rprimer\t$ltm,$rtm\t$span\t$id\t$span_seq\n";
 }
 
-sub rev_strand
+sub reverse_strand
 {
     my ($reverse,$seq) = @_;
 
@@ -521,17 +557,6 @@ sub rev_strand
     return $rev;
 }
 
-sub has_uniq
-{
-    my ($rec,$id) = @_;
-    for my $i (0..4)
-    {
-        if ( !exists($$rec{$i}) ) { warn("No such key: $i $id\n"); return 0; }
-        if ( $$rec{$i}==2 ) { return 1; }
-    }
-    return 0;
-}
-
 sub get_random_key
 {
 	my @letters = ('a'..'z');
@@ -552,42 +577,6 @@ sub clean
     {
         unlink($file);
     }
-}
-
-sub init_paths
-{
-    my ($opts) = @_;
-
-    my ($tmp_file);
-    if ( $$opts{outdir} )
-    {
-        $tmp_file = "$$opts{outdir}/";
-        `mkdir -p $$opts{outdir}`;
-    }
-    else
-    {
-        ($$opts{input_name}, $$opts{directory}) = fileparse($$opts{sites}, qr/\.[^.]*/);
-        my $random_key = get_random_key();
-        $tmp_file = $$opts{directory}."tmp_$$opts{input_name}.".$random_key;
-    }
-
-    ##Primer 3 options
-    $$opts{prmr3_input} = "${tmp_file}1-primer3.in";
-    $$opts{prmr3_output} = "${tmp_file}1-primer3.out";
-    $$opts{prmr3_exec} = "/software/vertres/bin-external/primer3_core";
-
-    ##Exonerate options
-    $$opts{prmrs_fa} = "${tmp_file}2-exonerate.fa";
-    $$opts{exonerate_output} = "${tmp_file}2-exonerate.out";
-    $$opts{exonerate_exec} = "/software/vertres/bin-external/exonerate";
-
-    ##Unique primer stage options
-    $$opts{unique_primers} = "${tmp_file}3-unique-primers.txt";
-
-    $$opts{files_to_remove} = [ $$opts{unique_primers}, $$opts{prmr3_input}, $$opts{prmr3_output}, $$opts{prmrs_fa}, $$opts{exonerate_output} ];
-
-    $SIG{TERM} = sub { clean($opts); exit; };
-    $SIG{INT}  = sub { clean($opts); exit; };
 }
 
 sub cmd
