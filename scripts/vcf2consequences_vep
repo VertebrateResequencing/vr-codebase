@@ -255,12 +255,16 @@ sub parse_rec {
 	($rec{vep_key}, $rec{Location}, $rec{Allele}, $rec{Gene}, $rec{Feature}, $rec{Feature_type}, $rec{Consequence}, $rec{cDNA_position}, $rec{CDS_position}, $rec{Protein_position}, $rec{Amino_acids}, $rec{Codons}, $rec{Existing_variation}, $rec{Extra}) = split("\t",$vep_rec);
 
 	# vep key is either rs id or format 1_8482797_T/C
-	if ($rec{vep_key} =~ /^rs/) {
-		$rec{variant_id} = $rec{vep_key};
-		($rec{vep_chr},$rec{vep_pos}) = split(":",$rec{Location});
+	my ($key_prefix,undef) = split("_", $rec{vep_key});
+	($rec{vep_chr},undef) = split(":",$rec{Location});
+
+	if ($key_prefix eq $rec{vep_chr}) {
+		($rec{vep_chr},$rec{vep_pos},$rec{variant_id}) = split("_", $rec{vep_key});
 	}
 	else {
-		($rec{vep_chr},$rec{vep_pos},$rec{variant_id}) = split("_", $rec{vep_key});
+		$rec{variant_id} = $rec{vep_key};
+		($rec{vep_chr},$rec{vep_pos}) = split(":",$rec{Location});
+		$rec{vep_pos} =~ s/-.*//;
 	}
 	return \%rec;
 }
