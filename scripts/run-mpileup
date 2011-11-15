@@ -25,16 +25,21 @@ sub new
     my ($class,@args) = @_;
     my $self = $class->SUPER::new(@args);
 
+    $$self{do_clean} = 1;
+    $$self{limits} = { runtime=>24*60 };
     $$self{debug_chunks} = 0;
     $$self{_sampleconf} = q[
             mpileup  => '/nfs/users/nfs_p/pd3/cvs/samtools/samtools mpileup -EDS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA',
             bcftools => '/nfs/users/nfs_p/pd3/cvs/samtools/bcftools/bcftools view -p 0.99',
             
-            bams    => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
-            fa_ref  => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
-            mysql   => 'mysql -sN -uXXX -pXXX -hmcs4a -P 3306 g1k_meta',   # To get the sex. Optional when assumed_sex is defined below.
+            bams     => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
+            fa_ref   => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
+            mysql    => 'mysql -sN -uXXX -pXXX -hmcs4a -P 3306 g1k_meta',   # To get the sex. Optional when assumed_sex or sample_list is defined below.
 
-            ploidy  =>
+            limits   => { runtime=>24*60 },
+            do_clean => 1,         # Remove runner's temporary files
+
+            ploidy   =>
             {
                 default => 2,
                 X =>
@@ -72,6 +77,7 @@ sub new
             chunks_overlap    => 0,
             whole_genome_bams => 0,         # Set to 1 if BAMs are not splitted by chromosome
             assumed_sex       => undef,     # Set to 'F' for females, 'M' males and undef mysql key above if the DB shouldn't be used.
+            sample_list       => undef,     # Provide list of samples with sex.
 
             # Do specific regions only (whitespace delimited file with the columns CHR,FROM,TO)
             #   regions => 'regions.list',
@@ -216,7 +222,7 @@ sub main
     # Run mpileup for each population and chunk: first all sites BCFs if requested and then call variants
     my $chunks = $self->get_chunks;
 
-    $self->set_limits(runtime=>24*60);
+    $self->set_limits(%{$$self{limits}}) unless !exists($$self{limits});
     if ( scalar keys %{$$self{pops}} > 1 ) { $$self{keep_bcfs} = 1; }
     if ( $$self{keep_bcfs} )
     {
@@ -295,7 +301,7 @@ sub main
     # Run performance stats and clean
     $self->spawn('runtime_stats',"$outdir/runtime");
     $self->wait;
-    $self->clean($outdir);
+    $self->clean($outdir) unless !$$self{do_clean};
 
     $self->all_done;
 }
@@ -387,6 +393,12 @@ sub population_group_bams_list
 sub sample_list
 {
     my ($self,$outfile,$bams) = @_;
+
+    if ( defined $$self{sample_list} )
+    {
+        $self->cmd("cp $$self{sample_list} $outfile");
+        return;
+    }
 
     my %samples;
 
@@ -693,7 +705,7 @@ sub concat_chroms
     }
     close($fh);
 
-    $self->cmd("vcf-concat -f $chunks_list | vcf-annotate -f + | bgzip -c > $outfile.part");
+    $self->cmd("vcf-concat -f $chunks_list | $$self{filter} | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
 }
 

@@ -13,7 +13,7 @@
             the read length of 4.
 */
 
-#define BAMCHECK_VERSION "2011-10-17"
+#define BAMCHECK_VERSION "2011-11-10"
 
 #define _ISOC99_SOURCE
 #include <stdio.h>
@@ -85,6 +85,7 @@ typedef struct
     uint64_t *gc_1st, *gc_2nd;
     uint64_t *isize_inward, *isize_outward, *isize_other;
     uint64_t *acgt_cycles;
+    uint64_t *read_lengths;
 
     // The extremes encountered
     int max_len;            // Maximum read length
@@ -419,6 +420,11 @@ void realloc_buffers(stats_t *stats, int seq_len)
         error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,n*4*sizeof(uint64_t));
     memset(stats->acgt_cycles + stats->nbases*4, 0, (n-stats->nbases)*4*sizeof(uint64_t));
 
+    stats->read_lengths = realloc(stats->read_lengths, n*sizeof(uint64_t));
+    if ( !stats->read_lengths )
+        error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,n*sizeof(uint64_t));
+    memset(stats->read_lengths + stats->nbases, 0, (n-stats->nbases)*sizeof(uint64_t));
+
     stats->nbases = n;
 
     // Realloc the coverage distribution buffer
@@ -443,6 +449,8 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
         realloc_buffers(stats,seq_len);
     if ( stats->max_len<seq_len )
         stats->max_len = seq_len;
+
+    stats->read_lengths[seq_len]++;
 
     // Count GC and ACGT per cycle
     uint8_t base, *seq  = bam1_seq(bam_line);
@@ -798,6 +806,13 @@ void output_stats(stats_t *stats)
         printf("IS\t%d\t%ld\t%ld\t%ld\t%ld\n", isize,(stats->isize_inward[isize]+stats->isize_outward[isize]+stats->isize_other[isize]),
             stats->isize_inward[isize],stats->isize_outward[isize],stats->isize_other[isize]);
 
+    printf("# Read lengths. Use `grep ^RL | cut -f 2-` to extract this part. The columns are: read length, count\n");
+    int ilen;
+    for (ilen=0; ilen<stats->max_len; ilen++)
+    {
+        if ( stats->read_lengths[ilen]>0 )
+            printf("RL\t%d\t%ld\n", ilen,stats->read_lengths[ilen]);
+    }
 
     printf("# Coverage distribution. Use `grep ^COV | cut -f 2-` to extract this part.\n");
     printf("COV\t[<%d]\t%d\t%ld\n",stats->cov_min,stats->cov_min-1,stats->cov[0]);
@@ -1014,6 +1029,7 @@ int main(int argc, char *argv[])
     stats.rseq_buf      = calloc(stats.nref_seq,sizeof(uint8_t));
     stats.mpc_buf       = stats.fai ? calloc(stats.nquals*stats.nbases,sizeof(uint64_t)) : NULL;
     stats.acgt_cycles   = calloc(4*stats.nbases,sizeof(uint64_t));
+    stats.read_lengths  = calloc(stats.nbases,sizeof(uint64_t));
 
     // Collect statistics
     while (samread(sam,bam_line) >= 0) 

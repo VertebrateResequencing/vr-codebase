@@ -25,7 +25,8 @@ sub new
     my ($class,@args) = @_;
     my $self = $class->SUPER::new(@args);
 
-    $$self{limits} = { memory=>5_500, runtime=>3*24*60 };
+    $$self{do_clean}    = 1;
+    $$self{limits}      = { memory=>5_500, runtime=>3*24*60 };
     $$self{impute2_bin} = 'impute2';
     $$self{_sampleconf} = q[
         impute2_bin => 'impute2',
@@ -37,7 +38,8 @@ sub new
         chunk_size   => 3_000_000,
         chromosomes  => [qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22)],
 
-        limits  => { memory=>5_500, runtime=>3*24*60 },
+        limits   => { memory=>5_500, runtime=>3*24*60 },
+        do_clean => 1,   # Remove runner's temporary files
     ]."\n";
 
     $$self{chunks_overlap} = 0;
@@ -171,7 +173,7 @@ sub main
     # Run performance stats and clean
     $self->spawn('runtime_stats',"$outdir/runtime");
     $self->wait;
-    $self->clean($outdir);
+    $self->clean($outdir) unless !$$self{do_clean};
 
     $self->all_done;
 }

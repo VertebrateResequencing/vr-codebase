@@ -25,6 +25,7 @@ sub new
     my ($class,@args) = @_;
     my $self = $class->SUPER::new(@args);
 
+    $$self{do_clean} = 1;
     $$self{debug_chunks} = 0;
     $$self{limits} = { memory=>5_000, runtime=>24*60 };
     $$self{_sampleconf} = q[
@@ -36,7 +37,8 @@ sub new
             chunk_size      => 1_000_000,
             debug_chunks    => 0,
 
-            limits  => { memory=>5_000, runtime=>24*60 },
+            limits   => { memory=>5_000, runtime=>24*60 },
+            do_clean => 1,         # Remove runner's temporary files
     ]."\n";
 
     $$self{usage} .= 
@@ -143,7 +145,7 @@ sub main
     # Run performance stats and clean
     $self->spawn('runtime_stats',"$outdir/runtime");
     $self->wait;
-    $self->clean($outdir);
+    $self->clean($outdir) unless !$$self{do_clean};
 
     $self->all_done;
 }

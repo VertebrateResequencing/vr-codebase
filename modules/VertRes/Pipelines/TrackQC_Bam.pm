@@ -512,6 +512,7 @@ my \%params =
     'stats_ref'    => q[$stats_ref],
     'chr_regex'    => q[$$self{chr_regex}],
     'bamcheck'     => q[$$self{bamcheck}],
+    'do_samtools_rmdup' => q[$$self{do_samtools_rmdup}]
 );
 
 my \$qc = VertRes::Pipelines::TrackQC_Bam->new(\%params);

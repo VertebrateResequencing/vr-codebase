@@ -20,7 +20,9 @@ sub error
     my (@msg) = @_;
     if ( scalar @msg ) { croak join('',@msg); }
     die
-        "About: Merge the bgzipped and tabix indexed VCF files. (E.g. bgzip file.vcf; tabix -p vcf file.vcf.gz)\n",
+        "About: Merges VCF files by position, creating multi-sample VCFs from fewer-sample VCFs.\n",
+        "   The tool requires bgzipped and tabix indexed VCF files on input. (E.g. bgzip file.vcf; tabix -p vcf file.vcf.gz)\n",
+        "   If you need to concatenate VCFs (e.g. files split by chromosome), look at vcf-concat instead.\n",
         "Usage: merge-vcf [OPTIONS] file1.vcf file2.vcf.gz ... > out.vcf\n",
         "Options:\n",
         "   -c, --chromosomes <list|file>           Same as -r, left for backward compatibility. Please do not use as it will be dropped in the future.\n",

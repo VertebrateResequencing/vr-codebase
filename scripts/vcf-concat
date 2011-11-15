@@ -34,10 +34,10 @@ sub error
         croak @msg;
     }
     die
-        "About: Convenience tool for concatenating VCF files. In the basic mode it does not \n",
-        "   do anything fancy except for a sanity check that all files have the same columns.\n",
-        "   When run with the -s option, it will perform a partial merge sort, looking at\n",
-        "   a limited number of open jobs simultaneously.\n",
+        "About: Convenience tool for concatenating VCF files (e.g. VCFs split by chromosome).\n",
+        "   In the basic mode it does not do anything fancy except for a sanity check that all\n",
+        "   files have the same columns.  When run with the -s option, it will perform a partial\n",
+        "   merge sort, looking at limited number of open files simultaneously.\n",
         "Usage: vcf-concat [OPTIONS] A.vcf.gz B.vcf.gz C.vcf.gz > out.vcf\n",
         "Options:\n",
         "   -c, --check-columns              Do not concatenate, only check if the columns agree.\n",

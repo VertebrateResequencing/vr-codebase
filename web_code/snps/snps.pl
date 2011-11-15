@@ -42,6 +42,7 @@ $ENV{PATH}= '/usr/local/bin';   # solely to stop taint from barfing
 my $params = 
 {
     'debug'        => 0,
+    'available'    => 1,
     'myself'       => 'snps.pl',
     'lookseq'      => '/cgi-bin/modelorgs/mousegenomes/lookseq/index.pl',
     'lseq_win'     => 100,
@@ -65,6 +66,8 @@ my $params =
 	
 	'svs_location' => 'ftp://ftp-mouse.sanger.ac.uk/web_data/web_svs.sdp.gz',
  	
+ 	'gene_db_location' => '/WWW/SANGER_docs/htdocs/modelorgs/mousegenomes/lookseq/data/snps-genes.sqlite',
+	
 	'vcf_strain_order' => ['129P2/OlaHsd','129S1/SvImJ','129S5SvEvBrd','A/J','AKR/J','BALB/cJ','C3H/HeJ','C57BL/6NJ','CAST/EiJ','CBA/J','DBA/2J','LP/J','NOD/ShiLtJ','NZO/HlLtJ','PWK/PhJ','SPRET/EiJ','WSB/EiJ'],
     
     'vcf_strain_map' => {
@@ -86,21 +89,21 @@ my $params =
     	'SPRET'  => { name => 'SPRET/EiJ',},
     	'WSB'  => { name => 'WSB/EiJ',},
     },
-    
+ 
     'mouseinfo' => {
         '129P2/OlaHsd'       => { 	display_name => '129P2/OlaHsd',
         					caption  => 'Commonly used to make embryonic stem cell lines.', 
                             img=>'mouse-129p2.png',
-                            bam=>'129P2.bam', },
+                            bam=>'129P2_OlaHsd.bam', },
         '129S1/SvImJ' => {  display_name => '129S1/SvImJ',
         					caption  => 'Commonly used to make embryonic stem cell lines. 
                                               Progenitor strain of the collaborative cross.',
                             img=>'mouse-129S1_SvImJ.png',
-                            bam=>'129S1.bam' },
+                            bam=>'129S1_SvImJ.bam' },
         '129S5SvEvBrd'       => { display_name => '129S5SvEvBrd',
         					caption  => 'Commonly used to make embryonic stem cell lines.', 
                             img=>'mouse-129s5.png',
-                            bam=>'129S5.bam' },
+                            bam=>'129S5SvEvBrd.bam' },
         'A/J'         => { display_name => 'A/J',
         					caption  => 'An asthma model. Progenitor strain of the collaborative cross and of the heterogeneous stock cross.', 
                             img=>'mouse-A_J.png', 
@@ -109,35 +112,35 @@ my $params =
         					caption  => 'High leukemie incidence. Hyporesponsive to diets containing high levels of fat and cholesterol,
                                           and resistant to aortic lesion formation. Progenitor strain of the heterogeneous stock cross.', 
                             img=>'mouse-AKR_J.png', 
-                            bam=>'AKR.bam' },
+                            bam=>'AKR_J.bam' },
         'BALB/cJ'     => { display_name => 'BALB/cJ',
         					caption  => 'Prone to develop mammary and kidney cancer. Progenitor strain of the 
                                           collaborative cross and of the heterogeneous stock cross.', 
                             img=>'mouse-BALB_cByJ.png',
-                            bam=>'BALB.bam' },
+                            bam=>'BALB_cJ.bam' },
         'C3H/HeJ'     => { display_name => 'C3H/HeJ',
         					caption  => 'Spontaneously develops mammary tumours. Highly susceptible to Gram-negative 
                                           bacterial infections. Progenitor strain of the heterogeneous stock cross.', 
                             img=>'mouse-C3H_HeJ.png', 
-                            bam=>'C3H.bam', },
+                            bam=>'C3H_HeJ.bam', },
         'C57BL/6NJ'   => { display_name => 'C57BL/6NJ',
         					caption  => 'Used in KOMP and EUCOMM programmes to knockout every gene in the mouse genome.', 
                             img=>'mouse-C57BL_6N.png', 
-                            bam=>'C57BL.bam', },
+                            bam=>'C57BL_6NJ.bam', },
         'CAST/EiJ'    => { display_name => 'CAST/EiJ',
         					caption  => 'Resistant to cancer and infections.', 
                             img=>'mouse-CAST_EiJ.png',
-                            bam=>'CAST.bam', },
+                            bam=>'CAST_EiJ.bam', },
         'CBA/J'       => { display_name => 'CBA/J',
         					caption  => 'Renal tubulointerstitial lesions observed at a high frequency. Prone to exocrine 
                                           pancreatic insufficiency syndrome. Progenitor strain of the heterogeneous stock cross.', 
                             img=>'mouse-CBA_J.png',
-                            bam=>'CBA.bam', },
+                            bam=>'CBA_J.bam', },
         'DBA/2J'      => { display_name => 'DBA/2J',
         					caption  => 'Develops agressive early hearing loss. Extreme intolerance to alcohol and morphine. 
                                           Aging DBA/2J mice develop progressive eye abnormalities.', 
                            img=>'mouse-DBA_2J.png', 
-                           bam=>'DBA.bam' },
+                           bam=>'DBA_2J.bam' },
         'LP/J'        => { display_name => 'LP/J',
         					caption  => 'High susceptibility to audiogenic seizures. This strain is also reported to have a 
                                           fairly high incidence of tumors that develop later in life. Progenitor strain 
@@ -147,23 +150,23 @@ my $params =
         'NOD/ShiLtJ'  => { display_name => 'NOD/ShiLtJ',
         					caption  => 'This strain is a polygenic model for type 1 (non-obese) diabetes. Progenitor strain of the collaborative cross.', 
                             img=>'mouse-NOD_ShiLtJ.png', 
-                            bam=>'NOD.bam', },
+                            bam=>'NOD_ShiLtJ.bam', },
         'NZO/HlLtJ'   => { display_name => 'NZO/HlLtJ',
         					caption  => 'New Zealand Obese. Susceptible to type II diabetes. Progenitor strain of the collaborative cross.', 
                             img=>'mouse-nzo.png',
-                            bam=>'NZO.bam', },
+                            bam=>'NZO_HlLtJ.bam', },
         'PWK/PhJ'     => { display_name => 'PWK/PhJ',
         					caption  => 'Susceptibility to type I diabetes and various behavioral traits. Progenitor strain of the collaborative cross.', 
                             img=>'mouse-pwk.png',
-                            bam=>'PWK.bam' },
+                            bam=>'PWK_PhJ.bam' },
         'SPRET/EiJ' => { display_name => 'SPRET/EiJ',
         					caption  => 'Resistant to cancer and infections.', 
                             img=>'mouse-Spretus_EiJ.png',
-                            bam=>'SPRET.bam', },
+                            bam=>'SPRET_EiJ.bam', },
         'WSB/EiJ'     => { display_name => 'WSB/EiJ',
         					caption  => 'Displays extremely long life-span. Progenitor strain of the collaborative cross.', 
                             img=>'mouse-WSB_EiJ.png',
-                            bam=>'WSB.bam', },
+                            bam=>'WSB_EiJ.bam', },
     },
 
     'conseqs' => { 
