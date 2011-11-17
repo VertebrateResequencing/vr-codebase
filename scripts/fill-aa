@@ -81,7 +81,8 @@ sub fill_aa
     my ($opts,$aa_fname) = @_;
 
     my $n_unknown = 0;
-    my $n_filled   = 0;
+    my $n_filled_sites = 0;
+    my $n_filled_bases = 0;
 
     my $vcf = Vcf->new(fh=>\*STDIN);
     $vcf->parse_header();
@@ -90,10 +91,11 @@ sub fill_aa
     print $vcf->format_header();
 
     my $fa;
-    while (my $rec = $vcf->next_data_hash())
+    while (my $rec = $vcf->next_data_array())
     {
-        my $chr = $$rec{CHROM};
-        my $pos = $$rec{POS};
+        my $chr = $$rec[0];
+        my $pos = $$rec[1];
+        my $ref = $$rec[3];
 
         my $fname = $aa_fname;
         if ( ! -e $fname )
@@ -106,24 +108,27 @@ sub fill_aa
             $fa = FaSlice->new(file=>$fname, size=>100_000);
         }
 
-        my $aa = $fa->get_base($chr,$pos);
+        my $ref_len = length($ref);
+        my $aa = $ref_len==1 ? $fa->get_base($chr,$pos) : $fa->get_slice($chr,$pos,$pos+$ref_len-1);
 
         if ( $aa )
         {
-            $$rec{$$vcf{columns}[7]}{AA} = $aa;
-            $n_filled++;
+            $$rec[7] = $vcf->add_info_field($$rec[7],'AA'=>$aa);
+            $n_filled_sites++;
+            $n_filled_bases+=$ref_len;
         }
         else
         {
-            $$rec{$$vcf{columns}[7]}{AA} = '.';
+            $$rec[7] = $vcf->add_info_field($$rec[7],'AA'=>'.');
             $n_unknown++;
         }
-        print $vcf->format_line($rec);
+        print join("\t",@$rec),"\n";
     }
 
     print STDERR 
-        "No AAs        .. $n_unknown\n",
-        "AAs filled    .. $n_filled\n";
+        "AA sites filled  .. $n_filled_sites\n",
+        "AA bases filled  .. $n_filled_bases\n",
+        "No AAs           .. $n_unknown\n";
 }
 
 
