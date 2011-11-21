@@ -1043,7 +1043,11 @@ sub get_import_jobs_from_vrtrack
     debug($config_data,"$config\tget_import_jobs_from_vrtrack...");
 
     my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
-    my $fnames  = $vrtrack->processed_file_hnames('import'=>0);
+    
+    my %filter  = ('import'=>0);
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
+    
+    my $fnames  = $vrtrack->processed_file_hnames(%filter);
 
     my @lanes = @{$vrtrack->processed_lane_hnames() || []};
     if (defined $config_data->{limits}) {
