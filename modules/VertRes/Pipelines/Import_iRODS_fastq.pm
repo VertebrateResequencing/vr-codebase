@@ -232,12 +232,16 @@ system("mv $self->{lane}.fastq.fastqcheck $self->{lane}_1.fastq.fastqcheck");
 };
     }
     print $scriptfh qq{
+foreach my \$fastq (\@fastqs) {
+    # compress & checksum fastq
+    system("md5sum \$fastq > \$fastq.md5; gzip \$fastq; md5sum \$fastq.gz > \$fastq.gz.md5");
+}
+
 # delete bam files
 unlink("$bam", "$bam.bai", "$bam.bc", "$bam.md5");
 
 foreach my \$fastq (\@fastqs) {
-    # compress & checksum fastq and rename the fastqcheck file made by bam2fastq
-    system("md5sum \$fastq > \$fastq.md5; gzip \$fastq; md5sum \$fastq.gz > \$fastq.gz.md5");
+    # rename the fastqcheck file made by bam2fastq
     system("mv \$fastq.fastqcheck \$fastq.gz.fastqcheck");
 }
 
