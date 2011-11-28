@@ -2962,14 +2962,22 @@ sub Vcf4_1::next_data_array
     $$out[3] = uc($$out[3]);
     my $alt  = $$out[4];
     $$out[4] = '';
-    while ($alt=~/[^<>]+/)
+    my $pos = 0;
+    while ( $pos<length($alt) && (my $start=index($alt,'<',$pos))!=-1 )
     {
-        $$out[4] .= $`;
-        $$out[4] .= (length($`) && substr($`,-1,1) eq '<' ) ? $& : uc($&);
-        $alt = $';
-        if ( $alt=~/^<[^<>]+>/ ) { $$out[4] .= $&; $alt=$'; }
+        my $end = index($alt,'>',$start+1);
+        if ( $end==-1 ) { $self->throw("Could not parse ALT [$alt]\n") }
+        if ( $start>$pos )
+        {
+            $$out[4] .= uc(substr($alt,$pos,$start-$pos));
+        }
+        $$out[4] .= substr($alt,$start,$end-$start+1);
+        $pos = $end+1;
     }
-
+    if ( $pos<length($alt) )
+    {
+        $$out[4] .= uc(substr($alt,$pos));
+    }
     return $out;
 }
 
