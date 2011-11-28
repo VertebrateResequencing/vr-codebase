@@ -25,7 +25,7 @@ sub error
         "Usage: vcf-sort > out.vcf\n",
         "       cat file.vcf | vcf-sort > out.vcf\n",
         "Options:\n",
-        "   -v, --verbose                   Print the sort command used\n",
+        "   -c, --chromosomal-order         Use natural ordering (1,2,10,MT,X) rather then the default (1,10,2,MT,X).\n",
         "   -h, -?, --help                  This help message.\n",
         "\n";
 }
@@ -35,7 +35,7 @@ sub parse_params
     my $opts = {};
     while (my $arg=shift(@ARGV))
     {
-        if ( $arg eq '-v' || $arg eq '--verbose' ) { $$opts{verbose}=1; next; }
+        if ( $arg eq '-c' || $arg eq '--chromosomal-order' ) { $$opts{chromosomal_order}=1; next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         if ( -e $arg ) { $$opts{file}=$arg; next }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
@@ -63,7 +63,6 @@ sub sort_vcf
 
     my $sort_opts = check_sort_options($opts);
     my $cmd = "sort $sort_opts -k2n";
-    if ( $$opts{verbose} ) { print STDERR "$cmd\n"; }
     open(my $sort_fh,"| $cmd") or error("$cmd: $!");
 
     my $unflushed = select(STDOUT); 
@@ -84,8 +83,12 @@ sub sort_vcf
 sub check_sort_options
 {
     my ($opts) = @_;
+    if ( !$$opts{chromosomal_order} ) { return '-k1d' }
+
     my @has_version_sort = `sort --help | grep -- --version-sort`;
     if ( scalar @has_version_sort ) { return '-k1V'; }
+
+    error("Obsolete version of sort command installed, please run without the -c option.\n");
     return '-k1d';
 }
 
