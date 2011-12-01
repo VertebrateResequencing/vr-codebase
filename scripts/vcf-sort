@@ -62,7 +62,7 @@ sub sort_vcf
     else { $fh = *STDIN; }
 
     my $sort_opts = check_sort_options($opts);
-    my $cmd = "sort $sort_opts -k2n";
+    my $cmd = "sort $sort_opts -k2,2n";
     open(my $sort_fh,"| $cmd") or error("$cmd: $!");
 
     my $unflushed = select(STDOUT); 
@@ -83,12 +83,12 @@ sub sort_vcf
 sub check_sort_options
 {
     my ($opts) = @_;
-    if ( !$$opts{chromosomal_order} ) { return '-k1d' }
+    if ( !$$opts{chromosomal_order} ) { return '-k1,1d' }
 
     my @has_version_sort = `sort --help | grep -- --version-sort`;
-    if ( scalar @has_version_sort ) { return '-k1V'; }
+    if ( scalar @has_version_sort ) { return '-k1,1V'; }
 
     error("Obsolete version of sort command installed, please run without the -c option.\n");
-    return '-k1d';
+    return '-k1,1d';
 }
 
