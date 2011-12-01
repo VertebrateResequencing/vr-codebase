@@ -123,10 +123,10 @@ sub check_AGtags_definition
     if ( exists($ENV{DONT_FIX_VCF40_AG_TAGS}) ) { return; }
 
     my @tags;
-    if ( exists($$vcf{header}{INFO}{PL}) && $$vcf{header}{INFO}{PL}{Number} ne '.' ) { push @tags, 'PL'; }
-    if ( exists($$vcf{header}{INFO}{GL}) && $$vcf{header}{INFO}{GL}{Number} ne '.' ) { push @tags, 'GL'; }
-    if ( exists($$vcf{header}{INFO}{AC}) && $$vcf{header}{INFO}{AC}{Number} ne '.' ) { push @tags, 'AC'; }
-    if ( exists($$vcf{header}{INFO}{AF}) && $$vcf{header}{INFO}{AF}{Number} ne '.' ) { push @tags, 'AF'; }
+    if ( exists($$vcf{header}{INFO}{PL}) && $$vcf{header}{INFO}{PL}{Number} != -1  ) { push @tags, 'PL'; }
+    if ( exists($$vcf{header}{INFO}{GL}) && $$vcf{header}{INFO}{GL}{Number} != -1  ) { push @tags, 'GL'; }
+    if ( exists($$vcf{header}{INFO}{AC}) && $$vcf{header}{INFO}{AC}{Number} != -1  ) { push @tags, 'AC'; }
+    if ( exists($$vcf{header}{INFO}{AF}) && $$vcf{header}{INFO}{AF}{Number} != -1  ) { push @tags, 'AF'; }
 
     if ( !@tags ) { return; }
 
