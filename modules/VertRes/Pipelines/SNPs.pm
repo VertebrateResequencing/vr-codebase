@@ -1524,12 +1524,18 @@ sub update_db {
     # flag in the database (if not already updated)
     my $vrlane = $self->{vrlane};
     my $vrtrack = $vrlane->vrtrack;
-    return $$self{'Yes'} if $vrlane->is_processed('snp_called');
-    
-    $vrtrack->transaction_start();
-    $vrlane->is_processed('snp_called',1);
-    $vrlane->update() || $self->throw("Unable to set improved status on lane $lane_path");
-    $vrtrack->transaction_commit();
+
+    # Ignore snp_called status. Used for lanes with bam files from different mappers/assemblies.
+    my $ignore_snp_called = (exists $$self{'ignore_snp_called_status'} && $$self{'ignore_snp_called_status'}) ? 1:0;
+
+    return $$self{'Yes'} if $vrlane->is_processed('snp_called') && !$ignore_snp_called;
+
+    unless($vrlane->is_processed('snp_called')){
+	$vrtrack->transaction_start();
+	$vrlane->is_processed('snp_called',1);
+	$vrlane->update() || $self->throw("Unable to set improved status on lane $lane_path");
+	$vrtrack->transaction_commit();
+    }
 
     if ($self->{task}{cleanup}) {
         my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
