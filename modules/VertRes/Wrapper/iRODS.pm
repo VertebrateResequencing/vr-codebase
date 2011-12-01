@@ -119,7 +119,7 @@ sub find_files_by_run_lane {
     unless ($run && $lane){
          $self->throw("Missing parameters: run and lane.\n");
     }
-    my $cmd = join "/",($self->{icommands},"imeta -z seq qu -d id_run = $run and lane = $lane");
+    my $cmd = join "/",($self->{icommands},"imeta -z seq qu -d id_run = $run and lane = $lane and target = 1");
 
     open(my $irods, "$cmd |");
 
