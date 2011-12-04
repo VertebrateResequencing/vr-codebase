@@ -902,12 +902,16 @@ sub merge_requires {
         my $bam = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.raw.sorted.bam");
         my $check_file = $self->{fsu}->catfile($lane_path, ".$self->{mapstats_id}.$ended.raw.sorted.bam.checked");
         next if -s $bam && -e $check_file;
+
+	# Ignore mapped status. Used if remapping lane with new reference or mapper
+	my $remapping = (exists $$self{'ignore_mapped_status'} && $$self{'ignore_mapped_status'}) ? 1:0;
         
         # if we've already mapped this lane but don't have the check_file,
         # we probably don't have a split dir anymore and just want to
         # check the merged bam (which might actually be a recal bam)
+        # If remapping then ignore the processed status.
         my $recal_bam = $self->{fsu}->catfile($lane_path, "$self->{mapstats_id}.$ended.recal.sorted.bam");
-        if ($self->{vrlane}->is_processed('mapped') || $self->{fsu}->file_exists($recal_bam) || $self->{fsu}->file_exists($bam)) {
+        if (($self->{vrlane}->is_processed('mapped') && !$remapping) || $self->{fsu}->file_exists($recal_bam) || $self->{fsu}->file_exists($bam)) {
             next if -e $check_file;
             if ($self->{fsu}->file_exists($recal_bam)) {
                 push(@requires, $recal_bam);
@@ -1377,7 +1381,10 @@ sub update_db {
     my $vrlane = $self->{vrlane};
     my $vrtrack = $vrlane->vrtrack;
     
-    return $self->{Yes} if $vrlane->is_processed('mapped');
+    # Check if remapping lane with new reference or mapper
+    my $remapping = (exists $$self{'ignore_mapped_status'} && $$self{'ignore_mapped_status'}) ? 1:0;
+
+    return $self->{Yes} if $vrlane->is_processed('mapped') && !$remapping;
     
     $vrtrack->transaction_start();
     
@@ -1474,8 +1481,10 @@ sub update_db {
     }
 
     # set mapped status
-    $vrlane->is_processed('mapped', 1);
-    $vrlane->update() || $self->throw("Unable to set mapped status on lane $lane_path");
+    unless($vrlane->is_processed('mapped')) {
+	$vrlane->is_processed('mapped', 1);
+	$vrlane->update() || $self->throw("Unable to set mapped status on lane $lane_path");
+    }
     
     $vrtrack->transaction_commit();
     
