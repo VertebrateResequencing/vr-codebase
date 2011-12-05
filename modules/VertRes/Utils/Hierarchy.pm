@@ -442,8 +442,8 @@ sub hierarchy_coverage {
  Args    : At least one hierarchy level as a key, and an array ref of names
            as values, eg. sample => ['NA19239'], platform => ['SLX', '454'].
            Valid key levels are project, sample, individual, population,
-           platform, centre and library. (With no options at all, all active
-           lanes in the database will be returned)
+           platform, centre, library and species. (With no options at all, all 
+           active lanes in the database will be returned)
            Alternatively to supplying hierarchy level keys and array refs of
            allowed values, you can supply *_regex keys with regex string values
            to select all members of that hierarchy level that match the regex,
@@ -517,11 +517,16 @@ sub get_lanes {
             my %objs;
             $objs{individual} = $sample->individual;
             $objs{population} = $objs{individual}->population;
+            $objs{species}    = $objs{individual}->species;
             
             my ($oks, $limits) = (0, 0);
-            foreach my $limit (qw(individual population)) {
+            foreach my $limit (qw(individual population species)) {
                 if (defined $args{$limit}) {
                     $limits++;
+                    if ($limit eq 'species' && !(defined $objs{'species'})) {
+                        $self->warn('species not defined for sample '.$sample->name);
+                        last;
+                    }
                     my $ok = 0;
                     foreach my $name (@{$args{$limit}}) {
                         if ($name eq $objs{$limit}->name || ($objs{$limit}->can('hierarchy_name') && $name eq $objs{$limit}->hierarchy_name)) {
