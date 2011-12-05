@@ -71,8 +71,8 @@ sub parse_params
     {
         if ( !exists($$opts{chain}) ) { error("Missing the -c option.\n") }
         if ( !exists($$opts{prefix}) ) { error("Missing the -p option.\n") }
-        if ( !exists($$opts{new_ref}) ) { error("Missing the -n option.\n") }
-        if ( !exists($$opts{ori_ref}) ) { error("Missing the -o option.\n") }
+        if ( !exists($$opts{new_ref}) ) { warn("The sanity check will not be performed: missing the reference file (-n).\n") }
+        if ( !exists($$opts{ori_ref}) ) { warn("The sanity check will not be performed: missing the reference file (-o).\n") }
     }
     return $opts;
 }
@@ -154,10 +154,12 @@ sub compare
 {
     my ($opts) = @_;
 
-    if ( !$$opts{ori_ref} or !$$opts{new_ref} ) { return; }
-
-    my $fa_ori  = FaSlice->new(file=>$$opts{ori_ref}, size=>1_000_000, oob=>'N');
-    my $fa_new  = FaSlice->new(file=>$$opts{new_ref}, size=>1_000_000, oob=>'N');
+    my ($fa_ori,$fa_new);
+    if ( $$opts{ori_ref} && $$opts{new_ref} ) 
+    {
+        $fa_ori  = FaSlice->new(file=>$$opts{ori_ref}, size=>1_000_000, oob=>'N');
+        $fa_new  = FaSlice->new(file=>$$opts{new_ref}, size=>1_000_000, oob=>'N');
+    }
     my $pos_unm = Reader->new(file=>$$opts{unmapped});
     my $pos_ori = Reader->new(file=>$$opts{ori_bed});
     my $pos_map = Reader->new(file=>$$opts{mapped});
@@ -190,6 +192,13 @@ sub compare
             $pos_unm->unread_line($unm);
         }
         my $map = $pos_map->next_line();
+
+        if ( !defined $fa_ori )
+        {
+            printf $tlog_fh "%s\t%d\t->\t%s\t%d\t%s\n",$$ori[0],$$ori[1]+1,$$map[0],$$map[1]+1,0;
+            $nlifted++;
+            next;
+        }
 
         my $ref_ori = $fa_ori->get_slice($$ori[0],$$ori[1]+1-$win,$$ori[1]+1+$win);
         my $ref_new = $fa_new->get_slice($$map[0],$$map[1]+1-$win,$$map[1]+1+$win);
@@ -226,13 +235,17 @@ sub compare
     }
     close($tlog_fh);
 
+
     open(my $fh,'>',"$$opts{prefix}/liftover.stats") or error("$$opts{prefix}/liftover.stats: $!");
     printf $fh "lifted over                             .. %.1f%% (%d)\n", $nlifted*100./$nlines,$nlifted;
     printf $fh "unmapped                                .. %.1f%% (%d)\n", $skipped*100./$nlines,$skipped;
-    printf $fh "ignored because of mismatches           .. %.1f%% (%d)\n", $ignored*100./$nlines,$ignored;
-    printf $fh "reference mismatches (1bp)              .. %.1f%% (%d)\n", $rmismatch*100./$nlines, $rmismatch;
-    printf $fh "flanking sequence mismatches (%dbp win) .. %.1f%% (%d)\n", 2*$win+1, $mismatch*100./($match+$mismatch),$mismatch/(2*$win+1);
-    printf $fh "                  matches               .. %.1f%% (%d)\n", $match*100./($match+$mismatch), $match/(2*$win+1);
+    if ( defined $fa_ori ) 
+    {
+        printf $fh "ignored because of mismatches           .. %.1f%% (%d)\n", $ignored*100./$nlines,$ignored;
+        printf $fh "reference mismatches (1bp)              .. %.1f%% (%d)\n", $rmismatch*100./$nlines, $rmismatch;
+        printf $fh "flanking sequence mismatches (%dbp win) .. %.1f%% (%d)\n", 2*$win+1, $mismatch*100./($match+$mismatch),$mismatch/(2*$win+1);
+        printf $fh "                  matches               .. %.1f%% (%d)\n", $match*100./($match+$mismatch), $match/(2*$win+1);
+    }
     close($fh);
 
     print STDERR "Check sanity of the transform: $$opts{prefix}/liftover.stats\n";
