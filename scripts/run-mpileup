@@ -73,6 +73,7 @@ sub new
             
             chunk_size        => 1_000_000,
             debug_chunks      => 0,
+            shuffle_chunks    => 0,         # Process chunks in random order to randomize disk access
             keep_bcfs         => 1,
             chunks_overlap    => 0,
             whole_genome_bams => 0,         # Set to 1 if BAMs are not splitted by chromosome
@@ -464,6 +465,13 @@ sub get_chunks
             if ( $$self{debug_chunks} && scalar @chunks>=$$self{debug_chunks} ) { return \@chunks; }
         }
     }
+
+    if ( $$self{shuffle_chunks} )
+    {
+        use List::Util 'shuffle';
+        @chunks = shuffle(@chunks);
+    }
+
     return \@chunks;
 }
 
