@@ -923,6 +923,10 @@ sub get_mapping_jobs_from_vrtrack {
         @lanes = @{$vrtrack->processed_lane_hnames(import => 1) || []};
     }
     
+    # Ignore mapped flag.
+    # Used for mapping with different assemblies/mappers for lane
+    my $ignore_mapped = defined($$config_data{data}{ignore_mapped_status}) && $$config_data{data}{ignore_mapped_status} ? 1:0;
+
     my $count = 0;
     foreach my $vrlane (@lanes) {
         unless ($use_hu) {
@@ -931,7 +935,9 @@ sub get_mapping_jobs_from_vrtrack {
         next if $vrlane->is_withdrawn;
         next unless $vrlane->is_processed('import');
         next if $vrlane->is_processed('swapped');
-        next if $vrlane->is_processed('mapped');
+        next if ($vrlane->is_processed('mapped') && !$ignore_mapped);
+        next if ($ignore_mapped && mapping_complete($config_data, $vrlane));
+
         my $lane_name = $vrlane->name;
         if ($limit_by_lane_name) {
             next unless exists $requested_lanes{$lane_name};
@@ -1043,7 +1049,11 @@ sub get_import_jobs_from_vrtrack
     debug($config_data,"$config\tget_import_jobs_from_vrtrack...");
 
     my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
-    my $fnames  = $vrtrack->processed_file_hnames('import'=>0);
+    
+    my %filter  = ('import'=>0);
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
+    
+    my $fnames  = $vrtrack->processed_file_hnames(%filter);
 
     my @lanes = @{$vrtrack->processed_lane_hnames() || []};
     if (defined $config_data->{limits}) {
@@ -1179,7 +1189,18 @@ sub get_snps_jobs_from_vrtrack {
     my $hnames = $vrtrack->processed_lane_hnames(%filter);
     my @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config);
 
-    debug($config_data, "found " . (scalar @lanes) . " lanes improved but not SNP called");
+    # Ignore snp_called
+    # Used when several bams for lane from differing assemblies/mappers
+    my $ignore_snp_called = defined($$config_data{data}{ignore_snp_called_status}) && $$config_data{data}{ignore_snp_called_status} ? 1:0;
+
+    unless( $ignore_snp_called )
+    {
+	debug($config_data, "found " . (scalar @lanes) . " lanes improved but not SNP called");
+    }
+    else 
+    {
+	debug($config_data, "found " . (scalar @lanes) . " mapped lanes checking if SNP called ")
+    }
 
     my $lanes_count = 0;
 
@@ -1215,17 +1236,36 @@ sub get_snps_jobs_from_vrtrack {
             next;
         }
 
-        # work out which is the latest bam to use for snp calling: the
-        # one with the largest mapstats id.
-        my @ids = sort {$b<=>$a} keys %mapstat_ids;
-        my $mapstat_id = $ids[0];
-        if (1 < scalar @{$mapstat_ids{$ids[0]}}) {
-            # There can be only one...
-            debug($config_data, "Found more than one bam matching regex with mapstats id $ids[0], don't know which to use, in lane $lane_path\n");
-            next;
-        }
+	my $mapstat_id;
+	unless( $ignore_snp_called )
+	{
+	    # work out which is the latest bam to use for snp calling: the
+	    # one with the largest mapstats id.
+	    my @ids = sort {$b<=>$a} keys %mapstat_ids;
+	    $mapstat_id = $ids[0];
+	    if (1 < scalar @{$mapstat_ids{$ids[0]}}) {
+		# There can be only one...
+		debug($config_data, "Found more than one bam matching regex with mapstats id $ids[0], don't know which to use, in lane $lane_path\n");
+		next;
+	    }
+	}
+	else
+	{
+	    # Find all mapstats IDs and select lowest uncalled id
+	    my @ids = sort {$a<=>$b} keys %mapstat_ids;
+	    
+	    foreach my $id (@ids)
+	    {
+		if(uncalled_mapstat($config_data, $vrtrack, $vrlane, $id, $mapstat_ids{$id}[0]))
+		{
+		    $mapstat_id = $id;
+		    last;
+		}
+	    }
+	    next unless $mapstat_id; # No uncalled mapstats
+	}
 
-        my $bam_for_calling = $mapstat_ids{$ids[0]}[0];
+        my $bam_for_calling = $mapstat_ids{$mapstat_id}[0];
         my $snp_dir = $bam_for_calling;
         if ($snp_dir =~ m/^(.*)\.bam$/){
             $snp_dir = "$1.snp";
@@ -1822,6 +1862,92 @@ sub get_mergeup_jobs {
     }
     return;
 }
+
+=head2 mapping_complete
+
+  Arg [1]    : The config data
+  Arg [2]    : The vrlane object
+  Description: Checks if mapping complete based on mapstats entry. 
+
+=cut
+
+sub mapping_complete
+{
+    my($config_data, $vrlane) = @_;
+
+    # Find mapstats associated with lane
+    my @mappings = @{ $vrlane->mappings() };
+
+    # Check assembly and mapper
+    foreach my $mapping (@mappings)
+    {
+	# Skip QC mappings.
+	my $images = $mapping->images();
+	next if( scalar(@{$images}) );
+
+	# Skip unfinished mapping
+	next unless(defined($mapping->raw_reads()));
+
+	# Check Reference and Mapper.
+	if($$config_data{data}{assembly_name} eq $mapping->assembly->name())
+	{
+	    my $mapper_slx = exists($$config_data{data}{'slx_mapper'}) ? $$config_data{data}{'slx_mapper'}:'';
+	    my $mapper_454 = exists($$config_data{data}{'454_mapper'}) ? $$config_data{data}{'454_mapper'}:'';
+
+	    if($mapper_slx eq $mapping->mapper->name() ||
+	       $mapper_454 eq $mapping->mapper->name())
+	    {
+		return(1); # Job done. Do not add to job list.
+	    }
+	}
+    }
+    return(0); # Add to job list.
+}
+
+
+=head2 uncalled_mapstat
+
+  Arg [1]    : The config data.
+  Arg [2]    : The vrtrack object
+  Arg [3]    : The vrlane object
+  Arg [4]    : The mapstats id
+  Arg [5]    : The bam filename
+  Description: Checks if SNPs have been called for a BAM file produced by the mapping pipeline. 
+               Used if running jobs on several BAM files from alignement with different assemblies.
+
+=cut
+
+sub uncalled_mapstat
+{
+    my ($config_data, $vrtrack, $vrlane, $id, $bam_file) = @_;
+
+    # 1. Check if SNP-called.
+    # Look for done file in snp directory
+    my $snp_done = $bam_file;
+    if ($snp_done =~ m/^(.*)\.bam$/){
+	$snp_done = "$1.snp/.snps_done";
+    }
+    else {
+	die "Fixme: couldn't work out snp done filename, bam $bam_file doesn't end with .bam?\n";
+    }
+    return(0) if -e $snp_done && $vrlane->is_processed('snp_called'); # SNP Called.
+
+    # 2. Check Assembly
+    my $mapstats= VRTrack::Mapstats->new($vrtrack, $id);
+    return(0) unless(defined $mapstats); # Failed to get mapstats - junk bam file?
+
+    my $mapstats_reference = $mapstats->assembly->name();
+    my @complete_path = split(/\//, $$config_data{data}{fa_ref});
+    my $config_reference = $complete_path[-1];
+    $config_reference =~ s/\.fa$//;
+    return(0) if($mapstats_reference ne $config_reference); # Different assembly
+
+    # 3. Check mapping completed.
+    return(0) unless(defined($mapstats->raw_reads())); # Mapping not completed
+
+    return(1); # Uncalled completed mapping 
+}
+
 
 #---------- Job ------------------------
 package Job;

@@ -30,14 +30,14 @@ use VertRes::Parser::bam;
 use VertRes::Parser::sam;
 
 my $RETROSEQ_BIN = qq[/nfs/users/nfs_t/tk2/code/RetroSeqCheckouts/master/RetroSeq/bin/retroseq.pl];
-my $CHUNKS_PER_JOB = 15;
-my $GENOTYPE_CHUNKS_PER_JOB = 15;
-my $MAX_RETRIES = 3;
+my $CHUNKS_PER_JOB = 10;
+my $GENOTYPE_CHUNKS_PER_JOB = 10;
+my $MAX_RETRIES = 1;
 my $DEFAULT_DISCOVERY_MEMORY = 2000;
 my $DEFAULT_CALLING_MEMORY = 4000;
 my $DEFAULT_SLEEP_SECS = 600;
 my $DEFAULT_ITERATIONS = 50;
-my $DEFAULT_CALLING_WINDOW = 1000000;
+my $DEFAULT_CALLING_WINDOW = 300000000;#15000000;
 my $DEFAULT_QUEUE = 'long';
 
 my ($discover, $call, $genotype, $horizontal, $vertical, $bams, $noclean, $terefs, $dir, $len, $iterations, $chr_sizes, $granularity, $ref, $hets, $depth, $memory, $chr, $maxJobs, $sleep, $queue, $noexitonerrors, $minReads, $vcf, $output, $help);
@@ -237,6 +237,8 @@ USAGE
     if( $minReads ){ die qq[Invalid parameter for minreads: $minReads] if( $minReads !~ /^\d+$/ ); $minReads = qq[-reads $minReads];}else{ $minReads = ''; }
     
     if( $granularity ){$granularity =~ /^\d+$/ or die qq[Check granularity parameter: $granularity\n];}else{$granularity = $DEFAULT_CALLING_WINDOW;}
+
+    if( ! $maxJobs ){$maxJobs = -1;}
     
     my %sizes;
     open( my $cfh, $chr_sizes ) or die qq[Failed to open chr sizes file: $chr_sizes];
@@ -260,7 +262,7 @@ USAGE
             {
                 chomp( $bam );
                 chdir( $toplevelDir ) or die qq[Failed to chdir];
-                if( $totalRunning >= $maxJobs ){print qq[Max number of jobs running: $totalRunning\n];last;}
+                if( $totalRunning >= $maxJobs && $maxJobs != -1 ){print qq[Max number of jobs running: $totalRunning\n];last;}
                 
                 -f $bam || die qq[Cant find bam file: $bam];
                 
@@ -485,7 +487,7 @@ sub _runAndCheckCalling
     my $numRunning = 0;
     foreach my $chr ( sort( keys( %sizes ) ) )
     {
-        if( $chrOnly && $chr ne $chrOnly ){print qq[Skipping $chr\n];next;}
+        if( ( $chrOnly && $chr ne $chrOnly ) || $chr =~ /^NT/ ){print qq[Skipping $chr\n];next;}
         
         if( $numRunning >= $maxSimJobs ){print qq[Maximum number of jobs running: $numRunning\n];chdir( qq[..] );return $numRunning;}
         
@@ -549,7 +551,7 @@ sub _runAndCheckCalling
             else
             {
                 my $newOffset = $offset + $gran;
-                $cmd .= qq[perl $RETROSEQ_BIN -call -bam $bamsFofn -input $candidatesFile -ref $reference -output $chr:$offset-$newOffset.vcf $hetsParam -region $chr:$offset-$newOffset $depthParam $minimumReads > $chr:$offset-$newOffset.out &\nsleep 120\n];
+                $cmd .= qq[perl $RETROSEQ_BIN -call -bam $bamsFofn -input $candidatesFile -ref $reference -output $chr:$offset-$newOffset.vcf $hetsParam -region $chr:$offset-$newOffset $depthParam $minimumReads > $chr:$offset-$newOffset.out &\nsleep 30\n];
                 $offset = $newOffset;
                 $chunks ++;
             }

@@ -33,6 +33,7 @@ Usage:
     -c --complement
     -chr --chromosome           select all entries from the specified chromosome (overrides a positions file if supplied)
     -p --positions <string>     File of chr<tab>position pairs
+    -pass                       Only print PASS filter positions
     -h --help                   Print this message
 ];
 	exit;
