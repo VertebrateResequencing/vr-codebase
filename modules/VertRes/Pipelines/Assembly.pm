@@ -349,7 +349,7 @@ sub mapping_and_generate_stats
     
   my \@lane_paths = $lane_paths_str;
   
-  my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
+  my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory], reference => qq[$self->{reference}]);
   my \$directory = \$assembler_util->${working_directory_method_name}();
   \$assembler_util->map_and_generate_stats(\$directory,qq[$output_directory], \\\@lane_paths );
   
