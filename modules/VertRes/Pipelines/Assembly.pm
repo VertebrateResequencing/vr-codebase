@@ -793,7 +793,7 @@ sub estimate_memory_required
 
 sub cleanup_requires {
   my ($self) = @_;
-  return $self->map_back_scaffolded_provides();
+  return [];
 }
 
 =head2 cleanup_provides
@@ -832,7 +832,9 @@ sub cleanup {
     velvet_optimise_parameters 
     velvet_map_back 
     velvet_optimise_parameters_with_reference 
-    velvet_map_back_with_reference)) 
+    velvet_map_back_with_reference
+    velvet_scaffold
+    velvet_map_back_scaffolded)) 
     {
       foreach my $suffix (qw(o e pl)) 
       {
@@ -841,7 +843,7 @@ sub cleanup {
   }
   
   # remove files
-  foreach my $file (qw(.RData contigs.fa.png.Rout scaffolded.summaryfile.txt scaffolded.logfile.txt _scaffolder.config scaffolded.final.evidence)) 
+  foreach my $file (qw(.RData contigs.fa.png.Rout scaffolded.summaryfile.txt scaffolded.logfile.txt _scaffolder.config scaffolded.final.evidence reverse.fastq forward.fastq pool_1.fastq.gz)) 
   {
     unlink($self->{fsu}->catfile($lane_path, $file));
   }
