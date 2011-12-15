@@ -2913,14 +2913,14 @@ sub Vcf4_1::validate_alt_field
             if ( !($pos=~/^\S+:\d+$/) ) { $msg=', cannot parse sequence:position'; push @err,$item; next; }
             next;
         }
-        if ( $item=~/^\.([ACTGNactgn])[ACTGNactgn]*$/ )
+        if ( $item=~/^\.[ACTGNactgn]*([ACTGNactgn])$/ )
         {
-            if ( $ref1 ne $1 ) { $msg=', first base does not match the reference'; push @err,$item; }
+            if ( $ref1 ne $1 ) { $msg=', last base does not match the reference'; push @err,$item; }
             next; 
         }
-        elsif ( $item=~/^[ACTGNactgn]*([ACTGNactgn])\.$/ )
+        elsif ( $item=~/^([ACTGNactgn])[ACTGNactgn]*\.$/ )
         {
-            if ( substr($ref,-1,1) ne $1 ) { $msg=', last base does not match the reference'; push @err,$item; }
+            if ( substr($ref,-1,1) ne $1 ) { $msg=', first base does not match the reference'; push @err,$item; }
             next; 
         }
         if ( !($item=~/^[ACTGNactgn]+$|^<[^<>\s]+>$/) ) { push @err,$item; next; }
