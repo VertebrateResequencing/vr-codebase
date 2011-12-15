@@ -127,7 +127,7 @@ sub map_and_generate_stats
      `gzip -cd $reverse_fastq  > $output_directory/reverse.fastq`;
    }
 
-   $reference = $self->{reference} || "$directory/contigs.fa";
+   my $reference = $self->{reference} || "$directory/contigs.fa";
 
    my $mapper = VertRes::Wrapper::smalt->new();
    $mapper->setup_reference($reference);
