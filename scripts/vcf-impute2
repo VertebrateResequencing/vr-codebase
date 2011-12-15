@@ -206,7 +206,7 @@ sub convert_to_be_imputed
                 $gl_ar = 10**(-$gl_ar/10.);
                 $gl_aa = 10**(-$gl_aa/10.);
             }
-            if ( !defined $gl_rr or ($gl_rr==$gl_ar && $gl_ar==$gl_aa) ) { $gl_rr = $gl_ar = $gl_aa = 1/3.; }
+            if ( !defined $gl_rr or (abs($gl_rr-$gl_ar)<1e-5 && abs($gl_ar-$gl_aa)<1e-5) ) { $gl_rr = $gl_ar = $gl_aa = 1/3.; }
             printf $fh " %f %f %f", $gl_rr,$gl_ar,$gl_aa;
         }
         print $fh "\n";
