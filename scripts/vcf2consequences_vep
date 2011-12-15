@@ -5,11 +5,11 @@
 use strict;
 use warnings;
 use Carp;
-use Data::Dumper; 
 use Getopt::Long;
 use Benchmark;
 use Vcf;
 use GranthamMatrix;
+use DB_File;
 
 =pod
 foreach( keys( %INC ) )
@@ -18,7 +18,7 @@ foreach( keys( %INC ) )
 }
 =cut
 
-my ($input_vcf, $index_vcf, $help, $vep_input, $gerp_cache_dir, $buffer_size, $grantham);
+my ($input_vcf, $index_vcf, $help, $vep_input, $gerp_cache_dir, $buffer_size, $grantham, $gene_list_db);
 
 GetOptions
 (
@@ -27,6 +27,7 @@ GetOptions
     "g|gerp=s"    => \$gerp_cache_dir,
     "b|buffer=i"    => \$buffer_size,
     "r|grantham"    => \$grantham,
+    "n|genenames=s"    => \$gene_list_db,
     "h|help"        => \$help
 );
 
@@ -46,6 +47,7 @@ Usage:
     -g --gerp               OPTIONAL: If GERP scores required, location of cached gerp score bed files
     -b --buffer             OPTIONAL: Number of rows of the gerp scores bed file to buffer (default = 1000)
     -r --grantham           OPTIONAL: Add Grantham matrix score to consequences for nsSNPS
+    -n --genenames          OPTIONAL: DBM file of external gene names for non_human ENS ids
     -h --help               Print this message
 ];
     exit;
@@ -56,6 +58,11 @@ my $grantham_matrix = GranthamMatrix->new() if $grantham;
 my $current_chr='';
 my $vep_cache = {};
 my $gerp_cache = {chr=>'', block=>'', scores=>{}};
+
+my %GENE_NAME;
+if ($gene_list_db) {
+	tie %GENE_NAME, "DB_File", $gene_list_db, O_RDONLY, 0666, $DB_HASH or die "Cannot open file : $!\n";
+}
 
 open VEP_FILE, $vep_input or die $!;
 our $vep_rec = <VEP_FILE>;
@@ -118,7 +125,7 @@ sub process_vcf_rec
 	}
 	else { # novel variant
 		$var_key = $alleles;
-		$var_key =~ s/,/\//g;	#  A/T,G = A/T/G in vep output
+		$var_key =~ s/,/\//;	#  A/T,G = A/T/G in vep output, however trialleles C/A,T,G are C/A/T,G
 	}
 
 	if ($chr ne $current_chr) {
@@ -149,7 +156,7 @@ sub process_vcf_rec
 		my $indel_alleles = join("/",@indel_alleles);
 
 		if ($vep_cache->{$pos+1}{$indel_alleles}) {
-			push (@{$vep_cache->{$pos}{$var_key}},@{$vep_cache->{$pos+1}{$indel_alleles}});
+			$vep_cache->{$pos}{$var_key} = $vep_cache->{$pos+1}{$indel_alleles};
 		}
 	}
 
@@ -174,12 +181,12 @@ sub process_vcf_rec
 		my $score = $gerp_cache->{scores}->{$pos};
 		if ($score) {
 			my $gerp_csq = sprintf ("GERP,%.2f", $score);
-			push (@{$vep_cache->{$pos}{$var_key}},$gerp_csq);
+			$vep_cache->{$pos}{$var_key}{$gerp_csq}++;
 		}
 	}
 
 	if ($vep_cache->{$pos}{$var_key}) {
-		my $conseqences = join('+',sort @{$vep_cache->{$pos}{$var_key}});
+		my $conseqences = join('+',sort keys %{$vep_cache->{$pos}{$var_key}});
     	$$rec[7] = $vcf->add_info_field($$rec[7],'CSQ'=>$conseqences);
 	}
 
@@ -202,7 +209,7 @@ sub load_vep_cache
 
 	while ($rec && $rec->{vep_chr} eq $chr) {
 
-		my $gene_name=$rec->{Gene}; # Default to ENSG id
+		my $gene_name=$rec->{Gene}; # Default to ENS id
 		my ($sift_pred,$polyphen_pred,$condel_pred);
 		my @extra_cols = split(/;/, $rec->{Extra});	# eg PolyPhen=unknown(0);SIFT=tolerated(0.56);HGNC=RERE
 		foreach (@extra_cols) {
@@ -214,10 +221,23 @@ sub load_vep_cache
 		}
 
 		my $consequence = $rec->{Feature};
+
+		if ($gene_name =~ /^ENS/ && $gene_list_db) {	# lookup external gene names in DBM file
+			my $ext_name = $GENE_NAME{$gene_name};
+			$gene_name = $ext_name if $ext_name;
+		}
 		$consequence .= ":$gene_name";
 		$consequence .= ":" . $rec->{Consequence};
 
-		if ( $rec->{Consequence} eq 'NON_SYNONYMOUS_CODING') {
+		if ( $rec->{CDS_position} ne '-') {
+			$consequence .= ":" . $rec->{CDS_position} . ":" . $rec->{Protein_position};
+		}
+
+		if ( $rec->{Consequence} =~ '^SYNONYMOUS_CODING' && length($rec->{Amino_acids}) == 1) {
+			$consequence .= ":" . $rec->{Amino_acids} . ">" . $rec->{Amino_acids}; # eg change D to D>D
+		}
+
+		if ( $rec->{Consequence} =~ '^NON_SYNONYMOUS_CODING') {
 			my $protein_pred="";
 			$protein_pred .= ":$sift_pred" if $sift_pred;
 			$protein_pred .= ":$polyphen_pred" if $polyphen_pred;
@@ -235,13 +255,13 @@ sub load_vep_cache
 			$consequence .= $protein_pred if $protein_pred ne "";
 		}
 
-		push (@{$vep_cache->{$rec->{vep_pos}}{$rec->{variant_id}}},$consequence);
+		## multi-allelic variants may have duplicate consequences, hence hash rather than array
+		$vep_cache->{$rec->{vep_pos}}{$rec->{variant_id}}{$consequence}++;
 
 		$vep_rec = <VEP_FILE>;
 		last if !$vep_rec;
 		$rec = parse_rec($vep_rec);
 	}
-	#print "CACHE $chr:", Dumper(sort $vep_cache);
 }
 
 sub parse_rec {
