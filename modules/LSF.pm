@@ -191,13 +191,28 @@ sub adjust_bsub_options
         }
     }
     
+    if ( defined $queue )
+    {
+        warn("$output_file: changing queue to long\n");     # this should be logged in the future
+
+        $opts =~ s/-q normal/-q long/;
+        if ( !($opts=~/-q/) ) { $opts .= ' -q long'; }
+    }
+    
     if (defined $mem) {
         # at some point an attempt to run this failed due to MEMLIMIT, using
         # $mem max memory; increase by 1000MB
         $mem += 1000;
         
-        if ($mem>15900) {
-            Utils::error("FIXME: This job cannot be run on the farm, more than 15.9GB of memory is required.");
+        if ($mem>500000) {
+            Utils::error("FIXME: This job cannot be run on the farm, more than 500GB of memory is required.");
+        }
+        elsif($mem>30000)
+        {
+                warn("$output_file: changing queue to hugemem\n");   
+                $opts =~ s/-q normal/-q hugemem/;
+                $opts =~ s/-q long/-q hugemem/;
+                if ( !($opts=~/-q/) ) { $opts .= ' -q hugemem'; }
         }
         
         # adjust the command line to include higher memory reservation, but only
@@ -225,13 +240,7 @@ sub adjust_bsub_options
         }
     }
 
-    if ( defined $queue )
-    {
-        warn("$output_file: changing queue to long\n");     # this should be logged in the future
 
-        $opts =~ s/-q normal/-q long/;
-        if ( !($opts=~/-q/) ) { $opts .= ' -q long'; }
-    }
 
     return $opts;
 }
