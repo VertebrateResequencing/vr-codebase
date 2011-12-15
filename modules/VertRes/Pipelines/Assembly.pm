@@ -282,7 +282,7 @@ sub map_back_provides
 sub map_back
 {
   my ($self, $build_path, $action_lock) = @_;
-  $self->mapping_and_generate_stats($build_path, $action_lock, "optimised_directory", "map_back");
+  $self->mapping_and_generate_stats($build_path, $action_lock, "optimised_directory", "map_back",$self->{reference});
   
   return $self->{No};
 }
@@ -323,7 +323,7 @@ sub map_back_with_reference
 
 sub mapping_and_generate_stats
 {
-  my ($self, $build_path, $action_lock, $working_directory_method_name, $action_name_suffix) = @_;
+  my ($self, $build_path, $action_lock, $working_directory_method_name, $action_name_suffix, $reference) = @_;
   
   my $assembler_class = $self->{assembler_class};
   my $output_directory = $self->{lane_path};
@@ -341,6 +341,11 @@ sub mapping_and_generate_stats
     push(@lane_paths,$base_path.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_name).'/'.$lane_name);
   }
   my $lane_paths_str = '("'.join('","', @lane_paths).'")';
+  my $reference_str = '';
+  if($reference)
+  {
+    $reference_str = qq{,reference => qq[$reference]} ;
+  }
 
   open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
   print $scriptfh qq{
@@ -349,7 +354,7 @@ sub mapping_and_generate_stats
     
   my \@lane_paths = $lane_paths_str;
   
-  my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory], reference => qq[$self->{reference}]);
+  my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory] $reference_str );
   my \$directory = \$assembler_util->${working_directory_method_name}();
   \$assembler_util->map_and_generate_stats(\$directory,qq[$output_directory], \\\@lane_paths );
   
