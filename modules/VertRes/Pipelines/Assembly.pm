@@ -282,7 +282,7 @@ sub map_back_provides
 sub map_back
 {
   my ($self, $build_path, $action_lock) = @_;
-  $self->mapping_and_generate_stats($build_path, $action_lock, "optimised_directory", "map_back");
+  $self->mapping_and_generate_stats($build_path, $action_lock, "optimised_directory", "map_back",$self->{reference});
   
   return $self->{No};
 }
@@ -323,7 +323,7 @@ sub map_back_with_reference
 
 sub mapping_and_generate_stats
 {
-  my ($self, $build_path, $action_lock, $working_directory_method_name, $action_name_suffix) = @_;
+  my ($self, $build_path, $action_lock, $working_directory_method_name, $action_name_suffix, $reference) = @_;
   
   my $assembler_class = $self->{assembler_class};
   my $output_directory = $self->{lane_path};
@@ -341,6 +341,11 @@ sub mapping_and_generate_stats
     push(@lane_paths,$base_path.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_name).'/'.$lane_name);
   }
   my $lane_paths_str = '("'.join('","', @lane_paths).'")';
+  my $reference_str = '';
+  if($reference)
+  {
+    $reference_str = qq{,reference => qq[$reference]} ;
+  }
 
   open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
   print $scriptfh qq{
@@ -349,7 +354,7 @@ sub mapping_and_generate_stats
     
   my \@lane_paths = $lane_paths_str;
   
-  my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory], reference => qq[$self->{reference}]);
+  my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory] $reference_str );
   my \$directory = \$assembler_util->${working_directory_method_name}();
   \$assembler_util->map_and_generate_stats(\$directory,qq[$output_directory], \\\@lane_paths );
   
@@ -666,11 +671,6 @@ sub pool_fastqs_provides
    my @provided_files ;
    push(@provided_files, $self->{lane_path}.'/'.$self->{prefix}."pool_fastqs_done");
 
-   my $pool_count = 1;
-   for my $lane_pool (@{$self->{pools}})
-   {
-     push(@provided_files, $self->{lane_path}."/pool_$pool_count.fastq.gz");
-   }
 
    return \@provided_files;
 }
@@ -793,7 +793,7 @@ sub estimate_memory_required
 
 sub cleanup_requires {
   my ($self) = @_;
-  return [];
+  return ["_velvet_map_back_scaffolded_done"];
 }
 
 =head2 cleanup_provides
@@ -807,7 +807,7 @@ sub cleanup_requires {
 =cut
 
 sub cleanup_provides {
-    return [];
+    return ["_cleanup_done"];
 }
 
 =head2 cleanup
@@ -823,7 +823,7 @@ sub cleanup_provides {
 
 sub cleanup {
   my ($self, $lane_path, $action_lock) = @_;
-  return $self->{Yes} unless $self->{do_cleanup};
+#  return $self->{Yes} unless $self->{do_cleanup};
   
   my $prefix = $self->{prefix};
   
@@ -847,6 +847,7 @@ sub cleanup {
   {
     unlink($self->{fsu}->catfile($lane_path, $file));
   }
+  system("touch _cleanup_done");
   
   return $self->{Yes};
 }
