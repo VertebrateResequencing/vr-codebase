@@ -671,11 +671,6 @@ sub pool_fastqs_provides
    my @provided_files ;
    push(@provided_files, $self->{lane_path}.'/'.$self->{prefix}."pool_fastqs_done");
 
-   my $pool_count = 1;
-   for my $lane_pool (@{$self->{pools}})
-   {
-     push(@provided_files, $self->{lane_path}."/pool_$pool_count.fastq.gz");
-   }
 
    return \@provided_files;
 }
@@ -798,7 +793,7 @@ sub estimate_memory_required
 
 sub cleanup_requires {
   my ($self) = @_;
-  return [];
+  return ["_velvet_map_back_scaffolded_done"];
 }
 
 =head2 cleanup_provides
@@ -812,7 +807,7 @@ sub cleanup_requires {
 =cut
 
 sub cleanup_provides {
-    return [];
+    return ["_cleanup_done"];
 }
 
 =head2 cleanup
@@ -828,7 +823,7 @@ sub cleanup_provides {
 
 sub cleanup {
   my ($self, $lane_path, $action_lock) = @_;
-  return $self->{Yes} unless $self->{do_cleanup};
+#  return $self->{Yes} unless $self->{do_cleanup};
   
   my $prefix = $self->{prefix};
   
@@ -852,6 +847,7 @@ sub cleanup {
   {
     unlink($self->{fsu}->catfile($lane_path, $file));
   }
+  system("touch _cleanup_done");
   
   return $self->{Yes};
 }
