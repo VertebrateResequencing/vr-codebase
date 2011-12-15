@@ -28,8 +28,10 @@ sub new
     $$self{do_clean} = 1;
     $$self{debug_chunks} = 0;
     $$self{limits} = { memory=>5_000, runtime=>24*60 };
+    $$self{vcf_beagle} = 'vcf-beagle';
     $$self{_sampleconf} = q[
             beagle_jar  => '/nfs/users/nfs_p/pd3/sandbox/svn/beagle/beagle.jar',
+            vcf_beagle  => 'vcf-beagle',
             fai_ref     => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
             known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',
 
@@ -181,7 +183,7 @@ sub vcf_to_beagle
 {
     my ($self,$outfile,$outdir,$region) = @_;
     $self->cmd(qq[mkdir -p $outdir]);
-    $self->cmd(qq[vcf-beagle -r $region -i $$self{in_vcf} -k $$self{known_vcf} -o $outdir/$region.01 >$outfile.o 2>$outfile.e && touch $outfile]);
+    $self->cmd(qq[$$self{vcf_beagle} -r $region -i $$self{in_vcf} -k $$self{known_vcf} -o $outdir/$region.01 >$outfile.o 2>$outfile.e && touch $outfile]);
 }
 
 sub beagle
@@ -207,7 +209,7 @@ sub beagle_to_vcf
         $self->cmd("touch $outfile");
         return;
     }
-    $self->cmd(qq[vcf-beagle -r $region -i $$self{in_vcf} -o $outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz 2>$outfile.e | bgzip -c > $outfile.part]);
+    $self->cmd(qq[$$self{vcf-beagle} -r $region -i $$self{in_vcf} -o $outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz 2>$outfile.e | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
 }
