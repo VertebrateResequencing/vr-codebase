@@ -349,7 +349,7 @@ sub mapping_and_generate_stats
     
   my \@lane_paths = $lane_paths_str;
   
-  my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
+  my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory], reference => qq[$self->{reference}]);
   my \$directory = \$assembler_util->${working_directory_method_name}();
   \$assembler_util->map_and_generate_stats(\$directory,qq[$output_directory], \\\@lane_paths );
   
@@ -793,7 +793,7 @@ sub estimate_memory_required
 
 sub cleanup_requires {
   my ($self) = @_;
-  return $self->map_back_scaffolded_provides();
+  return [];
 }
 
 =head2 cleanup_provides
@@ -832,7 +832,9 @@ sub cleanup {
     velvet_optimise_parameters 
     velvet_map_back 
     velvet_optimise_parameters_with_reference 
-    velvet_map_back_with_reference)) 
+    velvet_map_back_with_reference
+    velvet_scaffold
+    velvet_map_back_scaffolded)) 
     {
       foreach my $suffix (qw(o e pl)) 
       {
@@ -841,7 +843,7 @@ sub cleanup {
   }
   
   # remove files
-  foreach my $file (qw(.RData contigs.fa.png.Rout scaffolded.summaryfile.txt scaffolded.logfile.txt _scaffolder.config scaffolded.final.evidence)) 
+  foreach my $file (qw(.RData contigs.fa.png.Rout scaffolded.summaryfile.txt scaffolded.logfile.txt _scaffolder.config scaffolded.final.evidence reverse.fastq forward.fastq pool_1.fastq.gz)) 
   {
     unlink($self->{fsu}->catfile($lane_path, $file));
   }

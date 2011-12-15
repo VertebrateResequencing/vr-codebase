@@ -127,17 +127,19 @@ sub map_and_generate_stats
      `gzip -cd $reverse_fastq  > $output_directory/reverse.fastq`;
    }
 
-   my $mapper = VertRes::Wrapper::smalt->new();
-   $mapper->setup_reference("$directory/contigs.fa");
+   my $reference = $self->{reference} || "$directory/contigs.fa";
 
-   `smalt map -x -i 3000 -f samsoft -y 0.95 -o $directory/contigs.mapped.sam $directory/contigs.fa.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
+   my $mapper = VertRes::Wrapper::smalt->new();
+   $mapper->setup_reference($reference);
+
+   `smalt map -x -i 3000 -f samsoft -y 0.95 -o $directory/contigs.mapped.sam $reference.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
    $self->throw("Sam file not created") unless(-e "$directory/contigs.mapped.sam");
 
-   `ref-stats -r $directory/contigs.fa > $directory/contigs.fa.refstats`;
-   `samtools faidx $directory/contigs.fa`;
-   $self->throw("Reference index file not created") unless(-e "$directory/contigs.fa.fai");
+   `ref-stats -r $reference > $directory/contigs.fa.refstats`;
+   `samtools faidx $reference`;
+   $self->throw("Reference index file not created") unless(-e "$reference.fai");
 
-   `samtools view -bt $directory/contigs.fa.fai $directory/contigs.mapped.sam > $directory/contigs.mapped.bam`;
+   `samtools view -bt $reference.fai $directory/contigs.mapped.sam > $directory/contigs.mapped.bam`;
    $self->throw("Couldnt convert from sam to BAM") unless(-e "$directory/contigs.mapped.bam");
    unlink("$directory/contigs.mapped.sam");
 
@@ -147,7 +149,7 @@ sub map_and_generate_stats
    `samtools index $directory/contigs.mapped.sorted.bam`;
    $self->throw("Couldnt index the BAM") unless(-e "$directory/contigs.mapped.sorted.bam.bai");
 
-   `bamcheck -c 1,20000,5 -r $directory/contigs.fa $directory/contigs.mapped.sorted.bam >  $directory/contigs.mapped.sorted.bam.bc`;
+   `bamcheck -c 1,20000,5 -r $reference $directory/contigs.mapped.sorted.bam >  $directory/contigs.mapped.sorted.bam.bc`;
 
    `plot-bamcheck -p $directory/qc_graphs/ -r $directory/contigs.fa.refstats $directory/contigs.mapped.sorted.bam.bc`;
    $self->generate_stats($directory);
@@ -237,7 +239,7 @@ sub estimate_memory_required
   }
 
   my $memory_required = -109635 + (20000*($input_params->{read_length})) + (86326*($input_params->{genome_size})/1000000) + (300000*($input_params->{total_number_of_reads})/1000000) - (51092*$kmer_size);
-  $memory_required *= 2.5;
+  $memory_required *= 2.0;
   if($memory_required < 2000000)
   {
     $memory_required = 2000000;
