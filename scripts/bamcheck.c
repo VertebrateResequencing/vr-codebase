@@ -10,10 +10,11 @@
         - GC content graph can have saw-like pattern when BAM contains multiple read lengths. This is 
             unavoidable, consider for example uneven mixture of reads with lengths 4 and 5: the 50% GC 
             bin cannot be accessed with the read length of 5 and the 40% bin cannot be accessed with 
-            the read length of 4.
+            the read length of 4. Handling these cases in full generality would be difficult, use the
+            --read-length option for now.
 */
 
-#define BAMCHECK_VERSION "2011-11-10"
+#define BAMCHECK_VERSION "2012-01-04"
 
 #define _ISOC99_SOURCE
 #include <stdio.h>
@@ -127,6 +128,9 @@ typedef struct
     int32_t rseq_pos;           // The coordinate of the first base in the buffer
     int32_t rseq_len;           // The used part of the buffer
     uint64_t *mpc_buf;          // Mismatches per cycle
+
+    // Filters
+    int filter_readlen;
 
     // Auxiliary data
     double sum_qual;            // For calculating average quality value 
@@ -445,6 +449,7 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
 
     int seq_len = bam_line->core.l_qseq;
     if ( !seq_len ) return;
+    if ( stats->filter_readlen!=-1 && seq_len!=stats->filter_readlen ) return;
     if ( seq_len >= stats->nbases )
         realloc_buffers(stats,seq_len);
     if ( stats->max_len<seq_len )
@@ -866,6 +871,7 @@ void error(const char *format, ...)
         printf("    -d, --remove-dups                   Exlude from statistics reads marked as duplicates\n");
         printf("    -h, --help                          This help message\n");
         printf("    -i, --insert-size <int>             Maximum insert size [8000]\n");
+        printf("    -l, --read-length <int>             Include in the statistics only reads with the given read length []\n");
         printf("    -m, --most-inserts <float>          Report only the main part of inserts [0.99]\n");
         printf("    -q, --trim-quality <int>            The BWA trimming parameter [0]\n");
         printf("    -r, --ref-seq <file>                Reference sequence (required for GC-depth calculation).\n");
@@ -927,6 +933,7 @@ int main(int argc, char *argv[])
     stats.cov_step = 1;
     stats.argc = argc;
     stats.argv = argv;
+    stats.filter_readlen = -1;
 
     strcpy(in_mode, "rb");
 
@@ -960,6 +967,14 @@ int main(int argc, char *argv[])
                 error(NULL);
             if ( sscanf(argv[i],"%d,%d,%d",&(stats.cov_min),&(stats.cov_max),&(stats.cov_step)) != 3 )
                 error(NULL);
+            continue;
+        }
+        if ( !strcmp(argv[i],"-l") || !strcmp(argv[i],"--read-length") )
+        {
+            if ( ++i>=argc )
+                error(NULL);
+            if ( sscanf(argv[i],"%d",&(stats.filter_readlen)) != 1 )
+                error("Expected integer after -l, got [%s]\n", argv[i]);
             continue;
         }
         if ( !strcmp(argv[i],"-i") || !strcmp(argv[i],"--insert-size") )
