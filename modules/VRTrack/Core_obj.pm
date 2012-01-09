@@ -327,6 +327,39 @@ sub create {
     return $class->new($vrtrack, $next_id);
 }
 
+=head2 _all_values_by_field
+
+  Arg[1]     : field name
+  Example    ; VRTrack::Core_obj->_all_values_by_field($vrtrack, 'changed')
+  Description: Class method. Probably best used internally by inheritors of Core_obj. 
+               Gives an array reference to all values in a column of the database table.
+  Returntype : ArrayRef
+
+=cut
+
+sub _all_values_by_field {
+    my ($class, $vrtrack, $field) = @_;
+    confess "Need to call a vrtrack handle and field name" unless ($vrtrack && $field);
+    if ($vrtrack->isa('DBI::db')) {
+	confess "The interface has changed, expected vrtrack reference.\n";
+    } 
+    my $table = $class->_class_to_table;
+    my $dbh = $vrtrack->{_dbh};
+    my $sql = qq[select $field from $table where latest=true];
+    my $sth = $dbh->prepare($sql);
+    my @data;
+    if ($sth->execute()) {
+        while( my $data = $sth->fetchrow_hashref) {
+            push( @data, $data->{$field} );
+        } 
+    }
+    else {
+        confess "Cannot retrieve $table by $field: ".$DBI::errstr;
+    }
+   
+    return \@data;
+}
+
 
 =head2 is_name_in_database
 
