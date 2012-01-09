@@ -7,14 +7,10 @@
             There are small overlaps between bins (max readlen-1). However, the bins are big (20k).
         - coverage distribution ignores softclips and deletions
         - some stats require sorted BAMs
-        - GC content graph can have saw-like pattern when BAM contains multiple read lengths. This is 
-            unavoidable, consider for example uneven mixture of reads with lengths 4 and 5: the 50% GC 
-            bin cannot be accessed with the read length of 5 and the 40% bin cannot be accessed with 
-            the read length of 4. Handling these cases in full generality would be difficult, use the
-            --read-length option for now.
+        - GC content graph can have an untidy, step-like pattern when BAM contains multiple read lengths.
 */
 
-#define BAMCHECK_VERSION "2012-01-04"
+#define BAMCHECK_VERSION "2012-01-09"
 
 #define _ISOC99_SOURCE
 #include <stdio.h>
@@ -476,7 +472,8 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
             error("FIXME: acgt_cycles\n");
         stats->acgt_cycles[ 4*(reverse ? seq_len-i-1 : i) + base ]++;
     }
-    int gc_idx = gc_count*(stats->ngc-1)/seq_len;
+    int gc_idx_min = gc_count*(stats->ngc-1)/seq_len;
+    int gc_idx_max = (gc_count+1)*(stats->ngc-1)/seq_len;
 
     // Determine which array (1st or 2nd read) will these stats go to,
     //  trim low quality bases from end the same way BWA does, 
@@ -487,13 +484,15 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
     {
         quals  = stats->quals_2nd;
         stats->nreads_2nd++;
-        stats->gc_2nd[gc_idx]++;
+        for (i=gc_idx_min; i<gc_idx_max; i++)
+            stats->gc_2nd[i]++;
     }
     else
     {
         quals = stats->quals_1st;
         stats->nreads_1st++;
-        stats->gc_1st[gc_idx]++;
+        for (i=gc_idx_min; i<gc_idx_max; i++)
+            stats->gc_1st[i]++;
     }
     if ( stats->trim_qual>0 ) 
         stats->nbases_trimmed += bwa_trim_read(stats->trim_qual, bam_quals, seq_len, reverse);
@@ -785,18 +784,20 @@ void output_stats(stats_t *stats)
         }
     }
     printf("# GC Content of first fragments. Use `grep ^GCF | cut -f 2-` to extract this part.\n");
+    int ibase_prev = 0;
     for (ibase=0; ibase<stats->ngc; ibase++)
     {
-        // Skip the zero-values. The discrete read length leaves unpleasent saw pattern in the graphs
-        if ( !stats->gc_1st[ibase] ) continue;
-        printf("GCF\t%.2f\t%ld\n", ibase*100./(stats->ngc-1),stats->gc_1st[ibase]);
+        if ( stats->gc_1st[ibase]==stats->gc_1st[ibase_prev] ) continue;
+        printf("GCF\t%.2f\t%ld\n", (ibase+ibase_prev)*0.5*100./(stats->ngc-1),stats->gc_1st[ibase_prev]);
+        ibase_prev = ibase;
     }
     printf("# GC Content of last fragments. Use `grep ^GCL | cut -f 2-` to extract this part.\n");
+    ibase_prev = 0;
     for (ibase=0; ibase<stats->ngc; ibase++)
     {
-        // Skip the zero-values. The discrete read length leaves unpleasent saw pattern in the graphs
-        if ( !stats->gc_1st[ibase] ) continue;
-        printf("GCL\t%.2f\t%ld\n", ibase*100./(stats->ngc-1),stats->gc_2nd[ibase]);
+        if ( stats->gc_2nd[ibase]==stats->gc_2nd[ibase_prev] ) continue;
+        printf("GCL\t%.2f\t%ld\n", (ibase+ibase_prev)*0.5*100./(stats->ngc-1),stats->gc_2nd[ibase_prev]);
+        ibase_prev = ibase;
     }
     printf("# ACGT content per cycle. Use `grep ^GCC | cut -f 2-` to extract this part. The columns are: cycle, and A,C,G,T counts [%%]\n");
     for (ibase=0; ibase<stats->max_len; ibase++)
@@ -896,7 +897,7 @@ int main(int argc, char *argv[])
     int i;
 
     stats_t stats;
-    stats.ngc    = 1000+1;
+    stats.ngc    = 200;
     stats.nquals = 95;
     stats.nbases = 300;
     stats.nisize = 8000;
