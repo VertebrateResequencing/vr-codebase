@@ -192,6 +192,7 @@ sub _open
     # Open the file unless filehandle is provided
     if ( !exists($$self{fh}) ) 
     {
+        if ( !defined $$self{file} ) { $self->throw("Undefined value passed to Vcf->new(file=>undef)."); }
         my $cmd = "<$$self{file}";
 
         my $tabix_args = '';
@@ -969,7 +970,8 @@ sub format_line
     my ($self,$record,$columns) = @_;
 
     if ( ref($record) eq 'HASH' ) { return $self->_format_line_hash($record,$columns); }
-    $self->throw("FIXME: todo\n");
+    if ( ref($record) eq 'ARRAY' ) { return join("\t",@$record)."\n"; }
+    $self->throw("FIXME: todo .. " .ref($record). "\n");
 }
 
 
@@ -1053,6 +1055,77 @@ sub remove_field
     }
     if ( !defined $out ) { return '.'; }
     return $out;
+}
+
+=head2 replace_field
+
+    Usage   : my $col = $vcf->replace_field('GT:PL:DP:SP:GQ','XX',1,':');    # returns 'GT:XX:DP:SP:GQ'
+    Arg 1   : Field
+        2   : The index of the field to replace
+        3   : Replacement
+        4   : Field separator
+    Returns : Modified string
+
+=cut
+
+sub replace_field
+{
+    my ($self,$string,$repl,$idx,$sep) = @_;
+    my $isep = -1;
+    my $prev_isep = 0;
+    my $itag = 0;
+    while ($itag!=$idx)
+    {
+        $isep = index($string,$sep,$prev_isep);
+        if ( $isep==-1 ) { $self->throw("The index out of range: $string:$isep .. $idx"); }
+        $prev_isep = $isep+1;
+        $itag++;
+    }
+    my $out;
+    if ( $isep>=0 ) { $out = substr($string,0,$isep+1); }
+    my $ito = index($string,$sep,$isep+1);
+    if ( $ito==-1 )
+    {
+        $out .= $repl;
+    }
+    else
+    { 
+        $out .= $repl;
+        $out .= ':';
+        $out .= substr($string,$ito+1); 
+    }
+    if ( !defined $out ) { return '.'; }
+    return $out;
+}
+
+=head2 get_field
+
+    Usage   : my $line  = $vcf->next_line;
+              my @items = split(/\t/,$line); 
+              my $idx = $vcf->get_tag_index($$line[8],'PL',':'); 
+              my $pl  = $vcf->get_field($$line[9],$idx) unless $idx==-1;
+    Arg 1   : The VCF line broken into an array
+        2   : The index of the field to retrieve
+    Returns : The tag value
+
+=cut
+
+sub get_field
+{
+    my ($self,$col,$idx) = @_;
+
+    my $isep = 0;
+    my $prev_isep = 0;
+    my $itag = 0;
+    while (1)
+    {
+        $isep = index($col,':',$prev_isep);
+        if ( $itag==$idx ) { last; }
+        if ( $isep==-1 ) { $self->throw("The index out of range: $col:$isep .. $idx"); }
+        $prev_isep = $isep+1;
+        $itag++;
+    }
+    return $isep<0 ? substr($col,$prev_isep) : substr($col,$prev_isep,$isep-$prev_isep);
 }
 
 =head2 get_sample_field
