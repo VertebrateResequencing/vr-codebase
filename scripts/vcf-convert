@@ -23,7 +23,7 @@ sub error
         croak @msg;
     }
     die
-        "About: Convert between VCF versions, currently to VCFv4.0 only.\n",
+        "About: Convert between VCF versions.\n",
         "Usage: cat in.vcf | vcf-convert [OPTIONS] > out.vcf\n",
         "Options:\n",
         "   -r, --refseq <file>              The reference sequence in samtools faindexed fasta file. (Not required with SNPs only.)\n",
