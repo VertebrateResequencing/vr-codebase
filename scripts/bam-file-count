@@ -140,9 +140,12 @@ if ($interactive) {
 	my $sql_proj = qq[SELECT f.name FROM latest_file f, latest_lane l, latest_library b, latest_sample s where s.project_id = ? and s.sample_id = b.sample_id and b.library_id = l.library_id and l.lane_id = f.lane_id];
 
 	my $sql_samp = qq[SELECT s.name, f.name FROM latest_file f, latest_lane l, latest_library b, latest_sample s where s.project_id = ? and s.sample_id = b.sample_id and b.library_id = l.library_id and l.lane_id = f.lane_id];
+	
+	my $all_samples = qq[SELECT s.name from latest_sample s where s.project_id = ?];
 
 	my $sth_proj = $vrtrack->{_dbh}->prepare($sql_proj);
 	my $sth_samp = $vrtrack->{_dbh}->prepare($sql_samp);
+	my $sth_all = $vrtrack->{_dbh}->prepare($all_samples);
 
 	my $db_bam_total;
 	my $irods_bam_total;
@@ -177,10 +180,16 @@ if ($interactive) {
 				my ($sample_name, $file_name);
 				$sth_samp->bind_columns(undef, \$sample_name, \$file_name);
 				while ($sth_samp->fetch) {
-					if (!$db_files{$sample_name}) { push @$sample_names, $sample_name; }		
 					push ( @{ $db_files{$sample_name} }, $file_name);
 				}
 			}	
+			if ($sth_all->execute($proj_id)) {		
+				my ($sample_name);
+				$sth_all->bind_columns(undef, \$sample_name);
+				while ($sth_all->fetch) {
+					push @$sample_names, $sample_name;
+				}
+			}			
 			foreach (@{$sample_names}) { get_irods_files(\%irods_files, $_, 'sample') };
 			if ( !$show_files ) {
 				print "\t\t[Columns: 1=Sample, 2=# in iRods, 3=# in db]\n";
@@ -246,8 +255,8 @@ sub get_irods_files
 	my @irods_proj_files = `/software/irods/icommands/bin/imeta -z seq qu -d $source = "$name" | grep dataObj | sed s/'dataObj: '//`;
 	foreach ( sort(@irods_proj_files) ) {
 	    chomp;
-        next if /#0.bam$/;  # skip unassigned deplexed reads
-	    next if /phix.bam$/;
+        next if /#0.bam$/ || /phix.bam$/;  # skip unassigned deplexed reads
+        #print STDERR "$name, $_\n";
 	    push ( @{ ${$hashref}{$name} }, $_);
 	}
 }
