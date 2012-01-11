@@ -198,7 +198,7 @@ sub _open
         my $tabix_args = '';
         if ( exists($args{print_header}) && $args{print_header} ) { $tabix_args .= ' -h '; }
         $tabix_args .= $$self{file};
-        if ( exists($args{region}) && defined($args{region}) ) { $tabix_args .= ' '.$args{region}; }
+        if ( exists($args{region}) && defined($args{region}) ) { $tabix_args .= qq[ '$args{region}']; }
 
         if ( -e $$self{file} && $$self{file}=~/\.gz/i )
         {
