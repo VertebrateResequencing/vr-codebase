@@ -209,7 +209,7 @@ sub beagle_to_vcf
         $self->cmd("touch $outfile");
         return;
     }
-    $self->cmd(qq[$$self{vcf-beagle} -r $region -i $$self{in_vcf} -o $outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz 2>$outfile.e | bgzip -c > $outfile.part]);
+    $self->cmd(qq[$$self{vcf_beagle} -r $region -i $$self{in_vcf} -o $outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz 2>$outfile.e | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
 }
