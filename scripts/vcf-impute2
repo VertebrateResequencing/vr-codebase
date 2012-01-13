@@ -65,6 +65,8 @@ sub parse_params
     {
         $$opts{impute2_out}  = "$$opts{prefix}.gz";
         $$opts{impute2_info} = "$$opts{prefix}_info";
+        $$opts{impute2_haps} = "$$opts{prefix}_haps.gz";
+        $$opts{impute2_hap_conf} = "$$opts{prefix}_haps_confidence.gz";
         $$opts{impute2_samples} = "$$opts{prefix}_samples";
         if ( !-e $$opts{impute2_out} or !-e $$opts{impute2_samples} or !-e $$opts{impute2_info}) 
         { 
@@ -369,7 +371,7 @@ sub next_impute_line
 # Copy genotype and phase from impute to VCF 
 sub merge_lines
 {
-    my ($vcf,$vcf_line,$a,$b,$imp_line,$samples,$ordering,$impute2_info) = @_;
+    my ($vcf,$vcf_line,$a,$b,$imp_line,$haps_line,$haps_conf_line,$samples,$impute2_info) = @_;
 
     chomp($vcf_line);
     my $rec = $vcf->next_data_hash($vcf_line);
@@ -377,44 +379,44 @@ sub merge_lines
     { 
         # This can happen when the VCF file contains a site which was
         #   left out from the imputation whereas the site is present in the known set. Impute2 adds
-        #   those on output. In such a case, use the original VCF line.
+        #   them to the output. In such a case, use the original VCF line.
         #
-        #   error("Expected biallelic site $$rec{POS} $$rec{ALT}[0], ",@{$$rec{ALT}}); 
         return $vcf_line."\n";
     }
 
     my $ref = $$rec{REF};
-    my ($oaa,$oab,$obb,$uaa,$uab,$ubb);
+    my ($aa,$bb,$ab0,$ab1);
     my $reverse = 0;
     if ( $b eq $ref ) 
     { 
+        error("Can this ever happen?? Apparently it can: $$rec{CHROM}:$$rec{POS} $a $b vs $$rec{REF}\n");
         $reverse=1; 
-        $oaa = '1|1';
-        $oab = '1|0';
-        $obb = '0|0';
-        $uaa = '1/1';
-        $uab = '1/0';
-        $ubb = '0/0';
+        $aa  = '1|1';
+        $bb  = '0|0';
+        $ab0 = '1|0';
+        $ab1 = '0|1';
     }
     elsif ( $a ne $ref ) 
     { 
         # The same case as above
-        #   error("None of the impute alleles is ref? $$rec{POS} $$rec{REF} $a $b\n"); 
         return $vcf_line."\n";  
     }
     else
     {
-        $oaa = '0|0';
-        $oab = '0|1';
-        $obb = '1|1';
-        $uaa = '0/0';
-        $uab = '0/1';
-        $ubb = '1/1';
+        # if so, set ab
+        $aa  = '0|0';
+        $bb  = '1|1';
+        $ab0 = '0|1';
+        $ab1 = '1|0';
     }
 
     my $gtypes = $$rec{gtypes};
     my @lks = split(/ /,$imp_line);
     chomp($lks[-1]);
+    my @haps = split(/ /,$haps_line);
+    chomp($haps[-1]);
+    my @haps_conf = split(/ /,$haps_conf_line);
+    chomp($haps_conf[-1]);
     my $n = @$samples;
     my $log10 = log(10);
 
@@ -427,35 +429,33 @@ sub merge_lines
         if ( $lk_ab eq 0 ) { $lk_ab=1e-12; }
         if ( $lk_bb eq 0 ) { $lk_bb=1e-12; }
 
-        my ($aa,$ab,$bb);
-        if ( $$ordering[$i] )
-        {
-            $aa = $oaa;
-            $ab = $oab;
-            $bb = $obb;
-        }
-        else
-        {
-            $aa = $uaa;
-            $ab = $uab;
-            $bb = $ubb;
-        }
+        my $gt_hash = $$gtypes{$$samples[$i]};
 
         if ( $lk_aa >= $lk_ab )
         {
-            $$gtypes{$$samples[$i]}{GT} = $lk_aa >= $lk_bb ? $aa : $bb;
+            $$gt_hash{GT} = $lk_aa >= $lk_bb ? $aa : $bb;
+        }
+        elsif ( $lk_bb >= $lk_ab )
+        {
+            $$gt_hash{GT} = $bb;
         }
         else
         {
-            $$gtypes{$$samples[$i]}{GT} = $lk_ab >= $lk_bb ? $ab : $bb;
+            if ( $haps[5+2*$i]==$haps[5+2*$i+1] ) { error("Uh, something is broken: $$rec{CHROM}:$$rec{POS} $a $b vs haps[5+2*$i]==haps[5+2*$i+1]\n"); }
+            $$gt_hash{GT} = $haps[5+2*$i]==0 ? $ab0 : $ab1;
         }
 
-        $$gtypes{$$samples[$i]}{GL} = $reverse ?
+        $$gt_hash{GL} = $reverse ?
             sprintf("%.2f,%.2f,%.2f",log($lk_bb)/$log10,log($lk_ab)/$log10,log($lk_aa)/$log10) :
             sprintf("%.2f,%.2f,%.2f",log($lk_aa)/$log10,log($lk_ab)/$log10,log($lk_bb)/$log10);
+
+        $$gt_hash{PQ} = $haps_conf[5+$i] eq '*' ? '.' : $haps_conf[5+$i];
+        delete($$gt_hash{PL});
     }
 
     $vcf->add_format_field($rec,'GL');
+    $vcf->add_format_field($rec,'PQ');
+    $vcf->remove_format_field($rec,'PL');
     $$rec{INFO}{IMP2} = $impute2_info;
     return $vcf->format_line($rec);
 }
@@ -471,8 +471,6 @@ sub impute2_to_vcf
 {
     my ($opts) = @_;
 
-    my ($reg_chr,$reg_from,$reg_to) = parse_region($$opts{region}{region});
-
     my $vcf = Vcf->new(file=>$$opts{impute},%{$$opts{region}});
     $vcf->parse_header();
     $vcf->add_header_line({key=>'INFO',ID=>'IMP2',Number=>3,Type=>'Float',Description=>'IMPUTE2 scores: exp_freq_a1, info, certainty'});
@@ -480,18 +478,21 @@ sub impute2_to_vcf
     my $samples = check_samples($vcf,$$opts{impute2_samples});
     print $vcf->format_header();
 
-    my $ordering = check_ordering($$opts{prefix});
     open(my $fh,"zcat $$opts{impute2_out} |") or error("zcat $$opts{impute2_out}: $!");
+    open(my $fh_haps,"zcat $$opts{impute2_haps} |") or error("zcat $$opts{impute2_haps}: $!");
+    open(my $fh_haps_conf,"zcat $$opts{impute2_hap_conf} |") or error("zcat $$opts{impute2_hap_conf}: $!");
     open(my $fh_info,'<',$$opts{impute2_info}) or error("$$opts{impute2_info}: $!");
     <$fh_info>;
 
-    my ($vcf_line,$imp_line,$vcf_pos,$imp_pos,$info);
+    my ($vcf_line,$imp_line,$haps_line,$haps_conf_line,$vcf_pos,$imp_pos,$info);
     while (1)
     {
         if ( !defined $vcf_line ) { $vcf_line = $vcf->next_line() or last; undef $vcf_pos; }
         if ( !defined $imp_line ) 
         { 
             ($imp_pos,$a,$b,$imp_line) = next_impute_line($fh); 
+            $haps_line = <$fh_haps>;
+            $haps_conf_line = <$fh_haps_conf>;
             if ( defined $imp_line )
             {
                 my $info_line = <$fh_info>;
@@ -517,17 +518,6 @@ sub impute2_to_vcf
         if ( $vcf_pos<$imp_pos ) 
         {
             # impute is ahead of VCF
-
-            # A rather annoying problem: If and indel happens to span the region boundary, it will be reported
-            #   twice by tabix, in both this and the preceeding region. Moreover, after concatenating
-            #   all chunks, the resulting VCF will be unsorted. Prevent this by excluding records
-            #   with starting position outside the region boundaries.
-            if ( defined $reg_from && $vcf_line=~/^[^\t]+\t(\d+)\t/ && $reg_from>$1 )
-            {
-                undef $vcf_line;
-                next;
-            }
-
             print $vcf_line;
             undef $vcf_line;
             next;
@@ -541,7 +531,7 @@ sub impute2_to_vcf
         }
 
         # VCF and impute have the same position
-        print merge_lines($vcf,$vcf_line,$a,$b,$imp_line,$samples,$ordering,$info);
+        print merge_lines($vcf,$vcf_line,$a,$b,$imp_line,$haps_line,$haps_conf_line,$samples,$info);
 
         # Do not undef imp_line, in case there are duplicate VCF lines
         undef $vcf_line;

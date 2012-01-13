@@ -155,12 +155,12 @@ sub main
 sub mrProper
 {
     my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
     my $regions = $self->regions();
     for my $region (@$regions)
     {
         $self->cmd("rm -rf $outdir/$region");
     }
-    $self->SUPER::clean($outdir);
 }
 
 sub runtime_stats
@@ -209,7 +209,7 @@ sub beagle_to_vcf
         $self->cmd("touch $outfile");
         return;
     }
-    $self->cmd(qq[$$self{vcf-beagle} -r $region -i $$self{in_vcf} -o $outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz 2>$outfile.e | bgzip -c > $outfile.part]);
+    $self->cmd(qq[$$self{vcf_beagle} -r $region -i $$self{in_vcf} -o $outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz 2>$outfile.e | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
 }
