@@ -567,7 +567,7 @@ sub report_stats
     log_msg($opts, "#BP         2 .. percent of samples with breakpoint at that position\n");
     for my $bp (sort {$$opts{breakpoints}{$b} <=> $$opts{breakpoints}{$a}} keys %{$$opts{breakpoints}})
     {
-        log_msg($opts,sprintf "BP\t%d\t%d\n", $bp,100.*$$opts{breakpoints}{$bp}/$$opts{nsamples});
+        log_msg($opts,sprintf "BP\t%d\t%.1f\n", $bp,100.*$$opts{breakpoints}{$bp}/$$opts{nsamples});
     }
 
     log_msg($opts, "#ED Error Distribution. Use `grep ^ED | cut -f 2-` to extract this part.\n");
