@@ -2271,8 +2271,17 @@ sub run_validation
     my $warn_sorted=1;
     my $warn_duplicates = exists($$self{warn_duplicates}) ? $$self{warn_duplicates} : 1;
     my ($prev_chrm,$prev_pos);
-    while (my $x=$self->next_data_hash()) 
+    while (my $line=$self->next_data_array()) 
     {
+        for (my $i=0; $i<@$line; $i++)
+        {
+            if (!defined($$line[$i]) or $$line[$i] eq '' ) 
+            {
+                $self->warn("The column $$self{columns}[$i] is empty at $$line[0]:$$line[1].\n");
+            }
+        }
+
+        my $x = $self->next_data_hash($line);
         $self->validate_line($x);
 
         # Is the position numeric?
