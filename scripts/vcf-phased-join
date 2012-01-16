@@ -78,7 +78,12 @@ sub parse_params
     if ( !exists($$opts{vcfs}) ) { error("No VCF file given"); }
     if ( !exists($$opts{split_size}) )
     {
-        if ( @{$$opts{vcfs}}<2 ) { error("Expected multiple VCFs."); }
+        if ( @{$$opts{vcfs}}<1 ) { error("No input VCF given?\n"); }
+        if ( @{$$opts{vcfs}}<2 ) 
+        { 
+            warn("Only one input VCF given, running in --min-PQ splitting mode.\n"); 
+            if ( $$opts{min_PQ}<=0.5 ) { warn("You better know what you're doing: --min-PQ set too low, will hardly find any split!"); }
+        }
         if ( !exists($$opts{output}) ) { error("No output VCF file name given"); }
     }
     return $opts;
@@ -260,12 +265,9 @@ sub join_vcfs
 
     my $i = -1;
     my $vcf1 = Vcf->new(file=>$$opts{vcfs}[++$i]);
-    my $vcf2 = Vcf->new(file=>$$opts{vcfs}[++$i]);
     $vcf1->parse_header();
-    $vcf2->parse_header();
     my $rec1 = $vcf1->next_data_array();
-    my $rec2 = $vcf2->next_data_array();
-    check_sanity($opts,$i-1,$i,$rec1,$rec2);
+
     $$opts{nsamples} = @{$$vcf1{columns}}-9;
     $$opts{swapped} = [ (-1) x $$opts{nsamples} ];
     $$opts{phasing_set} = [ (0) x $$opts{nsamples} ];
@@ -302,7 +304,25 @@ sub join_vcfs
     log_msg($opts, "#PS           7 .. number of het genotypes used for phasing\n");
     log_msg($opts, "#PS         8,9 .. log10 likelihood of phase match/mismatch\n");
     $$opts{file1} = $$opts{vcfs}[$i-1];
-    $$opts{file2} = $$opts{vcfs}[$i];
+
+    my ($vcf2,$rec2);
+    if ( $i+1 >= @{$$opts{vcfs}} )
+    {
+        # Only one VCF file present, running in --min-PQ splitting mode
+        while ( defined($rec1 = $vcf1->next_data_array()) )
+        {
+            output_line($opts,$rec1,$$opts{swapped});
+        }
+        return;
+    }
+    else
+    {
+        $vcf2 = Vcf->new(file=>$$opts{vcfs}[++$i]);
+        $vcf2->parse_header();
+        $rec2 = $vcf2->next_data_array();
+        check_sanity($opts,$i-1,$i,$rec1,$rec2);
+        $$opts{file2} = $$opts{vcfs}[$i];
+    }
 
     my @buffer;
     while (1)
