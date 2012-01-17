@@ -68,6 +68,7 @@ sub parse_params
         if (                 $arg eq '--INFO/AF1-af' ) { $$opts{INFO_AF1_af}=1; next; }
         if (                 $arg eq '--ignore-indels' ) { $$opts{ignore_indels}=1; next; }
         if (                 $arg eq '--high-conf-gls' ) { $$opts{high_confidence_gls}=shift(@ARGV); next; }
+        if (                 $arg eq '--error-by-gl' ) { $$opts{err_by_gl}=1; next; }
         if ( $arg eq '-a' || $arg eq '--apply-filters' ) { $$opts{apply_filters}=1; next; }
         if ( $arg eq '-m' || $arg eq '--name-mapping' ) { $$opts{mappings_list}=shift(@ARGV); next; }
         if ( $arg eq '-R' || $arg eq '--refseq' ) { $$opts{refseq}=shift(@ARGV); next; }
@@ -467,6 +468,21 @@ sub report_stats
         print "\n";
     }
 
+    if ( exists($$opts{counts_by_gl}) )
+    {
+        print "#EQ Errors by quality. Use `grep ^EQ | cut -f 2-` to extract this part.\n";
+        print "#EQ The columns are:\n";
+        print "#EQ      1 .. GL\n";
+        print "#EQ      2 .. number of matches\n";
+        print "#EQ      3 .. number of mismatches\n";
+        for my $qual (sort {$a<=>$b} keys %{$$opts{counts_by_gl}})
+        {
+            printf "EQ\t%s\t%d\t%d\n", $qual, 
+                $$opts{counts_by_gl}{$qual}{match}?$$opts{counts_by_gl}{$qual}{match}:0, 
+                $$opts{counts_by_gl}{$qual}{mismatch}?$$opts{counts_by_gl}{$qual}{mismatch}:0;
+        }
+    }
+
     if ( $$opts{debug} )
     {
         print "#MT Mismatch Types\n";
@@ -483,19 +499,31 @@ sub report_stats
 sub print_gs
 {
     my ($opts,$stats) = @_;
-    my ($ndr_ms,$ndr_m);
+    my ($ndr_ms,$ndr_m,@summary);
     for my $key qw(hom_RR het_RA hom_AA het_AA)
     {
         my $m   = $$stats{"${key}_"}{match};
         my $ms  = $$stats{"${key}_"}{mismatch};
         if ( !$m ) { $m=0; }
         if ( !$ms ) { $ms=0; }
-        printf "GS\t$key\t%d\t%d\t%.2f%%\n", $ms,$m,$m?$ms*100./($m+$ms):0;
+
+        my $err = $m?$ms*100./($m+$ms):0;
+        printf "GS\t$key\t%d\t%d\t%.2f%%\n", $ms,$m,$err;
         $ndr_ms += $ms;
         $ndr_m  += $key eq 'hom_RR' ? 0 : $m;
+
+        if ( $key eq 'het_AA' ) { next; }
+        if ( $key=~/_(.+)$/ )
+        {
+            push @summary, sprintf "%s %.2f", $1,$err;
+        }
     }
+    my $err = $ndr_m+$ndr_ms ? $ndr_ms*100./($ndr_m+$ndr_ms) : 0;
+    unshift @summary, sprintf "NDR %.2f", $err;
+
     printf 
-        "SN\tNon-reference Discordance Rate (NDR):\t%.2f\n", $ndr_m+$ndr_ms ? $ndr_ms*100./($ndr_m+$ndr_ms) : 0;
+        "SN\tNon-reference Discordance Rate (NDR):\t%.2f\n", $err;
+    print "SN\tSummary:\t", join(', ', @summary), "\n";
 }
 
 sub read_stats
@@ -524,7 +552,7 @@ sub read_stats
             $$stats{dp}{AA}{RA}{$dp} += $items[10];
             $$stats{dp}{n}{AA}{RA}   += $items[10];
         }
-        if ( $items[0] eq 'AF' )
+        elsif ( $items[0] eq 'AF' )
         {
             my $af = $items[1];
             $$stats{af}{RR}{$af}{matches}    += $items[2];
@@ -534,11 +562,17 @@ sub read_stats
             $$stats{af}{RA}{$af}{mismatches} += $items[7];
             $$stats{af}{AA}{$af}{mismatches} += $items[8];
         }
-        if ( $items[0] eq 'GS' )
+        elsif ( $items[0] eq 'GS' )
         {
             my $type = $items[1];
             $$stats{gs}{$type.'_'}{mismatch} += $items[2];
             $$stats{gs}{$type.'_'}{match}    += $items[3];
+        }
+        elsif ( $items[0] eq 'EQ' )
+        {
+            my $gl = $items[1];
+            $$stats{counts_by_gl}{$gl}{mismatch} += $items[2];
+            $$stats{counts_by_gl}{$gl}{match}    += $items[3];
         }
     }
     close($fh);
@@ -576,6 +610,7 @@ sub plot_stats
     make_dir($$opts{plot});
     plot_dp($opts,$$stats{dp});
     plot_af($opts,$$stats{af});
+    plot_ndr($opts,$$stats{af});
     print_gs($opts,$$stats{gs});
 }
 
@@ -675,6 +710,72 @@ sub plot_af
     close($fh);
 
     plot("$$opts{plot}-af.gp");
+}
+
+sub plot_ndr
+{
+    my ($opts,$stats) = @_;
+
+    open(my $fh,'>',"$$opts{plot}-ndr.gp") or error("$$opts{plot}-ndr.gp: $!");
+    if ( exists($$opts{title}) ) { print $fh qq[set title "$$opts{title}"\n]; }
+    print $fh q[
+        set terminal png size 550,400 truecolor font "DejaVuSansMono,9"
+        set output "] . "$$opts{plot}-ndr.png" . q["
+        set style line 1 linecolor rgb "#ff4400"
+        set style line 2 linecolor rgb "#0084ff"
+        set style increment user
+        set grid back lc rgb "#dddddd"
+        set xlabel "Alternate allele frequency"
+        set ylabel "Non-reference Discordance Rate"
+        set y2label "Number of genotypes"
+        set xrange [0.0:1.0]
+        set y2tics
+
+        plot '-' with lines lw 1 title "NDR", \
+             '-' axes x1y2 with lines lw 1 title "GTs"
+        ];
+
+    my $afs;
+    for my $type qw(RA AA)
+    {
+        for my $af (keys %{$$stats{$type}})
+        {
+            $$afs{$af}{m} += $$stats{$type}{$af}{matches};
+            $$afs{$af}{mi} += $$stats{$type}{$af}{mismatches};
+        }
+    }
+    for my $type qw(RR)
+    {
+        for my $af (keys %{$$stats{$type}})
+        {
+            $$afs{$af}{mi} += $$stats{$type}{$af}{mismatches};
+        }
+    }
+
+    my @afs = sort { $a<=>$b } keys %$afs;
+    my $iafs = 0;
+    my $bin_size = 0.02;
+    my @dp;
+    for (my $i=0; $i<=1/$bin_size; $i++)
+    {
+        my $from = $i*$bin_size;
+        my $to   = ($i+1)*$bin_size;
+        my ($m,$mi,$af);
+        while ( $iafs<@afs && $afs[$iafs]>=$from && $afs[$iafs]<$to ) 
+        {
+            $af = $afs[$iafs];
+            $m  += $$afs{$af}{m};
+            $mi += $$afs{$af}{mi};
+            $iafs++;
+        }
+        printf $fh "$af\t%.2f\n", $m+$mi ? $mi*100./($m+$mi) : 0;
+        push @dp, sprintf "$af\t%d",$m+$mi;
+    }
+    print $fh "end\n";
+    print $fh join("\n",@dp), "\nend\n";
+    close($fh);
+
+    plot("$$opts{plot}-ndr.gp");
 }
 
 sub do_region_stats
@@ -931,7 +1032,7 @@ sub cmp_genotypes
     my $ndp3 = 0;
     for my $id (keys %{$$grp[0]{rec}{gtypes}})
     {
-        my (@sorted_als1,$nploid,$type);
+        my (@sorted_als1,$nploid,$type,$max_gl);
 
         my ($als1,$seps1,$is_phased1,$is_empty1) = $$grp[0]{vcf}->parse_haplotype($$grp[0]{rec},$id);
         if ( !$is_empty1 ) 
@@ -947,6 +1048,13 @@ sub cmp_genotypes
             if ( @gls!=3 or $gls[0] eq '.' ) { next; }
             @gls = sort {$b<=>$a} @gls;
             if ( abs($gls[0]-$gls[1])<$$opts{high_confidence_gls} ) { next; }
+        }
+        if ( exists($$opts{err_by_gl}) && exists($$grp[0]{rec}{gtypes}{$id}{GL}) )
+        {
+            for my $gl (split(/,/,$$grp[0]{rec}{gtypes}{$id}{GL}))
+            {
+                if ( !defined $max_gl or $gl>$max_gl ) { $max_gl = $gl; }
+            }
         }
 
         # There may be multiple files entering the comparison. Report match only if all are present and all match. 
@@ -1001,7 +1109,15 @@ sub cmp_genotypes
                 if ( $$opts{debug} ) { $$opts{mismatch_types}{$type}{'Allele_Count'}++ }
                 last; 
             }
-            
+
+            if ( exists($$opts{err_by_gl}) && exists($$grp[$i]{rec}{gtypes}{$id}{GL}) )
+            {
+                for my $gl (split(/,/,$$grp[$i]{rec}{gtypes}{$id}{GL}))
+                {
+                    if ( !defined $max_gl or $gl>$max_gl ) { $max_gl = $gl; }
+                }
+            }
+
             my @sorted_als2 = sort @$als2;
             for (my $ial=0; $ial<$nploid; $ial++)
             {
@@ -1054,12 +1170,22 @@ sub cmp_genotypes
             if ( $phase_match ) { $$hapls{$id}{$type.'phase_match'}++ }
             $gtype_matches{$type}++;
             $$opts{counts_by_dp}{$dp}{$type.'-'.$type}++;
+            if ( defined $max_gl ) 
+            { 
+                my $gl = sprintf "%.2f", $max_gl;
+                $$opts{counts_by_gl}{$gl}{match}++;
+            }
         }
         elsif ( defined $type ) 
         { 
             $$hapls{$id}{$type.'gtype_mismatch'}++;
             $gtype_mismatches{$type}++;
             $$opts{counts_by_dp}{$dp}{$type.'-'.$type2}++;
+            if ( defined $max_gl ) 
+            { 
+                my $gl = sprintf "%.2f", $max_gl;
+                $$opts{counts_by_gl}{$gl}{mismatch}++;
+            }
         }
     }
     $$opts{hapls_ncmp}++;
