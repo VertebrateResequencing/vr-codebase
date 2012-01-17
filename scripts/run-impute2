@@ -30,6 +30,7 @@ sub new
     $$self{impute2_bin}   = 'impute2';
     $$self{vcf_impute2}   = 'vcf-impute2';
     $$self{buffer_region} = 250;
+    $$self{phased_join_args} = '';
     $$self{_sampleconf} = q[
         impute2_bin => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/impute2.2.0',
         vcf_impute2 => 'vcf-impute2',
@@ -37,10 +38,12 @@ sub new
         fai_ref     => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
         known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/gtypes/UK10k-twins/uk10k-twins.ref.vcf.gz',
 
-        impute2_args  => '-Ne 20000 -k 100',
-        buffer_region => 250, # kb
-        chunk_size    => 3_000_000,
-        chromosomes   => [qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22)],
+        impute2_args     => '-Ne 20000 -k 100',
+        buffer_region    => 250, # kb
+        # Do not split blocks phased by IMPUTE2 even when phasing quality is low - single sites may be unphased in otherwise phased chunks
+        phased_join_args => '-q 0 -j 10',
+        chunk_size       => 3_000_000,
+        chromosomes      => [qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22)],
 
         limits   => { memory=>5_500, runtime=>3*24*60 },
         do_clean => 1,   # Remove runner's temporary files
@@ -292,7 +295,7 @@ sub concat_vcfs
         print $fh $file, "\n";
     }
     close($fh);
-    $self->cmd(qq[vcf-phased-join -l $outfile.list -o - 2>$outfile.log | bgzip -c > $outfile.part]);
+    $self->cmd(qq[vcf-phased-join $$self{phased_join_args} -l $outfile.list -o - 2>$outfile.log | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
 }
