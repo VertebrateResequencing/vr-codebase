@@ -847,7 +847,7 @@ sub cleanup {
   {
     unlink($self->{fsu}->catfile($lane_path, $file));
   }
-  system("touch _cleanup_done");
+  Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_cleanup_done")   );  
   
   return $self->{Yes};
 }
