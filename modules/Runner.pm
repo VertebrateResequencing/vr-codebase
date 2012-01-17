@@ -475,12 +475,24 @@ sub all_done
     About : Clean all system files (in .jobs directories)
     Usage : $self->clean($dir);
     Args  : <@dirs>
-                Directories to recursively clean from all .jobs subdirs
+                Directories to recursively clean from all .jobs subdirs leaving a single tarball instead
 =cut
 
 sub clean
 {
     my ($self,@dirs) = @_;
+
+    if ( !@dirs ) { return; }
+
+    # Create the tarball, existing file will not be overwritten
+    my $tarball = $dirs[0] . '/cleaned-job-outputs.tgz';
+    if ( !-e $tarball )
+    {
+        my $dirs = join(' ',@dirs);
+        my $cmd = "find $dirs -name .jobs | tar -T - -czf $tarball";
+        $self->debugln($cmd);
+        system($cmd);
+    }
     for my $dir (@dirs)
     {
         my $cmd = "find $dir -name .jobs | xargs rm -rf";
@@ -489,16 +501,14 @@ sub clean
     }
 }
 
-# Do not advertise this method, the user module should not need it
-#
-#   =head2 is_finished
-#   
-#       About : Check if the file is finished.
-#       Usage : $self->is_finished('some/file');
-#       Args  : <file list>
-#                   The name of the file to check the existence of
-#                   
-#   =cut
+=head2 is_finished
+
+    About : Check if the file is finished.
+    Usage : $self->is_finished('some/file');
+    Args  : <file list>
+                The name of the file to check the existence of
+                
+=cut
 
 sub is_finished
 {

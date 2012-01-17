@@ -11,6 +11,7 @@ use Carp;
 my @remove_me = ();
 
 my $opts = parse_params();
+check_sanity($opts);
 plot_heatmap_qualities($opts);
 plot_qualities($opts);
 plot_isize($opts);
@@ -85,6 +86,14 @@ sub clean
     for my $file (@remove_me) { unlink $file; }
 }
 
+sub check_sanity
+{
+    my ($opts) = @_;
+    my $nseq = `grep "^SN\tsequences:" $$opts{bamcheck} | sed 's,^.*\\s,,'`;
+    chomp($nseq);
+    if ( !$nseq ) { error("Sanity check failed: no sequences found by bamcheck??\n"); }
+}
+
 sub get_temp_file
 {
     my ($opts) = @_;
@@ -155,8 +164,8 @@ sub plot_heatmap_qualities
         
         set palette defined (0 0 0 0, 1 0 0 1, 3 0 1 0, 4 1 0 0, 6 1 1 1)
         
-        max_val = `grep -e ^FFQ -e ^LFQ ] . $$opts{bamcheck} . q[ | cut -f 3- | sed 's,\s\s*,\n,g' | awk '{if($1>max)max=$1}END{print max}'`
-        ncycles = `grep ^FFQ ] . $$opts{bamcheck} . q[ | cut -f 2 | awk '{if($1>max)max=$1}END{print max}'`
+        max_val = `grep -e ^FFQ -e ^LFQ ] . $$opts{bamcheck} . q[ | cut -f 3- | sed 's,\s\s*,\n,g' | awk 'BEGIN{max=0}{if($1>max)max=$1}END{print max}'`
+        ncycles = `grep ^FFQ ] . $$opts{bamcheck} . q[ | cut -f 2 | awk 'BEGIN{max=0}{if($1>max)max=$1}END{print max}'`
         nquals  = `grep '^FFQ[[:space:]]1[[:space:]]' ] . $$opts{bamcheck} . q[ | cut -f 4- | sed 's,\s\s*,\n,g' |wc -l`
         
         set cbrange [0:max_val]
@@ -452,17 +461,17 @@ sub plot_gc
         $ref_stats = qq['$tmp_file' with lines lt 0 title 'Reference', ];
     }
 
-    my $gcf_max = `grep ^GCF  $$opts{bamcheck}  | cut -f 2- | awk '{if(\$2>max)max=\$2}END{print max}'`;
+    my $gcf_max = `grep ^GCF  $$opts{bamcheck}  | cut -f 2- | awk 'BEGIN{max=0}{if(\$2>max)max=\$2}END{print max}'`;
     
     # if its single ended dont plot the reverse reads
     my $gcl_max_plot ='';
     my $plot_reverse_str = '';
-    my $gcl_max = `grep ^GCL  $$opts{bamcheck}  | cut -f 2- | awk '{if(\$2>max)max=\$2}END{print max}'`;
+    my $gcl_max = `grep ^GCL  $$opts{bamcheck}  | cut -f 2- | awk 'BEGIN{max=0}{if(\$2>max)max=\$2}END{print max}'`;
     chomp $gcl_max;
-    if((defined $gcl_max) && $gcl_max ne "")
+    if ( $gcl_max )
     {
-      $gcl_max_plot = 'gcl_max = ' . $gcl_max ;
-      $plot_reverse_str = q[, '< grep ^GCL ] . $$opts{bamcheck} . q[ | cut -f 2-' using 1:($2/gcl_max) with lines title 'Last fragments' lc 2 ];
+        $gcl_max_plot = 'gcl_max = ' . $gcl_max ;
+        $plot_reverse_str = q[, '< grep ^GCL ] . $$opts{bamcheck} . q[ | cut -f 2-' using 1:($2/gcl_max) smooth csplines with lines title 'Last fragments' lc 2 ];
     }
     
     # Create the gnuplot script. Quick solution: the script relies on backticks and unix commands, may be changed in future
@@ -474,7 +483,7 @@ sub plot_gc
         gcf_max = ] . $gcf_max . q[
         ] . $gcl_max_plot . q[
 
-        peak = `grep ^GC\[FL\] ] . $$opts{bamcheck} . q[ | cut -f 2- | awk '{if($2>max){max=$2;pos=$1}}END{print pos}'`
+        peak = `grep ^GC\[FL\] ] . $$opts{bamcheck} . q[ | cut -f 2- | awk 'BEGIN{pos=0}{if($2>max){max=$2;pos=$1}}END{print pos}'`
         set label sprintf("%.1f",peak) at peak,1 front offset 1,0
 
         set grid back lc rgb "#aaaaaa"
@@ -483,7 +492,7 @@ sub plot_gc
         set yrange [0:1.1]
         
         set title "] . $$args{title} . q["
-        plot ] . $ref_stats . q[ '< grep ^GCF ] . $$opts{bamcheck} . q[ | cut -f 2-' using 1:($2/gcf_max) with lines lc 1 title 'First fragments']. $plot_reverse_str. q[
+        plot ] . $ref_stats . q[ '< grep ^GCF ] . $$opts{bamcheck} . q[ | cut -f 2-' using 1:($2/gcf_max) smooth csplines with lines lc 1 title 'First fragments']. $plot_reverse_str. q[
     ];
     close($fh);
 

@@ -1,0 +1,606 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Carp;
+use Vcf;
+
+my $opts = parse_params();
+if ( $$opts{split_size} ) 
+{
+    split_vcf($opts);
+}
+else
+{
+    join_vcfs($opts);
+}
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg )
+    {
+        croak @msg;
+    }
+    die
+        "About: The script takes multiple overlapping pre-phased chunks and concatenates them into one VCF\n",
+        "   using heterozygous calls from the overlaps to determine correct phase.\n",
+        "Usage: vcf-phased-join [OPTIONS] A.vcf B.vcf C.vcf\n",
+        "Options:\n",
+        "   -j, --min-join-quality <num>    Quality threshold for gluing the pre-phased blocks together [10]\n",
+        "   -l, --list <file>               List of VCFs to join.\n",
+        "   -o, --output <file>             Output file name. When \"-\" is supplied, STDOUT and STDERR will be used\n",
+        "   -q, --min-PQ <num>              Break pre-phased segments if PQ value is lower in input VCFs [0.6]\n",
+        "   -h, -?, --help                  This help message\n",
+        "\n";
+}
+
+
+sub parse_params
+{
+    my $opts = 
+    {
+        args => [$0, @ARGV],
+        min_join_quality => 10,
+        min_PQ => 0.6,
+    };
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-o' || $arg eq '--output' ) { $$opts{output}=shift(@ARGV); next; }
+        if ( $arg eq '-j' || $arg eq '--min-join-quality' ) { $$opts{min_join_quality}=shift(@ARGV); next; }
+        if ( $arg eq '-q' || $arg eq '--min-PQ' ) { $$opts{min_PQ}=shift(@ARGV); next; }
+        if ( $arg eq '-l' || $arg eq '--list' ) { $$opts{list}=shift(@ARGV); next; }
+        if (                 $arg eq '--split-size' ) { $$opts{split_size}=shift(@ARGV); next; }
+        if (                 $arg eq '--split-noise' ) { $$opts{split_noise}=shift(@ARGV); next; }
+        if (                 $arg eq '--split-overlap' ) { $$opts{split_overlap}=shift(@ARGV); next; }
+        if (                 $arg eq '--split-prefix' ) { $$opts{split_prefix}=shift(@ARGV); next; }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        if ( -e $arg ) { push @{$$opts{vcfs}}, $arg; next; }
+        error("Unknown parameter or non-existent file \"$arg\". Run -h for help.\n");
+    }
+    if ( exists($$opts{list}) )
+    {
+        open(my $fh,'<',$$opts{list}) or error("$$opts{list}: $!");
+        while (my $line=<$fh>)
+        {
+            if ($line=~/^\s*$/) { next; }
+            $line =~ s/^\s*//;
+            $line =~ s/\s*$//;
+            if ( ! -e $line ) { error("Some of the files in $$opts{list} do not exist\n"); }
+            push @{$$opts{vcfs}},$line;
+        }
+        close($fh);
+    }
+    if ( !exists($$opts{vcfs}) ) { error("No VCF file given"); }
+    if ( !exists($$opts{split_size}) )
+    {
+        if ( @{$$opts{vcfs}}<1 ) { error("No input VCF given?\n"); }
+        if ( @{$$opts{vcfs}}<2 ) 
+        { 
+            warn("Only one input VCF given, running in --min-PQ splitting mode.\n"); 
+            if ( $$opts{min_PQ}<=0.5 ) { warn("You better know what you're doing: --min-PQ set too low, will hardly find any split!"); }
+        }
+        if ( !exists($$opts{output}) ) { error("No output VCF file name given"); }
+    }
+    return $opts;
+}
+
+sub split_vcf
+{
+    my ($opts) = @_;
+    my $vcf = Vcf->new(file=>$$opts{vcfs}[0]);
+    $vcf->parse_header();
+    $$opts{vcf} = $vcf;
+
+    my ($fh_next,$swap_next) = open_next_file($opts);
+    my ($fh,$prev_boundary,$start_pos,@buffer,$prev_chr,$prev_pos,$swap);
+    while (my $rec=$vcf->next_data_array)
+    {
+        my $rec_next = [];
+        for my $col (@$rec) { push @{$rec_next}, "$col"; }
+
+        my $chr = $$rec[0];
+        my $pos = $$rec[1];
+        if ( defined $prev_chr && $prev_chr ne $chr ) { last; }
+        if ( defined $prev_pos && $pos<=$prev_pos ) { error("Not sorted or duplicate position: $chr:$prev_pos vs $chr:$pos"); }
+        $prev_pos = $pos;
+        $prev_chr = $chr;
+        if ( !defined $start_pos ) { $start_pos = $pos; }
+
+        my $bnd = $start_pos + int(($pos-$start_pos)/$$opts{split_size})*$$opts{split_size};
+        if ( $start_pos!=$bnd && abs($pos-$bnd)*2 <= $$opts{split_overlap} ) 
+        { 
+            # Known boundary
+            if ( defined $fh_next ) { print $fh_next randomize($opts,$swap_next,$vcf,$rec_next,$pos-$bnd+$$opts{split_overlap}/2); }
+            if ( defined $fh ) { print $fh randomize($opts,$swap,$vcf,$rec,$bnd+$$opts{split_overlap}/2-$pos); }
+            next;
+        }
+
+        $bnd += $$opts{split_size};
+        if ( abs($pos-$bnd)*2 >= $$opts{split_overlap} )
+        {
+            print $fh_next swap_gts($vcf,$swap_next,$rec);
+            next;
+        }
+
+        # New boundary
+        if ( !defined $prev_boundary || $prev_boundary ne $bnd )
+        {
+            close($fh) unless !defined $fh;
+            $fh   = $fh_next;
+            $swap = $swap_next;
+            $prev_boundary = $bnd;
+            $fh_next = undef;
+        }
+        if ( !defined $fh_next )
+        {
+            ($fh_next,$swap_next) = open_next_file($opts);
+            $prev_boundary = $bnd;
+        }
+        if ( defined $fh_next ) { print $fh_next randomize($opts,$swap_next,$vcf,$rec_next,$pos-$bnd+$$opts{split_overlap}/2); }
+        if ( defined $fh ) { print $fh randomize($opts,$swap,$vcf,$rec,$bnd+$$opts{split_overlap}/2-$pos); }
+    }
+    if ( defined $fh ) { close($fh); }
+    if ( defined $fh_next ) { close($fh_next); }
+}
+
+sub open_next_file
+{
+    my ($opts) = @_;
+
+    $$opts{split_ifile}++;
+    my $fname = sprintf "%s%02d.vcf", $$opts{split_prefix},$$opts{split_ifile};
+    open(my $fh,'>',$fname) or error("$fname: $!");
+    print $fh $$opts{vcf}->format_header;
+
+    my @swap;
+    for (my $i=9; $i<@{$$opts{vcf}{columns}}; $i++)
+    {
+        if ( $$opts{split_ifile}==1 )
+        {
+            $swap[$i-9] = -1;
+        }
+        else
+        {
+            $swap[$i-9] = int(rand(2)) ? 1 : -1;
+        }
+        if ( $swap[$i-9]==1 )
+        {
+            printf "%s\t%s\tswapped\n",$fname,$$opts{vcf}{columns}[$i];
+        }
+    }
+
+    return ($fh,\@swap);
+}
+
+sub randomize
+{
+    my ($opts,$swap,$vcf,$rec,$dist) = @_;
+
+    if ( $dist>$$opts{split_overlap} ) { $dist = $$opts{split_overlap}; }
+    my $noise = $dist/$$opts{split_overlap};
+    if ( exists($$opts{split_noise}) ) { $noise = $$opts{split_noise}; }
+    my $na = 2 * (scalar @$rec - 9);
+    my $nchanged = int($na*$noise);
+    if ( !$nchanged ) { return swap_gts($vcf,$swap,$rec); }
+
+    use List::Util 'shuffle';
+    my @errors = (1) x $nchanged;
+    if ( $nchanged<$na ) { @errors = (@errors, (0) x ($na-$nchanged)); }
+    @errors = shuffle(@errors);
+
+    print "$$rec[1] .. dist=$dist, changed=$nchanged total=$na ($noise)\n";
+
+    my $itag = $vcf->get_tag_index($$rec[8],'GT',':');
+    my $i = -2;
+    for (my $isample=9; $isample<@$rec; $isample++)
+    {
+        $i += 2;
+        if ( !$errors[$i] && $errors[$i+1] ) { next; }
+
+        my $gt = $vcf->get_field($$rec[$isample],$itag);
+        my ($a1,$a2) = $vcf->split_gt($gt);
+        if ( $errors[$i] ) { $a1 = $a1 ? 0 : 1; }
+        if ( $errors[$i+1] ) { $a2 = $a2 ? 0 : 1; }
+        $$rec[$isample] = $vcf->replace_field($$rec[$isample],"$a1|$a2",$itag,':');
+    }
+
+    return swap_gts($vcf,$swap,$rec);
+}
+
+sub swap_gts
+{
+    my ($vcf,$swap,$rec) = @_;
+    my $igt = $vcf->get_tag_index($$rec[8],'GT',':'); 
+    my $gts = $vcf->get_sample_field($rec,$igt);
+    for (my $i=0; $i<@$gts; $i++)
+    {
+        if ( $$swap[$i]==-1 ) { next; }
+        my ($a1,$a2) = $vcf->split_gt($$gts[$i]);
+        $$rec[$i+9] = $vcf->replace_field($$rec[$i+9],"$a2|$a1",$igt,':');
+    }
+    return $vcf->format_line($rec);
+}
+
+sub check_columns
+{
+    my ($opts) = @_;
+    my @columns;
+    for my $file (@{$$opts{vcfs}})
+    {
+        my $vcf = Vcf->new(file=>$file);
+        $vcf->parse_header();
+
+        if ( @columns )
+        {
+            if ( @columns != @{$$vcf{columns}} ) { warn("Different number of columns in [$file].\n"); }
+            for (my $i=0; $i<@columns; $i++)
+            {
+                if ( $$vcf{columns}[$i] ne $columns[$i] ) { warn("The column names do not agree in [$file].\n"); last; }
+            }
+        }
+        else
+        {
+            @columns = @{$$vcf{columns}};
+        }
+        $vcf->close();
+    }
+}
+
+sub log_msg
+{
+    my ($opts,@msg) = @_;
+    print {$$opts{log_fh}} @msg;
+}
+
+sub join_vcfs
+{
+    my ($opts) = @_;
+
+    check_columns($opts);
+
+    my $i = -1;
+    my $vcf1 = Vcf->new(file=>$$opts{vcfs}[++$i]);
+    $vcf1->parse_header();
+    my $rec1 = $vcf1->next_data_array();
+
+    $$opts{nsamples} = @{$$vcf1{columns}}-9;
+    $$opts{swapped} = [ (-1) x $$opts{nsamples} ];
+    $$opts{phasing_set} = [ (0) x $$opts{nsamples} ];
+    $$opts{phased_blocks} = [ (0) x $$opts{nsamples} ];
+    $$opts{broken_blocks} = [ (0) x $$opts{nsamples} ];
+
+    if ( $$opts{output} ne '-' )
+    {
+        my $logfile = $$opts{output};
+        if ( $$opts{output}=~/\.[^\.]+$/ ) { $logfile = $`; }
+        $logfile .= '.plog';
+        open($$opts{log_fh},'>',$logfile) or error("$logfile: $!");
+        open($$opts{out_fh},'>',$$opts{output}) or error("$$opts{output}: $!");
+    }
+    else
+    {
+        $$opts{log_fh} = \*STDERR;
+        $$opts{out_fh} = \*STDOUT;
+    }
+
+    $$opts{vcf} = $vcf1;
+    $$opts{vcf}->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
+    print {$$opts{out_fh}} $$opts{vcf}->format_header();
+    log_msg($opts, "# This file was generated by vcf-phased-join.\n");
+    log_msg($opts, "# The command line was: ", join(' ',@{$$opts{args}}), "\n");
+    log_msg($opts, "#\n");
+    log_msg($opts, "#PS 'Phasing Summary'. Use `grep ^PS | cut -f 2-` to extract this part.\n");
+    log_msg($opts, "#PS The columns are:\n");
+    log_msg($opts, "#PS         1,2 .. the pair of files being joined\n");
+    log_msg($opts, "#PS           3 .. the overlapping region used for determining the phase\n");
+    log_msg($opts, "#PS           4 .. sample name\n");
+    log_msg($opts, "#PS           5 .. did a swap occur?\n");
+    log_msg($opts, "#PS           6 .. quality of phase assignment\n");
+    log_msg($opts, "#PS           7 .. number of het genotypes used for phasing\n");
+    log_msg($opts, "#PS         8,9 .. log10 likelihood of phase match/mismatch\n");
+    $$opts{file1} = $$opts{vcfs}[$i-1];
+
+    my ($vcf2,$rec2);
+    if ( $i+1 >= @{$$opts{vcfs}} )
+    {
+        # Only one VCF file present, running in --min-PQ splitting mode
+        while ( defined($rec1 = $vcf1->next_data_array()) )
+        {
+            output_line($opts,$rec1,$$opts{swapped});
+        }
+        return;
+    }
+    else
+    {
+        $vcf2 = Vcf->new(file=>$$opts{vcfs}[++$i]);
+        $vcf2->parse_header();
+        $rec2 = $vcf2->next_data_array();
+        check_sanity($opts,$i-1,$i,$rec1,$rec2);
+        $$opts{file2} = $$opts{vcfs}[$i];
+    }
+
+    my @buffer;
+    while (1)
+    {
+        # is vcf1 ahead of vcf2?
+        while ( $$rec1[1] < $$rec2[1] )
+        {
+            output_line($opts,$rec1,$$opts{swapped});
+            $rec1 = $vcf1->next_data_array();
+            if ( !defined $rec1 ) { last; }
+            check_sanity($opts,$i-1,$i,$rec1,$rec2);
+        }
+
+        if ( defined $rec1 )
+        {
+            while ( $$rec1[1] eq $$rec2[1] )
+            {
+                push @buffer, [$rec1,$rec2];
+                $rec1 = $vcf1->next_data_array();
+                $rec2 = $vcf2->next_data_array();
+                if ( !defined $rec1 ) { last; }
+                check_sanity($opts,$i-1,$i,$rec1,$rec2);
+            }
+            if ( defined $rec1 && $$rec1[1] ne $$rec2[1] )
+            {
+                error("Uh, out of sync: $$rec1[0]:$$rec1[1] ne $$rec2[1]");
+            }
+        }
+
+        # is vcf1 done?
+        if ( !defined $rec1 )
+        {
+            flush_buffer($opts,$vcf1,\@buffer);
+
+            $vcf1->close();
+            $vcf1 = $vcf2;
+            $rec1 = $rec2;
+
+            if ( ++$i >= @{$$opts{vcfs}} ) { last; }
+            $vcf2 = Vcf->new(file=>$$opts{vcfs}[$i]);
+            $vcf2->parse_header();
+            $rec2 = $vcf2->next_data_array();
+            check_sanity($opts,$i-1,$i,$rec1,$rec2);
+            $$opts{file1} = $$opts{vcfs}[$i-1];
+            $$opts{file2} = $$opts{vcfs}[$i];
+            next;
+        }
+    }
+
+    if ( @buffer ) { flush_buffer($opts,$vcf1,\@buffer); }
+    do
+    {
+        output_line($opts,$rec1,$$opts{swapped}) unless !defined $rec1;
+    }
+    while ( defined($rec1 = $vcf1->next_data_array()) );
+
+    report_stats($opts);
+}
+
+sub check_sanity
+{
+    my ($opts,$i1,$i2,$rec1,$rec2) = @_;
+    if ( $$rec1[0] ne $$rec2[0] ) { error("Encountered different chromosomes in $$opts{vcfs}[$i1] and $$opts{vcfs}[$i2]: $$rec1[0] vs $$rec2[0]"); }
+    if ( $$rec1[1] > $$rec2[1] ) { error("The file $$opts{vcfs}[$i1] ahead of $$opts{vcfs}[$i2]: $$rec1[0]:$$rec1[1] vs $$rec2[1]"); }
+}
+
+sub output_line
+{
+    my ($opts,$rec,$swap) = @_;
+    
+    my $vcf = $$opts{vcf};
+    my $igt = $vcf->get_tag_index($$rec[8],'GT',':'); 
+    my $ips = $vcf->get_tag_index($$rec[8],'PS',':');
+    if ( $ips==-1 ) { $$rec[8] .=  ':PS'; }
+    my $ipq = exists($$opts{min_PQ}) ? $vcf->get_tag_index($$rec[8],'PQ',':') : -1;
+
+    for (my $i=0; $i<@$swap; $i++)
+    {
+        if ( $$swap[$i]==1 ) 
+        { 
+            my $gt = $vcf->get_field($$rec[$i+9],$igt);
+            my ($a1,$a2) = $vcf->split_gt($gt);
+            $$rec[$i+9] = $vcf->replace_field($$rec[$i+9],"$a2|$a1",$igt,':');
+        }
+
+        if ( $ipq!=-1 )
+        {
+            my $pq = $vcf->get_field($$rec[$i+9],$ipq);
+            if ( $pq ne '.' && $pq<$$opts{min_PQ} ) 
+            { 
+                $$opts{phasing_set}[$i]=0;
+                $$opts{broken_blocks}[$i]++;
+            }
+        }
+
+        if ( !$$opts{phasing_set}[$i] ) 
+        { 
+            $$opts{phasing_set}[$i] = $$rec[1]; 
+            $$opts{phased_blocks}[$i]++; 
+            $$opts{breakpoints}{$$rec[1]}++;
+        }
+        if ( $ips==-1 ) 
+        { 
+            $$rec[$i+9] .= ':'.$$opts{phasing_set}[$i]; 
+        }
+        else 
+        { 
+            $$rec[$i+9] = $vcf->replace_field($$rec[$i+9],$$opts{phasing_set}[$i],$ips,':');
+        }
+    }
+    print {$$opts{out_fh}} $vcf->format_line($rec);
+}
+
+sub flush_buffer
+{
+    my ($opts,$vcf,$buffer) = @_;
+    if ( !@$buffer ) 
+    { 
+        $$opts{phasing_set} = [ (0) x $$opts{nsamples} ];
+        return;
+    }
+
+    my $chr  = $$buffer[0][0][0];
+    my $from = $$buffer[0][0][1];
+    my $to   = $$buffer[-1][0][1];
+    if ( $from==$to ) { error("Uh, buffer too short?! $from"); }
+
+    # Determine likelihoods of genotypes being swapped 
+    my @lks_match = ();
+    my @lks_mism  = ();
+    my @nsites = (0) x $$opts{nsamples};
+    for my $site (@$buffer)
+    {
+        my $rec1 = $$site[0];
+        my $rec2 = $$site[1];
+
+        my $igt1 = $vcf->get_tag_index($$rec1[8],'GT',':'); 
+        my $igt2 = $vcf->get_tag_index($$rec2[8],'GT',':'); 
+        my $gts1 = $vcf->get_sample_field($rec1,$igt1);
+        my $gts2 = $vcf->get_sample_field($rec2,$igt2);
+
+        my $ngts = $$opts{nsamples};
+        my $nerrors  = 0;
+        my (@als1,@als2);
+        for (my $i=0; $i<@$gts1; $i++)
+        {
+            my ($a1,$a2) = $vcf->split_gt($$gts1[$i]);
+            my ($b1,$b2) = $vcf->split_gt($$gts2[$i]);
+            if ( !(($a1 eq $b1 && $a2 eq $b2) or ($a1 eq $b2 && $a2 eq $b1)) ) { $nerrors++ }
+            push @als1, $a1,$a2;
+            push @als2, $b1,$b2;
+        }
+
+        my $dist = $to-$$site[0][1] < $$site[0][1]-$from ? $to-$$site[0][1] : $$site[0][1]-$from;
+        $$opts{dist_errors}{$dist}{$nerrors}++;
+
+        my $p = $nerrors/$ngts;
+        if ( $p==0 ) { $p=1./$ngts; }
+        elsif ( $p==1 ) { $p=1 - 1./$ngts; }
+
+        for (my $i=0; $i<@$gts1; $i++)
+        {
+            my $a1 = $als1[2*$i];
+            my $a2 = $als1[2*$i+1];
+            my $b1 = $als2[2*$i];
+            my $b2 = $als2[2*$i+1];
+
+            if ( $a1 eq $a2 or $b1 eq $b2 ) { next; }
+
+            $nsites[$i]++;
+
+            if ( $a1 eq $b1 && $a2 eq $b2 ) 
+            { 
+                #print STDERR "$i .. counting match $a1/$a2 $b1/$b2\n";
+                $lks_match[$i] += log($p*$p + (1-$p)*(1-$p));
+                $lks_mism[$i] += log($p*(1-$p) + (1-$p)*$p);
+            }
+            elsif ( $a1 eq $b2 && $a2 eq $b1 )
+            {
+                #print STDERR "$i .. counting mismatch $a1/$a2 $b1/$b2\n";
+                $lks_match[$i] += log($p*(1-$p) + (1-$p)*$p);
+                $lks_mism[$i] += log($p*$p + (1-$p)*(1-$p));
+            }
+            else { error("Uh: $$rec1[0]:$$rec1[1] .. $a1 $a2 vs $b1 $b2\n"); }
+        }
+    }
+
+    my $file1 = $$opts{file1};
+    my $file2 = $$opts{file2};
+    my @swapped = ();
+    my @quals = ();
+    my $log10 = log(10);
+    for (my $i=0; $i<@lks_match; $i++)
+    {
+        if ( !defined $lks_match[$i] )
+        {
+            $lks_match[$i] = $lks_mism[$i] = log(0.5);
+        }
+        $swapped[$i] = $lks_match[$i]>$lks_mism[$i] ? $$opts{swapped}[$i] : -1*$$opts{swapped}[$i];
+        $quals[$i] = abs($lks_match[$i]-$lks_mism[$i])/$log10;
+
+        log_msg($opts, sprintf "PS\t%s\t%s\t$chr:$from-$to\t%s\t%d\t%.1f\t%d\t%f\t%f\n", $file1,$file2, $$vcf{columns}[$i+9],
+            $swapped[$i]==-1?0:1, $quals[$i], $nsites[$i], $lks_match[$i]/$log10, $lks_mism[$i]/$log10);
+    }
+
+    # Do not allow segment breaking while processing the buffer: this may help sometimes, but may also make things worse.
+    my $min_PQ = $$opts{min_PQ}; 
+    delete($$opts{min_PQ});
+
+    # Output the VCF line and quality
+    for my $site (@$buffer)
+    {
+        # Which of the two overlapping VCF line to output? Take the one farther from the end.
+        my ($rec,$swap);
+        if ( $to-$$site[0][1] > $$site[0][1]-$from )
+        {
+            $rec = $$site[0];
+            $swap = $$opts{swapped};
+        }
+        else
+        {
+            # Update the phasing set ID
+            if ( @quals )
+            {
+                for (my $i=0; $i<@quals; $i++)
+                {
+                    if ( $quals[$i] < $$opts{min_join_quality} ) { $$opts{phasing_set}[$i]=0; }
+                }
+                @quals = ();
+            }
+
+            $rec = $$site[1];
+            $swap = \@swapped;
+        }
+        output_line($opts,$rec,$swap);
+    }
+
+    $$opts{min_PQ} = $min_PQ; 
+
+    @$buffer = ();
+    $$opts{swapped} = \@swapped;
+}
+
+sub report_stats
+{
+    my ($opts) = @_;
+
+    log_msg($opts, "#NS Number of phased segments. Use `grep ^NS | cut -f 2-` to extract this part.\n");
+    log_msg($opts, "#NS The columns are:\n");
+    log_msg($opts, "#NS         1 .. sample\n");
+    log_msg($opts, "#NS         2 .. number of phased blocks\n");
+    log_msg($opts, "#NS         3 .. number of blocks created because of low PQ\n");
+    log_msg($opts, "#NS         4 .. number of blocks created because of low joining quality\n");
+    for my $i (sort { $$opts{phased_blocks}[$b] <=> $$opts{phased_blocks}[$a] } (0..($$opts{nsamples}-1)))
+    {
+        log_msg($opts,sprintf "NS\t%s\t%d\t%d\t%d\n", $$opts{vcf}{columns}[9+$i],$$opts{phased_blocks}[$i],$$opts{broken_blocks}[$i],$$opts{phased_blocks}[$i]-$$opts{broken_blocks}[$i]);
+    }
+
+    log_msg($opts, "#BP Break Points. Use `grep ^BP | cut -f 2-` to extract this part.\n");
+    log_msg($opts, "#BP The columns are:\n");
+    log_msg($opts, "#BP         1 .. location\n");
+    log_msg($opts, "#BP         2 .. percent of samples with breakpoint at that position\n");
+    for my $bp (sort {$$opts{breakpoints}{$b} <=> $$opts{breakpoints}{$a}} keys %{$$opts{breakpoints}})
+    {
+        log_msg($opts,sprintf "BP\t%d\t%.1f\n", $bp,100.*$$opts{breakpoints}{$bp}/$$opts{nsamples});
+    }
+
+    log_msg($opts, "#ED Error Distribution. Use `grep ^ED | cut -f 2-` to extract this part.\n");
+    log_msg($opts, "#ED The columns are:\n");
+    log_msg($opts, "#ED         1 .. distance from the chunk end\n");
+    log_msg($opts, "#ED         2 .. number of GT mismatches per site not attributable to phasing\n");
+    log_msg($opts, "#ED         3 .. frequency \n");
+    for my $dist (sort {$a<=>$b} keys %{$$opts{dist_errors}})
+    {
+        for my $nerrors (sort {$a<=>$b} keys %{$$opts{dist_errors}{$dist}})
+        {
+            log_msg($opts, "ED\t$dist\t$nerrors\t$$opts{dist_errors}{$dist}{$nerrors}\n");
+        }
+    }
+}
+
