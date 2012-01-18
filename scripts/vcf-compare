@@ -156,10 +156,13 @@ sub compare_vcfs
             "#SD The columns are: \n",
             "#SD        1 .. chromosome\n",
             "#SD        2 .. position\n",
-            "#SD        3 .. indicates matching (+) or mismatching (-) site\n",
-            "#SD        4 .. number of Hom_RR mismatches\n",
-            "#SD        5 .. number of Het_RA mismatches\n",
-            "#SD        6 .. number of Hom_AA mismatches\n";
+            "#SD        3 .. number of Hom_RR matches\n",
+            "#SD        4 .. number of Het_RA matches\n",
+            "#SD        5 .. number of Hom_AA matches\n",
+            "#SD        6 .. number of Hom_RR mismatches\n",
+            "#SD        7 .. number of Het_RA mismatches\n",
+            "#SD        8 .. number of Hom_AA mismatches\n",
+            "#SD        9 .. site's non-reference discordance rate\n";
     }
 
     my $ifile = 0;
@@ -606,6 +609,7 @@ sub plot_stats
     for my $file (@{$$opts{files}})
     {
         read_stats($stats,$file);
+        plot_site_ndr($opts,$file);
     }
     make_dir($$opts{plot});
     plot_dp($opts,$$stats{dp});
@@ -618,6 +622,68 @@ sub plot
 {
     my ($file) = @_;
     system("GDFONTPATH=/usr/share/fonts/truetype/ttf-dejavu/ gnuplot $file");
+}
+
+sub plot_site_ndr
+{
+    my ($opts,$file) = @_;
+    my ($fname,$gp,$start_pos,$start_chr,$numerator,$denominator,$count,@counts);
+    open(my $fh,'<',$file) or error("$file: $!");
+    while (my $line=<$fh>)
+    {
+        if ( !($line=~/^SD/) ) { next; }
+        my @items = split(/\t/,$line);
+        my $chr = $items[1];
+        my $pos = $items[2];
+        if ( !defined $gp )
+        {
+            $fname = "$$opts{plot}-ndr-$chr-$pos.gp";
+            open($gp,'>',$fname) or error("$fname: $!");
+            print $gp q[
+                set terminal png size 550,400 truecolor font "DejaVuSansMono,9"
+                set output "] . "$$opts{plot}-ndr-$chr-$pos.png" . q["
+                set style line 1 linecolor rgb "#ff4400"
+                set style line 2 linecolor rgb "#0084ff"
+                set style increment user
+                set grid back lc rgb "#dddddd"
+                set xlabel "Alternate allele frequency"
+                set ylabel "Non-reference Discordance Rate"
+                set y2label "Number of genotypes"
+                set y2tics
+                set xtic rotate by -45
+
+                plot '-' with lines lw 1 title "NDR", \
+                '-' axes x1y2 with lines lw 1 title "GTs"
+            ];
+        }
+        if ( !defined $start_pos ) 
+        { 
+            $start_pos = $pos; 
+            $start_chr = $chr;
+        }
+        $numerator   += $items[6] + $items[7] + $items[8];
+        $denominator += $items[6] + $items[7] + $items[8] + $items[4] + $items[5];
+        $count       += $items[6] + $items[7] + $items[8] + $items[4] + $items[5] + $items[3];
+        if ( $start_pos+100_000 > $pos && $start_chr eq $chr ) { next; }
+
+        printf $gp "$start_pos\t%.2f\n", $denominator ? $numerator*100./$denominator : 0;
+        push @counts, "$start_pos\t$count\n";
+
+        $numerator = 0;
+        $denominator = 0;
+        $count = 0;
+        $start_pos = $pos;
+        $start_chr = $chr;
+    }
+    close($fh);
+
+    push @counts, "$start_pos\t$count\n";
+    printf $gp "$start_pos\t%.2f\n", $numerator*100./$denominator;
+    print $gp "end\n";
+    print $gp join('',@counts), "end\n";
+    close($gp);
+
+    plot("$fname");
 }
 
 sub plot_dp
@@ -1243,19 +1309,15 @@ sub cmp_genotypes
 
     if ( $$opts{debug} )
     {
-        my $match = '?';
-        if ( scalar keys %gtype_mismatches ) { $match = '-' }
-        elsif ( scalar keys %gtype_matches ) { $match = '+' }
         my $hom_rr_mm = $gtype_mismatches{hom_RR_} ? $gtype_mismatches{hom_RR_} : 0;
         my $het_ra_mm = $gtype_mismatches{het_RA_} ? $gtype_mismatches{het_RA_} : 0;
         my $hom_aa_mm = $gtype_mismatches{hom_AA_} ? $gtype_mismatches{hom_AA_} : 0;
         my $hom_rr_m  = $gtype_matches{hom_RR_} ? $gtype_matches{hom_RR_} : 0;
         my $het_ra_m  = $gtype_matches{het_RA_} ? $gtype_matches{het_RA_} : 0;
         my $hom_aa_m  = $gtype_matches{hom_AA_} ? $gtype_matches{hom_AA_} : 0;
-        my $hom_rr_c  = sprintf "%.2f", ($hom_rr_mm or $hom_rr_m) ? $hom_rr_m*1./($hom_rr_m + $hom_rr_mm) : -1;
-        my $het_ra_c  = sprintf "%.2f", ($het_ra_mm or $het_ra_m) ? $het_ra_m*1./($het_ra_m + $het_ra_mm) : -1;
-        my $hom_aa_c  = sprintf "%.2f", ($hom_aa_mm or $hom_aa_m) ? $hom_aa_m*1./($hom_aa_m + $hom_aa_mm) : -1;
-        print "SD\t$$grp[0]{rec}{CHROM}\t$$grp[0]{rec}{POS}\t$match\t$hom_rr_mm\t$het_ra_mm\t$hom_aa_mm\t$hom_rr_c\t$het_ra_c\t$hom_aa_c\n";
+        my $denom = $het_ra_m+$hom_aa_m+$hom_rr_mm+$het_ra_mm+$hom_aa_mm;
+        my $ndr   = sprintf "%.2f", $denom ? ($hom_rr_mm+$het_ra_mm+$hom_aa_mm)*100./$denom : 0;
+        print "SD\t$$grp[0]{rec}{CHROM}\t$$grp[0]{rec}{POS}\t$hom_rr_m\t$het_ra_m\t$hom_aa_m\t$hom_rr_mm\t$het_ra_mm\t$hom_aa_mm\t$ndr\n";
     }
 }
 
