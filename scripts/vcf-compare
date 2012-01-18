@@ -664,7 +664,7 @@ sub plot_site_ndr
         $numerator   += $items[6] + $items[7] + $items[8];
         $denominator += $items[6] + $items[7] + $items[8] + $items[4] + $items[5];
         $count       += $items[6] + $items[7] + $items[8] + $items[4] + $items[5] + $items[3];
-        if ( $start_pos+100_000 > $pos && $start_chr eq $chr ) { next; }
+        if ( $start_pos+50_000 > $pos && $start_chr eq $chr ) { next; }
 
         printf $gp "$start_pos\t%.2f\n", $denominator ? $numerator*100./$denominator : 0;
         push @counts, "$start_pos\t$count\n";
