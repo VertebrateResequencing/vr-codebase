@@ -385,7 +385,7 @@ sub merge_lines
     }
 
     my $ref = $$rec{REF};
-    my ($aa,$bb,$ab0,$ab1);
+    my ($aa,$bb,$ab0,$ab1,$ab);
     my $reverse = 0;
     if ( $b eq $ref ) 
     { 
@@ -395,6 +395,7 @@ sub merge_lines
         $bb  = '0|0';
         $ab0 = '1|0';
         $ab1 = '0|1';
+        $ab  = '0/1';
     }
     elsif ( $a ne $ref ) 
     { 
@@ -408,15 +409,20 @@ sub merge_lines
         $bb  = '1|1';
         $ab0 = '0|1';
         $ab1 = '1|0';
+        $ab  = '0/1';
     }
 
     my $gtypes = $$rec{gtypes};
     my @lks = split(/ /,$imp_line);
     chomp($lks[-1]);
-    my @haps = split(/ /,$haps_line);
-    chomp($haps[-1]);
-    my @haps_conf = split(/ /,$haps_conf_line);
-    chomp($haps_conf[-1]);
+    my (@haps,@haps_conf);
+    if ( defined $haps_line && defined $haps_conf_line )
+    {
+        @haps = split(/ /,$haps_line);
+        chomp($haps[-1]);
+        @haps_conf = split(/ /,$haps_conf_line);
+        chomp($haps_conf[-1]);
+    }
     my $n = @$samples;
     my $log10 = log(10);
 
@@ -441,20 +447,30 @@ sub merge_lines
         }
         else
         {
-            if ( $haps[5+2*$i]==$haps[5+2*$i+1] ) { error("Uh, something is broken: $$rec{CHROM}:$$rec{POS} $a $b vs haps[5+2*$i]==haps[5+2*$i+1]\n"); }
-            $$gt_hash{GT} = $haps[5+2*$i]==0 ? $ab0 : $ab1;
+            if ( @haps )
+            {
+                if ( $haps[5+2*$i]==$haps[5+2*$i+1] ) { error("Uh, something is broken: $$rec{CHROM}:$$rec{POS} $a $b vs haps[5+2*$i]==haps[5+2*$i+1]\n"); }
+                $$gt_hash{GT} = $haps[5+2*$i]==0 ? $ab0 : $ab1;
+            }
+            else
+            {
+                $$gt_hash{GT} = $ab;
+            }
         }
 
         $$gt_hash{GL} = $reverse ?
             sprintf("%.2f,%.2f,%.2f",log($lk_bb)/$log10,log($lk_ab)/$log10,log($lk_aa)/$log10) :
             sprintf("%.2f,%.2f,%.2f",log($lk_aa)/$log10,log($lk_ab)/$log10,log($lk_bb)/$log10);
 
-        $$gt_hash{PQ} = $haps_conf[5+$i] eq '*' ? '.' : $haps_conf[5+$i];
+        if ( @haps )
+        {
+            $$gt_hash{PQ} = $haps_conf[5+$i] eq '*' ? '.' : $haps_conf[5+$i];
+        }
         delete($$gt_hash{PL});
     }
 
     $vcf->add_format_field($rec,'GL');
-    $vcf->add_format_field($rec,'PQ');
+    $vcf->add_format_field($rec,'PQ') unless !@haps;
     $vcf->remove_format_field($rec,'PL');
     $$rec{INFO}{IMP2} = $impute2_info;
     return $vcf->format_line($rec);
@@ -479,10 +495,17 @@ sub impute2_to_vcf
     print $vcf->format_header();
 
     open(my $fh,"zcat $$opts{impute2_out} |") or error("zcat $$opts{impute2_out}: $!");
-    open(my $fh_haps,"zcat $$opts{impute2_haps} |") or error("zcat $$opts{impute2_haps}: $!");
-    open(my $fh_haps_conf,"zcat $$opts{impute2_hap_conf} |") or error("zcat $$opts{impute2_hap_conf}: $!");
+    my ($fh_haps,$fh_haps_conf);
+    if ( -e $$opts{impute2_haps} && -e $$opts{impute2_hap_conf} )
+    {
+        open(my $fh_haps,"zcat $$opts{impute2_haps} |") or error("zcat $$opts{impute2_haps}: $!");
+        open(my $fh_haps_conf,"zcat $$opts{impute2_hap_conf} |") or error("zcat $$opts{impute2_hap_conf}: $!");
+    }
     open(my $fh_info,'<',$$opts{impute2_info}) or error("$$opts{impute2_info}: $!");
     <$fh_info>;
+
+    if ( !defined $fh_haps ) { warn("Phasing information not available, could not open the file: $$opts{impute2_haps}\n"); }
+    if ( !defined $fh_haps_conf ) { warn("Phasing information not available, could not open the file: $$opts{impute2_hap_conf}\n"); }
 
     my ($vcf_line,$imp_line,$haps_line,$haps_conf_line,$vcf_pos,$imp_pos,$info);
     while (1)
@@ -491,8 +514,8 @@ sub impute2_to_vcf
         if ( !defined $imp_line ) 
         { 
             ($imp_pos,$a,$b,$imp_line) = next_impute_line($fh); 
-            $haps_line = <$fh_haps>;
-            $haps_conf_line = <$fh_haps_conf>;
+            $haps_line = <$fh_haps> unless !defined $fh_haps;
+            $haps_conf_line = <$fh_haps_conf> unless !defined $fh_haps_conf;
             if ( defined $imp_line )
             {
                 my $info_line = <$fh_info>;
