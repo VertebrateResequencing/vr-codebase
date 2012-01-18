@@ -39,7 +39,7 @@ $buffer_size = 1000 unless ($buffer_size);
 if( $missing )
 {
     print qq[
-This is a script to call consequences on a set of SNPs in a VCf file
+This script applies consequences called by the Ensembl Variant Effect Predictor to a VCf file, optionally adding GERP and Grantham matrix scores
 by querying Ensembl
 Usage:
     -v --vcf <string>       VCF input file
@@ -92,7 +92,7 @@ sub parse_vcf
 
     my $vcf = defined $input_vcf ? Vcf->new(file=>$input_vcf) : Vcf->new(fh=>\*STDIN);
     $vcf->parse_header();
-    $vcf->add_header_line({key=>'INFO',ID=>'CSQ',Number=>-1,Type=>'String',Description=>"Consequence of the ALT alleles from Ensembl $api_version VEP $vep_version"});
+    $vcf->add_header_line({key=>'INFO',ID=>'CSQ',Number=>-1,Type=>'String',Description=>"Consequence of the ALT alleles from Ensembl $api_version VEP $vep_version, format transcriptId:geneName:consequence[:codingSeqPosition:proteinPosition:proteinAlleles:proteinPredictions]+...[+gerpScore]"});
     print $vcf->format_header();
 
     my $lines = 0;
