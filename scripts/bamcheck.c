@@ -866,6 +866,8 @@ void error(const char *format, ...)
 {
     if ( !format )
     {
+        printf("Version: %s\n", BAMCHECK_VERSION);
+        printf("About: The program collects statistics from BAM files. The output can be visualized using plot-bamcheck.\n");
         printf("Usage: bamcheck [OPTIONS] file.bam\n");
         printf("Options:\n");
         printf("    -c, --coverage <int>,<int>,<int>    Coverage distribution min,max,step [1,1000,1]\n");
@@ -951,7 +953,7 @@ int main(int argc, char *argv[])
             strcpy(in_mode, "r");
             continue;
         }
-        if ( !strcmp(argv[i],"-h") || !strcmp(argv[i],"--help") )
+        if ( !strcmp(argv[i],"-h") || !strcmp(argv[i],"--help") || !strcmp(argv[i],"-?") )
             error(NULL);
         if ( !strcmp(argv[i],"-r") || !strcmp(argv[i],"--ref-seq") )
         {
