@@ -627,7 +627,11 @@ sub plot
 sub plot_site_ndr
 {
     my ($opts,$file) = @_;
-    my ($fname,$gp,$start_pos,$start_chr,$numerator,$denominator,$count,@counts);
+    my ($fname,$gp,$start_chr,@counts);
+    my $start_pos = -1;
+    my $count = 0;
+    my $numerator = 0;
+    my $denominator = 0;
     open(my $fh,'<',$file) or error("$file: $!");
     while (my $line=<$fh>)
     {
@@ -656,7 +660,7 @@ sub plot_site_ndr
                 '-' axes x1y2 with lines lw 1 title "GTs"
             ];
         }
-        if ( !defined $start_pos ) 
+        if ( $start_pos==-1 )
         { 
             $start_pos = $pos; 
             $start_chr = $chr;
@@ -677,8 +681,11 @@ sub plot_site_ndr
     }
     close($fh);
 
+    # Was the ^SD section found?
+    if ( !@counts ) { return; }
+
     push @counts, "$start_pos\t$count\n";
-    printf $gp "$start_pos\t%.2f\n", $numerator*100./$denominator;
+    printf $gp "$start_pos\t%.2f\n", $denominator ? $numerator*100./$denominator : 0;
     print $gp "end\n";
     print $gp join('',@counts), "end\n";
     close($gp);
