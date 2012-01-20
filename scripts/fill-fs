@@ -24,11 +24,18 @@ sub error
         "About: Annotate VCF with flanking sequence (INFO/FS tag)\n",
         "Usage: fill-fs [OPTIONS] file.vcf\n",
         "Options:\n",
-        "   -c, --cluster <int>         Do self-masking of clustered variants within this range.\n",
-        "   -l, --length <int>          Flanking sequence length [100]\n",
-        "   -m, --mask <VCF>            Mask known variants in the flanking sequence, multiple files can be given\n",
-        "   -r, --refseq <file>         The reference sequence.\n",
-        "   -h, -?, --help              This help message.\n",
+        "   -b, --bed-mask <file>           Regions to mask (tabix indexed), multiple files can be given\n",
+        "   -c, --cluster <int>             Do self-masking of clustered variants within this range.\n",
+        "   -l, --length <int>              Flanking sequence length [100]\n",
+        "   -m, --mask-char <char|lc>       The character to use or \"lc\" for lowercase. This option must preceed\n",
+        "                                       -b, -v or -c in order to take effect. With multiple files works\n",
+        "                                        as a switch on the command line, see the example below [N]\n",
+        "   -r, --refseq <file>             The reference sequence.\n",
+        "   -v, --vcf-mask <file>           Mask known variants in the flanking sequence, multiple files can be given (tabix indexed)\n",
+        "   -h, -?, --help                  This help message.\n",
+        "Example:\n",
+        "   # Mask variants from the VCF file with N's and use lowercase for the bed file regions\n",
+        "   fill-fs file.vcf -v mask.vcf -m lc -b mask.bed\n",
         "\n";
 }
 
@@ -36,18 +43,31 @@ sub error
 sub parse_params
 {
     my $opts = { length=>100, mask=>[], cluster=>0 };
+    my $mask = $$opts{mask_char}{default} = 'N';
+    my $mask_changed = 0;
     while (defined(my $arg=shift(@ARGV)))
     {
-        if ( $arg eq '-c' || $arg eq '--cluster' ) { $$opts{cluster}=shift(@ARGV); next; }
+        if ( $arg eq '-c' || $arg eq '--cluster' ) { $$opts{cluster}=shift(@ARGV); $$opts{mask_char}{default}=$mask; $mask_changed=0; next; }
         if ( $arg eq '-r' || $arg eq '--refseq' ) { $$opts{refseq}=shift(@ARGV); next; }
         if ( $arg eq '-l' || $arg eq '--length' ) { $$opts{length}=shift(@ARGV); next; }
-        if ( $arg eq '-m' || $arg eq '--mask' ) { push @{$$opts{mask}}, shift(@ARGV); next; }
+        if ( $arg eq '-m' || $arg eq '--mask' ) { $mask=shift(@ARGV); check_mask_char($mask); $mask_changed=1; next; }
+        if ( $arg eq '-b' || $arg eq '--bed-mask' ) { $arg=shift(@ARGV); push @{$$opts{bed_mask}},$arg; $$opts{mask_char}{$arg}=$mask; $mask_changed=0; next; }
+        if ( $arg eq '-v' || $arg eq '--vcf-mask' ) { $arg=shift(@ARGV); push @{$$opts{vcf_mask}},$arg; $$opts{mask_char}{$arg}=$mask; $mask_changed=0; next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
-        if ( -e $arg && !@{$$opts{file}} ) { $$opts{file}=$arg; next; }
+        if ( -e $arg && !exists($$opts{file}) ) { $$opts{file}=$arg; next; }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
     if ( !exists($$opts{refseq}) ) { error("Missing the -r option.\n"); }
+    if ( $mask_changed ) { error("The -m parameter must preceed -b, -v, or the file in order to take effect.\n"); }
     return $opts;
+}
+
+sub check_mask_char
+{
+    my ($mask) = @_;
+    if ( $mask eq 'lc' ) { return; }
+    if ( length($mask) eq 1 ) { return; }
+    error("Currently only \"lc\" or one-character mask is supported.\n");
 }
 
 sub flanking_sequence
@@ -152,15 +172,24 @@ sub mask_sequence
     for my $m (@$mask)
     {
         if ( $$m{chr} ne $chr or $$m{pos}<$from or $$m{pos}>$to ) { next; }
-        apply_mask($opts,\$seq,$$m{pos}-$from,$$m{ref});
+        apply_mask($opts,\$seq,$$m{pos}-$from,$$m{ref},$$opts{mask_char}{default});
     }
-    for my $file (@{$$opts{mask}})
+    for my $file (@{$$opts{vcf_mask}})
     {
         my @tabix = `tabix $file $chr:$from-$to`;
         for my $ret (@tabix)
         {
             my $items = $$opts{vcf}->split_mandatory($ret);
-            apply_mask($opts,\$seq,$$items[1]-$from,$$items[3]);
+            apply_mask($opts,\$seq,$$items[1]-$from,$$items[3],$$opts{mask_char}{$file});
+        }
+    }
+    for my $file (@{$$opts{bed_mask}})
+    {
+        my @tabix = `tabix $file $chr:$from-$to`;
+        for my $ret (@tabix)
+        {
+            my @items = split(/\t/,$ret);
+            apply_mask($opts,\$seq,$items[1]+1-$from,$items[2]+1-$from,$$opts{mask_char}{$file});
         }
     }
     return $seq;
@@ -168,14 +197,19 @@ sub mask_sequence
 
 sub apply_mask
 {
-    my ($opts,$seq,$from,$ref) = @_;
-    my $ref_len = length($ref);
+    my ($opts,$seq,$from,$ref,$mask_char) = @_;
+    my $ref_len = $ref=~/^\d+$/ ? $ref-$from+1 : length($ref);
     if ( $ref_len==1 )
     {
-        substr($$seq,$from,1,'N');
+        my $rpl = substr($$seq,$from,1);
+        $rpl = $mask_char eq 'lc' ? lc(substr($$seq,$from,1)) : $mask_char;
+        substr($$seq,$from,1,$rpl);
         return;
     }
     my $n = $ref_len - 1;
-    substr($$seq,$from+1,$n,'N' x $n);
+    my $rpl = substr($$seq,$from+1,$n);
+    $rpl = $mask_char eq 'lc' ? lc(substr($$seq,$from+1,$n)) : ($mask_char x $n);
+    substr($$seq,$from+1,$n,$rpl);
 }
+
 
