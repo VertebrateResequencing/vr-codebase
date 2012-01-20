@@ -287,6 +287,11 @@ sub join_vcfs
         $$opts{log_fh} = \*STDERR;
         $$opts{out_fh} = \*STDOUT;
     }
+    $$opts{tmp_filename} = "$$opts{output}.tmp.log";
+    my $clean_handler = sub { print STDERR "Signal caught, cleaning $$opts{tmp_filename}\n"; unlink $$opts{tmp_filename}; exit; };
+    $SIG{TERM} = $clean_handler;
+    $SIG{INT}  = $clean_handler;
+    open($$opts{tmp_fh},'>',$$opts{tmp_filename}) or error("$$opts{tmp_filename}: $!");
 
     $$opts{vcf} = $vcf1;
     $$opts{vcf}->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
@@ -399,6 +404,7 @@ sub output_line
     if ( $ips==-1 ) { $$rec[8] .=  ':PS'; }
     my $ipq = exists($$opts{min_PQ}) ? $vcf->get_tag_index($$rec[8],'PQ',':') : -1;
 
+    my $breakpoints = 0;
     for (my $i=0; $i<@$swap; $i++)
     {
         if ( $$swap[$i]==1 ) 
@@ -422,7 +428,7 @@ sub output_line
         { 
             $$opts{phasing_set}[$i] = $$rec[1]; 
             $$opts{phased_blocks}[$i]++; 
-            $$opts{breakpoints}{$$rec[1]}++;
+            $breakpoints++;
         }
         if ( $ips==-1 ) 
         { 
@@ -434,6 +440,12 @@ sub output_line
         }
     }
     print {$$opts{out_fh}} $vcf->format_line($rec);
+
+    $breakpoints *= 100./$$opts{nsamples};
+    if ( $breakpoints>10 )
+    {
+        printf {$$opts{tmp_fh}} "BP\t%d\t%.1f\n", $$rec[1],$breakpoints;
+    }
 }
 
 sub flush_buffer
@@ -477,7 +489,7 @@ sub flush_buffer
         }
 
         my $dist = $to-$$site[0][1] < $$site[0][1]-$from ? $to-$$site[0][1] : $$site[0][1]-$from;
-        $$opts{dist_errors}{$dist}{$nerrors}++;
+        $$opts{dist_errors}{$nerrors}++;
 
         my $p = $nerrors/$ngts;
         if ( $p==0 ) { $p=1./$ngts; }
@@ -581,26 +593,23 @@ sub report_stats
         log_msg($opts,sprintf "NS\t%s\t%d\t%d\t%d\n", $$opts{vcf}{columns}[9+$i],$$opts{phased_blocks}[$i],$$opts{broken_blocks}[$i],$$opts{phased_blocks}[$i]-$$opts{broken_blocks}[$i]);
     }
 
+    close($$opts{tmp_fh});
     log_msg($opts, "#BP Break Points. Use `grep ^BP | cut -f 2-` to extract this part.\n");
     log_msg($opts, "#BP The columns are:\n");
     log_msg($opts, "#BP         1 .. location\n");
     log_msg($opts, "#BP         2 .. percent of samples with breakpoint at that position\n");
-    for my $bp (sort {$$opts{breakpoints}{$b} <=> $$opts{breakpoints}{$a}} keys %{$$opts{breakpoints}})
-    {
-        log_msg($opts,sprintf "BP\t%d\t%.1f\n", $bp,100.*$$opts{breakpoints}{$bp}/$$opts{nsamples});
-    }
+    open(my $fh,'<',$$opts{tmp_filename}) or error("$$opts{tmp_filename}: $!");
+    while (my $line=<$fh>) { log_msg($opts,$line); }
+    close($fh);
+    unlink($$opts{tmp_filename});
 
     log_msg($opts, "#ED Error Distribution. Use `grep ^ED | cut -f 2-` to extract this part.\n");
     log_msg($opts, "#ED The columns are:\n");
-    log_msg($opts, "#ED         1 .. distance from the chunk end\n");
-    log_msg($opts, "#ED         2 .. number of GT mismatches per site not attributable to phasing\n");
-    log_msg($opts, "#ED         3 .. frequency \n");
-    for my $dist (sort {$a<=>$b} keys %{$$opts{dist_errors}})
+    log_msg($opts, "#ED         1 .. number of GT mismatches per site not attributable to phasing\n");
+    log_msg($opts, "#ED         2 .. frequency \n");
+    for my $nerrors (sort {$b<=>$a} keys %{$$opts{dist_errors}})
     {
-        for my $nerrors (sort {$a<=>$b} keys %{$$opts{dist_errors}{$dist}})
-        {
-            log_msg($opts, "ED\t$dist\t$nerrors\t$$opts{dist_errors}{$dist}{$nerrors}\n");
-        }
+        log_msg($opts, "ED\t$nerrors\t$$opts{dist_errors}{$nerrors}\n");
     }
 }
 
