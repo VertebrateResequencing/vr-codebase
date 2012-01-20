@@ -1223,6 +1223,41 @@ sub get_sample_field
     return \@out;
 }
 
+
+=head2 split_mandatory
+
+    About   : Faster alternative to regexs, extract the mandatory columns
+    Usage   : my $line=$vcf->next_line; my @cols = $vcf->split_mandatory($line);
+    Arg     : 
+    Returns : Pointer to the array of values
+
+=cut
+
+sub split_mandatory
+{
+    my ($self,$line) = @_;
+    my @out;
+    my $prev = 0;
+    for (my $i=0; $i<7; $i++)
+    {
+        my $isep = index($line,"\t",$prev);
+        if ( $isep==-1 ) { $self->throw("Could not parse the mandatory columns: $line"); }
+        push @out, substr($line,$prev,$isep-$prev);
+        $prev = $isep+1;
+    }
+    my $isep = index($line,"\t",$prev);
+    if ( $isep!=-1 )
+    {
+        push @out, substr($line,$prev,$isep-$prev-1);
+    }
+    else
+    {
+        push @out, substr($line,$prev);
+    }
+    return \@out;
+}
+
+
 =head2 split_gt
 
     About   : Faster alternative to regexs, diploid GT assumed
@@ -2914,7 +2949,7 @@ sub Vcf4_0::event_type
     }
     else
     {
-        ($len,$ht)=is_indel($ref,$allele);
+        ($len,$ht)=$self->is_indel($ref,$allele);
         if ( $len )
         {
             # Indel
@@ -2935,13 +2970,15 @@ sub Vcf4_0::event_type
 }
 
 # The sequences start at the same position, which simplifies things greatly.
+# Returns length of the indel (+ insertion, - deletion), the deleted/inserted sequence
+#   and the position of the first base after the shared sequence
 sub is_indel
 {
-    my ($seq1,$seq2) = @_;
+    my ($self,$seq1,$seq2) = @_;
 
     my $len1 = length($seq1);
     my $len2 = length($seq2);
-    if ( $len1 eq $len2 ) { return (0,''); }
+    if ( $len1 eq $len2 ) { return (0,'',0); }
 
     my ($del,$len,$LEN);
     if ( $len1<$len2 )
@@ -2965,7 +3002,7 @@ sub is_indel
     }
     if ( $ileft==$len )
     {
-        return ($del*($LEN-$len), substr($seq2,$ileft));
+        return ($del*($LEN-$len), substr($seq2,$ileft), $ileft);
     }
 
     my $iright;
@@ -2973,9 +3010,9 @@ sub is_indel
     {
         if ( substr($seq1,$len-$iright,1) ne substr($seq2,$LEN-$iright,1) ) { last; }
     }
-    if ( $iright+$ileft<=$len ) { return (0,''); }
+    if ( $iright+$ileft<=$len ) { return (0,'',0); }
 
-    return ($del*($LEN-$len),substr($seq2,$ileft,$LEN-$len));
+    return ($del*($LEN-$len),substr($seq2,$ileft,$LEN-$len),$ileft);
 }
 
 

@@ -1,0 +1,129 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Vcf;
+use FaSlice;
+
+my $opts = parse_params();
+flanking_sequence($opts);
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    die
+        "About: Annotate VCF with flanking sequence (INFO/FS tag)\n",
+        "Usage: fill-fs [OPTIONS] file.vcf\n",
+        "Options:\n",
+        "   -l, --length <int>          Flanking sequence length [100]\n",
+        "   -m, --mask <VCF>            Mask known variants in the flanking sequence, multiple files can be given\n",
+        "   -r, --refseq <file>         The reference sequence.\n",
+        "   -h, -?, --help              This help message.\n",
+        "\n";
+}
+
+
+sub parse_params
+{
+    my $opts = { dist=>1_000, length=>100, mask=>[] };
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-r' || $arg eq '--refseq' ) { $$opts{refseq}=shift(@ARGV); next; }
+        if ( $arg eq '-l' || $arg eq '--length' ) { $$opts{length}=shift(@ARGV); next; }
+        if ( $arg eq '-m' || $arg eq '--mask' ) { push @{$$opts{mask}}, shift(@ARGV); next; }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        if ( -e $arg && !@{$$opts{file}} ) { $$opts{file}=$arg; next; }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    if ( !exists($$opts{refseq}) ) { error("Missing the -r option.\n"); }
+    return $opts;
+}
+
+sub flanking_sequence
+{
+    my ($opts) = @_;
+
+    my $refseq = FaSlice->new(file=>$$opts{refseq},size=>1_024,oob=>'N');
+    my $vcf = $$opts{vcf} = exists($$opts{file}) ? Vcf->new(file=>$$opts{file}) : Vcf->new(fh=>\*STDIN);
+    $vcf->parse_header;
+    print $vcf->format_header;
+
+    while (my $line=$vcf->next_data_array)
+    {
+        my $chr = $$line[0];
+        my $pos = $$line[1];
+        my $ref = $$line[3];
+        my $alt = $$line[4];
+
+        my $from = $pos-$$opts{dist};
+        my $to   = $pos+$$opts{dist};
+
+        my $seq_pos = $$opts{length};
+        my $reflen  = length($ref);
+        $from = $pos-$$opts{length};
+        $to   = $pos+($reflen-1)+$$opts{length};
+        my $seq = $refseq->get_slice($chr,$from,$to);
+        $seq = mask_sequence($opts,$seq,$chr,$from,$to);
+
+        my ($len,$indel,$off) = $vcf->is_indel($ref,$alt);
+        if ( $len<0 )
+        {
+            $seq_pos += $off;
+            $ref = $indel;
+            $reflen = abs($len);
+            $alt = '-';
+        }
+        elsif ( $len>0 )
+        {
+            $seq_pos += $off;
+            $ref = '+';
+            $alt = $indel;
+            $reflen = $off-1;
+        }
+        
+        substr($seq,$seq_pos,$reflen,"[$ref/$alt]");
+        if ( $$line[7] eq '.' or !defined $$line[7] ) 
+        { 
+            $$line[7] = '';
+        }
+        else 
+        {
+            $$line[7] .= ';';
+        }
+        $$line[7] .= "FS=$seq";
+        print join("\t",@$line),"\n";
+    }
+}
+
+sub mask_sequence
+{
+    my ($opts,$seq,$chr,$from,$to) = @_;
+    for my $file (@{$$opts{mask}})
+    {
+        my @tabix = `tabix $file $chr:$from-$to`;
+        for my $ret (@tabix)
+        {
+            my $items = $$opts{vcf}->split_mandatory($ret);
+            my $mask_from = $$items[1]-$from;
+            my $ref_len = length($$items[3]);
+            if ( $ref_len==1 )
+            {
+                substr($seq,$mask_from,1,'N');
+                next;
+            }
+            my $n = $ref_len - 1;
+            substr($seq,$mask_from+1,$n,'N' x $n);
+        }
+    }
+    return $seq;
+}
+
