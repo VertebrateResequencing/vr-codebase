@@ -235,7 +235,7 @@ sub vcf_to_impute2
     my ($self,$outfile,$region) = @_;
     my $outdir = "$$self{outdir}/$region";
     $self->cmd(qq[mkdir -p $outdir]);
-    $self->cmd(qq[$$self{vcf_impute2} -r $region -i $$self{in_vcf} -k $$self{known_vcf} -o $outdir/01 >$outfile.o 2>$outfile.e && touch $outfile]);
+    $self->cmd(qq[$$self{vcf_impute2} -r $region -i $$self{in_vcf} -k $$self{known_vcf} -o $outdir/01 >>$outfile.o 2>>$outfile.e && touch $outfile]);
 }
 
 sub impute2
@@ -249,7 +249,7 @@ sub impute2
     $genmap =~ s/\{CHROM\}/$chr/;
     if ( ! -e $genmap ) { $self->throw("The genmap [$genmap] does not exist.\n"); }
     my $known = $$self{known_vcf} eq '--' ? '' : "-known_haps_g $outdir/01.known_haps -sample_known_haps_g $outdir/01.known_samples";
-    $self->cmd(qq[$$self{impute2_bin} -buffer $$self{buffer_region} -g $outdir/01.impute_haps -sample_g $outdir/01.impute_samples $known -m $genmap -int $from $to -phase -include_buffer_in_output $$self{impute2_args} -prob_g -pgs_prob -o_gz -o $outdir/02.impute2.$chunk >$outdir/02.impute2.$chunk.o 2>$outdir/02.impute2.$chunk.e]);
+    $self->cmd(qq[$$self{impute2_bin} -buffer $$self{buffer_region} -g $outdir/01.impute_haps -sample_g $outdir/01.impute_samples $known -m $genmap -int $from $to -phase -include_buffer_in_output $$self{impute2_args} -prob_g -pgs_prob -o_gz -o $outdir/02.impute2.$chunk >>$outdir/02.impute2.$chunk.o 2>>$outdir/02.impute2.$chunk.e]);
 
     $self->cmd(qq[touch $outfile]);
 }
@@ -265,7 +265,7 @@ sub impute2_to_vcf
     if ( $from<0 ) { $from = 0; }
     if ( -e "$outdir/02.impute2.$chunk.gz" )
     {
-        $self->cmd(qq[$$self{vcf_impute2} -r $chr:$from-$to -i $$self{in_vcf} -o $outdir/02.impute2.$chunk 2>$outfile.e | bgzip -c > $outfile.part]);
+        $self->cmd(qq[$$self{vcf_impute2} -r $chr:$from-$to -i $$self{in_vcf} -o $outdir/02.impute2.$chunk 2>>$outfile.e | bgzip -c > $outfile.part]);
     }
     elsif ( -z "$outdir/02.impute2.$chunk.e" )
     {
