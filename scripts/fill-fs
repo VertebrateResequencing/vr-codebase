@@ -24,6 +24,7 @@ sub error
         "About: Annotate VCF with flanking sequence (INFO/FS tag)\n",
         "Usage: fill-fs [OPTIONS] file.vcf\n",
         "Options:\n",
+        "   -c, --cluster <int>         Do self-masking of clustered variants within this range.\n",
         "   -l, --length <int>          Flanking sequence length [100]\n",
         "   -m, --mask <VCF>            Mask known variants in the flanking sequence, multiple files can be given\n",
         "   -r, --refseq <file>         The reference sequence.\n",
@@ -34,9 +35,10 @@ sub error
 
 sub parse_params
 {
-    my $opts = { dist=>1_000, length=>100, mask=>[] };
+    my $opts = { length=>100, mask=>[], cluster=>0 };
     while (defined(my $arg=shift(@ARGV)))
     {
+        if ( $arg eq '-c' || $arg eq '--cluster' ) { $$opts{cluster}=shift(@ARGV); next; }
         if ( $arg eq '-r' || $arg eq '--refseq' ) { $$opts{refseq}=shift(@ARGV); next; }
         if ( $arg eq '-l' || $arg eq '--length' ) { $$opts{length}=shift(@ARGV); next; }
         if ( $arg eq '-m' || $arg eq '--mask' ) { push @{$$opts{mask}}, shift(@ARGV); next; }
@@ -52,11 +54,13 @@ sub flanking_sequence
 {
     my ($opts) = @_;
 
-    my $refseq = FaSlice->new(file=>$$opts{refseq},size=>1_024,oob=>'N');
+    $$opts{faref} = FaSlice->new(file=>$$opts{refseq},size=>1_024,oob=>'N');
+
     my $vcf = $$opts{vcf} = exists($$opts{file}) ? Vcf->new(file=>$$opts{file}) : Vcf->new(fh=>\*STDIN);
     $vcf->parse_header;
     print $vcf->format_header;
 
+    my (@lines,@mask);
     while (my $line=$vcf->next_data_array)
     {
         my $chr = $$line[0];
@@ -64,66 +68,114 @@ sub flanking_sequence
         my $ref = $$line[3];
         my $alt = $$line[4];
 
-        my $from = $pos-$$opts{dist};
-        my $to   = $pos+$$opts{dist};
-
-        my $seq_pos = $$opts{length};
-        my $reflen  = length($ref);
-        $from = $pos-$$opts{length};
-        $to   = $pos+($reflen-1)+$$opts{length};
-        my $seq = $refseq->get_slice($chr,$from,$to);
-        $seq = mask_sequence($opts,$seq,$chr,$from,$to);
-
-        my ($len,$indel,$off) = $vcf->is_indel($ref,$alt);
-        if ( $len<0 )
-        {
-            $seq_pos += $off;
-            $ref = $indel;
-            $reflen = abs($len);
-            $alt = '-';
-        }
-        elsif ( $len>0 )
-        {
-            $seq_pos += $off;
-            $ref = '+';
-            $alt = $indel;
-            $reflen = $off-1;
-        }
-        
-        substr($seq,$seq_pos,$reflen,"[$ref/$alt]");
-        if ( $$line[7] eq '.' or !defined $$line[7] ) 
-        { 
-            $$line[7] = '';
-        }
-        else 
-        {
-            $$line[7] .= ';';
-        }
-        $$line[7] .= "FS=$seq";
-        print join("\t",@$line),"\n";
+        push @lines, { chr=>$chr, pos=>$pos, ref=>$ref, alt=>$alt, line=>$line };
+        push @mask, { chr=>$chr, pos=>$pos, ref=>$ref };
+        flush_buffers($opts,\@lines,\@mask);
     }
+
+    flush_buffers($opts,\@lines,\@mask,1);
+}
+
+sub flush_buffers
+{
+    my ($opts,$lines,$mask,$force) = @_;
+
+    if ( !@$lines ) { return; }
+
+    if ( !$$opts{cluster} )
+    {
+        shift(@$mask);
+        output_line($opts,shift(@$lines),$mask);
+        return;
+    }
+
+    while ( @$lines && ($force or $$mask[0]{chr} ne $$lines[-1]{chr} or $$mask[0]{pos}+2*$$opts{cluster}<=$$lines[-1]{pos}) )
+    {
+        output_line($opts,$$lines[0],$mask);
+        shift(@$lines);
+        while ( @$mask && @$lines && ($$mask[0]{chr} ne $$lines[0]{chr} or $$mask[0]{pos}+$$opts{cluster}<=$$lines[0]{pos}) )
+        {
+            shift(@$mask);
+        }
+    }
+}
+
+sub output_line
+{
+    my ($opts,$hline,$mask) = @_;
+
+    my $chr  = $$hline{chr};
+    my $pos  = $$hline{pos};
+    my $ref  = $$hline{ref};
+    my $alt  = $$hline{alt};
+    my $line = $$hline{line};
+
+    my $seq_pos = $$opts{length};
+    my $reflen  = length($ref);
+    my $from = $pos-$$opts{length};
+    my $to   = $pos+($reflen-1)+$$opts{length};
+    my $seq  = $$opts{faref}->get_slice($chr,$from,$to);
+    $seq = mask_sequence($opts,$seq,$chr,$from,$to,$mask);
+
+    my ($len,$indel,$off) = $$opts{vcf}->is_indel($ref,$alt);
+    if ( $len<0 )
+    {
+        $seq_pos += $off;
+        $ref = $indel;
+        $reflen = abs($len);
+        $alt = '-';
+    }
+    elsif ( $len>0 )
+    {
+        $seq_pos += $off;
+        $ref = '+';
+        $alt = $indel;
+        $reflen = $off-1;
+    }
+
+    substr($seq,$seq_pos,$reflen,"[$ref/$alt]");
+    if ( $$line[7] eq '.' or !defined $$line[7] ) 
+    { 
+        $$line[7] = '';
+    }
+    else 
+    {
+        $$line[7] .= ';';
+    }
+    $$line[7] .= "FS=$seq";
+    print join("\t",@$line),"\n";
 }
 
 sub mask_sequence
 {
-    my ($opts,$seq,$chr,$from,$to) = @_;
+    my ($opts,$seq,$chr,$from,$to,$mask) = @_;
+    for my $m (@$mask)
+    {
+        if ( $$m{chr} ne $chr or $$m{pos}<$from or $$m{pos}>$to ) { next; }
+        apply_mask($opts,\$seq,$$m{pos}-$from,$$m{ref});
+    }
     for my $file (@{$$opts{mask}})
     {
         my @tabix = `tabix $file $chr:$from-$to`;
         for my $ret (@tabix)
         {
             my $items = $$opts{vcf}->split_mandatory($ret);
-            my $mask_from = $$items[1]-$from;
-            my $ref_len = length($$items[3]);
-            if ( $ref_len==1 )
-            {
-                substr($seq,$mask_from,1,'N');
-                next;
-            }
-            my $n = $ref_len - 1;
-            substr($seq,$mask_from+1,$n,'N' x $n);
+            apply_mask($opts,\$seq,$$items[1]-$from,$$items[3]);
         }
     }
     return $seq;
+}
+
+sub apply_mask
+{
+    my ($opts,$seq,$from,$ref) = @_;
+    my $ref_len = length($ref);
+    if ( $ref_len==1 )
+    {
+        substr($$seq,$from,1,'N');
+        return;
+    }
+    my $n = $ref_len - 1;
+    substr($$seq,$from+1,$n,'N' x $n);
 }
 
