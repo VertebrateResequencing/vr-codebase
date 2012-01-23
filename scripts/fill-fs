@@ -57,6 +57,7 @@ sub parse_params
         if ( -e $arg && !exists($$opts{file}) ) { $$opts{file}=$arg; next; }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
+    if ( !($$opts{length}=~/^\d+$/) ) { error("Expected integer after -l, got $$opts{length}\n"); }
     if ( !exists($$opts{refseq}) ) { error("Missing the -r option.\n"); }
     if ( $mask_changed ) { error("The -m parameter must preceed -b, -v, or the file in order to take effect.\n"); }
     return $opts;
@@ -67,7 +68,7 @@ sub check_mask_char
     my ($mask) = @_;
     if ( $mask eq 'lc' ) { return; }
     if ( length($mask) eq 1 ) { return; }
-    error("Currently only \"lc\" or one-character mask is supported.\n");
+    error("Currently only \"lc\" or one-character mask is supported, got \"$mask\".\n");
 }
 
 sub flanking_sequence
@@ -171,7 +172,8 @@ sub mask_sequence
     my ($opts,$seq,$chr,$from,$to,$mask) = @_;
     for my $m (@$mask)
     {
-        if ( $$m{chr} ne $chr or $$m{pos}<$from or $$m{pos}>$to ) { next; }
+        my $reflen = length($$m{ref});
+        if ( $$m{chr} ne $chr or $$m{pos}+$reflen<$from or $$m{pos}>$to ) { next; }
         apply_mask($opts,\$seq,$$m{pos}-$from,$$m{ref},$$opts{mask_char}{default});
     }
     for my $file (@{$$opts{vcf_mask}})
@@ -183,7 +185,7 @@ sub mask_sequence
             # In different situations one may want to treat indels differently. For
             #   now, mask the whole REF string as for primer design it is safer to 
             #   mask the whole thing; for example, a 2bp deletion can be reported by 
-            #   samtools as REF=GACACACA ALT=GACACA.
+            #   samtools as REF=GACACACA ALT=GACACA, the script will mask it all.
             apply_mask($opts,\$seq,$$items[1]-$from,$$items[3],$$opts{mask_char}{$file});
         }
     }
@@ -193,7 +195,7 @@ sub mask_sequence
         for my $ret (@tabix)
         {
             my @items = split(/\t/,$ret);
-            apply_mask($opts,\$seq,$items[1]-$from,$items[2]-$from,$$opts{mask_char}{$file});
+            apply_mask($opts,\$seq,$items[1]-$from+1,$items[2]-$from,$$opts{mask_char}{$file});
         }
     }
     return $seq;
@@ -204,7 +206,8 @@ sub apply_mask
     my ($opts,$seq,$from,$ref,$mask_char) = @_;
     if ( $from<0 ) { $from=0; }
     my $ref_len = $ref=~/^\d+$/ ? $ref-$from+1 : length($ref);
-    if ( $from+$ref_len>=2*$$opts{length} ) { $ref_len = 2*$$opts{length}+1 - $from; }
+    my $seq_len = length($$seq);
+    if ( $from+$ref_len>=$seq_len ) { $ref_len = $seq_len - $from; }
     if ( $ref_len<0 ) { return; }
     if ( $ref_len==1 )
     {
@@ -213,10 +216,9 @@ sub apply_mask
         substr($$seq,$from,1,$rpl);
         return;
     }
-    my $n = $ref_len - 1;
-    my $rpl = substr($$seq,$from+1,$n);
-    $rpl = $mask_char eq 'lc' ? lc(substr($$seq,$from+1,$n)) : ($mask_char x $n);
-    substr($$seq,$from+1,$n,$rpl);
+    my $rpl = substr($$seq,$from,$ref_len);
+    $rpl = $mask_char eq 'lc' ? lc(substr($$seq,$from,$ref_len)) : ($mask_char x $ref_len);
+    substr($$seq,$from,$ref_len,$rpl);
 }
 
 
