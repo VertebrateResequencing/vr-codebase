@@ -180,6 +180,10 @@ sub mask_sequence
         for my $ret (@tabix)
         {
             my $items = $$opts{vcf}->split_mandatory($ret);
+            # In different situations one may want to treat indels differently. For
+            #   now, mask the whole REF string as for primer design it is safer to 
+            #   mask the whole thing; for example, a 2bp deletion can be reported by 
+            #   samtools as REF=GACACACA ALT=GACACA.
             apply_mask($opts,\$seq,$$items[1]-$from,$$items[3],$$opts{mask_char}{$file});
         }
     }
@@ -198,7 +202,10 @@ sub mask_sequence
 sub apply_mask
 {
     my ($opts,$seq,$from,$ref,$mask_char) = @_;
+    if ( $from<0 ) { $from=0; }
     my $ref_len = $ref=~/^\d+$/ ? $ref-$from+1 : length($ref);
+    if ( $from+$ref_len>=2*$$opts{length} ) { $ref_len = 2*$$opts{length}+1 - $from; }
+    if ( $ref_len<0 ) { return; }
     if ( $ref_len==1 )
     {
         my $rpl = substr($$seq,$from,1);
