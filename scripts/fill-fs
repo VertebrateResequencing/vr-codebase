@@ -148,7 +148,7 @@ sub output_line
     elsif ( $len>0 )
     {
         $seq_pos += $off;
-        $ref = '+';
+        $ref = '-';
         $alt = $indel;
         $reflen = $off-1;
     }
