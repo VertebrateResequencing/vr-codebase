@@ -41,7 +41,7 @@ sub error
         "   vcf-query file.vcf.gz -r 1:1000-2000 -f '%CHROM:%POS\\t%REF\\t%ALT[\\t%SAMPLE:%*=,]\\n'\n",
         "   vcf-query file.vcf.gz -f '[%GT\\t]%LINE\\n'\n",
         "   vcf-query file.vcf.gz -f '[%GT\\ ]%LINE\\n'\n",
-        "   vcf-query file.vcf.gz -f '%CHROM\\t%POS\\t%INFO/DP\\t%FILTER\\n'\n",
+        "   vcf-query file.vcf.gz -f '%CHROM\\_%POS\\t%INFO/DP\\t%FILTER\\n'\n",
         "\n";
 }
 
@@ -107,7 +107,7 @@ sub parse_format_string
         }
         else { error("FIXME: $str"); }
 
-        if ( $before ) { push @arr,$before; }
+        if ( defined $before && $before ne '' ) { push @arr,$before; }
         push @arr,'.';      # If the tag is not present in the VCF, a missing value ('.') will be printed instead.
         if ( exists($idx{$match}) ) 
         { 
@@ -115,6 +115,10 @@ sub parse_format_string
         }
         $idx{$match} = $#arr;
         $str = $';
+    }
+    for (my $i=0; $i<@arr; $i++)
+    {
+        $arr[$i] =~ s/\\{1}//g;
     }
     $$hash{format} = \@arr;
     $$hash{idx}    = \%idx;
