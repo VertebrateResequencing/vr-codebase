@@ -193,7 +193,7 @@ sub mask_sequence
         for my $ret (@tabix)
         {
             my @items = split(/\t/,$ret);
-            apply_mask($opts,\$seq,$items[1]+1-$from,$items[2]+1-$from,$$opts{mask_char}{$file});
+            apply_mask($opts,\$seq,$items[1]-$from,$items[2]-$from,$$opts{mask_char}{$file});
         }
     }
     return $seq;
