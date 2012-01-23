@@ -101,7 +101,7 @@ sub parse_format_string
         {
             $match = '*'; $join1=$1; $join2=$2;
         }
-        elsif ( $str=~m{([A-Za-z0-9/]+)} )
+        elsif ( $str=~m{([A-Za-z0-9/_]+)} )
         {
             $match = $1;
         }
