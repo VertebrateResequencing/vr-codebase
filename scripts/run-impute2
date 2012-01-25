@@ -269,8 +269,9 @@ sub impute2_to_vcf
     }
     elsif ( -z "$outdir/02.impute2.$chunk.e" )
     {
-        $self->cmd(qq[touch $outfile]);
-        return;
+        # From some reason, IMPUTE2 could not finish it's task, but the error log is empty. Don't loose any sites,
+        #   even if they are not imputed.
+        $self->cmd(qq[tabix -h $$self{in_vcf} $chunk | bgzip -c > $outfile.part]);
     }
     else
     {
