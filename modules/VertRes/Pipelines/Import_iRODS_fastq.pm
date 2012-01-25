@@ -198,7 +198,17 @@ sub bam_to_fastq {
 
     my $in_bam = $self->{fsu}->catfile($lane_path, $bam);
     my $fastq_base = $self->{lane};
-
+    
+    
+    my $memory = $self->{memory};
+    my $java_mem = 6200;
+    if (! defined $memory || $memory < 6900) {
+        $memory = 6900;
+        $java_mem = 6200;
+    }
+    $java_mem ||= int($memory * 0.9);
+    my $queue = $memory >= 30000 ? "hugemem" : "normal";
+    
 
     my $fastqs_str ; 
     if( $self->is_paired )
@@ -222,7 +232,7 @@ use File::Spec;
 my \$dir = '$lane_path';
 my \@fastqs = $fastqs_str;
 # convert to fastq
-VertRes::Utils::Sam->new(verbose => 1, quiet => 0)->bam2fastq(qq[$in_bam], qq[$fastq_base]);
+VertRes::Utils::Sam->new(verbose => 1, quiet => 0, java_memory => $java_mem)->bam2fastq(qq[$in_bam], qq[$fastq_base]);
 };
     unless($self->is_paired){
     print $scriptfh qq{
@@ -251,7 +261,7 @@ exit;
     
     my $job_name = $self->{prefix}.'bam2fastq';
     $self->archive_bsub_files($lane_path, $job_name);
-    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => '-M5900000 -R \'select[mem>5900] rusage[mem=5900]\''}, qq{perl -w $script_name});
+    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'" }, qq{perl -w $script_name});
     
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete

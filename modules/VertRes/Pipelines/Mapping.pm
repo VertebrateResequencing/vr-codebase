@@ -1292,13 +1292,24 @@ sub mark_duplicates {
 
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         
+        
+        my $memory = $self->{memory};
+        my $java_mem = 7200;
+        if (! defined $memory || $memory < 8000) {
+            $memory = 8000;
+            $java_mem = 7200;
+        }
+        $java_mem ||= int($memory * 0.9);
+        my $queue = $memory >= 30000 ? "hugemem" : "normal";
+        
+        
 
         print $scriptfh qq{
   use strict;
   use VertRes::Wrapper::samtools;
   use VertRes::Utils::Sam;
 
-  my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
+  my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose, java_memory => $java_mem);
  
   \$sam_util->markdup('$bam_file', '$mark_dup_bam_file');
   \$sam_util->index_bams(files=>['$mark_dup_bam_file']);
@@ -1311,7 +1322,7 @@ sub mark_duplicates {
               };
        close $scriptfh;
  
-       LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => '-M8000000 -R \'select[mem>8000] rusage[mem=8000]\''}, qq{perl -w $script_name});
+       LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'" }, qq{perl -w $script_name});
 
       }
 
