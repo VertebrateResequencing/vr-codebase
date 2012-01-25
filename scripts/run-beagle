@@ -35,8 +35,8 @@ sub new
             fai_ref     => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
             known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',
 
-            chunks_overlap  => 500,
-            chunk_size      => 1_000_000,
+            buffer_region   => 250_000,
+            chunk_size      => 3_000_000,
             debug_chunks    => 0,
 
             limits   => { memory=>5_000, runtime=>24*60 },
@@ -71,6 +71,7 @@ sub parse_args
 
     if ( !exists($$self{outdir}) ) { $self->throw("Missing the -o option.\n"); }
     if ( !exists($$self{in_vcf}) ) { $self->throw("Missing the -i option.\n"); }
+    if ( !exists($$self{fai_ref}) ) { $self->throw("Missing the 'fai_ref' config key.\n"); }
     if ( $$self{mrProper} )
     {
         $self->mrProper($$self{outdir});
@@ -81,14 +82,14 @@ sub parse_args
         $$self{known_vcf} = '--';
         $self->warn("The 'known_vcf' config key not present, running without reference panel.\n"); 
     }
-    if ( !exists($$self{chunks_overlap}) ) 
+    if ( !exists($$self{buffer_region}) ) 
     { 
-        $$self{chunks_overlap} = 500;
-        $self->warn("The 'chunks_overlap' config key not present, assuming: $$self{chunks_overlap}\n"); 
+        $$self{buffer_region} = 250_000;
+        $self->warn("The 'buffer_region' config key not present, assuming: $$self{buffer_region}\n"); 
     }
     if ( !exists($$self{chunk_size}) ) 
     { 
-        $$self{chunk_size} = 1_000_000;
+        $$self{chunk_size} = 3_000_000;
         $self->warn("The 'chunk_size' config key not present, assuming: $$self{chunk_size}\n"); 
     }
 }
@@ -186,8 +187,12 @@ sub regions
 sub vcf_to_beagle
 {
     my ($self,$outfile,$outdir,$region) = @_;
+    if ( !($region=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the chunk string: [$region]\n"); }
+    my $chr  = $1;
+    my $from = $2 - $$self{buffer_region};
+    my $to   = $3 + $$self{buffer_region};
     $self->cmd(qq[mkdir -p $outdir]);
-    $self->cmd(qq[$$self{vcf_beagle} -r $region -i $$self{in_vcf} -k $$self{known_vcf} -o $outdir/$region.01 >$outfile.o 2>$outfile.e && touch $outfile]);
+    $self->cmd(qq[$$self{vcf_beagle} -r $chr:$from-$to -i $$self{in_vcf} -k $$self{known_vcf} -o $outdir/$region.01 >>$outfile.o 2>>$outfile.e && touch $outfile]);
 }
 
 sub beagle
@@ -202,7 +207,7 @@ sub beagle
     my $mem  = $self->get_limits('memory');
     if ( !$mem ) { $mem = 100; }
     my $known = $$self{known_vcf} eq '--' ? '' : "markers=$outdir/$region.01.markers unphased=$outdir/$region.01.known_haps.gz missing=?";
-    $self->cmd(qq[java -Xmx${mem}m -jar $$self{beagle_jar} like=$outdir/$region.01.impute_haps.gz $known out=$outdir/$region.02 >$outfile.o 2>$outfile.e]);
+    $self->cmd(qq[java -Xmx${mem}m -jar $$self{beagle_jar} like=$outdir/$region.01.impute_haps.gz $known out=$outdir/$region.02 >>$outfile.o 2>>$outfile.e]);
     if ( !-z "$outfile.e" ) { $self->throw("Expected empty output file: $outfile.e"); }
     $self->cmd(qq[touch $outfile]);
 }
@@ -216,7 +221,7 @@ sub beagle_to_vcf
         $self->cmd("touch $outfile");
         return;
     }
-    $self->cmd(qq[$$self{vcf_beagle} -r $region -i $$self{in_vcf} -o $outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz 2>$outfile.e | bgzip -c > $outfile.part]);
+    $self->cmd(qq[$$self{vcf_beagle} -r $region -i $$self{in_vcf} -o $outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz 2>>$outfile.e | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
 }
@@ -318,7 +323,7 @@ sub chr_chunks
 
             push @chunks, "$chr:$from-$to";
 
-            $pos += $split_size - $$self{chunks_overlap};
+            $pos += $split_size;
             if ( $pos<1 ) { $self->throw("The split size too small [$split_size]?\n"); }
 
             if ( $$self{debug_chunks} && scalar @chunks>$$self{debug_chunks} ) { return \@chunks; }
