@@ -113,7 +113,7 @@ sub get_stats
     if ( !$n ) { return; }
 
     push @{$$opts{stats}{attempts}},$n;
-    for my $key qw(memory time cpu_time idle_factor)
+    for my $key qw(memory time cpu_time idle_factor start_time end_time)
     {
         my $value = $parser->get($key,$n-1);
         push @{$$opts{stats}{$key}},$value;
@@ -123,8 +123,20 @@ sub get_stats
 sub report_stats
 {
     my ($opts) = @_;
+    my ($min_start,$max_end);
     while (my ($key,$values) = each %{$$opts{stats}})
     {
+        if ( $key eq 'start_time' )
+        {
+            for my $val (@$values) { if ( !defined $min_start or $min_start>$val ) { $min_start = $val; } }
+            next;
+        }
+        if ( $key eq 'end_time' )
+        {
+            for my $val (@$values) { if ( !defined $max_end or $max_end<$val ) { $max_end = $val; } }
+            next;
+        }
+
         my $n = scalar @$values;
 
         my $avg = 0;
@@ -150,6 +162,7 @@ sub report_stats
         if ( $key=~/time/ ) { printf "\ttotal=%.1fh",$sum/3600.; }
         print "\n";
     }
+    printf "finished_in\t%.1fh\n", ($max_end-$min_start)/3600.;
 }
 
 sub plot_stats

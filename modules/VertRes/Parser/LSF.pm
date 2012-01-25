@@ -96,6 +96,8 @@ sub new {
            [4]  cpu_time
            [5]  idle_factor
            [6]  queue
+           [7]  start_time (seconds since the epoch)
+           [8]  end_time (seconds since the epoch)
  Args    : n/a
 
 =cut
@@ -191,6 +193,8 @@ sub next_result {
     $self->{_result_holder}->[4] = $cpu;
     $self->{_result_holder}->[5] = $idle;
     $self->{_result_holder}->[6] = $queue;
+    $self->{_result_holder}->[7] = $st;
+    $self->{_result_holder}->[8] = $et;
     unless ($self->{"saw_last_record_$fh_id"}) {
         push(@{$self->{results}}, {cmd => $cmd,
                                    status => $status,
@@ -198,7 +202,9 @@ sub next_result {
                                    time => $wall,
                                    cpu_time => $cpu,
                                    idle_factor => $idle,
-                                   queue => $queue});
+                                   queue => $queue,
+                                   start_time => $st,
+                                   end_time => $et});
     }
     
     return 1;
