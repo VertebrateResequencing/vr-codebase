@@ -76,7 +76,11 @@ sub parse_args
         $self->mrProper($$self{outdir});
         $self->all_done;
     }
-    if ( !exists($$self{known_vcf}) ) { $self->throw("Missing the known_vcf config key or -k option.\n"); }
+    if ( !exists($$self{known_vcf}) ) 
+    { 
+        $$self{known_vcf} = '--';
+        $self->warn("The 'known_vcf' config key not present, running without reference panel.\n"); 
+    }
     if ( !exists($$self{chunks_overlap}) ) 
     { 
         $$self{chunks_overlap} = 500;
@@ -189,7 +193,7 @@ sub vcf_to_beagle
 sub beagle
 {
     my ($self,$outfile,$outdir,$region) = @_;
-    if ( ! -s "$outdir/$region.01.markers" or ! -s "$outdir/$region.01.markers.known" or ! -s "$outdir/$region.01.markers.impute" )
+    if ( !-s "$outdir/$region.01.markers.impute" or (!-s "$outdir/$region.01.markers.known" && $$self{known_vcf} ne '--') )
     {
         # The region is empty
         $self->cmd("touch $outfile");
@@ -197,13 +201,16 @@ sub beagle
     }
     my $mem  = $self->get_limits('memory');
     if ( !$mem ) { $mem = 100; }
-    $self->cmd(qq[java -Xmx${mem}m -jar $$self{beagle_jar} markers=$outdir/$region.01.markers like=$outdir/$region.01.impute_haps.gz unphased=$outdir/$region.01.known_haps.gz missing=? out=$outdir/$region.02 >$outfile.o 2>$outfile.e && touch $outfile]);
+    my $known = $$self{known_vcf} eq '--' ? '' : "markers=$outdir/$region.01.markers unphased=$outdir/$region.01.known_haps.gz missing=?";
+    $self->cmd(qq[java -Xmx${mem}m -jar $$self{beagle_jar} like=$outdir/$region.01.impute_haps.gz $known out=$outdir/$region.02 >$outfile.o 2>$outfile.e]);
+    if ( !-z "$outfile.e" ) { $self->throw("Expected empty output file: $outfile.e"); }
+    $self->cmd(qq[touch $outfile]);
 }
 
 sub beagle_to_vcf
 {
     my ($self,$outfile,$outdir,$region) = @_;
-    if ( ! -s "$outdir/$region.01.markers" )
+    if ( ! -e "$outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz" )
     {
         # The region is empty
         $self->cmd("touch $outfile");

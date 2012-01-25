@@ -96,7 +96,7 @@ sub convert_known
 {
     my ($opts) = @_;
 
-    if ( -e "$$opts{prefix}.known_haps" ) { return; }
+    if ( -e "$$opts{prefix}.known_haps" or $$opts{known} eq '--' ) { return; }
 
     my $vcf = Vcf->new(file=>$$opts{known},%{$$opts{region}});
     $vcf->parse_header();
@@ -218,7 +218,7 @@ sub create_markers
 
     if ( ! -s "$$opts{beagle_markers}.known" or ! -s "$$opts{beagle_markers}.impute" )
     {
-        # Create an empty file if one of files is empty
+        # Create an empty file if one of the files is empty
         `touch $$opts{beagle_markers}`;
         return;
     }
