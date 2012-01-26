@@ -35,10 +35,11 @@ sub new
             fai_ref     => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
             known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',
 
-            buffer_region   => 250_000,
-            chunk_size      => 3_000_000,
+            buffer_region   => 10_000,
+            chunk_size      => 1_000_000,
             debug_chunks    => 0,
 
+            # Additional 40% of this memory will be requested from LSF because of java issues
             limits   => { memory=>5_000, runtime=>24*60 },
             do_clean => 1,         # Remove runner's temporary files
     ]."\n";
@@ -84,12 +85,12 @@ sub parse_args
     }
     if ( !exists($$self{buffer_region}) ) 
     { 
-        $$self{buffer_region} = 250_000;
+        $$self{buffer_region} = 10_000;
         $self->warn("The 'buffer_region' config key not present, assuming: $$self{buffer_region}\n"); 
     }
     if ( !exists($$self{chunk_size}) ) 
     { 
-        $$self{chunk_size} = 3_000_000;
+        $$self{chunk_size} = 1_000_000;
         $self->warn("The 'chunk_size' config key not present, assuming: $$self{chunk_size}\n"); 
     }
 }
@@ -204,12 +205,14 @@ sub beagle
         $self->cmd("touch $outfile");
         return;
     }
-    my $mem  = $self->get_limits('memory');
-    if ( !$mem ) { $mem = 100; }
+    my $mem_ori  = $self->get_limits('memory');
+    my $mem = $mem_ori ? $mem_ori : 100;
+    $self->set_limits(memory=>$mem*1.4);
     my $known = $$self{known_vcf} eq '--' ? '' : "markers=$outdir/$region.01.markers unphased=$outdir/$region.01.known_haps.gz missing=?";
     $self->cmd(qq[java -Xmx${mem}m -jar $$self{beagle_jar} like=$outdir/$region.01.impute_haps.gz $known out=$outdir/$region.02 >>$outfile.o 2>>$outfile.e]);
     if ( !-z "$outfile.e" ) { $self->throw("Expected empty output file: $outfile.e"); }
     $self->cmd(qq[touch $outfile]);
+    $self->set_limits(memory=>$mem_ori);
 }
 
 sub beagle_to_vcf
