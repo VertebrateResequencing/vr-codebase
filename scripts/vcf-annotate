@@ -75,7 +75,7 @@ sub error
         "The file dbSNPv132.tab.gz with dbSNP IDs can be downloaded from\n",
         "   ftp://ftp.sanger.ac.uk/pub/1000genomes/pd3/dbSNP/\n",
         "\n",
-        "User-defined filters:\n",
+        "Example of a user-defined filter file (copy and paste it to filter.txt and run with -f filter.txt):\n",
         "    # The examples below are self-explanatory. Notice the use of the predefined\n",
         "    #  variables (\$MATCH, \$PASS, \$FAIL) and methods (error).\n",
         "    #\n",
