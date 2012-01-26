@@ -619,6 +619,7 @@ sub plot_stats
     plot_af($opts,$$stats{af});
     plot_ndr($opts,$$stats{af});
     plot_dp_ndr($opts,$$stats{dp});
+    plot_eq($opts,$$stats{counts_by_gl});
     print_gs($opts,$$stats{gs});
 }
 
@@ -914,6 +915,48 @@ sub plot_ndr
     close($fh);
 
     plot("$$opts{plot}-ndr.gp");
+}
+
+sub plot_eq
+{
+    my ($opts,$stats) = @_;
+
+    if ( !scalar keys %$stats ) { return; }
+
+    open(my $fh,'>',"$$opts{plot}-eq.gp") or error("$$opts{plot}-eq.gp: $!");
+    if ( exists($$opts{title}) ) { print $fh qq[set title "$$opts{title}"\n]; }
+    print $fh q[
+        set terminal png size 550,400 truecolor font "DejaVuSansMono,9"
+        set output "] . "$$opts{plot}-eq.png" . q["
+        set style line 1 linecolor rgb "#ff4400"
+        set style line 2 linecolor rgb "#0084ff"
+        set style increment user
+        set grid back lc rgb "#dddddd"
+        set xlabel "GL"
+        set ylabel "Number of matches (log)"
+        set y2label "Number of mismatches (log)"
+        set y2tics
+        set ytics nomirror
+        set log y
+        set log y2
+
+        plot '-' with lines lw 1 title "Matches", \
+             '-' axes x1y2 with lines lw 1 title "Mismatches"
+        ];
+
+    for my $gl (sort {$a<=>$b} keys %$stats)
+    {
+        print $fh "$gl\t$$stats{$gl}{match}\n";
+    }
+    print $fh "end\n";
+    for my $gl (sort {$a<=>$b} keys %$stats)
+    {
+        print $fh "$gl\t$$stats{$gl}{mismatch}\n";
+    }
+    print $fh "end\n";
+    close($fh);
+
+    plot("$$opts{plot}-eq.gp");
 }
 
 sub do_region_stats
