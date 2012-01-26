@@ -25,7 +25,8 @@ sub error
         "Usage: vcf-sort > out.vcf\n",
         "       cat file.vcf | vcf-sort > out.vcf\n",
         "Options:\n",
-        "   -c, --chromosomal-order         Use natural ordering (1,2,10,MT,X) rather then the default (1,10,2,MT,X).\n",
+        "   -c, --chromosomal-order         Use natural ordering (1,2,10,MT,X) rather then the default (1,10,2,MT,X). This requires\n",
+        "                                       new version of the unix \"sort\" command which supports the --version-sort option.\n",
         "   -h, -?, --help                  This help message.\n",
         "\n";
 }
@@ -88,7 +89,7 @@ sub check_sort_options
     my @has_version_sort = `sort --help | grep -- --version-sort`;
     if ( scalar @has_version_sort ) { return '-k1,1V'; }
 
-    error("Obsolete version of sort command installed, please run without the -c option.\n");
+    error("Old version of sort command installed, please run without the -c option.\n");
     return '-k1,1d';
 }
 
