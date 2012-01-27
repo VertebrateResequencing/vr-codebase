@@ -66,13 +66,11 @@ sub _build_exon_length
 sub add_discontinuous_feature
 {
   my ($self,$raw_feature) = @_;
-  # need a consistency check
-  #die("$gene_id: DNA sequence id doesn't match.\n") unless ($seq_id eq $feature->seq_id());
-  #die("$gene_id: DNA template strand doesn't match.\n") unless ($gene_strand == $feature->strand);
   
   my $gene_start = ($raw_feature->start < $self->gene_start) ? $raw_feature->start : $self->gene_start;
   my $gene_end = ($raw_feature->end   > $self->gene_end) ? $raw_feature->end : $self->gene_end;
-  my $exon_length += ($raw_feature->end - $raw_feature->start + 1);
+  
+  my $exon_length = ($raw_feature->end - $raw_feature->start + 1) + $self->exon_length;
   
   $self->gene_start($gene_start);
   $self->gene_end($gene_end);
