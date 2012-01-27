@@ -21,6 +21,16 @@ has 'gene_strand'   => ( is => 'rw', isa => 'Int',                 lazy_build =>
 has 'gene_start'    => ( is => 'rw', isa => 'Int',                 lazy_build => 1 );
 has 'gene_end'      => ( is => 'rw', isa => 'Int',                 lazy_build => 1 );
 has 'exon_length'   => ( is => 'rw', isa => 'Int',                 lazy_build => 1 );
+has 'exons'         => ( is => 'rw', isa => 'ArrayRef',            lazy_build => 1);
+
+sub _build_exons
+{
+  my ($self) = @_;
+  my @exons;
+  push @exons, [$self->gene_start, $self->gene_end];
+  
+  return \@exons;
+}
 
 sub _build_gene_id
 {
@@ -75,6 +85,8 @@ sub add_discontinuous_feature
   $self->gene_start($gene_start);
   $self->gene_end($gene_end);
   $self->exon_length($exon_length);
+  
+  push @{$self->exons}, [$raw_feature->start, $raw_feature->end ];
   
   return;
 }

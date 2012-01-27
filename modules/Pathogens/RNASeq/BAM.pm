@@ -13,7 +13,7 @@ my $rna_seq_bam = Pathogens::RNASeq::BAM->new(
 =cut
 package Pathogens::RNASeq::BAM;
 use Moose;
-extends 'Pathogens::RNASeq::BAS';
+extends 'Pathogens::RNASeq::BAMStats';
 
 has 'filename'           => ( is => 'rw', isa => 'Str', required   => 1 );
 1;

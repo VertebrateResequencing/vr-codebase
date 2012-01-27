@@ -1,10 +1,11 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
+use Data::Dumper;
 
 BEGIN { unshift(@INC, './modules') }
 BEGIN {
-    use Test::Most tests => 13;
+    use Test::Most tests => 14;
     use_ok('Pathogens::RNASeq::GFF');
 }
 
@@ -28,3 +29,9 @@ is $rna_seq_gff->features->{"discontinuous_feature_id"}->exon_length, 3894, 'exo
 # reverse strand
 is $rna_seq_gff->features->{"reverse_strand_id"}->gene_strand,  -1, 'reverse strand';
 is $rna_seq_gff->features->{"no_strand_identifier_id"}->gene_strand,  0, 'no strand identifier';
+
+
+my @expected_gene_ids = ("FN543502.13","FN543502.18","FN543502.33","continuous_feature_id","discontinuous_feature_id","no_strand_identifier_id","reverse_strand_id");
+
+
+is_deeply $rna_seq_gff->sorted_gene_ids, \@expected_gene_ids, 'sorting of gene ids';

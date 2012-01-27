@@ -4,7 +4,7 @@ use warnings;
 
 BEGIN { unshift(@INC, './modules') }
 BEGIN {
-    use Test::Most tests => 10;
+    use Test::Most tests => 3;
     use_ok('Pathogens::RNASeq::BAM');
 }
 

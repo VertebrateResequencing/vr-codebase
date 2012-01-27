@@ -55,4 +55,19 @@ sub _build_features
   return \%features;
 }
 
+sub sorted_gene_ids
+{
+  my ($self) = @_;
+  my @sorted_ids = sort _idsort keys(%{$self->features});
+  return \@sorted_ids;
+}
+
+sub _idsort
+{
+  my @A = split(/\./,$a,2);
+  my @B = split(/\./,$b,2);
+
+  $A[0] cmp $B[0] || $A[1] <=> $B[1];
+}
+
 1;
