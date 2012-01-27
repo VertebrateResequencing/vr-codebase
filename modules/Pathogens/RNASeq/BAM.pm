@@ -16,3 +16,4 @@ use Moose;
 extends 'Pathogens::RNASeq::BAS';
 
 has 'filename'           => ( is => 'rw', isa => 'Str', required   => 1 );
+1;

@@ -10,4 +10,4 @@ BEGIN {
 
 # get the total mapped reads
 ok my $rna_seq_bam = Pathogens::RNASeq::BAM->new(filename => 't/data/bam'), 'initialise the rna seq bam file container';
-is $rna_seq_bam->total_mapped_reads, 10000000, 'extracted total mapped reads';
+is $rna_seq_bam->total_mapped_reads, 50, 'extracted total mapped reads';

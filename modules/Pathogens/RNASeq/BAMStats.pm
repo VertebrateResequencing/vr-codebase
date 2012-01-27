@@ -16,8 +16,8 @@ use VertRes::Parser::flagstat;
 use VertRes::Utils::Sam;
 use Time::Format;
 
-has 'total_mapped_reads' => ( is => 'rw', isa => 'Str', lazy_builder   => 1 );
-has '_parser'  => ( is => 'rw', isa => 'VertRes::Parser::flagstat', lazy_builder   => 1 );
+has 'total_mapped_reads' => ( is => 'rw', isa => 'Str', lazy_build   => 1 );
+has '_parser'  => ( is => 'rw', isa => 'VertRes::Parser::flagstat', lazy_build   => 1 );
 
 sub _build__parser
 {
@@ -44,3 +44,4 @@ sub _create_stats_files
    my $sam =  VertRes::Utils::Sam->new();
    $sam->stats("$time{'yyyymmdd'}", $self->filename);
 }
+1;
