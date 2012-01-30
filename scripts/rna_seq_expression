@@ -36,7 +36,7 @@ GetOptions(
 
 Usage: $0
      -s|sequence_file         <aligned BAM file>
-     -f|annotation_file       <annotation file (GFF)>
+     -a|annotation_file       <annotation file (GFF)>
      -h|help            <print this message>
 
 This script takes in an aligned sequence file (BAM) and a corresponding annotation file (GFF) and creates a spreadsheet with expression values.

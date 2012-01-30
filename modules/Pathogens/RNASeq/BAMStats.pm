@@ -12,22 +12,22 @@ my $bam_container = Pathogens::RNASeq::BAM->new(
 =cut
 package Pathogens::RNASeq::BAMStats;
 use Moose;
-use VertRes::Parser::flagstat;
+use VertRes::Parser::bas;
 use VertRes::Utils::Sam;
 use Time::Format;
 
 has 'total_mapped_reads' => ( is => 'rw', isa => 'Str', lazy_build   => 1 );
-has '_parser'  => ( is => 'rw', isa => 'VertRes::Parser::flagstat', lazy_build   => 1 );
+has '_parser'  => ( is => 'rw', isa => 'VertRes::Parser::bas', lazy_build   => 1 );
 
 sub _build__parser
 {
   my ($self) = @_;
-  unless(-e $self->filename.'.flagstat')
+  unless(-e $self->filename.'.bas')
   {
     $self->_create_stats_files();
   }
   
-  VertRes::Parser::flagstat->new(file => $self->filename.'.flagstat');
+  VertRes::Parser::bas->new(file => $self->filename.'.bas');
 }
 
 
