@@ -28,9 +28,9 @@ has 'filters'        => ( is => 'rw', isa => 'Maybe[HashRef]'            );
 
 has '_read_details'  => ( is => 'rw', isa => 'HashRef',  lazy_build   => 1 );
 has '_read_length'   => ( is => 'rw', isa => 'Int',      lazy_build   => 1 );
-has '_read_strand'   => ( is => 'rw', isa => 'Int',      lazy_build   => 1 );
 has '_read_position' => ( is => 'rw', isa => 'Int',      lazy_build   => 1 );
 
+has 'read_strand'   => ( is => 'rw', isa => 'Int',      lazy_build   => 1 );
 has 'mapped_reads' => ( is => 'rw', isa => 'HashRef',  lazy_build   => 1 );
 
 sub _build__read_details
@@ -60,7 +60,7 @@ sub _build__read_length
   return $read_length;
 }
 
-sub _build__read_strand
+sub _build_read_strand
 {
   my ($self) = @_;
   my $read_strand = $self->_read_details->{flag} & 16 ? -1:1; # $flag bit set to 0 for forward 1 for reverse.
@@ -79,7 +79,7 @@ sub _build_mapped_reads
   my ($self) = @_;
   my %mapped_reads ;
   $mapped_reads{sense} = 0;
-  $mapped_reads{antisense} = 0; 
+  $mapped_reads{antisense} = 0;
   
   return \%mapped_reads unless( $self->_does_read_pass_filters() == 1 );
   
@@ -89,7 +89,7 @@ sub _build_mapped_reads
     if($self->_read_position < $exon_end && ($self->_read_position + $self->_read_length - 1) >= $exon_start)
     {
       
-      if($self->_read_strand == $self->gene_strand) 
+      if($self->read_strand == $self->gene_strand) 
       {
         $mapped_reads{sense}++;
       }

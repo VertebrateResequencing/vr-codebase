@@ -16,6 +16,9 @@ my $alignment_slice = Pathogens::RNASeq::AlignmentSlice->new(
   $rpkm_values{mapped_reads_sense};
   $rpkm_values{mapped_reads_antisense};
 
+  $rpkm_values{mapped_reads_forward};
+  $rpkm_values{mapped_reads_reverse};
+
 =cut
 package Pathogens::RNASeq::AlignmentSlice;
 use Moose;
@@ -91,6 +94,9 @@ sub _build_rpkm_values
 
   $rpkm_values{mapped_reads_sense} = 0;
   $rpkm_values{mapped_reads_antisense} = 0;
+  $rpkm_values{mapped_reads_forward} = 0;
+  $rpkm_values{mapped_reads_reverse} = 0;
+
   my $file_handle = $self->_slice_file_handle;
   
   while(my $line = <$file_handle>)
@@ -103,6 +109,17 @@ sub _build_rpkm_values
       )->mapped_reads;
     $rpkm_values{mapped_reads_sense} += $mapped_reads->{sense};
     $rpkm_values{mapped_reads_antisense} += $mapped_reads->{antisense};
+
+    if($mapped_reads->read_strand == 0)
+    {
+	    $rpkm_values{mapped_reads_forward} += $mapped_reads->{sense};
+	    $rpkm_values{mapped_reads_reverse} += $mapped_reads->{antisense};
+	  }
+		else
+		{
+		  $rpkm_values{mapped_reads_forward} += $mapped_reads->{antisense};
+	    $rpkm_values{mapped_reads_reverse} += $mapped_reads->{sense};
+		}
   }
   
   $rpkm_values{rpkm_sense} = $self->_calculate_rpkm($rpkm_values{mapped_reads_sense});
