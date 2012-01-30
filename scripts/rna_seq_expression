@@ -43,10 +43,12 @@ This script takes in an aligned sequence file (BAM) and a corresponding annotati
 The BAM must be aligned to the same reference that the annotation refers to.
 USAGE
 
+my %filters = (mapping_quality => 10);
 
 my $expression_results = Pathogens::RNASeq::Expression->new(
   sequence_filename   => $sequence_file,
-  annotation_filename => $annotation_file
+  annotation_filename => $annotation_file,
+  filters             => \%filters
   );
 
 $expression_results->output_spreadsheet();

@@ -22,6 +22,8 @@ use Pathogens::RNASeq::ExpressionStatsSpreadsheet;
 
 has 'sequence_filename'     => ( is => 'rw', isa => 'Str', required => 1 );
 has 'annotation_filename'   => ( is => 'rw', isa => 'Str', required => 1 );
+#optional filters
+has 'filters'               => ( is => 'rw', isa => 'Maybe[HashRef]'     );
 
 has '_sequence_file'        => ( is => 'rw', isa => 'Pathogens::RNASeq::SequenceFile',               lazy_build  => 1 );
 has '_annotation_file'      => ( is => 'rw', isa => 'Pathogens::RNASeq::GFF',                        lazy_build  => 1 );
@@ -58,7 +60,8 @@ sub _build__expression_results
     my $alignment_slice = Pathogens::RNASeq::AlignmentSlice->new(
       filename           => $self->sequence_filename,
       total_mapped_reads => $total_mapped_reads,
-      feature            => $self->_annotation_file->features->{$feature_id}
+      feature            => $self->_annotation_file->features->{$feature_id},
+      filters            => $self->filters
       );
     my $alignment_slice_results = $alignment_slice->rpkm_values;
     $alignment_slice_results->{gene_id} = $feature_id;

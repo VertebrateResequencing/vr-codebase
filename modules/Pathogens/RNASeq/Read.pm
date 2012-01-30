@@ -21,8 +21,10 @@ use Pathogens::RNASeq::Exceptions;
 
 has 'alignment_line' => ( is => 'rw', isa => 'Str',      required   => 1 );
 has 'exons'          => ( is => 'rw', isa => 'ArrayRef', required   => 1 );
-has 'gene_strand'    => ( is => 'rw', isa => 'Int',      required   => 1);
+has 'gene_strand'    => ( is => 'rw', isa => 'Int',      required   => 1 );
 
+#optional filters
+has 'filters'        => ( is => 'rw', isa => 'Maybe[HashRef]'            );
 
 has '_read_details'  => ( is => 'rw', isa => 'HashRef',  lazy_build   => 1 );
 has '_read_length'   => ( is => 'rw', isa => 'Int',      lazy_build   => 1 );
@@ -36,9 +38,10 @@ sub _build__read_details
   my ($self) = @_;
   my($qname, $flag, $rname, $read_position, $mapq, $cigar, $mrnm, $mpos, $isize, $seq, $qual) = split(/\t/,$self->alignment_line);
   my $read_details = {
-    cigar => $cigar,
-    read_position => $read_position,
-    flag => $flag,
+    mapping_quality => $mapq,
+    cigar           => $cigar,
+    read_position   => $read_position,
+    flag            => $flag,
   };
   
   return $read_details;
@@ -73,11 +76,14 @@ sub _build_mapped_reads
   $mapped_reads{sense} = 0;
   $mapped_reads{antisense} = 0; 
   
+  return \%mapped_reads unless( $self->_does_read_pass_filters() == 1 );
+  
   foreach my $exon (@{$self->exons})
   {
     my($exon_start,$exon_end) = @{$exon};
     if($self->_read_position < $exon_end && ($self->_read_position + $self->_read_length - 1) >= $exon_start)
     {
+      
       if($self->_read_strand == $self->gene_strand) 
       {
         $mapped_reads{sense}++;
@@ -92,4 +98,18 @@ sub _build_mapped_reads
   
   return \%mapped_reads;
 }
+
+sub _does_read_pass_filters
+{
+  my ($self) = @_;
+  return 1 unless(defined($self->filters));
+  
+  if(defined($self->filters->{mapping_quality}) && ($self->_read_details->{mapping_quality}  <= $self->filters->{mapping_quality}) )
+  {
+     return 0;
+  }
+  
+  return 1;
+}
+
 1;
