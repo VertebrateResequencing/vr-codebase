@@ -1,17 +1,17 @@
 =head1 NAME
 
-BAM.pm   - Represents a BAM file for use in RNASeq
+SequenceFile.pm   - Represents a SequenceFile file for use in RNASeq
 
 =head1 SYNOPSIS
 
-use Pathogens::RNASeq::BAM;
-my $rna_seq_bam = Pathogens::RNASeq::BAM->new(
+use Pathogens::RNASeq::SequenceFile;
+my $rna_seq_bam = Pathogens::RNASeq::SequenceFile->new(
   filename => '/abc/my_file.bam'
   );
   $rna_seq_bam->total_mapped_reads;
 
 =cut
-package Pathogens::RNASeq::BAM;
+package Pathogens::RNASeq::SequenceFile;
 use Moose;
 extends 'Pathogens::RNASeq::BAMStats';
 

@@ -1,0 +1,53 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+rna_seq_expression
+
+=head1 SYNOPSIS
+
+=head1 DESCRIPTION
+
+This script takes in an aligned sequence file (BAM) and a corresponding annotation file (GFF) and creates a spreadsheet with expression values.
+The BAM must be aligned to the same reference that the annotation refers to.
+
+=head1 CONTACT
+
+path-help@sanger.ac.uk
+
+=cut
+
+use strict;
+use warnings;
+no warnings 'uninitialized';
+use Getopt::Long;
+use Pathogens::RNASeq::Expression;
+
+my($sequence_file, $annotation_file, $help );
+
+GetOptions(
+   's|sequence_file=s'   => \$sequence_file,
+   'a|annotation_file=s' => \$annotation_file,
+   'h|help'              => \$help,
+    );
+
+
+($sequence_file && $annotation_file) or die <<USAGE;
+
+Usage: $0
+     -s|sequence_file         <aligned BAM file>
+     -f|annotation_file       <annotation file (GFF)>
+     -h|help            <print this message>
+
+This script takes in an aligned sequence file (BAM) and a corresponding annotation file (GFF) and creates a spreadsheet with expression values.
+The BAM must be aligned to the same reference that the annotation refers to.
+USAGE
+
+
+my $expression_results = Pathogens::RNASeq::Expression->new(
+  sequence_filename   => $sequence_file,
+  annotation_filename => $annotation_file
+  );
+
+$expression_results->output_spreadsheet();
+

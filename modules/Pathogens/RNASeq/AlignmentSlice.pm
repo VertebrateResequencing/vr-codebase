@@ -22,17 +22,20 @@ use Moose;
 use Pathogens::RNASeq::Exceptions;
 use Pathogens::RNASeq::Read;
 
-
+# required inputs
 has 'filename'           => ( is => 'rw', isa => 'Str',                       required   => 1 );
 has 'feature'            => ( is => 'rw', isa => 'Pathogens::RNASeq::Feature', required   => 1 );
-has 'window_margin'      => ( is => 'rw', isa => 'Int',                       default    => 50 );
 has 'total_mapped_reads' => ( is => 'rw', isa => 'Int',                       required   => 1 );
+#optional input
+has 'window_margin'      => ( is => 'rw', isa => 'Int',                       default    => 50 );
+has '_input_slice_filename' => ( is => 'rw', isa => 'Str'); # allow for testing and for using VR samtools view output file
+# output variable
 has 'rpkm_values'        => ( is => 'rw', isa => 'HashRef',                   lazy_build => 1 );
 
-has '_input_slice_filename' => ( is => 'rw', isa => 'Str'); # allow for testing and for using VR samtools view output file
-has '_slice_file_handle' => ( is => 'rw',  lazy_build   => 1 );
-has '_window_start'      => ( is => 'rw', isa => 'Int', lazy_build   => 1 );
-has '_window_end'        => ( is => 'rw', isa => 'Int', lazy_build   => 1 );
+# internal variables
+has '_slice_file_handle'    => ( is => 'rw',               lazy_build   => 1 );
+has '_window_start'         => ( is => 'rw', isa => 'Int', lazy_build   => 1 );
+has '_window_end'           => ( is => 'rw', isa => 'Int', lazy_build   => 1 );
 
 sub _build__window_start
 {
