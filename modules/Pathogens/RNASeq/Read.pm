@@ -36,13 +36,18 @@ has 'mapped_reads' => ( is => 'rw', isa => 'HashRef',  lazy_build   => 1 );
 sub _build__read_details
 {
   my ($self) = @_;
+  
   my($qname, $flag, $rname, $read_position, $mapq, $cigar, $mrnm, $mpos, $isize, $seq, $qual) = split(/\t/,$self->alignment_line);
+  
   my $read_details = {
     mapping_quality => $mapq,
     cigar           => $cigar,
     read_position   => $read_position,
     flag            => $flag,
   };
+  
+  # hook to allow for reads to be altered for different protocols
+  $self->_process_read_details($read_details);
   
   return $read_details;
 }
@@ -97,6 +102,11 @@ sub _build_mapped_reads
   }
   
   return \%mapped_reads;
+}
+
+sub _process_read_details
+{
+  # hook to allow for reads to be altered for different protocols
 }
 
 sub _does_read_pass_filters

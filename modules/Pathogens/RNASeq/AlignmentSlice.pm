@@ -27,6 +27,7 @@ has 'filename'           => ( is => 'rw', isa => 'Str',                        r
 has 'feature'            => ( is => 'rw', isa => 'Pathogens::RNASeq::Feature', required   => 1 );
 has 'total_mapped_reads' => ( is => 'rw', isa => 'Int',                        required   => 1 );
 #optional input
+has 'protocol'           => ( is => 'rw', isa => 'Str',                        default    => 'StandardProtocol' );
 has 'window_margin'      => ( is => 'rw', isa => 'Int',                        default    => 50 );
 has 'filters'            => ( is => 'rw', isa => 'Maybe[HashRef]'                               );
 has '_input_slice_filename' => ( is => 'rw', isa => 'Str'); # allow for testing and for using VR samtools view output file
@@ -37,6 +38,7 @@ has 'rpkm_values'        => ( is => 'rw', isa => 'HashRef',                    l
 has '_slice_file_handle'    => ( is => 'rw',               lazy_build   => 1 );
 has '_window_start'         => ( is => 'rw', isa => 'Int', lazy_build   => 1 );
 has '_window_end'           => ( is => 'rw', isa => 'Int', lazy_build   => 1 );
+has '_read_protocol_class'  => ( is => 'rw',               lazy_build   => 1 );
 
 sub _build__window_start
 {
@@ -73,18 +75,27 @@ sub _slice_stream
   }
 }
 
+sub _build__read_protocol_class
+{
+	my ($self) = @_;
+	my $read_protocol_class = "Pathogens::RNASeq::".$self->protocol."::Read";
+	eval("use $read_protocol_class");
+  return $read_protocol_class;
+}
+
+
 sub _build_rpkm_values
 {
   my ($self) = @_;
   my %rpkm_values;
-  
+
   $rpkm_values{mapped_reads_sense} = 0;
   $rpkm_values{mapped_reads_antisense} = 0;
   my $file_handle = $self->_slice_file_handle;
   
   while(my $line = <$file_handle>)
   {
-    my $mapped_reads = Pathogens::RNASeq::Read->new(
+    my $mapped_reads = $self->_read_protocol_class->new(
       alignment_line => $line, 
       exons          => $self->feature->exons, 
       gene_strand    => $self->feature->gene_strand,

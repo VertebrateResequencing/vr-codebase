@@ -23,20 +23,22 @@ no warnings 'uninitialized';
 use Getopt::Long;
 use Pathogens::RNASeq::Expression;
 
-my($sequence_file, $annotation_file, $help );
+my($sequence_file, $annotation_file, $protocol_name,  $help );
 
 GetOptions(
    's|sequence_file=s'   => \$sequence_file,
    'a|annotation_file=s' => \$annotation_file,
+   'p|protocol=s'        => \$protocol_name,
    'h|help'              => \$help,
     );
 
 
-($sequence_file && $annotation_file) or die <<USAGE;
+($sequence_file && $annotation_file && $protocol_name) or die <<USAGE;
 
 Usage: $0
      -s|sequence_file         <aligned BAM file>
      -a|annotation_file       <annotation file (GFF)>
+     -p|protocol              <standard|nc_protocol>
      -h|help            <print this message>
 
 This script takes in an aligned sequence file (BAM) and a corresponding annotation file (GFF) and creates a spreadsheet with expression values.
@@ -45,10 +47,16 @@ USAGE
 
 my %filters = (mapping_quality => 10);
 
+my %protocols = ( 
+	standard => "StandardProtocol",
+	nc_protocol => "StrandSpecificProtocol"
+)
+
 my $expression_results = Pathogens::RNASeq::Expression->new(
   sequence_filename   => $sequence_file,
   annotation_filename => $annotation_file,
-  filters             => \%filters
+  filters             => \%filters,
+  protocol            => $protocols{$protocol_name}
   );
 
 $expression_results->output_spreadsheet();

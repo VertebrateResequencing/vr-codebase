@@ -24,12 +24,13 @@ has 'sequence_filename'     => ( is => 'rw', isa => 'Str', required => 1 );
 has 'annotation_filename'   => ( is => 'rw', isa => 'Str', required => 1 );
 #optional filters
 has 'filters'               => ( is => 'rw', isa => 'Maybe[HashRef]'     );
+has 'protocol'              => ( is => 'rw', isa => 'Str', default  => 'StandardProtocol' );
 
 has '_sequence_file'        => ( is => 'rw', isa => 'Pathogens::RNASeq::SequenceFile',               lazy_build  => 1 );
 has '_annotation_file'      => ( is => 'rw', isa => 'Pathogens::RNASeq::GFF',                        lazy_build  => 1 );
 has '_results_spreadsheet'  => ( is => 'rw', isa => 'Pathogens::RNASeq::ExpressionStatsSpreadsheet', lazy_build  => 1 );
 has '_expression_results'   => ( is => 'rw', isa => 'ArrayRef',                                      lazy_build  => 1 );
-
+has '_alignment_slice_protocol_class'  => ( is => 'rw',                                              lazy_build   => 1 );
 
 sub _build__sequence_file
 {
@@ -57,11 +58,12 @@ sub _build__expression_results
 
   for my $feature_id (keys %{$self->_annotation_file->features})
   {
-    my $alignment_slice = Pathogens::RNASeq::AlignmentSlice->new(
+    my $alignment_slice = $self->_alignment_slice_protocol_class->new(
       filename           => $self->sequence_filename,
       total_mapped_reads => $total_mapped_reads,
       feature            => $self->_annotation_file->features->{$feature_id},
-      filters            => $self->filters
+      filters            => $self->filters,
+      protocol           => $self->protocol,
       );
     my $alignment_slice_results = $alignment_slice->rpkm_values;
     $alignment_slice_results->{gene_id} = $feature_id;
@@ -71,6 +73,13 @@ sub _build__expression_results
   return \@expression_results;
 }
 
+sub _build__alignment_slice_protocol_class
+{
+	my ($self) = @_;
+	my $alignment_slice_protocol_class = "Pathogens::RNASeq::".$self->protocol."::AlignmentSlice";
+	eval("use $alignment_slice_protocol_class");
+  return $alignment_slice_protocol_class;
+}
 
 sub output_spreadsheet
 {
