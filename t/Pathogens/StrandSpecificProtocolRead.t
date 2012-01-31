@@ -20,7 +20,7 @@ is $alignment_slice->_read_details->{flag}, 131, 'flipped flag';
 # check the other bits work as per normal
 is $alignment_slice->_read_position, 1918, 'read position';
 is $alignment_slice->_read_length, 54, 'read length';
-is $alignment_slice->_read_strand, 1, 'read strand';
+is $alignment_slice->read_strand, 1, 'read strand';
 ok  my %mapped_reads = %{$alignment_slice->mapped_reads}, 'build the mapped reads';
 is  $mapped_reads{sense}, 1, 'identified mapped reads';
 is  $mapped_reads{antisense}, 0, 'identified antisense read';

@@ -50,7 +50,7 @@ my %filters = (mapping_quality => 10);
 my %protocols = ( 
 	standard => "StandardProtocol",
 	nc_protocol => "StrandSpecificProtocol"
-)
+);
 
 my $expression_results = Pathogens::RNASeq::Expression->new(
   sequence_filename   => $sequence_file,

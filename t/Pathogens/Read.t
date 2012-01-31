@@ -16,7 +16,7 @@ ok my $alignment_slice = Pathogens::RNASeq::Read->new(
   
 is $alignment_slice->_read_position, 66737, 'read position';
 is $alignment_slice->_read_length, 54, 'read length';
-is $alignment_slice->_read_strand, 1, 'read strand';
+is $alignment_slice->read_strand, 1, 'read strand';
 
 ok  my %mapped_reads = %{$alignment_slice->mapped_reads}, 'build the mapped reads';
 is  $mapped_reads{sense}, 1, 'identified mapped reads';

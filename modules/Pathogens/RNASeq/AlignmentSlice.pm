@@ -101,16 +101,18 @@ sub _build_rpkm_values
   
   while(my $line = <$file_handle>)
   {
-    my $mapped_reads = $self->_read_protocol_class->new(
+    my $sequence_read = $self->_read_protocol_class->new(
       alignment_line => $line, 
       exons          => $self->feature->exons, 
       gene_strand    => $self->feature->gene_strand,
       filters        => $self->filters
-      )->mapped_reads;
+      );
+		my $mapped_reads = $sequence_reads->mapped_reads;
+
     $rpkm_values{mapped_reads_sense} += $mapped_reads->{sense};
     $rpkm_values{mapped_reads_antisense} += $mapped_reads->{antisense};
 
-    if($mapped_reads->read_strand == 0)
+    if($sequence_reads->read_strand == 0)
     {
 	    $rpkm_values{mapped_reads_forward} += $mapped_reads->{sense};
 	    $rpkm_values{mapped_reads_reverse} += $mapped_reads->{antisense};
