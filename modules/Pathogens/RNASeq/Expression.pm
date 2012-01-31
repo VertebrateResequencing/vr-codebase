@@ -19,6 +19,8 @@ use Pathogens::RNASeq::SequenceFile;
 use Pathogens::RNASeq::GFF;
 use Pathogens::RNASeq::AlignmentSlice;
 use Pathogens::RNASeq::ExpressionStatsSpreadsheet;
+use Pathogens::RNASeq::ValidateInputs;
+use Pathogens::RNASeq::Exceptions;
 
 has 'sequence_filename'     => ( is => 'rw', isa => 'Str', required => 1 );
 has 'annotation_filename'   => ( is => 'rw', isa => 'Str', required => 1 );
@@ -30,11 +32,18 @@ has '_sequence_file'        => ( is => 'rw', isa => 'Pathogens::RNASeq::Sequence
 has '_annotation_file'      => ( is => 'rw', isa => 'Pathogens::RNASeq::GFF',                        lazy_build  => 1 );
 has '_results_spreadsheet'  => ( is => 'rw', isa => 'Pathogens::RNASeq::ExpressionStatsSpreadsheet', lazy_build  => 1 );
 has '_expression_results'   => ( is => 'rw', isa => 'ArrayRef',                                      lazy_build  => 1 );
-has '_alignment_slice_protocol_class'  => ( is => 'rw',                                              lazy_build   => 1 );
+has '_alignment_slice_protocol_class'  => ( is => 'rw',                                              lazy_build  => 1 );
 
 sub _build__sequence_file
 {
   my ($self) = @_;
+
+	my $validator = Pathogens::RNASeq::ValidateInputs->new( sequence_filename => $self->sequence_filename, annotation_filename => $self->annotation_filename);
+	if($validator->are_input_files_valid() == 0)
+	{
+		Pathogens::RNASeq::Exceptions::FailedToOpenAlignementSlice->throw( error => "Input files invalid: ".$self->sequence_filename." ".$self->annotation_filename."" );
+	}
+	
   Pathogens::RNASeq::SequenceFile->new(filename => $self->sequence_filename);
 }
 
