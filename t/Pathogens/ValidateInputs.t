@@ -4,7 +4,7 @@ use warnings;
 
 BEGIN { unshift(@INC, './modules') }
 BEGIN {
-    use Test::Most tests => 8;
+    use Test::Most tests => 7;
     use_ok('Pathogens::RNASeq::ValidateInputs');
 }
 

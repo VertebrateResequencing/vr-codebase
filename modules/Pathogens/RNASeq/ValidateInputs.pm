@@ -39,7 +39,7 @@ sub _sequence_names_match
 {
 	my ($self) = @_;
 	
-	for my $sequence_name (keys $self->_actual_sequence_details)
+	for my $sequence_name (keys %{$self->_actual_sequence_details})
 	{
 		# cant find the sequence name
 		return 0 unless(defined ($self->_annotated_sequence_details->{$sequence_name}));
@@ -52,7 +52,7 @@ sub _lengths_match
 {
 	my ($self) = @_;
 	
-	for my $sequence_name (keys $self->_actual_sequence_details)
+	for my $sequence_name (keys %{$self->_actual_sequence_details})
 	{
 		# cant find the sequence name
 		return 0 unless(defined ($self->_annotated_sequence_details->{$sequence_name}));
@@ -75,7 +75,7 @@ sub _build__actual_sequence_details
 	  $actual_sequence_details{$sequence_name} = $all_sequences_info{$sequence_name}->{LN};
 	}
 
-  return \@actual_sequence_details;
+  return \%actual_sequence_details;
 }
 
 
