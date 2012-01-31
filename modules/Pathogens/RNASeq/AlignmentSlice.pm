@@ -101,7 +101,7 @@ sub _build_rpkm_values
   
   while(my $line = <$file_handle>)
   {
-    my $sequence_read = $self->_read_protocol_class->new(
+    my $sequence_reads = $self->_read_protocol_class->new(
       alignment_line => $line, 
       exons          => $self->feature->exons, 
       gene_strand    => $self->feature->gene_strand,
