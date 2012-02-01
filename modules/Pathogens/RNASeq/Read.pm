@@ -45,7 +45,6 @@ sub _build__read_details
     read_position   => $read_position,
     flag            => $flag,
   };
-  
   # hook to allow for reads to be altered for different protocols
   $self->_process_read_details($read_details);
   
@@ -120,6 +119,24 @@ sub _does_read_pass_filters
   }
   
   return 1;
+}
+
+# class method
+sub _unmark_duplicates
+{
+  my ($self, $flag) = @_;
+  if ($flag & 1024) 
+  {
+    $flag = $flag - 1024;     
+  }
+  return $flag;
+}
+
+sub _calculate_bitwise_flag
+{
+	# hook for protocols to update the bitwise flag
+	my ($self, $flag) = @_;
+	return $flag;
 }
 
 1;

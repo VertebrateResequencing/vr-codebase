@@ -21,6 +21,7 @@ use Pathogens::RNASeq::AlignmentSlice;
 use Pathogens::RNASeq::ExpressionStatsSpreadsheet;
 use Pathogens::RNASeq::ValidateInputs;
 use Pathogens::RNASeq::Exceptions;
+use Pathogens::RNASeq::BitWise;
 
 has 'sequence_filename'     => ( is => 'rw', isa => 'Str', required => 1 );
 has 'annotation_filename'   => ( is => 'rw', isa => 'Str', required => 1 );
@@ -41,7 +42,7 @@ sub _build__sequence_file
 	my $validator = Pathogens::RNASeq::ValidateInputs->new( sequence_filename => $self->sequence_filename, annotation_filename => $self->annotation_filename);
 	if($validator->are_input_files_valid() == 0)
 	{
-		Pathogens::RNASeq::Exceptions::FailedToOpenAlignementSlice->throw( error => "Input files invalid: ".$self->sequence_filename." ".$self->annotation_filename."" );
+		Pathogens::RNASeq::Exceptions::FailedToOpenAlignmentSlice->throw( error => "Input files invalid: ".$self->sequence_filename." ".$self->annotation_filename."" );
 	}
 	
   Pathogens::RNASeq::SequenceFile->new(filename => $self->sequence_filename);
@@ -56,19 +57,34 @@ sub _build__annotation_file
 sub _build__results_spreadsheet
 {
   my ($self) = @_;
-  Pathogens::RNASeq::ExpressionStatsSpreadsheet->new( output_filename => $self->sequence_filename."_expression.csv" );
+  Pathogens::RNASeq::ExpressionStatsSpreadsheet->new( output_filename => $self->_corrected_sequence_filename.".expression.csv" );
+}
+
+sub _corrected_sequence_filename
+{
+  my ($self) = @_;
+  return $self->sequence_filename.".corrected.bam";
 }
 
 sub _build__expression_results
 {
   my ($self) = @_;
   my $total_mapped_reads = $self->_sequence_file->total_mapped_reads;
+  
+  my $bitwise = Pathogens::RNASeq::BitWise->new(
+    filename => $self->sequence_filename,
+    output_filename => $self->_corrected_sequence_filename,
+    protocol => $self->protocol
+    );
+  $bitwise->update_bitwise_flags;
+  
+  
   my @expression_results = ();
 
   for my $feature_id (keys %{$self->_annotation_file->features})
   {
     my $alignment_slice = $self->_alignment_slice_protocol_class->new(
-      filename           => $self->sequence_filename,
+      filename           => $self->_corrected_sequence_filename,
       total_mapped_reads => $total_mapped_reads,
       feature            => $self->_annotation_file->features->{$feature_id},
       filters            => $self->filters,

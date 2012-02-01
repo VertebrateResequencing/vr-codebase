@@ -8,7 +8,7 @@ BEGIN { unshift(@INC, './modules') }
 BEGIN {
 
     use Test::Most tests => 12;
-    use_ok('Pathogens::RNASeq::AlignmentSlice');
+    use_ok('Pathogens::RNASeq::StandardProtocol::AlignmentSlice');
 }
 use Pathogens::RNASeq::GFF;
 
@@ -20,7 +20,7 @@ my @exons;
 push @exons, [66630,66940];
 $feature->exons(\@exons);
 
-ok my $alignment_slice = Pathogens::RNASeq::AlignmentSlice->new(
+ok my $alignment_slice = Pathogens::RNASeq::StandardProtocol::AlignmentSlice->new(
   filename => 't/data/bam',
   window_margin => 10,
   total_mapped_reads => 10000,
@@ -39,7 +39,7 @@ is $rpkm_values->{mapped_reads_antisense},0, 'mapped reads antisense';
 
 
 # invalid filehandle
-ok $alignment_slice = Pathogens::RNASeq::AlignmentSlice->new(
+ok $alignment_slice = Pathogens::RNASeq::StandardProtocol::AlignmentSlice->new(
   filename => 't/data/bam',
   total_mapped_reads => 10000,
   window_margin => 10,

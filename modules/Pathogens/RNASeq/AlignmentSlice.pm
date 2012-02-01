@@ -61,7 +61,7 @@ sub _build__slice_file_handle
 {
   my ($self) = @_;
   my $slice_file_handle;
-  open($slice_file_handle, $self->_slice_stream ) || Pathogens::RNASeq::Exceptions::FailedToOpenAlignementSlice->throw( error => "Cant view slice for ".$self->filename." ".$self->_window_start." " .$self->_window_end );
+  open($slice_file_handle, $self->_slice_stream ) || Pathogens::RNASeq::Exceptions::FailedToOpenAlignmentSlice->throw( error => "Cant view slice for ".$self->filename." ".$self->_window_start." " .$self->_window_end );
   return $slice_file_handle;
 }
 

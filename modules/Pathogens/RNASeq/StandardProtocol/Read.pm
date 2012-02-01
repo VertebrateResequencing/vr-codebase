@@ -20,4 +20,19 @@ package Pathogens::RNASeq::StandardProtocol::Read;
 use Moose;
 extends 'Pathogens::RNASeq::Read';
 
+sub _process_read_details
+{
+  my ($self, $read_details) = @_;
+  $read_details->{flag} = Pathogens::RNASeq::StandardProtocol::Read->_calculate_bitwise_flag($read_details->{flag});
+}
+
+sub _calculate_bitwise_flag
+{
+	my ($self, $flag) = @_;
+  $flag = Pathogens::RNASeq::Read->_unmark_duplicates($flag);
+  
+  return $flag;
+}
+
+
 1;
