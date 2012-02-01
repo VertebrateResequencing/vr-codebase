@@ -15,6 +15,7 @@ $bitwise->update_bitwise_flags;
 package Pathogens::RNASeq::BitWise;
 use Moose;
 use Pathogens::RNASeq::Exceptions;
+use VertRes::Wrapper::samtools;
 
 has 'filename'                      => ( is => 'rw', isa => 'Str', required  => 1 );
 has 'output_filename'               => ( is => 'rw', isa => 'Str', required  => 1 );
@@ -57,7 +58,16 @@ sub update_bitwise_flags
 	
 	}
 	close($self->_output_file_handle);
+	$self->_index_output_file;
 	return 1;
+}
+
+sub _index_output_file
+{
+  my ($self) = @_;
+  my $samtools = VertRes::Wrapper::samtools->new();
+  $samtools->index($self->output_filename, $self->output_filename.".bai");
+  return 1;
 }
 
 
