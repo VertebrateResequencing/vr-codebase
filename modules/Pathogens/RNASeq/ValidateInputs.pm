@@ -39,10 +39,10 @@ sub _sequence_names_match
 {
 	my ($self) = @_;
 	
-	for my $sequence_name (keys %{$self->_actual_sequence_details})
+	for my $sequence_name (keys %{$self->_annotated_sequence_details})
 	{
-		# cant find the sequence name
-		return 0 unless(defined ($self->_annotated_sequence_details->{$sequence_name}));
+		# cant find the sequence name _actual_sequence_details
+		return 0 unless(defined ($self->_actual_sequence_details->{$sequence_name}));
 	}
 	
 	return 1;
@@ -52,10 +52,10 @@ sub _lengths_match
 {
 	my ($self) = @_;
 	
-	for my $sequence_name (keys %{$self->_actual_sequence_details})
+	for my $sequence_name (keys %{$self->_annotated_sequence_details})
 	{
 		# cant find the sequence name
-		return 0 unless(defined ($self->_annotated_sequence_details->{$sequence_name}));
+		return 0 unless(defined ($self->_actual_sequence_details->{$sequence_name}));
 		if($self->_annotated_sequence_details->{$sequence_name } != $self->_actual_sequence_details->{$sequence_name} )
 		{
 			return 0;
