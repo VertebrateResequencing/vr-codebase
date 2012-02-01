@@ -200,7 +200,7 @@ sub parse_user_defined_filters
         if ( !exists($$filter{desc}) ) { error("Missing 'desc' key for the filter [$$filter{tag}]\n"); }
 
         my $name = $$filter{name};
-        push @{$$opts{desc}}, "key=FILTER,ID=$name,Description='$$filter{desc}";
+        push @{$$opts{desc}}, "key=FILTER,ID=$name,Description='$$filter{desc}'";
         if ( !exists($$filter{apply_to}) or lc($$filter{apply_to}) eq 'all' ) 
         {
             $$opts{udef_filters}{'all'}{$name} = $filter;
