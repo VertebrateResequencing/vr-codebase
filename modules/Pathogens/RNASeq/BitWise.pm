@@ -20,6 +20,7 @@ use VertRes::Wrapper::samtools;
 has 'filename'                      => ( is => 'rw', isa => 'Str', required  => 1 );
 has 'output_filename'               => ( is => 'rw', isa => 'Str', required  => 1 );
 has 'protocol'                      => ( is => 'rw', isa => 'Str', default   => 'StandardProtocol' );
+has 'samtools_exec'                 => ( is => 'rw', isa => 'Str', default   => "samtools" );
 
 has '_input_sequence_data_filename' => ( is => 'rw', isa => 'Str'); # allow for testing
 has '_sequence_data_file_handle'    => ( is => 'rw',               lazy_build => 1 );
@@ -75,7 +76,7 @@ sub _build__output_file_handle
 {
   my ($self) = @_;
   my $output_file_handle; 
-  open($output_file_handle, '|- '," samtools view -bS - > ". $self->output_filename) || Pathogens::RNASeq::Exceptions::FailedToCreateNewBAM->throw(error => "Couldnt open output file for writing ". $self->output_filename);
+  open($output_file_handle, '|- ', $self->samtools_exec." view -bS - > ". $self->output_filename) || Pathogens::RNASeq::Exceptions::FailedToCreateNewBAM->throw(error => "Couldnt open output file for writing ". $self->output_filename);
   return $output_file_handle;
 }
 
@@ -104,7 +105,7 @@ sub _sequence_data_stream
   }
   else
   {
-    return "samtools view -h ".$self->filename." |";
+    return $self->samtools_exec." view -h ".$self->filename." |";
   }
 }
 

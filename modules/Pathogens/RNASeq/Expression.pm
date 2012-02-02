@@ -31,7 +31,9 @@ has 'output_base_filename'  => ( is => 'rw', isa => 'Str', required => 1 );
 
 #optional filters
 has 'filters'               => ( is => 'rw', isa => 'Maybe[HashRef]'     );
-has 'protocol'              => ( is => 'rw', isa => 'Str', default  => 'StandardProtocol' );
+has 'protocol'              => ( is => 'rw', isa => 'Str', default => 'StandardProtocol' );
+has 'mpileup_cmd'           => ( is => 'rw', isa => 'Str', default => "samtools mpileup -d 1000 -DSug" );
+has 'samtools_exec'         => ( is => 'rw', isa => 'Str', default => "samtools" );
 
 has '_sequence_file'        => ( is => 'rw', isa => 'Pathogens::RNASeq::SequenceFile',               lazy_build  => 1 );
 has '_annotation_file'      => ( is => 'rw', isa => 'Pathogens::RNASeq::GFF',                        lazy_build  => 1 );
@@ -78,12 +80,14 @@ sub _build__expression_results
   Pathogens::RNASeq::BitWise->new(
       filename        => $self->sequence_filename,
       output_filename => $self->_corrected_sequence_filename,
-      protocol        => $self->protocol
+      protocol        => $self->protocol,
+      samtools_exec   => $self->samtools_exec
     )->update_bitwise_flags();
   
   Pathogens::RNASeq::CoveragePlot->new(
       filename             => $self->_corrected_sequence_filename,
-      output_base_filename => $self->output_base_filename
+      output_base_filename => $self->output_base_filename,
+      mpileup_cmd          => $self->mpileup_cmd
     )->create_plots();
   
   my @expression_results = ();
@@ -96,6 +100,7 @@ sub _build__expression_results
       feature            => $self->_annotation_file->features->{$feature_id},
       filters            => $self->filters,
       protocol           => $self->protocol,
+      samtools_exec      => $self->samtools_exec
       );
     my $alignment_slice_results = $alignment_slice->rpkm_values;
     $alignment_slice_results->{gene_id} = $feature_id;

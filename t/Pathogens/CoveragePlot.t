@@ -12,20 +12,21 @@ BEGIN {
 }
 
 ok my $coverage_plots_from_bam = Pathogens::RNASeq::CoveragePlot->new(
-   filename => 't/data/small_multi_sequence.bam',
-   output_base_filename => 't/data/coverage'
+   filename             => 't/data/small_multi_sequence.bam',
+   output_base_filename => 't/data/coverage',
+   mpileup_cmd          => "samtools mpileup"
   );
 ok $coverage_plots_from_bam->create_plots();
 
 # parse output files and check they are okay
-ok is_input_string_found_on_given_line("0 0", 1, 't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values first value';
-ok is_input_string_found_on_given_line("1 0", 104, 't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values for forward read only';
-ok is_input_string_found_on_given_line("0 4", 548, 't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values for reverse reads only';
+ok is_input_string_found_on_given_line("0 0", 1,    't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values first value';
+ok is_input_string_found_on_given_line("1 0", 104,  't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values for forward read only';
+ok is_input_string_found_on_given_line("0 4", 548,  't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values for reverse reads only';
 ok is_input_string_found_on_given_line("7 3", 7795, 't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values for both';
 ok is_input_string_found_on_given_line("0 0", 8974, 't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values last value';
 
-ok is_input_string_found_on_given_line("0 0", 1, 't/data/coverage.pCROD1.coverageplot.gz'), 'check empty plasmid coverage values first value';
-ok is_input_string_found_on_given_line("0 0", 59, 't/data/coverage.pCROD1.coverageplot.gz'), 'check empty plasmid coverage values last value';
+ok is_input_string_found_on_given_line("0 0", 1,    't/data/coverage.pCROD1.coverageplot.gz'), 'check empty plasmid coverage values first value';
+ok is_input_string_found_on_given_line("0 0", 59,   't/data/coverage.pCROD1.coverageplot.gz'), 'check empty plasmid coverage values last value';
 
 ok is_input_string_found_on_given_line("0 0", 1,    't/data/coverage.pCROD2.coverageplot.gz'), 'check plasmid with 1 read coverage values first value';
 ok is_input_string_found_on_given_line("0 0", 89,   't/data/coverage.pCROD2.coverageplot.gz'), 'check plasmid with 1 read coverage values before first base of read';

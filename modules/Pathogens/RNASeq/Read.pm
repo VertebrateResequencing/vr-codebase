@@ -85,7 +85,7 @@ sub _build_mapped_reads
   foreach my $exon (@{$self->exons})
   {
     my($exon_start,$exon_end) = @{$exon};
-    if($self->_read_position < $exon_end && ($self->_read_position + $self->_read_length - 1) >= $exon_start)
+    if($self->_read_position <= $exon_end && ($self->_read_position + $self->_read_length - 1) >= $exon_start)
     {
       
       if($self->read_strand == $self->gene_strand) 

@@ -23,13 +23,14 @@ no warnings 'uninitialized';
 use Getopt::Long;
 use Pathogens::RNASeq::Expression;
 
-my($sequence_file, $annotation_file, $protocol_name, $output_base_filename  $help );
+my($sequence_file, $annotation_file, $protocol_name, $output_base_filename, $mapping_quality, $help );
 
 GetOptions(
    's|sequence_file=s'         => \$sequence_file,
    'a|annotation_file=s'       => \$annotation_file,
    'p|protocol=s'              => \$protocol_name,
    'o|output_base_filename=s'  => \$output_base_filename,
+   'q|minimum_mapping_quality=s' => \$mapping_quality,
    'h|help'                    => \$help,
     );
 
@@ -39,15 +40,17 @@ Usage: $0
   -s|sequence_file         <aligned BAM file>
   -a|annotation_file       <annotation file (GFF)>
   -p|protocol              <standard|nc_protocol>
-  -o|output_base_filename  <base name and location to use for output files>
+  -o|output_base_filename  <Optional: base name and location to use for output files>
+  -q|minimum_mapping_quality <Optional: minimum mapping quality>
   -h|help                  <print this message>
 
 This script takes in an aligned sequence file (BAM) and a corresponding annotation file (GFF) and creates a spreadsheet with expression values.
 The BAM must be aligned to the same reference that the annotation refers to and must be sorted.
 USAGE
 
-my %filters = (mapping_quality => 10);
 $output_base_filename ||= $sequence_file;
+$mapping_quality ||= 10;
+my %filters = (mapping_quality => $mapping_quality);
 
 my %protocols = ( 
 	standard    => "StandardProtocol",

@@ -30,6 +30,7 @@ has 'filename'           => ( is => 'rw', isa => 'Str',                        r
 has 'feature'            => ( is => 'rw', isa => 'Pathogens::RNASeq::Feature', required   => 1 );
 has 'total_mapped_reads' => ( is => 'rw', isa => 'Int',                        required   => 1 );
 #optional input
+has 'samtools_exec'      => ( is => 'rw', isa => 'Str',                        default    => "samtools" );
 has 'protocol'           => ( is => 'rw', isa => 'Str',                        default    => 'StandardProtocol' );
 has 'window_margin'      => ( is => 'rw', isa => 'Int',                        default    => 50 );
 has 'filters'            => ( is => 'rw', isa => 'Maybe[HashRef]'                               );
@@ -74,7 +75,7 @@ sub _slice_stream
   }
   else
   {
-    return "samtools view ".$self->filename." ".$self->feature->seq_id.":".$self->_window_start."-".$self->_window_end." |"; 
+    return $self->samtools_exec." view ".$self->filename." ".$self->feature->seq_id.":".$self->_window_start."-".$self->_window_end." |"; 
   }
 }
 
