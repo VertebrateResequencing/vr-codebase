@@ -7,7 +7,8 @@ Expression.pm   - Find the expression when given an input aligned file and an an
 use Pathogens::RNASeq::Expression;
 my $expression_results = Pathogens::RNASeq::Expression->new(
   sequence_filename => 'my_aligned_sequence.bam',
-  annotation_filename => 'my_annotation_file.gff'
+  annotation_filename => 'my_annotation_file.gff',
+  output_base_filename => 'my_alignement_basename'
   );
 
 $expression_results->output_spreadsheet();
@@ -22,9 +23,12 @@ use Pathogens::RNASeq::ExpressionStatsSpreadsheet;
 use Pathogens::RNASeq::ValidateInputs;
 use Pathogens::RNASeq::Exceptions;
 use Pathogens::RNASeq::BitWise;
+use Pathogens::RNASeq::CoveragePlot;
 
 has 'sequence_filename'     => ( is => 'rw', isa => 'Str', required => 1 );
 has 'annotation_filename'   => ( is => 'rw', isa => 'Str', required => 1 );
+has 'output_base_filename'  => ( is => 'rw', isa => 'Str', required => 1 );
+
 #optional filters
 has 'filters'               => ( is => 'rw', isa => 'Maybe[HashRef]'     );
 has 'protocol'              => ( is => 'rw', isa => 'Str', default  => 'StandardProtocol' );
@@ -57,13 +61,13 @@ sub _build__annotation_file
 sub _build__results_spreadsheet
 {
   my ($self) = @_;
-  Pathogens::RNASeq::ExpressionStatsSpreadsheet->new( output_filename => $self->_corrected_sequence_filename.".expression.csv" );
+  Pathogens::RNASeq::ExpressionStatsSpreadsheet->new( output_filename => $self->output_base_filename.".expression.csv" );
 }
 
 sub _corrected_sequence_filename
 {
   my ($self) = @_;
-  return $self->sequence_filename.".corrected.bam";
+  return $self->output_base_filename.".corrected.bam";
 }
 
 sub _build__expression_results
@@ -71,13 +75,16 @@ sub _build__expression_results
   my ($self) = @_;
   my $total_mapped_reads = $self->_sequence_file->total_mapped_reads;
   
-  my $bitwise = Pathogens::RNASeq::BitWise->new(
-    filename => $self->sequence_filename,
-    output_filename => $self->_corrected_sequence_filename,
-    protocol => $self->protocol
-    );
-  $bitwise->update_bitwise_flags;
+  Pathogens::RNASeq::BitWise->new(
+      filename        => $self->sequence_filename,
+      output_filename => $self->_corrected_sequence_filename,
+      protocol        => $self->protocol
+    )->update_bitwise_flags();
   
+  Pathogens::RNASeq::CoveragePlot->new(
+      filename             => $self->_corrected_sequence_filename,
+      output_base_filename => $self->output_base_filename
+    )->create_plots();
   
   my @expression_results = ();
 
