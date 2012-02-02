@@ -37,6 +37,10 @@ ok is_input_string_found_on_given_line("0 0", 1000, 't/data/coverage.pCROD2.cove
 ok is_input_string_found_on_given_line("0 0", 1,   't/data/coverage.pCROD3.coverageplot.gz'), 'check another empty plasmid coverage values first value';
 ok is_input_string_found_on_given_line("0 0", 100, 't/data/coverage.pCROD3.coverageplot.gz'), 'check another empty plasmid coverage values last value';
 
+unlink("t/data/coverage.FN543502.coverageplot.gz");
+unlink("t/data/coverage.pCROD1.coverageplot.gz");
+unlink("t/data/coverage.pCROD2.coverageplot.gz");
+unlink("t/data/coverage.pCROD3.coverageplot.gz");
 
 sub is_input_string_found_on_given_line
 {
