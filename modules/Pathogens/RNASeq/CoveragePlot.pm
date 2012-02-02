@@ -1,6 +1,6 @@
 =head1 NAME
 
-CoveragePlot.pm   - Take in a sequencing file, do a pileup and generate a dot plot of the number of reads at each position
+CoveragePlot.pm   - Take in a sequencing file, do a pileup and generate a dot plot of the number of reads at each position.Assumes the BAM is sorted.
 
 =head1 SYNOPSIS
 
@@ -16,12 +16,11 @@ $coverage_plots_from_bam->create_plots();
 package Pathogens::RNASeq::CoveragePlot;
 use Moose;
 use VertRes::Parser::bam;
-use Scalar::Util::Numeric qw(isint);
 
 has 'filename'                => ( is => 'rw', isa => 'Str',      required  => 1 );
 has 'output_base_filename'    => ( is => 'rw', isa => 'Str',      required  => 1 );
                             
-has '_input_file_handle'      => ( is => 'rw', isa => 'Str',      lazy_build => 1 );
+has '_input_file_handle'      => ( is => 'rw',                    lazy_build => 1 );
 has '_output_file_handles'    => ( is => 'rw', isa => 'HashRef',  lazy_build => 1 );
 has '_sequence_names'         => ( is => 'rw', isa => 'ArrayRef', lazy_build => 1 );
 has '_sequence_base_counters' => ( is => 'rw', isa => 'HashRef',  lazy_build => 1 );
@@ -77,29 +76,28 @@ sub _build__input_file_handle
 sub _number_of_forward_reads
 {
   my ($self, $read_string) = @_;
-  $_ = $read_string;
-  my $forward_count = s/[ACGTN]//g;
-  
-  while ($read_string =~ /[\+-]([\d]+)[ACGTN]/g) 
-  {
-    $forward_count -= $1;
-  }
-  $forward_count = ($forward_count < 0) ? 0 : $forward_count;
-  return $forward_count;
+  return $self->_number_of_reads("[ACGTN]", $read_string);  
 }
 
 sub _number_of_reverse_reads
 {
   my ($self, $read_string) = @_;
+  return $self->_number_of_reads("[acgtn]", $read_string);
+}
+
+sub _number_of_reads
+{
+  my ($self,$base_regex, $read_string) = @_;
   $_ = $read_string;
-  my $reverse_count = s/[acgtn]//g;
+  my $base_count = s/$base_regex//g;
+  $base_count = ($base_count eq "") ? 0 : $base_count;
   
-  while ($read_string =~ /[\+-]([\d]+)[acgtn]/g) 
+  while ($read_string =~ /[\+-]([\d]+)$base_regex/g) 
   {
-    $reverse_count -= $1;
+    $base_count -= $1;
   }
-  $reverse_count = ($reverse_count < 0) ? 0 : $reverse_count;
-  return $reverse_count;
+  $base_count = ($base_count < 0) ? 0 : $base_count;
+  return $base_count;
 }
 
 # work out if padding is needed and return it as a formatted string
@@ -107,7 +105,7 @@ sub _create_padding_string
 {
   my ($self,$previous_counter, $current_counter) = @_;
   my $padding_string = "";
-  for(my $i = $previous_counter+1 ; $previous_counter < $current_counter; $i++)
+  for(my $i = $previous_counter+1 ; $i < $current_counter; $i++)
   {
     $padding_string .= "0 0\n";
   }
@@ -120,9 +118,10 @@ sub _print_padding_at_end_of_sequence
    for my $sequence_name (@{$self->_sequence_names} )
    {
      my $sequence_length = $self->_sequence_information->{$sequence_name}->{'LN'};
-     next unless isint($sequence_length);
-     $self->_create_padding_string($self->_sequence_base_counters{$sequence_name}, $sequence_length);
-     $padding_string = $self->_sequence_base_counters{$sequence_name} = $sequence_length;
+     next unless($sequence_length =~ /^[\d]+$/);
+     $sequence_length++;
+     my $padding_string = $self->_create_padding_string($self->_sequence_base_counters->{$sequence_name}, $sequence_length);
+     $self->_sequence_base_counters->{$sequence_name} = $sequence_length;
      print { $self->_output_file_handles->{$sequence_name} } $padding_string;
    }
 }
@@ -145,12 +144,12 @@ sub create_plots
   while(my $line = <$input_file_handle>)
   {
     my($sequence_name, $base_position, $read_string) = split(/\t/, $line);
-    
-    my $padding_string = $self->_create_padding_string($self->_sequence_base_counters{$sequence_name},$base_position);
-    $self->_sequence_base_counters{$sequence_name} = $base_position;
+    my $padding_string = $self->_create_padding_string($self->_sequence_base_counters->{$sequence_name},$base_position);
+
+    $self->_sequence_base_counters->{$sequence_name} = $base_position;
     print { $self->_output_file_handles->{$sequence_name} } $padding_string.$self->_number_of_forward_reads($read_string)." ".$self->_number_of_reverse_reads($read_string)."\n";
   }
-  $self->_padding_at_end_of_sequence;
+  $self->_print_padding_at_end_of_sequence;
   $self->_close_output_file_handles;
   return 1;
 }
