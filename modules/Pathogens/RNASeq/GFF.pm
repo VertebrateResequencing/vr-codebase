@@ -21,12 +21,11 @@ has 'filename'    => ( is => 'rw', isa => 'Str',             required   => 1 );
 has 'features'    => ( is => 'rw', isa => 'HashRef',         lazy_build => 1 );
 has '_gff_parser' => ( is => 'rw', isa => 'Bio::Tools::GFF', lazy_build => 1 );
 
-# TODO GFF/Feature validator
 
 sub _build__gff_parser
 {
   my ($self) = @_;
-  Bio::Tools::GFF->new(-gff_version => 3, -file => $self->filename);
+  Bio::Tools::GFF->new(-gff_version => 3, -file => $self->filename, -alphabet => 'dna');
 }
 
 sub _build_features
