@@ -14,18 +14,18 @@ $rna_seq_gff->features();
 =cut
 package Pathogens::RNASeq::GFF;
 use Moose;
-use Bio::Tools::GFF;
+use Bio::Tools::NonStandardGFF;
 use Pathogens::RNASeq::Feature;
 
 has 'filename'    => ( is => 'rw', isa => 'Str',             required   => 1 );
 has 'features'    => ( is => 'rw', isa => 'HashRef',         lazy_build => 1 );
-has '_gff_parser' => ( is => 'rw', isa => 'Bio::Tools::GFF', lazy_build => 1 );
+has '_gff_parser' => ( is => 'rw', isa => 'Bio::Tools::NonStandardGFF', lazy_build => 1 );
 
 
 sub _build__gff_parser
 {
   my ($self) = @_;
-  Bio::Tools::GFF->new(-gff_version => 3, -file => $self->filename, -alphabet => 'dna');
+  Bio::Tools::NonStandardGFF->new(-gff_version => 3, -file => $self->filename);
 }
 
 sub _build_features

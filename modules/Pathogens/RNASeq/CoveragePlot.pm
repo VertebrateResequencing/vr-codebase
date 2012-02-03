@@ -21,7 +21,7 @@ use VertRes::Parser::bam;
 has 'filename'                => ( is => 'rw', isa => 'Str',      required  => 1 );
 has 'output_base_filename'    => ( is => 'rw', isa => 'Str',      required  => 1 );
 # optional inputs
-has 'mpileup_cmd'             => ( is => 'rw', isa => 'Str',      default   => "samtools mpileup" );
+has 'mpileup_cmd'             => ( is => 'rw', isa => 'Str',      default   => "samtools mpileup -d 1000 -DSug" );
                             
 has '_input_file_handle'      => ( is => 'rw',                    lazy_build => 1 );
 has '_output_file_handles'    => ( is => 'rw', isa => 'HashRef',  lazy_build => 1 );
