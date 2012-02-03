@@ -29,7 +29,7 @@ data => {
     sequencing_file_suffix      => '.bam',
     protocol  => "StandardProtocol",
     annotation_filename => "my_reference.gff",
-    filters => {mapping_quality => 30}
+    mapping_quality => 30,
 }
 
 # by default __VRTrack_RNASeqExpression__ will pick up lanes that have been both mapped
@@ -150,6 +150,8 @@ sub _create_expression_job
 
   my $job_name = $self->{prefix}.$sequencing_filename.'_calculate_expression';
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$sequencing_filename.'_calculate_expression.pl');
+  my $total_memory_mb = 3000;
+  my $sequencing_file_action_lock = $action_lock.$sequencing_filename;
 
 
   my $expression_results = Pathogens::RNASeq::Expression->new(
@@ -168,23 +170,26 @@ sub _create_expression_job
   
   
   my \$expression_results = Pathogens::RNASeq::Expression->new(
-    sequence_filename    => $sequencing_filename,
-    annotation_filename  => $self->{annotation_file},
-    filters              => $self->{filters},
-    protocol             => $self->{protocol},
-    output_base_filename => $sequencing_filename
+    sequence_filename    => qq[$sequencing_filename],
+    annotation_filename  => qq[$self->{annotation_file}],
+    mapping_quality      => $self->{mapping_quality},
+    protocol             => qq[$self->{protocol}],
+    output_base_filename => qq[$sequencing_filename]
     );
 
   \$expression_results->output_spreadsheet();
+  
+  Pathogens::RNASeq::CoveragePlot->new(
+    filename             => \$expression_results->_corrected_sequence_filename,
+    output_base_filename => qq[$output_base_filename]
+  )->create_plots();
 
   system('touch _${sequencing_filename}_calculate_expression_done');
   exit;
                 };
                 close $scriptfh;
 
-        my $total_memory_mb = $num_threads*$memory_required_mb;
-
-        LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb}000 -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
+        LSF::run($sequencing_file_action_lock, $output_directory, $job_name, {bsub_opts => "-M${total_memory_mb}000 -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb]'", dont_wait=>1}, qq{perl -w $script_name});
 
         # we've only submitted to LSF, so it won't have finished; we always return
         # that we didn't complete
@@ -195,8 +200,12 @@ sub _create_expression_job
 
 sub calculate_expression
 {
-      my ($self, $build_path,$action_lock) = @_;
-
+  my ($self, $build_path,$action_lock) = @_;
+  for my $sequencing_filename (@{$self->_find_sequencing_files})
+  {
+    $self->_create_expression_job($build_path,$action_lock, $sequencing_filename);
+  }
+  return $self->{No};
 }
 
 
@@ -204,6 +213,129 @@ sub calculate_expression
 
 
 
+=head2 update_db_requires
+
+ Title   : update_db_requires
+ Usage   : my $required_files = $obj->update_db_requires('/path/to/lane');
+ Function: Find out what files the update_db action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub update_db_requires {
+    my ($self, $lane_path) = @_;
+    return $self->calculate_expression_provides();
+}
+
+=head2 update_db_provides
+
+ Title   : update_db_provides
+ Usage   : my $provided_files = $obj->update_db_provides('/path/to/lane');
+ Function: Find out what files the update_db action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub update_db_provides {
+    return [];
+}
+
+=head2 update_db
+
+ Title   : update_db
+ Usage   : $obj->update_db('/path/to/lane', 'lock_filename');
+ Function: Records in the database that the lane has been improved.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+sub update_db {
+    my ($self, $lane_path, $action_lock) = @_;
+
+    # all the done files are there, so just need to update the processed
+    # flag in the database (if not already updated)
+    my $vrlane = $self->{vrlane};
+    my $vrtrack = $vrlane->vrtrack;
+    
+    return $$self{'Yes'} if $vrlane->is_processed('rna_seq_expression');
+
+    unless($vrlane->is_processed('rna_seq_expression')){
+      $vrtrack->transaction_start();
+      $vrlane->is_processed('rna_seq_expression',1);
+      $vrlane->update() || $self->throw("Unable to set rna_seq_expression status on lane $lane_path");
+      $vrtrack->transaction_commit();
+    }
+
+    if ($self->{task}{cleanup}) {
+        my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
+        Utils::CMD("rm $job_status") if (-e $job_status);
+    }
+
+    return $$self{'Yes'};
+}
+
+
+=head2 cleanup_requires
+
+ Title   : cleanup_requires
+ Usage   : my $required_files = $obj->cleanup_requires('/path/to/lane');
+ Function: Find out what files the cleanup action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub cleanup_requires {
+  my ($self) = @_;
+  return $self->calculate_expression_provides();
+}
+
+=head2 cleanup_provides
+
+ Title   : cleanup_provides
+ Usage   : my $provided_files = $obj->cleanup_provides('/path/to/lane');
+ Function: Find out what files the cleanup action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub cleanup_provides {
+    return ["_cleanup_done"];
+}
+
+=head2 cleanup
+
+ Title   : cleanup
+ Usage   : $obj->cleanup('/path/to/lane', 'lock_filename');
+ Function: Unlink all the pipeline-related files (_*) in a lane, as well
+           as the split directory.
+ Returns : $VertRes::Pipeline::Yes
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub cleanup {
+  my ($self, $lane_path, $action_lock) = @_;
+#  return $self->{Yes} unless $self->{do_cleanup};
+  
+  my $prefix = $self->{prefix};
+  
+  # remove job files
+  foreach my $file (@{$self->_find_sequencing_files()}) 
+    {
+      foreach my $suffix (qw(o e pl)) 
+      {
+        unlink($self->{fsu}->catfile($lane_path, $prefix.$file.'_calculate_expression.'.$suffix));
+      }
+  }
+  
+  Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_cleanup_done")   );  
+  
+  return $self->{Yes};
+}
 
 
 
