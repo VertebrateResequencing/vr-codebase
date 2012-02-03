@@ -153,16 +153,6 @@ sub _create_expression_job
   my $total_memory_mb = 3000;
   my $sequencing_file_action_lock = $action_lock.$sequencing_filename;
 
-
-  my $expression_results = Pathogens::RNASeq::Expression->new(
-    sequence_filename    => $sequence_file,
-    annotation_filename  => $annotation_file,
-    filters              => \%filters,
-    protocol             => $protocols{$protocol_name},
-    output_base_filename => $output_base_filename
-    );
-
-
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
   use strict;
@@ -181,7 +171,7 @@ sub _create_expression_job
   
   Pathogens::RNASeq::CoveragePlot->new(
     filename             => \$expression_results->_corrected_sequence_filename,
-    output_base_filename => qq[$output_base_filename]
+    output_base_filename => qq[$sequencing_filename],
   )->create_plots();
 
   system('touch _${sequencing_filename}_calculate_expression_done');
