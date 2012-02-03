@@ -201,15 +201,12 @@ sub bam_to_fastq {
     
     
     my $memory = $self->{memory};
-    my $java_mem = 6200;
     if (! defined $memory || $memory < 6900) {
         $memory = 6900;
-        $java_mem = 6200;
     }
-    $java_mem ||= int($memory * 0.9);
+    my $java_mem = int($memory * 0.9);
     my $queue = $memory >= 30000 ? "hugemem" : "normal";
     
-
     my $fastqs_str ; 
     if( $self->is_paired )
     {
