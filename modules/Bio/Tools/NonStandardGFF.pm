@@ -2,7 +2,6 @@
 # Taken from https://github.com/bioperl/bioperl-live/blob/master/Bio/Tools/GFF.pm
 #https://github.com/bioperl/bioperl-live/commit/c044a602819e7f7bcfda35940bb4da6f22d1f1d6
 # It allows for GFF files with fasta sequences to be directly concatonated together, instead of all the fasta in header or footer
-# it also doesnt load in the sequence because we dont need it
 
 # BioPerl module for Bio::Tools::GFF
 #
@@ -387,14 +386,14 @@ sub next_feature {
             # fasta can be in header or footer
             my $seq = $self->_parse_sequence($gff_string);
             if ($seq) {
-               # dont save the sequence
-                #$self->_seq_by_id_h->{$seq->primary_id} = $seq;
+                $self->_seq_by_id_h->{$seq->primary_id} = $seq;
                 $gff_string = $self->_readline;
                 last unless $gff_string;
             }
         }
-        
-        last unless($gff_string =~ /^\#/ );
+        next if($gff_string =~ /^\#/ );
+
+        last;
     }
     return unless $gff_string;
 
