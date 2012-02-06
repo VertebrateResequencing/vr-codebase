@@ -26,7 +26,7 @@ db  => {
 }
 
 data => {
-    sequencing_file_suffix      => '.bam',
+    sequencing_file_suffix      => '.corrected.bam',
     protocol  => "StandardProtocol",
     annotation_filename => "my_reference.gff",
     mapping_quality => 30,
@@ -98,10 +98,9 @@ sub new {
 sub _find_sequencing_files
 {
   my $self = shift;
-  $self->{lane_path}."/".
   
   opendir(DIR,$self->{lane_path});
-  my $sequencing_file_suffix = $self->{sequencing_file_suffix} || ".bam";
+  my $sequencing_file_suffix = $self->{sequencing_file_suffix} || "corrected.bam";
   my @sequencing_filenames = grep { /$sequencing_file_suffix$/i } 
   readdir(DIR);
   closedir(DIR);

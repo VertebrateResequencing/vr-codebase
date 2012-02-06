@@ -5,7 +5,7 @@ AlignmentSlice.pm   - strand specific protocol, just inherits from the base clas
 =head1 SYNOPSIS
 
 =cut
-package Pathogens::RNASeq::StandardProtocol::AlignmentSlice;
+package Pathogens::RNASeq::StrandSpecificProtocol::AlignmentSlice;
 use Moose;
 extends 'Pathogens::RNASeq::AlignmentSlice';
 

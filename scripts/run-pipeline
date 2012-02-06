@@ -1064,6 +1064,7 @@ sub get_rna_seq_jobs_from_vrtrack {
     my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
     
     my %filter  = ( mapped => 1, rna_seq_expression => 0 );
+    # FIXME: not scalable, need to filter at this point, rather than getting all lanes and filtering later
     my @lanes = @{$vrtrack->processed_lane_hnames(%filter) || []};
 
     if (defined $config_data->{limits}) {
