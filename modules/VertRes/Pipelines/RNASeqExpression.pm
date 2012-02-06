@@ -60,6 +60,7 @@ use warnings;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use LSF;
+use File::Basename;
 
 use base qw(VertRes::Pipeline);
 
@@ -150,7 +151,9 @@ sub _create_expression_job
   my $job_name = $self->{prefix}.$sequencing_filename.'_calculate_expression';
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$sequencing_filename.'_calculate_expression.pl');
   my $total_memory_mb = 3000;
-  my $sequencing_file_action_lock = $sequencing_filename.$action_lock;
+  
+  my($action_lock_filename, $directories, $suffix) = fileparse($action_lock);
+  my $sequencing_file_action_lock = $self->{lane_path}.$sequencing_filename.$action_lock_filename;
 
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
