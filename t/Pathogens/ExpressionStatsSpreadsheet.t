@@ -14,6 +14,7 @@ ok my $expression_results = Pathogens::RNASeq::ExpressionStatsSpreadsheet->new(
   output_filename => 'my_result_file.csv'), 'initialise';
 
 my %result_1 = (
+  seq_id  => "some_name",
   gene_id => "abc123",
   mapped_reads_sense     => 2000, 
   mapped_reads_antisense => 10,
@@ -22,6 +23,7 @@ my %result_1 = (
   );
   
 my %result_2 = (
+  seq_id  => "some_name",
   gene_id => "efg456",
   mapped_reads_sense     => 10, 
   mapped_reads_antisense => 200,
@@ -41,8 +43,8 @@ $header =~ s/[\r\n]//g;
 $output_result_1 =~ s/[\r\n]//g;
 $output_result_2 =~ s/[\r\n]//g;
 
-is $header, 'GeneID,"Reads Mapping",RPKM,"Antisense Reads Mapping","Antisense RPKM"', 'header okay';
-is $output_result_1, 'abc123,2000,15.3245,10,1.34324', 'result set 1';
-is $output_result_2, 'efg456,10,0,200,780.34242543543', 'result set 2';
+is $header, '"Seq ID",GeneID,"Reads Mapping",RPKM,"Antisense Reads Mapping","Antisense RPKM"', 'header okay';
+is $output_result_1, 'some_name,abc123,2000,15.3245,10,1.34324', 'result set 1';
+is $output_result_2, 'some_name,efg456,10,0,200,780.34242543543', 'result set 2';
 
 unlink('my_result_file.csv');

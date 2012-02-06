@@ -46,6 +46,7 @@ sub _result_rows
   {
     push(@denormalised_results, 
       [
+      $result_set->{seq_id},
       $result_set->{gene_id},
       $result_set->{mapped_reads_sense},
       $result_set->{rpkm_sense},
@@ -59,7 +60,7 @@ sub _result_rows
 sub _header
 {
   my ($self) = @_;
-  my @header = ["GeneID","Reads Mapping", "RPKM", "Antisense Reads Mapping", "Antisense RPKM"];
+  my @header = ["Seq ID","GeneID","Reads Mapping", "RPKM", "Antisense Reads Mapping", "Antisense RPKM"];
   return \@header;
 }
 
