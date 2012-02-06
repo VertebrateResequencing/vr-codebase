@@ -269,10 +269,9 @@ sub update_db {
       $vrtrack->transaction_commit();
     }
 
-    if ($self->{task}{cleanup}) {
-        my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
-        Utils::CMD("rm $job_status") if (-e $job_status);
-    }
+    
+    my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
+    Utils::CMD("rm $job_status") if (-e $job_status);
     Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_update_db_done")   );  
 
     return $$self{'Yes'};
