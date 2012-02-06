@@ -30,6 +30,7 @@ data => {
     protocol  => "StandardProtocol",
     annotation_filename => "my_reference.gff",
     mapping_quality => 30,
+    mpileup_cmd => 'samtools mpileup'
 }
 
 # by default __VRTrack_RNASeqExpression__ will pick up lanes that have been both mapped
@@ -155,6 +156,12 @@ sub _create_expression_job
   my($action_lock_filename, $directories, $suffix) = fileparse($action_lock);
   my $sequencing_file_action_lock = $self->{lane_path}.$sequencing_filename.$action_lock_filename;
 
+  my $mpileup_str  = "";
+  if(defined ($self->{mpileup_cmd}))
+  {
+    $mpileup_str = ' mpileup => "'.$self->{mpileup_cmd}.'", ';
+  }
+
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
   use strict;
@@ -174,6 +181,7 @@ sub _create_expression_job
   Pathogens::RNASeq::CoveragePlot->new(
     filename             => \$expression_results->_corrected_sequence_filename,
     output_base_filename => qq[$sequencing_filename],
+    $mpileup_str
   )->create_plots();
 
   system('touch _${sequencing_filename}_calculate_expression_done');
