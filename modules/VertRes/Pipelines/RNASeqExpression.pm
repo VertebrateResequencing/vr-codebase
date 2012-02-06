@@ -150,7 +150,7 @@ sub _create_expression_job
   my $job_name = $self->{prefix}.$sequencing_filename.'_calculate_expression';
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$sequencing_filename.'_calculate_expression.pl');
   my $total_memory_mb = 3000;
-  my $sequencing_file_action_lock = $action_lock.$sequencing_filename;
+  my $sequencing_file_action_lock = $sequencing_filename.$action_lock;
 
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
@@ -228,7 +228,7 @@ sub update_db_requires {
 =cut
 
 sub update_db_provides {
-   my ($self) = = @_;
+   my ($self) = @_;
     return [ $self->{lane_path}."/".$self->{prefix}."update_db_done"];
 }
 
@@ -294,7 +294,7 @@ sub cleanup_requires {
 =cut
 
 sub cleanup_provides {
-  my ($self) = = @_;
+  my ($self) = @_;
     return [ $self->{lane_path}."/".$self->{prefix}."cleanup_done"];
 }
 
