@@ -203,6 +203,8 @@ sub calculate_expression
   my ($self, $build_path,$action_lock) = @_;
   for my $sequencing_filename (@{$self->_find_sequencing_files})
   {
+    next if( -e $self->{lane_path}."/".$self->{prefix}.$sequencing_filename."_calculate_expression_done");
+    
     $self->_create_expression_job($build_path,$action_lock, $sequencing_filename);
   }
   return $self->{No};
