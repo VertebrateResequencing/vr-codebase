@@ -1,0 +1,78 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+rna_seq_expression
+
+=head1 SYNOPSIS
+
+=head1 DESCRIPTION
+
+This script takes in an aligned sequence file (BAM) and a corresponding annotation file (GFF) and creates a spreadsheet with expression values.
+The BAM must be aligned to the same reference that the annotation refers to.
+
+=head1 CONTACT
+
+path-help@sanger.ac.uk
+
+=cut
+
+use strict;
+use warnings;
+no warnings 'uninitialized';
+use Getopt::Long;
+use Pathogens::RNASeq::Expression;
+
+my($sequence_file, $annotation_file, $protocol_name, $output_base_filename, $mapping_quality, $no_coverage_plots,  $help );
+
+GetOptions(
+   's|sequence_file=s'         => \$sequence_file,
+   'a|annotation_file=s'       => \$annotation_file,
+   'p|protocol=s'              => \$protocol_name,
+   'o|output_base_filename=s'  => \$output_base_filename,
+   'q|minimum_mapping_quality=s' => \$mapping_quality,
+   'c|no_coverage_plots'       => \$no_coverage_plots,
+   'h|help'                    => \$help,
+    );
+
+($sequence_file && $annotation_file && $protocol_name) or die <<USAGE;
+
+Usage: $0
+  -s|sequence_file         <aligned BAM file>
+  -a|annotation_file       <annotation file (GFF)>
+  -p|protocol              <standard|nc_protocol>
+  -o|output_base_filename  <Optional: base name and location to use for output files>
+  -q|minimum_mapping_quality <Optional: minimum mapping quality>
+  -c|no_coverage_plots     <Dont create Artemis coverage plots>
+  -h|help                  <print this message>
+
+This script takes in an aligned sequence file (BAM) and a corresponding annotation file (GFF) and creates a spreadsheet with expression values.
+The BAM must be aligned to the same reference that the annotation refers to and must be sorted.
+USAGE
+
+$output_base_filename ||= $sequence_file;
+$mapping_quality ||= 10;
+my %filters = (mapping_quality => $mapping_quality);
+
+my %protocols = ( 
+	standard    => "StandardProtocol",
+	nc_protocol => "StrandSpecificProtocol"
+);
+
+my $expression_results = Pathogens::RNASeq::Expression->new(
+  sequence_filename    => $sequence_file,
+  annotation_filename  => $annotation_file,
+  filters              => \%filters,
+  protocol             => $protocols{$protocol_name},
+  output_base_filename => $output_base_filename
+  );
+
+$expression_results->output_spreadsheet();
+
+unless($no_coverage_plots)
+{
+  Pathogens::RNASeq::CoveragePlot->new(
+    filename             => $expression_results->_corrected_sequence_filename,
+    output_base_filename => $output_base_filename
+  )->create_plots();
+}
