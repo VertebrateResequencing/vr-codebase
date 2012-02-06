@@ -639,6 +639,7 @@ sub _from_gff3_string {
     my @groups = split(/\s*;\s*/, $groups);
 
     for my $group (@groups) {
+      next unless defined($group);
 	my ($tag,$value) = split /=/,$group;
 	$tag             = unescape($tag);
 	my @values       = map {unescape($_)} split /,/,$value;

@@ -26,7 +26,7 @@ db  => {
 }
 
 data => {
-    sequencing_file_suffix      => '.corrected.bam',
+    sequencing_file_suffix      => '.bam',
     protocol  => "StandardProtocol",
     annotation_filename => "my_reference.gff",
     mapping_quality => 30,
@@ -100,7 +100,7 @@ sub _find_sequencing_files
   my $self = shift;
   
   opendir(DIR,$self->{lane_path});
-  my $sequencing_file_suffix = $self->{sequencing_file_suffix} || "corrected.bam";
+  my $sequencing_file_suffix = $self->{sequencing_file_suffix} || ".bam";
   my @sequencing_filenames = grep { /$sequencing_file_suffix$/i } 
   readdir(DIR);
   closedir(DIR);
@@ -228,7 +228,7 @@ sub update_db_requires {
 =cut
 
 sub update_db_provides {
-    return [];
+    return [ $self->{lane_path}."/".$self->{prefix}."update_db_done"];
 }
 
 =head2 update_db
@@ -261,6 +261,7 @@ sub update_db {
         my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
         Utils::CMD("rm $job_status") if (-e $job_status);
     }
+    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_update_db_done")   );  
 
     return $$self{'Yes'};
 }
@@ -278,7 +279,7 @@ sub update_db {
 
 sub cleanup_requires {
   my ($self) = @_;
-  return $self->calculate_expression_provides();
+  return [ $self->{lane_path}."/".$self->{prefix}."update_db_done"];
 }
 
 =head2 cleanup_provides
@@ -292,7 +293,7 @@ sub cleanup_requires {
 =cut
 
 sub cleanup_provides {
-    return ["_cleanup_done"];
+    return [ $self->{lane_path}."/".$self->{prefix}."cleanup_done"];
 }
 
 =head2 cleanup
@@ -326,11 +327,4 @@ sub cleanup {
   return $self->{Yes};
 }
 
-
-
-
-
-
-
-
-
+1;

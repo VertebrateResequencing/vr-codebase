@@ -98,7 +98,6 @@ sub _build__expression_results
       samtools_exec      => $self->samtools_exec
       );
     my $alignment_slice_results = $alignment_slice->rpkm_values;
-    $self->_annotation_file->features->{$feature_id}->seq_id
     
     $alignment_slice_results->{gene_id} = $feature_id;
     $alignment_slice_results->{seq_id}  =  $self->_annotation_file->features->{$feature_id}->seq_id;
