@@ -228,6 +228,7 @@ sub update_db_requires {
 =cut
 
 sub update_db_provides {
+   my ($self) = = @_;
     return [ $self->{lane_path}."/".$self->{prefix}."update_db_done"];
 }
 
@@ -293,6 +294,7 @@ sub cleanup_requires {
 =cut
 
 sub cleanup_provides {
+  my ($self) = = @_;
     return [ $self->{lane_path}."/".$self->{prefix}."cleanup_done"];
 }
 
