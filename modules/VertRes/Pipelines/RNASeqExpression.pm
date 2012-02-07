@@ -175,8 +175,12 @@ sub _create_expression_job
     protocol             => qq[$self->{protocol}],
     output_base_filename => qq[$sequencing_filename]
     );
-
+  eval {
   \$expression_results->output_spreadsheet();
+  };
+  if (\$@) {
+      print("Couldnt create expression for $sequencing_filename using reference $self->{annotation_file} probably because it was mapped to a different reference\n");
+  }
   
   Pathogens::RNASeq::CoveragePlot->new(
     filename             => \$expression_results->_corrected_sequence_filename,
