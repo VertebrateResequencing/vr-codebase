@@ -110,7 +110,7 @@ sub _create_padding_string
   my $padding_string = "";
   for(my $i = $previous_counter+1 ; $i < $current_counter; $i++)
   {
-    $padding_string .= "0 0\n";
+    $padding_string .= "0 0 0\n";
   }
   return $padding_string;
 }
@@ -150,7 +150,11 @@ sub create_plots
     my $padding_string = $self->_create_padding_string($self->_sequence_base_counters->{$sequence_name},$base_position);
 
     $self->_sequence_base_counters->{$sequence_name} = $base_position;
-    print { $self->_output_file_handles->{$sequence_name} } $padding_string.$self->_number_of_forward_reads($read_string)." ".$self->_number_of_reverse_reads($read_string)."\n";
+    my $forward_reads = $self->_number_of_forward_reads($read_string);
+    my $reverse_reads = $self->_number_of_reverse_reads($read_string);
+    my $total_reads = $forward_reads + $reverse_reads;
+    
+    print { $self->_output_file_handles->{$sequence_name} } $padding_string.$forward_reads." ".$reverse_reads." ".$total_reads."\n";
   }
   $self->_print_padding_at_end_of_sequence;
   $self->_close_output_file_handles;
