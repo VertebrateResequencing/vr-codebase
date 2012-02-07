@@ -30,7 +30,8 @@ data => {
     protocol  => "StandardProtocol",
     annotation_filename => "my_reference.gff",
     mapping_quality => 30,
-    mpileup_cmd => 'samtools mpileup'
+    mpileup_cmd => 'samtools mpileup',
+    window_margin => 50,
 }
 
 # by default __VRTrack_RNASeqExpression__ will pick up lanes that have been both mapped
@@ -161,7 +162,13 @@ sub _create_expression_job
   {
     $mpileup_str = ' mpileup => "'.$self->{mpileup_cmd}.'", ';
   }
-
+  my $window_margin_str = "";
+  if(defined ($self->{window_margin}))
+  {
+    $window_margin_str = ' window_margin => '.$self->{window_margin}.', ';
+  }
+  
+  
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
   use strict;
@@ -173,7 +180,8 @@ sub _create_expression_job
     annotation_filename  => qq[$self->{annotation_file}],
     mapping_quality      => $self->{mapping_quality},
     protocol             => qq[$self->{protocol}],
-    output_base_filename => qq[$sequencing_filename]
+    output_base_filename => qq[$sequencing_filename],
+    $window_margin_str
     );
   eval {
   \$expression_results->output_spreadsheet();
