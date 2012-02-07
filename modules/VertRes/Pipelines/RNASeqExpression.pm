@@ -32,6 +32,7 @@ data => {
     mapping_quality => 30,
     mpileup_cmd => 'samtools mpileup',
     window_margin => 50,
+    intergenic_regions => 1,
 }
 
 # by default __VRTrack_RNASeqExpression__ will pick up lanes that have been both mapped
@@ -168,6 +169,12 @@ sub _create_expression_job
     $window_margin_str = ' window_margin => '.$self->{window_margin}.', ';
   }
   
+  my $intergenic_regions_str = "";
+  if(defined ($self->{intergenic_regions}))
+  {
+    $intergenic_regions_str = ' intergenic_regions => '.$self->{intergenic_regions}.', ';
+  }
+  
   
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
@@ -182,6 +189,7 @@ sub _create_expression_job
     protocol             => qq[$self->{protocol}],
     output_base_filename => qq[$sequencing_filename],
     $window_margin_str
+    $intergenic_regions_str
     );
   eval {
   \$expression_results->output_spreadsheet();
