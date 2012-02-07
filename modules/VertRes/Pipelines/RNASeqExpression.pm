@@ -154,7 +154,7 @@ sub _create_expression_job
   my $total_memory_mb = 3000;
   
   my($action_lock_filename, $directories, $suffix) = fileparse($action_lock);
-  my $sequencing_file_action_lock = $self->{lane_path}.$sequencing_filename.$action_lock_filename;
+  my $sequencing_file_action_lock = $self->{lane_path}.'/'.$sequencing_filename.$action_lock_filename;
 
   my $mpileup_str  = "";
   if(defined ($self->{mpileup_cmd}))
@@ -177,17 +177,18 @@ sub _create_expression_job
     );
   eval {
   \$expression_results->output_spreadsheet();
-  };
-  if (\$@) {
-      print("Couldnt create expression for $sequencing_filename using reference $self->{annotation_file} probably because it was mapped to a different reference\n");
-  }
   
   Pathogens::RNASeq::CoveragePlot->new(
     filename             => \$expression_results->_corrected_sequence_filename,
     output_base_filename => qq[$sequencing_filename],
     $mpileup_str
   )->create_plots();
-
+  
+  };
+  if (\$@) {
+      print("Couldnt create expression for $sequencing_filename using reference $self->{annotation_file} probably because it was mapped to a different reference\n");
+  }
+  
   system('touch _${sequencing_filename}_calculate_expression_done');
   exit;
                 };
