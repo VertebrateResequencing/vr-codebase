@@ -407,27 +407,25 @@ sub read_chr_lengths
 {
     my ($self,$fai,$regions) = @_;
 
+    my @chr_lengths;
     my @regex;
     if ( defined $regions )
     {
         for my $region (@$regions)
         {
             if ( $region=~/^[^:]+$/ ) { push @regex,$region; }
+            elsif ( $region=~/^([^:]+):(\d+)-(\d+)$/ ) { push @chr_lengths, {name=>$1, from=>$2, to=>$3} }
         }
     }
 
     if ( !@regex ) 
-    { 
-        if ( $$self{fai_chr_regex}=~/^\^/ or $$self{fai_chr_regex}=~/\$$/ )
-        {
-            $self->throw("The regex must not contain [^\$], this will be appended automagically.\n");
-        }
-        push @regex, $$self{fai_chr_regex}; 
+    {
+        if ( !@chr_lengths ) { $self->throw("FIXME: No regions given?"); }
+        return \@chr_lengths;
     }
 
     # Determine the chromosomes and their lengths
     open(my $fh,'<',$fai) or $self->throw("$fai: $!"); 
-    my @chr_lengths;
     while (my $line=<$fh>)
     {
         for my $regex (@regex)
