@@ -145,7 +145,7 @@ sub job_in_bjobs
 #
 sub adjust_bsub_options
 {
-    my ($opts, $output_file) = @_;
+    my ($opts, $output_file,$mem_limit) = @_;
 
     my $mem;
     my $queue;
@@ -196,8 +196,9 @@ sub adjust_bsub_options
         # $mem max memory; increase by 1000MB
         $mem += 1000;
         
-        if ($mem>15900) {
-            Utils::error("FIXME: This job cannot be run on the farm, more than 15.9GB of memory is required.");
+        if ( !defined $mem_limit ) { $mem_limit = 15_900; }
+        if ( $mem>$mem_limit ) {
+            Utils::error(sprintf "FIXME: Increase memory_limit, more than %.1fGB of memory is required.", $mem_limit/1000);
         }
         
         # adjust the command line to include higher memory reservation, but only
@@ -303,7 +304,7 @@ sub run
     }
 
     # Check if memory or queue should be changed (and change it)
-    $bsub_opts = adjust_bsub_options($bsub_opts, $lsf_output_file);
+    $bsub_opts = adjust_bsub_options($bsub_opts, $lsf_output_file,$$options{memory_limit});
     my $cmd = "bsub -J $job_name -e $lsf_error_file -o $lsf_output_file $bsub_opts '$bsub_cmd'";
 
     my @out = Utils::CMD($cmd,$options);
