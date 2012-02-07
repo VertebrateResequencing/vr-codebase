@@ -24,7 +24,8 @@ my %filters =
     RefN         => { dflt=>'', usage=>'', desc=>"Reference base is N", nick=>'r' },
     Qual         => { dflt=>'10', usage=>'INT', desc=>"Minimum value of the QUAL field", nick=>'Q' },
     VDB          => { dflt=>'0', usage=>'FLOAT', desc=>"Minimum Variant Distance Bias (INFO/VDB)", nick=>'v' },
-    HWE          => { dflt=>1e-4, usage=>'FLOAT', desc=>"Minimum P-value for HWE (plus F<0) (INFO/HWE and INFO/G3)", nick=>'H' },
+    HWE          => { dflt=>undef, usage=>'FLOAT', desc=>"Minimum P-value for HWE and F<0 (invokes --fill-HWE)", nick=>'H' },
+    HWE_G3       => { dflt=>undef, usage=>'FLOAT', desc=>"Minimum P-value for HWE and F<0 (INFO/HWE and INFO/G3)", nick=>'HG' },
 );
 
 my $opts = parse_params();
@@ -57,6 +58,9 @@ sub error
         "                                           matching lines are annotated.\n",
         "   -d, --description <file|string>     Header annotation, e.g. key=INFO,ID=HM2,Number=0,Type=Flag,Description='HapMap2 membership'.\n",
         "                                           The descriptions can be read from a file, one annotation per line.\n",
+        "       --fill-AC-AN                    (Re)Calculate AC and AN tags\n",
+        "       --fill-HWE                      (Re)Calculate HWE, AC and AN tags\n",
+        "       --fill-ICF                      (Re)Calculate Inbreeding Coefficient F, HWE, AC and AN\n",
         "   -f, --filter <file|list>            Apply filters, list is in the format flt1=value/flt2/flt3=value/etc. If argument to -f is a file,\n",
         "                                           user-defined filters be applied. See User Defined Filters below.\n",
         "   -r, --remove <list>                 Comma-separated list of tags to be removed (e.g. INFO/DP,FORMAT/DP). (Currently only removing from INFO and FORMAT is supported.)\n",
@@ -115,6 +119,7 @@ sub error
 
 sub parse_params
 {
+    $0 =~ s{^.+/}{}; $0 .= "($Vcf::VERSION)";
     my $opts = { args=>[$0, @ARGV], };
     while (defined(my $arg=shift(@ARGV)))
     {
@@ -170,6 +175,9 @@ sub parse_params
             next;
         }
         if ( $arg eq '-a' || $arg eq '--annotations' ) { $$opts{annotations} = shift(@ARGV); next }
+        if (                 $arg eq '--fill-AC-AN' ) { $$opts{fill_ac_an} = 1; $$opts{fill}=1; next }
+        if (                 $arg eq '--fill-HWE' ) { $$opts{fill_ac_an} = $$opts{fill_hwe} = 1; $$opts{fill}=1; next }
+        if (                 $arg eq '--fill-ICF' ) { $$opts{fill_ac_an} = $$opts{fill_hwe} = $$opts{fill_icf} = 1; $$opts{fill}=1; next }
         if ( $arg eq '-t' || $arg eq '--tag' ) { $$opts{tag} = shift(@ARGV); next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         if ( -e $arg ) { $$opts{file}=$arg; next; }
@@ -177,7 +185,10 @@ sub parse_params
     }
     if ( !exists($$opts{filters}) && !exists($$opts{udef_filters}) )
     {
-        if ( !exists($$opts{annotations}) && !exists($$opts{remove}) ) { error("Missing one of the -a, -f or -r options.\n") }
+        if ( !exists($$opts{annotations}) && !exists($$opts{remove}) && !exists($$opts{fill}) ) 
+        { 
+            error("Missing one of the -a, -f, -r or --fill-* options.\n") 
+        }
     }
     if ( exists($$opts{annotations}) && !exists($$opts{cols}) ) { error("Missing the -c option.\n"); }
     return $opts;
@@ -200,7 +211,7 @@ sub parse_user_defined_filters
         if ( !exists($$filter{desc}) ) { error("Missing 'desc' key for the filter [$$filter{tag}]\n"); }
 
         my $name = $$filter{name};
-        push @{$$opts{desc}}, "key=FILTER,ID=$name,Description='$$filter{desc}";
+        push @{$$opts{desc}}, "key=FILTER,ID=$name,Description='$$filter{desc}'";
         if ( !exists($$filter{apply_to}) or lc($$filter{apply_to}) eq 'all' ) 
         {
             $$opts{udef_filters}{'all'}{$name} = $filter;
@@ -284,6 +295,7 @@ sub parse_filters
         push @{$$opts{desc}}, "key=FILTER,ID=$key,Description='$filters{$key}{desc}" . (defined $$opts{filters}{$key} ? " [$$opts{filters}{$key}]'" : "'");
     }
     if ( !$has_filters && !scalar keys %{$$opts{filters}} ) { delete($$opts{filters}); }
+    if ( exists($$opts{filters}{HWE}) ) { $$opts{fill_ac_an}=$$opts{fill_hwe}=1; } 
 }
 
 
@@ -404,9 +416,26 @@ sub annotate
     # Open VCF file and add all required header lines
     my $vcf = $$opts{vcf} = exists($$opts{file}) ? Vcf->new(file=>$$opts{file}) : Vcf->new(fh=>\*STDIN);
     $vcf->parse_header();
+    if ( exists($$opts{remove}) )
+    {
+        for my $col (keys %{$$opts{remove}})
+        {
+            for my $tag (keys %{$$opts{remove}{$col}}) { $vcf->remove_header_line(key=>$col, ID=>$tag); }
+        }
+    }
     for my $desc (@$descs)
     {
         $vcf->add_header_line($desc,silent=>1);
+    }
+    if ( $$opts{fill_ac_an} )
+    {
+        $vcf->add_header_line({key=>'INFO',ID=>'AC',Number=>'A',Type=>'Integer',Description=>'Allele count in genotypes'});
+        $vcf->add_header_line({key=>'INFO',ID=>'AN',Number=>1,Type=>'Integer',Description=>'Total number of alleles in called genotypes'});
+    }
+    if ( $$opts{fill_hwe} )
+    {
+        $vcf->add_header_line({key=>'INFO',ID=>'HWE',Number=>1,Type=>'Float',Description=>'Hardy-Weinberg equilibrium test (PMID:15789306)'});
+        $vcf->add_header_line({key=>'INFO',ID=>'ICF',Number=>1,Type=>'Float',Description=>'Inbreeding coefficient F'});
     }
     $vcf->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
     print $vcf->format_header();
@@ -567,14 +596,142 @@ sub annotate
 }
 
 
+sub fill_ac_an_hwe
+{
+    my ($opts,$line) = @_;
+    my $igt = $$opts{vcf}->get_tag_index($$line[8],'GT',':');
+    if ( $igt==-1 ) { return; }
+    my %counts = ( 0=>0 );
+    my $nhets  = 0;
+    my $ngts   = 0;
+    my $ncols  = @$line;
+    for (my $isample=9; $isample<$ncols; $isample++)
+    {
+        my $gt = $$opts{vcf}->get_field($$line[$isample],$igt);
+        my ($a1,$a2) = $$opts{vcf}->split_gt($gt);
+        if ( $a1 ne '.' ) { $counts{$a1}++ }
+        if ( $a2 ne '.' ) 
+        { 
+            $counts{$a2}++;
+            if ( $a1 ne '.' )
+            {
+                if ( $a1 ne $a2 ) { $nhets++ }
+                $ngts++;
+            }
+        }
+    }
+
+    my $an = 0;
+    my $ac;
+    my $max_ac = 0;
+    for my $key (sort {$a<=>$b} keys %counts)
+    {
+        if ( $key eq 0 ) { $an += $counts{$key}; next; }
+        if ( defined $ac ) { $ac .= ','; }
+        my $count = $counts{$key};
+        $ac .= $count;
+        $an += $count;
+        if ( $count>$max_ac ) { $max_ac = $count; }
+    }
+
+    my %tags = (AN=>$an);
+    if ( defined $ac ) { $tags{AC}=$ac }
+    if ( $$opts{fill_hwe} )
+    {
+        my $nall = $counts{0} + $max_ac;
+        my $freq_obs = 2*$nhets/$nall;
+        my $freq_exp = 2*($max_ac/$nall)*(1-($max_ac/$nall));
+        $$opts{icf} = $freq_exp ? 1-$freq_obs/$freq_exp : 0;
+        $$opts{hwe} = eval_hwe(($max_ac-$nhets)/2,($counts{0}-$nhets)/2,$nhets);
+        $tags{HWE} = sprintf "%.6f", $$opts{hwe};
+    }
+    if ( $$opts{fill_icf} )
+    {
+        $tags{ICF} = sprintf "%.5f", $$opts{icf};
+    }
+    $$line[7] = $$opts{vcf}->add_info_field($$line[7],%tags);
+    return $$line[7];
+}
+
+# Wigginton 2005, PMID: 15789306
+sub eval_hwe
+{
+    my ($obs_hom1,$obs_hom2,$obs_hets) = @_;
+    if ( $obs_hom1 + $obs_hom2 + $obs_hets == 0 ) { return 1; }
+
+    my $obs_homc = $obs_hom1 < $obs_hom2 ? $obs_hom2 : $obs_hom1;
+    my $obs_homr = $obs_hom1 < $obs_hom2 ? $obs_hom1 : $obs_hom2;
+
+    my $rare_copies = 2 * $obs_homr + $obs_hets;
+    my $genotypes   = $obs_hets + $obs_homc + $obs_homr;
+
+    my @het_probs = ((0) x ($rare_copies+1));
+
+    # start at midpoint
+    my $mid = int($rare_copies * (2 * $genotypes - $rare_copies) / (2 * $genotypes));
+    # check to ensure that midpoint and rare alleles have same parity
+    if (($rare_copies & 1) ^ ($mid & 1)) { $mid++; }
+
+    my $curr_hets = $mid;
+    my $curr_homr = ($rare_copies - $mid) / 2;
+    my $curr_homc = $genotypes - $curr_hets - $curr_homr;
+
+    $het_probs[$mid] = 1.0;
+    my $sum = $het_probs[$mid];
+    for ($curr_hets=$mid; $curr_hets > 1; $curr_hets -= 2)
+    {
+        $het_probs[$curr_hets - 2] = $het_probs[$curr_hets] * $curr_hets * ($curr_hets - 1.0) / (4.0 * ($curr_homr + 1.0) * ($curr_homc + 1.0));
+        $sum += $het_probs[$curr_hets - 2];
+
+        # 2 fewer heterozygotes for next iteration -> add one rare, one common homozygote
+        $curr_homr++;
+        $curr_homc++;
+    }
+    $curr_hets = $mid;
+    $curr_homr = int(($rare_copies - $mid) / 2);
+    $curr_homc = $genotypes - $curr_hets - $curr_homr;
+    for ($curr_hets = $mid; $curr_hets <= $rare_copies - 2; $curr_hets += 2)
+    {
+        $het_probs[$curr_hets + 2] = $het_probs[$curr_hets] * 4.0 * $curr_homr * $curr_homc /(($curr_hets + 2.0) * ($curr_hets + 1.0));
+        $sum += $het_probs[$curr_hets + 2];
+
+        # add 2 heterozygotes for next iteration -> subtract one rare, one common homozygote
+        $curr_homr--;
+        $curr_homc--;
+    }
+
+    for (my $i = 0; $i <= $rare_copies; $i++)
+    {
+        $het_probs[$i] /= $sum;
+    }
+
+    my $p_hwe = 0.0;
+    #  p-value calculation for p_hwe
+    for (my $i = 0; $i <= $rare_copies; $i++)
+    {
+        if ($het_probs[$i] > $het_probs[$obs_hets]) { next; }
+        $p_hwe += $het_probs[$i];
+    }
+
+    return $p_hwe > 1.0 ? 1.0 : $p_hwe;
+}
+
+
 # Stage the lines and then apply filtering if requested, otherwise just print the line
 sub output_line
 {
     my ($opts,$line) = @_;
 
-    if ( exists($$opts{remove}) && defined $line )
+    if ( defined $line )
     {
-        remove_tags($opts,$line);
+        if ( exists($$opts{remove}) )
+        {
+            remove_tags($opts,$line);
+        }
+        if ( $$opts{fill_ac_an} ) 
+        {
+            fill_ac_an_hwe($opts,$line);
+        }
     }
 
     if ( !exists($$opts{filters}) && !exists($$opts{udef_filters}) )
@@ -762,20 +919,24 @@ sub apply_local_filters
     {
         $apply{Qual} = $$line[5] < $$filters{Qual} ? 1 : 0;
     }
-    if ( exists($$filters{HWE}) && $$line[7]=~/G3=([^,]+),([^,]+),/ )
+    if ( exists($$filters{HWE_G3}) && $$line[7]=~/G3=([^,]+),([^,]+),/ )
     {
         my ($rr,$ra);
         $rr = $1; 
         $ra = $2; 
-        $apply{HWE} = 0;
-        if ( $$line[7]=~/HWE=([^;\t]+)/ && $1<$$filters{HWE} ) 
+        $apply{HWE_G3} = 0;
+        if ( $$line[7]=~/HWE_G3=([^;\t]+)/ && $1<$$filters{HWE_G3} ) 
         {
             my $p = 2*$rr + $ra;
-            if ( $p>0 && $p<1 && $ra/($p*(1-$p))>1 )
+            if ( $p>0 && $p<1 && (1-$ra)/($p*(1-$p))<0 )
             {
-                $apply{HWE} = 1;
+                $apply{HWE_G3} = 1;
             }
         }
+    }
+    if ( exists($$filters{HWE}) )
+    {
+        $apply{HWE} = $$opts{hwe}<$$filters{HWE} && $$opts{icf}<0 ? 1 : 0;
     }
     if ( defined $dp_alt )
     {

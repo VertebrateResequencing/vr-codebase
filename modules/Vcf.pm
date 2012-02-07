@@ -1,5 +1,7 @@
 package Vcf;
 
+our $VERSION = 'r660';
+
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:variant_call_format
