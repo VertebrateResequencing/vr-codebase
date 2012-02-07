@@ -47,7 +47,7 @@ sub _build__sequence_file
 	my $validator = Pathogens::RNASeq::ValidateInputs->new( sequence_filename => $self->sequence_filename, annotation_filename => $self->annotation_filename);
 	if($validator->are_input_files_valid() == 0)
 	{
-		Pathogens::RNASeq::Exceptions::FailedToOpenAlignmentSlice->throw( error => "Input files invalid: ".$self->sequence_filename." ".$self->annotation_filename."" );
+		Pathogens::RNASeq::Exceptions::FailedToOpenAlignmentSlice->throw( error => "Input files invalid: ".$self->sequence_filename." ".$self->annotation_filename."\n" );
 	}
 	
   Pathogens::RNASeq::SequenceFile->new(filename => $self->sequence_filename);
