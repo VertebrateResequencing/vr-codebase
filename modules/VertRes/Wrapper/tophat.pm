@@ -25,7 +25,7 @@ use warnings;
 use File::Copy;
 use VertRes::IO;
 use VertRes::Parser::fastqcheck;
-ues VertRes::Wrapper::bowtie;
+use VertRes::Wrapper::bowtie;
 
 use base qw(VertRes::Wrapper::MapperI);
 
