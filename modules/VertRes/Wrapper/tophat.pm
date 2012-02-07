@@ -1,6 +1,6 @@
 =head1 NAME
 
-VertRes::Wrapper::bowtie - wrapper for bowtie
+VertRes::Wrapper::tophat - wrapper for tophat
 
 =head1 SYNOPSIS
 
@@ -9,7 +9,8 @@ VertRes::Wrapper::bowtie - wrapper for bowtie
 =head1 DESCRIPTION
 
 bowtie-build ref.fa out_base
-bowtie -e aspermaq -X maxinsert --sam --time index_basename -1 read1.fastq -2 read2.fastq output
+
+tophat ref read_1.fastq read_2.fastq
 
 =head1 AUTHOR
 
@@ -17,13 +18,14 @@ Sendu Bala: bix@sendu.me.uk
 
 =cut
 
-package VertRes::Wrapper::bowtie;
+package VertRes::Wrapper::tophat;
 
 use strict;
 use warnings;
 use File::Copy;
 use VertRes::IO;
 use VertRes::Parser::fastqcheck;
+ues VertRes::Wrapper::bowtie;
 
 use base qw(VertRes::Wrapper::MapperI);
 
@@ -50,7 +52,7 @@ my %e_parameter = (
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => '/software/pathogen/external/apps/usr/bin/bowtie');
+    my $self = $class->SUPER::new(@args, exe => '/software/pathogen/external/apps/usr/bin/tophat');
     
     return $self;
 }
@@ -82,21 +84,8 @@ sub version {
 sub setup_reference {
     my ($self, $ref) = @_;
     
-    #  .1.ebwt, .2.ebwt, .3.ebwt, .4.ebwt, .rev.1.ebwt, and .rev.2.ebwt
-    my $existing_ebwts = 0;
-    foreach my $suffix (qw(.1.ebwt .2.ebwt .3.ebwt .4.ebwt .rev.1.ebwt .rev.2.ebwt)) {
-        my $ebwt = $ref.$suffix;
-        $existing_ebwts += -s $ebwt ? 1 : 0;
-    }
-    
-    unless ($existing_ebwts == 6) {
-        my $orig_exe = $self->exe;
-        $self->exe($orig_exe.'-build');
-        $self->simple_run("$ref $ref");
-        $self->exe($orig_exe);
-    }
-    
-    return 1;
+    my $bowtie = VertRes::Wrapper::bowtie->new();
+    return $bowtie->setup_reference($ref);
 }
 
 =head2 setup_fastqs
@@ -171,7 +160,12 @@ sub generate_sam {
         }
         
         my $X = 1000;
-        $self->simple_run("-e $e -X $X --sam --time $ref -1 $fqs[0] -2 $fqs[1] $out");
+        
+        # parameters needed
+        #-I to specify sensible max intron length
+        #-r for inner-mate distance  ( insert size - readlength*2
+        # index files
+        $self->simple_run("$ref $fqs[0] $fqs[1]");
     }
     
     return -s $out ? 1 : 0;
