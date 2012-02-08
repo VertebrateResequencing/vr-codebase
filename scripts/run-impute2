@@ -32,9 +32,9 @@ sub new
     $$self{buffer_region} = 250;
     $$self{phased_join_args} = '';
     $$self{_sampleconf} = q[
-        impute2_bin => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/impute2.2.0',
+        impute2_bin => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/impute2.2.2',
         vcf_impute2 => 'vcf-impute2',
-        gen_map     => '/nfs/users/nfs_p/pd3/sandbox/impute2/genetic_maps_b37/genetic_map_chr{CHROM}_combined_b37.txt',
+        gen_map     => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/ALL_1000G_phase1interim_jun2011_impute/genetic_map_chr{CHROM}_combined_b37.txt',
         fai_ref     => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
         known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/gtypes/UK10k-twins/uk10k-twins.ref.vcf.gz',
 
@@ -42,8 +42,8 @@ sub new
         buffer_region    => 250, # kb
         # Do not split blocks phased by IMPUTE2 even when phasing quality is low - single sites may be unphased in otherwise phased chunks
         phased_join_args => '-q 0 -j 10',
-        chunk_size       => 3_000_000,
-        chromosomes      => [qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22)],
+        chunk_size       => 1_000_000,
+        chromosomes      => [qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X)],
 
         limits   => { memory=>5_500, runtime=>3*24*60 },
         do_clean => 1,   # Remove runner's temporary files
