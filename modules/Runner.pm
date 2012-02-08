@@ -96,7 +96,7 @@ sub new
     bless $self, ref($class) || $class;
     $$self{_status_codes}{DONE} = 111;
     $$self{_farm} = 'LSF';
-    $$self{_farm_options} = { runtime=>600 };
+    $$self{_farm_options} = { runtime=>600, memory_limit=>20_000 };
     $$self{_running_jobs} = {};
     $$self{_nretries} = 1;
     $$self{usage} = 
