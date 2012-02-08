@@ -23,8 +23,8 @@ use Pathogens::RNASeq::ExpressionStatsSpreadsheet;
 use Pathogens::RNASeq::ValidateInputs;
 use Pathogens::RNASeq::Exceptions;
 use Pathogens::RNASeq::BitWise;
-use Pathogens::RNASeq::CoveragePlot;
 use Pathogens::RNASeq::IntergenicRegions;
+use Pathogens::RNASeq::FeaturesTabFile;
 
 has 'sequence_filename'       => ( is => 'rw', isa => 'Str', required => 1 );
 has 'annotation_filename'     => ( is => 'rw', isa => 'Str', required => 1 );
@@ -87,8 +87,6 @@ sub _build__expression_results
       samtools_exec   => $self->samtools_exec
     )->update_bitwise_flags();
   
-
-  
   my @expression_results = ();
   
   for my $feature_id (keys %{$self->_annotation_file->features})
@@ -124,8 +122,19 @@ sub _calculate_values_for_intergenic_regions
    my $intergenic_regions = Pathogens::RNASeq::IntergenicRegions->new(
      features       => $self->_annotation_file->features,
      window_margin  => $self->window_margin,
-     minimum_size   => $self->minimum_intergenic_size
+     minimum_size   => $self->minimum_intergenic_size,
+     sequence_lengths => $self->_annotation_file->sequence_lengths
      );
+
+  my @sequence_names = keys %{$self->_annotation_file->sequence_lengths};
+     
+  # print out the features into a tab file for loading into Artemis
+     my $tab_file_results = Pathogens::RNASeq::FeaturesTabFile->new(
+       output_filename => $self->_corrected_sequence_filename.".intergenic.tab",
+       features        => $intergenic_regions->intergenic_features,
+       sequence_names  => \@sequence_names
+     );
+     $tab_file_results->create_files;
 
    for my $feature_id (keys %{$intergenic_regions->intergenic_features})
    {
