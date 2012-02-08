@@ -42,7 +42,7 @@ sub sequence_names
 {
 	my ($self) = @_;
 	my @sequence_names = (sort keys %{$self->_exons});
-	return \@@sequence_names;
+	return \@sequence_names;
 }
 
 sub _build_intergenic_features
