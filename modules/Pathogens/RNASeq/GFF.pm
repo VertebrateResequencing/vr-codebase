@@ -17,10 +17,10 @@ use Moose;
 use Bio::Tools::NonStandardGFF;
 use Pathogens::RNASeq::Feature;
 
-has 'filename'    => ( is => 'rw', isa => 'Str',             required   => 1 );
-has 'features'    => ( is => 'rw', isa => 'HashRef',         lazy_build => 1 );
-has '_gff_parser' => ( is => 'rw', isa => 'Bio::Tools::NonStandardGFF', lazy_build => 1 );
-
+has 'filename'          => ( is => 'rw', isa => 'Str',             required   => 1 );
+has 'features'          => ( is => 'rw', isa => 'HashRef',         lazy_build => 1 );
+has '_gff_parser'       => ( is => 'rw', isa => 'Bio::Tools::NonStandardGFF', lazy_build => 1 );
+has 'sequence_lengths' => ( is => 'rw', isa => 'HashRef',         lazy_build => 1 );
 
 sub _build__gff_parser
 {
@@ -53,6 +53,18 @@ sub _build_features
   }
   
   return \%features;
+}
+
+# create a hash with sequence names and the length of the sequence
+sub _build_sequence_lengths
+{
+	my ($self) = @_;
+	my %sequence_lengths;
+	while(my $sequence_region = $self->_gff_parser->next_segment())
+	{
+		$sequence_lengths{$sequence_region->id()} = $sequence_region->end() + 1 - $sequence_region->start();
+	}
+	return \%sequence_lengths;
 }
 
 sub sorted_gene_ids

@@ -50,7 +50,6 @@ sub _build_seq_id
 sub _build_gene_strand
 {
   my ($self) = @_;
-  # die("$gene_id: Feature on both strands.\n") unless $gene_strand;
   $self->raw_feature->strand;
 }
 
