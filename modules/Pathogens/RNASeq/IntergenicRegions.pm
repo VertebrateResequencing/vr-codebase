@@ -38,6 +38,13 @@ sub _build__exons
   return $exons;
 }
 
+sub sequence_names
+{
+	my ($self) = @_;
+	my @sequence_names = (sort keys %{$self->_exons});
+	return \@@sequence_names;
+}
+
 sub _build_intergenic_features
 {
   my ($self) = @_;
@@ -48,7 +55,7 @@ sub _build_intergenic_features
     my $previous_feature_start =0;
     my $previous_feature_end =  0 - $self->window_margin;
     
-    for my $gene_start (sort keys %{$self->_exons->{$seq_id}})
+    for my $gene_start (sort {$a<=>$b} keys %{$self->_exons->{$seq_id}})
     {
       my $intergenic_feature = $self->_create_intergenic_feature( $previous_feature_end,$gene_start,$seq_id );
       if(defined($intergenic_feature))
@@ -61,6 +68,7 @@ sub _build_intergenic_features
     }
     
     # create an intergenic feature between the last real feature and the end of the sequence
+    next unless(defined $self->sequence_lengths->{$seq_id});
     my $last_intergenic_feature = $self->_create_intergenic_feature( $previous_feature_end, $self->sequence_lengths->{$seq_id} + ($self->sequence_lengths->{$seq_id} - $self->calculate_intergenic_end($self->sequence_lengths->{$seq_id}))   ,$seq_id );
     if(defined($last_intergenic_feature))
     {

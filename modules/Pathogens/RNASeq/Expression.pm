@@ -109,7 +109,7 @@ sub _build__expression_results
   
   if(defined($self->intergenic_regions) && $self->intergenic_regions == 1)
   {
-    $self->_calculate_values_for_intergenic_regions($expression_results,$total_mapped_reads );
+    $self->_calculate_values_for_intergenic_regions(\@expression_results,$total_mapped_reads );
   }
   
   return \@expression_results;
@@ -126,13 +126,11 @@ sub _calculate_values_for_intergenic_regions
      sequence_lengths => $self->_annotation_file->sequence_lengths
      );
 
-  my @sequence_names = keys %{$self->_annotation_file->sequence_lengths};
-     
   # print out the features into a tab file for loading into Artemis
      my $tab_file_results = Pathogens::RNASeq::FeaturesTabFile->new(
        output_filename => $self->_corrected_sequence_filename.".intergenic.tab",
        features        => $intergenic_regions->intergenic_features,
-       sequence_names  => \@sequence_names
+       sequence_names  => $intergenic_regions->sequence_names
      );
      $tab_file_results->create_files;
 
