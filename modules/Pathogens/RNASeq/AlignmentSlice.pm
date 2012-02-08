@@ -27,7 +27,7 @@ use Pathogens::RNASeq::Read;
 
 # required inputs
 has 'filename'           => ( is => 'rw', isa => 'Str',                        required   => 1 );
-has 'feature'            => ( is => 'rw', isa => 'Pathogens::RNASeq::Feature', required   => 1 );
+has 'feature'            => ( is => 'rw', required   => 1 );
 has 'total_mapped_reads' => ( is => 'rw', isa => 'Int',                        required   => 1 );
 #optional input
 has 'samtools_exec'      => ( is => 'rw', isa => 'Str',                        default    => "samtools" );

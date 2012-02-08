@@ -22,6 +22,7 @@ use warnings;
 no warnings 'uninitialized';
 use Getopt::Long;
 use Pathogens::RNASeq::Expression;
+use Pathogens::RNASeq::CoveragePlot;
 
 my($sequence_file, $annotation_file, $protocol_name, $output_base_filename, $mapping_quality, $no_coverage_plots, $intergenic_regions, $help );
 
