@@ -59,7 +59,7 @@ my %filters = (mapping_quality => $mapping_quality);
 
 my %protocols = ( 
 	standard    => "StandardProtocol",
-	nc_protocol => "StrandSpecificProtocol"
+	strand_specific_protocol => "StrandSpecificProtocol"
 );
 
 my $expression_results = Pathogens::RNASeq::Expression->new(

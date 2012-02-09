@@ -128,7 +128,7 @@ sub _calculate_values_for_intergenic_regions
 
   # print out the features into a tab file for loading into Artemis
      my $tab_file_results = Pathogens::RNASeq::FeaturesTabFile->new(
-       output_filename => $self->_corrected_sequence_filename.".intergenic.tab",
+       output_filename => $self->_corrected_sequence_filename.".intergenic",
        features        => $intergenic_regions->intergenic_features,
        sequence_names  => $intergenic_regions->sequence_names
      );

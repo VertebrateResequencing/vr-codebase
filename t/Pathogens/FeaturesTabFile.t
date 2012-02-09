@@ -23,20 +23,19 @@ my @sequence_names = keys %{$rna_seq_gff->sequence_lengths};
 
 
 ok my $tab_file_results = Pathogens::RNASeq::FeaturesTabFile->new(
-  output_filename => 't/data/intergenic.tab',
+  output_filename => 't/data/intergenic',
   features => $intergenic_regions->intergenic_features,
   sequence_names => \@sequence_names
 ), 'initialise tab file';
 ok $tab_file_results->create_files , 'create tab file';
 
 # parse output files and check they are okay
-ok is_input_string_found_on_given_line('FT   misc_feature    1..115',                            1, 't/data/intergenic.tab.FN543502.gz'), 'first feature coords';
-ok is_input_string_found_on_given_line('FT                   /colour=2',                         2, 't/data/intergenic.tab.FN543502.gz'), 'first feature colour';
-ok is_input_string_found_on_given_line('FT                   /gene="FN543502_intergenic_1_115"', 3, 't/data/intergenic.tab.FN543502.gz'), 'first feature gene name';
-ok is_input_string_found_on_given_line('FT                   /seq_id="FN543502"',                4, 't/data/intergenic.tab.FN543502.gz'), 'first feature sequene id';
+ok is_input_string_found_on_given_line('FT   misc_feature    1..115',                            1, 't/data/intergenic.FN543502.tab.gz'), 'first feature coords';
+ok is_input_string_found_on_given_line('FT                   /colour=2',                         2, 't/data/intergenic.FN543502.tab.gz'), 'first feature colour';
+ok is_input_string_found_on_given_line('FT                   /gene="FN543502_intergenic_1_115"', 3, 't/data/intergenic.FN543502.tab.gz'), 'first feature gene name';
+ok is_input_string_found_on_given_line('FT                   /seq_id="FN543502"',                4, 't/data/intergenic.FN543502.tab.gz'), 'first feature sequene id';
 
-#t/data/intergenic.tab.FN543502.gz
-unlink('t/data/intergenic.tab.FN543502.gz');
+unlink('t/data/intergenic.FN543502.tab.gz');
 
 sub is_input_string_found_on_given_line
 {
