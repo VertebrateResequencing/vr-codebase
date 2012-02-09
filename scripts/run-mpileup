@@ -29,6 +29,7 @@ sub new
     $$self{limits} = { runtime=>24*60 };
     $$self{debug_chunks} = 0;
     $$self{merge_pops} = 0;
+    $$self{whole_genome_bams} = 1;
     $$self{_sampleconf} = q[
             mpileup  => '/nfs/users/nfs_p/pd3/cvs/samtools/samtools mpileup -EDS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA',
             bcftools => '/nfs/users/nfs_p/pd3/cvs/samtools/bcftools/bcftools view -p 0.99',
@@ -82,7 +83,7 @@ sub new
             shuffle_chunks    => 0,         # Process chunks in random order to randomize disk access
             keep_bcfs         => 1,
             chunks_overlap    => 0,
-            whole_genome_bams => 0,         # Set to 1 if BAMs are not splitted by chromosome
+            whole_genome_bams => 1,         # Set to 0 if BAMs are splitted by chromosome. In such a case, the bams must be named as '*chrom$chr.bam'
             assumed_sex       => undef,     # Set to 'F' for females, 'M' males and undef mysql key above if the DB shouldn't be used.
             sample_list       => undef,     # Provide list of samples with sex. In this case, neither mysql nor assumed_sex keys are required.
 
@@ -371,44 +372,62 @@ sub population_group_bams_list
 
     open(my $in,'<',$bam_list) or $self->throw("$bam_list: $!");
     my $out = $self->open_file("$outfile.part");
+    my $printed = 0;
     while (my $line=<$in>)
     {
-        if ( !($line=~/chrom$chr.bam/) && !$$self{whole_genome_bams} ) { next; }
+        # If the BAMs are split by chr, we are applying to regex's to select by chromosome
+        #   and by the population name. Otherwise, only population regex is used.
+        if ( !$$self{whole_genome_bams} && !($line=~/chrom$chr.bam/) ) { next; }
         for my $pop (@$pops)
         {
             if ( !($line=~/$pop/) ) { next; }
             print $out $line;
+            $printed = 1;
             last;
         }
     }
     close($in);
 
-    if ( !-s "$outfile.part" ) 
+    if ( !$printed )
     { 
+        # No BAM was identified. In that case, the population should be interpreted as
+        #   sample name regex's. Read BAM headers and find out the exact sample names and
+        #   list of BAMs. The regex may cause problems in future, this may be replaced by
+        #   an exact match in find_bams_with_samples.
+        #
         my ($bams,$samples) = $self->find_bams_with_samples($bam_list,$pops);
         if ( !@$bams ) 
         { 
             if ( !$$self{whole_genome_bams} ) 
             {
-                $self->throw("The BAMs not named as chrom$chr.bam, please set whole_genome_bams=>1 in your config file.\n");
+                $self->throw("The BAMs not named as chrom$chr.bam, please unset the whole_genome_bams config key\n");
             }
-            $self->throw("No matching BAM found: chr$chr; ",join(',',@$pops),"\n"); 
+            $self->throw("No matching BAM found for chr$chr; search in both file names and sample names: ",join(',',@$pops),"\n"); 
         }
         print $out join("\n", @$bams), "\n";
         close($out);
 
-        $out = $self->open_file($samples_fname);
-        my $sexes = $self->get_sample_sex(@$samples);
-        for my $sample (sort keys %$sexes)
+        if ( defined $$self{sample_list} )
         {
-            print $out "$sample\t$$sexes{$sample}\n";
+            $self->cmd("cp $$self{sample_list} $samples_fname");
+            undef $out;
+        }
+        else 
+        {
+            $out = $self->open_file($samples_fname);
+            my $sexes = $self->get_sample_sex(@$samples);
+            for my $sample (sort keys %$sexes)
+            {
+                print $out "$sample\t$$sexes{$sample}\n";
+            }
         }
     }
-    close($out);
+    if ( defined $out ) { close($out); }
 
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
 
+# Returns list of BAMs and samples which match the regex's from the sample_list
 sub find_bams_with_samples
 {
     my ($self,$bam_list,$sample_list) = @_;
