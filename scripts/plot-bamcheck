@@ -40,7 +40,7 @@ sub error
         "Options:\n",
         "   -k, --keep-files                    Do not remove temporary files.\n",
         "   -p, --prefix <path>                 The output files prefix, add a slash to create new directory.\n",
-        "   -r, --ref-stats <file>              Optional reference stats file with expected GC content.\n",
+        "   -r, --ref-stats <file>              Optional reference stats file with expected GC content (created by the ref-stats script).\n",
         "   -h, -?, --help                      This help message.\n",
         "\n";
 }
