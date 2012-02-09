@@ -505,8 +505,9 @@ sub next_data_hash
         if ( scalar @items != scalar @$cols ) 
         {
             my @test = split(/\s+/,$line);
-            if ( scalar @test == scalar @$cols ) { $self->warn("(Have spaces been used instead of tabs?)\n\n"); }
-            else { $self->throw("Error not recoverable, exiting.\n"); }
+            if ( scalar @test == scalar @$cols ) { $self->warn("(Were spaces used instead of tabs?)\n\n"); }
+            else { $self->throw(sprintf "Wrong number of fields%s; expected %d, got %d. The offending line was:\n[%s]\n\n", 
+                scalar @$cols, scalar @items, exists($$self{file}) ? "in $$self{file}" : '', $line); }
 
             @items = @test;
         }
