@@ -901,16 +901,6 @@ sub apply_local_filters
     my $filters = $$opts{filters};
     my %apply;
 
-    my ($dp,$dp_alt,$mq,$vdb);
-    if ( $$line[7]=~/DP4=(\d+),(\d+),(\d+),(\d+)/i )
-    {
-        $dp = $1 + $2 + $3 + $4;
-        $dp_alt = $3 + $4;
-    }
-    if ( $$line[7]=~/DP=(\d+)/i ) { $dp = $1; }
-    if ( $$line[7]=~/MQ=(\d+)/i ) { $mq = $1; }
-    if ( $$line[7]=~/VDB=([^;,\t]+)/i ) { $vdb = $1; }
-
     if ( exists($$filters{RefN}) )
     {
         $apply{RefN} = ($$line[3]=~/N/) ? 1 : 0;
@@ -938,36 +928,29 @@ sub apply_local_filters
     {
         $apply{HWE} = $$opts{hwe}<$$filters{HWE} && $$opts{icf}<0 ? 1 : 0;
     }
-    if ( defined $dp_alt )
+    if ( exists($$filters{VDB}) && $$line[7]=~/VDB=([^;,\t]+)/ )
     {
-        if ( exists($$filters{MinAB}) )
-        {
-            $apply{MinAB} = $dp_alt < $$filters{MinAB} ? 1 : 0;
-        }
+        $apply{VDB} = $1 < $$filters{VDB} ? 1 : 0;
     }
-    if ( defined $vdb )
+    if ( exists($$filters{MinDP}) or exists($$filters{MaxDP}) )
     {
-        $apply{VDB} = $vdb < $$filters{VDB} ? 1 : 0;
+        my $dp;
+        if ( $$line[7]=~/DP=(\d+)/ ) { $dp = $1; }
+        elsif ( $$line[7]=~/DP4=(\d+),(\d+),(\d+),(\d+)/ ) { $dp = $1 + $2 + $3 + $4; }
+
+        if ( exists($$filters{MinDP}) ) { $apply{MinDP} = $dp < $$filters{MinDP} ? 1 : 0; }
+        if ( exists($$filters{MaxDP}) ) { $apply{MaxDP} = $dp > $$filters{MaxDP} ? 1 : 0; }
     }
-    if ( defined $dp ) 
+    if ( exists($$filters{MinAB}) && $$line[7]=~/DP4=\d+,\d+,(\d+),(\d+)/ )
     {
-        if ( exists($$filters{MinDP}) )
-        {
-            $apply{MinDP} = $dp < $$filters{MinDP} ? 1 : 0;
-        }
-        if ( exists($$filters{MaxDP}) )
-        {
-            $apply{MaxDP} = $dp > $$filters{MaxDP} ? 1 : 0;
-        }
+        $apply{MinAB} = $1 + $2 < $$filters{MinAB} ? 1 : 0;
     }
-    if ( defined $mq )
+    if ( exists($$filters{MinMQ}) && $$line[7]=~/MQ=(\d+)/ )
     {
-        if ( exists($$filters{MinMQ}) )
-        {
-            $apply{MinMQ} = $mq < $$filters{MinMQ} ? 1 : 0;
-        }
+        $apply{MinMQ} = $1 < $$filters{MinMQ} ? 1 : 0;
     }
-    if ( $$line[7]=~/PV4=([^,]+),([^,]+),([^,]+),([^,;\t]+)/ )
+    if ( (exists($$filters{StrandBias}) or exists($$filters{BaseQualBias}) or exists($$filters{MapQualBias}) or exists($$filters{EndDistBias}))
+            && $$line[7]=~/PV4=([^,]+),([^,]+),([^,]+),([^,;\t]+)/ )
     {
         if ( exists($$filters{StrandBias}) ) 
         { 
