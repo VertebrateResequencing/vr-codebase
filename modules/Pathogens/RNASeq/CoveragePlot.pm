@@ -110,7 +110,7 @@ sub _create_padding_string
   my $padding_string = "";
   for(my $i = $previous_counter+1 ; $i < $current_counter; $i++)
   {
-    $padding_string .= "0 0 0\n";
+    $padding_string .= "0 0\n";
   }
   return $padding_string;
 }
