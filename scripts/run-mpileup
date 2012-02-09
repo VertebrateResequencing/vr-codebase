@@ -84,7 +84,7 @@ sub new
             chunks_overlap    => 0,
             whole_genome_bams => 0,         # Set to 1 if BAMs are not splitted by chromosome
             assumed_sex       => undef,     # Set to 'F' for females, 'M' males and undef mysql key above if the DB shouldn't be used.
-            sample_list       => undef,     # Provide list of samples with sex.
+            sample_list       => undef,     # Provide list of samples with sex. In this case, neither mysql nor assumed_sex keys are required.
 
             # Do specific regions only (whitespace delimited file with the columns CHR,FROM,TO)
             #   regions => 'regions.list',
@@ -121,7 +121,7 @@ sub parse_args
 
     # This lengthy code checks if mandatory parameters are present and fills the defaults issuing warnings when doing so.
     if ( !exists($$self{bams}) ) { $self->throw("The 'bams' config key not present\n"); }
-    if ( !exists($$self{mysql}) && !$$self{assumed_sex} ) { $self->throw("Neither 'mysql' nor 'assumed_sex' config keys present\n"); }
+    if ( !exists($$self{mysql}) && !$$self{assumed_sex} && !$$self{sample_list} ) { $self->throw("None of the config keys 'mysql', 'assumed_sex' or 'sample_list' present\n"); }
     if ( !exists($$self{chroms}) ) 
     { 
         $$self{chroms} = [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y) ];
