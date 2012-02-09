@@ -13,7 +13,7 @@ BEGIN {
 use Pathogens::RNASeq::GFF;
 
 my $rna_seq_gff = Pathogens::RNASeq::GFF->new(filename => 't/data/Citrobacter_rodentium_ICC168_v1_test.gff');
-my $feature = $rna_seq_gff->features()->{continuous_feature_id};
+my $feature = $rna_seq_gff->features()->{continuous_feature_locus_tag};
 $feature->exon_length(50);
 $feature->gene_strand(1);
 my @exons;

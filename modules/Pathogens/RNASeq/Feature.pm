@@ -35,7 +35,7 @@ sub _build_exons
 sub _build_gene_id
 {
   my ($self) = @_;
-  my ($gene_id, @junk) = $self->raw_feature->get_tag_values('ID');
+  my ($gene_id, @junk) = $self->raw_feature->get_tag_values('locus_tag');
   $gene_id =~ s/^"|"$//g;
   
   return $gene_id;

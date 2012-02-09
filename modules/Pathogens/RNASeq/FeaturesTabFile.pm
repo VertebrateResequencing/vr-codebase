@@ -6,7 +6,7 @@ FeaturesTabFile.pm   - Builds a spreadsheet of expression results
 
 use Pathogens::RNASeq::FeaturesTabFile;
 my $tab_file_results = Pathogens::RNASeq::FeaturesTabFile->new(
-  output_filename => '/abc/my_results.tab',
+  output_filename => '/abc/my_results',
   features => $features;
 );
 $tab_file_results->create_file;
@@ -28,7 +28,7 @@ sub _build__output_file_handles
   my %output_file_handles;
 	for my $sequence_name (@{$self->sequence_names} )
   {
-	  open($output_file_handles{$sequence_name}, '|-', " gzip >". $self->output_filename.".$sequence_name.gz")  || Pathogens::RNASeq::Exceptions::FailedToOpenFeaturesTabFileForWriting->throw( error => "Cant open ".$self->output_filename." for writing");
+	  open($output_file_handles{$sequence_name}, '|-', " gzip >". $self->output_filename.".$sequence_name.tab.gz")  || Pathogens::RNASeq::Exceptions::FailedToOpenFeaturesTabFileForWriting->throw( error => "Cant open ".$self->output_filename." for writing");
 	}
   return \%output_file_handles;
 }

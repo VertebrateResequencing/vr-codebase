@@ -48,3 +48,4 @@ is $read_2, 163, 'change to reverse strand Standard Protocol';
 is $duplicate_read, 117, 'unmark duplicates Standard Protocol' ;
 
 unlink('t/data/my_file.bam');
+unlink('t/data/my_file.bam.bai');
