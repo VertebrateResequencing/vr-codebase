@@ -253,7 +253,7 @@ has 'tag_id'  => (
     is          => 'ro',
     isa         => 'Maybe[Int]',
     #init_arg    => 'tag_internal_id', # this is the actual tag int id, not the id in the bamfile name
-    init_arg    => 'tag_id',
+    init_arg    => 'tag_map_id',
 );
 
 has 'tag_group_id'  => (
@@ -318,7 +318,7 @@ around BUILDARGS => sub {
         aliquot.tag_uuid,
         aliquot.tag_internal_id,
         library_tube.expected_sequence,
-        tags.map_id as tag_id,
+        tags.map_id as tag_map_id,
         library_tube.tag_group_name,
         library_tube.tag_group_uuid,
         library_tube.tag_group_internal_id,
@@ -330,7 +330,7 @@ around BUILDARGS => sub {
         library_tube.sample_name,
         library_tube.scanned_in_date,
         library_tube.public_name from current_library_tubes  as library_tube
-    join aliquots as aliquot on aliquot.receptacle_type = "library_tube" and aliquot.library_internal_id = library_tube.internal_id
+    join aliquots as aliquot on aliquot.receptacle_type = "library_tube" and aliquot.library_internal_id = library_tube.internal_id and aliquot.is_current = 1
     left join current_tags as tags on tags.internal_id = aliquot.tag_internal_id
     where library_tube.internal_id = ? order by aliquot.tag_internal_id desc limit 1];
 

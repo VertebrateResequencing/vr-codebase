@@ -198,11 +198,12 @@ around BUILDARGS => sub {
     # get pulldown_multiplexed_library_tube, tag is off that.
     $sql = qq[select distinct tag_internal_id,receptacle_internal_id as pulldown_tube_id
                 from aliquots
-                where library_uuid=?
+                where library_internal_id=?
                 and receptacle_type="pulldown_multiplexed_library_tube"
                 and is_current=1];
     
-    $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{uuid}));
+    $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
+   # use Data::Dumper; print Dumper($id_ref);
 
     if ($id_ref && $id_ref->{pulldown_tube_id}){
         # OK, have a pulldown tube, get tag info
