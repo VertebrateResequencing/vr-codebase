@@ -122,9 +122,9 @@ sub convert_known
     open($fh,'>',"$$opts{prefix}.known_haps.part") or error("$$opts{out}.known_haps.part: $!");
     while (my $x = $vcf->next_data_hash())
     {
-        # Consider only biallelic sites and SNPs only
+        # Consider only biallelic sites
         if ( scalar @{$$x{ALT}}!=1 or $$x{ALT}[0] eq '.' ) { next; }
-        if ( !($$x{ALT}[0]=~/^[ACGT]$/) or !($$x{REF}=~/^[ACGT]$/) ) { next; }
+        if ( !($$x{ALT}[0]=~/^[ACGT]+$/) or !($$x{REF}=~/^[ACGT]+$/) ) { next; }
 
         my $id = "$$x{CHROM}:$$x{POS}_$$x{REF}_$$x{ALT}[0]";
         print $fh "$id $id $$x{POS} $$x{REF} $$x{ALT}[0]";
@@ -176,7 +176,7 @@ sub convert_to_be_imputed
     open($fh,'>',"$$opts{prefix}.impute_haps.part") or error("$$opts{out}.impute_haps.part: $!");
     while (my $x = $vcf->next_data_hash())
     {
-        # Consider only biallelic sites and SNPs only
+        # Consider only biallelic sites
         if ( scalar @{$$x{ALT}}!=1 or $$x{ALT}[0] eq '.' ) { next; }
         if ( !($$x{ALT}[0]=~/^[ACGT]+$/) or !($$x{REF}=~/^[ACGT]+$/) ) { next; }
 
@@ -184,11 +184,13 @@ sub convert_to_be_imputed
         my $ref = $$x{REF};
         my $alt = $$x{ALT}[0];
         my $id  = "$$x{CHROM}:$$x{POS}_$ref\_$alt";
-        if ( length($ref)!=1 or length($alt)!=1 )
-        {
-            $ref = 'A';
-            $alt = 'C';
-        }
+
+        # This shouldn't be required anymore
+        # if ( length($ref)!=1 or length($alt)!=1 )
+        # {
+        #     $ref = 'A';
+        #     $alt = 'C';
+        # }
 
         print $fh "$$x{CHROM}:$$x{POS} $id $$x{POS} $ref $alt";
         for my $id (@samples)
@@ -351,20 +353,25 @@ sub next_impute_line
     my $ori_ref = $1;
     my $ori_alt = $2;
 
-    if ( length($ori_ref)>1 or length($ori_alt)>1 )
-    {
-        # The fake indel alleles: reverse the order if necessary
-        if ( $ref eq 'A' && $alt eq 'C' )
-        {
-            $ref = $ori_ref;
-            $alt = $ori_alt;
-        }
-        else
-        {
-            $ref = $ori_alt;
-            $alt = $ori_ref;
-        }
-    }
+    if ( $ori_ref ne $ref or $ori_alt ne $alt ) { error("Uh, this is not right: $id .. $ori_ref,$ori_alt vs $ref,$alt\n"); }
+
+    # This shouldn't be needed anymore
+    #
+    # if ( length($ori_ref)>1 or length($ori_alt)>1 )
+    # {
+    #     # The fake indel alleles: reverse the order if necessary
+    #     if ( $ref eq 'A' && $alt eq 'C' )
+    #     {
+    #         $ref = $ori_ref;
+    #         $alt = $ori_alt;
+    #     }
+    #     else
+    #     {
+    #         $ref = $ori_alt;
+    #         $alt = $ori_ref;
+    #     }
+    # }
+
     return ($pos,$ref,$alt,$gts);
 }
 

@@ -49,6 +49,7 @@ sub error
 
 sub parse_params
 {
+    $0 =~ s{^.+/}{}; $0 .= "($Vcf::VERSION)";
     my $opts = { positions=>0, args=>[$0, @ARGV], force=>0, split=>0, report_from_all=>1, apply_filters=>0 };
     while (defined(my $arg=shift(@ARGV)))
     {

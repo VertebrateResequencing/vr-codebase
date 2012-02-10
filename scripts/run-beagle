@@ -28,9 +28,11 @@ sub new
     $$self{do_clean} = 1;
     $$self{debug_chunks} = 0;
     $$self{limits} = { memory=>5_000, runtime=>24*60 };
-    $$self{vcf_beagle} = 'vcf-beagle';
+    $$self{vcf_beagle}  = 'vcf-beagle';
+    $$self{beagle_args} = '';
     $$self{_sampleconf} = q[
             beagle_jar  => '/nfs/users/nfs_p/pd3/sandbox/svn/beagle/beagle.jar',
+            beagle_args => '',
             vcf_beagle  => 'vcf-beagle',
             fai_ref     => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
             known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',
@@ -209,7 +211,7 @@ sub beagle
     my $mem = $mem_ori ? $mem_ori : 100;
     $self->set_limits(memory=>$mem*1.4);
     my $known = $$self{known_vcf} eq '--' ? '' : "markers=$outdir/$region.01.markers unphased=$outdir/$region.01.known_haps.gz missing=?";
-    $self->cmd(qq[java -Xmx${mem}m -jar $$self{beagle_jar} like=$outdir/$region.01.impute_haps.gz $known out=$outdir/$region.02 >>$outfile.o 2>>$outfile.e]);
+    $self->cmd(qq[java -Xmx${mem}m -jar $$self{beagle_jar} $$self{beagle_args} like=$outdir/$region.01.impute_haps.gz $known out=$outdir/$region.02 >>$outfile.o 2>>$outfile.e]);
     if ( !-z "$outfile.e" ) { $self->throw("Expected empty output file: $outfile.e"); }
     $self->cmd(qq[touch $outfile]);
     $self->set_limits(memory=>$mem_ori);
@@ -339,27 +341,25 @@ sub read_chr_lengths
 {
     my ($self,$fai,$regions) = @_;
 
+    my @chr_lengths;
     my @regex;
     if ( defined $regions )
     {
         for my $region (@$regions)
         {
             if ( $region=~/^[^:]+$/ ) { push @regex,$region; }
+            elsif ( $region=~/^([^:]+):(\d+)-(\d+)$/ ) { push @chr_lengths, {name=>$1, from=>$2, to=>$3} }
         }
     }
 
     if ( !@regex ) 
-    { 
-        if ( $$self{fai_chr_regex}=~/^\^/ or $$self{fai_chr_regex}=~/\$$/ )
-        {
-            $self->throw("The regex must not contain [^\$], this will be appended automagically.\n");
-        }
-        push @regex, $$self{fai_chr_regex}; 
+    {
+        if ( !@chr_lengths ) { $self->throw("FIXME: No regions given?"); }
+        return \@chr_lengths;
     }
 
     # Determine the chromosomes and their lengths
     open(my $fh,'<',$fai) or $self->throw("$fai: $!"); 
-    my @chr_lengths;
     while (my $line=<$fh>)
     {
         for my $regex (@regex)

@@ -1,5 +1,7 @@
 package Vcf;
 
+our $VERSION = 'r660';
+
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:variant_call_format
@@ -503,8 +505,9 @@ sub next_data_hash
         if ( scalar @items != scalar @$cols ) 
         {
             my @test = split(/\s+/,$line);
-            if ( scalar @test == scalar @$cols ) { $self->warn("(Have spaces been used instead of tabs?)\n\n"); }
-            else { $self->throw("Error not recoverable, exiting.\n"); }
+            if ( scalar @test == scalar @$cols ) { $self->warn("(Were spaces used instead of tabs?)\n\n"); }
+            else { $self->throw(sprintf "Wrong number of fields%s; expected %d, got %d. The offending line was:\n[%s]\n\n", 
+                scalar @$cols, scalar @items, exists($$self{file}) ? "in $$self{file}" : '', $line); }
 
             @items = @test;
         }
@@ -1274,7 +1277,7 @@ sub split_gt
     if ( $isep<0 ) 
     { 
         $isep = index($gt,'|'); 
-        if ( $isep<0 ) { $self->throw("No separator? [$gt]"); }
+        if ( $isep<0 ) { return $gt; }
     }
     my $a1 = substr($gt,0,$isep);
     my $a2 = substr($gt,$isep+1);

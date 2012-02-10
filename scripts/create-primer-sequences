@@ -25,6 +25,7 @@ create-primer-sequences
   -f, --flanking-length <int>-<int>       The length of the flanking sequence.
   -r, --ref <file>                        The reference sequence.
   -s, --sites <file>                      The file containing the sites data to produce primers for.
+  -a, --print-all-pairs                   [OPTIONAL] Print all possible primer pairs
   -c, --cluster <int>                     [OPTIONAL] Group sites into clusters if they are within <int> from each other
   -d, --tmp-dir                           [OPTIONAL] Where to put temporary files.
   -e, --edits <vcf>                       [OPTIONAL] To locate snps and indels within the flanking sequences.
@@ -69,6 +70,7 @@ my $opts = {};
 
 GetOptions(
     's|sites=s'                  =>  \$$opts{sites},
+    'a|print-all-pairs'          =>  \$$opts{all_pairs},
     'c|cluster=i'                =>  \$$opts{cluster},
     'f|flanking-length=s'        =>  \$$opts{flank},
     'r|ref=s'		             =>  \$$opts{refseq},
@@ -108,6 +110,7 @@ sub error
   -f, --flanking-length <int>-<int>       The length of the flanking sequence.
   -r, --ref <file>                        The reference sequence.
   -s, --sites <file>                      The file containing the sites data to produce primers for.
+  -a, --print-all-pairs                   [OPTIONAL] Print all possible primer pairs
   -c, --cluster <int>                     [OPTIONAL] Group sites into clusters if they are within <int> from each other
   -d, --tmp-dir                           [OPTIONAL] Where to put temporary files.
   -e, --edits <vcf>                       [OPTIONAL] To locate snps and indels within the flanking sequences.
@@ -269,8 +272,6 @@ sub query_transcripts
     if ( !exists($$opts{registry}) ) 
     {
         $$opts{species} = $$opts{transcripts};
-        warn("ToDo: Using hardwired species for Ensembl: $$opts{species}\n");
-
         $$opts{registry} = 'Bio::EnsEMBL::Registry';
         $$opts{registry}->load_registry_from_db(-host => 'ensembldb.ensembl.org', -user => 'anonymous', -port => 5306);
         $$opts{gene} = $$opts{registry}->get_adaptor($$opts{species}, "core", "Gene");
@@ -355,6 +356,7 @@ sub run_exonerate
 {
     my ($opts) = @_;
     my $id;
+    my ($nseqs,$nfound);
     
     open (my $fa_fh, ">", $$opts{prmrs_fa}) or error ("Unable to create $$opts{prmrs_fa}");
     open (my $prm_fh, "<", $$opts{prmr3_output}) or error ("Unable to open $$opts{prmr3_output}");
@@ -364,11 +366,13 @@ sub run_exonerate
         # SEQUENCE_ID=MATCH_DEL_RAW_1_1088554_220_221bp
         if ( $line=~/^SEQUENCE_ID=/ )
         {
+            $nseqs++;
             $id = $';
             next;
         }
         if ( $line=~/^PRIMER_LEFT_(\d+)_SEQUENCE=/ )
         {
+            $nfound++;
             print $fa_fh ">${id}_L$1\n$'\n";
             next;
         }
@@ -381,6 +385,8 @@ sub run_exonerate
     close ($prm_fh);
     close ($fa_fh);
     
+    if ( !$nfound ) { error("No primers returned by primer3"); }
+    if ( $nseqs>$nfound ) { warn("$nfound primers for $nseqs sequences\n"); }
     cmd($opts,"$$opts{exonerate_exec} -n 3 $$opts{prmrs_fa} $$opts{refseq} > $$opts{exonerate_output}");
 }
 
@@ -456,16 +462,16 @@ sub output_primer
     # use Data::Dumper; print STDERR Dumper($exn,$dat);
 
     # Check the uniqueness of exonerate hits
-    my $pair_to_use;
+    my @pairs_to_use;
     if ( exists($$exn{$id}) ) 
     {
         for my $pair (sort {$a<=>$b} keys %{$$exn{$id}})
         {
             if ( exists($$exn{$id}{$pair}{L}) && $$exn{$id}{$pair}{L}!=1 ) { next; }
             if ( exists($$exn{$id}{$pair}{R}) && $$exn{$id}{$pair}{R}!=1 ) { next; }
-            $pair_to_use = $pair;
+            push @pairs_to_use, $pair;
         }
-        if ( !$pair_to_use )
+        if ( !@pairs_to_use )
         {
             warn("No usable primers selected by exonerate: $id\n");
             return;
@@ -473,61 +479,69 @@ sub output_primer
     }
     else
     {
-        $pair_to_use = (sort {$a<=>$b} keys %{$$dat{primer}})[0];
+        @pairs_to_use = (sort {$a<=>$b} keys %{$$dat{primer}});
         warn("No hit from exonerate (splice site overlap?), using first pair: $id\n");
     }
-    if ( !exists($$dat{primer}{$pair_to_use}) ) { error("FIXME: no such pair $id:$pair_to_use in primer3 output?"); }
-
-    if ( !$$opts{header_printed} )
+    for my $pair (@pairs_to_use)
     {
-        $$opts{header_printed} = 1;
-        print "#ID\tLeft_primer\tRight_primer\tMelting_temperagures\tProduct_length\tTarget_ID\tTarget_Sequence\n";
-    }
+        $id = $$dat{id};
+        my $pair_to_use = $pair; 
 
-    if ( !($id=~/^([^_]+)_(\d+)_.+$/) ) { error("Could not parse the pair ID: $id\n"); }
-    my $chr = $1;
-    my $pos = $2;
-	my $short_pair_id = sprintf "%s_%s_%s", ++$$opts{nprinted},$chr,$pos;
+        if ( !exists($$dat{primer}{$pair_to_use}) ) { error("FIXME: no such pair $id:$pair_to_use in primer3 output?"); }
 
-    my $lprimer = $$dat{primer}{$pair_to_use}{L};
-    my $rprimer = $$dat{primer}{$pair_to_use}{R};
-    my $lpos    = $$dat{pos}{$pair_to_use}{L};
-    my $rpos    = $$dat{pos}{$pair_to_use}{R};
-    my $ltm     = $$dat{tm}{$pair_to_use}{L};
-    my $rtm     = $$dat{tm}{$pair_to_use}{R};
-    my $seq     = $$dat{seq};
-
-    # Sanity check the positions
-    my ($ppos,$len) = split(/,/,$lpos);
-    if ( length($lprimer) != $len ) { error("Different length: $lprimer $len\n"); }
-    my $lidx = index($seq,$lprimer);
-    if ( $lidx==-1 ) { error("Not found: $id .. $lprimer in $seq"); }
-    
-    ($ppos,$len) = split(/,/,$rpos);
-    if ( length($rprimer) != $len ) { error("Different length: $rprimer $len\n"); }
-    my $rrprimer = reverse_strand(1,$rprimer);
-    my $ridx = index($seq,$rrprimer);
-    if ( $ridx ==-1 ) { error("Not found: $id .. $rprimer ($rrprimer)"); }
-
-    my $span = $ridx - $lidx - length($lprimer);
-    my $span_seq = substr($seq,$lidx,$span+length($rprimer)+length($lprimer));
-    if ( $span<$$opts{span_min} or $span>$$opts{span_max} ) { error("The primer $id not within requested range <$$opts{span_min},$$opts{span_max}>: $span\n"); }
-
-    my $printed_id = $lprimer.'-'.$rprimer;
-    if ( exists($$opts{printed}{$printed_id}) )
-    {
-        my $msg = "The pair $id is identical to $$opts{printed}{$printed_id}{id}, skipping\n";
-        if ( abs($span-$$opts{printed}{$printed_id}{span})>20 )
+        if ( !$$opts{header_printed} )
         {
-            $msg = "The pair $id is identical to $$opts{printed}{$printed_id}{id} except for product length ($span vs $$opts{printed}{$printed_id}{span}), skipping...\n";
+            $$opts{header_printed} = 1;
+            print "#ID\tLeft_primer\tRight_primer\tMelting_temperagures\tProduct_length\tTarget_ID\tTarget_Sequence\n";
         }
-        warn($msg);
-        return; 
-    }
-    $$opts{printed}{$printed_id} = { id=>$id, span=>$span };
 
-    $id =~ s/^\S+_\d+_//;
-    print "$short_pair_id\t$lprimer\t$rprimer\t$ltm,$rtm\t$span\t$id\t$span_seq\n";
+        if ( !($id=~/^([^_]+)_(\d+)_.+$/) ) { error("Could not parse the pair ID: $id\n"); }
+        my $chr = $1;
+        my $pos = $2;
+        my $short_pair_id = sprintf "%s_%s_%s", ++$$opts{nprinted},$chr,$pos;
+
+        my $lprimer = $$dat{primer}{$pair_to_use}{L};
+        my $rprimer = $$dat{primer}{$pair_to_use}{R};
+        my $lpos    = $$dat{pos}{$pair_to_use}{L};
+        my $rpos    = $$dat{pos}{$pair_to_use}{R};
+        my $ltm     = $$dat{tm}{$pair_to_use}{L};
+        my $rtm     = $$dat{tm}{$pair_to_use}{R};
+        my $seq     = $$dat{seq};
+
+        # Sanity check the positions
+        my ($ppos,$len) = split(/,/,$lpos);
+        if ( length($lprimer) != $len ) { error("Different length: $lprimer $len\n"); }
+        my $lidx = index($seq,$lprimer);
+        if ( $lidx==-1 ) { error("Not found: $id .. $lprimer in $seq"); }
+
+        ($ppos,$len) = split(/,/,$rpos);
+        if ( length($rprimer) != $len ) { error("Different length: $rprimer $len\n"); }
+        my $rrprimer = reverse_strand(1,$rprimer);
+        my $ridx = index($seq,$rrprimer);
+        if ( $ridx ==-1 ) { error("Not found: $id .. $rprimer ($rrprimer)"); }
+
+        my $span = $ridx - $lidx - length($lprimer);
+        my $span_seq = substr($seq,$lidx,$span+length($rprimer)+length($lprimer));
+        if ( $span<$$opts{span_min} or $span>$$opts{span_max} ) { error("The primer $id not within requested range <$$opts{span_min},$$opts{span_max}>: $span\n"); }
+
+        my $printed_id = $lprimer.'-'.$rprimer;
+        if ( exists($$opts{printed}{$printed_id}) )
+        {
+            my $msg = "The pair $id is identical to $$opts{printed}{$printed_id}{id}, skipping\n";
+            if ( abs($span-$$opts{printed}{$printed_id}{span})>20 )
+            {
+                $msg = "The pair $id is identical to $$opts{printed}{$printed_id}{id} except for product length ($span vs $$opts{printed}{$printed_id}{span}), skipping...\n";
+            }
+            warn($msg);
+            return; 
+        }
+        $$opts{printed}{$printed_id} = { id=>$id, span=>$span };
+
+        $id =~ s/^\S+_\d+_//;
+        print "$short_pair_id\t$lprimer\t$rprimer\t$ltm,$rtm\t$span\t$id\t$span_seq\n";
+
+        if ( !$$opts{all_pairs} ) { last; }
+    }
 }
 
 sub reverse_strand
