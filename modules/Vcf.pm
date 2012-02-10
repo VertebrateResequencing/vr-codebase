@@ -1277,7 +1277,7 @@ sub split_gt
     if ( $isep<0 ) 
     { 
         $isep = index($gt,'|'); 
-        if ( $isep<0 ) { $self->throw("No separator? [$gt]"); }
+        if ( $isep<0 ) { return $gt; }
     }
     my $a1 = substr($gt,0,$isep);
     my $a2 = substr($gt,$isep+1);
