@@ -153,7 +153,7 @@ sub _create_expression_job
 
   my $job_name = $self->{prefix}.$sequencing_filename.'_calculate_expression';
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$sequencing_filename.'_calculate_expression.pl');
-  my $total_memory_mb = 3000;
+  my $total_memory_mb = 2000;
   
   my($action_lock_filename, $directories, $suffix) = fileparse($action_lock);
   my $sequencing_file_action_lock = $self->{lane_path}.'/'.$sequencing_filename.$action_lock_filename;
@@ -180,7 +180,8 @@ sub _create_expression_job
         print $scriptfh qq{
   use strict;
   use Pathogens::RNASeq::Expression;
-  
+  use Pathogens::RNASeq::CoveragePlot;
+
   
   my \$expression_results = Pathogens::RNASeq::Expression->new(
     sequence_filename    => qq[$sequencing_filename],
