@@ -239,7 +239,7 @@ sub _get_mplex_pool_ids{
     my $sql = qq[select distinct receptacle_internal_id as mplex_id 
                 from aliquots
                 where library_uuid=?
-                and receptacle_type="pulldown_multiplexed_library_tube"
+                and receptacle_type in("pulldown_multiplexed_library_tube", "multiplexed_library_tube")
                 and is_current=1];
     
     my $sth = $self->_dbh->prepare($sql);
