@@ -199,7 +199,7 @@ around BUILDARGS => sub {
     $sql = qq[select distinct tag_internal_id,receptacle_internal_id as pulldown_tube_id
                 from aliquots
                 where library_internal_id=?
-                and receptacle_type="pulldown_multiplexed_library_tube"
+                and receptacle_type in ("pulldown_multiplexed_library_tube","multiplexed_library_tube")
                 and is_current=1];
     
     $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
