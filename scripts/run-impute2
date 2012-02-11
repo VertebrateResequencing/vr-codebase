@@ -267,10 +267,11 @@ sub impute2_to_vcf
     my $from = $2 - $$self{buffer_region}*1000;
     my $to   = $3 + $$self{buffer_region}*1000;
     if ( $from<0 ) { $from = 0; }
+    if ( !-z "$outfile.e" ) { `cat $outfile.e >> $outfile.e.saved`; }
     if ( -e "$outdir/02.impute2.$chunk.gz" )
     {
         # Everything went OK
-        $self->cmd(qq[$$self{vcf_impute2} -r $chr:$from-$to -i $$self{in_vcf} -o $outdir/02.impute2.$chunk 2>>$outfile.e | bgzip -c > $outfile.part]);
+        $self->cmd(qq[$$self{vcf_impute2} -r $chr:$from-$to -i $$self{in_vcf} -o $outdir/02.impute2.$chunk 2>$outfile.e | bgzip -c > $outfile.part]);
     }
     elsif ( -z "$outdir/02.impute2.$chunk.e" )
     {

@@ -30,9 +30,11 @@ sub new
     $$self{limits} = { memory=>5_000, runtime=>24*60 };
     $$self{vcf_beagle}  = 'vcf-beagle';
     $$self{beagle_args} = '';
+    $$self{java_args} = '';
     $$self{_sampleconf} = q[
             beagle_jar  => '/nfs/users/nfs_p/pd3/sandbox/svn/beagle/beagle.jar',
             beagle_args => '',
+            java_args   => '',
             vcf_beagle  => 'vcf-beagle',
             fai_ref     => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
             known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',
@@ -48,8 +50,8 @@ sub new
             #   be sorted. By default, the whole inpute VCF is imputed.
             # region => [ '1:159000000-161000000', '1:62000000-64000000', ],
 
-            # Additional 40% of this memory will be requested from LSF because of java issues
-            limits   => { memory=>5_000, runtime=>24*60 },
+            # Only 80% of this memory will be given to java because of LSF+java issues
+            limits   => { memory=>10_000, runtime=>24*60 },
             do_clean => 1,         # Remove runner's temporary files
     ]."\n";
 
@@ -230,19 +232,12 @@ sub beagle
         $self->cmd("touch $outfile");
         return;
     }
-    my $mem_ori  = $self->get_limits('memory');
-    my $mem = $mem_ori ? $mem_ori : 100;
-    $self->set_limits(memory=>$mem*1.4);
+    if ( !-z "$outfile.e" ) { `cat $outfile.e >> $outfile.e.saved`; }
+    my $mem = int($self->get_limits('memory') * 0.8);
     my $known = $$self{known_vcf} eq '--' ? '' : "markers=$outdir/$region.01.markers unphased=$outdir/$region.01.known_haps.gz missing=?";
-    $self->cmd(qq[java -Xmx${mem}m -jar $$self{beagle_jar} $$self{beagle_args} like=$outdir/$region.01.impute_haps.gz $known out=$outdir/$region.02 >>$outfile.o 2>$outfile.e]);
-    if ( !-z "$outfile.e" ) 
-    {
-        `cat $outfile.e >> $outfile.e.saved`;
-        unlink("$outfile.e");
-        $self->throw("Expected empty error file: $outfile.e.saved");
-    }
+    $self->cmd(qq[java -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} like=$outdir/$region.01.impute_haps.gz $known out=$outdir/$region.02 >>$outfile.o 2>$outfile.e]);
+    if ( !-z "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
     $self->cmd(qq[touch $outfile]);
-    $self->set_limits(memory=>$mem_ori);
 }
 
 sub beagle_to_vcf
