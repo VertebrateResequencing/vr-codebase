@@ -43,7 +43,13 @@ sub new
         # Do not split blocks phased by IMPUTE2 even when phasing quality is low - single sites may be unphased in otherwise phased chunks
         phased_join_args => '-q 0 -j 10',
         chunk_size       => 1_000_000,
-        chromosomes      => [qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X)],
+
+        # Chunks to prioritize. If set, these chunks will run as first
+        # VIP_chunks => [ '18:46588427-47619278', '9:107043283-108190518' ],
+
+        # Regions to impute, the chunks must be sorted by chromosomal position or else the resulting VCF will not
+        #   be sorted. By default, the whole inpute VCF is imputed.
+        # region => [ '1:159000000-161000000', '1:62000000-64000000', ],
 
         limits   => { memory=>5_500, runtime=>3*24*60 },
         do_clean => 1,   # Remove runner's temporary files
@@ -123,7 +129,7 @@ sub main
         # List chunks and exit
         for my $region (@$regions)
         {
-            my $chunks = $self->get_chunks($$self{chunk_size},[$region]);
+            my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
             for my $chunk (@$chunks)
             {
                 print "$outdir/$region/02.impute2.$chunk\n";
@@ -138,7 +144,7 @@ sub main
     {
         $self->spawn('vcf_to_impute2',"$outdir/$region/01.vcf_to_impute2.done",$region);
     }
-    $self->wait;
+    if ( !exists($$self{_VIP_chunks}) ) { $self->wait; }
     
 
     # Run impute2 on chunks
@@ -147,7 +153,7 @@ sub main
     {
         if ( !$self->is_finished("$outdir/$region/02.impute2.done") )
         {
-            my $chunks = $self->get_chunks($$self{chunk_size},[$region]);
+            my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
             for my $chunk (@$chunks)
             {
                 $self->spawn('impute2',"$outdir/$region/02.impute2.$chunk.done",$chunk,"$outdir/$region");
@@ -155,24 +161,34 @@ sub main
         }
     }
     $self->set_limits(memory=>undef,runtime=>undef,verbose=>1);
-    $self->wait;
-
+    if ( !exists($$self{_VIP_chunks}) ) { $self->wait; }
 
     # Convert to VCFs and concat
     if ( !$self->is_finished("$outdir/04.merged.vcf.gz") ) 
     {
-        my @all_chunks;
         for my $region (@$regions)
         {
-            my $chunks = $self->get_chunks($$self{chunk_size},[$region]);
+            my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
             for my $chunk (@$chunks)
             {
+                if ( !$self->is_finished("$outdir/$region/02.impute2.$chunk.done") ) { next; }
                 $self->spawn('impute2_to_vcf',"$outdir/$region/03.vcfs.$chunk.vcf.gz",$chunk,"$outdir/$region");
-                push @all_chunks, "$outdir/$region/03.vcfs.$chunk.vcf.gz";
             }
         }
         $self->wait;
 
+        # This is clumsy, but the VIP chunks must be disabled for this, they may be out of order.
+        delete($$self{VIP_chunks});
+        delete($$self{_VIP_chunks});
+        my @all_chunks = ();
+        for my $region (@$regions)
+        {
+            my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
+            for my $chunk (@$chunks)
+            {
+                push @all_chunks, "$outdir/$region/03.vcfs.$chunk.vcf.gz";
+            }
+        }
         $self->spawn('concat_vcfs',"$outdir/04.merged.vcf.gz",@all_chunks);
         $self->wait;
     }
@@ -211,22 +227,10 @@ sub regions
     my ($self) = @_;
     if ( exists($$self{region}) ) 
     { 
-        # The region was given on command line
-        my @list;
-        for my $region (@{$$self{region}})
-        {
-            if ( !($region=~/^([^:]+)/) ) { $self->throw("Could not parse region: $region\n"); }
-            push @list, $1;
-            if ( $region=~/^([^:]+):(\d+)-(\d+)$/ )
-            {
-                push @{$$self{regions}{$1}}, { name=>$1, from=>$2, to=>$3 };
-            }
-        }
-        return \@list;
+        if ( ref($$self{region}) eq 'ARRAY' ) { return $$self{region} }
+        return [ $$self{region} ]; 
     }
-    # Do all regions given in the config file
-    my %chroms = map { $_ => 1 } @{$$self{chromosomes}};
-    my (@in_list) = grep { chomp && exists($chroms{$_}) } $self->cmd(qq[tabix -l $$self{in_vcf}]);
+    my (@in_list) = grep { chomp } $self->cmd(qq[tabix -l $$self{in_vcf}]);
     return \@in_list;
 }
 
@@ -265,16 +269,23 @@ sub impute2_to_vcf
     if ( $from<0 ) { $from = 0; }
     if ( -e "$outdir/02.impute2.$chunk.gz" )
     {
+        # Everything went OK
         $self->cmd(qq[$$self{vcf_impute2} -r $chr:$from-$to -i $$self{in_vcf} -o $outdir/02.impute2.$chunk 2>>$outfile.e | bgzip -c > $outfile.part]);
     }
     elsif ( -z "$outdir/02.impute2.$chunk.e" )
     {
-        # From some reason, IMPUTE2 could not finish it's task, but the error log is empty. Don't loose any sites,
+        # From some reason, IMPUTE2 could not finish its task, but the error log is empty. Don't loose any sites,
         #   even if they are not imputed.
         $self->cmd(qq[tabix -h $$self{in_vcf} $chunk | bgzip -c > $outfile.part]);
     }
     else
     {
+        # It's alright to go without the impute2 output if there are no variants in the 
+        #   input file. Save the error log. TODO: It makes more sense to do this check before
+        #   impute2 is run.
+        `cat $outdir/02.impute2.$chunk.e >> $outdir/02.impute2.$chunk.e.saved`;
+        unlink("$outdir/02.impute2.$chunk.e");
+
         my @ret = $self->cmd(qq[tabix $$self{known_vcf} $chunk | head -100 | wc -l]);
         if ( !@ret ) { $self->throw("FIXME: tabix $$self{known_vcf} $chunk | head -100 | wc -l"); }
         chomp($ret[0]);
@@ -296,7 +307,7 @@ sub concat_vcfs
         print $fh $file, "\n";
     }
     close($fh);
-    $self->cmd(qq[vcf-phased-join $$self{phased_join_args} -l $outfile.list -o - 2>$outfile.log | bgzip -c > $outfile.part]);
+    $self->cmd(qq[vcf-phased-join $$self{phased_join_args} -l $outfile.list -o - 2>>$outfile.log | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
 }
@@ -361,30 +372,32 @@ sub cmd
     return Utils::CMD($cmd,{verbose=>1});
 }
 
-sub filter_regions
+sub chr_chunks
 {
-    my ($self,$regions,$filters) = @_;
-    my @out;
-    for my $filter (@$filters)
-    {
-        if ( !($filter=~/^[^:]+$/) ) { $self->throw("todo: [$filter]"); }
-        if ( !exists($$regions{$filter}) ) { next; }
-        @out = @{$$regions{$filter}};
-    }
-    return \@out;
-}
+    my ($self,$split_size,$region) = @_;
 
-sub get_chunks
-{
-    my ($self,$split_size,$regions) = @_;
+    my $regions = $self->read_chr_lengths($$self{fai_ref},$region);
+
+    if ( exists($$self{VIP_chunks}) && !exists($$self{_VIP_chunks}) ) 
+    {
+        for my $chunk (@{$$self{VIP_chunks}})
+        {
+            if ( !($chunk=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the VIP chunk [$chunk]\n"); }
+            my $chr  = $1;
+            my $from = $2;
+            my $to   = $3;
+            push @{$$self{_VIP_chunks}{$chr}}, [$from,$to];
+        }
+    }
 
     my @chunks;
-    $regions = exists($$self{regions}) ? $self->filter_regions($$self{regions},$regions) : $self->read_chr_lengths($$self{fai_ref},$regions);
+    my @vip_chunks;
     for my $region (@$regions)
     {
         my $chr     = $$region{name};
         my $pos     = $$region{from};
         my $end_pos = $$region{to};
+
         while ($pos<$end_pos)
         {
             my $from = $pos;
@@ -392,14 +405,28 @@ sub get_chunks
 
             if ( $to>$end_pos ) { $to=$end_pos; }
 
-            push @chunks, "$chr:$from-$to";
+            my $is_vip;
+            if ( exists($$self{_VIP_chunks}) && exists($$self{_VIP_chunks}{$chr}) )
+            {
+                for my $chunk (@{$$self{_VIP_chunks}{$chr}})
+                {
+                    if ( $$chunk[0]>$to   ) { next; }
+                    if ( $$chunk[1]<$from ) { next; }
+                    $is_vip = 1; 
+                    last;
+                }
+            }
+            if ( $is_vip ) { push @vip_chunks, "$chr:$from-$to"; }
+            else { push @chunks, "$chr:$from-$to"; }
 
-            $pos += $split_size - $$self{chunks_overlap};
+            $pos += $split_size;
             if ( $pos<1 ) { $self->throw("The split size too small [$split_size]?\n"); }
 
             if ( $$self{debug_chunks} && scalar @chunks>$$self{debug_chunks} ) { return \@chunks; }
         }
     }
+    if ( @vip_chunks ) { @chunks = ( @vip_chunks, @chunks ); }
+
     return \@chunks;
 }
 

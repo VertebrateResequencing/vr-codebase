@@ -41,6 +41,13 @@ sub new
             chunk_size      => 1_000_000,
             debug_chunks    => 0,
 
+            # Chunks to prioritize. If set, these chunks will run as first
+            # VIP_chunks => [ '18:46588427-47619278', '9:107043283-108190518' ],
+
+            # Regions to impute, the chunks must be sorted by chromosomal position or else the resulting VCF will not
+            #   be sorted. By default, the whole inpute VCF is imputed.
+            # region => [ '1:159000000-161000000', '1:62000000-64000000', ],
+
             # Additional 40% of this memory will be requested from LSF because of java issues
             limits   => { memory=>5_000, runtime=>24*60 },
             do_clean => 1,         # Remove runner's temporary files
@@ -129,22 +136,34 @@ sub main
         }
     }
     $self->set_limits(memory=>undef,runtime=>undef);
-    $self->wait;
+    if ( !exists($$self{_VIP_chunks}) ) { $self->wait; }
 
     # Convert to VCFs and concat
     if ( !$self->is_finished("$outdir/03.merged.vcf.gz") ) 
     {
-        my @all_chunks;
         for my $region (@$regions)
         {
             my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
             for my $chunk (@$chunks)
             {
+                if ( !$self->is_finished("$outdir/$region/$chunk.02.beagle.done") ) { next; }
                 $self->spawn('beagle_to_vcf',"$outdir/$region/03.vcfs.$chunk.vcf.gz","$outdir/$region",$chunk);
-                push @all_chunks, "$outdir/$region/03.vcfs.$chunk.vcf.gz";
             }
         }
         $self->wait;
+
+        # This is clumsy, but the VIP chunks must be disabled for this, because they may be out of order.
+        delete($$self{VIP_chunks});
+        delete($$self{_VIP_chunks});
+        my @all_chunks = ();
+        for my $region (@$regions)
+        {
+            my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
+            for my $chunk (@$chunks)
+            {
+                push @all_chunks, "$outdir/$region/03.vcfs.$chunk.vcf.gz";
+            }
+        }
 
         $self->set_limits(runtime=>24*60);
         $self->spawn('concat_vcfs',"$outdir/03.merged.vcf.gz",@all_chunks);
@@ -182,7 +201,11 @@ sub runtime_stats
 sub regions
 {
     my ($self) = @_;
-    if ( exists($$self{region}) ) { return [ $$self{region} ]; }
+    if ( exists($$self{region}) ) 
+    { 
+        if ( ref($$self{region}) eq 'ARRAY' ) { return $$self{region} }
+        return [ $$self{region} ]; 
+    }
     my (@in_list) = grep { chomp } $self->cmd(qq[tabix -l $$self{in_vcf}]);
     return \@in_list;
 }
@@ -211,8 +234,13 @@ sub beagle
     my $mem = $mem_ori ? $mem_ori : 100;
     $self->set_limits(memory=>$mem*1.4);
     my $known = $$self{known_vcf} eq '--' ? '' : "markers=$outdir/$region.01.markers unphased=$outdir/$region.01.known_haps.gz missing=?";
-    $self->cmd(qq[java -Xmx${mem}m -jar $$self{beagle_jar} $$self{beagle_args} like=$outdir/$region.01.impute_haps.gz $known out=$outdir/$region.02 >>$outfile.o 2>>$outfile.e]);
-    if ( !-z "$outfile.e" ) { $self->throw("Expected empty output file: $outfile.e"); }
+    $self->cmd(qq[java -Xmx${mem}m -jar $$self{beagle_jar} $$self{beagle_args} like=$outdir/$region.01.impute_haps.gz $known out=$outdir/$region.02 >>$outfile.o 2>$outfile.e]);
+    if ( !-z "$outfile.e" ) 
+    {
+        `cat $outfile.e >> $outfile.e.saved`;
+        unlink("$outfile.e");
+        $self->throw("Expected empty error file: $outfile.e.saved");
+    }
     $self->cmd(qq[touch $outfile]);
     $self->set_limits(memory=>$mem_ori);
 }
@@ -312,13 +340,28 @@ sub chr_chunks
 {
     my ($self,$split_size,$region) = @_;
 
-    my @chunks;
     my $regions = $self->read_chr_lengths($$self{fai_ref},$region);
+
+    if ( exists($$self{VIP_chunks}) && !exists($$self{_VIP_chunks}) ) 
+    {
+        for my $chunk (@{$$self{VIP_chunks}})
+        {
+            if ( !($chunk=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the VIP chunk [$chunk]\n"); }
+            my $chr  = $1;
+            my $from = $2;
+            my $to   = $3;
+            push @{$$self{_VIP_chunks}{$chr}}, [$from,$to];
+        }
+    }
+
+    my @chunks;
+    my @vip_chunks;
     for my $region (@$regions)
     {
         my $chr     = $$region{name};
         my $pos     = $$region{from};
         my $end_pos = $$region{to};
+
         while ($pos<$end_pos)
         {
             my $from = $pos;
@@ -326,7 +369,19 @@ sub chr_chunks
 
             if ( $to>$end_pos ) { $to=$end_pos; }
 
-            push @chunks, "$chr:$from-$to";
+            my $is_vip;
+            if ( exists($$self{_VIP_chunks}) && exists($$self{_VIP_chunks}{$chr}) )
+            {
+                for my $chunk (@{$$self{_VIP_chunks}{$chr}})
+                {
+                    if ( $$chunk[0]>$to   ) { next; }
+                    if ( $$chunk[1]<$from ) { next; }
+                    $is_vip = 1; 
+                    last;
+                }
+            }
+            if ( $is_vip ) { push @vip_chunks, "$chr:$from-$to"; }
+            else { push @chunks, "$chr:$from-$to"; }
 
             $pos += $split_size;
             if ( $pos<1 ) { $self->throw("The split size too small [$split_size]?\n"); }
@@ -334,6 +389,8 @@ sub chr_chunks
             if ( $$self{debug_chunks} && scalar @chunks>$$self{debug_chunks} ) { return \@chunks; }
         }
     }
+    if ( @vip_chunks ) { @chunks = ( @vip_chunks, @chunks ); }
+
     return \@chunks;
 }
 
