@@ -41,6 +41,7 @@ sub error
 
 sub parse_params
 {
+    $0 =~ s{^.+/}{}; $0 .= "($Vcf::VERSION)";
     my $opts = { exclude_ref=>0, keep_uncalled=>0, replace_with_ref=>0, private=>0, args=>[$0, @ARGV] };
     while (my $arg=shift(@ARGV))
     {

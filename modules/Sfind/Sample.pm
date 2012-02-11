@@ -238,15 +238,16 @@ has 'created' => (
     isa         => MysqlDateTime,
     coerce      => 1,   # accept mysql dates
 );
-# Add these when fields appear from Andrew Page.
-#has 'strain'=> (
-#    is          => 'ro',
-#    isa         => 'Maybe[Str]',
-#);
-#has 'public_name'=> (
-#    is          => 'ro',
-#    isa         => 'Maybe[Str]',
-#);
+
+has 'strain'=> (
+    is          => 'ro',
+    isa         => 'Maybe[Str]',
+);
+
+has 'public_name'=> (
+    is          => 'ro',
+    isa         => 'Maybe[Str]',
+);
 
 has 'library_request_ids'=> (
     is          => 'ro',
@@ -305,7 +306,9 @@ sub _get_library_requests {
  
 sub _get_library_request_ids {
     my ($self) = @_;
-    my $sql = qq[select internal_id from current_requests where (request_type like '%library creation' or request_type like '%library preparation') and source_asset_sample_internal_id=? and study_internal_id=? ];
+    #my $sql = qq[select internal_id from current_requests where (request_type like '%library creation' or request_type like '%library preparation') and source_asset_sample_internal_id=? and study_internal_id=? ];
+
+    my $sql = qq[select internal_id from current_requests where ((request_type like '%library creation' or request_type like '%library preparation') or (request_type in ('Pulldown WGS', 'Pulldown SC', 'Pulldown ISC'))) and source_asset_sample_internal_id=? and study_internal_id=? ];
     my @library_requests;
     my $sth = $self->{_dbh}->prepare($sql);
     $sth->execute($self->id, $self->study_id);

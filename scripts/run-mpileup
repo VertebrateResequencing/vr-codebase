@@ -28,6 +28,8 @@ sub new
     $$self{do_clean} = 1;
     $$self{limits} = { runtime=>24*60 };
     $$self{debug_chunks} = 0;
+    $$self{merge_pops} = 0;
+    $$self{whole_genome_bams} = 1;
     $$self{_sampleconf} = q[
             mpileup  => '/nfs/users/nfs_p/pd3/cvs/samtools/samtools mpileup -EDS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA',
             bcftools => '/nfs/users/nfs_p/pd3/cvs/samtools/bcftools/bcftools view -p 0.99',
@@ -61,12 +63,17 @@ sub new
                 # With no populations, at least 'pooled' must be given
                 pooled => [ '.' ],
             
+                # The population groups can be defined either as BAM file name substrings (attempted first)
+                #   or, if none of the regex finds a matching BAM, as a list of samples.
                 AMR => [ qw(MXL CLM PUR) ],
                 AFR => [ qw(YRI LWK ASW) ],
                 ASN => [ qw(CHB CHS JPT) ],
                 EUR => [ qw(CEU TSI FIN GBR IBS) ],
-            
             },
+
+            # Do not merge population VCFs into one VCF. The merged set can find more rare variants
+            #   than the pooled set.
+            merge_pops => 0,
             
             # Set the depth filter (+/D=N) to about twice the average depth.
             filter => 'vcf-annotate -f +',
@@ -76,9 +83,9 @@ sub new
             shuffle_chunks    => 0,         # Process chunks in random order to randomize disk access
             keep_bcfs         => 1,
             chunks_overlap    => 0,
-            whole_genome_bams => 0,         # Set to 1 if BAMs are not splitted by chromosome
+            whole_genome_bams => 1,         # Set to 0 if BAMs are splitted by chromosome. In such a case, the bams must be named as '*chrom$chr.bam'
             assumed_sex       => undef,     # Set to 'F' for females, 'M' males and undef mysql key above if the DB shouldn't be used.
-            sample_list       => undef,     # Provide list of samples with sex.
+            sample_list       => undef,     # Provide list of samples with sex. In this case, neither mysql nor assumed_sex keys are required.
 
             # Do specific regions only (whitespace delimited file with the columns CHR,FROM,TO)
             #   regions => 'regions.list',
@@ -115,7 +122,7 @@ sub parse_args
 
     # This lengthy code checks if mandatory parameters are present and fills the defaults issuing warnings when doing so.
     if ( !exists($$self{bams}) ) { $self->throw("The 'bams' config key not present\n"); }
-    if ( !exists($$self{mysql}) && !$$self{assumed_sex} ) { $self->throw("Neither 'mysql' nor 'assumed_sex' config keys present\n"); }
+    if ( !exists($$self{mysql}) && !$$self{assumed_sex} && !$$self{sample_list} ) { $self->throw("None of the config keys 'mysql', 'assumed_sex' or 'sample_list' present\n"); }
     if ( !exists($$self{chroms}) ) 
     { 
         $$self{chroms} = [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y) ];
@@ -206,13 +213,12 @@ sub main
     {
         for my $chr (@chroms)
         {
-            my $bams_outfile = "$outdir/lists/chr$chr-$pop.list";
+            my $bams_outfile    = "$outdir/lists/chr$chr-$pop.list";
+            my $samples_outfile = "$outdir/lists/chr$chr-$pop.samples";
             if ( !$self->is_finished($bams_outfile) )
             {
-                $self->population_group_bams_list($bams_outfile,$$self{bams},$chr,$value);
+                $self->population_group_bams_list($bams_outfile,$$self{bams},$chr,$value, $samples_outfile);
             }
-
-            my $samples_outfile = "$outdir/lists/chr$chr-$pop.samples";
             if ( !$self->is_finished($samples_outfile) )
             {
                 $self->sample_list($samples_outfile,$bams_outfile);
@@ -252,7 +258,7 @@ sub main
     $self->set_limits(runtime=>undef);
 
     # Create the merged set if there are more population groups (pooled + two others)
-    if ( scalar keys %{$$self{pops}} > 2 )
+    if ( $$self{merge_pops} && scalar keys %{$$self{pops}} > 2 )
     {
         for my $chunk (@$chunks)
         {
@@ -362,33 +368,121 @@ sub open_file
 
 sub population_group_bams_list
 {
-    my ($self,$outfile,$bam_list,$chr,$pops) = @_;
+    my ($self,$outfile,$bam_list,$chr,$pops,$samples_fname) = @_;
 
     open(my $in,'<',$bam_list) or $self->throw("$bam_list: $!");
     my $out = $self->open_file("$outfile.part");
+    my $printed = 0;
     while (my $line=<$in>)
     {
-        if ( !($line=~/chrom$chr.bam/) && !$$self{whole_genome_bams} ) { next; }
+        # If the BAMs are split by chr, we are applying to regex's to select by chromosome
+        #   and by the population name. Otherwise, only population regex is used.
+        if ( !$$self{whole_genome_bams} && !($line=~/chrom$chr.bam/) ) { next; }
         for my $pop (@$pops)
         {
             if ( !($line=~/$pop/) ) { next; }
             print $out $line;
+            $printed = 1;
             last;
         }
     }
-    close($out);
     close($in);
 
-    if ( !-s "$outfile.part" ) 
+    if ( !$printed )
     { 
-        if ( !$$self{whole_genome_bams} ) 
-        {
-            $self->throw("The BAMs not named as chrom$chr.bam, please set whole_genome_bams=>1 in your config file.\n");
+        # No BAM was identified. In that case, the population should be interpreted as
+        #   sample name regex's. Read BAM headers and find out the exact sample names and
+        #   list of BAMs. The regex may cause problems in future, this may be replaced by
+        #   an exact match in find_bams_with_samples.
+        #
+        my ($bams,$samples) = $self->find_bams_with_samples($bam_list,$pops);
+        if ( !@$bams ) 
+        { 
+            if ( !$$self{whole_genome_bams} ) 
+            {
+                $self->throw("The BAMs not named as chrom$chr.bam, please unset the whole_genome_bams config key\n");
+            }
+            $self->throw("No matching BAM found for chr$chr; search in both file names and sample names: ",join(',',@$pops),"\n"); 
         }
-        $self->throw("No matching BAMs found: chr$chr; ",join(',',@$pops),"\n");
+        print $out join("\n", @$bams), "\n";
+        close($out);
+
+        if ( defined $$self{sample_list} )
+        {
+            $self->cmd("cp $$self{sample_list} $samples_fname");
+            undef $out;
+        }
+        else 
+        {
+            $out = $self->open_file($samples_fname);
+            my $sexes = $self->get_sample_sex(@$samples);
+            for my $sample (sort keys %$sexes)
+            {
+                print $out "$sample\t$$sexes{$sample}\n";
+            }
+        }
     }
+    if ( defined $out ) { close($out); }
 
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+# Returns list of BAMs and samples which match the regex's from the sample_list
+sub find_bams_with_samples
+{
+    my ($self,$bam_list,$sample_list) = @_;
+
+    my (%bams,%samples);
+
+    open(my $in,'<',$bam_list) or $self->throw("$bam_list: $!");
+    while (my $bam=<$in>)
+    {
+        chomp($bam);
+
+        open(my $rgs,"samtools view -H $bam |") or $self->throw("samtools view -H $bam: $!");
+        while (my $rg=<$rgs>)
+        {
+            if ( !($rg=~/^\@RG/) ) { next; }
+            if ( !($rg=~/SM:(\S+)/) ) { next; }
+            my $sample = $1;
+            for my $re (@$sample_list)
+            {
+                if ( ($sample=~/$re/) ) 
+                { 
+                    $bams{$bam} = 1;
+                    $samples{$sample} = 1;
+                    last;
+                }
+            }
+        }
+        close($rgs);
+    }
+    close($in);
+
+    my @bams = sort keys %bams;
+    my @samples = sort keys %samples;
+    return (\@bams,\@samples);
+}
+
+sub get_sample_sex
+{
+    my ($self,@samples) = @_;
+    my $sexes;
+    for my $sample (@samples)
+    {
+        my $sex;
+        if ( !$$self{mysql} ) { $sex = $$self{assumed_sex}; }
+        else
+        {
+            my @sex = $self->cmd(qq[$$self{mysql} -e 'SELECT sex FROM individual WHERE name="$sample"']);
+            if ( !@sex ) { $self->throw("No info for $sample?\n"); }
+            $sex = $sex[0];
+            chomp($sex);
+        }
+        if ( !($sex=~/^[MF]$/) ) { $self->throw("Neither male nor female? Expected 'F' or 'M', got '$sex'."); }
+        $$sexes{$sample} = $sex;
+    }
+    return $sexes;
 }
 
 sub sample_list
@@ -420,19 +514,10 @@ sub sample_list
     close($in);
 
     open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    my $sexes = $self->get_sample_sex(keys %samples);
     for my $sample (sort keys %samples)
     {
-        my $sex;
-        if ( !$$self{mysql} ) { $sex = $$self{assumed_sex}; }
-        else
-        {
-            my @sex = $self->cmd(qq[$$self{mysql} -e 'SELECT sex FROM individual WHERE name="$sample"']);
-            if ( !@sex ) { $self->throw("No info for $sample?\n"); }
-            $sex = $sex[0];
-            chomp($sex);
-        }
-        if ( !($sex=~/^[MF]$/) ) { $self->throw("Neither male nor female? Expected 'F' or 'M', got '$sex'."); }
-        print $out "$sample\t$sex\n";
+        print $out "$sample\t$$sexes{$sample}\n";
     }
     close($out);
 

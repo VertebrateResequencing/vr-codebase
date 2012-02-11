@@ -30,6 +30,7 @@ sub error
         "   -d, --dir <dir>                 Where to look for output files.\n",
         "   -p, --plot <prefix>             Create plots\n",
         "   -s, --suffix <string>           How to recognise LSF output files [.o]\n",
+        "   -t, --table                     Produce table-like output, one line per job\n",
         "   -h, -?, --help                  This help message.\n",
         "\n";
 }
@@ -40,6 +41,7 @@ sub parse_params
     my $opts = { suffix=>'.o' };
     while (defined(my $arg=shift(@ARGV)))
     {
+        if ( $arg eq '-t' || $arg eq '--table' ) { $$opts{table}=1; next }
         if ( $arg eq '-d' || $arg eq '--dir' ) { push @{$$opts{dir}},shift(@ARGV); next }
         if ( $arg eq '-p' || $arg eq '--plot' ) { $$opts{plot}=shift(@ARGV); next }
         if ( $arg eq '-s' || $arg eq '--suffix' ) { $$opts{suffix}=shift(@ARGV); next }
@@ -112,19 +114,46 @@ sub get_stats
     my $n = $parser->nrecords();
     if ( !$n ) { return; }
 
+    my @keys = qw(memory time cpu_time idle_factor start_time end_time);
+    if ( $$opts{table} )
+    {
+        if ( !exists($$opts{header_printed}) )
+        {
+            print "#file\t", join("\t",'attempts',@keys), "\n";
+            $$opts{header_printed} = 1;
+        }
+        print "$file\t$n";
+    }
+
     push @{$$opts{stats}{attempts}},$n;
-    for my $key qw(memory time cpu_time idle_factor)
+    for my $key (@keys)
     {
         my $value = $parser->get($key,$n-1);
         push @{$$opts{stats}{$key}},$value;
+        if ( $$opts{table} ) { print "\t$value"; }
     }
+    if ( $$opts{table} ) { print "\n"; } 
 }
 
 sub report_stats
 {
     my ($opts) = @_;
+    if ( $$opts{table} ) { return; }
+
+    my ($min_start,$max_end);
     while (my ($key,$values) = each %{$$opts{stats}})
     {
+        if ( $key eq 'start_time' )
+        {
+            for my $val (@$values) { if ( !defined $min_start or $min_start>$val ) { $min_start = $val; } }
+            next;
+        }
+        if ( $key eq 'end_time' )
+        {
+            for my $val (@$values) { if ( !defined $max_end or $max_end<$val ) { $max_end = $val; } }
+            next;
+        }
+
         my $n = scalar @$values;
 
         my $avg = 0;
@@ -150,6 +179,7 @@ sub report_stats
         if ( $key=~/time/ ) { printf "\ttotal=%.1fh",$sum/3600.; }
         print "\n";
     }
+    printf "finished_in\t%.1fh\n", ($max_end-$min_start)/3600.;
 }
 
 sub plot_stats

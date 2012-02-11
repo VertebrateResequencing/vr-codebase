@@ -96,7 +96,7 @@ sub convert_known
 {
     my ($opts) = @_;
 
-    if ( -e "$$opts{prefix}.known_haps" ) { return; }
+    if ( -e "$$opts{prefix}.known_haps" or $$opts{known} eq '--' ) { return; }
 
     my $vcf = Vcf->new(file=>$$opts{known},%{$$opts{region}});
     $vcf->parse_header();
@@ -187,22 +187,32 @@ sub convert_to_be_imputed
         print $fh "$id\t$ref\t$alt";
         for my $id (@samples)
         {
+            my $dat = $$x{gtypes}{$id};
+
             my ($gl_rr,$gl_ar,$gl_aa);
-            if ( exists($$x{gtypes}{$id}{GL}) ) 
+            if ( exists($$dat{GL}) ) 
             { 
-                ($gl_rr,$gl_ar,$gl_aa) = split(/,/,$$x{gtypes}{$id}{GL});
+                ($gl_rr,$gl_ar,$gl_aa) = split(/,/,$$dat{GL});
                 $gl_rr = 10**$gl_rr;
                 $gl_ar = 10**$gl_ar;
                 $gl_aa = 10**$gl_aa;
             }
-            elsif ( exists($$x{gtypes}{$id}{PL}) )
+            elsif ( exists($$dat{PL}) )
             {
-                ($gl_rr,$gl_ar,$gl_aa) = split(/,/,$$x{gtypes}{$id}{PL});
+                ($gl_rr,$gl_ar,$gl_aa) = split(/,/,$$dat{PL});
                 $gl_rr = 10**(-$gl_rr/10.);
                 $gl_ar = 10**(-$gl_ar/10.);
                 $gl_aa = 10**(-$gl_aa/10.);
             }
-            if ( !defined $gl_rr or (abs($gl_rr-$gl_ar)<1e-5 && abs($gl_ar-$gl_aa)<1e-5) ) { $gl_rr = $gl_ar = $gl_aa = 1/3.; }
+
+            # Check the ploidy
+            if ( index($$dat{GT},'/')==-1 && index($$dat{GT},'/')==-1  ) 
+            { 
+                $gl_ar = 0;
+                if ( !defined $gl_rr or abs($gl_rr-$gl_aa)<1e-5 ) { $gl_rr = $gl_aa = 0.5 }
+            }
+            elsif ( !defined $gl_rr or (abs($gl_rr-$gl_ar)<1e-5 && abs($gl_ar-$gl_aa)<1e-5) ) { $gl_rr = $gl_ar = $gl_aa = 1/3.; }
+
             printf $fh "\t%f\t%f\t%f", $gl_rr,$gl_ar,$gl_aa;
         }
         print $fh "\n";
@@ -218,7 +228,7 @@ sub create_markers
 
     if ( ! -s "$$opts{beagle_markers}.known" or ! -s "$$opts{beagle_markers}.impute" )
     {
-        # Create an empty file if one of files is empty
+        # Create an empty file if one of the files is empty
         `touch $$opts{beagle_markers}`;
         return;
     }
@@ -313,7 +323,7 @@ sub merge_lines
     if ( @{$$rec{ALT}} != 1 or $$rec{ALT}[0] eq '.' ) 
     { 
         # This can happen when the VCF file contains a site (an indel for example) which was
-        #   left out from imputing whereas the site is present in the known set. beagle adds
+        #   left out from imputing and the site is present in the known set. beagle adds
         #   those on output. In such a case, use the original VCF line.
         #
         #   error("Expected biallelic site $$rec{POS} $$rec{ALT}[0], ",@{$$rec{ALT}}); 
@@ -321,7 +331,7 @@ sub merge_lines
     }
 
     my $ref = $$rec{REF};
-    my ($oaa,$oab,$obb,$uaa,$uab,$ubb);
+    my ($oaa,$oab,$obb,$uaa,$uab,$ubb,$oa,$ob);
     my $reverse = 0;
     if ( $b eq $ref ) 
     { 
@@ -332,6 +342,8 @@ sub merge_lines
         $uaa = '1/1';
         $uab = '1/0';
         $ubb = '0/0';
+        $oa  = '1';
+        $ob  = '0';
     }
     elsif ( $a ne $ref ) 
     { 
@@ -347,6 +359,8 @@ sub merge_lines
         $uaa = '0/0';
         $uab = '0/1';
         $ubb = '1/1';
+        $oa  = '0';
+        $ob  = '1';
     }
 
     my $gtypes = $$rec{gtypes};
@@ -371,7 +385,13 @@ sub merge_lines
         $ab = $uab;
         $bb = $ubb;
 
-        if ( $lk_aa >= $lk_ab )
+        # Check the ploidy
+        if ( index($$gtypes{$sample}{GT},'/')==-1 && index($$gtypes{$sample}{GT},'/')==-1  )
+        {
+            $$gtypes{$sample}{GT} = $lk_aa >= $lk_bb ? $oa : $ob;
+            if ( $lk_ab>1e-10 ) { error("FIXME: non-zero HET GL: $$rec{CHROM} $$rec{POS} .. $sample $lk_aa $lk_ab $lk_bb\n"); }
+        }
+        elsif ( $lk_aa >= $lk_ab )
         {
             $$gtypes{$sample}{GT} = $lk_aa >= $lk_bb ? $aa : $bb;
         }
@@ -423,27 +443,22 @@ sub beagle_to_vcf
             undef $vcf_line;
             next;
         }
-
         if ( !defined $vcf_pos ) 
         { 
             if ( !($vcf_line=~/^[^\t]+\t(\d+)\t/) ) { error("Could not parse VCF pos"); }
             $vcf_pos = $1;
         }
+        
+        # Ignore positions which are outside the region
+        if ( defined $reg_from && $vcf_pos<$reg_from or defined $reg_to && $vcf_pos>$reg_to )
+        {
+            undef $vcf_line;
+            next;
+        }
 
         if ( $vcf_pos<$bgl_pos ) 
         { 
             # beagle is ahead of VCF
-        
-            # A rather annoying problem: If and indel happens to span the region boundary, it will be reported
-            #   twice by tabix, in both this and the preceeding region. Moreover, after concatenating
-            #   all chunks, the resulting VCF will be unsorted. Prevent this by excluding records
-            #   with starting position outside the region boundaries.
-            if ( defined $reg_from && $vcf_line=~/^[^\t]+\t(\d+)\t/ && $reg_from>$1 )
-            {
-                undef $vcf_line;
-                next;
-            }
-
             print $vcf_line;
             undef $vcf_line;
             next;

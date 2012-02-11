@@ -36,6 +36,7 @@ sub error
         "Usage: fill-aa [OPTIONS] < in.vcf >out.vcf\n",
         "Options:\n",
         "   -a, --ancestral-allele <prefix>     Prefix to ancestral allele chromosome files.\n",
+        "   -t, --type <list>                   Variant types to process: all,indel,ref,snp. [all]\n",
         "   -h, -?, --help                      This help message.\n",
         "Example:\n",
         "   # Get the files ready: compress by gzip and index by samtools faidx. Either repeat the\n",
@@ -68,6 +69,23 @@ sub parse_params
     while (my $arg=shift(@ARGV))
     {
         if ( $arg eq '-a' || $arg eq '--ancestral-allele' ) { $$opts{aa_file} = shift(@ARGV); next }
+        if ( $arg eq '-t' || $arg eq '--type' ) 
+        { 
+            my %known = ( snp=>'s', indel=>'i', all=>'a', ref=>'r' );
+            my $types = shift(@ARGV);
+            for my $t (split(/,/,$types))
+            {
+                if ( !(exists($known{$t})) ) { error("Unknown type [$t] with -t [$types]\n"); }
+                $$opts{types}{$known{$t}} = 1;
+            }
+            if ( exists($$opts{types}{a}) )
+            {
+                $$opts{types}{s} = 1;
+                $$opts{types}{i} = 1;
+                $$opts{types}{r} = 1;
+            }
+            next;
+        }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
@@ -84,15 +102,17 @@ sub fill_aa
     my $n_filled_sites = 0;
     my $n_filled_bases = 0;
 
-    my $vcf = Vcf->new(fh=>\*STDIN);
+    my $vcf = Vcf->new(fh=>\*STDIN, assume_uppercase=>1);
     $vcf->parse_header();
     $vcf->add_header_line({key=>'INFO',ID=>'AA',Number=>1,Type=>'String',
         Description=>'Ancestral Allele, ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/pilot_data/technical/reference/ancestral_alignments/README'});
     print $vcf->format_header();
 
     my $fa;
-    while (my $rec = $vcf->next_data_array())
+    my $nskipped = 0;
+    while (my $line = $vcf->next_line() )
     {
+        my $rec = $vcf->next_data_array($line);
         my $chr = $$rec[0];
         my $pos = $$rec[1];
         my $ref = $$rec[3];
@@ -109,6 +129,21 @@ sub fill_aa
         }
 
         my $ref_len = length($ref);
+        if ( exists($$opts{types}) && !exists($$opts{types}{a}) )
+        {
+            my $ok = 0;
+            for my $alt (split(/,/,$$rec[4]))
+            {
+                my ($type,$len,$ht) = $vcf->event_type($ref,$alt);
+                if ( exists($$opts{types}{$type}) ) { $ok=1; last; }
+            }
+            if ( !$ok )
+            {
+                print $line;
+                $nskipped++;
+                next;
+            }
+        }
         my $aa = $ref_len==1 ? $fa->get_base($chr,$pos) : $fa->get_slice($chr,$pos,$pos+$ref_len-1);
 
         if ( $aa )
@@ -128,7 +163,8 @@ sub fill_aa
     print STDERR 
         "AA sites filled  .. $n_filled_sites\n",
         "AA bases filled  .. $n_filled_bases\n",
-        "No AAs           .. $n_unknown\n";
+        "No AAs           .. $n_unknown\n",
+        "Lines skipped    .. $nskipped\n";
 }
 
 

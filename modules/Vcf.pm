@@ -1,5 +1,7 @@
 package Vcf;
 
+our $VERSION = 'r660';
+
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
 # http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:variant_call_format
@@ -490,17 +492,25 @@ sub next_data_hash
             else { $self->throw("Multiple header blocks (^#) not allowed.\n"); }
         }
 
-        $self->warn("Different number of columns at $items[0]:$items[1] (expected ".scalar @$cols.", got ".scalar @items.")\n");
-        while ( $items[-1] eq '' ) { pop(@items); }
+        if ( $items[-1] eq '' )
+        {
+            my $nremoved = 0;
+            while ( $items[-1] eq '' ) { pop(@items); $nremoved++; }
+            if ( $nremoved && !$$self{trailing_tabs_warned} )
+            {
+                $self->warn("Broken VCF: empty columns (trailing TABs) starting at $items[0]:$items[1].\n");
+                $$self{trailing_tabs_warned} = 1;
+            }
+        }
         if ( scalar @items != scalar @$cols ) 
         {
             my @test = split(/\s+/,$line);
-            if ( scalar @test == scalar @$cols ) { $self->warn("(Have spaces been used instead of tabs?)\n\n"); }
-            else { $self->throw("Error not recoverable, exiting.\n"); }
+            if ( scalar @test == scalar @$cols ) { $self->warn("(Were spaces used instead of tabs?)\n\n"); }
+            else { $self->throw(sprintf "Wrong number of fields%s; expected %d, got %d. The offending line was:\n[%s]\n\n", 
+                scalar @$cols, scalar @items, exists($$self{file}) ? "in $$self{file}" : '', $line); }
 
             @items = @test;
         }
-        else { $self->warn("(Trailing tabs?)\n\n"); }
     }
     my %out;
 
@@ -853,12 +863,22 @@ sub _read_column_names
     if ( !defined $line or substr($line,0,1) ne '#' ) { $self->throw("Broken VCF header, no column names?"); }
     $$self{column_line} = $line;
 
-    chomp($line);
     my @cols  = split(/\t/, substr($line,1));
+    chomp($cols[-1]);
+
+    my $nremoved = 0;
+    for (my $i=0; $i<@cols; $i++)
+    {
+        if ( !($cols[$i]=~/^\s*$/) ) { next; }
+        $self->warn(sprintf "Empty fields in the header line, the column %d is empty, removing.\n",$i+1+$nremoved);
+        $nremoved++;
+        splice(@cols,$i,1);
+    }
+
     my $ncols = scalar @cols;
     if ( $ncols == 1 )
     {
-        # If there is only one name, it can be space-seprated instead of tab separated
+        # If there is only one name, it can be space-separated instead of tab separated
         @cols  = split(/\s+/, $cols[0]);
         $ncols = scalar @cols;
         chomp($line);
@@ -1098,6 +1118,45 @@ sub replace_field
     return $out;
 }
 
+=head2 get_info_field
+
+    Usage   : my $line  = $vcf->next_line;
+              my @items = split(/\t/,$line); 
+              $af = $vcf->get_info_field('DP=14;AF=0.5;DB','AF');    # returns 0.5
+              $af = $vcf->get_info_field('DP=14;AF=0.5;DB','DB');    # returns 1
+              $af = $vcf->get_info_field('DP=14;AF=0.5;DB','XY');    # returns undef
+    Arg 1   : The VCF line broken into an array
+        2   : The tag to retrieve
+    Returns : undef when tag is not present, the tag value if present, or 1 if flag is present
+
+=cut
+
+sub get_info_field
+{
+    my ($self,$info,$tag) = @_;
+
+    my $info_len = length($info);
+    my $tag_len = length($tag);
+    my $idx = 0;
+    while (1)
+    {
+        $idx = index($info,$tag,$idx);
+        if ( $idx==-1 ) { return undef; }
+        if ( $idx!=0 && substr($info,$idx-1,1) ne ';' ) { $idx += $tag_len; next; }
+        if ( $tag_len+$idx >= $info_len ) { return 1; }
+
+        my $follows = substr($info,$idx+$tag_len,1);
+        if ( $follows eq ';' ) { return 1; }
+
+        $idx += $tag_len;
+        if ( $follows ne '=' ) { next; }
+
+        $idx++;
+        my $to = index($info,';',$idx);
+        return $to==-1 ? substr($info,$idx) : substr($info,$idx,$to-$idx);
+    }
+}
+
 =head2 get_field
 
     Usage   : my $line  = $vcf->next_line;
@@ -1106,20 +1165,22 @@ sub replace_field
               my $pl  = $vcf->get_field($$line[9],$idx) unless $idx==-1;
     Arg 1   : The VCF line broken into an array
         2   : The index of the field to retrieve
+        3   : The delimiter [Default is ':']
     Returns : The tag value
 
 =cut
 
 sub get_field
 {
-    my ($self,$col,$idx) = @_;
+    my ($self,$col,$idx,$delim) = @_;
 
+    if ( !defined $delim ) { $delim=':'; }
     my $isep = 0;
     my $prev_isep = 0;
     my $itag = 0;
     while (1)
     {
-        $isep = index($col,':',$prev_isep);
+        $isep = index($col,$delim,$prev_isep);
         if ( $itag==$idx ) { last; }
         if ( $isep==-1 ) { $self->throw("The index out of range: $col:$isep .. $idx"); }
         $prev_isep = $isep+1;
@@ -1165,6 +1226,41 @@ sub get_sample_field
     return \@out;
 }
 
+
+=head2 split_mandatory
+
+    About   : Faster alternative to regexs, extract the mandatory columns
+    Usage   : my $line=$vcf->next_line; my @cols = $vcf->split_mandatory($line);
+    Arg     : 
+    Returns : Pointer to the array of values
+
+=cut
+
+sub split_mandatory
+{
+    my ($self,$line) = @_;
+    my @out;
+    my $prev = 0;
+    for (my $i=0; $i<7; $i++)
+    {
+        my $isep = index($line,"\t",$prev);
+        if ( $isep==-1 ) { $self->throw("Could not parse the mandatory columns: $line"); }
+        push @out, substr($line,$prev,$isep-$prev);
+        $prev = $isep+1;
+    }
+    my $isep = index($line,"\t",$prev);
+    if ( $isep!=-1 )
+    {
+        push @out, substr($line,$prev,$isep-$prev-1);
+    }
+    else
+    {
+        push @out, substr($line,$prev);
+    }
+    return \@out;
+}
+
+
 =head2 split_gt
 
     About   : Faster alternative to regexs, diploid GT assumed
@@ -1181,11 +1277,64 @@ sub split_gt
     if ( $isep<0 ) 
     { 
         $isep = index($gt,'|'); 
-        if ( $isep<0 ) { $self->throw("No separator? [$gt]"); }
+        if ( $isep<0 ) { return $gt; }
     }
     my $a1 = substr($gt,0,$isep);
     my $a2 = substr($gt,$isep+1);
     return ($a1,$a2);
+}
+
+
+=head2 decode_genotype
+
+    About   : Faster alternative to regexs
+    Usage   : my $gt = $vcf->decode_genotype('G',['A','C'],'0/0'); # returns 'G/G'
+    Arg   1 : Ref allele
+          2 : Alt alleles
+          3 : The genotype to decode
+    Returns : Decoded GT string
+
+=cut
+
+sub decode_genotype
+{
+    my ($self,$ref,$alt,$gt) = @_;
+    my $isep = 0;
+    my $out;
+    while (1)
+    {
+        my $i = index($gt,'/',$isep);
+        my $j = index($gt,'|',$isep);
+        if ( $i==-1 && $j==-1 )
+        {
+            my $idx = substr($gt,$isep);
+            if ( $idx eq '.' )
+            {
+                $out .= $idx;
+            }
+            else
+            {
+                if ( $idx>@$alt ) { $self->throw("The genotype index $idx in $gt is out of bounds: ", join(',',@$alt)); }
+                $out .= $idx==0 ? $ref : $$alt[$idx-1];
+            }
+            return $out;
+        }
+        if ( $i!=-1 && $j!=-1 && $i>$j ) { $i=$j; }
+        elsif ( $i==-1 ) { $i=$j }
+
+        my $idx = substr($gt,$isep,$i-$isep);
+        if ( $idx eq '.' )
+        {
+            $out .= $idx;
+        }
+        else
+        {
+            if ( $idx>@$alt ) { $self->throw("The genotype index $idx in $gt out of bounds: ", join(',',@$alt)); }
+            $out .= $idx==0 ? $ref : $$alt[$idx-1];
+        }
+        $out .= substr($gt,$i,1);
+        $isep = $i+1;
+    }
 }
 
 
@@ -2277,7 +2426,8 @@ sub run_validation
         {
             if (!defined($$line[$i]) or $$line[$i] eq '' ) 
             {
-                $self->warn("The column $$self{columns}[$i] is empty at $$line[0]:$$line[1].\n");
+                my $colname = $i<@{$$self{columns}} ? $$self{columns}[$i] : $i+1;
+                $self->warn("The column $colname is empty at $$line[0]:$$line[1].\n");
             }
         }
 
@@ -2802,7 +2952,7 @@ sub Vcf4_0::event_type
     }
     else
     {
-        ($len,$ht)=is_indel($ref,$allele);
+        ($len,$ht)=$self->is_indel($ref,$allele);
         if ( $len )
         {
             # Indel
@@ -2823,13 +2973,15 @@ sub Vcf4_0::event_type
 }
 
 # The sequences start at the same position, which simplifies things greatly.
+# Returns length of the indel (+ insertion, - deletion), the deleted/inserted sequence
+#   and the position of the first base after the shared sequence
 sub is_indel
 {
-    my ($seq1,$seq2) = @_;
+    my ($self,$seq1,$seq2) = @_;
 
     my $len1 = length($seq1);
     my $len2 = length($seq2);
-    if ( $len1 eq $len2 ) { return (0,''); }
+    if ( $len1 eq $len2 ) { return (0,'',0); }
 
     my ($del,$len,$LEN);
     if ( $len1<$len2 )
@@ -2853,7 +3005,7 @@ sub is_indel
     }
     if ( $ileft==$len )
     {
-        return ($del*($LEN-$len), substr($seq2,$ileft));
+        return ($del*($LEN-$len), substr($seq2,$ileft), $ileft);
     }
 
     my $iright;
@@ -2861,9 +3013,9 @@ sub is_indel
     {
         if ( substr($seq1,$len-$iright,1) ne substr($seq2,$LEN-$iright,1) ) { last; }
     }
-    if ( $iright+$ileft<=$len ) { return (0,''); }
+    if ( $iright+$ileft<=$len ) { return (0,'',0); }
 
-    return ($del*($LEN-$len),substr($seq2,$ileft,$LEN-$len));
+    return ($del*($LEN-$len),substr($seq2,$ileft,$LEN-$len),$ileft);
 }
 
 

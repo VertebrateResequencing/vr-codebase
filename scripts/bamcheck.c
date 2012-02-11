@@ -10,7 +10,7 @@
         - GC content graph can have an untidy, step-like pattern when BAM contains multiple read lengths.
 */
 
-#define BAMCHECK_VERSION "2012-01-09"
+#define BAMCHECK_VERSION "2012-02-11"
 
 #define _ISOC99_SOURCE
 #include <stdio.h>
@@ -76,6 +76,7 @@ typedef struct
     int nbases;         // The maximum sequence length the allocated array can hold
     int nisize;         // The maximum insert size that the allocated array can hold
     int ngc;            // The size of gc_1st and gc_2nd
+    int nindels;        // The maximum indel length for indel distribution
 
     // Arrays for the histogram data
     uint64_t *quals_1st, *quals_2nd;
@@ -83,6 +84,8 @@ typedef struct
     uint64_t *isize_inward, *isize_outward, *isize_other;
     uint64_t *acgt_cycles;
     uint64_t *read_lengths;
+    uint64_t *insertions, *deletions;
+    uint64_t *ins_cycles, *del_cycles;
 
     // The extremes encountered
     int max_len;            // Maximum read length
@@ -244,6 +247,44 @@ int bwa_trim_read(int trim_qual, uint8_t *quals, int len, int reverse)
     return max_l;
 }
 
+
+void count_indels(stats_t *stats,bam1_t *bam_line) 
+{
+    int is_fwd = IS_REVERSE(bam_line) ? 0 : 1;
+    int icig;
+    int icycle = 0;
+    int read_len = bam_line->core.l_qseq;
+    for (icig=0; icig<bam_line->core.n_cigar; icig++) 
+    {
+        // Conversion from uint32_t to MIDNSHP
+        //  0123456
+        //  MIDNSHP
+        int cig  = bam1_cigar(bam_line)[icig] & BAM_CIGAR_MASK;
+        int ncig = bam1_cigar(bam_line)[icig] >> BAM_CIGAR_SHIFT;
+
+        if ( cig==1 )
+        {
+            int idx = is_fwd ? icycle : read_len-icycle-1;
+            if ( idx >= stats->nbases ) error("FIXME: %d vs %d\n", idx,stats->nbases);
+            stats->ins_cycles[idx]++;
+            icycle += ncig;
+            if ( ncig<=stats->nindels )
+                stats->insertions[ncig-1]++;
+            continue;
+        }
+        if ( cig==2 )
+        {
+            int idx = is_fwd ? icycle : read_len-icycle-1;
+            if ( idx >= stats->nbases ) error("FIXME: %d vs %d\n", idx,stats->nbases);
+            stats->del_cycles[idx]++;
+            if ( ncig<=stats->nindels )
+                stats->deletions[ncig-1]++;
+            continue;
+        }
+        icycle += ncig;
+    }
+}
+
 void count_mismatches_per_cycle(stats_t *stats,bam1_t *bam_line) 
 {
     int is_fwd = IS_REVERSE(bam_line) ? 0 : 1;
@@ -288,7 +329,7 @@ void count_mismatches_per_cycle(stats_t *stats,bam1_t *bam_line)
             error("TODO: cigar %d, %s\n", cig,bam1_qname(bam_line));
        
         if ( ncig+iref > stats->rseq_len )
-            error("FIXME: %d+%d > %d, %s\n",ncig,iref,stats->rseq_len, bam1_qname(bam_line));
+            error("FIXME: %d+%d > %d, %s, %s:%d\n",ncig,iref,stats->rseq_len, bam1_qname(bam_line),stats->sam->header->target_name[bam_line->core.tid],bam_line->core.pos+1);
 
         int im;
         for (im=0; im<ncig; im++)
@@ -296,9 +337,21 @@ void count_mismatches_per_cycle(stats_t *stats,bam1_t *bam_line)
             uint8_t cread = bam1_seqi(read,iread);
             uint8_t cref  = stats->rseq_buf[iref];
 
-            if ( cref && cread && cref!=cread )
+            // ---------------15
+            // =ACMGRSVTWYHKDBN
+            if ( cread==15 )
             {
-                uint8_t qual = quals[iread];
+                int idx = is_fwd ? icycle : read_len-icycle-1;
+                if ( idx>stats->max_len )
+                    error("mpc: %d>%d\n",idx,stats->max_len);
+                idx = idx*stats->nquals;
+                if ( idx>=stats->nquals*stats->nbases )
+                    error("FIXME: mpc_buf overflow\n");
+                mpc_buf[idx]++;
+            }
+            else if ( cref && cread && cref!=cread )
+            {
+                uint8_t qual = quals[iread] + 1;
                 if ( qual>=stats->nquals )
                     error("TODO: quality too high %d>=%d\n", quals[iread],stats->nquals);
 
@@ -341,6 +394,7 @@ void read_ref_seq(stats_t *stats,int32_t tid,int32_t pos)
         error("Was the bam file mapped with the reference sequence supplied?"
               " A read mapped beyond the end of the chromosome (%s:%d, chromosome length %d).\n", chr,pos,val.len);
     int size = stats->nref_seq;
+    // The buffer extends beyond the chromosome end. Later the rest will be filled with N's.
     if (size+pos > val.len) size = val.len-pos;
 
     // Position the razf reader
@@ -368,6 +422,11 @@ void read_ref_seq(stats_t *stats,int32_t tid,int32_t pos)
             *ptr = 0;
         ptr++;
         nread++;
+    }
+    if ( nread < stats->nref_seq )
+    {
+        memset(ptr,0, stats->nref_seq - nread);
+        nread = stats->nref_seq;
     }
     stats->rseq_len = nread;
     stats->rseq_pos = pos;
@@ -517,6 +576,8 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
     {
         if ( !bam_line->core.qual )
             stats->nreads_mq0++;
+
+        count_indels(stats,bam_line);
 
         // The insert size is tricky, because for long inserts the libraries are
         // prepared differently and the pairs point in other direction. BWA does
@@ -771,8 +832,8 @@ void output_stats(stats_t *stats)
     if ( stats->mpc_buf )
     {
         printf("# Mismatches per cycle and quality. Use `grep ^MPC | cut -f 2-` to extract this part.\n");
-        printf("# Columns correspond to qualities, rows to cycles. First column is the cycle number, the rest\n");
-        printf("# is the number of mismatches\n");
+        printf("# Columns correspond to qualities, rows to cycles. First column is the cycle number, second\n");
+        printf("# is the number of N's and the rest is the number of mismatches\n");
         for (ibase=0; ibase<stats->max_len; ibase++)
         {
             printf("MPC\t%d",ibase+1);
@@ -818,6 +879,20 @@ void output_stats(stats_t *stats)
     {
         if ( stats->read_lengths[ilen]>0 )
             printf("RL\t%d\t%ld\n", ilen,stats->read_lengths[ilen]);
+    }
+
+    printf("# Indel distribution. Use `grep ^ID | cut -f 2-` to extract this part. The columns are: length, number of insertions, number of deletions\n");
+    for (ilen=0; ilen<stats->nindels; ilen++)
+    {
+        if ( stats->insertions[ilen]>0 || stats->deletions[ilen]>0 )
+            printf("ID\t%d\t%ld\t%ld\n", ilen+1,stats->insertions[ilen],stats->deletions[ilen]);
+    }
+
+    printf("# Indels per cycle. Use `grep ^IC | cut -f 2-` to extract this part. The columns are: cycle, number of insertions, number of deletions\n");
+    for (ilen=0; ilen<stats->nbases; ilen++)
+    {
+        if ( stats->ins_cycles[ilen]>0 || stats->del_cycles[ilen]>0 )
+            printf("IC\t%d\t%ld\t%ld\n", ilen+1,stats->ins_cycles[ilen],stats->del_cycles[ilen]);
     }
 
     printf("# Coverage distribution. Use `grep ^COV | cut -f 2-` to extract this part.\n");
@@ -866,6 +941,8 @@ void error(const char *format, ...)
 {
     if ( !format )
     {
+        printf("Version: %s\n", BAMCHECK_VERSION);
+        printf("About: The program collects statistics from BAM files. The output can be visualized using plot-bamcheck.\n");
         printf("Usage: bamcheck [OPTIONS] file.bam\n");
         printf("Options:\n");
         printf("    -c, --coverage <int>,<int>,<int>    Coverage distribution min,max,step [1,1000,1]\n");
@@ -935,6 +1012,7 @@ int main(int argc, char *argv[])
     stats.argc = argc;
     stats.argv = argv;
     stats.filter_readlen = -1;
+    stats.nindels = stats.nbases;
 
     strcpy(in_mode, "rb");
 
@@ -951,7 +1029,7 @@ int main(int argc, char *argv[])
             strcpy(in_mode, "r");
             continue;
         }
-        if ( !strcmp(argv[i],"-h") || !strcmp(argv[i],"--help") )
+        if ( !strcmp(argv[i],"-h") || !strcmp(argv[i],"--help") || !strcmp(argv[i],"-?") )
             error(NULL);
         if ( !strcmp(argv[i],"-r") || !strcmp(argv[i],"--ref-seq") )
         {
@@ -1046,6 +1124,10 @@ int main(int argc, char *argv[])
     stats.mpc_buf       = stats.fai ? calloc(stats.nquals*stats.nbases,sizeof(uint64_t)) : NULL;
     stats.acgt_cycles   = calloc(4*stats.nbases,sizeof(uint64_t));
     stats.read_lengths  = calloc(stats.nbases,sizeof(uint64_t));
+    stats.insertions    = calloc(stats.nbases,sizeof(uint64_t));
+    stats.deletions     = calloc(stats.nbases,sizeof(uint64_t));
+    stats.ins_cycles    = calloc(stats.nbases,sizeof(uint64_t));
+    stats.del_cycles    = calloc(stats.nbases,sizeof(uint64_t));
 
     // Collect statistics
     while (samread(sam,bam_line) >= 0) 
