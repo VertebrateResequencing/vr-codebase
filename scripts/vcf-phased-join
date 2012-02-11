@@ -22,6 +22,7 @@ exit;
 sub error
 {
     my (@msg) = @_;
+    if ( exists($$opts{tmp_filename}) ) { unlink $$opts{tmp_filename}; }
     if ( scalar @msg )
     {
         croak @msg;
@@ -425,7 +426,10 @@ sub output_line
         { 
             my $gt = $vcf->get_field($$rec[$i+9],$igt);
             my ($a1,$a2) = $vcf->split_gt($gt);
-            $$rec[$i+9] = $vcf->replace_field($$rec[$i+9],"$a2|$a1",$igt,':');
+            if ( defined $a2 )
+            {
+                $$rec[$i+9] = $vcf->replace_field($$rec[$i+9],"$a2|$a1",$igt,':');
+            }
         }
 
         if ( $ipq!=-1 )
@@ -497,6 +501,8 @@ sub flush_buffer
         {
             my ($a1,$a2) = $vcf->split_gt($$gts1[$i]);
             my ($b1,$b2) = $vcf->split_gt($$gts2[$i]);
+            if ( !defined $a2 ) { $a2 = $a1; }  # haploid genotypes
+            if ( !defined $b2 ) { $b2 = $b1; }
             if ( !(($a1 eq $b1 && $a2 eq $b2) or ($a1 eq $b2 && $a2 eq $b1)) ) { $nerrors++ }
             push @als1, $a1,$a2;
             push @als2, $b1,$b2;
