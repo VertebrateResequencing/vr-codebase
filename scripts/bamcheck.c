@@ -10,7 +10,7 @@
         - GC content graph can have an untidy, step-like pattern when BAM contains multiple read lengths.
 */
 
-#define BAMCHECK_VERSION "2012-02-06"
+#define BAMCHECK_VERSION "2012-02-11"
 
 #define _ISOC99_SOURCE
 #include <stdio.h>
@@ -329,7 +329,7 @@ void count_mismatches_per_cycle(stats_t *stats,bam1_t *bam_line)
             error("TODO: cigar %d, %s\n", cig,bam1_qname(bam_line));
        
         if ( ncig+iref > stats->rseq_len )
-            error("FIXME: %d+%d > %d, %s\n",ncig,iref,stats->rseq_len, bam1_qname(bam_line));
+            error("FIXME: %d+%d > %d, %s, %s:%d\n",ncig,iref,stats->rseq_len, bam1_qname(bam_line),stats->sam->header->target_name[bam_line->core.tid],bam_line->core.pos+1);
 
         int im;
         for (im=0; im<ncig; im++)
@@ -394,6 +394,7 @@ void read_ref_seq(stats_t *stats,int32_t tid,int32_t pos)
         error("Was the bam file mapped with the reference sequence supplied?"
               " A read mapped beyond the end of the chromosome (%s:%d, chromosome length %d).\n", chr,pos,val.len);
     int size = stats->nref_seq;
+    // The buffer extends beyond the chromosome end. Later the rest will be filled with N's.
     if (size+pos > val.len) size = val.len-pos;
 
     // Position the razf reader
@@ -421,6 +422,11 @@ void read_ref_seq(stats_t *stats,int32_t tid,int32_t pos)
             *ptr = 0;
         ptr++;
         nread++;
+    }
+    if ( nread < stats->nref_seq )
+    {
+        memset(ptr,0, stats->nref_seq - nread);
+        nread = stats->nref_seq;
     }
     stats->rseq_len = nread;
     stats->rseq_pos = pos;
