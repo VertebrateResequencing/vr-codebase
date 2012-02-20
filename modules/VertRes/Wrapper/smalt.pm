@@ -95,7 +95,13 @@ sub version {
 sub setup_reference {
     my ($self, $ref) = @_;
     
-    my @suffixes = qw(small.sma small.smi large.sma large.smi);
+    my @suffixes = qw(small.sma small.smi large.sma large.smi medium.sma medium.smi);
+    if(defined($self->{mapper_index_params}) && defined ($self->{mapper_index_suffix}))
+    {
+      push(@suffixes, $self->{mapper_index_suffix}.'.smi');
+      push(@suffixes, $self->{mapper_index_suffix}.'.sma');
+    }
+    
     my $indexed = 0;
     foreach my $suffix (@suffixes) {
         if (-s "$ref.$suffix") {
@@ -109,6 +115,11 @@ sub setup_reference {
         $self->simple_run("index -k 13 -s 4 $ref.small $ref");
         $self->simple_run("index -k 13 -s 6 $ref.medium $ref");
         $self->simple_run("index -k 20 -s 13 $ref.large $ref");
+        
+        if(defined($self->{mapper_index_params}) && defined ($self->{mapper_index_suffix}))
+        {
+          $self->simple_run("index ".$self->{mapper_index_params}." $ref.".$self->{mapper_index_suffix}." $ref");
+        }
         
         $indexed = 0;
         foreach my $suffix (@suffixes) {
@@ -199,7 +210,11 @@ sub generate_sam {
             }
         }
         my $hash_name;
-        if ($max_length < 70) {
+        if(defined($self->{mapper_index_suffix}))
+        {
+          $hash_name = $ref.'.'.$self->{mapper_index_suffix};
+        }
+        elsif ($max_length < 70) {
             $hash_name = $ref.'.small';
         }
         elsif ($max_length >= 100) {
@@ -220,8 +235,13 @@ sub generate_sam {
         elsif(defined $other_args{i}) {
             $insert_size_arg = " -i $other_args{i}";
         }
+        my $additional_mapper_params = '';
+        if(defined($other_args{additional_mapper_params}))
+        {
+          $additional_mapper_params = $other_args{additional_mapper_params};
+        }
         
-        $self->simple_run("map -f samsoft$insert_size_arg -o $out $hash_name $fq1 $fq2");
+        $self->simple_run("map -f samsoft$insert_size_arg $additional_mapper_params -o $out $hash_name $fq1 $fq2");
     }
     
     return -s $out ? 1 : 0;
