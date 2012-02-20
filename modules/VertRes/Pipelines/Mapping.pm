@@ -821,7 +821,7 @@ use strict;
 use $mapper_class;
 use VertRes::Utils::Sam;
 
-my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe] $mapper_index_params_str $mapper_index_suffix_str);
+my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe], $mapper_index_params_str $mapper_index_suffix_str);
 
 # mapping won't get repeated if mapping works the first time but subsequent
 # steps fail
