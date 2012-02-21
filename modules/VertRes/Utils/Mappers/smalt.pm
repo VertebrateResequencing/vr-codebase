@@ -167,7 +167,7 @@ sub do_mapping {
     
     if(defined($input_args{mapper_index_params}) && defined ($input_args{mapper_index_suffix}))
     {
-      $wrapper = $self->setup_custom_reference_index($input_args{ref}, $input_args{mapper_index_params},$input_args{mapper_index_suffix})
+      $wrapper->setup_custom_reference_index($input_args{ref}, $input_args{mapper_index_params},$input_args{mapper_index_suffix})
     }
     $wrapper->do_mapping(@args);
     $self->_add_command_line($wrapper->command_line());
