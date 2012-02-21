@@ -135,8 +135,10 @@ sub setup_reference {
 
 sub setup_custom_reference_index {
     my ($self, $ref, $mapper_index_params, $mapper_index_suffix) = @_;
-    
-    $self->simple_run("index ".$mapper_index_params." $ref.".$mapper_index_suffix." $ref");
+    if(! (-s "$ref.$mapper_index_suffix.sma") && (-s "$ref.$mapper_index_suffix.smi") )
+    {
+      $self->simple_run("index ".$mapper_index_params." $ref.".$mapper_index_suffix." $ref");
+    }
 }
     
     
