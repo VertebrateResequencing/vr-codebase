@@ -821,7 +821,7 @@ use strict;
 use $mapper_class;
 use VertRes::Utils::Sam;
 
-my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe], $mapper_index_params_str $mapper_index_suffix_str);
+my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe] );
 
 # mapping won't get repeated if mapping works the first time but subsequent
 # steps fail
@@ -833,6 +833,8 @@ my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
                                is_paired => $self->{vrlane}->{is_paired},
                                error_file => '$prev_error_file',
                                $additional_mapper_params_str
+                               $mapper_index_params_str 
+                               $mapper_index_suffix_str
                                );
 
 # (it will only return ok and create output if the sam file was created and not
