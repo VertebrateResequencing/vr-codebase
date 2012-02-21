@@ -35,7 +35,7 @@ use VertRes::Wrapper::smalt;
 use base qw(VertRes::Utils::Mapping);
 
 
-our %do_mapping_args = (insert_size => 'i');
+our %do_mapping_args = (insert_size => 'i', mapper_index_suffix => 'mapper_index_suffix', additional_mapper_params => 'additional_mapper_params');
 
 
 =head2 new
@@ -164,6 +164,11 @@ sub do_mapping {
     my @args = $self->_do_mapping_args(\%do_mapping_args, %input_args);
 
     my $wrapper = $self->wrapper;
+    
+    if(defined($input_args{mapper_index_params}) && defined ($input_args{mapper_index_suffix}))
+    {
+      $wrapper = $self->setup_custom_reference_index($input_args{ref}, $input_args{mapper_index_params},$input_args{mapper_index_suffix})
+    }
     $wrapper->do_mapping(@args);
     $self->_add_command_line($wrapper->command_line());
 

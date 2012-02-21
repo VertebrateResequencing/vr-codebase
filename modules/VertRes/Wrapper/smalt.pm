@@ -96,11 +96,6 @@ sub setup_reference {
     my ($self, $ref) = @_;
     
     my @suffixes = qw(small.sma small.smi large.sma large.smi medium.sma medium.smi);
-    if(defined($self->{mapper_index_params}) && defined ($self->{mapper_index_suffix}))
-    {
-      push(@suffixes, $self->{mapper_index_suffix}.'.smi');
-      push(@suffixes, $self->{mapper_index_suffix}.'.sma');
-    }
     
     my $indexed = 0;
     foreach my $suffix (@suffixes) {
@@ -115,12 +110,7 @@ sub setup_reference {
         $self->simple_run("index -k 13 -s 4 $ref.small $ref");
         $self->simple_run("index -k 13 -s 6 $ref.medium $ref");
         $self->simple_run("index -k 20 -s 13 $ref.large $ref");
-        
-        if(defined($self->{mapper_index_params}) && defined ($self->{mapper_index_suffix}))
-        {
-          $self->simple_run("index ".$self->{mapper_index_params}." $ref.".$self->{mapper_index_suffix}." $ref");
-        }
-        
+
         $indexed = 0;
         foreach my $suffix (@suffixes) {
             if (-s "$ref.$suffix") {
@@ -131,6 +121,25 @@ sub setup_reference {
     
     return $indexed == @suffixes ? 1 : 0;
 }
+
+
+=head2 setup_reference
+
+ Title   : setup_reference
+ Usage   : $obj->setup_reference($ref_fasta);
+ Function: Do whatever needs to be done with the reference to allow mapping.
+ Returns : boolean
+ Args    : n/a
+
+=cut
+
+sub setup_custom_reference_index {
+    my ($self, $ref, $mapper_index_params, $mapper_index_suffix) = @_;
+    
+    $self->simple_run("index ".$mapper_index_params." $ref.".$mapper_index_suffix." $ref");
+}
+    
+    
 
 =head2 setup_fastqs
 
@@ -210,9 +219,9 @@ sub generate_sam {
             }
         }
         my $hash_name;
-        if(defined($self->{mapper_index_suffix}))
+        if(defined($other_args{mapper_index_suffix}))
         {
-          $hash_name = $ref.'.'.$self->{mapper_index_suffix};
+          $hash_name = $ref.'.'.$other_args{mapper_index_suffix};
         }
         elsif ($max_length < 70) {
             $hash_name = $ref.'.small';
