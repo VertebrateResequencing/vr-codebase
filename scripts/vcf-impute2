@@ -592,8 +592,8 @@ sub impute2_to_vcf
         # VCF and impute have the same position
         print merge_lines($vcf,$vcf_line,$a,$b,$imp_line,$haps_line,$haps_conf_line,$samples,$info);
 
-        # Do not undef imp_line, in case there are duplicate VCF lines
         undef $vcf_line;
+        undef $imp_line;
     }
     close($fh);
     close($fh_info);
