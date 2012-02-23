@@ -125,14 +125,56 @@ sub job_in_bjobs
     #
     # on STDERR.
 
-    my @out = Utils::CMD("bjobs $jid 2>/dev/null");
-    
+    my @out = Utils::CMD("bjobs -l $jid 2>/dev/null");
     if ( ! scalar @out ) { return $Unknown; }
-    if ( scalar @out != 2 ) { Utils::error("Expected different output, got: ", @out) }
-    if ( $out[1] =~ /^$jid\s+\S+\s+DONE/ ) { return $Done; }
-    if ( $out[1] =~ /^$jid\s+\S+\s+EXIT/ ) { return $Error; }
 
-    return $Running;
+    my $job = parse_bjobs_l(\@out);
+    if ( $$job{status} eq 'DONE' ) { return $Done; }
+    if ( $$job{status} eq 'PEND' ) { return $Running; }
+    if ( $$job{status} eq 'EXIT' ) { return $Error; } 
+    if ( $$job{status} eq 'RUN' ) 
+    {
+        my $bswitch;
+        if ( $$job{queue} eq 'normal' && $$job{cpu_time}*1.1 > 12*3600 ) { $bswitch = 'long' }
+        elsif ( $$job{queue} eq 'long' && $$job{cpu_time}*1.1 > 2*24*3600 ) { $bswitch = 'basement' }
+        if ( defined $bswitch )
+        {
+            warn("Changing queue of the job $jid from $$job{queue} to $bswitch\n");
+            `bswitch $bswitch $jid`;
+        }
+        return $Running;
+    }
+    return $Error;
+}
+
+sub parse_bjobs_l
+{
+    my ($lines) = @_;
+
+    my $i=0;
+    while ( $i<@$lines && $$lines[$i]=~/^\s*$/ ) { $i++ }
+    if ( $i>=@$lines ) { Utils::error("Could not parse bjobs -l output: ", join('',@$lines)); }
+
+    my $job_info = $$lines[$i++]; chomp($job_info);
+    while ( $i<@$lines && $$lines[$i]=~/^\s{21}?/ ) 
+    { 
+        $job_info .= $';
+        chomp($job_info);
+        $i++;
+    }
+
+    if ( !($job_info=~/, Status <([^>]+)>/) ) { Utils::error("Could not determine the status: [$job_info]"); }
+    my $status = $1;
+    if ( !($job_info=~/, Queue <([^>]+)>/) ) { Utils::error("Could not determine the queue: [$job_info]"); }
+    my $queue = $1;
+
+    my $cpu_time = 0;
+    while ( $i<@$lines )
+    {
+        if ( $$lines[$i]=~/The CPU time used is (\d+) seconds./ ) { $cpu_time=$1; last; }
+        $i++;
+    }
+    return { status=>$status, queue=>$queue, cpu_time=>$cpu_time };
 }
 
 
