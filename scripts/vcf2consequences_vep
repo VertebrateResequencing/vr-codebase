@@ -134,7 +134,7 @@ sub process_vcf_rec
 		$current_chr=$chr;
 	}
 
-	# Search for novel indels offset in vep output eg CAA/CNNNNNNNAA at 10108 in vcf is reported as AA/NNNNNNNAA at 10109 by vep
+	# Search for indels offset by 1 in vep output eg CAA/CNNNNNNNAA at 10108 in vcf is reported as AA/NNNNNNNAA at 10109 by vep
 
 	my $is_indel=0;
 	foreach my $allele (split ',', $$rec[4]){
@@ -144,8 +144,7 @@ sub process_vcf_rec
 		}
 	}
 
-	if ($is_indel > 0 && $$rec[2] eq '.') {
-
+	if ($is_indel > 0 && $$rec[2] eq '.') {	# novel SNP, cache key is alleles list
 		$alleles =~ s/,/\//g;	#  NT  N,NTCT keyed by vep as T/-/TCT
 		my @indel_alleles;
 		foreach (split(/\//,$alleles)) {
@@ -157,6 +156,13 @@ sub process_vcf_rec
 
 		if ($vep_cache->{$pos+1}{$indel_alleles}) {
 			$vep_cache->{$pos}{$var_key} = $vep_cache->{$pos+1}{$indel_alleles};
+		}
+	}
+	if ($is_indel > 0 && $$rec[2] ne '.') {	# ref SNP, cache key is ref id
+		foreach my $k (keys %{$vep_cache->{$pos+1}}) {
+			if ($k eq $$rec[2]) {
+				$vep_cache->{$pos}{$k} = $vep_cache->{$pos+1}{$k};
+			}
 		}
 	}
 
