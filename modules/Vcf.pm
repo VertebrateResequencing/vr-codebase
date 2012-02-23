@@ -1879,7 +1879,8 @@ sub format_haplotype
     Args 1  : VCF data line in the format as if parsed by next_data_hash with alleles written as letters.
          2  : Optionally, a subset of columns can be supplied. See also format_line.
     Returns : Modifies the ALT array and the genotypes so that ref alleles become 0 and non-ref alleles 
-                numbers starting from 1.
+                numbers starting from 1. If the key $$vcf{trim_redundant_ALTs} is set, ALT alleles not appearing
+                in any of the sample column will be removed.
 
 =cut
 
@@ -1933,6 +1934,13 @@ sub format_genotype_strings
             if ( $sep ) { $out .= $sep; }
         }
         $$rec{gtypes}{$key}{GT} = $out;
+    }
+    if ( !$$self{trim_redundant_ALTs} && exists($$rec{ALT}) && @{$$rec{ALT}} )
+    {
+        for my $alt (@{$$rec{ALT}}) 
+        { 
+            if ( !exists($alts{$alt}) ) { $alts{$alt} = ++$nalts;  }
+        }
     }
     $$rec{ALT} = [ sort { $alts{$a}<=>$alts{$b} } keys %alts ];
 }

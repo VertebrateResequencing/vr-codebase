@@ -31,6 +31,7 @@ sub error
         "   -h, -?, --help                          This help message.\n",
         "   -r, --regions <list|file>               Do only the given regions (comma-separated list or one region per line in a file).\n",
         "   -s, --silent                            Try to be a bit more silent, no warnings about duplicate lines.\n",
+        "   -t, --trim-ALTs                         If set, redundant ALTs will be removed\n",
         "\n";
 }
 
@@ -46,10 +47,12 @@ sub parse_params
             'DP4' => \&joiner_dp4,
             'DP'  => \&joiner_sum,
         },
+        trim_redundant_ALTs => 0,
     };
     while (my $arg=shift(@ARGV))
     {
         if ( $arg eq '-d' || $arg eq '--remove-duplicates' ) { $$opts{rm_dups}=1; next; }
+        if ( $arg eq '-t' || $arg eq '--trim-ALTs' ) { $$opts{trim_redundant_ALTs}=1; next; }
         if ( $arg eq '-s' || $arg eq '--silent' ) { $$opts{silent_dups}=1; next; }
         if ( $arg eq '-H' || $arg eq '--vcf-header' ) { $$opts{vcf_header}=shift(@ARGV); next; }
         if ( $arg eq '-c' || $arg eq '--chromosomes' ) { $$opts{regions_list}=shift(@ARGV); next; }
@@ -253,6 +256,8 @@ sub merge_vcf_files
         $vcf_out = Vcf->new();
     }
 
+    $$vcf_out{trim_redundant_ALTs} = $$opts{trim_redundant_ALTs};
+
     init_cols($opts,$vcf_out);
     my @regions = @{$$opts{regions}};
     my @cols    = @{$$opts{cols}};
@@ -334,7 +339,7 @@ sub merge_vcf_files
             { 
                 $new_ref = $vcf_out->fill_ref_alt_mapping(\%ref_alt_map); 
             }
-            if ( !$have_samples )
+            if ( !$have_samples or !$$opts{trim_redundant_ALTs} )
             {
                 # Do not loose information from the ALT column when samples are not present
                 my %alts;
