@@ -160,11 +160,17 @@ sub do_mapping {
         # so we multiply by 3
         $input_args{insert_size} *= 3;
     }
-    
-    my @args = $self->_do_mapping_args(\%do_mapping_args, %input_args);
 
+    my %args = $self->_do_mapping_args(\%do_mapping_args, %input_args);
+    $args{mapper_index_suffix} = $input_args{mapper_index_suffix} if(defined($input_args{mapper_index_suffix}));
+    $args{additional_mapper_params} = $input_args{additional_mapper_params} if(defined($input_args{additional_mapper_params} ));
     my $wrapper = $self->wrapper;
-    $wrapper->do_mapping(@args);
+    
+    if(defined($input_args{mapper_index_params}) && defined ($input_args{mapper_index_suffix}))
+    {
+      $wrapper->setup_custom_reference_index($input_args{ref}, $input_args{mapper_index_params},$input_args{mapper_index_suffix})
+    }
+    $wrapper->do_mapping(%args);
     $self->_add_command_line($wrapper->command_line());
 
     # smalt directly generates sam files, so nothing futher to do

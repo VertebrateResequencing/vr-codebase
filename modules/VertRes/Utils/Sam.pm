@@ -565,25 +565,21 @@ sub add_sam_header {
     $header_lines++;
     
     if ($args{program}) {
-	unless(scalar @{$args{command_line}})
-	{
+	unless (scalar @{$args{command_line} || []}) {
 	    # Add single PG line without CL tag 
 	    print $shfh "\@PG\tID:$args{program}";
 	    print $shfh "\tVN:$args{program_version}" if (defined $args{program_version});
 	    print $shfh "\n";
 	    $header_lines++;
 	}
-	else
-	{
+	else {
 	    # Add PG lines with CL tags
 	    my $id = $args{program};
 	    my $pp = '';
 	    my $linecount = 1;
-	    foreach my $cl (@{$args{command_line}})
-	    {
+	    foreach my $cl (@{$args{command_line}}) {
 		chomp $cl;
 		$cl =~ s/\/\S+\///g; # remove file paths
-
 		print $shfh "\@PG\tID:$id";
 		print $shfh "\tVN:$args{program_version}" if (defined $args{program_version});
 		print $shfh "\tPP:$pp" if $pp;

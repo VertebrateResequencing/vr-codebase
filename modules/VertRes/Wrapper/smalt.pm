@@ -95,7 +95,8 @@ sub version {
 sub setup_reference {
     my ($self, $ref) = @_;
     
-    my @suffixes = qw(small.sma small.smi large.sma large.smi);
+    my @suffixes = qw(small.sma small.smi large.sma large.smi medium.sma medium.smi);
+    
     my $indexed = 0;
     foreach my $suffix (@suffixes) {
         if (-s "$ref.$suffix") {
@@ -109,7 +110,7 @@ sub setup_reference {
         $self->simple_run("index -k 13 -s 4 $ref.small $ref");
         $self->simple_run("index -k 13 -s 6 $ref.medium $ref");
         $self->simple_run("index -k 20 -s 13 $ref.large $ref");
-        
+
         $indexed = 0;
         foreach my $suffix (@suffixes) {
             if (-s "$ref.$suffix") {
@@ -120,6 +121,27 @@ sub setup_reference {
     
     return $indexed == @suffixes ? 1 : 0;
 }
+
+
+=head2 setup_reference
+
+ Title   : setup_reference
+ Usage   : $obj->setup_reference($ref_fasta);
+ Function: Do whatever needs to be done with the reference to allow mapping.
+ Returns : boolean
+ Args    : n/a
+
+=cut
+
+sub setup_custom_reference_index {
+    my ($self, $ref, $mapper_index_params, $mapper_index_suffix) = @_;
+    if(! ((-s "$ref.$mapper_index_suffix.sma") && (-s "$ref.$mapper_index_suffix.smi")) )
+    {
+      $self->simple_run("index ".$mapper_index_params." $ref.".$mapper_index_suffix." $ref");
+    }
+}
+    
+    
 
 =head2 setup_fastqs
 
@@ -199,7 +221,11 @@ sub generate_sam {
             }
         }
         my $hash_name;
-        if ($max_length < 70) {
+        if(defined($other_args{mapper_index_suffix}))
+        {
+          $hash_name = $ref.'.'.$other_args{mapper_index_suffix};
+        }
+        elsif ($max_length < 70) {
             $hash_name = $ref.'.small';
         }
         elsif ($max_length >= 100) {
@@ -220,8 +246,13 @@ sub generate_sam {
         elsif(defined $other_args{i}) {
             $insert_size_arg = " -i $other_args{i}";
         }
+        my $additional_mapper_params = '';
+        if(defined($other_args{additional_mapper_params}))
+        {
+          $additional_mapper_params = $other_args{additional_mapper_params};
+        }
         
-        $self->simple_run("map -f samsoft$insert_size_arg -o $out $hash_name $fq1 $fq2");
+        $self->simple_run("map -f samsoft$insert_size_arg $additional_mapper_params -o $out $hash_name $fq1 $fq2");
     }
     
     return -s $out ? 1 : 0;

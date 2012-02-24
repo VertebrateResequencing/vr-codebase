@@ -210,6 +210,10 @@ our $split_dir_name = 'split';
            slx_mapper_exe => 'bwa-0.5.5' (optional - defaults to slx_mapper)
            '454_mapper_exe' => 'ssaha2', (optional - defaults to 454_mapper)
            
+           mapper_index_params => '-k 13 -s 4',(optional parameters for indexing, currently only smalt)
+           mapper_index_suffix => 'custom', (optional custom suffix for indexing, currently only smalt, both needed)
+           additional_mapper_params => '-d 0 -r 3', (optional additional mapper params, currently only smalt)
+           
            reference => '/path/to/ref.fa' (no default, either this or the
                         male_reference and female_reference pair of args must be
                         supplied)
@@ -762,6 +766,20 @@ sub map {
     my $mapper_exe = $self->{mapper_obj}->exe;
     my $verbose = $self->verbose;
     
+    my $mapper_index_params_str = '';
+    my $mapper_index_suffix_str = '';
+    if(defined($self->{mapper_index_params}) && defined($self->{mapper_index_suffix})) 
+    {
+      $mapper_index_params_str = " mapper_index_params => '".$self->{mapper_index_params}."', ";
+      $mapper_index_suffix_str = " mapper_index_suffix => '".$self->{mapper_index_suffix}."', ";
+    }
+    my $additional_mapper_params_str = '';
+    if(defined($self->{additional_mapper_params}))
+    {
+      $additional_mapper_params_str = " additional_mapper_params => '".$self->{additional_mapper_params}."', ";
+    }
+      
+      
     # run mapping of each split in LSF calls to temp scripts;
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
     # independantly.
@@ -797,13 +815,14 @@ sub map {
             my $job_name = $self->{prefix}.'map_'.$ended.'_'.$self->{mapstats_id}.'_'.$split;
             my $prev_error_file = $self->archive_bsub_files($lane_path, $job_name) || '';
             
+            
             open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
             print $scriptfh qq{
 use strict;
 use $mapper_class;
 use VertRes::Utils::Sam;
 
-my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe]);
+my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe] );
 
 # mapping won't get repeated if mapping works the first time but subsequent
 # steps fail
@@ -813,7 +832,11 @@ my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
                                insert_size => $insert_size_for_mapping,
                                read_group => '$info{lane}',
                                is_paired => $self->{vrlane}->{is_paired},
-                               error_file => '$prev_error_file');
+                               error_file => '$prev_error_file',
+                               $additional_mapper_params_str
+                               $mapper_index_params_str 
+                               $mapper_index_suffix_str
+                               );
 
 # (it will only return ok and create output if the sam file was created and not
 #  truncated)
