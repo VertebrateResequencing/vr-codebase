@@ -48,7 +48,7 @@ sub error
 
     print
         "About: Annotates VCF file, adding filters or custom annotations. Requires tabix indexed file with annotations.\n",
-        "   Currently annotates only the ID and INFO column, but it will be extended on popular demand.\n",
+        "   Currently it annotates the ID, FILTER, and INFO columns, but it will be extended on popular demand.\n",
         "Usage: cat in.vcf | vcf-annotate [OPTIONS] > out.vcf\n",
         "Options:\n",
         "   -a, --annotations <file.gz>         The tabix indexed file with the annotations: CHR\\tFROM[\\tTO][\\tVALUE]+.\n",
@@ -71,7 +71,7 @@ sub error
         join('',@filters),
         "Examples:\n",
         "   zcat in.vcf.gz | vcf-annotate -a annotations.gz -d descriptions.txt -c FROM,TO,CHROM,ID,INFO/DP | bgzip -c >out.vcf.gz \n",
-        "   zcat in.vcf.gz | vcf-annotate -f +/-a/c=3,10/q=3/d=5/-D -a annotations.gz -d descriptions.txt | bgzip -c >out.vcf.gz \n",
+        "   zcat in.vcf.gz | vcf-annotate -f +/-a/c=3,10/q=3/d=5/-D -a annotations.gz -d key=INFO,ID=GN,Number=1,Type=String,Description='Gene Name' | bgzip -c >out.vcf.gz \n",
         "   zcat in.vcf.gz | vcf-annotate -a dbSNPv132.tab.gz -c CHROM,FROM,REF,ALT,ID,-,-,- | bgzip -c >out.vcf.gz \n",
         "Where descriptions.txt contains:\n",
         "   key=INFO,ID=GN,Number=1,Type=String,Description='Gene Name'\n",
@@ -376,6 +376,7 @@ sub parse_columns
         elsif ( $col eq 'POS' ) { $out{'FROM'}=$i; }
         elsif ( $col eq 'TO' ) { $out{$col}=$i; }
         elsif ( $col eq 'ID' ) { $out{$col}=$i; }
+        elsif ( $col eq 'FILTER' ) { $out{$col}=$i; }
         elsif ( $col eq 'REF' ) { $out{$col}=$i; }
         elsif ( $col eq 'ALT' ) { $out{$col}=$i; }
         else
@@ -443,6 +444,7 @@ sub annotate
     my ($prev_chr,$prev_pos,$annot_from,$annot_to,$annot_line);
     my @annots  = @{$$cols{annots}};
     my $id_col  = exists($$cols{ID}) ? $$cols{ID} : undef;
+    my $fltr_col = exists($$cols{FILTER}) ? $$cols{FILTER} : undef;
     my $from_col = $$cols{FROM};
     my $to_col   = $$cols{TO};
     my $ref_col  = exists($$cols{REF}) ? $$cols{REF} : undef;
@@ -548,7 +550,6 @@ sub annotate
                 for my $info (@annots)
                 {
                     my $val = $$annot_line[$$info{col}];
-                    chomp($val);
 
                     if ( $val eq '' or $val eq '.' ) { $val=undef; }       # Existing annotation should be removed
                     elsif ( $$info{is_flag} )
@@ -557,7 +558,7 @@ sub annotate
                         else { $val=undef; }                # Flag annotation should be removed
                     }
 
-                    # Only single undef values can be present are overriden if defined in other records
+                    # A single undef value can be overriden by other overlapping records (?)
                     if ( !defined $val && exists($values{$$info{id}}) ) { next; }
                     elsif ( exists($values{$$info{id}}) && !defined $values{$$info{id}}[0] )
                     {
@@ -567,6 +568,7 @@ sub annotate
                     push @{$values{$$info{id}}}, $val;
                 }
                 if ( defined $id_col && $$annot_line[$id_col] ne '' ) { $ids{$$annot_line[$id_col]} = 1; }
+                if ( defined $fltr_col && $$annot_line[$fltr_col] ne '' ) { $rec[6] = $$annot_line[$fltr_col]; }
             }
             if ( scalar keys %ids ) { $rec[2] = join(';', keys %ids); }
             if ( scalar keys %values )
@@ -1316,6 +1318,7 @@ sub next_line
         last;
     }
     my @items = split($$self{delim},$line);
+    chomp($items[-1]);
     return \@items;
 }
 
