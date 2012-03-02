@@ -135,7 +135,7 @@ sub setup_fastqs {
 =cut
 
 sub generate_sam {
-    my ($self, $out, $ref, @fqs) = @_;
+    my ($self, $out, $ref, @fqs,%other_args) = @_;
     
     unless (-s $out) {
         my $e = 70;
@@ -160,15 +160,38 @@ sub generate_sam {
         }
         
         my $X = 1000;
+        my $max_intron_length_str = $self->_max_intron_length_option(%other_args);
+        my $inner_mate_str = $self->_insert_size_option($longest_read, %other_args);
         
         # parameters needed
         #-I to specify sensible max intron length
         #-r for inner-mate distance  ( insert size - readlength*2
         # index files
-        $self->simple_run("$ref $fqs[0] $fqs[1]");
+        $self->simple_run(" $max_intron_length_str $inner_mate_str $ref $fqs[0] $fqs[1]");
     }
     
     return -s $out ? 1 : 0;
+}
+
+sub _max_intron_length_option
+{
+  my ($self, %other_args) = @_;
+  
+  $other_args{max_intron_length}  ||=10000;
+  return "-I ".$other_args{max_intron_length};
+}
+
+sub _insert_size_option
+{
+  my ($self, $longest_read, %other_args) = @_;
+  
+  $other_args{insert_size}  ||=500;
+  my $inner_mate_distance = $other_args{insert_size} - (2*$longest_read);
+  if($inner_mate_distance <0)
+  {
+    $inner_mate_distance = 50;
+  }
+  return "-r $inner_mate_distance";
 }
 
 =head2 add_unmapped

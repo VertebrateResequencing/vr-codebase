@@ -161,10 +161,20 @@ sub do_mapping {
    #     $input_args{insert_size} *= 3;
    # }
     
-    my @args = $self->_do_mapping_args(\%do_mapping_args, %input_args);
-
+    my %args = $self->_do_mapping_args(\%do_mapping_args, %input_args);
+    $args{insert_size} = $input_args{insert_size} if(defined($input_args{insert_size} ));
+    
+    if(defined($input_args{max_intron_length} ))
+    {
+      $args{max_intron_length} = $input_args{max_intron_length} ;
+    }
+    else
+    {
+        $args{max_intron_length} = 10000; 
+    }
+    
     my $wrapper = $self->wrapper;
-    $wrapper->do_mapping(@args);
+    $wrapper->do_mapping(%args);
     $self->_add_command_line($wrapper->command_line());
 
     # tophat directly generates sam files, so nothing futher to do
