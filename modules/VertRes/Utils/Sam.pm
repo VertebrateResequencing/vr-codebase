@@ -3737,7 +3737,7 @@ sub coverage
 	} 
     }
     close $fh;
-    unless( $sam->run_status() ){ $self->throw("Samtools pileup failed for: $bam\n"); }
+    unless( $sam->run_status() >= 1 ){ $self->throw("Samtools pileup failed for: $bam\n"); }
 
     return @cover;
 }
@@ -3774,7 +3774,7 @@ sub coverage_depth
 	$coverage++; # Count bases covered
     }
     close $fh;
-    unless( $sam->run_status() ){ $self->throw("Samtools pileup failed for: $bam\n"); }
+    unless( $sam->run_status() >= 1 ){ $self->throw("Samtools pileup failed for: $bam\n"); }
     unless( $coverage <= $ref_size ){ $self->throw("Total bases found by pileup exceeds size of reference sequence.\n"); }
 
     # Add ummapped bases to histogram.
