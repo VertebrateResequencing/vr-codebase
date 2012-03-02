@@ -769,7 +769,7 @@ sub run_graphs
     my($coverage, $depth, $depth_sd) = $sam_util->coverage_depth($bam_file,$reference_size);
 
     # Output cover file.
-    open(my $cov_fh, "> $cover_file") or throw("Cannot open: $cover_file\n");
+    open(my $cov_fh, "> $cover_file") or $self->throw("Cannot open: $cover_file\n");
     printf $cov_fh "[%d, %.2f, %.2f]\n", $coverage, $depth, $depth_sd;
     close($cov_fh);
 }
