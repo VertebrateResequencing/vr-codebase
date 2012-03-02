@@ -18,40 +18,28 @@ foreach( keys( %INC ) )
 }
 =cut
 
-my ($input_vcf, $index_vcf, $help, $vep_input, $gerp_cache_dir, $buffer_size, $grantham, $gene_list_db);
+my ($input_vcf, $index_vcf, $help, $vep_input, $gerp_cache_dir, $buffer_size, $grantham, $gene_list_db, $tab_input);
 
 GetOptions
 (
     "v|vcf=s"       => \$input_vcf,
-    "i|vep=s"    => \$vep_input,
-    "g|gerp=s"    => \$gerp_cache_dir,
+    "i|vep=s"       => \$vep_input,
+    "t|tab=s"       => \$tab_input,
+    "g|gerp=s"      => \$gerp_cache_dir,
     "b|buffer=i"    => \$buffer_size,
     "r|grantham"    => \$grantham,
-    "n|genenames=s"    => \$gene_list_db,
+    "n|genenames=s" => \$gene_list_db,
     "h|help"        => \$help
 );
 
 my $missing = 0;
-if( ! $vep_input || $help ){$missing = 1;}
+if( (!$vep_input && !$tab_input) || $help ){$missing = 1;}
+if ( $vep_input && $tab_input ) { error("Only one of the -i or -t option can be given.") }
 
 $buffer_size = 1000 unless ($buffer_size);
 
-if( $missing )
-{
-    print qq[
-This script applies consequences called by the Ensembl Variant Effect Predictor to a VCf file, optionally adding GERP and Grantham matrix scores
-by querying Ensembl
-Usage:
-    -v --vcf <string>       VCF input file
-    -i --vep                Text Input file from Ensembl VEP
-    -g --gerp               OPTIONAL: If GERP scores required, location of cached gerp score bed files
-    -b --buffer             OPTIONAL: Number of rows of the gerp scores bed file to buffer (default = 1000)
-    -r --grantham           OPTIONAL: Add Grantham matrix score to consequences for nsSNPS
-    -n --genenames          OPTIONAL: DBM file of external gene names for non_human ENS ids
-    -h --help               Print this message
-];
-    exit;
-}
+if( $missing ) { error(); }
+
 
 my $t0 = Benchmark->new;
 my $grantham_matrix = GranthamMatrix->new() if $grantham;
@@ -64,18 +52,8 @@ if ($gene_list_db) {
 	tie %GENE_NAME, "DB_File", $gene_list_db, O_RDONLY, 0666, $DB_HASH or die "Cannot open file : $!\n";
 }
 
-open VEP_FILE, $vep_input or die $!;
-our $vep_rec = <VEP_FILE>;
-our ($vep_version,$api_version);
-while ($vep_rec =~ /^#/) {
-	if ($vep_rec =~ /## ENSEMBL VARIANT EFFECT PREDICTOR (\S+)$/) {
-		 $vep_version=$1;
-	}
-	if ($vep_rec =~ /## Using API version (\d+),/) {
-		 $api_version=$1;
-	}
-	$vep_rec = <VEP_FILE>;
-}
+our ($vep_rec,$vep_version,$api_version);
+init_vep();
 
 parse_vcf($input_vcf);
 my $t1 = Benchmark->new;
@@ -84,6 +62,59 @@ print STDERR "The consequences calculations took:",timestr($td),"\n";
 close(VEP_FILE);
     
 exit;
+
+#------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    print qq[
+This script applies consequences called by the Ensembl Variant Effect Predictor to a VCf file, optionally adding GERP and Grantham matrix scores
+by querying Ensembl
+Usage:
+    -v --vcf <string>       VCF input file
+    -i --vep                Text Input file from Ensembl VEP
+    -g --gerp               OPTIONAL: If GERP scores required, location of cached gerp score bed files
+    -b --buffer             OPTIONAL: Number of rows of the gerp scores bed file to buffer (default = 1000)
+    -r --grantham           OPTIONAL: Add Grantham matrix score to consequences for nsSNPS
+    -n --genenames          OPTIONAL: DBM file of external gene names for non_human ENS ids
+    -t --tab                Alternative to -i, see the notes below
+    -h --help               Print this message
+Note:
+    The script requires that chromosomes in VEP output are listed in the same order as in the VCF. 
+    Either use vep_resort.sh to reorder (beware, this script will not warn you if the order is different!)
+    or convert to tab-delimited file and index by tabix (the bullet proof way, the chromosomal order
+    does not matter anymore):
+        ( cat file.vep | head -100 | grep ^#; 
+         cat file.vep | grep -v ^# | awk '{OFS="\\t"}{gsub(/:/,"\\t",\$2); print}' | sort -k2,2d -k3,3n ) | bgzip -c > file.tab.gz && tabix -s 2 -b 3 -e 3 file.tab.gz
+
+];
+    exit -1;
+}
+
+sub init_vep
+{
+    if ( $vep_input )
+    {
+        open VEP_FILE, $vep_input or die $!;
+    }
+    else
+    {
+        open(VEP_FILE,"tabix -H $tab_input|") or error("tabix -H $tab_input: $!");
+    }
+
+    $vep_rec = <VEP_FILE>;
+    while (defined $vep_rec && $vep_rec =~ /^#/) {
+        if ($vep_rec =~ /## ENSEMBL VARIANT EFFECT PREDICTOR (\S+)$/) {
+            $vep_version=$1;
+        }
+        if ($vep_rec =~ /## Using API version (\d+),/) {
+            $api_version=$1;
+        }
+        $vep_rec = <VEP_FILE>;
+    }
+}
 
 sub parse_vcf
 {
@@ -204,14 +235,24 @@ sub load_vep_cache
     my ($chr) = @_;
 	$vep_cache = ();
 
-	return if !$vep_rec;
-	my $rec = parse_rec($vep_rec);
+    my $rec;
+    if ( $vep_input )
+    {
+        return if !$vep_rec;
+        $rec = parse_rec($vep_rec);
 
-	while ($rec && $rec->{vep_chr} ne $chr) {
-		$vep_rec = <VEP_FILE>;
-		last if !$vep_rec;
-		$rec = parse_rec($vep_rec);
-	}
+        while ($rec && $rec->{vep_chr} ne $chr) {
+            $vep_rec = <VEP_FILE>;
+            last if !$vep_rec;
+            $rec = parse_rec($vep_rec);
+        }
+    }
+    else
+    {
+        open(VEP_FILE, "tabix $tab_input $chr |") or error("tabix $tab_input $chr: $!");
+        $vep_rec = <VEP_FILE>;
+        $rec = parse_rec($vep_rec);
+    }
 
 	while ($rec && $rec->{vep_chr} eq $chr) {
 
@@ -278,7 +319,15 @@ sub parse_rec {
 
 	my %rec;
 	chomp $vep_rec;
-	($rec{vep_key}, $rec{Location}, $rec{Allele}, $rec{Gene}, $rec{Feature}, $rec{Feature_type}, $rec{Consequence}, $rec{cDNA_position}, $rec{CDS_position}, $rec{Protein_position}, $rec{Amino_acids}, $rec{Codons}, $rec{Existing_variation}, $rec{Extra}) = split("\t",$vep_rec);
+
+    my @items = split(/\t/, $vep_rec);
+    if ( $tab_input ) 
+    { 
+        $items[1] = "$items[1]:$items[2]";
+        splice(@items,2,1);
+    }
+
+	($rec{vep_key}, $rec{Location}, $rec{Allele}, $rec{Gene}, $rec{Feature}, $rec{Feature_type}, $rec{Consequence}, $rec{cDNA_position}, $rec{CDS_position}, $rec{Protein_position}, $rec{Amino_acids}, $rec{Codons}, $rec{Existing_variation}, $rec{Extra}) = @items;
 
 	# vep key is either rs id or format 1_8482797_T/C
 	my ($key_prefix,undef) = split("_", $rec{vep_key});

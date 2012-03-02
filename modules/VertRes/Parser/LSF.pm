@@ -174,12 +174,12 @@ sub next_result {
     chomp($cmd) if $cmd;
     
     # calculate wall time and idle factor
-    my $date_regex = qr/(\w+)\s+(\d+) (\d+):(\d+):(\d+)/;
-    my ($smo, $sd, $sh, $sm, $ss) = $started =~ /$date_regex/;
-    my ($emo, $ed, $eh, $em, $es) = $finished =~ /$date_regex/;
-    my $dt = DateTime->new(year => 2010, month => $months{$smo}, day => $sd, hour => $sh, minute => $sm, second => $ss);
+    my $date_regex = qr/(\w+)\s+(\d+) (\d+):(\d+):(\d+) (\d+)/;
+    my ($smo, $sd, $sh, $sm, $ss,$sy) = $started =~ /$date_regex/;
+    my ($emo, $ed, $eh, $em, $es,$ey) = $finished =~ /$date_regex/;
+    my $dt = DateTime->new(year => $sy, month => $months{$smo}, day => $sd, hour => $sh, minute => $sm, second => $ss);
     my $st = $dt->epoch;
-    $dt = DateTime->new(year => 2010, month => $months{$emo}, day => $ed, hour => $eh, minute => $em, second => $es);
+    $dt = DateTime->new(year => $ey, month => $months{$emo}, day => $ed, hour => $eh, minute => $em, second => $es);
     my $et = $dt->epoch;
     my $wall = $et - $st;
     my $idle = sprintf("%0.2f", ($cpu < 1 ? 1 : $cpu) / ($wall < 1 ? 1 : $wall));
