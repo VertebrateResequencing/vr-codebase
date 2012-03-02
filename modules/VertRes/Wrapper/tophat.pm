@@ -52,7 +52,8 @@ my %e_parameter = (
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => '/software/pathogen/external/apps/usr/bin/tophat');
+    my $self = $class->SUPER::new(exe => 'tophat', @args);
+    $self->{orig_exe} = $self->exe;
     
     return $self;
 }
