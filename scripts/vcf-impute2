@@ -528,8 +528,8 @@ sub impute2_to_vcf
     my ($fh_haps,$fh_haps_conf);
     if ( -e $$opts{impute2_haps} && -e $$opts{impute2_hap_conf} )
     {
-        open(my $fh_haps,"zcat $$opts{impute2_haps} |") or error("zcat $$opts{impute2_haps}: $!");
-        open(my $fh_haps_conf,"zcat $$opts{impute2_hap_conf} |") or error("zcat $$opts{impute2_hap_conf}: $!");
+        open($fh_haps,"zcat $$opts{impute2_haps} |") or error("zcat $$opts{impute2_haps}: $!");
+        open($fh_haps_conf,"zcat $$opts{impute2_hap_conf} |") or error("zcat $$opts{impute2_hap_conf}: $!");
     }
     open(my $fh_info,'<',$$opts{impute2_info}) or error("$$opts{impute2_info}: $!");
     <$fh_info>;
