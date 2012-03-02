@@ -57,7 +57,7 @@ Craig Porter: cp7@sanger.ac.uk
 
 
 package VertRes::Pipelines::Import_iRODS_fastq;
-use base qw(VertRes::Pipelines::Import_iRODS);
+use base qw(VertRes::Pipelines::Import_iRODS VertRes::Pipelines::Import);
 
 use strict;
 use warnings;
@@ -68,6 +68,7 @@ use VRTrack::File;
 use VertRes::Utils::FileSystem;
 use VertRes::Pipelines::Import;
 use VertRes::Pipelines::Import_iRODS;
+use Pathogens::Import::ValidateFastqConversion;
 
 our @actions =
 (
@@ -90,7 +91,7 @@ our @actions =
     # If all files downloaded OK, update the VRTrack database.
     {
         'name'     => 'update_db',
-        'action'   => \&VertRes::Pipelines::Import::update_db,
+        'action'   => \&update_db,
         'requires' => \&update_db_requires, 
         'provides' => \&update_db_provides,
     },
@@ -108,7 +109,7 @@ our $options =
 sub VertRes::Pipelines::Import_iRODS_fastq::new 
 {
     my ($class, %args) = @_;
-    my $self = $class->SUPER::new(%$options,'actions'=>\@actions,%args);
+    my $self = $class->VertRes::Pipelines::Import_iRODS::new(%$options,'actions'=>\@actions,%args);
 
     $self->{fsu} = VertRes::Utils::FileSystem->new; 
 
@@ -258,7 +259,7 @@ exit;
     
     my $job_name = $self->{prefix}.'bam2fastq';
     $self->archive_bsub_files($lane_path, $job_name);
-    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'" }, qq{perl -w $script_name});
+    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'", dont_wait=>1 }, qq{perl -w $script_name});
     
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete
@@ -296,6 +297,37 @@ sub update_db_provides
     if ( exists($$self{db}) ) { return 0; }
     my @provides = ();
     return \@provides;
+}
+
+sub update_db
+{
+    my ($self,$lane_path,$lock_file) = @_;
+
+    # Check reads from fastqs match reads from iRODS.
+    my $validate = Pathogens::Import::ValidateFastqConversion->new(
+	fastqcheck_filenames => $self->_generate_fastqcheck_filenames($lane_path),
+	irods_filename       => ${$$self{files}}[0]
+    );
+    $self->throw("Reads in fastq files do not match reads from iRODS.") if $validate->is_total_reads_valid() != 1;
+
+    return $self->VertRes::Pipelines::Import::update_db($lane_path,$lock_file);
+}
+
+sub _generate_fastqcheck_filenames
+{
+    my ($self, $lane_path) = @_;
+
+    opendir(DIR,$lane_path);
+    my @filenames = grep { /fastq.gz.fastqcheck$/i }
+    readdir(DIR);
+    closedir(DIR);
+
+    for my $file (@filenames)
+    {
+	$file = $lane_path.'/'.$file;
+    }
+
+    return \@filenames;
 }
 
 #---------- Debugging and error reporting -----------------

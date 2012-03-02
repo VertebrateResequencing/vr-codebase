@@ -22,8 +22,9 @@ use warnings;
 no warnings 'uninitialized';
 use Getopt::Long;
 use Pathogens::RNASeq::Expression;
+use Pathogens::RNASeq::CoveragePlot;
 
-my($sequence_file, $annotation_file, $protocol_name, $output_base_filename, $mapping_quality, $no_coverage_plots,  $help );
+my($sequence_file, $annotation_file, $protocol_name, $output_base_filename, $mapping_quality, $no_coverage_plots, $intergenic_regions, $help );
 
 GetOptions(
    's|sequence_file=s'         => \$sequence_file,
@@ -32,6 +33,7 @@ GetOptions(
    'o|output_base_filename=s'  => \$output_base_filename,
    'q|minimum_mapping_quality=s' => \$mapping_quality,
    'c|no_coverage_plots'       => \$no_coverage_plots,
+   'i|intergenic_regions'      => \$intergenic_regions,
    'h|help'                    => \$help,
     );
 
@@ -44,6 +46,7 @@ Usage: $0
   -o|output_base_filename  <Optional: base name and location to use for output files>
   -q|minimum_mapping_quality <Optional: minimum mapping quality>
   -c|no_coverage_plots     <Dont create Artemis coverage plots>
+  -i|intergenic_regions    <Include intergenic regions>
   -h|help                  <print this message>
 
 This script takes in an aligned sequence file (BAM) and a corresponding annotation file (GFF) and creates a spreadsheet with expression values.
@@ -56,7 +59,7 @@ my %filters = (mapping_quality => $mapping_quality);
 
 my %protocols = ( 
 	standard    => "StandardProtocol",
-	nc_protocol => "StrandSpecificProtocol"
+	strand_specific_protocol => "StrandSpecificProtocol"
 );
 
 my $expression_results = Pathogens::RNASeq::Expression->new(
@@ -64,7 +67,8 @@ my $expression_results = Pathogens::RNASeq::Expression->new(
   annotation_filename  => $annotation_file,
   filters              => \%filters,
   protocol             => $protocols{$protocol_name},
-  output_base_filename => $output_base_filename
+  output_base_filename => $output_base_filename,
+  intergenic_regions   => $intergenic_regions
   );
 
 $expression_results->output_spreadsheet();

@@ -28,16 +28,26 @@ sub _build_exons
   my ($self) = @_;
   my @exons;
   push @exons, [$self->gene_start, $self->gene_end];
-  
+
   return \@exons;
 }
 
 sub _build_gene_id
 {
   my ($self) = @_;
-  my ($gene_id, @junk) = $self->raw_feature->get_tag_values('ID');
+
+  my $gene_id;
+  my @junk;
+  if($self->raw_feature->has_tag('locus_tag'))
+  {
+    ($gene_id, @junk) = $self->raw_feature->get_tag_values('locus_tag');
+  }
+  else
+  {
+    ($gene_id, @junk) = $self->raw_feature->get_tag_values('ID');
+  }
   $gene_id =~ s/^"|"$//g;
-  
+
   return $gene_id;
 }
 
@@ -50,7 +60,6 @@ sub _build_seq_id
 sub _build_gene_strand
 {
   my ($self) = @_;
-  # die("$gene_id: Feature on both strands.\n") unless $gene_strand;
   $self->raw_feature->strand;
 }
 
@@ -76,18 +85,18 @@ sub _build_exon_length
 sub add_discontinuous_feature
 {
   my ($self,$raw_feature) = @_;
-  
+
   my $gene_start = ($raw_feature->start < $self->gene_start) ? $raw_feature->start : $self->gene_start;
   my $gene_end = ($raw_feature->end   > $self->gene_end) ? $raw_feature->end : $self->gene_end;
-  
+
   my $exon_length = ($raw_feature->end - $raw_feature->start + 1) + $self->exon_length;
-  
+
   $self->gene_start($gene_start);
   $self->gene_end($gene_end);
   $self->exon_length($exon_length);
-  
+
   push @{$self->exons}, [$raw_feature->start, $raw_feature->end ];
-  
+
   return;
 }
 1;
