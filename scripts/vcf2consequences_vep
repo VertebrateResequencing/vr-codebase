@@ -114,7 +114,6 @@ sub init_vep
         }
         $vep_rec = <VEP_FILE>;
     }
-    close(VEP_FILE);
 }
 
 sub parse_vcf
