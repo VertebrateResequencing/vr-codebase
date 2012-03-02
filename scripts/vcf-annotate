@@ -63,7 +63,7 @@ sub error
         "       --fill-ICF                      (Re)Calculate Inbreeding Coefficient F, HWE, AC and AN\n",
         "   -f, --filter <file|list>            Apply filters, list is in the format flt1=value/flt2/flt3=value/etc. If argument to -f is a file,\n",
         "                                           user-defined filters be applied. See User Defined Filters below.\n",
-        "   -r, --remove <list>                 Comma-separated list of tags to be removed (e.g. INFO/DP,FORMAT/DP). (Currently only removing from INFO and FORMAT is supported.)\n",
+        "   -r, --remove <list>                 Comma-separated list of tags to be removed (e.g. ID,INFO/DP,FORMAT/DP).\n",
         "   -h, -?, --help                      This help message.\n",
         "Filters:\n",
         sprintf("\t+  %-25s\t\tApply all filters with default values (can be overriden, see the example below).\n",''),
@@ -164,6 +164,9 @@ sub parse_params
                 my ($col,$tag) = split(m{/},$tag);
                 if ( !defined $tag )
                 {
+                    if ( $col eq 'ID' ) { $$opts{remove}{$col}=1; next; }
+                    if ( $col eq 'QUAL' ) { $$opts{remove}{$col}=1; next; }
+                    if ( $col eq 'FILTER' ) { $$opts{remove}{$col}=1; next; }
                     $$opts{remove}{INFO}{$col}   = 1;
                     $$opts{remove}{FORMAT}{$col} = 1;
                 }
@@ -421,6 +424,7 @@ sub annotate
     {
         for my $col (keys %{$$opts{remove}})
         {
+            if ( ref($col) ne 'HASH' ) { next; } # exception ID,QUAL,FILTER
             for my $tag (keys %{$$opts{remove}{$col}}) { $vcf->remove_header_line(key=>$col, ID=>$tag); }
         }
     }
@@ -515,6 +519,8 @@ sub annotate
                 last;
             }
 
+            if ( exists($$opts{remove}) ) { remove_tags($opts,\@rec); }
+
             # Quick position-based check: Is there an annotation for this record?
             if ( !defined $annot_prev_from or $pos < $annot_prev_from )
             {
@@ -590,6 +596,7 @@ sub annotate
     {
         my @rec = split(/\t/,$line);
         chomp($rec[-1]);
+        if ( exists($$opts{remove}) ) { remove_tags($opts,\@rec); }
         output_line($opts,\@rec);
     }
 
@@ -726,10 +733,6 @@ sub output_line
 
     if ( defined $line )
     {
-        if ( exists($$opts{remove}) )
-        {
-            remove_tags($opts,$line);
-        }
         if ( $$opts{fill_ac_an} ) 
         {
             fill_ac_an_hwe($opts,$line);
@@ -845,6 +848,11 @@ sub remove_tags
             $$line[$i] = $$opts{vcf}->remove_field($$line[$i],$idx,':');
         }
     }
+
+    # Remove ID, QUAL, FILTER
+    if ( exists($$opts{remove}{ID}) ) { $$line[2] = '.' }
+    if ( exists($$opts{remove}{QUAL}) ) { $$line[5] = '.' }
+    if ( exists($$opts{remove}{FILTER}) ) { $$line[6] = '.' }
 }
 
 sub apply_user_defined_filters
