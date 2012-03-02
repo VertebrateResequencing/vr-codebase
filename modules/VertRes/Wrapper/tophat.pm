@@ -69,20 +69,20 @@ sub new {
 =cut
 
 sub version {
-    my $self = shift;
-    
-    my $exe = $self->{orig_exe};
-    open(my $fh, "$exe 2>&1 |") || $self->throw("Could not start $exe");
-    my $version = 0;
-    while (<$fh>) {
-        if (/TopHat v(\S+)/) {
-            $version = $1;
-            last;
-        }
-    }
-    close($fh);
-    
-    return $version;
+  my $self = shift;
+
+  my $exe = $self->{orig_exe};
+  open(my $fh, "$exe -v 2>&1 |") || $self->throw("Could not start $exe");
+  my $version = 0;
+  while (<$fh>) {
+      if (/TopHat v(\S+)/) {
+          $version = $1;
+          last;
+      }
+  }
+  close($fh);
+
+  return $version;
 }
 
 =head2 setup_reference
