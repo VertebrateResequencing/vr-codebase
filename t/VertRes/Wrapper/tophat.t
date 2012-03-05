@@ -46,7 +46,7 @@ my $sai1 = File::Spec->catfile($temp_dir, '2822_6_1_1000.sai');
 my $sai2 = File::Spec->catfile($temp_dir, '2822_6_2_1000.sai');
 my $mapping = File::Spec->catfile($temp_dir, 'mapping.sam');
 my @ref_index_files;
-foreach my $suffix (qw(amb ann bwt pac rbwt rpac rsa sa 1.ebwt 2.ebwt 3.ebwt 4.ebwt rev.1.ebwt rev.2.ebwt fastqcheck)) {
+foreach my $suffix (qw(1.ebwt 2.ebwt 3.ebwt 4.ebwt rev.1.ebwt rev.2.ebwt fastqcheck)) {
     push(@ref_index_files, File::Spec->catfile($temp_dir, 'S_suis_P17.fa.'.$suffix));
 }
 
@@ -68,7 +68,7 @@ my ($lines, $mapped) = check_sam($mapping);
 is $lines, 2002, 'output sam not truncated';
 cmp_ok $mapped, '>=', 1098, 'mapped enough reads';
 foreach my $file ($sai1, $sai2, $mapping, @ref_index_files) {
-    ok -s $file, 'output file exists';
+    ok -s $file, "output file exists $file";
     unlink($file);
 }
 
