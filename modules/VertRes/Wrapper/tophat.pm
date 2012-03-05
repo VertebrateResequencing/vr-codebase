@@ -149,8 +149,8 @@ sub setup_fastqs {
 =cut
 
 sub generate_sam {
-    my ($self, $out, $ref, @fqs,%other_args) = @_;
-    
+    my ($self, $out, $ref, $fq1, $fq2, %other_args) = @_;
+    my @fqs = [$fq1, $fq2];
     unless (-s $out) {
         my $e = 70;
         

@@ -9,6 +9,8 @@ BEGIN {
     
     use_ok('VertRes::Wrapper::tophat');
     use_ok('VertRes::Utils::Mappers::tophat');
+    use VertRes::Wrapper::fastqcheck;
+    use VertRes::Utils::FileSystem;
 }
 
 
@@ -18,6 +20,9 @@ is $tophat->quiet, 1, 'quiet set via new';
 
 is $tophat->exe, 'tophat', 'exe ok';
 like $tophat->version, qr/\d+\.\d+/, 'version ok';
+
+
+
 
 
 # prepare our test files; copy them to a temp dir where we will do the tests
@@ -41,16 +46,23 @@ my $sai1 = File::Spec->catfile($temp_dir, '2822_6_1_1000.sai');
 my $sai2 = File::Spec->catfile($temp_dir, '2822_6_2_1000.sai');
 my $mapping = File::Spec->catfile($temp_dir, 'mapping.sam');
 my @ref_index_files;
-foreach my $suffix (qw(amb ann bwt pac rbwt rpac rsa sa)) {
+foreach my $suffix (qw(amb ann bwt pac rbwt rpac rsa sa 1.ebwt 2.ebwt 3.ebwt 4.ebwt rev.1.ebwt rev.2.ebwt fastqcheck)) {
     push(@ref_index_files, File::Spec->catfile($temp_dir, 'S_suis_P17.fa.'.$suffix));
 }
+
+my $fw = VertRes::Wrapper::fastqcheck->new(quiet => 1);
+my $out_file1 = File::Spec->catfile($temp_dir, '2822_6_1_1000.fastq.fastqcheck');
+my $out_file2 = File::Spec->catfile($temp_dir, '2822_6_2_1000.fastq.fastqcheck');
+$fw->run($read1, $out_file1);
+$fw->run($read2, $out_file2);
+
 
 # run the whole mapping
 $tophat->do_mapping(ref => $ref,
                  read1 => $read1,
                  read2 => $read2,
                  output => $mapping,
-                 index_a => 'is', sampe_a => 2000);
+                 insert_size => 500);
 is $tophat->run_status, 1, 'status after mapping is ok';
 my ($lines, $mapped) = check_sam($mapping);
 is $lines, 2002, 'output sam not truncated';
