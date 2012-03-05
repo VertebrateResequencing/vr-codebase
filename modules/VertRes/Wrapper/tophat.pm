@@ -26,6 +26,7 @@ use File::Copy;
 use VertRes::IO;
 use VertRes::Parser::fastqcheck;
 use VertRes::Wrapper::bowtie;
+use File::Basename;
 
 use base qw(VertRes::Wrapper::MapperI);
 
@@ -150,7 +151,10 @@ sub setup_fastqs {
 
 sub generate_sam {
     my ($self, $out, $ref, $fq1, $fq2, %other_args) = @_;
-    my @fqs = [$fq1, $fq2];
+    my @fqs = ($fq1, $fq2);
+    
+    my($filename, $directories, $suffix) = fileparse($out);
+    
     unless (-s $out) {
         my $e = 70;
         
@@ -181,7 +185,15 @@ sub generate_sam {
         #-I to specify sensible max intron length
         #-r for inner-mate distance  ( insert size - readlength*2
         # index files
-        $self->simple_run(" $max_intron_length_str $inner_mate_str $ref $fqs[0] $fqs[1]");
+        $self->simple_run(" $max_intron_length_str $inner_mate_str -o $directories $ref $fqs[0] $fqs[1]");
+        Utils::CMD(qq[mv $directories/accepted_hits.bam $out]);
+        
+        unlink(qq[$directories/left_kept_reads.info]);
+        unlink(qq[$directories/right_kept_reads.info]);
+        unlink(qq[$directories/logs]);
+        unlink(qq[$directories/insertions.bed]);
+        unlink(qq[$directories/deletions.bed]);
+        unlink(qq[$directories/junctions.bed]);
     }
     
     return -s $out ? 1 : 0;
