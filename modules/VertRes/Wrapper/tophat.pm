@@ -190,11 +190,16 @@ sub generate_sam {
         my $max_intron_length_str = $self->_max_intron_length_option(%other_args);
         my $inner_mate_str = $self->_insert_size_option($longest_read, %other_args);
         
-        # parameters needed
-        #-I to specify sensible max intron length
-        #-r for inner-mate distance  ( insert size - readlength*2
-        # index files
-        $self->simple_run(" $max_intron_length_str $inner_mate_str -o $directories --no-convert-bam $ref $fqs[0] $fqs[1]");
+        if((defined $other_args{is_paired}) && $other_args{is_paired} == 0)
+        {
+          # single ended
+          $self->simple_run(" $max_intron_length_str -o $directories --no-convert-bam $ref $fqs[0]");
+        }
+        else
+        {
+          #paired_ended
+          $self->simple_run(" $max_intron_length_str $inner_mate_str -o $directories --no-convert-bam $ref $fqs[0] $fqs[1]");
+        }
         Utils::CMD(qq[mv $directories/accepted_hits.sam $out]);
         
         unlink(qq[$directories/left_kept_reads.info]);
