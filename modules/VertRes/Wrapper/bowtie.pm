@@ -50,7 +50,7 @@ my %e_parameter = (
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => '/lustre/scratch102/user/sb10/mapper_comparisons/mappers/bowtie-0.11.3/bowtie');
+    my $self = $class->SUPER::new(@args, exe => '/software/pathogen/external/apps/usr/bin/bowtie');
     
     return $self;
 }
