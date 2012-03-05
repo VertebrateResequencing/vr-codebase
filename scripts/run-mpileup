@@ -31,8 +31,8 @@ sub new
     $$self{merge_pops} = 0;
     $$self{whole_genome_bams} = 1;
     $$self{_sampleconf} = q[
-            mpileup  => '/nfs/users/nfs_p/pd3/cvs/samtools/samtools mpileup -EDS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA',
-            bcftools => '/nfs/users/nfs_p/pd3/cvs/samtools/bcftools/bcftools view -p 0.99',
+            mpileup  => 'samtools mpileup -EDS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA',
+            bcftools => 'bcftools view -p 0.99',
             
             bams     => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
             fa_ref   => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
@@ -160,12 +160,12 @@ sub parse_args
     }
     if ( !exists($$self{mpileup}) ) 
     { 
-        $$self{mpileup} = '/nfs/users/nfs_p/pd3/cvs/samtools/samtools mpileup -DS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA';
+        $$self{mpileup} = 'samtools mpileup -DS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA';
         $self->warn("The 'mpileup' config key not present, assuming: $$self{mpileup}\n"); 
     }
     if ( !exists($$self{bcftools}) ) 
     { 
-        $$self{bcftools} = '/nfs/users/nfs_p/pd3/cvs/samtools/bcftools/bcftools view -p 0.99';
+        $$self{bcftools} = 'bcftools view -p 0.99';
         $self->warn("The 'bcftools' config key not present, assuming: $$self{bcftools}\n"); 
     }
     if ( !exists($$self{chunk_size}) ) 
