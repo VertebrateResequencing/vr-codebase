@@ -287,8 +287,8 @@ sub compress_and_validate {
     my $fastq_base = $self->{lane};
     
     my $memory = $self->{memory};
-    if (! defined $memory || $memory < 50) {
-        $memory = 50;
+    if (! defined $memory || $memory < 100) {
+        $memory = 100;
     }
     my $queue = $memory >= 30000 ? "hugemem" : "normal";
     
