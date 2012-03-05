@@ -25,6 +25,7 @@ use warnings;
 use File::Copy;
 use VertRes::IO;
 use VertRes::Parser::fastqcheck;
+use VertRes::Wrapper::fastqcheck;
 use VertRes::Wrapper::bowtie;
 use File::Basename;
 
@@ -160,6 +161,14 @@ sub generate_sam {
         
         my $longest_read = 0;
         foreach my $fq (@fqs) {
+          
+            # create a fastqcheck file if it doesnt already exist
+            unless(-e "$fq.fastqcheck")
+            {
+              my $fqc = VertRes::Wrapper::fastqcheck->new();
+              $fqc->run($fq, "$fq.fastqcheck");
+            }
+            
             my $pars = VertRes::Parser::fastqcheck->new(file => "$fq.fastqcheck");
             my $length = $pars->max_length();
             if ($length > $longest_read) {
