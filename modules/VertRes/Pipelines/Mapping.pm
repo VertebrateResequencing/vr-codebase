@@ -1013,6 +1013,7 @@ sub merge {
     
     # setup filenames etc. we'll use within our temp script
     my $mapper_class = $self->{mapper_class};
+    my $mapper_exe = $self->{mapper_obj}->exe;
     my $verbose = $self->verbose;
     
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
@@ -1057,6 +1058,9 @@ use strict;
 use VertRes::Wrapper::samtools;
 use VertRes::Utils::Sam;
 use File::Copy;
+use $mapper_class;
+
+my \$mapper = $mapper_class->new(exe => qq[$mapper_exe] );
 
 my \$samtools = VertRes::Wrapper::samtools->new(verbose => $verbose);
 
@@ -1080,18 +1084,23 @@ unless (-s '$bam_file') {
 if (-s '$bam_file') {
     unless (-e '$double_check_file') {
         my \$su = VertRes::Utils::Sam->new;
-        my \$num_bam_records = \$su->num_bam_records('$bam_file');
-        if (\$num_bam_records >= $total_reads) {
-            open(my \$fh, '>', '$double_check_file') || die "Couldn't write to $double_check_file\n";
-            close(\$fh);
+        
+        if(\$mapper->check_total_reads == 1)
+        {
+          my \$num_bam_records = \$su->num_bam_records('$bam_file');
+          if (\$num_bam_records >= $total_reads) {
+              open(my \$fh, '>', '$double_check_file') || die "Couldn't write to $double_check_file\n";
+              close(\$fh);
+          }
+          else {
+              move('$bam_file', \$bad_bam);
+              die "Merged bam created OK, yet contains too few reads - moved to \$bad_bam\n";
+          }
         }
-        else {
-            move('$bam_file', \$bad_bam);
-            die "Merged bam created OK, yet contains too few reads - moved to \$bad_bam\n";
+        
+        if ($add_index_option){
+            \$su->index_bams(files=>['$bam_file']);
         }
-	if ($add_index_option){
-	    \$su->index_bams(files=>['$bam_file']);
-	}
     }
 }
 

@@ -182,4 +182,23 @@ sub do_mapping {
     return $wrapper->run_status >= 1;
 }
 
+=head2 check_total_reads
+
+ Title   : check_total_reads
+ Usage   : $self->check_total_reads();
+ Function: Flag which tells the pipeline if it should check the total number of input reads against the 
+           number of reads in the output file. This check needs to be disabled for some specialised mappers 
+           (e.g. tophat) which dont include the unmapped reads in the output file
+ Example : $self->check_total_reads();
+ Returns : 0 or 1
+ Args    : n/a
+
+=cut
+
+sub  check_total_reads
+{
+   my $self = shift;
+   return 0;
+}
+
 1;
