@@ -256,6 +256,65 @@ sub add_unmapped {
 
 =cut
 
+
+sub do_mapping {
+    my ($self, %args) = @_;
+    
+    my $orig_run_method = $self->run_method;
+    $self->run_method('system');
+    
+    my $ref_fa = delete $args{ref} || $self->throw("ref is required");
+    my @fqs;
+    if (defined $args{read1} && defined $args{read2} && ! defined $args{read0}) {
+        push(@fqs, delete $args{read1});
+        push(@fqs, delete $args{read2});
+    }
+    elsif (defined $args{read0} && ! defined $args{read1} && ! defined $args{read2}) {
+        push(@fqs, delete $args{read0});
+    }
+    else {
+        $self->throw("Bad read args: need read1 and read2, or read0");
+    }
+    my $out_sam = delete $args{output};
+    
+    # setup reference-related files
+    $self->setup_reference($ref_fa) || $self->throw("failed during the reference step");
+    
+    # setup fastq-related files (may involve alignment)
+    $self->setup_fastqs($ref_fa, @fqs) || $self->throw("failed during the fastq step");
+    
+    # run the alignment/ combine alignments into final sam file
+    unless (-s $out_sam) {
+        my $tmp_sam = $out_sam.'_tmp';
+        
+        if (@fqs == 2) {
+            unless (-s $tmp_sam) {
+               $self->generate_sam($tmp_sam, $ref_fa, @fqs, %args) || $self->throw("failed during the alignment step");
+            }
+        }
+        else {
+            unless (-s $tmp_sam) {
+               $self->generate_sam($tmp_sam, $ref_fa, $fqs[0], undef, %args) || $self->throw("failed during the alignment step");
+            }
+        }
+        
+        # add in unmapped reads if necessary
+        $self->add_unmapped($tmp_sam, @fqs) || $self->throw("failed during the add unmapped step");
+
+        # tophat throws away some reads
+        move($tmp_sam, $out_sam) || $self->throw("Failed to move $tmp_sam to $out_sam: $!");
+        $self->_set_run_status(2);
+    }
+    else {
+        $self->_set_run_status(1);
+    }
+    
+    $self->run_method($orig_run_method);
+    return;
+}
+
+
+
 =head2 run
 
  Title   : run
