@@ -163,9 +163,9 @@ sub parse_bjobs_l
         $i++;
     }
 
-    if ( !($job_info=~/, Status <([^>]+)>/) ) { Utils::error("Could not determine the status: [$job_info]"); }
+    if ( !($job_info=~/,\s*Status <([^>]+)>/) ) { Utils::error("Could not determine the status: [$job_info]"); }
     my $status = $1;
-    if ( !($job_info=~/, Queue <([^>]+)>/) ) { Utils::error("Could not determine the queue: [$job_info]"); }
+    if ( !($job_info=~/,\s*Queue <([^>]+)>/) ) { Utils::error("Could not determine the queue: [$job_info]"); }
     my $queue = $1;
 
     my $cpu_time = 0;
