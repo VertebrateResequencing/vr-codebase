@@ -28,6 +28,7 @@ use VertRes::Parser::fastqcheck;
 use VertRes::Wrapper::fastqcheck;
 use VertRes::Wrapper::bowtie;
 use File::Basename;
+use File::Temp qw/ tempdir /;
 
 use base qw(VertRes::Wrapper::MapperI);
 
@@ -154,7 +155,8 @@ sub generate_sam {
     my ($self, $out, $ref, $fq1, $fq2, %other_args) = @_;
     my @fqs = ($fq1, $fq2);
     
-    my($filename, $directories, $suffix) = fileparse($out);
+    my($filename, $base_directory, $suffix) = fileparse($out);
+    my $directories = tempdir( DIR => $base_directory );
     
     unless (-s $out) {
         my $e = 70;
@@ -201,13 +203,6 @@ sub generate_sam {
           $self->simple_run(" $max_intron_length_str $inner_mate_str -o $directories --no-convert-bam $ref $fqs[0] $fqs[1]");
         }
         Utils::CMD(qq[mv $directories/accepted_hits.sam $out]);
-        
-        unlink(qq[$directories/left_kept_reads.info]);
-        unlink(qq[$directories/right_kept_reads.info]);
-        unlink(qq[$directories/logs]);
-        unlink(qq[$directories/insertions.bed]);
-        unlink(qq[$directories/deletions.bed]);
-        unlink(qq[$directories/junctions.bed]);
     }
     
     return -s $out ? 1 : 0;
