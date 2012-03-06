@@ -156,7 +156,7 @@ sub generate_sam {
     my @fqs = ($fq1, $fq2);
     
     my($filename, $base_directory, $suffix) = fileparse($out);
-    $directories = tempdir( DIR => $base_directory );
+    my $directories = tempdir( DIR => $base_directory );
     
     unless (-s $out) {
         my $e = 70;
