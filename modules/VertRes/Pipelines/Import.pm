@@ -507,7 +507,7 @@ sub update_db
         $vrfile->update();
 
         # Now add also the fastq.gz file into the File table. (Requested for the Mapping pipeline.)
-        $self->fix_lane_file_if_exists("$name.gz",$vrlane);
+        $self->fix_lane_file_if_exists("$name.gz",$vrlane, $vrtrack);
         my $vrfile_gz = $vrlane->get_file_by_name("$name.gz");
         if ( !$vrfile_gz )
         {
@@ -571,12 +571,12 @@ sub update_db
 
 sub fix_lane_file_if_exists
 {
-  my ($self,$file_name, $vrlane) = @_;
+  my ($self,$file_name, $vrlane, $vrtrack) = @_;
   
-  if(VRTrack::File->is_name_in_database($vrtrack,$name,$name) == 1)
+  if(VRTrack::File->is_name_in_database($vrtrack,$file_name,$file_name) == 1)
   {
-    my $direct_file_object = VRTrack::File->new_by_name($vrtrack, $name);
-    my $lane_file_object = $vrlane->get_file_by_name($name);
+    my $direct_file_object = VRTrack::File->new_by_name($vrtrack, $file_name);
+    my $lane_file_object = $vrlane->get_file_by_name($file_name);
     
     if(! defined($lane_file_object)  || ( defined($lane_file_object) &&  $direct_file_object->row_id() != $lane_file_object->row_id()  ) )
     {
