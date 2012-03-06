@@ -507,6 +507,7 @@ sub update_db
         $vrfile->update();
 
         # Now add also the fastq.gz file into the File table. (Requested for the Mapping pipeline.)
+        $self->fix_lane_file_if_exists("$name.gz",$vrlane);
         my $vrfile_gz = $vrlane->get_file_by_name("$name.gz");
         if ( !$vrfile_gz )
         {
@@ -556,6 +557,33 @@ sub update_db
     $vrtrack->transaction_commit();
 
     return $$self{Yes};
+}
+
+=head2 fix_lane_file_if_exists
+
+        Example : fix_lane_file_if_exists("my_file_name", $vlane);
+        Args    : filename to check
+                : lane object which will in future have the file object
+
+  This will see if a file row already exists for a lane. If its attached to a different lane, then delete it so that it doesnt cause
+  issues later.
+=cut
+
+sub fix_lane_file_if_exists
+{
+  my ($self,$file_name, $vrlane) = @_;
+  
+  if(VRTrack::File->is_name_in_database($vrtrack,$name,$name) == 1)
+  {
+    my $direct_file_object = VRTrack::File->new_by_name($vrtrack, $name);
+    my $lane_file_object = $vrlane->get_file_by_name($name);
+    
+    if(! defined($lane_file_object)  || ( defined($lane_file_object) &&  $direct_file_object->row_id() != $lane_file_object->row_id()  ) )
+    {
+      # file exists already but its not attached to our lane, delete it
+      $direct_file_object->delete();
+    }
+  }
 }
 
 
