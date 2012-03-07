@@ -647,7 +647,7 @@ int main(int argc, char *argv[])
     stats_t stats;
     stats.ngc    = 1000+1;
     stats.nquals = 95;
-    stats.nbases = 300;
+    stats.nbases = 600;
     stats.nisize = 8000;
     stats.max_len   = 30;
     stats.max_qual  = 40;
