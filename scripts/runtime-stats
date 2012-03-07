@@ -129,6 +129,7 @@ sub get_stats
     for my $key (@keys)
     {
         my $value = $parser->get($key,$n-1);
+        if ( !defined $value ) { next; }
         push @{$$opts{stats}{$key}},$value;
         if ( $$opts{table} ) { print "\t$value"; }
     }
