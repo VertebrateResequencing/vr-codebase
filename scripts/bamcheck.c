@@ -487,7 +487,7 @@ void realloc_buffers(stats_t *stats, int seq_len)
     stats->nbases = n;
 
     // Realloc the coverage distribution buffer
-    int *rbuffer = calloc(sizeof(int),seq_len*10);
+    int *rbuffer = calloc(sizeof(int),seq_len*5);
     n = stats->cov_rbuf.size-stats->cov_rbuf.start;
     memcpy(rbuffer,stats->cov_rbuf.buffer+stats->cov_rbuf.start,n);
     if ( stats->cov_rbuf.start>1 )
@@ -495,6 +495,7 @@ void realloc_buffers(stats_t *stats, int seq_len)
     stats->cov_rbuf.start = 0;
     free(stats->cov_rbuf.buffer);
     stats->cov_rbuf.buffer = rbuffer;
+    stats->cov_rbuf.size = seq_len*5;
 }
 
 void collect_stats(bam1_t *bam_line, stats_t *stats)
@@ -1102,7 +1103,7 @@ int main(int argc, char *argv[])
     stats.ncov = 3 + (stats.cov_max-stats.cov_min) / stats.cov_step;
     stats.cov_max = stats.cov_min + ((stats.cov_max-stats.cov_min)/stats.cov_step +1)*stats.cov_step - 1;
     stats.cov = calloc(sizeof(uint64_t),stats.ncov);
-    stats.cov_rbuf.size = stats.nbases;
+    stats.cov_rbuf.size = stats.nbases*5;
     stats.cov_rbuf.buffer = calloc(sizeof(int32_t),stats.cov_rbuf.size);
     stats.cov_rbuf.pos = 0;
     stats.cov_rbuf.start = 0;
