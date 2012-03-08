@@ -751,7 +751,7 @@ sub plot_dp_ndr
     print $fh "end\n";
     for my $dp (sort {$a<=>$b} keys %$denominator)
     {
-         printf $fh "%d\t%d\n", $dp,$$denominator{$dp};
+        printf $fh "%d\t%d\n", $dp,$$denominator{$dp};
     }
     print $fh "end\n";
     close($fh);
@@ -908,6 +908,7 @@ sub plot_ndr
             $mi += $$afs{$af}{mi};
             $iafs++;
         }
+        if ( !($m+$mi) ) { next; }
         printf $fh "$af\t%.2f\n", $m+$mi ? $mi*100./($m+$mi) : 0;
         push @dp, sprintf "$af\t%d",$m+$mi;
     }
