@@ -51,6 +51,11 @@ sub new
         #   be sorted. By default, the whole inpute VCF is imputed.
         # region => [ '1:159000000-161000000', '1:62000000-64000000', ],
 
+        # Chunk-specific options will be applied to chunks with a non-zero overlap
+        chunk_options => { 
+            'X:0-155270560' => { impute2_args=>'-Ne 15000 -k 100'  },
+        },
+
         limits   => { memory=>5_500, runtime=>3*24*60 },
         do_clean => 1,   # Remove runner's temporary files
     ]."\n";
@@ -221,6 +226,45 @@ sub runtime_stats
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
 
+sub set_chunk_options
+{
+    my ($self,$chr,$from,$to) = @_;
+    if ( !exists($$self{chunk_options}) ) { return; }
+    my $hit;
+    for my $chunk (keys %{$$self{chunk_options}})
+    {
+        if ( !($chunk=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the chunk_options: [$chunk]"); }
+        if ( $chr ne $1 ) { next; }
+        if ( $2>$to ) { next; }
+        if ( $3<$from ) { next; }
+        $hit = $chunk;
+        last;
+    }
+    if ( !defined $hit )
+    {
+        if ( exists($$self{ori_chunk_options}) ) 
+        {
+            $self->set_options($$self{ori_chunk_options},$self);
+        }
+        return;
+    }
+    if ( !exists($$self{ori_chunk_options}) )
+    {
+        $$self{ori_chunk_options} = {};
+        $self->set_options($self,$$self{ori_chunk_options},keys %{$$self{chunk_options}{$hit}});
+    }
+    $self->set_options($$self{chunk_options}{$hit},$self);
+}
+
+sub set_options
+{
+    my ($self,$src,$tgt,@keys) = @_;
+    if ( !scalar @keys ) { @keys = keys %$src }
+    for my $key (@keys)
+    {
+        $$tgt{$key} = $$src{$key};
+    }
+}
 
 sub regions
 {
@@ -249,6 +293,9 @@ sub impute2
     my $chr = $1;
     my $from = $2;
     my $to   = $3;
+
+    $self->set_chunk_options($chr,$from,$to);
+
     my $genmap = $$self{gen_map};
     $genmap =~ s/\{CHROM\}/$chr/;
     if ( ! -e $genmap ) { $self->throw("The genmap [$genmap] does not exist.\n"); }
