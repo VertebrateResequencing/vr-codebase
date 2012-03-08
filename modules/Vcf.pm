@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r660';
+our $VERSION = 'r692';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
@@ -2813,7 +2813,7 @@ sub Vcf4_0::parse_header_line
     if ( $key ne 'PEDIGREE' && !exists($$rec{ID}) ) { $self->throw("Missing the ID tag in $line\n"); }
     if ( $key eq 'INFO' or $key eq 'FILTER' or $key eq 'FORMAT' )
     {
-        if ( !exists($$rec{Description}) ) { $self->throw("Missing the Description tag in $line\n"); }
+        if ( !exists($$rec{Description}) ) { $self->warn("Missing the Description tag in $line\n"); }
     }
     if ( exists($$rec{Number}) && $$rec{Number} eq '-1' ) { $self->warn("The use of -1 for unknown number of values is deprecated, please use '.' instead.\n\t$line\n"); }
     if ( exists($$rec{Number}) && $$rec{Number} eq '.' ) { $$rec{Number}=-1; }
