@@ -28,7 +28,7 @@ sub _compress_and_checksum
     for my $fastq (@{$self->{fastq_filenames}})
     {
 	# Compress fastq
-	Utils::CMD(qq[gzip -c $fastq > $fastq.gz]);
+	Utils::CMD(qq[gzip -9 -c $fastq > $fastq.gz]);
 
 	# Checksum fastqs
 	Utils::CMD(qq[md5sum $fastq    > $fastq.md5]);
