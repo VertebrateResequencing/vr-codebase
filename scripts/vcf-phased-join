@@ -406,6 +406,7 @@ sub join_vcfs_chr
                 $rec1 = $vcf1->next_data_array();
                 $rec2 = $vcf2->next_data_array();
                 if ( !defined $rec1 ) { last; }
+                if ( !defined $rec2 ) { error("The file $$opts{file1} ended before $$opts{file2}."); }
                 check_sanity($opts,$rec1,$rec2);
             }
             if ( defined $rec1 && $$rec1[1] ne $$rec2[1] )
@@ -420,6 +421,14 @@ sub join_vcfs_chr
             flush_buffer($opts,$vcf1,\@buffer);
 
             $vcf1->close();
+
+            if ( !defined $rec2 )
+            {
+                # Yes, this can happen when file1 ends exactly where file2 does
+                $vcf2->close();
+                ($vcf2,$rec2) = next_vcf_file($opts);
+                if ( !defined $rec2 ) { last; }
+            }
             $vcf1 = $vcf2;
             $rec1 = $rec2;
             $$opts{file1} = $$opts{ivcf_fname};
@@ -443,7 +452,7 @@ sub join_vcfs_chr
 sub check_sanity
 {
     my ($opts,$rec1,$rec2) = @_;
-    if ( $$rec1[0] ne $$rec2[0] ) { error("Encountered different chromosomes in $$opts{file1} and $$opts{file2}: \"$$rec1[0]\" vs \"$$rec2[0]\"\n"); }
+    if ( $$rec1[0] ne $$rec2[0] ) { error("Encountered different chromosomes in $$opts{file1} and $$opts{file2}: \"$$rec1[0]:$$rec1[1]\" vs \"$$rec2[0]:$$rec2[1]\"\n"); }
     if ( $$rec1[1] > $$rec2[1] ) { error("The file $$opts{file1} ahead of $$opts{file2}: \"$$rec1[0]:$$rec1[1]\" vs \"$$rec2[1]\"\n"); }
 }
 
