@@ -332,6 +332,12 @@ sub spawn
         $self->debugln("Cleaning skip file: $basename.s");
         unlink($basename . '.s');
     }
+    if ( -e $basename . '.fs' )
+    {
+        # The only way to clean a force skip file is to remove it manually
+        $self->debugln("Skipping the job upon request, the force skip file exists: $basename.fs");
+        return 1;
+    }
 
     # Store all necessary information to run the task in a temp file
     $$self{_store}{call} = $call;
