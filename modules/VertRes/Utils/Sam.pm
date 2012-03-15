@@ -3727,8 +3727,10 @@ sub coverage
     # Run pileup. 
     my $sam = VertRes::Wrapper::samtools->new(verbose => $self->verbose, run_method => 'open', quiet => 1);
     my $fh = $sam->pileup($bam, undef); 
+    my $pileup_ok = 0;
     while(my $inp = <$fh>)
     {
+	$pileup_ok = 1;
 	my @col = split(/\s+/,$inp,5);
 	for(my $i=0; $i < @bin; $i++)
 	{
@@ -3737,6 +3739,7 @@ sub coverage
 	} 
     }
     close $fh;
+    unless( $pileup_ok ){ $self->throw("No samtools pileup output for: $bam\n"); }
     unless( $sam->run_status() >= 1 ){ $self->throw("Samtools pileup failed for: $bam\n"); }
 
     return @cover;
@@ -3774,6 +3777,7 @@ sub coverage_depth
 	$coverage++; # Count bases covered
     }
     close $fh;
+    unless( $coverage ){ $self->throw("No samtools pileup output for: $bam\n"); }
     unless( $sam->run_status() >= 1 ){ $self->throw("Samtools pileup failed for: $bam\n"); }
     unless( $coverage <= $ref_size ){ $self->throw("Total bases found by pileup exceeds size of reference sequence.\n"); }
 
