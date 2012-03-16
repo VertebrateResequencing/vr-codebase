@@ -233,14 +233,22 @@ is $row_map->manual_qc,           'passed','manual_qc ok';
 ok open(my $csv_fh, ">/dev/null"),'Opened filehandle to /dev/null';
 ok my $spreadsheet = Pathogens::Reports::Mapping::Spreadsheet->new( filehandle => $csv_fh, rows => [$row_qc, $row_map]), 'spreadsheet ok';
 
-$spreadsheet->_output_headers;
-$spreadsheet->_output_rows;
-$spreadsheet->output_csv;
-
-ok my $report = Pathogens::Reports::Mapping::Report->new( vrtrack => $vrtrack, filehandle => $csv_fh, lanes => [$vrobject{lane}]),'opened report ok';
-$report->output_csv;
-
+ok $spreadsheet->_output_headers,'wrote header';
+ok $spreadsheet->_output_rows,   'wrote rows';
+ok $spreadsheet->output_csv,     'wrote spreadsheet';
 close $csv_fh;
+
+my $report_output;
+ok open(my $report_fh,">",\$report_output), 'opened report_fh to scalar';
+ok my $report = Pathogens::Reports::Mapping::Report->new( vrtrack => $vrtrack, filehandle => $report_fh, lanes => [$vrobject{lane}]),'opened report ok';
+ok $report->output_csv,'wrote report';
+
+my $expected_report_output = qq["Study ID",Sample,Lane,Cycles,"Yield (Reads)","Yield (Bases)","Type (QC/Mapping)",Reference,"Reference Size",Mapper,"Adapter (%)","Transposon (%)","Mapped (%)","Paired (%)","Mean Insert Size","Genome Covered (%)","Genome Covered (% >= 1X)","Genome Covered (% >= 5X)","Genome Covered (% >= 10X)","Genome Covered (% >= 50X)","Genome Covered (% >= 100X)","Depth of Coverage (X)","Duplication Rate","Error Rate","NPG QC","Manual QC"\r
+1000,Sparky,1234_5#6,76,10066330,765041080,QC,Sue_FMNH_PR_2081,23298589,velocimapper,0.0,NA,99.0,96.9,315.6,73.99,NA,NA,NA,NA,NA,32.28,0.0003,0.003,pending,passed\r
+1000,Sparky,1234_5#6,76,10066330,765041080,Mapping,Sue_FMNH_PR_2081,23298589,dinomap,0.0,NA,95.5,92.1,319,NA,88.2,70.4,62.2,25.1,2.2,30.16,NA,NA,pending,passed\r
+1000,Sparky,1234_5#6,76,10066330,765041080,Mapping,Sue_FMNH_PR_2081,23298589,dinomap,NA,NA,0.0,0.0,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,pending,passed\r
+];
+is $report_output,$expected_report_output,'report gives expected output';
 
 
 # cleanup

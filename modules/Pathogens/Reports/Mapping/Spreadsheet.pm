@@ -44,7 +44,7 @@ sub _build__csv_out
 sub _output_headers
 {
     my($self) = @_;
-    $self->_csv_out->print($self->filehandle, $self->_headers);
+    return $self->_csv_out->print($self->filehandle, $self->_headers);
 }
 
 sub _output_rows
@@ -61,8 +61,9 @@ sub _output_rows
 	    # set any undefined values to NA and output
 	    push @row_output, defined($row->$col) ? $row->$col:'NA';
 	}
-	$self->_csv_out->print($self->filehandle, \@row_output);
+	$self->_csv_out->print($self->filehandle, \@row_output) || return 0;
     }
+    return 1;
 }
 
 sub output_csv
@@ -76,6 +77,7 @@ sub output_csv
 
     $self->_output_headers();
     $self->_output_rows();
+    return 1;
 }
 
 1;
