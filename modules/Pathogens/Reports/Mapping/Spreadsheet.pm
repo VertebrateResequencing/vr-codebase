@@ -69,12 +69,6 @@ sub _output_rows
 sub output_csv
 {
     my($self) = @_; 
-
-    # Handle errors here...
-    # No rows ?
-    # Filehandle defined ?
-    # 
-
     $self->_output_headers();
     $self->_output_rows();
     return 1;
