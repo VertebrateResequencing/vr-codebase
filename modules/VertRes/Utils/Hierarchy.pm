@@ -1452,7 +1452,7 @@ sub dcc_filename {
         # might be more than one of these if we're a sample-level bam. We
         # standardise on the DCC nomenclature for the 3 platforms; they should
         # be in this form anyway, so this is just-in-case
-        $platform = $info->{PL};
+        $platform = $info->{PL} || '';
         $raw_pl = $platform;
         if ($platform =~ /illumina|slx/i) {
             $platform = 'ILLUMINA';
