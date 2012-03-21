@@ -338,14 +338,15 @@ sub create {
 =cut
 
 sub _all_values_by_field {
-    my ($class, $vrtrack, $field) = @_;
+    my ($class, $vrtrack, $field, $order_by) = @_;
     confess "Need to call a vrtrack handle and field name" unless ($vrtrack && $field);
     if ($vrtrack->isa('DBI::db')) {
 	confess "The interface has changed, expected vrtrack reference.\n";
     } 
     my $table = $class->_class_to_table;
+    $order_by ||= 'row_id';
     my $dbh = $vrtrack->{_dbh};
-    my $sql = qq[select $field from $table where latest=true];
+    my $sql = qq[select $field from $table where latest=true order by $order_by];
     my $sth = $dbh->prepare($sql);
     my @data;
     if ($sth->execute()) {
