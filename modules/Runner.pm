@@ -340,7 +340,7 @@ sub spawn
     if ( -e $basename . '.fs' )
     {
         # The only way to clean a force skip file is to remove it manually
-        $self->debugln("Skipping the job upon request, the force skip file exists: $basename.fs");
+        $self->debugln("Skipping the job upon request, a force skip file exists: $basename.fs");
         return 1;
     }
 
