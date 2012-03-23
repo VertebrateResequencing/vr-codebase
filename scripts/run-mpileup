@@ -553,8 +553,9 @@ sub get_chunks
 
     if ( $$self{shuffle_chunks} )
     {
-        use List::Util 'shuffle';
-        @chunks = shuffle(@chunks);
+        use Math::Random;
+        random_set_seed_from_phrase(1,1);
+        @chunks = random_permutation(@chunks);
     }
 
     return \@chunks;
