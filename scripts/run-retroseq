@@ -29,18 +29,18 @@ use LSF;
 use VertRes::Parser::bam;
 use VertRes::Parser::sam;
 
-my $RETROSEQ_BIN = qq[/nfs/users/nfs_t/tk2/code/RetroSeqCheckouts/master/RetroSeq/bin/retroseq.pl];
-my $CHUNKS_PER_JOB = 10;
+my $RETROSEQ_BIN = qq[/nfs/users/nfs_t/tk2/code/RetroSeqTags/tk2-RetroSeq-7754cca/bin/retroseq.pl];
+my $CHUNKS_PER_JOB = 1;
 my $GENOTYPE_CHUNKS_PER_JOB = 10;
 my $MAX_RETRIES = 1;
 my $DEFAULT_DISCOVERY_MEMORY = 2000;
 my $DEFAULT_CALLING_MEMORY = 4000;
 my $DEFAULT_SLEEP_SECS = 600;
 my $DEFAULT_ITERATIONS = 50;
-my $DEFAULT_CALLING_WINDOW = 300000000;#15000000;
+my $DEFAULT_CALLING_WINDOW = 30000000;#15000000;
 my $DEFAULT_QUEUE = 'long';
 
-my ($discover, $call, $genotype, $horizontal, $vertical, $bams, $noclean, $terefs, $dir, $len, $iterations, $chr_sizes, $granularity, $ref, $hets, $depth, $memory, $chr, $maxJobs, $sleep, $queue, $noexitonerrors, $minReads, $vcf, $output, $help);
+my ($discover, $call, $genotype, $horizontal, $vertical, $bams, $noclean, $terefs, $dir, $len, $iterations, $chr_sizes, $granularity, $ref, $hets, $depth, $memory, $chr, $maxJobs, $sleep, $queue, $noexitonerrors, $minReads, $vcf, $output, $id, $filter, $help);
 
 GetOptions
 (
@@ -72,7 +72,9 @@ GetOptions
     'reads=s'       => \$minReads,
     'iterations=s'  => \$iterations,
     'vcf=s'         => \$vcf,
+    'id=s'          => \$id,
     'output=s'      => \$output,
+    'filter=s'      => \$filter,
     
     'h|help'        =>  \$help,
 );
@@ -118,6 +120,8 @@ Usage: $0 -discover -bams <string> -teref <string>
     [-maxjobs   Maximum of simultaneous jobs in queue. Default is unlimited.]
     [-queue     LSF queue. Default is long.]
 USAGE
+
+    if( $id && $id =~ /^[0-9]+$/ ){$id=qq[-id $id];}else{$id = '';}
 
     my $i = 0;
     my %retries;
@@ -184,7 +188,7 @@ USAGE
                 my %reqs = (memory=>$memory,queue=>$queue);
                 print qq[Starting job: $job_lock\n];
                 LSF::run($job_lock, $cwd, $job_name, \%reqs, 
-                    qq[perl $RETROSEQ_BIN -discover -bam $bam -eref $terefs -output $sample.candidates.$rg -len $len -rgs $rg] );
+                    qq[perl $RETROSEQ_BIN -discover -bam $bam -eref $terefs -output $sample.pe.candidates.$rg -len $len -rgs $rg $id -srmode -srcands $sample.sr.candidates.$rg] );
                 $totalRunning ++;
             }
             chdir( qq[..] ) or die qq[Failed to chdir to parent dir];
@@ -224,6 +228,7 @@ Usage: $0 -call -bams <string> -terefs <string> -chr_sizes -horizontal|vertical
     [-chr                   Only call this chromosome. Default is all.]
     [-maxjobs               Maximum of simultaneous jobs in queue. Default is unlimited.]
     [-reads                 Minimum number of reads required for a call. Default is 10.]
+    [-filter                Tab file containing reference elements by type. TE type\\tBED file]
 USAGE
     
     if( $hets ){$hets = qq[-hets];}else{$hets='';}
@@ -239,6 +244,8 @@ USAGE
     if( $granularity ){$granularity =~ /^\d+$/ or die qq[Check granularity parameter: $granularity\n];}else{$granularity = $DEFAULT_CALLING_WINDOW;}
 
     if( ! $maxJobs ){$maxJobs = -1;}
+    
+    if( $filter && -f $filter ){print qq[Using filter file: $filter\n];print $filter=qq[ -filter $filter];}else{$filter='';}
     
     my %sizes;
     open( my $cfh, $chr_sizes ) or die qq[Failed to open chr sizes file: $chr_sizes];
@@ -273,7 +280,7 @@ USAGE
                 chdir( $sample ) or die qq[Failed to chdir $sample];
                 
                 #check if already completed
-                my @candidates = glob(getcwd.qq[/$sample.candidates.*]);
+                my @candidates = glob(getcwd.qq[/$sample.pe.candidates.*]);my @srcandidates = glob(getcwd.qq[/$sample.sr.candidates.*]);
                 
                 if( ! -d qq[Calling] ){mkdir( qq[Calling] or die qq[Failed to make calling directory] );}
                 chdir( qq[Calling] ) or die qq[Failed to chdir Calling];
@@ -286,8 +293,12 @@ USAGE
                     open( my $cfh, qq[>$can_fofn] ) or die $!;
                     foreach my $f( @candidates ){print $cfh qq[$f\n];}
                     close( $cfh );
+                    my $srcan_fofn = getcwd.qq[/$$.srcand.fofn];
+                    open( $cfh, qq[>$srcan_fofn] ) or die $!;
+                    foreach my $f( @srcandidates ){print $cfh qq[$f\n];}
+                    close( $cfh );
                     
-                    my $status = _runAndCheckCalling( $bam_fofn, $can_fofn, \%sizes, $memory, $chr, $granularity, $hets, $depth, $ref, $queue, $maxJobs, $minReads );
+                    my $status = _runAndCheckCalling( $bam_fofn, $can_fofn, $srcan_fofn, \%sizes, $memory, $chr, $granularity, $hets, $depth, $ref, $queue, $maxJobs, $minReads, $filter );
                     
                     if( $status == -1 )
                     {
@@ -321,7 +332,7 @@ USAGE
             close( $cfh );
             
             #all of the bams are inputted to calling
-            my $status = _runAndCheckCalling( $bams, $can_fofn, \%sizes, $memory, $chr, $granularity, $hets, $depth, $ref, $queue, $maxJobs, $minReads );
+            my $status = _runAndCheckCalling( $bams, $can_fofn, \%sizes, $memory, $chr, $granularity, $hets, $depth, $ref, $queue, $maxJobs, $minReads, $filter );
             
             exit if( $status == -1 );
             if( $status > 0 ){$totalRunning += $status; if( $status >= $maxJobs ){print qq[Max number of jobs running: $status\n];}}
@@ -464,9 +475,10 @@ else
 
 sub _runAndCheckCalling
 {
-    die qq[incorrect number of args] unless @_ == 12;
+    die qq[incorrect number of args] unless @_ == 14;
     my $bamsFofn = shift;
     my $candidatesFile = shift;
+    my $srcandidatesFile = shift;
     my %sizes = %{ $_[ 0 ] };shift;
     my $mem = shift;
     my $chrOnly = shift;
@@ -477,6 +489,7 @@ sub _runAndCheckCalling
     my $lsfQueue = shift;
     my $maxSimJobs = shift;
     my $minimumReads = shift;
+    my $filter = shift;
     
     my $offset = 0;
     my $cmd;
@@ -502,7 +515,7 @@ sub _runAndCheckCalling
             if( $numRunning >= $maxSimJobs ){print qq[Maximum number of jobs running: $numRunning\n];chdir( qq[..] );return $numRunning;}
             
             #have enough chunks to make a job OR at the end of the chr
-            if( $chunks >= $CHUNKS_PER_JOB || $offset > $size )
+            if( $chunks >= $CHUNKS_PER_JOB || $offset > $size || ( $gran > $size && $offset > 0 ) )
             {
                 my $job_lock = qq[call.$setID.jids];
                 #check the job status
@@ -551,7 +564,14 @@ sub _runAndCheckCalling
             else
             {
                 my $newOffset = $offset + $gran;
-                $cmd .= qq[perl $RETROSEQ_BIN -call -bam $bamsFofn -input $candidatesFile -ref $reference -output $chr:$offset-$newOffset.vcf $hetsParam -region $chr:$offset-$newOffset $depthParam $minimumReads > $chr:$offset-$newOffset.out &\nsleep 30\n];
+                if( -s $srcandidatesFile )
+                {
+                    $cmd .= qq[perl $RETROSEQ_BIN -call -bam $bamsFofn -input $candidatesFile -ref $reference -output $chr:$offset-$newOffset.vcf $hetsParam -region $chr:$offset-$newOffset $depthParam $minimumReads -srmode -srinput $srcandidatesFile $filter> $chr:$offset-$newOffset.out &\nsleep 30\n];
+                }
+                else
+                {
+                    $cmd .= qq[perl $RETROSEQ_BIN -call -bam $bamsFofn -input $candidatesFile -ref $reference -output $chr:$offset-$newOffset.vcf $hetsParam -region $chr:$offset-$newOffset $depthParam $minimumReads $filter> $chr:$offset-$newOffset.out &\nsleep 30\n];
+                }
                 $offset = $newOffset;
                 $chunks ++;
             }
@@ -611,7 +631,7 @@ sub _runAndCheckCalling
                     if( ! $done || length( $done ) == 0 )
                     {
                         print qq[Found unfinished process];
-                        $cmd .= qq[cd $chr\nperl $RETROSEQ_BIN -call -bam $bamsFofn -input $candidatesFile -ref $reference -output $chr:$offset-$newOffset.vcf $hetsParam -region $chr:$offset-$newOffset $depthParam $minimumReads > $chr:$offset-$newOffset.out &\ncd ..\nsleep 120\n];
+                        $cmd .= qq[cd $chr\nperl $RETROSEQ_BIN -call -bam $bamsFofn -input $candidatesFile -ref $reference -output $chr:$offset-$newOffset.vcf $hetsParam -region $chr:$offset-$newOffset $depthParam $minimumReads $filter> $chr:$offset-$newOffset.out &\ncd ..\nsleep 120\n];
                         $incomplete ++;
                     }
                     $offset = $newOffset;
@@ -654,7 +674,7 @@ sub _writeFinalVCF
     foreach my $chr ( sort( keys( %sizes ) ) )
     {
         if( $chrOnly && $chr ne $chrOnly ){next;}
-        my @v = glob(qq[$chr/*.vcf]);
+        my @v = glob(qq[$chr/*.PE]);
         foreach( @v ){print $vcfFofn qq[$_\n];}
     }
     
@@ -675,7 +695,7 @@ sub _getBAMSampleName
     my $pars = VertRes::Parser::sam->new(file => $bamFile);
     my @samples = $pars->samples();
     $pars->close;
-    if( @samples < 1 ){print ("Could not open figure out sample for bam: $bamFile");}
+    if( @samples < 1 ){print ("Could not open figure out sample for bam: $bamFile - setting to filename");return basename( $bamFile );}
     my $s;
     foreach my $sam ( @samples ){$s = $s ? $s.qq[_$sam] : $sam;}
     
