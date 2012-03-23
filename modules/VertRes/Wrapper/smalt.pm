@@ -118,6 +118,15 @@ sub setup_reference {
             }
         }
     }
+    else {
+	# Record index command lines for sam/bam header.
+	my $exe = $self->exe;
+	my @index_commands = (
+	    "$exe index -k 13 -s 4 $ref.small $ref",
+	    "$exe index -k 13 -s 6 $ref.medium $ref",
+	    "$exe index -k 20 -s 13 $ref.large $ref");
+	$self->_add_command_line(@index_commands);
+    }
     
     return $indexed == @suffixes ? 1 : 0;
 }
@@ -138,6 +147,11 @@ sub setup_custom_reference_index {
     if(! ((-s "$ref.$mapper_index_suffix.sma") && (-s "$ref.$mapper_index_suffix.smi")) )
     {
       $self->simple_run("index ".$mapper_index_params." $ref.".$mapper_index_suffix." $ref");
+    }
+    else {
+	# Record command line for sam/bam header.
+	my $exe = $self->exe;
+	$self->_add_command_line("$exe index ".$mapper_index_params." $ref.".$mapper_index_suffix." $ref");
     }
 }
     
