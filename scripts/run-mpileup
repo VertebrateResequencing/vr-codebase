@@ -83,7 +83,7 @@ sub new
             shuffle_chunks    => 0,         # Process chunks in random order to randomize disk access
             keep_bcfs         => 1,
             chunks_overlap    => 0,
-            whole_genome_bams => 1,         # Set to 0 if BAMs are splitted by chromosome. In such a case, the bams must be named as '*chrom$chr.bam'
+            whole_genome_bams => 1,         # Set to 0 if BAMs are splitted by chromosome. In such a case, the bams must contain '*chrom$chr.' in the name.
             assumed_sex       => undef,     # Set to 'F' for females, 'M' males and undef mysql key above if the DB shouldn't be used.
             sample_list       => undef,     # Provide list of samples with sex. In this case, neither mysql nor assumed_sex keys are required.
 
@@ -271,7 +271,7 @@ sub main
                 if ( $pop eq 'pooled' ) { next; }
                 push @vcfs, "$outdir/$pop/$chr/$chr:$from-$to.vcf.gz";
             }
-            $self->spawn('merge_vcfs',"$outdir/merged/$chr/$chr:$from-$to.vcf.gz",\@vcfs);
+            $self->spawn('merge_vcfs',"$outdir/merged/$chr/$chr:$from-$to.vcf.gz","$outdir/pooled/$chr/$chr:$from-$to.bcf",\@vcfs);
         }
 
         # Work with the merged set only from now (otherwise comment the next line)
@@ -377,7 +377,7 @@ sub population_group_bams_list
     {
         # If the BAMs are split by chr, we are applying to regex's to select by chromosome
         #   and by the population name. Otherwise, only population regex is used.
-        if ( !$$self{whole_genome_bams} && !($line=~/chrom$chr.bam/) ) { next; }
+        if ( !$$self{whole_genome_bams} && !($line=~/chrom$chr\./) ) { next; }
         for my $pop (@$pops)
         {
             if ( !($line=~/$pop/) ) { next; }
@@ -402,7 +402,7 @@ sub population_group_bams_list
             {
                 $self->throw("The BAMs not named as chrom$chr.bam, please unset the whole_genome_bams config key\n");
             }
-            $self->throw("No matching BAM found for chr$chr; search in both file names and sample names: ",join(',',@$pops),"\n"); 
+            $self->throw("No matching BAM found for chr$chr; searched in file names (/chrom$chr\\./) and sample names: ",join(',',@$pops),"\n"); 
         }
         print $out join("\n", @$bams), "\n";
         close($out);
@@ -757,9 +757,15 @@ sub tabix_part
 
 sub merge_vcfs
 {
-    my ($self,$outfile,$vcfs) = @_;
-    my $cmd = 'vcf-merge '.join(' ',@$vcfs)." | bgzip -c > $outfile.part";
-    $self->cmd($cmd);
+    my ($self,$outfile,$bcf,$vcfs) = @_;
+
+    # List of all sites. Use awk, grep has the peculiar property of exiting with error status when no lines are printed
+    #   through -v
+    $self->cmd(q[vcf-isec -f -n +1 ] .join(' ',@$vcfs). q[ | awk '!($1~/^#/)' | cut -f 1,2 | uniq > ] . "$outfile.sites");
+
+    # Call genotypes for all samples at these positions
+    $self->cmd("$$self{bcftools} -vcgN -l $outfile.sites $bcf | bgzip -c > $outfile.part");
+
     $self->tabix_part($outfile);
 }
 
