@@ -575,6 +575,7 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
     }
     int gc_idx_min = gc_count*(stats->ngc-1)/seq_len;
     int gc_idx_max = (gc_count+1)*(stats->ngc-1)/seq_len;
+    if ( gc_idx_max >= stats->ngc ) gc_idx_max = stats->ngc - 1;
 
     // Determine which array (1st or 2nd read) will these stats go to,
     //  trim low quality bases from end the same way BWA does, 
