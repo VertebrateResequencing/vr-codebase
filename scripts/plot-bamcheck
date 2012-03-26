@@ -33,9 +33,9 @@ sub error
         "Options:\n",
         "   -k, --keep-files                    Do not remove temporary files.\n",
         "   -p, --prefix <path>                 The output files prefix, add a slash to create new directory.\n",
-        "   -r, --ref-stats <file>              Optional reference stats file with expected GC content (created with -s).\n",
-        "   -s, --do-ref-stats <file.fa>        Calculate reference sequence GC to be used with -r\n",
-        "   -t, --targets <file.tab>            Restrict -s to the listed regions (chr,from,to)\n",
+        "   -r, --ref-stats <file.fa.gc>        Optional reference stats file with expected GC content (created with -s).\n",
+        "   -s, --do-ref-stats <file.fa>        Calculate reference sequence GC for later use with -r\n",
+        "   -t, --targets <file.tab>            Restrict -s to the listed regions (tab-delimited chr,from,to. 1-based, inclusive)\n",
         "   -h, -?, --help                      This help message.\n",
         "\n";
 }
@@ -78,6 +78,7 @@ sub do_ref_stats
         open(my $fh,'<',$$opts{targets}) or error("$$opts{targets}: $!");
         while (my $line=<$fh>)
         {
+            if ( $line=~/^#/ ) { next; }
             my ($chr,$from,$to) = split(/\s+/,$line);
             chomp($to);
             push @{$targets{$chr}}, $from,$to;

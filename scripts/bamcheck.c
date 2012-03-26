@@ -1000,6 +1000,8 @@ void init_regions(stats_t *stats, char *file)
     int prev_tid=-1, prev_pos=-1;
     while ((nread = getline(&line, &len, fp)) != -1) 
     {
+        if ( line[0] == '#' ) continue;
+
         int i = 0;
         while ( i<nread && !isspace(line[i]) ) i++;
         if ( i>=nread ) error("Could not parse the file: %s\n", file);
@@ -1082,7 +1084,7 @@ void error(const char *format, ...)
         printf("    -m, --most-inserts <float>          Report only the main part of inserts [0.99]\n");
         printf("    -q, --trim-quality <int>            The BWA trimming parameter [0]\n");
         printf("    -r, --ref-seq <file>                Reference sequence (required for GC-depth calculation).\n");
-        printf("    -t, --target-regions <file>         Do stats in these regions only. Tab-delimited file chr,from,to.\n");
+        printf("    -t, --target-regions <file>         Do stats in these regions only. Tab-delimited file chr,from,to, 1-based, inclusive.\n");
         printf("    -s, --sam                           Input is SAM\n");
         printf("\n");
     }
