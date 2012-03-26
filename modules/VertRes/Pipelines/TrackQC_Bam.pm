@@ -566,7 +566,7 @@ sub run_graphs
     {
     	# Plot bamcheck graphs
     	my $stats_ref = $$self{stats_ref} ? "-r $$self{stats_ref}" : '';
-    	Utils::CMD("plot-bamcheck -p $outdir/ $stats_ref $bam_file.bc");
+    	Utils::CMD("plot-bamcheck-2012-02-11 -p $outdir/ $stats_ref $bam_file.bc");
 
     	# Get and report the stats
     	report_detailed_stats($lane_path,$bam_file,$stats_file);
