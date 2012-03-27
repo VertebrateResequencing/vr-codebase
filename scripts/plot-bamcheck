@@ -261,7 +261,7 @@ sub plot_qualities
 {
     my ($opts) = @_;
 
-    if ( !@{$$opts{dat}{FFQ}} or !@{$$opts{dat}{LFQ}} ) { return; }
+    if ( !exists($$opts{dat}{FFQ}) or !@{$$opts{dat}{FFQ}} ) { return; }
 
     my $yrange = @{$$opts{dat}{FFQ}[0]} > 50 ? @{$$opts{dat}{FFQ}[0]} : 50;
     my $is_paired = $$opts{dat}{'is paired:'};
@@ -501,7 +501,7 @@ sub plot_acgt_cycles
 {
     my ($opts) = @_;
 
-    if ( !@{$$opts{dat}{GCC}} ) { return; }
+    if ( !exists($$opts{dat}{GCC}) or !@{$$opts{dat}{GCC}} ) { return; }
 
     my $args = get_defaults($opts,"$$opts{prefix}acgt-cycles.png");
     my $fh = $$args{fh};
@@ -582,7 +582,7 @@ sub plot_gc_depth
 {
     my ($opts) = @_;
 
-    if ( !@{$$opts{dat}{GCD}} ) { return; }
+    if ( !exists($$opts{dat}{GCD}) or !@{$$opts{dat}{GCD}} ) { return; }
 
     # Find unique sequence percentiles for 30,40, and 50% GC content, just to draw x2tics.
     my @tics = ( {gc=>30},{gc=>40},{gc=>50} );
@@ -629,7 +629,7 @@ sub plot_isize
 {
     my ($opts) = @_;
 
-    if ( !$$opts{dat}{'is paired:'} or !@{$$opts{dat}{IS}} ) { return; }
+    if ( !$$opts{dat}{'is paired:'} or !exists($$opts{dat}{IS}) or !@{$$opts{dat}{IS}} ) { return; }
 
     my ($isize_max,$isize_cnt);
     for my $isize (@{$$opts{dat}{IS}})
@@ -667,7 +667,7 @@ sub plot_coverage
 {
     my ($opts) = @_;
 
-    if ( !@{$$opts{dat}{COV}} ) { return; }
+    if ( !exists($$opts{dat}{COV}) or !@{$$opts{dat}{COV}} ) { return; }
 
     my @vals;
     for my $cov (@{$$opts{dat}{COV}}) { push @vals,$$cov[2]; }
@@ -701,7 +701,7 @@ sub plot_mismatches_per_cycle
 {
     my ($opts) = @_;
 
-    if ( !@{$$opts{dat}{MPC}} ) { return; }
+    if ( !exists($$opts{dat}{MPC}) or !@{$$opts{dat}{MPC}} ) { return; }
     if ( older_than($opts,'2012-02-06') ) { plot_mismatches_per_cycle_old($opts); }
 
     my $nquals = @{$$opts{dat}{MPC}[0]} - 2;
@@ -769,7 +769,7 @@ sub plot_indel_dist
 {
     my ($opts) = @_;
 
-    if ( !@{$$opts{dat}{ID}} ) { return; }
+    if ( !exists($$opts{dat}{ID}) or !@{$$opts{dat}{ID}} ) { return; }
 
     my $args = get_defaults($opts,"$$opts{prefix}indel-dist.png");
     my $fh = $$args{fh};
@@ -801,7 +801,7 @@ sub plot_indel_cycles
 {
     my ($opts) = @_;
 
-    if ( !@{$$opts{dat}{IC}} ) { return; }
+    if ( !exists($$opts{dat}{IC}) or !@{$$opts{dat}{IC}} ) { return; }
 
     my $args = get_defaults($opts,"$$opts{prefix}indel-cycles.png");
     my $fh = $$args{fh};
