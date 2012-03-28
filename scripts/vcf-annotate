@@ -218,6 +218,7 @@ sub parse_user_defined_filters
 {
     my ($opts,$str) = @_;
     my $filters = [ do $str ];
+    if ( $@ ) { error("do $str: $@"); }
     for my $filter (@$filters)
     {
         if ( !exists($$filter{tag}) ) { error("Missing 'tag' key for one of the filters in $str\n"); }
