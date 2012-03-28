@@ -121,7 +121,6 @@ sub error
         "       apply_to => 'SNPs',\n",
         "       test     => sub {\n",
         "           if ( \$\$LINE[5]<10 ) { return \$FAIL; }    # Just to show the \$LINE variable\n",
-        "           if ( !defined \$MATCH ) { return \$PASS; }\n",
         "           for my \$pl (\@\$MATCH)\n",
         "           {\n",
         "               my \@pls = split(/,/,\$pl);\n",
@@ -917,7 +916,8 @@ sub apply_user_defined_filters
         elsif ( exists($$filter{format_tag}) )
         {
             my $idx = $$opts{vcf}->get_tag_index($$line[8],$$filter{format_tag},':');
-            $MATCH = $idx<1 ? undef : $$opts{vcf}->get_sample_field($line,$idx);
+            if ( $idx<1 ) { next; }
+            $MATCH = $$opts{vcf}->get_sample_field($line,$idx);
         }
         $apply{ $$filter{name} } = &{$$filter{test}} == $PASS ? 0 : 1;
     }
