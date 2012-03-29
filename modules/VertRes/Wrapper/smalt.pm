@@ -105,6 +105,9 @@ sub setup_reference {
     }
     
     unless ($indexed == @suffixes) {
+        # get command line record
+        my @command_lines = $self->command_line();
+
         # we produce multiple sets of hashes, one for <70bp reads, one for >70bp,
         # one for >=100bp and one for >500bp
         $self->simple_run("index -k 13 -s 4 $ref.small $ref");
@@ -117,15 +120,10 @@ sub setup_reference {
                 $indexed++;
             }
         }
-    }
-    else {
-	# Record index command lines for sam/bam header.
-	my $exe = $self->exe;
-	my @index_commands = (
-	    "$exe index -k 13 -s 4 $ref.small $ref",
-	    "$exe index -k 13 -s 6 $ref.medium $ref",
-	    "$exe index -k 20 -s 13 $ref.large $ref");
-	$self->_add_command_line(@index_commands);
+
+        # reset command lines for sam/bam header
+        $self->_reset_command_line();
+        $self->command_line(@command_lines)
     }
     
     return $indexed == @suffixes ? 1 : 0;
@@ -149,9 +147,9 @@ sub setup_custom_reference_index {
       $self->simple_run("index ".$mapper_index_params." $ref.".$mapper_index_suffix." $ref");
     }
     else {
-	# Record command line for sam/bam header.
-	my $exe = $self->exe;
-	$self->_add_command_line("$exe index ".$mapper_index_params." $ref.".$mapper_index_suffix." $ref");
+        # Record command line for sam/bam header.
+        my $exe = $self->exe;
+        $self->_add_command_line("$exe index ".$mapper_index_params." $ref.".$mapper_index_suffix." $ref");
     }
 }
     
@@ -237,15 +235,19 @@ sub generate_sam {
         my $hash_name;
         if(defined($other_args{mapper_index_suffix}))
         {
-          $hash_name = $ref.'.'.$other_args{mapper_index_suffix};
+            $self->setup_custom_reference_index($ref,$other_args{additional_mapper_params},$other_args{mapper_index_suffix});
+            $hash_name = $ref.'.'.$other_args{mapper_index_suffix};
         }
         elsif ($max_length < 70) {
+            $self->setup_custom_reference_index($ref,'-k 13 -s 4','small');
             $hash_name = $ref.'.small';
         }
         elsif ($max_length >= 100) {
+            $self->setup_custom_reference_index($ref,'-k 20 -s 13','large');
             $hash_name = $ref.'.large';
         }
         else {
+            $self->setup_custom_reference_index($ref,'-k 13 -s 6','medium');
             $hash_name = $ref.'.medium';
         }
         
