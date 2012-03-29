@@ -1097,6 +1097,11 @@ if (-s '$bam_file') {
               die "Merged bam created OK, yet contains too few reads - moved to \$bad_bam\n";
           }
         }
+        else
+        {
+          open(my \$fh, '>', '$double_check_file') || die "Couldn't write to $double_check_file\n";
+          close(\$fh);
+        }
         
         if ($add_index_option){
             \$su->index_bams(files=>['$bam_file']);
