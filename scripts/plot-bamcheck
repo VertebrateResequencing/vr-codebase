@@ -147,16 +147,7 @@ sub do_ref_stats
 sub plot
 {
     my ($cmdfile) = @_;
-
-    my @fonts = qw(/usr/share/fonts/truetype/ttf-dejavu/ /usr/share/fonts/truetype/);
-    my $font  = '';
-    for my $f (@fonts)
-    {
-        if ( ! -e $f ) { next; }
-        $font = "GDFONTPATH=$f";
-        last;
-    }
-    my $cmd = "$font gnuplot $cmdfile";
+    my $cmd = "gnuplot $cmdfile";
     system($cmd);
     if ( $? ) { error("The command exited with non-zero status $?:\n\t$cmd\n\n"); }
 }
@@ -233,7 +224,7 @@ sub get_defaults
         gp    => $gp_file, 
         img   => $img_fname, 
         fh    => $fh, 
-        terminal => qq[set terminal png size $wh truecolor font "DejaVuSansMono,9"],
+        terminal => qq[set terminal png size $wh truecolor],
         grid  => 'set grid xtics ytics y2tics back lc rgb "#cccccc"',
     };
 }
