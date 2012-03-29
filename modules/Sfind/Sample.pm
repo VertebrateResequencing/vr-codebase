@@ -238,11 +238,12 @@ has 'created' => (
     isa         => MysqlDateTime,
     coerce      => 1,   # accept mysql dates
 );
-# Add these when fields appear from Andrew Page.
-#has 'strain'=> (
-#    is          => 'ro',
-#    isa         => 'Maybe[Str]',
-#);
+
+has 'strain'=> (
+    is          => 'ro',
+    isa         => 'Maybe[Str]',
+);
+
 #has 'public_name'=> (
 #    is          => 'ro',
 #    isa         => 'Maybe[Str]',
