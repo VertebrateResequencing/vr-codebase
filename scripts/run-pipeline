@@ -98,6 +98,7 @@ use VRTrack::Sample;
 use VertRes::Utils::Hierarchy;
 use VertRes::Utils::Math;
 use Utils;
+use Parallel::ForkManager;
 
 
 my $Error   = $VertRes::Pipeline::Error;
@@ -124,6 +125,7 @@ sub read_cmd_line_args
     $$opts{'sleep_time'} = 60;
     $$opts{'once'}       = 0;
     $$opts{'status_filter'} = '.*';
+    $$opts{'parallel_processes'} = 1;
 
     my $module;
     if ( !scalar @ARGV) { usage(); }
@@ -139,6 +141,7 @@ sub read_cmd_line_args
         if ( $arg eq '-m' || $arg eq '--max-lsf-jobs' ) { $$opts{'lsf_limit'}=shift(@ARGV); next; }
         if ( $arg eq '-o' || $arg eq '--once' ) { $$opts{'once'}=1; next; }
         if ( $arg eq '-v' || $arg eq '--verbose' ) { $$opts{'verbose'}++; next; }
+        if ( $arg eq '-p' || $arg eq '--parallel-processes' ) { $$opts{'parallel_processes'}=shift(@ARGV); next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { usage(); }
         if ( -d $arg ) { $$opts{'dir'} = $arg; next; }
         usage("Unknown parameter \"$arg\". Run -h for help.\n");
@@ -174,8 +177,10 @@ sub usage
         "   -L, --lockfile <file>           Run only if there is no other process running.\n",
         "   -m, --max-lsf-jobs <int>        Allow at most this many LSF jobs in queue.\n",
         "   -o, --once                      Run all jobs only once and then exit.\n",
+        "   -p, --parallel-processes        Number of processes to use when constructing jobs.\n",
         "   -s, --sleep-time <int>          Check the projects every N minutes.\n",
         "   -t, --todo                      List jobs which should be run (i.e. jobs with the status 0,1,2).\n",
+        
         "   -v, --verbose                   Be verbose. (Given twice increases the verbosity level.)\n",
         "\n";
 
@@ -209,9 +214,11 @@ sub run_pipelines
         $first_pass = 0;
 
         my $jobs = get_jobs($opts);
-
+        
+        my $pm = new Parallel::ForkManager($$opts{parallel_processes});
         for my $job (@$jobs)
         {
+          
             if ( $$opts{list} )
             {
                 my $info   = $job->get_info();
@@ -224,8 +231,12 @@ sub run_pipelines
             }
 
             if ( $$opts{lsf_limit} && n_lsf_jobs($opts) > $$opts{lsf_limit} ) { last; }
+            
+            $pm->start and next; # do the fork
             $job->run();
+            $pm->finish; # do the exit in the child process
         }
+        $pm->wait_all_children;
     }
 }
 
