@@ -758,5 +758,21 @@ sub _add_command_line
     push((@{$self->{_command_line}}),@_) if scalar @_;
 }
 
+=head2 _reset_command_line
+
+ Title   : _reset_command_line
+ Usage   : $self->_reset_command_line();
+ Function: Internal method to reset record of command lines executed by wrapper
+ Returns : n/a
+ Args    : n/a
+
+=cut
+
+sub _reset_command_line
+{
+    my $self = shift;
+    $self->{_command_line} = [];
+}
+
 
 1;
