@@ -219,6 +219,7 @@ sub vcf_to_beagle
     my $chr  = $1;
     my $from = $2 - $$self{buffer_region};
     my $to   = $3 + $$self{buffer_region};
+    if ( $from<0 ) { $from = 0; }
     $self->cmd(qq[mkdir -p $outdir]);
     $self->cmd(qq[$$self{vcf_beagle} -r $chr:$from-$to -i $$self{in_vcf} -k $$self{known_vcf} -o $outdir/$region.01 >>$outfile.o 2>>$outfile.e && touch $outfile]);
 }

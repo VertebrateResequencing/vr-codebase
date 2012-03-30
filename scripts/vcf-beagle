@@ -52,7 +52,13 @@ sub parse_params
     my $opts = { from_vcf=>1 };
     while (defined(my $arg=shift(@ARGV)))
     {
-        if ( $arg eq '-r' || $arg eq '--region' ) { $$opts{chrom}=shift(@ARGV); $$opts{region} = {region=>$$opts{chrom},print_header=>1}; next }
+        if ( $arg eq '-r' || $arg eq '--region' ) 
+        { 
+            $$opts{chrom} = shift(@ARGV); 
+            $$opts{region} = {region=>$$opts{chrom},print_header=>1}; 
+            parse_region($$opts{region}{region});
+            next;
+        }
         if ( $arg eq '-o' || $arg eq '--out' ) { $$opts{out}=shift(@ARGV); next }
         if ( $arg eq '-k' || $arg eq '--known' ) { $$opts{known}=shift(@ARGV); next }
         if ( $arg eq '-i' || $arg eq '--impute' ) { $$opts{impute}=shift(@ARGV); next }
@@ -413,6 +419,7 @@ sub parse_region
 {
     my ($region) = @_;
     if ( $region=~/^([^:]+):(\d+)-(\d+)$/ ) { return ($1,$2,$3); }
+    elsif ( $region=~/^([^:]+):/ ) { error("Could not parse region [$region]\n"); }
     return ($region,undef,undef);
 }
 
