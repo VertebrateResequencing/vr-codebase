@@ -87,6 +87,8 @@ sub version {
  Title   : setup_reference
  Usage   : $obj->setup_reference($ref_fasta);
  Function: Do whatever needs to be done with the reference to allow mapping.
+           Removed in favour of setting-up reference index on demand using
+           setup_custom_reference_index().
  Returns : boolean
  Args    : n/a
 
@@ -94,39 +96,7 @@ sub version {
 
 sub setup_reference {
     my ($self, $ref) = @_;
-    
-    my @suffixes = qw(small.sma small.smi large.sma large.smi medium.sma medium.smi);
-    
-    my $indexed = 0;
-    foreach my $suffix (@suffixes) {
-        if (-s "$ref.$suffix") {
-            $indexed++;
-        }
-    }
-    
-    unless ($indexed == @suffixes) {
-        # get command line record
-        my @command_lines = $self->command_line();
-
-        # we produce multiple sets of hashes, one for <70bp reads, one for >70bp,
-        # one for >=100bp and one for >500bp
-        $self->simple_run("index -k 13 -s 4 $ref.small $ref");
-        $self->simple_run("index -k 13 -s 6 $ref.medium $ref");
-        $self->simple_run("index -k 20 -s 13 $ref.large $ref");
-
-        $indexed = 0;
-        foreach my $suffix (@suffixes) {
-            if (-s "$ref.$suffix") {
-                $indexed++;
-            }
-        }
-
-        # reset command lines for sam/bam header
-        $self->_reset_command_line();
-        $self->command_line(@command_lines)
-    }
-    
-    return $indexed == @suffixes ? 1 : 0;
+    return 1;
 }
 
 
