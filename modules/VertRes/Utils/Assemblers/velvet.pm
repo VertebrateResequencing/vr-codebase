@@ -130,7 +130,7 @@ sub map_and_generate_stats
    my $reference = $self->{reference} || "$directory/contigs.fa";
 
    my $mapper = VertRes::Wrapper::smalt->new();
-   $mapper->setup_reference($reference);
+   $mapper->setup_custom_reference_index($reference,'-k 13 -s 4','small');
 
    `smalt map -x -i 3000 -f samsoft -y 0.95 -o $directory/contigs.mapped.sam $reference.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
    $self->throw("Sam file not created") unless(-e "$directory/contigs.mapped.sam");
