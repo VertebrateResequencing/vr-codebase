@@ -43,7 +43,7 @@ sub new
             chunk_size      => 1_000_000,
             debug_chunks    => 0,
 
-            # Chunks to prioritize. If set, these chunks will run as first
+            # Chunks to prioritize. If set, these chunks will run as first.
             # VIP_chunks => [ '18:46588427-47619278', '9:107043283-108190518' ],
 
             # Regions to impute, the chunks must be sorted by chromosomal position or else the resulting VCF will not
@@ -219,6 +219,7 @@ sub vcf_to_beagle
     my $chr  = $1;
     my $from = $2 - $$self{buffer_region};
     my $to   = $3 + $$self{buffer_region};
+    if ( $from<0 ) { $from = 0; }
     $self->cmd(qq[mkdir -p $outdir]);
     $self->cmd(qq[$$self{vcf_beagle} -r $chr:$from-$to -i $$self{in_vcf} -k $$self{known_vcf} -o $outdir/$region.01 >>$outfile.o 2>>$outfile.e && touch $outfile]);
 }

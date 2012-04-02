@@ -293,6 +293,11 @@ sub get_limits
 =head2 spawn
 
     About : Schedule a job for execution. When +maxjobs limit is exceeded, the runner will exit via self->wait call.
+                When the job fails too many times (controllable by the +retries option), the pipeline exists. With 
+                negative value of +retries, a skip file '.s' is created and the job is reported as finished.
+                The skip files are cleaned automatically when +retries is set to a positive value. A non cleanable 
+                variant is force skip '.fs' file which is never cleaned by the pipeline and is created/removed 
+                manually by the user.
     Usage : $self->spawn("method",$done_file,@params);
     Args  : <func_name>
                 The method to be run
@@ -335,7 +340,7 @@ sub spawn
     if ( -e $basename . '.fs' )
     {
         # The only way to clean a force skip file is to remove it manually
-        $self->debugln("Skipping the job upon request, the force skip file exists: $basename.fs");
+        $self->debugln("Skipping the job upon request, a force skip file exists: $basename.fs");
         return 1;
     }
 

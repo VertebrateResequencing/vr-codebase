@@ -81,7 +81,7 @@ sub error
         "\n",
         "Example of a user-defined filter file (copy and paste it to filter.txt and run with -f filter.txt):\n",
         "    # The examples below are self-explanatory. Notice the use of the predefined\n",
-        "    #  variables (\$MATCH, \$PASS, \$FAIL) and methods (error).\n",
+        "    #  variables (\$PASS, \$FAIL, \$MATCH, \$LINE) and methods (error).\n",
         "    #\n",
         "    # In this example, a minimum value of AF1=0.1 is required\n",
         "    {\n",
@@ -113,6 +113,22 @@ sub error
         "           return \$FAIL;\n",
         "       },\n",
         "    },\n",
+        "    # Example of filtering based on genotype columns and the QUAL column\n",
+        "    {\n",
+        "       tag      => 'FORMAT/PL',\n",
+        "       name     => 'NoHets',\n",
+        "       desc     => 'Inbred homozygous mouse, no hets expected',\n",
+        "       apply_to => 'SNPs',\n",
+        "       test     => sub {\n",
+        "           if ( \$\$LINE[5]<10 ) { return \$FAIL; }    # Just to show the \$LINE variable\n",
+        "           for my \$pl (\@\$MATCH)\n",
+        "           {\n",
+        "               my \@pls = split(/,/,\$pl);\n",
+        "               if ( \$pls[1]<\$pls[0] && \$pls[1]<\$pls[2] ) { return \$FAIL; }\n",
+        "           }\n",
+        "           return \$PASS;\n",
+        "       },\n",
+        "   },\n",
         "\n";
     exit -1;
 }
@@ -201,14 +217,13 @@ sub parse_user_defined_filters
 {
     my ($opts,$str) = @_;
     my $filters = [ do $str ];
+    if ( $@ ) { error("do $str: $@"); }
     for my $filter (@$filters)
     {
         if ( !exists($$filter{tag}) ) { error("Missing 'tag' key for one of the filters in $str\n"); }
-        if ( !($$filter{tag}=~m{^INFO/(.+)$}) ) { error("Currently only INFO tags supported. Could not parse the tag [$$filter{tag}]\n"); }
-        my $ID = $1;
-
-        $$filter{ID} = $ID;
-        $$filter{tag_re} = qr{$ID=?([^\t;]*)};
+        if ( $$filter{tag}=~m{^INFO/(.+)$} ) { $$filter{info_tag} = $1; }
+        elsif ( $$filter{tag}=~m{^FORMAT/(.+)$} ) { $$filter{format_tag} = $1; }
+        else { error("Currently only INFO and FORMAT tags are supported. Could not parse the tag [$$filter{tag}]\n"); }
 
         if ( !exists($$filter{name}) ) { error("Missing 'name' key for the filter [$$filter{tag}]\n"); }
         if ( !exists($$filter{desc}) ) { error("Missing 'desc' key for the filter [$$filter{tag}]\n"); }
@@ -533,7 +548,10 @@ sub annotate
                 last;
             }
             
-            # Initialize the REF,ALT-based check
+            # Initialize the REF,ALT-based check. If there are multiple records with the same
+            #   position, they can appear in any order. A single ALT allele is expected in the 
+            #   annot file but multiple ALTs can be present in the VCF. As long as one of them
+            #   matches the annot file, the record will be annotated.
             my ($ref,%alt);
             if ( defined $alt_col )
             {
@@ -890,8 +908,17 @@ sub apply_user_defined_filters
     my %apply;
     for my $filter (values %filters)
     {
-        if ( !($$line[7]=~$$filter{tag_re}) ) { next; }
-        $MATCH = $1;
+        if ( exists($$filter{info_tag}) )
+        {
+            $MATCH = $$opts{vcf}->get_info_field($$line[7],$$filter{info_tag});
+            if ( !defined $MATCH ) { next; }
+        }
+        elsif ( exists($$filter{format_tag}) )
+        {
+            my $idx = $$opts{vcf}->get_tag_index($$line[8],$$filter{format_tag},':');
+            if ( $idx<1 ) { next; }
+            $MATCH = $$opts{vcf}->get_sample_field($line,$idx);
+        }
         $apply{ $$filter{name} } = &{$$filter{test}} == $PASS ? 0 : 1;
     }
     if ( scalar keys %apply )

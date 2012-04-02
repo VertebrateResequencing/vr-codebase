@@ -1,6 +1,6 @@
 /* 
     Author: petr.danecek@sanger
-    gcc -Wall -Winline -g -O2 -I ~/cvs/samtools bamcheck.c -o bamcheck -lm -lz -L ~/cvs/samtools -lbam
+    gcc -Wall -Winline -g -O2 -I ~/git/samtools bamcheck.c -o bamcheck -lm -lz -L ~/git/samtools -lbam
 
     Assumptions, approximations and other issues:
         - GC-depth graph does not split reads, the starting position determines which bin is incremented.
@@ -8,17 +8,22 @@
         - coverage distribution ignores softclips and deletions
         - some stats require sorted BAMs
         - GC content graph can have an untidy, step-like pattern when BAM contains multiple read lengths.
+        - The whole reads are used with -t, no splicing is done, no indels or soft clips are 
+            considered, even small overlap is good enough to include the read in the stats.
 */
 
-#define BAMCHECK_VERSION "2012-02-11"
+#define BAMCHECK_VERSION "2012-03-29"
 
 #define _ISOC99_SOURCE
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 #include <math.h>
 #include <ctype.h>
+#include <getopt.h>
+#include <errno.h>
 #include "faidx.h"
 #include "khash.h"
 #include "sam.h"
@@ -41,6 +46,7 @@ typedef struct
 } 
 faidx1_t;
 KHASH_MAP_INIT_STR(s, faidx1_t)
+KHASH_MAP_INIT_STR(str, int)
 struct __faidx_t {
     RAZF *rz;
     int n, m;
@@ -63,6 +69,14 @@ typedef struct
     int *buffer;
 } 
 round_buffer_t;
+
+typedef struct { uint32_t from, to; } pos_t;
+typedef struct
+{
+    int npos,mpos,cpos;
+    pos_t *pos;
+}
+regions_t;
 
 typedef struct
 {
@@ -130,6 +144,10 @@ typedef struct
 
     // Filters
     int filter_readlen;
+
+    // Target regions
+    int nregions;
+    regions_t *regions;
 
     // Auxiliary data
     double sum_qual;            // For calculating average quality value 
@@ -469,10 +487,13 @@ void realloc_buffers(stats_t *stats, int seq_len)
         error("Could not realloc buffers, the sequence too long: %d (2x%ld)\n", seq_len,n*stats->nquals*sizeof(uint64_t));
     memset(stats->quals_2nd + stats->nbases*stats->nquals, 0, (n-stats->nbases)*stats->nquals*sizeof(uint64_t));
 
-    stats->mpc_buf = realloc(stats->mpc_buf, n*stats->nquals*sizeof(uint64_t));
-    if ( !stats->mpc_buf )
-        error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,n*stats->nquals*sizeof(uint64_t));
-    memset(stats->mpc_buf + stats->nbases*stats->nquals, 0, (n-stats->nbases)*stats->nquals*sizeof(uint64_t));
+    if ( stats->mpc_buf )
+    {
+        stats->mpc_buf = realloc(stats->mpc_buf, n*stats->nquals*sizeof(uint64_t));
+        if ( !stats->mpc_buf )
+            error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,n*stats->nquals*sizeof(uint64_t));
+        memset(stats->mpc_buf + stats->nbases*stats->nquals, 0, (n-stats->nbases)*stats->nquals*sizeof(uint64_t));
+    }
 
     stats->acgt_cycles = realloc(stats->acgt_cycles, n*4*sizeof(uint64_t));
     if ( !stats->acgt_cycles )
@@ -483,6 +504,26 @@ void realloc_buffers(stats_t *stats, int seq_len)
     if ( !stats->read_lengths )
         error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,n*sizeof(uint64_t));
     memset(stats->read_lengths + stats->nbases, 0, (n-stats->nbases)*sizeof(uint64_t));
+
+    stats->insertions = realloc(stats->insertions, n*sizeof(uint64_t));
+    if ( !stats->insertions )
+        error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,n*sizeof(uint64_t));
+    memset(stats->insertions + stats->nbases, 0, (n-stats->nbases)*sizeof(uint64_t));
+
+    stats->deletions = realloc(stats->deletions, n*sizeof(uint64_t));
+    if ( !stats->deletions )
+        error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,n*sizeof(uint64_t));
+    memset(stats->deletions + stats->nbases, 0, (n-stats->nbases)*sizeof(uint64_t));
+
+    stats->ins_cycles = realloc(stats->ins_cycles, n*sizeof(uint64_t));
+    if ( !stats->ins_cycles )
+        error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,n*sizeof(uint64_t));
+    memset(stats->ins_cycles + stats->nbases, 0, (n-stats->nbases)*sizeof(uint64_t));
+
+    stats->del_cycles = realloc(stats->del_cycles, n*sizeof(uint64_t));
+    if ( !stats->del_cycles )
+        error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,n*sizeof(uint64_t));
+    memset(stats->del_cycles + stats->nbases, 0, (n-stats->nbases)*sizeof(uint64_t));
 
     stats->nbases = n;
 
@@ -534,6 +575,7 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
     }
     int gc_idx_min = gc_count*(stats->ngc-1)/seq_len;
     int gc_idx_max = (gc_count+1)*(stats->ngc-1)/seq_len;
+    if ( gc_idx_max >= stats->ngc ) gc_idx_max = stats->ngc - 1;
 
     // Determine which array (1st or 2nd read) will these stats go to,
     //  trim low quality bases from end the same way BWA does, 
@@ -938,6 +980,93 @@ void output_stats(stats_t *stats)
     }
 }
 
+void bam_init_header_hash(bam_header_t *header);
+
+void init_regions(stats_t *stats, char *file)
+{
+    khiter_t iter;
+    khash_t(str) *header_hash;
+
+    bam_init_header_hash(stats->sam->header);
+    header_hash = (khash_t(str)*)stats->sam->header->hash;
+
+    FILE *fp = fopen(file,"r");
+    if ( !fp ) error("%s: %s\n",file,strerror(errno));
+
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t nread;
+    int warned = 0;
+    int prev_tid=-1, prev_pos=-1;
+    while ((nread = getline(&line, &len, fp)) != -1) 
+    {
+        if ( line[0] == '#' ) continue;
+
+        int i = 0;
+        while ( i<nread && !isspace(line[i]) ) i++;
+        if ( i>=nread ) error("Could not parse the file: %s\n", file);
+        line[i] = 0;
+
+        iter = kh_get(str, header_hash, line);
+        int tid = kh_val(header_hash, iter);
+        if ( iter == kh_end(header_hash) )
+        {
+            if ( !warned )
+                fprintf(stderr,"Warning: Some sequences not present in the BAM (%s)\n", line);
+            warned = 1;
+            continue;
+        }
+
+        if ( tid >= stats->nregions )
+        {
+            stats->regions = realloc(stats->regions,sizeof(regions_t)*(stats->nregions+100));
+            int j;
+            for (j=stats->nregions; j<stats->nregions+100; j++)
+            {
+                stats->regions[j].npos = stats->regions[j].mpos = stats->regions[j].cpos = 0;
+                stats->regions[j].pos = NULL;
+            }
+            stats->nregions += 100;
+        }
+        int npos = stats->regions[tid].npos;
+        if ( npos >= stats->regions[tid].mpos )
+        {
+            stats->regions[tid].mpos += 1000;
+            stats->regions[tid].pos = realloc(stats->regions[tid].pos,sizeof(pos_t)*stats->regions[tid].mpos);
+        }
+
+        if ( (sscanf(line+i+1,"%d %d",&stats->regions[tid].pos[npos].from,&stats->regions[tid].pos[npos].to))!=2 ) error("Could not parse the region [%s]\n");
+        if ( prev_tid==-1 || prev_tid!=tid )
+        {
+            prev_tid = tid;
+            prev_pos = stats->regions[tid].pos[npos].from;
+        }
+        if ( prev_pos>stats->regions[tid].pos[npos].from )
+            error("The positions are not in chromosomal order (%s:%d comes after %d)\n", line,stats->regions[tid].pos[npos].from,prev_pos);
+        stats->regions[tid].npos++;
+    }
+    if (line) free(line);
+    fclose(fp);
+}
+
+void destroy_regions(stats_t *stats)
+{
+    int i;
+    for (i=0; i<stats->nregions; i++)
+    {
+        if ( !stats->regions[i].mpos ) continue;
+        free(stats->regions[i].pos);
+    }
+    if ( stats->regions ) free(stats->regions);
+}
+
+static int fetch_read(const bam1_t *bam_line, void *data)
+{
+    collect_stats((bam1_t*)bam_line,(stats_t*)data);
+    return 1;
+}
+
+
 void error(const char *format, ...)
 {
     if ( !format )
@@ -945,6 +1074,7 @@ void error(const char *format, ...)
         printf("Version: %s\n", BAMCHECK_VERSION);
         printf("About: The program collects statistics from BAM files. The output can be visualized using plot-bamcheck.\n");
         printf("Usage: bamcheck [OPTIONS] file.bam\n");
+        printf("       bamcheck [OPTIONS] file.bam chr:from-to\n");
         printf("Options:\n");
         printf("    -c, --coverage <int>,<int>,<int>    Coverage distribution min,max,step [1,1000,1]\n");
         printf("    -d, --remove-dups                   Exlude from statistics reads marked as duplicates\n");
@@ -954,6 +1084,7 @@ void error(const char *format, ...)
         printf("    -m, --most-inserts <float>          Report only the main part of inserts [0.99]\n");
         printf("    -q, --trim-quality <int>            The BWA trimming parameter [0]\n");
         printf("    -r, --ref-seq <file>                Reference sequence (required for GC-depth calculation).\n");
+        printf("    -t, --target-regions <file>         Do stats in these regions only. Tab-delimited file chr,from,to, 1-based, inclusive.\n");
         printf("    -s, --sam                           Input is SAM\n");
         printf("\n");
     }
@@ -969,121 +1100,76 @@ void error(const char *format, ...)
 
 int main(int argc, char *argv[])
 {
+    char *targets = NULL;
     char *bam_fname = NULL;
     samfile_t *sam = NULL;
     char in_mode[5];
-    int i;
 
-    stats_t stats;
-    stats.ngc    = 200;
-    stats.nquals = 95;
-    stats.nbases = 300;
-    stats.nisize = 8000;
-    stats.max_len   = 30;
-    stats.max_qual  = 40;
-    stats.total_len = 0;
-    stats.total_len_dup = 0;
-    stats.nreads_1st = 0;
-    stats.nreads_2nd = 0;
-    stats.nreads_dup = 0;
-    stats.nreads_unmapped = 0;
-    stats.nreads_unpaired = 0;
-    stats.nreads_paired   = 0;
-    stats.nreads_mq0      = 0;
-    stats.nbases_mapped   = 0;
-    stats.nbases_mapped_cigar = 0;
-    stats.nmismatches     = 0;
-    stats.sum_qual = 0;
-    stats.isize_main_bulk = 0.99;   // There are always outliers at the far end
-    stats.trim_qual = 0;
-    stats.nbases_trimmed = 0;
-    stats.gcd_bin_size = 20000;
-    stats.ngcd         = 3e5;     // 300k of 20k bins is enough to hold a genome 6Gbp big
-    stats.nref_seq     = stats.gcd_bin_size;
-    stats.rseq_pos     = -1;
-    stats.rseq_len     = 0;
-    stats.tid = stats.gcd_pos = -1;
-    stats.igcd = 0;
-    stats.fai  = NULL;
-    stats.is_sorted = 1;
-    stats.rmdup = 0;
-    stats.cov_min  = 1;
-    stats.cov_max  = 1000;
-    stats.cov_step = 1;
-    stats.argc = argc;
-    stats.argv = argv;
-    stats.filter_readlen = -1;
-    stats.nindels = stats.nbases;
+    stats_t *stats = calloc(1,sizeof(stats_t));
+    stats->ngc    = 200;
+    stats->nquals = 95;
+    stats->nbases = 300;
+    stats->nisize = 8000;
+    stats->max_len   = 30;
+    stats->max_qual  = 40;
+    stats->isize_main_bulk = 0.99;   // There are always outliers at the far end
+    stats->gcd_bin_size = 20000;
+    stats->ngcd         = 3e5;     // 300k of 20k bins is enough to hold a genome 6Gbp big
+    stats->nref_seq     = stats->gcd_bin_size;
+    stats->rseq_pos     = -1;
+    stats->tid = stats->gcd_pos = -1;
+    stats->is_sorted = 1;
+    stats->cov_min  = 1;
+    stats->cov_max  = 1000;
+    stats->cov_step = 1;
+    stats->argc = argc;
+    stats->argv = argv;
+    stats->filter_readlen = -1;
+    stats->nindels = stats->nbases;
 
     strcpy(in_mode, "rb");
 
-    // Parse command line arguments
-    for (i=1; i<argc; i++)
+    static struct option loptions[] = 
     {
-        if ( !strcmp(argv[i],"-d") || !strcmp(argv[i],"--remove-dups") )
+        {"help",0,0,'h'},
+        {"remove-dups",0,0,'d'},
+        {"sam",0,0,'s'},
+        {"ref-seq",0,0,'r'},
+        {"coverage",0,0,'c'},
+        {"read-length",0,0,'l'},
+        {"insert-size",0,0,'i'},
+        {"most-inserts",0,0,'m'},
+        {"trim-quality",0,0,'q'},
+        {"target-regions",0,0,'t'},
+        {0,0,0,0}
+    };
+    int opt;
+    while ( (opt=getopt_long(argc,argv,"?hdsr:c:l:i:t:m:q:",loptions,NULL))>0 )
+    {
+        switch (opt)
         {
-            stats.rmdup = 1;
-            continue;
+            case 'd': stats->rmdup=1; break;
+            case 's': strcpy(in_mode, "r"); break;
+            case 'r': stats->fai = fai_load(optarg); 
+                      if (stats->fai==0) 
+                          error("Could not load faidx: %s\n", optarg); 
+                      break;
+            case 'c': if ( sscanf(optarg,"%d,%d,%d",&stats->cov_min,&stats->cov_max,&stats->cov_step)!= 3 ) 
+                          error("Unable to parse -c %s\n", optarg); 
+                      break;
+            case 'l': stats->filter_readlen = atoi(optarg); break;
+            case 'i': stats->nisize = atoi(optarg); break;
+            case 'm': stats->isize_main_bulk = atof(optarg); break;
+            case 'q': stats->trim_qual = atoi(optarg); break;
+            case 't': targets = optarg; break;
+            case '?': 
+            case 'h': error(NULL);
+            default: error("Unknown argument: %s\n", optarg);
         }
-        if ( !strcmp(argv[i],"-s") || !strcmp(argv[i],"--sam") )
-        {
-            strcpy(in_mode, "r");
-            continue;
-        }
-        if ( !strcmp(argv[i],"-h") || !strcmp(argv[i],"--help") || !strcmp(argv[i],"-?") )
-            error(NULL);
-        if ( !strcmp(argv[i],"-r") || !strcmp(argv[i],"--ref-seq") )
-        {
-            if ( ++i>=argc )
-                error(NULL);
-            stats.fai = fai_load(argv[i]);
-            if ( stats.fai==0 )
-                error(NULL);
-            continue;
-        }
-        if ( !strcmp(argv[i],"-c") || !strcmp(argv[i],"--coverage") )
-        {
-            if ( ++i>=argc )
-                error(NULL);
-            if ( sscanf(argv[i],"%d,%d,%d",&(stats.cov_min),&(stats.cov_max),&(stats.cov_step)) != 3 )
-                error(NULL);
-            continue;
-        }
-        if ( !strcmp(argv[i],"-l") || !strcmp(argv[i],"--read-length") )
-        {
-            if ( ++i>=argc )
-                error(NULL);
-            if ( sscanf(argv[i],"%d",&(stats.filter_readlen)) != 1 )
-                error("Expected integer after -l, got [%s]\n", argv[i]);
-            continue;
-        }
-        if ( !strcmp(argv[i],"-i") || !strcmp(argv[i],"--insert-size") )
-        {
-            if ( ++i>=argc )
-                error(NULL);
-            if ( sscanf(argv[i],"%d",&(stats.nisize)) != 1 )
-                error("Expected integer after -i, got [%s]\n", argv[i]);
-            continue;
-        }
-        if ( !strcmp(argv[i],"-m") || !strcmp(argv[i],"--most-inserts") )
-        {
-            if ( ++i>=argc )
-                error(NULL);
-            if ( sscanf(argv[i],"%f",&(stats.isize_main_bulk)) != 1 )
-                error("Expected float after -m, got [%s]\n", argv[i]);
-            continue;
-        }
-        if ( !strcmp(argv[i],"-q") || !strcmp(argv[i],"--trim-quality") )
-        {
-            if ( ++i>=argc )
-                error(NULL);
-            if ( sscanf(argv[i],"%d",&(stats.trim_qual)) != 1 )
-                error("Expected integer after -q, got [%s]\n", argv[i]);
-            continue;
-        }
-        if (!bam_fname) { bam_fname=argv[i]; continue; }
-        error(NULL);
     }
+    if ( optind<argc )
+        bam_fname = argv[optind++];
+
     if ( !bam_fname )
     {
         if ( isatty(fileno((FILE *)stdin)) )
@@ -1091,53 +1177,108 @@ int main(int argc, char *argv[])
         bam_fname = "-";
     }
 
-
     // Init structures
     //  .. coverage bins and round buffer
-    if ( stats.cov_step > stats.cov_max - stats.cov_min + 1 )
+    if ( stats->cov_step > stats->cov_max - stats->cov_min + 1 )
     {
-        stats.cov_step = stats.cov_max-stats.cov_min;
-        if ( stats.cov_step <= 0 )
-            stats.cov_step = 1;
+        stats->cov_step = stats->cov_max - stats->cov_min;
+        if ( stats->cov_step <= 0 )
+            stats->cov_step = 1;
     }
-    stats.ncov = 3 + (stats.cov_max-stats.cov_min) / stats.cov_step;
-    stats.cov_max = stats.cov_min + ((stats.cov_max-stats.cov_min)/stats.cov_step +1)*stats.cov_step - 1;
-    stats.cov = calloc(sizeof(uint64_t),stats.ncov);
-    stats.cov_rbuf.size = stats.nbases*5;
-    stats.cov_rbuf.buffer = calloc(sizeof(int32_t),stats.cov_rbuf.size);
-    stats.cov_rbuf.pos = 0;
-    stats.cov_rbuf.start = 0;
+    stats->ncov = 3 + (stats->cov_max-stats->cov_min) / stats->cov_step;
+    stats->cov_max = stats->cov_min + ((stats->cov_max-stats->cov_min)/stats->cov_step +1)*stats->cov_step - 1;
+    stats->cov = calloc(sizeof(uint64_t),stats->ncov);
+    stats->cov_rbuf.size = stats->nbases*5;
+    stats->cov_rbuf.buffer = calloc(sizeof(int32_t),stats->cov_rbuf.size);
     // .. bam
     if ((sam = samopen(bam_fname, in_mode, NULL)) == 0) 
         error("Failed to open: %s\n", bam_fname);
-    stats.sam = sam;
+    stats->sam = sam;
     bam1_t *bam_line = bam_init1();
     // .. arrays
-    stats.quals_1st     = calloc(stats.nquals*stats.nbases,sizeof(uint64_t));
-    stats.quals_2nd     = calloc(stats.nquals*stats.nbases,sizeof(uint64_t));
-    stats.gc_1st        = calloc(stats.ngc,sizeof(uint64_t));
-    stats.gc_2nd        = calloc(stats.ngc,sizeof(uint64_t));
-    stats.isize_inward  = calloc(stats.nisize,sizeof(uint64_t));
-    stats.isize_outward = calloc(stats.nisize,sizeof(uint64_t));
-    stats.isize_other   = calloc(stats.nisize,sizeof(uint64_t));
-    stats.gcd           = calloc(stats.ngcd,sizeof(gc_depth_t));
-    stats.rseq_buf      = calloc(stats.nref_seq,sizeof(uint8_t));
-    stats.mpc_buf       = stats.fai ? calloc(stats.nquals*stats.nbases,sizeof(uint64_t)) : NULL;
-    stats.acgt_cycles   = calloc(4*stats.nbases,sizeof(uint64_t));
-    stats.read_lengths  = calloc(stats.nbases,sizeof(uint64_t));
-    stats.insertions    = calloc(stats.nbases,sizeof(uint64_t));
-    stats.deletions     = calloc(stats.nbases,sizeof(uint64_t));
-    stats.ins_cycles    = calloc(stats.nbases,sizeof(uint64_t));
-    stats.del_cycles    = calloc(stats.nbases,sizeof(uint64_t));
+    stats->quals_1st     = calloc(stats->nquals*stats->nbases,sizeof(uint64_t));
+    stats->quals_2nd     = calloc(stats->nquals*stats->nbases,sizeof(uint64_t));
+    stats->gc_1st        = calloc(stats->ngc,sizeof(uint64_t));
+    stats->gc_2nd        = calloc(stats->ngc,sizeof(uint64_t));
+    stats->isize_inward  = calloc(stats->nisize,sizeof(uint64_t));
+    stats->isize_outward = calloc(stats->nisize,sizeof(uint64_t));
+    stats->isize_other   = calloc(stats->nisize,sizeof(uint64_t));
+    stats->gcd           = calloc(stats->ngcd,sizeof(gc_depth_t));
+    stats->rseq_buf      = calloc(stats->nref_seq,sizeof(uint8_t));
+    stats->mpc_buf       = stats->fai ? calloc(stats->nquals*stats->nbases,sizeof(uint64_t)) : NULL;
+    stats->acgt_cycles   = calloc(4*stats->nbases,sizeof(uint64_t));
+    stats->read_lengths  = calloc(stats->nbases,sizeof(uint64_t));
+    stats->insertions    = calloc(stats->nbases,sizeof(uint64_t));
+    stats->deletions     = calloc(stats->nbases,sizeof(uint64_t));
+    stats->ins_cycles    = calloc(stats->nbases,sizeof(uint64_t));
+    stats->del_cycles    = calloc(stats->nbases,sizeof(uint64_t));
+    if ( targets )
+        init_regions(stats, targets);
 
     // Collect statistics
-    while (samread(sam,bam_line) >= 0) 
+    if ( optind<argc )
     {
-        collect_stats(bam_line,&stats);
-    }
-    round_buffer_flush(&stats,-1);
+        // Collect stats in selected regions only
+        bam_index_t *bam_idx = bam_index_load(bam_fname);
+        if (bam_idx == 0)
+            error("Random alignment retrieval only works for indexed BAM files.\n");
 
-    output_stats(&stats);
+        int i;
+        for (i=optind; i<argc; i++) 
+        {
+            int tid, beg, end;
+            bam_parse_region(stats->sam->header, argv[i], &tid, &beg, &end);
+            if ( tid < 0 ) continue;
+            bam_fetch(stats->sam->x.bam, bam_idx, tid, beg, end, stats, fetch_read);
+        }
+        bam_index_destroy(bam_idx);
+    }
+    else
+    {
+        // Stream through the entire BAM ignoring off-target regions if -t is given
+        while (samread(sam,bam_line) >= 0) 
+        {
+            if ( stats->regions )
+            {
+                if ( bam_line->core.tid >= stats->nregions || bam_line->core.tid<0 ) continue;
+                if ( !stats->is_sorted ) error("The BAM must be sorted in order for -t to work.\n");
+
+                regions_t *reg = &stats->regions[bam_line->core.tid];
+                if ( reg->cpos==reg->npos ) continue;       // done for this chr
+
+                // Find a matching interval or skip this read. No splicing of reads is done, no indels or soft clips considered, 
+                //  even small overlap is enough to include the read in the stats.
+                int i = reg->cpos;
+                while ( i<reg->npos && reg->pos[i].to<=bam_line->core.pos ) i++;
+                if ( i>=reg->npos ) { reg->cpos = reg->npos; continue; }
+                if ( bam_line->core.pos + bam_line->core.l_qseq + 1 < reg->pos[i].from ) continue;
+                reg->cpos = i;
+            }
+            collect_stats(bam_line,stats);
+        }
+    }
+    round_buffer_flush(stats,-1);
+
+    output_stats(stats);
+
+    bam_destroy1(bam_line);
+    samclose(stats->sam);
+    if (stats->fai) fai_destroy(stats->fai);
+    free(stats->cov_rbuf.buffer); free(stats->cov);
+    free(stats->quals_1st); free(stats->quals_2nd); 
+    free(stats->gc_1st); free(stats->gc_2nd);
+    free(stats->isize_inward); free(stats->isize_outward); free(stats->isize_other);
+    free(stats->gcd);
+    free(stats->rseq_buf);
+    free(stats->mpc_buf);
+    free(stats->acgt_cycles);
+    free(stats->read_lengths);
+    free(stats->insertions);
+    free(stats->deletions);
+    free(stats->ins_cycles);
+    free(stats->del_cycles);
+    destroy_regions(stats);
+    free(stats);
 
 	return 0;
 }
