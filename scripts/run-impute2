@@ -36,7 +36,7 @@ sub new
         vcf_impute2 => 'vcf-impute2',
         gen_map     => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/ALL_1000G_phase1interim_jun2011_impute/genetic_map_chr{CHROM}_combined_b37.txt',
         fai_ref     => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
-        known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/gtypes/UK10k-twins/uk10k-twins.ref.vcf.gz',
+        known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/gtypes/UK10k-twins/uk10k-twins.ref.vcf.gz',    # This must be tabix indexed VCF
 
         impute2_args     => '-Ne 20000 -k 100',
         buffer_region    => 250, # kb
@@ -98,6 +98,10 @@ sub parse_args
     { 
         $$self{known_vcf} = '--';
         $self->warn("The 'known_vcf' config key not present, running without reference panel.\n"); 
+    }
+    elsif ( !($$self{known_vcf}=~/.gz$/) )
+    {
+        $self->warn("The known_vcf should be bgzipped and tabix indexed. Hopefully you know what you're doing?\n");
     }
     if ( !exists($$self{gen_map}) ) 
     {
@@ -314,7 +318,7 @@ sub impute2_to_vcf
     my $from = $2 - $$self{buffer_region}*1000; 
     my $to   = $3 + $$self{buffer_region}*1000;
     if ( $from<0 ) { $from = 0; }
-    if ( !-z "$outfile.e" ) { `cat $outfile.e >> $outfile.e.saved`; }
+    if ( -s "$outfile.e" ) { `cat $outfile.e >> $outfile.e.saved`; }
     if ( -e "$outdir/02.impute2.$chunk.gz" )
     {
         # Everything went OK
