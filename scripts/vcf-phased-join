@@ -22,7 +22,6 @@ exit;
 sub error
 {
     my (@msg) = @_;
-    if ( exists($$opts{tmp_filename}) ) { unlink $$opts{tmp_filename}; }
     if ( scalar @msg )
     {
         croak @msg;
@@ -345,12 +344,6 @@ sub join_vcfs_chr
     {
         $$opts{header_printed} = 1;
 
-        use File::Temp qw(tempfile);
-        ($$opts{tmp_fh}, $$opts{tmp_filename}) = tempfile("_vcf_phased_join.tmp.XXXXXX");
-        my $clean_handler = sub { print STDERR "Signal caught, cleaning $$opts{tmp_filename}\n"; unlink $$opts{tmp_filename}; exit; };
-        $SIG{TERM} = $clean_handler;
-        $SIG{INT}  = $clean_handler;
-
         $$opts{vcf}->add_header_line({key=>'INFO',ID=>'PS',Number=>1,Type=>'Integer',Description=>'Phase set'});
         $$opts{vcf}->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
         print {$$opts{out_fh}} $$opts{vcf}->format_header();
@@ -453,7 +446,7 @@ sub check_sanity
 {
     my ($opts,$rec1,$rec2) = @_;
     if ( $$rec1[0] ne $$rec2[0] ) { error("Encountered different chromosomes in $$opts{file1} and $$opts{file2}: \"$$rec1[0]:$$rec1[1]\" vs \"$$rec2[0]:$$rec2[1]\"\n"); }
-    if ( $$rec1[1] > $$rec2[1] ) { error("The file $$opts{file1} ahead of $$opts{file2}: \"$$rec1[0]:$$rec1[1]\" vs \"$$rec2[1]\"\n"); }
+    if ( $$rec1[1] > $$rec2[1] ) { error("Hmm, files out of order or overlap of three files? $$opts{file1} vs $$opts{file2} and \"$$rec1[0]:$$rec1[1]\" vs \"$$rec2[1]\"\n"); }
 }
 
 sub output_line
@@ -509,7 +502,7 @@ sub output_line
     $breakpoints *= 100./$$opts{nsamples};
     if ( $breakpoints>$$opts{min_BP} )
     {
-        printf {$$opts{tmp_fh}} "BP\t%s\t%d\t%.1f\n", $$rec[0],$$rec[1],$breakpoints;
+        push @{$$opts{breakpoints}}, sprintf("BP\t%s\t%d\t%.1f\n", $$rec[0],$$rec[1],$breakpoints);
     }
 }
 
@@ -660,16 +653,15 @@ sub report_stats
         log_msg($opts,sprintf "NS\t%s\t%d\t%d\t%d\n", $$opts{vcf}{columns}[9+$i],$$opts{phased_blocks}[$i],$$opts{broken_blocks}[$i],$$opts{phased_blocks}[$i]-$$opts{broken_blocks}[$i]);
     }
 
-    close($$opts{tmp_fh});
     log_msg($opts, "#BP Break Points. Use `grep ^BP | cut -f 2-` to extract this part.\n");
     log_msg($opts, "#BP The columns are:\n");
     log_msg($opts, "#BP         1 .. chromosome\n");
     log_msg($opts, "#BP         2 .. position\n");
     log_msg($opts, "#BP         3 .. percent of samples with breakpoint at that position\n");
-    open(my $fh,'<',$$opts{tmp_filename}) or error("$$opts{tmp_filename}: $!");
-    while (my $line=<$fh>) { log_msg($opts,$line); }
-    close($fh);
-    unlink($$opts{tmp_filename});
+    for my $break (@{$$opts{breakpoints}})
+    {
+        print $break;
+    }
 
     log_msg($opts, "#ED Error Distribution. Use `grep ^ED | cut -f 2-` to extract this part.\n");
     log_msg($opts, "#ED The columns are:\n");
