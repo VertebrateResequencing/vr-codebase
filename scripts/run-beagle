@@ -37,7 +37,7 @@ sub new
             java_args   => '',
             vcf_beagle  => 'vcf-beagle',
             fai_ref     => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
-            known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',
+            known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',    # This must be tabix indexed VCF
 
             buffer_region   => 10_000,
             chunk_size      => 1_000_000,
@@ -93,6 +93,10 @@ sub parse_args
     { 
         $$self{known_vcf} = '--';
         $self->warn("The 'known_vcf' config key not present, running without reference panel.\n"); 
+    }
+    elsif ( !($$self{known_vcf}=~/.gz$/) )
+    {
+        $self->warn("The known_vcf should be bgzipped and tabix indexed. Hopefully you know what you're doing?\n");
     }
     if ( !exists($$self{buffer_region}) ) 
     { 
@@ -233,11 +237,11 @@ sub beagle
         $self->cmd("touch $outfile");
         return;
     }
-    if ( !-z "$outfile.e" ) { `cat $outfile.e >> $outfile.e.saved`; }
+    if ( -s "$outfile.e" ) { `cat $outfile.e >> $outfile.e.saved`; }
     my $mem = int($self->get_limits('memory') * 0.8);
     my $known = $$self{known_vcf} eq '--' ? '' : "markers=$outdir/$region.01.markers unphased=$outdir/$region.01.known_haps.gz missing=?";
     $self->cmd(qq[java -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} like=$outdir/$region.01.impute_haps.gz $known out=$outdir/$region.02 >>$outfile.o 2>$outfile.e]);
-    if ( !-z "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
+    if ( -s "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
     $self->cmd(qq[touch $outfile]);
 }
 
