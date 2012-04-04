@@ -61,6 +61,7 @@ sub error
         "       --fill-AC-AN                    (Re)Calculate AC and AN tags\n",
         "       --fill-HWE                      (Re)Calculate HWE, AC and AN tags\n",
         "       --fill-ICF                      (Re)Calculate Inbreeding Coefficient F, HWE, AC and AN\n",
+        "       --fill-type                     Annotate INFO/TYPE with snp,del,ins,mnp,complex\n",
         "   -f, --filter <file|list>            Apply filters, list is in the format flt1=value/flt2/flt3=value/etc. If argument to -f is a file,\n",
         "                                           user-defined filters be applied. See User Defined Filters below.\n",
         "   -r, --remove <list>                 Comma-separated list of tags to be removed (e.g. ID,INFO/DP,FORMAT/DP).\n",
@@ -194,6 +195,7 @@ sub parse_params
             next;
         }
         if ( $arg eq '-a' || $arg eq '--annotations' ) { $$opts{annotations} = shift(@ARGV); next }
+        if (                 $arg eq '--fill-type' ) { $$opts{fill_type}=1; $$opts{fill}=1; next }
         if (                 $arg eq '--fill-AC-AN' ) { $$opts{fill_ac_an} = 1; $$opts{fill}=1; next }
         if (                 $arg eq '--fill-HWE' ) { $$opts{fill_ac_an} = $$opts{fill_hwe} = 1; $$opts{fill}=1; next }
         if (                 $arg eq '--fill-ICF' ) { $$opts{fill_ac_an} = $$opts{fill_hwe} = $$opts{fill_icf} = 1; $$opts{fill}=1; next }
@@ -447,6 +449,7 @@ sub annotate
     {
         $vcf->add_header_line($desc,silent=>1);
     }
+    if ( $$opts{fill_type} ) { $vcf->add_header_line({key=>'INFO',ID=>'TYPE',Number=>'1',Type=>'String',Description=>'Variant type'}); }
     if ( $$opts{fill_ac_an} )
     {
         $vcf->add_header_line({key=>'INFO',ID=>'AC',Number=>'A',Type=>'Integer',Description=>'Allele count in genotypes'});
@@ -677,7 +680,6 @@ sub fill_ac_an_hwe
         $tags{ICF} = sprintf "%.5f", $$opts{icf};
     }
     $$line[7] = $$opts{vcf}->add_info_field($$line[7],%tags);
-    return $$line[7];
 }
 
 # Wigginton 2005, PMID: 15789306
@@ -743,6 +745,22 @@ sub eval_hwe
     return $p_hwe > 1.0 ? 1.0 : $p_hwe;
 }
 
+sub fill_type
+{
+    my ($opts,$line) = @_;
+    my @types;
+    for my $alt (split(/,/,$$line[4]))
+    {
+        my ($type,$len,$ht) = $$opts{vcf}->event_type($$line[3],$alt);
+        if ( $type eq 'i' ) { push @types, $len>0 ? 'ins' : 'del'; }
+        elsif ( $type eq 's' ) { push @types, $len==1 ? 'snp' : 'mnp'; } 
+        elsif ( $type eq 'o' ) { push @types, 'complex'; } 
+        elsif ( $type eq 'b' ) { push @types, 'break'; } 
+        elsif ( $type eq 'u' ) { push @types, 'unknown'; } 
+    }
+    $$line[7] = $$opts{vcf}->add_info_field($$line[7],TYPE=>(@types ? join(',',@types) : undef));
+}
+
 
 # Stage the lines and then apply filtering if requested, otherwise just print the line
 sub output_line
@@ -751,10 +769,8 @@ sub output_line
 
     if ( defined $line )
     {
-        if ( $$opts{fill_ac_an} ) 
-        {
-            fill_ac_an_hwe($opts,$line);
-        }
+        if ( $$opts{fill_ac_an} ) { fill_ac_an_hwe($opts,$line); }
+        if ( $$opts{fill_type} ) { fill_type($opts,$line); }
     }
 
     if ( !exists($$opts{filters}) && !exists($$opts{udef_filters}) )
