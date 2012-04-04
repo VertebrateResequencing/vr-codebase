@@ -154,8 +154,8 @@ sub convert_known
         }
         print $fh "\n";
     }
-    close($fh);
-    close($mfh);
+    close($fh) or error("close gzip -c > $$opts{prefix}.known_haps.part.gz");
+    close($mfh) or error("close $$opts{beagle_markers}.known.part");
     rename("$$opts{prefix}.known_haps.part.gz","$$opts{prefix}.known_haps.gz");
     rename("$$opts{beagle_markers}.known.part","$$opts{beagle_markers}.known");
 }
@@ -225,8 +225,8 @@ sub convert_to_be_imputed
         }
         print $fh "\n";
     }
-    close($fh);
-    close($mfh);
+    close($fh) or error("close gzip -c > $$opts{prefix}.impute_haps.part.gz");
+    close($mfh) or error("close $$opts{beagle_markers}.impute.part");
     rename("$$opts{prefix}.impute_haps.part.gz","$$opts{prefix}.impute_haps.gz");
     rename("$$opts{beagle_markers}.impute.part","$$opts{beagle_markers}.impute");
 }
@@ -260,7 +260,7 @@ sub read_samples
         if ( !($line=~/^(\S+)\s/) ) { error("Could not parse: $line"); }
         $samples{$1} = 1;
     }
-    close($fh);
+    close($fh) or error("close $file");
     return \%samples;
 }
 
@@ -486,6 +486,8 @@ sub beagle_to_vcf
         # Do not undef bgl_line, in case there are duplicate VCF lines
         undef $vcf_line;
     }
-    close($fh);
+    # Skip anything what's left so that the close status can be checked
+    while (my $line=<$fh>) {}
+    close($fh) or error("close zcat $$opts{beagle_out}");
 }
 

@@ -124,7 +124,7 @@ sub convert_known
     {
         print $fh "$id $id 0\n";
     }
-    close($fh);
+    close($fh) or error("close $$opts{prefix}.known_samples");
 
     open($fh,'>',"$$opts{prefix}.known_haps.part") or error("$$opts{out}.known_haps.part: $!");
     while (my $x = $vcf->next_data_hash())
@@ -156,7 +156,7 @@ sub convert_known
         }
         print $fh "\n";
     }
-    close($fh);
+    close($fh) or error("close $$opts{prefix}.known_haps.part");
     rename("$$opts{prefix}.known_haps.part","$$opts{prefix}.known_haps");
 }
 
@@ -178,7 +178,7 @@ sub convert_to_be_imputed
     {
         print $fh "$id $id 0\n";
     }
-    close($fh);
+    close($fh) or error("close $$opts{prefix}.impute_samples");
 
     open($fh,'>',"$$opts{prefix}.impute_haps.part") or error("$$opts{out}.impute_haps.part: $!");
     while (my $x = $vcf->next_data_hash())
@@ -232,7 +232,7 @@ sub convert_to_be_imputed
         }
         print $fh "\n";
     }
-    close($fh);
+    close($fh) or error("close $$opts{prefix}.impute_haps.part");
     rename("$$opts{prefix}.impute_haps.part","$$opts{prefix}.impute_haps");
 }
 
@@ -248,7 +248,7 @@ sub read_samples
         if ( !($line=~/^(\S+)\s/) ) { error("Could not parse: $line"); }
         $samples{$1} = 1;
     }
-    close($fh);
+    close($fh) or error("close $file");
     return \%samples;
 }
 
@@ -311,7 +311,7 @@ sub check_samples
         if ( $1 ne $samples[$i] ) { error("FIXME: the samples are in different order, starting at ",$i+1,": $1 vs $samples[$i]"); }
         $i++;
     }
-    close($fh);
+    close($fh) or error("close $impute_samples");
     return \@samples;
 }
 
@@ -333,7 +333,7 @@ sub check_ordering
             push @ordering, $2 eq 'unordered' ? 0 : 1;
             $i++;
         }
-        close($fh);
+        close($fh) or error("close $file");
         return \@ordering;
     }
     $file = "${prefix}_samples";
@@ -346,7 +346,7 @@ sub check_ordering
         {
             push @ordering, 0;
         }
-        close($fh);
+        close($fh) or error("close $file");
         return \@ordering;
     }
     error("Neither ${prefix}_diplotype_ordering nor ${prefix}_samples exists?!");
@@ -603,7 +603,9 @@ sub impute2_to_vcf
         undef $vcf_line;
         undef $imp_line;
     }
-    close($fh);
-    close($fh_info);
+    close($fh) or error("close zcat $$opts{impute2_out}");
+    close($fh_info) or error("close $$opts{impute2_info}");
+    if ( defined $fh_haps ) { close($fh_haps) or error("close zcat $$opts{impute2_haps}"); }
+    if ( defined $fh_haps_conf ) { close($fh_haps_conf) or error("close zcat $$opts{impute2_hap_conf}"); }
 }
 
