@@ -729,8 +729,8 @@ sub run_mpileup
             if ( $2 eq 'F' && !$fploidy ) { next; }
             print $out "$1\t" .($2 eq 'M' ? $mploidy : $fploidy). "\n";
         }
-        close($out);
-        close($in);
+        close($out) or $self->throw("close failed: $sample_list");
+        close($in) or $self->throw("close failed: $outdir/lists/chr$chr-$pop.samples");
     }
 
     my $cmd;
