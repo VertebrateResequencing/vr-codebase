@@ -32,7 +32,7 @@ sub new
     $$self{whole_genome_bams} = 1;
     $$self{_sampleconf} = q[
             mpileup  => 'samtools mpileup -EDS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA',
-            bcftools => 'bcftools view -p 0.99',
+            bcftools => 'bcftools view -p 0.99 -vcgN',
             
             bams     => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
             fa_ref   => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
@@ -165,7 +165,7 @@ sub parse_args
     }
     if ( !exists($$self{bcftools}) ) 
     { 
-        $$self{bcftools} = 'bcftools view -p 0.99';
+        $$self{bcftools} = 'bcftools view -p 0.99 -vcgN';
         $self->warn("The 'bcftools' config key not present, assuming: $$self{bcftools}\n"); 
     }
     if ( !exists($$self{chunk_size}) ) 
@@ -736,12 +736,12 @@ sub run_mpileup
     my $cmd;
     if ( $$self{keep_bcfs} )
     {
-        $cmd = "$$self{bcftools} -vcgN -s $sample_list $outdir/pooled/$chr/$chr:$from-$to.bcf";
+        $cmd = "$$self{bcftools} -s $sample_list $outdir/pooled/$chr/$chr:$from-$to.bcf";
     }
     else
     {
         my $bam_list = "$outdir/lists/chr$chr-$pop.list";
-        $cmd = "$$self{mpileup} -ug -r $chr:$from-$to -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -vcgN -s $sample_list -";
+        $cmd = "$$self{mpileup} -ug -r $chr:$from-$to -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -s $sample_list -";
     }
     $self->cmd("$cmd | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
@@ -764,7 +764,7 @@ sub merge_vcfs
     $self->cmd(q[vcf-isec -f -n +1 ] .join(' ',@$vcfs). q[ | awk '!($1~/^#/)' | cut -f 1,2 | uniq > ] . "$outfile.sites");
 
     # Call genotypes for all samples at these positions
-    $self->cmd("$$self{bcftools} -vcgN -l $outfile.sites $bcf | bgzip -c > $outfile.part");
+    $self->cmd("$$self{bcftools} -l $outfile.sites $bcf | bgzip -c > $outfile.part");
 
     $self->tabix_part($outfile);
 }
