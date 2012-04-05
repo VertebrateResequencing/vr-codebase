@@ -329,7 +329,9 @@ sub create {
 
 =head2 _all_values_by_field
 
-  Arg[1]     : field name
+  Arg[1]     : column to get
+  Arg[2]     : column to order by (optional, default is row_id)
+  Arg[3]     : where clause (optional, default is 'latest=true')
   Example    ; VRTrack::Core_obj->_all_values_by_field($vrtrack, 'changed')
   Description: Class method. Probably best used internally by inheritors of Core_obj. 
                Gives an array reference to all values in a column of the database table.
@@ -338,15 +340,16 @@ sub create {
 =cut
 
 sub _all_values_by_field {
-    my ($class, $vrtrack, $field, $order_by) = @_;
+    my ($class, $vrtrack, $field, $order_by, $where) = @_;
     confess "Need to call a vrtrack handle and field name" unless ($vrtrack && $field);
     if ($vrtrack->isa('DBI::db')) {
 	confess "The interface has changed, expected vrtrack reference.\n";
     } 
     my $table = $class->_class_to_table;
     $order_by ||= 'row_id';
+    $where ||= 'latest=true';
     my $dbh = $vrtrack->{_dbh};
-    my $sql = qq[select $field from $table where latest=true order by $order_by];
+    my $sql = qq[select $field from $table where $where order by $order_by];
     my $sth = $dbh->prepare($sql);
     my @data;
     if ($sth->execute()) {
