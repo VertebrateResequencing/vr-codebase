@@ -660,7 +660,7 @@ sub report_stats
     log_msg($opts, "#BP         3 .. percent of samples with breakpoint at that position\n");
     for my $break (@{$$opts{breakpoints}})
     {
-        print $break;
+        log_msg($opts,$break);
     }
 
     log_msg($opts, "#ED Error Distribution. Use `grep ^ED | cut -f 2-` to extract this part.\n");
