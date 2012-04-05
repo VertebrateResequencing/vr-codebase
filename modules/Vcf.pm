@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r692';
+our $VERSION = 'r698';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
@@ -1579,6 +1579,41 @@ sub event_type
     return ($type,$len,$ht);
 }
 
+=head2 has_AGtags
+
+    About   : Checks the header for the presence of tags with variable number of fields (Number=A or Number=G, such as GL)
+    Usage   : $vcf->parse_header(); my $agtags = $vcf->has_AGtags();
+    Args    : None
+    Returns : Hash {fmtA=>[tags],fmtG=>[tags],infoA=>[tags],infoG=>[tags]} or undef if none is present
+
+=cut
+
+sub has_AGtags
+{
+    my ($self) = @_;
+    my $out;
+    if ( exists($$self{header}{FORMAT}) )
+    {
+        for my $tag (keys %{$$self{header}{FORMAT}})
+        {
+            if ( $$self{header}{FORMAT}{$tag}{Number} eq 'A' ) { push @{$$out{fmtA}},$tag; }
+            if ( $$self{header}{FORMAT}{$tag}{Number} eq 'G' ) { push @{$$out{fmtG}},$tag; }
+        }
+    }
+    if ( exists($$self{header}{INFO}) )
+    {
+        for my $tag (keys %{$$self{header}{INFO}})
+        {
+            if ( $$self{header}{INFO}{$tag}{Number} eq 'A' ) { push @{$$out{infoA}},$tag; }
+            if ( $$self{header}{INFO}{$tag}{Number} eq 'G' ) { push @{$$out{infoG}},$tag; }
+        }
+    }
+    if ( defined $out ) 
+    {
+        for my $key qw(fmtA fmtG infoA infoG) { if ( !exists($$out{$key}) ) { $$out{$key}=[] } }
+    }
+    return $out;
+}
 
 =head2 parse_AGtags
 
@@ -1893,7 +1928,6 @@ sub format_genotype_strings
     my $ref = $$rec{REF};
     my $nalts = 0;
     my %alts  = ();
-    my $gt_re = $$self{regex_gt2};
 
     if ( !$columns ) { $columns = [keys %{$$rec{gtypes}}]; }
 
@@ -1904,7 +1938,7 @@ sub format_genotype_strings
         my $out = '';
         while ($buf ne '')
         {
-            if ( !($buf=~$gt_re) ) { $self->throw("Could not parse gtype string [$gtype]\n"); }
+            $buf=~m{^([^/|]+)([/|]?)};
             $buf = $';
 
             my $al  = $1;
@@ -1919,14 +1953,10 @@ sub format_genotype_strings
                 }
 
                 if ( exists($alts{$al}) ) { $al = $alts{$al} }
-                elsif ( $al=~$$self{regex_snp} or $al=~$$self{regex_ins} or $al=~$$self{regex_del} )
+                elsif ( $al ne '.' )
                 {
                     $alts{$al} = ++$nalts;
                     $al = $nalts;
-                }
-                elsif ( $al ne '.' )
-                {
-                    $self->throw("Could not parse the genotype string [$gtype]\n");
                 }
 
             }
@@ -1983,6 +2013,35 @@ sub format_header_line
     $line .= qq[,"$$rec{Description}"] unless !exists($$rec{Description});
     $line .= "\n";
     return $line;
+}
+
+=head2 remove_columns
+
+    Usage   : my $rec=$vcf->next_data_hash(); $vcf->remove_columns($rec,remove=>['NA001','NA0002']);
+    Args    : VCF hash pointer
+            : list of columns to remove or a lookup hash with column names to keep (remove=>[] or keep=>{})
+    Returns : 
+
+=cut
+
+sub remove_columns
+{
+    my ($self,$rec,%args) = @_;
+    if ( ref($rec) ne 'HASH' ) { $self->throw("TODO: rec for array"); }
+    if ( exists($args{keep}) )
+    {
+        for my $col (keys %{$$rec{gtypes}})
+        {
+            if ( !exists($args{keep}{$col}) ) { delete($$rec{gtypes}{$col}); }
+        }
+    }
+    if ( exists($args{remove}) )
+    {
+        for my $col (@{$args{remove}})
+        {
+            if ( exists($$rec{gtypes}{$col}) ) { delete($$rec{gtypes}{$col}); }
+        }
+    }
 }
 
 =head2 add_columns
