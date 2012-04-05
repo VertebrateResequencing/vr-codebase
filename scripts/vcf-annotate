@@ -82,7 +82,7 @@ sub error
         "\n",
         "Example of a user-defined filter file (copy and paste it to filter.txt and run with -f filter.txt):\n",
         "    # The examples below are self-explanatory. Notice the use of the predefined\n",
-        "    #  variables (\$PASS, \$FAIL, \$MATCH, \$LINE) and methods (error).\n",
+        "    #  variables (\$PASS, \$FAIL, \$MATCH, \$RECORD) and methods (error).\n",
         "    #\n",
         "    # In this example, a minimum value of AF1=0.1 is required\n",
         "    {\n",
@@ -121,7 +121,7 @@ sub error
         "       desc     => 'Inbred homozygous mouse, no hets expected',\n",
         "       apply_to => 'SNPs',\n",
         "       test     => sub {\n",
-        "           if ( \$\$LINE[5]<10 ) { return \$FAIL; }    # Just to show the \$LINE variable\n",
+        "           if ( \$\$RECORD[5]<10 ) { return \$FAIL; }    # Just to show the \$RECORD variable\n",
         "           for my \$pl (\@\$MATCH)\n",
         "           {\n",
         "               my \@pls = split(/,/,\$pl);\n",
@@ -756,7 +756,7 @@ sub fill_type
         elsif ( $type eq 's' ) { push @types, $len==1 ? 'snp' : 'mnp'; } 
         elsif ( $type eq 'o' ) { push @types, 'complex'; } 
         elsif ( $type eq 'b' ) { push @types, 'break'; } 
-        elsif ( $type eq 'u' ) { push @types, 'unknown'; } 
+        elsif ( $type eq 'u' ) { push @types, 'other'; } 
     }
     $$line[7] = $$opts{vcf}->add_info_field($$line[7],TYPE=>(@types ? join(',',@types) : undef));
 }
