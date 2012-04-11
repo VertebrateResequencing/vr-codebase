@@ -208,6 +208,8 @@ sub main
     my $outdir = $$self{outdir};
     my @chroms = @{$$self{chroms}};
 
+    if ( $self->is_finished("$outdir/all_done") ) { $self->all_done; }
+
     # Create sample list for each population group
     while (my ($pop,$value) = each %{$$self{pops}})
     {
@@ -310,6 +312,7 @@ sub main
     $self->wait;
     $self->clean($outdir) unless !$$self{do_clean};
 
+    $self->cmd("touch $outdir/all_done");
     $self->all_done;
 }
 
