@@ -808,7 +808,7 @@ sub concat_chroms
     }
     close($fh) or $self->throw("close $chunks_list");
 
-    $self->cmd("vcf-concat -f $chunks_list | $$self{filter} | bgzip -c > $outfile.part");
+    $self->cmd("vcf-concat -p -f $chunks_list | $$self{filter} | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
 }
 
