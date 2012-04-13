@@ -76,7 +76,7 @@ sub new
             merge_pops => 0,
             
             # Set the depth filter (+/D=N) to about twice the average depth.
-            filter => 'vcf-annotate -f +',
+            filter => 'vcf-annotate --fill-AC-AN -f +',
             
             chunk_size        => 1_000_000,
             debug_chunks      => 0,
@@ -185,7 +185,7 @@ sub parse_args
     }
     if ( !exists($$self{filter}) )
     {
-        $$self{filter} = 'vcf-annotate -f +';
+        $$self{filter} = 'vcf-annotate --fill-AC-AN -f +';
         $self->warn("The 'filter' config key not present, assuming: $$self{filter}\n"); 
     }
     if ( $$self{clean} ) 
