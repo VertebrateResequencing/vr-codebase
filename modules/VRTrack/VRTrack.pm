@@ -72,8 +72,7 @@ sub new {
                                       $dbparams->{'password'},
                              {'RaiseError' => 0, 'PrintError'=>0}
                            );
-    #my ($dbname) = $dbh->selectrow_array("select DATABASE()");
-    #warn $dbname;
+    
     if ($DBI::err){
           warn(sprintf('DB connection failed: %s', $DBI::errstr));
           return undef;
@@ -420,8 +419,8 @@ sub hierarchy_path_of_lane {
 
   Arg [1]    : list of flags and values
   Example    : my $all_lanes   = $track->processed_lane_hnames();
-               my $qc_lanes    = $track->qc_filtered_lane_hnames('qc'=>1);
-               my $no_qc_lanes = $track->qc_filtered_lane_hnames('qc'=>0);
+               my $qc_lanes    = $track->processed_lane_hnames('qc'=>1);
+               my $no_qc_lanes = $track->processed_lane_hnames('qc'=>0);
   Description: retrieves a (optionally filtered) list of all lane hierarchy names, ordered by project, sample, library names.
                This is a helper function for the qc web interface for speed.
   Returntype : arrayref
@@ -596,8 +595,8 @@ sub qc_filtered_lib_hnames {
 
   Arg [1]    : list of flags and values
   Example    : my $all_files   = $track->processed_file_hnames();
-               my $qc_files    = $track->qc_filtered_file_hnames('qc'=>1);
-               my $no_qc_files = $track->qc_filtered_file_hnames('qc'=>0);
+               my $qc_files    = $track->processed_file_hnames('qc'=>1);
+               my $no_qc_files = $track->processed_file_hnames('qc'=>0);
   Description: retrieves a (optionally filtered) list of all file hierarchy names, ordered by project, sample, library names.
                This is a helper function for the qc web interface for speed.
   Returntype : arrayref
