@@ -998,7 +998,7 @@ sub does_lane_pass_vrtrack_processed_flag_filters
 {
   my ($vrlane, $filter) = @_;
   
-  for my $pipeline_task (keys $filter)
+  for my $pipeline_task (keys %{$filter})
   {
     if($vrlane->is_processed($pipeline_task) != $filter->{$pipeline_task})
     {
