@@ -632,6 +632,14 @@ sub fill_ac_an_hwe
     my $igt = $$opts{vcf}->get_tag_index($$line[8],'GT',':');
     if ( $igt==-1 ) { return; }
     my %counts = ( 0=>0 );
+    if ( $$line[4] ne '.' )
+    {
+        my $idx=0;
+        my $cnt=0;
+        $counts{++$cnt} = 0;
+        while ( ($idx=index($$line[4],',',$idx))>0 ) { $idx++; $counts{++$cnt} = 0; }
+
+    }
     my $nhets  = 0;
     my $ngts   = 0;
     my $ncols  = @$line;
