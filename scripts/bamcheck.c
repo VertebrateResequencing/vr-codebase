@@ -12,10 +12,9 @@
             considered, even small overlap is good enough to include the read in the stats.
 */
 
-#define BAMCHECK_VERSION "2012-03-29"
+#define BAMCHECK_VERSION "2012-04-04"
 
 #define _ISOC99_SOURCE
-#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -282,8 +281,9 @@ void count_indels(stats_t *stats,bam1_t *bam_line)
 
         if ( cig==1 )
         {
-            int idx = is_fwd ? icycle : read_len-icycle-1;
-            if ( idx >= stats->nbases ) error("FIXME: %d vs %d\n", idx,stats->nbases);
+            int idx = is_fwd ? icycle : read_len-icycle;
+            if ( idx<0 ) error("FIXME: read_len=%d vs icycle=%d\n", read_len,icycle);
+            if ( idx >= stats->nbases || idx<0 ) error("FIXME: %d vs %d\n", idx,stats->nbases);
             stats->ins_cycles[idx]++;
             icycle += ncig;
             if ( ncig<=stats->nindels )
@@ -292,7 +292,8 @@ void count_indels(stats_t *stats,bam1_t *bam_line)
         }
         if ( cig==2 )
         {
-            int idx = is_fwd ? icycle : read_len-icycle-1;
+            int idx = is_fwd ? icycle-1 : read_len-icycle-1;
+            if ( idx<0 ) continue;  // discard meaningless deletions
             if ( idx >= stats->nbases ) error("FIXME: %d vs %d\n", idx,stats->nbases);
             stats->del_cycles[idx]++;
             if ( ncig<=stats->nindels )
@@ -515,15 +516,15 @@ void realloc_buffers(stats_t *stats, int seq_len)
         error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,n*sizeof(uint64_t));
     memset(stats->deletions + stats->nbases, 0, (n-stats->nbases)*sizeof(uint64_t));
 
-    stats->ins_cycles = realloc(stats->ins_cycles, n*sizeof(uint64_t));
+    stats->ins_cycles = realloc(stats->ins_cycles, (n+1)*sizeof(uint64_t));
     if ( !stats->ins_cycles )
-        error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,n*sizeof(uint64_t));
-    memset(stats->ins_cycles + stats->nbases, 0, (n-stats->nbases)*sizeof(uint64_t));
+        error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,(n+1)*sizeof(uint64_t));
+    memset(stats->ins_cycles + stats->nbases + 1, 0, (n+1-stats->nbases)*sizeof(uint64_t));
 
-    stats->del_cycles = realloc(stats->del_cycles, n*sizeof(uint64_t));
+    stats->del_cycles = realloc(stats->del_cycles, (n+1)*sizeof(uint64_t));
     if ( !stats->del_cycles )
-        error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,n*sizeof(uint64_t));
-    memset(stats->del_cycles + stats->nbases, 0, (n-stats->nbases)*sizeof(uint64_t));
+        error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,(n+1)*sizeof(uint64_t));
+    memset(stats->del_cycles + stats->nbases + 1, 0, (n+1-stats->nbases)*sizeof(uint64_t));
 
     stats->nbases = n;
 
@@ -819,23 +820,23 @@ void output_stats(stats_t *stats)
         printf(" %s",stats->argv[i]);
     printf("\n");
     printf("# Summary Numbers. Use `grep ^SN | cut -f 2-` to extract this part.\n");
-    printf("SN\tsequences:\t%ld\n", stats->nreads_1st+stats->nreads_2nd);
+    printf("SN\tsequences:\t%ld\n", (long)(stats->nreads_1st+stats->nreads_2nd));
     printf("SN\tis paired:\t%d\n", stats->nreads_1st&&stats->nreads_2nd ? 1 : 0);
     printf("SN\tis sorted:\t%d\n", stats->is_sorted ? 1 : 0);
-    printf("SN\t1st fragments:\t%ld\n", stats->nreads_1st);
-    printf("SN\tlast fragments:\t%ld\n", stats->nreads_2nd);
-    printf("SN\treads mapped:\t%ld\n", stats->nreads_paired+stats->nreads_unpaired);
-    printf("SN\treads unmapped:\t%ld\n", stats->nreads_unmapped);
-    printf("SN\treads unpaired:\t%ld\n", stats->nreads_unpaired);
-    printf("SN\treads paired:\t%ld\n", stats->nreads_paired);
-    printf("SN\treads duplicated:\t%ld\n", stats->nreads_dup);
-    printf("SN\treads MQ0:\t%ld\n", stats->nreads_mq0);
-    printf("SN\ttotal length:\t%ld\n", stats->total_len);
-    printf("SN\tbases mapped:\t%ld\n", stats->nbases_mapped);
-    printf("SN\tbases mapped (cigar):\t%ld\n", stats->nbases_mapped_cigar);
-    printf("SN\tbases trimmed:\t%ld\n", stats->nbases_trimmed);
-    printf("SN\tbases duplicated:\t%ld\n", stats->total_len_dup);
-    printf("SN\tmismatches:\t%ld\n", stats->nmismatches);
+    printf("SN\t1st fragments:\t%ld\n", (long)stats->nreads_1st);
+    printf("SN\tlast fragments:\t%ld\n", (long)stats->nreads_2nd);
+    printf("SN\treads mapped:\t%ld\n", (long)(stats->nreads_paired+stats->nreads_unpaired));
+    printf("SN\treads unmapped:\t%ld\n", (long)stats->nreads_unmapped);
+    printf("SN\treads unpaired:\t%ld\n", (long)stats->nreads_unpaired);
+    printf("SN\treads paired:\t%ld\n", (long)stats->nreads_paired);
+    printf("SN\treads duplicated:\t%ld\n", (long)stats->nreads_dup);
+    printf("SN\treads MQ0:\t%ld\n", (long)stats->nreads_mq0);
+    printf("SN\ttotal length:\t%ld\n", (long)stats->total_len);
+    printf("SN\tbases mapped:\t%ld\n", (long)stats->nbases_mapped);
+    printf("SN\tbases mapped (cigar):\t%ld\n", (long)stats->nbases_mapped_cigar);
+    printf("SN\tbases trimmed:\t%ld\n", (long)stats->nbases_trimmed);
+    printf("SN\tbases duplicated:\t%ld\n", (long)stats->total_len_dup);
+    printf("SN\tmismatches:\t%ld\n", (long)stats->nmismatches);
     printf("SN\terror rate:\t%e\n", (float)stats->nmismatches/stats->nbases_mapped_cigar);
     float avg_read_length = (stats->nreads_1st+stats->nreads_2nd)?stats->total_len/(stats->nreads_1st+stats->nreads_2nd):0;
     printf("SN\taverage length:\t%.0f\n", avg_read_length);
@@ -843,9 +844,9 @@ void output_stats(stats_t *stats)
     printf("SN\taverage quality:\t%.1f\n", stats->total_len?stats->sum_qual/stats->total_len:0);
     printf("SN\tinsert size average:\t%.1f\n", avg_isize);
     printf("SN\tinsert size standard deviation:\t%.1f\n", sd_isize);
-    printf("SN\tinward oriented pairs:\t%ld\n", nisize_inward);
-    printf("SN\toutward oriented pairs:\t%ld\n", nisize_outward);
-    printf("SN\tpairs with other orientation:\t%ld\n", nisize_other);
+    printf("SN\tinward oriented pairs:\t%ld\n", (long)nisize_inward);
+    printf("SN\toutward oriented pairs:\t%ld\n", (long)nisize_outward);
+    printf("SN\tpairs with other orientation:\t%ld\n", (long)nisize_other);
 
     int ibase,iqual;
     if ( stats->max_len<stats->nbases ) stats->max_len++;
@@ -857,7 +858,7 @@ void output_stats(stats_t *stats)
         printf("FFQ\t%d",ibase+1);
         for (iqual=0; iqual<=stats->max_qual; iqual++)
         {
-            printf("\t%ld", stats->quals_1st[ibase*stats->nquals+iqual]);
+            printf("\t%ld", (long)stats->quals_1st[ibase*stats->nquals+iqual]);
         }
         printf("\n");
     }
@@ -868,7 +869,7 @@ void output_stats(stats_t *stats)
         printf("LFQ\t%d",ibase+1);
         for (iqual=0; iqual<=stats->max_qual; iqual++)
         {
-            printf("\t%ld", stats->quals_2nd[ibase*stats->nquals+iqual]);
+            printf("\t%ld", (long)stats->quals_2nd[ibase*stats->nquals+iqual]);
         }
         printf("\n");
     }
@@ -882,7 +883,7 @@ void output_stats(stats_t *stats)
             printf("MPC\t%d",ibase+1);
             for (iqual=0; iqual<=stats->max_qual; iqual++)
             {
-                printf("\t%ld", stats->mpc_buf[ibase*stats->nquals+iqual]);
+                printf("\t%ld", (long)stats->mpc_buf[ibase*stats->nquals+iqual]);
             }
             printf("\n");
         }
@@ -892,7 +893,7 @@ void output_stats(stats_t *stats)
     for (ibase=0; ibase<stats->ngc; ibase++)
     {
         if ( stats->gc_1st[ibase]==stats->gc_1st[ibase_prev] ) continue;
-        printf("GCF\t%.2f\t%ld\n", (ibase+ibase_prev)*0.5*100./(stats->ngc-1),stats->gc_1st[ibase_prev]);
+        printf("GCF\t%.2f\t%ld\n", (ibase+ibase_prev)*0.5*100./(stats->ngc-1), (long)stats->gc_1st[ibase_prev]);
         ibase_prev = ibase;
     }
     printf("# GC Content of last fragments. Use `grep ^GCL | cut -f 2-` to extract this part.\n");
@@ -900,7 +901,7 @@ void output_stats(stats_t *stats)
     for (ibase=0; ibase<stats->ngc; ibase++)
     {
         if ( stats->gc_2nd[ibase]==stats->gc_2nd[ibase_prev] ) continue;
-        printf("GCL\t%.2f\t%ld\n", (ibase+ibase_prev)*0.5*100./(stats->ngc-1),stats->gc_2nd[ibase_prev]);
+        printf("GCL\t%.2f\t%ld\n", (ibase+ibase_prev)*0.5*100./(stats->ngc-1), (long)stats->gc_2nd[ibase_prev]);
         ibase_prev = ibase;
     }
     printf("# ACGT content per cycle. Use `grep ^GCC | cut -f 2-` to extract this part. The columns are: cycle, and A,C,G,T counts [%%]\n");
@@ -913,37 +914,37 @@ void output_stats(stats_t *stats)
     }
     printf("# Insert sizes. Use `grep ^IS | cut -f 2-` to extract this part. The columns are: pairs total, inward oriented pairs, outward oriented pairs, other pairs\n");
     for (isize=1; isize<ibulk; isize++)
-        printf("IS\t%d\t%ld\t%ld\t%ld\t%ld\n", isize,(stats->isize_inward[isize]+stats->isize_outward[isize]+stats->isize_other[isize]),
-            stats->isize_inward[isize],stats->isize_outward[isize],stats->isize_other[isize]);
+        printf("IS\t%d\t%ld\t%ld\t%ld\t%ld\n", isize, (long)(stats->isize_inward[isize]+stats->isize_outward[isize]+stats->isize_other[isize]),
+            (long)stats->isize_inward[isize], (long)stats->isize_outward[isize], (long)stats->isize_other[isize]);
 
     printf("# Read lengths. Use `grep ^RL | cut -f 2-` to extract this part. The columns are: read length, count\n");
     int ilen;
     for (ilen=0; ilen<stats->max_len; ilen++)
     {
         if ( stats->read_lengths[ilen]>0 )
-            printf("RL\t%d\t%ld\n", ilen,stats->read_lengths[ilen]);
+            printf("RL\t%d\t%ld\n", ilen, (long)stats->read_lengths[ilen]);
     }
 
     printf("# Indel distribution. Use `grep ^ID | cut -f 2-` to extract this part. The columns are: length, number of insertions, number of deletions\n");
     for (ilen=0; ilen<stats->nindels; ilen++)
     {
         if ( stats->insertions[ilen]>0 || stats->deletions[ilen]>0 )
-            printf("ID\t%d\t%ld\t%ld\n", ilen+1,stats->insertions[ilen],stats->deletions[ilen]);
+            printf("ID\t%d\t%ld\t%ld\n", ilen+1, (long)stats->insertions[ilen], (long)stats->deletions[ilen]);
     }
 
     printf("# Indels per cycle. Use `grep ^IC | cut -f 2-` to extract this part. The columns are: cycle, number of insertions, number of deletions\n");
-    for (ilen=0; ilen<stats->nbases; ilen++)
+    for (ilen=0; ilen<=stats->nbases; ilen++)
     {
         if ( stats->ins_cycles[ilen]>0 || stats->del_cycles[ilen]>0 )
-            printf("IC\t%d\t%ld\t%ld\n", ilen+1,stats->ins_cycles[ilen],stats->del_cycles[ilen]);
+            printf("IC\t%d\t%ld\t%ld\n", ilen+1, (long)stats->ins_cycles[ilen], (long)stats->del_cycles[ilen]);
     }
 
     printf("# Coverage distribution. Use `grep ^COV | cut -f 2-` to extract this part.\n");
-    printf("COV\t[<%d]\t%d\t%ld\n",stats->cov_min,stats->cov_min-1,stats->cov[0]);
+    printf("COV\t[<%d]\t%d\t%ld\n",stats->cov_min,stats->cov_min-1, (long)stats->cov[0]);
     int icov;
     for (icov=1; icov<stats->ncov-1; icov++)
-        printf("COV\t[%d-%d]\t%d\t%ld\n",stats->cov_min + (icov-1)*stats->cov_step, stats->cov_min + icov*stats->cov_step-1,stats->cov_min + icov*stats->cov_step-1,stats->cov[icov]);
-    printf("COV\t[%d<]\t%d\t%ld\n",stats->cov_min + (stats->ncov-2)*stats->cov_step-1,stats->cov_min + (stats->ncov-2)*stats->cov_step-1,stats->cov[stats->ncov-1]);
+        printf("COV\t[%d-%d]\t%d\t%ld\n",stats->cov_min + (icov-1)*stats->cov_step, stats->cov_min + icov*stats->cov_step-1,stats->cov_min + icov*stats->cov_step-1, (long)stats->cov[icov]);
+    printf("COV\t[%d<]\t%d\t%ld\n",stats->cov_min + (stats->ncov-2)*stats->cov_step-1,stats->cov_min + (stats->ncov-2)*stats->cov_step-1, (long)stats->cov[stats->ncov-1]);
 
 
     // Calculate average GC content, then sort by GC and depth
@@ -982,6 +983,40 @@ void output_stats(stats_t *stats)
 
 void bam_init_header_hash(bam_header_t *header);
 
+size_t getline(char **line, size_t *n, FILE *fp)
+{
+    if (line == NULL || n == NULL || fp == NULL)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    if (*n==0 || !*line)
+    {
+        *line = NULL;
+        *n = 0;
+    }
+
+    size_t nread=0;
+    int c;
+    while ((c=getc(fp))!= EOF && c!='\n')
+    {
+        if ( ++nread>=*n )
+        {
+            *n += 255;
+            *line = realloc(*line, sizeof(char)*(*n));
+        }
+        (*line)[nread-1] = c;
+    }
+    if ( nread>=*n )
+    {
+        *n += 255;
+        *line = realloc(*line, sizeof(char)*(*n));
+    }
+    (*line)[nread] = 0;
+    return nread>0 ? nread : -1;
+
+}
+
 void init_regions(stats_t *stats, char *file)
 {
     khiter_t iter;
@@ -1004,7 +1039,7 @@ void init_regions(stats_t *stats, char *file)
 
         int i = 0;
         while ( i<nread && !isspace(line[i]) ) i++;
-        if ( i>=nread ) error("Could not parse the file: %s\n", file);
+        if ( i>=nread ) error("Could not parse the file: %s [%s]\n", file,line);
         line[i] = 0;
 
         iter = kh_get(str, header_hash, line);
@@ -1210,8 +1245,8 @@ int main(int argc, char *argv[])
     stats->read_lengths  = calloc(stats->nbases,sizeof(uint64_t));
     stats->insertions    = calloc(stats->nbases,sizeof(uint64_t));
     stats->deletions     = calloc(stats->nbases,sizeof(uint64_t));
-    stats->ins_cycles    = calloc(stats->nbases,sizeof(uint64_t));
-    stats->del_cycles    = calloc(stats->nbases,sizeof(uint64_t));
+    stats->ins_cycles    = calloc(stats->nbases+1,sizeof(uint64_t));
+    stats->del_cycles    = calloc(stats->nbases+1,sizeof(uint64_t));
     if ( targets )
         init_regions(stats, targets);
 

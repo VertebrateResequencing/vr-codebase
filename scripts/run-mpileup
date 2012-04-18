@@ -76,7 +76,7 @@ sub new
             merge_pops => 0,
             
             # Set the depth filter (+/D=N) to about twice the average depth.
-            filter => 'vcf-annotate -f +',
+            filter => 'vcf-annotate --fill-AC-AN -f +',
             
             chunk_size        => 1_000_000,
             debug_chunks      => 0,
@@ -185,7 +185,7 @@ sub parse_args
     }
     if ( !exists($$self{filter}) )
     {
-        $$self{filter} = 'vcf-annotate -f +';
+        $$self{filter} = 'vcf-annotate --fill-AC-AN -f +';
         $self->warn("The 'filter' config key not present, assuming: $$self{filter}\n"); 
     }
     if ( $$self{clean} ) 
@@ -207,6 +207,8 @@ sub main
 
     my $outdir = $$self{outdir};
     my @chroms = @{$$self{chroms}};
+
+    if ( $self->is_finished("$outdir/all_done") ) { $self->all_done; }
 
     # Create sample list for each population group
     while (my ($pop,$value) = each %{$$self{pops}})
@@ -310,6 +312,7 @@ sub main
     $self->wait;
     $self->clean($outdir) unless !$$self{do_clean};
 
+    $self->cmd("touch $outdir/all_done");
     $self->all_done;
 }
 
@@ -386,7 +389,7 @@ sub population_group_bams_list
             last;
         }
     }
-    close($in);
+    close($in) or $self->throw("close $bam_list");
 
     if ( !$printed )
     { 
@@ -405,7 +408,7 @@ sub population_group_bams_list
             $self->throw("No matching BAM found for chr$chr; searched in file names (/chrom$chr\\./) and sample names: ",join(',',@$pops),"\n"); 
         }
         print $out join("\n", @$bams), "\n";
-        close($out);
+        close($out) or $self->throw("close $outfile.part");
 
         if ( defined $$self{sample_list} )
         {
@@ -422,7 +425,7 @@ sub population_group_bams_list
             }
         }
     }
-    if ( defined $out ) { close($out); }
+    if ( defined $out ) { close($out) or $self->throw("close $samples_fname"); }
 
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
@@ -519,7 +522,7 @@ sub sample_list
     {
         print $out "$sample\t$$sexes{$sample}\n";
     }
-    close($out);
+    close($out) or $self->throw("close $outfile.part");
 
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
@@ -784,7 +787,7 @@ sub concat_vcfs
         my $to   = $$chunk{to};
         print $fh "$outdir/$pop/$chr/$chr:$from-$to.vcf.gz\n";
     }
-    close($fh);
+    close($fh) or $self->throw("close $chunks_list");
 
     my $filter = $$self{filter} ? "| $$self{filter}" : '';
     $self->cmd("vcf-concat -f $chunks_list $filter | bgzip -c > $outfile.part");
@@ -803,9 +806,9 @@ sub concat_chroms
     {
         print $fh "$outdir/$pop/$chr.vcf.gz\n";
     }
-    close($fh);
+    close($fh) or $self->throw("close $chunks_list");
 
-    $self->cmd("vcf-concat -f $chunks_list | $$self{filter} | bgzip -c > $outfile.part");
+    $self->cmd("vcf-concat -p -f $chunks_list | $$self{filter} | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
 }
 

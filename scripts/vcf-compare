@@ -164,6 +164,18 @@ sub compare_vcfs
             "#SD        7 .. number of Het_RA mismatches\n",
             "#SD        8 .. number of Hom_AA mismatches\n",
             "#SD        9 .. site's non-reference discordance rate\n";
+        print
+            "#AM ALT mismatches. The columns are:\n",
+            "#AM        1 .. chromosome\n",
+            "#AM        2 .. position\n",
+            "#AM        3 .. ALT in the first file\n",
+            "#AM        4 .. differing ALT\n";
+        print
+            "#RM REF mismatches. The columns are:\n",
+            "#RM        1 .. chromosome\n",
+            "#RM        2 .. position\n",
+            "#RM        3 .. REF in the first file\n",
+            "#RM        4 .. differing REF\n";
     }
 
     my $ifile = 0;
@@ -1137,7 +1149,7 @@ sub ref_alt_stats
     my $ref = $$grp[0]{ref};
     my $alt = join(',',sort split(/,/,$$grp[0]{alt}));
 
-    my $alt_mismatch = 0;
+    my $alt_mismatch;
     for (my $i=1; $i<@$grp; $i++)
     {
         my $rec = $$grp[$i];
@@ -1145,18 +1157,23 @@ sub ref_alt_stats
         if ( $ref ne $$rec{ref} ) 
         { 
             $$opts{ref_mismatch}++;
+            if ( $$opts{debug} ) { print "RM\t$$grp[0]{chr}\t$$grp[0]{pos}\t$$grp[0]{ref}\t$ref\n"; }
             return; 
         }
 
         my $tmp = join(',',sort split(/,/,$$rec{alt}));
         if ( $alt ne $tmp ) 
         { 
-            $alt_mismatch = 1;
+            $alt_mismatch = $tmp;
         }
     }
     if ( $alt ne '.' )
     {
-        if ( $alt_mismatch ) { $$opts{alt_mismatch}++; }
+        if ( defined $alt_mismatch ) 
+        { 
+            $$opts{alt_mismatch}++; 
+            if ( $$opts{debug} ) { print "AM\t$$grp[0]{chr}\t$$grp[0]{pos}\t$alt\t$alt_mismatch\n"; }
+        }
         else { $$opts{alt_match}++; }
     }
     $$opts{ref_match}++;

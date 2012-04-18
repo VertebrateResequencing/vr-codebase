@@ -298,8 +298,19 @@ sub impute2
     my $from = $2;
     my $to   = $3;
 
-    $self->set_chunk_options($chr,$from,$to);
+    # Check if there are any variants in this chunk
+    my @ret = `tabix $$self{in_vcf} $chr:$from-$to | head | wc -l`;
+    if ( !@ret ) { $self->throw("FIXME: tabix $$self{in_vcf} $chr:$from-$to | head | wc -l"); }
+    chomp($ret[0]);
+    if ( !$ret[0] ) 
+    {
+        $self->warn("Empty chunk $chr:$from-$to");
+        $self->cmd(qq[touch $outdir/02.impute2.$chunk.empty]);
+        $self->cmd(qq[touch $outfile]);
+        return;
+    }
 
+    $self->set_chunk_options($chr,$from,$to);
     my $genmap = $$self{gen_map};
     $genmap =~ s/\{CHROM\}/$chr/;
     if ( ! -e $genmap ) { $self->throw("The genmap [$genmap] does not exist.\n"); }
@@ -319,31 +330,19 @@ sub impute2_to_vcf
     my $to   = $3 + $$self{buffer_region}*1000;
     if ( $from<0 ) { $from = 0; }
     if ( -s "$outfile.e" ) { `cat $outfile.e >> $outfile.e.saved`; }
-    if ( -e "$outdir/02.impute2.$chunk.gz" )
+    if ( -e "$outdir/02.impute2.$chunk.empty" )
+    {
+        # This chunk is empty. Create an empty VCF with header.
+        $self->cmd(qq[tabix -h $$self{in_vcf} $chunk | bgzip -c > $outfile.part]);
+    }
+    elsif ( -e "$outdir/02.impute2.$chunk.gz" )
     {
         # Everything went OK
         $self->cmd(qq[$$self{vcf_impute2} -r $chr:$from-$to -i $$self{in_vcf} -o $outdir/02.impute2.$chunk 2>$outfile.e | bgzip -c > $outfile.part]);
     }
-    elsif ( -z "$outdir/02.impute2.$chunk.e" )
-    {
-        # From some reason, IMPUTE2 could not finish its task, but the error log is empty. Don't loose any sites,
-        #   even if they are not imputed.
-        $self->cmd(qq[tabix -h $$self{in_vcf} $chunk | bgzip -c > $outfile.part]);
-    }
     else
     {
-        # It's alright to go without the impute2 output if there are no variants in the 
-        #   input file. Save the error log. TODO: It makes more sense to do this check before
-        #   impute2 is run.
-        `cat $outdir/02.impute2.$chunk.e >> $outdir/02.impute2.$chunk.e.saved`;
-        unlink("$outdir/02.impute2.$chunk.e");
-
-        my @ret = $self->cmd(qq[tabix $$self{known_vcf} $chunk | head -100 | wc -l]);
-        if ( !@ret ) { $self->throw("FIXME: tabix $$self{known_vcf} $chunk | head -100 | wc -l"); }
-        chomp($ret[0]);
-        if ( $ret[0]!=0 ) { $self->throw("FIXME: tabix $$self{known_vcf} $chunk | head -100 | wc -l"); }
-
-        $self->cmd(qq[tabix -h $$self{in_vcf} $chunk | bgzip -c > $outfile.part]);
+        $self->throw("What happened: $outdir/02.impute2.$chunk, $$self{in_vcf} $chunk");
     }
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
