@@ -19,16 +19,19 @@ use VRTrack::Project;
 use VertRes::Utils::VRTrackFactory;
 use VertRes::QCGrind::Util;
 
-my $QC_GRIND_SCRIPT = "./qc_grind.pl";
-my $STUDY_LANES_SCRIPT = "./study_lanes.pl";
 my $pending_view = "../pending-view/pending_view.pl";
 
+my $title = 'Lane View';
 my $sw  = SangerWeb->new({
-    'title'   => q(QC Grind Lane View),
+    'title'   => $title,
     'banner'  => q(),
     'inifile' => SangerWeb->document_root() . q(/Info/header.ini),
 });
+
 my $utl = VertRes::QCGrind::Util->new();
+my $main_script = $utl->{SCRIPTS}{DATABASES_VIEW};
+my $proj_view_script = $utl->{SCRIPTS}{PROJECTS_VIEW};
+my $study_lanes_view_script = $utl->{SCRIPTS}{STUDY_LANES};
 
 my $USER = $sw->username();
 my $cgi = $sw->cgi();
@@ -72,37 +75,23 @@ sub displayLane
 		displayError("Can't retrieve lane $laneID\n");
 	}
 
-	my $name = $lane->name;
+	my $lanename = $lane->name;
 	my ($project,$sample,$library) = get_hierarchy_for_lane($vrtrack, $lane);
 
-	my $pname = $project->name;
-	my $pid = $project->id();
-	my $sname = $sample->name;
-	my $sid = $sample->id();
-	my $libname = $library->name;
-	my $lid = $library->id();
-	$name =~ /(\d+)_(\d+)/;
+	my $projname = $project->name;
+	my $projid = $project->id();
+
+	$lanename =~ /(\d+)_(\d+)/;
 	my $run = $1;
 
-	my $SPECIES_VIEW = $utl->{MODES}{SPECIES_VIEW};
-	my $PROJ_VIEW = $utl->{MODES}{PROJ_VIEW};
-	my $LIB_VIEW = $utl->{MODES}{LIB_VIEW};
-	print qq[
-		<h2 align="center" style="font: normal 900 1.5em arial">QC Grind</h2>
-		<h3 style="font: normal 700 1.5em arial">
-		<a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;db=$database">].ucfirst($database).qq[</a> : 
-		<a href="$SCRIPT_NAME?mode=$PROJ_VIEW&amp;proj_id=$pid&amp;db=$database">$pname</a> :
-		<a href="$SCRIPT_NAME?mode=$PROJ_VIEW&amp;proj_id=$pid&amp;db=$database">$sname</a> :
-		<a href="$SCRIPT_NAME?mode=$LIB_VIEW&amp;lib_id=$lid&amp;db=$database">$libname</a> :
-		$name 
-		];
+	print $cgi->h2({-align=>"center", -style=>"font: normal 900 1.5em arial"},"<a href='$main_script'>QC Grind</a> $title");
+	print $cgi->h3({-align=>"center", -style=>"font: normal 700 1.5em arial"},"Database : <a href='$proj_view_script?db=$database'>$database</a>");
 
-	if( $run !~ /SRR|ERR/ )
-	{
-		print qq{[<a href="http://intweb.sanger.ac.uk/perl/prodsoft/npg/npg/run/$run">npg</a>]};
+    print qq[ <h3 align="center" style="font: normal 700 1.5em arial"> Project : <a href="$study_lanes_view_script?db=$database&amp;proj_id=$projid">$projname</a> $lanename ];
+	if( $run !~ /SRR|ERR/ ) {
+        print qq{[<a target="_blank" href="http://intweb.sanger.ac.uk/perl/prodsoft/npg/npg/run/$run">npg</a>]};
 	}
-
-	print "</h3>";
+    print "</h3>";
 
 	my $status = $lane->qc_status;
 	my $auto_qc_status = $lane->auto_qc_status();
@@ -425,10 +414,8 @@ sub displayLane
 		if ($utl->{AUTH_USERS}{$USER}) {   
 			{
 				my $laneID = $lane->id();
-				my $LANE_UPDATE = $utl->{MODES}{LANE_UPDATE};
 				print qq[
 					<form action="$SCRIPT_NAME">
-					<input type="hidden" name="mode" value="$LANE_UPDATE">
 					<input type="hidden" name="db" value="$database">
 					<input type="hidden" name="lane_id" value="$laneID">
 					];

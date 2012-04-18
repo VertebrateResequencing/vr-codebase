@@ -73,9 +73,10 @@ sub displayProjectLaneForm
 {
     my ($cgi, $vrtrack, $database, $project) = @_;
 
-	my ($npg_status_filt, $auto_qc_status_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt);
+	my ($gt_status_filt, $npg_status_filt, $auto_qc_status_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt);
 
 	if( $cgi->param('filter')) {
+		$gt_status_filt = $cgi->param('gt_status');
 		$npg_status_filt = $cgi->param('npg_status');
 		$auto_qc_status_filt = $cgi->param('auto_qc_status');
 		$bases_mapped_filt = $cgi->param('bases_mapped');
@@ -83,6 +84,7 @@ sub displayProjectLaneForm
 		$rmdup_mapped_filt = $cgi->param('rmdup_mapped');
 	}
 	else {
+		$gt_status_filt = 'all';
 		$npg_status_filt = 'all';
 		$auto_qc_status_filt = 'all';
 	}
@@ -102,11 +104,10 @@ sub displayProjectLaneForm
     }
     
     my $pname = $project->name;
-	my $SPECIES_VIEW = $utl->{MODES}{SPECIES_VIEW};
-	my $PROJ_VIEW= $utl->{MODES}{PROJ_VIEW};
 
 	print $cgi->h2({-align=>"center", -style=>"font: normal 900 1.5em arial"},"<a href='$main_script'>QC Grind</a> Lane Status Update");
-	print $cgi->h3({-align=>"center", -style=>"font: normal 700 1.5em arial"},"<a href='$proj_view_script?db=$database'>".ucfirst($database)."</a>: $pname");
+	print $cgi->h3({-align=>"center", -style=>"font: normal 700 1.5em arial"},"Database : <a href='$proj_view_script?db=$database'>$database</a>");
+	print $cgi->h3({-align=>"center", -style=>"font: normal 700 1.5em arial"},"Project : $pname");
 	print $cgi->h5({-style=>"font: arial"},"<a href='$pending_view?mode=2&amp;db=$database'>Pending Requests</a>");
 
     print $cgi->br;
@@ -114,7 +115,7 @@ sub displayProjectLaneForm
     print qq[
         <div class="centerFieldset">
         <fieldset>
-        <legend>$pname</legend>
+        <legend>Lane status</legend>
         <table RULES=GROUPS>
         <tr>
 		<th style="width: 40px">Pass</th>
@@ -125,6 +126,7 @@ sub displayProjectLaneForm
         <th>Individual</th>
         <th>Library</th>
         <th>Run</th>
+    	<th>Genotype</th>
         <th>NPG Status</th>
         <th>Auto QC Status</th>
         <th>Mapped</th>
@@ -140,6 +142,7 @@ sub displayProjectLaneForm
 
     print qq[ <tr> ];
 	print $cgi->th(['','','','','','','','']);
+	print "<th>", $cgi->popup_menu( -name => 'gt_status', -values => ['all','confirmed','unconfirmed','unchecked','wrong'], -default => 'all',), "</th>"; 
 	print "<th>", $cgi->popup_menu( -name => 'npg_status', -values => ['all','pass','fail','pending'], -default => 'all',), "</th>"; 
 	print "<th>", $cgi->popup_menu( -name => 'auto_qc_status', -values => ['all','passed','failed','no_qc'], -default => 'all',), "</th>"; 
 	print "<th>", $cgi->textfield(-name=>'bases_mapped', -size=>1), "</th>";
@@ -157,7 +160,7 @@ sub displayProjectLaneForm
 			my @libraries = sort {$a->name cmp $b->name} @{$sample->libraries()};
 
 			foreach my $library ( @libraries ) {
-				my $lname = $library->name;
+				my $libname = $library->name;
 				my $lid = $library->id();
 				my $lanes = $library->lanes();
 
@@ -165,13 +168,15 @@ sub displayProjectLaneForm
 					my $mapping_raw_bases = 0;
 					my $duplication = 0;
 
-        			my $name = $lane->name;
+        			my $lanename = $lane->name;
+					my $gt_status = $lane->genotype_status;
         			my $npg_qc = $lane->npg_qc_status;
 					my $auto_qc_status = $lane->auto_qc_status();
 
                 	my $lane_status_colour = $utl->get_colour_for_status($lane->qc_status);
                 	my $lane_id = $lane->id;
 
+					next if $gt_status_filt ne 'all' && $gt_status_filt ne $gt_status;
 					next if $npg_status_filt ne 'all' && $npg_status_filt ne $npg_qc;
 					next if $auto_qc_status_filt ne 'all' && $auto_qc_status_filt ne $auto_qc_status;
 
@@ -193,19 +198,20 @@ sub displayProjectLaneForm
 							print $cgi->td("<input type='radio' name='$lane_id' value='$status' $state >");
 						}
 
-						my $LIB_VIEW= $utl->{MODES}{LIB_VIEW};
-						my $LANE_VIEW= $utl->{MODES}{LANE_VIEW};
+						my $gt_found = $lane_mapstats->{genotype_found};
+						my $gt_ratio = $lane_mapstats->{genotype_ratio};
+						my $gt_display = "$gt_status ($gt_found:$gt_ratio)";
+
 						print $cgi->td($iname);
-						#print qq[ <td style="background-color:$lane_status_colour;"><a href="$main_script?mode=$LIB_VIEW&amp;db=$database&amp;lib_id=$lid">$lname</a></td> ];
-						print $cgi->td($lname);
+						print $cgi->td($libname);
 
-						print qq [ <td style="background-color:$lane_status_colour;"><a href="$lane_view_script?lane_id=$lane_id&amp;db=$database">$name</a></td> ];
+						print qq [ <td style="background-color:$lane_status_colour;"><a href="$lane_view_script?lane_id=$lane_id&amp;db=$database">$lanename</a></td> ];
 
+						print $cgi->td($gt_display);
 						print $cgi->td([$npg_qc, $auto_qc_status, $lane_mapstats->{mapping_raw_bases}, $lane_mapstats->{duplication}, $lane_mapstats->{rmdup_bases_mapped}]);
 						print qq[</tr>];
 					}
 				} # foreach lane
-
 			} # foreach library
 		} # sample
     }
@@ -249,7 +255,9 @@ sub updateLaneData
 sub downloadLaneData {
     my ($cgi, $vrtrack, $project) = @_;
 
-	my ($npg_status_filt, $auto_qc_status_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt);
+	my ($gt_status_filt, $npg_status_filt, $auto_qc_status_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt);
+
+	$gt_status_filt = $cgi->param('gt_status');
 	$npg_status_filt = $cgi->param('npg_status');
 	$auto_qc_status_filt = $cgi->param('auto_qc_status');
 	$bases_mapped_filt = $cgi->param('bases_mapped');
@@ -273,7 +281,7 @@ sub downloadLaneData {
         else{$individuals2Samples{ $indname } = [ $sample ];}
     }
 
-    print "Sanger ID/Source Sample Name\tLibrary\tRun number\tLane QC status\tNPG status\tAuto QC status\tMapped\tDuplication\tRmDup Mapped\n";
+    print join ("\t","Sanger ID/Source Sample Name","Library","Run number","Genotype","Lane QC status","NPG status","Auto QC status","Mapped","Duplication","RmDup Mapped"), "\n";
 
     foreach( sort( keys( %individuals2Samples ) ) ) {
         my $iname = $_;
@@ -284,7 +292,7 @@ sub downloadLaneData {
 
 			foreach my $library ( @libraries ) {
 
-				my $lname = $library->name;
+				my $libname = $library->name;
 				my $lid = $library->id();
 				my $lanes = $library->lanes();
 
@@ -292,22 +300,28 @@ sub downloadLaneData {
 					my $mapping_raw_bases = 0;
 					my $duplication = 0;
 
-        			my $name = $lane->name;
+        			my $lanename = $lane->name;
+					my $gt_status = $lane->genotype_status;
 					my $lane_qc_status = $lane->qc_status;
         			my $npg_qc = $lane->npg_qc_status;
 					my $auto_qc_status = $lane->auto_qc_status();
 
+					next if $gt_status_filt ne 'all' && $gt_status_filt ne $gt_status;
 					next if $npg_status_filt ne 'all' && $npg_status_filt ne $npg_qc;
 					next if $auto_qc_status_filt ne 'all' && $auto_qc_status_filt ne $auto_qc_status;
 
 					my $lane_mapstats = getMapStats($lane);
 					if (%{$lane_mapstats}) {
 
+						my $gt_found = $lane_mapstats->{genotype_found};
+						my $gt_ratio = $lane_mapstats->{genotype_ratio};
+						my $gt_display = "$gt_status ($gt_found:$gt_ratio)";
+
 						next if $bases_mapped_filt && $lane_mapstats->{mapping_raw_bases} < $bases_mapped_filt;
 						next if $duplication_filt && $lane_mapstats->{duplication} < $duplication_filt;
 						next if $rmdup_mapped_filt && $lane_mapstats->{rmdup_bases_mapped} < $rmdup_mapped_filt;
 
-						print (join("\t",$iname,$lname,$name,$lane_qc_status,$npg_qc,$auto_qc_status,$lane_mapstats->{mapping_raw_bases},$lane_mapstats->{duplication},$lane_mapstats->{rmdup_bases_mapped}),"\n");
+						print (join("\t",$iname,$libname,$lanename,$gt_display,$lane_qc_status,$npg_qc,$auto_qc_status,$lane_mapstats->{mapping_raw_bases},$lane_mapstats->{duplication},$lane_mapstats->{rmdup_bases_mapped}),"\n");
 					}
 				} # foreach lane
 
@@ -315,28 +329,23 @@ sub downloadLaneData {
 		} # foreach sample
 	}
 }
-
 sub getMapStats {
 
 	my $lane = shift;
 	my %lane_mapstats;
 
-	#work out which mapstats has the QC data (i.e. check for images in the mapstats)
 	my @mappings = @{ $lane->mappings() };
-	my $mapstats;
-	foreach( sort {$a->row_id() <=> $b->row_id()} @mappings ) {
-		my $map = $_;
-		my $im = $map->images();
-		if( @{$im} > 0 ){$mapstats = $map;}
-	}
-	if ($mapstats) {
-		my $bases_mapped = $mapstats->bases_mapped;
-		if ($bases_mapped) {   # sometimes the mapping fails
-			$lane_mapstats{mapping_raw_bases} = sprintf("%.1f", ($mapstats->raw_bases()/1000000000)); # GB
-			$lane_mapstats{duplication} = sprintf("%.1f", ($mapstats->rmdup_bases_mapped()/$mapstats->raw_bases)*100);
-			$lane_mapstats{rmdup_bases_mapped} =  sprintf("%.1f", ($mapstats->rmdup_bases_mapped/1000000000)); # GB
-		}
-	}
-	return \%lane_mapstats;
+
+	foreach my $mapstats ( @mappings ) {
+        if ($mapstats->bases_mapped) {
+            $lane_mapstats{mapping_raw_bases} = sprintf("%.1f", ($mapstats->raw_bases()/1000000000)); # GB
+            $lane_mapstats{duplication} = sprintf("%.1f", ($mapstats->rmdup_bases_mapped()/$mapstats->raw_bases)*100);
+            $lane_mapstats{rmdup_bases_mapped} =  sprintf("%.1f", ($mapstats->rmdup_bases_mapped/1000000000)); # GB
+            $lane_mapstats{genotype_found} = $mapstats->genotype_found;
+            $lane_mapstats{genotype_ratio} = sprintf("%.3f",$mapstats->genotype_ratio);
+            last;
+        }
+    }
+    return \%lane_mapstats;
 }
 

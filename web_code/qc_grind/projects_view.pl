@@ -1,5 +1,5 @@
 #!/usr/local/bin/perl -T
-# Displays projects view
+# Display QC Grind projects view
 
 BEGIN {
     $ENV{VRTRACK_HOST} = 'mcs4a';
@@ -19,7 +19,7 @@ use VRTrack::Project;
 use VertRes::Utils::VRTrackFactory;
 use VertRes::QCGrind::Util;
 
-my $title = 'QC Grind Projects';
+my $title = 'Projects View';
 my $sw  = SangerWeb->new({
     'title'   => $title,
     'banner'  => q(),
@@ -51,13 +51,12 @@ sub displayProjectsPage
     
 	my $main_script = $utl->{SCRIPTS}{DATABASES_VIEW};
 	my $st_lanes_script = $utl->{SCRIPTS}{STUDY_LANES};
-	my $st_samples_script = $utl->{SCRIPTS}{STUDY_SAMPLES};
+	my $st_samples_script = $utl->{SCRIPTS}{SAMPLES_VIEW};
     print qq[
-    <h2 align="center" style="font: normal 900 1.5em arial"><a href="$main_script">QC Grind</a></h2>
-    <h3 style="font: normal 700 1.5em arial">].ucfirst($database).qq[</h3>
+    <h2 align="center" style="font: normal 900 1.5em arial"><a href="$main_script">QC Grind</a> $title</h2>
+    <h3 align="center" style="font: normal 700 1.5em arial">Database : $database</h3>
     ];
     
-    my $t = ucfirst( $database );
     print qq[
         <div class="centerFieldset">
         <fieldset style="width: 700px">
@@ -70,20 +69,19 @@ sub displayProjectsPage
         </tr>
     ];
     
-    foreach( @projects )
-    {
-        my $project = $_;
+    foreach my $project ( @projects ) {
+
         my $study = $project->study();
         my $acc = '-';
         if( defined( $study ) ) {
             $acc = $study->acc();
         }
         my $pid = $project->id();
-        my $name = $project->name;
+        my $projname = $project->name;
 
         print qq[
             <tr>
-                <td><a href="$st_lanes_script?db=$database&amp;proj_id=$pid">$name</a></td>
+                <td><a href="$st_lanes_script?db=$database&amp;proj_id=$pid">$projname</a></td>
                 <td>$acc</td>
                 <td><a href="$st_samples_script?db=$database&amp;proj_id=$pid">Samples</a></td>
             </tr>
