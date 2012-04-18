@@ -214,7 +214,7 @@ sub convert_to_be_imputed
             }
 
             # Check the ploidy
-            if ( index($$dat{GT},'/')==-1 && index($$dat{GT},'/')==-1  ) 
+            if ( index($$dat{GT},'/')==-1 && index($$dat{GT},'|')==-1  ) 
             { 
                 $gl_ar = 0;
                 if ( !defined $gl_rr or abs($gl_rr-$gl_aa)<1e-5 ) { $gl_rr = $gl_aa = 0.5 }
@@ -394,7 +394,7 @@ sub merge_lines
         $bb = $ubb;
 
         # Check the ploidy
-        if ( index($$gtypes{$sample}{GT},'/')==-1 && index($$gtypes{$sample}{GT},'/')==-1  )
+        if ( index($$gtypes{$sample}{GT},'/')==-1 && index($$gtypes{$sample}{GT},'|')==-1  )
         {
             $$gtypes{$sample}{GT} = $lk_aa >= $lk_bb ? $oa : $ob;
             if ( $lk_ab>1e-10 ) { error("FIXME: non-zero HET GL: $$rec{CHROM} $$rec{POS} .. $sample $lk_aa $lk_ab $lk_bb\n"); }
