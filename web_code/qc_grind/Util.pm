@@ -5,31 +5,15 @@ use strict;
 sub new {
     my $self={};
 
-#different modes/views possible ( will get rid of these)
-	$self->{MODES} = {
-		LANE_VIEW => 0,
-		LIB_VIEW => 1,
-		ERROR_DISPLAY => 2,
-		LIBS_VIEW => 3,
-		SPECIES_VIEW => 4,
-		LIB_UPDATE => 5,
-		PROJ_VIEW => 6,
-		SAMP_VIEW => 7,
-		LANE_UPDATE => 10,
-		LANES_UPDATE => 9,
-		FILTER_LANES => 11,
-		PROJ_LANE_VIEW => 12,
-	};
-
 	$self->{SCRIPTS} = {
 		DATABASES_VIEW => 'databases_view.pl',
 		PROJECTS_VIEW	=> 'projects_view.pl',
 		STUDY_LANES	=> 'study_lanes.pl',
-		STUDY_SAMPLES	=> 'study_samples.pl',
+		SAMPLES_VIEW	=> 'samples_view.pl',
 		LANE_VIEW	=> 'lane_view.pl',
 	};
 
-#possible states
+	#possible states
 	$self->{STATES} = {
 		PASSED => 'passed',
 		PENDING => 'pending',
@@ -41,132 +25,18 @@ sub new {
 		OPEN_LIBRARY => 'open',
 	};
 
-# Use SSO to authenticate, and then authorise against a list of people allowed to update the database.
+	# Use SSO to authenticate, and then authorise against a list of people allowed to update the database.
 	$self->{AUTH_USERS} = {
-		'jws' => 1, # Jim Stalker
-			'tk2' => 1, # Thomas Keane
-			'pd3' => 1, # Petr Danecek
-			'sb10'=> 1, # Sendu Bala
-			'rd'  => 1, # Richard Durbin
-			'kb1' => 1, # Karen McLaren
-			'ylx' => 1, #Yali Xue from Chris's group
-			'ak6' => 1, # Anja Kolb-Kokocinski (kuusamo)
-			'cj5' => 1, # chris joyce
+		'jws' => 'Jim Stalker',
+		'tk2' => 'Thomas Keane',
+		'pd3' => 'Petr Danecek',
+		'sb10'=> 'Sendu Bala',
+		'rd'  => 'Richard Durbin',
+		'kb1' => 'Karen McLaren',
+		'ylx' => "Yali Xue from Chris's group",
+		'ak6' => 'Anja Kolb-Kokocinski (kuusamo)',
+		'cj5' => 'chris joyce',
 	};
-
-$self->{CSS} = <<CSS ;
-
-.centerFieldset {
-text-align:center;
-}
-
-.centerFieldset fieldset {
-margin-left:auto;
-margin-right:auto;
-/* INHERITED ALIGNMENT IS CENTER. ONLY INCLUDE THIS IF YOU WANT */
-/* TO CHANGE THE ALIGNMENT OF THE CONTENTS OF THE FIELDSET */
-text-align:left;
-}
-
-.centerFieldset table {
-    margin-left:auto;
-    margin-right:auto;
-}
-
-table.summary {
-    border-collapse: collapse;
-    font: 0.9em Verdana, Arial, Helvetica, sans-serif;
-}
-
-table.summary td {
-    white-space: nowrap;
-    text-align: right;
-    padding-right: 1em;
-    padding-left: 1em;
-    padding-top: 2px;
-    padding-bottom: 2px;
-    border-bottom: #83a4c3 dotted 1px;
-}
-
-table.summary tr.header th, table.summary tr.header td {
-    font-weight:bold;
-    border-bottom: #83a4c3 solid 1px;
-    text-align: left;
-    vertical-align:middle;
-}
-
-table.summary tr.level th, table.summary tr.level td {
-    font-weight:bold;
-    border-bottom: #83a4c3 dotted 1px;
-    text-align: left;
-    vertical-align:middle;
-}
-
-table.summary tr.total th, table.summary tr.total td {
-    font-weight:bold;
-    background-color: #CBDCED;
-    border-bottom: #83a4c3 dotted 1px;
-    text-align: right;
-    vertical-align:middle;
-}
-
-input.btn {
-  font: bold 150% 'trebuchet ms',helvetica,sans-serif;
-  border:1px solid;
-  border-color: #707070 #000 #000 #707070;
-}
-
-input.btnhov { 
-  cursor:pointer;
-  border-color: #c63 #930 #930 #c63; 
-}
-
-.clear
-{
-    clear: both;
-    display: block;
-    overflow: hidden;
-    visibility: hidden;
-    width: 0;
-    height: 0;
-}
-
-img.preview:hover {
-    width: 480px;
-    height: 480px;
-}
-
-.thumbnail{
-position: relative;
-z-index: 0;
-}
-
-.thumbnail:hover{
-background-color: transparent;
-z-index: 50;
-}
-
-.thumbnail span{ /*CSS for enlarged image*/
-position: absolute;
-padding: 5px;
-left: -1000px;
-visibility: hidden;
-text-decoration: none;
-}
-
-.thumbnail span img{ /*CSS for enlarged image*/
-border-width: 0;
-padding: 2px;
-}
-
-.thumbnail:hover span{ /*CSS for enlarged image on hover*/
-visibility: visible;
-top: 0;
-left: -480px; /*position where enlarged image should offset horizontally */
-
-}
-
-CSS
     bless $self;
     return $self;
 }
@@ -282,31 +152,32 @@ sub printPreviewImage
 sub isDatabase
 {
 	my $self = shift;
-        my $db = shift;
-        
-        my @dbs = VertRes::Utils::VRTrackFactory->databases(1);
-        foreach( @dbs ){if( $db eq $_ ){return 1;}}
-        return 0;
+	my $db = shift;
+
+	my @dbs = VertRes::Utils::VRTrackFactory->databases(1);
+	foreach( @dbs ){if( $db eq $_ ){return 1;}}
+	return 0;
 }
 
-sub bp_to_nearest_unit {
-    my ($self,$bp,$dp) = @_;
-    $dp = 2 unless defined $dp;
+sub bp_to_nearest_unit
+{
+	my ($self,$bp,$dp) = @_;
+	$dp = 2 unless defined $dp;
 
-    my @units = qw( bp Kb Mb Gb Tb );
+	my @units = qw( bp Kb Mb Gb Tb );
 
-    my $power_ranger = int( ( length( abs($bp) ) - 1 ) / 3 );
-    my $unit = $units[$power_ranger];
-    my $unit_str;
+	my $power_ranger = int( ( length( abs($bp) ) - 1 ) / 3 );
+	my $unit = $units[$power_ranger];
+	my $unit_str;
 
-    my $value = int( $bp / ( 10 ** ( $power_ranger * 3 ) ) );
+	my $value = int( $bp / ( 10 ** ( $power_ranger * 3 ) ) );
 
-    if ( $unit ne "bp" ){
-        $unit_str = sprintf( "%.${dp}f%s", $bp / ( 10 ** ( $power_ranger * 3 ) ), " $unit" );
-    }
-    else{
-        $unit_str = "$value $unit";
-    }
-    return $unit_str;
+	if ( $unit ne "bp" ){
+		$unit_str = sprintf( "%.${dp}f%s", $bp / ( 10 ** ( $power_ranger * 3 ) ), " $unit" );
+	}
+	else{
+		$unit_str = "$value $unit";
+	}
+	return $unit_str;
 }
 1;
