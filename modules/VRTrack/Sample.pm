@@ -143,42 +143,45 @@ sub create {
         confess "Already a $table entry with value $name";
     }
     
-    $vrtrack->transaction_start();
+    my $next_id;
+    my $success = $vrtrack->transaction(sub {
+	# insert a fake record to obtain a unique id (row_id)
+	my $query = qq[INSERT INTO $table SET ${table}_id=0];
+	my $sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
+	my $rv    = $sth->execute or confess qq[The query "$query" failed: $!];
+	
+	# now update the inserted record
+	$next_id = $dbh->last_insert_id(undef, undef, $table, 'row_id') or confess "No last_insert_id? $!";
+	
+	if ($name) {
+	    my $hierarchy_name;
+	    
+	    my $fieldsref = $class->fields_dispatch();
+	    if ( exists($fieldsref->{hierarchy_name}) )
+	    {
+		$hierarchy_name = $name;
+		$hierarchy_name =~ s/\W+/_/g;
+	    }
+	    
+	    $name = qq[name='$name' ];
+	    if ($hierarchy_name) {
+		$name .= qq[, hierarchy_name='$hierarchy_name' ];
+	    }
+	}
+	
+	$query = qq[UPDATE $table SET ${table}_id=$next_id];
+	if ($name){
+	    $query .= qq[, $name ];     # add name, hierarchy_name clause
+	}
+	
+	$query .= qq[, changed=now(), latest=true WHERE row_id=$next_id];
+	$sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
+	$sth->execute or confess qq[The query "$query" failed: $!];
+    });
     
-    # insert a fake record to obtain a unique id (row_id)
-    my $query = qq[INSERT INTO $table SET ${table}_id=0];
-    my $sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
-    my $rv    = $sth->execute or confess qq[The query "$query" failed: $!];
-    
-    # now update the inserted record
-    my $next_id = $dbh->last_insert_id(undef, undef, $table, 'row_id') or confess "No last_insert_id? $!";
-    
-    if ($name) {
-        my $hierarchy_name;
-        
-        my $fieldsref = $class->fields_dispatch();
-        if ( exists($fieldsref->{hierarchy_name}) )
-        {
-            $hierarchy_name = $name;
-            $hierarchy_name =~ s/\W+/_/g;
-        }
-        
-        $name = qq[name='$name' ];
-        if ($hierarchy_name) {
-            $name .= qq[, hierarchy_name='$hierarchy_name' ];
-        }
+    unless ($success) {
+	confess $vrtrack->{transaction_error};
     }
-    
-    $query = qq[UPDATE $table SET ${table}_id=$next_id];
-    if ($name){
-        $query .= qq[, $name ];     # add name, hierarchy_name clause
-    }
-    
-    $query .= qq[, changed=now(), latest=true WHERE row_id=$next_id];
-    $sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
-    $sth->execute or confess qq[The query "$query" failed: $!];
-    
-    $vrtrack->transaction_commit();
     
     return $class->new($vrtrack, $next_id);
 }
