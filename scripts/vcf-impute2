@@ -109,7 +109,11 @@ sub convert_known
 {
     my ($opts) = @_;
 
-    if ( -e "$$opts{prefix}.known_haps" ) { return; }
+    if ( -e "$$opts{prefix}.known_haps" ) 
+    { 
+        warn("The file already exists, skipping: $$opts{prefix}.known_haps\n");
+        return; 
+    }
     if ( $$opts{known} eq '--' ) { return; }
 
     my $vcf = Vcf->new(file=>$$opts{known},%{$$opts{region}});
@@ -164,7 +168,11 @@ sub convert_to_be_imputed
 {
     my ($opts) = @_;
 
-    if ( -e "$$opts{prefix}.impute_haps" ) { return; }
+    if ( -e "$$opts{prefix}.impute_haps" ) 
+    { 
+        warn("The file already exists, skipping: $$opts{prefix}.impute_haps\n");
+        return; 
+    }
 
     my $vcf = Vcf->new(file=>$$opts{impute},%{$$opts{region}});
     $vcf->parse_header();
@@ -221,7 +229,7 @@ sub convert_to_be_imputed
             }
 
             # Check the ploidy
-            if ( index($$dat{GT},'/')==-1 && index($$dat{GT},'/')==-1  ) 
+            if ( index($$dat{GT},'/')==-1 && index($$dat{GT},'|')==-1  ) 
             { 
                 $gl_ar = 0;
                 if ( !defined $gl_rr or abs($gl_rr-$gl_aa)<1e-5 ) { $gl_rr = $gl_aa = 0.5 }
@@ -466,7 +474,7 @@ sub merge_lines
         my $gt_hash = $$gtypes{$$samples[$i]};
 
         # Check the ploidy
-        if ( index($$gt_hash{GT},'/')==-1 && index($$gt_hash{GT},'/')==-1  )
+        if ( index($$gt_hash{GT},'/')==-1 && index($$gt_hash{GT},'|')==-1  )
         {
             $$gt_hash{GT} = $lk_aa >= $lk_bb ? $oa : $ob;
             if ( $lk_ab>1e-10 ) { error("FIXME: non-zero HET GL: $$rec{CHROM} $$rec{POS} .. $$samples[$i] $lk_aa $lk_ab $lk_bb\n"); }

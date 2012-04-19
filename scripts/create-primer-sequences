@@ -523,6 +523,7 @@ sub output_primer
         my $span = $ridx - $lidx - length($lprimer);
         my $span_seq = substr($seq,$lidx,$span+length($rprimer)+length($lprimer));
         if ( $span<$$opts{span_min} or $span>$$opts{span_max} ) { error("The primer $id not within requested range <$$opts{span_min},$$opts{span_max}>: $span\n"); }
+        $span += length($lprimer) + length($rprimer);
 
         my $printed_id = $lprimer.'-'.$rprimer;
         if ( exists($$opts{printed}{$printed_id}) )

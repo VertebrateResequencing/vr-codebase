@@ -43,23 +43,15 @@ sub displayDatabasesPage {
         <h2 align="center" style="font: normal 900 1.5em arial">$title</h2>
         <div class="centerFieldset">
         <fieldset style="width: 500px">
-        <legend>Select database to QC</legend>
+        <legend>Databases</legend>
     ];
     
     my @dbs = VertRes::Utils::VRTrackFactory->databases(1);
 
 	my $script = $utl->{SCRIPTS}{PROJECTS_VIEW};
 	
-    foreach( @dbs )
-    {
-        print qq[
-            <p><a href="$script?db=$_">].ucfirst( $_ ).qq[</a></p>
-        ];
+    foreach( @dbs ) {
+		print $cgi->p("<a href='$script?db=$_'> $_ </a>");
     }
-    
-    print qq[
-        </fieldset>
-        </div>
-    ];
+    print qq[ </fieldset> </div> ];
 }
-
