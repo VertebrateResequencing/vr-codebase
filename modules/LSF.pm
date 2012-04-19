@@ -264,7 +264,7 @@ sub calculate_memory_limit
     $updated_memory_limit =  $mem + $minimum_memory_increase;
   }
   
-  return $updated_memory_limit;
+  return int($updated_memory_limit);
 }
 
 
