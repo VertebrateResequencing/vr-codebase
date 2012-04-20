@@ -1096,6 +1096,7 @@ sub apply_gapwin_filter
     my $vcf = $$opts{vcf};
     my $win = $$opts{filters}{GapWin};
     my $buffer = $$opts{GapWin_buffer};
+    my $n = @$buffer;
     my ($indel_chr,$indel_pos,$to);
 
     if ( defined $line )
@@ -1127,62 +1128,58 @@ sub apply_gapwin_filter
             else { $af = $vcf->get_field($af,0,',') }
             if ( !defined $af ) { $af=0 }
         }
-        push @$buffer, { line=>$line, chr=>$$line[0], from=>defined $indel_pos ? $indel_pos : $$line[1], to=>$to, exclude=>0, is_indel=>$is_indel, AF=>$af };
-    }
+        push @$buffer, { line=>$line, chr=>$$line[0], from=>defined $indel_pos ? $indel_pos : $$line[1], to=>$to, is_indel=>$is_indel, AF=>$af, exclude=>0 };
 
-    my $n = @$buffer;
-
-    # Is the new line an indel? If yes, check the distance to all previous lines
-    if ( defined $indel_chr )
-    {
-        for (my $i=0; $i<$n-1; $i++)
+        # Update the latest gap position and check if the buffer can be flushed
+        if ( $is_indel && (!exists($$opts{GapWin_chr}) or $$opts{GapWin_chr} ne $$line[0]) )
         {
-            my $buf = $$buffer[$i];
-            if ( $$buf{chr} ne $indel_chr ) { next; }
-            if ( !$$buf{is_indel} ) { next; }
-            if ( $$buf{to}>=$indel_pos-$win ) 
-            { 
-                $$buf{exclude}=1; 
-                $$buffer[-1]{exclude}=1; 
+            $$opts{GapWin_chr} = $$line[0];
+            $$opts{GapWin_to}  = $$line[1] + $win;
+        }
+        $$opts{GapWin_chr} = $$line[0];
+        if ( $is_indel )
+        {
+            if ( $to+$win>$$opts{GapWin_to} ) { $$opts{GapWin_to} = $to+$win; }
+
+            # Check distance to previous indels and set the exclude flags
+            for (my $i=0; $i<$n; $i++)
+            {
+                if ( !$$buffer[$i]{is_indel} ) { next; }
+                if ( $$buffer[$i]{to}>=$indel_pos-$win ) 
+                { 
+                    $$buffer[$i]{exclude}=1; 
+                    $$buffer[-1]{exclude}=1; 
+                }
             }
         }
+        if ( $$opts{GapWin_chr} eq $$line[0] && $$line[1]<=$$opts{GapWin_to} ) { return (); } # not ready 
     }
-    if ( defined $line && $$buffer[0]{chr} eq $$buffer[-1]{chr} && $win+$$buffer[0]{to}>=$$buffer[-1]{from} )
-    {
-        # There are not enough rows in the buffer: the GapWin window spans them all. Wait until there is more rows
-        #   or a new chromosome
-        return ();
-    }
-
-    # Output. If no $line was given, output everything
-    $to = $$buffer[-1]{from}-$win;
-    my $chr = $$buffer[-1]{chr};
 
     # Let one of the gaps go through. It may not be the best one, but as there are more
     #   it is likely that at least one of them is real. Better to have the wrong one 
     #   than miss it completely. Base the decision on AF. If not present, let the first 
     #   one through.
-    my $max_af=0;
-    for my $buf (@$buffer)
+    my $max_af=-1;
+    for (my $i=0; $i<$n; $i++)
     {
-        if ( $$buf{chr} eq $chr && $$buf{to}+$win>=$to && defined $line ) { last; }
-        if ( !$$buf{exclude} ) { next; }
-        if ( $max_af<$$buf{AF} ) { $max_af=$$buf{AF} }
+        if ( !$$buffer[$i]{exclude} ) { next; }
+        if ( $max_af<$$buffer[$i]{AF} ) { $max_af=$$buffer[$i]{AF} }
     }
-
-    my @out;
-    while (@$buffer)
+    for (my $i=0; $i<$n; $i++)
     {
-        if ( $$buffer[0]{chr} eq $chr && $$buffer[0]{to}+$win>=$to && defined $line ) { last; }
-
+        if ( !$$buffer[$i]{exclude} ) { next; }
+        if ( $max_af==$$buffer[$i]{AF} ) { $$buffer[$i]{exclude}=0; last; }
+    }
+    my @out;
+    for (my $i=0; $i<$n; $i++)
+    {
         my $buf = shift(@$buffer);
-        if ( $$buf{exclude} && $max_af!=$$buf{AF} )
+        if ( $$buf{exclude} )
         {
             $$buf{line}[6] = $$opts{vcf}->add_filter($$buf{line}[6],'GapWin'=>1); 
         }
         else
         {
-            if ( $$buf{exclude} ) { $max_af=-1; }    # One was printed, the rest will be filtered
             $$buf{line}[6] = $$opts{vcf}->add_filter($$buf{line}[6],'GapWin'=>0); 
         }
         push @out,$$buf{line};
