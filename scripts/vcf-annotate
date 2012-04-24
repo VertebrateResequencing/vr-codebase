@@ -581,7 +581,8 @@ sub fill_ac_an_hwe
     my ($opts,$line) = @_;
     my $igt = $$opts{vcf}->get_tag_index($$line[8],'GT',':');
     if ( $igt==-1 ) { return; }
-    my %counts = ( 0=>0 );
+    my %counts     = ( 0=>0 );
+    my %dpl_counts = ( 0=>0 );
     if ( $$line[4] ne '.' )
     {
         my $idx=0;
@@ -598,11 +599,13 @@ sub fill_ac_an_hwe
         my $gt = $$opts{vcf}->get_field($$line[$isample],$igt);
         my ($a1,$a2) = $$opts{vcf}->split_gt($gt);
         if ( $a1 ne '.' ) { $counts{$a1}++ }
-        if ( defined($a2) && $a2 ne '.' ) 
+        if ( defined $a2 && $a2 ne '.' ) 
         { 
             $counts{$a2}++;
             if ( $a1 ne '.' )
             {
+                $dpl_counts{$a1}++;
+                $dpl_counts{$a2}++;
                 if ( $a1 ne $a2 ) { $nhets++ }
                 $ngts++;
             }
@@ -616,21 +619,20 @@ sub fill_ac_an_hwe
     {
         if ( $key eq 0 ) { $an += $counts{$key}; next; }
         if ( defined $ac ) { $ac .= ','; }
-        my $count = $counts{$key};
-        $ac .= $count;
-        $an += $count;
-        if ( $count>$max_ac ) { $max_ac = $count; }
+        $ac .= $counts{$key};
+        $an += $counts{$key};
+        if ( exists($dpl_counts{$key}) && $dpl_counts{$key}>$max_ac ) { $max_ac = $dpl_counts{$key}; }
     }
 
     my %tags = (AN=>$an);
     if ( defined $ac ) { $tags{AC}=$ac }
-    if ( $$opts{fill_hwe} )
+    my $nall = $dpl_counts{0} + $max_ac;
+    if ( $$opts{fill_hwe} && $nall )
     {
-        my $nall = $counts{0} + $max_ac;
         my $freq_obs = 2*$nhets/$nall;
         my $freq_exp = 2*($max_ac/$nall)*(1-($max_ac/$nall));
         $$opts{icf} = $freq_exp ? 1-$freq_obs/$freq_exp : 0;
-        $$opts{hwe} = eval_hwe(($max_ac-$nhets)/2,($counts{0}-$nhets)/2,$nhets);
+        $$opts{hwe} = eval_hwe(($max_ac-$nhets)/2,($dpl_counts{0}-$nhets)/2,$nhets);
         $tags{HWE} = sprintf "%.6f", $$opts{hwe};
     }
     if ( $$opts{fill_icf} )
@@ -1131,16 +1133,15 @@ sub apply_gapwin_filter
         push @$buffer, { line=>$line, chr=>$$line[0], from=>defined $indel_pos ? $indel_pos : $$line[1], to=>$to, is_indel=>$is_indel, AF=>$af, exclude=>0 };
 
         # Update the latest gap position and check if the buffer can be flushed
-        if ( $is_indel && (!exists($$opts{GapWin_chr}) or $$opts{GapWin_chr} ne $$line[0]) )
+        if ( !exists($$opts{GapWin_chr}) )
         {
             $$opts{GapWin_chr} = $$line[0];
-            $$opts{GapWin_to}  = $$line[1] + $win;
+            $$opts{GapWin_to} = $$line[1];
         }
-        $$opts{GapWin_chr} = $$line[0];
-        if ( $is_indel )
-        {
-            if ( $to+$win>$$opts{GapWin_to} ) { $$opts{GapWin_to} = $to+$win; }
+        my $flush = ( $$opts{GapWin_chr} eq $$line[0] && $$line[1]<=$$opts{GapWin_to} ) ? 0 : 1;
 
+        if ( $is_indel ) 
+        { 
             # Check distance to previous indels and set the exclude flags
             for (my $i=0; $i<$n; $i++)
             {
@@ -1151,8 +1152,11 @@ sub apply_gapwin_filter
                     $$buffer[-1]{exclude}=1; 
                 }
             }
+            if ( $$opts{GapWin_chr} ne $$line[0] or $to+$win>$$opts{GapWin_to} ) { $$opts{GapWin_to} = $to+$win; }
         }
-        if ( $$opts{GapWin_chr} eq $$line[0] && $$line[1]<=$$opts{GapWin_to} ) { return (); } # not ready 
+        $$opts{GapWin_chr} = $$line[0];
+        if ( !$flush ) { return (); }
+        if ( !$is_indel ) { $$opts{GapWin_to} = 0; }
     }
 
     # Let one of the gaps go through. It may not be the best one, but as there are more
