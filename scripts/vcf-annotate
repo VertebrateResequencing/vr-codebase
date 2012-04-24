@@ -598,7 +598,7 @@ sub fill_ac_an_hwe
         my $gt = $$opts{vcf}->get_field($$line[$isample],$igt);
         my ($a1,$a2) = $$opts{vcf}->split_gt($gt);
         if ( $a1 ne '.' ) { $counts{$a1}++ }
-        if ( $a2 ne '.' ) 
+        if ( defined($a2) && $a2 ne '.' ) 
         { 
             $counts{$a2}++;
             if ( $a1 ne '.' )
