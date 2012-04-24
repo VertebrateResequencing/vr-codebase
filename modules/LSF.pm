@@ -135,9 +135,10 @@ sub job_in_bjobs
     if ( $$job{status} eq 'RUN' ) 
     {
         my $bswitch;
-        if ( $$job{queue} eq 'normal' && $$job{cpu_time}*1.1 > 12*3600 ) { $bswitch = 'long' }
-        elsif ( $$job{queue} eq 'long' && $$job{cpu_time}*1.1 > 2*24*3600 ) { $bswitch = 'basement' }
-        if ( defined $bswitch )
+        if ( $$job{cpu_time}*1.3 > 2*24*3600 ) { $bswitch = 'basement' }
+        elsif ( $$job{cpu_time}*1.3 > 12*3600 && $$job{queue} ne 'basement' ) { $bswitch = 'long' }
+
+        if ( defined $bswitch && $bswitch ne $$job{queue} )
         {
             warn("Changing queue of the job $jid from $$job{queue} to $bswitch\n");
             `bswitch $bswitch $jid`;
