@@ -195,8 +195,13 @@ sub bam_to_fastq {
     if (! defined $memory || $memory < 6900) {
         $memory = 6900;
     }
+    
+    ### We need to check old jobs here to see if it bummed out because of memory and increase the java memory accordingly
+    ### if we know whats its going to be increased to we can set java to 90% of it.
+    
     my $java_mem = int($memory * 0.9);
-    my $queue = $memory >= 30000 ? "hugemem" : "normal";
+    my $queue = $memory >= 30000 ? "hugemem" : "long";
+    my $samtools_sorting_memory = $memory*1000000*0.3;
     
     my $fastqs_str ; 
     if( $self->is_paired )
@@ -216,6 +221,7 @@ sub bam_to_fastq {
 use strict;
 use VertRes::Utils::Sam;
 use File::Spec;
+use VertRes::Wrapper::samtools;
 
 my \$dir = '$lane_path';
 my \@fastqs = $fastqs_str;
@@ -226,8 +232,10 @@ for my \$fastq (\@fastqs)
     unlink(\$fastq,\$fastq.'.fastqcheck');
 }
 
-# convert to fastq
-VertRes::Utils::Sam->new(verbose => 1, quiet => 0, java_memory => $java_mem)->bam2fastq(qq[$in_bam], qq[$fastq_base]);
+VertRes::Wrapper::samtools->new()->sort(qq[$in_bam], qq[sorted], n => 1, m => $samtools_sorting_memory);
+system("mv sorted.bam $in_bam");
+
+VertRes::Utils::Sam->new(verbose => 1, quiet => 0, java_memory => $java_mem )->bam2fastq(qq[$in_bam], qq[$fastq_base]);
 };
     unless($self->is_paired){
     print $scriptfh qq{
