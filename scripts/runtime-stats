@@ -199,7 +199,7 @@ sub plot
 
     if ( !exists($$opts{stats}{$key}) ) { return; }
 
-    my $prefix = "$$opts{plot}-$key";
+    my $prefix = $$opts{plot}=~m{/$} ? "$$opts{plot}$key" : "$$opts{plot}-$key";
     open(my $fh,'>',"$prefix.gp") or error("$prefix.gp: $!");
     print $fh qq[
         set terminal png size 600,400 truecolor font "DejaVuSansMono,9"
