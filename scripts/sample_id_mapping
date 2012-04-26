@@ -1,0 +1,135 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+sample_mappings
+
+=head1 SYNOPSIS
+
+Retrieve the mappings between Sanger sample names, supplier names and accessions from the warehouse (all samples in the system).
+
+=head1 DESCRIPTION
+
+The command line parameters to pass are:
+	NOTE: Both parameters are optional, only one one must be specified.
+     -s   Name of study 
+     -d   DB name (to retrieve a list of the available samples for that database).
+
+[IMPORTANT NOTE: If the study name contains space characters you must either enter the name in 'quotes' or escape each space using \ ]
+
+Examples of use:
+    > Retrieve mappings of all samples in the warehouse:
+    	sample_mappings -s Bronx Waltzer
+	
+    > Retrieve list of studies using database name for interactive use: 
+    	sample_mappings -d vrtrack_mouse_wgs
+    	This will provide a list of studies for interactive selection - the mappings will then be obtained from the warehouse.
+
+Output is to a tab-delimited file.
+
+=head1 AUTHOR
+
+jm23@sanger.ac.uk
+
+=cut
+
+use strict;
+use warnings;
+use Getopt::Long;
+use DBI;
+use POSIX qw(strftime);
+
+my ($study, $db, $help);
+
+GetOptions(
+    'study=s'     =>  \$study,
+    'db=s'        =>  \$db,
+    'h|help'	  =>  \$help,
+);
+
+($study || $db && !$help) or die <<USAGE;
+Usage options: 
+[IMPORTANT NOTE: If the study name contains space characters you must 
+either enter the name in 'quotes' or escape each space using \\ ]
+    Retrieve from warehouse:
+    	$0 -s <study>
+    Retrieve study list for interactive selection	
+    	$0 -d <vrtrack_db>
+USAGE
+
+#vrtrack database connection parameters (set in env)
+my %dbparams = (host => $ENV{VRTRACK_HOST}, port => $ENV{VRTRACK_PORT} || 3306, user => $ENV{VRTRACK_RO_USER});
+#web db has database and study mappings
+my $web_db = 'vrtrack_web_index';
+#sql to fetch project names
+my $sql_select_project_names = "select d.project_name from tracking_database t, db_projects d where d.db_id=t.db_id and t.db_name = ? order by d.project_name";
+
+#if db is specified, select the study to download
+$study = get_study($db, $sql_select_project_names) unless $study;
+
+#connection to warehouse
+my $dbh = DBI->connect("DBI:mysql:host=mcs7:port=3306;database=warehouse_two_production", "warehouse_ro", undef, {'RaiseError' => 1, 'PrintError'=>0});
+#mapping sql
+my $sql = "select distinct (csa.supplier_name), ifnull(csa.sanger_sample_id, 'N/A'), ifnull(csa.accession_number, 'N/A') 
+	        from current_samples csa, study_samples sta, current_studies cst where csa.internal_id = sta.sample_internal_id 
+	        and sta.study_internal_id = cst.internal_id and cst.name = ? and csa.supplier_name is not null"; 
+
+#fetch mappings and write to file
+my ($supp_name, $sanger_name, $acc);
+my $sth = $dbh->prepare($sql);
+$sth->execute($study);
+$sth->bind_columns(undef, \$supp_name, \$sanger_name, \$acc);
+
+my $date = strftime "%Y-%m-%d", localtime;
+my $time = strftime "%H:%M:%S", localtime;
+my $filest = length($study) > 30 ? substr($study, 0, 30) : $study;
+
+$filest =~ s/[^a-zA-Z0-9\._-]/_/g;
+
+my $outfile = $filest.'_'.$date.'.tab';
+open OUTFILE, '>', $outfile;
+print OUTFILE "## sample mappings for $study, taken at $time on $date.\n";
+print OUTFILE "Supplier_id\tSanger_sample_id\tSample_accession\n";
+while ($sth->fetch()) {
+	print OUTFILE "$supp_name\t$sanger_name\t$acc\n";
+}
+close OUTFILE;
+print "Results written to $outfile\n";
+
+$sth->finish();
+$dbh->disconnect();
+
+#subroutine to fetch the study interactively if the database is specified
+sub get_study {
+	my ($db_in, $sql_in) = @_;
+	$dbh = DBI->connect("dbi:mysql:$web_db;host=$dbparams{host};port=$dbparams{port}", $dbparams{user}, undef, { RaiseError => 0 });
+	my $index = 0;
+	my %result;
+	my ($name, $input_index);
+	my $sth = $dbh->prepare($sql_in);
+	$sth->execute($db_in);
+	$sth->bind_col(1, \$name);
+	while($sth->fetch()) {
+		$result{++$index} = $name;
+	}
+	$sth->finish();
+	$dbh->disconnect();
+	my @order = sort {$a <=> $b} keys %result;
+	if (scalar @order == 0) {
+		print "A search for the database $db_in has found no studies.\n";
+		exit 1;
+	}
+	print "-----------\nSelect a study from the list (enter a number 1 - $index):\n\n";
+	foreach ( @order ) {
+		print "\t$_: $result{$_}\n";	
+	}
+	my $looking = 1; 
+	while ( $looking ) {
+		chomp ($input_index = <>);
+		if ( ! $result{$input_index} ) {
+			print "invalid input, please try again!\n";
+		}
+		else { $looking = 0 };
+	}	
+	return $result{$input_index};
+}
