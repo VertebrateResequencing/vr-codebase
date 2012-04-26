@@ -1,0 +1,130 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+use Carp;
+use DBI;
+use strict;
+use warnings;
+
+my ($db, $help);
+
+GetOptions(
+    'db=s'        =>  \$db,
+    'h|help'	  =>  \$help,
+);
+
+($db && !$help) or die <<USAGE;
+Usage options: $0 -d <vrtrack_db>
+USAGE
+
+if ( $db !~ m/^.+w[eg]s$/ ) {
+	print "-----------\nThis script is designed to be used with the new vrtrack databases used by the vr-pipe pipeline.\n";
+	print "It will update the name and hierarchy name fields of the individual table with the supplier name from the warehouse.\n";
+	print "Are you sure you wish to proceed (y/n):\n\n";
+	my $looking = 1; 
+	while ( $looking ) {
+		my $input;
+		chomp ($input = <>);
+		if ( uc($input) eq 'N') {
+			exit 0;
+		}
+		elsif ( uc($input) eq 'Y') {
+			$looking = 0;
+		}
+		else {
+			print "Enter y or n....\n";
+		}	
+	}
+}
+
+#vrtrack database connection parameters (set in env)
+my $HOST = $ENV{VRTRACK_HOST};
+my $PORT = $ENV{VRTRACK_PORT} || 3306;
+my $WRITE_USER = $ENV{VRTRACK_RW_USER};
+my $WRITE_PASS = $ENV{VRTRACK_PASSWORD};
+
+#warehouse connection:
+my $wh2_dbh = DBI->connect("DBI:mysql:host=mcs7:port=3306;database=warehouse_two_production", "warehouse_ro",undef,
+                             {'RaiseError' => 1, 'PrintError'=>0});
+#SQL statements
+#vrtrack database
+my $sql_select_sample_names = "select s.name, s.individual_id, i.name, i.acc from latest_sample s, individual i where s.individual_id = i.individual_id";
+my $sql_select_individual_check = "select individual_id, name, acc from individual";
+my $sql_update_individual_acc_name = "update individual set name = ?, hierarchy_name = ?, acc = ? where individual_id = ?";
+my $sql_update_individual_name = "update individual set name = ?, hierarchy_name = ? where individual_id = ?";
+
+my $sql_update_sample_indiv_id = "update sample set individual_id = ? where individual_id = ?";
+my $sql_delete_individual = "delete from individual where individual_id = ?";
+my $sql_update_missing_acc = "update individual set acc = ? where individual_id = ?";
+
+#warehouse database
+my $sql_select_supplier_name = "select accession_number, supplier_name from current_samples c where name = ?";
+
+#warehouse statement handle
+my $whsth = $wh2_dbh->prepare($sql_select_supplier_name);
+
+my $dbh = DBI->connect("DBI:mysql:host=$HOST:port=$PORT;database=$db", $WRITE_USER, $WRITE_PASS, {'RaiseError' => 1, 'PrintError'=>0});
+my $sth = $dbh->prepare($sql_select_sample_names);
+my $sth_i1 = $dbh->prepare($sql_update_individual_acc_name);
+my $sth_i2 = $dbh->prepare($sql_update_individual_name);
+my $sth_i3 = $dbh->prepare($sql_update_sample_indiv_id);
+my $sth_i4 = $dbh->prepare($sql_delete_individual);
+my $sth_i5 = $dbh->prepare($sql_update_missing_acc);
+my $sth_i6 = $dbh->prepare($sql_select_individual_check);
+my($sample_name, $indiv_id, $indiv_name, $current_acc, %supplier_name_check);
+$sth_i6->execute();
+$sth_i6->bind_columns(undef, \$indiv_id, \$indiv_name, \$current_acc);
+while ($sth_i6->fetch) {
+	$current_acc = defined $current_acc ? $current_acc : 'NO_ACC';
+	$supplier_name_check{$indiv_name} = $indiv_id.':'.$current_acc;
+}
+$sth->execute();
+$sth->bind_columns(undef, \$sample_name, \$indiv_id, \$indiv_name, \$current_acc);
+while ($sth->fetch) {
+    my ($acc, $supplier_name);
+	$whsth->execute($sample_name);
+    $whsth->bind_columns(undef, \$acc, \$supplier_name);
+	while ($whsth->fetch) {
+		if (defined $supplier_name) {
+			if ( $supplier_name eq $indiv_name ) {
+				$current_acc = defined $current_acc ? $current_acc : 'NO_ACC';
+				if (defined $acc && ($acc ne $current_acc) ) {
+					$current_acc = $acc;
+					$sth_i5->execute($acc, $indiv_id);
+					$supplier_name_check{$indiv_name} = $indiv_id.':'.$current_acc;
+				} 
+			} 
+			else {
+				if ( $supplier_name_check{$supplier_name} ) {
+					#get indiv_id and acc
+					my @indiv_acc = split(':', $supplier_name_check{$supplier_name});
+					my $new_indiv = $indiv_acc[0];
+					my $new_acc = $indiv_acc[1];
+					#reassign sample to this individual
+					$sth_i3->execute($new_indiv, $indiv_id);
+					#delete current indiv_id
+					$sth_i4->execute($indiv_id);
+					if ( defined $acc && $new_acc eq 'NO_ACC') {
+						#update acc if defined
+						$sth_i5->execute($acc, $new_indiv);
+					}
+				}	
+				else {
+					my $hierarchy_name = $supplier_name;
+					$hierarchy_name =~ s/[^a-zA-Z0-9\._-]/_/g;
+					if (defined $acc) {
+						$sth_i1->execute($supplier_name, $hierarchy_name, $acc, $indiv_id);
+						$supplier_name_check{$supplier_name} = $indiv_id.':'.$acc;	
+					}
+					else {
+						$sth_i2->execute($supplier_name, $hierarchy_name, $indiv_id);
+						$supplier_name_check{$supplier_name} = $indiv_id.':NO_ACC';
+					}
+				}
+			}	
+		}
+	}
+}
+
+$whsth->finish();
+$wh2_dbh->disconnect();
