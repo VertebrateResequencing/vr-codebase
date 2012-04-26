@@ -136,7 +136,7 @@ sub job_in_bjobs
     {
         my $bswitch;
         if ( $$job{cpu_time}*1.3 > 2*24*3600 ) { $bswitch = 'basement' }
-        elsif ( $$job{cpu_time}*1.3 > 12*3600 && $$job{queue} ne 'basement' ) { $bswitch = 'long' }
+        elsif ( $$job{cpu_time}*1.3 > 2*3600 && $$job{queue} ne 'basement' ) { $bswitch = 'long' }
 
         if ( defined $bswitch && $bswitch ne $$job{queue} )
         {
