@@ -344,7 +344,7 @@ sub join_vcfs_chr
     {
         $$opts{header_printed} = 1;
 
-        $$opts{vcf}->add_header_line({key=>'INFO',ID=>'PS',Number=>1,Type=>'Integer',Description=>'Phase set'});
+        $$opts{vcf}->add_header_line({key=>'FORMAT',ID=>'PS',Number=>1,Type=>'Integer',Description=>'Phase set'});
         $$opts{vcf}->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
         print {$$opts{out_fh}} $$opts{vcf}->format_header();
 
