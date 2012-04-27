@@ -537,7 +537,6 @@ sub impute2_to_vcf
     $vcf->add_header_line({key=>'INFO',ID=>'IMP2',Number=>3,Type=>'Float',Description=>'IMPUTE2 scores: exp_freq_a1, info, certainty'});
 
     my $samples = check_samples($vcf,$$opts{impute2_samples});
-    print $vcf->format_header();
 
     open(my $fh,"zcat $$opts{impute2_out} |") or error("zcat $$opts{impute2_out}: $!");
     my ($fh_haps,$fh_haps_conf);
@@ -551,6 +550,11 @@ sub impute2_to_vcf
 
     if ( !defined $fh_haps ) { warn("Phasing information not available, could not open the file: $$opts{impute2_haps}\n"); }
     if ( !defined $fh_haps_conf ) { warn("Phasing information not available, could not open the file: $$opts{impute2_hap_conf}\n"); }
+    else 
+    { 
+        $vcf->add_header_line({key=>'FORMAT',ID=>'PQ',Number=>1,Type=>'Float',Description=>'IMPUTE2 phasing confidence score'});
+    }
+    print $vcf->format_header();
 
     my ($vcf_line,$imp_line,$haps_line,$haps_conf_line,$vcf_pos,$imp_pos,$info);
     while (1)
