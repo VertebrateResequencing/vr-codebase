@@ -144,6 +144,7 @@ use VertRes::Parser::fastqcheck;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::File;
+use VRTrack::Assembly;
 use File::Basename;
 use Time::Format;
 use LSF;
@@ -1192,6 +1193,15 @@ sub statistics {
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
     my $release_date = $self->{release_date};
+
+    # get_genome_coverage needs reference_size
+    my $reference_size = 0;
+    if(exists $$self{'get_genome_coverage'} && $$self{'get_genome_coverage'}) {
+	my $vrtrack  = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
+	my $assembly = VRTrack::Assembly->new_by_name($vrtrack, $$self{assembly_name});
+	$reference_size = $assembly->reference_size();
+	unless($reference_size){ $self->throw("Failed to find reference genome size for lane $lane_path\n"); }
+    }
     
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
     # independantly.
@@ -1233,8 +1243,11 @@ unless (\$num_present == ($#stat_files + 1)) {
 	    # Generate genome coverage file.
 	    print $scriptfh qq{
 my \@cover = \$sam_util->coverage('$bam_file',1,2,5,10,20,50,100);
+my(\$coverage, \$depth, \$depth_sd)  = \$sam_util->coverage_depth('$bam_file',$reference_size);
+
 open(my \$fh, '> $bam_file.cover') || die "Failed to open file '$bam_file.cover'";
-print \$fh "[",join(',',\@cover),"]\n";
+print \$fh "[",join(',',\@cover);
+printf \$fh ", %d, %6.2f, %6.2f]\n", \$coverage, \$depth, \$depth_sd;
 close \$fh;
             };
 	}
@@ -1504,6 +1517,12 @@ sub update_db {
 	    $stats{target_bases_20X}  = $$coverage[4] if !$stats{target_bases_20X}  || $$coverage[4] > $stats{target_bases_20X};
 	    $stats{target_bases_50X}  = $$coverage[5] if !$stats{target_bases_50X}  || $$coverage[5] > $stats{target_bases_50X};
 	    $stats{target_bases_100X} = $$coverage[6] if !$stats{target_bases_100X} || $$coverage[6] > $stats{target_bases_100X};
+
+	    if(!$stats{target_bases_mapped} || $$coverage[7] > $stats{target_bases_mapped}) {
+		$stats{target_bases_mapped}  = $$coverage[7]; 
+		$stats{mean_target_coverage} = $$coverage[8];
+		$stats{target_coverage_sd}   = $$coverage[9];
+	    }
 	}
 
 	# Get percentage cover
@@ -1516,6 +1535,9 @@ sub update_db {
 	$stats{target_bases_100X} = sprintf("%.2f",$stats{target_bases_100X} * 100 / $reference_size);
 
 	# Update mapstats
+	$mapping->target_bases_mapped($stats{target_bases_mapped});
+	$mapping->mean_target_coverage($stats{mean_target_coverage});
+	$mapping->target_coverage_sd($stats{target_coverage_sd});
 	$mapping->target_bases_1X($stats{target_bases_1X});
 	$mapping->target_bases_2X($stats{target_bases_2X});
 	$mapping->target_bases_5X($stats{target_bases_5X});

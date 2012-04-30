@@ -1012,8 +1012,11 @@ sub update_db
 
     # Length of reference sequence mapped
     if(defined $sequence_mapped)
-    { $mapping->target_bases_mapped($sequence_mapped); }
-
+    { 
+	$mapping->target_bases_mapped($$sequence_mapped[0]); 
+	$mapping->mean_target_coverage($$sequence_mapped[1]); 
+	$mapping->target_coverage_sd($$sequence_mapped[2]); 
+    }
     $mapping->update;
 
     # Write the QC status. Never overwrite a QC status set previously by human. Only NULL or no_qc can be overwritten.

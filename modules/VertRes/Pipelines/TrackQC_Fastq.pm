@@ -17,6 +17,8 @@ use warnings;
 use LSF;
 use VertRes::Parser::fastqcheck;
 use VertRes::Wrapper::bwa;
+use VertRes::Utils::Sam;
+use VRTrack::Assembly;
 
 
 our @actions =
@@ -713,6 +715,12 @@ sub stats_and_graphs
     my $lane  = $$self{lane};
     my $stats_ref = exists($$self{stats_ref}) ? $$self{stats_ref} : '';
 
+    # Get size of assembly
+    my $vrtrack  = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
+    my $assembly = VRTrack::Assembly->new_by_name($vrtrack, $$self{assembly});
+    my $reference_size = $assembly->reference_size();
+    unless($reference_size){ $self->throw("Failed to find reference genome size for lane $lane_path\n"); }
+
     # Dynamic script to be run by LSF.
     open(my $fh, '>', "$lane_path/$sample_dir/_graphs.pl") or Utils::error("$lane_path/$sample_dir/_graphs.pl: $!");
     print $fh 
@@ -738,7 +746,7 @@ my \%params =
 );
 
 my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
-\$qc->run_graphs(\$params{lane_path});
+\$qc->run_graphs(\$params{lane_path}, $reference_size);
 ];
     close $fh;
 
@@ -749,23 +757,22 @@ my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
 
 sub run_graphs
 {
-    my ($self,$lane_path) = @_;
+    my ($self,$lane_path, $reference_size) = @_;
 
     $self->SUPER::run_graphs($lane_path);
 
-    use Utils;
+    # Get coverage, depth and sd.
+    my $bam_file   = qq[$lane_path/$$self{'sample_dir'}/$$self{'lane'}.bam];
+    my $cover_file = qq[$lane_path/$$self{'sample_dir'}/$$self{'lane'}.cover];
 
-    # Set the variables
-    my $samtools     = $$self{'samtools'};
-    my $sample_dir   = $$self{'sample_dir'};
-    my $name         = $$self{'lane'};
-    my $outdir       = "$lane_path/$sample_dir/";
+    my $sam_util = VertRes::Utils::Sam->new(verbose => $$self{verbose});
+    my($coverage, $depth, $depth_sd) = $sam_util->coverage_depth($bam_file,$reference_size);
 
-    # Genome covered 
-    Utils::CMD("$samtools mpileup $outdir/$name.bam | wc -l > $outdir/$name.cover");
-    
+    # Output cover file.
+    open(my $cov_fh, "> $cover_file") or $self->throw("Cannot open: $cover_file\n");
+    printf $cov_fh "[%d, %.2f, %.2f]\n", $coverage, $depth, $depth_sd;
+    close($cov_fh);
 }
-
 
 1;
 
