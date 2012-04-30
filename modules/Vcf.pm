@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r698';
+our $VERSION = 'r709';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
@@ -507,7 +507,7 @@ sub next_data_hash
             my @test = split(/\s+/,$line);
             if ( scalar @test == scalar @$cols ) { $self->warn("(Were spaces used instead of tabs?)\n\n"); }
             else { $self->throw(sprintf "Wrong number of fields%s; expected %d, got %d. The offending line was:\n[%s]\n\n", 
-                scalar @$cols, scalar @items, exists($$self{file}) ? "in $$self{file}" : '', $line); }
+                exists($$self{file}) ? "in $$self{file}" : '', scalar @$cols, scalar @items, join("\t",@items)); }
 
             @items = @test;
         }

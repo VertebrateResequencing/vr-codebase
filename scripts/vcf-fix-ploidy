@@ -25,6 +25,7 @@ sub error
         "   -a, --assumed-sex <sex>         M or F, required if the list is not complete in -s\n",
         "   -p, --ploidy <file>             Ploidy definition. The default is shown below.\n",
         "   -s, --samples <file>            List of sample sexes (sample_name [MF]).\n",
+        "   -l, --fix-likelihoods           Add or remove het likeihoods (not the default behaviour)\n",
         "   -h, -?, --help                  This help message.\n",
         "Default ploidy definition:\n",
         "   ploidy =>\n",
@@ -39,6 +40,11 @@ sub error
         "       [\n",
         "           # No chrY in females and one copy in males\n",
         "           { from=>1, to=>59_373_566, M=>1, F=>0 },\n",
+        "       ],\n",
+        "       MT =>\n",
+        "       [\n",
+        "           # Haploid MT in males and females\n",
+        "           { from=>1, to => 16_569, M=>1, F=>1 },\n",
         "       ],\n",
         "   }\n",
         "\n";
@@ -61,6 +67,10 @@ sub parse_params
             [
                 { from=>1, to=>59_373_566, M=>1, F=>0 },
             ],
+            MT =>
+            [
+                { from=>1, to => 16_569, M=>1, F=>1 },
+            ],
         },
     };
     while (defined(my $arg=shift(@ARGV)))
@@ -68,6 +78,7 @@ sub parse_params
         if ( $arg eq '-p' || $arg eq '--ploidy' ) { my $file=shift(@ARGV); my $x=do $file; $$opts{ploidy}=$x; next }
         if ( $arg eq '-s' || $arg eq '--samples' ) { $$opts{samples}=shift(@ARGV); next }
         if ( $arg eq '-a' || $arg eq '--assumed-sex' ) { $$opts{assumed_sex}=shift(@ARGV); next }
+        if ( $arg eq '-l' || $arg eq '--fix-likelihoods' ) { $$opts{fix_likelihoods}=1; next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
@@ -81,7 +92,6 @@ sub fix_ploidy
     my $vcf = $$opts{vcf} = Vcf->new(fh=>\*STDIN);
     $vcf->parse_header();
     init_regions($opts);
-
     print $vcf->format_header;
 
     my @samples = $vcf->get_samples;
@@ -129,6 +139,8 @@ sub fix_ploidy
         if ( !defined $samples ) { print $line; next; }
 
         my $igt = $vcf->get_tag_index($$rec[8],'GT',':');
+        my $ipl = $vcf->get_tag_index($$rec[8],'PL',':');
+        my $igl = $vcf->get_tag_index($$rec[8],'GL',':');
         if ( $igt==-1 ) { print $line; next; }
 
         my $changed = 0;
@@ -139,26 +151,85 @@ sub fix_ploidy
             if ( !exists($$samples{$sample}) ) { next; }
 
             my $gt = $vcf->get_field($$rec[$isample],$igt);
-            my $rpl;
+            my ($pl,$gl);
+            if ( $$opts{fix_likelihoods} && $ipl != -1 ) { $pl = $vcf->get_field($$rec[$isample],$ipl); }
+            if ( $$opts{fix_likelihoods} && $igl != -1 ) { $gl = $vcf->get_field($$rec[$isample],$igl); }
+            
+            my ($new_gt, $new_pl, $new_gl);
             if ( !$$samples{$sample} )
             {
-                if ( $gt ne '.' && $gt ne './.' ) { $rpl = '.'; $nchanged{removed}{$sample}++ }
+                if ( $gt ne '.' && $gt ne './.' ) { $new_gt = '.'; $nchanged{removed}{$sample}++; }
             }
             else
             {
                 my ($a1,$a2) = $vcf->split_gt($gt);
                 if ( $$samples{$sample}==1 )
                 {
-                    if ( defined $a2 ) { $rpl = $a1; $nchanged{stripped}{$sample}++ }
+                    if ( defined $a2 ) { $new_gt = $a1; $nchanged{stripped}{$sample}++; }
+                    if ( $pl )
+                    {
+                        my @pls = split(/,/, $pl);
+                        if (scalar @pls == 3)
+                        {
+                            # 0/0:10,0,100 -> 0:0,90
+                            # 0/0:10,0,10 -> 0:0,0                            
+                            # 0/0:0,10,100 -> 0:0,100
+                            # 0/0:0,100,10 -> 0:0,10
+                            if ($pls[1]==0)
+                            {
+                                 if ($pls[0] < $pls[2])
+                                 {
+                                     $pls[2] -= $pls[0];
+                                     $pls[0] = 0;
+                                 }
+                                 elsif ($pls[0] > $pls[2])
+                                 {
+                                     $pls[0] -= $pls[2];
+                                     $pls[2] = 0;
+                                 }
+                                 else
+                                 {
+                                     $pls[0] = 0;
+                                     $pls[2] = 0;
+                                 }
+                            }
+                            $new_pl = join(',', @pls[0,2]);
+                        }
+                    }
+                    if ( $gl )
+                    {
+                        my @gls = split(/,/, $gl);
+                        if (scalar @gls == 3) { $new_gl = join(',', @gls[0,2]); } # todo rescale GLs like we do for PLs
+                    }
                 }
                 elsif ( $$samples{$sample}==2 )
                 {
-                    if ( !defined $a2 ) { $rpl = "$a1/$a1"; $nchanged{added}{$sample}++ }
+                    if ( !defined $a2 ) { $new_gt = "$a1/$a1"; $nchanged{added}{$sample}++; }
+                    if ( $pl )
+                    {
+                        my @pls = split(/,/, $pl);
+                        if (scalar @pls == 2) { $new_pl = join(',', ($pls[0], 0, $pls[1])); }
+                    }
+                    if ( $gl )
+                    {
+                        my @gls = split(/,/, $gl);
+                        if (scalar @gls == 2) { $new_gl = join(',', ($gls[0], 0, $gls[1])); }
+                    }
                 }
             }
-            if ( defined $rpl )
+            if ( defined $new_gt )
             {
-                $$rec[$isample] = $vcf->replace_field($$rec[$isample],$rpl,$igt,':');
+                $$rec[$isample] = $vcf->replace_field($$rec[$isample],$new_gt,$igt,':');
+                $changed++;
+            }
+            if ( defined $new_pl )
+            {
+                $$rec[$isample] = $vcf->replace_field($$rec[$isample],$new_pl,$ipl,':');
+                $changed++;
+            }
+            if ( defined $new_gl )
+            {
+                $$rec[$isample] = $vcf->replace_field($$rec[$isample],$new_gl,$igl,':');
                 $changed++;
             }
         }

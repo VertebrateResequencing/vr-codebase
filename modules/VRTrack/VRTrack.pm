@@ -33,7 +33,7 @@ jws@sanger.ac.uk
 # author: jws
 use strict;
 use warnings;
-use Carp;
+use Carp qw(confess croak cluck);
 no warnings 'uninitialized';
 use DBI;
 use File::Spec;
@@ -72,8 +72,7 @@ sub new {
                                       $dbparams->{'password'},
                              {'RaiseError' => 0, 'PrintError'=>0}
                            );
-    #my ($dbname) = $dbh->selectrow_array("select DATABASE()");
-    #warn $dbname;
+    
     if ($DBI::err){
           warn(sprintf('DB connection failed: %s', $DBI::errstr));
           return undef;
@@ -420,8 +419,8 @@ sub hierarchy_path_of_lane {
 
   Arg [1]    : list of flags and values
   Example    : my $all_lanes   = $track->processed_lane_hnames();
-               my $qc_lanes    = $track->qc_filtered_lane_hnames('qc'=>1);
-               my $no_qc_lanes = $track->qc_filtered_lane_hnames('qc'=>0);
+               my $qc_lanes    = $track->processed_lane_hnames('qc'=>1);
+               my $no_qc_lanes = $track->processed_lane_hnames('qc'=>0);
   Description: retrieves a (optionally filtered) list of all lane hierarchy names, ordered by project, sample, library names.
                This is a helper function for the qc web interface for speed.
   Returntype : arrayref
@@ -596,8 +595,8 @@ sub qc_filtered_lib_hnames {
 
   Arg [1]    : list of flags and values
   Example    : my $all_files   = $track->processed_file_hnames();
-               my $qc_files    = $track->qc_filtered_file_hnames('qc'=>1);
-               my $no_qc_files = $track->qc_filtered_file_hnames('qc'=>0);
+               my $qc_files    = $track->processed_file_hnames('qc'=>1);
+               my $no_qc_files = $track->processed_file_hnames('qc'=>0);
   Description: retrieves a (optionally filtered) list of all file hierarchy names, ordered by project, sample, library names.
                This is a helper function for the qc web interface for speed.
   Returntype : arrayref
@@ -683,6 +682,103 @@ sub individual_names {
     return \@individual_names;
 }
 
+=head2 transaction
+
+  Arg [1]    : Code ref
+  Arg [2]    : optional hash ref: { read => [], write => []} where the array
+               ref values contain table names to lock for reading/writing
+  Example    : my $worked = $vrtrack->transaction(sub { $lane->update; }, { write => ['lane'] });
+  Description: Run code safely in a transaction, with automatic retries in the
+               case of deadlocks. If the transaction fails for some other reason,
+               the error message can be found in $vrtrack->{transaction_error}.
+  Returntype : Boolean
+
+=cut
+
+sub transaction {
+    my ($self, $code, $locks) = @_;
+    
+    my $dbh = $self->{_dbh};
+    
+    # we wanted to use begin_work() to handle turning off and on AutoCommit, but
+    # to be compatible with transaction_start() et al. we'll have to use the
+    # same mechanisms
+    my $autocommit = $dbh->{AutoCommit};
+    $dbh->{AutoCommit} = 0;
+    $self->{transaction}++;
+    
+    # Raise Errors if there are any problems, which we will catch in evals
+    my $raiseerror = $dbh->{RaiseError};
+    $dbh->{RaiseError} = 1;
+    
+    #eval {
+    #    $dbh->begin_work;
+    #};
+    #if ($@) {
+    #    my $err = $@;
+    #    if ($err =~ /Already in a transaction/) {
+    #        # we're already in a transaction, so just run the $code without
+    #        # doing a commit
+    #        $dbh->{RaiseError} = 1;
+    #        $dbh->{AutoCommit} = 0;
+    #        &$code;
+    #        $self->{transaction}--;
+    #        return 1;
+    #    }
+    #    else {
+    #        confess $err;
+    #    }
+    #}
+    if ($self->{transaction} > 1) {
+        &$code;
+        $self->{transaction}--;
+        return 1;
+    } 
+    
+    # turn off warnings that may be generated when we call &$code
+    my $sig_warn = $SIG{'__WARN__'};
+    $SIG{'__WARN__'} = sub { };
+    
+    # try to run the $code and commit, repeating if deadlock found, die with
+    # stack trace for other issues
+    my $success = 0;
+    delete $self->{transaction_error};
+    while (1) {
+        eval {
+            # make extra sure RaiseError and AutoCommit are set as necessary,
+            # incase something nested changes these
+            $dbh->{RaiseError} = 1;
+            $dbh->{AutoCommit} = 0;
+            &$code;
+            $dbh->{RaiseError} = 1;
+            $dbh->{AutoCommit} = 0;
+            $dbh->commit;
+        };
+        if ($@) {
+            my $err = $@;
+            eval { $dbh->rollback };
+            if ($err =~ /Deadlock found/) {
+                sleep(2);
+            }
+            else {
+                chomp($err);
+                $self->{transaction_error} = "Transaction failed, rolled back. Error was: $err";
+                last;
+            }
+        }
+        else {
+            $success = 1;
+            last;
+        }
+    }
+    
+    $dbh->{AutoCommit} = $autocommit;
+    $dbh->{RaiseError} = $raiseerror;
+    $SIG{'__WARN__'} = $sig_warn;
+    $self->{transaction}--;
+    
+    return $success;
+}
 
 =head2 transaction_start
 

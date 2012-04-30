@@ -49,6 +49,7 @@ sub error
     print
         "About: Annotates VCF file, adding filters or custom annotations. Requires tabix indexed file with annotations.\n",
         "   Currently it annotates the ID, FILTER, and INFO columns, but it will be extended on popular demand.\n",
+        "   For examples of user-defined filters see online documentation or examples/filters.txt in vcftools distribution.\n",
         "Usage: cat in.vcf | vcf-annotate [OPTIONS] > out.vcf\n",
         "Options:\n",
         "   -a, --annotations <file.gz>         The tabix indexed file with the annotations: CHR\\tFROM[\\tTO][\\tVALUE]+.\n",
@@ -79,57 +80,6 @@ sub error
         "   key=INFO,ID=STR,Number=1,Type=Integer,Description='Strand'\n",
         "The file dbSNPv132.tab.gz with dbSNP IDs can be downloaded from\n",
         "   ftp://ftp.sanger.ac.uk/pub/1000genomes/pd3/dbSNP/\n",
-        "\n",
-        "Example of a user-defined filter file (copy and paste it to filter.txt and run with -f filter.txt):\n",
-        "    # The examples below are self-explanatory. Notice the use of the predefined\n",
-        "    #  variables (\$PASS, \$FAIL, \$MATCH, \$RECORD) and methods (error).\n",
-        "    #\n",
-        "    # In this example, a minimum value of AF1=0.1 is required\n",
-        "    {\n",
-        "       tag  => 'INFO/AF1',                       # The VCF tag to apply this filter on\n",
-        "       name => 'MinAF',                          # The filter ID\n",
-        "       desc => 'Minimum AF1 [0.01]',             # Description for the VCF header\n",
-        "       test => sub { return \$MATCH < 0.01 ? \$FAIL : \$PASS },\n",
-        "    },\n",
-        "    # Filter all indels (presence of INDEL tag is tested)\n",
-        "    {\n",
-        "       tag      => 'INFO/INDEL',\n",
-        "       apply_to => 'indels',         # Can be one of SNPs, indels, all. Default: [All]\n",
-        "       name     => 'Indel',\n",
-        "       desc     => 'INDEL tag present',\n",
-        "       test     => sub { return \$FAIL },\n",
-        "    },\n",
-        "    # Only loci with enough reads supporting the variant will pass the filter\n",
-        "    {\n",
-        "       tag      => 'INFO/DP4',\n",
-        "       name     => 'FewAlts',\n",
-        "       desc     => 'Too few reads supporting the variant',\n",
-        "       apply_to => 'SNPs',\n",
-        "       test     => sub {\n",
-        "           if ( !(\$MATCH =~ /^([^,]+),([^,]+),([^,]+),(.+)\$/) )\n",
-        "           {\n",
-        "               error(\"Could not parse INFO/DP4: \$CHROM:\$POS [\$MATCH]\");\n",
-        "           }\n",
-        "           if ( 0.1*(\$1+\$2) > \$3+\$4  ) { return \$PASS; }\n",
-        "           return \$FAIL;\n",
-        "       },\n",
-        "    },\n",
-        "    # Example of filtering based on genotype columns and the QUAL column\n",
-        "    {\n",
-        "       tag      => 'FORMAT/PL',\n",
-        "       name     => 'NoHets',\n",
-        "       desc     => 'Inbred homozygous mouse, no hets expected',\n",
-        "       apply_to => 'SNPs',\n",
-        "       test     => sub {\n",
-        "           if ( \$\$RECORD[5]<10 ) { return \$FAIL; }    # Just to show the \$RECORD variable\n",
-        "           for my \$pl (\@\$MATCH)\n",
-        "           {\n",
-        "               my \@pls = split(/,/,\$pl);\n",
-        "               if ( \$pls[1]<\$pls[0] && \$pls[1]<\$pls[2] ) { return \$FAIL; }\n",
-        "           }\n",
-        "           return \$PASS;\n",
-        "       },\n",
-        "   },\n",
         "\n";
     exit -1;
 }
@@ -631,7 +581,8 @@ sub fill_ac_an_hwe
     my ($opts,$line) = @_;
     my $igt = $$opts{vcf}->get_tag_index($$line[8],'GT',':');
     if ( $igt==-1 ) { return; }
-    my %counts = ( 0=>0 );
+    my %counts     = ( 0=>0 );
+    my %dpl_counts = ( 0=>0 );
     if ( $$line[4] ne '.' )
     {
         my $idx=0;
@@ -648,11 +599,13 @@ sub fill_ac_an_hwe
         my $gt = $$opts{vcf}->get_field($$line[$isample],$igt);
         my ($a1,$a2) = $$opts{vcf}->split_gt($gt);
         if ( $a1 ne '.' ) { $counts{$a1}++ }
-        if ( $a2 ne '.' ) 
+        if ( defined $a2 && $a2 ne '.' ) 
         { 
             $counts{$a2}++;
             if ( $a1 ne '.' )
             {
+                $dpl_counts{$a1}++;
+                $dpl_counts{$a2}++;
                 if ( $a1 ne $a2 ) { $nhets++ }
                 $ngts++;
             }
@@ -666,21 +619,20 @@ sub fill_ac_an_hwe
     {
         if ( $key eq 0 ) { $an += $counts{$key}; next; }
         if ( defined $ac ) { $ac .= ','; }
-        my $count = $counts{$key};
-        $ac .= $count;
-        $an += $count;
-        if ( $count>$max_ac ) { $max_ac = $count; }
+        $ac .= $counts{$key};
+        $an += $counts{$key};
+        if ( exists($dpl_counts{$key}) && $dpl_counts{$key}>$max_ac ) { $max_ac = $dpl_counts{$key}; }
     }
 
     my %tags = (AN=>$an);
     if ( defined $ac ) { $tags{AC}=$ac }
-    if ( $$opts{fill_hwe} )
+    my $nall = $dpl_counts{0} + $max_ac;
+    if ( $$opts{fill_hwe} && $nall )
     {
-        my $nall = $counts{0} + $max_ac;
         my $freq_obs = 2*$nhets/$nall;
         my $freq_exp = 2*($max_ac/$nall)*(1-($max_ac/$nall));
         $$opts{icf} = $freq_exp ? 1-$freq_obs/$freq_exp : 0;
-        $$opts{hwe} = eval_hwe(($max_ac-$nhets)/2,($counts{0}-$nhets)/2,$nhets);
+        $$opts{hwe} = eval_hwe(($max_ac-$nhets)/2,($dpl_counts{0}-$nhets)/2,$nhets);
         $tags{HWE} = sprintf "%.6f", $$opts{hwe};
     }
     if ( $$opts{fill_icf} )
@@ -1146,6 +1098,7 @@ sub apply_gapwin_filter
     my $vcf = $$opts{vcf};
     my $win = $$opts{filters}{GapWin};
     my $buffer = $$opts{GapWin_buffer};
+    my $n = @$buffer;
     my ($indel_chr,$indel_pos,$to);
 
     if ( defined $line )
@@ -1168,38 +1121,62 @@ sub apply_gapwin_filter
         #   ALT=CAGAGAGAGAGA. Thus this filtering is more strict and may remove
         #   some valid SNPs.
         $to = $is_indel ? $$line[1]+length($$line[3])-1 : $$line[1];
-        push @$buffer, { line=>$line, chr=>$$line[0], from=>defined $indel_pos ? $indel_pos : $$line[1], to=>$to, exclude=>0, is_indel=>$is_indel };
-    }
-
-    my $n = @$buffer;
-
-    # Is the new line an indel? If yes, check the distance to all previous lines
-    if ( defined $indel_chr )
-    {
-        for (my $i=0; $i<$n-1; $i++)
+        my $af = 0;
+        if ( $is_indel )
         {
-            my $buf = $$buffer[$i];
-            if ( $$buf{chr} ne $indel_chr ) { next; }
-            if ( !$$buf{is_indel} ) { next; }
-            if ( $$buf{to}>=$indel_pos-$win ) { $$buf{exclude}=1; $$buffer[-1]{exclude}=1; }
+            # Collect allele frequency to make an educated guess which of the indels to keep
+            $af = $vcf->get_info_field($$line[7],'AF');
+            if ( !defined $af ) { $af = $vcf->get_info_field($$line[7],'AF1'); }
+            else { $af = $vcf->get_field($af,0,',') }
+            if ( !defined $af ) { $af=0 }
         }
+        push @$buffer, { line=>$line, chr=>$$line[0], from=>defined $indel_pos ? $indel_pos : $$line[1], to=>$to, is_indel=>$is_indel, AF=>$af, exclude=>0 };
+
+        # Update the latest gap position and check if the buffer can be flushed
+        if ( !exists($$opts{GapWin_chr}) )
+        {
+            $$opts{GapWin_chr} = $$line[0];
+            $$opts{GapWin_to} = $$line[1];
+        }
+        my $flush = ( $$opts{GapWin_chr} eq $$line[0] && $$line[1]<=$$opts{GapWin_to} ) ? 0 : 1;
+
+        if ( $is_indel ) 
+        { 
+            # Check distance to previous indels and set the exclude flags
+            for (my $i=0; $i<$n; $i++)
+            {
+                if ( !$$buffer[$i]{is_indel} ) { next; }
+                if ( $$buffer[$i]{to}>=$indel_pos-$win ) 
+                { 
+                    $$buffer[$i]{exclude}=1; 
+                    $$buffer[-1]{exclude}=1; 
+                }
+            }
+            if ( $$opts{GapWin_chr} ne $$line[0] or $to+$win>$$opts{GapWin_to} ) { $$opts{GapWin_to} = $to+$win; }
+        }
+        $$opts{GapWin_chr} = $$line[0];
+        if ( !$flush ) { return (); }
+        if ( !$is_indel ) { $$opts{GapWin_to} = 0; }
     }
 
-    if ( defined $line && $$buffer[0]{chr} eq $$buffer[-1]{chr} && $win+$$buffer[0]{to}>=$$buffer[-1]{from} )
+    # Let one of the gaps go through. It may not be the best one, but as there are more
+    #   it is likely that at least one of them is real. Better to have the wrong one 
+    #   than miss it completely. Base the decision on AF. If not present, let the first 
+    #   one through.
+    my $max_af=-1;
+    for (my $i=0; $i<$n; $i++)
     {
-        # There are not enough rows in the buffer: the GapWin window spans them all. Wait until there is more rows
-        #   or a new chromosome
-        return ();
+        if ( !$$buffer[$i]{exclude} ) { next; }
+        if ( $max_af<$$buffer[$i]{AF} ) { $max_af=$$buffer[$i]{AF} }
     }
-
-    # Output. If no $line was given, output everything
-    $to = $$buffer[-1]{from}-$win;
-    my $chr = $$buffer[-1]{chr};
+    for (my $i=0; $i<$n; $i++)
+    {
+        if ( !$$buffer[$i]{exclude} ) { next; }
+        if ( $max_af==$$buffer[$i]{AF} ) { $$buffer[$i]{exclude}=0; last; }
+    }
     my @out;
-    while (@$buffer)
+    for (my $i=0; $i<$n; $i++)
     {
-        if ( $$buffer[0]{chr} eq $chr && $$buffer[0]{to}+$win>=$to && defined $line ) { last; }
-
         my $buf = shift(@$buffer);
         if ( $$buf{exclude} )
         {

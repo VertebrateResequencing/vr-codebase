@@ -30,6 +30,8 @@ sub error
         "   -H, --vcf-header <file>                 Use the VCF header\n",
         "   -h, -?, --help                          This help message.\n",
         "   -r, --regions <list|file>               Do only the given regions (comma-separated list or one region per line in a file).\n",
+        "   -R, --ref-for-missing <string>          Use the REF allele instead of the default missing genotype. Because it is not obvious\n",
+        "                                               what ploidy should be used, a user-defined string is used instead (e.g. 0/0).\n",
         "   -s, --silent                            Try to be a bit more silent, no warnings about duplicate lines.\n",
         "   -t, --trim-ALTs                         If set, redundant ALTs will be removed\n",
         "\n";
@@ -52,6 +54,7 @@ sub parse_params
     while (my $arg=shift(@ARGV))
     {
         if ( $arg eq '-d' || $arg eq '--remove-duplicates' ) { $$opts{rm_dups}=1; next; }
+        if ( $arg eq '-R' || $arg eq '--ref-for-missing' ) { $$opts{ref_for_missing}=shift(@ARGV); next; }
         if ( $arg eq '-t' || $arg eq '--trim-ALTs' ) { $$opts{trim_redundant_ALTs}=1; next; }
         if ( $arg eq '-s' || $arg eq '--silent' ) { $$opts{silent_dups}=1; next; }
         if ( $arg eq '-H' || $arg eq '--vcf-header' ) { $$opts{vcf_header}=shift(@ARGV); next; }
@@ -363,7 +366,7 @@ sub merge_vcf_files
                     for (my $i=0; $i<@{$$vcf{__col_names}}; $i++)
                     {
                         my $name = $$vcf{__col_names}->[$i];
-                        $out{gtypes}{$name}{GT} = $$vcf_out{defaults}{GT};
+                        $out{gtypes}{$name}{GT} = exists($$opts{ref_for_missing}) ? $$opts{ref_for_missing} : $$vcf_out{defaults}{GT};
                     }
                     next;
                 }
