@@ -37,6 +37,120 @@ sub new {
 		'ak6' => 'Anja Kolb-Kokocinski (kuusamo)',
 		'cj5' => 'chris joyce',
 	};
+
+    $self->{CSS} = <<CSS ;
+
+.centerFieldset {
+text-align:center;
+}
+
+.centerFieldset fieldset {
+margin-left:auto;
+margin-right:auto;
+/* INHERITED ALIGNMENT IS CENTER. ONLY INCLUDE THIS IF YOU WANT */
+/* TO CHANGE THE ALIGNMENT OF THE CONTENTS OF THE FIELDSET */
+text-align:left;
+}
+
+.centerFieldset table {
+    margin-left:auto;
+    margin-right:auto;
+}
+
+table.summary {
+    border-collapse: collapse;
+    font: 0.9em Verdana, Arial, Helvetica, sans-serif;
+}
+
+table.summary td {
+    white-space: nowrap;
+    text-align: right;
+    padding-right: 1em;
+    padding-left: 1em;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    border-bottom: #83a4c3 dotted 1px;
+}
+
+table.summary tr.header th, table.summary tr.header td {
+    font-weight:bold;
+    border-bottom: #83a4c3 solid 1px;
+    text-align: left;
+    vertical-align:middle;
+}
+
+table.summary tr.level th, table.summary tr.level td {
+    font-weight:bold;
+    border-bottom: #83a4c3 dotted 1px;
+    text-align: left;
+    vertical-align:middle;
+}
+
+table.summary tr.total th, table.summary tr.total td {
+    font-weight:bold;
+    background-color: #CBDCED;
+    border-bottom: #83a4c3 dotted 1px;
+    text-align: right;
+    vertical-align:middle;
+}
+
+input.btn {
+  font: bold 150% 'trebuchet ms',helvetica,sans-serif;
+  border:1px solid;
+  border-color: #707070 #000 #000 #707070;
+}
+
+input.btnhov { 
+  cursor:pointer;
+  border-color: #c63 #930 #930 #c63; 
+}
+
+.clear
+{
+    clear: both;
+    display: block;
+    overflow: hidden;
+    visibility: hidden;
+    width: 0;
+    height: 0;
+}
+
+img.preview:hover {
+    width: 480px;
+    height: 480px;
+}
+
+.thumbnail{
+position: relative;
+z-index: 0;
+}
+
+.thumbnail:hover{
+background-color: transparent;
+z-index: 50;
+}
+
+.thumbnail span{ /*CSS for enlarged image*/
+position: absolute;
+padding: 5px;
+left: -1000px;
+visibility: hidden;
+text-decoration: none;
+}
+
+.thumbnail span img{ /*CSS for enlarged image*/
+border-width: 0;
+padding: 2px;
+}
+
+.thumbnail:hover span{ /*CSS for enlarged image on hover*/
+visibility: visible;
+top: 0;
+left: -480px; /*position where enlarged image should offset horizontally */
+
+}
+CSS
+
     bless $self;
     return $self;
 }
@@ -92,7 +206,7 @@ sub get_colour_for_status
 		$status_colour="#FFFFFF";
 	}
 	elsif ($status eq $self->{STATES}{PASSED}) {
-		$status_colour="#C0FFC0";
+		$status_colour="#CCFFCC";
 	}
 	elsif ($status eq $self->{STATES}{FAILED}) {
 		$status_colour="#FFC0C0";
