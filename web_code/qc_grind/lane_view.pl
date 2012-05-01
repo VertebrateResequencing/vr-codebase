@@ -48,6 +48,11 @@ my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => $db, mode 
 my $laneID = $cgi->param('lane_id');
 $utl->displayError( "No Lane ID",$sw ) unless $laneID;
 
+if ($cgi->param("lane_update")) {
+        my $state = $cgi->param("lane_update");
+        updateLane($cgi,$vrtrack,$laneID,$state);
+}
+
 displayLane( $cgi, $vrtrack, $db, $laneID);
 print $sw->footer();
 exit;
@@ -512,3 +517,22 @@ sub printPreviewImage
         <span><img src="$uri" alt="$caption" style="border:1px dotted #83A4C3;"/></span></a>
     ];
 }
+
+sub updateLane {
+    my ($cgi, $vrtrack, $laneID, $state) = @_;
+    
+    #update the lane in the db
+    my $lane = VRTrack::Lane->new( $vrtrack, $laneID );
+    if( !$utl->{STATES}{uc($state)} ) {
+        $utl->displayError("Invalid lane state found: $state");
+    }
+    else {
+        eval {
+            $lane->qc_status( $state );
+            $lane->update;
+        };
+        $utl->displayError("Failed to update lane: $laneID" ) unless ! $@;
+    }
+
+}
+
