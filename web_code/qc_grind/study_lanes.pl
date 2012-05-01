@@ -359,7 +359,7 @@ sub getMapStats {
 	foreach my $mapstats ( @mappings ) {
         if ($mapstats->bases_mapped) {
             $lane_mapstats{mapping_raw_bases} = sprintf("%.1f", ($mapstats->raw_bases()/1000000000)); # GB
-            $lane_mapstats{duplication} = sprintf("%.1f", ($mapstats->rmdup_reads_mapped()/$mapstats->reads_mapped)*100);
+            $lane_mapstats{duplication} = sprintf("%.1f", (1.0-($mapstats->rmdup_reads_mapped()/$mapstats->reads_mapped))*100);
             $lane_mapstats{rmdup_bases_mapped} =  sprintf("%.1f", ($mapstats->rmdup_bases_mapped/1000000000)); # GB
             $lane_mapstats{genotype_found} = $mapstats->genotype_found;
             $lane_mapstats{genotype_ratio} = sprintf("%.3f",$mapstats->genotype_ratio) if $mapstats->genotype_ratio;
