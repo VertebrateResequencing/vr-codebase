@@ -165,9 +165,6 @@ sub parse_lane {
 sub lane_info {
     my ($self, $lane, %args) = @_;
     
-    my $hist = VRTrack::History->new();
-    my $orig_time_travel = $hist->time_travel;
-    
     my ($rg, $vrlane, $vrtrack);
     if (ref($lane) && $lane->isa('VRTrack::Lane')) {
         $vrlane = $lane;
@@ -190,60 +187,16 @@ sub lane_info {
     
     return unless ($rg && $vrlane && $vrtrack);
     
-    my $datetime = 'latest';
-    if ($args{pre_swap}) {
-        $datetime = $hist->was_processed($vrlane, 'swapped');
+    delete $args{db};
+    delete $args{vrtrack};
+    my $no_cov = delete $args{no_coverage};
+    if ($no_cov) {
+        $args{get_coverage} = 0;
     }
-    # make sure we've got a lane of the correct time period
-    $hist->time_travel($datetime);
-    $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane) || $self->throw("Could not get a vrlane with name $lane prior to $datetime");
-    
-    my %info = (lane => $rg, vrlane => $vrlane);
-    
-    $info{hierarchy_path} = $vrtrack->hierarchy_path_of_lane($vrlane);
-    $info{withdrawn} = $vrlane->is_withdrawn;
-    $info{imported} = $vrlane->is_processed('import');
-    $info{mapped} = $vrlane->is_processed('mapped');
-    
-    my %objs = $self->lane_hierarchy_objects($vrlane);
-    
-    $info{insert_size} = $objs{library}->insert_size;
-    $info{library} = $objs{library}->hierarchy_name || $self->throw("library hierarchy_name wasn't known for $rg");
-    my $lib_name = $objs{library}->name || $self->throw("library name wasn't known for $rg");
-    $info{library_raw} = $lib_name;
-    ($lib_name) = split(/\|/, $lib_name);
-    $info{library_true} = $lib_name;
-    $info{centre} = $objs{centre}->name || $self->throw("sequencing centre wasn't known for $rg");
-    my $seq_tech = $objs{platform}->name || $self->throw("sequencing platform wasn't known for $rg");
-    $info{seq_tech} = $seq_tech;
-    if ($seq_tech =~ /illumina|slx/i) {
-        $info{technology} = 'ILLUMINA';
+    else {
+        $args{get_coverage} = 1;
     }
-    elsif ($seq_tech =~ /solid/i) {
-        $info{technology} = 'ABI_SOLID';
-    }
-    elsif ($seq_tech =~ /454/) {
-        $info{technology} = 'LS454';
-    }
-    $info{sample} = $objs{sample}->name || $self->throw("sample name wasn't known for $rg");
-    $info{individual} = $objs{individual}->name || $self->throw("individual name wasn't known for $rg");
-    $info{species} =  $objs{species}->name if $objs{species};#|| $self->throw("species name wasn't known for $rg");
-    $info{individual_acc} = $objs{individual}->acc; # || $self->throw("sample accession wasn't known for $rg");
-    unless ($args{no_coverage}) {
-        $info{individual_coverage} = $self->hierarchy_coverage(individual => [$info{individual}],
-                                                               vrtrack => $vrtrack,
-                                                               $args{genome_size} ? (genome_size => $args{genome_size}) : (),
-                                                               $args{gt_confirmed} ? (gt_confirmed => $args{gt_confirmed}) : (),
-                                                               $args{qc_passed} ? (qc_passed => $args{qc_passed}) : (),
-                                                               $args{mapped} ? (mapped => $args{mapped}) : ());
-    }
-    $info{population} = $objs{population}->name;
-    $info{project} = $objs{project}->name;
-    $info{study} = $objs{study} ? $objs{study}->acc : $info{project};
-    
-    $hist->time_travel($orig_time_travel);
-    
-    return %info;
+    return $vrtrack->lane_info($lane, %args);
 }
 
 =head2 lane_hierarchy_objects
@@ -268,27 +221,8 @@ sub lane_info {
 
 sub lane_hierarchy_objects {
     my ($self, $vrlane) = @_;
-    
     my $vrtrack = $vrlane->vrtrack;
-    my $lib = VRTrack::Library->new($vrtrack, $vrlane->library_id);
-    my $sc = $lib->seq_centre;
-    my $st = $lib->seq_tech;
-    my $sample = VRTrack::Sample->new($vrtrack, $lib->sample_id);
-    my $individual = $sample->individual;
-    my $species = $individual->species;
-    my $pop = $individual->population;
-    my $project_obj = VRTrack::Project->new($vrtrack, $sample->project_id);
-    my $study_obj = VRTrack::Study->new($vrtrack, $project_obj->study_id) if $project_obj->study_id;
-    
-    return (study => $study_obj,
-            project => $project_obj,
-            sample => $sample,
-            individual => $individual,
-            population => $pop,
-            platform => $st,
-            centre => $sc,
-            library => $lib,
-            species => $species);
+    return $vrtrack->lane_hierarchy_objects($vrlane);
 }
 
 =head2 hierarchy_coverage
@@ -335,101 +269,13 @@ sub lane_hierarchy_objects {
 
 sub hierarchy_coverage {
     my ($self, %args) = @_;
-    my $genome_size = delete $args{genome_size} || 3e9;
-    my $gt = delete $args{gt_confirmed} ? 1 : 0;
-    my $qc = delete $args{qc_passed} ? 1 : 0;
-    my $mapped = delete $args{mapped} ? 1 : 0;
     
-    if (exists $args{lane} || exists $args{level}) {
-        my $lane = delete $args{lane};
-        my $level = delete $args{level};
-        $self->throw("Both lane and level options must be supplied if either of them are") unless $lane && $level;
-        
-        my @levels = qw(project sample individual population platform centre library);
-        foreach my $valid_level (@levels) {
-            $self->throw("'$valid_level' option is mutually exclusive of lane&level") if exists $args{$valid_level};
-        }
-        my %levels = map { $_ => 1 } @levels;
-        $self->throw("Supplied level '$level' wasn't valid") unless exists $levels{$level};
-        
-        my $db = $args{db} || $DEFAULT_DB_SETTINGS;
-        my $vrtrack = VRTrack::VRTrack->new($db);
-        my $vrlane = VRTrack::Lane->new_by_name($vrtrack, $lane) || $self->throw("Could not get a lane from the db with name '$lane'");
-        
-        my %objs = $self->lane_hierarchy_objects($vrlane);
-        $self->throw("Could not get the $level of lane $lane") unless defined $objs{$level};
-        
-        $args{$level} = [$objs{$level}->name];
-    }
+    my $db = $args{db} || $DEFAULT_DB_SETTINGS;
+    my $vrtrack = VRTrack::VRTrack->new($db);
     
-    my @store = ($gt, $qc, $mapped);
-    while (my ($key, $val) = each %args) {
-        unless (ref($val)) {
-            push(@store, $val);
-        }
-        else {
-            if (ref($val) eq 'ARRAY') {
-                push(@store, @{$val});
-            }
-            elsif (ref($val) eq 'HASH') {
-                while (my ($sub_key, $sub_val) = each %{$val}) {
-                    push(@store, $sub_val);
-                }
-            }
-            elsif ($val->isa('VRTrack::VRTrack')) {
-                my $db_params = $val->database_params;
-                while (my ($sub_key, $sub_val) = each %{$db_params}) {
-                    push(@store, $sub_val);
-                }
-            }
-        }
-    }
-    my $store = join(",", sort @store);
-    
-    unless (defined $self->{_cover_bases}->{$store}) {
-        my @lanes = $self->get_lanes(%args);
-        @lanes || return 0;
-        my $bps = 0;
-        
-        # sum raw bases for all the qc passed, gt confirmed and not withdrawn
-        # lanes
-        foreach my $lane (@lanes) {
-            next if $lane->is_withdrawn;
-            if ($gt) {
-                next unless ($lane->genotype_status && $lane->genotype_status eq 'confirmed');
-            }
-            if ($qc) {
-                next unless ($lane->qc_status && $lane->qc_status eq 'passed');
-            }
-            
-            my $bp = $lane->raw_bases || 0;
-            
-            if ($mapped) {
-                my $mapstats = $lane->latest_mapping;
-                
-                if ($mapstats && $mapstats->raw_bases){
-                    if ($mapstats->genotype_ratio) {
-                        # this is a QC mapped lane, so we make a projection
-                        $bps += $bp * ($mapstats->rmdup_bases_mapped / $mapstats->raw_bases);
-                    }
-                    else {
-                        # this is a fully mapped lane, so we know the real answer
-                        $bps += $mapstats->bases_mapped;
-                    }
-                }
-                else {
-                    $bps += $bp * 0.9; # not sure what else to do here?
-                }
-            }
-            else {
-                $bps += $bp;
-            }
-        }
-        
-        $self->{_cover_bases}->{$store} = $bps;
-    }
-    
-    return sprintf('%.2f', $self->{_cover_bases}->{$store} / $genome_size);
+    delete $args{db};
+    delete $args{vrtrack};
+    return $vrtrack->hierarchy_coverage(%args);
 }
 
 =head2 get_lanes
@@ -481,117 +327,9 @@ sub get_lanes {
         $vrtrack = VRTrack::VRTrack->new($db);
     }
     
-    my @good_lanes;
-    foreach my $project (@{$vrtrack->projects}) {
-        my $ok = 1;
-        if (defined $args{project}) {
-            $ok = 0;
-            foreach my $name (@{$args{project}}) {
-                if ($name eq $project->name || $name eq $project->hierarchy_name || ($project->study && $name eq $project->study->acc)) {
-                    $ok = 1;
-                    last;
-                }
-            }
-        }
-        $ok || next;
-        if (defined $args{project_regex}) {
-            $project->name =~ /$args{project_regex}/ || next;
-        }
-        
-        foreach my $sample (@{$project->samples}) {
-            my $ok = 1;
-            if (defined ($args{sample})) {
-                $ok = 0;
-                foreach my $name (@{$args{sample}}) {
-                    if ($name eq $sample->name) {
-                        $ok = 1;
-                        last;
-                    }
-                }
-            }
-            $ok || next;
-            if (defined $args{sample_regex}) {
-                $sample->name =~ /$args{sample_regex}/ || next;
-            }
-            
-            my %objs;
-            $objs{individual} = $sample->individual;
-            $objs{population} = $objs{individual}->population;
-            $objs{species}    = $objs{individual}->species;
-            
-            my ($oks, $limits) = (0, 0);
-            foreach my $limit (qw(individual population species)) {
-                if (defined $args{$limit}) {
-                    $limits++;
-                    if ($limit eq 'species' && !(defined $objs{'species'})) {
-                        $self->warn('species not defined for sample '.$sample->name);
-                        last;
-                    }
-                    my $ok = 0;
-                    foreach my $name (@{$args{$limit}}) {
-                        if ($name eq $objs{$limit}->name || ($objs{$limit}->can('hierarchy_name') && $name eq $objs{$limit}->hierarchy_name)) {
-                            $ok = 1;
-                            last;
-                        }
-                    }
-                    $oks += $ok;
-                }
-            }
-            next unless $oks == $limits;
-            
-            foreach my $library (@{$sample->libraries}) {
-                my $ok = 1;
-                if (defined ($args{library})) {
-                    $ok = 0;
-                    foreach my $name (@{$args{library}}) {
-                        if ($name eq $library->name || $name eq $library->hierarchy_name) {
-                            $ok = 1;
-                            last;
-                        }
-                    }
-                }
-                $ok || next;
-                if (defined $args{library_regex}) {
-                    $library->name =~ /$args{library_regex}/ || next;
-                }
-                
-                my %objs;
-                $objs{centre} = $library->seq_centre;
-                $objs{platform} = $library->seq_tech;
-                
-                my ($oks, $limits) = (0, 0);
-                foreach my $limit (qw(centre platform)) {
-                    if (defined $args{$limit}) {
-                        $limits++;
-                        my $ok = 0;
-                        foreach my $name (@{$args{$limit}}) {
-                            if ($name eq $objs{$limit}->name) {
-                                $ok = 1;
-                                last;
-                            }
-                        }
-                        $oks += $ok;
-                    }
-                }
-                next unless $oks == $limits;
-                
-                push(@good_lanes, @{$library->lanes});
-            }
-        }
-    }
-    
-    if ($args{return_withdrawn}) {
-        return @good_lanes;
-    }
-    else {
-        # filter out withdrawn lanes
-        my @active;
-        foreach my $lane (@good_lanes) {
-            next if $lane->is_withdrawn;
-            push(@active, $lane);
-        }
-        return @active;
-    }
+    delete $args{db};
+    delete $args{vrtrack};
+    return $vrtrack->get_lanes(%args);
 }
 
 =head2 new_platforms
