@@ -12,7 +12,7 @@ BEGIN {
         plan skip_all => "Skipping all tests because VRTrack tests have not been configured";
     }
     else {
-        plan tests => 4;
+        plan tests => 10;
     }
 
     use_ok('VRTrack::Factory');
@@ -48,7 +48,45 @@ isa_ok $vrtrack, 'VRTrack::VRTrack';
 my %dbs = map { $_ => 1 } VRTrack::Factory->databases(1);
 is exists $dbs{$cd{database}}, 1, 'VRTrack::Factory->databases returned at least our test database';
 
+# get_lanes
+my @lanes = grep { $_->isa('VRTrack::Lane') } $vrtrack->get_lanes();
+is scalar(@lanes), 285, 'get_lanes() gave all lanes';
+@lanes = grep { $_->isa('VRTrack::Lane') } $vrtrack->get_lanes(project_regex => 'diversity');
+is scalar(@lanes), 285, 'get_lanes(project_regex) worked';
+@lanes = map { $_->name } grep { $_->isa('VRTrack::Lane') } $vrtrack->get_lanes(sample_regex => '1996STDY5244898');
+is_deeply \@lanes, ['7816_3#1', '7211_8#1', '7413_5#1'], 'get_lanes(sample_regex) worked';
+@lanes = map { $_->name } grep { $_->isa('VRTrack::Lane') } $vrtrack->get_lanes(library_regex => '4858163|4074489');
+is_deeply \@lanes, ['7816_3#1', '7211_8#1', '7413_5#1'], 'get_lanes(library_regex) worked';
 
-
+# lane_info
+my %i = $vrtrack->lane_info('7816_3#1');
+is_deeply [$i{centre},
+           $i{project},
+           $i{study},
+           $i{species},
+           $i{population},
+           $i{individual},
+           $i{sample},
+           $i{seq_tech},
+           $i{library},
+           $i{lane},
+           $i{withdrawn},
+           $i{insert_size},
+           $i{individual_coverage}],
+          ['SC',
+           'S.pombe genetic diversity',
+           'ERP000979',
+           'Schizosaccharomyces pombe',
+           'Population',
+           'JB4',
+           '1996STDY5244898',
+           'SLX',
+           '4858163',
+           '7816_3#1',
+           undef,
+           197,
+           undef], 'lane_info worked';
+%i = $vrtrack->lane_info('7816_3#1', get_coverage => 1, genome_size => 12631379);
+is $i{individual_coverage}, 85.95, 'lane_info with get_coverage worked';
 
 exit;
