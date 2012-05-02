@@ -159,6 +159,7 @@ is $row_blank->genome_covered_10x,     undef,'genome_covered_10x  ok';
 is $row_blank->genome_covered_50x,     undef,'genome_covered_50x  ok';
 is $row_blank->genome_covered_100x,    undef,'genome_covered_100x ok';
 is $row_blank->depth_of_coverage,      undef,'depth_of_coverage ok';
+is $row_blank->depth_of_coverage_sd,   undef,'depth_of_coverage_sd ok';
 is $row_blank->duplication_rate,       undef,'duplication_rate ok';
 is $row_blank->error_rate,             undef,'error_rate ok';
 is $row_blank->npg_qc,             'pending','npg_qc ok';
@@ -191,7 +192,8 @@ is $row_qc->genome_covered_5x,      undef,'genome_covered_5x   ok';
 is $row_qc->genome_covered_10x,     undef,'genome_covered_10x  ok';
 is $row_qc->genome_covered_50x,     undef,'genome_covered_50x  ok';
 is $row_qc->genome_covered_100x,    undef,'genome_covered_100x ok';
-is $row_qc->depth_of_coverage,      32.28,'depth_of_coverage ok';
+is $row_qc->depth_of_coverage,      30.45,'depth_of_coverage ok';
+is $row_qc->depth_of_coverage_sd,   37.59,'depth_of_coverage_sd ok';
 is $row_qc->duplication_rate,      0.0003,'duplication_rate ok';
 is $row_qc->error_rate,             0.003,'error_rate ok';
 is $row_qc->npg_qc,             'pending','npg_qc ok';
@@ -225,6 +227,7 @@ is $row_map->genome_covered_10x,      62.2,'genome_covered_10x  ok';
 is $row_map->genome_covered_50x,      25.1,'genome_covered_50x  ok';
 is $row_map->genome_covered_100x,      2.2,'genome_covered_100x ok';
 is $row_map->depth_of_coverage,      30.16,'depth_of_coverage ok';
+is $row_map->depth_of_coverage_sd,   37.12,'depth_of_coverage_sd ok';
 is $row_map->duplication_rate,       undef,'duplication_rate ok';
 is $row_map->error_rate,             undef,'error_rate ok';
 is $row_map->npg_qc,             'pending','npg_qc ok';
@@ -243,10 +246,10 @@ ok open(my $report_fh,">",\$report_output), 'opened report_fh to scalar';
 ok my $report = Pathogens::Reports::Mapping::Report->new( vrtrack => $vrtrack, filehandle => $report_fh, lanes => [$vrobject{lane}]),'opened report ok';
 ok $report->output_csv,'wrote report';
 
-my $expected_report_output = qq["Study ID",Sample,Lane,Cycles,"Yield (Reads)","Yield (Bases)","Type (QC/Mapping)",Reference,"Reference Size",Mapper,"Adapter (%)","Transposon (%)","Mapped (%)","Paired (%)","Mean Insert Size","Genome Covered (%)","Genome Covered (% >= 1X)","Genome Covered (% >= 5X)","Genome Covered (% >= 10X)","Genome Covered (% >= 50X)","Genome Covered (% >= 100X)","Depth of Coverage (X)","Duplication Rate","Error Rate","NPG QC","Manual QC"\r
-1000,Sparky,1234_5#6,76,10066330,765041080,QC,Sue_FMNH_PR_2081,23298589,velocimapper,0.0,NA,99.0,96.9,315.6,73.99,NA,NA,NA,NA,NA,32.28,0.0003,0.003,pending,passed\r
-1000,Sparky,1234_5#6,76,10066330,765041080,Mapping,Sue_FMNH_PR_2081,23298589,dinomap,0.0,NA,95.5,92.1,319,NA,88.2,70.4,62.2,25.1,2.2,30.16,NA,NA,pending,passed\r
-1000,Sparky,1234_5#6,76,10066330,765041080,Mapping,Sue_FMNH_PR_2081,23298589,dinomap,NA,NA,0.0,0.0,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,pending,passed\r
+my $expected_report_output = qq["Study ID",Sample,Lane,Cycles,"Yield (Reads)","Yield (Bases)","Type (QC/Mapping)",Reference,"Reference Size",Mapper,"Adapter (%)","Transposon (%)","Mapped (%)","Paired (%)","Mean Insert Size","Genome Covered (%)","Genome Covered (% >= 1X)","Genome Covered (% >= 5X)","Genome Covered (% >= 10X)","Genome Covered (% >= 50X)","Genome Covered (% >= 100X)","Depth of Coverage (X)","Depth of Coverage StdDev (X)","Duplication Rate","Error Rate","NPG QC","Manual QC"\r
+1000,Sparky,1234_5#6,76,10066330,765041080,QC,Sue_FMNH_PR_2081,23298589,velocimapper,0.0,NA,99.0,96.9,315.6,73.99,NA,NA,NA,NA,NA,30.45,37.59,0.0003,0.003,pending,passed\r
+1000,Sparky,1234_5#6,76,10066330,765041080,Mapping,Sue_FMNH_PR_2081,23298589,dinomap,0.0,NA,95.5,92.1,319,NA,88.2,70.4,62.2,25.1,2.2,30.16,37.12,NA,NA,pending,passed\r
+1000,Sparky,1234_5#6,76,10066330,765041080,Mapping,Sue_FMNH_PR_2081,23298589,dinomap,NA,NA,0.0,0.0,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,pending,passed\r
 ];
 is $report_output,$expected_report_output,'report gives expected output';
 
