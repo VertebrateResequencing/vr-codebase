@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r709';
+our $VERSION = 'r724';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
@@ -199,7 +199,7 @@ sub _open
 
         my $tabix_args = '';
         if ( exists($args{print_header}) && $args{print_header} ) { $tabix_args .= ' -h '; }
-        $tabix_args .= $$self{file};
+        $tabix_args .= qq['$$self{file}'];
         if ( exists($args{region}) && defined($args{region}) ) { $tabix_args .= qq[ '$args{region}']; }
 
         if ( -e $$self{file} && $$self{file}=~/\.gz/i )
@@ -208,7 +208,7 @@ sub _open
             {
                 $cmd = "tabix $tabix_args |";
             }
-            else { $cmd = "gunzip -c $$self{file} |"; } 
+            else { $cmd = "gunzip -c '$$self{file}' |"; } 
             $$self{check_exit_status} = 1;
         }
         elsif ( $$self{file}=~m{^(?:http|ftp)://} )
@@ -338,6 +338,7 @@ sub next_data_array
     my ($self,$line) = @_;
     if ( !$line ) { $line = $self->next_line(); }
     if ( !$line ) { return undef; }
+    if ( ref($line) eq 'ARRAY' ) { return $line; }
     my @items = split(/\t/,$line);
     chomp($items[-1]);
     return \@items;
@@ -1025,6 +1026,7 @@ sub recalc_ac_an
 sub get_tag_index
 {
     my ($self,$field,$tag,$sep) = @_;
+    if ( !defined $field ) { return -1; }
     my $idx = 0;
     my $prev_isep = 0;
     my $isep = 0;
@@ -1264,7 +1266,7 @@ sub split_mandatory
 =head2 split_gt
 
     About   : Faster alternative to regexs, diploid GT assumed
-    Usage   : my ($a1,$a2) = $vcf->split_gt('0/0'); # returns (0,0)
+    Usage   : my ($a1,$a2,$a3) = $vcf->split_gt('0/0/1'); # returns (0,0,1)
     Arg     : Diploid genotype to split into alleles
     Returns : Array of values
 
@@ -1273,15 +1275,18 @@ sub split_mandatory
 sub split_gt
 {
     my ($self,$gt) = @_;
-    my $isep = index($gt,'/');
-    if ( $isep<0 ) 
-    { 
-        $isep = index($gt,'|'); 
-        if ( $isep<0 ) { return $gt; }
+    my @als;
+    my $iprev = 0;
+    while (1)
+    {
+        my $isep = index($gt,'/',$iprev);
+        my $jsep = index($gt,'|',$iprev);
+        if ( $isep<0 or ($jsep>=0 && $jsep<$isep) ) { $isep = $jsep; }
+        push @als, $isep<0 ? substr($gt,$iprev) : substr($gt,$iprev,$isep-$iprev);
+        if ( $isep<0 ) { return (@als); }
+        $iprev = $isep+1;
     }
-    my $a1 = substr($gt,0,$isep);
-    my $a2 = substr($gt,$isep+1);
-    return ($a1,$a2);
+    return (@als);
 }
 
 
@@ -2582,9 +2587,11 @@ sub get_chromosomes
 {
     my ($self) = @_;
     if ( !$$self{file} ) { $self->throw(qq[The parameter "file" not set.\n]); }
-    my (@out) = `tabix -l $$self{file}`;
+    my (@out) = `tabix -l '$$self{file}'`;
     if ( $? ) 
     { 
+        my @has_tabix = `which tabix`;
+        if ( !@has_tabix ) { $self->throw(qq[The command "tabix" not found, please add it to your PATH\n]); }
         $self->throw(qq[The command "tabix -l $$self{file}" exited with an error. Is the file tabix indexed?\n]); 
     }
     for (my $i=0; $i<@out; $i++) { chomp($out[$i]); }
