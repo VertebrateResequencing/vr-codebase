@@ -14,7 +14,7 @@ my $base = '/software/vertres';
 foreach my $repo ("$base/bin-external", "$base/codebase", "$base/vrpipe/master") {
     chdir($repo);
     warn "\nupdating $repo\n";
-    system("git checkout .; git pull");
+    system("umask 002; git checkout .; git pull; umask 007");
 }
 
 chdir($cwd);
