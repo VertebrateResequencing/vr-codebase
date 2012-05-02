@@ -18,7 +18,7 @@ sub _build__headers
 		   'Reference','Reference Size','Mapper','Adapter (%)','Transposon (%)','Mapped (%)','Paired (%)',
 		   'Mean Insert Size','Genome Covered (%)','Genome Covered (% >= 1X)','Genome Covered (% >= 5X)',
 		   'Genome Covered (% >= 10X)','Genome Covered (% >= 50X)','Genome Covered (% >= 100X)',
-		   'Depth of Coverage (X)','Duplication Rate','Error Rate','NPG QC','Manual QC');
+		   'Depth of Coverage (X)','Depth of Coverage StdDev (X)','Duplication Rate','Error Rate','NPG QC','Manual QC');
     return \@headers;
 }
 
@@ -29,7 +29,7 @@ sub _build__columns
 		   'reference','reference_size','mapper','adapter_perc','transposon_perc','mapped_perc','paired_perc',
 		   'mean_insert_size','genome_covered','genome_covered_1x','genome_covered_5x',
 		   'genome_covered_10x','genome_covered_50x','genome_covered_100x',
-		   'depth_of_coverage','duplication_rate','error_rate','npg_qc','manual_qc');          
+		   'depth_of_coverage','depth_of_coverage_sd','duplication_rate','error_rate','npg_qc','manual_qc');          
     return \@columns;
 }
 
