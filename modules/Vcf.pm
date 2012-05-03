@@ -162,7 +162,11 @@ sub new
     if ( !exists($$self{max_line_len}) && exists($ENV{MAX_VCF_LINE_LEN}) ) { $$self{max_line_len} = $ENV{MAX_VCF_LINE_LEN} }
     $$self{fix_v40_AGtags} = $ENV{DONT_FIX_VCF40_AG_TAGS} ? 0 : 1;
     my %open_args = ();
-    if ( exists($$self{region}) ) { $open_args{region}=$$self{region}; }
+    if ( exists($$self{region}) ) 
+    { 
+        $open_args{region}=$$self{region}; 
+        if ( !exists($$self{print_header}) ) { $$self{print_header}=1; }
+    }
     if ( exists($$self{print_header}) ) { $open_args{print_header}=$$self{print_header}; }
     return $self->_open(%open_args);
 }
