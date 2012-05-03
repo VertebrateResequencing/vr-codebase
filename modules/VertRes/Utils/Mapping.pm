@@ -47,6 +47,9 @@ use base qw(VertRes::Base);
 our %tech_to_mapper = (454 => 'ssaha',
                        SLX => 'bwa');
 
+our %tech_to_exe = (454 => 'ssaha2',
+                      SLX => 'bwa');
+
 our %do_mapping_args = (insert_size => 1,
                         local_cache => 1,
                         read_group  => 1);
@@ -100,6 +103,34 @@ sub lane_to_module {
     return "VertRes::Utils::Mappers::$mapper";
 }
 
+=head2 lane_to_exe
+
+ Title   : lane_to_exe
+ Usage   : my $exe = $obj->lane_to_exe('/path/to/lane');
+ Function: Find out what mapping utility module to use on your lane.
+ Returns : class string (call new on it)
+ Args    : path string
+
+=cut
+
+sub lane_to_exe {
+    my ($self, $arg) = @_;
+    
+    my $exe;
+    if ($arg =~ /\/SLX\//i) {
+        $exe = $self->{slx_mapper_exe} || $self->{slx_mapper} || $tech_to_exe{SLX};
+    }
+    elsif ($arg =~ /\/454\//) {
+        $exe = $self->{'454_mapper_exe'} || $self->{'454_mapper'} || $tech_to_exe{454};
+        $exe =~ s/ssaha$/ssaha2/;
+    }
+    else {
+        $self->throw("Encountered an argument that doesn't correspond to an executable: $arg");
+    }
+    
+    return $exe;
+}
+
 =head2 split_fastq
 
  Title   : split_fastq
@@ -147,6 +178,21 @@ sub split_fastq {
 =cut
 
 sub wrapper {
+    my $self = shift;
+    $self->throw("This is supposed to be overriden");
+}
+
+=head2 name
+
+ Title   : name
+ Usage   : my $name = $obj->name();
+ Function: Returns the program name.
+ Returns : string representing name of the program 
+ Args    : n/a
+
+=cut
+
+sub name {
     my $self = shift;
     $self->throw("This is supposed to be overriden");
 }
@@ -257,6 +303,11 @@ sub _do_mapping_args {
     
     $out_hash{ref} = $args{ref};
     $out_hash{output} = $args{output};
+    if(defined $args{is_paired})
+    {
+      $out_hash{is_paired} = $args{is_paired};
+    }
+    
     
     foreach my $arg (keys %do_mapping_args) {
         if (defined $args{$arg}) {

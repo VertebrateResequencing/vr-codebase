@@ -16,6 +16,7 @@ plot_qualities($opts);
 plot_isize($opts);
 plot_gc($opts);
 plot_gc_depth($opts);
+plot_coverage($opts);
 
 # Clean the temporary files
 clean();
@@ -58,6 +59,24 @@ sub parse_params
     elsif ( !($$opts{prefix}=~/-$/) ) { $$opts{prefix} .= '-'; }
     return $opts;
 }
+
+sub plot
+{
+    my ($cmdfile) = @_;
+
+    my @fonts = qw(/usr/share/fonts/truetype/ttf-dejavu/ /usr/share/fonts/truetype/);
+    my $font  = '';
+    for my $f (@fonts)
+    {
+        if ( ! -e $f ) { next; }
+        $font = "GDFONTPATH=$f";
+        last;
+    }
+    my $cmd = "$font gnuplot $cmdfile";
+    system($cmd);
+    if ( $? ) { error("The command exited with non-zero status $?:\n\t$cmd\n\n"); }
+}
+
 
 sub clean
 {
@@ -115,56 +134,54 @@ sub plot_heatmap_qualities
     # Create the gnuplot script. Quick solution: the script relies on backticks and unix commands, may be changed in future
     open(my $fh,'>',$$args{gp}) or error("$$args{gp}: $!");
     print $fh q[
-
-set terminal png size 600,500 truecolor font "DejaVuSansMono,9"
-set output "] . $$args{img} . q["
-
-unset key
-unset colorbox
-
-set palette defined (0 0 0 0, 1 0 0 1, 3 0 1 0, 4 1 0 0, 6 1 1 1)
-
-max_val = `grep -e ^FFQ -e ^LFQ ] . $$opts{bamcheck} . q[ | cut -f 3- | sed 's,\s\s*,\n,g' | awk '{if($1>max)max=$1}END{print max}'`
-ncycles = `grep ^FFQ ] . $$opts{bamcheck} . q[ | cut -f 2 | awk '{if($1>max)max=$1}END{print max}'`
-nquals  = `grep '^FFQ[[:space:]]1[[:space:]]' ] . $$opts{bamcheck} . q[ | cut -f 4- | sed 's,\s\s*,\n,g' |wc -l`
-
-set cbrange [0:max_val]
-set yrange  [0:ncycles]
-set xrange  [0:nquals]
-
-set view map
-set multiplot
-set rmargin 0 
-set lmargin 0 
-set tmargin 0 
-set bmargin 0 
-
-set origin 0,0.46
-set size 0.95,0.6
-set ylabel "Cycle (fwd reads)" offset character -1,0
-unset ytics
-set ytics (`grep ^FFQ ] . $$opts{bamcheck} . q[ | awk '{if ($2%10==0) printf "\"%s\" %s,",$2,NR}END{printf "\"\" 0\n"}'`)
-unset xtics
-set title "] . $$args{title} . q["
-splot '< grep ^FFQ ] . $$opts{bamcheck} . q[ | cut -f 3-' matrix with image
-
-set origin 0,0.03
-set size 0.95,0.6
-set ylabel "Cycle (rev reads)" offset character -1,0
-set xlabel "Base Quality"
-unset title
-unset ytics
-set ytics (`grep ^LFQ ] . $$opts{bamcheck} . q[ | awk '{if ($2%10==0) printf "\"%s\" %s,",$2,NR}END{printf "\"\" 0\n"}'`)
-set xtics
-set colorbox vertical user origin first (nquals+1),0 size screen 0.025,0.812
-set cblabel "Number of bases"
-splot '< grep ^LFQ ] . $$opts{bamcheck} . q[ | cut -f 3-' matrix with image
-set nomultiplot
-
-];
+        set terminal png size 600,500 truecolor font "DejaVuSansMono,9"
+        set output "] . $$args{img} . q["
+        
+        unset key
+        unset colorbox
+        
+        set palette defined (0 0 0 0, 1 0 0 1, 3 0 1 0, 4 1 0 0, 6 1 1 1)
+        
+        max_val = `grep -e ^FFQ -e ^LFQ ] . $$opts{bamcheck} . q[ | cut -f 3- | sed 's,\s\s*,\n,g' | awk '{if($1>max)max=$1}END{print max}'`
+        ncycles = `grep ^FFQ ] . $$opts{bamcheck} . q[ | cut -f 2 | awk '{if($1>max)max=$1}END{print max}'`
+        nquals  = `grep '^FFQ[[:space:]]1[[:space:]]' ] . $$opts{bamcheck} . q[ | cut -f 4- | sed 's,\s\s*,\n,g' |wc -l`
+        
+        set cbrange [0:max_val]
+        set yrange  [0:ncycles]
+        set xrange  [0:nquals]
+        
+        set view map
+        set multiplot
+        set rmargin 0 
+        set lmargin 0 
+        set tmargin 0 
+        set bmargin 0 
+        
+        set origin 0,0.46
+        set size 0.95,0.6
+        set ylabel "Cycle (fwd reads)" offset character -1,0
+        unset ytics
+        set ytics (`grep ^FFQ ] . $$opts{bamcheck} . q[ | awk '{if ($2%10==0) printf "\"%s\" %s,",$2,NR}END{printf "\"\" 0\n"}'`)
+        unset xtics
+        set title "] . $$args{title} . q["
+        splot '< grep ^FFQ ] . $$opts{bamcheck} . q[ | cut -f 3-' matrix with image
+        
+        set origin 0,0.03
+        set size 0.95,0.6
+        set ylabel "Cycle (rev reads)" offset character -1,0
+        set xlabel "Base Quality"
+        unset title
+        unset ytics
+        set ytics (`grep ^LFQ ] . $$opts{bamcheck} . q[ | awk '{if ($2%10==0) printf "\"%s\" %s,",$2,NR}END{printf "\"\" 0\n"}'`)
+        set xtics
+        set colorbox vertical user origin first (nquals+1),0 size screen 0.025,0.812
+        set cblabel "Number of bases"
+        splot '< grep ^LFQ ] . $$opts{bamcheck} . q[ | cut -f 3-' matrix with image
+        set nomultiplot
+    ];
     close($fh);
 
-    system("export GDFONTPATH=/usr/share/fonts/truetype/ttf-dejavu/; gnuplot $$args{gp}");
+    plot($$args{gp});
 }
 
 
@@ -183,6 +200,7 @@ sub plot_qualities
     #
     my @ff = `cat $$opts{bamcheck} | grep ^FFQ | cut -f 2-`;
     my @lf = `cat $$opts{bamcheck} | grep ^LFQ | cut -f 2-`;
+    
     my $tmpf = get_temp_file($opts);
     my $tmpl = get_temp_file($opts);
     my (@fvals, @lvals);
@@ -240,72 +258,93 @@ sub plot_qualities
     }
     push @lines, sprintf "'' using 1:%d with lines lw 2 lc rgb '#4affda' t ''",$nrows+2;
     my $lines = join(',', @lines);
+    
+    my $is_paired = 1;
+    if(@lf <= 1)
+    {
+      $is_paired = 0;
+    }
 
     
     # Create the gnuplot script. Quick solution: the script relies on backticks and unix commands, may be changed in future
     open(my $fh,'>',$$args{gp}) or error("$$args{gp}: $!");
     print $fh qq[
+        set terminal png size 600,500 truecolor font "DejaVuSansMono,9"
+        set output "$$args{img}"
+        set ylabel "Quality" 
+        set xlabel "Cycle"
+        set yrange [0:$max_qual]
+        set title "$$args{title}"
+        plot '$tmpf' using 1:2 with lines title 'Forward reads', '$tmpl' using 1:2 with lines title 'Reverse reads'
+        
+        
+        set terminal png size 700,500 truecolor font "DejaVuSansMono,9"
+        set output "$$args2{img}"
+        unset title
+        set multiplot
+        set rmargin 0 
+        set lmargin 0 
+        set tmargin 0 
+        set bmargin 0 
+        set origin 0.1,0.1
+        set size 0.4,0.8
+        set xlabel "Cycle (fwd reads)"
+        plot '$tmpf' using 1:3:5 with filledcurve lt 1 lc rgb "#cccccc" t '25-75th percentile' , '' using 1:4 with lines lc rgb "#000000" t 'Median', '' using 1:2 with lines lt 1 t 'Mean'
+        set origin 0.55,0.1
+        set size 0.4,0.8
+        unset ytics
+        set y2tics mirror
+        unset ylabel
+    ];
+  
+    unless($is_paired)
+    {
+      print $fh qq[
+          set xlabel "Cycle (rev reads)"
+          set label "$$args{title}" at screen 0.5,0.95 center
+          plot '$tmpl' using 1:3:5 with filledcurve lt 1 lc rgb "#cccccc" t '25-75th percentile' , '' using 1:4 with lines lc rgb "#000000" t 'Median', '' using 1:2 with lines lt 2 t 'Mean'
+      ];
+    }
+    
+    print $fh qq[
+        set nomultiplot
+    
+        reset
+        set terminal png size 600,600 truecolor font "DejaVuSansMono,9"
+        set output "$$args3{img}"
+        set multiplot
+        set rmargin 0
+        set lmargin 0
+        set tmargin 0
+        set bmargin 0
+        set origin 0.15,0.52
+        set size 0.8,0.4
+        set title "$$args{title}"
+        set ylabel "Frequency (fwd reads)" 
+        unset xlabel
+        set xrange [0:$ncols]
+        set format x ""
+        plot '$transpf' using 1:2 with lines t '', $lines
+        set origin 0.15,0.1
+        set size 0.8,0.4
+        unset title
+        unset format
+        set xtics
+        set xlabel "Quality"
+    ];
+    
+    unless($is_paired)
+    {
+      print $fh qq[
+          set ylabel "Frequency (rev reads)" 
+          plot '$transpl' using 1:2 with lines t '', $lines
 
-set terminal png size 600,500 truecolor font "DejaVuSansMono,9"
-set output "$$args{img}"
-set ylabel "Quality" 
-set xlabel "Cycle"
-set yrange [0:$max_qual]
-set title "$$args{title}"
-plot '$tmpf' using 1:2 with lines title 'Forward reads', '$tmpl' using 1:2 with lines title 'Reverse reads'
-
-
-set terminal png size 700,500 truecolor font "DejaVuSansMono,9"
-set output "$$args2{img}"
-unset title
-set multiplot
-set rmargin 0 
-set lmargin 0 
-set tmargin 0 
-set bmargin 0 
-set origin 0.1,0.1
-set size 0.4,0.8
-set xlabel "Cycle (fwd reads)"
-plot '$tmpf' using 1:3:5 with filledcurve lt 1 lc rgb "#cccccc" t '25-75th percentile' , '' using 1:4 with lines lc rgb "#000000" t 'Median', '' using 1:2 with lines lt 1 t 'Mean'
-set origin 0.55,0.1
-set size 0.4,0.8
-unset ytics
-set y2tics mirror
-unset ylabel
-set xlabel "Cycle (rev reads)"
-set label "$$args{title}" at screen 0.5,0.95 center
-plot '$tmpl' using 1:3:5 with filledcurve lt 1 lc rgb "#cccccc" t '25-75th percentile' , '' using 1:4 with lines lc rgb "#000000" t 'Median', '' using 1:2 with lines lt 2 t 'Mean'
-set nomultiplot
-
-reset
-set terminal png size 600,600 truecolor font "DejaVuSansMono,9"
-set output "$$args3{img}"
-set multiplot
-set rmargin 0
-set lmargin 0
-set tmargin 0
-set bmargin 0
-set origin 0.15,0.52
-set size 0.8,0.4
-set title "$$args{title}"
-set ylabel "Frequency (fwd reads)" 
-unset xlabel
-set xrange [0:$ncols]
-set format x ""
-plot '$transpf' using 1:2 with lines t '', $lines
-set origin 0.15,0.1
-set size 0.8,0.4
-unset title
-unset format
-set xtics
-set ylabel "Frequency (rev reads)" 
-set xlabel "Quality"
-plot '$transpl' using 1:2 with lines t '', $lines
-
-];
+      ];
+    } 
+    
     close($fh);
 
-    system("export GDFONTPATH=/usr/share/fonts/truetype/ttf-dejavu/; gnuplot $$args{gp}");
+    plot($$args{gp});
 }
 
 sub percentile
@@ -317,7 +356,7 @@ sub percentile
     my $k = int($n);
     my $d = $n-$k;
     if ( $k<=0 ) { return 0; }
-    if ( $k>=$N ) { return $N-1; }
+    if ( $k>=$N ) { return scalar @$vals-1; }
     my $cnt;
     for (my $i=0; $i<@$vals; $i++)
     { 
@@ -333,29 +372,32 @@ sub plot_isize
 
     my $args = get_defaults($opts,"$$opts{prefix}insert-size.png");
     
+    my $isize_max = `grep ^IS  $$opts{bamcheck} | cut -f 2- | awk 'BEGIN{max=0;isize=0}{if(\$2>max){max=\$2;isize=\$1}}END{print isize}'`;
+    my $isize_cnt = `grep ^IS  $$opts{bamcheck} | cut -f 2- | awk 'BEGIN{max=0;isize=0}{if(\$2>max){max=\$2;isize=\$1}}END{print max}'`;
+    
+    return if(  (!(defined $isize_max)) || (!(defined $isize_cnt)) ||  ($isize_max <= 0) || ($isize_cnt <=0));
+    
     # Create the gnuplot script. Quick solution: the script relies on backticks and unix commands, may be changed in future
     open(my $fh,'>',$$args{gp}) or error("$$args{gp}: $!");
     print $fh q[
-
-set terminal png size 600,500 truecolor font "DejaVuSansMono,9"
-set output "] . $$args{img} . q["
-
-unset key
-
-isize_max = `grep ^IS ] . $$opts{bamcheck} . q[ | cut -f 2- | awk '{if($2>max){max=$2;isize=$1}}END{print isize}'`
-isize_cnt = `grep ^IS ] . $$opts{bamcheck} . q[ | cut -f 2- | awk '{if($2>max){max=$2;isize=$1}}END{print max}'`
-set label sprintf("%d",isize_max) at isize_max+10,isize_cnt
-
-set ylabel "Frequency" 
-set xlabel "Insert Size"
-
-set title "] . $$args{title} . q["
-plot '< grep ^IS ] . $$opts{bamcheck} . q[ | cut -f 2-' with lines
-
-];
+        set terminal png size 600,500 truecolor font "DejaVuSansMono,9"
+        set output "] . $$args{img} . q["
+        
+        unset key
+        
+        isize_max = ] . $isize_max . q[
+        isize_cnt = ] . $isize_cnt . q[
+        set label sprintf("%d",isize_max) at isize_max+10,isize_cnt
+        
+        set ylabel "Frequency" 
+        set xlabel "Insert Size"
+        
+        set title "] . $$args{title} . q["
+        plot '< grep ^IS ] . $$opts{bamcheck} . q[ | cut -f 2-' with lines
+    ];
     close($fh);
 
-    system("export GDFONTPATH=/usr/share/fonts/truetype/ttf-dejavu/; gnuplot $$args{gp}");
+    plot($$args{gp});
 }
 
 
@@ -384,28 +426,42 @@ sub plot_gc
         close($fh);
         $ref_stats = qq['$tmp_file' with lines lt 0 title 'Reference', ];
     }
+
+    my $gcf_max = `grep ^GCF  $$opts{bamcheck}  | cut -f 2- | awk '{if(\$2>max)max=\$2}END{print max}'`;
+    
+    # if its single ended dont plot the reverse reads
+    my $gcl_max_plot ='';
+    my $plot_reverse_str = '';
+    my $gcl_max = `grep ^GCL  $$opts{bamcheck}  | cut -f 2- | awk '{if(\$2>max)max=\$2}END{print max}'`;
+    chomp $gcl_max;
+    if((defined $gcl_max) && $gcl_max ne "")
+    {
+      $gcl_max_plot = 'gcl_max = ' . $gcl_max ;
+      $plot_reverse_str = q[, '< grep ^GCL ] . $$opts{bamcheck} . q[ | cut -f 2-' using 1:($2/gcl_max) with lines title 'Last fragments' lc 2 ];
+    }
     
     # Create the gnuplot script. Quick solution: the script relies on backticks and unix commands, may be changed in future
     open(my $fh,'>',$$args{gp}) or error("$$args{gp}: $!");
     print $fh q[
+        set terminal png size 600,500 truecolor font "DejaVuSansMono,9"
+        set output "] . $$args{img} . q["
+        
+        gcf_max = ] . $gcf_max . q[
+        ] . $gcl_max_plot . q[
 
-set terminal png size 600,500 truecolor font "DejaVuSansMono,9"
-set output "] . $$args{img} . q["
+        peak = `grep ^GC\[FL\] ] . $$opts{bamcheck} . q[ | cut -f 2- | awk '{if($2>max){max=$2;pos=$1}}END{print pos}'`
+        set label sprintf("%.1f",peak) at peak,1 front offset 1,0
 
-gcf_max = `grep ^GCF ] . $$opts{bamcheck} . q[ | cut -f 2- | awk '{if($2>max)max=$2}END{print max}'`
-gcl_max = `grep ^GCL ] . $$opts{bamcheck} . q[ | cut -f 2- | awk '{if($2>max)max=$2}END{print max}'`
-
-set ylabel "Normalized Frequency" 
-set xlabel "GC Content [%]"
-set yrange [0:1.1]
-
-set title "] . $$args{title} . q["
-plot ] . $ref_stats . q[ '< grep ^GCF ] . $$opts{bamcheck} . q[ | cut -f 2-' using 1:($2/gcf_max) with lines lc 1 title 'First fragments', '< grep ^GCL ] . $$opts{bamcheck} . q[ | cut -f 2-' using 1:($2/gcl_max) with lines title 'Last fragments' lc 2
-
-];
+        set ylabel "Normalized Frequency" 
+        set xlabel "GC Content [%]"
+        set yrange [0:1.1]
+        
+        set title "] . $$args{title} . q["
+        plot ] . $ref_stats . q[ '< grep ^GCF ] . $$opts{bamcheck} . q[ | cut -f 2-' using 1:($2/gcf_max) with lines lc 1 title 'First fragments']. $plot_reverse_str. q[
+    ];
     close($fh);
 
-    system("export GDFONTPATH=/usr/share/fonts/truetype/ttf-dejavu/; gnuplot $$args{gp}");
+    plot($$args{gp});
 }
 
 
@@ -439,28 +495,56 @@ sub plot_gc_depth
     # Create the gnuplot script. Quick solution: the script relies on backticks and unix commands, may be changed in future
     open($fh,'>',$$args{gp}) or error("$$args{gp}: $!");
     print $fh q[
-
-set terminal png size 600,500 truecolor font "DejaVuSansMono,9"
-set output "] . $$args{img} . q["
-
-set grid back lc rgb "#aaaaaa"
-set ylabel "Mapped depth" 
-set xlabel "Percentile of mapped sequence ordered by GC content"
-set x2label "GC Content [%]"
-set title "] . $$args{title} . q["
-set x2tics (] . join(',',@x2tics) . q[)
-set xtics nomirror
-set xrange [0.1:99.9]
-
-plot '< grep ^GCD ] . $$opts{bamcheck} . q[ | cut -f 2-' using 2:3:7 with filledcurve lt 1 lc rgb "#dedede" t '10-90th percentile' , \\
-    '' using 2:4:6 with filledcurve lt 1 lc rgb "#bbdeff" t '25-75th percentile' , \\
-    '' using 2:5 with lines lc rgb "#0084ff" t 'Median'
-
-];
+        set terminal png size 600,500 truecolor font "DejaVuSansMono,9"
+        set output "] . $$args{img} . q["
+        
+        set grid back lc rgb "#aaaaaa"
+        set ylabel "Mapped depth" 
+        set xlabel "Percentile of mapped sequence ordered by GC content"
+        set x2label "GC Content [%]"
+        set title "] . $$args{title} . q["
+        set x2tics (] . join(',',@x2tics) . q[)
+        set xtics nomirror
+        set xrange [0.1:99.9]
+        
+        plot '< grep ^GCD ] . $$opts{bamcheck} . q[ | cut -f 2-' using 2:3:7 with filledcurve lt 1 lc rgb "#dedede" t '10-90th percentile' , \\
+            '' using 2:4:6 with filledcurve lt 1 lc rgb "#bbdeff" t '25-75th percentile' , \\
+            '' using 2:5 with lines lc rgb "#0084ff" t 'Median'
+    ];
     close($fh);
 
-    system("export GDFONTPATH=/usr/share/fonts/truetype/ttf-dejavu/; gnuplot $$args{gp}");
+    plot($$args{gp});
 }
 
+
+sub plot_coverage
+{
+    my ($opts) = @_;
+
+    my $args = get_defaults($opts,"$$opts{prefix}coverage.png");
+
+    my @values = grep { chomp } `cat $$opts{bamcheck} | grep ^COV | cut -f 4`;
+    my $p99    = percentile(\@values,99.8);
+
+    open(my $fh,'>',$$args{gp}) or error("$$args{gp}: $!");
+    print $fh q[
+        set terminal png size 600,500 truecolor font "DejaVuSansMono,9"
+        set output "] . $$args{img} . q["
+        
+        #set logscale y
+        set grid back lc rgb "#aaaaaa"
+        set ylabel "Number of mapped bases" 
+        set xlabel "Coverage"
+        set style fill solid border -1
+        set title "] . $$args{title} . q["
+        set xrange ] . "[:$p99]" . q[
+        
+        plot '< grep ^COV ] . $$opts{bamcheck} . q[ | cut -f 3,4' with boxes notitle
+
+    ];
+    close($fh);
+
+    plot($$args{gp});
+}
 
 

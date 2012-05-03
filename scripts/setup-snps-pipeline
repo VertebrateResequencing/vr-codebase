@@ -111,7 +111,10 @@ sub create_mergeup_config
                 "    do_sample_merge => 1,                      \n",
                 "    do_index_bams => 1,                        \n",
                 "    do_cleanup => 1,                           \n",
-                "    tag_strip => [qw(OQ XM XG XO)],            \n",
+
+              # This does not seem to be working 
+              # "    tag_strip => [qw(OQ XM XG XO)],            \n",
+
                 "}                                              \n",
             );
     Utils::CMD("mkdir -p $$opts{outdir}/mergeup");

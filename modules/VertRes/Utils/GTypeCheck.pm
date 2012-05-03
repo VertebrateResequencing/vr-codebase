@@ -41,6 +41,27 @@ sub check_genotype
     my ($dir,$name,$suff) = Utils::basename($bam);
     if ( !$dir ) { $dir = '.'; }
 
+    my $pileup_out = "$name.bcf";
+    my $pileup_cmd = "bin2hapmap -l $snps > $name.tmp.sites && $samtools mpileup -ugDI -d 1000 -l $name.tmp.sites -f $fa_ref $bam > $name.tmp.pileup && mv $name.tmp.pileup $pileup_out";
+    my $checkGenotype_cmd = "$glf checkGenotype -s - $snps $pileup_out > $name.gtypey";
+
+    if (exists $self->{'snp_sites'} ) {
+        my $snp_sites_string;
+        open my $f, $self->{'snp_sites'} or $self->throw("Error opening file ". $self->{'snp_sites'});
+
+        while (<$f>) {
+            chomp;
+            my @a = split /\t/;
+            $snp_sites_string .= "$a[0]:$a[1]-$a[1] ";
+        }
+
+        close $f;
+        my $gtype_bam = "$name.gtype.tmp.sort";
+        $pileup_out = "$name.bcf";
+        $pileup_cmd = "$samtools view -bh $bam $snp_sites_string > $name.gtype.tmp.bam && $samtools sort $name.gtype.tmp.bam $gtype_bam && $samtools index $gtype_bam.bam && $samtools mpileup -ugDI -d 1000 -l " . $self->{'snp_sites'} . " -f $fa_ref $gtype_bam.bam > $name.gtype.tmp.pileup && mv $name.gtype.tmp.pileup $pileup_out && rm $name.gtype.tmp.bam";
+        $checkGenotype_cmd = "$glf checkGenotype -s - $snps $pileup_out > $name.gtypey";
+    }
+
     # Dynamic script to be run by LSF.
     open(my $fh, '>', "$dir/${prefix}genotype.pl") or $self->throw("$dir/${prefix}genotype.pl: $!");
     print $fh
@@ -54,17 +75,16 @@ if ( ! -e "$bam.bai" || Utils::file_newer("$bam","$bam.bai") )
 { 
     Utils::CMD("$samtools index $bam"); 
 }
-if ( ! -e "$name.glf" || Utils::file_newer("$bam","$name.glf") )
+if ( ! -e "$pileup_out" || Utils::file_newer("$bam","$pileup_out") )
 {
-    Utils::CMD("$samtools pileup -g -f $fa_ref $bam > $name.glfx");
-    rename("$name.glfx", "$name.glf") or Utils::CMD("rename $name.glfx $name.glf: \$!");
+    Utils::CMD(q[$pileup_cmd]);
 }
-if ( ! -e "$name.gtypex" || Utils::file_newer("$name.glf","$name.gtypex") )
+if ( ! -e "$name.gtypex" || Utils::file_newer(q[$pileup_out],"$name.gtypex") )
 {
-    Utils::CMD("$glf checkGenotype $snps $name.glf > $name.gtypey");
+    Utils::CMD(q[$checkGenotype_cmd]);
     if ( ! -s "$name.gtypey" ) 
     { 
-        \$base->throw("FIXME: this should not happen, what's wrong with:\n\t$glf checkGenotype $snps $name.glf > $name.gtypey\n???\n");
+        \$base->throw("FIXME: this should not happen, what's wrong with:\n\t$checkGenotype_cmd\n???\n");
     }
     rename("$name.gtypey", "$name.gtypex") or Utils::CMD("rename $name.gtypey $name.gtypex: \$!");
     if ( ! -s "$name.gtypex" ) 
@@ -102,6 +122,13 @@ sub is_genotype_ok
     #   sample C57BL_6J likelihood 9863 over 2583 sites, avg depth 1.05
     #   sample C57BLKS_J likelihood 16203 over 2469 sites, avg depth 1.05
 
+	# We also need to take account of examples where the top 2 records have an equal likelihood
+	# and one of them is the expected sample, but as it is listed second it is recorded as unconfirmed
+	# e.g. sample UK10K_CIL5062115 lane 6436_7#5:
+	#	entropy 0.1, hets included 1
+	#	sample UK10K_CIL5002407 likelihood 0 over 26 sites, score 0.000000, avg depth 30.192308
+	#	sample UK10K_CIL5062115 likelihood 0 over 26 sites, score 0.000000, avg depth 30.192308
+
     my $has_data = 0;
     my ($hit1,$hit2,$gtype1,$lhood1,$gtype2,$lhood2);
 
@@ -136,17 +163,23 @@ sub is_genotype_ok
     }
     close $fh;
 
+	# need to take account of special circumstance above where the 'correct' sample is listed second, but has 
+	# the same likelihood as that reported first->  $expected eq $gtype2 and $lhood1==$lhood2
+    my $expected_gtype2 = ($expected eq $gtype2 && $lhood1 == $lhood2) ? 1 : 0; 
+     
     if ( $expected && !$has_data ) { $expected = 0; }
 
     my $ratio = $lhood1!=0 ? $lhood2/$lhood1 : $lhood2/1e-6;
+
+	if ( $expected_gtype2 ) { return "status=confirmed expected=$expected found=$gtype2 ratio=$ratio\n"; }
 
     if ( $ratio<$min_ratio ) 
     { 
         if ( $expected ) { return "status=unconfirmed expected=$expected found=$gtype1 ratio=$ratio\n"; }
         return "status=unknown expected=none found=$gtype1 ratio=$ratio\n";
     }
-    if ( !$expected ) { return "status=candidate expected=none found=$gtype1 ratio=$ratio\n" }
-    if ( $expected eq $gtype1 ) { return "status=confirmed expected=$expected found=$gtype1 ratio=$ratio\n" }
+    if ( !$expected ) { return "status=candidate expected=none found=$gtype1 ratio=$ratio\n"; }
+    if ( $expected eq $gtype1 ) { return "status=confirmed expected=$expected found=$gtype1 ratio=$ratio\n"; }
     return "status=wrong expected=$expected found=$gtype1 ratio=$ratio\n";
 }
 

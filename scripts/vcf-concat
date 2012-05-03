@@ -9,7 +9,11 @@ use Carp;
 use Vcf;
 
 my $opts = parse_params();
-if ( !exists($$opts{sort}) )
+if ( $$opts{check_columns} )
+{
+    check_columns($opts);
+}
+elsif ( !exists($$opts{sort}) )
 {
     concat($opts);
 }
@@ -36,6 +40,7 @@ sub error
         "   a limited number of open jobs simultaneously.\n",
         "Usage: vcf-concat [OPTIONS] A.vcf.gz B.vcf.gz C.vcf.gz > out.vcf\n",
         "Options:\n",
+        "   -c, --check-columns              Do not concatenate, only check if the columns agree.\n",
         "   -f, --files <file>               Read the list of files from a file.\n",
         "   -s, --merge-sort <int>           Allow small overlaps in N consecutive files.\n",
         "   -h, -?, --help                   This help message.\n",
@@ -48,6 +53,7 @@ sub parse_params
     while (my $arg=shift(@ARGV))
     {
         if ( $arg eq '-s' || $arg eq '--merge-sort' ) { $$opts{sort}=shift(@ARGV); next; } 
+        if ( $arg eq '-c' || $arg eq '--check-columns' ) { $$opts{check_columns}=1; next;  }
         if ( $arg eq '-f' || $arg eq '--files' ) 
         {
             my $files = shift(@ARGV);
@@ -66,6 +72,31 @@ sub parse_params
     }
     if ( ! @{$$opts{files}} ) { error("No files to concat?\n") }
     return $opts;
+}
+
+sub check_columns
+{
+    my ($opts) = @_;
+    my @columns;
+    for my $file (@{$$opts{files}})
+    {
+        my $vcf = Vcf->new(file=>$file);
+        $vcf->parse_header();
+
+        if ( @columns )
+        {
+            if ( @columns != @{$$vcf{columns}} ) { warn("Different number of columns in [$file].\n"); }
+            for (my $i=0; $i<@columns; $i++)
+            {
+                if ( $$vcf{columns}[$i] ne $columns[$i] ) { warn("The column names do not agree in [$file].\n"); last; }
+            }
+        }
+        else
+        {
+            @columns = @{$$vcf{columns}};
+        }
+        $vcf->close();
+    }
 }
 
 sub concat

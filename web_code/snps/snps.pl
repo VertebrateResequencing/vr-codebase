@@ -58,8 +58,8 @@ my $params =
 
     
     #'db_info' => 'DBI:mysql:host=mcs4a;port=3306;database=test_snps_db',           # development version (test data)
-    'db_info' => 'DBI:mysql:host=mcs4a;port=3307;database=mouse_web_snps',         # test version (full data)
-    #'db_info' => 'DBI:mysql:host=web-mei-vrip;port=3307;database=mouse_web_snps',  # public version (full data)
+    #'db_info' => 'DBI:mysql:host=mcs4a;port=3307;database=mouse_web_snps',         # test version (full data)
+    'db_info' => 'DBI:mysql:host=web-mei-vrip;port=3307;database=mouse_web_snps',  # public version (full data)
     'db_user' => 'vreseq_ro', 
     'db_pass' => '',
 
@@ -111,7 +111,7 @@ my $params =
         'NOD/ShiLtJ'  => { caption  => 'This strain is a polygenic model for type 1 (non-obese) diabetes. Progenitor strain of the collaborative cross.', 
                             img=>'mouse-NOD_ShiLtJ.png', 
                             bam=>'NOD.bam', },
-        'NZO/HiLtJ'   => { caption  => 'New Zealand Obese. Susceptible to type II diabetes. Progenitor strain of the collaborative cross.', 
+        'NZO/HlLtJ'   => { caption  => 'New Zealand Obese. Susceptible to type II diabetes. Progenitor strain of the collaborative cross.', 
                             img=>'mouse-nzo.png',
                             bam=>'NZO.bam', },
         'PWK/PhJ'     => { caption  => 'Susceptibility to type I diabetes and various behavioral traits. Progenitor strain of the collaborative cross.', 

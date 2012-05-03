@@ -313,7 +313,7 @@ sub insert_size {
     my $self = shift;
     my $f_from = $self->fragment_size_from();
     my $f_to = $self->fragment_size_to();
-    my $insert_size = int(($f_from+$f_to)/2);
+    my $insert_size = (defined $f_from && $f_to) ? int(($f_from+$f_to)/2) : 0;
     return $insert_size;
 }
 

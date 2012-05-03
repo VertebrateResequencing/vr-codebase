@@ -72,7 +72,9 @@ our @ref_hash_suffixes = ('head', 'body', 'name', 'base', 'size');
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => 'ssaha2');
+    my $self = $class->SUPER::new(exe => 'ssaha2', @args);
+    
+    $self->{orig_exe} = $self->exe;
     
     return $self;
 }
@@ -90,7 +92,7 @@ sub new {
 sub version {
     my $self = shift;
     
-    my $exe = $self->exe;
+    my $exe = $self->{orig_exe};
     open(my $fh, "$exe -v |") || $self->throw("Could not start $exe");
     my $version = 0;
     while (<$fh>) {
@@ -122,7 +124,7 @@ sub ssaha2Build {
     my (undef, $path) = fileparse($in_fa);
     $out_basename = File::Spec->catfile($path, basename($out_basename));
     
-    $self->exe('ssaha2Build');
+    $self->exe($self->{orig_exe}.'Build');
     
     $self->switches([]);
     $self->params([qw(kmer skip save)]);
@@ -135,6 +137,9 @@ sub ssaha2Build {
     $self->{silence_stdout} = 1;
     my @results = $self->run($in_fa);
     $self->{silence_stdout} = 0;
+    
+    $self->exe($self->{orig_exe});
+    
     return @results;
 }
 
@@ -156,7 +161,7 @@ sub ssaha2 {
     my ($self, $seqs, $out, %opts) = @_;
     my $ref = delete $opts{ref};
     
-    $self->exe('ssaha2');
+    $self->exe($self->{orig_exe});
     
     $self->switches([qw(sense best 454 NQS tags name fix solexa)]);
     $self->params([qw(kmer skip save ckmer cmatch cut seeds depth memory score

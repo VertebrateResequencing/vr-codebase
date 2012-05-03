@@ -220,15 +220,15 @@ sub split {
 
     open my $fh, '>', $perl_out  or $self->throw("Couldn't write to $perl_out");
 
-    print $fh qq[ use strict;
+    print $fh qq[use strict;
 use warnings;
 use VertRes::Utils::Sam;
 my \$o = VertRes::Utils::Sam->new();
 my ];
     print $fh $split_opts_dump->Dump;
-    print $fh "my \@expected_bams = \$o->split_bam_by_sequence(qq[$self->{bam}], \%\$opts);\n";
+    print $fh "my \@expected_bams = \$o->split_bam_by_sequence(qq[$self->{bam}], \%\$opts, pretend => 1);\n";
     print $fh q[
-open my $ofh, '>', '.split_expected' or die "Couldn't write to .split_epected";
+open my $ofh, '>', '.split_expected' or die "Couldn't write to .split_expected";
 foreach my $out_bam (@expected_bams) {
     print $ofh $out_bam, "\n";
 }
@@ -236,6 +236,7 @@ my $expected = @expected_bams;
 print $ofh "# expecting $expected\n";
 close $ofh;
 ];
+print $fh "\$o->split_bam_by_sequence(qq[$self->{bam}], \%\$opts);\n";
 
     close $fh;
 

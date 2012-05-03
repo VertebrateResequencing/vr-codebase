@@ -70,7 +70,6 @@ memoize('find_file_by_name');
 sub find_file_by_name {
     my ($self, $name) = @_;
     my $cmd = join "/",($self->{icommands},qq(iquest -z seq "SELECT COLL_NAME, DATA_NAME WHERE DATA_NAME = '$name'"));
-    print "CMD: $cmd\n";
     open(my $irods, "$cmd |");
     my ($path, $filename);
     while (<$irods>) {
