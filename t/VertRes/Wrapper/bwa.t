@@ -51,7 +51,7 @@ $bwa->do_mapping(ref => $ref,
                  index_a => 'is', sampe_a => 2000);
 is $bwa->run_status, 1, 'status after mapping is ok';
 my ($lines, $mapped) = check_sam($mapping);
-is $lines, 2001, 'output sam not truncated';
+is $lines, 2002, 'output sam not truncated';
 cmp_ok $mapped, '>=', 1098, 'mapped enough reads';
 foreach my $file ($sai1, $sai2, $mapping, @ref_index_files) {
     ok -s $file, 'output file exists';
@@ -76,7 +76,7 @@ $bwa->sampe($ref, $sai1, $sai2, $read1, $read2, $mapping, a => 2000);
 is $bwa->run_status, 1, 'status after sampe is ok';
 ok -s $mapping, 'mapping file created';
 ($lines, my $mapped2) = check_sam($mapping);
-is $lines, 2001, 'output sam not truncated';
+is $lines, 2002, 'output sam not truncated';
 cmp_ok $mapped2, '>=', 1098, 'mapped enough reads';
 is $mapped, $mapped2, 'mapped the same number of reads both times';
 

@@ -28,6 +28,7 @@ use Carp qw(cluck confess);
 use VRTrack::Image;
 use VRTrack::Mapper;
 use VRTrack::Assembly;
+use VRTrack::Exome_design;
 use File::Basename;
 
 use base qw(VRTrack::Core_obj);
@@ -48,25 +49,47 @@ sub fields_dispatch {
     
     my %fields = %{$self->SUPER::fields_dispatch()};
     %fields = (%fields,
-	       mapstats_id        => sub { $self->id(@_)},
-               lane_id            => sub { $self->lane_id(@_)},
-               mapper_id          => sub { $self->mapper_id(@_)},
-               assembly_id        => sub { $self->assembly_id(@_)},
-               raw_reads          => sub { $self->raw_reads(@_)},
-               raw_bases          => sub { $self->raw_bases(@_)},
-               clip_bases         => sub { $self->clip_bases(@_)},
-               reads_mapped       => sub { $self->reads_mapped(@_)},
-               reads_paired       => sub { $self->reads_paired(@_)},
-               bases_mapped       => sub { $self->bases_mapped(@_)},
-               rmdup_reads_mapped => sub { $self->rmdup_reads_mapped(@_)},
-               rmdup_bases_mapped => sub { $self->rmdup_bases_mapped(@_)},
-               error_rate         => sub { $self->error_rate(@_)},
-               mean_insert        => sub { $self->mean_insert(@_)},
-               sd_insert          => sub { $self->sd_insert(@_)},
-               adapter_reads      => sub { $self->adapter_reads(@_)},
-               gt_expected        => sub { $self->genotype_expected(@_)},
-               gt_found           => sub { $self->genotype_found(@_)},
-               gt_ratio           => sub { $self->genotype_ratio(@_)});
+               mapstats_id              => sub { $self->id(@_)},
+               lane_id                  => sub { $self->lane_id(@_)},
+               mapper_id                => sub { $self->mapper_id(@_)},
+               assembly_id              => sub { $self->assembly_id(@_)},
+               raw_reads                => sub { $self->raw_reads(@_)},
+               raw_bases                => sub { $self->raw_bases(@_)},
+               clip_bases               => sub { $self->clip_bases(@_)},
+               reads_mapped             => sub { $self->reads_mapped(@_)},
+               reads_paired             => sub { $self->reads_paired(@_)},
+               bases_mapped             => sub { $self->bases_mapped(@_)},
+               rmdup_reads_mapped       => sub { $self->rmdup_reads_mapped(@_)},
+               rmdup_bases_mapped       => sub { $self->rmdup_bases_mapped(@_)},
+               error_rate               => sub { $self->error_rate(@_)},
+               mean_insert              => sub { $self->mean_insert(@_)},
+               sd_insert                => sub { $self->sd_insert(@_)},
+               adapter_reads            => sub { $self->adapter_reads(@_)},
+               gt_expected              => sub { $self->genotype_expected(@_)},
+               gt_found                 => sub { $self->genotype_found(@_)},
+               gt_ratio                 => sub { $self->genotype_ratio(@_)},
+               bait_near_bases_mapped   => sub { $self->bait_near_bases_mapped(@_)},
+               target_near_bases_mapped => sub { $self->target_near_bases_mapped(@_)},
+               bait_bases_mapped        => sub { $self->bait_bases_mapped(@_)},
+               mean_bait_coverage       => sub { $self->mean_bait_coverage(@_)},
+               bait_coverage_sd         => sub { $self->bait_coverage_sd(@_)},
+               off_bait_bases           => sub { $self->off_bait_bases(@_)},
+               reads_on_bait            => sub { $self->reads_on_bait(@_)},
+               reads_on_bait_near       => sub { $self->reads_on_bait_near(@_)},
+               reads_on_target          => sub { $self->reads_on_target(@_)},
+               reads_on_target_near     => sub { $self->reads_on_target_near(@_)},
+               target_bases_mapped      => sub { $self->target_bases_mapped(@_)},
+               mean_target_coverage     => sub { $self->mean_target_coverage(@_)},
+               target_coverage_sd       => sub { $self->target_coverage_sd(@_)},
+               target_bases_1X          => sub { $self->target_bases_1X(@_)},
+               target_bases_2X          => sub { $self->target_bases_2X(@_)},
+               target_bases_5X          => sub { $self->target_bases_5X(@_)},
+               target_bases_10X         => sub { $self->target_bases_10X(@_)},
+               target_bases_20X         => sub { $self->target_bases_20X(@_)},
+               target_bases_50X         => sub { $self->target_bases_50X(@_)},
+               target_bases_100X        => sub { $self->target_bases_100X(@_)},
+               exome_design_id          => sub { $self->exome_design_id(@_)},
+               percentage_reads_with_transposon => sub { $self->percentage_reads_with_transposon(@_)});
 
     return \%fields;
 }
@@ -482,6 +505,391 @@ sub genotype_ratio {
 }
 
 
+=head2 bait_near_bases_mapped
+
+  Arg [1]    : number of bases mapped near to, but not on, a bait (optional)
+  Example    : my $bait_near_bases_mapped = $mapstats->bait_near_bases_mapped();
+               $mapstats->bait_near_bases_mapped(100000);
+  Description: Get/Set for the bases mapped near to a bait from exome QC
+  ReturnType : integer
+
+=cut
+
+sub bait_near_bases_mapped {
+    my $self = shift;
+    return $self->_get_set('bait_near_bases_mapped', 'number', @_);
+}
+
+
+=head2 target_near_bases_mapped
+
+  Arg [1]    : number of bases mapped near to, but not on, a target (optional)
+  Example    : my $target_near_bases_mapped = $mapstats->target_near_bases_mapped();
+               $mapstats->target_near_bases_mapped(100000);
+  Description: Get/Set for the bases mapped near to a target from exome QC
+  ReturnType : integer
+
+=cut
+
+sub target_near_bases_mapped {
+    my $self = shift;
+    return $self->_get_set('target_near_bases_mapped', 'number', @_);
+}
+
+
+=head2 bait_bases_mapped
+
+  Arg [1]    : number of bases mapped onto a bait (optional)
+  Example    : my $bait_bases_mapped = $mapstats->bait_bases_mapped();
+               $mapstats->bait_bases_mapped(100000000);
+  Description: Get/Set for the bases mapped onto a bait from exome QC
+  ReturnType : integer
+
+=cut
+
+sub bait_bases_mapped {
+    my $self = shift;
+    return $self->_get_set('bait_bases_mapped', 'number', @_);
+}
+
+
+=head2 mean_bait_coverage
+
+  Arg [1]    : mean coverage of the bait bases (optional)
+  Example    : my $mean_bait_coverage = $mapstats->mean_bait_coverage();
+               $mapstats->mean_bait_coverage(42);
+  Description: Get/Set for the mean bait coverage from exome QC
+  ReturnType : float
+
+=cut
+
+sub mean_bait_coverage {
+    my $self = shift;
+    return $self->_get_set('mean_bait_coverage', 'number', @_);
+}
+
+
+=head2 bait_coverage_sd
+
+  Arg [1]    : standard deviation of the coverage of bait bases (optional)
+  Example    : my $bait_coverage_sd = $mapstats->bait_coverage_sd();
+               $mapstats->bait_coverage_sd(30);
+  Description: Get/Set for the standard devation of bait coverage from exome QC
+  ReturnType : float
+
+=cut
+
+sub bait_coverage_sd {
+    my $self = shift;
+    return $self->_get_set('bait_coverage_sd', 'number', @_);
+}
+
+
+=head2 off_bait_bases
+
+  Arg [1]    : number of bases mapped not onto a bait (optional)
+  Example    : my $off_bait_bases = $mapstats->off_bait_bases();
+               $mapstats->off_bait_bases(123456789);
+  Description: Get/Set for the number of bases not mapped to a bait from exome QC
+  ReturnType : integer
+
+=cut
+
+sub off_bait_bases {
+    my $self = shift;
+    return $self->_get_set('off_bait_bases', 'number', @_);
+}
+
+
+=head2 reads_on_bait
+
+  Arg [1]    : number of reads mapped onto a bait (optional)
+  Example    : my $reads_on_bait = $mapstats->reads_on_bait();
+               $mapstats->reads_on_bait(10000000);
+  Description: Get/Set for the number of reads mapped onto a bait from exome QC
+  ReturnType : integer
+
+=cut
+
+sub reads_on_bait {
+    my $self = shift;
+    return $self->_get_set('reads_on_bait', 'number', @_);
+}
+
+
+=head2 reads_on_bait_near
+
+  Arg [1]    : number of reads mapped near to, but not on, a bait (optional)
+  Example    : my $reads_on_bait_near = $mapstats->reads_on_bait_near();
+               $mapstats->reads_on_bait_near(1000000);
+  Description: Get/Set for the number of read mapped near to a bait from exome QC
+  ReturnType : integer
+
+=cut
+
+sub reads_on_bait_near {
+    my $self = shift;
+    return $self->_get_set('reads_on_bait_near', 'number', @_);
+}
+
+
+=head2 reads_on_target
+
+  Arg [1]    : number of reads mapped near to, but not on, a target (optional)
+  Example    : my $reads_on_target = $mapstats->reads_on_target();
+               $mapstats->reads_on_target(10000000);
+  Description: Get/Set for the number of reads mapped near to a bait from exome QC
+  ReturnType : integer
+
+=cut
+
+sub reads_on_target {
+    my $self = shift;
+    return $self->_get_set('reads_on_target', 'number', @_);
+}
+
+
+=head2 reads_on_target_near
+
+  Arg [1]    : number of reads mapped near to a target (optional)
+  Example    : my $reads_on_target_near = $mapstats->reads_on_target_near();
+               $mapstats->reads_on_target_near(1000000);
+  Description: Get/Set for the number of reads mapped near to a target from exome QC
+  ReturnType : integer
+
+=cut
+
+sub reads_on_target_near {
+    my $self = shift;
+    return $self->_get_set('reads_on_target_near', 'number', @_);
+}
+
+
+=head2 target_bases_mapped
+
+  Arg [1]    : number of reads mapped onto a target (optional)
+  Example    : my $target_bases_mapped = $mapstats->target_bases_mapped();
+               $mapstats->target_bases_mapped(6473820);
+  Description: Get/Set for the number of reads mapped onto a target from exome QC
+  ReturnType : integer
+
+=cut
+
+sub target_bases_mapped {
+    my $self = shift;
+    return $self->_get_set('target_bases_mapped', 'number', @_);
+}
+
+
+=head2 mean_target_coverage
+
+  Arg [1]    : mean coverage of target bases (optional)
+  Example    : my $mean_target_coverage = $mapstats->mean_target_coverage();
+               $mapstats->mean_target_coverage(FILL IN);
+  Description: Get/Set for the mean coverage of target bases from exome QC
+  ReturnType : float
+
+=cut
+
+sub mean_target_coverage {
+    my $self = shift;
+    return $self->_get_set('mean_target_coverage', 'number', @_);
+}
+
+
+=head2 target_coverage_sd
+
+  Arg [1]    : standard deviation of coverage of target bases (optional)
+  Example    : my $target_coverage_sd = $mapstats->target_coverage_sd();
+               $mapstats->target_coverage_sd(FILL IN);
+  Description: Get/Set for the standard devation of target coverage from exome QC
+  ReturnType : float
+
+=cut
+
+sub target_coverage_sd {
+    my $self = shift;
+    return $self->_get_set('target_coverage_sd', 'number', @_);
+}
+
+
+=head2 target_bases_1X
+
+  Arg [1]    : fraction of target bases with coverage >= 1X (optional)
+  Example    : my $target_bases_1X = $mapstats->target_bases_1X();
+               $mapstats->target_bases_1X(0.95);
+  Description: Get/Set for the fraction of target bases covered >= 1X from exome QC
+  ReturnType : float
+
+=cut
+
+sub target_bases_1X {
+    my $self = shift;
+    return $self->_get_set('target_bases_1X', 'number', @_);
+}
+
+
+=head2 target_bases_2X
+
+  Arg [1]    : fraction of target bases with coverage >= 2X (optional)
+  Example    : my $target_bases_2X = $mapstats->target_bases_2X();
+               $mapstats->target_bases_2X(0.9);
+  Description: Get/Set for
+  Description: Get/Set for the fraction of target bases covered >= 2X from exome QC
+  ReturnType : float
+
+=cut
+
+sub target_bases_2X {
+    my $self = shift;
+    return $self->_get_set('target_bases_2X', 'number', @_);
+}
+
+
+=head2 target_bases_5X
+
+  Arg [1]    : fraction of target bases with coverage >= 5X (optional)
+  Example    : my $target_bases_5X = $mapstats->target_bases_5X();
+               $mapstats->target_bases_5X(0.6);
+  Description: Get/Set for
+  Description: Get/Set for the fraction of target bases covered >= 5X from exome QC
+  ReturnType : float
+
+=cut
+
+sub target_bases_5X {
+    my $self = shift;
+    return $self->_get_set('target_bases_5X', 'number', @_);
+}
+
+=head2 target_bases_10X
+
+  Arg [1]    : fraction of target bases with coverage >= 10X (optional)
+  Example    : my $target_bases_10X = $mapstats->target_bases_10X();
+               $mapstats->target_bases_10X(0.55);
+  Description: Get/Set for
+  ReturnType : float
+  Description: Get/Set for the fraction of target bases covered >= 10X from exome QC
+
+=cut
+
+sub target_bases_10X {
+    my $self = shift;
+    return $self->_get_set('target_bases_10X', 'number', @_);
+}
+
+
+=head2 target_bases_20X
+
+  Arg [1]    : fraction of target bases with coverage >= 20X (optional)
+  Example    : my $target_bases_20X = $mapstats->target_bases_20X();
+               $mapstats->target_bases_20X(0.42);
+  Description: Get/Set for
+  Description: Get/Set for the fraction of target bases covered >= 20X from exome QC
+  ReturnType : float
+
+=cut
+
+sub target_bases_20X {
+    my $self = shift;
+    return $self->_get_set('target_bases_20X', 'number', @_);
+}
+
+
+=head2 target_bases_50X
+
+  Arg [1]    : fraction of target bases with coverage >= 50X (optional)
+  Example    : my $target_bases_50X = $mapstats->target_bases_50X();
+               $mapstats->target_bases_50X(0.2);
+  Description: Get/Set for
+  Description: Get/Set for the fraction of target bases covered >= 50X from exome QC
+  ReturnType : float
+
+=cut
+
+sub target_bases_50X {
+    my $self = shift;
+    return $self->_get_set('target_bases_50X', 'number', @_);
+}
+
+
+=head2 target_bases_100X
+
+  Arg [1]    : fraction of target bases with coverage >= 100X (optional)
+  Example    : my $target_bases_100X = $mapstats->target_bases_100X();
+               $mapstats->target_bases_100X(0.1);
+  Description: Get/Set for the fraction of target bases covered >= 100X from exome QC
+  ReturnType : float
+
+=cut
+
+sub target_bases_100X {
+    my $self = shift;
+    return $self->_get_set('target_bases_100X', 'number', @_);
+}
+
+
+=head2 exome_design_id
+
+  Arg [1]    : id of th exome_design (optional)
+  Example    : my $exome_design_id = $mapstats->exome_design_id();
+               $mapstats->exome_design_id(1);
+  Description: Get/Set for internal ID of the exome_design used for the mapping stats
+  ReturnType : integer
+
+=cut
+
+sub exome_design_id {
+    my $self = shift;
+    return $self->_get_set('exome_design_id', 'number', @_);
+}
+
+=head2 exome_design
+
+  Arg [1]    : exome design name (optional)
+  Example    : my $exome_design = $mapstats->exome_design();
+               $mapstats->exome_design('Mm37.1');
+  Description: Get/Set for mapping exome design. Lazy-loads exome_design object from $self->exome_design_id. If an exome_design name is supplied, then exome_design_id is set to the corresponding exome_design in the database. If no such exome_design exists, returns undef. Use add_exome_design to add an exome_design in this case.
+  Returntype : VRTrack::Exome_design object
+
+=cut
+
+sub exome_design {
+    my $self = shift;
+    return $self->_get_set_child_object('get_exome_design_by_name', 'VRTrack::Exome_design', @_);
+}
+
+
+=head2 add_exome_design
+
+  Arg [1]    : exome_design name
+  Example    : my $exome_design = $mapstats->add_exome_design('Mm37.1');
+  Description: create a new exome_design, and if successful, return the object
+  Returntype : VRTrack::Exome_design object
+
+=cut
+
+sub add_exome_design {
+    my $self = shift;
+    return $self->_create_child_object('get_exome_design_by_name', 'VRTrack::Exome_design', @_);
+}
+
+
+=head2 get_exome_design_by_name
+
+  Arg [1]    : exome_design name
+  Example    : my $exome_design = $mapstats->get_exome_design_by_name('Mm37.1');
+  Description: Retrieve a VRTrack::Exome_design object by name
+  Returntype : VRTrack::Exome_design object
+
+=cut
+
+sub get_exome_design_by_name {
+    my ($self,$name,$version) = @_;
+    return VRTrack::Exome_design->new_by_name($self->{vrtrack}, $name);
+}
+
+
 =head2 add_image_by_filename
 
   Arg [1]    : image file path
@@ -569,6 +977,21 @@ sub image_ids {
 
 sub _get_child_methods {
     return qw(images);
+}
+
+=head2 percentage_reads_with_transposon
+
+  Arg [1]    : percentage_reads_with_transposon
+  Example    : my $exome_design_id = $mapstats->percentage_reads_with_transposon(73.23);
+               $mapstats->percentage_reads_with_transposon();
+  Description: Get/Set the percetage of reads with a transposon for a lane
+  ReturnType : Float
+
+=cut
+
+sub percentage_reads_with_transposon {
+    my $self = shift;
+    return $self->_get_set('percentage_reads_with_transposon', 'number', @_);
 }
 
 1;

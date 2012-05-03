@@ -1,0 +1,151 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use VertRes::Parser::LSF;
+use IPC::Open3 'open3';
+use IO::Select;
+
+my $opts = parse_params();
+crawl($opts);
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    die
+        "About: The script attempts to find all LSF output files and gives overall stats\n",
+        "   about total runtime and memory.\n",
+        "Usage: runtime-stats [OPTIONS]\n",
+        "Options:\n",
+        "   -d, --dir <dir>                 Where to look for output files.\n",
+        "   -s, --suffix <string>           How to recognise LSF output files [.o]\n",
+        "   -h, -?, --help                  This help message.\n",
+        "\n";
+}
+
+
+sub parse_params
+{
+    my $opts = { suffix=>'.o' };
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-d' || $arg eq '--dir' ) { push @{$$opts{dir}},shift(@ARGV); next }
+        if ( $arg eq '-s' || $arg eq '--suffix' ) { $$opts{suffix}=shift(@ARGV); next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        if ( -d $arg ) { push @{$$opts{dir}},$arg; next; }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    if ( !exists($$opts{dir}) ) { error("Missing the -d option.\n") }
+    return $opts;
+}
+
+sub crawl
+{
+    my ($opts) = @_;
+    my @files;
+    for my $dir (@{$$opts{dir}})
+    {
+        my $cmd = qq[find $dir -name \\*$$opts{suffix}];
+        my @tmp = grep { chomp } `$cmd`;
+        push @files,@tmp;
+    }
+
+    my ($kid_in,$kid_out,$kid_err);
+    my $pid = open3($kid_in,$kid_out,$kid_err,'-');
+    if ( !defined $pid ) { error("Cannot fork: $!"); }
+
+    if ($pid)
+    {
+        my $sel = new IO::Select;
+        $sel->add($kid_out,$kid_err);
+
+        while(my @ready = $sel->can_read) 
+        {
+            foreach my $fh (@ready) 
+            {
+                my $line = <$fh>; 
+                if (not defined $line) 
+                {
+                    $sel->remove($fh); 
+                    next;         
+                }
+                print_or_discard_line($opts,$line);
+            }
+        }
+    } 
+    else 
+    {
+        for my $f (@files)
+        {
+            get_stats($opts,$f);
+        }
+        report_stats($opts);
+    }
+}
+
+sub print_or_discard_line
+{
+    my ($opts,$line) = @_;
+    if ( $line=~/^No records in the LSF output file/ ) { return; }
+    print $line;
+}
+
+sub get_stats
+{
+    my ($opts,$file) = @_;
+
+    # TODO: include also running time of failed jobs as a separate stats?
+    my $parser = VertRes::Parser::LSF->new(file=>$file);
+    my $n = $parser->nrecords();
+    if ( !$n ) { return; }
+
+    push @{$$opts{stats}{attempts}},$n;
+    for my $key qw(memory time cpu_time idle_factor)
+    {
+        my $value = $parser->get($key,$n-1);
+        push @{$$opts{stats}{$key}},$value;
+    }
+}
+
+sub report_stats
+{
+    my ($opts) = @_;
+    while (my ($key,$values) = each %{$$opts{stats}})
+    {
+        my $n = scalar @$values;
+
+        my $avg = 0;
+        my $max = $$values[0];
+        my $min = $$values[0];
+        my $sum = 0;
+        for my $value (@$values)
+        {
+            if ( $max<$value ) { $max=$value; }
+            if ( $min>$value ) { $min=$value; }
+            $avg += $value/$n;
+            $sum += $value;
+        }
+
+        my $sd = 0;
+        for my $value (@$values)
+        {
+            $sd += ($value - $avg)**2/$n;
+        }
+        $sd = sqrt($sd);
+
+        printf "%-15sn=%d\tavg=%.1f\tmin=%.1f\tmax=%.1f\tSD=%.1f", $key,$n,$avg,$min,$max,$sd;
+        if ( $key=~/time/ ) { printf "\ttotal=%.1fh",$sum/3600.; }
+        print "\n";
+    }
+}
+
+

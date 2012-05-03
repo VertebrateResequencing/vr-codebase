@@ -425,14 +425,41 @@ sub verify_md5 {
 =cut
 
 sub calculate_md5 {
-    my ($self, $file) = @_;
+    my ($self, $file, $md5_file) = @_;
     
     open(my $fh, $file) || $self->throw("Could not open file $file");
     binmode($fh);
     my $dmd5 = Digest::MD5->new();
     $dmd5->addfile($fh);
     my $md5 = $dmd5->hexdigest;
+    close $fh;
     
+    if ($md5_file) {
+        open(my $mdfh, ">$md5_file") || $self->throw("Could not open file $md5_file");
+        print $mdfh "$md5  $file\n";
+        close $mdfh;
+    }
+    
+    return $md5;
+}
+
+=head2 md5_from_file
+
+ Title   : md5_from_file
+ Usage   : $md5 = $obj->md5_from_file($file)
+ Function: Verify that a given file has the given md5.
+ Returns : hexdigest string
+ Args    : path to file, the expected md5 (hexdigest as produced by the md5sum
+           program) as a string
+
+=cut
+
+sub md5_from_file {
+    my ($self, $file) = @_;
+    open my $fh, "<$file" || $self->throw("Could not open $file to read md5");
+    my ($md5) = <$fh> =~ m/^([0-9a-z]{32})\s/;
+    close $fh;
+    $md5 || $self->throw("Could not read md5 from $file");
     return $md5;
 }
 
@@ -819,7 +846,9 @@ sub _get_dbh {
     
     unless (defined $self->{_dbh}) {
         my %cd = VertRes::Utils::VRTrackFactory->connection_details('rw');
-        my $dbname = 'vrtrack_fsu_file_exists';
+
+        my $dbname = VertRes::Utils::VRTrackFactory->fsu_file_exists_db_name();
+
         $self->{_dbh} = DBI->connect("dbi:mysql:$dbname;host=$cd{host};port=$cd{port}", $cd{user}, $cd{password}, { RaiseError => 0 });
         
         unless ($self->{_dbh}) {

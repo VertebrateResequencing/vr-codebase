@@ -288,7 +288,7 @@ sub add_file {
     my $file;
     foreach my $obj (@{$lane->files || []}) {
         my $this_md5 = $obj->md5;
-        if ($this_md5 eq $md5 || $obj->hierarchy_name eq $fastq_filename) {
+        if ($md5 && $this_md5 eq $md5 || $obj->hierarchy_name eq $fastq_filename) {
             $file = $obj;
             last;
         }
@@ -630,11 +630,14 @@ sub main_loop {
     my $sample = $object_cache{sample}->{"$rh->[3].$rh->[9]"} || $project->get_sample_by_name($rh->[9]);
     unless ($sample) {
         $sample = $project->add_sample($rh->[9]);
-        if (exists $sample_data{$sample_lookup}) {
-            unless ($sample_data{$sample_lookup}->{acc} eq $rh->[8]) {
-                die "$sample_to_population_map_file and $si_file disagree on the accession for $rh->[9] ([".$sample_data{$sample_lookup}->{acc}."] vs [$$rh[8]])\n";
-            }
-        }
+        # With the introduction of multiplex data, sample accessions in the sequence 
+        # index may not necessarily correspond to the actual sample accessions. 
+        # Comment out the check below.
+#         if (exists $sample_data{$sample_lookup}) {
+#             unless ($sample_data{$sample_lookup}->{acc} eq $rh->[8]) {
+#                 die "$sample_to_population_map_file and $si_file disagree on the accession for $rh->[9] ([".$sample_data{$sample_lookup}->{acc}."] vs [$$rh[8]])\n";
+#             }
+#         }
         $sample->update;
         
         $project->update;
@@ -652,7 +655,9 @@ sub main_loop {
             $individual->alias($sample_data{$sample_lookup}->{alias});
             $individual->sex($sample_data{$sample_lookup}->{sex});
         }
-        $individual->acc($rh->[8]);
+        # No longer set individual accession due to multiplex issue described above.
+        # Correct accessions should be imported by load_vrtrack_allocations.pl
+#         $individual->acc($rh->[8]);
         
         my $population = $individual->population;
         unless ($population) {
@@ -684,6 +689,7 @@ sub main_loop {
         # says they need to go through regardless, so just call them 'UNKNOWN'
         $rh->[5] = 'UNKNOWN';
     }
+    my $seq_centre_name = uc($rh->[5]);
     
     # create library if it doesn't already exist.
     # since in rare cases a library can have been legitimately sequenced by
@@ -698,13 +704,15 @@ sub main_loop {
     # sample objs, each associated with their own project_id, even though we're
     # describing the same physical sample and library.
     $rh->[14] || die "fastq $rh->[0] had no library name!\n";
-    my $old_library_name = $rh->[14].'|'.$rh->[5];
-    my $library_name = $rh->[14].'|'.$rh->[5].'|'.$rh->[3];
+    my $old_library_name = $rh->[14].'|'.$seq_centre_name;
+    my $newer_library_name = $rh->[14].'|'.$seq_centre_name.'|'.$rh->[3];
+    my $library_name = $rh->[14].'|'.$seq_centre_name.'|'.$rh->[3].'|'.$rh->[9];
     my $library = $object_cache{library}->{"$rh->[3].$rh->[9].$library_name"} || $sample->get_library_by_name($library_name);
     my $tech_name = $platform_to_tech{uc($rh->[12])} || die "Could not map platform '$rh->[12]' to a technology\n";
     unless ($library) {
         # conversion of old pre-project_id-concat to new form
         $library = $sample->get_library_by_name($old_library_name);
+        $library ||= $sample->get_library_by_name($newer_library_name);
         if ($library) {
             $library->name($library_name);
             $library->update || die "Could not update library name";
@@ -755,8 +763,8 @@ sub main_loop {
                 # sort out the associated objects seq_centre and seq_tech
                 my $seq_centre = $library->seq_centre();
                 unless ($seq_centre) {
-                    $seq_centre = $library->seq_centre($rh->[5]);
-                    $library->add_seq_centre($rh->[5]) unless $seq_centre;
+                    $seq_centre = $library->seq_centre($seq_centre_name);
+                    $library->add_seq_centre($seq_centre_name) unless $seq_centre;
                 }
                 
                 my $seq_tech = $library->seq_tech();
@@ -889,13 +897,13 @@ sub main_loop {
         }
         
         my $seq_centre = $library->seq_centre();
-        if ($seq_centre->name ne $rh->[5]) {
+        if ($seq_centre->name ne $seq_centre_name) {
             my $db_name = $seq_centre->name;
-            issue_warning("The sequencing centre for library $library_name is supposed to be $rh->[5], not $db_name");
+            issue_warning("The sequencing centre for library $library_name is supposed to be $seq_centre_name, not $db_name");
             if ($do_major_updates) {
                 swap_descendants($library);
-                $seq_centre = $library->seq_centre($rh->[5]);
-                $library->add_seq_centre($rh->[5]) unless $seq_centre;
+                $seq_centre = $library->seq_centre($seq_centre_name);
+                $library->add_seq_centre($seq_centre_name) unless $seq_centre;
                 $library->update;
                 issue_warning("Sequencing centre for library $library_name corrected");
             }

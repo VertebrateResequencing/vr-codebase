@@ -41,6 +41,22 @@ data => {
 # Reference option can be replaced with male_reference and female_reference
 # if you have 2 different references.
 
+# In the data section, there is an option to explicitly set the executable 
+# for the mappers. Will be the first occurrence in your path. Default to 
+# bwa and ssaha2 for the slx and 454 mappers respectively.
+
+slx_mapper_exe => 'bwa-0.5.5' (optional - defaults to slx_mapper)
+'454_mapper_exe' => 'ssaha2', (optional - defaults to 454_mapper)
+
+# In the data section, there is an option to generate a BAM index file for the 
+# mapping by adding the following line:
+
+add_index => 1,
+
+# And an option for finding the percentage genome mapped by adding the line:
+
+get_genome_coverage => 1,
+
 # By default it will map all unmapped lanes in a random order. You can limit
 # it to only mapping certain lanes by suppling the limits key with a hash ref
 # as a value. The hash ref should contain options understood by
@@ -105,7 +121,8 @@ can be created with update_vrmeta.pl, using meta information held in a
 NB: there is an expectation that read fastqs are named [readgroup]_[1|2].*
 for paired end sequencing, and [readgroup].* for single ended. Failing this
 the forward/reverse/single-ended information about a fastq must be stored in
-the database.
+the database. Failing that, a bam must be described in the database, from which
+fastq files will be generated.
 
 =head1 AUTHOR
 
@@ -132,7 +149,11 @@ use LSF;
 
 use base qw(VertRes::Pipeline);
 
-our $actions = [ { name     => 'split',
+our $actions = [ { name     => 'bam_to_fastq',
+                   action   => \&bam_to_fastq,
+                   requires => \&bam_to_fastq_requires, 
+                   provides => \&bam_to_fastq_provides },
+                 { name     => 'split',
                    action   => \&split,
                    requires => \&split_requires, 
                    provides => \&split_provides },
@@ -180,6 +201,9 @@ our $split_dir_name = 'split';
            '454_mapper' => 'ssaha', (default ssaha; the mapper to use for
                                      mapping 454 lanes)
            
+           slx_mapper_exe => 'bwa-0.5.5' (optional - defaults to slx_mapper)
+           '454_mapper_exe' => 'ssaha2', (optional - defaults to 454_mapper)
+           
            reference => '/path/to/ref.fa' (no default, either this or the
                         male_reference and female_reference pair of args must be
                         supplied)
@@ -199,13 +223,24 @@ sub new {
     # lane we're in, which lets us choose which mapper module to use.
     my $lane = $self->{lane} || $self->throw("lane readgroup not supplied, can't continue");
     my $lane_path = $self->{lane_path} || $self->throw("lane path not supplied, can't continue");
+    
+    $self->{slx_mapper_exe} ||= $self->{slx_mapper};
+    $self->{'454_mapper_exe'} ||= $self->{'454_mapper'};
+    
     my $mapping_util = VertRes::Utils::Mapping->new(slx_mapper => $self->{slx_mapper},
-                                                    '454_mapper' => $self->{'454_mapper'});
+                                                    '454_mapper' => $self->{'454_mapper'},
+                                                    slx_mapper_exe => $self->{slx_mapper_exe},
+                                                    '454_mapper_exe' => $self->{'454_mapper_exe'});
     my $mapper_class = $mapping_util->lane_to_module($lane_path);
     $mapper_class || $self->throw("Lane '$lane_path' was for an unsupported technology");
+    my $mapper_exe = $mapping_util->lane_to_exe($lane_path);
+    $mapper_exe || $self->throw("Lane '$lane_path' was for an unsupported technology");
     eval "require $mapper_class;";
     $self->{mapper_class} = $mapper_class;
-    $self->{mapper_obj} = $mapper_class->new();
+    $self->{mapper_obj} = $mapper_class->new(exe => $mapper_exe);
+    
+    my $mapper_name = $self->{mapper_obj}->name;
+    $self->throw('Mapper class and exe do not match') unless ($self->{mapper_obj}->exe =~ /$mapper_name/);
     
     # if we've been supplied a list of lane paths to work with, instead of
     # getting the lanes from the db, we won't have a vrlane object; make one
@@ -217,7 +252,7 @@ sub new {
         
         my $files = $vrlane->files();
         foreach my $file (@{$files}) {
-            push @{$self->{files}}, $file->hierarchy_name;
+            push @{$self->{files}}, $file->hierarchy_name if $file->type =~ /0|1|2/;
         }
     }
     $self->{vrlane} || $self->throw("vrlane object missing");
@@ -263,7 +298,7 @@ sub new {
             my $assembly = $possible->assembly() || next;
             $assembly->name eq $self->{assembly_name} || next;
             my $mapper = $possible->mapper() || next;
-            $mapper->name eq $self->{mapper_obj}->exe || next;
+            $mapper->name eq $self->{mapper_obj}->name || next;
             $mapper->version eq $self->{mapper_obj}->version || next;
             
             $mapping = $possible;
@@ -281,9 +316,9 @@ sub new {
         }
         
         # associate with a mapper, creating that if necessary
-        my $mapper = $mapping->mapper($self->{mapper_obj}->exe, $self->{mapper_obj}->version);
+        my $mapper = $mapping->mapper($self->{mapper_obj}->name, $self->{mapper_obj}->version);
         if (!$mapper) {
-            $mapper = $mapping->add_mapper($self->{mapper_obj}->exe, $self->{mapper_obj}->version);
+            $mapper = $mapping->add_mapper($self->{mapper_obj}->name, $self->{mapper_obj}->version);
         }
         
         $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
@@ -299,6 +334,163 @@ sub new {
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     
     return $self;
+}
+
+=head2 bam_to_fastq_requires
+
+ Title   : bam_to_fastq_requires
+ Usage   : my $required_files = $obj->bam_to_fastq_requires('/path/to/lane');
+ Function: Find out what files the bam_to_fastq action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub bam_to_fastq_requires {
+    my $self = shift;
+    
+    my @files = @{$self->{files} || []};
+    
+    if (@files) {
+        return [];
+    }
+    else {
+        my @vrfiles = @{$self->{vrlane}->files};
+        my $bam;
+        foreach my $vrfile (@vrfiles) {
+            my $type = $vrfile->type;
+            if ($type == 4) {
+                $bam = $vrfile->hierarchy_name;
+                last;
+            }
+        }
+        
+        # bam name in the db or on disc might be one of original name or
+        # renamed to mapping-pipeline-style mapstats id name
+        if ($bam && -e $self->{fsu}->catfile($self->{lane_path}, $bam)) {
+            return [$bam];
+        }
+        elsif ($bam) {
+            # get the latest mapstats id that isn't our own mapstats id
+            my $mapstats;
+            my $mappings = $self->{vrlane}->mappings();
+            if ($mappings && @{$mappings}) {
+                my @sorted_mappings = sort { $a->changed cmp $b->changed 
+                                             ||
+                                             $a->row_id <=> $b->row_id} 
+                                             @{$mappings };
+                
+                my $own_mapstats_id = $self->{mapstats_id};
+                foreach my $possible (@sorted_mappings) {
+                    next if $possible->id == $own_mapstats_id;
+                    $mapstats = $possible;
+                }
+            }
+            $self->throw("No fastqs were found, and the lane has not been mapped previously: no data to map!") unless $mapstats;
+            
+            $bam = sprintf "%d.pe.raw.sorted.bam", $mapstats->id();
+            return [$bam];
+        }
+        else {
+            $self->throw("Neither fastq nor bam files were found: no data to map!");
+        }
+    }
+}
+
+sub is_paired {
+  my ($self) = @_;
+  return $self->{vrlane}->{is_paired};
+}
+
+=head2 bam_to_fastq_provides
+
+ Title   : bam_to_fastq_provides
+ Usage   : my $provided_files = $obj->bam_to_fastq_provides('/path/to/lane');
+ Function: Find out what files the bam_to_fastq action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+
+sub bam_to_fastq_provides {
+  my ($self, $lane_path) = @_;
+  my @files = @{$self->{files} || []};
+   
+  if( $self->is_paired )
+  {
+    return @files ? [] : ["$self->{lane}_1.fastq.gz", "$self->{lane}_2.fastq.gz", "$self->{lane}_1.fastq.gz.fastqcheck", "$self->{lane}_2.fastq.gz.fastqcheck"];
+  }
+  else
+  {
+    return @files ? [] : ["$self->{lane}.fastq.gz", "$self->{lane}.fastq.gz.fastqcheck"];
+  }
+}
+
+
+=head2 bam_to_fastq
+
+ Title   : bam_to_fastq
+ Usage   : $obj->bam_to_fastq('/path/to/lane', 'lock_filename');
+ Function: If there are no fastqs, convert bam to fastq files
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+
+sub bam_to_fastq {
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    my ($bam) = @{$self->bam_to_fastq_requires};
+    
+    my $in_bam = $self->{fsu}->catfile($lane_path, $bam);
+    my $fastq_base = $self->{lane};
+    
+    
+    my $fastqs_str ; 
+    if( $self->is_paired )
+    {
+      $fastqs_str  = qq{ (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq"), File::Spec->catfile(\$dir, "$self->{lane}_2.fastq")) };
+    }
+    else
+    {
+      $fastqs_str  = qq{ (File::Spec->catfile(\$dir, "$self->{lane}.fastq")) };
+    }
+    
+    
+    # (bam2fastq itself does full sanity checking and safe result file creation)
+    my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."bam2fastq.pl");
+    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+    print $scriptfh qq{
+use strict;
+use VertRes::Utils::Sam;
+use File::Spec;
+
+my \$dir = '$lane_path';
+my \@fastqs = $fastqs_str;
+
+# convert to fastq
+unless (-e \$fastqs[0] && -e \$fastqs[1]) {
+    my \$worked = VertRes::Utils::Sam->new(verbose => 1, quiet => 0)->bam2fastq(qq[$in_bam], qq[$fastq_base]);
+    die "bam2fastq failed\n" unless \$worked;
+}
+
+foreach my \$fastq (\@fastqs) {
+    # compress & checksum fastq and rename the fastqcheck file made by bam2fastq
+    system("gzip \$fastq; md5sum \$fastq.gz > \$fastq.gz.md5; mv \$fastq.fastqcheck \$fastq.gz.fastqcheck");
+}
+
+exit;
+    };
+    close $scriptfh;
+    
+    my $job_name = $self->{prefix}.'bam2fastq';
+    $self->archive_bsub_files($lane_path, $job_name);
+    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => '-M5900000 -R \'select[mem>5900] rusage[mem=5900]\''}, qq{perl -w $script_name});
+    
+    # we've only submitted to LSF, so it won't have finished; we always return
+    # that we didn't complete
+    return $self->{No};
 }
 
 =head2 split_requires
@@ -359,6 +551,7 @@ sub split {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $mapper_class = $self->{mapper_class};
+    my $mapper_exe = $self->{mapper_obj}->exe;
     my $verbose = $self->verbose;
     my $chunk_size = $self->{chunk_size} || 0; # if 0, will get set to mapper's default size
     
@@ -379,7 +572,7 @@ use strict;
 use $mapper_class;
 use VertRes::IO;
 
-my \$mapper = $mapper_class->new(verbose => $verbose);
+my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe]);
 
 # split
 my \$splits = \$mapper->split_fastq(@these_read_args,
@@ -422,8 +615,13 @@ sub _get_read_args {
     foreach my $vrfile (@vrfiles) {
         my $fastq = $vrfile->hierarchy_name;
         my $type = $vrfile->type;
-        if (defined $type && $type =~ /^(0|1|2)$/) {
-            $fastq_info[$type]->[0] = $fastq;
+        if (defined $type && $type != 3) {
+            if ($type =~ /^(0|1|2)$/) {
+                $fastq_info[$type]->[0] = $fastq;
+            }
+            else {
+                next;
+            }
         }
         else {
             if ($fastq =~ /${lane}_(\d)\./) {
@@ -553,7 +751,9 @@ sub map {
     my $insert_size_for_mapping = $info{insert_size} || 2000;
     my $insert_size_for_samheader = $info{insert_size} || 0;
     
+    
     my $mapper_class = $self->{mapper_class};
+    my $mapper_exe = $self->{mapper_obj}->exe;
     my $verbose = $self->verbose;
     
     # run mapping of each split in LSF calls to temp scripts;
@@ -597,7 +797,7 @@ use strict;
 use $mapper_class;
 use VertRes::Utils::Sam;
 
-my \$mapper = $mapper_class->new(verbose => $verbose);
+my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe]);
 
 # mapping won't get repeated if mapping works the first time but subsequent
 # steps fail
@@ -606,6 +806,7 @@ my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
                                output => '$sam_file',
                                insert_size => $insert_size_for_mapping,
                                read_group => '$info{lane}',
+                               is_paired => $self->{vrlane}->{is_paired},
                                error_file => '$prev_error_file');
 
 # (it will only return ok and create output if the sam file was created and not
@@ -628,7 +829,7 @@ close(\$samfh);
                                   ref_fa => '$ref_fa',
                                   ref_dict => '$ref_fa.dict',
                                   ref_name => '$self->{assembly_name}',
-                                  program => \$mapper->exe,
+                                  program => \$mapper->name,
                                   program_version => \$mapper->version);
 \$sam_util->throw("Failed to add sam header!") unless \$ok;
 
@@ -813,6 +1014,8 @@ sub merge {
         $total_reads > 0 || $self->throw("From looking at the fastqcheck files for $lane_path $ended, didn't get any reads!");
         
         my $copy_instead_of_merge = @bams > 1 ? 0 : 1;
+
+	my $add_index_option = $$self{'add_index'} ? 1 : 0; # Add index option
         
         # run this in an LSF call to a temp script
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -853,6 +1056,9 @@ if (-s '$bam_file') {
             move('$bam_file', \$bad_bam);
             die "Merged bam created OK, yet contains too few reads - moved to \$bad_bam\n";
         }
+	if ($add_index_option){
+	    \$su->index_bams(files=>['$bam_file']);
+	}
     }
 }
 
@@ -906,12 +1112,17 @@ sub statistics_provides {
     my ($self, $lane_path) = @_;
     
     my @provides;
+
+    my @stats_methods = ('bas', 'flagstat');
+    if(exists $$self{'get_genome_coverage'} && $$self{'get_genome_coverage'})
+    { push(@stats_methods, 'cover'); }
+
     foreach my $bam (@{$self->statistics_requires($lane_path)}) {
-        foreach my $suffix ('bas', 'flagstat') {
+        foreach my $suffix (@stats_methods) {
             push(@provides, $bam.'.'.$suffix);
         }
     }
-    
+
     @provides || $self->throw("Something went wrong; we don't seem to provide any stat files!");
     
     return \@provides;
@@ -969,7 +1180,18 @@ unless (\$num_present == ($#stat_files + 1)) {
         die "Failed to get stats for the bam '$bam_file'!\n";
     }
 }
-
+        };
+	if(exists $$self{'get_genome_coverage'} && $$self{'get_genome_coverage'})
+	{
+	    # Generate genome coverage file.
+	    print $scriptfh qq{
+my \@cover = \$sam_util->coverage('$bam_file',1,2,5,10,20,50,100);
+open(my \$fh, '> $bam_file.cover') || die "Failed to open file '$bam_file.cover'";
+print \$fh "[",join(',',\@cover),"]\n";
+close \$fh;
+            };
+	}
+        print $scriptfh qq{
 exit;
         };
         close $scriptfh;
@@ -1091,7 +1313,53 @@ sub update_db {
         $mapping->sd_insert($stats{sd_insert}) if $stats{sd_insert};
         $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
     }
-    
+ 
+    # Get Genome Coverage Option
+    if($needs_update && exists $$self{'get_genome_coverage'} && $$self{'get_genome_coverage'})
+    {
+	my @cover_files;
+	foreach my $file (@{$files}) {
+	    next unless $file =~ /\.cover$/;
+	    push(@cover_files, $self->{fsu}->catfile($lane_path, $file));
+	    -s $cover_files[-1] || $self->throw("Expected coverage file $cover_files[-1] but it didn't exist!");
+	}
+
+	# Get reference size
+	my $reference_size = $mapping->assembly->reference_size();
+	unless($reference_size){ $self->throw("Failed to find reference genome size for lane $lane_path"); }
+
+	# For more than one file, pick best coverage.
+	foreach my $file (@cover_files){
+	    my $coverage = do $file || $self->throw("Could not parse: $file");
+	    $stats{target_bases_1X}   = $$coverage[0] if !$stats{target_bases_1X}   || $$coverage[0] > $stats{target_bases_1X};
+	    $stats{target_bases_2X}   = $$coverage[1] if !$stats{target_bases_2X}   || $$coverage[1] > $stats{target_bases_2X};
+	    $stats{target_bases_5X}   = $$coverage[2] if !$stats{target_bases_5X}   || $$coverage[2] > $stats{target_bases_5X};
+	    $stats{target_bases_10X}  = $$coverage[3] if !$stats{target_bases_10X}  || $$coverage[3] > $stats{target_bases_10X};
+	    $stats{target_bases_20X}  = $$coverage[4] if !$stats{target_bases_20X}  || $$coverage[4] > $stats{target_bases_20X};
+	    $stats{target_bases_50X}  = $$coverage[5] if !$stats{target_bases_50X}  || $$coverage[5] > $stats{target_bases_50X};
+	    $stats{target_bases_100X} = $$coverage[6] if !$stats{target_bases_100X} || $$coverage[6] > $stats{target_bases_100X};
+	}
+
+	# Get percentage cover
+	$stats{target_bases_1X}   = sprintf("%.2f",$stats{target_bases_1X}   * 100 / $reference_size);
+	$stats{target_bases_2X}   = sprintf("%.2f",$stats{target_bases_2X}   * 100 / $reference_size);
+	$stats{target_bases_5X}   = sprintf("%.2f",$stats{target_bases_5X}   * 100 / $reference_size);
+	$stats{target_bases_10X}  = sprintf("%.2f",$stats{target_bases_10X}  * 100 / $reference_size);
+	$stats{target_bases_20X}  = sprintf("%.2f",$stats{target_bases_20X}  * 100 / $reference_size);
+	$stats{target_bases_50X}  = sprintf("%.2f",$stats{target_bases_50X}  * 100 / $reference_size);
+	$stats{target_bases_100X} = sprintf("%.2f",$stats{target_bases_100X} * 100 / $reference_size);
+
+	# Update mapstats
+	$mapping->target_bases_1X($stats{target_bases_1X});
+	$mapping->target_bases_2X($stats{target_bases_2X});
+	$mapping->target_bases_5X($stats{target_bases_5X});
+	$mapping->target_bases_10X($stats{target_bases_10X});
+	$mapping->target_bases_20X($stats{target_bases_20X});
+	$mapping->target_bases_50X($stats{target_bases_50X});
+	$mapping->target_bases_100X($stats{target_bases_100X});
+	$mapping->update || $self->throw("Unable to set mapping genome coverage on lane $lane_path");
+    }
+
     # set mapped status
     $vrlane->is_processed('mapped', 1);
     $vrlane->update() || $self->throw("Unable to set mapped status on lane $lane_path");
@@ -1256,6 +1524,47 @@ sub is_finished {
 	  }
 	}
       }
+    }
+    elsif ($action->{name} eq 'bam_to_fastq') {
+        my @files = @{$self->{files} || []};
+        unless (@files >= 2) {
+            my @fastqs = ($self->{fsu}->catfile($self->{lane_path}, "$self->{lane}_1.fastq.gz"), $self->{fsu}->catfile($self->{lane_path}, "$self->{lane}_2.fastq.gz"));
+            my $type = 0;
+            foreach my $fastq (@fastqs) {
+                $type++;
+                next unless -s "$fastq.fastqcheck";
+                my $fq_base = basename($fastq);
+                
+                my $vrlane = $self->{vrlane};
+                my $file = $vrlane->get_file_by_name($fq_base);
+                next if $file;
+                
+                # add a new file entry to the database
+                my $pars = VertRes::Parser::fastqcheck->new(file => "$fastq.fastqcheck");
+                my $num_of_sequences = $pars->num_sequences();
+                my $raw_bases = $pars->total_length();
+                my $average_length_of_a_sequence = $pars->avg_length();
+                my $mean_q = $pars->avg_qual();
+                open(my $fh, "$fastq.md5") || $self->throw("Could not open $fastq.md5");
+                my $line = <$fh>;
+                my ($md5) = split(" ", $line);
+                
+                $file = $vrlane->add_file($fq_base);
+                $file->hierarchy_name($fq_base);
+                $file->raw_bases($raw_bases);
+                $file->raw_reads($num_of_sequences);
+                $file->mean_q($mean_q);
+                $file->read_len($average_length_of_a_sequence);
+                $file->md5($md5);
+                $file->type($type);
+                $file->is_processed(import => 1);
+                
+                $file->update;
+                $vrlane->update;
+            }
+            
+            $self->{files} = \@files;
+        }
     }
     elsif ($action->{name} eq 'cleanup' || $action->{name} eq 'update_db') {
         return $self->{No};

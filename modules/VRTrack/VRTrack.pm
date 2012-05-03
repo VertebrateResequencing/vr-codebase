@@ -45,7 +45,7 @@ use VRTrack::Lane;
 use VRTrack::File;
 use VRTrack::Core_obj;
 
-use constant SCHEMA_VERSION => '12';
+use constant SCHEMA_VERSION => '15';
 
 our $DEFAULT_PORT = 3306;
 
@@ -789,6 +789,80 @@ sub database_params {
     return $self->{_db_params};
 }
 
+
+=head2 assembly_names
+
+  Arg [1]    : None
+  Example    : my @assemblies = $vrtrack->assembly_names();
+  Description: Returns a reference to an array of the names in the assembly table sorted by name
+  Returntype : reference to array of strings
+
+=cut
+
+sub assembly_names {
+    my $self = shift;
+    return $self->_list_names('assembly');
+}
+
+=head2 species_names
+
+  Arg [1]    : None
+  Example    : my @species = $vrtrack->species_names();
+  Description: Returns a reference to an array of the names in the species table sorted by name
+  Returntype : reference to array of strings
+
+=cut
+
+sub species_names {
+    my $self = shift;
+    return $self->_list_names('species');
+}
+
+=head2 mapper_names
+
+  Arg [1]    : None
+  Example    : my @mappers = $vrtrack->mapper_names();
+  Description: Returns a reference to an array of the distinct names in the species table
+  Returntype : reference to array of strings
+
+=cut
+
+sub mapper_names {
+    my $self = shift;
+    return $self->_list_names('mapper');
+}
+
+# Returns reference to an array of names contained in the name column of a table
+# Tables are restricted to tables contained in hash %permitted_table within the function.
+sub _list_names {
+    my ($self,$table) = @_;
+
+    # List of permitted tables
+    my %permitted_table = (assembly => 0, species => 0, mapper => 1);
+
+    unless(exists $permitted_table{$table}){croak qq[The listing names for '$table' not permitted];}
+    my $distinct = $permitted_table{$table} ? 'distinct' : '';
+
+    my @names;
+    my $sql =qq[select $distinct $table.name 
+                from $table
+                order by $table.name;];
+
+    my $sth = $self->{_dbh}->prepare($sql);
+	
+    my $tmpname;
+    if ($sth->execute()){
+        $sth->bind_columns ( \$tmpname );
+        push @names, $tmpname while $sth->fetchrow_arrayref;
+    }
+    else{
+        die(sprintf('Cannot retrieve $table names: %s', $DBI::errstr));
+    }
+
+    return \@names;
+}
+
+
 1;
 
 
@@ -803,7 +877,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (12);
+insert into schema_version(schema_version) values (14);
 
 --
 -- Table structure for table `assembly`
@@ -813,8 +887,23 @@ DROP TABLE IF EXISTS `assembly`;
 CREATE TABLE `assembly` (
   `assembly_id` smallint(5) unsigned NOT NULL auto_increment,
   `name` varchar(255) NOT NULL,
-   `reference_size` integer,
+  `reference_size` integer,
+  `taxon_id` mediumint(8) unsigned DEFAULT NULL,
+  `translation_table` smallint(5) unsigned DEFAULT NULL,
   PRIMARY KEY  (`assembly_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `exome_design`
+--
+
+DROP TABLE IF EXISTS `exome_design`;
+CREATE TABLE `exome_design` (
+  `exome_design_id` smallint(5) unsigned NOT NULL auto_increment,
+  `name` varchar(255) NOT NULL,
+  `bait_bases` bigint(20) unsigned default NULL,
+  `target_bases` bigint(20) unsigned default NULL,
+  PRIMARY KEY (`exome_design_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 --
@@ -891,7 +980,7 @@ CREATE TABLE `lane` (
   `npg_qc_status` enum('pending','pass','fail','-') default 'pending',
   `processed` int(10) default 0,
   `auto_qc_status` enum('no_qc','passed','failed') default 'no_qc',
-  `qc_status` enum('no_qc','pending','passed','failed') default 'no_qc',
+  `qc_status` enum('no_qc','pending','passed','failed','gt_pending','investigate') default 'no_qc',
   `gt_status` enum('unchecked','confirmed','wrong','unconfirmed','candidate','unknown','swapped') default 'unchecked',
   `submission_id` smallint(5) unsigned default NULL,
   `withdrawn` tinyint(1) default NULL,
@@ -1035,32 +1124,55 @@ CREATE TABLE `mapper` (
 
 DROP TABLE IF EXISTS `mapstats`;
 CREATE TABLE `mapstats` (
-  `row_id` int unsigned NOT NULL auto_increment key,
+  `row_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `mapstats_id` mediumint(8) unsigned NOT NULL,
   `lane_id` mediumint(8) unsigned NOT NULL,
-  `mapper_id` smallint(5) unsigned default NULL,
-  `assembly_id` smallint(5) unsigned default NULL,
-  `raw_reads` bigint(20) unsigned default NULL,
-  `raw_bases` bigint(20) unsigned default NULL,
-  `clip_bases` bigint(20) unsigned default NULL,
-  `reads_mapped` bigint(20) unsigned default NULL,
-  `reads_paired` bigint(20) unsigned default NULL,
-  `bases_mapped` bigint(20) unsigned default NULL,
-  `rmdup_reads_mapped` bigint(20) unsigned default NULL,
-  `rmdup_bases_mapped` bigint(20) unsigned default NULL,
-  `adapter_reads` bigint(20) unsigned default NULL,
-  `error_rate` float unsigned default NULL,
-  `mean_insert` float unsigned default NULL,
-  `sd_insert` float unsigned default NULL,
-  `gt_expected` varchar(40) default NULL,
-  `gt_found` varchar(40) default NULL,
-  `gt_ratio` float unsigned default NULL,
-  `note_id` mediumint(8) unsigned default NULL,
+  `mapper_id` smallint(5) unsigned DEFAULT NULL,
+  `assembly_id` smallint(5) unsigned DEFAULT NULL,
+  `raw_reads` bigint(20) unsigned DEFAULT NULL,
+  `raw_bases` bigint(20) unsigned DEFAULT NULL,
+  `clip_bases` bigint(20) unsigned DEFAULT NULL,
+  `reads_mapped` bigint(20) unsigned DEFAULT NULL,
+  `reads_paired` bigint(20) unsigned DEFAULT NULL,
+  `bases_mapped` bigint(20) unsigned DEFAULT NULL,
+  `rmdup_reads_mapped` bigint(20) unsigned DEFAULT NULL,
+  `rmdup_bases_mapped` bigint(20) unsigned DEFAULT NULL,
+  `adapter_reads` bigint(20) unsigned DEFAULT NULL,
+  `error_rate` float unsigned DEFAULT NULL,
+  `mean_insert` float unsigned DEFAULT NULL,
+  `sd_insert` float unsigned DEFAULT NULL,
+  `gt_expected` varchar(40) DEFAULT NULL,
+  `gt_found` varchar(40) DEFAULT NULL,
+  `gt_ratio` float unsigned DEFAULT NULL,
+  `note_id` mediumint(8) unsigned DEFAULT NULL,
   `changed` datetime NOT NULL,
-  `latest` tinyint(1) default '0',
+  `latest` tinyint(1) DEFAULT '0',
+  `bait_near_bases_mapped` bigint(20) unsigned DEFAULT NULL,
+  `target_near_bases_mapped` bigint(20) unsigned DEFAULT NULL,
+  `bait_bases_mapped` bigint(20) unsigned DEFAULT NULL,
+  `mean_bait_coverage` float unsigned DEFAULT NULL,
+  `bait_coverage_sd` float unsigned DEFAULT NULL,
+  `off_bait_bases` bigint(20) unsigned DEFAULT NULL,
+  `reads_on_bait` bigint(20) unsigned DEFAULT NULL,
+  `reads_on_bait_near` bigint(20) unsigned DEFAULT NULL,
+  `reads_on_target` bigint(20) unsigned DEFAULT NULL,
+  `reads_on_target_near` bigint(20) unsigned DEFAULT NULL,
+  `target_bases_mapped` bigint(20) unsigned DEFAULT NULL,
+  `mean_target_coverage` float unsigned DEFAULT NULL,
+  `target_coverage_sd` float unsigned DEFAULT NULL,
+  `target_bases_1X` float unsigned DEFAULT NULL,
+  `target_bases_2X` float unsigned DEFAULT NULL,
+  `target_bases_5X` float unsigned DEFAULT NULL,
+  `target_bases_10X` float unsigned DEFAULT NULL,
+  `target_bases_20X` float unsigned DEFAULT NULL,
+  `target_bases_50X` float unsigned DEFAULT NULL,
+  `target_bases_100X` float unsigned DEFAULT NULL,
+  `exome_design_id` smallint(5) unsigned DEFAULT NULL,
+  `percentage_reads_with_transposon` float unsigned DEFAULT NULL,
+  PRIMARY KEY (`row_id`),
   KEY `mapstats_id` (`mapstats_id`),
   KEY `lane_id` (`lane_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
 
 --
 -- Table structure for table `population`

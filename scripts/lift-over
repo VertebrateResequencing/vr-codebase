@@ -1,0 +1,290 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+use FindBin;
+use lib "$FindBin::Bin";
+use FaSlice;
+
+my $opts = parse_params();
+if ( exists($$opts{tlog}) )
+{
+    apply_tlog($opts);
+}
+else
+{
+    run_liftover($opts);
+}
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    die
+        "About: Calls liftOver to modify coordinates of tab-delimited files. Only the first and second column (chromosome and position)\n",
+        "   are modified, the rest of the line and comment lines (starting with #) are left unchanged.\n",
+        "Usage: lift-over [OPTIONS] > out_file\n",
+        "Options:\n",
+        "   -a, --apply-log <file>          Apply log file from previous run, do not lift-over nor check the reference again.\n",
+        "   -c, --chain-file <file>         The liftover chain file.\n",
+        "   -i, --in <file>                 The file to be lifted over\n",
+        "   -n, --new-ref <file>            The reference of the output file\n",
+        "   -o, --ori-ref <file>            The reference of the input file\n",
+        "   -p, --prefix <dir>              Output files prefix\n",
+        "   -h, -?, --help                  This help message.\n",
+        "Chain files:\n",
+        "   http://hgdownload.cse.ucsc.edu/downloads.html\n",
+        "   Human NCBI36 to NCBI37\thttp://hgdownload.cse.ucsc.edu/goldenPath/hg18/liftOver/hg18ToHg19.over.chain.gz\n",
+        "\n";
+}
+
+
+sub parse_params
+{
+    my $opts = {};
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-a' || $arg eq '--apply-log' ) { $$opts{tlog}=shift(@ARGV); next }
+        if ( $arg eq '-n' || $arg eq '--new-ref' ) { $$opts{new_ref}=shift(@ARGV); next }
+        if ( $arg eq '-o' || $arg eq '--ori-ref' ) { $$opts{ori_ref}=shift(@ARGV); next }
+        if ( $arg eq '-p' || $arg eq '--prefix' ) { $$opts{prefix}=shift(@ARGV); next }
+        if ( $arg eq '-i' || $arg eq '--in' ) { $$opts{in_file}=shift(@ARGV); next }
+        if ( $arg eq '-c' || $arg eq '--chain' ) { $$opts{chain}=shift(@ARGV); next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    if ( !exists($$opts{in_file}) ) { error("Missing the -i option.\n") }
+    if ( !exists($$opts{tlog}) ) 
+    {
+        if ( !exists($$opts{chain}) ) { error("Missing the -c option.\n") }
+        if ( !exists($$opts{prefix}) ) { error("Missing the -p option.\n") }
+        if ( !exists($$opts{new_ref}) ) { error("Missing the -n option.\n") }
+        if ( !exists($$opts{ori_ref}) ) { error("Missing the -o option.\n") }
+    }
+    return $opts;
+}
+
+sub run_liftover
+{
+    my ($opts) = @_;
+    $$opts{ori_bed} = "$$opts{prefix}/in.bed";
+    my $out_bed = "$$opts{prefix}/out.bed";
+
+    Utils::CMD("mkdir -p $$opts{prefix}");
+
+    # Convert the tab-delimited file to BED file and convert chrom names from N to chrN
+    my $cmd = ( $$opts{in_file}=~/\.gz$/i ) ? "zcat $$opts{in_file} |" : "<$$opts{in_file}";
+    open(my $in_fh,$cmd) or error("$cmd: $!");
+    open(my $bed_fh,'>',$$opts{ori_bed}) or error("$$opts{ori_bed}: $!");
+    while (my $line=<$in_fh>)
+    {
+        if ( $line=~/^#/ ) { next; }
+        if ( !($line=~/^(\S+)\s+(\d+)/) ) { error("Could not parse: $line"); }
+        my $chr = $1;
+        my $pos = $2;
+        if ( !($chr=~/^chr/) ) { $chr="chr$chr"; }
+        printf $bed_fh "%s\t%d\t%d\n",$chr,$pos-1,$pos;
+    }
+    close($bed_fh);
+    close($in_fh);
+
+    # Run liftover
+    $$opts{mapped}   = "$$opts{prefix}/out.mapped";
+    $$opts{unmapped} = "$$opts{prefix}/out.unmapped";
+    Utils::CMD("liftOver_x86_64 $$opts{ori_bed} $$opts{chain} $$opts{mapped} $$opts{unmapped}");
+
+    # Check sanity
+    $$opts{tlog} = "$$opts{prefix}/liftover.tlog";
+    compare($opts);
+
+    # Transfer the coordinates
+    apply_tlog($opts);
+}
+
+
+sub compare
+{
+    my ($opts) = @_;
+
+    if ( !$$opts{ori_ref} or !$$opts{new_ref} ) { return; }
+
+    my $fa_ori  = FaSlice->new(file=>$$opts{ori_ref}, size=>1_000_000, oob=>'N');
+    my $fa_new  = FaSlice->new(file=>$$opts{new_ref}, size=>1_000_000, oob=>'N');
+    my $pos_unm = Reader->new(file=>$$opts{unmapped});
+    my $pos_ori = Reader->new(file=>$$opts{ori_bed});
+    my $pos_map = Reader->new(file=>$$opts{mapped});
+    open(my $tlog_fh,'>',$$opts{tlog}) or error("$$opts{tlog}: $!");
+
+    my $match     = 0;
+    my $mismatch  = 0;
+    my $rmismatch = 0;
+    my $skipped   = 0;
+    my $ignored   = 0;
+    my $nlines    = 0;
+    my $nlifted   = 0;
+    my $win = 10;
+    while (1)
+    {
+        my $ori = $pos_ori->next_line();
+        if ( !$ori ) { last; }
+        $nlines++;
+
+        my $unm = $pos_unm->next_line();
+        if ( defined $unm )
+        {
+            if ( !defined $ori ) { error("Run out of ori lines?\n"); }
+            if ( $$ori[0] eq $$unm[0] && $$ori[1] eq $$unm[1] && $$ori[2] eq $$unm[2] )
+            {
+                print $tlog_fh "# skip\t$$ori[0]\t",$$ori[1]+1,"\n";
+                $skipped++;
+                next;
+            }
+            $pos_unm->unread_line($unm);
+        }
+        my $map = $pos_map->next_line();
+
+        my $ref_ori = $fa_ori->get_slice($$ori[0],$$ori[1]+1-$win,$$ori[1]+1+$win);
+        my $ref_new = $fa_new->get_slice($$map[0],$$map[1]+1-$win,$$map[1]+1+$win);
+        if ( !$ref_ori || !$ref_new ) 
+        { 
+            error(
+                sprintf("Error: the chain file suggests that $$ori[0]:%d is transformed to $$map[0]:%d, but the sequence is not accessible: \n", $$ori[1]+1,$$map[1]+1),
+                $ref_ori ? '' : sprintf("\t$$opts{ori_ref} $$ori[0]:%d (%d-%d)\n",$$ori[1]+1,$$ori[1]+1-$win,$$ori[1]+1+$win),
+                $ref_new ? '' : sprintf("\t$$opts{new_ref} $$map[0]:%d (%d-%d)\n",$$map[1]+1,$$map[1]+1-$win,$$map[1]+1+$win)
+                );
+        }
+
+        $ref_ori = uc($ref_ori);
+        $ref_new = uc($ref_new);
+
+        my $ok = 1;
+        if ( substr($ref_new,$win,1) ne substr($ref_ori,$win,1) ) { $ok=0; $rmismatch++; }
+        for (my $i=0; $i<2*$win+1; $i++)
+        {
+            if ( substr($ref_new,$i,1) eq substr($ref_ori,$i,1) ) { $match++; }
+            else { $ok=0; $mismatch++; }
+        }
+
+        if ( $ok )
+        {
+            printf $tlog_fh "%s\t%d\t->\t%s\t%d\n",$$ori[0],$$ori[1]+1,$$map[0],$$map[1]+1;
+            $nlifted++;
+        }
+        else
+        {
+            $ignored++;
+            print $tlog_fh "# ignored\t$$ori[0]\t",$$ori[1]+1,"\n";
+        }
+    }
+    close($tlog_fh);
+
+    open(my $fh,'>',"$$opts{prefix}/liftover.stats") or error("$$opts{prefix}/liftover.stats: $!");
+    printf $fh "lifted over                             .. %.1f%% (%d)\n", $nlifted*100./$nlines,$nlifted;
+    printf $fh "unmapped                                .. %.1f%% (%d)\n", $skipped*100./$nlines,$skipped;
+    printf $fh "ignored because of mismatches           .. %.1f%% (%d)\n", $ignored*100./$nlines,$ignored;
+    printf $fh "reference mismatches (1bp)              .. %.1f%% (%d)\n", $rmismatch*100./$nlines, $rmismatch;
+    printf $fh "flanking sequence mismatches (%dbp win) .. %.1f%% (%d)\n", 2*$win+1, $mismatch*100./($match+$mismatch),$mismatch/(2*$win+1);
+    printf $fh "                  matches               .. %.1f%% (%d)\n", $match*100./($match+$mismatch), $match/(2*$win+1);
+    close($fh);
+
+    print STDERR "Check sanity of the transform: $$opts{prefix}/liftover.stats\n";
+}
+
+
+sub apply_tlog
+{
+    my ($opts) = @_;
+
+    open(my $tlog_fh,'<',$$opts{tlog}) or error("$$opts{tlog}: $!");
+    my $cmd = ( $$opts{in_file}=~/\.gz$/i ) ? "zcat $$opts{in_file} |" : "<$$opts{in_file}";
+    open(my $in_fh,$cmd) or error("$cmd: $!");
+
+    while (1)
+    {
+        my $ori;
+        while (!defined $ori)
+        {
+            $ori = <$in_fh>;
+            if ( !defined $ori ) { last; }
+            if ( !($ori=~/^#/) ) { last; }
+            print $ori;
+            undef $ori;
+        }
+        my $tlog = <$tlog_fh>;
+
+        if ( !$ori && !$tlog ) { last; }
+        if ( !$ori && $tlog or $ori && !$tlog ) { error("FIXME: Different lengths?\n"); }
+
+        if ( $tlog=~/^# skip\t\S+\t\d+$/ ) { next; }
+        if ( $tlog=~/^# ignored\t\S+\t\d+$/ ) { next; }
+        if ( !($tlog=~/^(\S+)\t(\d+)\t->\t(\S+)\t(\d+)/) ) { error("Could not parse $$opts{tlog}: $tlog"); }
+        my $exp_chr = $1;
+        my $exp_pos = $2;
+        my $new_chr = $3;
+        my $new_pos = $4;
+        if ( !($ori=~/^(\S+)\t(\d+)/) ) { error("Could not parse data on input: $ori"); }
+        my $ori_chr = $1;
+        my $ori_pos = $2;
+        if ( $exp_chr ne $ori_chr or $exp_pos ne $ori_pos ) { error("Out of sync, expected $exp_chr:$exp_pos got $ori_chr:$ori_pos\n"); }
+        print "$new_chr\t$new_pos$'";
+    }
+    close($tlog_fh);
+}
+
+
+
+#--------------------------------
+
+package Reader;
+use strict;
+use warnings;
+use Carp;
+
+sub Reader::new
+{
+    my ($class,%args) = @_;
+    my $self = { %args };
+    bless($self,$class);
+    $$self{buffer} = [];
+    if ( !exists($$self{file}) ) { $self->error("Expected 'file' parameter.\n"); }
+    open($$self{fh},'<',$$self{file}) or $self->error("$$self{file}: $!"); 
+    return $self;
+}
+
+sub Reader::error
+{
+    my ($self,@msg) = @_;
+    confess @msg;
+}
+
+sub Reader::next_line
+{
+    my ($self) = @_;
+    if ( @{$$self{buffer}} ) { return shift(@{$$self{buffer}}); }
+    my $line;
+    while (defined($line=readline($$self{fh})))
+    {
+        if ( $line=~/^#/ ) { next; }
+        last;
+    }
+    if ( !defined($line) ) { return undef; }
+    my @items = split(/\s+/,$line);
+    $items[0] =~ s/^chr//;
+    return \@items;
+}
+
+sub Reader::unread_line
+{
+    my ($self,$line) = @_;
+    push @{$$self{buffer}}, $line;
+}
+

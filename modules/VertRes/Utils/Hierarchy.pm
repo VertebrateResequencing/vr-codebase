@@ -35,7 +35,7 @@ use File::Copy;
 use Cwd qw(abs_path cwd);
 use VertRes::Parser::sequence_index;
 use VertRes::Wrapper::samtools;
-use VertRes::Parser::sam;
+use VertRes::Parser::bam;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::Library;
@@ -55,7 +55,7 @@ our $DEFAULT_DB_SETTINGS = {host => $ENV{VRTRACK_HOST},
                             user => $ENV{VRTRACK_RO_USER},
                             database => 'g1k_meta'};
 
-our $nfs_disc_basename = '/nfs/vertreseq';
+our $nfs_disc_basename = '/nfs/vertres';
 
 
 =head2 new
@@ -130,6 +130,7 @@ sub parse_lane {
                                       and library_raw)
            lane           => string, (aka read group)
            centre         => string, (the sequencing centre name)
+           species        => string,
            insert_size    => int, (can be undef if this lane is single-ended)
            withdrawn      => boolean,
            imported       => boolean,
@@ -226,6 +227,7 @@ sub lane_info {
     }
     $info{sample} = $objs{sample}->name || $self->throw("sample name wasn't known for $rg");
     $info{individual} = $objs{individual}->name || $self->throw("individual name wasn't known for $rg");
+    $info{species} =  $objs{species}->name || $self->throw("species name wasn't known for $rg");
     $info{individual_acc} = $objs{individual}->acc; # || $self->throw("sample accession wasn't known for $rg");
     unless ($args{no_coverage}) {
         $info{individual_coverage} = $self->hierarchy_coverage(individual => [$info{individual}],
@@ -259,6 +261,7 @@ sub lane_info {
            platform => VRTrack::Seq_tech object
            centre => VRTrack::Seq_centre object
            library => VRTrack::Library object
+           species => VRTrack::Species object
  Args    : VRTrack::Lane object
 
 =cut
@@ -272,6 +275,7 @@ sub lane_hierarchy_objects {
     my $st = $lib->seq_tech;
     my $sample = VRTrack::Sample->new($vrtrack, $lib->sample_id);
     my $individual = $sample->individual;
+    my $species = $individual->species;
     my $pop = $individual->population;
     my $project_obj = VRTrack::Project->new($vrtrack, $sample->project_id);
     my $study_obj = VRTrack::Study->new($vrtrack, $project_obj->study_id) if $project_obj->study_id;
@@ -283,7 +287,8 @@ sub lane_hierarchy_objects {
             population => $pop,
             platform => $st,
             centre => $sc,
-            library => $lib);
+            library => $lib,
+            species => $species);
 }
 
 =head2 hierarchy_coverage
@@ -1269,12 +1274,22 @@ sub lane_bam_link {
            slx_mapper => string
            454_mapper => string
            assembly_name => string
+           
+           the following optionally give aliases for the mapper names read fom the database
+           slx_mapper_alias => ['bwa', 'bwa_aln']
+           454_mapper_alias => ['ssaha', 'ssaha_1.4']
 
 =cut
 
 sub lane_bams {
     my ($self, $lane_path, %args) = @_;
     my $lane_name = basename($lane_path);
+    
+    my ($mapper_slx, $mapper_454) = ($args{slx_mapper}, $args{'454_mapper'});
+    my $mapper_alias_slx = $args{slx_mapper_alias} || [ $mapper_slx ];
+    my $mapper_alias_454 = $args{'454_mapper_alias'} || [ $mapper_454 ];
+    push @{$mapper_alias_slx}, $mapper_slx unless grep {/^$mapper_slx$/} @{$mapper_alias_slx};
+    push @{$mapper_alias_454}, $mapper_454 unless grep {/^$mapper_454$/} @{$mapper_alias_454};
     
     # first get the mapstats object so we'll know the bam prefix
     my $vrlane = VRTrack::Lane->new_by_hierarchy_name($args{vrtrack}, $lane_name) || $self->throw("Unable to get lane $lane_name from db");
@@ -1284,15 +1299,15 @@ sub lane_bams {
     my $mapstats;
     if ($mappings && @{$mappings}) {
         # find the most recent mapstats that corresponds to our mapping
-        my $mapping_util = VertRes::Utils::Mapping->new(slx_mapper => $args{slx_mapper},
-                                                        '454_mapper' => $args{'454_mapper'});
+        my $mapping_util = VertRes::Utils::Mapping->new(slx_mapper => $mapper_slx,
+                                                        '454_mapper' => $mapper_454);
         my $mapper_class = $mapping_util->lane_to_module($lane_path);
         $mapper_class || $self->throw("Lane '$lane_path' was for an unsupported technology");
         $self->{mapper_class} = $mapper_class;
         eval "require $mapper_class;";
         my $mapper_obj = $mapper_class->new;
         $self->{mapper_obj} = $mapper_obj;
-        my $mapper = $mapper_obj->exe;
+        my $mapper = $mapper_obj->name;
         $self->throw("no mapper from $mapper_class") unless $mapper;
         
         my $highest_id = 0;
@@ -1303,15 +1318,26 @@ sub lane_bams {
             my $assembly = $possible->assembly() || next;
             $assembly->name eq $args{assembly_name} || next;
             my $this_mapper = $possible->mapper() || next;
-            $this_mapper->name eq $mapper || next;
+            my $this_mapper_name = $this_mapper->name || next;
             
+            foreach my $mapper_alt (@{$mapper_alias_slx}) {
+                next unless $mapper_alt eq $this_mapper_name;
+                $this_mapper_name = $mapper_slx;
+                last;
+            }
+            foreach my $mapper_alt (@{$mapper_alias_454}) {
+                next unless $mapper_alt eq $this_mapper_name;
+                $this_mapper_name = $mapper_454;
+                last;
+            }
+            $this_mapper_name eq $mapper || next;
             if ($pid > $highest_id) {
                 $mapstats = $possible;
                 $highest_id = $pid;
             }
         }
     }
-    $mapstats || $self->throw("Could not get a mapstats for lane $lane_name");
+    $mapstats || $self->throw("Could not get a mapstats for lane $lane_name. Perhaps try setting a mapper alias");
     $self->{mapstats_obj} = $mapstats;
     my $mapstats_prefix = $mapstats->id;
     
@@ -1376,12 +1402,15 @@ sub lane_bams {
            the path to the sequence.index file. Optionally a chrom string if the
            supplied bam is unsplit, but you want to work out what the dcc
            filename of a certain chromosmal split of that bam would be prior to
-           actually making the split bam.
+           actually making the split bam. A final option is a boolean which if
+           true means that RG ids are taken to be meaningless, with the true
+           read group identifier being in the PU field of the RG line(s) in the
+           header
 
 =cut
 
 sub dcc_filename {
-    my ($self, $file, $date_string, $sequence_index, $given_chrom) = @_;
+    my ($self, $file, $date_string, $sequence_index, $given_chrom, $rg_from_pu) = @_;
     $date_string || $self->throw("release date string must be supplied");
     
     # NAXXXXX.[chromN].technology.[center].algorithm.population.analysis_group.YYYYMMDD.bam
@@ -1396,31 +1425,30 @@ sub dcc_filename {
         $algorithm = $self->{algorithm}->{$file};
     }
     else {
-        my $stw = VertRes::Wrapper::samtools->new(quiet => 1);
-        $stw->run_method('open');
-        my $view_fh = $stw->view($file, undef, H => 1);
-        $view_fh || $self->throw("Failed to samtools view '$file'");
-        
-        my $ps = VertRes::Parser::sam->new(fh => $view_fh);
-        %readgroup_info = $ps->readgroup_info();
+        my $bp = VertRes::Parser::bam->new(file => $file);
+        %readgroup_info = $bp->readgroup_info();
+        $algorithm = $bp->program;
+        $bp->close;
         $self->{rginfo}->{$file} = \%readgroup_info;
-        $algorithm = $ps->program;
         $self->{algorithm}->{$file} = $algorithm;
     }
     
     my $sample;
     my $platform = 'unknown_platform';
+    my $raw_pl;
+    my $project;
     my %techs;
     my $example_rg;
     while (my ($rg, $info) = each %readgroup_info) {
         # there should only be one sample, so we just pick the first
         $sample ||= $info->{SM};
-        $example_rg ||= $rg;
+        $example_rg ||= $rg_from_pu ? $info->{PU} : $rg;
         
         # might be more than one of these if we're a sample-level bam. We
         # standardise on the DCC nomenclature for the 3 platforms; they should
         # be in this form anyway, so this is just-in-case
         $platform = $info->{PL};
+        $raw_pl = $platform;
         if ($platform =~ /illumina|slx/i) {
             $platform = 'ILLUMINA';
         }
@@ -1431,13 +1459,15 @@ sub dcc_filename {
             $platform = 'LS454';
         }
         $techs{$platform}++;
+        
+        $project ||= $info->{DS};
     }
     $sample ||= 'unknown_sample';
     
     # picard merge may have tried to uniqueify the rg, so pluck off .\d
     $example_rg =~ s/\.\d+$//;
     
-    unless ($example_rg) {
+    unless (defined $example_rg) {
         $self->throw("The bam '$file' had no RG in the header!");
     }
     
@@ -1492,6 +1522,9 @@ sub dcc_filename {
         }
         elsif ($platform =~ /454/) {
             $algorithm = 'ssaha2';
+        }
+        elsif ($raw_pl eq 'solid') {
+            $algorithm = 'mosaik';
         }
         elsif ($platform =~ /SOLID/) {
             $algorithm = 'bfast';
@@ -1654,9 +1687,8 @@ sub store_lane {
     
     if ($do_move) {
         symlink($storage_path, $source_dir) || $self->throw("Failed to create symlink from $storage_path to $source_dir");
-        chdir($cwd);
-        
         File::Copy::move($storage_path_temp, $storage_path) || $self->throw("Could not rename $storage_path_temp to $storage_path");
+        chdir($cwd) || $self->throw("Could not change directory to $cwd");
     }
     
     $lane->storage_path($storage_path);

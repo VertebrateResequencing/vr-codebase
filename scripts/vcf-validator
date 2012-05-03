@@ -27,6 +27,7 @@ sub error
     die
         "Usage: vcf-validator [OPTIONS] file.vcf.gz\n",
         "Options:\n",
+        "   -d, --duplicates                 Warn about duplicate positions.\n",
         "   -u, --unique-messages            Output all messages only once.\n",
         "   -h, -?, --help                   This help message.\n",
         "\n";
@@ -35,9 +36,10 @@ sub error
 
 sub parse_params
 {
-    my $opts = { unique=>0 };
+    my $opts = { unique=>0, duplicates=>0 };
     while (my $arg=shift(@ARGV))
     {
+        if ( $arg eq '-d' || $arg eq '--duplicates' ) { $$opts{duplicates}=1; next; }
         if ( $arg eq '-u' || $arg eq '--unique-messages' ) { $$opts{unique}=1; next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         if ( -e $arg && !exists($$opts{file}) ) { $$opts{file}=$arg; next; }
@@ -50,7 +52,8 @@ sub do_validation
 {
     my ($opts) = @_;
 
-    my $vcf = $$opts{file} ? Vcf->new(file=>$$opts{file}) : Vcf->new(fh=>\*STDIN);
+    my %opts = $$opts{file} ? (file=>$$opts{file}) : (fh=>\*STDIN);
+    my $vcf = Vcf->new(%opts, warn_duplicates=>$$opts{duplicates});
 
     if ( !$$opts{unique} )
     {

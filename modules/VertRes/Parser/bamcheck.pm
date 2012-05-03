@@ -66,6 +66,7 @@ sub new {
                 'avg_insert_size',
                 'avg_length',
                 'avg_qual',
+                'bases_duplicated',
                 'bases_mapped',
                 'bases_mapped_cigar',
                 'bases_trimmed',
@@ -75,6 +76,7 @@ sub new {
                 'last_fragments',
                 'max_length',
                 'mismatches',
+                'reads_duplicated',
                 'reads_mapped',
                 'reads_unmapped',
                 'reads_unpaired',
@@ -84,6 +86,7 @@ sub new {
                 'total_length',
 
             or one of the arrays:
+                'coverage',
                 'first_fragment_gc',
                 'first_fragment_qualities',
                 'gc_depth',
@@ -126,10 +129,12 @@ sub _get_header {
         'reads unmapped'    => 'reads_unmapped',
         'reads unpaired'    => 'reads_unpaired',
         'reads paired'      => 'reads_paired',
+        'reads duplicated'  => 'reads_duplicated',
         'total length'      => 'total_length',
         'bases mapped'      => 'bases_mapped',
         'bases mapped (cigar)' => 'bases_mapped_cigar',
         'bases trimmed'     => 'bases_trimmed',
+        'bases duplicated'  => 'bases_duplicated',
         'mismatches'        => 'mismatches',
         'error rate'        => 'error_rate',
         'average length'    => 'avg_length',
@@ -148,6 +153,7 @@ sub _get_header {
         'GCL'   => 'last_fragment_gc',
         'IS'    => 'insert_size',
         'GCD'   => 'gc_depth',
+        'COV'   => 'coverage',
     );
     
     while (my $line=<$fh>) 
