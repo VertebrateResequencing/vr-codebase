@@ -165,12 +165,14 @@ sub is_genotype_ok
 
 	# need to take account of special circumstance above where the 'correct' sample is listed second, but has 
 	# the same likelihood as that reported first->  $expected eq $gtype2 and $lhood1==$lhood2
+    my $expected_gtype1 = ($expected eq $gtype1 && $lhood1 == $lhood2) ? 1 : 0;
     my $expected_gtype2 = ($expected eq $gtype2 && $lhood1 == $lhood2) ? 1 : 0; 
      
     if ( $expected && !$has_data ) { $expected = 0; }
 
     my $ratio = $lhood1!=0 ? $lhood2/$lhood1 : $lhood2/1e-6;
 
+	if ( $expected_gtype1 ) { return "status=confirmed expected=$expected found=$gtype1 ratio=$ratio\n"; }
 	if ( $expected_gtype2 ) { return "status=confirmed expected=$expected found=$gtype2 ratio=$ratio\n"; }
 
     if ( $ratio<$min_ratio ) 

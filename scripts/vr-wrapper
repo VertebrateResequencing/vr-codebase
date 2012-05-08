@@ -25,6 +25,6 @@ fi
 
 shift 1
 
-umask 002
+umask 007
 eval $@
 

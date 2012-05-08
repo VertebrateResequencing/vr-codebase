@@ -142,8 +142,6 @@ while (<$ifh>) {
     # Set lane name to @RG->ID unless this is '1', in which case try to set it to @RG->PU
     my $lane_name = ($rg eq '1' && exists($rg_info{$rg}{PU})) ? $rg_info{$rg}{PU} : $rg;
     
-    my $run_date = $date || $data{$bam}{DT}  || $time{'yyyy-mm-dd hh:mm:ss'};
-    
     $data{$bam}{path}        = $bam_path;
     $data{$bam}{md5}         = $md5;
     $data{$bam}{sample}      = $sample      || $rg_info{$rg}{SM} || 'default_sample';
@@ -155,7 +153,11 @@ while (<$ifh>) {
     $data{$bam}{seq_tech}    = $seq_tech    || $platform_to_tech{ $rg_info{$rg}{PL} } || 'default_seq_tech';
     $data{$bam}{insert_size} = $insert_size || $rg_info{$rg}{PI} || 'default_insert_size';
     $data{$bam}{alias}       = $alias       || $data{$bam}{sample};
-    $data{$bam}{run_date}    = Time::Format::time_format('yyyy-mm-dd hh:mm:ss', $run_date);
+    $data{$bam}{run_date}    = $date || $rg_info{$rg}{DT}  || $time{'yyyymmddhhmmss'};
+    
+    $data{$bam}{run_date} =~ s/\+\d+$//;
+    $data{$bam}{run_date} =~ s/[^0-9]//g;
+    
 }
 close $ifh;
 

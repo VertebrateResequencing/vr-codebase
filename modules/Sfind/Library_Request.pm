@@ -187,7 +187,7 @@ sub _get_libraries {
     my @libraries;
     foreach my $id (@{$self->library_ids()}){
         my $obj;
-        if ($self->type eq "Pulldown Multiplex Library Preparation"){
+        if ($self->type =~ /^pulldown/i){
             $obj = Sfind::Well_Library->new({dbh=>$self->{_dbh},id=>$id});
         }
         else {
@@ -212,8 +212,25 @@ sub _get_library_ids {
 
     my @lib_ids;
 
-    if ($self->type eq "Pulldown Multiplex Library Preparation"){
-        my $sql= qq[select descendant_internal_id from asset_links, current_requests where current_requests.source_asset_internal_id = asset_links.ancestor_internal_id and descendant_type="wells" and current_requests.internal_id=? and asset_links.is_current=1];
+    if ($self->type =~ /^pulldown/i){
+    my $sql = qq[
+        SELECT
+         aliquots.library_internal_id
+        FROM
+         aliquots
+        STRAIGHT_JOIN
+         current_requests ON
+           aliquots.receptacle_uuid = current_requests.target_asset_uuid AND
+           aliquots.sample_uuid = current_requests.source_asset_sample_uuid
+        WHERE
+         (
+           (aliquots.receptacle_type = 'pulldown_multiplexed_library_tube' AND current_requests.request_type = 'Pulldown Multiplex Library Preparation') OR
+           (aliquots.receptacle_type = 'multiplexed_library_tube' AND current_requests.request_type IN ('Pulldown WGS', 'Pulldown SC'))
+         )
+        AND aliquots.is_current = 1
+        AND current_requests.internal_id = ?;
+        ];
+        #my $sql= qq[select descendant_internal_id from asset_links, current_requests where current_requests.source_asset_internal_id = asset_links.ancestor_internal_id and descendant_type="wells" and current_requests.internal_id=? and asset_links.is_current=1];
         my $sth = $self->{_dbh}->prepare($sql);
 
         $sth->execute($self->id);
@@ -228,14 +245,19 @@ sub _get_library_ids {
         # for a non-multiplex request, or the indexed library tube that will be
         # pooled for a multiplexed request
 
-        my $sql= qq[select distinct aliquot.library_internal_id as target_asset_internal_id, aliquot.receptacle_type as target_asset_type  from aliquots as aliquot join current_requests as request on request.target_asset_internal_id = aliquot.receptacle_internal_id where request.internal_id = ?];
+        my $sql= qq[select distinct aliquot.library_internal_id as target_asset_internal_id, 
+                            aliquot.receptacle_type as target_asset_type  
+                    from aliquots as aliquot 
+                    join current_requests as request 
+                    on request.target_asset_internal_id = aliquot.receptacle_internal_id 
+                    where request.internal_id = ?];
 
         my $sth = $self->{_dbh}->prepare($sql);
 
         $sth->execute($self->id);
         foreach(@{$sth->fetchall_arrayref()}){
             if ($_->[0]){
-                die "Unexpected target type ".$_->[1] unless $_->[1] eq 'library_tube';
+                die "Unexpected target type ".$_->[1]." for ".$self->id unless $_->[1] eq 'library_tube';
                 push @lib_ids, $_->[0];
             }
         }

@@ -253,7 +253,7 @@ has 'tag_id'  => (
     is          => 'ro',
     isa         => 'Maybe[Int]',
     #init_arg    => 'tag_internal_id', # this is the actual tag int id, not the id in the bamfile name
-    init_arg    => 'tag_id',
+    init_arg    => 'tag_map_id',
 );
 
 has 'tag_group_id'  => (
@@ -318,7 +318,7 @@ around BUILDARGS => sub {
         aliquot.tag_uuid,
         aliquot.tag_internal_id,
         library_tube.expected_sequence,
-        tags.map_id as tag_id,
+        tags.map_id as tag_map_id,
         library_tube.tag_group_name,
         library_tube.tag_group_uuid,
         library_tube.tag_group_internal_id,

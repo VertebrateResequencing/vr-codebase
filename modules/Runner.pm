@@ -54,6 +54,9 @@ Runner.pm   - A simple module for quick development of scripts and pipelines whi
         # Checkpoint, wait until all the above files are finished
         $self->wait;
 
+        # Clean temporary files
+        $self->clean;
+
         print STDERR "All done!\n";
         $self->all_done;
     }
@@ -91,9 +94,9 @@ sub new
     my ($class,@args) = @_;
     my $self = @args ? {@args} : {};
     bless $self, ref($class) || $class;
-    $$self{_status_codes}{DONE} = 1;
+    $$self{_status_codes}{DONE} = 111;
     $$self{_farm} = 'LSF';
-    $$self{_farm_options} = { runtime=>600 };
+    $$self{_farm_options} = { runtime=>600, memory_limit=>20_000 };
     $$self{_running_jobs} = {};
     $$self{_nretries} = 1;
     $$self{usage} = 
@@ -174,15 +177,23 @@ sub run
     # Run the user's module once or multiple times
     while (1)
     {
+        # The parent loops and forks, the childs run main() in user's module
         my $pid = fork();
-        if ( !$pid ) { $self->main(); }
+        if ( !$pid ) { $self->main(); return; }
         else
         {
-            # If killed, killed the child process too.
+            # If killed, kill the child process too.
             $SIG{TERM} = $SIG{INT} = sub { kill 9,$pid; die "Signal caught, killing the child $pid.\n"; };
         }
         wait();
-        if ( !$$self{_loop} or $? ) { return; }
+        my $status = $?>>8;
+        if ( $status ) 
+        { 
+            if ( $status==$$self{_status_codes}{DONE} ) { exit 0; }
+            # Exit with the correct status immediately if the user module fails. Note that +retries applies only to spawned jobs.
+            die "\n"; 
+        }
+        if ( !$$self{_loop} ) { return; }
         $self->debugln("sleeping...");
         sleep($$self{_loop});
     }
@@ -282,6 +293,11 @@ sub get_limits
 =head2 spawn
 
     About : Schedule a job for execution. When +maxjobs limit is exceeded, the runner will exit via self->wait call.
+                When the job fails too many times (controllable by the +retries option), the pipeline exists. With 
+                negative value of +retries, a skip file '.s' is created and the job is reported as finished.
+                The skip files are cleaned automatically when +retries is set to a positive value. A non cleanable 
+                variant is force skip '.fs' file which is never cleaned by the pipeline and is created/removed 
+                manually by the user.
     Usage : $self->spawn("method",$done_file,@params);
     Args  : <func_name>
                 The method to be run
@@ -320,6 +336,12 @@ sub spawn
         if ( $$self{_nretries}<0 ) { return 1; }
         $self->debugln("Cleaning skip file: $basename.s");
         unlink($basename . '.s');
+    }
+    if ( -e $basename . '.fs' )
+    {
+        # The only way to clean a force skip file is to remove it manually
+        $self->debugln("Skipping the job upon request, a force skip file exists: $basename.fs");
+        return 1;
     }
 
     # Store all necessary information to run the task in a temp file
@@ -464,12 +486,24 @@ sub all_done
     About : Clean all system files (in .jobs directories)
     Usage : $self->clean($dir);
     Args  : <@dirs>
-                Directories to recursively clean from all .jobs subdirs
+                Directories to recursively clean from all .jobs subdirs leaving a single tarball instead
 =cut
 
 sub clean
 {
     my ($self,@dirs) = @_;
+
+    if ( !@dirs ) { return; }
+
+    # Create the tarball, existing file will not be overwritten
+    my $tarball = $dirs[0] . '/cleaned-job-outputs.tgz';
+    if ( !-e $tarball )
+    {
+        my $dirs = join(' ',@dirs);
+        my $cmd = "find $dirs -name .jobs | tar -T - -czf $tarball";
+        $self->debugln($cmd);
+        system($cmd);
+    }
     for my $dir (@dirs)
     {
         my $cmd = "find $dir -name .jobs | xargs rm -rf";
@@ -478,16 +512,14 @@ sub clean
     }
 }
 
-# Do not advertise this method, the user module should not need it
-#
-#   =head2 is_finished
-#   
-#       About : Check if the file is finished.
-#       Usage : $self->is_finished('some/file');
-#       Args  : <file list>
-#                   The name of the file to check the existence of
-#                   
-#   =cut
+=head2 is_finished
+
+    About : Check if the file is finished.
+    Usage : $self->is_finished('some/file');
+    Args  : <file list>
+                The name of the file to check the existence of
+                
+=cut
 
 sub is_finished
 {
