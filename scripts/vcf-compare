@@ -43,6 +43,8 @@ sub error
         "   -m, --name-mapping <list|file>      Use with -g when comparing files with differing column names. The argument to this options is a\n",
         "                                           comma-separated list or one mapping per line in a file. The names are colon separated and must\n",
         "                                           appear in the same order as the files on the command line.\n",
+        "       --INFO <string> [<int>]         Calculate genotype errors by INFO. Use zero based indecies if field has more than one value. Can be\n",
+	    "                                           given multiple times.\n",
         "   -p, --plot <prefix>                 Create plots. Multiple files (e.g. per-chromosome outputs from vcf-compare) can be given.\n",
         "   -R, --refseq <file>                 Compare the actual sequence, not just positions. Use with -w to compare indels.\n",
         "   -r, --regions <list|file>           Process the given regions (comma-separated list or one region per line in a file).\n",
@@ -62,6 +64,8 @@ sub parse_params
     { 
         args => [$0, @ARGV],
         positions => 0,
+	    INFOgroup => [ ],
+	    INFOgroupIdx => { },
     };
     while (my $arg=shift(@ARGV))
     {
@@ -69,6 +73,14 @@ sub parse_params
         if (                 $arg eq '--INFO/AF1-af' ) { $$opts{INFO_AF1_af}=1; next; }
         if (                 $arg eq '--ignore-indels' ) { $$opts{ignore_indels}=1; next; }
         if (                 $arg eq '--high-conf-gls' ) { $$opts{high_confidence_gls}=shift(@ARGV); next; }
+        if (                 $arg eq '--INFO' ) 
+        { 
+            # --INFO IMP2 1  (calculate errors by second value of INFO/IMP2 
+            my $infoTag = shift(@ARGV); 
+            unshift @{$$opts{INFOgroup}}, $infoTag;
+            if ($ARGV[0] =~ /^\d+$/ ) { $$opts{INFOgroupIdx}{$infoTag} = shift(@ARGV); } 
+            next; 
+        }
         if (                 $arg eq '--error-by-gl' ) { $$opts{err_by_gl}=1; next; }
         if ( $arg eq '-a' || $arg eq '--apply-filters' ) { $$opts{apply_filters}=1; next; }
         if ( $arg eq '-m' || $arg eq '--name-mapping' ) { $$opts{mappings_list}=shift(@ARGV); next; }
@@ -296,7 +308,7 @@ sub report_stats
     my (@counts,%totals);
     while (my ($key,$num) = each %{$$opts{match}})
     {
-        my @files = split(/\s+/,$key);
+        my @files = split(/'/,$key);
         for my $file (@files)
         {
             $totals{$file} += $num;
@@ -317,7 +329,7 @@ sub report_stats
         print "VN\t$num";
         for my $file (@$files)
         {
-            printf "\t$file (%.1f%%)", $num*100./$totals{$file};
+            printf "\t$file (%.1f%%)", $num*100.0/$totals{$file};
         }
         print "\n";
     }
@@ -355,7 +367,7 @@ sub report_stats
         my $diff  = $$vcf{nread}-$totals{$$vcf{file}};
         my $reported = $totals{$$vcf{file}};
         my $total = $$vcf{nread};
-        $out .= sprintf "SN\tNumber of lost sites:\t%d\t%.1f%%\t%d\t%d\t%s\n", $diff,$diff*100./$total,$total,$reported,$$vcf{file};
+        $out .= sprintf "SN\tNumber of lost sites:\t%d\t%.1f%%\t%d\t%d\t%s\n", $diff,$diff*100.0/$total,$total,$reported,$$vcf{file};
     }
     if ( $out )
     {
@@ -462,6 +474,43 @@ sub report_stats
         print "\n";
     }
 
+    for my $infoTag ( @{$$opts{INFOgroup}} ) 
+    {
+	    print 
+            "#INFO/".$infoTag." Number of matching and mismatching genotypes vs INFO/". $infoTag. (exists($$opts{INFOgroupIdx}{$infoTag}) ? "[".$$opts{INFOgroupIdx}{$infoTag}."]" : ""). ". Use `^INFO/".$infoTag." | cut -f 2-` to extract this part.\n",
+            "#INFO/".$infoTag." The columns are:\n",
+            "#INFO/".$infoTag."      1  .. INFO/". $infoTag. (exists($$opts{INFOgroupIdx}{$infoTag}) ? "[".$$opts{INFOgroupIdx}{$infoTag}."]\n" : "\n"),
+            "#INFO/".$infoTag."      2  .. Hom(RR) matches\n",
+            "#INFO/".$infoTag."      3  .. Het(RA) matches\n",
+            "#INFO/".$infoTag."      4  .. Hom(AA) matches\n",
+            "#INFO/".$infoTag."      5  .. Het(AA) matches\n",
+            "#INFO/".$infoTag."      6  .. Hom(RR) mismatches\n",
+            "#INFO/".$infoTag."      7  .. Het(RA) mismatches\n",
+            "#INFO/".$infoTag."      8  .. Hom(AA) mismatches\n",
+            "#INFO/".$infoTag."      9  .. Het(AA) mismatches\n",
+            "#INFO/".$infoTag."      10 .. Non-reference Discordance Rate\n";
+
+        for my $info (sort {$a<=>$b} keys %{$$opts{counts_by_INFO}{$infoTag}})
+        {
+            print "INFO/".$infoTag."\t$info";
+            my $nonRefMatches=-$$opts{counts_by_INFO}{$infoTag}{$info}{"hom_RR_"}{matches} ? $$opts{counts_by_INFO}{$infoTag}{$info}{"hom_RR_"}{matches} : 0;
+            my $mismatches=0;
+
+            for my $key qw(hom_RR_ het_RA_ hom_AA_ het_AA_)
+            {
+                print "\t", $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{matches} ? $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{matches} : 0;
+                $nonRefMatches += $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{matches} ? $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{matches} : 0;
+            }
+            for my $key qw(hom_RR_ het_RA_ hom_AA_ het_AA_)
+            {
+                print "\t", $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{mismatches} ? $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{mismatches} : 0;
+                $mismatches += $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{mismatches} ? $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{mismatches} : 0;
+            }
+            printf "\t%.2f\n",$mismatches*100.0/($mismatches+$nonRefMatches);
+        }
+
+    }
+
     print "#DP Counts by depth. Use `grep ^DP | cut -f 2-` to extract this part.\n";
     print "#DP The columns are:\n";
     print "#DP      1 .. depth\n";
@@ -523,7 +572,7 @@ sub print_gs
         if ( !$m ) { $m=0; }
         if ( !$ms ) { $ms=0; }
 
-        my $err = $m?$ms*100./($m+$ms):0;
+        my $err = $m?$ms*100.0/($m+$ms):0;
         printf "GS\t$key\t%d\t%d\t%.2f%%\n", $ms,$m,$err;
         $ndr_ms += $ms;
         $ndr_m  += $key eq 'hom_RR' ? 0 : $m;
@@ -534,7 +583,7 @@ sub print_gs
             push @summary, sprintf "%s %.2f", $1,$err;
         }
     }
-    my $err = $ndr_m+$ndr_ms ? $ndr_ms*100./($ndr_m+$ndr_ms) : 0;
+    my $err = $ndr_m+$ndr_ms ? $ndr_ms*100.0/($ndr_m+$ndr_ms) : 0;
     unshift @summary, sprintf "NDR %.2f", $err;
 
     printf 
@@ -688,7 +737,7 @@ sub plot_site_ndr
         $count       += $denominator;
         if ( $start_pos+50_000 > $pos && $start_chr eq $chr ) { next; }
 
-        printf $gp "$start_pos\t%.2f\n", $denominator ? $numerator*100./$denominator : 0;
+        printf $gp "$start_pos\t%.2f\n", $denominator ? $numerator*100.0/$denominator : 0;
         push @counts, "$start_pos\t$count\n";
 
         $numerator = 0;
@@ -703,7 +752,7 @@ sub plot_site_ndr
     if ( !@counts ) { return; }
 
     push @counts, "$start_pos\t$count\n";
-    printf $gp "$start_pos\t%.2f\n", $denominator ? $numerator*100./$denominator : 0;
+    printf $gp "$start_pos\t%.2f\n", $denominator ? $numerator*100.0/$denominator : 0;
     print $gp "end\n";
     print $gp join('',@counts), "end\n";
     close($gp);
@@ -758,7 +807,7 @@ sub plot_dp_ndr
 
     for my $dp (sort {$a<=>$b} keys %$denominator)
     {
-        printf $fh "%d\t%.2f\n", $dp,$$denominator{$dp} ? $$numerator{$dp}*100./$$denominator{$dp} : 0;
+        printf $fh "%d\t%.2f\n", $dp,$$denominator{$dp} ? $$numerator{$dp}*100.0/$$denominator{$dp} : 0;
     }
     print $fh "end\n";
     for my $dp (sort {$a<=>$b} keys %$denominator)
@@ -786,7 +835,7 @@ sub plot_dp
             if ( $agt eq $bgt ) { next; }
             for my $dp (sort {$a<=>$b} keys %{$$stats{$agt}{$bgt}})
             {
-                $out .= $dp . "\t" . ($$stats{n}{$agt}{$bgt} ? $$stats{$agt}{$bgt}{$dp}*100./$$stats{n}{$agt}{$bgt} : 0) . "\n";
+                $out .= $dp . "\t" . ($$stats{n}{$agt}{$bgt} ? $$stats{$agt}{$bgt}{$dp}*100.0/$$stats{n}{$agt}{$bgt} : 0) . "\n";
             }
             $out .= "end\n";
             push @plots, qq["-" using 1:2 with linespoints pt 12 title "$agt -> $bgt"];
@@ -921,7 +970,7 @@ sub plot_ndr
             $iafs++;
         }
         if ( !($m+$mi) ) { next; }
-        printf $fh "$af\t%.2f\n", $m+$mi ? $mi*100./($m+$mi) : 0;
+        printf $fh "$af\t%.2f\n", $m+$mi ? $mi*100.0/($m+$mi) : 0;
         push @dp, sprintf "$af\t%d",$m+$mi;
     }
     print $fh "end\n";
@@ -1002,7 +1051,7 @@ sub do_region_stats
         {
             $files{$$rec{vcf}{file}} = 1;
         }
-        my $key = join(' ',sort(keys %files));
+        my $key = join(q['],sort(keys %files));
         $$match{$key}++;
 
         my $npresent = scalar keys %files;
@@ -1131,7 +1180,7 @@ sub cmp_sequence
         if ( !$match ) { last; }
     }
     
-    my $key = join(' ',sort(values %has_indels));
+    my $key = join(q['],sort(values %has_indels));
     if ( $match )
     {
         $$opts{indels}{$key}{match}++;
@@ -1157,7 +1206,7 @@ sub ref_alt_stats
         if ( $ref ne $$rec{ref} ) 
         { 
             $$opts{ref_mismatch}++;
-            if ( $$opts{debug} ) { print "RM\t$$grp[0]{chr}\t$$grp[0]{pos}\t$$grp[0]{ref}\t$ref\n"; }
+            if ( $$opts{debug} ) { print "RM\t$$grp[0]{chr}\t$$grp[0]{pos}\t$$grp[0]{ref}\t$$rec{ref}\n"; }
             return; 
         }
 
@@ -1390,6 +1439,21 @@ sub cmp_genotypes
     }
     $$opts{hapls_ncmp}++;
 
+    my %infoGroup;
+    for my $infoTag ( @{$$opts{INFOgroup}} ) 
+    {
+        if ( exists($$grp[1]{rec}{INFO}{$infoTag}) )
+        {
+            if( exists($$opts{INFOgroupIdx}{$infoTag}) ) 
+            {
+                my @arr = split(/,/,$$grp[1]{rec}{INFO}{$infoTag});
+                $infoGroup{$infoTag} = sprintf "%.2f", $arr[$$opts{INFOgroupIdx}{$infoTag}];
+            } else {
+                $infoGroup{$infoTag} = sprintf "%.2f", $$grp[1]{rec}{INFO}{$infoTag}; 
+            }
+        }
+    }
+
     # Store the number of matching types by AC
     my $af;
     if ( $$opts{INFO_AF1_af} && exists($$grp[1]{rec}{INFO}{AF1}) )
@@ -1432,11 +1496,19 @@ sub cmp_genotypes
 
     for my $type (keys %gtype_matches)
     {
+        for my $infoTag ( @{$$opts{INFOgroup}} ) 
+        {
+            $$opts{counts_by_INFO}{$infoTag}{$infoGroup{$infoTag}}{$type}{matches} += $gtype_matches{$type};
+        }
         $$opts{counts_by_af}{$af}{$type}{matches} += $gtype_matches{$type};
         $$opts{gtypes_cmp_total} += $gtype_matches{$type};
     }
     for my $type (keys %gtype_mismatches)
     {
+        for my $infoTag ( @{$$opts{INFOgroup}} ) 
+        {
+            $$opts{counts_by_INFO}{$infoTag}{$infoGroup{$infoTag}}{$type}{mismatches} += $gtype_mismatches{$type};
+        }
         $$opts{counts_by_af}{$af}{$type}{mismatches} += $gtype_mismatches{$type};
         $$opts{gtypes_cmp_total} += $gtype_mismatches{$type};
     }
@@ -1450,7 +1522,7 @@ sub cmp_genotypes
         my $het_ra_m  = $gtype_matches{het_RA_} ? $gtype_matches{het_RA_} : 0;
         my $hom_aa_m  = $gtype_matches{hom_AA_} ? $gtype_matches{hom_AA_} : 0;
         my $denom = $het_ra_m+$hom_aa_m+$hom_rr_mm+$het_ra_mm+$hom_aa_mm;
-        my $ndr   = sprintf "%.2f", $denom ? ($hom_rr_mm+$het_ra_mm+$hom_aa_mm)*100./$denom : 0;
+        my $ndr   = sprintf "%.2f", $denom ? ($hom_rr_mm+$het_ra_mm+$hom_aa_mm)*100.0/$denom : 0;
         print "SD\t$$grp[0]{rec}{CHROM}\t$$grp[0]{rec}{POS}\t$hom_rr_m\t$het_ra_m\t$hom_aa_m\t$hom_rr_mm\t$het_ra_mm\t$hom_aa_mm\t$ndr\n";
     }
 }
