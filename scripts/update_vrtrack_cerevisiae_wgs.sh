@@ -1,6 +1,6 @@
 #!/bin/sh
 umask 002
-DUMPS="/warehouse/g1k-03/sql_dumps"
+DUMPS="/warehouse/g1k-04/sql_dumps"
 CONF="/nfs/vertres01/conf"
 BIN_EXT="/software/vertres/bin-external/update_pipeline"
 

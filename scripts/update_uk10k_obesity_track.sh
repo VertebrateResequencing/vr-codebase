@@ -2,7 +2,7 @@
 umask 002
 ROOT="/lustre/scratch105"
 CONF="/nfs/vertres01/conf"
-DUMPS="/warehouse/g1k-03/sql_dumps"
+DUMPS="/warehouse/g1k-04/sql_dumps"
 export LD_LIBRARY_PATH=/software/badger/lib:/software/oracle_client-10.2.0/lib
 export ORACLE_HOME=/software/oracle_client-10.2.0
 
