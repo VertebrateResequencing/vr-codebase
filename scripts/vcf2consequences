@@ -13,7 +13,7 @@ use Benchmark;
 
 BEGIN{
     my $ROOT = '/software/vertres/lib/all';
-    my $VERSION = '62';
+    my $VERSION = '63';
     unshift(@INC, "$ROOT/bioperl-1.2.3/lib/site_perl/5.8.8");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl/modules");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-variation/modules");
@@ -35,13 +35,14 @@ foreach( keys( %INC ) )
 }
 =cut
 
-my ($input_vcf, $complement, $species, $index_vcf, $help, $buffer_size, $gerp, $grantham,$passonly);
+my ($input_vcf, $complement, $species, $index_vcf, $help, $buffer_size, $gerp, $grantham,$passonly, $include_intergenic);
 
 GetOptions
 (
     "v|vcf=s"       => \$input_vcf,
     "s|species=s"   => \$species,
     "i|index=s"     => \$index_vcf,
+    "I|include-intergenic" => \$include_intergenic,
     "b|buffer=i"    => \$buffer_size,
     "g|gerp"    => \$gerp,
     "r|grantham"    => \$grantham,
@@ -251,7 +252,7 @@ sub process_conseqs
     my $ref  = $vars[2];
     my $alts = $vars[3];
 
-    if ( $$ensembl{reader}->is_intergenic($chr,$pos) )
+    if ( !$include_intergenic && $$ensembl{reader}->is_intergenic($chr,$pos) )
     {
         return $info;
     }
@@ -387,7 +388,7 @@ sub call_conseqs
 
             my $con_str = join ":",@data;
 
-            if ( $type eq 'NON_SYNONYMOUS_CODING' && $species eq 'Homo_sapiens') {
+			if ( $type eq 'NON_SYNONYMOUS_CODING' && $species eq 'Homo_sapiens' && $allele !~ '-') { # ignore indels
 				$con_str .= get_nssnp_annotations($con);
 			}
 
@@ -411,11 +412,8 @@ sub call_conseqs
 
 		if ($$scores[0] ) {
 			$gerp_text .= sprintf ("%.2f", $$scores[0]->diff_score);
+			$out{$gerp_text} = 1;
 		}
-		else {
-			$gerp_text .= "undef";
-		}
-		$out{$gerp_text} = 1;
 	}
 
     return \%out;
@@ -424,7 +422,7 @@ sub call_conseqs
 sub get_nssnp_annotations
 {
     my ($tv) = @_;
-    my $pred_text = ":";
+    my $pred_text = "";
 
 	return if !($tv->affects_transcript);
 
@@ -439,11 +437,10 @@ sub get_nssnp_annotations
 			my $pred = $tva->$pred_meth;
 
 			if($pred) {
-
                                 # jws 2011-08-07 Can't have "$tool=", as '=' is
                                 # not allowed with an INFO string.  Use ','
                                 # instead.
-				$pred_text .= "$tool,";
+				$pred_text .= ":$tool,";
 
 				$pred =~ s/\s+/\_/;
 				$pred_text .= $pred;
@@ -453,10 +450,8 @@ sub get_nssnp_annotations
 				if(defined $score) {
 					$pred_text .= "($score)";
 				}
-				$pred_text .= ':';
 			}
 		}
-		$pred_text =~ s/\:$//g;
 
 		# Use first alternate_TranscriptVariationAllele with predictions
 		if ($pred_text) {

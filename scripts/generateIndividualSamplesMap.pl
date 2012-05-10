@@ -69,27 +69,43 @@ while( <$ifh> )
     {
         my $sam_name = $_->name();
         
-        my $hasIndividual = 0;
-        foreach( keys( %currentMap ) )
+        #first check the sample is not already mapped to an individual
+        my $mapped = 0;
+        foreach my $mappedSamples ( values( %currentMap ) )
         {
-            if( $sam_name =~ /^$_/ ) #################RULE HERE - IF SAMPLE IS A PREFIX OF AN INDIVIDUAL - THEN ASSIGN IT TO THE INDIVIDUAL
+            my @samples = @{ $mappedSamples };
+            foreach my $sample (@samples)
             {
-                my $ind = $_;
-                my $found = 0;
-                foreach( @{ $currentMap{ $_ } } ){if( $_ eq $sam_name ){$found = 1;}}
-                if( ! $found ){print qq[NEW SAMPLE: $sam_name on existing individual $ind\n];push( @{ $currentMap{ $_ } }, $sam_name );}
-                $hasIndividual = 1;
-                last;
+                if( $sample eq $sam_name ){$mapped = 1;last;}
             }
         }
         
-        if( ! $hasIndividual )
+        if( ! $mapped ) #attempt to work out the individual
         {
-            print qq[NEW SAMPLE: $sam_name on new individual\n];
-            my $ind;
-            if( $sam_name =~ /^(.*)(_\d+)$/ ){$ind = $1;}else{$ind = $sam_name;}
-            $currentMap{ $ind } = [ $sam_name ];
+            my $hasIndividual = 0;
+            foreach( keys( %currentMap ) )
+            {
+                if( $sam_name =~/^NOD/&&$_=~/^NOD/){print qq[$_***$sam_name\n];}
+                if( $sam_name =~ /^$_/ ) #################RULE HERE - IF SAMPLE IS A PREFIX OF AN INDIVIDUAL - THEN ASSIGN IT TO THE INDIVIDUAL
+                {
+                    my $ind = $_;
+                    my $found = 0;
+                    foreach( @{ $currentMap{ $_ } } ){if( $_ eq $sam_name ){$found = 1;}}
+                    if( ! $found ){print qq[NEW SAMPLE: $sam_name on existing individual $ind\n];push( @{ $currentMap{ $_ } }, $sam_name );}
+                    $hasIndividual = 1;
+                    last;
+                }
+            }
+            
+            if( ! $hasIndividual )
+            {
+                print qq[NEW SAMPLE: $sam_name on new individual\n];
+                my $ind;
+                if( $sam_name =~ /^(.*)(_\d+)$/ ){$ind = $1;}else{$ind = $sam_name;}
+                $currentMap{ $ind } = [ $sam_name ];
+            }
         }
+        else{print qq[SAMPLE ALREADY MAPPED: $sam_name\n];}
     }
 }
 

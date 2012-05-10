@@ -86,8 +86,7 @@ acc
 The information for new samples (sex, accession, etc) comes from the individual
 table - this must be populated for new samples before update will load the
 samples.  The exception is if --create_individuals is passed, in which case
-each new sample name will trigger creation of a corresponding individual (sex
-will be set to 'unknown').
+each new sample name will trigger creation of a corresponding individual.
 
 By default, samples will be mapped to existing individuals by the prefix of the
 sample and individual name up to the first non-word or underscore character
@@ -225,8 +224,22 @@ foreach my $pname (keys %projects){
 
                 print "Adding individual: $sample_name.\n";
                 $vind = VRTrack::Individual->create($vrtrack, $sample_name);
-                # default sex to M - QC pipeline needs sex set
-                $vind->sex('M');
+                # sex should now be set on sample in warehouse
+                if ($sample->gender){
+                    if ($sample->gender =~ /^male/i){
+                        $vind->sex('M');
+                    }
+                    elsif ($sample->gender =~ /^female/i){
+                        $vind->sex('F');
+                    }
+                    else {
+                        warn "Unrecognised gender ",$sample->gender," for sample $sample_name\n";
+                    }
+                }
+                else {
+                    $vind->sex('unknown');
+                }
+
                 $vind->alias($sample_name);
 
                 $vind->update;

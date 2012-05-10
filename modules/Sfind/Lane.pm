@@ -388,15 +388,7 @@ sub _get_fastq {
 
 sub _get_fastq_filenames {
     my ($self) = @_;
-    my $run = $self->run_name;
-    my $lane = $self->run_lane;
-    open(my $FASTQ, "/software/solexa/bin/dfind -run $run -lane $lane -filetype fastq |grep fuse |") or die "Can't run dfind to locate fastq: $!\n";
     my @fastq;
-    while (my $fq = <$FASTQ>){
-        chomp $fq;
-        push @fastq, $fq;
-    }
-    close $FASTQ;
     return \@fastq;
 }
 
@@ -472,25 +464,6 @@ sub basepairs {
 # No way of getting this for bam yet, and with MPSA going, this is obsolete.
 sub _get_fastq_stats {
     my ($self) = @_;
-    my $fastq = $self->fastq;
-    my $read_tot = 0;
-    my $bp_tot = 0;
-    my $mean_q = 0;
-    my $q_tot;
-    my $count;
-    foreach my $fq(@$fastq){
-        $count++;
-        $q_tot += $fq->mean_quality;
-        $read_tot += $fq->reads;
-        $bp_tot += $fq->basepairs;
-    }
-
-    if ($count){
-	$mean_q = $q_tot/$count;
-    }
-    $self->{'reads'} = $read_tot;
-    $self->{'basepairs'} = $bp_tot;
-    $self->{'mean_quality'} = sprintf("%.1f",$mean_q);
 }
 
 1;

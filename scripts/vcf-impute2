@@ -1,0 +1,623 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Vcf;
+
+my $opts = parse_params();
+if ( $$opts{from_vcf} )
+{
+    convert_known($opts);
+    convert_to_be_imputed($opts);
+    samples_overlap($opts);
+}
+else
+{
+    impute2_to_vcf($opts);
+}
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    die
+        "About: Helper script of run-impute2. Conversion between input and output files of impute2. Only biallelic sites will be modified.\n",
+        "Usage: vcf-impute2 [OPTIONS]\n",
+        "Options:\n",
+        "   -r, --region <chr|chr:from-to>      \n",
+        "   -i, --impute <file>                 VCF file to be imputed.\n",
+        "   -k, --known <file>                  VCF file with reference genotypes or \"--\" when not available.\n",
+        "   -o, --out <prefix>                  Prefix of impute2 output files\n",
+        "   -h, -?, --help                      This help message.\n",
+        "Examples:\n",
+        "   # Convert from VCFs to impute2 files\n",
+        "   vcf-impute2 -r 20:50000001-55000000 -i file.vcf.gz -k ref.vcf.gz -o dir/prefix\n",
+        "   vcf-impute2 -r 20:50000001-55000000 -i file.vcf.gz -k -- -o dir/prefix\n",
+        "\n",
+        "   # Take the impute2 results and annotate the original VCF file\n",
+        "   vcf-impute2 -r 20:50000001-55000000 -i file.vcf.gz -o dir/prefix | bgzip -c > imputed.vcf.gz\n",
+        "\n";
+}
+
+sub parse_params
+{
+    my $opts = { from_vcf=>1 };
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-r' || $arg eq '--region' ) 
+        { 
+            $$opts{chrom}=shift(@ARGV); 
+            parse_region($$opts{chrom});
+            $$opts{region} = {region=>$$opts{chrom},print_header=>1}; 
+            next;
+        }
+        if ( $arg eq '-o' || $arg eq '--out' ) { $$opts{out}=shift(@ARGV); next }
+        if ( $arg eq '-k' || $arg eq '--known' ) { $$opts{known}=shift(@ARGV); next }
+        if ( $arg eq '-i' || $arg eq '--impute' ) { $$opts{impute}=shift(@ARGV); next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    if ( !exists($$opts{impute}) ) { error("Missing the -i option.\n") }
+    if ( !exists($$opts{out}) ) { error("Missing the -o option.\n") }
+    $$opts{prefix} = init_path($$opts{out});
+    if ( !exists($$opts{known}) )
+    {
+        $$opts{impute2_out}  = "$$opts{prefix}.gz";
+        $$opts{impute2_info} = "$$opts{prefix}_info";
+        $$opts{impute2_haps} = "$$opts{prefix}_haps.gz";
+        $$opts{impute2_hap_conf} = "$$opts{prefix}_haps_confidence.gz";
+        $$opts{impute2_samples} = "$$opts{prefix}_samples";
+        if ( !-e $$opts{impute2_out} or !-e $$opts{impute2_samples} or !-e $$opts{impute2_info}) 
+        { 
+            error("Missing the -k option or one of the files: $$opts{impute2_out} $$opts{impute2_samples} $$opts{impute2_info}\n") 
+        }
+        $$opts{from_vcf} = 0;
+    }
+    return $opts;
+}
+
+sub init_path
+{
+    my ($prefix) = @_;
+    if ( $prefix=~m{/} )
+    {
+        # A directory should be created. This will populate dir and prefix, for example
+        #   prefix  -> dir      prefix
+        #   ----------------------------
+        #   out                 out.dump
+        #   out/       out/     out/out.dump
+        #   out/xxx    out/     out/xxx.dump 
+        #
+        my $dir = '';
+        if ( $prefix=~m{/[^/]+$} ) { $dir=$`; }
+        elsif ( $prefix=~m{/([^/]+)/$} ) { $dir = $`.'/'.$1; $prefix = $dir.'/'.$1; }
+        elsif ( $prefix=~m{([^/]+)/?$} ) { $dir=$1; $prefix=$dir.'/'.$1; }
+        if ( $dir ) { `mkdir -p $dir`; }
+    }
+    return $prefix;
+}
+
+sub convert_known
+{
+    my ($opts) = @_;
+
+    if ( -e "$$opts{prefix}.known_haps" ) 
+    { 
+        warn("The file already exists, skipping: $$opts{prefix}.known_haps\n");
+        return; 
+    }
+    if ( $$opts{known} eq '--' ) { return; }
+
+    my $vcf = Vcf->new(file=>$$opts{known},%{$$opts{region}});
+    $vcf->parse_header();
+    my @samples = $vcf->get_samples();
+
+    my $fh;
+    open($fh,'>',"$$opts{prefix}.known_samples") or error("$$opts{out}.known_samples $!");
+    print $fh "ID_1 ID_2 missing\n";
+    print $fh "0 0 0\n";
+    for my $id (@samples)
+    {
+        print $fh "$id $id 0\n";
+    }
+    close($fh) or error("close $$opts{prefix}.known_samples");
+
+    open($fh,'>',"$$opts{prefix}.known_haps.part") or error("$$opts{out}.known_haps.part: $!");
+    while (my $x = $vcf->next_data_hash())
+    {
+        # Consider only biallelic sites
+        if ( scalar @{$$x{ALT}}!=1 or $$x{ALT}[0] eq '.' ) { next; }
+        if ( !($$x{ALT}[0]=~/^[ACGT]+$/) or !($$x{REF}=~/^[ACGT]+$/) ) { next; }
+
+        my $id = "$$x{CHROM}:$$x{POS}_$$x{REF}_$$x{ALT}[0]";
+        print $fh "$id $id $$x{POS} $$x{REF} $$x{ALT}[0]";
+        for my $id (@samples)
+        {
+            my ($alleles,$seps,$is_phased,$is_empty) = $vcf->parse_haplotype($x,$id);
+
+            my ($a1,$a2);
+            if ( $is_empty ) { $a1='?'; $a2='?'; }
+            else
+            {
+                $a1 = $$alleles[0] eq $$x{REF} ? '0' : '1';
+                $a2 = $$alleles[1] eq $$x{REF} ? '0' : '1';
+                if ( !$is_phased )
+                {
+                    $a1 .= '*';
+                    $a2 .= '*';
+                }
+            }
+
+            print $fh " $a1 $a2";
+        }
+        print $fh "\n";
+    }
+    close($fh) or error("close $$opts{prefix}.known_haps.part");
+    rename("$$opts{prefix}.known_haps.part","$$opts{prefix}.known_haps");
+}
+
+sub convert_to_be_imputed
+{
+    my ($opts) = @_;
+
+    if ( -e "$$opts{prefix}.impute_haps" ) 
+    { 
+        warn("The file already exists, skipping: $$opts{prefix}.impute_haps\n");
+        return; 
+    }
+
+    my $vcf = Vcf->new(file=>$$opts{impute},%{$$opts{region}});
+    $vcf->parse_header();
+    my @samples = $vcf->get_samples();
+
+    my $fh;
+    open($fh,'>',"$$opts{prefix}.impute_samples") or error("$$opts{out}.impute_samples: $!");
+    print $fh "ID_1 ID_2 missing\n";
+    print $fh "0 0 0\n";
+    for my $id (@samples)
+    {
+        print $fh "$id $id 0\n";
+    }
+    close($fh) or error("close $$opts{prefix}.impute_samples");
+
+    open($fh,'>',"$$opts{prefix}.impute_haps.part") or error("$$opts{out}.impute_haps.part: $!");
+    while (my $x = $vcf->next_data_hash())
+    {
+        # Consider only biallelic sites
+        if ( scalar @{$$x{ALT}}!=1 or $$x{ALT}[0] eq '.' ) { next; }
+        if ( !($$x{ALT}[0]=~/^[ACGT]+$/) or !($$x{REF}=~/^[ACGT]+$/) ) { next; }
+
+        # Encode indels in the SNP id and fake ref,alt allele
+        my $ref = $$x{REF};
+        my $alt = $$x{ALT}[0];
+        my $id  = "$$x{CHROM}:$$x{POS}_$ref\_$alt";
+
+        # This shouldn't be required anymore, IMPUTE2 now handles indels
+        # if ( length($ref)!=1 or length($alt)!=1 )
+        # {
+        #     $ref = 'A';
+        #     $alt = 'C';
+        # }
+
+        print $fh "$$x{CHROM}:$$x{POS} $id $$x{POS} $ref $alt";
+        for my $id (@samples)
+        {
+            my $dat = $$x{gtypes}{$id};
+
+            my ($gl_rr,$gl_ar,$gl_aa); 
+            if ( exists($$dat{GL}) ) 
+            { 
+                ($gl_rr,$gl_ar,$gl_aa) = split(/,/,$$dat{GL});
+                $gl_rr = 10**$gl_rr;
+                $gl_ar = 10**$gl_ar;
+                $gl_aa = 10**$gl_aa;
+            }
+            elsif ( exists($$dat{PL}) )
+            {
+                ($gl_rr,$gl_ar,$gl_aa) = split(/,/,$$dat{PL});
+                $gl_rr = 10**(-$gl_rr/10.);
+                $gl_ar = 10**(-$gl_ar/10.);
+                $gl_aa = 10**(-$gl_aa/10.);
+            }
+
+            # Check the ploidy
+            if ( index($$dat{GT},'/')==-1 && index($$dat{GT},'|')==-1  ) 
+            { 
+                $gl_ar = 0;
+                if ( !defined $gl_rr or abs($gl_rr-$gl_aa)<1e-5 ) { $gl_rr = $gl_aa = 0.5 }
+            }
+            elsif ( !defined $gl_rr or (abs($gl_rr-$gl_ar)<1e-5 && abs($gl_ar-$gl_aa)<1e-5) ) { $gl_rr = $gl_ar = $gl_aa = 1/3.; }
+
+            printf $fh " %f %f %f", $gl_rr,$gl_ar,$gl_aa;
+        }
+        print $fh "\n";
+    }
+    close($fh) or error("close $$opts{prefix}.impute_haps.part");
+    rename("$$opts{prefix}.impute_haps.part","$$opts{prefix}.impute_haps");
+}
+
+sub read_samples
+{
+    my ($file) = @_;
+    my %samples;
+    open(my $fh,'<',$file) or error("$file: $!");
+    <$fh>; 
+    <$fh>;
+    while (my $line=<$fh>)
+    {
+        if ( !($line=~/^(\S+)\s/) ) { error("Could not parse: $line"); }
+        $samples{$1} = 1;
+    }
+    close($fh) or error("close $file");
+    return \%samples;
+}
+
+
+# Check if the sample IDs match or at least overlap
+sub samples_overlap
+{
+    my ($opts) = @_;
+
+    if ( $$opts{known} eq '--' )
+    {
+        print STDERR "No known samples.\n";
+        return;
+    }
+
+    my $impute = read_samples("$$opts{prefix}.impute_samples");
+    my $known  = read_samples("$$opts{prefix}.known_samples");
+    my @known_only;
+    my @impute_only;
+    my $both = 0;
+    for my $sample (keys %$known)
+    {
+        if ( !exists($$impute{$sample}) ) { push @known_only,$sample; }
+        else { $both++; }
+    }
+    for my $sample (keys %$impute)
+    {
+        if ( !exists($$known{$sample}) ) { push @impute_only,$sample; }
+    }
+    if ( !@known_only && !@impute_only ) { return; }
+
+    printf STDERR "%d samples only in $$opts{prefix}.known_samples\n", scalar @known_only;
+    printf STDERR "%d samples only in $$opts{prefix}.impute_samples\n", scalar @impute_only;
+    printf STDERR "%d samples in both\n", $both;
+    print STDERR "\n";
+    for my $sample (@known_only)
+    {
+        print STDERR "only in $$opts{prefix}.known_samples:\t$sample\n";
+    }
+    for my $sample (@impute_only)
+    {
+        print STDERR "only in $$opts{prefix}.impute_samples:\t$sample\n";
+    }
+}
+
+
+# Check that the samples in VCF and impute2 are identical and in the same order
+sub check_samples
+{
+    my ($vcf,$impute_samples) = @_;
+    my @samples = $vcf->get_samples();
+    open(my $fh,'<',$impute_samples) or error("$impute_samples: $!");
+    <$fh>;
+    <$fh>;
+    my $i=0;
+    while (my $line=<$fh>)
+    {
+        if ( !($line=~/^(\S+)\s+(\S+)/) ) { error("Could not parse $impute_samples: [$line]\n"); }
+        if ( $1 ne $2 ) { error("FIXME: [$1] ne [$2]\n"); }
+        if ( $1 ne $samples[$i] ) { error("FIXME: the samples are in different order, starting at ",$i+1,": $1 vs $samples[$i]"); }
+        $i++;
+    }
+    close($fh) or error("close $impute_samples");
+    return \@samples;
+}
+
+
+sub check_ordering
+{
+    my ($prefix) = @_;
+    my @ordering;
+    my $i = 0;
+    my $file = "${prefix}_diplotype_ordering";
+    if ( -e $file )
+    {
+        open(my $fh,'<',$file) or error("$file: $!");
+        <$fh>;
+        while (my $line=<$fh>)
+        {
+            if ( !($line=~/^(\d+)\s(u?n?ordered)\s*$/) ) { error("Could not parse: $line"); }
+            if ( $1 != $i ) { error("Expected $i, got $1\n"); }
+            push @ordering, $2 eq 'unordered' ? 0 : 1;
+            $i++;
+        }
+        close($fh) or error("close $file");
+        return \@ordering;
+    }
+    $file = "${prefix}_samples";
+    if ( -e $file )
+    {
+        open(my $fh,'<',$file) or error("$file: $!");
+        <$fh>;
+        <$fh>;
+        while (my $line=<$fh>)
+        {
+            push @ordering, 0;
+        }
+        close($fh) or error("close $file");
+        return \@ordering;
+    }
+    error("Neither ${prefix}_diplotype_ordering nor ${prefix}_samples exists?!");
+}
+
+
+# Break the impute2 line to position, alleles and unparsed genotypes
+sub next_impute_line
+{
+    my ($fh) = @_;
+    my $line = <$fh>;
+    if ( !defined $line ) { return undef; }
+    if ( !($line=~/^\S+ (\S+) (\d+) (\S+) (\S+) /) ) { error("next_impute_line FIXME: could not parse [$line]\n"); }
+    my $id  = $1;
+    my $pos = $2;
+    my $ref = $3;
+    my $alt = $4;
+    my $gts = $';
+
+    if ( !($id=~/^[^:]+:\d+_([^_]+)_([^_]+)$/) ) { error("next_impute_line FIXME: could not parse [$id]"); }
+    my $ori_ref = $1;
+    my $ori_alt = $2;
+
+    if ( $ori_ref ne $ref or $ori_alt ne $alt ) { error("Uh, this is not right: $id .. $ori_ref,$ori_alt vs $ref,$alt\n"); }
+
+    # This shouldn't be needed anymore, IMPUTE2 now handles indels
+    #
+    # if ( length($ori_ref)>1 or length($ori_alt)>1 )
+    # {
+    #     # The fake indel alleles: reverse the order if necessary
+    #     if ( $ref eq 'A' && $alt eq 'C' )
+    #     {
+    #         $ref = $ori_ref;
+    #         $alt = $ori_alt;
+    #     }
+    #     else
+    #     {
+    #         $ref = $ori_alt;
+    #         $alt = $ori_ref;
+    #     }
+    # }
+
+    return ($pos,$ref,$alt,$gts);
+}
+
+# Copy genotype and phase from impute to VCF 
+sub merge_lines
+{
+    my ($vcf,$vcf_line,$a,$b,$imp_line,$haps_line,$haps_conf_line,$samples,$impute2_info) = @_;
+
+    chomp($vcf_line);
+    my $rec = $vcf->next_data_hash($vcf_line);
+    if ( @{$$rec{ALT}} != 1 or $$rec{ALT}[0] eq '.' ) 
+    { 
+        # This can happen when the VCF file contains a site which was
+        #   left out from the imputation whereas the site is present in the known set. Impute2 adds
+        #   them to the output. In such a case, use the original VCF line.
+        #
+        return $vcf_line."\n";
+    }
+
+    my $ref = $$rec{REF};
+    my ($aa,$bb,$ab0,$ab1,$ab,$oa,$ob);
+    my $reverse = 0;
+    if ( $b eq $ref ) 
+    { 
+        error("Can this ever happen?? Apparently it can: $$rec{CHROM}:$$rec{POS} $a $b vs $$rec{REF}\n");
+        $reverse=1; 
+        $aa  = '1|1';
+        $bb  = '0|0';
+        $ab0 = '1|0';
+        $ab1 = '0|1';
+        $ab  = '0/1';
+        $oa  = '1';
+        $ob  = '0';
+    }
+    elsif ( $a ne $ref ) 
+    { 
+        # The same case as above
+        return $vcf_line."\n";  
+    }
+    else
+    {
+        # if so, set ab
+        $aa  = '0|0';
+        $bb  = '1|1';
+        $ab0 = '0|1';
+        $ab1 = '1|0';
+        $ab  = '0/1';
+        $oa  = '0';
+        $ob  = '1';
+    }
+
+    my $gtypes = $$rec{gtypes};
+    my @lks = split(/ /,$imp_line);
+    chomp($lks[-1]);
+    my (@haps,@haps_conf);
+    if ( defined $haps_line && defined $haps_conf_line )
+    {
+        @haps = split(/ /,$haps_line);
+        chomp($haps[-1]);
+        @haps_conf = split(/ /,$haps_conf_line);
+        chomp($haps_conf[-1]);
+    }
+    my $n = @$samples;
+    my $log10 = log(10);
+
+    for (my $i=0; $i<$n; $i++)
+    {
+        my $lk_aa = $lks[$i*3];
+        my $lk_ab = $lks[$i*3+1];
+        my $lk_bb = $lks[$i*3+2];
+        if ( $lk_aa eq 0 ) { $lk_aa=1e-12; }
+        if ( $lk_ab eq 0 ) { $lk_ab=1e-12; }
+        if ( $lk_bb eq 0 ) { $lk_bb=1e-12; }
+
+        my $gt_hash = $$gtypes{$$samples[$i]};
+
+        # Check the ploidy
+        if ( index($$gt_hash{GT},'/')==-1 && index($$gt_hash{GT},'|')==-1  )
+        {
+            $$gt_hash{GT} = $lk_aa >= $lk_bb ? $oa : $ob;
+            if ( $lk_ab>1e-10 ) { error("FIXME: non-zero HET GL: $$rec{CHROM} $$rec{POS} .. $$samples[$i] $lk_aa $lk_ab $lk_bb\n"); }
+        }
+        elsif ( $lk_aa >= $lk_ab )
+        {
+            $$gt_hash{GT} = $lk_aa >= $lk_bb ? $aa : $bb;
+        }
+        elsif ( $lk_bb >= $lk_ab )
+        {
+            $$gt_hash{GT} = $bb;
+        }
+        else
+        {
+            if ( @haps )
+            {
+                if ( $haps[5+2*$i]==$haps[5+2*$i+1] ) { error("Uh, something is broken: $$rec{CHROM}:$$rec{POS} $a $b vs haps[5+2*$i]==haps[5+2*$i+1]\n"); }
+                $$gt_hash{GT} = $haps[5+2*$i]==0 ? $ab0 : $ab1;
+            }
+            else
+            {
+                $$gt_hash{GT} = $ab;
+            }
+        }
+
+        $$gt_hash{GL} = $reverse ?
+            sprintf("%.2f,%.2f,%.2f",log($lk_bb)/$log10,log($lk_ab)/$log10,log($lk_aa)/$log10) :
+            sprintf("%.2f,%.2f,%.2f",log($lk_aa)/$log10,log($lk_ab)/$log10,log($lk_bb)/$log10);
+
+        if ( @haps )
+        {
+            $$gt_hash{PQ} = $haps_conf[5+$i] eq '*' ? '.' : $haps_conf[5+$i];
+        }
+        delete($$gt_hash{PL});
+    }
+
+    $vcf->add_format_field($rec,'GL');
+    $vcf->add_format_field($rec,'PQ') unless !@haps;
+    $vcf->remove_format_field($rec,'PL');
+    $$rec{INFO}{IMP2} = $impute2_info;
+    return $vcf->format_line($rec);
+}
+
+sub parse_region
+{
+    my ($region) = @_;
+    if ( $region=~/^([^:]+):(\d+)-(\d+)$/ ) { return ($1,$2,$3); }
+    elsif ( $region=~/^([^:]+):/ ) { error("Could not parse region [$region]\n"); }
+    return ($region,undef,undef);
+}
+
+sub impute2_to_vcf
+{
+    my ($opts) = @_;
+
+    my ($reg_chr,$reg_from,$reg_to) = parse_region($$opts{region}{region});
+
+    my $vcf = Vcf->new(file=>$$opts{impute},%{$$opts{region}});
+    $vcf->parse_header();
+    $vcf->add_header_line({key=>'INFO',ID=>'IMP2',Number=>3,Type=>'Float',Description=>'IMPUTE2 scores: exp_freq_a1, info, certainty'});
+
+    my $samples = check_samples($vcf,$$opts{impute2_samples});
+
+    open(my $fh,"zcat $$opts{impute2_out} |") or error("zcat $$opts{impute2_out}: $!");
+    my ($fh_haps,$fh_haps_conf);
+    if ( -e $$opts{impute2_haps} && -e $$opts{impute2_hap_conf} )
+    {
+        open($fh_haps,"zcat $$opts{impute2_haps} |") or error("zcat $$opts{impute2_haps}: $!");
+        open($fh_haps_conf,"zcat $$opts{impute2_hap_conf} |") or error("zcat $$opts{impute2_hap_conf}: $!");
+    }
+    open(my $fh_info,'<',$$opts{impute2_info}) or error("$$opts{impute2_info}: $!");
+    <$fh_info>;
+
+    if ( !defined $fh_haps ) { warn("Phasing information not available, could not open the file: $$opts{impute2_haps}\n"); }
+    if ( !defined $fh_haps_conf ) { warn("Phasing information not available, could not open the file: $$opts{impute2_hap_conf}\n"); }
+    else 
+    { 
+        $vcf->add_header_line({key=>'FORMAT',ID=>'PQ',Number=>1,Type=>'Float',Description=>'IMPUTE2 phasing confidence score'});
+    }
+    print $vcf->format_header();
+
+    my ($vcf_line,$imp_line,$haps_line,$haps_conf_line,$vcf_pos,$imp_pos,$info);
+    while (1)
+    {
+        if ( !defined $vcf_line ) { $vcf_line = $vcf->next_line() or last; undef $vcf_pos; }
+        if ( !defined $imp_line ) 
+        { 
+            ($imp_pos,$a,$b,$imp_line) = next_impute_line($fh); 
+            $haps_line = <$fh_haps> unless !defined $fh_haps;
+            $haps_conf_line = <$fh_haps_conf> unless !defined $fh_haps_conf;
+            if ( defined $imp_line )
+            {
+                my $info_line = <$fh_info>;
+                my @items = split(/ /,$info_line);
+                $info = join(',',splice(@items,3,3));
+            }
+        }
+
+        if ( !defined $imp_line )
+        { 
+            # There are no more impute lines left
+            print $vcf_line; 
+            undef $vcf_line;
+            next;
+        }
+
+        if ( !defined $vcf_pos ) 
+        { 
+            if ( !($vcf_line=~/^[^\t]+\t(\d+)\t/) ) { error("Could not parse VCF pos"); }
+            $vcf_pos = $1;
+        }
+
+        # Ignore positions which are outside the region
+        if ( defined $reg_from && $vcf_pos<$reg_from or defined $reg_to && $vcf_pos>$reg_to )
+        {
+            undef $vcf_line;
+            next;
+        }
+
+        if ( $vcf_pos<$imp_pos ) 
+        {
+            # impute is ahead of VCF
+            print $vcf_line;
+            undef $vcf_line;
+            next;
+        }
+
+        if ( $vcf_pos>$imp_pos )
+        {
+            # VCF is ahead of impute
+            undef $imp_line;
+            next;
+        }
+
+        # VCF and impute have the same position
+        print merge_lines($vcf,$vcf_line,$a,$b,$imp_line,$haps_line,$haps_conf_line,$samples,$info);
+
+        undef $vcf_line;
+        undef $imp_line;
+    }
+    close($fh) or error("close zcat $$opts{impute2_out}");
+    close($fh_info) or error("close $$opts{impute2_info}");
+    if ( defined $fh_haps ) { close($fh_haps) or error("close zcat $$opts{impute2_haps}"); }
+    if ( defined $fh_haps_conf ) { close($fh_haps_conf) or error("close zcat $$opts{impute2_hap_conf}"); }
+}
+

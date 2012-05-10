@@ -1,9 +1,10 @@
 #
 # Author:    Petr Danecek (pd3@sanger.ac.uk)    Team 145
+# Modified:		John Maslen  (jm23@sanger.ac.uk)   Team 145
 #
 #--------------- QuerySNPs ------------------------------------------
 #
-# Builds and executes the SQL query for SNPs.
+# Builds and executes the TABIX command to retrieve SNP data via FTP
 #
 
 package SNPs::QuerySNPs;
@@ -12,24 +13,18 @@ use strict;
 use warnings;
 
 use SNPs::Session;
+use SNPs::Writer;
 use POSIX;
+use DBI;
 use Storable qw(freeze thaw);
+use CGI::Carp qw(fatalsToBrowser);
+use Data::Dumper;
 
 sub new
 {
     my ($class,$args) = @_;
 
     my $self = $args ? $args : {};
-    if ( !exists($$self{'dbh'}) )
-    {
-        if ( !exists $$self{db_info} ) { die("Expected db_info parameter.\n"); }
-        if ( !exists $$self{db_user} ) { die("Expected db_user parameter.\n"); }
-        if ( !exists $$self{db_pass} ) { die("Expected db_pass parameter.\n"); }
-
-        my $dbh = DBI->connect($$self{db_info},$$self{db_user},$$self{db_pass}, {'RaiseError' => 0, 'PrintError'=>0});
-        if ( !$dbh || $DBI::err ) { die(sprintf("DB connection failed: %s\n",$DBI::errstr,"\n")); }
-        $$self{'dbh'} = $dbh;
-    }
     if ( !exists($$self{'writer'}) ) { die "Missing the 'writer' option.\n"; }
     bless $self, ref($class) || $class;
 
@@ -42,6 +37,9 @@ sub new
 
         $$self{'session'} = SNPs::Session->new($args); 
     }
+    
+	#$$self{'writer'}->error_exit("Service Temporarily Unavailable ;;; The Mouse Genome Project SNP/Indel/SV viewer is currently being updated. We apologise for any inconvenience caused.\n") unless $$self{'available'};    
+    
     if ( !$self->cache_exists() ) 
     { 
         $self->validate_cgi_params(); 
@@ -50,12 +48,7 @@ sub new
     $$self{title}        = 'SNPs' unless exists($$self{'title'});
     $$self{print_legend} = 1 unless exists($$self{'print_legend'});
     $$self{'action'}     = 'snps';
-
-    # Why was this here?
-    #   $$self{writer}->get_cookies('rows');
-    #   $$self{'cache_page_size'} = $self->validate_int($$self{writer}->param('rows'));
-    #   $$self{writer}->set_cookies('rows');
-
+    
     # The cache_page_size can be overriden by pg_size - user can browse his old results with different 
     #   page size than the new ones.
     if ( $$self{writer}{cgi}->param('pg_size') )
@@ -67,27 +60,7 @@ sub new
         # We should never get here, unless the user builds the URL himself.
         $$self{cache_page_size}=50; 
     }
-
     return $self;
-}
-
-
-sub mysql_query
-{
-    my ($self,$query) = @_;
-    my $sth = $$self{'dbh'}->prepare($query);
-    if ( !$sth ) { die "$query: $DBI::errstr\n"; }
-
-    # Unfortunately, there is no way how to set query timeout.
-    #   We can kill the mysql connection, call $sth->cancel etc,
-    #   but the query is still continues on the mysql server.
-    #   To connect again and run SHOW PROCESSLIST followed by KILL 
-    #   is unfortunately not an option, because of the load sharing 
-    #   server design - there is no garantuee that we will reconnect 
-    #   to the same server.
-    #
-    $sth->execute or die "$query: $DBI::errstr\n";
-    return $sth;
 }
 
 sub validate_int
@@ -101,27 +74,9 @@ sub validate_int
 }
 
 
-sub chr_pos_to_chrpos
-{
-    my ($self,$chr,$pos) = @_;
-    my $max_chr_len = 200000000;
-    if ( !($chr=~/^\d+$/) )
-    {
-        if ( $chr eq 'X' ) { $chr=20; }
-        elsif ( $chr eq 'Y' ) { $chr=21; }
-        else { $chr=22; }
-    }
-    if ( $pos >= 200000000 ) { $pos=200000000; }
-
-    my $chrpos = ($chr-1)*$max_chr_len + $pos;
-    return $chrpos;
-}
-
-
 # The following locations are valid:
 #   1:10000-20000
 #   1 : 1,000,000 -2,000,000
-#   Cops5
 #
 sub validate_location
 {
@@ -143,38 +98,58 @@ sub validate_location
         {
             if ($chrm<1 || $chrm>19) { $chrm=0; }
         }
-        elsif ($chrm ne 'X' && $chrm ne 'Y') { $chrm=0; }
+        elsif ($chrm ne 'X') { $chrm=0; }
 
-        if ( !$chrm ) { die("Sorry, only the chromosomes 1-19,X,Y are available.\n"); }
+        if ( !$chrm ) { die("Chromosome not available ;;; Chromosomes 1-19 and X are available for searching.\n"); }
 
         if ( $to < $from )
         {
-            die ("Is this a typo? The end coordinate ($to) is smaller than the start coordinate ($from).\n");
+            die ("Error in search coordinates ;;; The end coordinate ($to) is smaller than the start coordinate ($from).\n");
         }
 
-        if ( $to - $from > 10_000_000 )
+        if ( $to - $from > 20_000_000 )
         {
-            die ("We are sorry, but the selected region is too big. The limit of the
-                    web interface is 10Mb. Please contact us if you need bigger 
-                    amounts of data.\n");
+            die (qq[Search region too large ;;; The current maximum region search limit is 20Mb. For larger queries - the raw data can be obtained from our <a href=&quot;ftp://ftp-mouse.sanger.ac.uk/&quot;>ftp site</a>.\n]);
         }
 
         $$self{chrm}    = $chrm;
         $$self{from}    = $from;
         $$self{to}      = $to;
-        my $chrpos_from = $self->chr_pos_to_chrpos($chrm,$from);
-        my $chrpos_to   = $self->chr_pos_to_chrpos($chrm,$to);
-
-        return "s.chrpos>=$chrpos_from AND s.chrpos<=$chrpos_to";
+        $$self{loc}		= $chrm.':'.$from.'-'.$to;	
+        return "$chrm:$from-$to";
     }
-    elsif ( !($loc=~/^[A-Za-z0-9.\-_]+$/) )
+    elsif ( $loc=~/^[A-Za-z0-9.\-_]+$/ )
     {
-        # Security, no tricks with altering the SQL commands
+        my $dbfile = $$self{'gene_db_location'};
+		my $dbh = DBI->connect(
+			"dbi:SQLite:dbname=$dbfile", # DSN: dbi, driver, database file
+			"",                          # no user
+			"",                          # no password
+			{ RaiseError => 1 },         # complain if something goes wrong
+		) or die "ERROR\n".$DBI::errstr;
+		my $select_sql = "select chromosome, from_pos, to_pos, ensembl_id from gene_position where lower(gene_name) = ?";
+		my $sth = $dbh->prepare($select_sql);
+  		my $location;
+		my ($chrm, $from, $to, $ensembl);
+		$sth->execute(lc($loc)) 
+			or die "Couldn't execute statement: " . $sth->errstr;
+		$sth->bind_columns(undef, \$chrm, \$from, \$to, \$ensembl);
+  		while ($sth->fetch) {
+  	    	$location = $chrm.':'.$from.'-'.$to;
+  	    	$$self{chrm}    = $chrm;
+        	$$self{from}    = $from;
+        	$$self{to}      = $to;
+        	$$self{ens_id}  = $ensembl;
+        	$$self{loc}		= $location;	
+		}	
+		$sth->finish;
+    	$dbh->disconnect;
+    	$location ? return $location : $$self{'writer'}->error_exit("Gene name not found ;;; No chromosome location could be found for $loc.\n");
+    }
+	else
+    {
         die(qq[Sorry, could not parse the region '$location'.\n]);
     }
-
-    $$self{gene} = $loc;
-    return "c.gene=g.id AND g.value='$loc'";
 }
 
 
@@ -196,22 +171,17 @@ sub validate_strains
         push @selected, $str;
     }
 
-    my $sql;
-    if ( @selected )
-    {
-        $sql = q[s.strain=r.id AND r.value IN ('] . join(q[','], @selected) . q[')];
-    }
-    else
-    {
-        @selected = @{$self->{'strains'}};
-    }
+    @selected = @{$self->{'strains'}} unless @selected;
 
     my $strains={};
     my $i=0;
-    for my $key (sort @selected) { $$strains{$key} = $i++; }
+    for my $key (sort @selected) { 
+    	$$strains{$key} = $i;
+    	$i++; }
 
-    return ($strains,$sql);
+    return ($strains);
 }
+
 
 
 # Similar to validate_strains, but the selection can be void.
@@ -221,35 +191,39 @@ sub validate_conseq_type
     my ($self,$list) = @_;
 
     my $sql_filter = '';
-    my @selected   = ();
+    my %selected;
     my $intergenic = 0;
     for my $type (@$list)
     {
-        if ( $type eq 'INTERGENIC' ) { $intergenic=1; next; }
-        # Security, no tricks with altering the SQL commands
         if ( !($type=~/^[A-Za-z0-9_-]+$/) ) { die("Could not parse the consequence type: [$type]\n"); }
-        push @selected, $type;
+        $selected{$type} = 1;
     }
 
-    if ( @selected )
-    {
-        $sql_filter = q[c.consequence IN ('] . join(q[','], @selected) . q[')];
-        if ( $intergenic ) { $sql_filter = "($sql_filter OR c.consequence IS NULL)"; }
-    }
-    elsif ( $intergenic )
-    { 
-        $sql_filter = "c.consequence IS NULL";
-    }
-    return $sql_filter;
+    return \%selected;
 }
 
+sub validate_sv_type
+{
+    my ($self,$list) = @_;
+
+    my %selected;
+    for my $type (@$list)
+    {
+        if ( !($type=~/^[A-Za-z0-9_-]+$/) ) { die("Could not parse the sv type: [$type]\n"); }
+        $selected{$type} = 1;
+    }
+
+    return \%selected;
+}
 
 sub validate_cgi_params
 {
     my ($self) = @_;
 
     my $cgi = $$self{'writer'}->{'cgi'};
-
+	
+	$$self{'writer'}->error_exit("Service Temporarily Unavailable ;;; The Mouse Genome Project SNP/Indel/SV viewer is currently being updated. We apologise for any inconvenience caused.\n") unless $$self{'available'};
+    
     my @strains = ();
     for my $strain (keys %{$$self{mouseinfo}})
     {
@@ -257,49 +231,55 @@ sub validate_cgi_params
         $id =~ s{/}{_}g;
         if ( $cgi->param('str_'.$strain) ) { push @strains, $strain; }
     }
-
+	
     my @conseqs = ();
     for my $conseq (keys %{$$self{conseqs}})
     {
         if ( $cgi->param('cnsq_'.$conseq) ) { push @conseqs, $conseq; }
     }
-
+		
+    my @svtypes = ();
+    for my $svtype (keys %{$$self{sv_types}})
+    {
+        if ( $cgi->param('svt_'.$svtype) ) { push @svtypes, $svtype; }
+    }
+		
     $$self{'writer'}->set_cookie('strain',join(',',@strains));
     $$self{'writer'}->set_cookie('conseqs',join(',',@conseqs));
-    $$self{'writer'}->set_cookies('location','snp_qual','map_qual','cons_qual','depth_qual','action','depth_min','depth_max','rows');
+    $$self{'writer'}->set_cookie('svtypes',join(',',@svtypes));
+    $$self{'writer'}->set_cookies('location','action','rows');
 
     $$self{cache_page_size} = $self->validate_int($$self{writer}{cgi}->param('rows'));
-    ($$self{'selected_strains'},$$self{'strains_sql'}) = $self->validate_strains(\@strains);
-    $$self{'conseq_sql'} = $self->validate_conseq_type(\@conseqs);
-    $$self{'pos_sql'}    = $self->validate_location($cgi->param('location'));
-    $$self{'snp_qual'}   = $self->validate_int($cgi->param('snp_qual'));
-    $$self{'map_qual'}   = $self->validate_int($cgi->param('map_qual'));
-    $$self{'cons_qual'}  = $self->validate_int($cgi->param('cons_qual'));
-    $$self{'depth_min'}  = $self->validate_int($cgi->param('depth_min'));
-    $$self{'depth_max'}  = $self->validate_int($cgi->param('depth_max'));
+    ($$self{'selected_strains'}) = $self->validate_strains(\@strains);
+    $$self{'selected_conseq'} = $self->validate_conseq_type(\@conseqs);
+    $$self{'selected_svtypes'} = $self->validate_sv_type(\@svtypes);
+    $$self{'pos_str'}    = $self->validate_location($cgi->param('location'));
 
-    if ( !$$self{'pos_sql'} && !$$self{'gene_sql'} ) { die "Neither region nor gene selected!\n"; }
+    if ( !$$self{'pos_str'} ) { die "Chromosome location must be a region (format = 1:10000000-10040000).\n"; }
 
 
     # Save the parameters for display, both on the web page and the downloadable file.
     my @display = ();
-    if ( $$self{'pos_sql'} ) { push @display, ['Location', $cgi->param('location')]; }
-    if ( $$self{'conseq_sql'} ) 
+    my @svdisplay = ();
+    if ( $$self{'pos_str'} ) { 
+    	push @display, ['Location', $cgi->param('location')]; 
+    	push @svdisplay, ['Location', $cgi->param('location')]; 
+    }
+    if ( $$self{'selected_conseq'} ) 
     { 
         push @display, ['Consequence', \@conseqs]; 
     }
-    if ( $$self{'snp_qual'} ) { push @display, ['SNP quality', $$self{'snp_qual'}]; }
-    if ( $$self{'map_qual'} ) { push @display, ['Mapping quality', $$self{'map_qual'}]; }
-    if ( $$self{'cons_qual'} ) { push @display, ['Consensus quality', $$self{'cons_qual'}]; }
-    if ( $$self{'depth_min'} ) { push @display, ['Min depth', $$self{'depth_min'}]; }
-    if ( $$self{'depth_max'} ) { push @display, ['Max depth', $$self{'depth_max'}]; }
-
-    my ($dload_params,$html_params);
+    if ( $$self{'selected_svtypes'} ) 
+    { 
+        push @svdisplay, ['SV types', \@svtypes]; 
+    }
+    
+    my ($dload_params,$html_params,$svdload_params,$svhtml_params);
     for my $param (@display)
     {
         my $key   = $$param[0];
         my $value = $$param[1];
-        $html_params .= qq[<tr><td>$key</td><td>...</td><td>];
+        $html_params .= qq[<tr><td style="text-align: left;"><b><u>$key:</u></b></td></tr><tr><td style="padding-left: 2em;">];
         $html_params .= (ref($value) eq 'ARRAY' ) ? join('<br>', @$value) : $value;
         $html_params .= qq[</td></tr>];
 
@@ -307,6 +287,18 @@ sub validate_cgi_params
         $dload_params .= (ref($value) eq 'ARRAY' ) ? join(',', @$value) : $value;
         $dload_params .= "\n";
     }
+    for my $param (@svdisplay)
+    {
+        my $key   = $$param[0];
+        my $value = $$param[1];
+        $svhtml_params .= qq[<tr><td style="text-align: left;"><b><u>$key:</u></b></td></tr><tr><td style="padding-left: 1em;">];
+        $svhtml_params .= (ref($value) eq 'ARRAY' ) ? join('<br>', @$value) : $value;
+        $svhtml_params .= qq[</td></tr>];
+
+        $svdload_params .= qq[#\t$key .. ];
+        $svdload_params .= (ref($value) eq 'ARRAY' ) ? join(',', @$value) : $value;
+        $svdload_params .= "\n";
+    }    
     if ( $html_params )
     {
         $html_params  = q[<table id="params">] . $html_params . q[</table>];
@@ -314,53 +306,142 @@ sub validate_cgi_params
         $$self{display_html_params}  = $html_params;
         $$self{display_dload_params} = $dload_params;
     }
-
+    if ( $svhtml_params )
+    {
+        $svhtml_params  = q[<table id="params">] . $svhtml_params . q[</table>];
+        $svdload_params = qq[# The filters used:\n] . $svdload_params . "#\n";
+        $$self{display_html_svparams}  = $svhtml_params;
+        $$self{display_dload_svparams} = $svdload_params;
+    }    
     return;
 }
 
-
-sub sql_filters
+sub run_tabix_command
 {
-    my ($self) = @_;
+	my ($self) = @_;
+	my $tabix_cmd = "cd $$self{'index_directory'} ; $$self{'tabix_location'} -h $$self{'snps_location'}  $$self{'pos_str'}";
+	my @mouse_strains2 = ();
+	my $strains = $$self{'selected_strains'};
+	my @sort_strains = (sort {$$strains{$a}<=>$$strains{$b}} keys %$strains);
+	my $input = `$tabix_cmd`;
+	my @lines = split('\n', $input); 
+	my %output = ();
+	my %conseq_selected = %{$$self{'selected_conseq'}};
+	
+	my ($gt, $atg, $mq, $gq, $dp);
+	my $linecount = 0;
 
-    my @filters = ();
-    if ( $$self{'strains_sql'} ) { push @filters, $$self{'strains_sql'}; }
-    if ( $$self{'pos_sql'} ) { push @filters,$$self{'pos_sql'}; }
-    if ( $$self{'gene_sql'} ) { push @filters,$$self{'gene_sql'}; }
-    if ( $$self{'snp_qual'} ) { push @filters, "(s.snp_qual>=$$self{snp_qual} OR s.snp_qual IS NULL)"; }
-    if ( $$self{'map_qual'} ) { push @filters, "(s.map_qual>=$$self{map_qual} OR s.map_qual IS NULL)"; }
-    if ( $$self{'cons_qual'} ) { push @filters, "(s.cons_qual>=$$self{cons_qual} OR s.cons_qual IS NULL)"; }
-    if ( $$self{'depth_min'} ) { push @filters, "(s.depth>=$$self{depth_min} OR s.depth IS NULL)"; }
-    if ( $$self{'depth_max'} ) { push @filters, "(s.depth<=$$self{depth_max} OR s.depth IS NULL)"; }
-    if ( $$self{'conseq_sql'} ) { push @filters, $$self{'conseq_sql'}; }
-
-    push @filters, 'r.id=s.strain';
-    push @filters, 'chr.id=s.chr';
-
-    return \@filters;
-}
-
-
-sub sql_query
-{
-    my ($self,$filters) = @_;
-    
-    my $query = qq[
-        SELECT 
-            r.value AS strain_name,
-            chr.value AS chr,
-            s.pos, s.ref_base, s.snp_base1, s.snp_base2, s.depth, s.snp_qual, s.map_qual, s.cons_qual, s.verified,
-            g.value AS gene_name,
-            c.*
-        FROM 
-            strains r, chroms chr, snps s
-            LEFT JOIN snp_conseqs c ON s.snp_id=c.snp_id
-            LEFT JOIN genes g ON c.gene=g.id
-        WHERE
-            ] .join("\n AND ",@$filters). q[ ORDER BY s.chr ASC, s.pos ASC];
-
-    return $query;
-}
+	for my $line_in ( @lines ) {
+		if ( $line_in =~ /^##\w+/ ) {
+			next;
+		}
+		elsif ( $line_in =~ /^#CHROM/ ) {
+			my @strain_line = split('\t', $line_in); 
+			for my $vcf_str (@strain_line) {
+				if ($$self{vcf_strain_map}{$vcf_str}{name}) {
+					push @mouse_strains2, $$self{vcf_strain_map}{$vcf_str}{name};
+				}
+			}
+		}
+		else {
+		my @line = split('\t', $line_in);
+		my @lineoutput = ();		
+		if ($linecount==0) {
+			($gt, $atg, $mq, $gq, $dp) = get_filter_order($line[8]);
+			$linecount++;
+		}		
+		my $info_csq = return_info_field($line[7], 'CSQ');
+		my (%types, %gene_conseq);
+    	if ( $info_csq ) {
+        	for my $cons (split('\+', $info_csq)) {
+        		my @gene_type = split(/[:,]/, $cons);
+        		if (!$types{$gene_type[2]} && $conseq_selected{$gene_type[2]}) {
+        			$types{$gene_type[2]} = 1;
+        			push @{$gene_conseq{$gene_type[1]}}, $gene_type[2];
+        		}
+        	}
+    	}
+    	elsif ($conseq_selected{'INTERGENIC'}) {
+    		push @{$gene_conseq{'-'}}, 'INTERGENIC';
+    	} 	
+	    my @strain_data = @line[9 .. 25];
+    	my %alleles = ();
+    	my $allele_count = 0;
+    	$alleles{$allele_count++} = $line[3];
+    	foreach ( split(',', $line[4] )) {
+    		$alleles{$allele_count++} = $_;	
+    	}
+    	die "Mouse strains in vcf file do not match expected strains" unless scalar(@strain_data) == scalar( @mouse_strains2);
+    	 
+    	for my $i ( 0 .. $#strain_data ) {
+    		my %linehash;
+    		my $high_qual_filter;
+    		my $strain = $mouse_strains2[$i];   	
+			my @data = split (':', $strain_data[$i]);
+			for my $gene (keys %gene_conseq) {
+    			my $depth = $data[$dp];
+    			my $cons_qual = $data[$gq]-10;
+    			my $map_qual = $data[$mq];
+    			my $gt_qual = $data[$gq];
+				$high_qual_filter = $data[$atg];
+    			if ($high_qual_filter == 0 || $high_qual_filter == -1 || $high_qual_filter == -8) {
+    				$linehash{'strain_name'} = $strain;
+    				$linehash{'chr'} = $line[0];
+    				$linehash{'pos'} = $line[1];
+    				$linehash{'atg_qual'} = $high_qual_filter;
+    			}
+    			else {					
+    				my %allele_hash;
+    				my @allele_out;
+    				foreach (split('/', $data[$gt])) {
+    					if (!$allele_hash{$alleles{$_}}) {
+    						$allele_hash{$alleles{$_}} = 1;
+    						push @allele_out, $alleles{$_};
+    					} 
+    				}
+    				$linehash{'strain_name'} = $strain;
+    				$linehash{'consequence'} = $gene_conseq{$gene};
+    				$linehash{'gene_name'} = $gene unless $gene eq '-';
+    				$linehash{'chr'} = $line[0];
+    				$linehash{'pos'} = $line[1];
+    				$linehash{'ref_base'} = $line[3];
+    				$linehash{'snp_base'} = join('/',@allele_out);
+    				$linehash{'depth'} = $depth;
+    				$linehash{'map_qual'} = $map_qual;
+    				$linehash{'gt_qual'} = $gt_qual;
+    				$linehash{'cons_qual'} = $cons_qual;
+    				$linehash{'atg_qual'} = $high_qual_filter; 
+    				if ( $$self{mouseinfo}{$strain}{bam} ) {
+    					$linehash{'bam'} = $$self{mouseinfo}{$strain}{bam};
+        			}
+    			}
+    		}
+    		if (%linehash) {
+    			push @lineoutput, {%linehash};
+    		}	
+    	}
+    	if (@lineoutput) {
+    		my @strain_output = ();
+    		my $conseq_found = 0;
+    	    for my $str ( @sort_strains ) {
+    	    	for my $str_res ( @lineoutput ) {
+    	    		if ( $$str_res{'strain_name'} eq $str ) {
+    	    			push @strain_output, $str_res;
+    	    			if ( !$conseq_found && exists $$str_res{'consequence'} ) {
+    	    				$conseq_found = 1;
+    	    			}
+    	    		}
+    	    	}
+    	    }
+    	    if ( $conseq_found ) {
+    			$output{$linecount} = [@strain_output];
+    			$linecount++;
+    		}	
+    	}
+    	}
+    }
+	return \%output;
+}	
 
 
 sub print_legend
@@ -371,31 +452,41 @@ sub print_legend
 
     # TODO: position taken from the first result on the page??
     my $html = $$self{'writer'};
-    my $lookseq_params = 
-        "show=$$self{chrm}:$$self{from}-$$self{from},paired_pileup" .
-        "&amp;win=$$self{lseq_win}" .
-        "&amp;width=$$self{lseq_width}" .
-        "&amp;$$self{lseq_display}" .
-        "&amp;lane=129S1_SvImJ.bam";
 
     $html->out(qq[<div id="legend">
             <b>Try:</b>
                 <div style="margin-left:1em;"> <a href="$$self{'myself'}">New search</a> </div>
-                <div style="margin-left:1em;"> <a href="http://www.ensembl.org/Mus_musculus/Location/View?db=core;r=$$self{chrm}:$$self{from}-$$self{to};">View in Ensembl</a> </div>
-                <div style="margin-left:1em;"> <a href="$$self{'lookseq'}?$lookseq_params">View in LookSeq</a> </div>
+                <div style="margin-left:1em;"> <a href="http://www.ensembl.org/Mus_musculus/Location/View?db=core;r=$$self{chrm}:$$self{from}-$$self{to};" target="_ensembl_snp">View in Ensembl</a> </div>
                 <div style="margin-left:1em;"> Click on SNPs for details</div>
             <div style="padding-top:1em;"><b>Download:</b></div>
         ]);
+        
+#lookseq details removed from above:
+#        
+#     my $lookseq_win = $$self{to}-$$self{from};
+#     if ($lookseq_win > 100000) {
+#     	$lookseq_win = 100000;
+#     }
+#     my $lookseq_params = 
+#         "show=$$self{chrm}:$$self{from}-$$self{to},paired_pileup" .
+#         "&amp;win=$lookseq_win" .
+#         "&amp;width=$$self{lseq_width}" .
+#         "&amp;$$self{lseq_display}" .
+#         "&amp;lane=DBA.bam";
+#link to lookseq:
+#   <div style="margin-left:1em;"> <a href="$$self{'lookseq'}?$lookseq_params" target="_lookseq_snp">View in LookSeq</a> </div>
+                
 
     my $session = $$self{session}->id();
-    $html->out(qq[<div style="margin-left:1em;"> <a href="$$self{'myself'}?cache=$session&action=$$self{action}_dload">Results</a>\n </div>]);
+    $html->out(qq[<div style="margin-left:1em;">Formats: <a href="$$self{'myself'}?cache=$session&action=$$self{action}_dload">tab</a> or <a href="$$self{'myself'}?cache=$session&action=$$self{action}_dload_csv">csv</a>.\n </div>]);
 
     $html->out(qq[
         <div style="padding-top:1em;">
-        <b>Legend:</b>
-        <table>
-        ]);
-    for my $key (sort keys %{$$self{'conseqs'}})
+        <b>Legend:</b><br/>
+         &nbsp;&nbsp;<b>SNP Consequences:</b>
+        <table>]);
+    #for my $key (sort keys %{$$self{'conseqs'}})
+    for my $key (sort keys %{$$self{'selected_conseq'}})
     {
         my $conseq = $$self{'conseqs'}{$key};
         $html->out(qq[
@@ -403,18 +494,16 @@ sub print_legend
                 <td>$$conseq{'label'}</td>\n]);
     }
     $html->out(qq[<tr><td><sup>+</sup></td><td>Multiple consequences</td></tr>]);
-    $html->out(qq[</table></div>]);
-    if ( $$self{display_html_params} )
-    {
-        $html->out(qq[
-            <div style="padding-top:1em;position:relative;">
-            <span class="button" style="font-weight:bold;" onclick="toggle_element('#params')">Filters</span>
-            <div class="hidden" id="params" style="right:0em;">
-                <div style="float:right;cursor:pointer;padding:0px;margin-top:-0.5em; margin-right:-0.5em;" onclick="hide_element('#params')">[x]</div>
-                $$self{display_html_params}
-            </div>
-            </div>]);
-    }
+    $html->out(qq[</table><br/>
+            &nbsp;&nbsp;<b>Base Calling examples:</b>
+        <table>
+        <tr><td>T</td><td>High confidence SNP</td></tr>\n
+        <tr><td>t</td><td>Low confidence SNP</td></tr>\n        
+        <tr><td>-</td><td>High confidence reference</td></tr>\n
+        <tr><td class="c14">-</td><td>Low confidence reference</td></tr>\n
+        <tr><td class="c14"> </td><td>Genotype not called</td></tr> 
+        </table></div>]);
+    
     $html->out(qq[</div>]);
 }
 
@@ -422,7 +511,7 @@ sub print_legend
 sub print_no_match
 {
     my ($self) = @_;
-    die("Sorry, no matching SNPs.\n");
+    die("SNPs not found ;;; Sorry, unable to find SNPs for $$self{loc}.\n");
 }
 
 
@@ -453,10 +542,8 @@ sub print_header
         my $img_name = lc($str);
         $img_name =~ s{/}{_}g;
         $html->out(qq[<th class="results"><img src="$url_imgs/$img_name.png" alt="$str" /></th>]);
-        # $session->append("\t$str");
     }
     $html->out("</tr></thead><tbody>\n");
-    # $session->append("\n");
 }
 
 sub print_footer
@@ -473,7 +560,7 @@ sub nonzero_column_data
 {
     my ($self,$row) = @_;
 
-    my ($pos,$chr,$base,$gene_name,$gene_id);
+    my ($pos,$chr,$base,$gene_name);
 
     my $ncols = @$row;
     for (my $i=0; $i<$ncols; $i++)
@@ -482,17 +569,17 @@ sub nonzero_column_data
 
         $pos  = $$row[$i]->{'pos'};
         $chr  = $$row[$i]->{'chr'};
-        $base = $$row[$i]->{'ref_base'};
-        if ( exists($$row[$i]->{'_conseqs'}) )
+        if ( exists($$row[$i]->{'ref_base'}) ) {
+        	$base = $$row[$i]->{'ref_base'};
+        }
+        if ( exists($$row[$i]->{'consequence'}) )
         {
-            my $conseqs = $$row[$i]->{'_conseqs'};
-            $gene_id   = $$conseqs[0]->{'gene_ensid'} || '';
-            $gene_name = $$conseqs[0]->{'gene_name'} || $gene_id;
-            if ( $gene_id && $pos ) { last; }
+            $gene_name = $$row[$i]->{'gene_name'};
+            if ( $gene_name && $pos ) { last; }
         }
     }
-
-    return ($pos,$chr,$base,$gene_name,$gene_id);
+	
+    return ($pos,$chr,$base,$gene_name);
 }
 
 
@@ -500,18 +587,24 @@ sub print_row
 {
     my ($self,$row) = @_;
 
-    my ($pos,$chr,$base,$gene_name,$gene_id) = $self->nonzero_column_data($row);
-
+    my ($pos,$chr,$base,$gene_name) = $self->nonzero_column_data($row);
+    my $strains    = $$self{'selected_strains'};
     # Alternate background for each gene and print gene name only if different from the previous row
     #
+    
+	# 1. ATG = 1 (high qual ref) : can be left as '-'
+	# 2. ATG = -8 (missing or het) : no dash '-'
+	# 3. ATG = -1 (low qual ref) : '-' with light grey box
+	# 4. all other ATGs (low qual SNPs): The SNP base in italics (and the background colored according to consequence, if any) 
+    
     my $print_gene = 0;
     my $style      = 0;
-    if ( !$gene_id ) { $style=-1; }
-    elsif ( !$$self{'last_gene_id'} ) { $style=0; $print_gene=1; }
-    elsif ( $$self{'last_gene_id'} eq $gene_id ) { $style=$$self{'last_gene_style'}; }
+    if ( !$gene_name ) { $style=-1; }
+    elsif ( !$$self{'last_gene_name'} ) { $style=0; $print_gene=1; }
+    elsif ( $$self{'last_gene_name'} eq $gene_name ) { $style=$$self{'last_gene_style'}; }
     else { $style = $$self{'last_gene_style'} ? 0 : 1; $print_gene=1; }
 
-    $$self{'last_gene_id'}    = $gene_id;
+    $$self{'last_gene_name'} = $gene_name;
     $$self{'last_gene_style'} = $style;
     
     my @styles = ('class="gene1"','class="gene2"','');
@@ -519,7 +612,15 @@ sub print_row
 
     my $html = $$self{writer};
     $html->out("<tr><td $style>");
-    if ( $print_gene ) { $html->out(sprintf qq[<a href="http://www.ensembl.org/Mus_musculus/Gene/Summary?g=ENSMUSG%.11d">$gene_name</a>], $gene_id); }
+    if ( $print_gene ) { 
+        if ($$self{ens_id}) {
+        	my $ens_id = $$self{ens_id};
+        	$html->out(sprintf qq[<a href="http://www.ensembl.org/Mus_musculus/Gene/Summary?g=$ens_id" target="_ensembl_snp">$gene_name</a>]); 
+        }
+        else {
+        	$html->out(sprintf qq[<a href="http://www.ensembl.org/Mus_musculus/Gene/Summary?g=$gene_name" target="_ensembl_snp">$gene_name</a>]); 
+        }	
+    }
     $html->out(qq[</td><td $style>$chr</td><td $style>$pos</td><td class="resultsbar">$base</td>]);
 
     my $ncols = scalar keys %{$$self{'selected_strains'}};
@@ -532,9 +633,10 @@ sub print_row
         my $conseq_type  = '';
         my $details      = '';
         my $codons       = '';
-        for my $cons (@{$$row[$i]->{'_conseqs'}})
+        my $atg_qual = $$row[$i]->{'atg_qual'};
+        for my $type (@{$$row[$i]->{'consequence'}})
         {
-            my $type = $$cons{'consequence'};
+            #my $type = $$cons{'consequence'};
 
             if ( !$type || $type eq 'SPLICE_SITE' ) { next }  # ignore these - according to Dave these are rubbish
 
@@ -545,10 +647,6 @@ sub print_row
             #
             if ( $conseq_type && $type =~ /UTR$/ ) { next }
             $conseq_type = $type;
-            if ( $$cons{'ref_codon'} ) { $codons .= '<tr><td>Ref codon:</td><td>' .$$cons{'ref_codon'}. '</td></tr>'; }
-            if ( $$cons{'snp_codon1'} ) { $codons .= '<tr><td>SNP codon:</td><td>' .$$cons{'snp_codon1'}. '</td></tr>'; }
-            if ( $$cons{'ref_aa'} ) { $codons .= '<tr><td>Ref aa:</td><td>' .$$cons{'ref_aa'}. '</td></tr>'; }
-            if ( $$cons{'snp_aa1'} ) { $codons .= '<tr><td>SNP aa:</td><td>' .$$cons{'snp_aa1'}. '</td></tr>'; }
         }
 
         # The SNPs will be coloured according to its consequence type.
@@ -559,11 +657,14 @@ sub print_row
             my @types = ();
             for my $key (sort keys %$reported)
             {
-                if ( !exists($$self{'conseqs'}{$key}) ) { die("FIXME: The consequence type \"$key\" not covered.\n"); }
+                if ( !exists($$self{'conseqs'}{$key}) ) { die("FIX ME: The consequence type \"$key\" not covered.\n"); }
                 push @types, qq[<span class="$$self{'conseqs'}{$key}{'style'}">$$self{'conseqs'}{$key}{'label'}</span>];
             }
             $style   = $$self{'conseqs'}{$conseq_type}{'style'};
             $details = '<tr><td>Type:</td><td>' . join('<br />',@types) . '</td></tr>';
+        }
+        if ($atg_qual == -1) {
+        	$style = 'class="c14"';
         }
 
         if ( $codons ) { $details .= $codons; }
@@ -571,6 +672,10 @@ sub print_row
         my $onclick='';
         my $div='';
         my $snp1 = '-';
+        if ($atg_qual == -8) {
+        	$style = 'class="c14"';
+        	$snp1 = ' ';
+        }
         if ( $$row[$i]->{'ref_base'} )
         {
             # If we are here, there is a SNP, not an empty row.
@@ -578,9 +683,9 @@ sub print_row
             $details = "<tr><td>Location:</td><td>$chr:$pos</td></tr>" . $details;
             $details = "<tr><td>Strain:</td><td>" .$$row[$i]->{strain_name}. "</td></tr>" . $details;
             $details .= '<tr><td>Depth:</td><td> ' . $$row[$i]->{'depth'} . '</td></tr>';
-            $details .= '<tr><td>Quality:</td><td> ' . $$row[$i]->{'snp_qual'} .'/'. $$row[$i]->{'map_qual'} .'/'. $$row[$i]->{'cons_qual'} 
-                            . '<br><span style="font-size:xx-small">(SNP/map/cons)</span></td></tr>';
-            $details .= qq[<tr><td colspan="2"><a href="http://www.ensembl.org/Mus_musculus/Location/View?db=core;r=$chr:$pos-$pos;">View in Ensembl</a></td></tr>];
+            $details .= '<tr><td>Quality:</td><td> ' . $$row[$i]->{'gt_qual'} .'/'. $$row[$i]->{'map_qual'} .'/'. $$row[$i]->{'cons_qual'} 
+                            . '<br><span style="font-size:xx-small">(GT/map/cons)</span></td></tr>';
+            $details .= qq[<tr><td colspan="2"><a href="http://www.ensembl.org/Mus_musculus/Location/View?db=core;r=$chr:$pos-$pos;" target="_ensembl_snp">View in Ensembl</a></td></tr>];
             if ( $$row[$i]->{bam} )
             {
                 my $from = $pos - int($$self{lseq_win}*0.5);
@@ -589,27 +694,25 @@ sub print_row
                 my $lookseq = 
                     "$$self{lookseq}?show=$chr:$from-$from,paired_pileup&amp;win=$$self{lseq_win}&amp;width=$$self{lseq_width}" .
                     "&amp;$$self{lseq_display}&amp;lane=" . $$row[$i]->{bam};
-                $details .= qq[<tr><td colspan="2"><a href="$lookseq">View in LookSeq</a></td></tr>];
+                $details .= qq[<tr><td colspan="2"><a href="$lookseq" target="_lookseq_snp">View in LookSeq</a></td></tr>];
             }
 
             my $id = 'ud' . (++$$html{'unique_div'});
-            $onclick = qq[onclick="toggle_one_element('#$id')"];
+            $onclick = qq[onclick="toggle_one_element('#$id')" ];
             $div = qq[
                 <div class="hidden" id="$id">
                 <div style="text-align:right;font-size:smaller;margin-top:-0.5em; margin-right:-0.5em;">
-                        <span class="button">[x]</span></div>
+					<span class="button">[x]</span></div>
                 <table class="details">
                     $details
                 </table>
                 </div>];
-
-            if ( !$$row[$i]->{'snp_base1'} ) { die "FIXME: yes, it can happen\n"; }
-            $snp1 = $$row[$i]->{'snp_base1'};
-            if ( $$row[$i]->{'snp_base2'} )
-            {
-                $snp1 .= '/' . $$row[$i]->{'snp_base2'};
-            }
+            if ( !$$row[$i]->{'snp_base'} ) { die "FIXME: yes, it can happen\n"; }
+            $snp1 = $$row[$i]->{'snp_base'};
             if ( keys %$reported > 1 ) { $snp1 .= '<sup>+</sup>'; }
+            if ($atg_qual != 1) {
+            	$snp1 = lc($snp1);
+            }  
 
             $style = qq[class="$style button"];
         }
@@ -634,11 +737,16 @@ sub cache_exists
 
     $data = thaw($data);
     $$self{selected_strains} = $$data{selected_strains};
+    $$self{selected_conseq} = $$data{selected_conseq};
+    $$self{selected_svtypes} = $$data{selected_svtypes};
     $$self{chrm} = $$data{chrm};
     $$self{from} = $$data{from};
     $$self{to}   = $$data{to};
+    $$self{loc}   = $$data{loc};
     $$self{display_html_params}  = $$data{display_html_params};
     $$self{display_dload_params} = $$data{display_dload_params};
+    $$self{display_html_svparams}  = $$data{display_html_svparams};
+    $$self{display_dload_svparams} = $$data{display_dload_svparams};
 
     my @rows = @{$$data{data}};
     if ( !@rows ) { return 0; }
@@ -683,82 +791,60 @@ sub cache_nrows
 }
 
 
-# Reads the mySQL result and collects all rows, which belong to one
-#   position. It assumes that the results are ordered by chrom and pos
-#   in the ascendent order.
-# The parameters are:
-#   result     .. mysql result
-#   buffer     .. contains a row left from previous call of get_next_position
-#
-sub get_next_position
+sub return_info_field
 {
-    my ($self,$result,$buffer) = @_;
+    my ($info,$search) = @_;
 
-    my $strains = $$self{'selected_strains'};
-    my ($row,$prev_pos,$prev_chr,$idx);
-    my @data = ();
-    while (1)
+    my $out;
+
+    # Split the info string on the ';' first, then extract the field of interest by splitting on equals
+    for my $field (split(/;/,$info))
     {
-        $row = @$buffer ? shift(@$buffer) : $result->fetchrow_hashref;
-        if ( !$row ) { last }
-
-        my $strain = $$row{'strain_name'};
-        my $chr    = $$row{'chr'};
-        my $pos    = $$row{'pos'};
-
-        # If the search was by gene and not by region, the values of chrm:pos
-        #   are not set. They will be required later when printing the legend
-        #   (a link to LookSeq).
-        if ( !$$self{chrm} ) { $$self{chrm}=$chr; }
-        if ( !$$self{from} ) { $$self{from}=$pos; }
-
-        if ( $prev_pos && ($chr ne $prev_chr || $pos ne $prev_pos) )
-        {
-            push @$buffer, $row;
-            last;
-        }
-
-        $idx = $$strains{$strain};
-        if ( !exists($data[$idx]) )
-        {
-            $data[$idx] = $row;
-            $data[$idx]->{'_conseqs'} = [];
-        }
-
-        $data[$idx]->{strain_name} = $strain;
-        if ( $$self{mouseinfo}{$strain}{bam} )
-        {
-            $data[$idx]->{bam} = $$self{mouseinfo}{$strain}{bam};
-        }
-
-        # Rather than copying the consequence-specific data, save the whole row.
-        push @{$data[$idx]->{'_conseqs'}}, $row;
-
-        $prev_pos   = $pos;
-        $prev_chr   = $chr;
+    my ($key,$value) = split(/=/,$field);
+    if ( $key eq $search ) { return $value; }
     }
 
-    if ( $prev_pos ) { $$self{to} = $prev_pos; }
+    # Field not found, return 0
+    return 0;
+}
 
-    if ( !@data ) { return 0; }
-    return \@data;
+sub get_filter_order 
+{
+	my ($filter) = @_;
+	my @filter_fields = split(':', $filter);
+	# Get the position of the parameter in the FORMAT, e.g. GT:ATG:MQ:HCG:GQ:DP
+	# as they might not necessarly always be in that order.
+	# Will return an array with the position in the order GT, ATG, MQ, GQ, DP.
+	my ($gt, $atg, $mq, $gq, $dp);
+	
+	for my $i (0 .. $#filter_fields) {
+		if ($filter_fields[$i] eq 'GT') {
+			$gt = $i;
+		}
+		elsif ($filter_fields[$i] eq 'ATG') {
+			$atg = $i;
+		}
+		elsif ($filter_fields[$i] eq 'MQ') {
+			$mq = $i;
+		}
+		elsif ($filter_fields[$i] eq 'GQ') {
+			$gq = $i;
+		}
+		elsif ($filter_fields[$i] eq 'DP') {
+			$dp = $i;
+		}
+	}
+	return ($gt, $atg, $mq, $gq, $dp);	
 }
 
 sub run
 {
     my ($self,@args) = @_;
-
     my $result;
     if ( !$self->cache_exists() )
     {
-        # If the cache does not exist, build the SQL query
-        my $filters = $self->sql_filters();
-        my $query   = $self->sql_query($filters);
-
-        # $$self{'writer'}->out(qq[<div><pre>$query</pre></div>]); return;
-
-        $result = $self->mysql_query($query);
-        $$self{'nrows'} = $result->rows;    # Beware: this is not the number of rows in the result table!
+        $result = $self->run_tabix_command;
+        $$self{'nrows'} = scalar %{ $result };    # Beware: this is not the number of rows in the result table!
         if ( !$$self{'nrows'} )
         {
             $self->print_no_match();
@@ -766,9 +852,8 @@ sub run
         }
     }
 
-    $$self{'writer'}->out(qq[<h3>Mouse Genomes Project - $$self{'title'}</h3>
-        <div style="font-size:x-small;">(NOTE: All SNPs/indels reported have not been experimentally validated)</div>
-    ]);
+    $$self{'writer'}->out("<h3>Mouse Genomes Project - $$self{'title'} [$$self{'loc'}]</h3>");
+    $$self{'writer'}->out(qq[<div style="font-size:x-small;">(NOTE: All SNPs,indels and SVs reported have not been experimentally validated)</div>]);
     $$self{'writer'}->out(qq[<table style="width:100%;"><tr><td><div class="resultsdiv">]);
     $self->print_header();
 
@@ -797,10 +882,14 @@ sub run
         #   and the last item is stored in the buffer which is reused upon subsequent
         #   call.
         #
+        #my $buffer = [];
+        #while (my $pos=$self->get_next_position($result,$buffer))
+        my @resultsort = sort { $a <=> $b } keys %{ $result };
         my $irow = 0;
-        my $buffer = [];
-        while (my $pos=$self->get_next_position($result,$buffer))
+        for my $row ( @resultsort )
         {
+            my $pos = $$result{$row};
+            
             push @{$store{data}}, $pos;
 
             if ( $irow<$$self{cache_page_size} )
@@ -811,11 +900,16 @@ sub run
         }
         # These are necessary values for the cached pages display.
         $store{selected_strains} = $$self{selected_strains};
+        $store{selected_conseq} = $$self{selected_conseq};
+        $store{selected_svtypes} = $$self{selected_svtypes};
         $store{chrm} = $$self{chrm};
         $store{from} = $$self{from};
         $store{to}   = $$self{to};
+        $store{loc}   = $$self{loc};
         $store{display_html_params}  = $$self{display_html_params};
         $store{display_dload_params} = $$self{display_dload_params};
+        $store{display_html_svparams}  = $$self{display_html_svparams};
+        $store{display_dload_svparams} = $$self{display_dload_svparams};       
 
         $$self{'session'}->append(freeze(\%store));
         $$self{'session'}->store();
@@ -889,12 +983,6 @@ sub run
         }
         $$self{writer}->out(q[</div>]);
     }
-
-    #   if ( $$self{cached_data} )
-    #   {
-    #       use Data::Dumper;
-    #       $$self{writer}->out(qq[<div><pre>] . Dumper($$self{cached_data}) . qq[</pre></div>]);
-    #   }
 
     $$self{'writer'}->out("</div></td><td>");
     $self->print_legend();

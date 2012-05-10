@@ -1164,7 +1164,7 @@ sub run_gatk_chunk
     {
         %opts = $self->get_gatk_opts(qw(all indel_genotyper));
         $gatk = VertRes::Wrapper::GATK->new(%opts);
-        $gatk->indel_genotyper($bam, "$name.indels.raw.bed", "$name.indels.detailed.bed",L=>$chunk,%opts);
+        $gatk->somatic_indel_detector($bam, "$name.indels.raw.bed", "$name.indels.detailed.bed",L=>$chunk,%opts);
         Utils::CMD("make_indel_mask.pl $name.indels.raw.bed 10 $name.indels.mask.bed",{verbose=>1});
     
         %opts = $self->get_gatk_opts(qw(all variant_filtration));
@@ -1445,6 +1445,13 @@ sub cleanup {
             my $new_file = File::Spec->catfile($lane_path, "$task.$suff");
             next unless (-s $old_file);
             $fs->copy($old_file, $new_file) or $self->throw("Error copying files:\nold: $old_file\nnew: $new_file");
+        }
+        
+        if ($task eq 'gatk') {
+            my $tranches = File::Spec->catfile($lane_path, $task, "file.tranches");
+            if (-s $tranches) {
+                $fs->copy($tranches, File::Spec->catfile($lane_path, "gatk.tranches")) or $self->throw("Error copying files:\nold: $tranches\n");
+            }
         }
 
         # cleanup files in the root of the snps output directory

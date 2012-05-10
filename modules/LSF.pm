@@ -125,14 +125,57 @@ sub job_in_bjobs
     #
     # on STDERR.
 
-    my @out = Utils::CMD("bjobs $jid 2>/dev/null");
-    
+    my @out = Utils::CMD("bjobs -l $jid 2>/dev/null");
     if ( ! scalar @out ) { return $Unknown; }
-    if ( scalar @out != 2 ) { Utils::error("Expected different output, got: ", @out) }
-    if ( $out[1] =~ /^$jid\s+\S+\s+DONE/ ) { return $Done; }
-    if ( $out[1] =~ /^$jid\s+\S+\s+EXIT/ ) { return $Error; }
 
-    return $Running;
+    my $job = parse_bjobs_l(\@out);
+    if ( $$job{status} eq 'DONE' ) { return $Done; }
+    if ( $$job{status} eq 'PEND' ) { return $Running; }
+    if ( $$job{status} eq 'EXIT' ) { return $Error; } 
+    if ( $$job{status} eq 'RUN' ) 
+    {
+        my $bswitch;
+        if ( $$job{cpu_time}*1.3 > 2*24*3600 ) { $bswitch = 'basement' }
+        elsif ( $$job{cpu_time}*1.3 > 2*3600 && $$job{queue} ne 'basement' ) { $bswitch = 'long' }
+
+        if ( defined $bswitch && $bswitch ne $$job{queue} )
+        {
+            warn("Changing queue of the job $jid from $$job{queue} to $bswitch\n");
+            `bswitch $bswitch $jid`;
+        }
+        return $Running;
+    }
+    return $Error;
+}
+
+sub parse_bjobs_l
+{
+    my ($lines) = @_;
+
+    my $i=0;
+    while ( $i<@$lines && $$lines[$i]=~/^\s*$/ ) { $i++ }
+    if ( $i>=@$lines ) { Utils::error("Could not parse bjobs -l output: ", join('',@$lines)); }
+
+    my $job_info = $$lines[$i++]; chomp($job_info);
+    while ( $i<@$lines && $$lines[$i]=~/^\s{21}?/ ) 
+    { 
+        $job_info .= $';
+        chomp($job_info);
+        $i++;
+    }
+
+    if ( !($job_info=~/,\s*Status <([^>]+)>/) ) { Utils::error("Could not determine the status: [$job_info]"); }
+    my $status = $1;
+    if ( !($job_info=~/,\s*Queue <([^>]+)>/) ) { Utils::error("Could not determine the queue: [$job_info]"); }
+    my $queue = $1;
+
+    my $cpu_time = 0;
+    while ( $i<@$lines )
+    {
+        if ( $$lines[$i]=~/The CPU time used is (\d+) seconds./ ) { $cpu_time=$1; last; }
+        $i++;
+    }
+    return { status=>$status, queue=>$queue, cpu_time=>$cpu_time };
 }
 
 
@@ -145,7 +188,7 @@ sub job_in_bjobs
 #
 sub adjust_bsub_options
 {
-    my ($opts, $output_file) = @_;
+    my ($opts, $output_file,$mem_limit) = @_;
 
     my $mem;
     my $queue;
@@ -191,14 +234,6 @@ sub adjust_bsub_options
         }
     }
     
-    if ( defined $queue )
-    {
-        warn("$output_file: changing queue to long\n");     # this should be logged in the future
-
-        $opts =~ s/-q normal/-q long/;
-        if ( !($opts=~/-q/) ) { $opts .= ' -q long'; }
-    }
-    
     if (defined $mem) {
       # at some point an attempt to run this failed due to MEMLIMIT
         $mem = calculate_memory_limit($mem);
@@ -239,7 +274,13 @@ sub adjust_bsub_options
         }
     }
 
+    if ( defined $queue )
+    {
+        warn("$output_file: changing queue to long\n");     # this should be logged in the future
 
+        $opts =~ s/-q normal/-q long/;
+        if ( !($opts=~/-q/) ) { $opts .= ' -q long'; }
+    }
 
     return $opts;
 }
@@ -334,7 +375,7 @@ sub run
     }
 
     # Check if memory or queue should be changed (and change it)
-    $bsub_opts = adjust_bsub_options($bsub_opts, $lsf_output_file);
+    $bsub_opts = adjust_bsub_options($bsub_opts, $lsf_output_file,$$options{memory_limit});
     my $cmd = "bsub -J $job_name -e $lsf_error_file -o $lsf_output_file $bsub_opts '$bsub_cmd'";
 
     my @out = Utils::CMD($cmd,$options);
