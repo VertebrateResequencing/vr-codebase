@@ -212,6 +212,7 @@ sub main
     my @chroms = @{$$self{chroms}};
 
     if ( $self->is_finished("$outdir/all_done") ) { $self->all_done; }
+    if ( !$self->is_finished("$outdir/sanity_checked") ) { $self->check_sanity; }
 
     # Create sample list for each population group
     while (my ($pop,$value) = each %{$$self{pops}})
@@ -362,6 +363,36 @@ sub cmd
 {
     my ($self,$cmd) = @_;
     return Utils::CMD($cmd,{verbose=>$$self{_verbose}});
+}
+
+sub check_sanity
+{
+    my ($self) = @_;
+
+    # Check that the -P option corresponds to PL in the BAMs
+    if ( !($$self{mpileup}=~/-\S*P\s+(\S+)/) ) { return; }
+    my %pl = map { $_=>1 } split(/,/,$1);
+    my %bam_pls = ();
+
+    open(my $fh,'<',$$self{bams}) or $self->throw("$$self{bams}: $!");
+    while (my $bam=<$fh>)
+    {
+        chomp($bam);
+        my @rgs = `samtools view -H $bam | grep ^\@RG`;
+        for my $rg (@rgs)
+        {
+            if ( !($rg=~/\tPL:(\S+)/) ) { next; }
+            $bam_pls{$1} = 1;
+        }
+    }
+    close($fh);
+
+    for my $pl (keys %pl)
+    {
+        if ( !exists($bam_pls{$pl}) ) { $self->throw("The platform \"$pl\" not present in any of the BAMs.\n"); }
+    }
+    `mkdir -p $$self{outdir}`;
+    $self->cmd("touch $$self{outdir}/sanity_checked");
 }
 
 sub open_file
