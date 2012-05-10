@@ -15,6 +15,6 @@ mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOS
 
 $COMPRESS_CMD $DUMPS/$DB"_"$date.sql
 
-$BIN_EXT/update_pipeline.pl -s $CONF/$DB_studies -d $DB -v
+$BIN_EXT/update_pipeline.pl -s $CONF/$DB"_studies" -d $DB -v
 
 $SCRIPTS/vrtrack_individual_supplier_name -d $DB
