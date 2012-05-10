@@ -31,7 +31,10 @@ sub new
     $$self{merge_pops} = 0;
     $$self{whole_genome_bams} = 1;
     $$self{_sampleconf} = q[
-            mpileup  => 'samtools mpileup -EDS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA',
+            # Add -P ILLUMINA or -P SLX if the BAMs contain also reads from different platforms. 
+            #   The options -m2 -F0.0005 are intended for hundred of samples, go with the mpileup's
+            #   defaults if you don't have that many.
+            mpileup  => 'samtools mpileup -EDS -C50 -m2 -F0.0005 -d 10000',
             bcftools => 'bcftools view -p 0.99 -vcgN',
             
             bams     => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
@@ -160,7 +163,7 @@ sub parse_args
     }
     if ( !exists($$self{mpileup}) ) 
     { 
-        $$self{mpileup} = 'samtools mpileup -DS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA';
+        $$self{mpileup} = 'samtools mpileup -DS -C50 -m2 -F0.0005 -d 10000';
         $self->warn("The 'mpileup' config key not present, assuming: $$self{mpileup}\n"); 
     }
     if ( !exists($$self{bcftools}) ) 
