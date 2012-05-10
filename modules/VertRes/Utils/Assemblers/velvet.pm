@@ -151,7 +151,7 @@ sub map_and_generate_stats
 
    `bamcheck -c 1,20000,5 -r $reference $directory/contigs.mapped.sorted.bam >  $directory/contigs.mapped.sorted.bam.bc`;
 
-   `plot-bamcheck -p $directory/qc_graphs/ -r $directory/contigs.fa.refstats $directory/contigs.mapped.sorted.bam.bc`;
+   `plot-bamcheck-2012-02-11  -p $directory/qc_graphs/ -r $directory/contigs.fa.refstats $directory/contigs.mapped.sorted.bam.bc`;
    $self->generate_stats($directory);
    unlink("$directory/contigs.mapped.bam");
 }
