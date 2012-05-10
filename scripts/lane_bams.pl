@@ -166,13 +166,17 @@ foreach my $lane (@lanes) {
     
     if( $gt && ( !$lane->genotype_status() || $lane->genotype_status() ne 'confirmed' ) ) {
         my $lane_name = $lane->name;
-        warn "$lane_name genotype not confirmed!\n" if $verbose;
-        if ($strict) {
-            $bad_samples{"$project/$sample"} = 1;
-            delete $lanes_by_sample{"$project/$sample"};
-            warn "Not all the lanes under sample '$project/$sample' have confirmed genotype; they will all be excluded\n";
+        if ( $lane->qc_status() eq 'passed' ) {
+            warn "$lane_name genotype not confirmed, but is marked as qc passed... keeping\n" if $verbose;
+        } else {
+            warn "$lane_name genotype not confirmed!\n" if $verbose;
+            if ($strict) {
+                $bad_samples{"$project/$sample"} = 1;
+                delete $lanes_by_sample{"$project/$sample"};
+                warn "Not all the lanes under sample '$project/$sample' have confirmed genotype; they will all be excluded\n";
+            }
+            next;
         }
-        next;
     }
     
     # are we mapped/improved?

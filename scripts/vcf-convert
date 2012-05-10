@@ -23,11 +23,11 @@ sub error
         croak @msg;
     }
     die
-        "About: Convert between VCF versions, currently to VCFv4.0 only.\n",
+        "About: Convert between VCF versions.\n",
         "Usage: cat in.vcf | vcf-convert [OPTIONS] > out.vcf\n",
         "Options:\n",
         "   -r, --refseq <file>              The reference sequence in samtools faindexed fasta file. (Not required with SNPs only.)\n",
-        "   -v, --version <string>           4.0\n",
+        "   -v, --version <string>           4.0, 4.1\n",
         "   -h, -?, --help                   This help message.\n",
         "\n";
 }
@@ -35,7 +35,7 @@ sub error
 
 sub parse_params
 {
-    my $opts = { version=>'4.0' };
+    my $opts = { version=>'4.1' };
     while (my $arg=shift(@ARGV))
     {
         if ( $arg eq '-r' || $arg eq '--refseq' ) { $$opts{refseq}=shift(@ARGV); next; }
@@ -51,13 +51,13 @@ sub convert_file
 {
     my ($opts) = @_;
 
-    if ( $$opts{version} ne '4.0' ) { error("Sorry, 4.0 is currently the only supported output version.\n"); }
-
     # How to recognise a number
     my $FLOAT_RE = qr/^\-?\d+\.?\d*(?:[eE][+-]\d+)?$/;
 
     my $vcf_in  = Vcf->new(fh=>\*STDIN);
-    my $vcf_out = Vcf->new(version=>'4.0');
+    my $vcf_out = Vcf->new(version=>$$opts{version});
+
+    if ( $$opts{version} < $$vcf_in{version} ) { warn("Downgrading of VCF versions is experimental: expect troubles!\n"); }
 
     # Convert the header
     $vcf_in->parse_header();

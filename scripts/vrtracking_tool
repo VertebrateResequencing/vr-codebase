@@ -377,9 +377,10 @@ sub get_vrtrack_directory
 	}
 	#project:sample:technology:library
 	elsif ($vrobject->isa('VRTrack::Library')) {
-		my $lanepath = $vrtrack->hierarchy_path_of_lane_name( @{ $vrobject->lanes() }[0]->name );
-		$lanepath =~ s/\/[\d]+_\d[#\d]*$//;
-		return $lanepath
+		my $sample = VRTrack::Sample->new($vrtrack, $vrobject->sample_id);
+		my $project = VRTrack::Project->new($vrtrack, $sample->project_id);
+		my $seq_tech_name = $vrobject->seq_tech() ? $vrobject->seq_tech->name : 'SLX';
+		return File::Spec->catdir($project->hierarchy_name, $sample->hierarchy_name, $seq_tech_name, $vrobject->hierarchy_name);
 	}
 	elsif ($vrobject->isa('VRTrack::Sample')) {
 		my $project = VRTrack::Project->new($vrtrack, $vrobject->project_id);

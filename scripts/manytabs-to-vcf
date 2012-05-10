@@ -1,0 +1,441 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+use Vcf;
+use FaSlice;
+
+my $opts = parse_params();
+do_convert($opts);
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    print 
+        "Usage: manytabs-to-vcf [OPTIONS]\n",
+        "       cat file.list | manytabs-to-vcf -o out.vcf.gz -r ref.fa\n",
+        "Options:\n",
+        "   -m, --max-at-once <int>         Keep at max this many files open [100]\n",
+        "   -o, --out <file>                Output file name.\n",
+        "   -r, --ref <file>                Reference sequence.\n",
+        "   -h, -?, --help                  This help message.\n",
+        "\n";
+    exit -1;
+}
+
+
+sub parse_params
+{
+    my $opts = { max_files=>100 };
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-m' || $arg eq '--max-at-once' ) { $$opts{max_files}=shift(@ARGV); next }
+        if ( $arg eq '-o' || $arg eq '--out' ) { $$opts{out}=shift(@ARGV); next }
+        if ( $arg eq '-r' || $arg eq '--ref' ) { $$opts{ref_fname}=shift(@ARGV); next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    if ( !exists($$opts{out}) ) { error("Missing the -o option.\n") }
+    if ( !exists($$opts{ref_fname}) ) { error("Missing the -r option.\n") }
+    return $opts;
+}
+
+sub cmd
+{
+    my ($cmd) = @_;
+    print STDERR "$cmd\n";
+    return Utils::CMD($cmd);
+}
+
+sub read_file_list
+{
+    my ($opts) = @_;
+    my %has_sample;
+    while (my $line=<STDIN>)
+    {
+        chomp($line);
+        if ( ! -e $line ) { error("The file does not exist: [$line]\n"); }
+        push @{$$opts{files}}, $line;
+
+        if ( !($line=~m{([^/.]+)\..+$}) ) { error("Could not determine sample name: $line"); }
+        if ( $has_sample{$1} ) { error("Could not determine sample name, [$1] appeared twice ($line, $has_sample{$1})"); }
+        push @{$$opts{samples}}, $1;
+        $has_sample{$1} = $line;
+    }
+    if ( !$$opts{max_files} ) { $$opts{max_files}=@{$$opts{files}}; }
+}
+
+
+sub do_convert
+{
+    my ($opts) = @_;
+
+    read_file_list($opts);
+
+    my $tmp_name = "$$opts{out}.tmp1";
+    my $tmp_idx = 0;
+    my $from = 0;
+    while ( $from < @{$$opts{files}} )
+    {
+        my $to = $from + $$opts{max_files} - 1;
+        if ( $to >= @{$$opts{files}} ) { $to = @{$$opts{files}} - 1; }
+        my @files = @{$$opts{files}}[$from..$to];
+
+        if ( $tmp_idx )
+        {
+            @files = ($tmp_name, @files);
+            $tmp_name = $tmp_idx % 2 ? "$$opts{out}.tmp2" : "$$opts{out}.tmp1";
+        }
+        merge_files($opts,\@files,$tmp_name);
+        $from += $$opts{max_files};
+
+        $tmp_idx++;
+    }
+
+    convert_to_vcf($opts,$tmp_name);
+    unlink("$$opts{out}.tmp1");
+    unlink("$$opts{out}.tmp1.tbi");
+    unlink("$$opts{out}.tmp2");
+    unlink("$$opts{out}.tmp2.tbi");
+}
+
+sub merge_files
+{
+    my ($opts,$files,$out) = @_;
+    my %chroms;
+    for my $file (@$files)
+    {
+        my @chrs = cmd("tabix -l $file");
+        for my $chr (@chrs)
+        {
+            chomp($chr);
+            $chroms{$chr} = 1;
+        }
+    }
+
+    my @readers;
+    for my $file (@$files)
+    {
+        my $reader = Reader->new(file=>$file);
+        push @readers, $reader;
+        my @cols = split(/\t/,`zcat $file | head -1`);
+        $$reader{ncols} = @cols - 2;
+    }
+
+    open(my $fh,"| bgzip -c > $out") or error("bgzip -c > $out: $!");
+    for my $chr (sort keys %chroms)
+    {
+        for my $reader (@readers) { $reader->open_tabix($chr); }
+        while (my $min = $readers[0]->next_min_position(\@readers))
+        {
+            my $chr = $$min{line}[0];
+            my $pos = $$min{line}[1];
+            print $fh "$chr\t$pos";
+            for my $reader (@readers)
+            {
+                if ( !$$reader{line} or $$reader{line}[0] ne $chr or $$reader{line}[1] ne $pos )
+                {
+                    for (my $i=0; $i<$$reader{ncols}; $i++) { print $fh "\tNN"; }
+                    next;
+                }
+                chomp($$reader{line}[-1]);
+                for (my $i=2; $i<@{$$reader{line}}; $i++) { print $fh "\t",$$reader{line}[$i]; }
+                $reader->advance_position();
+            }
+            print $fh "\n";
+        }
+    }
+    close($fh) or error("close | bgzip -c > $out");
+    cmd("tabix -s 1 -b 2 -e 2 $out");
+
+    for my $reader (@readers) 
+    { 
+        $reader->close(); 
+        if ( @{$$reader{buffer}} ) { error("FIXME: still something in buffer: $$reader{file}"); }
+    }
+    print STDERR "Merged ", scalar @readers, " files...\n";
+}
+
+sub convert_to_vcf
+{
+    my ($opts,$tmp) = @_;
+
+    my $fa  = FaSlice->new(file=>$$opts{ref_fname});
+    my $vcf = Vcf->new();
+    my @samples = @{$$opts{samples}};
+    $vcf->add_header_line({key=>'FORMAT',ID=>'GT',Number=>1,Type=>'String', Description=>'Genotype'});
+    $vcf->add_header_line({key=>'INFO',ID=>'AC',Number=>'A',Type=>'Integer',Description=>'Allele count in genotypes'});
+    $vcf->add_header_line({key=>'INFO',ID=>'AN',Number=>1,Type=>'Integer',Description=>'Total number of alleles in called genotypes'});
+    $vcf->add_columns(@samples);
+    $vcf->recalc_ac_an(2);
+
+    open(my $out,"| bgzip -c > $$opts{out}.tmp") or error("bgzip -c > $$opts{out}.tmp: $!");
+    print $out $vcf->format_header;
+
+    open(my $in, "zcat $tmp |") or error("zcat $tmp: $!");
+    while (my $line=<$in>)
+    {
+        my @items = split(/\t/,$line);
+        chomp($items[-1]);
+        my $ref = $fa->get_base($items[0],$items[1]);
+        my $rec = 
+        { 
+            CHROM  => $items[0], 
+            POS    => $items[1], 
+            ID     => '.',
+            REF    => $ref,
+            ALT    => [],
+            QUAL   => '.',
+            FILTER => ['PASS'],
+            FORMAT => ['GT'],
+            INFO   => {},
+        };
+        for (my $i=2; $i<@items; $i++)
+        {
+            my ($a,$b) = split(//,$items[$i]);
+            if ( $a eq 'N' ) { $a = '.' }
+            if ( $b eq 'N' ) { $b = '.' }
+            $$rec{gtypes}{ $samples[$i-2] }{GT} = "$a/$b";
+        }
+        $vcf->format_genotype_strings($rec);
+        print $out $vcf->format_line($rec);
+    }
+    close($in) or error("close zcat $tmp:");
+    close($out) or error("close bgzip -c > $$opts{out}.tmp");
+    rename("$$opts{out}.tmp",$$opts{out});
+    cmd("tabix -p vcf $$opts{out}");
+}
+
+
+#--------------------------------
+
+package Reader;
+use strict;
+use warnings;
+use Carp;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = @args ? {@args} : {};
+    bless $self, ref($class) || $class;
+    if ( $$self{cmd} ) 
+    { 
+        $$self{file} = '';
+        open($$self{fh},$$self{cmd}) or $self->throw("$$self{cmd}: $!"); 
+    }
+    if ( !$$self{file} && !$$self{fh} ) { $self->throw("Expected the file or fh option.\n"); }
+    if ( !$$self{delim} ) { $$self{delim} = qr/\t/; }
+    if ( !exists($$self{chr}) ) { $$self{chr} = 0; }    # the index of the chromosome column (indexed from 0)
+    if ( !exists($$self{pos}) ) { $$self{pos} = 1; }    # the index of the position column 
+    if ( !exists($$self{warn_dups}) ) { $$self{warn_dups}=1; }
+    return $self;
+}
+
+sub throw
+{
+    my ($self,@msg) = @_;
+    confess @msg;
+}
+
+sub open_tabix
+{
+    my ($self,$arg) = @_;
+    if ( !$$self{file} ) { $self->throw(qq[The parameter "file" not set.\n]); }
+    $self->close();
+    open($$self{fh},"tabix $$self{file} $arg |");
+}
+
+sub open
+{
+    my ($self) = @_;
+    if ( !$$self{file} ) { $self->throw(qq[The parameter "file" not set.\n]); }
+    $self->close();
+    if ( $$self{file}=~/\.gz$/i ) 
+    { 
+        open($$self{fh},"zcat $$self{file} |") or $self->throw("zcat $$self{file} |: $!");
+    }
+    else
+    {
+        open($$self{fh},'<',$$self{file}) or $self->throw("$$self{file}: $!");
+    }
+}
+
+sub close
+{
+    my ($self) = @_;
+    if ( !$$self{fh} ) { return; }
+    close($$self{fh}) or $self->throw("close $$self{file}");
+    delete($$self{fh});
+}
+
+sub get_field
+{
+    my ($self,$field) = @_;
+    if ( !$$self{line} ) { $self->throw("No line in the buffer.\n"); }
+    return $$self{line}[$$self{$field}];
+}
+
+sub read_line
+{
+    my ($self) = @_;
+    if ( !$$self{buffer} or !@{$$self{buffer}} )
+    {
+        my $line;
+        while ( $line = readline($$self{fh}) )
+        {
+            if ( $line=~/^#/ ) { next; }
+            last;
+        }
+        if ( !$line ) { return undef; }
+        my @items = split($$self{delim},$line);
+        push @{$$self{buffer}}, \@items;
+    }
+
+    if ( $$self{stay_on_chr} && $$self{stay_on_chr} ne $$self{buffer}[0][$$self{chr}] ) { return undef; }
+    return shift(@{$$self{buffer}});
+}
+
+sub stay_on_chr
+{
+    my ($self,$chr) = @_;
+    if ( !defined $chr ) { delete($$self{stay_on_chr}); }
+    else { $$self{stay_on_chr} = $chr; }
+}
+
+sub unread_line
+{
+    my ($self,$line) = @_;
+    if ( !$line ) { return; }
+    push @{$$self{buffer}}, $line;
+}
+
+sub advance_position
+{
+    my ($self) = @_;
+    if ( !$$self{fh} ) { return; }
+
+    my ($chr,$pos);
+    if ( $$self{line} )
+    {
+        $chr = $self->get_field('chr');
+        $pos = $self->get_field('pos');
+        delete($$self{line});
+    }
+
+    while (1)
+    {
+        my $line = $self->read_line();
+        if ( !$line ) { return; }
+
+        my $new_chr = $$line[$$self{chr}];
+        my $new_pos = $$line[$$self{pos}];
+        if ( $chr )
+        {
+            if ( $new_chr eq $chr && $new_pos eq $pos ) 
+            { 
+                warn("$$self{file}: Skipping duplicate line: $chr:$pos\n") unless ($$self{ignore_dups} or !$$self{warn_dups}); 
+                next; 
+            }
+            elsif ( $new_chr eq $chr && $new_pos<$pos ) { croak("$$self{file}: The file not sorted: $chr:$new_pos after $chr:$pos\n"); }
+        }
+
+        $$self{line} = $line;
+        return;
+    }
+}
+
+sub next_min_position
+{
+    my ($self,$files) = @_;
+
+    my ($min_pos,$min_file);
+    for my $file (@$files)
+    {
+        # Check if there is a line in the buffer, if not, read. If still empty, the file reached eof
+        if ( !$$file{line} ) { $file->advance_position(); }
+        if ( !$$file{line} ) { next; }
+
+        my $line = $$file{line};
+
+        # Designate this position as the minimum of all the files if:
+        # .. is this the first file?
+        if ( !$min_pos )
+        {
+            $min_pos  = $$line[$$file{pos}];
+            $min_file = $file;
+            next;
+        }
+
+        # .. has this file lower position?
+        if ( $min_pos>$$line[$$file{pos}] )
+        {
+            $min_pos  = $$line[$$file{pos}];
+            $min_file = $file;
+            next;
+        }
+    }
+    return $min_file;
+}
+
+sub next_shared_position
+{
+    my ($self,$files) = @_;
+    while (1)
+    {
+        my $min = $self->next_min_position($files);
+        if ( !$min ) { return $min; }
+
+        my $chr = $$min{line}[$$min{chr}];
+        my $pos = $$min{line}[$$min{pos}];
+
+        #print STDERR "$chr:$pos\n";
+
+        # Count the number of files which share the position
+        my $shared = 0;
+        for my $file (@$files)
+        {
+            if ( !$$file{line} or !scalar @{$$file{line}} ) { last; }
+            if ( $chr ne $$file{line}[$$file{chr}] or $pos ne $$file{line}[$$file{pos}] ) { last; }
+            $shared++;
+        }
+
+        # If not all files share the position, advance the file positioned at min
+        if ( $shared != scalar @$files ) 
+        { 
+            for my $file (@$files)
+            {
+                if ( !$$file{line} or !scalar @{$$file{line}} ) { next; }
+                if ( $chr ne $$file{line}[$$file{chr}] or $pos ne $$file{line}[$$file{pos}] ) { next; }
+                $file->advance_position();
+            }
+            next; 
+        }
+        return $min;
+    }
+}
+
+sub get_chromosomes
+{
+    my ($self) = @_;
+    if ( !$$self{file} ) { $self->throw(qq[The parameter "file" not set.\n]); }
+    my (@out) = `tabix $$self{file} -l`;
+    if ( $? )
+    {
+        $self->throw(qq[The command "tabix $$self{file} -l" exited with an error. Is the file tabix indexed?\n]);
+    }
+    for (my $i=0; $i<@out; $i++) { chomp($out[$i]); }
+    return \@out;
+}
+
+1;
