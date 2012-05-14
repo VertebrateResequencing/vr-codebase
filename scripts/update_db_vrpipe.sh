@@ -1,12 +1,25 @@
 #!/bin/sh
 umask 002
+if [ $# -ne 1 ]
+then
+    echo "Error in $0 - Invalid Argument Count"
+    echo "Syntax: $0 vr-pipe_db_name (vrtrack_mouse_wgs, etc.)"
+    exit
+fi
+
+DB="$1"
+DBEXISTS=$(mysql -u vreseq_ro -hmcs4a --batch --skip-column-names -e "SHOW DATABASES LIKE '$DB'" | grep $DB > /dev/null; echo "$?")
+if [ $DBEXISTS -eq 1 ];then
+    echo "A database with the name $DB does not exist."
+    exit
+fi
+
 date="`date +'%y%m%d'`"
 ROOT="/lustre/scratch105"
 CONF="/nfs/vertres01/conf"
 COMPRESS_CMD="/usr/bin/lzma --best --force "
 SCRIPTS="/software/vertres/scripts"
 BIN_EXT="/software/vertres/bin-external/update_pipeline"
-DB="vrtrack_human_wes"
 DUMPS="/warehouse/g1k-04/sql_dumps/"$DB"_"$date".sql"
 
 export LD_LIBRARY_PATH=/software/badger/lib:/software/oracle_client-10.2.0/lib
