@@ -1011,7 +1011,7 @@ sub percentage_reads_with_transposon {
 sub is_qc 
 {
   my $self = shift;
-  return $self->_get_set('mapping_type', 'number', @_);
+  return $self->_get_set('is_qc', 'number', @_);
 }
 
 =head2 prefix
@@ -1027,7 +1027,7 @@ sub is_qc
 sub prefix 
 {
   my $self = shift;
-  return $self->_get_set('mapping_type', 'string', @_);
+  return $self->_get_set('prefix', 'string', @_);
 }
 
 

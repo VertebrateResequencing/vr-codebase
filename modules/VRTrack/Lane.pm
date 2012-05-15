@@ -540,6 +540,21 @@ sub mappings {
 }
 
 
+=head2 mappings_excluding_qc
+
+  Arg [1]    : None
+  Example    : my $mappings = $lane->mappings_excluding_qc();
+  Description: Returns a ref to an array of the mappings that are associated with this lane excluding qc mappings
+  Returntype : ref to array of VRTrack::Mapstats objects
+
+=cut
+
+sub mappings_excluding_qc {
+    my $self = shift;
+    my @filtered_mappings = map { $_->is_qc() == 1 ? () : $_ } @{$self->mappings()};
+    return \@filtered_mappings;
+}
+
 =head2 mapping_ids
 
   Arg [1]    : None
