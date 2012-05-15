@@ -1,6 +1,14 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
+use Time::Format;
+
+my $dir = shift;
+my $ofh;
+if ($dir && -d $dir) {
+    open($ofh, "| gzip -9 > $dir/$time{'yyyy-mm-dd'}.gz");
+    select($ofh);
+}
 
 my $auth = $ENV{ASANA_API};
 my $base_url = 'https://app.asana.com/api/1.0';
@@ -27,6 +35,10 @@ foreach my $p_ref (@$projects) {
         $notes =~ s/\n/ /g;
         print join("\t", $project_name, $task_name, $assignee, map { $d->{$_} || '' } @fields[3..8], $notes), "\n";
     }
+}
+
+if ($ofh) {
+    close($ofh);
 }
 
 exit;
