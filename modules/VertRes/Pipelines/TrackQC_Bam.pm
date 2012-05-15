@@ -1002,6 +1002,7 @@ sub update_db
     $mapping->adapter_reads($nadapters);
     $mapping->clip_bases($bases_total-$bases_trimmed);
     $mapping->percentage_reads_with_transposon($percentage_reads_with_transposon);
+    $mapping->is_qc(1);
 
     $mapping->mean_insert($avg_isize);
     $mapping->sd_insert($sd_isize);

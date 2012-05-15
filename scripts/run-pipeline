@@ -1973,15 +1973,13 @@ sub mapping_complete
     # Check assembly and mapper
     foreach my $mapping (@mappings)
     {
-	# Skip QC mappings.
-	my $images = $mapping->images();
-	next if( scalar(@{$images}) );
+      next if($mapping->is_qc);
 
 	# Skip unfinished mapping
 	next unless(defined($mapping->raw_reads()));
 
 	# Check Reference and Mapper.
-	if($$config_data{data}{assembly_name} eq $mapping->assembly->name())
+	if($$config_data{data}{assembly_name} eq $mapping->assembly->name() && $$config_data{prefix} eq $mapping->prefix )
 	{
 	    my $mapper_slx = exists($$config_data{data}{'slx_mapper'}) ? $$config_data{data}{'slx_mapper'}:'';
 	    my $mapper_454 = exists($$config_data{data}{'454_mapper'}) ? $$config_data{data}{'454_mapper'}:'';

@@ -89,7 +89,10 @@ sub fields_dispatch {
                target_bases_50X         => sub { $self->target_bases_50X(@_)},
                target_bases_100X        => sub { $self->target_bases_100X(@_)},
                exome_design_id          => sub { $self->exome_design_id(@_)},
-               percentage_reads_with_transposon => sub { $self->percentage_reads_with_transposon(@_)});
+               percentage_reads_with_transposon => sub { $self->percentage_reads_with_transposon(@_)},
+               is_qc                    => sub { $self->is_qc(@_)},
+               prefix                   => sub { $self->prefix(@_)},
+               );
 
     return \%fields;
 }
@@ -993,5 +996,39 @@ sub percentage_reads_with_transposon {
     my $self = shift;
     return $self->_get_set('percentage_reads_with_transposon', 'number', @_);
 }
+
+
+=head2 is_qc
+
+  Arg [1]    : is_qc
+  Example    : my $is_the_mapping_qc = $mapstats->is_qc(1);
+               $mapstats->is_qc();
+  Description: Get/Set flag to record if the mapstats belong to QC or to a full lane mapping
+  ReturnType : Boolean
+
+=cut
+
+sub is_qc 
+{
+  my $self = shift;
+  return $self->_get_set('mapping_type', 'number', @_);
+}
+
+=head2 prefix
+
+  Arg [1]    : prefix
+  Example    : my $mapping_prefix = $mapstats->prefix('_01_');
+               $mapstats->prefix();
+  Description: Get/Set flag to record the mapping prefix, allows for multiple mapping with different parameters and the same mapper+version+assembly
+  ReturnType : Boolean
+
+=cut
+
+sub prefix 
+{
+  my $self = shift;
+  return $self->_get_set('mapping_type', 'string', @_);
+}
+
 
 1;

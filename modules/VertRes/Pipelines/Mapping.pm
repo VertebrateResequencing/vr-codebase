@@ -301,9 +301,11 @@ sub new {
     if ($mappings && @{$mappings}) {
         # find the already created mapping that corresponds to what we're trying
         # to do (we're basically forcing ourselves to only allow one mapping
-        # per mapper,version,assembly combo - can't change mapping args and keep
-        # that as a separate file)
+        # per mapper,version,assembly,prefix combo
         foreach my $possible (@{$mappings}) {
+            next if($mapping->is_qc == 1);
+            $possible->prefix eq $self->{prefix} || next;
+            
             # we're expecting it to have the correct assembly and mapper
             my $assembly = $possible->assembly() || next;
             $assembly->name eq $self->{assembly_name} || next;
@@ -330,7 +332,7 @@ sub new {
         if (!$mapper) {
             $mapper = $mapping->add_mapper($self->{mapper_obj}->name, $self->{mapper_obj}->version);
         }
-        
+        $mapping->prefix = $self->{prefix};
         $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
     }
     $self->{mapstats_obj} = $mapping || $self->throw("Couldn't get an empty mapstats object for this lane from the database");
