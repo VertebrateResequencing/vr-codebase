@@ -205,7 +205,7 @@ sub generate_sam {
         my $hash_name;
         if(defined($other_args{mapper_index_suffix}))
         {
-            $self->setup_custom_reference_index($ref,$other_args{additional_mapper_params},$other_args{mapper_index_suffix});
+            $self->setup_custom_reference_index($ref,$other_args{mapper_index_params},$other_args{mapper_index_suffix});
             $hash_name = $ref.'.'.$other_args{mapper_index_suffix};
         }
         elsif ($max_length < 70) {
