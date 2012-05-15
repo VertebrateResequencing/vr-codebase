@@ -31,8 +31,10 @@ is $mapping_1->prefix, '_', 'defaults to normal prefix';
 my $mapping_qc = $vr_lane->add_mapping();
 $mapping_qc->is_qc(1);
 $mapping_qc->update();
+push(@expected_qc_mappings, $mapping_qc);
 # add some other mappings
 my @expected_mappings;
+my @expected_qc_mappings;
 push(@expected_mappings,$mapping_1 );
 push(@expected_mappings,$vr_lane->add_mapping());
 push(@expected_mappings,$vr_lane->add_mapping());
@@ -40,8 +42,10 @@ push(@expected_mappings,$vr_lane->add_mapping());
 my $mapping_qc_2 = $vr_lane->add_mapping();
 $mapping_qc_2->is_qc(1);
 $mapping_qc_2->update();
+push(@expected_qc_mappings, $mapping_qc_2);
 
 is_deeply $vr_lane->mappings_excluding_qc, \@expected_mappings, 'only non qc mappings returned';
+is_deeply $vr_lane->qc_mappings, \@expected_qc_mappings, 'only qc mappings returned';
 
 clean_test_db($vrtrack);
 done_testing();
