@@ -332,7 +332,7 @@ sub new {
         if (!$mapper) {
             $mapper = $mapping->add_mapper($self->{mapper_obj}->name, $self->{mapper_obj}->version);
         }
-        $mapping->prefix = $self->{prefix};
+        $mapping->prefix($self->{prefix});
         $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
     }
     $self->{mapstats_obj} = $mapping || $self->throw("Couldn't get an empty mapstats object for this lane from the database");
