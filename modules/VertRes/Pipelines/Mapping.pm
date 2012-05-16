@@ -303,7 +303,7 @@ sub new {
         # to do (we're basically forcing ourselves to only allow one mapping
         # per mapper,version,assembly,prefix combo
         foreach my $possible (@{$mappings}) {
-            next if($mapping->is_qc == 1);
+            next if($possible->is_qc == 1);
             $possible->prefix eq $self->{prefix} || next;
             
             # we're expecting it to have the correct assembly and mapper
