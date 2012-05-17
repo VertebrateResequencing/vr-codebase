@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '18';
+use constant SCHEMA_VERSION => '19';
 
 our $DEFAULT_PORT = 3306;
 
@@ -1404,7 +1404,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (18);
+insert into schema_version(schema_version) values (19);
 
 --
 -- Table structure for table `assembly`
@@ -1696,6 +1696,8 @@ CREATE TABLE `mapstats` (
   `target_bases_100X` float unsigned DEFAULT NULL,
   `exome_design_id` smallint(5) unsigned DEFAULT NULL,
   `percentage_reads_with_transposon` float unsigned DEFAULT NULL,
+  `is_qc` tinyint(1) DEFAULT '0',
+  `prefix` varchar(40) DEFAULT '_',
   PRIMARY KEY (`row_id`),
   KEY `mapstats_id` (`mapstats_id`),
   KEY `lane_id` (`lane_id`)

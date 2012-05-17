@@ -50,8 +50,7 @@ has 'manual_qc'           => ( is => 'ro', isa => 'Maybe[Str]', lazy_build => 1)
 sub _build_is_qc_mapstats
 {
     my ($self) = @_;
-    # Check for image
-    return ( scalar @{$self->{mapstats}->images()} ) ? 1:0;
+    return $self->{mapstats}->is_qc();
 }
 
 sub _build_is_mapping_complete
