@@ -26,6 +26,7 @@ my %filters =
     VDB          => { dflt=>'0', usage=>'FLOAT', desc=>"Minimum Variant Distance Bias (INFO/VDB)", nick=>'v' },
     HWE          => { dflt=>undef, usage=>'FLOAT', desc=>"Minimum P-value for HWE and F<0 (invokes --fill-HWE)", nick=>'H' },
     HWE_G3       => { dflt=>undef, usage=>'FLOAT', desc=>"Minimum P-value for HWE and F<0 (INFO/HWE and INFO/G3)", nick=>'HG' },
+    HWE2         => { dflt=>undef, usage=>'FLOAT', desc=>"Minimum P-value for HWE (plus F<0) (INFO/AC and INFO/AN or --fill-AC-AN)", nick=>'H2' },
 );
 
 my $opts = parse_params();
@@ -935,6 +936,7 @@ sub apply_local_filters
             {
                 $apply{HWE_G3} = 1;
             }
+            #printf "xHWE: f=%f  rr=$rr ra=$ra hwe=$1 p=$p  ($$line[1])\n";
         }
     }
     if ( exists($$filters{HWE}) )
@@ -950,9 +952,12 @@ sub apply_local_filters
         my $dp;
         if ( $$line[7]=~/DP=(\d+)/ ) { $dp = $1; }
         elsif ( $$line[7]=~/DP4=(\d+),(\d+),(\d+),(\d+)/ ) { $dp = $1 + $2 + $3 + $4; }
-
-        if ( exists($$filters{MinDP}) ) { $apply{MinDP} = $dp < $$filters{MinDP} ? 1 : 0; }
-        if ( exists($$filters{MaxDP}) ) { $apply{MaxDP} = $dp > $$filters{MaxDP} ? 1 : 0; }
+        
+        if ( defined $dp )
+        {
+            if ( exists($$filters{MinDP}) ) { $apply{MinDP} = $dp < $$filters{MinDP} ? 1 : 0; }
+            if ( exists($$filters{MaxDP}) ) { $apply{MaxDP} = $dp > $$filters{MaxDP} ? 1 : 0; }
+        }
     }
     if ( exists($$filters{MinAB}) && $$line[7]=~/DP4=\d+,\d+,(\d+),(\d+)/ )
     {
