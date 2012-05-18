@@ -14,12 +14,11 @@ if [ $DBEXISTS -eq 1 ];then
     exit
 fi
 
-date="`date +'%y%m%d'`"
 ROOT="/lustre/scratch105"
 CONF="/nfs/vertres01/conf"
 SCRIPTS="/software/vertres/scripts"
 BIN_EXT="/software/vertres/bin-external/update_pipeline"
-DUMPS="/warehouse/g1k-04/sql_dumps/"$DB"_"$date".sql"
+DUMPS="/warehouse/g1k-04/sql_dumps/$DB.sql"
 
 export LD_LIBRARY_PATH=/software/badger/lib:/software/oracle_client-10.2.0/lib
 export ORACLE_HOME=/software/oracle_client-10.2.0
