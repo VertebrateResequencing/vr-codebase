@@ -3014,7 +3014,6 @@ sub Vcf4_0::event_type
 
     my $reflen = length($ref);
     my $len = length($allele);
-    
     my $ht;
     my $type;
     if ( $len==$reflen )
@@ -3296,7 +3295,18 @@ sub Vcf4_1::next_data_array
 sub Vcf4_1::event_type
 {
     my ($self,$rec,$allele) = @_;
-    if ( $allele=~/\[|\]|^\..+|.+\.$/ ) { return 'b'; }
+
+    my $len = length($allele);
+    if ( $len==1 ) { return $self->SUPER::event_type($rec,$allele); }
+
+    my $c = substr($allele,0,1);
+    if ( $c eq '<' ) { return ('u',0,$allele); }
+    elsif ( $c eq '[' or $c eq ']' or $c eq '.' ) { return 'b'; }
+
+    $c = substr($allele,-1,1);
+    if ( $c eq '[' or $c eq ']' or $c eq '.' ) { return 'b'; }
+    elsif ( index($allele,'[')!=-1 or index($allele,']')!=-1 ) { return 'b'; }
+
     return $self->SUPER::event_type($rec,$allele);
 }
 
