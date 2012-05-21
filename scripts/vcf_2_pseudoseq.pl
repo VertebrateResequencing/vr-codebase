@@ -19,7 +19,7 @@ our %args = (
                , af1          => 0.95
                , ci95         => 0.0
                , strand_bias  => 0.001
-               , quality_bias => 0.0
+               , base_quality_bias => 0.0
                , map_bias     => 0.001
                , tail_bias    => 0.001
 );
@@ -97,7 +97,7 @@ Optional parameters:
     -Q[uality_bias] <float:0+n>        	(0.0) P-value cutoff for base quality bias
                                             {
                                             	reject($float > 1 => "p-value cutoff for base quality bias (-Q) must be between 0 and 1");
-                                            	$main::args{quality_bias} = $float;
+                                            	$main::args{base_quality_bias} = $float;
                                             }
                                             
     -M[ap_bias] <float:0+n>            	(0.001) P-value cutoff for mapping bias
@@ -129,17 +129,17 @@ my $iterator = Pathogens::Variant::Iterator::Vcf->new(vcf_file => $args{vcf_file
 
 #create an evaluator object to filter bad calls based on user criteria
 my $evaluator = Pathogens::Variant::Evaluator::Pseudosequence->new(
-                                                          depth => $args{depth}
-                                                        , depth_strand => $args{depth_strand}
-                                                        , ratio => $args{ratio}
-                                                        , quality => $args{quality}
-                                                        , map_quality => $args{map_quality}
-                                                        , af1 => $args{af1}
-                                                        , ci95 => $args{ci95}
-                                                        , strand_bias => $args{strand_bias}
-                                                        , quality_bias => $args{quality_bias}
-                                                        , map_bias => $args{map_bias}
-                                                        , tail_bias => $args{tail_bias}
+                                                          minimum_depth => $args{depth}
+                                                        , minimum_depth_strand => $args{depth_strand}
+                                                        , minimum_ratio => $args{ratio}
+                                                        , minimum_quality => $args{quality}
+                                                        , minimum_map_quality => $args{map_quality}
+                                                        , minimum_af1 => $args{af1}
+                                                        , minimum_ci95 => $args{ci95}
+                                                        , minimum_strand_bias => $args{strand_bias}
+                                                        , minimum_base_quality_bias => $args{base_quality_bias}
+                                                        , minimum_map_bias => $args{map_bias}
+                                                        , minimum_tail_bias => $args{tail_bias}
                                                        );
 
 while( my $event = $iterator->next_event() ) {

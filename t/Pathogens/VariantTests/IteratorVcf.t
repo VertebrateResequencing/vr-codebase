@@ -1,6 +1,6 @@
-# -*- perl -*-
-
-# t/001_load.t - check module loading and create testing directory
+use strict;
+use warnings;
+use Data::Dumper;
 
 use Test::More tests => 6;
 use Data::Dumper;

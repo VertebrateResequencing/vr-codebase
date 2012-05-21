@@ -9,8 +9,6 @@ use namespace::autoclean;
 
 
 
-
-
 #VCF specific 8 fields + meta_lines
 has 'chromosome'         => ( is => 'rw', isa => 'Str' );
 has 'position'           => ( is => 'rw', isa => 'Int' );
@@ -21,18 +19,13 @@ has 'quality'            => ( is => 'rw', isa => 'Num' );
 has 'filter'             => ( is => 'rw', isa => 'Str' );
 has 'info'               => ( is => 'rw', isa => 'Str' ); #vcf's info field (may vary per entry within the same file)
 has 'format'             => ( is => 'rw', isa => 'Str' ); 
-has 'meta_lines'         => ( is => 'rw', isa => 'ArrayRef[Str]', lazy_build => 1 );
+has 'meta_lines'         => ( is => 'rw', isa => 'ArrayRef[Str]' );
 
 #Additional non-VCF fields
-has 'event_type'         => ( is => 'rw', isa => 'Str', lazy_build => 1 );
-has 'polymorphism'       => ( is => 'rw', isa => 'Str', lazy_build => 1 );
-#has 'samples'            => ( is => 'rw', isa => 'ArrayRef[Pathogens::Variant::Sample]', lazy_build => 1);
-has 'samples'            => ( is => 'rw', isa => 'ArrayRef[Pathogens::Variant::Sample]', default => sub {[]});
+has 'event_type'         => ( is => 'rw', isa => 'Str' );
+has 'polymorphism'       => ( is => 'rw', isa => 'Str' );
+has 'samples'            => ( is => 'rw', isa => 'ArrayRef', default => sub {[]} );
 
-has 'dp4_ratio_forward_reference'   => ( is => 'rw', isa => 'Num', default => 0.0 );
-has 'dp4_ratio_reverse_reference'   => ( is => 'rw', isa => 'Num', default => 0.0 );
-has 'dp4_ratio_forward_alternative' => ( is => 'rw', isa => 'Num', default => 0.0 );
-has 'dp4_ratio_reverse_alternative' => ( is => 'rw', isa => 'Num', default => 0.0 );
 
 
 

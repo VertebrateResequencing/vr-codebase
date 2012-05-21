@@ -32,10 +32,11 @@ sub next_event {
     my ($self) = @_;
     
     while (my $data_array_ref = $self->_vcf_obj->next_data_array) {
-	    my $event;  
-	    switch($$data_array_ref[7]) {
-	        case /INDEL/  { $event = Pathogens::Variant::Event::Dip->new; }
-            else          { $event = Pathogens::Variant::Event::Snp->new; }
+        my $event;  
+        if ( $$data_array_ref[7] =~ /INDEL/) {
+            $event = Pathogens::Variant::Event::Dip->new(); 
+        } else {
+            $event = Pathogens::Variant::Event::Snp->new; 
         }
         return $self->_populate_event_attributes($event, $data_array_ref);	
     }     
