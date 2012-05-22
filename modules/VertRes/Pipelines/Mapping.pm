@@ -187,6 +187,7 @@ our $actions = [ { name     => 'bam_to_fastq',
 our %options = (local_cache => '',
                 slx_mapper => 'bwa',
                 '454_mapper' => 'ssaha',
+                'bamcheck'   => 'bamcheck -q 20',
                 do_cleanup => 1);
 
 our $split_dir_name = 'split';
@@ -1222,6 +1223,7 @@ sub statistics {
         print $scriptfh qq{
 use strict;
 use VertRes::Utils::Sam;
+use Utils::CMD;
 
 my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
 
@@ -1239,7 +1241,10 @@ unless (\$num_present == ($#stat_files + 1)) {
         die "Failed to get stats for the bam '$bam_file'!\n";
     }
 }
+
+VertRes::Pipelines::Mapping->create_graphs(qq[$$self{bamcheck}],  qq[$self->{reference}], qq[$bam_file]);
         };
+        
 	if(exists $$self{'get_genome_coverage'} && $$self{'get_genome_coverage'})
 	{
 	    # Generate genome coverage file.
@@ -1267,6 +1272,29 @@ exit;
     return $self->{No};
 }
 
+
+=head2 create_graphs
+
+ Title   : create_graphs
+ Usage   : VertRes::Pipelines::Mapping ->create_graphs('bamcheck -q 20', '/path/to/reference.fa','my_bam_file.bam');
+ Function: Create a bamcheck file and graphs from plot-bamcheck
+ Returns : Nothing
+ Args    : bamcheck executable plus parameters, reference fasta used for mapping, bamfile
+
+=cut
+sub create_graphs
+{
+  my ($class, $bamcheck, $reference, $bam_file) = @_;
+  
+  my $basename = basename($bam_file);
+  my $bam_check_cmd = qq[$bamcheck -r $reference $bam_file > $bam_file.bc];
+  my $reference_gc_file = $reference.'.gc';
+  my $plot_bamcheck_reference_gc = qq[plot-bamcheck -s $reference $reference_gc_file];
+  my $plot_bamcheck  = qq[plot-bamcheck -p $basename].'_graphs'.qq[/ -r  $reference_gc_file $bam_file.bc];
+  Utils::CMD($bam_check_cmd) unless(-e qq[$bam_file.bc]);
+  Utils::CMD($plot_bamcheck_reference_gc) unless( -e $reference_gc_file);
+  Utils::CMD($plot_bamcheck);
+}
 
 
 =head2 mark_duplicates_requires
