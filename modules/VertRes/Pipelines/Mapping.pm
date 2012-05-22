@@ -1289,11 +1289,12 @@ sub create_graphs
   my $basename = basename($bam_file);
   my $bam_check_cmd = qq[$bamcheck -r $reference $bam_file > $bam_file.bc];
   my $reference_gc_file = $reference.'.gc';
-  my $plot_bamcheck_reference_gc = qq[plot-bamcheck -s $reference $reference_gc_file];
+  my $plot_bamcheck_reference_gc = qq[plot-bamcheck -s $reference > $reference_gc_file];
   my $plot_bamcheck  = qq[plot-bamcheck -p $basename].'_graphs'.qq[/ -r  $reference_gc_file $bam_file.bc];
   Utils::CMD($bam_check_cmd) unless(-e qq[$bam_file.bc]);
   Utils::CMD($plot_bamcheck_reference_gc) unless( -e $reference_gc_file);
   Utils::CMD($plot_bamcheck);
+  1;
 }
 
 
