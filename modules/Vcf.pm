@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r724';
+our $VERSION = 'r735';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
@@ -1269,7 +1269,7 @@ sub split_mandatory
 
 =head2 split_gt
 
-    About   : Faster alternative to regexs, diploid GT assumed
+    About   : Faster alternative to regexs
     Usage   : my ($a1,$a2,$a3) = $vcf->split_gt('0/0/1'); # returns (0,0,1)
     Arg     : Diploid genotype to split into alleles
     Returns : Array of values
@@ -1293,6 +1293,35 @@ sub split_gt
     return (@als);
 }
 
+=head2 split_by
+
+    About   : Generalization of split_gt
+    Usage   : my ($a1,$a2,$a3) = $vcf->split_gt('0/0|1',qw(| /)); # returns (0,0,1)
+    Arg     : Diploid genotype to split into alleles
+    Returns : Array of values
+
+=cut
+
+sub split_by
+{
+    my ($self,$str,@seps) = @_;
+    my @out;
+    my $iprev = 0;
+    while (1)
+    {
+        my $min;
+        for my $sep (@seps)
+        {
+            my $idx = index($str,$sep,$iprev);
+            if ( $idx==-1 ) { next; }
+            if ( !defined $min or $idx<$min ) { $min=$idx }
+        }
+        push @out, defined $min ? substr($str,$iprev,$min-$iprev) : substr($str,$iprev);
+        if ( !defined $min ) { return @out; }
+        $iprev = $min+1;
+    }
+    return (@out);
+}
 
 =head2 decode_genotype
 
@@ -2351,9 +2380,34 @@ sub validate_info_field
 
 =cut
 
+sub binom
+{
+    my ($n, $k) = @_;
+    my $b = 1;
+    if ( $k > $n-$k ) { $k = $n-$k; }
+    if ( $k < 1 ) { return 1; }
+    for (my $i=0; $i<$k; $i++) { $b *= ($n-$i)/($k-$i); }
+    return $b;
+}
+
 sub validate_gtype_field
 {
     my ($self,$data,$alts,$format) = @_;
+
+    my @errs;
+    my $ploidy = 2; 
+    if ( !exists($$data{GT}) ) { push @errs, "The mandatory tag GT not present." unless $$self{ignore_missing_GT}; }
+    else
+    {
+        my (@als) = $self->split_by($$data{GT},@{$$self{gt_sep}});
+        for my $al (@als)
+        {
+            if ( $al eq '.' or $al eq '0' ) { next; }
+            if ( !($al=~/^[0-9]+$/) ) { push @errs, "Unable to parse the GT field [$$data{GT}], expected integers"; }
+            if ( !exists($$alts[$al-1]) ) { push @errs, "Bad ALT value in the GT field, the index [$al] out of bounds [$$data{GT}]."; last; }
+        }
+        $ploidy = @als;
+    }
 
     # Expected numbers
     my $ng = -1;
@@ -2364,11 +2418,10 @@ sub validate_gtype_field
         else
         {
             $na = @$alts;
-            $ng = (1+$na+1)*($na+1)/2;
+            $ng = binom($ploidy+$na,$ploidy);
         }
     }
 
-    my @errs;
     while (my ($key,$value) = each %$data)
     {
         if ( !exists($$self{header}{FORMAT}{$key}) )
@@ -2397,31 +2450,6 @@ sub validate_gtype_field
         {
             my $err = &{$$type{handler}}($self,$val,$$type{default});
             if ( $err ) { push @errs, $err; }
-        }
-    }
-    if ( !exists($$data{GT}) ) { push @errs, "The mandatory tag GT not present." unless $$self{ignore_missing_GT}; }
-    else
-    {
-        my $buf = $$data{GT};
-        while ($buf ne '')
-        {
-            my $al = $buf;
-            if ( $buf=~$$self{regex_gtsep} )
-            {
-                $al  = $`;
-                $buf = $';
-                if ( $buf eq '' ) { push @errs, "Unable to parse the GT field [$$data{GT}]."; last; }
-            }
-            else
-            {
-                $buf = '';
-            }
-
-            if ( !defined $al ) { push @errs, "Unable to parse the GT field [$$data{GT}]."; last; }
-            if ( $al eq '.' ) { next; }
-            if ( $al eq '0' ) { next; }
-            if ( !($al=~/^[0-9]+$/) ) { push @errs, "Unable to parse the GT field [$$data{GT}], expected integer."; last; }
-            if ( !exists($$alts[$al-1]) ) { push @errs, "Bad ALT value in the GT field, the index [$al] out of bounds [$$data{GT}]."; last; }
         }
     }
     if ( !@errs ) { return undef; }
@@ -2717,6 +2745,7 @@ sub new
         regex_gtsep => qr{[\\|/]},
         regex_gt    => qr{^(\.|\d+)([\\|/]?)(\.?|\d*)$},
         regex_gt2   => qr{^(\.|[0-9ACGTNIDacgtn]+)([\\|/]?)}, # . 0/1 0|1 A/A A|A D4/IACGT
+        gt_sep => [qw(\ | /)],
     };
 
     for my $key (keys %{$$self{_defaults}}) 
@@ -2779,6 +2808,7 @@ sub new
         regex_gtsep => qr{[|/]},                     # | /
         regex_gt    => qr{^(\.|\d+)([|/]?)(\.?|\d*)$},   # . ./. 0/1 0|1
         regex_gt2   => qr{^(\.|[0-9ACGTNacgtn]+|<[\w:.]+>)([|/]?)},   # . ./. 0/1 0|1 A/A A|A 0|<DEL:ME:ALU>
+        gt_sep => [qw(| /)],
     };
 
     for my $key (keys %{$$self{_defaults}}) 
@@ -3147,6 +3177,7 @@ sub new
         regex_gtsep => qr{[|/]},                     # | /
         regex_gt    => qr{^(\.|\d+)([|/]?)(\.?|\d*)$},   # . ./. 0/1 0|1
         regex_gt2   => qr{^(\.|[0-9ACGTNacgtn]+|<[\w:.]+>)([|/]?)},   # . ./. 0/1 0|1 A/A A|A 0|<DEL:ME:ALU>
+        gt_sep => [qw(| /)],
     };
 
     $$self{ignore_missing_GT} = 1;
