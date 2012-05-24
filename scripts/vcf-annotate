@@ -635,17 +635,20 @@ sub fill_ac_an_hwe
     my %tags = (AN=>$an);
     if ( defined $ac ) { $tags{AC}=$ac }
     my $nall = $dpl_counts{0} + $max_ac;
-    if ( $$opts{fill_hwe} && $nall )
+    if ( scalar keys %counts==2 )
     {
-        my $freq_obs = 2*$nhets/$nall;
-        my $freq_exp = 2*($max_ac/$nall)*(1-($max_ac/$nall));
-        $$opts{icf} = $freq_exp ? 1-$freq_obs/$freq_exp : 0;
-        $$opts{hwe} = eval_hwe(($max_ac-$nhets)/2,($dpl_counts{0}-$nhets)/2,$nhets);
-        $tags{HWE} = sprintf "%.6f", $$opts{hwe};
-    }
-    if ( $$opts{fill_icf} )
-    {
-        $tags{ICF} = sprintf "%.5f", $$opts{icf};
+        if ( $$opts{fill_hwe} && $nall && scalar keys %counts==2 )
+        {
+            my $freq_obs = 2*$nhets/$nall;
+            my $freq_exp = 2*($max_ac/$nall)*(1-($max_ac/$nall));
+            $$opts{icf} = $freq_exp ? 1-$freq_obs/$freq_exp : 0;
+            $$opts{hwe} = eval_hwe(($max_ac-$nhets)/2,($dpl_counts{0}-$nhets)/2,$nhets ,$line);
+            $tags{HWE} = sprintf "%.6f", $$opts{hwe};
+        }
+        if ( $$opts{fill_icf} )
+        {
+            $tags{ICF} = sprintf "%.5f", $$opts{icf};
+        }
     }
     $$line[7] = $$opts{vcf}->add_info_field($$line[7],%tags);
 }
@@ -653,7 +656,7 @@ sub fill_ac_an_hwe
 # Wigginton 2005, PMID: 15789306
 sub eval_hwe
 {
-    my ($obs_hom1,$obs_hom2,$obs_hets) = @_;
+    my ($obs_hom1,$obs_hom2,$obs_hets , $line) = @_;
     if ( $obs_hom1 + $obs_hom2 + $obs_hets == 0 ) { return 1; }
 
     my $obs_homc = $obs_hom1 < $obs_hom2 ? $obs_hom2 : $obs_hom1;
