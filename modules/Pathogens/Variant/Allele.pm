@@ -1,6 +1,7 @@
 package Pathogens::Variant::Allele;
-use Moose;
 
+use Moose;
+extends 'Pathogens::Variant::Root';
 use namespace::autoclean;
 
 
@@ -18,10 +19,6 @@ has 'coverage'   => ( is => 'rw', isa => 'Int');
 =head1 BUGS
 
 =head1 AUTHOR
-
-    Feyruz Yalcin
-    CPAN ID: FYALCIN
-
 
 =head1 SEE ALSO
 

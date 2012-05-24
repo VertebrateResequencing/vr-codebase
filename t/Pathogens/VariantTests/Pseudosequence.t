@@ -1,9 +1,19 @@
 use strict;
 use warnings;
 use Data::Dumper;
-
+use Log::Log4perl qw(get_logger :levels); 
 use Test::More tests => 2;
 
+###############################################
+#the section below is relevant for log4perl
+my $pseudoseq_logger = get_logger("Pathogens::Variant::Evaluator::Pseudosequence");
+$pseudoseq_logger->level($FATAL);
+my $layout = Log::Log4perl::Layout::PatternLayout->new("%d %p> %F{1}:%L %M - %m%n");
+my $appender = Log::Log4perl::Appender->new("Log::Dispatch::Screen");
+$appender->layout($layout);
+$pseudoseq_logger->add_appender($appender);
+#the section above is relavant for log4perl
+###############################################
 
 BEGIN { use_ok( 'Pathogens::Variant::Evaluator::Pseudosequence' ); }
 use Pathogens::Variant::EvaluationReporter;
@@ -32,7 +42,7 @@ my $evaluator = Pathogens::Variant::Evaluator::Pseudosequence->new (
  , minimum_depth_strand => 2
  , minimum_ratio => 0.8
  , minimum_quality => 50
- , minimum_map_quality => 0
+ , minimum_map_quality => 100
  , minimum_af1 => 0.95
  , minimum_ci95 =>0.0
  , minimum_strand_bias => 0.001
@@ -42,5 +52,5 @@ my $evaluator = Pathogens::Variant::Evaluator::Pseudosequence->new (
  , reporter => $reporter
 );
 
-my $filter_status = $evaluator->passed_filters($snp_event);
+my $return_val = $evaluator->evaluate($snp_event);
 

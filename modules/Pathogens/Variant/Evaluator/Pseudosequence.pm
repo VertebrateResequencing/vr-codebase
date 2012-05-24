@@ -1,7 +1,10 @@
 package Pathogens::Variant::Evaluator::Pseudosequence;
 use Moose;
+extends 'Pathogens::Variant::Root';
+with 'Pathogens::Variant::Role::Evaluator';#forces this class to implement "evaluate" subroutine
 
-
+use Log::Log4perl qw(get_logger);
+use Data::Dumper;
 use namespace::autoclean;
 
 
@@ -21,35 +24,57 @@ has 'minimum_tail_bias'    => ( is => 'rw', isa => 'Num', default => 0.001 );
 
 has 'reporter' => ( is => 'rw', isa => 'Pathogens::Variant::EvaluationReporter', required => 1 );
 
-sub passed_filters {
+
+sub evaluate {
 
     my ($self, $event) = @_;
-    if ( $self->_passed_vcf_info_field_filters($event) ) {
+    my $logger = get_logger("Pathogens::Variant::Evaluator::Pseudosequence");
+
+    $logger->debug("Evaluating event:...\n". Dumper $event);
+
+    if ( $self->_evaluate_vcf_info_field_values($event) ) {
+        $event->passed_evaluation(1);
+        
+        #log if in debug mode
+        $logger->debug("Event dump after evaluation:...\n". Dumper $event);
+        $logger->debug("Reporter dump after evaluation:...\n". Dumper $self->reporter);
+        
         return 1;
-    } else {
-        return 0;
-    }    
+    }
+    
+    $event->passed_evaluation(0); #i.e. the event failed to pass the filters
+
+    #log if in debug mode
+    $logger->debug("Event dump after evaluation:...\n". Dumper $event);
+    $logger->debug("Reporter dump after evaluation:...\n". Dumper $self->reporter);
+    
+    return 0;
 }
 
-
-sub _passed_vcf_info_field_filters {
-    my ($self, $event) = @_;
+sub _evaluate_vcf_info_field_values {
     
+    my ($self, $event) = @_;
+    my $logger = get_logger("Pathogens::Variant::Evaluator::Pseudosequence");
+
     my %param;
     my $passed = 1;
-    
+   
     foreach my $param_value ( split(";", $event->info)) {
         my ($parameter, $value) = split('=', $param_value);
         $param{$parameter} = $value;
     }
 
+    #log if in debug mode
+    $logger->debug("Evaluating vcf info field values...\n" . Dumper %param);
+
     if ( exists $param{'MQ'} and $param{'MQ'} < $self->minimum_map_quality) {
         $passed = 0;
-        $self->reporter->inc_failed_allele_frequency;
+        $self->reporter->inc_map_quality_fail;
     }
     
     if ( exists $param{'AF1'} and $param{'AF1'} < $self->minimum_af1) {
         $passed = 0;
+        $self->reporter->inc_af1_fail;
     }
     
     if ( exists $param{'PV4'} ) {
@@ -57,27 +82,31 @@ sub _passed_vcf_info_field_filters {
 
         if ( $strand_bias < $self->minimum_strand_bias ) {
             $passed = 0;
+            $self->reporter->inc_strand_bias_fail;
         }
         if ( $base_quality_bias < $self->minimum_base_quality_bias) {
             $passed = 0;
+            $self->reporter->inc_base_quality_bias_fail;
         }
         if ( $map_bias < $self->minimum_map_bias) {
             $passed = 0;
+            $self->reporter->inc_map_bias_fail;
         }
         if ( $tail_distance_bias < $self->minimum_tail_bias) {
             $passed = 0;
+            $self->reporter->inc_tail_bias_fail;
         }
+    }
+
+    if ( exists $param{'DP4'} ) {
+        
+        $self->_calculate_dp4_ratios($param{'DP4'});
+    } else {
+        
     }
 }
 
-sub _dp4_evaluation {
 
-    my $dp4_ratio_forward_reference   = 0;
-    my $dp4_ratio_reverse_reference   = 0;
-    my $dp4_ratio_forward_alternative = 0;
-    my $dp4_ratio_reverse_alternative = 0;
-
-}
 
 =head1 BUGS
 

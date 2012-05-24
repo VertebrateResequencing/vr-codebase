@@ -1,5 +1,6 @@
 package Pathogens::Variant::Iterator::Vcf;
 use Moose;
+extends 'Pathogens::Variant::Root';
 
 use Pathogens::Variant::Exception;
 use Vcf; # Petr Danecek's Vcf module

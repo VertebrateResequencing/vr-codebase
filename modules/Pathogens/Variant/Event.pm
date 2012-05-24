@@ -1,6 +1,7 @@
 package Pathogens::Variant::Event;
 use Moose;
-
+extends 'Pathogens::Variant::Root';
+with 'Pathogens::Variant::Role::Evaluable'; #implicitly adds the "passed_evaluation" attribute to this class, with the default "false"
 
 use namespace::autoclean;
 

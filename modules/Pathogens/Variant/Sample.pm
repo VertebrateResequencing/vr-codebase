@@ -1,6 +1,6 @@
 package Pathogens::Variant::Sample;
 use Moose;
-
+extends 'Pathogens::Variant::Root';
 
 has 'name' => (is => 'rw', isa => 'Str', required => 1);
 has 'alleles' => (is => 'rw', isa => sub {[]}) ;
