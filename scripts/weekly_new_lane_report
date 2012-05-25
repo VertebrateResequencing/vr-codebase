@@ -29,16 +29,23 @@ foreach ( @dbs ) {
 	my $sth_curr = $dbconn->{_dbh}->prepare($sql_select_current_lane_count);
 	my $sth_prev = $dbconn->{_dbh}->prepare($sql_select_lastweek_lane_count);
 	my ($study, $current_count, $lastweek_count);
+	my $change_count = 0;
 	if ($sth_curr->execute()) {
 		$sth_curr->bind_columns(\($study, $current_count));
 		while ($sth_curr->fetch) {
 			if ($sth_prev->execute($study)) {
 				$sth_prev->bind_col(1, \$lastweek_count);
 				while ($sth_prev->fetch) {
-					printf ("\t%-70s %8s %8s\n", substr($study,0,70), $lastweek_count, $current_count);
+					if ($lastweek_count != 0) {
+						printf ("\t%-70s %8s %8s\n", substr($study,0,70), $lastweek_count, $current_count);
+						$change_count++;
+					}
 				}
 			}
 		}
+	}
+	if ($change_count == 0){
+		print "\tNo new lanes for this database this week.\n";
 	}
 	print "\n";
 
