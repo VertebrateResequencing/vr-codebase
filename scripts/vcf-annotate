@@ -1122,7 +1122,8 @@ sub apply_gapwin_filter
     if ( defined $line )
     {
         # There may be multiple variants, only indels can be filtered
-        my $is_indel = 0;
+        my $is_indel  = 0;
+        my $indel_len = 0;
         for my $alt (split(/,/,$$line[4]))
         {
             my ($type,$len,$ht) = $vcf->event_type($$line[3],$alt);
@@ -1131,24 +1132,27 @@ sub apply_gapwin_filter
                 $is_indel = 1; 
                 $indel_chr = $$line[0];
                 $indel_pos = $$line[1] + 1;
+                $indel_len = abs($len); # This may remove valid insertions but also artefacts
+                last;
             }
         }
-        # The indel boundaries are based on REF (POS+1,POS+rlen-1). This is not
-        #   correct as the indel can begin anywhere in the VCF4.x record with
-        #   respect to POS. Specifically mpileup likes to write REF=CAGAGAGAGA
-        #   ALT=CAGAGAGAGAGA. Thus this filtering is more strict and may remove
-        #   some valid SNPs.
-        $to = $is_indel ? $$line[1]+length($$line[3])-1 : $$line[1];
+        $to = $$line[1] + $indel_len;
         my $af = 0;
         if ( $is_indel )
         {
             # Collect allele frequency to make an educated guess which of the indels to keep
             $af = $vcf->get_info_field($$line[7],'AF');
-            if ( !defined $af ) { $af = $vcf->get_info_field($$line[7],'AF1'); }
-            else { $af = $vcf->get_field($af,0,',') }
+            if ( !defined $af ) 
+            { 
+                $af = $vcf->get_info_field($$line[7],'AF1'); 
+                # assuming that all records have the same set of annotations, otherwise comparing later AC with AF will be wrong
+                if ( !defined $af ) { $af = $vcf->get_info_field($$line[7],'AC'); }
+            }
             if ( !defined $af ) { $af=0 }
+            else { $af = $vcf->get_field($af,0,',') }
         }
         push @$buffer, { line=>$line, chr=>$$line[0], from=>defined $indel_pos ? $indel_pos : $$line[1], to=>$to, is_indel=>$is_indel, AF=>$af, exclude=>0 };
+        # printf "%d-%d\t%d-%d\n", $$buffer[0]{from},$$buffer[0]{to},$$buffer[-1]{from},$$buffer[-1]{to};
 
         # Update the latest gap position and check if the buffer can be flushed
         if ( !exists($$opts{GapWin_chr}) )
