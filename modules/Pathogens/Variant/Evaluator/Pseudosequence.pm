@@ -3,6 +3,7 @@ use Moose;
 extends 'Pathogens::Variant::Root';
 with 'Pathogens::Variant::Role::Evaluator';#forces this class to implement "evaluate" subroutine
 
+use Pathogens::Variant::Utils::DP4Parser;
 use Log::Log4perl qw(get_logger);
 use Data::Dumper;
 use namespace::autoclean;
@@ -22,8 +23,9 @@ has 'minimum_base_quality_bias' => ( is => 'rw', isa => 'Num', default => 0.0 );
 has 'minimum_map_bias'     => ( is => 'rw', isa => 'Num', default => 0.001 );
 has 'minimum_tail_bias'    => ( is => 'rw', isa => 'Num', default => 0.001 );
 
-has 'reporter' => ( is => 'rw', isa => 'Pathogens::Variant::EvaluationReporter', required => 1 );
+has 'reporter'             => ( is => 'rw', isa => 'Pathogens::Variant::EvaluationReporter', default => sub { return Pathogens::Variant::EvaluationReporter->new } );
 
+has '_dp4_parser'          => ( is => 'ro', isa => 'Pathogens::Variant::Utils::DP4Parser', lazy => 1, default => sub { return Pathogens::Variant::Utils::DP4Parser->new } );
 
 sub evaluate {
 
@@ -100,7 +102,45 @@ sub _evaluate_vcf_info_field_values {
 
     if ( exists $param{'DP4'} ) {
         
-        $self->_calculate_dp4_ratios($param{'DP4'});
+        my $parsed = $self->_dp4_parser->parse( $param{'DP4'} );
+ 
+        #depths for ref bases and alt bases
+        if ( $parsed->{count_referecence_bases} < $self->minimum_depth) {
+            
+        }
+        if ( $parsed->{count_alternative_bases} < $self->minimum_depth) {
+            
+        }
+
+        #depths for ref/alt forward bases and ref/alt reverse bases
+        if ( $parsed->{count_reference_forward_bases} < $self->minimum_depth_strand) {
+            
+        }
+        if ( $parsed->{count_reference_reverse_bases} < $self->minimum_depth_strand) {
+            
+        }
+
+        if ( $parsed->{count_alternative_forward_bases} < $self->minimum_depth_strand) {
+            
+        }
+        if ( $parsed->{count_alternative_reverse_bases} < $self->minimum_depth_strand) {
+            
+        }
+
+        #ratios for ref/alt forward bases and ref/alt reverse bases
+        if ( $parsed->{ratio_forward_reference_bases} < $self->minimum_ratio) {
+            
+        }
+        if ( $parsed->{ratio_forward_alternative_bases} < $self->minimum_ratio) {
+            
+        }
+        if ( $parsed->{ratio_reverse_reference_bases} < $self->minimum_ratio) {
+            
+        }
+        if ( $parsed->{ratio_reverse_alternative_bases} < $self->minimum_ratio) {
+            
+        }
+        
     } else {
         
     }
