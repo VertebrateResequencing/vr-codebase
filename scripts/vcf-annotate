@@ -49,12 +49,12 @@ sub error
 
     print
         "About: Annotates VCF file, adding filters or custom annotations. Requires tabix indexed file with annotations.\n",
-        "   Currently it annotates the ID, FILTER, and INFO columns, but it will be extended on popular demand.\n",
+        "   Currently it can annotate ID, QUAL, FILTER and INFO columns, but will be extended on popular demand.\n",
         "   For examples of user-defined filters see online documentation or examples/filters.txt in vcftools distribution.\n",
         "Usage: cat in.vcf | vcf-annotate [OPTIONS] > out.vcf\n",
         "Options:\n",
         "   -a, --annotations <file.gz>         The tabix indexed file with the annotations: CHR\\tFROM[\\tTO][\\tVALUE]+.\n",
-        "   -c, --columns <list>                The list of columns in the annotation file, e.g. CHROM,FROM,TO,-,INFO/STR,INFO/GN. The dash\n",
+        "   -c, --columns <list>                The list of columns in the annotation file, e.g. CHROM,FROM,TO,-,QUAL,INFO/STR,INFO/GN. The dash\n",
         "                                           in this example indicates that the third column should be ignored. If TO is not\n",
         "                                           present, it is assumed that TO equals to FROM. When REF and ALT columns are present, only\n",
         "                                           matching lines are annotated.\n",
@@ -75,7 +75,7 @@ sub error
         "Examples:\n",
         "   zcat in.vcf.gz | vcf-annotate -a annotations.gz -d descriptions.txt -c FROM,TO,CHROM,ID,INFO/DP | bgzip -c >out.vcf.gz \n",
         "   zcat in.vcf.gz | vcf-annotate -f +/-a/c=3,10/q=3/d=5/-D -a annotations.gz -d key=INFO,ID=GN,Number=1,Type=String,Description='Gene Name' | bgzip -c >out.vcf.gz \n",
-        "   zcat in.vcf.gz | vcf-annotate -a dbSNPv132.tab.gz -c CHROM,FROM,REF,ALT,ID,-,-,- | bgzip -c >out.vcf.gz \n",
+        "   zcat in.vcf.gz | vcf-annotate -a dbSNPv132.tab.gz -c CHROM,POS,REF,ALT,ID,-,-,- | bgzip -c >out.vcf.gz \n",
         "Where descriptions.txt contains:\n",
         "   key=INFO,ID=GN,Number=1,Type=String,Description='Gene Name'\n",
         "   key=INFO,ID=STR,Number=1,Type=Integer,Description='Strand'\n",
@@ -357,6 +357,7 @@ sub parse_columns
         elsif ( $col eq 'FILTER' ) { $out{$col}=$i; }
         elsif ( $col eq 'REF' ) { $out{$col}=$i; }
         elsif ( $col eq 'ALT' ) { $out{$col}=$i; }
+        elsif ( $col eq 'QUAL' ) { $out{$col}=$i; }
         else
         {
             if ( !exists($desc{$col}) && exists($desc{"INFO/$col"}) )
@@ -429,6 +430,7 @@ sub annotate
     my $to_col   = $$cols{TO};
     my $ref_col  = exists($$cols{REF}) ? $$cols{REF} : undef;
     my $alt_col  = exists($$cols{ALT}) ? $$cols{ALT} : undef;
+    my $qual_col = exists($$cols{QUAL}) ? $$cols{QUAL} : undef;
 
     # Initialize the annotation reader
     my $reader;
@@ -554,6 +556,7 @@ sub annotate
                 }
                 if ( defined $id_col && $$annot_line[$id_col] ne '' ) { $ids{$$annot_line[$id_col]} = 1; }
                 if ( defined $fltr_col && $$annot_line[$fltr_col] ne '' ) { $rec[6] = $$annot_line[$fltr_col]; }
+                if ( defined $qual_col && $$annot_line[$qual_col] ne '' ) { $rec[5] = $$annot_line[$qual_col]; }
             }
             if ( scalar keys %ids ) { $rec[2] = join(';', keys %ids); }
             if ( scalar keys %values )
