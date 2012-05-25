@@ -1,0 +1,48 @@
+#!/usr/bin/env perl
+
+use DBI;
+use VertRes::Utils::VRTrackFactory;
+use Carp;
+
+use strict;
+use warnings;
+
+my @dbs = qw(vrtrack_human_wgs vrtrack_human_wes vrtrack_mouse_wgs vrtrack_mouse_wes);
+
+#SQL for vrtrack databases:
+my $sql_select_current_lane_count = qq[SELECT p.name, count(*) from latest_lane l, latest_library b, latest_sample s, latest_project p 
+                                     where l.library_id = b.library_id and b.sample_id=s.sample_id and s.project_id = p.project_id group by p.name];
+
+
+my $sql_select_lastweek_lane_count = qq[select count(*) from (select l.name, min(l.changed) as import_date from lane l, latest_library b, latest_sample s, latest_project p 
+                                        where l.library_id = b.library_id and b.sample_id=s.sample_id and s.project_id = p.project_id and p.name = ? group by l.name order by l.name) a 
+                                        where a.import_date > date_sub(now(), INTERVAL 1 WEEK)];
+
+printf ("Database:\n\t%-70s %8s %8s\n\n", "Study_name", "New_lanes", "Total_lanes");
+
+foreach ( @dbs ) {
+	my $dbname = $_;
+	print "$dbname:\n";
+	my $dbconn = VertRes::Utils::VRTrackFactory->instantiate(database => $dbname, mode => 'r');
+	croak "Can't connect to $dbname tracking database\n" unless $dbconn;
+	
+	my $sth_curr = $dbconn->{_dbh}->prepare($sql_select_current_lane_count);
+	my $sth_prev = $dbconn->{_dbh}->prepare($sql_select_lastweek_lane_count);
+	my ($study, $current_count, $lastweek_count);
+	if ($sth_curr->execute()) {
+		$sth_curr->bind_columns(\($study, $current_count));
+		while ($sth_curr->fetch) {
+			if ($sth_prev->execute($study)) {
+				$sth_prev->bind_col(1, \$lastweek_count);
+				while ($sth_prev->fetch) {
+					printf ("\t%-70s %8s %8s\n", substr($study,0,70), $lastweek_count, $current_count);
+				}
+			}
+		}
+	}
+	print "\n";
+
+    $sth_curr->finish();
+    $sth_prev->finish();
+    $dbconn->{_dbh}->disconnect;
+}
