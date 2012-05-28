@@ -3,7 +3,10 @@ use Moose;
 extends 'Pathogens::Variant::Root';
 use namespace::autoclean;
 
-#traits + handles make use of the "Moose::Meta::Attribute::Native::Trait::Counter"
+
+
+#Calling "inc_counter_failed_base_quality" on the object will increment 
+#the counter of the attribute "failed_base_quality"
 #( http://search.cpan.org/dist/Moose/lib/Moose/Meta/Attribute/Native/Trait/Counter.pm )
 has 'failed_base_quality' => ( 
       is => 'ro' 
@@ -11,7 +14,7 @@ has 'failed_base_quality' => (
     , default => 0
     , traits  => ['Counter']
     , handles => {
-          inc_bq_fail => 'inc'
+          inc_counter_failed_base_quality => 'inc'  
     }
 );
 
@@ -21,7 +24,7 @@ has 'failed_map_quality' => (
     , default => 0
     , traits  => ['Counter']
     , handles => {
-          inc_map_quality_fail => 'inc'
+          inc_counter_failed_map_quality => 'inc'
     }
 );
 
@@ -31,7 +34,7 @@ has 'failed_depth' => (
     , default => 0
     , traits  => ['Counter']
     , handles => {
-          inc_depth_fail => 'inc'
+          inc_counter_failed_depth => 'inc'
     }
 );
 
@@ -41,7 +44,7 @@ has 'failed_depth_forward' => (
     , default => 0
     , traits  => ['Counter']
     , handles => {
-          inc_depth_forward_fail => 'inc'
+          inc_counter_failed_depth_forward => 'inc'
     }
 );
 
@@ -51,37 +54,37 @@ has 'failed_depth_reverse' => (
     , default => 0
     , traits  => ['Counter']
     , handles => {
-          inc_depth_reverse_fail => 'inc'
+          inc_counter_failed_depth_reverse => 'inc'
     }
 );
 
-has 'failed_ratio_forward_snp' => ( 
+has 'failed_ratio_forward' => ( 
       is => 'ro' 
     , isa => 'Int', 
     , default => 0
     , traits  => ['Counter']
     , handles => {
-          inc_ratio_forward_fail => 'inc'
+          inc_counter_failed_ratio_forward => 'inc'
     }
 );
 
-has 'failed_ratio_reverse_snp' => ( 
+has 'failed_ratio_reverse' => ( 
       is => 'ro' 
     , isa => 'Int', 
     , default => 0
     , traits  => ['Counter']
     , handles => {
-          inc_ratio_reverse_fail => 'inc'
+          inc_counter_failed_ratio_reverse => 'inc'
     }
 );
 
-has 'failed_allele_frequency' => ( 
+has 'failed_af1_allele_frequency' => ( 
       is => 'ro' 
     , isa => 'Int', 
     , default => 0
     , traits  => ['Counter']
     , handles => {
-          inc_af1_fail => 'inc'
+          inc_counter_failed_af1_allele_frequency => 'inc'
     }
 );
 
@@ -91,7 +94,7 @@ has 'failed_heterozygous_snp' => (
     , default => 0
     , traits  => ['Counter']
     , handles => {
-          inc_heterozygous_fail => 'inc'
+          inc_counter_failed_heterozygous_snp => 'inc'
     }
 );
 
@@ -101,7 +104,7 @@ has 'failed_strand_bias' => (
     , default => 0
     , traits  => ['Counter']
     , handles => {
-          inc_strand_bias_fail => 'inc'
+          inc_counter_failed_strand_bias => 'inc'
     }
 );
 
@@ -111,7 +114,7 @@ has 'failed_base_quality_bias' => (
     , default => 0
     , traits  => ['Counter']
     , handles => {
-          inc_base_quality_bias_fail => 'inc'
+          inc_counter_failed_base_quality_bias => 'inc'
     }
 );
 
@@ -121,7 +124,7 @@ has 'failed_map_bias' => (
     , default => 0
     , traits  => ['Counter']
     , handles => {
-          inc_map_bias_fail => 'inc'
+          inc_counter_failed_map_bias => 'inc'
     }
 );
 
@@ -131,10 +134,20 @@ has 'failed_tail_distance_bias' => (
     , default => 0
     , traits  => ['Counter']
     , handles => {
-          inc_tail_bias_fail => 'inc'
+          inc_counter_failed_tail_distance_bias => 'inc'
     }
 );
 
+
+has 'skipped_indel' => ( 
+      is => 'ro' 
+    , isa => 'Int', 
+    , default => 0
+    , traits  => ['Counter']
+    , handles => {
+          inc_counter_skipped_indel => 'inc'
+    }
+);
 __PACKAGE__->meta->make_immutable;
 
 1;

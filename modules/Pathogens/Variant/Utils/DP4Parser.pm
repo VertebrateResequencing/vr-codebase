@@ -1,12 +1,16 @@
 package Pathogens::Variant::Utils::DP4Parser;
 use Moose;
+use Data::Dumper;
 use namespace::autoclean;
-
+use Log::Log4perl qw(get_logger);
 
 sub parse {
 
     my ($self, $dp4string) = @_;
 
+    my $logger = get_logger("Pathogens::Variant::Utils::DP4Parser");
+    $logger->debug("Got this dp4string for parsing:...\n". $dp4string);
+    
     my (
           $ratio_forward_reference_bases
         , $ratio_forward_alternative_bases
@@ -53,6 +57,8 @@ sub parse {
         , ratio_reverse_alternative_bases => $ratio_reverse_alternative_bases
 
     );
+
+    $logger->debug("Finished parsing the dp4 string into a hash:...\n". Dumper %parse_results);
 
     return (\%parse_results);
 

@@ -7,7 +7,7 @@ use Test::More tests => 2;
 ###############################################
 #the section below is relevant for log4perl
 my $pseudoseq_logger = get_logger("Pathogens::Variant::Evaluator::Pseudosequence");
-$pseudoseq_logger->level($FATAL);
+$pseudoseq_logger->level($DEBUG);
 my $layout = Log::Log4perl::Layout::PatternLayout->new("%d %p> %F{1}:%L %M - %m%n");
 my $appender = Log::Log4perl::Appender->new("Log::Dispatch::Screen");
 $appender->layout($layout);
@@ -42,7 +42,7 @@ my $evaluator = Pathogens::Variant::Evaluator::Pseudosequence->new (
  , minimum_depth_strand => 2
  , minimum_ratio => 0.8
  , minimum_quality => 50
- , minimum_map_quality => 100
+ , minimum_map_quality => 1
  , minimum_af1 => 0.95
  , minimum_ci95 =>0.0
  , minimum_strand_bias => 0.001
@@ -53,4 +53,13 @@ my $evaluator = Pathogens::Variant::Evaluator::Pseudosequence->new (
 );
 
 my $return_val = $evaluator->evaluate($snp_event);
+
+use Pathogens::Variant::Iterator::Vcf;
+#this will traverse the VCF file and return Pathogens::Variant::Event::* objects
+my $iterator = Pathogens::Variant::Iterator::Vcf->new(vcf_file => './data/single.dip.vcf');
+while( my $event = $iterator->next_event() ) {
+    $evaluator->evaluate($event);
+}
+$iterator->close_vcf();
+
 
