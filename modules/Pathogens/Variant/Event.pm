@@ -18,22 +18,39 @@ has 'reference_allele'   => ( is => 'rw', isa => 'Str' );
 has 'alternative_allele' => ( is => 'rw', isa => 'Str' );
 has 'quality'            => ( is => 'rw', isa => 'Num' );
 has 'filter'             => ( is => 'rw', isa => 'Str' );
-has 'info'               => ( is => 'rw', isa => 'Str' ); #vcf's info field (may vary per entry within the same file)
+has 'info'               => ( is => 'rw', isa => 'Str' ); #may vary per entry
 has 'format'             => ( is => 'rw', isa => 'Str' ); 
-has 'meta_lines'         => ( is => 'rw', isa => 'ArrayRef[Str]' );
 
-#Additional non-VCF fields
+#non-VCF attributes
 has 'event_type'         => ( is => 'rw', isa => 'Str' );
 has 'polymorphism'       => ( is => 'rw', isa => 'Str' );
-has 'samples'            => ( is => 'rw', isa => 'ArrayRef', default => sub {[]} );
 
+has 'samples' => (
+    traits  => ['Array'],
+    is      => 'ro',
+    isa     => 'ArrayRef[Pathogens::Variant::Sample]',
+    default => sub { [] },
+    lazy    => 1,
+    handles => {
+        get_samples      => 'elements', #returns an array, NOT a ref
+        add_sample       => 'push',
+        has_samples      => 'count',
+        clear_samples    => 'clear', 
+    },
+);
 
+has 'meta_lines' => (
+    traits  => ['Array'],
+    is      => 'ro',
+    isa     => 'ArrayRef[Str]',
+    default => sub { [] },
+    lazy    => 1,
+    handles => {
+        get_metalines    => 'elements', #returns an array, NOT a ref
+        add_metaline     => 'push', 
+    },
+);
 
-
-sub add_sample {
-    my ($self, @samples) = @_;
-    push (@{$self->samples}, @samples);
-}
 
 =head1 NAME
 

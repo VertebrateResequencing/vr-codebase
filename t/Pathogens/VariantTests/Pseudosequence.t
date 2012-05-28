@@ -7,7 +7,7 @@ use Test::More tests => 2;
 ###############################################
 #the section below is relevant for log4perl
 my $pseudoseq_logger = get_logger("Pathogens::Variant::Evaluator::Pseudosequence");
-$pseudoseq_logger->level($DEBUG);
+$pseudoseq_logger->level($FATAL);
 my $layout = Log::Log4perl::Layout::PatternLayout->new("%d %p> %F{1}:%L %M - %m%n");
 my $appender = Log::Log4perl::Appender->new("Log::Dispatch::Screen");
 $appender->layout($layout);
