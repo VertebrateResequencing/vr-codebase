@@ -8,6 +8,7 @@ use namespace::autoclean;
 has 'passed_evaluation' => (
       is  => 'rw',
       isa => 'Bool',
+      default => 0
 );
 
 1;

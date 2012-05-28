@@ -5,9 +5,6 @@ use namespace::autoclean;
 
 
 
-#Calling "inc_counter_failed_base_quality" on the object will increment 
-#the counter of the attribute "failed_base_quality"
-#( http://search.cpan.org/dist/Moose/lib/Moose/Meta/Attribute/Native/Trait/Counter.pm )
 has 'failed_base_quality' => ( 
       is => 'ro' 
     , isa => 'Int', 
@@ -88,16 +85,6 @@ has 'failed_af1_allele_frequency' => (
     }
 );
 
-has 'failed_heterozygous_snp' => ( 
-      is => 'ro' 
-    , isa => 'Int', 
-    , default => 0
-    , traits  => ['Counter']
-    , handles => {
-          inc_counter_failed_heterozygous_snp => 'inc'
-    }
-);
-
 has 'failed_strand_bias' => ( 
       is => 'ro' 
     , isa => 'Int', 
@@ -138,7 +125,6 @@ has 'failed_tail_distance_bias' => (
     }
 );
 
-
 has 'skipped_indel' => ( 
       is => 'ro' 
     , isa => 'Int', 
@@ -148,6 +134,27 @@ has 'skipped_indel' => (
           inc_counter_skipped_indel => 'inc'
     }
 );
+
+has 'heterozygous_calls' => ( 
+      is => 'ro' 
+    , isa => 'Int', 
+    , default => 0
+    , traits  => ['Counter']
+    , handles => {
+          inc_counter_heterozygous_calls => 'inc'
+    }
+);
+
+has 'accepted_snp_calls' => ( 
+      is => 'ro' 
+    , isa => 'Int', 
+    , default => 0
+    , traits  => ['Counter']
+    , handles => {
+          inc_counter_accepted_snp_calls => 'inc'
+    }
+);
+
 __PACKAGE__->meta->make_immutable;
 
 1;

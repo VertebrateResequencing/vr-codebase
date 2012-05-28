@@ -1,3 +1,5 @@
+#!/Users/fy2/perl5/perlbrew/perls/perl-5.8.8/bin/perl
+
 use strict;
 use warnings;
 use Getopt::Declare;
@@ -129,21 +131,29 @@ my $iterator = Pathogens::Variant::Iterator::Vcf->new(vcf_file => $args{vcf_file
 
 #create an evaluator object to filter bad calls based on user criteria
 my $evaluator = Pathogens::Variant::Evaluator::Pseudosequence->new(
-                                                          minimum_depth => $args{depth}
-                                                        , minimum_depth_strand => $args{depth_strand}
-                                                        , minimum_ratio => $args{ratio}
-                                                        , minimum_quality => $args{quality}
-                                                        , minimum_map_quality => $args{map_quality}
-                                                        , minimum_af1 => $args{af1}
-                                                        , minimum_ci95 => $args{ci95}
-                                                        , minimum_strand_bias => $args{strand_bias}
-                                                        , minimum_base_quality_bias => $args{base_quality_bias}
-                                                        , minimum_map_bias => $args{map_bias}
-                                                        , minimum_tail_bias => $args{tail_bias}
-                                                       );
+      minimum_depth => $args{depth}
+    , minimum_depth_strand => $args{depth_strand}
+    , minimum_ratio => $args{ratio}
+    , minimum_quality => $args{quality}
+    , minimum_map_quality => $args{map_quality}
+    , minimum_af1 => $args{af1}
+    , minimum_ci95 => $args{ci95}
+    , minimum_strand_bias => $args{strand_bias}
+    , minimum_base_quality_bias => $args{base_quality_bias}
+    , minimum_map_bias => $args{map_bias}
+    , minimum_tail_bias => $args{tail_bias}
+);
 
 while( my $event = $iterator->next_event() ) {
-	#print $event->chromosome, "\t", $event->position, "\n";
-}
 
+    $evaluator->evaluate($event); #note: evaluator will modify heterozygous calls
+    if ($event->passed_evaluation) {
+        
+    } else {
+        
+    }
+}
 $iterator->close_vcf();
+
+print $evaluator->dump_evaluation_statistics;
+
