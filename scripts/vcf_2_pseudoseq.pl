@@ -155,5 +155,6 @@ while( my $event = $iterator->next_event() ) {
 }
 $iterator->close_vcf();
 
+print join("\n", $iterator-> get_metalines);
 print $evaluator->dump_evaluation_statistics;
 

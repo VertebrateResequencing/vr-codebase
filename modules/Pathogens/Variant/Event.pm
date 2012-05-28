@@ -39,17 +39,6 @@ has 'samples' => (
     },
 );
 
-has 'meta_lines' => (
-    traits  => ['Array'],
-    is      => 'ro',
-    isa     => 'ArrayRef[Str]',
-    default => sub { [] },
-    lazy    => 1,
-    handles => {
-        get_metalines    => 'elements', #returns an array, NOT a ref
-        add_metaline     => 'push', 
-    },
-);
 
 
 =head1 NAME
@@ -65,9 +54,6 @@ Pathogens::Variant::Event - A Pathogens::Variant::Event object
 =head1 SUPPORT
 
 =head1 AUTHOR
-
-    Feyruz Yalcin
-    CPAN ID: FYALCIN
 
 =head1 SEE ALSO
 
