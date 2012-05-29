@@ -84,7 +84,7 @@ if ($mode eq 'projects') {
 }
 else {
     my $q = CGI->new;
-    #print $q->header();
+    print $q->header();
     my $desired_user_name = $q->param('user_name');
     
     my $css = <<'CSS';
