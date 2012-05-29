@@ -61,7 +61,7 @@ sub asana {
     }
     
     unless ($data) {
-        warn "no data retrieved for [$curl]; is asano down or overloaded?\n";
+        warn "no data retrieved for [$curl]; is asana down or overloaded?\n";
     }
     return $data;
 }
@@ -72,6 +72,7 @@ sub string_to_hash {
     $str =~ s/:true/:1/g;
     $str =~ s/:false/:0/g;
     $str =~ s/":/" => /g;
+    $str =~ s/\B\$(\w)/\\\$$1/g;
     my $hash = eval $str;
     return $hash;
 }
