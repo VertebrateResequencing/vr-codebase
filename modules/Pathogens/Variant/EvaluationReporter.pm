@@ -5,13 +5,13 @@ use namespace::autoclean;
 
 
 
-has 'failed_base_quality' => ( 
+has 'failed_quality' => ( 
       is => 'ro' 
     , isa => 'Int', 
     , default => 0
     , traits  => ['Counter']
     , handles => {
-          inc_counter_failed_base_quality => 'inc'  
+          inc_counter_failed_quality => 'inc'  
     }
 );
 

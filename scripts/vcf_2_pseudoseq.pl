@@ -5,7 +5,18 @@ use warnings;
 use Getopt::Declare;
 use Data::Dumper;
 use Pathogens::Variant::Iterator::Vcf;
-use Pathogens::Variant::Evaluator::Pseudosequence
+use Pathogens::Variant::Evaluator::Pseudosequence;
+use Log::Log4perl;
+
+
+my $conf = q(
+    log4perl.category.Pathogens.Variant.Evaluator.Pseudosequence = FATAL, Screen
+    log4perl.appender.Screen = Log::Log4perl::Appender::Screen
+    log4perl.appender.Screen.layout = Log::Log4perl::Layout::SimpleLayout
+);
+
+Log::Log4perl::init( \$conf );
+ 
 our $VERSION = 0.01;
 
 
@@ -66,7 +77,7 @@ Optional parameters:
                                             	$main::args{ratio} = $float;
                                             }
                                             
-    -q[uality] <integer:0+i>           	(50) Minimum base quality
+    -q[uality] <integer:0+i>           	(50) Minimum variant quality (Vcf QUAL field)
                                             {
                                             	reject($integer > 99 => "Base quality (-q) must be between 0 and 99");
                                             	$main::args{quality} = $integer;
@@ -119,12 +130,18 @@ Optional parameters:
 die "Exiting... Argument errors" 
 	unless (Getopt::Declare->new($specification));
 
+#a little bit more argument sanity check
 my $doubled_arg_D_depth_strand = $args{depth_strand} * 2;
-
 if ( $args{depth} < $doubled_arg_D_depth_strand ) {
     print "'-d' (depth) must be greater than '-D' (depth_strand)! Silently increasing it to " .$doubled_arg_D_depth_strand ."\n";
     $args{depth} = $doubled_arg_D_depth_strand;
 }
+
+#af1 is used to check quality of variant sites.
+#we will use af1_complement to check the quality if non-variant sites
+my $af1_complement = 1 - $args{af1};
+
+
 
 #this will traverse the VCF file and return Pathogens::Variant::Event::* objects
 my $iterator = Pathogens::Variant::Iterator::Vcf->new(vcf_file => $args{vcf_file});
@@ -137,6 +154,7 @@ my $evaluator = Pathogens::Variant::Evaluator::Pseudosequence->new(
     , minimum_quality => $args{quality}
     , minimum_map_quality => $args{map_quality}
     , minimum_af1 => $args{af1}
+    , af1_complement =>  $af1_complement
     , minimum_ci95 => $args{ci95}
     , minimum_strand_bias => $args{strand_bias}
     , minimum_base_quality_bias => $args{base_quality_bias}
@@ -144,17 +162,19 @@ my $evaluator = Pathogens::Variant::Evaluator::Pseudosequence->new(
     , minimum_tail_bias => $args{tail_bias}
 );
 
+my $c = 0;
+my $p = 0;
 while( my $event = $iterator->next_event() ) {
-
+    $c++; print $c, "\n" unless $c % 10000;
     $evaluator->evaluate($event); #note: evaluator will modify heterozygous calls
+
     if ($event->passed_evaluation) {
-        
-    } else {
-        
+        $p++;
     }
+
 }
 $iterator->close_vcf();
 
-print join("\n", $iterator-> get_metalines);
+#print join("\n", $iterator-> get_metalines);
 print $evaluator->dump_evaluation_statistics;
-
+print "\n$p\n";

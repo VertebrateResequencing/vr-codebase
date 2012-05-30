@@ -52,24 +52,33 @@ sub _vcf_set {
     close $fhd;
 
     #we will wrap our iterator on top of Petr's Vcf module
-    my $vcf = Vcf->new( file => $vcf_file );   
-    $vcf->parse_header; #required by Petr's module after new()
+    my $vcf = Vcf->new( file => $vcf_file );
+    $vcf->recalc_ac_an(0); #turn this off. See "perldoc Vcf"
+    $vcf->parse_header; #required by Petr's module after new(), See "perldoc Vcf"
     $self->_vcf_obj($vcf);  
 }
 
 sub next_event {
+
     my ($self) = @_;
     
-    while (my $data_array_ref = $self->_vcf_obj->next_data_array) {
-        my $event;  
-        if ( $$data_array_ref[7] =~ /INDEL/) {
-            $event = Pathogens::Variant::Event::Dip->new(); 
-        } else {
-            $event = Pathogens::Variant::Event::Snp->new; 
+    my $data_array_ref = $self->_vcf_obj->next_data_array;
+
+    if ($data_array_ref) {
+        
+        my $event = Pathogens::Variant::Event->new();
+        if ($$data_array_ref[4] eq '.') { #this might be the case in a VCF file where non-variants are listed alongside the variants
+            $event->polymorphic(0);
+            $event->type('NotPolymorph');
         }
-        return $self->_populate_event_attributes($event, $data_array_ref);	
-    }     
-    return undef;
+        
+        return $self->_populate_event_attributes($event, $data_array_ref);
+        
+    } else {
+        
+        return undef;
+        
+    }
 }
 
 sub close_vcf {

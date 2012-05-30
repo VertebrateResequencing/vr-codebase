@@ -11,19 +11,20 @@ use namespace::autoclean;
 
 
 #VCF specific 8 fields + meta_lines
-has 'chromosome'         => ( is => 'rw', isa => 'Str' );
-has 'position'           => ( is => 'rw', isa => 'Int' );
-has 'id'                 => ( is => 'rw', isa => 'Str' );
-has 'reference_allele'   => ( is => 'rw', isa => 'Str' );
-has 'alternative_allele' => ( is => 'rw', isa => 'Str' );
-has 'quality'            => ( is => 'rw', isa => 'Num' );
-has 'filter'             => ( is => 'rw', isa => 'Str' );
-has 'info'               => ( is => 'rw', isa => 'Str' ); #may vary per entry
-has 'format'             => ( is => 'rw', isa => 'Str' ); 
+has 'chromosome'         => ( is => 'rw', isa => 'Str', lazy => 1, default => 'NoValueSet' );
+has 'position'           => ( is => 'rw', isa => 'Int', lazy => 1, default => -1 );
+has 'id'                 => ( is => 'rw', isa => 'Str', lazy => 1, default => 'NoValueSet' );
+has 'reference_allele'   => ( is => 'rw', isa => 'Str', lazy => 1, default => 'NoValueSet' );
+has 'alternative_allele' => ( is => 'rw', isa => 'Str', lazy => 1, default => 'NoValueSet' );
+has 'quality'            => ( is => 'rw', isa => 'Num', lazy => 1, default => -1);
+has 'filter'             => ( is => 'rw', isa => 'Str', lazy => 1, default => 'NoValueSet' );
+has 'info'               => ( is => 'rw', isa => 'Str', lazy => 1, default => 'NoValueSet' ); #may vary per entry
+has 'format'             => ( is => 'rw', isa => 'Str', lazy => 1, default => 'NoValueSet' ); 
 
 #non-VCF attributes
-has 'event_type'         => ( is => 'rw', isa => 'Str' );
-has 'polymorphism'       => ( is => 'rw', isa => 'Str' );
+has 'type'               => ( is => 'rw', isa => 'Str', lazy => 1, default => 'NoValueSet');
+has 'polymorphic'        => ( is => 'rw', isa => 'Bool', lazy => 1, default => 1 );
+has 'polymorphism'       => ( is => 'rw', isa => 'Str', lazy => 1, default => '[X/Y]' );
 
 has 'samples' => (
     traits  => ['Array'],
