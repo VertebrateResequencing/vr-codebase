@@ -79,7 +79,7 @@ sub new
             merge_pops => 0,
             
             # Set the depth filter (+/D=N) to about twice the average depth.
-            filter => 'vcf-annotate --fill-AC-AN -f +',
+            filter => 'vcf-annotate -f +',
             
             chunk_size        => 1_000_000,
             debug_chunks      => 0,
@@ -98,6 +98,30 @@ sub new
             #       '10:42000001-43000000' => { mpileup=>'...'  } 
             #   },
 
+            # Uncomment and modify as necessary if VQSR filtering should be applied. The PV0-4 annotations will be 
+            #   created from INFO/PV4 by the pipeline
+            # vqsr_filtering => 
+            # {
+            #     recal => q[
+            #         java -Xmx4800m -Xms4800m -Xss280m -server -XX:+UseSerialGC -jar /nfs/users/nfs_s/sm15/src/GATK/dist/GenomeAnalysisTK.jar
+            #             -T VariantRecalibrator
+            #             -resource:hapmap,known=false,training=true,truth=true,prior=15.0 /lustre/scratch105/projects/g1k/ref/broad_resources_b37/hapmap_3.3.b37.sites.vcf.gz
+            #             -resource:omni,known=false,training=true,truth=false,prior=12.0 /lustre/scratch105/projects/g1k/ref/broad_resources_b37/1000G_omni2.5.b37.sites.vcf.gz
+            #             -resource:dbsnp,known=true,training=false,truth=false,prior=8.0 /lustre/scratch105/projects/g1k/ref/broad_resources_b37/dbsnp_132.b37.vcf.gz
+            #             -tranche 100 -tranche 99.99 -tranche 99.90 -tranche 99.85 -tranche 99.80 -tranche 99.50 -tranche 99.00 -tranche 98.00
+            #             --target_titv 2.3 --ts_filter_level 99.85 
+            #             --mode BOTH
+            #             --maxGaussians 4
+            #             -an DP -an VDB -an MQ -an HWE -an ICF -an PV0 -an PV1 -an PV2 -an PV3
+            #     ],
+            #     filter => q[
+            #         java -Xmx4800m -Xms4800m -Xss280m -server -XX:+UseSerialGC -jar /nfs/users/nfs_s/sm15/src/GATK/dist/GenomeAnalysisTK.jar
+            #             -T ApplyRecalibration
+            #             --mode BOTH
+            #             --ts_filter_level 99.85
+            #     ],
+            #     limits   => { runtime=>24*60, memory=>2_000 },     
+            # },
     ]."\n";
 
     $$self{usage} .= 
@@ -188,7 +212,7 @@ sub parse_args
     }
     if ( !exists($$self{filter}) )
     {
-        $$self{filter} = 'vcf-annotate --fill-AC-AN -f +';
+        $$self{filter} = 'vcf-annotate -f +';
         $self->warn("The 'filter' config key not present, assuming: $$self{filter}\n"); 
     }
     if ( $$self{clean} ) 
@@ -297,11 +321,13 @@ sub main
     $self->wait;
 
     # Create whole genome file: concat all chromosomes
+    if ( exists($$self{vqsr_filtering}) && exists($$self{vqsr_filtering}{limits}) ) { $self->set_limits(%{$$self{vqsr_filtering}{limits}}) }
     for my $pop (keys %{$$self{pops}})
     {
         $self->spawn('concat_chroms',"$outdir/$pop.vcf.gz",$pop);
     }
     $self->wait;
+    $self->set_limits(memory=>undef);
 
     # Run summary stats
     for my $pop (keys %{$$self{pops}})
@@ -780,7 +806,7 @@ sub run_mpileup
         my $bam_list = "$outdir/lists/chr$chr-$pop.list";
         $cmd = "$$self{mpileup} -ug -r $chr:$from-$to -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -s $sample_list -";
     }
-    $self->cmd("$cmd | bgzip -c > $outfile.part");
+    $self->cmd("$cmd | vcf-annotate --fill-ICF | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
 }
 
@@ -823,8 +849,63 @@ sub concat_vcfs
     }
     close($fh) or $self->throw("close $chunks_list");
 
-    my $filter = $$self{filter} ? "| $$self{filter}" : '';
-    $self->cmd("vcf-concat -f $chunks_list $filter | bgzip -c > $outfile.part");
+    if ( !exists($$self{vqsr_filtering}) )
+    {
+        my $filter = $$self{filter} ? "| $$self{filter}" : '';
+        $self->cmd("vcf-concat -f $chunks_list $filter | bgzip -c > $outfile.part");
+        $self->tabix_part($outfile);
+        return;
+    }
+
+    # VQSR filtering
+    my $tmp = $outfile; $tmp =~ s/\.vcf\.gz$//;
+    my $concat = "$tmp.concat.vcf.gz";
+    if ( ! -e $concat )
+    {
+        open(my $fh,'>',"$tmp.annot") or $self->throw("$tmp.annot: $!");
+        print $fh q[
+                {
+                    header   => [ qq[key=INFO,ID=PV0,Number=1,Type=Float,Description="P-value for strand bias"],
+                                  qq[key=INFO,ID=PV1,Number=1,Type=Float,Description="P-value for baseQ bias"],
+                                  qq[key=INFO,ID=PV2,Number=1,Type=Float,Description="P-value for mapQ bias"],
+                                  qq[key=INFO,ID=PV3,Number=1,Type=Float,Description="P-value for tail distance bias"] ],
+                    tag      => 'INFO/PV4',
+                    name     => 'SplitPV4',
+                    desc     => 'Split PV4',
+                    apply_to => 'all',
+                    test     => sub {
+                                    my @pv = split(/,/,$MATCH);
+                                    my %tags;
+                                    if ( $pv[0] != 1 ) { $tags{PV0} = $pv[0]; }
+                                    if ( $pv[1] != 1 ) { $tags{PV1} = $pv[1]; }
+                                    if ( $pv[2] != 1 ) { $tags{PV2} = $pv[2]; }
+                                    if ( $pv[3] != 1 ) { $tags{PV3} = $pv[3]; }
+                                    if ( $VCF->get_info_field($$RECORD[7],'HWE') == 1 ) { $tags{HWE}=undef; }
+                                    if ( scalar keys %tags ) { $$RECORD[7] = $VCF->add_info_field($$RECORD[7],%tags); }
+                                    return $PASS;
+                                },
+                },
+            ];
+        close($fh);
+
+        $self->cmd("vcf-concat -f $chunks_list | vcf-annotate -f $tmp.annot | bgzip -c > $concat.part");
+        $self->tabix_part($concat);
+    }
+    my $recal = $$self{vqsr_filtering}{recal};
+    $recal =~ s/\n/ /g;
+    $self->cmd("$recal -R $$self{fa_ref} --input $concat -recalFile $tmp.vqsr.csv -tranchesFile $tmp.vqsr.tranches");
+
+    my $filter = $$self{vqsr_filtering}{filter};
+    $filter =~ s/\n/ /g;
+    $self->cmd("$filter -R $$self{fa_ref} --input $concat -recalFile $tmp.vqsr.csv -tranchesFile $tmp.vqsr.tranches -o $tmp.vqsr.vcf.gz");
+
+    if ( !$$self{filter} )
+    {
+        Utils::relative_symlink("$tmp.vqsr.vcf.gz",$outfile);
+        $self->cmd("tabix -f $outfile");
+        return;
+    }
+    $self->cmd("zcat $tmp.vqsr.vcf.gz | $$self{filter} | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
 }
 
