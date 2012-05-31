@@ -633,10 +633,12 @@ my \@lane_names;
        {
          push(@file_names, $file_name->name );
        }
-       $file_names_str = '("',join('","',@file_names ),'")';
+       $file_names_str = '("'.join('","',@file_names ).'")';
      }
 
-     print $scriptfh qq{\$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",$file_names_str);
+     print $scriptfh qq{
+       \@filenames_array = $file_names_str;
+       \$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
      };
    }
 
