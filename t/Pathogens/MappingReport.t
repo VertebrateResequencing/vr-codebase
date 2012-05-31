@@ -57,7 +57,7 @@ my %assembly = ( name => 'Sue_FMNH_PR_2081', reference_size => 23298589);
 my %mapper   = ( name_a => 'velocimapper', version_a => '0.0.1',
 		 name_b => 'dinomap',      version_b => '0.0.2' );
 
-my %mapstats_qc  = (raw_reads => 1438046, raw_bases => 109291496, clip_bases => 108674266,
+my %mapstats_qc  = (is_qc => 1, raw_reads => 1438046, raw_bases => 109291496, clip_bases => 108674266,
 		    reads_mapped => 1423575, reads_paired => 1393135, bases_mapped  => 107477960, 
 		    rmdup_reads_mapped => 1423083, rmdup_bases_mapped => 107443038,
 		    adapter_reads => 83, error_rate => 0.00297524, mean_insert  => 315.6, sd_insert => 42.6,
