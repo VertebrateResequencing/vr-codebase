@@ -2,11 +2,8 @@ package Pathogens::Variant::Iterator::Vcf;
 use Moose;
 extends 'Pathogens::Variant::Root';
 
-use Pathogens::Variant::Exception;
 use Vcf; # Petr Danecek's Vcf module
-use Switch;
-use Pathogens::Variant::Event::Snp;
-use Pathogens::Variant::Event::Dip;
+use Pathogens::Variant::Event;
 use Pathogens::Variant::Sample;
 
 use namespace::autoclean;
@@ -87,7 +84,7 @@ sub close_vcf {
 }
 
 sub _populate_event_attributes {
-	my ($self, $event, $data_array_ref) = @_;
+    my ($self, $event, $data_array_ref) = @_;
 
     #there are 8 fixed fields in a vcf (http://www.1000genomes.org/node/101)
     $event->chromosome($$data_array_ref[0]);
@@ -109,7 +106,7 @@ sub _populate_event_attributes {
         $event->add_sample($sample_object);
         $data_array_counter++;
     }
-	return $event;
+    return $event;
 }
 
 __PACKAGE__->meta->make_immutable;

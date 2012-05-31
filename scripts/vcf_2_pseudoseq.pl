@@ -130,7 +130,7 @@ Optional parameters:
 die "Exiting... Argument errors" 
 	unless (Getopt::Declare->new($specification));
 
-#a little bit more argument sanity check
+#a little more argument sanity check
 my $doubled_arg_D_depth_strand = $args{depth_strand} * 2;
 if ( $args{depth} < $doubled_arg_D_depth_strand ) {
     print "'-d' (depth) must be greater than '-D' (depth_strand)! Silently increasing it to " .$doubled_arg_D_depth_strand ."\n";
@@ -138,7 +138,7 @@ if ( $args{depth} < $doubled_arg_D_depth_strand ) {
 }
 
 #af1 is used to check quality of variant sites.
-#we will use af1_complement to check the quality if non-variant sites
+#we will use 1-af1 (af1's complement) to check the quality if non-variant sites
 my $af1_complement = 1 - $args{af1};
 
 
@@ -163,18 +163,18 @@ my $evaluator = Pathogens::Variant::Evaluator::Pseudosequence->new(
 );
 
 my $c = 0;
-my $p = 0;
 while( my $event = $iterator->next_event() ) {
-    $c++; print $c, "\n" unless $c % 10000;
+    
+    $c++; print $c, "\n" unless $c % 100000;
+    
     $evaluator->evaluate($event); #note: evaluator will modify heterozygous calls
 
     if ($event->passed_evaluation) {
-        $p++;
+        
     }
-
 }
+
 $iterator->close_vcf();
 
 #print join("\n", $iterator-> get_metalines);
 print $evaluator->dump_evaluation_statistics;
-print "\n$p\n";

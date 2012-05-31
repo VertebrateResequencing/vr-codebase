@@ -38,38 +38,44 @@ sub evaluate {
 
     my ($self, $event) = @_;
     
+    #logger is for DEBUGging purposes, little effect on overall performance
     my $logger = get_logger("Pathogens::Variant::Evaluator::Pseudosequence");
     
     #Set the _event for this evaluation round
     $self->_event($event);
     
     
-    #there are various values in the VCF's "INFO" field, check if they are all good enough
-    my $good_values_in_info_field  = $self->_passed_vcf_info_field_evaluation;
     
-    #we are not dealing with indels in this version
-    my $is_not_an_indel            = $self->_is_not_an_indel;
+    #sub-evaluation of the values in the VCF's "INFO" field
+    my $good_values_in_info_field = $self->_passed_vcf_info_field_evaluation;
     
-    #heterozygous variants will need some modification
-    my $is_heterozygous            = $self->_has_secondary_heterozygous_alternative_alleles;
+    #sub-evaluation of indels(we will discard these)
+    my $is_not_an_indel = $self->_is_not_an_indel;
     
-    #this is just a check on VCF's "QUAL" field, check if good enough
-    my $has_good_quality           = $self->_passed_quality;
+    #sub-evaluation of heterozygous variants (we will remove secondary alleles later on)
+    my $is_heterozygous =0;
+    if ($self->_event->polymorphic and $self->_has_secondary_heterozygous_alternative_alleles) {
+        $is_heterozygous = 1;
+    }
     
-    
+    #sub-evaluation of VCF's "QUAL" field
+    my $has_good_quality = $self->_passed_quality;
+
+
+    #Bringing all sub-evaluation results together, and taking here the final decision on this variant
     if ( $good_values_in_info_field and $is_not_an_indel and $has_good_quality ) {
 
+        #make it homozygous
         if ( $is_heterozygous ) {
-            #modify some fields in the heterozygous event to make it look like homozygous
             $self->_event_manipulator->remove_secondary_alternative_heterozygous_alleles($event);
         }
 
         $self->_event->passed_evaluation(1);
-        $self->_reporter->inc_counter_accepted_snp_calls;
+        $self->_reporter->inc_counter_accepted_snp_calls; #increments the counter called "accepted_snp_calls" by 1
 
         $logger->is_debug() && $logger->debug("Event dump after passing the evaluation:...\n". Dumper($event) . "\nReporter dump after passing the evaluation:...\n". Dumper($self->_reporter) );
 
-        return 1; #PASSED
+        return 1; #PASSED OVERALL EVALUATION
 
     } else {
 
@@ -77,7 +83,7 @@ sub evaluate {
 
         $logger->is_debug() && $logger->debug("Event dump after failing the evaluation:...\n". Dumper($event) . "\nReporter dump after failing the evaluation:...\n". Dumper($self->_reporter) );
 
-        return 0; #FAILED
+        return 0; #FAILED OVERALL EVALUATION 
 
     }
 }
@@ -88,6 +94,7 @@ sub _has_secondary_heterozygous_alternative_alleles {
     
     my @num_alleles = split(',', $self->_event->alternative_allele);
     
+    #seeing more than 1 element after splitting on comma, implies heterozygousity
     if (scalar @num_alleles > 1) {
         $self->_reporter->inc_counter_heterozygous_calls;
         return 1;
@@ -102,8 +109,9 @@ sub _passed_quality {
     if ($self->_event->quality < $self->minimum_quality) {
         $self->_reporter->inc_counter_failed_quality;
         return 0;
+    } else {
+        return 1;
     }
-    return 1;
 }
 
 sub _passed_vcf_info_field_evaluation {
@@ -128,7 +136,7 @@ sub _passed_vcf_info_field_evaluation {
     
     if ( exists $param{'AF1'} ) {
         if (not $self->_event->polymorphic) {
-            if ($param{'AF1'} > $self->af1_complement) {
+            if ($param{'AF1'} >= $self->af1_complement) { #Why is this not ">=" in SH's script?
                 $evaluation_status = 0;
                 $self->_reporter->inc_counter_failed_af1_allele_frequency;
             }
@@ -138,12 +146,6 @@ sub _passed_vcf_info_field_evaluation {
                 $self->_reporter->inc_counter_failed_af1_allele_frequency;
             }
         }
-    }
-
-    
-    if ( exists $param{'AF1'} and $param{'AF1'} < $self->minimum_af1) {
-        $evaluation_status = 0;
-        $self->_reporter->inc_counter_failed_af1_allele_frequency;
     }
 
     if (exists $param{'PV4'} and not $self->_passed_pv4_evaluation($param{'PV4'}) ) {
@@ -202,7 +204,7 @@ sub _passed_dp4_evaluation {
     my $evaluation_status = 1;
     
     
-    if (not $self->_event->polymorphic) { #i.e. if dealing with a NON-polymorphic site (i.e. ALT = '.' in VCF file)
+    if (not $self->_event->polymorphic) { #dealing with NON-polymorphic site (i.e. Vcf's ALT field equals '.')
 
         #reference depth test for the reference allele
         if ( $self->_dp4_parser->count_referecence_bases < $self->minimum_depth) {
@@ -232,7 +234,7 @@ sub _passed_dp4_evaluation {
             $self->_reporter->inc_counter_failed_ratio_reverse;
             $evaluation_status = 0;
         }
-    } else { #POLYMORPHIC EVENT
+    } else { #dealing with polymorphic site
     
         #alternative allele depth test
         if ( $self->_dp4_parser->count_alternative_bases < $self->minimum_depth) {
@@ -271,16 +273,15 @@ sub _is_not_an_indel {
     my ($self) = @_;
     my $logger = get_logger("Pathogens::Variant::Evaluator::Pseudosequence");
     
-    my ($ref_allele) = split(',', $self->_event->reference_allele);   #taking only the 1st element
-    my ($alt_allele) = split(',', $self->_event->alternative_allele); #taking only the 1st element
+    my ($ref_allele) = split(',', $self->_event->reference_allele);   #(as SH) taking only the 1st element
+    my ($alt_allele) = split(',', $self->_event->alternative_allele); #(as SH) taking only the 1st element
     
     $logger->is_debug() && $logger->debug("Checking if the event is an indel...");
     
     if ( length($ref_allele) > 1
             or
          length($alt_allele) > 1
-            or
-         $self->_event->info =~ /INDEL/ )
+       )
     {
         $self->_reporter->inc_counter_skipped_indel;
 
