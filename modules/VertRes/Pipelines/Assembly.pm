@@ -637,7 +637,7 @@ my \@lane_names;
      }
 
      print $scriptfh qq{
-       \@filenames_array = $file_names_str;
+       my \@filenames_array = $file_names_str;
        \$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
      };
    }
