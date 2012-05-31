@@ -132,11 +132,11 @@ sub vcf_subset
     # Init requested column info. If not present, include all columns.
     my $columns = exists($$opts{columns_file}) ? read_columns($$opts{columns_file}) : [];
     $columns = check_columns($opts,$vcf,$columns);
-    my $columns_to_keep = { map { $_ => 1 } @$columns }; 
     if ( !@$columns && (my $ncols=@{$$vcf{columns}})>9 )
     {
         push @$columns, @{$$vcf{columns}}[9..($ncols-1)];
     }
+    my $columns_to_keep = { map { $_ => 1 } @$columns }; 
     my %has_col = map { $_ => 1 } @$columns;
 
     $vcf->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
