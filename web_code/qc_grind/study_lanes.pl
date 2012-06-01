@@ -130,9 +130,9 @@ sub displayProjectLaneForm
     	<th>Genotype</th>
         <th>NPG Status</th>
         <th>Auto QC Status</th>
-        <th>Mapped</th>
-        <th>Dup</th>
-        <th>RmDup Mapped</th>
+        <th title="Gbp mapped">Mapped</th>
+        <th title="Percent of mapped reads which were duplicates">Dup \%</th>
+        <th title="Gbp mapped ignoring duplicate reads">Mapped-dup</th>
         <th></th>
         </tr>
     ];
