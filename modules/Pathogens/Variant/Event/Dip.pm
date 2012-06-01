@@ -9,10 +9,8 @@ use namespace::autoclean;
 
 
 
-
-
-has 'insertion_in_sample' => ( is => 'rw', isa => 'Bool', default => undef );
-has 'insertion_length'       => ( is => 'rw', isa => 'Int' );
+has 'insertion_length'       => ( is => 'rw', isa => 'Int', lazy => 1, default => -1 );
+has 'deletion_length'        => ( is => 'rw', isa => 'Int', lazy => 1, default => -1 );
 
 
 =head1 NAME

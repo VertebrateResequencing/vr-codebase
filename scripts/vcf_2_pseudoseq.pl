@@ -3,38 +3,48 @@
 use strict;
 use warnings;
 use Getopt::Declare;
-use Data::Dumper;
-use Pathogens::Variant::Iterator::Vcf;
-use Pathogens::Variant::Evaluator::Pseudosequence;
 use Log::Log4perl;
+use Pathogens::Variant::Utils::PseudoReferenceMaker;
+
+our $VERSION = 0.01;
 
 
-my $conf = q(
+
+
+
+
+
+
+#log4perl's log configuration setting
+#Activates the logger at level "FATAL", and prints the errors to STDERR
+my $logconf = q(
     log4perl.category.Pathogens.Variant.Evaluator.Pseudosequence = FATAL, Screen
     log4perl.appender.Screen = Log::Log4perl::Appender::Screen
     log4perl.appender.Screen.layout = Log::Log4perl::Layout::SimpleLayout
 );
-
-Log::Log4perl::init( \$conf );
+Log::Log4perl::init( \$logconf );
  
-our $VERSION = 0.01;
 
 
-#set the default values for commandline arguments
+
+
+
+#set the default argument values
 our %args = (
-                 vcf_file     => ''
-               , out_prefix   => ''
-               , depth        => 4
-               , depth_strand => 2
-               , ratio        => 0.8
-               , quality      => 50
-               , map_quality  => 0
-               , af1          => 0.95
-               , ci95         => 0.0
-               , strand_bias  => 0.001
-               , base_quality_bias => 0.0
-               , map_bias     => 0.001
-               , tail_bias    => 0.001
+     vcf_file     => ''
+   , out_prefix   => ''
+   , depth        => 4
+   , depth_strand => 2
+   , ratio        => 0.8
+   , quality      => 50
+   , map_quality  => 0
+   , af1          => 0.95
+   , af1_complement => 0.05
+   , ci95         => 0.0
+   , strand_bias  => 0.001
+   , base_quality_bias => 0.0
+   , map_bias     => 0.001
+   , tail_bias    => 0.001
 );
 
 my $specification = q(
@@ -127,54 +137,10 @@ Optional parameters:
 ------------------------------------------------------------------------------------------
 );
 
-die "Exiting... Argument errors" 
-	unless (Getopt::Declare->new($specification));
+die "Exiting: Argument errors" 
+	unless ( Getopt::Declare->new($specification) );
 
-#a little more argument sanity check
-my $doubled_arg_D_depth_strand = $args{depth_strand} * 2;
-if ( $args{depth} < $doubled_arg_D_depth_strand ) {
-    print "'-d' (depth) must be greater than '-D' (depth_strand)! Silently increasing it to " .$doubled_arg_D_depth_strand ."\n";
-    $args{depth} = $doubled_arg_D_depth_strand;
-}
+my $pseudo_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(run_arguments => \%args);
+$pseudo_maker->create_pseudo_reference();
+$pseudo_maker->report_run_statistics();
 
-#af1 is used to check quality of variant sites.
-#we will use 1-af1 (af1's complement) to check the quality if non-variant sites
-my $af1_complement = 1 - $args{af1};
-
-
-
-#this will traverse the VCF file and return Pathogens::Variant::Event::* objects
-my $iterator = Pathogens::Variant::Iterator::Vcf->new(vcf_file => $args{vcf_file});
-
-#create an evaluator object to filter bad calls based on user criteria
-my $evaluator = Pathogens::Variant::Evaluator::Pseudosequence->new(
-      minimum_depth => $args{depth}
-    , minimum_depth_strand => $args{depth_strand}
-    , minimum_ratio => $args{ratio}
-    , minimum_quality => $args{quality}
-    , minimum_map_quality => $args{map_quality}
-    , minimum_af1 => $args{af1}
-    , af1_complement =>  $af1_complement
-    , minimum_ci95 => $args{ci95}
-    , minimum_strand_bias => $args{strand_bias}
-    , minimum_base_quality_bias => $args{base_quality_bias}
-    , minimum_map_bias => $args{map_bias}
-    , minimum_tail_bias => $args{tail_bias}
-);
-
-my $c = 0;
-while( my $event = $iterator->next_event() ) {
-    
-    $c++; print $c, "\n" unless $c % 100000;
-    
-    $evaluator->evaluate($event); #note: evaluator will modify heterozygous calls
-
-    if ($event->passed_evaluation) {
-        
-    }
-}
-
-$iterator->close_vcf();
-
-#print join("\n", $iterator-> get_metalines);
-print $evaluator->dump_evaluation_statistics;

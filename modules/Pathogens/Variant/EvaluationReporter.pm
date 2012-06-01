@@ -1,5 +1,6 @@
 package Pathogens::Variant::EvaluationReporter;
 use Moose;
+use Data::Dumper;
 extends 'Pathogens::Variant::Root';
 use namespace::autoclean;
 
@@ -154,6 +155,21 @@ has 'accepted_snp_calls' => (
           inc_counter_accepted_snp_calls => 'inc'
     }
 );
+
+has 'total_number_of_event_evaluations' => ( 
+      is => 'ro' 
+    , isa => 'Int', 
+    , default => 0
+    , traits  => ['Counter']
+    , handles => {
+          inc_total_number_of_event_evaluations => 'inc'
+    }
+);
+
+sub dump {
+    my $self = shift;
+    return Dumper $self;
+} 
 
 __PACKAGE__->meta->make_immutable;
 

@@ -28,9 +28,9 @@ has 'minimum_strand_bias'    => ( is => 'ro', isa => 'Num', default => 0.001 );
 has 'minimum_map_bias'       => ( is => 'ro', isa => 'Num', default => 0.001 );
 has 'minimum_tail_bias'      => ( is => 'ro', isa => 'Num', default => 0.001 );
 has 'minimum_base_quality_bias' => ( is => 'ro', isa => 'Num', default => 0.0 );
+has 'reporter'            => ( is => 'ro', isa => 'Pathogens::Variant::EvaluationReporter', lazy => 1, default => sub { return Pathogens::Variant::EvaluationReporter->new } );
 
 has '_event'               => ( is => 'rw', isa => 'Pathogens::Variant::Event' );
-has '_reporter'            => ( is => 'ro', isa => 'Pathogens::Variant::EvaluationReporter', default => sub { return Pathogens::Variant::EvaluationReporter->new } );
 has '_dp4_parser'          => ( is => 'ro', isa => 'Pathogens::Variant::Utils::DP4Parser', lazy => 1, default => sub { return Pathogens::Variant::Utils::DP4Parser->new } );
 has '_event_manipulator'   => ( is => 'ro', isa => 'Pathogens::Variant::Utils::EventManipulator', lazy => 1, default => sub { return Pathogens::Variant::Utils::EventManipulator->new } );
 
@@ -44,7 +44,8 @@ sub evaluate {
     #Set the _event for this evaluation round
     $self->_event($event);
     
-    
+    #increments total number of event evaluations counter
+    $self->reporter->inc_total_number_of_event_evaluations;
     
     #sub-evaluation of the values in the VCF's "INFO" field
     my $good_values_in_info_field = $self->_passed_vcf_info_field_evaluation;
@@ -71,9 +72,9 @@ sub evaluate {
         }
 
         $self->_event->passed_evaluation(1);
-        $self->_reporter->inc_counter_accepted_snp_calls; #increments the counter called "accepted_snp_calls" by 1
+        $self->reporter->inc_counter_accepted_snp_calls; #increments the counter called "accepted_snp_calls" by 1
 
-        $logger->is_debug() && $logger->debug("Event dump after passing the evaluation:...\n". Dumper($event) . "\nReporter dump after passing the evaluation:...\n". Dumper($self->_reporter) );
+        $logger->is_debug() && $logger->debug("Event dump after passing the evaluation:...\n". Dumper($event) . "\nReporter dump after passing the evaluation:...\n". Dumper($self->reporter) );
 
         return 1; #PASSED OVERALL EVALUATION
 
@@ -81,7 +82,7 @@ sub evaluate {
 
         $self->_event->passed_evaluation(0); #i.e. the event failed to pass the filters
 
-        $logger->is_debug() && $logger->debug("Event dump after failing the evaluation:...\n". Dumper($event) . "\nReporter dump after failing the evaluation:...\n". Dumper($self->_reporter) );
+        $logger->is_debug() && $logger->debug("Event dump after failing the evaluation:...\n". Dumper($event) . "\nReporter dump after failing the evaluation:...\n". Dumper($self->reporter) );
 
         return 0; #FAILED OVERALL EVALUATION 
 
@@ -96,7 +97,7 @@ sub _has_secondary_heterozygous_alternative_alleles {
     
     #seeing more than 1 element after splitting on comma, implies heterozygousity
     if (scalar @num_alleles > 1) {
-        $self->_reporter->inc_counter_heterozygous_calls;
+        $self->reporter->inc_counter_heterozygous_calls;
         return 1;
     } else {
         return 0;
@@ -107,7 +108,7 @@ sub _passed_quality {
     
     my ($self) = @_;
     if ($self->_event->quality < $self->minimum_quality) {
-        $self->_reporter->inc_counter_failed_quality;
+        $self->reporter->inc_counter_failed_quality;
         return 0;
     } else {
         return 1;
@@ -131,19 +132,19 @@ sub _passed_vcf_info_field_evaluation {
 
     if ( exists $param{'MQ'} and $param{'MQ'} < $self->minimum_map_quality) {
         $evaluation_status = 0;
-        $self->_reporter->inc_counter_failed_map_quality;
+        $self->reporter->inc_counter_failed_map_quality;
     }
     
     if ( exists $param{'AF1'} ) {
         if (not $self->_event->polymorphic) {
             if ($param{'AF1'} >= $self->af1_complement) { #Why is this not ">=" in SH's script?
                 $evaluation_status = 0;
-                $self->_reporter->inc_counter_failed_af1_allele_frequency;
+                $self->reporter->inc_counter_failed_af1_allele_frequency;
             }
         } else {
             if ($param{'AF1'} < $self->minimum_af1) {
                 $evaluation_status = 0;
-                $self->_reporter->inc_counter_failed_af1_allele_frequency;
+                $self->reporter->inc_counter_failed_af1_allele_frequency;
             }
         }
     }
@@ -177,19 +178,19 @@ sub _passed_pv4_evaluation {
     
     if ( $strand_bias < $self->minimum_strand_bias ) {
         $evaluation_status = 0;
-        $self->_reporter->inc_counter_failed_strand_bias;
+        $self->reporter->inc_counter_failed_strand_bias;
     }
     if ( $base_quality_bias < $self->minimum_base_quality_bias) {
         $evaluation_status = 0;
-        $self->_reporter->inc_counter_failed_base_quality_bias;
+        $self->reporter->inc_counter_failed_base_quality_bias;
     }
     if ( $map_bias < $self->minimum_map_bias) {
         $evaluation_status = 0;
-        $self->_reporter->inc_counter_failed_map_bias;
+        $self->reporter->inc_counter_failed_map_bias;
     }
     if ( $tail_distance_bias < $self->minimum_tail_bias) {
         $evaluation_status = 0;
-        $self->_reporter->inc_counter_failed_tail_distance_bias;
+        $self->reporter->inc_counter_failed_tail_distance_bias;
     }
     
     return $evaluation_status;
@@ -208,60 +209,60 @@ sub _passed_dp4_evaluation {
 
         #reference depth test for the reference allele
         if ( $self->_dp4_parser->count_referecence_bases < $self->minimum_depth) {
-            $self->_reporter->inc_counter_failed_depth;
+            $self->reporter->inc_counter_failed_depth;
             $evaluation_status = 0;
         }
         
         #forward strand depth test for the reference allele
         if ( $self->_dp4_parser->count_reference_forward_bases < $self->minimum_depth_strand) {
-            $self->_reporter->inc_counter_failed_depth_forward;
+            $self->reporter->inc_counter_failed_depth_forward;
             $evaluation_status = 0;
         }
         
         #reverse strand depth test for the reference allele
         if ( $self->_dp4_parser->count_reference_reverse_bases < $self->minimum_depth_strand) {
-            $self->_reporter->inc_counter_failed_depth_reverse;
+            $self->reporter->inc_counter_failed_depth_reverse;
             $evaluation_status = 0;
         }
         
         #forward ratio test for the reference allele
         if ( $self->_dp4_parser->ratio_forward_reference_bases < $self->minimum_ratio) {
-            $self->_reporter->inc_counter_failed_ratio_forward;
+            $self->reporter->inc_counter_failed_ratio_forward;
             $evaluation_status = 0;
         }
         #reverse ratio test for the reference allele
         if ( $self->_dp4_parser->ratio_reverse_reference_bases < $self->minimum_ratio) {
-            $self->_reporter->inc_counter_failed_ratio_reverse;
+            $self->reporter->inc_counter_failed_ratio_reverse;
             $evaluation_status = 0;
         }
     } else { #dealing with polymorphic site
     
         #alternative allele depth test
         if ( $self->_dp4_parser->count_alternative_bases < $self->minimum_depth) {
-            $self->_reporter->inc_counter_failed_depth;
+            $self->reporter->inc_counter_failed_depth;
             $evaluation_status = 0;
         }
         
         #forward strand depth test for alternative allele
         if ( $self->_dp4_parser->count_alternative_forward_bases < $self->minimum_depth_strand) {
-            $self->_reporter->inc_counter_failed_depth_forward;
+            $self->reporter->inc_counter_failed_depth_forward;
             $evaluation_status = 0;
         }
         
         #reverse strand depth test for alternative allele
         if ( $self->_dp4_parser->count_alternative_reverse_bases < $self->minimum_depth_strand) {
-            $self->_reporter->inc_counter_failed_depth_reverse;
+            $self->reporter->inc_counter_failed_depth_reverse;
             $evaluation_status = 0;
         }
         
         #forward ratio test for alternative allele
         if ( $self->_dp4_parser->ratio_forward_alternative_bases < $self->minimum_ratio) {
-            $self->_reporter->inc_counter_failed_ratio_forward;
+            $self->reporter->inc_counter_failed_ratio_forward;
             $evaluation_status = 0;
         }
         #reverse ratio test for alternative allele
         if ( $self->_dp4_parser->ratio_reverse_alternative_bases < $self->minimum_ratio) {
-            $self->_reporter->inc_counter_failed_ratio_reverse;
+            $self->reporter->inc_counter_failed_ratio_reverse;
             $evaluation_status = 0;
         }
     }
@@ -283,7 +284,7 @@ sub _is_not_an_indel {
          length($alt_allele) > 1
        )
     {
-        $self->_reporter->inc_counter_skipped_indel;
+        $self->reporter->inc_counter_skipped_indel;
 
         $logger->is_debug() && $logger->debug("Event was classified as indel!...");
 
@@ -293,11 +294,6 @@ sub _is_not_an_indel {
 
         return 1;
     }
-}
-
-sub dump_evaluation_statistics {
-    my ($self) = @_;
-    return Dumper $self->_reporter;
 }
 
 =head1 BUGS

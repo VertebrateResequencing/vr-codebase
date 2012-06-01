@@ -8,8 +8,9 @@ use namespace::autoclean;
 
 
 
-
-
+has "transversion" => (is => 'rw', isa => 'Bool', lazy => 1, default => 0 );
+has "transition"   => (is => 'rw', isa => 'Bool', lazy => 1, default => 0 );
+has 'synonymous'   => (is => 'rw', isa => 'Bool', lazy => 1, default => 0 );
 
 =head1 NAME
 
