@@ -73,14 +73,10 @@ sub next_event {
         
     } else {
         
+        $self->_vcf_obj->close();
         return undef;
         
     }
-}
-
-sub close_vcf {
-    my $self = shift;
-    $self->_vcf_obj->close();
 }
 
 sub _populate_event_attributes {

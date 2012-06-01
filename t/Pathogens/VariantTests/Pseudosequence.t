@@ -63,8 +63,6 @@ while( $event = $iterator->next_event() ) {
     $evaluator->evaluate($event);
     is($event->passed_evaluation, 0, "Evaluation filters the indel out (no indels allowed) as expected");
 }
-$iterator->close_vcf();
-
 
 $event = Pathogens::Variant::Event::Snp->new(
    chromosome => 'FN433596'

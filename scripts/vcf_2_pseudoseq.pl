@@ -18,8 +18,13 @@ our $VERSION = 0.01;
 #log4perl's log configuration setting
 #Activates the logger at level "INFO", and prints the errors to SCREEN
 my $logconf = q(
+
+    #set the log category to root (i.e. Pathogens::*) and
+    #set the level to INFO and higher, choose 'Screen' as appender
     log4perl.category.Pathogens = INFO, Screen
     
+    
+    #create the appender, turn off stderr (ie choose stdout) create log pattern
     log4perl.appender.Screen = Log::Log4perl::Appender::Screen
     log4perl.appender.Screen.stderr  = 0
     log4perl.appender.Screen.layout = PatternLayout
@@ -35,7 +40,8 @@ Log::Log4perl::init( \$logconf );
 #set the default argument values
 our %args = (
      vcf_file     => ''
-   , out_prefix   => ''
+   , out   => ''
+   , bam   => ''
    , depth        => 4
    , depth_strand => 2
    , ratio        => 0.8
@@ -57,13 +63,17 @@ my $specification = q(
 ==========================================================================================
 Required parameters:
 
-    -v[cf_file] <string>               	Variation input file in vcf format [required]
+    -v[cf] <string>                    	Variation input file in vcf format [required]
                                             { 
                                             	$main::args{vcf_file} = $string; 
                                             }
-    -o[ut_prefix] <string>             	Prefix for output file names [required]
+    -o[ut] <string>                    	Output file name for the pseudoreference [required]
                                             { 
-                                            	$main::args{out_prefix} = $string; 
+                                            	$main::args{out} = $string; 
+                                            }
+    -b[am] <string>                    	Bam file with a valid header and read alignments [required]
+                                            { 
+                                            	$main::args{bam} = $string; 
                                             }
 ------------------------------------------------------------------------------------------
 
