@@ -16,11 +16,14 @@ our $VERSION = 0.01;
 
 
 #log4perl's log configuration setting
-#Activates the logger at level "FATAL", and prints the errors to STDERR
+#Activates the logger at level "INFO", and prints the errors to SCREEN
 my $logconf = q(
-    log4perl.category.Pathogens.Variant.Evaluator.Pseudosequence = FATAL, Screen
+    log4perl.category.Pathogens = INFO, Screen
+    
     log4perl.appender.Screen = Log::Log4perl::Appender::Screen
-    log4perl.appender.Screen.layout = Log::Log4perl::Layout::SimpleLayout
+    log4perl.appender.Screen.stderr  = 0
+    log4perl.appender.Screen.layout = PatternLayout
+    log4perl.appender.Screen.layout.ConversionPattern=[%p][%d] %m (%C %L)%n
 );
 Log::Log4perl::init( \$logconf );
  
@@ -140,7 +143,7 @@ Optional parameters:
 die "Exiting: Argument errors" 
 	unless ( Getopt::Declare->new($specification) );
 
-my $pseudo_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(run_arguments => \%args);
+my $pseudo_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \%args);
 $pseudo_maker->create_pseudo_reference();
-$pseudo_maker->report_run_statistics();
+print $pseudo_maker->get_statistics_dump();
 
