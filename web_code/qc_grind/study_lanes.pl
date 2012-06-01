@@ -116,7 +116,7 @@ sub displayProjectLaneForm
         <div class="centerFieldset">
         <fieldset>
         <legend>Lane status</legend>
-        <table RULES=GROUPS>
+        <table RULES=GROUPS cellpadding="4">
         <tr>
 		<th style="width: 40px">Pass</th>
 		<th style="width: 40px">Fail</th>
@@ -131,7 +131,7 @@ sub displayProjectLaneForm
         <th>NPG Status</th>
         <th>Auto QC Status</th>
         <th>Mapped</th>
-        <th>Rmdup&#37;</th>
+        <th>Dup</th>
         <th>RmDup Mapped</th>
         <th></th>
         </tr>
@@ -178,9 +178,6 @@ sub displayProjectLaneForm
 						next unless $cgi->param($lane->qc_status);
 					}
 
-					my $mapping_raw_bases = 0;
-					my $duplication = 0;
-
         			my $lanename = $lane->name;
 					my $gt_status = $lane->genotype_status;
         			my $npg_qc = $lane->npg_qc_status;
@@ -196,7 +193,7 @@ sub displayProjectLaneForm
 					my $lane_mapstats = getMapStats($lane);
 					if (%{$lane_mapstats}) {
 
-						next if $bases_mapped_filt && $lane_mapstats->{mapping_raw_bases} < $bases_mapped_filt;
+						next if $bases_mapped_filt && $lane_mapstats->{bases_mapped} < $bases_mapped_filt;
 						next if $duplication_filt && $lane_mapstats->{duplication} < $duplication_filt;
 						next if $rmdup_mapped_filt && $lane_mapstats->{rmdup_bases_mapped} < $rmdup_mapped_filt;
 	
@@ -224,7 +221,7 @@ sub displayProjectLaneForm
 
 						print qq [ <td style="background-color:$lane_status_colour;"><a href="$lane_view_script?lane_id=$lane_id&amp;db=$database">$lanename</a></td> ];
 						print qq [ <td style="background-color:$gt_status_colour;">$gt_display</td> ];
-						print $cgi->td([$npg_qc, $auto_qc_status, $lane_mapstats->{mapping_raw_bases}, $lane_mapstats->{duplication}, $lane_mapstats->{rmdup_bases_mapped}]);
+						print $cgi->td([$npg_qc, $auto_qc_status, $lane_mapstats->{bases_mapped}, $lane_mapstats->{duplication}, $lane_mapstats->{rmdup_bases_mapped}]);
 						print qq[</tr>];
 					}
 				} # foreach lane
@@ -317,9 +314,6 @@ sub downloadLaneData {
 
 					next unless $cgi->param($lane->qc_status); # filter on lane status check button
 
-					my $mapping_raw_bases = 0;
-					my $duplication = 0;
-
         			my $lanename = $lane->name;
 					my $gt_status = $lane->genotype_status;
 					my $lane_qc_status = $lane->qc_status;
@@ -338,11 +332,11 @@ sub downloadLaneData {
 						my $gt_display = $gt_status;
 						$gt_display .= " ($gt_found:$gt_ratio)" if $gt_found;
 
-						next if $bases_mapped_filt && $lane_mapstats->{mapping_raw_bases} < $bases_mapped_filt;
+						next if $bases_mapped_filt && $lane_mapstats->{bases_mapped} < $bases_mapped_filt;
 						next if $duplication_filt && $lane_mapstats->{duplication} < $duplication_filt;
 						next if $rmdup_mapped_filt && $lane_mapstats->{rmdup_bases_mapped} < $rmdup_mapped_filt;
 
-						print (join("\t",$iname,$sample_name,$libname,$lanename,$gt_display,$lane_qc_status,$npg_qc,$auto_qc_status,$lane_mapstats->{mapping_raw_bases},$lane_mapstats->{duplication},$lane_mapstats->{rmdup_bases_mapped}),"\n");
+						print (join("\t",$iname,$sample_name,$libname,$lanename,$gt_display,$lane_qc_status,$npg_qc,$auto_qc_status,$lane_mapstats->{bases_mapped},$lane_mapstats->{duplication},$lane_mapstats->{rmdup_bases_mapped}),"\n");
 					}
 				} # foreach lane
 			} # foreach lib
@@ -358,7 +352,7 @@ sub getMapStats {
 
 	foreach my $mapstats ( @mappings ) {
         if ($mapstats->bases_mapped) {
-            $lane_mapstats{mapping_raw_bases} = sprintf("%.1f", ($mapstats->bases_mapped()/1000000000)); # GB
+            $lane_mapstats{bases_mapped} = sprintf("%.1f", ($mapstats->bases_mapped()/1000000000)); # GB
             $lane_mapstats{duplication} = sprintf("%.1f", (1.0-($mapstats->rmdup_reads_mapped()/$mapstats->reads_mapped))*100);
             $lane_mapstats{rmdup_bases_mapped} =  sprintf("%.1f", ($mapstats->rmdup_bases_mapped/1000000000)); # GB
             $lane_mapstats{genotype_found} = $mapstats->genotype_found;
