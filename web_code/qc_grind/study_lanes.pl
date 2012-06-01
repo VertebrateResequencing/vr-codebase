@@ -132,7 +132,7 @@ sub displayProjectLaneForm
         <th>Auto QC Status</th>
         <th title="Gbp mapped">Mapped</th>
         <th title="Percent of mapped reads which were duplicates">Dup \%</th>
-        <th title="Gbp mapped ignoring duplicate reads">Mapped-dup</th>
+        <th title="Gbp mapped ignoring duplicate reads">Mapped-dups</th>
         <th></th>
         </tr>
     ];
