@@ -352,6 +352,7 @@ sub merge_vcf_files
                     if ( !$line or $pos ne $$line{POS} ) { next; }
                     my $ref = $$line{REF};
                     for my $alt (@{$$line{ALT}}) { $alts{$ref_alt_map{$ref}{$alt}}=1; }
+                    delete($alts{'.'});
                     $out{ALT} = [ keys %alts ];
                 }
             }
