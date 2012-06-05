@@ -69,3 +69,8 @@ use base 'Pathogens::Variant::Exception';
 package Pathogens::Variant::Exception::Default;
 use base 'Pathogens::Variant::Exception';
 1;
+
+package Pathogens::Variant::Exception::ObjectUsage;
+use base 'Pathogens::Variant::Exception';
+1;
+

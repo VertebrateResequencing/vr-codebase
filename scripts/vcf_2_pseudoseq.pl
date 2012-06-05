@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 use Getopt::Declare;
-use Log::Log4perl;
+use Log::Log4perl qw(get_logger);
 use Pathogens::Variant::Utils::PseudoReferenceMaker;
 
 our $VERSION = 0.01;
@@ -21,7 +21,7 @@ my $logconf = q(
 
     #set the log category to root (i.e. Pathogens::*) and
     #set the level to INFO and higher, choose 'Screen' as appender
-    log4perl.category.Pathogens = INFO, Screen
+    log4perl.category = INFO, Screen
     
     
     #create the appender, turn off stderr (ie choose stdout) create log pattern
@@ -31,7 +31,8 @@ my $logconf = q(
     log4perl.appender.Screen.layout.ConversionPattern=[%p][%d] %m (%C %L)%n
 );
 Log::Log4perl::init( \$logconf );
- 
+
+my $logger = get_logger();
 
 
 
@@ -150,7 +151,7 @@ Optional parameters:
 ------------------------------------------------------------------------------------------
 );
 
-die "Exiting: Argument errors" 
+$logger->logdie("Exiting: Argument errors") 
 	unless ( Getopt::Declare->new($specification) );
 
 my $pseudo_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \%args);

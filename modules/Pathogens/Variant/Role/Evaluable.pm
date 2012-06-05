@@ -20,7 +20,6 @@ has 'was_evaluated' => (
 
 sub _set_evaluated {
     my ($self) = @_;
- 
     $self->was_evaluated(1);
 
 }
