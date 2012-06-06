@@ -115,16 +115,16 @@ sub map_and_generate_stats
    
    for my $lane_path ( @$lane_paths)
    {
-     my ($base_directory,$base,$suff) = basename($lane_path);
+     my ($base_directory,$base,$suff) = Utils::basename($lane_path);
      opendir(my $lane_dir_handle, $base_directory);
-     @fastq_files  = grep { /^fastq.gz/ } readdir($lane_dir_handle);
+     my @fastq_files  = grep { /\.fastq\.gz$/ } readdir($lane_dir_handle);
      if(@fastq_files >=1 )
      {
-       $forward_fastq .= $lane_path.$fastq_files[0];
+       $forward_fastq .= $base_directory.'/'.$fastq_files[0];
      }
      if(@fastq_files >=2 )
      {
-       $reverse_fastq .= $lane_path.$fastq_files[1];
+       $reverse_fastq .= $base_directory.'/'.$fastq_files[1];
      }
    }
 
