@@ -18,144 +18,16 @@ use Log::Log4perl qw(get_logger);
 
 has 'arguments'       => (is => 'rw', isa => 'HashRef', required => 1, trigger => \&_initialise);
 
+#all attributes below are initialised by the trigger in the "arguments" attribute above
 has '_iterator'       => (is => 'rw', isa => 'Pathogens::Variant::Iterator::Vcf', init_arg => undef );
 has '_reporter'       => (is => 'rw', isa => 'Pathogens::Variant::EvaluationReporter', init_arg => undef );
 has '_evaluator'      => (is => 'rw', isa => 'Pathogens::Variant::Evaluator::Pseudosequence', init_arg => undef );
 has '_bam_parser'     => (is => 'rw', isa => 'Pathogens::Variant::Utils::BamParser', init_arg => undef );
-
 has '_out_filehandle' => (is => 'rw', isa => 'FileHandle', init_arg => undef );
 
 
-has '_reference_lengths' => (
-      traits  => ['Hash'],
-      is      => 'rw',
-      isa     => 'HashRef[Str]',
-      default => sub { {} },
-      handles => {
-          exists_in_reference_lengths => 'exists',
-          ids_in_reference_lengths    => 'keys',
-          get_reference_length        => 'get',
-          set_reference_length        => 'set'
-      }
-);
 
 
-
-
-
-
-
-
-############################################################
-#Iterate through the VCF file, judge the variant/non-variant
-#and write accordingly a new "pseudoReference" to the disk
-#################################################### #######
-sub create_pseudo_reference {
-
-    my ($self) = @_;
-    my $logger = get_logger("Pathogens::Variant::Utils::PseudoReferenceMaker");
-    
-    
-    my $chromosome_sizes = $self->_bam_parser->fetch_hashref_chromosome_sizes;
-    my $processed_entries = 0;;
-    my $filehandle = $self->_out_filehandle;
-
-
-    my $event = $self->_iterator->next_event();
-    $self->_evaluator->evaluate($event);
-    my $last_allele = $self->_get_allele_of_evaluated_event($event);
-    my $last_chr = $event->chromosome;
-    my $last_pos = $event->position;
-    my %seen_references;
-    
-    print $filehandle ">" . $last_chr . "\n"; 
-    
-    while( $event = $self->_iterator->next_event() ) {
-
-        $self->_evaluator->evaluate($event);
-        my $curr_chr = $event->chromosome; 
-        my $curr_pos = $event->position;
-        my $curr_allele = $self->_get_allele_of_evaluated_event($event);
-
-        $self->_write_next_pseudo_reference_allele($event, $last_pos, $curr_pos, $last_chr, $curr_chr, $last_allele, $curr_allele, $chromosome_sizes);
-
-        $seen_references{$last_chr} = 1;
-        
-        $last_chr = $curr_chr;
-        $last_pos = $curr_pos;
-        $last_allele = $curr_allele;
-        $processed_entries++;
-        $logger->info("Processed $processed_entries sites") unless $processed_entries % 10000;
-    }
-
-    my $pad_size = $chromosome_sizes->{$last_chr} - $last_pos;
-    $self->_pad_chromosome_file_with_Ns($pad_size);
-
-}
-
-sub _write_next_pseudo_reference_allele {
-    
-    my (  $self
-        , $event
-        , $last_pos
-        , $curr_pos
-        , $last_chr
-        , $curr_chr
-        , $last_allele
-        , $curr_allele
-        , $chromosome_sizes) = @_;
-
-    my $filehandle = $self->_out_filehandle;
-    my $pad_size   = 0;
-
-    if ($curr_chr eq $last_chr) {  #still at the previous chromosome
-        print $filehandle $curr_allele;
-    } else { #at a new Chromosome
-        #finish previous chr
-        print $filehandle $last_allele;
-        $pad_size = $chromosome_sizes->{$last_chr} - $last_pos;
-        #pad the end with "N" if necessary
-        $self->_pad_chromosome_file_with_Ns($pad_size);
-
-        #start new chr
-        print $filehandle "\n" . ">" . $curr_chr . "\n";
-        $pad_size = $curr_pos - 1;
-        #pad the begin with "N" if necessary
-        $self->_pad_chromosome_file_with_Ns($pad_size);
-        print $filehandle $curr_allele;
-
-    }
-}
-
-
-sub _pad_chromosome_file_with_Ns {
-    
-    my ($self, $pad_size) = @_;
-    my $fhd = $self->_out_filehandle;
-    while ($pad_size > 0) {
-        print $fhd "N";
-        $pad_size--;
-    }
-}
-
-sub _get_allele_of_evaluated_event {
-    
-    my ($self, $event) = @_;
-    
-    if ( $event->passed_evaluation ) {
-        if (not $event->polymorphic) {
-            return $event->reference_allele;
-        } else {
-            return $event->alternative_allele;
-        }
-    } else {
-        if ( $event->was_evaluated ) {
-            return 'N';
-        } else {
-            throw Pathogens::Variant::Exception::ObjectUsage->new({text => 'An event must be evaluated before using _get_allele_of_evaluated_event function on it.'})
-        }
-    }
-}
 
 #################################################
 #initialise all the objects/settings for this run
@@ -202,14 +74,166 @@ sub _initialise {
 
     open( my $outfhd, ">", $self->arguments->{out} ) or throw Pathogens::Variant::Exception::File->new({text => "Couldn't open filehandle to write pseudo sequence: " . $!});
 
-    $self->_bam_parser( Pathogens::Variant::Utils::BamParser->new(bam => $self->arguments->{bam}) );
-    #set the objects into appropriate attributes for later access withing this class
+    my $bam_parser = Pathogens::Variant::Utils::BamParser->new(bam => $self->arguments->{bam});
+    $self->_bam_parser($bam_parser);
     $self->_evaluator($evaluator);
     $self->_iterator($iterator);
     $self->_reporter($reporter);
     $self->_out_filehandle($outfhd);
 
 }
+
+
+############################################################
+#Iterate through the VCF file, judge the variant/non-variant
+#and write accordingly a new "pseudoReference" to the disk
+#################################################### #######
+sub create_pseudo_reference {
+
+    my ($self) = @_;
+    my $logger = get_logger("Pathogens::Variant::Utils::PseudoReferenceMaker");
+    
+    
+
+    my $processed_entries = 0;;
+    my $filehandle = $self->_out_filehandle;
+
+
+    my $event = $self->_iterator->next_event();
+    $self->_evaluator->evaluate($event);
+    my $last_allele = $self->_get_allele_of_evaluated_event($event);
+    my $last_chr = $event->chromosome;
+    my $last_pos = $event->position;
+    my %seen_chromosomes;
+    
+    print $filehandle ">" . $last_chr . "\n"; 
+    
+    while( $event = $self->_iterator->next_event() ) {
+
+        $self->_evaluator->evaluate($event);
+        my $curr_chr = $event->chromosome; 
+        my $curr_pos = $event->position;
+        my $curr_allele = $self->_get_allele_of_evaluated_event($event);
+
+        $self->_write_next_pseudo_reference_allele(   $event
+                                                    , $last_pos
+                                                    , $curr_pos
+                                                    , $last_chr
+                                                    , $curr_chr
+                                                    , $last_allele
+                                                    , $curr_allele
+                                                  );
+
+        $seen_chromosomes{$last_chr} = 1;
+
+        $last_chr = $curr_chr;
+        $last_pos = $curr_pos;
+        $last_allele = $curr_allele;
+        $processed_entries++;
+        $logger->info("Processed $processed_entries sites") unless $processed_entries % 10000;
+    }
+
+    my $pad_size = $self->_bam_parser->get_chromosome_size($last_chr) - $last_pos;
+    $self->_pad_chromosome_file_with_Ns($pad_size); #pad the end with "N" if necessary
+    print $filehandle "\n";
+    
+    #if chromosome did not have any coverate/variant at all, 
+    #then we fill N's in the pseudoreference chromosomes 
+    $self->_fill_unseen_chromosomes_with_Ns(\%seen_chromosomes);
+}
+
+sub _fill_unseen_chromosomes_with_Ns {
+
+    my ($self, $seen_chromosomes) = @_;
+    my $filehandle = $self->_out_filehandle;
+    
+    foreach my $chr_name ( $self->_bam_parser->get_chromosome_names ) {
+        if (not exists $seen_chromosomes->{$chr_name} ) {
+            
+            print $filehandle ">" . $chr_name . "\n";
+            my $chromosome_length =$self->_bam_parser->get_chromosome_size($chr_name);
+            $self->_pad_chromosome_file_with_Ns($chromosome_length);
+            print $filehandle "\n";
+        }
+    }
+}
+
+sub _write_next_pseudo_reference_allele {
+    
+    my (  $self
+        , $event
+        , $last_pos
+        , $curr_pos
+        , $last_chr
+        , $curr_chr
+        , $last_allele
+        , $curr_allele
+       ) = @_;
+
+    my $filehandle = $self->_out_filehandle;
+    my $pad_size   = 0;
+
+    if ($curr_chr eq $last_chr) {  #still at the previous chromosome
+
+        #if the last position is not followed immediately by the current position, 
+        #pad the file with N's before writing the current allele
+        $pad_size = $curr_pos - $last_pos - 1;
+        $self->_pad_chromosome_file_with_Ns($pad_size) if ($pad_size > 0);
+
+        #write the current allele to the chromosome
+        print $filehandle $curr_allele;
+
+    } else { #at a new Chromosome
+
+        #finish writing to the previous chromosome after the last edits
+        print $filehandle $last_allele;
+        $pad_size =  $self->_bam_parser->get_chromosome_size($last_chr)  - $last_pos;
+        #pad the end with "N" if necessary
+        $self->_pad_chromosome_file_with_Ns($pad_size) if ($pad_size > 0);
+        print $filehandle "\n";
+
+
+        #start writing to the new chromosome
+        print $filehandle ">" . $curr_chr . "\n";
+        $pad_size = $curr_pos - 1;
+        #pad the begin with "N" if necessary
+        $self->_pad_chromosome_file_with_Ns($pad_size) if ($pad_size > 0);
+        print $filehandle $curr_allele;
+
+    }
+}
+
+
+sub _pad_chromosome_file_with_Ns {
+    
+    my ($self, $pad_size) = @_;
+    my $fhd = $self->_out_filehandle;
+    while ($pad_size > 0) {
+        print $fhd "N";
+        $pad_size--;
+    }
+}
+
+sub _get_allele_of_evaluated_event {
+    
+    my ($self, $event) = @_;
+    
+    if ( $event->passed_evaluation ) {
+        if (not $event->polymorphic) {
+            return $event->reference_allele;
+        } else {
+            return $event->alternative_allele;
+        }
+    } else {
+        if ( $event->was_evaluated ) {
+            return 'N';
+        } else {
+            throw Pathogens::Variant::Exception::ObjectUsage->new({text => 'An event must be evaluated before using _get_allele_of_evaluated_event function on it.'})
+        }
+    }
+}
+
+
 
 #####################################################################
 #To dump evaluation statistics after the sub 'create_pseudo_reference'
