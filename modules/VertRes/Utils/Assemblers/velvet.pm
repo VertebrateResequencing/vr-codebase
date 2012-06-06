@@ -35,6 +35,7 @@ package VertRes::Utils::Assemblers::velvet;
 use strict;
 use warnings;
 use VertRes::Wrapper::smalt;
+use Utils;
 
 use base qw(VertRes::Utils::Assembly);
 
@@ -114,8 +115,17 @@ sub map_and_generate_stats
    
    for my $lane_path ( @$lane_paths)
    {
-     $forward_fastq .= $lane_path.'_1.fastq.gz ';
-     $reverse_fastq .= $lane_path.'_2.fastq.gz ';
+     my ($base_directory,$base,$suff) = Utils::basename($lane_path);
+     opendir(my $lane_dir_handle, $base_directory);
+     my @fastq_files  = grep { /\.fastq\.gz$/ } readdir($lane_dir_handle);
+     if(@fastq_files >=1 )
+     {
+       $forward_fastq .= $base_directory.'/'.$fastq_files[0];
+     }
+     if(@fastq_files >=2 )
+     {
+       $reverse_fastq .= $base_directory.'/'.$fastq_files[1];
+     }
    }
 
    unless( -e "$output_directory/forward.fastq")
