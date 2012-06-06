@@ -1223,6 +1223,7 @@ sub statistics {
         print $scriptfh qq{
 use strict;
 use VertRes::Utils::Sam;
+use VertRes::Pipelines::Mapping;
 
 
 my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
