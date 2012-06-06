@@ -1223,7 +1223,7 @@ sub statistics {
         print $scriptfh qq{
 use strict;
 use VertRes::Utils::Sam;
-use Utils::CMD;
+
 
 my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
 
