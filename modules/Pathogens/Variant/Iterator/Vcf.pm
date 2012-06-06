@@ -64,10 +64,6 @@ sub next_event {
     if ($data_array_ref) {
         
         my $event = Pathogens::Variant::Event->new();
-        if ($$data_array_ref[4] eq '.') { #this might be the case in a VCF file where non-variants are listed alongside the variants
-            $event->polymorphic(0);
-            $event->type('NotPolymorph');
-        }
         
         return $self->_populate_event_attributes($event, $data_array_ref);
         

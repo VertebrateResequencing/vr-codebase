@@ -110,36 +110,46 @@ sub create_pseudo_reference {
     
     while( $event = $self->_iterator->next_event() ) {
 
-        $self->_evaluator->evaluate($event);
         my $curr_chr = $event->chromosome; 
         my $curr_pos = $event->position;
-        my $curr_allele = $self->_get_allele_of_evaluated_event($event);
 
-        $self->_write_next_pseudo_reference_allele(   $event
-                                                    , $last_pos
-                                                    , $curr_pos
-                                                    , $last_chr
-                                                    , $curr_chr
-                                                    , $last_allele
-                                                    , $curr_allele
-                                                  );
+        #indication of duplicate entries in the VCF
+        if ( ($last_chr eq $curr_chr) and ($last_pos == $curr_pos) ) {
+
+            #increments duplicate artifact counter
+            $self->_reporter->inc_skipped_vcf_duplicate_entry_artifact;
+
+        } else {
+ 
+            $self->_evaluator->evaluate($event);
+            my $curr_allele = $self->_get_allele_of_evaluated_event($event);
+ 
+            $self->_write_next_pseudo_reference_allele(   $event, $last_pos, $curr_pos, $last_chr, $curr_chr, $last_allele, $curr_allele);
+            
+            $last_chr = $curr_chr;
+            $last_pos = $curr_pos;
+            $last_allele = $curr_allele;
+            
+        }
 
         $seen_chromosomes{$last_chr} = 1;
-
-        $last_chr = $curr_chr;
-        $last_pos = $curr_pos;
-        $last_allele = $curr_allele;
         $processed_entries++;
         $logger->info("Processed $processed_entries sites") unless $processed_entries % 10000;
+
     }
 
+
+    #having finished looping through all the variants in the VCF file, see if it is necessary to
+    #pad the last chromosome with Ns up to the end of its original size
     my $pad_size = $self->_bam_parser->get_chromosome_size($last_chr) - $last_pos;
     $self->_pad_chromosome_file_with_Ns($pad_size); #pad the end with "N" if necessary
     print $filehandle "\n";
-    
-    #if chromosome did not have any coverate/variant at all, 
-    #then we fill N's in the pseudoreference chromosomes 
+
+
+    #For all chromosomes that were not present in the VCF file, we fill 
+    #N's in the pseudoreference 
     $self->_fill_unseen_chromosomes_with_Ns(\%seen_chromosomes);
+
 }
 
 sub _fill_unseen_chromosomes_with_Ns {
@@ -174,7 +184,7 @@ sub _write_next_pseudo_reference_allele {
     my $pad_size   = 0;
 
     if ($curr_chr eq $last_chr) {  #still at the previous chromosome
-
+        
         #if the last position is not followed immediately by the current position, 
         #pad the file with N's before writing the current allele
         $pad_size = $curr_pos - $last_pos - 1;
@@ -187,7 +197,7 @@ sub _write_next_pseudo_reference_allele {
 
         #finish writing to the previous chromosome after the last edits
         print $filehandle $last_allele;
-        $pad_size =  $self->_bam_parser->get_chromosome_size($last_chr)  - $last_pos;
+        $pad_size =  $self->_bam_parser->get_chromosome_size($last_chr) - $last_pos;
         #pad the end with "N" if necessary
         $self->_pad_chromosome_file_with_Ns($pad_size) if ($pad_size > 0);
         print $filehandle "\n";

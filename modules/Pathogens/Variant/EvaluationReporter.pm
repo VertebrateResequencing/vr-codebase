@@ -166,6 +166,16 @@ has 'total_number_of_event_evaluations' => (
     }
 );
 
+has 'skipped_vcf_duplicate_entry_artifact' => ( 
+      is => 'ro' 
+    , isa => 'Int', 
+    , default => 0
+    , traits  => ['Counter']
+    , handles => {
+          inc_skipped_vcf_duplicate_entry_artifact => 'inc'
+    }
+);
+
 sub dump {
     my $self = shift;
     return Dumper $self;

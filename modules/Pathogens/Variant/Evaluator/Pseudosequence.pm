@@ -30,7 +30,8 @@ has 'minimum_tail_bias'      => ( is => 'ro', isa => 'Num', default => 0.001 );
 has 'minimum_base_quality_bias' => ( is => 'ro', isa => 'Num', default => 0.0 );
 has 'reporter'            => ( is => 'ro', isa => 'Pathogens::Variant::EvaluationReporter', lazy => 1, default => sub { return Pathogens::Variant::EvaluationReporter->new } );
 
-has '_event'               => ( is => 'rw', isa => 'Pathogens::Variant::Event' );
+has '_event'               => ( is => 'rw', isa => 'Pathogens::Variant::Event');
+
 has '_dp4_parser'          => ( is => 'ro', isa => 'Pathogens::Variant::Utils::DP4Parser', lazy => 1, default => sub { return Pathogens::Variant::Utils::DP4Parser->new } );
 has '_event_manipulator'   => ( is => 'ro', isa => 'Pathogens::Variant::Utils::EventManipulator', lazy => 1, default => sub { return Pathogens::Variant::Utils::EventManipulator->new } );
 
@@ -40,6 +41,9 @@ sub evaluate {
     
     #logger is for DEBUGging purposes, little effect on overall performance
     my $logger = get_logger("Pathogens::Variant::Evaluator::Pseudosequence");
+    
+    #marks non polymorphic events
+    $self->_mark_the_event_if_not_polymorphic($event);
     
     #Set the _event for this evaluation round
     $self->_event($event);
@@ -89,6 +93,15 @@ sub evaluate {
     }
 }
 
+sub _mark_the_event_if_not_polymorphic {
+    
+    my ($self, $event) = @_;
+
+    if ($event->alternative_allele eq '.') {
+        $event->polymorphic(0); #set this one to false (0). Note default value is true
+    }
+
+}
 sub _has_secondary_heterozygous_alternative_alleles {
 
     my ($self) = @_;
@@ -282,6 +295,8 @@ sub _is_not_an_indel {
     if ( length($ref_allele) > 1
             or
          length($alt_allele) > 1
+            or 
+         $self->_event->info =~ /INDEL/
        )
     {
         $self->reporter->inc_counter_skipped_indel;
