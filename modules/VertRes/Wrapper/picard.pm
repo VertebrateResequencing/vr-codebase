@@ -184,6 +184,13 @@ sub merge_and_check {
     $self->run_method('system');
     my $tmp_out = $out_bam;
     $tmp_out =~ s/\.bam$/.tmp.bam/; # won't work unless the final suffix is .bam
+    
+    # if a temp file already exists it means the previous run failed partially, delete and try again
+    if(-e $tmp_out)
+    {
+      $self->_set_run_status(-1);
+      unlink("$tmp_out");
+    }
     $self->MergeSamFiles($tmp_out, @{$in_bams}, %opts);
     $self->throw("failed during the merge step, giving up for now") unless $self->run_status >= 1;
     
