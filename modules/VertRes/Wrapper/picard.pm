@@ -188,7 +188,6 @@ sub merge_and_check {
     # if a temp file already exists it means the previous run failed partially, delete and try again
     if(-e $tmp_out)
     {
-      $self->_set_run_status(-1);
       unlink("$tmp_out");
     }
     $self->MergeSamFiles($tmp_out, @{$in_bams}, %opts);
