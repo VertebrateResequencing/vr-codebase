@@ -6,6 +6,7 @@ use Getopt::Declare;
 use Log::Log4perl qw(get_logger);
 use Pathogens::Variant::Utils::PseudoReferenceMaker;
 
+
 our $VERSION = 0.01;
 
 
@@ -153,6 +154,7 @@ Optional parameters:
 
 $logger->logdie("Exiting: Argument errors") 
 	unless ( Getopt::Declare->new($specification) );
+
 
 my $pseudo_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \%args);
 $pseudo_maker->create_pseudo_reference();

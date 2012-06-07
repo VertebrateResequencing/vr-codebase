@@ -19,7 +19,7 @@ sub new {
     my ($proto, $params) = @_;
 
     my $class = ref($proto) || $proto;
-    my $text  = defined $$params{text} ? $$params{text} :   ' ';
+    my $text  = defined $$params{text} ? $$params{text} : ' ';
     my $value = defined $$params{value} ? $$params{value} : ' ';
     local $Error::Depth = $Error::Depth + 1;
     local $Error::Debug = 1;                   # Enables storing of stacktrace
@@ -32,8 +32,7 @@ sub stringify {
 
     my $self = shift;
     my $class = ref($self) || $self;
-    my $description = $class . "=". $self->text . "\n" . $self->value;
-    return $description;
+    return $self->stacktrace;
 }
 1;
 

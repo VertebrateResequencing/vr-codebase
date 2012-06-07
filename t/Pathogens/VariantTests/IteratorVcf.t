@@ -32,7 +32,7 @@ while( my $next_event = $object->next_event ) {
     $obj_counter++;
 }
 
-is($obj_counter, 1, 'We expect the iterator to have returned 1 object only');
+is($obj_counter, 1, 'We expect the iterator to return 1 object only');
 
 
 done_testing();

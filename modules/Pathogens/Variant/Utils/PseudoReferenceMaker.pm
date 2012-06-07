@@ -72,7 +72,7 @@ sub _initialise {
         , reporter                  => $reporter
     );
 
-    open( my $outfhd, ">", $self->arguments->{out} ) or throw Pathogens::Variant::Exception::File->new({text => "Couldn't open filehandle to write pseudo sequence: " . $!});
+    open( my $outfhd, ">", $self->arguments->{out} ) or throw Pathogens::Variant::Exception::File({text => "Couldn't open filehandle to write pseudo sequence." . $!});
 
     my $bam_parser = Pathogens::Variant::Utils::BamParser->new(bam => $self->arguments->{bam});
     $self->_bam_parser($bam_parser);
@@ -99,18 +99,18 @@ sub create_pseudo_reference {
     my $filehandle = $self->_out_filehandle;
 
 
-    my $first_event = $self->_iterator->next_event();
-    $self->_evaluator->evaluate($first_event);
-    my $last_allele = $self->_get_allele_of_evaluated_event($first_event);
-    my $last_chr = $first_event->chromosome;
-    my $last_pos = $first_event->position;
+    my $event = $self->_iterator->next_event();
+    $self->_evaluator->evaluate($event);
+    my $last_allele = $self->_get_allele_of_evaluated_event($event);
+    my $last_chr = $event->chromosome;
+    my $last_pos = $event->position;
     my %seen_chromosomes;
     
     #first event is handled here:
     print $filehandle ">" . $last_chr . "\n" . $last_allele; 
     
     #handle all other events in this loop:
-    while( my $event = $self->_iterator->next_event() ) {
+    while( $event = $self->_iterator->next_event() ) {
 
         my $curr_chr = $event->chromosome; 
         my $curr_pos = $event->position;
@@ -189,8 +189,8 @@ sub _write_next_pseudo_reference_allele {
 
     } else { #at a new Chromosome
 
-        $pad_size =  $self->_bam_parser->get_chromosome_size($last_chr) - $last_pos;
         #pad the end with "N" if necessary
+        $pad_size =  $self->_bam_parser->get_chromosome_size($last_chr) - $last_pos;
         $self->_pad_chromosome_file_with_Ns($pad_size) if ($pad_size > 0);
         print $filehandle "\n";
 
@@ -230,7 +230,8 @@ sub _get_allele_of_evaluated_event {
         if ( $event->was_evaluated ) {
             return 'N';
         } else {
-            throw Pathogens::Variant::Exception::ObjectUsage->new({text => 'An event must be evaluated before using _get_allele_of_evaluated_event function on it.'})
+            
+            throw Pathogens::Variant::Exception::ObjectUsage({text => 'An event must be evaluated before using _get_allele_of_evaluated_event function on it.'});
         }
     }
 }
