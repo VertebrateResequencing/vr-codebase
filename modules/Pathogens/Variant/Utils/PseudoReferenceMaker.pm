@@ -99,16 +99,18 @@ sub create_pseudo_reference {
     my $filehandle = $self->_out_filehandle;
 
 
-    my $event = $self->_iterator->next_event();
-    $self->_evaluator->evaluate($event);
-    my $last_allele = $self->_get_allele_of_evaluated_event($event);
-    my $last_chr = $event->chromosome;
-    my $last_pos = $event->position;
+    my $first_event = $self->_iterator->next_event();
+    $self->_evaluator->evaluate($first_event);
+    my $last_allele = $self->_get_allele_of_evaluated_event($first_event);
+    my $last_chr = $first_event->chromosome;
+    my $last_pos = $first_event->position;
     my %seen_chromosomes;
     
-    print $filehandle ">" . $last_chr . "\n"; 
+    #first event is handled here:
+    print $filehandle ">" . $last_chr . "\n" . $last_allele; 
     
-    while( $event = $self->_iterator->next_event() ) {
+    #handle all other events in this loop:
+    while( my $event = $self->_iterator->next_event() ) {
 
         my $curr_chr = $event->chromosome; 
         my $curr_pos = $event->position;
@@ -119,18 +121,20 @@ sub create_pseudo_reference {
             #increments duplicate artifact counter
             $self->_reporter->inc_skipped_vcf_duplicate_entry_artifact;
 
+        #a unique entry in the vcf file
         } else {
- 
+
             $self->_evaluator->evaluate($event);
             my $curr_allele = $self->_get_allele_of_evaluated_event($event);
- 
-            $self->_write_next_pseudo_reference_allele(   $event, $last_pos, $curr_pos, $last_chr, $curr_chr, $last_allele, $curr_allele);
-            
-            $last_chr = $curr_chr;
-            $last_pos = $curr_pos;
+
+            $self->_write_next_pseudo_reference_allele($event, $last_pos, $curr_pos, $last_chr, $curr_chr, $last_allele, $curr_allele);
+
             $last_allele = $curr_allele;
-            
+
         }
+
+        $last_chr = $curr_chr;
+        $last_pos = $curr_pos;
 
         $seen_chromosomes{$last_chr} = 1;
         $processed_entries++;
@@ -138,9 +142,7 @@ sub create_pseudo_reference {
 
     }
 
-
-    #having finished looping through all the variants in the VCF file, see if it is necessary to
-    #pad the last chromosome with Ns up to the end of its original size
+    #if necessary pad the last chromosome with Ns up to the end of its original size
     my $pad_size = $self->_bam_parser->get_chromosome_size($last_chr) - $last_pos;
     $self->_pad_chromosome_file_with_Ns($pad_size); #pad the end with "N" if necessary
     print $filehandle "\n";
@@ -169,16 +171,8 @@ sub _fill_unseen_chromosomes_with_Ns {
 }
 
 sub _write_next_pseudo_reference_allele {
-    
-    my (  $self
-        , $event
-        , $last_pos
-        , $curr_pos
-        , $last_chr
-        , $curr_chr
-        , $last_allele
-        , $curr_allele
-       ) = @_;
+
+    my (  $self, $event, $last_pos, $curr_pos, $last_chr, $curr_chr, $last_allele, $curr_allele) = @_;
 
     my $filehandle = $self->_out_filehandle;
     my $pad_size   = 0;
@@ -195,8 +189,6 @@ sub _write_next_pseudo_reference_allele {
 
     } else { #at a new Chromosome
 
-        #finish writing to the previous chromosome after the last edits
-        print $filehandle $last_allele;
         $pad_size =  $self->_bam_parser->get_chromosome_size($last_chr) - $last_pos;
         #pad the end with "N" if necessary
         $self->_pad_chromosome_file_with_Ns($pad_size) if ($pad_size > 0);

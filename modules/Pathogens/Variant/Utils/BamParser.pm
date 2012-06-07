@@ -25,6 +25,9 @@ sub _populate_chromosome_size_hash {
     $self->set_chromosome_size('FN433596' => 3043210);
     $self->set_chromosome_size('pTW20_1' => 29585);
     $self->set_chromosome_size('pTW20_2' => 3011);
+#$self->set_chromosome_size('FN433596' => 5);
+#$self->set_chromosome_size('pTW20_1' => 1);
+#$self->set_chromosome_size('pTW20_2' => 1);
 
 }
 __PACKAGE__->meta->make_immutable;

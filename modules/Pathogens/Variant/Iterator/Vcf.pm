@@ -15,39 +15,12 @@ use namespace::autoclean;
 
 has 'vcf_file' => (is => 'rw', isa => 'Str', required => 1, trigger => \&_vcf_set);
 has '_vcf_obj'  => (is => 'rw', isa => 'Vcf');
-has 'meta_lines' => (
-    traits  => ['Array'],
-    is      => 'ro',
-    isa     => 'ArrayRef[Str]',
-    default => sub { [] },
-    lazy    => 1,
-    handles => {
-        get_metalines    => 'elements', #returns an array, NOT a ref
-        add_metaline     => 'push', 
-        clear_metalines  => 'clear', 
-        has_metalines    => 'count',
-        
-    },
-);
+
 
 #update the internal object 
 #and parse the vcf header
 sub _vcf_set {
     my ($self, $vcf_file) = @_;
-    
-    #This just saves the header lines of a VCF into "meta_lines" attribute
-    $self->clear_metalines if ($self->has_metalines);
-    open my $fhd, "<", $vcf_file; 
-    META: while(<$fhd>) {
-        if (/^#/) {
-            chomp;
-            $self->add_metaline($_);
-        } else {
-            last META;
-        }
-    }
-    close $fhd;
-
     #we will wrap our iterator on top of Petr's Vcf module
     my $vcf = Vcf->new( file => $vcf_file );
     $vcf->recalc_ac_an(0); #turn this off. See "perldoc Vcf"

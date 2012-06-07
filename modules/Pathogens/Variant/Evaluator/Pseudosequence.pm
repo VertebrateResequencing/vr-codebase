@@ -35,6 +35,7 @@ has '_event'               => ( is => 'rw', isa => 'Pathogens::Variant::Event');
 has '_dp4_parser'          => ( is => 'ro', isa => 'Pathogens::Variant::Utils::DP4Parser', lazy => 1, default => sub { return Pathogens::Variant::Utils::DP4Parser->new } );
 has '_event_manipulator'   => ( is => 'ro', isa => 'Pathogens::Variant::Utils::EventManipulator', lazy => 1, default => sub { return Pathogens::Variant::Utils::EventManipulator->new } );
 
+
 sub evaluate {
 
     my ($self, $event) = @_;
