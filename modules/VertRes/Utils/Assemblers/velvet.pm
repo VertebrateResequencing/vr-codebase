@@ -250,9 +250,9 @@ sub estimate_memory_required
 
   my $memory_required = -109635 + (20000*($input_params->{read_length})) + (86326*($input_params->{genome_size})/1000000) + (300000*($input_params->{total_number_of_reads})/1000000) - (51092*$kmer_size);
   $memory_required *= 2.0;
-  if($memory_required < 2000000)
+  if($memory_required < 6000000)
   {
-    $memory_required = 2000000;
+    $memory_required = 6000000;
   }
   elsif($memory_required > 400000000)
   {
