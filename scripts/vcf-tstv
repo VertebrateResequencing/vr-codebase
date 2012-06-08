@@ -78,7 +78,7 @@ sub calc_tstv
         if ( exists($$stats{$mut}) ) { $tv += $$stats{$mut}; }
     }
     my $ratio = $tv ? $ts/$tv : 0;
-    printf "%.2f\t%d\t(ts=%d tv=%d skipped=%d multiallelic=%d)\n", $ratio,$n, $ts,$tv,$n-$ts-$tv,$multiallelic;
+    printf "%.2f\t%d\t(ts=%d tv=%d total=%d skipped=%d multiallelic=%d)\n", $ratio,$ts+$tv, $ts,$tv,$n,$n-$ts-$tv,$multiallelic;
 }
 
 
