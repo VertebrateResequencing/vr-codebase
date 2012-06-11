@@ -2818,7 +2818,7 @@ sub filter_readgroups
 =cut
 
 sub replace_readgroup_id {
-    my ($self, $bam, $rgid) = @_;
+    my ($self, $bam, $rgid, $force) = @_;
     
     $self->throw(qq['$rgid' is not a valid id tag]) unless ($rgid =~ /^[ !-~]+$/);
     
@@ -2834,7 +2834,9 @@ sub replace_readgroup_id {
     $self->throw("$bam does not contain a single readgroup") unless (scalar @rgs == 1);
     my $rg = $rgs[0];
     
-    return(1) if ($rg eq $rgid);
+    unless ($force) {
+        return(1) if ($rg eq $rgid);
+    }
     
     my %args = ( RGID => qq[$rgid] );
     foreach my $tag (keys %{$rg_info{$rg}}) {
