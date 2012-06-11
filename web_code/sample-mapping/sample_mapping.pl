@@ -1,10 +1,10 @@
 #!/usr/local/bin/perl -T
-# Displays QC information for Sanger short-read sequencing to allow lanes
-# to be passed/failed
+# Displays sample id mappings (Sanger sample name, Supplier name, Accession number) for all major vrtrack databases
+# Data can be downloaded in tsv or csv (for excel) formats
 #
-# Author:        tk2    
-# Maintainer:    tk2
-# Created:       2011-03-12
+# Author:        jm23 
+# Maintainer:    jm23
+# Created:       2011-05-08
 
 use strict;
 use warnings;
