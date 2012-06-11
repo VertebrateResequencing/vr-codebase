@@ -42,6 +42,7 @@ sub calc_tstv
 {
     my $stats;
     my $n=0;
+    my $multiallelic=0;
 
     while (my $line=<STDIN>)
     {
@@ -58,8 +59,10 @@ sub calc_tstv
         if ( $alt eq '.' ) { next; }
 
         $i = index($alt,',');
-        if ( $i!=-1 ) { $alt = substr($alt,0,$i); }
+        if ( $i!=-1 ) { $alt = substr($alt,0,$i); } # only first ALT is counted
         if ( length($alt)>1 ) { next; }
+
+        if ( $i!=-1 ) { $multiallelic++ }
 
         $$stats{$ref.$alt}++;
     }
@@ -75,7 +78,7 @@ sub calc_tstv
         if ( exists($$stats{$mut}) ) { $tv += $$stats{$mut}; }
     }
     my $ratio = $tv ? $ts/$tv : 0;
-    printf "%.2f\t%d\t(ts=%d tv=%d skipped=%d)\n", $ratio,$n, $ts,$tv,$n-$ts-$tv;
+    printf "%.2f\t%d\t(ts=%d tv=%d total=%d skipped=%d multiallelic=%d)\n", $ratio,$ts+$tv, $ts,$tv,$n,$n-$ts-$tv,$multiallelic;
 }
 
 

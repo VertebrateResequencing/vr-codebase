@@ -314,8 +314,7 @@ sub main
     }
     $self->wait;
 
-    # Concat chunks into chromosomes and apply filtering
-    if ( exists($$self{vqsr_filtering}) && exists($$self{vqsr_filtering}{limits}) ) { $self->set_limits(%{$$self{vqsr_filtering}{limits}}) }
+    # Concat chunks into chromosomes
     for my $pop (keys %{$$self{pops}})
     {
         for my $chr (@chroms)
@@ -324,14 +323,15 @@ sub main
         }
     }
     $self->wait;
-    $self->set_limits(memory=>undef);
 
-    # Create whole genome file: concat all chromosomes
+    # Create whole genome file: concat all chromosomes, apply filtering and VQSR
+    if ( exists($$self{vqsr_filtering}) && exists($$self{vqsr_filtering}{limits}) ) { $self->set_limits(%{$$self{vqsr_filtering}{limits}}) }
     for my $pop (keys %{$$self{pops}})
     {
         $self->spawn('concat_chroms',"$outdir/$pop.vcf.gz",$pop);
     }
     $self->wait;
+    $self->set_limits(memory=>undef);
 
     # Run summary stats
     for my $pop (keys %{$$self{pops}})
@@ -854,10 +854,28 @@ sub concat_vcfs
     }
     close($fh) or $self->throw("close $chunks_list");
 
+    my $filter = $$self{filter} ? "| $$self{filter}" : '';
+    $self->cmd("vcf-concat -f $chunks_list $filter | bgzip -c > $outfile.part");
+    $self->tabix_part($outfile);
+}
+
+sub concat_chroms
+{
+    my ($self,$outfile,$pop) = @_;
+
+    my $outdir = $$self{outdir};
+    my $chunks_list = "$outdir/$pop/concat.list";
+
+    open(my $fh,'>',$chunks_list) or $self->throw("$chunks_list: $!");
+    for my $chr (@{$$self{chroms}})
+    {
+        print $fh "$outdir/$pop/$chr.vcf.gz\n";
+    }
+    close($fh) or $self->throw("close $chunks_list");
+
     if ( !exists($$self{vqsr_filtering}) )
     {
-        my $filter = $$self{filter} ? "| $$self{filter}" : '';
-        $self->cmd("vcf-concat -f $chunks_list $filter | bgzip -c > $outfile.part");
+        $self->cmd("vcf-concat -p -f $chunks_list | $$self{filter} | bgzip -c > $outfile.part");
         $self->tabix_part($outfile);
         return;
     }
@@ -924,24 +942,6 @@ sub concat_vcfs
         return;
     }
     $self->cmd("zcat $input | $$self{filter} | bgzip -c > $outfile.part");
-    $self->tabix_part($outfile);
-}
-
-sub concat_chroms
-{
-    my ($self,$outfile,$pop) = @_;
-
-    my $outdir = $$self{outdir};
-    my $chunks_list = "$outdir/$pop/concat.list";
-
-    open(my $fh,'>',$chunks_list) or $self->throw("$chunks_list: $!");
-    for my $chr (@{$$self{chroms}})
-    {
-        print $fh "$outdir/$pop/$chr.vcf.gz\n";
-    }
-    close($fh) or $self->throw("close $chunks_list");
-
-    $self->cmd("vcf-concat -p -f $chunks_list | $$self{filter} | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
 }
 

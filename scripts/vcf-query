@@ -176,6 +176,7 @@ sub get_sample_idxs
     my @idxs;
     for my $sample (@samples)
     {
+        if ( !exists($$vcf{has_column}{$sample}) ) { error("No such sample: [$sample]\n"); }
         push @idxs, $$vcf{has_column}{$sample} - 1;
     }
     return @idxs;

@@ -69,7 +69,7 @@ sub parse_params
         if ( -e $arg or $arg=~m{^(?:ftp|http)://} ) { $$opts{file}=$arg; next; }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
-    if ( !$$opts{exclude_ref} && !$$opts{'columns_file'} && !exists($$opts{'types'}) ) { error("Missing the -c or -t or -r option.\n") }
+    if ( !$$opts{exclude_ref} && !$$opts{'columns_file'} && !exists($$opts{'types'}) && !exists($$opts{trim_alts}) ) { error("Missing the -c or -t or -r option.\n") }
     if ( exists($$opts{types}) ) { $$opts{types}{r}=1; }
     return $opts;
 }
