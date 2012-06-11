@@ -74,6 +74,7 @@ sub do_stats
 
     $$opts{in_frame} = $$opts{out_frame} = 0;
     my ($prev_chr,$prev_pos);
+    my $ntot=0;
     while (my $line=$vcf->next_line)
     {
         if ( substr($line,0,1) eq '#' ) { next; }
@@ -101,8 +102,13 @@ sub do_stats
             $i = $j+1;
         }
         my ($type,$len,$ht) = $vcf->event_type($ref,substr($alt,$i));
-        if ( $type eq 'i' or $type eq 'o' ) { check_csq($opts,$chr,$pos,$len); }
+        if ( $type eq 'i' or $type eq 'o' ) 
+        { 
+            $ntot++;
+            check_csq($opts,$chr,$pos,$len); 
+        }
     }
+    printf "total\t%d\n", $ntot;
     printf "in-frame\t%d\n", $$opts{in_frame};
     printf "frameshift\t%d\n", $$opts{out_frame};
     printf "ratio\t%f\n", ($$opts{out_frame}+$$opts{in_frame})?$$opts{out_frame}/($$opts{out_frame}+$$opts{in_frame}) : 0;

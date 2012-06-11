@@ -26,6 +26,7 @@ my %filters =
     VDB          => { dflt=>'0', usage=>'FLOAT', desc=>"Minimum Variant Distance Bias (INFO/VDB)", nick=>'v' },
     HWE          => { dflt=>undef, usage=>'FLOAT', desc=>"Minimum P-value for HWE and F<0 (invokes --fill-HWE)", nick=>'H' },
     HWE_G3       => { dflt=>undef, usage=>'FLOAT', desc=>"Minimum P-value for HWE and F<0 (INFO/HWE and INFO/G3)", nick=>'HG' },
+    HWE2         => { dflt=>undef, usage=>'FLOAT', desc=>"Minimum P-value for HWE (plus F<0) (INFO/AC and INFO/AN or --fill-AC-AN)", nick=>'H2' },
 );
 
 my $opts = parse_params();
@@ -48,12 +49,12 @@ sub error
 
     print
         "About: Annotates VCF file, adding filters or custom annotations. Requires tabix indexed file with annotations.\n",
-        "   Currently it annotates the ID, FILTER, and INFO columns, but it will be extended on popular demand.\n",
+        "   Currently it can annotate ID, QUAL, FILTER and INFO columns, but will be extended on popular demand.\n",
         "   For examples of user-defined filters see online documentation or examples/filters.txt in vcftools distribution.\n",
         "Usage: cat in.vcf | vcf-annotate [OPTIONS] > out.vcf\n",
         "Options:\n",
         "   -a, --annotations <file.gz>         The tabix indexed file with the annotations: CHR\\tFROM[\\tTO][\\tVALUE]+.\n",
-        "   -c, --columns <list>                The list of columns in the annotation file, e.g. CHROM,FROM,TO,-,INFO/STR,INFO/GN. The dash\n",
+        "   -c, --columns <list>                The list of columns in the annotation file, e.g. CHROM,FROM,TO,-,QUAL,INFO/STR,INFO/GN. The dash\n",
         "                                           in this example indicates that the third column should be ignored. If TO is not\n",
         "                                           present, it is assumed that TO equals to FROM. When REF and ALT columns are present, only\n",
         "                                           matching lines are annotated.\n",
@@ -74,7 +75,7 @@ sub error
         "Examples:\n",
         "   zcat in.vcf.gz | vcf-annotate -a annotations.gz -d descriptions.txt -c FROM,TO,CHROM,ID,INFO/DP | bgzip -c >out.vcf.gz \n",
         "   zcat in.vcf.gz | vcf-annotate -f +/-a/c=3,10/q=3/d=5/-D -a annotations.gz -d key=INFO,ID=GN,Number=1,Type=String,Description='Gene Name' | bgzip -c >out.vcf.gz \n",
-        "   zcat in.vcf.gz | vcf-annotate -a dbSNPv132.tab.gz -c CHROM,FROM,REF,ALT,ID,-,-,- | bgzip -c >out.vcf.gz \n",
+        "   zcat in.vcf.gz | vcf-annotate -a dbSNPv132.tab.gz -c CHROM,POS,REF,ALT,ID,-,-,- | bgzip -c >out.vcf.gz \n",
         "Where descriptions.txt contains:\n",
         "   key=INFO,ID=GN,Number=1,Type=String,Description='Gene Name'\n",
         "   key=INFO,ID=STR,Number=1,Type=Integer,Description='Strand'\n",
@@ -181,7 +182,14 @@ sub parse_user_defined_filters
         if ( !exists($$filter{desc}) ) { error("Missing 'desc' key for the filter [$$filter{tag}]\n"); }
 
         my $name = $$filter{name};
-        push @{$$opts{desc}}, "key=FILTER,ID=$name,Description='$$filter{desc}'";
+        if ( exists($$filter{header}) )
+        {
+            push @{$$opts{desc}}, ref($$filter{header}) eq 'ARRAY' ? @{$$filter{header}} : $$filter{header};
+        }
+        else
+        {
+            push @{$$opts{desc}}, "key=FILTER,ID=$name,Description='$$filter{desc}'";
+        }
         if ( !exists($$filter{apply_to}) or lc($$filter{apply_to}) eq 'all' ) 
         {
             $$opts{udef_filters}{'all'}{$name} = $filter;
@@ -349,6 +357,7 @@ sub parse_columns
         elsif ( $col eq 'FILTER' ) { $out{$col}=$i; }
         elsif ( $col eq 'REF' ) { $out{$col}=$i; }
         elsif ( $col eq 'ALT' ) { $out{$col}=$i; }
+        elsif ( $col eq 'QUAL' ) { $out{$col}=$i; }
         else
         {
             if ( !exists($desc{$col}) && exists($desc{"INFO/$col"}) )
@@ -421,6 +430,7 @@ sub annotate
     my $to_col   = $$cols{TO};
     my $ref_col  = exists($$cols{REF}) ? $$cols{REF} : undef;
     my $alt_col  = exists($$cols{ALT}) ? $$cols{ALT} : undef;
+    my $qual_col = exists($$cols{QUAL}) ? $$cols{QUAL} : undef;
 
     # Initialize the annotation reader
     my $reader;
@@ -546,6 +556,7 @@ sub annotate
                 }
                 if ( defined $id_col && $$annot_line[$id_col] ne '' ) { $ids{$$annot_line[$id_col]} = 1; }
                 if ( defined $fltr_col && $$annot_line[$fltr_col] ne '' ) { $rec[6] = $$annot_line[$fltr_col]; }
+                if ( defined $qual_col && $$annot_line[$qual_col] ne '' ) { $rec[5] = $$annot_line[$qual_col]; }
             }
             if ( scalar keys %ids ) { $rec[2] = join(';', keys %ids); }
             if ( scalar keys %values )
@@ -627,17 +638,20 @@ sub fill_ac_an_hwe
     my %tags = (AN=>$an);
     if ( defined $ac ) { $tags{AC}=$ac }
     my $nall = $dpl_counts{0} + $max_ac;
-    if ( $$opts{fill_hwe} && $nall )
+    if ( scalar keys %counts==2 )
     {
-        my $freq_obs = 2*$nhets/$nall;
-        my $freq_exp = 2*($max_ac/$nall)*(1-($max_ac/$nall));
-        $$opts{icf} = $freq_exp ? 1-$freq_obs/$freq_exp : 0;
-        $$opts{hwe} = eval_hwe(($max_ac-$nhets)/2,($dpl_counts{0}-$nhets)/2,$nhets);
-        $tags{HWE} = sprintf "%.6f", $$opts{hwe};
-    }
-    if ( $$opts{fill_icf} )
-    {
-        $tags{ICF} = sprintf "%.5f", $$opts{icf};
+        if ( $$opts{fill_hwe} && $nall && scalar keys %counts==2 )
+        {
+            my $freq_obs = 2*$nhets/$nall;
+            my $freq_exp = 2*($max_ac/$nall)*(1-($max_ac/$nall));
+            $$opts{icf} = $freq_exp ? 1-$freq_obs/$freq_exp : 0;
+            $$opts{hwe} = eval_hwe(($max_ac-$nhets)/2,($dpl_counts{0}-$nhets)/2,$nhets ,$line);
+            $tags{HWE} = sprintf "%.6f", $$opts{hwe};
+        }
+        if ( $$opts{fill_icf} )
+        {
+            $tags{ICF} = sprintf "%.5f", $$opts{icf};
+        }
     }
     $$line[7] = $$opts{vcf}->add_info_field($$line[7],%tags);
 }
@@ -645,7 +659,7 @@ sub fill_ac_an_hwe
 # Wigginton 2005, PMID: 15789306
 sub eval_hwe
 {
-    my ($obs_hom1,$obs_hom2,$obs_hets) = @_;
+    my ($obs_hom1,$obs_hom2,$obs_hets , $line) = @_;
     if ( $obs_hom1 + $obs_hom2 + $obs_hets == 0 ) { return 1; }
 
     my $obs_homc = $obs_hom1 < $obs_hom2 ? $obs_hom2 : $obs_hom1;
@@ -935,6 +949,7 @@ sub apply_local_filters
             {
                 $apply{HWE_G3} = 1;
             }
+            #printf "xHWE: f=%f  rr=$rr ra=$ra hwe=$1 p=$p  ($$line[1])\n";
         }
     }
     if ( exists($$filters{HWE}) )
@@ -950,9 +965,12 @@ sub apply_local_filters
         my $dp;
         if ( $$line[7]=~/DP=(\d+)/ ) { $dp = $1; }
         elsif ( $$line[7]=~/DP4=(\d+),(\d+),(\d+),(\d+)/ ) { $dp = $1 + $2 + $3 + $4; }
-
-        if ( exists($$filters{MinDP}) ) { $apply{MinDP} = $dp < $$filters{MinDP} ? 1 : 0; }
-        if ( exists($$filters{MaxDP}) ) { $apply{MaxDP} = $dp > $$filters{MaxDP} ? 1 : 0; }
+        
+        if ( defined $dp )
+        {
+            if ( exists($$filters{MinDP}) ) { $apply{MinDP} = $dp < $$filters{MinDP} ? 1 : 0; }
+            if ( exists($$filters{MaxDP}) ) { $apply{MaxDP} = $dp > $$filters{MaxDP} ? 1 : 0; }
+        }
     }
     if ( exists($$filters{MinAB}) && $$line[7]=~/DP4=\d+,\d+,(\d+),(\d+)/ )
     {
@@ -1104,7 +1122,8 @@ sub apply_gapwin_filter
     if ( defined $line )
     {
         # There may be multiple variants, only indels can be filtered
-        my $is_indel = 0;
+        my $is_indel  = 0;
+        my $indel_len = 0;
         for my $alt (split(/,/,$$line[4]))
         {
             my ($type,$len,$ht) = $vcf->event_type($$line[3],$alt);
@@ -1113,24 +1132,27 @@ sub apply_gapwin_filter
                 $is_indel = 1; 
                 $indel_chr = $$line[0];
                 $indel_pos = $$line[1] + 1;
+                $indel_len = abs($len); # This may remove valid insertions but also artefacts
+                last;
             }
         }
-        # The indel boundaries are based on REF (POS+1,POS+rlen-1). This is not
-        #   correct as the indel can begin anywhere in the VCF4.x record with
-        #   respect to POS. Specifically mpileup likes to write REF=CAGAGAGAGA
-        #   ALT=CAGAGAGAGAGA. Thus this filtering is more strict and may remove
-        #   some valid SNPs.
-        $to = $is_indel ? $$line[1]+length($$line[3])-1 : $$line[1];
+        $to = $$line[1] + $indel_len;
         my $af = 0;
         if ( $is_indel )
         {
             # Collect allele frequency to make an educated guess which of the indels to keep
             $af = $vcf->get_info_field($$line[7],'AF');
-            if ( !defined $af ) { $af = $vcf->get_info_field($$line[7],'AF1'); }
-            else { $af = $vcf->get_field($af,0,',') }
+            if ( !defined $af ) 
+            { 
+                $af = $vcf->get_info_field($$line[7],'AF1'); 
+                # assuming that all records have the same set of annotations, otherwise comparing later AC with AF will be wrong
+                if ( !defined $af ) { $af = $vcf->get_info_field($$line[7],'AC'); }
+            }
             if ( !defined $af ) { $af=0 }
+            else { $af = $vcf->get_field($af,0,',') }
         }
         push @$buffer, { line=>$line, chr=>$$line[0], from=>defined $indel_pos ? $indel_pos : $$line[1], to=>$to, is_indel=>$is_indel, AF=>$af, exclude=>0 };
+        # printf "%d-%d\t%d-%d\n", $$buffer[0]{from},$$buffer[0]{to},$$buffer[-1]{from},$$buffer[-1]{to};
 
         # Update the latest gap position and check if the buffer can be flushed
         if ( !exists($$opts{GapWin_chr}) )

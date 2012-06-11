@@ -493,6 +493,7 @@ sub stats_and_graphs
     my $stats_ref = exists($$self{stats_ref}) ? $$self{stats_ref} : '';
     my $class = (caller(0))[0];  # In case we are called from a inherited object
     
+    my $name = $$self{lane};
     if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
     my $vrtrack     = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
     my $vrlane      = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$name) or $self->throw("No such lane in the DB: [$name]\n");
