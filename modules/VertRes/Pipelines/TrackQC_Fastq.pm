@@ -721,6 +721,11 @@ sub stats_and_graphs
     my $reference_size = $assembly->reference_size();
     unless($reference_size){ $self->throw("Failed to find reference genome size for lane $lane_path\n"); }
 
+    my $name = $$self{lane};
+    my $vrlane      = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$name) or $self->throw("No such lane in the DB: [$name]\n");
+    my $insert_size = (VRTrack::Library->new($vrtrack, $vrlane->library_id())->insert_size() )*3 || 8000;
+
+
     # Dynamic script to be run by LSF.
     open(my $fh, '>', "$lane_path/$sample_dir/_graphs.pl") or Utils::error("$lane_path/$sample_dir/_graphs.pl: $!");
     print $fh 
@@ -746,7 +751,7 @@ my \%params =
 );
 
 my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
-\$qc->run_graphs(\$params{lane_path}, $reference_size);
+\$qc->run_graphs(\$params{lane_path}, $reference_size, $insert_size);
 ];
     close $fh;
 
@@ -757,9 +762,9 @@ my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
 
 sub run_graphs
 {
-    my ($self,$lane_path, $reference_size) = @_;
+    my ($self,$lane_path, $reference_size,$insert_size) = @_;
 
-    $self->SUPER::run_graphs($lane_path);
+    $self->SUPER::run_graphs($lane_path,$insert_size);
 
     # Get coverage, depth and sd.
     my $bam_file   = qq[$lane_path/$$self{'sample_dir'}/$$self{'lane'}.bam];
