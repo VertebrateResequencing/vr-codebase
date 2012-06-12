@@ -156,6 +156,16 @@ has 'accepted_snp_calls' => (
     }
 );
 
+has 'accepted_reference_calls' => ( 
+      is => 'ro' 
+    , isa => 'Int', 
+    , default => 0
+    , traits  => ['Counter']
+    , handles => {
+          inc_counter_accepted_reference_calls => 'inc'
+    }
+);
+
 has 'total_number_of_event_evaluations' => ( 
       is => 'ro' 
     , isa => 'Int', 

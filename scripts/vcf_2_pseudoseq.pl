@@ -32,7 +32,6 @@ my $logconf = q(
     log4perl.appender.Screen.layout.ConversionPattern=[%p][%d] %m (%C %L)%n
 );
 Log::Log4perl::init( \$logconf );
-
 my $logger = get_logger();
 
 
@@ -155,8 +154,8 @@ Optional parameters:
 $logger->logdie("Exiting: Argument errors") 
 	unless ( Getopt::Declare->new($specification) );
 
-
 my $pseudo_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \%args);
+
 $pseudo_maker->create_pseudo_reference();
 print $pseudo_maker->get_statistics_dump();
 

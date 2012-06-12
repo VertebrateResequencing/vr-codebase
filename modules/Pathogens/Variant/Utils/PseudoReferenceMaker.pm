@@ -1,14 +1,17 @@
-    package Pathogens::Variant::Utils::PseudoReferenceMaker;
+package Pathogens::Variant::Utils::PseudoReferenceMaker;
 
 use Moose;
+
 use Pathogens::Variant::Iterator::Vcf;
 use Pathogens::Variant::Evaluator::Pseudosequence;
 use Pathogens::Variant::EvaluationReporter;
 use Pathogens::Variant::Utils::BamParser;
+
 use Pathogens::Variant::Exception;
+use Log::Log4perl qw(get_logger);
+
 use namespace::autoclean;
 
-use Log::Log4perl qw(get_logger);
 
 
 
@@ -23,18 +26,15 @@ has '_iterator'       => (is => 'rw', isa => 'Pathogens::Variant::Iterator::Vcf'
 has '_reporter'       => (is => 'rw', isa => 'Pathogens::Variant::EvaluationReporter', init_arg => undef );
 has '_evaluator'      => (is => 'rw', isa => 'Pathogens::Variant::Evaluator::Pseudosequence', init_arg => undef );
 has '_bam_parser'     => (is => 'rw', isa => 'Pathogens::Variant::Utils::BamParser', init_arg => undef );
-has '_out_filehandle' => (is => 'rw', isa => 'FileHandle', init_arg => undef );
+has '_output_filehandle_temporary_file' => (is => 'rw', isa => 'FileHandle', init_arg => undef );
 
 
-
-
-
-#################################################
-#initialise all the objects/settings for this run
-#################################################
+######################################################################
+#initialise some objects and settings according to the given arguments
+######################################################################
 sub _initialise {
-    
     my ($self) = @_;
+
     my $logger = get_logger("Pathogens::Variant::Utils::PseudoReferenceMaker");
      
     #complement af1 is needed for non variant site evaluations
@@ -72,43 +72,64 @@ sub _initialise {
         , reporter                  => $reporter
     );
 
-    open( my $outfhd, ">", $self->arguments->{out} ) or throw Pathogens::Variant::Exception::File({text => "Couldn't open filehandle to write pseudo sequence." . $!});
 
-    my $bam_parser = Pathogens::Variant::Utils::BamParser->new(bam => $self->arguments->{bam});
+    my $bam_parser = Pathogens::Variant::Utils::BamParser->new();
+    
+    $bam_parser->fetch_chromosome_size_into_hash($self->arguments->{bam});
+
     $self->_bam_parser($bam_parser);
     $self->_evaluator($evaluator);
     $self->_iterator($iterator);
     $self->_reporter($reporter);
-    $self->_out_filehandle($outfhd);
+
 
 }
-
 
 ############################################################
 #Iterate through the VCF file, judge the variant/non-variant
 #and write accordingly a new "pseudoReference" to the disk
 #################################################### #######
 sub create_pseudo_reference {
-
     my ($self) = @_;
+
+    my $logger = get_logger("Pathogens::Variant::Utils::PseudoReferenceMaker");
+    
+    my $temporary_unsorted_tab_file = "out.tmp." . $self->arguments->{out};
+    my $final_sorted_and_merged_fasta_file     = $self->arguments->{out};
+    
+    $self->_write_pseudo_reference_to_file($temporary_unsorted_tab_file);
+    
+    #The entries in the $temporary_unsorted_tab_file are first sorted (dictionary sort) by sequence name
+    #and the sequences are concatenated end-to-end into a single string, and saved in fasta format.
+    #The name of the sequence is the lane id.
+    #$self->_fasta_manipulator->sort_and_merge_fasta($temporary_unsorted_tab_file, $final_sorted_and_merged_fasta_file);
+
+}
+
+sub _write_pseudo_reference_to_file {
+    my ($self, $temporary_unsorted_tab_file) = @_;
+
     my $logger = get_logger("Pathogens::Variant::Utils::PseudoReferenceMaker");
     
     
+    #open the filehandle for the temporary file
+    open( my $filehandle, ">" . $temporary_unsorted_tab_file ) or throw Pathogens::Variant::Exception::File({text => "Couldn't open filehandle to write the pseudoreference." . $!});
+    $self->_output_filehandle_temporary_file($filehandle);
 
-    my $processed_entries = 0;;
-    my $filehandle = $self->_out_filehandle;
-
-
+    #first event is handled here:
     my $event = $self->_iterator->next_event();
     $self->_evaluator->evaluate($event);
+
     my $last_allele = $self->_get_allele_of_evaluated_event($event);
     my $last_chr = $event->chromosome;
     my $last_pos = $event->position;
     my %seen_chromosomes;
-    
-    #first event is handled here:
-    print $filehandle ">" . $last_chr . "\n" . $last_allele; 
-    
+
+    #write the first event to the file
+    print $filehandle $last_chr . "\t" . $last_allele;  
+
+    my $processed_entries = 1;
+
     #handle all other events in this loop:
     while( $event = $self->_iterator->next_event() ) {
 
@@ -126,17 +147,20 @@ sub create_pseudo_reference {
 
             $self->_evaluator->evaluate($event);
             my $curr_allele = $self->_get_allele_of_evaluated_event($event);
-
             $self->_write_next_pseudo_reference_allele($event, $last_pos, $curr_pos, $last_chr, $curr_chr, $last_allele, $curr_allele);
-
             $last_allele = $curr_allele;
 
         }
 
+        #necessary for the next round in the loop
         $last_chr = $curr_chr;
         $last_pos = $curr_pos;
 
-        $seen_chromosomes{$last_chr} = 1;
+        #this initialises a hashkey for chromosome names,
+        #so that we know which ones were present in the vcf file
+        $seen_chromosomes{$last_chr} = 1; 
+
+        #can be used to monitor the progress if log-leve is set to "INFO" (or lower)
         $processed_entries++;
         $logger->info("Processed $processed_entries sites") unless $processed_entries % 10000;
 
@@ -151,18 +175,20 @@ sub create_pseudo_reference {
     #For all chromosomes that were not present in the VCF file, we fill 
     #N's in the pseudoreference 
     $self->_fill_unseen_chromosomes_with_Ns(\%seen_chromosomes);
-
+    
+    #close the filehandle for the temporary file
+    close($filehandle);
 }
 
 sub _fill_unseen_chromosomes_with_Ns {
-
     my ($self, $seen_chromosomes) = @_;
-    my $filehandle = $self->_out_filehandle;
+
+    my $filehandle = $self->_output_filehandle_temporary_file;
     
     foreach my $chr_name ( $self->_bam_parser->get_chromosome_names ) {
         if (not exists $seen_chromosomes->{$chr_name} ) {
             
-            print $filehandle ">" . $chr_name . "\n";
+            print $filehandle $chr_name . "\t";
             my $chromosome_length =$self->_bam_parser->get_chromosome_size($chr_name);
             $self->_pad_chromosome_file_with_Ns($chromosome_length);
             print $filehandle "\n";
@@ -171,10 +197,9 @@ sub _fill_unseen_chromosomes_with_Ns {
 }
 
 sub _write_next_pseudo_reference_allele {
-
     my (  $self, $event, $last_pos, $curr_pos, $last_chr, $curr_chr, $last_allele, $curr_allele) = @_;
 
-    my $filehandle = $self->_out_filehandle;
+    my $filehandle = $self->_output_filehandle_temporary_file;
     my $pad_size   = 0;
 
     if ($curr_chr eq $last_chr) {  #still at the previous chromosome
@@ -196,7 +221,7 @@ sub _write_next_pseudo_reference_allele {
 
 
         #start writing to the new chromosome
-        print $filehandle ">" . $curr_chr . "\n";
+        print $filehandle $curr_chr . "\t";
         $pad_size = $curr_pos - 1;
         #pad the begin with "N" if necessary
         $self->_pad_chromosome_file_with_Ns($pad_size) if ($pad_size > 0);
@@ -205,21 +230,19 @@ sub _write_next_pseudo_reference_allele {
     }
 }
 
-
 sub _pad_chromosome_file_with_Ns {
-    
     my ($self, $pad_size) = @_;
-    my $fhd = $self->_out_filehandle;
+
+    my $filehandle = $self->_output_filehandle_temporary_file;
     while ($pad_size > 0) {
-        print $fhd "N";
+        print $filehandle "N";
         $pad_size--;
     }
 }
 
 sub _get_allele_of_evaluated_event {
-    
     my ($self, $event) = @_;
-    
+
     if ( $event->passed_evaluation ) {
         if (not $event->polymorphic) {
             return $event->reference_allele;
@@ -243,6 +266,7 @@ sub _get_allele_of_evaluated_event {
 #####################################################################
 sub get_statistics_dump {
     my ($self) = @_;
+
     return $self->_reporter->dump;
 }
 

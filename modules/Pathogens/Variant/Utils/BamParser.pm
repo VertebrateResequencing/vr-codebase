@@ -1,9 +1,9 @@
 package Pathogens::Variant::Utils::BamParser;
 use Moose;
 extends 'Pathogens::Variant::Root';
-use namespace::autoclean;
+use VertRes::Parser::bam;
 
-has 'bam' => (is  => 'rw', isa => 'Str', required => 1, trigger => \&_populate_chromosome_size_hash);
+use namespace::autoclean;
 
 has 'chromsome_size' => (
       traits    => ['Hash'],
@@ -17,15 +17,21 @@ has 'chromsome_size' => (
       }
 );
 
-sub _populate_chromosome_size_hash {
-    my ($self) = @_;
-
-    #TO BE IMPLEMENTED!!!
-    #(for test purposes)
-    $self->set_chromosome_size('FN433596' => 3043210);
-    $self->set_chromosome_size('pTW20_1' => 29585);
-    $self->set_chromosome_size('pTW20_2' => 3011);
-
+sub fetch_chromosome_size_into_hash {
+    my ($self, $bam) = @_;
+   
+    my $parser = VertRes::Parser::bam->new(file => $bam);
+    my %sequence_info = $parser->sequence_info();
+    
+    foreach my $reference_name (keys %sequence_info) {
+        
+        #the key will be $reference_name, and the value will be its length as shown in
+        #the bam file header with "LN"
+        
+        $self->set_chromosome_size( $reference_name => $sequence_info{$reference_name}->{"LN"} );
+        
+    }
+    
 }
 __PACKAGE__->meta->make_immutable;
 

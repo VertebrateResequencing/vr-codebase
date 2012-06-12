@@ -37,9 +37,8 @@ has '_event_manipulator'   => ( is => 'ro', isa => 'Pathogens::Variant::Utils::E
 
 
 sub evaluate {
-
     my ($self, $event) = @_;
-    
+
     #logger is for DEBUGging purposes, little effect on overall performance
     my $logger = get_logger("Pathogens::Variant::Evaluator::Pseudosequence");
     
@@ -77,7 +76,13 @@ sub evaluate {
         }
 
         $self->_event->passed_evaluation(1);
-        $self->reporter->inc_counter_accepted_snp_calls; #increments the counter called "accepted_snp_calls" by 1
+        
+        
+        if (not $self->_event->polymorphic) {
+            $self->reporter->inc_counter_accepted_reference_calls; #increments the counter called "accepted_reference_calls" by 1
+        } else {
+            $self->reporter->inc_counter_accepted_snp_calls        #increments the counter called "accepted_snp_calls" by 1
+        }
 
         $logger->is_debug() && $logger->debug("Event dump after passing the evaluation:...\n". Dumper($event) . "\nReporter dump after passing the evaluation:...\n". Dumper($self->reporter) );
 
@@ -95,7 +100,6 @@ sub evaluate {
 }
 
 sub _mark_the_event_if_not_polymorphic {
-    
     my ($self, $event) = @_;
 
     if ($event->alternative_allele eq '.') {
@@ -104,9 +108,8 @@ sub _mark_the_event_if_not_polymorphic {
 
 }
 sub _has_secondary_heterozygous_alternative_alleles {
-
     my ($self) = @_;
-    
+
     my @num_alleles = split(',', $self->_event->alternative_allele);
     
     #seeing more than 1 element after splitting on comma, implies heterozygousity
@@ -119,8 +122,8 @@ sub _has_secondary_heterozygous_alternative_alleles {
 }
 
 sub _passed_quality {
-    
     my ($self) = @_;
+
     if ($self->_event->quality < $self->minimum_quality) {
         $self->reporter->inc_counter_failed_quality;
         return 0;
@@ -130,8 +133,8 @@ sub _passed_quality {
 }
 
 sub _passed_vcf_info_field_evaluation {
-
     my ($self) = @_;
+
     my $logger = get_logger("Pathogens::Variant::Evaluator::Pseudosequence");
 
     $logger->is_debug() && $logger->debug("Evaluating vcf info field values...\n" . $self->_event->info);
@@ -176,7 +179,6 @@ sub _passed_vcf_info_field_evaluation {
 }
 
 sub _passed_pv4_evaluation {
-    
     my ($self, $pv4string) = @_;
 
     #Do not test on pv4 if this is not a polymorphic site: 
@@ -211,9 +213,8 @@ sub _passed_pv4_evaluation {
 }
 
 sub _passed_dp4_evaluation {
-    
     my ($self, $dp4string) = @_;
-    
+
     $self->_dp4_parser->parse( $dp4string );
     
     my $evaluation_status = 1;
@@ -284,8 +285,8 @@ sub _passed_dp4_evaluation {
 }
 
 sub _is_not_an_indel {
-    
     my ($self) = @_;
+
     my $logger = get_logger("Pathogens::Variant::Evaluator::Pseudosequence");
     
     my ($ref_allele) = split(',', $self->_event->reference_allele);   #(as SH) taking only the 1st element

@@ -9,8 +9,8 @@ BEGIN { use_ok( 'Pathogens::Variant::Utils::PseudoReferenceMaker' ); }
 #set the default argument values
 our %args = (
      vcf_file     => './data/single.dip.vcf'
-   , out   => 'out.dummy'
-   , bam   => 'out.dummy'
+   , out   => '/dev/null'
+   , bam   => './data/test.bam'
    , depth        => 4
    , depth_strand => 2
    , ratio        => 0.8
@@ -28,5 +28,8 @@ our %args = (
 my $object = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \%args );
 isa_ok ($object, 'Pathogens::Variant::Utils::PseudoReferenceMaker');
 
-unlink('out.dummy');
+#some modules create a dir called "_Inline" in the current dir
+#delete it after the test
+
+
 done_testing;
