@@ -53,7 +53,7 @@ package Pathogens::Variant::Exception::Argument;
 use base 'Pathogens::Variant::Exception';
 1;
 
-package Pathogens::Variant::Exception::CommandExecution;
+package Pathogens::Variant::Exception::IPC;
 use base 'Pathogens::Variant::Exception';
 1;
 

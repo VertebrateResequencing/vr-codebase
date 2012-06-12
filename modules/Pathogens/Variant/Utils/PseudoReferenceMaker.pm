@@ -102,7 +102,10 @@ sub create_pseudo_reference {
     #The entries in the $temporary_unsorted_tab_file are first sorted (dictionary sort) by sequence name
     #and the sequences are concatenated end-to-end into a single string, and saved in fasta format.
     #The name of the sequence is the lane id.
-    #$self->_fasta_manipulator->sort_and_merge_fasta($temporary_unsorted_tab_file, $final_sorted_and_merged_fasta_file);
+    $self->_sort_and_merge_fasta($temporary_unsorted_tab_file, $final_sorted_and_merged_fasta_file);
+
+    
+    unlink($temporary_unsorted_tab_file);
 
 }
 
@@ -259,7 +262,23 @@ sub _get_allele_of_evaluated_event {
     }
 }
 
-
+sub _sort_and_merge_fasta {
+    my ($self, $temporary_unsorted_tab_file, $final_sorted_and_merged_fasta_file) = @_;
+    
+    my $pipecmd = "sort -d -k1,1 $temporary_unsorted_tab_file 2>&1 |";
+    
+    open(my $fhd_pipe, $pipecmd) || throw Pathogens::Variant::Exception::IPC({text => "Error running pipe command: '$pipecmd' " . $!});
+    open(my $fhd_file, ">" . $final_sorted_and_merged_fasta_file) || throw Pathogens::Variant::Exception::IPC({text => "Could not open filehandle to '$final_sorted_and_merged_fasta_file' " . $!});
+    
+    print $fhd_file ">FinalSequence\n";
+    while(<$fhd_pipe>) {
+        chomp $_;
+        my (undef, $seq) = split("\t", $_);
+        print $fhd_file $seq if $seq;
+    }
+    close $fhd_file;
+    close $fhd_pipe || throw Pathogens::Variant::Exception::IPC({text => "Bad status ($?) running pipe command: '$pipecmd' $! "});
+}
 
 #####################################################################
 #To dump evaluation statistics after the sub 'create_pseudo_reference'
