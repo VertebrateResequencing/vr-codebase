@@ -19,9 +19,10 @@ use Moose;
 use Text::CSV;
 
 
-has 'output_filename'     => ( is => 'rw', isa => 'Str',  required   => 1 );
+has 'output_filename'     => ( is => 'rw', isa => 'Str',      required   => 1 );
 has '_output_file_handle' => ( is => 'rw', lazy_build => 1 );
 has '_results'            => ( is => 'rw', isa => 'ArrayRef', lazy_build => 1 );
+has 'protocol'            => ( is => 'rw', isa => 'Str',      default    => 'StandardProtocol' );
 
 sub _build__output_file_handle
 {
@@ -60,7 +61,15 @@ sub _result_rows
 sub _header
 {
   my ($self) = @_;
-  my @header = ["Seq ID","GeneID","Reads Mapping", "RPKM", "Antisense Reads Mapping", "Antisense RPKM"];
+  my @header;
+  if($self->protocol eq "StrandSpecificProtocol")
+  {
+    @header = ["Seq ID","GeneID","Reads Mapping", "RPKM", "Antisense Reads Mapping", "Antisense RPKM"];
+  }
+  else
+  {
+    @header = ["Seq ID","GeneID", "Antisense Reads Mapping", "Antisense RPKM","Reads Mapping", "RPKM"];
+  }
   return \@header;
 }
 

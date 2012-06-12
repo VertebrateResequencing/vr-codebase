@@ -207,7 +207,10 @@ sub _run {
     my @result = $self->$run_method($exe, $params, @extra_args);
 
     # Record commands run.
-    $self->_add_command_line("$exe $params @extra_args");
+    my @to_add = ($exe);
+    push(@to_add, $params) if $params;
+    push(@to_add, grep { defined $_ } @extra_args) if @extra_args;
+    $self->_add_command_line(join(' ', @to_add));
 
     return @result;
 }
@@ -756,6 +759,22 @@ sub _add_command_line
 {
     my $self = shift;
     push((@{$self->{_command_line}}),@_) if scalar @_;
+}
+
+=head2 _reset_command_line
+
+ Title   : _reset_command_line
+ Usage   : $self->_reset_command_line();
+ Function: Internal method to reset record of command lines executed by wrapper
+ Returns : n/a
+ Args    : n/a
+
+=cut
+
+sub _reset_command_line
+{
+    my $self = shift;
+    $self->{_command_line} = [];
 }
 
 

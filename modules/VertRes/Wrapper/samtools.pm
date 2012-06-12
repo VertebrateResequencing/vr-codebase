@@ -198,6 +198,11 @@ sub merge_and_check {
     
     my $orig_run_method = $self->run_method;
     
+    if(-e $out_bam.'.tmp')
+    {
+      unlink("$out_bam.tmp");
+    }
+    
     # do the merge
     $self->run_method('system');
     $self->merge($out_bam.'.tmp', $in_bams, %options);

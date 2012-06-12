@@ -4,6 +4,8 @@ jQuery.noConflict();
 
 jQuery(document).ready(init);
 
+jQuery(document).onclick=function() {window.close()}
+
 function init()
 {
     jQuery().mousemove(mouse_moved);
@@ -84,4 +86,5 @@ function check_all(prefix,value)
 {
     jQuery("input[name^='"+prefix+"']").attr('checked',value);
 }
+
 

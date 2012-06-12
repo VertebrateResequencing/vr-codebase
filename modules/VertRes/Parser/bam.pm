@@ -449,10 +449,14 @@ sub program_info {
 =head2 program
 
  Title   : program
- Usage   : my $program = $obj->program();
- Function: Return the program used to do the mapping, as given in the header.
+ Usage   : my $program_id = $obj->program();
+ Function: Return the ID of the program used to do the mapping, as given in
+           the header.
            If there is more than 1 PG header line, tries to guess which one is
            for the mapping program.
+           If you want the program name, use program_info, find the PG line
+           with the program id from this function, then pull out PN from the
+           hash.
  Returns : string (undef if no header or not given in header)
  Args    : n/a
 

@@ -940,14 +940,17 @@ sub get_mapping_jobs_from_vrtrack {
     # Used for mapping with different assemblies/mappers for lane
     my $ignore_mapped = defined($$config_data{data}{ignore_mapped_status}) && $$config_data{data}{ignore_mapped_status} ? 1:0;
 
+    my %filter  = (import => 1, swapped => 0);
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
+
     my $count = 0;
     foreach my $vrlane (@lanes) {
         unless ($use_hu) {
             $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $vrlane);
         }
+        
+        next unless does_lane_pass_vrtrack_processed_flag_filters($vrlane, \%filter);
         next if $vrlane->is_withdrawn;
-        next unless $vrlane->is_processed('import');
-        next if $vrlane->is_processed('swapped');
         next if ($vrlane->is_processed('mapped') && !$ignore_mapped);
         next if ($ignore_mapped && mapping_complete($config_data, $vrlane));
 
@@ -983,6 +986,27 @@ sub get_mapping_jobs_from_vrtrack {
     return;
 }
 
+=head2 does_lane_pass_vrtrack_processed_flag_filters
+
+  Arg [1]    : VRlane
+  Arg [2]    : Hash of filters corresponding to processed flags on a VRlane
+  Return     : Boolean
+  Description: Check that the and passes the filters passed in
+  
+=cut
+sub does_lane_pass_vrtrack_processed_flag_filters
+{
+  my ($vrlane, $filter) = @_;
+  
+  for my $pipeline_task (keys %{$filter})
+  {
+    if($vrlane->is_processed($pipeline_task) != $filter->{$pipeline_task})
+    {
+     return 0; 
+    }
+  }
+  return 1;
+}
 
 =head2 get_improvement_jobs_from_vrtrack
 
@@ -1659,7 +1683,7 @@ sub get_mergeup_jobs {
                     # skip if one of our ancestor dirs is a symlink to the
                     # previous_root
                     foreach my $symlinked (keys %symlinked) {
-                        if ($this_path =~ /^$symlinked/) {
+                        if ($this_path eq $symlinked) {
                             if ($level eq 'platforms') {
                                 $old_platform{$this_path} = 1;
                             }
@@ -1949,15 +1973,13 @@ sub mapping_complete
     # Check assembly and mapper
     foreach my $mapping (@mappings)
     {
-	# Skip QC mappings.
-	my $images = $mapping->images();
-	next if( scalar(@{$images}) );
+      next if($mapping->is_qc);
 
 	# Skip unfinished mapping
 	next unless(defined($mapping->raw_reads()));
 
 	# Check Reference and Mapper.
-	if($$config_data{data}{assembly_name} eq $mapping->assembly->name())
+	if($$config_data{data}{assembly_name} eq $mapping->assembly->name() && $$config_data{prefix} eq $mapping->prefix )
 	{
 	    my $mapper_slx = exists($$config_data{data}{'slx_mapper'}) ? $$config_data{data}{'slx_mapper'}:'';
 	    my $mapper_454 = exists($$config_data{data}{'454_mapper'}) ? $$config_data{data}{'454_mapper'}:'';

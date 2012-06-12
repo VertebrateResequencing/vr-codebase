@@ -140,7 +140,7 @@ sub find_files_by_run_lane {
         }
         if (/^dataObj: (.+)$/){
             my $bamfile = $1;
-            next if($bamfile =~ m/phix/);
+            next if ($bamfile =~ m/_phix/);
             push @out, "$path/$bamfile";
         }
     }

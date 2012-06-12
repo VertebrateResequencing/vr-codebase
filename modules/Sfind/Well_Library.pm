@@ -174,13 +174,6 @@ use namespace::autoclean;
 use Sfind::Library;
 extends 'Sfind::Library';
 
-has '_sample_well_asset_id'    => (
-    is          => 'ro',
-    isa         => 'Int',
-    required    => 1,
-    init_arg    => 'sample_well_asset',
-);
-
 # Populate the parameters from the database
 around BUILDARGS => sub {
     my $orig  = shift;
@@ -201,33 +194,29 @@ around BUILDARGS => sub {
 
     $argref->{library_type} = "well";   # all we have, really
 
-    # other info (tag, pool, etc) is keyed off the samplewell asset id
-    $sql = qq[select source_asset_internal_id 
-                from current_requests r, 
-                     asset_links a 
-                where a.descendant_internal_id = ? 
-                and a.descendant_type="wells" 
-                and a.ancestor_type="wells" 
-                and a.ancestor_internal_id = r.source_asset_internal_id  
-                and r.request_type="Pulldown Multiplex Library Preparation"];
+
+    # get pulldown_multiplexed_library_tube, tag is off that.
+    $sql = qq[select distinct tag_internal_id,receptacle_internal_id as pulldown_tube_id
+                from aliquots
+                where library_internal_id=?
+                and receptacle_type in ("pulldown_multiplexed_library_tube","multiplexed_library_tube")
+                and is_current=1];
     
     $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
-    if ($id_ref && $id_ref->{source_asset_internal_id}){
-        # OK, have sample_well asset id
-        $argref->{sample_well_asset} = $id_ref->{source_asset_internal_id};
+   # use Data::Dumper; print Dumper($id_ref);
+
+    if ($id_ref && $id_ref->{pulldown_tube_id}){
+        # OK, have a pulldown tube, get tag info
+        my $tag_internal_id = $id_ref->{tag_internal_id};
 
         # get tag info
-        $sql = qq[select tag_map_id, tag_internal_id,tag_group_internal_id, 
-                        tag_expected_sequence as expected_sequence 
-                    from current_tag_instances t, 
-                         asset_links a 
-                    where a.ancestor_internal_id = ?
-                    and a.ancestor_type="wells" 
-                    and a.descendant_type="tag_instances" 
-                    and a.descendant_internal_id = t.internal_id
+        $sql = qq[select map_id as tag_map_id, internal_id as tag_internal_id,
+                        tag_group_internal_id, expected_sequence
+                    from current_tags 
+                    where internal_id=?
                     ];
         
-        $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{sample_well_asset}));
+        $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($tag_internal_id));
         if ($id_ref){
             foreach my $field(keys %$id_ref){
                 $argref->{$field} = $id_ref->{$field};
@@ -243,29 +232,25 @@ around BUILDARGS => sub {
 # BUILDERS
 ###############################################################################
 
-# this works differently for Well_Libraries
-# Get the pulldown mplex tubes that have the samplewell of this well.
-# The well_library and mplex aren't linked directly.
-# Note that this won't work for custom re-plexing of this library_well (if
-# that is possible)
 sub _get_mplex_pool_ids{
     my ($self) = @_;
     my @mplex_ids;
-
-    my $sql = qq[select descendant_internal_id as mplex_id
-                from asset_links 
-                where ancestor_type="wells" 
-                and ancestor_internal_id=?
-                and descendant_type="pulldown_multiplexed_library_tubes"
+    
+    my $sql = qq[select distinct receptacle_internal_id as mplex_id 
+                from aliquots
+                where library_uuid=?
+                and receptacle_type in("pulldown_multiplexed_library_tube", "multiplexed_library_tube")
                 and is_current=1];
-
+    
     my $sth = $self->_dbh->prepare($sql);
-    $sth->execute($self->_sample_well_asset_id);
+    $sth->execute($self->uuid);
     foreach(@{$sth->fetchall_arrayref()}){
         push @mplex_ids, $_->[0];
     }
 
     @mplex_ids = sort {$a <=> $b} @mplex_ids;
+
+
 
     return \@mplex_ids;
 }

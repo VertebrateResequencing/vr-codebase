@@ -7,11 +7,13 @@ use Data::Dumper;
 BEGIN { unshift(@INC, './modules') }
 BEGIN {
 
-    use Test::Most tests => 8;
+    use Test::Most;
     use_ok('Pathogens::RNASeq::ExpressionStatsSpreadsheet');
 }
 ok my $expression_results = Pathogens::RNASeq::ExpressionStatsSpreadsheet->new(
-  output_filename => 'my_result_file.csv'), 'initialise';
+  output_filename => 'my_result_file.csv',
+  protocol => 'StrandSpecificProtocol'
+  ), 'initialise';
 
 my %result_1 = (
   seq_id  => "some_name",
@@ -46,5 +48,35 @@ $output_result_2 =~ s/[\r\n]//g;
 is $header, '"Seq ID",GeneID,"Reads Mapping",RPKM,"Antisense Reads Mapping","Antisense RPKM"', 'header okay';
 is $output_result_1, 'some_name,abc123,2000,15.3245,10,1.34324', 'result set 1';
 is $output_result_2, 'some_name,efg456,10,0,200,780.34242543543', 'result set 2';
-
+close(IN);
 unlink('my_result_file.csv');
+
+
+#####################
+## Standard protocol
+#####################
+
+ok my $expression_results_standard = Pathogens::RNASeq::ExpressionStatsSpreadsheet->new(
+  output_filename => 'my_result_file_standard.csv',
+  protocol => 'StandardProtocol'
+  ), 'initialise';
+
+ok $expression_results_standard->add_result(\%result_1), 'add first result set';
+ok $expression_results_standard->add_result(\%result_2), 'add second result set';
+ok $expression_results_standard->build_and_close(), 'build the csv file and close';
+
+open(IN_STANDARD, 'my_result_file_standard.csv') or die "Couldnt open input file";
+my $header_standard = <IN_STANDARD>;
+my $output_result_1_standard = <IN_STANDARD>;
+my $output_result_2_standard = <IN_STANDARD>;
+$header_standard =~ s/[\r\n]//g;
+$output_result_1_standard =~ s/[\r\n]//g;
+$output_result_2_standard =~ s/[\r\n]//g;
+
+is $header_standard, '"Seq ID",GeneID,"Antisense Reads Mapping","Antisense RPKM","Reads Mapping",RPKM', 'header okay';
+is $output_result_1_standard, 'some_name,abc123,2000,15.3245,10,1.34324', 'result set 1';
+is $output_result_2_standard, 'some_name,efg456,10,0,200,780.34242543543', 'result set 2';
+close(IN_STANDARD);
+unlink('my_result_file_standard.csv');
+
+done_testing();

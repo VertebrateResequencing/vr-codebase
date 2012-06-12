@@ -25,26 +25,49 @@ sub new
     my ($class,@args) = @_;
     my $self = $class->SUPER::new(@args);
 
-    $$self{limits} = { memory=>5_500, runtime=>3*24*60 };
+    $$self{do_clean}      = 1;
+    $$self{limits}        = { memory=>5_500, runtime=>3*24*60 };
+    $$self{impute2_bin}   = 'impute2';
+    $$self{vcf_impute2}   = 'vcf-impute2';
+    $$self{buffer_region} = 250;
+    $$self{phased_join_args} = '';
     $$self{_sampleconf} = q[
-        gen_map   => '/nfs/users/nfs_p/pd3/sandbox/impute2/genetic_maps_b37/genetic_map_chr{CHROM}_combined_b37.txt',
-        fai_ref   => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
-        known_vcf => '/nfs/users/nfs_p/pd3/sandbox/gtypes/UK10k-twins/uk10k-twins.ref.vcf.gz',
+        impute2_bin => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/impute2.2.2',
+        vcf_impute2 => 'vcf-impute2',
+        gen_map     => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/ALL_1000G_phase1interim_jun2011_impute/genetic_map_chr{CHROM}_combined_b37.txt',
+        fai_ref     => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
+        known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/gtypes/UK10k-twins/uk10k-twins.ref.vcf.gz',    # This must be tabix indexed VCF
 
-        impute2_args => '-Ne 15000 -k 100',
-        chunk_size   => 3_000_000,
-        chromosomes  => [qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22)],
+        impute2_args     => '-Ne 20000 -k 100',
+        buffer_region    => 250, # kb
+        # Do not split blocks phased by IMPUTE2 even when phasing quality is low - single sites may be unphased in otherwise phased chunks
+        phased_join_args => '-q 0 -j 10',
+        chunk_size       => 1_000_000,
 
-        limits  => { memory=>5_500, runtime=>3*24*60 },
+        # Chunks to prioritize. If set, these chunks will run as first
+        # VIP_chunks => [ '18:46588427-47619278', '9:107043283-108190518' ],
+
+        # Regions to impute, the chunks must be sorted by chromosomal position or else the resulting VCF will not
+        #   be sorted. By default, the whole inpute VCF is imputed.
+        # region => [ '1:159000000-161000000', '1:62000000-64000000', ],
+
+        # Chunk-specific options will be applied to chunks with a non-zero overlap
+        chunk_options => { 
+            'X:0-155270560' => { impute2_args=>'-Ne 15000 -k 100'  },
+        },
+
+        limits   => { memory=>5_500, runtime=>3*24*60 },
+        do_clean => 1,   # Remove runner's temporary files
     ]."\n";
 
     $$self{chunks_overlap} = 0;
 
     $$self{usage} .= 
-        "Usage: scripte\n" .
+        "Usage: run-impute2 [OPTIONS]\n" .
         "Options:\n" .
         "   -i, --impute-vcf <file>             The target VCF file to be imputed or genotypes refined\n" .
         "   -l, --list-chunks                   List chunks and exit\n" .
+        "   -m, --mrProper                      Clean all intermediate files, including Impute2 output files, leaving only top-level VCFs\n" .
         "   -o, --outdir <dir>                  Output directory\n" .
         "   -r, --region <chr|chr:from-to>      Run imputation in the given region only\n" .
         "\n";
@@ -58,18 +81,28 @@ sub parse_args
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '-r' or $arg eq '--region' ) { push @{$$self{region}},shift(@ARGV); next; }
+        if ( $arg eq '-m' or $arg eq '--mrProper' ) { $$self{mrProper}=1; next; }
         if ( $arg eq '-l' or $arg eq '--list-chunks' ) { $$self{list_chunks}=1; next; }
         if ( $arg eq '-i' or $arg eq '--impute-vcf' ) { $$self{in_vcf}=shift(@ARGV); next; }
         if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
         $self->throw();
     }
     if ( !exists($$self{in_vcf}) ) { $self->throw("Expected the -i option.\n"); }
+    if ( !exists($$self{outdir}) ) { $self->throw("Expected the -o option.\n"); }
+    if ( $$self{mrProper} )
+    {
+        $self->mrProper($$self{outdir});
+        $self->all_done;
+    }
     if ( !exists($$self{known_vcf}) ) 
     { 
         $$self{known_vcf} = '--';
         $self->warn("The 'known_vcf' config key not present, running without reference panel.\n"); 
     }
-    if ( !exists($$self{outdir}) ) { $self->throw("Expected the -o option.\n"); }
+    elsif ( !($$self{known_vcf}=~/.gz$/) )
+    {
+        $self->warn("The known_vcf should be bgzipped and tabix indexed. Hopefully you know what you're doing?\n");
+    }
     if ( !exists($$self{gen_map}) ) 
     {
         $$self{gen_map} = '/nfs/users/nfs_p/pd3/sandbox/impute2/genetic_maps_b37/genetic_map_chr{CHROM}_combined_b37.txt';
@@ -105,7 +138,7 @@ sub main
         # List chunks and exit
         for my $region (@$regions)
         {
-            my $chunks = $self->get_chunks($$self{chunk_size},[$region]);
+            my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
             for my $chunk (@$chunks)
             {
                 print "$outdir/$region/02.impute2.$chunk\n";
@@ -120,7 +153,7 @@ sub main
     {
         $self->spawn('vcf_to_impute2',"$outdir/$region/01.vcf_to_impute2.done",$region);
     }
-    $self->wait;
+    if ( !exists($$self{_VIP_chunks}) ) { $self->wait; }
     
 
     # Run impute2 on chunks
@@ -129,7 +162,7 @@ sub main
     {
         if ( !$self->is_finished("$outdir/$region/02.impute2.done") )
         {
-            my $chunks = $self->get_chunks($$self{chunk_size},[$region]);
+            my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
             for my $chunk (@$chunks)
             {
                 $self->spawn('impute2',"$outdir/$region/02.impute2.$chunk.done",$chunk,"$outdir/$region");
@@ -137,29 +170,104 @@ sub main
         }
     }
     $self->set_limits(memory=>undef,runtime=>undef,verbose=>1);
-    $self->wait;
-
+    if ( !exists($$self{_VIP_chunks}) ) { $self->wait; }
 
     # Convert to VCFs and concat
     if ( !$self->is_finished("$outdir/04.merged.vcf.gz") ) 
     {
-        my @all_chunks;
         for my $region (@$regions)
         {
-            my $chunks = $self->get_chunks($$self{chunk_size},[$region]);
+            my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
             for my $chunk (@$chunks)
             {
+                if ( !$self->is_finished("$outdir/$region/02.impute2.$chunk.done") ) { next; }
                 $self->spawn('impute2_to_vcf',"$outdir/$region/03.vcfs.$chunk.vcf.gz",$chunk,"$outdir/$region");
-                push @all_chunks, "$outdir/$region/03.vcfs.$chunk.vcf.gz";
             }
         }
         $self->wait;
 
+        # This is clumsy, but the VIP chunks must be disabled for this, they may be out of order.
+        delete($$self{VIP_chunks});
+        delete($$self{_VIP_chunks});
+        my @all_chunks = ();
+        for my $region (@$regions)
+        {
+            my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
+            for my $chunk (@$chunks)
+            {
+                push @all_chunks, "$outdir/$region/03.vcfs.$chunk.vcf.gz";
+            }
+        }
         $self->spawn('concat_vcfs',"$outdir/04.merged.vcf.gz",@all_chunks);
         $self->wait;
     }
 
+    # Run performance stats and clean
+    $self->spawn('runtime_stats',"$outdir/runtime");
+    $self->wait;
+    $self->clean($outdir) unless !$$self{do_clean};
+
     $self->all_done;
+}
+
+sub mrProper
+{
+    my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
+    my $regions = $self->regions();
+    for my $region (@$regions)
+    {
+        $self->cmd("rm -rf $outdir/$region");
+    }
+}
+
+
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub set_chunk_options
+{
+    my ($self,$chr,$from,$to) = @_;
+    if ( !exists($$self{chunk_options}) ) { return; }
+    my $hit;
+    for my $chunk (keys %{$$self{chunk_options}})
+    {
+        if ( !($chunk=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the chunk_options: [$chunk]"); }
+        if ( $chr ne $1 ) { next; }
+        if ( $2>$to ) { next; }
+        if ( $3<$from ) { next; }
+        $hit = $chunk;
+        last;
+    }
+    if ( !defined $hit )
+    {
+        if ( exists($$self{ori_chunk_options}) ) 
+        {
+            $self->set_options($$self{ori_chunk_options},$self);
+        }
+        return;
+    }
+    if ( !exists($$self{ori_chunk_options}) )
+    {
+        $$self{ori_chunk_options} = {};
+        $self->set_options($self,$$self{ori_chunk_options},keys %{$$self{chunk_options}{$hit}});
+    }
+    $self->set_options($$self{chunk_options}{$hit},$self);
+}
+
+sub set_options
+{
+    my ($self,$src,$tgt,@keys) = @_;
+    if ( !scalar @keys ) { @keys = keys %$src }
+    for my $key (@keys)
+    {
+        $$tgt{$key} = $$src{$key};
+    }
 }
 
 sub regions
@@ -167,22 +275,10 @@ sub regions
     my ($self) = @_;
     if ( exists($$self{region}) ) 
     { 
-        # The region was given on command line
-        my @list;
-        for my $region (@{$$self{region}})
-        {
-            if ( !($region=~/^([^:]+)/) ) { $self->throw("Could not parse region: $region\n"); }
-            push @list, $1;
-            if ( $region=~/^([^:]+):(\d+)-(\d+)$/ )
-            {
-                push @{$$self{regions}{$1}}, { name=>$1, from=>$2, to=>$3 };
-            }
-        }
-        return \@list;
+        if ( ref($$self{region}) eq 'ARRAY' ) { return $$self{region} }
+        return [ $$self{region} ]; 
     }
-    # Do all regions given in the config file
-    my %chroms = map { $_ => 1 } @{$$self{chromosomes}};
-    my (@in_list) = grep { chomp && exists($chroms{$_}) } $self->cmd(qq[tabix -l $$self{in_vcf}]);
+    my (@in_list) = grep { chomp } $self->cmd(qq[tabix -l $$self{in_vcf}]);
     return \@in_list;
 }
 
@@ -191,7 +287,7 @@ sub vcf_to_impute2
     my ($self,$outfile,$region) = @_;
     my $outdir = "$$self{outdir}/$region";
     $self->cmd(qq[mkdir -p $outdir]);
-    $self->cmd(qq[vcf-impute2 -r $region -i $$self{in_vcf} -k $$self{known_vcf} -o $outdir/01 >$outfile.o 2>$outfile.e && touch $outfile]);
+    $self->cmd(qq[$$self{vcf_impute2} -r $region -i $$self{in_vcf} -k $$self{known_vcf} -o $outdir/01 >>$outfile.o 2>>$outfile.e && touch $outfile]);
 }
 
 sub impute2
@@ -201,11 +297,25 @@ sub impute2
     my $chr = $1;
     my $from = $2;
     my $to   = $3;
+
+    # Check if there are any variants in this chunk
+    my @ret = `tabix $$self{in_vcf} $chr:$from-$to | head | wc -l`;
+    if ( !@ret ) { $self->throw("FIXME: tabix $$self{in_vcf} $chr:$from-$to | head | wc -l"); }
+    chomp($ret[0]);
+    if ( !$ret[0] ) 
+    {
+        $self->warn("Empty chunk $chr:$from-$to");
+        $self->cmd(qq[touch $outdir/02.impute2.$chunk.empty]);
+        $self->cmd(qq[touch $outfile]);
+        return;
+    }
+
+    $self->set_chunk_options($chr,$from,$to);
     my $genmap = $$self{gen_map};
     $genmap =~ s/\{CHROM\}/$chr/;
     if ( ! -e $genmap ) { $self->throw("The genmap [$genmap] does not exist.\n"); }
     my $known = $$self{known_vcf} eq '--' ? '' : "-known_haps_g $outdir/01.known_haps -sample_known_haps_g $outdir/01.known_samples";
-    $self->cmd(qq[impute2 -g $outdir/01.impute_haps -sample_g $outdir/01.impute_samples $known -m $genmap -int $from $to $$self{impute2_args} -prob_g -pgs_prob -o_gz -o $outdir/02.impute2.$chunk >$outdir/02.impute2.$chunk.o 2>$outdir/02.impute2.$chunk.e]);
+    $self->cmd(qq[$$self{impute2_bin} -buffer $$self{buffer_region} -g $outdir/01.impute_haps -sample_g $outdir/01.impute_samples $known -m $genmap -int $from $to -phase -include_buffer_in_output $$self{impute2_args} -prob_g -pgs_prob -o_gz -o $outdir/02.impute2.$chunk >>$outdir/02.impute2.$chunk.o 2>>$outdir/02.impute2.$chunk.e]);
 
     $self->cmd(qq[touch $outfile]);
 }
@@ -215,23 +325,24 @@ sub impute2_to_vcf
 {
     my ($self,$outfile,$chunk,$outdir) = @_;
     if ( !($chunk=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the chunk string: [$chunk]\n"); }
-    if ( -e "$outdir/02.impute2.$chunk.gz" )
+    my $chr  = $1;
+    my $from = $2 - $$self{buffer_region}*1000; 
+    my $to   = $3 + $$self{buffer_region}*1000;
+    if ( $from<0 ) { $from = 0; }
+    if ( -s "$outfile.e" ) { `cat $outfile.e >> $outfile.e.saved`; }
+    if ( -e "$outdir/02.impute2.$chunk.empty" )
     {
-        $self->cmd(qq[vcf-impute2 -r $chunk -i $$self{in_vcf} -o $outdir/02.impute2.$chunk 2>$outfile.e | bgzip -c > $outfile.part]);
+        # This chunk is empty. Create an empty VCF with header.
+        $self->cmd(qq[tabix -h $$self{in_vcf} $chunk | bgzip -c > $outfile.part]);
     }
-    elsif ( -z "$outdir/02.impute2.$chunk.e" )
+    elsif ( -e "$outdir/02.impute2.$chunk.gz" )
     {
-        $self->cmd(qq[touch $outfile]);
-        return;
+        # Everything went OK
+        $self->cmd(qq[$$self{vcf_impute2} -r $chr:$from-$to -i $$self{in_vcf} -o $outdir/02.impute2.$chunk 2>$outfile.e | bgzip -c > $outfile.part]);
     }
     else
     {
-        my @ret = $self->cmd(qq[tabix $$self{known_vcf} $chunk | head -100 | wc -l]);
-        if ( !@ret ) { $self->throw("FIXME: tabix $$self{known_vcf} $chunk | head -100 | wc -l"); }
-        chomp($ret[0]);
-        if ( $ret[0]!=0 ) { $self->throw("FIXME: tabix $$self{known_vcf} $chunk | head -100 | wc -l"); }
-
-        $self->cmd(qq[tabix -h $$self{in_vcf} $chunk | bgzip -c > $outfile.part]);
+        $self->throw("What happened: $outdir/02.impute2.$chunk, $$self{in_vcf} $chunk");
     }
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
@@ -247,7 +358,7 @@ sub concat_vcfs
         print $fh $file, "\n";
     }
     close($fh);
-    $self->cmd(qq[vcf-concat -f $outfile.list | bgzip -c > $outfile.part]);
+    $self->cmd(qq[vcf-phased-join $$self{phased_join_args} -l $outfile.list -o - 2>>$outfile.log | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
 }
@@ -312,30 +423,32 @@ sub cmd
     return Utils::CMD($cmd,{verbose=>1});
 }
 
-sub filter_regions
+sub chr_chunks
 {
-    my ($self,$regions,$filters) = @_;
-    my @out;
-    for my $filter (@$filters)
-    {
-        if ( !($filter=~/^[^:]+$/) ) { $self->throw("todo: [$filter]"); }
-        if ( !exists($$regions{$filter}) ) { next; }
-        @out = @{$$regions{$filter}};
-    }
-    return \@out;
-}
+    my ($self,$split_size,$region) = @_;
 
-sub get_chunks
-{
-    my ($self,$split_size,$regions) = @_;
+    my $regions = $self->read_chr_lengths($$self{fai_ref},$region);
+
+    if ( exists($$self{VIP_chunks}) && !exists($$self{_VIP_chunks}) ) 
+    {
+        for my $chunk (@{$$self{VIP_chunks}})
+        {
+            if ( !($chunk=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the VIP chunk [$chunk]\n"); }
+            my $chr  = $1;
+            my $from = $2;
+            my $to   = $3;
+            push @{$$self{_VIP_chunks}{$chr}}, [$from,$to];
+        }
+    }
 
     my @chunks;
-    $regions = exists($$self{regions}) ? $self->filter_regions($$self{regions},$regions) : $self->read_chr_lengths($$self{fai_ref},$regions);
+    my @vip_chunks;
     for my $region (@$regions)
     {
         my $chr     = $$region{name};
         my $pos     = $$region{from};
         my $end_pos = $$region{to};
+
         while ($pos<$end_pos)
         {
             my $from = $pos;
@@ -343,14 +456,28 @@ sub get_chunks
 
             if ( $to>$end_pos ) { $to=$end_pos; }
 
-            push @chunks, "$chr:$from-$to";
+            my $is_vip;
+            if ( exists($$self{_VIP_chunks}) && exists($$self{_VIP_chunks}{$chr}) )
+            {
+                for my $chunk (@{$$self{_VIP_chunks}{$chr}})
+                {
+                    if ( $$chunk[0]>$to   ) { next; }
+                    if ( $$chunk[1]<$from ) { next; }
+                    $is_vip = 1; 
+                    last;
+                }
+            }
+            if ( $is_vip ) { push @vip_chunks, "$chr:$from-$to"; }
+            else { push @chunks, "$chr:$from-$to"; }
 
-            $pos += $split_size - $$self{chunks_overlap};
+            $pos += $split_size;
             if ( $pos<1 ) { $self->throw("The split size too small [$split_size]?\n"); }
 
             if ( $$self{debug_chunks} && scalar @chunks>$$self{debug_chunks} ) { return \@chunks; }
         }
     }
+    if ( @vip_chunks ) { @chunks = ( @vip_chunks, @chunks ); }
+
     return \@chunks;
 }
 
@@ -358,27 +485,25 @@ sub read_chr_lengths
 {
     my ($self,$fai,$regions) = @_;
 
+    my @chr_lengths;
     my @regex;
     if ( defined $regions )
     {
         for my $region (@$regions)
         {
             if ( $region=~/^[^:]+$/ ) { push @regex,$region; }
+            elsif ( $region=~/^([^:]+):(\d+)-(\d+)$/ ) { push @chr_lengths, {name=>$1, from=>$2, to=>$3} }
         }
     }
 
     if ( !@regex ) 
-    { 
-        if ( $$self{fai_chr_regex}=~/^\^/ or $$self{fai_chr_regex}=~/\$$/ )
-        {
-            $self->throw("The regex must not contain [^\$], this will be appended automagically.\n");
-        }
-        push @regex, $$self{fai_chr_regex}; 
+    {
+        if ( !@chr_lengths ) { $self->throw("FIXME: No regions given?"); }
+        return \@chr_lengths;
     }
 
     # Determine the chromosomes and their lengths
     open(my $fh,'<',$fai) or $self->throw("$fai: $!"); 
-    my @chr_lengths;
     while (my $line=<$fh>)
     {
         for my $regex (@regex)

@@ -71,13 +71,17 @@ sub new {
                 'bases_mapped_cigar',
                 'bases_trimmed',
                 'error_rate',
+                'inward_pairs',
                 'is_paired',
                 'is_sorted',
                 'last_fragments',
                 'max_length',
                 'mismatches',
+                'other_pairs',
+                'outward_pairs',
                 'reads_duplicated',
                 'reads_mapped',
+                'reads_mq0',
                 'reads_unmapped',
                 'reads_unpaired',
                 'reads_paired,
@@ -90,9 +94,14 @@ sub new {
                 'first_fragment_gc',
                 'first_fragment_qualities',
                 'gc_depth',
+                'gc_content_per_cycle',
+                'indel_cycles',
+                'indel_dist',
                 'insert_size',
                 'last_fragment_gc',
                 'last_fragment_qualities',
+                'mismatches_per_cycle',
+                'read_lengths',
 
 =cut
 
@@ -126,6 +135,7 @@ sub _get_header {
         '1st fragments'     => '1st_fragments',
         'last fragments'    => 'last_fragments',
         'reads mapped'      => 'reads_mapped',
+        'reads MQ0'         => 'reads_mq0',
         'reads unmapped'    => 'reads_unmapped',
         'reads unpaired'    => 'reads_unpaired',
         'reads paired'      => 'reads_paired',
@@ -144,6 +154,9 @@ sub _get_header {
         'insert size standard deviation' => 'sd_insert_size',
         'is sorted'         => 'is_sorted',
         'is paired'         => 'is_paired',
+        'inward oriented pairs'         => 'inward_pairs',
+        'outward oriented pairs'        => 'outward_pairs',
+        'pairs with other orientation'  => 'other_pairs',
     );
     my %mapping = 
     (
@@ -151,9 +164,14 @@ sub _get_header {
         'LFQ'   => 'last_fragment_qualities',
         'GCF'   => 'first_fragment_gc',
         'GCL'   => 'last_fragment_gc',
+        'IC'    => 'indel_cycles',
+        'ID'    => 'indel_dist',
         'IS'    => 'insert_size',
         'GCD'   => 'gc_depth',
         'COV'   => 'coverage',
+        'MPC'   => 'mismatches_per_cycle',
+        'GCC'   => 'gc_content_per_cycle',
+        'RL'    => 'read_lengths',
     );
     
     while (my $line=<$fh>) 

@@ -1,0 +1,891 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+run-release -- Runner pipeline script to do a rolling release.
+
+=head1 SYNOPSIS
+
+run-release +verbose +config release.conf --rolling_release
+
+=head1 DESCRIPTION
+
+Runner pipeline script to do a rolling release.
+
+=head1 AUTHOR
+
+Shane McCarthy: sm15@sanger.ac.uk
+
+=cut
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+
+use Data::Dumper;
+use VertRes::IO;
+use VertRes::Utils::FileSystem;
+use VertRes::Parser::bas;
+use File::Basename;
+use Time::Format;
+use Data::Compare;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+    
+    $$self{debug_chunks} = 0;
+    $$self{_sampleconf} = q[
+    
+tracking_root  => '/path/to/TRACKING',
+build_root => '/path/to/BUILD',
+
+db => 'db_name',
+
+lane_bams_options => q[--all_samples --improved --slx_mapper bwa --454_mapper ssaha --qc --assembly_name NCBI37],
+
+# data section to be used as in MergeUp pipeline
+merge_up => 
+{
+    data =>
+    {
+        tag_strip => [qw(OQ XM XG XO E2)],
+        extract_intervals => { intervals_file => '/path/to/intervals/file' },
+        remove_tag_strip_bams => 1,
+        remove_library_level_bams => 1,
+        do_index_bams => 1,
+        do_cleanup => 1,
+    },
+}
+
+# data section for the SNPs pipeline
+all_callers => 
+{
+    chunks_overlap => 0,
+    bsub_opts       => "-q normal -M3500000 -R 'select[type==X86_64 && mem>3500] rusage[mem=3500,thouio=1,tmp=16000]'",
+    bsub_opts_long  => "-q normal -M3500000 -R 'select[type==X86_64 && mem>3500] rusage[mem=3500,thouio=1,tmp=16000]'",
+    fa_ref => '/path/to/ref.fasta',
+    fai_ref => '/path/to/ref.fasta.fai',
+},
+
+mpileup => 
+{
+    version => 'v1',
+    filter => '/path/to/mpileup/filter/file',
+    data => 
+    {
+        task => 'mpileup,cleanup',
+        bsub_opts_mpileup    => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
+        split_size_mpileup   => 300_000_000,
+        
+        samtools    => 'samtools',
+        mpileup_cmd => 'mpileup -d 500 -C50 -m3 -F0.0002 -aug',
+        
+        max_jobs => 24,
+    },
+},
+    
+gatk => 
+{
+    version => 'v2',
+    filter => '/path/to/gatk/filter/file',
+    data => 
+    {
+        task => 'gatk,cleanup',
+        split_size_gatk      => 100_000_000,   
+        gatk_opts =>
+        {
+            all =>
+            {
+                verbose => 1,
+                _extras => [ '-U ALLOW_UNSET_BAM_SORT_ORDER ' ],
+            },
+            unified_genotyper => 
+            {
+                genotype_likelihoods_model => 'BOTH',         # Call both SNPs and INDELs
+            },
+            variant_filtration =>
+            {
+                filters => { HARD_TO_VALIDATE => 'MQ0 >= 4 && (MQ0 / (1.0 * DP)) > 0.1' },
+                maskName => 'InDel',
+                clusterWindowSize => 11,
+            },
+            variant_recalibrator =>
+            {
+                mode => 'BOTH',         # recalibrate SNPs and INDELs
+                target_titv => 2.08,    # only for plotting
+                ignore_filter => 'HARD_TO_VALIDATE',
+                percentBadVariants => 0.06,
+                maxGaussians => 4,
+                training_sets => ['dbsnp,VCF,known=true,training=false,truth=false,prior=8.0,/path/to/broad_resources/dbsnp_132.b37.vcf.gz',
+                                  'hapmap,VCF,known=false,training=true,truth=true,prior=15.0,/path/to/broad_resources/hapmap_3.3.b37.sites.vcf.gz',
+                                  'omni,VCF,known=false,training=true,truth=false,prior=12.0,/path/to/broad_resources/1000G_omni2.5.b37.sites.vcf.gz'],
+            },
+            apply_recalibration =>
+            {
+                ts_filter_level => 99.0,
+                mode => 'BOTH',
+            },
+        },
+    
+        # max number of running jobs per task
+        max_jobs => 42,
+
+        dbSNP_vcf   => '/path/to/broad_resources/dbsnp_132.b37.vcf.gz',
+        indel_mask  => '/path/to/broad_resources/indels.bed.mask',
+    },
+}];
+    
+    $$self{usage} .= 
+        "Usage: \n" .
+        "Options:\n" .
+        "\n" .
+        "\n";
+    
+    $$self{fsu} = VertRes::Utils::FileSystem->new();
+    $$self{io} = VertRes::IO->new();
+    
+    return $self;
+}
+
+sub parse_args
+{
+    my ($self) = @_;
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '--rolling_release' ) { $$self{rolling_release} = 1; next; }
+        if ( $arg eq '-r' or $arg eq '--release' ) { $$self{release} = shift(@ARGV); next; }
+        if ( $arg eq '-p' or $arg eq '--previous_release' ) { $$self{previous_release} = shift(@ARGV); next; }
+        if ( $arg eq '-h' or $arg eq '--help' ) { $self->throw(); }
+        $self->throw();
+    }
+    if ( !exists($$self{db}) ) { $self->throw("The 'db' option needs to be supplied."); }
+    if ( !exists($$self{tracking_root}) ) { $self->throw("The 'tracking_root' option needs to be supplied."); }
+    if ( !exists($$self{build_root}) ) { $self->throw("The 'build_root' option needs to be supplied."); }
+    if ( !exists($$self{lane_bams_options}) ) { $self->throw("The 'lane_bams_options' option needs to be supplied."); }
+    
+    $self->throw("Build directory does not exist $$self{build_root}") unless (-e $$self{build_root});
+    $self->throw("Tracking directory does not exist $$self{tracking_root}") unless (-e $$self{tracking_root});
+    
+    if ($$self{rolling_release})
+    {
+        if (exists $$self{release} || exists $$self{previous_release})
+        {
+            $self->throw("If rolling release option is set, cannot supply release or previous_release options.");
+        }
+        else
+        {
+            $$self{release} = qq[REL-$time{'yyyy-mm-dd'}];
+        }
+    }
+    elsif (!exists $$self{release})
+    {
+        $self->throw("This is not a rolling release, so release option must be supplied.");
+    }
+    
+    if (exists $$self{all_callers})
+    {
+        my $snps_data = delete $$self{all_callers};
+        %{$$self{mpileup}{data}} = ( %{$$self{mpileup}{data}}, %{$snps_data} );
+        %{$$self{gatk}{data}} = ( %{$$self{gatk}{data}}, %{$snps_data} );
+    }
+    
+    $$self{max_snps_samples} ||= 5;
+}
+
+sub find_release_dirs 
+{
+    my ($self) = @_;
+    
+    my $db_root = $$self{fsu}->catfile($$self{build_root}, $$self{db});
+    system("mkdir $db_root") unless (-s $db_root);
+    
+    # If this is a rolling release, we will attempt to automatically find 
+    # previous releases
+    if ($$self{rolling_release})
+    {
+        if ( !$$self{previous_release} ) 
+        { 
+            my @release_dirs;
+            opendir(my $dh, $db_root) || $self->throw("Can't opendir $db_root");
+            @release_dirs = grep { /^REL-\d{4}-\d{2}-\d{2}$/ } readdir($dh);
+            closedir $dh;
+        
+            my $previous;
+            foreach my $dir (sort (@release_dirs, $$self{release}))
+            {
+                last if ($dir eq $$self{release});
+                $previous = $dir;
+            }
+            
+            if ($previous) 
+            {
+                $$self{previous_release} = $previous;
+            }
+        }
+        
+        if ( $$self{previous_release} ) 
+        {
+            my $previous_dir = $$self{fsu}->catfile($db_root, $$self{previous_release});
+            my $previous_done = $$self{fsu}->catfile($previous_dir, '.release_done');
+            if (-e $previous_dir && ! -e $previous_done) 
+            {
+                $$self{release} = $$self{previous_release};
+                delete $$self{previous_release};
+                $self->find_release_dirs();
+            }
+        }
+    }
+    
+    $$self{root} = $$self{fsu}->catfile($$self{build_root}, $$self{db}, $$self{release});
+    if ( $$self{previous_release} )
+    {
+        $$self{previous_root} = $$self{fsu}->catfile($$self{build_root}, $$self{db}, $$self{previous_release});
+    }
+    $$self{frozen} = (!$$self{rolling_release}) || (-e "$$self{root}/.freeze");
+}
+
+sub setup_release
+{
+    my ($self, $lane_bams_fofn) = @_;
+    
+    # Set up top level of release directory structure
+    system("mkdir -p $$self{root}/{config,log,by-sample}");
+    
+    my $lane_bams_cmd = qq[lane_bams.pl --root $$self{tracking_root} --db $$self{db} $$self{lane_bams_options}];
+    $self->cmd(qq[$lane_bams_cmd > $lane_bams_fofn.tmp]);# || $self->throw("Command failed: $lane_bams_cmd");
+    $self->throw("Could not create lane bams fofn $lane_bams_fofn.tmp") unless (-s "$lane_bams_fofn.tmp");
+    if ( ($$self{lane_bams_options} =~ /--improved/) && `grep raw $lane_bams_fofn.tmp` )
+    {
+        $self->throw("Unimproved bams found in $lane_bams_fofn.tmp even though --improved option set");
+    }
+    rename("$lane_bams_fofn.tmp", $lane_bams_fofn) || $self->throw("Could not rename $lane_bams_fofn.tmp to $lane_bams_fofn");
+}
+
+sub main
+{
+    my ($self) = @_;
+    
+    $self->parse_args();
+    $self->find_release_dirs();
+    
+    $self->debugln("Building release: $$self{root}");
+    $self->debugln("Previous release: $$self{previous_root}") if ($$self{previous_root});
+    
+    $self->spawn('setup_release', "$$self{root}/lane_bams.fofn");
+    $self->wait;
+    
+    # Run MergeUp pipeline
+    $self->spawn('merge_up', "$$self{root}/.merge_up_done");
+    $self->wait unless (-s "$$self{root}/release_bams.fofn");
+    
+    # Post-process merged bams
+    $self->spawn('process_bams', "$$self{root}/alignment_stats.bas", "$$self{root}/release_bams.fofn");
+    
+    # Run SplitBam pipeline for whole genome studies
+    if (exists $$self{split_bam})
+    {
+        $self->spawn('split_bam', "$$self{root}/.split_bam_done"); # TODO: index split bams
+    }
+    
+    # Only do variant calling on a frozen release
+    # Exome calling
+    if (exists $$self{mpileup} && exists $$self{gatk})
+    {
+        $self->spawn('create_snps_hierarchy', "$$self{root}/calling");
+        $self->wait unless (-d "$$self{root}/calling");
+        
+        # Run SNPs pipeline for each caller
+        foreach my $caller (qw(mpileup gatk)) 
+        {
+            $self->spawn('snps', "$$self{root}/.snps_${caller}_done", $caller);
+        }
+        
+        # TODO: Apply basic filters
+        # TODO: Merge variants across callers
+        # TODO: G1K and dbSNP annotations
+        # TODO: vcf2consequences
+        # TODO: stats
+        
+        $self->wait;
+    }
+    $self->wait;
+        
+    if ($$self{frozen})
+    {
+        # Whole genome calling
+        if (exists $$self{merge_across})
+        {
+            # TODO: Run MergeAcross pipeline
+            # $self->spawn('merge_across', "$$self{root}/.merge_across_done");
+            # $self->wait;
+        
+            # TODO: Run mpileup Runner pipeline
+            # $self->spawn('run_mpileup');
+            # $self->wait;
+        }
+        
+        # If this is a frozen release and the snp calling is done, we should store the horizontal sample BAMs to nfs
+        if ($$self{store_path})
+        {
+            $self->spawn('store_path', "$$self{root}/.store_path_done");
+            $self->wait;
+        }
+    }
+    $self->wait;
+    
+    # Consolidate merge_up hierarchies
+    $self->spawn('consolidate_hierarchies', "$$self{root}/.consolidate_hierarchies_done");
+    $self->wait;
+    
+    # The release is done
+    system("touch $$self{root}/.release_done") unless (-e "$$self{root}/.release_done");
+    
+    $self->all_done;
+}
+
+
+sub create_snps_hierarchy 
+{
+    my ($self, $calling_path) = @_;
+    
+    my $calling_path_tmp = "$calling_path.tmp";
+    if (-e $calling_path_tmp)
+    {
+        system("rm -r $calling_path_tmp");
+    }
+    system("mkdir -p $calling_path_tmp");
+    
+    my @release_bams = $$self{io}->parse_fofn("$$self{root}/release_bams.fofn", '/');
+    
+    my %samples;
+    foreach my $bam (@release_bams) 
+    {
+        my ($basename, $release_dir) = fileparse($bam);
+        $release_dir =~ s/\/$//;
+        my @parts = File::Spec->splitdir($release_dir);
+        my $project = $parts[-3];
+        my $sample = File::Spec->catdir($project, $parts[-2]);
+        my $platform = File::Spec->catdir($sample, $parts[-1]);
+        
+        push(@{$samples{projects}->{$project}}, $bam);
+        push(@{$samples{samples}->{$sample}}, $bam);
+        push(@{$samples{platforms}->{$platform}}, $bam);
+    }
+    
+    my %symlinked;
+    foreach my $level (qw(projects samples platforms))
+    {
+        DIR: foreach my $dir (keys %{$samples{$level}})
+        {
+            my $this_merge_path = "$$self{root}/by-sample/$dir";
+            my $this_calling_path = "$calling_path_tmp/$dir";
+            my $previous_calling_path = $$self{previous_root} ? "$$self{previous_root}/calling/$dir" : '';
+            
+            foreach my $symlinked (keys %symlinked)
+            {
+                if ($this_calling_path =~ /^$symlinked/)
+                {
+                    next DIR;
+                }
+            }
+            
+            if (-l $this_merge_path && $previous_calling_path && -e $previous_calling_path)
+            {
+                symlink $previous_calling_path, $this_calling_path;
+                $symlinked{$this_calling_path} = 1;
+            }
+            else
+            {
+                system("mkdir -p $this_calling_path");
+            }
+        }
+    }
+    
+    rename $calling_path_tmp, $calling_path;
+}
+
+sub merge_up 
+{
+    my ($self, $outfile, $opts) = @_;
+    
+    my %merge_up_data = (
+        root => qq[$$self{root}/by-sample],
+        module => 'VertRes::Pipelines::MergeUp',
+        prefix => '_',
+        log => qq[$$self{root}/log/merge_up.log],
+        
+        lane_bams => qq[$$self{root}/lane_bams.fofn],
+    );
+    
+    if ($$self{previous_release}) 
+    {
+        $merge_up_data{previous_merge_root} = qq[$$self{previous_root}/by-sample];
+    }
+    $$self{merge_up}{data}{do_index_bams} = 1;
+    
+    %merge_up_data = (%{$$self{merge_up}}, %merge_up_data);
+    
+    my $pipeline = "$$self{root}/config/merge_up.pipeline";
+    my $config = "$$self{root}/config/merge_up.conf";
+    $self->create_config($config, %merge_up_data);
+    $self->create_pipeline($pipeline, '__MERGEUP__', $config);
+    $self->run_pipeline($pipeline, $opts);
+    
+    unless (-s "$$self{root}/release_bams.fofn")
+    {
+        if (-s "$$self{root}/by-sample/raw_platform_bams.fofn_expected")
+        {
+            system("cp $$self{root}/by-sample/raw_platform_bams.fofn_expected $$self{root}/release_bams.fofn");
+        }
+        elsif (-s "$$self{root}/by-sample/raw_platform_bams.fofn")
+        {
+            system("cp $$self{root}/by-sample/raw_platform_bams.fofn $$self{root}/release_bams.fofn");
+        }
+    }
+    
+    my $done_file = "$$self{root}/by-sample/raw_platform_bams.fofn";
+    if ($self->is_finished($done_file))
+    {
+        system(qq[touch $outfile]);
+    }
+}
+
+sub process_bams 
+{
+    my ($self, $outfile, $fofn) = @_;
+    my $release_date = $$self{release};
+    $release_date =~ s/[REL-]//g;
+    my $bas = qq[$$self{root}/by-sample/alignment_stats.bas];
+    $self->cmd(qq[process_bams +verbose --fofn $fofn --operations bas bc --merge_bas_files $bas --release_date $release_date]);
+    system(qq[cp $bas $outfile]) if (-s $bas);
+}
+
+sub split_bam 
+{
+    my ($self, $outfile) = @_;
+    
+    my %split_bam_data = (
+        root => qq[/abs/path/to/output/dir],
+        module => 'VertRes::Pipelines::SplitBam',
+        prefix => '_',
+        log => qq[$$self{root}/log/split_bam.log],
+        
+        bams_fofn => qq[$$self{root}/release_bams.fofn],
+    );
+    
+    %split_bam_data = (%{$$self{split_bam}}, %split_bam_data);
+    
+    my $pipeline = "$$self{root}/config/split_bam.pipeline";
+    my $config = "$$self{root}/config/split_bam.conf";
+    $self->create_config($config, %split_bam_data);
+    $self->create_pipeline($pipeline, '__SPLITBAM__', $config);
+    $self->run_pipeline($pipeline);
+    
+    my @bams = $$self{io}->parse_fofn($split_bam_data{bams_fofn}, '/');
+    my $all_finished = 1;
+    foreach my $bam (@bams)
+    {
+        my ($base, $path) = fileparse($bam);
+        $base = "$split_bam_data{prefix}$base";
+        $base =~ s/bam$/split/;
+        unless (-s "$path/$base/split.done") { $all_finished = 0; last; }
+    }
+    
+    if ($all_finished)
+    {
+        system("touch $outfile");
+    }
+}
+
+sub merge_across 
+{
+    my ($self, $outfile) = @_;
+    
+    my %merge_across_data = (
+        root => qq[$$self{root}/cross-sample],
+        module => 'VertRes::Pipelines::MergeAcross',
+        prefix => '_',
+        log => qq[$$self{root}/log/merge_across.log],
+    );
+    
+    my $groups = $self->setup_merge_across_hierarchy();
+    $merge_across_data{data}{groups} = $groups;
+    %merge_across_data = (%{$$self{merge_across_data}}, %merge_across_data);
+    
+    my $pipeline = "$$self{root}/config/merge_across.pipeline";
+    my $config = "$$self{root}/config/merge_across.conf";
+    $self->create_config($config, %merge_across_data);
+    $self->create_pipeline($pipeline, $merge_across_data{root}, $config);
+    $self->run_pipeline($pipeline);
+}
+
+# sub setup_merge_across_hierarchy
+# {
+#     my ($self) = @_;
+#     
+#     my %groups;
+#     my $groups_dump = "$$self{root}/cross-sample/groups.dump";
+#     if (-s $groups_dump)
+#     {
+#         %groups = %{do "$groups_dump"};
+#     }
+#     else 
+#     {
+#         my $bas = VertRes::Parser::bas->new(file => "$$self{root}/alignment_stats.bas");
+#         my $res = $bas->result_holder();
+#         my %sample_mapped_bases;
+#         while ($bas->next_result()) 
+#         {
+#             my ($study, $sample, $platform, $mapped_bases) = ($res->[2], $res->[3], $res[4], $res->[8]);
+#             $sample_mapped_bases{"$study/$platform_to_tech{$platform}"}{$sample} += $mapped_bases;
+#         }
+#         
+#         foreach my $study_tech (keys %sample_mapped_bases)
+#         {
+#             sort { $sample_mapped_bases{$study_tech}{$a} <=> $sample_mapped_bases{$study_tech}{$b}} keys %ages
+#         }
+#         
+#         open my $fh, ">$groups_dump" || $self->throw("Could not open file $groups_dump");
+#         print $fh Dumper(\%groups);
+#         close $fh;
+#     }
+#     
+#     return %groups;
+# }
+
+sub snps 
+{
+    my ($self, $done_file, $caller) = @_;
+    
+    my $version = delete $$self{$caller}{version};
+    my $caller_vcfs_fofn = "$$self{root}/calling/${caller}_${version}_vcf.fofn";
+    
+    unless (-s $caller_vcfs_fofn)
+    {
+        my @release_bams = $$self{io}->parse_fofn("$$self{root}/release_bams.fofn", '/');
+        open my $fh, "> $caller_vcfs_fofn.tmp";
+        foreach my $bam (@release_bams)
+        {
+            my $vcf = $bam;
+            $vcf =~ s/by-sample/calling/;
+            $vcf =~ s/bam$/snp/;
+            $vcf .= "/$caller/$version/$caller.vcf.gz";
+            print $fh "$vcf\n";
+        }
+        close $fh;
+        rename "$caller_vcfs_fofn.tmp", $caller_vcfs_fofn;
+    }
+    
+    my %snps_data = (
+        root => qq[$$self{root}/by-sample],
+        module => 'VertRes::Pipelines::SNPs',
+        prefix => '_',
+        log => qq[$$self{root}/log/snps_$caller.log],
+        
+        bams_fofn => qq[$$self{root}/release_bams.fofn],
+        new_root => qq[$$self{root}/calling],
+        
+        max_simultaneous => $$self{max_snps_samples},
+    );
+    
+    $snps_data{outdir} = qq[$caller/$version];
+    %snps_data = (%{$$self{$caller}}, %snps_data);
+    
+    my $pipeline = "$$self{root}/config/snps_$caller.pipeline";
+    my $config = "$$self{root}/config/snps_$caller.conf";
+    $self->create_config($config, %snps_data);
+    $self->create_pipeline($pipeline, '__SNPs__', $config);
+    $self->run_pipeline($pipeline);
+    
+    my @caller_vcfs = $$self{io}->parse_fofn($caller_vcfs_fofn, '/');
+    my $all_finished = 1;
+    my $finished = 0;
+    foreach my $vcf (@caller_vcfs)
+    {
+        if (-s $vcf) 
+        {
+            ++$finished;
+        }
+        else
+        {
+            $all_finished = 0;
+            last; 
+        }
+    }
+    
+    if ($all_finished)
+    {
+        unless ($finished == scalar @caller_vcfs)
+        {
+            $self->throw("Number of finished vcfs reported does not match\n");
+        }
+        system("touch $done_file");
+    }
+}
+
+sub filter 
+{
+    my ($self, $outfile, $vcf, $filter);
+    $self->cmd("zcat $vcf | vcf-filter -f $filter | bgzip -c > $outfile.part");
+    $self->tabix_part($outfile);
+}
+
+sub merge
+{
+    my ($self, $outfile, @vcfs);
+    my $cmd = "vcf-isec -n +1 " . join ' ', @vcfs . " | bgzip -c > $outfile.part";
+    $self->cmd($cmd);
+    $self->tabix_part($outfile);
+}
+
+sub annotate
+{
+    my ($self, $outfile, $vcf);
+    $self->cmd("zcat $vcf | vcf-annotate -a $$self{annotations} -d $$self{descriptions} -c CHROM,FROM,REF,ALT,ID,-,INFO/KGPilot123,INFO/dbSNP | bgzip -c > $outfile.part");
+    $self->tabix_part($outfile);
+}
+
+sub tabix_part
+{
+    my ($self,$vcf) = @_;
+    $self->cmd("tabix -p vcf -f $vcf.part");
+    rename("$vcf.part.tbi","$vcf.tbi");
+    rename("$vcf.part", $vcf);
+}
+
+sub vcf2consequences
+{
+    my ($self, $outfile, $vcf);
+    my $cmd = "vcf2consequences -v $vcf -s Homo_sapiens -g -r";
+    $cmd .= " -i $$self{cache}" if ($$self{cache});
+    $self->cmd("$cmd | bgzip -c > $outfile.part");
+    $self->tabix_part($outfile);
+}
+
+sub store_path
+{
+    my ($self, $outfile) = @_;
+    
+    my %store_path_data = (
+        root => qq[/abs/path/to/nowhere],
+        module => 'VertRes::Pipelines::StorePath',
+        prefix => '_',
+        log => qq[$$self{root}/log/store_path.log],
+        
+        fod => qq[$$self{root}/by-sample/samples.txt],
+    );
+    
+    $$self{store_path}{limit} ||= 20;
+    $$self{store_path}{data}{storage_base} = qq['hashed_samples/$$self{db}'];
+    
+    %store_path_data = (%{$$self{store_path}}, %store_path_data);
+    
+    my $pipeline = "$$self{root}/config/store_path.pipeline";
+    my $config = "$$self{root}/config/store_path.conf";
+    $self->create_config($config, %store_path_data);
+    $self->create_pipeline($pipeline, '__Storing__', $config);
+    $self->run_pipeline($pipeline);    
+    
+    my @samples;
+    my $all_finished = 1;
+    open(my $fh,'<',$store_path_data{fod}) || $self->throw("Could not open file $store_path_data{fod}\n");
+    while (<$fh>)
+    {
+        chomp;
+        if ( /^\s*$/ ) { next; }
+        if ( /^#/ ) { next; }
+        my ($sample) = split /\t/;
+        unless (-e "$sample/.store_nfs_done") { $all_finished = 0; last; }
+    }
+    close($fh);
+    
+    if ($all_finished)
+    {
+        system("touch $outfile");
+    }
+
+}
+
+sub consolidate_hierarchies 
+{
+    my ($self) = @_;
+    
+    # Parse lane_bams.fofn to group bams by hierarchy level
+    my @lane_bams = $$self{io}->parse_fofn("$$self{root}/lane_bams.fofn", '/');
+    my %lanes;
+    foreach my $bam (@lane_bams) 
+    {
+        my ($basename, $lane_dir) = fileparse($bam);
+        $lane_dir =~ s/\/$//;
+        my @parts = File::Spec->splitdir($lane_dir);
+        my $project = $parts[-5];
+        my $sample = File::Spec->catdir($project, $parts[-4]);
+        my $platform = File::Spec->catdir($sample, $parts[-3]);
+        my $library = File::Spec->catdir($platform, $parts[-2]);
+        my $lane = File::Spec->catdir($library, $parts[-1]);
+        
+        push(@{$lanes{projects}->{$project}}, $bam);
+        push(@{$lanes{samples}->{$sample}}, $bam);
+        push(@{$lanes{platforms}->{$platform}}, $bam);
+        push(@{$lanes{libraries}->{$library}}, $bam);
+        push(@{$lanes{lanes}->{$lane}}, $bam);
+    }
+    
+    my $root = $$self{root};
+    my $previous_root = $$self{previous_root} || '';
+    my $previous_release_frozen = $previous_root && ((-e "$previous_root/.freeze") || (-e "$previous_root/cross-sample"));
+    
+    # strip merge_up hierarchy below sample level
+    # find -L $$self{root}/by-sample -mindepth 4 -type f -name lane_bams.fofn
+    foreach my $level (qw(platforms libraries lanes))
+    {
+        foreach my $dir (keys %{$lanes{$level}})
+        {
+            my $this_merge_path = "$$self{root}/by-sample/$dir";
+            rename("$this_merge_path/lane_bams.fofn", "$this_merge_path/.lane_bams.fofn"); 
+        }
+    }
+    
+    # consolidate merge_up and calling hierarchies
+    # don't consolidate if the previous release hierarchy is frozen
+    if ($previous_root && !$previous_release_frozen) 
+    {
+        my %symlinked;
+        foreach my $level (qw(projects samples))
+        {
+            DIR: foreach my $dir (keys %{$lanes{$level}})
+            {
+                my $this_merge_path = "$$self{root}/by-sample/$dir";
+                my $previous_merge_path = "$$self{previous_root}/by-sample/$dir";
+                my $this_calling_path = "$$self{root}/calling/$dir";
+                my $previous_calling_path = "$$self{previous_root}/calling/$dir";
+                
+                foreach my $symlinked (keys %symlinked)
+                {
+                    if ($this_merge_path =~ /^$symlinked/)
+                    {
+                        next DIR;
+                    }
+                }
+                
+                # Move previous mergup hierarchy path into current hierarchy
+                next unless (-l $this_merge_path && -e $previous_merge_path);
+                unlink $this_merge_path;
+                rename $previous_merge_path, $this_merge_path;
+                $symlinked{$this_merge_path} = 1;
+                
+                # Move previous calling hierarchy path into current hierarchy
+                next unless (-l $this_calling_path && -e $previous_calling_path);
+                unlink $this_calling_path;
+                rename $previous_calling_path, $this_calling_path;
+            }
+        }
+        
+        # Remove previous release hierarchy
+        my @release_bams = $$self{io}->parse_fofn("$$self{root}/release_bams.fofn", '/');
+        rename $previous_root, "$previous_root.tmp";
+        
+        my ($ok) = 1;
+        foreach my $file (@release_bams) 
+        {
+            unless (-s $file)
+            { 
+                $ok = 0; 
+                $self->warn("Release file $file does not exist"); 
+                last; 
+            }
+        }
+        
+        if ($ok)
+        {
+            $self->cmd("rm -r $previous_root.tmp");
+            # TODO: add safe mode to move this to a temp dir instead of removing
+        }
+        else
+        {
+            rename "$previous_root.tmp", $previous_root;
+            $self->throw("Release files will not exist if $previous_root removed -- not deleting.");
+        }
+    }
+    
+    # Task done
+    system("touch $$self{root}/.consolidate_hierarchies_done");
+}
+
+sub create_config
+{
+    my ($self, $config, %data) = @_;
+    
+    if (-s $config)
+    {
+        # existing config file newer than Runner config file
+        return if ($self->mtime($config) > $$self{_mtime});
+        
+        # existing config data is the same as Runner config data
+        my %config_data = do "$config";
+        return if Compare(\%config_data, \%data);
+    }
+    
+    open my $cfh, "> $config.tmp";
+    $Data::Dumper::Terse = 1;
+    for (split /^/, Dumper(\%data)) 
+    {
+        s/^\s{2}//; 
+        print $cfh $_ unless /^[{}]/; 
+    }
+    close $cfh;
+    
+    $self->throw("Could not write config file $config.tmp") unless (-s "$config.tmp");
+    rename("$config.tmp", $config) || $self->throw("Could not rename $config.tmp to $config");
+    
+    return;
+}
+
+sub create_pipeline 
+{
+    my ($self, $pipeline, $input, $config) = @_;
+    
+    return if (-s $pipeline);
+    
+    open my $pfh, "> $pipeline.tmp";
+    print $pfh qq[$input $config];
+    close $pfh;
+    
+    # Check that the pipeline file was created
+    $self->throw("Could not create pipeline file $pipeline") unless (-s "$pipeline.tmp");
+    rename("$pipeline.tmp", $pipeline) || $self->throw("Could not rename $pipeline.tmp to $pipeline");
+}
+
+sub run_pipeline
+{
+    my ($self, $pipeline, $opts) = @_;
+    $opts ||= '-o';
+    my $base = File::Basename::basename($pipeline);
+    my $lock = "$$self{root}/config/.$base.lock";
+    my $log = "$$self{root}/log/$base";
+    my $cmd = qq[run-pipeline -c $pipeline $opts -L $lock];
+    $cmd .= ' -v -v' if $$self{_verbose};
+    $cmd .= " 2>>$log.err >>$log.out";
+    $self->cmd($cmd);
+}
+
+sub cmd
+{
+    my ($self,$cmd) = @_;
+    return Utils::CMD($cmd,{verbose=>$$self{_verbose}, exit_on_error=>1});
+}

@@ -66,7 +66,7 @@ sub _build__annotation_file
 sub _build__results_spreadsheet
 {
   my ($self) = @_;
-  Pathogens::RNASeq::ExpressionStatsSpreadsheet->new( output_filename => $self->output_base_filename.".expression.csv" );
+  Pathogens::RNASeq::ExpressionStatsSpreadsheet->new( output_filename => $self->output_base_filename.".expression.csv", protocol => $self->protocol);
 }
 
 sub _corrected_sequence_filename

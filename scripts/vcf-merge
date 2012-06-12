@@ -20,25 +20,42 @@ sub error
     my (@msg) = @_;
     if ( scalar @msg ) { croak join('',@msg); }
     die
-        "About: Merge the bgzipped and tabix indexed VCF files. (E.g. bgzip file.vcf; tabix -p vcf file.vcf.gz)\n",
-        "Usage: merge-vcf [OPTIONS] file1.vcf file2.vcf.gz ... > out.vcf\n",
+        "About: Merges VCF files by position, creating multi-sample VCFs from fewer-sample VCFs.\n",
+        "   The tool requires bgzipped and tabix indexed VCF files on input. (E.g. bgzip file.vcf; tabix -p vcf file.vcf.gz)\n",
+        "   If you need to concatenate VCFs (e.g. files split by chromosome), look at vcf-concat instead.\n",
+        "Usage: vcf-merge [OPTIONS] file1.vcf file2.vcf.gz ... > out.vcf\n",
         "Options:\n",
         "   -c, --chromosomes <list|file>           Same as -r, left for backward compatibility. Please do not use as it will be dropped in the future.\n",
         "   -d, --remove-duplicates                 If there should be two consecutive rows with the same chr:pos, print only the first one.\n",
         "   -H, --vcf-header <file>                 Use the VCF header\n",
         "   -h, -?, --help                          This help message.\n",
         "   -r, --regions <list|file>               Do only the given regions (comma-separated list or one region per line in a file).\n",
+        "   -R, --ref-for-missing <string>          Use the REF allele instead of the default missing genotype. Because it is not obvious\n",
+        "                                               what ploidy should be used, a user-defined string is used instead (e.g. 0/0).\n",
         "   -s, --silent                            Try to be a bit more silent, no warnings about duplicate lines.\n",
+        "   -t, --trim-ALTs                         If set, redundant ALTs will be removed\n",
         "\n";
 }
 
 
 sub parse_params
 {
-    my $opts = { args=>[$0, @ARGV] };
+    $0 =~ s{^.+/}{}; $0 .= "($Vcf::VERSION)";
+    my $opts = 
+    { 
+        args => [$0, @ARGV],
+        joiner => 
+        {
+            'DP4' => \&joiner_dp4,
+            'DP'  => \&joiner_sum,
+        },
+        trim_redundant_ALTs => 0,
+    };
     while (my $arg=shift(@ARGV))
     {
         if ( $arg eq '-d' || $arg eq '--remove-duplicates' ) { $$opts{rm_dups}=1; next; }
+        if ( $arg eq '-R' || $arg eq '--ref-for-missing' ) { $$opts{ref_for_missing}=shift(@ARGV); next; }
+        if ( $arg eq '-t' || $arg eq '--trim-ALTs' ) { $$opts{trim_redundant_ALTs}=1; next; }
         if ( $arg eq '-s' || $arg eq '--silent' ) { $$opts{silent_dups}=1; next; }
         if ( $arg eq '-H' || $arg eq '--vcf-header' ) { $$opts{vcf_header}=shift(@ARGV); next; }
         if ( $arg eq '-c' || $arg eq '--chromosomes' ) { $$opts{regions_list}=shift(@ARGV); next; }
@@ -104,6 +121,29 @@ sub read_region_list
     return (@regions);
 }
 
+sub check_AGtags_definition
+{
+    my ($vcf) = @_;
+    if ( $$vcf{version} >= 4.1 ) { return; }
+
+    # Whatever is the value set to, the user takes the responsibility for the merging strategy used
+    if ( exists($ENV{DONT_FIX_VCF40_AG_TAGS}) ) { return; }
+
+    my @tags;
+    if ( exists($$vcf{header}{INFO}{PL}) && $$vcf{header}{INFO}{PL}{Number} != -1  ) { push @tags, 'PL'; }
+    if ( exists($$vcf{header}{INFO}{GL}) && $$vcf{header}{INFO}{GL}{Number} != -1  ) { push @tags, 'GL'; }
+    if ( exists($$vcf{header}{INFO}{AC}) && $$vcf{header}{INFO}{AC}{Number} != -1  ) { push @tags, 'AC'; }
+    if ( exists($$vcf{header}{INFO}{AF}) && $$vcf{header}{INFO}{AF}{Number} != -1  ) { push @tags, 'AF'; }
+
+    if ( !@tags ) { return; }
+
+    $ENV{DONT_FIX_VCF40_AG_TAGS} = 1;
+    my $tags = join(',',@tags);
+    print STDERR 
+        "Warning: The $tags tag(s) will not be merged correctly for multiallelic sites.\n",
+        "   To be handled correctly, please redefine with Number=. or set the environment\n",
+        "   variable DONT_FIX_VCF40_AG_TAGS=0.\n";
+}
 
 sub init_cols
 {
@@ -126,6 +166,7 @@ sub init_cols
     {
         my $vcf = Vcf->new(file=>$file);
         $vcf->parse_header();
+        check_AGtags_definition($vcf);
         $vcf->close();
         push @vcfs, $vcf;
 
@@ -218,6 +259,8 @@ sub merge_vcf_files
         $vcf_out = Vcf->new();
     }
 
+    $$vcf_out{trim_redundant_ALTs} = $$opts{trim_redundant_ALTs};
+
     init_cols($opts,$vcf_out);
     my @regions = @{$$opts{regions}};
     my @cols    = @{$$opts{cols}};
@@ -263,7 +306,7 @@ sub merge_vcf_files
         for my $vcf (@vcfs) 
         { 
             delete($$vcf{last_line});
-            $vcf->open(region=>$region,parse_header=>1); 
+            $vcf->open(region=>$region); 
             advance_position($vcf);
         }
 
@@ -299,7 +342,7 @@ sub merge_vcf_files
             { 
                 $new_ref = $vcf_out->fill_ref_alt_mapping(\%ref_alt_map); 
             }
-            if ( !$have_samples )
+            if ( !$have_samples or !$$opts{trim_redundant_ALTs} )
             {
                 # Do not loose information from the ALT column when samples are not present
                 my %alts;
@@ -309,6 +352,7 @@ sub merge_vcf_files
                     if ( !$line or $pos ne $$line{POS} ) { next; }
                     my $ref = $$line{REF};
                     for my $alt (@{$$line{ALT}}) { $alts{$ref_alt_map{$ref}{$alt}}=1; }
+                    delete($alts{'.'});
                     $out{ALT} = [ keys %alts ];
                 }
             }
@@ -323,7 +367,7 @@ sub merge_vcf_files
                     for (my $i=0; $i<@{$$vcf{__col_names}}; $i++)
                     {
                         my $name = $$vcf{__col_names}->[$i];
-                        $out{gtypes}{$name}{GT} = $$vcf_out{defaults}{GT};
+                        $out{gtypes}{$name}{GT} = exists($$opts{ref_for_missing}) ? $$opts{ref_for_missing} : $$vcf_out{defaults}{GT};
                     }
                     next;
                 }
@@ -382,8 +426,15 @@ sub merge_vcf_files
                 # Join the INFO field
                 for my $inf (keys %{$$line{INFO}}) 
                 {
-                    # When conflicting INFO fields are present, use the first one
-                    if ( exists($info{$inf}) ) { next; }
+                    # When conflicting INFO fields are present, use the first one, unless a joining method exists
+                    if ( exists($info{$inf}) )
+                    {
+                        if ( exists($$opts{joiner}{$inf}) )
+                        {
+                            &{$$opts{joiner}{$inf}}(\$info{$inf},$$line{INFO}{$inf});
+                        }
+                        next;
+                    }
                     $info{$inf} = $$line{INFO}{$inf};
                 }
 
@@ -548,6 +599,26 @@ sub get_min_position
         }
     }
     return $pos;
+}
+
+# Field joiner methods
+sub joiner_sum
+{
+    my ($ori,$new) = @_;
+    $$ori += $new;
+}
+
+sub joiner_dp4
+{
+    my ($ori,$new) = @_;
+    my @vals1 = split(/,/,$$ori);
+    my @vals2 = split(/,/,$new);
+    if ( @vals1 != @vals2 ) { error("Cannot join: $$ori vs $new\n"); }
+    for (my $i=0; $i<@vals1; $i++)
+    {
+        $vals1[$i] += $vals2[$i];
+    }
+    $$ori = join(',',@vals1);
 }
 
 

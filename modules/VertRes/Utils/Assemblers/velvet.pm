@@ -35,6 +35,7 @@ package VertRes::Utils::Assemblers::velvet;
 use strict;
 use warnings;
 use VertRes::Wrapper::smalt;
+use Utils;
 
 use base qw(VertRes::Utils::Assembly);
 
@@ -114,8 +115,17 @@ sub map_and_generate_stats
    
    for my $lane_path ( @$lane_paths)
    {
-     $forward_fastq .= $lane_path.'_1.fastq.gz ';
-     $reverse_fastq .= $lane_path.'_2.fastq.gz ';
+     my ($base_directory,$base,$suff) = Utils::basename($lane_path);
+     opendir(my $lane_dir_handle, $base_directory);
+     my @fastq_files  = grep { /\.fastq\.gz$/ } readdir($lane_dir_handle);
+     if(@fastq_files >=1 )
+     {
+       $forward_fastq .= $base_directory.'/'.$fastq_files[0];
+     }
+     if(@fastq_files >=2 )
+     {
+       $reverse_fastq .= $base_directory.'/'.$fastq_files[1];
+     }
    }
 
    unless( -e "$output_directory/forward.fastq")
@@ -130,7 +140,7 @@ sub map_and_generate_stats
    my $reference = $self->{reference} || "$directory/contigs.fa";
 
    my $mapper = VertRes::Wrapper::smalt->new();
-   $mapper->setup_reference($reference);
+   $mapper->setup_custom_reference_index($reference,'-k 13 -s 4','small');
 
    `smalt map -x -i 3000 -f samsoft -y 0.95 -o $directory/contigs.mapped.sam $reference.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
    $self->throw("Sam file not created") unless(-e "$directory/contigs.mapped.sam");
@@ -151,7 +161,7 @@ sub map_and_generate_stats
 
    `bamcheck -c 1,20000,5 -r $reference $directory/contigs.mapped.sorted.bam >  $directory/contigs.mapped.sorted.bam.bc`;
 
-   `plot-bamcheck -p $directory/qc_graphs/ -r $directory/contigs.fa.refstats $directory/contigs.mapped.sorted.bam.bc`;
+   `plot-bamcheck-2012-02-11  -p $directory/qc_graphs/ -r $directory/contigs.fa.refstats $directory/contigs.mapped.sorted.bam.bc`;
    $self->generate_stats($directory);
    unlink("$directory/contigs.mapped.bam");
 }
@@ -240,9 +250,9 @@ sub estimate_memory_required
 
   my $memory_required = -109635 + (20000*($input_params->{read_length})) + (86326*($input_params->{genome_size})/1000000) + (300000*($input_params->{total_number_of_reads})/1000000) - (51092*$kmer_size);
   $memory_required *= 2.0;
-  if($memory_required < 2000000)
+  if($memory_required < 6000000)
   {
-    $memory_required = 2000000;
+    $memory_required = 6000000;
   }
   elsif($memory_required > 400000000)
   {

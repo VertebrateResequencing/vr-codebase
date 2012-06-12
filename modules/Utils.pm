@@ -427,6 +427,7 @@ sub relative_symlink
     {
         $dir .= '/' . join('/', @new_dir);
     }
+    if ( ! -d $dir ) { CMD("mkdir -p $dir"); }
     chdir($dir) or Utils::error("chdir $dir: $!");
 
     # The uphill + downhill path

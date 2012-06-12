@@ -25,16 +25,26 @@ sub new
     my ($class,@args) = @_;
     my $self = $class->SUPER::new(@args);
 
+    $$self{do_clean} = 1;
+    $$self{limits} = { runtime=>24*60 };
     $$self{debug_chunks} = 0;
+    $$self{merge_pops} = 0;
+    $$self{whole_genome_bams} = 1;
     $$self{_sampleconf} = q[
-            mpileup  => '/nfs/users/nfs_p/pd3/cvs/samtools/samtools mpileup -DS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA',
-            bcftools => '/nfs/users/nfs_p/pd3/cvs/samtools/bcftools/bcftools view -p 0.99',
+            # Add -P ILLUMINA or -P SLX if the BAMs contain also reads from different platforms. 
+            #   The options -m2 -F0.0005 are intended for hundred of samples, go with the mpileup's
+            #   defaults if you don't have that many.
+            mpileup  => 'samtools mpileup -EDS -C50 -m2 -F0.0005 -d 10000',
+            bcftools => 'bcftools view -p 0.99 -vcgN',
             
-            bams    => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
-            fa_ref  => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
-            mysql   => 'mysql -sN -uXXX -pXXX -hmcs4a -P 3306 g1k_meta',   # To get the sex. Optional with assumed_sex below.
+            bams     => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
+            fa_ref   => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
+            mysql    => 'mysql -sN -uXXX -pXXX -hmcs4a -P 3306 g1k_meta',   # To get the sex. Optional when assumed_sex or sample_list is defined below.
 
-            ploidy  =>
+            limits   => { runtime=>24*60 },
+            do_clean => 1,         # Remove runner's temporary files
+
+            ploidy   =>
             {
                 default => 2,
                 X =>
@@ -56,21 +66,29 @@ sub new
                 # With no populations, at least 'pooled' must be given
                 pooled => [ '.' ],
             
+                # The population groups can be defined either as BAM file name substrings (attempted first)
+                #   or, if none of the regex finds a matching BAM, as a list of samples.
                 AMR => [ qw(MXL CLM PUR) ],
                 AFR => [ qw(YRI LWK ASW) ],
                 ASN => [ qw(CHB CHS JPT) ],
                 EUR => [ qw(CEU TSI FIN GBR IBS) ],
-            
             },
+
+            # Do not merge population VCFs into one VCF. The merged set can find more rare variants
+            #   than the pooled set.
+            merge_pops => 0,
             
+            # Set the depth filter (+/D=N) to about twice the average depth.
             filter => 'vcf-annotate -f +',
             
             chunk_size        => 1_000_000,
             debug_chunks      => 0,
+            shuffle_chunks    => 0,         # Process chunks in random order to randomize disk access
             keep_bcfs         => 1,
             chunks_overlap    => 0,
-            whole_genome_bams => 0,         # Set to 1 if BAMs are not splitted by chromosome
-            assumed_sex       => undef,     # Set to 'F' for females, 'M' males and undef if the DB should be used.
+            whole_genome_bams => 1,         # Set to 0 if BAMs are splitted by chromosome. In such a case, the bams must contain '*chrom$chr.' in the name.
+            assumed_sex       => undef,     # Set to 'F' for females, 'M' males and undef mysql key above if the DB shouldn't be used.
+            sample_list       => undef,     # Provide list of samples with sex. In this case, neither mysql nor assumed_sex keys are required.
 
             # Do specific regions only (whitespace delimited file with the columns CHR,FROM,TO)
             #   regions => 'regions.list',
@@ -80,12 +98,41 @@ sub new
             #       '10:42000001-43000000' => { mpileup=>'...'  } 
             #   },
 
+            # Uncomment and modify as necessary if VQSR filtering should be applied. The PV0-4 annotations will be 
+            #   created from INFO/PV4 by the pipeline
+            # vqsr_filtering => 
+            # {
+            #     jar => q[java -Xmx4800m -Xms4800m -Xss280m -server -XX:+UseSerialGC -jar /nfs/users/nfs_s/sm15/src/GATK/dist/GenomeAnalysisTK.jar],
+            #     recal_snps => q[
+            #             -T VariantRecalibrator --mode SNP -l INFO
+            #             -resource:hapmap,known=false,training=true,truth=true,prior=15.0 /lustre/scratch105/projects/g1k/ref/broad_resources_b37/hapmap_3.3.b37.sites.vcf.gz
+            #             -resource:omni,known=false,training=true,truth=false,prior=12.0 /lustre/scratch105/projects/g1k/ref/broad_resources_b37/1000G_omni2.5.b37.sites.vcf.gz
+            #             -resource:dbsnp,known=true,training=false,truth=false,prior=8.0 /lustre/scratch105/projects/g1k/ref/broad_resources_b37/dbsnp_132.b37.vcf.gz
+            #             -tranche 100 -tranche 99.99 -tranche 99.90 -tranche 99.85 -tranche 99.80 -tranche 99.50 -tranche 99.00 -tranche 98.00
+            #             --target_titv 2.3 --ts_filter_level 99.85 
+            #             --maxGaussians 4
+            #             -an DP -an VDB -an MQ -an HWE -an ICF -an PV0 -an PV1 -an PV2 -an PV3
+            #     ],
+            #     recal_indels => q[
+            #             -T VariantRecalibrator --mode INDEL -l INFO
+            #             -resource:mills,VCF,known=true,training=true,truth=true,prior=12.0 /lustre/scratch105/projects/g1k/ref/broad_resources_b37/Mills_and_1000G_gold_standard.indels.b37.sites.vcf.gz
+            #             -resource:g1k,known=false,training=true,truth=false,prior=10.0 /lustre/scratch105/projects/g1k/mapping/resources/ALL.wgs.low_coverage_vqsr.20101123.indels.sites.vcf.gz
+            #             -tranche 100 -tranche 99.99 -tranche 99.90 -tranche 99.85 -tranche 99.80 -tranche 99.50 -tranche 99.00 -tranche 98.00
+            #             --target_titv 2.3 --ts_filter_level 99.85 
+            #             --maxGaussians 4
+            #             -an DP -an VDB -an MQ -an HWE -an ICF -an PV0 -an PV1 -an PV2 -an PV3
+            #     ],
+            #     filter_snps   => q[ -T ApplyRecalibration --ts_filter_level 99.85 --mode SNP ],
+            #     filter_indels => q[ -T ApplyRecalibration --ts_filter_level 99.85 --mode INDEL ],
+            #     limits   => { runtime=>24*60, memory=>5_000 },
+            # },
     ]."\n";
 
     $$self{usage} .= 
         "Usage: run-mpileup\n" .
         "Options:\n" .
         "   -c, --clean             Clean all temporary files\n" .
+        "   -m, --mrProper          Clean all temporary files, including the population directories and BCFs, leaving only toplevel VCFs\n" .
         "   -o, --outdir <dir>      Output directory\n" .
         "\n";
 
@@ -98,6 +145,7 @@ sub parse_args
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '-c' or $arg eq '--clean' ) { $$self{clean}=1; next; }
+        if ( $arg eq '-m' or $arg eq '--mrProper' ) { $$self{mrProper}=1; next; }
         if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
         $self->throw();
     }
@@ -105,7 +153,7 @@ sub parse_args
 
     # This lengthy code checks if mandatory parameters are present and fills the defaults issuing warnings when doing so.
     if ( !exists($$self{bams}) ) { $self->throw("The 'bams' config key not present\n"); }
-    if ( !exists($$self{mysql}) && !$$self{assumed_sex} ) { $self->throw("Neither 'mysql' nor 'assumed_sex' config keys present\n"); }
+    if ( !exists($$self{mysql}) && !$$self{assumed_sex} && !$$self{sample_list} ) { $self->throw("None of the config keys 'mysql', 'assumed_sex' or 'sample_list' present\n"); }
     if ( !exists($$self{chroms}) ) 
     { 
         $$self{chroms} = [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y) ];
@@ -143,12 +191,12 @@ sub parse_args
     }
     if ( !exists($$self{mpileup}) ) 
     { 
-        $$self{mpileup} = '/nfs/users/nfs_p/pd3/cvs/samtools/samtools mpileup -DS -C50 -m2 -F0.0005 -d 10000 -P ILLUMINA';
+        $$self{mpileup} = 'samtools mpileup -DS -C50 -m2 -F0.0005 -d 10000';
         $self->warn("The 'mpileup' config key not present, assuming: $$self{mpileup}\n"); 
     }
     if ( !exists($$self{bcftools}) ) 
     { 
-        $$self{bcftools} = '/nfs/users/nfs_p/pd3/cvs/samtools/bcftools/bcftools view -p 0.99';
+        $$self{bcftools} = 'bcftools view -p 0.99 -vcgN';
         $self->warn("The 'bcftools' config key not present, assuming: $$self{bcftools}\n"); 
     }
     if ( !exists($$self{chunk_size}) ) 
@@ -176,6 +224,11 @@ sub parse_args
         $self->clean($$self{outdir});
         $self->all_done;
     }
+    if ( $$self{mrProper} )
+    {
+        $self->mrProper($$self{outdir});
+        $self->all_done;
+    }
 }
 
 sub main
@@ -186,18 +239,20 @@ sub main
     my $outdir = $$self{outdir};
     my @chroms = @{$$self{chroms}};
 
+    if ( $self->is_finished("$outdir/all_done") ) { $self->all_done; }
+    if ( !$self->is_finished("$outdir/sanity_checked") ) { $self->check_sanity; }
+
     # Create sample list for each population group
     while (my ($pop,$value) = each %{$$self{pops}})
     {
         for my $chr (@chroms)
         {
-            my $bams_outfile = "$outdir/lists/chr$chr-$pop.list";
+            my $bams_outfile    = "$outdir/lists/chr$chr-$pop.list";
+            my $samples_outfile = "$outdir/lists/chr$chr-$pop.samples";
             if ( !$self->is_finished($bams_outfile) )
             {
-                $self->population_group_bams_list($bams_outfile,$$self{bams},$chr,$value);
+                $self->population_group_bams_list($bams_outfile,$$self{bams},$chr,$value, $samples_outfile);
             }
-
-            my $samples_outfile = "$outdir/lists/chr$chr-$pop.samples";
             if ( !$self->is_finished($samples_outfile) )
             {
                 $self->sample_list($samples_outfile,$bams_outfile);
@@ -208,7 +263,7 @@ sub main
     # Run mpileup for each population and chunk: first all sites BCFs if requested and then call variants
     my $chunks = $self->get_chunks;
 
-    $self->set_limits(runtime=>24*60);
+    $self->set_limits(%{$$self{limits}}) unless !exists($$self{limits});
     if ( scalar keys %{$$self{pops}} > 1 ) { $$self{keep_bcfs} = 1; }
     if ( $$self{keep_bcfs} )
     {
@@ -237,7 +292,7 @@ sub main
     $self->set_limits(runtime=>undef);
 
     # Create the merged set if there are more population groups (pooled + two others)
-    if ( scalar keys %{$$self{pops}} > 2 )
+    if ( $$self{merge_pops} && scalar keys %{$$self{pops}} > 2 )
     {
         for my $chunk (@$chunks)
         {
@@ -250,7 +305,7 @@ sub main
                 if ( $pop eq 'pooled' ) { next; }
                 push @vcfs, "$outdir/$pop/$chr/$chr:$from-$to.vcf.gz";
             }
-            $self->spawn('merge_vcfs',"$outdir/merged/$chr/$chr:$from-$to.vcf.gz",\@vcfs);
+            $self->spawn('merge_vcfs',"$outdir/merged/$chr/$chr:$from-$to.vcf.gz","$outdir/pooled/$chr/$chr:$from-$to.bcf",\@vcfs);
         }
 
         # Work with the merged set only from now (otherwise comment the next line)
@@ -259,7 +314,7 @@ sub main
     }
     $self->wait;
 
-    # Concat chunks into chromosomes and apply filtering
+    # Concat chunks into chromosomes
     for my $pop (keys %{$$self{pops}})
     {
         for my $chr (@chroms)
@@ -269,21 +324,40 @@ sub main
     }
     $self->wait;
 
-    # Create whole genome file: concat all chromosomes
+    # Create whole genome file: concat all chromosomes, apply filtering and VQSR
+    if ( exists($$self{vqsr_filtering}) && exists($$self{vqsr_filtering}{limits}) ) { $self->set_limits(%{$$self{vqsr_filtering}{limits}}) }
     for my $pop (keys %{$$self{pops}})
     {
         $self->spawn('concat_chroms',"$outdir/$pop.vcf.gz",$pop);
     }
     $self->wait;
+    $self->set_limits(memory=>undef);
 
     # Run summary stats
     for my $pop (keys %{$$self{pops}})
     {
         $self->spawn('vcf_stats',"$outdir/$pop.vcf.gz.stats","$outdir/$pop.vcf.gz",q[awk '/^#/||$7=="PASS"']);
+        $self->spawn('apply_filter',"$outdir/$pop.filt.vcf.gz","$outdir/$pop.vcf.gz");
     }
     $self->wait;
 
+    # Run performance stats and clean
+    $self->spawn('runtime_stats',"$outdir/runtime");
+    $self->wait;
+    $self->clean($outdir) unless !$$self{do_clean};
+
+    $self->cmd("touch $outdir/all_done");
     $self->all_done;
+}
+
+sub mrProper
+{
+    my ($self,$outdir) = @_;
+    for my $pop (keys %{$$self{pops}})
+    {
+        $self->cmd("rm -rf $outdir/$pop");
+    }
+    $self->clean($outdir);
 }
 
 sub clean
@@ -307,10 +381,49 @@ sub clean
     }
 }
 
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
 sub cmd
 {
     my ($self,$cmd) = @_;
+    $cmd =~ s/\n/ /g;
     return Utils::CMD($cmd,{verbose=>$$self{_verbose}});
+}
+
+sub check_sanity
+{
+    my ($self) = @_;
+
+    # Check that the -P option corresponds to PL in the BAMs
+    if ( !($$self{mpileup}=~/-\S*P\s+(\S+)/) ) { return; }
+    my %pl = map { $_=>1 } split(/,/,$1);
+    my %bam_pls = ();
+
+    open(my $fh,'<',$$self{bams}) or $self->throw("$$self{bams}: $!");
+    while (my $bam=<$fh>)
+    {
+        chomp($bam);
+        my @rgs = `samtools view -H $bam | grep ^\@RG`;
+        for my $rg (@rgs)
+        {
+            if ( !($rg=~/\tPL:(\S+)/) ) { next; }
+            $bam_pls{$1} = 1;
+        }
+    }
+    close($fh);
+
+    for my $pl (keys %pl)
+    {
+        if ( !exists($bam_pls{$pl}) ) { $self->throw("The platform \"$pl\" not present in any of the BAMs.\n"); }
+    }
+    `mkdir -p $$self{outdir}`;
+    $self->cmd("touch $$self{outdir}/sanity_checked");
 }
 
 sub open_file
@@ -323,38 +436,132 @@ sub open_file
 
 sub population_group_bams_list
 {
-    my ($self,$outfile,$bam_list,$chr,$pops) = @_;
+    my ($self,$outfile,$bam_list,$chr,$pops,$samples_fname) = @_;
 
     open(my $in,'<',$bam_list) or $self->throw("$bam_list: $!");
     my $out = $self->open_file("$outfile.part");
+    my $printed = 0;
     while (my $line=<$in>)
     {
-        if ( !($line=~/chrom$chr.bam/) && !$$self{whole_genome_bams} ) { next; }
+        # If the BAMs are split by chr, we are applying to regex's to select by chromosome
+        #   and by the population name. Otherwise, only population regex is used.
+        if ( !$$self{whole_genome_bams} && !($line=~/chrom$chr\./) ) { next; }
         for my $pop (@$pops)
         {
             if ( !($line=~/$pop/) ) { next; }
             print $out $line;
+            $printed = 1;
             last;
         }
     }
-    close($out);
-    close($in);
+    close($in) or $self->throw("close $bam_list");
 
-    if ( !-s "$outfile.part" ) 
+    if ( !$printed )
     { 
-        if ( !$$self{whole_genome_bams} ) 
-        {
-            $self->throw("The BAMs not named as chrom$chr.bam, please set whole_genome_bams=>1 in your config file.\n");
+        # No BAM was identified. In that case, the population should be interpreted as
+        #   sample name regex's. Read BAM headers and find out the exact sample names and
+        #   list of BAMs. The regex may cause problems in future, this may be replaced by
+        #   an exact match in find_bams_with_samples.
+        #
+        my ($bams,$samples) = $self->find_bams_with_samples($bam_list,$pops);
+        if ( !@$bams ) 
+        { 
+            if ( !$$self{whole_genome_bams} ) 
+            {
+                $self->throw("The BAMs not named as chrom$chr.bam, please unset the whole_genome_bams config key\n");
+            }
+            $self->throw("No matching BAM found for chr$chr; searched in file names (/chrom$chr\\./) and sample names: ",join(',',@$pops),"\n"); 
         }
-        $self->throw("No matching BAMs found: chr$chr; ",join(',',@$pops),"\n");
+        print $out join("\n", @$bams), "\n";
+        close($out) or $self->throw("close $outfile.part");
+
+        if ( defined $$self{sample_list} )
+        {
+            $self->cmd("cp $$self{sample_list} $samples_fname");
+            undef $out;
+        }
+        else 
+        {
+            $out = $self->open_file($samples_fname);
+            my $sexes = $self->get_sample_sex(@$samples);
+            for my $sample (sort keys %$sexes)
+            {
+                print $out "$sample\t$$sexes{$sample}\n";
+            }
+        }
     }
+    if ( defined $out ) { close($out) or $self->throw("close $samples_fname"); }
 
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+# Returns list of BAMs and samples which match the regex's from the sample_list
+sub find_bams_with_samples
+{
+    my ($self,$bam_list,$sample_list) = @_;
+
+    my (%bams,%samples);
+
+    open(my $in,'<',$bam_list) or $self->throw("$bam_list: $!");
+    while (my $bam=<$in>)
+    {
+        chomp($bam);
+
+        open(my $rgs,"samtools view -H $bam |") or $self->throw("samtools view -H $bam: $!");
+        while (my $rg=<$rgs>)
+        {
+            if ( !($rg=~/^\@RG/) ) { next; }
+            if ( !($rg=~/SM:(\S+)/) ) { next; }
+            my $sample = $1;
+            for my $re (@$sample_list)
+            {
+                if ( ($sample=~/$re/) ) 
+                { 
+                    $bams{$bam} = 1;
+                    $samples{$sample} = 1;
+                    last;
+                }
+            }
+        }
+        close($rgs);
+    }
+    close($in);
+
+    my @bams = sort keys %bams;
+    my @samples = sort keys %samples;
+    return (\@bams,\@samples);
+}
+
+sub get_sample_sex
+{
+    my ($self,@samples) = @_;
+    my $sexes;
+    for my $sample (@samples)
+    {
+        my $sex;
+        if ( !$$self{mysql} ) { $sex = $$self{assumed_sex}; }
+        else
+        {
+            my @sex = $self->cmd(qq[$$self{mysql} -e 'SELECT sex FROM individual WHERE name="$sample"']);
+            if ( !@sex ) { $self->throw("No info for $sample?\n"); }
+            $sex = $sex[0];
+            chomp($sex);
+        }
+        if ( !($sex=~/^[MF]$/) ) { $self->throw("Neither male nor female? Expected 'F' or 'M', got '$sex'."); }
+        $$sexes{$sample} = $sex;
+    }
+    return $sexes;
 }
 
 sub sample_list
 {
     my ($self,$outfile,$bams) = @_;
+
+    if ( defined $$self{sample_list} )
+    {
+        $self->cmd("cp $$self{sample_list} $outfile");
+        return;
+    }
 
     my %samples;
 
@@ -375,21 +582,12 @@ sub sample_list
     close($in);
 
     open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    my $sexes = $self->get_sample_sex(keys %samples);
     for my $sample (sort keys %samples)
     {
-        my $sex;
-        if ( !$$self{mysql} ) { $sex = $$self{assumed_sex}; }
-        else
-        {
-            my @sex = $self->cmd(qq[$$self{mysql} -e 'SELECT sex FROM individual WHERE name="$sample"']);
-            if ( !@sex ) { $self->throw("No info for $sample?\n"); }
-            $sex = $sex[0];
-            chomp($sex);
-        }
-        if ( !($sex=~/^[MF]$/) ) { $self->throw("Neither male nor female? Expected 'F' or 'M', got '$sex'."); }
-        print $out "$sample\t$sex\n";
+        print $out "$sample\t$$sexes{$sample}\n";
     }
-    close($out);
+    close($out) or $self->throw("close $outfile.part");
 
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
@@ -420,6 +618,14 @@ sub get_chunks
             if ( $$self{debug_chunks} && scalar @chunks>=$$self{debug_chunks} ) { return \@chunks; }
         }
     }
+
+    if ( $$self{shuffle_chunks} )
+    {
+        use Math::Random;
+        random_set_seed_from_phrase(1,1);
+        @chunks = random_permutation(@chunks);
+    }
+
     return \@chunks;
 }
 
@@ -591,21 +797,21 @@ sub run_mpileup
             if ( $2 eq 'F' && !$fploidy ) { next; }
             print $out "$1\t" .($2 eq 'M' ? $mploidy : $fploidy). "\n";
         }
-        close($out);
-        close($in);
+        close($out) or $self->throw("close failed: $sample_list");
+        close($in) or $self->throw("close failed: $outdir/lists/chr$chr-$pop.samples");
     }
 
     my $cmd;
     if ( $$self{keep_bcfs} )
     {
-        $cmd = "$$self{bcftools} -vcgN -s $sample_list $outdir/pooled/$chr/$chr:$from-$to.bcf";
+        $cmd = "$$self{bcftools} -s $sample_list $outdir/pooled/$chr/$chr:$from-$to.bcf";
     }
     else
     {
         my $bam_list = "$outdir/lists/chr$chr-$pop.list";
-        $cmd = "$$self{mpileup} -ug -r $chr:$from-$to -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -vcgN -s $sample_list -";
+        $cmd = "$$self{mpileup} -ug -r $chr:$from-$to -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -s $sample_list -";
     }
-    $self->cmd("$cmd | bgzip -c > $outfile.part");
+    $self->cmd("$cmd | vcf-annotate --fill-ICF | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
 }
 
@@ -619,9 +825,15 @@ sub tabix_part
 
 sub merge_vcfs
 {
-    my ($self,$outfile,$vcfs) = @_;
-    my $cmd = 'vcf-merge '.join(' ',@$vcfs)." | bgzip -c > $outfile.part";
-    $self->cmd($cmd);
+    my ($self,$outfile,$bcf,$vcfs) = @_;
+
+    # List of all sites. Use awk, grep has the peculiar property of exiting with error status when no lines are printed
+    #   through -v
+    $self->cmd(q[vcf-isec -f -n +1 ] .join(' ',@$vcfs). q[ | awk '!($1~/^#/)' | cut -f 1,2 | uniq > ] . "$outfile.sites");
+
+    # Call genotypes for all samples at these positions
+    $self->cmd("$$self{bcftools} -l $outfile.sites $bcf | bgzip -c > $outfile.part");
+
     $self->tabix_part($outfile);
 }
 
@@ -640,7 +852,7 @@ sub concat_vcfs
         my $to   = $$chunk{to};
         print $fh "$outdir/$pop/$chr/$chr:$from-$to.vcf.gz\n";
     }
-    close($fh);
+    close($fh) or $self->throw("close $chunks_list");
 
     my $filter = $$self{filter} ? "| $$self{filter}" : '';
     $self->cmd("vcf-concat -f $chunks_list $filter | bgzip -c > $outfile.part");
@@ -659,9 +871,77 @@ sub concat_chroms
     {
         print $fh "$outdir/$pop/$chr.vcf.gz\n";
     }
-    close($fh);
+    close($fh) or $self->throw("close $chunks_list");
 
-    $self->cmd("vcf-concat -f $chunks_list | vcf-annotate -f + | bgzip -c > $outfile.part");
+    if ( !exists($$self{vqsr_filtering}) )
+    {
+        $self->cmd("vcf-concat -p -f $chunks_list | $$self{filter} | bgzip -c > $outfile.part");
+        $self->tabix_part($outfile);
+        return;
+    }
+
+    # VQSR filtering
+    my $tmp = $outfile; $tmp =~ s/\.vcf\.gz$//;
+    my $concat = "$tmp.concat.vcf.gz";
+    if ( ! -e $concat )
+    {
+        open(my $fh,'>',"$tmp.annot") or $self->throw("$tmp.annot: $!");
+        print $fh q[
+                {
+                    header   => [ qq[key=INFO,ID=PV0,Number=1,Type=Float,Description="P-value for strand bias"],
+                                  qq[key=INFO,ID=PV1,Number=1,Type=Float,Description="P-value for baseQ bias"],
+                                  qq[key=INFO,ID=PV2,Number=1,Type=Float,Description="P-value for mapQ bias"],
+                                  qq[key=INFO,ID=PV3,Number=1,Type=Float,Description="P-value for tail distance bias"] ],
+                    tag      => 'INFO/PV4',
+                    name     => 'SplitPV4',
+                    desc     => 'Split PV4',
+                    apply_to => 'all',
+                    test     => sub {
+                                    my @pv = split(/,/,$MATCH);
+                                    my %tags;
+                                    if ( $pv[0] != 1 ) { $tags{PV0} = $pv[0]; }
+                                    if ( $pv[1] != 1 ) { $tags{PV1} = $pv[1]; }
+                                    if ( $pv[2] != 1 ) { $tags{PV2} = $pv[2]; }
+                                    if ( $pv[3] != 1 ) { $tags{PV3} = $pv[3]; }
+                                    if ( $VCF->get_info_field($$RECORD[7],'HWE') == 1 ) { $tags{HWE}=undef; }
+                                    if ( scalar keys %tags ) { $$RECORD[7] = $VCF->add_info_field($$RECORD[7],%tags); }
+                                    return $PASS;
+                                },
+                },
+            ];
+        close($fh);
+
+        $self->cmd("vcf-concat -f $chunks_list | vcf-annotate -f $tmp.annot | bgzip -c > $concat.part");
+        $self->tabix_part($concat);
+    }
+    my $conf = $$self{vqsr_filtering};
+    my $input = $concat;
+    my $output;
+    if ( exists($$conf{recal_snps}) )
+    {
+        $output = "$tmp.vqsr_snps.vcf.gz";
+        $self->cmd("$$conf{jar} $$conf{recal_snps} -R $$self{fa_ref} --input $input -recalFile $tmp.vqsr_snps.csv -tranchesFile $tmp.vqsr_snps.tranches");
+        $self->cmd("$$conf{jar} $$conf{filter_snps} -R $$self{fa_ref} --input $input -recalFile $tmp.vqsr_snps.csv -tranchesFile $tmp.vqsr_snps.tranches -o $output");
+        $self->cmd("tabix $output");
+        $input = $output;
+    }
+    if ( exists($$conf{recal_indels}) )
+    {
+        $output = "$tmp.vqsr_indels.vcf.gz";
+        $self->cmd("$$conf{jar} $$conf{recal_indels} -R $$self{fa_ref} --input $input -recalFile $tmp.vqsr_indels.csv -tranchesFile $tmp.vqsr_indels.tranches");
+        $self->cmd("$$conf{jar} $$conf{filter_indels} -R $$self{fa_ref} --input $input -recalFile $tmp.vqsr_indels.csv -tranchesFile $tmp.vqsr_indels.tranches -o $output");
+        $self->cmd("tabix $output");
+        $input = $output;
+    }
+    if ( !defined $output ) { $self->throw("Neither recal_snps nor recal_indels key defined in vqsr_filtering?"); }
+
+    if ( !$$self{filter} )
+    {
+        Utils::relative_symlink($input,$outfile);
+        $self->cmd("tabix -f $outfile");
+        return;
+    }
+    $self->cmd("zcat $input | $$self{filter} | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
 }
 
@@ -672,4 +952,12 @@ sub vcf_stats
     $self->cmd($cmd);
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
+
+sub apply_filter
+{
+    my ($self,$outfile,$vcf) = @_;
+    $self->cmd(qq[zcat $vcf | awk '/^#/||\$7=="PASS"' | bgzip -c > $outfile.part]);
+    $self->tabix_part($outfile);
+}
+
 

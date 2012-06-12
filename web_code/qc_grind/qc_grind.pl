@@ -8,13 +8,21 @@
 # Maintainer:    jws
 # Created:       2010-05-17
 
+BEGIN {
+    $ENV{VRTRACK_HOST} = 'mcs4a';
+    $ENV{VRTRACK_PORT} = 3306;
+    $ENV{VRTRACK_RO_USER} = 'vreseq_ro';
+    $ENV{VRTRACK_RW_USER} = 'vreseq_rw';
+    $ENV{VRTRACK_PASSWORD} = 't3aml3ss';
+};
+
 use strict;
 use warnings;
 use URI;
 
-#use SangerPaths qw(core team145);
-use SangerPaths qw(core);
-use lib './modules';
+use SangerPaths qw(core team145);
+#use SangerPaths qw(core);
+#use lib './modules';
 use VRTrack::VRTrack;
 use VRTrack::Project;
 use VRTrack::Sample;
@@ -27,6 +35,7 @@ use Data::Dumper;
 
 use SangerWeb;
 $ENV{PATH}= '/usr/local/bin';   # solely to stop taint from barfing
+
 
 $|++;
 
@@ -42,6 +51,7 @@ my $SAMP_VIEW = 7;
 my $LANE_UPDATE = 10;
 my $LANES_UPDATE = 9;
 my $FILTER_LANES = 11;
+my $PROJ_LANE_VIEW = 12;
 
 #possible states
 my $PASSED = 'passed';
@@ -63,6 +73,7 @@ my %AUTH_USERS = (  'jws' => 1, # Jim Stalker
                     'kb1' => 1, # Karen McLaren
                     'ylx' => 1, #Yali Xue from Chris's group
                     'ak6' => 1, # Anja Kolb-Kokocinski (kuusamo)
+                    'cj5' => 1, # chris joyce
                  );
 
 ###############################CSS Stuff#############################
@@ -198,8 +209,7 @@ my $cgi = $sw->cgi();
 #script name for self links
 my $SCRIPT_NAME = $cgi->url(-relative=>1);
 my $pending_view = "../pending-view/pending_view.pl";
-
-
+my $lane_qc_script = "./lane_qc.pl";
 
 #decide on the entry point
 my $mode = $cgi->param('mode');
@@ -575,7 +585,9 @@ sub displayProjectPage
     <h2 align="center" style="font: normal 900 1.5em arial"><a href="$SCRIPT_NAME">QC Grind</a></h2>
     <h3 style="font: normal 700 1.5em arial"><a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;db=$database">].
     ucfirst($database).qq{</a> : $pname </h3>
-    <h5 style="font: arial"><a href="$pending_view?mode=2&amp;db=$database">Pending Requests</a></h5><br/>};
+    <h5 style="font: arial"><a href="$pending_view?mode=2&amp;db=$database">Pending Requests</a></h5>};
+
+    print qq[<div align=right><h5><a href="$lane_qc_script?mode=$PROJ_LANE_VIEW&amp;proj_id=$projectID&amp;db=$database">Lane View</a></h5></div>];
     
     print qq[
         <div class="centerFieldset">
@@ -1446,7 +1458,7 @@ sub displayQCLaneList {
                 <td>$reads_paired_perc%</td>
                 <td>$rmdup_reads_mapped_perc%</td>
                 <td>$error_rate_perc%</td>
-                <td>$gt_status ($gt_ratio)</td>
+                <td>$gt_status ($gt_found:$gt_ratio)</td>
                 ];
                 
                 #print the images
@@ -1511,7 +1523,7 @@ sub displayError
 
 sub connectToDatabase
 {
-    my $database = $_[ 0 ];
+    my $db = $_[ 0 ];
     my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => $db,
                                                           mode => 'rw');
     return $vrtrack;
@@ -1656,7 +1668,7 @@ sub isDatabase
 {
         my $db = shift;
         
-        my @dbs = VertRes::Utils::VRTrackFactory->databases();
+        my @dbs = VertRes::Utils::VRTrackFactory->databases(1);
         foreach( @dbs ){if( $db eq $_ ){return 1;}}
         return 0;
 }

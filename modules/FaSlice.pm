@@ -87,9 +87,9 @@ sub cmd
 sub chromosome_naming
 {
     my ($self,$fa_file) = @_;
-    open(my $fh,'<',$fa_file) or $self->throw("$fa_file: $!");
+    open(my $fh,'<',"$fa_file.fai") or $self->throw("$fa_file.fai: $!");
     my $line=<$fh>;
-    if ( !($line=~/^>(chr)?\S+/) ) { chomp($line); $self->throw("FIXME: the sequence names not in '>(chr)?\\S+' format [$line] ... $fa_file\n"); }
+    if ( !($line=~/^(chr)?\S+\t/) ) { chomp($line); $self->throw("FIXME: the sequence names not in '>(chr)?\\S+' format [$line] ... $fa_file.fai\n"); }
     close($fh); 
     $$self{chr_naming} = defined $1 ? $1 : '';
 }

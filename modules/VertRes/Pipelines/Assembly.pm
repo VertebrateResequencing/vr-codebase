@@ -624,8 +624,22 @@ my \@lane_names;
    for my $lane_name ( @$lane_names)
    {
      my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
-     print $scriptfh qq{\$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory");
-};
+     my $vlane = VRTrack::Lane->new_by_name($self->{vrtrack},$lane_name);
+     my $file_names_str ;
+     if( @{$vlane->files} == 2)
+     {
+       my @file_names ;
+       for my $file_name (@{$vlane->files})
+       {
+         push(@file_names, $file_name->name );
+       }
+       $file_names_str = '("'.join('","',@file_names ).'")';
+     }
+
+     print $scriptfh qq{
+       my \@filenames_array = $file_names_str;
+       \$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
+     };
    }
 
    my $pool_count = 1;
@@ -706,10 +720,10 @@ sub concat_fastq_gz_files
 # adapted from https://github.com/dzerbino/velvet/blob/master/shuffleSequences_fastq.pl
 sub shuffle_sequences_fastq_gz
 {
-  my ($self, $name, $input_directory, $output_directory) = @_;
+  my ($self, $name, $input_directory, $output_directory, $file_names) = @_;
 
-  my $filenameA = $name."_1.fastq.gz";
-  my $filenameB = $name."_2.fastq.gz";
+  my $filenameA = $file_names->[0];
+  my $filenameB = $file_names->[1];
   my $filenameOut = $name.".fastq.gz";
 
   open( my $FILEA, "-|",'gunzip -c '.$input_directory.'/'.$filenameA) ;
