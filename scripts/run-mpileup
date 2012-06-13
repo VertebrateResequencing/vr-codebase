@@ -98,8 +98,8 @@ sub new
             #       '10:42000001-43000000' => { mpileup=>'...'  } 
             #   },
 
-            # Uncomment and modify as necessary if VQSR filtering should be applied. The PV0-4 annotations will be 
-            #   created from INFO/PV4 by the pipeline
+            # Uncomment and modify as necessary if VQSR filtering should be applied. The annotations QD,PV0,..,PV4 will be 
+            #   created from FORMAT/PL, FORMAT/DP and INFO/PV4 by the pipeline
             # vqsr_filtering => 
             # {
             #     jar => q[java -Xmx4800m -Xms4800m -Xss280m -server -XX:+UseSerialGC -jar /nfs/users/nfs_s/sm15/src/GATK/dist/GenomeAnalysisTK.jar],
@@ -108,19 +108,17 @@ sub new
             #             -resource:hapmap,known=false,training=true,truth=true,prior=15.0 /lustre/scratch105/projects/g1k/ref/broad_resources_b37/hapmap_3.3.b37.sites.vcf.gz
             #             -resource:omni,known=false,training=true,truth=false,prior=12.0 /lustre/scratch105/projects/g1k/ref/broad_resources_b37/1000G_omni2.5.b37.sites.vcf.gz
             #             -resource:dbsnp,known=true,training=false,truth=false,prior=8.0 /lustre/scratch105/projects/g1k/ref/broad_resources_b37/dbsnp_132.b37.vcf.gz
-            #             -tranche 100 -tranche 99.99 -tranche 99.90 -tranche 99.85 -tranche 99.80 -tranche 99.50 -tranche 99.00 -tranche 98.00
             #             --target_titv 2.3 --ts_filter_level 99.85 
-            #             --maxGaussians 4
-            #             -an DP -an VDB -an MQ -an HWE -an ICF -an PV0 -an PV1 -an PV2 -an PV3
+            #             --maxGaussians 6
+            #             -an DP -an FQ -an ICF -an PV1 -an QD
             #     ],
             #     recal_indels => q[
             #             -T VariantRecalibrator --mode INDEL -l INFO
             #             -resource:mills,VCF,known=true,training=true,truth=true,prior=12.0 /lustre/scratch105/projects/g1k/ref/broad_resources_b37/Mills_and_1000G_gold_standard.indels.b37.sites.vcf.gz
             #             -resource:g1k,known=false,training=true,truth=false,prior=10.0 /lustre/scratch105/projects/g1k/mapping/resources/ALL.wgs.low_coverage_vqsr.20101123.indels.sites.vcf.gz
-            #             -tranche 100 -tranche 99.99 -tranche 99.90 -tranche 99.85 -tranche 99.80 -tranche 99.50 -tranche 99.00 -tranche 98.00
             #             --target_titv 2.3 --ts_filter_level 99.85 
-            #             --maxGaussians 4
-            #             -an DP -an VDB -an MQ -an HWE -an ICF -an PV0 -an PV1 -an PV2 -an PV3
+            #             --maxGaussians 6
+            #             -an DP -an FQ -an ICF -an PV1 -an QD
             #     ],
             #     filter_snps   => q[ -T ApplyRecalibration --ts_filter_level 99.85 --mode SNP ],
             #     filter_indels => q[ -T ApplyRecalibration --ts_filter_level 99.85 --mode INDEL ],
@@ -285,6 +283,7 @@ sub main
             my $chr  = $$chunk{chr};
             my $from = $$chunk{from};
             my $to   = $$chunk{to};
+            if ( $self->is_finished("$outdir/$pop/$chr.vcf.gz") ) { next; }
             $self->spawn('run_mpileup',"$outdir/$pop/$chr/$chr:$from-$to.vcf.gz",$pop,$chunk);
         }
     }
@@ -386,6 +385,9 @@ sub runtime_stats
     my ($self,$outfile) = @_;
     $self->cmd("mkdir -p $outfile.part");
     $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
+    open(my $fh,'>',"$outfile.part/info.txt") or $self->throw("$outfile.part/info.txt: $!");
+    print $fh $$self{_about};
+    close($fh);
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
 
@@ -854,8 +856,7 @@ sub concat_vcfs
     }
     close($fh) or $self->throw("close $chunks_list");
 
-    my $filter = $$self{filter} ? "| $$self{filter}" : '';
-    $self->cmd("vcf-concat -f $chunks_list $filter | bgzip -c > $outfile.part");
+    $self->cmd("vcf-concat -f $chunks_list | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
 }
 
@@ -891,7 +892,8 @@ sub concat_chroms
                     header   => [ qq[key=INFO,ID=PV0,Number=1,Type=Float,Description="P-value for strand bias"],
                                   qq[key=INFO,ID=PV1,Number=1,Type=Float,Description="P-value for baseQ bias"],
                                   qq[key=INFO,ID=PV2,Number=1,Type=Float,Description="P-value for mapQ bias"],
-                                  qq[key=INFO,ID=PV3,Number=1,Type=Float,Description="P-value for tail distance bias"] ],
+                                  qq[key=INFO,ID=PV3,Number=1,Type=Float,Description="P-value for tail distance bias"],
+                                  qq[key=INFO,ID=QD,Number=1,Type=Float,Description="Quality By Depth"] ],
                     tag      => 'INFO/PV4',
                     name     => 'SplitPV4',
                     desc     => 'Split PV4',
@@ -904,6 +906,30 @@ sub concat_chroms
                                     if ( $pv[2] != 1 ) { $tags{PV2} = $pv[2]; }
                                     if ( $pv[3] != 1 ) { $tags{PV3} = $pv[3]; }
                                     if ( $VCF->get_info_field($$RECORD[7],'HWE') == 1 ) { $tags{HWE}=undef; }
+
+                                    my $idp = $VCF->get_tag_index($$RECORD[8],'DP',':');
+                                    my $ipl = $VCF->get_tag_index($$RECORD[8],'PL',':');
+                                    my $qd = 0;
+                                    my $nqd = 0;
+                                    for (my $i=9; $i<@$RECORD; $i++)
+                                    {
+                                        my $pl = $VCF->get_field($$RECORD[$i],$ipl);
+                                        my $dp = $VCF->get_field($$RECORD[$i],$idp);
+                                        my ($rr,$ra,$aa) = split(/,/,$pl);
+                                        if ( $dp && $aa )
+                                        {
+                                            $qd += ($rr+$ra)/$aa/$dp;
+                                            $nqd++;
+
+                                            if ( !defined $mqd or $qd>$mqd ) { $mqd=$qd; }
+                                        }
+                                        elsif ( $dp && $rr )
+                                        {
+                                            $qd += ($aa+$ra)/$rr/$dp;
+                                            $nqd++;
+                                        }
+                                    }
+                                    if ( $nqd ) { $tags{QD} = sprintf "%.4f",$qd/$nqd; }
                                     if ( scalar keys %tags ) { $$RECORD[7] = $VCF->add_info_field($$RECORD[7],%tags); }
                                     return $PASS;
                                 },
@@ -917,10 +943,12 @@ sub concat_chroms
     my $conf = $$self{vqsr_filtering};
     my $input = $concat;
     my $output;
+    my $tranches;
+    for (my $i=95; $i<=100; $i+=0.1) { $tranches .= sprintf(" -tranche %.1f",$i); }
     if ( exists($$conf{recal_snps}) )
     {
         $output = "$tmp.vqsr_snps.vcf.gz";
-        $self->cmd("$$conf{jar} $$conf{recal_snps} -R $$self{fa_ref} --input $input -recalFile $tmp.vqsr_snps.csv -tranchesFile $tmp.vqsr_snps.tranches");
+        $self->cmd("$$conf{jar} $$conf{recal_snps} -R $$self{fa_ref} --input $input -recalFile $tmp.vqsr_snps.csv -tranchesFile $tmp.vqsr_snps.tranches $tranches");
         $self->cmd("$$conf{jar} $$conf{filter_snps} -R $$self{fa_ref} --input $input -recalFile $tmp.vqsr_snps.csv -tranchesFile $tmp.vqsr_snps.tranches -o $output");
         $self->cmd("tabix $output");
         $input = $output;
@@ -928,7 +956,7 @@ sub concat_chroms
     if ( exists($$conf{recal_indels}) )
     {
         $output = "$tmp.vqsr_indels.vcf.gz";
-        $self->cmd("$$conf{jar} $$conf{recal_indels} -R $$self{fa_ref} --input $input -recalFile $tmp.vqsr_indels.csv -tranchesFile $tmp.vqsr_indels.tranches");
+        $self->cmd("$$conf{jar} $$conf{recal_indels} -R $$self{fa_ref} --input $input -recalFile $tmp.vqsr_indels.csv -tranchesFile $tmp.vqsr_indels.tranches $tranches");
         $self->cmd("$$conf{jar} $$conf{filter_indels} -R $$self{fa_ref} --input $input -recalFile $tmp.vqsr_indels.csv -tranchesFile $tmp.vqsr_indels.tranches -o $output");
         $self->cmd("tabix $output");
         $input = $output;

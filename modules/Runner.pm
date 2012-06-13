@@ -88,6 +88,7 @@ use Carp;
 use Storable qw(nstore retrieve dclone);
 use File::Temp;
 use Data::Dumper;
+use Cwd;
 
 sub new
 {
@@ -105,6 +106,7 @@ sub new
         "   +config <file>      Configuration file\n" .
         "   +local              Do not submit jobs to LSF, but run serially\n" .
         "   +loop <int>         Run in daemon mode with <int> sleep intervals\n" .
+        "   +mail <address>     Email when the runner finishes\n" .
         "   +maxjobs <int>      Maximum number of simultaneously running jobs\n" .
         "   +retries <int>      Maximum number of retries. When negative, the runner eventually skips the task rather than exiting completely. [$$self{_nretries}]\n" .
         "   +run <file>         Run the freezed object created by spawn\n" .
@@ -119,14 +121,16 @@ sub new
 
     About : The main runner method which parses runner's command line parameters and calls the main() method defined by the user.
     Args  : The system command line options are prefixed by "+" to distinguish from user-module options and must come first, before the user-module options 
-                +help
-                    Summary of commands
                 +config <file>
                     Optional configuration file for overriding defaults
+                +help
+                    Summary of commands
                 +local
                     Do not submit jobs to LSF, but run serially
                 +loop <int>
                     Run in daemon mode with <int> sleep intervals
+                +mail <address>
+                    Email to send when the runner is done
                 +maxjobs <int>
                     Maximum number of simultaneously running jobs
                 +retries <int>
@@ -145,6 +149,7 @@ sub new
 sub run
 {
     my ($self) = @_;
+    my @args = @ARGV;
 
     # Parse runner system parameters
     while (defined(my $arg=shift(@ARGV)))
@@ -154,6 +159,7 @@ sub run
         if ( $arg eq '+sampleconf' ) { $self->_sample_config(); next; }
         if ( $arg eq '+loop' ) { $$self{_loop}=shift(@ARGV); next; }
         if ( $arg eq '+maxjobs' ) { $$self{_maxjobs}=shift(@ARGV); next; }
+        if ( $arg eq '+mail' ) { $$self{_mail}=shift(@ARGV); next; }
         if ( $arg eq '+retries' ) { $$self{_nretries}=shift(@ARGV); next; }
         if ( $arg eq '+verbose' ) { $$self{_verbose}=1; next; }
         if ( $arg eq '+local' ) { $$self{_run_locally}=1; next; }
@@ -173,6 +179,8 @@ sub run
         unshift(@ARGV,$arg);
         last;
     }
+
+    $$self{_about} = "Working directory: " . getcwd() . "\nCommand line: $0 " . join(' ',@args) . "\n";
 
     # Run the user's module once or multiple times
     while (1)
@@ -404,6 +412,7 @@ sub _spawn_to_farm
 
             if ( $$self{_nretries}>=0 )
             {
+                $self->_send_email("The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
                 $self->throw($msg);
             }
             $self->warn($msg,"This was last attempt, excluding from normal flow. (Remove $prefix.s to clean the status.)\n");
@@ -478,7 +487,17 @@ sub all_done
 {
     my ($self) = @_;
     $self->debugln("All done!");
+    $self->_send_email("The runner has finished, all done!\n", $$self{_about});
     exit $$self{_status_codes}{DONE};
+}
+
+sub _send_email
+{
+    my ($self,@msg) = @_;
+    if ( !exists($$self{_mail}) ) { return; }
+    open(my $mh,"| mail -s 'Runner report' $$self{_mail}");
+    print $mh @msg;
+    close($mh);
 }
 
 =head2 clean
