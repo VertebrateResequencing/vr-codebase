@@ -2,8 +2,22 @@
 
 use Carp;
 use DBI;
+use Getopt::Long;
 use strict;
 use warnings;
+
+my ($db_file, $help);
+
+GetOptions(
+    'd|dbs=s'      =>  \$db_file,
+    'h|help'	   =>  \$help,
+);
+
+($db_file && !$help) or die <<USAGE;
+    Usage: $0 -d path_db_list_file 
+USAGE
+
+#Current file of all updated databases is at $CONF/vrtrack_npg_gt_db
 
 #vrtrack database connection parameters (set in env)
 my $HOST = $ENV{VRTRACK_HOST};
@@ -37,9 +51,9 @@ my $sql_select_lane_gtype = "select sample_name_match, search_parameters, sample
 #npg statement handle
 my $npg_sth = $npgdbh->prepare($sql_select_lane_gtype);
 
-#Location of file in $CONF that contains the list of databases to be genotyped using this method
-my $db_gtype_file = '/nfs/vertres01/conf/vrtrack_npg_gt_db';
-open DB_FILE, "<", $db_gtype_file;
+#Open file that contains the list of databases to be genotyped using this method
+#Note format: db_name,wgs OR db_name,exome
+open DB_FILE, "<", $db_file;
 
 while (<DB_FILE>) {
 	chomp $_;
