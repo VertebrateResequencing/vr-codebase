@@ -492,6 +492,12 @@ sub stats_and_graphs
     my $lane  = $$self{lane};
     my $stats_ref = exists($$self{stats_ref}) ? $$self{stats_ref} : '';
     my $class = (caller(0))[0];  # In case we are called from a inherited object
+    
+    my $name = $$self{lane};
+    if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
+    my $vrtrack     = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
+    my $vrlane      = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$name) or $self->throw("No such lane in the DB: [$name]\n");
+    my $insert_size = (VRTrack::Library->new($vrtrack, $vrlane->library_id())->insert_size() )*3 || 8000;
 
     # Dynamic script to be run by LSF.
     open(my $fh, '>', "$lane_path/$sample_dir/_graphs.pl") or Utils::error("$lane_path/$sample_dir/_graphs.pl: $!");
@@ -517,7 +523,7 @@ my \%params =
 );
 
 my \$qc = VertRes::Pipelines::TrackQC_Bam->new(\%params);
-\$qc->run_graphs(\$params{lane_path});
+\$qc->run_graphs(\$params{lane_path}, $insert_size);
 ];
     close $fh;
 
@@ -528,7 +534,7 @@ my \$qc = VertRes::Pipelines::TrackQC_Bam->new(\%params);
 
 sub run_graphs
 {
-    my ($self,$lane_path) = @_;
+    my ($self,$lane_path,$insert_size) = @_;
 
     use Graphs;
     use SamTools;
@@ -548,11 +554,11 @@ sub run_graphs
     my $bindepth     = "$outdir/gc-depth.bindepth";
     my $gcdepth_R    = $$self{'gcdepth_R'};
     my $stats_file   = "$outdir/$$self{stats_detailed}";
-
+    
     # Run bamcheck even if bamcheck output already exists. The import pipeline does not have
     #   the reference sequence and bamcheck only approximates the GC depth graph. It takes 8 minutes
     #   to run 17GB file, no big overhead.
-    Utils::CMD(qq[$$self{bamcheck} -r $refseq $bam_file > $bam_file.bc.tmp]);
+    Utils::CMD(qq[$$self{bamcheck} -r $refseq -i $insert_size $bam_file > $bam_file.bc.tmp]);
     rename("$bam_file.bc.tmp","$bam_file.bc") or $self->throw("rename $bam_file.bc.tmp $bam_file.bc: $!");
     if ( ! -e "$bam_file.rmdup.bc" )
     {
@@ -1002,6 +1008,7 @@ sub update_db
     $mapping->adapter_reads($nadapters);
     $mapping->clip_bases($bases_total-$bases_trimmed);
     $mapping->percentage_reads_with_transposon($percentage_reads_with_transposon);
+    $mapping->is_qc(1);
 
     $mapping->mean_insert($avg_isize);
     $mapping->sd_insert($sd_isize);
@@ -1024,8 +1031,11 @@ sub update_db
 
     # Length of reference sequence mapped
     if(defined $sequence_mapped)
-    { $mapping->target_bases_mapped($sequence_mapped); }
-
+    { 
+	$mapping->target_bases_mapped($$sequence_mapped[0]); 
+	$mapping->mean_target_coverage($$sequence_mapped[1]); 
+	$mapping->target_coverage_sd($$sequence_mapped[2]); 
+    }
     $mapping->update;
 
     # Write the QC status. Never overwrite a QC status set previously by human. Only NULL or no_qc can be overwritten.
