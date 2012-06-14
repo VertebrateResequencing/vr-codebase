@@ -26,7 +26,7 @@ use MyBuild;
 
 my $build = MyBuild->new(
     module_name          => 'VertRes',
-    dist_version         => 0.02,
+    dist_version         => 0.03,
     dist_author          => 'Vertebrate Resequencing group at the Sanger Institute',
     dist_abstract        => 'A collection of modules and scripts for processing and analysing large quantities of sequencing data.',
     license              => 'perl',
