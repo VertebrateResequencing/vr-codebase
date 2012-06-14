@@ -393,6 +393,13 @@ sub get_jobs
                 next;
             }
             
+            if ($action=~/^__VRTrack_RNASeqExpression__$/ )
+            {
+                get_rna_seq_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
+                next;
+            }
+            
+            
             if ($action=~/^__SNPs__$/ )
             {
                 get_snps_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
@@ -414,6 +421,12 @@ sub get_jobs
             if ($action=~/^__SPLITBAM__$/ )
             {
                 get_splitbam_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
+                next;
+            }
+            
+            if ($action=~/^__Assembly__$/ )
+            {
+                get_assembly_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
 
@@ -927,14 +940,17 @@ sub get_mapping_jobs_from_vrtrack {
     # Used for mapping with different assemblies/mappers for lane
     my $ignore_mapped = defined($$config_data{data}{ignore_mapped_status}) && $$config_data{data}{ignore_mapped_status} ? 1:0;
 
+    my %filter  = (import => 1, swapped => 0);
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
+
     my $count = 0;
     foreach my $vrlane (@lanes) {
         unless ($use_hu) {
             $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $vrlane);
         }
+        
+        next unless does_lane_pass_vrtrack_processed_flag_filters($vrlane, \%filter);
         next if $vrlane->is_withdrawn;
-        next unless $vrlane->is_processed('import');
-        next if $vrlane->is_processed('swapped');
         next if ($vrlane->is_processed('mapped') && !$ignore_mapped);
         next if ($ignore_mapped && mapping_complete($config_data, $vrlane));
 
@@ -970,6 +986,27 @@ sub get_mapping_jobs_from_vrtrack {
     return;
 }
 
+=head2 does_lane_pass_vrtrack_processed_flag_filters
+
+  Arg [1]    : VRlane
+  Arg [2]    : Hash of filters corresponding to processed flags on a VRlane
+  Return     : Boolean
+  Description: Check that the and passes the filters passed in
+  
+=cut
+sub does_lane_pass_vrtrack_processed_flag_filters
+{
+  my ($vrlane, $filter) = @_;
+  
+  for my $pipeline_task (keys %{$filter})
+  {
+    if($vrlane->is_processed($pipeline_task) != $filter->{$pipeline_task})
+    {
+     return 0; 
+    }
+  }
+  return 1;
+}
 
 =head2 get_improvement_jobs_from_vrtrack
 
@@ -1030,6 +1067,61 @@ sub get_improvement_jobs_from_vrtrack {
     
     return;
 }
+
+
+=head2 get_rna_seq_jobs_from_vrtrack
+
+  Arg [1]    : Pointer to array of jobs
+  Arg [2]    : The config file name
+  Arg [3]    : The mtime of the config file
+  Arg [4]    : The config data.
+  Description: Obtains the lane list from the VRTrack database.
+
+=cut
+
+sub get_rna_seq_jobs_from_vrtrack {
+    my ($jobs, $config, $mtime, $config_data) = @_;
+    
+    croak("Expected db key in the config $config.\n") unless defined $config_data->{db};
+    debug($config_data,"$config\tget_rna_seq_jobs_from_vrtrack...");
+    
+    my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
+    
+    my %filter  = ( mapped => 1, rna_seq_expression => 0 );
+    # FIXME: not scalable, need to filter at this point, rather than getting all lanes and filtering later
+    my @lanes = @{$vrtrack->processed_lane_hnames(%filter) || []};
+
+    if (defined $config_data->{limits}) {
+        @lanes = filter_lanes($config_data->{limits}, \@lanes, $vrtrack, $config);
+        debug($config_data, "got ", scalar(@lanes), " lanes that passed your limits...");
+    }
+    
+    my $count = 0;
+    foreach my $vrlane (@lanes) {
+        unless (ref($vrlane)) {
+            $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $vrlane);
+        }
+        next if $vrlane->is_withdrawn;
+        $count++;
+        
+        my $path = $vrtrack->hierarchy_path_of_lane($vrlane);
+        if ( !$path ) { croak("No path for [$vrlane->name]?\n"); }
+        my $lane_info = lane_info($path);
+        
+        $lane_info->{vrlane} = $vrlane;
+        $lane_info->{lane_path} = $path;
+        
+        my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
+        push @$jobs, $job;
+        debug($config_data,".");
+        
+        last if ($config_data->{limit} && $count >= $config_data->{limit});
+    }
+    debug($config_data,"done $count\n");
+    
+    return;
+}
+
 
 =head2 get_import_jobs_from_vrtrack
 
@@ -1881,15 +1973,13 @@ sub mapping_complete
     # Check assembly and mapper
     foreach my $mapping (@mappings)
     {
-	# Skip QC mappings.
-	my $images = $mapping->images();
-	next if( scalar(@{$images}) );
+      next if($mapping->is_qc);
 
 	# Skip unfinished mapping
 	next unless(defined($mapping->raw_reads()));
 
 	# Check Reference and Mapper.
-	if($$config_data{data}{assembly_name} eq $mapping->assembly->name())
+	if($$config_data{data}{assembly_name} eq $mapping->assembly->name() && $$config_data{prefix} eq $mapping->prefix )
 	{
 	    my $mapper_slx = exists($$config_data{data}{'slx_mapper'}) ? $$config_data{data}{'slx_mapper'}:'';
 	    my $mapper_454 = exists($$config_data{data}{'454_mapper'}) ? $$config_data{data}{'454_mapper'}:'';
