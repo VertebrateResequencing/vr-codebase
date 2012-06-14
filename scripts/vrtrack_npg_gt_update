@@ -3,6 +3,7 @@
 use Carp;
 use DBI;
 use Getopt::Long;
+use Array::Compare;
 use strict;
 use warnings;
 
@@ -44,6 +45,7 @@ my $sql_select_sample_lanes = "select s.name, l.name, l.lane_id, l.npg_qc_status
 my $sql_insert_new_mapstats = "insert into mapstats(mapstats_id, lane_id, changed, latest) values(0, ?, NOW(), 1)";
 my $sql_select_new_mapstats = "select max(row_id) from mapstats where mapstats_id = 0 and lane_id = ?";
 my $sql_update_new_mapstats = "update mapstats set mapstats_id = ?, gt_expected = ?, gt_found = ?, gt_ratio = ? where row_id = ?";
+my $sql_select_gt_mapstats = "select gt_expected, gt_found , gt_ratio from latest_mapstats where lane_id = ?";
 my $sql_update_gt_mapstats = "update mapstats set gt_expected = ?, gt_found = ?, gt_ratio = ?, changed = NOW() where lane_id = ? and latest = 1";
 #npg database
 my $sql_select_lane_gtype = "select sample_name_match, search_parameters, sample_name_relaxed_match, alternate_match_count, alternate_matches FROM genotype where expected_sample_name = ? and bam_file =?";
@@ -151,10 +153,18 @@ while (<DB_FILE>) {
 							$mp_sth->finish();
 						}
 						else {
-							#update current mapstats with gt information
+							#update current mapstats with gt information if not already current
+							my $sl_sth = $dbh->prepare($sql_select_gt_mapstats);
 							my $up_sth = $dbh->prepare($sql_update_gt_mapstats);
-							$up_sth->execute($sample_name, $sample_match, $match_ratio, $lane_id);
-							$up_sth->finish();
+							my @npg_arr = ($sample_name, $sample_match, $match_ratio);
+							$sl_sth->execute($lane_id);
+							my @curr_arr = $sl_sth->fetchrow_array;
+							my $comp = Array::Compare->new;
+							#update only if calculated ratio or expected sample differs from current mapstats data
+							if ( !$comp->compare(\(@curr_arr, @npg_arr)) ) {
+								$up_sth->execute($sample_name, $sample_match, $match_ratio, $lane_id);
+								$up_sth->finish();
+							}	
 						}
 					}
 				}
