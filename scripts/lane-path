@@ -11,6 +11,28 @@ use VRTrack::Lane;
 
 my $opts = parse_params();
 
+our %db_to_root = (
+    g1k_track => qq[$ENV{G1K}/TRACKING],
+    g1k_meta  => qq[$ENV{G1K}/META],
+    vrtrack_uk10k_cohort => qq[$ENV{UK10K}/TRACKING],
+    vrtrack_uk10k_rare => qq[$ENV{UK10K}/TRACKING],
+    vrtrack_uk10k_obesity => qq[$ENV{UK10K}/TRACKING],
+    vrtrack_uk10k_neuro => qq[$ENV{UK10K}/TRACKING],
+    mouse_reseq_track => qq[$ENV{MOUSE}/TRACKING],
+);
+
+our %dbs;
+if (exists $$opts{db})
+{
+    error("db supplied ($$opts{db}) not known\n") unless (exists $db_to_root{$$opts{db}});
+    $dbs{$$opts{db}} = $db_to_root{$$opts{db}};
+}
+else
+{
+    %dbs = %db_to_root;
+}
+
+
 for my $lane (@{$$opts{lanes}})
 {
     my $paths = find_lane($lane);
@@ -45,6 +67,7 @@ sub parse_params
     while (my $arg=shift(@ARGV))
     {
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        if ( $arg eq '--db' ) { $$opts{db}=shift(@ARGV); next; }
         push @{$$opts{lanes}}, $arg;
     }
     return $opts;
@@ -57,11 +80,6 @@ sub find_lane
     my ($lane) = @_;
 
     my $db_opts = { VertRes::Utils::VRTrackFactory->connection_details('rw') };
-    my %dbs = (
-            g1k_track => '/lustre/scratch102/projects/g1k/TRACKING/',
-            g1k_meta  => '/lustre/scratch102/projects/g1k/META/',
-            mouse_reseq_track => '/lustre/scratch102/projects/mouse/TRACKING/'
-            );
 
     my ($vrtrack,$db,@paths);
     for $db (keys %dbs)

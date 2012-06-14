@@ -9,7 +9,11 @@ use Carp;
 use Vcf;
 
 my $opts = parse_params();
-if ( !exists($$opts{sort}) )
+if ( $$opts{check_columns} )
+{
+    check_columns($opts);
+}
+elsif ( !exists($$opts{sort}) )
 {
     concat($opts);
 }
@@ -30,13 +34,15 @@ sub error
         croak @msg;
     }
     die
-        "About: Convenience tool for concatenating VCF files. In the basic mode it does not \n",
-        "   do anything fancy except for a sanity check that all files have the same columns.\n",
-        "   When run with the -s option, it will perform a partial merge sort, looking at\n",
-        "   a limited number of open jobs simultaneously.\n",
+        "About: Convenience tool for concatenating VCF files (e.g. VCFs split by chromosome).\n",
+        "   In the basic mode it does not do anything fancy except for a sanity check that all\n",
+        "   files have the same columns.  When run with the -s option, it will perform a partial\n",
+        "   merge sort, looking at limited number of open files simultaneously.\n",
         "Usage: vcf-concat [OPTIONS] A.vcf.gz B.vcf.gz C.vcf.gz > out.vcf\n",
         "Options:\n",
+        "   -c, --check-columns              Do not concatenate, only check if the columns agree.\n",
         "   -f, --files <file>               Read the list of files from a file.\n",
+        "   -p, --pad-missing                Write '.' in place of missing columns. Useful for joining chrY with the rest.\n",
         "   -s, --merge-sort <int>           Allow small overlaps in N consecutive files.\n",
         "   -h, -?, --help                   This help message.\n",
         "\n";
@@ -47,7 +53,9 @@ sub parse_params
     my $opts = { files=>[] };
     while (my $arg=shift(@ARGV))
     {
+        if ( $arg eq '-p' || $arg eq '--pad-missing' ) { $$opts{pad_missing}=1; next; } 
         if ( $arg eq '-s' || $arg eq '--merge-sort' ) { $$opts{sort}=shift(@ARGV); next; } 
+        if ( $arg eq '-c' || $arg eq '--check-columns' ) { $$opts{check_columns}=1; next;  }
         if ( $arg eq '-f' || $arg eq '--files' ) 
         {
             my $files = shift(@ARGV);
@@ -68,7 +76,28 @@ sub parse_params
     return $opts;
 }
 
-sub concat
+sub can_be_padded
+{
+    my ($opts,$cols1,$cols2) = @_;
+    if ( @$cols1<@$cols2 ) { error(sprintf "Not ready for this, sorry, expected fewer columns (%d!<%d)", @$cols1,@$cols2); }
+    my $has1 = {};
+    my $has2 = {};
+    for (my $i=0; $i<@$cols1; $i++) { $$has1{$$cols1[$i]} = $i; }
+    for (my $i=0; $i<@$cols2; $i++) 
+    {
+        if ( !exists($$has1{$$cols2[$i]}) ) { error("The column [$$cols2[$i]] not seen previously."); }
+        $$has2{$$cols2[$i]} = $i; 
+    }
+    my @map;
+    for (my $i=0; $i<@$cols1; $i++)
+    {
+        my $cname = $$cols1[$i];
+        push @map, exists($$has2{$cname}) ? $$has2{$cname} : -1;
+    }
+    return \@map;
+}
+
+sub check_columns
 {
     my ($opts) = @_;
     my @columns;
@@ -79,10 +108,79 @@ sub concat
 
         if ( @columns )
         {
-            if ( @columns != @{$$vcf{columns}} ) { error("Different number of columns in [$file].\n"); }
+            my $different_order;
+            my $different_columns;
+            if ( @columns != @{$$vcf{columns}} ) { warn("Different number of columns in [$file].\n"); }
+            if ( $$opts{pad_missing} && can_be_padded($opts,\@columns,$$vcf{columns}) ) { next; }
             for (my $i=0; $i<@columns; $i++)
             {
-                if ( $$vcf{columns}[$i] ne $columns[$i] ) { error("The column names do not agree in [$file].\n"); }
+                if ( $$vcf{columns}[$i] ne $columns[$i] ) 
+                { 
+                    if ( !exists($$vcf{has_column}{$columns[$i]}) )
+                    {
+                        warn("The column names do not match; the column \"$columns[$i]\" no present in [$file].\n"); 
+                        $different_columns = $columns[$i];
+                    }
+                    elsif ( !defined $different_order )
+                    {
+                        $different_order = $columns[$i];
+                    }
+                }
+            }
+            if ( defined $different_order && !defined $different_columns )
+            {
+                warn("The columns ordered differently in [$file]. Use vcf-shuffle-cols to reorder.\n");
+            }
+        }
+        else
+        {
+            @columns = @{$$vcf{columns}};
+        }
+        $vcf->close();
+    }
+}
+
+sub concat
+{
+    my ($opts) = @_;
+    my @columns;
+    for my $file (@{$$opts{files}})
+    {
+        my $vcf = Vcf->new(file=>$file);
+        $vcf->parse_header();
+
+        my $map;
+        if ( @columns )
+        {
+            if ( @columns != @{$$vcf{columns}} ) 
+            { 
+                if ( !$$opts{pad_missing} )
+                {
+                    error(sprintf "Different number of columns in [%s], expected %d, found %d\n", $file,scalar @columns,scalar @{$$vcf{columns}}); 
+                }
+                $map = can_be_padded($opts,\@columns,$$vcf{columns});
+            }
+            else
+            {
+                my $different_order;
+                for (my $i=0; $i<@columns; $i++)
+                {
+                    if ( $$vcf{columns}[$i] ne $columns[$i] )
+                    {
+                        if ( !exists($$vcf{has_column}{$columns[$i]}) )
+                        {
+                            error("The column names do not match; the column \"$columns[$i]\" no present in [$file].\n");
+                        }
+                        elsif ( !defined $different_order )
+                        {
+                            $different_order = $columns[$i];
+                        }
+                    }
+                }
+                if ( defined $different_order )
+                {
+                    error("The columns ordered differently in [$file]. Use vcf-shuffle-cols to reorder.\n");
+                }
             }
         }
         else
@@ -92,7 +190,22 @@ sub concat
         }
         while (my $line=$vcf->next_line())
         {
-            print $line;
+            if ( defined $map )
+            {
+                my @line = split(/\t/,$line);
+                chomp($line[-1]);
+                my @out;
+                for my $idx (@$map)
+                {
+                    if ( $idx==-1 ) { push @out,'.'; }
+                    else { push @out,$line[$$map[$idx]] }
+                }
+                print join("\t",@out),"\n";
+            }
+            else
+            {
+                print $line;
+            }
         }
     }
 }

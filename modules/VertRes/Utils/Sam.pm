@@ -34,6 +34,7 @@ use VertRes::IO;
 use VertRes::Utils::FileSystem;
 use VertRes::Wrapper::samtools;
 use VertRes::Wrapper::picard;
+use VertRes::Wrapper::fastqcheck;
 use HierarchyUtilities;
 use VertRes::Parser::dict;
 use VertRes::Parser::sequence_index;
@@ -45,7 +46,8 @@ use VertRes::Utils::FastQ;
 use VertRes::Utils::Math;
 use VertRes::Utils::Hierarchy;
 use Digest::MD5;
-use VertRes::Parser::bam;
+use VertRes::Parser::bamcheck;
+use VertRes::Parser::fastqcheck;
 use List::Util qw(min max sum);
 use Test::Deep::NoTest;
 use Graphs;
@@ -204,6 +206,34 @@ sub num_bam_records {
     }
     return $records;
 }
+
+
+
+=head2 bam_refnames
+
+ Title   : bam_refnames
+ Usage   : my $ref_names = $obj->bam_refnames($bam_file);
+ Function: Get the reference sequnce names from the header of a bam file
+ Returns : reference to array of names.  names will be same order as in header
+ Args    : bam filename
+
+=cut
+
+sub bam_refnames {
+    my ($self, $bam_file) = @_;
+    
+    my @names;
+    my $st = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+    my $fh = $st->view($bam_file, undef, H => 1);
+    while (<$fh>){
+        if (/^\@SQ\t.*SN:(\w+)/) {
+            push @names, $1;
+        }
+    }
+
+    return \@names;
+}
+
 
 =head2 num_bam_header_lines
 
@@ -420,6 +450,7 @@ sub split_bam_by_sequence {
             unlink($unchecked);
         }
     }
+    $self->throw("Number of correct output files not equal to number of expected output files") unless (scalar @outs == scalar(keys %output_bams));
     
     return @outs;
 }
@@ -463,6 +494,7 @@ sub split_bam_by_sequence {
            program_version => version of the program
            run_name => string, the platform unit - the original accession before
                        DCC gave it the [ES]RR id
+           command_line => refarray, ref to array of command lines.
 
 =cut
 
@@ -515,7 +547,7 @@ sub add_sam_header {
     my $rh = $dict_parser->result_holder;
     while ($dict_parser->next_result) {
         my $sp = $rh->{SP} || '';
-        $sp = "\t$sp" if $sp;
+        $sp = "\tSP:$sp" if $sp;
         my $local_ref_name = $rh->{AS} || $ref_name;
         my $local_ur = $rh->{UR} || $ref_fa;
         print $shfh "\@SQ\tSN:$rh->{SN}\tLN:$rh->{LN}\tAS:$local_ref_name\tUR:$local_ur\tM5:$rh->{M5}$sp\n";
@@ -533,10 +565,32 @@ sub add_sam_header {
     $header_lines++;
     
     if ($args{program}) {
-        print $shfh "\@PG\tID:$args{program}";
-        print $shfh "\tVN:$args{program_version}" if (defined $args{program_version});
-        print $shfh "\n";
-        $header_lines++;
+	unless (scalar @{$args{command_line} || []}) {
+	    # Add single PG line without CL tag 
+	    print $shfh "\@PG\tID:$args{program}";
+	    print $shfh "\tVN:$args{program_version}" if (defined $args{program_version});
+	    print $shfh "\n";
+	    $header_lines++;
+	}
+	else {
+	    # Add PG lines with CL tags
+	    my $id = $args{program};
+	    my $pp = '';
+	    my $linecount = 1;
+	    foreach my $cl (@{$args{command_line}}) {
+		chomp $cl;
+		$cl =~ s/\/\S+\///g; # remove file paths
+		print $shfh "\@PG\tID:$id";
+		print $shfh "\tVN:$args{program_version}" if (defined $args{program_version});
+		print $shfh "\tPP:$pp" if $pp;
+		print $shfh "\tCL:$cl" if $cl;
+		print $shfh "\n";
+		$header_lines++;
+		
+		$pp=$id;
+		$id=$linecount++;
+	    }
+	}
     }
     
     # combine the header with the raw sam file, adding/correcting RG tag if
@@ -844,12 +898,15 @@ sub index_bams
            are accurate NM tags for each record), YYYYMMDD string describing the
            date of the release, output filename, sequence.index file (optional
            if your bam headers are good and you don't care about column 1 of the
-           bas file, which is the DCC filename)
+           bas file, which is the DCC filename), and finally an optional
+           boolean which if true means that RG ids are taken to be meaningless,
+           with the true read group identifier being in the PU field of the RG
+           line(s) in the header
 
 =cut
 
 sub bas {
-    my ($self, $in_bam, $release_date, $out_bas, $seq_index) = @_;
+    my ($self, $in_bam, $release_date, $out_bas, $seq_index, $rg_from_pu) = @_;
     $release_date =~ /^\d{8}$/ || $self->throw("bad release date '$release_date'");
     
     my $working_bas = $out_bas.'.working';
@@ -877,7 +934,7 @@ sub bas {
     
     # get the meta data
     my $hu = VertRes::Utils::Hierarchy->new(verbose => $self->verbose);
-    my $dcc_filename = $hu->dcc_filename($in_bam, $release_date, $seq_index);
+    my $dcc_filename = $hu->dcc_filename($in_bam, $release_date, $seq_index, undef, $rg_from_pu);
     
     my $md5;
     my $md5_file = $in_bam.'.md5';
@@ -898,13 +955,30 @@ sub bas {
     
     my $pb = VertRes::Parser::bam->new(file => $in_bam);
     
+    # if necessary, convert from arbitrary RG ids to the lane identifier stored
+    # in PU
+    my %orig_rgs;
+    if ($rg_from_pu) {
+        while (my ($rg, $data) = each %readgroup_data) {
+            my $new_rg = $pb->readgroup_info($rg, 'PU');
+            $orig_rgs{$new_rg} = $rg;
+        }
+        while (my ($new_rg, $old_rg) = each %orig_rgs) {
+            my $data = delete $readgroup_data{$old_rg};
+            $readgroup_data{$new_rg} = $data;
+        }
+    }
+    else {
+        %orig_rgs = map { $_ => $_ } keys %readgroup_data;
+    }
+    
     # add in the meta data
     while (my ($rg, $data) = each %readgroup_data) {
         $readgroup_data{$rg}->{dcc_filename} = $dcc_filename;
-        $readgroup_data{$rg}->{study} = $pb->readgroup_info($rg, 'DS') || 'unknown_study';
-        $readgroup_data{$rg}->{sample} = $pb->readgroup_info($rg, 'SM') || 'unknown_sample';
-        $readgroup_data{$rg}->{platform} = $pb->readgroup_info($rg, 'PL') || 'unknown_platform';
-        $readgroup_data{$rg}->{library} = $pb->readgroup_info($rg, 'LB') || 'unknown_library';
+        $readgroup_data{$rg}->{study} = $pb->readgroup_info($orig_rgs{$rg}, 'DS') || 'unknown_study';
+        $readgroup_data{$rg}->{sample} = $pb->readgroup_info($orig_rgs{$rg}, 'SM') || 'unknown_sample';
+        $readgroup_data{$rg}->{platform} = $pb->readgroup_info($orig_rgs{$rg}, 'PL') || 'unknown_platform';
+        $readgroup_data{$rg}->{library} = $pb->readgroup_info($orig_rgs{$rg}, 'LB') || 'unknown_library';
         
         # fall back on the sequence.index if we have to
         if ($sip) {
@@ -998,7 +1072,7 @@ sub bam_statistics {
         my $rg = $rh->{RG};
         my $flag = $rh->{FLAG};
         
-        unless ($rg) {
+        unless (defined $rg) {
             $self->warn("a read had no RG tag, using previous RG tag '$previous_rg'");
             $rg = $previous_rg;
         }
@@ -1595,61 +1669,63 @@ sub header_rewrite_required {
     
     keys %changes || return 1;
     my %arg_to_tag = (RG => {sample_name => 'SM',
-                      	library => 'LB',
-                      	platform => 'PL',
-                      	centre => 'CN',
-                      	insert_size => 'PI',
-                      	study => 'DS',
-                      	project => 'DS'},
+                        library => 'LB',
+                        platform => 'PL',
+                        centre => 'CN',
+                        insert_size => 'PI',
+                        study => 'DS',
+                        project => 'DS',
+                        date => 'DT',
+                        platform_unit => 'PU'},
                       PG => {program => 'PN',
-                      	command => 'CL',
-                      	version => 'VN'},
+                        command => 'CL',
+                        version => 'VN'},
                       SQ => {seq_name => 'SN',
-                      	ref_length => 'LN',
-                      	assembler => 'AS',
-                      	md5 => 'M5',
-                      	species => 'SP',
-                      	uri => 'UR'});
+                        ref_length => 'LN',
+                        assembler => 'AS',
+                        md5 => 'M5',
+                        species => 'SP',
+                        uri => 'UR'});
 
-	my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+    my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
 
     my $remove_unique = 0;
     if (exists $changes{'PG'}{'remove_unique'}) {
-    	$remove_unique = $changes{'PG'}{'remove_unique'};
+        $remove_unique = $changes{'PG'}{'remove_unique'};
     }
 
     my $dict;
     if (exists $changes{'SQ'}{'from_dict'}) {
-		$dict = $changes{'SQ'}{'from_dict'};
+        $dict = $changes{'SQ'}{'from_dict'};
     }
     
     # Compare the SQ lines of the bam and the dict file
-	if ($dict) {
-		my $bfh = $stin->view($bam, undef, H => 1);
-    	$bfh || $self->throw("Could not read header from '$bam'");
-    	my @bheader;
-    	while (<$bfh>) {
-    		chomp;
-    		next unless /\@SQ/;
-    		push @bheader, $_;
-    	}
-    	close $bfh;
-    	
+    if ($dict) {
+        my $bfh = $stin->view($bam, undef, H => 1);
+        $bfh || $self->throw("Could not read header from '$bam'");
+        my @bheader;
+        while (<$bfh>) {
+            chomp;
+            next unless /\@SQ/;
+            push @bheader, $_;
+        }
+        close $bfh;
+        
         open my $dfh, "<$dict" || $self->throw("Could not open dictionary, $dict");
-    	my @dheader;
-    	while (<$dfh>) {
-    		chomp;
-    		next unless /\@SQ/;
-    		push @dheader, $_;
-    	}
-    	close $bfh;
-    	
-    	my $dict_header = join "\n", @dheader;
-    	my $bam_header = join "\n", @bheader;
-    	
-    	return 1 unless ($dict_header eq $bam_header);
-	}
-	
+        my @dheader;
+        while (<$dfh>) {
+            chomp;
+            next unless /\@SQ/;
+            push @dheader, $_;
+        }
+        close $bfh;
+        
+        my $dict_header = join "\n", @dheader;
+        my $bam_header = join "\n", @bheader;
+        
+        return 1 unless ($dict_header eq $bam_header);
+    }
+    
     if (defined $changes{platform}) {
         $changes{platform} = $tech_to_platform{$changes{platform}} || $self->throw("Bad platform '$changes{platform}'");
     }
@@ -1658,63 +1734,63 @@ sub header_rewrite_required {
     # Parse original header and grab the lane id
     my $lane;
     if ($remove_unique) {
-		my $pars = VertRes::Parser::sam->new(file => $bam);
-		my %read_info = $pars->readgroup_info();
-		my @lane_ids = keys %read_info;
-		$self->throw("$bam does not have a single lane id.") unless (scalar @lane_ids == 1);
-		$lane = $lane_ids[0];
+        my $pars = VertRes::Parser::sam->new(file => $bam);
+        my %read_info = $pars->readgroup_info();
+        my @lane_ids = keys %read_info;
+        $self->throw("$bam does not have a single lane id.") unless (scalar @lane_ids == 1);
+        $lane = $lane_ids[0];
     }
     
-	# Write new header
+    # Write new header
     my $made_changes = 0;
-	my $bamfh = $stin->view($bam, undef, H => 1);
+    my $bamfh = $stin->view($bam, undef, H => 1);
     $bamfh || $self->throw("Could not read header from '$bam'");
-	my $sq_from_dict_done = 0;
+    my $sq_from_dict_done = 0;
     while (<$bamfh>) {
-    	foreach my $line_tag (keys %changes) {
-    		my $id_tag = $line_tag eq 'SQ' ? 'SN' : 'ID';
-	        if (/^\@$line_tag.+$id_tag:([^\t]+)/) {
-	            my $id = $1;
-	            if (exists $changes{$line_tag}{$id}) {
-	                while (my ($arg, $value) = each %{$changes{$line_tag}{$id}}) {
-	                    next unless defined $value;
-	                    my $tag = $arg_to_tag{$line_tag}{$arg} || next;
-	                    
-	                    if (/\t$tag:([^\t\n]+)/) {
-	                        if ($1 ne $value) {
-	                            $made_changes = 1;
-	                        }
-	                    }
-	                    else {
-	                        $made_changes = 1;
-	                    }
-	                }
-	            }
+        foreach my $line_tag (keys %changes) {
+            my $id_tag = $line_tag eq 'SQ' ? 'SN' : 'ID';
+            if (/^\@$line_tag.+$id_tag:([^\t]+)/) {
+                my $id = $1;
+                if (exists $changes{$line_tag}{$id}) {
+                    while (my ($arg, $value) = each %{$changes{$line_tag}{$id}}) {
+                        next unless defined $value;
+                        my $tag = $arg_to_tag{$line_tag}{$arg} || next;
+                        
+                        if (/\t$tag:([^\t\n]+)/) {
+                            if ($1 ne $value) {
+                                $made_changes = 1;
+                            }
+                        }
+                        else {
+                            $made_changes = 1;
+                        }
+                    }
+                }
 
-	            if (exists $changes{$line_tag}{ all }) {
-	                while (my ($arg, $value) = each %{$changes{$line_tag}{all}}) {
-	                    next unless defined $value;
-	                    my $tag = $arg_to_tag{$line_tag}{$arg} || next;
-	                    
-	                    if (/\t$tag:([^\t\n]+)/) {
-	                        if ($1 ne $value) {
-	                            $made_changes = 1;
-	                        }
-	                    }
-	                    else {
-	                        $made_changes = 1;
-	                    }
-	                }
-	            }
-	            
-	            if ($remove_unique) {
-					if (/\tCL:([^\t]+)/) {
-			        	if ($1 =~ /\@|$lane/) {
-							$made_changes = 1;
-						}
-			        }
-				}
-			}
+                if (exists $changes{$line_tag}{ all }) {
+                    while (my ($arg, $value) = each %{$changes{$line_tag}{all}}) {
+                        next unless defined $value;
+                        my $tag = $arg_to_tag{$line_tag}{$arg} || next;
+                        
+                        if (/\t$tag:([^\t\n]+)/) {
+                            if ($1 ne $value) {
+                                $made_changes = 1;
+                            }
+                        }
+                        else {
+                            $made_changes = 1;
+                        }
+                    }
+                }
+                
+                if ($remove_unique) {
+                    if (/\tCL:([^\t]+)/) {
+                        if ($1 =~ /\@|$lane/) {
+                            $made_changes = 1;
+                        }
+                    }
+                }
+            }
         }
     }
     close($bamfh);
@@ -1741,15 +1817,15 @@ sub replace_bam_header {
     # Setup temporary output bam
     my $temp_bam = $bam.'.reheader.tmp.bam';
     $self->register_for_unlinking($temp_bam);
-	
-	# Run samtools reheader
-	my $sw = VertRes::Wrapper::samtools->new(run_method => 'system');
-	$sw->reheader($new_header, $bam, $temp_bam);
-		
+    
+    # Run samtools reheader
+    my $sw = VertRes::Wrapper::samtools->new(run_method => 'system');
+    $sw->reheader($new_header, $bam, $temp_bam);
+        
     # Check for trunction in the number of bam records (headers may have different number of lines)
     my $old_bam_records = num_bam_records($bam);
     my $new_bam_records = num_bam_records($temp_bam);
-	    
+        
     if ( $old_bam_records == $new_bam_records ) {
         unlink($bam);
         move($temp_bam, $bam) || $self->throw("Failed to move $temp_bam to $bam: $!");
@@ -1765,8 +1841,8 @@ sub replace_bam_header {
 =head2 change_header_lines
 
  Title   : change_header_lines
- Usage   : $obj->change_header_lines('a.bam', (RG => readgroup1 => { sample_name => 'NA000001' }));
-           $obj->change_header_lines('a.bam', (PG => 'PG ID' => { version => '1.0.34' }));
+ Usage   : $obj->change_header_lines('a.bam', (RG => {'readgroup1' => { sample_name => 'NA000001' }}));
+           $obj->change_header_lines('a.bam', (PG => {'PG ID' => { version => '1.0.34' }}));
            $obj->change_header_lines('a.bam', (PG => { remove_unique => 1}));
            $obj->change_header_lines('a.bam', (SQ => { from_dict => '/path/to/dict/'}));
            $obj->change_header_lines('a.bam', (SQ => { all => { uri => 'ftp://something.awesome.com/huzzah.fasta'}}));
@@ -1786,25 +1862,25 @@ sub replace_bam_header {
            want to edit and a hash of changes to be made. Keys are readgroup or program 
            identifiers and values are hash refs with at least one of the following:
            For @RG changes:
-           	sample_name => string, eg. 'NA00000';
-           	library => string
-           	platform => string
-           	centre => string
-           	insert_size => int
-           	study => string, the study id, eg. 'SRP000001' (overwrites DS)
+            sample_name => string, eg. 'NA00000';
+            library => string
+            platform => string
+            centre => string
+            insert_size => int
+            study => string, the study id, eg. 'SRP000001' (overwrites DS)
            For @PG changes:
-           	version => string, eg. '0.5.5';
-           	command => string, eg. '-q 0.9 out=some_file
-           	program => string, eg. 'bwa' (overwrites PN tag)
+            version => string, eg. '0.5.5';
+            command => string, eg. '-q 0.9 out=some_file
+            program => string, eg. 'bwa' (overwrites PN tag)
            For @PG, there is the added option 'remove_unique => 1' which will 
            perform as specified above.
            For @SQ changes:
-           	seq_name => string
-           	ref_length => int
-           	assembler => string
-           	md5 => string
-           	species => string
-           	uri => string
+            seq_name => string
+            ref_length => int
+            assembler => string
+            md5 => string
+            species => string
+            uri => string
            For @SQ, there is the added option 'dict => /path/to/dict' which will 
            perform as specified above.
 
@@ -1815,60 +1891,64 @@ sub change_header_lines {
     
     keys %changes || return 1;
     my %arg_to_tag = (RG => {sample_name => 'SM',
-                      	library => 'LB',
-                      	platform => 'PL',
-                      	centre => 'CN',
-                      	insert_size => 'PI',
-                      	study => 'DS',
-                      	project => 'DS'},
+                        library => 'LB',
+                        platform => 'PL',
+                        centre => 'CN',
+                        insert_size => 'PI',
+                        study => 'DS',
+                        project => 'DS',
+                        date => 'DT',
+                        platform_unit => 'PU'},
                       PG => {program => 'PN',
-                      	command => 'CL',
-                      	version => 'VN'},
+                        command => 'CL',
+                        version => 'VN'},
                       SQ => {seq_name => 'SN',
-                      	ref_length => 'LN',
-                      	assembler => 'AS',
-                      	md5 => 'M5',
-                      	species => 'SP',
-                      	uri => 'UR'});
+                        ref_length => 'LN',
+                        assembler => 'AS',
+                        md5 => 'M5',
+                        species => 'SP',
+                        uri => 'UR'});
 
-	my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
+    my $stin = VertRes::Wrapper::samtools->new(quiet => 1, run_method => 'open');
 
     my $remove_unique = 0;
     if (exists $changes{'PG'}{'remove_unique'}) {
-    	$remove_unique = $changes{'PG'}{'remove_unique'};
+        $remove_unique = $changes{'PG'}{'remove_unique'};
     }
 
     my $dict;
-    if (exists $changes{'SQ'}{'from_dict'}) {
-		$dict = $changes{'SQ'}{'from_dict'};
+    if (exists $changes{'SQ'}{'from_dict'} && $changes{'SQ'}{'from_dict'}) {
+        $dict = $changes{'SQ'}{'from_dict'};
+        $self->throw("dict file, '$dict', supplied does not exist\n") unless -s $dict;
     }
     
-	# Compare the SQ lines of the bam and the dict file
-	if ($dict) {
-		my $bfh = $stin->view($bam, undef, H => 1);
-    	$bfh || $self->throw("Could not read header from '$bam'");
-    	my @bheader;
-    	while (<$bfh>) {
-    		chomp;
-    		next unless /\@SQ/;
-    		push @bheader, $_;
-    	}
-    	close $bfh;
-    	
-        open my $dfh, "<$dict" || $self->throw("Could not open dictionary, $dict");
-    	my @dheader;
-    	while (<$dfh>) {
-    		chomp;
-    		next unless /\@SQ/;
-    		push @dheader, $_;
-    	}
-    	close $bfh;
-    	
-    	my $dict_header = join "\n", @dheader;
-    	my $bam_header = join "\n", @bheader;
-    	
-    	$dict = "" if ($dict_header eq $bam_header);
-	}
+    # Compare the SQ lines of the bam and the dict file
+    if ($dict) {
+        my $bfh = $stin->view($bam, undef, H => 1);
+        $bfh || $self->throw("Could not read header from '$bam'");
+        my @bheader;
+        while (<$bfh>) {
+            chomp;
+            next unless /\@SQ/;
+            push @bheader, $_;
+        }
+        close $bfh;
+        
+        open my $dfh, "<$dict";
+        $dfh || $self->throw("Could not open dictionary, $dict");
+        my @dheader;
+        while (<$dfh>) {
+            chomp;
+            next unless /\@SQ/;
+            push @dheader, $_;
+        }
+        close $dfh;
+        
+        my $dict_header = join "\n", @dheader;
+        my $bam_header = join "\n", @bheader;
+        
+        $dict = '' if ($dict_header eq $bam_header);
+    }
     
     if (defined $changes{platform}) {
         $changes{platform} = $tech_to_platform{$changes{platform}} || $self->throw("Bad platform '$changes{platform}'");
@@ -1880,98 +1960,98 @@ sub change_header_lines {
     # Parse original header and grab the lane id
     my $lane;
     if ($remove_unique) {
-		my $pars = VertRes::Parser::sam->new(file => $bam);
-		my %read_info = $pars->readgroup_info();
-		my @lane_ids = keys %read_info;
-		$self->throw("$bam does not have a single lane id.") unless (scalar @lane_ids == 1);
-		$lane = $lane_ids[0];
+        my $pars = VertRes::Parser::sam->new(file => $bam);
+        my %read_info = $pars->readgroup_info();
+        my @lane_ids = keys %read_info;
+        $self->throw("$bam does not have a single lane id.") unless (scalar @lane_ids == 1);
+        $lane = $lane_ids[0];
     }
     
-	open my $hfh, ">$new_header";
+    open my $hfh, ">$new_header";
     $hfh || $self->throw("failed to get a filehandle for writing to '$new_header'");
 
-	# Write new header
+    # Write new header
     my $made_changes = 0;
-	my $bamfh = $stin->view($bam, undef, H => 1);
+    my $bamfh = $stin->view($bam, undef, H => 1);
     $bamfh || $self->throw("Could not read header from '$bam'");
-	my $sq_from_dict_done = 0;
+    my $sq_from_dict_done = 0;
     while (<$bamfh>) {
-    	
-		if (/^\@SQ/ && $dict) {
-			$made_changes = 1;
-        	unless ( $sq_from_dict_done ) {
-        		open my $dictfh, "<$dict" || $self->throw("Could not open dictionary, $dict");
-        		while (<$dictfh>) {
-        			next unless /^\@SQ/;
-					print $hfh $_;
-        		}
-		
-        		close $dictfh;
-        		$sq_from_dict_done = 1;
-        	}
-        	next;
+        if (/^\@SQ/ && $dict) {
+            $made_changes = 1;
+            unless ( $sq_from_dict_done ) {
+                open my $dictfh, "<$dict";
+                $dictfh || $self->throw("Could not open dictionary, $dict");
+                while (<$dictfh>) {
+                    next unless /^\@SQ/;
+                    print $hfh $_;
+                }
+        
+                close $dictfh;
+                $sq_from_dict_done = 1;
+            }
+            next;
         }
 
-    	foreach my $line_tag (keys %changes) {
-    		my $id_tag = $line_tag eq 'SQ' ? 'SN' : 'ID';
-	        if (/^\@$line_tag.+$id_tag:([^\t]+)/) {
-	            my $id = $1;
-	            if (exists $changes{$line_tag}{$id}) {
-	                while (my ($arg, $value) = each %{$changes{$line_tag}{$id}}) {
-	                    next unless defined $value;
-	                    my $tag = $arg_to_tag{$line_tag}{$arg} || next;
-	                    
-	                    if (/\t$tag:([^\t\n]+)/) {
-	                        if ($1 ne $value) {
-	                            $made_changes = 1;
-	                            if ($value eq '') {
-									s/\t$tag:[^\t\n]+//;
-	                            } else {
-	                            	s/\t$tag:[^\t\n]+/\t$tag:$value/;
-	                            }
-	                        }
-	                    }
-	                    else {
-	                        $made_changes = 1;
-	                        s/\n/\t$tag:$value\n/;
-	                    }
-	                }
-	            }
+        foreach my $line_tag (keys %changes) {
+            my $id_tag = $line_tag eq 'SQ' ? 'SN' : 'ID';
+            if (/^\@$line_tag.+$id_tag:([^\t]+)/) {
+                my $id = $1;
+                if (exists $changes{$line_tag}{$id}) {
+                    while (my ($arg, $value) = each %{$changes{$line_tag}{$id}}) {
+                        next unless defined $value;
+                        my $tag = $arg_to_tag{$line_tag}{$arg} || next;
+                        
+                        if (/\t$tag:([^\t\n]+)/) {
+                            if ($1 ne $value) {
+                                $made_changes = 1;
+                                if ($value eq '') {
+                                    s/\t$tag:[^\t\n]+//;
+                                } else {
+                                    s/\t$tag:[^\t\n]+/\t$tag:$value/;
+                                }
+                            }
+                        }
+                        else {
+                            $made_changes = 1;
+                            s/\n/\t$tag:$value\n/;
+                        }
+                    }
+                }
 
-	            if (exists $changes{$line_tag}{ all }) {
-	                while (my ($arg, $value) = each %{$changes{$line_tag}{all}}) {
-	                    next unless defined $value;
-	                    my $tag = $arg_to_tag{$line_tag}{$arg} || next;
-	                    
-	                    if (/\t$tag:([^\t\n]+)/) {
-	                        if ($1 ne $value) {
-	                            $made_changes = 1;
-	                            if ($value eq '') {
-									s/\t$tag:[^\t\n]+//;
-	                            } else {
-	                            	s/\t$tag:[^\t\n]+/\t$tag:$value/;
-	                            }
-	                        }
-	                    }
-	                    else {
-	                        $made_changes = 1;
-	                        s/\n/\t$tag:$value\n/;
-	                    }
-	                }
-	            }
-	            
-	            if ($remove_unique) {
-					if (/\tCL:([^\t]+)/) {
-			        	if ($1 =~ /\@|$lane/) {
-							$made_changes = 1;
-							s/[^\s\:]+=[^\s]+$lane[^\s]+//g;
-							s/[^\s\:]+=[^\s]+\@[^\s]+//g;
-							s/:\s+/:/;
-							s/[^\S\n\t]+/ /g;
-						}
-			        }
-				}
-			}
+                if (exists $changes{$line_tag}{ all }) {
+                    while (my ($arg, $value) = each %{$changes{$line_tag}{all}}) {
+                        next unless defined $value;
+                        my $tag = $arg_to_tag{$line_tag}{$arg} || next;
+                        
+                        if (/\t$tag:([^\t\n]+)/) {
+                            if ($1 ne $value) {
+                                $made_changes = 1;
+                                if ($value eq '') {
+                                    s/\t$tag:[^\t\n]+//;
+                                } else {
+                                    s/\t$tag:[^\t\n]+/\t$tag:$value/;
+                                }
+                            }
+                        }
+                        else {
+                            $made_changes = 1;
+                            s/\n/\t$tag:$value\n/;
+                        }
+                    }
+                }
+                
+                if ($remove_unique) {
+                    if (/\tCL:([^\t]+)/) {
+                        if ($1 =~ /\@|$lane/) {
+                            $made_changes = 1;
+                            s/[^\s\:]+=[^\s]+$lane[^\s]+//g;
+                            s/[^\s\:]+=[^\s]+\@[^\s]+//g;
+                            s/:\s+/:/;
+                            s/[^\S\n\t]+/ /g;
+                        }
+                    }
+                }
+            }
         }
         print $hfh $_;
     }
@@ -1985,10 +2065,10 @@ sub change_header_lines {
     }
     
     # Otherwise do the replacement and return its status
-	my $status = $self->replace_bam_header($bam, $new_header);
-	unlink($new_header);
-	
-	return $status;
+    my $status = $self->replace_bam_header($bam, $new_header);
+    unlink($new_header);
+    
+    return $status;
 }
 
 =head2 check_bam_header
@@ -2449,6 +2529,21 @@ sub extract_intervals_from_bam {
     }
 
     $bam_parser->close();
+
+    # check that some reads were written for the final chromosome
+    $samtools->run_method('system');
+    my $tmp_bai = $tmp_out.'.bai';
+    $samtools->index($tmp_out, $tmp_bai);
+    $samtools->run_status >= 1 || $self->throw("Failed to create $tmp_bai");
+    my $final_chr = $ordered_ref_seqs[-1];
+    my $tmp_parser = VertRes::Parser::bam->new(file => $tmp_out);
+    $tmp_parser->region($final_chr);
+    unless ($tmp_parser->next_result()) {
+        $self->warn("$tmp_out is bad, deleting it -- no reads written for chrom $final_chr");
+        return 1;
+    };
+    
+    unlink $tmp_bai;
     unlink $bai if $created_bai;
 
     # check the right number of lines got written
@@ -2456,7 +2551,7 @@ sub extract_intervals_from_bam {
     my $actual_lines = $self->num_bam_lines("$tmp_out");
     
     if ($actual_lines == $lines_out_counter) {
-        rename "$tmp_out", $bam_out;
+        rename($tmp_out, $bam_out) || $self->throw("Could not rename $tmp_out to $bam_out");
         return 1;
     }
     else {
@@ -2506,12 +2601,128 @@ sub tag_strip {
     }
 }
 
+=head2 bam2fastq
+
+ Title   : bam2fastq
+ Usage   : $obj->bam2fastq('in.bam', 'fastq_base', 'outdir');
+ Function: Converts bam to fastq and runs fastqcheck on the result. 
+           bamcheck will be run, if a bamcheck file does not already exist.
+ Returns : boolean (true on success, meaning the output bam was successfully
+           made)
+ Args    : path to input bam, basename of the fastq files to create, 
+           path of output directory (optional).
+
+=cut
+
+sub bam2fastq {
+    my ($self, $bam, $fastq_base, $outdir) = @_;
+
+    # read bam info from bamcheck file - create if necessary
+    my $bamcheck = $bam.'.bc';
+    unless (-s $bamcheck) {
+        Utils::CMD(qq[bamcheck $bam > $bamcheck.tmp]);
+        move("$bamcheck.tmp", $bamcheck) || $self->throw("Could not rename '$bamcheck.tmp' to '$bamcheck'\n");
+    }
+    my $bc_parser = VertRes::Parser::bamcheck->new(file => $bamcheck);
+    my $total_reads = $bc_parser->get('sequences');
+    my $total_bases = $bc_parser->get('total_length');
+    my $is_paired = $bc_parser->get('is_paired');
+    $self->throw("failed to parse $bamcheck\n") unless ($total_reads && $total_bases);
+    
+    my $fsu = VertRes::Utils::FileSystem->new();
+    my (undef, $path) = fileparse($bam);
+    $path = $outdir if ($outdir);
+    my @out_fastq;
+    if ($is_paired) {
+        push @out_fastq, $fsu->catfile($path, "${fastq_base}_1.fastq");
+        push @out_fastq, $fsu->catfile($path, "${fastq_base}_2.fastq");
+    } else {
+        push @out_fastq, "${fastq_base}.fastq";
+    }
+    
+    my @tmp_fastq = map("$_.tmp.fastq", @out_fastq);
+    
+    # picard needs a tmp dir, but we don't use /tmp because it's likely to fill up
+    my $tmp_dir = $fsu->tempdir('_bam2fastq_tmp_XXXXXX', DIR => $path);
+    
+    my $verbose = $self->verbose();
+    my $picard = VertRes::Wrapper::picard->new(verbose => $verbose,
+                                                quiet => $verbose ? 0 : 1,
+                                                $self->{java_memory} ? (java_memory => $self->{java_memory}) : (),
+                                                validation_stringency => 'silent',
+                                                tmp_dir => $tmp_dir);
+    
+    $picard->SamToFastq($bam, @tmp_fastq);
+    $self->throw("SamToFastq of $bam failed\n") unless $picard->run_status >= 1;
+    
+    # run fastqcheck on all of the fastq files made record total length and number of reads
+    my $num_bases = 0;
+    my $num_sequences = 0;
+    foreach my $precheck_fq (@tmp_fastq) {
+        my $fqc_file = $precheck_fq;
+        $fqc_file =~ s/\.tmp\.fastq$/.fastqcheck/;
+        unless (-s $fqc_file) {
+            # make the fqc file
+            my $fqc = VertRes::Wrapper::fastqcheck->new();
+            $fqc->run($precheck_fq, $fqc_file.'.temp');
+            $self->throw("fastqcheck on $precheck_fq failed - try again?") unless $fqc->run_status >= 1;
+            $self->throw("fastqcheck failed to make the file $fqc_file.temp") unless -s $fqc_file.'.temp';
+        
+            # check it is parsable
+            my $parser = VertRes::Parser::fastqcheck->new(file => $fqc_file.'.temp');
+            my $num_seq = $parser->num_sequences();
+            if ($num_seq) {
+                move($fqc_file.'.temp', $fqc_file) || $self->throw("failed to rename '$fqc_file.temp' to '$fqc_file'");
+            }
+            else {
+                unlink $fqc_file.'.temp';
+                $self->throw("fastqcheck file '$fqc_file.temp' was created, but doesn't seem valid\n");
+            }
+        }
+        
+        if (-s $fqc_file) {
+            my $parser = VertRes::Parser::fastqcheck->new(file => $fqc_file);
+            $num_sequences += $parser->num_sequences();
+            $num_bases += $parser->total_length();          
+        }
+    }
+    
+    # check fastqcheck output against expectation
+    my $ok = 0;
+    if ($num_sequences == $total_reads) {
+        $ok++;
+    } else {
+        $self->warn("fastqcheck reports number of reads as $num_sequences, not the expected $total_reads\n");
+    }
+    if ($num_bases == $total_bases) {
+        $ok++;
+    } else {
+        $self->warn("fastqcheck reports number of bases as $num_bases, not the expected $total_bases\n");
+    }
+    
+    # if everything checks out rename the tmp fastqs, otherwise unlink created files
+    if ($ok == 2) {
+        foreach my $tmp_fq (@tmp_fastq) {
+            my $fq = $tmp_fq;
+            $fq =~ s/\.tmp\.fastq$//;
+            move($tmp_fq, $fq) || $self->throw("Could not rename '$tmp_fq' to '$fq'\n");
+        }
+    } else {
+        foreach my $tmp_fq (@tmp_fastq) {
+            unlink $tmp_fq;
+        }
+        $self->throw("fastqcheck of fastq file doesn't match expectations\n");
+    }
+}
+
 =head2 filter_readgroups
 
  Title   : filter_readgroups
  Usage   : $obj->filter_readgroups('in.bam','out.bam',include=>[{SM=>'HG01522',PL=>'ILLUMINA'}]);
+           $obj->filter_readgroups('in.bam','out.bam',exclude=>[{ID=>'ERR001503'}]);
  Function: Given a bam file, generates another bam file that contains only the
-           requested read groups. Currently only 'include' logic implemented; it is trivial to add 'exclude' though.
+           requested read groups. Contains both 'include' and 'exclude' logic. If both are supplied,
+           the include filter is parsed first, followed by the exclude filter.
            Note: The header is not modified.
  Returns : 1 on success or 0 when the filters would not exclude any reads
  Args    : starting bam file, output name for bam file and filter specification
@@ -2522,7 +2733,7 @@ sub filter_readgroups
 {
     my ($self, $in_bam, $out_bam, %opts) = @_;
 
-    if ( !exists($opts{include}) ) { $self->throw("Missing the 'include' parameter.\n"); }
+    if ( !exists($opts{include}) && !exists($opts{exclude}) ) { $self->throw("Must supply 'include' and/or 'exclude' parameter.\n"); }
     if ( ! -e $in_bam ) { $self->throw("No such file: $in_bam\n"); }
 
     my $pars = VertRes::Parser::bam->new(file=>$in_bam);
@@ -2535,20 +2746,45 @@ sub filter_readgroups
     my %rg_info = $pars->readgroup_info();
     while (my ($rg,$info) = each %rg_info)
     {
+        $$info{ID}=$rg; # add id to rg info hash
+
         # Will the RG pass any of these filters?
-        for my $inc (@{$opts{include}})
-        {
-            # All requested tags must match
-            my $match = 0;
-            while (my ($tag,$value) = each %$inc)
+        if (exists($opts{include})) {
+            for my $inc (@{$opts{include}})
             {
-                if ( exists($$info{$tag}) && $$info{$tag} eq $value ) { $match++; }
+                # All requested tags must match
+                my $match = 0;
+                while (my ($tag,$value) = each %$inc)
+                {
+                    if ( exists($$info{$tag}) && $$info{$tag} eq $value ) { $match++; }
+                }
+                if ( $match == scalar keys %$inc ) 
+                {
+                    # All tags match the criteria, include this RG
+                    $include{$rg} = 1;
+                    last;
+                }
             }
-            if ( $match == scalar keys %$inc ) 
+        } else {
+            # Include all if no specific include option given
+            $include{$rg} = 1;
+        }
+
+        if (exists($opts{exclude})) {
+            for my $exc (@{$opts{exclude}})
             {
-                # All tags match the criteria, include this RG
-                $include{$rg} = 1;
-                last;
+                # All requested tags must match
+                my $match = 0;
+                while (my ($tag,$value) = each %$exc)
+                {
+                    if ( exists($$info{$tag}) && $$info{$tag} eq $value ) { $match++; }
+                }
+                if ( $match == scalar keys %$exc ) 
+                {
+                    # All tags match the criteria, exclude this RG
+                    delete $include{$rg} if (exists $include{$rg});
+                    last;
+                }
             }
         }
     }
@@ -2570,6 +2806,83 @@ sub filter_readgroups
     rename($tmp,$out_bam) or $self->throw("rename $tmp $out_bam: $!");
 }
 
+=head2 replace_readgroup_id
+
+ Title   : replace_readgroup_id
+ Usage   : $obj->replace_readgroup_id('in.bam', 'rgid');
+ Function: Replaces the @RG ID tag in the given BAM.
+ Returns : boolean (true on success, meaning the output bam was successfully
+           made)
+ Args    : path to input bam, string of the new ID tag.
+
+=cut
+
+sub replace_readgroup_id {
+    my ($self, $bam, $rgid, $force) = @_;
+    
+    $self->throw(qq['$rgid' is not a valid id tag]) unless ($rgid =~ /^[ !-~]+$/);
+    
+    my $bp = VertRes::Parser::bam->new(file => $bam);
+    my %rg_info = $bp->readgroup_info();
+    my $count = 0;
+    while ($bp->next_result()) {
+        $count++;
+    }
+    $bp->close;
+    
+    my @rgs = keys %rg_info;
+    $self->throw("$bam does not contain a single readgroup") unless (scalar @rgs == 1);
+    my $rg = $rgs[0];
+    
+    unless ($force) {
+        return(1) if ($rg eq $rgid);
+    }
+    
+    my %args = ( RGID => qq[$rgid] );
+    foreach my $tag (keys %{$rg_info{$rg}}) {
+        $args{"RG$tag"} = qq['$rg_info{$rg}{$tag}'];
+    }
+    $args{RGSM} ||= 'unknown_sample'; # set unknown sample as default
+    $args{RGPL} ||= 'unknown_platform'; # set unknown platform as default
+    $args{RGLB} ||= 'unknown_library'; # set unknown library as default
+    $args{RGPU} ||= 'unknown_platform_unit'; # set unknown platform unit as default
+    
+    my $tmp_bam = qq[$bam.working];
+    
+    my $fsu = VertRes::Utils::FileSystem->new();
+    # picard needs a tmp dir, but we don't use /tmp because it's likely to fill up
+    my $tmp_dir = $fsu->tempdir('_changeReadGroupID_tmp_XXXXXX', DIR => dirname($bam));
+    
+    my $verbose = $self->verbose();
+    my $picard = VertRes::Wrapper::picard->new( verbose => $verbose,
+                                                quiet => $verbose ? 0 : 1,
+                                                $self->{java_memory} ? (java_memory => $self->{java_memory}) : (),
+                                                validation_stringency => 'silent',
+                                                tmp_dir => $tmp_dir);
+    
+    $picard->AddOrReplaceReadGroups($bam, $tmp_bam, %args);
+    $self->throw(qq[AddOrReplaceReadGroups failed for '$bam']) unless ($picard->run_status >= 1);
+    
+    # check for truncation
+    my $tmp_bp = VertRes::Parser::bam->new(file => $tmp_bam);
+    my $tmp_count = 0;
+    while ($tmp_bp->next_result()) {
+        $tmp_count++;
+    }
+    $tmp_bp->close;
+    
+    # if everything checks out replace original bam with new bam
+    if ($count == $tmp_count) {
+        unlink $bam;
+        move($tmp_bam, $bam) || $self->throw(qq[Could not rename '$tmp_bam' to '$bam']);
+    } else {
+        unlink $tmp_bam;
+        $self->throw(qq[Readgroup replacement for '$bam' does not meet expectations]);
+    }
+    
+    return 1;
+}
+
 =head2 bam_exome_qc_stats
 
  Title   : bam_exome_qc_stats
@@ -2586,6 +2899,8 @@ sub filter_readgroups
                                           0.5 => half of baited bases not on target)
                mean_bait_coverage       = bait_bases_mapped / bait_bases
                mean_target_coverage     = target_bases_mapped / target_bases
+               bait_coverage_sd         = standard deviation of coverage distribution of bait bases
+               target_coverage_sd       = standard deviation of coverage distribution of target bases
                off_bait_bases           = number of bases not mapped on or near to a bait
                bases_mapped             = number of bases mapped (to anything)
                bases_mapped_reads       = total length of mapped reads
@@ -2593,7 +2908,7 @@ sub filter_readgroups
                mapped_as_pair           = number of reads mapped as a proper pair (0x0002 in flag)
                num_mismatches           = number of mismatches (total of NM:i:.. values)
                pct_mismatches           = 100 * num_mismatches / bases_mapped_reads
-               reads_paired             = number of paired reads (0x00001 in flag)
+               reads_paired             = number of paired reads (0x0001 in flag)
                raw_reads                = number of records in the input bam file
                reads_mapped             = number of reads mapped (0x0004 not in flag)
                rmdup_reads_mapped       = number of reads mapped excluding duplicates
@@ -2633,14 +2948,23 @@ sub filter_readgroups
                                     i.e. those with 0x0080 in the flag.
                qual_scores_up     = same as for qual_box_data_1, but reads which are not paired,
                                     i.e. those without 0x0001 in the flag.
+               bait_cvg_hist      = hash of coverage => number of bait bases with that coverage
+               target_cvg_hist    = hash of coverage => number of target bases with that coverage
                gc_vs_bait_cvg     = hash to see how coverage varies with GC content.
                                     %GC (nearest int) => {mean coverage (nearest int) => count}
                gc_vs_target_cvg   = as for gc_vs_bait_cvg, but for targets instead of baits
                insert_size_hist   = hash of insert size -> count of read pairs
-               bait_cumultative_coverage = hash of coverage => number of bait bases achieving
-                                           at least that coverage
- Args    : prefix of output files.
-           Options in a hash:
+               bait_cumulative_coverage = hash of coverage => number of bait bases achieving
+               target_cumulative_coverage = as previous, but targets instead of baits
+               target_bases_1X   = fraction of target bases with >= 1X coverage
+               target_bases_2X   = fraction of target bases with >= 2X coverage
+               target_bases_5X   = fraction of target bases with >= 5X coverage
+               target_bases_10X  = fraction of target bases with >= 10X coverage
+               target_bases_20X  = fraction of target bases with >= 20X coverage
+               target_bases_50X  = fraction of target bases with >= 50X coverage
+               target_bases_100X = fraction of target bases with >= 100X coverage
+
+ Args    : Options in a hash:
              MANDATORY: either all four of:
                           - bait_interval, target_interval, ref_fa, ref_fai
                         or this:
@@ -2662,7 +2986,8 @@ sub filter_readgroups
                                          load all reference/bait/target info from the dump file, which
                                          is faster than creating it from scratch
              bam             => name of bam file to be QC'd.
-                                 MANDATORY, unless the dump_intervals option is used
+                                MANDATORY, unless the dump_intervals option is used (in which case
+                                the BAM file is ignored)
              low_cvg         => int (default 2).  Used to make the statistic low_cvg_targets.
                                 Any target with all its bases' coverage less than this value will
                                 be counted as low coverage.  e.g. default means that a target
@@ -2670,12 +2995,15 @@ sub filter_readgroups
                                 low coverage target.
              near_length     => int (default 100)
                                 Distance to count as 'near' to a bait or a target
-             max_insert      => int (default 2000) Ignore insert sizes > this number
+             max_insert      => int (default 2000) Ignore insert sizes > this number.  Sometimes
+                                (depending on the mapper) BAM files can have unrealisticly large
+                                insert sizes.  This option removes the outliers, so calculated
+                                mean insert size is more realistic.
 
 =cut
 
 sub bam_exome_qc_stats {
-    my ($self, $bam_in, %opts) = @_;
+    my ($self, %opts) = @_;
     my $intervals;
     my $ref_lengths; 
     my $current_rname;
@@ -2683,6 +3011,17 @@ sub bam_exome_qc_stats {
     $opts{low_cvg} = 2 unless $opts{low_cvg};
     $opts{max_insert} = 1000 unless $opts{max_insert};
     my $first_sam_record = 1;
+
+    if ($opts{fake_it}) {  # top-secret(!) option for quick pipeline debugging
+        my $s = do $opts{fake_it} or $self->throw("Error loading data from file $opts{fake_it}");
+        print STDERR "VertRes::Utils::Sam->bam_exome_qc_stats using fake file $opts{fake_it}\n";
+        return $s;
+    }
+
+    if (!($opts{dump_intervals}) and !($opts{bam})) {
+        $self->throw("If dump_intervals not used, then a BAM file must be given");
+    }
+
 
     my %stats = ('bait_bases', 0,
                  'bait_bases_mapped', 0,
@@ -2760,10 +3099,36 @@ sub bam_exome_qc_stats {
         $self->throw("Error. must use either intervals_dump_file, or give all four of ref_fa, ref_fai, bait_interval and target_interval\n");
     }
 
+    # sanity check that the reference sequence names in the intervals hash have
+    # a non-empty intersection with the names in the header of the bam file.  Maybe
+    # not an ideal check, but we can't expect either to be a subset of the other, so
+    # intersection non-empty will have to do.
+    unless ($opts{skip_name_check}) {
+        my %bam_ref_names = map {$_ => 1} @{$self->bam_refnames($opts{bam})};
+        my $names_ok = 0;
+
+        foreach (keys %bam_ref_names) {
+            if (exists $intervals->{target}{$_}) {
+                $names_ok = 1;
+                last;
+            }
+        }
+
+        # Unfortunately, we have 'MT' in masked and unmasked versions of the same
+        # genome.  In this case, the previous test doesn't work.
+        # These have chromosomes named chr1, chr2, ...etc , or 1,2,... etc.
+        # Check this for chromosome 1: it's a reasonable assumption that
+        # there is at least one target in chromosome 1.
+        if ($names_ok and ( ($bam_ref_names{1} and $intervals->{targets}{chr1}) or ($bam_ref_names{chr1} and $intervals->{targets}{1}) ) ) {
+            $names_ok = 0;
+        }
+        $names_ok or $self->throw("Mismatch in reference sequence names in BAM file vs ref sequences containing targets."); 
+    }
+
     print STDERR "Intervals etc sorted. Parse BAM file...\n" if $opts{verbose};
 
     # Everything is initialised.  It's time to parse the bam file to get the stats
-    my $bam_parser = VertRes::Parser::bam->new(file => $bam_in);
+    my $bam_parser = VertRes::Parser::bam->new(file => $opts{bam});
     my $result_holder = $bam_parser->result_holder();
     $bam_parser->get_fields('FLAG', 'RNAME', 'POS', 'CIGAR', 'ISIZE', 'SEQ', 'QUAL', 'SEQ_LENGTH', 'MAPPED_SEQ_LENGTH', 'NM');
 
@@ -2863,6 +3228,7 @@ sub bam_exome_qc_stats {
             # sort out stats etc for the ref sequence we just finished
             if (defined $current_rname) {
                 $self->_update_bam_exome_qc_stats($intervals, \%pileup, \%stats, $current_rname, \%opts);
+                print STDERR "Chromosome $current_rname stats done\n" if $opts{verbose};
             }
 
             $current_rname = $rname;
@@ -2947,6 +3313,18 @@ sub bam_exome_qc_stats {
     $bam_parser->close();
     print STDERR "Finished parsing BAM file\n" if $opts{verbose};
 
+    $stats{'bait_gc_hist'} = [(0) x 101 ];
+    $stats{'target_gc_hist'} = [(0) x 101];
+
+    # add bait/target gc histogram to qc dump hash
+    for my $b_or_t ('bait', 'target'){
+        foreach my $chr (keys %{$intervals->{$b_or_t}}) {
+            foreach my $a (@{$intervals->{$b_or_t}{$chr}}) {
+                $stats{$b_or_t . '_gc_hist'}[$a->[2]]++;
+            }
+        }
+    }
+
     # sort out stats for the last ref sequence in the bam file
     $self->_update_bam_exome_qc_stats($intervals, \%pileup, \%stats, $current_rname, \%opts);
     undef %pileup;
@@ -2964,6 +3342,9 @@ sub bam_exome_qc_stats {
 
     # calculate cumulative coverage of baits and targets
     foreach my $bait_or_target qw(bait target) {
+        my %cov_stats = VertRes::Utils::Math->new()->histogram_stats($stats{$bait_or_target . '_cvg_hist'});
+        $stats{$bait_or_target . '_coverage_sd'} = $cov_stats{standard_deviation};
+
         my $base_count = 0;
         my $total_bases = $stats{$bait_or_target . '_bases'};
 
@@ -2973,17 +3354,17 @@ sub bam_exome_qc_stats {
             $stats{$bait_or_target . '_cumulative_coverage_pct'}{$cov} = $base_count / $stats{$bait_or_target . '_bases'};
         }
     }
-    
+
     # work out % bases coverage above certain values
     foreach my $bait_or_target qw(bait target) { 
         my @vals = (1, 2, 5, 10, 20, 50, 100);
         foreach (@vals) {
-            $stats{$bait_or_target . '_bases_' . $_ . 'X_pc'} = 0;
+            $stats{$bait_or_target . '_bases_' . $_ . 'X'} = 0;
         }
 
         foreach my $cov (sort {$a <=> $b} keys %{$stats{$bait_or_target . '_cumulative_coverage_pct'}}) {
             while ((0 < scalar @vals) and $cov >= $vals[0]) {
-                $stats{$bait_or_target . '_bases_' . $cov . 'X_pc'} = $stats{$bait_or_target . '_cumulative_coverage_pct'}{$cov};
+                $stats{$bait_or_target . '_bases_' . $cov . 'X'} = $stats{$bait_or_target . '_cumulative_coverage_pct'}{$cov};
                 shift @vals;
             }
             last if (0 == scalar @vals);
@@ -3039,7 +3420,7 @@ sub bam_exome_qc_make_plots {
                 {xvals => $plot_data{target}{x}, yvals => $plot_data{target}{y}, legend => 'targets'},);
 
     Graphs::plot_stats({outfile=>"$outfiles_prefix.mean_coverage.$plot_type",
-                        title => "Mean coverage distribution of baits targets",
+                        title => "Mean coverage distribution of baits and targets",
                         desc_xvals => 'Mean coverage',
                         desc_yvals => 'Frequency',
                         data => \@data});
@@ -3124,7 +3505,7 @@ sub bam_exome_qc_make_plots {
                                                title => "Coverage vs GC plot of $_" . 's',
                                                x_scale => 1, 
                                                x_scale_values => [(30,40,50)],
-                                               desc_xvals => 'Percentile of target sequence ordered by GC content',
+                                               desc_xvals => "Percentile of $_ sequence ordered by GC content",
                                                desc_xvals_top => '%GC',
                                                desc_yvals => 'Mapped depth',
                                                xdata => [(0..100)],
@@ -3145,15 +3526,20 @@ sub bam_exome_qc_make_plots {
                                                y_max => 41});
     }
 
-    # Plot: reads GC content
-    my @xvals = (0..$stats->{readlen});
-    foreach(@xvals){$_ = 100 * $_ / $stats->{readlen}}
+    # Plot: reads/targets/baits GC content
+    my @read_xvals = (0..$stats->{readlen});
+    foreach(@read_xvals){$_ = 100 * $_ / $stats->{readlen}}
+
+    my @zero_to_100 = (0..100);
+    
 
     foreach my $type ('unmapped', 'mapped') {
         my @yvals_1 = @{$stats->{"gc_hist_$type" . '_1'}};
         my @yvals_2 = @{$stats->{"gc_hist_$type" . '_2'}};
-        my @data = ({xvals => \@xvals, yvals => \@yvals_1, legend => '_1'},
-                    {xvals => \@xvals, yvals => \@yvals_2, legend => '_2'},);
+        my @data = ({xvals => \@read_xvals, yvals => \@yvals_1, legend => '_1'},
+                    {xvals => \@read_xvals, yvals => \@yvals_2, legend => '_2'},
+                    {xvals => \@zero_to_100, yvals => $stats->{bait_gc_hist}, legend => 'bait'},
+                    {xvals => \@zero_to_100, yvals => $stats->{target_gc_hist}, legend => 'target'},);
         Graphs::plot_stats({outfile=>"$outfiles_prefix.gc_$type.$plot_type",
                             normalize => 1,
                             title => "GC Plot $type reads",
@@ -3168,7 +3554,7 @@ sub bam_exome_qc_make_plots {
     # plot 4 standard devations away from the mean
     my $xmin = max (0, $insert_stats{mean} - 4 * $insert_stats{standard_deviation});
     my $xmax = $insert_stats{mean} + 4 * $insert_stats{standard_deviation};
-    @xvals = ();
+    my @xvals = ();
     my @yvals = ();
 
     foreach my $i ($xmin .. $xmax) {
@@ -3306,6 +3692,56 @@ sub _intervals_file2hash {
     }
 
     return \%intervals;
+}
+
+
+=head2 coverage
+
+ Title   : coverage
+ Usage   : my @bases_covered = $obj->coverage($bam_file,@coverage_depth);
+ Function: Uses samtools pileup to find the number of bases covered to specified depths.
+           If coverage depth is not supplied then function returns 1X coverage.
+ Returns : array of int. 
+ Args    : Bam filename and optional list of coverage depths eg (1,2,5,10,20,50,100)
+
+=cut
+
+sub coverage
+{
+    my ($self, $bam, @bin) = @_;
+
+    if( ! -e $bam ){ $self->throw("Input file not found: $bam\n"); }
+
+    unless(@bin){ @bin = (1); } # Default to 1X coverage.
+
+    # Sort coverage depths into ascending order.
+    # Zero base count.
+    my @sorted_bin;
+    my @cover;
+    for(my $i=0; $i < @bin; $i++)
+    {
+	$sorted_bin[$i][0] = $i;
+	$sorted_bin[$i][1] = $bin[$i];
+	$cover[$i] = 0;
+    }
+    @sorted_bin = sort {my @a = @{$a}; my @b = @{$b}; $a[1] <=> $b[1];} @sorted_bin;
+
+    # Run pileup. 
+    my $sam = VertRes::Wrapper::samtools->new(verbose => $self->verbose, run_method => 'open', quiet => 1);
+    my $fh = $sam->pileup($bam, undef); 
+    while(my $inp = <$fh>)
+    {
+	my @col = split(/\s+/,$inp,5);
+	for(my $i=0; $i < @bin; $i++)
+	{
+	    if($sorted_bin[$i][1] <= $col[3]){ $cover[$sorted_bin[$i][0]]++; }
+	    else{ last; }
+	} 
+    }
+    close $fh;
+    unless( $sam->run_status() ){ $self->throw("Samtools pileup failed for: $bam\n"); }
+
+    return @cover;
 }
 
 1;

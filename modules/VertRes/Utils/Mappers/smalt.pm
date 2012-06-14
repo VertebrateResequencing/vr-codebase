@@ -83,7 +83,23 @@ sub _bsub_opts {
 
 sub wrapper {
     my $self = shift;
-    return VertRes::Wrapper::smalt->new(verbose => $self->verbose);
+    my $exe = $self->{exe} || 'smalt';
+    return VertRes::Wrapper::smalt->new(verbose => $self->verbose, exe => $exe);
+}
+
+=head2 name
+
+ Title   : name
+ Usage   : my $name = $obj->name();
+ Function: Returns the program name.
+ Returns : string representing name of the program 
+ Args    : n/a
+
+=cut
+
+sub name {
+    my $self = shift;
+    return 'smalt';
 }
 
 =head2 split_fastq
@@ -146,10 +162,11 @@ sub do_mapping {
     }
     
     my @args = $self->_do_mapping_args(\%do_mapping_args, %input_args);
-    
+
     my $wrapper = $self->wrapper;
     $wrapper->do_mapping(@args);
-    
+    $self->_add_command_line($wrapper->command_line());
+
     # smalt directly generates sam files, so nothing futher to do
     
     return $wrapper->run_status >= 1;

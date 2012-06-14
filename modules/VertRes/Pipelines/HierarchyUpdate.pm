@@ -26,6 +26,10 @@ db  => {
 # (the ftp_limit option is the maximum number of lanes worth of fastqs to
 #  download at once)
 
+# set the skip_exomes option to skip projects with exome in their hierarchy 
+# name.
+skip_exomes => 1,
+
 # run the pipeline:
 run-pipeline -c pipeline.config -s 1
 
@@ -231,10 +235,6 @@ sub fix_swaps {
         # old_path to lane_path. We can't just move the contents of old_path
         # to inside lane_path, because old_path may be a symlink to contents
         # on an archival disc, and must remain there.
-        my $ok = $self->{fsu}->copy($lane_path, $old_path);
-        unless ($ok) {
-            $self->throw("Could not copy contents of $lane_path to $old_path\n");
-        }
         
         my $cwd = cwd();
         chdir(File::Spec->tmpdir) if $cwd eq $lane_path;
@@ -270,6 +270,7 @@ sub fix_swaps {
         opendir(my $dfh, $lane_path) || $self->throw("Could not open dir '$lane_path'");
         my (@bams, @bass);
         foreach (readdir($dfh)) {
+            next if /^\./;
             if (/\.bam$/) {
                 push(@bams, $self->{fsu}->catfile($lane_path, $_));
             }

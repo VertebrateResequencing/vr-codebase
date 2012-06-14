@@ -284,47 +284,87 @@ sub create {
         confess "Already a $table entry with value $name";
     }
     
-    $vrtrack->transaction_start();
-    
-    # insert a fake record to obtain a unique id (row_id)
-    my $query = qq[INSERT INTO $table SET ${table}_id=0];
-    my $sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
-    my $rv    = $sth->execute or confess qq[The query "$query" failed: $!];
-    
-    # now update the inserted record
-    my $next_id = $dbh->last_insert_id(undef, undef, $table, 'row_id') or confess "No last_insert_id? $!";
-    
-    if ($name) {
-        my $hierarchy_name;
+    my $next_id;
+    my $success = $vrtrack->transaction(sub {
+	# insert a fake record to obtain a unique id (row_id)
+	my $query = qq[INSERT INTO $table SET ${table}_id=0];
+	my $sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
+	my $rv    = $sth->execute or confess qq[The query "$query" failed: $!];
 	
-        my $fieldsref = $class->fields_dispatch();
-        if ( exists($fieldsref->{hierarchy_name}) )
-        {
-            $hierarchy_name = $name;
-            $hierarchy_name =~ s/\W+/_/g;
-        }
+	# now update the inserted record
+	$next_id = $dbh->last_insert_id(undef, undef, $table, 'row_id') or confess "No last_insert_id? $!";
 	
-        $name = qq[name='$name' ];
-        if ($hierarchy_name) {
-            $name .= qq[, hierarchy_name='$hierarchy_name' ];
-        }
-    }
+	if ($name) {
+	    my $hierarchy_name;
+	    
+	    my $fieldsref = $class->fields_dispatch();
+	    if ( exists($fieldsref->{hierarchy_name}) )
+	    {
+		$hierarchy_name = $name;
+		$hierarchy_name =~ s/\W+/_/g;
+	    }
+	    
+	    $name = qq[name='$name' ];
+	    if ($hierarchy_name) {
+		$name .= qq[, hierarchy_name='$hierarchy_name' ];
+	    }
+	}
+	
+	$query = qq[UPDATE $table SET ${table}_id=$next_id];
+	if ($name){
+	    $query .= qq[, $name ];     # add name, hierarchy_name clause
+	}
+	elsif ($ssid){
+	    $query .= qq[, ssid=$ssid ]; # add ssid clause
+	}
+	
+	$query .= qq[, changed=now(), latest=true WHERE row_id=$next_id];
+	$sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
+	$sth->execute or confess qq[The query "$query" failed: $!];
+    });
     
-    $query = qq[UPDATE $table SET ${table}_id=$next_id];
-    if ($name){
-        $query .= qq[, $name ];     # add name, hierarchy_name clause
+    unless ($success) {
+	confess $vrtrack->{transaction_error};
     }
-    elsif ($ssid){
-        $query .= qq[, ssid=$ssid ]; # add ssid clause
-    }
-
-    $query .= qq[, changed=now(), latest=true WHERE row_id=$next_id];
-    $sth   = $dbh->prepare($query) or confess qq[The query "$query" failed: $!];
-    $sth->execute or confess qq[The query "$query" failed: $!];
-    
-    $vrtrack->transaction_commit();
     
     return $class->new($vrtrack, $next_id);
+}
+
+=head2 _all_values_by_field
+
+  Arg[1]     : column to get
+  Arg[2]     : column to order by (optional, default is row_id)
+  Arg[3]     : where clause (optional, default is 'latest=true')
+  Example    ; VRTrack::Core_obj->_all_values_by_field($vrtrack, 'changed')
+  Description: Class method. Probably best used internally by inheritors of Core_obj. 
+               Gives an array reference to all values in a column of the database table.
+  Returntype : ArrayRef
+
+=cut
+
+sub _all_values_by_field {
+    my ($class, $vrtrack, $field, $order_by, $where) = @_;
+    confess "Need to call a vrtrack handle and field name" unless ($vrtrack && $field);
+    if ($vrtrack->isa('DBI::db')) {
+	confess "The interface has changed, expected vrtrack reference.\n";
+    } 
+    my $table = $class->_class_to_table;
+    $order_by ||= 'row_id';
+    $where ||= 'latest=true';
+    my $dbh = $vrtrack->{_dbh};
+    my $sql = qq[select $field from $table where $where order by $order_by];
+    my $sth = $dbh->prepare($sql);
+    my @data;
+    if ($sth->execute()) {
+        while( my $data = $sth->fetchrow_hashref) {
+            push( @data, $data->{$field} );
+        } 
+    }
+    else {
+        confess "Cannot retrieve $table by $field: ".$DBI::errstr;
+    }
+   
+    return \@data;
 }
 
 
@@ -393,12 +433,11 @@ sub update {
     if ($self->dirty) {
 	my $dbh = $self->{_dbh};
         my $latestval = $self->{'unset_latest'} ? 'false' : 'true';
-        $self->{vrtrack}->transaction_start();
-	
-        my $fieldsref = $self->fields_dispatch;
-        my @fields = grep {!/^changed$/ && !/^latest$/} keys %$fieldsref;
-        my $row_id; # new row_id if update works
-	eval {
+	my $row_id; # new row_id if update works
+        $success = $self->{vrtrack}->transaction(sub {
+	    my $fieldsref = $self->fields_dispatch;
+	    my @fields = grep {!/^changed$/ && !/^latest$/} keys %$fieldsref;
+	    
 	    # Need to unset 'latest' flag on current latest obj and add
 	    # the new obj details with the latest flag set
 	    my $updsql = qq[UPDATE $table SET latest=false WHERE ${table}_id = ? and latest=true];
@@ -410,18 +449,10 @@ sub update {
 	    $dbh->do ($updsql, undef, $self->id);
 	    $dbh->do ($addsql, undef, map {$_->()} @$fieldsref{@fields});
 	    $row_id = $dbh->{'mysql_insertid'};
-	    $self->{vrtrack}->transaction_commit();
-	};
+	});
 	
-        if ($@) {
-            cluck "Transaction failed, rolling back. Error was:\n$@\n";
-            $self->{vrtrack}->transaction_rollback();
-        }
-        else {
-            # Remember to update the row_id to the _new_ row_id, as this is an autoinc field
-            $self->row_id($row_id);
-            $success = 1;
-        }
+	# Remember to update the row_id to the _new_ row_id, as this is an autoinc field
+	$self->row_id($row_id) if $success;
         
         # reinitialize so that changed() will return the correct value. Could
         # probably shortcut and only grab the changed value, but calling
@@ -457,24 +488,13 @@ sub delete {
     
     # now delete them all, one table at a time
     my $dbh = $self->{_dbh};
-    $self->{vrtrack}->transaction_start();
-    
-    eval {
+    $success = $self->{vrtrack}->transaction(sub {
         foreach my $table (keys %rows_from_table){
             my $rows = join ",", @{$rows_from_table{$table}};
             my $delsql = qq[delete from $table WHERE ${table}_id in ($rows)];
             $dbh->do ($delsql);
         }
-        $self->{vrtrack}->transaction_commit();
-    };
-    
-    if ($@) {
-        cluck "Transaction failed, rolling back. Error was:\n$@\n";
-        $self->{vrtrack}->transaction_rollback();
-    }
-    else {
-        $success = 1;
-    }
+    });
     
     return $success;
 }
@@ -717,7 +737,8 @@ sub allowed_processed_flags {
 		 deleted => 16,
 		 swapped => 32,
 		 altered_fastq => 64,
-                 improved => 128);
+                 improved => 128,
+                 snp_called => 256);
     return %flags;
 }
 

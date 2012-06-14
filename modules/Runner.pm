@@ -52,10 +52,13 @@ Runner.pm   - A simple module for quick development of scripts and pipelines whi
             $self->spawn($method,$done_file,@params);
         }
         # Checkpoint, wait until all the above files are finished
-        $self->wait();
+        $self->wait;
+
+        # Clean temporary files
+        $self->clean;
 
         print STDERR "All done!\n";
-        $self->all_done();
+        $self->all_done;
     }
 
     sub touch
@@ -82,25 +85,34 @@ package Runner;
 use strict;
 use warnings;
 use Carp;
-use Storable qw(nstore retrieve);
+use Storable qw(nstore retrieve dclone);
 use File::Temp;
 use Data::Dumper;
+use Cwd;
 
 sub new
 {
     my ($class,@args) = @_;
     my $self = @args ? {@args} : {};
     bless $self, ref($class) || $class;
-    $$self{_status_codes}{DONE} = 1;
+    $$self{_status_codes}{DONE} = 111;
     $$self{_farm} = 'LSF';
+    $$self{_farm_options} = { runtime=>600, memory_limit=>20_000 };
+    $$self{_running_jobs} = {};
+    $$self{_nretries} = 1;
     $$self{usage} = 
         "Runner.pm arguments:\n" .
-        "   +help           Summary of commands\n" .
-        "   +local          Do not submit jobs to LSF, but run serially\n" .
-        "   +loop <int>     Run in daemon mode with <int> sleep intervals\n" .
-        "   +run <file>     Run the freezed object created by spawn\n" .
-        "   +show <file>    Print the content of the freezed object created by spawn\n" .
-        "   +verbose        Print debugging messages\n" .
+        "   +help               Summary of commands\n" .
+        "   +config <file>      Configuration file\n" .
+        "   +local              Do not submit jobs to LSF, but run serially\n" .
+        "   +loop <int>         Run in daemon mode with <int> sleep intervals\n" .
+        "   +mail <address>     Email when the runner finishes\n" .
+        "   +maxjobs <int>      Maximum number of simultaneously running jobs\n" .
+        "   +retries <int>      Maximum number of retries. When negative, the runner eventually skips the task rather than exiting completely. [$$self{_nretries}]\n" .
+        "   +run <file>         Run the freezed object created by spawn\n" .
+        "   +sampleconf         Print a working configuration example\n" .
+        "   +show <file>        Print the content of the freezed object created by spawn\n" .
+        "   +verbose            Print debugging messages\n" .
         "\n";
     return $self;
 }
@@ -109,14 +121,24 @@ sub new
 
     About : The main runner method which parses runner's command line parameters and calls the main() method defined by the user.
     Args  : The system command line options are prefixed by "+" to distinguish from user-module options and must come first, before the user-module options 
+                +config <file>
+                    Optional configuration file for overriding defaults
                 +help
                     Summary of commands
                 +local
                     Do not submit jobs to LSF, but run serially
                 +loop <int>
                     Run in daemon mode with <int> sleep intervals
+                +mail <address>
+                    Email to send when the runner is done
+                +maxjobs <int>
+                    Maximum number of simultaneously running jobs
+                +retries <int>
+                    Maximum number of retries
                 +run <file>
                     Run the freezed object created by spawn
+                +sampleconf
+                    Print a working config file example
                 +show <file>
                      Print the content of the freezed object created by spawn
                 +verbose   
@@ -127,12 +149,18 @@ sub new
 sub run
 {
     my ($self) = @_;
+    my @args = @ARGV;
 
     # Parse runner system parameters
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '+help' ) { $self->throw(); }
+        if ( $arg eq '+config' ) { $self->_read_config(shift(@ARGV)); next; }
+        if ( $arg eq '+sampleconf' ) { $self->_sample_config(); next; }
         if ( $arg eq '+loop' ) { $$self{_loop}=shift(@ARGV); next; }
+        if ( $arg eq '+maxjobs' ) { $$self{_maxjobs}=shift(@ARGV); next; }
+        if ( $arg eq '+mail' ) { $$self{_mail}=shift(@ARGV); next; }
+        if ( $arg eq '+retries' ) { $$self{_nretries}=shift(@ARGV); next; }
         if ( $arg eq '+verbose' ) { $$self{_verbose}=1; next; }
         if ( $arg eq '+local' ) { $$self{_run_locally}=1; next; }
         if ( $arg eq '+show' ) 
@@ -152,34 +180,146 @@ sub run
         last;
     }
 
+    $$self{_about} = "Working directory: " . getcwd() . "\nCommand line: $0 " . join(' ',@args) . "\n";
+
     # Run the user's module once or multiple times
     while (1)
     {
+        # The parent loops and forks, the childs run main() in user's module
         my $pid = fork();
-        if ( !$pid ) { $self->main(); }
+        if ( !$pid ) { $self->main(); return; }
         else
         {
-            # If killed, killed the child process too.
+            # If killed, kill the child process too.
             $SIG{TERM} = $SIG{INT} = sub { kill 9,$pid; die "Signal caught, killing the child $pid.\n"; };
         }
         wait();
-        if ( !$$self{_loop} or $? ) { return; }
+        my $status = $?>>8;
+        if ( $status ) 
+        { 
+            if ( $status==$$self{_status_codes}{DONE} ) { exit 0; }
+            # Exit with the correct status immediately if the user module fails. Note that +retries applies only to spawned jobs.
+            die "\n"; 
+        }
+        if ( !$$self{_loop} ) { return; }
         $self->debugln("sleeping...");
         sleep($$self{_loop});
     }
 }
 
+
+# Read the user config file, the values set there will override variables set in the user's clone of Runner.
+# Note that developers could be easily forced to document *all* options if desired.
+sub _read_config
+{
+    my ($self,$config) = @_;
+
+    if ( !exists($$self{_sampleconf}) or !length($$self{_sampleconf}) )
+    {
+        $self->throw("No config file parameters are accepted by this script.");
+    }
+
+    my %x = do "$config";
+    while (my ($key,$value) = each %x)
+    {
+        if ( !ref($value) ) 
+        { 
+            $$self{$key} = $value;
+            next;
+        }
+        $$self{$key} = dclone($value);
+    }
+    
+    $$self{_mtime} = $self->mtime($config);
+}
+
+=head2 mtime
+
+    About : Stat the mtime of a file
+    Usage : $self->mtime('/path/to/file');
+    Args  : path to file
+
+=cut
+
+sub mtime
+{
+    my ($self, $file) = @_;
+    my $mtime = (stat($file))[9];
+    $mtime || $self->throw("Could not stat mtime for file $file\n");
+    return $mtime;
+}
+
+sub _sample_config
+{
+    my ($self) = @_;
+    if ( !exists($$self{_sampleconf}) )
+    {
+        $self->throw("Sample config not available, the '_sampleconf' key not set. This should be fixed!\n");
+    }
+    if ( !length($$self{_sampleconf}) )
+    {
+        print "# No config file parameters accepted by this script.\n";
+        $self->all_done;
+    }
+    print $$self{_sampleconf};
+    $self->all_done;
+}
+
+=head2 set_limits
+
+    About : Set time and memory requirements for computing farm
+    Usage : $self->set_limits(memory=>1_000, runtime=>24*60);
+    Args  : <memory>
+                Expected memory requirements [MB] or undef to unset
+            <runtime>
+                Expected running time [minutes] or undef to unset
+                
+=cut
+
+sub set_limits
+{
+    my ($self,%args) = @_;
+    $$self{_farm_options} = { %{$$self{_farm_options}}, %args };
+}
+
+
+=head2 get_limits
+
+    About : get limits set for computing farm
+    Usage : $self->get_limits(memory);
+    Args  : See set_limits
+                
+=cut
+
+sub get_limits
+{
+    my ($self,$arg) = @_;
+    return exists($$self{_farm_options}{$arg}) ? $$self{_farm_options}{$arg} : undef;
+}
+
+
 =head2 spawn
 
-    About : Schedule a job for execution.
-    Usage : $self->spawn($done_file,"method",@params);
+    About : Schedule a job for execution. When +maxjobs limit is exceeded, the runner will exit via self->wait call.
+                When the job fails too many times (controllable by the +retries option), the pipeline exists. With 
+                negative value of +retries, a skip file '.s' is created and the job is reported as finished.
+                The skip files are cleaned automatically when +retries is set to a positive value. A non cleanable 
+                variant is force skip '.fs' file which is never cleaned by the pipeline and is created/removed 
+                manually by the user.
+    Usage : $self->spawn("method",$done_file,@params);
     Args  : <func_name>
                 The method to be run
             <file>
                 The file to be created by the method. If exists, the task is completed and
                 spawn returns immediately.
             <array>
-                Arbitrary number of parameters to be passed to the method
+                Arbitrary number of parameters to be passed to the method. Note that these
+                are stored by Storable and thus the same limitations apply. Passing for example,
+                complex objects with CODE refs will not work.
+    Returns : 0
+                Job was submitted to farm
+              1
+                Job is finished
                 
 =cut
 
@@ -194,13 +334,29 @@ sub spawn
     push @{$$self{_checkpoints}}, $done_file;
 
     # If the file is there, no need to run anything
-    if ( $self->is_finished($done_file) ) { return; }
+    if ( $self->is_finished($done_file) ) { return 1; }
+
+    # If the file needs to be skipped, then skip it
+    my $basename = $self->_get_temp_prefix($done_file);
+    if ( -e $basename . '.s' )
+    {
+        # This is currently the only way to clean the skip files: run with +retries set to positive value
+        if ( $$self{_nretries}<0 ) { return 1; }
+        $self->debugln("Cleaning skip file: $basename.s");
+        unlink($basename . '.s');
+    }
+    if ( -e $basename . '.fs' )
+    {
+        # The only way to clean a force skip file is to remove it manually
+        $self->debugln("Skipping the job upon request, a force skip file exists: $basename.fs");
+        return 1;
+    }
 
     # Store all necessary information to run the task in a temp file
     $$self{_store}{call} = $call;
     $$self{_store}{args} = \@args;
     $$self{_store}{done_file} = $done_file;
-    my $tmp_file = $self->_get_temp_prefix($$self{_store}{done_file}) . '.r';
+    my $tmp_file = $basename . '.r';
     nstore($self,$tmp_file);
 
     # With '+local', the jobs will be run serially
@@ -209,12 +365,23 @@ sub spawn
         my $cmd = qq[$0 +run $tmp_file];
         $self->debugln("$call:\t$cmd");
         system($cmd);
+        return 1;
     }
 
-    # Otherwise submit to farm
+    # Otherwise submit to farm 
     else
     {
+        # Check if the number of running jobs should be kept low. In case there are too many jobs already, let through
+        #   only jobs which previously failed, i.e. are registered as running.
+        if ( exists($$self{_maxjobs}) && scalar keys %{$$self{_running_jobs}} >= $$self{_maxjobs} && !exists($$self{_running_jobs}{$done_file}) )
+        {
+            $self->wait;
+            return 1;
+        }
+        $$self{_running_jobs}{$done_file} = 1;
+
         $self->_spawn_to_farm($tmp_file);
+        return 0;
     }
 }
 
@@ -238,9 +405,19 @@ sub _spawn_to_farm
     { 
         my ($nfailures) = `wc -l $farm_jobs_ids`;
         $nfailures =~ s/\s+.+$//;
-        if ( $nfailures >= 3 )
+        if ( $nfailures > abs($$self{_nretries}) )
         {   
-            $self->throw("The job failed repeatedly: $prefix.[oer], $$self{_store}{call}(" .join(',',@{$$self{_store}{args}}). ")\n(Remove $prefix.jid to clean the status.)\n");
+            my $msg = "The job failed repeatedly: $prefix.[oers], $$self{_store}{call}(" .join(',',@{$$self{_store}{args}}). ")"
+                ."\n(Remove $prefix.jid to clean the status, increase +retries or run with negative value of +retries to skip this task.)\n";
+
+            if ( $$self{_nretries}>=0 )
+            {
+                $self->_send_email("The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
+                $self->throw($msg);
+            }
+            $self->warn($msg,"This was last attempt, excluding from normal flow. (Remove $prefix.s to clean the status.)\n");
+            system("touch $prefix.s");
+            return;
         }
         else
         {
@@ -251,26 +428,48 @@ sub _spawn_to_farm
     # Run the job
     my $cmd = qq[$0 +run $freeze_file];
     $self->debugln("$$self{_store}{call}:\t$cmd");
-    $farm->can('run')->($farm_jobs_ids,'.',$prefix,{bsub_opts=>''},$cmd);
+    my $ok;
+    eval {
+        $farm->can('run')->($farm_jobs_ids,'.',$prefix,$$self{_farm_options},$cmd);
+        $ok = 1;
+    };
+    if ( !$ok )
+    {
+        if ( $$self{_nretries}<0 )
+        {
+            $self->warn($@,"This was last attempt, excluding from normal flow. (Remove $prefix.s to clean the status.)\n");
+            system("touch $prefix.s");
+            return;
+        }
+        $self->throw($@);
+    }
+    return;
 }
 
 =head2 wait
 
     About : Checkpoint, wait for all tasks to finish. 
-    Usage : $self->spawn($done_file1,"method",@params1); 
-            $self->spawn($done_file2,"method",@params2);
+    Usage : $self->spawn("method",$done_file1,@params1); 
+            $self->spawn("method",$done_file2,@params2);
             $self->wait();
-    Args  : None
-                
+    Args  : <none>
+                Without arguments, waits for files registered by previous spawn calls.
+            <@files>
+                Extra files to wait for, in addition to those registered by spawn.
 =cut
 
 sub wait
 {
-    my ($self) = @_;
+    my ($self,@files) = @_;
 
-    for my $file (@{$$self{_checkpoints}})
+    for my $file (@{$$self{_checkpoints}},@files)
     {
-        if ( ! $self->is_finished($file) ) { exit; }
+        if ( ! $self->is_finished($file) ) 
+        { 
+            my $prefix = $self->_get_temp_prefix($file);
+            $self->debugln("The job not finished: $prefix.*");
+            exit; 
+        }
     }
     $$self{_checkpoints} = [];
 }
@@ -288,24 +487,70 @@ sub all_done
 {
     my ($self) = @_;
     $self->debugln("All done!");
+    $self->_send_email("The runner has finished, all done!\n", $$self{_about});
     exit $$self{_status_codes}{DONE};
 }
 
-# Do not advertise this method, the user module should not need it
-#
-#   =head2 is_finished
-#   
-#       About : Check if the file is finished.
-#       Usage : $self->is_finished('some/file');
-#       Args  : <file>
-#                   The name of the file to check the existence of
-#                   
-#   =cut
+sub _send_email
+{
+    my ($self,@msg) = @_;
+    if ( !exists($$self{_mail}) ) { return; }
+    open(my $mh,"| mail -s 'Runner report' $$self{_mail}");
+    print $mh @msg;
+    close($mh);
+}
+
+=head2 clean
+
+    About : Clean all system files (in .jobs directories)
+    Usage : $self->clean($dir);
+    Args  : <@dirs>
+                Directories to recursively clean from all .jobs subdirs leaving a single tarball instead
+=cut
+
+sub clean
+{
+    my ($self,@dirs) = @_;
+
+    if ( !@dirs ) { return; }
+
+    # Create the tarball, existing file will not be overwritten
+    my $tarball = $dirs[0] . '/cleaned-job-outputs.tgz';
+    if ( !-e $tarball )
+    {
+        my $dirs = join(' ',@dirs);
+        my $cmd = "find $dirs -name .jobs | tar -T - -czf $tarball";
+        $self->debugln($cmd);
+        system($cmd);
+    }
+    for my $dir (@dirs)
+    {
+        my $cmd = "find $dir -name .jobs | xargs rm -rf";
+        $self->debugln($cmd);
+        system($cmd);
+    }
+}
+
+=head2 is_finished
+
+    About : Check if the file is finished.
+    Usage : $self->is_finished('some/file');
+    Args  : <file list>
+                The name of the file to check the existence of
+                
+=cut
 
 sub is_finished
 {
-    my ($self,$file) = @_;
-    return -e $file;
+    my ($self,@files) = @_;
+    my $all_finished = 1;
+    for my $file (@files)
+    {
+        my $is_finished = -e $file;
+        if ( !$is_finished ) { $all_finished=0; }
+        elsif ( exists($$self{_running_jobs}{$file}) ) { delete($$self{_running_jobs}{$file}); }
+    }
+    return $all_finished;
 }
 
 # Run the freezed object created by spawn

@@ -1,0 +1,433 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+
+    $$self{do_clean} = 1;
+    $$self{debug_chunks} = 0;
+    $$self{limits} = { memory=>5_000, runtime=>24*60 };
+    $$self{vcf_beagle}  = 'vcf-beagle';
+    $$self{beagle_args} = '';
+    $$self{java_args} = '';
+    $$self{_sampleconf} = q[
+            beagle_jar  => '/nfs/users/nfs_p/pd3/sandbox/svn/beagle/beagle.jar',
+            beagle_args => '',
+            java_args   => '',
+            vcf_beagle  => 'vcf-beagle',
+            fai_ref     => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
+            known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',    # This must be tabix indexed VCF
+
+            buffer_region   => 10_000,
+            chunk_size      => 1_000_000,
+            debug_chunks    => 0,
+
+            # Chunks to prioritize. If set, these chunks will run as first.
+            # VIP_chunks => [ '18:46588427-47619278', '9:107043283-108190518' ],
+
+            # Regions to impute, the chunks must be sorted by chromosomal position or else the resulting VCF will not
+            #   be sorted. By default, the whole inpute VCF is imputed.
+            # region => [ '1:159000000-161000000', '1:62000000-64000000', ],
+
+            # Only 80% of this memory will be given to java because of LSF+java issues
+            limits   => { memory=>10_000, runtime=>24*60 },
+            do_clean => 1,         # Remove runner's temporary files
+    ]."\n";
+
+    $$self{usage} .= 
+        "Usage: run-beagle\n" .
+        "Options:\n" .
+        "   -i, --impute-vcf <file>             The target VCF file to be imputed or genotypes refined\n" .
+        "   -m, --mrProper                      Clean all intermediate files, including Impute2 output files, leaving only top-level VCFs\n" .
+        "   -o, --outdir <dir>                  Output directory\n" .
+        "   -r, --region <chr|chr:from-to>      Run imputation in the given region only\n" .
+        "\n";
+
+    return $self;
+}
+
+sub parse_args
+{
+    my ($self) = @_;
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-m' or $arg eq '--mrProper' ) { $$self{mrProper}=1; next; }
+        if ( $arg eq '-r' or $arg eq '--region' ) { $$self{region}=shift(@ARGV); next; }
+        if ( $arg eq '-i' or $arg eq '--impute-vcf' ) { $$self{in_vcf}=shift(@ARGV); next; }
+        if ( $arg eq '-k' or $arg eq '--known-vcf' ) { $$self{known_vcf}=shift(@ARGV); next; }
+        if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
+        if ( $arg eq '-s' or $arg eq '--chunk-size' ) { $$self{chunk_size}=shift(@ARGV); next; }
+        $self->throw();
+    }
+
+    if ( !exists($$self{outdir}) ) { $self->throw("Missing the -o option.\n"); }
+    if ( !exists($$self{in_vcf}) ) { $self->throw("Missing the -i option.\n"); }
+    if ( !exists($$self{fai_ref}) ) { $self->throw("Missing the 'fai_ref' config key.\n"); }
+    if ( $$self{mrProper} )
+    {
+        $self->mrProper($$self{outdir});
+        $self->all_done;
+    }
+    if ( !exists($$self{known_vcf}) ) 
+    { 
+        $$self{known_vcf} = '--';
+        $self->warn("The 'known_vcf' config key not present, running without reference panel.\n"); 
+    }
+    elsif ( !($$self{known_vcf}=~/.gz$/) )
+    {
+        $self->warn("The known_vcf should be bgzipped and tabix indexed. Hopefully you know what you're doing?\n");
+    }
+    if ( !exists($$self{buffer_region}) ) 
+    { 
+        $$self{buffer_region} = 10_000;
+        $self->warn("The 'buffer_region' config key not present, assuming: $$self{buffer_region}\n"); 
+    }
+    if ( !exists($$self{chunk_size}) ) 
+    { 
+        $$self{chunk_size} = 1_000_000;
+        $self->warn("The 'chunk_size' config key not present, assuming: $$self{chunk_size}\n"); 
+    }
+}
+
+sub main
+{
+    my ($self) = @_;
+    $self->parse_args();
+
+    my $outdir = $$self{outdir};
+
+    # Convert from VCFs to Beagle
+    my $regions = $self->regions();
+    for my $region (@$regions)
+    {
+        my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
+        for my $chunk (@$chunks)
+        {
+            $self->spawn('vcf_to_beagle',"$outdir/$region/$chunk.01.vcf_to_beagle.done","$outdir/$region",$chunk);
+        }
+    }
+    $self->wait;
+
+    # Run Beagle on all chunks
+    $self->set_limits(%{$$self{limits}}) unless !exists($$self{limits});
+    for my $region (@$regions)
+    {
+        if ( $self->is_finished("$outdir/$region/02.beagle.done") ) { next; }
+
+        my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
+        for my $chunk (@$chunks)
+        {
+            $self->spawn('beagle',"$outdir/$region/$chunk.02.beagle.done","$outdir/$region",$chunk);
+        }
+    }
+    $self->set_limits(memory=>undef,runtime=>undef);
+    if ( !exists($$self{_VIP_chunks}) ) { $self->wait; }
+
+    # Convert to VCFs and concat
+    if ( !$self->is_finished("$outdir/03.merged.vcf.gz") ) 
+    {
+        for my $region (@$regions)
+        {
+            my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
+            for my $chunk (@$chunks)
+            {
+                if ( !$self->is_finished("$outdir/$region/$chunk.02.beagle.done") ) { next; }
+                $self->spawn('beagle_to_vcf',"$outdir/$region/03.vcfs.$chunk.vcf.gz","$outdir/$region",$chunk);
+            }
+        }
+        $self->wait;
+
+        # This is clumsy, but the VIP chunks must be disabled for this, because they may be out of order.
+        delete($$self{VIP_chunks});
+        delete($$self{_VIP_chunks});
+        my @all_chunks = ();
+        for my $region (@$regions)
+        {
+            my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
+            for my $chunk (@$chunks)
+            {
+                push @all_chunks, "$outdir/$region/03.vcfs.$chunk.vcf.gz";
+            }
+        }
+
+        $self->set_limits(runtime=>24*60);
+        $self->spawn('concat_vcfs',"$outdir/03.merged.vcf.gz",@all_chunks);
+        $self->wait;
+        $self->set_limits(runtime=>undef);
+    }
+
+    # Run performance stats and clean
+    $self->spawn('runtime_stats',"$outdir/runtime");
+    $self->wait;
+    $self->clean($outdir) unless !$$self{do_clean};
+
+    $self->all_done;
+}
+
+sub mrProper
+{
+    my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
+    my $regions = $self->regions();
+    for my $region (@$regions)
+    {
+        $self->cmd("rm -rf $outdir/$region");
+    }
+}
+
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub regions
+{
+    my ($self) = @_;
+    if ( exists($$self{region}) ) 
+    { 
+        if ( ref($$self{region}) eq 'ARRAY' ) { return $$self{region} }
+        return [ $$self{region} ]; 
+    }
+    my (@in_list) = grep { chomp } $self->cmd(qq[tabix -l $$self{in_vcf}]);
+    return \@in_list;
+}
+
+sub vcf_to_beagle
+{
+    my ($self,$outfile,$outdir,$region) = @_;
+    if ( !($region=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the chunk string: [$region]\n"); }
+    my $chr  = $1;
+    my $from = $2 - $$self{buffer_region};
+    my $to   = $3 + $$self{buffer_region};
+    if ( $from<0 ) { $from = 0; }
+    $self->cmd(qq[mkdir -p $outdir]);
+    $self->cmd(qq[$$self{vcf_beagle} -r $chr:$from-$to -i $$self{in_vcf} -k $$self{known_vcf} -o $outdir/$region.01 >>$outfile.o 2>>$outfile.e && touch $outfile]);
+}
+
+sub beagle
+{
+    my ($self,$outfile,$outdir,$region) = @_;
+    if ( !-s "$outdir/$region.01.markers.impute" or (!-s "$outdir/$region.01.markers.known" && $$self{known_vcf} ne '--') )
+    {
+        # The region is empty
+        $self->cmd("touch $outfile");
+        return;
+    }
+    if ( -s "$outfile.e" ) { `cat $outfile.e >> $outfile.e.saved`; }
+    my $mem = int($self->get_limits('memory') * 0.8);
+    my $known = $$self{known_vcf} eq '--' ? '' : "markers=$outdir/$region.01.markers unphased=$outdir/$region.01.known_haps.gz missing=?";
+    $self->cmd(qq[java -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} like=$outdir/$region.01.impute_haps.gz $known out=$outdir/$region.02 >>$outfile.o 2>$outfile.e]);
+    if ( -s "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
+    $self->cmd(qq[touch $outfile]);
+}
+
+sub beagle_to_vcf
+{
+    my ($self,$outfile,$outdir,$region) = @_;
+    if ( ! -e "$outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz" )
+    {
+        # The region is empty
+        $self->cmd("touch $outfile");
+        return;
+    }
+    $self->cmd(qq[$$self{vcf_beagle} -r $region -i $$self{in_vcf} -o $outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz 2>>$outfile.e | bgzip -c > $outfile.part]);
+    $self->tabix_part($outfile);
+    rename("$outfile.part",$outfile);
+}
+
+sub concat_vcfs
+{
+    my ($self,$outfile,@files) = @_;
+    open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
+    for my $file (@files)
+    {
+        # Check that the region is not empty
+        if ( ! -s $file ) { next; }
+        print $fh $file, "\n";
+    }
+    close($fh);
+    $self->cmd(qq[vcf-concat -s 2 -f $outfile.list | bgzip -c > $outfile.part]);
+    $self->tabix_part($outfile);
+    rename("$outfile.part",$outfile);
+}
+
+
+sub tabix_part
+{
+    my ($self,$vcf) = @_;
+    $self->cmd("tabix -p vcf -f $vcf.part");
+    rename("$vcf.part.tbi","$vcf.tbi");
+}
+
+sub change_names
+{
+    my ($self,$args,@names) = @_;
+    my %known = (prefix=>1,suffix=>1,rm_prefix=>1,rm_suffix=>1);
+    for my $key (keys %$args)
+    {
+        if ( !exists($known{$key}) ) { $self->throw("No such argument to change_names: [$key]\n"); }
+    }
+    if ( exists($$args{prefix}) )
+    {
+        my $re = $$args{prefix};
+        $re =~ s/\./\\./g;
+        for (my $i=0; $i<@names; $i++)
+        {
+            if ( !($names[$i] =~ m{^$re}) ) { $names[$i] = $$args{prefix} . $names[$i]; }
+        }
+    }
+    if ( exists($$args{suffix}) )
+    {
+        my $re = $$args{suffix};
+        $re =~ s/\./\\./g;
+        for (my $i=0; $i<@names; $i++)
+        {
+            if ( !($names[$i] =~ m{$re$}) ) { $names[$i] .= $$args{suffix}; }
+        }
+    }
+    if ( exists($$args{rm_prefix}) )
+    {
+        my $re = $$args{rm_prefix};
+        $re =~ s/\./\\./g;
+        for (my $i=0; $i<@names; $i++)
+        {
+            $names[$i] =~ s{^$re}{};
+        }
+    }
+    if ( exists($$args{rm_suffix}) )
+    {
+        my $re = $$args{rm_suffix};
+        $re =~ s/\./\\./g;
+        for (my $i=0; $i<@names; $i++)
+        {
+            $names[$i] =~ s{$re$}{};
+        }
+    }
+    return @names;
+}
+
+sub cmd
+{
+    my ($self,$cmd) = @_;
+    return Utils::CMD($cmd,{verbose=>1});
+}
+
+sub chr_chunks
+{
+    my ($self,$split_size,$region) = @_;
+
+    my $regions = $self->read_chr_lengths($$self{fai_ref},$region);
+
+    if ( exists($$self{VIP_chunks}) && !exists($$self{_VIP_chunks}) ) 
+    {
+        for my $chunk (@{$$self{VIP_chunks}})
+        {
+            if ( !($chunk=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the VIP chunk [$chunk]\n"); }
+            my $chr  = $1;
+            my $from = $2;
+            my $to   = $3;
+            push @{$$self{_VIP_chunks}{$chr}}, [$from,$to];
+        }
+    }
+
+    my @chunks;
+    my @vip_chunks;
+    for my $region (@$regions)
+    {
+        my $chr     = $$region{name};
+        my $pos     = $$region{from};
+        my $end_pos = $$region{to};
+
+        while ($pos<$end_pos)
+        {
+            my $from = $pos;
+            my $to   = $from+$split_size-1;
+
+            if ( $to>$end_pos ) { $to=$end_pos; }
+
+            my $is_vip;
+            if ( exists($$self{_VIP_chunks}) && exists($$self{_VIP_chunks}{$chr}) )
+            {
+                for my $chunk (@{$$self{_VIP_chunks}{$chr}})
+                {
+                    if ( $$chunk[0]>$to   ) { next; }
+                    if ( $$chunk[1]<$from ) { next; }
+                    $is_vip = 1; 
+                    last;
+                }
+            }
+            if ( $is_vip ) { push @vip_chunks, "$chr:$from-$to"; }
+            else { push @chunks, "$chr:$from-$to"; }
+
+            $pos += $split_size;
+            if ( $pos<1 ) { $self->throw("The split size too small [$split_size]?\n"); }
+
+            if ( $$self{debug_chunks} && scalar @chunks>$$self{debug_chunks} ) { return \@chunks; }
+        }
+    }
+    if ( @vip_chunks ) { @chunks = ( @vip_chunks, @chunks ); }
+
+    return \@chunks;
+}
+
+sub read_chr_lengths
+{
+    my ($self,$fai,$regions) = @_;
+
+    my @chr_lengths;
+    my @regex;
+    if ( defined $regions )
+    {
+        for my $region (@$regions)
+        {
+            if ( $region=~/^[^:]+$/ ) { push @regex,$region; }
+            elsif ( $region=~/^([^:]+):(\d+)-(\d+)$/ ) { push @chr_lengths, {name=>$1, from=>$2, to=>$3} }
+        }
+    }
+
+    if ( !@regex ) 
+    {
+        if ( !@chr_lengths ) { $self->throw("FIXME: No regions given?"); }
+        return \@chr_lengths;
+    }
+
+    # Determine the chromosomes and their lengths
+    open(my $fh,'<',$fai) or $self->throw("$fai: $!"); 
+    while (my $line=<$fh>)
+    {
+        for my $regex (@regex)
+        {
+            if ( !($line=~/^($regex)\t(\d+)/i) ) { next; }
+            push @chr_lengths, {name=>$1, from=>1, to=>$2};
+            last;
+        }
+    }
+    close($fh);
+    return \@chr_lengths;
+}
+
+

@@ -35,7 +35,7 @@ use File::Copy;
 use Cwd qw(abs_path cwd);
 use VertRes::Parser::sequence_index;
 use VertRes::Wrapper::samtools;
-use VertRes::Parser::sam;
+use VertRes::Parser::bam;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::Library;
@@ -55,7 +55,7 @@ our $DEFAULT_DB_SETTINGS = {host => $ENV{VRTRACK_HOST},
                             user => $ENV{VRTRACK_RO_USER},
                             database => 'g1k_meta'};
 
-our $nfs_disc_basename = '/nfs/vertreseq';
+our $nfs_disc_basename = VertRes::Utils::VRTrackFactory->nfs_disc_basename();
 
 
 =head2 new
@@ -130,6 +130,7 @@ sub parse_lane {
                                       and library_raw)
            lane           => string, (aka read group)
            centre         => string, (the sequencing centre name)
+           species        => string, (may be undef)
            insert_size    => int, (can be undef if this lane is single-ended)
            withdrawn      => boolean,
            imported       => boolean,
@@ -164,9 +165,6 @@ sub parse_lane {
 sub lane_info {
     my ($self, $lane, %args) = @_;
     
-    my $hist = VRTrack::History->new();
-    my $orig_time_travel = $hist->time_travel;
-    
     my ($rg, $vrlane, $vrtrack);
     if (ref($lane) && $lane->isa('VRTrack::Lane')) {
         $vrlane = $lane;
@@ -189,59 +187,16 @@ sub lane_info {
     
     return unless ($rg && $vrlane && $vrtrack);
     
-    my $datetime = 'latest';
-    if ($args{pre_swap}) {
-        $datetime = $hist->was_processed($vrlane, 'swapped');
+    delete $args{db};
+    delete $args{vrtrack};
+    my $no_cov = delete $args{no_coverage};
+    if ($no_cov) {
+        $args{get_coverage} = 0;
     }
-    # make sure we've got a lane of the correct time period
-    $hist->time_travel($datetime);
-    $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $lane) || $self->throw("Could not get a vrlane with name $lane prior to $datetime");
-    
-    my %info = (lane => $rg, vrlane => $vrlane);
-    
-    $info{hierarchy_path} = $vrtrack->hierarchy_path_of_lane($vrlane);
-    $info{withdrawn} = $vrlane->is_withdrawn;
-    $info{imported} = $vrlane->is_processed('import');
-    $info{mapped} = $vrlane->is_processed('mapped');
-    
-    my %objs = $self->lane_hierarchy_objects($vrlane);
-    
-    $info{insert_size} = $objs{library}->insert_size;
-    $info{library} = $objs{library}->hierarchy_name || $self->throw("library hierarchy_name wasn't known for $rg");
-    my $lib_name = $objs{library}->name || $self->throw("library name wasn't known for $rg");
-    $info{library_raw} = $lib_name;
-    ($lib_name) = split(/\|/, $lib_name);
-    $info{library_true} = $lib_name;
-    $info{centre} = $objs{centre}->name || $self->throw("sequencing centre wasn't known for $rg");
-    my $seq_tech = $objs{platform}->name || $self->throw("sequencing platform wasn't known for $rg");
-    $info{seq_tech} = $seq_tech;
-    if ($seq_tech =~ /illumina|slx/i) {
-        $info{technology} = 'ILLUMINA';
+    else {
+        $args{get_coverage} = 1;
     }
-    elsif ($seq_tech =~ /solid/i) {
-        $info{technology} = 'ABI_SOLID';
-    }
-    elsif ($seq_tech =~ /454/) {
-        $info{technology} = 'LS454';
-    }
-    $info{sample} = $objs{sample}->name || $self->throw("sample name wasn't known for $rg");
-    $info{individual} = $objs{individual}->name || $self->throw("individual name wasn't known for $rg");
-    $info{individual_acc} = $objs{individual}->acc; # || $self->throw("sample accession wasn't known for $rg");
-    unless ($args{no_coverage}) {
-        $info{individual_coverage} = $self->hierarchy_coverage(individual => [$info{individual}],
-                                                               vrtrack => $vrtrack,
-                                                               $args{genome_size} ? (genome_size => $args{genome_size}) : (),
-                                                               $args{gt_confirmed} ? (gt_confirmed => $args{gt_confirmed}) : (),
-                                                               $args{qc_passed} ? (qc_passed => $args{qc_passed}) : (),
-                                                               $args{mapped} ? (mapped => $args{mapped}) : ());
-    }
-    $info{population} = $objs{population}->name;
-    $info{project} = $objs{project}->name;
-    $info{study} = $objs{study} ? $objs{study}->acc : $info{project};
-    
-    $hist->time_travel($orig_time_travel);
-    
-    return %info;
+    return $vrtrack->lane_info($lane, %args);
 }
 
 =head2 lane_hierarchy_objects
@@ -259,31 +214,15 @@ sub lane_info {
            platform => VRTrack::Seq_tech object
            centre => VRTrack::Seq_centre object
            library => VRTrack::Library object
+           species => VRTrack::Species object
  Args    : VRTrack::Lane object
 
 =cut
 
 sub lane_hierarchy_objects {
     my ($self, $vrlane) = @_;
-    
     my $vrtrack = $vrlane->vrtrack;
-    my $lib = VRTrack::Library->new($vrtrack, $vrlane->library_id);
-    my $sc = $lib->seq_centre;
-    my $st = $lib->seq_tech;
-    my $sample = VRTrack::Sample->new($vrtrack, $lib->sample_id);
-    my $individual = $sample->individual;
-    my $pop = $individual->population;
-    my $project_obj = VRTrack::Project->new($vrtrack, $sample->project_id);
-    my $study_obj = VRTrack::Study->new($vrtrack, $project_obj->study_id) if $project_obj->study_id;
-    
-    return (study => $study_obj,
-            project => $project_obj,
-            sample => $sample,
-            individual => $individual,
-            population => $pop,
-            platform => $st,
-            centre => $sc,
-            library => $lib);
+    return $vrtrack->lane_hierarchy_objects($vrlane);
 }
 
 =head2 hierarchy_coverage
@@ -330,101 +269,13 @@ sub lane_hierarchy_objects {
 
 sub hierarchy_coverage {
     my ($self, %args) = @_;
-    my $genome_size = delete $args{genome_size} || 3e9;
-    my $gt = delete $args{gt_confirmed} ? 1 : 0;
-    my $qc = delete $args{qc_passed} ? 1 : 0;
-    my $mapped = delete $args{mapped} ? 1 : 0;
     
-    if (exists $args{lane} || exists $args{level}) {
-        my $lane = delete $args{lane};
-        my $level = delete $args{level};
-        $self->throw("Both lane and level options must be supplied if either of them are") unless $lane && $level;
-        
-        my @levels = qw(project sample individual population platform centre library);
-        foreach my $valid_level (@levels) {
-            $self->throw("'$valid_level' option is mutually exclusive of lane&level") if exists $args{$valid_level};
-        }
-        my %levels = map { $_ => 1 } @levels;
-        $self->throw("Supplied level '$level' wasn't valid") unless exists $levels{$level};
-        
-        my $db = $args{db} || $DEFAULT_DB_SETTINGS;
-        my $vrtrack = VRTrack::VRTrack->new($db);
-        my $vrlane = VRTrack::Lane->new_by_name($vrtrack, $lane) || $self->throw("Could not get a lane from the db with name '$lane'");
-        
-        my %objs = $self->lane_hierarchy_objects($vrlane);
-        $self->throw("Could not get the $level of lane $lane") unless defined $objs{$level};
-        
-        $args{$level} = [$objs{$level}->name];
-    }
+    my $db = $args{db} || $DEFAULT_DB_SETTINGS;
+    my $vrtrack = VRTrack::VRTrack->new($db);
     
-    my @store = ($gt, $qc, $mapped);
-    while (my ($key, $val) = each %args) {
-        unless (ref($val)) {
-            push(@store, $val);
-        }
-        else {
-            if (ref($val) eq 'ARRAY') {
-                push(@store, @{$val});
-            }
-            elsif (ref($val) eq 'HASH') {
-                while (my ($sub_key, $sub_val) = each %{$val}) {
-                    push(@store, $sub_val);
-                }
-            }
-            elsif ($val->isa('VRTrack::VRTrack')) {
-                my $db_params = $val->database_params;
-                while (my ($sub_key, $sub_val) = each %{$db_params}) {
-                    push(@store, $sub_val);
-                }
-            }
-        }
-    }
-    my $store = join(",", sort @store);
-    
-    unless (defined $self->{_cover_bases}->{$store}) {
-        my @lanes = $self->get_lanes(%args);
-        @lanes || return 0;
-        my $bps = 0;
-        
-        # sum raw bases for all the qc passed, gt confirmed and not withdrawn
-        # lanes
-        foreach my $lane (@lanes) {
-            next if $lane->is_withdrawn;
-            if ($gt) {
-                next unless ($lane->genotype_status && $lane->genotype_status eq 'confirmed');
-            }
-            if ($qc) {
-                next unless ($lane->qc_status && $lane->qc_status eq 'passed');
-            }
-            
-            my $bp = $lane->raw_bases || 0;
-            
-            if ($mapped) {
-                my $mapstats = $lane->latest_mapping;
-                
-                if ($mapstats && $mapstats->raw_bases){
-                    if ($mapstats->genotype_ratio) {
-                        # this is a QC mapped lane, so we make a projection
-                        $bps += $bp * ($mapstats->rmdup_bases_mapped / $mapstats->raw_bases);
-                    }
-                    else {
-                        # this is a fully mapped lane, so we know the real answer
-                        $bps += $mapstats->bases_mapped;
-                    }
-                }
-                else {
-                    $bps += $bp * 0.9; # not sure what else to do here?
-                }
-            }
-            else {
-                $bps += $bp;
-            }
-        }
-        
-        $self->{_cover_bases}->{$store} = $bps;
-    }
-    
-    return sprintf('%.2f', $self->{_cover_bases}->{$store} / $genome_size);
+    delete $args{db};
+    delete $args{vrtrack};
+    return $vrtrack->hierarchy_coverage(%args);
 }
 
 =head2 get_lanes
@@ -437,8 +288,8 @@ sub hierarchy_coverage {
  Args    : At least one hierarchy level as a key, and an array ref of names
            as values, eg. sample => ['NA19239'], platform => ['SLX', '454'].
            Valid key levels are project, sample, individual, population,
-           platform, centre and library. (With no options at all, all active
-           lanes in the database will be returned)
+           platform, centre, library and species. (With no options at all, all 
+           active lanes in the database will be returned)
            Alternatively to supplying hierarchy level keys and array refs of
            allowed values, you can supply *_regex keys with regex string values
            to select all members of that hierarchy level that match the regex,
@@ -476,112 +327,9 @@ sub get_lanes {
         $vrtrack = VRTrack::VRTrack->new($db);
     }
     
-    my @good_lanes;
-    foreach my $project (@{$vrtrack->projects}) {
-        my $ok = 1;
-        if (defined $args{project}) {
-            $ok = 0;
-            foreach my $name (@{$args{project}}) {
-                if ($name eq $project->name || $name eq $project->hierarchy_name || ($project->study && $name eq $project->study->acc)) {
-                    $ok = 1;
-                    last;
-                }
-            }
-        }
-        $ok || next;
-        if (defined $args{project_regex}) {
-            $project->name =~ /$args{project_regex}/ || next;
-        }
-        
-        foreach my $sample (@{$project->samples}) {
-            my $ok = 1;
-            if (defined ($args{sample})) {
-                $ok = 0;
-                foreach my $name (@{$args{sample}}) {
-                    if ($name eq $sample->name) {
-                        $ok = 1;
-                        last;
-                    }
-                }
-            }
-            $ok || next;
-            if (defined $args{sample_regex}) {
-                $sample->name =~ /$args{sample_regex}/ || next;
-            }
-            
-            my %objs;
-            $objs{individual} = $sample->individual;
-            $objs{population} = $objs{individual}->population;
-            
-            my ($oks, $limits) = (0, 0);
-            foreach my $limit (qw(individual population)) {
-                if (defined $args{$limit}) {
-                    $limits++;
-                    my $ok = 0;
-                    foreach my $name (@{$args{$limit}}) {
-                        if ($name eq $objs{$limit}->name || ($objs{$limit}->can('hierarchy_name') && $name eq $objs{$limit}->hierarchy_name)) {
-                            $ok = 1;
-                            last;
-                        }
-                    }
-                    $oks += $ok;
-                }
-            }
-            next unless $oks == $limits;
-            
-            foreach my $library (@{$sample->libraries}) {
-                my $ok = 1;
-                if (defined ($args{library})) {
-                    $ok = 0;
-                    foreach my $name (@{$args{library}}) {
-                        if ($name eq $library->name || $name eq $library->hierarchy_name) {
-                            $ok = 1;
-                            last;
-                        }
-                    }
-                }
-                $ok || next;
-                if (defined $args{library_regex}) {
-                    $library->name =~ /$args{library_regex}/ || next;
-                }
-                
-                my %objs;
-                $objs{centre} = $library->seq_centre;
-                $objs{platform} = $library->seq_tech;
-                
-                my ($oks, $limits) = (0, 0);
-                foreach my $limit (qw(centre platform)) {
-                    if (defined $args{$limit}) {
-                        $limits++;
-                        my $ok = 0;
-                        foreach my $name (@{$args{$limit}}) {
-                            if ($name eq $objs{$limit}->name) {
-                                $ok = 1;
-                                last;
-                            }
-                        }
-                        $oks += $ok;
-                    }
-                }
-                next unless $oks == $limits;
-                
-                push(@good_lanes, @{$library->lanes});
-            }
-        }
-    }
-    
-    if ($args{return_withdrawn}) {
-        return @good_lanes;
-    }
-    else {
-        # filter out withdrawn lanes
-        my @active;
-        foreach my $lane (@good_lanes) {
-            next if $lane->is_withdrawn;
-            push(@active, $lane);
-        }
-        return @active;
-    }
+    delete $args{db};
+    delete $args{vrtrack};
+    return $vrtrack->get_lanes(%args);
 }
 
 =head2 new_platforms
@@ -1269,12 +1017,22 @@ sub lane_bam_link {
            slx_mapper => string
            454_mapper => string
            assembly_name => string
+           
+           the following optionally give aliases for the mapper names read fom the database
+           slx_mapper_alias => ['bwa', 'bwa_aln']
+           454_mapper_alias => ['ssaha', 'ssaha_1.4']
 
 =cut
 
 sub lane_bams {
     my ($self, $lane_path, %args) = @_;
     my $lane_name = basename($lane_path);
+    
+    my ($mapper_slx, $mapper_454) = ($args{slx_mapper}, $args{'454_mapper'});
+    my $mapper_alias_slx = $args{slx_mapper_alias} || [ $mapper_slx ];
+    my $mapper_alias_454 = $args{'454_mapper_alias'} || [ $mapper_454 ];
+    push @{$mapper_alias_slx}, $mapper_slx unless grep {/^$mapper_slx$/} @{$mapper_alias_slx};
+    push @{$mapper_alias_454}, $mapper_454 unless grep {/^$mapper_454$/} @{$mapper_alias_454};
     
     # first get the mapstats object so we'll know the bam prefix
     my $vrlane = VRTrack::Lane->new_by_hierarchy_name($args{vrtrack}, $lane_name) || $self->throw("Unable to get lane $lane_name from db");
@@ -1284,15 +1042,15 @@ sub lane_bams {
     my $mapstats;
     if ($mappings && @{$mappings}) {
         # find the most recent mapstats that corresponds to our mapping
-        my $mapping_util = VertRes::Utils::Mapping->new(slx_mapper => $args{slx_mapper},
-                                                        '454_mapper' => $args{'454_mapper'});
+        my $mapping_util = VertRes::Utils::Mapping->new(slx_mapper => $mapper_slx,
+                                                        '454_mapper' => $mapper_454);
         my $mapper_class = $mapping_util->lane_to_module($lane_path);
         $mapper_class || $self->throw("Lane '$lane_path' was for an unsupported technology");
         $self->{mapper_class} = $mapper_class;
         eval "require $mapper_class;";
         my $mapper_obj = $mapper_class->new;
         $self->{mapper_obj} = $mapper_obj;
-        my $mapper = $mapper_obj->exe;
+        my $mapper = $mapper_obj->name;
         $self->throw("no mapper from $mapper_class") unless $mapper;
         
         my $highest_id = 0;
@@ -1303,15 +1061,26 @@ sub lane_bams {
             my $assembly = $possible->assembly() || next;
             $assembly->name eq $args{assembly_name} || next;
             my $this_mapper = $possible->mapper() || next;
-            $this_mapper->name eq $mapper || next;
+            my $this_mapper_name = $this_mapper->name || next;
             
+            foreach my $mapper_alt (@{$mapper_alias_slx}) {
+                next unless $mapper_alt eq $this_mapper_name;
+                $this_mapper_name = $mapper_slx;
+                last;
+            }
+            foreach my $mapper_alt (@{$mapper_alias_454}) {
+                next unless $mapper_alt eq $this_mapper_name;
+                $this_mapper_name = $mapper_454;
+                last;
+            }
+            $this_mapper_name eq $mapper || next;
             if ($pid > $highest_id) {
                 $mapstats = $possible;
                 $highest_id = $pid;
             }
         }
     }
-    $mapstats || $self->throw("Could not get a mapstats for lane $lane_name");
+    $mapstats || $self->throw("Could not get a mapstats for lane $lane_name. Perhaps try setting a mapper alias");
     $self->{mapstats_obj} = $mapstats;
     my $mapstats_prefix = $mapstats->id;
     
@@ -1376,12 +1145,15 @@ sub lane_bams {
            the path to the sequence.index file. Optionally a chrom string if the
            supplied bam is unsplit, but you want to work out what the dcc
            filename of a certain chromosmal split of that bam would be prior to
-           actually making the split bam.
+           actually making the split bam. A final option is a boolean which if
+           true means that RG ids are taken to be meaningless, with the true
+           read group identifier being in the PU field of the RG line(s) in the
+           header
 
 =cut
 
 sub dcc_filename {
-    my ($self, $file, $date_string, $sequence_index, $given_chrom) = @_;
+    my ($self, $file, $date_string, $sequence_index, $given_chrom, $rg_from_pu) = @_;
     $date_string || $self->throw("release date string must be supplied");
     
     # NAXXXXX.[chromN].technology.[center].algorithm.population.analysis_group.YYYYMMDD.bam
@@ -1396,31 +1168,30 @@ sub dcc_filename {
         $algorithm = $self->{algorithm}->{$file};
     }
     else {
-        my $stw = VertRes::Wrapper::samtools->new(quiet => 1);
-        $stw->run_method('open');
-        my $view_fh = $stw->view($file, undef, H => 1);
-        $view_fh || $self->throw("Failed to samtools view '$file'");
-        
-        my $ps = VertRes::Parser::sam->new(fh => $view_fh);
-        %readgroup_info = $ps->readgroup_info();
+        my $bp = VertRes::Parser::bam->new(file => $file);
+        %readgroup_info = $bp->readgroup_info();
+        $algorithm = $bp->program;
+        $bp->close;
         $self->{rginfo}->{$file} = \%readgroup_info;
-        $algorithm = $ps->program;
         $self->{algorithm}->{$file} = $algorithm;
     }
     
     my $sample;
     my $platform = 'unknown_platform';
+    my $raw_pl;
+    my $project;
     my %techs;
     my $example_rg;
     while (my ($rg, $info) = each %readgroup_info) {
         # there should only be one sample, so we just pick the first
         $sample ||= $info->{SM};
-        $example_rg ||= $rg;
+        $example_rg ||= $rg_from_pu ? $info->{PU} : $rg;
         
         # might be more than one of these if we're a sample-level bam. We
         # standardise on the DCC nomenclature for the 3 platforms; they should
         # be in this form anyway, so this is just-in-case
-        $platform = $info->{PL};
+        $platform = $info->{PL} || '';
+        $raw_pl = $platform;
         if ($platform =~ /illumina|slx/i) {
             $platform = 'ILLUMINA';
         }
@@ -1431,13 +1202,15 @@ sub dcc_filename {
             $platform = 'LS454';
         }
         $techs{$platform}++;
+        
+        $project ||= $info->{DS};
     }
     $sample ||= 'unknown_sample';
     
     # picard merge may have tried to uniqueify the rg, so pluck off .\d
     $example_rg =~ s/\.\d+$//;
     
-    unless ($example_rg) {
+    unless (defined $example_rg) {
         $self->throw("The bam '$file' had no RG in the header!");
     }
     
@@ -1492,6 +1265,9 @@ sub dcc_filename {
         }
         elsif ($platform =~ /454/) {
             $algorithm = 'ssaha2';
+        }
+        elsif ($raw_pl eq 'solid') {
+            $algorithm = 'mosaik';
         }
         elsif ($platform =~ /SOLID/) {
             $algorithm = 'bfast';
@@ -1654,9 +1430,8 @@ sub store_lane {
     
     if ($do_move) {
         symlink($storage_path, $source_dir) || $self->throw("Failed to create symlink from $storage_path to $source_dir");
-        chdir($cwd);
-        
         File::Copy::move($storage_path_temp, $storage_path) || $self->throw("Could not rename $storage_path_temp to $storage_path");
+        chdir($cwd) || $self->throw("Could not change directory to $cwd");
     }
     
     $lane->storage_path($storage_path);

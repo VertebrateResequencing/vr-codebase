@@ -49,7 +49,8 @@ use base qw(VertRes::Wrapper::MapperI);
 sub new {
     my ($class, @args) = @_;
     
-    my $self = $class->SUPER::new(@args, exe => 'smalt');
+    my $self = $class->SUPER::new(exe => 'smalt', @args);
+    $self->{orig_exe} = $self->exe;
     
     return $self;
 }
@@ -67,7 +68,7 @@ sub new {
 sub version {
     my $self = shift;
     
-    my $exe = $self->exe;
+    my $exe = $self->{orig_exe};
     open(my $fh, "$exe version 2>&1 |") || $self->throw("Could not start $exe");
     my $version = 0;
     while (<$fh>) {
@@ -140,14 +141,26 @@ sub setup_fastqs {
             
             unless (-s $fq_new) {
                 my $i = VertRes::IO->new(file => $fq);
-                my $o = VertRes::IO->new(file => ">$fq_new");
+                my $o = VertRes::IO->new(file => ">$fq_new.tmp");
                 my $ifh = $i->fh;
                 my $ofh = $o->fh;
+                my $lines = 0;
                 while (<$ifh>) {
+                    $lines++;
                     print $ofh $_;
                 }
                 $i->close;
                 $o->close;
+                
+                # check the decompressed fastq isn't truncated
+                $i = VertRes::IO->new(file => "$fq_new.tmp");
+                my $actual_lines = $i->num_lines;
+                if ($actual_lines == $lines) {
+                    move("$fq_new.tmp", $fq_new);
+                }
+                else {
+                    $self->throw("Made $fq_new.tmp, but it only had $actual_lines instead of $lines lines");
+                }
             }
         }
     }
@@ -202,7 +215,9 @@ sub generate_sam {
         }
         
         my $insert_size_arg = '';
-        if (defined $other_args{i}) {
+        if((defined $other_args{is_paired}) && ! $other_args{is_paired})
+        {}
+        elsif(defined $other_args{i}) {
             $insert_size_arg = " -i $other_args{i}";
         }
         

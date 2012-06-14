@@ -86,8 +86,7 @@ acc
 The information for new samples (sex, accession, etc) comes from the individual
 table - this must be populated for new samples before update will load the
 samples.  The exception is if --create_individuals is passed, in which case
-each new sample name will trigger creation of a corresponding individual (sex
-will be set to 'unknown').
+each new sample name will trigger creation of a corresponding individual.
 
 By default, samples will be mapped to existing individuals by the prefix of the
 sample and individual name up to the first non-word or underscore character
@@ -187,7 +186,7 @@ foreach my $pname (keys %projects){
     }
 
     #Get and set the EBI accession number
-    my $study_acc = $study->get_accession();
+    my $study_acc = $study->accession();
 
     if ($study_acc){
         my $vstudy = $vproject->study($study_acc);
@@ -225,8 +224,22 @@ foreach my $pname (keys %projects){
 
                 print "Adding individual: $sample_name.\n";
                 $vind = VRTrack::Individual->create($vrtrack, $sample_name);
-                # default sex to M - QC pipeline needs sex set
-                $vind->sex('M');
+                # sex should now be set on sample in warehouse
+                if ($sample->gender){
+                    if ($sample->gender =~ /^male/i){
+                        $vind->sex('M');
+                    }
+                    elsif ($sample->gender =~ /^female/i){
+                        $vind->sex('F');
+                    }
+                    else {
+                        warn "Unrecognised gender ",$sample->gender," for sample $sample_name\n";
+                    }
+                }
+                else {
+                    $vind->sex('unknown');
+                }
+
                 $vind->alias($sample_name);
 
                 $vind->update;
@@ -356,10 +369,12 @@ foreach my $pname (keys %projects){
                 }
 
                 my $type=$lib->type;
-                my $libtype = $vlib->library_type($type);
-                unless ($libtype){
-                print "New library type $type\n";
-                    $vlib->add_library_type($type);
+                if (defined $type) {
+                	my $libtype = $vlib->library_type($type);
+                	unless ($libtype){
+                		print "New library type $type\n";
+                    	$vlib->add_library_type($type);
+                	}
                 }
                 my $seq_centre = $vlib->seq_centre('SC');
                 unless ($seq_centre){
@@ -520,7 +535,7 @@ foreach my $pname (keys %projects){
                                 print "New lane ",$deplexed_lane,"\n";
                                 #$vlane = $vlib->add_lane($deplexed_lane);
                                 $vlane = $vseq_request->add_lane($deplexed_lane);
-				$vlane->hierarchy_name($deplexed_lane);
+								$vlane->hierarchy_name($deplexed_lane);
                                 $vlane->library_id($vlib->id);
                                 $vlane->update;
                             }
@@ -626,35 +641,35 @@ foreach my $pname (keys %projects){
                                     $vfile = $vlane->add_file($filename);
                                 }
                             }
-                            $vfile->raw_reads($file->reads);
-                            $vfile->raw_bases($file->basepairs);
-                            $vfile->read_len($file->read_len);
-                            $vfile->mean_q($file->mean_quality);
-                            $vfile->md5($file->md5);
-                            print "File ",$vfile->name," updating\n" if $vfile->dirty;
-                            # determine type
-                            #   0 is single-end
-                            #   1 fwd
-                            #   2 rev
-                            #   3 is for _s_ files
-                            #   4 is for bam files
-                            if ($filename =~ /^\d+_s_\d.fastq/){
-                                $vfile->type(3);
-                            }
-                            elsif ($filename =~ /^\d+_\d_1.fastq/){
-                                $vfile->type(1);
-                            }
-                            elsif ($filename =~ /^\d+_\d_2.fastq/){
-                                $vfile->type(2);
-                            }
-                            elsif ($filename =~ /^\d+_\d.fastq/){
-                                $vfile->type(0);
-                            }
-                            else {
-                                print "Can't determine type of file $filename\n";
-                            }
-        
-                            $vfile->update;
+#                             $vfile->raw_reads($file->reads);
+#                             $vfile->raw_bases($file->basepairs);
+#                             $vfile->read_len($file->read_len);
+#                             $vfile->mean_q($file->mean_quality);
+#                             $vfile->md5($file->md5);
+#                             print "File ",$vfile->name," updating\n" if $vfile->dirty;
+#                             # determine type
+#                             #   0 is single-end
+#                             #   1 fwd
+#                             #   2 rev
+#                             #   3 is for _s_ files
+#                             #   4 is for bam files
+#                             if ($filename =~ /^\d+_s_\d.fastq/){
+#                                 $vfile->type(3);
+#                             }
+#                             elsif ($filename =~ /^\d+_\d_1.fastq/){
+#                                 $vfile->type(1);
+#                             }
+#                             elsif ($filename =~ /^\d+_\d_2.fastq/){
+#                                 $vfile->type(2);
+#                             }
+#                             elsif ($filename =~ /^\d+_\d.fastq/){
+#                                 $vfile->type(0);
+#                             }
+#                             else {
+#                                 print "Can't determine type of file $filename\n";
+#                             }
+#         
+#                             $vfile->update;
                         } # Fastqs
                     } #Lanes
                 } # Seq Requests       

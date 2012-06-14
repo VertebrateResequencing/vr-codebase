@@ -1,0 +1,221 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+stats-file-output
+
+=head1 SYNOPSIS
+
+This script produces an Excel file of statistics for all lanes in a database or set of studies if specified
+
+stats-file-output --db dbname (optional:  --study UK10K_XXXX_CCCC --from YYYY-MM-DD --to YYYY-MM-DD --months x
+(default values --study ALL_STUDIES_IN_DB --from Not_set --to TODAY --months Not_set)
+
+For example:
+1. stats-file-output --db vrtrack_uk10k_cohort (creates vrtrack_uk10k_cohort_YYYY-MM-DD.xls)
+Output historical data:
+2. stats-file-output --db vrtrack_uk10k_neuro --study UK10K_NEURO_MUIR,UK10K_NEURO_ASD_SKUSE --from 2011-04-22 
+--to 2011-06-18
+Output the last month's data:
+3. stats-file-output --db vrtrack_uk10k_obesity --study 1706 --months 1
+
+Note: the study details can be a names or ids (or a mixture) and the user can only specify months and to or from
+but not all three. Dates are only accepted in the UK/European format.
+
+Produces an Excel file of the statistics for each lane (currently) for the projects/studies specified (or the 
+whole database, sorted by project) between the dates specified (or all if not).
+
+Author: John Maslen <jm23@sanger.ac.uk>
+
+
+=head1 AUTHOR
+
+John Maslen, jm23@sanger.ac.uk, Team 145
+
+=cut
+
+use strict;
+use warnings;
+no warnings 'uninitialized';
+
+use Getopt::Long;
+use VertRes::Utils::VRTrackFactory;
+use VRTrack::Lane;
+use Spreadsheet::WriteExcel;
+use Scalar::Util qw(looks_like_number);
+use Date::Calc qw( Add_Delta_YMD Add_Delta_Days );
+use POSIX qw(strftime); 
+use Date::Manip;
+use Carp;
+
+my ($db, $study, $fromdate, $todate, $months, $nocol, $help);
+
+GetOptions(
+    'd|db=s'        =>  \$db,
+    's|study=s'		=>  \$study,
+    'f|from=s'		=>  \$fromdate,
+    't|to=s'		=>  \$todate,
+    'm|months=i'    =>  \$months,
+    'n|nocol'		=>  \$nocol,
+    'h|help'	    =>  \$help,
+    );
+
+($db && !$help) or die <<USAGE;
+    Usage: $0   
+                --db        <specify db name>
+                --study     [studies/project ids or names (individual or comma-separated) can be given]
+                --from      [date for stats collection to start can be given, NB format: DD-MM-YYYY]
+                --to        [date for stats collection to end can be given, NB format: DD-MM-YYYY]
+                --months    [specify the number of months worth of stats to retrieve - CAN NOT be used with --to and --from]
+                --nocol     [use this flag to produce output with no column headers e.g. for concatenation]
+                --help      <this message>
+
+Generates lane statistics file for a database or study (if specified).
+
+Examples:
+--------
+Retrieve all stats for a database:
+1. stats-file-output --db vrtrack_uk10k_cohort
+
+Retrieve stats for 2 projects between certain dates:
+2. stats-file-output --db vrtrack_uk10k_neuro --study UK10K_NEURO_MUIR,UK10K_NEURO_ASD_SKUSE --from 2011-01-25
+--to 2011-04-25
+(NB, date format is YYYY-MM-DD)
+
+Retrieve stats for 1 project for the previous 3 mojnt
+3. stats-file-output --db vrtrack_uk10k_obesity --study 1706 --months 3
+
+NOTES:
+The --study can use study names or ids (or a mixture). 
+The user can specify --months as well as --to or --from, but NOT all three.
+
+USAGE
+
+my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => $db,
+                                                          mode => 'rw');
+unless ($vrtrack){
+    die "Can't connect to tracking database\n";
+}
+
+if (($todate && $fromdate) && $months) {
+	die "You cannot specify exact dates and a value for months.\n";
+}
+my $dateregex = '^(19|20)\d\d[-](0[1-9]|1[012])[-](0[1-9]|[12][0-9]|3[01])$';
+my $human_genome_size = 3e9;
+my $end_analysis_date = strftime "%Y-%m-%d", localtime;
+my $outfile = $db."_".$end_analysis_date."_stats.xls";
+my $start_analysis_date;
+
+if ($todate) {
+	$todate =~ $dateregex ? $end_analysis_date = $todate : croak "You have not specified the --to date in the correct format: YYYY-MM-DD.\n";
+    my ($y,$m,$d) = Add_Delta_Days((split(/-/,$end_analysis_date))[0,1,2], 1);
+	$end_analysis_date = sprintf( "%04d-%02d-%02d", $y,$m,$d );	
+}
+if ( $months ) {
+    croak "You must specify months as a positive or non-zero integer!\n" unless ( looks_like_number($months) && $months >= 1 );
+    my ($y,$m,$d) = Add_Delta_YMD((split(/-/,$end_analysis_date))[0,1,2], 0, -($months), 1);
+	$start_analysis_date = sprintf( "%04d-%02d-%02d", $y,$m,$d );
+}
+
+if ($fromdate) {
+	$fromdate =~ $dateregex ? $start_analysis_date = $fromdate : croak "You have not specified the --from date in the correct format: YYYY-MM-DD.\n";
+	croak "You have specified --from date that is either the same or later than the --to date.\n" if (Date_Cmp($start_analysis_date, $end_analysis_date) >= 0);
+	if ( $months ) {   
+		my ($y,$m,$d) = Add_Delta_YMD((split(/-/,$start_analysis_date))[0,1,2], 0, $months, -1);
+		$end_analysis_date = sprintf( "%04d-%02d-%02d", $y,$m,$d );
+	}	
+}
+
+my $workbook  = Spreadsheet::WriteExcel->new($outfile);
+my $worksheet = $workbook->add_worksheet();
+my $projects;
+
+if ($study) {
+	my %study_hash   = ();
+	my @studies = split(/,/, $study);
+	for my $study_input (@studies) {
+		my $project;
+		if (looks_like_number($study_input)) {
+			$project = $vrtrack->get_project_by_id($study_input);
+		}
+		else {
+			$project = $vrtrack->get_project_by_name(uc($study_input));
+		}
+		unless ($project){
+			warn "Unable to retrieve project $study_input\n";
+        	next;
+     	}
+     	$study_hash{$project->name} = $project; 
+	}
+	for my $proj (keys %study_hash) {
+		push @$projects, $study_hash{$proj};
+	}
+}
+else {
+	$projects = $vrtrack->projects();
+}
+
+unless ($projects) {
+	die "No projects found for studies or database given.\n";
+}
+
+my @totaloutput;
+
+for my $project (@$projects) {
+	my $name = $project->name();
+	my $samples = $project->samples();
+	for my $sample ( @{ $samples } ) {
+		my $sample_name = $sample->name();
+		my $libraries = $sample->libraries();
+		for my $library  ( @{$libraries} ) {
+			my $lanes = $library->lanes();
+			for my $lane ( @{$lanes} ) {
+				my $mapstats = $lane->latest_mapping();
+				my $run_date = $lane->run_date;
+				if (Date_Cmp($run_date, $start_analysis_date)>=1 && Date_Cmp($end_analysis_date, $run_date)>=1) {
+					my @lineout = ($sample_name, $lane->name, $name, $run_date);
+					my $raw_reads = $mapstats->raw_reads;
+					my $raw_bases = $mapstats->raw_bases;
+					my $reads_mapped = $mapstats->reads_mapped;
+					my $bases_mapped = $mapstats->bases_mapped;
+					my $target_bases_mapped = $mapstats->target_bases_mapped;
+					my $num_reads = $mapstats->rmdup_reads_mapped;
+					my $gt_ratio = $mapstats->genotype_ratio();
+					my $gt_status = $lane->genotype_status();
+					my $mean_target_coverage = $mapstats->mean_target_coverage();
+					my $target_bases_1X = $mapstats->target_bases_1X();
+					my $target_bases_10X = $mapstats->target_bases_10X();
+					my $target_bases_20X = $mapstats->target_bases_20X();
+					my $target_bases_100X = $mapstats->target_bases_100X();
+					
+					my $percent_mapping_to_ref = ($raw_reads ? sprintf('%.2f', ($reads_mapped/$raw_reads)*100) : '-' );
+					my $percent_duplicates = ($reads_mapped ? sprintf('%.2f', (($reads_mapped-$num_reads)/$reads_mapped)*100) : '-' );
+					my $percent_unique_mapping = ($raw_reads ? sprintf('%.2f', ($num_reads/$raw_reads)*100) : '-');
+
+					my $mean_depth = ($mean_target_coverage ? $mean_target_coverage :  sprintf('%.2f', $raw_bases/$human_genome_size));
+					my $percent_mapping_capture = '-';
+					if ($target_bases_mapped && $bases_mapped) { $percent_mapping_capture = sprintf('%.2f',  (($target_bases_mapped/$bases_mapped)*100 )); }
+				
+					push @lineout, (($raw_reads ? $raw_reads : '-'), ($raw_bases ? $raw_bases : '-'), $percent_mapping_to_ref, $percent_duplicates, $percent_unique_mapping, ($gt_ratio ? $gt_ratio : '-'), ($gt_status ? $gt_status : '-'), ($target_bases_1X ? $target_bases_1X : '-'), ($target_bases_10X ? $target_bases_10X : '-'), ($target_bases_20X ? $target_bases_20X : '-'), ($target_bases_100X ? $target_bases_100X : '-'), $mean_depth, $percent_mapping_capture);
+				
+					push @totaloutput, [@lineout];
+				}
+			}
+		}
+	}
+}
+
+if (@totaloutput) {
+	my @columns = ('sample', 'lane', 'projectname', 'analysis_complete_date', 'raw_reads', 'raw_bases', '%_map_reference', '%_duplicates', '%_uniq_mapping', 'gt_ratio', 'gt_status', '%_1x', '%_10x', '%_20x', '%_100x', 'mean_depth', 'percent_mapping_to_capture_target');
+
+	for my $i (0 .. $#columns) {
+		$worksheet->write(0, $i,  $columns[$i]);
+	}
+	
+	for my $x (0 .. $#totaloutput) {
+		for my $y (0 .. $#columns) {
+			$worksheet->write($x+1, $y,  ($totaloutput[$x][$y]));
+		}
+	}
+
+}

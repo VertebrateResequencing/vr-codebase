@@ -1,5 +1,6 @@
 #
-# Author:    Petr Danecek (pd3@sanger.ac.uk)    Team 145
+# Author:    	Petr Danecek (pd3@sanger.ac.uk)    Team 145
+# Modified:		John Maslen  (jm23@sanger.ac.uk)   Team 145
 #
 #--------------- QueryIndelsData ---------------------------------
 #
@@ -11,6 +12,7 @@ package SNPs::QueryIndelsData;
 use strict;
 use warnings;
 
+use POSIX qw(strftime);
 use base qw(SNPs::QuerySNPsData);
 
 sub new
@@ -18,7 +20,12 @@ sub new
     my ($class, $args) = @_;
 
     my $self = $class->SUPER::new($args);
-
+    if ( !$self->cache_exists() ) { die "Error: no data in cache??\n"; }
+    my $date = strftime "%Y-%m-%d", localtime;
+	my $str_count =  scalar keys %{$$self{selected_strains}};
+	my $loc = '['.$$self{chrm}.':'.$$self{from}.'-'.$$self{to}.']';
+	my $file = 'Indels'.$str_count."_mouse_strains_".$loc."_".$date.".tab";
+    $$self{writer}->fname($file);
     return $self;
 }
 
@@ -26,9 +33,8 @@ sub nonzero_column_data
 {
     my ($self,$row) = @_;
 
-    my ($pos,$chr,$sequence,$type,$gene_name,$gene_id);
+    my ($pos,$chr,$ref,$gene_name);
 
-    $sequence = '*';
     my $ncols = @$row;
     for (my $i=0; $i<$ncols; $i++)
     {
@@ -36,24 +42,34 @@ sub nonzero_column_data
 
         $pos  = $$row[$i]->{'pos'};
         $chr  = $$row[$i]->{'chr'};
-        $type = $$row[$i]->{'type'};
-        if ( $type && $type eq 'D' ) 
-        { 
-            $sequence=$$row[$i]->{'sequence1'}; 
-        }
-        if ( exists($$row[$i]->{'_conseqs'}) )
+        $ref = $$row[$i]->{'ref_base'};
+        if ( exists($$row[$i]->{'consequence'}) )
         {
-            my $conseqs = $$row[$i]->{'_conseqs'};
-            $gene_id   = $$conseqs[0]->{'gene_ensid'} || '';
-            $gene_name = $$conseqs[0]->{'gene_name'} || $gene_id;
-            if ( $gene_id && $pos ) { last; }
+            $gene_name = $$row[$i]->{'gene_name'};
+            if ( $gene_name && $pos ) { last; }
         }
     }
 
-    return ($pos,$chr,$sequence,$gene_name,$gene_id);
+    return ($pos,$chr,$ref,$gene_name);
 }
 
-
+sub print_header
+{
+    my ($self) = @_;
+    my $strains = $$self{selected_strains};
+    my $html = $$self{writer};
+    if ( $$self{display_dload_params} )
+    {
+        $html->out($$self{display_dload_params});
+    }
+    $html->out("Gene\tChromosome\tPosition\tReference");
+    for my $str (sort {$$strains{$a}<=>$$strains{$b}} keys %$strains)
+    {
+        $html->out("\t$str\tConsequence");
+    }
+    $html->out("\n");
+    return;
+}
 
 sub print_row
 {
@@ -62,7 +78,7 @@ sub print_row
     my $html = $$self{'writer'};
     my $session = $$self{'session'};
 
-    my ($pos,$chr,$ref,$gene_name,$gene_id) = $self->nonzero_column_data($row);
+    my ($pos,$chr,$ref,$gene_name) = $self->nonzero_column_data($row);
 
     $html->out("$gene_name\t$chr\t$pos\t$ref");
 
@@ -70,38 +86,13 @@ sub print_row
     for (my $i=0; $i<$ncols; $i++)
     {
         my $conseqs = {};
-        for my $cons (@{$$row[$i]->{'_conseqs'}})
+        for my $type (@{$$row[$i]->{'consequence'}})
         {
-            my $type = $$cons{'consequence'};
             if ( !$type || $type eq 'SPLICE_SITE' ) { next }  # ignore these - according to Dave these are rubbish
             $$conseqs{$type} = 1;
         }
-
-        if ( $$row[$i]->{'sequence1'} )
-        {
-            my $sequence;
-
-            if ( $$row[$i]->{type} eq 'I' ) { $sequence=$$row[$i]->{sequence1}; }
-            else { $sequence='*'; }
-            if ( $$row[$i]->{sequence2} )
-            {
-                if ( $$row[$i]->{sequence2} eq '*' )
-                {
-                    $sequence .= '/' . $ref;
-                }
-                else
-                {
-                    $sequence .= '/' . $$row[$i]->{sequence2};
-                }
-            }
-
-            $html->out("\t" . $sequence);
-            $html->out("\t" . join(',',sort keys %$conseqs));
-        }
-        else
-        {
-            $html->out("\t-\t");
-        }
+        
+        $$row[$i]->{'sequence'} ? $html->out("\t" . $$row[$i]->{'sequence'} . "\t" . join(',',sort keys %$conseqs)) : $html->out("\t-\t-");
     }
     $html->out("\n");
 }

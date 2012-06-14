@@ -346,6 +346,11 @@ sub get_jobs
                 next;
             }
             
+            if ($action =~ /^__Storing__$/) {
+                get_storage_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
+                next;
+            }
+            
             if ( $action=~/^__VRTrack_QC__$/ )
             {
                 get_qc_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
@@ -379,6 +384,18 @@ sub get_jobs
             if ( $action=~/^__VRTrack_HierarchyUpdate__$/ )
             {
                 get_hierarchy_update_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
+                next;
+            }
+            
+            if ($action=~/^__VRTrack_SNPs__$/ )
+            {
+                get_snps_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
+                next;
+            }
+            
+            if ($action=~/^__SNPs__$/ )
+            {
+                get_snps_jobs(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
             
@@ -588,6 +605,64 @@ sub get_storage_jobs_from_vrtrack {
     return;
 }
 
+=head2 get_storage_jobs
+
+  Arg [1]    : Pointer to array of jobs
+  Arg [2]    : The config file name
+  Arg [3]    : The mtime of the config file
+  Arg [4]    : The config data.
+  Description: Obtains the directory list from a file.
+
+=cut
+
+sub get_storage_jobs {
+    my ($jobs,$config,$mtime,$config_data) = @_;
+    
+    if ( !$$config_data{fod} ) { croak("Expected fod key in the config $config.\n"); }
+    debug($config_data,"$config\tget_storage_jobs...");
+    
+    my @paths;
+    open(my $fh,'<',$$config_data{fod}) or croak("$$config_data{fod}: $!");
+    while (<$fh>)
+    {
+        chomp;
+        if ( /^\s*$/ ) { next; }
+        if ( /^#/ ) { next; }
+        my ($path) = split /\t/;
+        croak("Path does not exists, $path") unless (-e $path);
+        push @paths, $path;
+    }
+    close($fh);
+    debug($config_data,"found ".scalar(@paths)." paths to store...");
+    
+    my $jobs_running = 0;
+    my $jobs_failed = 0;
+    my $jobs_done = 0;
+    my $max_jobs = $$config_data{limit} || 50;
+    foreach my $path (@paths) 
+    {
+        my $lane_info = { lane_path => $path, root => $$config_data{root} };
+        my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
+        push @$jobs, $job;
+        $jobs_running++;
+        my $job_state = $job->state();
+        if ($job_state eq 'failed') { $jobs_running--; $jobs_failed++; };
+        if (-e File::Spec->catfile($path, '.store_nfs_done')) { $jobs_running--; $jobs_done++; }
+        debug($config_data,".");
+        # to stop us crushing io, we limit the number of simultaneous jobs
+        if ($jobs_running >= $max_jobs)
+        {
+            debug($config_data,"max number of jobs reached...");
+            last;
+        }
+    }
+    debug($config_data,"failed $jobs_failed...") if $jobs_failed;
+    debug($config_data,"completed $jobs_done...") if $jobs_done;
+    debug($config_data,"running $jobs_running...") if $jobs_running;
+    debug($config_data,"done\n");
+
+    return;
+}
 
 =head2 filter_lanes
 
@@ -603,7 +678,7 @@ sub filter_lanes {
     my ($limits, $hnames, $vrtrack, $config) = @_;
     
     my %valid_limits;
-    foreach my $limit_type (qw(project sample individual population technology seq_tech centre library lane)) {
+    foreach my $limit_type (qw(project sample individual population technology seq_tech centre library lane species)) {
         if (defined $limits->{$limit_type}) {
             my $array = $limits->{$limit_type};
             unless (ref($array) && ref($array) eq 'ARRAY') {
@@ -627,14 +702,14 @@ sub filter_lanes {
     my @lanes;
     my $hu = VertRes::Utils::Hierarchy->new();
     foreach my $hname (@{$hnames}) {
-	my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$hname) or croak("Could not get lane for $hname: $config\n");
+    my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$hname) or croak("Could not get lane for $hname: $config\n");
         my $path   = $vrtrack->hierarchy_path_of_lane_hname($vrlane->name);
         my %lane_info = $hu->lane_info($vrlane, no_coverage => 1);
         
         # we require that it pass all limit types ('AND')
         my $all_passed = 1;
         foreach my $limit_type (keys %valid_limits) {
-	    my $actual_value = $lane_info{$limit_type};
+        my $actual_value = $lane_info{$limit_type};
             
             # we require that at least one of the limits for this type is
             # matched ('OR')
@@ -650,10 +725,10 @@ sub filter_lanes {
                 $all_passed = 0;
                 last;
             }
-	}
+    }
         next unless $all_passed;
         
-	push @lanes, $vrlane;
+    push @lanes, $vrlane;
     }
     
     return @lanes;
@@ -685,7 +760,7 @@ sub get_qc_jobs_from_vrtrack
     my $hnames = $vrtrack->processed_lane_hnames(%filter);
     my @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config);
 
-
+    my $jobs_running = 0;
     # For big data sets, this loop takes suprisingly long.
     foreach my $vrlane (@lanes)
     {
@@ -709,7 +784,18 @@ sub get_qc_jobs_from_vrtrack
         }
         my $job = Job->new({lane_info=>$lane_info, %$config_data, path=>$path, config=>$config, mtime=>$mtime});
         push @$jobs, $job;
+
+        $jobs_running++;
+        #my $job_state = $job->pipeline_state();
+        my $job_state = $job->state();
+        # Don't count failed jobs towards job count to prevent remaining jobs being stalled indefinitely.
+        $jobs_running-- if ($job_state eq 'failed');
         debug($config_data,".");
+
+        if (exists($$config_data{max_qc_jobs}) && $$config_data{max_qc_jobs} && ($jobs_running >= $$config_data{max_qc_jobs})) {
+            debug($config_data, "jobs limit $$config_data{max_qc_jobs} reached...");
+            last;
+        }
     }
     debug($config_data,"done\n");
 
@@ -748,8 +834,8 @@ sub get_pathimport_jobs_from_vrtrack {
 
         my $lane_info = lane_info($path);
         $$lane_info{paired} = $vrlane->is_paired();
-	$$lane_info{vrlane} = $vrlane;
-	$$lane_info{root} = $config_data->{root};
+    $$lane_info{vrlane} = $vrlane;
+    $$lane_info{root} = $config_data->{root};
 
         if ( exists($$config_data{data}{known_genders}) )
         {
@@ -790,6 +876,20 @@ sub get_mapping_jobs_from_vrtrack {
     
     my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
     
+    # a limit on lane is not valid for VertRes::Utils::Hierarchy->get_lanes, but
+    # for consistency allow it
+    my %requested_lanes;
+    my $limit_by_lane_name = 0;
+    if (defined $config_data->{limits}) {
+        my $lanes = delete $config_data->{limits}->{lane};
+        if ($lanes) {
+            $limit_by_lane_name = 1;
+            foreach my $lane (@{$lanes}) {
+                $requested_lanes{$lane} = 1;
+            }
+        }
+    }
+    
     # if no limits have been specified, or if it's only platform => ['SLX',
     # '454'] which is what you'd get anyway given that the import doesn't import
     # SOLID, then don't use VertRes::Utils::Hierarchy->get_lanes which is slow
@@ -823,6 +923,10 @@ sub get_mapping_jobs_from_vrtrack {
         @lanes = @{$vrtrack->processed_lane_hnames(import => 1) || []};
     }
     
+    # Ignore mapped flag.
+    # Used for mapping with different assemblies/mappers for lane
+    my $ignore_mapped = defined($$config_data{data}{ignore_mapped_status}) && $$config_data{data}{ignore_mapped_status} ? 1:0;
+
     my $count = 0;
     foreach my $vrlane (@lanes) {
         unless ($use_hu) {
@@ -830,10 +934,15 @@ sub get_mapping_jobs_from_vrtrack {
         }
         next if $vrlane->is_withdrawn;
         next unless $vrlane->is_processed('import');
-        next if $vrlane->is_processed('mapped');
-        $count++;
-        
+        next if $vrlane->is_processed('swapped');
+        next if ($vrlane->is_processed('mapped') && !$ignore_mapped);
+        next if ($ignore_mapped && mapping_complete($config_data, $vrlane));
+
         my $lane_name = $vrlane->name;
+        if ($limit_by_lane_name) {
+            next unless exists $requested_lanes{$lane_name};
+        }
+        $count++;
         
         if ($coverage_opts) {
             my $coverage = $hu->hierarchy_coverage(lane => $lane_name, %{$coverage_opts->{pass_through}});
@@ -849,7 +958,7 @@ sub get_mapping_jobs_from_vrtrack {
         
         my $files = $vrlane->files();
         foreach my $file (@{$files}) {
-            push @{$lane_info->{files}}, $file->hierarchy_name;
+            push @{$lane_info->{files}}, $file->hierarchy_name if $file->type =~ /0|1|2/;
         }
         
         my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
@@ -880,12 +989,20 @@ sub get_improvement_jobs_from_vrtrack {
     
     my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
     
-    my @lanes = @{$vrtrack->processed_lane_hnames(mapped => 1, improved => 0) || []};
-    warn "got ", scalar(@lanes), " lanes that were mapped and not improved\n";
+    my %filter  = ( mapped => 1, improved => 0, swapped => 0 );
+    my @lanes;
+    if ( exists $config_data->{qc} && $config_data->{qc} ) { 
+        $filter{qc} = $config_data->{qc}; 
+        @lanes = @{$vrtrack->processed_lane_hnames(%filter) || []};
+        debug($config_data, "got ", scalar(@lanes), " lanes that were mapped, passed qc and not improved...");
+    } else {
+        @lanes = @{$vrtrack->processed_lane_hnames(%filter) || []};
+        debug($config_data, "got ", scalar(@lanes), " lanes that were mapped and not improved...");
+    } 
     
     if (defined $config_data->{limits}) {
         @lanes = filter_lanes($config_data->{limits}, \@lanes, $vrtrack, $config);
-        warn "got ", scalar(@lanes), " lanes that passed your limits\n";
+        debug($config_data, "got ", scalar(@lanes), " lanes that passed your limits...");
     }
     
     my $count = 0;
@@ -932,8 +1049,24 @@ sub get_import_jobs_from_vrtrack
     debug($config_data,"$config\tget_import_jobs_from_vrtrack...");
 
     my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
-    my $fnames  = $vrtrack->processed_file_hnames('import'=>0);
+    
+    my %filter  = ('import'=>0);
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
+    
+    my $fnames  = $vrtrack->processed_file_hnames(%filter);
 
+    my @lanes = @{$vrtrack->processed_lane_hnames() || []};
+    if (defined $config_data->{limits}) {
+        @lanes = map {$_->name} filter_lanes($config_data->{limits}, \@lanes, $vrtrack, $config);
+        debug($config_data, "got ", scalar(@lanes), " lanes that passed your limits...");
+    }
+
+    my %filtered_lanes = ();
+    foreach my $vrlane (@lanes)
+    {
+        $filtered_lanes{$vrlane} = 1;
+    }
+    
     my %lanes_to_run = ();
     foreach my $fname (@$fnames)
     {
@@ -944,9 +1077,11 @@ sub get_import_jobs_from_vrtrack
 
         my $file = VRTrack::File->new_by_hierarchy_name($vrtrack,$fname) or croak("Could not get File for $fname: $config\n");
         my $lane = VRTrack::Lane->new($vrtrack, $file->lane_id());
+        unless (exists $filtered_lanes{$lane->name}) { next; }
         if ( $lane->is_withdrawn() ) { next; }
 
         my $path = $vrtrack->hierarchy_path_of_lane_hname($lane->name);
+        next unless $path;
         
         $lanes_to_run{$path}{is_paired} = $lane->is_paired();
         $lanes_to_run{$path}{vrlane}    = $lane;
@@ -1022,6 +1157,7 @@ sub get_hierarchy_update_jobs_from_vrtrack {
         
         my $path = $vrtrack->hierarchy_path_of_lane_hname($lname);
         next if $path =~ /\/SOLID\//;
+        next if (exists $$config_data{skip_exomes} && $$config_data{skip_exomes} && $path =~ /\_exome\//);
         
         $lanes_to_run{$path}{is_paired} = $lane->is_paired();
         $lanes_to_run{$path}{vrlane}    = $lane;
@@ -1036,7 +1172,224 @@ sub get_hierarchy_update_jobs_from_vrtrack {
     }
     
     _make_jobs_from_vrtrack_lanes($jobs, $config, $mtime, $config_data, \%lanes_to_run);
+    debug($config_data, "done ", scalar keys %lanes_to_run, "\n");
+    return;
+}
+
+sub get_snps_jobs_from_vrtrack {
+    my ($jobs,$config,$mtime,$config_data) = @_;
+
+    if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
+    debug($config_data,"$config\tget_snps_jobs_from_vrtrack...");
+
+    my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+    my %filter  = ('improved'=>1, 'snp_called' => 0);
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
+
+    my $hnames = $vrtrack->processed_lane_hnames(%filter);
+    my @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config);
+
+    # Ignore snp_called
+    # Used when several bams for lane from differing assemblies/mappers
+    my $ignore_snp_called = defined($$config_data{data}{ignore_snp_called_status}) && $$config_data{data}{ignore_snp_called_status} ? 1:0;
+
+    unless( $ignore_snp_called )
+    {
+	debug($config_data, "found " . (scalar @lanes) . " lanes improved but not SNP called");
+    }
+    else 
+    {
+	debug($config_data, "found " . (scalar @lanes) . " mapped lanes checking if SNP called ")
+    }
+
+    my $lanes_count = 0;
+
+    # For big data sets, this loop takes suprisingly long.
+    foreach my $vrlane (@lanes)
+    {
+        my $path   = $vrtrack->hierarchy_path_of_lane($vrlane);
+        if ( !$path ) { croak("No path for [$vrlane->name]?\n"); }
+        if ( $vrlane->is_withdrawn() ) { next; }
+        my $lane_info = lane_info($path);
+        my $bam;
+        my $lane_path = File::Spec->catfile($config_data->{root}, $path);
+        my %mapstat_ids;
+        my $mapstat;
+
+        # Get all the possible BAMs from the current lane.
+        my @bam_files = glob("$lane_path/*.bam");
+        if ( !scalar @bam_files ) {die "No BAM files in [$lane_path]?"; };
+                 
+        my $regex = $config_data->{data}{bam_suffix};
+        $regex =~ s/\.bam/\\\.bam/;
+        $regex = '^(\d+)\.[ps]e\..*' . $regex . '$';
+
+        for my $file (@bam_files) {
+            my ($basename, $path) = fileparse($file);
+            if ($basename =~ m/$regex/){
+                push @{$mapstat_ids{$1}}, $file;
+            }
+        }
+
+        unless (scalar keys %mapstat_ids){
+            debug($config_data,"Didn't find an improved bam for snp calling in $lane_path\n");
+            next;
+        }
+
+	my $mapstat_id;
+	unless( $ignore_snp_called )
+	{
+	    # work out which is the latest bam to use for snp calling: the
+	    # one with the largest mapstats id.
+	    my @ids = sort {$b<=>$a} keys %mapstat_ids;
+	    $mapstat_id = $ids[0];
+	    if (1 < scalar @{$mapstat_ids{$ids[0]}}) {
+		# There can be only one...
+		debug($config_data, "Found more than one bam matching regex with mapstats id $ids[0], don't know which to use, in lane $lane_path\n");
+		next;
+	    }
+	}
+	else
+	{
+	    # Find all mapstats IDs and select lowest uncalled id
+	    my @ids = sort {$a<=>$b} keys %mapstat_ids;
+	    
+	    foreach my $id (@ids)
+	    {
+		if(uncalled_mapstat($config_data, $vrtrack, $vrlane, $id, $mapstat_ids{$id}[0]))
+		{
+		    $mapstat_id = $id;
+		    last;
+		}
+	    }
+	    next unless $mapstat_id; # No uncalled mapstats
+	}
+
+        my $bam_for_calling = $mapstat_ids{$mapstat_id}[0];
+        my $snp_dir = $bam_for_calling;
+        if ($snp_dir =~ m/^(.*)\.bam$/){
+            $snp_dir = "$1.snp";
+        }
+        else {
+            die "Fixme: couldn't work out snp dir name, bam $bam_for_calling doesn't end with .bam?\n";
+        }
+
+        unless (-d $snp_dir) {
+            mkdir $snp_dir or die "Could not mkdir $snp_dir\n";
+        }     
+
+        # make the file list file for the pipeline
+        my $file_list = File::Spec->catfile($snp_dir, 'file.list');
+        unless (-e $file_list){
+            open my $fh, '>', $file_list or debug($config_data, "Error opening $file_list\n");
+            print $fh $bam_for_calling, "\n";
+            close $fh;
+        }
+
+        $config_data->{data}{file_list} = $file_list;
+        $lane_info->{vrlane} = $vrlane;
+        $lane_info->{lane_path} = $path;
+        my $job = Job->new({lane_info=>$lane_info, %$config_data, path=>$snp_dir, config=>$config, mtime=>$mtime});
+        push @$jobs, $job;
+
+        $lanes_count++;
+        if ($config_data->{max_lanes} and $lanes_count == $config_data->{max_lanes}){
+            debug($config_data, ".max lanes limit of " . $config_data->{max_lanes} . " reached...");
+            last;
+        }
+
+        debug($config_data,".");
+    }
+
     debug($config_data,"done\n");
+    return;
+}
+
+=head2 get_snps_jobs
+
+  Arg [1]    : Pointer to array of jobs
+  Arg [2]    : The config file name
+  Arg [3]    : The mtime of the config file
+  Arg [4]    : The config data.
+  Description: Obtains the directory list and bam fofns from the config file.
+
+=cut
+
+sub get_snps_jobs {
+    my ($jobs,$config,$mtime,$config_data) = @_;
+    
+    croak("Expected bams_fofn key in the config $config.\n") unless defined $$config_data{bams_fofn};
+    croak("Expected root key in the config $config.\n") unless defined $$config_data{root};
+    debug($config_data,"$config\tget_snps_jobs...");
+    
+    $$config_data{new_root} ||= $$config_data{root};
+    Utils::CMD("mkdir -p $$config_data{new_root}") unless (-d $$config_data{new_root});
+    
+    my $bams_fofn = File::Spec->catfile($$config_data{new_root}, 'bams.fofn');
+    unless (-s $bams_fofn) 
+    {
+        copy($$config_data{bams_fofn}, $bams_fofn) || die "Could not copy '$$config_data{bams_fofn}' to '$bams_fofn'\n";
+    }
+    
+    my @bams = VertRes::IO->new()->parse_fofn($bams_fofn, $$config_data{root});
+    debug($config_data, "found " . (scalar @bams) . " bams to be SNP called...");
+    
+    my $jobs_running = 0;
+    my $jobs_failed = 0;
+    my $jobs_done = 0;
+    foreach my $bam (@bams)
+    {
+        my $bam_for_calling = File::Spec->catfile($$config_data{root}, $bam);
+        my $snp_dir = File::Spec->catdir($$config_data{new_root}, $bam);
+        if ($snp_dir =~ m/^(.*)\.bam$/)
+        {
+            $snp_dir = "$1.snp";
+        }
+        else 
+        {
+            die "Fixme: couldn't work out snp dir name, bam $bam doesn't end with .bam?\n";
+        }
+        
+        if (exists $$config_data{outdir})
+        {
+            $snp_dir = File::Spec->catdir($snp_dir, $$config_data{outdir});
+        }
+        
+        unless (-d $snp_dir) 
+        {
+            Utils::CMD("mkdir -p $snp_dir");
+        }     
+        
+        if (-e File::Spec->catfile($snp_dir, '.snps_done')) { $jobs_done++; next; }
+        
+        # make the file list file for the pipeline
+        my $file_list = File::Spec->catfile($snp_dir, "file.list");
+        unless (-e $file_list)
+        {
+            open my $fh, '>', $file_list or die($config_data, "Error opening $file_list\n");
+            print $fh $bam_for_calling, "\n";
+            close $fh;
+        }
+        
+        $$config_data{data}{file_list} = $file_list;
+        my $job = Job->new({lane_info => {}, %$config_data, path => $snp_dir, config => $config, mtime => $mtime});
+        push @$jobs, $job;
+        $jobs_running++;
+        my $job_state = $job->state();
+        if ($job_state eq 'failed') { $jobs_running--; $jobs_failed++; };
+        debug($config_data,".");
+        if ($$config_data{max_simultaneous} && $jobs_running >= $$config_data{max_simultaneous})
+        {
+            debug($config_data,"max number of jobs reached...");
+            last;
+        }
+    }
+    
+    debug($config_data,"failed $jobs_failed...") if $jobs_failed;
+    debug($config_data,"completed $jobs_done...") if $jobs_done;
+    debug($config_data,"running $jobs_running...") if $jobs_running;
+    debug($config_data,"done\n");
+    
     return;
 }
 
@@ -1109,7 +1462,12 @@ sub get_splitbam_jobs {
     
     # we make a job to run through the whole pipeline one bam at a time, but
     # don't exceed the maximum jobs limit
+    my $skipped;
     foreach my $bam (@bams) {
+        unless (-s $bam) {
+            $skipped++;
+            next;
+        }
         my ($bam_basename, $path) = fileparse($bam);
         my $prefix = $bam_basename;
         $prefix =~ s/\.bam$//;
@@ -1144,7 +1502,8 @@ sub get_splitbam_jobs {
         $jobs_running++;
     }
 
-    debug($config_data,"done\n");
+    debug($config_data, " $skipped bams skipped...") if ( $skipped );
+    debug($config_data, " done $jobs_running\n");
     return;
 }
 
@@ -1173,7 +1532,12 @@ sub get_mergeup_jobs {
         copy($config_data->{lane_bams}, $lane_bams_fofn) || die "Could not copy '$config_data->{lane_bams}' to '$lane_bams_fofn'\n";
     }
     
-    # We will make a job (instance of MergeUp) for each sample, suplying it the
+    my $platform_expected = File::Spec->catfile($root, 'raw_platform_bams.fofn_expected');
+    my $platform_done = File::Spec->catfile($root, 'raw_platform_bams.fofn');
+    my $sample_expected = File::Spec->catfile($root, 'raw_sample_bams.fofn_expected');
+    my $sample_done = File::Spec->catfile($root, 'raw_sample_bams.fofn');
+
+    # We will make a job (instance of MergeUp) for each sample, supplying it the
     # subset of lanes in the input lane_bams fofn for that sample. We'll create
     # the whole hierarchy; if we have been given previous_merge_root, we'll have
     # symlinks to dirs at levels that haven't changed.
@@ -1181,13 +1545,11 @@ sub get_mergeup_jobs {
     # first work out which samples changed and which didn't; record the results
     # and create hierarchy of directories/symlinks
     my $s_file = File::Spec->catfile($root, 'samples.txt');
-    my $p_file = File::Spec->catfile($root, 'expected_platform_bams.fofn');
-	unless (-s $s_file) {	
+    unless (-s $s_file) {   
         my $tmp_s = $s_file.'.working';
         open(my $sfh, '>', $tmp_s) || die "Could not write to $tmp_s\n";
-
-        my $tmp_p = $p_file.'.working';
-        open(my $pfh, '>', $tmp_p) || die "Could not write to $tmp_p\n";
+        
+        my %new_platform; my %old_platform;
         
         # parse lane_bams.fofn to group bams by hierarchy level
         open(my $lfh, $lane_bams_fofn) || die "Could not open $lane_bams_fofn\n";
@@ -1229,7 +1591,13 @@ sub get_mergeup_jobs {
                     # skip if one of our ancestor dirs is a symlink to the
                     # previous_root
                     foreach my $symlinked (keys %symlinked) {
-                        if ($this_path =~ /^$symlinked/) {
+                        if ($this_path eq $symlinked) {
+                            if ($level eq 'platforms') {
+                                $old_platform{$this_path} = 1;
+                            }
+                            if ($level eq 'samples') {
+                                print $sfh "$this_path\t0\n";
+                            }
                             next DIR;
                         }
                     }
@@ -1237,13 +1605,13 @@ sub get_mergeup_jobs {
                     $previous_path = File::Spec->catdir($previous_root, $dir);
                     my $previous_fofn = File::Spec->catfile($previous_path, 'lane_bams.fofn');
                     my %previous_bams;
-                    # no need to read previous fofn if path did not exist in previous hierarchy
-					if (-d $previous_path) {
-	                    open(my $pfh, $previous_fofn) || die "Could not open $previous_fofn\n";
-	                    while (<$pfh>) {
-	                        chomp;
-	                        $previous_bams{$_} = 1;
-	                    }
+                    # no need to read previous fofn if path or file does not exist in previous hierarchy
+                    if (-s $previous_fofn) {
+                        open(my $pfh, $previous_fofn) || die "Could not open $previous_fofn\n";
+                        while (<$pfh>) {
+                            chomp;
+                            $previous_bams{$_} = 1;
+                        }
                     }
                     $symlink = $mu->compare_hash_keys(\%these_bams, \%previous_bams);
                 }
@@ -1252,12 +1620,17 @@ sub get_mergeup_jobs {
                     symlink($previous_path, $this_path);
                     $symlinked{$this_path} = 1;
                     
+                    if ($level eq 'platforms') {
+                        $old_platform{$this_path} = 1;
+                    }
                     if ($level eq 'samples') {
                         print $sfh "$this_path\t0\n";
                     }
                 }
                 else {
-                    mkdir($this_path) || die "Could not mkdir $this_path\n";
+                    unless (-d $this_path) {
+                        mkdir($this_path) || die "Could not mkdir $this_path\n";
+                    }
                     
                     my $this_fofn = File::Spec->catfile($this_path, 'lane_bams.fofn');
                     open(my $ofh, '>', $this_fofn) || die "Could not write to $this_fofn\n";
@@ -1278,10 +1651,8 @@ sub get_mergeup_jobs {
                         die "wrote a fofn file '$this_fofn', but there was something wrong with it, so deleted it\n";
                     }
                     
-                    # create fofn of the raw platform bams created, not symlinked
                     if ($level eq 'platforms') {
-                        my $expected_raw_bam = File::Spec->catfile($this_path, 'raw.bam');
-                        print $pfh "$expected_raw_bam\n";
+                        $new_platform{$this_path} = 1;
                     }
                     
                     if ($level eq 'samples') {
@@ -1290,131 +1661,293 @@ sub get_mergeup_jobs {
                 }
             }
         }
-        
         close($sfh);
-        move($tmp_s, $s_file) || die "Could not move $tmp_s to $s_file\n";
+        
+        open(my $rpfh, '>', $platform_expected) || die "Could not open $platform_expected\n";
+        foreach my $path (keys %old_platform, keys %new_platform) {
+            my $raw_bam = File::Spec->catfile($path, 'raw.bam');
+            print $rpfh "$raw_bam\n";
+        }
+        close($rpfh);
 
-        close($pfh);
-        move($tmp_p, $p_file) || die "Could not move $tmp_p to $p_file\n";
+        my $new_platform_fofn = File::Spec->catfile($root, '.new_platform_bams');
+        open(my $npfh, '>', $new_platform_fofn) || die "Could not open $new_platform_fofn\n";
+        foreach my $path (keys %new_platform) {
+            my $raw_bam = File::Spec->catfile($path, 'raw.bam');
+            print $npfh "$raw_bam\n";
+        }
+        close($npfh);
+
+        move($tmp_s, $s_file) || die "Could not move $tmp_s to $s_file\n";
     }
     
-	# note which samples we have to deal with	
+    
+    my @tasks = qw(platform_merge sample_merge index_platform_bams index_sample_bam);
+    
+    # what is the final non-cleanup action that will complete?
+    my $final_task = 'platform_merge';
+    $final_task = 'sample_merge' if $config_data->{data}->{do_sample_merge};
+    $final_task = 'index_platform_bams' if ($config_data->{data}->{do_index_bams});
+    $final_task = 'index_sample_bam' if ($config_data->{data}->{do_sample_merge} && $config_data->{data}->{do_index_bams});
+    
+    my $cleanup = 0;
+    if (exists $config_data->{data}->{do_cleanup} && $config_data->{data}->{do_cleanup}) {
+        $cleanup = 1;
+    }
+    
+    # note which samples we have to deal with   
     my %new_samples;
+    my %old_samples;
     open(my $sfh, $s_file) || die "Could not open $s_file\n";
     while (<$sfh>) {
         my ($sample, $new) = split;
-        $new_samples{$sample} = 1 if $new;
+        if ( $new ) {
+            $new_samples{$sample} = 1;
+        } elsif ( $config_data->{previous_merge_root} ) {
+            # If previous root hierarchy was not completed to same level as we wish for this
+            # hierarchy, then we must deal with the old samples too.
+            my $previous_done_file = File::Spec->catfile($config_data->{previous_merge_root}, ".$final_task\_done");
+            (-s $previous_done_file) ? $old_samples{$sample} = 1 : $new_samples{$sample} = 1;
+        } else {
+            $old_samples{$sample} = 1;
+        }
     }
-	close $sfh;
-	
-	# Record the files expected from the platform and sample merges
-	my $platform_merges_expected_file = File::Spec->catfile($root, '.platform_merges_expected');
-	my $sample_merges_expected_file = File::Spec->catfile($root, '.sample_merges_expected');
-	my $platform_merges_done_file = File::Spec->catfile($root, '.platform_merges_done');
-	my $sample_merges_done_file = File::Spec->catfile($root, '.sample_merges_done');
-	
-	unless ( -s $platform_merges_expected_file || -e $platform_merges_done_file ) {
-		open(my $ofh, '>', $platform_merges_expected_file) || die "Couldn't write to $platform_merges_expected_file";
-	    foreach my $sample (keys %new_samples) {
-			my $expected_file = File::Spec->catfile($sample, ".platform_merge_done");
-	        print $ofh $expected_file, "\n";
-	    }
-	    my $expected = keys %new_samples;
-	    print $ofh "# expecting $expected\n";
-	    close($ofh);
-	}
-	
-	if ( $config_data->{data}->{do_sample_merge} ) {
-		unless ( -s $sample_merges_expected_file || -e $sample_merges_done_file ) {
-			open(my $ofh, '>', $sample_merges_expected_file) || die "Couldn't write to $sample_merges_expected_file";
-		    foreach my $sample (keys %new_samples) {
-				my $expected_file = File::Spec->catfile($sample, ".sample_merge_done");
-		        print $ofh $expected_file, "\n";
-		    }
-		    my $expected = keys %new_samples;
-		    print $ofh "# expecting $expected\n";
-		    close($ofh);
-		}
-	}
-	
-	# Check for done files. 
-	my %done_merges;
-	foreach my $level ('platform', 'sample') {
-		next if ( $level eq 'sample' && ! $config_data->{data}->{do_sample_merge} );
-		
-		my $expected_file = $level eq 'platform' ? $platform_merges_expected_file : $sample_merges_expected_file;
-		my $done_file = $level eq 'platform' ? $platform_merges_done_file : $sample_merges_done_file;
-		
-		if (-s $expected_file && ! -e $done_file) {
-	        my $done_count = 0;
-	        my $expected_merges = 0;
-	        my $written_expected;
-	        open(my $efh, $expected_file) || die "Couldn't open $expected_file";
-	        my @merged;
-	        my @skipped;
-	        while (<$efh>) {
-	            chomp;
-	            /\S/ || next;
-	            if (/^# expecting (\d+)/) {
-	                $written_expected = $1;
-	                next;
-	            }
-	            $expected_merges++;
-			
-	            if ( -e $_ ) {
-	                $done_count++;
-	                push(@merged, $_);
-					my $sample = dirname($_);
-					$done_merges{$sample}++;
-	            }
-	            else {
-	                push(@skipped, $_);
-	            }
-	        }
-	        
-	        if ($written_expected == $expected_merges && scalar @merged == $expected_merges) {
-	            move($expected_file, $done_file) || die "Failed to move $expected_file -> $done_file";
-	        }
-	    }
-	}
-	
-	# Exit if pipeline complete - i.e. merges_done files are present
-	if ( -s $platform_merges_done_file ) {
-		if ( $config_data->{data}->{do_sample_merge} ) {
-			if ( -s $sample_merges_done_file ) {
-				debug($config_data,"done. All sample merges complete.\n");
-				return;
-			}
-		} else {
-			debug($config_data,"done. All platform merges complete.\n");
-			return;
-		}
-	}
-	
-	# Remove from new samples hash if done for both platform and sample merges (if required)
-	my $done_count = $config_data->{data}->{do_sample_merge} ? 2 : 1;
-	while ( my ($sample, $count) = each %done_merges ) {
-		delete $new_samples{$sample} if ($count == $done_count);
-	}
-	
+    close $sfh;
+
+    # Create raw_sample_bams.fofn_expected
+    if ( $config_data->{data}->{do_sample_merge} && ! (-s $sample_expected || -s $sample_done ) ) {
+        open(my $sfh, '>', $sample_expected) || die "Couldn't write to $sample_expected";
+        foreach my $sample (keys %old_samples, keys %new_samples) {
+            my $raw_bam = File::Spec->catfile($sample, "raw.bam");
+            print $sfh $raw_bam, "\n";
+        }
+        close($sfh);
+    }
+
+    # Create .sample_bams_expected fofn
+    my $new_sample_fofn = File::Spec->catfile($root, '.new_sample_bams');
+    if ( $config_data->{data}->{do_sample_merge} && ! -s $new_sample_fofn ) {
+        open(my $sfh, '>', $new_sample_fofn) || die "Couldn't write to $new_sample_fofn";
+        foreach my $sample (keys %new_samples) {
+            my $raw_bam = File::Spec->catfile($sample, "raw.bam");
+            print $sfh $raw_bam, "\n";
+        }
+        close($sfh);
+    }
+
+    
+    my %done_tasks; foreach my $sample (keys %new_samples) { $done_tasks{$sample} = '' };
+    foreach my $task (@tasks) {
+        next if ( $task =~ /sample/ && ! $config_data->{data}->{do_sample_merge} );
+        next if ( $task =~ /index/ && ! $config_data->{data}->{do_index_bams} );
+
+        my $expected_file = File::Spec->catfile($root, ".${task}_expected");
+        my $done_file = File::Spec->catfile($root, ".${task}_done");
+        
+        # Record the files expected
+        unless ( -s $expected_file || -e $done_file ) {
+            open(my $ofh, '>', $expected_file) || die "Couldn't write to $expected_file";
+            foreach my $sample (keys %new_samples) {
+                my $expected_done_file = File::Spec->catfile($sample, ".${task}_done");
+                print $ofh $expected_done_file, "\n";
+            }
+            my $expected = keys %new_samples;
+            print $ofh "# expecting $expected\n";
+            close($ofh);
+        }
+        
+        # Check for done files. 
+        if ( -s $expected_file && ! -e $done_file ) {
+            my $done_count = 0;
+            my $expected_done = 0;
+            my $written_expected;
+            open(my $efh, $expected_file) || die "Couldn't open $expected_file";
+            my @done;
+            my @skipped;
+            while (<$efh>) {
+                chomp;
+                /\S/ || next;
+                if (/^# expecting (\d+)/) {
+                    $written_expected = $1;
+                    next;
+                }
+                $expected_done++;
+            
+                if ( -e $_ ) {
+                    push(@done, $_);
+                    my $sample = dirname($_);
+                    $done_tasks{$sample} = $task;
+                }
+                else {
+                    push(@skipped, $_);
+                }
+            }
+            
+            if ($written_expected == $expected_done && scalar @done == $expected_done) {
+                move($expected_file, $done_file) || die "Failed to move $expected_file -> $done_file";
+            }
+        } elsif (-s $done_file) {
+            foreach my $sample (keys %new_samples) {
+                $done_tasks{$sample} = $task;
+            }
+        }
+    }
+    
+    my $final_done_file = File::Spec->catfile($root, ".${final_task}_done");
+    if (-s $final_done_file) {
+        foreach my $merge ('platform', 'sample') {
+            next if ( $merge eq 'sample' && ! $config_data->{data}->{do_sample_merge} );
+
+            my $expected_file = File::Spec->catfile($root, "raw_${merge}_bams.fofn_expected");
+            my $done_file = File::Spec->catfile($root, "raw_${merge}_bams.fofn");
+            
+            if ( -s $expected_file && ! -e $done_file ) {
+                my $done_count = 0;
+                my $expected_done = 0;
+                open(my $efh, $expected_file) || die "Couldn't open $expected_file";
+                my @done;
+                while (<$efh>) {
+                    chomp;
+                    /\S/ || next;
+                    $expected_done++;
+                    if ( -e $_ ) {
+                        push(@done, $_);
+                        my $sample = dirname($_);
+                    }
+                }
+
+                if (scalar @done == $expected_done) {
+                    move($expected_file, $done_file) || die "Failed to move $expected_file -> $done_file";
+                } else {
+                    warn "Not all the expected $merge bams are present!\n";
+                }
+            }
+        }
+    }
+    
+    # Unless cleanup action will be run, remove from new samples hash if final 
+    # task has completed
+    unless ($cleanup) {
+        while ( my ($sample, $task) = each(%done_tasks) ) {
+            delete $new_samples{$sample} if ( $task eq $final_task );
+        }
+    }
+    
     # now actually create the jobs
     my @samples = sort keys %new_samples;
     my $sample_count = 0;
+    my $cleanup_count = 0;
     my $max_samples = $config_data->{simultaneous_samples} || @samples;
     foreach my $sample_path (@samples) {
         my $job = Job->new({lane_info => { lane_bams => File::Spec->catfile($sample_path, 'lane_bams.fofn'), hierarchy_root => $root }, %$config_data, path => $sample_path, config => $config, mtime => $mtime});
         push @$jobs, $job;
         debug($config_data,".");
         
-        $sample_count++;
-        if ($sample_count >= $max_samples) {
+        if ( $cleanup && $done_tasks{$sample_path} eq $final_task ) {
+            $cleanup_count++;
+        } else {
+            $sample_count++;
+        }
+        
+        if ($sample_count > $max_samples) {
+            debug($config_data, "jobs limit $config_data->{simultaneous_samples} reached... ");
             last;
         }
     }
     
-    debug($config_data,"done $sample_count\n");
+    if ($cleanup && $cleanup_count) {
+        debug($config_data,"done $sample_count, $cleanup_count in cleanup mode\n");
+    } else {
+        debug($config_data,"done $sample_count\n");
+    }
     return;
 }
+
+=head2 mapping_complete
+
+  Arg [1]    : The config data
+  Arg [2]    : The vrlane object
+  Description: Checks if mapping complete based on mapstats entry. 
+
+=cut
+
+sub mapping_complete
+{
+    my($config_data, $vrlane) = @_;
+
+    # Find mapstats associated with lane
+    my @mappings = @{ $vrlane->mappings() };
+
+    # Check assembly and mapper
+    foreach my $mapping (@mappings)
+    {
+	# Skip QC mappings.
+	my $images = $mapping->images();
+	next if( scalar(@{$images}) );
+
+	# Skip unfinished mapping
+	next unless(defined($mapping->raw_reads()));
+
+	# Check Reference and Mapper.
+	if($$config_data{data}{assembly_name} eq $mapping->assembly->name())
+	{
+	    my $mapper_slx = exists($$config_data{data}{'slx_mapper'}) ? $$config_data{data}{'slx_mapper'}:'';
+	    my $mapper_454 = exists($$config_data{data}{'454_mapper'}) ? $$config_data{data}{'454_mapper'}:'';
+
+	    if($mapper_slx eq $mapping->mapper->name() ||
+	       $mapper_454 eq $mapping->mapper->name())
+	    {
+		return(1); # Job done. Do not add to job list.
+	    }
+	}
+    }
+    return(0); # Add to job list.
+}
+
+
+=head2 uncalled_mapstat
+
+  Arg [1]    : The config data.
+  Arg [2]    : The vrtrack object
+  Arg [3]    : The vrlane object
+  Arg [4]    : The mapstats id
+  Arg [5]    : The bam filename
+  Description: Checks if SNPs have been called for a BAM file produced by the mapping pipeline. 
+               Used if running jobs on several BAM files from alignement with different assemblies.
+
+=cut
+
+sub uncalled_mapstat
+{
+    my ($config_data, $vrtrack, $vrlane, $id, $bam_file) = @_;
+
+    # 1. Check if SNP-called.
+    # Look for done file in snp directory
+    my $snp_done = $bam_file;
+    if ($snp_done =~ m/^(.*)\.bam$/){
+	$snp_done = "$1.snp/.snps_done";
+    }
+    else {
+	die "Fixme: couldn't work out snp done filename, bam $bam_file doesn't end with .bam?\n";
+    }
+    return(0) if -e $snp_done && $vrlane->is_processed('snp_called'); # SNP Called.
+
+    # 2. Check Assembly
+    my $mapstats= VRTrack::Mapstats->new($vrtrack, $id);
+    return(0) unless(defined $mapstats); # Failed to get mapstats - junk bam file?
+
+    my $mapstats_reference = $mapstats->assembly->name();
+    my @complete_path = split(/\//, $$config_data{data}{fa_ref});
+    my $config_reference = $complete_path[-1];
+    $config_reference =~ s/\.fa$//;
+    return(0) if($mapstats_reference ne $config_reference); # Different assembly
+
+    # 3. Check mapping completed.
+    return(0) unless(defined($mapstats->raw_reads())); # Mapping not completed
+
+    return(1); # Uncalled completed mapping 
+}
+
 
 #---------- Job ------------------------
 package Job;

@@ -70,7 +70,6 @@ memoize('find_file_by_name');
 sub find_file_by_name {
     my ($self, $name) = @_;
     my $cmd = join "/",($self->{icommands},qq(iquest -z seq "SELECT COLL_NAME, DATA_NAME WHERE DATA_NAME = '$name'"));
-    print "CMD: $cmd\n";
     open(my $irods, "$cmd |");
     my ($path, $filename);
     while (<$irods>) {
@@ -120,7 +119,7 @@ sub find_files_by_run_lane {
     unless ($run && $lane){
          $self->throw("Missing parameters: run and lane.\n");
     }
-    my $cmd = join "/",($self->{icommands},"imeta -z seq qu -d id_run = $run and lane = $lane");
+    my $cmd = join "/",($self->{icommands},"imeta -z seq qu -d id_run = $run and lane = $lane and target = 1");
 
     open(my $irods, "$cmd |");
 
@@ -140,7 +139,9 @@ sub find_files_by_run_lane {
             $path = $1;
         }
         if (/^dataObj: (.+)$/){
-            push @out, "$path/$1";
+            my $bamfile = $1;
+            next if ($bamfile =~ m/_phix/);
+            push @out, "$path/$bamfile";
         }
     }
     close $irods;
@@ -226,5 +227,25 @@ sub get_file {
     #my @args = ($cmd, "-K", "-Q", "-f", $file, $dest);
     my @args = ($cmd, "-K", "-f", $file, $dest);
     return system(@args);
+}
+
+
+=head2 get_total_reads
+
+    Description : returns the total nubmer of reads in the bam file
+    Arg [1]     : irods file location
+    Example     : my $total_reads = $irods->get_total_reads('/seq/1234/1234_5.bam');
+    Returntype  : integer number of reads
+
+=cut
+
+sub get_total_reads {
+  my ($self, $file) = @_;
+  my $cmd = join "/",($self->{icommands},"imeta ls -d $file total_reads | grep value");
+
+  my $total_reads_value = `$cmd`;
+  my @total_reads = split(/ /,$total_reads_value);
+  chomp $total_reads[1];
+  return $total_reads[1];
 }
 

@@ -8,28 +8,36 @@
 # Maintainer:    jws
 # Created:       2010-05-17
 
+BEGIN {
+    $ENV{VRTRACK_HOST} = 'mcs4a';
+    $ENV{VRTRACK_PORT} = 3306;
+    $ENV{VRTRACK_RO_USER} = 'vreseq_ro';
+    $ENV{VRTRACK_RW_USER} = 'vreseq_rw';
+    $ENV{VRTRACK_PASSWORD} = 't3aml3ss';
+};
+
 use strict;
 use warnings;
 use URI;
 
-use lib '.';
-
-#use SangerPaths qw(core team145);
-use SangerPaths qw(core);
-use lib '..';
+use SangerPaths qw(core team145);
+#use SangerPaths qw(core);
+#use lib './modules';
 use VRTrack::VRTrack;
 use VRTrack::Project;
 use VRTrack::Sample;
 use VRTrack::Library;
 use VRTrack::Lane;
+use VRTrack::Mapper;
+use VRTrack::Mapstats;
 use VertRes::Utils::VRTrackFactory;
+use Data::Dumper;
 
 use SangerWeb;
-
 $ENV{PATH}= '/usr/local/bin';   # solely to stop taint from barfing
 
-$|++;
 
+$|++;
 
 #different modes/views possible
 my $LANE_VIEW = 0;
@@ -43,6 +51,7 @@ my $SAMP_VIEW = 7;
 my $LANE_UPDATE = 10;
 my $LANES_UPDATE = 9;
 my $FILTER_LANES = 11;
+my $PROJ_LANE_VIEW = 12;
 
 #possible states
 my $PASSED = 'passed';
@@ -63,6 +72,8 @@ my %AUTH_USERS = (  'jws' => 1, # Jim Stalker
                     'rd'  => 1, # Richard Durbin
                     'kb1' => 1, # Karen McLaren
                     'ylx' => 1, #Yali Xue from Chris's group
+                    'ak6' => 1, # Anja Kolb-Kokocinski (kuusamo)
+                    'cj5' => 1, # chris joyce
                  );
 
 ###############################CSS Stuff#############################
@@ -197,7 +208,8 @@ my $USER = $sw->username();
 my $cgi = $sw->cgi();
 #script name for self links
 my $SCRIPT_NAME = $cgi->url(-relative=>1);
-
+my $pending_view = "../pending-view/pending_view.pl";
+my $lane_qc_script = "./lane_qc.pl";
 
 #decide on the entry point
 my $mode = $cgi->param('mode');
@@ -317,13 +329,14 @@ elsif( $mode == $LANES_UPDATE ) {
 elsif( $mode == $FILTER_LANES ) {
     my $projID = $cgi->param('proj_id');
     my $filter = $cgi->param('filter');
+    my $individual = defined( $cgi->param('individual') ) ? $cgi->param('individual') : undef;
     unless ( defined $projID  && defined $filter )
     {
         redirectErrorScreen( $cgi, "Must provide a project ID & filter" );
         exit;
     }
     print $sw->header();
-    displayFilteredLanes( $cgi, $vrtrack, $db, $projID,$filter);
+    displayFilteredLanes( $cgi, $vrtrack, $db, $projID, $individual, $filter);
     print $sw->footer();
     exit;
 }
@@ -430,7 +443,7 @@ sub displayDatabasesPage {
         <legend>Select dataset to QC</legend>
     ];
     
-    my @dbs = VertRes::Utils::VRTrackFactory->databases();
+    my @dbs = VertRes::Utils::VRTrackFactory->databases(1);
     foreach( @dbs )
     {
         print qq[
@@ -482,10 +495,13 @@ sub displayProjectsPage
         my $pid = $project->id();
         
         my $name = $project->name;
+
         print qq[
             <tr>
                 <td><a href="$SCRIPT_NAME?db=$database&amp;mode=$PROJ_VIEW&amp;proj_id=$pid">$name</a></td>
                 <td>$acc</td>
+
+
             </tr>
         ];
     }
@@ -498,7 +514,7 @@ sub displayProjectsPage
 }
 
 sub displayFilteredLanes {
-    my ($cgi, $vrtrack, $database, $projectID, $filter) = @_;
+    my ($cgi, $vrtrack, $database, $projectID, $individual, $filter) = @_;
     
     my $project = VRTrack::Project->new( $vrtrack, $projectID );
     displayError( "Cant get project: $projectID" ) unless $project;
@@ -517,8 +533,11 @@ sub displayFilteredLanes {
     
     my @filtlanes;
 
-    foreach( sort { $a->ssid() <=> $b->ssid() } @$samples){
-        my @libraries = sort {$a->name cmp $b->name} @{$_->libraries()};
+    foreach my $sample ( sort { $a->ssid() <=> $b->ssid() } @$samples)
+    {
+        if( ! $individual || ( $individual && $sample->individual()->name() eq $individual ) )
+        {
+        my @libraries = sort {$a->name cmp $b->name} @{$sample->libraries()};
         foreach( @libraries ) {
             my $library = $_;
             my $lanes = $library->lanes();
@@ -531,6 +550,7 @@ sub displayFilteredLanes {
                 }
                 push @filtlanes, $lane;
             }
+        }
         }
     }
     my $current_url = $cgi->url(-query=>1,-relative=>1);
@@ -547,11 +567,27 @@ sub displayProjectPage
     my $samples = $project->samples();
     displayError( "Cant get samples for project: $projectID" ) unless $samples;
     
+    my %individuals2Samples;
+    foreach( @{ $samples } )
+    {
+        my $sample = $_;
+        my $ind = $sample->individual();
+        my $indname = $ind->name();
+        if( $individuals2Samples{ $indname } )
+        {
+            push( @{ $individuals2Samples{ $indname } }, $sample );
+        }
+        else{$individuals2Samples{ $indname } = [ $sample ];}
+    }
+    
     my $pname = $project->name;
     print qq[
     <h2 align="center" style="font: normal 900 1.5em arial"><a href="$SCRIPT_NAME">QC Grind</a></h2>
     <h3 style="font: normal 700 1.5em arial"><a href="$SCRIPT_NAME?mode=$SPECIES_VIEW&amp;db=$database">].
-    ucfirst($database).qq{</a> : $pname </h3><br/>};
+    ucfirst($database).qq{</a> : $pname </h3>
+    <h5 style="font: arial"><a href="$pending_view?mode=2&amp;db=$database">Pending Requests</a></h5>};
+
+    print qq[<div align=right><h5><a href="$lane_qc_script?mode=$PROJ_LANE_VIEW&amp;proj_id=$projectID&amp;db=$database">Lane View</a></h5></div>];
     
     print qq[
         <div class="centerFieldset">
@@ -559,7 +595,7 @@ sub displayProjectPage
         <legend>$pname</legend>
         <table RULES=GROUPS width="100%">
         <tr>
-        <th>Sample</th>
+        <th>Individual</th>
         <th>Sanger</th>
         <th>Library</th>
         <th>Lanes</th>
@@ -575,13 +611,15 @@ sub displayProjectPage
     my $grandTotalDepth = 0;
     my $grandTotalNoQC = 0;
     my $grandTotalSamples = 0;
-    foreach( sort { $a->ssid() <=> $b->ssid() } @$samples){
-        my $sample = $_;
-        my $sname = $sample->name;
+    foreach( sort( keys( %individuals2Samples ) ) )
+    {
+        my $iname = $_;
+        my @samples = @{$individuals2Samples{ $_ }};
+        
         my $is_ours = 1;
         if( defined( $project->study() ) )
         {
-                $is_ours = $sample->is_sanger_sample();
+            $is_ours = $samples[ 0 ]->is_sanger_sample(); #check the first sample is ours
         }
         
         print qq[
@@ -591,25 +629,30 @@ sub displayProjectPage
         if( ! $is_ours && $database =~ '.*g1k.*' )
         {
             print qq[
-                <td bgcolor="red">$sname</td>
+                <td bgcolor="red">$iname</td>
                 <td bgcolor="red">NO</td>
             ];
         }
         else
         {
             print qq[
-                <td>$sname</td>
+                <td>$iname</td>
                 <td></td>
             ];
         }
-        
-        my @libraries = sort {$a->name cmp $b->name} @{$sample->libraries()};
-        my $firstL = 1;
+
         my $sampleLanes = 0;
         my $sampleDepth = 0;
         my $samplePassed = 0;
         my $samplePassseq = 0;
         my $sample_no_qcLanes = 0;
+        my $firstL = 1;
+        foreach( @samples )
+        {
+#    foreach( sort { $a->ssid() <=> $b->ssid() } @$samples){
+        my $sample = $_;        
+        
+        my @libraries = sort {$a->name cmp $b->name} @{$sample->libraries()};
         foreach( @libraries )
         {
             my $library = $_;
@@ -677,12 +720,14 @@ sub displayProjectPage
             $firstL = 0;
             $sample_no_qcLanes += $lib_no_qcLanes;
         }
+        }
+        
         $samplePassseq = bp_to_nearest_unit($samplePassseq, 1);
         print qq[<tr><th></th><th></th><th></th><th>$sampleLanes</th><th>$samplePassed</th><th>$samplePassseq</th><th>$sampleDepth].qq[x</th>];
         
         if( $sample_no_qcLanes > 0 )
         {
-            print qq[<th>$sample_no_qcLanes</th>];
+            print qq[<th><a href="$SCRIPT_NAME?mode=$FILTER_LANES&amp;filter=$PENDING&amp;proj_id=$projectID&amp;db=$database&amp;individual=$iname">$sample_no_qcLanes</a></th>];
         }
         else
         {
@@ -694,7 +739,7 @@ sub displayProjectPage
         $grandTotalPassed += $samplePassed;
         $grandTotalDepth += $sampleDepth;
         $grandTotalNoQC += $sample_no_qcLanes;
-                $grandTotalSamples ++;
+        $grandTotalSamples ++;
     }
     
     print qq[<tr><tfoot><th>$grandTotalSamples</th><th></th><th></th><th>$grandTotalLanes</th><th>$grandTotalPassed</th><th>$grandTotalDepth].qq[x];
@@ -780,7 +825,10 @@ sub displayLane
     }
     
     my $npg_qc = $lane->npg_qc_status;
-    my ($error_rate, $adapter_perc, $reads_mapped, $bases_mapped, $reads_paired, $rmdup_reads_mapped, $rmdup_bases_mapped, $clip_bases,$adapter_reads);
+    my ($error_rate, $adapter_perc, $reads_mapped, $bases_mapped, $reads_paired, $rmdup_reads_mapped, $rmdup_bases_mapped, $clip_bases,$adapter_reads,
+        $bait_near_bases_mapped, $target_near_bases_mapped, $bait_bases_mapped, $mean_bait_coverage, $bait_coverage_sd, $off_bait_bases,
+        $reads_on_bait, $reads_on_bait_near, $reads_on_target, $reads_on_target_near, $target_bases_mapped, $mean_target_coverage,
+        $target_coverage_sd, $targets, $target_bases_1X, $target_bases_2X, $target_bases_5X, $target_bases_10X, $target_bases_20X, $target_bases_50X, $target_bases_100X);
     my $cycles = $lane->read_len;
     my $raw_reads = $lane->raw_reads;
     my $raw_bases = $lane->raw_bases;
@@ -794,6 +842,11 @@ sub displayLane
     if ($mapstats)
     {
         my $images = $mapstats->images;
+        my $exome_design = $mapstats->exome_design();
+        my ($target_bases, $bait_bases, $bait_near_bases_mapped_perc, $target_near_bases_mapped_perc, $bait_bases_mapped_perc, $off_bait_bases_perc, $reads_on_bait_perc, $reads_on_bait_near_perc, $reads_on_target_perc, $reads_on_target_near_perc, $target_bases_mapped_perc);
+
+        #my $bait_bases = $exome_design->bait_bases();
+        #my $target_bases = $exome_design->target_bases();
         
         # over-ride raw_reads and raw_bases if we have a mapping
         # This handles sampling for mapping
@@ -812,11 +865,45 @@ sub displayLane
             $adapter_reads = $mapstats->adapter_reads;
             $adapter_perc = sprintf("%.1f",($adapter_reads/$reads)*100);
         }
+
+        #get the aligner
+        my $mapper = $mapstats->mapper();
+        my $mapper_string = qq[None found];
+        if( $mapper )
+        {
+            $mapper_string = $mapper->name().qq[ ].$mapper->version();
+        }
         
         # genotypes
         my $gt_found = $mapstats->genotype_found;
         my $gt_ratio = sprintf("%.3f",$mapstats->genotype_ratio);
         my $gt_display = "$gt_status ($gt_found:$gt_ratio)";
+
+        # exome stats
+        if (defined $exome_design) {
+            $target_bases = commify($exome_design->target_bases());
+            $bait_bases = commify($exome_design->bait_bases());
+            $bait_near_bases_mapped = $mapstats->bait_near_bases_mapped;
+            $target_near_bases_mapped = $mapstats->target_near_bases_mapped;
+            $bait_bases_mapped = $mapstats->bait_bases_mapped;
+            $mean_bait_coverage = $mapstats->mean_bait_coverage;
+            $bait_coverage_sd = $mapstats->bait_coverage_sd;
+            $off_bait_bases = $mapstats->off_bait_bases;
+            $reads_on_bait = $mapstats->reads_on_bait;
+            $reads_on_bait_near = $mapstats->reads_on_bait_near;
+            $reads_on_target = $mapstats->reads_on_target;
+            $reads_on_target_near = $mapstats->reads_on_target_near;
+            $target_bases_mapped = $mapstats->target_bases_mapped;
+            $mean_target_coverage = $mapstats->mean_target_coverage;
+            $target_coverage_sd = $mapstats->target_coverage_sd;
+            $target_bases_1X   = sprintf("%.1f", 100 * $mapstats->target_bases_1X);
+            $target_bases_2X   = sprintf("%.1f", 100 * $mapstats->target_bases_2X);
+            $target_bases_5X   = sprintf("%.1f", 100 * $mapstats->target_bases_5X);
+            $target_bases_10X  = sprintf("%.1f", 100 * $mapstats->target_bases_10X);
+            $target_bases_20X  = sprintf("%.1f", 100 * $mapstats->target_bases_20X);
+            $target_bases_50X  = sprintf("%.1f", 100 * $mapstats->target_bases_50X);
+            $target_bases_100X = sprintf("%.1f", 100 * $mapstats->target_bases_100X);
+        }
 
         if ($bases_mapped)
         {   # sometimes the mapping fails
@@ -828,18 +915,46 @@ sub displayLane
             my $rmdup_bases_mapped_perc   = sprintf("%.1f", ($rmdup_bases_mapped/$total_bases)*100);
             my $clip_bases_perc    = sprintf("%.1f", ($clip_bases/$bases)*100);
             my $error_rate_perc    = sprintf("%.2f", ($error_rate*100));
-            
             $reads_mapped = commify($reads_mapped);
             $bases_mapped = commify($bases_mapped);
             $reads_paired = commify($reads_paired);
             $rmdup_reads_mapped = commify($rmdup_reads_mapped);
             $rmdup_bases_mapped = commify($rmdup_bases_mapped);
-            $reads = commify($reads);
             $bases = commify($bases);
             $raw_reads = commify($raw_reads);
             $raw_bases = bp_to_nearest_unit($raw_bases);
             $clip_bases = commify($clip_bases) if $clip_bases;
-            
+ 
+            if (defined $exome_design) {
+                $bait_near_bases_mapped_perc   = sprintf("%.1f", 100 * $bait_near_bases_mapped / $total_bases);
+                $target_near_bases_mapped_perc = sprintf("%.1f", 100 * $target_near_bases_mapped / $total_bases);
+                $bait_bases_mapped_perc        = sprintf("%.1f", 100 * $bait_bases_mapped / $total_bases);
+                $off_bait_bases_perc           = sprintf("%.1f", 100 * $off_bait_bases / $total_bases);
+                $reads_on_bait_perc            = sprintf("%.1f", 100 * $reads_on_bait / $reads);
+                $reads_on_bait_near_perc       = sprintf("%.1f", 100 * $reads_on_bait_near / $reads);
+                $reads_on_target_perc          = sprintf("%.1f", 100 * $reads_on_target / $reads);
+                $reads_on_target_near_perc     = sprintf("%.1f", 100 * $reads_on_target_near / $reads);
+                $target_bases_mapped_perc      = sprintf("%.1f", 100 * $target_bases_mapped / $total_bases);
+
+                $mean_target_coverage = sprintf("%.1f", $mean_target_coverage);
+                $mean_bait_coverage = sprintf("%.1f", $mean_bait_coverage);
+                $bait_near_bases_mapped = commify($bait_near_bases_mapped);
+                $target_near_bases_mapped = commify($target_near_bases_mapped);
+                $bait_bases_mapped = commify($bait_bases_mapped);
+                $mean_bait_coverage = commify($mean_bait_coverage);
+                $bait_coverage_sd = commify($bait_coverage_sd);
+                $off_bait_bases = commify($off_bait_bases);
+                $reads_on_bait = commify($reads_on_bait);
+                $reads_on_bait_near = commify($reads_on_bait_near);
+                $reads_on_target = commify($reads_on_target);
+                $reads_on_target_near = commify($reads_on_target_near);
+                $target_bases_mapped = commify($target_bases_mapped);
+                $mean_target_coverage = commify($mean_target_coverage);
+                $target_coverage_sd = commify($target_coverage_sd);
+            }
+
+            $reads = commify($reads);
+
             print qq[
                 <div class="centerFieldset">
                 <fieldset style="width: 800px">
@@ -851,19 +966,39 @@ sub displayLane
             #map the image names to the object
             my $imglist = $mapstats->images;
             my %images = map {$_->name => $_} @$imglist;
-            my $img = $images{'gc-content.png'};
-            if( $img )
-            {
-                print qq[<td>];printFullImage($img);print qq[</td>];
-                delete( $images{'gc-content.png'} );
+            my @big_images;
+            if ($exome_design) {
+                @big_images = qw(exomeQC.gc_mapped.png exomeQC.gc_mapped.png exomeQC.insert_size.png);
             }
-            
-            $img = $images{ "insert-size.png" };
-            if( $img )
-            {
-                print qq[<td>];printFullImage($img);print qq[</td>];
-                delete( $images{ "insert-size.png" } );
+            else {
+                @big_images = qw(gc-content.png insert-size.png);
             }
+
+            foreach (@big_images) {
+                my $img = $images{$_};
+                if ($img) {
+                     print qq[<td>];printFullImage($img);print qq[</td>];
+                     delete $images{$_};
+                }
+            } 
+
+
+
+
+
+#            my $img = $images{'exomeQC.gc_mapped.png'};
+#            if( $img )
+#            {
+#                print qq[<td>];printFullImage($img);print qq[</td>];
+#                delete( $images{'exomeQC.gc_mapped.png'} );
+#            }
+#            
+#            $img = $images{ "exomeQC.insert_size.png" };
+#            if( $img )
+#            {
+#                print qq[<td>];printFullImage($img);print qq[</td>];
+#                delete( $images{ "exomeQC.insert_size.png" } );
+#            }
             
             print qq[
                 </tr>
@@ -872,10 +1007,22 @@ sub displayLane
                 <tr>
             ];
             
-            my @i = sort( { $a->name() cmp $b->name() } @{$images} );
-            $images = \@i;
-            
-            foreach( keys( %images ) )
+            my @i;
+
+            if ($exome_design){
+                @i = qw(exomeQC.quality_scores_1.png
+                        exomeQC.quality_scores_2.png
+                        exomeQC.gc_unmapped.png
+                        exomeQC.target_gc_vs_cvg.scaled.png
+                        exomeQC.cumulative_coverage.png
+                        exomeQC.coverage_per_base.png);
+            } 
+            else{
+                @i = keys %images;
+                #@i = sort( { $a->name() cmp $b->name() } @{$images} );
+            }
+
+            foreach( @i )
             {
                 print qq[<td>];printPreviewImage($images{ $_ });print qq[</td>];
             }
@@ -908,11 +1055,14 @@ sub displayLane
             $bmapped_str = "$bases_mapped ($bases_mapped_perc\%)" if $bases_mapped;
             $rmdup_bmapped_str = "$rmdup_bases_mapped ($rmdup_bases_mapped_perc\%)" if $rmdup_bases_mapped;
             
+
+            my $mapping_section_title = $exome_design ? 'General mapping data' : 'Mapping data';
+
             print qq[
                 <br/>
                 <div class="centerFieldset">
                 <fieldset style="width: 900px">
-                <legend>Mapping data</legend>
+                <legend>$mapping_section_title</legend>
                 <table width="100%">
                 <tr>
                 <td><table>
@@ -934,7 +1084,7 @@ sub displayLane
                 </table>
                 </td>
                 <td><table>
-                <tr><td>&nbsp;</td><td></td></tr>
+                <tr><td>Mapper: </td><td>$mapper_string</td></tr>
                 <tr><td>Cycles: </td><td>$cycles</td></tr>
                 <tr><td>NPG QC: </td><td>$npg_qc</td></tr>
                 <tr><td>Error rate: </td><td>$error_rate_perc%</td></tr>
@@ -947,8 +1097,51 @@ sub displayLane
                 </fieldset>
                 </div>
             ];
+
+
+            if ($exome_design) {
+                print qq[
+                    <br/>
+                    <div class="centerFieldset">
+                      <fieldset style="width: 900px">
+                      <legend>Exome-specific data</legend>
+                      <table width="100%">
+                        <tr>
+                          <td><table>
+                              <tr><td>% target bases >= 1X:</td><td>$target_bases_1X</td></tr>
+                              <tr><td>% target bases >= 2X:</td><td>$target_bases_2X</td></tr>
+                              <tr><td>% target bases >= 5X:</td><td>$target_bases_5X</td></tr>
+                              <tr><td>% target bases >= 10X:</td><td>$target_bases_10X</td></tr>
+                              <tr><td>% target bases >= 20X:</td><td>$target_bases_20X</td></tr>
+                              <tr><td>% target bases >= 50X:</td><td>$target_bases_50X</td></tr>
+                              <tr><td>% target bases >= 100X:</td><td>$target_bases_100X</td></tr>
+                              <tr><td>Mean target coverage:</td><td>$mean_target_coverage</td></tr>
+                              <tr><td>Mean bait coverage:</td><td>$mean_bait_coverage</td></tr>
+                              <tr><td>Off bait bases:</td><td>$off_bait_bases ($off_bait_bases_perc%)</td></tr>
+                          </table></td>
+                          <td><table>
+                              <tr><td>Bases mapped on bait:</td><td>$bait_bases_mapped ($bait_bases_mapped_perc%)</td></tr>
+                              <tr><td>Bases mapped near bait:</td><td>$bait_near_bases_mapped ($bait_near_bases_mapped_perc%)</td></tr>
+                              <tr><td>Bases mapped on target:</td><td>$target_bases_mapped ($target_bases_mapped_perc%)</td></tr>
+                              <tr><td>Bases mapped near target:</td><td>$target_near_bases_mapped ($target_near_bases_mapped_perc%)</td></tr>
+                              <tr><td>Reads on bait:</td><td>$reads_on_bait ($reads_on_bait_perc%)</td></tr>
+                              <tr><td>Reads near bait:</td><td>$reads_on_bait_near ($reads_on_bait_near_perc%)</td></tr>
+                              <tr><td>Reads on target:</td><td>$reads_on_target ($reads_on_target_perc%)</td></tr>
+                              <tr><td>Reads near target:</td><td>$reads_on_target_near ($reads_on_target_near_perc%)</td></tr>
+                          </table></td>
+                          <td><table>
+                              <tr><td>Target bases:</t><td>$target_bases</td></tr>
+                              <tr><td>Bait bases:</t><td>$bait_bases</td></tr>
+                          </table></td>
+                        </tr>
+                      </table>
+                      </fieldset>
+                    </div>
+                ];
+            }
         }
             print qq[
+        <br/>
         <div class="centerFieldset">
         <fieldset style="background-color: $status_colour;width: 500px">
         <legend>Lane QC : $status &nbsp;&nbsp;&nbsp;(Auto QC : $auto_qc_status)</legend>
@@ -1043,7 +1236,7 @@ sub displayLibrary
     {
         my $libID = $library->id();
         my $opentoggle =  $library->open() == 1 ? $CLOSE_LIBRARY : $OPEN_LIBRARY;
-        my $opentoggle_bg = $opentoggle == $CLOSE_LIBRARY ? "#FFC0C0" : "#C0FFC0";
+        my $opentoggle_bg = $opentoggle eq $CLOSE_LIBRARY ? "#FFC0C0" : "#C0FFC0";
 
         print qq[
             <form action="$SCRIPT_NAME">
@@ -1265,7 +1458,7 @@ sub displayQCLaneList {
                 <td>$reads_paired_perc%</td>
                 <td>$rmdup_reads_mapped_perc%</td>
                 <td>$error_rate_perc%</td>
-                <td>$gt_status ($gt_ratio)</td>
+                <td>$gt_status ($gt_found:$gt_ratio)</td>
                 ];
                 
                 #print the images
@@ -1330,7 +1523,7 @@ sub displayError
 
 sub connectToDatabase
 {
-    my $database = $_[ 0 ];
+    my $db = $_[ 0 ];
     my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => $db,
                                                           mode => 'rw');
     return $vrtrack;
@@ -1475,7 +1668,7 @@ sub isDatabase
 {
         my $db = shift;
         
-        my @dbs = VertRes::Utils::VRTrackFactory->databases();
+        my @dbs = VertRes::Utils::VRTrackFactory->databases(1);
         foreach( @dbs ){if( $db eq $_ ){return 1;}}
         return 0;
 }

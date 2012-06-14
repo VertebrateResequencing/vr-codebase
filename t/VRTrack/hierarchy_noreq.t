@@ -163,7 +163,7 @@ is $library->get_lane_by_id($lane_1->id)->name, $lane_name, 'get_lane_by_id work
 
 ok my $vrlane = VRTrack::Lane->new_by_name($vrtrack, $lane_name), 'lane new_by_name worked';
 is $vrlane->id, $lane_1->id, 'lane is the right lane';
-is $vrlane->qc_status(), undef, 'lane qc_status defaults undef';
+is $vrlane->qc_status(), 'no_qc', 'lane qc_status defaults undef';
 is $vrlane->qc_status('passed'), 'passed', 'lane qc_status could be set to passed';
 is $vrlane->is_processed('import'), 0, 'is_processed import starts off';
 is $vrlane->is_processed('import', 1), 1, 'is_processed import could be turned on';

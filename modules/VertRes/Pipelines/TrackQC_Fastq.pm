@@ -16,6 +16,8 @@ use strict;
 use warnings;
 use LSF;
 use VertRes::Parser::fastqcheck;
+use VertRes::Wrapper::bwa;
+
 
 our @actions =
 (
@@ -60,6 +62,14 @@ our @actions =
         'action'   => \&VertRes::Pipelines::TrackQC_Bam::check_genotype,
         'requires' => \&VertRes::Pipelines::TrackQC_Bam::check_genotype_requires, 
         'provides' => \&VertRes::Pipelines::TrackQC_Bam::check_genotype_provides,
+    },
+    
+    # Finds percentage of transposons in reads if applicable
+    {
+      'name'     => 'transposon',
+      'action'   => \&transposon,
+      'requires' => \&transposon_requires, 
+      'provides' => \&transposon_provides,
     },
 
     # Creates some QC graphs and generate some statistics.
@@ -164,6 +174,11 @@ sub VertRes::Pipelines::TrackQC_Fastq::new
     if ( !$$self{sample_dir} ) { $self->throw("Missing the option sample_dir.\n"); }
     if ( !$$self{sample_size} ) { $self->throw("Missing the option sample_size.\n"); }
 
+    # Set mapper + version 
+    my $mapper = VertRes::Wrapper::bwa->new(exe => $self->{'bwa_exec'});
+    $self->{mapper} = 'bwa';
+    $self->{mapper_version} = $mapper->version;
+
     return $self;
 }
 
@@ -242,10 +257,11 @@ sub rename_files
         {
             Utils::relative_symlink("$file.fastqcheck","$lane_path/${name}_$i.fastq.gz.fastqcheck");
         }
-        if ( -e "$file.md5" && ! -e "$lane_path/${name}_$i.fastq.md5" )
+        if ( -e "$file.md5" && ! -e "$lane_path/${name}_$i.fastq.gz.md5" )
         {
-            Utils::relative_symlink("$file.md5","$lane_path/${name}_$i.fastq.md5");
+            Utils::relative_symlink("$file.md5","$lane_path/${name}_$i.fastq.gz.md5");
         }
+        
         $i++;
     }
     return $$self{'Yes'};
@@ -606,7 +622,69 @@ rename("x$name.bam","$name.bam") or Utils::error("rename x$name.bam $name.bam: \
     return $$self{'No'};
 }
 
+#----------- transposon ---------------------
 
+sub transposon_requires
+{
+  my ($self) = @_;
+
+  my $sample_dir = $$self{'sample_dir'};
+  my @requires = ("$sample_dir/$$self{lane}_1.fastq.gz");
+  return \@requires;
+}
+
+sub transposon_provides
+{
+  my ($self) = @_;
+  my @provides = ();
+  
+  if(( defined $$self{reads_contain_transposon}) && $$self{reads_contain_transposon})
+  {
+    my $sample_dir = $$self{'sample_dir'};
+    @provides = ("$sample_dir/$$self{lane}.transposon");
+  }
+  
+  return \@provides;
+}
+
+sub transposon
+{
+   my ($self,$lane_path,$lock_file) = @_;
+   my $sample_dir = $$self{'sample_dir'};
+   
+   if(( defined $$self{reads_contain_transposon}) && $$self{reads_contain_transposon})
+   {
+     my $tag_length = $$self{transposon_length} || 7;
+     my $output_file = "$lane_path/$sample_dir/".$$self{lane}.".transposon";
+     
+     my $transposon_sequence_str;
+     if(defined $$self{transposon_sequence})
+     { 
+       $transposon_sequence_str = 'tag => "'.$$self{transposon_sequence}.'"';
+     }
+   
+     # Dynamic script to be run by LSF.
+     open(my $fh, '>', "$lane_path/$sample_dir/_transposon.pl") or Utils::error("$lane_path/$sample_dir/_transposon.pl: $!");
+     print $fh 
+     qq[ 
+          use strict;
+          use warnings;
+          use Pathogens::Parser::Transposon;
+          my \$transposon = Pathogens::Parser::Transposon->new(
+            'filename'   => '$$self{lane}_1.fastq.gz',
+            'tag_length' => $tag_length,
+            $transposon_sequence_str
+          );
+          open(OUT,'+>','$output_file') or die "couldnt open transposon output file \$!";
+          print OUT \$transposon->percentage_reads_with_tag;
+          close(OUT);
+     ];
+     close $fh;
+
+     LSF::run($lock_file,"$lane_path/$sample_dir","_$$self{lane}_transposon", $self, qq{perl -w _transposon.pl});
+   }
+   return $$self{'No'};
+}
 
 
 #----------- stats_and_graphs ---------------------
@@ -623,8 +701,7 @@ sub stats_and_graphs_provides
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @provides = ("$sample_dir/chrom-distrib.png","$sample_dir/gc-content.png",
-                        "$sample_dir/gc-depth.png","$sample_dir/fastqcheck.png");
+    my @provides = ("$sample_dir/_graphs.done","$sample_dir/$$self{lane}.cover");
     return \@provides;
 }
 
@@ -656,6 +733,8 @@ my \%params =
     'stats_ref'    => q[$stats_ref],
     'bwa_clip'     => q[$$self{bwa_clip}],
     'chr_regex'    => q[$$self{chr_regex}],
+    'bwa_exec'     => q[$$self{bwa_exec}],
+    'do_samtools_rmdup' => q[$$self{do_samtools_rmdup}]
 );
 
 my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
@@ -674,79 +753,17 @@ sub run_graphs
 
     $self->SUPER::run_graphs($lane_path);
 
-    use Graphs;
     use Utils;
-    use FastQ;
 
     # Set the variables
+    my $samtools     = $$self{'samtools'};
     my $sample_dir   = $$self{'sample_dir'};
-    my $name         = $$self{lane};
+    my $name         = $$self{'lane'};
     my $outdir       = "$lane_path/$sample_dir/";
-    my $bam_file     = "$outdir/$name.bam";
-    my $dump_file    = "$outdir/$$self{stats_dump}";
 
-    # Create the multiline fastqcheck files
-    my @fastq_legend = ();
-    my @fastq_quals  = ();
-    my $fastq_files  = existing_fastq_files("$lane_path/$name");
-    my $total_reads  = 0;    # this is for integrity check of the bam file
-    for (my $i=1; $i<=scalar @$fastq_files; $i++)
-    {
-        my $fastqcheck = "$lane_path/${name}_$i.fastq.gz.fastqcheck";
-        if ( !-e $fastqcheck )
-        {
-            # This can happen when the lane was not imported by the Import.pm pipeline.
-            if ( ! -e "$lane_path/${name}_$i.fastq.gz" ) { next; }
-
-            Utils::CMD(qq[zcat $lane_path/${name}_$i.fastq.gz | fastqcheck > $fastqcheck.part]);
-            if ( -s "$fastqcheck.part" )
-            {
-                rename("$fastqcheck.part","$fastqcheck") or $self->throw("rename $fastqcheck.part $fastqcheck: $!");
-            }
-            else { next; }
-        }
-
-        my $data = FastQ::parse_fastqcheck($fastqcheck);
-        $$data{'outfile'}    = "$outdir/fastqcheck_$i.png";
-        $$data{'title'}      = "FastQ Check $i";
-        $$data{'desc_xvals'} = 'Sequencing Quality';
-        $$data{'desc_yvals'} = '1000 x Frequency / nBases';
-
-        # Draw the 'Total' line as the last one and somewhat thicker
-        my $total = shift(@{$$data{'data'}});
-        $$total{'lines'} = ',lwd=3';
-        push @{$$data{'data'}}, $total;
-
-        Graphs::plot_stats($data);
-
-        my $pars = VertRes::Parser::fastqcheck->new(file => $fastqcheck);
-        my ($bases,$quals) = $pars->avg_base_quals();
-        push @fastq_quals, { xvals=>$bases, yvals=>$quals, legend=>"FQ $i" };
-
-        # To check the integrity of the BAM file
-        open(my $fh,"zcat $outdir/${name}_$i.fastq.gz | fastqcheck |") or $self->throw("zcat $outdir/${name}_$i.fastq.gz | fastqcheck |: $!");
-        $pars = VertRes::Parser::fastqcheck->new(fh => $fh);
-        $total_reads += $pars->num_sequences();
-        close($fh);
-    }
-
-    if ( scalar @fastq_quals )
-    {
-        Graphs::plot_stats({
-                outfile     => qq[$outdir/fastqcheck.png],
-                title       => 'fastqcheck base qualities',
-                desc_yvals  => 'Quality',
-                desc_xvals  => 'Base',
-                data        => \@fastq_quals,
-                r_plot      => "ylim=c(0,50)",
-                });
-    }
-
-    my $stats = do $dump_file;
-    if ( $total_reads != $$stats{reads_total} )
-    {
-        $self->throw("Sanity check failed, different number of reads in fastq files and $bam_file ($total_reads .. $$stats{reads_total})\n");
-    }
+    # Genome covered 
+    Utils::CMD("$samtools mpileup $outdir/$name.bam | wc -l > $outdir/$name.cover");
+    
 }
 
 

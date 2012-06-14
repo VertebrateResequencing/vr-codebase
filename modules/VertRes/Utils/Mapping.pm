@@ -47,6 +47,9 @@ use base qw(VertRes::Base);
 our %tech_to_mapper = (454 => 'ssaha',
                        SLX => 'bwa');
 
+our %tech_to_exe = (454 => 'ssaha2',
+                      SLX => 'bwa');
+
 our %do_mapping_args = (insert_size => 1,
                         local_cache => 1,
                         read_group  => 1);
@@ -69,7 +72,8 @@ sub new {
     my ($class, @args) = @_;
     
     my $self = $class->SUPER::new(@args);
-    
+    $self->{_command_line} = []; # List of commands run.
+
     return $self;
 }
 
@@ -98,6 +102,34 @@ sub lane_to_module {
     }
     
     return "VertRes::Utils::Mappers::$mapper";
+}
+
+=head2 lane_to_exe
+
+ Title   : lane_to_exe
+ Usage   : my $exe = $obj->lane_to_exe('/path/to/lane');
+ Function: Find out what mapping utility module to use on your lane.
+ Returns : class string (call new on it)
+ Args    : path string
+
+=cut
+
+sub lane_to_exe {
+    my ($self, $arg) = @_;
+    
+    my $exe;
+    if ($arg =~ /\/SLX\//i) {
+        $exe = $self->{slx_mapper_exe} || $self->{slx_mapper} || $tech_to_exe{SLX};
+    }
+    elsif ($arg =~ /\/454\//) {
+        $exe = $self->{'454_mapper_exe'} || $self->{'454_mapper'} || $tech_to_exe{454};
+        $exe =~ s/ssaha$/ssaha2/;
+    }
+    else {
+        $self->throw("Encountered an argument that doesn't correspond to an executable: $arg");
+    }
+    
+    return $exe;
 }
 
 =head2 split_fastq
@@ -147,6 +179,21 @@ sub split_fastq {
 =cut
 
 sub wrapper {
+    my $self = shift;
+    $self->throw("This is supposed to be overriden");
+}
+
+=head2 name
+
+ Title   : name
+ Usage   : my $name = $obj->name();
+ Function: Returns the program name.
+ Returns : string representing name of the program 
+ Args    : n/a
+
+=cut
+
+sub name {
     my $self = shift;
     $self->throw("This is supposed to be overriden");
 }
@@ -257,6 +304,11 @@ sub _do_mapping_args {
     
     $out_hash{ref} = $args{ref};
     $out_hash{output} = $args{output};
+    if(defined $args{is_paired})
+    {
+      $out_hash{is_paired} = $args{is_paired};
+    }
+    
     
     foreach my $arg (keys %do_mapping_args) {
         if (defined $args{$arg}) {
@@ -511,6 +563,45 @@ sub get_mapping_stats {
     $stats{percent_properly_paired} = $stats{total_reads} ? sprintf("%0.2f", ((100 / $stats{total_reads}) * $stats{mapped_reads_in_proper_pairs})) : 0;
     
     return %stats;
+}
+
+=head2 command_line
+
+ Title   : command_line
+ Usage   : $mapper->command_line();
+           $self->command_line(@my_command_lines);
+ Function: Get/set list of commands executed by wrapper
+ Example : $self->command_line($wrapper->command_line());
+ Returns : list of command line strings executed by the wrapper
+ Args    : list of strings
+
+=cut
+
+sub command_line
+{
+    my $self = shift;
+    $self->{_command_line} = \@_ if @_; 
+    return @{$self->{_command_line}};
+}
+
+=head2 _add_command_line
+
+ Title   : _add_command_line
+ Usage   : $self->_add_command_line($my_command_line);
+           $self->_add_command_line(@my_command_lines);
+ Function: Internal method to add command line strings to record of command lines 
+           executed by wrapper.
+ Example : $self->_add_command_line($wrapper->command_line());
+ Returns : n/a
+ Args    : list of strings
+
+=cut
+
+sub _add_command_line
+{
+    my $self = shift;
+    push((@{$self->{_command_line}}),@_) if @_;
+    return @{$self->{_command_line}};
 }
 
 1;
