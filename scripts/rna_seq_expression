@@ -24,7 +24,7 @@ use Getopt::Long;
 use Pathogens::RNASeq::Expression;
 use Pathogens::RNASeq::CoveragePlot;
 
-my($sequence_file, $annotation_file, $protocol_name, $output_base_filename, $mapping_quality, $no_coverage_plots, $intergenic_regions, $bitwise_filter, $help );
+my($sequence_file, $annotation_file, $protocol_name, $output_base_filename, $mapping_quality, $no_coverage_plots, $intergenic_regions, $bitwise_flag, $help );
 
 GetOptions(
    's|sequence_file=s'         => \$sequence_file,
@@ -34,7 +34,7 @@ GetOptions(
    'q|minimum_mapping_quality=s' => \$mapping_quality,
    'c|no_coverage_plots'       => \$no_coverage_plots,
    'i|intergenic_regions'      => \$intergenic_regions,
-   'b|bitwise_flag'            => \$bitwise_filter,
+   'b|bitwise_flag'            => \$bitwise_flag,
    'h|help'                    => \$help,
     );
 
@@ -58,7 +58,7 @@ USAGE
 $output_base_filename ||= $sequence_file;
 $mapping_quality ||= 10;
 my %filters = (mapping_quality => $mapping_quality);
-if(defined($bitwise))
+if(defined($bitwise_flag))
 {
   $filters{bitwise_flag} = $bitwise_flag ;
 }

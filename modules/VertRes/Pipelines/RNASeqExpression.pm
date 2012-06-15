@@ -30,6 +30,7 @@ data => {
     protocol  => "StandardProtocol",
     annotation_filename => "my_reference.gff",
     mapping_quality => 30,
+    bitwise_flag => 2,
     mpileup_cmd => 'samtools mpileup',
     window_margin => 50,
     intergenic_regions => 1,
@@ -187,6 +188,7 @@ sub _create_expression_job
     sequence_filename    => qq[$sequencing_filename],
     annotation_filename  => qq[$self->{annotation_file}],
     mapping_quality      => $self->{mapping_quality},
+    bitwise_flag         => $self->{bitwise_flag},
     protocol             => qq[$self->{protocol}],
     output_base_filename => qq[$sequencing_filename],
     $window_margin_str
