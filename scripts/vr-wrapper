@@ -26,5 +26,5 @@ fi
 shift 1
 
 umask 007
-eval $@
+exec $@
 
