@@ -87,6 +87,8 @@ sub version {
  Title   : setup_reference
  Usage   : $obj->setup_reference($ref_fasta);
  Function: Do whatever needs to be done with the reference to allow mapping.
+           Removed in favour of setting-up reference index on demand using
+           setup_custom_reference_index().
  Returns : boolean
  Args    : n/a
 
@@ -94,32 +96,34 @@ sub version {
 
 sub setup_reference {
     my ($self, $ref) = @_;
-    
-    my @suffixes = qw(small.sma small.smi large.sma large.smi);
-    my $indexed = 0;
-    foreach my $suffix (@suffixes) {
-        if (-s "$ref.$suffix") {
-            $indexed++;
-        }
-    }
-    
-    unless ($indexed == @suffixes) {
-        # we produce multiple sets of hashes, one for <70bp reads, one for >70bp,
-        # one for >=100bp and one for >500bp
-        $self->simple_run("index -k 13 -s 4 $ref.small $ref");
-        $self->simple_run("index -k 13 -s 6 $ref.medium $ref");
-        $self->simple_run("index -k 20 -s 13 $ref.large $ref");
-        
-        $indexed = 0;
-        foreach my $suffix (@suffixes) {
-            if (-s "$ref.$suffix") {
-                $indexed++;
-            }
-        }
-    }
-    
-    return $indexed == @suffixes ? 1 : 0;
+    return 1;
 }
+
+
+=head2 setup_reference
+
+ Title   : setup_reference
+ Usage   : $obj->setup_reference($ref_fasta);
+ Function: Do whatever needs to be done with the reference to allow mapping.
+ Returns : boolean
+ Args    : n/a
+
+=cut
+
+sub setup_custom_reference_index {
+    my ($self, $ref, $mapper_index_params, $mapper_index_suffix) = @_;
+    if(! ((-s "$ref.$mapper_index_suffix.sma") && (-s "$ref.$mapper_index_suffix.smi")) )
+    {
+      $self->simple_run("index ".$mapper_index_params." $ref.".$mapper_index_suffix." $ref");
+    }
+    else {
+        # Record command line for sam/bam header.
+        my $exe = $self->exe;
+        $self->_add_command_line("$exe index ".$mapper_index_params." $ref.".$mapper_index_suffix." $ref");
+    }
+}
+    
+    
 
 =head2 setup_fastqs
 
@@ -199,13 +203,21 @@ sub generate_sam {
             }
         }
         my $hash_name;
-        if ($max_length < 70) {
+        if(defined($other_args{mapper_index_suffix}) && defined($other_args{mapper_index_params}))
+        {
+            $self->setup_custom_reference_index($ref,$other_args{mapper_index_params},$other_args{mapper_index_suffix});
+            $hash_name = $ref.'.'.$other_args{mapper_index_suffix};
+        }
+        elsif ($max_length < 70) {
+            $self->setup_custom_reference_index($ref,'-k 13 -s 4','small');
             $hash_name = $ref.'.small';
         }
         elsif ($max_length >= 100) {
+            $self->setup_custom_reference_index($ref,'-k 20 -s 13','large');
             $hash_name = $ref.'.large';
         }
         else {
+            $self->setup_custom_reference_index($ref,'-k 13 -s 6','medium');
             $hash_name = $ref.'.medium';
         }
         
@@ -220,8 +232,13 @@ sub generate_sam {
         elsif(defined $other_args{i}) {
             $insert_size_arg = " -i $other_args{i}";
         }
+        my $additional_mapper_params = '';
+        if(defined($other_args{additional_mapper_params}))
+        {
+          $additional_mapper_params = $other_args{additional_mapper_params};
+        }
         
-        $self->simple_run("map -f samsoft$insert_size_arg -o $out $hash_name $fq1 $fq2");
+        $self->simple_run("map -f samsoft$insert_size_arg $additional_mapper_params -o $out $hash_name $fq1 $fq2");
     }
     
     return -s $out ? 1 : 0;

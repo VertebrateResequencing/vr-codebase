@@ -737,8 +737,12 @@ sub allowed_processed_flags {
 		 deleted => 16,
 		 swapped => 32,
 		 altered_fastq => 64,
-                 improved => 128,
-                 snp_called => 256);
+     improved => 128,
+     snp_called => 256,
+     rna_seq_expression => 512,
+     
+     );
+
     return %flags;
 }
 

@@ -1,0 +1,177 @@
+#!/usr/bin/env perl
+
+use Carp;
+use DBI;
+use Getopt::Long;
+use Array::Compare;
+use strict;
+use warnings;
+
+my ($db_file, $help);
+
+GetOptions(
+    'd|dbs=s'      =>  \$db_file,
+    'h|help'	   =>  \$help,
+);
+
+($db_file && !$help) or die <<USAGE;
+    Usage: $0 -d path_db_list_file 
+USAGE
+
+#Current file of all updated databases is at $CONF/vrtrack_npg_gt_db
+
+#vrtrack database connection parameters (set in env)
+my $HOST = $ENV{VRTRACK_HOST};
+my $PORT = $ENV{VRTRACK_PORT} || 3306;
+my $WRITE_USER = $ENV{VRTRACK_RW_USER};
+my $WRITE_PASS = $ENV{VRTRACK_PASSWORD};
+
+#NPG database connection parameters
+my $NPG_USER = 'nqcro';
+my $NPG_DB = 'npgqcp';
+my $NPG_HOST = 'mcs4a';
+my $NPG_PORT = 3310;
+
+#NPG database connection handle
+my $npgdbh = DBI->connect("DBI:mysql:host=$NPG_HOST:port=$NPG_PORT;database=$NPG_DB", $NPG_USER, undef, {'RaiseError' => 1, 'PrintError'=>0});
+
+#analysis types
+my $WGS_ANALYSIS = 'wgs';
+my $EXOME_ANALYSIS = 'exome';
+
+#SQL statements
+#vrtrack database
+my $sql_select_sample_lanes = "select s.name, l.name, l.lane_id, l.npg_qc_status, m.mapstats_id from latest_library b, latest_sample s, latest_lane l left join latest_mapstats m on (l.lane_id=m.lane_id) where l.library_id=b.library_id and b.sample_id=s.sample_id";
+my $sql_insert_new_mapstats = "insert into mapstats(mapstats_id, lane_id, changed, latest) values(0, ?, NOW(), 1)";
+my $sql_select_new_mapstats = "select max(row_id) from mapstats where mapstats_id = 0 and lane_id = ?";
+my $sql_update_new_mapstats = "update mapstats set mapstats_id = ?, gt_expected = ?, gt_found = ?, gt_ratio = ? where row_id = ?";
+my $sql_select_gt_mapstats = "select gt_expected, gt_found , gt_ratio from latest_mapstats where lane_id = ?";
+my $sql_update_gt_mapstats = "update mapstats set gt_expected = ?, gt_found = ?, gt_ratio = ?, changed = NOW() where lane_id = ? and latest = 1";
+#npg database
+my $sql_select_lane_gtype = "select sample_name_match, search_parameters, sample_name_relaxed_match, alternate_match_count, alternate_matches FROM genotype where expected_sample_name = ? and bam_file =?";
+
+#npg statement handle
+my $npg_sth = $npgdbh->prepare($sql_select_lane_gtype);
+
+#Open file that contains the list of databases to be genotyped using this method
+#Note format: db_name,wgs OR db_name,exome
+open DB_FILE, "<", $db_file;
+
+while (<DB_FILE>) {
+	chomp $_;
+	my @db_line = split(',', $_);
+	my $db = $db_line[0];
+	my $analysis = $db_line[1];
+	my $dbh = DBI->connect("DBI:mysql:host=$HOST:port=$PORT;database=$db", $WRITE_USER, $WRITE_PASS, {'RaiseError' => 1, 'PrintError'=>0});
+    my $sth = $dbh->prepare($sql_select_sample_lanes);
+    my($sample_name, $lane_name, $lane_id, $npg_qc_status, $mapstats_id);
+    $sth->execute();
+    $sth->bind_columns(undef, \$sample_name, \$lane_name, \$lane_id, \$npg_qc_status, \$mapstats_id);
+    while ($sth->fetch) {
+        my $lane_bam = $lane_name.'.bam';
+    	my ($sample_name_match, $search_parameters, $sample_name_relaxed_match, $alt_match_count, $alternate_matches);
+    	$npg_sth->execute($sample_name, $lane_bam);
+	    $npg_sth->bind_columns(undef, \$sample_name_match, \$search_parameters, \$sample_name_relaxed_match, \$alt_match_count, \$alternate_matches);
+		while ($npg_sth->fetch) {
+			if (length($sample_name_match) > 0) {
+				#process search parameters and sample_name_match from the genotype entry for this lane
+				my @parameters = split(',', $search_parameters);
+				my @name_matches = split(',', $sample_name_match);
+				my @relax_matches = split(',', $sample_name_relaxed_match);
+				my ($sample_match, $match_pct, $match_count, $relax_match, $relax_pct, $relax_count, %ratio_out, $conc_threshold, $poss_dup_level);
+				foreach ( @parameters ) {
+					if ( $_ =~ /"high_concordance_threshold/ ) {
+						$conc_threshold = (split(':', $_))[1]/100;
+					}
+					if ( $_ =~ /"poss_dup_level/ ) {
+						$poss_dup_level = (split(':', $_))[1]/100;
+					}
+				}
+				foreach ( @name_matches ) {
+					if ( $_ =~ /"matched_sample_name/ ) {
+						$sample_match = (split(':', $_))[1];
+					}
+					if ( $_ =~ /"match_pct/ ) {
+						$match_pct = (split(':', $_))[1];
+					}
+					if ( $_ =~ /"match_count/ ) {
+						$match_count = (split(':', $_))[1];
+					}
+				}
+				foreach ( @relax_matches ) {
+					if ( $_ =~ /"match_pct/ ) {
+						$relax_pct = (split(':', $_))[1];
+					}
+					if ( $_ =~ /"match_count/ ) {
+						$relax_count = (split(':', $_))[1];
+					}
+				}				
+				if (defined $sample_match && defined $match_pct) {
+					$sample_match =~ s/\"//g;
+					$match_count =~ s/}//g;
+					if ( $match_pct > 0 ) {
+						$ratio_out{$WGS_ANALYSIS} = $relax_pct;
+						$ratio_out{$EXOME_ANALYSIS} = $match_pct;
+						my $max_alt_match = 0;
+						if ( $alt_match_count > 0 ) {
+							my @alt_matches = split(',', $alternate_matches);
+							foreach ( @alt_matches ) {
+								if ( $_ =~ /match_pct/ ) {
+									my $alt_match = (split(':', $_))[1];
+									$alt_match =~ s/}//g;
+									$max_alt_match = $alt_match unless $max_alt_match > $alt_match; 
+								}
+							}
+						}
+						else {
+							$max_alt_match = $conc_threshold;
+						}
+						my $match_ratio = sprintf "%.2f", $ratio_out{$analysis}/$max_alt_match;
+# 						if ( $analysis eq $WGS_ANALYSIS ) {
+# 							print "WGS: $sample_name\t$lane_name\t$match_ratio\t$conc_threshold\t$poss_dup_level\n";
+# 						}
+# 						elsif ( $analysis eq $EXOME_ANALYSIS ) {
+# 							print "EXOME: $sample_name\t$lane_name\t$match_ratio\t$conc_threshold\t$poss_dup_level\n";
+# 						}
+						if ( ! defined $mapstats_id ) {
+							#SQL statement holders for new mapstats creation
+							my $in_sth = $dbh->prepare($sql_insert_new_mapstats);
+							my $mp_sth = $dbh->prepare($sql_select_new_mapstats);
+							my $up_sth = $dbh->prepare($sql_update_new_mapstats);
+							#create new mapstats entry
+							$in_sth->execute($lane_id);
+							#select new row_id
+							$mp_sth->execute($lane_id);
+							$mp_sth->bind_col(1, \$mapstats_id);
+							while( $mp_sth->fetch ) {
+								#update row with mapstats_id and gt fields completed
+								$up_sth->execute($mapstats_id, $sample_name, $sample_match, $match_ratio, $mapstats_id);	
+							}
+							#tidy up
+							$up_sth->finish();	
+							$in_sth->finish();
+							$mp_sth->finish();
+						}
+						else {
+							#update current mapstats with gt information if not already current
+							my $sl_sth = $dbh->prepare($sql_select_gt_mapstats);
+							my $up_sth = $dbh->prepare($sql_update_gt_mapstats);
+							my @npg_arr = ($sample_name, $sample_match, $match_ratio);
+							$sl_sth->execute($lane_id);
+							my @curr_arr = $sl_sth->fetchrow_array;
+							my $comp = Array::Compare->new;
+							#update only if calculated ratio or expected sample differs from current mapstats data
+							if ( !$comp->compare(\(@curr_arr, @npg_arr)) ) {
+								$up_sth->execute($sample_name, $sample_match, $match_ratio, $lane_id);
+								$up_sth->finish();
+							}	
+						}
+					}
+				}
+			}
+		}
+	}
+}
+close DB_FILE;
+$npg_sth->finish();
+$npgdbh->disconnect();

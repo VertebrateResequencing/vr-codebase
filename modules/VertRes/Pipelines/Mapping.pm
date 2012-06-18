@@ -144,6 +144,7 @@ use VertRes::Parser::fastqcheck;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::File;
+use VRTrack::Assembly;
 use File::Basename;
 use Time::Format;
 use LSF;
@@ -186,6 +187,7 @@ our $actions = [ { name     => 'bam_to_fastq',
 our %options = (local_cache => '',
                 slx_mapper => 'bwa',
                 '454_mapper' => 'ssaha',
+                'bamcheck'   => 'bamcheck -q 20',
                 do_cleanup => 1);
 
 our $split_dir_name = 'split';
@@ -208,6 +210,10 @@ our $split_dir_name = 'split';
            
            slx_mapper_exe => 'bwa-0.5.5' (optional - defaults to slx_mapper)
            '454_mapper_exe' => 'ssaha2', (optional - defaults to 454_mapper)
+           
+           mapper_index_params => '-k 13 -s 4',(optional parameters for indexing, currently only smalt)
+           mapper_index_suffix => 'custom', (optional custom suffix for indexing, currently only smalt, both needed)
+           additional_mapper_params => '-d 0 -r 3', (optional additional mapper params, currently only smalt)
            
            reference => '/path/to/ref.fa' (no default, either this or the
                         male_reference and female_reference pair of args must be
@@ -296,9 +302,11 @@ sub new {
     if ($mappings && @{$mappings}) {
         # find the already created mapping that corresponds to what we're trying
         # to do (we're basically forcing ourselves to only allow one mapping
-        # per mapper,version,assembly combo - can't change mapping args and keep
-        # that as a separate file)
+        # per mapper,version,assembly,prefix combo
         foreach my $possible (@{$mappings}) {
+            next if($possible->is_qc == 1);
+            $possible->prefix eq $self->{prefix} || next;
+            
             # we're expecting it to have the correct assembly and mapper
             my $assembly = $possible->assembly() || next;
             $assembly->name eq $self->{assembly_name} || next;
@@ -325,7 +333,7 @@ sub new {
         if (!$mapper) {
             $mapper = $mapping->add_mapper($self->{mapper_obj}->name, $self->{mapper_obj}->version);
         }
-        
+        $mapping->prefix($self->{prefix});
         $mapping->update || $self->throw("Unable to set mapping details on lane $lane_path");
     }
     $self->{mapstats_obj} = $mapping || $self->throw("Couldn't get an empty mapstats object for this lane from the database");
@@ -761,6 +769,20 @@ sub map {
     my $mapper_exe = $self->{mapper_obj}->exe;
     my $verbose = $self->verbose;
     
+    my $mapper_index_params_str = '';
+    my $mapper_index_suffix_str = '';
+    if(defined($self->{mapper_index_params}) && defined($self->{mapper_index_suffix})) 
+    {
+      $mapper_index_params_str = " mapper_index_params => '".$self->{mapper_index_params}."', ";
+      $mapper_index_suffix_str = " mapper_index_suffix => '".$self->{mapper_index_suffix}."', ";
+    }
+    my $additional_mapper_params_str = '';
+    if(defined($self->{additional_mapper_params}))
+    {
+      $additional_mapper_params_str = " additional_mapper_params => '".$self->{additional_mapper_params}."', ";
+    }
+      
+      
     # run mapping of each split in LSF calls to temp scripts;
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
     # independantly.
@@ -796,13 +818,14 @@ sub map {
             my $job_name = $self->{prefix}.'map_'.$ended.'_'.$self->{mapstats_id}.'_'.$split;
             my $prev_error_file = $self->archive_bsub_files($lane_path, $job_name) || '';
             
+            
             open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
             print $scriptfh qq{
 use strict;
 use $mapper_class;
 use VertRes::Utils::Sam;
 
-my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe]);
+my \$mapper = $mapper_class->new(verbose => $verbose, exe => qq[$mapper_exe] );
 
 # mapping won't get repeated if mapping works the first time but subsequent
 # steps fail
@@ -812,7 +835,11 @@ my \$ok = \$mapper->do_mapping(ref => '$ref_fa',
                                insert_size => $insert_size_for_mapping,
                                read_group => '$info{lane}',
                                is_paired => $self->{vrlane}->{is_paired},
-                               error_file => '$prev_error_file');
+                               error_file => '$prev_error_file',
+                               $additional_mapper_params_str
+                               $mapper_index_params_str 
+                               $mapper_index_suffix_str
+                               );
 
 # (it will only return ok and create output if the sam file was created and not
 #  truncated)
@@ -990,6 +1017,7 @@ sub merge {
     
     # setup filenames etc. we'll use within our temp script
     my $mapper_class = $self->{mapper_class};
+    my $mapper_exe = $self->{mapper_obj}->exe;
     my $verbose = $self->verbose;
     
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
@@ -1034,6 +1062,9 @@ use strict;
 use VertRes::Wrapper::samtools;
 use VertRes::Utils::Sam;
 use File::Copy;
+use $mapper_class;
+
+my \$mapper = $mapper_class->new(exe => qq[$mapper_exe] );
 
 my \$samtools = VertRes::Wrapper::samtools->new(verbose => $verbose);
 
@@ -1057,18 +1088,28 @@ unless (-s '$bam_file') {
 if (-s '$bam_file') {
     unless (-e '$double_check_file') {
         my \$su = VertRes::Utils::Sam->new;
-        my \$num_bam_records = \$su->num_bam_records('$bam_file');
-        if (\$num_bam_records >= $total_reads) {
-            open(my \$fh, '>', '$double_check_file') || die "Couldn't write to $double_check_file\n";
-            close(\$fh);
+        
+        if(\$mapper->check_total_reads == 1)
+        {
+          my \$num_bam_records = \$su->num_bam_records('$bam_file');
+          if (\$num_bam_records >= $total_reads) {
+              open(my \$fh, '>', '$double_check_file') || die "Couldn't write to $double_check_file\n";
+              close(\$fh);
+          }
+          else {
+              move('$bam_file', \$bad_bam);
+              die "Merged bam created OK, yet contains too few reads - moved to \$bad_bam\n";
+          }
         }
-        else {
-            move('$bam_file', \$bad_bam);
-            die "Merged bam created OK, yet contains too few reads - moved to \$bad_bam\n";
+        else
+        {
+          open(my \$fh, '>', '$double_check_file') || die "Couldn't write to $double_check_file\n";
+          close(\$fh);
         }
-	if ($add_index_option){
-	    \$su->index_bams(files=>['$bam_file']);
-	}
+        
+        if ($add_index_option){
+            \$su->index_bams(files=>['$bam_file']);
+        }
     }
 }
 
@@ -1155,6 +1196,15 @@ sub statistics {
     my $mapper_class = $self->{mapper_class};
     my $verbose = $self->verbose;
     my $release_date = $self->{release_date};
+
+    # get_genome_coverage needs reference_size
+    my $reference_size = 0;
+    if(exists $$self{'get_genome_coverage'} && $$self{'get_genome_coverage'}) {
+	my $vrtrack  = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database: ",join(',',%{$$self{db}}),"\n");
+	my $assembly = VRTrack::Assembly->new_by_name($vrtrack, $$self{assembly_name});
+	$reference_size = $assembly->reference_size();
+	unless($reference_size){ $self->throw("Failed to find reference genome size for lane $lane_path\n"); }
+    }
     
     # we treat read 0 (single ended - se) and read1+2 (paired ended - pe)
     # independantly.
@@ -1173,6 +1223,8 @@ sub statistics {
         print $scriptfh qq{
 use strict;
 use VertRes::Utils::Sam;
+use VertRes::Pipelines::Mapping;
+
 
 my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
 
@@ -1190,14 +1242,20 @@ unless (\$num_present == ($#stat_files + 1)) {
         die "Failed to get stats for the bam '$bam_file'!\n";
     }
 }
+
+VertRes::Pipelines::Mapping->create_graphs(qq[$$self{bamcheck}],  qq[$self->{reference}], qq[$bam_file]);
         };
+        
 	if(exists $$self{'get_genome_coverage'} && $$self{'get_genome_coverage'})
 	{
 	    # Generate genome coverage file.
 	    print $scriptfh qq{
 my \@cover = \$sam_util->coverage('$bam_file',1,2,5,10,20,50,100);
+my(\$coverage, \$depth, \$depth_sd)  = \$sam_util->coverage_depth('$bam_file',$reference_size);
+
 open(my \$fh, '> $bam_file.cover') || die "Failed to open file '$bam_file.cover'";
-print \$fh "[",join(',',\@cover),"]\n";
+print \$fh "[",join(',',\@cover);
+printf \$fh ", %d, %6.2f, %6.2f]\n", \$coverage, \$depth, \$depth_sd;
 close \$fh;
             };
 	}
@@ -1215,6 +1273,30 @@ exit;
     return $self->{No};
 }
 
+
+=head2 create_graphs
+
+ Title   : create_graphs
+ Usage   : VertRes::Pipelines::Mapping ->create_graphs('bamcheck -q 20', '/path/to/reference.fa','my_bam_file.bam');
+ Function: Create a bamcheck file and graphs from plot-bamcheck
+ Returns : Nothing
+ Args    : bamcheck executable plus parameters, reference fasta used for mapping, bamfile
+
+=cut
+sub create_graphs
+{
+  my ($class, $bamcheck, $reference, $bam_file) = @_;
+  
+  my $basename = basename($bam_file);
+  my $bam_check_cmd = qq[$bamcheck -r $reference $bam_file > $bam_file.bc];
+  my $reference_gc_file = $reference.'.gc';
+  my $plot_bamcheck_reference_gc = qq[plot-bamcheck -s $reference > $reference_gc_file];
+  my $plot_bamcheck  = qq[plot-bamcheck -p $basename].'_graphs'.qq[/ -r  $reference_gc_file $bam_file.bc];
+  Utils::CMD($bam_check_cmd) unless(-e qq[$bam_file.bc]);
+  Utils::CMD($plot_bamcheck_reference_gc) unless( -e $reference_gc_file);
+  Utils::CMD($plot_bamcheck);
+  1;
+}
 
 
 =head2 mark_duplicates_requires
@@ -1292,13 +1374,22 @@ sub mark_duplicates {
 
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         
+        
+        my $memory = $self->{memory};
+        if (! defined $memory || $memory < 8000) {
+            $memory = 8000;
+        }
+        my $java_mem = int($memory * 0.9);
+        my $queue = $memory >= 30000 ? "hugemem" : "normal";
+        
+        
 
         print $scriptfh qq{
   use strict;
   use VertRes::Wrapper::samtools;
   use VertRes::Utils::Sam;
 
-  my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
+  my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose, java_memory => $java_mem);
  
   \$sam_util->markdup('$bam_file', '$mark_dup_bam_file');
   \$sam_util->index_bams(files=>['$mark_dup_bam_file']);
@@ -1311,7 +1402,7 @@ sub mark_duplicates {
               };
        close $scriptfh;
  
-       LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => '-M8000000 -R \'select[mem>8000] rusage[mem=8000]\''}, qq{perl -w $script_name});
+       LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'" }, qq{perl -w $script_name});
 
       }
 
@@ -1458,6 +1549,12 @@ sub update_db {
 	    $stats{target_bases_20X}  = $$coverage[4] if !$stats{target_bases_20X}  || $$coverage[4] > $stats{target_bases_20X};
 	    $stats{target_bases_50X}  = $$coverage[5] if !$stats{target_bases_50X}  || $$coverage[5] > $stats{target_bases_50X};
 	    $stats{target_bases_100X} = $$coverage[6] if !$stats{target_bases_100X} || $$coverage[6] > $stats{target_bases_100X};
+
+	    if(!$stats{target_bases_mapped} || $$coverage[7] > $stats{target_bases_mapped}) {
+		$stats{target_bases_mapped}  = $$coverage[7]; 
+		$stats{mean_target_coverage} = $$coverage[8];
+		$stats{target_coverage_sd}   = $$coverage[9];
+	    }
 	}
 
 	# Get percentage cover
@@ -1470,6 +1567,9 @@ sub update_db {
 	$stats{target_bases_100X} = sprintf("%.2f",$stats{target_bases_100X} * 100 / $reference_size);
 
 	# Update mapstats
+	$mapping->target_bases_mapped($stats{target_bases_mapped});
+	$mapping->mean_target_coverage($stats{mean_target_coverage});
+	$mapping->target_coverage_sd($stats{target_coverage_sd});
 	$mapping->target_bases_1X($stats{target_bases_1X});
 	$mapping->target_bases_2X($stats{target_bases_2X});
 	$mapping->target_bases_5X($stats{target_bases_5X});

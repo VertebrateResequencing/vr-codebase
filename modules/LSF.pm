@@ -235,13 +235,18 @@ sub adjust_bsub_options
     }
     
     if (defined $mem) {
-        # at some point an attempt to run this failed due to MEMLIMIT, using
-        # $mem max memory; increase by 1000MB
-        $mem += 1000;
+      # at some point an attempt to run this failed due to MEMLIMIT
+        $mem = calculate_memory_limit($mem);
         
-        if ( !defined $mem_limit ) { $mem_limit = 15_900; }
-        if ( $mem>$mem_limit ) {
-            Utils::error(sprintf "FIXME: Increase memory_limit, more than %.1fGB of memory is required.", $mem_limit/1000);
+        if ($mem>500000) {
+            Utils::error("FIXME: This job cannot be run on the farm, more than 500GB of memory is required.");
+        }
+        elsif($mem>30000)
+        {
+                warn("$output_file: changing queue to hugemem\n");   
+                $opts =~ s/-q normal/-q hugemem/;
+                $opts =~ s/-q long/-q hugemem/;
+                if ( !($opts=~/-q/) ) { $opts .= ' -q hugemem'; }
         }
         
         # adjust the command line to include higher memory reservation, but only
@@ -278,6 +283,29 @@ sub adjust_bsub_options
     }
 
     return $opts;
+}
+
+
+=head2 calculate_memory_limit
+
+    Arg [1]     : memory in mega bytes for previously failed job
+    Description : Increases the memory by a set minimum or by a percentage, which ever is greater
+    Returntype  : Int
+
+=cut
+sub calculate_memory_limit
+{
+  my ($mem) = @_; 
+  my $minimum_memory_increase = 1000;
+  my $memory_increase_percentage = 0.3;
+
+  my $updated_memory_limit = $mem*(1+$memory_increase_percentage);
+  if($updated_memory_limit < $mem + $minimum_memory_increase)
+  {
+    $updated_memory_limit =  $mem + $minimum_memory_increase;
+  }
+  
+  return int($updated_memory_limit);
 }
 
 
