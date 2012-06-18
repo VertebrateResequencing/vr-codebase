@@ -1188,7 +1188,7 @@ sub get_field
     {
         $isep = index($col,$delim,$prev_isep);
         if ( $itag==$idx ) { last; }
-        if ( $isep==-1 ) { $self->throw("The index out of range: $col:$isep .. $idx"); }
+        if ( $isep==-1 ) { return '.'; }    # This is valid, missing fields can be ommited from genotype columns
         $prev_isep = $isep+1;
         $itag++;
     }
