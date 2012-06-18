@@ -3208,6 +3208,8 @@ sub Vcf4_1::validate_line
         $$self{_contig_validated}{$$line{CHROM}} = 1;
     }
 
+    if ( index($$line{CHROM},':')!=-1 ) { $self->warn("Colons not allowed in chromosome names: $$line{CHROM}\n"); }
+
     # Is the ID composed of alphanumeric chars
     if ( !($$line{ID}=~/^\S+$/) ) { $self->warn("Expected non-whitespace ID at $$line{CHROM}:$$line{POS}, but got [$$line{ID}]\n"); }
 }
