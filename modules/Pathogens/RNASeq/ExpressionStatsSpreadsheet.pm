@@ -62,7 +62,7 @@ sub _header
 {
   my ($self) = @_;
   my @header;
-  if($self->protocol eq "StrandSpecificProtocol")
+  if($self->protocol ne "StrandSpecificProtocol")
   {
     @header = ["Seq ID","GeneID","Reads Mapping", "RPKM", "Antisense Reads Mapping", "Antisense RPKM"];
   }

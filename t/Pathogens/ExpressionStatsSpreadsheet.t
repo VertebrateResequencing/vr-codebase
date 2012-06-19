@@ -45,7 +45,7 @@ $header =~ s/[\r\n]//g;
 $output_result_1 =~ s/[\r\n]//g;
 $output_result_2 =~ s/[\r\n]//g;
 
-is $header, '"Seq ID",GeneID,"Reads Mapping",RPKM,"Antisense Reads Mapping","Antisense RPKM"', 'header okay';
+is $header, '"Seq ID",GeneID,"Antisense Reads Mapping","Antisense RPKM","Reads Mapping",RPKM', 'header okay';
 is $output_result_1, 'some_name,abc123,2000,15.3245,10,1.34324', 'result set 1';
 is $output_result_2, 'some_name,efg456,10,0,200,780.34242543543', 'result set 2';
 close(IN);
@@ -73,7 +73,7 @@ $header_standard =~ s/[\r\n]//g;
 $output_result_1_standard =~ s/[\r\n]//g;
 $output_result_2_standard =~ s/[\r\n]//g;
 
-is $header_standard, '"Seq ID",GeneID,"Antisense Reads Mapping","Antisense RPKM","Reads Mapping",RPKM', 'header okay';
+is $header_standard, '"Seq ID",GeneID,"Reads Mapping",RPKM,"Antisense Reads Mapping","Antisense RPKM"', 'header okay';
 is $output_result_1_standard, 'some_name,abc123,2000,15.3245,10,1.34324', 'result set 1';
 is $output_result_2_standard, 'some_name,efg456,10,0,200,780.34242543543', 'result set 2';
 close(IN_STANDARD);
