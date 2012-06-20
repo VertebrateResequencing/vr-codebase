@@ -81,7 +81,7 @@ unlink('my_result_file_standard.csv');
 
 
 #####################
-## Tradis protocol
+## Another new protocol
 #####################
 
 ok my $expression_results_tradis = Pathogens::RNASeq::ExpressionStatsSpreadsheet->new(

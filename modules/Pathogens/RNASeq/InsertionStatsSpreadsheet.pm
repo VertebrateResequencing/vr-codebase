@@ -14,7 +14,7 @@ $expression_results->build_and_close();
 
 
 =cut
-package Pathogens::RNASeq::ExpressionStatsSpreadsheet;
+package Pathogens::RNASeq::InsertionStatsSpreadsheet;
 use Moose;
 extends 'Pathogens::RNASeq::CommonSpreadsheet';
 
@@ -28,11 +28,14 @@ sub _result_rows
       [
       $result_set->{seq_id},
       $result_set->{gene_id},
-      $result_set->{mapped_reads_sense},
-      $result_set->{rpkm_sense},
-      $result_set->{mapped_reads_antisense},
-      $result_set->{rpkm_antisense}
+      $result_set->{forward_insert_sites},
+      $result_set->{normalised_forward_insert_sites},
+      $result_set->{reverse_insert_sites},
+      $result_set->{normalised_reverse_insert_sites},
+      $result_set->{total_insert_sites},
+      $result_set->{normalised_total_insert_sites}
       ]);
+
   }
   return \@denormalised_results;
 }
@@ -41,14 +44,7 @@ sub _header
 {
   my ($self) = @_;
   my @header;
-  if($self->protocol eq "StrandSpecificProtocol")
-  {
-    @header = ["Seq ID","GeneID","Reads Mapping", "RPKM", "Antisense Reads Mapping", "Antisense RPKM"];
-  }
-  else
-  {
-    @header = ["Seq ID","GeneID", "Antisense Reads Mapping", "Antisense RPKM","Reads Mapping", "RPKM"];
-  }
+  @header = ["Seq ID","GeneID","Forward insert sites", "Normalised forward insert sites", "Reverse insert sites", "Normalised reverse insert sites", "Total insert sites", "Normalised total insert sites"];  
   return \@header;
 }
 
