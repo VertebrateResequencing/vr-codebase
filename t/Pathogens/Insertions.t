@@ -25,7 +25,7 @@ ok((-e "output_results.corrected.bam"), "Corrected bam file created");
 ok((-e "output_results.corrected.bam.bai"), "Corrected bai file created");
 ok((-e "output_results.corrected.bam.intergenic.FN543502.tab.gz"), "Corrected tab file for intergenic regions created");
 
-unlink("output_results.corrected.csv");
+unlink("output_results.insertion.csv");
 unlink("output_results.corrected.bam");
 unlink("output_results.corrected.bam.bai");
 unlink("output_results.corrected.bam.intergenic.FN543502.tab.gz");

@@ -21,8 +21,8 @@ use strict;
 use warnings;
 no warnings 'uninitialized';
 use Getopt::Long;
-use Pathogens::RNASeq::Expression;
-use Pathogens::RNASeq::CoveragePlot;
+use Pathogens::RNASeq::Insertions;
+use Pathogens::RNASeq::InsertSite;
 
 my($sequence_file, $annotation_file, $protocol_name, $output_base_filename, $mapping_quality, $no_coverage_plots, $intergenic_regions, $bitwise_flag, $help );
 
