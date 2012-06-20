@@ -173,7 +173,7 @@ sub _calculate_values_for_intergenic_regions
      my $insertion_results_feature  = $self->_count_insertions_in_feature($intergenic_regions->intergenic_features->{$feature_id});
 
      $insertion_results_feature->{gene_id} = $feature_id;
-     $insertion_results_feature->{seq_id}  =  $self->_annotation_file->features->{$feature_id}->seq_id;
+     $insertion_results_feature->{seq_id}  =  $intergenic_regions->intergenic_features->{$feature_id}->seq_id;
      push(@{$all_insertion_results}, $insertion_results_feature);
    }
    
