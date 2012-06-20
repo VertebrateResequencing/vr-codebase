@@ -906,7 +906,7 @@ sub apply_user_defined_filters
         elsif ( exists($$filter{format_tag}) )
         {
             my $idx = $$opts{vcf}->get_tag_index($$line[8],$$filter{format_tag},':');
-            if ( $idx<1 ) { next; }
+            if ( $idx<0 ) { next; }
             $MATCH = $$opts{vcf}->get_sample_field($line,$idx);
         }
         $apply{ $$filter{name} } = &{$$filter{test}} == $PASS ? 0 : 1;
