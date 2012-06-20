@@ -137,9 +137,11 @@ sub _build__frequency_of_read_start
   my %frequency_of_read_start ;
   my $header       = $self->_input_file_handle->header;
    my $target_names = $header->target_name;
-  while (my $align = $self->_input_file_handle->read1) {
-     my $seqid     = $target_names->[$align->tid];
-     $frequency_of_read_start{$seqid}{$align->pos+1}{$align->strand}++;
+  while (my $align = $self->_input_file_handle->read1) 
+  {
+    next if ($align->unmapped);
+    my $seqid     = $target_names->[$align->tid];
+    $frequency_of_read_start{$seqid}{$align->pos+1}{$align->strand}++;
   }
 
   return \%frequency_of_read_start;
