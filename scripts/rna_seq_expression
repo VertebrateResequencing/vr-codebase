@@ -84,6 +84,7 @@ unless($no_coverage_plots)
 {
   Pathogens::RNASeq::CoveragePlot->new(
     filename             => $expression_results->_corrected_sequence_filename,
-    output_base_filename => $output_base_filename
+    output_base_filename => $output_base_filename,
+    mapping_quality      => $mapping_quality
   )->create_plots();
 }

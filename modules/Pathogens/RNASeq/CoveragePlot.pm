@@ -8,7 +8,8 @@ use Pathogens::RNASeq::CoveragePlot;
 my $coverage_plots_from_bam = Pathogens::RNASeq::CoveragePlot->new(
    filename => 'my_file.bam',
    output_base_filename => 'my_output_file',
-   mpileup_cmd   => "samtools mpileup "
+   mpileup_cmd   => "samtools mpileup ",
+   mapping_quality => 30
   );
 $coverage_plots_from_bam->create_plots();
 
@@ -22,6 +23,7 @@ has 'filename'                => ( is => 'rw', isa => 'Str',      required  => 1
 has 'output_base_filename'    => ( is => 'rw', isa => 'Str',      required  => 1 );
 # optional inputs
 has 'mpileup_cmd'             => ( is => 'rw', isa => 'Str',      default   => "samtools mpileup -d 1000" );
+has 'mapping_quality'         => ( is => 'rw', isa => 'Int',      default   => 0 );
                             
 has '_input_file_handle'      => ( is => 'rw',                    lazy_build => 1 );
 has '_output_file_handles'    => ( is => 'rw', isa => 'HashRef',  lazy_build => 1 );
@@ -72,7 +74,7 @@ sub _build__input_file_handle
   my $input_file_handle; 
   # TODO remove direct call to samtools and allow for filtering options
   # this only extracts the sequence name, base position, bases.
-  open($input_file_handle, '-|', $self->mpileup_cmd." ". $self->filename.' | awk \'{print $1"\t"$2"\t"$5}\'') || Pathogens::RNASeq::Exceptions::FailedToCreateMpileup->throw(error => "Failed to create mpileup for ".$self->filename );
+  open($input_file_handle, '-|', $self->mpileup_cmd." -q ".$self->mapping_quality." " $self->filename.' | awk \'{print $1"\t"$2"\t"$5}\'') || Pathogens::RNASeq::Exceptions::FailedToCreateMpileup->throw(error => "Failed to create mpileup for ".$self->filename );
   return $input_file_handle;
 }
 

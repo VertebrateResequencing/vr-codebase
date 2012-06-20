@@ -212,6 +212,7 @@ sub _create_expression_job
   Pathogens::RNASeq::$plots_class->new(
     filename             => \$expression_results->_corrected_sequence_filename,
     output_base_filename => qq[$sequencing_filename],
+    mapping_quality      => $self->{mapping_quality},
     $mpileup_str
   )->create_plots();
   
