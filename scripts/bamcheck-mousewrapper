@@ -36,7 +36,7 @@ TMPFILE=`mktemp /tmp/bamcheck-mousewrapper.XXXXXXXXXX` || exit 1
 
 die()
 {
-    cat $TMPFILE
+    if [ -e $TMPFILE ]; then cat $TMPFILE; fi
     rm -f $TMPFILE
     exit 1
 }
@@ -44,9 +44,9 @@ die()
 trap 'die' TERM
 trap 'die' INT
 
-if [ ! -t 0 ]; then
+read -t 1 -n 1 A && if [ $? -eq 0 ]; then
     echo "The mousewrapper does not accept streamed BAMs."
-    die
+    exit 1
 fi
 
 bamcheck $@ -t /lustre/scratch102/projects/mouse/ref/bamcheck-mousewrapper.regions > $TMPFILE || die
