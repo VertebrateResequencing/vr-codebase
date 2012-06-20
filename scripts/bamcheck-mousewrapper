@@ -36,13 +36,18 @@ TMPFILE=`mktemp /tmp/bamcheck-mousewrapper.XXXXXXXXXX` || exit 1
 
 die()
 {
-    echo "killed, removing $TMPFILE"
+    cat $TMPFILE
     rm -f $TMPFILE
     exit 1
 }
 
 trap 'die' TERM
 trap 'die' INT
+
+if [ ! -t 0 ]; then
+    echo "The mousewrapper does not accept streamed BAMs."
+    die
+fi
 
 bamcheck $@ -t /lustre/scratch102/projects/mouse/ref/bamcheck-mousewrapper.regions > $TMPFILE || die
 DUPL=`cat $TMPFILE | grep ^SN | grep 'reads duplicated:'` || die
