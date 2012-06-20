@@ -98,14 +98,14 @@ sub _count_insertions_in_feature
    {
       if(defined($self->_frequency_of_read_start->{$seqid}) && defined($self->_frequency_of_read_start->{$seqid}{$i}) )
       {
-        if($self->_frequency_of_read_start->{$seqid}{$i}{"1"})
+        if(defined($self->_frequency_of_read_start->{$seqid}{$i}{"1"}) && $self->_frequency_of_read_start->{$seqid}{$i}{"1"} > 0)
         {
-          $feature_insertion_details{forward_insert_sites} += $self->_frequency_of_read_start->{$seqid}{$i}{"1"};
+          $feature_insertion_details{forward_insert_sites}++;
         }
 
-       if($self->_frequency_of_read_start->{$seqid}{$i}{"-1"})
+       if(defined($self->_frequency_of_read_start->{$seqid}{$i}{"-1"}) && $self->_frequency_of_read_start->{$seqid}{$i}{"-1"} > 0)
        {
-         $feature_insertion_details{reverse_insert_sites} += $self->_frequency_of_read_start->{$seqid}{$i}{"-1"};
+         $feature_insertion_details{reverse_insert_sites}++;
        }
      }
    }
