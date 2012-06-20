@@ -1,0 +1,86 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+tradis_analysis
+
+=head1 SYNOPSIS
+
+=head1 DESCRIPTION
+
+This script takes a bam file created by the pipelines, applies some filters, creates a plot file of insert sites for transposons,
+creates a csv file of insert sites per gene, optionally with intergenic regions, and a tab file with intergenic regions marked up.
+
+=head1 CONTACT
+
+path-help@sanger.ac.uk
+
+=cut
+
+use strict;
+use warnings;
+no warnings 'uninitialized';
+use Getopt::Long;
+use Pathogens::RNASeq::Expression;
+use Pathogens::RNASeq::CoveragePlot;
+
+my($sequence_file, $annotation_file, $protocol_name, $output_base_filename, $mapping_quality, $no_coverage_plots, $intergenic_regions, $bitwise_flag, $help );
+
+GetOptions(
+   's|sequence_file=s'         => \$sequence_file,
+   'a|annotation_file=s'       => \$annotation_file,
+   'o|output_base_filename=s'  => \$output_base_filename,
+   'q|minimum_mapping_quality=s' => \$mapping_quality,
+   'c|no_coverage_plots'       => \$no_coverage_plots,
+   'i|intergenic_regions'      => \$intergenic_regions,
+   'b|bitwise_flag'            => \$bitwise_flag,
+   'h|help'                    => \$help,
+    );
+
+($sequence_file && $annotation_file) or die <<USAGE;
+
+Usage: $0
+  -s|sequence_file           <aligned BAM file>
+  -a|annotation_file         <annotation file (GFF)>
+  -o|output_base_filename    <Optional: base name and location to use for output files>
+  -q|minimum_mapping_quality <Optional: minimum mapping quality, defaults to 0>
+  -c|no_coverage_plots       <Dont create Artemis coverage plots>
+  -i|intergenic_regions      <Include intergenic regions>
+  -b|bitwise_flag            <Only include reads which pass filter>
+  -h|help                    <print this message>
+
+This script takes in an aligned sequence file (BAM) and a corresponding annotation file (GFF) and creates a spreadsheet with insertion site values 
+for each gene and intergenic region.  It also produces plots of insert sites (for Artemis) and a tab file of intergenic regions.
+The BAM must be aligned to the same reference that the annotation refers to and must be sorted.
+
+Example:
+tradis_analysis -s mybamfile.bam -a myannotation.gff
+
+USAGE
+
+$output_base_filename ||= $sequence_file;
+$mapping_quality ||= 0;
+my %filters = (mapping_quality => $mapping_quality);
+if(defined($bitwise_flag))
+{
+  $filters{bitwise_flag} = $bitwise_flag ;
+}
+
+my $expression_results = Pathogens::RNASeq::Insertions->new(
+  sequence_filename    => $sequence_file,
+  annotation_filename  => $annotation_file,
+  filters              => \%filters,
+  protocol             => "TradisProtocol",
+  output_base_filename => $output_base_filename,
+  intergenic_regions   => $intergenic_regions
+  );
+
+$expression_results->output_spreadsheet();
+
+unless($no_coverage_plots)
+{
+  Pathogens::RNASeq::InsertSite->new(
+    filename             => $expression_results->_corrected_sequence_filename,
+    output_base_filename => $output_base_filename
+  )->create_plots();
+}

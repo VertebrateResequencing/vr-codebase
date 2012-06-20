@@ -21,7 +21,6 @@ ok(my $expression_results = Pathogens::RNASeq::Insertions->new(
 ok($expression_results->output_spreadsheet(),'Create spreadsheet');
 
 ok((-e "output_results.insertion.csv"), 'spredsheet file exists');
-ok((-e ""), 'intergenic regions tab file exists');
 ok((-e "output_results.corrected.bam"), "Corrected bam file created");
 ok((-e "output_results.corrected.bam.bai"), "Corrected bai file created");
 ok((-e "output_results.corrected.bam.intergenic.FN543502.tab.gz"), "Corrected tab file for intergenic regions created");
