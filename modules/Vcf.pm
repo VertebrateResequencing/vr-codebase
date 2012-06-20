@@ -2647,6 +2647,24 @@ sub get_samples
 }
 
 
+=head2 get_column
+
+    About   : Convenient way to get data for a sample
+    Usage   : my $rec = $vcf->next_data_array(); my $sample_col = $vcf->get_column($rec, 'NA0001');
+    Args    : none
+
+=cut
+
+sub get_column
+{
+    my ($self,$line,$column) = @_;
+    if ( !exists($$self{has_column}{$column}) ) { $self->throw("No such column: [$column]\n"); }
+    if ( ref($line) ne 'ARRAY' ) { $self->throw("TODO: support next_line and/or next_data_hash?"); }
+    my $idx = $$self{has_column}{$column};
+    return $$line[$idx-1];
+}
+
+
 #------------------------------------------------
 # Version 3.2 specific functions
 
