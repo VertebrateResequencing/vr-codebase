@@ -1,0 +1,51 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+insert_site_plot
+
+=head1 SYNOPSIS
+
+=head1 DESCRIPTION
+
+This script takes a bam file created by the pipelines and creates a plot file of the insert sites for transposons. The files are saved in gzipped format and can be opened in Artemis.
+
+=head1 CONTACT
+
+path-help@sanger.ac.uk
+
+=cut
+
+use strict;
+use warnings;
+no warnings 'uninitialized';
+use Getopt::Long;
+use Pathogens::RNASeq::InsertSite;
+
+my($bam_file, $output_base_filename, $help );
+
+GetOptions(
+   'b|bam_file=s'             => \$bam_file,
+   'o|output_base_filename=s' => \$output_base_filename,
+   'h|help'                   => \$help,
+    );
+
+($bam_file && (-e $bam_file ) ) or die <<USAGE;
+
+Usage: $0
+  -b|bam_file              <aligned BAM file>
+  -o|output_base_filename  <Optional: base name and location to use for output files>
+  -h|help                  <print this message>
+
+This script takes a bam file created by the pipelines and creates a plot file of the insert sites for transposons. 
+The files are saved in gzipped format and can be opened in Artemis.
+
+USAGE
+
+
+$output_base_filename ||= $bam_file;
+
+Pathogens::RNASeq::InsertSite->new(
+  filename             => $bam_file,
+  output_base_filename => $output_base_filename
+)->create_plots();
