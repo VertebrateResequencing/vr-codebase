@@ -74,22 +74,22 @@ sub _build__input_file_handle
 
 sub _number_of_forward_reads
 {
-  my ($self, $read_coord) = @_;
-  return $self->_number_of_reads($read_coord, 1);
+  my ($self, $sequence_name,$read_coord) = @_;
+  return $self->_number_of_reads($sequence_name,$read_coord, 1);
 }
 
 sub _number_of_reverse_reads
 {
-  my ($self, $read_string) = @_;
-  return $self->_number_of_reads($read_coord, -1);
+  my ($self, $sequence_name,$read_coord) = @_;
+  return $self->_number_of_reads($sequence_name,$read_coord, -1);
 }
 
 sub _number_of_reads
 {
-  my ($self, $read_coord, $direction) = @_;
-  if(defined($self->_frequency_of_read_start->{$read_coord}) && defined($self->_frequency_of_read_start->{$read_coord}{$direction}))
+  my ($self, $sequence_name,$read_coord, $direction) = @_;
+  if(defined($self->_frequency_of_read_start->{$sequence_name}{$read_coord}) && defined($self->_frequency_of_read_start->{$sequence_name}{$read_coord}{$direction}))
   {
-    return $self->_frequency_of_read_start->{$read_coord}{$direction};
+    return $self->_frequency_of_read_start->{$sequence_name}{$read_coord}{$direction};
   }
   return 0;
 }
@@ -135,31 +135,39 @@ sub _build__frequency_of_read_start
 {
   my ($self) = @_;
   my %frequency_of_read_start ;
+  my $header       = $self->_input_file_handle->header;
+   my $target_names = $header->target_name;
   while (my $align = $self->_input_file_handle->read1) {
-     $frequency_of_read_start{$align->pos+1}{$align->strand}++;
+     my $seqid     = $target_names->[$align->tid];
+     $frequency_of_read_start{$seqid}{$align->pos+1}{$align->strand}++;
   }
+
   return \%frequency_of_read_start;
 }
 
 sub create_plots
 {
   my ($self) = @_;
-  
-  for(my $read_coord (keys %{$self->_frequency_of_read_start})
+  my %read_starts = %{$self->_frequency_of_read_start};
+  for my $sequence_name (keys %read_starts)
   {
-    my $padding_string = $self->_create_padding_string($self->_sequence_base_counters->{$sequence_name}, $read_coord);
-    
-    my $forward_reads = $self->_number_of_forward_reads($read_coord);
-    my $reverse_reads = $self->_number_of_reverse_reads($read_coord);
-    
-    print { $self->_output_file_handles->{$sequence_name} } $padding_string.$forward_reads." ".$reverse_reads."\n";
+    my %sequence_read_coords  = %{$read_starts{$sequence_name}};
+    for my $read_coord (sort {$a <=> $b} (keys %sequence_read_coords))
+    {
+      my $padding_string = $self->_create_padding_string($self->_sequence_base_counters->{$sequence_name}, $read_coord);
+      $self->_sequence_base_counters->{$sequence_name} = $read_coord;
+
+      my $forward_reads = $self->_number_of_forward_reads($sequence_name,$read_coord);
+      my $reverse_reads = $self->_number_of_reverse_reads($sequence_name,$read_coord);
+
+      print { $self->_output_file_handles->{$sequence_name} } $padding_string.$forward_reads." ".$reverse_reads."\n";
+    }
   }
 
   $self->_print_padding_at_end_of_sequence;
   $self->_close_output_file_handles;
   return 1;
 }
-
 
 
 1;
