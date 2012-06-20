@@ -22,16 +22,15 @@ has 'minimum_ratio'          => ( is => 'ro', isa => 'Num', default => 0.8 );
 has 'minimum_quality'        => ( is => 'ro', isa => 'Int', default => 0 );
 has 'minimum_map_quality'    => ( is => 'ro', isa => 'Int', default => 1 );
 has 'minimum_af1'            => ( is => 'ro', isa => 'Num', default => 0.95 );
-has 'af1_complement'         => (is => 'ro',  isa => 'Num', default => 0.05);
+has 'minimum_af1_complement' => ( is => 'ro', isa => 'Num', default => 0.05);
 has 'minimum_ci95'           => ( is => 'ro', isa => 'Num', default => 0.0 );
 has 'minimum_strand_bias'    => ( is => 'ro', isa => 'Num', default => 0.001 );
 has 'minimum_map_bias'       => ( is => 'ro', isa => 'Num', default => 0.001 );
 has 'minimum_tail_bias'      => ( is => 'ro', isa => 'Num', default => 0.001 );
 has 'minimum_base_quality_bias' => ( is => 'ro', isa => 'Num', default => 0.0 );
+
 has 'reporter'            => ( is => 'ro', isa => 'Pathogens::Variant::EvaluationReporter', lazy => 1, default => sub { return Pathogens::Variant::EvaluationReporter->new } );
-
 has '_event'               => ( is => 'rw', isa => 'Pathogens::Variant::Event');
-
 has '_dp4_parser'          => ( is => 'ro', isa => 'Pathogens::Variant::Utils::DP4Parser', lazy => 1, default => sub { return Pathogens::Variant::Utils::DP4Parser->new } );
 has '_event_manipulator'   => ( is => 'ro', isa => 'Pathogens::Variant::Utils::EventManipulator', lazy => 1, default => sub { return Pathogens::Variant::Utils::EventManipulator->new } );
 
@@ -84,17 +83,17 @@ sub evaluate {
             $self->reporter->inc_counter_accepted_snp_calls        #increments the counter called "accepted_snp_calls" by 1
         }
 
-        $logger->is_debug() && $logger->debug("Event dump after passing the evaluation:...\n". Dumper($event) . "\nReporter dump after passing the evaluation:...\n". Dumper($self->reporter) );
+        $logger->is_trace() && $logger->trace("Event dump after passing the evaluation:...\n". Dumper($event) . "\nReporter dump after passing the evaluation:...\n". Dumper($self->reporter) );
 
-        return 1; #PASSED OVERALL EVALUATION
+        return 1; #Passed
 
     } else {
 
         $self->_event->passed_evaluation(0); #i.e. the event failed to pass the filters
 
-        $logger->is_debug() && $logger->debug("Event dump after failing the evaluation:...\n". Dumper($event) . "\nReporter dump after failing the evaluation:...\n". Dumper($self->reporter) );
+        $logger->is_trace() && $logger->trace("Event dump after failing the evaluation:...\n". Dumper($event) . "\nReporter dump after failing the evaluation:...\n". Dumper($self->reporter) );
 
-        return 0; #FAILED OVERALL EVALUATION 
+        return 0; #Failed 
 
     }
 }
@@ -103,7 +102,7 @@ sub _mark_the_event_if_not_polymorphic {
     my ($self, $event) = @_;
 
     if ($event->alternative_allele eq '.') {
-        $event->polymorphic(0); #set this one to false (0). Note default value is true
+        $event->polymorphic(0); #set this one to false (0)
     }
 
 }
@@ -137,7 +136,7 @@ sub _passed_vcf_info_field_evaluation {
 
     my $logger = get_logger("Pathogens::Variant::Evaluator::Pseudosequence");
 
-    $logger->is_debug() && $logger->debug("Evaluating vcf info field values...\n" . $self->_event->info);
+    $logger->is_debug() && $logger->debug("Evaluating info field of chromosome/position: " . $self->_event->chromosome ."/" . $self->_event->position . " with info field:" . $self->_event->info);
     
     my %param;
     my $evaluation_status = 1; #default is 1, i.e. passed the evaluation
@@ -154,7 +153,7 @@ sub _passed_vcf_info_field_evaluation {
     
     if ( exists $param{'AF1'} ) {
         if (not $self->_event->polymorphic) {
-            if ($param{'AF1'} >= $self->af1_complement) { #Why is this not ">=" in SH's script?
+            if ($param{'AF1'} > $self->minimum_af1_complement) { 
                 $evaluation_status = 0;
                 $self->reporter->inc_counter_failed_af1_allele_frequency;
             }

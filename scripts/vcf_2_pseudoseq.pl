@@ -40,18 +40,20 @@ my $logger = get_logger();
 
 #set the default argument values
 our %args = (
-     vcf_file     => ''
-   , out   => ''
-   , bam   => ''
+     vcf_file => ''
+   , out => ''
+   , bam => ''
+   , reference => ''
+   , lane_name => ''
    , depth        => 4
    , depth_strand => 2
    , ratio        => 0.8
    , quality      => 50
    , map_quality  => 0
-   , af1          => 0.95
+   , af1            => 0.95
    , af1_complement => 0.05
-   , ci95         => 0.0
-   , strand_bias  => 0.001
+   , ci95           => 0.0
+   , strand_bias    => 0.001
    , base_quality_bias => 0.0
    , map_bias     => 0.001
    , tail_bias    => 0.001
@@ -75,6 +77,14 @@ Required parameters:
     -b[am] <string>                    	Bam file with a valid header and read alignments [required]
                                             { 
                                             	$main::args{bam} = $string; 
+                                            }
+    -l[ane_name] <string>              	Lane id (in 'XXXX_X#XX' format) [required]
+                                            { 
+                                            	$main::args{lane_name} = $string; 
+                                            }
+    -R[eference] <string>              	Reference sequence in fasta format (same fasta as used in the mapping) [required]
+                                            { 
+                                            	$main::args{reference} = $string; 
                                             }
 ------------------------------------------------------------------------------------------
 

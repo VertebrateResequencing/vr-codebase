@@ -6,10 +6,10 @@ use Pathogens::Variant::Iterator::Vcf;
 use Pathogens::Variant::Evaluator::Pseudosequence;
 use Pathogens::Variant::EvaluationReporter;
 use Pathogens::Variant::Utils::BamParser;
-
+use Utils;
 use Pathogens::Variant::Exception;
 use Log::Log4perl qw(get_logger);
-
+use File::Basename;
 use namespace::autoclean;
 
 
@@ -63,7 +63,7 @@ sub _initialise {
         , minimum_quality           => $self->arguments->{quality}
         , minimum_map_quality       => $self->arguments->{map_quality}
         , minimum_af1               => $self->arguments->{af1}
-        , af1_complement            => $self->arguments->{af1_complement}
+        , minimum_af1_complement    => $self->arguments->{af1_complement}
         , minimum_ci95              => $self->arguments->{ci95}
         , minimum_strand_bias       => $self->arguments->{strand_bias}
         , minimum_base_quality_bias => $self->arguments->{base_quality_bias}
@@ -93,30 +93,36 @@ sub create_pseudo_reference {
     my ($self) = @_;
 
     my $logger = get_logger("Pathogens::Variant::Utils::PseudoReferenceMaker");
-    
-    my $temporary_unsorted_tab_file = "out.tmp." . $self->arguments->{out};
-    my $final_sorted_and_merged_fasta_file     = $self->arguments->{out};
-    
-    $self->_write_pseudo_reference_to_file($temporary_unsorted_tab_file);
-    
-    #The entries in the $temporary_unsorted_tab_file are first sorted (dictionary sort) by sequence name
-    #and the sequences are concatenated end-to-end into a single string, and saved in fasta format.
-    #The name of the sequence is the lane id.
-    $self->_sort_and_merge_fasta($temporary_unsorted_tab_file, $final_sorted_and_merged_fasta_file);
 
+
+    $logger->info("Creating a VCF file with all mapped sites");
+    my $temporary_vcf_file_with_all_mapped_positions = $self->_generate_vcf_file_with_all_reference_sites;
+    $logger->info("VCF has been created.");
+
+
+    my $temporary_tab_delimited_pseudo_reference_file = $self->_generate_tab_delimited_pseudo_reference_file($temporary_vcf_file_with_all_mapped_positions);
     
-    unlink($temporary_unsorted_tab_file);
+    
+    #The entries in the $temporary_tab_delimited_pseudo_reference_file are first sorted (dictionary sort) by sequence name
+    #and the sequences are then concatenated end-to-end into a single string, and saved in fasta format.
+    $self->_sort_and_merge($temporary_tab_delimited_pseudo_reference_file);
+
+    unlink($temporary_tab_delimited_pseudo_reference_file);
+    unlink($temporary_vcf_file_with_all_mapped_positions);
 
 }
 
-sub _write_pseudo_reference_to_file {
-    my ($self, $temporary_unsorted_tab_file) = @_;
+sub _generate_tab_delimited_pseudo_reference_file {
+    my ($self, $temporary_vcf_file_with_all_mapped_positions) = @_;
 
     my $logger = get_logger("Pathogens::Variant::Utils::PseudoReferenceMaker");
     
+   
+    my ($file,$path,$suffix) = File::Basename::fileparse($self->arguments->{out}); # returns  ("baz", "/foo/bar/", ".txt") 
+    my $temporary_tab_delimited_pseudo_reference_file = "$path/temporary.$file";
     
     #open the filehandle for the temporary file
-    open( my $filehandle, ">" . $temporary_unsorted_tab_file ) or throw Pathogens::Variant::Exception::File({text => "Couldn't open filehandle to write the pseudoreference." . $!});
+    open( my $filehandle, ">" . $temporary_tab_delimited_pseudo_reference_file ) or throw Pathogens::Variant::Exception::File({text => "Couldn't open filehandle to write the pseudoreference." . $!});
     $self->_output_filehandle_temporary_file($filehandle);
 
     #first event is handled here:
@@ -160,10 +166,10 @@ sub _write_pseudo_reference_to_file {
         $last_pos = $curr_pos;
 
         #this initialises a hashkey for chromosome names,
-        #so that we know which ones were present in the vcf file
+        #so that we know which ones have been seen in the vcf file
         $seen_chromosomes{$last_chr} = 1; 
 
-        #can be used to monitor the progress if log-leve is set to "INFO" (or lower)
+        #optinal to monitor for progress report if log-leve is set to "INFO" (or lower)
         $processed_entries++;
         $logger->info("Processed $processed_entries sites") unless $processed_entries % 10000;
 
@@ -181,6 +187,9 @@ sub _write_pseudo_reference_to_file {
     
     #close the filehandle for the temporary file
     close($filehandle);
+    
+    return $temporary_tab_delimited_pseudo_reference_file;
+    
 }
 
 sub _fill_unseen_chromosomes_with_Ns {
@@ -262,24 +271,58 @@ sub _get_allele_of_evaluated_event {
     }
 }
 
-sub _sort_and_merge_fasta {
-    my ($self, $temporary_unsorted_tab_file, $final_sorted_and_merged_fasta_file) = @_;
+sub _sort_and_merge {
+    my ($self, $temporary_tab_delimited_pseudo_reference_file) = @_;
+    my $logger = get_logger("Pathogens::Variant::Utils::PseudoReferenceMaker");
+
+    my $final_output_file =  $self->arguments->{out};
     
-    my $pipecmd = "sort -d -k1,1 $temporary_unsorted_tab_file 2>&1 |";
+    open(my $fhd_file, ">" . $final_output_file) || throw Pathogens::Variant::Exception::File({text => "Could not open output filehandle to write pseudo_reference" . $!});
+
+    my $pipecmd = "sort -d -k1,1 $temporary_tab_delimited_pseudo_reference_file |";
+    $logger->debug("Sorting the tab-delimited pseudoseq on sequence id before merging the chromosomes into a single string");
+    $logger->debug($pipecmd);
+    open(my $fhd_pipe, $pipecmd) || throw Pathogens::Variant::Exception::CommandExecution({text => "Pipe failed with run status ($?) when running command:\n$pipecmd $!"}); 
+
+
+
+    #final fasta file, where we will write everything in one single line
+    print $fhd_file ">" . $self->arguments->{lane_name} . "\n";
     
-    open(my $fhd_pipe, $pipecmd) || throw Pathogens::Variant::Exception::IPC({text => "Error running pipe command: '$pipecmd' " . $!});
-    open(my $fhd_file, ">" . $final_sorted_and_merged_fasta_file) || throw Pathogens::Variant::Exception::IPC({text => "Could not open filehandle to '$final_sorted_and_merged_fasta_file' " . $!});
-    
-    print $fhd_file ">FinalSequence\n";
     while(<$fhd_pipe>) {
-        chomp $_;
-        my (undef, $seq) = split("\t", $_);
-        print $fhd_file $seq if $seq;
+        my (undef, $sequence) = split("\t", $_);
+        print $fhd_file $sequence;
+        chomp $sequence;
     }
+    
     close $fhd_file;
-    close $fhd_pipe || throw Pathogens::Variant::Exception::IPC({text => "Bad status ($?) running pipe command: '$pipecmd' $! "});
+    
+    #pipe errors are only visibly when closing the pipe handle
+    close $fhd_pipe || throw Pathogens::Variant::Exception::CommandExecution({text => "Pipe failed with run status ($?) when running command:\n$pipecmd $!"});
+    
+    $logger->debug("Conversion was succesful");
 }
 
+sub _generate_vcf_file_with_all_reference_sites {
+    
+    my ($self) = @_;
+    my $logger = get_logger("Pathogens::Variant::Utils::PseudoReferenceMaker");
+
+    my $reference_file = $self->arguments->{reference};
+    
+    my $bam_file   = $self->arguments->{bam};
+    my ($file,$path,$suffix) = File::Basename::fileparse($bam_file); # returns  ("baz", "/foo/bar/", ".txt") 
+    my $temporary_vcf_file_with_all_mapped_positions = "$path/temporary.$file.vcf";
+
+
+    my $pipecmd = qq[samtools mpileup -d 1000 -DSugBf $reference_file $bam_file 2>/dev/null | bcftools view -cg - 2>/dev/null > $temporary_vcf_file_with_all_mapped_positions];
+    $logger->debug($pipecmd);
+
+    Utils::CMD($pipecmd);
+
+    return $temporary_vcf_file_with_all_mapped_positions;
+    
+}
 #####################################################################
 #To dump evaluation statistics after the sub 'create_pseudo_reference'
 #####################################################################
