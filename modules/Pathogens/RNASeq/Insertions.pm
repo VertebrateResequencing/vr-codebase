@@ -35,7 +35,7 @@ has 'output_base_filename'    => ( is => 'rw', isa => 'Str', required => 1 );
 has 'filters'                 => ( is => 'rw', isa => 'Maybe[HashRef]'     );
 has 'protocol'                => ( is => 'rw', isa => 'Str',  default => 'TradisProtocol' );
 has 'samtools_exec'           => ( is => 'rw', isa => 'Str',  default => "samtools" );
-has 'intergenic_regions'      => ( is => 'rw', isa => 'Bool', default => 0 );
+has 'intergenic_regions'      => ( is => 'rw', isa => 'Bool', default => 1 );
 has 'minimum_intergenic_size' => ( is => 'rw', isa => 'Int',  default => 10 );
 
 has '_sequence_file'          => ( is => 'rw', isa => 'Pathogens::RNASeq::SequenceFile',               lazy_build  => 1 );
@@ -88,25 +88,28 @@ sub _build__frequency_of_read_start
 sub _count_insertions_in_feature
 {
    my ($self, $feature) = @_;
-   my $seq_id = $feature->seq_id;
+   my $seqid = $feature->seq_id;
    my %feature_insertion_details ;
+   $feature_insertion_details{forward_insert_sites} = 0;
+   $feature_insertion_details{reverse_insert_sites} = 0;
+   
    my $i=0;
-   for($i = $self->feature->gene_start; $i<= $self->feature->gene_end ; $i++ )
+   for($i = $feature->gene_start; $i<= $feature->gene_end ; $i++ )
    {
-      if(defined($self->_frequency_of_read_start{$seqid}) && defined($self->_frequency_of_read_start{$seqid}{$i}) )
+      if(defined($self->_frequency_of_read_start->{$seqid}) && defined($self->_frequency_of_read_start->{$seqid}{$i}) )
       {
-        if($self->_frequency_of_read_start{$seqid}{$i}{"1"})
+        if($self->_frequency_of_read_start->{$seqid}{$i}{"1"})
         {
-          $feature_insertion_details{forward_insert_sites} += $self->_frequency_of_read_start{$seqid}{$i}{"1"};
+          $feature_insertion_details{forward_insert_sites} += $self->_frequency_of_read_start->{$seqid}{$i}{"1"};
         }
-      
-       if($self->_frequency_of_read_start{$seqid}{$i}{"-1"})
+
+       if($self->_frequency_of_read_start->{$seqid}{$i}{"-1"})
        {
-         $feature_insertion_details{reverse_insert_sites} += $self->_frequency_of_read_start{$seqid}{$i}{"-1"};
+         $feature_insertion_details{reverse_insert_sites} += $self->_frequency_of_read_start->{$seqid}{$i}{"-1"};
        }
      }
    }
-   my $length  = (($self->feature->gene_end +1) - $self->feature->gene_start);
+   my $length  = (($feature->gene_end +1) - $feature->gene_start);
    $feature_insertion_details{normalised_forward_insert_sites} = $feature_insertion_details{forward_insert_sites} /$length;
    $feature_insertion_details{normalised_reverse_insert_sites} = $feature_insertion_details{reverse_insert_sites} /$length;
    $feature_insertion_details{total_insert_sites}              = ($feature_insertion_details{forward_insert_sites} + $feature_insertion_details{reverse_insert_sites} );
