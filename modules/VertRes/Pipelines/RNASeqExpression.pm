@@ -188,9 +188,8 @@ sub _create_expression_job
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
   use strict;
-  use Pathogens::RNASeq::Expression;
-  use Pathogens::RNASeq::CoveragePlot;
-
+  use Pathogens::RNASeq::$driver_class;
+  use Pathogens::RNASeq::$plots_class;
   
   my \$expression_results = Pathogens::RNASeq::$driver_class->new(
     sequence_filename    => qq[$sequencing_filename],
