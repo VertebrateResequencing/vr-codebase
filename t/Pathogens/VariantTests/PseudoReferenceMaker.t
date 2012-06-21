@@ -24,7 +24,7 @@ our %args = (
      vcf_file     => './data/single.dip.vcf'
    , out   => './data/temporary.test.out'
    , bam   => './data/test.bam'
-   , reference => './data/reference.fasta'
+   , reference => './data/reference.snpAt10.insertionAt30.deletionAt50.fasta'
    , depth        => 4
    , depth_strand => 2
    , ratio        => 0.8
@@ -44,8 +44,8 @@ isa_ok ($object, 'Pathogens::Variant::Utils::PseudoReferenceMaker');
 
 my $name_of_created_file = $object->_generate_vcf_file_with_all_reference_sites;
 isnt($name_of_created_file, '', "Managed to create a VCF file with all sites");
- 
- unlink($name_of_created_file);
+
+unlink($name_of_created_file);
  
 #some modules create a dir called "_Inline" in the current dir
 #delete it after the test

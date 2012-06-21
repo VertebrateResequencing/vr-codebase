@@ -40,8 +40,7 @@ my $logger = get_logger();
 
 #set the default argument values
 our %args = (
-     vcf_file => ''
-   , out => ''
+     out => ''
    , bam => ''
    , reference => ''
    , lane_name => ''
@@ -66,10 +65,6 @@ my $specification = q(
 ==========================================================================================
 Required parameters:
 
-    -v[cf] <string>                    	Variation input file in vcf format [required]
-                                            { 
-                                            	$main::args{vcf_file} = $string; 
-                                            }
     -o[ut] <string>                    	Output file name for the pseudoreference [required]
                                             { 
                                             	$main::args{out} = $string; 

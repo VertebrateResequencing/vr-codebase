@@ -1,0 +1,6 @@
+#with -I
+multiple_mappings_to_bam_AS_IN_20_06_2012.py -r reference.snp10.ins30.del50.fasta -s -a -I test.fastq
+
+#without -I
+multiple_mappings_to_bam_AS_IN_20_06_2012.py -r reference.snp10.ins30.del50.fasta -s -a test.fastq
+
