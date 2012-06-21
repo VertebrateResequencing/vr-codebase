@@ -90,31 +90,61 @@ sub _count_insertions_in_feature
    my ($self, $feature) = @_;
    my $seqid = $feature->seq_id;
    my %feature_insertion_details ;
-   $feature_insertion_details{forward_insert_sites} = 0;
-   $feature_insertion_details{reverse_insert_sites} = 0;
+   $feature_insertion_details{pos_insert_sites} = 0;
+   $feature_insertion_details{neg_insert_sites} = 0;
    
    my $i=0;
+   my $insert_sites = 0;
+   my $insert_site_reads = 0;
    for($i = $feature->gene_start; $i<= $feature->gene_end ; $i++ )
    {
       if(defined($self->_frequency_of_read_start->{$seqid}) && defined($self->_frequency_of_read_start->{$seqid}{$i}) )
       {
         if(defined($self->_frequency_of_read_start->{$seqid}{$i}{"1"}) && $self->_frequency_of_read_start->{$seqid}{$i}{"1"} > 0)
         {
-          $feature_insertion_details{forward_insert_sites}++;
+          $insert_site++;
+          $insert_site_reads += $self->_frequency_of_read_start->{$seqid}{$i}{"1"} ;
         }
 
        if(defined($self->_frequency_of_read_start->{$seqid}{$i}{"-1"}) && $self->_frequency_of_read_start->{$seqid}{$i}{"-1"} > 0)
        {
-         $feature_insertion_details{reverse_insert_sites}++;
+         $insert_site++;
+         $insert_site_reads += $self->_frequency_of_read_start->{$seqid}{$i}{"-1"} ;
        }
      }
    }
    my $length  = (($feature->gene_end +1) - $feature->gene_start);
-   $feature_insertion_details{normalised_forward_insert_sites} = $feature_insertion_details{forward_insert_sites} /$length;
-   $feature_insertion_details{normalised_reverse_insert_sites} = $feature_insertion_details{reverse_insert_sites} /$length;
-   $feature_insertion_details{total_insert_sites}              = ($feature_insertion_details{forward_insert_sites} + $feature_insertion_details{reverse_insert_sites} );
+   
+   if($feature->strand == -1)
+   {
+     $feature_insertion_details{neg_insert_sites} = $insert_sites;
+     $feature_insertion_details{neg_insert_site_reads} = $insert_site_reads;
+   }
+   elsif($feature->strand == 1)
+   {
+     $feature_insertion_details{pos_insert_sites} = $insert_sites;
+     $feature_insertion_details{pos_insert_site_reads} = $insert_site_reads;
+   }
+   else
+   {
+     $feature_insertion_details{zero_insert_sites} = $insert_sites;
+     $feature_insertion_details{zero_insert_site_reads} = $insert_site_reads;
+   }
+   
+   $feature_insertion_details{normalised_pos_insert_sites} = $feature_insertion_details{pos_insert_sites} /$length;
+   $feature_insertion_details{normalised_neg_insert_sites} = $feature_insertion_details{neg_insert_sites} /$length;
+   $feature_insertion_details{normalised_zero_insert_sites} = $feature_insertion_details{zero_insert_sites} /$length;
+   $feature_insertion_details{total_insert_sites}              = ($feature_insertion_details{neg_insert_sites} + $feature_insertion_details{neg_insert_sites} + $feature_insertion_details{zero_insert_sites});
    $feature_insertion_details{normalised_total_insert_sites}   = $feature_insertion_details{total_insert_sites} /$length;
-   return \%feature_insertion_details ;
+   
+   
+   $feature_insertion_details{normalised_pos_insert_site_reads} = $feature_insertion_details{pos_insert_site_reads} /$length;
+   $feature_insertion_details{normalised_neg_insert_site_reads} = $feature_insertion_details{neg_insert_site_reads} /$length;
+   $feature_insertion_details{normalised_zero_insert_site_reads} = $feature_insertion_details{zero_insert_site_reads} /$length;
+   $feature_insertion_details{total_insert_site_reads} =  $feature_insertion_details{pos_insert_site_reads}  + $feature_insertion_details{neg_insert_site_reads}  +  $feature_insertion_details{zero_insert_site_reads};
+   $feature_insertion_details{normalised_total_insert_site_reads} = $feature_insertion_details{total_insert_site_reads} /$length;
+   
+   return \%feature_insertion_details;
 }
 
 sub _build__insertion_results

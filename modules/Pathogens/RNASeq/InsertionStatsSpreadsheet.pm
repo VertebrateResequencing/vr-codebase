@@ -28,13 +28,23 @@ sub _result_rows
       [
       $result_set->{seq_id},
       $result_set->{gene_id},
-      $result_set->{forward_insert_sites},
-      $result_set->{normalised_forward_insert_sites},
-      $result_set->{reverse_insert_sites},
-      $result_set->{normalised_reverse_insert_sites},
+      $result_set->{normalised_pos_insert_sites},
+      $result_set->{pos_insert_sites},
+      $result_set->{normalised_neg_insert_sites},
+      $result_set->{neg_insert_sites},
+      $result_set->{normalised_zero_insert_sites},
+      $result_set->{zero_insert_sites},
+      $result_set->{normalised_total_insert_sites},
       $result_set->{total_insert_sites},
-      $result_set->{normalised_total_insert_sites}
-      ]);
+      $result_set->{normalised_pos_insert_site_reads},
+      $result_set->{pos_insert_site_reads},
+      $result_set->{normalised_neg_insert_site_reads},
+      $result_set->{neg_insert_site_reads},
+      $result_set->{normalised_zero_insert_site_reads},
+      $result_set->{zero_insert_site_reads},
+      $result_set->{normalised_total_insert_site_reads},
+      $result_set->{total_insert_site_reads},
+    ]);
 
   }
   return \@denormalised_results;
@@ -44,7 +54,16 @@ sub _header
 {
   my ($self) = @_;
   my @header;
-  @header = ["Seq ID","GeneID","Forward insert sites", "Normalised forward insert sites", "Reverse insert sites", "Normalised reverse insert sites", "Total insert sites", "Normalised total insert sites"];  
+  @header = ["Seq ID","GeneID", 
+  'Normalised pos insert sites', 'Pos insert sites',
+  'Normalised neg insert sites', 'Neg insert sites', 
+  'Normalised unknown strand insert sites', 'Unknown strand insert sites', 
+  'Normalised total insert sites', 'Total insert sites', 
+  'Normalised pos insertions', 'Pos insertions',
+  'Normalised neg insertions', 'Neg insertions', 
+  'Normalised unknown strand insertions', 'Unknown strand insertions', 
+  'Normalised total insertions', 'Total insertions',
+  ];  
   return \@header;
 }
 
