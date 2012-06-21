@@ -21,10 +21,6 @@ Usage options:
     	$0 -d <file_of_dbs>
 USAGE
 
-my $sql = "select distinct (csa.supplier_name), ifnull(csa.sanger_sample_id, 'N/A'), ifnull(csa.accession_number, 'N/A') 
-	        from current_samples csa, study_samples sta, current_studies cst where csa.internal_id = sta.sample_internal_id 
-	        and sta.study_internal_id = cst.internal_id and cst.name = ? and csa.supplier_name is not null"; 
-
 my @dbs;
 open DBFILE, '<', $dbfile;
 while ( <DBFILE> ) {
