@@ -154,7 +154,7 @@ sub _create_expression_job
 
   my $job_name = $self->{prefix}.$sequencing_filename.'_calculate_expression';
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$sequencing_filename.'_calculate_expression.pl');
-  my $total_memory_mb = 2000;
+  my $total_memory_mb = 3000;
   
   my($action_lock_filename, $directories, $suffix) = fileparse($action_lock);
   my $sequencing_file_action_lock = $self->{lane_path}.'/'.$sequencing_filename.$action_lock_filename;
@@ -174,6 +174,11 @@ sub _create_expression_job
   if(defined ($self->{intergenic_regions}))
   {
     $intergenic_regions_str = ' intergenic_regions => '.$self->{intergenic_regions}.', ';
+  }
+  my $bitwise_flag_str = "";
+  if(defined($self->{bitwise_flag}))
+  {
+    $bitwise_flag_str = ' bitwise_flag => '.$self->{bitwise_flag}.',';
   }
   
   my $driver_class = "Expression";
@@ -195,7 +200,7 @@ sub _create_expression_job
     sequence_filename    => qq[$sequencing_filename],
     annotation_filename  => qq[$self->{annotation_file}],
     mapping_quality      => $self->{mapping_quality},
-    bitwise_flag         => $self->{bitwise_flag},
+    $bitwise_flag_str
     protocol             => qq[$self->{protocol}],
     output_base_filename => qq[$sequencing_filename],
     $window_margin_str
