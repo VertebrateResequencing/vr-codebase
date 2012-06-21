@@ -5,25 +5,30 @@ use Data::Dumper;
 use Test::More;
 use Data::Dumper;
 
+use File::Basename; 
+
+#get the directory path to the test file
+my (undef, $dir) = fileparse($0);
+
 BEGIN { use_ok( 'Pathogens::Variant::Iterator::Vcf' ); }
 
 my $object;
 my $event;
 
 #try iterating through a vcf file with a single snp entry
-$object = Pathogens::Variant::Iterator::Vcf->new (vcf_file => '/Users/fy2/sandbox/refactor/VariantCallFramework/t/data/single.snp.vcf');
+$object = Pathogens::Variant::Iterator::Vcf->new (vcf_file => "$dir/data/single.snp.vcf");
 isa_ok ($object, 'Pathogens::Variant::Iterator::Vcf');
 $event = $object->next_event;
 isa_ok($event, 'Pathogens::Variant::Event');
 
 #try another vcf where a single indel entry is present
-$object = Pathogens::Variant::Iterator::Vcf->new (vcf_file => '/Users/fy2/sandbox/refactor/VariantCallFramework/t/data/single.dip.vcf');
+$object = Pathogens::Variant::Iterator::Vcf->new (vcf_file => "$dir/data/single.dip.vcf");
 $event = $object->next_event;
 isa_ok($event, 'Pathogens::Variant::Event');
 
 
 #try iterating through a vcf thas is gzipped and with single snp
-$object = Pathogens::Variant::Iterator::Vcf->new (vcf_file => '/Users/fy2/sandbox/refactor/VariantCallFramework/t/data/single.snp.vcf.gz');
+$object = Pathogens::Variant::Iterator::Vcf->new (vcf_file => "$dir/data/single.snp.vcf.gz");
 isa_ok ($object, 'Pathogens::Variant::Iterator::Vcf');
 
 my $obj_counter;

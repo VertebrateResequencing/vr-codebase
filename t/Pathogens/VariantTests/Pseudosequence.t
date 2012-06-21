@@ -3,6 +3,10 @@ use warnings;
 use Data::Dumper;
 use Log::Log4perl qw(get_logger :levels); 
 use Test::More;
+use File::Basename; 
+
+#get the directory path to the test file
+my (undef, $dir) = fileparse($0);
 
 ###############################################
 #log4perl initialisation settings
@@ -58,7 +62,7 @@ is($event->passed_evaluation, 0, "Evaluation filters the snp out (due to low af1
 
 use Pathogens::Variant::Iterator::Vcf;
 #this will traverse the VCF file and return Pathogens::Variant::Event::* objects
-my $iterator = Pathogens::Variant::Iterator::Vcf->new(vcf_file => './data/single.dip.vcf');
+my $iterator = Pathogens::Variant::Iterator::Vcf->new(vcf_file => "$dir/data/single.dip.vcf");
 while( $event = $iterator->next_event() ) {
     $evaluator->evaluate($event);
     is($event->passed_evaluation, 0, "Evaluation filters the indel out (no indels allowed) as expected");
