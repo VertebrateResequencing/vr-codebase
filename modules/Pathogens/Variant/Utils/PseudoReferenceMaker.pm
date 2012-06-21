@@ -104,7 +104,7 @@ sub create_pseudo_reference {
     
     #The entries in the $temporary_tab_delimited_pseudo_reference_file are first sorted (dictionary sort) by sequence name
     #and the sequences are then concatenated end-to-end into a single string, and saved in fasta format.
-    $self->_sort_and_merge($temporary_tab_delimited_pseudo_reference_file);
+    $self->_sort_and_merge_and_generate_final_output($temporary_tab_delimited_pseudo_reference_file);
 
     unlink($temporary_tab_delimited_pseudo_reference_file);
     unlink($temporary_vcf_file_with_all_mapped_positions);
@@ -274,7 +274,7 @@ sub _get_allele_of_evaluated_event {
     }
 }
 
-sub _sort_and_merge {
+sub _sort_and_merge_and_generate_final_output {
     my ($self, $temporary_tab_delimited_pseudo_reference_file) = @_;
     my $logger = get_logger("Pathogens::Variant::Utils::PseudoReferenceMaker");
 
@@ -295,6 +295,7 @@ sub _sort_and_merge {
     close $fhd_file;
     #pipe errors are only visibly when closing the pipe handle
     close $fhd_pipe || throw Pathogens::Variant::Exception::CommandExecution({text => "Pipe failed with run status ($?) when running command:\n$pipecmd $!"});
+    
 }
 
 sub _generate_vcf_file_with_all_reference_sites {
