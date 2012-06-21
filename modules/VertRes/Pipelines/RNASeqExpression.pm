@@ -30,6 +30,7 @@ data => {
     protocol  => "StandardProtocol",
     annotation_filename => "my_reference.gff",
     mapping_quality => 30,
+    bitwise_flag => 2,
     mpileup_cmd => 'samtools mpileup',
     window_margin => 50,
     intergenic_regions => 1,
@@ -175,6 +176,14 @@ sub _create_expression_job
     $intergenic_regions_str = ' intergenic_regions => '.$self->{intergenic_regions}.', ';
   }
   
+  my $driver_class = "Expression";
+  my $plots_class = "CoveragePlot";
+  if($self->{protocol} eq "TradisProtocol")
+  {
+    $driver_class = "Insertions";
+    $plots_class = "InsertSite";
+  }
+
   
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
@@ -183,10 +192,11 @@ sub _create_expression_job
   use Pathogens::RNASeq::CoveragePlot;
 
   
-  my \$expression_results = Pathogens::RNASeq::Expression->new(
+  my \$expression_results = Pathogens::RNASeq::$driver_class->new(
     sequence_filename    => qq[$sequencing_filename],
     annotation_filename  => qq[$self->{annotation_file}],
     mapping_quality      => $self->{mapping_quality},
+    bitwise_flag         => $self->{bitwise_flag},
     protocol             => qq[$self->{protocol}],
     output_base_filename => qq[$sequencing_filename],
     $window_margin_str
@@ -195,7 +205,7 @@ sub _create_expression_job
   eval {
   \$expression_results->output_spreadsheet();
   
-  Pathogens::RNASeq::CoveragePlot->new(
+  Pathogens::RNASeq::$plots_class->new(
     filename             => \$expression_results->_corrected_sequence_filename,
     output_base_filename => qq[$sequencing_filename],
     $mpileup_str

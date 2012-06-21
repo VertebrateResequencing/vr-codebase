@@ -1,6 +1,6 @@
 ##gff-version 3
-##sequence-region FN543502 1 5346659
-FN543502	EMBL	databank_entry	1	5346659	0.000	+	.	ID="FN543502.1";organism="Citrobacter rodentium ICC168";strain="ICC168";mol_type="genomic DNA";db_xref="taxon:637910"
+##sequence-region FN543502 1 30000
+FN543502	EMBL	databank_entry	1	30000	0.000	+	.	ID="FN543502.1";organism="Citrobacter rodentium ICC168";strain="ICC168";mol_type="genomic DNA";db_xref="taxon:637910"
 FN543502	EMBL	transcript	160	287	0.000	+	.	ID="non_cds_feature_id";note="Rfam:RF00506;Thr_leader;Score=126.03;positions 1 to 60"
 FN543502	EMBL	CDS	166	231	0.000	+	0	ID="continuous_feature_id";transl_table=11;gene="thrL";locus_tag="continuous_feature_locus_tag";product="Thr operon leader peptide (Thr operon attenuator)";db_xref="GOA:D2TGH6";db_xref="InterPro:IPR011720";db_xref="UniProtKB/TrEMBL:D2TGH6";protein_id="CBG86780.1";translation="MKRISTTIITTTTITTGNGAG"
 FN543502	EMBL	sequence_feature	166	228	0.000	+	.	ID="FN543502.4";locus_tag="ROD_00001";note="HMMPfam hit to PF08254, Thr operon leader peptide, score 7.6e-07";inference="protein motif:PFAM:PF08254"
