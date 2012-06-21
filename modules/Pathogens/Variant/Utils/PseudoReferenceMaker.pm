@@ -291,7 +291,7 @@ sub _sort_and_merge {
     while(<$fhd_pipe>) {
          print $fhd_file $_;
     }
-
+    print $fhd_file "\n";
     close $fhd_file;
     #pipe errors are only visibly when closing the pipe handle
     close $fhd_pipe || throw Pathogens::Variant::Exception::CommandExecution({text => "Pipe failed with run status ($?) when running command:\n$pipecmd $!"});
