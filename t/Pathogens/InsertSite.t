@@ -19,7 +19,7 @@ ok $insert_site_plots_from_bam->create_plots();
 
 # parse output files and check they are okay
 ok is_input_string_found_on_given_line("0 0", 1,    't/data/insert_site.FN543502.insert_site_plot.gz'), 'check main sequence insert_site values first value';
-ok is_input_string_found_on_given_line("4 0", 7777,  't/data/insert_site.FN543502.insert_site_plot.gz'), 'check main sequence insert_site value before site';
+ok is_input_string_found_on_given_line("2 0", 7777,  't/data/insert_site.FN543502.insert_site_plot.gz'), 'check main sequence insert_site value before site';
 ok is_input_string_found_on_given_line("1 0", 7778,  't/data/insert_site.FN543502.insert_site_plot.gz'), 'check main sequence insert_site values for forward reads only';
 ok is_input_string_found_on_given_line("0 0", 7779, 't/data/insert_site.FN543502.insert_site_plot.gz'), 'check main sequence insert_site values after site';
 
@@ -56,6 +56,7 @@ sub is_input_string_found_on_given_line
     last if($line_counter >  $line_number);
     
     return 1 if($expected_string eq $line);
+    print "Expected: ".$expected_string ."\t Got: ". $line."\n";
   }
   return 0;
 }
