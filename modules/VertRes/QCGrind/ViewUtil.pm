@@ -184,8 +184,8 @@ sub fetchTrackingDatabases
 	my ($self) = @_;
 	my @dbs;
 	my $web_db = 'vrtrack_web_index';
-	my $vrtrack = connectToDatabase($web_db);
-	redirectErrorScreen( $cgi, "Failed to connect to web database: $web_db" ) unless defined( $vrtrack );
+	my $vrtrack = $self->connectToDatabase($web_db);
+	$self->displayError( "Failed to connect to web database: $web_db" ) unless defined( $vrtrack );
 	my $sql = qq[SELECT db_name FROM tracking_database];
 	my $sth = $vrtrack->{_dbh}->prepare($sql);
 	if ($sth->execute()) {
