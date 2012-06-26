@@ -27,7 +27,7 @@ BEGIN { use_ok( 'Pathogens::Variant::Utils::PseudoReferenceMaker' ); }
 my $pseudo_reference_output = "$dir/data/temporary.test.out";
 
 #set the default argument values
-our %args = (
+my %args = (
      vcf_file     => "$dir/data/single.dip.vcf"
    , out   => $pseudo_reference_output
    , bam   => "$dir/data/test.bam"

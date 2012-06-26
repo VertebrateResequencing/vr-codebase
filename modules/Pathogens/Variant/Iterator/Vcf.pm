@@ -1,3 +1,18 @@
+=head1 NAME
+
+Pathogens::Variant::Iterator::Vcf  - A Vcf file traverser that returns an iterator. The iterator delivers "Pathogens::Variant::Event" objects at each iteration
+
+=head1 SYNOPSIS
+
+#iterates through a vcf
+$object = Pathogens::Variant::Iterator::Vcf->new (vcf_file => "$dir/data/single.snp.vcf.gz");
+
+while( my $next_event = $object->next_event ) {
+   #do something with "$next_event"...
+}
+
+=cut
+
 package Pathogens::Variant::Iterator::Vcf;
 use Moose;
 extends 'Pathogens::Variant::Root';

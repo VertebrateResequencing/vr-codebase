@@ -1,3 +1,18 @@
+=head1 NAME
+
+Pathogens::Variant::Utils::BamParser  - Parses a BAM file to get the reference names and their lengths. 
+
+=head1 SYNOPSIS
+
+my $object = Pathogens::Variant::Utils::BamParser->new();
+$object->fetch_chromosome_size_into_hash("$dir/data/test.bam");
+
+foreach my $name ($object->get_chromosome_names) {
+    my $size_in_bp = $object->get_chromosome_size($name);  
+}
+
+=cut
+
 package Pathogens::Variant::Utils::BamParser;
 use Moose;
 extends 'Pathogens::Variant::Root';

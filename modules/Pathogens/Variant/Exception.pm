@@ -1,18 +1,45 @@
-package Pathogens::Variant::Exception;
-use base qw(Error);
-use overload ('""' => 'stringify', fallback => 1); #this is what we do if called in string context.
-
 =head1 NAME
+
+Pathogens::Variant::Exception  - Basic exception class. It subclasses the CPAN's Error.pm (http://search.cpan.org/~shlomif/Error-0.17016/lib/Error.pm).
 
 =head1 SYNOPSIS
 
-=head1 DESCRIPTION
+use Pathogens::Variant::Exception;
+throw Pathogens::Variant::Exception( {text => "I have failed for some reason"} );;
 
-The CPAN Error.pm (http://search.cpan.org/~shlomif/Error-0.17016/lib/Error.pm) is the base class for this object.
 
-=head1 USAGE
+#or something like this:
+use Pathogens::Variant::Exception qw(:try);
+
+try {
+    do_some_stuff();
+    die "error!" if $condition;
+    throw Error::Simple "Oops!" if $other_condition;
+}
+catch Error::IO with {
+    my $E = shift;
+    print STDERR "File ", $E->{'-file'}, " had a problem\n";
+}
+except {
+    my $E = shift;
+    my $general_handler=sub {send_message $E->{-description}};
+    return {
+        UserException1 => $general_handler,
+        UserException2 => $general_handler
+    };
+}
+otherwise {
+    print STDERR "Well I don't know what to say\n";
+}
+finally {
+    close_the_garage_door_already(); # Should be reliable
+}; # Don't forget the trailing ; or you might be surprised
 
 =cut
+
+package Pathogens::Variant::Exception;
+use base qw(Error);
+use overload ('""' => 'stringify', fallback => 1); #this is what we do if called in string context.
 
 sub new {
 

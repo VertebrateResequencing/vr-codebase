@@ -1,3 +1,22 @@
+=head1 NAME
+
+Pathogens::Variant::Event  - A (non-)polymorphic event. This represents any kind of (non)-polymorphic event, i.e. can correspond to a row in a VCF file for example.
+
+=head1 SYNOPSIS
+
+my $object = Pathogens::Variant::Event->new ( 
+                                              chromosome => 'test'
+                                            , position => '1'
+                                            , id => '.'
+                                            , reference_allele => 'A'
+                                            , alternative_allele => 'C'
+                                            , quality => 50               #could represent variant quality for example...
+                                            , filter => 'something' 
+                                            , info => 'DP=179;VDB=0.0490;AF1=1;AC1=2;DP4=0,0,80,67;MQ=60;FQ=-290'
+                                            );
+
+=cut
+
 package Pathogens::Variant::Event;
 use Moose;
 extends 'Pathogens::Variant::Root';
@@ -39,26 +58,6 @@ has 'samples' => (
         clear_samples    => 'clear', 
     },
 );
-
-
-
-=head1 NAME
-
-Pathogens::Variant::Event - A Pathogens::Variant::Event object
-
-=head1 SYNOPSIS
-
-=head1 DESCRIPTION
-
-=head1 USAGE
-
-=head1 SUPPORT
-
-=head1 AUTHOR
-
-=head1 SEE ALSO
-
-=cut
 
 __PACKAGE__->meta->make_immutable;
 

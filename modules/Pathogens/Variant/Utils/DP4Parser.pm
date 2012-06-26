@@ -1,3 +1,20 @@
+=head1 NAME
+
+Pathogens::Variant::Utils::DP4Parser - Parses the "DP4" field of a VCF file and computes some ratios based on the values in the values. 
+
+=head1 SYNOPSIS
+
+my $object = Pathogens::Variant::Utils::DP4Parser->new;
+
+$object->parse( '0,0,80,66' );
+
+my $count = $object->count_reference_forward_bases; #returns the count for the forward bases that were equal to the reference allele
+my $ratio = $object->ratio_reverse_reference_bases; #reverse ratio for the reference allele
+
+#etc...
+
+=cut
+
 package Pathogens::Variant::Utils::DP4Parser;
 use Moose;
 use namespace::autoclean;

@@ -1,3 +1,20 @@
+=head1 NAME
+
+Pathogens::Variant::EvaluationReporter  - Basically a class that holds some kinds of counters to hold their statistics
+
+=head1 SYNOPSIS
+
+my $object = Pathogens::Variant::EvaluationReporter->new;
+
+$object->inc_counter_failed_quality; #increments the 'failed_quality' counter by +1
+my $how_many_are_failed_due_to_quality = $object->failed_quality; #returns 1 
+
+#increment again
+$object->inc_counter_failed_quality;
+$how_many_are_failed_due_to_quality = $object->failed_quality; #returns 2
+
+=cut
+
 package Pathogens::Variant::EvaluationReporter;
 use Moose;
 use Data::Dumper;

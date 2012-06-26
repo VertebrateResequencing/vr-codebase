@@ -1,3 +1,16 @@
+=head1 NAME
+
+Pathogens::Variant::Sample  - This object can old an organism/lane/library etc...
+
+=head1 SYNOPSIS
+
+my $object = Pathogens::Variant::Sample->new;
+$object->name('A_friendly_human');
+$object->homozygous(1);
+$object->genotype('AA');
+
+=cut
+
 package Pathogens::Variant::Sample;
 use Moose;
 extends 'Pathogens::Variant::Root';
@@ -19,27 +32,6 @@ has 'alleles' => (
         has_alleles    => 'count',
     },
 );
- 
-=head1 NAME
-
-=head1 SYNOPSIS
-
-=head1 DESCRIPTION
-
-=head1 USAGE
-
-=head1 BUGS
-
-=head1 SUPPORT
-
-=head1 AUTHOR
-
-    Feyruz Yalcin
-    CPAN ID: FYALCIN
-
-=head1 SEE ALSO
-
-=cut
 
 __PACKAGE__->meta->make_immutable;
 

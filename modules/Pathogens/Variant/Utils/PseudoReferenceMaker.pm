@@ -1,7 +1,43 @@
+=head1 NAME
+
+Pathogens::Variant::Utils::PseudoReferenceMaker  - Creates a Pseudoreference. The module required a bam file, a reference fasta file, a lane name and a output file name. It can take a list of filtering options for evaluation of each snp or reference base. The results of the evaluation will shape the pseudo-reference.
+
+=head1 SYNOPSIS
+
+my %args = (
+
+    #REQUIRED
+     vcf_file       => "$dir/data/single.dip.vcf"
+   , out            => $pseudo_reference_output
+   , bam            => "$dir/data/test.bam"
+   , lane_name      => "test_lane"
+   , reference      => "$dir/data/reference.snpAt10.insertionAt30.deletionAt50.fasta"
+      
+   #OPTIONALY CHANGE TO OTHER VALUES FOR MORE/LESS STRINGENT FILTERING
+   , depth          => 4
+   , depth_strand   => 2
+   , ratio          => 0.8
+   , quality        => 50
+   , map_quality    => 0
+   , af1            => 0.95
+   , af1_complement => 0.05
+   , ci95           => 0.0
+   , strand_bias    => 0.001
+   , base_quality_bias => 0.0
+   , map_bias       => 0.001
+   , tail_bias      => 0.001
+
+);
+
+my $object = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \%args );
+
+$object->create_pseudo_reference;
+
+=cut
+
 package Pathogens::Variant::Utils::PseudoReferenceMaker;
 
 use Moose;
-
 use Pathogens::Variant::Iterator::Vcf;
 use Pathogens::Variant::Evaluator::Pseudosequence;
 use Pathogens::Variant::EvaluationReporter;
@@ -11,9 +47,6 @@ use Pathogens::Variant::Exception;
 use Log::Log4perl qw(get_logger);
 use File::Basename;
 use namespace::autoclean;
-
-
-
 
 
 
@@ -268,7 +301,6 @@ sub _get_allele_of_evaluated_event {
         if ( $event->was_evaluated ) {
             return 'N';
         } else {
-            
             throw Pathogens::Variant::Exception::ObjectUsage({text => 'An event must be evaluated before using _get_allele_of_evaluated_event function on it.'});
         }
     }
@@ -318,6 +350,7 @@ sub _generate_vcf_file_with_all_reference_sites {
     return $temporary_vcf_file_with_all_mapped_positions;
 
 }
+
 #####################################################################
 #To dump evaluation statistics after the sub 'create_pseudo_reference'
 #####################################################################
@@ -325,6 +358,7 @@ sub get_statistics_dump {
     my ($self) = @_;
 
     return $self->_reporter->dump;
+
 }
 
 __PACKAGE__->meta->make_immutable;
