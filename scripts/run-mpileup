@@ -371,7 +371,7 @@ sub clean
             my $chr  = $$chunk{chr};
             my $from = $$chunk{from};
             my $to   = $$chunk{to};
-            for my $suffix qw(samples vcf.gz vcf.gz.tbi)
+            for my $suffix (qw(samples vcf.gz vcf.gz.tbi))
             {
                 my $file = "$outdir/$pop/$chr/$chr:$from-$to.$suffix";
                 unlink($file) unless !-e $file;
