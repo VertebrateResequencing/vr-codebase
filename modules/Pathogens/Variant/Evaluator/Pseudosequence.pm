@@ -7,9 +7,9 @@ Pathogens::Variant::Evaluator::Pseudosequence  - An evaluator object to judge if
 my $evaluator_used_in_pseudoseq_creation = Pathogens::Variant::Evaluator::Pseudosequence->new (
    minimum_depth => 4
  , minimum_depth_strand => 2
- , minimum_ratio => 0.8
+ , minimum_ratio => 0.75
  , minimum_quality => 50
- , minimum_map_quality => 1
+ , minimum_map_quality => 30
  , minimum_af1 => 0.95
  , minimum_ci95 =>0.0
  , minimum_strand_bias => 0.001
@@ -123,8 +123,8 @@ sub evaluate {
             $self->_event_manipulator->remove_secondary_alternative_heterozygous_alleles($event);
         }
 
+        #the event passed the filters
         $self->_event->passed_evaluation(1);
-        
         
         if (not $self->_event->polymorphic) {
             $self->reporter->inc_counter_accepted_reference_calls; #increments the counter called "accepted_reference_calls" by 1
@@ -134,15 +134,12 @@ sub evaluate {
 
         $logger->is_trace() && $logger->trace("Event dump after passing the evaluation:...\n". Dumper($event) . "\nReporter dump after passing the evaluation:...\n". Dumper($self->reporter) );
 
-        return 1; #Passed
-
     } else {
 
-        $self->_event->passed_evaluation(0); #i.e. the event failed to pass the filters
+        #the event failed to pass the filters
+        $self->_event->passed_evaluation(0); 
 
         $logger->is_trace() && $logger->trace("Event dump after failing the evaluation:...\n". Dumper($event) . "\nReporter dump after failing the evaluation:...\n". Dumper($self->reporter) );
-
-        return 0; #Failed 
 
     }
 }

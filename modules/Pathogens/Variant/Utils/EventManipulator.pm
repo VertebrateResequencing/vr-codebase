@@ -30,8 +30,29 @@ use namespace::autoclean;
 sub remove_secondary_alternative_heterozygous_alleles {
 
     my ($self, $event) = @_;
-    my ($first_allele) = split(',', $event->alternative_allele); #effectively, all other alleles are discarded
-    $event->alternative_allele($first_allele); #overwriting the original value
+    
+    my ($first_allele, $second_allele) = split(',', $event->alternative_allele);
+    
+    my $allele;
+    if ( length($first_allele) > 1)    #indel 
+    {
+        if(length($second_allele >1) ) #indel 
+        { 
+            $allele = 'N';    
+        } 
+        else 
+        { #choose if not indel
+            $allele = $second_allele;
+        }
+    }
+    else  #first choice if no indel 
+    {   
+        $allele = $first_allele;
+    }
+    
+    
+    $event->alternative_allele($allele); #overwriting the original value
+    
 
 }
 

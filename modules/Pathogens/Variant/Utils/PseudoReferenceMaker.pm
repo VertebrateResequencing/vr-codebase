@@ -165,21 +165,35 @@ sub _generate_tab_delimited_pseudo_reference_file {
         $logger->error("Couldn't open filehandle to write the pseudoreference. " . $!); 
         throw Pathogens::Variant::Exception::File({text => "Couldn't open filehandle to write the pseudoreference. " . $!});
     }
+    
+    #set it here, so that we can access this file handle from other subs
     $self->_output_filehandle_temporary_file($filehandle);
-
-
+   
+    #this hash will be used to keep track of observed chromosomes in the VCF file
+    my %seen_chromosomes;
+    
+    ######################################################
     #The very first event in the VCF file is handled here:
     my $event = $iterator->next_event();
     $self->_evaluator->evaluate($event);
-
     my $last_allele = $self->_get_allele_of_evaluated_event($event);
     my $last_chr = $event->chromosome;
     my $last_pos = $event->position;
-    my %seen_chromosomes;
+    
+    #if we are not at the first position of this chromosome, we fill the preeceding 
+    #positions with N's so that the chromosome size is identical to the original reference
+    my $initial_pad_size = $last_pos - 1;
+    $self->_pad_chromosome_file_with_Ns($initial_pad_size) if ($initial_pad_size > 0);   
+    
+    #now we are ready to append the allele to the file:
     print $filehandle $last_chr . "\t" . $last_allele;  
-
+    
+    #so that we know which ones have been seen in the vcf file
+    $seen_chromosomes{$last_chr} = 1; 
     my $processed_entries = 1;
-    #All other events are handled in this loop:
+
+    ######################################################
+    #All other events in the VCF are handled here:########
     while( $event = $iterator->next_event() ) {
 
         my $curr_chr = $event->chromosome; 
@@ -353,7 +367,7 @@ sub _generate_vcf_file_with_all_reference_sites {
     
     my ($self) = @_;
     my $logger = get_logger("Pathogens::Variant::Utils::PseudoReferenceMaker");
-
+    
     my $reference_file = $self->arguments->{reference};
     
     my $bam_file   = $self->arguments->{bam};
@@ -365,7 +379,7 @@ sub _generate_vcf_file_with_all_reference_sites {
     $logger->debug($pipecmd);
 
     Utils::CMD($pipecmd);
-
+    
     return $temporary_vcf_file_with_all_mapped_positions;
 
 }
