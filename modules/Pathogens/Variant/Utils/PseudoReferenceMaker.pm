@@ -160,7 +160,11 @@ sub _generate_tab_delimited_pseudo_reference_file {
     my $temporary_tab_delimited_pseudo_reference_file = "$path/temporary.$file";
 
     #open the filehandle for the temporary file
-    open( my $filehandle, ">" . $temporary_tab_delimited_pseudo_reference_file ) or throw Pathogens::Variant::Exception::File({text => "Couldn't open filehandle to write the pseudoreference." . $!});
+    my $filehandle;
+    unless ( open( $filehandle, ">" . $temporary_tab_delimited_pseudo_reference_file ) ) {
+        $logger->error("Couldn't open filehandle to write the pseudoreference. " . $!); 
+        throw Pathogens::Variant::Exception::File({text => "Couldn't open filehandle to write the pseudoreference. " . $!});
+    }
     $self->_output_filehandle_temporary_file($filehandle);
 
 
@@ -301,7 +305,9 @@ sub _get_allele_of_evaluated_event {
         if ( $event->was_evaluated ) {
             return 'N';
         } else {
-            throw Pathogens::Variant::Exception::ObjectUsage({text => 'An event must be evaluated before using _get_allele_of_evaluated_event function on it.'});
+            my $logger = get_logger("Pathogens::Variant::Utils::PseudoReferenceMaker");
+            $logger->error('An un-evaluated reference position was asked to return an allele. You should first evaluate the position');
+            throw Pathogens::Variant::Exception::ObjectUsage({text => 'An un-evaluated reference position was asked to return an allele. You should first evaluate the position'});
         }
     }
 }
@@ -311,11 +317,21 @@ sub _sort_and_merge_and_generate_final_output {
     my $logger = get_logger("Pathogens::Variant::Utils::PseudoReferenceMaker");
 
     my $final_output_file =  $self->arguments->{out};
-    open(my $fhd_file, ">" . $final_output_file) || throw Pathogens::Variant::Exception::File({text => "Could not open output filehandle to write pseudo_reference" . $!});
+    
+    my $fhd_file;
+    unless ( open($fhd_file, ">" . $final_output_file) ) {
+        $logger->error("Could not open output filehandle to write pseudo_reference. $!");
+        throw Pathogens::Variant::Exception::File({text => "Could not open output filehandle to write pseudo_reference" . $!});
+    }
 
     my $pipecmd = "set -o pipefail; sort -d -k1,1 $temporary_tab_delimited_pseudo_reference_file | cut -f 2 | tr -d '\n' | fold -w 60 |";
     $logger->debug($pipecmd);
-    open(my $fhd_pipe, $pipecmd) || throw Pathogens::Variant::Exception::CommandExecution({text => "Pipe failed with run status ($?) when running command:\n$pipecmd $!"}); 
+    
+    my $fhd_pipe;
+    unless (open($fhd_pipe, $pipecmd) ) {
+         $logger->error("Pipe failed with run status ($?) when running command: $pipecmd $!");
+         throw Pathogens::Variant::Exception::CommandExecution({text => "Pipe failed with run status ($?) when running command: $pipecmd $!"}); 
+    }
 
 
     #final fasta file
@@ -325,9 +341,12 @@ sub _sort_and_merge_and_generate_final_output {
     }
     print $fhd_file "\n";
     close $fhd_file;
-    #pipe errors are only visibly when closing the pipe handle
-    close $fhd_pipe || throw Pathogens::Variant::Exception::CommandExecution({text => "Pipe failed with run status ($?) when running command:\n$pipecmd $!"});
     
+    #most pipe errors are only caught to the parent when closing the pipe handle
+    unless (close $fhd_pipe) {
+         $logger->error("Pipe failed with run status ($?) when running command: $pipecmd $!");
+         throw Pathogens::Variant::Exception::CommandExecution({text => "Pipe failed with run status ($?) when running command: $pipecmd $!"});
+    }
 }
 
 sub _generate_vcf_file_with_all_reference_sites {
