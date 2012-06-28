@@ -180,17 +180,20 @@ sub _generate_tab_delimited_pseudo_reference_file {
     my $last_chr = $event->chromosome;
     my $last_pos = $event->position;
     
-    #if we are not at the first position of this chromosome, we fill the preeceding 
-    #positions with N's so that the chromosome size is identical to the original reference
+    #write the name of the new chromosome to the file
+    print $filehandle $last_chr . "\t";
+    
+    #we may not be at the first position of this chromosome, we fill any preeceding 
+    #positions with N's in order to keep identical chromosome size to the reference
     my $initial_pad_size = $last_pos - 1;
-    $self->_pad_chromosome_file_with_Ns($initial_pad_size) if ($initial_pad_size > 0);   
+    $self->_pad_chromosome_file_with_Ns($initial_pad_size) if ($initial_pad_size > 0); #writes indirectly to the $filehandle   
     
     #now we are ready to append the allele to the file:
-    print $filehandle $last_chr . "\t" . $last_allele;  
+    print $filehandle $last_allele;  
     
-    #so that we know which ones have been seen in the vcf file
+    #keep track of the chromosomes that we have seen in this vcf file
     $seen_chromosomes{$last_chr} = 1; 
-    my $processed_entries = 1;
+    my $processed_entries = 1; 
 
     ######################################################
     #All other events in the VCF are handled here:########
