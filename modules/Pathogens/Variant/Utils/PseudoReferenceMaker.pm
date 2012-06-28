@@ -16,9 +16,9 @@ my %args = (
    #OPTIONALY CHANGE TO OTHER VALUES FOR MORE/LESS STRINGENT FILTERING
    , depth          => 4
    , depth_strand   => 2
-   , ratio          => 0.8
+   , ratio          => 0.75
    , quality        => 50
-   , map_quality    => 0
+   , map_quality    => 30
    , af1            => 0.95
    , af1_complement => 0.05
    , ci95           => 0.0
