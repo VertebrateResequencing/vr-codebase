@@ -1,3 +1,52 @@
+=head1 NAME
+
+Pathogens::Variant::Evaluator::Pseudosequence  - An evaluator object to judge if a (non-) polymorphism event passes user set thresholds. 
+
+=head1 SYNOPSIS
+
+my $evaluator_used_in_pseudoseq_creation = Pathogens::Variant::Evaluator::Pseudosequence->new (
+   minimum_depth => 4
+ , minimum_depth_strand => 2
+ , minimum_ratio => 0.8
+ , minimum_quality => 50
+ , minimum_map_quality => 1
+ , minimum_af1 => 0.95
+ , minimum_ci95 =>0.0
+ , minimum_strand_bias => 0.001
+ , minimum_base_quality_bias => 0.0
+ , minimum_map_bias => 0.001
+ , minimum_tail_bias => 0.001
+);
+
+#create an event
+my $event = Pathogens::Variant::Event::Snp->new(
+   chromosome => 'FN433596'
+ , position => '75182'
+ , id => '.'
+ , reference_allele => 'A'
+ , alternative_allele => 'G'
+ , quality => 222 
+ , filter => '.' 
+ , info => 'DP=138;VDB=0.0410;AF1=0.0001;AC1=2;DP4=7,8,56,67;MQ=45;FQ=-238;PV4=1,0.2,1,0.42'
+
+);
+
+#evaluate the event
+$evaluator->evaluate($event);
+
+#see if the event passed the evaluation:
+if($event->passed_evaluation) { # $event is passed the filters which were provided to the evaluator  
+    
+    if ($event->is_polymorphic) { #$event is polymorphic (if not polymorphic, it is equal to the reference base)
+        
+    }
+     
+}
+
+
+
+=cut
+
 package Pathogens::Variant::Evaluator::Pseudosequence;
 use Moose;
 extends 'Pathogens::Variant::Root';
@@ -311,16 +360,6 @@ sub _is_not_an_indel {
         return 1;
     }
 }
-
-=head1 BUGS
-
-=head1 SUPPORT
-
-=head1 AUTHOR
-
-=head1 SEE ALSO
-
-=cut
 
 __PACKAGE__->meta->make_immutable;
 
