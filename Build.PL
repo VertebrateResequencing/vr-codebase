@@ -44,6 +44,7 @@ my $build = MyBuild->new(
                               'Net::FTP::Robust' => 0,
                               'Time::Format' => 0,
                               'IO::Capture::Stderr' => 0,
+                              'Math::Random' => 0,
                             },
     pm_files             => get_pm_files(),
     script_files         => 'scripts'
