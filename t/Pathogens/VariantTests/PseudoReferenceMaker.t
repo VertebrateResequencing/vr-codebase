@@ -28,11 +28,10 @@ my $pseudo_reference_output = "$dir/data/temporary.test.out";
 
 #set the default argument values
 my %args = (
-     vcf_file     => "$dir/data/single.dip.vcf"
-   , out   => $pseudo_reference_output
-   , bam   => "$dir/data/test.bam"
+     out   => $pseudo_reference_output
    , lane_name  => "test_lane"
-   , reference => "$dir/data/reference.snpAt10.insertionAt30.deletionAt50.fasta"
+   , bam   => "$dir/data/test.bam"
+   , reference => "$dir/data/reference.snpAt11.insertionAt31.deletionAt51.fasta"
    , depth        => 4
    , depth_strand => 2
    , ratio        => 0.8
@@ -60,6 +59,12 @@ is($file_exists, 1, "We have managed to create a pseudoreference file");
 
 #we check if the output is identical to the one that Simon Harris' original script generated
 open(FHD_NEW, "<$pseudo_reference_output");
+
+#"simons.pseudo.reference.new.fasta" has been derived from simons ".mfa" file. The mfa was created by
+#multiple_mappings_to_bam.py with options "-s -I -c". The .mfa was a multi-fasta file with the original 
+#reference as the first, and followed by the pseudo-reference chromosomes.  To derive "simons.pseudo.reference.new.fasta"
+#we manually remove the original reference from the mfa, and concatenate the chromosomes of the remaining pseudoreference
+#into a single fasta entry. This file is then named "simons.pseudo.reference.new.fasta".
 open(FHD_OLD, "<$dir/data/simons.pseudo.reference.fasta");
 
 my $differing_line_count = 0;
