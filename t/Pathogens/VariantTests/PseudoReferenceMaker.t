@@ -1,10 +1,12 @@
 use strict;
 use warnings;
-
-use Test::More 'no_plan';
 use Data::Dumper;
 use Log::Log4perl qw(get_logger :levels); 
 use File::Basename; 
+
+use Test::More tests => 6;
+
+
 
 #get the directory path to the test file
 my (undef, $dir) = fileparse($0);

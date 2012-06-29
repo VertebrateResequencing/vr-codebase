@@ -1,19 +1,20 @@
 use strict;
 use warnings;
 use Data::Dumper;
-
-use Test::More;
-use Data::Dumper;
-
 use File::Basename; 
 
-#get the directory path to the test file
-my (undef, $dir) = fileparse($0);
+use Test::More tests => 7;
+
+
+
 
 BEGIN { use_ok( 'Pathogens::Variant::Iterator::Vcf' ); }
 
 my $object;
 my $event;
+
+#get the directory path to the test file
+my (undef, $dir) = fileparse($0);
 
 #try iterating through a vcf file with a single snp entry
 $object = Pathogens::Variant::Iterator::Vcf->new (vcf_file => "$dir/data/single.snp.vcf");
@@ -39,5 +40,3 @@ while( my $next_event = $object->next_event ) {
 
 is($obj_counter, 1, 'We expect the iterator to return 1 object only');
 
-
-done_testing();

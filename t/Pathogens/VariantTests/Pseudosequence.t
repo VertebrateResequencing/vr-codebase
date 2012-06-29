@@ -2,11 +2,12 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Log::Log4perl qw(get_logger :levels); 
-use Test::More;
 use File::Basename; 
+use Pathogens::Variant::EvaluationReporter;
+use Pathogens::Variant::Event::Snp;
 
-#get the directory path to the test file
-my (undef, $dir) = fileparse($0);
+use Test::More tests => 5;
+
 
 ###############################################
 #log4perl initialisation settings
@@ -21,8 +22,10 @@ $pseudoseq_logger->add_appender($appender);
 
 
 BEGIN { use_ok( 'Pathogens::Variant::Evaluator::Pseudosequence' ); }
-use Pathogens::Variant::EvaluationReporter;
-use Pathogens::Variant::Event::Snp;
+
+#get the directory path to the test file
+my (undef, $dir) = fileparse($0);
+
 
 my $object = Pathogens::Variant::Evaluator::Pseudosequence->new (reporter => Pathogens::Variant::EvaluationReporter->new);
 isa_ok ($object, 'Pathogens::Variant::Evaluator::Pseudosequence');
@@ -63,10 +66,9 @@ is($event->passed_evaluation, 0, "Evaluation filters the snp out (due to low af1
 use Pathogens::Variant::Iterator::Vcf;
 #this will traverse the VCF file and return Pathogens::Variant::Event::* objects
 my $iterator = Pathogens::Variant::Iterator::Vcf->new(vcf_file => "$dir/data/single.dip.vcf");
-while( $event = $iterator->next_event() ) {
-    $evaluator->evaluate($event);
-    is($event->passed_evaluation, 0, "Evaluation filters the indel out (no indels allowed) as expected");
-}
+$event = $iterator->next_event();
+$evaluator->evaluate($event);
+is($event->passed_evaluation, 0, "Evaluation filters the indel out (no indels allowed) as expected");
 
 $event = Pathogens::Variant::Event::Snp->new(
    chromosome => 'FN433596'
@@ -81,6 +83,3 @@ $event = Pathogens::Variant::Event::Snp->new(
 
 $evaluator->evaluate($event);
 is($event->passed_evaluation, 1, "Evaluation accepts the snp as expected");
-
-
-done_testing();
