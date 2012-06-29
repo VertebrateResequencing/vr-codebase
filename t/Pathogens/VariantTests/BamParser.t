@@ -11,6 +11,9 @@ my (undef, $dir) = fileparse($0);
 
 BEGIN { use_ok( 'Pathogens::Variant::Utils::BamParser' ); }
 
+my $samtools_environment_variable_exists = 1 if exists  $ENV{SAMTOOLS};
+is($samtools_environment_variable_exists, 1, "SAMTOOLS environment is present found");
+
 my $object = Pathogens::Variant::Utils::BamParser->new();
 isa_ok ($object, 'Pathogens::Variant::Utils::BamParser');
 

@@ -24,6 +24,10 @@ $pseudoseq_logger->add_appender($appender);
 
 BEGIN { use_ok( 'Pathogens::Variant::Utils::PseudoReferenceMaker' ); }
 
+
+my $samtools_environment_variable_exists = 1 if exists  $ENV{SAMTOOLS};
+is($samtools_environment_variable_exists, 1, "SAMTOOLS environment is present found");
+
 my $pseudo_reference_output = "$dir/data/temporary.test.out";
 
 #set the default argument values

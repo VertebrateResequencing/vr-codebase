@@ -4,11 +4,12 @@ Pathogens::Variant::Utils::PseudoReferenceMaker  - Creates a Pseudoreference. Th
 
 =head1 SYNOPSIS
 
+#requires SAMTOOLS shell environment variable to point to samtools compiled dir
+  
 my %args = (
 
     #REQUIRED
-     vcf_file       => "$dir/data/single.dip.vcf"
-   , out            => $pseudo_reference_output
+     out            => $pseudo_reference_output
    , bam            => "$dir/data/test.bam"
    , lane_name      => "test_lane"
    , reference      => "$dir/data/reference.snpAt10.insertionAt30.deletionAt50.fasta"
@@ -31,6 +32,7 @@ my %args = (
 
 my $object = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \%args );
 
+#writes the pseudoreference (in fasta format) to a file named "$pseudo_reference_output"
 $object->create_pseudo_reference;
 
 =cut

@@ -4,6 +4,8 @@ Pathogens::Variant::Utils::BamParser  - Parses a BAM file to get the reference n
 
 =head1 SYNOPSIS
 
+#requires SAMTOOLS shell environment variable to point to samtools compiled dir
+
 my $object = Pathogens::Variant::Utils::BamParser->new();
 $object->fetch_chromosome_size_into_hash("$dir/data/test.bam");
 
