@@ -188,7 +188,7 @@ sub generate_sam {
     
     unless (-s $out) {
         # settings change depending on read length
-        my $max_length = 0;
+        my $max_length = $self->{read_length};
         foreach my $fq ($fq1, $fq2) {
             $fq || next;
             if (-s "$fq.fastqcheck") {
@@ -227,7 +227,7 @@ sub generate_sam {
         }
         
         my $insert_size_arg = '';
-        if((defined $other_args{is_paired}) && ! $other_args{is_paired})
+        if((defined $other_args{is_paired}) && ! $other_args{is_paired} || (! defined($fq2)))
         {}
         elsif(defined $other_args{i}) {
             $insert_size_arg = " -i $other_args{i}";
