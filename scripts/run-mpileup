@@ -129,8 +129,8 @@ sub new
     $$self{usage} .= 
         "Usage: run-mpileup\n" .
         "Options:\n" .
-        "   -c, --clean             Clean all temporary files\n" .
-        "   -m, --mrProper          Clean all temporary files, including the population directories and BCFs, leaving only toplevel VCFs\n" .
+        "   -c, --clean             Clean all temporary files (and do nothing else)\n" .
+        "   -m, --mrProper          Clean all temporary files, including the population directories and BCFs, leaving only toplevel VCFs (and do nothing else)\n" .
         "   -o, --outdir <dir>      Output directory\n" .
         "\n";
 
