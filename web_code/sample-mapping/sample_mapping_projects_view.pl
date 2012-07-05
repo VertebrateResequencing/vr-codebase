@@ -14,6 +14,8 @@ use URI;
 
 use SangerPaths qw(core team145);
 use SangerWeb;
+use VRTrack::VRTrack;
+use VRTrack::Project;
 use VertRes::Utils::VRTrackFactory;
 use VertRes::QCGrind::ViewUtil;
 
@@ -25,15 +27,25 @@ my $sw  = SangerWeb->new({
     'title'   => $title,
     'banner'  => q(),
     'inifile' => SangerWeb->document_root() . q(/Info/header.ini),
-    'jsfile'  => ['http://jsdev.sanger.ac.uk/prototype.js','http://jsdev.sanger.ac.uk/jquery-1.4.2.min.js','http://www.sanger.ac.uk/modelorgs/mousegenomes/jquery.coolfieldset.js'],
-    'style'   => $utl->{CSS},
 });
 
 my $cgi = $sw->cgi();
 
-my $script = $utl->{SCRIPTS}{SAMPMAP_PROJECTS_VIEW};
+my $db = $cgi->param('db');
+unless ($db) {
+    print $sw->header();
+	$utl->displayError( "No database ID",$sw );
+}
+my $vrtrack = $utl->connectToDatabase($db);
+unless ( defined $vrtrack ) {
+	print $sw->header();
+	$utl->displayError( "No database connection to $db",$sw );
+}
+
+my $init_script = $utl->{SCRIPTS}{SAMPLE_MAPPING};
+my $lanes_script = $utl->{SCRIPTS}{SAMPMAP_LANES_VIEW};
 
 print $sw->header();
-$utl->displayDatabasesPage($title,$cgi,$script,1);
+$utl->displayDatabasePage($title,$cgi,$vrtrack,$db,$init_script,$lanes_script);
 print $sw->footer();
 exit;
