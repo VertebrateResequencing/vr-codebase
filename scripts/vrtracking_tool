@@ -371,28 +371,22 @@ sub get_vrtrack_objects
 
 sub get_vrtrack_directory
 {
-	my ($vrtrack, $vrobject) = @_;
-	if ($vrobject->isa('VRTrack::Lane')) {
-		return $vrtrack->hierarchy_path_of_lane_name($vrobject->name);
-	}
-	#project:sample:technology:library
-	elsif ($vrobject->isa('VRTrack::Library')) {
-		my $sample = VRTrack::Sample->new($vrtrack, $vrobject->sample_id);
-		my $project = VRTrack::Project->new($vrtrack, $sample->project_id);
-		my $seq_tech_name = $vrobject->seq_tech() ? $vrobject->seq_tech->name : 'SLX';
-		return File::Spec->catdir($project->hierarchy_name, $sample->hierarchy_name, $seq_tech_name, $vrobject->hierarchy_name);
-	}
-	elsif ($vrobject->isa('VRTrack::Sample')) {
-		my $project = VRTrack::Project->new($vrtrack, $vrobject->project_id);
-		return File::Spec->catdir($project->hierarchy_name, $vrobject->hierarchy_name)
-	}	
-	elsif ($vrobject->isa('VRTrack::Project')) {
-		return $vrobject->hierarchy_name;	
-	}
-	else {
-		croak "Unable to retrieve the tracking directory as the tracking object type is not recognised.\n";
-	}		
-}	
+    my ($vrtrack, $vrobject) = @_;
+
+    my %recognised_type = ('VRTrack::Project' => 1,
+			   'VRTrack::Sample'  => 1,
+			   'VRTrack::Library' => 1,
+			   'VRTrack::Lane'    => 1);
+    
+    # Check object
+    croak "Unable to retrieve the tracking directory as the tracking object is not defined.\n"         unless defined $vrobject;
+    croak "Unable to retrieve the tracking directory as the tracking object type is not recognised.\n" unless $recognised_type{ref($vrobject)};
+
+    my $vrtrack_directory = $vrtrack->hierarchy_path_of_object($vrobject);
+    croak "Unable to retrieve the tracking directory as could not build hierarchy path for tracking object.\n" unless defined $vrtrack_directory;
+
+    return $vrtrack_directory;
+}
 
 sub get_reset_flag_objects
 {
