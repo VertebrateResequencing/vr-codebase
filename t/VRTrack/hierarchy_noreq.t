@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use warnings;
+use Test::Exception;
 
 BEGIN {
     use Test::Most;
@@ -11,7 +12,7 @@ BEGIN {
         plan skip_all => "Skipping all tests because VRTrack tests have not been configured";
     }
     else {
-        plan tests => 134;
+        plan tests => 149;
     }
 
     use_ok('VRTrack::VRTrack');
@@ -268,6 +269,34 @@ is $vrtrack->hierarchy_path_of_lane($vrlane), 'species/foo/lib_a', 'hierarchy_pa
 # is $vrtrack->hierarchy_path_of_lane($vrlane), 'species/foo/lib_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY set to species:foo:library';
 # $ENV{DATA_HIERARCHY} = 'genus:species-subspecies:project:strain:sample:technology:library:lane';
 # is $vrtrack->hierarchy_path_of_lane($vrlane) ,'genus/species_subspecies/Project_test2/Individual_test/sample_a/seq_tech_test/lib_a/lane_a', 'hierarchy_path_of_lane works with DATA_HIERARCHY set to all items';
+
+# test hierarchy_path_of_object
+$ENV{DATA_HIERARCHY} = 'projectssid:project:individual:sample:technology:library:lane';
+is $vrtrack->hierarchy_path_of_object($vrproj), '1111/Project_htest', 'hierarchy_path_of_object works for project';
+is $vrtrack->hierarchy_path_of_object($sample), '1111/Project_htest/Individual_test/sample_a', 'hierarchy_path_of_object works for sample';
+is $vrtrack->hierarchy_path_of_object($library), '1111/Project_htest/Individual_test/sample_a/seq_tech_test/lib_a', 'hierarchy_path_of_object works for library';
+is $vrtrack->hierarchy_path_of_object($vrlane), '1111/Project_htest/Individual_test/sample_a/seq_tech_test/lib_a/lane_a', 'hierarchy_path_of_object works for lane';
+
+$ENV{DATA_HIERARCHY} = 'projectssid:project:genus:species-subspecies:individual:sample:technology:library:lane';
+is $vrtrack->hierarchy_path_of_object($vrlane), undef, 'hierarchy_path_of_object returns undef if hierarchy cannot be built (no species data)';
+my $species = $ind->add_species('Genus species subspecies');
+$ind->update();
+is $ind->species->name(), 'Genus species subspecies', 'added species to individual';
+is $vrtrack->hierarchy_path_of_object($vrlane), '1111/Project_htest/Genus/species_subspecies/Individual_test/sample_a/seq_tech_test/lib_a/lane_a', 'hierarchy_path_of_object works with species data';
+$ENV{DATA_HIERARCHY} = 'TRACKING:genus:species-subspecies:strain:individual:project:projectid:projectssid:sample:technology:library:lane';
+is $vrtrack->hierarchy_path_of_object($vrproj), undef, 'hierarchy_path_of_object returns undef if hierarchy cannot be built (impossible structure)';
+is $vrtrack->hierarchy_path_of_object($vrlane), 'TRACKING/Genus/species_subspecies/Individual_test/Individual_test/Project_htest/1/1111/sample_a/seq_tech_test/lib_a/lane_a', 'hierarchy_path_of_object finds all hierarchy terms';
+
+delete $ENV{DATA_HIERARCHY};
+is $vrtrack->hierarchy_path_of_object($vrlane), 'Project_htest/sample_a/seq_tech_test/lib_a/lane_a', 'hierarchy_path_of_object defaults to project:sample:technology:library:lane';
+$ENV{DATA_HIERARCHY} = 'project:genus:species-subspecies:sample:lane';
+is $vrtrack->hierarchy_path_of_object($vrlane, 'SUPPLIED_HIERARCHY:project:sample:lane'), 'SUPPLIED_HIERARCHY/Project_htest/sample_a/lane_a', 'hierarchy_path_of_object works for hierarchy supplied as parameter';
+
+throws_ok { $vrtrack->hierarchy_path_of_object($ind) } qr/A recognised object type must be supplied/, 'hierarchy_path_of_object throws for VRTrack::Individual';
+throws_ok { $vrtrack->hierarchy_path_of_object($species) } qr/A recognised object type must be supplied/, 'hierarchy_path_of_object throws for VRTrack::Species';
+throws_ok { $vrtrack->hierarchy_path_of_object('scalar') } qr/A recognised object type must be supplied/, 'hierarchy_path_of_object throws for unrecognised object';
+throws_ok { $vrtrack->hierarchy_path_of_object(undef) } qr/A recognised object type must be supplied/, 'hierarchy_path_of_object throws for undef object';
+
 
 # test descendants using lane
 $vrlane->update;
