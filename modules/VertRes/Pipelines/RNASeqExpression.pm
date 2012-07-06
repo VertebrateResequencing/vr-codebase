@@ -30,6 +30,7 @@ data => {
     protocol  => "StandardProtocol",
     annotation_filename => "my_reference.gff",
     mapping_quality => 30,
+    bitwise_flag => 2,
     mpileup_cmd => 'samtools mpileup',
     window_margin => 50,
     intergenic_regions => 1,
@@ -153,7 +154,7 @@ sub _create_expression_job
 
   my $job_name = $self->{prefix}.$sequencing_filename.'_calculate_expression';
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$sequencing_filename.'_calculate_expression.pl');
-  my $total_memory_mb = 2000;
+  my $total_memory_mb = 3000;
   
   my($action_lock_filename, $directories, $suffix) = fileparse($action_lock);
   my $sequencing_file_action_lock = $self->{lane_path}.'/'.$sequencing_filename.$action_lock_filename;
@@ -174,19 +175,32 @@ sub _create_expression_job
   {
     $intergenic_regions_str = ' intergenic_regions => '.$self->{intergenic_regions}.', ';
   }
+  my $bitwise_flag_str = "";
+  if(defined($self->{bitwise_flag}))
+  {
+    $bitwise_flag_str = ' bitwise_flag => '.$self->{bitwise_flag}.',';
+  }
   
+  my $driver_class = "Expression";
+  my $plots_class = "CoveragePlot";
+  if($self->{protocol} eq "TradisProtocol")
+  {
+    $driver_class = "Insertions";
+    $plots_class = "InsertSite";
+  }
+
   
         open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
         print $scriptfh qq{
   use strict;
-  use Pathogens::RNASeq::Expression;
-  use Pathogens::RNASeq::CoveragePlot;
-
+  use Pathogens::RNASeq::$driver_class;
+  use Pathogens::RNASeq::$plots_class;
   
-  my \$expression_results = Pathogens::RNASeq::Expression->new(
+  my \$expression_results = Pathogens::RNASeq::$driver_class->new(
     sequence_filename    => qq[$sequencing_filename],
     annotation_filename  => qq[$self->{annotation_file}],
     mapping_quality      => $self->{mapping_quality},
+    $bitwise_flag_str
     protocol             => qq[$self->{protocol}],
     output_base_filename => qq[$sequencing_filename],
     $window_margin_str
@@ -195,7 +209,7 @@ sub _create_expression_job
   eval {
   \$expression_results->output_spreadsheet();
   
-  Pathogens::RNASeq::CoveragePlot->new(
+  Pathogens::RNASeq::$plots_class->new(
     filename             => \$expression_results->_corrected_sequence_filename,
     output_base_filename => qq[$sequencing_filename],
     $mpileup_str
