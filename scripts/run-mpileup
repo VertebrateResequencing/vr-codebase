@@ -937,7 +937,7 @@ sub concat_chroms
             ];
         close($fh);
 
-        $self->cmd("vcf-concat -f $chunks_list | vcf-annotate -f $tmp.annot | bgzip -c > $concat.part");
+        $self->cmd("vcf-concat -p -f $chunks_list | vcf-annotate -f $tmp.annot | bgzip -c > $concat.part");
         $self->tabix_part($concat);
     }
     my $conf = $$self{vqsr_filtering};
