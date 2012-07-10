@@ -23,9 +23,10 @@ sub error
         "Usage: cat broken.vcf | vcf-fix-ploidy [OPTIONS] > fixed.vcf\n",
         "Options:\n",
         "   -a, --assumed-sex <sex>         M or F, required if the list is not complete in -s\n",
+        "   -l, --fix-likelihoods           Add or remove het likeihoods (not the default behaviour)\n",
+        "   -m, --missing-for-hets          Insert missing GT instead of the first allele for hets.\n",
         "   -p, --ploidy <file>             Ploidy definition. The default is shown below.\n",
         "   -s, --samples <file>            List of sample sexes (sample_name [MF]).\n",
-        "   -l, --fix-likelihoods           Add or remove het likeihoods (not the default behaviour)\n",
         "   -h, -?, --help                  This help message.\n",
         "Default ploidy definition:\n",
         "   ploidy =>\n",
@@ -75,6 +76,7 @@ sub parse_params
     };
     while (defined(my $arg=shift(@ARGV)))
     {
+        if ( $arg eq '-m' || $arg eq '--missing-for-hets' ) { $$opts{missing_for_hets}=1; next }
         if ( $arg eq '-p' || $arg eq '--ploidy' ) { my $file=shift(@ARGV); my $x=do $file; $$opts{ploidy}=$x; next }
         if ( $arg eq '-s' || $arg eq '--samples' ) { $$opts{samples}=shift(@ARGV); next }
         if ( $arg eq '-a' || $arg eq '--assumed-sex' ) { $$opts{assumed_sex}=shift(@ARGV); next }
@@ -165,7 +167,11 @@ sub fix_ploidy
                 my ($a1,$a2) = $vcf->split_gt($gt);
                 if ( $$samples{$sample}==1 )
                 {
-                    if ( defined $a2 ) { $new_gt = $a1; $nchanged{stripped}{$sample}++; }
+                    if ( defined $a2 ) 
+                    { 
+                        $new_gt = ( $a1 ne $a2 && $$opts{missing_for_hets} ) ? '.' : $a1; 
+                        $nchanged{stripped}{$sample}++; 
+                    }
                     if ( $pl )
                     {
                         my @pls = split(/,/, $pl);
