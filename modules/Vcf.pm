@@ -1648,7 +1648,7 @@ sub has_AGtags
     }
     if ( defined $out ) 
     {
-        for my $key qw(fmtA fmtG infoA infoG) { if ( !exists($$out{$key}) ) { $$out{$key}=[] } }
+        for my $key (qw(fmtA fmtG infoA infoG)) { if ( !exists($$out{$key}) ) { $$out{$key}=[] } }
     }
     return $out;
 }
