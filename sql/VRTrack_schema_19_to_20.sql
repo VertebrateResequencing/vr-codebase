@@ -1,6 +1,7 @@
 ALTER TABLE `file` MODIFY `md5` char(32);
 ALTER TABLE `image` MODIFY `name` varchar(255);
-ALTER TABLE `library_type_id` MODIFY `name` varchar(255);
+ALTER TABLE `library` MODIFY `name` varchar(255);
+ALTER TABLE `library_type` MODIFY `name` varchar(255);
 ALTER TABLE `mapper` MODIFY `name` varchar(255);
 ALTER TABLE `population` MODIFY `name` varchar(255);
 ALTER TABLE `study` MODIFY `name` varchar(255);
