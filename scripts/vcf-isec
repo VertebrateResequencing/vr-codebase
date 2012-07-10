@@ -402,10 +402,15 @@ sub write_line
         {
             open($$opts{out_files}{$src},"| bgzip -c > $$opts{prefix}$src.vcf.gz") or error("| bgzip -c > $$opts{prefix}$src.vcf.gz: $!");
 
-            print "Using file '$$opts{prefix}$src.vcf.gz' for records present in:\n";
+            if ( !exists($$opts{readme_fh}) ) 
+            { 
+                open($$opts{readme_fh},'>',"$$opts{prefix}_README") or error("$$opts{prefix}_README: $!"); 
+                print {$$opts{readme_fh}} "# This file was produced by vcf-isec. The command line was:\n#\t",join(' ',@{$$opts{args}}),"\n#\n";
+            }
+            print {$$opts{readme_fh}} "Using file '$$opts{prefix}$src.vcf.gz' for records present in:\n";
             for my $rec (sort values %$hash)
             {
-                print "\t$$rec{vcf}{file}\n";
+                print {$$opts{readme_fh}} "\t$$rec{vcf}{file}\n";
             }
             if ( !$$vcf{delim} )
             {
