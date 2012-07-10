@@ -26,6 +26,7 @@ use strict;
 use warnings;
 use Carp qw(cluck confess);
 use VRTrack::Image;
+use VRTrack::AutoQC;
 use VRTrack::Mapper;
 use VRTrack::Assembly;
 use VRTrack::Exome_design;
@@ -957,6 +958,52 @@ sub image_ids {
     return $self->_get_child_ids('VRTrack::Image');
 }
 
+=head2 add_autoqc
+
+  Arg [1]    : autoqc test
+  Arg [2]    : autoqc result
+  Arg [3]    : autoqc reason
+  Example    : my $autoqc = $mapstats->add_autoqc('NPG QC status',0,'The lane failed the NPG QC check, so auto-fail');
+  Description: Adds an autoqc test result to mapstats; If object already exists for this test, updates the result and reason.
+  Returntype : VRTrack::AutoQC object
+
+=cut
+
+sub add_autoqc {
+
+    my ($self,$test,$result,$reason) = @_;
+    my $dbh = $self->{vrtrack}->{_dbh};
+    my $sql = qq[select autoqc_id from autoqc where mapstats_id = ? and test = ?];
+    my $sth = $dbh->prepare($sql);
+
+    $sth->execute($self->id(), $test);
+    my $row = $sth->fetchrow_hashref;
+	if ($row) {
+		my $autoqc_id = $row->{'autoqc_id'};
+		my $autoqc = $self->get_autoqc_by_id($autoqc_id);
+		$autoqc->result($result);
+		$autoqc->reason($reason);
+		$autoqc->update;
+		return $autoqc;
+	}
+    else{
+    	return $self->_add_child_object(undef, 'VRTrack::AutoQC', $test,$result,$reason );
+    }
+}
+
+=head2 get_autoqc_by_id
+
+  Arg [1]    : file name
+  Example    : my $autoqc = $mapstats->get_autoqc_by_id(100);
+  Description: retrieve autoqc object on this mapstats by autoqc id
+  Returntype : VRTrack::AutoQC object
+
+=cut
+
+sub get_autoqc_by_id {
+    my $self = shift;
+    return $self->_get_child_by_field_value('autoqcs', 'id', @_);
+}
 
 =head2 changed
 
@@ -967,6 +1014,35 @@ sub image_ids {
   Returntype : string
 
 =cut
+
+=head2 autoqcs
+
+  Arg [1]    : None
+  Example    : my $autoqcs = $mapstats-->autoqcs();
+  Description: Returns a ref to an array of auto qc test results associated with these mapstas
+  Returntype : ref to array of VRTrack::AutoQC objects
+
+=cut
+
+sub autoqcs {
+    my $self = shift;
+    return $self->_get_child_objects('VRTrack::AutoQC');
+}
+
+=head2 autoqc_ids
+
+  Arg [1]    : None
+  Example    : my $ids = $mapstats--->autoqc_ids();
+  Description: Returns a ref to an array of the autoqc ids that are associated with these mapstas
+  Returntype : ref to array of ids
+
+=cut
+
+sub autoqc_ids {
+    my $self = shift;
+    return $self->_get_child_ids('VRTrack::AutoQC');
+}
+
 
 
 =head2 descendants
