@@ -1,4 +1,4 @@
-ALTER TABLE `assembly` MODIFY `md5` char(30);
+ALTER TABLE `assembly` MODIFY `md5` char(32);
 ALTER TABLE `image` MODIFY `name` varchar(255);
 ALTER TABLE `library_type_id` MODIFY `name` varchar(255);
 ALTER TABLE `mapper` MODIFY `name` varchar(255);
@@ -15,7 +15,7 @@ CREATE TABLE `autoqc`
   `autoqc_id` mediumint(8) unsigned NOT NULL auto_increment,
    mapstats_id mediumint(8) unsigned NOT NULL DEFAULT 0,
    test varchar(50) NOT NULL default '',
-   result smallint(5) unsigned NOT NULL DEFAULT 0,
+   result tinyint(1) DEFAULT 0,
    reason varchar(200) NOT NULL default '',
    PRIMARY KEY (`autoqc_id`),
   KEY  `mapstats_id` (`mapstats_id`),
