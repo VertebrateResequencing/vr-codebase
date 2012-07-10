@@ -33,7 +33,7 @@ db  =>
 
 data =>
 {
-    task => 'mpileup,gatk,update_db,cleanup',
+    task => 'mpileup,gatk,update_db,cleanup,pseudo_genome',
    
     bsub_opts       => "-q normal -M3500000 -R 'select[type==X86_64 && mem>3500] rusage[mem=3500,thouio=1,tmp=16000]'",
     bsub_opts_long  => "-q normal -M3500000 -R 'select[type==X86_64 && mem>3500] rusage[mem=3500,thouio=1,tmp=16000]'",
@@ -194,6 +194,13 @@ our @actions =
         'requires' => \&qcall_requires, 
         'provides' => \&qcall_provides,
     },
+    # create pseudo-genomes for the mapped organisms
+    {
+        'name'     => 'pseudo_genome',
+        'action'   => \&pseudo_genome,
+        'requires' => \&pseudo_genome_requires, 
+        'provides' => \&pseudo_genome_provides,
+    },    
     # clean up all files after SNP calling
     {
         'name'     => 'cleanup',
@@ -839,6 +846,80 @@ if ( !-e "$name.vcf.gz" )
 }
 
     ];
+}
+
+#---------- pseudo_genome ---------------------
+
+
+# Requires the bam files listed in the file
+sub pseudo_genome_requires
+{
+    my ($self,$dir) = @_;
+    return [$$self{file_list}];
+}
+
+
+sub pseudo_genome_provides
+{
+    my ($self,$dir) = @_;
+    my @provides = ('pseudo_genome.done', 'pseudo_genome.fasta');
+    return \@provides;
+}
+
+# Create a pseudo genome for the organism
+sub pseudo_genome {
+    my ($self,$dir,$lock_file) = @_;
+
+    #$self->{vrtrack} = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
+    #my $vlane = VRTrack::Lane->new_by_name($self->{vrtrack}, $self->{lane}); 
+    
+    if ( !$$self{fa_ref} ) { $self->throw("Missing the option fa_ref.\n"); }
+    
+    #There will be a single BAM file in the list file ( $$self{file_list} )  
+    my $bam_in_array_ref = $self->read_files($$self{file_list});
+    my $single_bam = $bam_in_array_ref->[0];
+    
+    my $memory = $self->{memory};
+    if (! defined $memory || $memory < 2000) {
+        $memory = 2000;
+    }
+    
+    
+    # Script to be run by LSF
+    my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."pseudo_genome.pl");
+    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+    
+    print $scriptfh qq[
+use strict;
+use warnings;
+use Log::Log4perl;
+use Pathogens::Variant::Utils::PseudoReferenceMaker;
+
+
+Log::Log4perl::init;
+
+#set the default argument values
+my \%args = (
+     out       => 'pseudo_genome.fasta'
+   , bam       => '$single_bam_file'
+   , reference => '$$self{fa_ref}'
+   , lane_name => '$self->{lane}'
+);
+
+my \$pseudo_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \\%args);
+\$pseudo_maker->create_pseudo_reference();
+
+exit 0;
+];
+    close $scriptfh;
+    
+    my $job_name = $self->{prefix}.'pseudo_genome';
+    $self->archive_bsub_files($lane_path, $job_name);
+    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q normal -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'", dont_wait=>1 }, qq{perl -w $script_name});
+    
+    # we've only submitted to LSF, so it won't have finished; we always return
+    # that we didn't complete
+    return $self->{No};
 }
 
 
