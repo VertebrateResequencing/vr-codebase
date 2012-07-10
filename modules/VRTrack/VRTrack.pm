@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '19';
+use constant SCHEMA_VERSION => '20';
 
 our $DEFAULT_PORT = 3306;
 
@@ -1404,7 +1404,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (19);
+insert into schema_version(schema_version) values (20);
 
 --
 -- Table structure for table `assembly`
@@ -1462,7 +1462,7 @@ CREATE TABLE `file` (
   `raw_reads` bigint(20) unsigned DEFAULT NULL,
   `raw_bases` bigint(20) unsigned DEFAULT NULL,
   `mean_q` float unsigned DEFAULT NULL,
-  `md5` varchar(40) DEFAULT NULL,
+  `md5` char(32) DEFAULT NULL,
   `note_id` mediumint(8) unsigned DEFAULT NULL,
   `changed` datetime NOT NULL DEFAULT '0000-00-00',
   `latest` tinyint(1) DEFAULT '0',
@@ -1480,7 +1480,7 @@ DROP TABLE IF EXISTS `image`;
 CREATE TABLE `image` (
   `image_id` mediumint(8) unsigned NOT NULL auto_increment,
   `mapstats_id` mediumint(8) unsigned NOT NULL DEFAULT 0,
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   `caption` varchar(40) DEFAULT NULL,
   `image` MEDIUMBLOB,
   PRIMARY KEY (`image_id`),
@@ -1628,7 +1628,7 @@ CREATE TABLE `seq_request` (
 DROP TABLE IF EXISTS `library_type`;
 CREATE TABLE `library_type` (
   `library_type_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   PRIMARY KEY  (`library_type_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -1639,7 +1639,7 @@ CREATE TABLE `library_type` (
 DROP TABLE IF EXISTS `mapper`;
 CREATE TABLE `mapper` (
   `mapper_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   `version` varchar(40) NOT NULL DEFAULT 0,
   PRIMARY KEY  (`mapper_id`),
   UNIQUE KEY `name_v` (`name`, `version`)
@@ -1710,7 +1710,7 @@ CREATE TABLE `mapstats` (
 DROP TABLE IF EXISTS `population`;
 CREATE TABLE `population` (
   `population_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   PRIMARY KEY  (`population_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -1776,7 +1776,7 @@ CREATE TABLE `project` (
 DROP TABLE IF EXISTS `study`;
 CREATE TABLE `study` (
 `study_id` smallint(5) unsigned NOT NULL auto_increment,
-`name` varchar(40) NOT NULL DEFAULT '',
+`name` varchar(255) NOT NULL DEFAULT '',
 `acc` varchar(40) DEFAULT NULL,
 `ssid` mediumint(8) unsigned DEFAULT NULL,
 `note_id` mediumint(8) unsigned DEFAULT NULL,
@@ -1806,7 +1806,7 @@ CREATE TABLE `sample` (
   `sample_id` smallint(5) unsigned NOT NULL DEFAULT 0,
   `project_id` smallint(5) unsigned NOT NULL DEFAULT 0,
   `ssid` mediumint(8) unsigned DEFAULT NULL,
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   `hierarchy_name` varchar(40) NOT NULL DEFAULT '',
   `individual_id` smallint(5) unsigned DEFAULT NULL,
   `note_id` mediumint(8) unsigned DEFAULT NULL,
@@ -1826,7 +1826,7 @@ CREATE TABLE `sample` (
 DROP TABLE IF EXISTS `seq_centre`;
 CREATE TABLE `seq_centre` (
   `seq_centre_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   PRIMARY KEY  (`seq_centre_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -1837,7 +1837,7 @@ CREATE TABLE `seq_centre` (
 DROP TABLE IF EXISTS `seq_tech`;
 CREATE TABLE `seq_tech` (
   `seq_tech_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   PRIMARY KEY  (`seq_tech_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -1849,12 +1849,29 @@ DROP TABLE IF EXISTS `submission`;
 CREATE TABLE `submission` (
   `submission_id` smallint(5) unsigned NOT NULL auto_increment,
   `date` datetime NOT NULL DEFAULT '0000-00-00',
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   `acc` varchar(40) DEFAULT NULL,
   PRIMARY KEY  (`submission_id`),
   UNIQUE KEY `acc` (`acc`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
+
+--
+-- Table structure for table `autoqc`
+--
+
+DROP TABLE IF EXISTS `autoqc`;
+CREATE TABLE `autoqc`
+(
+  `autoqc_id` mediumint(8) unsigned NOT NULL auto_increment,
+   mapstats_id mediumint(8) unsigned NOT NULL DEFAULT 0,
+   test varchar(50) NOT NULL default '',
+   result smallint(5) unsigned NOT NULL DEFAULT 0,
+   reason varchar(200) NOT NULL default '',
+   PRIMARY KEY (`autoqc_id`),
+  KEY  `mapstats_id` (`mapstats_id`),
+   UNIQUE KEY `mapstats_test` (`mapstats_id`, `test`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 --
 -- Views
