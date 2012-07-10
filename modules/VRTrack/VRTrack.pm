@@ -346,6 +346,39 @@ sub hierarchy_path_of_lane {
     my ($self, $lane, $template) = @_;
     ($lane && ref($lane) && $lane->isa('VRTrack::Lane')) || confess "A VRTrack::Lane must be supplied\n";
 
+    return $self->hierarchy_path_of_object($lane,$template);
+}
+
+=head2 hierarchy_path_of_object
+
+  Arg [1]    : VRTrack::Project, VRTrack::Sample, VRTrack::Library or VRTrack::Lane object
+  Arg [2]    : hierarchy template (Optional)
+  Example    : my $lane_hier = $track->hierarchy_path_of_object($vrlane);
+  Description: Retrieve the hierarchy path for a project, sample, library or lane according 
+               to the template defined by environment variable 'DATA_HIERARCHY', to the
+               root of the hierarchy. Template defaults to:
+               'project:sample:technology:library:lane'
+               Possible terms are 'genus', 'species-subspecies', 'strain',
+               'individual', 'project', 'projectid', 'sample', 'technology',
+               'library', 'lane'. ('strain' and 'individual' are synonymous)
+               Does not check the filesystem.
+               Returns undef if hierarchy cannot be built.
+  Returntype : string
+
+=cut
+
+sub hierarchy_path_of_object {
+    my ($self, $object, $template) = @_;
+
+    # Object types
+    my %object_type = ('VRTrack::Project' => 'project',
+		       'VRTrack::Sample'  => 'sample',
+		       'VRTrack::Library' => 'library',
+		       'VRTrack::Lane'    => 'lane');
+
+    (defined($object) && exists($object_type{ref($object)})) || confess "A recognised object type must be supplied\n";
+
+
     # For all acceptable terms, we generate the corresponding word, but for
     # others we just append the term itself to the hierarchy. This allows for
     # words like DATA or TRACKING to be injected into the hierarchy without much
@@ -354,12 +387,15 @@ sub hierarchy_path_of_lane {
     # Since not all possible terms might be used in the template, we will only
     # create objects if necessary (accessing db is expensive).
     my %objs;
-    my $get_lane = sub { return $lane; };
-    my $get_lib = sub { $objs{library} ||= VRTrack::Library->new($self, $lane->library_id); return $objs{library}; };
-    my $get_sample = sub { $objs{sample} ||= VRTrack::Sample->new($self, &{$get_lib}->sample_id); return $objs{sample}; };
-    my $get_project = sub { $objs{project} ||= VRTrack::Project->new($self, &{$get_sample}->project_id); return $objs{project}; };
-    my $get_individual = sub { $objs{individual} ||= VRTrack::Individual->new($self, &{$get_sample}->individual_id); return $objs{individual}; };
-    my $get_species = sub { $objs{species} ||= VRTrack::Species->new($self, &{$get_individual}->species_id); return $objs{species}; };
+
+    $objs{$object_type{ref($object)}} = $object; # set input object
+
+    my $get_lane = sub { return $objs{lane}; };
+    my $get_lib = sub { $objs{library} ||= eval { VRTrack::Library->new($self, &{$get_lane}->library_id) }; return $objs{library}; };
+    my $get_sample = sub { $objs{sample} ||= eval { VRTrack::Sample->new($self, &{$get_lib}->sample_id) };  return $objs{sample}; };
+    my $get_project = sub { $objs{project} ||= eval { VRTrack::Project->new($self, &{$get_sample}->project_id) }; return $objs{project}; };
+    my $get_individual = sub { $objs{individual} ||= eval { VRTrack::Individual->new($self, &{$get_sample}->individual_id) }; return $objs{individual}; };
+    my $get_species = sub { $objs{species} ||= eval { VRTrack::Species->new($self, &{$get_individual}->species_id) }; return $objs{species}; };
     my %terms = (genus => $get_species,
                  'species-subspecies' => $get_species,
                  strain => $get_individual,
@@ -376,7 +412,7 @@ sub hierarchy_path_of_lane {
         $template = $ENV{DATA_HIERARCHY} || 'project:sample:technology:library:lane';
     }
     my @path = split(/:/, $template);
-    
+
     my @hier_path_bits;
     foreach my $term (@path) {
         my $get_method = $terms{$term};
@@ -414,6 +450,8 @@ sub hierarchy_path_of_lane {
         else {
             push(@hier_path_bits, $term);
         }
+
+	last if $term eq $object_type{ref($object)}; # Finish at object directory
     }
     
     return File::Spec->catdir(@hier_path_bits);
