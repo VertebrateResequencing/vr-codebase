@@ -250,7 +250,7 @@ sub pileup {
     
     $self->exe($self->{base_exe}.' mpileup');
     
-    $self->switches([qw(s i c g S a 2)]);
+    $self->switches([qw(s i c g S a 2 A)]);
     $self->params([qw(m M t l f T N r G I)]);
     $self->_set_params_and_switches_from_args(%options);
     
