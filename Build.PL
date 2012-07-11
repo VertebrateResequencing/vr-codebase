@@ -26,7 +26,7 @@ use MyBuild;
 
 my $build = MyBuild->new(
     module_name          => 'VertRes',
-    dist_version         => 0.03,
+    dist_version         => 0.04,
     dist_author          => 'Vertebrate Resequencing group at the Sanger Institute',
     dist_abstract        => 'A collection of modules and scripts for processing and analysing large quantities of sequencing data.',
     license              => 'perl',
@@ -44,6 +44,7 @@ my $build = MyBuild->new(
                               'Net::FTP::Robust' => 0,
                               'Time::Format' => 0,
                               'IO::Capture::Stderr' => 0,
+                              'Math::Random' => 0,
                             },
     pm_files             => get_pm_files(),
     script_files         => 'scripts'

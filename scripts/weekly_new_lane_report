@@ -1,13 +1,33 @@
 #!/usr/bin/env perl
 
-use DBI;
-use VertRes::Utils::VRTrackFactory;
-use Carp;
-
 use strict;
 use warnings;
 
-my @dbs = qw(vrtrack_human_wgs vrtrack_human_wes vrtrack_mouse_wgs vrtrack_mouse_wes);
+use DBI;
+use VertRes::Utils::VRTrackFactory;
+use Carp;
+use Getopt::Long;
+
+my ($dbfile, $help);
+
+GetOptions(
+    'd|dbs=s'     =>  \$dbfile,
+    'h|help'	  =>  \$help,
+);
+
+($dbfile && !$help) or die <<USAGE;
+Usage options: 
+    Produce weekly reports for databases listed in a file:
+    	$0 -d <file_of_dbs>
+USAGE
+
+my @dbs;
+open DBFILE, '<', $dbfile;
+while ( <DBFILE> ) {
+	chomp;
+	push @dbs, $_;	
+}
+close DBFILE;
 
 #SQL for vrtrack databases:
 my $sql_select_current_lane_count = qq[SELECT p.name, count(*) from latest_lane l, latest_library b, latest_sample s, latest_project p 

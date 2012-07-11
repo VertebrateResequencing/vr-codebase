@@ -1,0 +1,198 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Vcf;
+
+my $opts = parse_params();
+query_vcf($opts);
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    print 
+        "About: Find differences amongst samples\n",
+        "Usage: vcf-contrast +<list> -<list> [OPTIONS] file.vcf.gz\n",
+        "Options:\n",
+        "   +<list>                             List of samples where unique variant is expected\n",
+        "   -<list>                             List of background samples\n",
+        "   -d, --min-DP <int>                  Minimum depth across all -<list> samples\n",
+        "   -f, --apply-filters                 Skip sites with FILTER column different from PASS or \".\"\n",
+        "   -h, -?, --help                      This help message.\n",
+        "Example:\n",
+        "   # Test if any of the samples A,B is different from all C,D,E\n",
+        "   vcf-contrast +A,B -C,D,E -m file.vcf.gz\n",
+        "\n",
+        "   # Similar to above but require minimum mapping quality of 20\n",
+        "   vcf-annotate -f MinMQ=20 file.vcf.gz | vcf-contrast +A,B,C -D,E,F -f\n",
+        "\n";
+    exit -1;
+}
+
+
+sub parse_params
+{
+    my $opts = {};
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( -e $arg ) { $$opts{vcf}=$arg; next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        if ( $arg eq '-d' || $arg eq '--min-DP' ) { $$opts{min_dp}=shift(@ARGV); next; }
+        if ( $arg eq '-f' || $arg eq '--apply-filters' ) { $$opts{apply_filters}=1; next; }
+        if ( $arg eq '-m' || $arg eq '--mendelian' ) { $$opts{mendelian}=1; next; }
+        if ( $arg=~/^\+/ && !exists($$opts{var_samples}) ) { @{$$opts{var_samples}}=split(/,/,$'); next }
+        if ( $arg=~/^-/ && !exists($$opts{bg_samples}) ) { @{$$opts{bg_samples}}=split(/,/,$'); next }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    if ( !exists($$opts{var_samples}) ) { error("Missing the list of variant samples (+<list>).\n") }
+    if ( !exists($$opts{bg_samples}) ) { error("Missing the list of background samples (-<list>).\n") }
+    return $opts;
+}
+
+sub init_columns
+{
+    my ($vcf,@samples) = @_;
+    my @out;
+    for my $sample (@samples)
+    {
+        push @out, $vcf->get_column_index($sample);
+    }
+    return (@out);
+}
+
+sub query_vcf
+{
+    my ($opts) = @_;
+    my $vcf = exists($$opts{vcf}) ? Vcf->new(file=>$$opts{vcf}) : Vcf->new(fh=>\*STDIN);
+    $vcf->parse_header;
+
+    my @cols = qw(CHROM POS NOVEL_ALLELE NOVEL_GT SCORE IS_INDEL);
+    for my $sample (@{$$opts{var_samples}}) { push @cols,"+GT:$sample"; }
+    for my $sample (@{$$opts{var_samples}}) { push @cols,"+PL:$sample"; }
+    for my $sample (@{$$opts{bg_samples}}) { push @cols,"-GT:$sample"; }
+    for my $sample (@{$$opts{bg_samples}}) { push @cols,"-PL:$sample"; }
+    print "#";
+    for (my $i=0; $i<@cols; $i++)
+    {
+        print "[",$i+1,"]$cols[$i]\t";
+    }
+    print "\n";
+
+    my @var_cols = init_columns($vcf,@{$$opts{var_samples}});
+    my @bg_cols = init_columns($vcf,@{$$opts{bg_samples}});
+
+    while (my $rec=$vcf->next_data_array)
+    {
+        if ( $$opts{apply_filters} && $$rec[6] ne '.' && $$rec[6] ne 'PASS' ) { next; }
+
+        my $ipl = $vcf->get_tag_index($$rec[8],'PL',':');
+        if ( $ipl<0 ) { error("todo: currently only PL-based analysis implemented"); }
+        my $idp;
+        if ( exists($$opts{min_dp}) ) 
+        {
+            $idp = $vcf->get_tag_index($$rec[8],'DP',':');
+            if ( $idp<0 ) { error("todo: DP not available"); }
+        }
+
+        my (@bg_pls, @bg_als, @bg_gts, @var_pls,@var_gts, $min_dp);
+        for my $bg_col (@bg_cols) 
+        {
+            if ( defined $idp )
+            {
+                my $dp = $vcf->get_field($$rec[$bg_col],$idp);
+                if ( !defined $min_dp or $min_dp>$dp ) { $min_dp=$dp; }
+            }
+            my $pl = $vcf->get_field($$rec[$bg_col],$ipl);
+            my @gt = likely_gt($pl);
+            push @bg_pls, $pl;
+            push @bg_als, \@gt;
+            push @bg_gts, join('/',sort @gt);
+        }
+        if ( defined $min_dp && $min_dp<$$opts{min_dp} ) { next; }
+
+        my $novel_gt = 1;
+        my $novel_al = 0;
+        my $min_score;
+        for my $var_col (@var_cols)
+        {
+            my $var_pl  = $vcf->get_field($$rec[$var_col],$ipl);
+            my @var_als = likely_gt($var_pl);
+            my $var_gt  = join('/',sort @var_als);
+            push @var_pls, $var_pl;
+            push @var_gts, $var_gt;
+            my $bg_score;
+            my %als;
+            for (my $i=0; $i<@bg_cols; $i++)
+            {
+                my $score = same_pls($var_pl, $bg_pls[$i]);
+                if ( !defined $bg_score or $score<$bg_score ) { $bg_score = $score; }
+                for my $al (@{$bg_als[$i]}) { $als{$al} = 1; }
+                if ( $var_gt eq $bg_gts[$i] ) { $novel_gt = 0; }
+            }
+            if ( !$bg_score ) { next; }
+            if ( !defined $min_score or $min_score>$bg_score ) { $min_score = $bg_score; }
+
+            for my $al (@var_als) 
+            { 
+                if ( !exists($als{$al}) ) { $novel_al = 1; }
+            }
+        }
+
+        if ( !$min_score ) { next; }
+        if ( !$novel_gt && !$novel_al ) { next; }
+
+        my $is_indel = 0;
+        for my $al ($$rec[3], $$rec[4])
+        {
+            if ( length($al)>1 ) { $is_indel=1; last; }
+        }
+
+        print "$$rec[0]\t$$rec[1]\t$novel_al\t$novel_gt\t$min_score\t$is_indel\t";
+        print join("\t",@var_gts), "\t", join("\t",@var_pls), "\t";
+        print join("\t",@bg_gts), "\t", join("\t",@bg_pls), "\n";
+    }
+}
+
+sub likely_gt
+{
+    my ($pl) = @_;
+    my @pls  = split(/,/,$pl);
+
+    my ($min,$imin,$jmin);
+    my $idx=0;
+    my $i=0;
+    while ($idx<@pls)
+    {
+        for (my $j=0; $j<=$i; $j++)
+        {
+            if ( !defined $min or $min>$pls[$idx] ) { $min=$pls[$idx]; $imin=$i; $jmin=$j; }
+            $idx++;
+        }
+        $i++;
+    }
+    return ($jmin,$imin);
+}
+
+sub same_pls
+{
+    my ($pla,$plb) = @_;
+    my @pla = split(/,/,$pla);
+    my @plb = split(/,/,$plb);
+    my $min;
+    my $imin;
+    for (my $i=0; $i<@pla; $i++)
+    {
+        if ( !defined $min or $pla[$i]+$plb[$i]<$min ) { $min=$pla[$i]+$plb[$i]; $imin=$i; }
+    }
+    return $min;
+}
+

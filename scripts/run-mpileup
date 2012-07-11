@@ -129,8 +129,8 @@ sub new
     $$self{usage} .= 
         "Usage: run-mpileup\n" .
         "Options:\n" .
-        "   -c, --clean             Clean all temporary files\n" .
-        "   -m, --mrProper          Clean all temporary files, including the population directories and BCFs, leaving only toplevel VCFs\n" .
+        "   -c, --clean             Clean all temporary files (and do nothing else)\n" .
+        "   -m, --mrProper          Clean all temporary files, including the population directories and BCFs, leaving only toplevel VCFs (and do nothing else)\n" .
         "   -o, --outdir <dir>      Output directory\n" .
         "\n";
 
@@ -371,7 +371,7 @@ sub clean
             my $chr  = $$chunk{chr};
             my $from = $$chunk{from};
             my $to   = $$chunk{to};
-            for my $suffix qw(samples vcf.gz vcf.gz.tbi)
+            for my $suffix (qw(samples vcf.gz vcf.gz.tbi))
             {
                 my $file = "$outdir/$pop/$chr/$chr:$from-$to.$suffix";
                 unlink($file) unless !-e $file;
@@ -937,7 +937,7 @@ sub concat_chroms
             ];
         close($fh);
 
-        $self->cmd("vcf-concat -f $chunks_list | vcf-annotate -f $tmp.annot | bgzip -c > $concat.part");
+        $self->cmd("vcf-concat -p -f $chunks_list | vcf-annotate -f $tmp.annot | bgzip -c > $concat.part");
         $self->tabix_part($concat);
     }
     my $conf = $$self{vqsr_filtering};

@@ -41,6 +41,10 @@ for my $lane (@{$$opts{lanes}})
     {
         reset_improved($vrtrack,$path,$lane,$opts);
     }
+    elsif ( $$opts{reset} eq 'rnaseq' )
+    {
+        reset_rnaseq($vrtrack,$path,$lane,$opts);
+    }
     else
     {
         error("Unknown flag: $$opts{reset}\n");
@@ -292,6 +296,29 @@ sub reset_improved
     $vrlane->is_processed('improved',0);
     $vrlane->update();
 }
+
+
+sub reset_rnaseq
+{
+    my ($vrtrack,$path,$lane,$opts) = @_;
+
+    my $vrlane = VRTrack::Lane->new_by_name($vrtrack,$lane);
+
+    if ( $$opts{clean} )
+    {
+        my $rm_cmd = qq[rm -f $path/*.intergenic.* $path/*calculate_expression* $path/*.coverageplot.gz $path/*.expression.csv $path/_cleanup_done $path/_update_db_done $path/_job_status];
+        if ( !$$opts{dont_ask} ) 
+        {
+            confirm_action("About to delete\n\t$rm_cmd\n");
+        }
+        print "$rm_cmd\n";
+        `$rm_cmd`;
+    }
+
+    $vrlane->is_processed('rna_seq_expression',0);
+    $vrlane->update();
+}
+
 
 sub confirm_action
 {

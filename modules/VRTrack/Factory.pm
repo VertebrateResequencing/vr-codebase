@@ -134,11 +134,9 @@ sub databases {
         
         my %tables = map { s/`//g; s/^$db\.//; $_ => 1 } $dbh->tables();
         
-        foreach my $etable (keys %expected_tables) {
-            next DB unless exists $tables{$etable};
-        }
+        next DB unless exists $tables{schema_version};
         foreach my $table (keys %tables) {
-            next DB unless exists $expected_tables{$table};
+            next DB unless exists $expected_tables{$table}; # we're assuming no schema update will ever drop a table
         }
         
         my $sql = qq[ select * from schema_version ];
