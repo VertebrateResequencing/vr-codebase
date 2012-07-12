@@ -892,11 +892,11 @@ sub pseudo_genome {
     print $scriptfh qq[
 use strict;
 use warnings;
-use Log::Log4perl;
+use Log::Log4perl qw(:easy);
 use Pathogens::Variant::Utils::PseudoReferenceMaker;
 
-
-Log::Log4perl::init;
+#log verbosity is error messages only
+Log::Log4perl->easy_init(\$ERROR);
 
 #set the default argument values
 my \%args = (
