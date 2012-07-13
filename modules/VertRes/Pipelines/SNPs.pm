@@ -868,7 +868,7 @@ sub pseudo_genome_provides
 
 # Create a pseudo genome for the organism
 sub pseudo_genome {
-    my ($self,$dir,$lock_file) = @_;
+    my ($self,$lane_path,$action_lock) = @_;
 
     #$self->{vrtrack} = VRTrack::VRTrack->new($self->{db}) or $self->throw("Could not connect to the database\n");
     #my $vlane = VRTrack::Lane->new_by_name($self->{vrtrack}, $self->{lane}); 
@@ -877,7 +877,7 @@ sub pseudo_genome {
     
     #There will be a single BAM file in the list file ( $$self{file_list} )  
     my $bam_in_array_ref = $self->read_files($$self{file_list});
-    my $single_bam = $bam_in_array_ref->[0];
+    my $single_bam_file = $bam_in_array_ref->[0];
     
     my $memory = $self->{memory};
     if (! defined $memory || $memory < 2000) {
