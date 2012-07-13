@@ -156,7 +156,7 @@ Optional parameters:
 ------------------------------------------------------------------------------------------
 );
 
-$logger->logdie("Exiting: Argument errors") 
+$logger->warn("Exiting: Argument errors") 
 	unless ( Getopt::Declare->new($specification) );
 
 my $pseudo_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \%args);
