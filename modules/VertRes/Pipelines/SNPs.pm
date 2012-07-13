@@ -862,7 +862,7 @@ sub pseudo_genome_requires
 sub pseudo_genome_provides
 {
     my ($self,$dir) = @_;
-    my @provides = ('pseudo_genome.done', 'pseudo_genome.fasta');
+    my @provides = ('_pseudo_genome_done', 'pseudo_genome.fasta');
     return \@provides;
 }
 
@@ -908,6 +908,8 @@ my \%args = (
 
 my \$pseudo_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \\%args);
 \$pseudo_maker->create_pseudo_reference();
+
+system('touch _pseudo_genome_done');
 
 exit 0;
 ];
