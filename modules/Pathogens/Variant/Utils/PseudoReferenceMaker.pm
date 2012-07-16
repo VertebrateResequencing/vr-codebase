@@ -21,7 +21,6 @@ my %args = (
    , quality        => 50
    , map_quality    => 30
    , af1            => 0.95
-   , af1_complement => 0.05
    , ci95           => 0.0
    , strand_bias    => 0.001
    , base_quality_bias => 0.0
@@ -71,51 +70,56 @@ sub _initialise {
 
     my $logger = get_logger("Pathogens::Variant::Utils::PseudoReferenceMaker");
      
-    #complement af1 is needed for non variant site evaluations
-    $self->arguments->{af1complement} = 1 - $self->arguments->{af1};
-    
-    #total depth has to be at least twice larger than strand-depth
-    my $doubled_arg_D_depth_strand = $self->arguments->{depth_strand} * 2;
-    if ( $self->arguments->{depth} < $doubled_arg_D_depth_strand ) {
-        
-        $logger->is_warn() && $logger->warn("Argument value for '-d' (depth) must be larger than '-D' (depth_strand)! Automatically increasing it to " .$doubled_arg_D_depth_strand);
-
-        $self->arguments->{depth} = $doubled_arg_D_depth_strand;
-    }
-    
-
-    
-    #reporter will be used by the evaluator object below to keep counters on evaluation statistics
+    #reporter will be used by the evaluator object below to hold evaluation statistics
     my $reporter = Pathogens::Variant::EvaluationReporter->new;
     
-    #create an evaluator object to mark the bad calls and to convert heterozygous into homozygous calls 
-    my $evaluator = Pathogens::Variant::Evaluator::Pseudosequence->new(
-          minimum_depth             => $self->arguments->{depth}
-        , minimum_depth_strand      => $self->arguments->{depth_strand}
-        , minimum_ratio             => $self->arguments->{ratio}
-        , minimum_quality           => $self->arguments->{quality}
-        , minimum_map_quality       => $self->arguments->{map_quality}
-        , minimum_af1               => $self->arguments->{af1}
-        , minimum_af1_complement    => $self->arguments->{af1_complement}
-        , minimum_ci95              => $self->arguments->{ci95}
-        , minimum_strand_bias       => $self->arguments->{strand_bias}
-        , minimum_base_quality_bias => $self->arguments->{base_quality_bias}
-        , minimum_map_bias          => $self->arguments->{map_bias}
-        , minimum_tail_bias         => $self->arguments->{tail_bias}
-        , reporter                  => $reporter
-    );
+    #the evaluator will help us decide, whether to keep an allele in the new pseudo-genome
+    #by looking if the quality of a position in the VCF file is good enough
+    my $evaluator = Pathogens::Variant::Evaluator::Pseudosequence->new;
 
+    $evaluator->reporter($reporter);
+    
+    $evaluator->minimum_depth($self->arguments->{depth})  
+        if ( exists $self->arguments->{depth} ); 
+
+    $evaluator->minimum_depth_strand($self->arguments->{depth_strand})
+        if ( exists $self->arguments->{depth_strand} );
+ 
+    $evaluator->minimum_ratio($self->arguments->{ratio})
+        if ( exists $self->arguments->{ratio} );
+
+    $evaluator->minimum_quality($self->arguments->{quality})
+        if ( exists $self->arguments->{quality} );
+
+    $evaluator->minimum_map_quality($self->arguments->{map_quality})
+        if ( exists $self->arguments->{map_quality} );
+
+    $evaluator->minimum_af1($self->arguments->{af1}) 
+        if ( exists $self->arguments->{af1} );
+
+    $evaluator->minimum_ci95($self->arguments->{ci95}) 
+        if ( exists $self->arguments->{ci95} );
+
+    $evaluator->minimum_strand_bias($self->arguments->{strand_bias}) 
+        if ( exists $self->arguments->{strand_bias} );
+
+    $evaluator->minimum_base_quality_bias($self->arguments->{base_quality_bias})
+        if ( exists $self->arguments->{base_quality_bias} );
+
+    $evaluator->minimum_map_bias($self->arguments->{map_bias})
+        if ( exists $self->arguments->{map_bias} );
+
+    $evaluator->minimum_tail_bias($self->arguments->{tail_bias})
+        if ( exists $self->arguments->{tail_bias} );
+    
 
     my $bam_parser = Pathogens::Variant::Utils::BamParser->new();
-    
     $bam_parser->fetch_chromosome_size_into_hash($self->arguments->{bam});
-
     $self->_bam_parser($bam_parser);
+    
     $self->_evaluator($evaluator);
     
-
     $self->_reporter($reporter);
-
 
 }
 

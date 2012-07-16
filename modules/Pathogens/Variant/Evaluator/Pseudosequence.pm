@@ -65,21 +65,28 @@ use namespace::autoclean;
 
 
 
-has 'minimum_depth'          => ( is => 'ro', isa => 'Int', default => 4 );
-has 'minimum_depth_strand'   => ( is => 'ro', isa => 'Int', default => 2 );
-has 'minimum_ratio'          => ( is => 'ro', isa => 'Num', default => 0.8 );
-has 'minimum_quality'        => ( is => 'ro', isa => 'Int', default => 0 );
-has 'minimum_map_quality'    => ( is => 'ro', isa => 'Int', default => 1 );
-has 'minimum_af1'            => ( is => 'ro', isa => 'Num', default => 0.95 );
-has 'minimum_af1_complement' => ( is => 'ro', isa => 'Num', default => 0.05);
-has 'minimum_ci95'           => ( is => 'ro', isa => 'Num', default => 0.0 );
-has 'minimum_strand_bias'    => ( is => 'ro', isa => 'Num', default => 0.001 );
-has 'minimum_map_bias'       => ( is => 'ro', isa => 'Num', default => 0.001 );
-has 'minimum_tail_bias'      => ( is => 'ro', isa => 'Num', default => 0.001 );
-has 'minimum_base_quality_bias' => ( is => 'ro', isa => 'Num', default => 0.0 );
+has 'minimum_depth'          => ( is => 'rw', isa => 'Int', default => 4 );
+has 'minimum_depth_strand'   => ( is => 'rw', isa => 'Int', default => 2 );
+has 'minimum_ratio'          => ( is => 'rw', isa => 'Num', default => 0.8 );
+has 'minimum_quality'        => ( is => 'rw', isa => 'Int', default => 0 );
+has 'minimum_map_quality'    => ( is => 'rw', isa => 'Int', default => 1 );
 
-has 'reporter'            => ( is => 'ro', isa => 'Pathogens::Variant::EvaluationReporter', lazy => 1, default => sub { return Pathogens::Variant::EvaluationReporter->new } );
+#this serves to evaluate positions where mapped isolate has an alternative allele (non ref.)
+has 'minimum_af1'            => ( is => 'rw', isa => 'Num', default => 0.95, trigger => \&_set_the_minimum_af1_complement );
+
+#this serves to evaluate positions where mapped isolate has the reference allele
+has '_minimum_af1_complement' => ( is => 'rw', isa => 'Num', default => 0.05);
+
+has 'minimum_ci95'           => ( is => 'rw', isa => 'Num', default => 0.0 );
+has 'minimum_strand_bias'    => ( is => 'rw', isa => 'Num', default => 0.001 );
+has 'minimum_map_bias'       => ( is => 'rw', isa => 'Num', default => 0.001 );
+has 'minimum_tail_bias'      => ( is => 'rw', isa => 'Num', default => 0.001 );
+has 'minimum_base_quality_bias' => ( is => 'rw', isa => 'Num', default => 0.0 );
+
+
 has '_event'               => ( is => 'rw', isa => 'Pathogens::Variant::Event');
+
+has 'reporter'            => ( is => 'rw', isa => 'Pathogens::Variant::EvaluationReporter', lazy => 1, default => sub { return Pathogens::Variant::EvaluationReporter->new } );
 has '_dp4_parser'          => ( is => 'ro', isa => 'Pathogens::Variant::Utils::DP4Parser', lazy => 1, default => sub { return Pathogens::Variant::Utils::DP4Parser->new } );
 has '_event_manipulator'   => ( is => 'ro', isa => 'Pathogens::Variant::Utils::EventManipulator', lazy => 1, default => sub { return Pathogens::Variant::Utils::EventManipulator->new } );
 
@@ -199,7 +206,7 @@ sub _passed_vcf_info_field_evaluation {
     
     if ( exists $param{'AF1'} ) {
         if (not $self->_event->polymorphic) {
-            if ($param{'AF1'} > $self->minimum_af1_complement) { 
+            if ($param{'AF1'} > $self->_minimum_af1_complement) { 
                 $evaluation_status = 0;
                 $self->reporter->inc_counter_failed_af1_allele_frequency;
             }
@@ -356,6 +363,14 @@ sub _is_not_an_indel {
 
         return 1;
     }
+}
+
+sub _set_the_minimum_af1_complement {
+    my ($self, $minimum_af1_value) = @_;
+
+    my $complement = 1 - $minimum_af1_value;
+    $self->_minimum_af1_complement($complement);
+    
 }
 
 __PACKAGE__->meta->make_immutable;

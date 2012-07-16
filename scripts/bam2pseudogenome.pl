@@ -1,41 +1,15 @@
-#!/Users/fy2/perl5/perlbrew/perls/perl-5.8.8/bin/perl
+#!/usr/bin/env perl
 
 use strict;
 use warnings;
 use Getopt::Declare;
-use Log::Log4perl qw(get_logger);
+use Log::Log4perl qw(:easy);
 use Pathogens::Variant::Utils::PseudoReferenceMaker;
-
-
 our $VERSION = 0.01;
 
 
 
-
-
-
-
-
-#log4perl's log configuration setting
-#Activates the logger at level "INFO", and prints the errors to SCREEN
-my $logconf = q(
-
-    #set the log category to root (i.e. Pathogens::*) and
-    #set the level to INFO and higher, choose 'Screen' as appender
-    log4perl.category = INFO, Screen
-    
-    
-    #create the appender, turn off stderr (ie choose stdout) create log pattern
-    log4perl.appender.Screen = Log::Log4perl::Appender::Screen
-    log4perl.appender.Screen.stderr  = 0
-    log4perl.appender.Screen.layout = PatternLayout
-    log4perl.appender.Screen.layout.ConversionPattern=[%p][%d] %m (%C %L)%n
-);
-Log::Log4perl::init( \$logconf );
-my $logger = get_logger();
-
-
-
+Log::Log4perl->easy_init($INFO);
 
 
 #set the default argument values
@@ -50,7 +24,6 @@ our %args = (
    , quality      => 50
    , map_quality  => 30
    , af1            => 0.95
-   , af1_complement => 0.05
    , ci95           => 0.0
    , strand_bias    => 0.001
    , base_quality_bias => 0.0
@@ -156,11 +129,11 @@ Optional parameters:
 ------------------------------------------------------------------------------------------
 );
 
-$logger->warn("Exiting: Argument errors") 
-	unless ( Getopt::Declare->new($specification) );
+exit unless ( Getopt::Declare->new($specification) );
 
 my $pseudo_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \%args);
 
 $pseudo_maker->create_pseudo_reference();
+print "Evaluation statistics:\n";
 print $pseudo_maker->get_statistics_dump();
-
+print "\n";
