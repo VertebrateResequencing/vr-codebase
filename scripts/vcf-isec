@@ -150,8 +150,8 @@ sub check_columns
             {
                 my @icols = @{$$vcfs[$ivcf]{columns}};
                 my @jcols = @{$$vcfs[$jvcf]{columns}};
-                warn("Warning: The number of columns is different:\n",
-                    scalar @icols - 9, ": ",
+                warn("Warning: The number of sample columns is different:\n",
+                    (@icols>9 ? scalar @icols - 9 : 0), ": ",
                     join(',',@icols[9..$#icols]),"\n",
                     scalar @jcols - 9, ": ",
                     join(',',@jcols[9..$#jcols]),"\n",
@@ -261,6 +261,7 @@ sub vcf_isec
         $$vcf{vcf_isec_ID} = $ifile;
     }
     check_columns($opts,\@vcfs);
+    $$opts{vcfs} = \@vcfs;
 
     if ( !$vcfs[0]{delim} && !$$opts{split} )
     {
@@ -390,16 +391,15 @@ sub do_chrm_isec
 sub write_line
 {
     my ($opts,$grp,$srcs) = @_;
-
-    my $vcf  = $$grp[0]{vcf};
-    my $file = $$vcf{file};
-    my $rec  = $$grp[0];
-
     for my $hash (values %$srcs)
     {
         my $src = join('_',sort keys %$hash);
         if ( !exists($$opts{out_files}{$src}) )
         {
+            my $id  = (sort keys %$hash)[0];
+            my $vcf = $$opts{vcfs}[$id];
+            $$opts{out_vcfs}{$src} = $vcf;
+            $$opts{out_recs}{$src} = $id;
             open($$opts{out_files}{$src},"| bgzip -c > $$opts{prefix}$src.vcf.gz") or error("| bgzip -c > $$opts{prefix}$src.vcf.gz: $!");
 
             if ( !exists($$opts{readme_fh}) ) 
@@ -422,11 +422,14 @@ sub write_line
         }
     }
 
+#use Data::Dumper; print Dumper($srcs);
     for my $pos (keys %$srcs)
     {
-        my $rec = (values %{$$srcs{$pos}})[0];
-        my $src = join('_',sort keys %{$$srcs{$pos}});
-        my $fh  = $$opts{out_files}{$src};
+        my $src  = join('_',sort keys %{$$srcs{$pos}});
+        my $fh   = $$opts{out_files}{$src};
+        my $irec = $$opts{out_recs}{$src};
+        my $vcf  = $$opts{out_vcfs}{$src};
+        my $rec  = $$srcs{$pos}{$irec};
 
         if ( !$$vcf{delim} )
         {
@@ -436,7 +439,6 @@ sub write_line
         {
             print $fh $$rec{line};
         }
-        if ( $$opts{one_per_group} ) { last; }
     }
 }
 

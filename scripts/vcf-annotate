@@ -531,8 +531,16 @@ sub annotate
                 if ( $$annot_line[$from_col] > $pos or $$annot_line[$to_col] < $pos ) { next; }
                 if ( defined $alt_col && $$annot_line[$ref_col] ne '.' )
                 {
+                    # Ignore the annotation line if REF and ALT don't agree
                     if ( $$annot_line[$ref_col] ne $ref ) { next; }
-                    if ( !exists($alt{$$annot_line[$alt_col]}) ) { next; }
+
+                    # There can be multiple ALTs
+                    my $alt_match = 0;
+                    for my $al (split(/,/, $$annot_line[$alt_col]))
+                    {
+                        if ( exists($alt{$al}) ) { $alt_match=1; last; }
+                    }
+                    if ( !$alt_match ) { next; }
                 }
                 for my $info (@annots)
                 {
