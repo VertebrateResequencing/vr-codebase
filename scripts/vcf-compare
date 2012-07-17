@@ -381,7 +381,7 @@ sub report_stats
     my %summary;
     for my $id (keys %{$$opts{hapls}})
     {
-        for my $key qw(hom_RR_ het_RA_ hom_AA_ het_AA_)
+        for my $key (qw(hom_RR_ het_RA_ hom_AA_ het_AA_))
         { 
             if ( !exists($$opts{hapls}{$id}{$key.'gtype_mismatch'}) ) { $$opts{hapls}{$id}{$key.'gtype_mismatch'}=0; }
             $$opts{hapls}{$id}{total_gtype_mismatch} += $$opts{hapls}{$id}{$key.'gtype_mismatch'};
@@ -398,7 +398,7 @@ sub report_stats
             $summary{$key}{match} += $$opts{hapls}{$id}{$key.'gtype_match'};
             $summary{$key}{mismatch} += $$opts{hapls}{$id}{$key.'gtype_mismatch'};
         }
-        for my $key qw(het_RA_ het_AA_)
+        for my $key (qw(het_RA_ het_AA_))
         { 
             if ( !exists($$opts{hapls}{$id}{$key.'phase_match'}) ) { $$opts{hapls}{$id}{$key.'phase_match'}=0; }
             $$opts{hapls}{$id}{total_phase_match} += $$opts{hapls}{$id}{$key.'phase_match'};
@@ -436,15 +436,15 @@ sub report_stats
     for my $id (keys %{$$opts{hapls}})
     {
         print "GC\t$id";
-        for my $key qw(total_ hom_RR_ hom_AA_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'gtype_mismatch'}; }
-        for my $key qw(total_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'gtype_lost'}; }
-        for my $key qw(total_ hom_RR_ hom_AA_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'gtype_gained'}; }
-        for my $key qw(total_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'phase_lost'}; }
+        for my $key (qw(total_ hom_RR_ hom_AA_ het_RA_ het_AA_)) { print "\t",$$opts{hapls}{$id}{$key.'gtype_mismatch'}; }
+        for my $key (qw(total_ het_RA_ het_AA_)) { print "\t",$$opts{hapls}{$id}{$key.'gtype_lost'}; }
+        for my $key (qw(total_ hom_RR_ hom_AA_ het_RA_ het_AA_)) { print "\t",$$opts{hapls}{$id}{$key.'gtype_gained'}; }
+        for my $key (qw(total_ het_RA_ het_AA_)) { print "\t",$$opts{hapls}{$id}{$key.'phase_lost'}; }
         if ( !exists($$opts{hapls}{$id}{phase_gained}) ) { $$opts{hapls}{$id}{phase_gained}=0; }
         print "\t",$$opts{hapls}{$id}{phase_gained};
-        for my $key qw(total_ hom_RR_ hom_AA_ het_RA_ het_AA_) { print "\t",$$opts{hapls}{$id}{$key.'gtype_match'}; }
-        for my $key qw(het_RA_) { print "\t",$$opts{hapls}{$id}{$key.'phase_match'}; }
-        for my $key qw(het_RA_) { print "\t",$$opts{hapls}{$id}{$key.'phase_mismatch'}; }
+        for my $key (qw(total_ hom_RR_ hom_AA_ het_RA_ het_AA_)) { print "\t",$$opts{hapls}{$id}{$key.'gtype_match'}; }
+        for my $key (qw(het_RA_)) { print "\t",$$opts{hapls}{$id}{$key.'phase_match'}; }
+        for my $key (qw(het_RA_)) { print "\t",$$opts{hapls}{$id}{$key.'phase_mismatch'}; }
         print "\n";
     }
 
@@ -463,11 +463,11 @@ sub report_stats
     for my $ac (sort {$a<=>$b} keys %{$$opts{counts_by_af}})
     {
         print "AF\t$ac";
-        for my $key qw(hom_RR_ het_RA_ hom_AA_ het_AA_)
+        for my $key (qw(hom_RR_ het_RA_ hom_AA_ het_AA_))
         {
             print "\t", $$opts{counts_by_af}{$ac}{$key}{matches} ? $$opts{counts_by_af}{$ac}{$key}{matches} : 0;
         }
-        for my $key qw(hom_RR_ het_RA_ hom_AA_ het_AA_)
+        for my $key (qw(hom_RR_ het_RA_ hom_AA_ het_AA_))
         {
             print "\t", $$opts{counts_by_af}{$ac}{$key}{mismatches} ? $$opts{counts_by_af}{$ac}{$key}{mismatches} : 0;
         }
@@ -496,12 +496,12 @@ sub report_stats
             my $nonRefMatches=-$$opts{counts_by_INFO}{$infoTag}{$info}{"hom_RR_"}{matches} ? $$opts{counts_by_INFO}{$infoTag}{$info}{"hom_RR_"}{matches} : 0;
             my $mismatches=0;
 
-            for my $key qw(hom_RR_ het_RA_ hom_AA_ het_AA_)
+            for my $key (qw(hom_RR_ het_RA_ hom_AA_ het_AA_))
             {
                 print "\t", $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{matches} ? $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{matches} : 0;
                 $nonRefMatches += $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{matches} ? $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{matches} : 0;
             }
-            for my $key qw(hom_RR_ het_RA_ hom_AA_ het_AA_)
+            for my $key (qw(hom_RR_ het_RA_ hom_AA_ het_AA_))
             {
                 print "\t", $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{mismatches} ? $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{mismatches} : 0;
                 $mismatches += $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{mismatches} ? $$opts{counts_by_INFO}{$infoTag}{$info}{$key}{mismatches} : 0;
@@ -526,7 +526,7 @@ sub report_stats
     for my $dp (sort {$a<=>$b} keys %{$$opts{counts_by_dp}})
     {
         print "DP\t$dp";
-        for my $type qw(hom_RR_-hom_RR_ het_RA_-het_RA_ hom_AA_-hom_AA_ hom_RR_-het_RA_ hom_RR_-hom_AA_ het_RA_-hom_RR_ het_RA_-hom_AA_ hom_AA_-hom_RR_ hom_AA_-het_RA_)
+        for my $type (qw(hom_RR_-hom_RR_ het_RA_-het_RA_ hom_AA_-hom_AA_ hom_RR_-het_RA_ hom_RR_-hom_AA_ het_RA_-hom_RR_ het_RA_-hom_AA_ hom_AA_-hom_RR_ hom_AA_-het_RA_))
         {
             printf "\t%d", exists($$opts{counts_by_dp}{$dp}{$type}) ? $$opts{counts_by_dp}{$dp}{$type} : 0;
         }
@@ -565,7 +565,7 @@ sub print_gs
 {
     my ($opts,$stats) = @_;
     my ($ndr_ms,$ndr_m,@summary);
-    for my $key qw(hom_RR het_RA hom_AA het_AA)
+    for my $key (qw(hom_RR het_RA hom_AA het_AA))
     {
         my $m   = $$stats{"${key}_"}{match};
         my $ms  = $$stats{"${key}_"}{mismatch};
@@ -891,7 +891,7 @@ sub plot_af
              '-' with points pt 20 lc rgb "blue" title "HomAlt"
         ];
 
-    for my $type qw(RR RA AA)
+    for my $type (qw(RR RA AA))
     {
         for my $af (sort {$a<=>$b} keys %{$$stats{$type}})
         {
@@ -899,7 +899,7 @@ sub plot_af
         }
         print $fh "end\n";
     }
-    for my $type qw(RR RA AA)
+    for my $type (qw(RR RA AA))
     {
         for my $af (sort {$a<=>$b} keys %{$$stats{$type}})
         {
@@ -937,7 +937,7 @@ sub plot_ndr
         ];
 
     my $afs;
-    for my $type qw(RA AA)
+    for my $type (qw(RA AA))
     {
         for my $af (keys %{$$stats{$type}})
         {
@@ -945,7 +945,7 @@ sub plot_ndr
             $$afs{$af}{mi} += $$stats{$type}{$af}{mismatches};
         }
     }
-    for my $type qw(RR)
+    for my $type (qw(RR))
     {
         for my $af (keys %{$$stats{$type}})
         {
