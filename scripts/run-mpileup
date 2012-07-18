@@ -44,6 +44,8 @@ sub new
             limits   => { runtime=>24*60 },
             do_clean => 1,         # Remove runner's temporary files
 
+			merge_chroms => 0,	# Create whole-genome VCF? This can produce *huge* files for thousands of samples
+
             ploidy   =>
             {
                 default => 2,
@@ -308,20 +310,69 @@ sub main
     }
     $self->wait;
 
-    # Create whole genome file: concat all chunks, apply filtering and VQSR
-    if ( exists($$self{vqsr_filtering}) && exists($$self{vqsr_filtering}{limits}) ) { $self->set_limits(%{$$self{vqsr_filtering}{limits}}) }
-    for my $pop (keys %{$$self{pops}})
-    {
-        $self->spawn('concat_vcfs',"$outdir/$pop.vcf.gz",$pop,$chunks);
-    }
-    $self->wait;
-    $self->set_limits(memory=>undef);
+	# Merge the files and apply filtering. There are four possible cases: with or without VQSR, 
+	#	whole-genome or per-chromosome files
+	my @vcfs;
+    if ( exists($$self{vqsr_filtering}) ) 
+	{  
+		# Create whole genome file with sites only, apply filtering and VQSR. 
+		if ( exists($$self{vqsr_filtering}{limits}) ) { $self->set_limits(%{$$self{vqsr_filtering}{limits}}); }
+		for my $pop (keys %{$$self{pops}})
+		{
+			$self->spawn('run_vqsr',"$outdir/$pop/vqsr.sites.vcf.gz",$pop,$chunks);
+		}
+		$self->wait;
+		$self->set_limits(memory=>undef);
+		for my $pop (keys %{$$self{pops}})
+		{
+			if ( $$self{merge_chroms} ) 
+			{ 
+				my $outfile = "$outdir/$pop/all.vqsr.vcf.gz";
+				$self->spawn('combine_vqsr',$outfile,"$outdir/$pop/vqsr.sites.vcf.gz",$pop,'.');
+				push @vcfs, $outfile;
+			}
+			else 
+			{ 
+				for my $chr (@chroms) 
+				{ 
+					my $outfile = "$outdir/$pop/$chr.vqsr.vcf.gz";
+					$self->spawn('combine_vqsr',$outfile,"$outdir/$pop/vqsr.sites.vcf.gz",$pop,$chr);
+					push @vcfs, $outfile;
+				}
+			}
+		}
+		$self->wait;
+	}
+	else
+	{
+		# Apply filtering, no VQSR
+		for my $pop (keys %{$$self{pops}})
+		{
+			if ( $$self{merge_chroms} ) 
+			{ 
+				my $outfile = "$outdir/$pop/all.vcf.gz";
+				$self->spawn('concat_vcfs',$outfile,$pop,'.',$chunks); 
+				push @vcfs, $outfile;
+			}
+			else 
+			{ 
+				for my $chr (@chroms) 
+				{ 
+					my $outfile = "$outdir/$pop/$chr.vcf.gz";
+					$self->spawn('concat_vcfs',$outfile,$pop,$chunks); 
+					push @vcfs, $outfile;
+				} 
+			}
+		}
+		$self->wait;
+	}
 
     # Run summary stats
-    for my $pop (keys %{$$self{pops}})
+    for my $vcf (@vcfs)
     {
-        $self->spawn('vcf_stats',"$outdir/$pop.vcf.gz.stats","$outdir/$pop.vcf.gz",q[awk '/^#/||$7=="PASS"']);
-        $self->spawn('apply_filter',"$outdir/$pop.filt.vcf.gz","$outdir/$pop.vcf.gz");
+        $self->spawn('vcf_stats',"$vcf.stats",$vcf,q[awk '/^#/||$7=="PASS"']);
+		my $filt = $vcf; $filt =~ s/.vcf.gz/.filt.vcf.gz/;
+        $self->spawn('apply_filter',$filt,$vcf);
     }
     $self->wait;
 
@@ -923,7 +974,7 @@ sub write_annot_file
 	close($fh);
 }
 
-sub concat_vcfs_old
+sub concat_vcfs
 {
 	my ($self,$outfile,$pop,$chr,$chunks) = @_;
 
@@ -933,7 +984,7 @@ sub concat_vcfs_old
 	open(my $fh,'>',$chunks_list) or $self->throw("$chunks_list: $!");
 	for my $chunk (sort { $$a{from}<=>$$b{from} } @$chunks)
 	{
-		if ( $$chunk{chr} ne $chr ) { next; }
+		if ( $chr ne '.' && $$chunk{chr} ne $chr ) { next; }
 		my $from = $$chunk{from};
 		my $to   = $$chunk{to};
 		print $fh "$outdir/$pop/$chr/$chr:$from-$to.vcf.gz\n";
@@ -944,7 +995,7 @@ sub concat_vcfs_old
 	$self->tabix_part($outfile);
 }
 
-sub concat_vcfs
+sub run_vqsr
 {
     my ($self,$outfile,$pop,$chunks) = @_;
 
@@ -961,18 +1012,8 @@ sub concat_vcfs
     }
     close($fh) or $self->throw("close $chunks_list");
 
-    if ( !exists($$self{vqsr_filtering}) )
-    {
-		my $filter = exists($$self{filter}) ? "| $$self{filter}" : '';
-        $self->cmd("vcf-concat -p -f $chunks_list $filter | bgzip -c > $outfile.part");
-        $self->tabix_part($outfile);
-        return;
-    }
-
-    # VQSR filtering
     my $tmp = $outfile; $tmp =~ s/\.vcf\.gz$//;
-    my $concat = "$tmp.sites.vcf.gz";
-	my $concat_filt = "$tmp.filt.sites.vcf.gz";
+    my $concat = "$tmp.raw.vcf.gz";
     if ( ! -e $concat )
     {
         $self->cmd("vcf-concat -p -f $chunks_list | cut -f 1-8 | bgzip -c > $concat.part");
@@ -985,17 +1026,17 @@ sub concat_vcfs
     for (my $i=95; $i<=100; $i+=0.1) { $tranches .= sprintf(" -tranche %.1f",$i); }
     if ( exists($$conf{recal_snps}) )
     {
-        $output = "$tmp.vqsr_snps.vcf.gz";
-        $self->cmd("$$conf{jar} $$conf{recal_snps} -R $$self{fa_ref} --input $input -recalFile $tmp.vqsr_snps.csv -tranchesFile $tmp.vqsr_snps.tranches $tranches");
-        $self->cmd("$$conf{jar} $$conf{filter_snps} -R $$self{fa_ref} --input $input -recalFile $tmp.vqsr_snps.csv -tranchesFile $tmp.vqsr_snps.tranches -o $output");
+        $output = "$tmp.snps.vcf.gz";
+        $self->cmd("$$conf{jar} $$conf{recal_snps} -R $$self{fa_ref} --input $input -recalFile $tmp.snps.csv -tranchesFile $tmp.snps.tranches $tranches");
+        $self->cmd("$$conf{jar} $$conf{filter_snps} -R $$self{fa_ref} --input $input -recalFile $tmp.snps.csv -tranchesFile $tmp.snps.tranches -o $output");
         $self->cmd("tabix $output");
         $input = $output;
     }
     if ( exists($$conf{recal_indels}) )
     {
-        $output = "$tmp.vqsr_indels.vcf.gz";
-        $self->cmd("$$conf{jar} $$conf{recal_indels} -R $$self{fa_ref} --input $input -recalFile $tmp.vqsr_indels.csv -tranchesFile $tmp.vqsr_indels.tranches $tranches");
-        $self->cmd("$$conf{jar} $$conf{filter_indels} -R $$self{fa_ref} --input $input -recalFile $tmp.vqsr_indels.csv -tranchesFile $tmp.vqsr_indels.tranches -o $output");
+        $output = "$tmp.indels.vcf.gz";
+        $self->cmd("$$conf{jar} $$conf{recal_indels} -R $$self{fa_ref} --input $input -recalFile $tmp.indels.csv -tranchesFile $tmp.indels.tranches $tranches");
+        $self->cmd("$$conf{jar} $$conf{filter_indels} -R $$self{fa_ref} --input $input -recalFile $tmp.indels.csv -tranchesFile $tmp.indels.tranches -o $output");
         $self->cmd("tabix $output");
         $input = $output;
     }
@@ -1003,23 +1044,23 @@ sub concat_vcfs
 
 	if ( !exists($$self{filter}) )
 	{
-		Utils::relative_symlink($input,$concat_filt);
+		Utils::relative_symlink($input,$outfile);
+		Utils::relative_symlink("$input.tbi","$outfile.tbi");
 	}
 	else
 	{
-		$self->cmd("zcat $input | $$self{filter} | bgzip -c > $concat_filt.part");
-		$self->tabix_part($concat_filt);
+		$self->cmd("zcat $input | $$self{filter} | bgzip -c > $outfile.part");
+		$self->tabix_part($outfile);
 	}
-
-	$self->combine_vcfs($outfile,$concat_filt,$chunks_list);
 }
 
 # Combine VCFs so that the first 8 columns are taken from the sites file and the genotypes from the list.
 # The task is made more difficult by GATK changing indels.
-sub combine_vcfs
+sub combine_vqsr
 {
-	my ($self,$outfile,$sites,$file_list) = @_;
-	open(my $sites_fh,"gunzip -c $sites |") or $self->throw("gunzip -c $sites: $!");
+	my ($self,$outfile,$sites,$pop,$chr) = @_;
+    my $file_list = "$$self{outdir}/$pop/concat.list";
+	open(my $sites_fh,"tabix -h $sites $chr |") or $self->throw("tabix -h $sites $chr: $!");
 	open(my $out_fh,"| bgzip -c > $outfile.part") or $self->throw("bgzip -c > $outfile.part: $!");
 	open(my $files_fh,'<',$file_list) or $self->throw("$file_list: $!");
 	my ($gt_fh,$gt_file,$gt_line,$header_printed);
@@ -1028,11 +1069,11 @@ sub combine_vcfs
 		if ( substr($site_line,0,1) eq '#' ) { next; }
 		while ( !defined $gt_line )
 		{
-			if ( defined $gt_fh ) { close($gt_fh) or $self->throw("close gunzip -c $gt_file"); }
+			if ( defined $gt_fh ) { close($gt_fh) or $self->throw("close tabix -h $gt_file $chr"); }
 			$gt_file = <$files_fh>;
 			if ( !defined $gt_file ) { last; }
 			chomp($gt_file);
-			open($gt_fh,"gunzip -c $gt_file |") or $self->throw("gunzip -c $gt_file: $!");
+			open($gt_fh,"tabix -h $gt_file $chr |") or $self->throw("tabix -h $gt_file $chr: $!");
 			while ($gt_line=<$gt_fh>)
 			{
 				if ( substr($gt_line,0,1) ne '#' ) { last; }
@@ -1069,10 +1110,10 @@ sub combine_vcfs
 		print $out_fh substr($gt_line,$gt_idx);
 		$gt_line = <$gt_fh>;
 	}
-	close($gt_fh) or $self->throw("close gunzip -c $gt_file");
+	close($gt_fh) or $self->throw("close tabix -h $gt_file $chr");
 	close($files_fh) or $self->throw("close $file_list");
 	close($out_fh) or $self->throw("close bgzip -c > $outfile.part");
-	close($sites_fh) or $self->throw("close gunzip -c $sites");
+	close($sites_fh) or $self->throw("close tabix -h $sites $chr");
 	$self->tabix_part($outfile);
 }
 
