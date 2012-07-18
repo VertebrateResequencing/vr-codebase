@@ -368,10 +368,10 @@ sub run
 
     if($$options{logfile_output_directory})
     {
-      my $log_dir = $$options{logfile_output_directory}."/".time().'_'.int( rand(1000));
-      if ( !-e $log_dir ) { Utils::CMD("mkdir -p $log_dir"); }
-      $lsf_output_file = $log_dir.'/'.$lsf_output_file;
-      $lsf_error_file  = $log_dir.'/'.$lsf_error_file;
+        my $log_dir = $$options{logfile_output_directory}."/".time().'_'.int( rand(1000));
+        if ( !-e $log_dir ) { Utils::CMD("mkdir -p $log_dir"); }
+        $lsf_output_file = $log_dir.'/'.$lsf_output_file;
+        $lsf_error_file  = $log_dir.'/'.$lsf_error_file;
     }
 
     # Check if memory or queue should be changed (and change it)
@@ -385,8 +385,9 @@ sub run
     }
     my $jid  = $1;
     my $mode = exists($$options{append}) && !$$options{append} ? '>' : '>>';
+    if ( !($lsf_output_file=~m{^/}) ) { $lsf_output_file = "$work_dir/$lsf_output_file"; }
     open(my $jids_fh, $mode, $jids_file) or Utils::error("$jids_file: $!");
-    print $jids_fh "$jid\t$work_dir/$lsf_output_file\n";
+    print $jids_fh "$jid\t$lsf_output_file\n";
     close $jids_fh;
 
     if ( !$$options{dont_wait} )
@@ -399,12 +400,12 @@ sub run
         my $status   = $No;
         while ($max_wait>0)
         {
-            $status = job_in_queue($jid,"$work_dir/$lsf_output_file");
+            $status = job_in_queue($jid,"$lsf_output_file");
             if ( $status!=$No ) { last }
             sleep(2);
             $max_wait-=2;
         }
-        if ( $status==$No ) { Utils::error("The job $1 $work_dir/$lsf_output_file still not in queue??\n"); }
+        if ( $status==$No ) { Utils::error("The job $1 $lsf_output_file still not in queue??\n"); }
     }
 
     if ( $work_dir ) { chdir($cwd) or Utils::error("chdir \"$cwd\": $!"); }
