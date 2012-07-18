@@ -862,7 +862,7 @@ sub pseudo_genome_requires
 sub pseudo_genome_provides
 {
     my ($self,$dir) = @_;
-    my @provides = ('_pseudo_genome_done', 'pseudo_genome.fasta');
+    my @provides = ('pseudo_genome.done');
     return \@provides;
 }
 
@@ -895,10 +895,9 @@ use warnings;
 use Log::Log4perl qw(:easy);
 use Pathogens::Variant::Utils::PseudoReferenceMaker;
 
-#log verbosity is error messages only
-Log::Log4perl->easy_init(\$ERROR);
+#inits Log4perl and sets its log verbosity
+Log::Log4perl->easy_init(\$INFO);
 
-#set the default argument values
 my \%args = (
      out       => 'pseudo_genome.fasta'
    , bam       => '$single_bam_file'
@@ -909,7 +908,7 @@ my \%args = (
 my \$pseudo_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \\%args);
 \$pseudo_maker->create_pseudo_reference();
 
-system('touch _pseudo_genome_done');
+system('touch pseudo_genome.done');
 
 exit 0;
 ];
@@ -1513,7 +1512,7 @@ sub cleanup {
     # for each caller, we move the files we want to keep to the root directory
     # and the delete that caller's directory
     for my $task (keys %{$self->{task}}) {
-        next if ($task eq "update_db" or $task eq "cleanup");
+        next if ($task eq "update_db" or $task eq "cleanup" or $task eq "pseudo_genome");
          
         my @suffixes = qw(vcf.gz vcf.gz.stats vcf.gz.tbi);
 

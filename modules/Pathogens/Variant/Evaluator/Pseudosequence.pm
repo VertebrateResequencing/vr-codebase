@@ -65,24 +65,23 @@ use namespace::autoclean;
 
 
 
-has 'minimum_depth'          => ( is => 'rw', isa => 'Int', default => 4 );
-has 'minimum_depth_strand'   => ( is => 'rw', isa => 'Int', default => 2 );
-has 'minimum_ratio'          => ( is => 'rw', isa => 'Num', default => 0.8 );
-has 'minimum_quality'        => ( is => 'rw', isa => 'Int', default => 0 );
-has 'minimum_map_quality'    => ( is => 'rw', isa => 'Int', default => 1 );
+has 'minimum_depth'          => ( is => 'rw', isa => 'Int', lazy => 1, default => 4 );
+has 'minimum_depth_strand'   => ( is => 'rw', isa => 'Int', lazy => 1, default => 2 );
+has 'minimum_ratio'          => ( is => 'rw', isa => 'Num', lazy => 1, default => 0.8 );
+has 'minimum_quality'        => ( is => 'rw', isa => 'Int', lazy => 1, default => 0 );
+has 'minimum_map_quality'    => ( is => 'rw', isa => 'Int', lazy => 1, default => 1 );
 
 #this serves to evaluate positions where mapped isolate has an alternative allele (non ref.)
-has 'minimum_af1'            => ( is => 'rw', isa => 'Num', default => 0.95, trigger => \&_set_the_minimum_af1_complement );
+has 'minimum_af1'            => ( is => 'rw', isa => 'Num', lazy => 1, default => 0.95 );
 
 #this serves to evaluate positions where mapped isolate has the reference allele
-has '_minimum_af1_complement' => ( is => 'rw', isa => 'Num', default => 0.05);
+has '_minimum_af1_complement' => ( is => 'rw', isa => 'Num', lazy => 1, builder => '_build_minimum_af1_complement');
 
-has 'minimum_ci95'           => ( is => 'rw', isa => 'Num', default => 0.0 );
-has 'minimum_strand_bias'    => ( is => 'rw', isa => 'Num', default => 0.001 );
-has 'minimum_map_bias'       => ( is => 'rw', isa => 'Num', default => 0.001 );
-has 'minimum_tail_bias'      => ( is => 'rw', isa => 'Num', default => 0.001 );
-has 'minimum_base_quality_bias' => ( is => 'rw', isa => 'Num', default => 0.0 );
-
+has 'minimum_ci95'           => ( is => 'rw', isa => 'Num', lazy => 1, default => 0.0 );
+has 'minimum_strand_bias'    => ( is => 'rw', isa => 'Num', lazy => 1, default => 0.001 );
+has 'minimum_map_bias'       => ( is => 'rw', isa => 'Num', lazy => 1, default => 0.001 );
+has 'minimum_tail_bias'      => ( is => 'rw', isa => 'Num', lazy => 1, default => 0.001 );
+has 'minimum_base_quality_bias' => ( is => 'rw', isa => 'Num', lazy => 1, default => 0.0 );
 
 has '_event'               => ( is => 'rw', isa => 'Pathogens::Variant::Event');
 
@@ -90,6 +89,27 @@ has 'reporter'            => ( is => 'rw', isa => 'Pathogens::Variant::Evaluatio
 has '_dp4_parser'          => ( is => 'ro', isa => 'Pathogens::Variant::Utils::DP4Parser', lazy => 1, default => sub { return Pathogens::Variant::Utils::DP4Parser->new } );
 has '_event_manipulator'   => ( is => 'ro', isa => 'Pathogens::Variant::Utils::EventManipulator', lazy => 1, default => sub { return Pathogens::Variant::Utils::EventManipulator->new } );
 
+
+#runs only once after new() method 
+sub BUILD {
+    my ($self) = @_;
+ 
+    my $logger = get_logger("Pathogens::Variant::Evaluator::Pseudosequence");
+    
+    #total depth has to be at least twice larger than strand-depth
+    my $doubled_minimumDepthStrand = $self->minimum_depth_strand * 2;
+    if ( $self->minimum_depth < $doubled_minimumDepthStrand ) {        
+        $logger->is_info() && $logger->warn("Argument value for minimum depth must be >= 2x larger than minimum_depth_strand! Automatically increasing it to " .$doubled_minimumDepthStrand);
+        $self->minimum_depth($doubled_minimumDepthStrand);
+    }
+}
+
+#runs only once
+sub _build_minimum_af1_complement {
+    my ($self) = @_;
+
+    return 1 - $self->minimum_af1;
+}
 
 sub evaluate {
     my ($self, $event) = @_;
@@ -363,14 +383,6 @@ sub _is_not_an_indel {
 
         return 1;
     }
-}
-
-sub _set_the_minimum_af1_complement {
-    my ($self, $minimum_af1_value) = @_;
-
-    my $complement = 1 - $minimum_af1_value;
-    $self->_minimum_af1_complement($complement);
-    
 }
 
 __PACKAGE__->meta->make_immutable;

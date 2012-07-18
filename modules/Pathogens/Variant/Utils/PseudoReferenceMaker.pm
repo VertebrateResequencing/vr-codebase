@@ -76,7 +76,7 @@ sub _initialise {
     #the evaluator will help us decide, whether to keep an allele in the new pseudo-genome
     #by looking if the quality of a position in the VCF file is good enough
     my $evaluator = Pathogens::Variant::Evaluator::Pseudosequence->new;
-
+    
     $evaluator->reporter($reporter);
     
     $evaluator->minimum_depth($self->arguments->{depth})  
@@ -85,6 +85,7 @@ sub _initialise {
     $evaluator->minimum_depth_strand($self->arguments->{depth_strand})
         if ( exists $self->arguments->{depth_strand} );
  
+    
     $evaluator->minimum_ratio($self->arguments->{ratio})
         if ( exists $self->arguments->{ratio} );
 
@@ -234,7 +235,7 @@ sub _generate_tab_delimited_pseudo_reference_file {
 
         #optinal to monitor the progress whenever log-level is set to "INFO" (or lower)
         $processed_entries++;
-        $logger->info("Processed $processed_entries sites") unless $processed_entries % 10000;
+        $logger->info("Processed $processed_entries sites") unless $processed_entries % 500000;
 
     }
 
