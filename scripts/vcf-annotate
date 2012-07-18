@@ -655,10 +655,10 @@ sub fill_ac_an_hwe
             $$opts{icf} = $freq_exp ? 1-$freq_obs/$freq_exp : 0;
             $$opts{hwe} = eval_hwe(($max_ac-$nhets)/2,($dpl_counts{0}-$nhets)/2,$nhets ,$line);
             $tags{HWE} = sprintf "%.6f", $$opts{hwe};
-        }
-        if ( $$opts{fill_icf} )
-        {
-            $tags{ICF} = sprintf "%.5f", $$opts{icf};
+            if ( $$opts{fill_icf} )
+            {
+                $tags{ICF} = sprintf "%.5f", $$opts{icf};
+            }
         }
     }
     $$line[7] = $$opts{vcf}->add_info_field($$line[7],%tags);
