@@ -892,12 +892,12 @@ sub pseudo_genome {
     print $scriptfh qq[
 use strict;
 use warnings;
-use Log::Log4perl qw(:easy);
+use Log::Log4perl;
 use Pathogens::Variant::Utils::PseudoReferenceMaker;
 use Pathogens::Variant::Exception qw(:try);
 
 
-Log::Log4perl->init(\ qq{
+Log::Log4perl->init(\\ qq{
     log4perl.logger = INFO, AppInfo, AppError
 
     # Filter to match level WARN
@@ -923,7 +923,6 @@ Log::Log4perl->init(\ qq{
     log4perl.appender.AppInfo.Filter   = MatchInfo
 });
 
-
 my \$logger = get_logger();
 
 my \%args = (
@@ -934,17 +933,21 @@ my \%args = (
 );
 
 try {
+
     my \$pseudo_reference_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \\%args);
    \$pseudo_reference_maker->create_pseudo_reference();
    \$logger->info(\$pseudo_reference_maker->get_statistics_dump);
+
 } catch Error with {
+
     #print the error stacktrace
     my \$E = shift;
-    print STDERR \$E->stacktrace;
-    
+    \$logger->error(\$E->stacktrace);
+
     #clean up the files
-    $pseudo_reference_maker->_clean_up_the_temporary_files;
+    \$pseudo_reference_maker->_clean_up_the_temporary_files;
     unlink 'pseudo_genome.fasta' if -e 'pseudo_genome.fasta';
+
 };
 
 system('touch .pseudo_genome.done');
