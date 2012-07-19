@@ -862,7 +862,7 @@ sub pseudo_genome_requires
 sub pseudo_genome_provides
 {
     my ($self,$dir) = @_;
-    my @provides = ('pseudo_genome.done');
+    my @provides = ('.pseudo_genome.done');
     return \@provides;
 }
 
@@ -894,6 +894,7 @@ use strict;
 use warnings;
 use Log::Log4perl qw(:easy);
 use Pathogens::Variant::Utils::PseudoReferenceMaker;
+use Pathogens::Variant::Exception qw(:try);
 
 #inits Log4perl and sets its log verbosity
 Log::Log4perl->easy_init(\$INFO);
@@ -905,10 +906,15 @@ my \%args = (
    , lane_name => '$self->{lane}'
 );
 
-my \$pseudo_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \\%args);
-\$pseudo_maker->create_pseudo_reference();
+try {
+    my \$pseudo_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \\%args);
+   \$pseudo_maker->create_pseudo_reference();
+} catch Error with {
+    my \$E = shift;
+    print STDERR \$E->stacktrace;
+};
 
-system('touch pseudo_genome.done');
+system('touch .pseudo_genome.done');
 
 exit 0;
 ];
@@ -1461,10 +1467,11 @@ sub cleanup_requires {
 
     # need a done file from each caller
     for my $task (keys %{$self->{task}}) {
-        next if ($task eq "update_db" or $task eq "cleanup");
+        next if ($task eq "update_db" or $task eq "cleanup" or $task eq "pseudo_genome");
         push @requires, "$task.done";
     }
-
+   
+    push @requires, ".pseudo_genome.done";
     return \@requires;
 }
 
