@@ -25,7 +25,7 @@ use VertRes::QCGrind::Util;
 
 my $pending_view = "../pending-view/pending_view.pl";
 
-my $title = 'QC Breeze Lane Status Update';
+my $title = 'QC Grind Lane Status Update';
 my $sw  = SangerWeb->new({
     'title'   => $title,
     'banner'  => q(),
@@ -196,10 +196,10 @@ sub displayProjectLaneForm
 					my $lane_mapstats = getMapStats($lane);
 					if (%{$lane_mapstats}) {
 
-						next if $raw_bases_filt && $lane_mapstats->{raw_bases} < $raw_bases_filt;
-						next if $bases_mapped_filt && $lane_mapstats->{bases_mapped} < $bases_mapped_filt;
-						next if $duplication_filt && $lane_mapstats->{duplication} < $duplication_filt;
-						next if $rmdup_mapped_filt && $lane_mapstats->{rmdup_bases_mapped} < $rmdup_mapped_filt;
+                        next unless pass_filter($lane_mapstats->{raw_bases},$raw_bases_filt);
+                        next unless pass_filter($lane_mapstats->{bases_mapped},$bases_mapped_filt);
+                        next unless pass_filter($lane_mapstats->{duplication},$duplication_filt);
+                        next unless pass_filter($lane_mapstats->{rmdup_bases_mapped},$rmdup_mapped_filt);
 	
 						print qq[<tr>];
 
@@ -337,10 +337,10 @@ sub downloadLaneData {
 						my $gt_display = $gt_status;
 						$gt_display .= " ($gt_found:$gt_ratio)" if $gt_found;
 
-						next if $raw_bases_filt && $lane_mapstats->{raw_bases} < $raw_bases_filt;
-						next if $bases_mapped_filt && $lane_mapstats->{bases_mapped} < $bases_mapped_filt;
-						next if $duplication_filt && $lane_mapstats->{duplication} < $duplication_filt;
-						next if $rmdup_mapped_filt && $lane_mapstats->{rmdup_bases_mapped} < $rmdup_mapped_filt;
+                        next unless pass_filter($lane_mapstats->{raw_bases},$raw_bases_filt);
+                        next unless pass_filter($lane_mapstats->{bases_mapped},$bases_mapped_filt);
+                        next unless pass_filter($lane_mapstats->{duplication},$duplication_filt);
+                        next unless pass_filter($lane_mapstats->{rmdup_bases_mapped},$rmdup_mapped_filt);
 
 						print (join("\t",$iname,$sample_name,$libname,$lanename,$gt_display,$lane_qc_status,$npg_qc,$auto_qc_status,$lane_mapstats->{raw_bases},$lane_mapstats->{bases_mapped},$lane_mapstats->{duplication},$lane_mapstats->{rmdup_bases_mapped}),"\n");
 					}
@@ -369,7 +369,6 @@ sub getMapStats {
     }
     return \%lane_mapstats;
 }
-
 sub get_gt_status_colour
 {
 	my (($status,$iname,$gt_found)) = @_;
@@ -399,5 +398,28 @@ sub get_gt_status_colour
 		$status_colour="#F5F5F5";
 	}
 	return $status_colour;
+}
+
+sub pass_filter {
+#Check a numeric filter argument, optionally prefixed with '<','=' or '>', against a value
+#return 1 (pass) or 0 (fail)
+
+	my ($val,$filter) = @_;
+    return 1 unless $filter;
+
+    my $operand = $1 if $filter =~ s/^([<=>])//;
+    $operand ||= '>';
+
+    my $rc;
+    if ($operand eq '>') {
+        $rc = $val > $filter ? 1 : 0;
+    }
+    elsif ($operand eq '<') {
+        $rc = $val < $filter ? 1 : 0;
+    }
+    else {
+        $rc = $val == $filter ? 1 : 0;
+    }
+    return $rc;
 }
 
