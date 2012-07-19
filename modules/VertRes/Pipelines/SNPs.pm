@@ -896,7 +896,6 @@ use Log::Log4perl qw(get_logger);
 use Pathogens::Variant::Utils::PseudoReferenceMaker;
 use Pathogens::Variant::Exception qw(:try);
 
-
 Log::Log4perl->init(\\ qq{
     log4perl.logger = INFO, AppInfo, AppError
 
@@ -922,7 +921,6 @@ Log::Log4perl->init(\\ qq{
     log4perl.appender.AppInfo.layout   = SimpleLayout
     log4perl.appender.AppInfo.Filter   = MatchInfo
 });
-
 my \$logger = get_logger();
 
 my \%args = (
@@ -939,15 +937,11 @@ try {
    \$logger->info(\$pseudo_reference_maker->get_statistics_dump);
 
 } catch Error with {
-
-    #print the error stacktrace
     my \$E = shift;
     \$logger->error(\$E->stacktrace);
 
-    #clean up the files
     \$pseudo_reference_maker->_clean_up_the_temporary_files;
     unlink 'pseudo_genome.fasta' if -e 'pseudo_genome.fasta';
-
 };
 
 system('touch .pseudo_genome.done');
