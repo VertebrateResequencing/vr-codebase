@@ -896,8 +896,34 @@ use Log::Log4perl qw(:easy);
 use Pathogens::Variant::Utils::PseudoReferenceMaker;
 use Pathogens::Variant::Exception qw(:try);
 
-#inits Log4perl and sets its log verbosity
-Log::Log4perl->easy_init(\$INFO);
+
+Log::Log4perl->init(\ qq{
+    log4perl.logger = INFO, AppInfo, AppError
+
+    # Filter to match level WARN
+    log4perl.filter.MatchError = Log::Log4perl::Filter::LevelMatch
+    log4perl.filter.MatchError.LevelToMatch  = WARN
+    log4perl.filter.MatchError.AcceptOnMatch = true
+
+    # Filter to match level INFO
+    log4perl.filter.MatchInfo  = Log::Log4perl::Filter::LevelMatch
+    log4perl.filter.MatchInfo.LevelToMatch  = INFO
+    log4perl.filter.MatchInfo.AcceptOnMatch = true
+
+    # Error appender
+    log4perl.appender.AppError = Log::Log4perl::Appender::Screen
+    log4perl.appender.AppError.stderr   = 1
+    log4perl.appender.AppError.layout   = SimpleLayout
+    log4perl.appender.AppError.Filter   = MatchError
+
+    # Info appender
+    log4perl.appender.AppInfo = Log::Log4perl::Appender::Screen
+    log4perl.appender.AppInfo.stderr   = 0
+    log4perl.appender.AppInfo.layout   = SimpleLayout
+    log4perl.appender.AppInfo.Filter   = MatchInfo
+});
+
+
 my \$logger = get_logger();
 
 my \%args = (
