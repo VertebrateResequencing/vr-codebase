@@ -892,7 +892,7 @@ sub pseudo_genome {
     print $scriptfh qq[
 use strict;
 use warnings;
-use Log::Log4perl;
+use Log::Log4perl qw(get_logger);
 use Pathogens::Variant::Utils::PseudoReferenceMaker;
 use Pathogens::Variant::Exception qw(:try);
 
@@ -932,9 +932,9 @@ my \%args = (
    , lane_name => '$self->{lane}'
 );
 
+my \$pseudo_reference_maker;
 try {
-
-    my \$pseudo_reference_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \\%args);
+   \$pseudo_reference_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \\%args);
    \$pseudo_reference_maker->create_pseudo_reference();
    \$logger->info(\$pseudo_reference_maker->get_statistics_dump);
 
