@@ -61,6 +61,16 @@ has '_evaluator'      => (is => 'rw', isa => 'Pathogens::Variant::Evaluator::Pse
 has '_bam_parser'     => (is => 'rw', isa => 'Pathogens::Variant::Utils::BamParser', init_arg => undef );
 has '_output_filehandle_temporary_file' => (is => 'rw', isa => 'FileHandle', init_arg => undef );
 
+has '_files_to_be_cleaned_up_later' => (
+      traits  => ['Array']
+    , is      => 'ro'
+    , isa     => 'ArrayRef[Str]'
+    , default => sub {[]}
+    , handles => {
+            add_file_to_clean_up_list  => 'push'
+          , get_files_from_clean_up_list => 'elements'
+    }
+); 
 
 ######################################################################
 #initialise some objects and settings according to the given arguments
@@ -85,7 +95,6 @@ sub _initialise {
     $evaluator->minimum_depth_strand($self->arguments->{depth_strand})
         if ( exists $self->arguments->{depth_strand} );
  
-    
     $evaluator->minimum_ratio($self->arguments->{ratio})
         if ( exists $self->arguments->{ratio} );
 
@@ -146,9 +155,18 @@ sub create_pseudo_reference {
     #and the sequences are then concatenated end-to-end into a single string, and saved in fasta format.
     $self->_sort_and_merge_and_generate_final_output($temporary_tab_delimited_pseudo_reference_file);
 
-    unlink($temporary_tab_delimited_pseudo_reference_file);
-    unlink($temporary_vcf_file_with_all_mapped_positions);
+    $self->_clean_up_the_temporary_files;
+    
+}
 
+sub _clean_up_the_temporary_files {
+    my ($self) = @_;
+    
+    foreach my $temporary_file ( $self->get_files_from_clean_up_list ) {
+        if (-e $temporary_file) {
+            unlink($temporary_file);
+        }
+    }
 }
 
 sub _generate_tab_delimited_pseudo_reference_file {
@@ -166,6 +184,8 @@ sub _generate_tab_delimited_pseudo_reference_file {
     my ($file,$path,$suffix) = File::Basename::fileparse($self->arguments->{out}); # returns  ("baz", "/foo/bar/", ".txt") 
     my $temporary_tab_delimited_pseudo_reference_file = "$path/temporary.$file";
 
+    $self->add_file_to_clean_up_list($temporary_tab_delimited_pseudo_reference_file);
+    
     #open the filehandle for the temporary file
     my $filehandle;
     unless ( open( $filehandle, ">" . $temporary_tab_delimited_pseudo_reference_file ) ) {
@@ -384,7 +404,8 @@ sub _generate_vcf_file_with_all_reference_sites {
     my ($file,$path,$suffix) = File::Basename::fileparse($bam_file); # returns  ("baz", "/foo/bar/", ".txt") 
     my $temporary_vcf_file_with_all_mapped_positions = "$path/temporary.$file.vcf";
 
-
+    $self->add_file_to_clean_up_list($temporary_vcf_file_with_all_mapped_positions);
+    
     my $pipecmd = qq[samtools mpileup -d 1000 -DSugBf $reference_file $bam_file | bcftools view -cg - > $temporary_vcf_file_with_all_mapped_positions];
     $logger->debug($pipecmd);
 
