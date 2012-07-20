@@ -56,7 +56,7 @@ The BAM must be aligned to the same reference that the annotation refers to and 
 USAGE
 
 $output_base_filename ||= $sequence_file;
-$mapping_quality ||= 10;
+$mapping_quality ||= 1;
 my %filters = (mapping_quality => $mapping_quality);
 if(defined($bitwise_flag))
 {

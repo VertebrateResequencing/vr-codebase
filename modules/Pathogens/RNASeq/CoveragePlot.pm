@@ -74,7 +74,7 @@ sub _build__input_file_handle
   my $input_file_handle; 
   # TODO remove direct call to samtools and allow for filtering options
   # this only extracts the sequence name, base position, bases.
-  open($input_file_handle, '-|', $self->mpileup_cmd." -q ".$self->mapping_quality." " $self->filename.' | awk \'{print $1"\t"$2"\t"$5}\'') || Pathogens::RNASeq::Exceptions::FailedToCreateMpileup->throw(error => "Failed to create mpileup for ".$self->filename );
+  open($input_file_handle, '-|', $self->mpileup_cmd." -A -q ".$self->mapping_quality." " $self->filename.' | awk \'{print $1"\t"$2"\t"$5}\'') || Pathogens::RNASeq::Exceptions::FailedToCreateMpileup->throw(error => "Failed to create mpileup for ".$self->filename );
   return $input_file_handle;
 }
 
