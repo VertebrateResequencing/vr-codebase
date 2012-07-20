@@ -157,7 +157,7 @@ sub _create_expression_job
   my $total_memory_mb = 3000;
   
   my($action_lock_filename, $directories, $suffix) = fileparse($action_lock);
-  my $sequencing_file_action_lock = $self->{lane_path}.'/'.$sequencing_filename.$action_lock_filename;
+  my $sequencing_file_action_lock = $self->{lane_path}.'/'.$self->{prefix}.$sequencing_filename.$action_lock_filename;
 
   my $mpileup_str  = "";
   if(defined ($self->{mpileup_cmd}))
