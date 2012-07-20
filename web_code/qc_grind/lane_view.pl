@@ -291,7 +291,7 @@ sub displayLane
                         exomeQC.coverage_per_base.png);
             } 
             else{
-                @i = keys %images;
+                @i = sort keys %images;
                 #@i = sort( { $a->name() cmp $b->name() } @{$images} );
             }
 
@@ -418,6 +418,48 @@ sub displayLane
                 ];
             }
         }
+
+        # auto qc failure reasons
+        my @autoqc_statuses = @{ $mapstats->autoqcs() };
+        if (@autoqc_statuses) {
+            print qq[
+            <br/>
+            <div class="centerFieldset">
+            <fieldset style="width: 80%">
+            <legend>AutoQC Failure Reasons</legend>
+	    <table width="80%" align="center">
+            <thead>
+            <tr>
+                <th align="left">Test</td>
+                <th align="left">Status</td>
+                <th align="left">Reason</td>
+            </tr>
+            </thead>
+            <tbody>
+            ];
+    
+            foreach my $autoqc (@autoqc_statuses) {
+                next if $autoqc->result eq '1' || $autoqc->current_run eq '0';
+                my $test = $autoqc->test;
+                my $result = $autoqc->result;
+                my $reason = $autoqc->reason;
+                print qq[
+            <tr>
+                <td align="left">$test</td>
+                <td align="left">$result</td>
+                <td align="left">$reason</td>
+            </tr>
+            ];
+            }
+	
+	    print qq[
+            </tbody>
+	    </table>
+            </fieldset>
+            </div>
+            ];
+        }
+
         print qq[
         <br/>
         <div class="centerFieldset">
