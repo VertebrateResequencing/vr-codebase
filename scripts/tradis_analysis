@@ -21,6 +21,10 @@ use strict;
 use warnings;
 no warnings 'uninitialized';
 use Getopt::Long;
+
+use lib "/software/pathogen/internal/pathdev/vr-codebase/modules"; #Change accordingly once we have a stable checkout
+use lib "/software/vertres/lib/all";
+use lib "/software/pathogen/internal/prod/lib";
 use Pathogens::RNASeq::Insertions;
 use Pathogens::RNASeq::InsertSite;
 
