@@ -102,17 +102,18 @@ sub new
     $$self{_nretries} = 1;
     $$self{usage} = 
         "Runner.pm arguments:\n" .
-        "   +help               Summary of commands\n" .
-        "   +config <file>      Configuration file\n" .
-        "   +local              Do not submit jobs to LSF, but run serially\n" .
-        "   +loop <int>         Run in daemon mode with <int> sleep intervals\n" .
-        "   +mail <address>     Email when the runner finishes\n" .
-        "   +maxjobs <int>      Maximum number of simultaneously running jobs\n" .
-        "   +retries <int>      Maximum number of retries. When negative, the runner eventually skips the task rather than exiting completely. [$$self{_nretries}]\n" .
-        "   +run <file>         Run the freezed object created by spawn\n" .
-        "   +sampleconf         Print a working configuration example\n" .
-        "   +show <file>        Print the content of the freezed object created by spawn\n" .
-        "   +verbose            Print debugging messages\n" .
+        "   +help                   Summary of commands\n" .
+        "   +config <file>          Configuration file\n" .
+        "   +debug <file1> <file2>  Run the freezed object <file1> overriding with keys from <file2>\n" .
+        "   +local                  Do not submit jobs to LSF, but run serially\n" .
+        "   +loop <int>             Run in daemon mode with <int> sleep intervals\n" .
+        "   +mail <address>         Email when the runner finishes\n" .
+        "   +maxjobs <int>          Maximum number of simultaneously running jobs\n" .
+        "   +retries <int>          Maximum number of retries. When negative, the runner eventually skips the task rather than exiting completely. [$$self{_nretries}]\n" .
+        "   +run <file>             Run the freezed object created by spawn\n" .
+        "   +sampleconf             Print a working configuration example\n" .
+        "   +show <file>            Print the content of the freezed object created by spawn\n" .
+        "   +verbose                Print debugging messages\n" .
         "\n";
     return $self;
 }
@@ -123,6 +124,8 @@ sub new
     Args  : The system command line options are prefixed by "+" to distinguish from user-module options and must come first, before the user-module options 
                 +config <file>
                     Optional configuration file for overriding defaults
+				+debug <file1> <file2>
+					Run the freezed object <file1> overriding with keys from <file2>
                 +help
                     Summary of commands
                 +local
@@ -174,6 +177,13 @@ sub run
         { 
             $arg = shift(@ARGV);
             $self->_revive($arg);
+            exit;
+        }
+        if ( $arg eq '+debug' ) 
+        { 
+            my $file1 = shift(@ARGV);
+			my $file2 = shift(@ARGV);
+            $self->_revive($file1,$file2);
             exit;
         }
         unshift(@ARGV,$arg);
@@ -553,15 +563,22 @@ sub is_finished
     return $all_finished;
 }
 
-# Run the freezed object created by spawn
+# Run the freezed object created by spawn. The $config_file argument can supply custom
+#	settings for overriding and debugging settings in the freezed file.
 sub _revive
 {
-    my ($self,$freeze_file) = @_;
+    my ($self,$freeze_file,$config_file) = @_;
 
     my $back = retrieve($freeze_file);
     if ( $$self{clean} ) { unlink($freeze_file); }
 
     while (my ($key,$value) = each %$back) { $$self{$key} = $value; }
+
+	if ( defined $config_file )
+	{
+		my %x = do "$config_file";
+		while (my ($key,$value) = each %x) { $$self{$key} = $value; }
+	}
 
     my $code = $self->can($$self{_store}{call});
     &$code($self,@{$$self{_store}{args}});
