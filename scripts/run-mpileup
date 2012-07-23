@@ -991,7 +991,7 @@ sub concat_vcfs
 	}
 	close($fh) or $self->throw("close $chunks_list");
 
-	$self->cmd("vcf-concat -f $chunks_list | bgzip -c > $outfile.part");
+	$self->cmd("vcf-concat -p -f $chunks_list | bgzip -c > $outfile.part");
 	$self->tabix_part($outfile);
 }
 
@@ -1054,6 +1054,31 @@ sub run_vqsr
 	}
 }
 
+sub pad_columns
+{
+	my ($self,$cols1,$cols2) = @_;
+	if ( @$cols1<@$cols2 ) { $self->throw(sprintf "Not ready for this, sorry, expected fewer columns (%d!<%d)", @$cols1,@$cols2); }
+	my $has1 = {};
+	my $has2 = {};
+	for (my $i=0; $i<@$cols1; $i++) { $$has1{$$cols1[$i]} = $i; }
+	my $need_map = 0;
+	for (my $i=0; $i<@$cols2; $i++) 
+	{
+		if ( !exists($$has1{$$cols2[$i]}) ) { $self->throw("The column [$$cols2[$i]] not seen previously."); }
+		if ( $i != $$has1{$$cols2[$i]} ) { $need_map=1; }
+		$$has2{$$cols2[$i]} = $i; 
+	}
+	if ( @$cols1==@$cols2 && !$need_map ) { return undef; }
+	my @map;
+	for (my $i=0; $i<@$cols1; $i++)
+	{
+		my $cname = $$cols1[$i];
+		push @map, exists($$has2{$cname}) ? $$has2{$cname} : -1;
+	}
+	return \@map;
+}
+
+
 # Combine VCFs so that the first 8 columns are taken from the sites file and the genotypes from the list.
 # The task is made more difficult by GATK changing indels.
 sub combine_vqsr
@@ -1063,23 +1088,47 @@ sub combine_vqsr
 	open(my $sites_fh,"tabix -h $sites $chr |") or $self->throw("tabix -h $sites $chr: $!");
 	open(my $out_fh,"| bgzip -c > $outfile.part") or $self->throw("bgzip -c > $outfile.part: $!");
 	open(my $files_fh,'<',$file_list) or $self->throw("$file_list: $!");
-	my ($gt_fh,$gt_file,$gt_line,$header_printed);
+	my ($gt_fh,$gt_file,$gt_line,$header_printed,@columns,@header,$column_map);
 	while (my $site_line=<$sites_fh>)
 	{
-		if ( substr($site_line,0,1) eq '#' ) { next; }
+		if ( substr($site_line,0,1) eq '#' ) 
+		{ 
+			if ( $header_printed ) { next; }
+			if ( substr($site_line,1,1) eq '#' ) { push @header,$site_line; }	# this header contains GATK's filters
+			next; 
+		}
 		while ( !defined $gt_line )
 		{
-			if ( defined $gt_fh ) { close($gt_fh) or $self->throw("close tabix -h $gt_file $chr"); }
+			if ( defined $gt_fh ) 
+			{ 
+				close($gt_fh) or $self->throw("close tabix -h $gt_file $chr"); 
+				$gt_fh = undef;
+			}
 			$gt_file = <$files_fh>;
 			if ( !defined $gt_file ) { last; }
 			chomp($gt_file);
+			if ( $header_printed && $chr ne '.' && ($gt_file=~m{/?([^:/]+):[^/]+.vcf.gz$}) ) 
+			{ 
+				# different chromosome, skip
+				if ( $chr ne $1 ) { next; } 
+			}
 			open($gt_fh,"tabix -h $gt_file $chr |") or $self->throw("tabix -h $gt_file $chr: $!");
 			while ($gt_line=<$gt_fh>)
 			{
-				if ( substr($gt_line,0,1) ne '#' ) { last; }
-				if ( $header_printed ) { next; }
-				if ( substr($gt_line,1,1) ne '#' ) { $header_printed = 1; }
-				print $out_fh $gt_line;
+				if ( substr($gt_line,0,1) ne '#' ) { last; }	# data line
+				if ( substr($gt_line,1,1) eq '#' ) { next; }	# header line
+				
+				# column line
+				my @cols = split(/\t/,$gt_line);
+				if ( !$header_printed )
+				{
+					@columns = @cols;
+					print $out_fh @header;
+					print $out_fh $gt_line;
+					$header_printed = 1;
+					next;
+				}
+				$column_map = $self->pad_columns(\@columns,\@cols);
 			}
 		}
 		if ( !defined $gt_line ) { $self->throw("Out of sync: no gt_line in $gt_file after $site_line"); }
@@ -1107,7 +1156,22 @@ sub combine_vqsr
 		else { $gt_idx = $site_idx; }
 		print $out_fh substr($site_line,0,-1);
 		for (my $i=0; $i<3; $i++) { $gt_idx = index($gt_line,"\t",$gt_idx+1); }
-		print $out_fh substr($gt_line,$gt_idx);
+		if ( !defined $column_map )
+		{
+			print $out_fh substr($gt_line,$gt_idx);
+		}
+		else
+		{
+			my @cols = split(/\t/,substr($gt_line,$gt_idx+1));
+			chomp($cols[-1]);
+			for (my $i=8; $i<@$column_map; $i++)
+			{
+				my $idx = $$column_map[$i];
+				if ( $idx==-1 ) { print $out_fh "\t."; }
+				else { print $out_fh "\t",$cols[$idx-8]; }
+			}
+			print $out_fh "\n";
+		}
 		$gt_line = <$gt_fh>;
 	}
 	close($gt_fh) or $self->throw("close tabix -h $gt_file $chr");
