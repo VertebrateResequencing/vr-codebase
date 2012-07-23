@@ -92,6 +92,10 @@ sub _count_insertions_in_feature
    my %feature_insertion_details ;
    $feature_insertion_details{pos_insert_sites} = 0;
    $feature_insertion_details{neg_insert_sites} = 0;
+   $feature_insertion_details{zero_insert_sites} = 0;
+   $feature_insertion_details{neg_insert_site_reads} = 0;
+   $feature_insertion_details{pos_insert_site_reads} = 0;
+   $feature_insertion_details{zero_insert_site_reads}  = 0;
    
    my $i=0;
    my $insert_sites = 0;
@@ -102,25 +106,25 @@ sub _count_insertions_in_feature
       {
         if(defined($self->_frequency_of_read_start->{$seqid}{$i}{"1"}) && $self->_frequency_of_read_start->{$seqid}{$i}{"1"} > 0)
         {
-          $insert_site++;
+          $insert_sites++;
           $insert_site_reads += $self->_frequency_of_read_start->{$seqid}{$i}{"1"} ;
         }
 
        if(defined($self->_frequency_of_read_start->{$seqid}{$i}{"-1"}) && $self->_frequency_of_read_start->{$seqid}{$i}{"-1"} > 0)
        {
-         $insert_site++;
+         $insert_sites++;
          $insert_site_reads += $self->_frequency_of_read_start->{$seqid}{$i}{"-1"} ;
        }
      }
    }
    my $length  = (($feature->gene_end +1) - $feature->gene_start);
    
-   if($feature->strand == -1)
+   if($feature->gene_strand == -1)
    {
      $feature_insertion_details{neg_insert_sites} = $insert_sites;
      $feature_insertion_details{neg_insert_site_reads} = $insert_site_reads;
    }
-   elsif($feature->strand == 1)
+   elsif($feature->gene_strand == 1)
    {
      $feature_insertion_details{pos_insert_sites} = $insert_sites;
      $feature_insertion_details{pos_insert_site_reads} = $insert_site_reads;

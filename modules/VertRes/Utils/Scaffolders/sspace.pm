@@ -86,17 +86,23 @@ sub run_sspace
 sub get_insert_size
 {
   my ($self) = @_;
+  my $insert_size = 350;
   open(BAMCHECK, $self->{assembled_file_directory}."/contigs.mapped.sorted.bam.bc") or $self->throw("couldnt find bamcheck file to get insert size for scaffolding");
   while(<BAMCHECK>)
   {
     my $line = $_;
     if($line =~ m/insert size average:\t([\d]+)/)
     {
-      return $1;
+      my $bamcheck_insert_size = $1;
+      if($bamcheck_insert_size > 100)
+      {
+        $insert_size = $bamcheck_insert_size;
+      }
+      return $insert_size;
     }
   }
   # sensible default
-  return 350;
+  return $insert_size;
 }
 
 
