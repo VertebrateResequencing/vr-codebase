@@ -36,6 +36,7 @@ sub new {
 		'ylx' => "Yali Xue from Chris's group",
 		'ak6' => 'Anja Kolb-Kokocinski (kuusamo)',
 		'cj5' => 'chris joyce',
+		'kw10' => 'Kim Wong',
 	};
 
     $self->{CSS} = <<CSS ;
