@@ -32,8 +32,6 @@ sub new
     $$self{whole_genome_bams} = 1;
     $$self{_sampleconf} = q[
             # Add -P ILLUMINA or -P SLX if the BAMs contain also reads from different platforms. 
-            #   The options -m2 -F0.0005 are intended for hundred of samples, go with the mpileup's
-            #   defaults if you don't have that many.
             mpileup  => '/nfs/users/nfs_p/pd3/sandbox/svn/samtools/singletons/samtools-qsum mpileup -EDVS -C50 -pm3 -F0.2 -d 10000',
             bcftools => '/nfs/users/nfs_p/pd3/sandbox/svn/samtools/singletons/bcftools-qsum view -Ngvm0.99',
             
