@@ -286,7 +286,9 @@ sub main
     }
     $self->wait;
     $self->set_limits(runtime=>undef);
-
+    
+    $$self{shuffle_chunks} = 0; # chunks need to be in genomic order from here on
+    
     # Create the merged set if there are more population groups (pooled + two others)
     if ( $$self{merge_pops} && scalar keys %{$$self{pops}} > 2 )
     {
@@ -878,7 +880,10 @@ sub write_annot_file
 {
 	my ($self) = @_;
 
-	$$self{annot_file} = "$$self{outdir}/annot.pl";
+    if ( !exists($$self{annot_file}) ) 
+    { 
+        $$self{annot_file} = "$$self{outdir}/annot.pl";
+    }
 	if ( -e $$self{annot_file} ) { return; }
 
 	open(my $fh,'>',$$self{annot_file}) or $self->throw("$$self{annot_file}: $!");
