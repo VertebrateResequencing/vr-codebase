@@ -359,7 +359,7 @@ sub main
 				for my $chr (@chroms) 
 				{ 
 					my $outfile = "$outdir/$pop/$chr.vcf.gz";
-					$self->spawn('concat_vcfs',$outfile,$pop,$chunks); 
+					$self->spawn('concat_vcfs',$outfile,$pop,$chr,$chunks);
 					push @vcfs, $outfile;
 				} 
 			}
