@@ -228,6 +228,7 @@ sub _read_config
     {
         $self->throw("No config file parameters are accepted by this script.");
     }
+	if ( !-e $config ) { $self->throw("The file does not exist: $config\n"); }
 
     my %x = do "$config";
     while (my ($key,$value) = each %x)

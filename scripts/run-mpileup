@@ -30,7 +30,11 @@ sub new
     $$self{debug_chunks} = 0;
     $$self{merge_pops} = 0;
     $$self{whole_genome_bams} = 1;
+	$$self{config_version} = '47417d8';
     $$self{_sampleconf} = q[
+            # For sanity checking that your config file is not obsolete
+            version  => '] .$$self{config_version}. q[',
+
             # Add -P ILLUMINA or -P SLX if the BAMs contain also reads from different platforms. 
             mpileup  => '/nfs/users/nfs_p/pd3/sandbox/svn/samtools/singletons/samtools-qsum mpileup -EDVS -C50 -pm3 -F0.2 -d 10000',
             bcftools => '/nfs/users/nfs_p/pd3/sandbox/svn/samtools/singletons/bcftools-qsum view -Ngvm0.99',
@@ -42,7 +46,7 @@ sub new
             limits   => { runtime=>24*60 },
             do_clean => 1,         # Remove runner's temporary files
 
-			merge_chroms => 0,	# Create whole-genome VCF? This can produce *huge* files for thousands of samples
+            merge_chroms => 0,     # Create whole-genome VCF? This can produce *huge* files for thousands of samples
 
             ploidy   =>
             {
@@ -149,6 +153,10 @@ sub parse_args
     if ( !exists($$self{outdir}) ) { $self->throw("Expected -o option."); }
 
     # This lengthy code checks if mandatory parameters are present and fills the defaults issuing warnings when doing so.
+	if ( !exists($$self{version}) or $$self{version} ne $$self{config_version} )
+	{
+		$self->warn("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
+	}
     if ( !exists($$self{bams}) ) { $self->throw("The 'bams' config key not present\n"); }
     if ( !exists($$self{mysql}) && !$$self{assumed_sex} && !$$self{sample_list} ) { $self->throw("None of the config keys 'mysql', 'assumed_sex' or 'sample_list' present\n"); }
     if ( !exists($$self{chroms}) ) 
