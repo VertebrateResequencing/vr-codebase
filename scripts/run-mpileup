@@ -32,7 +32,8 @@ sub new
     $$self{whole_genome_bams} = 1;
 	$$self{config_version} = '47417d8';
     $$self{_sampleconf} = q[
-            # For sanity checking that your config file is not obsolete
+            # For sanity checking that your config file is not obsolete. Update the version key in your 
+            #  config file to get rid of the warnings.
             version  => '] .$$self{config_version}. q[',
 
             # Add -P ILLUMINA or -P SLX if the BAMs contain also reads from different platforms. 
