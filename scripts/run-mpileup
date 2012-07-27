@@ -1003,7 +1003,8 @@ sub concat_vcfs
 	}
 	close($fh) or $self->throw("close $chunks_list");
 
-	$self->cmd("vcf-concat -p -f $chunks_list | bgzip -c > $outfile.part");
+	my $filter = exists($$self{filter}) ? "| $$self{filter}" : '';
+	$self->cmd("vcf-concat -p -f $chunks_list $filter | bgzip -c > $outfile.part");
 	$self->tabix_part($outfile);
 }
 
