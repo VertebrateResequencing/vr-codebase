@@ -986,6 +986,12 @@ sub write_annot_file
 	close($fh);
 }
 
+sub chunk_sort
+{
+	if ($$a{chr} eq $$b{chr}) { return $$a{from}<=>$$b{from} }
+	return $$a{chr} cmp $$b{chr};
+}
+
 sub concat_vcfs
 {
 	my ($self,$outfile,$pop,$chr,$chunks) = @_;
@@ -994,12 +1000,12 @@ sub concat_vcfs
 	my $chunks_list = "$outdir/$pop/$chr/concat.list";
 
 	open(my $fh,'>',$chunks_list) or $self->throw("$chunks_list: $!");
-	for my $chunk (sort { $$a{from}<=>$$b{from} } @$chunks)
+	for my $chunk (sort chunk_sort @$chunks)
 	{
 		if ( $chr ne '.' && $$chunk{chr} ne $chr ) { next; }
 		my $from = $$chunk{from};
 		my $to   = $$chunk{to};
-		print $fh "$outdir/$pop/$chr/$chr:$from-$to.vcf.gz\n";
+		print $fh "$outdir/$pop/$$chunk{chr}/$$chunk{chr}:$from-$to.vcf.gz\n";
 	}
 	close($fh) or $self->throw("close $chunks_list");
 
