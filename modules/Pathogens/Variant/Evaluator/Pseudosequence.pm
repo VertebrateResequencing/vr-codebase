@@ -99,7 +99,7 @@ sub BUILD {
     #total depth has to be at least twice larger than strand-depth
     my $doubled_minimumDepthStrand = $self->minimum_depth_strand * 2;
     if ( $self->minimum_depth < $doubled_minimumDepthStrand ) {        
-        $logger->warn() && $logger->warn("Argument value for minimum depth must be >= 2x larger than minimum_depth_strand! Automatically increasing it to " .$doubled_minimumDepthStrand);
+        $logger->is_warn() && $logger->warn("Argument value for minimum depth must be >= 2x larger than minimum_depth_strand! Automatically increasing it to " .$doubled_minimumDepthStrand);
         $self->minimum_depth($doubled_minimumDepthStrand);
     }
 }
