@@ -67,9 +67,9 @@ use namespace::autoclean;
 
 has 'minimum_depth'          => ( is => 'rw', isa => 'Int', lazy => 1, default => 4 );
 has 'minimum_depth_strand'   => ( is => 'rw', isa => 'Int', lazy => 1, default => 2 );
-has 'minimum_ratio'          => ( is => 'rw', isa => 'Num', lazy => 1, default => 0.8 );
-has 'minimum_quality'        => ( is => 'rw', isa => 'Int', lazy => 1, default => 0 );
-has 'minimum_map_quality'    => ( is => 'rw', isa => 'Int', lazy => 1, default => 1 );
+has 'minimum_ratio'          => ( is => 'rw', isa => 'Num', lazy => 1, default => 0.75 );
+has 'minimum_quality'        => ( is => 'rw', isa => 'Int', lazy => 1, default => 50 );
+has 'minimum_map_quality'    => ( is => 'rw', isa => 'Int', lazy => 1, default => 30 );
 
 #this serves to evaluate positions where mapped isolate has an alternative allele (non ref.)
 has 'minimum_af1'            => ( is => 'rw', isa => 'Num', lazy => 1, default => 0.95 );
@@ -99,7 +99,7 @@ sub BUILD {
     #total depth has to be at least twice larger than strand-depth
     my $doubled_minimumDepthStrand = $self->minimum_depth_strand * 2;
     if ( $self->minimum_depth < $doubled_minimumDepthStrand ) {        
-        $logger->is_info() && $logger->warn("Argument value for minimum depth must be >= 2x larger than minimum_depth_strand! Automatically increasing it to " .$doubled_minimumDepthStrand);
+        $logger->warn() && $logger->warn("Argument value for minimum depth must be >= 2x larger than minimum_depth_strand! Automatically increasing it to " .$doubled_minimumDepthStrand);
         $self->minimum_depth($doubled_minimumDepthStrand);
     }
 }
