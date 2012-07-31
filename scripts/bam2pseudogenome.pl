@@ -132,8 +132,4 @@ Optional parameters:
 exit unless ( Getopt::Declare->new($specification) );
 
 my $pseudo_maker = Pathogens::Variant::Utils::PseudoReferenceMaker->new(arguments => \%args);
-
 $pseudo_maker->create_pseudo_reference();
-print "Evaluation statistics:\n";
-print $pseudo_maker->get_statistics_dump();
-print "\n";
