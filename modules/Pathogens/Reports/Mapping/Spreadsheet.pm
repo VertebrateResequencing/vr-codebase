@@ -15,7 +15,7 @@ sub _build__headers
 {
     my($self) = @_;
     my @headers = ('Study ID','Sample', 'Lane','Cycles','Yield (Reads)','Yield (Bases)','Type (QC/Mapping)',
-		   'Reference','Reference Size','Mapper','Adapter (%)','Transposon (%)','Mapped (%)','Paired (%)',
+		   'Reference','Reference Size','Mapper','Mapstats ID','Adapter (%)','Transposon (%)','Mapped (%)','Paired (%)',
 		   'Mean Insert Size','Genome Covered (%)','Genome Covered (% >= 1X)','Genome Covered (% >= 5X)',
 		   'Genome Covered (% >= 10X)','Genome Covered (% >= 50X)','Genome Covered (% >= 100X)',
 		   'Depth of Coverage (X)','Depth of Coverage StdDev (X)','Duplication Rate','Error Rate','NPG QC','Manual QC');
@@ -26,7 +26,7 @@ sub _build__columns
 {
     my($self) = @_;
     my @columns = ('study_id','sample','lanename','cycles','reads','bases','map_type',
-		   'reference','reference_size','mapper','adapter_perc','transposon_perc','mapped_perc','paired_perc',
+		   'reference','reference_size','mapper','mapstats_id','adapter_perc','transposon_perc','mapped_perc','paired_perc',
 		   'mean_insert_size','genome_covered','genome_covered_1x','genome_covered_5x',
 		   'genome_covered_10x','genome_covered_50x','genome_covered_100x',
 		   'depth_of_coverage','depth_of_coverage_sd','duplication_rate','error_rate','npg_qc','manual_qc');          
