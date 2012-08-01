@@ -28,6 +28,7 @@ has 'map_type'            => ( is => 'ro', isa => 'Str',        lazy_build => 1)
 has 'reference'           => ( is => 'ro', isa => 'Str',        lazy_build => 1); # reference name
 has 'reference_size'      => ( is => 'ro', isa => 'Int',        lazy_build => 1); # reference size
 has 'mapper'              => ( is => 'ro', isa => 'Str',        lazy_build => 1); # mapper name
+has 'mapstats_id'         => ( is => 'ro', isa => 'Int',        lazy_build => 1); # mapstats id
 has 'adapter_perc'        => ( is => 'rw', isa => 'Maybe[Num]', lazy_build => 1); # percent adaptor reads
 has 'transposon_perc'     => ( is => 'rw', isa => 'Maybe[Num]', lazy_build => 1); # percent transposon reads
 has 'mapped_perc'         => ( is => 'ro', isa => 'Num',        lazy_build => 1); # percent mapped reads
@@ -157,6 +158,12 @@ sub _build_mapper
 {
     my($self) = @_;
     return $self->mapstats->mapper->name();
+}
+
+sub _build_mapstats_id
+{
+    my($self) = @_;
+    return $self->mapstats->id();
 }
 
 sub _build_adapter_perc

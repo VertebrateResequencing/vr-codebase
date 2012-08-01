@@ -121,7 +121,7 @@ sub generate_stats
   for my $file(@files)
   {
     next unless(-e $directory.'/'.$file);
-    system("stats $directory/$file > $directory/$file.stats");
+    system("assembly_stats_mh12 $directory/$file > $directory/$file.stats");
     system("/software/pathogen/external/bin/seqstat $directory/$file > $directory/$file.seqstat");
     # Use the GC plots from the QC pipeline instead
     system("~mh12/git/python/fastn2gc.py $directory/$file $directory/$file.png");
