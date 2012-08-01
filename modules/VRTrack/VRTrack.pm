@@ -1242,6 +1242,8 @@ sub transaction {
             $success = 1;
             if ($objects) {
                 OBJLOOP: foreach my $obj (@$objects) {
+                    next unless $obj;
+                    
                     # really make sure that the database values match the
                     # instance values
                     $obj->can('fields_dispatch') || next;
