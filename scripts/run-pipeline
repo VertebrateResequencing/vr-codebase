@@ -960,6 +960,8 @@ sub get_mapping_jobs_from_vrtrack {
         }
         $count++;
         
+        last if(exists($$config_data{max_lanes}) && $count > $$config_data{max_lanes} );
+        
         if ($coverage_opts) {
             my $coverage = $hu->hierarchy_coverage(lane => $lane_name, %{$coverage_opts->{pass_through}});
             next unless $coverage >= $coverage_opts->{limit};
