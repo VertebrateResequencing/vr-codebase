@@ -70,15 +70,16 @@ $study = get_study($db, $sql_select_project_names) unless $study;
 #connection to warehouse
 my $dbh = DBI->connect("DBI:mysql:host=mcs7:port=3306;database=warehouse_two_production", "warehouse_ro", undef, {'RaiseError' => 1, 'PrintError'=>0});
 #mapping sql
-my $sql = "select distinct ifnull(csa.supplier_name, 'N/A'), ifnull(csa.sanger_sample_id, 'N/A'), ifnull(csa.accession_number, 'N/A') 
+my $na = "'N/A'";
+my $sql = "select distinct ifnull(csa.supplier_name, $na), ifnull(csa.name, $na), ifnull(csa.sanger_sample_id, $na), ifnull(csa.accession_number, $na) 
 	        from current_samples csa, study_samples sta, current_studies cst where csa.internal_id = sta.sample_internal_id 
 	        and sta.study_internal_id = cst.internal_id and cst.name = ?"; 
 
 #fetch mappings and write to file
-my ($supp_name, $sanger_name, $acc);
+my ($supp_name, $name, $sanger_name, $acc);
 my $sth = $dbh->prepare($sql);
 $sth->execute($study);
-$sth->bind_columns(undef, \$supp_name, \$sanger_name, \$acc);
+$sth->bind_columns(undef, \$supp_name, \$name, \$sanger_name, \$acc);
 
 my $date = strftime "%Y-%m-%d", localtime;
 my $time = strftime "%H:%M:%S", localtime;
@@ -91,6 +92,7 @@ open OUTFILE, '>', $outfile;
 print OUTFILE "## sample mappings for $study, taken at $time on $date.\n";
 print OUTFILE "Supplier_id\tSanger_sample_id\tSample_accession\n";
 while ($sth->fetch()) {
+	$sanger_name = $name if $na =~ m/$sanger_name/;
 	print OUTFILE "$supp_name\t$sanger_name\t$acc\n";
 }
 close OUTFILE;
