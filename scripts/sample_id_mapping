@@ -70,9 +70,9 @@ $study = get_study($db, $sql_select_project_names) unless $study;
 #connection to warehouse
 my $dbh = DBI->connect("DBI:mysql:host=mcs7:port=3306;database=warehouse_two_production", "warehouse_ro", undef, {'RaiseError' => 1, 'PrintError'=>0});
 #mapping sql
-my $sql = "select distinct (csa.supplier_name), ifnull(csa.sanger_sample_id, 'N/A'), ifnull(csa.accession_number, 'N/A') 
+my $sql = "select distinct ifnull(csa.supplier_name, 'N/A'), ifnull(csa.sanger_sample_id, 'N/A'), ifnull(csa.accession_number, 'N/A') 
 	        from current_samples csa, study_samples sta, current_studies cst where csa.internal_id = sta.sample_internal_id 
-	        and sta.study_internal_id = cst.internal_id and cst.name = ? and csa.supplier_name is not null"; 
+	        and sta.study_internal_id = cst.internal_id and cst.name = ?"; 
 
 #fetch mappings and write to file
 my ($supp_name, $sanger_name, $acc);
