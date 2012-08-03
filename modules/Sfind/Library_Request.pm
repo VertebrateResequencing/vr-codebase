@@ -212,7 +212,7 @@ sub _get_library_ids {
 
     my @lib_ids;
 
-    if ($self->type =~ /^pulldown/i){
+    if ($self->type =~ /^(illumina-a )?pulldown/i){
     my $sql = qq[
         SELECT
          aliquots.library_internal_id
