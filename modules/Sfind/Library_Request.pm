@@ -225,7 +225,7 @@ sub _get_library_ids {
         WHERE
          (
            (aliquots.receptacle_type = 'pulldown_multiplexed_library_tube' AND current_requests.request_type = 'Pulldown Multiplex Library Preparation') OR
-           (aliquots.receptacle_type = 'multiplexed_library_tube' AND current_requests.request_type IN ('Pulldown WGS', 'Pulldown SC'))
+           (aliquots.receptacle_type = 'multiplexed_library_tube' AND (current_requests.request_type LIKE '%Pulldown WGS' OR current_requests.request_type LIKE '%Pulldown SC'))
          )
         AND aliquots.is_current = 1
         AND current_requests.internal_id = ?;
