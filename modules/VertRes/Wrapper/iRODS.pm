@@ -181,7 +181,8 @@ sub get_file_md5 {
     my ($self, $file) = @_;
     my $cmd = join "/",($self->{icommands},"ichksum $file");
 
-    my $md5 = `$cmd`;
+    open(my $irods_md5_fh, '-|', $cmd);
+    my $md5 = <$irods_md5_fh>;
     chomp $md5;
     $md5 =~s/.*\s//;
     return $md5;

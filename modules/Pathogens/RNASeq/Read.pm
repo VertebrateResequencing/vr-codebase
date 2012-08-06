@@ -118,6 +118,11 @@ sub _does_read_pass_filters
      return 0;
   }
   
+  if(defined($self->filters->{bitwise_flag}) && ( ($self->_read_details->{flag} & $self->filters->{bitwise_flag})  == 0 ))
+  {
+    return 0;
+  }
+  
   return 1;
 }
 

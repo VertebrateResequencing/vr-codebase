@@ -187,7 +187,7 @@ sub _get_libraries {
     my @libraries;
     foreach my $id (@{$self->library_ids()}){
         my $obj;
-        if ($self->type =~ /^pulldown/i){
+		if ($self->type =~ /^(illumina-a )?pulldown/i){
             $obj = Sfind::Well_Library->new({dbh=>$self->{_dbh},id=>$id});
         }
         else {
@@ -211,8 +211,7 @@ sub _get_library_ids {
     # library_ids aren't for library_tubes but for wells
 
     my @lib_ids;
-
-    if ($self->type =~ /^pulldown/i){
+	if ($self->type =~ /^(illumina-a )?pulldown/i){
     my $sql = qq[
         SELECT
          aliquots.library_internal_id
@@ -225,7 +224,7 @@ sub _get_library_ids {
         WHERE
          (
            (aliquots.receptacle_type = 'pulldown_multiplexed_library_tube' AND current_requests.request_type = 'Pulldown Multiplex Library Preparation') OR
-           (aliquots.receptacle_type = 'multiplexed_library_tube' AND current_requests.request_type IN ('Pulldown WGS', 'Pulldown SC'))
+           (aliquots.receptacle_type = 'multiplexed_library_tube' AND (current_requests.request_type LIKE '%Pulldown WGS' OR current_requests.request_type LIKE '%Pulldown SC'))
          )
         AND aliquots.is_current = 1
         AND current_requests.internal_id = ?;

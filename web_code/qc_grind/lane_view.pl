@@ -439,7 +439,7 @@ sub displayLane
             ];
     
             foreach my $autoqc (@autoqc_statuses) {
-                next if $autoqc->result eq '1' || $autoqc->current_run eq '0';
+                next if $autoqc->result eq '1';
                 my $test = $autoqc->test;
                 my $result = $autoqc->result;
                 my $reason = $autoqc->reason;
