@@ -213,13 +213,11 @@ sub _open
                 $cmd = "tabix $tabix_args |";
             }
             else { $cmd = "gunzip -c '$$self{file}' |"; } 
-            $$self{check_exit_status} = 1;
         }
         elsif ( $$self{file}=~m{^(?:http|ftp)://} )
         {
             if ( !exists($args{region}) ) { $tabix_args .= ' .'; }
             $cmd = "tabix $tabix_args |";
-            $$self{check_exit_status} = 1;
         }
         open($$self{fh},$cmd) or $self->throw("$cmd: $!");
     }
@@ -260,6 +258,7 @@ sub open
     About   : Close the filehandle
     Usage   : $vcf->close();
     Args    : none
+	Returns : close exit status
 
 =cut
 
@@ -267,8 +266,9 @@ sub close
 {
     my ($self) = @_;
     if ( !$$self{fh} ) { return; }
-    close($$self{fh});
+    my $ret = close($$self{fh});
     delete($$self{fh});
+	return $ret;
 }
 
 
@@ -306,14 +306,6 @@ sub next_line
                 next;
             }
             last;
-        }
-    }
-    if ( !defined $line && $$self{check_exit_status} )
-    {
-        my $pid = waitpid(-1, WNOHANG);
-        if ( $pid!=0 && $pid!=-1 && $? !=0 )
-        {
-            $self->throw("Error reading VCF file.\n");
         }
     }
     return $line;
