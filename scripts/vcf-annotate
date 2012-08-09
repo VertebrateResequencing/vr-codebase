@@ -400,7 +400,7 @@ sub annotate
     {
         for my $col (keys %{$$opts{remove}})
         {
-            if ( ref($col) ne 'HASH' ) { next; } # exception ID,QUAL,FILTER
+            if ( ref($$opts{remove}{$col}) ne 'HASH' ) { next; } # exception ID,QUAL,FILTER
             for my $tag (keys %{$$opts{remove}{$col}}) { $vcf->remove_header_line(key=>$col, ID=>$tag); }
         }
     }
@@ -865,10 +865,23 @@ sub remove_tags
         }
     }
 
+    # Remove FILTER tags
+    if ( exists($$opts{remove}{FILTER}) && ref($$opts{remove}{FILTER}) eq 'HASH')
+    {
+        for my $tag (keys %{$$opts{remove}{FILTER}})
+        {
+            last if ($$line[6] eq 'PASS' || $$line[6] eq '.');
+            my %filters = map { $_ => 1 } split(/;/, $$line[6]);
+            delete $filters{"$tag"} if (exists $filters{$tag});
+            $filters{PASS} = 1 unless (keys %filters);
+            $$line[6] = join(';', keys(%filters));
+        }
+    }
+
     # Remove ID, QUAL, FILTER
     if ( exists($$opts{remove}{ID}) ) { $$line[2] = '.' }
     if ( exists($$opts{remove}{QUAL}) ) { $$line[5] = '.' }
-    if ( exists($$opts{remove}{FILTER}) ) { $$line[6] = '.' }
+    if ( exists($$opts{remove}{FILTER}) && ref($$opts{remove}{FILTER}) ne 'HASH') { $$line[6] = '.' }
 }
 
 sub apply_user_defined_filters
