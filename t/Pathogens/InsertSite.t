@@ -19,16 +19,20 @@ ok $insert_site_plots_from_bam->create_plots();
 
 # parse output files and check they are okay
 ok is_input_string_found_on_given_line("0 0", 1,    't/data/insert_site.FN543502.insert_site_plot.gz'), 'check main sequence insert_site values first value';
-ok is_input_string_found_on_given_line("2 0", 7777,  't/data/insert_site.FN543502.insert_site_plot.gz'), 'check main sequence insert_site value before site';
-ok is_input_string_found_on_given_line("1 0", 7778,  't/data/insert_site.FN543502.insert_site_plot.gz'), 'check main sequence insert_site values for forward reads only';
+ok is_input_string_found_on_given_line("0 2", 7777,  't/data/insert_site.FN543502.insert_site_plot.gz'), 'check main sequence insert_site value before site';
+ok is_input_string_found_on_given_line("0 1", 7778,  't/data/insert_site.FN543502.insert_site_plot.gz'), 'check main sequence insert_site values for reverse reads only';
 ok is_input_string_found_on_given_line("0 0", 7779, 't/data/insert_site.FN543502.insert_site_plot.gz'), 'check main sequence insert_site values after site';
-
+ok is_input_string_found_on_given_line("0 1", 249, 't/data/insert_site.FN543502.insert_site_plot.gz'), 'various values';
+ok is_input_string_found_on_given_line("1 0", 345, 't/data/insert_site.FN543502.insert_site_plot.gz'), 'various values';
+ok is_input_string_found_on_given_line("3 0", 354, 't/data/insert_site.FN543502.insert_site_plot.gz'), 'various values';
+ok is_input_string_found_on_given_line("1 0", 366, 't/data/insert_site.FN543502.insert_site_plot.gz'), 'various values';
+ok is_input_string_found_on_given_line("0 3", 513, 't/data/insert_site.FN543502.insert_site_plot.gz'), 'various values';
 
 ok is_input_string_found_on_given_line("0 0", 1,    't/data/insert_site.pCROD1.insert_site_plot.gz'), 'check empty plasmid insert_site values first value';
 ok is_input_string_found_on_given_line("0 0", 59,   't/data/insert_site.pCROD1.insert_site_plot.gz'), 'check empty plasmid insert_site values last value';
 
 ok is_input_string_found_on_given_line("0 0", 1,    't/data/insert_site.pCROD2.insert_site_plot.gz'), 'check plasmid with 1 read insert_site values first value';
-ok is_input_string_found_on_given_line("1 0", 90,   't/data/insert_site.pCROD2.insert_site_plot.gz'), 'check plasmid with 1 read insert_site values first base of read';
+ok is_input_string_found_on_given_line("0 1", 90,   't/data/insert_site.pCROD2.insert_site_plot.gz'), 'check plasmid with 1 read insert_site values first base of read';
 ok is_input_string_found_on_given_line("0 0", 144,  't/data/insert_site.pCROD2.insert_site_plot.gz'), 'check plasmid with 1 read insert_site values after last base of read';
 ok is_input_string_found_on_given_line("0 0", 1000, 't/data/insert_site.pCROD2.insert_site_plot.gz'), 'check plasmid with 1 read insert_site values last value';
 
