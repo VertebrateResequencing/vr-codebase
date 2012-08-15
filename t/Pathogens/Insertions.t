@@ -29,3 +29,5 @@ unlink("output_results.insertion.csv");
 unlink("output_results.corrected.bam");
 unlink("output_results.corrected.bam.bai");
 unlink("output_results.corrected.bam.intergenic.FN543502.tab.gz");
+
+done_testing();
