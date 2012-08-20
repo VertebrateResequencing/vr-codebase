@@ -439,7 +439,7 @@ sub join_vcfs_chr
     {
         output_line($opts,$rec1,$$opts{swapped}) unless !defined $rec1;
     }
-    while ( defined($rec1 = $vcf1->next_data_array()) );
+    while ( exists($$vcf1{fh}) && defined($rec1 = $vcf1->next_data_array()) );
 }
 
 sub check_sanity
@@ -518,7 +518,6 @@ sub flush_buffer
     my $chr  = $$buffer[0][0][0];
     my $from = $$buffer[0][0][1];
     my $to   = $$buffer[-1][0][1];
-    if ( $from==$to ) { error("Uh, buffer too short?! $from"); }
 
     # Determine likelihoods of genotypes being swapped 
     my @lks_match = ();
@@ -584,7 +583,7 @@ sub flush_buffer
 
     my $file1 = $$opts{file1};
     my $file2 = $$opts{file2};
-    my @swapped = ();
+    my @swapped = [ (0) x $$opts{nsamples} ];
     my @quals = ();
     my $log10 = log(10);
     for (my $i=0; $i<@lks_match; $i++)
@@ -604,10 +603,13 @@ sub flush_buffer
     my $min_PQ = $$opts{min_PQ}; 
     delete($$opts{min_PQ});
 
+	# In case there is no overlap, reset the phasing set
+	if ( !@quals ) { $$opts{phasing_set} = [ (0) x $$opts{nsamples} ]; }
+
     # Output the VCF line and quality
     for my $site (@$buffer)
     {
-        # Which of the two overlapping VCF line to output? Take the one farther from the end.
+        # Which of the two overlapping VCF lines to output? Take the one farther from the end.
         my ($rec,$swap);
         if ( $to-$$site[0][1] > $$site[0][1]-$from )
         {
@@ -625,7 +627,6 @@ sub flush_buffer
                 }
                 @quals = ();
             }
-
             $rec = $$site[1];
             $swap = \@swapped;
         }
