@@ -397,6 +397,7 @@ sub _set_version
         }
         elsif ( !($version_line=~/^##fileformat=/i) or !($version_line=~/(\d+(?:\.\d+)?)\s*$/i) ) 
         { 
+			chomp($version_line);
             $self->warn("Could not parse the fileformat version string [$version_line], assuming VCFv$$self{default_version}\n"); 
             undef $version_line;
         }
