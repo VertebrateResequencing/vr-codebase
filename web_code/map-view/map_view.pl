@@ -1,5 +1,9 @@
 #!/usr/local/bin/perl -T
 
+# Displays QC information for Sanger short-read sequencing to allow lanes
+# to be passed/failed
+
+
 BEGIN {
     $ENV{VRTRACK_HOST} = 'mcs4a';
     $ENV{VRTRACK_PORT} = 3306;

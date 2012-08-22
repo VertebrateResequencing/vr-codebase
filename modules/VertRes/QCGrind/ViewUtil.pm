@@ -1,6 +1,7 @@
 package VertRes::QCGrind::ViewUtil;
 use base qw(VertRes::QCGrind::Util);
-# QC Grind common variables and modules
+use VertRes::Utils::VRTrackFactory;
+# Common variables and modules for view webpages (i.e. non-QCGrind)
 use strict;
 
 sub new {
@@ -17,7 +18,15 @@ sub new {
 		SAMPMAP_LANES_VIEW    => 'sample_mapping_lanes_view.pl',
 		QCGRIND_LANE          => '../qc_grind/lane_view.pl',
 		QCGRIND_SAMPLES       => '../qc_grind/samples_view.pl',
+		INDEX_PAGE            => '../index.pl',
 	};
+	
+	
+	$self->{SQL} = {
+	    PENDING_LIB              => "select p.name, s.name, r.prep_status, r.changed, r.ssid from latest_project p, latest_sample s, latest_library_request r where p.project_id = s.project_id and s.sample_id = r.sample_id and r.prep_status in ('pending', 'started') order by p.name, r.ssid",
+	    PENDING_SEQ              => "select p.name, s.name, r.seq_status, r.changed, r.ssid from latest_project p, latest_sample s, latest_library l, latest_seq_request r where p.project_id = s.project_id and s.sample_id = l.sample_id and l.library_id = r.library_id and r.seq_status in ('pending', 'started') order by p.name, r.ssid",
+	    PENDING_MULTIPLEX_SEQ    => "select p.name, s.name, r.seq_status, r.changed, r.ssid from latest_project p, latest_sample s, latest_library l, library_multiplex_pool m, latest_seq_request r where p.project_id = s.project_id and s.sample_id = l.sample_id and l.library_id = m.library_id and m.multiplex_pool_id = r.multiplex_pool_id and r.seq_status in ('pending', 'started')",
+    };
 
 
     $self->{CSS} = <<CSS ;
@@ -167,8 +176,8 @@ CSS
 
 sub displayDatabasesPage {
     my ($self,$title,$cgi,$script,$alldb) = @_;
-
-	print qq[ <h2 align="center" style="font: normal 900 1.5em arial">$title</h2> ];
+	my $index = $self->{SCRIPTS}{INDEX_PAGE};
+	print qq[ <h4 align="center" style="font: arial"><i><a href="$index">Team 145</a></i> : $title</h4> ];
 
 	my @main_dbs = qw (vrtrack_human_wgs vrtrack_human_wes vrtrack_mouse_wgs vrtrack_mouse_wes);
     print qq[
@@ -197,7 +206,13 @@ sub displayDatabasesPage {
 		foreach (@main_dbs) {
 			$done{$_}++;
 		}
-    	my @dbs = $self->fetchTrackingDatabases();
+    	my @dbs = VertRes::Utils::VRTrackFactory->databases(1);
+    	@dbs = grep(!/test/, @dbs);
+		@dbs = grep(!/jm23/, @dbs);
+		@dbs = grep(!/tttt/, @dbs);
+		@dbs = grep(!/dump/, @dbs);
+		@dbs = grep(!/irods/, @dbs);
+		@dbs = grep(!/kuusamo/, @dbs);
     	print qq[
         	<div class="centerFieldset">
         	<fieldset id="fieldset1" class="coolfieldset" style="width: 500px">
@@ -217,10 +232,9 @@ sub displayDatabasesPage {
 sub displayDatabasePage
 {
     my ($self,$title,$cgi,$vrtrack,$db,$init_script,$lanes_script) = @_;
-
+    my $index = $self->{SCRIPTS}{INDEX_PAGE};
     print qq[
-         <h2 align="center" style="font: normal 900 1.5em arial"><a href="$init_script">$title</a></h2>
-         <h3 align="center" style="font: normal 700 1.5em arial">Database : $db</h3>
+        <h4 align="center" style="font: arial"><i><a href="$index">Team 145</a> : <a href="$init_script">$title</a></i> :  $db</h4>
         <div class="centerFieldset">
         <fieldset style="width: 500px">
         <legend>Select study to View</legend>
@@ -235,25 +249,6 @@ sub displayDatabasePage
         </fieldset>
         </div>
     ];
-}
-
-sub fetchTrackingDatabases
-{
-	my ($self) = @_;
-	my @dbs;
-	my $web_db = 'vrtrack_web_index';
-	my $vrtrack = $self->connectToDatabase($web_db);
-	$self->displayError( "Failed to connect to web database: $web_db" ) unless defined( $vrtrack );
-	my $sql = qq[SELECT db_name FROM tracking_database];
-	my $sth = $vrtrack->{_dbh}->prepare($sql);
-	if ($sth->execute()) {
-		my ($col1);
-		$sth->bind_col(1, \$col1);
-		while ($sth->fetch) {
-			push @dbs, $col1;
-		}
-	}
-	return @dbs;
 }
 
 sub getDatabaseID 
