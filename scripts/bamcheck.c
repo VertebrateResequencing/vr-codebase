@@ -1,6 +1,6 @@
 /* 
     Author: petr.danecek@sanger
-    gcc -Wall -Winline -g -O2 -I ~/git/samtools bamcheck.c -o bamcheck -lm -lz -L ~/git/samtools -lbam
+    gcc -Wall -Winline -g -O2 -I ~/git/samtools bamcheck.c -o bamcheck -lm -lz -L ~/git/samtools -lbam -lpthread
 
     Assumptions, approximations and other issues:
         - GC-depth graph does not split reads, the starting position determines which bin is incremented.
@@ -1293,16 +1293,16 @@ int main(int argc, char *argv[])
         {"help",0,0,'h'},
         {"remove-dups",0,0,'d'},
         {"sam",0,0,'s'},
-        {"ref-seq",0,0,'r'},
-        {"coverage",0,0,'c'},
-        {"read-length",0,0,'l'},
-        {"insert-size",0,0,'i'},
-        {"most-inserts",0,0,'m'},
-        {"trim-quality",0,0,'q'},
+        {"ref-seq",1,0,'r'},
+        {"coverage",1,0,'c'},
+        {"read-length",1,0,'l'},
+        {"insert-size",1,0,'i'},
+        {"most-inserts",1,0,'m'},
+        {"trim-quality",1,0,'q'},
         {"target-regions",0,0,'t'},
-        {"required-flag",0,0,'f'},
+        {"required-flag",1,0,'f'},
         {"filtering-flag",0,0,'F'},
-        {"id",0,0,'I'},
+        {"id",1,0,'I'},
         {0,0,0,0}
     };
     int opt;

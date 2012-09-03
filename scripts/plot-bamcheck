@@ -663,7 +663,8 @@ sub plot_coverage
 
     my @vals;
     for my $cov (@{$$opts{dat}{COV}}) { push @vals,$$cov[2]; }
-    my $p99 = percentile(99.8,@vals);
+    my $i = percentile(99.8,@vals);
+    my $p99 = $$opts{dat}{COV}[$i][1];
 
     my $args = get_defaults($opts,"$$opts{prefix}coverage.png");
     my $fh = $$args{fh};
