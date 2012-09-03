@@ -28,7 +28,7 @@ print qq[<div class="centerFieldset">
         <fieldset style="width: 550px">
             <legend>Select web tool</legend>
     
-            <p><a href="qc_grind/qc_grind.pl">QC Grind</a><br/>Display and/or download QC data for project lanes</p>
+            <p><a href="qc_grind/databases_view.pl">QC Grind</a><br/>Display and/or download QC data for project lanes</p>
         
             <p><a href="sample-mapping/sample_mapping.pl">Sample ID Mapping</a><br/>Download and/or view mappings of sample/supplier names and accession numbers</p>
         
