@@ -362,8 +362,11 @@ void count_mismatches_per_cycle(stats_t *stats,bam1_t *bam_line)
             icycle += ncig;
             continue;
         }
+        // Ignore H and N CIGARs. The letter are inserted e.g. by TopHat and often require very large
+        //  chunk of refseq in memory. Not very frequent and not noticable in the stats.
+        if ( cig==3 || cig==5 ) continue;
         if ( cig!=0 )
-            error("TODO: cigar %d, %s\n", cig,bam1_qname(bam_line));
+            error("TODO: cigar %d, %s:%d %s\n", cig,stats->sam->header->target_name[bam_line->core.tid],bam_line->core.pos+1,bam1_qname(bam_line));
        
         if ( ncig+iref > stats->rseq_len )
             error("FIXME: %d+%d > %d, %s, %s:%d\n",ncig,iref,stats->rseq_len, bam1_qname(bam_line),stats->sam->header->target_name[bam_line->core.tid],bam_line->core.pos+1);
