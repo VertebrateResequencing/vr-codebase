@@ -15,7 +15,7 @@
 
 */
 
-#define BAMCHECK_VERSION "2012-04-24"
+#define BAMCHECK_VERSION "2012-09-04"
 
 #define _ISOC99_SOURCE
 #include <stdio.h>
@@ -292,8 +292,9 @@ void count_indels(stats_t *stats,bam1_t *bam_line)
         if ( cig==1 )
         {
             int idx = is_fwd ? icycle : read_len-icycle;
-            if ( idx<0 ) error("FIXME: read_len=%d vs icycle=%d\n", read_len,icycle);
-            if ( idx >= stats->nbases || idx<0 ) error("FIXME: %d vs %d\n", idx,stats->nbases);
+            if ( idx<0 ) 
+                error("FIXME: read_len=%d vs icycle=%d\n", read_len,icycle);
+            if ( idx >= stats->nbases || idx<0 ) error("FIXME: %d vs %d, %s:%d %s\n", idx,stats->nbases, stats->sam->header->target_name[bam_line->core.tid],bam_line->core.pos+1,bam1_qname(bam_line));
             if ( is_1st ) 
                 stats->ins_cycles_1st[idx]++;
             else
@@ -316,7 +317,8 @@ void count_indels(stats_t *stats,bam1_t *bam_line)
                 stats->deletions[ncig-1]++;
             continue;
         }
-        icycle += ncig;
+        if ( cig!=3 && cig!=5 )
+            icycle += ncig;
     }
 }
 
@@ -535,22 +537,22 @@ void realloc_buffers(stats_t *stats, int seq_len)
     stats->ins_cycles_1st = realloc(stats->ins_cycles_1st, (n+1)*sizeof(uint64_t));
     if ( !stats->ins_cycles_1st )
         error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,(n+1)*sizeof(uint64_t));
-    memset(stats->ins_cycles_1st + stats->nbases + 1, 0, (n+1-stats->nbases)*sizeof(uint64_t));
+    memset(stats->ins_cycles_1st + stats->nbases + 1, 0, (n-stats->nbases)*sizeof(uint64_t));
 
     stats->ins_cycles_2nd = realloc(stats->ins_cycles_2nd, (n+1)*sizeof(uint64_t));
     if ( !stats->ins_cycles_2nd )
         error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,(n+1)*sizeof(uint64_t));
-    memset(stats->ins_cycles_2nd + stats->nbases + 1, 0, (n+1-stats->nbases)*sizeof(uint64_t));
+    memset(stats->ins_cycles_2nd + stats->nbases + 1, 0, (n-stats->nbases)*sizeof(uint64_t));
 
     stats->del_cycles_1st = realloc(stats->del_cycles_1st, (n+1)*sizeof(uint64_t));
     if ( !stats->del_cycles_1st )
         error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,(n+1)*sizeof(uint64_t));
-    memset(stats->del_cycles_1st + stats->nbases + 1, 0, (n+1-stats->nbases)*sizeof(uint64_t));
+    memset(stats->del_cycles_1st + stats->nbases + 1, 0, (n-stats->nbases)*sizeof(uint64_t));
 
     stats->del_cycles_2nd = realloc(stats->del_cycles_2nd, (n+1)*sizeof(uint64_t));
     if ( !stats->del_cycles_2nd )
         error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,(n+1)*sizeof(uint64_t));
-    memset(stats->del_cycles_2nd + stats->nbases + 1, 0, (n+1-stats->nbases)*sizeof(uint64_t));
+    memset(stats->del_cycles_2nd + stats->nbases + 1, 0, (n-stats->nbases)*sizeof(uint64_t));
 
     stats->nbases = n;
 
@@ -1235,6 +1237,7 @@ void error(const char *format, ...)
         printf("    -d, --remove-dups                   Exlude from statistics reads marked as duplicates\n");
         printf("    -f, --required-flag <int>           Required flag, 0 for unset [0]\n");
         printf("    -F, --filtering-flag <int>          Filtering flag, 0 for unset [0]\n");
+        printf("        --GC-depth <float,float>        Bin size for GC-depth graph and the maximum reference length [2e4,6e9]\n");
         printf("    -h, --help                          This help message\n");
         printf("    -i, --insert-size <int>             Maximum insert size [8000]\n");
         printf("    -I, --id <string>                   Include only listed read group or sample name\n");
@@ -1274,7 +1277,6 @@ int main(int argc, char *argv[])
     stats->isize_main_bulk = 0.99;   // There are always outliers at the far end
     stats->gcd_bin_size = 20000;
     stats->ngcd         = 3e5;     // 300k of 20k bins is enough to hold a genome 6Gbp big
-    stats->nref_seq     = stats->gcd_bin_size;
     stats->rseq_pos     = -1;
     stats->tid = stats->gcd_pos = -1;
     stats->is_sorted = 1;
@@ -1303,10 +1305,11 @@ int main(int argc, char *argv[])
         {"required-flag",1,0,'f'},
         {"filtering-flag",0,0,'F'},
         {"id",1,0,'I'},
+        {"GC-depth",1,0,1},
         {0,0,0,0}
     };
     int opt;
-    while ( (opt=getopt_long(argc,argv,"?hdsr:c:l:i:t:m:q:f:F:I:",loptions,NULL))>0 )
+    while ( (opt=getopt_long(argc,argv,"?hdsr:c:l:i:t:m:q:f:F:I:1:",loptions,NULL))>0 )
     {
         switch (opt)
         {
@@ -1317,6 +1320,14 @@ int main(int argc, char *argv[])
             case 'r': stats->fai = fai_load(optarg); 
                       if (stats->fai==0) 
                           error("Could not load faidx: %s\n", optarg); 
+                      break;
+            case  1 : {
+                        float flen,fbin;
+                        if ( sscanf(optarg,"%f,%f",&fbin,&flen)!= 2 ) 
+                            error("Unable to parse --GC-depth %s\n", optarg); 
+                        stats->gcd_bin_size = fbin;
+                        stats->ngcd = flen/fbin;
+                      }
                       break;
             case 'c': if ( sscanf(optarg,"%d,%d,%d",&stats->cov_min,&stats->cov_max,&stats->cov_step)!= 3 ) 
                           error("Unable to parse -c %s\n", optarg); 
@@ -1370,6 +1381,7 @@ int main(int argc, char *argv[])
     stats->isize_outward  = calloc(stats->nisize,sizeof(uint64_t));
     stats->isize_other    = calloc(stats->nisize,sizeof(uint64_t));
     stats->gcd            = calloc(stats->ngcd,sizeof(gc_depth_t));
+    stats->nref_seq       = stats->gcd_bin_size;
     stats->rseq_buf       = calloc(stats->nref_seq,sizeof(uint8_t));
     stats->mpc_buf        = stats->fai ? calloc(stats->nquals*stats->nbases,sizeof(uint64_t)) : NULL;
     stats->acgt_cycles    = calloc(4*stats->nbases,sizeof(uint64_t));
