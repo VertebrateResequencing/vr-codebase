@@ -528,6 +528,10 @@ sub merge_vcf_files
             print $vcf_out->format_line(\%out);
         }
     }
+    for my $vcf (@vcfs) 
+    { 
+        $vcf->close() or error("close failed: $$vcf{file}\n"); 
+    }
 }
 
 

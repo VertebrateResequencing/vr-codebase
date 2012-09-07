@@ -103,7 +103,7 @@ sub new
             #       '10:42000001-43000000' => { mpileup=>'...'  } 
             #   },
 
-            # Uncomment and modify as necessary if VQSR filtering should be applied. The default annotations listed below will be by the pipeline
+            # Uncomment and modify as necessary if VQSR filtering should be applied. The default annotations listed below will be added by the pipeline
             # vqsr_filtering => 
             # {
             #     jar => q[java -Xmx4800m -Xms4800m -Xss280m -server -XX:+UseSerialGC -jar /nfs/users/nfs_s/sm15/src/GATK/dist/GenomeAnalysisTK.jar],
@@ -440,7 +440,7 @@ sub cmd
 {
     my ($self,$cmd) = @_;
     $cmd =~ s/\n/ /g;
-    return Utils::CMD($cmd,{verbose=>$$self{_verbose}});
+    return Utils::CMD($cmd,{verbose=>1});
 }
 
 sub check_sanity

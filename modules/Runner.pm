@@ -212,7 +212,7 @@ sub run
             die "\n"; 
         }
         if ( !$$self{_loop} ) { return; }
-        $self->debugln("sleeping...");
+        $self->debugln($$self{_about}, "sleeping...");
         sleep($$self{_loop});
     }
 }
