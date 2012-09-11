@@ -175,17 +175,23 @@ sub parse_user_defined_filters
         if ( !exists($$filter{tag}) ) { error("Missing 'tag' key for one of the filters in $str\n"); }
         if ( $$filter{tag}=~m{^INFO/(.+)$} ) { $$filter{info_tag} = $1; }
         elsif ( $$filter{tag}=~m{^FORMAT/(.+)$} ) { $$filter{format_tag} = $1; }
-        else { error("Currently only INFO and FORMAT tags are supported. Could not parse the tag [$$filter{tag}]\n"); }
+        elsif ( $$filter{tag} eq 'Dummy' ) 
+        { 
+            $$filter{any_tag} = $1; 
+            $$filter{name} = 'Dummy'; 
+            $$filter{desc} = 'Dummy'; 
+        }
+        else { error("Currently only INFO, FORMAT and Dummy tags are supported. Could not parse the tag [$$filter{tag}]\n"); }
 
+        my $name = $$filter{name};
         if ( !exists($$filter{name}) ) { error("Missing 'name' key for the filter [$$filter{tag}]\n"); }
         if ( !exists($$filter{desc}) ) { error("Missing 'desc' key for the filter [$$filter{tag}]\n"); }
 
-        my $name = $$filter{name};
         if ( exists($$filter{header}) )
         {
             push @{$$opts{desc}}, ref($$filter{header}) eq 'ARRAY' ? @{$$filter{header}} : $$filter{header};
         }
-        else
+        elsif ( $$filter{tag} ne 'Dummy' )
         {
             push @{$$opts{desc}}, "key=FILTER,ID=$name,Description='$$filter{desc}'";
         }

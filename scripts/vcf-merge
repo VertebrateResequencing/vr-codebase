@@ -25,15 +25,15 @@ sub error
         "   If you need to concatenate VCFs (e.g. files split by chromosome), look at vcf-concat instead.\n",
         "Usage: vcf-merge [OPTIONS] file1.vcf file2.vcf.gz ... > out.vcf\n",
         "Options:\n",
-        "   -c, --chromosomes <list|file>           Same as -r, left for backward compatibility. Please do not use as it will be dropped in the future.\n",
-        "   -d, --remove-duplicates                 If there should be two consecutive rows with the same chr:pos, print only the first one.\n",
-        "   -H, --vcf-header <file>                 Use the VCF header\n",
-        "   -h, -?, --help                          This help message.\n",
-        "   -r, --regions <list|file>               Do only the given regions (comma-separated list or one region per line in a file).\n",
-        "   -R, --ref-for-missing <string>          Use the REF allele instead of the default missing genotype. Because it is not obvious\n",
-        "                                               what ploidy should be used, a user-defined string is used instead (e.g. 0/0).\n",
-        "   -s, --silent                            Try to be a bit more silent, no warnings about duplicate lines.\n",
-        "   -t, --trim-ALTs                         If set, redundant ALTs will be removed\n",
+        "   -c, --collapse <snps|indels|both|any|none>      treat as identical sites with differing alleles [any]\n",
+        "   -d, --remove-duplicates                         If there should be two consecutive rows with the same chr:pos, print only the first one.\n",
+        "   -H, --vcf-header <file>                         Use the VCF header\n",
+        "   -h, -?, --help                                  This help message.\n",
+        "   -r, --regions <list|file>                       Do only the given regions (comma-separated list or one region per line in a file).\n",
+        "   -R, --ref-for-missing <string>                  Use the REF allele instead of the default missing genotype. Because it is not obvious\n",
+        "                                                       what ploidy should be used, a user-defined string is used instead (e.g. 0/0).\n",
+        "   -s, --silent                                    Try to be a bit more silent, no warnings about duplicate lines.\n",
+        "   -t, --trim-ALTs                                 If set, redundant ALTs will be removed\n",
         "\n";
 }
 
@@ -50,6 +50,7 @@ sub parse_params
             'DP'  => \&joiner_sum,
         },
         trim_redundant_ALTs => 0,
+        collapse_any => 1,
     };
     while (my $arg=shift(@ARGV))
     {
@@ -58,7 +59,18 @@ sub parse_params
         if ( $arg eq '-t' || $arg eq '--trim-ALTs' ) { $$opts{trim_redundant_ALTs}=1; next; }
         if ( $arg eq '-s' || $arg eq '--silent' ) { $$opts{silent_dups}=1; next; }
         if ( $arg eq '-H' || $arg eq '--vcf-header' ) { $$opts{vcf_header}=shift(@ARGV); next; }
-        if ( $arg eq '-c' || $arg eq '--chromosomes' ) { $$opts{regions_list}=shift(@ARGV); next; }
+        if ( $arg eq '-c' || $arg eq '--collapse' ) 
+        {
+            $$opts{collapse_any} = 1;
+            my $c = shift(@ARGV);
+            if ( $c eq 'snps' ) { $$opts{collapse_snps}=1; }
+            elsif ( $c eq 'indels' ) { $$opts{collapse_indels}=1; }
+            elsif ( $c eq 'both' ) { $$opts{collapse_snps}=1; $$opts{collapse_indels}=1; }
+            elsif ( $c eq 'any' ) { $$opts{collapse_any}=1; }
+            elsif ( $c eq 'none' ) { $$opts{collapse_any}=0; $$opts{collapse_snps}=0; $$opts{collapse_indels}=0; }
+            else { error("Expected one of <snps|indels|both|any> with -c"); }
+            next; 
+        }
         if ( $arg eq '-r' || $arg eq '--regions' ) { $$opts{regions_list}=shift(@ARGV); next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         if ( -e $arg ) { push @{$$opts{files}},$arg; next; }
@@ -165,6 +177,7 @@ sub init_cols
     for my $file (@{$$opts{files}})
     {
         my $vcf = Vcf->new(file=>$file);
+        $$vcf{line_buffer} = [];
         $vcf->parse_header();
         check_AGtags_definition($vcf);
         $vcf->close();
@@ -305,16 +318,12 @@ sub merge_vcf_files
         # Open files
         for my $vcf (@vcfs) 
         { 
-            delete($$vcf{last_line});
+            delete($$vcf{done});
             $vcf->open(region=>$region); 
-            advance_position($vcf);
         }
 
-        while (1)
+        while ( my $pos=advance_position($opts,\@vcfs) )
         {
-            my $pos = get_min_position(\@vcfs);
-            if ( !defined $pos ) { last; }
-
             my %out;
             $out{POS}    = $pos;
             $out{ID}     = '.';
@@ -331,7 +340,7 @@ sub merge_vcf_files
             for my $vcf (@vcfs)
             {
                 my $line = $$vcf{last_line};
-                if ( !$line or $pos ne $$line{POS} ) { next; }
+                if ( !$line ) { next; }
                 if ( !exists($out{CHROM}) ) { $out{CHROM} = $$line{CHROM}; }
                 my $ref = $$line{REF};
                 for my $alt (@{$$line{ALT}}) { $ref_alt_map{$ref}{$alt}=$alt; }
@@ -349,7 +358,7 @@ sub merge_vcf_files
                 for my $vcf (@vcfs)
                 {
                     my $line = $$vcf{last_line};
-                    if ( !$line or $pos ne $$line{POS} ) { next; }
+                    if ( !$line ) { next; }
                     my $ref = $$line{REF};
                     for my $alt (@{$$line{ALT}}) { $alts{$ref_alt_map{$ref}{$alt}}=1; }
                     delete($alts{'.'});
@@ -362,7 +371,7 @@ sub merge_vcf_files
                 my $line = $$vcf{last_line};
 
                 # If this file does not have a record for this position, then for all its columns output undef gtype
-                if ( !$line or $pos ne $$line{POS} )
+                if ( !$line )
                 {
                     for (my $i=0; $i<@{$$vcf{__col_names}}; $i++)
                     {
@@ -478,7 +487,6 @@ sub merge_vcf_files
                     }
                 }
                 $out{REF} = defined $new_ref ? $new_ref : $ref;
-                advance_position($vcf,$opts);
             }
 
             $out{INFO} = { %info }; 
@@ -537,73 +545,79 @@ sub merge_vcf_files
 
 sub advance_position
 {
-    my ($vcf,$opts) = @_;
+    my ($opts,$vcfs) = @_;
 
-    if ( exists($$vcf{last_line}) && !$$vcf{last_line} ) { return; }
-
-    my $line;
-    while (!$line)
-    {
-        $line = $vcf->next_data_hash();
-        if ( !$line )
-        {
-            $$vcf{last_line} = $line;
-            return;
-        }
-        if ( !$$vcf{last_line} ) { last; }
-
-        if ( $$vcf{last_line}{POS} eq $$line{POS} ) 
-        {
-            print STDERR "The position appeared twice: $$vcf{file} .. $$line{CHROM}:$$line{POS}\n" unless $$opts{silent_dups};
-
-            # This is the only reason for the while loop: if ignoring dups, get the next line
-            if ( $$opts{rm_dups} ) 
-            { 
-                undef($line); 
-            }
-        }
-        elsif ( $$vcf{last_line}{POS} > $$line{POS})
-        { 
-            error("Wrong order: $$vcf{file} .. $$line{CHROM}:$$line{POS} comes after $$vcf{last_line}{CHROM}:$$vcf{last_line}{POS}\n");
-        }
-    }
-
-    $$vcf{last_line} = $line;
-
-    return;
-}
-
-
-sub get_min_position
-{
-    my ($vcfs) = @_;
-    my ($pos,$ref);
+    my $min_pos;
     for my $vcf (@$vcfs)
     {
-        my $line = $$vcf{last_line};
-        if ( !$line ) { next; }
+        fill_buffer($opts,$vcf) unless $$vcf{done};
+        if ( @{$$vcf{line_buffer}} && (!defined $min_pos or $min_pos>$$vcf{line_buffer}[0]{POS}) ) { $min_pos = $$vcf{line_buffer}[0]{POS}; }
+    }
+    if ( !defined $min_pos ) { return undef; }
 
-        # Designate this position as the minimum of all the files if:
-        # .. is this the first file?
-        if ( !defined $pos )
-        {
-            $pos = $$line{POS};
-            $ref = $$line{REF};
+    my ($first,$has_snp,$has_indel);
+    for my $vcf (@$vcfs)
+    {
+        delete($$vcf{last_line});
 
+        if ( @{$$vcf{line_buffer}} && $min_pos ne $$vcf{line_buffer}[0]{POS} ) { next; }
+        if ( !defined $first ) 
+        { 
+            $$vcf{last_line} = shift @{$$vcf{line_buffer}};
+            $first = $$vcf{last_line};
             next;
         }
-        
-        # .. has this file lower position?
-        if ( $pos>$$line{POS} )
+        my $irec;
+        for (my $i=0; $i<@{$$vcf{line_buffer}}; $i++)
         {
-            $pos = $$line{POS};
-            $ref = $$line{REF};
+            my $line = $$vcf{line_buffer}[$i];
+            if ( $$line{POS} ne $$first{POS} ) { last; }
 
-            next;
+            if ( $$opts{collapse_any} ) { $irec=$i; last; }  # checking position only
+            if ( $$opts{collapse_snps} && $$first{variant_type}&1 && $$line{variant_type}&1 ) { $irec=$i; last; }
+            if ( $$opts{collapse_indels} && $$first{variant_type}&2 && $$line{variant_type}&2 ) { $irec=$i; last; }
+
+            if ( $$vcf{line_buffer}[$i]{REF} ne $$first{REF} ) { next; } # refs do not match
+            for my $al1 (@{$$line{ALT}})
+            {
+                for my $al2 (@{$$first{ALT}})
+                {
+                    if ( $al1 eq $al2 ) { $irec=$i; last; }
+                }
+                if ( defined $irec ) { last; }
+            }
+            if ( defined $irec ) { last; }
+        }
+        if ( defined $irec )
+        {
+            $$vcf{last_line} = splice(@{$$vcf{line_buffer}},$irec,1);
         }
     }
-    return $pos;
+    return $min_pos;
 }
+
+sub fill_buffer
+{
+    my ($opts,$vcf) = @_;
+    if ( @{$$vcf{line_buffer}} && $$vcf{line_buffer}[0]{POS}!=$$vcf{line_buffer}[-1]{POS} ) { return; }
+    while ( 1 )
+    {
+        my $line = $vcf->next_data_hash();
+        if ( !$line ) { $$vcf{done} = 1; return; }
+        if ( !$$opts{collapse_any} ) 
+        {
+            for my $al (@{$$line{ALT}})
+            {
+                my ($type,$len,$ht) = $vcf->event_type($$line{REF},$al);
+                if ( $type eq 's' or $type eq 'r' ) { $$line{variant_type} |= 1; }
+                if ( $type eq 'i' or $type eq 'o' ) { $$line{variant_type} |= 2; }
+            }
+        }
+        push @{$$vcf{line_buffer}}, $line;
+        if ( $$vcf{line_buffer}[0]{POS} != $$vcf{line_buffer}[-1]{POS} ) { return; }
+    }
+}
+
 
 # Field joiner methods
 sub joiner_sum
