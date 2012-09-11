@@ -127,7 +127,7 @@ typedef struct
     uint64_t nmismatches;
 
     // GC-depth related data
-    uint32_t ngcd, igcd;        // The maximum number of GC depth bins and index of the current bin
+    int32_t ngcd, igcd;        // The maximum number of GC depth bins and index of the current bin
     gc_depth_t *gcd;            // The GC-depth bins holder
     int gcd_bin_size;           // The size of GC-depth bin
     uint32_t gcd_ref_size;      // The approximate size of the genome
@@ -1050,16 +1050,21 @@ void output_stats(stats_t *stats)
     }
 
     printf("# Coverage distribution. Use `grep ^COV | cut -f 2-` to extract this part.\n");
-    printf("COV\t[<%d]\t%d\t%ld\n",stats->cov_min,stats->cov_min-1, (long)stats->cov[0]);
-    int icov;
-    for (icov=1; icov<stats->ncov-1; icov++)
-        printf("COV\t[%d-%d]\t%d\t%ld\n",stats->cov_min + (icov-1)*stats->cov_step, stats->cov_min + icov*stats->cov_step-1,stats->cov_min + icov*stats->cov_step-1, (long)stats->cov[icov]);
-    printf("COV\t[%d<]\t%d\t%ld\n",stats->cov_min + (stats->ncov-2)*stats->cov_step-1,stats->cov_min + (stats->ncov-2)*stats->cov_step-1, (long)stats->cov[stats->ncov-1]);
+    {
+        if  ( stats->cov[0] )
+            printf("COV\t[<%d]\t%d\t%ld\n",stats->cov_min,stats->cov_min-1, (long)stats->cov[0]);
+        int icov;
+        for (icov=1; icov<stats->ncov-1; icov++)
+            if ( stats->cov[icov] )
+                printf("COV\t[%d-%d]\t%d\t%ld\n",stats->cov_min + (icov-1)*stats->cov_step, stats->cov_min + icov*stats->cov_step-1,stats->cov_min + icov*stats->cov_step-1, (long)stats->cov[icov]);
+        if ( stats->cov[stats->ncov-1] )
+            printf("COV\t[%d<]\t%d\t%ld\n",stats->cov_min + (stats->ncov-2)*stats->cov_step-1,stats->cov_min + (stats->ncov-2)*stats->cov_step-1, (long)stats->cov[stats->ncov-1]);
+    }
 
 
     // Calculate average GC content, then sort by GC and depth
     printf("# GC-depth. Use `grep ^GCD | cut -f 2-` to extract this part. The columns are: GC%%, unique sequence percentiles, 10th, 25th, 50th, 75th and 90th depth percentile\n");
-    uint32_t igcd;
+    int32_t igcd;
     for (igcd=0; igcd<stats->igcd; igcd++)
     {
         if ( stats->fai )
@@ -1484,8 +1489,8 @@ int main(int argc, char *argv[])
     free(stats->del_cycles_1st);
     free(stats->del_cycles_2nd);
     destroy_regions(stats);
-    free(stats);
     if ( stats->rg_hash ) kh_destroy(kh_rg, stats->rg_hash);
+    free(stats);
 
     return 0;
 }

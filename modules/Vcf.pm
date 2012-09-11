@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r770';
+our $VERSION = 'r779';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
@@ -1060,7 +1060,8 @@ sub remove_field
     while ($itag!=$idx)
     {
         $isep = index($string,$sep,$prev_isep);
-        if ( $isep==-1 ) { $self->throw("The index out of range: $string:$isep .. $idx"); }
+        # The index may be out of range, VCFv4.1 allows omitting empty fields
+        if ( $isep==-1 ) { return $string; }
         $prev_isep = $isep+1;
         $itag++;
     }
@@ -1096,6 +1097,7 @@ sub replace_field
     while ($itag!=$idx)
     {
         $isep = index($string,$sep,$prev_isep);
+        # Todo: VCFv4.1 allows omitting empty fields, shouldn't fail here
         if ( $isep==-1 ) { $self->throw("The index out of range: $string:$isep .. $idx"); }
         $prev_isep = $isep+1;
         $itag++;

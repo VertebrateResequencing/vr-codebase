@@ -23,8 +23,7 @@ sub error
         "Usage: cat broken.vcf | vcf-fix-ploidy [OPTIONS] > fixed.vcf\n",
         "Options:\n",
         "   -a, --assumed-sex <sex>         M or F, required if the list is not complete in -s\n",
-        "   -l, --fix-likelihoods           Add or remove het likeihoods (not the default behaviour)\n",
-        "   -m, --missing-for-hets          Insert missing GT instead of the first allele for hets.\n",
+        "   -l, --fix-likelihoods           Add or remove het likelihoods (not the default behaviour)\n",
         "   -p, --ploidy <file>             Ploidy definition. The default is shown below.\n",
         "   -s, --samples <file>            List of sample sexes (sample_name [MF]).\n",
         "   -h, -?, --help                  This help message.\n",
@@ -76,7 +75,6 @@ sub parse_params
     };
     while (defined(my $arg=shift(@ARGV)))
     {
-        if ( $arg eq '-m' || $arg eq '--missing-for-hets' ) { $$opts{missing_for_hets}=1; next }
         if ( $arg eq '-p' || $arg eq '--ploidy' ) { my $file=shift(@ARGV); my $x=do $file; $$opts{ploidy}=$x; next }
         if ( $arg eq '-s' || $arg eq '--samples' ) { $$opts{samples}=shift(@ARGV); next }
         if ( $arg eq '-a' || $arg eq '--assumed-sex' ) { $$opts{assumed_sex}=shift(@ARGV); next }
@@ -145,6 +143,9 @@ sub fix_ploidy
         my $igl = $vcf->get_tag_index($$rec[8],'GL',':');
         if ( $igt==-1 ) { print $line; next; }
 
+        my @alt = split(/,/,$$rec[4]);
+        my $nals = $alt[0] eq '.' ? 1 : 1 + scalar @alt;
+
         my $changed = 0;
         my $nrec = @$rec;
         for (my $isample=9; $isample<$nrec; $isample++)
@@ -160,67 +161,24 @@ sub fix_ploidy
             my ($new_gt, $new_pl, $new_gl);
             if ( !$$samples{$sample} )
             {
-                if ( $gt ne '.' && $gt ne './.' ) { $new_gt = '.'; $nchanged{removed}{$sample}++; }
+                # missing genotype - leave it as it is unless it must be removed
+                if ( $gt ne '.' && $gt ne './.' ) 
+                { 
+                    my (@als) = $vcf->split_gt($gt);
+                    if ( defined $pl ) { ($new_pl) = reploid_g(1,  $nals, $pl, scalar @als, 1); }
+                    if ( defined $gl ) { ($new_gl) = reploid_g(-1, $nals, $gl, scalar @als, 1); }
+                    $new_gt = '.'; 
+                    $nchanged{removed}{$sample}++; 
+                }
             }
             else
             {
-                my ($a1,$a2) = $vcf->split_gt($gt);
-                if ( $$samples{$sample}==1 )
+                my (@als) = $vcf->split_gt($gt);
+                if ( $$samples{$sample} != @als )
                 {
-                    if ( defined $a2 ) 
-                    { 
-                        $new_gt = ( $a1 ne $a2 && $$opts{missing_for_hets} ) ? '.' : $a1; 
-                        $nchanged{stripped}{$sample}++; 
-                    }
-                    if ( $pl )
-                    {
-                        my @pls = split(/,/, $pl);
-                        if (scalar @pls == 3)
-                        {
-                            # 0/0:10,0,100 -> 0:0,90
-                            # 0/0:10,0,10 -> 0:0,0                            
-                            # 0/0:0,10,100 -> 0:0,100
-                            # 0/0:0,100,10 -> 0:0,10
-                            if ($pls[1]==0)
-                            {
-                                 if ($pls[0] < $pls[2])
-                                 {
-                                     $pls[2] -= $pls[0];
-                                     $pls[0] = 0;
-                                 }
-                                 elsif ($pls[0] > $pls[2])
-                                 {
-                                     $pls[0] -= $pls[2];
-                                     $pls[2] = 0;
-                                 }
-                                 else
-                                 {
-                                     $pls[0] = 0;
-                                     $pls[2] = 0;
-                                 }
-                            }
-                            $new_pl = join(',', @pls[0,2]);
-                        }
-                    }
-                    if ( $gl )
-                    {
-                        my @gls = split(/,/, $gl);
-                        if (scalar @gls == 3) { $new_gl = join(',', @gls[0,2]); } # todo rescale GLs like we do for PLs
-                    }
-                }
-                elsif ( $$samples{$sample}==2 )
-                {
-                    if ( !defined $a2 ) { $new_gt = "$a1/$a1"; $nchanged{added}{$sample}++; }
-                    if ( $pl )
-                    {
-                        my @pls = split(/,/, $pl);
-                        if (scalar @pls == 2) { $new_pl = join(',', ($pls[0], 0, $pls[1])); }
-                    }
-                    if ( $gl )
-                    {
-                        my @gls = split(/,/, $gl);
-                        if (scalar @gls == 2) { $new_gl = join(',', ($gls[0], 0, $gls[1])); }
-                    }
+                    $new_gt = join('/',($als[0]) x $$samples{$sample});
+                    if ( defined $pl ) { ($new_pl,$new_gt) = reploid_g(1,  $nals, $pl, scalar @als, $$samples{$sample}); }
+                    if ( defined $gl ) { ($new_gl,$new_gt) = reploid_g(-1, $nals, $gl, scalar @als, $$samples{$sample}); }
                 }
             }
             if ( defined $new_gt )
@@ -251,6 +209,53 @@ sub fix_ploidy
             print STDERR "$sample\t$$opts{samples}{$sample}\t$key\t$nchanged{$key}{$sample}\n";
         }
     }
+}
+
+sub reploid_g
+{
+    my ($extr,$nals,$str,$n,$m) = @_;
+    my @vals = split(/,/,$str);
+    if ( $n==2 && $m==1 )
+    {
+        my @out;
+        my $d = 1;
+        my $k = 0;
+        my ($imin,$min);
+        for (my $i=0; $i<$nals; $i++)
+        {
+            if ( $k>=@vals ) { error("Cannot reploid, too few values in $str: $nals, $n->$m ($i,$d,$k)\n"); }
+            if ( $vals[$k] ne '.' && (!defined $min or $min>$extr*$vals[$k]) )
+            {
+                $min = $extr*$vals[$k];
+                $imin = $i;
+            }
+            push @out, $vals[$k];
+            $d++;
+            $k += $d;
+        }
+        my $gt = defined $imin ? $imin : 0;
+        return (join(',',@out), $gt);
+    }
+    elsif ( $n==1 && $m==2 ) 
+    {
+        my @out;
+        my ($imin,$min);
+        for (my $i=0; $i<$nals; $i++)
+        {
+            for (my $j=0; $j<=$i; $j++)
+            {
+                push @out, $i==$j ? $vals[$i] : '.';
+                if ( $vals[$i] ne '.' && (!defined $min or $min>$extr*$vals[$i]) )
+                {
+                     $min = $extr*$vals[$i];
+                     $imin = $i;
+                }
+            }
+        }
+        my $gt = defined $imin ? $imin : 0;
+        return (join(',',@out), "$gt/$gt" );
+    }
+    else { error("Only diploid/haploid cases handled in this version, sorry."); }
 }
 
 sub init_regions
