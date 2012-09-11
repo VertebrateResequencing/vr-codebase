@@ -34,6 +34,6 @@ my $cgi = $sw->cgi();
 my $script = $utl->{SCRIPTS}{SAMPMAP_PROJECTS_VIEW};
 
 print $sw->header();
-$utl->displayDatabasesPage($title,$cgi,$script,1);
+$utl->displayDatabasesPage($title,$cgi,$script,1,0);
 print $sw->footer();
 exit;
