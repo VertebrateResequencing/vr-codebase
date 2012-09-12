@@ -23,9 +23,11 @@ sub new {
 	
 	
 	$self->{SQL} = {
-	    PENDING_LIB              => "select p.name, s.name, r.prep_status, r.changed, r.ssid from latest_project p, latest_sample s, latest_library_request r where p.project_id = s.project_id and s.sample_id = r.sample_id and r.prep_status in ('pending', 'started') order by p.name, r.ssid",
-	    PENDING_SEQ              => "select p.name, s.name, r.seq_status, r.changed, r.ssid from latest_project p, latest_sample s, latest_library l, latest_seq_request r where p.project_id = s.project_id and s.sample_id = l.sample_id and l.library_id = r.library_id and r.seq_status in ('pending', 'started') order by p.name, r.ssid",
+	    PENDING_LIB              => "select p.name, s.name, r.prep_status, r.changed, r.ssid from latest_project p, latest_sample s, latest_library_request r where p.project_id = s.project_id and s.sample_id = r.sample_id and r.prep_status in ('pending', 'started')",
+	    PENDING_SEQ              => "select p.name, s.name, r.seq_status, r.changed, r.ssid from latest_project p, latest_sample s, latest_library l, latest_seq_request r where p.project_id = s.project_id and s.sample_id = l.sample_id and l.library_id = r.library_id and r.seq_status in ('pending', 'started')",
 	    PENDING_MULTIPLEX_SEQ    => "select p.name, s.name, r.seq_status, r.changed, r.ssid from latest_project p, latest_sample s, latest_library l, library_multiplex_pool m, latest_seq_request r where p.project_id = s.project_id and s.sample_id = l.sample_id and l.library_id = m.library_id and m.multiplex_pool_id = r.multiplex_pool_id and r.seq_status in ('pending', 'started')",
+	    PENDING_ORDER            => " order by p.name, r.ssid",
+	    PROJECT_SSID             => "select ssid from latest_project",
     };
 
 
@@ -175,10 +177,11 @@ CSS
 
 
 sub displayDatabasesPage {
-    my ($self,$title,$cgi,$script,$alldb) = @_;
+    my ($self,$title,$cgi,$script,$alldb,$pending) = @_;
 	my $index = $self->{SCRIPTS}{INDEX_PAGE};
 	print qq[ <h4 align="center" style="font: arial"><i><a href="$index">Team 145</a></i> : $title</h4> ];
-
+    my $pending_db = 'vrtrack_pending_requests';
+    my $dbparam = $pending ? $pending_db : $_;
 	my @main_dbs = qw (vrtrack_human_wgs vrtrack_human_wes vrtrack_mouse_wgs vrtrack_mouse_wes);
     print qq[
         <div class="centerFieldset">
@@ -186,7 +189,7 @@ sub displayDatabasesPage {
         <legend>Main Databases</legend>
     ];
     foreach( @main_dbs ) {
-		print $cgi->p("<a href='$script?db=$_'> $_ </a>");
+		print $cgi->p("<a href='$script?db=$dbparam&amp;dbpend=$_'> $_ </a>");
     }
     print qq[ </fieldset> </div> ];
 
@@ -197,7 +200,7 @@ sub displayDatabasesPage {
         <legend>UK10K Databases</legend>
     ];
     foreach( @uk10k_dbs ) {
-		print $cgi->p("<a href='$script?db=$_'> $_ </a>");
+		print $cgi->p("<a href='$script?db=$dbparam&amp;dbpend=$_'> $_ </a>");
     }
     print qq[ </fieldset> </div> ];
 	if ($alldb) {
@@ -213,6 +216,7 @@ sub displayDatabasesPage {
 		@dbs = grep(!/dump/, @dbs);
 		@dbs = grep(!/irods/, @dbs);
 		@dbs = grep(!/kuusamo/, @dbs);
+		@dbs = grep(!/requests/, @dbs);
     	print qq[
         	<div class="centerFieldset">
         	<fieldset id="fieldset1" class="coolfieldset" style="width: 500px">

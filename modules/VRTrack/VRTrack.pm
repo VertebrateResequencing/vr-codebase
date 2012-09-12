@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '22';
+use constant SCHEMA_VERSION => '23';
 
 our $DEFAULT_PORT = 3306;
 
@@ -1484,7 +1484,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (22);
+insert into schema_version(schema_version) values (23);
 
 --
 -- Table structure for table `assembly`
@@ -1691,7 +1691,7 @@ CREATE TABLE `seq_request` (
   `library_id` smallint(5) unsigned,
   `multiplex_pool_id` smallint(5) unsigned,
   `ssid` mediumint(8) unsigned DEFAULT NULL,
-  `seq_type` enum('Illumina-A HiSeq Paired end sequencing', 'Illumina-B HiSeq Paired end sequencing', 'Illumina-C HiSeq Paired end sequencing', 'Single ended sequencing','Paired end sequencing','HiSeq Paired end sequencing','MiSeq sequencing','Single ended hi seq sequencing') DEFAULT 'Single ended sequencing',
+  `seq_type` enum('Illumina-A HiSeq Paired end sequencing','Illumina-B HiSeq Paired end sequencing','Illumina-C HiSeq Paired end sequencing','Illumina-C MiSeq sequencing','Illumina-C Single ended hi seq sequencing','Single ended sequencing','Paired end sequencing','HiSeq Paired end sequencing','MiSeq sequencing','Single ended hi seq sequencing') DEFAULT 'Single ended sequencing',
   `seq_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
   `note_id` mediumint(8) unsigned DEFAULT NULL,
   `changed` datetime NOT NULL DEFAULT '0000-00-00',
