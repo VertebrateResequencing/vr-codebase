@@ -181,15 +181,15 @@ sub displayDatabasesPage {
 	my $index = $self->{SCRIPTS}{INDEX_PAGE};
 	print qq[ <h4 align="center" style="font: arial"><i><a href="$index">Team 145</a></i> : $title</h4> ];
     my $pending_db = 'vrtrack_pending_requests';
-    my $dbparam = $pending ? $pending_db : $_;
-	my @main_dbs = qw (vrtrack_human_wgs vrtrack_human_wes vrtrack_mouse_wgs vrtrack_mouse_wes);
+    my @main_dbs = qw (vrtrack_human_wgs vrtrack_human_wes vrtrack_mouse_wgs vrtrack_mouse_wes);
     print qq[
         <div class="centerFieldset">
         <fieldset style="width: 500px">
         <legend>Main Databases</legend>
     ];
+    my $db_href = $pending ? "<a href='$script?db=$pending_db&amp;dbpend=" : "<a href='$script?db=";
     foreach( @main_dbs ) {
-		print $cgi->p("<a href='$script?db=$dbparam&amp;dbpend=$_'> $_ </a>");
+		print $cgi->p($db_href."$_'> $_ </a>");
     }
     print qq[ </fieldset> </div> ];
 
@@ -200,7 +200,7 @@ sub displayDatabasesPage {
         <legend>UK10K Databases</legend>
     ];
     foreach( @uk10k_dbs ) {
-		print $cgi->p("<a href='$script?db=$dbparam&amp;dbpend=$_'> $_ </a>");
+		print $cgi->p($db_href."$_'> $_ </a>");
     }
     print qq[ </fieldset> </div> ];
 	if ($alldb) {

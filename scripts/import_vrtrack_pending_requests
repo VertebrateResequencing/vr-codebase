@@ -1,0 +1,189 @@
+#!/usr/bin/env perl
+#
+# import_vrtrack_pending_requests
+#
+# Imports the pending requests for UK10K and vrpipe databases from the sequencescape warehouse into the vrtrack_pending_requests schema.
+# This schema is utilised by the pending view web tool and is updated nightly via cron.
+# 
+# Author: John Maslen <jm23@sanger.ac.uk>
+#
+
+use DBI;
+use VRTrack::VRTrack;
+use VertRes::Utils::VRTrackFactory;
+use VRTrack::Multiplex_pool;
+use Carp;
+
+use strict;
+use warnings;
+
+#db connection parameters for vrtrack dbs:
+my $HOST = $ENV{VRTRACK_HOST};
+my $PORT = $ENV{VRTRACK_PORT} || 3306;
+my $WRITE_USER = $ENV{VRTRACK_RW_USER};
+my $WRITE_PASS = $ENV{VRTRACK_PASSWORD};
+my $READ_USER = $ENV{VRTRACK_RO_USER};
+
+#pending_db connection, SQL statements and statement handles:
+my $pending_db = 'vrtrack_pending_requests';
+my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => $pending_db, mode => 'rw');
+croak "Can't connect to web tracking database\n" unless $vrtrack;
+
+my $sql_pend_project = qq[INSERT into project(project_id,name,hierarchy_name,ssid,latest) values(?,?,?,?,1)];
+my $sql_pend_sample = qq[INSERT into sample(sample_id,name,hierarchy_name,project_id,latest) values (?,?,?,?,1)];
+my $sql_pend_libreq = qq[INSERT into library_request(library_request_id,sample_id,ssid,prep_status,changed,latest) values (?,?,?,?,?,1)];
+my $sql_pend_lib = qq[INSERT into library(library_id,sample_id,name,hierarchy_name,latest) values (?,?,?,?,1)];
+my $sql_check_pool = qq[SELECT multiplex_pool_id from multiplex_pool where ssid = ?];
+my $sql_pend_pool = qq[INSERT into multiplex_pool(ssid) values (?)];
+my $sql_check_mplex = qq[SELECT multiplex_pool_id from library_multiplex_pool where library_id = ?];
+my $sql_pend_mplex = qq[INSERT into library_multiplex_pool(multiplex_pool_id,library_id) values (?,?)];
+my $sql_pend_sreq = qq[INSERT into seq_request(seq_request_id,ssid,seq_type,seq_status,changed,latest) values (?,?,?,?,?,1)];
+my $sql_pend_sreq_mp = qq[INSERT into seq_request(seq_request_id,multiplex_pool_id,ssid,seq_type,seq_status,changed,latest) values (?,?,?,?,?,?,1)];
+
+my $sth_proj = $vrtrack->{_dbh}->prepare($sql_pend_project);
+my $sth_ins_samp = $vrtrack->{_dbh}->prepare($sql_pend_sample);
+my $sth_ins_libreq = $vrtrack->{_dbh}->prepare($sql_pend_libreq);
+my $sth_ins_lib = $vrtrack->{_dbh}->prepare($sql_pend_lib);
+my $sth_chk_pool = $vrtrack->{_dbh}->prepare($sql_check_pool);
+my $sth_ins_pool = $vrtrack->{_dbh}->prepare($sql_pend_pool);
+my $sth_chk_mplex = $vrtrack->{_dbh}->prepare($sql_check_mplex);
+my $sth_ins_mplex = $vrtrack->{_dbh}->prepare($sql_pend_mplex);
+my $sth_ins_sreq = $vrtrack->{_dbh}->prepare($sql_pend_sreq);
+my $sth_ins_sreq_mp = $vrtrack->{_dbh}->prepare($sql_pend_sreq_mp);
+
+#warehouse connection, SQL statements and statement handles:
+my $wh_dbh = DBI->connect("DBI:mysql:host=mcs12:port=3379;database=sequencescape_warehouse", "warehouse_ro",undef,{'RaiseError' => 1, 'PrintError'=>0});
+croak "Can't connect to sequencescape_warehouse\n" unless $wh_dbh;
+
+my $sql_pending_count = qq[select count(*) from current_requests where study_internal_id = ? and state in ('started','pending') and (request_type like '%Pulldown%' or request_type like '%sequencing')];
+my $sql_wh_pending = qq[select sa.name, cr.internal_id, cr.request_type, cr.state, cr.is_current, cr.last_updated, cr.source_asset_type, a.library_internal_id from 
+                        current_requests cr, aliquots a, current_samples sa where source_asset_internal_id = a.receptacle_internal_id and a.sample_internal_id = sa.internal_id
+                        and cr.study_internal_id = ? and cr.state in ('started','pending')];
+my $sql_wh_mplex_id = qq[select receptacle_internal_id from aliquots where receptacle_type in ('multiplexed_library_tube','pulldown_multiplexed_library_tube') and library_internal_id = ?];
+
+my $sth_wh = $wh_dbh->prepare($sql_wh_pending);
+my $sth_wh_count = $wh_dbh->prepare($sql_pending_count);
+my $sth_wh_mplex = $wh_dbh->prepare($sql_wh_mplex_id);
+
+#vrtrack_pending_requests tables populated by script for the web tool:
+my @pending_tables = qw(project sample library library_request seq_request library_multiplex_pool multiplex_pool);
+
+#array of databases for which pending data is stored:
+my @dbs = qw(vrtrack_human_wgs vrtrack_mouse_wgs vrtrack_human_wes vrtrack_mouse_wes vrtrack_cerevisiae_wgs vrtrack_uk10k_neuro vrtrack_uk10k_obesity vrtrack_uk10k_rare vrtrack_uk10k_cohort);
+
+#truncate current pending view data
+foreach ( @pending_tables ) {
+	my $sql_del = qq[TRUNCATE TABLE $_];
+	my $sth_del = $vrtrack->{_dbh}->prepare($sql_del);
+	croak "Unable to truncate table $_\n" unless $sth_del->execute();
+}
+
+#initialise ids for tables of vrtrack_pending_results
+my $project_id = 1;
+my $sample_id = 1;
+my $library_request_id = 1;
+my $library_id = 1;
+my $seq_request_id = 1;
+my $mplex_pool_id = 1;
+
+
+foreach ( @dbs ) {
+	my $dbname = $_;
+	my $dbconn = DBI->connect("DBI:mysql:host=$HOST:port=$PORT;database=$dbname",$READ_USER,undef,{'RaiseError' => 1, 'PrintError'=>0});
+	croak "Can't connect to $dbname tracking database\n" unless $dbconn;
+	#retrieve project ssids:
+	my $sth_get = $dbconn->prepare("SELECT name, ssid from latest_project");
+    if ($sth_get->execute()) {
+        my ($proj, $ssid);
+        $sth_get->bind_columns(\($proj, $ssid));
+        while ($sth_get->fetch) {
+			my %samples;
+            my %libraries;
+            my %pool;
+			my %mplex;
+			my %seqreq;
+			#get count of pending or started requests to bypass v.slow pending requests select (in cases where there are none)
+			if ($sth_wh_count->execute($ssid)) {
+			    my $pending_count = $sth_wh_count->fetchrow_array();
+			    print "$proj ($ssid) has $pending_count pending requests.\n";
+			    next if $pending_count == 0;
+			}
+			$sth_proj->execute($project_id,$proj,$proj,$ssid);
+			if ($sth_wh->execute($ssid)) {
+				my $ref = $sth_wh->fetchall_arrayref;
+			    foreach my $row ( @{$ref} ) {
+					#samples
+					my $samp_ins = $samples{@$row[0]};
+					if ( !$samp_ins ) {
+						$samples{@$row[0]} = $sample_id;
+						$samp_ins = $sample_id++;
+						$sth_ins_samp->execute($samp_ins,@$row[0],@$row[0],$project_id);						
+					}
+					if ( @$row[2] =~ /Pulldown/ ) {
+					    #lib_request
+				    	$sth_ins_libreq->execute($library_request_id,$samp_ins,@$row[1],@$row[3],@$row[5]);
+				    	$library_request_id++;
+				    }
+				    elsif ( @$row[2] =~ /sequencing$/ ) {
+                        my $mplex_ssid;
+						my $mplex_ins;
+						my $seq_ins;
+						my $pool_id;						
+						#libraries
+						my $lib_ins = $libraries{@$row[7]};
+					    if ( !$lib_ins ) {
+							$libraries{@$row[7]} = $library_id;
+							$lib_ins = $library_id++;
+						    $sth_ins_lib->execute($lib_ins,$samp_ins,@$row[7],@$row[7]);
+						}
+						if ( @$row[6] =~ /^multiplexed/ ) {
+							#multiplex_pool_ssid
+							if ( $sth_wh_mplex->execute(@$row[7]) ) {
+								$mplex_ssid = $sth_wh_mplex->fetchrow_array();
+								if ( ! $mplex_ssid ) {
+									carp "Warning- multiplex_pool ssid not found in warehouse for library @$row[7], record skipped...\n";
+									next;
+								}							
+								else {
+									#library_multiplex_pool
+									$pool_id = $pool{$mplex_ssid};
+									if ( !$pool_id ) {
+										$sth_ins_pool->execute( $mplex_ssid );
+									    $sth_chk_pool->execute( $mplex_ssid );
+									    $pool_id = $sth_chk_pool->fetchrow_array();
+								        $pool{$mplex_ssid} = $pool_id;
+									}
+									$mplex_ins = $mplex{$lib_ins};
+									if ( !$mplex_ins ) {
+									    $sth_ins_mplex->execute( $pool_id,$lib_ins );
+									    $sth_chk_mplex->execute( $lib_ins );
+									    $mplex_ins = $sth_chk_mplex->fetchrow_array();
+									    $mplex{$lib_ins} = $pool_id;
+									}
+								}
+						    }
+						}
+						#seq_request
+						my $sr_str = $mplex_ins ? join(',', ($mplex_ins,@$row[1],@$row[2],@$row[3],@$row[5])) : join(',', (@$row[1],@$row[2],@$row[3],@$row[5]));
+						if ( !$seqreq{$sr_str} ) {
+							    if ( $mplex_ins ) {
+							        $sth_ins_sreq_mp->execute( $seq_request_id,$mplex_ins,@$row[1],@$row[2],@$row[3],@$row[5] );
+								}
+								else {
+									$sth_ins_sreq->execute( $seq_request_id,@$row[1],@$row[2],@$row[3],@$row[5] );
+								}
+								$seqreq{$sr_str} = $seq_request_id;
+								$seq_request_id++;
+						}							
+					}
+                }	        
+		    }
+		    $project_id++;
+		}
+    }
+    $dbconn->disconnect;
+}
+$sth_wh->finish();
+$sth_wh_mplex->finish();
+$sth_wh_count->finish();
+$wh_dbh->disconnect;
