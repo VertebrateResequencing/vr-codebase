@@ -405,7 +405,12 @@ sub annotate
     {
         for my $col (keys %{$$opts{remove}})
         {
-            if ( ref($$opts{remove}{$col}) ne 'HASH' ) { next; } # exception ID,QUAL,FILTER
+            if ( ref($$opts{remove}{$col}) ne 'HASH' ) 
+            {
+                # remove all filters at once
+                if ( $col eq 'FILTER' ) { $vcf->remove_header_line(key=>$col); }
+                next;
+            }
             for my $tag (keys %{$$opts{remove}{$col}}) { $vcf->remove_header_line(key=>$col, ID=>$tag); }
         }
     }
