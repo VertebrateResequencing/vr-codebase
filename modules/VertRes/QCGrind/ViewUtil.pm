@@ -1,6 +1,7 @@
 package VertRes::QCGrind::ViewUtil;
 use base qw(VertRes::QCGrind::Util);
 use VertRes::Utils::VRTrackFactory;
+use DBI;
 # Common variables and modules for view webpages (i.e. non-QCGrind)
 use strict;
 
@@ -209,7 +210,9 @@ sub displayDatabasesPage {
 		foreach (@main_dbs) {
 			$done{$_}++;
 		}
-    	my @dbs = VertRes::Utils::VRTrackFactory->databases(1);
+        my $dbh = $self->nonVrtrackConnection('information_schema');
+        my @dbs = @{$dbh->selectcol_arrayref('show databases')};
+		@dbs = grep(!/information_schema/, @dbs);
     	@dbs = grep(!/test/, @dbs);
 		@dbs = grep(!/jm23/, @dbs);
 		@dbs = grep(!/tttt/, @dbs);
@@ -217,6 +220,7 @@ sub displayDatabasesPage {
 		@dbs = grep(!/irods/, @dbs);
 		@dbs = grep(!/kuusamo/, @dbs);
 		@dbs = grep(!/requests/, @dbs);
+		@dbs = grep(!/web_index/, @dbs);
     	print qq[
         	<div class="centerFieldset">
         	<fieldset id="fieldset1" class="coolfieldset" style="width: 500px">
@@ -310,6 +314,14 @@ sub fetchProjectName
 		}
 	}
 	return $pname;
+}
+
+sub nonVrtrackConnection
+{
+	my ($self,$db) = @_;
+    my $dbh = DBI->connect("dbi:mysql:$db;host=$ENV{VRTRACK_HOST};port=$ENV{VRTRACK_PORT}", $ENV{VRTRACK_RO_USER}, undef, { 'RaiseError' => 1 } );
+    $self->displayError( "Failed to connect to non-VRTrack database: $db" ) unless defined( $dbh );
+    return $dbh;
 }
 
 1;

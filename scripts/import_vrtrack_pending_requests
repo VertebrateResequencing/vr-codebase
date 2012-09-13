@@ -56,14 +56,12 @@ my $wh_dbh = DBI->connect("DBI:mysql:host=mcs12:port=3379;database=sequencescape
 croak "Can't connect to sequencescape_warehouse\n" unless $wh_dbh;
 
 my $sql_pending_count = qq[select count(*) from current_requests where study_internal_id = ? and state in ('started','pending') and (request_type like '%Pulldown%' or request_type like '%sequencing')];
-my $sql_wh_pending = qq[select sa.name, cr.internal_id, cr.request_type, cr.state, cr.is_current, cr.last_updated, cr.source_asset_type, a.library_internal_id from 
+my $sql_wh_pending = qq[select sa.name, cr.internal_id, cr.request_type, cr.state, cr.is_current, cr.last_updated, cr.source_asset_type, a.library_internal_id, a.receptacle_internal_id from 
                         current_requests cr, aliquots a, current_samples sa where source_asset_internal_id = a.receptacle_internal_id and a.sample_internal_id = sa.internal_id
                         and cr.study_internal_id = ? and cr.state in ('started','pending')];
-my $sql_wh_mplex_id = qq[select receptacle_internal_id from aliquots where receptacle_type in ('multiplexed_library_tube','pulldown_multiplexed_library_tube') and library_internal_id = ?];
 
 my $sth_wh = $wh_dbh->prepare($sql_wh_pending);
 my $sth_wh_count = $wh_dbh->prepare($sql_pending_count);
-my $sth_wh_mplex = $wh_dbh->prepare($sql_wh_mplex_id);
 
 #vrtrack_pending_requests tables populated by script for the web tool:
 my @pending_tables = qw(project sample library library_request seq_request library_multiplex_pool multiplex_pool);
@@ -138,30 +136,28 @@ foreach ( @dbs ) {
 						}
 						if ( @$row[6] =~ /^multiplexed/ ) {
 							#multiplex_pool_ssid
-							if ( $sth_wh_mplex->execute(@$row[7]) ) {
-								$mplex_ssid = $sth_wh_mplex->fetchrow_array();
-								if ( ! $mplex_ssid ) {
-									carp "Warning- multiplex_pool ssid not found in warehouse for library @$row[7], record skipped...\n";
-									next;
-								}							
-								else {
-									#library_multiplex_pool
-									$pool_id = $pool{$mplex_ssid};
-									if ( !$pool_id ) {
-										$sth_ins_pool->execute( $mplex_ssid );
-									    $sth_chk_pool->execute( $mplex_ssid );
-									    $pool_id = $sth_chk_pool->fetchrow_array();
-								        $pool{$mplex_ssid} = $pool_id;
-									}
-									$mplex_ins = $mplex{$lib_ins};
-									if ( !$mplex_ins ) {
-									    $sth_ins_mplex->execute( $pool_id,$lib_ins );
-									    $sth_chk_mplex->execute( $lib_ins );
-									    $mplex_ins = $sth_chk_mplex->fetchrow_array();
-									    $mplex{$lib_ins} = $pool_id;
-									}
+							$mplex_ssid = @$row[8];
+							if ( ! $mplex_ssid ) {
+							    carp "Warning- multiplex_pool ssid not found in warehouse for library @$row[7], record skipped...\n";
+								next;
+							}							
+							else {
+								#library_multiplex_pool
+								$pool_id = $pool{$mplex_ssid};
+								if ( !$pool_id ) {
+									$sth_ins_pool->execute( $mplex_ssid );
+								    $sth_chk_pool->execute( $mplex_ssid );
+								    $pool_id = $sth_chk_pool->fetchrow_array();
+							        $pool{$mplex_ssid} = $pool_id;
 								}
-						    }
+								$mplex_ins = $mplex{$lib_ins};
+								if ( !$mplex_ins ) {
+								    $sth_ins_mplex->execute( $pool_id,$lib_ins );
+								    $sth_chk_mplex->execute( $lib_ins );
+								    $mplex_ins = $sth_chk_mplex->fetchrow_array();
+								    $mplex{$lib_ins} = $pool_id;
+								}
+							}
 						}
 						#seq_request
 						my $sr_str = $mplex_ins ? join(',', ($mplex_ins,@$row[1],@$row[2],@$row[3],@$row[5])) : join(',', (@$row[1],@$row[2],@$row[3],@$row[5]));
@@ -184,6 +180,5 @@ foreach ( @dbs ) {
     $dbconn->disconnect;
 }
 $sth_wh->finish();
-$sth_wh_mplex->finish();
 $sth_wh_count->finish();
 $wh_dbh->disconnect;
