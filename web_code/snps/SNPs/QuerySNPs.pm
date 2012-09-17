@@ -456,7 +456,7 @@ sub print_legend
     $html->out(qq[<div id="legend">
             <b>Try:</b>
                 <div style="margin-left:1em;"> <a href="$$self{'myself'}">New search</a> </div>
-                <div style="margin-left:1em;"> <a href="http://www.ensembl.org/Mus_musculus/Location/View?db=core;r=$$self{chrm}:$$self{from}-$$self{to};" target="_ensembl_snp">View in Ensembl</a> </div>
+                <div style="margin-left:1em;"> <a href="http://may2012.archive.ensembl.org/Mus_musculus/Location/View?db=core;r=$$self{chrm}:$$self{from}-$$self{to};" target="_ensembl_snp">View in Ensembl</a> </div>
                 <div style="margin-left:1em;"> Click on SNPs for details</div>
             <div style="padding-top:1em;"><b>Download:</b></div>
         ]);
@@ -615,10 +615,10 @@ sub print_row
     if ( $print_gene ) { 
         if ($$self{ens_id}) {
         	my $ens_id = $$self{ens_id};
-        	$html->out(sprintf qq[<a href="http://www.ensembl.org/Mus_musculus/Gene/Summary?g=$ens_id" target="_ensembl_snp">$gene_name</a>]); 
+        	$html->out(sprintf qq[<a href="http://may2012.archive.ensembl.org/Mus_musculus/Gene/Summary?g=$ens_id" target="_ensembl_snp">$gene_name</a>]); 
         }
         else {
-        	$html->out(sprintf qq[<a href="http://www.ensembl.org/Mus_musculus/Gene/Summary?g=$gene_name" target="_ensembl_snp">$gene_name</a>]); 
+        	$html->out(sprintf qq[<a href="http://may2012.archive.ensembl.org/Mus_musculus/Gene/Summary?g=$gene_name" target="_ensembl_snp">$gene_name</a>]); 
         }	
     }
     $html->out(qq[</td><td $style>$chr</td><td $style>$pos</td><td class="resultsbar">$base</td>]);
@@ -685,7 +685,7 @@ sub print_row
             $details .= '<tr><td>Depth:</td><td> ' . $$row[$i]->{'depth'} . '</td></tr>';
             $details .= '<tr><td>Quality:</td><td> ' . $$row[$i]->{'gt_qual'} .'/'. $$row[$i]->{'map_qual'} .'/'. $$row[$i]->{'cons_qual'} 
                             . '<br><span style="font-size:xx-small">(GT/map/cons)</span></td></tr>';
-            $details .= qq[<tr><td colspan="2"><a href="http://www.ensembl.org/Mus_musculus/Location/View?db=core;r=$chr:$pos-$pos;" target="_ensembl_snp">View in Ensembl</a></td></tr>];
+            $details .= qq[<tr><td colspan="2"><a href="http://may2012.archive.ensembl.org/Mus_musculus/Location/View?db=core;r=$chr:$pos-$pos;" target="_ensembl_snp">View in Ensembl</a></td></tr>];
             if ( $$row[$i]->{bam} )
             {
                 my $from = $pos - int($$self{lseq_win}*0.5);

@@ -53,10 +53,10 @@ sub do_validation
     my ($opts) = @_;
 
     my %opts = $$opts{file} ? (file=>$$opts{file}) : (fh=>\*STDIN);
-    my $vcf = Vcf->new(%opts, warn_duplicates=>$$opts{duplicates});
 
     if ( !$$opts{unique} )
     {
+		my $vcf = Vcf->new(%opts, warn_duplicates=>$$opts{duplicates});
         $vcf->run_validation();
         return;
     }
@@ -90,6 +90,7 @@ sub do_validation
     } 
     else 
     {
+		my $vcf = Vcf->new(%opts, warn_duplicates=>$$opts{duplicates});
         $vcf->run_validation();
         return;
     }

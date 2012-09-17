@@ -24,7 +24,7 @@ use strict;
 use warnings;
 use Carp;
 use Data::Dumper;
-use base qw(Vcf);
+use base 'Vcf';
 
 =head2 new
 
@@ -40,7 +40,7 @@ sub new
     my $self = $class->SUPER::new(@args);
     for my $version (@{$$self{versions}})
     {
-        if ( $self->isa($version) ) { eval "use base qw($version)"; }
+        if ( $self->isa($version) ) { eval "use base '$version'"; }
     }
     bless($self,$class);
     return $self;
@@ -425,12 +425,12 @@ sub _calc_tstv
     my ($self,$stat) = @_;
 
     my $ts = 0;
-    for my $mut qw(A>G G>A C>T T>C)
+    for my $mut (qw(A>G G>A C>T T>C))
     {
         if ( exists($$stat{$mut}) ) { $ts += $$stat{$mut}; }
     }
     my $tv = 0;
-    for my $mut qw(A>C C>A G>T T>G A>T T>A C>G G>C)
+    for my $mut (qw(A>C C>A G>T T>G A>T T>A C>G G>C))
     {
         if ( exists($$stat{$mut}) ) { $tv += $$stat{$mut}; }
     }

@@ -7,7 +7,7 @@ print "Type       Mounted on               Size     Used    Avail     Use%\n";
 
 my @disks = qw [/lustre/scratch102 /lustre/scratch105 /lustre/scratch106 ];
 push (@disks, `ls -d /nfs/vertres*`);
-push (@disks, qw [/warehouse/g1k-01 /warehouse/g1k-02 /warehouse/g1k-03 /warehouse/g1k-04 ]);
+push (@disks, qw [/warehouse/g1k-01 /warehouse/g1k-02 /warehouse/g1k-03_1 /warehouse/g1k-03_2 /warehouse/g1k-04 ]);
 
 my ($Size_t, $Used_t, $Avail_t, $Use_pct_t);
 

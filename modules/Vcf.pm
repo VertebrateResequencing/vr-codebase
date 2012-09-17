@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r735';
+our $VERSION = 'r779';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
@@ -213,13 +213,11 @@ sub _open
                 $cmd = "tabix $tabix_args |";
             }
             else { $cmd = "gunzip -c '$$self{file}' |"; } 
-            $$self{check_exit_status} = 1;
         }
         elsif ( $$self{file}=~m{^(?:http|ftp)://} )
         {
             if ( !exists($args{region}) ) { $tabix_args .= ' .'; }
             $cmd = "tabix $tabix_args |";
-            $$self{check_exit_status} = 1;
         }
         open($$self{fh},$cmd) or $self->throw("$cmd: $!");
     }
@@ -260,6 +258,7 @@ sub open
     About   : Close the filehandle
     Usage   : $vcf->close();
     Args    : none
+	Returns : close exit status
 
 =cut
 
@@ -267,8 +266,9 @@ sub close
 {
     my ($self) = @_;
     if ( !$$self{fh} ) { return; }
-    close($$self{fh});
+    my $ret = close($$self{fh});
     delete($$self{fh});
+	return $ret;
 }
 
 
@@ -306,14 +306,6 @@ sub next_line
                 next;
             }
             last;
-        }
-    }
-    if ( !defined $line && $$self{check_exit_status} )
-    {
-        my $pid = waitpid(-1, WNOHANG);
-        if ( $pid!=0 && $pid!=-1 && $? !=0 )
-        {
-            $self->throw("Error reading VCF file.\n");
         }
     }
     return $line;
@@ -405,6 +397,7 @@ sub _set_version
         }
         elsif ( !($version_line=~/^##fileformat=/i) or !($version_line=~/(\d+(?:\.\d+)?)\s*$/i) ) 
         { 
+			chomp($version_line);
             $self->warn("Could not parse the fileformat version string [$version_line], assuming VCFv$$self{default_version}\n"); 
             undef $version_line;
         }
@@ -779,7 +772,7 @@ sub _header_line_exists
 =head2 remove_header_line
 
     Usage   : $vcf->remove_header_line(key=>'INFO', ID=>'AC')
-    Args    : 
+    Args    :
     Returns : 
 
 =cut
@@ -788,6 +781,7 @@ sub remove_header_line
 {
     my ($self,%args) = @_;
     my $key = $args{key};
+    my %to_be_removed;
     for (my $i=0; $i<@{$$self{header_lines}}; $i++)
     {
         my $line = $$self{header_lines}[$i];
@@ -796,7 +790,12 @@ sub remove_header_line
         {
             if ( $args{ID} ne $$line{ID} ) { next; }
             delete($$self{header}{$key}{$args{ID}});
-            splice(@{$$self{header_lines}},$i,1);
+            splice(@{$$self{header_lines}},$i--,1);
+        }
+        elsif ( scalar keys %args==1 && exists($$self{header}{$key}) )
+        {
+            splice(@{$$self{header_lines}},$i--,1);
+            $to_be_removed{$key} = 1;
         }
         else
         {
@@ -806,9 +805,10 @@ sub remove_header_line
             {
                 if ( $$self{header}{$key}[$j] eq $to_be_removed ) { splice(@{$$self{header}{$key}},$j,1); last; }
             }
-            splice(@{$$self{header_lines}},$i,1);
+            splice(@{$$self{header_lines}},$i--,1);
         }
     }
+    for my $key (keys %to_be_removed) { delete($$self{header}{$key}); }
 }
 
 
@@ -1067,7 +1067,8 @@ sub remove_field
     while ($itag!=$idx)
     {
         $isep = index($string,$sep,$prev_isep);
-        if ( $isep==-1 ) { $self->throw("The index out of range: $string:$isep .. $idx"); }
+        # The index may be out of range, VCFv4.1 allows omitting empty fields
+        if ( $isep==-1 ) { return $string; }
         $prev_isep = $isep+1;
         $itag++;
     }
@@ -1103,6 +1104,7 @@ sub replace_field
     while ($itag!=$idx)
     {
         $isep = index($string,$sep,$prev_isep);
+        # Todo: VCFv4.1 allows omitting empty fields, shouldn't fail here
         if ( $isep==-1 ) { $self->throw("The index out of range: $string:$isep .. $idx"); }
         $prev_isep = $isep+1;
         $itag++;
@@ -1188,7 +1190,7 @@ sub get_field
     {
         $isep = index($col,$delim,$prev_isep);
         if ( $itag==$idx ) { last; }
-        if ( $isep==-1 ) { $self->throw("The index out of range: $col:$isep .. $idx"); }
+        if ( $isep==-1 ) { return '.'; }    # This is valid, missing fields can be ommited from genotype columns
         $prev_isep = $isep+1;
         $itag++;
     }
@@ -1648,7 +1650,7 @@ sub has_AGtags
     }
     if ( defined $out ) 
     {
-        for my $key qw(fmtA fmtG infoA infoG) { if ( !exists($$out{$key}) ) { $$out{$key}=[] } }
+        for my $key (qw(fmtA fmtG infoA infoG)) { if ( !exists($$out{$key}) ) { $$out{$key}=[] } }
     }
     return $out;
 }
@@ -2647,6 +2649,54 @@ sub get_samples
 }
 
 
+=head2 get_column
+
+    About   : Convenient way to get data for a sample
+    Usage   : my $rec = $vcf->next_data_array(); my $sample_col = $vcf->get_column($rec, 'NA0001');
+    Args 1  : Array pointer returned by next_data_array
+         2  : Column/Sample name
+
+=cut
+
+sub get_column
+{
+    my ($self,$line,$column) = @_;
+    if ( !exists($$self{has_column}{$column}) ) { $self->throw("No such column: [$column]\n"); }
+    my $idx = $$self{has_column}{$column};
+    return $$line[$idx-1];
+}
+
+=head2 get_column_name
+
+    About   : Mapping between zero-based VCF column and its name
+    Usage   : my $vcf = Vcf->new(); $vcf->parse_header(); my $name = $vcf->get_column_name(1); # returns POS
+    Args    : Index of the column (0-based)
+
+=cut
+
+sub get_column_name
+{
+    my ($self,$idx) = @_;
+    if ( $idx >= @{$$self{columns}} ) { $self->throw("The index out of bounds\n"); }
+    return $$self{columns}[$idx];
+}
+
+=head2 get_column_index
+
+    About   : Mapping between VCF column name and its zero-based index
+    Usage   : my $vcf = Vcf->new(); $vcf->parse_header(); my $name = $vcf->get_column_index('POS'); # returns 1
+    Args    : Name of the column
+
+=cut
+
+sub get_column_index
+{
+    my ($self,$column) = @_;
+    if ( !exists($$self{has_column}{$column}) ) { $self->throw("No such column: [$column]\n"); }
+    return $$self{has_column}{$column}-1;
+}
+
+
 #------------------------------------------------
 # Version 3.2 specific functions
 
@@ -3207,6 +3257,8 @@ sub Vcf4_1::validate_line
         if ( !@$lines ) { $self->warn("The header tag 'contig' not present for CHROM=$$line{CHROM}. (Not required but highly recommended.)\n"); }
         $$self{_contig_validated}{$$line{CHROM}} = 1;
     }
+
+    if ( index($$line{CHROM},':')!=-1 ) { $self->warn("Colons not allowed in chromosome names: $$line{CHROM}\n"); }
 
     # Is the ID composed of alphanumeric chars
     if ( !($$line{ID}=~/^\S+$/) ) { $self->warn("Expected non-whitespace ID at $$line{CHROM}:$$line{POS}, but got [$$line{ID}]\n"); }

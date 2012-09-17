@@ -37,7 +37,9 @@ sub new
             java_args   => '',
             vcf_beagle  => 'vcf-beagle',
             fai_ref     => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
-            known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',    # This must be tabix indexed VCF
+            known_vcf   => '/lustre/scratch111/resources/variation/grch37/1K_phase1_release_v3.20101123/ALL.chr{CHROM}.phase1_release_v3.20101123.snps_indels_svs.genotypes.vcf.gz',    # This must be tabix indexed VCF
+            # must be specified if {CHROM} is used in known_vcf
+            chrom_list  => [ '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', ],
 
             buffer_region   => 10_000,
             chunk_size      => 1_000_000,
@@ -212,6 +214,11 @@ sub regions
         if ( ref($$self{region}) eq 'ARRAY' ) { return $$self{region} }
         return [ $$self{region} ]; 
     }
+    if ( exists($$self{chrom_list}) )
+    {
+        if ( ref($$self{chrom_list}) eq 'ARRAY' ) { return $$self{chrom_list} }
+        return [ $$self{chrom_list} ];
+    }
     my (@in_list) = grep { chomp } $self->cmd(qq[tabix -l $$self{in_vcf}]);
     return \@in_list;
 }
@@ -219,13 +226,21 @@ sub regions
 sub vcf_to_beagle
 {
     my ($self,$outfile,$outdir,$region) = @_;
+    # Split up region information
     if ( !($region=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the chunk string: [$region]\n"); }
     my $chr  = $1;
     my $from = $2 - $$self{buffer_region};
     my $to   = $3 + $$self{buffer_region};
+    # select correct input file and known file
+    my $in_vcf = $$self{in_vcf};
+    $in_vcf =~ s/{CHROM}/$chr/;
+    my $known_vcf = $$self{known_vcf};
+    $known_vcf =~ s/{CHROM}/$chr/;
+
+    # Execute
     if ( $from<0 ) { $from = 0; }
     $self->cmd(qq[mkdir -p $outdir]);
-    $self->cmd(qq[$$self{vcf_beagle} -r $chr:$from-$to -i $$self{in_vcf} -k $$self{known_vcf} -o $outdir/$region.01 >>$outfile.o 2>>$outfile.e && touch $outfile]);
+    $self->cmd(qq[$$self{vcf_beagle} -r $chr:$from-$to -i $in_vcf -k $known_vcf -o $outdir/$region.01 >>$outfile.o 2>>$outfile.e && touch $outfile]);
 }
 
 sub beagle
@@ -237,8 +252,17 @@ sub beagle
         $self->cmd("touch $outfile");
         return;
     }
-    if ( -s "$outfile.e" ) { `cat $outfile.e >> $outfile.e.saved`; }
     my $mem = int($self->get_limits('memory') * 0.8);
+    if ( -s "$outfile.e" ) 
+    {
+        # At this stage the LSF memory cannot be increased, but we can tell java that more memory is available.
+        #   This way it should fail with the proper 'memory limit exceeded' status and the pipeline will assign
+        #   memory in the next retry.
+        my @err = `head -1 $outfile.e`;
+        if ( $err[0] =~ /java.lang.OutOfMemoryError/ ) { $mem = int($self->get_limits('memory') * 1.5); }
+        `cat $outfile.e >> $outfile.e.saved`; 
+    }
+    
     my $known = $$self{known_vcf} eq '--' ? '' : "markers=$outdir/$region.01.markers unphased=$outdir/$region.01.known_haps.gz missing=?";
     $self->cmd(qq[java -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} like=$outdir/$region.01.impute_haps.gz $known out=$outdir/$region.02 >>$outfile.o 2>$outfile.e]);
     if ( -s "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
@@ -248,13 +272,21 @@ sub beagle
 sub beagle_to_vcf
 {
     my ($self,$outfile,$outdir,$region) = @_;
+
+    # Split up region information
+    if ( !($region=~/^([^:]+):\d+-\d+$/) ) { $self->throw("Could not parse the chunk string: [$region]\n"); }
+    my $chr  = $1;
+    # select correct input file
+    my $in_vcf = $$self{in_vcf};
+    $in_vcf =~ s/{CHROM}/$chr/;
+
     if ( ! -e "$outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz" )
     {
         # The region is empty
         $self->cmd("touch $outfile");
         return;
     }
-    $self->cmd(qq[$$self{vcf_beagle} -r $region -i $$self{in_vcf} -o $outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz 2>>$outfile.e | bgzip -c > $outfile.part]);
+    $self->cmd(qq[$$self{vcf_beagle} -r $region -i $in_vcf -o $outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz 2>>$outfile.e | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
 }
