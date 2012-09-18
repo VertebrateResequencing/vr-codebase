@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '19';
+use constant SCHEMA_VERSION => '24';
 
 our $DEFAULT_PORT = 3306;
 
@@ -1156,6 +1156,9 @@ sub get_lanes {
   Arg [1]    : Code ref
   Arg [2]    : optional hash ref: { read => [], write => []} where the array
                ref values contain table names to lock for reading/writing
+               [NB: not yet implemented]
+  Arg [3]    : optional array ref of objects to make sure they really get
+               updated in the database
   Example    : my $worked = $vrtrack->transaction(sub { $lane->update; }, { write => ['lane'] });
   Description: Run code safely in a transaction, with automatic retries in the
                case of deadlocks. If the transaction fails for some other reason,
@@ -1165,7 +1168,7 @@ sub get_lanes {
 =cut
 
 sub transaction {
-    my ($self, $code, $locks) = @_;
+    my ($self, $code, $locks, $objects) = @_;
     
     my $dbh = $self->{_dbh};
     
@@ -1237,6 +1240,45 @@ sub transaction {
         }
         else {
             $success = 1;
+            if ($objects) {
+                OBJLOOP: foreach my $obj (@$objects) {
+                    next unless $obj;
+                    
+                    # really make sure that the database values match the
+                    # instance values
+                    $obj->can('fields_dispatch') || next;
+                    my %expected_fields = %{$obj->fields_dispatch || {}};
+                    my @fields = keys %expected_fields;
+                    my $retries = 0;
+                    while (1) {
+                        my $fresh_vrtrack = VRTrack::VRTrack->new($self->{_db_params});
+                        my $fresh_obj = $obj->new($fresh_vrtrack, $obj->id);
+                        my %db_fields = %{$fresh_obj->fields_dispatch || {}};
+                        my $all_matched = 1;
+                        foreach my $field (@fields) {
+                            my $expected_val = &{$expected_fields{$field}}();
+                            my $db_val = &{$db_fields{$field}}();
+                            if ($db_val ne $expected_val) {
+                                $fresh_obj->$field($expected_val);
+                                $all_matched = 0;
+                            }
+                        }
+                        
+                        unless ($all_matched) {
+                            $fresh_vrtrack->transaction(sub {
+                                $fresh_obj->update;
+                            });
+                        }
+                        
+                        last if $all_matched;
+                        if ($retries++ >= 10) {
+                            $self->{transaction_error} = "Unable to make the database values match instance values after using update() on object $obj with id ".$obj->id."\n";
+                            $success = 0;
+                            last OBJLOOP;
+                        }
+                    }
+                }
+            }
             last;
         }
     }
@@ -1442,7 +1484,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (19);
+insert into schema_version(schema_version) values (23);
 
 --
 -- Table structure for table `assembly`
@@ -1500,7 +1542,7 @@ CREATE TABLE `file` (
   `raw_reads` bigint(20) unsigned DEFAULT NULL,
   `raw_bases` bigint(20) unsigned DEFAULT NULL,
   `mean_q` float unsigned DEFAULT NULL,
-  `md5` varchar(40) DEFAULT NULL,
+  `md5` char(32) DEFAULT NULL,
   `note_id` mediumint(8) unsigned DEFAULT NULL,
   `changed` datetime NOT NULL DEFAULT '0000-00-00',
   `latest` tinyint(1) DEFAULT '0',
@@ -1518,7 +1560,7 @@ DROP TABLE IF EXISTS `image`;
 CREATE TABLE `image` (
   `image_id` mediumint(8) unsigned NOT NULL auto_increment,
   `mapstats_id` mediumint(8) unsigned NOT NULL DEFAULT 0,
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   `caption` varchar(40) DEFAULT NULL,
   `image` MEDIUMBLOB,
   PRIMARY KEY (`image_id`),
@@ -1649,7 +1691,7 @@ CREATE TABLE `seq_request` (
   `library_id` smallint(5) unsigned,
   `multiplex_pool_id` smallint(5) unsigned,
   `ssid` mediumint(8) unsigned DEFAULT NULL,
-  `seq_type` enum('Single ended sequencing','Paired end sequencing','HiSeq Paired end sequencing','MiSeq sequencing','Single ended hi seq sequencing') DEFAULT 'Single ended sequencing',
+  `seq_type` enum('Illumina-A HiSeq Paired end sequencing','Illumina-B HiSeq Paired end sequencing','Illumina-C HiSeq Paired end sequencing','Illumina-C MiSeq sequencing','Illumina-C Single ended hi seq sequencing','Single ended sequencing','Paired end sequencing','HiSeq Paired end sequencing','MiSeq sequencing','Single ended hi seq sequencing') DEFAULT 'Single ended sequencing',
   `seq_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
   `note_id` mediumint(8) unsigned DEFAULT NULL,
   `changed` datetime NOT NULL DEFAULT '0000-00-00',
@@ -1666,7 +1708,7 @@ CREATE TABLE `seq_request` (
 DROP TABLE IF EXISTS `library_type`;
 CREATE TABLE `library_type` (
   `library_type_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   PRIMARY KEY  (`library_type_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -1677,7 +1719,7 @@ CREATE TABLE `library_type` (
 DROP TABLE IF EXISTS `mapper`;
 CREATE TABLE `mapper` (
   `mapper_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   `version` varchar(40) NOT NULL DEFAULT 0,
   PRIMARY KEY  (`mapper_id`),
   UNIQUE KEY `name_v` (`name`, `version`)
@@ -1748,7 +1790,7 @@ CREATE TABLE `mapstats` (
 DROP TABLE IF EXISTS `population`;
 CREATE TABLE `population` (
   `population_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   PRIMARY KEY  (`population_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -1814,7 +1856,7 @@ CREATE TABLE `project` (
 DROP TABLE IF EXISTS `study`;
 CREATE TABLE `study` (
 `study_id` smallint(5) unsigned NOT NULL auto_increment,
-`name` varchar(40) NOT NULL DEFAULT '',
+`name` varchar(255) NOT NULL DEFAULT '',
 `acc` varchar(40) DEFAULT NULL,
 `ssid` mediumint(8) unsigned DEFAULT NULL,
 `note_id` mediumint(8) unsigned DEFAULT NULL,
@@ -1844,7 +1886,7 @@ CREATE TABLE `sample` (
   `sample_id` smallint(5) unsigned NOT NULL DEFAULT 0,
   `project_id` smallint(5) unsigned NOT NULL DEFAULT 0,
   `ssid` mediumint(8) unsigned DEFAULT NULL,
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   `hierarchy_name` varchar(40) NOT NULL DEFAULT '',
   `individual_id` smallint(5) unsigned DEFAULT NULL,
   `note_id` mediumint(8) unsigned DEFAULT NULL,
@@ -1864,7 +1906,7 @@ CREATE TABLE `sample` (
 DROP TABLE IF EXISTS `seq_centre`;
 CREATE TABLE `seq_centre` (
   `seq_centre_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   PRIMARY KEY  (`seq_centre_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -1875,7 +1917,7 @@ CREATE TABLE `seq_centre` (
 DROP TABLE IF EXISTS `seq_tech`;
 CREATE TABLE `seq_tech` (
   `seq_tech_id` smallint(5) unsigned NOT NULL auto_increment,
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   PRIMARY KEY  (`seq_tech_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -1887,12 +1929,29 @@ DROP TABLE IF EXISTS `submission`;
 CREATE TABLE `submission` (
   `submission_id` smallint(5) unsigned NOT NULL auto_increment,
   `date` datetime NOT NULL DEFAULT '0000-00-00',
-  `name` varchar(40) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   `acc` varchar(40) DEFAULT NULL,
   PRIMARY KEY  (`submission_id`),
   UNIQUE KEY `acc` (`acc`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
+
+--
+-- Table structure for table `autoqc`
+--
+
+DROP TABLE IF EXISTS `autoqc`;
+CREATE TABLE `autoqc`
+(
+  `autoqc_id` mediumint(8) unsigned NOT NULL auto_increment,
+   mapstats_id mediumint(8) unsigned NOT NULL DEFAULT 0,
+   test varchar(50) NOT NULL default '',
+   result tinyint(1) DEFAULT 0,
+   reason varchar(200) NOT NULL default '',
+   PRIMARY KEY (`autoqc_id`),
+  KEY  `mapstats_id` (`mapstats_id`),
+   UNIQUE KEY `mapstats_test` (`mapstats_id`, `test`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 --
 -- Views

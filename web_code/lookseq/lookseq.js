@@ -1046,6 +1046,7 @@ function initialize_display () {
 	document.getElementById('display_annotation').checked	= b['annotation'] ? true : false ;
 	document.getElementById('display_gc').checked			= b['gc'] ? true : false ;
 	document.getElementById('display_coverage').checked		= b['coverage'] ? true : false ;
+	document.getElementById('show_arrows').checked			= b['orientation'] ? true : false ;
 	
 	if ( indel_zoom != 'auto' ) document.getElementById('indel_zoom').value = indel_zoom ;
 }

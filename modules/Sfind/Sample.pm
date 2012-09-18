@@ -315,7 +315,7 @@ sub _get_library_request_ids {
     # non-relevant assets other than the well/sample tube, but these won't have
     # library requests so won't cause problems.
 
-    my $sql = qq[select cr.internal_id from current_requests cr ,aliquots a where ((request_type like '%library creation' or request_type like '%library preparation')or (request_type in ('Pulldown WGS', 'Pulldown SC', 'Pulldown ISC'))) and source_asset_internal_id = a.receptacle_internal_id and a.sample_internal_id=? and cr.study_internal_id=?];
+    my $sql = qq[select cr.internal_id from current_requests cr ,aliquots a where ((request_type like '%library creation' or request_type like '%library preparation') or (request_type like '%Pulldown WGS' or request_type like '%Pulldown SC' or request_type like '%Pulldown ISC')) and source_asset_internal_id = a.receptacle_internal_id and a.sample_internal_id=? and cr.study_internal_id=?];
     my @library_requests;
     my $sth = $self->{_dbh}->prepare($sql);
     $sth->execute($self->id, $self->study_id);

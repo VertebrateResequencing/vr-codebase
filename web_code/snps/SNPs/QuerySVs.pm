@@ -126,7 +126,7 @@ sub print_legend
     $html->out(qq[<div id="legend">
             <b>Try:</b>
                 <div style="margin-left:1em;"> <a href="$$self{'myself'}">New search</a> </div>
-                <div style="margin-left:1em;"> <a href="http://www.ensembl.org/Mus_musculus/Location/View?db=core;r=$$self{chrm}:$$self{from}-$$self{to};" target="_ensembl_snp">View in Ensembl</a> </div>
+                <div style="margin-left:1em;"> <a href="http://may2012.archive.ensembl.org/Mus_musculus/Location/View?db=core;r=$$self{chrm}:$$self{from}-$$self{to};" target="_ensembl_snp">View in Ensembl</a> </div>
                 <div style="margin-left:1em;"> Click on SVs for details</div>
             <div style="padding-top:1em;"><b>Download:</b></div>
         ]);
@@ -236,7 +236,7 @@ sub print_row
                 "<tr><td>Location:</td><td>".$$row[$i]->{strain_loc}."</td></tr>" . $details;
             $details .= '<tr><td>SV type:</td><td> ' . $$row[$i]->{'display'}. '</td></tr>';
             $details .= '<tr><td>Breakpoint:</td><td> ' . $$row[$i]->{'brkpt'} . '</td></tr>';
-            $details .= qq[<tr><td colspan="2"><a href="http://www.ensembl.org/Mus_musculus/Location/View?db=core;r=$chr:$pos-$endpos;" target="_ensembl">View in Ensembl</a></td></tr>];
+            $details .= qq[<tr><td colspan="2"><a href="http://may2012.archive.ensembl.org/Mus_musculus/Location/View?db=core;r=$chr:$pos-$endpos;" target="_ensembl">View in Ensembl</a></td></tr>];
             if ( $$row[$i]->{bam} )
             {
                 my $from = $pos - 1000;

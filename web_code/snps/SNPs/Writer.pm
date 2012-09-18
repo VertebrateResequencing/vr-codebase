@@ -306,14 +306,15 @@ sub print_form
                 <td> <input type="text" class="inputbox" name="location" size="25" value="$def_loc" /> </td>
                 <td style="text-align:right;"><input type="submit" class="button_submit" style="padding:0.2em 0.5em 0.1em 0.5em;margin-left:1.5em;" value="Submit" name="get" /> </td></tr>
                 <tr><td colspan="2">Examples: 2:10000000-10500000, Cops5</td><td></td></tr>
+                <tr><td colspan="3">Search engine currently uses the NCBI m37 assembly</td></tr>
         </table>
         </fieldset>
 
         <fieldset>
         <legend>Options</legend>
         <table>
-            <tr><td><input type="radio" name="action" $def_snps  value="snps"  /> <b>Show SNPs</b></td><td>(<a href="ftp://ftp-mouse.sanger.ac.uk/REL-1105/" target="_ftp">REL-1005</a>)</td></tr>
-            <tr><td><input type="radio" name="action" $def_indels value="indels"  /> <b>Show indels</b></td><td>(<a href="ftp://ftp-mouse.sanger.ac.uk/REL-1105/" target="_ftp">REL-1005</a>)</td></tr>
+            <tr><td><input type="radio" name="action" $def_snps  value="snps"  /> <b>Show SNPs</b></td><td>(<a href="ftp://ftp-mouse.sanger.ac.uk/REL-1105/" target="_ftp">REL-1105</a>)</td></tr>
+            <tr><td><input type="radio" name="action" $def_indels value="indels"  /> <b>Show indels</b></td><td>(<a href="ftp://ftp-mouse.sanger.ac.uk/REL-1105/" target="_ftp">REL-1105</a>)</td></tr>
             <tr><td><input type="radio" name="action" $def_svs  value="structvar"  /> <b>Show SVs</b></td><td>(<a href="ftp://ftp-mouse.sanger.ac.uk/REL-110804-SV/" target="_ftp">REL-110804-SV</a>)</td></tr>
             <tr><td colspan="2">Show max <input type="text" class="inputbox" size="3" name="rows" value="$def_rows" /> rows on page</td></tr>
         </table>

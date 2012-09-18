@@ -66,7 +66,7 @@ sub error
         "       --fill-type                     Annotate INFO/TYPE with snp,del,ins,mnp,complex\n",
         "   -f, --filter <file|list>            Apply filters, list is in the format flt1=value/flt2/flt3=value/etc. If argument to -f is a file,\n",
         "                                           user-defined filters be applied. See User Defined Filters below.\n",
-        "   -r, --remove <list>                 Comma-separated list of tags to be removed (e.g. ID,INFO/DP,FORMAT/DP).\n",
+        "   -r, --remove <list>                 Comma-separated list of tags to be removed (e.g. ID,INFO/DP,FORMAT/DP,FILTER).\n",
         "   -h, -?, --help                      This help message.\n",
         "Filters:\n",
         sprintf("\t+  %-25s\t\tApply all filters with default values (can be overriden, see the example below).\n",''),
@@ -76,6 +76,7 @@ sub error
         "   zcat in.vcf.gz | vcf-annotate -a annotations.gz -d descriptions.txt -c FROM,TO,CHROM,ID,INFO/DP | bgzip -c >out.vcf.gz \n",
         "   zcat in.vcf.gz | vcf-annotate -f +/-a/c=3,10/q=3/d=5/-D -a annotations.gz -d key=INFO,ID=GN,Number=1,Type=String,Description='Gene Name' | bgzip -c >out.vcf.gz \n",
         "   zcat in.vcf.gz | vcf-annotate -a dbSNPv132.tab.gz -c CHROM,POS,REF,ALT,ID,-,-,- | bgzip -c >out.vcf.gz \n",
+        "   zcat in.vcf.gz | vcf-annotate -r FILTER/MinDP | bgzip -c >out.vcf.gz \n",
         "Where descriptions.txt contains:\n",
         "   key=INFO,ID=GN,Number=1,Type=String,Description='Gene Name'\n",
         "   key=INFO,ID=STR,Number=1,Type=Integer,Description='Strand'\n",
@@ -138,10 +139,8 @@ sub parse_params
                     $$opts{remove}{INFO}{$col}   = 1;
                     $$opts{remove}{FORMAT}{$col} = 1;
                 }
-                else
-                {
-                    $$opts{remove}{$col}{$tag} = 1;
-                }
+                elsif ( $col eq 'FILTER' ) { $$opts{remove}{$col}{$tag} = 0; }
+                else { $$opts{remove}{$col}{$tag} = 1; }
             }
             next;
         }
@@ -176,17 +175,23 @@ sub parse_user_defined_filters
         if ( !exists($$filter{tag}) ) { error("Missing 'tag' key for one of the filters in $str\n"); }
         if ( $$filter{tag}=~m{^INFO/(.+)$} ) { $$filter{info_tag} = $1; }
         elsif ( $$filter{tag}=~m{^FORMAT/(.+)$} ) { $$filter{format_tag} = $1; }
-        else { error("Currently only INFO and FORMAT tags are supported. Could not parse the tag [$$filter{tag}]\n"); }
+        elsif ( $$filter{tag} eq 'Dummy' ) 
+        { 
+            $$filter{any_tag} = $1; 
+            $$filter{name} = 'Dummy'; 
+            $$filter{desc} = 'Dummy'; 
+        }
+        else { error("Currently only INFO, FORMAT and Dummy tags are supported. Could not parse the tag [$$filter{tag}]\n"); }
 
+        my $name = $$filter{name};
         if ( !exists($$filter{name}) ) { error("Missing 'name' key for the filter [$$filter{tag}]\n"); }
         if ( !exists($$filter{desc}) ) { error("Missing 'desc' key for the filter [$$filter{tag}]\n"); }
 
-        my $name = $$filter{name};
         if ( exists($$filter{header}) )
         {
             push @{$$opts{desc}}, ref($$filter{header}) eq 'ARRAY' ? @{$$filter{header}} : $$filter{header};
         }
-        else
+        elsif ( $$filter{tag} ne 'Dummy' )
         {
             push @{$$opts{desc}}, "key=FILTER,ID=$name,Description='$$filter{desc}'";
         }
@@ -400,7 +405,12 @@ sub annotate
     {
         for my $col (keys %{$$opts{remove}})
         {
-            if ( ref($col) ne 'HASH' ) { next; } # exception ID,QUAL,FILTER
+            if ( ref($$opts{remove}{$col}) ne 'HASH' ) 
+            {
+                # remove all filters at once
+                if ( $col eq 'FILTER' ) { $vcf->remove_header_line(key=>$col); }
+                next;
+            }
             for my $tag (keys %{$$opts{remove}{$col}}) { $vcf->remove_header_line(key=>$col, ID=>$tag); }
         }
     }
@@ -449,7 +459,7 @@ sub annotate
             $prev_chr = $rec[0];
             $prev_pos = $rec[1];
             $vcf->_unread_line($line);
-            $reader->open(region=>$prev_chr);
+            $reader->open(region=>"$prev_chr:$prev_pos");
         }
     }
 
@@ -493,7 +503,7 @@ sub annotate
             {
                 $vcf->_unread_line($line);
                 $prev_chr = $chr;
-                $reader->open(region=>$prev_chr);
+                $reader->open(region=>"$prev_chr:$prev_pos");
                 last;
             }
 
@@ -531,8 +541,16 @@ sub annotate
                 if ( $$annot_line[$from_col] > $pos or $$annot_line[$to_col] < $pos ) { next; }
                 if ( defined $alt_col && $$annot_line[$ref_col] ne '.' )
                 {
+                    # Ignore the annotation line if REF and ALT don't agree
                     if ( $$annot_line[$ref_col] ne $ref ) { next; }
-                    if ( !exists($alt{$$annot_line[$alt_col]}) ) { next; }
+
+                    # There can be multiple ALTs
+                    my $alt_match = 0;
+                    for my $al (split(/,/, $$annot_line[$alt_col]))
+                    {
+                        if ( exists($alt{$al}) ) { $alt_match=1; last; }
+                    }
+                    if ( !$alt_match ) { next; }
                 }
                 for my $info (@annots)
                 {
@@ -647,10 +665,10 @@ sub fill_ac_an_hwe
             $$opts{icf} = $freq_exp ? 1-$freq_obs/$freq_exp : 0;
             $$opts{hwe} = eval_hwe(($max_ac-$nhets)/2,($dpl_counts{0}-$nhets)/2,$nhets ,$line);
             $tags{HWE} = sprintf "%.6f", $$opts{hwe};
-        }
-        if ( $$opts{fill_icf} )
-        {
-            $tags{ICF} = sprintf "%.5f", $$opts{icf};
+            if ( $$opts{fill_icf} )
+            {
+                $tags{ICF} = sprintf "%.5f", $$opts{icf};
+            }
         }
     }
     $$line[7] = $$opts{vcf}->add_info_field($$line[7],%tags);
@@ -857,10 +875,15 @@ sub remove_tags
         }
     }
 
-    # Remove ID, QUAL, FILTER
+    # Remove FILTER
+    if ( exists($$opts{remove}{FILTER}) )
+    {
+        $$line[6] = ref($$opts{remove}{FILTER}) eq 'HASH' ? $$opts{vcf}->add_filter($$line[6],%{$$opts{remove}{FILTER}}) : 'PASS';
+    }
+
+    # Remove ID and QUAL
     if ( exists($$opts{remove}{ID}) ) { $$line[2] = '.' }
     if ( exists($$opts{remove}{QUAL}) ) { $$line[5] = '.' }
-    if ( exists($$opts{remove}{FILTER}) ) { $$line[6] = '.' }
 }
 
 sub apply_user_defined_filters
@@ -906,7 +929,7 @@ sub apply_user_defined_filters
         elsif ( exists($$filter{format_tag}) )
         {
             my $idx = $$opts{vcf}->get_tag_index($$line[8],$$filter{format_tag},':');
-            if ( $idx<1 ) { next; }
+            if ( $idx<0 ) { next; }
             $MATCH = $$opts{vcf}->get_sample_field($line,$idx);
         }
         $apply{ $$filter{name} } = &{$$filter{test}} == $PASS ? 0 : 1;

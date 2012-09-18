@@ -36,6 +36,7 @@ sub error
         "   %LINE           Prints the whole line\n",
         "   %SAMPLE         Sample name\n",
         "   []              The brackets loop over all samples\n",
+        "   %*<A><B>        All format fields printed as KEY<A>VALUE<B>\n",
         "Examples:\n",
         "   vcf-query file.vcf.gz 1:1000-2000 -c NA001,NA002,NA003\n",
         "   vcf-query file.vcf.gz -r 1:1000-2000 -f '%CHROM:%POS\\t%REF\\t%ALT[\\t%SAMPLE:%*=,]\\n'\n",

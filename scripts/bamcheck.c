@@ -1,6 +1,6 @@
 /* 
     Author: petr.danecek@sanger
-    gcc -Wall -Winline -g -O2 -I ~/git/samtools bamcheck.c -o bamcheck -lm -lz -L ~/git/samtools -lbam
+    gcc -Wall -Winline -g -O2 -I ~/git/samtools bamcheck.c -o bamcheck -lm -lz -L ~/git/samtools -lbam -lpthread
 
     Assumptions, approximations and other issues:
         - GC-depth graph does not split reads, the starting position determines which bin is incremented.
@@ -15,7 +15,7 @@
 
 */
 
-#define BAMCHECK_VERSION "2012-04-24"
+#define BAMCHECK_VERSION "2012-09-04"
 
 #define _ISOC99_SOURCE
 #include <stdio.h>
@@ -26,9 +26,11 @@
 #include <ctype.h>
 #include <getopt.h>
 #include <errno.h>
+#include <assert.h>
 #include "faidx.h"
 #include "khash.h"
 #include "sam.h"
+#include "sam_header.h"
 #include "razf.h"
 
 #define BWA_MIN_RDLEN 35
@@ -47,13 +49,14 @@ typedef struct
     uint64_t offset;
 } 
 faidx1_t;
-KHASH_MAP_INIT_STR(s, faidx1_t)
-KHASH_MAP_INIT_STR(str, int)
+KHASH_MAP_INIT_STR(kh_faidx, faidx1_t)
+KHASH_MAP_INIT_STR(kh_bam_tid, int)
+KHASH_MAP_INIT_STR(kh_rg, const char *)
 struct __faidx_t {
     RAZF *rz;
     int n, m;
     char **name;
-    khash_t(s) *hash;
+    khash_t(kh_faidx) *hash;
 };
 
 typedef struct
@@ -124,9 +127,10 @@ typedef struct
     uint64_t nmismatches;
 
     // GC-depth related data
-    uint32_t ngcd, igcd;        // The maximum number of GC depth bins and index of the current bin
+    int32_t ngcd, igcd;        // The maximum number of GC depth bins and index of the current bin
     gc_depth_t *gcd;            // The GC-depth bins holder
     int gcd_bin_size;           // The size of GC-depth bin
+    uint32_t gcd_ref_size;      // The approximate size of the genome
     int32_t tid, gcd_pos;       // Position of the current bin
     int32_t pos;                // Position of the last read
 
@@ -137,11 +141,11 @@ typedef struct
     round_buffer_t cov_rbuf;        // Pileup round buffer
 
     // Mismatches by read cycle 
-    uint8_t *rseq_buf;             // A buffer for reference sequence to check the mismatches against
-    int nref_seq;               // The size of the buffer
-    int32_t rseq_pos;           // The coordinate of the first base in the buffer
-    int32_t rseq_len;           // The used part of the buffer
-    uint64_t *mpc_buf;          // Mismatches per cycle
+    uint8_t *rseq_buf;              // A buffer for reference sequence to check the mismatches against
+    int mrseq_buf;                  // The size of the buffer
+    int32_t rseq_pos;               // The coordinate of the first base in the buffer
+    int32_t nrseq_buf;              // The used part of the buffer
+    uint64_t *mpc_buf;              // Mismatches per cycle
 
     // Filters
     int filter_readlen;
@@ -152,10 +156,11 @@ typedef struct
 
     // Auxiliary data
     int flag_require, flag_filter;
-    double sum_qual;            // For calculating average quality value 
-    samfile_t *sam;             // Unused
-    faidx_t *fai;               // Reference sequence for GC-depth graph
-    int argc;                   // Command line arguments to be printed on the output
+    double sum_qual;                // For calculating average quality value 
+    samfile_t *sam;             
+    khash_t(kh_rg) *rg_hash;        // Read groups to include, the array is null-terminated
+    faidx_t *fai;                   // Reference sequence for GC-depth graph
+    int argc;                       // Command line arguments to be printed on the output
     char **argv;
 }
 stats_t;
@@ -288,9 +293,10 @@ void count_indels(stats_t *stats,bam1_t *bam_line)
 
         if ( cig==1 )
         {
-            int idx = is_fwd ? icycle : read_len-icycle;
-            if ( idx<0 ) error("FIXME: read_len=%d vs icycle=%d\n", read_len,icycle);
-            if ( idx >= stats->nbases || idx<0 ) error("FIXME: %d vs %d\n", idx,stats->nbases);
+            int idx = is_fwd ? icycle : read_len-icycle-ncig;
+            if ( idx<0 ) 
+                error("FIXME: read_len=%d vs icycle=%d\n", read_len,icycle);
+            if ( idx >= stats->nbases || idx<0 ) error("FIXME: %d vs %d, %s:%d %s\n", idx,stats->nbases, stats->sam->header->target_name[bam_line->core.tid],bam_line->core.pos+1,bam1_qname(bam_line));
             if ( is_1st ) 
                 stats->ins_cycles_1st[idx]++;
             else
@@ -313,7 +319,8 @@ void count_indels(stats_t *stats,bam1_t *bam_line)
                 stats->deletions[ncig-1]++;
             continue;
         }
-        icycle += ncig;
+        if ( cig!=3 && cig!=5 )
+            icycle += ncig;
     }
 }
 
@@ -357,11 +364,14 @@ void count_mismatches_per_cycle(stats_t *stats,bam1_t *bam_line)
             icycle += ncig;
             continue;
         }
+        // Ignore H and N CIGARs. The letter are inserted e.g. by TopHat and often require very large
+        //  chunk of refseq in memory. Not very frequent and not noticable in the stats.
+        if ( cig==3 || cig==5 ) continue;
         if ( cig!=0 )
-            error("TODO: cigar %d, %s\n", cig,bam1_qname(bam_line));
+            error("TODO: cigar %d, %s:%d %s\n", cig,stats->sam->header->target_name[bam_line->core.tid],bam_line->core.pos+1,bam1_qname(bam_line));
        
-        if ( ncig+iref > stats->rseq_len )
-            error("FIXME: %d+%d > %d, %s, %s:%d\n",ncig,iref,stats->rseq_len, bam1_qname(bam_line),stats->sam->header->target_name[bam_line->core.tid],bam_line->core.pos+1);
+        if ( ncig+iref > stats->nrseq_buf )
+            error("FIXME: %d+%d > %d, %s, %s:%d\n",ncig,iref,stats->nrseq_buf, bam1_qname(bam_line),stats->sam->header->target_name[bam_line->core.tid],bam_line->core.pos+1);
 
         int im;
         for (im=0; im<ncig; im++)
@@ -406,7 +416,7 @@ void count_mismatches_per_cycle(stats_t *stats,bam1_t *bam_line)
 
 void read_ref_seq(stats_t *stats,int32_t tid,int32_t pos)
 {
-    khash_t(s) *h;
+    khash_t(kh_faidx) *h;
     khiter_t iter;
     faidx1_t val;
     char *chr, c;
@@ -416,7 +426,7 @@ void read_ref_seq(stats_t *stats,int32_t tid,int32_t pos)
     chr = stats->sam->header->target_name[tid];
 
     // ID of the sequence name
-    iter = kh_get(s, h, chr);
+    iter = kh_get(kh_faidx, h, chr);
     if (iter == kh_end(h)) 
         error("No such reference sequence [%s]?\n", chr);
     val = kh_value(h, iter);
@@ -425,7 +435,7 @@ void read_ref_seq(stats_t *stats,int32_t tid,int32_t pos)
     if (pos >= val.len)
         error("Was the bam file mapped with the reference sequence supplied?"
               " A read mapped beyond the end of the chromosome (%s:%d, chromosome length %d).\n", chr,pos,val.len);
-    int size = stats->nref_seq;
+    int size = stats->mrseq_buf;
     // The buffer extends beyond the chromosome end. Later the rest will be filled with N's.
     if (size+pos > val.len) size = val.len-pos;
 
@@ -455,24 +465,25 @@ void read_ref_seq(stats_t *stats,int32_t tid,int32_t pos)
         ptr++;
         nread++;
     }
-    if ( nread < stats->nref_seq )
+    if ( nread < stats->mrseq_buf )
     {
-        memset(ptr,0, stats->nref_seq - nread);
-        nread = stats->nref_seq;
+        memset(ptr,0, stats->mrseq_buf - nread);
+        nread = stats->mrseq_buf;
     }
-    stats->rseq_len = nread;
-    stats->rseq_pos = pos;
-    stats->tid      = tid;
+    stats->nrseq_buf = nread;
+    stats->rseq_pos  = pos;
+    stats->tid       = tid;
 }
 
-float fai_gc_content(stats_t *stats)
+float fai_gc_content(stats_t *stats, int pos, int len)
 {
     uint32_t gc,count,c;
-    int i,size = stats->rseq_len;
+    int i = pos - stats->rseq_pos, ito = i + len;
+    assert( i>=0 && ito<=stats->nrseq_buf );
 
     // Count GC content
     gc = count = 0;
-    for (i=0; i<size; i++)
+    for (; i<ito; i++)
     {
         c = stats->rseq_buf[i];
         if ( c==2 || c==4 )
@@ -486,6 +497,37 @@ float fai_gc_content(stats_t *stats)
     return count ? (float)gc/count : 0;
 }
 
+void realloc_rseq_buffer(stats_t *stats)
+{
+    int n = stats->nbases*10;
+    if ( stats->gcd_bin_size > n ) n = stats->gcd_bin_size;
+    if ( stats->mrseq_buf<n )
+    {
+        stats->rseq_buf = realloc(stats->rseq_buf,sizeof(uint8_t)*n);
+        stats->mrseq_buf = n;
+    }
+}
+
+void realloc_gcd_buffer(stats_t *stats, int seq_len)
+{
+    if ( seq_len >= stats->gcd_bin_size )
+        error("The --GC-depth bin size (%d) is set too low for the read length %d\n", stats->gcd_bin_size, seq_len);
+
+    int n = 1 + stats->gcd_ref_size / (stats->gcd_bin_size - seq_len);
+    if ( n <= stats->igcd )
+        error("Uh: n=%d igcd=%d\n", n,stats->igcd );
+        
+    if ( n >= stats->ngcd )
+    {
+        stats->gcd = realloc(stats->gcd, n*sizeof(gc_depth_t));
+        if ( !stats->gcd )
+            error("Could not realloc GCD buffer, too many chromosomes or the genome too long?? [%u %u]\n", stats->ngcd,n);
+        memset(&(stats->gcd[stats->ngcd]),0,(n-stats->ngcd)*sizeof(gc_depth_t));
+        stats->ngcd = n;
+    }
+
+    realloc_rseq_buffer(stats);
+}
 
 void realloc_buffers(stats_t *stats, int seq_len)
 {
@@ -532,22 +574,22 @@ void realloc_buffers(stats_t *stats, int seq_len)
     stats->ins_cycles_1st = realloc(stats->ins_cycles_1st, (n+1)*sizeof(uint64_t));
     if ( !stats->ins_cycles_1st )
         error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,(n+1)*sizeof(uint64_t));
-    memset(stats->ins_cycles_1st + stats->nbases + 1, 0, (n+1-stats->nbases)*sizeof(uint64_t));
+    memset(stats->ins_cycles_1st + stats->nbases + 1, 0, (n-stats->nbases)*sizeof(uint64_t));
 
     stats->ins_cycles_2nd = realloc(stats->ins_cycles_2nd, (n+1)*sizeof(uint64_t));
     if ( !stats->ins_cycles_2nd )
         error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,(n+1)*sizeof(uint64_t));
-    memset(stats->ins_cycles_2nd + stats->nbases + 1, 0, (n+1-stats->nbases)*sizeof(uint64_t));
+    memset(stats->ins_cycles_2nd + stats->nbases + 1, 0, (n-stats->nbases)*sizeof(uint64_t));
 
     stats->del_cycles_1st = realloc(stats->del_cycles_1st, (n+1)*sizeof(uint64_t));
     if ( !stats->del_cycles_1st )
         error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,(n+1)*sizeof(uint64_t));
-    memset(stats->del_cycles_1st + stats->nbases + 1, 0, (n+1-stats->nbases)*sizeof(uint64_t));
+    memset(stats->del_cycles_1st + stats->nbases + 1, 0, (n-stats->nbases)*sizeof(uint64_t));
 
     stats->del_cycles_2nd = realloc(stats->del_cycles_2nd, (n+1)*sizeof(uint64_t));
     if ( !stats->del_cycles_2nd )
         error("Could not realloc buffers, the sequence too long: %d (%ld)\n", seq_len,(n+1)*sizeof(uint64_t));
-    memset(stats->del_cycles_2nd + stats->nbases + 1, 0, (n+1-stats->nbases)*sizeof(uint64_t));
+    memset(stats->del_cycles_2nd + stats->nbases + 1, 0, (n-stats->nbases)*sizeof(uint64_t));
 
     stats->nbases = n;
 
@@ -561,10 +603,19 @@ void realloc_buffers(stats_t *stats, int seq_len)
     free(stats->cov_rbuf.buffer);
     stats->cov_rbuf.buffer = rbuffer;
     stats->cov_rbuf.size = seq_len*5;
+
+    realloc_rseq_buffer(stats);
 }
 
 void collect_stats(bam1_t *bam_line, stats_t *stats)
 {
+    if ( stats->rg_hash )
+    {
+        const uint8_t *rg = bam_aux_get(bam_line, "RG");
+        if ( !rg ) return; 
+        khiter_t k = kh_get(kh_rg, stats->rg_hash, (const char*)(rg + 1));
+        if ( k == kh_end(stats->rg_hash) ) return;
+    }
     if ( stats->flag_require && (bam_line->core.flag & stats->flag_require)!=stats->flag_require )
         return;
     if ( stats->flag_filter && (bam_line->core.flag & stats->flag_filter) )
@@ -747,44 +798,45 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
             if ( stats->tid==-1 || stats->tid!=bam_line->core.tid )
                 round_buffer_flush(stats,-1);
 
-            // Mismatches per cycle and GC-depth graph
+            // Mismatches per cycle and GC-depth graph. For simplicity, reads overlapping GCD bins
+            //  are not splitted which results in up to seq_len-1 overlaps. The default bin size is
+            //  20kbp, so the effect is negligible.
             if ( stats->fai )
             {
-                // First pass, new chromosome or sequence spanning beyond the end of the buffer 
-                if ( stats->rseq_pos==-1 || stats->tid != bam_line->core.tid || stats->rseq_pos+stats->rseq_len < bam_line->core.pos+readlen )
-                {
-                    read_ref_seq(stats,bam_line->core.tid,bam_line->core.pos);
-
-                    // Get the reference GC content for this bin. Note that in the current implementation
-                    //  the GCD bins overlap by seq_len-1. Because the bin size is by default 20k and the 
-                    //  expected read length only ~100bp, it shouldn't really matter.
-                    stats->gcd_pos = bam_line->core.pos;
-                    stats->igcd++;
-
-                    if ( stats->igcd >= stats->ngcd )
-                        error("The genome too long or the GCD bin overlaps too big [%ud]\n", stats->igcd);
-
-                    stats->gcd[ stats->igcd ].gc = fai_gc_content(stats);
+                int inc_ref = 0, inc_gcd = 0;
+                // First pass or new chromosome
+                if ( stats->rseq_pos==-1 || stats->tid != bam_line->core.tid ) { inc_ref=1; inc_gcd=1; }
+                // Read goes beyond the end of the rseq buffer
+                else if ( stats->rseq_pos+stats->nrseq_buf < bam_line->core.pos+readlen ) { inc_ref=1; inc_gcd=1; }
+                // Read overlaps the next gcd bin
+                else if ( stats->gcd_pos+stats->gcd_bin_size < bam_line->core.pos+readlen ) 
+                { 
+                    inc_gcd = 1;
+                    if ( stats->rseq_pos+stats->nrseq_buf < bam_line->core.pos+stats->gcd_bin_size ) inc_ref = 1;
                 }
+                if ( inc_gcd )
+                {
+                    stats->igcd++;
+                    if ( stats->igcd >= stats->ngcd )
+                        realloc_gcd_buffer(stats, readlen);
+                    if ( inc_ref )
+                        read_ref_seq(stats,bam_line->core.tid,bam_line->core.pos);
+                    stats->gcd_pos = bam_line->core.pos;
+                    stats->gcd[ stats->igcd ].gc = fai_gc_content(stats, stats->gcd_pos, stats->gcd_bin_size);
+                }
+
                 count_mismatches_per_cycle(stats,bam_line);
             }
+            // No reference and first pass, new chromosome or sequence going beyond the end of the gcd bin
             else if ( stats->gcd_pos==-1 || stats->tid != bam_line->core.tid || bam_line->core.pos - stats->gcd_pos > stats->gcd_bin_size )
             {
                 // First pass or a new chromosome
                 stats->tid     = bam_line->core.tid;
                 stats->gcd_pos = bam_line->core.pos;
                 stats->igcd++;
-
                 if ( stats->igcd >= stats->ngcd )
-                {
-                    uint32_t n = 2*(1 + stats->ngcd);
-                    stats->gcd = realloc(stats->gcd, n*sizeof(gc_depth_t));
-                    if ( !stats->gcd )
-                        error("Could not realloc GCD buffer, too many chromosomes or the genome too long?? [%u %u]\n", stats->ngcd,n);
-                    memset(&(stats->gcd[stats->ngcd]),0,(n-stats->ngcd)*sizeof(gc_depth_t));
-                }
+                    realloc_gcd_buffer(stats, readlen);
             }
-
             stats->gcd[ stats->igcd ].depth++;
             // When no reference sequence is given, approximate the GC from the read (much shorter window, but otherwise OK)
             if ( !stats->fai )
@@ -991,21 +1043,28 @@ void output_stats(stats_t *stats)
     printf("# Indels per cycle. Use `grep ^IC | cut -f 2-` to extract this part. The columns are: cycle, number of insertions (fwd), .. (rev) , number of deletions (fwd), .. (rev)\n");
     for (ilen=0; ilen<=stats->nbases; ilen++)
     {
+        // For deletions we print the index of the cycle before the deleted base (1-based) and for insertions
+        //  the index of the cycle of the first inserted base (also 1-based)
         if ( stats->ins_cycles_1st[ilen]>0 || stats->ins_cycles_2nd[ilen]>0 || stats->del_cycles_1st[ilen]>0 || stats->del_cycles_2nd[ilen]>0 )
             printf("IC\t%d\t%ld\t%ld\t%ld\t%ld\n", ilen+1, (long)stats->ins_cycles_1st[ilen], (long)stats->ins_cycles_2nd[ilen], (long)stats->del_cycles_1st[ilen], (long)stats->del_cycles_2nd[ilen]);
     }
 
     printf("# Coverage distribution. Use `grep ^COV | cut -f 2-` to extract this part.\n");
-    printf("COV\t[<%d]\t%d\t%ld\n",stats->cov_min,stats->cov_min-1, (long)stats->cov[0]);
-    int icov;
-    for (icov=1; icov<stats->ncov-1; icov++)
-        printf("COV\t[%d-%d]\t%d\t%ld\n",stats->cov_min + (icov-1)*stats->cov_step, stats->cov_min + icov*stats->cov_step-1,stats->cov_min + icov*stats->cov_step-1, (long)stats->cov[icov]);
-    printf("COV\t[%d<]\t%d\t%ld\n",stats->cov_min + (stats->ncov-2)*stats->cov_step-1,stats->cov_min + (stats->ncov-2)*stats->cov_step-1, (long)stats->cov[stats->ncov-1]);
+    {
+        if  ( stats->cov[0] )
+            printf("COV\t[<%d]\t%d\t%ld\n",stats->cov_min,stats->cov_min-1, (long)stats->cov[0]);
+        int icov;
+        for (icov=1; icov<stats->ncov-1; icov++)
+            if ( stats->cov[icov] )
+                printf("COV\t[%d-%d]\t%d\t%ld\n",stats->cov_min + (icov-1)*stats->cov_step, stats->cov_min + icov*stats->cov_step-1,stats->cov_min + icov*stats->cov_step-1, (long)stats->cov[icov]);
+        if ( stats->cov[stats->ncov-1] )
+            printf("COV\t[%d<]\t%d\t%ld\n",stats->cov_min + (stats->ncov-2)*stats->cov_step-1,stats->cov_min + (stats->ncov-2)*stats->cov_step-1, (long)stats->cov[stats->ncov-1]);
+    }
 
 
     // Calculate average GC content, then sort by GC and depth
     printf("# GC-depth. Use `grep ^GCD | cut -f 2-` to extract this part. The columns are: GC%%, unique sequence percentiles, 10th, 25th, 50th, 75th and 90th depth percentile\n");
-    uint32_t igcd;
+    int32_t igcd;
     for (igcd=0; igcd<stats->igcd; igcd++)
     {
         if ( stats->fai )
@@ -1074,10 +1133,10 @@ size_t mygetline(char **line, size_t *n, FILE *fp)
 void init_regions(stats_t *stats, char *file)
 {
     khiter_t iter;
-    khash_t(str) *header_hash;
+    khash_t(kh_bam_tid) *header_hash;
 
     bam_init_header_hash(stats->sam->header);
-    header_hash = (khash_t(str)*)stats->sam->header->hash;
+    header_hash = (khash_t(kh_bam_tid)*)stats->sam->header->hash;
 
     FILE *fp = fopen(file,"r");
     if ( !fp ) error("%s: %s\n",file,strerror(errno));
@@ -1096,7 +1155,7 @@ void init_regions(stats_t *stats, char *file)
         if ( i>=nread ) error("Could not parse the file: %s [%s]\n", file,line);
         line[i] = 0;
 
-        iter = kh_get(str, header_hash, line);
+        iter = kh_get(kh_bam_tid, header_hash, line);
         int tid = kh_val(header_hash, iter);
         if ( iter == kh_end(header_hash) )
         {
@@ -1186,6 +1245,32 @@ int is_in_regions(bam1_t *bam_line, stats_t *stats)
     return 1;
 }
 
+void init_group_id(stats_t *stats, char *id)
+{
+    if ( !stats->sam->header->dict )
+        stats->sam->header->dict = sam_header_parse2(stats->sam->header->text);
+    void *iter = stats->sam->header->dict;
+    const char *key, *val;
+    int n = 0;
+    stats->rg_hash = kh_init(kh_rg);
+    while ( (iter = sam_header2key_val(iter, "RG","ID","SM", &key, &val)) )
+    {
+        if ( !strcmp(id,key) || (val && !strcmp(id,val)) )
+        {
+            khiter_t k = kh_get(kh_rg, stats->rg_hash, key);
+            if ( k != kh_end(stats->rg_hash) ) 
+                fprintf(stderr, "[init_group_id] The group ID not unique: \"%s\"\n", key);
+            int ret;
+            k = kh_put(kh_rg, stats->rg_hash, key, &ret);
+            kh_value(stats->rg_hash, k) = val;
+            n++;
+        }
+    }
+    if ( !n )
+        error("The sample or read group \"%s\" not present.\n", id);
+}
+
+
 void error(const char *format, ...)
 {
     if ( !format )
@@ -1199,8 +1284,10 @@ void error(const char *format, ...)
         printf("    -d, --remove-dups                   Exlude from statistics reads marked as duplicates\n");
         printf("    -f, --required-flag <int>           Required flag, 0 for unset [0]\n");
         printf("    -F, --filtering-flag <int>          Filtering flag, 0 for unset [0]\n");
+        printf("        --GC-depth <float,float>        Bin size for GC-depth graph and the maximum reference length [2e4,6e9]\n");
         printf("    -h, --help                          This help message\n");
         printf("    -i, --insert-size <int>             Maximum insert size [8000]\n");
+        printf("    -I, --id <string>                   Include only listed read group or sample name\n");
         printf("    -l, --read-length <int>             Include in the statistics only reads with the given read length []\n");
         printf("    -m, --most-inserts <float>          Report only the main part of inserts [0.99]\n");
         printf("    -q, --trim-quality <int>            The BWA trimming parameter [0]\n");
@@ -1223,6 +1310,7 @@ int main(int argc, char *argv[])
 {
     char *targets = NULL;
     char *bam_fname = NULL;
+    char *group_id = NULL;
     samfile_t *sam = NULL;
     char in_mode[5];
 
@@ -1234,11 +1322,10 @@ int main(int argc, char *argv[])
     stats->max_len   = 30;
     stats->max_qual  = 40;
     stats->isize_main_bulk = 0.99;   // There are always outliers at the far end
-    stats->gcd_bin_size = 20000;
-    stats->ngcd         = 3e5;     // 300k of 20k bins is enough to hold a genome 6Gbp big
-    stats->nref_seq     = stats->gcd_bin_size;
+    stats->gcd_bin_size = 20e3;
+    stats->gcd_ref_size = 3e9;
     stats->rseq_pos     = -1;
-    stats->tid = stats->gcd_pos = -1;
+    stats->tid = stats->gcd_pos = stats->igcd = -1;
     stats->is_sorted = 1;
     stats->cov_min  = 1;
     stats->cov_max  = 1000;
@@ -1255,19 +1342,21 @@ int main(int argc, char *argv[])
         {"help",0,0,'h'},
         {"remove-dups",0,0,'d'},
         {"sam",0,0,'s'},
-        {"ref-seq",0,0,'r'},
-        {"coverage",0,0,'c'},
-        {"read-length",0,0,'l'},
-        {"insert-size",0,0,'i'},
-        {"most-inserts",0,0,'m'},
-        {"trim-quality",0,0,'q'},
+        {"ref-seq",1,0,'r'},
+        {"coverage",1,0,'c'},
+        {"read-length",1,0,'l'},
+        {"insert-size",1,0,'i'},
+        {"most-inserts",1,0,'m'},
+        {"trim-quality",1,0,'q'},
         {"target-regions",0,0,'t'},
-        {"required-flag",0,0,'f'},
+        {"required-flag",1,0,'f'},
         {"filtering-flag",0,0,'F'},
+        {"id",1,0,'I'},
+        {"GC-depth",1,0,1},
         {0,0,0,0}
     };
     int opt;
-    while ( (opt=getopt_long(argc,argv,"?hdsr:c:l:i:t:m:q:f:F:",loptions,NULL))>0 )
+    while ( (opt=getopt_long(argc,argv,"?hdsr:c:l:i:t:m:q:f:F:I:1:",loptions,NULL))>0 )
     {
         switch (opt)
         {
@@ -1279,6 +1368,14 @@ int main(int argc, char *argv[])
                       if (stats->fai==0) 
                           error("Could not load faidx: %s\n", optarg); 
                       break;
+            case  1 : {
+                        float flen,fbin;
+                        if ( sscanf(optarg,"%f,%f",&fbin,&flen)!= 2 ) 
+                            error("Unable to parse --GC-depth %s\n", optarg); 
+                        stats->gcd_bin_size = fbin;
+                        stats->gcd_ref_size = flen;
+                      }
+                      break;
             case 'c': if ( sscanf(optarg,"%d,%d,%d",&stats->cov_min,&stats->cov_max,&stats->cov_step)!= 3 ) 
                           error("Unable to parse -c %s\n", optarg); 
                       break;
@@ -1287,6 +1384,7 @@ int main(int argc, char *argv[])
             case 'm': stats->isize_main_bulk = atof(optarg); break;
             case 'q': stats->trim_qual = atoi(optarg); break;
             case 't': targets = optarg; break;
+            case 'I': group_id = optarg; break;
             case '?': 
             case 'h': error(NULL);
             default: error("Unknown argument: %s\n", optarg);
@@ -1319,6 +1417,7 @@ int main(int argc, char *argv[])
     if ((sam = samopen(bam_fname, in_mode, NULL)) == 0) 
         error("Failed to open: %s\n", bam_fname);
     stats->sam = sam;
+    if ( group_id ) init_group_id(stats, group_id);
     bam1_t *bam_line = bam_init1();
     // .. arrays
     stats->quals_1st      = calloc(stats->nquals*stats->nbases,sizeof(uint64_t));
@@ -1329,7 +1428,6 @@ int main(int argc, char *argv[])
     stats->isize_outward  = calloc(stats->nisize,sizeof(uint64_t));
     stats->isize_other    = calloc(stats->nisize,sizeof(uint64_t));
     stats->gcd            = calloc(stats->ngcd,sizeof(gc_depth_t));
-    stats->rseq_buf       = calloc(stats->nref_seq,sizeof(uint8_t));
     stats->mpc_buf        = stats->fai ? calloc(stats->nquals*stats->nbases,sizeof(uint64_t)) : NULL;
     stats->acgt_cycles    = calloc(4*stats->nbases,sizeof(uint64_t));
     stats->read_lengths   = calloc(stats->nbases,sizeof(uint64_t));
@@ -1339,6 +1437,7 @@ int main(int argc, char *argv[])
     stats->ins_cycles_2nd = calloc(stats->nbases+1,sizeof(uint64_t));
     stats->del_cycles_1st = calloc(stats->nbases+1,sizeof(uint64_t));
     stats->del_cycles_2nd = calloc(stats->nbases+1,sizeof(uint64_t));
+    realloc_rseq_buffer(stats);
     if ( targets )
         init_regions(stats, targets);
 
@@ -1390,9 +1489,10 @@ int main(int argc, char *argv[])
     free(stats->del_cycles_1st);
     free(stats->del_cycles_2nd);
     destroy_regions(stats);
+    if ( stats->rg_hash ) kh_destroy(kh_rg, stats->rg_hash);
     free(stats);
 
-	return 0;
+    return 0;
 }
 
 

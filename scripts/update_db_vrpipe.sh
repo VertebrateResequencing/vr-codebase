@@ -1,9 +1,10 @@
 #!/bin/sh
 umask 002
-if [ $# -ne 1 ]
+if [ $# -lt 1 -o $# -gt 2  ]
 then
     echo "Error in $0 - Invalid Argument Count"
-    echo "Syntax: $0 vr-pipe_db_name (vrtrack_mouse_wgs, etc.)"
+    echo "Syntax: $0 vr-pipe_db_name(vrtrack_mouse_wgs, etc.) -OR-"
+    echo "Syntax: $0 vr-pipe_db_name taxon_id (9606, 10090....)"
     exit
 fi
 
@@ -12,6 +13,20 @@ DBEXISTS=$(mysql -u vreseq_ro -hmcs4a --batch --skip-column-names -e "SHOW DATAB
 if [ $DBEXISTS -eq 1 ];then
     echo "A database with the name $DB does not exist."
     exit
+fi
+
+TAX=""
+if [ $# -eq 2  ]
+then
+    TAX="-tax $2"
+fi
+
+ARG_UP=""
+if [[ $DB =~ "uk10k" ]]
+then
+    ARG_UP="-u -v"
+else
+    ARG_UP="-u -sup -nop -v"
 fi
 
 ROOT="/lustre/scratch105"
@@ -25,6 +40,4 @@ export ORACLE_HOME=/software/oracle_client-10.2.0
 
 mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST $DB > $DUMPS
 
-$BIN_EXT/update_pipeline.pl -s $CONF/$DB"_studies" -d $DB -v
-
-$SCRIPTS/vrtrack_individual_supplier_name -d $DB
+$BIN_EXT/update_pipeline.pl -s $CONF/$DB"_studies" -d $DB $TAX $ARG_UP

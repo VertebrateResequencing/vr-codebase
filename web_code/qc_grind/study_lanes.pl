@@ -25,7 +25,7 @@ use VertRes::QCGrind::Util;
 
 my $pending_view = "../pending-view/pending_view.pl";
 
-my $title = 'QC Breeze Lane Status Update';
+my $title = 'QC Grind Lane Status Update';
 my $sw  = SangerWeb->new({
     'title'   => $title,
     'banner'  => q(),
@@ -74,15 +74,17 @@ sub displayProjectLaneForm
 {
     my ($cgi, $vrtrack, $database, $project) = @_;
 
-	my ($gt_status_filt, $npg_status_filt, $auto_qc_status_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt);
+	my ($gt_status_filt, $npg_status_filt, $auto_qc_status_filt, $raw_bases_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt, $overlap_dup_filt);
 
 	if ($form_submission) {
 		$gt_status_filt = $cgi->param('gt_status');
 		$npg_status_filt = $cgi->param('npg_status');
 		$auto_qc_status_filt = $cgi->param('auto_qc_status');
+		$raw_bases_filt = $cgi->param('raw_bases');
 		$bases_mapped_filt = $cgi->param('bases_mapped');
 		$duplication_filt = $cgi->param('duplication');
 		$rmdup_mapped_filt = $cgi->param('rmdup_mapped');
+		$overlap_dup_filt = $cgi->param('overlap_dup');
 	}
 	else {
 		$gt_status_filt = 'all';
@@ -130,9 +132,11 @@ sub displayProjectLaneForm
     	<th>Genotype</th>
         <th>NPG Status</th>
         <th>Auto QC Status</th>
+        <th title="Raw bases mapped">Raw</th>
         <th title="Gbp mapped">Mapped</th>
         <th title="Percent of mapped reads which were duplicates">Dup \%</th>
         <th title="Gbp mapped ignoring duplicate reads">Mapped-dups</th>
+        <th title="Overlapping base duplicate percent">Overlap \%</th>
         <th></th>
         </tr>
     ];
@@ -152,9 +156,11 @@ sub displayProjectLaneForm
 	print "<th>", $cgi->popup_menu( -name => 'gt_status', -values => ['all','confirmed','unconfirmed','unchecked','unknown','candidate','wrong'], -default => 'all',), "</th>"; 
 	print "<th>", $cgi->popup_menu( -name => 'npg_status', -values => ['all','pass','fail','pending'], -default => 'all',), "</th>"; 
 	print "<th>", $cgi->popup_menu( -name => 'auto_qc_status', -values => ['all','passed','failed','no_qc'], -default => 'all',), "</th>"; 
+	print "<th>", $cgi->textfield(-name=>'raw_bases', -size=>1), "</th>";
 	print "<th>", $cgi->textfield(-name=>'bases_mapped', -size=>1), "</th>";
 	print "<th>", $cgi->textfield(-name=>'duplication', -size=>1), "</th>";
 	print "<th>", $cgi->textfield(-name=>'rmdup_mapped', -size=>1), "</th>";
+	print "<th>", $cgi->textfield(-name=>'overlap_dup', -size=>1), "</th>";
     print "<th>", $cgi->submit(-name => 'filter', -value  => 'Filter'), "</th>";
     print qq[ </tr> ];
     
@@ -174,8 +180,8 @@ sub displayProjectLaneForm
 
 				foreach my $lane (sort {$a->name cmp $b->name} @$lanes ) {
 
-					if ($form_submission) { # filter on lane status check button
-						next unless $cgi->param($lane->qc_status);
+					if ($form_submission) { # filter on lane status checkboxes
+						next unless $cgi->param($lane->qc_status) || $lane->qc_status eq 'no_qc';
 					}
 
         			my $lanename = $lane->name;
@@ -193,9 +199,11 @@ sub displayProjectLaneForm
 					my $lane_mapstats = getMapStats($lane);
 					if (%{$lane_mapstats}) {
 
-						next if $bases_mapped_filt && $lane_mapstats->{bases_mapped} < $bases_mapped_filt;
-						next if $duplication_filt && $lane_mapstats->{duplication} < $duplication_filt;
-						next if $rmdup_mapped_filt && $lane_mapstats->{rmdup_bases_mapped} < $rmdup_mapped_filt;
+                        next unless pass_filter($lane_mapstats->{raw_bases},$raw_bases_filt);
+                        next unless pass_filter($lane_mapstats->{bases_mapped},$bases_mapped_filt);
+                        next unless pass_filter($lane_mapstats->{duplication},$duplication_filt);
+                        next unless pass_filter($lane_mapstats->{rmdup_bases_mapped},$rmdup_mapped_filt);
+                        next unless pass_filter($lane_mapstats->{overlap_dup},$overlap_dup_filt);
 	
 						print qq[<tr>];
 
@@ -204,7 +212,7 @@ sub displayProjectLaneForm
 						my $lane_status_colour = $utl->get_colour_for_status($lane_qc_status);
 
 						my $disabled = $utl->{AUTH_USERS}{$USER} ? '' : 'DISABLED';
-						foreach my $status ( qw (passed failed investigate gt_pending pending)) {
+						foreach my $status (@lane_status) {
 							my $state =  $lane_qc_status eq $status ? 'checked' : '';
 							print $cgi->td("<input type='radio' name='$lane_id' value='$status' $state $disabled>");
 						}
@@ -221,7 +229,8 @@ sub displayProjectLaneForm
 
 						print qq [ <td style="background-color:$lane_status_colour;"><a href="$lane_view_script?lane_id=$lane_id&amp;db=$database">$lanename</a></td> ];
 						print qq [ <td style="background-color:$gt_status_colour;">$gt_display</td> ];
-						print $cgi->td([$npg_qc, $auto_qc_status, $lane_mapstats->{bases_mapped}, $lane_mapstats->{duplication}, $lane_mapstats->{rmdup_bases_mapped}]);
+
+						print $cgi->td([$npg_qc, $auto_qc_status, $lane_mapstats->{raw_bases}, $lane_mapstats->{bases_mapped}, $lane_mapstats->{duplication}, $lane_mapstats->{rmdup_bases_mapped}, $lane_mapstats->{overlap_dup}]);
 						print qq[</tr>];
 					}
 				} # foreach lane
@@ -231,7 +240,7 @@ sub displayProjectLaneForm
 
     print qq[ <tr> ];
     if ($utl->{AUTH_USERS}{$USER}) {   
-		print qq[ <td colspan=5 align='center'> ];
+		print qq[ <td colspan=6 align='center'> ];
 		print $cgi->submit(-name => 'update', -value  => 'Update');
 		print qq[ </td> ];
     }
@@ -268,14 +277,16 @@ sub updateLaneData
 sub downloadLaneData {
     my ($cgi, $vrtrack, $project) = @_;
 
-	my ($gt_status_filt, $npg_status_filt, $auto_qc_status_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt);
+	my ($gt_status_filt, $npg_status_filt, $auto_qc_status_filt, $raw_bases_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt, $overlap_dup_filt);
 
 	$gt_status_filt = $cgi->param('gt_status');
 	$npg_status_filt = $cgi->param('npg_status');
 	$auto_qc_status_filt = $cgi->param('auto_qc_status');
+	$raw_bases_filt = $cgi->param('raw_bases');
 	$bases_mapped_filt = $cgi->param('bases_mapped');
 	$duplication_filt = $cgi->param('duplication');
 	$rmdup_mapped_filt = $cgi->param('rmdup_mapped');
+    $overlap_dup_filt = $cgi->param('overlap_dup');
 
     my $pname = $project->name;
 
@@ -294,7 +305,7 @@ sub downloadLaneData {
         else{$individuals2Samples{ $indname } = [ $sample ];}
     }
 
-    print join ("\t","Sanger ID","Sample Name","Library","Run number","Genotype","Lane QC status","NPG status","Auto QC status","Mapped","Duplication","RmDup Mapped"), "\n";
+    print join ("\t","Sanger ID","Sample Name","Library","Run number","Genotype","Lane QC status","NPG status","Auto QC status","Raw","Mapped","Duplication","RmDup Mapped","Overlap Dup"), "\n";
 
     foreach( sort( keys( %individuals2Samples ) ) ) {
         my $iname = $_;
@@ -312,7 +323,7 @@ sub downloadLaneData {
 
 				foreach my $lane (sort {$a->name cmp $b->name} @$lanes ) {
 
-					next unless $cgi->param($lane->qc_status); # filter on lane status check button
+					next unless $cgi->param($lane->qc_status) || $lane->qc_status eq 'no_qc'; # filter on lane status checkboxes
 
         			my $lanename = $lane->name;
 					my $gt_status = $lane->genotype_status;
@@ -332,11 +343,13 @@ sub downloadLaneData {
 						my $gt_display = $gt_status;
 						$gt_display .= " ($gt_found:$gt_ratio)" if $gt_found;
 
-						next if $bases_mapped_filt && $lane_mapstats->{bases_mapped} < $bases_mapped_filt;
-						next if $duplication_filt && $lane_mapstats->{duplication} < $duplication_filt;
-						next if $rmdup_mapped_filt && $lane_mapstats->{rmdup_bases_mapped} < $rmdup_mapped_filt;
+                        next unless pass_filter($lane_mapstats->{raw_bases},$raw_bases_filt);
+                        next unless pass_filter($lane_mapstats->{bases_mapped},$bases_mapped_filt);
+                        next unless pass_filter($lane_mapstats->{duplication},$duplication_filt);
+                        next unless pass_filter($lane_mapstats->{rmdup_bases_mapped},$rmdup_mapped_filt);
+                        next unless pass_filter($lane_mapstats->{overlap_dup},$overlap_dup_filt);
 
-						print (join("\t",$iname,$sample_name,$libname,$lanename,$gt_display,$lane_qc_status,$npg_qc,$auto_qc_status,$lane_mapstats->{bases_mapped},$lane_mapstats->{duplication},$lane_mapstats->{rmdup_bases_mapped}),"\n");
+						print (join("\t",$iname,$sample_name,$libname,$lanename,$gt_display,$lane_qc_status,$npg_qc,$auto_qc_status,$lane_mapstats->{raw_bases},$lane_mapstats->{bases_mapped},$lane_mapstats->{duplication},$lane_mapstats->{rmdup_bases_mapped},$lane_mapstats->{overlap_dup}),"\n");
 					}
 				} # foreach lane
 			} # foreach lib
@@ -352,17 +365,28 @@ sub getMapStats {
 
 	foreach my $mapstats ( @mappings ) {
         if ($mapstats->bases_mapped) {
+            $lane_mapstats{raw_bases} = sprintf("%.1f", ($mapstats->raw_bases()/1000000000)); # GB
             $lane_mapstats{bases_mapped} = sprintf("%.1f", ($mapstats->bases_mapped()/1000000000)); # GB
             $lane_mapstats{duplication} = sprintf("%.1f", (1.0-($mapstats->rmdup_reads_mapped()/$mapstats->reads_mapped))*100);
             $lane_mapstats{rmdup_bases_mapped} =  sprintf("%.1f", ($mapstats->rmdup_bases_mapped/1000000000)); # GB
             $lane_mapstats{genotype_found} = $mapstats->genotype_found;
             $lane_mapstats{genotype_ratio} = sprintf("%.3f",$mapstats->genotype_ratio) if $mapstats->genotype_ratio;
+
+            my @autoqc_statuses = @{ $mapstats->autoqcs() };
+            foreach my $autoqc (@autoqc_statuses) {
+
+                next unless $autoqc->test =~ /Overlap duplicate base percent/;
+
+                # eg "The percent of bases duplicated due to reads of a pair overlapping (2.8) is smaller than or equal to 4."
+                $autoqc->reason =~ /The percent of bases duplicated due to reads of a pair overlapping \((.*)\) /;
+                $lane_mapstats{overlap_dup} = sprintf("%.2f",$1);
+            }
+
             last;
         }
     }
     return \%lane_mapstats;
 }
-
 sub get_gt_status_colour
 {
 	my (($status,$iname,$gt_found)) = @_;
@@ -392,5 +416,28 @@ sub get_gt_status_colour
 		$status_colour="#F5F5F5";
 	}
 	return $status_colour;
+}
+
+sub pass_filter {
+#Check a numeric filter argument, optionally prefixed with '<','=' or '>', against a value
+#return 1 (pass) or 0 (fail)
+
+	my ($val,$filter) = @_;
+    return 1 unless $filter;
+
+    my $operand = $1 if $filter =~ s/^([<=>])//;
+    $operand ||= '>';
+
+    my $rc;
+    if ($operand eq '>') {
+        $rc = $val > $filter ? 1 : 0;
+    }
+    elsif ($operand eq '<') {
+        $rc = $val < $filter ? 1 : 0;
+    }
+    else {
+        $rc = $val == $filter ? 1 : 0;
+    }
+    return $rc;
 }
 
