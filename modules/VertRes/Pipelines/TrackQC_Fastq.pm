@@ -19,7 +19,7 @@ use VertRes::Parser::fastqcheck;
 use VertRes::Wrapper::bwa;
 use VertRes::Utils::Sam;
 use VRTrack::Assembly;
-
+use Pathogens::Parser::GenomeCoverage;
 
 our @actions =
 (
@@ -767,11 +767,12 @@ sub run_graphs
     $self->SUPER::run_graphs($lane_path,$insert_size);
 
     # Get coverage, depth and sd.
-    my $bam_file   = qq[$lane_path/$$self{'sample_dir'}/$$self{'lane'}.bam];
-    my $cover_file = qq[$lane_path/$$self{'sample_dir'}/$$self{'lane'}.cover];
+    my $bamcheck_file = qq[$lane_path/$$self{'sample_dir'}/$$self{'lane'}.bam.bc];
+    my $cover_file    = qq[$lane_path/$$self{'sample_dir'}/$$self{'lane'}.cover];
 
-    my $sam_util = VertRes::Utils::Sam->new(verbose => $$self{verbose});
-    my($coverage, $depth, $depth_sd) = $sam_util->coverage_depth($bam_file,$reference_size);
+    my $genomecover = Pathogens::Parser::GenomeCoverage->new( bamcheck => $bamcheck_file,
+                                                              ref_size => $reference_size );
+    my($coverage, $depth, $depth_sd) = $genomecover->coverage_depth();
 
     # Output cover file.
     open(my $cov_fh, "> $cover_file") or $self->throw("Cannot open: $cover_file\n");

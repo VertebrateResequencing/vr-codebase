@@ -78,7 +78,7 @@ sub optimise_parameters_with_reference
   my ($self, $num_threads) = @_;
   my $reference_directory = $self->optimised_directory();
 
-  `samtools sort -n -m 4000000000 $reference_directory/contigs.mapped.sorted.bam $reference_directory/contigs.mapped.sorted2`;
+  `samtools sort -n -m 2000000000 $reference_directory/contigs.mapped.sorted.bam $reference_directory/contigs.mapped.sorted2`;
   system("mv $reference_directory/contigs.mapped.sorted2.bam $reference_directory/contigs.mapped.sorted.bam");
 
   `perl $self->{optimiser_exec} -t $num_threads -s $self->{min_kmer} -e $self->{max_kmer} -p 'velvet_optimised_with_reference' -f '-reference -fasta $reference_directory/contigs.fa -shortPaired -bam $reference_directory/contigs.mapped.sorted.bam'`;
@@ -153,7 +153,7 @@ sub map_and_generate_stats
    $self->throw("Couldnt convert from sam to BAM") unless(-e "$directory/contigs.mapped.bam");
    unlink("$directory/contigs.mapped.sam");
 
-   `samtools sort -m 4000000000 $directory/contigs.mapped.bam $directory/contigs.mapped.sorted`;
+   `samtools sort -m 2000000000 $directory/contigs.mapped.bam $directory/contigs.mapped.sorted`;
    $self->throw("Couldnt sort the BAM") unless(-e "$directory/contigs.mapped.sorted.bam");
 
    `samtools index $directory/contigs.mapped.sorted.bam`;
@@ -250,9 +250,9 @@ sub estimate_memory_required
 
   my $memory_required = -109635 + (20000*($input_params->{read_length})) + (86326*($input_params->{genome_size})/1000000) + (300000*($input_params->{total_number_of_reads})/1000000) - (51092*$kmer_size);
   $memory_required *= 2.0;
-  if($memory_required < 6000000)
+  if($memory_required < 4000000)
   {
-    $memory_required = 6000000;
+    $memory_required = 4000000;
   }
   elsif($memory_required > 400000000)
   {
