@@ -336,6 +336,7 @@ sub next_data_array
     if ( !$line ) { return undef; }
     if ( ref($line) eq 'ARRAY' ) { return $line; }
     my @items = split(/\t/,$line);
+    if ( @items<8 ) { $line=~s/\n/\\n/g; $self->throw("Could not parse the line: [$line]"); }
     chomp($items[-1]);
     return \@items;
 }
@@ -2960,9 +2961,9 @@ sub Vcf4_0::parse_header_line
         $self->throw(qq[Could not parse header line: $line\nStopped at [$tmp].\n]);
     }
 
-    if ( $key ne 'PEDIGREE' && !exists($$rec{ID}) ) { $self->throw("Missing the ID tag in $line\n"); }
     if ( $key eq 'INFO' or $key eq 'FILTER' or $key eq 'FORMAT' )
     {
+        if ( $key ne 'PEDIGREE' && !exists($$rec{ID}) ) { $self->throw("Missing the ID tag in $line\n"); }
         if ( !exists($$rec{Description}) ) { $self->warn("Missing the Description tag in $line\n"); }
     }
     if ( exists($$rec{Number}) && $$rec{Number} eq '-1' ) { $self->warn("The use of -1 for unknown number of values is deprecated, please use '.' instead.\n\t$line\n"); }
