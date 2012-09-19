@@ -74,3 +74,5 @@ is $output_result_1, 'some_name,abc123,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16', 
 is $output_result_2, 'some_name,efg456,91,92,93,94,95,96,97,98,99,910,911,912,913,914,915,916', 'result set 2';
 close(IN);
 unlink('my_result_file.csv');
+
+done_testing();

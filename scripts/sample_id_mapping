@@ -68,7 +68,7 @@ my $sql_select_project_names = "select d.project_name from tracking_database t, 
 $study = get_study($db, $sql_select_project_names) unless $study;
 
 #connection to warehouse
-my $dbh = DBI->connect("DBI:mysql:host=mcs7:port=3306;database=warehouse_two_production", "warehouse_ro", undef, {'RaiseError' => 1, 'PrintError'=>0});
+my $dbh = DBI->connect("DBI:mysql:host=mcs12:port=3379;database=sequencescape_warehouse", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
 #mapping sql
 my $na = "'N/A'";
 my $sql = "select distinct ifnull(csa.supplier_name, $na), ifnull(csa.name, $na), ifnull(csa.sanger_sample_id, $na), ifnull(csa.accession_number, $na) 
