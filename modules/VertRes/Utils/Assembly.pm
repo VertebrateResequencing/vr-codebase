@@ -121,19 +121,9 @@ sub generate_stats
   for my $file(@files)
   {
     next unless(-e $directory.'/'.$file);
-    system("assembly_stats_mh12 $directory/$file > $directory/$file.stats");
-    system("/software/pathogen/external/bin/seqstat $directory/$file > $directory/$file.seqstat");
-    # Use the GC plots from the QC pipeline instead
-    system("~mh12/git/python/fastn2gc.py $directory/$file $directory/$file.png");
+    system("assembly_stats $directory/$file > $directory/$file.stats");
   }
 }
-
-sub scaffolded_directory
-{
-  my ($self) = @_;
-  return "$self->{output_directory}/scaffolding_results";
-}
-
 
 
 
