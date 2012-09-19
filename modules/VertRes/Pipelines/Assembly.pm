@@ -213,7 +213,7 @@ sub scaffold_with_sspace
                 };
   close $scriptfh;
   
-  my $memory_required_mb = 10000;
+  my $memory_required_mb = 5000;
 
   LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
   
@@ -365,7 +365,7 @@ sub mapping_and_generate_stats
                 };
   close $scriptfh;
   
-  my $memory_required_mb = 8000;
+  my $memory_required_mb = 4000;
 
   LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
   

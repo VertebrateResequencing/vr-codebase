@@ -1224,8 +1224,17 @@ sub statistics {
 use strict;
 use VertRes::Utils::Sam;
 use VertRes::Pipelines::Mapping;
+        };
+        
+	if(exists $$self{'get_genome_coverage'} && $$self{'get_genome_coverage'})
+	{
+	    # Generate genome coverage file.
+	    print $scriptfh qq{
+use Pathogens::Parser::GenomeCoverage;
+            };
+	}
 
-
+        print $scriptfh qq{
 my \$sam_util = VertRes::Utils::Sam->new(verbose => $verbose);
 
 my \$num_present = 0;
@@ -1250,8 +1259,11 @@ VertRes::Pipelines::Mapping->create_graphs(qq[$$self{bamcheck}],  qq[$self->{ref
 	{
 	    # Generate genome coverage file.
 	    print $scriptfh qq{
-my \@cover = \$sam_util->coverage('$bam_file',1,2,5,10,20,50,100);
-my(\$coverage, \$depth, \$depth_sd)  = \$sam_util->coverage_depth('$bam_file',$reference_size);
+my \$genomecover = Pathogens::Parser::GenomeCoverage->new( bamcheck => '$bam_file.bc',
+                                                           ref_size => $reference_size );
+
+my \@cover = \$genomecover->coverage(1,2,5,10,20,50,100);
+my(\$coverage, \$depth, \$depth_sd)  = \$genomecover->coverage_depth();
 
 open(my \$fh, '> $bam_file.cover') || die "Failed to open file '$bam_file.cover'";
 print \$fh "[",join(',',\@cover);
