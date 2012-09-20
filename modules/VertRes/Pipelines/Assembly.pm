@@ -77,6 +77,7 @@ use Data::Dumper;
 use FileHandle;
 use VertRes::Utils::Assembly;
 use VertRes::Utils::Scaffold;
+use Utils::basename;
 
 use base qw(VertRes::Pipeline);
 
@@ -245,6 +246,14 @@ sub optimise_parameters
 
       my $job_name = $self->{prefix}.$self->{assembler}.'_optimise_parameters';
       my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_optimise_parameters.pl");
+      
+      my $lane_names = $self->get_all_lane_names($self->{pools});
+      my @lane_paths;
+      for my $lane_name (@$lane_names)
+      {
+        push(@lane_paths,$base_path.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_name).'/'.$lane_name);
+      }
+      my $lane_paths_str = '("'.join('","', @lane_paths).'")';
 
       my $kmer = $self->calculate_kmer_size();
       
@@ -279,7 +288,10 @@ my \$assembler = $assembler_class->new(
   );
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
-\$ok = \$assembler->improve_assembly(\$assembler->optimised_directory(),qq[$files_str]);
+
+my \@lane_paths = $lane_paths_str;
+\$ok = \$assembler->split_reads(qq[$output_directory], \\\@lane_paths);
+\$ok = \$assembler->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',['$output_directory/forward.fastq','$output_directory/reverse.fastq']);
 
 system('touch _$self->{assembler}_optimise_parameters_done');
 exit;
@@ -295,9 +307,40 @@ exit;
       return $self->{No};
 }
 
+sub split_reads
+{
+  my ($self, $output_directory, $lane_paths) = @_;
+  my $forward_fastq = '';
+  my $reverse_fastq = '';
+  
+  for my $lane_path ( @$lane_paths)
+  {
+    my ($base_directory,$base,$suff) = Utils::basename($lane_path);
+    opendir(my $lane_dir_handle, $base_directory);
+    my @fastq_files  = grep { /\.fastq\.gz$/ } readdir($lane_dir_handle);
+    if(@fastq_files >=1 )
+    {
+      $forward_fastq .= $base_directory.'/'.$fastq_files[0];
+    }
+    if(@fastq_files >=2 )
+    {
+      $reverse_fastq .= $base_directory.'/'.$fastq_files[1];
+    }
+  }
+
+  unless( -e "$output_directory/forward.fastq")
+  {
+    `gzip -cd $forward_fastq  > $output_directory/forward.fastq`;
+  }
+  unless(-e "$output_directory/reverse.fastq")
+  {
+    `gzip -cd $reverse_fastq  > $output_directory/reverse.fastq`;
+  } 
+}
+
 sub improve_assembly
 {
-  my ($self,$input_files,$assembly_file) = @_;
+  my ($self,$assembly_file, $input_files) = @_;
   
   my $insert_size = $self->get_insert_size();
   
@@ -473,7 +516,7 @@ exit;
       close $scriptfh;
       my $job_name = $self->{prefix}.'pool_fastqs';
 
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M500000 -R \'select[mem>500] rusage[mem=500]\''}, qq{perl -w $script_name});
+      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M200000 -R \'select[mem>200] rusage[mem=200]\''}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
