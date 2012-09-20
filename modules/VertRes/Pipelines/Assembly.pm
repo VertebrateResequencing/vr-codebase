@@ -259,6 +259,7 @@ sub optimise_parameters
       my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer->{min})/1000);
 
       my $num_threads = $self->number_of_threads($memory_required_mb);
+      my $insert_size = $self->get_insert_size();
 
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
@@ -267,6 +268,8 @@ use $assembler_class;
 use Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles;
 use Bio::AssemblyImprovement::Scaffold::SSpace::Iterative;
 use Bio::AssemblyImprovement::FillGaps::GapFiller::Iterative;
+use VertRes::Pipelines::Assembly;
+my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
 
 my \$assembler = $assembler_class->new(
   assembler => qq[$self->{assembler}],
@@ -281,7 +284,7 @@ my \$ok = \$assembler->optimise_parameters($num_threads);
 
 my \@lane_paths = $lane_paths_str;
 \$ok = \$assembler->split_reads(qq[$output_directory], \\\@lane_paths);
-\$ok = \$assembler->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',['$output_directory/forward.fastq','$output_directory/reverse.fastq']);
+\$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',['$output_directory/forward.fastq','$output_directory/reverse.fastq'],$insert_size);
 
 system('touch _$self->{assembler}_optimise_parameters_done');
 exit;
@@ -322,9 +325,7 @@ sub decide_appropriate_queue
 
 sub improve_assembly
 {
-  my ($self,$assembly_file, $input_files) = @_;
-  
-  my $insert_size = $self->get_insert_size();
+  my ($self,$assembly_file, $input_files, $insert_size) = @_;
   
   my $preprocess_input_files = Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles->new(
       input_files    => $input_files,
