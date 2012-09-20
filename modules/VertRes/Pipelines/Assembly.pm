@@ -7,7 +7,6 @@ VertRes::Pipelines::Assembly - Assemble genomes
 echo '__Assembly__ assembly.conf' > pipeline.config
 # where assembly.conf contains:
 root    => '/abs/path/to/root/data/dir',
-seq_pipeline_root => /abs/path/to/raw/sequencing/data',
 module  => 'VertRes::Pipelines::Assembly',
 prefix  => '_',
 
@@ -27,7 +26,7 @@ data => {
         user     => 'pathpipe_rw',
         password => 'xxxx',
     },
-
+    seq_pipeline_root => /abs/path/to/raw/sequencing/data',
     assembler => 'velvet',
     assembler_exec => 'velvet',
     optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
@@ -519,7 +518,7 @@ sub concat_fastq_gz_files
 
   if(@{$filenames} == 1)
   {
-    move($input_directory.'/'.$filename, $output_directory/$outputname);
+    move($input_directory.'/'.$filenames->[0], "$output_directory/$outputname");
   }
   else
   {
