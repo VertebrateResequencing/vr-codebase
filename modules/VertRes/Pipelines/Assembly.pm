@@ -7,6 +7,7 @@ VertRes::Pipelines::Assembly - Assemble genomes
 echo '__Assembly__ assembly.conf' > pipeline.config
 # where assembly.conf contains:
 root    => '/abs/path/to/root/data/dir',
+seq_pipeline_root => /abs/path/to/raw/sequencing/data',
 module  => 'VertRes::Pipelines::Assembly',
 prefix  => '_',
 
@@ -28,14 +29,15 @@ data => {
     },
 
     assembler => 'velvet',
-    assembler_exec => '',
+    assembler_exec => 'velvet',
     optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
     # rough estimate so we know how much RAM to request
     genome_size => 10000000,
     num_threads => 4,
-    scaffolder => 'sspace',
-    scaffolder_exec => '/software/pathogen/external/apps/usr/local/SSPACE-1.2_linux-x86_64/SSPACE_v1-2.pl',
-    
+
+    scaffolder_exec => '/software/pathogen/external/apps/usr/local/SSPACE-BASIC-2.0_linux-x86_64/SSPACE_Basic_v2.0.pl',
+    gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-10_linux-x86_64/GapFiller.pl'
+
     pools => [
         {
             lanes => ['123_4','456_7#8'],
@@ -168,7 +170,7 @@ sub mapping_and_generate_stats
   my $output_directory = $self->{lane_path};
   eval("use $assembler_class; ");
   my $assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
-  my $base_path = $self->{lane_path}.'/../../seq-pipelines';
+  my $base_path = $self->{seq_pipeline_root};
   
   my $job_name = $self->{prefix}.$self->{assembler}."_$action_name_suffix";
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_$action_name_suffix.pl");
@@ -415,7 +417,7 @@ sub pool_fastqs
 
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
-      my $base_path = $self->{lane_path}.'/../../seq-pipelines';
+      my $base_path =  $self->{seq_pipeline_root};
 
       my $script_name = $self->{fsu}->catfile($build_path, $self->{prefix}."pool_fastqs.pl");
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -514,11 +516,19 @@ sub concat_fastq_gz_files
   my ($self, $filenames, $outputname, $input_directory, $output_directory) = @_;
 
   my $filenames_with_paths = '';
-  for my $filename (@$filenames)
+
+  if(@{$filenames} == 1)
   {
-    $filenames_with_paths = $filenames_with_paths.$input_directory.'/'.$filename.' ';
+    move($input_directory.'/'.$filename, $output_directory/$outputname);
   }
-  `gzip -cd $filenames_with_paths | gzip > $output_directory/$outputname`;
+  else
+  {
+    for my $filename (@$filenames)
+    {
+      $filenames_with_paths = $filenames_with_paths.$input_directory.'/'.$filename.' ';
+    }
+    `gzip -cd $filenames_with_paths | gzip > $output_directory/$outputname`;
+  }
 }
 
 
