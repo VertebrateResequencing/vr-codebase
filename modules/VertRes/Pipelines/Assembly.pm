@@ -77,7 +77,6 @@ use Data::Dumper;
 use FileHandle;
 use VertRes::Utils::Assembly;
 use VertRes::Utils::Scaffold;
-use Utils::basename;
 
 use base qw(VertRes::Pipeline);
 
@@ -236,6 +235,7 @@ sub optimise_parameters
 
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
+      my $base_path = $self->{seq_pipeline_root};
 
       my $assembler_class = $self->{assembler_class};
       my $optimiser_exec = $self->{optimiser_exec};
@@ -247,7 +247,6 @@ sub optimise_parameters
       my $job_name = $self->{prefix}.$self->{assembler}.'_optimise_parameters';
       my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_optimise_parameters.pl");
       
-      my $lane_names = $self->get_all_lane_names($self->{pools});
       my @lane_paths;
       for my $lane_name (@$lane_names)
       {
@@ -258,15 +257,6 @@ sub optimise_parameters
       my $kmer = $self->calculate_kmer_size();
       
       my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer->{min})/1000);
-      my $queue = 'long';
-      if($memory_required_mb > 30000)
-      {
-        $queue = 'hugemem';
-      }
-      elsif($memory_required_mb < 4000)
-      {
-        $queue = 'normal';
-      }
 
       my $num_threads = $self->number_of_threads($memory_required_mb);
 
@@ -299,12 +289,33 @@ exit;
               close $scriptfh;
 
       my $total_memory_mb = $num_threads*$memory_required_mb;
+      if($total_memory_mb < 3000)
+      {
+        $total_memory_mb = 3000;
+      }
+      
+      my $queue = $self->decide_appropriate_queue($memory_required_mb);
       
       LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb}000 -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
       return $self->{No};
+}
+
+sub decide_appropriate_queue
+{
+  my ($self, $memory_required_mb) = @_;
+  my $queue = 'long';
+  if($memory_required_mb > 30000)
+  {
+    $queue = 'hugemem';
+  }
+  elsif($memory_required_mb < 4000)
+  {
+    $queue = 'normal';
+  }
+  return $queue;
 }
 
 sub split_reads
