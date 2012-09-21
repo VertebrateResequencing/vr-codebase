@@ -76,7 +76,10 @@ use LSF;
 use Data::Dumper;
 use FileHandle;
 use VertRes::Utils::Assembly;
-use VertRes::Utils::Scaffold;
+use Bio::AssemblyImprovement::Scaffold::Descaffold;
+use Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles;
+use Bio::AssemblyImprovement::Scaffold::SSpace::Iterative;
+use Bio::AssemblyImprovement::FillGaps::GapFiller::Iterative;
 
 use base qw(VertRes::Pipeline);
 
@@ -101,7 +104,9 @@ our $actions = [ { name     => 'pool_fastqs',
 our %options = (
                 do_cleanup      => 1,
                 scaffolder_exec => '/software/pathogen/external/apps/usr/local/SSPACE-BASIC-2.0_linux-x86_64/SSPACE_Basic_v2.0.pl',
-                gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-10_linux-x86_64/GapFiller.pl'
+                gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-10_linux-x86_64/GapFiller.pl',
+                abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
+                no_scaffolding  => 0
                 );
 
 sub new {
@@ -265,9 +270,6 @@ sub optimise_parameters
       print $scriptfh qq{
 use strict;
 use $assembler_class;
-use Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles;
-use Bio::AssemblyImprovement::Scaffold::SSpace::Iterative;
-use Bio::AssemblyImprovement::FillGaps::GapFiller::Iterative;
 use VertRes::Pipelines::Assembly;
 my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
 
@@ -314,7 +316,7 @@ sub decide_appropriate_queue
   {
     $queue = 'hugemem';
   }
-  elsif($memory_required_mb < 4000)
+  elsif($memory_required_mb < 3500)
   {
     $queue = 'normal';
   }
@@ -329,7 +331,8 @@ sub improve_assembly
   
   my $preprocess_input_files = Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles->new(
       input_files    => $input_files,
-      input_assembly => $assembly_file
+      input_assembly => $assembly_file,
+      reference      => $self->{reference},
   );
   my $process_input_files_tmp_dir_obj = $preprocess_input_files->_temp_directory_obj();
 
@@ -343,6 +346,17 @@ sub improve_assembly
   $scaffolding_obj->run();
 
   my $scaffolding_output = $scaffolding_obj->final_output_filename;
+  
+  # order contigs on an assembly
+  if(defined($self->{reference}) && (-e $self->{reference}))
+  {
+    $scaffolding_obj = Bio::AssemblyImprovement::Abacas::Iterative->new(
+      reference      => $preprocess_input_files->processed_reference,
+      input_assembly => $scaffolding_output,
+      abacas_exec    => $self->{abacas_exec},
+    );
+    $scaffolding_obj->run();
+  }
 
   # fill gaps
   my $fill_gaps_obj = Bio::AssemblyImprovement::FillGaps::GapFiller::Iterative->new(
@@ -353,6 +367,14 @@ sub improve_assembly
       _output_prefix  => 'gapfilled'
   )->run();
   move($fill_gaps_obj->final_output_filename,$assembly_file);
+  
+  # descaffold if needed
+  if(defined($self->{no_scaffolding}) && $self->{no_scaffolding} == 1)
+  {
+    my $descaffold_obj = Bio::AssemblyImprovement::Scaffold::Descaffold->new(input_assembly => $assembly_file);
+    $descaffold_obj->run();
+    move($descaffold_obj->output_filename,$assembly_file);
+  }
 }
 
 # Get the requested insert size of the first lane. Not suitable for mixed insert sizes, should be run with standalone scripts in that case.
@@ -647,7 +669,7 @@ sub estimate_memory_required
 
 sub cleanup_requires {
   my ($self) = @_;
-  return ["_velvet_map_back_scaffolded_done"];
+  return $self->map_back_provides();
 }
 
 =head2 cleanup_provides
