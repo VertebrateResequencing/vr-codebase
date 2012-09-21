@@ -368,12 +368,6 @@ sub get_jobs
                 get_improvement_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
                 next;
             }
-            
-            if ( $action=~/^__PathTrack_Import__$/ )
-            {
-                get_pathimport_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
-                next;
-            }
 
             if ( $action=~/^__VRTrack_Import__$/ )
             {
@@ -809,62 +803,6 @@ sub get_qc_jobs_from_vrtrack
             debug($config_data, "jobs limit $$config_data{max_qc_jobs} reached...");
             last;
         }
-    }
-    debug($config_data,"done\n");
-
-    return;
-}
-
-=head2 get_pathimport_jobs_from_vrtrack
-
-  Arg [1]    : Pointer to array of jobs
-  Arg [2]    : The config file name
-  Arg [3]    : The mtime of the config file
-  Arg [4]    : The config data.
-  Description: Obtains the lane list from the VRTrack database.
-
-=cut
-
-sub get_pathimport_jobs_from_vrtrack {
-
-    my ($jobs,$config,$mtime,$config_data) = @_;
-
-    if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
-    debug($config_data,"$config\tget_pathimport_jobs_from_vrtrack...");
-
-    my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
-    my %filter  = ('import'=>1);
-    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
-
-    my $hnames = $vrtrack->processed_lane_hnames(%filter);
-    my @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config);
-
-    # For big data sets, this loop takes suprisingly long.
-    foreach my $vrlane (@lanes)
-    {
-        my $path   = $vrtrack->hierarchy_path_of_lane($vrlane);
-        if ( $vrlane->is_withdrawn() ) { next; }
-
-        my $lane_info = lane_info($path);
-        $$lane_info{paired} = $vrlane->is_paired();
-    $$lane_info{vrlane} = $vrlane;
-    $$lane_info{root} = $config_data->{root};
-
-        if ( exists($$config_data{data}{known_genders}) )
-        {
-            # Treat gender specific options.
-
-            my $lib    = VRTrack::Library->new($vrtrack, $vrlane->library_id());
-            my $sample = VRTrack::Sample->new($vrtrack, $lib->sample_id());
-            my $indiv  = VRTrack::Individual->new($vrtrack, $sample->individual_id());
-            my $gender = $indiv->sex();
-
-            if ( !exists($$config_data{data}{known_genders}{$gender}) ) { croak("No info for the gender $gender in $config\n"); }
-            $lane_info = { %{$$config_data{data}{known_genders}{$gender}}, %$lane_info };
-        }
-        my $job = Job->new({lane_info=>$lane_info, %$config_data, path=>$path, config=>$config, mtime=>$mtime});
-        push @$jobs, $job;
-        debug($config_data,".");
     }
     debug($config_data,"done\n");
 
