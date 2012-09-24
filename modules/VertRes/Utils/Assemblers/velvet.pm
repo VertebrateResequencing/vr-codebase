@@ -69,6 +69,7 @@ sub optimise_parameters
   unlink($self->optimised_directory()."/PreGraph");
   unlink($self->optimised_directory()."/Graph");
   unlink($self->optimised_directory()."/Graph2");
+  unlink($self->optimised_directory()."/stats.txt");
 
   return 1;
 }                                                                                                                             

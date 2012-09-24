@@ -740,6 +740,7 @@ sub allowed_processed_flags {
      improved => 128,
      snp_called => 256,
      rna_seq_expression => 512,
+     assembled  => 1024,
      
      );
 

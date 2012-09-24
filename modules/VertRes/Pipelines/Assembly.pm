@@ -95,6 +95,10 @@ our $actions = [ { name     => 'pool_fastqs',
                    action   => \&map_back,
                    requires => \&map_back_requires, 
                    provides => \&map_back_provides },
+                 { name     => 'update_db',
+                   action   => \&update_db,
+                   requires => \&update_db_requires, 
+                   provides => \&update_db_provides },
                  { name     => 'cleanup',
                    action   => \&cleanup,
                    requires => \&cleanup_requires,
@@ -122,6 +126,16 @@ sub new {
   unless(defined($self->{max_threads}))
   {
     $self->{max_threads} = 1;
+  }
+  
+  if(defined($self->{vrlane}))
+  {
+    # being run on individual lanes
+    $self->{pools} = 
+       [{
+            lanes => [$self->{vrlane}->name()],
+            type => 'shortPaired',
+       }];
   }
 
   my $assembly_util = VertRes::Utils::Assembly->new(assembler => $self->{assembler});
@@ -203,6 +217,8 @@ sub mapping_and_generate_stats
   my \$directory = \$assembler_util->${working_directory_method_name}();
   \$assembler_util->map_and_generate_stats(\$directory,qq[$output_directory], \\\@lane_paths );
   
+  unlink("\$directory/contigs.mapped.sorted.bam.bai");
+  unlink("\$directory/contigs.mapped.sorted.bam");
   system("touch \$directory/_$self->{assembler}_${action_name_suffix}_done");
  
   system("touch _$self->{assembler}_${action_name_suffix}_done");
@@ -375,6 +391,8 @@ sub improve_assembly
     $descaffold_obj->run();
     move($descaffold_obj->output_filename,$assembly_file);
   }
+  
+  move($input_files)
 }
 
 # Get the requested insert size of the first lane. Not suitable for mixed insert sizes, should be run with standalone scripts in that case.
@@ -669,7 +687,7 @@ sub estimate_memory_required
 
 sub cleanup_requires {
   my ($self) = @_;
-  return $self->map_back_provides();
+  return [ $self->{prefix}."update_db_done"];
 }
 
 =head2 cleanup_provides
@@ -715,7 +733,7 @@ sub cleanup {
   }
   
   # remove files
-  foreach my $file (qw(.RData contigs.fa.png.Rout scaffolded.summaryfile.txt reverse.fastq forward.fastq pool_1.fastq.gz)) 
+  foreach my $file (qw(contigs.fa.scaffolded.filtered .RData contigs.fa.png.Rout scaffolded.summaryfile.txt reverse.fastq forward.fastq pool_1.fastq.gz)) 
   {
     unlink($self->{fsu}->catfile($lane_path, $file));
   }
@@ -723,4 +741,73 @@ sub cleanup {
   
   return $self->{Yes};
 }
+
+
+
+=head2 update_db_requires
+
+ Title   : update_db_requires
+ Usage   : my $required_files = $obj->update_db_requires('/path/to/lane');
+ Function: Find out what files the update_db action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub update_db_requires {
+    my ($self, $lane_path) = @_;
+    return $self->map_back_provides();
+}
+
+=head2 update_db_provides
+
+ Title   : update_db_provides
+ Usage   : my $provided_files = $obj->update_db_provides('/path/to/lane');
+ Function: Find out what files the update_db action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub update_db_provides {
+   my ($self) = @_;
+    return [ $self->{lane_path}."/".$self->{prefix}."update_db_done"];
+}
+
+=head2 update_db
+
+ Title   : update_db
+ Usage   : $obj->update_db('/path/to/lane', 'lock_filename');
+ Function: Records in the database that the lane has been improved.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+sub update_db {
+    my ($self, $lane_path, $action_lock) = @_;
+
+    # all the done files are there, so just need to update the processed
+    # flag in the database (if not already updated)
+    my $vrlane = $self->{vrlane};
+    return $$self{'Yes'} unless(defined($vrlane));
+    
+    my $vrtrack = $vrlane->vrtrack;
+    
+    return $$self{'Yes'} if $vrlane->is_processed('assembled');
+
+    unless($vrlane->is_processed('assembled')){
+      $vrtrack->transaction_start();
+      $vrlane->is_processed('assembled',1);
+      $vrlane->update() || $self->throw("Unable to set assembled status on lane $lane_path");
+      $vrtrack->transaction_commit();
+    }
+
+    
+    my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
+    Utils::CMD("rm $job_status") if (-e $job_status);
+    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_update_db_done")   );  
+
+    return $$self{'Yes'};
+}
+
 
