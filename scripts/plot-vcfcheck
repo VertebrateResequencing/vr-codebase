@@ -776,7 +776,7 @@ sub plot_counts_by_AF_col
 	for (my $ifile=0; $ifile<@files; $ifile++)
 	{
 		iprint $fh, "
-			ax1.plot([row[0]/100. for row in dat$ifile], [row[1] for row in dat$ifile], '.', markersize=3, color='$cols[$ifile]',label='$$opts{title}{$files[$ifile]}')
+			ax1.plot([row[0]/100. for row in dat$ifile], [row[1] for row in dat$ifile], '.', markersize=3, color='$cols[$ifile]',label='$$opts{title}{$ifile}')
 		";
 	}
     if ( @files>1 )
