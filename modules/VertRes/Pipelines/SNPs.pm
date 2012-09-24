@@ -1497,11 +1497,16 @@ sub cleanup_requires {
 
     # need a done file from each caller
     for my $task (keys %{$self->{task}}) {
-        next if ($task eq "update_db" or $task eq "cleanup" or $task eq "pseudo_genome");
+        next if ($task eq "update_db" or $task eq "cleanup");
+
+        if ($task eq "pseudo_genome") {
+            #adding a "." prefix, otherwise "cleanup" would delete this file
+            push @requires, ".$task.done";
+            next;
+        }
+
         push @requires, "$task.done";
-    }
-   
-    push @requires, ".pseudo_genome.done";
+    }   
     return \@requires;
 }
 

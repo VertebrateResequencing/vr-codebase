@@ -141,7 +141,14 @@ sub _build__frequency_of_read_start
   {
     next if ($align->unmapped);
     my $seqid     = $target_names->[$align->tid];
-    $frequency_of_read_start{$seqid}{$align->pos+1}{$align->strand}++;
+    if($align->strand == 1)
+    {
+      $frequency_of_read_start{$seqid}{$align->start}{$align->strand}++;
+    }
+    else
+    {
+      $frequency_of_read_start{$seqid}{$align->end}{$align->strand}++;
+    }
   }
 
   return \%frequency_of_read_start;

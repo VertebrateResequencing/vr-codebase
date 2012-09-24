@@ -30,6 +30,7 @@ use VRTrack::Library;
 use VRTrack::Individual;
 use VRTrack::Multiplex_pool;
 use VRTrack::Library_Multiplex_pool;
+use Benchmark;
 
 my ($projfile, $spp, $update_files, $samplemap, $help, $database,$create_individuals, $no_fastq, $no_bam);
 
@@ -100,6 +101,8 @@ Supplying --no_fastq prevents the check of MPSA, which is useful if you know
 your project is bam only and don't wish to accidentally pull in fastq.
 
 USAGE
+
+my $start_time = Benchmark->new;
 
 if( $no_bam && $no_fastq )
 {
@@ -678,6 +681,9 @@ foreach my $pname (keys %projects){
     } # Sample 
 } # Study
 print "Done\n";
+my $end_time = Benchmark->new;
+my $update_time = timediff($end_time, $start_time);
+print "The $db update took ",timestr($update_time, 'noc'),"\n";
 
 # sub to get a core object, or create a new one if required
 # checks that the object has the right ssid and name and is not a duplicate
