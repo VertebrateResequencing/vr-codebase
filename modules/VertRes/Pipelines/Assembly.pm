@@ -36,6 +36,8 @@ data => {
     genome_size => 10000000,
 
     seq_pipeline_root    => '/lustre/scratch108/pathogen/pathpipe/prokaryotes/seq-pipelines',
+    no_scaffolding => 0,
+    annotation     => 1,
 
     assembler => 'velvet',
     assembler_exec => '/software/pathogen/external/apps/usr/bin/velvet',
@@ -45,6 +47,8 @@ data => {
 
 
 =head1 DESCRIPTION
+
+This pipeline requires velvet, prokka, smalt, SSPACE and GapFiller to be separately installed from the original authors software repositories.
 
 
 =head1 AUTHOR
@@ -104,7 +108,8 @@ our %options = (
                 scaffolder_exec => '/software/pathogen/external/apps/usr/local/SSPACE-BASIC-2.0_linux-x86_64/SSPACE_Basic_v2.0.pl',
                 gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-10_linux-x86_64/GapFiller.pl',
                 abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
-                no_scaffolding  => 0
+                no_scaffolding  => 0,
+                annotation      => 0,
                 );
 
 sub new {
@@ -213,6 +218,13 @@ sub mapping_and_generate_stats
   
   unlink("\$directory/contigs.mapped.sorted.bam.bai");
   unlink("\$directory/contigs.mapped.sorted.bam");
+  unlink("\$directory/contigs.fa.small.sma");
+  unlink("\$directory/contigs.fa.small.smi");
+  
+  if($annotation == 1)
+  {
+    system("prokka --centre SC --cpus 2 --force --outdir  \$directory/annotation \$directory/contigs.fa");
+  }
   system("touch \$directory/_$self->{assembler}_${action_name_suffix}_done");
  
   system("touch _$self->{assembler}_${action_name_suffix}_done");
@@ -220,7 +232,7 @@ sub mapping_and_generate_stats
                 };
   close $scriptfh;
   
-  my $memory_required_mb = 3500;
+  my $memory_required_mb = 2000;
 
   LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
   
@@ -304,9 +316,9 @@ exit;
               close $scriptfh;
 
       my $total_memory_mb = $num_threads*$memory_required_mb;
-      if($total_memory_mb < 3000)
+      if($total_memory_mb < 2000)
       {
-        $total_memory_mb = 3000;
+        $total_memory_mb = 2000;
       }
       
       my $queue = $self->decide_appropriate_queue($memory_required_mb);
@@ -385,8 +397,6 @@ sub improve_assembly
     $descaffold_obj->run();
     move($descaffold_obj->output_filename,$assembly_file);
   }
-  
-  move($input_files)
 }
 
 # Get the requested insert size of the first lane. Not suitable for mixed insert sizes, should be run with standalone scripts in that case.
@@ -681,7 +691,7 @@ sub estimate_memory_required
 
 sub cleanup_requires {
   my ($self) = @_;
-  return [ $self->{prefix}."update_db_done"];
+  return [ $self->{prefix}."assembly_update_db_done"];
 }
 
 =head2 cleanup_provides
@@ -695,7 +705,7 @@ sub cleanup_requires {
 =cut
 
 sub cleanup_provides {
-    return ["_cleanup_done"];
+    return ["_assembly_cleanup_done"];
 }
 
 =head2 cleanup
@@ -727,11 +737,11 @@ sub cleanup {
   }
   
   # remove files
-  foreach my $file (qw(contigs.fa.scaffolded.filtered .RData contigs.fa.png.Rout scaffolded.summaryfile.txt reverse.fastq forward.fastq pool_1.fastq.gz)) 
+  foreach my $file (qw(contigs.fa.scaffolded.filtered .RData contigs.fa.png.Rout scaffolded.summaryfile.txt reverse.fastq forward.fastq)) 
   {
     unlink($self->{fsu}->catfile($lane_path, $file));
   }
-  Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_cleanup_done")   );  
+  Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_assembly_cleanup_done")   );  
   
   return $self->{Yes};
 }
@@ -765,7 +775,7 @@ sub update_db_requires {
 
 sub update_db_provides {
    my ($self) = @_;
-    return [ $self->{lane_path}."/".$self->{prefix}."update_db_done"];
+    return [ $self->{lane_path}."/".$self->{prefix}."assembly_update_db_done"];
 }
 
 =head2 update_db
@@ -799,7 +809,7 @@ sub update_db {
     
     my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
     Utils::CMD("rm $job_status") if (-e $job_status);
-    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_update_db_done")   );  
+    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_assembly_update_db_done")   );  
 
     return $$self{'Yes'};
 }
