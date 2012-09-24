@@ -260,6 +260,11 @@ sub parse_vcfcheck1
     my %dat;
     while ($line=<$fh>)
     {
+        if ( $line=~/^#\s+(\S+)\t/ ) 
+        {
+            $$opts{def_line}{$1} = $line;
+            next; 
+        }
         if ( $line=~/^#/ ) { next; }
         my @items = split(/\t/,$line);
         chomp($items[-1]);
@@ -354,6 +359,27 @@ sub get_values
 	my ($opts,$id,$key) = @_;
 	if ( !exists($$opts{dat}{$key}) ) { return (); }
 	if ( !exists($$opts{dat}{$key}{$id}) ) { return (); }
+
+    my %exp =
+    (
+        ID    => "# ID\t[2]id\t[3]tab-separated file names\n",
+        SiS   => "# SiS\t[2]id\t[3]allele count\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n",
+        AF    => "# AF\t[2]id\t[3]allele frequency\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n",
+        IDD   => "# IDD\t[2]id\t[3]length (deletions negative)\t[4]count\n",
+        ST    => "# ST\t[2]id\t[3]type\t[4]count\n",
+        GCsAF => "# GCsAF\t[2]id\t[3]allele frequency\t[4]RR Hom matches\t[5]RA Het matches\t[6]AA Hom matches\t[7]RR Hom mismatches\t[8]RA Het mismatches\t[9]AA Hom mismatches\n",
+        NRD   => "# NRD\t[2]id\t[3]NRD\t[4]Ref/Ref discordance\t[5]Ref/Alt discordance\t[6]Alt/Alt discordance\n",
+        GCsS  => "# GCsS\t[2]id\t[3]sample\t[4]non-reference discordance rate\t[5]RR Hom matches\t[6]RA Het matches\t[7]AA Hom matches\t[8]RR Hom mismatches\t[9]RA Het mismatches\t[10]AA Hom mismatches\n",
+        PSC   => "# PSC\t[2]id\t[3]sample\t[4]nRefHom\t[5]nNonRefHom\t[6]nHets\t[7]nTransitions\t[8]nTransversions\t[9]nIndels\t[10]average depth\n",
+        DP    => "# DP\t[2]id\t[3]bin\t[4]number of genotypes\t[5]fraction of genotypes (%)\n",
+    );
+    my $fields_ok = 1;
+    if ( exists($$opts{def_line}{$key}) && $$opts{def_line}{$key} ne $exp{$key} && !$$opts{def_line_warned}{$key} )
+    {
+        warn("Warning: Possible version mismatch, the definition line differs\n\texpected: $exp{$key}\tfound:    $$opts{def_line}{$key}");
+        $$opts{def_line_warned}{$key} = 1;
+    }
+
 	return (@{$$opts{dat}{$key}{$id}});
 }
 
@@ -429,8 +455,8 @@ sub plot_tstv_by_sample
 		";
 	for (my $i=0; $i<@vals; $i++)
 	{ 
-		my $tstv = $vals[$i][3] ? $vals[$i][2]/$vals[$i][3] : 0;
-		iprint $fh, sprintf("\t[ %d, %f, %d, %d, %d ],\n", $i, $tstv, $vals[$i][1], $vals[$i][2]+$vals[$i][3], $vals[$i][4]);
+		my $tstv = $vals[$i][5] ? $vals[$i][4]/$vals[$i][5] : 0;
+		iprint $fh, sprintf("\t[ %d, %f, %d, %d, %d ],\n", $i, $tstv, $vals[$i][3], $vals[$i][4]+$vals[$i][5], $vals[$i][6]);
 	}
 	iprint $fh, "]
 
