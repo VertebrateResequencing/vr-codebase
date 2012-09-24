@@ -6,47 +6,41 @@ VertRes::Pipelines::Assembly - Assemble genomes
 
 echo '__Assembly__ assembly.conf' > pipeline.config
 # where assembly.conf contains:
-root    => '/abs/path/to/root/data/dir',
+root    => '/lustre/scratch108/pathogen/pathpipe/prokaryotes/seq-pipelines',
 module  => 'VertRes::Pipelines::Assembly',
 prefix  => '_',
+limit   => 30,
+
+limits => {
+ project => ['ABC']
+},
+vrtrack_processed_flags => {  stored => 1, import => 1, assembled => 0 },
 
 db  => {
     database => 'pathogen_prok_track',
-    host     => 'mcs6',
-    port     => 3347,
+    host     => 'xxx',
+    port     => yyyy,
     user     => 'pathpipe_rw',
-    password => 'xxxx',
+    password => 'xxx',
 },
 
 data => {
     db  => {
         database => 'pathogen_prok_track',
-        host     => 'mcs6',
-        port     => 3347,
+        host     => 'xxx',
+        port     => yyyy,
         user     => 'pathpipe_rw',
-        password => 'xxxx',
+        password => 'xxx',
     },
-    seq_pipeline_root => /abs/path/to/raw/sequencing/data',
-    assembler => 'velvet',
-    assembler_exec => 'velvet',
-    optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
     # rough estimate so we know how much RAM to request
     genome_size => 10000000,
-    num_threads => 4,
 
-    scaffolder_exec => '/software/pathogen/external/apps/usr/local/SSPACE-BASIC-2.0_linux-x86_64/SSPACE_Basic_v2.0.pl',
-    gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-10_linux-x86_64/GapFiller.pl'
+    seq_pipeline_root    => '/lustre/scratch108/pathogen/pathpipe/prokaryotes/seq-pipelines',
 
-    pools => [
-        {
-            lanes => ['123_4','456_7#8'],
-            type => 'shortPaired',
-        },
-        {
-            lanes => ['543_2','4987_1#7'],
-            type => 'longPaired',
-        },
-    ],
+    assembler => 'velvet',
+    assembler_exec => '/software/pathogen/external/apps/usr/bin/velvet',
+    optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
+    max_threads => 1,
 },
 
 
@@ -299,7 +293,7 @@ my \$assembler = $assembler_class->new(
   );
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
-
+unlink("pool_1.fastq.gz");
 my \@lane_paths = $lane_paths_str;
 \$ok = \$assembler->split_reads(qq[$output_directory], \\\@lane_paths);
 \$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',['$output_directory/forward.fastq','$output_directory/reverse.fastq'],$insert_size);
@@ -539,7 +533,7 @@ exit;
       close $scriptfh;
       my $job_name = $self->{prefix}.'pool_fastqs';
 
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M200000 -R \'select[mem>200] rusage[mem=200]\''}, qq{perl -w $script_name});
+      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M100000 -R \'select[mem>100] rusage[mem=100]\''}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
