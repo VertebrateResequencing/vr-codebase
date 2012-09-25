@@ -69,35 +69,10 @@ sub optimise_parameters
   unlink($self->optimised_directory()."/PreGraph");
   unlink($self->optimised_directory()."/Graph");
   unlink($self->optimised_directory()."/Graph2");
+  unlink($self->optimised_directory()."/stats.txt");
 
   return 1;
 }                                                                                                                             
-
-sub optimise_parameters_with_reference
-{
-  my ($self, $num_threads) = @_;
-  my $reference_directory = $self->optimised_directory();
-
-  `samtools sort -n -m 2000000000 $reference_directory/contigs.mapped.sorted.bam $reference_directory/contigs.mapped.sorted2`;
-  system("mv $reference_directory/contigs.mapped.sorted2.bam $reference_directory/contigs.mapped.sorted.bam");
-
-  `perl $self->{optimiser_exec} -t $num_threads -s $self->{min_kmer} -e $self->{max_kmer} -p 'velvet_optimised_with_reference' -f '-reference -fasta $reference_directory/contigs.fa -shortPaired -bam $reference_directory/contigs.mapped.sorted.bam'`;
-  my $params = $self->get_parameters("velvet_optimised_with_reference_logfile.txt");
-  system("mv  $params->{assembly_directory} ".$self->optimised_with_reference_directory());
-  system("touch ".$self->optimised_with_reference_directory()."/_velvet_optimised_with_reference_done");
-  unlink($self->optimised_with_reference_directory()."/Sequences");
-  unlink($self->optimised_with_reference_directory()."/PreGraph");
-  unlink($self->optimised_with_reference_directory()."/Graph");
-  unlink($self->optimised_with_reference_directory()."/Graph2");
-  return 1;
-}
-
-sub optimised_with_reference_directory
-{
-  my ($self) = @_;
-  return "$self->{output_directory}/velvet_assembly_with_reference";
-}
-
 
 sub optimised_directory
 {
@@ -145,7 +120,6 @@ sub map_and_generate_stats
    `smalt map -x -i 3000 -f samsoft -y 0.95 -o $directory/contigs.mapped.sam $reference.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
    $self->throw("Sam file not created") unless(-e "$directory/contigs.mapped.sam");
 
-   `ref-stats -r $reference > $directory/contigs.fa.refstats`;
    `samtools faidx $reference`;
    $self->throw("Reference index file not created") unless(-e "$reference.fai");
 
@@ -153,15 +127,16 @@ sub map_and_generate_stats
    $self->throw("Couldnt convert from sam to BAM") unless(-e "$directory/contigs.mapped.bam");
    unlink("$directory/contigs.mapped.sam");
 
-   `samtools sort -m 2000000000 $directory/contigs.mapped.bam $directory/contigs.mapped.sorted`;
+   `samtools sort -m 500000000 $directory/contigs.mapped.bam $directory/contigs.mapped.sorted`;
    $self->throw("Couldnt sort the BAM") unless(-e "$directory/contigs.mapped.sorted.bam");
 
    `samtools index $directory/contigs.mapped.sorted.bam`;
    $self->throw("Couldnt index the BAM") unless(-e "$directory/contigs.mapped.sorted.bam.bai");
 
    `bamcheck -c 1,20000,5 -r $reference $directory/contigs.mapped.sorted.bam >  $directory/contigs.mapped.sorted.bam.bc`;
-
-   `plot-bamcheck-2012-02-11  -p $directory/qc_graphs/ -r $directory/contigs.fa.refstats $directory/contigs.mapped.sorted.bam.bc`;
+   `plot-bamcheck -s $reference > $reference.gc`;
+   `plot-bamcheck -p $directory/qc_graphs/ -r  $reference.gc $directory/contigs.mapped.sorted.bam.bc`;
+   
    $self->generate_stats($directory);
    unlink("$directory/contigs.mapped.bam");
 }
@@ -248,11 +223,11 @@ sub estimate_memory_required
     $kmer_size = $optimised_params->{kmer};
   }
 
-  my $memory_required = -109635 + (20000*($input_params->{read_length})) + (86326*($input_params->{genome_size})/1000000) + (300000*($input_params->{total_number_of_reads})/1000000) - (51092*$kmer_size);
+  my $memory_required = -109635 + (18977*($input_params->{read_length})) + (86326*($input_params->{genome_size})/1000000) + (233353*($input_params->{total_number_of_reads})/1000000) - (51092*$kmer_size);
   $memory_required *= 2.0;
-  if($memory_required < 4000000)
+  if($memory_required < 1000000)
   {
-    $memory_required = 4000000;
+    $memory_required = 1000000;
   }
   elsif($memory_required > 400000000)
   {

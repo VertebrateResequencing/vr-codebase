@@ -89,6 +89,45 @@ sub estimate_memory_required
   $self->throw("This is supposed to be overriden");
 }
 
+=head2 split_reads
+
+ Title   : split_reads
+ Usage   : $obj->split_reads('/my_dir',['/path/to/lane1', 'path/to/lane2']);
+ Function: Take in a list of lane directories, find the forward and reverse fastqs, and merge them into single forward & reverse fastqs (pool them), 
+           so that they can be used as input to other applications.
+ Returns : nothing but creates 2 fastq files on disk in the output directory.
+
+=cut
+sub split_reads
+{
+  my ($self, $output_directory, $lane_paths) = @_;
+  my $forward_fastq = '';
+  my $reverse_fastq = '';
+  
+  for my $lane_path ( @$lane_paths)
+  {
+    my ($base_directory,$base,$suff) = Utils::basename($lane_path);
+    opendir(my $lane_dir_handle, $base_directory);
+    my @fastq_files  = grep { /\.fastq\.gz$/ } readdir($lane_dir_handle);
+    if(@fastq_files >=1 )
+    {
+      $forward_fastq .= $base_directory.'/'.$fastq_files[0];
+    }
+    if(@fastq_files >=2 )
+    {
+      $reverse_fastq .= $base_directory.'/'.$fastq_files[1];
+    }
+  }
+
+  unless( -e "$output_directory/forward.fastq")
+  {
+    `gzip -cd $forward_fastq  > $output_directory/forward.fastq`;
+  }
+  unless(-e "$output_directory/reverse.fastq")
+  {
+    `gzip -cd $reverse_fastq  > $output_directory/reverse.fastq`;
+  } 
+}
 
 =head2 assembly_directories
 
@@ -121,19 +160,9 @@ sub generate_stats
   for my $file(@files)
   {
     next unless(-e $directory.'/'.$file);
-    system("assembly_stats_mh12 $directory/$file > $directory/$file.stats");
-    system("/software/pathogen/external/bin/seqstat $directory/$file > $directory/$file.seqstat");
-    # Use the GC plots from the QC pipeline instead
-    system("~mh12/git/python/fastn2gc.py $directory/$file $directory/$file.png");
+    system("assembly_stats $directory/$file > $directory/$file.stats");
   }
 }
-
-sub scaffolded_directory
-{
-  my ($self) = @_;
-  return "$self->{output_directory}/scaffolding_results";
-}
-
 
 
 

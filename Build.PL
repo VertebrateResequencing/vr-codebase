@@ -45,6 +45,7 @@ my $build = MyBuild->new(
                               'Time::Format' => 0,
                               'IO::Capture::Stderr' => 0,
                               'Math::Random' => 0,
+                              'Bio::Assembly::Improvement' => 0,
                             },
     pm_files             => get_pm_files(),
     script_files         => 'scripts'

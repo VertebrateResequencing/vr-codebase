@@ -6,50 +6,49 @@ VertRes::Pipelines::Assembly - Assemble genomes
 
 echo '__Assembly__ assembly.conf' > pipeline.config
 # where assembly.conf contains:
-root    => '/abs/path/to/root/data/dir',
+root    => '/lustre/scratch108/pathogen/pathpipe/prokaryotes/seq-pipelines',
 module  => 'VertRes::Pipelines::Assembly',
 prefix  => '_',
+limit   => 30,
+
+limits => {
+ project => ['ABC']
+},
+vrtrack_processed_flags => {  stored => 1, import => 1, assembled => 0 },
 
 db  => {
     database => 'pathogen_prok_track',
-    host     => 'mcs6',
-    port     => 3347,
+    host     => 'xxx',
+    port     => yyyy,
     user     => 'pathpipe_rw',
-    password => 'xxxx',
+    password => 'xxx',
 },
 
 data => {
     db  => {
         database => 'pathogen_prok_track',
-        host     => 'mcs6',
-        port     => 3347,
+        host     => 'xxx',
+        port     => yyyy,
         user     => 'pathpipe_rw',
-        password => 'xxxx',
+        password => 'xxx',
     },
-
-    assembler => 'velvet',
-    assembler_exec => '',
-    optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
     # rough estimate so we know how much RAM to request
     genome_size => 10000000,
-    num_threads => 4,
-    scaffolder => 'sspace',
-    scaffolder_exec => '/software/pathogen/external/apps/usr/local/SSPACE-1.2_linux-x86_64/SSPACE_v1-2.pl',
-    
-    pools => [
-        {
-            lanes => ['123_4','456_7#8'],
-            type => 'shortPaired',
-        },
-        {
-            lanes => ['543_2','4987_1#7'],
-            type => 'longPaired',
-        },
-    ],
+
+    seq_pipeline_root    => '/lustre/scratch108/pathogen/pathpipe/prokaryotes/seq-pipelines',
+    no_scaffolding => 0,
+    annotation     => 1,
+
+    assembler => 'velvet',
+    assembler_exec => '/software/pathogen/external/apps/usr/bin/velvet',
+    optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
+    max_threads => 1,
 },
 
 
 =head1 DESCRIPTION
+
+This pipeline requires velvet, prokka, smalt, SSPACE and GapFiller to be separately installed from the original authors software repositories.
 
 
 =head1 AUTHOR
@@ -66,14 +65,19 @@ use VertRes::IO;
 use VertRes::Utils::FileSystem;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
+use VRTrack::Library;
 use VRTrack::File;
 use File::Basename;
 use Time::Format;
+use File::Copy;
 use LSF;
 use Data::Dumper;
 use FileHandle;
 use VertRes::Utils::Assembly;
-use VertRes::Utils::Scaffold;
+use Bio::AssemblyImprovement::Scaffold::Descaffold;
+use Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles;
+use Bio::AssemblyImprovement::Scaffold::SSpace::Iterative;
+use Bio::AssemblyImprovement::FillGaps::GapFiller::Iterative;
 
 use base qw(VertRes::Pipeline);
 
@@ -89,22 +93,10 @@ our $actions = [ { name     => 'pool_fastqs',
                    action   => \&map_back,
                    requires => \&map_back_requires, 
                    provides => \&map_back_provides },
-                 { name     => 'optimise_parameters_with_reference',
-                   action   => \&optimise_parameters_with_reference,
-                   requires => \&optimise_parameters_with_reference_requires,
-                   provides => \&optimise_parameters_with_reference_provides },
-                 { name     => 'map_back_with_reference',
-                   action   => \&map_back_with_reference,
-                   requires => \&map_back_with_reference_requires, 
-                   provides => \&map_back_with_reference_provides },
-                 { name     => 'scaffold',
-                   action   => \&scaffold,
-                   requires => \&scaffold_requires, 
-                   provides => \&scaffold_provides },
-                 { name     => 'map_back_scaffolded',
-                   action   => \&map_back_scaffolded,
-                   requires => \&map_back_scaffolded_requires, 
-                   provides => \&map_back_scaffolded_provides },
+                 { name     => 'update_db',
+                   action   => \&update_db,
+                   requires => \&update_db_requires, 
+                   provides => \&update_db_provides },
                  { name     => 'cleanup',
                    action   => \&cleanup,
                    requires => \&cleanup_requires,
@@ -112,7 +104,13 @@ our $actions = [ { name     => 'pool_fastqs',
                 ];
 
 our %options = (
-                do_cleanup => 1);
+                do_cleanup      => 1,
+                scaffolder_exec => '/software/pathogen/external/apps/usr/local/SSPACE-BASIC-2.0_linux-x86_64/SSPACE_Basic_v2.0.pl',
+                gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-10_linux-x86_64/GapFiller.pl',
+                abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
+                no_scaffolding  => 0,
+                annotation      => 0,
+                );
 
 sub new {
   my ($class, @args) = @_;
@@ -126,7 +124,17 @@ sub new {
 
   unless(defined($self->{max_threads}))
   {
-    $self->{max_threads} = 8;
+    $self->{max_threads} = 1;
+  }
+  
+  if(defined($self->{vrlane}))
+  {
+    # being run on individual lanes
+    $self->{pools} = 
+       [{
+            lanes => [$self->{vrlane}->name()],
+            type => 'shortPaired',
+       }];
   }
 
   my $assembly_util = VertRes::Utils::Assembly->new(assembler => $self->{assembler});
@@ -135,131 +143,8 @@ sub new {
   $self->{assembler_class} = $assembler_class;
   
   
-  my $scaffolder_util = VertRes::Utils::Scaffold->new(scaffolder => $self->{scaffolder});
-  my $scaffolder_class = $scaffolder_util->find_module();
-  eval "require $scaffolder_class;";
-  $self->{scaffolder_class} = $scaffolder_class;
-  
-
   return $self;
 }
-
-
-###########################
-# Begin scaffold
-###########################
-
-sub scaffold_requires
-{
-  my ($self) = @_;
-  return $self->map_back_provides();
-}
-
-sub scaffold_provides
-{
-   my ($self) = @_;
-   return [$self->{lane_path}."/scaffolding_results/contigs.fa"];
-
-}
-
-sub scaffold
-{
-  my ($self, $build_path, $action_lock) = @_;
-  $self->scaffold_with_sspace($build_path, $action_lock, "optimised_with_reference_directory", "scaffold");
-  
-  return $self->{No};
-}
-
-sub scaffold_with_sspace
-{
-  my ($self, $build_path, $action_lock, $working_directory_method_name, $action_name_suffix) = @_;
-  
-  my $scaffold_class = $self->{scaffolder_class};
-  my $scaffold_exec = $self->{scaffolder_exec};
-  my $output_directory = $self->{lane_path};
-  my $assembler_class = $self->{assembler_class};
-  
-  eval("use $assembler_class;");
-  my $assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
-  my $working_directory = $assembler_util->${working_directory_method_name}();
-
-  
-  my $job_name = $self->{prefix}.$self->{assembler}."_$action_name_suffix";
-  my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_$action_name_suffix.pl");
-  
-  # TODO: clean up output files, estimate memory usage
-  
-  open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
-  print $scriptfh qq{
-  use strict;
-  use $scaffold_class;
-  
-  my \@input_files = ('forward.fastq', 'reverse.fastq');
-  my \@merge_sizes = (90, 80, 70, 60, 50, 40, 30, 25, 20, 15, 10, 10, 10, 7, 7, 7, 5, 5, 5, 5 );
-  my \$scaffolder_util= $scaffold_class->new( output_directory => qq[$output_directory],
-    assembled_file => qq[contigs.fa],
-    assembled_file_directory => qq[$working_directory],
-    scaffolder_exec => qq[$self->{scaffolder_exec}],
-    input_files => \\\@input_files,
-    merge_sizes => \\\@merge_sizes
-  );
-  
-  \$scaffolder_util->scaffold();
-  
-  if ( !-e "scaffolding_results" ) { Utils::CMD("mkdir -p scaffolding_results"); }
-  system("mv scaffolded_contigs.fa scaffolding_results/contigs.fa");
-  
-  exit;
-                };
-  close $scriptfh;
-  
-  my $memory_required_mb = 5000;
-
-  LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
-  
-}
-
-
-
-
-###########################
-# End scaffold
-###########################
-
-
-###########################
-# Begin map_back
-###########################
-
-sub map_back_scaffolded_requires
-{
-  my ($self) = @_;
-  return $self->scaffold_provides();
-}
-
-sub map_back_scaffolded_provides
-{
-   my ($self) = @_;
-
-   return [$self->{lane_path}."/".$self->{prefix}.$self->{assembler}.'_map_back_scaffolded_done'];
-
-}
-
-sub map_back_scaffolded
-{
-  my ($self, $build_path, $action_lock) = @_;
-  $self->mapping_and_generate_stats($build_path, $action_lock, "scaffolded_directory", "map_back_scaffolded");
-  
-  return $self->{No};
-}
-
-
-###########################
-# End map_back
-###########################
-
-
-
 
 ###########################
 # Begin map_back
@@ -294,33 +179,6 @@ sub map_back
 
 
 
-###########################
-# Begin map_back_with_reference
-###########################
-
-sub map_back_with_reference_requires
-{
-  my ($self) = @_;
-  return $self->optimise_parameters_with_reference_provides();
-}
-
-sub map_back_with_reference_provides
-{
-   my ($self) = @_;
-
-   return [$self->{lane_path}."/".$self->{prefix}.$self->{assembler}.'_map_back_with_reference_done'];
-
-}
-
-sub map_back_with_reference
-{
-  my ($self, $build_path, $action_lock) = @_;
-  $self->mapping_and_generate_stats($build_path, $action_lock, "optimised_with_reference_directory", "map_back_with_reference");
-  
-  return $self->{No};
-  
-}
-
 sub mapping_and_generate_stats
 {
   my ($self, $build_path, $action_lock, $working_directory_method_name, $action_name_suffix, $reference) = @_;
@@ -329,7 +187,7 @@ sub mapping_and_generate_stats
   my $output_directory = $self->{lane_path};
   eval("use $assembler_class; ");
   my $assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
-  my $base_path = $self->{lane_path}.'/../../seq-pipelines';
+  my $base_path = $self->{seq_pipeline_root};
   
   my $job_name = $self->{prefix}.$self->{assembler}."_$action_name_suffix";
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_$action_name_suffix.pl");
@@ -358,6 +216,15 @@ sub mapping_and_generate_stats
   my \$directory = \$assembler_util->${working_directory_method_name}();
   \$assembler_util->map_and_generate_stats(\$directory,qq[$output_directory], \\\@lane_paths );
   
+  unlink("\$directory/contigs.mapped.sorted.bam.bai");
+  unlink("\$directory/contigs.mapped.sorted.bam");
+  unlink("\$directory/contigs.fa.small.sma");
+  unlink("\$directory/contigs.fa.small.smi");
+  
+  if($annotation == 1)
+  {
+    system("prokka --centre SC --cpus 2 --force --outdir  \$directory/annotation \$directory/contigs.fa");
+  }
   system("touch \$directory/_$self->{assembler}_${action_name_suffix}_done");
  
   system("touch _$self->{assembler}_${action_name_suffix}_done");
@@ -365,18 +232,11 @@ sub mapping_and_generate_stats
                 };
   close $scriptfh;
   
-  my $memory_required_mb = 4000;
+  my $memory_required_mb = 2000;
 
   LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
   
 }
-
-
-
-###########################
-# End map_back_with_reference
-###########################
-
 
 
 ###########################
@@ -402,6 +262,7 @@ sub optimise_parameters
 
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
+      my $base_path = $self->{seq_pipeline_root};
 
       my $assembler_class = $self->{assembler_class};
       my $optimiser_exec = $self->{optimiser_exec};
@@ -412,26 +273,27 @@ sub optimise_parameters
 
       my $job_name = $self->{prefix}.$self->{assembler}.'_optimise_parameters';
       my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_optimise_parameters.pl");
+      
+      my @lane_paths;
+      for my $lane_name (@$lane_names)
+      {
+        push(@lane_paths,$base_path.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_name).'/'.$lane_name);
+      }
+      my $lane_paths_str = '("'.join('","', @lane_paths).'")';
 
       my $kmer = $self->calculate_kmer_size();
       
       my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer->{min})/1000);
-      my $queue = 'long';
-      if($memory_required_mb > 35000)
-      {
-        $queue = 'hugemem';
-      }
-      elsif($memory_required_mb < 3000)
-      {
-        $queue = 'normal';
-      }
 
       my $num_threads = $self->number_of_threads($memory_required_mb);
+      my $insert_size = $self->get_insert_size();
 
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
 use strict;
 use $assembler_class;
+use VertRes::Pipelines::Assembly;
+my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
 
 my \$assembler = $assembler_class->new(
   assembler => qq[$self->{assembler}],
@@ -443,6 +305,10 @@ my \$assembler = $assembler_class->new(
   );
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
+unlink("pool_1.fastq.gz");
+my \@lane_paths = $lane_paths_str;
+\$ok = \$assembler->split_reads(qq[$output_directory], \\\@lane_paths);
+\$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',['$output_directory/forward.fastq','$output_directory/reverse.fastq'],$insert_size);
 
 system('touch _$self->{assembler}_optimise_parameters_done');
 exit;
@@ -450,6 +316,12 @@ exit;
               close $scriptfh;
 
       my $total_memory_mb = $num_threads*$memory_required_mb;
+      if($total_memory_mb < 2000)
+      {
+        $total_memory_mb = 2000;
+      }
+      
+      my $queue = $self->decide_appropriate_queue($memory_required_mb);
       
       LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb}000 -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
 
@@ -457,6 +329,94 @@ exit;
       # that we didn't complete
       return $self->{No};
 }
+
+sub decide_appropriate_queue
+{
+  my ($self, $memory_required_mb) = @_;
+  my $queue = 'long';
+  if($memory_required_mb > 30000)
+  {
+    $queue = 'hugemem';
+  }
+  elsif($memory_required_mb < 3500)
+  {
+    $queue = 'normal';
+  }
+  return $queue;
+}
+
+
+
+sub improve_assembly
+{
+  my ($self,$assembly_file, $input_files, $insert_size) = @_;
+  
+  my $preprocess_input_files = Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles->new(
+      input_files    => $input_files,
+      input_assembly => $assembly_file,
+      reference      => $self->{reference},
+  );
+  my $process_input_files_tmp_dir_obj = $preprocess_input_files->_temp_directory_obj();
+
+  # scaffold and extend contigs
+  my $scaffolding_obj = Bio::AssemblyImprovement::Scaffold::SSpace::Iterative->new(
+      input_files     => $preprocess_input_files->processed_input_files,
+      input_assembly  => $preprocess_input_files->processed_input_assembly,
+      insert_size     => $insert_size,
+      scaffolder_exec => $self->{scaffolder_exec}
+  );
+  $scaffolding_obj->run();
+
+  my $scaffolding_output = $scaffolding_obj->final_output_filename;
+  
+  # order contigs on an assembly
+  if(defined($self->{reference}) && (-e $self->{reference}))
+  {
+    $scaffolding_obj = Bio::AssemblyImprovement::Abacas::Iterative->new(
+      reference      => $preprocess_input_files->processed_reference,
+      input_assembly => $scaffolding_output,
+      abacas_exec    => $self->{abacas_exec},
+    );
+    $scaffolding_obj->run();
+  }
+
+  # fill gaps
+  my $fill_gaps_obj = Bio::AssemblyImprovement::FillGaps::GapFiller::Iterative->new(
+      input_files     => $preprocess_input_files->processed_input_files,
+      input_assembly  => $scaffolding_obj->final_output_filename,
+      insert_size     => $insert_size,
+      gap_filler_exec => $self->{gap_filler_exec},
+      _output_prefix  => 'gapfilled'
+  )->run();
+  move($fill_gaps_obj->final_output_filename,$assembly_file);
+  
+  # descaffold if needed
+  if(defined($self->{no_scaffolding}) && $self->{no_scaffolding} == 1)
+  {
+    my $descaffold_obj = Bio::AssemblyImprovement::Scaffold::Descaffold->new(input_assembly => $assembly_file);
+    $descaffold_obj->run();
+    move($descaffold_obj->output_filename,$assembly_file);
+  }
+}
+
+# Get the requested insert size of the first lane. Not suitable for mixed insert sizes, should be run with standalone scripts in that case.
+sub get_insert_size
+{
+  my ($self) = @_;
+  my $lane_names = $self->get_all_lane_names($self->{pools});
+  my $insert_size = 350;
+
+  for my $lane_name (@{$lane_names})
+  {
+    my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, $lane_name) or $self->throw("No such lane in the DB: [".$lane_name."]");
+    eval
+    {
+      $insert_size = VRTrack::Library->new($self->{vrtrack}, $vrlane->library_id())->insert_size() ;
+    };
+  }
+  return $insert_size;
+}
+
 
 sub lane_read_length
 {
@@ -514,90 +474,6 @@ sub number_of_threads
 
 
 
-###########################
-# Begin optimise_parameters_with_reference
-###########################
-
-sub optimise_parameters_with_reference_provides
-{
-  my $self = shift;
-  return  [$self->{lane_path}."/".$self->{prefix}."$self->{assembler}_optimise_parameters_with_reference_done"];
-}
-
-sub optimise_parameters_with_reference_requires
-{
-  my $self = shift;
-  return $self->map_back_provides();
-}
-
-sub optimise_parameters_with_reference
-{
-      my ($self, $build_path, $action_lock) = @_;
-
-      my $lane_names = $self->get_all_lane_names($self->{pools});
-      my $output_directory = $self->{lane_path};
-
-      my $assembler_class = $self->{assembler_class};
-      my $optimiser_exec = $self->{optimiser_exec};
-
-      eval("use $assembler_class; ");
-      my $assembler_util= $assembler_class->new();
-      my $files_str = $assembler_util->generate_files_str($self->{pools}, $output_directory);
-
-      my $job_name = $self->{prefix}.$self->{assembler}.'_optimise_parameters_with_reference';
-      my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_optimise_parameters_with_reference.pl");
-
-      my $kmer = $self->calculate_kmer_size();
-
-      
-      my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer->{min})/1000);
-      my $queue = 'long';
-      if($memory_required_mb > 35000)
-      {
-        $queue = 'hugemem';
-      }
-      elsif($memory_required_mb < 3000)
-      {
-        $queue = 'normal';
-      }
-
-      my $num_threads = $self->number_of_threads($memory_required_mb);
-
-      open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
-      print $scriptfh qq{
-use strict;
-use $assembler_class;
-
-my \$assembler = $assembler_class->new(
-  assembler => qq[$self->{assembler}],
-  optimiser_exec => qq[$optimiser_exec],
-  min_kmer => $kmer->{min},
-  max_kmer => $kmer->{max},
-  files_str => qq[$files_str],
-  output_directory => qq[$output_directory],
-  );
-
-my \$ok = \$assembler->optimise_parameters_with_reference($num_threads);
-
-system('touch _$self->{assembler}_optimise_parameters_with_reference_done');
-exit;
-              };
-              close $scriptfh;
-
-      my $total_memory_mb = $num_threads*$memory_required_mb;
-      
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb}000 -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
-
-      # we've only submitted to LSF, so it won't have finished; we always return
-      # that we didn't complete
-      return $self->{No};
-}
-
-
-###########################
-# End optimise_parameters_with_reference
-###########################
-
 
 ###########################
 # Begin pool fastqs
@@ -610,7 +486,7 @@ sub pool_fastqs
 
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
-      my $base_path = $self->{lane_path}.'/../../seq-pipelines';
+      my $base_path =  $self->{seq_pipeline_root};
 
       my $script_name = $self->{fsu}->catfile($build_path, $self->{prefix}."pool_fastqs.pl");
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -667,7 +543,7 @@ exit;
       close $scriptfh;
       my $job_name = $self->{prefix}.'pool_fastqs';
 
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M500000 -R \'select[mem>500] rusage[mem=500]\''}, qq{perl -w $script_name});
+      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M100000 -R \'select[mem>100] rusage[mem=100]\''}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
@@ -709,11 +585,19 @@ sub concat_fastq_gz_files
   my ($self, $filenames, $outputname, $input_directory, $output_directory) = @_;
 
   my $filenames_with_paths = '';
-  for my $filename (@$filenames)
+
+  if(@{$filenames} == 1)
   {
-    $filenames_with_paths = $filenames_with_paths.$input_directory.'/'.$filename.' ';
+    move($input_directory.'/'.$filenames->[0], "$output_directory/$outputname");
   }
-  `gzip -cd $filenames_with_paths | gzip > $output_directory/$outputname`;
+  else
+  {
+    for my $filename (@$filenames)
+    {
+      $filenames_with_paths = $filenames_with_paths.$input_directory.'/'.$filename.' ';
+    }
+    `gzip -cd $filenames_with_paths | gzip > $output_directory/$outputname`;
+  }
 }
 
 
@@ -807,7 +691,7 @@ sub estimate_memory_required
 
 sub cleanup_requires {
   my ($self) = @_;
-  return ["_velvet_map_back_scaffolded_done"];
+  return [ $self->{prefix}."assembly_update_db_done"];
 }
 
 =head2 cleanup_provides
@@ -821,7 +705,7 @@ sub cleanup_requires {
 =cut
 
 sub cleanup_provides {
-    return ["_cleanup_done"];
+    return ["_assembly_cleanup_done"];
 }
 
 =head2 cleanup
@@ -844,11 +728,7 @@ sub cleanup {
   # remove job files
   foreach my $file (qw(pool_fastqs 
     velvet_optimise_parameters 
-    velvet_map_back 
-    velvet_optimise_parameters_with_reference 
-    velvet_map_back_with_reference
-    velvet_scaffold
-    velvet_map_back_scaffolded)) 
+    velvet_map_back )) 
     {
       foreach my $suffix (qw(o e pl)) 
       {
@@ -857,12 +737,81 @@ sub cleanup {
   }
   
   # remove files
-  foreach my $file (qw(.RData contigs.fa.png.Rout scaffolded.summaryfile.txt scaffolded.logfile.txt _scaffolder.config scaffolded.final.evidence reverse.fastq forward.fastq pool_1.fastq.gz)) 
+  foreach my $file (qw(contigs.fa.scaffolded.filtered .RData contigs.fa.png.Rout scaffolded.summaryfile.txt reverse.fastq forward.fastq)) 
   {
     unlink($self->{fsu}->catfile($lane_path, $file));
   }
-  Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_cleanup_done")   );  
+  Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_assembly_cleanup_done")   );  
   
   return $self->{Yes};
 }
+
+
+
+=head2 update_db_requires
+
+ Title   : update_db_requires
+ Usage   : my $required_files = $obj->update_db_requires('/path/to/lane');
+ Function: Find out what files the update_db action needs before it will run.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub update_db_requires {
+    my ($self, $lane_path) = @_;
+    return $self->map_back_provides();
+}
+
+=head2 update_db_provides
+
+ Title   : update_db_provides
+ Usage   : my $provided_files = $obj->update_db_provides('/path/to/lane');
+ Function: Find out what files the update_db action generates on success.
+ Returns : array ref of file names
+ Args    : lane path
+
+=cut
+
+sub update_db_provides {
+   my ($self) = @_;
+    return [ $self->{lane_path}."/".$self->{prefix}."assembly_update_db_done"];
+}
+
+=head2 update_db
+
+ Title   : update_db
+ Usage   : $obj->update_db('/path/to/lane', 'lock_filename');
+ Function: Records in the database that the lane has been improved.
+ Returns : $VertRes::Pipeline::Yes or No, depending on if the action completed.
+ Args    : lane path, name of lock file to use
+
+=cut
+sub update_db {
+    my ($self, $lane_path, $action_lock) = @_;
+
+    # all the done files are there, so just need to update the processed
+    # flag in the database (if not already updated)
+    my $vrlane = $self->{vrlane};
+    return $$self{'Yes'} unless(defined($vrlane));
+    
+    my $vrtrack = $vrlane->vrtrack;
+    
+    return $$self{'Yes'} if $vrlane->is_processed('assembled');
+
+    unless($vrlane->is_processed('assembled')){
+      $vrtrack->transaction_start();
+      $vrlane->is_processed('assembled',1);
+      $vrlane->update() || $self->throw("Unable to set assembled status on lane $lane_path");
+      $vrtrack->transaction_commit();
+    }
+
+    
+    my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
+    Utils::CMD("rm $job_status") if (-e $job_status);
+    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_assembly_update_db_done")   );  
+
+    return $$self{'Yes'};
+}
+
 
