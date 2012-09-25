@@ -204,6 +204,7 @@ sub mapping_and_generate_stats
   {
     $reference_str = qq{,reference => qq[$reference]} ;
   }
+  my $annotation = $self->{annotation};
 
   open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
   print $scriptfh qq{
