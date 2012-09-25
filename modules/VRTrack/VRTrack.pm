@@ -472,6 +472,11 @@ sub hierarchy_path_of_object {
 
 sub processed_lane_hnames {
     my ($self,@filter) = @_;
+    return $self->processed_lane_hnames_with_lane_limit(-1,@filter);
+}
+
+sub processed_lane_hnames_with_lane_limit {
+    my ($self,$max_lanes,@filter) = @_;
     if ( scalar @filter % 2 ) { croak "Expected list of keys and values.\n"; }
     my %flags = VRTrack::Core_obj->allowed_processed_flags();
     my @goodfilters;
@@ -485,6 +490,13 @@ sub processed_lane_hnames {
     {
         $filterclause = ' AND ' . join(' AND ', @goodfilters);
     }
+    my $max_lanes_clause = '';
+    if(defined($max_lanes) && $max_lanes > 0)
+    {
+      $max_lanes_clause = " limit $max_lanes ";
+    }
+    
+    
     my @lane_names;
     my $sql =qq[select lane.hierarchy_name 
                 from latest_project as project,
@@ -498,7 +510,8 @@ sub processed_lane_hnames {
                 order by project.hierarchy_name, 
                         sample.name, 
                         library.hierarchy_name, 
-                        lane.hierarchy_name];
+                        lane.hierarchy_name
+                        $max_lanes_clause];
     my $sth = $self->{_dbh}->prepare($sql);
 
     my $tmpname;
@@ -512,6 +525,7 @@ sub processed_lane_hnames {
 
     return \@lane_names;
 }
+
 
 
 =head2 qc_filtered_lane_hnames
