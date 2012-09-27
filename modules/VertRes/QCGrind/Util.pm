@@ -212,6 +212,9 @@ sub get_colour_for_status
 	elsif ($status eq $self->{STATES}{FAILED}) {
 		$status_colour="#FFC0C0";
 	}
+	elsif ($status eq $self->{STATES}{INVESTIGATE}) {
+		$status_colour="#FFCC66";
+	}
 	else {
 		$status_colour="#F5F5F5";
 	}
