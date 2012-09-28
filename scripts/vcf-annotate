@@ -539,7 +539,7 @@ sub annotate
             {
                 my $ref = $rec[3];
                 my @alts;
-                if ( exists($$opts{normalize}) ) { ($ref,@alts) = $vcf->normalize_alleles($ref,$rec[4]); }
+                if ( !exists($$opts{normalize}) ) { ($ref,@alts) = $vcf->normalize_alleles($ref,$rec[4]); }
                 else { @alts = split(/,/,$rec[4]); }
                 for my $alt (@alts) { $ref_alt_pairs{$ref.'-'.$alt} = 1; }
             }
