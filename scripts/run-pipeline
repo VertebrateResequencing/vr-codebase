@@ -1109,6 +1109,12 @@ sub get_assembly_jobs_from_vrtrack {
         }
         next if $vrlane->is_withdrawn;
         next unless($vrlane->is_paired);
+        if(defined($config_data->{storage_device}))
+        {
+          my $storage_device_regex = $config_data->{storage_device};
+          next unless($vrlane->storage_path =~ /$storage_device_regex/);
+        }
+        
         $count++;
 
         my $path = $vrtrack->hierarchy_path_of_lane($vrlane);
