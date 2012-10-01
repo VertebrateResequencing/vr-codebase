@@ -210,6 +210,8 @@ sub mapping_and_generate_stats
   print $scriptfh qq{
   use strict;
   use $assembler_class;
+
+  unlink("pool_1.fastq.gz");
     
   my \@lane_paths = $lane_paths_str;
   
@@ -306,7 +308,6 @@ my \$assembler = $assembler_class->new(
   );
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
-unlink("pool_1.fastq.gz");
 my \@lane_paths = $lane_paths_str;
 \$ok = \$assembler->split_reads(qq[$output_directory], \\\@lane_paths);
 \$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',['$output_directory/forward.fastq','$output_directory/reverse.fastq'],$insert_size);
