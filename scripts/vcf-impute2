@@ -265,26 +265,29 @@ sub convert_to_be_imputed
             elsif ( exists($$dat{GT}) )
             {
                 my @als = $vcf->split_gt($$dat{GT});
-                if ( @als > 2 ) { error("Not ready for this: $$x{CHROM} $$x{POS}: $$dat{GT}\n"); }
-                if ( @als == 1 )
+                if ( $als[0] ne '.' )
                 {
-                    # haploid genotypes have GL of Het=0
-                    $gl_rr = $als[0] eq '0' ? $$opts{gtconf} : 1-$$opts{gtconf};
-                    $gl_ar = 0;
-                    $gl_aa = $als[0] eq '0' ? 1-$$opts{gtconf} : $$opts{gtconf};
-                }
-                elsif ( $als[0] eq $als[1] )
-                {
-                    # homozygous diploid genotype
-                    $gl_rr = $als[0] eq '0' ? $$opts{gtconf} : 0.5*(1-$$opts{gtconf});
-                    $gl_ar = 0.5*(1-$$opts{gtconf});
-                    $gl_aa = $als[0] eq '0' ? 0.5*(1-$$opts{gtconf}) : $$opts{gtconf};
-                }
-                else
-                {
-                    # heterozygous diploid genotype
-                    $gl_rr = $gl_aa = 0.5*(1-$$opts{gtconf});
-                    $gl_ar = $$opts{gtconf};
+                    if ( @als > 2 ) { error("Not ready for this: $$x{CHROM} $$x{POS}: $$dat{GT}\n"); }
+                    if ( @als == 1 )
+                    {
+                        # haploid genotypes have GL of Het=0
+                        $gl_rr = $als[0] eq '0' ? $$opts{gtconf} : 1-$$opts{gtconf};
+                        $gl_ar = 0;
+                        $gl_aa = $als[0] eq '0' ? 1-$$opts{gtconf} : $$opts{gtconf};
+                    }
+                    elsif ( $als[0] eq $als[1] )
+                    {
+                        # homozygous diploid genotype
+                        $gl_rr = $als[0] eq '0' ? $$opts{gtconf} : 0.5*(1-$$opts{gtconf});
+                        $gl_ar = 0.5*(1-$$opts{gtconf});
+                        $gl_aa = $als[0] eq '0' ? 0.5*(1-$$opts{gtconf}) : $$opts{gtconf};
+                    }
+                    else
+                    {
+                        # heterozygous diploid genotype
+                        $gl_rr = $gl_aa = 0.5*(1-$$opts{gtconf});
+                        $gl_ar = $$opts{gtconf};
+                    }
                 }
             }
             else
