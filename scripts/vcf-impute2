@@ -34,6 +34,7 @@ sub error
         "Options:\n",
         "   -e, --exclude-missing <frac,th>     Exclude sites with too many samples (frac float) below the given GL threshold (th float)\n",
         "   -f, --force                         Perform fewer sanity checks and try to make the conversion even if some fail\n",
+        "       --GT-confidence <float>         In absence of GL and PL, GT is used. What likelihood corresponds to the GTs? [1.0]\n",
         "   -i, --impute <file>                 VCF file to be imputed.\n",
         "   -k, --known <file>                  VCF file with reference genotypes or \"--\" when not available.\n",
         "   -l, --legend-file                   Create the legend and haplotype file instead of the default genotype file.\n",
@@ -55,7 +56,7 @@ sub error
 
 sub parse_params
 {
-    my $opts = { from_vcf=>1 };
+    my $opts = { from_vcf=>1, gtconf => 1 };
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '-r' || $arg eq '--region' ) 
@@ -67,6 +68,7 @@ sub parse_params
         }
         if ( $arg eq '-e' || $arg eq '--exclude-missing' ) { ($$opts{exclude_frac},$$opts{exclude_th})=split(/,/,shift(@ARGV)); next }
         if ( $arg eq '-o' || $arg eq '--out' ) { $$opts{out}=shift(@ARGV); next }
+        if (                 $arg eq '--GT-confidence' ) { $$opts{gtconf}=shift(@ARGV); next }
         if ( $arg eq '-f' || $arg eq '--force' ) { $$opts{force}=1; next }
         if ( $arg eq '-k' || $arg eq '--known' ) { $$opts{known}=shift(@ARGV); next }
         if ( $arg eq '-p' || $arg eq '--phased-only' ) { $$opts{phased_only}=1; next }
@@ -259,6 +261,35 @@ sub convert_to_be_imputed
                 $gl_rr = 10**(-$gl_rr/10.);
                 $gl_ar = 10**(-$gl_ar/10.);
                 $gl_aa = 10**(-$gl_aa/10.);
+            }
+            elsif ( exists($$dat{GT}) )
+            {
+                my @als = $vcf->split_gt($$dat{GT});
+                if ( @als > 2 ) { error("Not ready for this: $$x{CHROM} $$x{POS}: $$dat{GT}\n"); }
+                if ( @als == 1 )
+                {
+                    # haploid genotypes have GL of Het=0
+                    $gl_rr = $als[0] eq '0' ? $$opts{gtconf} : 1-$$opts{gtconf};
+                    $gl_ar = 0;
+                    $gl_aa = $als[0] eq '0' ? 1-$$opts{gtconf} : $$opts{gtconf};
+                }
+                elsif ( $als[0] eq $als[1] )
+                {
+                    # homozygous diploid genotype
+                    $gl_rr = $als[0] eq '0' ? $$opts{gtconf} : 0.5*(1-$$opts{gtconf});
+                    $gl_ar = 0.5*(1-$$opts{gtconf});
+                    $gl_aa = $als[0] eq '0' ? 0.5*(1-$$opts{gtconf}) : $$opts{gtconf};
+                }
+                else
+                {
+                    # heterozygous diploid genotype
+                    $gl_rr = $gl_aa = $$opts{gtconf_0};
+                    $gl_ar = $$opts{gtconf_1};
+                }
+            }
+            else
+            {
+                error("None of the FORMAT tags present at $$x{CHROM} $$x{POS}: GL, PL, GT\n");
             }
 
             
