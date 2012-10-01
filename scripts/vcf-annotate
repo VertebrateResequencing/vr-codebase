@@ -421,7 +421,7 @@ sub annotate
     {
         $vcf->add_header_line($desc,silent=>1);
     }
-    if ( $$opts{fill_type} ) { $vcf->add_header_line({key=>'INFO',ID=>'TYPE',Number=>'1',Type=>'String',Description=>'Variant type'}); }
+    if ( $$opts{fill_type} ) { $vcf->add_header_line({key=>'INFO',ID=>'TYPE',Number=>'A',Type=>'String',Description=>'Variant type'}); }
     if ( $$opts{fill_ac_an} )
     {
         $vcf->add_header_line({key=>'INFO',ID=>'AC',Number=>'A',Type=>'Integer',Description=>'Allele count in genotypes'});
