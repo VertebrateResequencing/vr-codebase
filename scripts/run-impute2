@@ -63,7 +63,7 @@ sub new
         # (Experimental, currently not functional.)
         # pre_phase => 1,
 
-        impute2_args     => '-Ne 20000 -k 80',
+        impute2_args     => '-Ne 20000 -k 80 -allow_large_regions',
         # Do not split blocks phased by IMPUTE2 even when phasing quality is low - single sites may be unphased in otherwise phased chunks
         phased_join_args => '-q 0 -j 10',
 
@@ -210,7 +210,7 @@ sub main
                 if ( $self->is_finished("$outdir/$$chunk[0].vcf.gz") ) { next; }
                 if ( $self->is_finished("$outdir/$$chunk[0]/03.impute2_to_vcf.$$chunk[1]-$$chunk[2].vcf.gz") ) { next; }
                 $unfinished{$$chunk[0]} = 1;
-                if ( $self->is_finished("$outdir/$$chunk[0]/02.impute2.$$chunk[1]-$$chunk[2].done") ) { next; }
+                if ( !$self->is_finished("$outdir/$$chunk[0]/02.impute2.$$chunk[1]-$$chunk[2].done") ) { next; }
                 $self->spawn('impute2_to_vcf',"$outdir/$$chunk[0]/03.impute2_to_vcf.$$chunk[1]-$$chunk[2].vcf.gz",$chunk);
             }
             $self->set_limits(runtime=>24*60);
@@ -220,6 +220,7 @@ sub main
                 if ( $unfinished{$chr} ) { next; }
                 $self->spawn('concat_vcfs',"$outdir/$chr.vcf.gz",$chunks,$chr);
             }
+            if ( scalar keys %unfinished ) { exit; }
         }
         $self->wait;
         $self->set_limits(runtime=>undef);
@@ -393,7 +394,7 @@ sub get_chroms
     my %chroms;
     for my $reg (@$regions) 
     { 
-        $chroms{$reg} = 1; 
+        $chroms{$$reg[0]} = 1; 
     }
     return ( sort keys %chroms );
 }
@@ -476,7 +477,7 @@ sub impute2
 
         $known = "$out.";
     }
-    else { $files  = qq[-g $outdir/01.vcf_to_impute2.$from-$to.impute_gts.gz]; }
+    else { $files  = qq[-g $outdir/01.vcf_to_impute2.$from-$to.impute_gts.gz -sample_g $outdir/01.vcf_to_impute2.$from-$to.impute_samples]; }
 
     if ( exists($$self{known_vcf}) ) 
     { 
@@ -600,7 +601,7 @@ sub impute2_to_vcf
     my $to   = $$chunk[2];
     my $outdir = "$$self{outdir}/$chr";
 
-    my $in_vcf = $self->exand_chrom($$self{in_vcf},$chr);
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
     if ( -s "$outfile.e" ) { `cat $outfile.e >> $outfile.e.saved`; }
     if ( ! -e "$outdir/02.impute2.$from-$to.gz" )
     {

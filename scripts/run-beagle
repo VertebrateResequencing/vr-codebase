@@ -190,6 +190,7 @@ sub main
                 if ( $unfinished{$chr} ) { next; }
                 $self->spawn('concat_vcfs',"$outdir/$chr.vcf.gz",$chunks,$chr);
             }
+            if ( scalar keys %unfinished ) { exit; }
         }
         $self->wait;
         $self->set_limits(runtime=>undef);
@@ -323,7 +324,7 @@ sub get_chroms
     my %chroms;
     for my $reg (@$regions) 
     { 
-        $chroms{$reg} = 1; 
+        $chroms{$$reg[0]} = 1; 
     }
     return ( sort keys %chroms );
 }
