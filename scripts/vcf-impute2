@@ -283,8 +283,8 @@ sub convert_to_be_imputed
                 else
                 {
                     # heterozygous diploid genotype
-                    $gl_rr = $gl_aa = $$opts{gtconf_0};
-                    $gl_ar = $$opts{gtconf_1};
+                    $gl_rr = $gl_aa = 0.5*(1-$$opts{gtconf});
+                    $gl_ar = $$opts{gtconf};
                 }
             }
             else
