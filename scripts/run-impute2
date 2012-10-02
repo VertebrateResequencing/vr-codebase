@@ -479,11 +479,14 @@ sub impute2
 
         $known = "$out.";
     }
-    else { $files  = qq[-g $outdir/01.vcf_to_impute2.$from-$to.impute_gts.gz -sample_g $outdir/01.vcf_to_impute2.$from-$to.impute_samples]; }
+    else 
+    { 
+        $files = qq[-g $outdir/01.vcf_to_impute2.$from-$to.impute_gts.gz -sample_g $outdir/01.vcf_to_impute2.$from-$to.impute_samples]; 
+    }
 
     if ( exists($$self{known_vcf}) ) 
     { 
-        $files .= $$self{known_is_phased} ? qq[ -known_haps_g ${known}gts.gz -sample_known_haps_g ${known}samples] : qq[ -g ${known}gts.gz -sample_g ${known}samples];
+        $files .= qq[ -known_haps_g ${known}gts.gz -sample_known_haps_g ${known}samples];
     }
 
     my $out = "$outdir/02.impute2.$from-$to";
