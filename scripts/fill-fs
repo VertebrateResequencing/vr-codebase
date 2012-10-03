@@ -89,6 +89,10 @@ sub flanking_sequence
         my $ref = $$line[3];
         my $alt = $$line[4];
 
+        my @alts;
+        ($ref,@alts) = $vcf->normalize_alleles($$line[3],$$line[4]);
+        $alt = $alts[0];    # first allele is used at multiallelic sites
+
         push @lines, { chr=>$chr, pos=>$pos, ref=>$ref, alt=>$alt, line=>$line };
         push @mask, { chr=>$chr, pos=>$pos, ref=>$ref };
         flush_buffers($opts,\@lines,\@mask);
