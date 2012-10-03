@@ -3093,7 +3093,7 @@ sub Vcf4_0::normalize_alleles
         for my $al (@als)
         {
             my $len = length($al);
-            if ( $i>=$len ) { $done = 1; $i--; last; }
+            if ( $i>=$len ) { $done = 1; }
             my $c = substr($al,$len-$i,1);
             if ( $c ne $r ) { $done = 1; last; }
         }
@@ -3102,13 +3102,44 @@ sub Vcf4_0::normalize_alleles
     }
     if ( $i>1 )
     {
-        if ( $i==$rlen ) { $i--; }
+        $i--;
         $ref = substr($ref,0,$rlen-$i);
         for (my $j=0; $j<@als; $j++) { $als[$j] = substr($als[$j],0,length($als[$j])-$i); }
     }
     return ($ref,@als);
 }
 
+sub Vcf4_0::normalize_alleles_pos
+{
+    my ($self,$ref,$alt) = @_;
+    my @als;
+    ($ref,@als) = $self->normalize_alleles($ref,$alt);
+
+    my $rlen = length($ref);
+    if ( $rlen==1 ) { return (0,$ref,@als); }
+    my $i = 0;
+    my $done = 0;
+    while ( $i+1<$rlen )
+    {
+        my $r = substr($ref,$i,1);
+        for my $al (@als)
+        {
+            my $len = length($al);
+            if ( $i+1>=$len ) { $done = 1; last; }
+            my $c = substr($al,$i,1);
+            if ( $c ne $r ) { $done = 1; last; }
+        }
+        if ( $done ) { last; }
+        $i++;
+    }
+    if ( $i<0 ) { $i = 0; }
+    if ( $i>0 )
+    {
+        substr($ref,0,$i,'');
+        for (my $j=0; $j<@als; $j++) { substr($als[$j],0,$i,''); }
+    }
+    return ($i,$ref,@als);
+}
 
 sub Vcf4_0::event_type
 {
