@@ -319,6 +319,7 @@ while (<>){
     					$reset_obj->is_processed($flag => 0);
     					if ( ($reset_stage eq 'qc' || $reset_stage eq 'all') && $reset_obj->isa('VRTrack::Lane')) {
     						$reset_obj->genotype_status('unchecked');
+						$logger->info("Deleted ".$flag." mapstats for the lane ".$reset_obj->name()) if delete_mapstats_entries($reset_obj,$flag);
     					}	
     					$reset_obj->update;
     				}
@@ -416,4 +417,32 @@ sub get_config_data
     if ( !$data{db} ) { croak("Error: missing the 'db' parameter in $file\n"); }
     
     return \%data;
+}
+
+
+sub delete_mapstats_entries
+{
+    my ($lane, $stage) = @_;
+
+    # Check lane
+    croak "Cannot delete mapstats as lane is undefined\n"       unless defined $lane;
+    croak "Cannot delete mapstats as object type is not lane\n" unless $lane->isa('VRTrack::Lane');
+
+    # Skip getting mapstats unless qc and mapping
+    my %mapstats_stage = ( 'qc' => 1, 'mapped' => 1);
+    return 0 unless $mapstats_stage{$stage};
+
+    # Get mappings
+    my @mappings = ();
+    push @mappings, @{$lane->qc_mappings()}           if ($stage eq 'qc');
+    push @mappings, @{$lane->mappings_excluding_qc()} if ($stage eq 'mapped');
+    
+    # Delete mappings
+    for my $mapstats (@mappings)
+    {
+        $mapstats->delete() or croak "Unable to delete mapstats for ".$lane->name().", error = $!\n";
+    }
+
+    # Return number of mapstats deleted
+    return scalar(@mappings);
 }
