@@ -48,8 +48,11 @@ sub new
         # known_vcf  => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',
         # in_vcf     => '/some/path/chr{CHROM}.vcf.gz',
 
-        # Tabix indexed VCF with known genotypes. Use when there is an additional info about the samples
-        #   (the samples overlap) or when imputing reference data into the study samples (the samples do not overlap).
+        # Tabix indexed VCF with known genotypes. Use when there is an
+        #   additional info about the samples (the samples overlap and known_vcf
+        #   is used as scaffold of known genotypes) or when imputing reference
+        #   data into the study samples (the samples do not overlap).
+        #   When known_is_phased is set, haplotypes will be passed to impute2 with -h and -l option.
         #   When known_vcf is set, consider also setting the chunk_by_known key.
         # known_vcf => '/nfs/users/nfs_p/pd3/sandbox/gtypes/UK10k-twins/uk10k-twins.ref.vcf.gz',
         # known_is_phased => 1,
@@ -434,8 +437,8 @@ sub vcf_to_impute2
     my $from = $$chunk[1];
     my $to   = $$chunk[2];
     my $outdir = "$$self{outdir}/$chr";
-    my $prephased = $$self{pre_phase} ? '-p' : '';
-    my $legend = $$self{per_sample} ? '-l' : '';
+    my $prephased = ($$self{pre_phase} or $$self{known_is_phased}) ? '-p' : '';
+    my $legend = ($$self{per_sample} or $$self{known_is_phased}) ? '-l' : '';
     my $in_vcf    = $self->expand_chrom($$self{in_vcf},$chr);
     my $known_vcf = exists($$self{known_vcf}) ? $self->expand_chrom($$self{known_vcf},$chr) : '--';
     my $args = exists($$self{vcf_impute2_args}) ? $$self{vcf_impute2_args} : '';
@@ -486,7 +489,7 @@ sub impute2
 
     if ( exists($$self{known_vcf}) ) 
     { 
-        $files .= qq[ -known_haps_g ${known}gts.gz -sample_known_haps_g ${known}samples];
+        $files .= $$self{known_is_phased} ? qq[ -h ${known}haps.gz -l ${known}legend] : qq[ -known_haps_g ${known}gts.gz -sample_known_haps_g ${known}samples];
     }
 
     my $out = "$outdir/02.impute2.$from-$to";
