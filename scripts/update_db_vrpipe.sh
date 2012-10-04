@@ -22,9 +22,9 @@ then
 fi
 
 ARG_UP=""
-if [[ $DB =~ "uk10k" ]]
+if [[ $DB =~ "g1k_track_phase3" ]]
 then
-    ARG_UP="-u -v"
+    ARG_UP="-u -sup -v"
 else
     ARG_UP="-u -sup -nop -v"
 fi
