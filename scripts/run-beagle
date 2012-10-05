@@ -147,12 +147,14 @@ sub main
     $self->wait;
 
     # Run Beagle on all chunks
-    $self->set_limits(%{$$self{limits}}) unless !exists($$self{limits});
     if ( !$self->is_finished("$outdir/02.beagle.done") )
     {
         for my $chunk (@$chunks)
         {
-            $self->spawn('beagle',"$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].02.beagle.done","$outdir/$$chunk[0]",$chunk);
+            my $done_file = "$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].02.beagle.done";
+            if ( $self->is_finished($done_file) ) { next; }
+            $self->increase_java_limits($done_file, exists($$self{limits}) ? %{$$self{limits}} : ());
+            $self->spawn('beagle',$done_file,"$outdir/$$chunk[0]",$chunk);
         }
         if ( $$self{merge_chroms} ) { $self->wait; }
     }
@@ -179,18 +181,27 @@ sub main
             {
                 if ( $self->is_finished("$outdir/$$chunk[0].vcf.gz") ) { next; }
                 if ( $self->is_finished("$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].03.vcfs.vcf.gz") ) { next; }
-                $unfinished{$$chunk[0]} = 1;
-                if ( !$self->is_finished("$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].02.beagle.done") ) { next; }
+                if ( !$self->is_finished("$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].02.beagle.done") ) 
+                { 
+                    push @{$unfinished{$$chunk[0]}}, "$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].02.beagle.done";
+                    next; 
+                }
                 $self->spawn('beagle_to_vcf',"$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].03.vcfs.vcf.gz","$outdir/$$chunk[0]",$chunk);
+                push @{$unfinished{$$chunk[0]}}, "$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].03.vcfs.vcf.gz";
             }
             $self->set_limits(runtime=>24*60);
             my @chroms = $self->get_chroms($chunks);
             for my $chr (@chroms)
             {
-                if ( $unfinished{$chr} ) { next; }
+                if ( exists($unfinished{$chr}) ) { next; }
                 $self->spawn('concat_vcfs',"$outdir/$chr.vcf.gz",$chunks,$chr);
             }
-            if ( scalar keys %unfinished ) { exit; }
+            if ( scalar keys %unfinished ) 
+            { 
+                my $prefix = $self->_get_temp_prefix((values %unfinished)[0]->[0]);
+                $self->debugln("The job not finished: $prefix.*");
+                exit; 
+            }
         }
         $self->wait;
         $self->set_limits(runtime=>undef);
@@ -370,6 +381,28 @@ sub vcf_to_beagle
     $self->cmd(qq[$$self{vcf_beagle} -r $chr:$from-$to -i $in_vcf -k $known_vcf -o $outdir/$from-$to.01 >>$outfile.o 2>>$outfile.e && touch $outfile]);
 }
 
+sub increase_java_limits
+{
+    my ($self,$done_file,%dlimits) = @_;
+
+    if ( !exists($dlimits{memory}) ) { $dlimits{memory} = 1_000; }
+
+    my %plimits = $self->past_limits($done_file);
+    if ( !exists($plimits{memory}) ) { $plimits{memory} = $dlimits{memory}; }
+
+    if ( -s "$done_file.e" ) 
+    {
+        my @err = `head -1 $done_file.e`;
+        if ( $err[0] =~ /java.lang.OutOfMemoryError/ or $err[0] =~ /Could not create the Java virtual machine/ ) 
+        {
+            if ( exists($plimits{memory}) ) { $dlimits{memory} = $plimits{memory} * 1.5; }
+        }
+        `cat $done_file.e >> $done_file.e.saved`; 
+        unlink("$done_file.e");
+    }
+    $self->set_limits(%dlimits);
+}
+
 sub beagle
 {
     my ($self,$outfile,$outdir,$chunk) = @_;
@@ -381,15 +414,6 @@ sub beagle
         return;
     }
     my $mem = int($self->get_limits('memory') * 0.8);
-    if ( -s "$outfile.e" ) 
-    {
-        # At this stage the LSF memory cannot be increased, but we can tell java that more memory is available.
-        #   This way it should fail with the proper 'memory limit exceeded' status and the pipeline will assign
-        #   memory in the next retry.
-        my @err = `head -1 $outfile.e`;
-        if ( $err[0] =~ /java.lang.OutOfMemoryError/ ) { $mem = int($self->get_limits('memory') * 1.5); }
-        `cat $outfile.e >> $outfile.e.saved`; 
-    }
     my $known = $$self{known_vcf} eq '--' ? '' : "markers=$prefix.01.markers unphased=$prefix.01.known_haps.gz missing=?";
     $self->cmd(qq[java -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} like=$prefix.01.impute_haps.gz $known out=$prefix.02 >>$outfile.o 2>$outfile.e]);
     if ( -s "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }

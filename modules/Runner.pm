@@ -97,7 +97,7 @@ sub new
     bless $self, ref($class) || $class;
     $$self{_status_codes}{DONE} = 111;
     $$self{_farm} = 'LSF';
-    $$self{_farm_options} = { runtime=>600, memory_limit=>20_000 };
+    $$self{_farm_options} = { runtime=>600, memory=>1_000 };
     $$self{_running_jobs} = {};
     $$self{_nretries} = 1;
     $$self{usage} = 
@@ -240,24 +240,6 @@ sub _read_config
         }
         $$self{$key} = dclone($value);
     }
-    
-    $$self{_mtime} = $self->mtime($config);
-}
-
-=head2 mtime
-
-    About : Stat the mtime of a file
-    Usage : $self->mtime('/path/to/file');
-    Args  : path to file
-
-=cut
-
-sub mtime
-{
-    my ($self, $file) = @_;
-    my $mtime = (stat($file))[9];
-    $mtime || $self->throw("Could not stat mtime for file $file\n");
-    return $mtime;
 }
 
 sub _sample_config
@@ -293,7 +275,6 @@ sub set_limits
     $$self{_farm_options} = { %{$$self{_farm_options}}, %args };
 }
 
-
 =head2 get_limits
 
     About : get limits set for computing farm
@@ -306,6 +287,25 @@ sub get_limits
 {
     my ($self,$arg) = @_;
     return exists($$self{_farm_options}{$arg}) ? $$self{_farm_options}{$arg} : undef;
+}
+
+
+=head2 past_limits
+
+    About : get limits set for computing farm in the previous run
+    Usage : %limits = $self->past_limits($done_file);
+    Args  : <file>
+                File name supplied in previous run of spawn
+                
+=cut
+
+sub past_limits
+{
+    my ($self,$done_file) = @_;
+    my $basename = $self->_get_temp_prefix($done_file);
+    my $freeze_file = $basename . '.r';
+    my $obj = retrieve($freeze_file);
+    return exists($$obj{_farm_options}) ? %{$$self{_farm_options}} : ();
 }
 
 
@@ -467,6 +467,7 @@ sub _spawn_to_farm
                 Without arguments, waits for files registered by previous spawn calls.
             <@files>
                 Extra files to wait for, in addition to those registered by spawn.
+
 =cut
 
 sub wait
@@ -517,6 +518,7 @@ sub _send_email
     Usage : $self->clean($dir);
     Args  : <@dirs>
                 Directories to recursively clean from all .jobs subdirs leaving a single tarball instead
+
 =cut
 
 sub clean

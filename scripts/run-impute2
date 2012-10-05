@@ -213,9 +213,14 @@ sub main
             {
                 if ( $self->is_finished("$outdir/$$chunk[0].vcf.gz") ) { next; }
                 if ( $self->is_finished("$outdir/$$chunk[0]/03.impute2_to_vcf.$$chunk[1]-$$chunk[2].vcf.gz") ) { next; }
+                if ( !$self->is_finished("$outdir/$$chunk[0]/02.impute2.$$chunk[1]-$$chunk[2].done") )
+                { 
+                    push @{$unfinished{$$chunk[0]}}, "$outdir/$$chunk[0]/02.impute2.$$chunk[1]-$$chunk[2].done";
+                    next; 
+                }
                 $unfinished{$$chunk[0]} = 1;
-                if ( !$self->is_finished("$outdir/$$chunk[0]/02.impute2.$$chunk[1]-$$chunk[2].done") ) { next; }
                 $self->spawn('impute2_to_vcf',"$outdir/$$chunk[0]/03.impute2_to_vcf.$$chunk[1]-$$chunk[2].vcf.gz",$chunk);
+                push @{$unfinished{$$chunk[0]}}, "$outdir/$$chunk[0]/03.impute2_to_vcf.$$chunk[1]-$$chunk[2].vcf.gz";
             }
             $self->set_limits(runtime=>24*60);
             my @chroms = $self->get_chroms($chunks);
@@ -224,7 +229,12 @@ sub main
                 if ( $unfinished{$chr} ) { next; }
                 $self->spawn('concat_vcfs',"$outdir/$chr.vcf.gz",$chunks,$chr);
             }
-            if ( scalar keys %unfinished ) { exit; }
+            if ( scalar keys %unfinished ) 
+            { 
+                my $prefix = $self->_get_temp_prefix((values %unfinished)[0]->[0]);
+                $self->debugln("The job not finished: $prefix.*");
+                exit; 
+            }
         }
         $self->wait;
         $self->set_limits(runtime=>undef);
