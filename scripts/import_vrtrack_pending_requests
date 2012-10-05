@@ -12,10 +12,31 @@ use DBI;
 use VRTrack::VRTrack;
 use VertRes::Utils::VRTrackFactory;
 use VRTrack::Multiplex_pool;
+use Getopt::Long;
 use Carp;
 
 use strict;
 use warnings;
+
+my ($db_study_file, %db_studies, $verbose, $help);
+
+GetOptions(
+    'd|db_study_file=s'     =>  \$db_study_file,
+    'v|verbose'             =>  \$verbose,
+    'h|help'	            =>  \$help,
+);
+
+($db_study_file && !$help) or die <<USAGE;
+    Usage: $0 -d <tsv_file_of_db_project_mappings>
+USAGE
+
+#initialise array of databases for which pending data is to be stored:
+open DBFILE, "<", $db_study_file or die "Can't open $db_study_file: $!\n";
+while (<DBFILE>){
+	chomp;
+	my @mapping = split("\t", $_);
+	push @{ $db_studies{$mapping[0]} }, $mapping[1];
+}
 
 #db connection parameters for vrtrack dbs:
 my $HOST = $ENV{VRTRACK_HOST};
@@ -29,7 +50,10 @@ my $pending_db = 'vrtrack_pending_requests';
 my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => $pending_db, mode => 'rw');
 croak "Can't connect to web tracking database\n" unless $vrtrack;
 
-my $sql_pend_project = qq[INSERT into project(project_id,name,hierarchy_name,ssid,latest) values(?,?,?,?,1)];
+#my $sql_pend_study = qq[INSERT into study(name) values (?)];
+my $sql_pend_study = qq[INSERT IGNORE INTO study SET name = ?];
+my $sql_fetch_study = qq[SELECT study_id from study where name = ?];
+my $sql_pend_project = qq[INSERT into project(project_id,study_id,name,hierarchy_name,ssid,latest) values(?,?,?,?,?,1)];
 my $sql_pend_sample = qq[INSERT into sample(sample_id,name,hierarchy_name,project_id,latest) values (?,?,?,?,1)];
 my $sql_pend_libreq = qq[INSERT into library_request(library_request_id,sample_id,ssid,prep_status,changed,latest) values (?,?,?,?,?,1)];
 my $sql_pend_lib = qq[INSERT into library(library_id,sample_id,name,hierarchy_name,latest) values (?,?,?,?,1)];
@@ -40,6 +64,8 @@ my $sql_pend_mplex = qq[INSERT into library_multiplex_pool(multiplex_pool_id,lib
 my $sql_pend_sreq = qq[INSERT into seq_request(seq_request_id,ssid,seq_type,seq_status,changed,latest) values (?,?,?,?,?,1)];
 my $sql_pend_sreq_mp = qq[INSERT into seq_request(seq_request_id,multiplex_pool_id,ssid,seq_type,seq_status,changed,latest) values (?,?,?,?,?,?,1)];
 
+my $sth_study = $vrtrack->{_dbh}->prepare($sql_pend_study);
+my $sth_fetch_study = $vrtrack->{_dbh}->prepare($sql_fetch_study);
 my $sth_proj = $vrtrack->{_dbh}->prepare($sql_pend_project);
 my $sth_ins_samp = $vrtrack->{_dbh}->prepare($sql_pend_sample);
 my $sth_ins_libreq = $vrtrack->{_dbh}->prepare($sql_pend_libreq);
@@ -55,6 +81,7 @@ my $sth_ins_sreq_mp = $vrtrack->{_dbh}->prepare($sql_pend_sreq_mp);
 my $wh_dbh = DBI->connect("DBI:mysql:host=mcs12:port=3379;database=sequencescape_warehouse", "warehouse_ro",undef,{'RaiseError' => 1, 'PrintError'=>0});
 croak "Can't connect to sequencescape_warehouse\n" unless $wh_dbh;
 
+my $sql_study_ssid = qq[SELECT internal_id FROM current_studies where name = ?];
 my $sql_pending_count = qq[select count(*) from current_requests where study_internal_id = ? and state in ('started','pending') and (request_type like '%Pulldown%' or request_type like '%sequencing')];
 my $sql_wh_pending = qq[select sa.name, cr.internal_id, cr.request_type, cr.state, cr.is_current, cr.last_updated, cr.source_asset_type, a.library_internal_id, a.receptacle_internal_id from 
                         current_requests cr, aliquots a, current_samples sa where source_asset_internal_id = a.receptacle_internal_id and a.sample_internal_id = sa.internal_id
@@ -62,12 +89,10 @@ my $sql_wh_pending = qq[select sa.name, cr.internal_id, cr.request_type, cr.stat
 
 my $sth_wh = $wh_dbh->prepare($sql_wh_pending);
 my $sth_wh_count = $wh_dbh->prepare($sql_pending_count);
+my $sth_wh_ssid = $wh_dbh->prepare($sql_study_ssid);
 
 #vrtrack_pending_requests tables populated by script for the web tool:
-my @pending_tables = qw(project sample library library_request seq_request library_multiplex_pool multiplex_pool);
-
-#array of databases for which pending data is stored:
-my @dbs = qw(vrtrack_human_wgs vrtrack_mouse_wgs vrtrack_human_wes vrtrack_mouse_wes vrtrack_cerevisiae_wgs vrtrack_uk10k_neuro vrtrack_uk10k_obesity vrtrack_uk10k_rare vrtrack_uk10k_cohort);
+my @pending_tables = qw(study project sample library library_request seq_request library_multiplex_pool multiplex_pool);
 
 #truncate current pending view data
 foreach ( @pending_tables ) {
@@ -84,18 +109,19 @@ my $library_id = 1;
 my $seq_request_id = 1;
 my $mplex_pool_id = 1;
 
+my @dbs = keys %db_studies;
 
 foreach ( @dbs ) {
 	my $dbname = $_;
-	my $dbconn = DBI->connect("DBI:mysql:host=$HOST:port=$PORT;database=$dbname",$READ_USER,undef,{'RaiseError' => 1, 'PrintError'=>0});
-	croak "Can't connect to $dbname tracking database\n" unless $dbconn;
-	#retrieve project ssids:
-	my $sth_get = $dbconn->prepare("SELECT name, ssid from latest_project");
-    if ($sth_get->execute()) {
-        my ($proj, $ssid);
-        $sth_get->bind_columns(\($proj, $ssid));
-        while ($sth_get->fetch) {
-			my %samples;
+    $sth_study->execute($_);
+	$sth_fetch_study->execute($_);
+	my $study_id = $sth_fetch_study->fetchrow_array();
+	print "$_ ($study_id)\n" if $verbose;
+	my @projects = @{ $db_studies{$_} };
+	for my $proj ( @projects ) {
+		if ($sth_wh_ssid->execute($proj)) {
+		    my $ssid = $sth_wh_ssid->fetchrow_array();
+		    my %samples;
             my %libraries;
             my %pool;
 			my %mplex;
@@ -103,10 +129,10 @@ foreach ( @dbs ) {
 			#get count of pending or started requests to bypass v.slow pending requests select (in cases where there are none)
 			if ($sth_wh_count->execute($ssid)) {
 			    my $pending_count = $sth_wh_count->fetchrow_array();
-			    print "$proj ($ssid) has $pending_count pending requests.\n";
+			    print "\t$proj ($ssid) has $pending_count pending requests.\n" if $verbose;
 			    next if $pending_count == 0;
 			}
-			$sth_proj->execute($project_id,$proj,$proj,$ssid);
+			$sth_proj->execute($project_id,$study_id,$proj,$proj,$ssid);
 			if ($sth_wh->execute($ssid)) {
 				my $ref = $sth_wh->fetchall_arrayref;
 			    foreach my $row ( @{$ref} ) {
@@ -177,8 +203,8 @@ foreach ( @dbs ) {
 		    $project_id++;
 		}
     }
-    $dbconn->disconnect;
 }
 $sth_wh->finish();
 $sth_wh_count->finish();
+$sth_wh_ssid->finish();
 $wh_dbh->disconnect;

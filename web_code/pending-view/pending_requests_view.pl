@@ -14,7 +14,6 @@ use URI;
 
 use SangerPaths qw(core team145);
 use SangerWeb;
-use lib './modules';
 use VertRes::QCGrind::ViewUtil;
 
 my $utl = VertRes::QCGrind::ViewUtil->new();
@@ -43,19 +42,8 @@ unless ( defined $vrtrack ) {
 }
 
 my $dbpend = $cgi->param('dbpend');
-my $project_ssid = '';
-if ( $dbpend ) {
-	my $vrtrack2 = $utl->connectToDatabase($dbpend);
-	unless ( defined $vrtrack2 ) {
-	    print $sw->header();
-	    $utl->displayError( "No database connection to $dbpend",$sw );
-    }
-	$project_ssid = getProjectSSID($vrtrack2, $utl->{SQL}{PROJECT_SSID});
-	$db = $dbpend;
-}
-
 print $sw->header();
-displayPendingRequestsPage($cgi,$vrtrack,$db,$project_ssid);
+displayPendingRequestsPage($cgi,$vrtrack,$dbpend);
 print $sw->footer();
 exit;
 
@@ -67,7 +55,6 @@ sub displayPendingRequestsPage
     my $cgi = shift;
     my $vrtrack = shift;
     my $db = shift;
-    my $project_ssid = shift;
     
     my $lib_type = "library";
     my $seq_type = "sequence";
@@ -76,9 +63,9 @@ sub displayPendingRequestsPage
     my $init_script = $utl->{SCRIPTS}{PENDING_VIEW};
     my $index = $utl->{SCRIPTS}{INDEX_PAGE};
    
-    my @libpendings = fetchRequests($vrtrack, $utl->{SQL}{PENDING_LIB}.$project_ssid.$utl->{SQL}{PENDING_ORDER}, $lib_type);
-    my @seqpendings = fetchRequests($vrtrack, $utl->{SQL}{PENDING_SEQ}.$project_ssid.$utl->{SQL}{PENDING_ORDER}, $seq_type);
-    my @mplexpendings = fetchRequests($vrtrack, $utl->{SQL}{PENDING_MULTIPLEX_SEQ}.$project_ssid, $plex_type);
+    my @libpendings = fetchRequests($vrtrack, $utl->{SQL}{PENDING_LIB}, $db, $lib_type);
+    my @seqpendings = fetchRequests($vrtrack, $utl->{SQL}{PENDING_SEQ}, $db, $seq_type);
+    my @mplexpendings = fetchRequests($vrtrack, $utl->{SQL}{PENDING_MULTIPLEX_SEQ}, $db, $plex_type);
     
     print qq[
         <h4 align="center" style="font: arial"><i><a href="$index">Team 145</a> : <a href="$init_script">$title</a></i> : $db</h4>
@@ -96,11 +83,12 @@ sub fetchRequests
 {
   my $vrtrack = shift;
   my $sql_fetch_pending = shift;
+  my $db = shift;
   my $type = shift;
   my @pending;
   my @started;
   my $sth = $vrtrack->{_dbh}->prepare($sql_fetch_pending);
-  if ($sth->execute()) {
+  if ($sth->execute($db)) {
     my ($project_name, $sample_name, $seq_status, $changed, $ssid); 
     $sth->bind_columns(\($project_name, $sample_name, $seq_status, $changed, $ssid));
     while ($sth->fetch) {
@@ -157,21 +145,4 @@ sub printPendingRows
         </table>
         </fieldset><br/>
     ];
-}
-
-sub getProjectSSID 
-{
-    my $vrtrack2 = shift;
-    my $sql_fetch_ssid = shift;
-    my $sth = $vrtrack2->{_dbh}->prepare($sql_fetch_ssid);
-    my @ssidarr;
-    if ($sth->execute()) {
-		my ($ssid);
-		$sth->bind_col(1, \$ssid);
-		
-		while ($sth->fetch) {
-	        push @ssidarr, $ssid
-	    }
-    }
-    return @ssidarr ? " and p.ssid in (".join(',',@ssidarr).")" : '';
 }
