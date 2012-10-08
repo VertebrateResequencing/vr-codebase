@@ -3728,7 +3728,7 @@ sub coverage
 
     # Run pileup. 
     my $sam = VertRes::Wrapper::samtools->new(verbose => $self->verbose, run_method => 'open', quiet => 1);
-    my $fh = $sam->pileup($bam, undef); 
+    my $fh = $sam->pileup($bam, undef, A => 1); 
     my $pileup_ok = 0;
     while(my $inp = <$fh>)
     {
@@ -3771,7 +3771,7 @@ sub coverage_depth
 
     # Run pileup. 
     my $sam = VertRes::Wrapper::samtools->new(verbose => $self->verbose, run_method => 'open', quiet => 1);
-    my $fh = $sam->pileup($bam, undef); 
+    my $fh = $sam->pileup($bam, undef, A => 1); 
     while(my $inp = <$fh>)
     {
 	my @col = split(/\s+/,$inp,5);

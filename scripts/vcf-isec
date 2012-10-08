@@ -29,13 +29,13 @@ sub error
         "Usage: vcf-isec [OPTIONS] file1.vcf file2.vcf ...\n",
         "Options:\n",
         "   -a, --apply-filters                 Ignore lines where FILTER column is anything else than PASS or '.'\n",
-        "   -C, --chromosomes <list|file>       Process the given chromosomes (comma-separated list or one chromosome per line in a file).\n",
         "   -c, --complement                    Output positions present in the first file but missing from the other files.\n",
         "   -d, --debug                         Debugging information\n",
         "   -f, --force                         Continue even if the script complains about differing columns, VCF versions, etc.\n",
         "   -o, --one-file-only                 Print only entries from the left-most file. Without -o, all unique positions will be printed.\n",
         "   -n, --nfiles [+-=]<int>             Output positions present in this many (=), this many or more (+), or this many or fewer (-) files.\n",
         "   -p, --prefix <path>                 If present, multiple files will be created with all possible isec combinations. (Suitable for Venn Diagram analysis.)\n",
+        "   -r, --regions <list|file>           Do only the given regions (comma-separated list or one region per line in a file).\n",
         "   -t, --tab <chr:pos:file>            Tab-delimited file with indexes of chromosome and position columns. (1-based indexes)\n",
         "   -w, --win <int>                     In repetitive sequences, the same indel can be called at different positions. Consider\n",
         "                                           records this far apart as matching (be it a SNP or an indel).\n",
@@ -62,7 +62,7 @@ sub parse_params
         }
         if ( $arg eq '-f' || $arg eq '--force' ) { $$opts{force}=1; next; }
         if ( $arg eq '-a' || $arg eq '--apply-filters' ) { $$opts{apply_filters}=1; next; }
-        if ( $arg eq '-C' || $arg eq '--chromosomes' ) { $$opts{chromosomes}=shift(@ARGV); next; }
+        if ( $arg eq '-r' || $arg eq '--regions' ) { $$opts{chromosomes}=shift(@ARGV); next; }
         if ( $arg eq '-o' || $arg eq '--one-file-only' ) { $$opts{report_from_all}=0; next; }
         if ( $arg eq '-c' || $arg eq '--complement' ) { $$opts{complement}=1; next; }
         if ( $arg eq '-n' || $arg eq '--nfiles' )
@@ -150,8 +150,8 @@ sub check_columns
             {
                 my @icols = @{$$vcfs[$ivcf]{columns}};
                 my @jcols = @{$$vcfs[$jvcf]{columns}};
-                warn("Warning: The number of columns is different:\n",
-                    scalar @icols - 9, ": ",
+                warn("Warning: The number of sample columns is different:\n",
+                    (@icols>9 ? scalar @icols - 9 : 0), ": ",
                     join(',',@icols[9..$#icols]),"\n",
                     scalar @jcols - 9, ": ",
                     join(',',@jcols[9..$#jcols]),"\n",
@@ -261,6 +261,7 @@ sub vcf_isec
         $$vcf{vcf_isec_ID} = $ifile;
     }
     check_columns($opts,\@vcfs);
+    $$opts{vcfs} = \@vcfs;
 
     if ( !$vcfs[0]{delim} && !$$opts{split} )
     {
@@ -390,22 +391,26 @@ sub do_chrm_isec
 sub write_line
 {
     my ($opts,$grp,$srcs) = @_;
-
-    my $vcf  = $$grp[0]{vcf};
-    my $file = $$vcf{file};
-    my $rec  = $$grp[0];
-
     for my $hash (values %$srcs)
     {
         my $src = join('_',sort keys %$hash);
         if ( !exists($$opts{out_files}{$src}) )
         {
+            my $id  = (sort keys %$hash)[0];
+            my $vcf = $$opts{vcfs}[$id];
+            $$opts{out_vcfs}{$src} = $vcf;
+            $$opts{out_recs}{$src} = $id;
             open($$opts{out_files}{$src},"| bgzip -c > $$opts{prefix}$src.vcf.gz") or error("| bgzip -c > $$opts{prefix}$src.vcf.gz: $!");
 
-            print "Using file '$$opts{prefix}$src.vcf.gz' for records present in:\n";
+            if ( !exists($$opts{readme_fh}) ) 
+            { 
+                open($$opts{readme_fh},'>',"$$opts{prefix}_README") or error("$$opts{prefix}_README: $!"); 
+                print {$$opts{readme_fh}} "# This file was produced by vcf-isec. The command line was:\n#\t",join(' ',@{$$opts{args}}),"\n#\n";
+            }
+            print {$$opts{readme_fh}} "Using file '$$opts{prefix}$src.vcf.gz' for records present in:\n";
             for my $rec (sort values %$hash)
             {
-                print "\t$$rec{vcf}{file}\n";
+                print {$$opts{readme_fh}} "\t$$rec{vcf}{file}\n";
             }
             if ( !$$vcf{delim} )
             {
@@ -417,11 +422,14 @@ sub write_line
         }
     }
 
+#use Data::Dumper; print Dumper($srcs);
     for my $pos (keys %$srcs)
     {
-        my $rec = (values %{$$srcs{$pos}})[0];
-        my $src = join('_',sort keys %{$$srcs{$pos}});
-        my $fh  = $$opts{out_files}{$src};
+        my $src  = join('_',sort keys %{$$srcs{$pos}});
+        my $fh   = $$opts{out_files}{$src};
+        my $irec = $$opts{out_recs}{$src};
+        my $vcf  = $$opts{out_vcfs}{$src};
+        my $rec  = $$srcs{$pos}{$irec};
 
         if ( !$$vcf{delim} )
         {
@@ -431,7 +439,6 @@ sub write_line
         {
             print $fh $$rec{line};
         }
-        if ( $$opts{one_per_group} ) { last; }
     }
 }
 

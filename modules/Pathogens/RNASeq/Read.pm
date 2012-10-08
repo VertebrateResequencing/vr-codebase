@@ -111,11 +111,22 @@ sub _process_read_details
 sub _does_read_pass_filters
 {
   my ($self) = @_;
+  
+  # filter unmapped read
+  if( ($self->_read_details->{flag} & 4) == 4)
+  {
+  	return 0;
+  }
   return 1 unless(defined($self->filters));
   
   if(defined($self->filters->{mapping_quality}) && ($self->_read_details->{mapping_quality}  <= $self->filters->{mapping_quality}) )
   {
      return 0;
+  }
+  
+  if(defined($self->filters->{bitwise_flag}) && ( ($self->_read_details->{flag} & $self->filters->{bitwise_flag})  == 0 ))
+  {
+    return 0;
   }
   
   return 1;

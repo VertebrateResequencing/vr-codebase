@@ -56,7 +56,10 @@ sub displayProjectLanesPage
     my ($cgi, $vrtrack, $database, $projectID) = @_;
     
     my $init_script = $utl->{SCRIPTS}{MAP_VIEW};
+    my $proj_script = $utl->{SCRIPTS}{MAP_PROJECTS_VIEW};
+    my $index = $utl->{SCRIPTS}{INDEX_PAGE};
     my $qcgrind_script = $utl->{SCRIPTS}{QCGRIND_LANE};
+    
     my $project = VRTrack::Project->new( $vrtrack, $projectID );
     displayError( "Cant get project: $projectID" ) unless $project;
     
@@ -64,12 +67,13 @@ sub displayProjectLanesPage
     displayError( "Cant get samples for project: $projectID" ) unless $samples;
     
     my $pname = $project->name;
+
     print qq[
-        <h2 align="center" style="font: normal 900 1.5em arial"><a href="$init_script">Map View</a></h2>
-        <h3 align="center" style="font: normal 700 1.5em arial">Project: $pname</h3>
-        ];
+        <h4 align="center" style="font: arial"><i><a href="$index">Team 145</a> : <a href="$init_script">$title</a> :  <a href="$proj_script?db=$database">$database</a></i> : $pname</h4>
+    ];
     
     print qq[
+    
     <div class="centerFieldset">
     <fieldset > 
     <legend>Lane data</legend>

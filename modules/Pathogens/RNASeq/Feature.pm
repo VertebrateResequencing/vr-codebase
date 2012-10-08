@@ -42,9 +42,13 @@ sub _build_gene_id
   {
     ($gene_id, @junk) = $self->raw_feature->get_tag_values('locus_tag');
   }
-  else
+  elsif($self->raw_feature->has_tag('ID'))
   {
     ($gene_id, @junk) = $self->raw_feature->get_tag_values('ID');
+  }
+  else
+  {
+    $gene_id = join("_",($self->seq_id, $self->gene_start, $self->gene_end ));
   }
   $gene_id =~ s/^"|"$//g;
 

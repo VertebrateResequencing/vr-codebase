@@ -68,12 +68,12 @@ sub calc_tstv
     }
     
     my $ts = 0;
-    for my $mut qw(AG GA CT TC)
+    for my $mut (qw(AG GA CT TC))
     {
         if ( exists($$stats{$mut}) ) { $ts += $$stats{$mut}; }
     }
     my $tv = 0;
-    for my $mut qw(AC CA GT TG AT TA CG GC)
+    for my $mut (qw(AC CA GT TG AT TA CG GC))
     {
         if ( exists($$stats{$mut}) ) { $tv += $$stats{$mut}; }
     }

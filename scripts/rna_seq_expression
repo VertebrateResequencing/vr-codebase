@@ -24,7 +24,7 @@ use Getopt::Long;
 use Pathogens::RNASeq::Expression;
 use Pathogens::RNASeq::CoveragePlot;
 
-my($sequence_file, $annotation_file, $protocol_name, $output_base_filename, $mapping_quality, $no_coverage_plots, $intergenic_regions, $help );
+my($sequence_file, $annotation_file, $protocol_name, $output_base_filename, $mapping_quality, $no_coverage_plots, $intergenic_regions, $bitwise_flag, $help );
 
 GetOptions(
    's|sequence_file=s'         => \$sequence_file,
@@ -34,6 +34,7 @@ GetOptions(
    'q|minimum_mapping_quality=s' => \$mapping_quality,
    'c|no_coverage_plots'       => \$no_coverage_plots,
    'i|intergenic_regions'      => \$intergenic_regions,
+   'b|bitwise_flag'            => \$bitwise_flag,
    'h|help'                    => \$help,
     );
 
@@ -47,6 +48,7 @@ Usage: $0
   -q|minimum_mapping_quality <Optional: minimum mapping quality>
   -c|no_coverage_plots     <Dont create Artemis coverage plots>
   -i|intergenic_regions    <Include intergenic regions>
+  -b|bitwise_flag        <Only include reads which pass filter>
   -h|help                  <print this message>
 
 This script takes in an aligned sequence file (BAM) and a corresponding annotation file (GFF) and creates a spreadsheet with expression values.
@@ -54,12 +56,17 @@ The BAM must be aligned to the same reference that the annotation refers to and 
 USAGE
 
 $output_base_filename ||= $sequence_file;
-$mapping_quality ||= 10;
+$mapping_quality ||= 1;
 my %filters = (mapping_quality => $mapping_quality);
+if(defined($bitwise_flag))
+{
+  $filters{bitwise_flag} = $bitwise_flag ;
+}
 
 my %protocols = ( 
 	standard    => "StandardProtocol",
-	strand_specific_protocol => "StrandSpecificProtocol"
+	strand_specific_protocol => "StrandSpecificProtocol",
+	tradis   => "TradisProtocol"
 );
 
 my $expression_results = Pathogens::RNASeq::Expression->new(
@@ -77,6 +84,7 @@ unless($no_coverage_plots)
 {
   Pathogens::RNASeq::CoveragePlot->new(
     filename             => $expression_results->_corrected_sequence_filename,
-    output_base_filename => $output_base_filename
+    output_base_filename => $output_base_filename,
+    mapping_quality      => $mapping_quality
   )->create_plots();
 }

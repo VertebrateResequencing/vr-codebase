@@ -44,8 +44,7 @@ my $WRITE_USER = $ENV{VRTRACK_RW_USER};
 my $WRITE_PASS = $ENV{VRTRACK_PASSWORD};
 
 #warehouse connection:
-my $wh2_dbh = DBI->connect("DBI:mysql:host=mcs7:port=3306;database=warehouse_two_production", "warehouse_ro",undef,
-                             {'RaiseError' => 1, 'PrintError'=>0});
+my $wh2_dbh = DBI->connect("DBI:mysql:host=mcs12:port=3379;database=sequencescape_warehouse", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
 #SQL statements
 #vrtrack database
 my $sql_select_sample_names = "select s.name, s.individual_id, i.name, i.acc from latest_sample s, individual i where s.individual_id = i.individual_id";

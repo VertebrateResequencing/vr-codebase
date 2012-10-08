@@ -376,7 +376,11 @@ sub join_vcfs_chr
     else
     {
         $$opts{file2} = $$opts{ivcf_fname};
-        check_sanity($opts,$rec1,$rec2);
+        if ( wrong_order($opts,$rec1,$rec2) )
+        {
+            $vcf1->_unread_line($rec1);
+            $rec1 = $rec2;
+        }
     }
 
     my @buffer;
@@ -388,7 +392,11 @@ sub join_vcfs_chr
             output_line($opts,$rec1,$$opts{swapped});
             $rec1 = $vcf1->next_data_array();
             if ( !defined $rec1 ) { last; }
-            check_sanity($opts,$rec1,$rec2);
+            if ( wrong_order($opts,$rec1,$rec2) )
+            {
+                $vcf1->_unread_line($rec1);
+                $rec1 = $rec2;
+            }
         }
 
         if ( defined $rec1 )
@@ -400,7 +408,11 @@ sub join_vcfs_chr
                 $rec2 = $vcf2->next_data_array();
                 if ( !defined $rec1 ) { last; }
                 if ( !defined $rec2 ) { error("The file $$opts{file1} ended before $$opts{file2}."); }
-                check_sanity($opts,$rec1,$rec2);
+                if ( wrong_order($opts,$rec1,$rec2) )
+                {
+                    $vcf1->_unread_line($rec1);
+                    $rec1 = $rec2;
+                }
             }
             if ( defined $rec1 && $$rec1[1] ne $$rec2[1] )
             {
@@ -429,7 +441,11 @@ sub join_vcfs_chr
             ($vcf2,$rec2) = next_vcf_file($opts);
             if ( !defined $rec2 ) { last; }
             $$opts{file2} = $$opts{ivcf_fname};
-            check_sanity($opts,$rec1,$rec2);
+            if ( wrong_order($opts,$rec1,$rec2) )
+            {
+                $vcf1->_unread_line($rec1);
+                $rec1 = $rec2;
+            }
             next;
         }
     }
@@ -439,14 +455,19 @@ sub join_vcfs_chr
     {
         output_line($opts,$rec1,$$opts{swapped}) unless !defined $rec1;
     }
-    while ( defined($rec1 = $vcf1->next_data_array()) );
+    while ( exists($$vcf1{fh}) && defined($rec1 = $vcf1->next_data_array()) );
 }
 
-sub check_sanity
+sub wrong_order
 {
     my ($opts,$rec1,$rec2) = @_;
     if ( $$rec1[0] ne $$rec2[0] ) { error("Encountered different chromosomes in $$opts{file1} and $$opts{file2}: \"$$rec1[0]:$$rec1[1]\" vs \"$$rec2[0]:$$rec2[1]\"\n"); }
-    if ( $$rec1[1] > $$rec2[1] ) { error("Hmm, files out of order or overlap of three files? $$opts{file1} vs $$opts{file2} and \"$$rec1[0]:$$rec1[1]\" vs \"$$rec2[1]\"\n"); }
+    if ( $$rec1[1] > $$rec2[1] ) 
+    { 
+        log_msg($opts,"WARNING\tThe lines out of sync: $$rec1[0]:$$rec1[1] in (1) vs $$rec2[0]:$$rec2[1] in (2), where (1)=$$opts{file1} (2)=$$opts{file2}\n");
+        return 1; 
+    }
+    return 0;
 }
 
 sub output_line
@@ -518,7 +539,6 @@ sub flush_buffer
     my $chr  = $$buffer[0][0][0];
     my $from = $$buffer[0][0][1];
     my $to   = $$buffer[-1][0][1];
-    if ( $from==$to ) { error("Uh, buffer too short?! $from"); }
 
     # Determine likelihoods of genotypes being swapped 
     my @lks_match = ();
@@ -584,7 +604,7 @@ sub flush_buffer
 
     my $file1 = $$opts{file1};
     my $file2 = $$opts{file2};
-    my @swapped = ();
+    my @swapped = [ (0) x $$opts{nsamples} ];
     my @quals = ();
     my $log10 = log(10);
     for (my $i=0; $i<@lks_match; $i++)
@@ -604,10 +624,13 @@ sub flush_buffer
     my $min_PQ = $$opts{min_PQ}; 
     delete($$opts{min_PQ});
 
+	# In case there is no overlap, reset the phasing set
+	if ( !@quals ) { $$opts{phasing_set} = [ (0) x $$opts{nsamples} ]; }
+
     # Output the VCF line and quality
     for my $site (@$buffer)
     {
-        # Which of the two overlapping VCF line to output? Take the one farther from the end.
+        # Which of the two overlapping VCF lines to output? Take the one farther from the end.
         my ($rec,$swap);
         if ( $to-$$site[0][1] > $$site[0][1]-$from )
         {
@@ -625,7 +648,6 @@ sub flush_buffer
                 }
                 @quals = ();
             }
-
             $rec = $$site[1];
             $swap = \@swapped;
         }

@@ -147,6 +147,7 @@ is $row_blank->map_type,           'Mapping','map_type ok';
 is $row_blank->reference, 'Sue_FMNH_PR_2081','reference ok';
 is $row_blank->reference_size,      23298589,'reference_size ok';
 is $row_blank->mapper,             'dinomap','mapper ok';
+is $row_blank->mapstats_id,                5,'mapstats_id ok'; # based on order mapstats created
 is $row_blank->adapter_perc,           undef,'adapter ok';
 is $row_blank->transposon_perc,        undef,'transposon ok';
 is $row_blank->mapped_perc,            '0.0','mapped ok';
@@ -181,6 +182,7 @@ is $row_qc->map_type,                'QC','map_type ok';
 is $row_qc->reference, 'Sue_FMNH_PR_2081','reference ok';
 is $row_qc->reference_size,      23298589,'reference_size ok';
 is $row_qc->mapper,        'velocimapper','mapper ok';
+is $row_qc->mapstats_id,                1,'mapstats_id ok';
 is $row_qc->adapter_perc,           '0.0','adapter ok'; # need larger number to check calc.
 is $row_qc->transposon_perc,        undef,'transposon ok'; # need large number for calc.
 is $row_qc->mapped_perc,            '99.0','mapped ok';
@@ -215,6 +217,7 @@ is $row_map->map_type,           'Mapping','map_type ok';
 is $row_map->reference, 'Sue_FMNH_PR_2081','reference ok';
 is $row_map->reference_size,      23298589,'reference_size ok';
 is $row_map->mapper,             'dinomap','mapper ok';
+is $row_map->mapstats_id,                3,'mapstats_id ok';
 is $row_map->adapter_perc,           undef,'adapter ok';
 is $row_map->transposon_perc,        undef,'transposon ok';
 is $row_map->mapped_perc,             95.5,'mapped ok';
@@ -246,10 +249,10 @@ ok open(my $report_fh,">",\$report_output), 'opened report_fh to scalar';
 ok my $report = Pathogens::Reports::Mapping::Report->new( vrtrack => $vrtrack, filehandle => $report_fh, lanes => [$vrobject{lane}]),'opened report ok';
 ok $report->output_csv,'wrote report';
 
-my $expected_report_output = qq["Study ID",Sample,Lane,Cycles,"Yield (Reads)","Yield (Bases)","Type (QC/Mapping)",Reference,"Reference Size",Mapper,"Adapter (%)","Transposon (%)","Mapped (%)","Paired (%)","Mean Insert Size","Genome Covered (%)","Genome Covered (% >= 1X)","Genome Covered (% >= 5X)","Genome Covered (% >= 10X)","Genome Covered (% >= 50X)","Genome Covered (% >= 100X)","Depth of Coverage (X)","Depth of Coverage StdDev (X)","Duplication Rate","Error Rate","NPG QC","Manual QC"\r
-1000,Sparky,1234_5#6,76,10066330,765041080,QC,Sue_FMNH_PR_2081,23298589,velocimapper,0.0,NA,99.0,96.9,315.6,73.99,NA,NA,NA,NA,NA,30.45,37.59,0.0003,0.003,pending,passed\r
-1000,Sparky,1234_5#6,76,10066330,765041080,Mapping,Sue_FMNH_PR_2081,23298589,dinomap,0.0,NA,95.5,92.1,319,NA,88.2,70.4,62.2,25.1,2.2,30.16,37.12,NA,NA,pending,passed\r
-1000,Sparky,1234_5#6,76,10066330,765041080,Mapping,Sue_FMNH_PR_2081,23298589,dinomap,NA,NA,0.0,0.0,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,pending,passed\r
+my $expected_report_output = qq["Study ID",Sample,Lane,Cycles,"Yield (Reads)","Yield (Bases)","Type (QC/Mapping)",Reference,"Reference Size",Mapper,"Mapstats ID","Adapter (%)","Transposon (%)","Mapped (%)","Paired (%)","Mean Insert Size","Genome Covered (%)","Genome Covered (% >= 1X)","Genome Covered (% >= 5X)","Genome Covered (% >= 10X)","Genome Covered (% >= 50X)","Genome Covered (% >= 100X)","Depth of Coverage (X)","Depth of Coverage StdDev (X)","Duplication Rate","Error Rate","NPG QC","Manual QC"\r
+1000,Sparky,1234_5#6,76,10066330,765041080,QC,Sue_FMNH_PR_2081,23298589,velocimapper,1,0.0,NA,99.0,96.9,315.6,73.99,NA,NA,NA,NA,NA,30.45,37.59,0.0003,0.003,pending,passed\r
+1000,Sparky,1234_5#6,76,10066330,765041080,Mapping,Sue_FMNH_PR_2081,23298589,dinomap,3,0.0,NA,95.5,92.1,319,NA,88.2,70.4,62.2,25.1,2.2,30.16,37.12,NA,NA,pending,passed\r
+1000,Sparky,1234_5#6,76,10066330,765041080,Mapping,Sue_FMNH_PR_2081,23298589,dinomap,5,NA,NA,0.0,0.0,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,pending,passed\r
 ];
 is $report_output,$expected_report_output,'report gives expected output';
 

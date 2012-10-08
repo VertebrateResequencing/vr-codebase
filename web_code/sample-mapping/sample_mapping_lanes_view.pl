@@ -76,9 +76,11 @@ sub displayProjectMappingsPage
      
     my $pname = $utl->fetchProjectName($db_id, $projectID);
     
+    my $index = $utl->{SCRIPTS}{INDEX_PAGE};
+    
     print qq[
-    <h2 align="center" style="font: normal 900 1.5em arial"><a href="$init_script">Sample ID Mappings</a></h2>
-    <h5 style="font: arial"><p><a href="$proj_script?db=$database">$database</a>: $pname</p></h5>];
+    <h4 align="center" style="font: arial"><i><a href="$index">Team 145</a> : <a href="$init_script">$title</a> :  <a href="$proj_script?db=$database">$database</a></i> : $pname</h4>
+    ];
     
     my %sampleMappings = $utl->getSampleMappings ($db_id, $projectID);
     

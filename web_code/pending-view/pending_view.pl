@@ -34,6 +34,6 @@ my $cgi = $sw->cgi();
 my $script = $utl->{SCRIPTS}{PENDING_REQ_VIEW};
 
 print $sw->header();
-$utl->displayDatabasesPage($title,$cgi,$script,1);
+$utl->displayDatabasesPage($title,$cgi,$script,1,1);
 print $sw->footer();
 exit;

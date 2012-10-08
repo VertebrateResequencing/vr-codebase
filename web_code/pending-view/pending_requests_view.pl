@@ -14,13 +14,6 @@ use URI;
 
 use SangerPaths qw(core team145);
 use SangerWeb;
-use VRTrack::VRTrack;
-use VRTrack::Project;
-use VRTrack::Sample;
-use VRTrack::Library;
-use VRTrack::Lane;
-use VRTrack::Multiplex_pool;
-use VertRes::Utils::VRTrackFactory;
 use VertRes::QCGrind::ViewUtil;
 
 my $utl = VertRes::QCGrind::ViewUtil->new();
@@ -31,6 +24,7 @@ my $sw  = SangerWeb->new({
     'title'   => $title,
     'banner'  => q(),
     'inifile' => SangerWeb->document_root() . q(/Info/header.ini),
+    'jsfile'  => ['http://jsdev.sanger.ac.uk/prototype.js','http://jsdev.sanger.ac.uk/toggle.js','ttp://jsdev.sanger.ac.uk/scriptaculous/scriptaculous.js','http://jsdev.sanger.ac.uk/sidebar.js','http://jsdev.sanger.ac.uk/urchin.js','http://jsdev.sanger.ac.uk/zebra.js','http://js.sanger.ac.uk/sorttable_v2.js',],  
     'style'   => $utl->{CSS},
 });
 
@@ -47,102 +41,65 @@ unless ( defined $vrtrack ) {
 	$utl->displayError( "No database connection to $db",$sw );
 }
 
+my $dbpend = $cgi->param('dbpend');
 print $sw->header();
-displayPendingRequestsPage($cgi,$vrtrack,$db);
+displayPendingRequestsPage($cgi,$vrtrack,$dbpend);
 print $sw->footer();
 exit;
 
 #######
 
-
 sub displayPendingRequestsPage 
 {
+
     my $cgi = shift;
     my $vrtrack = shift;
     my $db = shift;
+    
+    my $lib_type = "library";
+    my $seq_type = "sequence";
+    my $plex_type = "multiplex";
 
     my $init_script = $utl->{SCRIPTS}{PENDING_VIEW};
+    my $index = $utl->{SCRIPTS}{INDEX_PAGE};
+   
+    my @libpendings = fetchRequests($vrtrack, $utl->{SQL}{PENDING_LIB}, $db, $lib_type);
+    my @seqpendings = fetchRequests($vrtrack, $utl->{SQL}{PENDING_SEQ}, $db, $seq_type);
+    my @mplexpendings = fetchRequests($vrtrack, $utl->{SQL}{PENDING_MULTIPLEX_SEQ}, $db, $plex_type);
     
-	my @projects = sort {$a->name cmp $b->name} @{$vrtrack->projects()};
-	
-	my @libpendings;
-	my @libstarted;
-	my @seqpendings;
-	my @seqstarted;
-	my @mplexpendings;
-	my @mplexstarted;
-	my $lib_type = "library";
-	my $seq_type = "sequence";
-	my $plex_type = "multiplex sequence";
-
-	print qq[
-    	<h2 align="center" style="font: normal 900 1.5em arial"><a href="$init_script">Pending Requests</a></h2>
-    	
+    print qq[
+        <h4 align="center" style="font: arial"><i><a href="$index">Team 145</a> : <a href="$init_script">$title</a></i> : $db</h4>
 		<div class="centerFieldset">
     ];
-
-    foreach my $project (@projects)
-    {
-        my $projectID = $project->id();
-    
-        my $samples = $project->samples();
-        displayError( "Cant get samples for project: $projectID" ) unless $samples;
-     
-        my $pname = $project->name;
-
-        my $pendingflag = 'pending';
-        my $startedflag = 'started';
-
-        foreach( @{$samples} ) 
-        {	
-		    my $sample = $_;
-	    	my $sname = $sample->name();
-		    my $library_requests = $sample->library_requests();
-		    foreach ( @{$library_requests}) {
-			    my $librequest = $_;
-			    my $lib_status = $librequest->prep_status();
-			    my $lib_date = $librequest->changed();
-			    my $ssid = $librequest->ssid();
-			    if ($lib_status eq $pendingflag) { push @libpendings, [$projectID, $pname, $sname, $lib_status, $lib_date, $ssid]; }
-			    elsif ($lib_status eq $startedflag) { push @libstarted, [$projectID, $pname, $sname, $lib_status, $lib_date, $ssid]; }
-		    }
-		    my $libraries = $sample->libraries();
-		    foreach ( @{$libraries}) {
-			    my $library = $_;
-			    my $seq_requests = $library->seq_requests();
-			    foreach ( @{$seq_requests} ) {
-				    my $seqrequest = $_;
-				    my $seq_status = $seqrequest->seq_status();
-				    my $seq_date = $seqrequest->changed();
-				    my $ssid = $seqrequest->ssid();				
-				    if ($seq_status eq $pendingflag) { push @seqpendings, [$projectID, $pname, $sname, $seq_status, $seq_date, $ssid];}
-				    elsif ($seq_status eq $startedflag) { push @seqstarted, [$projectID, $pname, $sname, $seq_status, $seq_date, $ssid];}
-			    }
-			    foreach ( @{$library->library_multiplex_pools}){
-				    my $mplex = VRTrack::Multiplex_pool->new($vrtrack, $_->multiplex_pool_id);
-                    foreach ( @{ $mplex->seq_requests } ){
-                	    my $seqrequest = $_;
-                	    my $seq_status = $seqrequest->seq_status();
-                	    my $seq_date = $seqrequest->changed();
-					    my $ssid = $seqrequest->ssid();
-					    if ($seq_status eq $pendingflag) { push @mplexpendings, [$projectID, $pname, $sname, $seq_status, $seq_date, $ssid]; }
-					    if ($seq_status eq $startedflag) { push @mplexstarted, [$projectID, $pname, $sname, $seq_status, $seq_date, $ssid]; }
-                    }
-                }
-                @mplexpendings = sort {$a->[5] <=> $b->[5]} @mplexpendings;
-                @mplexstarted = sort {$a->[5] <=> $b->[5]} @mplexstarted;
-		    }
-        }
-	}
-	my @libtotal = (@libpendings, @libstarted);
-	my @seqtotal = (@seqpendings, @seqstarted);
-	my @mplextotal = (@mplexpendings, @mplexstarted);
-	printPendingRows(\@libtotal, $lib_type, $db, $cgi);
-	printPendingRows(\@seqtotal, $seq_type, $db, $cgi);
-	printPendingRows(\@mplextotal, $plex_type, $db, $cgi);
+	printPendingRows(\@libpendings, $lib_type, $db, $cgi);
+	printPendingRows(\@seqpendings, $seq_type, $db, $cgi);
+	printPendingRows(\@mplexpendings, $plex_type, $db, $cgi);
     print qq[
     	</div>
     ];
+}
+
+sub fetchRequests
+{
+  my $vrtrack = shift;
+  my $sql_fetch_pending = shift;
+  my $db = shift;
+  my $type = shift;
+  my @pending;
+  my @started;
+  my $sth = $vrtrack->{_dbh}->prepare($sql_fetch_pending);
+  if ($sth->execute($db)) {
+    my ($project_name, $sample_name, $seq_status, $changed, $ssid); 
+    $sth->bind_columns(\($project_name, $sample_name, $seq_status, $changed, $ssid));
+    while ($sth->fetch) {
+		$seq_status eq 'pending' ? push @pending, [$project_name, $sample_name, $seq_status, $changed, $ssid]: push @started, [$project_name, $sample_name, $seq_status, $changed, $ssid];
+    }
+  } 
+  if ($type eq 'multiplex') {
+	@pending = sort {$a->[4] <=> $b->[4]} @pending;
+	@started = sort {$a->[4] <=> $b->[4]} @started;
+  }
+  return (@pending, @started);
 }
 
 sub printPendingRows
@@ -152,7 +109,7 @@ sub printPendingRows
     print qq[
     <fieldset > 
     <legend>Pending $req_type requests</legend>
-    <table width="80%">
+    <table class='sortable' width="80%">
     <tr>
     <th>QC Link</th>
     <th>Project</th>
@@ -168,14 +125,14 @@ sub printPendingRows
 		for my $i ( 0 .. $#pendings ) {
 			my @pending = @{$pendings[$i]};
 			print qq[<tr>];
-			if ($current_project ne $pending[1]) {
+			if ($current_project ne $pending[0]) {
 				print qq[<td><a href="$qcgrind_script?db=$db&amp;proj_id=$pending[0]">QC_grind</a></td>];
-				$current_project = $pending[1];
+				$current_project = $pending[0];
 			}
 			else {
 				print qq[<td></td>];
 			}			
-			for my $j ( 1 .. ($#pending-1) ) {
+			for my $j ( 0 .. ($#pending-1) ) {
 				print qq[<td>$pending[$j]</td>];
 			}
 			print qq[<td><a href="http://psd-production.internal.sanger.ac.uk:6600/requests/$pending[$#pending]">$pending[$#pending]</a></td></tr>];

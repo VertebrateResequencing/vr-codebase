@@ -97,22 +97,23 @@ sub new
     bless $self, ref($class) || $class;
     $$self{_status_codes}{DONE} = 111;
     $$self{_farm} = 'LSF';
-    $$self{_farm_options} = { runtime=>600, memory_limit=>20_000 };
+    $$self{_farm_options} = { runtime=>600, memory=>1_000 };
     $$self{_running_jobs} = {};
     $$self{_nretries} = 1;
     $$self{usage} = 
         "Runner.pm arguments:\n" .
-        "   +help               Summary of commands\n" .
-        "   +config <file>      Configuration file\n" .
-        "   +local              Do not submit jobs to LSF, but run serially\n" .
-        "   +loop <int>         Run in daemon mode with <int> sleep intervals\n" .
-        "   +mail <address>     Email when the runner finishes\n" .
-        "   +maxjobs <int>      Maximum number of simultaneously running jobs\n" .
-        "   +retries <int>      Maximum number of retries. When negative, the runner eventually skips the task rather than exiting completely. [$$self{_nretries}]\n" .
-        "   +run <file>         Run the freezed object created by spawn\n" .
-        "   +sampleconf         Print a working configuration example\n" .
-        "   +show <file>        Print the content of the freezed object created by spawn\n" .
-        "   +verbose            Print debugging messages\n" .
+        "   +help                   Summary of commands\n" .
+        "   +config <file>          Configuration file\n" .
+        "   +debug <file1> <file2>  Run the freezed object <file1> overriding with keys from <file2>\n" .
+        "   +local                  Do not submit jobs to LSF, but run serially\n" .
+        "   +loop <int>             Run in daemon mode with <int> sleep intervals\n" .
+        "   +mail <address>         Email when the runner finishes\n" .
+        "   +maxjobs <int>          Maximum number of simultaneously running jobs\n" .
+        "   +retries <int>          Maximum number of retries. When negative, the runner eventually skips the task rather than exiting completely. [$$self{_nretries}]\n" .
+        "   +run <file>             Run the freezed object created by spawn\n" .
+        "   +sampleconf             Print a working configuration example\n" .
+        "   +show <file>            Print the content of the freezed object created by spawn\n" .
+        "   +verbose                Print debugging messages\n" .
         "\n";
     return $self;
 }
@@ -123,6 +124,8 @@ sub new
     Args  : The system command line options are prefixed by "+" to distinguish from user-module options and must come first, before the user-module options 
                 +config <file>
                     Optional configuration file for overriding defaults
+				+debug <file1> <file2>
+					Run the freezed object <file1> overriding with keys from <file2>
                 +help
                     Summary of commands
                 +local
@@ -151,6 +154,8 @@ sub run
     my ($self) = @_;
     my @args = @ARGV;
 
+    $$self{_about} = "Working directory: " . getcwd() . "\nCommand line: $0 " . join(' ',@args) . "\n";
+
     # Parse runner system parameters
     while (defined(my $arg=shift(@ARGV)))
     {
@@ -176,11 +181,16 @@ sub run
             $self->_revive($arg);
             exit;
         }
+        if ( $arg eq '+debug' ) 
+        { 
+            my $file1 = shift(@ARGV);
+			my $file2 = shift(@ARGV);
+            $self->_revive($file1,$file2);
+            exit;
+        }
         unshift(@ARGV,$arg);
         last;
     }
-
-    $$self{_about} = "Working directory: " . getcwd() . "\nCommand line: $0 " . join(' ',@args) . "\n";
 
     # Run the user's module once or multiple times
     while (1)
@@ -202,7 +212,7 @@ sub run
             die "\n"; 
         }
         if ( !$$self{_loop} ) { return; }
-        $self->debugln("sleeping...");
+        $self->debugln($$self{_about}, "sleeping...");
         sleep($$self{_loop});
     }
 }
@@ -218,6 +228,7 @@ sub _read_config
     {
         $self->throw("No config file parameters are accepted by this script.");
     }
+	if ( !-e $config ) { $self->throw("The file does not exist: $config\n"); }
 
     my %x = do "$config";
     while (my ($key,$value) = each %x)
@@ -229,24 +240,6 @@ sub _read_config
         }
         $$self{$key} = dclone($value);
     }
-    
-    $$self{_mtime} = $self->mtime($config);
-}
-
-=head2 mtime
-
-    About : Stat the mtime of a file
-    Usage : $self->mtime('/path/to/file');
-    Args  : path to file
-
-=cut
-
-sub mtime
-{
-    my ($self, $file) = @_;
-    my $mtime = (stat($file))[9];
-    $mtime || $self->throw("Could not stat mtime for file $file\n");
-    return $mtime;
 }
 
 sub _sample_config
@@ -282,7 +275,6 @@ sub set_limits
     $$self{_farm_options} = { %{$$self{_farm_options}}, %args };
 }
 
-
 =head2 get_limits
 
     About : get limits set for computing farm
@@ -295,6 +287,25 @@ sub get_limits
 {
     my ($self,$arg) = @_;
     return exists($$self{_farm_options}{$arg}) ? $$self{_farm_options}{$arg} : undef;
+}
+
+
+=head2 past_limits
+
+    About : get limits set for computing farm in the previous run
+    Usage : %limits = $self->past_limits($done_file);
+    Args  : <file>
+                File name supplied in previous run of spawn
+                
+=cut
+
+sub past_limits
+{
+    my ($self,$done_file) = @_;
+    my $basename = $self->_get_temp_prefix($done_file);
+    my $freeze_file = $basename . '.r';
+    my $obj = retrieve($freeze_file);
+    return exists($$obj{_farm_options}) ? %{$$self{_farm_options}} : ();
 }
 
 
@@ -456,6 +467,7 @@ sub _spawn_to_farm
                 Without arguments, waits for files registered by previous spawn calls.
             <@files>
                 Extra files to wait for, in addition to those registered by spawn.
+
 =cut
 
 sub wait
@@ -506,6 +518,7 @@ sub _send_email
     Usage : $self->clean($dir);
     Args  : <@dirs>
                 Directories to recursively clean from all .jobs subdirs leaving a single tarball instead
+
 =cut
 
 sub clean
@@ -553,15 +566,22 @@ sub is_finished
     return $all_finished;
 }
 
-# Run the freezed object created by spawn
+# Run the freezed object created by spawn. The $config_file argument can supply custom
+#	settings for overriding and debugging settings in the freezed file.
 sub _revive
 {
-    my ($self,$freeze_file) = @_;
+    my ($self,$freeze_file,$config_file) = @_;
 
     my $back = retrieve($freeze_file);
     if ( $$self{clean} ) { unlink($freeze_file); }
 
     while (my ($key,$value) = each %$back) { $$self{$key} = $value; }
+
+	if ( defined $config_file )
+	{
+		my %x = do "$config_file";
+		while (my ($key,$value) = each %x) { $$self{$key} = $value; }
+	}
 
     my $code = $self->can($$self{_store}{call});
     &$code($self,@{$$self{_store}{args}});

@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '20';
+use constant SCHEMA_VERSION => '24';
 
 our $DEFAULT_PORT = 3306;
 
@@ -1156,6 +1156,9 @@ sub get_lanes {
   Arg [1]    : Code ref
   Arg [2]    : optional hash ref: { read => [], write => []} where the array
                ref values contain table names to lock for reading/writing
+               [NB: not yet implemented]
+  Arg [3]    : optional array ref of objects to make sure they really get
+               updated in the database
   Example    : my $worked = $vrtrack->transaction(sub { $lane->update; }, { write => ['lane'] });
   Description: Run code safely in a transaction, with automatic retries in the
                case of deadlocks. If the transaction fails for some other reason,
@@ -1165,7 +1168,7 @@ sub get_lanes {
 =cut
 
 sub transaction {
-    my ($self, $code, $locks) = @_;
+    my ($self, $code, $locks, $objects) = @_;
     
     my $dbh = $self->{_dbh};
     
@@ -1237,6 +1240,45 @@ sub transaction {
         }
         else {
             $success = 1;
+            if ($objects) {
+                OBJLOOP: foreach my $obj (@$objects) {
+                    next unless $obj;
+                    
+                    # really make sure that the database values match the
+                    # instance values
+                    $obj->can('fields_dispatch') || next;
+                    my %expected_fields = %{$obj->fields_dispatch || {}};
+                    my @fields = keys %expected_fields;
+                    my $retries = 0;
+                    while (1) {
+                        my $fresh_vrtrack = VRTrack::VRTrack->new($self->{_db_params});
+                        my $fresh_obj = $obj->new($fresh_vrtrack, $obj->id);
+                        my %db_fields = %{$fresh_obj->fields_dispatch || {}};
+                        my $all_matched = 1;
+                        foreach my $field (@fields) {
+                            my $expected_val = &{$expected_fields{$field}}();
+                            my $db_val = &{$db_fields{$field}}();
+                            if ($db_val ne $expected_val) {
+                                $fresh_obj->$field($expected_val);
+                                $all_matched = 0;
+                            }
+                        }
+                        
+                        unless ($all_matched) {
+                            $fresh_vrtrack->transaction(sub {
+                                $fresh_obj->update;
+                            });
+                        }
+                        
+                        last if $all_matched;
+                        if ($retries++ >= 10) {
+                            $self->{transaction_error} = "Unable to make the database values match instance values after using update() on object $obj with id ".$obj->id."\n";
+                            $success = 0;
+                            last OBJLOOP;
+                        }
+                    }
+                }
+            }
             last;
         }
     }
@@ -1442,7 +1484,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (20);
+insert into schema_version(schema_version) values (24);
 
 --
 -- Table structure for table `assembly`
@@ -1649,7 +1691,7 @@ CREATE TABLE `seq_request` (
   `library_id` smallint(5) unsigned,
   `multiplex_pool_id` smallint(5) unsigned,
   `ssid` mediumint(8) unsigned DEFAULT NULL,
-  `seq_type` enum('Single ended sequencing','Paired end sequencing','HiSeq Paired end sequencing','MiSeq sequencing','Single ended hi seq sequencing') DEFAULT 'Single ended sequencing',
+  `seq_type` enum('HiSeq Paired end sequencing','Illumina-A HiSeq Paired end sequencing','Illumina-A Paired end sequencing','Illumina-A Pulldown ISC','Illumina-A Pulldown SC','Illumina-A Pulldown WGS','Illumina-A Single ended hi seq sequencing','Illumina-A Single ended sequencing','Illumina-B HiSeq Paired end sequencing','Illumina-B Paired end sequencing','Illumina-B Single ended hi seq sequencing','Illumina-B Single ended sequencing','Illumina-C HiSeq Paired end sequencing','Illumina-C MiSeq sequencing','Illumina-C Paired end sequencing','Illumina-C Single ended hi seq sequencing','Illumina-C Single ended sequencing','MiSeq sequencing','Paired end sequencing','Single ended hi seq sequencing','Single Ended Hi Seq Sequencing Control','Single ended sequencing') DEFAULT 'Single ended sequencing',
   `seq_status` enum('unknown','pending','started','passed','failed','cancelled','hold') DEFAULT 'unknown',
   `note_id` mediumint(8) unsigned DEFAULT NULL,
   `changed` datetime NOT NULL DEFAULT '0000-00-00',

@@ -198,7 +198,7 @@ sub print_legend
     $html->out(qq[<div id="legend">
             <b>Try:</b>
                 <div style="margin-left:1em;"> <a href="$$self{'myself'}">New search</a> </div>
-                <div style="margin-left:1em;"> <a href="http://www.ensembl.org/Mus_musculus/Location/View?db=core;r=$$self{chrm}:$$self{from}-$$self{to};" target="_ensembl_snp">View in Ensembl</a> </div>
+                <div style="margin-left:1em;"> <a href="http://may2012.archive.ensembl.org/Mus_musculus/Location/View?db=core;r=$$self{chrm}:$$self{from}-$$self{to};" target="_ensembl_snp">View in Ensembl</a> </div>
                 <div style="margin-left:1em;"> Click on Indels for details</div>
             <div style="padding-top:1em;"><b>Download:</b></div>
         ]);
@@ -270,7 +270,7 @@ sub print_row
     
     my $alt_seq_size = scalar keys %{$alt_seq};
     my $current_alt = 1;
-    if ( $print_gene ) { $html->out(sprintf qq[<a href="http://www.ensembl.org/Mus_musculus/Gene/Summary?g=$gene_name" target="_ensembl_snp">$gene_name</a>]); }    
+    if ( $print_gene ) { $html->out(sprintf qq[<a href="http://may2012.archive.ensembl.org/Mus_musculus/Gene/Summary?g=$gene_name" target="_ensembl_snp">$gene_name</a>]); }    
     
    	$html->out(qq[</td><td $style>$chr</td><td $style>$pos</td><td style="text-align: left;" ]);
    	
@@ -335,7 +335,7 @@ sub print_row
 
             $details .= '<tr><td>Alleles:</td><td> ' . $$row[$i]->{'sequence'}. '</td></tr>';
 			$details .= '<tr><td>GT quality:</td><td> ' . $$row[$i]->{'cons_qual'} . '</td></tr>';            
-            $details .= qq[<tr><td colspan="2"><a href="http://www.ensembl.org/Mus_musculus/Location/View?db=core;r=$chr:$pos-$pos;" target="_ensembl_snp">View in Ensembl</a></td></tr>];
+            $details .= qq[<tr><td colspan="2"><a href="http://may2012.archive.ensembl.org/Mus_musculus/Location/View?db=core;r=$chr:$pos-$pos;" target="_ensembl_snp">View in Ensembl</a></td></tr>];
             if ( $$row[$i]->{bam} )
             {
                 my $from = $pos - int($$self{lseq_win}*0.5);

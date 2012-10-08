@@ -31,24 +31,37 @@ sub new
     $$self{vcf_beagle}  = 'vcf-beagle';
     $$self{beagle_args} = '';
     $$self{java_args} = '';
+    $$self{phased_join_args} = '';
+    $$self{config_version} = '1345535795';
     $$self{_sampleconf} = q[
+            # For sanity checking that your config file is not obsolete. Update the version key in your 
+            #  config file to get rid of the warnings.
+            version  => '] .$$self{config_version}. q[',
+
             beagle_jar  => '/nfs/users/nfs_p/pd3/sandbox/svn/beagle/beagle.jar',
             beagle_args => '',
             java_args   => '',
             vcf_beagle  => 'vcf-beagle',
-            fai_ref     => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
-            known_vcf   => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',    # This must be tabix indexed VCF
 
-            buffer_region   => 10_000,
-            chunk_size      => 1_000_000,
-            debug_chunks    => 0,
+            # The known_vcf (aka -k) and in_vcf (aka -i) file names can contain the string "{CHROM}" which will be expanded 
+            #   according to chromosomes listed in the "region" key below. If the key is not defined, glob expansion will
+            #   be used to obtain the chromosomes. The VCFs must be tabix indexed.
+            # When known_vcf is set, consider also setting the chunk_by_known key.
+            #
+            # known_vcf  => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',
+            # in_vcf     => '/some/path/chr{CHROM}.vcf.gz',
 
-            # Chunks to prioritize. If set, these chunks will run as first.
-            # VIP_chunks => [ '18:46588427-47619278', '9:107043283-108190518' ],
+            # Number of sites per chunk and in buffer regions. The total number of sites considered is buffer_nsites+chunk_nsites.
+            #   The chunks are determined based on the input VCF (-i) unless chunk_by_known is set. 
+            buffer_nsites  => 5_000,
+            chunk_nsites   => 10_000,
+            chunk_by_known => 0,
+
+            merge_chroms   => 0,  # Create whole-genome VCF? This can produce *huge* files for thousands of samples
 
             # Regions to impute, the chunks must be sorted by chromosomal position or else the resulting VCF will not
-            #   be sorted. By default, the whole inpute VCF is imputed.
-            # region => [ '1:159000000-161000000', '1:62000000-64000000', ],
+            #   be sorted. By default, the whole VCF is imputed.
+            # region => [ '1:159000000-161000000', '1:62000000-64000000', '2' ],
 
             # Only 80% of this memory will be given to java because of LSF+java issues
             limits   => { memory=>10_000, runtime=>24*60 },
@@ -77,37 +90,45 @@ sub parse_args
         if ( $arg eq '-i' or $arg eq '--impute-vcf' ) { $$self{in_vcf}=shift(@ARGV); next; }
         if ( $arg eq '-k' or $arg eq '--known-vcf' ) { $$self{known_vcf}=shift(@ARGV); next; }
         if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
-        if ( $arg eq '-s' or $arg eq '--chunk-size' ) { $$self{chunk_size}=shift(@ARGV); next; }
         $self->throw();
     }
 
     if ( !exists($$self{outdir}) ) { $self->throw("Missing the -o option.\n"); }
     if ( !exists($$self{in_vcf}) ) { $self->throw("Missing the -i option.\n"); }
-    if ( !exists($$self{fai_ref}) ) { $self->throw("Missing the 'fai_ref' config key.\n"); }
     if ( $$self{mrProper} )
     {
         $self->mrProper($$self{outdir});
         $self->all_done;
     }
+    if ( !exists($$self{version}) or $$self{version} ne $$self{config_version} )
+    {
+        $self->warn("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
+    }
     if ( !exists($$self{known_vcf}) ) 
     { 
         $$self{known_vcf} = '--';
-        $self->warn("The 'known_vcf' config key not present, running without reference panel.\n"); 
     }
     elsif ( !($$self{known_vcf}=~/.gz$/) )
     {
         $self->warn("The known_vcf should be bgzipped and tabix indexed. Hopefully you know what you're doing?\n");
     }
-    if ( !exists($$self{buffer_region}) ) 
+    if ( exists($$self{buffer_region}) or exists($$self{chunk_size}) )  
     { 
-        $$self{buffer_region} = 10_000;
-        $self->warn("The 'buffer_region' config key not present, assuming: $$self{buffer_region}\n"); 
+        $self->throw("The keys buffer_region and chunk_size are deprecated, please use buffer_nsites and chunk_nsites instead."); 
     }
-    if ( !exists($$self{chunk_size}) ) 
+    if ( !exists($$self{buffer_nsites}) ) 
     { 
-        $$self{chunk_size} = 1_000_000;
-        $self->warn("The 'chunk_size' config key not present, assuming: $$self{chunk_size}\n"); 
+        $self->throw("Missing the key buffer_nsites"); 
     }
+    if ( !exists($$self{chunk_nsites}) ) 
+    { 
+         $self->throw("Missing the key chunk_nsites");
+    }
+    if ( exists($$self{chunk_by_known}) && !exists($$self{known_vcf}) )
+    {
+        $self->throw("Expected the key \"known_vcf\" with \"chunk_by_known\".\n");
+    }
+    $$self{chunk_file} = "$$self{outdir}/chunks.txt";
 }
 
 sub main
@@ -118,63 +139,73 @@ sub main
     my $outdir = $$self{outdir};
 
     # Convert from VCFs to Beagle
-    my $regions = $self->regions();
-    for my $region (@$regions)
+    my $chunks = $self->read_chunks();
+    for my $chunk (@$chunks)
     {
-        my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
-        for my $chunk (@$chunks)
-        {
-            $self->spawn('vcf_to_beagle',"$outdir/$region/$chunk.01.vcf_to_beagle.done","$outdir/$region",$chunk);
-        }
+        $self->spawn('vcf_to_beagle',"$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].01.vcf_to_beagle.done","$outdir/$$chunk[0]",$chunk);
     }
     $self->wait;
 
     # Run Beagle on all chunks
-    $self->set_limits(%{$$self{limits}}) unless !exists($$self{limits});
-    for my $region (@$regions)
+    if ( !$self->is_finished("$outdir/02.beagle.done") )
     {
-        if ( $self->is_finished("$outdir/$region/02.beagle.done") ) { next; }
-
-        my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
         for my $chunk (@$chunks)
         {
-            $self->spawn('beagle',"$outdir/$region/$chunk.02.beagle.done","$outdir/$region",$chunk);
+            my $done_file = "$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].02.beagle.done";
+            if ( $self->is_finished($done_file) ) { next; }
+            $self->increase_java_limits($done_file, exists($$self{limits}) ? %{$$self{limits}} : ());
+            $self->spawn('beagle',$done_file,"$outdir/$$chunk[0]",$chunk);
         }
+        if ( $$self{merge_chroms} ) { $self->wait; }
     }
     $self->set_limits(memory=>undef,runtime=>undef);
-    if ( !exists($$self{_VIP_chunks}) ) { $self->wait; }
 
     # Convert to VCFs and concat
-    if ( !$self->is_finished("$outdir/03.merged.vcf.gz") ) 
+    if ( !$self->is_finished("$outdir/03.merge.done") ) 
     {
-        for my $region (@$regions)
+        if ( $$self{merge_chroms} )
         {
-            my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
             for my $chunk (@$chunks)
             {
-                if ( !$self->is_finished("$outdir/$region/$chunk.02.beagle.done") ) { next; }
-                $self->spawn('beagle_to_vcf',"$outdir/$region/03.vcfs.$chunk.vcf.gz","$outdir/$region",$chunk);
+                $self->spawn('beagle_to_vcf',"$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].03.vcfs.vcf.gz","$outdir/$$chunk[0]",$chunk);
             }
+            $self->wait;
+            $self->set_limits(runtime=>24*60);
+            $self->spawn('concat_vcfs',"$outdir/merged.vcf.gz",$chunks);
         }
-        $self->wait;
-
-        # This is clumsy, but the VIP chunks must be disabled for this, because they may be out of order.
-        delete($$self{VIP_chunks});
-        delete($$self{_VIP_chunks});
-        my @all_chunks = ();
-        for my $region (@$regions)
+        else
         {
-            my $chunks = $self->chr_chunks($$self{chunk_size},[$region]);
+            # Cannot rely on Runner's wait here. Allow early release of shorter chromosomes.
+            my %unfinished;
             for my $chunk (@$chunks)
             {
-                push @all_chunks, "$outdir/$region/03.vcfs.$chunk.vcf.gz";
+                if ( $self->is_finished("$outdir/$$chunk[0].vcf.gz") ) { next; }
+                if ( $self->is_finished("$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].03.vcfs.vcf.gz") ) { next; }
+                if ( !$self->is_finished("$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].02.beagle.done") ) 
+                { 
+                    push @{$unfinished{$$chunk[0]}}, "$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].02.beagle.done";
+                    next; 
+                }
+                $self->spawn('beagle_to_vcf',"$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].03.vcfs.vcf.gz","$outdir/$$chunk[0]",$chunk);
+                push @{$unfinished{$$chunk[0]}}, "$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].03.vcfs.vcf.gz";
+            }
+            $self->set_limits(runtime=>24*60);
+            my @chroms = $self->get_chroms($chunks);
+            for my $chr (@chroms)
+            {
+                if ( exists($unfinished{$chr}) ) { next; }
+                $self->spawn('concat_vcfs',"$outdir/$chr.vcf.gz",$chunks,$chr);
+            }
+            if ( scalar keys %unfinished ) 
+            { 
+                my $prefix = $self->_get_temp_prefix((values %unfinished)[0]->[0]);
+                $self->debugln("The job not finished: $prefix.*");
+                exit; 
             }
         }
-
-        $self->set_limits(runtime=>24*60);
-        $self->spawn('concat_vcfs',"$outdir/03.merged.vcf.gz",@all_chunks);
         $self->wait;
         $self->set_limits(runtime=>undef);
+        $self->cmd("touch $outdir/03.merge.done");
     }
 
     # Run performance stats and clean
@@ -204,81 +235,220 @@ sub runtime_stats
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
 
-sub regions
+sub read_chunks
 {
     my ($self) = @_;
-    if ( exists($$self{region}) ) 
+    if ( !-e $$self{chunk_file} ) 
     { 
-        if ( ref($$self{region}) eq 'ARRAY' ) { return $$self{region} }
-        return [ $$self{region} ]; 
+        my $in_file = $$self{chunk_by_known} ? $$self{known_vcf} : $$self{in_vcf};
+        my @regions = $self->define_regions($in_file);
+        for my $region (@regions)
+        {
+            $self->spawn('define_chunks',"$$self{chunk_file}.$region",$in_file,$region);
+        }
+        $self->wait;
+
+        $self->cmd("> $$self{chunk_file}.part");
+        for my $region (@regions)
+        {
+            $self->cmd("cat $$self{chunk_file}.$region >> $$self{chunk_file}.part");
+            $self->spawn('define_chunks',"$$self{chunk_file}.$region",$in_file,$region);
+        }
+        rename("$$self{chunk_file}.part",$$self{chunk_file}) or $self->throw("rename $$self{chunk_file}.part $$self{chunk_file}: $!");
+        for my $region (@regions)
+        {
+            unlink("$$self{chunk_file}.$region");
+        }
     }
-    my (@in_list) = grep { chomp } $self->cmd(qq[tabix -l $$self{in_vcf}]);
-    return \@in_list;
+    open(my $fh,'<',$$self{chunk_file}) or $self->throw("$$self{chunk_file}: $!");
+    my @chunks;
+    while (my $line=<$fh>)
+    {
+        chomp($line);
+        my @items = split(/\t/,$line);
+        push @chunks, [@items];
+    }
+    close($fh) or $self->throw("$$self{chunk_file}: $!");
+    return \@chunks;
 }
+
+sub define_chunks
+{
+    my ($self,$outfile,$in_file,$region) = @_;
+    my $tot_sites = $$self{buffer_nsites} + $$self{chunk_nsites};
+    my (@chunks,@buffer);
+    my $file = $self->expand_chrom($in_file,$region);
+    my $cmd  = "tabix $file $region |";
+    open(my $in,$cmd) or $self->throw("$cmd: $!");
+    while (my $line=<$in>)
+    {
+        if ( substr($line,0,1) eq '#' ) { next; }
+        my $i = index($line,"\t");
+        if ( $i<0 ) { $self->throw("Could not parse the line [CHR]: $line"); }
+        my $chr = substr($line,0,$i);
+        my $j = index($line,"\t",$i+1);
+        if ( $j<0 ) { $self->throw("Could not parse the line [POS]: $line"); }
+        my $pos = substr($line,$i+1,$j-$i-1);
+
+        if ( @buffer && $buffer[0][0] ne $chr or @buffer>$tot_sites )
+        {
+            my $chr_from = $buffer[0][0];
+            my $pos_from = $buffer[0][1];
+            my $pos_to   = $buffer[-1][1];
+            my $nout     = @buffer;
+            push @chunks, { chr=>$chr_from, from=>$pos_from, to=>$pos_to, n=>$nout };
+            if ( $$self{chunk_nsites}<@buffer ) { splice(@buffer,0,$$self{chunk_nsites}); }
+            else { @buffer = (); }
+        }
+        push @buffer, [$chr,$pos];
+    }
+    if ( @buffer )
+    {
+        my $chr_from = $buffer[0][0];
+        my $pos_from = $buffer[0][1];
+        my $pos_to   = $buffer[-1][1];
+        my $nout     = @buffer;
+        push @chunks, { chr=>$chr_from, from=>$pos_from, to=>$pos_to, n=>$nout };
+    }
+    close($in) or $self->throw("close $cmd");
+
+    if ( !@chunks ) { $self->throw("No chunks defined?\n"); }
+    if ( @chunks>1 && $chunks[-1]{n} < $tot_sites*0.75 )
+    {
+        my $chunk = splice(@chunks,-1,1);
+        $chunks[-1]{to} = $$chunk{to};
+        $chunks[-1]{n} += $$chunk{n};
+    }
+
+    open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    for my $chunk (@chunks)
+    {
+        print $out "$$chunk{chr}\t$$chunk{from}\t$$chunk{to}\t$$chunk{n}\n";
+    }
+    close($out) or $self->throw("close $outfile.part");
+    rename("$outfile.part",$outfile);
+}
+
+sub get_chroms
+{
+    my ($self,$regions) = @_;
+    my %chroms;
+    for my $reg (@$regions) 
+    { 
+        $chroms{$$reg[0]} = 1; 
+    }
+    return ( sort keys %chroms );
+}
+
+sub expand_chrom
+{
+    my ($self,$path,$region) = @_;
+    $region =~ s/:.*$//;
+    $path =~ s/{CHROM}/$region/g;
+    return $path;
+}
+
+sub define_regions
+{
+    my ($self,$path) = @_;
+    if ( exists($$self{region}) ) { return @$$self{region}; }
+    if ( !($path=~/{CHROM}/) ) { return ('.'); }
+    my $before = $`;
+    my $after  = $';
+    $path =~ s/{CHROM}/*/;  # only one occurance of {CHROM} is allowed in this implementation
+    my @list = glob($path);
+    my @regs;
+    for my $file (@list)
+    {
+        $file =~ s{^$before}{};
+        $file =~ s{$after$}{};
+        push @regs,$file;
+    }
+    return @regs;
+}
+
 
 sub vcf_to_beagle
 {
-    my ($self,$outfile,$outdir,$region) = @_;
-    if ( !($region=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the chunk string: [$region]\n"); }
-    my $chr  = $1;
-    my $from = $2 - $$self{buffer_region};
-    my $to   = $3 + $$self{buffer_region};
+    my ($self,$outfile,$outdir,$chunk) = @_;
+    my $chr  = $$chunk[0];
+    my $from = $$chunk[1];
+    my $to   = $$chunk[2];
     if ( $from<0 ) { $from = 0; }
+    my $in_vcf    = $self->expand_chrom($$self{in_vcf},$chr);
+    my $known_vcf = $self->expand_chrom($$self{known_vcf},$chr);
     $self->cmd(qq[mkdir -p $outdir]);
-    $self->cmd(qq[$$self{vcf_beagle} -r $chr:$from-$to -i $$self{in_vcf} -k $$self{known_vcf} -o $outdir/$region.01 >>$outfile.o 2>>$outfile.e && touch $outfile]);
+    $self->cmd(qq[$$self{vcf_beagle} -r $chr:$from-$to -i $in_vcf -k $known_vcf -o $outdir/$from-$to.01 >>$outfile.o 2>>$outfile.e && touch $outfile]);
+}
+
+sub increase_java_limits
+{
+    my ($self,$done_file,%dlimits) = @_;
+
+    if ( !exists($dlimits{memory}) ) { $dlimits{memory} = 1_000; }
+
+    my %plimits = $self->past_limits($done_file);
+    if ( !exists($plimits{memory}) ) { $plimits{memory} = $dlimits{memory}; }
+
+    if ( -s "$done_file.e" ) 
+    {
+        my @err = `head -1 $done_file.e`;
+        if ( $err[0] =~ /java.lang.OutOfMemoryError/ or $err[0] =~ /Could not create the Java virtual machine/ ) 
+        {
+            if ( exists($plimits{memory}) ) { $dlimits{memory} = $plimits{memory} * 1.5; }
+        }
+        `cat $done_file.e >> $done_file.e.saved`; 
+        unlink("$done_file.e");
+    }
+    $self->set_limits(%dlimits);
 }
 
 sub beagle
 {
-    my ($self,$outfile,$outdir,$region) = @_;
-    if ( !-s "$outdir/$region.01.markers.impute" or (!-s "$outdir/$region.01.markers.known" && $$self{known_vcf} ne '--') )
+    my ($self,$outfile,$outdir,$chunk) = @_;
+    my $prefix = "$outdir/$$chunk[1]-$$chunk[2]";
+    if ( !-s "$prefix.01.markers.impute" or (!-s "$prefix.01.markers.known" && $$self{known_vcf} ne '--') )
     {
         # The region is empty
         $self->cmd("touch $outfile");
         return;
     }
     my $mem = int($self->get_limits('memory') * 0.8);
-    if ( -s "$outfile.e" ) 
-    {
-        # At this stage the LSF memory cannot be increased, but we can tell java that more memory is available.
-        #   This way it should fail with the proper 'memory limit exceeded' status and the pipeline will assign
-        #   memory in the next retry.
-        my @err = `head -1 $outfile.e`;
-        if ( $err[0] =~ /java.lang.OutOfMemoryError/ ) { $mem = int($self->get_limits('memory') * 1.5); }
-        `cat $outfile.e >> $outfile.e.saved`; 
-    }
-    my $known = $$self{known_vcf} eq '--' ? '' : "markers=$outdir/$region.01.markers unphased=$outdir/$region.01.known_haps.gz missing=?";
-    $self->cmd(qq[java -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} like=$outdir/$region.01.impute_haps.gz $known out=$outdir/$region.02 >>$outfile.o 2>$outfile.e]);
+    my $known = $$self{known_vcf} eq '--' ? '' : "markers=$prefix.01.markers unphased=$prefix.01.known_haps.gz missing=?";
+    $self->cmd(qq[java -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} like=$prefix.01.impute_haps.gz $known out=$prefix.02 >>$outfile.o 2>$outfile.e]);
     if ( -s "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
     $self->cmd(qq[touch $outfile]);
 }
 
 sub beagle_to_vcf
 {
-    my ($self,$outfile,$outdir,$region) = @_;
-    if ( ! -e "$outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz" )
+    my ($self,$outfile,$outdir,$chunk) = @_;
+    my $prefix = "$outdir/$$chunk[1]-$$chunk[2]";
+    if ( ! -e "$prefix.02.$$chunk[1]-$$chunk[2].01.impute_haps.gz.gprobs.gz" )
     {
-        # The region is empty
-        $self->cmd("touch $outfile");
-        return;
+        $self->throw("The region is empty: $prefix.01.impute_haps.gz.gprobs.gz?!\n");
+        # # The region is empty
+        # $self->cmd("touch $outfile");
+        # return;
     }
-    $self->cmd(qq[$$self{vcf_beagle} -r $region -i $$self{in_vcf} -o $outdir/$region.02.$region.01.impute_haps.gz.gprobs.gz 2>>$outfile.e | bgzip -c > $outfile.part]);
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$$chunk[0]);
+    $self->cmd(qq[$$self{vcf_beagle} -r $$chunk[0]:$$chunk[1]-$$chunk[2] -i $in_vcf -o $prefix.02.$$chunk[1]-$$chunk[2].01.impute_haps.gz.gprobs.gz 2>>$outfile.e | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
 }
 
 sub concat_vcfs
 {
-    my ($self,$outfile,@files) = @_;
+    my ($self,$outfile,$chunks,$chr) = @_;
     open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
-    for my $file (@files)
+    for my $chunk (@$chunks)
     {
-        # Check that the region is not empty
-        if ( ! -s $file ) { next; }
+        if ( $$chunk[0] ne $chr ) { next; }
+        my $file = "$$self{outdir}/$$chunk[0]/$$chunk[1]-$$chunk[2].03.vcfs.vcf.gz";
         print $fh $file, "\n";
     }
     close($fh);
-    $self->cmd(qq[vcf-concat -s 2 -f $outfile.list | bgzip -c > $outfile.part]);
+    $self->cmd(qq[vcf-phased-join $$self{phased_join_args} -l $outfile.list -o - 2>>$outfile.log | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
 }
@@ -291,151 +461,10 @@ sub tabix_part
     rename("$vcf.part.tbi","$vcf.tbi");
 }
 
-sub change_names
-{
-    my ($self,$args,@names) = @_;
-    my %known = (prefix=>1,suffix=>1,rm_prefix=>1,rm_suffix=>1);
-    for my $key (keys %$args)
-    {
-        if ( !exists($known{$key}) ) { $self->throw("No such argument to change_names: [$key]\n"); }
-    }
-    if ( exists($$args{prefix}) )
-    {
-        my $re = $$args{prefix};
-        $re =~ s/\./\\./g;
-        for (my $i=0; $i<@names; $i++)
-        {
-            if ( !($names[$i] =~ m{^$re}) ) { $names[$i] = $$args{prefix} . $names[$i]; }
-        }
-    }
-    if ( exists($$args{suffix}) )
-    {
-        my $re = $$args{suffix};
-        $re =~ s/\./\\./g;
-        for (my $i=0; $i<@names; $i++)
-        {
-            if ( !($names[$i] =~ m{$re$}) ) { $names[$i] .= $$args{suffix}; }
-        }
-    }
-    if ( exists($$args{rm_prefix}) )
-    {
-        my $re = $$args{rm_prefix};
-        $re =~ s/\./\\./g;
-        for (my $i=0; $i<@names; $i++)
-        {
-            $names[$i] =~ s{^$re}{};
-        }
-    }
-    if ( exists($$args{rm_suffix}) )
-    {
-        my $re = $$args{rm_suffix};
-        $re =~ s/\./\\./g;
-        for (my $i=0; $i<@names; $i++)
-        {
-            $names[$i] =~ s{$re$}{};
-        }
-    }
-    return @names;
-}
-
 sub cmd
 {
     my ($self,$cmd) = @_;
     return Utils::CMD($cmd,{verbose=>1});
-}
-
-sub chr_chunks
-{
-    my ($self,$split_size,$region) = @_;
-
-    my $regions = $self->read_chr_lengths($$self{fai_ref},$region);
-
-    if ( exists($$self{VIP_chunks}) && !exists($$self{_VIP_chunks}) ) 
-    {
-        for my $chunk (@{$$self{VIP_chunks}})
-        {
-            if ( !($chunk=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the VIP chunk [$chunk]\n"); }
-            my $chr  = $1;
-            my $from = $2;
-            my $to   = $3;
-            push @{$$self{_VIP_chunks}{$chr}}, [$from,$to];
-        }
-    }
-
-    my @chunks;
-    my @vip_chunks;
-    for my $region (@$regions)
-    {
-        my $chr     = $$region{name};
-        my $pos     = $$region{from};
-        my $end_pos = $$region{to};
-
-        while ($pos<$end_pos)
-        {
-            my $from = $pos;
-            my $to   = $from+$split_size-1;
-
-            if ( $to>$end_pos ) { $to=$end_pos; }
-
-            my $is_vip;
-            if ( exists($$self{_VIP_chunks}) && exists($$self{_VIP_chunks}{$chr}) )
-            {
-                for my $chunk (@{$$self{_VIP_chunks}{$chr}})
-                {
-                    if ( $$chunk[0]>$to   ) { next; }
-                    if ( $$chunk[1]<$from ) { next; }
-                    $is_vip = 1; 
-                    last;
-                }
-            }
-            if ( $is_vip ) { push @vip_chunks, "$chr:$from-$to"; }
-            else { push @chunks, "$chr:$from-$to"; }
-
-            $pos += $split_size;
-            if ( $pos<1 ) { $self->throw("The split size too small [$split_size]?\n"); }
-
-            if ( $$self{debug_chunks} && scalar @chunks>$$self{debug_chunks} ) { return \@chunks; }
-        }
-    }
-    if ( @vip_chunks ) { @chunks = ( @vip_chunks, @chunks ); }
-
-    return \@chunks;
-}
-
-sub read_chr_lengths
-{
-    my ($self,$fai,$regions) = @_;
-
-    my @chr_lengths;
-    my @regex;
-    if ( defined $regions )
-    {
-        for my $region (@$regions)
-        {
-            if ( $region=~/^[^:]+$/ ) { push @regex,$region; }
-            elsif ( $region=~/^([^:]+):(\d+)-(\d+)$/ ) { push @chr_lengths, {name=>$1, from=>$2, to=>$3} }
-        }
-    }
-
-    if ( !@regex ) 
-    {
-        if ( !@chr_lengths ) { $self->throw("FIXME: No regions given?"); }
-        return \@chr_lengths;
-    }
-
-    # Determine the chromosomes and their lengths
-    open(my $fh,'<',$fai) or $self->throw("$fai: $!"); 
-    while (my $line=<$fh>)
-    {
-        for my $regex (@regex)
-        {
-            if ( !($line=~/^($regex)\t(\d+)/i) ) { next; }
-            push @chr_lengths, {name=>$1, from=>1, to=>$2};
-            last;
-        }
-    }
-    close($fh);
-    return \@chr_lengths;
 }
 
 
