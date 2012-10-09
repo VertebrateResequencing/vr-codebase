@@ -291,20 +291,17 @@ sub optimise_parameters
 
       my $num_threads = $self->number_of_threads($memory_required_mb);
       my $insert_size = $self->get_insert_size();
-      my $tmp_directory = $self->{  } || getcwd();
+      my $tmp_directory = $self->{tmp_directory}.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_names->[0]).'/'.$lane_name->[0] || getcwd();
 
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
 use strict;
 use $assembler_class;
 use VertRes::Pipelines::Assembly;
-use File::Temp;
 use File::Copy;
 use Cwd;
 my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
-
-my \$tmp_obj = File::Temp->newdir( DIR => qq[$tmp_directory] );
-chdir(\$tmp_obj->dirname());
+chdir(qq[$tmp_directory]);
 
 my \$assembler = $assembler_class->new(
   assembler => qq[$self->{assembler}],
@@ -312,16 +309,16 @@ my \$assembler = $assembler_class->new(
   min_kmer => $kmer->{min},
   max_kmer => $kmer->{max},
   files_str => qq[$files_str],
-  output_directory => \$tmp_obj->dirname(),
+  output_directory => qq[$tmp_directory],
   );
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
 my \@lane_paths = $lane_paths_str;
-\$ok = \$assembler->split_reads(\$tmp_obj->dirname(), \\\@lane_paths);
-\$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',[\$tmp_obj->dirname().'/forward.fastq',\$tmp_obj->dirname().'/reverse.fastq'],$insert_size);
+\$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
+\$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size);
 
-move(\$tmp_obj->dirname().'/velvet_assembly_logfile.txt', qq[$output_directory].'/velvet_assembly_logfile.txt');
-move(\$tmp_obj->dirname().'/velvet_assembly', qq[$output_directory].'/velvet_assembly');
+move(qq[$tmp_directory].'/velvet_assembly_logfile.txt', qq[$output_directory].'/velvet_assembly_logfile.txt');
+move(qq[$tmp_directory].'/velvet_assembly', qq[$output_directory].'/velvet_assembly');
 
 chdir(qq[$output_directory]);
 system('touch _$self->{assembler}_optimise_parameters_done');
