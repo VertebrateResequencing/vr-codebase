@@ -40,54 +40,65 @@ sub new
         vcf_impute2 => 'vcf-impute2',
         gen_map     => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/ALL_1000G_phase1interim_jun2011_impute/genetic_map_chr{CHROM}_combined_b37.txt',
 
-        # The known_vcf (aka -k) and in_vcf (aka -i) file names can contain the string "{CHROM}" which will be expanded 
-        #   according to chromosomes listed in the "region" key below. If the key is not defined, glob expansion will
-        #   be used to obtain the chromosomes. The VCFs must be tabix indexed.
-        # When known_vcf is set, consider also setting the chunk_by_known key.
-        #
-        # known_vcf  => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',
-        # in_vcf     => '/some/path/chr{CHROM}.vcf.gz',
-
-        # Tabix indexed VCF with known genotypes. Use when there is an
-        #   additional info about the samples (the samples overlap and known_vcf
-        #   is used as scaffold of known genotypes) or when imputing reference
-        #   data into the study samples (the samples do not overlap).
-        #   When known_is_phased is set, haplotypes will be passed to impute2 with -h and -l option.
-        #   When known_vcf is set, consider also setting the chunk_by_known key.
+        # The known_vcf (aka -k) and in_vcf (aka -i) file names can contain the
+        #   string "{CHROM}" which will be expanded according to chromosomes
+        #   listed in the "region" key below. If the key is not defined, glob
+        #   expansion will be used to obtain the chromosomes. The VCFs must be
+        #   tabix indexed.  
+        # Use known_vcf when there is an additional info about the samples (the
+        #   samples overlap and "known_vcf" is used as scaffold of known
+        #   genotypes) or when imputing reference data into the study samples
+        #   (the samples do not overlap).  When "known_is_phased" is set, the
+        #   haplotypes will be passed to impute2 with -h and -l.  With
+        #   "known_vcf" consider also setting the "chunk_by_known" key.
         # known_vcf => '/nfs/users/nfs_p/pd3/sandbox/gtypes/UK10k-twins/uk10k-twins.ref.vcf.gz',
         # known_is_phased => 1,
+        # in_vcf     => '/some/path/chr{CHROM}.vcf.gz',
         
-        # Impute N samples at a time against the reference panel of known_vcf haplotypes. Include '-burnin 0 -iter 4' 
-        #   in impute2_args for this. When also merge_with_known is set, the output VCF will be merged with the known_vcf.
+        # Impute N samples at a time against the reference panel of known_vcf
+        #   haplotypes. Include '-burnin 0 -iter 4' in impute2_args for this.
+        #   When also merge_with_known is set, the output VCF will be merged with
+        #   the known_vcf.
         # per_sample => 1,
         # merge_with_known => 1,
 
-        # When known_is_phased is set, SHAPEIT is used to prephase the haplotypes. Note that known_vcf must be phased for this.
+        # When known_is_phased is set, SHAPEIT is used to prephase the
+        # haplotypes. Note that known_vcf must be phased for this.
         # (Experimental, currently not functional.)
         # pre_phase => 1,
 
         # The -prob_g option tells the program to treat the input genotypes
-        #   probabilistically (i.e., as likelihoods), rather than just thresholding the
-        #   probabilities to get hard or missing calls. The -pgs_prob option tells the
-        #   program to "predict genotyped SNPs" (infer genotypes at SNPs in the -g
-        #   file) by combining LD information with the input probabilities.
-        #   Without these options, accuracy in some scenarios significantly increases: this
-        #   may indicate that there is a bug in this pipeline.
+        #   probabilistically (i.e., as likelihoods), rather than just
+        #   thresholding the probabilities to get hard or missing calls. The
+        #   -pgs_prob option tells the program to "predict genotyped SNPs"
+        #   (infer genotypes at SNPs in the -g file) by combining LD
+        #   information with the input probabilities.  Without these options,
+        #   accuracy in some scenarios significantly increases: this may
+        #   indicate that there is a bug in this pipeline.
         impute2_args => '-Ne 20000 -k 80 -allow_large_regions -prob_g -pgs_prob',
+
+        # When likelihoods are not available (GL or PL), GT field is used instead. 
+        #   The genotype confidence can be controlled by this parameter, 1.0 is
+        #   the default.
         # vcf_impute2_args => '--GT-confidence 1.0',
-        # Do not split blocks phased by IMPUTE2 even when phasing quality is low - single sites may be unphased in otherwise phased chunks
+
+        # Do not split blocks phased by IMPUTE2 even when phasing quality is
+        #   low - single sites may be unphased in otherwise phased chunks
         phased_join_args => '-q 0 -j 10',
 
-        # Number of sites per chunk and in buffer regions. The total number of sites considered is buffer_nsites+chunk_nsites.
-        # The chunks are determined based on the input VCF (-i) unless chunk_by_known is set.
+        # Number of sites per chunk and in buffer regions. The total number of
+        #   sites considered is buffer_nsites+chunk_nsites.  The chunks are
+        #   determined based on the input VCF (-i) unless chunk_by_known is set.
         buffer_nsites  => 5_000,
         chunk_nsites   => 10_000,
         chunk_by_known => 0,
 
-        merge_chroms   => 0,  # Create whole-genome VCF? This can produce *huge* files for thousands of samples
+        # Create whole-genome VCF? This can produce *huge* files for thousands of samples
+        merge_chroms   => 0,
 
-        # Regions to impute, the chunks must be sorted by chromosomal position or else the resulting VCF will not
-        #   be sorted. By default, the whole input VCF is imputed.
+        # Regions to impute, the chunks must be sorted by chromosomal position
+        #   or else the resulting VCF will not be sorted. By default, the whole
+        #   input VCF is imputed.
         # region => [ '1:159000000-161000000', '1:62000000-64000000', '2' ],
 
         # Chunk-specific options will be applied to chunks with a non-zero overlap

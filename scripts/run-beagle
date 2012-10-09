@@ -32,7 +32,7 @@ sub new
     $$self{beagle_args} = '';
     $$self{java_args} = '';
     $$self{phased_join_args} = '';
-    $$self{config_version} = '1345535795';
+    $$self{config_version} = '1349789206';
     $$self{_sampleconf} = q[
             # For sanity checking that your config file is not obsolete. Update the version key in your 
             #  config file to get rid of the warnings.
@@ -48,8 +48,9 @@ sub new
             #   be used to obtain the chromosomes. The VCFs must be tabix indexed.
             # When known_vcf is set, consider also setting the chunk_by_known key.
             #
-            # known_vcf  => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',
             # in_vcf     => '/some/path/chr{CHROM}.vcf.gz',
+            # known_vcf  => '/nfs/users/nfs_p/pd3/sandbox/impute2/dec-chr20/Omni25_genotypes_1212_samples_v2.b37.vcf.gz',
+            # known_is_phased => 0,
 
             # Number of sites per chunk and in buffer regions. The total number of sites considered is buffer_nsites+chunk_nsites.
             #   The chunks are determined based on the input VCF (-i) unless chunk_by_known is set. 
@@ -57,7 +58,8 @@ sub new
             chunk_nsites   => 10_000,
             chunk_by_known => 0,
 
-            merge_chroms   => 0,  # Create whole-genome VCF? This can produce *huge* files for thousands of samples
+            # Create whole-genome VCF? This can produce *huge* files for thousands of samples
+            merge_chroms   => 0,
 
             # Regions to impute, the chunks must be sorted by chromosomal position or else the resulting VCF will not
             #   be sorted. By default, the whole VCF is imputed.
@@ -367,7 +369,6 @@ sub define_regions
     return @regs;
 }
 
-
 sub vcf_to_beagle
 {
     my ($self,$outfile,$outdir,$chunk) = @_;
@@ -414,7 +415,8 @@ sub beagle
         return;
     }
     my $mem = int($self->get_limits('memory') * 0.8);
-    my $known = $$self{known_vcf} eq '--' ? '' : "markers=$prefix.01.markers unphased=$prefix.01.known_haps.gz missing=?";
+    my $haps = $$self{known_is_phased} ? 'phased' : 'unphased';
+    my $known = $$self{known_vcf} eq '--' ? '' : "markers=$prefix.01.markers $haps=$prefix.01.known_haps.gz missing=?";
     $self->cmd(qq[java -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} like=$prefix.01.impute_haps.gz $known out=$prefix.02 >>$outfile.o 2>$outfile.e]);
     if ( -s "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
     $self->cmd(qq[touch $outfile]);
