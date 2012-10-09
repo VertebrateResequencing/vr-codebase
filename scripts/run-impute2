@@ -30,7 +30,7 @@ sub new
     $$self{impute2_bin}   = 'impute2';
     $$self{vcf_impute2}   = 'vcf-impute2';
     $$self{phased_join_args} = '';
-    $$self{config_version} = '1345457987';
+    $$self{config_version} = '1349789206';
     $$self{_sampleconf} = q[
         # For sanity checking that your config file is not obsolete. Update the version key in your 
         #  config file to get rid of the warnings.
@@ -66,7 +66,14 @@ sub new
         # (Experimental, currently not functional.)
         # pre_phase => 1,
 
-        impute2_args     => '-Ne 20000 -k 80 -allow_large_regions',
+        # The -prob_g option tells the program to treat the input genotypes
+        #   probabilistically (i.e., as likelihoods), rather than just thresholding the
+        #   probabilities to get hard or missing calls. The -pgs_prob option tells the
+        #   program to "predict genotyped SNPs" (infer genotypes at SNPs in the -g
+        #   file) by combining LD information with the input probabilities.
+        #   Without these options, accuracy in some scenarios significantly increases: this
+        #   may indicate that there is a bug in this pipeline.
+        impute2_args => '-Ne 20000 -k 80 -allow_large_regions -prob_g -pgs_prob',
         # vcf_impute2_args => '--GT-confidence 1.0',
         # Do not split blocks phased by IMPUTE2 even when phasing quality is low - single sites may be unphased in otherwise phased chunks
         phased_join_args => '-q 0 -j 10',
@@ -503,7 +510,7 @@ sub impute2
     }
 
     my $out = "$outdir/02.impute2.$from-$to";
-    $self->cmd(qq[$$self{impute2_bin} $$self{impute2_args} -buffer 0 -phase -include_buffer_in_output -prob_g -pgs_prob -o_gz -m $genmap -int $from $to $files -o $out >>$out.o 2>>$out.e]);
+    $self->cmd(qq[$$self{impute2_bin} $$self{impute2_args} -buffer 0 -phase -include_buffer_in_output -o_gz -m $genmap -int $from $to $files -o $out >>$out.o 2>>$out.e]);
 
     $self->cmd(qq[touch $outfile]);
 }
@@ -550,7 +557,7 @@ sub impute2_per_sample
         for (my $i=$isample+$nsamples; $i<@samples; $i++) { print $fh_out $samples[$i]; }
         close($fh_out) or $self->throw("close $out.exclude_samples");
 
-        my $cmd = qq[$$self{impute2_bin} $$self{impute2_args} -buffer 0 -phase -include_buffer_in_output -prob_g -pgs_prob -o_gz -m $genmap -int $from $to];
+        my $cmd = qq[$$self{impute2_bin} $$self{impute2_args} -buffer 0 -phase -include_buffer_in_output -o_gz -m $genmap -int $from $to];
         $cmd .= qq[ -h ${known}haps.gz -l ${known}legend -g ${inp}gts.gz -sample_g ${inp}samples -exclude_samples_g $out.exclude_samples -o $out.per_sample >>$out.o 2>>$out.e];
         $self->cmd($cmd);
 
