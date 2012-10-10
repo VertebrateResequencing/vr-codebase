@@ -304,8 +304,9 @@ sub past_limits
     my ($self,$done_file) = @_;
     my $basename = $self->_get_temp_prefix($done_file);
     my $freeze_file = $basename . '.r';
+    if ( ! -e $freeze_file ) { return (); }
     my $obj = retrieve($freeze_file);
-    return exists($$obj{_farm_options}) ? %{$$self{_farm_options}} : ();
+    return exists($$obj{_farm_options}) ? %{$$obj{_farm_options}} : ();
 }
 
 
