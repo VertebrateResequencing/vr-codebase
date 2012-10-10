@@ -236,7 +236,6 @@ sub main
                     push @{$unfinished{$$chunk[0]}}, "$outdir/$$chunk[0]/02.impute2.$$chunk[1]-$$chunk[2].done";
                     next; 
                 }
-                $unfinished{$$chunk[0]} = 1;
                 $self->spawn('impute2_to_vcf',"$outdir/$$chunk[0]/03.impute2_to_vcf.$$chunk[1]-$$chunk[2].vcf.gz",$chunk);
                 push @{$unfinished{$$chunk[0]}}, "$outdir/$$chunk[0]/03.impute2_to_vcf.$$chunk[1]-$$chunk[2].vcf.gz";
             }
@@ -244,7 +243,7 @@ sub main
             my @chroms = $self->get_chroms($chunks);
             for my $chr (@chroms)
             {
-                if ( $unfinished{$chr} ) { next; }
+                if ( exists($unfinished{$chr}) ) { next; }
                 $self->spawn('concat_vcfs',"$outdir/$chr.vcf.gz",$chunks,$chr);
             }
             if ( scalar keys %unfinished ) 
