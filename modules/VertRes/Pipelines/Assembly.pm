@@ -291,7 +291,7 @@ sub optimise_parameters
 
       my $num_threads = $self->number_of_threads($memory_required_mb);
       my $insert_size = $self->get_insert_size();
-      my $tmp_directory = $self->{tmp_directory}.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_names->[0]).'/'.$lane_name->[0] || getcwd();
+      my $tmp_directory = $self->{tmp_directory}.'/'.$lane_names->[0] || getcwd();
 
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
