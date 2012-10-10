@@ -300,7 +300,9 @@ use $assembler_class;
 use VertRes::Pipelines::Assembly;
 use File::Copy;
 use Cwd;
+use File::Path qw(make_path);
 my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
+make_path(qq[$tmp_directory]);
 chdir(qq[$tmp_directory]);
 
 my \$assembler = $assembler_class->new(
