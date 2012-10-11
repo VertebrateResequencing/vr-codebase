@@ -348,7 +348,7 @@ sub tag_strip {
         $job_name = $self->{fsu}->catfile($path, $job_name);
         
         LSF::run($action_lock, $lane_path, $job_name, $self,
-                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->tag_strip(qq[$lane_bam], qq[$strip_bam], qw(@{$self->{tag_strip}})) || die qq[tag_strip failed for $lane_bam\n];"});
+                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->tag_strip(qq[$lane_bam], qq[$strip_bam], qw(@{$self->{tag_strip}})) || die qq[tag_strip failed for $lane_bam\\n];"});
     }
     
     my $out_fofn = $self->{fsu}->catfile($lane_path, '.tag_strip_expected');
@@ -555,7 +555,7 @@ sub lib_markdup {
         $job_name = $self->{fsu}->catfile($path, $job_name);
         
         LSF::run($action_lock, $lane_path, $job_name, $self,
-                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->markdup(qq[$merge_bam], qq[$markdup_bam], java_memory => $java_mem) || die qq[markdup failed for $merge_bam\n];"});
+                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->markdup(qq[$merge_bam], qq[$markdup_bam], java_memory => $java_mem) || die qq[markdup failed for $merge_bam\\n];"});
     }
     
     my $out_fofn = $self->{fsu}->catfile($lane_path, '.lib_markdup_expected');
@@ -638,7 +638,7 @@ sub extract_intervals {
         $self->archive_bsub_files($path, $job_name);
         $job_name = $self->{fsu}->catfile($path, $job_name);
         LSF::run($action_lock, $lane_path, $job_name, $self,
-                 qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->extract_intervals_from_bam(qq[$markdup_bam], qq[$self->{extract_intervals}->{intervals_file}], qq[$extract_bam]) || die qq[extract_intervals failed for $markdup_bam\n];"~);
+                 qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->extract_intervals_from_bam(qq[$markdup_bam], qq[$self->{extract_intervals}->{intervals_file}], qq[$extract_bam]) || die qq[extract_intervals failed for $markdup_bam\\n];"~);
     }
     
     my $out_fofn = $self->{fsu}->catfile($lane_path, '.extract_intervals_expected');
@@ -868,7 +868,7 @@ sub merge_up_one_level {
             $self->archive_bsub_files($path, $this_job_name);
             
             LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
-                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose, java_memory => $java_mem)->merge(qq[$out_bam], qw(@bams)) || die qq[merge failed for (@bams) -> $out_bam\n];"});
+                 qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose, java_memory => $java_mem)->merge(qq[$out_bam], qw(@bams)) || die qq[merge failed for (@bams) -> $out_bam\\n];"});
         }
     }
     
@@ -1054,7 +1054,7 @@ sub _index_bams {
     $self->archive_bsub_files($lane_path, $this_job_name);
     $job_name = $self->{fsu}->catfile($lane_path, $this_job_name);
 	LSF::run($action_lock, $lane_path, $job_name, $self,
-qq~perl -MVertRes::Utils::Sam -Mstrict -e "my \@bams = qw(@bams_to_index); VertRes::Utils::Sam->new(verbose => $verbose)->index_bams(files=>\\\@bams) || die qq[index_bams failed for $this_fofn\n];"~);
+qq~perl -MVertRes::Utils::Sam -Mstrict -e "my \@bams = qw(@bams_to_index); VertRes::Utils::Sam->new(verbose => $verbose)->index_bams(files=>\\\@bams) || die qq[index_bams failed for $this_fofn\\n];"~);
 
     return;
 }
