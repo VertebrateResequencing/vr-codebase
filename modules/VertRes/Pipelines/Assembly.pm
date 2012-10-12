@@ -70,6 +70,7 @@ use VRTrack::File;
 use File::Basename;
 use Time::Format;
 use File::Copy;
+use Cwd;
 use LSF;
 use Data::Dumper;
 use FileHandle;
@@ -290,13 +291,20 @@ sub optimise_parameters
 
       my $num_threads = $self->number_of_threads($memory_required_mb);
       my $insert_size = $self->get_insert_size();
+      my $tmp_directory = $self->{tmp_directory}.'/'.$lane_names->[0] || getcwd();
 
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
 use strict;
 use $assembler_class;
 use VertRes::Pipelines::Assembly;
+use File::Copy;
+use Cwd;
+use File::Path qw(make_path);
 my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
+system("rm -rf velvet_assembly_*");
+make_path(qq[$tmp_directory]);
+chdir(qq[$tmp_directory]);
 
 my \$assembler = $assembler_class->new(
   assembler => qq[$self->{assembler}],
@@ -304,14 +312,23 @@ my \$assembler = $assembler_class->new(
   min_kmer => $kmer->{min},
   max_kmer => $kmer->{max},
   files_str => qq[$files_str],
-  output_directory => qq[$output_directory],
+  output_directory => qq[$tmp_directory],
   );
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
 my \@lane_paths = $lane_paths_str;
-\$ok = \$assembler->split_reads(qq[$output_directory], \\\@lane_paths);
-\$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',['$output_directory/forward.fastq','$output_directory/reverse.fastq'],$insert_size);
+\$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
+\$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size);
 
+move(qq[$tmp_directory].'/velvet_assembly_logfile.txt', qq[$output_directory].'/velvet_assembly_logfile.txt');
+system("mv $tmp_directory/velvet_assembly $output_directory");
+
+unlink(qq[$tmp_directory].'/forward.fastq');
+unlink(qq[$tmp_directory].'/reverse.fastq');
+unlink(qq[$tmp_directory].'/contigs.fa.scaffolded.filtered');
+
+chdir(qq[$output_directory]);
+unlink('pool_1.fastq.gz');
 system('touch _$self->{assembler}_optimise_parameters_done');
 exit;
               };
