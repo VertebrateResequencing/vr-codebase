@@ -278,7 +278,7 @@ sub set_limits
 =head2 get_limits
 
     About : get limits set for computing farm
-    Usage : $self->get_limits(memory);
+    Usage : $self->get_limits('memory');
     Args  : See set_limits
                 
 =cut
@@ -286,6 +286,7 @@ sub set_limits
 sub get_limits
 {
     my ($self,$arg) = @_;
+    if ( ! defined $arg ) { return %{$$self{_farm_options}}; }
     return exists($$self{_farm_options}{$arg}) ? $$self{_farm_options}{$arg} : undef;
 }
 
@@ -305,7 +306,13 @@ sub past_limits
     my $basename = $self->_get_temp_prefix($done_file);
     my $freeze_file = $basename . '.r';
     if ( ! -e $freeze_file ) { return (); }
-    my $obj = retrieve($freeze_file);
+    my $obj;
+    eval { $obj = retrieve($freeze_file); };
+    if ( $@ ) 
+    { 
+        $self->warn("retrieve() threw an error, saving as: $freeze_file.broken\n$@\n"); 
+        rename("$freeze_file","$freeze_file.broken") or $self->throw("Unable to rename($freeze_file,$freeze_file.broken)\n");
+    }
     return exists($$obj{_farm_options}) ? %{$$obj{_farm_options}} : ();
 }
 
@@ -573,7 +580,9 @@ sub _revive
 {
     my ($self,$freeze_file,$config_file) = @_;
 
-    my $back = retrieve($freeze_file);
+    my $back;
+    eval { $back = retrieve($freeze_file); };
+    if ( $@ ) { $self->throw("retrieve() threw an error: $freeze_file\n$@\n"); }
     if ( $$self{clean} ) { unlink($freeze_file); }
 
     while (my ($key,$value) = each %$back) { $$self{$key} = $value; }
@@ -583,7 +592,6 @@ sub _revive
 		my %x = do "$config_file";
 		while (my ($key,$value) = each %x) { $$self{$key} = $value; }
 	}
-
     my $code = $self->can($$self{_store}{call});
     &$code($self,@{$$self{_store}{args}});
 

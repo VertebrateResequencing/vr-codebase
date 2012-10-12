@@ -65,7 +65,6 @@ sub new
             #   be sorted. By default, the whole VCF is imputed.
             # region => [ '1:159000000-161000000', '1:62000000-64000000', '2' ],
 
-            # Only 80% of this memory will be given to java because of LSF+java issues
             limits   => { memory=>10_000, runtime=>24*60 },
             do_clean => 1,         # Remove runner's temporary files
     ]."\n";
@@ -154,8 +153,6 @@ sub main
         for my $chunk (@$chunks)
         {
             my $done_file = "$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].02.beagle.done";
-            if ( $self->is_finished($done_file) ) { next; }
-            $self->increase_java_limits($done_file, exists($$self{limits}) ? %{$$self{limits}} : ());
             $self->spawn('beagle',$done_file,"$outdir/$$chunk[0]",$chunk);
         }
         if ( $$self{merge_chroms} ) { $self->wait; }
@@ -386,22 +383,32 @@ sub increase_java_limits
 {
     my ($self,$done_file,%dlimits) = @_;
 
-    if ( !exists($dlimits{memory}) ) { $dlimits{memory} = 1_000; }
-
     my %plimits = $self->past_limits($done_file);
-    if ( !exists($plimits{memory}) ) { $plimits{memory} = $dlimits{memory}; }
+    print STDERR "dbg:\t$done_file\tplimits:",join(',',keys %plimits)," ",join(',',values %plimits),"\n";
+    if ( !exists($plimits{memory}) ) 
+    {
+        if ( !exists($dlimits{memory}) ) { $dlimits{memory} = 1_000; }
+        $plimits{memory} = $dlimits{memory}; 
+    }
 
     if ( -s "$done_file.e" ) 
     {
+        print STDERR "dbg:\t$done_file\thas $done_file.e\n";
         my @err = `head -1 $done_file.e`;
         if ( $err[0] =~ /java.lang.OutOfMemoryError/ or $err[0] =~ /Could not create the Java virtual machine/ ) 
         {
-            if ( exists($plimits{memory}) ) { $dlimits{memory} = $plimits{memory} * 1.5; }
+            print STDERR "dbg:\t$done_file\tout of memory\n";
+            $plimits{memory} *= 1.5;
         }
         `cat $done_file.e >> $done_file.e.saved`; 
         unlink("$done_file.e");
     }
-    $self->set_limits(%dlimits);
+    else
+    {
+        print STDERR "dbg:\t$done_file\tno $done_file.e\n";
+    }
+    print STDERR "dbg:\t$done_file\tnew dlimits:",join(',',keys %plimits)," ",join(',',values %plimits),"\n";
+    $self->set_limits(%plimits);
 }
 
 sub beagle
@@ -414,7 +421,7 @@ sub beagle
         $self->cmd("touch $outfile");
         return;
     }
-    my $mem = int($self->get_limits('memory') * 0.8);
+    my $mem = int($self->get_limits('memory') * 1.1);   # to make the Runner module aware of the memory limit being exceeded
     my $haps = $$self{known_is_phased} ? 'phased' : 'unphased';
     my $known = $$self{known_vcf} eq '--' ? '' : "markers=$prefix.01.markers $haps=$prefix.01.known_haps.gz missing=?";
     $self->cmd(qq[java -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} like=$prefix.01.impute_haps.gz $known out=$prefix.02 >>$outfile.o 2>$outfile.e]);
