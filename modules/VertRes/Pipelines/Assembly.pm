@@ -302,6 +302,7 @@ use File::Copy;
 use Cwd;
 use File::Path qw(make_path);
 my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
+system("rm -rf velvet_assembly_*");
 make_path(qq[$tmp_directory]);
 chdir(qq[$tmp_directory]);
 
@@ -320,9 +321,14 @@ my \@lane_paths = $lane_paths_str;
 \$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size);
 
 move(qq[$tmp_directory].'/velvet_assembly_logfile.txt', qq[$output_directory].'/velvet_assembly_logfile.txt');
-move(qq[$tmp_directory].'/velvet_assembly', qq[$output_directory].'/velvet_assembly');
+system("mv $tmp_directory/velvet_assembly $output_directory");
+
+unlink(qq[$tmp_directory].'/forward.fastq');
+unlink(qq[$tmp_directory].'/reverse.fastq');
+unlink(qq[$tmp_directory].'/contigs.fa.scaffolded.filtered');
 
 chdir(qq[$output_directory]);
+unlink('pool_1.fastq.gz');
 system('touch _$self->{assembler}_optimise_parameters_done');
 exit;
               };
