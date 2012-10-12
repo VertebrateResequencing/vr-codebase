@@ -225,8 +225,9 @@ sub get_file {
     # -K: checksum
     # -Q: use UDP rather than TCP
     # -f: force overwrite
+    # -I: redirect connection to best server
     #my @args = ($cmd, "-K", "-Q", "-f", $file, $dest);
-    my @args = ($cmd, "-K", "-f", $file, $dest);
+    my @args = ($cmd, "-K", "-f", "-I", $file, $dest);
     return system(@args);
 }
 
