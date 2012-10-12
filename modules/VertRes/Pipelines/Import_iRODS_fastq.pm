@@ -385,10 +385,13 @@ sub update_db
     my @bam_suffix   = ('bam','bam.bai','bam.md5','bam.bc');
     my @fastq_suffix = ('fastq','fastq.fastqcheck');
 
+    my $bam = $self->{files}->[0];
+    my $nonhuman = ($bam =~ /_nonhuman.bam$/) ? '_nonhuman':''; # set for nonhuman bams
+
     for my $suffix (@bam_suffix)
     {
 	# Remove bams
-	Utils::CMD(qq[rm $lane_path/$$self{lane}.$suffix]);
+	Utils::CMD(qq[rm $lane_path/$$self{lane}$nonhuman.$suffix]);
     }
 
     for my $suffix (@fastq_suffix)
