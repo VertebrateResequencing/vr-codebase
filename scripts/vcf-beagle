@@ -146,16 +146,10 @@ sub convert_known
 		for my $id (@samples)
 		{
 			my ($alleles,$seps,$is_phased,$is_empty) = $vcf->parse_haplotype($x,$id);
-			if ( $is_phased && !$$opts{phased_warned} )
-			{
-				warn("TODO: The known set phased, but we run unphased.");
-				$$opts{phased_warned} = 1;
-			}
-
 			my $a1 = $$alleles[0];
 			my $a2 = $$alleles[1];
 			if ( !defined $a1 ) { error("FIXME: allele1 not defined? $$x{CHROM}:$$x{POS} $id"); }
-			if ( !defined $a2 ) { error("FIXME: allele2 not defined? $$x{CHROM}:$$x{POS} $id"); }
+			if ( !defined $a2 ) { $a2 = $a1; } # haploid data
 
 			if ( $a1 eq '.' ) { $a1 = '?' }
 			if ( $a2 eq '.' ) { $a2 = '?' }
