@@ -18,7 +18,7 @@ my $opts =
 };
 
 my $utl = VertRes::QCGrind::ViewUtil->new();
-my $title = 'Team 145 Web Tools';
+my $title = 'bstats';
 my $sw  = SangerWeb->new({
     'title'   => $title,
     'banner'  => q(),
