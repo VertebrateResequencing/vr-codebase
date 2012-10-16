@@ -111,6 +111,10 @@ our $options =
 
     'adapters'        => '/software/pathogen/projects/protocols/ext/solexa-adapters.fasta',
     'bsub_opts'       => "-q normal -M5000000 -R 'select[type==X86_64 && mem>5000] rusage[mem=5000,thouio=1]'",
+    'bsub_opts_stats_and_graphs'   => "-q normal -M1000000 -R 'select[type==X86_64 && mem>1000] rusage[mem=1000,thouio=1]'",
+    'bsub_opts_map_sample'         => "-q normal -M1000000 -R 'select[type==X86_64 && mem>1000] rusage[mem=1000,thouio=1]'",
+    'bsub_opts_process_fastqs'     => "-q normal -M1000000 -R 'select[type==X86_64 && mem>1000] rusage[mem=1000,thouio=1]'",
+    'bsub_opts_subsample'          => "-q normal -M1000000 -R 'select[type==X86_64 && mem>1000] rusage[mem=1000,thouio=1]'",
     'bwa_clip'        => 20,
     'chr_regex'       => '^(?:\d+|X|Y)$',
     'gc_depth_bin'    => 20000,
@@ -366,7 +370,7 @@ sub subsample
     }
     close $fh;
 
-    LSF::run($lock_file,"$lane_path/$sample_dir","_${name}_sample", $self, qq{perl -w _qc-sample.pl});
+    LSF::run($lock_file,"$lane_path/$sample_dir","_${name}_sample", {bsub_opts=>$$self{bsub_opts_subsample}}, qq{perl -w _qc-sample.pl});
 
     return $$self{'No'};
 }
@@ -448,7 +452,7 @@ rename("${name}_$i.saix","${name}_$i.sai") or Utils::error("rename ${name}_$i.sa
 
 ];
         close($fh);
-        LSF::run($lock_file,$work_dir,"_${name}_$i",$self,qq[perl -w ${prefix}aln_fastq_$i.pl]);
+        LSF::run($lock_file,$work_dir,"_${name}_$i",{bsub_opts=>$$self{bsub_opts_process_fastqs}},qq[perl -w ${prefix}aln_fastq_$i.pl]);
     }
 
     # Run blat for each fastq file to find out how many adapter sequences are in there.
@@ -471,7 +475,7 @@ Utils::CMD(q[cat ${name}_$i.blat | awk '{if (\$2 ~ /^ADAPTER/) print \$1}' | sor
 unlink("${name}_$i.fa", "${name}_$i.blat");
 ];
         close($fh);
-        LSF::run($lock_file,$work_dir,"_${name}_a$i",$self,qq[perl -w ${prefix}blat_fastq_$i.pl]);
+        LSF::run($lock_file,$work_dir,"_${name}_a$i",{bsub_opts=>$$self{bsub_opts_process_fastqs}},qq[perl -w ${prefix}blat_fastq_$i.pl]);
     }
 
     return $$self{'No'};
@@ -620,7 +624,7 @@ rename("x$name.bam","$name.bam") or Utils::error("rename x$name.bam $name.bam: \
     }
     close($fh);
 
-    LSF::run($lock_file,$work_dir,"_${name}_sampe",$self, q{perl -w _map.pl});
+    LSF::run($lock_file,$work_dir,"_${name}_sampe",{bsub_opts=>$$self{bsub_opts_map_sample}}, q{perl -w _map.pl});
     return $$self{'No'};
 }
 
@@ -755,7 +759,7 @@ my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
 ];
     close $fh;
 
-    LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_graphs", $self, qq{perl -w _graphs.pl});
+    LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_graphs", {bsub_opts=>$$self{bsub_opts_stats_and_graphs}}, qq{perl -w _graphs.pl});
     return $$self{'No'};
 }
 
