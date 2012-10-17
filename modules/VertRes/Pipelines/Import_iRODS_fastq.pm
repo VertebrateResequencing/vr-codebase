@@ -192,8 +192,8 @@ sub bam_to_fastq {
     
     
     my $memory = $self->{memory};
-    if (! defined $memory || $memory < 5000) {
-        $memory = 5000;
+    if (! defined $memory || $memory < 2000) {
+        $memory = 2000;
     }
     
     ### We need to check old jobs here to see if it bummed out because of memory and increase the java memory accordingly
@@ -201,7 +201,7 @@ sub bam_to_fastq {
     
     my $java_mem = int($memory * 0.95);
     my $queue = $memory >= 30000 ? "hugemem" : "long";
-    my $samtools_sorting_memory = 500000000;
+    my $samtools_sorting_memory = 300000000;
     
     my $fastqs_str ; 
     if( $self->is_paired )
