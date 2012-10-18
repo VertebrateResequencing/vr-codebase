@@ -54,7 +54,6 @@ sub parse_params
         if ( $arg eq '-d' || $arg eq '--min-DP' ) { $$opts{min_dp}=shift(@ARGV); next; }
         if ( $arg eq '-n' || $arg eq '--novel-sites' ) { $$opts{novel_only}=1; next; }
         if ( $arg eq '-f' || $arg eq '--apply-filters' ) { $$opts{apply_filters}=1; next; }
-        if ( $arg eq '-m' || $arg eq '--mendelian' ) { $$opts{mendelian}=1; next; }
         if ( $arg=~/^\+/ && !exists($$opts{var_samples}) ) { @{$$opts{var_samples}}=split(/,/,$'); next }
         if ( $arg=~/^-/ && !exists($$opts{bg_samples}) ) { @{$$opts{bg_samples}}=split(/,/,$'); next }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
@@ -94,7 +93,6 @@ sub query_vcf
         if ( $$opts{apply_filters} && $$rec[6] ne '.' && $$rec[6] ne 'PASS' ) { next; }
 
         my $ipl = $vcf->get_tag_index($$rec[8],'PL',':');
-		#my ($novel,$novelal,$novelgt) = $ipl<0 ? contrast_gt($opts,$vcf,$rec,$ipl) : contrast_pl($opts,$vcf,$rec,$ipl);
 		my ($novel,$novelal,$novelgt) = contrast($opts,$vcf,$rec);
 		if ( $novel )
 		{
@@ -149,8 +147,8 @@ sub contrast
 		if ( $has_PL )
 		{
 			my $pl = $vcf->get_field($$rec[$bg_col],$ipl);
-			push @bg_pls, $pl;
 			@gt = likely_gt($pl);
+            push @bg_pls, $pl;
 		}
 		else
 		{
@@ -186,66 +184,17 @@ sub contrast
 		my %als;
 		for (my $i=0; $i<@{$$opts{bg_cols}}; $i++)
 		{
-			my $score = $has_PL ? same_pls($var_pl, $bg_pls[$i]) : same_gts(\@var_als, $bg_als[$i]);
-			if ( !defined $bg_score or $score<$bg_score ) { $bg_score = $score; }
-			for my $al (@{$bg_als[$i]}) { $als{$al} = 1; }
-			if ( $var_gt ne $bg_gts[$i] ) { $novel_gt{$var_col} = 1; }
-		}
-		if ( !$bg_score ) { next; }
-		if ( !defined $min_score or $min_score>$bg_score ) { $min_score = $bg_score; }
-
-		for my $al (@var_als) 
-		{ 
-			if ( !exists($als{$al}) ) { $novel_al{$var_col} = 1; }
-		}
-	}
-
-	if ( !$min_score ) { return undef; }
-	if ( !scalar keys %novel_gt && !scalar keys %novel_al ) { return undef; }
-	return ($min_score,\%novel_al,\%novel_gt);
-}
-
-sub contrast_pl
-{
-	my ($opts,$vcf,$rec,$ipl) = @_;
-	my $idp;
-	if ( exists($$opts{min_dp}) ) 
-	{
-		$idp = $vcf->get_tag_index($$rec[8],'DP',':');
-		if ( $idp<0 ) { error("todo: DP not available"); }
-	}
-
-	my (@bg_pls, @bg_als, @bg_gts, @var_pls,@var_gts, $min_dp);
-	for my $bg_col (@{$$opts{bg_cols}}) 
-	{
-		if ( defined $idp )
-		{
-			my $dp = $vcf->get_field($$rec[$bg_col],$idp);
-			if ( !defined $min_dp or $min_dp>$dp ) { $min_dp=$dp; }
-		}
-		my $pl = $vcf->get_field($$rec[$bg_col],$ipl);
-		my @gt = likely_gt($pl);
-		push @bg_pls, $pl;
-		push @bg_als, \@gt;
-		push @bg_gts, join('/',sort @gt);
-	}
-	if ( defined $min_dp && $min_dp<$$opts{min_dp} ) { return undef; }
-
-	my %novel_gt;
-	my %novel_al;
-	my $min_score;
-	for my $var_col (@{$$opts{var_cols}})
-	{
-		my $var_pl  = $vcf->get_field($$rec[$var_col],$ipl);
-		my @var_als = likely_gt($var_pl);
-		my $var_gt  = join('/',sort @var_als);
-		push @var_pls, $var_pl;
-		push @var_gts, $var_gt;
-		my $bg_score;
-		my %als;
-		for (my $i=0; $i<@{$$opts{bg_cols}}; $i++)
-		{
-			my $score = same_pls($var_pl, $bg_pls[$i]);
+            my $score;
+            if ( $has_PL )
+            {
+                if ( $var_pls[0] eq '.' or substr($bg_pls[$i],0,1) eq '.' ) { next; }
+                $score = same_pls($var_pl, $bg_pls[$i]);
+            }
+            else
+            {
+                if ( $var_als[0] eq '.' or $bg_als[$i][0] eq '.' ) { next; }
+                $score = same_gts(\@var_als, $bg_als[$i]);
+            }
 			if ( !defined $bg_score or $score<$bg_score ) { $bg_score = $score; }
 			for my $al (@{$bg_als[$i]}) { $als{$al} = 1; }
 			if ( $var_gt ne $bg_gts[$i] ) { $novel_gt{$var_col} = 1; }
@@ -274,6 +223,7 @@ sub likely_gt
     my $i=0;
     while ($idx<@pls)
     {
+        if ( $pls[$idx] eq '.' ) { return '.'; }
         for (my $j=0; $j<=$i; $j++)
         {
             if ( !defined $min or $min>$pls[$idx] ) { $min=$pls[$idx]; $imin=$i; $jmin=$j; }

@@ -2389,7 +2389,7 @@ sub binom
     my $b = 1;
     if ( $k > $n-$k ) { $k = $n-$k; }
     if ( $k < 1 ) { return 1; }
-    for (my $i=0; $i<$k; $i++) { $b *= ($n-$i)/($k-$i); }
+    for (my $i=1; $i<=$k; $i++) { $b *= ($n-$k+$i)/$i; }
     return $b;
 }
 
