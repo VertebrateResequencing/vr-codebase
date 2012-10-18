@@ -1,4 +1,9 @@
 #!/usr/local/bin/perl -T
+#
+# ~pd3/git/wscripts/bstats -c /nfs/WWWdev/INTWEB_docs/lib/teams/team145/vr-codebase/web_code/bstats/dat/config -d /nfs/WWWdev/INTWEB_docs/lib/teams/team145/vr-codebase/web_code/bstats/dat/uk10k
+# ~pd3/git/wscripts/bstats -c /nfs/WWWdev/INTWEB_docs/lib/teams/team145/vr-codebase/web_code/bstats/dat/config -d /nfs/WWWdev/INTWEB_docs/lib/teams/team145/vr-codebase/web_code/bstats/dat/farm2
+#
+#
 use strict;
 use warnings;
 use URI;
@@ -57,9 +62,9 @@ sub main
     if ( !$user or !exists($$list_users{$user}) ) { $user='all' } 
     if ( !$farm or !exists($$list_farms{$farm}) ) { $farm='uk10k' } 
     if ( !$view or !exists($$list_views{$view}) ) { $view='day' }
-    $user = ($user=~/(\w+)/) ? $1 : '';
-    $farm = ($farm=~/(\w+)/) ? $1 : '';
-    $view = ($view=~/(\w+)/) ? $1 : '';
+    $user = ($user=~/([\w-]+)/) ? $1 : '';
+    $farm = ($farm=~/([\w-]+)/) ? $1 : '';
+    $view = ($view=~/([\w-]+)/) ? $1 : '';
     my $header = qq[
                 <form action="" method="post" style="padding-bottom:0.5em;">
                 User: <select name="u" style="border:0px solid;margin:0px;padding:0px;" id="users">
@@ -152,7 +157,7 @@ sub read_config
     while (my $line=<$fh>)
     {
         chomp($line);
-        $line = ($line=~/(\w+)/) ? $1 : '';
+        $line = ($line=~/([\w-]+)/) ? $1 : '';
         $out{$line} = 1;
     }
     close($fh);
