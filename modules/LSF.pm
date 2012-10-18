@@ -286,6 +286,36 @@ sub adjust_bsub_options
 }
 
 
+=head2 past_limits
+
+    Arg [1]     : LSF job name (without the ".o" suffix)
+    Description : Find out status and limits of the previous run
+    Returntype  : Hash 
+
+=cut
+
+sub past_limits
+{
+    my ($job_name) = @_; 
+    if ( ! -e "$job_name.o" ) { return (); }
+    my %out;
+    my $parser = VertRes::Parser::LSF->new(file=>"$job_name.o");
+    my $n = $parser->nrecords() || 0;
+    for (my $i=0; $i<$n; $i++)
+    {
+        my $status = $parser->get('status',$i) || next;
+        my $mem = $parser->get('memory',$i);
+        if ( !exists($out{memory}) or $out{memory}<$mem )
+        {
+            $out{memory} = $mem;
+            if ( $status eq 'MEMLIMIT' ) { $out{MEMLIMIT} = $mem; }
+            else { delete($out{MEMLIMIT}); }
+        }
+    }
+    return %out;
+}
+
+
 =head2 calculate_memory_limit
 
     Arg [1]     : memory in mega bytes for previously failed job
