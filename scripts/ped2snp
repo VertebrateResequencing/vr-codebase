@@ -97,7 +97,7 @@ sub convert
         push @chroms, $items[0];
         push @positions, $items[3]; 
     }
-    closer($in_fh) or error("close $map_file");
+    close($in_fh) or error("close $map_file");
 
     my @alleles;
     my $nskip=6;
