@@ -51,6 +51,10 @@ sub new
         #   (the samples do not overlap).  When "known_is_phased" is set, the
         #   haplotypes will be passed to impute2 with -h and -l.  With
         #   "known_vcf" consider also setting the "chunk_by_known" key.
+        # Known issues: It's been reported that when -h file is splitted into
+        #   chunks, the performance is significantly worse than when left
+        #   unsplitted and passed via impute2_args args.
+        #
         # known_vcf => '/nfs/users/nfs_p/pd3/sandbox/gtypes/UK10k-twins/uk10k-twins.ref.vcf.gz',
         # known_is_phased => 1,
         # in_vcf     => '/some/path/chr{CHROM}.vcf.gz',
@@ -441,7 +445,7 @@ sub expand_chrom
 sub define_regions
 {
     my ($self,$path) = @_;
-    if ( exists($$self{region}) ) { return @$$self{region}; }
+    if ( exists($$self{region}) ) { return @{$$self{region}}; }
     if ( !($path=~/{CHROM}/) ) { return ('.'); }
     my $before = $`;
     my $after  = $';

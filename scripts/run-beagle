@@ -32,6 +32,7 @@ sub new
     $$self{beagle_args} = '';
     $$self{java_args} = '';
     $$self{phased_join_args} = '';
+    $$self{memstep} = 2_000;
     $$self{config_version} = '1349789206';
     $$self{_sampleconf} = q[
             # For sanity checking that your config file is not obsolete. Update the version key in your 
@@ -65,8 +66,13 @@ sub new
             #   be sorted. By default, the whole VCF is imputed.
             # region => [ '1:159000000-161000000', '1:62000000-64000000', '2' ],
 
-            # Only 80% of this memory will be given to java because of LSF+java issues
             limits   => { memory=>10_000, runtime=>24*60 },
+            # How much memory should be given to Beagle in the next run if it fails because of out-of-memory error?
+            #   Smaller step saves farm node's memory but can result in multiple runs (note that it can take
+            #   considerable amount of CPU time before the memory is exhausted). On the other hand, bigger step may 
+            #   block free CPUs on multi-core nodes by reserving too much memory.
+            memstep  => '] .$$self{memstep}. q[',   # the step for increasing memory limit
+
             do_clean => 1,         # Remove runner's temporary files
     ]."\n";
 
@@ -153,9 +159,8 @@ sub main
     {
         for my $chunk (@$chunks)
         {
+            $self->set_limits(%{$$self{limits}}) unless !exists($$self{limits});
             my $done_file = "$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].02.beagle.done";
-            if ( $self->is_finished($done_file) ) { next; }
-            $self->increase_java_limits($done_file, exists($$self{limits}) ? %{$$self{limits}} : ());
             $self->spawn('beagle',$done_file,"$outdir/$$chunk[0]",$chunk);
         }
         if ( $$self{merge_chroms} ) { $self->wait; }
@@ -353,7 +358,7 @@ sub expand_chrom
 sub define_regions
 {
     my ($self,$path) = @_;
-    if ( exists($$self{region}) ) { return @$$self{region}; }
+    if ( exists($$self{region}) ) { return @{$$self{region}}; }
     if ( !($path=~/{CHROM}/) ) { return ('.'); }
     my $before = $`;
     my $after  = $';
@@ -382,28 +387,6 @@ sub vcf_to_beagle
     $self->cmd(qq[$$self{vcf_beagle} -r $chr:$from-$to -i $in_vcf -k $known_vcf -o $outdir/$from-$to.01 >>$outfile.o 2>>$outfile.e && touch $outfile]);
 }
 
-sub increase_java_limits
-{
-    my ($self,$done_file,%dlimits) = @_;
-
-    if ( !exists($dlimits{memory}) ) { $dlimits{memory} = 1_000; }
-
-    my %plimits = $self->past_limits($done_file);
-    if ( !exists($plimits{memory}) ) { $plimits{memory} = $dlimits{memory}; }
-
-    if ( -s "$done_file.e" ) 
-    {
-        my @err = `head -1 $done_file.e`;
-        if ( $err[0] =~ /java.lang.OutOfMemoryError/ or $err[0] =~ /Could not create the Java virtual machine/ ) 
-        {
-            if ( exists($plimits{memory}) ) { $dlimits{memory} = $plimits{memory} * 1.5; }
-        }
-        `cat $done_file.e >> $done_file.e.saved`; 
-        unlink("$done_file.e");
-    }
-    $self->set_limits(%dlimits);
-}
-
 sub beagle
 {
     my ($self,$outfile,$outdir,$chunk) = @_;
@@ -414,10 +397,11 @@ sub beagle
         $self->cmd("touch $outfile");
         return;
     }
-    my $mem = int($self->get_limits('memory') * 0.8);
+    my $mem = $self->get_limits('memory') - 200;
+    if ( $mem<0 ) { $mem = 500; }
     my $haps = $$self{known_is_phased} ? 'phased' : 'unphased';
     my $known = $$self{known_vcf} eq '--' ? '' : "markers=$prefix.01.markers $haps=$prefix.01.known_haps.gz missing=?";
-    $self->cmd(qq[java -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} like=$prefix.01.impute_haps.gz $known out=$prefix.02 >>$outfile.o 2>$outfile.e]);
+    $self->java_cmd(qq[java -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} like=$prefix.01.impute_haps.gz $known out=$prefix.02 >>$outfile.o],"$outfile.e");
     if ( -s "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
     $self->cmd(qq[touch $outfile]);
 }
@@ -467,6 +451,33 @@ sub cmd
 {
     my ($self,$cmd) = @_;
     return Utils::CMD($cmd,{verbose=>1});
+}
+sub java_cmd
+{
+    my ($self,$cmd,$err_file) = @_;
+
+    print STDERR "$cmd 2>$err_file\n";
+    if ( -e $err_file ) { `cat $err_file >> $err_file.prev`; unlink($err_file); }
+
+    `$cmd 2>$err_file`;
+    if ( ! $? ) { return; } # finished OK
+
+    # something went wrong
+    my $out_of_memory = 0;
+    open(my $fh,'<',$err_file) or $self->throw("$err_file: $!");
+    while (my $line=<$fh>)
+    {
+        if ( $line=~/java.lang.OutOfMemoryError/ ) { $out_of_memory = 1; last; }
+    }
+    close($fh);
+    if ( !$out_of_memory ) { $self->throw("The command failed: $cmd\n"); }
+
+    # out of memory: tell the runner to use more memory next time
+    my $mem =  $self->get_limits('memory') + $$self{memstep};
+    $self->set_limits(memory=>$mem);
+    $self->freeze();
+
+    $self->throw("Memory limit exceeded, increasing the memory limit for the next run to $mem. The command was:\n$cmd\n");
 }
 
 
