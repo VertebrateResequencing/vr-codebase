@@ -445,7 +445,7 @@ sub expand_chrom
 sub define_regions
 {
     my ($self,$path) = @_;
-    if ( exists($$self{region}) ) { return @$$self{region}; }
+    if ( exists($$self{region}) ) { return @{$$self{region}}; }
     if ( !($path=~/{CHROM}/) ) { return ('.'); }
     my $before = $`;
     my $after  = $';
