@@ -468,6 +468,7 @@ sub java_cmd
     while (my $line=<$fh>)
     {
         if ( $line=~/java.lang.OutOfMemoryError/ ) { $out_of_memory = 1; last; }
+        if ( $line=~/Could not create the Java virtual machine/ ) { $out_of_memory = 1; last; }
     }
     close($fh);
     if ( !$out_of_memory ) { $self->throw("The command failed: $cmd\n"); }
