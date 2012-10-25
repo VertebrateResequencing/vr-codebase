@@ -419,6 +419,7 @@ sub spawn
         #   only jobs which previously failed, i.e. are registered as running.
         if ( exists($$self{_maxjobs}) && scalar keys %{$$self{_running_jobs}} >= $$self{_maxjobs} && !exists($$self{_running_jobs}{$done_file}) )
         {
+            $self->debugln("max_jobs: $$self{_maxjobs}, running: ", scalar keys %{$$self{_running_jobs}}, "\n");
             $self->wait;
             return 1;
         }

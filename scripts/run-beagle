@@ -397,11 +397,11 @@ sub beagle
         $self->cmd("touch $outfile");
         return;
     }
-    my $mem = $self->get_limits('memory') - 200;
-    if ( $mem<0 ) { $mem = 500; }
+    my $mem = $self->get_limits('memory') * 0.8;
+    if ( $mem<=0 ) { $mem = 500; }
     my $haps = $$self{known_is_phased} ? 'phased' : 'unphased';
     my $known = $$self{known_vcf} eq '--' ? '' : "markers=$prefix.01.markers $haps=$prefix.01.known_haps.gz missing=?";
-    $self->java_cmd(qq[java -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} like=$prefix.01.impute_haps.gz $known out=$prefix.02 >>$outfile.o],"$outfile.e");
+    $self->java_cmd(qq[java -Xms${mem}m -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} like=$prefix.01.impute_haps.gz $known out=$prefix.02 >>$outfile.o],"$outfile.e");
     if ( -s "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
     $self->cmd(qq[touch $outfile]);
 }
