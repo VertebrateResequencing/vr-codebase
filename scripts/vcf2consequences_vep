@@ -275,10 +275,12 @@ sub load_vep_cache
 		if ($gene_name =~ /^ENS/ && $gene_list_db) {	# lookup external gene names in DBM file
 			my $ext_name = $GENE_NAME{$gene_name};
             if ($append_gene_names) {
-			    $gene_name .= ":$ext_name" if $ext_name;
-            }
-            else {
-			    $gene_name = $ext_name if $ext_name;
+                if ($ext_name) {
+                    $gene_name .= ":$ext_name";
+                }
+                else {
+                    $gene_name .= ":";
+                }
             }
 		}
 		$consequence .= ":$gene_name";
