@@ -120,7 +120,7 @@ use Carp;
 
 my ($config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test);
 #values for $stage that involve *resetting* db flags and file deletion
-my @stages =  ('import', 'qc', 'genotype', 'improved', 'snp_called');
+my @stages =  ('import', 'qc', 'genotype', 'improved', 'snp_called', 'assembled');
 #values for $stage that can EITHER have flags reset as above, OR have VRTrack objects and whole directories deleted, depending on whether the --delete/-del flag is set)
 my @entities = ('lane', 'library', 'sample', 'study');
 
@@ -283,6 +283,17 @@ while (<>){
 				            "^\.realign\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.recalibrate\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.sort\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.rewrite\_header\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$"],
 				snp_called => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.snp\$"],
 				all => ["^[\\w]+"],
+                                assembled => ["^_pool_fastqs",
+                                              "^pool_1\.fastq\.gz\$",
+                                              "^_velvet_optimise_parameters",
+                                              "^_optimise_parameters\.jids\$",
+                                              "^_velvet_map_back",
+                                              "^_update_db_done\$", # prior to 24 Sept 2012 
+                                              "^_cleanup_done\$",   # prior to 24 Sept 2012 
+                                              "^_assembly_cleanup_done\$",    # replaced _cleanup_done
+                                              "^_assembly_update_db_done\$",  # replaced _update_db_done      
+                                              "^velvet_assembly_logfile\.txt\$",
+                                              "^velvet_assembly\$"],
     		);
     		
     		my @files_del = $entity_op ? @{$files_deleted{$reset_stage}} : @{$files_deleted{$stage}};	
