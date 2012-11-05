@@ -254,7 +254,7 @@ sub adjust_bsub_options
         # our +1000 value
         if ($mem > $orig_mem) {
             # The kind of option line we are trying to produce
-            #   -q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000,thouio=1]'
+            #   -q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000]'
             warn("$output_file: Increasing memory to $mem\n") unless $no_warn;  # this should be logged in the future
             
             $opts =~ s/-M\d+/-M${mem}000/;             # 3000MB -> -M3000000

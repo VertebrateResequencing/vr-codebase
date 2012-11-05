@@ -76,8 +76,8 @@ merge_up =>
 all_callers => 
 {
     chunks_overlap => 0,
-    bsub_opts       => "-q normal -M3500000 -R 'select[type==X86_64] select[mem>3500] rusage[mem=3500,thouio=1,tmp=16000]'",
-    bsub_opts_long  => "-q normal -M3500000 -R 'select[type==X86_64] select[mem>3500] rusage[mem=3500,thouio=1,tmp=16000]'",
+    bsub_opts       => "-q normal -M3500000 -R 'select[type==X86_64] select[mem>3500] rusage[mem=3500] rusage[thouio=1] rusage[tmp=16000]'",
+    bsub_opts_long  => "-q normal -M3500000 -R 'select[type==X86_64] select[mem>3500] rusage[mem=3500] rusage[thouio=1] rusage[tmp=16000]'",
     fa_ref => '/path/to/ref.fasta',
     fai_ref => '/path/to/ref.fasta.fai',
 },
