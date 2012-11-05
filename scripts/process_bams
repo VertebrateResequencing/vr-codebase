@@ -48,7 +48,7 @@ Options:
        --operations <op1 op2 op3 ...>  operations to perform; available operations:
                                             bai bas bc md5 bai.md5 bas.md5 bc.md5
        --only <regex>                  regex to filter the list of BAMs
-       --bamcheck_cmd <cmd>            bamcheck command to use; defaults to 'bamcheck -q 20'
+       --bamcheck_cmd <cmd>            bamcheck command to use; defaults to 'bamcheck'
        --release_date  YYYYMMDD        release date to be used in bas file, format YYYYMMDD;
                                             defaults to current day
        --sequence_index <file>         path to sequence index (optional)
@@ -77,7 +77,7 @@ fofn => 'by_sample_chromosome_bams.fofn',
     
     $$self{release_date} = $time{'yyyymmdd'};
     $$self{sequence_index} = '';
-    $$self{bamcheck_cmd} = 'bamcheck -q 20';
+    $$self{bamcheck_cmd} = 'bamcheck';
     $$self{merge_bas_files} = '';
     
     my @supported_operations = qw(bai bas bc md5 bai.md5 bas.md5 bc.md5);

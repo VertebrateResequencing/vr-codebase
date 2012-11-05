@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-print "Type       Mounted on               Size     Used    Avail     Use%\n";
+print "Type       Mounted on               Size     Used    Avail     Use%   OST Max%\n";
 
 my @disks = qw [/lustre/scratch102 /lustre/scratch105 /lustre/scratch106 ];
 push (@disks, `ls -d /nfs/vertres*`);
@@ -18,7 +18,13 @@ foreach my $d (@disks) {
   #ons04-g1k:/g1k_data03/g1k-03 nfs   24T   18T  6.7T  73% /warehouse/g1k-03
   my (undef, $Type, $Size, $Used, $Avail, $Use_pct, $Mounted_on) = split;
 
-  printf ("%-10s %-20s %8s %8s %8s %8s\n", $Type, $Mounted_on, $Size, $Used, $Avail, $Use_pct);
+  my $ost_max='';  
+  if ($d =~ /lustre/) {
+    $ost_max=`lfs df $d | sort -nr -k 5 | grep -v 'filesystem summary' | head -1 | awk '{print \$5}'`;
+    chomp $ost_max;
+  }
+
+  printf ("%-10s %-20s %8s %8s %8s %8s   %s\n", $Type, $Mounted_on, $Size, $Used, $Avail, $Use_pct, $ost_max);
 
   # Totals; note df always rounds up, hence any discrepancies in addition
   $_=`cd $d;df -PT .| grep -v '^Filesystem'`;

@@ -29,13 +29,13 @@ sub error
         "Usage: vcf-isec [OPTIONS] file1.vcf file2.vcf ...\n",
         "Options:\n",
         "   -a, --apply-filters                 Ignore lines where FILTER column is anything else than PASS or '.'\n",
-        "   -C, --chromosomes <list|file>       Process the given chromosomes (comma-separated list or one chromosome per line in a file).\n",
         "   -c, --complement                    Output positions present in the first file but missing from the other files.\n",
         "   -d, --debug                         Debugging information\n",
         "   -f, --force                         Continue even if the script complains about differing columns, VCF versions, etc.\n",
         "   -o, --one-file-only                 Print only entries from the left-most file. Without -o, all unique positions will be printed.\n",
         "   -n, --nfiles [+-=]<int>             Output positions present in this many (=), this many or more (+), or this many or fewer (-) files.\n",
         "   -p, --prefix <path>                 If present, multiple files will be created with all possible isec combinations. (Suitable for Venn Diagram analysis.)\n",
+        "   -r, --regions <list|file>           Do only the given regions (comma-separated list or one region per line in a file).\n",
         "   -t, --tab <chr:pos:file>            Tab-delimited file with indexes of chromosome and position columns. (1-based indexes)\n",
         "   -w, --win <int>                     In repetitive sequences, the same indel can be called at different positions. Consider\n",
         "                                           records this far apart as matching (be it a SNP or an indel).\n",
@@ -62,7 +62,7 @@ sub parse_params
         }
         if ( $arg eq '-f' || $arg eq '--force' ) { $$opts{force}=1; next; }
         if ( $arg eq '-a' || $arg eq '--apply-filters' ) { $$opts{apply_filters}=1; next; }
-        if ( $arg eq '-C' || $arg eq '--chromosomes' ) { $$opts{chromosomes}=shift(@ARGV); next; }
+        if ( $arg eq '-r' || $arg eq '--regions' ) { $$opts{chromosomes}=shift(@ARGV); next; }
         if ( $arg eq '-o' || $arg eq '--one-file-only' ) { $$opts{report_from_all}=0; next; }
         if ( $arg eq '-c' || $arg eq '--complement' ) { $$opts{complement}=1; next; }
         if ( $arg eq '-n' || $arg eq '--nfiles' )

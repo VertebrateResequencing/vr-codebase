@@ -43,6 +43,14 @@ use File::Basename;
 use Time::Format;
 use Data::Compare;
 
+sub mtime
+{
+    my ($self, $file) = @_;
+    my $mtime = (stat($file))[9];
+    $mtime || $self->throw("Could not stat mtime for file $file\n");
+    return $mtime;
+}
+
 sub new
 {
     my ($class,@args) = @_;
