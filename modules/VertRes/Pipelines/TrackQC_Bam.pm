@@ -87,8 +87,8 @@ our $options =
     'clean_fastqs'    => 0,
 
     'adapters'        => '/software/pathogen/projects/protocols/ext/solexa-adapters.fasta',
-    'bsub_opts'       => "-q normal -M5000000 -R 'select[type==X86_64 && mem>5000] rusage[mem=5000,thouio=1]'",
-    'bsub_opts_merge' => "-q normal -M5000000 -R 'select[type==X86_64 && mem>5000] rusage[mem=5000,thouio=5]'",
+    'bsub_opts'       => "-q normal -M5000000 -R 'select[type==X86_64] select[mem>5000] rusage[mem=5000,thouio=1]'",
+    'bsub_opts_merge' => "-q normal -M5000000 -R 'select[type==X86_64] select[mem>5000] rusage[mem=5000,thouio=5]'",
     'gc_depth_bin'    => 20000,
     'gtype_confidence'=> 5.0,
     'mapstat_id'      => 'mapstat_id.txt',
