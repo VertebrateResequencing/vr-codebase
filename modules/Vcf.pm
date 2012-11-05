@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r779';
+our $VERSION = 'r785';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
@@ -336,6 +336,7 @@ sub next_data_array
     if ( !$line ) { return undef; }
     if ( ref($line) eq 'ARRAY' ) { return $line; }
     my @items = split(/\t/,$line);
+    if ( @items<8 ) { $line=~s/\n/\\n/g; $self->throw("Could not parse the line: [$line]"); }
     chomp($items[-1]);
     return \@items;
 }
@@ -2388,7 +2389,7 @@ sub binom
     my $b = 1;
     if ( $k > $n-$k ) { $k = $n-$k; }
     if ( $k < 1 ) { return 1; }
-    for (my $i=0; $i<$k; $i++) { $b *= ($n-$i)/($k-$i); }
+    for (my $i=1; $i<=$k; $i++) { $b *= ($n-$k+$i)/$i; }
     return $b;
 }
 
@@ -2960,9 +2961,9 @@ sub Vcf4_0::parse_header_line
         $self->throw(qq[Could not parse header line: $line\nStopped at [$tmp].\n]);
     }
 
-    if ( $key ne 'PEDIGREE' && !exists($$rec{ID}) ) { $self->throw("Missing the ID tag in $line\n"); }
     if ( $key eq 'INFO' or $key eq 'FILTER' or $key eq 'FORMAT' )
     {
+        if ( $key ne 'PEDIGREE' && !exists($$rec{ID}) ) { $self->throw("Missing the ID tag in $line\n"); }
         if ( !exists($$rec{Description}) ) { $self->warn("Missing the Description tag in $line\n"); }
     }
     if ( exists($$rec{Number}) && $$rec{Number} eq '-1' ) { $self->warn("The use of -1 for unknown number of values is deprecated, please use '.' instead.\n\t$line\n"); }
@@ -3068,7 +3069,77 @@ sub Vcf4_0::fill_ref_alt_mapping
     return $new_ref;
 }
 
+=head2 normalize_alleles
 
+    About   : Makes REF and ALT alleles more compact if possible (e.g. TA,TAA -> T,TA)
+    Usage   : my $line = $vcf->next_data_array();
+              ($ref,@alts) = $vcf->normalize_alleles($$line[3],$$line[4]);
+
+=cut
+
+sub Vcf4_0::normalize_alleles
+{
+    my ($self,$ref,$alt) = @_;
+
+    my $rlen = length($ref);
+    if ( $rlen==1 or length($alt)==1 )  { return ($ref,$alt); }
+
+    my @als = split(/,/,$alt);
+    my $i = 1;
+    my $done = 0;
+    while ( $i<$rlen )
+    {
+        my $r = substr($ref,$rlen-$i,1);
+        for my $al (@als)
+        {
+            my $len = length($al);
+            if ( $i>=$len ) { $done = 1; }
+            my $c = substr($al,$len-$i,1);
+            if ( $c ne $r ) { $done = 1; last; }
+        }
+        if ( $done ) { last; }
+        $i++;
+    }
+    if ( $i>1 )
+    {
+        $i--;
+        $ref = substr($ref,0,$rlen-$i);
+        for (my $j=0; $j<@als; $j++) { $als[$j] = substr($als[$j],0,length($als[$j])-$i); }
+    }
+    return ($ref,@als);
+}
+
+sub Vcf4_0::normalize_alleles_pos
+{
+    my ($self,$ref,$alt) = @_;
+    my @als;
+    ($ref,@als) = $self->normalize_alleles($ref,$alt);
+
+    my $rlen = length($ref);
+    if ( $rlen==1 ) { return (0,$ref,@als); }
+    my $i = 0;
+    my $done = 0;
+    while ( $i+1<$rlen )
+    {
+        my $r = substr($ref,$i,1);
+        for my $al (@als)
+        {
+            my $len = length($al);
+            if ( $i+1>=$len ) { $done = 1; last; }
+            my $c = substr($al,$i,1);
+            if ( $c ne $r ) { $done = 1; last; }
+        }
+        if ( $done ) { last; }
+        $i++;
+    }
+    if ( $i<0 ) { $i = 0; }
+    if ( $i>0 )
+    {
+        substr($ref,0,$i,'');
+        for (my $j=0; $j<@als; $j++) { substr($als[$j],0,$i,''); }
+    }
+    return ($i,$ref,@als);
+}
 
 sub Vcf4_0::event_type
 {

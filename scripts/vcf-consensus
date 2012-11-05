@@ -78,10 +78,17 @@ sub do_consensus
 
         while ( defined($vcf_line = $vcf->next_data_array()) )
         {
+            # can the beginning of the buffer be printed?
             if ( $$opts{fa_pos}+$$opts{fa_len}-$$opts{fa_idx}<=$$vcf_line[1] )
             {
                 $vcf->_unread_line($vcf_line);
                 flush_fa_buffer($opts,60);
+                last;
+            }
+            # is the buffer long enough?
+            if ( $$opts{fa_pos}+$$opts{fa_len}-$$opts{fa_idx}<=$$vcf_line[1]+length($$vcf_line[3]) )
+            {
+                $vcf->_unread_line($vcf_line);
                 last;
             }
             apply_variant($opts,$vcf_line);
@@ -126,13 +133,14 @@ sub apply_variant
 
     # Sanity check
     my $ref_len = length($$vline[3]);
-    if ( substr($$vline[3],0,$ref_len) ne substr($$opts{fa_buf},$pos,$ref_len) ) 
+    if ( $$vline[3] ne substr($$opts{fa_buf},$pos,$ref_len) ) 
     { 
         error(sprintf "The fasta sequence does not match the REF at $$vline[0]:$$vline[1]. %s(%s) in .fa, %s in .vcf\n", 
-            substr($$opts{fa_buf},$pos,$ref_len),substr($$opts{fa_buf},$pos+1,$ref_len+5),substr($$vline[3],0,$ref_len));
+            substr($$opts{fa_buf},$pos,$ref_len),
+            substr($$opts{fa_buf},$pos+1,$ref_len+5),
+            $$vline[3]);
     }
 
-    my $alt_len = length($$vline[4]);
     my $alt;
     if ( !exists($$opts{sample_col}) )
     {
@@ -150,7 +158,7 @@ sub apply_variant
         }
         if ( !defined $alt ) { return; }
     }
-
+    my $alt_len = length($alt);
     substr($$opts{fa_buf},$pos,$ref_len,$alt);
     $$opts{fa_len} += $alt_len - $ref_len;
     $$opts{fa_pos} += $ref_len;

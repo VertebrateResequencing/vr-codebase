@@ -66,6 +66,8 @@ sub error
         "       --fill-type                     Annotate INFO/TYPE with snp,del,ins,mnp,complex\n",
         "   -f, --filter <file|list>            Apply filters, list is in the format flt1=value/flt2/flt3=value/etc. If argument to -f is a file,\n",
         "                                           user-defined filters be applied. See User Defined Filters below.\n",
+        "   -H, --hard-filter                   Remove lines with FILTER anything else than PASS or \".\"\n",
+        "   -n, --normalize-alleles             Make REF and ALT alleles more compact if possible (e.g. TA,TAA -> T,TA).\n",
         "   -r, --remove <list>                 Comma-separated list of tags to be removed (e.g. ID,INFO/DP,FORMAT/DP,FILTER).\n",
         "   -h, -?, --help                      This help message.\n",
         "Filters:\n",
@@ -144,21 +146,23 @@ sub parse_params
             }
             next;
         }
+        if ( $arg eq '-n' || $arg eq '--normalize-alleles' ) { $$opts{normalize} = 1; next }
         if ( $arg eq '-a' || $arg eq '--annotations' ) { $$opts{annotations} = shift(@ARGV); next }
         if (                 $arg eq '--fill-type' ) { $$opts{fill_type}=1; $$opts{fill}=1; next }
         if (                 $arg eq '--fill-AC-AN' ) { $$opts{fill_ac_an} = 1; $$opts{fill}=1; next }
         if (                 $arg eq '--fill-HWE' ) { $$opts{fill_ac_an} = $$opts{fill_hwe} = 1; $$opts{fill}=1; next }
         if (                 $arg eq '--fill-ICF' ) { $$opts{fill_ac_an} = $$opts{fill_hwe} = $$opts{fill_icf} = 1; $$opts{fill}=1; next }
         if ( $arg eq '-t' || $arg eq '--tag' ) { $$opts{tag} = shift(@ARGV); next }
+        if ( $arg eq '-H' || $arg eq '--hard-filter' ) { $$opts{hard_filter} = 1; next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         if ( -e $arg ) { $$opts{file}=$arg; next; }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
     if ( !exists($$opts{filters}) && !exists($$opts{udef_filters}) )
     {
-        if ( !exists($$opts{annotations}) && !exists($$opts{remove}) && !exists($$opts{fill}) ) 
+        if ( !exists($$opts{annotations}) && !exists($$opts{remove}) && !exists($$opts{fill}) && !exists($$opts{normalize}) && !exists($$opts{hard_filter}) ) 
         { 
-            error("Missing one of the -a, -f, -r or --fill-* options.\n") 
+            error("Missing one of the -a, -f, -n, -r or --fill-* options.\n") 
         }
     }
     if ( exists($$opts{annotations}) && !exists($$opts{cols}) ) { error("Missing the -c option.\n"); }
@@ -399,7 +403,8 @@ sub annotate
     my $cols  = parse_columns($$opts{cols},$descs);
 
     # Open VCF file and add all required header lines
-    my $vcf = $$opts{vcf} = exists($$opts{file}) ? Vcf->new(file=>$$opts{file}) : Vcf->new(fh=>\*STDIN);
+    my %args = exists($$opts{file}) ? (file=>$$opts{file}) : (fh=>\*STDIN);
+    my $vcf = $$opts{vcf} = Vcf->new(%args);
     $vcf->parse_header();
     if ( exists($$opts{remove}) )
     {
@@ -495,6 +500,12 @@ sub annotate
         while ($line = $vcf->next_line())
         {
             my @rec = split(/\t/,$line);
+            if ( $$opts{normalize} ) 
+            { 
+                my ($ref,@alts) = $vcf->normalize_alleles($rec[3],$rec[4]);  
+                $rec[3] = $ref;
+                $rec[4] = join(',',@alts);
+            }
             my $chr = $rec[0];
             my $pos = $rec[1];
             chomp($rec[-1]);
@@ -503,6 +514,7 @@ sub annotate
             {
                 $vcf->_unread_line($line);
                 $prev_chr = $chr;
+                $prev_pos = $pos;
                 $reader->open(region=>"$prev_chr:$prev_pos");
                 last;
             }
@@ -525,11 +537,14 @@ sub annotate
             #   position, they can appear in any order. A single ALT allele is expected in the 
             #   annot file but multiple ALTs can be present in the VCF. As long as one of them
             #   matches the annot file, the record will be annotated.
-            my ($ref,%alt);
+            my (%ref_alt_pairs);
             if ( defined $alt_col )
             {
-                $ref = $rec[3];
-                %alt = map { $_=>1 } split(/,/,$rec[4]);
+                my $ref = $rec[3];
+                my @alts;
+                if ( !exists($$opts{normalize}) ) { ($ref,@alts) = $vcf->normalize_alleles($ref,$rec[4]); }
+                else { @alts = split(/,/,$rec[4]); }
+                for my $alt (@alts) { $ref_alt_pairs{$ref.'-'.$alt} = 1; }
             }
 
             # Now fill the annotations; Existing annotations with the same tag will be overwritten 
@@ -541,14 +556,11 @@ sub annotate
                 if ( $$annot_line[$from_col] > $pos or $$annot_line[$to_col] < $pos ) { next; }
                 if ( defined $alt_col && $$annot_line[$ref_col] ne '.' )
                 {
-                    # Ignore the annotation line if REF and ALT don't agree
-                    if ( $$annot_line[$ref_col] ne $ref ) { next; }
-
-                    # There can be multiple ALTs
+                    my ($ref,@alts) = $vcf->normalize_alleles($$annot_line[$ref_col],$$annot_line[$alt_col]);
                     my $alt_match = 0;
-                    for my $al (split(/,/, $$annot_line[$alt_col]))
+                    for my $alt (@alts)
                     {
-                        if ( exists($alt{$al}) ) { $alt_match=1; last; }
+                        if ( exists($ref_alt_pairs{$ref.'-'.$alt}) ) { $alt_match = 1; last; }
                     }
                     if ( !$alt_match ) { next; }
                 }
@@ -595,6 +607,12 @@ sub annotate
     while (my $line=$vcf->next_line)
     {
         my @rec = split(/\t/,$line);
+        if ( $$opts{normalize} ) 
+        {
+            my ($ref,@alts) = $vcf->normalize_alleles($rec[3],$rec[4]);  
+            $rec[3] = $ref;
+            $rec[4] = join(',',@alts);
+        }
         chomp($rec[-1]);
         if ( exists($$opts{remove}) ) { remove_tags($opts,\@rec); }
         output_line($opts,\@rec);
@@ -768,7 +786,7 @@ sub output_line
     if ( !exists($$opts{filters}) && !exists($$opts{udef_filters}) )
     {
         # No filters requested, print the line
-        print_line($line);
+        print_line($opts, $line);
         return;
     }
 
@@ -819,7 +837,7 @@ sub output_line
 
     for my $line (@lines)
     {
-        print_line($line);
+        print_line($opts, $line);
     }
 }
 
@@ -1328,8 +1346,10 @@ sub apply_snpcluster_filter
 
 sub print_line
 {
-    my ($line) = @_;
-    if ( defined $line ) { print join("\t",@$line) . "\n"; }
+    my ($opts, $line) = @_;
+    if ( !defined $line ) { return; }
+    if ( $$opts{hard_filter} && $$line[6] ne '.' && $$line[6] ne 'PASS' ) { return; }
+    print join("\t",@$line) . "\n";
 }
 
 

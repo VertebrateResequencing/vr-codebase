@@ -52,8 +52,8 @@ sub is_job_running
     {
         chomp($jid);
         # For backwards compatibility, parse either a single integer or an integer
-        #   followed by \t and path to a LSF output file.
-        if ( !($jid=~/^(\d+)\s*(\S*.*)$/) ) { Utils::error("Uh, could not parse \"$jid\".\n") }
+        #   followed by \t, path to a LSF output file, and the command.
+        if ( !($jid=~/^(\d+)\s*([^\t]*)/) ) { Utils::error("Uh, could not parse \"$jid\".\n") }
 
         my $status = job_in_queue($1,$2);
         if ( $status == $Error ) { $job_running |= $Error; }
@@ -188,7 +188,7 @@ sub parse_bjobs_l
 #
 sub adjust_bsub_options
 {
-    my ($opts, $output_file,$mem_limit) = @_;
+    my ($opts, $output_file) = @_;
 
     my $mem;
     my $queue;
@@ -286,6 +286,36 @@ sub adjust_bsub_options
 }
 
 
+=head2 past_limits
+
+    Arg [1]     : LSF job name (without the ".o" suffix)
+    Description : Find out status and limits of the previous run
+    Returntype  : Hash 
+
+=cut
+
+sub past_limits
+{
+    my ($job_name) = @_; 
+    if ( ! -e "$job_name.o" ) { return (); }
+    my %out;
+    my $parser = VertRes::Parser::LSF->new(file=>"$job_name.o");
+    my $n = $parser->nrecords() || 0;
+    for (my $i=0; $i<$n; $i++)
+    {
+        my $status = $parser->get('status',$i) || next;
+        my $mem = $parser->get('memory',$i);
+        if ( !exists($out{memory}) or $out{memory}<$mem )
+        {
+            $out{memory} = $mem;
+            if ( $status eq 'MEMLIMIT' ) { $out{MEMLIMIT} = $mem; }
+            else { delete($out{MEMLIMIT}); }
+        }
+    }
+    return %out;
+}
+
+
 =head2 calculate_memory_limit
 
     Arg [1]     : memory in mega bytes for previously failed job
@@ -375,7 +405,7 @@ sub run
     }
 
     # Check if memory or queue should be changed (and change it)
-    $bsub_opts = adjust_bsub_options($bsub_opts, $lsf_output_file,$$options{memory_limit});
+    $bsub_opts = adjust_bsub_options($bsub_opts, $lsf_output_file);
     my $cmd = "bsub -J $job_name -e $lsf_error_file -o $lsf_output_file $bsub_opts '$bsub_cmd'";
 
     my @out = Utils::CMD($cmd,$options);
@@ -387,7 +417,7 @@ sub run
     my $mode = exists($$options{append}) && !$$options{append} ? '>' : '>>';
     if ( !($lsf_output_file=~m{^/}) ) { $lsf_output_file = "$work_dir/$lsf_output_file"; }
     open(my $jids_fh, $mode, $jids_file) or Utils::error("$jids_file: $!");
-    print $jids_fh "$jid\t$lsf_output_file\n";
+    print $jids_fh "$jid\t$lsf_output_file\t$cmd\n";
     close $jids_fh;
 
     if ( !$$options{dont_wait} )

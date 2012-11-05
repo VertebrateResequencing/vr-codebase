@@ -330,7 +330,7 @@ around BUILDARGS => sub {
         library_tube.sample_name,
         library_tube.scanned_in_date,
         library_tube.public_name from current_library_tubes  as library_tube
-    join aliquots as aliquot on aliquot.receptacle_type = "library_tube" and aliquot.library_internal_id = library_tube.internal_id and aliquot.is_current = 1
+    join current_aliquots as aliquot on aliquot.receptacle_type = "library_tube" and aliquot.library_internal_id = library_tube.internal_id
     left join current_tags as tags on tags.internal_id = aliquot.tag_internal_id
     where library_tube.internal_id = ? order by aliquot.tag_internal_id desc limit 1];
 
@@ -408,11 +408,10 @@ sub _get_mplex_pool_ids{
     my @mplex_ids;
 
     my $sql = qq[select distinct descendant_internal_id as mplex_id
-                from asset_links 
+                from current_asset_links 
                 where ancestor_type="library_tubes" 
                 and ancestor_internal_id=?
                 and descendant_type="multiplexed_library_tubes"
-                and is_current=1
                 ];
 
     my $sth = $self->_dbh->prepare($sql);

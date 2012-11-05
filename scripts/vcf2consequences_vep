@@ -18,7 +18,7 @@ foreach( keys( %INC ) )
 }
 =cut
 
-my ($input_vcf, $index_vcf, $help, $vep_input, $gerp_cache_dir, $buffer_size, $grantham, $gene_list_db, $tab_input);
+my ($input_vcf, $index_vcf, $help, $vep_input, $gerp_cache_dir, $buffer_size, $grantham, $gene_list_db, $tab_input, $append_gene_names);
 
 GetOptions
 (
@@ -29,12 +29,14 @@ GetOptions
     "b|buffer=i"    => \$buffer_size,
     "r|grantham"    => \$grantham,
     "n|genenames=s" => \$gene_list_db,
+    "a|appendgenenames" => \$append_gene_names,
     "h|help"        => \$help
 );
 
 my $missing = 0;
 if( (!$vep_input && !$tab_input) || $help ){$missing = 1;}
 if ( $vep_input && $tab_input ) { error("Only one of the -i or -t option can be given.") }
+if ( $append_gene_names && !($gene_list_db)) { error("--appendgenenames only valid with --genenames option") }
 
 $buffer_size = 1000 unless ($buffer_size);
 
@@ -78,7 +80,8 @@ Usage:
     -g --gerp               OPTIONAL: If GERP scores required, location of cached gerp score bed files
     -b --buffer             OPTIONAL: Number of rows of the gerp scores bed file to buffer (default = 1000)
     -r --grantham           OPTIONAL: Add Grantham matrix score to consequences for nsSNPS
-    -n --genenames          OPTIONAL: DBM file of external gene names for non_human ENS ids
+    -n --genenames          OPTIONAL: DBM file of external gene names for non_human ENS ids, to replace the Ensembl Gene ID in output
+    -a --appendgenenames    OPTIONAL: if using --genenames option, add gene names rather than replace the Ens ID
     -t --tab                Alternative to -i, see the notes below
     -h --help               Print this message
 Note:
@@ -271,7 +274,14 @@ sub load_vep_cache
 
 		if ($gene_name =~ /^ENS/ && $gene_list_db) {	# lookup external gene names in DBM file
 			my $ext_name = $GENE_NAME{$gene_name};
-			$gene_name = $ext_name if $ext_name;
+            if ($append_gene_names) {
+                if ($ext_name) {
+                    $gene_name .= ":$ext_name";
+                }
+                else {
+                    $gene_name .= ":";
+                }
+            }
 		}
 		$consequence .= ":$gene_name";
 		$consequence .= ":" . $rec->{Consequence};

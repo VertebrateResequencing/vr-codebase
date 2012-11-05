@@ -376,7 +376,11 @@ sub join_vcfs_chr
     else
     {
         $$opts{file2} = $$opts{ivcf_fname};
-        check_sanity($opts,$rec1,$rec2);
+        if ( wrong_order($opts,$rec1,$rec2) )
+        {
+            $vcf1->_unread_line($rec1);
+            $rec1 = $rec2;
+        }
     }
 
     my @buffer;
@@ -388,7 +392,11 @@ sub join_vcfs_chr
             output_line($opts,$rec1,$$opts{swapped});
             $rec1 = $vcf1->next_data_array();
             if ( !defined $rec1 ) { last; }
-            check_sanity($opts,$rec1,$rec2);
+            if ( wrong_order($opts,$rec1,$rec2) )
+            {
+                $vcf1->_unread_line($rec1);
+                $rec1 = $rec2;
+            }
         }
 
         if ( defined $rec1 )
@@ -400,7 +408,11 @@ sub join_vcfs_chr
                 $rec2 = $vcf2->next_data_array();
                 if ( !defined $rec1 ) { last; }
                 if ( !defined $rec2 ) { error("The file $$opts{file1} ended before $$opts{file2}."); }
-                check_sanity($opts,$rec1,$rec2);
+                if ( wrong_order($opts,$rec1,$rec2) )
+                {
+                    $vcf1->_unread_line($rec1);
+                    $rec1 = $rec2;
+                }
             }
             if ( defined $rec1 && $$rec1[1] ne $$rec2[1] )
             {
@@ -429,7 +441,11 @@ sub join_vcfs_chr
             ($vcf2,$rec2) = next_vcf_file($opts);
             if ( !defined $rec2 ) { last; }
             $$opts{file2} = $$opts{ivcf_fname};
-            check_sanity($opts,$rec1,$rec2);
+            if ( wrong_order($opts,$rec1,$rec2) )
+            {
+                $vcf1->_unread_line($rec1);
+                $rec1 = $rec2;
+            }
             next;
         }
     }
@@ -442,11 +458,16 @@ sub join_vcfs_chr
     while ( exists($$vcf1{fh}) && defined($rec1 = $vcf1->next_data_array()) );
 }
 
-sub check_sanity
+sub wrong_order
 {
     my ($opts,$rec1,$rec2) = @_;
     if ( $$rec1[0] ne $$rec2[0] ) { error("Encountered different chromosomes in $$opts{file1} and $$opts{file2}: \"$$rec1[0]:$$rec1[1]\" vs \"$$rec2[0]:$$rec2[1]\"\n"); }
-    if ( $$rec1[1] > $$rec2[1] ) { error("Hmm, files out of order or overlap of three files? $$opts{file1} vs $$opts{file2} and \"$$rec1[0]:$$rec1[1]\" vs \"$$rec2[1]\"\n"); }
+    if ( $$rec1[1] > $$rec2[1] ) 
+    { 
+        log_msg($opts,"WARNING\tThe lines out of sync: $$rec1[0]:$$rec1[1] in (1) vs $$rec2[0]:$$rec2[1] in (2), where (1)=$$opts{file1} (2)=$$opts{file2}\n");
+        return 1; 
+    }
+    return 0;
 }
 
 sub output_line

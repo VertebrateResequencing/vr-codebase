@@ -197,10 +197,9 @@ around BUILDARGS => sub {
 
     # get pulldown_multiplexed_library_tube, tag is off that.
     $sql = qq[select distinct tag_internal_id,receptacle_internal_id as pulldown_tube_id
-                from aliquots
+                from current_aliquots
                 where library_internal_id=?
-                and receptacle_type in ("pulldown_multiplexed_library_tube","multiplexed_library_tube")
-                and is_current=1];
+                and receptacle_type in ("pulldown_multiplexed_library_tube","multiplexed_library_tube")];
     
     $id_ref = $argref->{dbh}->selectrow_hashref($sql, undef, ($argref->{id}));
    # use Data::Dumper; print Dumper($id_ref);
@@ -237,10 +236,9 @@ sub _get_mplex_pool_ids{
     my @mplex_ids;
     
     my $sql = qq[select distinct receptacle_internal_id as mplex_id 
-                from aliquots
+                from current_aliquots
                 where library_uuid=?
-                and receptacle_type in("pulldown_multiplexed_library_tube", "multiplexed_library_tube")
-                and is_current=1];
+                and receptacle_type in("pulldown_multiplexed_library_tube", "multiplexed_library_tube")];
     
     my $sth = $self->_dbh->prepare($sql);
     $sth->execute($self->uuid);
