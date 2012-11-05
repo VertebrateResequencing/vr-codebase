@@ -155,6 +155,7 @@ sub _create_expression_job
   my $job_name = $self->{prefix}.$sequencing_filename.'_calculate_expression';
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$sequencing_filename.'_calculate_expression.pl');
   my $total_memory_mb = 3000;
+  my $prefix = $self->{prefix};
   
   my($action_lock_filename, $directories, $suffix) = fileparse($action_lock);
   my $sequencing_file_action_lock = $self->{lane_path}.'/'.$self->{prefix}.$sequencing_filename.$action_lock_filename;
@@ -221,7 +222,7 @@ sub _create_expression_job
       print("Couldnt create expression for $sequencing_filename using reference $self->{annotation_file} probably because it was mapped to a different reference\n");
   }
   
-  system('touch _${sequencing_filename}_calculate_expression_done');
+  system('touch $prefix${sequencing_filename}_calculate_expression_done');
   exit;
                 };
                 close $scriptfh;
@@ -311,7 +312,7 @@ sub update_db {
     
     my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
     Utils::CMD("rm $job_status") if (-e $job_status);
-    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_update_db_done")   );  
+    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,$self->{prefix}."rna_seq_update_db_done")   );  
 
     return $$self{'Yes'};
 }
@@ -329,7 +330,7 @@ sub update_db {
 
 sub cleanup_requires {
   my ($self) = @_;
-  return [ $self->{lane_path}."/".$self->{prefix}."update_db_done"];
+  return [ $self->{lane_path}."/".$self->{prefix}."rna_seq_update_db_done"];
 }
 
 =head2 cleanup_provides
@@ -344,7 +345,7 @@ sub cleanup_requires {
 
 sub cleanup_provides {
   my ($self) = @_;
-    return [ $self->{lane_path}."/".$self->{prefix}."cleanup_done"];
+    return [ $self->{lane_path}."/".$self->{prefix}."rna_seq_cleanup_done"];
 }
 
 =head2 cleanup
@@ -373,7 +374,7 @@ sub cleanup {
       }
   }
   
-  Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_cleanup_done")   );  
+  Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,$prefix."rna_seq_cleanup_done")   );  
   
   return $self->{Yes};
 }
