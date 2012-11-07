@@ -207,25 +207,18 @@ sub get_parameters
 
  Title   : estimate_memory_required
  Usage   : my $memory_required_in_kb = $obj->estimate_memory_required();
- Function: estimate the momory required for the assembler in KB
+ Function: estimate the memory required for the assembler in KB
  Returns : integer in kb of memory requirement
- Ram required for velvetg = -109635 + 18977*ReadSize + 86326*GenomeSize + 233353*NumReads - 51092*K
- http://listserver.ebi.ac.uk/pipermail/velvet-users/2009-July/000474.html
+ Ram for velvet is estimated based on the total number of reads. 
+ The memory required for velvet shows a linear relation to the number of reads but with a lot of variation
+ between different assemblies. The memory estimate is a rule of thumb based on the observed memory usage.
 =cut
 sub estimate_memory_required
 {
   my ($self, $input_params) = @_;
-  my $optimised_params;
-  my $kmer_size = $input_params->{kmer_size};
-  unless(defined($kmer_size))
-  {
-    $optimised_params = $self->get_parameters("velvet_assembly_logfile.txt");
-    $kmer_size = $optimised_params->{kmer};
-  }
 
-  my $memory_required = -109635 + (18977*($input_params->{read_length})) + (86326*($input_params->{genome_size})/1000000) + (233353*($input_params->{total_number_of_reads})/1000000) - (51092*$kmer_size);
-  $memory_required *= 2.0;
-  $memory_required +=   2000000;
+  my $memory_required = 0.5 * $input_params->{total_number_of_reads} + 1500000;
+
   if($memory_required < 1000000)
   {
     $memory_required = 1000000;
