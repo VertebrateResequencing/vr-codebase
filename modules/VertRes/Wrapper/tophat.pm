@@ -8,7 +8,7 @@ VertRes::Wrapper::tophat - wrapper for tophat
 
 =head1 DESCRIPTION
 
-bowtie-build ref.fa out_base
+bowtie2-build ref.fa out_base
 
 tophat ref read_1.fastq read_2.fastq
 
@@ -26,7 +26,7 @@ use File::Copy;
 use VertRes::IO;
 use VertRes::Parser::fastqcheck;
 use VertRes::Wrapper::fastqcheck;
-use VertRes::Wrapper::bowtie;
+use VertRes::Wrapper::bowtie2;
 use File::Basename;
 use File::Temp qw/ tempdir /;
 
@@ -45,9 +45,9 @@ my %e_parameter = (
 =head2 new
 
  Title   : new
- Usage   : my $wrapper = VertRes::Wrapper::bowtie->new();
- Function: Create a VertRes::Wrapper::bowtie object.
- Returns : VertRes::Wrapper::bowtie object
+ Usage   : my $wrapper = VertRes::Wrapper::tophat->new();
+ Function: Create a VertRes::Wrapper::tophat object.
+ Returns : VertRes::Wrapper::tophat object
  Args    : quiet   => boolean
 
 =cut
@@ -101,8 +101,8 @@ sub version {
 sub setup_reference {
     my ($self, $ref) = @_;
     
-    my $bowtie = VertRes::Wrapper::bowtie->new();
-    return $bowtie->setup_reference($ref);
+    my $bowtie2 = VertRes::Wrapper::bowtie2->new();
+    return $bowtie2->setup_reference($ref);
 }
 
 =head2 setup_fastqs
