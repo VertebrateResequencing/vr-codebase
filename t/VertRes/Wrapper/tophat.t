@@ -43,7 +43,7 @@ my $sai1 = File::Spec->catfile($temp_dir, '2822_6_1_1000.sai');
 my $sai2 = File::Spec->catfile($temp_dir, '2822_6_2_1000.sai');
 my $mapping = File::Spec->catfile($temp_dir, 'mapping.sam');
 my @ref_index_files;
-foreach my $suffix (qw(1.ebwt 2.ebwt 3.ebwt 4.ebwt rev.1.ebwt rev.2.ebwt)) {
+foreach my $suffix (qw(1.bt2 2.bt2 3.bt2 4.bt2 rev.1.bt2 rev.2.bt2)) {
     push(@ref_index_files, File::Spec->catfile($temp_dir, 'S_suis_P17.fa.'.$suffix));
 }
 
