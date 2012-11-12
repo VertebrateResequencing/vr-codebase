@@ -234,8 +234,10 @@ sub _build_genome_covered
     if($self->is_mapping_complete)
     {
 	my $target_bases_mapped = $self->mapstats->target_bases_mapped;
+	if($target_bases_mapped){
 	my $genome_covered = $self->reference_size ? ($target_bases_mapped/$self->reference_size)*100 : undef;
 	$genome_cover_perc = sprintf("%5.2f", $genome_covered) if defined $genome_covered;
+	}
     }
     return $genome_cover_perc;
 }
