@@ -186,7 +186,7 @@ exit;
     
     $self->archive_bsub_files($lane_path, $job_name);
     
-    LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-M80000 -R 'select[mem>80] rusage[mem=80]'" }, qq{perl -w $script_name});
     
     return $self->{No};
 }
