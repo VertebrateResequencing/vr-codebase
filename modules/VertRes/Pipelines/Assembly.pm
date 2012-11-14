@@ -562,7 +562,7 @@ exit;
       close $scriptfh;
       my $job_name = $self->{prefix}.'pool_fastqs';
 
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M100000 -R \'select[mem>100] rusage[mem=100]\''}, qq{perl -w $script_name});
+      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M80000 -R \'select[mem>80] rusage[mem=80]\''}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
