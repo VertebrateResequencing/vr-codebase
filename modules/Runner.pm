@@ -290,20 +290,19 @@ sub get_limits
     return exists($$self{_farm_options}{$arg}) ? $$self{_farm_options}{$arg} : undef;
 }
 
-
 =head2 past_limits
 
     About : get limits set for computing farm in the previous run
     Usage : %limits = $self->past_limits($done_file);
     Args  : <file>
-                File name supplied in previous run of spawn
+                File name supplied in previous run of spawn (optional)
                 
 =cut
 
 sub past_limits
 {
     my ($self,$done_file) = @_;
-    my $basename = $self->_get_temp_prefix($done_file);
+    my $basename = $self->_get_temp_prefix(defined $done_file ? $done_file : $$self{_store}{done_file});
     my $freeze_file = $basename . '.r';
     if ( ! -e $freeze_file ) { return (); }
     my $obj;
@@ -316,6 +315,21 @@ sub past_limits
     return exists($$obj{_farm_options}) ? %{$$obj{_farm_options}} : ();
 }
 
+=head2 freeze
+
+    About : freeze the runner object
+    Usage : $self->freeze();
+    Args  : <file>
+                Targe checkpoint file name (optional)
+
+=cut
+
+sub freeze
+{
+    my ($self,$arg) = @_;
+    my $rfile = $self->_get_temp_prefix(defined $arg ? $arg : $$self{_store}{done_file}) . '.r';
+    nstore($self,$rfile);
+}
 
 =head2 spawn
 
@@ -357,6 +371,7 @@ sub spawn
 
     # If the file needs to be skipped, then skip it
     my $basename = $self->_get_temp_prefix($done_file);
+    my $rfile = $basename . '.r';
     if ( -e $basename . '.s' )
     {
         # This is currently the only way to clean the skip files: run with +retries set to positive value
@@ -375,13 +390,23 @@ sub spawn
     $$self{_store}{call} = $call;
     $$self{_store}{args} = \@args;
     $$self{_store}{done_file} = $done_file;
-    my $tmp_file = $basename . '.r';
-    nstore($self,$tmp_file);
+
+    # Test if limits need to be increased
+    my %plimits = $self->past_limits();
+    for my $lim ('memory','runtime')
+    {
+        if ( !exists($plimits{$lim}) ) { next; }
+        if ( !$self->get_limits($lim) or $self->get_limits($lim) < $plimits{$lim} ) 
+        { 
+            $self->set_limits($lim=>$plimits{$lim}); 
+        }
+    }
+    $self->freeze();
 
     # With '+local', the jobs will be run serially
     if ( $$self{_run_locally} ) 
     {
-        my $cmd = qq[$0 +run $tmp_file];
+        my $cmd = qq[$0 +run $rfile];
         $self->debugln("$call:\t$cmd");
         system($cmd);
         return 1;
@@ -394,12 +419,13 @@ sub spawn
         #   only jobs which previously failed, i.e. are registered as running.
         if ( exists($$self{_maxjobs}) && scalar keys %{$$self{_running_jobs}} >= $$self{_maxjobs} && !exists($$self{_running_jobs}{$done_file}) )
         {
+            $self->debugln("max_jobs: $$self{_maxjobs}, running: ", scalar keys %{$$self{_running_jobs}}, "\n");
             $self->wait;
             return 1;
         }
         $$self{_running_jobs}{$done_file} = 1;
 
-        $self->_spawn_to_farm($tmp_file);
+        $self->_spawn_to_farm($rfile);
         return 0;
     }
 }
@@ -627,7 +653,7 @@ sub _get_temp_prefix
 sub throw
 {
     my ($self,@msg) = @_;
-    if ( scalar @msg ) { confess @msg; }
+    if ( scalar @msg ) { confess "\n[". scalar gmtime() ."]\n", @msg; }
     die $$self{usage};
 }
 

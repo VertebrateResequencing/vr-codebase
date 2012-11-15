@@ -66,6 +66,7 @@ sub error
         "       --fill-type                     Annotate INFO/TYPE with snp,del,ins,mnp,complex\n",
         "   -f, --filter <file|list>            Apply filters, list is in the format flt1=value/flt2/flt3=value/etc. If argument to -f is a file,\n",
         "                                           user-defined filters be applied. See User Defined Filters below.\n",
+        "   -H, --hard-filter                   Remove lines with FILTER anything else than PASS or \".\"\n",
         "   -n, --normalize-alleles             Make REF and ALT alleles more compact if possible (e.g. TA,TAA -> T,TA).\n",
         "   -r, --remove <list>                 Comma-separated list of tags to be removed (e.g. ID,INFO/DP,FORMAT/DP,FILTER).\n",
         "   -h, -?, --help                      This help message.\n",
@@ -152,13 +153,14 @@ sub parse_params
         if (                 $arg eq '--fill-HWE' ) { $$opts{fill_ac_an} = $$opts{fill_hwe} = 1; $$opts{fill}=1; next }
         if (                 $arg eq '--fill-ICF' ) { $$opts{fill_ac_an} = $$opts{fill_hwe} = $$opts{fill_icf} = 1; $$opts{fill}=1; next }
         if ( $arg eq '-t' || $arg eq '--tag' ) { $$opts{tag} = shift(@ARGV); next }
+        if ( $arg eq '-H' || $arg eq '--hard-filter' ) { $$opts{hard_filter} = 1; next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         if ( -e $arg ) { $$opts{file}=$arg; next; }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
     if ( !exists($$opts{filters}) && !exists($$opts{udef_filters}) )
     {
-        if ( !exists($$opts{annotations}) && !exists($$opts{remove}) && !exists($$opts{fill}) && !exists($$opts{normalize}) ) 
+        if ( !exists($$opts{annotations}) && !exists($$opts{remove}) && !exists($$opts{fill}) && !exists($$opts{normalize}) && !exists($$opts{hard_filter}) ) 
         { 
             error("Missing one of the -a, -f, -n, -r or --fill-* options.\n") 
         }
@@ -421,7 +423,7 @@ sub annotate
     {
         $vcf->add_header_line($desc,silent=>1);
     }
-    if ( $$opts{fill_type} ) { $vcf->add_header_line({key=>'INFO',ID=>'TYPE',Number=>'A',Type=>'String',Description=>'Variant type'}); }
+    if ( $$opts{fill_type} ) { $vcf->add_header_line({key=>'INFO',ID=>'TYPE',Number=>'1',Type=>'String',Description=>'Variant type'}); }
     if ( $$opts{fill_ac_an} )
     {
         $vcf->add_header_line({key=>'INFO',ID=>'AC',Number=>'A',Type=>'Integer',Description=>'Allele count in genotypes'});
@@ -512,6 +514,7 @@ sub annotate
             {
                 $vcf->_unread_line($line);
                 $prev_chr = $chr;
+                $prev_pos = $pos;
                 $reader->open(region=>"$prev_chr:$prev_pos");
                 last;
             }
@@ -783,7 +786,7 @@ sub output_line
     if ( !exists($$opts{filters}) && !exists($$opts{udef_filters}) )
     {
         # No filters requested, print the line
-        print_line($line);
+        print_line($opts, $line);
         return;
     }
 
@@ -834,7 +837,7 @@ sub output_line
 
     for my $line (@lines)
     {
-        print_line($line);
+        print_line($opts, $line);
     }
 }
 
@@ -1343,8 +1346,10 @@ sub apply_snpcluster_filter
 
 sub print_line
 {
-    my ($line) = @_;
-    if ( defined $line ) { print join("\t",@$line) . "\n"; }
+    my ($opts, $line) = @_;
+    if ( !defined $line ) { return; }
+    if ( $$opts{hard_filter} && $$line[6] ne '.' && $$line[6] ne 'PASS' ) { return; }
+    print join("\t",@$line) . "\n";
 }
 
 
