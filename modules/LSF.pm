@@ -125,8 +125,13 @@ sub job_in_bjobs
     #
     # on STDERR.
 
-    my @out = Utils::CMD("bjobs -l $jid 2>/dev/null");
-    if ( ! scalar @out ) { return $Unknown; }
+    my @out;
+    for (my $i=0; $i<3; $i++)
+    {
+        @out = `bjobs -l $jid 2>/dev/null`;
+        if ( $? ) { sleep 5; next; }
+        if ( !scalar @out ) { return $Unknown; }
+    }
 
     my $job = parse_bjobs_l(\@out);
     if ( $$job{status} eq 'DONE' ) { return $Done; }
