@@ -23,7 +23,7 @@ extends 'Pathogens::RNASeq::Read';
 sub _process_read_details
 {
   my ($self, $read_details) = @_;
-  $read_details->{flag} = Pathogens::RNASeq::StrandSpecificProtocol::Read->_calculate_bitwise_flag($read_details->{flag});
+  $read_details->{flag} = Pathogens::RNASeq::Read->_unmark_duplicates($read_details->{flag});
 }
 
 sub _calculate_bitwise_flag
