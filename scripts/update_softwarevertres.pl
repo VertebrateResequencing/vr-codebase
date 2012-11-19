@@ -17,7 +17,7 @@ foreach my $repo ("$base/bin-external", "$base/codebase", "$base/vrpipe/master")
 my @to_rsync = qw(/software/vertres/etc/ /software/vertres/vrpipe/archive_disc_pool);
 foreach my $path (@to_rsync) {
     warn "\nrsyncing $path\n";
-    system("rsync -rlptD -z --delete $path precise-dev64:$path");
+    system("rsync -rlptOD -z --delete $path precise-dev64:$path");
 }
 
 exit;
