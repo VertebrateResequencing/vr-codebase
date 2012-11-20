@@ -364,6 +364,7 @@ sub define_regions
     my $after  = $';
     $path =~ s/{CHROM}/*/;  # only one occurance of {CHROM} is allowed in this implementation
     my @list = glob($path);
+    if ( !@list ) { $self->throw("No such file(s): $path"); }
     my @regs;
     for my $file (@list)
     {

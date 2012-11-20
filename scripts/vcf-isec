@@ -325,12 +325,11 @@ sub do_chrm_isec
         my %srcs;
         for my $rec (@$grp)
         {
-            my $vcf  = $$rec{vcf};
-            my $file = $$vcf{file};
-
-            push @{$files{$file}}, $rec;
-
+            my $vcf = $$rec{vcf};
             my $src = $$vcf{vcf_isec_ID};
+
+            push @{$files{$src}}, $rec;
+
             if ( !$$vcf{delim} )
             {
                 # This is a VCF, check filters
@@ -347,8 +346,8 @@ sub do_chrm_isec
         my $nmatches = scalar keys %files;
         if ( $complement )
         {
-            my $file = $$vcfs[0]{file};
-            if ( !exists($files{$file}) ) { next; }
+            my $src = $$vcfs[0]{vcf_isec_ID};
+            if ( !exists($files{$src}) ) { next; }
             if ( $nmatches!=1 ) { next; }
         }
         elsif ( $isec_op eq '=' && $isec_nfiles!=$nmatches ) { next; }
