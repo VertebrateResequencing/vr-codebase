@@ -156,6 +156,11 @@ sub get_files
         if ( !$md5 ) { $self->throw("FIXME: the md5 not in the DB? [$file]"); }
         $self->throw("Could not verify md5 for $outfile.tmp") unless $fsu->verify_md5("$outfile.tmp", $md5);
         
+        # sort the bam by coordinates and regenerate the md5
+        $samtools->sort("$outfile.tmp", "sorted", m => 50000000);
+        rename("$outfile.tmp.sorted.bam","$outfile.tmp") or $self->throw("rename $outfile.tmp.sorted.bam $outfile.tmp: $!");
+        $md5 = $fsu->calculate_md5("$outfile.tmp");
+        
         # Create the checksum file
         open(my $fh,'>',"$outfile.md5") or $self->throw("$outfile.md5: $!");
         print $fh "$md5  $outfile\n";
