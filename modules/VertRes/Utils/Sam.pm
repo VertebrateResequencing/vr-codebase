@@ -2652,7 +2652,7 @@ sub bam2fastq {
                                                 validation_stringency => 'silent',
                                                 tmp_dir => $tmp_dir);
     
-    $picard->SamToFastq($bam, @tmp_fastq);
+    $picard->SamToFastq($bam, @tmp_fastq, INCLUDE_NON_PF_READS => 'true');
     $self->throw("SamToFastq of $bam failed\n") unless $picard->run_status >= 1;
     
     # run fastqcheck on all of the fastq files made record total length and number of reads
