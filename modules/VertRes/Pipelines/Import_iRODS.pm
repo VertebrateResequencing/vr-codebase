@@ -8,6 +8,8 @@ use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::File;
 use VertRes::Wrapper::iRODS;
+use VertRes::Wrapper::samtools;
+use VertRes::Utils::FileSystem;
 use VertRes::Parser::bamcheck;
 use File::Basename;
 
@@ -118,7 +120,9 @@ sub get_files
     my ($self) = @_;
 
     my $irods = VertRes::Wrapper::iRODS->new();
-
+    my $fsu = VertRes::Utils::FileSystem->new();
+    my $samtools = VertRes::Wrapper::samtools->new();
+    
     # Get files and run bamcheck on them
     for my $file (@{$$self{files}})
     {
@@ -154,6 +158,11 @@ sub get_files
 
         # Check that everything went alright. Although iRODS is supposed to check, local IO failures went unnoticed the other day...
         Utils::CMD(qq[md5sum --status -c $outfile.md5]);
+
+        # sort the bam by coordinates and regenerate the md5
+        $samtools->sort("$outfile.tmp", "$outfile.tmp.sorted", m => 50000000);
+        rename("$outfile.tmp.sorted.bam","$outfile.tmp") or $self->throw("rename $outfile.tmp.sorted.bam $outfile.tmp: $!");
+        $md5 = $fsu->calculate_md5("$outfile.tmp");
 
         # Recreate the checksum file to contain the correct file name
         open($fh,'>',"$outfile.md5") or $self->throw("$outfile.md5: $!");
