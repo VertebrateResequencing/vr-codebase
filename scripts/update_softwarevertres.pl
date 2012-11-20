@@ -9,7 +9,7 @@ my $base = '/software/vertres';
 foreach my $repo ("$base/bin-external", "$base/codebase", "$base/vrpipe/master") {
     foreach my $server ('uk10k-login', 'precise-dev64') {
         warn "\nupdating $repo on $server\n";
-        system(qq[ssh $server "umask 002; cd $repo; git checkout .; git pull"]);
+        system(qq[ssh -A $server "umask 002; cd $repo; git checkout .; git pull"]);
     }
 }
 
