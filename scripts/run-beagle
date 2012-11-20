@@ -384,7 +384,8 @@ sub vcf_to_beagle
     my $in_vcf    = $self->expand_chrom($$self{in_vcf},$chr);
     my $known_vcf = $self->expand_chrom($$self{known_vcf},$chr);
     $self->cmd(qq[mkdir -p $outdir]);
-    $self->cmd(qq[$$self{vcf_beagle} -r $chr:$from-$to -i $in_vcf -k $known_vcf -o $outdir/$from-$to.01 >>$outfile.o 2>>$outfile.e && touch $outfile]);
+    $self->cmd(qq[$$self{vcf_beagle} -r $chr:$from-$to -i $in_vcf -k $known_vcf -o $outdir/$from-$to.01 >>$outfile.o 2>>$outfile.e]);
+    $self->cmd(qq[touch $outfile]);
 }
 
 sub beagle
