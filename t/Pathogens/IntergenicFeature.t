@@ -6,7 +6,7 @@ use Data::Dumper;
 BEGIN { unshift(@INC, './modules') }
 BEGIN {
 
-    use Test::Most tests => 4;
+    use Test::Most;
     use_ok('Pathogens::RNASeq::IntergenicFeature');
 }
 
@@ -19,4 +19,4 @@ is $intergenicfeature->gene_id(), "ABC_intergenic_100_200", 'build the correct g
 my @expected_exons  = ([100,200]);
 
 is_deeply $intergenicfeature->exons(), \@expected_exons, 'build correct exons';
-
+done_testing();

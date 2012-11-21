@@ -4,7 +4,7 @@ use warnings;
 
 BEGIN { unshift(@INC, './modules') }
 BEGIN {
-    use Test::Most tests => 18;
+    use Test::Most;
     use_ok('Pathogens::RNASeq::Read');
 }
 
@@ -110,3 +110,4 @@ ok my $alignment_slice6 = Pathogens::RNASeq::Read->new(
 ok  my %mapped_reads6 = %{$alignment_slice6->mapped_reads}, 'build the mapped reads does not pass unmapped read';
 is  $mapped_reads6{sense}, 0, 'identified mapped reads does not pass unmapped read';
 is  $mapped_reads6{antisense}, 0, 'identified antisense read does not pass unmapped read';
+done_testing();

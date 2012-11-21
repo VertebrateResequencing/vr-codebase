@@ -32,21 +32,35 @@ sub _build_exons
   return \@exons;
 }
 
+sub _find_feature_id
+{
+  my ($self) = @_;
+  my $gene_id;
+  my @junk;
+  my @tag_names = ('ID', 'locus_tag', 'Parent');
+  
+  for my $tag_name (@tag_names)
+  {
+    if($self->raw_feature->has_tag($tag_name))
+    {
+      ($gene_id, @junk) = $self->raw_feature->get_tag_values($tag_name);
+      return $gene_id;
+    }
+  }
+
+  return $gene_id;
+}
+
 sub _build_gene_id
 {
   my ($self) = @_;
 
   my $gene_id;
   my @junk;
-  if($self->raw_feature->has_tag('locus_tag'))
-  {
-    ($gene_id, @junk) = $self->raw_feature->get_tag_values('locus_tag');
-  }
-  elsif($self->raw_feature->has_tag('ID'))
-  {
-    ($gene_id, @junk) = $self->raw_feature->get_tag_values('ID');
-  }
-  else
+  
+  $gene_id = $self->_find_feature_id();
+  
+  if(! defined($gene_id))
   {
     $gene_id = join("_",($self->seq_id, $self->gene_start, $self->gene_end ));
   }
@@ -85,6 +99,23 @@ sub _build_exon_length
   ($self->gene_end - $self->gene_start + 1);
 }
 
+sub _filter_out_parent_features_from_exon_list
+{
+  my ($self) = @_;
+  return if(scalar(@{$self->exons}) <= 1);
+
+  my @filtered_exons;
+
+  for my $exon_coords(@{$self->exons})
+  {
+    if(!($exon_coords->[0] == $self->gene_start && $exon_coords->[1] == $self->gene_end))
+    {
+      push(@filtered_exons, $exon_coords);
+    }
+  }
+  $self->exons(\@filtered_exons);
+}
+
 
 sub add_discontinuous_feature
 {
@@ -100,7 +131,8 @@ sub add_discontinuous_feature
   $self->exon_length($exon_length);
 
   push @{$self->exons}, [$raw_feature->start, $raw_feature->end ];
-
+  $self->_filter_out_parent_features_from_exon_list();
+  
   return;
 }
 1;

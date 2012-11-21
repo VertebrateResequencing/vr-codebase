@@ -5,7 +5,7 @@ use Data::Dumper;
 
 BEGIN { unshift(@INC, './modules') }
 BEGIN {
-    use Test::Most tests => 15;
+    use Test::Most;
     use_ok('Pathogens::RNASeq::GFF');
 }
 
@@ -34,3 +34,4 @@ is $rna_seq_gff->features->{"no_strand_identifier_locus_tag"}->gene_strand,  0, 
 my @expected_gene_ids = ('ROD_00021','ROD_00031','ROD_00071','continuous_feature_locus_tag','discontinuous_feature_locus_tag','no_strand_identifier_locus_tag','reverse_strand_locus_tag');
 
 is_deeply $rna_seq_gff->sorted_gene_ids, \@expected_gene_ids, 'sorting of gene ids';
+done_testing();

@@ -7,7 +7,7 @@ use Data::Dumper;
 BEGIN { unshift(@INC, './modules') }
 BEGIN {
 
-    use Test::Most tests => 18;
+    use Test::Most;
     use_ok('Pathogens::RNASeq::CoveragePlot');
 }
 
@@ -20,9 +20,9 @@ ok $coverage_plots_from_bam->create_plots();
 
 # parse output files and check they are okay
 ok is_input_string_found_on_given_line("0 0", 1,    't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values first value';
-ok is_input_string_found_on_given_line("1 0", 104,  't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values for forward read only';
+ok is_input_string_found_on_given_line("1 1", 104,  't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values for forward read only';
 ok is_input_string_found_on_given_line("0 4", 548,  't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values for reverse reads only';
-ok is_input_string_found_on_given_line("7 3", 7795, 't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values for both';
+ok is_input_string_found_on_given_line("7 24", 7795, 't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values for both';
 ok is_input_string_found_on_given_line("0 0", 8974, 't/data/coverage.FN543502.coverageplot.gz'), 'check main sequence coverage values last value';
 
 ok is_input_string_found_on_given_line("0 0", 1,    't/data/coverage.pCROD1.coverageplot.gz'), 'check empty plasmid coverage values first value';
@@ -43,6 +43,8 @@ unlink("t/data/coverage.pCROD1.coverageplot.gz");
 unlink("t/data/coverage.pCROD2.coverageplot.gz");
 unlink("t/data/coverage.pCROD3.coverageplot.gz");
 
+done_testing();
+
 sub is_input_string_found_on_given_line
 {
   my($expected_string, $line_number, $filename) = @_;
@@ -56,7 +58,14 @@ sub is_input_string_found_on_given_line
     next unless($line_counter ==  $line_number);
     last if($line_counter >  $line_number);
     
-    return 1 if($expected_string eq $line);
+    if($expected_string eq $line)
+    {
+      return 1;
+    }
+    else
+    {
+      print "Expected ".$expected_string." but got ".$line."\n";
+    }
   }
   return 0;
 }

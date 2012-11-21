@@ -5,7 +5,7 @@ use Data::Dumper;
 
 BEGIN { unshift(@INC, './modules') }
 BEGIN {
-    use Test::Most tests => 11;
+    use Test::Most;
     use_ok('Pathogens::RNASeq::BitWise');
 }
 
@@ -49,3 +49,5 @@ is $duplicate_read, 117, 'unmark duplicates Standard Protocol' ;
 
 unlink('t/data/my_file.bam');
 unlink('t/data/my_file.bam.bai');
+
+done_testing();

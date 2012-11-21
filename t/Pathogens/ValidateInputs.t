@@ -4,7 +4,7 @@ use warnings;
 
 BEGIN { unshift(@INC, './modules') }
 BEGIN {
-    use Test::Most tests => 7;
+    use Test::Most;
     use_ok('Pathogens::RNASeq::ValidateInputs');
 }
 
@@ -24,6 +24,6 @@ ok my $invalid_combination = Pathogens::RNASeq::ValidateInputs->new(
 is $invalid_combination->are_input_files_valid(), 0, 'validation fails for invalid input files';
 is $invalid_combination->_sequence_names_match(), 0, 'sequence names dont match';
 is $invalid_combination->_lengths_match(), 0, 'lengths dont match';
-
+done_testing();
 
 

@@ -101,7 +101,7 @@ $header_tradis =~ s/[\r\n]//g;
 $output_result_1_tradis =~ s/[\r\n]//g;
 $output_result_2_tradis =~ s/[\r\n]//g;
 
-is $header_tradis, '"Seq ID",GeneID,"Antisense Reads Mapping","Antisense RPKM","Reads Mapping",RPKM', 'header okay';
+is $header_tradis,  '"Seq ID",GeneID,"Reads Mapping",RPKM,"Antisense Reads Mapping","Antisense RPKM"', 'header okay';
 is $output_result_1_tradis, 'some_name,abc123,2000,15.3245,10,1.34324', 'result set 1';
 is $output_result_2_tradis, 'some_name,efg456,10,0,200,780.34242543543', 'result set 2';
 close(IN_TRADIS);
