@@ -584,8 +584,6 @@ sub flush_buffer
 
             if ( $a1 eq $a2 or $b1 eq $b2 ) { next; }
 
-            $nsites[$i]++;
-
             if ( $a1 eq $b1 && $a2 eq $b2 ) 
             { 
                 #print STDERR "$i .. counting match $a1/$a2 $b1/$b2\n";
@@ -598,7 +596,9 @@ sub flush_buffer
                 $lks_match[$i] += log($p*(1-$p) + (1-$p)*$p);
                 $lks_mism[$i] += log($p*$p + (1-$p)*(1-$p));
             }
-            else { error("Uh: $$rec1[0]:$$rec1[1] .. $a1 $a2 vs $b1 $b2\n"); }
+            else { next; } # different alleles might have been selected at multiallelic sites
+
+            $nsites[$i]++;
         }
     }
 
