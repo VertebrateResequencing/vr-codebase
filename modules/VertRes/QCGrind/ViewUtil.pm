@@ -192,7 +192,7 @@ sub displayDatabasesPage {
     }
     print qq[ </fieldset> </div> ];
 
-	my @uk10k_dbs = qw (vrtrack_uk10k_cohort vrtrack_uk10k_neuro vrtrack_uk10k_obesity vrtrack_uk10k_rare);
+	my @uk10k_dbs = qw (vrtrack_uk10k_cohort vrtrack_uk10k_neuro vrtrack_uk10k_obesity vrtrack_uk10k_rare vrtrack_uk10k_obesity_wga vrtrack_uk10k_rare_wga);
     print qq[
         <div class="centerFieldset">
         <fieldset style="width: 500px">
