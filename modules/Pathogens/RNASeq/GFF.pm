@@ -38,7 +38,6 @@ sub _build_features
       last unless defined($raw_feature); # No more features
       next if !($raw_feature->primary_tag eq 'CDS' ||   $raw_feature->primary_tag eq 'polypeptide');
         
-
       my $feature_object = Pathogens::RNASeq::Feature->new(raw_feature => $raw_feature);
 
       if(defined($features{$feature_object->gene_id}))

@@ -21,7 +21,7 @@ has 'gene_strand'   => ( is => 'rw', isa => 'Int',                 lazy_build =>
 has 'gene_start'    => ( is => 'rw', isa => 'Int',                 lazy_build => 1 );
 has 'gene_end'      => ( is => 'rw', isa => 'Int',                 lazy_build => 1 );
 has 'exon_length'   => ( is => 'rw', isa => 'Int',                 lazy_build => 1 );
-has 'exons'         => ( is => 'rw', isa => 'ArrayRef',            lazy_build => 1 );
+has 'exons'         => ( is => 'rw', isa => 'ArrayRef',            lazy =>1, builder => '_build_exons' );
 
 sub _build_exons
 {
@@ -41,6 +41,7 @@ sub _find_feature_id
   
   for my $tag_name (@tag_names)
   {
+
     if($self->raw_feature->has_tag($tag_name))
     {
       ($gene_id, @junk) = $self->raw_feature->get_tag_values($tag_name);
@@ -110,28 +111,38 @@ sub _filter_out_parent_features_from_exon_list
   {
     if(!($exon_coords->[0] == $self->gene_start && $exon_coords->[1] == $self->gene_end))
     {
+      
       push(@filtered_exons, $exon_coords);
     }
   }
   $self->exons(\@filtered_exons);
 }
 
+sub _update_exon_length_from_exon_list
+{
+   my ($self) = @_;
+   my $exon_length = 0;
+   for my $exon_coords(@{$self->exons})
+   {
+     $exon_length += ($exon_coords->[1] - $exon_coords->[0]);
+   }
+   $self->exon_length($exon_length);
+   return;
+}
+
 
 sub add_discontinuous_feature
 {
   my ($self,$raw_feature) = @_;
-
+  push @{$self->exons}, [$raw_feature->start, $raw_feature->end ];
   my $gene_start = ($raw_feature->start < $self->gene_start) ? $raw_feature->start : $self->gene_start;
   my $gene_end = ($raw_feature->end   > $self->gene_end) ? $raw_feature->end : $self->gene_end;
 
-  my $exon_length = ($raw_feature->end - $raw_feature->start + 1) + $self->exon_length;
-
   $self->gene_start($gene_start);
   $self->gene_end($gene_end);
-  $self->exon_length($exon_length);
-
-  push @{$self->exons}, [$raw_feature->start, $raw_feature->end ];
+  
   $self->_filter_out_parent_features_from_exon_list();
+  $self->_update_exon_length_from_exon_list();
   
   return;
 }

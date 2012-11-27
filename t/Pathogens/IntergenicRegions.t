@@ -43,7 +43,7 @@ ok $intergenic_regions = Pathogens::RNASeq::IntergenicRegions->new(
     ), 'initialise intergenic regions';
 
 ok $features = $intergenic_regions->intergenic_features, 'create features';
-@expected_keys = ('FN543502_intergenic_1_165','FN543502_intergenic_232_312','FN543502_intergenic_3708_3710','FN543502_intergenic_4998_5146','FN543502_intergenic_5921_5989','FN543502_intergenic_7421_7690','FN543502_intergenic_8645_8757','FN543502_intergenic_9346_30000');
+@expected_keys = ('FN543502_intergenic_1_165','FN543502_intergenic_232_312','FN543502_intergenic_2776_2777','FN543502_intergenic_3708_3710','FN543502_intergenic_4998_5146','FN543502_intergenic_5921_5989','FN543502_intergenic_7421_7690','FN543502_intergenic_8645_8757','FN543502_intergenic_9346_30000');
 
 @actual_keys = sort keys(%{$features});
 is_deeply \@actual_keys, \@expected_keys, 'expected keys';
