@@ -5,7 +5,7 @@ use Data::Dumper;
 
 BEGIN { unshift(@INC, './modules') }
 BEGIN {
-    use Test::Most tests =>  7;
+    use Test::Most;
     use_ok('Pathogens::RNASeq::FeaturesTabFile');
 }
 use Pathogens::RNASeq::GFF;
@@ -36,7 +36,7 @@ ok is_input_string_found_on_given_line('FT                   /gene="FN543502_int
 ok is_input_string_found_on_given_line('FT                   /seq_id="FN543502"',                4, 't/data/intergenic.FN543502.tab.gz'), 'first feature sequene id';
 
 unlink('t/data/intergenic.FN543502.tab.gz');
-
+done_testing();
 sub is_input_string_found_on_given_line
 {
   my($expected_string, $line_number, $filename) = @_;

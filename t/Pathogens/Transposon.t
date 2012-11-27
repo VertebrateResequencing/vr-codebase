@@ -4,7 +4,7 @@ use warnings;
 
 BEGIN { unshift(@INC, './modules') }
 BEGIN {
-    use Test::Most tests => 12;
+    use Test::Most;
     use_ok('Pathogens::Parser::Transposon;');
 }
 
@@ -40,3 +40,4 @@ ok $tradis_transposon = Pathogens::Parser::Transposon->new(
   tag        => 'CCCCCCC'
 ),'user supplied tag';
 is $tradis_transposon->percentage_reads_with_tag, 25, 'percentage of reads with supplied tag';
+done_testing();

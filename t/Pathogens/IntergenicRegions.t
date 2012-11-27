@@ -5,7 +5,7 @@ use Data::Dumper;
 
 BEGIN { unshift(@INC, './modules') }
 BEGIN {
-    use Test::Most tests =>  13;
+    use Test::Most;
     use_ok('Pathogens::RNASeq::IntergenicRegions');
 }
 use Pathogens::RNASeq::GFF;
@@ -21,7 +21,7 @@ ok my $intergenic_regions = Pathogens::RNASeq::IntergenicRegions->new(
   ), 'initialise intergenic regions';
 
 ok my $features = $intergenic_regions->intergenic_features, 'create features';
-my @expected_keys = ('FN543502_intergenic_1_115','FN543502_intergenic_5048_5096','FN543502_intergenic_7471_7640','FN543502_intergenic_8695_8707','FN543502_intergenic_9396_5346659');
+my @expected_keys = ('FN543502_intergenic_1_115','FN543502_intergenic_5048_5096','FN543502_intergenic_7471_7640','FN543502_intergenic_8695_8707','FN543502_intergenic_9396_30000');
 my @actual_keys = sort keys(%{$features});
 
 is_deeply \@actual_keys, \@expected_keys, 'expected keys';
@@ -43,9 +43,9 @@ ok $intergenic_regions = Pathogens::RNASeq::IntergenicRegions->new(
     ), 'initialise intergenic regions';
 
 ok $features = $intergenic_regions->intergenic_features, 'create features';
-@expected_keys = ('FN543502_intergenic_1_165','FN543502_intergenic_232_312','FN543502_intergenic_3708_3710','FN543502_intergenic_4998_5146','FN543502_intergenic_5921_5989','FN543502_intergenic_7421_7690','FN543502_intergenic_8645_8757','FN543502_intergenic_9346_5346659');
+@expected_keys = ('FN543502_intergenic_1_165','FN543502_intergenic_232_312','FN543502_intergenic_2776_2777','FN543502_intergenic_3708_3710','FN543502_intergenic_4998_5146','FN543502_intergenic_5921_5989','FN543502_intergenic_7421_7690','FN543502_intergenic_8645_8757','FN543502_intergenic_9346_30000');
 
 @actual_keys = sort keys(%{$features});
 is_deeply \@actual_keys, \@expected_keys, 'expected keys';
 
-
+done_testing();

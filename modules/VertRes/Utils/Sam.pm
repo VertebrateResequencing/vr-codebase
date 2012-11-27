@@ -3070,7 +3070,7 @@ sub bam_exome_qc_stats {
         $intervals->{bait_near} = $self->_intervals_file2hash($opts{bait_interval}, ('expand_intervals' => $opts{near_length}));
         
 
-        foreach my $bait_or_target qw(bait target) {
+        foreach my $bait_or_target (qw(bait target)) {
             my $pars = VertRes::Parser::fasta->new(file => $opts{ref_fa});
             my $result_holder = $pars->result_holder();
 
@@ -3155,14 +3155,14 @@ sub bam_exome_qc_stats {
             $stats{gc_hist_mapped_1} = [(0) x ($stats{readlen} + 1)];
             $stats{gc_hist_mapped_2} = [(0) x ($stats{readlen} + 1)];
             
-            foreach my $a qw(gc_vs_bait_cvg gc_vs_target_cvg) {
+            foreach my $a (qw(gc_vs_bait_cvg gc_vs_target_cvg)) {
                 $stats{$a} = ();
                 foreach (0 .. 100) {
                     push @{$stats{$a}}, {};
                 }
             }
 
-            foreach my $a qw(qual_scores_1 qual_scores_2 qual_scores_up) {
+            foreach my $a (qw(qual_scores_1 qual_scores_2 qual_scores_up)) {
                 $stats{$a} = ();
                 foreach (1 .. $stats{readlen}) {
                     push @{$stats{$a}}, {};
@@ -3341,7 +3341,7 @@ sub bam_exome_qc_stats {
     $stats{mean_target_coverage} = $stats{target_bases_mapped} / $stats{target_bases};
 
     # calculate cumulative coverage of baits and targets
-    foreach my $bait_or_target qw(bait target) {
+    foreach my $bait_or_target (qw(bait target)) {
         my %cov_stats = VertRes::Utils::Math->new()->histogram_stats($stats{$bait_or_target . '_cvg_hist'});
         $stats{$bait_or_target . '_coverage_sd'} = $cov_stats{standard_deviation};
 
@@ -3356,7 +3356,7 @@ sub bam_exome_qc_stats {
     }
 
     # work out % bases coverage above certain values
-    foreach my $bait_or_target qw(bait target) { 
+    foreach my $bait_or_target (qw(bait target)) { 
         my @vals = (1, 2, 5, 10, 20, 50, 100);
         foreach (@vals) {
             $stats{$bait_or_target . '_bases_' . $_ . 'X'} = 0;
@@ -3394,7 +3394,7 @@ sub bam_exome_qc_make_plots {
     my %coverage;
     my %plot_data;
 
-    foreach my $bait_or_target qw(bait target) {
+    foreach my $bait_or_target (qw(bait target)) {
         foreach my $hash (@{$stats->{'gc_vs_' . $bait_or_target . '_cvg'}}) {
             while (my ($cov, $freq) = each(%{$hash})) {
                 $coverage{$bait_or_target}{$cov} += $freq;
@@ -3428,7 +3428,7 @@ sub bam_exome_qc_make_plots {
     # Coverage plots
     %plot_data = ();
 
-    foreach my $bait_or_target qw(bait target) {
+    foreach my $bait_or_target (qw(bait target)) {
         my %cov_stats = VertRes::Utils::Math->new()->histogram_stats($stats->{$bait_or_target . '_cvg_hist'});
         my $xmin = max (0, $cov_stats{mean} - 4 * $cov_stats{standard_deviation});
         my $xmax = $cov_stats{mean} + 4 * $cov_stats{standard_deviation};
@@ -3607,7 +3607,7 @@ sub _update_bam_exome_qc_stats {
     # for each bait and target, we want to know:
     # 1) the mean coverage and the %GC
     # 2) whether the min coverage was achieved over the whole target.
-    foreach my $bait_or_target qw(bait target) {
+    foreach my $bait_or_target (qw(bait target)) {
         foreach my $interval (@{$intervals->{$bait_or_target}->{$ref_id}}) {
             my $cov_sum = int( 0.5 + sum @{$pileup->{$bait_or_target}}{($interval->[0] .. $interval->[1])} );
             my $mean_cov = int(0.5 + $cov_sum / ($interval->[1] - $interval->[0] + 1) );
