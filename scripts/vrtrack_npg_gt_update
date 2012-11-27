@@ -29,7 +29,7 @@ my $WRITE_PASS = $ENV{VRTRACK_PASSWORD};
 #NPG database connection parameters
 my $NPG_USER = 'nqcro';
 my $NPG_DB = 'npgqcp';
-my $NPG_HOST = 'mcs4a';
+my $NPG_HOST = 'mcs10';
 my $NPG_PORT = 3310;
 
 #NPG database connection handle
