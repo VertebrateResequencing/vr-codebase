@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '24';
+use constant SCHEMA_VERSION => '25';
 
 our $DEFAULT_PORT = 3306;
 
@@ -1498,7 +1498,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (24);
+insert into schema_version(schema_version) values (25);
 
 --
 -- Table structure for table `assembly`
@@ -1814,7 +1814,7 @@ CREATE TABLE `population` (
 
 DROP TABLE IF EXISTS `species`;
 CREATE TABLE `species` (
-  `species_id` smallint(5) unsigned NOT NULL auto_increment,
+  `species_id` mediumint(8) unsigned NOT NULL auto_increment,
   `name` varchar(255) NOT NULL,
   `taxon_id` mediumint(8) unsigned NOT NULL,
   PRIMARY KEY  (`species_id`),
@@ -1833,7 +1833,7 @@ CREATE TABLE `individual` (
   `alias` varchar(40) NOT NULL DEFAULT '',
   `sex` enum('M','F','unknown') DEFAULT 'unknown',
   `acc` varchar(40) DEFAULT NULL,
-  `species_id` smallint(5) unsigned DEFAULT NULL,
+  `species_id` mediumint(8) unsigned DEFAULT NULL,
   `population_id` smallint(5) unsigned DEFAULT NULL,
   PRIMARY KEY  (`individual_id`),
   UNIQUE KEY `name` (`name`),
