@@ -70,6 +70,7 @@ sub new {
                 'bases_mapped',
                 'bases_mapped_cigar',
                 'bases_trimmed',
+                'diff_chr_pairs',
                 'error_rate',
                 'inward_pairs',
                 'is_paired',
@@ -154,9 +155,10 @@ sub _get_header {
         'insert size standard deviation' => 'sd_insert_size',
         'is sorted'         => 'is_sorted',
         'is paired'         => 'is_paired',
-        'inward oriented pairs'         => 'inward_pairs',
-        'outward oriented pairs'        => 'outward_pairs',
-        'pairs with other orientation'  => 'other_pairs',
+        'inward oriented pairs'          => 'inward_pairs',
+        'outward oriented pairs'         => 'outward_pairs',
+        'pairs with other orientation'   => 'other_pairs',
+        'pairs on different chromosomes' => 'diff_chr_pairs',
     );
     my %mapping = 
     (

@@ -395,7 +395,7 @@ sub spawn
     my %plimits = $self->past_limits();
     for my $lim ('memory','runtime')
     {
-        if ( !exists($plimits{$lim}) ) { next; }
+        if ( !exists($plimits{$lim}) or !defined($plimits{$lim}) ) { next; }
         if ( !$self->get_limits($lim) or $self->get_limits($lim) < $plimits{$lim} ) 
         { 
             $self->set_limits($lim=>$plimits{$lim}); 
