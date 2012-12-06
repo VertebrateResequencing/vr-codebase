@@ -416,7 +416,7 @@ sub join_vcfs_chr
             }
             if ( defined $rec1 && $$rec1[1] ne $$rec2[1] )
             {
-                error("Uh, out of sync: $$rec1[0]:$$rec1[1] ne $$rec2[1]");
+                error("ERROR\tThe lines out of sync: $$rec1[0]:$$rec1[1] in (1) vs $$rec2[0]:$$rec2[1] in (2), where (1)=$$opts{file1} (2)=$$opts{file2}\n");
             }
         }
 

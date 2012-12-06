@@ -120,6 +120,7 @@ typedef struct
     uint64_t nreads_unmapped;
     uint64_t nreads_unpaired;
     uint64_t nreads_paired;
+    uint64_t nreads_anomalous;
     uint64_t nreads_mq0;
     uint64_t nbases_mapped;
     uint64_t nbases_mapped_cigar;
@@ -395,7 +396,7 @@ void count_mismatches_per_cycle(stats_t *stats,bam1_t *bam_line)
             {
                 uint8_t qual = quals[iread] + 1;
                 if ( qual>=stats->nquals )
-                    error("TODO: quality too high %d>=%d\n", quals[iread],stats->nquals);
+                    error("TODO: quality too high %d>=%d (%s %d %s)\n", qual,stats->nquals, stats->sam->header->target_name[bam_line->core.tid],bam_line->core.pos+1,bam1_qname(bam_line));
 
                 int idx = is_fwd ? icycle : read_len-icycle-1;
                 if ( idx>stats->max_len )
@@ -684,7 +685,7 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
     {
         uint8_t qual = bam_quals[ reverse ? seq_len-i-1 : i];
         if ( qual>=stats->nquals )
-            error("TODO: quality too high %d>=%d\n", quals[i],stats->nquals);
+            error("TODO: quality too high %d>=%d (%s %d %s)\n", qual,stats->nquals,stats->sam->header->target_name[bam_line->core.tid],bam_line->core.pos+1,bam1_qname(bam_line));
         if ( qual>stats->max_qual )
             stats->max_qual = qual;
 
@@ -702,42 +703,48 @@ void collect_stats(bam1_t *bam_line, stats_t *stats)
 
         count_indels(stats,bam_line);
 
-        // The insert size is tricky, because for long inserts the libraries are
-        // prepared differently and the pairs point in other direction. BWA does
-        // not set the paired flag for them.  Similar thing is true also for 454
-        // reads. Therefore, do the insert size stats for all mapped reads.
-        int32_t isize = bam_line->core.isize;
-        if ( isize<0 ) isize = -isize;
-        if ( IS_PAIRED(bam_line) && isize!=0 )
+        if ( !IS_PAIRED(bam_line) )
+            stats->nreads_unpaired++;
+        else 
         {
             stats->nreads_paired++;
+
+            if ( bam_line->core.tid!=bam_line->core.mtid )
+                stats->nreads_anomalous++;
+
+            // The insert size is tricky, because for long inserts the libraries are
+            // prepared differently and the pairs point in other direction. BWA does
+            // not set the paired flag for them.  Similar thing is true also for 454
+            // reads. Mates mapped to different chromosomes have isize==0.
+            int32_t isize = bam_line->core.isize;
+            if ( isize<0 ) isize = -isize;
             if ( isize >= stats->nisize )
-                isize=stats->nisize-1;
-
-            int pos_fst = bam_line->core.mpos - bam_line->core.pos;
-            int is_fst  = IS_READ1(bam_line) ? 1 : -1;
-            int is_fwd  = IS_REVERSE(bam_line) ? -1 : 1;
-            int is_mfwd = IS_MATE_REVERSE(bam_line) ? -1 : 1;
-
-            if ( is_fwd*is_mfwd>0 )
-                stats->isize_other[isize]++;
-            else if ( is_fst*pos_fst>0 )
+                isize = stats->nisize-1;
+            if ( isize>0 || bam_line->core.tid==bam_line->core.mtid )
             {
-                if ( is_fst*is_fwd>0 )
-                    stats->isize_inward[isize]++;
-                else
-                    stats->isize_outward[isize]++;
-            }
-            else if ( is_fst*pos_fst<0 )
-            {
-                if ( is_fst*is_fwd>0 )
-                    stats->isize_outward[isize]++;
-                else
-                    stats->isize_inward[isize]++;
+                int pos_fst = bam_line->core.mpos - bam_line->core.pos;
+                int is_fst  = IS_READ1(bam_line) ? 1 : -1;
+                int is_fwd  = IS_REVERSE(bam_line) ? -1 : 1;
+                int is_mfwd = IS_MATE_REVERSE(bam_line) ? -1 : 1;
+
+                if ( is_fwd*is_mfwd>0 )
+                    stats->isize_other[isize]++;
+                else if ( is_fst*pos_fst>0 )
+                {
+                    if ( is_fst*is_fwd>0 )
+                        stats->isize_inward[isize]++;
+                    else
+                        stats->isize_outward[isize]++;
+                }
+                else if ( is_fst*pos_fst<0 )
+                {
+                    if ( is_fst*is_fwd>0 )
+                        stats->isize_outward[isize]++;
+                    else
+                        stats->isize_inward[isize]++;
+                }
             }
         }
-        else
-            stats->nreads_unpaired++;
 
         // Number of mismatches 
         uint8_t *nm = bam_aux_get(bam_line,"NM");
@@ -889,7 +896,7 @@ void output_stats(stats_t *stats)
     // Calculate average insert size and standard deviation (from the main bulk data only)
     int isize, ibulk=0;
     uint64_t nisize=0, nisize_inward=0, nisize_outward=0, nisize_other=0;
-    for (isize=1; isize<stats->nisize; isize++)
+    for (isize=0; isize<stats->nisize; isize++)
     {
         // Each pair was counted twice
         stats->isize_inward[isize] *= 0.5;
@@ -903,7 +910,7 @@ void output_stats(stats_t *stats)
     }
 
     double bulk=0, avg_isize=0, sd_isize=0;
-    for (isize=1; isize<stats->nisize; isize++)
+    for (isize=0; isize<stats->nisize; isize++)
     {
         bulk += stats->isize_inward[isize] + stats->isize_outward[isize] + stats->isize_other[isize];
         avg_isize += isize * (stats->isize_inward[isize] + stats->isize_outward[isize] + stats->isize_other[isize]);
@@ -955,6 +962,7 @@ void output_stats(stats_t *stats)
     printf("SN\tinward oriented pairs:\t%ld\n", (long)nisize_inward);
     printf("SN\toutward oriented pairs:\t%ld\n", (long)nisize_outward);
     printf("SN\tpairs with other orientation:\t%ld\n", (long)nisize_other);
+    printf("SN\tpairs on different chromosomes:\t%ld\n", (long)stats->nreads_anomalous/2);
 
     int ibase,iqual;
     if ( stats->max_len<stats->nbases ) stats->max_len++;
@@ -1021,7 +1029,7 @@ void output_stats(stats_t *stats)
         printf("GCC\t%d\t%.2f\t%.2f\t%.2f\t%.2f\n", ibase,100.*ptr[0]/sum,100.*ptr[1]/sum,100.*ptr[2]/sum,100.*ptr[3]/sum);
     }
     printf("# Insert sizes. Use `grep ^IS | cut -f 2-` to extract this part. The columns are: pairs total, inward oriented pairs, outward oriented pairs, other pairs\n");
-    for (isize=1; isize<ibulk; isize++)
+    for (isize=0; isize<ibulk; isize++)
         printf("IS\t%d\t%ld\t%ld\t%ld\t%ld\n", isize, (long)(stats->isize_inward[isize]+stats->isize_outward[isize]+stats->isize_other[isize]),
             (long)stats->isize_inward[isize], (long)stats->isize_outward[isize], (long)stats->isize_other[isize]);
 
@@ -1313,7 +1321,7 @@ int main(int argc, char *argv[])
 
     stats_t *stats = calloc(1,sizeof(stats_t));
     stats->ngc    = 200;
-    stats->nquals = 95;
+    stats->nquals = 256;
     stats->nbases = 300;
     stats->nisize = 8000;
     stats->max_len   = 30;
