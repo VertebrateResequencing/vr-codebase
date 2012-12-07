@@ -379,7 +379,7 @@ sub main
     # Run summary stats
     for my $vcf (@vcfs)
     {
-        $self->spawn('vcf_stats',"$vcf.stats",$vcf,q[awk '/^#/||$7=="PASS"']);
+        $self->spawn('vcf_stats',"$vcf.vchk",$vcf);
 		my $filt = $vcf; $filt =~ s/.vcf.gz/.filt.vcf.gz/;
         $self->spawn('apply_filter',$filt,$vcf);
     }
@@ -1202,9 +1202,8 @@ sub combine_vqsr
 
 sub vcf_stats
 {
-    my ($self,$outfile,$vcf,$filter) = @_;
-    my $cmd = "zcat $vcf | " .(defined $filter ? "$filter |" : ''). "vcf-stats -s - -p $outfile.part/stats";
-    $self->cmd($cmd);
+    my ($self,$outfile,$vcf) = @_;
+    $self->cmd("vcf check -fs - $vcf > $outfile.part");
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
 
