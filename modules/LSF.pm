@@ -387,9 +387,10 @@ sub run
                 $opts{queue} = 'normal';
             }
         }
-        Utils::error("Invalid queue specified: $opts{queue}\n") if( $opts{queue} ne 'normal' && $opts{queue} ne 'long' && $opts{queue} ne 'basement' && $opts{queue} ne 'yesterday' );
-        
-        $opts{bsub_opts} = "-q $opts{queue}";
+        if ( defined($opts{queue}) ) 
+        {
+            $opts{bsub_opts} = "-q $opts{queue}";
+        }
         if ( defined($opts{memory}) ) 
         {
             $opts{bsub_opts} .= sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $opts{memory}*1000,$opts{memory},$opts{memory};
