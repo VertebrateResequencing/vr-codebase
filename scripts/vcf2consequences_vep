@@ -261,7 +261,7 @@ sub load_vep_cache
 
 		my $gene_name=$rec->{Gene}; # Default to ENS id
 		my ($sift_pred,$polyphen_pred,$condel_pred);
-		my @extra_cols = split(/;/, $rec->{Extra});	# eg PolyPhen=unknown(0);SIFT=tolerated(0.56);HGNC=RERE
+		my @extra_cols = split(/;/, $rec->{Extra}) if $rec->{Extra};	# eg PolyPhen=unknown(0);SIFT=tolerated(0.56);HGNC=RERE
 		foreach (@extra_cols) {
 			my ($key,$val) = split(/=/);
 			$gene_name = $val if $key eq 'HGNC';
