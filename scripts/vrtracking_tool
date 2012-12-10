@@ -120,7 +120,7 @@ use Carp;
 
 my ($config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test);
 #values for $stage that involve *resetting* db flags and file deletion
-my @stages =  ('import', 'qc', 'genotype', 'improved', 'snp_called', 'assembled');
+my @stages =  ('import', 'qc', 'genotype', 'improved', 'snp_called', 'assembled', 'mapped');
 #values for $stage that can EITHER have flags reset as above, OR have VRTrack objects and whole directories deleted, depending on whether the --delete/-del flag is set)
 my @entities = ('lane', 'library', 'sample', 'study');
 
@@ -281,7 +281,9 @@ while (<>){
 				genotype => ["^$vrinput\.gtype\$", "^$vrinput\.gtypex\$", "^$vrinput\.gtypey\$", "^$vrinput\.glf\$", "^_$vrinput\_glf\.o\$", "^_$vrinput\_glf\.e\$"],
 				improved => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.bam\.recal_data\.csv\$", "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.bam", "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.(?!snp\$)",
 				            "^\.realign\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.recalibrate\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.sort\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.rewrite\_header\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$"],
-				snp_called => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.snp\$"],
+				snp_called => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.snp\$",
+					       "^[0-9]+\.[ps]e\.markdup\.snp\$",
+					       "^[0-9]+\.[ps]e\.raw\.sorted\.snp\$"],
 				all => ["^[\\w]+"],
                                 assembled => ["^_pool_fastqs",
                                               "^pool_1\.fastq\.gz\$",
@@ -294,6 +296,18 @@ while (<>){
                                               "^_assembly_update_db_done\$",  # replaced _update_db_done      
                                               "^velvet_assembly_logfile\.txt\$",
                                               "^velvet_assembly\$"],
+                                mapped => ["^\._mark_duplicates_[ps]e_[0-9]+.[oe].archive\$",
+                                           "^\._statistics_[0-9]+\.[ps]e\.raw\.sorted\.bam\.[oe]\.archive\$",
+                                           "^\._merge_[ps]e_[0-9]+\.[oe]\.archive\$",
+                                           "^\._map_[ps]e_[0-9]+_[0-9]+\.[oe]\.archive\$",
+                                           "^\._split_[ps]e_[0-9]+\.[oe]\.archive\$",
+                                           "^[0-9]+\.[ps]e\.markdup\.bam\$","^[0-9]+\.[ps]e\.markdup\.bam\.bai\$",
+                                           "^[0-9]+\.[ps]e\.raw\.sorted\.bam\$","^[0-9]+\.[ps]e\.raw\.sorted\.bam\.bai\$",
+                                           "^[0-9]+\.[ps]e\.raw\.sorted\.bam_graphs\$",
+                                           "^[0-9]+\.[ps]e\.raw\.sorted\.bam\.(cover|bc|bas|flagstat)\$",
+                                           "^\.[0-9]+\.[ps]e\.raw\.sorted\.bam\.checked\$",
+                                           "^\.mapping_complete_[ps]e_[0-9]+\$",
+                                           "^\.split_complete_[ps]e_[0-9]+\$"],
     		);
     		
     		my @files_del = $entity_op ? @{$files_deleted{$reset_stage}} : @{$files_deleted{$stage}};	
@@ -316,7 +330,7 @@ while (<>){
 						unless ($test) {remove_tree($filepath) or die "Unable to delete the directory $filepath, error = $!\n"};
 						$logger->info("Removed directory: ", $filepath);
 					}
-					elsif ( -e $filepath ) {
+					elsif ( -e $filepath || (!-e $filepath && -l $filepath) ) {
 						unless ($test) {unlink $filepath or die "Unable to delete $filepath, error = $!\n"}; 
 						$logger->info("Deleted: ", $filepath);
 					}
@@ -328,8 +342,8 @@ while (<>){
     			for my $flag (@reset_flags) {
     				unless ($test) {
     					$reset_obj->is_processed($flag => 0);
-    					if ( ($reset_stage eq 'qc' || $reset_stage eq 'all') && $reset_obj->isa('VRTrack::Lane')) {
-    						$reset_obj->genotype_status('unchecked');
+    					if ( ($reset_stage eq 'qc' || $reset_stage eq 'mapped' || $reset_stage eq 'all') && $reset_obj->isa('VRTrack::Lane')) {
+    						$reset_obj->genotype_status('unchecked') unless $reset_stage eq 'mapped';
 						$logger->info("Deleted ".$flag." mapstats for the lane ".$reset_obj->name()) if delete_mapstats_entries($reset_obj,$flag);
     					}	
     					$reset_obj->update;
