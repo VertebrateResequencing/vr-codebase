@@ -139,14 +139,18 @@ sub job_in_bjobs
     if ( $$job{status} eq 'EXIT' ) { return $Error; } 
     if ( $$job{status} eq 'RUN' ) 
     {
-        my $bswitch;
-        if ( $$job{cpu_time}*1.3 > 2*24*3600 ) { $bswitch = 'basement' }
-        elsif ( $$job{cpu_time}*1.3 > 2*3600 && $$job{queue} ne 'basement' ) { $bswitch = 'long' }
-
-        if ( defined $bswitch && $bswitch ne $$job{queue} )
+        my $queue = $$job{queue};
+        my %queue_limits = ( basement=>1e9, long=>2880*60, normal=>720*60, small=>30*60 );
+        if ( exists($queue_limits{$queue}) && $$job{cpu_time}*1.3 > $queue_limits{$queue} )
         {
-            warn("Changing queue of the job $jid from $$job{queue} to $bswitch\n");
-            `bswitch $bswitch $jid`;
+            my $bswitch;
+            for my $q (sort {$queue_limits{$a} <=> $queue_limits{$b}} keys %queue_limits)
+            {
+                if ( $$job{cpu_time}*1.3 > $queue_limits{$q} ) { next; }
+                warn("Changing queue of the job $jid from $$job{queue} to $q\n");
+                `bswitch $q $jid`;
+
+            }
         }
         return $Running;
     }
