@@ -491,6 +491,7 @@ sub processed_lane_hnames_with_limits {
     my ($self,$max_lanes, $limits, @filter) = @_;
     
     my $additional_limits = "";
+    my @additional_limit_terms;
     foreach my $limit_type (qw(project sample library lane)) {
         if (defined $limits->{$limit_type}) {
             my $array = $limits->{$limit_type};
@@ -500,13 +501,14 @@ sub processed_lane_hnames_with_limits {
             
             for my $search_term (@{$limits->{$limit_type}})
             {
-                $additional_limits .= ' OR '.$limit_type.'.name = "%'.$search_term.'%" ';
+                push(@additional_limit_terms, $limit_type.'.name LIKE "%'.$search_term.'%"');
             }
         }
     }
     
-    if($additional_limits  ne "")
+    if(@additional_limit_terms > 0)
     {
+      $additional_limits = join(" OR ", @additional_limit_terms);
       $additional_limits = ' AND ('.$additional_limits.') ';
     }
     
