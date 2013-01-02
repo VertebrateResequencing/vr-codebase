@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r785';
+our $VERSION = 'r810';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
@@ -336,7 +336,7 @@ sub next_data_array
     if ( !$line ) { return undef; }
     if ( ref($line) eq 'ARRAY' ) { return $line; }
     my @items = split(/\t/,$line);
-    if ( @items<8 ) { $line=~s/\n/\\n/g; $self->throw("Could not parse the line: [$line]"); }
+    if ( @items<8 ) { $line=~s/\n/\\n/g; $self->throw("Could not parse the line, wrong number of columns: [$line]"); }
     chomp($items[-1]);
     return \@items;
 }
@@ -1089,8 +1089,8 @@ sub remove_field
 
     Usage   : my $col = $vcf->replace_field('GT:PL:DP:SP:GQ','XX',1,':');    # returns 'GT:XX:DP:SP:GQ'
     Arg 1   : Field
-        2   : The index of the field to replace
-        3   : Replacement
+        2   : Replacement
+        3   : 0-based index of the field to replace
         4   : Field separator
     Returns : Modified string
 
@@ -1105,8 +1105,17 @@ sub replace_field
     while ($itag!=$idx)
     {
         $isep = index($string,$sep,$prev_isep);
-        # Todo: VCFv4.1 allows omitting empty fields, shouldn't fail here
-        if ( $isep==-1 ) { $self->throw("The index out of range: $string:$isep .. $idx"); }
+        if ( $isep==-1 ) 
+        { 
+            # the out of range index may be OK, VCFv4.1 allows omitting empty fields
+            if ( $$self{version}<4.1 ) 
+            { 
+                $self->throw("The index out of range ($string,$repl,$idx,$sep), missing fields not supported in VCFv$$self{version}."); 
+            }
+            while ( $itag<$idx ) { $string .= ':'; $itag++; }
+            $string .= $repl;
+            return $string;
+        }
         $prev_isep = $isep+1;
         $itag++;
     }
@@ -3378,20 +3387,9 @@ sub Vcf4_1::validate_alt_field
             if ( !($pos=~/^\S+:\d+$/) ) { $msg=', cannot parse sequence:position'; push @err,$item; next; }
             next;
         }
-        if ( $item=~/^\.[ACTGNactgn]*([ACTGNactgn])$/ )
-        {
-            if ( $ref1 ne $1 ) { $msg=', last base does not match the reference'; push @err,$item; }
-            next; 
-        }
-        elsif ( $item=~/^([ACTGNactgn])[ACTGNactgn]*\.$/ )
-        {
-            if ( substr($ref,-1,1) ne $1 ) { $msg=', first base does not match the reference'; push @err,$item; }
-            next; 
-        }
+        if ( $item=~/^\.[ACTGNactgn]*([ACTGNactgn])$/ ) { next; }
+        elsif ( $item=~/^([ACTGNactgn])[ACTGNactgn]*\.$/ ) { next; }
         if ( !($item=~/^[ACTGNactgn]+$|^<[^<>\s]+>$/) ) { push @err,$item; next; }
-        if ( $item=~/^<[^<>\s]+>$/ ) { next; }
-        if ( $ref_len==length($item) ) { next; }
-        if ( substr($item,0,1) ne $ref1 ) { $msg=', first base does not match the reference'; push @err,$item; next; }
     }
     if ( !@err ) { return undef; }
     return 'Could not parse the allele(s) [' .join(',',@err). ']' . $msg;

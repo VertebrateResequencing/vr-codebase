@@ -320,7 +320,7 @@ sub join_vcfs_chr
     my ($opts) = @_;
 
     delete($$opts{ifile});
-    $$opts{swapped} = [ (-1) x $$opts{nsamples} ];
+    $$opts{swapped} = [ (0) x $$opts{nsamples} ];
     $$opts{phasing_set} = [ (0) x $$opts{nsamples} ];
 
     my ($vcf1,$rec1) = next_vcf_file($opts);
@@ -416,7 +416,7 @@ sub join_vcfs_chr
             }
             if ( defined $rec1 && $$rec1[1] ne $$rec2[1] )
             {
-                error("Uh, out of sync: $$rec1[0]:$$rec1[1] ne $$rec2[1]");
+                error("ERROR\tThe lines out of sync: $$rec1[0]:$$rec1[1] in (1) vs $$rec2[0]:$$rec2[1] in (2), where (1)=$$opts{file1} (2)=$$opts{file2}\n");
             }
         }
 
@@ -556,9 +556,15 @@ sub flush_buffer
 
         my $ngts = $$opts{nsamples};
         my $nerrors  = 0;
-        my (@als1,@als2);
+        my (@als1,@als2,@phased);
         for (my $i=0; $i<@$gts1; $i++)
         {
+            if ( index($$gts1[$i],'|')==-1 or index($$gts2[$i],'|')==-1 )
+            {
+                push @phased, 0;
+                next;
+            }
+            push @phased, 1;
             my ($a1,$a2) = $vcf->split_gt($$gts1[$i]);
             my ($b1,$b2) = $vcf->split_gt($$gts2[$i]);
             if ( !defined $a2 ) { $a2 = $a1; }  # haploid genotypes
@@ -577,14 +583,14 @@ sub flush_buffer
 
         for (my $i=0; $i<@$gts1; $i++)
         {
+            if ( !$phased[$i] ) { next; }
+
             my $a1 = $als1[2*$i];
             my $a2 = $als1[2*$i+1];
             my $b1 = $als2[2*$i];
             my $b2 = $als2[2*$i+1];
 
-            if ( $a1 eq $a2 or $b1 eq $b2 ) { next; }
-
-            $nsites[$i]++;
+            if ( $a1 eq $a2 or $b1 eq $b2 ) { next; }   # homozygous GT
 
             if ( $a1 eq $b1 && $a2 eq $b2 ) 
             { 
@@ -598,16 +604,18 @@ sub flush_buffer
                 $lks_match[$i] += log($p*(1-$p) + (1-$p)*$p);
                 $lks_mism[$i] += log($p*$p + (1-$p)*(1-$p));
             }
-            else { error("Uh: $$rec1[0]:$$rec1[1] .. $a1 $a2 vs $b1 $b2\n"); }
+            else { next; } # different alleles might have been selected at multiallelic sites
+
+            $nsites[$i]++;
         }
     }
 
     my $file1 = $$opts{file1};
     my $file2 = $$opts{file2};
-    my @swapped = [ (0) x $$opts{nsamples} ];
+    my @swapped = ( (0) x $$opts{nsamples} );
     my @quals = ();
     my $log10 = log(10);
-    for (my $i=0; $i<@lks_match; $i++)
+    for (my $i=0; $i<$$opts{nsamples}; $i++)
     {
         if ( !defined $lks_match[$i] )
         {

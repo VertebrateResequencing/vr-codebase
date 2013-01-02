@@ -472,11 +472,52 @@ sub hierarchy_path_of_object {
 
 sub processed_lane_hnames {
     my ($self,@filter) = @_;
-    return $self->processed_lane_hnames_with_lane_limit(-1,@filter);
+    return $self->processed_lane_hnames_with_lane_limit(-1,"",@filter);
 }
 
+=head2 processed_lane_hnames_with_limits
+
+  Arg [1]    : list of flags and values
+  Example    : my $all_lanes   = $track->processed_lane_hnames_with_limits();
+               my $qc_lanes    = $track->processed_lane_hnames_with_limits('qc'=>1);
+               my $no_qc_lanes = $track->processed_lane_hnames_with_limits('qc'=>0);
+  Description: retrieves a (optionally filtered) list of all lane hierarchy names, ordered by project, sample, library names. 
+               It filters applies another filter on the names of projects/samples/libraries/lanes at the sql level to reduce the 
+               dataset and speedup post processing
+  Returntype : arrayref
+
+=cut
+sub processed_lane_hnames_with_limits {
+    my ($self,$max_lanes, $limits, @filter) = @_;
+    
+    my $additional_limits = "";
+    my @additional_limit_terms;
+    foreach my $limit_type (qw(project sample library lane)) {
+        if (defined $limits->{$limit_type}) {
+            my $array = $limits->{$limit_type};
+            unless (ref($array) && ref($array) eq 'ARRAY') {
+                die "In your config file, the limits->$limit_type is supposed to be an array ref\n";
+            }
+            
+            for my $search_term (@{$limits->{$limit_type}})
+            {
+                push(@additional_limit_terms, $limit_type.'.name LIKE "%'.$search_term.'%"');
+            }
+        }
+    }
+    
+    if(@additional_limit_terms > 0)
+    {
+      $additional_limits = join(" OR ", @additional_limit_terms);
+      $additional_limits = ' AND ('.$additional_limits.') ';
+    }
+    
+    return $self->processed_lane_hnames_with_lane_limit(-1,$additional_limits, @filter);
+}
+
+
 sub processed_lane_hnames_with_lane_limit {
-    my ($self,$max_lanes,@filter) = @_;
+    my ($self,$max_lanes,$additional_limits, @filter) = @_;
     if ( scalar @filter % 2 ) { croak "Expected list of keys and values.\n"; }
     my %flags = VRTrack::Core_obj->allowed_processed_flags();
     my @goodfilters;
@@ -506,6 +547,7 @@ sub processed_lane_hnames_with_lane_limit {
                 where lane.library_id = library.library_id 
                       and library.sample_id = sample.sample_id 
                       and sample.project_id = project.project_id 
+                      $additional_limits
                 $filterclause 
                 order by project.hierarchy_name, 
                         sample.name, 

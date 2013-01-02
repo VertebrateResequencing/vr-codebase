@@ -769,8 +769,8 @@ sub get_qc_jobs_from_vrtrack
     my %filter  = ('qc'=>0,'import'=>1);
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
 
-
-    my $hnames = $vrtrack->processed_lane_hnames(%filter);
+    my $hnames = $vrtrack->processed_lane_hnames_with_limits(-1,$config_data->{limits}, %filter);
+    
     my @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config);
 
     my $jobs_running = 0;
@@ -976,10 +976,10 @@ sub get_improvement_jobs_from_vrtrack {
     my @lanes;
     if ( exists $config_data->{qc} && $config_data->{qc} ) { 
         $filter{qc} = $config_data->{qc}; 
-        @lanes = @{$vrtrack->processed_lane_hnames(%filter) || []};
+        @lanes = @{$vrtrack->processed_lane_hnames_with_limits(-1,$config_data->{limits}, %filter) || []};
         debug($config_data, "got ", scalar(@lanes), " lanes that were mapped, passed qc and not improved...");
     } else {
-        @lanes = @{$vrtrack->processed_lane_hnames(%filter) || []};
+        @lanes = @{$vrtrack->processed_lane_hnames_with_limits(-1,$config_data->{limits}, %filter) || []};
         debug($config_data, "got ", scalar(@lanes), " lanes that were mapped and not improved...");
     } 
     
@@ -1034,9 +1034,8 @@ sub get_rna_seq_jobs_from_vrtrack {
     my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
     
     my %filter  = ( mapped => 1, rna_seq_expression => 0 );
-    # FIXME: not scalable, need to filter at this point, rather than getting all lanes and filtering later
-    my @lanes = @{$vrtrack->processed_lane_hnames(%filter) || []};
-
+    my @lanes = @{$vrtrack->processed_lane_hnames_with_limits(-1,$config_data->{limits}, %filter) || []};
+    
     if (defined $config_data->{limits}) {
         @lanes = filter_lanes($config_data->{limits}, \@lanes, $vrtrack, $config);
         debug($config_data, "got ", scalar(@lanes), " lanes that passed your limits...");
@@ -1095,7 +1094,8 @@ sub get_assembly_jobs_from_vrtrack {
     }
     
     my %filter  = ( stored => 1, import => 1, assembled => 0 );
-    my @lanes = @{$vrtrack->processed_lane_hnames_with_lane_limit($max_lanes, %filter) || []};
+    
+    my @lanes = @{$vrtrack->processed_lane_hnames_with_limits($max_lanes,$config_data->{limits}, %filter) || []};
 
     if (defined $config_data->{limits}) {
         @lanes = filter_lanes($config_data->{limits}, \@lanes, $vrtrack, $config);
@@ -1290,7 +1290,8 @@ sub get_snps_jobs_from_vrtrack {
     my %filter  = ('improved'=>1, 'snp_called' => 0);
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
 
-    my $hnames = $vrtrack->processed_lane_hnames(%filter);
+    my $hnames = $vrtrack->processed_lane_hnames_with_limits(-1,$config_data->{limits}, %filter);
+    
     my @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config);
 
     # Ignore snp_called
