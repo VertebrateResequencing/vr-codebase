@@ -171,7 +171,7 @@ sub displaySamplesPage
 
 				if( ! $firstL ){print qq[<tr><td></td><td></td>];$firstL=0;}
 
-				print qq[ <td style="background-color:$colour;">$lname</td> ];
+				print qq[ <td style="background-color:$colour;"><a href="$study_lanes_script?;proj_id=$projectID&amp;db=$database&amp;lib=$lname">$lname</a></td> ];
 
 				print $numLanes > 0 ? qq[<td>$numLanes</td><td>$passedLanes</td>] : qq[<td></td><td></td>];
 				print $total_passed_bases > 0 ? qq[<td>$pass_seq</td>] : qq[<td></td>];

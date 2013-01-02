@@ -157,12 +157,15 @@ sub convert_known
         print $fh_legend "id position a0 a1\n";
         $fname = "$$opts{prefix}.known_haps.gz";
     }
+    my $prev;
     open($fh,"| gzip -c > $fname.part") or error("| gzip -c > $fname.part: $!");
     while (my $x = $vcf->next_data_hash())
     {
         # Consider only biallelic sites
         if ( scalar @{$$x{ALT}}!=1 or $$x{ALT}[0] eq '.' ) { next; }
         if ( !($$x{ALT}[0]=~/^[ACGT]+$/) or !($$x{REF}=~/^[ACGT]+$/) ) { next; }
+        if ( defined $prev && $$prev{CHROM} eq $$x{CHROM} && $$prev{POS} eq $$x{POS} ) { next; }
+        $prev = $x;
 
         my $oid = "$$x{CHROM}:$$x{POS}_$$x{REF}_$$x{ALT}[0]";
         my @out;
@@ -228,6 +231,7 @@ sub convert_to_be_imputed
     my $th   = $$opts{exclude_th} ? $$opts{exclude_th} : 0;
     my $frac = $$opts{exclude_frac} ? $$opts{exclude_frac} : 1;
     my $nsamples = @samples;
+    my $prev;
 
     open($fh,"| gzip -c > $$opts{prefix}.impute_gts.gz.part") or error("| gzip -c > $$opts{out}.impute_gts.gz.part: $!");
     while (my $x = $vcf->next_data_hash())
@@ -235,6 +239,8 @@ sub convert_to_be_imputed
         # Consider only biallelic sites
         if ( scalar @{$$x{ALT}}!=1 or $$x{ALT}[0] eq '.' ) { next; }
         if ( !($$x{ALT}[0]=~/^[ACGT]+$/) or !($$x{REF}=~/^[ACGT]+$/) ) { next; }
+        if ( defined $prev && $$prev{CHROM} eq $$x{CHROM} && $$prev{POS} eq $$x{POS} ) { next; }
+        $prev = $x;
 
         # Encode indels in the SNP id and fake ref,alt allele
         my $ref = $$x{REF};

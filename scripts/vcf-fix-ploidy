@@ -165,8 +165,8 @@ sub fix_ploidy
                 if ( $gt ne '.' && $gt ne './.' ) 
                 { 
                     my (@als) = $vcf->split_gt($gt);
-                    if ( defined $pl ) { ($new_pl) = reploid_g(1,  $nals, $pl, scalar @als, 1); }
-                    if ( defined $gl ) { ($new_gl) = reploid_g(-1, $nals, $gl, scalar @als, 1); }
+                    if ( defined $pl && $pl ne '.' ) { ($new_pl) = reploid_g($rec, 1,  $nals, $pl, scalar @als, 1); }
+                    if ( defined $gl && $gl ne '.' ) { ($new_gl) = reploid_g($rec, -1, $nals, $gl, scalar @als, 1); }
                     $new_gt = '.'; 
                     $nchanged{removed}{$sample}++; 
                 }
@@ -177,8 +177,8 @@ sub fix_ploidy
                 if ( $$samples{$sample} != @als )
                 {
                     $new_gt = join('/',($als[0]) x $$samples{$sample});
-                    if ( defined $pl ) { ($new_pl,$new_gt) = reploid_g(1,  $nals, $pl, scalar @als, $$samples{$sample}); }
-                    if ( defined $gl ) { ($new_gl,$new_gt) = reploid_g(-1, $nals, $gl, scalar @als, $$samples{$sample}); }
+                    if ( defined $pl && $pl ne '.' ) { ($new_pl,$new_gt) = reploid_g($rec, 1,  $nals, $pl, scalar @als, $$samples{$sample}); }
+                    if ( defined $gl && $gl ne '.' ) { ($new_gl,$new_gt) = reploid_g($rec, -1, $nals, $gl, scalar @als, $$samples{$sample}); }
                 }
             }
             if ( defined $new_gt )
@@ -213,7 +213,7 @@ sub fix_ploidy
 
 sub reploid_g
 {
-    my ($extr,$nals,$str,$n,$m) = @_;
+    my ($rec, $extr,$nals,$str,$n,$m) = @_;
     my @vals = split(/,/,$str);
     if ( $n==2 && $m==1 )
     {
@@ -223,7 +223,7 @@ sub reploid_g
         my ($imin,$min);
         for (my $i=0; $i<$nals; $i++)
         {
-            if ( $k>=@vals ) { error("Cannot reploid, too few values in $str: $nals, $n->$m ($i,$d,$k)\n"); }
+            if ( $k>=@vals ) { error("Cannot reploid $$rec[0]:$$rec[1], too few values in $str: $nals, $n->$m ($i,$d,$k)\n"); }
             if ( $vals[$k] ne '.' && (!defined $min or $min>$extr*$vals[$k]) )
             {
                 $min = $extr*$vals[$k];
