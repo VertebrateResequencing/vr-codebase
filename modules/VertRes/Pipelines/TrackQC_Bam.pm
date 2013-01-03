@@ -722,8 +722,16 @@ sub auto_qc
         push @qc_status, { test=>$test, status=>$status, reason=>$reason };
     }
 
+    #  May not have any indels
+    my $indel_distribution_exists = 0;
+    eval {
+        $bc->get('indel_dist');
+        $indel_distribution_exists = 1;
+    };
+    
+        
     # Number of insertions vs deletions 
-    if ( exists($$self{auto_qc}{max_ins_to_del_ratio}) )
+    if ( exists($$self{auto_qc}{max_ins_to_del_ratio}) && $indel_distribution_exists == 1)
     {
         my $max = $$self{auto_qc}{max_ins_to_del_ratio};
         $test   = 'InDel ratio';
