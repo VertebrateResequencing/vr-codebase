@@ -14,7 +14,7 @@ foreach my $repo ("$base/bin-external", "$base/codebase", "$base/vrpipe/master")
 }
 
 # rsync things from 'main' /software/vertres to precise-only /software/vertres
-my @to_rsync = qw(/software/vertres/etc/ /software/vertres/vrpipe/archive_disc_pool);
+my @to_rsync = qw(/software/vertres/etc/ /software/vertres/vrpipe/archive_disc_pool /software/vertres/vrpipe/siteconfig/);
 foreach my $path (@to_rsync) {
     warn "\nrsyncing $path\n";
     system("rsync -rlptOD -z --delete $path precise-dev64:$path");
