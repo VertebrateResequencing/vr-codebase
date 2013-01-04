@@ -38,7 +38,10 @@ sub _build__bc_coverage
 
     # get coverage from bamcheck file
     my $bc = VertRes::Parser::bamcheck->new( file => $self->bamcheck );
-    return $bc->get('coverage');
+    my $bc_cov;
+    eval{$bc_cov = $bc->get('coverage');};
+    if($@){return [];}
+    return $bc_cov;
 }
 
 
@@ -74,6 +77,7 @@ sub coverage
 
     # Get coverage from bamcheck file
     my @bc_cover = @{$self->_bc_coverage};
+
     for(my $x=1; $x < @bc_cover; $x++)
     {
         for(my $i=0; $i < @bin; $i++)
@@ -117,7 +121,6 @@ sub coverage_depth
         $depth_hist{$bc_cover[$x][1]} += $bc_cover[$x][2] if $bc_cover[$x][2];
     }
 
-    unless( $coverage ){ $self->throw("No coverage information for: ".$self->bamcheck."\n"); }
     unless( $coverage <= $self->ref_size ){ $self->throw("Total bases found by bamcheck exceeds size of reference sequence.\n"); }
 
     # Add ummapped bases to histogram.

@@ -603,7 +603,7 @@ sub plot_gc_depth
             set title "$$args{title}"
             set x2tics ($x2tics)
             set xtics nomirror
-            set xrange [0.1:99.9]
+            set xrange [0.1:100.0]
             
             plot '-' using 1:2:3 with filledcurve lt 1 lc rgb "#dedede" t '10-90th percentile' , \\
                  '-' using 1:2:3 with filledcurve lt 1 lc rgb "#bbdeff" t '25-75th percentile' , \\
