@@ -501,8 +501,9 @@ sub processed_lane_hnames_with_limits {
             
             for my $search_term (@{$limits->{$limit_type}})
             {
-                $search_term =~ s!\\!\\\\!g;
-                push(@additional_limit_terms, $limit_type.'.name REGEXP "^'.$search_term.'$"');
+                my $escaped_search_term  = $search_term;
+                $escaped_search_term =~ s!\\!\\\\!g;
+                push(@additional_limit_terms, $limit_type.'.name REGEXP "^'.$escaped_search_term.'$"');
             }
         }
     }
