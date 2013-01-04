@@ -159,6 +159,10 @@ sub _get_header {
         'outward oriented pairs'         => 'outward_pairs',
         'pairs with other orientation'   => 'other_pairs',
         'pairs on different chromosomes' => 'diff_chr_pairs',
+        'raw total sequences'    => 'raw_total_sequences',
+        'filtered sequences'     => 'filtered_sequences',
+        'reads QC failed'        => 'reads_qc_failed',
+        'non-primary alignments' => 'non_primary_alignments',
     );
     my %mapping = 
     (
