@@ -9,7 +9,7 @@ then
 fi
 
 DB="$1"
-DBEXISTS=$(mysql -u vreseq_ro -hmcs4a --batch --skip-column-names -e "SHOW DATABASES LIKE '$DB'" | grep $DB > /dev/null; echo "$?")
+DBEXISTS=$(mysql -u $VRTRACK_RO_USER -h$VRTRACK_HOST --batch --skip-column-names -e "SHOW DATABASES LIKE '$DB'" | grep $DB > /dev/null; echo "$?")
 if [ $DBEXISTS -eq 1 ];then
     echo "A database with the name $DB does not exist."
     exit
