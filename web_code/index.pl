@@ -35,6 +35,8 @@ print qq[<div class="centerFieldset">
             <p><a href="map-view/map_view.pl">Map View</a><br/>Display QC information for short-read sequencing to allow lanes to be passed/failed</p>
         
             <p><a href="pending-view/pending_view.pl">Pending View</a><br/>Display pending/started requests for libraries and sequences</p>
+            
+            <p><a href="disk_usage/vrpipe_disk_usage.pl">Vrpipe Disk Usage</a><br/>Display vrpipe disk usage for directories and pipelines</p>
            
         </fieldset>
         </div>];
