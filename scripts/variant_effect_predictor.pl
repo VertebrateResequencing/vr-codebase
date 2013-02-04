@@ -8,6 +8,7 @@ BEGIN{
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-variation/modules");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-compara/modules");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-functgenomics/modules");
+    unshift(@INC, "/software/vertres/bin-external/VEP_plugins");
 }
 
 =head1 LICENSE
