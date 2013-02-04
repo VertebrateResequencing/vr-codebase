@@ -1,8 +1,8 @@
-#!/software/bin/perl
+#!/usr/bin/env perl
 
 BEGIN{
     my $ROOT = '/software/vertres/lib/all';
-    my $VERSION = '66';
+    my $VERSION = '70';
     unshift(@INC, "$ROOT/bioperl-1.2.3/lib/site_perl/5.8.8");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl/modules");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-variation/modules");
@@ -36,7 +36,7 @@ Variant Effect Predictor - a script to predict the consequences of genomic varia
 
 http://www.ensembl.org/info/docs/variation/vep/vep_script.html
 
-Version 2.4
+Version 2.8
 
 by Will McLaren (wm2@ebi.ac.uk)
 =cut
@@ -67,7 +67,54 @@ use Bio::EnsEMBL::Variation::Utils::VEP qw(
 );
 
 # global vars
-my $VERSION = '2.4';
+my $VERSION = '2.8';
+
+ 
+# define headers that would normally go in the extra field
+# keyed on the config parameter used to turn it on
+my %extra_headers = (
+    protein         => ['ENSP'],
+    canonical       => ['CANONICAL'],
+    ccds            => ['CCDS'],
+    hgvs            => ['HGVSc','HGVSp'],
+    hgnc            => ['HGNC'],
+    sift            => ['SIFT'],
+    polyphen        => ['PolyPhen'],
+    numbers         => ['EXON','INTRON'],
+    domains         => ['DOMAINS'],
+    regulatory      => ['MOTIF_NAME','MOTIF_POS','HIGH_INF_POS','MOTIF_SCORE_CHANGE'],
+    cell_type       => ['CELL_TYPE'],
+    individual      => ['IND'],
+    xref_refseq     => ['RefSeq'],
+    check_svs       => ['SV'],
+    check_frequency => ['FREQS'],
+    gmaf            => ['GMAF'],
+    user            => ['DISTANCE'],
+);
+
+my %extra_descs = (
+    'CANONICAL'    => 'Indicates if transcript is canonical for this gene',
+    'CCDS'         => 'Indicates if transcript is a CCDS transcript',
+    'HGNC'         => 'HGNC gene identifier',
+    'ENSP'         => 'Ensembl protein identifer',
+    'HGVSc'        => 'HGVS coding sequence name',
+    'HGVSp'        => 'HGVS protein sequence name',
+    'SIFT'         => 'SIFT prediction',
+    'PolyPhen'     => 'PolyPhen prediction',
+    'EXON'         => 'Exon number(s) / total',
+    'INTRON'       => 'Intron number(s) / total',
+    'DOMAINS'      => 'The source and identifer of any overlapping protein domains',
+    'MOTIF_NAME'   => 'The source and identifier of a transcription factor binding profile (TFBP) aligned at this position',
+    'MOTIF_POS'    => 'The relative position of the variation in the aligned TFBP',
+    'HIGH_INF_POS' => 'A flag indicating if the variant falls in a high information position of the TFBP',
+    'MOTIF_SCORE_CHANGE' => 'The difference in motif score of the reference and variant sequences for the TFBP',
+    'CELL_TYPE'    => 'List of cell types and classifications for regulatory feature',
+    'IND'          => 'Individual name',
+    'SV'           => 'IDs of overlapping structural variants',
+    'FREQS'        => 'Frequencies of overlapping variants used in filtering',
+    'GMAF'         => 'Minor allele and frequency of existing variation in 1000 Genomes Phase 1',
+    'DISTANCE'     => 'Shortest distance from variant to transcript',
+);
 
 # set output autoflush for progress bars
 $| = 1;
@@ -83,6 +130,9 @@ sub main {
     my $config = shift;
     
     debug("Starting...") unless defined $config->{quiet};
+    
+    $config->{start_time} = time();
+    $config->{last_time} = time();
     
     my $tr_cache = {};
     my $rf_cache = {};
@@ -105,9 +155,39 @@ sub main {
         
         # header line?
         if(/^\#/) {
+            
+            # retain header lines if we are outputting VCF
             if(defined($config->{vcf})) {
                 push @{$config->{headers}}, $_;
             }
+            
+            # line with sample labels in VCF
+            if(defined($config->{individual}) && /^#CHROM/) {
+                my @split = split /\s+/;
+                
+                # no individuals
+                die("ERROR: No individual data found in VCF\n") if scalar @split <= 9;
+                
+                # get individual column indices
+                my %ind_cols = map {$split[$_] => $_} (9..$#split);
+                
+                # all?
+                if(scalar @{$config->{individual}} == 1 && $config->{individual}->[0] =~ /^all$/i) {
+                    $config->{ind_cols} = \%ind_cols;
+                }
+                else {
+                    my %new_ind_cols;
+                    
+                    # check we have specified individual(s)
+                    foreach my $ind(@{$config->{individual}}) {
+                        die("ERROR: Individual named \"$ind\" not found in VCF\n") unless defined $ind_cols{$ind};
+                        $new_ind_cols{$ind} = $ind_cols{$ind};
+                    }
+                    
+                    $config->{ind_cols} = \%new_ind_cols;
+                }
+            }
+            
             next;
         }
         
@@ -155,7 +235,7 @@ sub main {
             next unless validate_vf($config, $vf);
             
             # make a name if one doesn't exist
-            $vf->{variation_name} ||= $vf->{chr}.'_'.$vf->{start}.'_'.$vf->{allele_string};
+            $vf->{variation_name} ||= $vf->{chr}.'_'.$vf->{start}.'_'.($vf->{allele_string} || $vf->{class_SO_term});
             
             # jump out to convert here
             if(defined($config->{convert})) {
@@ -171,9 +251,14 @@ sub main {
                 if($vf_count == $config->{buffer_size}) {
                     debug("Read $vf_count variants into buffer") unless defined($config->{quiet});
                     
-                    print_line($config, $_) foreach @{get_all_consequences($config, \@vfs, $tr_cache, $rf_cache)};
+                    print_line($config, $_) foreach @{get_all_consequences($config, \@vfs)};
                     
-                    debug("Processed $total_vf_count total variants") unless defined($config->{quiet});
+                    # calculate stats
+                    my $total_rate = sprintf("%.0f vars/sec", $total_vf_count / ((time() - $config->{start_time}) || 1));
+                    my $rate = sprintf("%.0f vars/sec", $vf_count / ((time() - $config->{last_time}) || 1));
+                    $config->{last_time} = time();
+                    
+                    debug("Processed $total_vf_count total variants ($rate, $total_rate total)") unless defined($config->{quiet});
                     
                     @vfs = ();
                     $vf_count = 0;
@@ -187,18 +272,22 @@ sub main {
             }
         }
     }
-    $config->{out_file_handle} ||= &get_out_file_handle($config); # CJJ create file and write a header even if no vcf records
     
     # if in whole-genome mode, finish off the rest of the buffer
     if(defined $config->{whole_genome} && scalar @vfs) {
         debug("Read $vf_count variants into buffer") unless defined($config->{quiet});
         
-        print_line($config, $_) foreach @{get_all_consequences($config, \@vfs, $tr_cache, $rf_cache)};
+        print_line($config, $_) foreach @{get_all_consequences($config, \@vfs)};
         
-        debug("Processed $total_vf_count total variants") unless defined($config->{quiet});
+        # calculate stats
+        my $total_rate = sprintf("%.0f vars/sec", $total_vf_count / ((time() - $config->{start_time}) || 1));
+        my $rate = sprintf("%.0f vars/sec", $vf_count / ((time() - $config->{last_time}) || 1));
+        $config->{last_time} = time();
         
-        debug($config->{filter_count}, "/$total_vf_count variants remain after filtering") if defined($config->{filter}) && !defined($config->{quiet});
+        debug("Processed $total_vf_count total variants ($rate, $total_rate total)") unless defined($config->{quiet});
     }
+    
+    debug($config->{filter_count}, "/$total_vf_count variants remain after filtering") if (defined($config->{filter}) || defined($config->{check_frequency})) && !defined($config->{quiet});
     
     debug("Executed ", defined($Bio::EnsEMBL::DBSQL::StatementHandle::count_queries) ? $Bio::EnsEMBL::DBSQL::StatementHandle::count_queries : 'unknown number of', " SQL statements") if defined($config->{count_queries}) && !defined($config->{quiet});
     
@@ -230,7 +319,6 @@ sub configure {
         'db_version=i',            # Ensembl database version to use e.g. 62
         'genomes',                 # automatically sets DB params for e!Genomes
         'refseq',                  # use otherfeatures RefSeq DB instead of Ensembl
-        #'no_disconnect',           # disables disconnect_when_inactive
         
         # runtime options
         'most_severe',             # only return most severe consequence
@@ -245,12 +333,19 @@ sub configure {
         'chr=s',                   # analyse only these chromosomes, e.g. 1-5,10,MT
         'check_ref',               # check supplied reference allele against DB
         'check_existing',          # find existing co-located variations
+        'check_svs',               # find overlapping structural variations
         'check_alleles',           # only attribute co-located if alleles are the same
         'check_frequency',         # enable frequency checking
+        'gmaf',                    # add global MAF of existing var
         'freq_filter=s',           # exclude or include
         'freq_freq=f',             # frequency to filter on
         'freq_gt_lt=s',            # gt or lt (greater than or less than)
         'freq_pop=s',              # population to filter on
+        'filter_common',           # shortcut to MAF filtering
+        'allow_non_variant',       # allow non-variant VCF lines through
+        'individual=s',            # give results by genotype for individuals
+        'phased',                  # force VCF genotypes to be interpreted as phased
+        'fork=i',                  # fork into N processes
         
         # verbosity options
         'verbose|v',               # print out a bit more info while running
@@ -258,9 +353,10 @@ sub configure {
         'no_progress',             # don't display progress bars
         
         # output options
+        'everything|e',            # switch on EVERYTHING :-)
         'output_file|o=s',         # output file name
         'force_overwrite',         # force overwrite of output file if already exists
-        'terms=s',                 # consequence terms to use e.g. NCBI, SO
+        'terms|t=s',               # consequence terms to use e.g. NCBI, SO
         'coding_only',             # only return results for consequences in coding regions
         'canonical',               # indicates if transcript is canonical
         'ccds',                    # output CCDS identifer
@@ -271,8 +367,8 @@ sub configure {
         'sift=s',                  # SIFT predictions
         'polyphen=s',              # PolyPhen predictions
         'condel=s',                # Condel predictions
-        'gene',                    # force gene column to be populated (disabled by default, enabled when using cache)
         'regulatory',              # enable regulatory stuff
+        'cell_type=s' => ($config->{cell_type} ||= []),             # filter cell types for regfeats
         'convert=s',               # convert input to another format (doesn't run VEP)
         'filter=s',                # run in filtering mode
         'no_intergenic',           # don't print out INTERGENIC consequences
@@ -303,18 +399,26 @@ sub configure {
         'custom=s' => ($config->{custom} ||= []), # specify custom tabixed bgzipped file with annotation
         'tmpdir=s',                # tmp dir used for BigWig retrieval
         'plugin=s' => ($config->{plugin} ||= []), # specify a method in a module in the plugins directory
+        'fasta=s',                 # file or dir containing FASTA files with reference sequence
+        'freq_file=s',             # file containing freqs to add to cache build
         
         # debug
         'cluck',                   # these two need some mods to Bio::EnsEMBL::DBSQL::StatementHandle to work. Clucks callback trace and SQL
         'count_queries',           # counts SQL queries executed
         'admin',                   # allows me to build off public hosts
         'debug',                   # print out debug info
+        'tabix',                   # experimental use tabix cache files
     ) or die "ERROR: Failed to parse command-line flags\n";
     
     # print usage message if requested or no args supplied
     if(defined($config->{help}) || !$args) {
         &usage;
         exit(0);
+    }
+    
+    # config file?
+    if(defined $config->{config}) {
+        read_config_from_file($config, $config->{config});
     }
     
     # dir is where the cache and plugins live
@@ -331,14 +435,38 @@ sub configure {
     if(-e $ini_file) {
         read_config_from_file($config, $ini_file);
     }
-    
-    # config file?
-    if(defined $config->{config}) {
-        read_config_from_file($config, $config->{config});
-    }
 
     # can't be both quiet and verbose
     die "ERROR: Can't be both quiet and verbose!\n" if defined($config->{quiet}) && defined($config->{verbose});
+    
+    # check forking
+    if(defined($config->{fork})) {
+        die "ERROR: Fork number must be greater than 1\n" if $config->{fork} <= 1;
+        
+        # check we can use MIME::Base64
+        eval q{ use MIME::Base64; };
+        
+        if($@) {
+            debug("WARNING: Unable to load MIME::Base64, forking disabled") unless defined($config->{quiet});
+            delete $config->{fork};
+        }
+        else {
+            
+            # try a practice fork
+            my $pid = fork;
+            
+            if(!defined($pid)) {
+                debug("WARNING: Fork test failed, forking disabled") unless defined($config->{quiet});
+                delete $config->{fork};
+            }
+            elsif($pid) {
+                waitpid($pid, 0);
+            }
+            elsif($pid == 0) {
+                exit(0);
+            }
+        }
+    }
     
     # check file format
     if(defined $config->{format}) {
@@ -348,6 +476,77 @@ sub configure {
     # check convert format
     if(defined $config->{convert}) {
         die "ERROR: Unrecognised output format for conversion specified \"".$config->{convert}."\"\n" unless $config->{convert} =~ /vcf|ensembl|pileup|hgvs/i;
+    }
+    
+    
+    if(defined($config->{fasta})) {
+        die "ERROR: Specified FASTA file/directory not found" unless -e $config->{fasta};
+        
+        eval q{ use Bio::DB::Fasta; };
+        
+        if($@) {
+            die("ERROR: Could not load required BioPerl module\n");
+        }
+        
+        # try to overwrite sequence method in Slice
+        eval q{
+            package Bio::EnsEMBL::Slice;
+            
+            # define a global variable so that we can pull in config hash
+            our $config;
+            
+            {
+                # don't want a redefine warning spat out, thanks
+                no warnings 'redefine';
+                
+                # overwrite seq method to read from FASTA DB
+                sub seq {
+                    my $self = shift;
+                    
+                    # special case for in-between (insert) coordinates
+                    return '' if($self->start() == $self->end() + 1);
+                    
+                    my $seq;
+                    
+                    if(defined($config->{fasta_db})) {
+                        $seq = $config->{fasta_db}->seq($self->seq_region_name, $self->start => $self->end);
+                        reverse_comp(\$seq) if $self->strand < 0;
+                    }
+                    
+                    else {
+                        return $self->{'seq'} if($self->{'seq'});
+                      
+                        if($self->adaptor()) {
+                          my $seqAdaptor = $self->adaptor()->db()->get_SequenceAdaptor();
+                          return ${$seqAdaptor->fetch_by_Slice_start_end_strand($self,1,undef,1)};
+                        }
+                    }
+                    
+                    # default to a string of Ns if we couldn't get sequence
+                    $seq ||= 'N' x $self->length();
+                    
+                    return $seq;
+                }
+            }
+            
+            1;
+        };
+        
+        if($@) {
+            die("ERROR: Could not redefine sequence method\n");
+        }
+        
+        # copy to Slice for offline sequence fetching
+        $Bio::EnsEMBL::Slice::config = $config;
+        
+        # spoof a coordinate system
+        $config->{coord_system} = Bio::EnsEMBL::CoordSystem->new(
+            -NAME => 'chromosome',
+            -RANK => 1,
+        );
+        
+        debug("Checking/creating FASTA index") unless defined($config->{quiet});
+        $config->{fasta_db} = Bio::DB::Fasta->new($config->{fasta});
     }
     
     # check if user still using --standalone
@@ -370,8 +569,6 @@ sub configure {
     
     # refseq or core?
     if(defined($config->{refseq})) {
-        die "ERROR: SIFT, PolyPhen and Condel predictions not available fore RefSeq transcripts\n" if defined $config->{sift} || defined $config->{polyphen} || defined $config->{condel};
-        
         $config->{core_type} = 'otherfeatures';
     }
     else {
@@ -389,22 +586,55 @@ sub configure {
         }
     }
     
+    # everything?
+    if(defined($config->{everything})) {
+        my %everything = (
+            sift       => 'b',
+            polyphen   => 'b',
+            ccds       => 1,
+            hgvs       => 1,
+            hgnc       => 1,
+            numbers    => 1,
+            domains    => 1,
+            regulatory => 1,
+            canonical  => 1,
+            protein    => 1,
+            gmaf       => 1,
+        );
+        
+        $config->{$_} = $everything{$_} for keys %everything;
+        
+        # these ones won't work with offline
+        delete $config->{hgvs} if defined($config->{offline}) && !defined($config->{fasta_db});
+    }
+    
     # check nsSNP tools
     foreach my $tool(grep {defined $config->{lc($_)}} qw(SIFT PolyPhen Condel)) {
         die "ERROR: Unrecognised option for $tool \"", $config->{lc($tool)}, "\" - must be one of p (prediction), s (score) or b (both)\n" unless $config->{lc($tool)} =~ /^(s|p|b)/;
         
         die "ERROR: $tool not available for this species\n" unless $config->{species} =~ /human|homo/i;
         
-        # use V2 of the Condel algorithm, possibly gives fewer false positives
-        if($tool eq 'Condel' && $config->{lc($tool)} =~ /1$/) {
-            $Bio::EnsEMBL::Variation::Utils::Condel::USE_V2 = 0;
-        }
+        die "ERROR: $tool functionality is now available as a VEP Plugin - see http://www.ensembl.org/info/docs/variation/vep/vep_script.html#plugins\n" if $tool eq 'Condel';
     }
     
     # force quiet if outputting to STDOUT
     if(defined($config->{output_file}) && $config->{output_file} =~ /stdout/i) {
         delete $config->{verbose} if defined($config->{verbose});
         $config->{quiet} = 1;
+    }
+    
+    # individual(s) specified?
+    if(defined($config->{individual})) {
+        $config->{individual} = [split /\,/, $config->{individual}];
+        
+        # force allow_non_variant
+        $config->{allow_non_variant} = 1;
+    }
+    
+    # regulatory has to be on for cell_type
+    if(defined($config->{cell_type}) && scalar(@{$config->{cell_type}})) {
+        $config->{regulatory} = 1;
+        $config->{cell_type} = [map {split /\,/, $_} @{$config->{cell_type}}];
     }
     
     # summarise options if verbose
@@ -521,13 +751,35 @@ INTRO
     $config->{output_file}       ||= "variant_effect_output.txt";
     $config->{tmpdir}            ||= '/tmp';
     $config->{format}            ||= 'guess';
-    $config->{terms}             ||= 'display';
-    $config->{gene}              ||= 1 unless defined($config->{whole_genome}) && !defined($config->{cache});
+    $config->{terms}             ||= 'SO';
     $config->{cache_region_size} ||= 1000000;
     $config->{compress}          ||= 'zcat';
-    $config->{tmpdir}            ||= '/tmp';
+    
+    # can't use a whole bunch of options with most_severe
+    if(defined($config->{most_severe})) {
+        foreach my $flag(qw(no_intergenic protein hgnc sift polyphen coding_only ccds canonical xref_refseq numbers domains summary)) {
+            die "ERROR: --most_severe is not compatible with --$flag\n" if defined($config->{$flag});
+        }
+    }
+    
+    # can't use a whole bunch of options with summary
+    if(defined($config->{summary})) {
+        foreach my $flag(qw(no_intergenic protein hgnc sift polyphen coding_only ccds canonical xref_refseq numbers domains most_severe)) {
+            die "ERROR: --summary is not compatible with --$flag\n" if defined($config->{$flag});
+        }
+    }
     
     # frequency filtering
+    if(defined($config->{filter_common})) {
+        $config->{check_frequency} = 1;
+        
+        # set defaults
+        $config->{freq_freq}   ||= 0.01;
+        $config->{freq_filter} ||= 'exclude';
+        $config->{freq_pop}    ||= '1KG_ALL';
+        $config->{freq_gt_lt}  ||= 'gt';
+    }
+    
     if(defined($config->{check_frequency})) {
         foreach my $flag(qw(freq_freq freq_filter freq_pop freq_gt_lt)) {
             die "ERROR: To use --check_frequency you must also specify flag --$flag\n" unless defined $config->{$flag};
@@ -537,7 +789,7 @@ INTRO
         $config->{check_existing} = 1;
     }
     
-    $config->{check_existing} = 1 if defined $config->{check_alleles};
+    $config->{check_existing} = 1 if defined $config->{check_alleles} || defined $config->{gmaf};
     
     # warn users still using whole_genome flag
     if(defined($config->{whole_genome})) {
@@ -558,10 +810,12 @@ INTRO
     if(defined($config->{offline})) {
         $config->{cache} = 1;
         
-        die("ERROR: Cannot generate HGVS coordinates in offline mode\n") if defined($config->{hgvs});
+        die("ERROR: Cannot generate HGVS coordinates in offline mode without a FASTA file (see --fasta)\n") if defined($config->{hgvs}) && !defined($config->{fasta_db});
         die("ERROR: Cannot use HGVS as input in offline mode\n") if $config->{format} eq 'hgvs';
         die("ERROR: Cannot use variant identifiers as input in offline mode\n") if $config->{format} eq 'id';
-        die("ERROR: Cannot do frequency filtering in offline mode\n") if defined($config->{check_frequency});
+        die("ERROR: Cannot do frequency filtering in offline mode\n") if defined($config->{check_frequency}) && $config->{freq_pop} !~ /1kg.*(all|afr|amr|asn|eur)/i;
+        die("ERROR: Cannot retrieve overlapping structural variants in offline mode\n") if defined($config->{check_sv});
+        die("ERROR: Cannot check reference sequences without a FASTA file (see --fasta)\n") if defined($config->{check_ref}) && !defined($config->{fasta_db});
     }
     
     # write_cache needs cache
@@ -580,12 +834,12 @@ INTRO
     # force options for full build
     if(defined($config->{build})) {
         $config->{prefetch} = 1;
-        $config->{gene} = 1;
         $config->{hgnc} = 1;
         $config->{no_slice_cache} = 1;
         $config->{cache} = 1;
         $config->{strip} = 1;
         $config->{write_cache} = 1;
+        $config->{cell_type} = [1] if defined($config->{regulatory});
     }
     
     # connect to databases
@@ -713,6 +967,23 @@ INTRO
         &get_reg_adaptors($config) if defined($config->{regulatory});
     }
     
+    # check cell types
+    if(defined($config->{cell_type}) && scalar @{$config->{cell_type}} && !defined($config->{build})) {
+        my $cls = '';
+        
+        if(defined($config->{cache})) {
+            $cls = $config->{cache_cell_types};
+        }
+        else {
+            my $cta = $config->{RegulatoryFeature_adaptor}->db->get_CellTypeAdaptor();
+            $cls = join ",", map {$_->name} @{$cta->fetch_all};
+        }
+        
+        foreach my $cl(@{$config->{cell_type}}) {
+            die "ERROR: cell type $cl not recognised; available cell types are:\n$cls\n" unless $cls =~ /(^|,)$cl(,|$)/;
+        }
+    }
+    
     # get terminal width for progress bars
     unless(defined($config->{quiet})) {
         my $width;
@@ -745,6 +1016,20 @@ INTRO
             die("ERROR: Cannot build cache using public database server ", $config->{host}, "\n");
         }
         
+        # get 1KG freqs
+        if(defined($config->{'freq_file'})) {
+            debug("Loading extra frequencies from ".$config->{'freq_file'}) unless defined($config->{quiet});
+            
+            open IN, $config->{'freq_file'} or die "ERROR: Could not open frequencies file ".$config->{'freq_file'}."\n";
+            while(<IN>) {
+                chomp;
+                my @data = split /\t/;
+                my $id = shift @data;
+                $config->{'freqs'}->{$id} = join(" ", @data);
+            }
+            close IN;
+        }
+        
         # build the cache
         debug("Building cache for ".$config->{species}) unless defined($config->{quiet});
         build_full_cache($config);
@@ -755,19 +1040,21 @@ INTRO
     }
     
     
-    # warn user DB will be used for SIFT/PolyPhen/Condel/HGVS/frequency/LRG
+    # warn user DB will be used for SIFT/PolyPhen/HGVS/frequency/LRG
     if(defined($config->{cache})) {
         
         # these two def depend on DB
-        foreach my $param(grep {defined $config->{$_}} qw(hgvs check_frequency lrg)) {
-            debug("INFO: Database will be accessed when using --$param") unless defined($config->{quiet});
+        foreach my $param(grep {defined $config->{$_}} qw(hgvs lrg check_sv check_ref)) {
+            debug("INFO: Database will be accessed when using --$param") unless defined($config->{quiet}) or ($param =~ /hgvs|check_ref/ and defined($config->{fasta_db}));
         }
+        
+        debug("INFO: Database will be accessed when using --check_frequency with population ".$config->{freq_pop}) if !defined($config->{quiet}) and defined($config->{check_frequency}) && $config->{freq_pop} !~ /1kg.*(all|afr|amr|asn|eur)/i;
         
         # as does using HGVS or IDs as input
         debug("INFO: Database will be accessed when using --format ", $config->{format}) if ($config->{format} eq 'id' || $config->{format} eq 'hgvs') && !defined($config->{quiet});
         
         # the rest may be in the cache
-        foreach my $param(grep {defined $config->{$_}} qw(sift polyphen condel regulatory)) {
+        foreach my $param(grep {defined $config->{$_}} qw(sift polyphen regulatory)) {
             next if defined($config->{'cache_'.$param});
             debug("INFO: Database will be accessed when using --$param; consider using the complete cache containing $param data (see documentation for details)") unless defined($config->{quiet});
         }
@@ -801,12 +1088,10 @@ sub read_config_from_file {
     
     open CONFIG, $file or die "ERROR: Could not open config file \"$file\"\n";
     
-    debug("Reading configuration from $file") unless defined($config->{quiet});
-    
     while(<CONFIG>) {
         next if /^\#/;
         my @split = split /\s+|\=/;
-        my $key = shift @split;            
+        my $key = shift @split;
         $key =~ s/^\-//g;
         
         if(defined($config->{$key}) && ref($config->{$key}) eq 'ARRAY') {
@@ -818,6 +1103,14 @@ sub read_config_from_file {
     }
     
     close CONFIG;
+    
+    # force quiet if outputting to STDOUT
+    if(defined($config->{output_file}) && $config->{output_file} =~ /stdout/i) {
+        delete $config->{verbose} if defined($config->{verbose});
+        $config->{quiet} = 1;
+    }
+    
+    debug("Read configuration from $file") unless defined($config->{quiet});
 }
 
 # configures custom VEP plugins
@@ -845,7 +1138,7 @@ sub configure_plugins {
                 use $module;
             };
             if ($@) {
-                debug("Failed to compile plugin $module: $@");
+                debug("Failed to compile plugin $module: $@") unless defined($config->{quiet});
                 next;
             }
             
@@ -857,7 +1150,7 @@ sub configure_plugins {
                 $instance = $module->new($config, @params);
             };
             if ($@) {
-                debug("Failed to instantiate plugin $module: $@");
+                debug("Failed to instantiate plugin $module: $@") unless defined($config->{quiet});
                 next;
             }
 
@@ -876,22 +1169,22 @@ sub configure_plugins {
                 my ($major, $minor, $maintenance) = split /\./, $VERSION;
     
                 if ($plugin_major != $major) {
-                    debug("Warning: plugin $plugin version ($plugin_version) does not match the current VEP version ($VERSION)");
+                    debug("Warning: plugin $plugin version ($plugin_version) does not match the current VEP version ($VERSION)") unless defined($config->{quiet});
                     $version_ok = 0;
                 }
             }
             else {
-                debug("Warning: plugin $plugin does not define a version number");
+                debug("Warning: plugin $plugin does not define a version number") unless defined($config->{quiet});
                 $version_ok = 0;
             }
 
-            debug("You may experience unexpected behaviour with this plugin") unless $version_ok;
+            debug("You may experience unexpected behaviour with this plugin") unless defined($config->{quiet}) || $version_ok;
 
             # check that it implements all necessary methods
             
             for my $required(qw(run get_header_info check_feature_type check_variant_feature_type)) {
                 unless ($instance->can($required)) {
-                    debug("Plugin $module doesn't implement a required method '$required', does it inherit from BaseVepPlugin?");
+                    debug("Plugin $module doesn't implement a required method '$required', does it inherit from BaseVepPlugin?") unless defined($config->{quiet});
                     next;
                 }
             }
@@ -900,12 +1193,12 @@ sub configure_plugins {
             
             push @{ $config->{plugins} }, $instance;
             
-            debug("Loaded plugin: $module"); 
+            debug("Loaded plugin: $module") unless defined($config->{quiet}); 
 
             # for convenience, check if the plugin wants regulatory stuff and turn on the config option if so
             
             if (grep { $_ =~ /motif|regulatory/i } @{ $instance->feature_types }) {
-                debug("Fetching regulatory features for plugin: $module");
+                debug("Fetching regulatory features for plugin: $module") unless defined($config->{quiet});
                 $config->{regulatory} = 1;
             }
         }
@@ -970,6 +1263,37 @@ sub get_adaptors {
     
     die "ERROR: No registry" unless defined $config->{reg};
     
+    # try fetching a slice adaptor
+    eval {
+        $config->{sa}  = $config->{reg}->get_adaptor($config->{species}, $config->{core_type}, 'slice');
+    };
+    
+    if($@) {
+        if($@ =~ /not find internal name for species/) {
+            my %register = %Bio::EnsEMBL::Registry::registry_register;
+            my @species_list = sort keys %{$register{_SPECIES}};
+            
+            debug("ERROR: Could not find database for species ".$config->{species});
+            
+            if(scalar @species_list) {
+                debug("List of valid species for this server:\n\n".(join "\n", @species_list));
+            }
+            
+            die("\nExiting\n");
+        }
+        
+        else {
+            die $@;
+        }
+    }
+    
+    # get the remaining core adaptors
+    $config->{ga}  = $config->{reg}->get_adaptor($config->{species}, $config->{core_type}, 'gene');
+    $config->{ta}  = $config->{reg}->get_adaptor($config->{species}, $config->{core_type}, 'transcript');
+    $config->{mca} = $config->{reg}->get_adaptor($config->{species}, $config->{core_type}, 'metacontainer');
+    $config->{csa} = $config->{reg}->get_adaptor($config->{species}, $config->{core_type}, 'coordsystem');
+    
+    # get variation adaptors
     $config->{vfa}   = $config->{reg}->get_adaptor($config->{species}, 'variation', 'variationfeature');
     $config->{svfa}  = $config->{reg}->get_adaptor($config->{species}, 'variation', 'structuralvariationfeature');
     $config->{tva}   = $config->{reg}->get_adaptor($config->{species}, 'variation', 'transcriptvariation');
@@ -982,12 +1306,6 @@ sub get_adaptors {
         $config->{svfa} = Bio::EnsEMBL::Variation::DBSQL::StructuralVariationFeatureAdaptor->new_fake($config->{species});
         $config->{tva}  = Bio::EnsEMBL::Variation::DBSQL::TranscriptVariationAdaptor->new_fake($config->{species});
     }
-    
-    $config->{sa}  = $config->{reg}->get_adaptor($config->{species}, $config->{core_type}, 'slice');
-    $config->{ga}  = $config->{reg}->get_adaptor($config->{species}, $config->{core_type}, 'gene');
-    $config->{ta}  = $config->{reg}->get_adaptor($config->{species}, $config->{core_type}, 'transcript');
-    $config->{mca} = $config->{reg}->get_adaptor($config->{species}, $config->{core_type}, 'metacontainer');
-    $config->{csa} = $config->{reg}->get_adaptor($config->{species}, $config->{core_type}, 'coordsystem');
     
     # cache schema version
     $config->{mca}->get_schema_version if defined $config->{mca};
@@ -1094,24 +1412,7 @@ sub get_out_file_handle {
     
     elsif(defined($config->{vcf})) {
         
-        # create an info string for the VCF header
-        
-        # define headers that would normally go in the extra field
-        # keyed on the config parameter used to turn it on
-        # should probably move this elsewhere to avoid things getting missed out
-        my %extra_headers = (
-            protein    => ['ENSP'],
-            canonical  => ['CANONICAL'],
-            ccds       => ['CCDS'],
-            hgvs       => ['HGVSc','HGVSp'],
-            sift       => ['SIFT'],
-            polyphen   => ['PolyPhen'],
-            condel     => ['Condel'],
-            numbers    => ['EXON','INTRON'],
-            domains    => ['domains'],
-            regulatory => ['MOTIF_NAME','MOTIF_POS','HIGH_INF_POS','MOTIF_SCORE_CHANGE'],
-        );
-        
+        # create an info string for the VCF header        
         my @new_headers;
         
         # if the user has defined the fields themselves, we don't need to worry
@@ -1184,6 +1485,27 @@ sub get_out_file_handle {
     my $version_string =
         "Using API version ".$config->{reg}->software_version.
         ", DB version ".(defined $config->{mca} && $config->{mca}->get_schema_version ? $config->{mca}->get_schema_version : '?');
+        
+    # sift/polyphen versions
+    foreach my $tool(qw(sift polyphen)) {
+        if(defined($config->{$tool})) {
+            my $string = 'config_'.$tool.'_version';
+            
+            if(!defined($config->{$string}) && !defined($config->{offline})) {
+                my $var_mca = $config->{reg}->get_adaptor($config->{species}, 'variation', 'metacontainer');
+                my $values = $var_mca->list_value_by_key($tool.'_version') if defined($var_mca);
+                $config->{$string} = $values->[0] if scalar @$values;
+            }
+            $version_string .= "\n## $tool version ".$config->{$string} if defined($config->{$string});
+        }
+    }
+    
+    # add key for extra column headers based on config
+    my $extra_column_keys = join "\n",
+        map {'## '.$_.' : '.$extra_descs{$_}}
+        sort map {@{$extra_headers{$_}}}
+        grep {defined $config->{$_}}
+        keys %extra_headers;
     
     my $header =<<HEAD;
 ## ENSEMBL VARIANT EFFECT PREDICTOR v$VERSION
@@ -1191,22 +1513,7 @@ sub get_out_file_handle {
 ## Connected to $db_string
 ## $version_string
 ## Extra column keys:
-## CANONICAL    : Indicates if transcript is canonical for this gene
-## CCDS         : Indicates if transcript is a CCDS transcript
-## HGNC         : HGNC gene identifier
-## ENSP         : Ensembl protein identifer
-## HGVSc        : HGVS coding sequence name
-## HGVSp        : HGVS protein sequence name
-## SIFT         : SIFT prediction
-## PolyPhen     : PolyPhen prediction
-## Condel       : Condel SIFT/PolyPhen consensus prediction
-## EXON         : Exon number
-## INTRON       : Intron number
-## DOMAINS      : The source and identifer of any overlapping protein domains
-## MOTIF_NAME   : The source and identifier of a transcription factor binding profile (TFBP) aligned at this position
-## MOTIF_POS    : The relative position of the variation in the aligned TFBP
-## HIGH_INF_POS : A flag indicating if the variant falls in a high information position of the TFBP
-## MOTIF_SCORE_CHANGE : The difference in motif score of the reference and variant sequences for the TFBP
+$extra_column_keys
 HEAD
    
     $header .= get_plugin_headers($config);
@@ -1382,12 +1689,14 @@ sub print_line {
         
         # if the fields have been redefined we need to search through in case
         # any of the defined fields are actually part of the Extra hash
-        $output = join "\t", map { $line->{$_} || $extra{$_} || '-' } @{$config->{fields}};
+        $output = join "\t", map {
+            (defined $line->{$_} ? $line->{$_} : (defined $extra{$_} ? $extra{$_} : '-'))
+        } @{$config->{fields}};
     }
     
-    # gvf
+    # gvf/vcf
     else {
-        $output = $line;
+        $output = $$line;
     }
     
     my $fh = $config->{out_file_handle};
@@ -1420,6 +1729,11 @@ Options
 
 --config               Load configuration from file. Any command line options
                        specified overwrite those in the file [default: off]
+                       
+--everything           Shortcut switch to turn on commonly used options. See web
+                       documentation for details [default: off]
+                       
+--fork [num_forks]     Use forking to improve script runtime [default: off]
 
 -i | --input_file      Input file - if not specified, reads from STDIN. Files
                        may be gzip compressed.
@@ -1430,34 +1744,36 @@ Options
 --force_overwrite      Force overwriting of output file [default: quit if file
                        exists]
 --original             Writes output as it was in input - must be used with --filter
-                       [default: off]
---vcf                  Write output as VCF (forces --summary due to limit of one
-                       variant per line, you may also specify --most_severe to print
-                       only most severe consequence per variant) [default: off]
+                       since no consequence data is added [default: off]
+--vcf                  Write output as VCF [default: off]
 --gvf                  Write output as GVF [default: off]
 --fields [field list]  Define a custom output format by specifying a comma-separated
                        list of field names. Field names normally present in the
                        "Extra" field may also be specified, including those added by
-                       plugin modules [default: off]
+                       plugin modules. Can also be used to configure VCF output
+                       columns [default: off]
                        
 --species [species]    Species to use [default: "human"]
 
--t | --terms           Type of consequence terms to output - one of "ensembl", "SO",
-                       "NCBI" [default: ensembl]
+-t | --terms           Type of consequence terms to output - one of "SO", "ensembl"
+                       [default: SO]
  
 --sift=[p|s|b]         Add SIFT [p]rediction, [s]core or [b]oth [default: off]
 --polyphen=[p|s|b]     Add PolyPhen [p]rediction, [s]core or [b]oth [default: off]
---condel=[p|s|b]       Add Condel SIFT/PolyPhen consensus [p]rediction, [s]core or
-                       [b]oth. Add 1 (i.e. b1) to option to use old Condel algorithm
-                       [default: off]
 
-NB: SIFT, PolyPhen and Condel predictions are currently available for human only
+NB: SIFT and PolyPhen predictions are currently available for human only
+NB: Condel support has been moved to a VEP plugin module - see documentation
 
 --regulatory           Look for overlaps with regulatory regions. The script can
                        also call if a variant falls in a high information position
                        within a transcription factor binding site. Output lines have
                        a Feature type of RegulatoryFeature or MotifFeature
                        [default: off]
+--cell_type [types]    Report only regulatory regions that are found in the given cell
+                       type(s). Can be a single cell type or a comma-separated list.
+                       The functional type in each cell type is reported under
+                       CELL_TYPE in the output. To retrieve a list of cell types, use
+                       "--cell_type list" [default: off]
                        
 NB: Regulatory consequences are currently available for human and mouse only
 
@@ -1466,15 +1782,13 @@ NB: Regulatory consequences are currently available for human and mouse only
 --plugin [plugin_name] Use named plugin module [default: off]
 --hgnc                 Add HGNC gene identifiers to output [default: off]
 --hgvs                 Output HGVS identifiers (coding and protein). Requires database
-                       connection [default: off]
+                       connection or --fasta [default: off]
 --ccds                 Output CCDS transcript identifiers [default: off]
 --xref_refseq          Output aligned RefSeq mRNA identifier for transcript. NB: the
                        RefSeq and Ensembl transcripts aligned in this way MAY NOT, AND
-                       FREQUENCTLY WILL NOT, match exactly in sequence, exon structure
+                       FREQUENTLY WILL NOT, match exactly in sequence, exon structure
                        and protein product [default: off]
 --protein              Output Ensembl protein identifer [default: off]
---gene                 Force output of Ensembl gene identifer - disabled by default
-                       unless using --cache or --no_whole_genome [default: off]
 --canonical            Indicate if the transcript for this consequence is the canonical
                        transcript for this gene [default: off]
 --domains              Include details of any overlapping protein domains [default: off]
@@ -1499,11 +1813,12 @@ NB: Regulatory consequences are currently available for human and mouse only
                        Ensembl Variation database [default: off]
 --failed [0|1]         Include (1) or exclude (0) variants that have been flagged as
                        failed by Ensembl when checking for existing variants.
-		       [default: exclude]		       
+                       [default: exclude]
 --check_alleles        If specified, the alleles of existing co-located variations
                        are compared to the input; an existing variation will only
                        be reported if no novel allele is in the input (strand is
                        accounted for) [default: off]
+--check_svs            Report overlapping structural variants [default: off]
 
 --filter [filters]     Filter output by consequence type. Use this to output only
                        variants that have at least one consequence type matching the
@@ -1512,6 +1827,12 @@ NB: Regulatory consequences are currently available for human and mouse only
                        iteratively to progressively filter a set of variants. See
                        documentation for full details [default: off]
 
+--filter_common        Shortcut flag for the filters below - this will exclude
+                       variants that have a co-located existing variant with global
+                       MAF > 0.01 (1%). May be modified using any of the following
+                       freq_* filters. For human, this can be used in offline mode
+                       for the following populations: 1KG_ALL, 1KG_AFR, 1KG_AMR,
+                       1KG_ASN, 1KG_EUR
 --check_frequency      Turns on frequency filtering. Use this to include or exclude
                        variants based on the frequency of co-located existing
                        variants in the Ensembl Variation database. You must also
@@ -1524,7 +1845,19 @@ NB: Regulatory consequences are currently available for human and mouse only
                        less than (lt) --freq_freq
 --freq_filter          Specify whether variants that pass the above should be included
   [exclude|include]    or excluded from analysis
-
+--gmaf                 Include global MAF of existing variant from 1000 Genomes
+                       Phase 1 in output
+  
+--individual [id]      Consider only alternate alleles present in the genotypes of the
+                       specified individual(s). May be a single individual, a comma-
+                       separated list or "all" to assess all individuals separately.
+                       Each individual and variant combination is given on a separate
+                       line of output. Only works with VCF files containing individual
+                       genotype data; individual IDs are taken from column headers.
+--allow_non_variant    Prints out non-variant lines when using VCF input
+--phased               Force VCF individual genotypes to be interpreted as phased.
+                       For use with plugins that depend on phased state.
+                       
 --chr [list]           Select a subset of chromosomes to analyse from your file. Any
                        data not on this chromosome in the input will be skipped. The
                        list can be comma separated, with "-" characters representing
@@ -1563,6 +1896,15 @@ NB: Regulatory consequences are currently available for human and mouse only
                        chromosomes with --build all, or a list of chromosomes (see
                        --chr). DO NOT USE WHEN CONNECTED TO PUBLIC DB SERVERS AS THIS
                        VIOLATES OUR FAIR USAGE POLICY [default: off]
+                       
+--fasta [file|dir]     Specify a FASTA file or a directory containing FASTA files
+                       to use to look up reference sequence. The first time you
+                       run the script with this parameter an index will be built
+                       which can take a few minutes. This is required if
+                       fetching HGVS annotations (--hgvs) or checking reference
+                       sequences (--check_ref) in offline mode (--offline), and
+                       optional with some performance increase in cache mode
+                       (--cache). See documentation for more details
                        
 --compress             Specify utility to decompress cache files - may be "gzcat" or
                        "gzip -dc" Only use if default does not work [default: zcat]
