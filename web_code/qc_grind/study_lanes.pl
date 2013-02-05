@@ -186,6 +186,7 @@ sub displayProjectLaneForm
 
 				foreach my $lane (sort {$a->name cmp $b->name} @$lanes ) {
 
+        			next if $lane->is_withdrawn;
 					if ($form_submission) { # filter on lane status checkboxes
 						next unless $cgi->param($lane->qc_status) || $lane->qc_status eq 'no_qc';
 					}
@@ -333,6 +334,7 @@ sub downloadLaneData {
 
 				foreach my $lane (sort {$a->name cmp $b->name} @$lanes ) {
 
+        			next if $lane->is_withdrawn;
 					next unless $cgi->param($lane->qc_status) || $lane->qc_status eq 'no_qc'; # filter on lane status checkboxes
 
         			my $lanename = $lane->name;
