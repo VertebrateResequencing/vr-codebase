@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r813';
+our $VERSION = 'r818';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
@@ -732,7 +732,7 @@ sub add_header_line
     if ( $args{append} )
     {
         my @tm = gmtime(time);
-        $key = sprintf "%s_%d%.2d%.2d", $key,$tm[5]+1900,$tm[4],$tm[3];
+        $key = sprintf "%s_%d%.2d%.2d", $key,$tm[5]+1900,$tm[4]+1,$tm[3];
         my $i = 1;
         while ( exists($$self{header}{$key.'.'.$i}) ) { $i++; }
         $key = $key.'.'.$i;
