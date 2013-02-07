@@ -2603,7 +2603,7 @@ sub ConfigData::get_data
     close($fh) or croak("$file: $!");
 
     my $params;
-    eval '$params={' . join('',@lines) . '}';
+    $params =eval '{' . join('',@lines) . '}';
 
     if ( $@ ) { croak("$file: $@\n"); }
     if ( !$params->{root} ) { croak("Error: missing the 'root' parameter in $file\n"); }
