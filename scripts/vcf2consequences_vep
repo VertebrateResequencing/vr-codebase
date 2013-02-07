@@ -38,7 +38,7 @@ if( (!$vep_input && !$tab_input) || $help ){$missing = 1;}
 if ( $vep_input && $tab_input ) { error("Only one of the -i or -t option can be given.") }
 if ( $append_gene_names && !($gene_list_db)) { error("--appendgenenames only valid with --genenames option") }
 
-$buffer_size = 1000 unless ($buffer_size);
+$buffer_size = 50000 unless ($buffer_size);
 
 if( $missing ) { error(); }
 
@@ -220,14 +220,18 @@ sub process_vcf_rec
 
 			# eg "<dir>/gerp_score.22.bed.gz"
 			my $bed = join('.', "$gerp_cache_dir/gerp_score", $gerp_cache->{chr}, "bed.gz");
-			die "Cannot find $bed" unless -e $bed;
-			my $from = $gerp_cache->{block} * $buffer_size;
-			my $to = (1+$gerp_cache->{block}) * $buffer_size;
-			my @index_search = `tabix -p bed $bed $chr:${from}-${to}`;
-			for (@index_search) {
-				my @line = split("\t", $_);
-				$gerp_cache->{scores}->{$line[1]} = $line[3];
-			}
+            if (-e $bed) {
+                my $from = $gerp_cache->{block} * $buffer_size;
+                my $to = (1+$gerp_cache->{block}) * $buffer_size;
+                my @index_search = `tabix -p bed $bed $chr:${from}-${to}`;
+                for (@index_search) {
+                    my @line = split("\t", $_);
+                    $gerp_cache->{scores}->{$line[1]} = $line[3];
+                }
+            }
+            else {
+			    print STDERR "Cannot find $bed\n" unless -e $bed;
+            }
 		}
 		my $score = $gerp_cache->{scores}->{$pos};
 		if ($score) {
