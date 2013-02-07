@@ -2602,15 +2602,15 @@ sub ConfigData::get_data
     my @lines = <$fh>;
     close($fh) or croak("$file: $!");
 
-    my %params;
-    eval '%params=(' . join('',@lines) . ')';
+    my $params;
+    eval '$params={' . join('',@lines) . '}';
 
     if ( $@ ) { croak("$file: $@\n"); }
-    if ( !$params{root} ) { croak("Error: missing the 'root' parameter in $file\n"); }
-    if ( !$params{module} ) { croak("Error: missing the 'module' parameter in $file\n"); }
+    if ( !$params->{root} ) { croak("Error: missing the 'root' parameter in $file\n"); }
+    if ( !$params->{module} ) { croak("Error: missing the 'module' parameter in $file\n"); }
 
     $$self{$file}{mtime} = $stats[9];
-    $$self{$file}{data}  = \%params;
+    $$self{$file}{data}  = $params;
 
     my %data = (%{$$self{$file}{data}});  # Return a copy, so that it cannot be accidently modified
     return \%data;
