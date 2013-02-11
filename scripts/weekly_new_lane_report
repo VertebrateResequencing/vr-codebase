@@ -54,7 +54,7 @@ my $sql_select_current_processed_auto = qq[SELECT processed, auto_qc_status from
 
 my $sql_select_current_total_lanes = qq[select count(*) from latest_lane];
 #print "[1] = No. of new lanes\n[2] = Total number of lanes\n[3] = Number of lanes imported\n[4] = Number of lanes qced\n[5] = Number of lanes improved\n[6] = Number of lanes auto-qced\n\n";
-printf ("Database:\n\t%-50s %8s %8s %8s %8s %8s %8s %8s\n\n", "Study_name", "New", "Total", "Imported", "QCed", "Improved", "Auto-QCed");
+printf ("Database:\n\t%-50s %8s %8s %8s %8s %8s %8s\n\n", "Study_name", "New", "Total", "Imported", "QCed", "Improved", "Auto-QCed");
 #printf ("Database:\n\t%-50s %8s %8s %8s %8s %8s %8s\n\n", "Study_name", "[1]", "[2]", "[3]", "[4]", "[5]", "[6]");
 
 foreach ( @dbs ) {
