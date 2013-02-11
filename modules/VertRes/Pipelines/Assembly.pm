@@ -38,17 +38,19 @@ data => {
     seq_pipeline_root    => '/lustre/scratch108/pathogen/pathpipe/prokaryotes/seq-pipelines',
     no_scaffolding => 0,
     annotation     => 1,
+    sga            => 1, # Should SGA be used to correct reads before assembly?
 
     assembler => 'velvet',
     assembler_exec => '/software/pathogen/external/apps/usr/bin/velvet',
     optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
+    sga_exec       => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
     max_threads => 1,
 },
 
 
 =head1 DESCRIPTION
 
-This pipeline requires velvet, prokka, smalt, SSPACE and GapFiller to be separately installed from the original authors software repositories.
+This pipeline requires velvet, prokka, smalt, SSPACE, SGA and GapFiller to be separately installed from the original authors software repositories.
 
 
 =head1 AUTHOR
@@ -110,6 +112,7 @@ our %options = (
                 scaffolder_exec => '/software/pathogen/external/apps/usr/local/SSPACE-BASIC-2.0_linux-x86_64/SSPACE_Basic_v2.0.pl',
                 gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-10_linux-x86_64/GapFiller.pl',
                 abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
+                sga_exec        => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
                 no_scaffolding  => 0,
                 annotation      => 0,
                 );
@@ -513,6 +516,8 @@ sub pool_fastqs
       print $scriptfh qq{
 use strict;
 use VertRes::Pipelines::Assembly;
+Bio::AssemblyImprovement::Assemble::SGA::Main
+use IO::Compress::Gzip qw(gzip $GzipError) ;
 my \$assembly= VertRes::Pipelines::Assembly->new();
 my \@lane_names;
 };
@@ -532,10 +537,26 @@ my \@lane_names;
        $file_names_str = '("'.join('","',@file_names ).'")';
      }
 
-     print $scriptfh qq{
-       my \@filenames_array = $file_names_str;
-       \$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
-     };
+	 # If sga parameter set to 1, run sga to get a shuffled fastq file with corrected reads. If not, just shuffle the two fastq
+	 # files ourselves.
+	 
+	 if(defined ($self->{sga}) and $self->{sga} == 1)
+	 {
+	  my $sga_error_corrected_file = $output_directory.'/'.$lane_name.'.fastq.gz';
+	  print $scriptfh qq{
+my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
+            input_files     => \\\@filenames_array ,
+    )->run();
+    gzip $sga->_final_results_file => $sga_error_corrected_file or die "gzip failed: $GzipError\n"; 
+}; #TODO: Get SGA module to zip results file
+	 }
+	 else
+	 }
+     	print $scriptfh qq{
+my \@filenames_array = $file_names_str;
+\$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
+};
+     }
    }
 
    my $pool_count = 1;
