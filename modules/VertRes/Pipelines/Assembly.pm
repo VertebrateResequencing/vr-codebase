@@ -526,29 +526,29 @@ my \@lane_names;
      my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
      my $vlane = VRTrack::Lane->new_by_name($self->{vrtrack},$lane_name);
      my $file_names_str ;
+     my $file_names_with_path_str
+     
      if( @{$vlane->files} == 2)
      {
        my @file_names ;
        for my $file_name (@{$vlane->files})
        {
-       	 # Other modules (e.g. SGA) that needs to gunzip these input files struggle to find
-       	 # them when the full path is not provided.
-       	 my $file_name_with_path = $lane_path.'/'.$file_name->name;
-         push(@file_names, $file_name_with_path );
+        push(@file_names, $file_name->name );
+        push(@file_names_with_path, "$base_path/$lane_path/".$file_name->name ); # Redundant code. Improve. Some programs like SGA gunzip struggle to find files if not specified with full path
        }
        $file_names_str = '("'.join('","',@file_names ).'")';
+       $file_names_with_path_str = '("'.join('","',@file_names_with_path ).'")';
      }
 
 	 # If error_correct set to 1, run the chosen error correction program to get a shuffled 
 	 #fastq file with corrected reads. If not, just shuffle the two fastq files ourselves.
+	 # TODO: Make below more generic so that other error correctors can be slotted in
 	 
 	 if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
 	 {
-	  #TODO: Make below more generic so that other error correction programs can be slotted in seamlessly.
 	  my $error_corrected_file = $output_directory.'/'.$lane_name.'.fastq.gz';
-	  my $sga_exec = $self->{sga_exec};
 	  print $scriptfh qq{
-my \@filenames_array = $file_names_str;
+my \@filenames_array = $file_names_with_path_str;
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
             input_files     => \\\@filenames_array ,
             output_filename => "$error_corrected_file",
