@@ -517,7 +517,6 @@ sub pool_fastqs
 use strict;
 use VertRes::Pipelines::Assembly;
 use Bio::AssemblyImprovement::Assemble::SGA::Main
-use IO::Compress::Gzip qw(gzip $GzipError) ;
 my \$assembly= VertRes::Pipelines::Assembly->new();
 my \@lane_names;
 };
@@ -553,7 +552,7 @@ my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
 }; 
 	 }
 	 else
-	 }
+	 {
      	print $scriptfh qq{
 my \@filenames_array = $file_names_str;
 \$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
