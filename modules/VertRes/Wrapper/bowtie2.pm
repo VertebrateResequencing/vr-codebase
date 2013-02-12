@@ -51,6 +51,7 @@ sub new {
     my ($class, @args) = @_;
     
     my $self = $class->SUPER::new(@args, exe => '/software/pathogen/external/apps/usr/bin/bowtie2');
+    $self->{orig_exe} = $self->exe;
     
     return $self;
 }
@@ -66,7 +67,20 @@ sub new {
 =cut
 
 sub version {
-    return 0;
+    my $self = shift;
+    
+    my $exe = $self->{orig_exe};
+    open(my $fh, "$exe --version 2>&1 |") || $self->throw("Could not start $exe");
+    my $version = 2;
+    while (<$fh>) {
+        if (/bowtie2-align\s+version\s+(\S+)/) {
+            $version = $1;
+            last;
+        }
+    }
+    close($fh);
+    
+    return $version;
 }
 
 =head2 setup_reference
