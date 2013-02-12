@@ -38,7 +38,7 @@ if( (!$vep_input && !$tab_input) || $help ){$missing = 1;}
 if ( $vep_input && $tab_input ) { error("Only one of the -i or -t option can be given.") }
 if ( $append_gene_names && !($gene_list_db)) { error("--appendgenenames only valid with --genenames option") }
 
-$buffer_size = 1000 unless ($buffer_size);
+$buffer_size = 50000 unless ($buffer_size);
 
 if( $missing ) { error(); }
 
@@ -220,14 +220,18 @@ sub process_vcf_rec
 
 			# eg "<dir>/gerp_score.22.bed.gz"
 			my $bed = join('.', "$gerp_cache_dir/gerp_score", $gerp_cache->{chr}, "bed.gz");
-			die "Cannot find $bed" unless -e $bed;
-			my $from = $gerp_cache->{block} * $buffer_size;
-			my $to = (1+$gerp_cache->{block}) * $buffer_size;
-			my @index_search = `tabix -p bed $bed $chr:${from}-${to}`;
-			for (@index_search) {
-				my @line = split("\t", $_);
-				$gerp_cache->{scores}->{$line[1]} = $line[3];
-			}
+            if (-e $bed) {
+                my $from = $gerp_cache->{block} * $buffer_size;
+                my $to = (1+$gerp_cache->{block}) * $buffer_size;
+                my @index_search = `tabix -p bed $bed $chr:${from}-${to}`;
+                for (@index_search) {
+                    my @line = split("\t", $_);
+                    $gerp_cache->{scores}->{$line[1]} = $line[3];
+                }
+            }
+            else {
+			    print STDERR "Cannot find $bed\n" unless -e $bed;
+            }
 		}
 		my $score = $gerp_cache->{scores}->{$pos};
 		if ($score) {
@@ -306,7 +310,7 @@ sub load_vep_cache
             foreach my $ont (keys %{$terms} ) {
                 foreach my $csq ( keys %{$terms->{$ont}} ) {
                     foreach my $syn_term ( @{$terms->{$ont}{$csq}} ) {
-                        if ($rec->{Consequence} =~ "^$syn_term") {
+                        if ($rec->{Consequence} =~ /^$syn_term/) {
                             $ontology = $ont;
                             print STDERR "Using '$ontology' terms\n";
                         }
@@ -315,31 +319,33 @@ sub load_vep_cache
             }
         }
 
-        # Modify synonymous coding Amino_acid notation, eg change D to D>D
-        foreach my $syn_term ( @{$terms->{$ontology}{synonymous}} ) {
-            if ( $rec->{Consequence} =~ "^$syn_term" && length($rec->{Amino_acids}) == 1) {
-                $consequence .= ":" . $rec->{Amino_acids} . ">" . $rec->{Amino_acids};
-            }
-		}
-
-        # Apply protein predictions for non-synonymous coding csq
-        foreach my $non_syn_term ( @{$terms->{$ontology}{non_synonymous}} ) {
-            if ( $rec->{Consequence} =~ "^$non_syn_term") {
-                my $protein_pred="";
-                $protein_pred .= ":$sift_pred" if $sift_pred;
-                $protein_pred .= ":$polyphen_pred" if $polyphen_pred;
-                $protein_pred .= ":$condel_pred" if $condel_pred;
-
-                if ($grantham && $rec->{Amino_acids} !~ '-') {
-                    my ($ref_aa,$var_aa) = split(/\//,$rec->{Amino_acids});
-                    if (length($ref_aa) == 1 && length($var_aa) == 1) {
-                        $protein_pred .= ":Grantham," . $grantham_matrix->score($ref_aa,$var_aa);
-                    }
+        if ($ontology) {
+            # Modify synonymous coding Amino_acid notation, eg change D to D>D
+            foreach my $syn_term ( @{$terms->{$ontology}{synonymous}} ) {
+                if ( $rec->{Consequence} =~ "^$syn_term" && length($rec->{Amino_acids}) == 1) {
+                    $consequence .= ":" . $rec->{Amino_acids} . ">" . $rec->{Amino_acids};
                 }
-                $rec->{Amino_acids} =~ s/\//>/;
+    		}
 
-                $consequence .= ":" . $rec->{Amino_acids} if $rec->{Amino_acids} ne '-';
-                $consequence .= $protein_pred if $protein_pred ne "";
+            # Apply protein predictions for non-synonymous coding csq
+            foreach my $non_syn_term ( @{$terms->{$ontology}{non_synonymous}} ) {
+                if ( $rec->{Consequence} =~ "^$non_syn_term") {
+                    my $protein_pred="";
+                    $protein_pred .= ":$sift_pred" if $sift_pred;
+                    $protein_pred .= ":$polyphen_pred" if $polyphen_pred;
+                    $protein_pred .= ":$condel_pred" if $condel_pred;
+
+                    if ($grantham && $rec->{Amino_acids} !~ '-') {
+                        my ($ref_aa,$var_aa) = split(/\//,$rec->{Amino_acids});
+                        if (length($ref_aa) == 1 && length($var_aa) == 1) {
+                            $protein_pred .= ":Grantham," . $grantham_matrix->score($ref_aa,$var_aa);
+                        }
+                    }
+                    $rec->{Amino_acids} =~ s/\//>/;
+
+                    $consequence .= ":" . $rec->{Amino_acids} if $rec->{Amino_acids} ne '-';
+                    $consequence .= $protein_pred if $protein_pred ne "";
+                }
             }
         }
 

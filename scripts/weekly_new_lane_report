@@ -7,6 +7,8 @@ use DBI;
 use VertRes::Utils::VRTrackFactory;
 use Carp;
 use Getopt::Long;
+use VRTrack::Core_obj;
+use Data::Dumper;
 
 my ($dbfile, $help);
 
@@ -21,6 +23,16 @@ Usage options:
     	$0 -d <file_of_dbs>
 USAGE
 
+#Could you also add a breakdown for each database:
+#total lanes in database, lanes imported, lanes qc'd, lanes auto QC'd, lanes improved
+#Processed flags:
+#~ import => 1,
+#~ qc => 2,
+#~ mapped => 4,
+#~ improved => 128,
+ 
+
+     
 my @dbs;
 open DBFILE, '<', $dbfile;
 while ( <DBFILE> ) {
@@ -38,26 +50,61 @@ my $sql_select_lastweek_lane_count = qq[select count(*) from (select l.name, min
                                         where l.library_id = b.library_id and b.sample_id=s.sample_id and s.project_id = p.project_id and p.name = ? group by l.name order by l.name) a 
                                         where a.import_date > date_sub(now(), INTERVAL 1 WEEK)];
 
-printf ("Database:\n\t%-70s %8s %8s\n\n", "Study_name", "New_lanes", "Total_lanes");
+my $sql_select_current_processed_auto = qq[SELECT processed, auto_qc_status from latest_lane];
+
+my $sql_select_current_total_lanes = qq[select count(*) from latest_lane];
+#print "[1] = No. of new lanes\n[2] = Total number of lanes\n[3] = Number of lanes imported\n[4] = Number of lanes qced\n[5] = Number of lanes improved\n[6] = Number of lanes auto-qced\n\n";
+printf ("Database:\n\t%-50s %8s %8s %8s %8s %8s %8s\n\n", "Study_name", "New", "Total", "Imported", "QCed", "Improved", "Auto-QCed");
+#printf ("Database:\n\t%-50s %8s %8s %8s %8s %8s %8s\n\n", "Study_name", "[1]", "[2]", "[3]", "[4]", "[5]", "[6]");
 
 foreach ( @dbs ) {
 	my $dbname = $_;
-	print "$dbname:\n";
 	my $dbconn = VertRes::Utils::VRTrackFactory->instantiate(database => $dbname, mode => 'r');
 	croak "Can't connect to $dbname tracking database\n" unless $dbconn;
 	
 	my $sth_curr = $dbconn->{_dbh}->prepare($sql_select_current_lane_count);
 	my $sth_prev = $dbconn->{_dbh}->prepare($sql_select_lastweek_lane_count);
-	my ($study, $current_count, $lastweek_count);
+	my $sth_proc = $dbconn->{_dbh}->prepare($sql_select_current_processed_auto);
+	my $sth_lane = $dbconn->{_dbh}->prepare($sql_select_current_total_lanes);
+	
+	my ($imported, $qced, $improved, $total_lanes);
+	my $autoqced = 0;
+	my $withdrawn = 0;
+    my %processed;
+
+    if ($sth_lane->execute()) {
+		($total_lanes) = $sth_lane->fetchrow_array();
+	}
+
+    if ($sth_proc->execute()) {
+		while (my ($proc, $auto, $wdr) = $sth_proc->fetchrow_array()) {
+			$processed{$proc}++;
+			$autoqced++ unless $auto eq 'no_qc';
+			$withdrawn++ if ($wdr && $wdr == 1);
+		}
+	}
+	my @proc_keys = keys %processed;
+	my %proc_stages;
+	for my $proc_level ( @proc_keys ) {
+	    my @stages = get_processed_flags($proc_level);
+	    foreach ( @stages ) {
+			chomp;
+			my $stage_total = $processed{$proc_level};
+			$proc_stages{$_} += $stage_total;
+		}
+	}
+	$imported = $proc_stages{'import'} ? $proc_stages{'import'}: 0;
+	$qced = $proc_stages{'qc'} ? $proc_stages{'qc'}: 0;
+	$improved = $proc_stages{'improved'} ? $proc_stages{'improved'}: 0;
+    printf ("%-50s \t %10s %8s %8s %8s %8s %8s\n", "$dbname:", '-', $total_lanes, $imported, $qced, $improved, $autoqced);
+
 	my $change_count = 0;
 	if ($sth_curr->execute()) {
-		$sth_curr->bind_columns(\($study, $current_count));
-		while ($sth_curr->fetch) {
+		while (my ($study, $current_count) = $sth_curr->fetchrow_array()) {
 			if ($sth_prev->execute($study)) {
-				$sth_prev->bind_col(1, \$lastweek_count);
-				while ($sth_prev->fetch) {
+				while (my ($lastweek_count) = $sth_prev->fetchrow_array()) {
 					if ($lastweek_count != 0) {
-						printf ("\t%-70s %8s %8s\n", substr($study,0,70), $lastweek_count, $current_count);
+						printf ("\t%-50s %8s %8s\n", substr($study,0,50), $lastweek_count, $current_count);
 						$change_count++;
 					}
 				}
@@ -68,8 +115,17 @@ foreach ( @dbs ) {
 		print "\tNo new lanes for this database this week.\n";
 	}
 	print "\n";
-
+    $sth_lane->finish();
+    $sth_proc->finish();
     $sth_curr->finish();
     $sth_prev->finish();
     $dbconn->{_dbh}->disconnect;
+}
+
+sub get_processed_flags {
+	#modified from processed_flags.pl
+	my ($val) = @_;
+	my %flags = VRTrack::Core_obj->allowed_processed_flags();
+    my @flags = sort keys %flags;
+    return grep {$val & $flags{$_}} @flags;
 }
