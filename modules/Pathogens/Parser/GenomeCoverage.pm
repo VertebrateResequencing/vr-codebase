@@ -26,11 +26,13 @@ package Pathogens::Parser::GenomeCoverage;
 use Moose;
 use VertRes::Parser::bamcheck;
 use VertRes::Utils::Math;
+use VertRes::Wrapper::samtools;
 use base qw(VertRes::Base);
 
 has 'bamcheck' => ( is => 'ro', isa => 'Str', required => 1 );
 has 'ref_size' => ( is => 'rw', isa => 'Int', required => 0 );
 has '_bc_coverage' => ( is => 'ro', isa => 'ArrayRef', lazy_build => 1 );
+has '_bam_coverage' => ( is => 'ro', isa => 'Int', lazy_build => 1 );
 
 sub _build__bc_coverage
 {
@@ -44,6 +46,29 @@ sub _build__bc_coverage
     return $bc_cov;
 }
 
+sub _build__bam_coverage
+{
+    my ($self) = @_;
+    my $bam_coverage = 0;
+
+    # set bam_file name from bamcheck
+    my $bam_file = $self->bamcheck();
+    $bam_file =~ s/\.bc$//;
+    
+    # get total bases covered from samtools depth 
+    my $samtools = VertRes::Wrapper::samtools->new(verbose => $self->verbose, run_method => 'open', quiet => 1);
+    $samtools->exe($samtools->{base_exe}.' depth');
+    my $samtools_fh = $samtools->run($bam_file);
+    while(my $line = <$samtools_fh>)
+    {
+	my @line_data = split(/\t/,$line);
+	next unless $line_data[2] =~ m/^\d+$/;
+	next unless $line_data[2];
+	$bam_coverage++;
+    }
+
+    return $bam_coverage;
+}
 
 =head2 coverage
 
@@ -121,10 +146,11 @@ sub coverage_depth
         $depth_hist{$bc_cover[$x][1]} += $bc_cover[$x][2] if $bc_cover[$x][2];
     }
 
-    unless( $coverage <= $self->ref_size ){ $self->throw("Total bases found by bamcheck exceeds size of reference sequence.\n"); }
+    # check reference size against bases found from samtools depth 
+    unless( $self->_bam_coverage <= $self->ref_size ){ $self->throw("Total bases found exceeds size of reference sequence.\n"); } 
 
     # Add ummapped bases to histogram.
-    $depth_hist{0} = $self->ref_size - $coverage;
+    $depth_hist{0} = $self->ref_size - $coverage if $coverage < $self->ref_size;
 
     # Calculate Mean depth and SD
     my $math_util = VertRes::Utils::Math->new();
