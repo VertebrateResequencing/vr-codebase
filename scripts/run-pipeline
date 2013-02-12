@@ -893,10 +893,6 @@ sub get_mapping_jobs_from_vrtrack {
     
     my $count = 0;
     foreach my $vrlane (@lanes) {
-        unless ($use_hu) {
-            $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $vrlane);
-        }
-        
         next unless does_lane_pass_vrtrack_processed_flag_filters($vrlane, \%filter);
         next if $vrlane->is_withdrawn;
         next if ($vrlane->is_processed('mapped') && !$ignore_mapped);
