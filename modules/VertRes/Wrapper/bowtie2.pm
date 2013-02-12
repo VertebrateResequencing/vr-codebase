@@ -159,7 +159,7 @@ sub generate_sam {
         }
         
         my $X = 1000;
-        $self->simple_run("-X $X --time $ref -1 $fqs[0] -2 $fqs[1] $out");
+        $self->simple_run("-X $X --time $ref -1 $fqs[0] -2 $fqs[1] -S $out");
     }
     
     return -s $out ? 1 : 0;
