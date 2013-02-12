@@ -149,29 +149,12 @@ sub generate_sam {
     my ($self, $out, $ref, @fqs) = @_;
     
     unless (-s $out) {
-        my $e = 70;
-        
-        my $longest_read = 0;
-        foreach my $fq (@fqs) {
-            my $pars = VertRes::Parser::fastqcheck->new(file => "$fq.fastqcheck");
-            my $length = $pars->max_length();
-            if ($length > $longest_read) {
-                $longest_read = $length;
-            }
-        }
-        
-        foreach (sort { $a <=> $b } keys %e_parameter) {
-            if ($longest_read <= $_) {
-                $e = $e_parameter{$_};
-            }
-        }
-        
         foreach my $fq (@fqs) {
             $fq =~ s/\.gz$//;
         }
         
         my $X = 1000;
-        $self->simple_run("-e $e -X $X --sam --time $ref -1 $fqs[0] -2 $fqs[1] $out");
+        $self->simple_run("-X $X --time $ref -1 $fqs[0] -2 $fqs[1] $out");
     }
     
     return -s $out ? 1 : 0;
