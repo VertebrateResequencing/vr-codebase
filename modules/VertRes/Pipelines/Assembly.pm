@@ -516,7 +516,7 @@ sub pool_fastqs
       print $scriptfh qq{
 use strict;
 use VertRes::Pipelines::Assembly;
-use Bio::AssemblyImprovement::Assemble::SGA::Main
+use Bio::AssemblyImprovement::Assemble::SGA::Main;
 my \$assembly= VertRes::Pipelines::Assembly->new();
 my \@lane_names;
 };
@@ -543,11 +543,13 @@ my \@lane_names;
 	 {
 	  #TODO: Make below more generic so that other error correction programs can be slotted in seamlessly.
 	  my $error_corrected_file = $output_directory.'/'.$lane_name.'.fastq.gz';
+	  my $sga_exec = $self->{sga_exec};
 	  print $scriptfh qq{
 my \@filenames_array = $file_names_str;
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
             input_files     => \\\@filenames_array ,
-            output_filename => $error_corrected_file,
+            output_filename => "$error_corrected_file",
+            sga_exec        => "$sga_exec",
     )->run();
 }; 
 	 }
