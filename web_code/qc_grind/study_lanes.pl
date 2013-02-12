@@ -6,7 +6,7 @@
 # Created:       2012-03-28
 
 BEGIN {
-    $ENV{VRTRACK_HOST} = 'mcs4a';
+    $ENV{VRTRACK_HOST} = 'mcs10';
     $ENV{VRTRACK_PORT} = 3306;
     $ENV{VRTRACK_RO_USER} = 'vreseq_ro';
     $ENV{VRTRACK_RW_USER} = 'vreseq_rw';
@@ -186,6 +186,7 @@ sub displayProjectLaneForm
 
 				foreach my $lane (sort {$a->name cmp $b->name} @$lanes ) {
 
+        			next if $lane->is_withdrawn;
 					if ($form_submission) { # filter on lane status checkboxes
 						next unless $cgi->param($lane->qc_status) || $lane->qc_status eq 'no_qc';
 					}
@@ -333,6 +334,7 @@ sub downloadLaneData {
 
 				foreach my $lane (sort {$a->name cmp $b->name} @$lanes ) {
 
+        			next if $lane->is_withdrawn;
 					next unless $cgi->param($lane->qc_status) || $lane->qc_status eq 'no_qc'; # filter on lane status checkboxes
 
         			my $lanename = $lane->name;

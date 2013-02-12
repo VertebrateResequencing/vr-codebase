@@ -42,7 +42,7 @@ sub new
             
             bams     => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
             fa_ref   => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
-            mysql    => 'mysql -sN -uXXX -pXXX -hmcs4a -P 3306 g1k_meta',   # To get the sex. Optional when assumed_sex or sample_list is defined below.
+            mysql    => 'mysql -sN -uXXX -pXXX -hmcs10 -P 3306 g1k_meta',   # To get the sex. Optional when assumed_sex or sample_list is defined below.
 
             limits   => { runtime=>24*60 },
             do_clean => 1,         # Remove runner's temporary files

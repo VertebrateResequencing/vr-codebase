@@ -27,15 +27,6 @@ use VertRes::Parser::fastqcheck;
 
 use base qw(VertRes::Wrapper::MapperI);
 
-my %e_parameter = (
-    37 	=> 70,
-    63	=> 120,
-    76  => 140,
-    92 	=> 160,
-    108 => 160,
-    123	=> 200,
-    156	=> 240
-);
 
 =head2 new
 
