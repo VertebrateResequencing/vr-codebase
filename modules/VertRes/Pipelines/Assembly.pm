@@ -531,7 +531,10 @@ my \@lane_names;
        my @file_names ;
        for my $file_name (@{$vlane->files})
        {
-         push(@file_names, $file_name->name );
+       	 # Other modules (e.g. SGA) that needs to gunzip these input files struggle to find
+       	 # them when the full path is not provided.
+       	 my $file_name_with_path = $lane_path.'/'.$file_name->name;
+         push(@file_names, $file_name_with_path );
        }
        $file_names_str = '("'.join('","',@file_names ).'")';
      }
