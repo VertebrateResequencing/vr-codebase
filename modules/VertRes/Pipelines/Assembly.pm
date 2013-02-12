@@ -38,7 +38,7 @@ data => {
     seq_pipeline_root    => '/lustre/scratch108/pathogen/pathpipe/prokaryotes/seq-pipelines',
     no_scaffolding => 0,
     annotation     => 1,
-    sga            => 1, # Should SGA be used to correct reads before assembly?
+    error_correct  => 1, # Should the reads be put through an error correction stage?
 
     assembler => 'velvet',
     assembler_exec => '/software/pathogen/external/apps/usr/bin/velvet',
@@ -516,7 +516,7 @@ sub pool_fastqs
       print $scriptfh qq{
 use strict;
 use VertRes::Pipelines::Assembly;
-Bio::AssemblyImprovement::Assemble::SGA::Main
+use Bio::AssemblyImprovement::Assemble::SGA::Main
 use IO::Compress::Gzip qw(gzip $GzipError) ;
 my \$assembly= VertRes::Pipelines::Assembly->new();
 my \@lane_names;
@@ -537,18 +537,20 @@ my \@lane_names;
        $file_names_str = '("'.join('","',@file_names ).'")';
      }
 
-	 # If sga parameter set to 1, run sga to get a shuffled fastq file with corrected reads. If not, just shuffle the two fastq
-	 # files ourselves.
+	 # If error_correct set to 1, run the chosen error correction program to get a shuffled 
+	 #fastq file with corrected reads. If not, just shuffle the two fastq files ourselves.
 	 
-	 if(defined ($self->{sga}) and $self->{sga} == 1)
+	 if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
 	 {
-	  my $sga_error_corrected_file = $output_directory.'/'.$lane_name.'.fastq.gz';
+	  #TODO: Make below more generic so that other error correction programs can be slotted in seamlessly.
+	  my $error_corrected_file = $output_directory.'/'.$lane_name.'.fastq.gz';
 	  print $scriptfh qq{
+my \@filenames_array = $file_names_str;
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
             input_files     => \\\@filenames_array ,
+            output_filename => $error_corrected_file,
     )->run();
-    gzip $sga->_final_results_file => $sga_error_corrected_file or die "gzip failed: $GzipError\n"; 
-}; #TODO: Get SGA module to zip results file
+}; 
 	 }
 	 else
 	 }
