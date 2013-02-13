@@ -266,6 +266,7 @@ sub adjust_bsub_options
             #   -q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000]'
             warn("$output_file: Increasing memory to $mem\n") unless $no_warn;  # this should be logged in the future
             
+            
             $opts =~ s/-M\d+/-M${mem}000/;             # 3000MB -> -M3000000
             $opts =~ s/(select[^]]+mem>)\d+/$1$mem/;
             $opts =~ s/(rusage[^]]+mem=)\d+/$1$mem/;
@@ -276,6 +277,11 @@ sub adjust_bsub_options
             else
             {
                 if ( !($opts=~/select/) ) { $opts .= " -R 'select[mem>$mem]'"; }
+                elsif($opts=~ /select\[mem(.){1,2}[\d]+\]/)
+                { 
+                  # select[type==X86_64] select[mem>1000]
+                  # If there is more than 1 select statement, dont do anything as the memory has already been modified.
+                }
                 elsif ( $opts=~/select\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/select\[/select[mem>$mem &&/ }
                 if ( !($opts=~/rusage/) ) { $opts .= " -R 'rusage[mem=$mem]'" }
                 elsif ( $opts=~/rusage\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/rusage\[/rusage[mem=$mem,/ }
