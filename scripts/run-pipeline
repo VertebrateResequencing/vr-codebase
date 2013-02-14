@@ -861,7 +861,12 @@ sub get_mapping_jobs_from_vrtrack {
     # SOLID, then don't use VertRes::Utils::Hierarchy->get_lanes which is slow
     # for some reason
     my $use_hu = 0;
-    if (defined $config_data->{coverage_limit} || (defined $config_data->{limits} && keys %{$config_data->{limits}} > 1)) {
+    # processed_lane_hnames_with_limits is much faster if there is a project/sample/library/lane limit specified because it does the filtering in the DB.
+    if(defined($config_data->{dont_use_get_lanes}) && $config_data->{dont_use_get_lanes} == 1)
+    {
+        $use_hu = 0;
+    }
+    elsif (defined $config_data->{coverage_limit} || (defined $config_data->{limits} && keys %{$config_data->{limits}} > 1)) {
         $use_hu = 1;
     }
     elsif (defined $config_data->{limits} && keys %{$config_data->{limits}} == 1 && (! exists $config_data->{limits}->{platform} || (exists $config_data->{limits}->{platform} && @{$config_data->{limits}->{platform}} == 1))) {
