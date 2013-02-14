@@ -229,9 +229,9 @@ sub mapping_and_generate_stats
   {
     system("prokka --centre SC --cpus 2 --force --outdir  \$directory/annotation \$directory/contigs.fa");
   }
-  system("touch \$directory/_$self->{assembler}_${action_name_suffix}_done");
+  system("touch \$directory/$self->{prefix}$self->{assembler}_${action_name_suffix}_done");
  
-  system("touch _$self->{assembler}_${action_name_suffix}_done");
+  system("touch $self->{prefix}$self->{assembler}_${action_name_suffix}_done");
   exit;
                 };
   close $scriptfh;
@@ -329,7 +329,7 @@ unlink(qq[$tmp_directory].'/contigs.fa.scaffolded.filtered');
 
 chdir(qq[$output_directory]);
 unlink('pool_1.fastq.gz');
-system('touch _$self->{assembler}_optimise_parameters_done');
+system('touch $self->{prefix}$self->{assembler}_optimise_parameters_done');
 exit;
               };
               close $scriptfh;
@@ -556,7 +556,7 @@ unlink("$output_directory/$lane_name.fastq.gz");
    }
 
    print $scriptfh qq{
-system("touch $output_directory/_pool_fastqs_done");
+system("touch $output_directory/$self->{prefix}pool_fastqs_done");
 exit;
       };
       close $scriptfh;
@@ -724,7 +724,7 @@ sub cleanup_requires {
 =cut
 
 sub cleanup_provides {
-    return ["_assembly_cleanup_done"];
+    return [$self->{prefix}."assembly_cleanup_done"];
 }
 
 =head2 cleanup
@@ -760,7 +760,7 @@ sub cleanup {
   {
     unlink($self->{fsu}->catfile($lane_path, $file));
   }
-  Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_assembly_cleanup_done")   );  
+  Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_cleanup_done")   );  
   
   return $self->{Yes};
 }
@@ -828,7 +828,7 @@ sub update_db {
     
     my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
     Utils::CMD("rm $job_status") if (-e $job_status);
-    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"_assembly_update_db_done")   );  
+    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_update_db_done")   );  
 
     return $$self{'Yes'};
 }
