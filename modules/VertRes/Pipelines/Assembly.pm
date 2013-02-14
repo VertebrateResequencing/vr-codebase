@@ -65,6 +65,7 @@ use VertRes::IO;
 use VertRes::Utils::FileSystem;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
+use VertRes::Parser::fastqcheck;
 use VRTrack::Library;
 use VRTrack::File;
 use File::Basename;
@@ -442,7 +443,26 @@ sub lane_read_length
   my ($self) = @_;
   my $lane_names = $self->get_all_lane_names($self->{pools});
   my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, @$lane_names[0]) or $self->throw("No such lane in the DB: [".@$lane_names[0]."]");
-  my $read_length = $vrlane->read_len() || 75;
+  
+  my $read_length = $vrlane->read_len();
+  
+  if((!defined($read_length)) || $read_length <= 0)
+  {
+    for my $file_name (@{$vrlane->files})
+    {
+      my $fastqcheck_filename = "$file_name.fastqcheck";
+      next unless(-e $fastqcheck_filename);
+      my $pars = VertRes::Parser::fastqcheck->new(file => $fastqcheck_filename);
+      $read_length = $pars->max_length();
+      last if($read_length > 0);
+    }
+  }
+  
+  if((!defined($read_length)) || $read_length <= 0)
+  {
+    $read_length = 36;
+  }
+
   return $read_length;
 }
 
