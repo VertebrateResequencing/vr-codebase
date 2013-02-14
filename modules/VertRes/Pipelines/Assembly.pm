@@ -724,6 +724,7 @@ sub cleanup_requires {
 =cut
 
 sub cleanup_provides {
+    my ($self) = @_;
     return [$self->{prefix}."assembly_cleanup_done"];
 }
 
