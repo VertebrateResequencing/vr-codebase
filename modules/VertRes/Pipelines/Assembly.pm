@@ -526,23 +526,22 @@ my \@lane_names;
      my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
      my $vlane = VRTrack::Lane->new_by_name($self->{vrtrack},$lane_name);
      my $file_names_str ;
-     my $file_names_with_path_str
+     my $file_names_with_path_str;
      
      if( @{$vlane->files} == 2)
      {
        my @file_names ;
        for my $file_name (@{$vlane->files})
        {
-        push(@file_names, $file_name->name );
-        push(@file_names_with_path, "$base_path/$lane_path/".$file_name->name ); # Redundant code. Improve. Some programs like SGA gunzip struggle to find files if not specified with full path
+        	push(@file_names, $file_name->name );
+        	push(@file_names_with_path, "$base_path/$lane_path/".$file_name->name ); # Redundant code. Improve. Some programs like SGA gunzip struggle to find files if not specified with full path
        }
        $file_names_str = '("'.join('","',@file_names ).'")';
        $file_names_with_path_str = '("'.join('","',@file_names_with_path ).'")';
      }
 
 	 # If error_correct set to 1, run the chosen error correction program to get a shuffled 
-	 #fastq file with corrected reads. If not, just shuffle the two fastq files ourselves.
-	 # TODO: Make below more generic so that other error correctors can be slotted in
+	 # fastq file with corrected reads. If not, just shuffle the two fastq files ourselves.
 	 
 	 if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
 	 {
