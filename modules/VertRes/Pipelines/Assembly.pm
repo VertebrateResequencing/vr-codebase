@@ -525,12 +525,14 @@ my \@lane_names;
    {
      my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
      my $vlane = VRTrack::Lane->new_by_name($self->{vrtrack},$lane_name);
-     my $file_names_str ;
+     my $file_names_str;
      my $file_names_with_path_str;
+     my @file_names;
+     my @file_names_with_path ;
      
      if( @{$vlane->files} == 2)
      {
-       my @file_names ;
+     
        for my $file_name (@{$vlane->files})
        {
         	push(@file_names, $file_name->name );
@@ -551,7 +553,7 @@ my \@filenames_array = $file_names_with_path_str;
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
             input_files     => \\\@filenames_array ,
             output_filename => "$error_corrected_file",
-            sga_exec        => "$sga_exec",
+            sga_exec        => "$self->{sga_exec}",
     )->run();
 }; 
 	 }
