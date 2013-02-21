@@ -7,6 +7,7 @@ use Cwd;
 use Carp;
 
 my ($setupfile, $help);
+my $shell = $ENV{SHELL};
 
 GetOptions(
     'f|file=s'       =>  \$setupfile,
@@ -35,11 +36,13 @@ my $cwd = getcwd;
 my $pythonpath = '/software/vertres/lib/python/python-2.7.3/lib/python2.7/site-packages';
 my $python_library = '--prefix=/software/vertres/lib/python/python-2.7.3';
 my $python_binary = '/software/vertres/installs/python/python-2.7.3/bin/python';
+#csh/tcsh or POSIX-compliant shells (bash, ksh, dash...) need slightly different pythonpath set up
+my $ppath_setup = ( $shell =~ /tcsh/ || $shell =~ /csh/ ) ? "setenv PYTHONPATH $pythonpath;" : "PYTHONPATH=$pythonpath";
 
 # pass the setup_file and current directory to normal and precise nodes with umask 2
 foreach my $server ('uk10k-login', 'precise-dev64') {
     warn "\nInstalling $setupfile on $server\n";
-    system(qq[ssh -A $server "umask 002; cd $cwd; $python_binary $setupfile install $python_library"]);
+    system(qq[ssh -A $server "umask 002; cd $cwd; $ppath_setup $python_binary $setupfile install $python_library"]);
 }
 
 exit;
