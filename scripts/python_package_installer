@@ -39,7 +39,7 @@ my $python_binary = '/software/vertres/installs/python/python-2.7.3/bin/python';
 # pass the setup_file and current directory to normal and precise nodes with umask 2
 foreach my $server ('uk10k-login', 'precise-dev64') {
     warn "\nInstalling $setupfile on $server\n";
-    system(qq[ssh -A $server "umask 002; cd $cwd; PYTHONPATH=$pythonpath $python_binary $setupfile install $python_library"]);
+    system(qq[ssh -A $server "umask 002; cd $cwd; $python_binary $setupfile install $python_library"]);
 }
 
 exit;
