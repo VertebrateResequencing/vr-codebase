@@ -836,23 +836,37 @@ sub get_mapping_jobs_from_vrtrack {
     # a limit on lane is not valid for VertRes::Utils::Hierarchy->get_lanes, but
     # for consistency allow it
     my %requested_lanes;
+    my $lane_limits;
     my $limit_by_lane_name = 0;
     if (defined $config_data->{limits}) {
-        my $lanes = delete $config_data->{limits}->{lane};
-        if ($lanes) {
+        $lane_limits = delete $config_data->{limits}->{lane};
+        if ($lane_limits) {
             $limit_by_lane_name = 1;
-            foreach my $lane (@{$lanes}) {
+            foreach my $lane (@{$lane_limits}) {
                 $requested_lanes{$lane} = 1;
             }
         }
     }
+    
+    # Ignore mapped flag.
+    # Used for mapping with different assemblies/mappers for lane
+    my $ignore_mapped = defined($$config_data{data}{ignore_mapped_status}) && $$config_data{data}{ignore_mapped_status} ? 1:0;
+
+    my %filter  = (import => 1, swapped => 0);
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
+    
     
     # if no limits have been specified, or if it's only platform => ['SLX',
     # '454'] which is what you'd get anyway given that the import doesn't import
     # SOLID, then don't use VertRes::Utils::Hierarchy->get_lanes which is slow
     # for some reason
     my $use_hu = 0;
-    if (defined $config_data->{coverage_limit} || (defined $config_data->{limits} && keys %{$config_data->{limits}} > 1)) {
+    # processed_lane_hnames_with_limits is much faster if there is a project/sample/library/lane limit specified because it does the filtering in the DB.
+    if(defined($config_data->{dont_use_get_lanes}) && $config_data->{dont_use_get_lanes} == 1)
+    {
+        $use_hu = 0;
+    }
+    elsif (defined $config_data->{coverage_limit} || (defined $config_data->{limits} && keys %{$config_data->{limits}} > 1)) {
         $use_hu = 1;
     }
     elsif (defined $config_data->{limits} && keys %{$config_data->{limits}} == 1 && (! exists $config_data->{limits}->{platform} || (exists $config_data->{limits}->{platform} && @{$config_data->{limits}->{platform}} == 1))) {
@@ -877,22 +891,13 @@ sub get_mapping_jobs_from_vrtrack {
         }
     }
     else {
-        @lanes = @{$vrtrack->processed_lane_hnames(import => 1) || []};
+        $config_data->{limits}->{lane} = $lane_limits;
+        my $hnames = $vrtrack->processed_lane_hnames_with_limits(-1,$config_data->{limits}, %filter);
+        @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config);
     }
     
-    # Ignore mapped flag.
-    # Used for mapping with different assemblies/mappers for lane
-    my $ignore_mapped = defined($$config_data{data}{ignore_mapped_status}) && $$config_data{data}{ignore_mapped_status} ? 1:0;
-
-    my %filter  = (import => 1, swapped => 0);
-    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
-
     my $count = 0;
     foreach my $vrlane (@lanes) {
-        unless ($use_hu) {
-            $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $vrlane);
-        }
-        
         next unless does_lane_pass_vrtrack_processed_flag_filters($vrlane, \%filter);
         next if $vrlane->is_withdrawn;
         next if ($vrlane->is_processed('mapped') && !$ignore_mapped);
@@ -1094,6 +1099,7 @@ sub get_assembly_jobs_from_vrtrack {
     }
     
     my %filter  = ( stored => 1, import => 1, assembled => 0 );
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
     
     my @lanes = @{$vrtrack->processed_lane_hnames_with_limits($max_lanes,$config_data->{limits}, %filter) || []};
 
