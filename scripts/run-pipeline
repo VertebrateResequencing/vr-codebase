@@ -1099,6 +1099,7 @@ sub get_assembly_jobs_from_vrtrack {
     }
     
     my %filter  = ( stored => 1, import => 1, assembled => 0 );
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
     
     my @lanes = @{$vrtrack->processed_lane_hnames_with_limits($max_lanes,$config_data->{limits}, %filter) || []};
 
