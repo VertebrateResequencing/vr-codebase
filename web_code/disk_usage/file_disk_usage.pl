@@ -118,6 +118,7 @@ sub displayFileView
 	print qq[<table class='sortable' width="80%">
     <tr>
     <th>Pipeline ID</th>
+    <th>Owner</th>
     <th>File path</th>
     <th>File type</th>
     <th>Disk usage ($size_units)</th>
@@ -126,8 +127,8 @@ sub displayFileView
 
     foreach my $pipeline(@fileusage[0 .. $limit]) {
 		my @pipeline_data = @{ $pipeline };
-		my $usage = $check_gb_size > 0 ? int($pipeline_data[3] / 1073741824) : $pipeline_data[3];
-		print qq[<tr><td align="center">$pipeline_data[0]</td><td align="center">$pipeline_data[5]</td><td align="center">$pipeline_data[4]</td><td align="center">$usage</td></tr>];
+		my $usage = $check_gb_size > 0 ? int($pipeline_data[4] / 1073741824) : $pipeline_data[4];
+		print qq[<tr><td align="center">$pipeline_data[0]</td><td align="center">$pipeline_data[2]</td><td align="center">$pipeline_data[6]</td><td align="center">$pipeline_data[5]</td><td align="center">$usage</td></tr>];
 	}
     print qq[
         </table>
@@ -141,12 +142,12 @@ sub downloadMappings
 {
 	my ($cgi, $sql, $sep, $type, $ps_id, $root, $root_file_type) = @_;
 	print $cgi->header(-type=>"text/$type",  -attachment=>"disk_usage_pipeline_$ps_id\_$root_file_type\_files.$type");
-	print join ($sep, "Pipeline ID", "Pipeline name", "File path", "File type", "Disk usage (Bytes))", "\n");
+	print join ($sep, "Pipeline ID", "Pipeline name", "Pipeline owner", "File path", "File type", "Disk usage (Bytes))", "\n");
 	my @usage = $utl->fetchIndividualUsage($sql, $ps_id, $root, $root_file_type);
 	foreach my $pipeline(@usage) {
 		my @pipeline_data = @{ $pipeline };
 		$pipeline_data[1] =~ s/,//g ;
 		#my $usage = int($pipeline_data[3] / 1073741824);
-		print (join $sep, $ps_id, $pipeline_data[1], $pipeline_data[5], $pipeline_data[4], $pipeline_data[3], "\n");
+		print (join $sep, $ps_id, $pipeline_data[1], $pipeline_data[2], $pipeline_data[5], $pipeline_data[4], $pipeline_data[3], "\n");
 	}
 }
