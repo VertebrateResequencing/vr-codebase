@@ -34,10 +34,10 @@ sub new {
 	    PENDING_SEQ              => "select p.name, s.name, r.seq_status, r.changed, r.ssid from study y, latest_project p, latest_sample s, latest_library l, latest_seq_request r where y.study_id = p.study_id and p.project_id = s.project_id and s.sample_id = l.sample_id and l.library_id = r.library_id and r.seq_status in ('pending', 'started') and y.name = ? order by p.name, r.ssid",
 	    PENDING_MULTIPLEX_SEQ    => "select p.name, s.name, r.seq_status, r.changed, r.ssid from study y, latest_project p, latest_sample s, latest_library l, library_multiplex_pool m, latest_seq_request r where y.study_id = p.study_id and p.project_id = s.project_id and s.sample_id = l.sample_id and l.library_id = m.library_id and m.multiplex_pool_id = r.multiplex_pool_id and r.seq_status in ('pending', 'started') and y.name = ?",
 	    DISK_USAGE_DIRECTORY     => "select path_root, file_type, s, s_gb, file_count from vrpipe_root_top_level where s_gb > 0 and top_level_display = 1 order by s_gb desc",
-	    DISK_USAGE_PIPELINE      => "select ps_id, ps_name, ps_type, total_s_gb, file_count from vrpipe_usage_total where total_s_gb > 0 order by total_s_gb desc",
-	    DISK_USAGE_INDIV_DIR     => "select ps_id, ps_name, ps_type, file_type, path_root, s_gb, file_count from vrpipe_usage_top_level where path_root = ? and s_gb > 0 order by s_gb desc", 
-	    DISK_USAGE_INDIV_PIPE    => "select ps_id, ps_name, ps_type, file_type, path_root, s_gb, file_count from vrpipe_usage_top_level where ps_id = ? and s_gb > 0 order by s_gb desc", 
-	    DISK_USAGE_FILES         => "select ps_id, ps_name, ps_type, s, type, path from vrpipe_file_info where ps_id = ? and path_root = ? and type = ? order by s desc",
+	    DISK_USAGE_PIPELINE      => "select ps_id, ps_name, ps_user, ps_type, total_s_gb, file_count from vrpipe_usage_total where total_s_gb > 0 order by total_s_gb desc",
+	    DISK_USAGE_INDIV_DIR     => "select ps_id, ps_name, ps_user, ps_type, file_type, path_root, s_gb, file_count from vrpipe_usage_top_level where path_root = ? and s_gb > 0 order by s_gb desc", 
+	    DISK_USAGE_INDIV_PIPE    => "select ps_id, ps_name, ps_user, ps_type, file_type, path_root, s_gb, file_count from vrpipe_usage_top_level where ps_id = ? and s_gb > 0 order by s_gb desc", 
+	    DISK_USAGE_FILES         => "select ps_id, ps_name, ps_user, ps_type, s, type, path from vrpipe_file_info where ps_id = ? and path_root = ? and type = ? order by s desc",
     };
 
 

@@ -89,6 +89,7 @@ sub displayPipelineTotals
     <th>Pipeline type</th>
     <th>Disk usage (GB)</th>
     <th>No. of files</th>
+    <th>Owner</th>
     </tr>
     ];
     
@@ -96,7 +97,7 @@ sub displayPipelineTotals
     foreach my $pipeline(@diskusagetotals) {
 		my @pipeline_data = @{ $pipeline };
 		my $pslink = "<a href='$pipeline_script?setup=$pipeline_data[0]'> $pipeline_data[1] </a>";
-		print qq[<tr><td align="center">$pipeline_data[0]</td><td align="center">$pslink</td><td align="center">$pipeline_data[2]</td><td align="center">$pipeline_data[3]</td><td align="center">$pipeline_data[4]</td></tr>];
+		print qq[<tr><td align="center">$pipeline_data[0]</td><td align="center">$pslink</td><td align="center">$pipeline_data[3]</td><td align="center">$pipeline_data[4]</td><td align="center">$pipeline_data[5]</td><td align="center">$pipeline_data[2]</td></tr>];
 	}
     print qq[
         </table>
@@ -110,7 +111,7 @@ sub downloadMappings
 {
 	my ($cgi, $sql, $sep, $type) = @_;
 	print $cgi->header(-type=>"text/$type",  -attachment=>"disk_usage_vrpipe_pipeline_totals.$type");
-	print join ($sep,"Pipeline ID", "Pipeline name", "Pipeline type", "Disk usage (GB)", "No. of files"), "\n";
+	print join ($sep,"Pipeline ID", "Pipeline name", "Pipeline owner", "Pipeline type", "Disk usage (GB)", "No. of files"), "\n";
 	my @usage = $utl->fetchUsageTotals($sql);
 	foreach my $pipeline(@usage) {
 		my @pipeline_data = @{ $pipeline };

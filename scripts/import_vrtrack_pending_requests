@@ -78,7 +78,7 @@ my $sth_ins_sreq = $vrtrack->{_dbh}->prepare($sql_pend_sreq);
 my $sth_ins_sreq_mp = $vrtrack->{_dbh}->prepare($sql_pend_sreq_mp);
 
 #warehouse connection, SQL statements and statement handles:
-my $wh_dbh = DBI->connect("DBI:mysql:host=mcs12:port=3379;database=sequencescape_warehouse", "warehouse_ro",undef,{'RaiseError' => 1, 'PrintError'=>0});
+my $wh_dbh = DBI->connect("DBI:mysql:host=mcs7:port=3379;database=sequencescape_warehouse", "warehouse_ro",undef,{'RaiseError' => 1, 'PrintError'=>0});
 croak "Can't connect to sequencescape_warehouse\n" unless $wh_dbh;
 
 my $sql_study_ssid = qq[SELECT internal_id FROM current_studies where name = ?];

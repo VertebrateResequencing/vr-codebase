@@ -175,6 +175,7 @@ sub process_vcf_rec
 
 	if ($chr ne $current_chr) {
     	print STDERR "Processing chr $chr\n";    
+        init_vep(); # parse whole file to allow for VEP sort order bug
 		load_vep_cache($chr);
 		$current_chr=$chr;
 	}
@@ -256,14 +257,7 @@ sub load_vep_cache
     my $rec;
     if ( $vep_input )
     {
-        return if !$vep_rec;
         $rec = parse_rec($vep_rec);
-
-        while ($rec && $rec->{vep_chr} ne $chr) {
-            $vep_rec = <VEP_FILE>;
-            last if !$vep_rec;
-            $rec = parse_rec($vep_rec);
-        }
     }
     else
     {
@@ -272,7 +266,14 @@ sub load_vep_cache
         $rec = parse_rec($vep_rec);
     }
 
-	while ($rec && $rec->{vep_chr} eq $chr) {
+	while ($rec) {
+
+        unless  ($rec->{vep_chr} eq $chr) {
+            $vep_rec = <VEP_FILE>;
+            last if !$vep_rec;
+            $rec = parse_rec($vep_rec);
+            next;
+        }
 
 		my $gene_name=$rec->{Gene}; # Default to ENS id
 		my ($sift_pred,$polyphen_pred,$condel_pred);
