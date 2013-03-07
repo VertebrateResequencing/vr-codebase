@@ -273,6 +273,7 @@ sub main {
             }
         }
     }
+    $config->{out_file_handle} ||= &get_out_file_handle($config); # CJJ create file and write a header even if no vcf records
     
     # if in whole-genome mode, finish off the rest of the buffer
     if(defined $config->{whole_genome} && scalar @vfs) {
