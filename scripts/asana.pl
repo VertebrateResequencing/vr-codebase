@@ -225,7 +225,7 @@ sub asana {
     my $max_retries = 4;
     while (! $data) {
         my $return = `$curl`;
-        if ($data) {
+        if ($return) {
             my $hash = from_json($return);
             $data = $hash->{data};
         }
