@@ -628,7 +628,7 @@ sub run_in_parallel
         # Get the merging command
         my $cmd = &{$$opts{merge_chunks}}($self,$chunks,$name,"$work_dir/$outdir");
 
-        open(my $fh,'>',"$work_dir/$outdir/_$name.pl") or $self->throw("$work_dir/$outdir/$$self{prefix}$name.pl: $!");
+        open(my $fh,'>',"$work_dir/$outdir/$$self{prefix}$name.pl") or $self->throw("$work_dir/$outdir/$$self{prefix}$name.pl: $!");
         print $fh $cmd;
         close($fh);
         LSF::run($jids_file,"$work_dir/$outdir","$$self{prefix}$name",$$opts{bsub_opts},qq[perl -w $$self{prefix}$name.pl]);
