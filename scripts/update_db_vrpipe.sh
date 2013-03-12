@@ -25,6 +25,9 @@ ARG_UP=""
 if [[ $DB =~ "g1k_track_phase3" ]]
 then
     ARG_UP="-u -sup -v"
+elif [[ $DB =~ "g1k_track_phase2_vrpipe" ]] 
+then
+	ARG_UP="-u -sup -nop -v -min 9000"
 else
     ARG_UP="-u -sup -nop -v"
 fi

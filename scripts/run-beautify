@@ -60,7 +60,7 @@ sub new
                 --dir /lustre/scratch105/projects/g1k/ref/vep_cache
         ];
     $$self{vcf2consequences} = q[vcf2consequences_vep
-                -grantham 
+                --grantham 
                 --gerp /lustre/scratch105/projects/g1k/ref/gerp_db/hs
         ];
 
