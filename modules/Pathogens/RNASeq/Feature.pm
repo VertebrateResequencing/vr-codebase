@@ -23,6 +23,21 @@ has 'gene_end'      => ( is => 'rw', isa => 'Int',                 lazy_build =>
 has 'exon_length'   => ( is => 'rw', isa => 'Int',                 lazy_build => 1 );
 has 'exons'         => ( is => 'rw', isa => 'ArrayRef',            lazy =>1, builder => '_build_exons' );
 
+has 'locus_tag'     => ( is => 'rw', isa => 'Maybe[Str]',          lazy_build => 1 );
+
+sub _build_locus_tag
+{
+  my ($self) = @_;
+  my $locus_tag;
+  my @junk;
+  if($self->raw_feature->has_tag('locus_tag'))
+  {
+    ($locus_tag, @junk) = $self->raw_feature->get_tag_values('locus_tag');
+    $locus_tag =~ s!\"!!g;
+  }
+  return $locus_tag;
+}
+
 sub _build_exons
 {
   my ($self) = @_;
@@ -41,7 +56,6 @@ sub _find_feature_id
   
   for my $tag_name (@tag_names)
   {
-
     if($self->raw_feature->has_tag($tag_name))
     {
       ($gene_id, @junk) = $self->raw_feature->get_tag_values($tag_name);

@@ -28,6 +28,7 @@ sub _result_rows
       [
       $result_set->{seq_id},
       $result_set->{gene_id},
+      $result_set->{locus_tag},
       $result_set->{mapped_reads_sense},
       $result_set->{rpkm_sense},
       $result_set->{mapped_reads_antisense},
@@ -43,11 +44,11 @@ sub _header
   my @header;
   if($self->protocol ne "StrandSpecificProtocol")
   {
-    @header = ["Seq ID","GeneID","Reads Mapping", "RPKM", "Antisense Reads Mapping", "Antisense RPKM"];
+    @header = ["Seq ID","GeneID","Locus Tag","Reads Mapping", "RPKM", "Antisense Reads Mapping", "Antisense RPKM"];
   }
   else
   {
-    @header = ["Seq ID","GeneID", "Antisense Reads Mapping", "Antisense RPKM","Reads Mapping", "RPKM"];
+    @header = ["Seq ID","GeneID","Locus Tag","Antisense Reads Mapping", "Antisense RPKM","Reads Mapping", "RPKM"];
   }
   return \@header;
 }
