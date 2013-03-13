@@ -19,6 +19,8 @@ is $rna_seq_gff->features->{"continuous_feature_id"}->gene_end,   231, 'find gen
 is $rna_seq_gff->features->{"continuous_feature_id"}->exon_length, 66, 'exon length for continuous feature';
 is $rna_seq_gff->features->{"continuous_feature_id"}->gene_strand,  1, 'strand of continuous feature';
 is $rna_seq_gff->features->{"continuous_feature_id"}->seq_id,  "FN543502", 'seq_id of continuous feature';
+is $rna_seq_gff->features->{"continuous_feature_id"}->locus_tag,  "continuous_feature_locus_tag", 'continuous feature locus tag';
+
 
 is $rna_seq_gff->features->{"non_cds_feature_id"}, undef, 'Dont parse non CDS features';
 
