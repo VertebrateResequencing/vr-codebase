@@ -137,6 +137,8 @@ sub calculate_expression_provides
   my @expression_done_files ;
   for my $filename (@{$self->_find_sequencing_files})
   {
+    next if($self->does_reference_in_bam_match_annotation($self->{lane_path}."/".$filename,$self->{annotation_file}) == 0);
+    
     push(@expression_done_files, $self->{lane_path}."/".$self->{prefix}.$filename."_calculate_expression_done");
   }
 
