@@ -162,7 +162,7 @@ sub _create_expression_job
   my $prefix = $self->{prefix};
   
   my($action_lock_filename, $directories, $suffix) = fileparse($action_lock);
-  my $sequencing_file_action_lock = $self->{lane_path}.'/'.$self->{prefix}.$sequencing_filename.$action_lock_filename;
+  my $sequencing_file_action_lock = $self->{lane_path}.'/'.$self->{prefix}.$sequencing_filename.'_calculate_expression.jids';
 
   my $mpileup_str  = "";
   if(defined ($self->{mpileup_cmd}))
