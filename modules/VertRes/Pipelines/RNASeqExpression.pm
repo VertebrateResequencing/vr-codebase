@@ -240,7 +240,7 @@ sub calculate_expression
   for my $sequencing_filename (@{$self->_find_sequencing_files})
   {
     next if( -e $self->{lane_path}."/".$self->{prefix}.$sequencing_filename."_calculate_expression_done");
-    next if($self->does_reference_in_bam_match_annotation($sequencing_filename,$self->{annotation_file}) == 0);
+    next if($self->does_reference_in_bam_match_annotation($self->{lane_path}."/".$sequencing_filename,$self->{annotation_file}) == 0);
     
     $self->_create_expression_job($build_path,$action_lock, $sequencing_filename);
   }
