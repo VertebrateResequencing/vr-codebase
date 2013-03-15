@@ -134,12 +134,12 @@ sub displayProjectLaneForm
     	<th>Genotype</th>
         <th>NPG Status</th>
         <th>Auto QC Status</th>
-        <th title="Raw bases mapped">Raw</th>
-        <th title="Gbp mapped">Mapped</th>
-        <th title="Percent of mapped reads which were duplicates">Dup \%</th>
-        <th title="Gbp mapped ignoring duplicate reads">Mapped-dups</th>
-        <th title="Overlapping base duplicate percent">Overlap dup \%</th>
-        <th title="Final net bases excluding Overlapping base duplicates">Final net bases</th>
+        <th title="Number of raw bases in Gb [from the latest lane_mapstats raw_bases]">Raw</th>
+        <th title="Number of mapped bases in Gb [from the latest lane_mapstats bases_mapped]">Mapped</th>
+        <th title="Percent of mapped reads which were duplicates [from latest lane_mapstats, rmdup_reads_mapped / reads_mapped]">Dup \%</th>
+        <th title="Gbp mapped ignoring duplicate reads [from latest lane_mapstats rmdup_bases_mapped]">Mapped-dups</th>
+        <th title="The percent of bases duplicated due to reads of a pair overlapping">Overlap dup \%</th>
+        <th title="Final net bases excluding Overlapping base duplicates [latest lane_mapstats rmdup_bases_mapped - overlap_dup percentage]">Final net bases</th>
         <th></th>
         </tr>
     ];

@@ -18,6 +18,7 @@ use SangerWeb;
 use VRTrack::Project;
 use VertRes::Utils::VRTrackFactory;
 use VertRes::QCGrind::Util;
+use CGI::Carp qw(fatalsToBrowser);
 
 my $pending_view = "../pending-view/pending_view.pl";
 
@@ -94,7 +95,7 @@ sub displaySamplesPage
         <th>Library</th>
         <th>Lanes</th>
         <th>Passed</th>
-        <th>Pass seq</th>
+        <th title="Passed bases mapped with dups removed">Pass seq</th>
         <th>Depth</th>
         <th>Pending</th>
         </tr>
@@ -137,6 +138,7 @@ sub displaySamplesPage
 				my $sampledBases = 0;
 				my $total_passed_bases = 0;
 				my $lib_no_qcLanes = 0;
+                my $final_net = 0;
 
 				foreach my $lane( @$lanes ) {
 					$sampleLanes ++;
@@ -149,6 +151,19 @@ sub displaySamplesPage
 							$total_passed_bases += $lane->raw_bases();
 
 							$samplePassed ++;
+
+                            # subtract Overlap duplicate bases from bases_mapped to get net total bases
+                            my $overlap_dup = 0;
+                            my @autoqc_statuses = @{ $mapping->autoqcs() };
+                            foreach my $autoqc (@autoqc_statuses) {
+
+                                next unless $autoqc->test =~ /Overlap duplicate base percent/;
+
+                                # eg "The percent of bases duplicated due to reads of a pair overlapping (2.8) is smaller than or equal to 4."
+                                $autoqc->reason =~ /The percent of bases duplicated due to reads of a pair overlapping \((.*)\) /;
+                                $overlap_dup = sprintf("%.2f",$1);
+                            }
+                            $final_net += int($mapping->rmdup_bases_mapped - $mapping->rmdup_bases_mapped * $overlap_dup / 100);
 						}
 					}
 					elsif( $lane->qc_status() eq $utl->{STATES}{PENDING} ) {
@@ -162,9 +177,9 @@ sub displaySamplesPage
 					$depth = ( ( $passedBases / $sampledBases ) * $total_passed_bases ) / 3000000000;
 					$depth = sprintf("%.2f", $depth);
 					$sampleDepth += $depth;
-					$samplePassseq += $total_passed_bases;
-					$pass_seq = $utl->bp_to_nearest_unit($total_passed_bases, 1);
 				}
+                $pass_seq = $utl->bp_to_nearest_unit($final_net, 1);
+                $samplePassseq += $final_net;
 
 				my $colour = $utl->get_colour_for_status( $library->open() ? $library->qc_status() : $utl->{STATES}{CLOSE_LIBRARY} );
 				my $numLanes = @$lanes;
