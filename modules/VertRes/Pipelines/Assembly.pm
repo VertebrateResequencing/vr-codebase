@@ -39,6 +39,7 @@ data => {
     no_scaffolding => 0,
     annotation     => 1,
     error_correct  => 1, # Should the reads be put through an error correction stage?
+    subsample	   => 1, # Should we do subsampling (after error correction)?
 
     assembler => 'velvet',
     assembler_exec => '/software/pathogen/external/apps/usr/bin/velvet',
@@ -83,6 +84,7 @@ use Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles;
 use Bio::AssemblyImprovement::Scaffold::SSpace::Iterative;
 use Bio::AssemblyImprovement::FillGaps::GapFiller::Iterative;
 use Bio::AssemblyImprovement::Assemble::SGA::Main;
+use Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main;
 
 use base qw(VertRes::Pipeline);
 
@@ -114,6 +116,7 @@ our %options = (
                 gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-10_linux-x86_64/GapFiller.pl',
                 abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
                 sga_exec        => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
+                khmer_exec		=> '/nfs/users/nfs_n/nds/Git_projects/khmer/scripts/normalize-by-median.py',
                 no_scaffolding  => 0,
                 annotation      => 0,
                 );
@@ -562,17 +565,21 @@ my \@lane_names;
        $file_names_with_path_str = '("'.join('","',@file_names_with_path ).'")';
      }
 
-	 # If error_correct set to 1, run the chosen error correction program to get a shuffled 
+	 # If error_correct set to true, run the chosen error correction program to get a shuffled 
 	 # fastq file with corrected reads. If not, just shuffle the two fastq files ourselves.
 	 
+	 #my $shuffled_filename = $output_directory.'/'.$lane_name.'.fastq.gz';
+	 my $shuffled_filename = $lane_name.'.fastq.gz';
+	   
 	 if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
 	 {
-	  my $error_corrected_file = $output_directory.'/'.$lane_name.'.fastq.gz';
+	
 	  print $scriptfh qq{
 my \@filenames_array = $file_names_with_path_str;
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
             input_files     => \\\@filenames_array ,
-            output_filename => "$error_corrected_file",
+            output_filename => "$shuffled_filename",
+            output_directory=> "$output_directory",
             sga_exec        => "$self->{sga_exec}",
     )->run();
 }; 
@@ -585,6 +592,20 @@ my \@filenames_array = $file_names_str;
 };
      }
    }
+   
+   # If subsampling set to true, run digital normalisation on the shuffled fastq file
+    if(defined ($self->{subsample}) and $self->{subsample} == 1)
+    {
+       print $scriptfh qq{
+my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new(
+               input_file      => "$shuffled_filename" ,
+               khmer_exec      => $self->{khmer_exec}',
+               output_filename => "$shuffled_filename",
+               output_directory=> "$output_directory",
+    	)->run();
+};
+    }
+   
 
    my $pool_count = 1;
    for my $lane_pool (@{$self->{pools}})
