@@ -52,7 +52,7 @@ Usage options:
 [IMPORTANT NOTE: If the study name contains space characters you must 
 either enter the name in 'quotes' or escape each space using \\ ]
     Retrieve from warehouse:
-    	$0 -s <study>
+    	$0 -s <study> 
     Retrieve study list for interactive selection	
     	$0 -d <vrtrack_db>
 USAGE
@@ -65,44 +65,34 @@ my $web_db = 'vrtrack_web_index';
 my $sql_select_project_names = "select d.project_name from tracking_database t, db_projects d where d.db_id=t.db_id and t.db_name = ? order by d.project_name";
 
 #if db is specified, select the study to download
-$study = get_study($db, $sql_select_project_names) unless $study;
+my @studies = $study ? ($study) : get_studies($db, $sql_select_project_names);
+my $outfile = $study ? $study.'_sample_mapping.tab' : $db.'_sample_mapping.tab';
 
 #connection to warehouse
 my $dbh = DBI->connect("DBI:mysql:host=mcs7:port=3379;database=sequencescape_warehouse", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
 #mapping sql
 my $na = "'N/A'";
-my $sql = "select distinct ifnull(csa.supplier_name, $na), ifnull(csa.name, $na), ifnull(csa.sanger_sample_id, $na), ifnull(csa.accession_number, $na) 
-	        from current_samples csa, study_samples sta, current_studies cst where csa.internal_id = sta.sample_internal_id 
-	        and sta.study_internal_id = cst.internal_id and cst.name = ?"; 
-
-#fetch mappings and write to file
-my ($supp_name, $name, $sanger_name, $acc);
+my $sql = "select distinct csa.supplier_name, ifnull(csa.name, $na), ifnull(csa.sanger_sample_id, $na), ifnull(csa.accession_number, $na) from current_samples csa, study_samples sta, current_studies cst where csa.internal_id = sta.sample_internal_id and sta.study_internal_id = cst.internal_id and cst.name = ? and csa.supplier_name is not null";
 my $sth = $dbh->prepare($sql);
-$sth->execute($study);
-$sth->bind_columns(undef, \$supp_name, \$name, \$sanger_name, \$acc);
 
-my $date = strftime "%Y-%m-%d", localtime;
-my $time = strftime "%H:%M:%S", localtime;
-my $filest = length($study) > 30 ? substr($study, 0, 30) : $study;
-
-$filest =~ s/[^a-zA-Z0-9\._-]/_/g;
-
-my $outfile = $filest.'_'.$date.'.tab';
-open OUTFILE, '>', $outfile;
-print OUTFILE "## sample mappings for $study, taken at $time on $date.\n";
+#fetch mappings and write to standard output
+open OUTFILE, ">", $outfile;
+print OUTFILE "## sample mappings for : ".join(", ", @studies)."\n";
 print OUTFILE "Supplier_id\tSanger_sample_id\tSample_accession\n";
-while ($sth->fetch()) {
-	$sanger_name = $name if $na =~ m/$sanger_name/;
-	print OUTFILE "$supp_name\t$sanger_name\t$acc\n";
+foreach my $study_map ( @studies ) {
+	$sth->execute($study_map);
+	while (my ($supp_name, $name, $sanger_name, $acc) = $sth->fetchrow_array()) {
+		$sanger_name = $name if $na =~ m/$sanger_name/;
+		print OUTFILE "$supp_name\t$sanger_name\t$acc\n";
+	}
 }
 close OUTFILE;
-print "Results written to $outfile\n";
-
 $sth->finish();
 $dbh->disconnect();
+print "Output written to $outfile\n";
 
 #subroutine to fetch the study interactively if the database is specified
-sub get_study {
+sub get_studies {
 	my ($db_in, $sql_in) = @_;
 	$dbh = DBI->connect("dbi:mysql:$web_db;host=$dbparams{host};port=$dbparams{port}", $dbparams{user}, undef, { RaiseError => 0 });
 	my $index = 0;
@@ -121,17 +111,51 @@ sub get_study {
 		print "A search for the database $db_in has found no studies.\n";
 		exit 1;
 	}
-	print "-----------\nSelect a study from the list (enter a number 1 - $index):\n\n";
+	print STDOUT "-----------\nEnter space-separated list of study numbers or return for all :\n\n";
 	foreach ( @order ) {
-		print "\t$_: $result{$_}\n";	
+		print STDOUT "\t$_: $result{$_}\n";	
 	}
-	my $looking = 1; 
-	while ( $looking ) {
-		chomp ($input_index = <>);
-		if ( ! $result{$input_index} ) {
-			print "invalid input, please try again!\n";
+	chomp (my $study_in = <>);
+	my @return_arr;
+	if ( !$study_in ) {
+		print "Selected studies: All\n";
+		foreach ( @order ) {
+			push @return_arr, $result{$_};
 		}
-		else { $looking = 0 };
-	}	
-	return $result{$input_index};
+		return @return_arr;
+	}
+	else {
+		my @check_study = split(' ', $study_in);
+		my $notfound;
+		print "Selected studies: ";
+	    foreach ( @check_study ) {
+		    if ( $result{$_} ) {
+				push @return_arr, $result{$_};
+				print "$result{$_} ";
+			}
+			else {
+				$notfound = $notfound."$_ ";
+			}
+		}
+		print "\n";
+		if ($notfound) {
+			print "Study not found for: $notfound\n";
+		}
+		return @return_arr;
+	}
 }
+	
+	
+	
+	
+	
+	#~ my $looking = 1; 
+	#~ while ( $looking ) {
+		#~ chomp ($input_index = <>);
+		#~ if ( ! $result{$input_index} ) {
+			#~ print "invalid input, please try again!\n";
+		#~ }
+		#~ else { $looking = 0 };
+	#~ }	
+	#~ return $result{$input_index};
+#~ }
