@@ -20,7 +20,9 @@ vrtracking_tool
       qc
       genotype
       improved
+      mapped
       snp_called
+      assembled
     -database/file objects:  
       lane
       library
@@ -181,7 +183,9 @@ my $reset_stage = $reset_stages{$stage};
       qc
       genotype
       improved
+      mapped
       snp_called
+      assembled
     -database/file objects:  
       lane
       library

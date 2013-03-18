@@ -978,6 +978,7 @@ sub get_improvement_jobs_from_vrtrack {
     my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
     
     my %filter  = ( mapped => 1, improved => 0, swapped => 0 );
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
     my @lanes;
     if ( exists $config_data->{qc} && $config_data->{qc} ) { 
         $filter{qc} = $config_data->{qc}; 
@@ -1039,6 +1040,7 @@ sub get_rna_seq_jobs_from_vrtrack {
     my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
     
     my %filter  = ( mapped => 1, rna_seq_expression => 0 );
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
     my @lanes = @{$vrtrack->processed_lane_hnames_with_limits(-1,$config_data->{limits}, %filter) || []};
     
     if (defined $config_data->{limits}) {

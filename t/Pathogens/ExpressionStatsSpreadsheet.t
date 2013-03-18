@@ -31,6 +31,7 @@ my %result_2 = (
   mapped_reads_antisense => 200,
   rpkm_sense             => 0,
   rpkm_antisense         => 780.34242543543,
+  locus_tag              => 'some_locus_tag'
   );
   
 ok $expression_results->add_result(\%result_1), 'add first result set';
@@ -45,9 +46,9 @@ $header =~ s/[\r\n]//g;
 $output_result_1 =~ s/[\r\n]//g;
 $output_result_2 =~ s/[\r\n]//g;
 
-is $header, '"Seq ID",GeneID,"Antisense Reads Mapping","Antisense RPKM","Reads Mapping",RPKM', 'header okay';
-is $output_result_1, 'some_name,abc123,2000,15.3245,10,1.34324', 'result set 1';
-is $output_result_2, 'some_name,efg456,10,0,200,780.34242543543', 'result set 2';
+is $header, '"Seq ID",GeneID,"Locus Tag","Antisense Reads Mapping","Antisense RPKM","Reads Mapping",RPKM', 'header okay';
+is $output_result_1, 'some_name,abc123,,2000,15.3245,10,1.34324', 'result set 1';
+is $output_result_2, 'some_name,efg456,some_locus_tag,10,0,200,780.34242543543', 'result set 2';
 close(IN);
 unlink('my_result_file.csv');
 
@@ -73,9 +74,9 @@ $header_standard =~ s/[\r\n]//g;
 $output_result_1_standard =~ s/[\r\n]//g;
 $output_result_2_standard =~ s/[\r\n]//g;
 
-is $header_standard, '"Seq ID",GeneID,"Reads Mapping",RPKM,"Antisense Reads Mapping","Antisense RPKM"', 'header okay';
-is $output_result_1_standard, 'some_name,abc123,2000,15.3245,10,1.34324', 'result set 1';
-is $output_result_2_standard, 'some_name,efg456,10,0,200,780.34242543543', 'result set 2';
+is $header_standard, '"Seq ID",GeneID,"Locus Tag","Reads Mapping",RPKM,"Antisense Reads Mapping","Antisense RPKM"', 'header okay';
+is $output_result_1_standard, 'some_name,abc123,,2000,15.3245,10,1.34324', 'result set 1';
+is $output_result_2_standard, 'some_name,efg456,some_locus_tag,10,0,200,780.34242543543', 'result set 2';
 close(IN_STANDARD);
 unlink('my_result_file_standard.csv');
 
@@ -101,9 +102,9 @@ $header_tradis =~ s/[\r\n]//g;
 $output_result_1_tradis =~ s/[\r\n]//g;
 $output_result_2_tradis =~ s/[\r\n]//g;
 
-is $header_tradis,  '"Seq ID",GeneID,"Reads Mapping",RPKM,"Antisense Reads Mapping","Antisense RPKM"', 'header okay';
-is $output_result_1_tradis, 'some_name,abc123,2000,15.3245,10,1.34324', 'result set 1';
-is $output_result_2_tradis, 'some_name,efg456,10,0,200,780.34242543543', 'result set 2';
+is $header_tradis,  '"Seq ID",GeneID,"Locus Tag","Reads Mapping",RPKM,"Antisense Reads Mapping","Antisense RPKM"', 'header okay';
+is $output_result_1_tradis, 'some_name,abc123,,2000,15.3245,10,1.34324', 'result set 1';
+is $output_result_2_tradis, 'some_name,efg456,some_locus_tag,10,0,200,780.34242543543', 'result set 2';
 close(IN_TRADIS);
 unlink('my_result_file_tradis.csv');
 
