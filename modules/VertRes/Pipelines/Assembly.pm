@@ -318,10 +318,13 @@ my \$assembler = $assembler_class->new(
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
 my \@lane_paths = $lane_paths_str;
+
+copy(\$assembler->optimised_directory().'/contigs.fa',\$assembler->optimised_directory().'/unscaffolded_contigs.fa');
 \$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
 \$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size);
 
 move(qq[$tmp_directory].'/velvet_assembly_logfile.txt', qq[$output_directory].'/velvet_assembly_logfile.txt');
+
 system("mv $tmp_directory/velvet_assembly $output_directory");
 
 unlink(qq[$tmp_directory].'/forward.fastq');
