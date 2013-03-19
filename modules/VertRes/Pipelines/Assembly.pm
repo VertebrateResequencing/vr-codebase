@@ -591,7 +591,7 @@ my \@filenames_array = $file_names_str;
 \$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
 };
      }
-   }
+   
    
    # If subsampling set to true, run digital normalisation on the shuffled fastq file
     if(defined ($self->{subsample}) and $self->{subsample} == 1)
@@ -599,12 +599,13 @@ my \@filenames_array = $file_names_str;
        print $scriptfh qq{
 my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new(
                input_file      => "$shuffled_filename" ,
-               khmer_exec      => $self->{khmer_exec}',
+               khmer_exec      => "$self->{khmer_exec}",
                output_filename => "$shuffled_filename",
                output_directory=> "$output_directory",
     	)->run();
 };
     }
+   }
    
 
    my $pool_count = 1;
