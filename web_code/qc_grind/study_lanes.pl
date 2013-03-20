@@ -198,7 +198,7 @@ sub displayProjectLaneForm
 
                 	my $lane_status_colour = $utl->get_colour_for_status($lane->qc_status);
                 	my $lane_id = $lane->id;
-                    my $raw_bases = $lane->raw_bases;
+                    my $raw_bases =  sprintf("%.2f", ($lane->raw_bases/1000000000));
 
 					next if $lib_filt && $libname !~ /^$lib_filt/;
 					next if $runname_filt && $lanename !~ /^$runname_filt/;
@@ -343,7 +343,7 @@ sub downloadLaneData {
 					my $lane_qc_status = $lane->qc_status;
         			my $npg_qc = $lane->npg_qc_status;
 					my $auto_qc_status = $lane->auto_qc_status();
-                    my $raw_bases = $lane->raw_bases;
+                    my $raw_bases =  sprintf("%.2f", ($lane->raw_bases/1000000000));
 
 					next if $lib_filt && $libname !~ /^$lib_filt/;
 					next if $runname_filt && $lanename !~ /^$runname_filt/;
