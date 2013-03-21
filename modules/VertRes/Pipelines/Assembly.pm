@@ -80,6 +80,8 @@ use Bio::AssemblyImprovement::Scaffold::Descaffold;
 use Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles;
 use Bio::AssemblyImprovement::Scaffold::SSpace::Iterative;
 use Bio::AssemblyImprovement::FillGaps::GapFiller::Iterative;
+use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
+
 
 use base qw(VertRes::Pipeline);
 
@@ -293,6 +295,8 @@ sub optimise_parameters
       my $num_threads = $self->number_of_threads($memory_required_mb);
       my $insert_size = $self->get_insert_size();
       my $tmp_directory = $self->{tmp_directory}.'/'.$lane_names->[0] || getcwd();
+      
+      my $contigs_base_name = $self->generate_contig_base_name();
 
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
       print $scriptfh qq{
@@ -318,10 +322,15 @@ my \$assembler = $assembler_class->new(
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
 my \@lane_paths = $lane_paths_str;
+
+copy(\$assembler->optimised_directory().'/contigs.fa',\$assembler->optimised_directory().'/unscaffolded_contigs.fa');
 \$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
 \$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size);
 
+Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_directory().'/contigs.fa',base_contig_name => qq[$contigs_base_name])->run();
+
 move(qq[$tmp_directory].'/velvet_assembly_logfile.txt', qq[$output_directory].'/velvet_assembly_logfile.txt');
+
 system("mv $tmp_directory/velvet_assembly $output_directory");
 
 unlink(qq[$tmp_directory].'/forward.fastq');
@@ -417,6 +426,24 @@ sub improve_assembly
     $descaffold_obj->run();
     move($descaffold_obj->output_filename,$assembly_file);
   }
+}
+
+sub generate_contig_base_name
+{
+  my ($self) = @_;
+  my $lane_names = $self->get_all_lane_names($self->{pools});
+
+  for my $lane_name (@{$lane_names})
+  {
+    my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, $lane_name) or $self->throw("No such lane in the DB: [".$lane_name."]");
+    
+    if(defined($vrlane->acc())
+    {
+      # use the first one available which has an accession number, normally there will only be 1
+      return join('.',($vrlane->acc(),$lane_name));
+    }
+  }
+  return join('.',('',$lane_names->[0]));
 }
 
 # Get the requested insert size of the first lane. Not suitable for mixed insert sizes, should be run with standalone scripts in that case.
