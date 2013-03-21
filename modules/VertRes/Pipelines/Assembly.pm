@@ -85,6 +85,7 @@ use Bio::AssemblyImprovement::Scaffold::SSpace::Iterative;
 use Bio::AssemblyImprovement::FillGaps::GapFiller::Iterative;
 use Bio::AssemblyImprovement::Assemble::SGA::Main;
 use Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main;
+use Bio::AssemblyImprovement::Util::FastqTools;
 
 use base qw(VertRes::Pipeline);
 
@@ -116,7 +117,7 @@ our %options = (
                 gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-10_linux-x86_64/GapFiller.pl',
                 abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
                 sga_exec        => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
-                khmer_exec		=> '/nfs/users/nfs_n/nds/Git_projects/khmer/scripts/normalize-by-median.py',
+                khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
                 no_scaffolding  => 0,
                 annotation      => 0,
                 );
@@ -293,7 +294,12 @@ sub optimise_parameters
       }
       my $lane_paths_str = '("'.join('","', @lane_paths).'")';
 
-      my $kmer = $self->calculate_kmer_size();
+      # Calculate 66-90% of the median read length as min and max kmer values
+      my $fastq_tools  = Bio::AssemblyImprovement::Util::FastqTools->new(
+    	input_filename   => $files_str # For now this is fine as we only get one file....
+      );
+      
+      my %kmer_sizes = $fastq_tools->calculate_kmer_sizes();
       
       my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer->{min})/1000);
 
@@ -564,48 +570,54 @@ my \@lane_names;
        $file_names_str = '("'.join('","',@file_names ).'")';
        $file_names_with_path_str = '("'.join('","',@file_names_with_path ).'")';
      }
+     
+     # Create a shuffled sequence. If requested in config file, run digital normalisation and/or error correction on the data
+     
+     print $scriptfh qq{
+my \@filenames_array = $file_names_str;
+\$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
+};
 
-	 # If error_correct set to true, run the chosen error correction program to get a shuffled 
-	 # fastq file with corrected reads. If not, just shuffle the two fastq files ourselves.
-	 
-	 #my $shuffled_filename = $output_directory.'/'.$lane_name.'.fastq.gz';
-	 my $shuffled_filename = $lane_name.'.fastq.gz';
-	   
+   
+	 my $shuffled_filename = $output_directory.'/'.$lane_name.'.fastq.gz';
+	
+ 	 # Digital normalisation
+     if(defined ($self->{subsample}) and $self->{subsample} == 1)
+     {
+       print $scriptfh qq{
+my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new(
+               input_file      => "$shuffled_filename" ,
+               khmer_exec      => "$self->{khmer_exec}",
+               output_filename => "$shuffled_filename".'.normalised',
+               output_directory=> "$output_directory",
+    	)->run();
+    	
+    	move("$shuffled_filename".'.normalised', "$shuffled_filename");
+};
+
+		
+     }
+     
+	
+     # Error correction
 	 if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
 	 {
 	
 	  print $scriptfh qq{
 my \@filenames_array = $file_names_with_path_str;
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
-            input_files     => \\\@filenames_array ,
-            output_filename => "$shuffled_filename",
+            input_files     => "$shuffled_filename",
+            output_filename => "$shuffled_filename".'.corrected',
             output_directory=> "$output_directory",
             sga_exec        => "$self->{sga_exec}",
     )->run();
+    
+    move("$shuffled_filename".'.corrected', "$shuffled_filename");
 }; 
 	 }
-	 else
-	 {
-     	print $scriptfh qq{
-my \@filenames_array = $file_names_str;
-\$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
-};
-     }
-   
-   
-   # If subsampling set to true, run digital normalisation on the shuffled fastq file
-    if(defined ($self->{subsample}) and $self->{subsample} == 1)
-    {
-       print $scriptfh qq{
-my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new(
-               input_file      => "$shuffled_filename" ,
-               khmer_exec      => "$self->{khmer_exec}",
-               output_filename => "$shuffled_filename",
-               output_directory=> "$output_directory",
-    	)->run();
-};
-    }
-   }
+
+  
+   } #End for loop
    
 
    my $pool_count = 1;
