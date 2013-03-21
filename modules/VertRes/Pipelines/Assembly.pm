@@ -299,7 +299,7 @@ sub optimise_parameters
     	input_filename   => $files_str # For now this is fine as we only get one file....
       );
       
-      my %kmer_sizes = $fastq_tools->calculate_kmer_sizes();
+      my %kmer = $fastq_tools->calculate_kmer_sizes();
       
       my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer->{min})/1000);
 
@@ -593,9 +593,7 @@ my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new
     	)->run();
     	
     	move("$shuffled_filename".'.normalised', "$shuffled_filename");
-};
-
-		
+};		
      }
      
 	
