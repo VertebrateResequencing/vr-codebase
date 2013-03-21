@@ -134,12 +134,12 @@ sub displayProjectLaneForm
     	<th>Genotype</th>
         <th>NPG Status</th>
         <th>Auto QC Status</th>
-        <th title="Number of raw bases in Gb [from the latest lane_mapstats raw_bases]">Raw</th>
-        <th title="Number of mapped bases in Gb [from the latest lane_mapstats bases_mapped]">Mapped</th>
-        <th title="Percent of mapped reads which were duplicates [from latest lane_mapstats, rmdup_reads_mapped / reads_mapped]">Dup \%</th>
-        <th title="Gbp mapped ignoring duplicate reads [from latest lane_mapstats rmdup_bases_mapped]">Mapped-dups</th>
+        <th title="Number of raw bases in Gb [the lane raw_bases]">Raw</th>
+        <th title="Number of mapped bases in Gb [Excludes soft-clipped reads, and for exomes parts of reads which fall outside target region]">Mapped</th>
+        <th title="Percent of mapped reads which were duplicates [rmdup_reads_mapped / reads_mapped]">Dup \%</th>
+        <th title="Gbp mapped ignoring duplicate reads [Subtract an estimate of duplicated Mapped bases from Mapped]">Mapped-dups</th>
         <th title="The percent of bases duplicated due to reads of a pair overlapping">Overlap dup \%</th>
-        <th title="Final net bases excluding Overlapping base duplicates [latest lane_mapstats rmdup_bases_mapped - overlap_dup percentage]">Final net bases</th>
+        <th title="Final net bases excluding Overlapping base duplicates [rmdup_bases_mapped - overlap_dup percentage]">Final net bases</th>
         <th></th>
         </tr>
     ];
@@ -198,17 +198,18 @@ sub displayProjectLaneForm
 
                 	my $lane_status_colour = $utl->get_colour_for_status($lane->qc_status);
                 	my $lane_id = $lane->id;
+                    my $raw_bases =  sprintf("%.2f", ($lane->raw_bases/1000000000));
 
 					next if $lib_filt && $libname !~ /^$lib_filt/;
 					next if $runname_filt && $lanename !~ /^$runname_filt/;
 					next if $gt_status_filt ne 'all' && $gt_status_filt ne $gt_status;
 					next if $npg_status_filt ne 'all' && $npg_status_filt ne $npg_qc;
 					next if $auto_qc_status_filt ne 'all' && $auto_qc_status_filt ne $auto_qc_status;
+                    next unless pass_filter($raw_bases,$raw_bases_filt);
 
 					my $lane_mapstats = getMapStats($lane);
 					if (%{$lane_mapstats}) {
 
-                        next unless pass_filter($lane_mapstats->{raw_bases},$raw_bases_filt);
                         next unless pass_filter($lane_mapstats->{bases_mapped},$bases_mapped_filt);
                         next unless pass_filter($lane_mapstats->{duplication},$duplication_filt);
                         next unless pass_filter($lane_mapstats->{rmdup_bases_mapped},$rmdup_mapped_filt);
@@ -240,7 +241,7 @@ sub displayProjectLaneForm
 						print qq [ <td style="background-color:$lane_status_colour;"><a href="$lane_view_script?lane_id=$lane_id&amp;db=$database">$lanename</a></td> ];
 						print qq [ <td style="background-color:$gt_status_colour;">$gt_display</td> ];
 
-						print $cgi->td([$npg_qc, $auto_qc_status, $lane_mapstats->{raw_bases}, $lane_mapstats->{bases_mapped}, $lane_mapstats->{duplication}, $lane_mapstats->{rmdup_bases_mapped}, $lane_mapstats->{overlap_dup}, $lane_mapstats->{final_net}]);
+						print $cgi->td([$npg_qc, $auto_qc_status, $raw_bases, $lane_mapstats->{bases_mapped}, $lane_mapstats->{duplication}, $lane_mapstats->{rmdup_bases_mapped}, $lane_mapstats->{overlap_dup}, $lane_mapstats->{final_net}]);
 						print qq[</tr>];
 					}
 				} # foreach lane
@@ -342,12 +343,14 @@ sub downloadLaneData {
 					my $lane_qc_status = $lane->qc_status;
         			my $npg_qc = $lane->npg_qc_status;
 					my $auto_qc_status = $lane->auto_qc_status();
+                    my $raw_bases =  sprintf("%.2f", ($lane->raw_bases/1000000000));
 
 					next if $lib_filt && $libname !~ /^$lib_filt/;
 					next if $runname_filt && $lanename !~ /^$runname_filt/;
 					next if $gt_status_filt ne 'all' && $gt_status_filt ne $gt_status;
 					next if $npg_status_filt ne 'all' && $npg_status_filt ne $npg_qc;
 					next if $auto_qc_status_filt ne 'all' && $auto_qc_status_filt ne $auto_qc_status;
+                    next unless pass_filter($raw_bases,$raw_bases_filt);
 
 					my $lane_mapstats = getMapStats($lane);
 					if (%{$lane_mapstats}) {
@@ -357,14 +360,13 @@ sub downloadLaneData {
 						my $gt_display = $gt_status;
 						$gt_display .= " ($gt_found:$gt_ratio)" if $gt_found;
 
-                        next unless pass_filter($lane_mapstats->{raw_bases},$raw_bases_filt);
                         next unless pass_filter($lane_mapstats->{bases_mapped},$bases_mapped_filt);
                         next unless pass_filter($lane_mapstats->{duplication},$duplication_filt);
                         next unless pass_filter($lane_mapstats->{rmdup_bases_mapped},$rmdup_mapped_filt);
                         next unless pass_filter($lane_mapstats->{overlap_dup},$overlap_dup_filt);
                         next unless pass_filter($lane_mapstats->{final_net},$final_net_filt);
 
-						print (join("\t",$iname,$sample_name,$libname,$lanename,$gt_display,$lane_qc_status,$npg_qc,$auto_qc_status,$lane_mapstats->{raw_bases},$lane_mapstats->{bases_mapped},$lane_mapstats->{duplication},$lane_mapstats->{rmdup_bases_mapped},$lane_mapstats->{overlap_dup},$lane_mapstats->{final_net}),"\n");
+						print (join("\t",$iname,$sample_name,$libname,$lanename,$gt_display,$lane_qc_status,$npg_qc,$auto_qc_status,$raw_bases,$lane_mapstats->{bases_mapped},$lane_mapstats->{duplication},$lane_mapstats->{rmdup_bases_mapped},$lane_mapstats->{overlap_dup},$lane_mapstats->{final_net}),"\n");
 					}
 				} # foreach lane
 			} # foreach lib
@@ -380,7 +382,6 @@ sub getMapStats {
 
 	foreach my $mapstats ( @mappings ) {
         if ($mapstats->bases_mapped) {
-            $lane_mapstats{raw_bases} = sprintf("%.2f", ($mapstats->raw_bases()/1000000000)); # GB
             $lane_mapstats{bases_mapped} = sprintf("%.2f", ($mapstats->bases_mapped()/1000000000)); # GB
             $lane_mapstats{duplication} = sprintf("%.2f", (1.0-($mapstats->rmdup_reads_mapped()/$mapstats->reads_mapped))*100);
             $lane_mapstats{rmdup_bases_mapped} =  sprintf("%.2f", ($mapstats->rmdup_bases_mapped/1000000000)); # GB
