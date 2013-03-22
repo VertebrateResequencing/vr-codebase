@@ -592,7 +592,7 @@ my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new
                output_directory=> "$output_directory",
     	)->run();
     	
-    	move(\$diginorm->__final_results_file, "$shuffled_filename");
+    	move(\$diginorm->_final_results_file, "$shuffled_filename");
 };		
      }
      
@@ -604,14 +604,13 @@ my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new
 	  print $scriptfh qq{
 
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
-            input_files     => '["'."$shuffled_filename".'"]',
+            input_files     => '[\''."$shuffled_filename".'\']',
             pe_mode			=> 2,
-            output_filename => "$shuffled_filename".'.corrected',
             output_directory=> "$output_directory",
             sga_exec        => "$self->{sga_exec}",
     )->run();
     
-    move("$shuffled_filename".'.corrected', "$shuffled_filename");
+    move(\$sga->_final_results_file, "$shuffled_filename");
 }; 
 	 }
 
