@@ -592,7 +592,7 @@ my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new
                output_directory=> "$output_directory",
     	)->run();
     	
-    	move($diginorm->__final_results_file, "$shuffled_filename");
+    	move(\$diginorm->__final_results_file, "$shuffled_filename");
 };		
      }
      
