@@ -480,27 +480,27 @@ sub lane_read_length
 }
 
 # check kmers between 66% and 90% of read size. Choose lane and find out read size
-sub calculate_kmer_size
-{
-  my ($self) = @_;
-  my %kmer_size;
-  my $read_length = $self->lane_read_length();
-
-  $kmer_size{min} = int($read_length*0.66);
-  $kmer_size{max} = int($read_length*0.90);
-  
-  if($kmer_size{min} % 2 == 0)
-  {
-    $kmer_size{min}--;
-  }
-  
-  if($kmer_size{max} % 2 == 0)
-  {
-    $kmer_size{max}--;
-  }
-
-  return \%kmer_size;
-}
+# sub calculate_kmer_size
+# {
+#   my ($self) = @_;
+#   my %kmer_size;
+#   my $read_length = $self->lane_read_length();
+# 
+#   $kmer_size{min} = int($read_length*0.66);
+#   $kmer_size{max} = int($read_length*0.90);
+#   
+#   if($kmer_size{min} % 2 == 0)
+#   {
+#     $kmer_size{min}--;
+#   }
+#   
+#   if($kmer_size{max} % 2 == 0)
+#   {
+#     $kmer_size{max}--;
+#   }
+# 
+#   return \%kmer_size;
+# }
 
 sub number_of_threads
 {
@@ -602,9 +602,9 @@ my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new
 	 {
 	
 	  print $scriptfh qq{
-my \@filenames_array = $file_names_with_path_str;
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
-            input_files     => "$shuffled_filename",
+            input_files     => '[ '. "$shuffled_filename" . ']',
+            pe_mode			=> 2,
             output_filename => "$shuffled_filename".'.corrected',
             output_directory=> "$output_directory",
             sga_exec        => "$self->{sga_exec}",
