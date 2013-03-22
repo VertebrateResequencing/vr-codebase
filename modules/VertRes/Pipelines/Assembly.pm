@@ -301,7 +301,7 @@ sub optimise_parameters
       
       my %kmer = $fastq_tools->calculate_kmer_sizes();
       
-      my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer->{min})/1000);
+      my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer{min})/1000);
 
       my $num_threads = $self->number_of_threads($memory_required_mb);
       my $insert_size = $self->get_insert_size();
@@ -323,8 +323,8 @@ chdir(qq[$tmp_directory]);
 my \$assembler = $assembler_class->new(
   assembler => qq[$self->{assembler}],
   optimiser_exec => qq[$optimiser_exec],
-  min_kmer => $kmer->{min},
-  max_kmer => $kmer->{max},
+  min_kmer => $kmer{min},
+  max_kmer => $kmer{max},
   files_str => qq[$files_str],
   output_directory => qq[$tmp_directory],
   );
