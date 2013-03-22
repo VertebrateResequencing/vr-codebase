@@ -546,6 +546,7 @@ sub pool_fastqs
 use strict;
 use VertRes::Pipelines::Assembly;
 use Bio::AssemblyImprovement::Assemble::SGA::Main;
+use File::Copy;
 my \$assembly= VertRes::Pipelines::Assembly->new();
 my \@lane_names;
 };
