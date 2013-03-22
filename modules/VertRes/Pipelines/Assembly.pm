@@ -557,7 +557,6 @@ my \@lane_names;
      my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
      my $vlane = VRTrack::Lane->new_by_name($self->{vrtrack},$lane_name);
      my $file_names_str;
-     my $file_names_with_path_str;
      my @file_names;
      my @file_names_with_path ;
      
@@ -567,10 +566,9 @@ my \@lane_names;
        for my $file_name (@{$vlane->files})
        {
         	push(@file_names, $file_name->name );
-        	push(@file_names_with_path, "$base_path/$lane_path/".$file_name->name ); # Redundant code. Improve. Some programs like SGA gunzip struggle to find files if not specified with full path
        }
+       @file_names = sort @file_names; # Unfortunately normalisation code cannot handle reads interleaved in any other way besides /1, /2, /1 and so on
        $file_names_str = '("'.join('","',@file_names ).'")';
-       $file_names_with_path_str = '("'.join('","',@file_names_with_path ).'")';
      }
      
      # Create a shuffled sequence. If requested in config file, run digital normalisation and/or error correction on the data
