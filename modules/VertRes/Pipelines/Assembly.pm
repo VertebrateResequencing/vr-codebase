@@ -547,6 +547,7 @@ use strict;
 use VertRes::Pipelines::Assembly;
 use Bio::AssemblyImprovement::Assemble::SGA::Main;
 use File::Copy;
+use IO::Compress::Gzip qw(gzip $GzipError) ;
 my \$assembly= VertRes::Pipelines::Assembly->new();
 my \@lane_names;
 };
@@ -589,11 +590,10 @@ my \@filenames_array = $file_names_str;
 my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new(
                input_file      => "$shuffled_filename" ,
                khmer_exec      => "$self->{khmer_exec}",
-               output_filename => "$shuffled_filename".'.normalised',
                output_directory=> "$output_directory",
     	)->run();
     	
-    	move("$shuffled_filename".'.normalised', "$shuffled_filename");
+    	move($diginorm->__final_results_file, "$shuffled_filename");
 };		
      }
      
@@ -603,8 +603,9 @@ my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new
 	 {
 	
 	  print $scriptfh qq{
+
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
-            input_files     => '[ '. "$shuffled_filename" . ']',
+            input_files     => '["'."$shuffled_filename".'"]',
             pe_mode			=> 2,
             output_filename => "$shuffled_filename".'.corrected',
             output_directory=> "$output_directory",
