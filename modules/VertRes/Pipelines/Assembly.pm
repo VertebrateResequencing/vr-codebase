@@ -546,6 +546,7 @@ sub pool_fastqs
 use strict;
 use VertRes::Pipelines::Assembly;
 use Bio::AssemblyImprovement::Assemble::SGA::Main;
+use Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main;
 use File::Copy;
 my \$assembly= VertRes::Pipelines::Assembly->new();
 my \@lane_names;
@@ -604,7 +605,7 @@ my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new
 	  print $scriptfh qq{
 
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
-            input_files     => '[\''."$shuffled_filename".'\']',
+            input_files     => ["$shuffled_filename"],
             pe_mode			=> 2,
             output_directory=> "$output_directory",
             sga_exec        => "$self->{sga_exec}",
