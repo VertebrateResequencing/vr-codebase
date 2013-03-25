@@ -248,7 +248,7 @@ sub displayDatabasesPage {
 
 sub displayDatabasePage
 {
-    my ($self,$title,$cgi,$vrtrack,$db,$init_script,$lanes_script) = @_;
+    my ($self,$title,$cgi,$vrtrack,$db,$init_script,$lanes_script,$all_flag) = @_;
     my $index = $self->{SCRIPTS}{INDEX_PAGE};
     print qq[
         <h4 align="center" style="font: arial"><i><a href="$index">Team 145</a> : <a href="$init_script">$title</a></i> :  $db</h4>
@@ -262,6 +262,7 @@ sub displayDatabasePage
         my $id = $project->id();
         print qq[<p><a href="$lanes_script?db=$db&amp;proj_id=$id">].$project->name().qq[</a></p>];
     }
+    print qq[<p><a href="$lanes_script?db=$db&amp;proj_id=99999">SHOW_ALL_PROJECTS</a></p>] if $all_flag;
     print qq[
         </fieldset>
         </div>
@@ -294,14 +295,17 @@ sub getSampleMappings
     my $web_db = 'vrtrack_web_index';
 	my $vrtrack = $self->connectToDatabase($web_db);
 	$self->displayError( "Failed to connect to web database: $web_db" ) unless defined( $vrtrack );
-	my $sql = qq[SELECT supplier_name, accession_number, sanger_sample_name FROM sample_id_mapping where db_id = ? and project_id = ?];
+	my $sql = qq[SELECT supplier_name, accession_number, sanger_sample_name FROM sample_id_mapping where db_id = ?];
+	$sql = $sql." and project_id = ?" unless $pid == 99999;
 	my $sth = $vrtrack->{_dbh}->prepare($sql);	
-	if ($sth->execute($db_id, $pid)) {
-		my ($supp, $acc, $sang);
-		$sth->bind_columns(\($supp, $acc, $sang));
-		while ($sth->fetch) {
-			push @{ $mappings{$sang} }, ($supp, $acc);
-		}
+	if ( $pid == 99999 ) {
+		$sth->execute($db_id);
+	}
+	else {
+		$sth->execute($db_id, $pid);
+	}
+	while (my ($supp, $acc, $sang) = $sth->fetchrow_array()) {
+		push @{ $mappings{$sang} }, ($supp, $acc);
 	}
 	return %mappings;	
 }
