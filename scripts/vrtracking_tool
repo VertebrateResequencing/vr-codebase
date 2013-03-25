@@ -319,8 +319,9 @@ while (<>){
                                            "\.coverageplot\.gz\$",
                                            "\.expression\.csv\$",
                                            "rna\_seq\_update\_db\_done\$",
-                                           "rna\_seq\_cleanup\_done\$",],
-
+                                           "rna\_seq\_cleanup\_done\$",
+                                           "\.corrected\.bam\.bai\$",
+                                           "\.corrected\.bam\$"],
     		);
     		
     		my @files_del = $entity_op ? @{$files_deleted{$reset_stage}} : @{$files_deleted{$stage}};	
