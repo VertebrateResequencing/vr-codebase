@@ -1141,7 +1141,7 @@ int next_result(SV* self) {
     self_hash = (HV*)SvRV(self);
     
     if (! hv_exists(self_hash, "_cbam", 5)) {
-        return;
+        return 0;
     }
     SV* bam_ref;
     bam_ref = *(hv_fetch(self_hash, "_cbam", 5, 0));
