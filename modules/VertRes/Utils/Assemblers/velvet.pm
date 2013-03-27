@@ -80,6 +80,11 @@ sub optimised_directory
   return "$self->{output_directory}/velvet_assembly";
 }
 
+sub optimised_assembly_file_path
+{
+  my ($self) = @_;
+  return join('/',($self->optimised_directory(),'/contigs.fa'));
+}
 
 sub map_and_generate_stats
 {

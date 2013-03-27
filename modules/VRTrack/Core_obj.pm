@@ -741,7 +741,7 @@ sub allowed_processed_flags {
      snp_called => 256,
      rna_seq_expression => 512,
      assembled  => 1024,
-     
+     annotated  => 2048,
      );
 
     return %flags;
