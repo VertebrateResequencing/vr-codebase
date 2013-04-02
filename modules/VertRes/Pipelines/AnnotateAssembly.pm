@@ -1,16 +1,16 @@
 
 =head1 NAME
 
-VertRes::Pipelines::Annotation -  Pipeline for annotating an assembly
+VertRes::Pipelines::AnnotateAssembly -  Pipeline for annotating an assembly
 
 =head1 SYNOPSIS
 
 # make the config files, which specifies the details for connecting to the
 # VRTrack g1k-meta database and the data roots:
-echo '__VRTrack_Annotation__ annotation.conf' > pipeline.config
+echo '__VRTrack_AnnotateAssembly__ annotation.conf' > pipeline.config
 # where annotation.conf contains:
 root    => '/abs/path/to/root/data/dir',
-module  => 'VertRes::Pipelines::Annotation',
+module  => 'VertRes::Pipelines::AnnotateAssembly',
 prefix  => '_',
  
 limit => 50,
@@ -24,11 +24,12 @@ db  => {
 
 data => {
     assembler => 'velvet',
-    annotation_tool   => 'prokka',
+    annotation_tool   => 'Prokka',
     dbdir => '/lustre/scratch108/pathogen/pathpipe/prokka',
+    tmp_directory => '/tmp',
 }
 
-# by default __VRTrack_Annotation__ will pick up lanes that have been both mapped
+# by default __VRTrack_AnnotateAssembly__ will pick up lanes that have been both mapped
 # and qcd. To override this, set eg:
 # vrtrack_processed_flags => { mapped => 1, stored => 0 },
 
@@ -47,7 +48,7 @@ path-help@sanger.ac.uk
 
 =cut
 
-package VertRes::Pipelines::Annotation;
+package VertRes::Pipelines::AnnotateAssembly;
 
 use strict;
 use warnings;
@@ -169,11 +170,13 @@ sub annotate_assembly {
   use Bio::AutomatedAnnotation;
 
   my \$obj = Bio::AutomatedAnnotation->new(
-    assembly         => qq[$self->{assembly_file}],
-    annotation_tool  => qq[$self->{annotation_tool}]
-    lane_name        => qq[$self->{vrlane}->name],
+    assembly_file => qq[$self->{assembly_file}],
+    annotation_tool  => qq[$self->{annotation_tool}],
+    sample_name      => qq[$self->{vrlane}->name],
     accession_number => qq[$accession],
-    dbdir            => qq[$self->{dbdir}]
+    dbdir            => qq[$self->{dbdir}],
+    tmp_directory    => qq[$self->{tmp_directory}],
+    outdir           => "annotation",
   );
   \$obj->annotate;
   
