@@ -162,7 +162,7 @@ sub _create_expression_job
   
   my $total_memory_mb = 3000;
   my $queue = 'normal';
-  if($self->get_reference_size_from_bam($sequencing_filename) > 20000000)
+  if($self->get_reference_size_from_bam($output_directory.'/'.$sequencing_filename) > 20000000)
   {
     $total_memory_mb = 6000;
     $queue = 'long';
