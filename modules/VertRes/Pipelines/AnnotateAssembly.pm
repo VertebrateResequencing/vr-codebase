@@ -95,7 +95,7 @@ sub new {
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     $self->{assembly_file}           = $self->_assembly_for_lane();
     $self->{assembly_base_directory} = $self->_assembly_base_directory_for_lane();
-    $self->{genus} = $self->_genus_of_lane($self->{vrlane}, $self->{vrtrack});
+
 
     return $self;
 }
@@ -112,18 +112,31 @@ sub new {
 sub _genus_of_lane
 {
   my ($self,$vrlane, $vrtrack) = @_;
-  
-  my $lib = VRTrack::Library->new($vrtrack, $vrlane->library_id);
-  return undef unless(defined($lib));
-  my $sample = VRTrack::Sample->new($vrtrack, $lib->sample_id);
-  return undef unless(defined($sample));
-  my $individual = $sample->individual;
+  my $individual = $self->_individual_of_lane($vrlane, $vrtrack);
   return undef unless(defined($individual));
   my $species = $individual->species;
   return undef unless(defined($species));
-  
   return $species->genus();
 }
+
+sub _sample_accession_of_lane
+{
+  my ($self,$vrlane, $vrtrack) = @_;
+  my $individual = $self->_individual_of_lane($vrlane, $vrtrack);
+  return undef unless(defined($individual));
+  return $individual->acc;
+}
+
+sub _individual_of_lane
+{
+   my ($self,$vrlane, $vrtrack) = @_;
+   my $lib = VRTrack::Library->new($vrtrack, $vrlane->library_id);
+   return undef unless(defined($lib));
+   my $sample = VRTrack::Sample->new($vrtrack, $lib->sample_id);
+   return undef unless(defined($sample));
+   return $sample->individual;
+}
+
 
 sub _assembly_object {
     my ($self) = @_;
@@ -188,8 +201,9 @@ sub annotate_assembly {
     
     my $memory_in_mb = 500;
     
-    my $accession = $self->{vrlane}->acc;
-    $accession = "" unless defined($accession);
+    my $lane_name = $self->{vrlane}->name;
+    my $genus = $self->_genus_of_lane($self->{vrlane}, $self->{vrtrack});
+    my $sample_accession = $self->_sample_accession_of_lane($self->{vrlane}, $self->{vrtrack});
     
     
       my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."annotate_assembly.pl");
@@ -201,11 +215,11 @@ sub annotate_assembly {
   my \$obj = Bio::AutomatedAnnotation->new(
     assembly_file => qq[$self->{assembly_file}],
     annotation_tool  => qq[$self->{annotation_tool}],
-    sample_name      => qq[$self->{vrlane}->name],
-    accession_number => qq[$accession],
+    sample_name      => qq[$lane_name],
+    accession_number => qq[$sample_accession],
     dbdir            => qq[$self->{dbdir}],
     tmp_directory    => qq[$self->{tmp_directory}],
-    genus            => qq[$self->{genus}],
+    genus            => qq[$genus],
     outdir           => "annotation",
   );
   \$obj->annotate;
