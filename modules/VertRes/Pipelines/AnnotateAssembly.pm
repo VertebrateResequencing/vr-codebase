@@ -59,6 +59,7 @@ use VRTrack::Sample;
 use LSF;
 use base qw(VertRes::Pipeline);
 use VertRes::Utils::FileSystem;
+use VertRes::Utils::Assembly;
 use File::Spec;
 
 our $actions = [
@@ -94,7 +95,7 @@ sub new {
     $self->{fsu} = VertRes::Utils::FileSystem->new;
     $self->{assembly_file}           = $self->_assembly_for_lane();
     $self->{assembly_base_directory} = $self->_assembly_base_directory_for_lane();
-    $self->{genus} = $self->_genus_of_lane($self->{vlane}, $self->{vrtrack});
+    $self->{genus} = $self->_genus_of_lane($self->{vrlane}, $self->{vrtrack});
 
     return $self;
 }
@@ -102,7 +103,7 @@ sub new {
 =head2 _genus_of_lane
 
  Title   : _genus_of_lane
- Usage   : my $genus = $obj->_genus_of_lane($vlane, $vrtrack);
+ Usage   : my $genus = $obj->_genus_of_lane($vrlane, $vrtrack);
  Function: Given a lane, lookup the database and return the Genus, derived from the Species name
  Returns : String
  Args    : VRTrack::Lane object, VRTrack instance
@@ -110,9 +111,9 @@ sub new {
 =cut
 sub _genus_of_lane
 {
-  my ($self,$vlane, $vrtrack) = @_;
+  my ($self,$vrlane, $vrtrack) = @_;
   
-  my $lib = VRTrack::Library->new($vrtrack, $vlane->library_id);
+  my $lib = VRTrack::Library->new($vrtrack, $vrlane->library_id);
   return undef unless(defined($lib));
   my $sample = VRTrack::Sample->new($vrtrack, $lib->sample_id);
   return undef unless(defined($sample));
@@ -187,7 +188,7 @@ sub annotate_assembly {
     
     my $memory_in_mb = 500;
     
-    my $accession = $self->{vlane}->acc;
+    my $accession = $self->{vrlane}->acc;
     $accession = "" unless defined($accession);
     
     
