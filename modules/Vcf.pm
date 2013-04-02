@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r818';
+our $VERSION = 'r839';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
@@ -1743,6 +1743,7 @@ sub parse_AGtags
         else
         {
             @alleles = ($$rec{REF},@{$$rec{ALT}});
+            if ( @alleles==2 && $alleles[1] eq '.' ) { pop(@alleles); }
         }
         my @gtypes;
         for (my $i=0; $i<@alleles; $i++)
