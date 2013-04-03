@@ -199,7 +199,7 @@ sub annotate_assembly_requires {
 sub annotate_assembly {
     my ($self, $lane_path, $action_lock) = @_;
     
-    my $memory_in_mb = 1500;
+    my $memory_in_mb = 2000;
     
     my $lane_name = $self->{vrlane}->name;
     my $genus = $self->_genus_of_lane($self->{vrlane}, $self->{vrtrack});
