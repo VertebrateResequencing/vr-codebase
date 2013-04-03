@@ -195,12 +195,12 @@ sub generate_sam {
         if((defined $other_args{is_paired}) && $other_args{is_paired} == 0)
         {
           # single ended
-          $self->simple_run(" $max_intron_length_str -o $directories --no-convert-bam $ref $fqs[0]");
+          $self->simple_run(" $max_intron_length_str -o $directories -g 1 --no-convert-bam $ref $fqs[0]");
         }
         else
         {
           #paired_ended
-          $self->simple_run(" $max_intron_length_str $inner_mate_str -o $directories --no-convert-bam $ref $fqs[0] $fqs[1]");
+          $self->simple_run(" $max_intron_length_str $inner_mate_str -g 1 -o $directories --no-convert-bam $ref $fqs[0] $fqs[1]");
         }
         Utils::CMD(qq[mv $directories/accepted_hits.sam $out]);
     }
