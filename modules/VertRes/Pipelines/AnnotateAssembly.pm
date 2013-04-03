@@ -27,6 +27,7 @@ data => {
     annotation_tool   => 'Prokka',
     dbdir => '/lustre/scratch108/pathogen/pathpipe/prokka',
     tmp_directory => '/tmp',
+    pipeline_version => 1
 }
 
 # by default __VRTrack_AnnotateAssembly__ will pick up lanes that have been both mapped
@@ -205,6 +206,8 @@ sub annotate_assembly {
     my $genus = $self->_genus_of_lane($self->{vrlane}, $self->{vrtrack});
     my $sample_accession = $self->_sample_accession_of_lane($self->{vrlane}, $self->{vrtrack});
     
+    my $pipeline_version = join('/',($self->_annotation_base_directory,'pipeline_version_'.$self->{pipeline_version}));
+    
     
       my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."annotate_assembly.pl");
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -224,6 +227,7 @@ sub annotate_assembly {
   );
   \$obj->annotate;
   
+  system("touch $pipeline_version");
   system("touch $self->{prefix}annotate_assembly_done");
   exit;
       };
