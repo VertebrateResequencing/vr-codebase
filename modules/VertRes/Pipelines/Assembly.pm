@@ -146,6 +146,7 @@ sub new {
   eval "require $assembler_class;";
   $self->{assembler_class} = $assembler_class;
   
+  $self->{pipeline_version} = 2 unless(defined($self->{pipeline_version});  
   
   return $self;
 }
@@ -296,6 +297,8 @@ sub optimise_parameters
       my $insert_size = $self->get_insert_size();
       my $tmp_directory = $self->{tmp_directory}.'/'.$lane_names->[0] || getcwd();
       
+      my $pipeline_version = join('/',($output_directory,'velvet_assembly','pipeline_version_'.$self->{pipeline_version}));
+      
       my $contigs_base_name = $self->generate_contig_base_name();
 
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -339,6 +342,7 @@ unlink(qq[$tmp_directory].'/contigs.fa.scaffolded.filtered');
 
 chdir(qq[$output_directory]);
 unlink('pool_1.fastq.gz');
+system('touch $pipeline_version');
 system('touch $self->{prefix}$self->{assembler}_optimise_parameters_done');
 exit;
               };
