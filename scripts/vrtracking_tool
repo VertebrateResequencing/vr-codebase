@@ -329,6 +329,7 @@ while (<>){
                                           "annotate\_assembly\.(e|o|pl)\$",
                                           "annotate\_cleanup\_done\$",
                                           "annotate\_update\_db\_done\$",
+                                          "annotate\_assembly\_done\$",
                                           "^velvet_assembly\/annotation\$"
                                 ],
     		);
