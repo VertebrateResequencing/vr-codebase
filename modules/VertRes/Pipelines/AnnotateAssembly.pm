@@ -265,7 +265,7 @@ sub update_db_requires {
 
 sub update_db_provides {
    my ($self) = @_;
-    return [ $self->{lane_path}."/".$self->{prefix}."annotated_update_db_done"];
+    return [ $self->{lane_path}."/".$self->{prefix}."annotate_update_db_done"];
 }
 
 =head2 update_db
@@ -299,7 +299,7 @@ sub update_db {
     
     my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
     Utils::CMD("rm $job_status") if (-e $job_status);
-    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}annotated_update_db_done")   );  
+    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}annotate_update_db_done")   );  
 
     return $$self{'Yes'};
 }
@@ -318,7 +318,7 @@ sub update_db {
 
 sub cleanup_requires {
   my ($self) = @_;
-  return [ $self->{prefix}."annotated_update_db_done"];
+  return [ $self->{prefix}."annotate_update_db_done"];
 }
 
 =head2 cleanup_provides
@@ -333,7 +333,7 @@ sub cleanup_requires {
 
 sub cleanup_provides {
     my ($self) = @_;
-    return [$self->{prefix}."annotated_cleanup_done"];
+    return [$self->{prefix}."annotate_cleanup_done"];
 }
 
 =head2 cleanup
