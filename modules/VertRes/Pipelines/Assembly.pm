@@ -146,7 +146,7 @@ sub new {
   eval "require $assembler_class;";
   $self->{assembler_class} = $assembler_class;
   
-  $self->{pipeline_version} = 2 unless(defined($self->{pipeline_version});  
+  $self->{pipeline_version} = 2 unless(defined($self->{pipeline_version}) );  
   
   return $self;
 }
@@ -441,7 +441,7 @@ sub generate_contig_base_name
   {
     my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, $lane_name) or $self->throw("No such lane in the DB: [".$lane_name."]");
     
-    if(defined($vrlane->acc())
+    if(defined($vrlane->acc()))
     {
       # use the first one available which has an accession number, normally there will only be 1
       return join('.',($vrlane->acc(),$lane_name));
