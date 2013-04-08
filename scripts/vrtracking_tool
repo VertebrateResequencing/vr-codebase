@@ -24,6 +24,7 @@ vrtracking_tool
       snp_called
       assembled
       rna_seq_expression
+      annotated
     -database/file objects:  
       lane
       library
@@ -123,7 +124,7 @@ use Carp;
 
 my ($config, $config_data, $stage, $help, $delete, $verbose, $root, $db, $test);
 #values for $stage that involve *resetting* db flags and file deletion
-my @stages =  ('import', 'qc', 'genotype', 'improved', 'snp_called', 'assembled', 'mapped','rna_seq_expression');
+my @stages =  ('import', 'qc', 'genotype', 'improved', 'snp_called', 'assembled', 'mapped','rna_seq_expression','annotated');
 #values for $stage that can EITHER have flags reset as above, OR have VRTrack objects and whole directories deleted, depending on whether the --delete/-del flag is set)
 my @entities = ('lane', 'library', 'sample', 'study');
 
@@ -188,6 +189,7 @@ my $reset_stage = $reset_stages{$stage};
       snp_called
       assembled
       rna_seq_expression
+      annotated
     -database/file objects:  
       lane
       library
@@ -322,6 +324,14 @@ while (<>){
                                            "rna\_seq\_cleanup\_done\$",
                                            "\.corrected\.bam\.bai\$",
                                            "\.corrected\.bam\$"],
+                                           
+                                annotated => [
+                                          "annotate\_assembly\.(e|o|pl)\$",
+                                          "annotate\_cleanup\_done\$",
+                                          "annotate\_update\_db\_done\$",
+                                          "annotate\_assembly\_done\$",
+                                          "^velvet_assembly\/annotation\$"
+                                ],
     		);
     		
     		my @files_del = $entity_op ? @{$files_deleted{$reset_stage}} : @{$files_deleted{$stage}};	

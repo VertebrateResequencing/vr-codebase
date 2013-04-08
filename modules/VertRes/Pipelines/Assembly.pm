@@ -154,6 +154,7 @@ sub new {
   eval "require $assembler_class;";
   $self->{assembler_class} = $assembler_class;
   
+  $self->{pipeline_version} = 2 unless(defined($self->{pipeline_version}) );  
   
   return $self;
 }
@@ -309,6 +310,8 @@ sub optimise_parameters
       my $insert_size = $self->get_insert_size();
       my $tmp_directory = $self->{tmp_directory}.'/'.$lane_names->[0] || getcwd();
       
+      my $pipeline_version = join('/',($output_directory,'velvet_assembly','pipeline_version_'.$self->{pipeline_version}));
+      
       my $contigs_base_name = $self->generate_contig_base_name();
 
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -336,11 +339,11 @@ my \$assembler = $assembler_class->new(
 my \$ok = \$assembler->optimise_parameters($num_threads);
 my \@lane_paths = $lane_paths_str;
 
-copy(\$assembler->optimised_directory().'/contigs.fa',\$assembler->optimised_directory().'/unscaffolded_contigs.fa');
+copy(\$assembler->optimised_assembly_file_path(),\$assembler->optimised_directory().'/unscaffolded_contigs.fa');
 \$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
 \$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size);
 
-Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_directory().'/contigs.fa',base_contig_name => qq[$contigs_base_name])->run();
+Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_assembly_file_path(),base_contig_name => qq[$contigs_base_name])->run();
 
 move(qq[$tmp_directory].'/velvet_assembly_logfile.txt', qq[$output_directory].'/velvet_assembly_logfile.txt');
 
@@ -352,6 +355,7 @@ unlink(qq[$tmp_directory].'/contigs.fa.scaffolded.filtered');
 
 chdir(qq[$output_directory]);
 unlink('pool_1.fastq.gz');
+system('touch $pipeline_version');
 system('touch $self->{prefix}$self->{assembler}_optimise_parameters_done');
 exit;
               };
@@ -450,7 +454,7 @@ sub generate_contig_base_name
   {
     my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, $lane_name) or $self->throw("No such lane in the DB: [".$lane_name."]");
     
-    if(defined($vrlane->acc())
+    if(defined($vrlane->acc()))
     {
       # use the first one available which has an accession number, normally there will only be 1
       return join('.',($vrlane->acc(),$lane_name));
