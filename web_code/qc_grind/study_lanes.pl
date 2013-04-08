@@ -5,16 +5,11 @@
 # Author:        cj5
 # Created:       2012-03-28
 
-BEGIN {
-    $ENV{VRTRACK_HOST} = 'mcs10';
-    $ENV{VRTRACK_PORT} = 3306;
-    $ENV{VRTRACK_RO_USER} = 'vreseq_ro';
-    $ENV{VRTRACK_RW_USER} = 'vreseq_rw';
-    $ENV{VRTRACK_PASSWORD} = 't3aml3ss';
-};
+# todo fix the table to omit the filter and submission rows from the sort
 
 use strict;
 use warnings;
+use CGI::Carp qw(fatalsToBrowser);
 use URI;
 
 use SangerPaths qw(core team145);
@@ -29,6 +24,7 @@ my $title = 'QC Grind Lane Status Update';
 my $sw  = SangerWeb->new({
     'title'   => $title,
     'banner'  => q(),
+    'jsfile'  => ['http://code.jquery.com/jquery-latest.js','/Teams/Team145/js/qc.js','/Teams/Team145/js/jquery.tablesorter.min.js'],
     'inifile' => SangerWeb->document_root() . q(/Info/header.ini),
 });
 my $utl = VertRes::QCGrind::Util->new();
@@ -90,6 +86,7 @@ sub displayProjectLaneForm
 	}
 	else {
         $lib_filt = $cgi->param('lib'); # lib param may be passed by samples_view as well as from form
+		$runname_filt = $cgi->param('runname');
 		$gt_status_filt = 'all';
 		$npg_status_filt = 'all';
 		$auto_qc_status_filt = 'all';
@@ -120,7 +117,8 @@ sub displayProjectLaneForm
         <div class="centerFieldset">
         <fieldset>
         <legend>Lane status</legend>
-        <table RULES=GROUPS cellpadding="4">
+        <table RULES=GROUPS cellpadding="4" id="srtTblLanes">
+        <thead> 
         <tr>
 		<th style="width: 40px">Pass</th>
 		<th style="width: 40px">Fail</th>
@@ -148,27 +146,29 @@ sub displayProjectLaneForm
     print $cgi->hidden("db","$database");
     print $cgi->hidden("proj_id","$projectID");
 
+    # filters
     print qq[ <tr style="background-color:#F5F5F5"> ];
 
 	my @lane_status = qw (passed failed investigate gt_pending pending);
 	foreach my $status (@lane_status) {
-        print $cgi->th( $cgi->checkbox(-name=>$status, -checked=>1, -label=>''));
+        print $cgi->td( $cgi->checkbox(-name=>$status, -checked=>1, -label=>''));
 	}
-
-	print $cgi->th(['','']);
-	print "<th>", $cgi->textfield(-name=>'lib'), "</th>";
-	print "<th>", $cgi->textfield(-name=>'runname', -size=>6), "</th>";
-	print "<th>", $cgi->popup_menu( -name => 'gt_status', -values => ['all','confirmed','unconfirmed','unchecked','unknown','candidate','wrong'], -default => 'all',), "</th>"; 
-	print "<th>", $cgi->popup_menu( -name => 'npg_status', -values => ['all','pass','fail','pending'], -default => 'all',), "</th>"; 
-	print "<th>", $cgi->popup_menu( -name => 'auto_qc_status', -values => ['all','passed','failed','no_qc'], -default => 'all',), "</th>"; 
-	print "<th>", $cgi->textfield(-name=>'raw_bases', -size=>1), "</th>";
-	print "<th>", $cgi->textfield(-name=>'bases_mapped', -size=>1), "</th>";
-	print "<th>", $cgi->textfield(-name=>'duplication', -size=>1), "</th>";
-	print "<th>", $cgi->textfield(-name=>'rmdup_mapped', -size=>1), "</th>";
-	print "<th>", $cgi->textfield(-name=>'overlap_dup', -size=>1), "</th>";
-	print "<th>", $cgi->textfield(-name=>'final_net', -size=>1), "</th>";
-    print "<th>", $cgi->submit(-name => 'filter', -value  => 'Filter'), "</th>";
+	print $cgi->td(['','']);
+	print "<td>", $cgi->textfield(-name=>'lib'), "</td>";
+	print "<td>", $cgi->textfield(-name=>'runname', -size=>6), "</td>";
+	print "<td>", $cgi->popup_menu( -name => 'gt_status', -values => ['all','confirmed','unconfirmed','unchecked','unknown','candidate','wrong'], -default => 'all',), "</td>"; 
+	print "<td>", $cgi->popup_menu( -name => 'npg_status', -values => ['all','pass','fail','pending'], -default => 'all',), "</td>"; 
+	print "<td>", $cgi->popup_menu( -name => 'auto_qc_status', -values => ['all','passed','failed','no_qc'], -default => 'all',), "</td>"; 
+	print "<td>", $cgi->textfield(-name=>'raw_bases', -size=>1), "</td>";
+	print "<td>", $cgi->textfield(-name=>'bases_mapped', -size=>1), "</td>";
+	print "<td>", $cgi->textfield(-name=>'duplication', -size=>1), "</td>";
+	print "<td>", $cgi->textfield(-name=>'rmdup_mapped', -size=>1), "</td>";
+	print "<td>", $cgi->textfield(-name=>'overlap_dup', -size=>1), "</td>";
+	print "<td>", $cgi->textfield(-name=>'final_net', -size=>1), "</td>";
+    print "<td>", $cgi->submit(-name => 'filter', -value  => 'Filter'), "</td>";
     print qq[ </tr> ];
+    print qq[ </thead> ];
+    print qq[<tbody>];
     
     foreach( sort( keys( %individuals2Samples ) ) ) {
         my $iname = $_;
@@ -249,7 +249,9 @@ sub displayProjectLaneForm
 		} # sample
     }
 
-    print qq[ <tr> ];
+    print qq[</tbody>];
+    print qq[<tfoot>];
+    print qq[<tr>];
     if ($utl->{AUTH_USERS}{$USER}) {   
 		print qq[ <td colspan=6 align='center'> ];
 		print $cgi->submit(-name => 'update', -value  => 'Update');
@@ -258,9 +260,10 @@ sub displayProjectLaneForm
 
     print qq[ <td colspan=8 align='right'> ];
     print $cgi->submit(-name => 'download', -value  => 'Download');
-    print qq[ </td> ];
-    print qq[ </tr> ];
-    print qq[ </table> </fieldset> </div> ];
+    print qq[</td>];
+    print qq[</tr>];
+    print qq[</tfoot>];
+    print qq[</table> </fieldset> </div> ];
     print $cgi->end_form;
 }
 
