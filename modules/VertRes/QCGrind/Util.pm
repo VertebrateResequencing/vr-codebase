@@ -3,6 +3,13 @@ package VertRes::QCGrind::Util;
 use strict;
 
 sub new {
+
+    $ENV{VRTRACK_HOST} = 'mcs10';
+    $ENV{VRTRACK_PORT} = 3306;
+    $ENV{VRTRACK_RO_USER} = 'vreseq_ro';
+    $ENV{VRTRACK_RW_USER} = 'vreseq_rw';
+    $ENV{VRTRACK_PASSWORD} = 't3aml3ss';
+
     my $self={};
 
 	$self->{SCRIPTS} = {
