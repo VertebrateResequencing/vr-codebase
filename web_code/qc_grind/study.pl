@@ -175,7 +175,7 @@ sub displayProjectLaneForm
             $lane_data{raw_bases} += sprintf("%.2f", ($lanelet->raw_bases/1000000000));
             
             $lane_data{raw_max} = $lanelet->raw_bases if (!exists $lane_data{raw_max} || $lanelet->raw_bases > $lane_data{raw_max});
-            $lane_data{raw_min} = $lanelet->raw_bases if (!exists $lane_data{raw_min} || $lanelet->raw_bases < $lane_data{raw_max});
+            $lane_data{raw_min} = $lanelet->raw_bases if (!exists $lane_data{raw_min} || $lanelet->raw_bases < $lane_data{raw_min});
 
             my $lqc_status = $lanelet->qc_status;
             $lane_data{$lqc_status}++;
@@ -224,7 +224,7 @@ sub displayProjectLaneForm
         $uri->data($img);
 
         print qq[
-            <img src="$uri" alt="caption" width="30" height="30" title = "Click to enlarge/minimise" style="border:0px dotted #83A4C3;" onclick="if (this.width==30) {this.width=500;this.height=500;} else {this.width=30;this.height=30;}">
+            <img src="$uri" width="30" height="30" title = "Click to enlarge/minimise" style="border:0px dotted #83A4C3;" onclick="if (this.width==30) {this.width=500;this.height=500;} else {this.width=30;this.height=30;}">
         ];
         print qq[</td>];
         print $cgi->td({-align => "center"},$lanes_samples{$lane_name});
