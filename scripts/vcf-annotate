@@ -537,14 +537,17 @@ sub annotate
             #   position, they can appear in any order. A single ALT allele is expected in the 
             #   annot file but multiple ALTs can be present in the VCF. As long as one of them
             #   matches the annot file, the record will be annotated.
+            # The annot file can contain mutliallelic sites too. At least one ALT from the VCF
+            #   has to match an ALT from the annot file.
             my (%ref_alt_pairs);
             if ( defined $alt_col )
             {
                 my $ref = $rec[3];
-                my @alts;
-                if ( !exists($$opts{normalize}) ) { ($ref,@alts) = $vcf->normalize_alleles($ref,$rec[4]); }
-                else { @alts = split(/,/,$rec[4]); }
-                for my $alt (@alts) { $ref_alt_pairs{$ref.'-'.$alt} = 1; }
+                for my $alt (split(/,/,$rec[4]))
+                {
+                    my ($r,@a) = $vcf->normalize_alleles($ref,$alt);
+                    $ref_alt_pairs{$r.'-'.$a[0]} = 1;
+                }
             }
 
             # Now fill the annotations; Existing annotations with the same tag will be overwritten 
@@ -556,11 +559,11 @@ sub annotate
                 if ( $$annot_line[$from_col] > $pos or $$annot_line[$to_col] < $pos ) { next; }
                 if ( defined $alt_col && $$annot_line[$ref_col] ne '.' )
                 {
-                    my ($ref,@alts) = $vcf->normalize_alleles($$annot_line[$ref_col],$$annot_line[$alt_col]);
                     my $alt_match = 0;
-                    for my $alt (@alts)
+                    for my $alt (split(/,/,$$annot_line[$alt_col]))
                     {
-                        if ( exists($ref_alt_pairs{$ref.'-'.$alt}) ) { $alt_match = 1; last; }
+                        my ($r,@a) =  $vcf->normalize_alleles($$annot_line[$ref_col],$alt);
+                        if ( exists($ref_alt_pairs{$r.'-'.$a[0]}) ) { $alt_match = 1; last; }
                     }
                     if ( !$alt_match ) { next; }
                 }
