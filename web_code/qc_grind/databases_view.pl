@@ -4,6 +4,7 @@
 use strict;
 use warnings;
 use URI;
+use CGI::Carp qw(fatalsToBrowser);
 
 use SangerPaths qw(core team145);
 use SangerWeb;
