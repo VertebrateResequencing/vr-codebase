@@ -44,6 +44,7 @@ sub new {
 		'ak6' => 'Anja Kolb-Kokocinski (kuusamo)',
 		'cj5' => 'chris joyce',
 		'kw10' => 'Kim Wong',
+        'sm15' => 'Shane McCarthy'.
 	};
 
     $self->{CSS} = <<CSS ;
