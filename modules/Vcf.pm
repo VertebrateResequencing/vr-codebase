@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r839';
+our $VERSION = 'r840';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
@@ -3107,7 +3107,7 @@ sub Vcf4_0::normalize_alleles
     my ($self,$ref,$alt) = @_;
 
     my $rlen = length($ref);
-    if ( $rlen==1 or length($alt)==1 )  { return ($ref,$alt); }
+    if ( $rlen==1 or length($alt)==1 )  { return ($ref,split(/,/,$alt)); }
 
     my @als = split(/,/,$alt);
     my $i = 1;
