@@ -38,17 +38,19 @@ data => {
     seq_pipeline_root    => '/lustre/scratch108/pathogen/pathpipe/prokaryotes/seq-pipelines',
     no_scaffolding => 0,
     annotation     => 1,
+    error_correct  => 1, # Should the reads be put through an error correction stage?
 
     assembler => 'velvet',
     assembler_exec => '/software/pathogen/external/apps/usr/bin/velvet',
     optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
+    sga_exec       => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
     max_threads => 1,
 },
 
 
 =head1 DESCRIPTION
 
-This pipeline requires velvet, prokka, smalt, SSPACE and GapFiller to be separately installed from the original authors software repositories.
+This pipeline requires velvet, prokka, smalt, SSPACE, SGA and GapFiller to be separately installed from the original authors software repositories.
 
 
 =head1 AUTHOR
@@ -80,8 +82,8 @@ use Bio::AssemblyImprovement::Scaffold::Descaffold;
 use Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles;
 use Bio::AssemblyImprovement::Scaffold::SSpace::Iterative;
 use Bio::AssemblyImprovement::FillGaps::GapFiller::Iterative;
+use Bio::AssemblyImprovement::Assemble::SGA::Main;
 use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
-
 
 use base qw(VertRes::Pipeline);
 
@@ -112,6 +114,7 @@ our %options = (
                 scaffolder_exec => '/software/pathogen/external/apps/usr/local/SSPACE-BASIC-2.0_linux-x86_64/SSPACE_Basic_v2.0.pl',
                 gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-10_linux-x86_64/GapFiller.pl',
                 abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
+                sga_exec        => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
                 no_scaffolding  => 0,
                 annotation      => 0,
                 );
@@ -563,6 +566,7 @@ sub pool_fastqs
       print $scriptfh qq{
 use strict;
 use VertRes::Pipelines::Assembly;
+use Bio::AssemblyImprovement::Assemble::SGA::Main;
 my \$assembly= VertRes::Pipelines::Assembly->new();
 my \@lane_names;
 };
@@ -571,21 +575,45 @@ my \@lane_names;
    {
      my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
      my $vlane = VRTrack::Lane->new_by_name($self->{vrtrack},$lane_name);
-     my $file_names_str ;
+     my $file_names_str;
+     my $file_names_with_path_str;
+     my @file_names;
+     my @file_names_with_path ;
+     
      if( @{$vlane->files} == 2)
      {
-       my @file_names ;
+     
        for my $file_name (@{$vlane->files})
        {
-         push(@file_names, $file_name->name );
+        	push(@file_names, $file_name->name );
+        	push(@file_names_with_path, "$base_path/$lane_path/".$file_name->name ); # Redundant code. Improve. Some programs like SGA gunzip struggle to find files if not specified with full path
        }
        $file_names_str = '("'.join('","',@file_names ).'")';
+       $file_names_with_path_str = '("'.join('","',@file_names_with_path ).'")';
      }
 
-     print $scriptfh qq{
-       my \@filenames_array = $file_names_str;
-       \$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
-     };
+	 # If error_correct set to 1, run the chosen error correction program to get a shuffled 
+	 # fastq file with corrected reads. If not, just shuffle the two fastq files ourselves.
+	 
+	 if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
+	 {
+	  my $error_corrected_file = $output_directory.'/'.$lane_name.'.fastq.gz';
+	  print $scriptfh qq{
+my \@filenames_array = $file_names_with_path_str;
+my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
+            input_files     => \\\@filenames_array ,
+            output_filename => "$error_corrected_file",
+            sga_exec        => "$self->{sga_exec}",
+    )->run();
+}; 
+	 }
+	 else
+	 {
+     	print $scriptfh qq{
+my \@filenames_array = $file_names_str;
+\$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
+};
+     }
    }
 
    my $pool_count = 1;
@@ -613,7 +641,7 @@ exit;
       close $scriptfh;
       my $job_name = $self->{prefix}.'pool_fastqs';
 
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M80000 -R \'select[mem>80] rusage[mem=80]\''}, qq{perl -w $script_name});
+      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M20000000 -R \'select[mem>2000] rusage[mem=2000]\''}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
