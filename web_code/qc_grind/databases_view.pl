@@ -35,7 +35,7 @@ sub displayDatabasesPage {
 	my $script = $utl->{SCRIPTS}{PROJECTS_VIEW};
 	print qq[ <h2 align="center" style="font: normal 900 1.5em arial">$title</h2> ];
 
-	my @main_dbs = qw (vrtrack_human_wgs vrtrack_human_wes vrtrack_mouse_wgs vrtrack_mouse_wes);
+	my @main_dbs = qw (vrtrack_human_wgs vrtrack_human_wes vrtrack_mouse_wgs vrtrack_mouse_wes vrtrack_scerevisiae_wgs);
     print qq[
         <div class="centerFieldset">
         <fieldset style="width: 500px">
