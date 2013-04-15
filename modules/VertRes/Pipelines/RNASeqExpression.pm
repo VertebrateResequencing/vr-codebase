@@ -158,11 +158,18 @@ sub _create_expression_job
 
   my $job_name = $self->{prefix}.$sequencing_filename.'_calculate_expression';
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$sequencing_filename.'_calculate_expression.pl');
-  my $total_memory_mb = 3000;
   my $prefix = $self->{prefix};
   
+  my $total_memory_mb = 3000;
+  my $queue = 'normal';
+  if($self->get_reference_size_from_bam($output_directory.'/'.$sequencing_filename) > 20000000)
+  {
+    $total_memory_mb = 6000;
+    $queue = 'long';
+  }
+  
   my($action_lock_filename, $directories, $suffix) = fileparse($action_lock);
-  my $sequencing_file_action_lock = $self->{lane_path}.'/'.$self->{prefix}.'_calculate_expression.jids';
+  my $sequencing_file_action_lock = $self->{lane_path}.'/'.$self->{prefix}.'calculate_expression.jids';
 
   my $mpileup_str  = "";
   if(defined ($self->{mpileup_cmd}))
@@ -227,7 +234,7 @@ sub _create_expression_job
                 };
                 close $scriptfh;
 
-        LSF::run($sequencing_file_action_lock, $output_directory, $job_name, {bsub_opts => "-M${total_memory_mb}000 -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb]'", dont_wait=>1}, qq{perl -w $script_name});
+        LSF::run($sequencing_file_action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${total_memory_mb}000 -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb]'", dont_wait=>1}, qq{perl -w $script_name});
 
         # we've only submitted to LSF, so it won't have finished; we always return
         # that we didn't complete
@@ -249,6 +256,25 @@ sub calculate_expression
   return $self->{No};
 }
 
+sub get_reference_size_from_bam
+{
+  my($self, $sequencing_filename) = @_;
+  
+  my $total_reference_size = 0;
+  my $obj = VertRes::Parser::bam->new(file => $sequencing_filename);
+  my %all_sequences_info = $obj->sequence_info();
+  my @sequence_names = keys(%all_sequences_info);
+  
+  for my $sequence_line (@sequence_names)
+  {
+     my $sequence_size = $obj->sequence_info($sequence_line, 'LN');
+     next unless(defined($sequence_size));
+     $total_reference_size += $sequence_size;
+  }
+  
+  return $total_reference_size;  
+}
+
 sub get_reference_from_bam
 {
   my($self, $sequencing_filename) = @_;
@@ -259,7 +285,6 @@ sub get_reference_from_bam
   my $reference_file = $obj->sequence_info($sequence_names[0], 'UR');
   return undef unless(defined($reference_file));
   $reference_file =~ s/file://;
-  return undef unless(-e $reference_file);
   return $reference_file;
 }
 

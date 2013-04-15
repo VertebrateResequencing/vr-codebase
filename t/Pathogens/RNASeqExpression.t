@@ -12,9 +12,12 @@ BEGIN {
 
 my $obj = VertRes::Pipelines::RNASeqExpression->new();
 
+
 is($obj->does_reference_in_bam_match_annotation("t/data/rnaseq_expression.bam", "/lustre/scratch108/pathogen/pathpipe/refs/Mus/musculus/Mus_musculus_mm10.gff"), 1, 'annotation base name matches reference');
 is($obj->does_reference_in_bam_match_annotation("t/data/rnaseq_expression.bam", "Mus_musculus_mm10.gff"), 1, 'annotation base name matches reference where theres no directory');
 is($obj->does_reference_in_bam_match_annotation("t/data/rnaseq_expression.bam", "/lustre/scratch108/pathogen/pathpipe/refs/Mus/musculus/Mus_musculus_mm10.fa.gff"), 1, 'annotation base name matches reference where the extension is still on');
 is($obj->does_reference_in_bam_match_annotation("t/data/rnaseq_expression.bam", "/path/to/something_which_doesnt_match.gff"), 0, 'annotation base name doesnt matche reference');
+
+is($obj->get_reference_size_from_bam('t/data/rnaseq_expression.bam'), 618344893, 'Bam reference size correct');
 
 done_testing();
