@@ -649,7 +649,7 @@ exit;
         $queue = 'long';
       }
 
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${memory_in_mb}0000 -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'"}, qq{perl -w $script_name});
+      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${memory_in_mb}000 -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'"}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
