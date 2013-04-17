@@ -644,7 +644,15 @@ exit;
       close $scriptfh;
       my $job_name = $self->{prefix}.'pool_fastqs';
 
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M20000000 -R \'select[mem>2000] rusage[mem=2000]\''}, qq{perl -w $script_name});
+      my $memory_in_mb = 500;
+      my $queue = 'normal';
+      if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
+      {
+        $memory_in_mb = 4000;
+        $queue = 'long';
+      }
+
+      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${memory_in_mb}000 -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'"}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
