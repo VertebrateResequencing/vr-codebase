@@ -597,12 +597,15 @@ my \@lane_names;
 	 
 	 if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
 	 {
-	  my $error_corrected_file = $output_directory.'/'.$lane_name.'.fastq.gz';
+	  #my $error_corrected_file = $output_directory.'/'.$lane_name.'.fastq.gz';
+	  my $error_corrected_file = $lane_name.'.fastq.gz';
 	  print $scriptfh qq{
 my \@filenames_array = $file_names_with_path_str;
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
             input_files     => \\\@filenames_array ,
             output_filename => "$error_corrected_file",
+            output_directory => "$output_directory",
+            pe_mode		    => 1,
             sga_exec        => "$self->{sga_exec}",
     )->run();
 }; 
