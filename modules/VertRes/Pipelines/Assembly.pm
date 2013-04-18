@@ -300,7 +300,7 @@ sub optimise_parameters
 
       # Calculate 66-90% of the median read length as min and max kmer values
       my $fastq_tools  = Bio::AssemblyImprovement::Util::FastqTools->new(
-    	input_filename   => $files_str # For now this is fine as we only get one file....
+    	input_filename   => $files_str 
       );
       
       my %kmer = $fastq_tools->calculate_kmer_sizes();
