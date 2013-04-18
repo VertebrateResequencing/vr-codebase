@@ -599,60 +599,50 @@ my \@lane_names;
        {
         	push(@file_names, $file_name->name );
        }
-       @file_names = sort @file_names; # Unfortunately normalisation code cannot handle reads interleaved in any other way besides /1, /2, /1 and so on
+       @file_names = sort @file_names; # Unfortunately normalisation code cannot handle reads interleaved in any other way besides /1, /2, /1 and so on. We rely here on the files being named with _1 and _2 so that the order is maintained.
        $file_names_str = '("'.join('","',@file_names ).'")';
      }
      
-     # Create a shuffled sequence. If requested in config file, run digital normalisation and/or error correction on the data
+     # Create a shuffled sequence. This shuffled file will be the input for any processing steps below (i.e. normalisation, error correction etc)
+     my $shuffled_filename = $output_directory.'/'.$lane_name.'.fastq.gz';
+	 my $output_filename = $lane_name.'.fastq.gz'; # Each step below (normalisation and error correction), should produce an output file with this name (which is the same as the shuffled filename)
      
      print $scriptfh qq{
 my \@filenames_array = $file_names_str;
 \$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
 };
-
-   
-	 my $shuffled_filename = $output_directory.'/'.$lane_name.'.fastq.gz';
 	
  	 # Digital normalisation
      if(defined ($self->{subsample}) and $self->{subsample} == 1)
      {
        print $scriptfh qq{
 my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new(
-               input_file      => "$shuffled_filename" ,
-               khmer_exec      => "$self->{khmer_exec}",
-               output_directory=> "$output_directory",
-    	)->run();
-    	
-    	move(\$diginorm->_final_results_file, "$shuffled_filename");
+input_file       => "$shuffled_filename",
+khmer_exec       => "$self->{khmer_exec}",
+output_filename  => "$output_filename",
+output_directory => "$output_directory",
+)->run();
+system("touch $output_directory/$self->{prefix}normalisation_done");
 };		
      }
-     
 	
      # Error correction
 	 if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
 	 {
-
-	  #my $error_corrected_file = $output_directory.'/'.$lane_name.'.fastq.gz';
-	  my $error_corrected_file = $lane_name.'.fastq.gz';
-
 	  print $scriptfh qq{
-
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
-            input_files     => \\\@filenames_array ,
-            output_filename => "$error_corrected_file",
-            output_directory => "$output_directory",
-            pe_mode		    => 1,
-            sga_exec        => "$self->{sga_exec}",
-    )->run();
-    
-    move(\$sga->_final_results_file, "$shuffled_filename");
+input_files     => ["$shuffled_filename"],
+output_filename => "$output_filename",
+output_directory => "$output_directory",
+pe_mode		    => 1,
+sga_exec        => "$self->{sga_exec}",
+)->run();
+system("touch $output_directory/$self->{prefix}error_correction_done");
 }; 
 	 }
 
-  
    } #End for loop
    
-
    my $pool_count = 1;
    for my $lane_pool (@{$self->{pools}})
    {
