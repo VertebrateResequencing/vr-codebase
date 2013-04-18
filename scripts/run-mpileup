@@ -272,9 +272,6 @@ sub main
             my $from = $$chunk{from};
             my $to   = $$chunk{to};
             if ( $self->is_finished("$outdir/$pop/$chr.vcf.gz") ) { next; }
-if ( $$self{keep_bcfs} 
-    && !$self->is_finished("$outdir/$pop/$chr/$chr:$from-$to.vcf.gz") 
-    && !$self->is_finished("$outdir/pooled/$chr/$chr:$from-$to.bcf") ) { $self->throw("How could this happen, $outdir/pooled/$chr/$chr:$from-$to.bcf not finished?!!\n"); }
             $self->spawn('call_variants',"$outdir/$pop/$chr/$chr:$from-$to.vcf.gz",$pop,$chunk);
         }
     }
