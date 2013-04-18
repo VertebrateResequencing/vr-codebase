@@ -634,7 +634,7 @@ my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
 input_files     => ["$shuffled_filename"],
 output_filename => "$output_filename",
 output_directory => "$output_directory",
-pe_mode		    => 1,
+pe_mode		    => 2,
 sga_exec        => "$self->{sga_exec}",
 )->run();
 system("touch $output_directory/$self->{prefix}error_correction_done");
