@@ -87,6 +87,7 @@ use Bio::AssemblyImprovement::Assemble::SGA::Main;
 use Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main;
 use Bio::AssemblyImprovement::Util::FastqTools;
 use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
+use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
 
 
 use base qw(VertRes::Pipeline);
@@ -630,13 +631,17 @@ my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new
      # Error correction
 	 if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
 	 {
-	
+
+	  #my $error_corrected_file = $output_directory.'/'.$lane_name.'.fastq.gz';
+	  my $error_corrected_file = $lane_name.'.fastq.gz';
+
 	  print $scriptfh qq{
 
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
-            input_files     => ["$shuffled_filename"],
-            pe_mode			=> 2,
-            output_directory=> "$output_directory",
+            input_files     => \\\@filenames_array ,
+            output_filename => "$error_corrected_file",
+            output_directory => "$output_directory",
+            pe_mode		    => 1,
             sga_exec        => "$self->{sga_exec}",
     )->run();
     
@@ -673,7 +678,15 @@ exit;
       close $scriptfh;
       my $job_name = $self->{prefix}.'pool_fastqs';
 
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => '-M20000000 -R \'select[mem>2000] rusage[mem=2000]\''}, qq{perl -w $script_name});
+      my $memory_in_mb = 500;
+      my $queue = 'normal';
+      if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
+      {
+        $memory_in_mb = 4000;
+        $queue = 'long';
+      }
+
+      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${memory_in_mb}000 -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'"}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
