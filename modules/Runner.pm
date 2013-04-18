@@ -81,7 +81,7 @@ Runner.pm   - A simple module for quick development of scripts and pipelines whi
 
 =cut
 
-package RunnerJA;
+package Runner;
 use strict;
 use warnings;
 use Carp;
