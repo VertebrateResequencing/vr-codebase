@@ -299,8 +299,9 @@ sub optimise_parameters
       my $lane_paths_str = '("'.join('","', @lane_paths).'")';
 
       # Calculate 66-90% of the median read length as min and max kmer values
+      my $fastq_file_to_process = $output_directory.'/pool_1.fastq.gz';
       my $fastq_tools  = Bio::AssemblyImprovement::Util::FastqTools->new(
-    	input_filename   => $files_str 
+    	input_filename   => $fastq_file_to_process;
       );
       
       my %kmer = $fastq_tools->calculate_kmer_sizes();
