@@ -622,9 +622,11 @@ primers_file	=> "$self->{primers_file}",
 output_directory => "$output_directory",
 QUASR_exec		=> "$self->{QUASR_exec}",
 )->run();
-$file_names_str = '("'.join('","',$primer_remover->_final_results_files ).'")';
 system("touch $output_directory/$self->{prefix}primer_removal_done");
 };
+
+	  my @primer_removed_files = ( 'primer_removed.forward.fastq.gz', 'primer_removed.reverse.fastq.gz');
+	  $file_names_str = '("'.join('","', @primer_removed_files ).'")';
       }     
      
      # Create a shuffled sequence. This shuffled file will be the input for any processing steps below (i.e. normalisation, error correction etc)
