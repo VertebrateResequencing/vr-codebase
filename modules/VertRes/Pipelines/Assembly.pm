@@ -615,7 +615,7 @@ my \@lane_names;
      {
      	#Replace code here with an alternative way of removing primers that can accept a shuffled file     
      	print $scriptfh qq{
-my $primer_remover = Bio::AssemblyImprovement::PrimerRemoval::Main->new(
+my \$primer_remover = Bio::AssemblyImprovement::PrimerRemoval::Main->new(
 forward_file    => "$output_directory"."/"."$file_names[0]",
 reverse_file    => "$output_directory"."/"."$file_names[1]",
 primers_file	=> "$self->{primers_file}",
