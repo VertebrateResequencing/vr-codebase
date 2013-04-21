@@ -40,11 +40,15 @@ data => {
     annotation     => 1,
     error_correct  => 1, # Should the reads be put through an error correction stage?
     subsample	   => 1, # Should we do subsampling (after error correction)?
+    remove_primers => 1,
+    primers_file   => /path/to/primers/file, #Essential if primers are to be removed
 
     assembler => 'velvet',
     assembler_exec => '/software/pathogen/external/apps/usr/bin/velvet',
     optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
     sga_exec       => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
+    khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
+    QUASR_exec		=> '/lustre/scratch108/viruses/mc13/scripts/QUASR702_Parser_25July12/readsetProcessor.jar', 
     max_threads => 1,
 },
 
@@ -121,6 +125,7 @@ our %options = (
                 abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
                 sga_exec        => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
                 khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
+                QUASR_exec	    => '/lustre/scratch108/viruses/mc13/scripts/QUASR702_Parser_25July12/readsetProcessor.jar', 
                 no_scaffolding  => 0,
                 annotation      => 0,
                 );
@@ -580,6 +585,7 @@ use strict;
 use VertRes::Pipelines::Assembly;
 use Bio::AssemblyImprovement::Assemble::SGA::Main;
 use Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main;
+use Bio::AssemblyImprovement::PrimerRemoval::Main;
 use File::Copy;
 my \$assembly= VertRes::Pipelines::Assembly->new();
 my \@lane_names;
@@ -603,6 +609,23 @@ my \@lane_names;
        @file_names = sort @file_names; # Unfortunately normalisation code cannot handle reads interleaved in any other way besides /1, /2, /1 and so on. We rely here on the files being named with _1 and _2 so that the order is maintained.
        $file_names_str = '("'.join('","',@file_names ).'")';
      }
+     
+     #Primer removal
+     if(defined ($self->{remove_primers}) and $self->{remove_primers} == 1 and defined ($self->{primers_file}))
+     {
+     	#Replace code here with an alternative way of removing primers that can accept a shuffled file     
+     	print $scriptfh qq{
+my $primer_remover = Bio::AssemblyImprovement::PrimerRemoval::Main->new(
+forward_file    => "$output_directory"."/"."$file_names[0]",
+reverse_file    => "$output_directory"."/"."$file_names[1]",
+primers_file	=> "$self->{primers_file}",
+output_directory => "$output_directory",
+QUASR_exec		=> "$self->{QUASR_exec}",
+)->run();
+$file_names_str = '("'.join('","',$primer_remover->_final_results_files ).'")';
+system("touch $output_directory/$self->{prefix}primer_removal_done");
+};
+      }     
      
      # Create a shuffled sequence. This shuffled file will be the input for any processing steps below (i.e. normalisation, error correction etc)
      my $shuffled_filename = $output_directory.'/'.$lane_name.'.fastq.gz';
