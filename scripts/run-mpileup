@@ -219,6 +219,7 @@ sub main
 {
     my ($self) = @_;
     $self->parse_args();
+    $self->save_config();
 
     my $outdir = $$self{outdir};
     my @chroms = @{$$self{chroms}};
@@ -384,6 +385,21 @@ sub runtime_stats
     print $fh $$self{_about};
     close($fh);
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub save_config
+{
+    my ($self) = @_;
+    my $src = $$self{_config};
+    my $dst = "$$self{outdir}/annots.conf";
+    if ( -e $dst && (stat($src))[9] <= (stat($dst))[9] ) { return; }
+    if ( !-d $$self{outdir} ) { $self->cmd("mkdir -p $$self{outdir}"); }
+    open(my $fh,'>',$dst) or $self->throw("$dst: $!");
+    my $about = $$self{_about};
+    $about =~ s/\n/\n# /g;
+    print $fh "# $about";
+    close($fh);
+    $self->cmd("cat $src >> $dst");
 }
 
 sub cmd
