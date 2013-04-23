@@ -191,7 +191,7 @@ sub displayDatabasesPage {
 	my $index = $self->{SCRIPTS}{INDEX_PAGE};
 	print qq[ <h4 align="center" style="font: arial"><i><a href="$index">Team 145</a></i> : $title</h4> ];
     my $pending_db = 'vrtrack_pending_requests';
-    my @main_dbs = qw (vrtrack_human_wgs vrtrack_human_wes vrtrack_mouse_wgs vrtrack_mouse_wes g1k_track_phase3);
+    my @main_dbs = qw (vrtrack_human_wgs vrtrack_human_wes vrtrack_mouse_wgs vrtrack_mouse_wes vrtrack_mouse_wes_GRCm38 vrtrack_mouse_wgs_GRCm38 vrtrack_scerevisiae_wgs);
     print qq[
         <div class="centerFieldset">
         <fieldset style="width: 500px">
