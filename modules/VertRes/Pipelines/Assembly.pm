@@ -48,7 +48,7 @@ data => {
     optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
     sga_exec       => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
     khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
-    QUASR_exec		=> '/lustre/scratch108/viruses/mc13/scripts/QUASR702_Parser_25July12/readsetProcessor.jar', 
+    QUASR_exec		=> '/software/pathogen/internal/pathdev/java/QUASR702_Parser/readsetProcessor.jar', 
     max_threads => 1,
 },
 
@@ -125,7 +125,7 @@ our %options = (
                 abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
                 sga_exec        => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
                 khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
-                QUASR_exec	    => '/lustre/scratch108/viruses/mc13/scripts/QUASR702_Parser_25July12/readsetProcessor.jar', 
+                QUASR_exec	    => '/software/pathogen/internal/pathdev/java/QUASR702_Parser/readsetProcessor.jar', 
                 no_scaffolding  => 0,
                 annotation      => 0,
                 );
