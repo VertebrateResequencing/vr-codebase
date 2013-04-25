@@ -39,7 +39,7 @@ data => {
     no_scaffolding => 0,
     annotation     => 1,
     error_correct  => 1, # Should the reads be put through an error correction stage?
-    subsample	   => 1, # Should we do subsampling (after error correction)?
+    normalise	   => 1, # Should we do digital normalisation?
     remove_primers => 1,
     primers_file   => /path/to/primers/file, #Essential if primers are to be removed
 
@@ -55,7 +55,7 @@ data => {
 
 =head1 DESCRIPTION
 
-This pipeline requires velvet, prokka, smalt, SSPACE, SGA and GapFiller to be separately installed from the original authors software repositories.
+This pipeline requires velvet, prokka, smalt, SSPACE, SGA, khmer, QUASR and GapFiller to be separately installed from the original authors software repositories.
 
 
 =head1 AUTHOR
@@ -89,6 +89,7 @@ use Bio::AssemblyImprovement::Scaffold::SSpace::Iterative;
 use Bio::AssemblyImprovement::FillGaps::GapFiller::Iterative;
 use Bio::AssemblyImprovement::Assemble::SGA::Main;
 use Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main;
+use Bio::AssemblyImprovement::PrimerRemoval::Main;
 use Bio::AssemblyImprovement::Util::FastqTools;
 use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
 use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
@@ -637,6 +638,15 @@ system("touch $output_directory/$self->{prefix}primer_removal_done");
 my \@filenames_array = $file_names_str;
 \$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
 };
+
+ 	 #Clean up primer removed files. This is quite messy. Will be better when primer removal can accept a shuffled file
+     if(defined ($self->{remove_primers}) and $self->{remove_primers} == 1 and defined ($self->{primers_file}))
+     {
+      print $scriptfh qq{
+unlink($output_directory/primer_removed.forward.fastq.gz);
+unlink($output_directory/primer_removed.reverse.fastq.gz);
+};          
+     {
 	
  	 # Digital normalisation
      if(defined ($self->{subsample}) and $self->{subsample} == 1)
