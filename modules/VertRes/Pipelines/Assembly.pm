@@ -640,13 +640,13 @@ my \@filenames_array = $file_names_str;
 };
 
  	 #Clean up primer removed files. This is quite messy. Will be better when primer removal can accept a shuffled file
-     if(defined ($self->{remove_primers}) and $self->{remove_primers} == 1 and defined ($self->{primers_file})){
+     if(defined ($self->{remove_primers}) and $self->{remove_primers} == 1 and defined ($self->{primers_file}))
      {
       print $scriptfh qq{
 unlink($output_directory/primer_removed.forward.fastq.gz);
 unlink($output_directory/primer_removed.reverse.fastq.gz);
 };          
-     {
+     }
 	
  	 # Digital normalisation
      if(defined ($self->{subsample}) and $self->{subsample} == 1)
