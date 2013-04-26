@@ -666,7 +666,8 @@ sub wait
             #   the file has not appeared in the meantime, stat on non-existent files is fast anyway.
             elsif ( $stat & $Done )
             {
-                if ( $self->is_finished($done_file) ) { $must_run = 0; }
+                if ( $$self{_nocache} && !$$self->is_finished($done_file) ) { $must_run = 1; }
+                else { $must_run = 0; }
             }
 
             # If the job has been already ran and failed, check if it failed repeatedly
@@ -737,7 +738,6 @@ sub wait
         }
     }
     if ( $is_running ) { exit; }
-print STDERR "nothing is running: $is_running\n";
 }
 
 
