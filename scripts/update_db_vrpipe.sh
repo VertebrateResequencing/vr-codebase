@@ -21,16 +21,7 @@ then
     TAX="-tax $2"
 fi
 
-ARG_UP=""
-if [[ $DB =~ "g1k_track_phase3" ]]
-then
-    ARG_UP="-u -sup -v"
-elif [[ $DB =~ "g1k_track_phase2_vrpipe" ]] 
-then
-	ARG_UP="-u -sup -nop -v -min 9000"
-else
-    ARG_UP="-u -sup -nop -v"
-fi
+ARG_UP="-u -sup -nop -md5 -wdr -trd -v"
 
 ROOT="/lustre/scratch105"
 CONF="/nfs/vertres01/conf"
