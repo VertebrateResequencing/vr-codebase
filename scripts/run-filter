@@ -308,7 +308,7 @@ sub collect
     if ( $self->is_file_list($in_vcf) ) { $in_vcf = "-v $in_vcf"; }
     my $annots = join(',', sort keys %annots);
     $self->cmd("$$self{vcf_exec} query -Ha $annots $in_vcf $$self{good_vcf} | bgzip -c > $outfile.part");
-    $self->cmd("$$self{vcf_exec} filter $outfile.part -o $outfile $$self{filter_args}");
+    $self->cmd("$$self{vcf_exec} filter $outfile.part -p -o $outfile $$self{filter_args}");
     # Remove annots.tab.gz.SNP.* files so that it's not accidently used for final filtering
     unlink("$outfile.SNP.tab");
     unlink("$outfile.SNP.sites.gz");
