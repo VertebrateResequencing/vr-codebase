@@ -623,7 +623,6 @@ primers_file	=> "$self->{primers_file}",
 output_directory => "$output_directory",
 QUASR_exec		=> "$self->{QUASR_exec}",
 )->run();
-system("touch $output_directory/$self->{prefix}primer_removal_done");
 };
 
 	  my @primer_removed_files = ( 'primer_removed.forward.fastq.gz', 'primer_removed.reverse.fastq.gz');
@@ -658,7 +657,6 @@ khmer_exec       => "$self->{khmer_exec}",
 output_filename  => "$output_filename",
 output_directory => "$output_directory",
 )->run();
-system("touch $output_directory/$self->{prefix}normalisation_done");
 };		
      }
 	
@@ -673,7 +671,6 @@ output_directory => "$output_directory",
 pe_mode		    => 2,
 sga_exec        => "$self->{sga_exec}",
 )->run();
-system("touch $output_directory/$self->{prefix}error_correction_done");
 }; 
 	 }
 
