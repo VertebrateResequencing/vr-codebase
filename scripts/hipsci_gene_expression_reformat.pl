@@ -1,6 +1,8 @@
-#!/bin/perl -w
+#!/usr/bin/env perl
 
 use strict;
+use warnings;
+no warnings 'uninitialized';
 
 if($#ARGV != 3){
     print "Usage: $0 <PARSE> <ANNO> <ID MAPPING> <FIRST N SAMPLES>\n";
