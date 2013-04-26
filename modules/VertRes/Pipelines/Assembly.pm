@@ -639,12 +639,12 @@ my \@filenames_array = $file_names_str;
 \$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
 };
 
- 	 #Clean up primer removed files. This is quite messy. Will be better when primer removal can accept a shuffled file
+ 	 #Clean up primer removed files. This is quite messy. Will be better when primer removal can accept a shuffled file so it fits in like normalisation and error_correction does
      if(defined ($self->{remove_primers}) and $self->{remove_primers} == 1 and defined ($self->{primers_file}))
      {
       print $scriptfh qq{
-unlink($output_directory/primer_removed.forward.fastq.gz);
-unlink($output_directory/primer_removed.reverse.fastq.gz);
+unlink("$output_directory/primer_removed.forward.fastq.gz");
+unlink("$output_directory/primer_removed.reverse.fastq.gz");
 };          
      }
 	
