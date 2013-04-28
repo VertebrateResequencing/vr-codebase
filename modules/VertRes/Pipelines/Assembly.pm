@@ -39,18 +39,23 @@ data => {
     no_scaffolding => 0,
     annotation     => 1,
     error_correct  => 1, # Should the reads be put through an error correction stage?
+    normalise	   => 1, # Should we do digital normalisation?
+    remove_primers => 1,
+    primers_file   => /path/to/primers/file, #Essential if primers are to be removed
 
     assembler => 'velvet',
     assembler_exec => '/software/pathogen/external/apps/usr/bin/velvet',
     optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
     sga_exec       => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
+    khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
+    QUASR_exec		=> '/software/pathogen/internal/pathdev/java/QUASR702_Parser/readsetProcessor.jar', 
     max_threads => 1,
 },
 
 
 =head1 DESCRIPTION
 
-This pipeline requires velvet, prokka, smalt, SSPACE, SGA and GapFiller to be separately installed from the original authors software repositories.
+This pipeline requires velvet, prokka, smalt, SSPACE, SGA, khmer, QUASR and GapFiller to be separately installed from the original authors software repositories.
 
 
 =head1 AUTHOR
@@ -83,7 +88,12 @@ use Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles;
 use Bio::AssemblyImprovement::Scaffold::SSpace::Iterative;
 use Bio::AssemblyImprovement::FillGaps::GapFiller::Iterative;
 use Bio::AssemblyImprovement::Assemble::SGA::Main;
+use Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main;
+use Bio::AssemblyImprovement::PrimerRemoval::Main;
+use Bio::AssemblyImprovement::Util::FastqTools;
 use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
+use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
+
 
 use base qw(VertRes::Pipeline);
 
@@ -115,6 +125,8 @@ our %options = (
                 gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-10_linux-x86_64/GapFiller.pl',
                 abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
                 sga_exec        => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
+                khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
+                QUASR_exec	    => '/software/pathogen/internal/pathdev/java/QUASR702_Parser/readsetProcessor.jar', 
                 no_scaffolding  => 0,
                 annotation      => 0,
                 );
@@ -292,9 +304,15 @@ sub optimise_parameters
       }
       my $lane_paths_str = '("'.join('","', @lane_paths).'")';
 
-      my $kmer = $self->calculate_kmer_size();
+      # Calculate 66-90% of the median read length as min and max kmer values
+      my $fastq_file_to_process = $output_directory.'/pool_1.fastq.gz';
+      my $fastq_tools  = Bio::AssemblyImprovement::Util::FastqTools->new(
+    	input_filename   => $fastq_file_to_process,
+      );
       
-      my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer->{min})/1000);
+      my %kmer = $fastq_tools->calculate_kmer_sizes();
+      
+      my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer{min})/1000);
 
       my $num_threads = $self->number_of_threads($memory_required_mb);
       my $insert_size = $self->get_insert_size();
@@ -320,8 +338,8 @@ chdir(qq[$tmp_directory]);
 my \$assembler = $assembler_class->new(
   assembler => qq[$self->{assembler}],
   optimiser_exec => qq[$optimiser_exec],
-  min_kmer => $kmer->{min},
-  max_kmer => $kmer->{max},
+  min_kmer => $kmer{min},
+  max_kmer => $kmer{max},
   files_str => qq[$files_str],
   output_directory => qq[$tmp_directory],
   );
@@ -501,27 +519,27 @@ sub lane_read_length
 }
 
 # check kmers between 66% and 90% of read size. Choose lane and find out read size
-sub calculate_kmer_size
-{
-  my ($self) = @_;
-  my %kmer_size;
-  my $read_length = $self->lane_read_length();
-
-  $kmer_size{min} = int($read_length*0.66);
-  $kmer_size{max} = int($read_length*0.90);
-  
-  if($kmer_size{min} % 2 == 0)
-  {
-    $kmer_size{min}--;
-  }
-  
-  if($kmer_size{max} % 2 == 0)
-  {
-    $kmer_size{max}--;
-  }
-
-  return \%kmer_size;
-}
+# sub calculate_kmer_size
+# {
+#   my ($self) = @_;
+#   my %kmer_size;
+#   my $read_length = $self->lane_read_length();
+# 
+#   $kmer_size{min} = int($read_length*0.66);
+#   $kmer_size{max} = int($read_length*0.90);
+#   
+#   if($kmer_size{min} % 2 == 0)
+#   {
+#     $kmer_size{min}--;
+#   }
+#   
+#   if($kmer_size{max} % 2 == 0)
+#   {
+#     $kmer_size{max}--;
+#   }
+# 
+#   return \%kmer_size;
+# }
 
 sub number_of_threads
 {
@@ -567,6 +585,9 @@ sub pool_fastqs
 use strict;
 use VertRes::Pipelines::Assembly;
 use Bio::AssemblyImprovement::Assemble::SGA::Main;
+use Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main;
+use Bio::AssemblyImprovement::PrimerRemoval::Main;
+use File::Copy;
 my \$assembly= VertRes::Pipelines::Assembly->new();
 my \@lane_names;
 };
@@ -576,7 +597,6 @@ my \@lane_names;
      my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
      my $vlane = VRTrack::Lane->new_by_name($self->{vrtrack},$lane_name);
      my $file_names_str;
-     my $file_names_with_path_str;
      my @file_names;
      my @file_names_with_path ;
      
@@ -586,39 +606,76 @@ my \@lane_names;
        for my $file_name (@{$vlane->files})
        {
         	push(@file_names, $file_name->name );
-        	push(@file_names_with_path, "$base_path/$lane_path/".$file_name->name ); # Redundant code. Improve. Some programs like SGA gunzip struggle to find files if not specified with full path
        }
+       @file_names = sort @file_names; # Unfortunately normalisation code cannot handle reads interleaved in any other way besides /1, /2, /1 and so on. We rely here on the files being named with _1 and _2 so that the order is maintained.
        $file_names_str = '("'.join('","',@file_names ).'")';
-       $file_names_with_path_str = '("'.join('","',@file_names_with_path ).'")';
      }
-
-	 # If error_correct set to 1, run the chosen error correction program to get a shuffled 
-	 # fastq file with corrected reads. If not, just shuffle the two fastq files ourselves.
-	 
-	 if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
-	 {
-	  #my $error_corrected_file = $output_directory.'/'.$lane_name.'.fastq.gz';
-	  my $error_corrected_file = $lane_name.'.fastq.gz';
-	  print $scriptfh qq{
-my \@filenames_array = $file_names_with_path_str;
-my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
-            input_files     => \\\@filenames_array ,
-            output_filename => "$error_corrected_file",
-            output_directory => "$output_directory",
-            pe_mode		    => 1,
-            sga_exec        => "$self->{sga_exec}",
-    )->run();
-}; 
-	 }
-	 else
-	 {
+     
+     #Primer removal
+     if(defined ($self->{remove_primers}) and $self->{remove_primers} == 1 and defined ($self->{primers_file}))
+     {
+     	#Replace code here with an alternative way of removing primers that can accept a shuffled file     
      	print $scriptfh qq{
+my \$primer_remover = Bio::AssemblyImprovement::PrimerRemoval::Main->new(
+forward_file    => "$output_directory/$file_names[0]",
+reverse_file    => "$output_directory/$file_names[1]",
+primers_file	=> "$self->{primers_file}",
+output_directory => "$output_directory",
+QUASR_exec		=> "$self->{QUASR_exec}",
+)->run();
+};
+
+	  my @primer_removed_files = ( 'primer_removed.forward.fastq.gz', 'primer_removed.reverse.fastq.gz');
+	  $file_names_str = '("'.join('","', @primer_removed_files ).'")';
+      }     
+     
+     # Create a shuffled sequence. This shuffled file will be the input for any processing steps below (i.e. normalisation, error correction etc)
+     my $shuffled_filename = $output_directory.'/'.$lane_name.'.fastq.gz';
+	 my $output_filename = $lane_name.'.fastq.gz'; # Each step below (normalisation and error correction), should produce an output file with this name (which is the same as the shuffled filename)
+     
+     print $scriptfh qq{
 my \@filenames_array = $file_names_str;
 \$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
 };
-     }
-   }
 
+ 	 #Clean up primer removed files. This is quite messy. Will be better when primer removal can accept a shuffled file so it fits in like normalisation and error_correction does
+     if(defined ($self->{remove_primers}) and $self->{remove_primers} == 1 and defined ($self->{primers_file}))
+     {
+      print $scriptfh qq{
+unlink("$output_directory/primer_removed.forward.fastq.gz");
+unlink("$output_directory/primer_removed.reverse.fastq.gz");
+};          
+     }
+	
+ 	 # Digital normalisation
+     if(defined ($self->{normalise}) and $self->{normalise} == 1)
+     {
+       print $scriptfh qq{
+my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new(
+input_file       => "$shuffled_filename",
+khmer_exec       => "$self->{khmer_exec}",
+output_filename  => "$output_filename",
+output_directory => "$output_directory",
+)->run();
+};		
+     }
+	
+     # Error correction
+	 if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
+	 {
+	  print $scriptfh qq{
+my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
+input_files     => ["$shuffled_filename"],
+output_filename => "$output_filename",
+output_directory => "$output_directory",
+pe_mode		    => 2,
+sga_exec        => "$self->{sga_exec}",
+)->run();
+}; 
+	 }
+
+   } #End for loop
+   
    my $pool_count = 1;
    for my $lane_pool (@{$self->{pools}})
    {
