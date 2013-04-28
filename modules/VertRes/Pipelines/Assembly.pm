@@ -648,7 +648,7 @@ unlink("$output_directory/primer_removed.reverse.fastq.gz");
      }
 	
  	 # Digital normalisation
-     if(defined ($self->{subsample}) and $self->{subsample} == 1)
+     if(defined ($self->{normalise}) and $self->{normalise} == 1)
      {
        print $scriptfh qq{
 my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new(
