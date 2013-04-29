@@ -189,6 +189,7 @@ sub generate_files_str
 =cut
 sub get_parameters
 {
+	my ($self, $filename) = @_;
 	my %parameters;
 	$parameters{assembly_directory} = "$self->{output_directory}/spades";
 	return \%parameters;
