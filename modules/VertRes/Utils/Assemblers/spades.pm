@@ -73,12 +73,12 @@ sub optimise_parameters
   `python $self->{optimiser_exec} --12 $self->{files_str} --only-assembler -k $spades_kmer_string -o spades_assembly`;
   
   my $params = $self->get_parameters("spades.log"); 
-  system("mv  $params->{assembly_directory} ".$self->optimised_directory());
+  #system("mv  $params->{assembly_directory} ".$self->optimised_directory());
   system("touch ".$self->optimised_directory()."/_spades_optimise_parameters_done");
    
-  unlink($self->optimised_directory()."/params.txt");
-  unlink($self->optimised_directory()."/dataset.info");
-  unlink($self->optimised_directory()."/contigs.fasta");
+  #unlink($self->optimised_directory()."/params.txt");
+  #unlink($self->optimised_directory()."/dataset.info");
+  #unlink($self->optimised_directory()."/contigs.fasta");
   #Should the spades.log file be deleted too? For now, I call it spades_assembly_logfile.txt
   system("mv ".$self->optimised_directory()."/spades.log ".$self->optimised_directory()."/spades_assembly_logfile.txt");
 
