@@ -293,22 +293,22 @@ while (<>){
 					       "^[0-9]+\.[ps]e\.markdup\.snp\$",
 					       "^[0-9]+\.[ps]e\.raw\.sorted\.snp\$"],
 				all => ["^[\\w]+"],
-                                assembled => ["^_pool_fastqs",
+                                assembled => ["pool_fastqs",
                                               "^pool_1\.fastq\.gz\$",
-                                              "^_velvet_optimise_parameters",
-                                              "^_optimise_parameters\.jids\$",
-                                              "^_velvet_map_back",
+                                              "velvet_optimise_parameters",
+                                              "optimise_parameters\.jids\$",
+                                              "velvet_map_back",
                                               "^_update_db_done\$", # prior to 24 Sept 2012 
                                               "^_cleanup_done\$",   # prior to 24 Sept 2012 
-                                              "^_assembly_cleanup_done\$",    # replaced _cleanup_done
-                                              "^_assembly_update_db_done\$",  # replaced _update_db_done      
+                                              "assembly_cleanup_done\$",    # replaced _cleanup_done
+                                              "assembly_update_db_done\$",  # replaced _update_db_done      
                                               "^velvet_assembly_logfile\.txt\$",
                                               "^velvet_assembly\$"],
-                                mapped => ["^\._mark_duplicates_[ps]e_[0-9]+.[oe].archive\$",
-                                           "^\._statistics_[0-9]+\.[ps]e\.raw\.sorted\.bam\.[oe]\.archive\$",
-                                           "^\._merge_[ps]e_[0-9]+\.[oe]\.archive\$",
-                                           "^\._map_[ps]e_[0-9]+_[0-9]+\.[oe]\.archive\$",
-                                           "^\._split_[ps]e_[0-9]+\.[oe]\.archive\$",
+                                mapped => ["^\.[\\w]+mark_duplicates_[ps]e_[0-9]+.[oe].archive\$",
+                                           "^\.[\\w]+statistics_[0-9]+\.[ps]e\.raw\.sorted\.bam\.[oe]\.archive\$",
+                                           "^\.[\\w]+merge_[ps]e_[0-9]+\.[oe]\.archive\$",
+                                           "^\.[\\w]+map_[ps]e_[0-9]+_[0-9]+\.[oe]\.archive\$",
+                                           "^\.[\\w]+split_[ps]e_[0-9]+\.[oe]\.archive\$",
                                            "^[0-9]+\.[ps]e\.markdup\.bam\$","^[0-9]+\.[ps]e\.markdup\.bam\.bai\$",
                                            "^[0-9]+\.[ps]e\.raw\.sorted\.bam\$","^[0-9]+\.[ps]e\.raw\.sorted\.bam\.bai\$",
                                            "^[0-9]+\.[ps]e\.raw\.sorted\.bam_graphs\$",
