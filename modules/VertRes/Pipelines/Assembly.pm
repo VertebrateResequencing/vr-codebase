@@ -318,7 +318,7 @@ sub optimise_parameters
       my $insert_size = $self->get_insert_size();
       my $tmp_directory = $self->{tmp_directory}.'/'.$lane_names->[0] || getcwd();
       
-      my $pipeline_version = join('/',($output_directory,'velvet_assembly','pipeline_version_'.$self->{pipeline_version}));
+      my $pipeline_version = join('/',($output_directory, $self->{assembler}.'_assembly','pipeline_version_'.$self->{pipeline_version}));
       
       my $contigs_base_name = $self->generate_contig_base_name();
 
@@ -331,7 +331,7 @@ use File::Copy;
 use Cwd;
 use File::Path qw(make_path);
 my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
-system("rm -rf velvet_assembly_*");
+system("rm -rf $self->{assembler}_assembly_*");
 make_path(qq[$tmp_directory]);
 chdir(qq[$tmp_directory]);
 
@@ -353,9 +353,9 @@ copy(\$assembler->optimised_assembly_file_path(),\$assembler->optimised_director
 
 Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_assembly_file_path(),base_contig_name => qq[$contigs_base_name])->run();
 
-move(qq[$tmp_directory].'/velvet_assembly_logfile.txt', qq[$output_directory].'/velvet_assembly_logfile.txt');
+move(qq[$tmp_directory].'/$self->{assembler}_assembly_logfile.txt', qq[$output_directory].'/$self->{assembler}_assembly_logfile.txt');
 
-system("mv $tmp_directory/velvet_assembly $output_directory");
+system("mv $tmp_directory/$self->{assembler}_assembly $output_directory");
 
 unlink(qq[$tmp_directory].'/forward.fastq');
 unlink(qq[$tmp_directory].'/reverse.fastq');
