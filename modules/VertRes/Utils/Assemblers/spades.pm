@@ -190,7 +190,7 @@ sub generate_files_str
 sub get_parameters
 {
 	my %parameters;
-	$parameters{assembly_directory} = "$self->output_directory/spades";
+	$parameters{assembly_directory} = "$self{output_directory}/spades";
 	return \%parameters;
 }
 
