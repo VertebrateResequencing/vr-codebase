@@ -191,7 +191,7 @@ sub get_parameters
 {
 	my ($self, $filename) = @_;
 	my %parameters;
-	$parameters{assembly_directory} = "$self->{output_directory}/spades";
+	$parameters{assembly_directory} = "$self->{output_directory}/spades_assembly";
 	return \%parameters;
 }
 
