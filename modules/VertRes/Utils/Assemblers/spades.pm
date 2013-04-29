@@ -61,7 +61,9 @@ sub optimise_parameters
 {
   my ($self, $num_threads) = @_;
   
-  `python $self->{optimiser_exec} --12 $self->{files_str} --only-assembler -k $self->_create_kmer_values_string -o spades_assembly`;
+  my $kmer_string = $self->_create_kmer_values_string();
+  
+  `python $self->{optimiser_exec} --12 $self->{files_str} --only-assembler -k $kmer_string -o spades_assembly`;
   
   my $params = $self->get_parameters("spades.log"); 
   system("touch ".$self->optimised_directory()."/_spades_optimise_parameters_done");
