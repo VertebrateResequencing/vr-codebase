@@ -80,7 +80,7 @@ sub optimise_parameters
   unlink($self->optimised_directory()."/dataset.info");
   unlink($self->optimised_directory()."/contigs.fasta");
   #Should the spades.log file be deleted too? For now, I call it spades_assembly_logfile.txt
-  system("mv $self->optimised_directory()/spades.log $self->optimised_directory()/spades_assembly_logfile.txt");
+  system("mv ".$self->optimised_directory()."/spades.log ".$self->optimised_directory()."/spades_assembly_logfile.txt");
 
   return 1;
 }                                                                                                                             
