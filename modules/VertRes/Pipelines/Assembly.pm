@@ -894,8 +894,8 @@ sub cleanup {
   
   # remove job files
   foreach my $file (qw(pool_fastqs 
-    velvet_optimise_parameters 
-    velvet_map_back )) 
+    $self{assembler}_optimise_parameters 
+    $self{assembler}_map_back )) 
     {
       foreach my $suffix (qw(o e pl)) 
       {
