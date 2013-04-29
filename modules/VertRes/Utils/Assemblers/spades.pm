@@ -68,11 +68,12 @@ sub optimise_parameters
   my $params = $self->get_parameters("spades.log"); 
   system("touch ".$self->optimised_directory()."/_spades_optimise_parameters_done");
    
-  #unlink($self->optimised_directory()."/params.txt");
+  #unlink($self->optimised_directory()."/K*");
   #unlink($self->optimised_directory()."/dataset.info");
-  #unlink($self->optimised_directory()."/contigs.fasta");
+  unlink($self->optimised_directory()."/contigs.fasta");
   #Should the spades.log file be deleted too? For now, I call it spades_assembly_logfile.txt
   system("mv ".$self->optimised_directory()."/spades.log ".$self->optimised_directory()."/spades_assembly_logfile.txt");
+  system("mv ".$self->optimised_directory()."/scaffolds.fasta ".$self->optimised_directory()."/contigs.fa");
 
   return 1;
 }     
@@ -110,7 +111,7 @@ sub optimised_directory
 sub optimised_assembly_file_path
 {
   my ($self) = @_;
-  return join('/',($self->optimised_directory(),'/scaffolds.fasta'));
+  return join('/',($self->optimised_directory(),'/contigs.fa'));
 }
 
 sub map_and_generate_stats
