@@ -30,7 +30,7 @@ path-help@sanger.ac.uk
 
 =cut
 
-package VertRes::Utils::Assemblers::velvet;
+package VertRes::Utils::Assemblers::spades;
 
 use strict;
 use warnings;
