@@ -61,19 +61,9 @@ sub optimise_parameters
 {
   my ($self, $num_threads) = @_;
   
-  #SPAdes needs a comma separated list of kmer values
-  my @spades_kmer_array;
-  my $kmer_value = $self->{min_kmer};
-  while ($kmer_value < $self->{max_kmer}){
-	push(@spades_kmer_array, $kmer_value);
-	$kmer_value = $kmer_value + 4; #Step in 4
-  }
-  my $spades_kmer_string = join (',', @spades_kmer_array);	
-  
-  `python $self->{optimiser_exec} --12 $self->{files_str} --only-assembler -k $spades_kmer_string -o spades_assembly`;
+  `python $self->{optimiser_exec} --12 $self->{files_str} --only-assembler -k $self->_create_kmer_values_string -o spades_assembly`;
   
   my $params = $self->get_parameters("spades.log"); 
-  #system("mv  $params->{assembly_directory} ".$self->optimised_directory());
   system("touch ".$self->optimised_directory()."/_spades_optimise_parameters_done");
    
   #unlink($self->optimised_directory()."/params.txt");
@@ -83,7 +73,31 @@ sub optimise_parameters
   system("mv ".$self->optimised_directory()."/spades.log ".$self->optimised_directory()."/spades_assembly_logfile.txt");
 
   return 1;
-}                                                                                                                             
+}     
+
+sub _create_kmer_values_string 
+{
+  my ($self) = @_;
+  #SPAdes needs a comma separated list of kmer values and all the kmer values should be less than 128 
+  my @spades_kmer_array;
+  my $current_kmer_value = $self->{min_kmer};
+  my $max_kmer_value = $self->{max_kmer};
+  
+  if($current_kmer_value < 21){
+  	$current_kmer_value = 21;
+  }
+  
+  if($max_kmer_value > 127){
+  	$max_kmer_value = 127;
+  }
+  while ($current_kmer_value < $max_kmer_value){
+	push(@spades_kmer_array, $current_kmer_value);
+	$current_kmer_value = $current_kmer_value + 4; #Step in 4
+  }
+  my $spades_kmer_string = join (',', @spades_kmer_array);	
+  return $spades_kmer_string;
+}                                                                                                                        
+
 
 sub optimised_directory
 {
@@ -94,7 +108,7 @@ sub optimised_directory
 sub optimised_assembly_file_path
 {
   my ($self) = @_;
-  return join('/',($self->optimised_directory(),'/scaffolds.fa'));
+  return join('/',($self->optimised_directory(),'/scaffolds.fasta'));
 }
 
 sub map_and_generate_stats
