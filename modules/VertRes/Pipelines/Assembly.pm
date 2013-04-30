@@ -341,8 +341,8 @@ my \%kmer = \$fastq_tools->calculate_kmer_sizes();
 my \$assembler = $assembler_class->new(
   assembler => qq[$self->{assembler}],
   optimiser_exec => qq[$optimiser_exec],
-  min_kmer => $kmer{min},
-  max_kmer => $kmer{max},
+  min_kmer => \$kmer{min},
+  max_kmer => \$kmer{max},
   files_str => qq[$files_str],
   output_directory => qq[$tmp_directory],
   );
