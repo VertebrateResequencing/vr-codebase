@@ -66,14 +66,16 @@ sub optimise_parameters
   `python $self->{optimiser_exec} --12 $self->{files_str} --only-assembler -k $kmer_string -o spades_assembly`;
   
   my $params = $self->get_parameters("spades.log"); 
-  system("touch ".$self->optimised_directory()."/_spades_optimise_parameters_done");
-   
-  #unlink($self->optimised_directory()."/K*");
-  #unlink($self->optimised_directory()."/dataset.info");
-  unlink($self->optimised_directory()."/contigs.fasta");
-  #Should the spades.log file be deleted too? For now, I call it spades_assembly_logfile.txt
+
+  # Delete any unwanted files that SPAdes produces 
+  unlink($self->optimised_directory()."/dataset.info"); 
+  unlink($self->optimised_directory()."/contigs.fasta"); #These are the unscaffolded contigs which we are not interested in
+  #Should the spades.log file be deleted too? For now, I call it spades_assembly_logfile.txt. It is quite a large file though.
   system("mv ".$self->optimised_directory()."/spades.log ".$self->optimised_directory()."/spades_assembly_logfile.txt");
-  system("mv ".$self->optimised_directory()."/scaffolds.fasta ".$self->optimised_directory()."/contigs.fa");
+  system("mv ".$self->optimised_directory()."/scaffolds.fasta ".$self->optimised_directory()."/contigs.fa"); #Move ths scaffolded sequences into a file called contigs.fa
+  system("rm -rf ".$self->optimised_directory()."/K*"); #Directories with the intermediate assemblies
+  system("rm -rf ".$self->optimised_directory()."/misc");
+  system("touch ".$self->optimised_directory()."/_spades_optimise_parameters_done");
 
   return 1;
 }     
@@ -86,7 +88,8 @@ sub _create_kmer_values_string
   my $current_kmer_value = $self->{min_kmer};
   my $max_kmer_value = $self->{max_kmer};
   
-  if($current_kmer_value < 21){
+  # We make the kmers go from 21-127 effectively. Change once we learn the optimum kmer range for SPAdes
+  if($current_kmer_value > 21){
   	$current_kmer_value = 21;
   }
   
