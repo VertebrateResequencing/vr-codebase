@@ -303,16 +303,11 @@ sub optimise_parameters
         push(@lane_paths,$base_path.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_name).'/'.$lane_name);
       }
       my $lane_paths_str = '("'.join('","', @lane_paths).'")';
-
-      # Calculate 66-90% of the median read length as min and max kmer values
-      my $fastq_file_to_process = $output_directory.'/pool_1.fastq.gz';
-      my $fastq_tools  = Bio::AssemblyImprovement::Util::FastqTools->new(
-    	input_filename   => $fastq_file_to_process,
-      );
       
-      my %kmer = $fastq_tools->calculate_kmer_sizes();
-      
-      my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer{min})/1000);
+      #We use 33% of the read length (read in from database) to estimate the memory required
+      my $read_length = $self->lane_read_length();
+      my $kmer_for_memory_calculation =  int($read_length*0.33);
+      my $memory_required_mb = int($self->estimate_memory_required($output_directory, $kmer_for_memory_calculation)/1000);
 
       my $num_threads = $self->number_of_threads($memory_required_mb);
       my $insert_size = $self->get_insert_size();
@@ -330,16 +325,24 @@ use VertRes::Pipelines::Assembly;
 use File::Copy;
 use Cwd;
 use File::Path qw(make_path);
+use Bio::AssemblyImprovement::Util::FastqTools;
+
 my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
 system("rm -rf velvet_assembly_*");
 make_path(qq[$tmp_directory]);
 chdir(qq[$tmp_directory]);
 
+# Calculate 66-90% of the median read length as min and max kmer values
+my \$fastq_tools  = Bio::AssemblyImprovement::Util::FastqTools->new(
+    	input_filename   => "$output_directory/pool_1.fastq.gz",
+);
+my \%kmer = \$fastq_tools->calculate_kmer_sizes();
+
 my \$assembler = $assembler_class->new(
   assembler => qq[$self->{assembler}],
   optimiser_exec => qq[$optimiser_exec],
-  min_kmer => $kmer{min},
-  max_kmer => $kmer{max},
+  min_kmer => \$kmer{min},
+  max_kmer => \$kmer{max},
   files_str => qq[$files_str],
   output_directory => qq[$tmp_directory],
   );
