@@ -313,7 +313,7 @@ sub optimise_parameters
       my $insert_size = $self->get_insert_size();
       my $tmp_directory = $self->{tmp_directory}.'/'.$lane_names->[0] || getcwd();
       
-      my $pipeline_version = join('/',($output_directory,'velvet_assembly','pipeline_version_'.$self->{pipeline_version}));
+      my $pipeline_version = join('/',($output_directory, $self->{assembler}.'_assembly','pipeline_version_'.$self->{pipeline_version}));
       
       my $contigs_base_name = $self->generate_contig_base_name();
 
@@ -328,7 +328,7 @@ use File::Path qw(make_path);
 use Bio::AssemblyImprovement::Util::FastqTools;
 
 my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
-system("rm -rf velvet_assembly_*");
+system("rm -rf $self->{assembler}_assembly_*");
 make_path(qq[$tmp_directory]);
 chdir(qq[$tmp_directory]);
 
@@ -352,13 +352,13 @@ my \@lane_paths = $lane_paths_str;
 
 copy(\$assembler->optimised_assembly_file_path(),\$assembler->optimised_directory().'/unscaffolded_contigs.fa');
 \$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
-\$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_directory().'/contigs.fa',[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size);
+\$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_assembly_file_path(),[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size);
 
 Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_assembly_file_path(),base_contig_name => qq[$contigs_base_name])->run();
 
-move(qq[$tmp_directory].'/velvet_assembly_logfile.txt', qq[$output_directory].'/velvet_assembly_logfile.txt');
+move(qq[$tmp_directory].'/$self->{assembler}_assembly_logfile.txt', qq[$output_directory].'/$self->{assembler}_assembly_logfile.txt');
 
-system("mv $tmp_directory/velvet_assembly $output_directory");
+system("mv $tmp_directory/$self->{assembler}_assembly $output_directory");
 
 unlink(qq[$tmp_directory].'/forward.fastq');
 unlink(qq[$tmp_directory].'/reverse.fastq');
@@ -897,8 +897,8 @@ sub cleanup {
   
   # remove job files
   foreach my $file (qw(pool_fastqs 
-    velvet_optimise_parameters 
-    velvet_map_back )) 
+    $self{assembler}_optimise_parameters 
+    $self{assembler}_map_back )) 
     {
       foreach my $suffix (qw(o e pl)) 
       {
