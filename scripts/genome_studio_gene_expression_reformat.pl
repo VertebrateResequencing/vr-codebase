@@ -1,40 +1,52 @@
 #!/usr/bin/env perl
 
+use Getopt::Long;
+
 use strict;
 use warnings;
 no warnings 'uninitialized';
 
-if($#ARGV != 3){
-    print "Usage: $0 <PARSE> <ANNO> <ID MAPPING> <FIRST N SAMPLES>\n";
-    exit 0;
-}
+my ( $PROFILE_FILE, $ANNOS_FILE, $MAPPING_FILE, $numberOfSamples, $OUTPUT_FILE, $help );
+
+GetOptions(
+    'p|profile=s'               => \$PROFILE_FILE,
+    'a|annot=s'                 => \$ANNOS_FILE,
+    'm|mapping=s'               => \$MAPPING_FILE,
+    's|samples=i'               => \$numberOfSamples,
+    'o|out=s'                   => \$OUTPUT_FILE,
+    'h|help'                    => \$help,
+);
+
+( $PROFILE_FILE && $ANNOS_FILE && $MAPPING_FILE && $numberOfSamples && $OUTPUT_FILE && !$help ) or die <<USAGE;
+Usage: $0   
+  -p|--profile                <Genome Studio profile file>
+  -a|--annot                  <Genome Studio annotation file>
+  -m|--mapping                <Sample mapping file>
+  -s|--samples                <Number of samples to reformat>
+  -o|--out                    <Output file>
+  -h|--help                   <this message>
+USAGE
+
 
 my(
     $i, $j, $k, 
     @VALS, 
-    $ANNOS_FILE, 
-    $PROFILE_FILE, 
-    $MAPPING_FILE, 
     $IDOne,
     $IDTwo,
     $IDThree, 
     $annoCount, 
     $found, 
     @arr, 
-    @IDMap, 
-    $numberOfSamples
+    @IDMap
 );
-
-$PROFILE_FILE = $ARGV[0];
-$ANNOS_FILE = $ARGV[1];
-$MAPPING_FILE = $ARGV[2];
-$numberOfSamples = $ARGV[3];
 
 $i = 0;
 
+open OUTF, ">", $OUTPUT_FILE || die "cannot open $OUTPUT_FILE ($!)";
+
 open (ANNOS, "$ANNOS_FILE") || die "cannot open $ANNOS_FILE ($!)";
 <ANNOS>;
-while(<ANNOS>){
+while ( <ANNOS> ) {
     chomp;
     @VALS = split /\t/;
 
@@ -89,7 +101,7 @@ my $positionFour;
 
 $sampleCount = $numberOfSamples;
 
-print "$VALS[1]\t";
+print OUTF "$VALS[1]\t";
 for($k = 0; $k < $sampleCount; $k++){
     $indexStart = ($k * 8) + 2;
     $positionOne = ($indexStart + 1);
@@ -159,12 +171,12 @@ for($k = 0; $k < $sampleCount; $k++){
     }
     $headerFour = $partOne . '-' . $partTwo . '_' . $partThree;
 
-    print "$headerOne\t$headerTwo\t$headerThree\t$headerFour";
+    print OUTF "$headerOne\t$headerTwo\t$headerThree\t$headerFour";
     if($k == ($sampleCount - 1)){
-        print "\n";
+        print OUTF "\n";
     }
     else{
-        print "\t";
+        print OUTF "\t";
     }
 }
 
@@ -180,12 +192,12 @@ while(<PROFILE>){
     $found = 0;
     for($j = 0; $j < $annoCount; $j++){
         if(($IDOne eq $arr[$j][0]) && ($IDTwo eq $arr[$j][1])){ #arr[0] = TargetID arr[1] = ProbeID arr[2] = PROBEID/ILMN_..
-            print "$arr[$j][2]\t";
+            print OUTF "$arr[$j][2]\t";
             $found = 1;
         }
     }
     if($found == 0){
-        print "Couldn't find $IDOne\n";
+        print OUTF "Couldn't find $IDOne\n";
         exit;
     }
 
@@ -195,13 +207,14 @@ while(<PROFILE>){
         $positionTwo = ($indexStart + 5);
         $positionThree = ($indexStart + 6);
         $positionFour = ($indexStart + 7);
-        print "$VALS[$positionOne]\t$VALS[$positionTwo]\t$VALS[$positionThree]\t$VALS[$positionFour]";
+        print OUTF "$VALS[$positionOne]\t$VALS[$positionTwo]\t$VALS[$positionThree]\t$VALS[$positionFour]";
         if($k == ($sampleCount - 1)){
-            print "\n";
+            print OUTF "\n";
         }
         else{
-            print "\t";
+            print OUTF "\t";
         }
     }
 }
 close (PROFILE);
+close (OUTF);
