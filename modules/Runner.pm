@@ -321,7 +321,7 @@ sub inc_limits
     {
         if ( !exists($$self{_farm_options}{$key}) or $$self{_farm_options}{$key}<$args{$key} ) 
         { 
-        print STDERR "increasing limit: $key=$args{$key}\n";
+            $self->debugln("increasing limit, $key set to $args{$key}");
             $$self{_farm_options}{$key} = $args{$key};
         }
     }
@@ -666,7 +666,7 @@ sub wait
             #   the file has not appeared in the meantime, stat on non-existent files is fast anyway.
             elsif ( $stat & $Done )
             {
-                if ( $$self{_nocache} && !$$self->is_finished($done_file) ) { $must_run = 1; }
+                if ( $$self{_nocache} && !$self->is_finished($done_file) ) { $must_run = 1; }
                 else { $must_run = 0; }
             }
 
@@ -690,7 +690,7 @@ sub wait
                 }
 
                 # Increase memory limits if necessary: by a set minimum or by a percentage, which ever is greater
-                my %limits = $farm->can('past_limits')->($jobs_id_file);
+                my %limits = $farm->can('past_limits')->($ids[$i],$wfile);
                 if ( exists($limits{MEMLIMIT}) )
                 { 
                     my $mem = $limits{memory}*1.3 > $limits{memory}+1_000 ? $limits{memory}*1.3 : $limits{memory}+1_000;

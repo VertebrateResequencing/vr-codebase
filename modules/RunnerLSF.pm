@@ -190,8 +190,8 @@ sub parse_output
 
 sub past_limits
 {
-    my ($job_name) = @_; 
-    my $fname = "$job_name.o";
+    my ($jid,$output) = @_; 
+    my $fname = "$output.$jid.o";
     if ( ! -e $fname ) { return (); }
     open(my $fh,'<',$fname) or confess("$fname: $!");
     my (%out,$killed,$mem);
@@ -219,7 +219,7 @@ sub past_limits
 
 sub run_array
 {
-    my ($jids_file, $job_name, $options, $cmd, $ids) = @_;
+    my ($jids_file, $job_name, $opts, $cmd, $ids) = @_;
 
     if ( !scalar @$ids ) { confess("No IDs given??\n"); }
 
@@ -246,6 +246,7 @@ sub run_array
     $cmd =~ s/{JOB_INDEX}/\$LSB_JOBINDEX/g;
     my $bsub_ids  = join(',', @bsub_ids);
     my $bsub_opts = '';
+    if ( exists($$opts{memory}) ) { $bsub_opts = sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $$opts{memory}*1000,$$opts{memory},$$opts{memory}; }
     my $bsub_cmd  = qq[bsub -J '${job_name}[$bsub_ids]' -e $job_name.\%I.e -o $job_name.\%I.o $bsub_opts '$cmd'];
 
     # Submit to LSF
