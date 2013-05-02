@@ -1,30 +1,27 @@
 # RUN ON THE COMMANDLINE USING:
-# /software/bin/R-2.15 --slave --args "fileName" "working directory" ".RData location on lustre" < pluriTestCommandLine.r 
-# e.g. /software/bin/R-2.15 --slave --args "pilot_data.txt-EDIT-7-names" "." "/lustre/scratch105/vrpipe/refs/pluritest.RData"
+# /software/bin/R-2.15 --slave --args "fileName" ".RData location on lustre" < pluriTestCommandLine.r 
+# e.g. /software/bin/R-2.15 --slave --args "pilot_data.txt-EDIT-7-names" "/lustre/scratch105/vrpipe/refs/pluritest.RData"
 
 args <- commandArgs(trailingOnly=TRUE)
-#for (arg in args) cat("  ", arg, "\n", sep="");
 
 #GENERATE GRAPHS AND CSV FILE GIVING PLURIPOTENCY, NOVELTY AND COMBINED SCORE
 #NEEDS R VERSION 2.1.5 AND BIOCONDUCTOR R PACKAGE INSTALLED
-pluriTestCommandLine <- function (NewDataFileName, wd, DataRepository) 
+pluriTestCommandLine <- function (NewDataFileName, DataRepository) 
 {
     require(lumi) # load the Bioconductor package
     require(xtable)
     require(GO.db)
-    #load (file="/lustre/scratch105/vrpipe/refs/human/ncbi37/resources/.RData")
     load (file=DataRepository)
-    setwd(wd)
     sink(file = "pluritest_log.txt") # print to the log file
     working.lumi <- lumiR(NewDataFileName, convertNuID = FALSE, inputAnnotation = FALSE) # read in the gene expression data
     fData(working.lumi)[, 1] <- gsub("\"", "", fData(working.lumi)[, 1])
-    pdf(file = "pluritest_image01.pdf") # Boxplot of microarray intensity
+    png(file = "pluritest_image01.png") # Boxplot of microarray intensity
     plot(working.lumi, what = "boxplot")
     dev.off()
     working.lumi <- lumiT(working.lumi) # Transform the data
     
     hc <- hclust(as.dist(1 - abs(cor(exprs(working.lumi[, ])))))
-    pdf(file = "pluritest_image02a.pdf") # Clustering of vst-transformed samples (VST = variance stabilization normalisation)
+    png(file = "pluritest_image02a.png") # Clustering of vst-transformed samples (VST = variance stabilization normalisation)
     plot(hc, hang = -1, main = "Clustering of vst-transformed samples", 
         sub = "distance based on pearson correlations", xlab = "")
 
@@ -67,7 +64,7 @@ pluriTestCommandLine <- function (NewDataFileName, wd, DataRepository)
     colnames(table.results) <- c("pluri-raw", "pluri logit-p", 
         "novelty", "novelty logit-p", "RMSD")
     try({
-        pdf(file = "pluritest_image02.pdf") # Graph of pluripotency scores
+        png(file = "pluritest_image02.png") # Graph of pluripotency scores
         par(mar = c(12, 4, 4, 2))
         par(xaxt = "n")
         plot(s.new, main = "pluripotency", xlab = "", ylab = "pluripotency", 
@@ -87,7 +84,7 @@ pluriTestCommandLine <- function (NewDataFileName, wd, DataRepository)
     table.results[, 3] <- round(novel.new, 3)
     table.results[, 5] <- round(RMSE.new, 3)
     try({
-        pdf(file = "pluritest_image03.pdf") # Graph of pluripotency versus novelty
+        png(file = "pluritest_image03.png") # Graph of pluripotency versus novelty
         color.palette = colorRampPalette(c("red", "pink1", "aliceblue", 
             "lightblue", "blue"), bias = 1)
         filled.contour2(y = c(-129:70), x = c((1:200)/50), background129_70x1_4, 
@@ -100,7 +97,7 @@ pluriTestCommandLine <- function (NewDataFileName, wd, DataRepository)
         palette(colorRampPalette(c("green", "orange", "orange", 
             "orange", "red"))(5))
         df.novelty.new <- data.frame(novelty = novel.new)
-        pdf(file = "pluritest_image03c.pdf") # Graph of novelty scores
+        png(file = "pluritest_image03c.png") # Graph of novelty scores
         par(mar = c(12, 4, 4, 2))
         par(xaxt = "n")
         barplot(novel.new, col = pmin(5, 10 * predict(logit.novelty, 
@@ -121,4 +118,4 @@ pluriTestCommandLine <- function (NewDataFileName, wd, DataRepository)
     sink()
 }
 
-pluriTestCommandLine(args[1], args[2], args[3])
+pluriTestCommandLine(args[1], args[2])
