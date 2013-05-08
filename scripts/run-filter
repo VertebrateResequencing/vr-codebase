@@ -458,7 +458,8 @@ sub plot_randomize
                 if ( $cnt < $cnts{$tstv}[$i]{cnt} ) { last; }   # sorted in ascending order
             }
             if ( $i>0 ) { splice(@{$cnts{$tstv}}, $i, 0, $rec); }
-            if ( @{$cnts{$tstv}} > 20 ) { shift @{$cnts{$tstv}}; }
+            elsif ( @{$cnts{$tstv}}<20 ) { push @{$cnts{$tstv}}, $rec; } 
+            if ( @{$cnts{$tstv}}>20 ) { shift @{$cnts{$tstv}}; }
         }
         if ( !exists($sens{$tstv}) ) { push @{$sens{$tstv}}, $rec; }
         else
@@ -469,7 +470,8 @@ sub plot_randomize
                 if ( $sns < $sens{$tstv}[$i]{sns} ) { last; }
             }
             if ( $i>0 ) { splice(@{$sens{$tstv}}, $i, 0, $rec); }
-            if ( @{$cnts{$tstv}} > 20 ) { shift @{$cnts{$tstv}}; }
+            elsif ( @{$sens{$tstv}}<20 ) { push @{$sens{$tstv}}, $rec; }
+            if ( @{$sens{$tstv}} > 20 ) { shift @{$sens{$tstv}}; }
         }
     }
     close($fh);
