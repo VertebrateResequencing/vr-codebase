@@ -570,10 +570,19 @@ sub sample_list
 {
     my ($self,$outfile,$bams) = @_;
 
+    my $sexes;
     if ( defined $$self{sample_list} )
     {
-        $self->cmd("cp $$self{sample_list} $outfile");
-        return;
+        open(my $fh,'<',$$self{sample_list}) or $self->throw("$$self{sample_list}: $!");
+        while (my $line=<$fh>)
+        {
+            my ($sample,$sex) = split(/\s+/, $line);
+            if ( !defined $sex ) { next; }
+            chomp($sex);
+            if ( !($sex=~/^[MF]$/) ) { $self->throw("Neither male nor female? Expected 'F' or 'M', got '$sex'."); }
+            $$sexes{$sample} = $sex;
+        }
+        close($fh);
     }
 
     my %samples;
@@ -595,7 +604,7 @@ sub sample_list
     close($in);
 
     open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
-    my $sexes = $self->get_sample_sex(keys %samples);
+    if ( !defined $sexes ) { $sexes = $self->get_sample_sex(keys %samples); }
     for my $sample (sort keys %samples)
     {
         print $out "$sample\t$$sexes{$sample}\n";
@@ -869,7 +878,6 @@ sub write_annot_file
 				qq[key=INFO,ID=PV3,Number=1,Type=Float,Description="P-value for tail distance bias"],
 				qq[key=INFO,ID=MSQ,Number=1,Type=Float,Description="Maximum quality across non-ref genotypes"],
 				qq[key=INFO,ID=MSD,Number=1,Type=Float,Description="Maximum depth across non-ref genotypes"],
-				qq[key=INFO,ID=SB,Number=1,Type=Float,Description="Strand Bias"]
 			],
 			tag      => 'INFO/PV4',
 			name     => 'SplitPV4',
@@ -885,16 +893,6 @@ sub write_annot_file
 
 				my $dp4 = $VCF->get_info_field($$RECORD[7],'DP4'); 
 				my @dp4 = split(/,/,$dp4);
-				my $sb = 0;
-				if ( $dp4[2]+$dp4[3] )
-				{
-					my $sb = $dp4[2]<$dp4[3] ? ($dp4[2]+1)/($dp4[3]+1) : ($dp4[3]+1)/($dp4[2]+1);
-					if ( $dp4[0]+$dp4[1] )
-					{
-						$sb *= 1 - 0.5 * ($dp4[0]<$dp4[1] ? (1+$dp4[0])/(1+$dp4[1]) : (1+$dp4[1])/(1+$dp4[0]));
-					}
-					$tags{SB} = sprintf "%.4f", $sb;
-				}
 
 				my $igt = $VCF->get_tag_index($$RECORD[8],'GT',':');
 				my $igq = $VCF->get_tag_index($$RECORD[8],'GQ',':');
