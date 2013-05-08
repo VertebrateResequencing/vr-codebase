@@ -834,6 +834,29 @@ sub get_qc_jobs_from_vrtrack
 sub get_mapping_jobs_from_vrtrack {
     my ($jobs, $config, $mtime, $config_data) = @_;
     
+    unless(defined($config_data->{dont_use_get_lanes}) && $config_data->{dont_use_get_lanes} == 1)
+    {
+        return get_mapping_jobs_from_vrtrack_with_get_lanes($jobs, $config, $mtime, $config_data);
+    }
+    else
+    {
+        return get_mapping_jobs_from_vrtrack_without_get_lanes($jobs, $config, $mtime, $config_data);
+    }
+}
+
+=head2 get_mapping_jobs_from_vrtrack_with_get_lanes
+
+  Arg [1]    : Pointer to array of jobs
+  Arg [2]    : The config file name
+  Arg [3]    : The mtime of the config file
+  Arg [4]    : The config data.
+  Description: Obtains the lane list from the VRTrack database using VertRes::Utils::Hierarchy->get_lanes.
+
+=cut
+
+sub get_mapping_jobs_from_vrtrack_with_get_lanes {
+    my ($jobs, $config, $mtime, $config_data) = @_;
+    
     croak("Expected db key in the config $config.\n") unless defined $config_data->{db};
     debug($config_data,"$config\tget_mapping_jobs_from_vrtrack...");
     
@@ -913,6 +936,89 @@ sub get_mapping_jobs_from_vrtrack {
         last if(exists($$config_data{max_lanes}) && $count > $$config_data{max_lanes} );
         
         if ($coverage_opts) {
+            my $coverage = $hu->hierarchy_coverage(lane => $lane_name, %{$coverage_opts->{pass_through}});
+            next unless $coverage >= $coverage_opts->{limit};
+        }
+        
+        my $path = $vrtrack->hierarchy_path_of_lane_name($lane_name);
+        if ( !$path ) { croak("No path for [$lane_name]?\n"); }
+        my $lane_info = lane_info($path);
+        
+        $lane_info->{vrlane} = $vrlane;
+        $lane_info->{lane_path} = $path;
+        
+        my $files = $vrlane->files();
+        foreach my $file (@{$files}) {
+            push @{$lane_info->{files}}, $file->hierarchy_name if $file->type =~ /0|1|2/;
+        }
+        
+        my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
+        push @$jobs, $job;
+        debug($config_data,".");
+    }
+    debug($config_data,"done $count\n");
+    
+    return;
+}
+
+=head2 get_mapping_jobs_from_vrtrack_without_get_lanes
+
+  Arg [1]    : Pointer to array of jobs
+  Arg [2]    : The config file name
+  Arg [3]    : The mtime of the config file
+  Arg [4]    : The config data.
+  Description: Obtains the lane list from the VRTrack database without using VertRes::Utils::Hierarchy->get_lanes.
+
+=cut
+
+sub get_mapping_jobs_from_vrtrack_without_get_lanes {
+    my ($jobs, $config, $mtime, $config_data) = @_;
+    
+    croak("Expected db key in the config $config.\n") unless defined $config_data->{db};
+    debug($config_data,"$config\tget_mapping_jobs_from_vrtrack...");
+    
+    my $vrtrack = VRTrack::VRTrack->new($config_data->{db}) or croak("Could not connect to the database: $config\n");
+    
+    # Ignore mapped flag.
+    # Used for mapping with different assemblies/mappers for lane
+    my $ignore_mapped = defined($$config_data{data}{ignore_mapped_status}) && $$config_data{data}{ignore_mapped_status} ? 1:0;
+
+    my %filter  = (import => 1, swapped => 0);
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
+    
+    # Get coverage opts.
+    my $coverage_opts;
+    if (defined $config_data->{coverage_limit}) {
+        my %coverage_limit = %{$config_data->{coverage_limit}};
+        my $limit = delete $coverage_limit{min_coverage};
+        if ($limit && $coverage_limit{level}) {
+            $coverage_opts->{limit} = $limit;
+            unless (defined $coverage_limit{db}) {
+                $coverage_limit{db} = $config_data->{db};
+            }
+            $coverage_opts->{pass_through} = \%coverage_limit;
+        }
+    }
+
+    # Get lanes
+    my $hnames = $vrtrack->processed_lane_hnames_with_limits(-1,$config_data->{limits}, %filter);
+    my @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config);
+
+    
+    my $count = 0;
+    foreach my $vrlane (@lanes) {
+        next unless does_lane_pass_vrtrack_processed_flag_filters($vrlane, \%filter);
+        next if $vrlane->is_withdrawn;
+        next if ($vrlane->is_processed('mapped') && !$ignore_mapped);
+        next if ($ignore_mapped && mapping_complete($config_data, $vrlane));
+
+        my $lane_name = $vrlane->name;
+        $count++;
+        
+        last if(exists($$config_data{max_lanes}) && $count > $$config_data{max_lanes} );
+        
+        if ($coverage_opts) {
+            my $hu = VertRes::Utils::Hierarchy->new();
             my $coverage = $hu->hierarchy_coverage(lane => $lane_name, %{$coverage_opts->{pass_through}});
             next unless $coverage >= $coverage_opts->{limit};
         }
