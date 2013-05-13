@@ -231,7 +231,7 @@ sub process_vcf_rec
                 }
             }
             else {
-			    print STDERR "Cannot find $bed\n" unless -e $bed;
+			     error("Cannot find $bed\n");
             }
 		}
 		my $score = $gerp_cache->{scores}->{$pos};
