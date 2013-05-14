@@ -680,7 +680,7 @@ sub wait
                         "The job failed repeatedly, ${nfailures}x: $wfile.$ids[$i].[eo]\n" .
                         "(Remove $jobs_id_file to clean the status, increase +retries or run with negative value of +retries to skip this task.)\n";
 
-                    $self->_send_email("The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
+                    $self->_send_email('failed', "The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
                     $self->throw($msg);
                 }
                 elsif ( !$warned )
@@ -753,15 +753,15 @@ sub all_done
 {
     my ($self) = @_;
     $self->debugln("All done!");
-    $self->_send_email("The runner has finished, all done!\n", $$self{_about});
+    $self->_send_email('done', "The runner has finished, all done!\n", $$self{_about});
     exit $$self{_status_codes}{DONE};
 }
 
 sub _send_email
 {
-    my ($self,@msg) = @_;
+    my ($self,$status, @msg) = @_;
     if ( !exists($$self{_mail}) ) { return; }
-    open(my $mh,"| mail -s 'Runner report' $$self{_mail}");
+    open(my $mh,"| mail -s 'Runner report: $status' $$self{_mail}");
     print $mh @msg;
     close($mh);
 }
