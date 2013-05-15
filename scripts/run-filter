@@ -424,6 +424,14 @@ sub calc_rank
     return (\%out,\@order);
 }
 
+sub round_value
+{
+    my ($tick, $value) = @_;
+    my $rounded = $tick * int($value/$tick);
+    if ( $value - $rounded > $tick*0.5 ) { $rounded += $tick; }
+    return $rounded;
+}
+
 sub plot_randomize
 {
     my ($self,$outfile) = @_;
@@ -441,7 +449,7 @@ sub plot_randomize
     {
         my @items = split(/\t/, $line);
         # Novel ts/tv:  if ( $items[3] < $$self{target_tstv}[0] or $items[3] > $$self{target_tstv}[1] ) { next; }
-        my $tstv  = sprintf("%.2f", $items[0]);
+        my $tstv  = round_value(0.01, $items[0]);
         my $cnt   = $items[1];
         my $sns   = $items[2];
         my $novel_tstv = $items[3];
@@ -458,7 +466,7 @@ sub plot_randomize
                 if ( $cnt < $cnts{$tstv}[$i]{cnt} ) { last; }   # sorted in ascending order
             }
             if ( $i>0 ) { splice(@{$cnts{$tstv}}, $i, 0, $rec); }
-            elsif ( @{$cnts{$tstv}}<20 ) { push @{$cnts{$tstv}}, $rec; } 
+            elsif ( @{$cnts{$tstv}}<20 ) { unshift @{$cnts{$tstv}}, $rec; } 
             if ( @{$cnts{$tstv}}>20 ) { shift @{$cnts{$tstv}}; }
         }
         if ( !exists($sens{$tstv}) ) { push @{$sens{$tstv}}, $rec; }
@@ -470,7 +478,7 @@ sub plot_randomize
                 if ( $sns < $sens{$tstv}[$i]{sns} ) { last; }
             }
             if ( $i>0 ) { splice(@{$sens{$tstv}}, $i, 0, $rec); }
-            elsif ( @{$sens{$tstv}}<20 ) { push @{$sens{$tstv}}, $rec; }
+            elsif ( @{$sens{$tstv}}<20 ) { unshift @{$sens{$tstv}}, $rec; }
             if ( @{$sens{$tstv}} > 20 ) { shift @{$sens{$tstv}}; }
         }
     }
