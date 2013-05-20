@@ -224,7 +224,7 @@ sub run
             die "\n"; 
         }
         if ( !$$self{_loop} ) { return; }
-        $self->debugln($$self{_about}, "sleeping...");
+        $self->debugln($$self{_about}, "sleeping for $$self{_loop} seconds...");
         sleep($$self{_loop});
     }
 }
@@ -321,7 +321,7 @@ sub inc_limits
     {
         if ( !exists($$self{_farm_options}{$key}) or $$self{_farm_options}{$key}<$args{$key} ) 
         { 
-        print STDERR "increasing limit: $key=$args{$key}\n";
+            $self->debugln("increasing limit, $key set to $args{$key}");
             $$self{_farm_options}{$key} = $args{$key};
         }
     }
@@ -666,7 +666,8 @@ sub wait
             #   the file has not appeared in the meantime, stat on non-existent files is fast anyway.
             elsif ( $stat & $Done )
             {
-                if ( $self->is_finished($done_file) ) { $must_run = 0; }
+                if ( $$self{_nocache} && !$self->is_finished($done_file) ) { $must_run = 1; }
+                else { $must_run = 0; }
             }
 
             # If the job has been already ran and failed, check if it failed repeatedly
@@ -679,7 +680,7 @@ sub wait
                         "The job failed repeatedly, ${nfailures}x: $wfile.$ids[$i].[eo]\n" .
                         "(Remove $jobs_id_file to clean the status, increase +retries or run with negative value of +retries to skip this task.)\n";
 
-                    $self->_send_email("The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
+                    $self->_send_email('failed', "The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
                     $self->throw($msg);
                 }
                 elsif ( !$warned )
@@ -689,7 +690,7 @@ sub wait
                 }
 
                 # Increase memory limits if necessary: by a set minimum or by a percentage, which ever is greater
-                my %limits = $farm->can('past_limits')->($jobs_id_file);
+                my %limits = $farm->can('past_limits')->($ids[$i],$wfile);
                 if ( exists($limits{MEMLIMIT}) )
                 { 
                     my $mem = $limits{memory}*1.3 > $limits{memory}+1_000 ? $limits{memory}*1.3 : $limits{memory}+1_000;
@@ -737,7 +738,6 @@ sub wait
         }
     }
     if ( $is_running ) { exit; }
-print STDERR "nothing is running: $is_running\n";
 }
 
 
@@ -753,15 +753,15 @@ sub all_done
 {
     my ($self) = @_;
     $self->debugln("All done!");
-    $self->_send_email("The runner has finished, all done!\n", $$self{_about});
+    $self->_send_email('done', "The runner has finished, all done!\n", $$self{_about});
     exit $$self{_status_codes}{DONE};
 }
 
 sub _send_email
 {
-    my ($self,@msg) = @_;
+    my ($self,$status, @msg) = @_;
     if ( !exists($$self{_mail}) ) { return; }
-    open(my $mh,"| mail -s 'Runner report' $$self{_mail}");
+    open(my $mh,"| mail -s 'Runner report: $status' $$self{_mail}");
     print $mh @msg;
     close($mh);
 }

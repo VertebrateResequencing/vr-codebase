@@ -190,8 +190,8 @@ sub parse_output
 
 sub past_limits
 {
-    my ($job_name) = @_; 
-    my $fname = "$job_name.o";
+    my ($jid,$output) = @_; 
+    my $fname = "$output.$jid.o";
     if ( ! -e $fname ) { return (); }
     open(my $fh,'<',$fname) or confess("$fname: $!");
     my (%out,$killed,$mem);
@@ -219,7 +219,7 @@ sub past_limits
 
 sub run_array
 {
-    my ($jids_file, $job_name, $options, $cmd, $ids) = @_;
+    my ($jids_file, $job_name, $opts, $cmd, $ids) = @_;
 
     if ( !scalar @$ids ) { confess("No IDs given??\n"); }
 
@@ -246,6 +246,11 @@ sub run_array
     $cmd =~ s/{JOB_INDEX}/\$LSB_JOBINDEX/g;
     my $bsub_ids  = join(',', @bsub_ids);
     my $bsub_opts = '';
+    if ( exists($$opts{memory}) ) 
+    { 
+        my $mem = int($$opts{memory});
+        $bsub_opts = sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $mem*1000,$mem,$mem; 
+    }
     my $bsub_cmd  = qq[bsub -J '${job_name}[$bsub_ids]' -e $job_name.\%I.e -o $job_name.\%I.o $bsub_opts '$cmd'];
 
     # Submit to LSF
@@ -253,7 +258,8 @@ sub run_array
     my @out = `$bsub_cmd`;
     if ( scalar @out!=1 || !($out[0]=~/^Job <(\d+)> is submitted/) )
     {
-        confess("Expected different output from bsub. The command was:\n\t$cmd\nThe output was:\n", @out);
+        my $cwd = `pwd`;
+        confess("Expected different output from bsub. The command was:\n\t$cmd\nThe working directory was:\n\t$cwd\nThe output was:\n", @out);
     }
 
     # Write down info about the submitted command
