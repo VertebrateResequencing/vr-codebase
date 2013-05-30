@@ -5,8 +5,6 @@
 # Author:        cj5
 # Created:       2012-03-28
 
-# todo fix the table to omit the filter and submission rows from the sort
-
 use strict;
 use warnings;
 use CGI::Carp qw(fatalsToBrowser);
@@ -117,7 +115,7 @@ sub displayProjectLaneForm
         <div class="centerFieldset">
         <fieldset>
         <legend>Lane status</legend>
-        <table RULES=GROUPS cellpadding="4" id="srtTblLanes">
+        <table RULES=GROUPS cellpadding="4" class="sortable">
         <thead> 
         <tr>
 		<th style="width: 40px">Pass</th>
@@ -142,7 +140,7 @@ sub displayProjectLaneForm
         </tr>
     ];
 
-    print $cgi->start_form;
+    print $cgi->start_form({name=>'qc_status'});
     print $cgi->hidden("db","$database");
     print $cgi->hidden("proj_id","$projectID");
 
@@ -225,7 +223,7 @@ sub displayProjectLaneForm
 						my $disabled = $utl->{AUTH_USERS}{$USER} ? '' : 'DISABLED';
 						foreach my $status (@lane_status) {
 							my $state =  $lane_qc_status eq $status ? 'checked' : '';
-							print $cgi->td("<input type='radio' name='$lane_id' value='$status' $state $disabled>");
+							print $cgi->td("<input type='radio' class='lanestatus' name='$lane_id' value='$status' $state $disabled/>");
 						}
 
 						my $gt_found = $lane_mapstats->{genotype_found};
@@ -250,15 +248,22 @@ sub displayProjectLaneForm
     }
 
     print qq[</tbody>];
-    print qq[<tfoot>];
+    print qq[ <tfoot><tr style="background-color:#F5F5F5"> ];
     print qq[<tr>];
+
     if ($utl->{AUTH_USERS}{$USER}) {   
-		print qq[ <td colspan=6 align='center'> ];
+
+        # toggle lane status radios
+        foreach my $status (@lane_status) {
+            print $cgi->td("<input type='radio' name='statusAll' title='Toggle $status' class='togglestatus' id='$status'/>");
+        }
+		print qq[ <td colspan=4 > ];
 		print $cgi->submit(-name => 'update', -value  => 'Update');
+        print $cgi->button(-id =>'resetRadios', -value=>'Reset');
 		print qq[ </td> ];
     }
 
-    print qq[ <td colspan=8 align='right'> ];
+    print qq[ <td colspan=6 align='right'> ];
     print $cgi->submit(-name => 'download', -value  => 'Download');
     print qq[</td>];
     print qq[</tr>];
