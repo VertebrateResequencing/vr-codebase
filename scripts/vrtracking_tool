@@ -293,17 +293,33 @@ while (<>){
 					       "^[0-9]+\.[ps]e\.markdup\.snp\$",
 					       "^[0-9]+\.[ps]e\.raw\.sorted\.snp\$"],
 				all => ["^[\\w]+"],
-                                assembled => ["pool_fastqs",
+                               #  assembled => ["pool_fastqs",
+#                                               "^pool_1\.fastq\.gz\$",
+#                                               "velvet_optimise_parameters",
+#                                               "optimise_parameters\.jids\$",
+#                                               "velvet_map_back",
+#                                               "^_update_db_done\$", # prior to 24 Sept 2012 
+#                                               "^_cleanup_done\$",   # prior to 24 Sept 2012 
+#                                               "assembly_cleanup_done\$",    # replaced _cleanup_done
+#                                               "assembly_update_db_done\$",  # replaced _update_db_done      
+#                                               "^velvet_assembly_logfile\.txt\$",
+#                                               "^velvet_assembly\$"],
+ 							    assembled => [ #Files from pool fastqs stage
+ 							    			  "[\\w]*pool_fastqs_done", 
+					      "[\\w]*pool_fastqs\.(e|o|pl)",
                                               "^pool_1\.fastq\.gz\$",
-                                              "velvet_optimise_parameters",
+                                              #Files from optimise parameters stage. Changed to cope with different assemblers. 4 June 2013
+                                              "[\\w]*optimise_parameters\.(e|o|pl)", 
+                                              "[\\w]*optimise_parameters_done",
+                                              "[\\w]*assembly_logfile\.txt\$",
                                               "optimise_parameters\.jids\$",
-                                              "velvet_map_back",
-                                              "^_update_db_done\$", # prior to 24 Sept 2012 
-                                              "^_cleanup_done\$",   # prior to 24 Sept 2012 
-                                              "assembly_cleanup_done\$",    # replaced _cleanup_done
-                                              "assembly_update_db_done\$",  # replaced _update_db_done      
-                                              "^velvet_assembly_logfile\.txt\$",
-                                              "^velvet_assembly\$"],
+                                              "[\\w]_assembly",
+                                              #Files from map back stage
+                                              "[\\w]*map_back\.(e|o|pl)", 
+                                              "[\\w]*map_back_done",    
+                                              #Files from update db and clean up stages                                    
+                                              "[\\w]*cleanup_done\$",    
+                                              "[\\w]*update_db_done\$"],      
                                 mapped => ["^\.[\\w]+mark_duplicates_[ps]e_[0-9]+.[oe].archive\$",
                                            "^\.[\\w]+statistics_[0-9]+\.[ps]e\.raw\.sorted\.bam\.[oe]\.archive\$",
                                            "^\.[\\w]+merge_[ps]e_[0-9]+\.[oe]\.archive\$",
