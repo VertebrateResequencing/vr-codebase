@@ -306,10 +306,11 @@ while (<>){
 #                                               "^velvet_assembly\$"],
  							    assembled => [ #Files from pool fastqs stage
  							    			  "[\\w]*pool_fastqs_done", 
+					      "[\\w]*pool_fastqs\.(e|o|pl)",
                                               "^pool_1\.fastq\.gz\$",
                                               #Files from optimise parameters stage. Changed to cope with different assemblers. 4 June 2013
                                               "[\\w]*optimise_parameters\.(e|o|pl)", 
-                                              "[\\w]*optimise_parameters_done"
+                                              "[\\w]*optimise_parameters_done",
                                               "[\\w]*assembly_logfile\.txt\$",
                                               "optimise_parameters\.jids\$",
                                               "[\\w]_assembly",
@@ -318,7 +319,7 @@ while (<>){
                                               "[\\w]*map_back_done",    
                                               #Files from update db and clean up stages                                    
                                               "[\\w]*cleanup_done\$",    
-                                              "[\\w]*update_db_done\$",      
+                                              "[\\w]*update_db_done\$"],      
                                 mapped => ["^\.[\\w]+mark_duplicates_[ps]e_[0-9]+.[oe].archive\$",
                                            "^\.[\\w]+statistics_[0-9]+\.[ps]e\.raw\.sorted\.bam\.[oe]\.archive\$",
                                            "^\.[\\w]+merge_[ps]e_[0-9]+\.[oe]\.archive\$",
