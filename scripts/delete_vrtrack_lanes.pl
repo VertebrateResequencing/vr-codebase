@@ -74,6 +74,14 @@ while (<>){
         my $lanedir = $root.$vrtrack->hierarchy_path_of_lane_name($lane->name);
         print "Deleting: \n" if $verbose;
         remove_tree($lanedir, {verbose => $verbose, safe => 1});
+        
+        #If the lane is stored in nexsan, delete those files too
+        my $stored = $lane->is_processed('stored');
+        if($stored){
+        	my $stored_path = $lane->storage_path();
+        	print "Deleting: \n" if $verbose;
+        	remove_tree($stored_path, {verbose => $verbose, safe => 1});
+        }
     }
 
     #update database
