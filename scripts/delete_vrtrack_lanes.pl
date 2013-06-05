@@ -23,11 +23,12 @@ use VertRes::Utils::VRTrackFactory;
 use VRTrack::Lane;
 use File::Path qw(remove_tree);
 
-my ($db, $root, $help, $verbose);
+my ($db, $root, $clean, $help, $verbose);
 
 GetOptions(
     'd|db=s'        =>  \$db,
     'r|root=s'		=>  \$root,
+    'c|clean'		=>  \$clean,
     'v|verbose'     =>  \$verbose,
     'h|help'	    =>  \$help,
     );
@@ -36,6 +37,7 @@ GetOptions(
     Usage: $0 <file of lane names to delete>  
                 --db        <specify db name>
                 [--root      <root directory for the analyses>]
+                --clean     [delete stored folder - in nexsan]
                 --verbose   [be extra verbose about what it is doing]
                 --help      <this message>
 
@@ -69,9 +71,8 @@ while (<>){
        next;
     }
     if ($root){
-        #Delete files first
         
-        # We get the lane hierarchy which is a symlink. We delete the folder which
+        # We get the lane hierarchy which is a symlink. If -c is specified, we delete the folder which
         # the symlink points to. Then we delete the symlink.
         # We don't rely on the stored_path in the lanes table because it may not be the
         # one that was used to actually store the data.
@@ -81,10 +82,12 @@ while (<>){
         
         #Get full path to lane directory
         my $lanedir = $root.$vrtrack->hierarchy_path_of_lane_name($lane->name);
-        my $stored_path = readlink $lanedir;
         
-        print "Deleting: \n" if $verbose;
-        remove_tree($stored_path, {verbose => $verbose, safe => 1}); #Delete folder pointed to by symlink
+        if($clean){
+        	my $stored_path = readlink $lanedir;        
+        	print "Deleting: \n" if $verbose;
+        	remove_tree($stored_path, {verbose => $verbose, safe => 1}); #Delete folder pointed to by symlink
+        }
                
         print "Deleting: \n" if $verbose;
         remove_tree($lanedir, {verbose => $verbose, safe => 1}); #Delete symlink
