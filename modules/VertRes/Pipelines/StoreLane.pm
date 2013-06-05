@@ -53,6 +53,7 @@ use VertRes::Utils::FileSystem;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VertRes::LSF;
+use Utils;
 
 use base qw(VertRes::Pipeline);
 

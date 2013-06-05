@@ -10,6 +10,7 @@ use VertRes::Utils::FileSystem;
 use VertRes::Parser::bamcheck;
 use VertRes::Wrapper::samtools;
 use VertRes::Pipelines::Import_iRODS;
+use Utils;
 
 our @actions =
 (

@@ -69,6 +69,7 @@ use VertRes::Utils::FileSystem;
 use VertRes::Pipelines::Import;
 use VertRes::Pipelines::Import_iRODS;
 use Pathogens::Import::ValidateFastqConversion;
+use Utils;
 
 our @actions =
 (

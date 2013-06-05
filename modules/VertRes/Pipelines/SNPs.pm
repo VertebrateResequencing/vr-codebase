@@ -163,6 +163,7 @@ use VertRes::Parser::sam;
 use VertRes::Utils::FileSystem;
 use VertRes::Wrapper::GATK;
 use File::Copy;
+use Utils;
 
 our @actions =
 (

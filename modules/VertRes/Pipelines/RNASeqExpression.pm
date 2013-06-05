@@ -67,6 +67,7 @@ use VertRes::LSF;
 use File::Basename;
 use VertRes::Parser::bam;
 use File::Basename;
+use Utils;
 
 use base qw(VertRes::Pipeline);
 

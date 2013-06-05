@@ -10,6 +10,7 @@ use VRTrack::File;
 use VertRes::Wrapper::iRODS;
 use VertRes::Parser::bamcheck;
 use File::Basename;
+use Utils;
 
 our @actions =
 (

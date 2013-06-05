@@ -62,6 +62,7 @@ use File::Basename;
 use File::Spec;
 use Cwd qw(abs_path cwd);
 use VertRes::LSF;
+use Utils;
 
 use base qw(VertRes::Pipeline);
 

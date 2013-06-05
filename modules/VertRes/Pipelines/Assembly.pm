@@ -82,6 +82,7 @@ use Cwd;
 use VertRes::LSF;
 use Data::Dumper;
 use FileHandle;
+use Utils;
 use VertRes::Utils::Assembly;
 use Bio::AssemblyImprovement::Scaffold::Descaffold;
 use Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles;

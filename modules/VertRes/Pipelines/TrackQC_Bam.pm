@@ -23,6 +23,7 @@ use VRTrack::Mapstats;
 use VertRes::Parser::bamcheck;
 use VertRes::Parser::bam;
 use VertRes::Parser::dict;
+use Utils;
 
 our @actions =
 (

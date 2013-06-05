@@ -94,6 +94,7 @@ use File::Spec;
 use File::Copy;
 use Cwd 'abs_path';
 use VertRes::LSF;
+use Utils;
 
 use base qw(VertRes::Pipeline);
 

@@ -62,6 +62,7 @@ use base qw(VertRes::Pipeline);
 use VertRes::Utils::FileSystem;
 use VertRes::Utils::Assembly;
 use File::Spec;
+use Utils;
 
 our $actions = [
     {

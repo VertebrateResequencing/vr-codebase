@@ -86,6 +86,7 @@ use File::Copy;
 use Cwd 'abs_path';
 use VertRes::LSF;
 use Data::Dumper;
+use Utils;
 
 use base qw(VertRes::Pipeline);
 

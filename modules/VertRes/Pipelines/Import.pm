@@ -11,6 +11,7 @@ use VertRes::Parser::fastqcheck;
 use VertRes::Pipelines::Import_iRODS;
 use VertRes::Pipelines::Import_Bam;
 use File::Spec;
+use Utils;
 
 our @actions =
 (

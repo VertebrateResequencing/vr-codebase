@@ -148,6 +148,7 @@ use VRTrack::Assembly;
 use File::Basename;
 use Time::Format;
 use VertRes::LSF;
+use Utils;
 
 use base qw(VertRes::Pipeline);
 

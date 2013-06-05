@@ -20,6 +20,7 @@ use VertRes::Wrapper::bwa;
 use VertRes::Utils::Sam;
 use VRTrack::Assembly;
 use Pathogens::Parser::GenomeCoverage;
+use Utils;
 
 our @actions =
 (
