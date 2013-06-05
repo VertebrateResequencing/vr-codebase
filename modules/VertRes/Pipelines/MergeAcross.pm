@@ -84,7 +84,7 @@ use VertRes::Utils::FileSystem;
 use File::Basename;
 use File::Copy;
 use Cwd 'abs_path';
-use LSF;
+use VertRes::LSF;
 use Data::Dumper;
 
 use base qw(VertRes::Pipeline);
@@ -251,10 +251,10 @@ sub merge {
         my $tmp_bai = "$tmp_bam_out.bai";
         my $jids_file = "$prefix.jids";
         my $perl_out = "$prefix.pl";
-        my $status = LSF::is_job_running($jids_file);
+        my $status =  VertRes::LSF::is_job_running($jids_file);
         
         # Check that all BAMs are present before proceeding
-        if ($status & $LSF::No) {
+        if ($status & $VertRes::LSF::No) {
             my $ready = 1;
             foreach my $bam (@{$bams}) {
                 unless ($$self{fsu}->file_exists($bam)) {
@@ -270,15 +270,15 @@ sub merge {
             File::Path::make_path($bam_out_dir) || $self->throw("Error making directory '$bam_out_dir'");
         }
 
-        if ($status & $LSF::Done and $$self{fsu}->file_exists($bam_out)) {
+        if ($status & $VertRes::LSF::Done and $$self{fsu}->file_exists($bam_out)) {
             ++$jobs_done;
             next;
         }
-        elsif ($status & $LSF::Running) {
+        elsif ($status & $VertRes::LSF::Running) {
             $jobs_running++;
             next;
         } 
-        if ($status & $LSF::Error) { 
+        if ($status & $VertRes::LSF::Error) { 
             $self->warn("The command failed: $perl_out\n");
         }
             
@@ -315,7 +315,7 @@ rename '$tmp_bam_out', '$bam_out';
         close $fh;
 
         $self->archive_bsub_files($work_dir, "$self->{prefix}$group.pl");
-        LSF::run($jids_file, $bam_out_dir, $job_name, $self, "perl -w $perl_out");
+        VertRes::LSF::run($jids_file, $bam_out_dir, $job_name, $self, "perl -w $perl_out");
         print STDERR "    Submitted $perl_out\n"
     }
 

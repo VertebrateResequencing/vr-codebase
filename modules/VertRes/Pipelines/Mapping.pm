@@ -147,7 +147,7 @@ use VRTrack::File;
 use VRTrack::Assembly;
 use File::Basename;
 use Time::Format;
-use LSF;
+use VertRes::LSF;
 
 use base qw(VertRes::Pipeline);
 
@@ -499,7 +499,7 @@ exit;
     
     my $job_name = $self->{prefix}.'bam2fastq';
     $self->archive_bsub_files($lane_path, $job_name);
-    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => '-M5900 -R \'select[mem>5900] rusage[mem=5900]\''}, qq{perl -w $script_name});
+    VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => '-M5900 -R \'select[mem>5900] rusage[mem=5900]\''}, qq{perl -w $script_name});
     
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete
@@ -608,7 +608,7 @@ exit;
         my $job_name = $self->{prefix}.'split_'.$ended.'_'.$self->{mapstats_id};
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'split'), qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'split'), qq{perl -w $script_name});
     }
     
     # we've only submitted to LSF, so it won't have finished; we always return
@@ -881,7 +881,7 @@ exit;
             };
             close $scriptfh;
             
-            LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'map'), qq{perl -w $script_name});
+            VertRes::LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'map'), qq{perl -w $script_name});
         }
     }
     
@@ -1120,7 +1120,7 @@ exit;
         my $job_name = $self->{prefix}.'merge_'.$ended.'_'.$self->{mapstats_id};
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'merge'), qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'merge'), qq{perl -w $script_name});
     }
     
     # we've only submitted to LSF, so it won't have finished; we always return
@@ -1279,7 +1279,7 @@ exit;
         my $job_name = $self->{prefix}.'statistics_'.$basename;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'statistics'), qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'statistics'), qq{perl -w $script_name});
     }
     
     return $self->{No};
@@ -1414,7 +1414,7 @@ sub mark_duplicates {
               };
        close $scriptfh;
  
-       LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'" }, qq{perl -w $script_name});
+       VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'" }, qq{perl -w $script_name});
 
       }
 

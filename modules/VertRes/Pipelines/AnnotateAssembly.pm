@@ -57,7 +57,7 @@ use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::Library;
 use VRTrack::Sample;
-use LSF;
+use VertRes::LSF;
 use base qw(VertRes::Pipeline);
 use VertRes::Utils::FileSystem;
 use VertRes::Utils::Assembly;
@@ -236,7 +236,7 @@ sub annotate_assembly {
     my $job_name = $self->{prefix}.'annotate_assembly';
       
     $self->archive_bsub_files($lane_path, $job_name);
-    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'"}, qq{perl -w $script_name});
+    VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'"}, qq{perl -w $script_name});
 
     return $self->{No};
 }

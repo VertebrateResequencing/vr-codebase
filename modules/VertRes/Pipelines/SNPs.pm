@@ -157,7 +157,7 @@ use base qw(VertRes::Pipeline);
 
 use strict;
 use warnings;
-use LSF;
+use VertRes::LSF;
 use Utils;
 use VertRes::Parser::sam;
 use VertRes::Utils::FileSystem;
@@ -538,7 +538,7 @@ sub run_in_parallel
     my @to_be_merged;
     my $ntasks = 0;
     my $max_jobs = $$self{max_jobs} ? $$self{max_jobs} : 0;
-    my $done = $LSF::Done;
+    my $done = $VertRes::LSF::Done;
 
     # Step 1, call the split_chunks command.
     for my $bam (@{$$opts{bams}})
@@ -584,20 +584,20 @@ sub run_in_parallel
             Utils::CMD("mkdir -p $work_dir/$outdir") unless $$self{fsu}->file_exists("$work_dir/$outdir");
 
             my $jids_file = "$work_dir/$outdir/_$chunk_name.jid";
-            my $status = LSF::is_job_running($jids_file);
+            my $status = VertRes::LSF::is_job_running($jids_file);
 
             $ntasks++;
             if ( $max_jobs && $ntasks>$max_jobs )
             {
-                $done |= $LSF::Running;
+                $done |= $VertRes::LSF::Running;
                 $self->debug("The limit reached, $max_jobs jobs are running.\n");
                 last;
             }
 
-            if ( $status&$LSF::Running ) { $done |= $LSF::Running; next; }
-            if ( $status&$LSF::Error ) 
+            if ( $status&$VertRes::LSF::Running ) { $done |= $VertRes::LSF::Running; next; }
+            if ( $status&$VertRes::LSF::Error ) 
             { 
-                $done |= $LSF::Error;
+                $done |= $VertRes::LSF::Error;
                 $self->warn("The command failed: $work_dir/$outdir .. perl -w $$self{prefix}$chunk_name.pl\n");
             }
 
@@ -607,9 +607,9 @@ sub run_in_parallel
             open(my $fh,'>',"$work_dir/$outdir/$$self{prefix}$chunk_name.pl") or $self->throw("$work_dir/$outdir/$$self{prefix}$chunk_name.pl: $!");
             print $fh $cmd;
             close($fh);
-            LSF::run($jids_file,"$work_dir/$outdir","$$self{prefix}$chunk_name",$$opts{bsub_opts},qq[perl -w $$self{prefix}$chunk_name.pl]);
+            VertRes::LSF::run($jids_file,"$work_dir/$outdir","$$self{prefix}$chunk_name",$$opts{bsub_opts},qq[perl -w $$self{prefix}$chunk_name.pl]);
             $self->debug("Submitting $work_dir/$outdir .. perl -w $$self{prefix}$chunk_name.pl\n");
-            $done |= $LSF::Running;
+            $done |= $VertRes::LSF::Running;
         }
 
         # Some of the chunks is not ready
@@ -617,11 +617,11 @@ sub run_in_parallel
 
         # Now merge the chunks for one bam file into one VCF file.
         my $jids_file = "$work_dir/$outdir/_$name.jid";
-        my $status = LSF::is_job_running($jids_file);
-        if ( $status&$LSF::Running ) { $done |= $LSF::Running; next; }
-        if ( $status&$LSF::Error ) 
+        my $status = VertRes::LSF::is_job_running($jids_file);
+        if ( $status&$VertRes::LSF::Running ) { $done |= $VertRes::LSF::Running; next; }
+        if ( $status&$VertRes::LSF::Error ) 
         { 
-            $done |= $LSF::Error;
+            $done |= $VertRes::LSF::Error;
             $self->warn("The command failed: $work_dir/$outdir .. perl -w $$self{prefix}$name.pl\n");
         }
 
@@ -631,12 +631,12 @@ sub run_in_parallel
         open(my $fh,'>',"$work_dir/$outdir/$$self{prefix}$name.pl") or $self->throw("$work_dir/$outdir/$$self{prefix}$name.pl: $!");
         print $fh $cmd;
         close($fh);
-        LSF::run($jids_file,"$work_dir/$outdir","$$self{prefix}$name",$$opts{bsub_opts},qq[perl -w $$self{prefix}$name.pl]);
+        VertRes::LSF::run($jids_file,"$work_dir/$outdir","$$self{prefix}$name",$$opts{bsub_opts},qq[perl -w $$self{prefix}$name.pl]);
         $self->debug("Submitting $work_dir/$outdir .. $$self{prefix}$name\n");
     }
 
-    if ( $done&$LSF::Error ) { $self->throw("$$opts{job_type} failed for some of the files.\n"); }
-    if ( $done&$LSF::Running ) { $self->debug("Some files not finished...\n"); return $$self{No}; }
+    if ( $done&$VertRes::LSF::Error ) { $self->throw("$$opts{job_type} failed for some of the files.\n"); }
+    if ( $done&$VertRes::LSF::Running ) { $self->debug("Some files not finished...\n"); return $$self{No}; }
 
 
     # Some chunks still not done?
@@ -667,16 +667,16 @@ sub run_in_parallel
     # Because this subroutine returns as if it has already finished, a custom jids_file must
     #   be used: Pipeline.pm will delete the $lock_file.
     my $jids_file = "$work_dir/_$$opts{job_type}_merge.jid";
-    my $status = LSF::is_job_running($jids_file);
-    if ( $status&$LSF::Running ) { return; }
-    if ( $status&$LSF::Error ) { $self->warn("Some jobs failed: $jids_file\n"); }
+    my $status = VertRes::LSF::is_job_running($jids_file);
+    if ( $status&$VertRes::LSF::Running ) { return; }
+    if ( $status&$VertRes::LSF::Error ) { $self->warn("Some jobs failed: $jids_file\n"); }
 
     # Get the VCF merging command
     my $cmd = &{$$opts{merge_vcf_files}}($self,\@to_be_merged,$$opts{job_type});
     open(my $fh,'>',"$work_dir/_merge.pl") or $self->throw("$work_dir/_merge.pl: $!");
     print $fh $cmd;
     close($fh);
-    LSF::run($jids_file,$work_dir,"_merge",$$opts{bsub_opts},qq[perl -w _merge.pl]);
+    VertRes::LSF::run($jids_file,$work_dir,"_merge",$$opts{bsub_opts},qq[perl -w _merge.pl]);
     $self->debug("Submitting $work_dir .. _merge\n");
     
     return;
@@ -952,7 +952,7 @@ exit 0;
     
     my $job_name = $self->{prefix}.'pseudo_genome';
     $self->archive_bsub_files($lane_path, $job_name);
-    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q normal -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'", dont_wait=>1 }, qq{perl -w $script_name});
+    VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q normal -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'", dont_wait=>1 }, qq{perl -w $script_name});
     
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete

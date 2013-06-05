@@ -123,7 +123,7 @@ use VRTrack::File;
 use File::Basename;
 use File::Copy;
 use Time::Format;
-use LSF;
+use VertRes::LSF;
 
 use base qw(VertRes::Pipeline);
 
@@ -569,7 +569,7 @@ exit;
         my $job_name = $self->{prefix}.'realign_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
     
     # we've only submitted to LSF, so it won't have finished; we always return
@@ -712,7 +712,7 @@ exit;
         my $job_name = $self->{prefix}.'sort_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
     
     $self->{bsub_opts} = $orig_bsub_opts;
@@ -858,7 +858,7 @@ exit;
         my $job_name = $self->{prefix}.'recalibrate_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
     
     $self->{bsub_opts} = $orig_bsub_opts;
@@ -964,7 +964,7 @@ exit;
         my $job_name = $self->{prefix}.'calmd_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
     
     $self->{bsub_opts} = $orig_bsub_opts;
@@ -1129,7 +1129,7 @@ exit;
         my $job_name = $self->{prefix}.'rewrite_header_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
         $job_submitted = 1;
     }
     
@@ -1245,7 +1245,7 @@ exit;
         my $job_name = $self->{prefix}.'statistics_'.$basename;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'statistics'), qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'statistics'), qq{perl -w $script_name});
     }
     
     return $self->{No};
@@ -1325,7 +1325,7 @@ sub extract_intervals {
         my $job_name =  $self->{prefix}.'extract_intervals_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
 
-        LSF::run($action_lock, $lane_path, $job_name, $self,
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self,
                  qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new()->extract_intervals_from_bam(qq[$penultimate_bam], qq[$self->{extract_intervals}->{intervals_file}], qq[$final_bam]) || die qq[extract_intervals failed for $penultimate_bam\n];"~);
     }
 
@@ -1426,7 +1426,7 @@ my \$samtools = VertRes::Wrapper::samtools->new();
         my $job_name =  $self->{prefix}.'index_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
 
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
 
     # we've only submitted to LSF, so it won't have finished; we always return

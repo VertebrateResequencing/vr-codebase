@@ -66,7 +66,7 @@ use base qw(VertRes::Pipelines::TrackQC_Bam);
 
 use strict;
 use warnings;
-use LSF;
+use VertRes::LSF;
 use File::Spec;
 use Data::Dumper;
 
@@ -301,7 +301,7 @@ die "error touching done file" if (system "touch _stats_and_graphs.done");
 
     	my $orig_bsub_opts = $self->{bsub_opts};
     	$self->{bsub_opts} = $self->{bsub_opts_stats};
-    	LSF::run($lock_file,$outdir,"_${lane}_stats_and_graphs", $self, qq{perl -w _stats_and_graphs.pl});
+    	VertRes::LSF::run($lock_file,$outdir,"_${lane}_stats_and_graphs", $self, qq{perl -w _stats_and_graphs.pl});
     	$self->{bsub_opts} = $orig_bsub_opts;
     }
     else {

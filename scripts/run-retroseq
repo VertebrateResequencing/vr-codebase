@@ -25,7 +25,7 @@ use Cwd;
 use File::Basename;
 use File::Path qw(make_path);
 
-use LSF;
+use VertRes::LSF;
 use VertRes::Parser::bam;
 use VertRes::Parser::sam;
 
@@ -156,7 +156,7 @@ USAGE
                 my $job_lock = qq[$rg.jids];
                 my $job_name = $rg.qq[.discovery];
                 my $is_running = LSF::is_job_running($job_lock);
-                if ($is_running & $LSF::Error)
+                if ($is_running & $VertRes::LSF::Error)
                 {
                     $retries{$job_lock} ++;
                     if( $retries{$job_lock} > $MAX_RETRIES )
@@ -166,13 +166,13 @@ USAGE
                     }
                     unlink(qq[$job_name.o], qq[$job_name.e]);
                 }
-                elsif ($is_running & $LSF::Running) 
+                elsif ($is_running & $VertRes::LSF::Running) 
                 {
                     print qq[$rg running\n];
                     $totalRunning ++;
                     next; #ok its running still
                 }
-                elsif ($is_running & $LSF::Done) 
+                elsif ($is_running & $VertRes::LSF::Done) 
                 {
                     #job has completed
                     print qq[$rg complete\n];
@@ -187,7 +187,7 @@ USAGE
                 if( ! $memory ){$memory=$DEFAULT_DISCOVERY_MEMORY;}
                 my %reqs = (memory=>$memory,queue=>$queue);
                 print qq[Starting job: $job_lock\n];
-                LSF::run($job_lock, $cwd, $job_name, \%reqs, 
+                VertRes::LSF::run($job_lock, $cwd, $job_name, \%reqs, 
                     qq[perl $RETROSEQ_BIN -discover -bam $bam -eref $terefs -output $sample.pe.candidates.$rg -len $len -rgs $rg $id -srmode -srcands $sample.sr.candidates.$rg] );
                 $totalRunning ++;
             }
@@ -412,8 +412,8 @@ USAGE
                 {
                     my $job_lock = qq[genotype.$setID.jids];
                     #check the job status
-                    my $is_running = LSF::is_job_running($job_lock);
-                    if ($is_running & $LSF::Error) 
+                    my $is_running = VertRes::LSF::is_job_running($job_lock);
+                    if ($is_running & $VertRes::LSF::Error) 
                     {
                         print qq[Error in job: $job_lock\n];
                         $setID ++;
@@ -422,7 +422,7 @@ USAGE
                         last if( $offset > $size ); #loop termination condition
                         next; #what to do?
                     }
-                    elsif ($is_running & $LSF::Running)
+                    elsif ($is_running & $VertRes::LSF::Running)
                     {
                         $numRunning ++;
                         $setID ++;
@@ -431,7 +431,7 @@ USAGE
                         last if( $offset > $size ); #loop termination condition
                         next; #ok its running still
                     }
-                    elsif ($is_running & $LSF::Done)
+                    elsif ($is_running & $VertRes::LSF::Done)
                     {
                         #job has completed
                         $jobsDone ++;
@@ -444,7 +444,7 @@ USAGE
                         my %reqs = (memory=>$memory,queue=>$queue);
                         print qq[Starting job: $job_lock\n];
                         open( my $sfh, qq[>genotype.$setID.sh] ) or die $!;print $sfh qq[$cmd\nwait\n];close( $sfh );
-                        LSF::run($job_lock, $cwd, qq[genotype.$setID], \%reqs, 
+                        VertRes::LSF::run($job_lock, $cwd, qq[genotype.$setID], \%reqs, 
                                       qq[sh genotype.$setID.sh] );
                         $numRunning ++;
                     }
@@ -519,8 +519,8 @@ sub _runAndCheckCalling
             {
                 my $job_lock = qq[call.$setID.jids];
                 #check the job status
-                my $is_running = LSF::is_job_running($job_lock);
-                if ($is_running & $LSF::Error) 
+                my $is_running = VertRes::LSF::is_job_running($job_lock);
+                if ($is_running & $VertRes::LSF::Error) 
                 {
                     print qq[Error in job: $job_lock\n];
                     $setID ++;
@@ -529,7 +529,7 @@ sub _runAndCheckCalling
                     last if( $offset > $size ); #loop termination condition
                     next; #what to do?
                 }
-                elsif ($is_running & $LSF::Running)
+                elsif ($is_running & $VertRes::LSF::Running)
                 {
                     $numRunning ++;
                     $setID ++;
@@ -538,7 +538,7 @@ sub _runAndCheckCalling
                     last if( $offset > $size ); #loop termination condition
                     next; #ok its running still
                 }
-                elsif ($is_running & $LSF::Done)
+                elsif ($is_running & $VertRes::LSF::Done)
                 {
                     #job has completed
                     $jobsDone ++;
@@ -551,7 +551,7 @@ sub _runAndCheckCalling
                     my %reqs = (memory=>$mem,queue=>$lsfQueue);
                     print qq[Starting job: $job_lock\n];
                     open( my $sfh, qq[>call.$setID.sh] ) or die $!;print $sfh qq[$cmd\nwait\n];close( $sfh );
-                    LSF::run($job_lock, $cwd, qq[call.$setID], \%reqs, 
+                    VertRes::LSF::run($job_lock, $cwd, qq[call.$setID], \%reqs, 
                                   qq[sh call.$setID.sh] );
                     $numRunning ++;
                 }
@@ -586,8 +586,8 @@ sub _runAndCheckCalling
         my $job_lock = qq[incomplete.jids];
         if( -f $job_lock )
         {
-            my $is_running = LSF::is_job_running($job_lock);
-            if ($is_running & $LSF::Error) 
+            my $is_running = VertRes::LSF::is_job_running($job_lock);
+            if ($is_running & $VertRes::LSF::Error) 
             {
                 $retries{$job_lock} ++;
                 if( $retries{$job_lock} > $MAX_RETRIES )
@@ -596,11 +596,11 @@ sub _runAndCheckCalling
                     next;
                 }
             }
-            elsif ($is_running & $LSF::Running) 
+            elsif ($is_running & $VertRes::LSF::Running) 
             {
                 return 0; #ok its running still
             }
-            elsif ($is_running & $LSF::Done) 
+            elsif ($is_running & $VertRes::LSF::Done) 
             {
                 #job has completed
                 print qq[OUTSTANDING JOBS RUN - ALL DONE\n];
@@ -655,7 +655,7 @@ sub _runAndCheckCalling
             my %reqs = (memory=>$mem,queue=>'long');
             print qq[Starting job: $job_lock\n];
             open( my $sfh, qq[>call.incomplete.sh] ) or die $!;print $sfh qq[$cmd\nwait];close( $sfh );
-            LSF::run($job_lock, $cwd, qq[call.incomplete], \%reqs, 
+            VertRes::LSF::run($job_lock, $cwd, qq[call.incomplete], \%reqs, 
                                     qq[sh call.incomplete.sh] );
         }
     }

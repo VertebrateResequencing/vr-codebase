@@ -14,7 +14,7 @@ use base qw(VertRes::Pipeline);
 
 use strict;
 use warnings;
-use LSF;
+use VertRes::LSF;
 use VertRes::Utils::GTypeCheck;
 use VertRes::Utils::GTypeCheckGLF;
 use VRTrack::VRTrack;
@@ -343,7 +343,7 @@ rename("x$name.bam","$name.bam") or Utils::error("rename x$name.bam $name.bam: \
 ];
     close($fh);
 
-    LSF::run($lock_file,$work_dir,"_${name}_merge",{bsub_opts=>$$self{bsub_opts_merge}}, q{perl -w _merge.pl});
+    VertRes::LSF::run($lock_file,$work_dir,"_${name}_merge",{bsub_opts=>$$self{bsub_opts_merge}}, q{perl -w _merge.pl});
     return $$self{'No'};
 }
 
@@ -527,7 +527,7 @@ my \$qc = VertRes::Pipelines::TrackQC_Bam->new(\%params);
 ];
     close $fh;
 
-    LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_graphs", $self, qq{perl -w _graphs.pl});
+    VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_graphs", $self, qq{perl -w _graphs.pl});
     return $$self{'No'};
 }
 

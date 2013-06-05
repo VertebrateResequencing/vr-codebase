@@ -3,7 +3,7 @@ use base qw(VertRes::Pipeline);
 
 use strict;
 use warnings;
-use LSF;
+use VertRes::LSF;
 use HierarchyUtilities;
 use VertRes::Utils::GTypeCheck;
 

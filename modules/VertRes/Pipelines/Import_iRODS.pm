@@ -3,7 +3,7 @@ use base qw(VertRes::Pipeline);
 
 use strict;
 use warnings;
-use LSF;
+use VertRes::LSF;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::File;
@@ -108,7 +108,7 @@ my \$import = VertRes::Pipelines::Import_iRODS->new(%\$opts);
 ];
 
     close($fh);
-    LSF::run($lock_file,$work_dir,"${prefix}import_bams",$self,qq[perl -w ${prefix}import_bams.pl]);
+    VertRes::LSF::run($lock_file,$work_dir,"${prefix}import_bams",$self,qq[perl -w ${prefix}import_bams.pl]);
 
     return $$self{No};
 }

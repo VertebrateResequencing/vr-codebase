@@ -4,7 +4,7 @@ use base qw(VertRes::Base);
 use strict;
 use warnings;
 use Carp;
-use LSF;
+use VertRes::LSF;
 use Utils;
 
 sub new 
@@ -87,7 +87,7 @@ if ( -s "$name.gtypex" )
 };
     close $fh;
 
-    LSF::run($lock_file,$dir,"$prefix${name}_glf",$self, qq{perl -w ${prefix}genotype.pl});
+    VertRes::LSF::run($lock_file,$dir,"$prefix${name}_glf",$self, qq{perl -w ${prefix}genotype.pl});
 
     return $$self{'No'};
 }

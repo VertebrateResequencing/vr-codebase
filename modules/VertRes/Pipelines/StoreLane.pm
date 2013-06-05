@@ -52,7 +52,7 @@ use warnings;
 use VertRes::Utils::FileSystem;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
-use LSF;
+use VertRes::LSF;
 
 use base qw(VertRes::Pipeline);
 
@@ -186,7 +186,7 @@ exit;
     
     $self->archive_bsub_files($lane_path, $job_name);
     
-    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-M80 -R 'select[mem>80] rusage[mem=80]'" }, qq{perl -w $script_name});
+    VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-M80 -R 'select[mem>80] rusage[mem=80]'" }, qq{perl -w $script_name});
     
     return $self->{No};
 }

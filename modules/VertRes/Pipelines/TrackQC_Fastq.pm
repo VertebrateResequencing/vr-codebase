@@ -14,7 +14,7 @@ use base qw(VertRes::Pipelines::TrackQC_Bam);
 
 use strict;
 use warnings;
-use LSF;
+use VertRes::LSF;
 use VertRes::Parser::fastqcheck;
 use VertRes::Wrapper::bwa;
 use VertRes::Utils::Sam;
@@ -370,7 +370,7 @@ sub subsample
     }
     close $fh;
 
-    LSF::run($lock_file,"$lane_path/$sample_dir","_${name}_sample", {bsub_opts=>$$self{bsub_opts_subsample}}, qq{perl -w _qc-sample.pl});
+    VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_${name}_sample", {bsub_opts=>$$self{bsub_opts_subsample}}, qq{perl -w _qc-sample.pl});
 
     return $$self{'No'};
 }
@@ -452,7 +452,7 @@ rename("${name}_$i.saix","${name}_$i.sai") or Utils::error("rename ${name}_$i.sa
 
 ];
         close($fh);
-        LSF::run($lock_file,$work_dir,"_${name}_$i",{bsub_opts=>$$self{bsub_opts_process_fastqs}},qq[perl -w ${prefix}aln_fastq_$i.pl]);
+        VertRes::LSF::run($lock_file,$work_dir,"_${name}_$i",{bsub_opts=>$$self{bsub_opts_process_fastqs}},qq[perl -w ${prefix}aln_fastq_$i.pl]);
     }
 
     # Run blat for each fastq file to find out how many adapter sequences are in there.
@@ -475,7 +475,7 @@ Utils::CMD(q[cat ${name}_$i.blat | awk '{if (\$2 ~ /^ADAPTER/) print \$1}' | sor
 unlink("${name}_$i.fa", "${name}_$i.blat");
 ];
         close($fh);
-        LSF::run($lock_file,$work_dir,"_${name}_a$i",{bsub_opts=>$$self{bsub_opts_process_fastqs}},qq[perl -w ${prefix}blat_fastq_$i.pl]);
+        VertRes::LSF::run($lock_file,$work_dir,"_${name}_a$i",{bsub_opts=>$$self{bsub_opts_process_fastqs}},qq[perl -w ${prefix}blat_fastq_$i.pl]);
     }
 
     return $$self{'No'};
@@ -624,7 +624,7 @@ rename("x$name.bam","$name.bam") or Utils::error("rename x$name.bam $name.bam: \
     }
     close($fh);
 
-    LSF::run($lock_file,$work_dir,"_${name}_sampe",{bsub_opts=>$$self{bsub_opts_map_sample}}, q{perl -w _map.pl});
+    VertRes::LSF::run($lock_file,$work_dir,"_${name}_sampe",{bsub_opts=>$$self{bsub_opts_map_sample}}, q{perl -w _map.pl});
     return $$self{'No'};
 }
 
@@ -687,7 +687,7 @@ sub transposon
      ];
      close $fh;
 
-     LSF::run($lock_file,"$lane_path/$sample_dir","_$$self{lane}_transposon", $self, qq{perl -w _transposon.pl});
+     VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_$$self{lane}_transposon", $self, qq{perl -w _transposon.pl});
    }
    return $$self{'No'};
 }
@@ -759,7 +759,7 @@ my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
 ];
     close $fh;
 
-    LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_graphs", {bsub_opts=>$$self{bsub_opts_stats_and_graphs}}, qq{perl -w _graphs.pl});
+    VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_graphs", {bsub_opts=>$$self{bsub_opts_stats_and_graphs}}, qq{perl -w _graphs.pl});
     return $$self{'No'};
 }
 
