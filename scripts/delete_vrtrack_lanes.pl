@@ -70,18 +70,25 @@ while (<>){
     }
     if ($root){
         #Delete files first
+        
+        # We get the lane hierarchy which is a symlink. We delete the folder which
+        # the symlink points to. Then we delete the symlink.
+        # We don't rely on the stored_path in the lanes table because it may not be the
+        # one that was used to actually store the data.
+        # Further down in this script, the record for this lane is deleted from the DB
+        # so we do not have to do any updating of the processed flag etc.
+        # 5 June 2013
+        
         #Get full path to lane directory
         my $lanedir = $root.$vrtrack->hierarchy_path_of_lane_name($lane->name);
-        print "Deleting: \n" if $verbose;
-        remove_tree($lanedir, {verbose => $verbose, safe => 1});
+        my $stored_path = readlink $lanedir;
         
-        #If the lane is stored in nexsan, delete those files too
-        my $stored = $lane->is_processed('stored');
-        if($stored){
-        	my $stored_path = $lane->storage_path();
-        	print "Deleting: \n" if $verbose;
-        	remove_tree($stored_path, {verbose => $verbose, safe => 1});
-        }
+        print "Deleting: \n" if $verbose;
+        remove_tree($stored_path, {verbose => $verbose, safe => 1}); #Delete folder pointed to by symlink
+               
+        print "Deleting: \n" if $verbose;
+        remove_tree($lanedir, {verbose => $verbose, safe => 1}); #Delete symlink
+        
     }
 
     #update database
