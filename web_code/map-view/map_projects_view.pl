@@ -46,6 +46,6 @@ my $init_script = $utl->{SCRIPTS}{MAP_VIEW};
 my $lanes_script = $utl->{SCRIPTS}{MAP_LANES_VIEW};
 
 print $sw->header();
-$utl->displayDatabasePage($title,$cgi,$vrtrack,$db,$init_script,$lanes_script);
+$utl->displayDatabasePage($title,$cgi,$vrtrack,$db,$init_script,$lanes_script,0);
 print $sw->footer();
 exit;

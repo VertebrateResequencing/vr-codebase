@@ -429,7 +429,7 @@ sub merge_lines
 			if ( $ploidy==1 )
 			{
 				$$gtypes{$sample}{GT} = $lk_aa >= $lk_bb ? '0' : '1';
-				if ( $lk_ab>1e-10 ) { error("FIXME: non-zero HET GL: $$rec{CHROM} $$rec{POS} .. $sample $lk_aa $lk_ab $lk_bb\n"); }
+				if ( $lk_ab>$lk_aa && $lk_ab>$lk_bb ) { error("FIXME: HET GL most likely?! $$rec{CHROM} $$rec{POS} .. $sample $lk_aa $lk_ab $lk_bb\n"); }
 			}
 			elsif ( $lk_aa >= $lk_ab )
 			{

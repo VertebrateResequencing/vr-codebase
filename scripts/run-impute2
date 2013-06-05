@@ -36,7 +36,7 @@ sub new
         #  config file to get rid of the warnings.
         version  => '] .$$self{config_version}. q[',
 
-        impute2_bin => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/impute2.2.2',
+        impute2_bin => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/impute2.3.0',
         vcf_impute2 => 'vcf-impute2',
         gen_map     => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/ALL_1000G_phase1interim_jun2011_impute/genetic_map_chr{CHROM}_combined_b37.txt',
 
@@ -58,6 +58,9 @@ sub new
         # known_vcf => '/nfs/users/nfs_p/pd3/sandbox/gtypes/UK10k-twins/uk10k-twins.ref.vcf.gz',
         # known_is_phased => 1,
         # in_vcf     => '/some/path/chr{CHROM}.vcf.gz',
+
+        # If given, vcf check will be run to evaluate the performance
+        # eval_vcf => undef,
         
         # Impute N samples at a time against the reference panel of known_vcf
         #   haplotypes. Include '-burnin 0 -iter 4' in impute2_args for this.
@@ -180,13 +183,13 @@ sub parse_args
     { 
          $self->throw("Missing the key chunk_nsites");
     }
-    if ( exists($$self{per_sample}) && !exists($$self{known_vcf}) ) 
+    if ( $$self{per_sample} && !exists($$self{known_vcf}) ) 
     {
-        $self->throw("Expected the key \"known_vcf\" with \"per_sample\".\n");
+        $self->throw("With \"per_sample\" also \"known_vcf\" should be given.\n");
     }
-    if ( exists($$self{chunk_by_known}) && !exists($$self{known_vcf}) )
+    if ( $$self{chunk_by_known} && !exists($$self{known_vcf}) )
     {
-        $self->throw("Expected the key \"known_vcf\" with \"chunk_by_known\".\n");
+        $self->throw("With \"chunk_by_known\" also \"known_vcf\" should be given.\n");
     }
     $$self{chunk_file} = "$$self{outdir}/chunks.txt";
 }
@@ -229,37 +232,23 @@ sub main
         if ( $$self{merge_chroms} ) { $self->throw("fixme: merge_chroms parameter not active yet"); }
         else
         {
-            # Cannot rely on Runner's wait here. Allow early release of shorter chromosomes.
-            my %unfinished;
             for my $chunk (@$chunks)
             {
-                if ( $self->is_finished("$outdir/$$chunk[0].vcf.gz") ) { next; }
-                if ( $self->is_finished("$outdir/$$chunk[0]/03.impute2_to_vcf.$$chunk[1]-$$chunk[2].vcf.gz") ) { next; }
-                if ( !$self->is_finished("$outdir/$$chunk[0]/02.impute2.$$chunk[1]-$$chunk[2].done") )
-                { 
-                    push @{$unfinished{$$chunk[0]}}, "$outdir/$$chunk[0]/02.impute2.$$chunk[1]-$$chunk[2].done";
-                    next; 
-                }
                 $self->spawn('impute2_to_vcf',"$outdir/$$chunk[0]/03.impute2_to_vcf.$$chunk[1]-$$chunk[2].vcf.gz",$chunk);
-                push @{$unfinished{$$chunk[0]}}, "$outdir/$$chunk[0]/03.impute2_to_vcf.$$chunk[1]-$$chunk[2].vcf.gz";
             }
-            $self->set_limits(runtime=>24*60);
+            $self->wait; 
+
             my @chroms = $self->get_chroms($chunks);
+            $self->set_limits(runtime=>24*60);
             for my $chr (@chroms)
             {
-                if ( exists($unfinished{$chr}) ) { next; }
                 $self->spawn('concat_vcfs',"$outdir/$chr.vcf.gz",$chunks,$chr);
             }
-            if ( scalar keys %unfinished ) 
-            { 
-                my $prefix = $self->_get_temp_prefix((values %unfinished)[0]->[0]);
-                $self->debugln("The job not finished: $prefix.*");
-                exit; 
-            }
+            $self->wait; 
+
+            $self->set_limits(runtime=>undef);
+            $self->cmd("touch $outdir/04.merge.done");
         }
-        $self->wait;
-        $self->set_limits(runtime=>undef);
-        $self->cmd("touch $outdir/04.merge.done");
     }
 
     # Run performance stats and clean
@@ -665,7 +654,19 @@ sub concat_vcfs
     close($fh);
     $self->cmd(qq[vcf-phased-join $$self{phased_join_args} -l $outfile.list -o - 2>>$outfile.log | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
-    rename("$outfile.part",$outfile);
+
+    if ( !defined($$self{eval_vcf}) )
+    {
+        rename("$outfile.part",$outfile);
+        return;
+    }
+
+    rename("$outfile.part","$outfile.tmp.vcf.gz");
+    rename("$outfile.tbi","$outfile.tmp.vcf.gz.tbi");
+    my $args = defined $chr ? "-r $chr" : '';
+    $self->cmd(qq[vcf check $args -s - $$self{eval_vcf} $outfile.tmp.vcf.gz > $outfile.vchk]);
+    rename("$outfile.tmp.vcf.gz.tbi","$outfile.tbi");
+    rename("$outfile.tmp.vcf.gz","$outfile");
 }
 
 sub tabix_part

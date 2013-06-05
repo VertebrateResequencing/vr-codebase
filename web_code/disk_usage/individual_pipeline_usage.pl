@@ -104,13 +104,14 @@ sub displayPipelineOverview
     <th>Path root</th>
     <th>Disk usage (GB)</th>
     <th>No. of files</th>
+    <th>Owner</th>
     </tr>
     ];
     
     foreach my $pipeline(@pipelineusage) {
 		my @pipeline_data = @{ $pipeline };
-        my $filelink = "<a href='$file_script?setup=$pipeline_data[0]\&root=$pipeline_data[4]\&type=$pipeline_data[3]\&refer=pipe'> $pipeline_data[5] </a>";
-		print qq[<tr><td align="center">$pipeline_data[0]</td><td align="center">$pipeline_data[1]</td><td align="center">$pipeline_data[2]</td><td align="center">$pipeline_data[3]</td><td align="center">$pipeline_data[4]</td><td align="center">$filelink</td><td align="center">$pipeline_data[6]</td></tr>];
+        my $filelink = "<a href='$file_script?setup=$pipeline_data[0]\&root=$pipeline_data[5]\&type=$pipeline_data[4]\&refer=pipe'> $pipeline_data[6] </a>";
+		print qq[<tr><td align="center">$pipeline_data[0]</td><td align="center">$pipeline_data[1]</td><td align="center">$pipeline_data[3]</td><td align="center">$pipeline_data[4]</td><td align="center">$pipeline_data[5]</td><td align="center">$filelink</td><td align="center">$pipeline_data[7]</td><td align="center">$pipeline_data[2]</td></tr>];
 	}
     print qq[
         </table>
@@ -124,7 +125,7 @@ sub downloadMappings
 {
 	my ($cgi, $sql, $sep, $type, $ps_id) = @_;
 	print $cgi->header(-type=>"text/$type",  -attachment=>"disk_usage_overview_setup_$ps_id.$type");
-	print join ($sep,"Pipeline ID", "Pipeline name", "Pipeline type", "File type", "Path root", "Disk usage (GB)", "No. of files"), "\n";
+	print join ($sep,"Pipeline ID", "Pipeline name", "Pipeline owner", "Pipeline type", "File type", "Path root", "Disk usage (GB)", "No. of files"), "\n";
 	my @pipeline_usage = $utl->fetchIndividualUsage($sql, $ps_id, 0, 0);
 	foreach my $pipeline(@pipeline_usage) {
 		my @pipeline_data = @{ $pipeline };
