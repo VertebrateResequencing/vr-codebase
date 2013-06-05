@@ -56,7 +56,7 @@ sub is_job_running
         if ( !($jid=~/^(\d+)\s*([^\t]*)/) ) { Utils::error("Uh, could not parse \"$jid\".\n") }
 
         my $status = job_in_queue($1,$2);
-        if ( $status == $rorrE ) { $job_running |= $Error; }
+        if ( $status == $Error ) { $job_running |= $Error; }
         if ( $status == $Running ) 
         { 
             # Do not exit if one running was found - check all jobs, no one should have the EXIT status.
