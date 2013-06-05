@@ -234,7 +234,7 @@ sub _create_expression_job
                 };
                 close $scriptfh;
 
-        LSF::run($sequencing_file_action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${total_memory_mb}000 -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb]'", dont_wait=>1}, qq{perl -w $script_name});
+        LSF::run($sequencing_file_action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${total_memory_mb} -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb]'", dont_wait=>1}, qq{perl -w $script_name});
 
         # we've only submitted to LSF, so it won't have finished; we always return
         # that we didn't complete

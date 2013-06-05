@@ -263,16 +263,15 @@ sub adjust_bsub_options
         # our +1000 value
         if ($mem > $orig_mem) {
             # The kind of option line we are trying to produce
-            #   -q normal -M3000000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000]'
+            #   -q normal -M3000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000]'
             warn("$output_file: Increasing memory to $mem\n") unless $no_warn;  # this should be logged in the future
             
-            
-            $opts =~ s/-M\d+/-M${mem}000/;             # 3000MB -> -M3000000
+
             $opts =~ s/(select[^]]+mem>)\d+/$1$mem/;
             $opts =~ s/(rusage[^]]+mem=)\d+/$1$mem/;
             
             # The lines above replaced existing values in $opts. If they are not present, add them
-            if ( !($opts=~/-M\d+/) ) { $opts .= " -M${mem}000" }
+            if ( !($opts=~/-M\d+/) ) { $opts .= " -M${mem}" }
             if ( !($opts=~/-R/) ) { $opts .= " -R 'select[mem>$mem] rusage[mem=$mem]'"; }
             else
             {
@@ -403,7 +402,7 @@ sub run
         }
         if ( defined($opts{memory}) ) 
         {
-            $opts{bsub_opts} .= sprintf " -M%d -R 'select[type==X86_64] select[mem>%d] rusage[mem=%d]'", $opts{memory}*1000,$opts{memory},$opts{memory};
+            $opts{bsub_opts} .= sprintf " -M%d -R 'select[type==X86_64] select[mem>%d] rusage[mem=%d]'", $opts{memory},$opts{memory},$opts{memory};
         }
     }
     if ( !exists($opts{'bsub_opts'}) ) { Utils::error("No 'bsub_opts' given.\n") }

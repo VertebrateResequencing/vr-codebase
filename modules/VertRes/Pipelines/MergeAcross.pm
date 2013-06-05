@@ -235,7 +235,7 @@ sub merge {
     my $java_mem = int($memory * 0.9);
     my $queue = $memory >= 16000 ? "hugemem" : $self->{queue};
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
 
     # for each group of bam files, run the merge if not done already
     # (subject to max_jobs constraint)

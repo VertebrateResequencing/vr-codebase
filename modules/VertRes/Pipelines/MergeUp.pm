@@ -533,7 +533,7 @@ sub lib_markdup {
     my $queue = $memory >= 16000 ? "hugemem" : "long";
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
     
     my @markdup_bams;
     foreach my $merge_bam (@files) {
@@ -814,7 +814,7 @@ sub merge_up_one_level {
     $queue = $memory >= 16000 ? "hugemem" : $queue;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
     
     my $group_by_basename = ! defined $output_basename;
     my %grouped_bams = $self->_fofn_to_bam_groups($lane_path, $fofn, $group_by_basename);

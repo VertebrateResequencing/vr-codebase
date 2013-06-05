@@ -487,7 +487,7 @@ sub realign {
     my $queue = $memory >= 16000 ? "hugemem" : "normal";
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
     my $verbose = $self->verbose;
     
     my $tmp_dir = $self->{tmp_dir} || '';
@@ -649,7 +649,7 @@ sub sort {
     my $queue = $memory >= 16000 ? "hugemem" : "normal";
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
     
     my $tmp_dir = $self->{tmp_dir} || '';
     $tmp_dir = ", tmp_dir => q[$tmp_dir]" if $tmp_dir;
@@ -800,7 +800,7 @@ sub recalibrate {
     my $queue = $memory >= 16000 ? "hugemem" : "long";
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
     my $verbose = $self->verbose;
     
     my $tmp_dir = $self->{tmp_dir} || '';
@@ -929,7 +929,7 @@ sub calmd {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M1000000 -R \'select[mem>1000] rusage[mem=1000]\'';
+    $self->{bsub_opts} = '-q normal -M1000 -R \'select[mem>1000] rusage[mem=1000]\'';
     
     my $e = $self->{calmde} ? 'e => 1' : 'e => 0';
     
@@ -1043,7 +1043,7 @@ sub rewrite_header {
     my %header_changes = %{$self->{header_changes}};
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M5000000 -R \'select[mem>5000] rusage[mem=5000]\'';
+    $self->{bsub_opts} = '-q normal -M5000 -R \'select[mem>5000] rusage[mem=5000]\'';
     
     my $job_submitted = 0;
     foreach my $in_bam (@{$self->{in_bams}}) {
