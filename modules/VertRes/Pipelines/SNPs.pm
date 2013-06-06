@@ -224,7 +224,7 @@ our $options =
     bsub_opts_varfilter  => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
     bsub_opts_mpileup    => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
     bsub_opts_qcall      => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
-    bsub_opts_gatk       => "-q normal -M3000 -R 'select[type==X86_64] select[mem>3000] rusage[mem=3000]'",
+    bsub_opts_gatk       => "-q normal -M3000 -R 'select[mem>3000] rusage[mem=3000]'",
     chunks_overlap  => 250,
     fai_chr_regex   => '\d+|x|y',
     gatk_opts       => { all=>{verbose=>1} },

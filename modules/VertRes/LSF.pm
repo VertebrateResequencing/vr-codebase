@@ -402,7 +402,7 @@ sub run
         }
         if ( defined($opts{memory}) ) 
         {
-            $opts{bsub_opts} .= sprintf " -M%d -R 'select[type==X86_64] select[mem>%d] rusage[mem=%d]'", $opts{memory},$opts{memory},$opts{memory};
+            $opts{bsub_opts} .= sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $opts{memory},$opts{memory},$opts{memory};
         }
     }
     if ( !exists($opts{'bsub_opts'}) ) { Utils::error("No 'bsub_opts' given.\n") }
