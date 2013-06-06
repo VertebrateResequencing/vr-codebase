@@ -21,7 +21,9 @@ no warnings 'uninitialized';
 use Getopt::Long;
 use VertRes::Utils::VRTrackFactory;
 use VRTrack::Lane;
+use VertRes::Utils::FileSystem;
 use File::Path qw(remove_tree);
+use Cwd 'abs_path';
 
 my ($db, $root, $clean, $help, $verbose);
 
@@ -71,6 +73,8 @@ while (<>){
        next;
     }
     if ($root){
+    
+
         
         # We get the lane hierarchy which is a symlink. If -c is specified, we delete the folder which
         # the symlink points to. Then we delete the symlink.
@@ -84,7 +88,22 @@ while (<>){
         my $lanedir = $root.$vrtrack->hierarchy_path_of_lane_name($lane->name);
         
         if($clean){
-        	my $stored_path = readlink $lanedir;        
+        	my $stored_path = readlink $lanedir;  
+        	
+        	#Clear up any files in the FSU FILE EXISTS tables
+        	my $fsu = VertRes::Utils::FileSystem->new(reconnect_db=>1);
+        	opendir(DIR, "$stored_path") || die "Can't open $stored_path: $!\n";
+			my @files = readdir(DIR);
+			closedir(DIR);
+			foreach my $file (@files) {
+  				#If it's a file, and has one of the recognised parts to its name, we look for it in the database
+  				if(-f $file and $file =~ /bam|done|vcf|mpileup/){
+  					$fsu->file_exists(abs_path ($file) ,wipe_out=>1);
+  				}
+			}
+        	
+        	
+        	      
         	print "Deleting: \n" if $verbose;
         	remove_tree($stored_path, {verbose => $verbose, safe => 1}); #Delete folder pointed to by symlink
         }
