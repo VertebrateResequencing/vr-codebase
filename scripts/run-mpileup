@@ -42,6 +42,7 @@ sub new
             
             bams     => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
             fa_ref   => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
+            exons    => '/nfs/users/nfs_p/pd3/sandbox/other/20120425-inframe-indels/CCDS-human-GRCh37p6.sorted.txt.gz', # optional, for frame shift vcf check
 
             # To determine ploidy of sex chromosomes, one of these options must be given
             # mysql       => 'mysql -sN -uXXX -pXXX -hmcs10 -P 3306 g1k_meta', 
@@ -450,6 +451,17 @@ sub open_file
 sub population_group_bams_list
 {
     my ($self,$outfile,$bam_list,$chr,$pops,$samples_fname) = @_;
+
+    # Is it a BAM or a file of file names?
+    my @out = `file $bam_list`;
+    if ( !($out[0]=~/ASCII/) ) 
+    {
+        my $out = $self->open_file("$outfile.part");
+        print $out "$bam_list\n";
+        close($out) or $self->throw("close $samples_fname");
+        rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+        return;
+    }
 
     open(my $in,'<',$bam_list) or $self->throw("$bam_list: $!");
     my $out = $self->open_file("$outfile.part");
@@ -955,6 +967,8 @@ sub concat_vcfs
 sub vcf_stats
 {
     my ($self,$outfile,$vcf,$args) = @_;
+    $args .= " -F $$self{fa_ref}";
+    if ( exists($$self{exons}) ) { $args .= " -e $$self{exons}"; }
     $self->cmd("vcf check $args $vcf > $outfile.part");
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
