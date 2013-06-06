@@ -223,7 +223,7 @@ sub run_array
 
     if ( !scalar @$ids ) { confess("No IDs given??\n"); }
 
-    # Process the list of IDs
+    # Process the list of IDs. The maximum job name length is 255 characters.
     my @ids = sort { $a<=>$b } @$ids;
     my @bsub_ids;
     my $from = $ids[0];
@@ -242,9 +242,15 @@ sub run_array
     }
     if ( $prev>$from ) { push @bsub_ids, "$from-$prev"; }
     else { push @bsub_ids, $from; }
-
-    $cmd =~ s/{JOB_INDEX}/\$LSB_JOBINDEX/g;
     my $bsub_ids  = join(',', @bsub_ids);
+    while ( length($job_name) + length($bsub_ids) > 250 && scalar @bsub_ids ) 
+    {
+        pop(@bsub_ids);
+        $bsub_ids = join(',', @bsub_ids);
+    }
+
+  
+    $cmd =~ s/{JOB_INDEX}/\$LSB_JOBINDEX/g;
     my $bsub_opts = '';
     if ( exists($$opts{memory}) ) 
     { 
