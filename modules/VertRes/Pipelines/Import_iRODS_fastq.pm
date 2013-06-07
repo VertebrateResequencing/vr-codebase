@@ -222,9 +222,22 @@ use strict;
 use VertRes::Utils::Sam;
 use File::Spec;
 use VertRes::Wrapper::samtools;
+use Bio::Tradis::DetectTags;
+use Bio::Tradis::AddTagsToSeq;
+use Util;
 
 my \$dir = '$lane_path';
 my \@fastqs = $fastqs_str;
+
+my \$is_tradis =
+  Bio::Tradis::DetectTags->new( bamfile => qq[$in_bam] )->tags_present;
+if (defined(\$is_tradis) && \$is_tradis == 1) {
+	my \$trbam = qq[$in_bam].".tratmp.bam";
+	my \$add_tag_obj =
+      Bio::Tradis::AddTagsToSeq->new( bamfile => qq[$in_bam], outfile => \$trbam);
+	\$add_tag_obj->add_tags_to_seq();
+	Util::CMD("mv \$trbam $in_bam");
+}
 
 # Remove output files from failed runs.
 for my \$fastq (\@fastqs)
