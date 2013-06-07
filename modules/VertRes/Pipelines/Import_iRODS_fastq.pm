@@ -1,4 +1,3 @@
-
 =head1 NAME
 
 VertRes::Pipelines::Import_iRODS_fastq - pipeline for importing fastq files from iRODS
@@ -56,6 +55,7 @@ Craig Porter: cp7@sanger.ac.uk
 
 =cut
 
+
 package VertRes::Pipelines::Import_iRODS_fastq;
 use base qw(VertRes::Pipelines::Import_iRODS VertRes::Pipelines::Import);
 
@@ -69,78 +69,69 @@ use VertRes::Utils::FileSystem;
 use VertRes::Pipelines::Import;
 use VertRes::Pipelines::Import_iRODS;
 use Pathogens::Import::ValidateFastqConversion;
-use Bio::Tradis::DetectTags;
-use Bio::Tradis::AddTagsToSeq;
 
-our @actions = (
-
+our @actions =
+(
     # Create the hierarchy path, download and bamcheck the bam files.
     {
         'name'     => 'get_bams',
         'action'   => \&VertRes::Pipelines::Import_iRODS::get_bams,
-        'requires' => \&get_bams_requires,
+        'requires' => \&get_bams_requires, 
         'provides' => \&get_bams_provides,
     },
 
-    # Check if TraDIS
-    {
-        'name'     => 'check_tradis',
-        'action'   => \&check_tradis,
-        'requires' => \&check_tradis_requires,
-        'provides' => \&check_tradis_provides
-    },
-
     # Convert to fastq.
-    {
-        'name'     => 'bam_to_fastq',
-        'action'   => \&bam_to_fastq,
-        'requires' => \&bam_to_fastq_requires,
-        'provides' => \&bam_to_fastq_provides
+    { 
+	'name'     => 'bam_to_fastq',
+	'action'   => \&bam_to_fastq,
+	'requires' => \&bam_to_fastq_requires, 
+        'provides' => \&bam_to_fastq_provides 
     },
 
     # Compress and validate fastq.
-    {
-        'name'     => 'compress_and_validate',
-        'action'   => \&compress_and_validate,
-        'requires' => \&compress_and_validate_requires,
-        'provides' => \&compress_and_validate_provides
+    { 
+	'name'     => 'compress_and_validate',
+	'action'   => \&compress_and_validate,
+	'requires' => \&compress_and_validate_requires, 
+        'provides' => \&compress_and_validate_provides 
     },
 
     # If all files downloaded OK, update the VRTrack database.
     {
         'name'     => 'update_db',
         'action'   => \&update_db,
-        'requires' => \&update_db_requires,
+        'requires' => \&update_db_requires, 
         'provides' => \&update_db_provides,
     },
 );
 
-our $options = {
-    'bamcheck'  => 'bamcheck -q 20',
-    'bsub_opts' => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
+our $options = 
+{
+    'bamcheck'        => 'bamcheck -q 20',
+    'bsub_opts'       => "-q normal -R 'select[type==X86_64] rusage[thouio=1]'",
 };
+
 
 # --------- OO stuff --------------
 
-sub VertRes::Pipelines::Import_iRODS_fastq::new {
-    my ( $class, %args ) = @_;
-    my $self = $class->VertRes::Pipelines::Import_iRODS::new(
-        %$options,
-        'actions' => \@actions,
-        %args
-    );
+sub VertRes::Pipelines::Import_iRODS_fastq::new 
+{
+    my ($class, %args) = @_;
+    my $self = $class->VertRes::Pipelines::Import_iRODS::new(%$options,'actions'=>\@actions,%args);
 
-    $self->{fsu} = VertRes::Utils::FileSystem->new;
+    $self->{fsu} = VertRes::Utils::FileSystem->new; 
 
     # Skip lane without updating db unless only bams in lane.
-    foreach my $file ( @{ $$self{files} } ) {
-        unless ( $file =~ /\.bam$/i ) {
-            my $verbosity = $self->verbose;
-            $self->verbose(1);
-            $self->debug("Skipping import of lane: Cannot import $file\n");
-            $self->verbose($verbosity);
-            $self->{actions} = [];
-        }
+    foreach my $file (@{$$self{files}})
+    {
+	unless($file =~ /\.bam$/i)
+	{
+	    my $verbosity = $self->verbose;
+	    $self->verbose(1);
+	    $self->debug("Skipping import of lane: Cannot import $file\n");
+	    $self->verbose($verbosity);
+	    $self->{actions} = []; 
+	}
     }
 
     return $self;
@@ -149,123 +140,83 @@ sub VertRes::Pipelines::Import_iRODS_fastq::new {
 #---------- get_bams ---------------------
 
 # Requires nothing
-sub get_bams_requires {
+sub get_bams_requires
+{
     my ($self) = @_;
     return [];
 }
 
 # Return bam files for import
-sub get_bams_provides {
-    my ( $self, $lane_path ) = @_;
+sub get_bams_provides
+{
+    my ($self, $lane_path) = @_;
     return $$self{files};
-}
-
-#---------- check_tradis ------------------
-
-sub check_tradis_requires {
-    my ( $self, $lane_path ) = @_;
-
-    #    return ["$lane_path/".$$self{prefix}.'import_bams.done'];
-    return $$self{files};
-}
-
-sub check_tradis_provides {
-    my ( $self, $lane_path ) = @_;
-
-    return $$self{files};
-}
-
-sub check_tradis {
-    my ( $self, $lane_path ) = @_;
-    my ($bam) = @{ $$self{files} };
-    my $trbam = $bam;
-    $trbam =~ s/\.bam/\.tr\.bam/;
-    my $is_tradis =
-      Bio::Tradis::DetectTags->new( bamfile => $lane_path . $bam );
-    if ($is_tradis) {
-        my $add_tag_obj =
-          Bio::Tradis::AddTagsToSeq->new( bamfile => $lane_path . $bam );
-        $add_tag_obj->add_tags_to_seq();
-    }
-    else {
-        my $fullf  = $lane_path . $bam;
-        my $fulltr = $lane_path . $trbam;
-        `ln -s $fullf $fulltr`;
-    }
-    $$self{files} = $trbam;
-    `touch $lane_path/check_tradis.done`;
-
 }
 
 #---------- bam_to_fastq ------------------
 
-sub bam_to_fastq_requires {
-    my ( $self, $lane_path ) = @_;
-
-    return [ "$lane_path/check_tradis.done", $$self{files} ];
-
-    #return $$self{files};
+sub bam_to_fastq_requires 
+{
+    my ($self,$lane_path) = @_;
+#    return ["$lane_path/".$$self{prefix}.'import_bams.done'];
+    return $$self{files};
 }
 
 sub bam_to_fastq_provides {
-    my ( $self, $lane_path ) = @_;
-
-    if ( $self->is_paired ) {
-        return [
-            "$self->{lane}_1.fastq",
-            "$self->{lane}_2.fastq",
-            "$self->{lane}_1.fastq.fastqcheck",
-            "$self->{lane}_2.fastq.fastqcheck"
-        ];
-    }
-    else {
-        return [ "$self->{lane}_1.fastq", "$self->{lane}_1.fastq.fastqcheck" ];
-    }
+  my ($self, $lane_path) = @_;
+   
+  if( $self->is_paired )
+  {
+    return ["$self->{lane}_1.fastq", "$self->{lane}_2.fastq", "$self->{lane}_1.fastq.fastqcheck", "$self->{lane}_2.fastq.fastqcheck"];
+  }
+  else
+  {
+    return ["$self->{lane}_1.fastq", "$self->{lane}_1.fastq.fastqcheck"];
+  }
 }
 
 sub is_paired {
-    my ($self) = @_;
-    return $self->{vrlane}->{is_paired};
+  my ($self) = @_;
+  return $self->{vrlane}->{is_paired};
 }
 
-# Adapted from Mapping.pm
+# Adapted from Mapping.pm 
 # Converts from bam to fastq.
 sub bam_to_fastq {
-    my ( $self, $lane_path, $action_lock ) = @_;
+    my ($self, $lane_path, $action_lock) = @_;
+    
+    my ($bam) = @{$$self{files}};
 
-    my ($bam) = @{ $$self{files} };
-
-    my $in_bam = $self->{fsu}->catfile( $lane_path, $bam );
+    my $in_bam = $self->{fsu}->catfile($lane_path, $bam);
     my $fastq_base = $self->{lane};
-
+    
+    
     my $memory = $self->{memory};
-    if ( !defined $memory || $memory < 2000 ) {
+    if (! defined $memory || $memory < 2000) {
         $memory = 2000;
     }
-
+    
     ### We need to check old jobs here to see if it bummed out because of memory and increase the java memory accordingly
     ### if we know whats its going to be increased to we can set java to 90% of it.
-
-    my $java_mem                = int( $memory * 0.95 );
-    my $queue                   = $memory >= 30000 ? "hugemem" : "long";
+    
+    my $java_mem = int($memory * 0.95);
+    my $queue = $memory >= 30000 ? "hugemem" : "long";
     my $samtools_sorting_memory = 300000000;
-
-    my $fastqs_str;
-    if ( $self->is_paired ) {
-        $fastqs_str =
-qq{ (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq"), File::Spec->catfile(\$dir, "$self->{lane}_2.fastq")) };
+    
+    my $fastqs_str ; 
+    if( $self->is_paired )
+    {
+      $fastqs_str  = qq{ (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq"), File::Spec->catfile(\$dir, "$self->{lane}_2.fastq")) };
     }
-    else {
-        $fastqs_str =
-          qq{ (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq")) };
+    else
+    {
+      $fastqs_str  = qq{ (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq")) };
     }
-
+    
     # Script to be run by LSF to convert bam to fastq
     # bam2fastq does full sanity checking and safe result file creation
-    my $script_name =
-      $self->{fsu}->catfile( $lane_path, $self->{prefix} . "bam2fastq.pl" );
-    open( my $scriptfh, '>', $script_name )
-      or $self->throw("Couldn't write to temp script $script_name: $!");
+    my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."bam2fastq.pl");
+    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
     print $scriptfh qq{
 use strict;
 use VertRes::Utils::Sam;
@@ -286,8 +237,8 @@ system("mv sorted.bam $in_bam");
 
 VertRes::Utils::Sam->new(verbose => 1, quiet => 0, java_memory => $java_mem )->bam2fastq(qq[$in_bam], qq[$fastq_base]);
 };
-    unless ( $self->is_paired ) {
-        print $scriptfh qq{
+    unless($self->is_paired){
+    print $scriptfh qq{
 # rename single-ended fastqs
 system("mv $self->{lane}.fastq $self->{lane}_1.fastq");
 system("mv $self->{lane}.fastq.fastqcheck $self->{lane}_1.fastq.fastqcheck");
@@ -297,88 +248,71 @@ system("mv $self->{lane}.fastq.fastqcheck $self->{lane}_1.fastq.fastqcheck");
 exit;
 };
     close $scriptfh;
-
-    my $job_name = $self->{prefix} . 'bam2fastq';
-    $self->archive_bsub_files( $lane_path, $job_name );
-    LSF::run(
-        $action_lock,
-        $lane_path,
-        $job_name,
-        {
-            bsub_opts =>
-"-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'",
-            dont_wait => 1
-        },
-        qq{perl -w $script_name}
-    );
-
+    
+    my $job_name = $self->{prefix}.'bam2fastq';
+    $self->archive_bsub_files($lane_path, $job_name);
+    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'", dont_wait=>1 }, qq{perl -w $script_name});
+    
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete
     return $self->{No};
 }
 
+
 #---------- compress_and_validate ---------
 
-sub compress_and_validate_requires {
-    my ( $self, $lane_path ) = @_;
-
-    if ( $self->is_paired ) {
-        return [
-            "$self->{lane}_1.fastq",
-            "$self->{lane}_2.fastq",
-            "$self->{lane}_1.fastq.fastqcheck",
-            "$self->{lane}_2.fastq.fastqcheck"
-        ];
-    }
-    else {
-        return [ "$self->{lane}_1.fastq", "$self->{lane}_1.fastq.fastqcheck" ];
-    }
+sub compress_and_validate_requires 
+{
+  my ($self, $lane_path) = @_;
+   
+  if( $self->is_paired )
+  {
+    return ["$self->{lane}_1.fastq", "$self->{lane}_2.fastq", "$self->{lane}_1.fastq.fastqcheck", "$self->{lane}_2.fastq.fastqcheck"];
+  }
+  else
+  {
+    return ["$self->{lane}_1.fastq", "$self->{lane}_1.fastq.fastqcheck"];
+  }
 }
 
 sub compress_and_validate_provides {
-    my ( $self, $lane_path ) = @_;
-
-    if ( $self->is_paired ) {
-        return [
-            "$self->{lane}_1.fastq.gz",
-            "$self->{lane}_2.fastq.gz",
-            "$self->{lane}_1.fastq.gz.fastqcheck",
-            "$self->{lane}_2.fastq.gz.fastqcheck"
-        ];
-    }
-    else {
-        return [ "$self->{lane}_1.fastq.gz",
-            "$self->{lane}_1.fastq.gz.fastqcheck" ];
-    }
+  my ($self, $lane_path) = @_;
+   
+  if( $self->is_paired )
+  {
+    return ["$self->{lane}_1.fastq.gz", "$self->{lane}_2.fastq.gz", "$self->{lane}_1.fastq.gz.fastqcheck", "$self->{lane}_2.fastq.gz.fastqcheck"];
+  }
+  else
+  {
+    return ["$self->{lane}_1.fastq.gz", "$self->{lane}_1.fastq.gz.fastqcheck"];
+  }
 }
 
 # Compress and validate fastq files
 sub compress_and_validate {
-    my ( $self, $lane_path, $action_lock ) = @_;
-
+    my ($self, $lane_path, $action_lock) = @_;
+    
     my $fastq_base = $self->{lane};
-
+    
     my $memory = $self->{memory};
-    if ( !defined $memory || $memory < 70 ) {
+    if (! defined $memory || $memory < 70) {
         $memory = 70;
     }
     my $queue = $memory >= 30000 ? "hugemem" : "normal";
-
-    my $fastqs_str;
-    if ( $self->is_paired ) {
-        $fastqs_str =
-qq{ (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq"), File::Spec->catfile(\$dir, "$self->{lane}_2.fastq")) };
+    
+    my $fastqs_str ; 
+    if( $self->is_paired )
+    {
+      $fastqs_str  = qq{ (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq"), File::Spec->catfile(\$dir, "$self->{lane}_2.fastq")) };
     }
-    else {
-        $fastqs_str =
-          qq{ (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq")) };
+    else
+    {
+      $fastqs_str  = qq{ (File::Spec->catfile(\$dir, "$self->{lane}_1.fastq")) };
     }
-
+    
     # Script to be run by LSF
-    my $script_name =
-      $self->{fsu}->catfile( $lane_path, $self->{prefix} . "compressfastq.pl" );
-    open( my $scriptfh, '>', $script_name )
-      or $self->throw("Couldn't write to temp script $script_name: $!");
+    my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."compressfastq.pl");
+    open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
     print $scriptfh qq{
 use strict;
 use File::Spec;
@@ -395,21 +329,11 @@ my \$validator = Pathogens::Import::CompressAndValidate->new( irods_filename => 
 exit;
 };
     close $scriptfh;
-
-    my $job_name = $self->{prefix} . 'compressfastq';
-    $self->archive_bsub_files( $lane_path, $job_name );
-    LSF::run(
-        $action_lock,
-        $lane_path,
-        $job_name,
-        {
-            bsub_opts =>
-"-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'",
-            dont_wait => 1
-        },
-        qq{perl -w $script_name}
-    );
-
+    
+    my $job_name = $self->{prefix}.'compressfastq';
+    $self->archive_bsub_files($lane_path, $job_name);
+    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'", dont_wait=>1 }, qq{perl -w $script_name});
+    
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete
     return $self->{No};
@@ -418,20 +342,17 @@ exit;
 #---------- update_db ---------------------
 
 # Requires the gzipped fastq and fastqcheck files.
-sub update_db_requires {
-    my ( $self, $lane_path ) = @_;
-
-    if ( $self->is_paired ) {
-        return [
-            "$self->{lane}_1.fastq.gz",
-            "$self->{lane}_2.fastq.gz",
-            "$self->{lane}_1.fastq.gz.fastqcheck",
-            "$self->{lane}_2.fastq.gz.fastqcheck"
-        ];
+sub update_db_requires
+{
+    my ($self, $lane_path) = @_;
+    
+    if( $self->is_paired )
+    {
+      return ["$self->{lane}_1.fastq.gz", "$self->{lane}_2.fastq.gz", "$self->{lane}_1.fastq.gz.fastqcheck", "$self->{lane}_2.fastq.gz.fastqcheck"];
     }
-    else {
-        return [ "$self->{lane}_1.fastq.gz",
-            "$self->{lane}_1.fastq.gz.fastqcheck" ];
+    else
+    {
+      return ["$self->{lane}_1.fastq.gz", "$self->{lane}_1.fastq.gz.fastqcheck"];
     }
 }
 
@@ -443,42 +364,41 @@ sub update_db_requires {
 #   If the key 'db' is absent, the empty list is returned and the database will not
 #   be written.
 #
-sub update_db_provides {
+sub update_db_provides
+{
     my ($self) = @_;
-    if ( exists( $$self{db} ) ) { return 0; }
+    if ( exists($$self{db}) ) { return 0; }
     my @provides = ();
     return \@provides;
 }
 
 # Update Database and clean large files
 #
-sub update_db {
-    my ( $self, $lane_path, $lock_file ) = @_;
+sub update_db
+{
+    my ($self,$lane_path,$lock_file) = @_;
 
     # Update database
-    $self->VertRes::Pipelines::Import::update_db( $lane_path, $lock_file );
+    $self->VertRes::Pipelines::Import::update_db($lane_path,$lock_file);
 
     # Remove Large Files
-    my @bam_suffix = ( 'bam', 'bam.bai', 'bam.md5', 'bam.bc' );
-    if ( -e "$lane_path/check_tradis.done" ) { push( @bam_suffix, 'tr.bam' ); }
-    my @fastq_suffix = ( 'fastq', 'fastq.fastqcheck' );
+    my @bam_suffix   = ('bam','bam.bai','bam.md5','bam.bc');
+    my @fastq_suffix = ('fastq','fastq.fastqcheck');
 
     my $bam = $self->{files}->[0];
-    my $nonhuman =
-      ( $bam =~ /_nonhuman.bam$/ ) ? '_nonhuman' : '';   # set for nonhuman bams
+    my $nonhuman = ($bam =~ /_nonhuman.bam$/) ? '_nonhuman':''; # set for nonhuman bams
 
-    for my $suffix (@bam_suffix) {
-
-        # Remove bams
-        Utils::CMD(qq[rm $lane_path/$$self{lane}$nonhuman.$suffix]);
+    for my $suffix (@bam_suffix)
+    {
+	# Remove bams
+	Utils::CMD(qq[rm $lane_path/$$self{lane}$nonhuman.$suffix]);
     }
 
-    for my $suffix (@fastq_suffix) {
-
-        # Remove fastqs
-        Utils::CMD(qq[rm $lane_path/$$self{lane}_1.$suffix]);
-        Utils::CMD(qq[rm $lane_path/$$self{lane}_2.$suffix])
-          if $self->is_paired;
+    for my $suffix (@fastq_suffix)
+    {
+	# Remove fastqs
+	Utils::CMD(qq[rm $lane_path/$$self{lane}_1.$suffix]);
+	Utils::CMD(qq[rm $lane_path/$$self{lane}_2.$suffix]) if $self->is_paired;
     }
 
     return $$self{'Yes'};
@@ -486,52 +406,61 @@ sub update_db {
 
 #---------- Debugging and error reporting -----------------
 
-sub format_msg {
-    my ( $self, @msg ) = @_;
-    return '[' . scalar gmtime() . "]\t" . join( '', @msg );
+sub format_msg
+{
+    my ($self,@msg) = @_;
+    return '['. scalar gmtime() ."]\t". join('',@msg);
 }
 
-sub warn {
-    my ( $self, @msg ) = @_;
+sub warn
+{
+    my ($self,@msg) = @_;
     my $msg = $self->format_msg(@msg);
-    if ( $self->verbose > 0 ) {
+    if ($self->verbose > 0) 
+    {
         print STDERR $msg;
     }
     $self->log($msg);
 }
 
-sub debug {
-
+sub debug
+{
     # The granularity of verbose messaging does not make much sense
     #   now, because verbose cannot be bigger than 1 (made Base.pm
     #   throw on warn's).
-    my ( $self, @msg ) = @_;
-    if ( $self->verbose > 0 ) {
+    my ($self,@msg) = @_;
+    if ($self->verbose > 0) 
+    {
         my $msg = $self->format_msg(@msg);
         print STDERR $msg;
         $self->log($msg);
     }
 }
 
-sub throw {
-    my ( $self, @msg ) = @_;
+sub throw
+{
+    my ($self,@msg) = @_;
     my $msg = $self->format_msg(@msg);
     Utils::error($msg);
 }
 
-sub log {
-    my ( $self, @msg ) = @_;
+sub log
+{
+    my ($self,@msg) = @_;
 
     my $msg = $self->format_msg(@msg);
-    my $status = open( my $fh, '>>', $self->log_file );
-    if ( !$status ) {
+    my $status  = open(my $fh,'>>',$self->log_file);
+    if ( !$status ) 
+    {
         print STDERR $msg;
     }
-    else {
-        print $fh $msg;
+    else 
+    { 
+        print $fh $msg; 
     }
-    if ($fh) { close($fh); }
+    if ( $fh ) { close($fh); }
 }
+
 
 1;
 

@@ -969,7 +969,7 @@ sub ignore_tags_on_write {
     }
 }
 
-use Inline C => '<<END_C';
+use Inline C => <<'END_C';
 
 #include "bam.h"
 
