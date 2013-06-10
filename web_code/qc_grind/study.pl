@@ -48,7 +48,6 @@ unless ($db) {
 my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => $db, mode => 'rw');
  
 print $sw->header();
-##use Data::Dumper;print "<pre>parms:", Dumper($cgi->param()), "FILT $lane_name_filt, $sample_filt</pre>"; ## DEBUG
 
 my $projectID = $cgi->param('proj_id');
 unless ($projectID) {
@@ -122,7 +121,7 @@ sub displayProjectLaneForm
         <div class="centerFieldset">
         <fieldset>
         <legend>Lane status</legend>
-        <table RULES=GROUPS id="srtTbl" cellpadding=4>
+        <table RULES=GROUPS cellpadding="4" class="sortable">
         <thead> 
         <tr>
 		<th style="width: 40px">Pass</th>
@@ -147,7 +146,11 @@ sub displayProjectLaneForm
 
     # filters 
     print qq[ <tr style="background-color:#F5F5F5"> ];
-	print $cgi->td(['','','','','']);
+
+	my @lane_status = qw (passed failed investigate gt_pending pending);
+	foreach my $status (@lane_status) {
+        print $cgi->td( $cgi->checkbox(-name=>$status, -checked=>1, -label=>'', -title=>"Filter on all lanelets $status"));
+	}
 	print "<td>", $cgi->textfield(-name=>'lanename', -size=>6), "</td>";
 	print $cgi->td(['','']);
     my @sn = sort keys(%sample_names);
@@ -157,8 +160,6 @@ sub displayProjectLaneForm
     print qq[ </tr> ];
     print qq[ </thead> ];
     print qq[<tbody>];
-
-	my @lane_status = qw (passed failed investigate gt_pending pending);
 
     foreach( sort( keys( %lanes) ) ) {
 
@@ -175,7 +176,7 @@ sub displayProjectLaneForm
             $lane_data{raw_bases} += sprintf("%.2f", ($lanelet->raw_bases/1000000000));
             
             $lane_data{raw_max} = $lanelet->raw_bases if (!exists $lane_data{raw_max} || $lanelet->raw_bases > $lane_data{raw_max});
-            $lane_data{raw_min} = $lanelet->raw_bases if (!exists $lane_data{raw_min} || $lanelet->raw_bases < $lane_data{raw_min});
+            $lane_data{raw_min} = $lanelet->raw_bases if (!exists $lane_data{raw_min} || $lanelet->raw_bases < $lane_data{raw_max});
 
             my $lqc_status = $lanelet->qc_status;
             $lane_data{$lqc_status}++;
@@ -197,6 +198,16 @@ sub displayProjectLaneForm
                 }
             }
         }
+        ## filter out lane from results if Lanes status unchecked and all lanelets are of this status?
+        if ($form_submission) { # filter on lane status checkboxes
+            my $do_filter=0;
+            foreach my $status (@lane_status) {
+                next if $cgi->param($status);
+                $do_filter++ if $lane_data{$status} == $lane_data{num_lanelets};
+            }
+            next if $do_filter;
+        }
+
         $lane_data{raw_mean} = sprintf("%.2f", ($lane_data{raw_bases} / $lane_data{num_lanelets}));
         $lane_data{raw_min} = sprintf("%.2f", ($lane_data{raw_min}/1000000000));
         $lane_data{raw_max} = sprintf("%.2f", ($lane_data{raw_max}/1000000000));
@@ -247,12 +258,12 @@ sub displayProjectLaneForm
 
         # toggle lane status radios
         foreach my $status (@lane_status) {
-            print $cgi->td("<input type='radio' title='Toggle $status' id='toggle_$status'");
+            print $cgi->td("<input type='radio' name='statusAll' title='Toggle $status' class='togglestatus' id='$status'/>");
         }
 
 		print qq[ <td colspan=12 > ];
 		print $cgi->submit(-name => 'update', -value  => 'Update');
-        print $cgi->button(-id =>'resetRadios', -value=>'Clear');
+        print $cgi->button(-id =>'resetRadios', -value=>'Reset');
 		print qq[ </td> ];
         print qq[ </tr> </tfoot> ];
     }

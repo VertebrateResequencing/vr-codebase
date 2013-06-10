@@ -26,45 +26,92 @@ sub new
     my $self = $class->SUPER::new(@args);
 
     $$self{do_clean} = 1;
-    $$self{config_version} = '1349789206';
-    $$self{good_vcf}     = '/lustre/scratch105/projects/g1k/ref/broad_resources_b37/hapmap_3.3.b37.sites.vcf.gz';
+    $$self{config_version} = '1369387998';
+    $$self{good_vcf}     = '/lustre/scratch105/projects/g1k/ref/broad_resources_b37/hapmap_3.3.b37.sites.vcf.gz ' .
+                           '/lustre/scratch105/vrpipe/refs/human/ncbi37/resources/Mills_and_1000G_gold_standard.indels.b37.vcf.gz';
     $$self{vcf_exec}     = 'vcf';
-    $$self{filter_args}  = q[-f 'QUAL>5' -l 'QUAL>0.5'];
-    $$self{annots}       = 'RPB,MDV,QBD,HWE,VDB,QUAL';
-    $$self{nshuffle_max} = 100_000;
-    $$self{chunk_by}     = 100;
+    $$self{snps} = 
+    {
+        filter_args  => q[-f 'QUAL>=10' -l 'QUAL>0.8'],
+        annots       => 'RPB,MDV,QBD,HWE,VDB,QUAL',
+        good_mask    => '10',
+        nshuffle_max => 100_000,
+        chunk_by     => 50,
+    };
+    $$self{indels} = 
+    {
+        filter_args  => q[-f 'QUAL>=10' -l 'QUAL>0.8'],
+        annots       => 'RPB,MDV,QBD,HWE,VDB,QUAL',
+        good_mask    => '01',
+        nshuffle_max => 100_000,
+        chunk_by     => 50,
+        fa_ref       => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
+    };
     $$self{_sampleconf}  = q[
+            vcf_exec     => '] .$$self{vcf_exec}. q[',
+
+            do_snps      => 1,
+            do_indels    => 1,
+
+            # Single VCF or a file with list of file names. Can be overriden by the -i command line argument.
+            in_vcf       => undef,
+
+            # Training sites. Multiple files can be given, for both SNPs and indels. Indicate which is which
+            # by setting the good_mask below.
+            good_vcf     => '] .$$self{good_vcf}. q[',
+
+            # Set the desired annotations and filtering parameters separately for SNPs and INDELs.
+            # The mask indicates which of the files contains training sites. For example, to read training
+            # sites from the first file, write '10'. To read training sites from both files, set to '11'.
+            snps => 
+            {
+                filter_args  => q\[] .$$self{snps}{filter_args}. q[\],
+                annots       => '] .$$self{snps}{annots}. q[',
+                good_mask    => '] .$$self{snps}{good_mask}. q[',
+                target_tstv  => [ 2.00, 2.40 ],     # Scan in this ts/tv region, use bigger value for exomes, 
+                                                    # typically >3.4 or >2.6 when also off-target regions are
+                                                    # included.
+                nshuffle_max => ] .$$self{snps}{nshuffle_max}. q[,    # maximum number of combinations to try
+                chunk_by     => ] .$$self{snps}{chunk_by}. q[,        # number of combinations to pack into one job
+            },
+            indels => 
+            {
+                filter_args  => q\[] .$$self{indels}{filter_args}. q[\],
+                annots       => '] .$$self{indels}{annots}. q[',
+                good_mask    => '] .$$self{indels}{good_mask}. q[',
+                target_rc    => [ 0.70, 0.90 ],     # Repeat-consistency, a metric similar to ts/tv for INDELs
+                fa_ref       => '] .$$self{indels}{fa_ref}. q[',
+                exons        => '/nfs/users/nfs_p/pd3/sandbox/other/20120425-inframe-indels/CCDS-human-GRCh37p6.sorted.txt.gz', # optional, for frame shift vcf check
+                nshuffle_max => ] .$$self{indels}{nshuffle_max}. q[,
+                chunk_by     => ] .$$self{indels}{chunk_by}. q[,
+            },
+
+
+            # The -s functionality is not maintained in this version
+            #
+            #   scan_nbins   => [ 15, 17, 18, 19, 20, 21, 22, 23, 24, 25, 30 ], # list
+            #   scan_learn   => [ 0.01, 0.05, 0.10, 0.15, 0.20 ],               # list
+            #   scan_th      => [ 0.1, 0.2, 0.3, 0.4, 0.5 ],                    # list
+
+
+            do_clean => 1, 
+
             # For sanity checking that your config file is not obsolete. Update the version key in your 
             #  config file to get rid of the warnings.
             version      => '] .$$self{config_version}. q[',
-
-            vcf_exec     => '] .$$self{vcf_exec}. q[',
-            filter_args  => q\[] .$$self{filter_args}. q[\],
-
-            annots       => '] .$$self{annots}. q[',
-            good_vcf     => '] .$$self{good_vcf}. q[',
-            in_vcf       => undef,      # single VCF or a file with list of file names
-
-            target_tstv  => [ 2.00, 2.40 ],     # min, max
-            scan_nbins   => [ 15, 17, 18, 19, 20, 21, 22, 23, 24, 25, 30 ], # list
-            scan_learn   => [ 0.01, 0.05, 0.10, 0.15, 0.20 ],               # list
-            scan_th      => [ 0.1, 0.2, 0.3, 0.4, 0.5 ],                    # list
-
-            nshuffle_max => ] .$$self{nshuffle_max}. q[,
-            chunk_by     => ] .$$self{chunk_by}. q[,
-
-            do_clean => 1, 
     ]."\n";
 
     $$self{usage} .= 
         "Usage: run-beautify\n" .
         "Options:\n" .
-        "   -c, --clean             Clean all temporary files\n" .
-        "   -i, --input <vcf>       Input VCF\n" .
-        "   -m, --mrProper          Clean all temporary files leaving only the resulting VCF\n" .
-        "   -r, --randomize         Randomly shuffle annotations to find the best combination\n" .
-        "   -s, --scan              Scan the parameter space to find the best values\n" .
-        "   -o, --outdir <dir>      Output directory\n" .
+        "   -a, --apply <type>:<th>:<list>      Apply SOM filter using the given threshold and annotations.\n" .
+        "                                           Type is either 'snps' or 'indels', both can be given.\n" .
+        "   -c, --clean                         Clean all temporary files\n" .
+        "   -i, --input <vcf>                   Input VCF\n" .
+        "   -m, --mrProper                      Clean all temporary files leaving only the resulting VCF\n" .
+        "   -r, --randomize                     Randomly shuffle annotations to find the best combination\n" .
+        "   -s, --scan                          Scan the parameter space to find the best values\n" .
+        "   -o, --outdir <dir>                  Output directory\n" .
         "\n";
 
     return $self;
@@ -75,6 +122,17 @@ sub parse_args
     my ($self) = @_;
     while (defined(my $arg=shift(@ARGV)))
     {
+        if ( $arg eq '-a' or $arg eq '--apply' ) 
+        { 
+            my $do_apply = shift(@ARGV); 
+            if ( !($do_apply=~/^([^:]+):([^:]+):(\S+)$/) ) { $self->throw("Could not parse the --apply parameter: [$do_apply]\n"); }
+            if ( $1 ne 'snps' && $1 ne 'indels' ) { $self->throw("Expected either 'snps' or 'indels' with -a but got '$1': $do_apply\n"); }
+            $$self{$1}{apply_th} = $2;
+            $$self{$1}{annots}   = $3;
+            $$self{$1}{do_apply} = 1;
+            $$self{do_apply} = 1;
+            next; 
+        }
         if ( $arg eq '-c' or $arg eq '--clean' ) { $$self{clean}=1; next; }
         if ( $arg eq '-s' or $arg eq '--scan' ) { $$self{do_scan}=1; next; }
         if ( $arg eq '-r' or $arg eq '--randomize' ) { $$self{do_randomize}=1; next; }
@@ -83,7 +141,8 @@ sub parse_args
         if ( $arg eq '-m' or $arg eq '--mrProper' ) { $$self{mrProper}=1; next; }
         $self->throw();
     }
-    if ( !$$self{do_scan} && !$$self{do_randomize} ) { $self->throw("Missing one of the --scan or --randomize options\n"); }
+    if ( !$$self{do_snps} && !$$self{do_indels} ) { $self->throw("Neither do_snps nor do_indels key is set!\n"); }
+    if ( !$$self{do_apply} && !$$self{do_scan} && !$$self{do_randomize} ) { $self->throw("Missing one of the --apply, --scan or --randomize options\n"); }
     if ( $$self{do_scan} && $$self{do_randomize} ) { $self->throw("Only one of the --scan or --randomize options should be given\n"); }
     if ( exists($$self{version}) && $$self{version} ne $$self{config_version} )
     {
@@ -112,43 +171,38 @@ sub main
     my $outdir = $$self{outdir};
     $self->save_config();
 
+    # Parse VCF and collect annotations
     $self->spawn('collect',"$outdir/annots.tab.gz");
     $self->wait;
 
+    # First run with all annotations to create distribution stats. This takes longer
+    # and will be re-used by the individual filtering tasks.
+    if ( $$self{do_snps} ) { $self->spawn('init_distributions',"$outdir/annots.tab.gz.SNP.n", "$outdir/annots.tab.gz", 'snps'); }
+    if ( $$self{do_indels} ) { $self->spawn('init_distributions',"$outdir/annots.tab.gz.INDEL.n", "$outdir/annots.tab.gz", 'indels'); }
+    $self->wait;
+
+
+    my (@snp_annots, @indel_annots);
+    if ( $$self{do_snps} ) { my %anns = $self->parse_annots('snps'); @snp_annots = sort keys %anns; }
+    if ( $$self{do_indels} ) { my %anns = $self->parse_annots('indels'); @indel_annots = sort keys %anns; }
+
     if ( $$self{do_randomize} )
     {
-        my %annots = map { $_ => 1 } split(/,/, $$self{annots});    # remove duplicate keys
-        my @annots = keys %annots;
-        my $cmbs   = $self->shuffle(scalar @annots);
-        my @tests  = ();
-        for (my $i=0; $i<@$cmbs; $i+=$$self{chunk_by})
-        {
-            my @args;
-            for (my $j=0; $j<$$self{chunk_by}; $j++)
-            {
-                if ( $i+$j >= @$cmbs ) { last; }
-                my @anns;
-                for (my $k=0; $k<@annots; $k++)
-                {
-                    if ( $$cmbs[$i+$j] & (1<<$k) ) { next; }
-                    push @anns, $annots[$k];
-                }
-                if ( !@anns ) { next; }
-                my $ann = join(',', @anns);
-                push @args, "-a $ann";
-            }
-            push @tests, "$outdir/randomize/$i.tab";
-            $self->spawn('try_filter',"$outdir/randomize/$i.tab", @args);
-        }
+        my @snp_tests = $$self{do_snps} ? $self->spawn_randomize('snps', @snp_annots) : ();
+        my @indel_tests = $$self{do_indels} ? $self->spawn_randomize('indels', @indel_annots) : ();
         $self->wait;
 
-        $self->spawn('find_best',"$outdir/randomize.tab",@tests);
+        $self->spawn('find_best',"$outdir/randomize.SNP.tab",@snp_tests) unless !$$self{do_snps};
+        $self->spawn('find_best',"$outdir/randomize.INDEL.tab",@indel_tests) unless !$$self{do_indels};
         $self->wait;
-        $self->spawn('plot_randomize',"$outdir/randomize.tab.png");
+
+        $self->spawn('plot_randomize',"$outdir/randomize.SNP.tab.png",'snps') unless !$$self{do_snps};
+        $self->spawn('plot_randomize',"$outdir/randomize.INDEL.tab.png",'indels') unless !$$self{do_indels};
         $self->wait;
     }
-    else
+    elsif ( $$self{do_scan} )
     {
+        $self->throw("Sorry, this branch is currently not maintained.\n");
         my @jobs;
         for my $bin (@{$$self{scan_nbins}})
         {
@@ -179,6 +233,53 @@ sub main
         $self->spawn('plot_scan',"$outdir/scan.tab.png");
         $self->wait;
     }
+    elsif ( $$self{snps}{do_apply} or $$self{indels}{do_apply} )
+    {
+        my $dirname;
+        if ( $$self{snps}{do_apply} ) { $dirname = 'snps-' . $$self{snps}{annots} . '-' . $$self{snps}{apply_th}; }
+        if ( $$self{indels}{do_apply} ) 
+        { 
+            if ( defined $dirname ) { $dirname .= '-'; }
+            $dirname .= 'indels-' . join(',',$$self{indels}{annots}); 
+            $dirname .= '-' . $$self{indels}{apply_th}; 
+        }
+
+        # Run the requested filters to generate list of sites with scores
+        if ( $$self{snps}{do_apply} ) 
+        { 
+            $self->spawn('apply_init',"$outdir/$dirname/annots.SNP.tab",$$self{snps}{filter_args},$$self{snps}{annots}); 
+        }
+        if ( $$self{indels}{do_apply} ) 
+        { 
+            $self->spawn('apply_init',"$outdir/$dirname/annots.INDEL.tab","$$self{indels}{filter_args} -t INDEL -F $$self{indels}{fa_ref}",$$self{indels}{annots}); 
+        }
+        $self->wait;
+
+        # Apply filtering, create output VCFs
+        my %names = ();
+        my @files = $self->list_files($$self{in_vcf});
+        my @vcfs  = ();
+        for my $file (@files)
+        {
+            my $name = $self->strip_dir($file);
+            if ( exists($names{$name}) ) { $self->throw("Improve me: conflicting base names [$file] -> [$name]\n"); }
+
+            my $args;
+            if ( $$self{snps}{do_apply} ) { $args .= " -s $$self{snps}{apply_th}"; }
+            if ( $$self{indels}{do_apply} ) { $args .= " -i $$self{indels}{apply_th}"; }
+
+            $self->spawn('apply_filter',"$outdir/$dirname/$name","$outdir/$dirname/annots",$file, $args);
+            push @vcfs, "$outdir/$dirname/$name";
+        }
+        $self->wait;
+
+        for my $vcf (@vcfs)
+        {
+            $self->spawn('vcf_stats',"$vcf.filt.vchk",$vcf,'-f');
+            $self->spawn('vcf_stats',"$vcf.vchk",$vcf,'');
+        }
+        $self->wait;
+    }
     $self->all_done;
 
     # Run performance stats and clean
@@ -188,6 +289,36 @@ sub main
 
     $self->all_done;
 }
+
+sub spawn_randomize
+{
+    my ($self,$key,@annots) = @_;
+    my $cmbs   = $self->shuffle($$self{$key}{nshuffle_max}, scalar @annots);
+    my @tests  = ();
+    for (my $i=0; $i<@$cmbs; $i+=$$self{$key}{chunk_by})
+    {
+        my @args;
+        for (my $j=0; $j<$$self{$key}{chunk_by}; $j++)
+        {
+            if ( $i+$j >= @$cmbs ) { last; }
+            my @anns;
+            for (my $k=0; $k<@annots; $k++)
+            {
+                if ( $$cmbs[$i+$j] & (1<<$k) ) { next; }
+                push @anns, $annots[$k];
+            }
+            if ( !@anns ) { next; }
+            my $arg = '-a ' . join(',', @anns);
+            if ( exists($$self{$key}{good_mask}) ) { $arg .= " -g 0$$self{$key}{good_mask}" }
+            if ( $key eq 'indels' ) { $arg .= " -t INDEL -F $$self{$key}{fa_ref}"; }
+            push @args, $arg;
+        }
+        push @tests, "$$self{outdir}/randomize.$key/$i.tab";
+        $self->spawn('try_filter',"$$self{outdir}/randomize.$key/$i.tab", $key, @args);
+    }
+    return (@tests);
+}
+
 
 sub mrProper
 {
@@ -242,7 +373,7 @@ sub tabix_part
 
 sub shuffle
 {
-    my ($self, $n) = @_;
+    my ($self, $nmax, $n) = @_;
 
     # variable number of nested loops
     my (@out, @cnt);
@@ -268,11 +399,28 @@ sub shuffle
             if ( $cnt[$nl-1] >= $n ) { last; }
 
             for ($il=0; $il<$nl; $il++) { $out[$i] |= 1<<$cnt[$il]; }
-            if ( ++$i >= $$self{nshuffle_max} ) { last; }
+            if ( ++$i >= $nmax ) { last; }
         }
-        if ( $i >= $$self{nshuffle_max} ) { last; }
+        if ( $i >= $nmax ) { last; }
     }
     return \@out;
+}
+
+sub list_files
+{
+    my ($self,$file) = @_;
+    if ( !$self->is_file_list($file) ) { return ($file); } 
+    my @files;
+    open(my $fh,'<',$file) or $self->throw("$file: $!");
+    while (my $line=<$fh>)
+    {
+        chomp($line);
+        $line =~ s/^\s*//;
+        $line =~ s/\s*$//;
+        push @files, $line;
+    }
+    close($fh);
+    return (@files);
 }
 
 sub is_file_list
@@ -283,42 +431,90 @@ sub is_file_list
     return 0;
 }
 
-sub collect
+sub strip_dir
 {
-    my ($self,$outfile) = @_;
-    my %annots = map { $_ => 1 } split(/,/,$$self{annots});
-    for my $filt (split(/\s+/,$$self{filter_args}))
+    my ($self,$file) = @_;
+    $file =~ s{^.*/}{};
+    return $file;
+}
+
+sub parse_annots
+{
+    my ($self,$key) = @_;
+    my @annots = split(/,/,$$self{$key}{annots});
+    my %annots = map { $_ => 1 } @annots;
+    for my $filt (split(/\s+/,$$self{$key}{filter_args}))
     {
         if ( $filt eq '&&' ) { next; }
         if ( $filt=~/^-/ ) { next; }
         $filt =~ s/\'//g;
         $filt =~ s/\"//g;
 
-        my ($a,$b) = split(/[>=<]/, $filt);
+        my ($a,$b) = split(/[>=<]+/, $filt);
         if ( exists($annots{$a}) or exists($annots{$b}) ) { next; }
 
         use Scalar::Util qw(looks_like_number);
         my $anum = looks_like_number($a);
         my $bnum = looks_like_number($b);
-        if ( $anum && $bnum ) { $self->throw("Unable to decide which is which: $filt\n"); }
-        if ( !$anum && !$bnum ) { $self->throw("Unable to decide which is which: $filt\n"); }
+        if ( $anum && $bnum ) { $self->throw("Unable to decide which is which: $filt [$anum,$bnum $a,$b]\n"); }
+        if ( !$anum && !$bnum ) { $self->throw("Unable to decide which is which: $filt [$anum,$bnum $a,$b]\n"); }
         if ( !$anum ) { $annots{$a} = 1; } else { $annots{$b} = 1; }
     }
+    return %annots;
+}
+
+sub collect
+{
+    my ($self,$outfile) = @_;
+
+    # Prepare command-line arguments
+    my %annots;
+    if ( $$self{do_snps} ) { %annots = $self->parse_annots('snps'); }
+    if ( $$self{do_indels} ) { %annots = (%annots, $self->parse_annots('indels')); }
+
     my $in_vcf = $$self{in_vcf};
     if ( $self->is_file_list($in_vcf) ) { $in_vcf = "-v $in_vcf"; }
     my $annots = join(',', sort keys %annots);
+
+    # Collect the annotations
     $self->cmd("$$self{vcf_exec} query -Ha $annots $in_vcf $$self{good_vcf} | bgzip -c > $outfile.part");
-    $self->cmd("$$self{vcf_exec} filter $outfile.part -p -o $outfile $$self{filter_args}");
-    # Remove annots.tab.gz.SNP.* files so that it's not accidently used for final filtering
-    unlink("$outfile.SNP.tab");
-    unlink("$outfile.SNP.sites.gz");
-    unlink("$outfile.SNP.sites.gz.tbi");
-    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub init_distributions
+{
+    my ($self,$outfile,$tabfile,$key) = @_;
+
+    my $args = $$self{$key}{filter_args};
+    if ( exists($$self{$key}{good_mask}) ) { $args .= " -g 0$$self{$key}{good_mask}" }
+    if ( $key eq 'indels' ) { $args .= " -t INDEL -F $$self{$key}{fa_ref}"; }
+
+    my $type = $key eq 'snps' ? 'SNP' : 'INDEL';
+    
+    $self->cmd("$$self{vcf_exec} filter $tabfile -p -o $outfile.part/ $args");
+    rename("$outfile.part/annots.$type.n","$outfile.partx");
+    $self->cmd("rm -rf $outfile.part");
+    rename("$outfile.partx",$outfile);
 }
 
 sub try_filter
 {
-    my ($self,$outfile,@args) = @_;
+    my ($self,$outfile,$key,@args) = @_;
+
+    my $filter_args = $$self{$key}{filter_args};
+    my ($min,$max,$type);
+    if ( $key eq 'snps' )
+    {
+        $min  = $$self{$key}{target_tstv}[0];
+        $max  = $$self{$key}{target_tstv}[1];
+        $type = 'SNP';
+    }
+    else
+    {
+        $min  = $$self{$key}{target_rc}[0];
+        $max  = $$self{$key}{target_rc}[1];
+        $type = 'INDEL';
+    }
 
     `mkdir -p $outfile.xxx/`;
     open(my $out,">","$outfile.part") or $self->throw("$outfile.part: $!");
@@ -326,24 +522,59 @@ sub try_filter
     my @best;
     for my $arg (@args)
     {
-        $self->cmd("$$self{vcf_exec} filter $$self{outdir}/annots.tab.gz $arg -o $outfile.xxx/ $$self{filter_args}");
+        $self->cmd("$$self{vcf_exec} filter $$self{outdir}/annots.tab.gz $arg -o $outfile.xxx/ $filter_args");
         
-        open(my $fh,'<',"$outfile.xxx/annots.SNP.tab") or $self->throw("$outfile.xxx/annots.SNP.tab: $!");
+        open(my $fh,'<',"$outfile.xxx/annots.$type.tab") or $self->throw("$outfile.xxx/annots.$type.tab: $!");
         while (my $line=<$fh>)
         {
             if ( $line=~/^#/ ) { next; }
             chomp($line);
             my @items = split(/\t/, $line);
-            if ( $items[0] < $$self{target_tstv}[0] ) { next; }
-            if ( $items[0] > $$self{target_tstv}[1] ) { next; }
+            if ( $items[0] < $min ) { next; }
+            if ( $items[0] > $max ) { next; }
             print $out $line, "\t$arg\n";
         }
-        close($fh) or $self->throw("close $outfile.xxx/annots.SNP.tab");
+        close($fh) or $self->throw("close $outfile.xxx/annots.$type.tab");
         `rm -rf $outfile.xxx/`;
     }
     close($out) or $self->throw("close $outfile.part");
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
+
+sub apply_init
+{
+    my ($self,$outfile,$args,@annots) = @_;
+    my $annots = join(',',@annots);
+    `mkdir -p $outfile.part/`;
+    $self->cmd("$$self{vcf_exec} filter $$self{outdir}/annots.tab.gz -a $annots -o $outfile.part/ $args");
+    my $outdir = $outfile;
+    $outdir =~ s{/[^/]+$}{};
+    $self->cmd("mv $outfile.part/* $outdir");
+    $self->cmd("rm -rf $outfile.part");
+}
+
+sub apply_filter
+{
+    my ($self,$outfile,$prefix,$infile,$args) = @_;
+    my @chrs = `tabix -l $infile`;
+    if ( @chrs == 1 )
+    {
+        chomp($chrs[0]);
+        $args .= " -r $chrs[0]";
+    }
+    $self->cmd("$$self{vcf_exec} filter $args $infile -o $prefix | bgzip -c > $outfile.part");
+    $self->tabix_part($outfile);
+}
+
+sub vcf_stats
+{
+    my ($self,$outfile,$vcf,$args) = @_;
+    if ( $$self{do_indels} ) { $args .= " -F $$self{indels}{fa_ref}"; }
+    if ( $$self{do_indels} && exists($$self{indels}{exons}) ) { $args .= " -e $$self{indels}{exons}"; }
+    $self->cmd("$$self{vcf_exec} check $args $vcf > $outfile.part");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
 
 sub tprint
 {
@@ -424,54 +655,81 @@ sub calc_rank
     return (\%out,\@order);
 }
 
+sub round_value
+{
+    my ($tick, $value) = @_;
+    my $rounded = $tick * int($value/$tick);
+    if ( $value - $rounded > $tick*0.5 ) { $rounded += $tick; }
+    return $rounded;
+}
+
 sub plot_randomize
 {
-    my ($self,$outfile) = @_;
+    my ($self,$outfile,$key) = @_;
 
     my $prefix = $outfile;
     $prefix =~ s/\.png$//;
 
     # Collect data for two plots: 
-    #   1) biggest number of sites and best sensitivity by ts/tv
+    #   1) biggest number of sites and best sensitivity by metric, which is ts/tv for SNPs and repeat consistency for indels
     #   2) rank annotation box plot
 
-    my (%cnts,%sens,%anns);   # keep n-top hits for each ts/tv to calculate rank
+    my ($min,$max,$metric_name,$step);
+    if ( $key eq 'snps' )
+    {
+        $metric_name = 'ts/tv';
+        $min  = $$self{$key}{target_tstv}[0];
+        $max  = $$self{$key}{target_tstv}[1];
+        $step = 0.01;
+        $key  = 'SNP';
+    }
+    else
+    {
+        $metric_name = 'repeat consistency';
+        $min  = $$self{$key}{target_rc}[0];
+        $max  = $$self{$key}{target_rc}[1];
+        $step = 0.005;
+        $key  = 'INDEL';
+    }
+
+
+    my (%cnts,%sens,%anns);   # keep n-top hits for each segregating value to calculate rank
     open(my $fh,"<",$prefix) or $self->throw("$prefix: $!");
     while (my $line=<$fh>)
     {
         my @items = split(/\t/, $line);
-        # Novel ts/tv:  if ( $items[3] < $$self{target_tstv}[0] or $items[3] > $$self{target_tstv}[1] ) { next; }
-        my $tstv  = sprintf("%.2f", $items[0]);
-        my $cnt   = $items[1];
-        my $sns   = $items[2];
-        my $novel_tstv = $items[3];
+        # Novel:  if ( $items[3] < $min or $items[3] > $max ) { next; }
+        my $metric = round_value($step, $items[0]);
+        my $cnt    = $items[1];
+        my $sns    = $items[2];
+        my $novel_metric = $items[3];
         if ( !($items[5]=~/-a\s*(\S+)/) ) { $self->throw("Could not detect annotations in $prefix: $line"); }
         my @annot = split(/,/,$1);
         for my $ann (@annot) { $anns{$ann} = 1; }
-        my $rec = { cnt=>$cnt, sns=>$sns, novel=>$novel_tstv, ann=>\@annot };
-        if ( !exists($cnts{$tstv}) ) { push @{$cnts{$tstv}}, $rec; }
+        my $rec = { cnt=>$cnt, sns=>$sns, novel=>$novel_metric, ann=>\@annot };
+        if ( !exists($cnts{$metric}) ) { push @{$cnts{$metric}}, $rec; }
         else
         {
             my $i;
-            for ($i=0; $i<@{$cnts{$tstv}}; $i++)
+            for ($i=0; $i<@{$cnts{$metric}}; $i++)
             {
-                if ( $cnt < $cnts{$tstv}[$i]{cnt} ) { last; }   # sorted in ascending order
+                if ( $cnt < $cnts{$metric}[$i]{cnt} ) { last; }   # sorted in ascending order
             }
-            if ( $i>0 ) { splice(@{$cnts{$tstv}}, $i, 0, $rec); }
-            elsif ( @{$cnts{$tstv}}<20 ) { push @{$cnts{$tstv}}, $rec; } 
-            if ( @{$cnts{$tstv}}>20 ) { shift @{$cnts{$tstv}}; }
+            if ( $i>0 ) { splice(@{$cnts{$metric}}, $i, 0, $rec); }
+            elsif ( @{$cnts{$metric}}<20 ) { unshift @{$cnts{$metric}}, $rec; } 
+            if ( @{$cnts{$metric}}>20 ) { shift @{$cnts{$metric}}; }
         }
-        if ( !exists($sens{$tstv}) ) { push @{$sens{$tstv}}, $rec; }
+        if ( !exists($sens{$metric}) ) { push @{$sens{$metric}}, $rec; }
         else
         {
             my $i;
-            for ($i=0; $i<@{$sens{$tstv}}; $i++)
+            for ($i=0; $i<@{$sens{$metric}}; $i++)
             {
-                if ( $sns < $sens{$tstv}[$i]{sns} ) { last; }
+                if ( $sns < $sens{$metric}[$i]{sns} ) { last; }
             }
-            if ( $i>0 ) { splice(@{$sens{$tstv}}, $i, 0, $rec); }
-            elsif ( @{$sens{$tstv}}<20 ) { push @{$sens{$tstv}}, $rec; }
-            if ( @{$sens{$tstv}} > 20 ) { shift @{$sens{$tstv}}; }
+            if ( $i>0 ) { splice(@{$sens{$metric}}, $i, 0, $rec); }
+            elsif ( @{$sens{$metric}}<20 ) { unshift @{$sens{$metric}}, $rec; }
+            if ( @{$sens{$metric}} > 20 ) { shift @{$sens{$metric}}; }
         }
     }
     close($fh);
@@ -505,23 +763,23 @@ sub plot_randomize
         dat_cnt = [
     ");
     my %annot_sets = ();
-    for my $tstv (sort {$a<=>$b} keys %cnts)
+    for my $metric (sort {$a<=>$b} keys %cnts)
     {
-        my $ann = join(',',@{$cnts{$tstv}[-1]{ann}});
+        my $ann = join(',',@{$cnts{$metric}[-1]{ann}});
         if ( !exists($annot_sets{$ann}) ) { $annot_sets{$ann} = 1 + scalar keys %annot_sets; }
         $ann = $annot_sets{$ann};
-        print $fh "[$tstv,$cnts{$tstv}[-1]{cnt},$cnts{$tstv}[-1]{sns},'$ann',$cnts{$tstv}[-1]{novel}],\n";
+        print $fh "[$metric,$cnts{$metric}[-1]{cnt},$cnts{$metric}[-1]{sns},'$ann',$cnts{$metric}[-1]{novel}],\n";
     }
     $self->tprint($fh, "
         ]
         dat_sns = [
     ");
-    for my $tstv (sort {$a<=>$b} keys %sens)
+    for my $metric (sort {$a<=>$b} keys %sens)
     {
-        my $ann = join(',',@{$cnts{$tstv}[-1]{ann}});
+        my $ann = join(',',@{$cnts{$metric}[-1]{ann}});
         if ( !exists($annot_sets{$ann}) ) { $annot_sets{$ann} = 1 + scalar keys %annot_sets; }
         $ann = $annot_sets{$ann};
-        print $fh "[$tstv,$sens{$tstv}[-1]{sns},'" .bignum($sens{$tstv}[-1]{cnt}). "','$ann',", $sens{$tstv}[-1]{cnt} ,"],\n";
+        print $fh "[$metric,$sens{$metric}[-1]{sns},'" .bignum($sens{$metric}[-1]{cnt}). "','$ann',", $sens{$metric}[-1]{cnt} ,"],\n";
     }
     $self->tprint($fh, "
         ]
@@ -575,7 +833,9 @@ sub plot_randomize
         from mpl_toolkits.axes_grid1 import make_axes_locatable
         div1 = make_axes_locatable(ax1)
         cax1 = div1.append_axes('right', size='3%', pad=0.1)
-        plt.colorbar(sc1, cax=cax1).set_label('Sensitivity')
+        cb1  = fig.colorbar(sc1, cax=cax1)
+        cb1.set_label('Sensitivity')
+        for t in cb1.ax.get_yticklabels(): t.set_fontsize(9)
 
         cols = [x[4] for x in dat_sns]
         sc2 = ax2.scatter([x[0] for x in dat_sns],[x[1] for x in dat_sns],c=cols,edgecolor='none')
@@ -596,15 +856,18 @@ sub plot_randomize
         cb2.set_label('Number of sites')
         for t in cb2.ax.get_yticklabels(): t.set_fontsize(9)
 
+        # cols = [x[2] for x in dat_cnt] # uncomment if sensitivity should be the color
         sc3 = ax3.scatter([x[0] for x in dat_cnt],[x[4] for x in dat_cnt],c=cols,edgecolor='none')
         div3 = make_axes_locatable(ax3)
         cax3 = div3.append_axes('right', size='3%', pad=0.1)
+        # cb3  = fig.colorbar(sc3, cax=cax3)
+        # cb3.set_label('Sensitivity')
         cb3  = fig.colorbar(sc3, cax=cax3, format='%.2e')
         cb3.set_label('Number of sites')
         for t in cb3.ax.get_yticklabels(): t.set_fontsize(9)
         ax3.grid(color='gray')
-        ax3.set_ylabel('Novel ts/tv')
-        ax3.set_xlabel('ts/tv')
+        ax3.set_ylabel('Novel $metric_name')
+        ax3.set_xlabel('$metric_name')
 
         #plt.subplots_adjust(right=0.82,bottom=0.06,top=0.95,left=0.2,hspace=0.1,wspace=0.05)
         plt.savefig('$prefix.png')

@@ -159,9 +159,11 @@ sub run
 
     $$self{_about} = "Working directory: " . getcwd() . "\nCommand line: $0 " . join(' ',@args) . "\n";
 
-    # Parse runner system parameters
+    # Parse runner system parameters. Allow mixing + and - parameters
+    my @argv = ();
     while (defined(my $arg=shift(@ARGV)))
     {
+        if ( substr($arg,0,1) ne '+' ) { push @argv, $arg; next; }
         if ( $arg eq '+help' ) { $self->throw(); }
         if ( $arg eq '+config' ) { $self->_read_config(shift(@ARGV)); next; }
         if ( $arg eq '+sampleconf' ) { $self->_sample_config(); next; }
@@ -200,9 +202,8 @@ sub run
             $self->_revive($file1,$file2);
             exit;
         }
-        unshift(@ARGV,$arg);
-        last;
     }
+    @ARGV = @argv;
 
     # Run the user's module once or multiple times
     while (1)
@@ -557,7 +558,10 @@ sub _get_unfinished_jobs
             else
             {
                 my $id = $$self{_jobs_db}{$$job{done_file}}{id};
-                if ( exists($wfiles{$$job{wait_file}}{$id}) ) { $self->throw("FIXME: duplicate IDs??\n"); }
+                if ( exists($wfiles{$$job{wait_file}}{$id}) ) 
+                { 
+                    $self->throw("The target file name is not unique: $$job{done_file}\n",Dumper($wfiles{$$job{wait_file}}{$id}{args},$$job{args})); 
+                }
                 $wfiles{$$job{wait_file}}{$id} = $job;
             }
         }
@@ -680,12 +684,12 @@ sub wait
                         "The job failed repeatedly, ${nfailures}x: $wfile.$ids[$i].[eo]\n" .
                         "(Remove $jobs_id_file to clean the status, increase +retries or run with negative value of +retries to skip this task.)\n";
 
-                    $self->_send_email("The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
+                    $self->_send_email('failed', "The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
                     $self->throw($msg);
                 }
                 elsif ( !$warned )
                 {
-                    $self->warn("Running again, the previous attempt failed: $wfile.*\n");
+                    $self->warn("\nRunning again, the previous attempt failed: $wfile.*\n\n");
                     $warned = 1;
                 }
 
@@ -753,15 +757,15 @@ sub all_done
 {
     my ($self) = @_;
     $self->debugln("All done!");
-    $self->_send_email("The runner has finished, all done!\n", $$self{_about});
+    $self->_send_email('done', "The runner has finished, all done!\n", $$self{_about});
     exit $$self{_status_codes}{DONE};
 }
 
 sub _send_email
 {
-    my ($self,@msg) = @_;
+    my ($self,$status, @msg) = @_;
     if ( !exists($$self{_mail}) ) { return; }
-    open(my $mh,"| mail -s 'Runner report' $$self{_mail}");
+    open(my $mh,"| mail -s 'Runner report: $status' $$self{_mail}");
     print $mh @msg;
     close($mh);
 }
