@@ -875,7 +875,7 @@ sub plot_randomize
     ");
     close($fh);
 
-    `python $prefix.py`;
+    $self->cmd("python $prefix.py");
 }
 
 
