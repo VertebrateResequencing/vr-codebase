@@ -20,7 +20,7 @@ use Data::Dumper;
 die "Usage $0 <species> <chromosome>" unless @ARGV == 2;
 my $species = $ARGV[0];
 my $chr = $ARGV[1];
-print STDERR `date`, "Generating bed for $species chr $chr\n";
+print STDERR `date`, "Generating bed for $species, chr $chr\n";
 
 my $reg = "Bio::EnsEMBL::Registry";
 $reg->load_registry_from_db( -host => "ensembldb.ensembl.org", -user => "anonymous",);
