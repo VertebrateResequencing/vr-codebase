@@ -127,7 +127,7 @@ our %options = (
                 abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
                 sga_exec        => '/software/pathogen/external/apps/usr/bin/sga',
                 khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
-                QUASR_exec	    => '/software/pathogen/internal/pathdev/java/QUASR702_Parser/readsetProcessor.jar', 
+                QUASR_exec	    => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar', 
                 no_scaffolding  => 0,
                 annotation      => 0,
                 );
@@ -582,6 +582,7 @@ sub pool_fastqs
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
       my $base_path =  $self->{seq_pipeline_root};
+      my $assembler = $self->{assembler};
 
       my $script_name = $self->{fsu}->catfile($build_path, $self->{prefix}."pool_fastqs.pl");
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -592,7 +593,7 @@ use Bio::AssemblyImprovement::Assemble::SGA::Main;
 use Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main;
 use Bio::AssemblyImprovement::PrimerRemoval::Main;
 use File::Copy;
-my \$assembly= VertRes::Pipelines::Assembly->new();
+my \$assembly= VertRes::Pipelines::Assembly->new(assembler => qq[$assembler]);
 my \@lane_names;
 };
 
