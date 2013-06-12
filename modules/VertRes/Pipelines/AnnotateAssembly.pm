@@ -208,7 +208,7 @@ sub annotate_assembly {
     my $sample_accession = $self->_sample_accession_of_lane($self->{vrlane}, $self->{vrtrack});
     
     my $pipeline_version = join('/',($self->_annotation_base_directory,'pipeline_version_'.$self->{pipeline_version}));
-    
+    my $kingdom = $self->{kingdom} || "Bacteria";
     
       my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."annotate_assembly.pl");
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -225,6 +225,7 @@ sub annotate_assembly {
     tmp_directory    => qq[$self->{tmp_directory}],
     genus            => qq[$genus],
     outdir           => "annotation",
+    kingdom          => qq[$kingdom]
   );
   \$obj->annotate;
   
