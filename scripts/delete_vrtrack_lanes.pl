@@ -21,13 +21,16 @@ no warnings 'uninitialized';
 use Getopt::Long;
 use VertRes::Utils::VRTrackFactory;
 use VRTrack::Lane;
+use VertRes::Utils::FileSystem;
 use File::Path qw(remove_tree);
+use Cwd 'abs_path';
 
-my ($db, $root, $help, $verbose);
+my ($db, $root, $clean, $help, $verbose);
 
 GetOptions(
     'd|db=s'        =>  \$db,
     'r|root=s'		=>  \$root,
+    'c|clean'		=>  \$clean,
     'v|verbose'     =>  \$verbose,
     'h|help'	    =>  \$help,
     );
@@ -36,6 +39,7 @@ GetOptions(
     Usage: $0 <file of lane names to delete>  
                 --db        <specify db name>
                 [--root      <root directory for the analyses>]
+                --clean     [delete stored folder - in nexsan]
                 --verbose   [be extra verbose about what it is doing]
                 --help      <this message>
 
@@ -69,11 +73,37 @@ while (<>){
        next;
     }
     if ($root){
-        #Delete files first
+    
+
+        
+        # We first get the hierarchy structure for this lane. This is usually a symlink. 
+        # If -c is specified, we delete any entries in the fsu_file_exists table for this lane
+        # and also the folder which the symlink points to. We then delete the symlink itself.
+        # We don't rely on the stored_path in the lanes table because it may not be the
+        # one that was used to actually store the data.
+        # Further down in this script, the record for this lane is deleted from the DB
+        # so we do not have to do any updating of the processed flag etc.
+        # 5 June 2013
+        
         #Get full path to lane directory
         my $lanedir = $root.$vrtrack->hierarchy_path_of_lane_name($lane->name);
+        
+        if($clean){
+        	
+        	#Clear up any files in the FSU FILE EXISTS tables
+        	my $fsu = VertRes::Utils::FileSystem->new(reconnect_db=>1);
+        	print "Deleting: \n Files in the fsu_file_exists table that have a path like $lanedir \n" if $verbose;
+    		$fsu->file_exists($lanedir, recurse =>1, wipe_out=>1);
+ 
+ 	        my $stored_path = readlink $lanedir;  #Get the folder pointed to by the symlink
+
+         	print "Deleting: \n" if $verbose;
+        	remove_tree($stored_path, {verbose => $verbose, safe => 1}); #Delete folder pointed to by symlink
+        }
+               
         print "Deleting: \n" if $verbose;
-        remove_tree($lanedir, {verbose => $verbose, safe => 1});
+        remove_tree($lanedir, {verbose => $verbose, safe => 1}); #Delete symlink
+        
     }
 
     #update database
