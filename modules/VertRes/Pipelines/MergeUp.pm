@@ -93,7 +93,8 @@ use File::Basename;
 use File::Spec;
 use File::Copy;
 use Cwd 'abs_path';
-use LSF;
+use VertRes::LSF;
+use Utils;
 
 use base qw(VertRes::Pipeline);
 
@@ -347,7 +348,7 @@ sub tag_strip {
         $self->archive_bsub_files($path, $job_name);
         $job_name = $self->{fsu}->catfile($path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self,
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self,
                  qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->tag_strip(qq[$lane_bam], qq[$strip_bam], qw(@{$self->{tag_strip}})) || die qq[tag_strip failed for $lane_bam\\n];"});
     }
     
@@ -533,7 +534,7 @@ sub lib_markdup {
     my $queue = $memory >= 16000 ? "hugemem" : "long";
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
     
     my @markdup_bams;
     foreach my $merge_bam (@files) {
@@ -554,7 +555,7 @@ sub lib_markdup {
         $self->archive_bsub_files($path, $job_name);
         $job_name = $self->{fsu}->catfile($path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self,
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self,
                  qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->markdup(qq[$merge_bam], qq[$markdup_bam], java_memory => $java_mem) || die qq[markdup failed for $merge_bam\\n];"});
     }
     
@@ -637,7 +638,7 @@ sub extract_intervals {
         my $job_name = $self->{prefix}.'extract_intervals_'.$basename;
         $self->archive_bsub_files($path, $job_name);
         $job_name = $self->{fsu}->catfile($path, $job_name);
-        LSF::run($action_lock, $lane_path, $job_name, $self,
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self,
                  qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose)->extract_intervals_from_bam(qq[$markdup_bam], qq[$self->{extract_intervals}->{intervals_file}], qq[$extract_bam]) || die qq[extract_intervals failed for $markdup_bam\\n];"~);
     }
     
@@ -814,7 +815,7 @@ sub merge_up_one_level {
     $queue = $memory >= 16000 ? "hugemem" : $queue;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
     
     my $group_by_basename = ! defined $output_basename;
     my %grouped_bams = $self->_fofn_to_bam_groups($lane_path, $fofn, $group_by_basename);
@@ -854,20 +855,20 @@ sub merge_up_one_level {
         my $lock_file = $pathed_job_name.'.jids';
         
         # keep all the jobs running all the time
-        my $is_running = LSF::is_job_running($lock_file);
-        if ($is_running & $LSF::Error) {
+        my $is_running = VertRes::LSF::is_job_running($lock_file);
+        if ($is_running & $VertRes::LSF::Error) {
             next;
         }
-        elsif ($is_running & $LSF::Running) {
+        elsif ($is_running & $VertRes::LSF::Running) {
             next;
         }
-        elsif ($is_running & $LSF::Done) {
+        elsif ($is_running & $VertRes::LSF::Done) {
             next;
         }
         else {
             $self->archive_bsub_files($path, $this_job_name);
             
-            LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
+            VertRes::LSF::run($lock_file, $lane_path, $pathed_job_name, $self,
                  qq{perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new(verbose => $verbose, java_memory => $java_mem)->merge(qq[$out_bam], qw(@bams)) || die qq[merge failed for (@bams) -> $out_bam\\n];"});
         }
     }
@@ -1053,7 +1054,7 @@ sub _index_bams {
     my $this_job_name = $self->{prefix}.$job_name;
     $self->archive_bsub_files($lane_path, $this_job_name);
     $job_name = $self->{fsu}->catfile($lane_path, $this_job_name);
-	LSF::run($action_lock, $lane_path, $job_name, $self,
+	VertRes::LSF::run($action_lock, $lane_path, $job_name, $self,
 qq~perl -MVertRes::Utils::Sam -Mstrict -e "my \@bams = qw(@bams_to_index); VertRes::Utils::Sam->new(verbose => $verbose)->index_bams(files=>\\\@bams) || die qq[index_bams failed for $this_fofn\\n];"~);
 
     return;
@@ -1293,7 +1294,7 @@ sub _merge_check {
 sub running_status {
     my ($self, $jids_file) = @_;
     if ($jids_file =~ /_merge/) {
-        return $LSF::No;
+        return $VertRes::LSF::No;
     }
     
     return $self->SUPER::running_status($jids_file);

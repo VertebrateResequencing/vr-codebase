@@ -79,9 +79,10 @@ use File::Basename;
 use Time::Format;
 use File::Copy;
 use Cwd;
-use LSF;
+use VertRes::LSF;
 use Data::Dumper;
 use FileHandle;
+use Utils;
 use VertRes::Utils::Assembly;
 use Bio::AssemblyImprovement::Scaffold::Descaffold;
 use Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles;
@@ -122,11 +123,11 @@ our $actions = [ { name     => 'pool_fastqs',
 our %options = (
                 do_cleanup      => 1,
                 scaffolder_exec => '/software/pathogen/external/apps/usr/local/SSPACE-BASIC-2.0_linux-x86_64/SSPACE_Basic_v2.0.pl',
-                gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-10_linux-x86_64/GapFiller.pl',
+                gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-11_linux-x86_64/GapFiller.pl',
                 abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
-                sga_exec        => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
+                sga_exec        => '/software/pathogen/external/apps/usr/bin/sga',
                 khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
-                QUASR_exec	    => '/software/pathogen/internal/pathdev/java/QUASR702_Parser/readsetProcessor.jar', 
+                QUASR_exec	    => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar', 
                 no_scaffolding  => 0,
                 annotation      => 0,
                 );
@@ -257,7 +258,7 @@ sub mapping_and_generate_stats
   
   my $memory_required_mb = 1700;
 
-  LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb}000 -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
+  VertRes::LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb} -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
   
 }
 
@@ -380,7 +381,7 @@ exit;
       
       my $queue = $self->decide_appropriate_queue($memory_required_mb);
       
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb}000 -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
+      VertRes::LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb} -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete
@@ -581,6 +582,7 @@ sub pool_fastqs
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
       my $base_path =  $self->{seq_pipeline_root};
+      my $assembler = $self->{assembler};
 
       my $script_name = $self->{fsu}->catfile($build_path, $self->{prefix}."pool_fastqs.pl");
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -591,7 +593,7 @@ use Bio::AssemblyImprovement::Assemble::SGA::Main;
 use Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main;
 use Bio::AssemblyImprovement::PrimerRemoval::Main;
 use File::Copy;
-my \$assembly= VertRes::Pipelines::Assembly->new();
+my \$assembly= VertRes::Pipelines::Assembly->new(assembler => qq[$assembler]);
 my \@lane_names;
 };
 
@@ -712,7 +714,7 @@ exit;
         $queue = 'long';
       }
 
-      LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${memory_in_mb}000 -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'"}, qq{perl -w $script_name});
+      VertRes::LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'"}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
       # that we didn't complete

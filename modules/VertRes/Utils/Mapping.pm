@@ -268,10 +268,10 @@ sub _bsub_opts {
     my %bsub_opts = (bsub_opts => $child_opts || '');
     
     if ($action && $action eq 'merge_and_stat') {
-        $bsub_opts{bsub_opts} .= ' -q normal -M5100000 -R \'select[mem>5100] rusage[mem=5100]\'';
+        $bsub_opts{bsub_opts} .= ' -q normal -M5100 -R \'select[mem>5100] rusage[mem=5100]\'';
     }
     elsif ($action && $action =~ /split|map|merge/) {
-        $bsub_opts{bsub_opts} .= ' -R \'rusage[thouio=5]\' -M1000000 -R \'select[mem>1000] rusage[mem=1000]\'';
+        $bsub_opts{bsub_opts} .= ' -R \'rusage[thouio=5]\' -M1000 -R \'select[mem>1000] rusage[mem=1000]\'';
     }
     
     return \%bsub_opts;

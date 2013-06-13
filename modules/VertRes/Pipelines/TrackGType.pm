@@ -3,9 +3,10 @@ use base qw(VertRes::Pipeline);
 
 use strict;
 use warnings;
-use LSF;
+use VertRes::LSF;
 use HierarchyUtilities;
 use VertRes::Utils::GTypeCheck;
+use Utils;
 
 our @actions =
 (
@@ -24,7 +25,7 @@ our $options =
     'glf'            => 'glf',
     'samtools'       => 'samtools',
 
-    'bsub_opts'      => "-q normal -M5000000 -R 'select[mem>5000] rusage[mem=5000]'",
+    'bsub_opts'      => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
     'min_glf_ratio'  => 5.0,
 };
 

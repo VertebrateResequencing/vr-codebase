@@ -85,7 +85,8 @@ use File::Basename;
 use File::Spec;
 use File::Copy;
 use Cwd 'abs_path';
-use LSF;
+use VertRes::LSF;
+use Utils;
 
 use base qw(VertRes::Pipeline);
 
@@ -240,7 +241,7 @@ print $fh "\$o->split_bam_by_sequence(qq[$self->{bam}], \%\$opts);\n";
 
     close $fh;
 
-    LSF::run($action_lock, $out_dir, $perl_out, $self, qq[perl $perl_out]);
+    VertRes::LSF::run($action_lock, $out_dir, $perl_out, $self, qq[perl $perl_out]);
     return $self->{No};
 }
 
