@@ -92,7 +92,7 @@ while (<>){
         	
         	#Clear up any files in the FSU FILE EXISTS tables
         	my $fsu = VertRes::Utils::FileSystem->new(reconnect_db=>1);
-    		$fsu->file_exists(abs_path($lane_dir) , recurse =>1, wipe_out=>1);
+    		$fsu->file_exists(abs_path($lanedir) , recurse =>1, wipe_out=>1);
  
  	        my $stored_path = readlink $lanedir;  #Get the folder pointed to by the symlink
 
