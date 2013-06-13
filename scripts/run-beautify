@@ -1,0 +1,417 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+
+    $$self{buffer_nsites} = 0; # no overlaps
+    $$self{chunk_nsites} = 5_000;
+    $$self{do_clean} = 1;
+    $$self{vcfcheck_args} = '-s -';
+    $$self{vcf_annotate} = q[vcf-annotate
+                sed "s/ID=GL,Number=3/ID=GL,Number=G/"
+                |
+                --fill-ICF
+                -r INFO/AC1,INFO/AF1,INFO/FQ,INFO/G3,INFO/MQ,INFO/PV4,INFO/VDB,FORMAT/PL,FORMAT/GQ,FORMAT/SP,INFO/SF
+                -r INFO/BaseQRankSum,INFO/Dels,INFO/FS,INFO/HRun,INFO/HaplotypeScore,INFO/MQ0,INFO/InbreedingCoeff,INFO/MQRankSum,INFO/QD,INFO/ReadPosRankSum,INFO/VQSLOD,INFO/culprit,FORMAT/PQ
+                -c CHROM,POS,-,REF,ALT,INFO/AF_AFR,INFO/AF_AMR,INFO/AF_ASN,INFO/AF_EUR,INFO/AF_MAX
+                -d ~pd3/sandbox/hapmap/dbSNP-b132/AFs/annots-rsIDs-AFs.2011-09-15.tab.gz.desc
+                -a ~pd3/sandbox/hapmap/dbSNP-b132/AFs/annots-rsIDs-AFs.2011-09-15.tab.gz 
+                |
+                vcf-annotate 
+                -r ID 
+                -c CHROM,POS,ID,REF,ALT 
+                -a ~pd3/sandbox/hapmap/annots-rsIDs-dbSNPv135.2012-03-14.tab.gz
+                | 
+                ~pd3/git/wscripts/guniq -c 1,2,4,5 | grep -v AC=0
+        ];
+    $$self{predictor} = q[variant_effect_predictor.pl 
+                --quiet 
+                --regulatory
+                --sift b 
+                --polyphen b 
+                --condel b 
+                --gene 
+                --hgnc 
+                --format vcf 
+                --force_overwrite 
+                --cache 
+                --dir /lustre/scratch105/projects/g1k/ref/vep_cache
+        ];
+    $$self{vcf2consequences} = q[vcf2consequences_vep
+                --grantham 
+                --gerp /lustre/scratch105/projects/g1k/ref/gerp_db/hs
+        ];
+
+    $$self{limits} = { memory=>3_000, runtime=>3*60 };
+    $$self{config_version} = '1349789206';
+    $$self{_sampleconf} = q[
+            # For sanity checking that your config file is not obsolete. Update the version key in your 
+            #  config file to get rid of the warnings.
+            version  => '] .$$self{config_version}. q[',
+
+            vcf_annotate     => '] . $$self{vcf_annotate} . q[',
+            predictor        => '] . $$self{predictor} . q[',
+            vcf2consequences => '] . $$self{vcf2consequences} . q[',
+
+            # The in_vcf (aka -i) file names can contain the string "{CHROM}" 
+            #   which will be expanded according to chromosomes listed in the
+            #   "region" key below. If the key is not defined, glob expansion
+            #   will be used to obtain the chromosomes. The VCF must be tabix
+            #   indexed.
+            #
+            # in_vcf     => '/some/path/chr{CHROM}.vcf.gz',
+
+            vcfcheck_args => '-s -',
+
+            # Regions to process, the chunks must be sorted by chromosomal position or else the resulting VCF will not
+            #   be sorted. By default, the whole VCF is imputed.
+            # region => [ '1:159000000-161000000', '1:62000000-64000000', '2' ],
+
+            chunk_nsites => ] . $$self{chunk_nsites} . q[,
+            limits   => { memory=>3_000, runtime=>3*60 },
+            do_clean => 1, 
+    ]."\n";
+
+    $$self{usage} .= 
+        "Usage: run-beautify\n" .
+        "Options:\n" .
+        "   -c, --clean             Clean all temporary files\n" .
+        "   -i, --input-vcf         VCF to annotate\n" .
+        "   -m, --mrProper          Clean all temporary files leaving only the resulting VCF\n" .
+        "   -o, --outdir <dir>      Output directory\n" .
+        "\n";
+
+    return $self;
+}
+
+sub parse_args
+{
+    my ($self) = @_;
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-c' or $arg eq '--clean' ) { $$self{clean}=1; next; }
+        if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
+        if ( $arg eq '-i' or $arg eq '--input-vcf' ) { $$self{in_vcf}=shift(@ARGV); next; }
+        if ( $arg eq '-m' or $arg eq '--mrProper' ) { $$self{mrProper}=1; next; }
+        $self->throw();
+    }
+    if ( !exists($$self{version}) or $$self{version} ne $$self{config_version} )
+    {
+        $self->warn("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
+    }
+    if ( !exists($$self{outdir}) ) { $self->throw("Expected -o option."); }
+    if ( !exists($$self{in_vcf}) ) { $self->throw("Expected -i option."); }
+    $$self{chunk_file} = "$$self{outdir}/chunks.txt";
+    if ( $$self{clean} ) 
+    { 
+        $self->clean($$self{outdir});
+        $self->all_done;
+    }
+    if ( $$self{mrProper} )
+    {
+        $self->mrProper($$self{outdir});
+        $self->all_done;
+    }
+}
+
+sub main
+{
+    my ($self) = @_;
+    $self->parse_args();
+
+    my $outdir = $$self{outdir};
+    my $chunks = $self->read_chunks();
+    if ( !$self->is_finished("$outdir/predictor.done") )
+    {
+        for my $chunk (@$chunks)
+        {
+            $self->spawn('run_predictor',"$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].vep",$chunk);
+        }
+        $self->wait;
+        $self->cmd("touch $outdir/predictor.done");
+    }
+
+    if ( !$self->is_finished("$outdir/annotate.done") )
+    {
+        # Add consequences and annotate
+        $self->set_limits(%{$$self{limits}}) unless !exists($$self{limits});
+        for my $chunk (@$chunks)
+        {
+            $self->spawn('annotate',"$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].vcf.gz",$chunk);
+        }
+        $self->wait;
+        $self->set_limits(runtime=>undef,memory=>undef);
+        $self->cmd("touch $outdir/annotate.done");
+    }
+
+    if ( !$self->is_finished("$outdir/merge.done") )
+    {
+        my @chroms = $self->get_chroms($chunks);
+        for my $chr (@chroms)
+        {
+            $self->spawn('concat_vcfs',"$outdir/$chr.vcf.gz",$chunks,$chr);
+        }
+        $self->wait;
+        $self->cmd("touch $outdir/merge.done");
+    }
+
+    # Run performance stats and clean
+    $self->spawn('runtime_stats',"$outdir/runtime");
+    $self->wait;
+    $self->clean($outdir) unless !$$self{do_clean};
+
+    $self->all_done;
+}
+
+sub mrProper
+{
+    my ($self,$outdir) = @_;
+
+    my %chrs;
+    my $chunks = $self->read_chunks();
+    for my $chunk (@$chunks) { $chrs{$$chunk[0]} = 1; }
+    for my $chr (keys %chrs)
+    {
+        $self->cmd("rm -rf $outdir/$chr");
+        $self->cmd("rm -rf $outdir/$chr.vcf.gz.list");
+    }
+    $self->clean($outdir);
+}
+
+sub clean
+{
+    my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
+}
+
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub cmd
+{
+    my ($self,$cmd) = @_;
+    $cmd =~ s/\n/ /g;
+    return Utils::CMD($cmd,{verbose=>1});
+}
+
+sub tabix_part
+{
+    my ($self,$vcf) = @_;
+    $self->cmd("tabix -p vcf -f $vcf.part");
+    rename("$vcf.part.tbi","$vcf.tbi");
+    rename("$vcf.part",$vcf);
+}
+
+sub read_chunks
+{
+    my ($self) = @_;
+    if ( !-e $$self{chunk_file} ) 
+    { 
+        my $in_file = $$self{chunk_by_known} ? $$self{known_vcf} : $$self{in_vcf};
+        my @regions = $self->define_regions($in_file);
+        for my $region (@regions)
+        {
+            $self->spawn('define_chunks',"$$self{chunk_file}.$region",$in_file,$region);
+        }
+        $self->wait;
+
+        $self->cmd("> $$self{chunk_file}.part");
+        for my $region (@regions)
+        {
+            $self->cmd("cat $$self{chunk_file}.$region >> $$self{chunk_file}.part");
+            $self->spawn('define_chunks',"$$self{chunk_file}.$region",$in_file,$region);
+        }
+        rename("$$self{chunk_file}.part",$$self{chunk_file}) or $self->throw("rename $$self{chunk_file}.part $$self{chunk_file}: $!");
+        for my $region (@regions)
+        {
+            unlink("$$self{chunk_file}.$region");
+        }
+    }
+    open(my $fh,'<',$$self{chunk_file}) or $self->throw("$$self{chunk_file}: $!");
+    my @chunks;
+    while (my $line=<$fh>)
+    {
+        chomp($line);
+        my @items = split(/\t/,$line);
+        push @chunks, [@items];
+    }
+    close($fh) or $self->throw("$$self{chunk_file}: $!");
+    return \@chunks;
+}
+
+sub define_chunks
+{
+    my ($self,$outfile,$in_file,$region) = @_;
+    my $tot_sites = $$self{buffer_nsites} + $$self{chunk_nsites};
+    my (@chunks,@buffer);
+    my $file = $self->expand_chrom($in_file,$region);
+    my $cmd  = "tabix $file $region |";
+    open(my $in,$cmd) or $self->throw("$cmd: $!");
+    while (my $line=<$in>)
+    {
+        if ( substr($line,0,1) eq '#' ) { next; }
+        my $i = index($line,"\t");
+        if ( $i<0 ) { $self->throw("Could not parse the line [CHR]: $line"); }
+        my $chr = substr($line,0,$i);
+        my $j = index($line,"\t",$i+1);
+        if ( $j<0 ) { $self->throw("Could not parse the line [POS]: $line"); }
+        my $pos = substr($line,$i+1,$j-$i-1);
+
+        if ( @buffer && $buffer[0][0] ne $chr or @buffer>$tot_sites )
+        {
+            my $chr_from = $buffer[0][0];
+            my $pos_from = $buffer[0][1];
+            my $pos_to   = $buffer[-1][1];
+            my $nout     = @buffer;
+            push @chunks, { chr=>$chr_from, from=>$pos_from, to=>$pos_to, n=>$nout };
+            if ( $$self{chunk_nsites}<@buffer ) { splice(@buffer,0,$nout); }
+            else { @buffer = (); }
+        }
+        push @buffer, [$chr,$pos];
+    }
+    if ( @buffer )
+    {
+        my $chr_from = $buffer[0][0];
+        my $pos_from = $buffer[0][1];
+        my $pos_to   = $buffer[-1][1];
+        my $nout     = @buffer;
+        push @chunks, { chr=>$chr_from, from=>$pos_from, to=>$pos_to, n=>$nout };
+    }
+    close($in) or $self->throw("close $cmd");
+
+    if ( !@chunks ) { $self->throw("No chunks defined?\n"); }
+    if ( @chunks>1 && $chunks[-1]{n} < $tot_sites*0.75 )
+    {
+        my $chunk = splice(@chunks,-1,1);
+        $chunks[-1]{to} = $$chunk{to};
+        $chunks[-1]{n} += $$chunk{n};
+    }
+
+    open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    for my $chunk (@chunks)
+    {
+        print $out "$$chunk{chr}\t$$chunk{from}\t$$chunk{to}\t$$chunk{n}\n";
+    }
+    close($out) or $self->throw("close $outfile.part");
+    rename("$outfile.part",$outfile);
+}
+
+sub get_chroms
+{
+    my ($self,$regions) = @_;
+    my %chroms;
+    for my $reg (@$regions) 
+    { 
+        $chroms{$$reg[0]} = 1; 
+    }
+    return ( sort keys %chroms );
+}
+
+sub expand_chrom
+{
+    my ($self,$path,$region) = @_;
+    $region =~ s/:.*$//;
+    $path =~ s/{CHROM}/$region/g;
+    return $path;
+}
+
+sub define_regions
+{
+    my ($self,$path) = @_;
+    if ( exists($$self{region}) ) { return @{$$self{region}}; }
+    if ( !($path=~/{CHROM}/) ) { return ('.'); }
+    my $before = $`;
+    my $after  = $';
+    $path =~ s/{CHROM}/*/;  # only one occurance of {CHROM} is allowed in this implementation
+    my @list = glob($path);
+    my @regs;
+    for my $file (@list)
+    {
+        $file =~ s{^$before}{};
+        $file =~ s{$after$}{};
+        push @regs,$file;
+    }
+    return @regs;
+}
+
+sub run_predictor
+{
+    my ($self,$outfile,$chunk) = @_;
+    my $chr    = $$chunk[0];
+    my $from   = $$chunk[1];
+    my $to     = $$chunk[2];
+    my $prefix = "$$self{outdir}/$$chunk[0]/$$chunk[1]-$$chunk[2]";
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
+    # exclude overlapping indels
+    $self->cmd("tabix -h $in_vcf $chr:$from-$to | awk '\$1~/^#/ || \$2>=$from' | bgzip -c > $prefix.in.vcf.gz");
+    $self->cmd("zcat $prefix.in.vcf.gz | $$self{predictor} -o $outfile.part");
+    rename("$outfile.part",$outfile);
+}
+
+sub annotate
+{
+    my ($self,$outfile,$chunk) = @_;
+    my $chr    = $$chunk[0];
+    my $from   = $$chunk[1];
+    my $to     = $$chunk[2];
+    my $prefix = "$$self{outdir}/$$chunk[0]/$$chunk[1]-$$chunk[2]";
+    my $vep_in = "$prefix.vep";
+    my $in_vcf = "$prefix.in.vcf.gz";
+
+    my $cmd = q[( cat ] . $vep_in . q[ | head -100 | grep ^#; cat ] . $vep_in . q[ | grep -v ^# | awk '{OFS="\t"}{gsub(/:/,"\t",$2); print}' | sort -k2,2d -k3,3n ) | bgzip -c > ] . $vep_in . q[.tab.gz]; 
+    $self->cmd($cmd);
+    $self->cmd("tabix -s 2 -b 3 -e 3 $vep_in.tab.gz");
+
+    my $annotate = (!exists($$self{vcf_annotate}) or $$self{vcf_annotate}=~/^\s*$/) ? '' : "| $$self{vcf_annotate}";
+    $self->cmd("$$self{vcf2consequences} -v $in_vcf -t $vep_in.tab.gz $annotate | bgzip -c > $outfile.part");
+    $self->tabix_part($outfile);
+}
+
+sub concat_vcfs
+{
+    my ($self,$outfile,$chunks,$chr) = @_;
+    open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
+    for my $chunk (@$chunks)
+    {
+        if ( $$chunk[0] ne $chr ) { next; }
+        my $file = "$$self{outdir}/$$chunk[0]/$$chunk[1]-$$chunk[2].vcf.gz";
+        print $fh $file, "\n";
+    }
+    close($fh);
+    $self->cmd(qq[vcf-concat -f $outfile.list | bgzip -c > $outfile.part]);
+    $self->cmd(qq[cat $outfile.part | md5sum > $outfile.md5]);
+    rename("$outfile.part","$outfile.tmp.vcf.gz");
+    $self->cmd("tabix -p vcf -f $outfile.tmp.vcf.gz");
+    $self->cmd(qq[vcf check -r $chr $$self{vcfcheck_args} $outfile.tmp.vcf.gz > $outfile.vchk]);
+    rename("$outfile.tmp.vcf.gz.tbi","$outfile.tbi");
+    rename("$outfile.tmp.vcf.gz",$outfile);
+}
+
+

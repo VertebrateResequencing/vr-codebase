@@ -8,7 +8,7 @@ use strict;
 use warnings;
 use VRTrack::VRTrack;
 use Utils;
-use LSF;
+use VertRes::LSF;
 use VertRes::Utils::FileSystem;
 
 our @actions =
@@ -221,7 +221,7 @@ if ( ! -s "$$self{assembly_path}/$$self{scaffolds_filename}.stats" ) {
 }
 ];
     close($fh);
-    LSF::run($lock_file, $$self{assembly_path}, "_$$self{assembly_id}_$$self{lane}", $self, qq[perl -w _stats.pl]);
+    VertRes::LSF::run($lock_file, $$self{assembly_path}, "_$$self{assembly_id}_$$self{lane}", $self, qq[perl -w _stats.pl]);
 
     return $$self{'No'};
 }

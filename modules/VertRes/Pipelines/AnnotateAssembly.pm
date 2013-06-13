@@ -57,11 +57,12 @@ use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::Library;
 use VRTrack::Sample;
-use LSF;
+use VertRes::LSF;
 use base qw(VertRes::Pipeline);
 use VertRes::Utils::FileSystem;
 use VertRes::Utils::Assembly;
 use File::Spec;
+use Utils;
 
 our $actions = [
     {
@@ -207,7 +208,7 @@ sub annotate_assembly {
     my $sample_accession = $self->_sample_accession_of_lane($self->{vrlane}, $self->{vrtrack});
     
     my $pipeline_version = join('/',($self->_annotation_base_directory,'pipeline_version_'.$self->{pipeline_version}));
-    
+    my $kingdom = $self->{kingdom} || "Bacteria";
     
       my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."annotate_assembly.pl");
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -224,6 +225,7 @@ sub annotate_assembly {
     tmp_directory    => qq[$self->{tmp_directory}],
     genus            => qq[$genus],
     outdir           => "annotation",
+    kingdom          => qq[$kingdom]
   );
   \$obj->annotate;
   
@@ -236,7 +238,7 @@ sub annotate_assembly {
     my $job_name = $self->{prefix}.'annotate_assembly';
       
     $self->archive_bsub_files($lane_path, $job_name);
-    LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-M${memory_in_mb}000 -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'"}, qq{perl -w $script_name});
+    VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'"}, qq{perl -w $script_name});
 
     return $self->{No};
 }

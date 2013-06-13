@@ -99,13 +99,14 @@ sub displayTopTenTotals
     <th>Pipeline type</th>
     <th>Disk usage (GB)</th>
     <th align="center">No. of files</th>
+    <th align="center">Owner</th>
     </tr>
     ];
     
     foreach my $pipeline(@projects[0 .. 9]) {
 		my @pipeline_data = @{ $pipeline };
 		my $pslink = "<a href='$indiv_pipe_script?setup=$pipeline_data[0]'> $pipeline_data[1] </a>";
-		print qq[<tr><td align="center">$pipeline_data[0]</td><td align="center">$pslink</td><td align="center">$pipeline_data[2]</td><td align="center">$pipeline_data[3]</td><td align="center">$pipeline_data[4]</td></tr>];
+		print qq[<tr><td align="center">$pipeline_data[0]</td><td align="center">$pslink</td><td align="center">$pipeline_data[2]</td><td align="center">$pipeline_data[4]</td><td align="center">$pipeline_data[5]</td><td align="center">$pipeline_data[2]</td></tr>];
 	}
     print qq[
         </table>

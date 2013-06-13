@@ -220,15 +220,16 @@ exit;
 sub asana {
     my $command = shift;
     my $curl = qq[curl -s -u "$auth:" "$base_url/$command"];
-    
+
     my $data;
     my $max_retries = 4;
     while (! $data) {
         my $return = `$curl`;
-        my $hash = from_json($return);
-        $data = $hash->{data};
-
-        unless ($data) {
+        if ($return) {
+            my $hash = from_json($return);
+            $data = $hash->{data};
+        }
+        else {
             $max_retries--;
             last if $max_retries == 0;
             sleep(1);

@@ -22,7 +22,7 @@ use base qw(VertRes::Base);
 use strict;
 use warnings;
 use Carp;
-use LSF;
+use VertRes::LSF;
 use File::Spec;
 use Utils;
 use VertRes::Wrapper::samtools;

@@ -84,7 +84,8 @@ use File::Basename;
 use File::Spec;
 use File::Copy;
 use Cwd 'abs_path';
-use LSF;
+use VertRes::LSF;
+use Utils;
 
 use base qw(VertRes::Pipeline);
 
@@ -333,16 +334,16 @@ sub extract_indels {
         my $job_name = $self->{fsu}->catfile($out_dir, $job_base_name);
         my $lock_file = $job_name.'.jids';
         
-        my $is_running = LSF::is_job_running($lock_file);
-        if ($is_running & $LSF::Error) {
+        my $is_running = VertRes::LSF::is_job_running($lock_file);
+        if ($is_running & $VertRes::LSF::Error) {
             warn "$job_name failed!\n";
             unlink($lock_file);
             next;
         }
-        elsif ($is_running & $LSF::Running) {
+        elsif ($is_running & $VertRes::LSF::Running) {
             next;
         }
-        elsif ($is_running & $LSF::Done) {
+        elsif ($is_running & $VertRes::LSF::Done) {
             #*** $LSF::Done means that the .o file said we were successful
             foreach my $type ('libraries', 'variants') {
                 my $out_file = $out_base.".$type.txt";
@@ -354,7 +355,7 @@ sub extract_indels {
         else {
             $self->archive_bsub_files($out_dir, $job_base_name);
             
-            LSF::run($lock_file, $out_dir, $job_base_name, $self,
+            VertRes::LSF::run($lock_file, $out_dir, $job_base_name, $self,
                      qq{$self->{dindel_bin} --analysis getCIGARindels --bamFile $bam --ref $self->{ref} --outputFile $running_base});
         }
     }
@@ -473,7 +474,7 @@ sub select_candidates {
     my $job_name = $self->{fsu}->catfile($lane_path, $job_basename);
     $self->archive_bsub_files($lane_path, $job_basename);
     
-    LSF::run($action_lock, $lane_path, $job_basename, $self,
+    VertRes::LSF::run($action_lock, $lane_path, $job_basename, $self,
              qq{python $self->{dindel_scripts}/selectCandidates.py --minCount $min_count -i $var_file -o $sel_file.running});
     
     return $self->{No};
@@ -513,7 +514,7 @@ sub filter_candidates {
     my $job_name = $self->{fsu}->catfile($lane_path, $job_basename);
     $self->archive_bsub_files($lane_path, $job_basename);
 
-    LSF::run($action_lock, $lane_path, $job_basename, $self,
+    VertRes::LSF::run($action_lock, $lane_path, $job_basename, $self,
             qq{perl -MVertRes::Pipelines::Dindel -e '\\''VertRes::Pipelines::Dindel->filter_candidates_run(q[$win],q[$candidates],q[$filter],q[$done_file])'\\''});
     
     return $self->{No};
@@ -687,7 +688,7 @@ sub make_windows {
     my $orig_bsub_opts = $self->{bsub_opts};
     $self->{bsub_opts} = $self->{make_windows_bsub_opts};
     
-    LSF::run($action_lock, $window_dir, $job_basename, $self,
+    VertRes::LSF::run($action_lock, $window_dir, $job_basename, $self,
              qq{python $self->{dindel_scripts}/makeWindows.py --inputVarFile $var_file --windowFilePrefix $window_dir/window --numWindowsPerFile 1000});
     
     $self->{bsub_opts} = $orig_bsub_opts;
@@ -755,17 +756,17 @@ sub realign_windows {
         my $job_name = $self->{fsu}->catfile($window_dir, $job_base_name);
         my $lock_file = $job_name.'.jids';
         
-        my $is_running = LSF::is_job_running($lock_file);
-        if ($is_running & $LSF::Error) {
+        my $is_running = VertRes::LSF::is_job_running($lock_file);
+        if ($is_running & $VertRes::LSF::Error) {
             warn "$job_name failed!\n";
             unlink($lock_file);
             next;
         }
-        elsif ($is_running & $LSF::Running) {
+        elsif ($is_running & $VertRes::LSF::Running) {
             $jobs++;
             next;
         }
-        elsif ($is_running & $LSF::Done) {
+        elsif ($is_running & $VertRes::LSF::Done) {
             my $running_file = $running_base.".glf.txt";
             
             # to check the glf file for completion properly, the number of lines
@@ -810,7 +811,7 @@ sub realign_windows {
             my $mode = $self->{type} eq 'diploid' ? '--doDiploid' : '--doPooled';
             my $files = @bam_files > 1 ? "--bamFiles $self->{bam_fofn}" : "--bamFile @bam_files";
             
-            LSF::run($lock_file, $window_dir, $job_base_name, $self,
+            VertRes::LSF::run($lock_file, $window_dir, $job_base_name, $self,
                      qq{$self->{dindel_bin} --analysis indels $files $mode $self->{dindel_args} --ref $self->{ref} --varFile $window_file --libFile $lib_file --outputFile $running_base});
         }
     }
@@ -860,7 +861,7 @@ sub merge {
     
     my $running_out = $self->{fsu}->catfile($lane_path, 'calls.vcf.running');
     
-    LSF::run($action_lock, $lane_path, $job_basename, $self,
+    VertRes::LSF::run($action_lock, $lane_path, $job_basename, $self,
              qq{python $self->{dindel_scripts}/$script --inputFiles $glf_fofn --outputFile $running_out --ref $self->{ref}});
     
     return $self->{No};
@@ -906,12 +907,12 @@ sub is_finished {
         if (-s $running) {
             my $lock_file = $self->{fsu}->catfile($lane_path, $self->{prefix}.'select_candidates.jids');
             
-            my $is_running = LSF::is_job_running($lock_file);
-            if ($is_running & $LSF::Error) {
+            my $is_running = VertRes::LSF::is_job_running($lock_file);
+            if ($is_running & $VertRes::LSF::Error) {
                 warn "$lock_file indicates failure\n";
                 unlink($lock_file);
             }
-            elsif ($is_running & $LSF::Done) {
+            elsif ($is_running & $VertRes::LSF::Done) {
                 move($running, $sel_file) || $self->throw("failed to move $running to $sel_file");
             }
         }
@@ -926,12 +927,12 @@ sub is_finished {
         if (! $self->{fsu}->file_exists($vcf) && -s $running) {
             my $lock_file = $self->{fsu}->catfile($lane_path, $self->{prefix}.'merge.jids');
             
-            my $is_running = LSF::is_job_running($lock_file);
-            if ($is_running & $LSF::Error) {
+            my $is_running = VertRes::LSF::is_job_running($lock_file);
+            if ($is_running & $VertRes::LSF::Error) {
                 warn "$lock_file indicates failure\n";
                 unlink($lock_file);
             }
-            elsif ($is_running & $LSF::Done) {
+            elsif ($is_running & $VertRes::LSF::Done) {
                  #*** check for truncation? we could check the .o file which
                  #    lists all the glf files calls were made from...
                 move($running, $vcf) || $self->throw("failed to move $running to $vcf");
@@ -948,7 +949,7 @@ sub is_finished {
 sub running_status {
     my ($self, $jids_file) = @_;
     if ($jids_file =~ /call/) {
-        return $LSF::No;
+        return $VertRes::LSF::No;
     }
     
     return $self->SUPER::running_status($jids_file);

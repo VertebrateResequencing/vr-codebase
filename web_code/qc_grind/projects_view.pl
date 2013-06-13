@@ -1,14 +1,6 @@
 #!/usr/local/bin/perl -T
 # Display QC Grind projects view
 
-BEGIN {
-    $ENV{VRTRACK_HOST} = 'mcs10';
-    $ENV{VRTRACK_PORT} = 3306;
-    $ENV{VRTRACK_RO_USER} = 'vreseq_ro';
-    $ENV{VRTRACK_RW_USER} = 'vreseq_rw';
-    $ENV{VRTRACK_PASSWORD} = 't3aml3ss';
-};
-
 use strict;
 use warnings;
 use URI;
@@ -61,10 +53,12 @@ sub displayProjectsPage
         <div class="centerFieldset">
         <fieldset style="width: 700px">
         <legend>Projects</legend>
-        <table width="90%">
+        <table id="projects" class="zebra" width="100%" cellpadding=4>
         <tr>
         <th>Name</th>
         <th>Accession</th>
+        <th></th>
+        <th></th>
         <th></th>
         </tr>
     ];
@@ -81,8 +75,10 @@ sub displayProjectsPage
 
         print qq[
             <tr>
-                <td><a href="$st_lanes_script?db=$database&amp;proj_id=$pid">$projname</a></td>
+                <td>$projname</td>
                 <td>$acc</td>
+                <td><a href="study.pl?db=$database&amp;proj_id=$pid">Lanes</a></td>
+                <td><a href="$st_lanes_script?db=$database&amp;proj_id=$pid">Lanelets</a></td>
                 <td><a href="$st_samples_script?db=$database&amp;proj_id=$pid">Samples</a></td>
             </tr>
         ];

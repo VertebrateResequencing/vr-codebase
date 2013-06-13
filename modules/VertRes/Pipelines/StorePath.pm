@@ -61,6 +61,8 @@ use VertRes::Utils::Hierarchy;
 use File::Basename;
 use File::Spec;
 use Cwd qw(abs_path cwd);
+use VertRes::LSF;
+use Utils;
 
 use base qw(VertRes::Pipeline);
 
@@ -155,7 +157,7 @@ sub store_nfs
     
     my $storage_path = $self->storage_path($path);
     $self->archive_bsub_files($path, File::Basename::basename($job_name));
-    LSF::run($action_lock, $path, $job_name, $self, 
+    VertRes::LSF::run($action_lock, $path, $job_name, $self, 
              qq{perl -MVertRes::Pipelines::StorePath -Mstrict -e "VertRes::Pipelines::StorePath->new()->store_path(qq[$path], qq[$storage_path]) || die qq[Failed to store path, $path in $storage_path]; system(qq[touch $done_file]);"});
     $self->debug("Storing '$path' to '$storage_path'\n");
     

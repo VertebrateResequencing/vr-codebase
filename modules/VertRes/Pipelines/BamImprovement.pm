@@ -123,7 +123,8 @@ use VRTrack::File;
 use File::Basename;
 use File::Copy;
 use Time::Format;
-use LSF;
+use VertRes::LSF;
+use Utils;
 
 use base qw(VertRes::Pipeline);
 
@@ -487,7 +488,7 @@ sub realign {
     my $queue = $memory >= 16000 ? "hugemem" : "normal";
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
     my $verbose = $self->verbose;
     
     my $tmp_dir = $self->{tmp_dir} || '';
@@ -569,7 +570,7 @@ exit;
         my $job_name = $self->{prefix}.'realign_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
     
     # we've only submitted to LSF, so it won't have finished; we always return
@@ -649,7 +650,7 @@ sub sort {
     my $queue = $memory >= 16000 ? "hugemem" : "normal";
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
     
     my $tmp_dir = $self->{tmp_dir} || '';
     $tmp_dir = ", tmp_dir => q[$tmp_dir]" if $tmp_dir;
@@ -712,7 +713,7 @@ exit;
         my $job_name = $self->{prefix}.'sort_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
     
     $self->{bsub_opts} = $orig_bsub_opts;
@@ -800,7 +801,7 @@ sub recalibrate {
     my $queue = $memory >= 16000 ? "hugemem" : "long";
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = "-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'";
+    $self->{bsub_opts} = "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'";
     my $verbose = $self->verbose;
     
     my $tmp_dir = $self->{tmp_dir} || '';
@@ -858,7 +859,7 @@ exit;
         my $job_name = $self->{prefix}.'recalibrate_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
     
     $self->{bsub_opts} = $orig_bsub_opts;
@@ -929,7 +930,7 @@ sub calmd {
     my ($self, $lane_path, $action_lock) = @_;
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M1000000 -R \'select[mem>1000] rusage[mem=1000]\'';
+    $self->{bsub_opts} = '-q normal -M1000 -R \'select[mem>1000] rusage[mem=1000]\'';
     
     my $e = $self->{calmde} ? 'e => 1' : 'e => 0';
     
@@ -964,7 +965,7 @@ exit;
         my $job_name = $self->{prefix}.'calmd_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
     
     $self->{bsub_opts} = $orig_bsub_opts;
@@ -1043,7 +1044,7 @@ sub rewrite_header {
     my %header_changes = %{$self->{header_changes}};
     
     my $orig_bsub_opts = $self->{bsub_opts};
-    $self->{bsub_opts} = '-q normal -M5000000 -R \'select[mem>5000] rusage[mem=5000]\'';
+    $self->{bsub_opts} = '-q normal -M5000 -R \'select[mem>5000] rusage[mem=5000]\'';
     
     my $job_submitted = 0;
     foreach my $in_bam (@{$self->{in_bams}}) {
@@ -1129,7 +1130,7 @@ exit;
         my $job_name = $self->{prefix}.'rewrite_header_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
         $job_submitted = 1;
     }
     
@@ -1245,7 +1246,7 @@ exit;
         my $job_name = $self->{prefix}.'statistics_'.$basename;
         $self->archive_bsub_files($lane_path, $job_name);
         
-        LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'statistics'), qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self->{mapper_obj}->_bsub_opts($lane_path, 'statistics'), qq{perl -w $script_name});
     }
     
     return $self->{No};
@@ -1325,7 +1326,7 @@ sub extract_intervals {
         my $job_name =  $self->{prefix}.'extract_intervals_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
 
-        LSF::run($action_lock, $lane_path, $job_name, $self,
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self,
                  qq~perl -MVertRes::Utils::Sam -Mstrict -e "VertRes::Utils::Sam->new()->extract_intervals_from_bam(qq[$penultimate_bam], qq[$self->{extract_intervals}->{intervals_file}], qq[$final_bam]) || die qq[extract_intervals failed for $penultimate_bam\n];"~);
     }
 
@@ -1426,7 +1427,7 @@ my \$samtools = VertRes::Wrapper::samtools->new();
         my $job_name =  $self->{prefix}.'index_'.$base;
         $self->archive_bsub_files($lane_path, $job_name);
 
-        LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
+        VertRes::LSF::run($action_lock, $lane_path, $job_name, $self, qq{perl -w $script_name});
     }
 
     # we've only submitted to LSF, so it won't have finished; we always return

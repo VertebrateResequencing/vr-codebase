@@ -9,5 +9,5 @@ my $archive = '/warehouse/g1k-04/sql_dumps/archive';
 my @inarr = grep(!/.lzma$/, (split(' ', `ls $archive`)));
 
 foreach (@inarr) {
-	system qq[bsub -M4000000 -R'select[mem>4000] rusage[mem=4000]' -o /lustre/scratch105/log/sqldumps_compression.out -e /lustre/scratch105/log/sqldumps_compression.err "lzma --best --force $archive/$_"];	
+	system qq[bsub -M4000 -R'select[mem>4000] rusage[mem=4000]' -o /lustre/scratch105/log/sqldumps_compression.out -e /lustre/scratch105/log/sqldumps_compression.err "lzma --best --force $archive/$_"];	
 }
