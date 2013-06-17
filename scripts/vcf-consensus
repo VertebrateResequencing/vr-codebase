@@ -20,10 +20,13 @@ sub error
         croak @msg;
     }
     die
-        "Usage: cat ref.fa | vcf-consensus [OPTIONS] in.vcf.gz > out.txt\n",
+        "Usage: cat ref.fa | vcf-consensus [OPTIONS] in.vcf.gz > out.fa\n",
         "Options:\n",
         "   -h, -?, --help                   This help message.\n",
-        "   -s, --sample <name>              \n",
+        "   -H, --haplotype <int>            Apply only variants for the given haplotype (1,2)\n",
+        "   -s, --sample <name>              If not given, all variants are applied\n",
+        "Examples:\n",
+        "   samtools faidx ref.fa 8:11870-11890 | vcf-consensus in.vcf.gz > out.fa\n",
         "\n";
 }
 
@@ -35,9 +38,11 @@ sub parse_params
     {
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         if ( $arg eq '-s' || $arg eq '--sample' ) { $$opts{sample}=shift(@ARGV); next; }
+        if ( $arg eq '-H' || $arg eq '--haplotype' ) { $$opts{haplotype}=shift(@ARGV); next; }
         if ( -e $arg && !exists($$opts{vcf_file}) ) { $$opts{vcf_file}=$arg; next; }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
+    if ( exists($$opts{haplotype}) && !exists($$opts{sample}) ) { error("Expected -s option with -H.\n"); }
     return $opts;
 }
 
@@ -66,8 +71,10 @@ sub do_consensus
             my $rest = $';
             $$opts{fa_pos} = ($rest=~/^:(\d+)-\d+$/) ? $1 : 1;
             $$opts{fa_idx} = 0;
+            $$opts{fa_frz} = 0;
             if ( exists($chrs{$chr}) ) { $chrs{$chr}=1; }
-            $vcf->open(region=>$chr);
+            my $region = $$opts{fa_pos} > 1 ? "$chr:$$opts{fa_pos}" : $chr;
+            $vcf->open(region=>$region);
             print $line;
             next;
         }
@@ -128,19 +135,7 @@ sub apply_variant
 
     if ( $$vline[4] eq '.' ) { return; }
 
-    my $pos = $$vline[1] - $$opts{fa_pos} + $$opts{fa_idx};
-    if ( $pos<0 or $pos>=$$opts{fa_len} ) { error("FIXME: $$vline[0]:$$vline[1] .. $$opts{fa_pos},$$opts{fa_len}\n"); }
-
-    # Sanity check
-    my $ref_len = length($$vline[3]);
-    if ( $$vline[3] ne substr($$opts{fa_buf},$pos,$ref_len) ) 
-    { 
-        error(sprintf "The fasta sequence does not match the REF at $$vline[0]:$$vline[1]. %s(%s) in .fa, %s in .vcf\n", 
-            substr($$opts{fa_buf},$pos,$ref_len),
-            substr($$opts{fa_buf},$pos+1,$ref_len+5),
-            $$vline[3]);
-    }
-
+    my $hap = exists($$opts{haplotype}) ? $$opts{haplotype} : 0;
     my $alt;
     if ( !exists($$opts{sample_col}) )
     {
@@ -150,19 +145,51 @@ sub apply_variant
     else
     {
         my @als = $$opts{vcf}->split_gt($$vline[$$opts{sample_col}-1]);
-        for my $al (@als)
+        if ( $hap )
         {
-            if ( $al eq '0' ) { next; }
-            $alt = $$opts{vcf}->get_field($$vline[4],$al-1,',');
-            last;
+            # Note: we are not checking the phase or phase blocks, assuming the VCF is perfect
+            if ( $hap <= @als && $als[$hap-1] ne '0' ) 
+            { 
+                $alt = $$opts{vcf}->get_field($$vline[4],$als[$hap-1]-1,','); 
+            }
+        }
+        else
+        {
+            for my $al (@als)
+            {
+                if ( $al eq '0' ) { next; }
+                $alt = $$opts{vcf}->get_field($$vline[4],$al-1,',');
+                last;
+            }
         }
         if ( !defined $alt ) { return; }
+    } 
+
+    if ( $$vline[1] <= $$opts{fa_frz} )
+    {
+        print STDERR "Note: Conflicting variants at (or near) $$vline[0]:$$vline[1], cannot apply both.\n";
+        return;
     }
+
+    my $pos = $$vline[1] - $$opts{fa_pos} + $$opts{fa_idx};
+    if ( $pos<0 or $pos>=$$opts{fa_len} ) { error("FIXME: $$vline[0]:$$vline[1] .. $$opts{fa_pos},$pos,$$opts{fa_len},$$opts{fa_frz}\n"); }
+
+    # Sanity check
+    my $ref_len = length($$vline[3]);
+    if ( $$vline[3] ne substr($$opts{fa_buf},$pos,$ref_len) ) 
+    { 
+        error(sprintf "The fasta sequence does not match the REF at $$vline[0]:$$vline[1]. %s(%s) in .fa, %s in .vcf, frz=%d\n", 
+            substr($$opts{fa_buf},$pos,$ref_len),
+            substr($$opts{fa_buf},$pos+1,$ref_len+5),
+            $$vline[3], $$opts{fa_frz}?$$opts{fa_frz}:0);
+    }
+
     my $alt_len = length($alt);
     substr($$opts{fa_buf},$pos,$ref_len,$alt);
     $$opts{fa_len} += $alt_len - $ref_len;
-    $$opts{fa_pos} += $ref_len;
-    $$opts{fa_idx} += $alt_len;
+    $$opts{fa_pos} += $ref_len;     # position with respect to the original reference sequence
+    $$opts{fa_idx} += $alt_len;     # position in the modified sequence
+    $$opts{fa_frz}  = $$vline[1] + $ref_len - 1;      # freeze changes until this position
 }
 
 

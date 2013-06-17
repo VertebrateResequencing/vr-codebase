@@ -490,8 +490,15 @@ sub init_distributions
     if ( $key eq 'indels' ) { $args .= " -t INDEL -F $$self{$key}{fa_ref}"; }
 
     my $type = $key eq 'snps' ? 'SNP' : 'INDEL';
+
+    # Init with the first annotation to avoid using all columns from
+    #   annots.tab.gz. Some of them may cause the vcffilter complain, such as
+    #   for indels "The annotation RPB does not look good, please leave it out"
+    my $ann = $$self{$key}{annots};
+    $ann =~ s/,.*//;
+    if ( $ann ne '' ) { $ann = "-a $ann"; }
     
-    $self->cmd("$$self{vcf_exec} filter $tabfile -p -o $outfile.part/ $args");
+    $self->cmd("$$self{vcf_exec} filter $tabfile -p -o $outfile.part/ $args $ann");
     rename("$outfile.part/annots.$type.n","$outfile.partx");
     $self->cmd("rm -rf $outfile.part");
     rename("$outfile.partx",$outfile);
@@ -875,7 +882,7 @@ sub plot_randomize
     ");
     close($fh);
 
-    `python $prefix.py`;
+    $self->cmd("python $prefix.py");
 }
 
 
