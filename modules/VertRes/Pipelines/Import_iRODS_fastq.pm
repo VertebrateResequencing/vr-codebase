@@ -192,8 +192,8 @@ sub bam_to_fastq {
     
     
     my $memory = $self->{memory};
-    if (! defined $memory || $memory < 2000) {
-        $memory = 2000;
+    if (! defined $memory || $memory < 8000) {
+        $memory = 8000;
     }
     
     ### We need to check old jobs here to see if it bummed out because of memory and increase the java memory accordingly
