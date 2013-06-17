@@ -224,7 +224,6 @@ use File::Spec;
 use VertRes::Wrapper::samtools;
 use Bio::Tradis::DetectTags;
 use Bio::Tradis::AddTagsToSeq;
-use Util;
 
 my \$dir = '$lane_path';
 my \@fastqs = $fastqs_str;
@@ -236,7 +235,13 @@ if (defined(\$is_tradis) && \$is_tradis == 1) {
 	my \$add_tag_obj =
       Bio::Tradis::AddTagsToSeq->new( bamfile => qq[$in_bam], outfile => \$trbam);
 	\$add_tag_obj->add_tags_to_seq();
-	Util::CMD("mv \$trbam $in_bam");
+	system("mv \$trbam $in_bam");
+
+	# Remove previous runs of bamcheck without tags - forces rerun
+	my \$bc = $in_bam . ".bc";
+	if(-e \$bc){
+		system("rm \$bc");
+	}
 }
 
 # Remove output files from failed runs.
