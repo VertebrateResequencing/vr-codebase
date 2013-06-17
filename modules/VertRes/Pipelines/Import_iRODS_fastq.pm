@@ -238,7 +238,7 @@ if (defined(\$is_tradis) && \$is_tradis == 1) {
 	system("mv \$trbam $in_bam");
 
 	# Remove previous runs of bamcheck without tags - forces rerun
-	my \$bc = $in_bam . ".bc";
+	my \$bc = qq[$in_bam] . ".bc";
 	if(-e \$bc){
 		system("rm \$bc");
 	}
