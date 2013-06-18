@@ -50,7 +50,7 @@ sub parse_params
 sub convert_file
 {
     my ($opts) = @_;
-    my $MAX_LEN=51;
+    my $MAX_VAR_LEN=50;
 
     my %gtypes;
     if ($$opts{genotypes}) {
@@ -123,16 +123,11 @@ sub convert_file
 
     $vcf_out->add_columns(@{$$vcf_in{columns}});
 
-    my ($rec_tot,$ref_only,$none_passed,$snp_out,$mixed_vars,$indel_out,$rec_rejects) = (0,0,0,0,0,0,0);
+    my ($rec_tot,$ref_only,$none_passed,$snp_out,$mixed_vars,$indel_out) = (0,0,0,0,0,0);
 
     while (my $rec=$vcf_in->next_data_hash()) {
 
         $rec_tot++;
-        if (length($$rec{REF}) > $MAX_LEN) {
-            $rec_rejects++;
-            next;
-        }
-
         #print $vcf_in->format_line($rec);
 
         # genotypes must have FORMAT tag FI=1 (pass filter)
@@ -159,7 +154,9 @@ sub convert_file
         my ($i,$gt_new) = (1,1);
 
         for my $alt (@{$$rec{ALT}}) {
-            if (length($alt) > $MAX_LEN) {
+
+            ##if (length($alt) > $MAX_VAR_LEN) {
+            if (abs(length($alt) - length($$rec{REF})) > $MAX_VAR_LEN) {
                 push (@gt_deletion, $i);
             }
             else {
@@ -237,7 +234,7 @@ sub convert_file
             print $vcf_out->format_line($rec);
         }
     }
-    print STDERR "Input VCF:$rec_tot Rejected(>$MAX_LEN):$rec_rejects Rejected mixed variants:$mixed_vars No GTs passed:$none_passed Ref Only:$ref_only SNPs:$snp_out Indels:$indel_out\n";
+    print STDERR "Input VCF:$rec_tot Rejected mixed variants:$mixed_vars No GTs passed:$none_passed Ref Only:$ref_only SNPs:$snp_out Indels:$indel_out\n";
 }
 
 sub delete_gt {
