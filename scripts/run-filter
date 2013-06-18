@@ -1,0 +1,866 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+
+    $$self{do_clean} = 1;
+    $$self{config_version} = '1349789206';
+    $$self{good_vcf}     = '/lustre/scratch105/projects/g1k/ref/broad_resources_b37/hapmap_3.3.b37.sites.vcf.gz';
+    $$self{vcf_exec}     = 'vcf';
+    $$self{filter_args}  = q[-f 'QUAL>5' -l 'QUAL>0.5'];
+    $$self{annots}       = 'RPB,MDV,QBD,HWE,VDB,QUAL';
+    $$self{nshuffle_max} = 100_000;
+    $$self{chunk_by}     = 100;
+    $$self{_sampleconf}  = q[
+            # For sanity checking that your config file is not obsolete. Update the version key in your 
+            #  config file to get rid of the warnings.
+            version      => '] .$$self{config_version}. q[',
+
+            vcf_exec     => '] .$$self{vcf_exec}. q[',
+            filter_args  => q\[] .$$self{filter_args}. q[\],
+
+            annots       => '] .$$self{annots}. q[',
+            good_vcf     => '] .$$self{good_vcf}. q[',
+            in_vcf       => undef,      # single VCF or a file with list of file names
+
+            # Scan ts/tv in this region, use bigger max for exomes (>3.4 or >2.6 when also off-target regions are included)
+            target_tstv  => [ 2.00, 2.40 ],     # min, max
+            scan_nbins   => [ 15, 17, 18, 19, 20, 21, 22, 23, 24, 25, 30 ], # list
+            scan_learn   => [ 0.01, 0.05, 0.10, 0.15, 0.20 ],               # list
+            scan_th      => [ 0.1, 0.2, 0.3, 0.4, 0.5 ],                    # list
+
+            nshuffle_max => ] .$$self{nshuffle_max}. q[,
+            chunk_by     => ] .$$self{chunk_by}. q[,
+
+            do_clean => 1, 
+    ]."\n";
+
+    $$self{usage} .= 
+        "Usage: run-beautify\n" .
+        "Options:\n" .
+        "   -a, --apply <th>:<list>     Apply SOM filter using the given threshold and annotations\n" .     # todo: indels
+        "   -c, --clean                 Clean all temporary files\n" .
+        "   -i, --input <vcf>           Input VCF\n" .
+        "   -m, --mrProper              Clean all temporary files leaving only the resulting VCF\n" .
+        "   -r, --randomize             Randomly shuffle annotations to find the best combination\n" .
+        "   -s, --scan                  Scan the parameter space to find the best values\n" .
+        "   -o, --outdir <dir>          Output directory\n" .
+        "\n";
+
+    return $self;
+}
+
+sub parse_args
+{
+    my ($self) = @_;
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-a' or $arg eq '--apply' ) { $$self{do_apply}=shift(@ARGV); next; }
+        if ( $arg eq '-c' or $arg eq '--clean' ) { $$self{clean}=1; next; }
+        if ( $arg eq '-s' or $arg eq '--scan' ) { $$self{do_scan}=1; next; }
+        if ( $arg eq '-r' or $arg eq '--randomize' ) { $$self{do_randomize}=1; next; }
+        if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
+        if ( $arg eq '-i' or $arg eq '--input' ) { $$self{in_vcf}=shift(@ARGV); next; }
+        if ( $arg eq '-m' or $arg eq '--mrProper' ) { $$self{mrProper}=1; next; }
+        $self->throw();
+    }
+    if ( exists($$self{do_apply}) )
+    {
+        if ( !($$self{do_apply}=~/^([^:]+):(\S+)$/) ) { $self->throw("Could not parse the --apply parameter: [$$self{do_apply}]\n"); }
+        $$self{apply_th} = $1;
+        $$self{annots}   = $2;
+        $$self{do_apply} = 1;
+    }
+    if ( !$$self{do_apply} && !$$self{do_scan} && !$$self{do_randomize} ) { $self->throw("Missing one of the --apply, --scan or --randomize options\n"); }
+    if ( $$self{do_scan} && $$self{do_randomize} ) { $self->throw("Only one of the --scan or --randomize options should be given\n"); }
+    if ( exists($$self{version}) && $$self{version} ne $$self{config_version} )
+    {
+        $self->warn("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
+    }
+    if ( !exists($$self{good_vcf}) ) { $self->throw("Expected 'good_vcf' parameter."); }
+    if ( !exists($$self{in_vcf}) ) { $self->throw("Expected -i option."); }
+    if ( $$self{clean} ) 
+    { 
+        $self->clean($$self{outdir});
+        $self->all_done;
+    }
+    if ( $$self{mrProper} )
+    {
+        $self->mrProper($$self{outdir});
+        $self->all_done;
+    }
+    $$self{outdir} =~ s{/+?$}{};
+}
+
+sub main
+{
+    my ($self) = @_;
+    $self->parse_args();
+
+    my $outdir = $$self{outdir};
+    $self->save_config();
+
+    $self->spawn('collect',"$outdir/annots.tab.gz");
+    $self->wait;
+
+    my %annots = map { $_ => 1 } split(/,/, $$self{annots});    # remove duplicate keys
+    my @annots = sort keys %annots;
+
+    if ( $$self{do_randomize} )
+    {
+        my $cmbs   = $self->shuffle(scalar @annots);
+        my @tests  = ();
+        for (my $i=0; $i<@$cmbs; $i+=$$self{chunk_by})
+        {
+            my @args;
+            for (my $j=0; $j<$$self{chunk_by}; $j++)
+            {
+                if ( $i+$j >= @$cmbs ) { last; }
+                my @anns;
+                for (my $k=0; $k<@annots; $k++)
+                {
+                    if ( $$cmbs[$i+$j] & (1<<$k) ) { next; }
+                    push @anns, $annots[$k];
+                }
+                if ( !@anns ) { next; }
+                my $ann = join(',', @anns);
+                push @args, "-a $ann";
+            }
+            push @tests, "$outdir/randomize/$i.tab";
+            $self->spawn('try_filter',"$outdir/randomize/$i.tab", @args);
+        }
+        $self->wait;
+
+        $self->spawn('find_best',"$outdir/randomize.tab",@tests);
+        $self->wait;
+        $self->spawn('plot_randomize',"$outdir/randomize.tab.png");
+        $self->wait;
+    }
+    elsif ( $$self{do_scan} )
+    {
+        my @jobs;
+        for my $bin (@{$$self{scan_nbins}})
+        {
+            for my $learn (@{$$self{scan_learn}})
+            {
+                for my $th (@{$$self{scan_th}}) 
+                { 
+                    push @jobs, "-a $$self{annots} -m$bin,$learn,$th"
+                }
+            }
+        }
+        my @tests;
+        my $i = 0;
+        while ($i<@jobs)
+        {
+            my @args = ();
+            for (my $j=0; $j<$$self{chunk_by} && $i<@jobs; $j++, $i++)
+            {
+                push @args, $jobs[$i];
+            }
+            push @tests, "$outdir/scan/$i.tab";
+            $self->spawn('try_filter',"$outdir/scan/$i.tab", @args);
+        }
+        $self->wait;
+
+        $self->spawn('find_best',"$outdir/scan.tab",@tests);
+        $self->wait;
+        $self->spawn('plot_scan',"$outdir/scan.tab.png");
+        $self->wait;
+    }
+    elsif ( $$self{do_apply} )
+    {
+        my $annots = join(',', @annots);
+        $self->spawn('apply_filter_init',"$outdir/$annots",$annots);
+        $self->wait;
+
+        my %names = ();
+        my @files = $self->list_files($$self{in_vcf});
+        for my $file (@files)
+        {
+            my $name = $self->strip_dir($file);
+            if ( exists($names{$name}) ) { $self->throw("Improve me: conflicting base names [$file] -> [$name]\n"); }
+            $self->spawn('apply_filter_do',"$outdir/$annots/$name","$outdir/$annots/annots",$file);
+        }
+        $self->wait;
+    }
+    $self->all_done;
+
+    # Run performance stats and clean
+    $self->spawn('runtime_stats',"$outdir/runtime");
+    $self->wait;
+    $self->clean($outdir) unless !$$self{do_clean};
+
+    $self->all_done;
+}
+
+sub mrProper
+{
+    my ($self,$outdir) = @_;
+    $self->clean($outdir);
+}
+
+sub clean
+{
+    my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
+    $self->cmd("rm -rf $outdir/chunks");
+}
+
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub save_config
+{
+    my ($self) = @_;
+    my $src = $$self{_config};
+    my $dst = "$$self{outdir}/annots.conf";
+    if ( -e $dst && (stat($src))[9] <= (stat($dst))[9] ) { return; }
+    if ( !-d $$self{outdir} ) { $self->cmd("mkdir -p $$self{outdir}"); }
+    open(my $fh,'>',$dst) or $self->throw("$dst: $!");
+    my $about = $$self{_about};
+    $about =~ s/\n/\n# /g;
+    print $fh "# $about";
+    close($fh);
+    $self->cmd("cat $src >> $dst");
+}
+
+sub cmd
+{
+    my ($self,$cmd) = @_;
+    $cmd =~ s/\n/ /g;
+    return Utils::CMD($cmd,{verbose=>1});
+}
+
+sub tabix_part
+{
+    my ($self,$vcf) = @_;
+    $self->cmd("tabix -p vcf -f $vcf.part");
+    rename("$vcf.part.tbi","$vcf.tbi");
+    rename("$vcf.part",$vcf);
+}
+
+sub shuffle
+{
+    my ($self, $n) = @_;
+
+    # variable number of nested loops
+    my (@out, @cnt);
+    my ($il, $nl);
+    my $i = 0;
+    for ($nl=$n; $nl>=1; $nl--)
+    {
+        for ($il=0; $il<$nl-1; $il++) { $cnt[$il] = 0; }
+        $cnt[$nl-1] = -1;
+        while (1)
+        {
+            for ($il=$nl-1; $il>=0; $il--)
+            {
+                if ( ++$cnt[$il] < $n-$nl+$il+1 ) { last; }
+                if ( $il==0 ) { last; }
+                $cnt[$il] = 0;
+            }
+            for ($il=1; $il<$nl; $il++)
+            {
+                if ( $cnt[$il] <= $cnt[$il-1] ) { $cnt[$il] = $cnt[$il-1] + 1; }
+            }
+
+            if ( $cnt[$nl-1] >= $n ) { last; }
+
+            for ($il=0; $il<$nl; $il++) { $out[$i] |= 1<<$cnt[$il]; }
+            if ( ++$i >= $$self{nshuffle_max} ) { last; }
+        }
+        if ( $i >= $$self{nshuffle_max} ) { last; }
+    }
+    return \@out;
+}
+
+sub list_files
+{
+    my ($self,$file) = @_;
+    if ( !$self->is_file_list($file) ) { return ($file); } 
+    my @files;
+    open(my $fh,'<',$file) or $self->throw("$file: $!");
+    while (my $line=<$fh>)
+    {
+        chomp($line);
+        $line =~ s/^\s*//;
+        $line =~ s/\s*$//;
+        push @files, $line;
+    }
+    close($fh);
+    return (@files);
+}
+
+sub is_file_list
+{
+    my ($self,$file) = @_;
+    my @out = `file $file`;
+    if ( $out[0]=~/ASCII/ ) { return 1; }
+    return 0;
+}
+
+sub strip_dir
+{
+    my ($self,$file) = @_;
+    $file =~ s{^.*/}{};
+    return $file;
+}
+
+sub collect
+{
+    my ($self,$outfile) = @_;
+    my %annots = map { $_ => 1 } split(/,/,$$self{annots});
+    for my $filt (split(/\s+/,$$self{filter_args}))
+    {
+        if ( $filt eq '&&' ) { next; }
+        if ( $filt=~/^-/ ) { next; }
+        $filt =~ s/\'//g;
+        $filt =~ s/\"//g;
+
+        my ($a,$b) = split(/[>=<]/, $filt);
+        if ( exists($annots{$a}) or exists($annots{$b}) ) { next; }
+
+        use Scalar::Util qw(looks_like_number);
+        my $anum = looks_like_number($a);
+        my $bnum = looks_like_number($b);
+        if ( $anum && $bnum ) { $self->throw("Unable to decide which is which: $filt\n"); }
+        if ( !$anum && !$bnum ) { $self->throw("Unable to decide which is which: $filt\n"); }
+        if ( !$anum ) { $annots{$a} = 1; } else { $annots{$b} = 1; }
+    }
+    my $in_vcf = $$self{in_vcf};
+    if ( $self->is_file_list($in_vcf) ) { $in_vcf = "-v $in_vcf"; }
+    my $annots = join(',', sort keys %annots);
+    $self->cmd("$$self{vcf_exec} query -Ha $annots $in_vcf $$self{good_vcf} | bgzip -c > $outfile.part");
+    $self->cmd("$$self{vcf_exec} filter $outfile.part -p -o $outfile $$self{filter_args}");
+    # Remove annots.tab.gz.SNP.* files so that it's not accidently used for final filtering
+    unlink("$outfile.SNP.tab");
+    unlink("$outfile.SNP.sites.gz");
+    unlink("$outfile.SNP.sites.gz.tbi");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile");
+}
+
+sub try_filter
+{
+    my ($self,$outfile,@args) = @_;
+
+    `mkdir -p $outfile.xxx/`;
+    open(my $out,">","$outfile.part") or $self->throw("$outfile.part: $!");
+
+    my @best;
+    for my $arg (@args)
+    {
+        $self->cmd("$$self{vcf_exec} filter $$self{outdir}/annots.tab.gz $arg -o $outfile.xxx/ $$self{filter_args}");
+        
+        open(my $fh,'<',"$outfile.xxx/annots.SNP.tab") or $self->throw("$outfile.xxx/annots.SNP.tab: $!");
+        while (my $line=<$fh>)
+        {
+            if ( $line=~/^#/ ) { next; }
+            chomp($line);
+            my @items = split(/\t/, $line);
+            if ( $items[0] < $$self{target_tstv}[0] ) { next; }
+            if ( $items[0] > $$self{target_tstv}[1] ) { next; }
+            print $out $line, "\t$arg\n";
+        }
+        close($fh) or $self->throw("close $outfile.xxx/annots.SNP.tab");
+        `rm -rf $outfile.xxx/`;
+    }
+    close($out) or $self->throw("close $outfile.part");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub apply_filter_init
+{
+    my ($self,$outfile,$annots) = @_;
+    `mkdir -p $outfile.part/`;
+    $self->cmd("$$self{vcf_exec} filter $$self{outdir}/annots.tab.gz -a $annots -o $outfile.part/ $$self{filter_args}");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub apply_filter_do
+{
+    my ($self,$outfile,$prefix,$infile) = @_;
+    my $args = "-s $$self{apply_th}";   # todo: indels
+    my @chrs = `tabix -l $infile`;
+    if ( @chrs == 1 )
+    {
+        chomp($chrs[0]);
+        $args .= " -r $chrs[0]";
+    }
+    $self->cmd("$$self{vcf_exec} filter $args $infile -o $prefix | bgzip -c > $outfile.part");
+    $self->cmd("zcat $outfile.part | $$self{vcf_exec} check -f - > $outfile.vchk");
+    $self->tabix_part($outfile);
+}
+
+sub tprint
+{
+    my ($self,$fh,@txt) = @_;
+    for my $txt (@txt)
+    {
+        $txt =~ s/\n[ \t]+/\n/g;
+        $txt =~ s/\\t/\t/g;
+        $txt =~ s/\n\\t\s*/\n\t/g;
+        print $fh $txt;
+    }
+}
+
+sub find_best
+{
+    my ($self,$outfile,@jobs) = @_;
+
+    my $cmd = "sort -k1,1gr -k2,2nr > $outfile.part";
+    open(my $sort, "| $cmd") or $self->throw("$cmd: $!");
+    for my $job (@jobs)
+    {
+        open(my $fh,'<',$job) or $self->throw("$job: $!");
+        while (my $line=<$fh>)
+        {
+            print $sort $line;
+        }
+        close($fh) or $self->throw("$job: $!");
+    }
+    close($sort) or $self->throw("close $sort");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+
+sub bignum
+{
+    my ($num) = @_;
+    if ( !defined $num ) { return ''; }
+    if ( !($num=~/^\d+$/) ) { return $num; }
+    my $len = length($num);
+    my $out;
+    for (my $i=0; $i<$len; $i++)
+    {
+        $out .= substr($num,$i,1);
+        if ( $i+1<$len && !(($len-$i-1)%3) ) { $out .= ','; }
+    }
+    return $out;
+}
+
+sub calc_rank
+{
+    my ($self, $dat, $anns) = @_;
+    my %out = ();
+    for my $tstv (keys %$dat)
+    {
+        my %rank = ();
+        for (my $i=@{$$dat{$tstv}}-1; $i>=0; $i--)
+        {
+            for my $ann (@{$$dat{$tstv}[$i]{ann}})
+            {
+                if ( exists($rank{$ann}) ) { next; }
+                $rank{$ann} = @{$$dat{$tstv}} - $i;
+            }
+            if ( scalar keys %rank == scalar keys %$anns ) { last; }
+        }
+        for my $ann (keys %$anns)
+        {
+            if ( !exists($rank{$ann}) ) { $rank{$ann} = 1 + scalar keys %$anns; }
+            push @{$out{$ann}}, $rank{$ann};
+        }
+    }
+    my %means = ();
+    for my $ann (keys %out)
+    {
+        my @dat = sort { $a<=>$b } @{$out{$ann}};
+        $means{$ann} = $dat[ int(0.5*@dat) ];
+    }
+    my @order = sort { $means{$a}<=>$means{$b} } keys %means;
+    return (\%out,\@order);
+}
+
+sub round_value
+{
+    my ($tick, $value) = @_;
+    my $rounded = $tick * int($value/$tick);
+    if ( $value - $rounded > $tick*0.5 ) { $rounded += $tick; }
+    return $rounded;
+}
+
+sub plot_randomize
+{
+    my ($self,$outfile) = @_;
+
+    my $prefix = $outfile;
+    $prefix =~ s/\.png$//;
+
+    # Collect data for two plots: 
+    #   1) biggest number of sites and best sensitivity by ts/tv
+    #   2) rank annotation box plot
+
+    my (%cnts,%sens,%anns);   # keep n-top hits for each ts/tv to calculate rank
+    open(my $fh,"<",$prefix) or $self->throw("$prefix: $!");
+    while (my $line=<$fh>)
+    {
+        my @items = split(/\t/, $line);
+        # Novel ts/tv:  if ( $items[3] < $$self{target_tstv}[0] or $items[3] > $$self{target_tstv}[1] ) { next; }
+        my $tstv  = round_value(0.01, $items[0]);
+        my $cnt   = $items[1];
+        my $sns   = $items[2];
+        my $novel_tstv = $items[3];
+        if ( !($items[5]=~/-a\s*(\S+)/) ) { $self->throw("Could not detect annotations in $prefix: $line"); }
+        my @annot = split(/,/,$1);
+        for my $ann (@annot) { $anns{$ann} = 1; }
+        my $rec = { cnt=>$cnt, sns=>$sns, novel=>$novel_tstv, ann=>\@annot };
+        if ( !exists($cnts{$tstv}) ) { push @{$cnts{$tstv}}, $rec; }
+        else
+        {
+            my $i;
+            for ($i=0; $i<@{$cnts{$tstv}}; $i++)
+            {
+                if ( $cnt < $cnts{$tstv}[$i]{cnt} ) { last; }   # sorted in ascending order
+            }
+            if ( $i>0 ) { splice(@{$cnts{$tstv}}, $i, 0, $rec); }
+            elsif ( @{$cnts{$tstv}}<20 ) { unshift @{$cnts{$tstv}}, $rec; } 
+            if ( @{$cnts{$tstv}}>20 ) { shift @{$cnts{$tstv}}; }
+        }
+        if ( !exists($sens{$tstv}) ) { push @{$sens{$tstv}}, $rec; }
+        else
+        {
+            my $i;
+            for ($i=0; $i<@{$sens{$tstv}}; $i++)
+            {
+                if ( $sns < $sens{$tstv}[$i]{sns} ) { last; }
+            }
+            if ( $i>0 ) { splice(@{$sens{$tstv}}, $i, 0, $rec); }
+            elsif ( @{$sens{$tstv}}<20 ) { unshift @{$sens{$tstv}}, $rec; }
+            if ( @{$sens{$tstv}} > 20 ) { shift @{$sens{$tstv}}; }
+        }
+    }
+    close($fh);
+
+    my @anns = sort keys %anns;
+    my ($sens_rank,$sens_order) = $self->calc_rank(\%sens, \%anns);
+    my ($cnts_rank,$cnts_order) = $self->calc_rank(\%cnts, \%anns);
+
+    open($fh,'>',"$prefix.py") or $self->throw("$prefix.py: $!");
+    $self->tprint($fh, "
+        import matplotlib as mpl
+        mpl.use('Agg')
+        import matplotlib.pyplot as plt
+        from matplotlib.ticker import ScalarFormatter
+
+    ");
+    print $fh "rank_cnts_labels = ['", join("','", @$cnts_order), "']\n";
+    print $fh "rank_sens_labels = ['", join("','", @$sens_order), "']\n";
+    print $fh "rank_sens_dat = [";
+    for my $annot (@$sens_order)
+    {
+        print $fh "[", join(',', @{$$sens_rank{$annot}}), "],\n";
+    }
+    print $fh "]\n";
+    print $fh "rank_cnts_dat = [";
+    for my $annot (@$cnts_order)
+    {
+        print $fh "[", join(',', @{$$cnts_rank{$annot}}), "],\n";
+    }
+    $self->tprint($fh, "]
+        dat_cnt = [
+    ");
+    my %annot_sets = ();
+    for my $tstv (sort {$a<=>$b} keys %cnts)
+    {
+        my $ann = join(',',@{$cnts{$tstv}[-1]{ann}});
+        if ( !exists($annot_sets{$ann}) ) { $annot_sets{$ann} = 1 + scalar keys %annot_sets; }
+        $ann = $annot_sets{$ann};
+        print $fh "[$tstv,$cnts{$tstv}[-1]{cnt},$cnts{$tstv}[-1]{sns},'$ann',$cnts{$tstv}[-1]{novel}],\n";
+    }
+    $self->tprint($fh, "
+        ]
+        dat_sns = [
+    ");
+    for my $tstv (sort {$a<=>$b} keys %sens)
+    {
+        my $ann = join(',',@{$cnts{$tstv}[-1]{ann}});
+        if ( !exists($annot_sets{$ann}) ) { $annot_sets{$ann} = 1 + scalar keys %annot_sets; }
+        $ann = $annot_sets{$ann};
+        print $fh "[$tstv,$sens{$tstv}[-1]{sns},'" .bignum($sens{$tstv}[-1]{cnt}). "','$ann',", $sens{$tstv}[-1]{cnt} ,"],\n";
+    }
+    $self->tprint($fh, "
+        ]
+        annots = [
+    ");
+    for my $key (sort {$annot_sets{$a}<=>$annot_sets{$b}} keys %annot_sets)
+    {
+        print $fh "[$annot_sets{$key},'$key'],\n";
+    }
+    $self->tprint($fh, "
+        ]
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7,7))
+        fmt = ScalarFormatter(useMathText=True)
+        fmt.set_scientific(True)
+        fmt.set_powerlimits((-3,3))
+        ax1.yaxis.set_major_formatter(fmt)
+        ax1.yaxis.get_major_formatter().set_scientific(True)
+        ax1.boxplot(rank_cnts_dat)
+        ax2.boxplot(rank_sens_dat)
+        ax1.set_xticklabels(rank_cnts_labels, rotation=45, fontsize='small',va='top',ha='right')
+        ax2.set_xticklabels(rank_sens_labels, rotation=45, fontsize='small',va='top',ha='right')
+        ax1.set_title('Annotation rank', fontsize='medium')
+        ax1.set_ylabel('Count Rank')
+        ax2.set_ylabel('Sensitivity Rank')
+        if rank_cnts_dat[0][0]*0.8 > rank_cnts_dat[0][-1]: ax1.set_ylim(rank_cnts_dat[0][0]*0.8)
+        if rank_sens_dat[0][0]*0.9 > rank_sens_dat[0][-1]: ax2.set_ylim(rank_sens_dat[0][0]*0.9)
+        plt.savefig('$prefix.rank.png')
+        plt.close()
+
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True, figsize=(9,9))
+        fmt = ScalarFormatter(useMathText=True)
+        fmt.set_scientific(True)
+        fmt.set_powerlimits((-3,3))
+        ax1.yaxis.set_major_formatter(fmt)
+        ax1.yaxis.get_major_formatter().set_scientific(True)
+        fmt = ScalarFormatter(useMathText=True)
+        fmt.set_scientific(True)
+        fmt.set_powerlimits((-3,3))
+        ax2.yaxis.set_major_formatter(fmt)
+        cols = [x[2] for x in dat_cnt]
+        sc1  = ax1.scatter([x[0] for x in dat_cnt],[x[1] for x in dat_cnt],c=cols,edgecolor='none')
+        i = 0
+        for x,y,d,t in zip([d[0] for d in dat_cnt],[d[1] for d in dat_cnt],[d[2] for d in dat_cnt],[d[3] for d in dat_cnt]):
+        \\ti += 1
+        \\tif i % 2:
+        \\t\\tax1.annotate('%.2f (%s)' % (d,t), xy=(x,y), xytext=(3,3), textcoords='offset points',fontsize='xx-small',rotation=45,va='bottom',ha='left')
+        \\telse:
+        \\t\\tax1.annotate('%.2f (%s)' % (d,t), xy=(x,y), xytext=(3,-3), textcoords='offset points',fontsize='xx-small',rotation=45,va='top',ha='right')
+        ax1.set_ylabel('Number of sites')
+        ax1.grid(color='gray')
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+        div1 = make_axes_locatable(ax1)
+        cax1 = div1.append_axes('right', size='3%', pad=0.1)
+        cb1  = fig.colorbar(sc1, cax=cax1)
+        cb1.set_label('Sensitivity')
+        for t in cb1.ax.get_yticklabels(): t.set_fontsize(9)
+
+        cols = [x[4] for x in dat_sns]
+        sc2 = ax2.scatter([x[0] for x in dat_sns],[x[1] for x in dat_sns],c=cols,edgecolor='none')
+        i = 0
+        for x,y,d,t in zip([d[0] for d in dat_sns],[d[1] for d in dat_sns],[d[2] for d in dat_sns],[d[3] for d in dat_sns]):
+        \\ti += 1
+        \\tif i % 2:
+        \\t\\tax2.annotate('%s (%s)' % (d,t), xy=(x,y), xytext=(0,3), textcoords='offset points',fontsize='xx-small',rotation=45,va='bottom',ha='left')
+        \\telse:
+        \\t\\tax2.annotate('%s (%s)' % (d,t), xy=(x,y), xytext=(3,-3), textcoords='offset points',fontsize='xx-small',rotation=45,va='top',ha='right')
+        for a,b in zip([d[0] for d in annots],[d[1] for d in annots]):
+        \\tax2.annotate('(%d) .. %s' % (a,b), xy=(0.01,(len(annots)-a)*0.05+0.03), xytext=(5,0), textcoords='offset points',xycoords='axes fraction',fontsize='xx-small',va='bottom',ha='left')
+        ax2.set_ylabel('Sensitivity')
+        ax2.grid(color='gray')
+        div2 = make_axes_locatable(ax2)
+        cax2 = div2.append_axes('right', size='3%', pad=0.1)
+        cb2  = fig.colorbar(sc2, cax=cax2, format='%.2e')
+        cb2.set_label('Number of sites')
+        for t in cb2.ax.get_yticklabels(): t.set_fontsize(9)
+
+        # cols = [x[2] for x in dat_cnt] # uncomment if sensitivity should be the color
+        sc3 = ax3.scatter([x[0] for x in dat_cnt],[x[4] for x in dat_cnt],c=cols,edgecolor='none')
+        div3 = make_axes_locatable(ax3)
+        cax3 = div3.append_axes('right', size='3%', pad=0.1)
+        # cb3  = fig.colorbar(sc3, cax=cax3)
+        # cb3.set_label('Sensitivity')
+        cb3  = fig.colorbar(sc3, cax=cax3, format='%.2e')
+        cb3.set_label('Number of sites')
+        for t in cb3.ax.get_yticklabels(): t.set_fontsize(9)
+        ax3.grid(color='gray')
+        ax3.set_ylabel('Novel ts/tv')
+        ax3.set_xlabel('ts/tv')
+
+        #plt.subplots_adjust(right=0.82,bottom=0.06,top=0.95,left=0.2,hspace=0.1,wspace=0.05)
+        plt.savefig('$prefix.png')
+        plt.close()
+    ");
+    close($fh);
+
+    `python $prefix.py`;
+}
+
+
+sub plot_scan
+{
+    my ($self,$outfile) = @_;
+
+    my $prefix = $outfile;
+    $prefix =~ s/\.png$//;
+
+    my %tstv;
+    my $t = $$self{target_tstv}[0];
+    while ($t<=$$self{target_tstv}[1])
+    {
+        my $_tstv = sprintf("%.2f", $t);
+        $tstv{$_tstv} = 1;
+        $t += ($$self{target_tstv}[1] - $$self{target_tstv}[0]) / 5;
+    }
+    my $tstv_min = ($$self{target_tstv}[1] + $$self{target_tstv}[0])*0.5 - 0.01;
+    my $tstv_max = ($$self{target_tstv}[1] + $$self{target_tstv}[0])*0.5 + 0.01;
+
+    my (%win,%learn,%th, %win_learn,%win_th,%learn_th);
+    open(my $fh,"<",$prefix) or $self->throw("$prefix: $!");
+    while (my $line=<$fh>)
+    {
+        my @items = split(/\t/, $line);
+        my $tstv  = sprintf("%.2f", $items[0]);
+        my $cnt   = $items[1];
+        my $sns   = $items[2];
+        if ( !($items[5]=~/-m\s*(\S+)/) ) { $self->throw("Could not detect annotations in $prefix: $line"); }
+        my ($win,$learn,$th) = split(/,/, $1);
+        if ( $tstv_min<=$tstv && $tstv<=$tstv_max )
+        {
+            if ( !exists($win_learn{$win}{$learn}) or $win_learn{$win}{$learn} < $cnt ) { $win_learn{$win}{$learn} = $cnt; }
+            if ( !exists($win_th{$win}{$th}) or $win_th{$win}{$th} < $cnt ) { $win_th{$win}{$th} = $cnt; }
+            if ( !exists($learn_th{$learn}{$th}) or $learn_th{$learn}{$th} < $cnt ) { $learn_th{$learn}{$th} = $cnt; }
+        }
+        if ( !exists($tstv{$tstv}) ) { next; }
+        if ( !exists($win{$tstv}{$win}) or $win{$tstv}{$win} < $cnt ) { $win{$tstv}{$win} = $cnt; }
+        if ( !exists($learn{$tstv}{$learn}) or $learn{$tstv}{$learn} < $cnt ) { $learn{$tstv}{$learn} = $cnt; }
+        if ( !exists($th{$tstv}{$th}) or $th{$tstv}{$th} < $cnt ) { $th{$tstv}{$th} = $cnt; }
+    }
+    close($fh);
+
+    if ( !scalar keys %win_learn ) { $self->throw("No result in the range of tstv=($tstv_min,$tstv_max)?! $prefix\n"); }
+
+    open($fh,'>',"$prefix.py") or $self->throw("$prefix.py: $!");
+    $self->tprint($fh, "
+        import matplotlib as mpl
+        mpl.use('Agg')
+        import matplotlib.pyplot as plt
+        from matplotlib.ticker import ScalarFormatter
+
+    ");
+    print $fh "labels = ['", join("','", sort {$a<=>$b} keys %win), "']\n";
+    print $fh "dat_win = [";
+    for my $tstv (sort {$a<=>$b} keys %win)
+    {
+        my (@x,@y);
+        for my $win (sort {$a<=>$b} keys %{$win{$tstv}}) { push @x,$win; push @y,$win{$tstv}{$win}; }
+        print $fh "[", join(',',@x), "],\n";
+        print $fh "[", join(',',@y), "],\n";
+    }
+    print $fh "]\ndat_learn = [";
+    for my $tstv (sort {$a<=>$b} keys %learn)
+    {
+        my (@x,@y);
+        for my $learn (sort {$a<=>$b} keys %{$learn{$tstv}}) { push @x,$learn; push @y,$learn{$tstv}{$learn}; }
+        print $fh "[", join(',',@x), "],\n";
+        print $fh "[", join(',',@y), "],\n";
+    }
+    print $fh "]\ndat_th = [";
+    for my $tstv (sort {$a<=>$b} keys %th)
+    {
+        my (@x,@y);
+        for my $th (sort {$a<=>$b} keys %{$th{$tstv}}) { push @x,$th; push @y,$th{$tstv}{$th}; }
+        print $fh "[", join(',',@x), "],\n";
+        print $fh "[", join(',',@y), "],\n";
+    }
+    print $fh "]\ndat_win_learn = [";
+    my (@x,@y,@s);
+    for my $win (sort {$a<=>$b} keys %win_learn)
+    {
+        for my $learn (keys %{$win_learn{$win}}) { push @x,$win; push @y,$learn; push @s,$win_learn{$win}{$learn}; }
+    }
+    print $fh "[", join(',',@x), "],\n";
+    print $fh "[", join(',',@y), "],\n";
+    print $fh "[", join(',',@s), "],\n";
+    print $fh "]\ndat_win_th = [";
+    @x = (); @y = (); @s = ();
+    for my $win (sort {$a<=>$b} keys %win_th)
+    {
+        for my $th (keys %{$win_th{$win}}) { push @x,$win; push @y,$th; push @s,$win_th{$win}{$th}; }
+    }
+    print $fh "[", join(',',@x), "],\n";
+    print $fh "[", join(',',@y), "],\n";
+    print $fh "[", join(',',@s), "],\n";
+    print $fh "]\ndat_learn_th = [";
+    @x = (); @y = (); @s = ();
+    for my $learn (sort {$a<=>$b} keys %learn_th)
+    {
+        for my $th (keys %{$learn_th{$learn}}) { push @x,$learn; push @y,$th; push @s,$learn_th{$learn}{$th}; }
+    }
+    print $fh "[", join(',',@x), "],\n";
+    print $fh "[", join(',',@y), "],\n";
+    print $fh "[", join(',',@s), "],\n";
+    $self->tprint($fh, "
+        ]
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(5,8))
+        M1  = max(dat_win_learn[2])
+        m1  = min(dat_win_learn[2])
+        M2  = max(dat_win_th[2])
+        m2  = min(dat_win_th[2])
+        M3  = max(dat_learn_th[2])
+        m3  = min(dat_learn_th[2])
+        sc1 = ax1.scatter(dat_win_learn[0],dat_win_learn[1],s=[(x-m1)*100./(M1-m1+1) for x in dat_win_learn[2]], marker='o', c=dat_win_learn[2])
+        sc2 = ax2.scatter(dat_win_th[0],dat_win_th[1],s=[(x-m2)*100./(M2-m2+1) for x in dat_win_th[2]], marker='o', c=dat_win_th[2])
+        sc3 = ax3.scatter(dat_learn_th[0],dat_learn_th[1],s=[(x-m3)*100./(M3-m3+1) for x in dat_learn_th[2]], marker='o', c=dat_learn_th[2])
+        cb1 = fig.colorbar(sc1, ax=ax1, format='%.2e'); cb1.set_label('Number of sites')
+        for t in cb1.ax.get_yticklabels(): t.set_fontsize(9)
+        cb2 = fig.colorbar(sc2, ax=ax2, format='%.2e'); cb2.set_label('Number of sites')
+        for t in cb2.ax.get_yticklabels(): t.set_fontsize(9)
+        cb3 = fig.colorbar(sc3, ax=ax3, format='%.2e'); cb3.set_label('Number of sites')
+        for t in cb3.ax.get_yticklabels(): t.set_fontsize(9)
+        ax1.set_title('Stability of params at ts/tv $tstv_min-$tstv_max', fontsize='medium')
+        ax1.set_xlabel('nBins'); ax1.set_ylabel('learning constant')
+        ax2.set_xlabel('nBins'); ax2.set_ylabel('threshold')
+        ax3.set_xlabel('learning constant'); ax3.set_ylabel('threshold')
+        plt.subplots_adjust(right=0.95,bottom=0.06,top=0.95,left=0.2,hspace=0.32)
+        plt.savefig('$prefix.2.png')
+        plt.close()
+
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(5,8))
+        fmt = ScalarFormatter(useMathText=True)
+        fmt.set_scientific(True)
+        fmt.set_powerlimits((-3,3))
+        ax1.yaxis.set_major_formatter(fmt)
+        ax1.yaxis.get_major_formatter().set_scientific(True)
+        ax2.yaxis.set_major_formatter(fmt)
+        ax2.yaxis.get_major_formatter().set_scientific(True)
+        ax3.yaxis.set_major_formatter(fmt)
+        ax3.yaxis.get_major_formatter().set_scientific(True)
+        for i in range(len(labels)): ax1.plot(dat_win[2*i],dat_win[2*i+1],'-o',label='tstv '+labels[i])
+        for i in range(len(labels)): ax2.plot(dat_learn[2*i],dat_learn[2*i+1],'-o',label='tstv '+labels[i])
+        for i in range(len(labels)): ax3.plot(dat_th[2*i],dat_th[2*i+1],'-o',label='tstv '+labels[i])
+        ax1.legend(frameon=False,numpoints=1,markerscale=0.6,loc='best',prop={'size':9})
+        ax2.legend(frameon=False,numpoints=1,markerscale=0.6,loc='best',prop={'size':9})
+        ax3.legend(frameon=False,numpoints=1,markerscale=0.6,loc='best',prop={'size':9})
+        ax1.set_title('Stability of SOM params', fontsize='medium')
+        ax1.set_ylabel('Number of sites')
+        ax2.set_ylabel('Number of sites')
+        ax3.set_ylabel('Number of sites')
+        ax1.set_xlabel('nBins')
+        ax2.set_xlabel('learning constant')
+        ax3.set_xlabel('threshold')
+        plt.subplots_adjust(right=0.95,bottom=0.06,top=0.95,left=0.2,hspace=0.32)
+        plt.savefig('$prefix.png')
+        plt.close()
+    ");
+    close($fh);
+
+    `python $prefix.py`;
+}
+

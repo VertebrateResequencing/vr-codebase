@@ -23,7 +23,7 @@ use warnings;
 use Carp;   # this is for confess in lock_file and unlock_file. eventually should go somewhere else
 
 use base qw(VertRes::Base);
-use LSF;
+use VertRes::LSF;
 use File::Spec;
 use File::Copy;
 use File::Basename;
@@ -177,14 +177,14 @@ sub run_lane
         # If we are here, the task needs to be run. Check if it is currently running.
         #
         $status = $self->running_status($action_lock);
-        if ( $status & $LSF::Running ) 
+        if ( $status & $VertRes::LSF::Running ) 
         { 
             $self->debug("The task \"$$action{'name'}\" is running.\n");
             $all_done = $Running; 
             if ( ! $$self{'stepwise'} ) { next; }
             last;
         }
-        if ( $status & $LSF::Error )
+        if ( $status & $VertRes::LSF::Error )
         {
             # If exit_on_errors is set to 0, the action will be rerun. If it finishes
             #   successfully, the lock file will be deleted above after the is_finished()
@@ -377,7 +377,7 @@ sub can_be_run
 
         Description : The default routine checks the lock file for LSF job ID's and checks their status.
         Arg [1]     : the lock file of the task
-        Returntype  : LSF::is_job_running return codes.
+        Returntype  : VertRes::LSF::is_job_running return codes.
 
 =cut
 
@@ -386,7 +386,7 @@ sub running_status
     my ($self,$lock_file) = @_;
 
     my $status;
-    eval { $status = LSF::is_job_running($lock_file); };
+    eval { $status = VertRes::LSF::is_job_running($lock_file); };
     if ( $@ )
     {
         if ( $@ eq $VertRes::Base::SIGNAL_CAUGHT_EVENT ) 
@@ -394,7 +394,7 @@ sub running_status
             # The pipeline received SIGTERM or SIGINT.
             die $@; 
         }
-        return $LSF::Error;
+        return $VertRes::LSF::Error;
     }
     return $status;
 }
@@ -439,7 +439,7 @@ sub unlock_file
     close($lock_fh) or confess "close $lock_fh: $!";
 }
 
-# For a given bsub job name (arg 3 to LSF::run), if the bsub o/e files exist
+# For a given bsub job name (arg 3 to VertRes::LSF::run), if the bsub o/e files exist
 # they will be moved to .previous files. If a .previous file exists, its
 # content will be moved to an .archive file. Returns the abs path to the
 # .previous error file so you can parse it for errors before proceeding.

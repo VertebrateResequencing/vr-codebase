@@ -66,9 +66,10 @@ use base qw(VertRes::Pipelines::TrackQC_Bam);
 
 use strict;
 use warnings;
-use LSF;
+use VertRes::LSF;
 use File::Spec;
 use Data::Dumper;
+use Utils;
 
 
 our @actions =
@@ -131,9 +132,9 @@ our $options = {
     'clean_fastqs'    => 0,
 
     'adapters'        => '/software/pathogen/projects/protocols/ext/solexa-adapters.fasta',
-    'bsub_opts'       => "-q normal -M5000000 -R 'select[type==X86_64] select[mem>5000] rusage[mem=5000] rusage[thouio=1]'",
-    'bsub_opts_merge' => "-q normal -M5000000 -R 'select[type==X86_64] select[mem>5000] rusage[mem=5000] rusage[thouio=5]'",
-    'bsub_opts_stats' => "-q normal -M3500000 -R 'select[type==X86_64] select[mem>3500] rusage[mem=3500]'",
+    'bsub_opts'       => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
+    'bsub_opts_merge' => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]' -R 'rusage[thouio=5]'",
+    'bsub_opts_stats' => "-q normal -M3500 -R 'select[mem>3500] rusage[mem=3500]'",
     'gc_depth_bin'    => 20000,
     'gtype_confidence'=> 5.0,
     'mapstat_id'      => 'mapstat_id.txt',
@@ -301,7 +302,7 @@ die "error touching done file" if (system "touch _stats_and_graphs.done");
 
     	my $orig_bsub_opts = $self->{bsub_opts};
     	$self->{bsub_opts} = $self->{bsub_opts_stats};
-    	LSF::run($lock_file,$outdir,"_${lane}_stats_and_graphs", $self, qq{perl -w _stats_and_graphs.pl});
+    	VertRes::LSF::run($lock_file,$outdir,"_${lane}_stats_and_graphs", $self, qq{perl -w _stats_and_graphs.pl});
     	$self->{bsub_opts} = $orig_bsub_opts;
     }
     else {

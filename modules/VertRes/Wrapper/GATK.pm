@@ -113,7 +113,7 @@ sub new {
     $self->exe("java -Xmx${java_mem}m -Xms${java_mem}m $xss -Djava.io.tmpdir=$temp_dir -server -XX:+UseParallelGC -XX:ParallelGCThreads=2 -jar ".$self->exe);
     
     # our bsub jobs will get killed if we don't select high-mem machines
-    $self->bsub_options(M => ($java_mem * 1000), R => "'select[mem>$java_mem] rusage[mem=$java_mem]'");
+    $self->bsub_options(M => ($java_mem), R => "'select[mem>$java_mem] rusage[mem=$java_mem]'");
     
     # default settings
     my $build = delete $self->{build} || '';

@@ -61,7 +61,7 @@ use base qw(VertRes::Pipelines::Import_iRODS VertRes::Pipelines::Import);
 
 use strict;
 use warnings;
-use LSF;
+use VertRes::LSF;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::File;
@@ -73,6 +73,7 @@ use Bio::Tradis::DetectTags;
 use Bio::Tradis::AddTagsToSeq;
 
 our @actions = (
+
 
     # Create the hierarchy path, download and bamcheck the bam files.
     {
@@ -298,19 +299,11 @@ exit;
 };
     close $scriptfh;
 
-    my $job_name = $self->{prefix} . 'bam2fastq';
-    $self->archive_bsub_files( $lane_path, $job_name );
-    LSF::run(
-        $action_lock,
-        $lane_path,
-        $job_name,
-        {
-            bsub_opts =>
-"-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'",
-            dont_wait => 1
-        },
-        qq{perl -w $script_name}
-    );
+    
+    my $job_name = $self->{prefix}.'bam2fastq';
+    $self->archive_bsub_files($lane_path, $job_name);
+    VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'", dont_wait=>1 }, qq{perl -w $script_name});
+    
 
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete
@@ -396,20 +389,11 @@ exit;
 };
     close $scriptfh;
 
-    my $job_name = $self->{prefix} . 'compressfastq';
-    $self->archive_bsub_files( $lane_path, $job_name );
-    LSF::run(
-        $action_lock,
-        $lane_path,
-        $job_name,
-        {
-            bsub_opts =>
-"-q $queue -M${memory}000 -R 'select[mem>$memory] rusage[mem=$memory]'",
-            dont_wait => 1
-        },
-        qq{perl -w $script_name}
-    );
-
+    
+    my $job_name = $self->{prefix}.'compressfastq';
+    $self->archive_bsub_files($lane_path, $job_name);
+    VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'", dont_wait=>1 }, qq{perl -w $script_name});
+    
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete
     return $self->{No};

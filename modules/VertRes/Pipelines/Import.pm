@@ -3,7 +3,7 @@ use base qw(VertRes::Pipeline);
 
 use strict;
 use warnings;
-use LSF;
+use VertRes::LSF;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::File;
@@ -11,6 +11,7 @@ use VertRes::Parser::fastqcheck;
 use VertRes::Pipelines::Import_iRODS;
 use VertRes::Pipelines::Import_Bam;
 use File::Spec;
+use Utils;
 
 our @actions =
 (
@@ -168,7 +169,7 @@ my \$import = VertRes::Pipelines::Import->new(%\$opts);
 ];
 
     close($fh);
-    LSF::run($lock_file,$work_dir,"${prefix}import_fastqs",$self,qq[perl -w ${prefix}import_fastqs.pl]);
+    VertRes::LSF::run($lock_file,$work_dir,"${prefix}import_fastqs",$self,qq[perl -w ${prefix}import_fastqs.pl]);
 
     return $$self{No};
 }

@@ -14,7 +14,7 @@ use base qw(VertRes::Pipeline);
 
 use strict;
 use warnings;
-use LSF;
+use VertRes::LSF;
 use VertRes::Utils::GTypeCheck;
 use VertRes::Utils::GTypeCheckGLF;
 use VRTrack::VRTrack;
@@ -23,6 +23,7 @@ use VRTrack::Mapstats;
 use VertRes::Parser::bamcheck;
 use VertRes::Parser::bam;
 use VertRes::Parser::dict;
+use Utils;
 
 our @actions =
 (
@@ -87,8 +88,8 @@ our $options =
     'clean_fastqs'    => 0,
 
     'adapters'        => '/software/pathogen/projects/protocols/ext/solexa-adapters.fasta',
-    'bsub_opts'       => "-q normal -M5000000 -R 'select[type==X86_64] select[mem>5000] rusage[mem=5000]'",
-    'bsub_opts_merge' => "-q normal -M5000000 -R 'select[type==X86_64] select[mem>5000] rusage[mem=5000] rusage[thouio=5]'",
+    'bsub_opts'       => "-q normal -M5000 -R 'select[type==X86_64] select[mem>5000] rusage[mem=5000]'",
+    'bsub_opts_merge' => "-q normal -M5000 -R 'select[type==X86_64] select[mem>5000] rusage[mem=5000] rusage[thouio=5]'",
     'gc_depth_bin'    => 20000,
     'gtype_confidence'=> 5.0,
     'mapstat_id'      => 'mapstat_id.txt',
@@ -343,7 +344,7 @@ rename("x$name.bam","$name.bam") or Utils::error("rename x$name.bam $name.bam: \
 ];
     close($fh);
 
-    LSF::run($lock_file,$work_dir,"_${name}_merge",{bsub_opts=>$$self{bsub_opts_merge}}, q{perl -w _merge.pl});
+    VertRes::LSF::run($lock_file,$work_dir,"_${name}_merge",{bsub_opts=>$$self{bsub_opts_merge}}, q{perl -w _merge.pl});
     return $$self{'No'};
 }
 
@@ -527,7 +528,7 @@ my \$qc = VertRes::Pipelines::TrackQC_Bam->new(\%params);
 ];
     close $fh;
 
-    LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_graphs", $self, qq{perl -w _graphs.pl});
+    VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_graphs", $self, qq{perl -w _graphs.pl});
     return $$self{'No'};
 }
 

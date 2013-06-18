@@ -46,6 +46,6 @@ my $init_script = $utl->{SCRIPTS}{SAMPLE_MAPPING};
 my $lanes_script = $utl->{SCRIPTS}{SAMPMAP_LANES_VIEW};
 
 print $sw->header();
-$utl->displayDatabasePage($title,$cgi,$vrtrack,$db,$init_script,$lanes_script);
+$utl->displayDatabasePage($title,$cgi,$vrtrack,$db,$init_script,$lanes_script,1);
 print $sw->footer();
 exit;
