@@ -311,8 +311,10 @@ while (<>){
                                               "[\\w]*assembly_logfile\.txt\$",
                                               "optimise_parameters\.jids\$",
                                               "[\\w]_assembly",
+                                              "^forward\.fastq\$",
+                                              "^reverse\.fastq\$",
                                               #Files from map back stage
-                                              "[\\w]*map_back\.(e|o|pl)", 
+                                              "[\\w]*map_back\.(e|o|pl|jids)", 
                                               "[\\w]*map_back_done",    
                                               #Files from update db and clean up stages                                    
                                               "[\\w]*cleanup_done\$",    
