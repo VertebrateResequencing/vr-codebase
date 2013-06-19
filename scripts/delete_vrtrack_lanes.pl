@@ -98,7 +98,7 @@ while (<>){
  	        my $stored_path = readlink $lanedir;  #Get the folder pointed to by the symlink
 
          	print "Deleting: \n" if $verbose;
-        	remove_tree($stored_path, {verbose => $verbose, safe => 1}); #Delete folder pointed to by symlink
+        	remove_tree($stored_path, {verbose => $verbose, safe => 0}); #Delete folder pointed to by symlink
         }
                
         print "Deleting: \n" if $verbose;
