@@ -87,6 +87,13 @@ sub new
             },
 
 
+            # This pipeline can be run on pre-filtered VCFs and the filters can be afterwards applied to the
+            # the original unfiltered VCF, see the --apply option. In this case, one may wish to leave the FILTER 
+            # field of these sites untouched or, alternatively, one may want to unset existing filters and fill in
+            # the missing value "." instead. By default, the filters are left untouched.
+            unset_unknowns => 0,
+
+
             # The -s functionality is not maintained in this version
             #
             #   scan_nbins   => [ 15, 17, 18, 19, 20, 21, 22, 23, 24, 25, 30 ], # list
@@ -246,12 +253,16 @@ sub main
 
         # Run the requested filters to generate list of sites with scores
         if ( $$self{snps}{do_apply} ) 
-        { 
-            $self->spawn('apply_init',"$outdir/$dirname/annots.SNP.tab",$$self{snps}{filter_args},$$self{snps}{annots}); 
+        {
+            my $mask = '';
+            if ( exists($$self{snps}{good_mask}) ) { $mask = "-g 0$$self{snps}{good_mask}" }
+            $self->spawn('apply_init',"$outdir/$dirname/annots.SNP.tab","$$self{snps}{filter_args} $mask",$$self{snps}{annots}); 
         }
         if ( $$self{indels}{do_apply} ) 
         { 
-            $self->spawn('apply_init',"$outdir/$dirname/annots.INDEL.tab","$$self{indels}{filter_args} -t INDEL -F $$self{indels}{fa_ref}",$$self{indels}{annots}); 
+            my $mask = '';
+            if ( exists($$self{indels}{good_mask}) ) { $mask = "-g 0$$self{indels}{good_mask}" }
+            $self->spawn('apply_init',"$outdir/$dirname/annots.INDEL.tab","$$self{indels}{filter_args} $mask -t INDEL -F $$self{indels}{fa_ref}",$$self{indels}{annots}); 
         }
         $self->wait;
 
@@ -265,6 +276,7 @@ sub main
             if ( exists($names{$name}) ) { $self->throw("Improve me: conflicting base names [$file] -> [$name]\n"); }
 
             my $args;
+            if ( $$self{unset_unknowns} ) { $args .= ' -u'; }
             if ( $$self{snps}{do_apply} ) { $args .= " -s $$self{snps}{apply_th}"; }
             if ( $$self{indels}{do_apply} ) { $args .= " -i $$self{indels}{apply_th}"; }
 
@@ -275,7 +287,7 @@ sub main
 
         for my $vcf (@vcfs)
         {
-            $self->spawn('vcf_stats',"$vcf.filt.vchk",$vcf,'-f');
+            $self->spawn('vcf_stats',"$vcf.filt.vchk",$vcf,'-f PASS');
             $self->spawn('vcf_stats',"$vcf.vchk",$vcf,'');
         }
         $self->wait;
@@ -499,9 +511,8 @@ sub init_distributions
     if ( $ann ne '' ) { $ann = "-a $ann"; }
     
     $self->cmd("$$self{vcf_exec} filter $tabfile -p -o $outfile.part/ $args $ann");
-    rename("$outfile.part/annots.$type.n","$outfile.partx");
-    $self->cmd("rm -rf $outfile.part");
-    rename("$outfile.partx",$outfile);
+    rename("$outfile.part","$outfile.plots");
+    rename("$outfile.plots/annots.$type.n",$outfile);
 }
 
 sub try_filter

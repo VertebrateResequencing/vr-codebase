@@ -331,7 +331,7 @@ sub main
     for my $vcf (@vcfs)
     {
 		my $filt = $vcf; $filt =~ s/.vcf.gz/.filt.vcf.gz/;
-        $self->spawn('vcf_stats',"$vcf.filt.vchk",$vcf,'-fs -');
+        $self->spawn('vcf_stats',"$vcf.filt.vchk",$vcf,'-f PASS -s -');
         $self->spawn('vcf_stats',"$vcf.vchk",$vcf,'-s -');
         $self->spawn('apply_filter',$filt,$vcf);
     }
