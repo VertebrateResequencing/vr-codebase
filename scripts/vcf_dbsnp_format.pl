@@ -108,7 +108,7 @@ sub convert_file
         }
         push @gtypes,$gtype;
     }
-    print $vcf_out->format_header();
+    #print $vcf_out->format_header();
 
     if ($$opts{genotypes}) {
         my @gts;
