@@ -179,10 +179,6 @@ sub convert_file
             $mixed_vars++;
             next;
         }
-print '@alts ', Dumper(@alts);
-print '%gt_trans ', Dumper(%gt_trans);
-print '@gt_deletion ', Dumper(@gt_deletion);
-
         delete $rec->{INFO};
 
         # Need to modify the ALT and each affected GT if we removed any ALTS > max
