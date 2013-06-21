@@ -128,7 +128,7 @@ sub convert_file
     while (my $rec=$vcf_in->next_data_hash()) {
 
         $rec_tot++;
-        print $vcf_in->format_line($rec);
+        ##print $vcf_in->format_line($rec);
 
         # genotypes must have FORMAT tag FI=1 (pass filter)
         my $passed = 0;
