@@ -284,6 +284,8 @@ sub copy {
         }
         
         my $ok = $rsync->exec({src => $source.'/', dest => $tmp_dest});
+        # Run it again, sometimes it fails.
+        $ok = $rsync->exec({src => $source.'/', dest => $tmp_dest});
         if ($ok) {
             # we run it again; with the checksum option this should hopefully
             # ensure the copy is perfect
