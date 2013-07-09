@@ -1402,6 +1402,9 @@ sub store_lane {
         #$fsu->rmtree($storage_path);
         #$fsu->rmtree($storage_path_temp);
     }
+    elsif (-l $hroot && abs_path($hroot) =~ /hashed_lanes/ ) {
+          $do_move = 0;
+    }
     
     my $hpath = $lane->vrtrack->hierarchy_path_of_lane($lane);
     
