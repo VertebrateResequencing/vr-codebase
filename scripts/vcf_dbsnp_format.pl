@@ -128,7 +128,7 @@ sub convert_file
     while (my $rec=$vcf_in->next_data_hash()) {
 
         $rec_tot++;
-        #print $vcf_in->format_line($rec);
+        ##print $vcf_in->format_line($rec);
 
         # genotypes must have FORMAT tag FI=1 (pass filter)
         my $passed = 0;
@@ -153,9 +153,9 @@ sub convert_file
         my ($snps,$indels) = (0,0);
         my ($i,$gt_new) = (1,1);
 
+
         for my $alt (@{$$rec{ALT}}) {
 
-            ##if (length($alt) > $MAX_VAR_LEN) {
             if (abs(length($alt) - length($$rec{REF})) > $MAX_VAR_LEN) {
                 push (@gt_deletion, $i);
             }
@@ -179,7 +179,6 @@ sub convert_file
             $mixed_vars++;
             next;
         }
-
         delete $rec->{INFO};
 
         # Need to modify the ALT and each affected GT if we removed any ALTS > max
@@ -188,8 +187,13 @@ sub convert_file
 
             foreach my $gtype (keys %{$rec->{'gtypes'}}) {
                 my $gt = $rec->{gtypes}{$gtype}{GT};
-                my $gt1 = substr($gt,0,1);
-                my $gt2 = substr($gt,2,1);
+                my ($gt1,$gt2);
+                if ($gt =~ /\//) {
+                    ($gt1,$gt2) = split (/\//,$gt);
+                }
+                else {
+                    ($gt1,$gt2) = split (/\|/,$gt);
+                }
                 
                 if ($gt_trans{$gt1} && $gt_trans{$gt2}) {  # translate the GT numbers
                     $gt = $gt_trans{$gt1} . substr($gt,1,1) . $gt_trans{$gt2};
