@@ -454,7 +454,7 @@ sub population_group_bams_list
 
     # Is it a BAM or a file of file names?
     my @out = `file $bam_list`;
-    if ( !($out[0]=~/ASCII/) ) 
+    if ( $out[0]=~/gzip compressed data/ ) 
     {
         my $out = $self->open_file("$outfile.part");
         print $out "$bam_list\n";
