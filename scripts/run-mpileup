@@ -415,7 +415,7 @@ sub check_sanity
     my ($self) = @_;
 
     # Check that the -P option corresponds to PL in the BAMs
-    if ( !($$self{mpileup}=~/-\S*P\s+(\S+)/) ) { return; }
+    if ( !($$self{mpileup}=~/\s+-\S*P\s+(\S+)/) ) { return; }
     my %pl = map { $_=>1 } split(/,/,$1);
     my %bam_pls = ();
 
