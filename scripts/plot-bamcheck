@@ -750,29 +750,33 @@ sub plot_qualities
         print $fh "\n";
     }
     print $fh "end\nend\n";
-    @ytics = ();
-    for my $cycle (@lfq) { if ( $$cycle[0]%10==0 ) { push @ytics,qq["$$cycle[0]" $$cycle[0]]; } }
-    $ytics = join(',', @ytics);
-    print $fh qq[
-            set origin 0,0.03
-            set size 0.95,0.6
-            set ylabel "Cycle (rev reads)" offset character -1,0
-            set xlabel "Base Quality"
-            unset title
-            unset ytics
-            set ytics ($ytics)
-            set xrange  [0:$nquals]
-            set xtics
-            set colorbox vertical user origin first ($nquals+1),0 size screen 0.025,0.812
-            set cblabel "Number of bases"
-            splot '-' matrix with image
-        ];
-    for my $cycle (@lfq)
+    
+    if ( $is_paired )
     {
-        for (my $iqual=1; $iqual<@$cycle; $iqual++) { print $fh "\t$$cycle[$iqual]"; }
-        print $fh "\n";
+      @ytics = ();
+      for my $cycle (@lfq) { if ( $$cycle[0]%10==0 ) { push @ytics,qq["$$cycle[0]" $$cycle[0]]; } }
+      $ytics = join(',', @ytics);
+      print $fh qq[
+              set origin 0,0.03
+              set size 0.95,0.6
+              set ylabel "Cycle (rev reads)" offset character -1,0
+              set xlabel "Base Quality"
+              unset title
+              unset ytics
+              set ytics ($ytics)
+              set xrange  [0:$nquals]
+              set xtics
+              set colorbox vertical user origin first ($nquals+1),0 size screen 0.025,0.812
+              set cblabel "Number of bases"
+              splot '-' matrix with image
+          ];
+      for my $cycle (@lfq)
+      {
+          for (my $iqual=1; $iqual<@$cycle; $iqual++) { print $fh "\t$$cycle[$iqual]"; }
+          print $fh "\n";
+      }
+      print $fh "end\nend\n";
     }
-    print $fh "end\nend\n";
     close($fh);
     plot($$args{gp});
 }
