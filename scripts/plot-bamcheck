@@ -825,6 +825,19 @@ sub plot_gc
     my ($gcl_max,$gcf_max,$lmax,$fmax);
     my @gcf = get_values($opts, 'GCF');
     my @gcl = get_values($opts, 'GCL');
+    
+    # Force there to be some points
+    if(@gcf == 1)
+    {
+      push(@gcf, [1,0]);
+      push(@gcf, [2,0]);
+    }
+    if(@gcl == 1)
+    {
+      push(@gcl, [1,0]);
+      push(@gcl, [2,0]);
+    }
+    
     for my $gc (@gcf) { if ( !defined $gcf_max or $gcf_max<$$gc[1] ) { $gcf_max=$$gc[1]; $fmax=$$gc[0]; } }
     for my $gc (@gcl) { if ( !defined $gcl_max or $gcl_max<$$gc[1] ) { $gcl_max=$$gc[1]; $lmax=$$gc[0]; } }
     my $gcmax = $is_paired && $gcl_max > $gcf_max ? $lmax : $fmax;
