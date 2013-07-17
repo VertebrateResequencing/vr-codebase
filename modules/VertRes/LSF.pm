@@ -447,8 +447,8 @@ sub run
         {
             $status = job_in_queue($jid,"$lsf_output_file");
             if ( $status!=$No ) { last }
-            sleep(2);
-            $max_wait-=2;
+            sleep(1);
+            $max_wait-=1;
         }
         if ( $status==$No ) { Utils::error("The job $1 $lsf_output_file still not in queue??\n"); }
     }
