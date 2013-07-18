@@ -48,7 +48,7 @@ data => {
     optimiser_exec => '/software/pathogen/external/apps/usr/bin/VelvetOptimiser.pl',
     sga_exec       => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
     khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
-    QUASR_exec		=> '/software/pathogen/internal/pathdev/java/QUASR702_Parser/readsetProcessor.jar', 
+    QUASR_exec		=> '/software/pathogen/internal/pathdev/java/QUASR702_Parser/readsetProcessor.jar',
     max_threads => 1,
 },
 
@@ -94,6 +94,7 @@ use Bio::AssemblyImprovement::PrimerRemoval::Main;
 use Bio::AssemblyImprovement::Util::FastqTools;
 use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
 use Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs;
+use Bio::AssemblyImprovement::Util::FastaTools;
 
 
 use base qw(VertRes::Pipeline);
@@ -108,11 +109,11 @@ our $actions = [ { name     => 'pool_fastqs',
                    provides => \&optimise_parameters_provides },
                  { name     => 'map_back',
                    action   => \&map_back,
-                   requires => \&map_back_requires, 
+                   requires => \&map_back_requires,
                    provides => \&map_back_provides },
                  { name     => 'update_db',
                    action   => \&update_db,
-                   requires => \&update_db_requires, 
+                   requires => \&update_db_requires,
                    provides => \&update_db_provides },
                  { name     => 'cleanup',
                    action   => \&cleanup,
@@ -127,7 +128,7 @@ our %options = (
                 abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
                 sga_exec        => '/software/pathogen/external/apps/usr/bin/sga',
                 khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
-                QUASR_exec	    => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar', 
+                QUASR_exec	    => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar',
                 no_scaffolding  => 0,
                 annotation      => 0,
                 );
@@ -146,11 +147,11 @@ sub new {
   {
     $self->{max_threads} = 1;
   }
-  
+
   if(defined($self->{vrlane}))
   {
     # being run on individual lanes
-    $self->{pools} = 
+    $self->{pools} =
        [{
             lanes => [$self->{vrlane}->name()],
             type => 'shortPaired',
@@ -161,9 +162,9 @@ sub new {
   my $assembler_class = $assembly_util->find_module();
   eval "require $assembler_class;";
   $self->{assembler_class} = $assembler_class;
-  
-  $self->{pipeline_version} = 2 unless(defined($self->{pipeline_version}) );  
-  
+
+  $self->{pipeline_version} = 2 unless(defined($self->{pipeline_version}) );
+
   return $self;
 }
 
@@ -189,7 +190,7 @@ sub map_back
 {
   my ($self, $build_path, $action_lock) = @_;
   $self->mapping_and_generate_stats($build_path, $action_lock, "optimised_directory", "map_back",$self->{reference});
-  
+
   return $self->{No};
 }
 
@@ -203,16 +204,16 @@ sub map_back
 sub mapping_and_generate_stats
 {
   my ($self, $build_path, $action_lock, $working_directory_method_name, $action_name_suffix, $reference) = @_;
-  
+
   my $assembler_class = $self->{assembler_class};
   my $output_directory = $self->{lane_path};
   eval("use $assembler_class; ");
   my $assembler_util= $assembler_class->new( output_directory => qq[$output_directory]);
   my $base_path = $self->{seq_pipeline_root};
-  
+
   my $job_name = $self->{prefix}.$self->{assembler}."_$action_name_suffix";
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_$action_name_suffix.pl");
-  
+
   my $lane_names = $self->get_all_lane_names($self->{pools});
   my @lane_paths;
   for my $lane_name (@$lane_names)
@@ -233,33 +234,33 @@ sub mapping_and_generate_stats
   use $assembler_class;
 
   unlink("pool_1.fastq.gz");
-    
+
   my \@lane_paths = $lane_paths_str;
-  
+
   my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory] $reference_str );
   my \$directory = \$assembler_util->${working_directory_method_name}();
   \$assembler_util->map_and_generate_stats(\$directory,qq[$output_directory], \\\@lane_paths );
-  
+
   unlink("\$directory/contigs.mapped.sorted.bam.bai");
   unlink("\$directory/contigs.mapped.sorted.bam");
   unlink("\$directory/contigs.fa.small.sma");
   unlink("\$directory/contigs.fa.small.smi");
-  
+
   if($annotation == 1)
   {
     system("prokka --centre SC --cpus 2 --force --outdir  \$directory/annotation \$directory/contigs.fa");
   }
   system("touch \$directory/$self->{prefix}$self->{assembler}_${action_name_suffix}_done");
- 
+
   system("touch $self->{prefix}$self->{assembler}_${action_name_suffix}_done");
   exit;
                 };
   close $scriptfh;
-  
+
   my $memory_required_mb = 1700;
 
   VertRes::LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => " -M${memory_required_mb} -R 'select[mem>$memory_required_mb] rusage[mem=$memory_required_mb]'"}, qq{perl -w $script_name});
-  
+
 }
 
 
@@ -297,14 +298,14 @@ sub optimise_parameters
 
       my $job_name = $self->{prefix}.$self->{assembler}.'_optimise_parameters';
       my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_optimise_parameters.pl");
-      
+
       my @lane_paths;
       for my $lane_name (@$lane_names)
       {
         push(@lane_paths,$base_path.'/'.$self->{vrtrack}->hierarchy_path_of_lane_name($lane_name).'/'.$lane_name);
       }
       my $lane_paths_str = '("'.join('","', @lane_paths).'")';
-      
+
       #We use 33% of the read length (read in from database) to estimate the memory required
       my $read_length = $self->lane_read_length();
       my $kmer_for_memory_calculation =  int($read_length*0.33);
@@ -313,9 +314,9 @@ sub optimise_parameters
       my $num_threads = $self->number_of_threads($memory_required_mb);
       my $insert_size = $self->get_insert_size();
       my $tmp_directory = $self->{tmp_directory}.'/'.$lane_names->[0] || getcwd();
-      
+
       my $pipeline_version = join('/',($output_directory, $self->{assembler}.'_assembly','pipeline_version_'.$self->{pipeline_version}));
-      
+
       my $contigs_base_name = $self->generate_contig_base_name();
 
       open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
@@ -378,9 +379,9 @@ exit;
       {
         $total_memory_mb = 2000;
       }
-      
+
       my $queue = $self->decide_appropriate_queue($memory_required_mb);
-      
+
       VertRes::LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-n$num_threads -q $queue -M${total_memory_mb} -R 'select[mem>$total_memory_mb] rusage[mem=$total_memory_mb] span[hosts=1]'", dont_wait=>1}, qq{perl -w $script_name});
 
       # we've only submitted to LSF, so it won't have finished; we always return
@@ -408,7 +409,7 @@ sub decide_appropriate_queue
 sub improve_assembly
 {
   my ($self,$assembly_file, $input_files, $insert_size) = @_;
-  
+
   my $preprocess_input_files = Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles->new(
       input_files    => $input_files,
       input_assembly => $assembly_file,
@@ -426,7 +427,7 @@ sub improve_assembly
   $scaffolding_obj->run();
 
   my $scaffolding_output = $scaffolding_obj->final_output_filename;
-  
+
   # order contigs on an assembly
   if(defined($self->{reference}) && (-e $self->{reference}))
   {
@@ -447,7 +448,7 @@ sub improve_assembly
       _output_prefix  => 'gapfilled'
   )->run();
   move($fill_gaps_obj->final_output_filename,$assembly_file);
-  
+
   # descaffold if needed
   if(defined($self->{no_scaffolding}) && $self->{no_scaffolding} == 1)
   {
@@ -455,7 +456,16 @@ sub improve_assembly
     $descaffold_obj->run();
     move($descaffold_obj->output_filename,$assembly_file);
   }
+
+  if(defined($self->{post_contig_filtering}) && $self->{post_contig_filtering} > 0)
+  {
+    my $fasta_processor = Bio::AssemblyImprovement::Util::FastaTools->new(input_filename => $assembly_file);
+    $fasta_processor->remove_small_contigs($self->{post_contig_filtering}, 95);
+    move($fasta_processor->output_filename,$assembly_file);
+  }
 }
+
+
 
 sub generate_contig_base_name
 {
@@ -465,7 +475,7 @@ sub generate_contig_base_name
   for my $lane_name (@{$lane_names})
   {
     my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, $lane_name) or $self->throw("No such lane in the DB: [".$lane_name."]");
-    
+
     if(defined($vrlane->acc()))
     {
       # use the first one available which has an accession number, normally there will only be 1
@@ -499,9 +509,9 @@ sub lane_read_length
   my ($self) = @_;
   my $lane_names = $self->get_all_lane_names($self->{pools});
   my $vrlane  = VRTrack::Lane->new_by_name($self->{vrtrack}, @$lane_names[0]) or $self->throw("No such lane in the DB: [".@$lane_names[0]."]");
-  
+
   my $read_length = $vrlane->read_len();
-  
+
   if((!defined($read_length)) || $read_length <= 0)
   {
     for my $file_name (@{$vrlane->files})
@@ -513,7 +523,7 @@ sub lane_read_length
       last if($read_length > 0);
     }
   }
-  
+
   if((!defined($read_length)) || $read_length <= 0)
   {
     $read_length = 36;
@@ -528,20 +538,20 @@ sub lane_read_length
 #   my ($self) = @_;
 #   my %kmer_size;
 #   my $read_length = $self->lane_read_length();
-# 
+#
 #   $kmer_size{min} = int($read_length*0.66);
 #   $kmer_size{max} = int($read_length*0.90);
-#   
+#
 #   if($kmer_size{min} % 2 == 0)
 #   {
 #     $kmer_size{min}--;
 #   }
-#   
+#
 #   if($kmer_size{max} % 2 == 0)
 #   {
 #     $kmer_size{max}--;
 #   }
-# 
+#
 #   return \%kmer_size;
 # }
 
@@ -550,7 +560,7 @@ sub number_of_threads
   my ($self, $memory_required_mb) = @_;
   my $normal_queue_mem_limit = 35000;
   my $num_threads = 1;
-  
+
   if($normal_queue_mem_limit/$memory_required_mb > 2)
   {
     $num_threads = int($normal_queue_mem_limit/$memory_required_mb);
@@ -559,7 +569,7 @@ sub number_of_threads
   {
     $num_threads = $self->{max_threads};
   }
-  
+
   return $num_threads;
 }
 
@@ -604,10 +614,10 @@ my \@lane_names;
      my $file_names_str;
      my @file_names;
      my @file_names_with_path ;
-     
+
      if( @{$vlane->files} == 2)
      {
-     
+
        for my $file_name (@{$vlane->files})
        {
         	push(@file_names, $file_name->name );
@@ -615,11 +625,11 @@ my \@lane_names;
        @file_names = sort @file_names; # Unfortunately normalisation code cannot handle reads interleaved in any other way besides /1, /2, /1 and so on. We rely here on the files being named with _1 and _2 so that the order is maintained.
        $file_names_str = '("'.join('","',@file_names ).'")';
      }
-     
+
      #Primer removal
      if(defined ($self->{remove_primers}) and $self->{remove_primers} == 1 and defined ($self->{primers_file}))
      {
-     	#Replace code here with an alternative way of removing primers that can accept a shuffled file     
+     	#Replace code here with an alternative way of removing primers that can accept a shuffled file
      	print $scriptfh qq{
 my \$primer_remover = Bio::AssemblyImprovement::PrimerRemoval::Main->new(
 forward_file    => "$output_directory/$file_names[0]",
@@ -632,12 +642,12 @@ QUASR_exec		=> "$self->{QUASR_exec}",
 
 	  my @primer_removed_files = ( 'primer_removed.forward.fastq.gz', 'primer_removed.reverse.fastq.gz');
 	  $file_names_str = '("'.join('","', @primer_removed_files ).'")';
-      }     
-     
+      }
+
      # Create a shuffled sequence. This shuffled file will be the input for any processing steps below (i.e. normalisation, error correction etc)
      my $shuffled_filename = $output_directory.'/'.$lane_name.'.fastq.gz';
 	 my $output_filename = $lane_name.'.fastq.gz'; # Each step below (normalisation and error correction), should produce an output file with this name (which is the same as the shuffled filename)
-     
+
      print $scriptfh qq{
 my \@filenames_array = $file_names_str;
 \$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
@@ -649,9 +659,9 @@ my \@filenames_array = $file_names_str;
       print $scriptfh qq{
 unlink("$output_directory/primer_removed.forward.fastq.gz");
 unlink("$output_directory/primer_removed.reverse.fastq.gz");
-};          
+};
      }
-	
+
  	 # Digital normalisation
      if(defined ($self->{normalise}) and $self->{normalise} == 1)
      {
@@ -662,9 +672,9 @@ khmer_exec       => "$self->{khmer_exec}",
 output_filename  => "$output_filename",
 output_directory => "$output_directory",
 )->run();
-};		
+};
      }
-	
+
      # Error correction
 	 if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
 	 {
@@ -676,11 +686,11 @@ output_directory => "$output_directory",
 pe_mode		    => 2,
 sga_exec        => "$self->{sga_exec}",
 )->run();
-}; 
+};
 	 }
 
    } #End for loop
-   
+
    my $pool_count = 1;
    for my $lane_pool (@{$self->{pools}})
    {
@@ -894,27 +904,27 @@ sub cleanup_provides {
 sub cleanup {
   my ($self, $lane_path, $action_lock) = @_;
 #  return $self->{Yes} unless $self->{do_cleanup};
-  
+
   my $prefix = $self->{prefix};
-  
+
   # remove job files
-  foreach my $file (qw(pool_fastqs 
-    $self{assembler}_optimise_parameters 
-    $self{assembler}_map_back )) 
+  foreach my $file (qw(pool_fastqs
+    $self{assembler}_optimise_parameters
+    $self{assembler}_map_back ))
     {
-      foreach my $suffix (qw(o e pl)) 
+      foreach my $suffix (qw(o e pl))
       {
         unlink($self->{fsu}->catfile($lane_path, $prefix.$file.'.'.$suffix));
       }
   }
-  
+
   # remove files
-  foreach my $file (qw(contigs.fa.scaffolded.filtered .RData contigs.fa.png.Rout scaffolded.summaryfile.txt reverse.fastq forward.fastq)) 
+  foreach my $file (qw(contigs.fa.scaffolded.filtered .RData contigs.fa.png.Rout scaffolded.summaryfile.txt reverse.fastq forward.fastq))
   {
     unlink($self->{fsu}->catfile($lane_path, $file));
   }
-  Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_cleanup_done")   );  
-  
+  Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_cleanup_done")   );
+
   return $self->{Yes};
 }
 
@@ -966,9 +976,9 @@ sub update_db {
     # flag in the database (if not already updated)
     my $vrlane = $self->{vrlane};
     return $$self{'Yes'} unless(defined($vrlane));
-    
+
     my $vrtrack = $vrlane->vrtrack;
-    
+
     return $$self{'Yes'} if $vrlane->is_processed('assembled');
 
     unless($vrlane->is_processed('assembled')){
@@ -978,10 +988,10 @@ sub update_db {
       $vrtrack->transaction_commit();
     }
 
-    
+
     my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
     Utils::CMD("rm $job_status") if (-e $job_status);
-    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_update_db_done")   );  
+    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_update_db_done")   );
 
     return $$self{'Yes'};
 }
