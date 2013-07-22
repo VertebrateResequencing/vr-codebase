@@ -142,7 +142,7 @@ sub parse_bjobs_l
 sub check_job
 {
     my ($job) = @_;
-    my $status = { DONE=>$Done, PEND=>$Running, EXIT=>$Error, RUN=>$Running, UNKWN=>$Running };
+    my $status = { DONE=>$Done, PEND=>$Running, EXIT=>$Error, RUN=>$Running, UNKWN=>$Running, SSUSP=>$Running };
     if ( !exists($$status{$$job{status}}) ) 
     { 
         if ( $$job{status} eq 'ZOMBI' )
