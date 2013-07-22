@@ -787,10 +787,11 @@ sub auto_qc
             }
             push @qc_status, { test=>$test, status=>1, reason=>$reason };
 
-            $reason = sprintf "%.1f%% of inserts are contained within %.1f%% of the max peak (%.2f%%).",$within_peak,$peak_win,$range;
-            if ( $range>$peak_win )
+            my $range_str = defined $range ? sprintf "%.2f%%",$range : "undef";
+            $reason = sprintf "%.1f%% of inserts are contained within %.1f%% of the max peak (%s).",$within_peak,$peak_win,$range_str;
+            if ( $range>$peak_win || !defined $range )
             {
-                $status=0; $reason = sprintf "Fail library, %.1f%% of inserts are not within %.1f%% of the max peak (%.2f%%).",$within_peak,$peak_win,$range;
+                $status=0; $reason = sprintf "Fail library, %.1f%% of inserts are not within %.1f%% of the max peak (%s).",$within_peak,$peak_win,$range_str;
             }
             push @qc_status, { test=>'Insert size (rev)', status=>1, reason=>$reason };
 
@@ -856,6 +857,10 @@ sub insert_size_ok
         $count += $yval;
     }
     my $out_amount = 100.0*$count/$total_count;
+
+    # return range as undef if max insert peak at zero.
+    return($out_amount,undef) unless $$vals[$imaxpeak][0];
+
 
     # How big must be the range in order to accomodate the requested amount of data
     $data_amount *= 0.01;
