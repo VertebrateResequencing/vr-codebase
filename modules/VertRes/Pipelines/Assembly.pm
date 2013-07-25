@@ -393,11 +393,11 @@ sub decide_appropriate_queue
 {
   my ($self, $memory_required_mb) = @_;
   my $queue = 'long';
-  if($memory_required_mb > 30000)
+  if($memory_required_mb > 36000)
   {
     $queue = 'hugemem';
   }
-  elsif($memory_required_mb < 3500)
+  elsif($memory_required_mb < 5000)
   {
     $queue = 'normal';
   }

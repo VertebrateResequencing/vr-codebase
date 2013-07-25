@@ -201,7 +201,7 @@ sub bam_to_fastq {
     ### if we know whats its going to be increased to we can set java to 90% of it.
     
     my $java_mem = int($memory * 0.95);
-    my $queue = $memory >= 30000 ? "hugemem" : "long";
+    my $queue = $memory >= 30000 ? "hugemem" : "normal";
     my $samtools_sorting_memory = 300000000;
     
     my $fastqs_str ; 
