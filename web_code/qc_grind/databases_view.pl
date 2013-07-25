@@ -40,7 +40,7 @@ sub displayDatabasesPage {
     print $cgi->p({-align=>"right"},'Find Project <input type="text" id="projFind" />');
     print $cgi->p('<span id="projHint"></span>');
 
-	my @main_dbs = qw (vrtrack_human_wgs vrtrack_human_wes vrtrack_mouse_wgs vrtrack_mouse_wes);
+	my @main_dbs = qw (vrtrack_human_wgs vrtrack_human_wes_v5 vrtrack_mouse_wgs_GRCm38 vrtrack_mouse_wes_GRCm38 vrtrack_scerevisiae_wgs);
     print qq[
         <fieldset style="width: 500px">
         <legend>Main Databases</legend>

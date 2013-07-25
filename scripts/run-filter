@@ -253,12 +253,16 @@ sub main
 
         # Run the requested filters to generate list of sites with scores
         if ( $$self{snps}{do_apply} ) 
-        { 
-            $self->spawn('apply_init',"$outdir/$dirname/annots.SNP.tab",$$self{snps}{filter_args},$$self{snps}{annots}); 
+        {
+            my $mask = '';
+            if ( exists($$self{snps}{good_mask}) ) { $mask = "-g 0$$self{snps}{good_mask}" }
+            $self->spawn('apply_init',"$outdir/$dirname/annots.SNP.tab","$$self{snps}{filter_args} $mask",$$self{snps}{annots}); 
         }
         if ( $$self{indels}{do_apply} ) 
         { 
-            $self->spawn('apply_init',"$outdir/$dirname/annots.INDEL.tab","$$self{indels}{filter_args} -t INDEL -F $$self{indels}{fa_ref}",$$self{indels}{annots}); 
+            my $mask = '';
+            if ( exists($$self{indels}{good_mask}) ) { $mask = "-g 0$$self{indels}{good_mask}" }
+            $self->spawn('apply_init',"$outdir/$dirname/annots.INDEL.tab","$$self{indels}{filter_args} $mask -t INDEL -F $$self{indels}{fa_ref}",$$self{indels}{annots}); 
         }
         $self->wait;
 

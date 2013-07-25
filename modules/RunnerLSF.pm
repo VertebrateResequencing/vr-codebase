@@ -142,8 +142,21 @@ sub parse_bjobs_l
 sub check_job
 {
     my ($job) = @_;
-    my $status = { DONE=>$Done, PEND=>$Running, EXIT=>$Error, RUN=>$Running, UNKWN=>$Running };
-    if ( !exists($$status{$$job{status}}) ) { confess("Todo: $$job{status}\n"); }
+    my $status = { DONE=>$Done, PEND=>$Running, EXIT=>$Error, RUN=>$Running, UNKWN=>$Running, SSUSP=>$Running };
+    if ( !exists($$status{$$job{status}}) ) 
+    { 
+        if ( $$job{status} eq 'ZOMBI' )
+        {
+            confess(
+                    "FIXME: \n" .
+                    "Some of the jobs are in ZOMBI state, please see `man bjobs` for possible reasons why this happened.\n" .
+                    "Because the job might have been already requeued with a new job ID which this pipeline would be unaware of,\n" .
+                    "the pipeline cannot proceed. Please fix manually by deleting the appropriate line in .jobs/*.w.jid\n" .
+                    "and remove the appropriate LSF output file(s) .jobs/*.w.<ID>.o\n"
+                   );
+        }
+        confess("Todo: $$job{status}\n"); 
+    }
     $$job{status} = $$status{$$job{status}};
     if ( $$job{status}==$Running )
     {

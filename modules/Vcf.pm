@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r840';
+our $VERSION = 'r868';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
@@ -1234,7 +1234,7 @@ sub get_sample_field
         {
             $isep = index($col,':',$prev_isep);
             if ( $itag==$idx ) { last; }
-            if ( $isep==-1 ) { $self->throw("The index out of range: $col:$isep .. $idx"); }
+            if ( $isep==-1 ) { return '.'; }    # This is valid, missing fields can be ommited from genotype columns
             $prev_isep = $isep+1;
             $itag++;
         }
