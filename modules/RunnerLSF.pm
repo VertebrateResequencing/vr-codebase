@@ -243,9 +243,10 @@ sub run_array
     if ( $prev>$from ) { push @bsub_ids, "$from-$prev"; }
     else { push @bsub_ids, $from; }
     my $bsub_ids  = join(',', @bsub_ids);
+    my @skipped_bsub_ids;
     while ( length($job_name) + length($bsub_ids) > 250 && scalar @bsub_ids ) 
     {
-        pop(@bsub_ids);
+        push @skipped_bsub_ids, pop(@bsub_ids);
         $bsub_ids = join(',', @bsub_ids);
     }
 
@@ -273,6 +274,18 @@ sub run_array
     open(my $jids_fh, '>>', $jids_file) or confess("$jids_file: $!");
     print $jids_fh "$jid\t$job_name\t$bsub_cmd\n";
     close $jids_fh;
+
+    # If we skipped any subs due to command line limit, call run_array again
+    if (@skipped_bsub_ids)
+    {
+        my @skipped_ids;
+        foreach my $bsub_id (@skipped_bsub_ids)
+        {
+            if ($bsub_id =~ m/(\d+)-(\d+)/) { push @skipped_ids, ($1..$2); }
+            else { push @skipped_ids, $bsub_id; }
+        }
+        run_array($jids_file, $job_name, $opts, $cmd, \@skipped_ids);
+    }
 }
 
 
