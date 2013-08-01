@@ -350,6 +350,7 @@ sub merge_vcf_files
             if ( scalar keys %ref_alt_map > 1 ) 
             { 
                 $new_ref = $vcf_out->fill_ref_alt_mapping(\%ref_alt_map); 
+                if ( !defined $new_ref ) { error("Failed on line $out{CHROM}:$out{POS}\n"); }
             }
             if ( !$have_samples or !$$opts{trim_redundant_ALTs} )
             {

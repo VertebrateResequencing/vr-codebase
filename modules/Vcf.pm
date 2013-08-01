@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r868';
+our $VERSION = 'r874';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
@@ -2041,7 +2041,7 @@ sub fill_ref_alt_mapping
     for my $ref (keys %$map)
     {
         $new_ref = $ref;
-        if ( $ref ne $new_ref ) { $self->throw("The reference prefixes do not agree: $ref vs $new_ref\n"); }
+        if ( $ref ne $new_ref ) { $self->warn("The reference prefixes do not agree: $ref vs $new_ref\n"); return undef; }
         for my $alt (keys %{$$map{$ref}})
         {
             $$map{$ref}{$alt} = $alt;
@@ -3058,7 +3058,7 @@ sub Vcf4_0::validate_alt_field
                     GTC  G      ->      GTC  G
                     G    <DEL>  ->      GTC  <DEL>
     Args    : 
-    Returns : New REF string and fills the hash with appropriate ALT.
+    Returns : New REF string and fills the hash with appropriate ALT or undef on error.
 
 =cut
 
@@ -3081,7 +3081,7 @@ sub Vcf4_0::fill_ref_alt_mapping
     for my $ref (keys %$map)
     {
         my $rlen = length($ref);
-        if ( substr($new_ref,0,$rlen) ne $ref ) { $self->throw("The reference prefixes do not agree: $ref vs $new_ref\n"); }
+        if ( substr($new_ref,0,$rlen) ne $ref ) { $self->warn("The reference prefixes do not agree: $ref vs $new_ref\n"); return undef; }
         for my $alt (keys %{$$map{$ref}})
         {
             # The second part of the regex is for VCF>4.0, but does no harm for v<=4.0

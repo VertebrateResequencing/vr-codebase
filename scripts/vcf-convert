@@ -147,12 +147,13 @@ sub convert_file
                         $fa = FaSlice->new(file=>$$opts{refseq},size=>1_000_000);
                     }
                     my $ref   = $fa->get_slice($$x{CHROM},$$x{POS},$$x{POS}+abs($len));
-                    my $first = substr($ref,0,1);
+                    my $nref1 = uc(substr($ref,0,1));
+                    my $oref1 = uc(substr($$x{REF},0,1));
 
                     # Sanity check
-                    if ( $$x{REF} ne $first ) 
+                    if ( $oref1 ne $nref1 ) 
                     { 
-                        error("Sanity check failed: the ref does not agree at $$x{CHROM}:$$x{POS} .. [$$x{REF}] in .fa,  [$first] in .vcf\n"); 
+                        error("Sanity check failed: the ref does not agree at $$x{CHROM}:$$x{POS} .. [$nref1] in .fa,  [$oref1] in .vcf\n"); 
                     }
 
                     $$alt_to_mapref{$alt} = { ref=>$ref, alt=>$$x{REF} };
@@ -166,6 +167,7 @@ sub convert_file
             }
 
             $$x{REF} = $vcf_out->fill_ref_alt_mapping($map);
+            if ( !defined $$x{REF} ) { error("Failed on line $$x{CHROM}:$$x{POS}\n"); }
             for (my $i=0; $i<@{$$x{ALT}}; $i++)
             {
                 my $ori_ref = $$alt_to_mapref{$$x{ALT}[$i]}{ref};
