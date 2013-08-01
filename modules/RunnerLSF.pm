@@ -265,10 +265,13 @@ sub run_array
   
     $cmd =~ s/{JOB_INDEX}/\$LSB_JOBINDEX/g;
     my $bsub_opts = '';
-    if ( exists($$opts{memory}) ) 
+    if ( exists($$opts{memory}) && $$opts{memory} ) 
     { 
         my $mem = int($$opts{memory});
-        $bsub_opts = sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $mem*1000,$mem,$mem; 
+        if ( $mem )
+        {
+            $bsub_opts = sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $mem*1000,$mem,$mem; 
+        }
     }
     my $bsub_cmd  = qq[bsub -J '${job_name}[$bsub_ids]' -e $job_name.\%I.e -o $job_name.\%I.o $bsub_opts '$cmd'];
 
