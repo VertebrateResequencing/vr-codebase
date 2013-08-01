@@ -393,7 +393,11 @@ sub run
         }
         if ( defined($opts{queue}) ) 
         {
-            $opts{bsub_opts} = "-q $opts{queue}";
+            $opts{bsub_opts} = " -q $opts{queue}";
+        }
+        if ( defined($opts{cpus}) ) 
+        {
+            $opts{bsub_opts} .= " -n $opts{cpus} -R 'span[hosts=1]'";
         }
         if ( defined($opts{memory}) ) 
         {
@@ -416,7 +420,7 @@ sub run
 
     # Check if memory or queue should be changed (and change it)
     $bsub_opts = adjust_bsub_options($bsub_opts, $lsf_output_file);
-    my $cmd = "bsub -J $job_name -e $lsf_error_file -o $lsf_output_file $bsub_opts '$bsub_cmd'";
+    my $cmd = "bsub -J $job_name -e $lsf_error_file -o $lsf_output_file$bsub_opts '$bsub_cmd'";
 
     my @out = Utils::CMD($cmd,$options);
     if ( scalar @out!=1 || !($out[0]=~/^Job <(\d+)> is submitted/) ) 
