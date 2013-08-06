@@ -244,6 +244,7 @@ sub _read_config
 	if ( !-e $config ) { $self->throw("The file does not exist: $config\n"); }
 
     my %x = do "$config";
+    if ( $@ ) { $self->throw("do $config: $@\n"); }
     while (my ($key,$value) = each %x)
     {
         if ( !ref($value) ) 
@@ -657,6 +658,8 @@ sub wait
             my $stat = $$status[$i]{status};
             my $done_file = $$jobs{$wfile}{$ids[$i]}{done_file};
 
+if ( !defined $stat ) { $self->throw("No status for $i-th job: $done_file; $ids[$i],$wfile??"); }
+
             # If the job is already running, skip. There can be error from previous run.
             if ( $stat & $Running ) 
             { 
@@ -880,6 +883,7 @@ sub _revive
 	if ( defined $config_file )
 	{
 		my %x = do "$config_file";
+        if ( $@ ) { $self->throw("do $config_file: $@\n"); }
 		while (my ($key,$value) = each %x) { $$self{$key} = $value; }
 	}
     my $code = $self->can($$self{_store}{call});
