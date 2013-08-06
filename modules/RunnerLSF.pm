@@ -229,6 +229,12 @@ sub past_limits
     return %out;
 }
 
+sub get_lsf_limits_unit
+{
+    my @units = grep { /LSF_UNIT_FOR_LIMITS/ } `lsadmin showconf lim`;
+    if ( @units && $units[0]=~/\s+MB$/ ) { return 'MB'; }
+    return 'kB';
+}
 
 sub run_array
 {
@@ -271,7 +277,9 @@ sub run_array
         my $mem = int($$opts{memory});
         if ( $mem )
         {
-            $bsub_opts = sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $mem*1000,$mem,$mem; 
+            my $units = get_lsf_limits_unit();
+            my $lmem  = $units eq 'kB' ? $mem*1000 : $mem;
+            $bsub_opts = sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $lmem,$mem,$mem; 
         }
     }
     my $bsub_cmd  = qq[bsub -J '${job_name}[$bsub_ids]' -e $job_name.\%I.e -o $job_name.\%I.o $bsub_opts '$cmd'];
