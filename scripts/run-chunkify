@@ -27,15 +27,27 @@ sub new
 
     $$self{do_clean} = 1;
     $$self{limits} = { runtime=>24*60 };
+    $$self{config_version} = '1376393805';
     $$self{_sampleconf} = q[
-        # Split VCFs either by the genomic regions or the number of sites
-        # todo: chunk_size => 1_000_000,  
-        chunk_sites => 100_000,
+        # This pipeline allows to execute arbitrary commands in parallel
+        # on a computing farm and concatenate the outputs. Originally it was
+        # developed to parallelize VCF operations but can be used in other
+        # contexts as well.
+        #
+        # 1) Define chunks. Currently there are two possibilities how to do this:
+        #   - split by number of sites in a VCF (vcf_sites)
+        #   - list genomic regions and chunk sizes (regions, chunk_size, fai)
+        # vcf_sites => 100_000,
+        regions     => [ 20, 11],
+        chunk_size  => 1_000_000,
+        fai         => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta.fai',
 
-        # The command to run. By default, it will be used as:
+
+        # 2) Specifiy the command to run. By default, it will be used as:
         #   tabix -h $input $region | $cmd | bgzip -c > $output
-        # In case that the input key below is an array reference instead of a string,
-        # the command will be used in the following form:
+        # In case that the input key below does not exist or is an array
+        # reference instead of a string, the command will be used in the
+        # following form:
         #   $cmd | bgzip -c > $output
         # In the latter case, the string {REGION} is expected to be part of the command
         # and will be expanded accordingly.
@@ -43,29 +55,40 @@ sub new
         # Examples:
         #   cmd => 'wc -l',
         #   cmd => 'vcf-merge -r {REGION} {INPUT}',
+        #   cmd => 'bcftools check -r {REGION} A.vcf.gz B.vcf.gz'
 
-        # If not set, the chunks will be concatenated as they are. Otherwise, 
-        #   vcf-concat will be used
+
+        # 3) Set optional keys to determine how the outputs should be merged.
+        # If not set, the chunks will be concatenated as they are. Otherwise,
+        # vcf-concat will be used. Todo: allow user-defined command to merge
+        # the outputs.
         vcf_concat => 1,
 
         # Tabix reports the same record in two different chunks when an indel overlaps
         #   region boundary. These duplicate records will be removed when the key 
         #   fix_overlaps is set; the value is interpreted as the 1-based index of the
-        #   position column, i.e. 2 for VCF.
+        #   position column, i.e. 2 for VCF. If set to 0, the overlaps will not be fixed.
         fix_overlaps => 2,
+
 
         # The input and output file can be also given on command line (-i,-o). If an 
         #   array of input files is given, the first one is used to define the chunks.
         # input  => 'input.vcf.gz',
         # output => 'output.vcf.gz',
+
+        do_clean => '] .$$self{do_clean}. q[',
+
+        # For sanity checking that your config file is not obsolete. Update the
+        # version key in your config file to get rid of the warnings.
+        version  => '] .$$self{config_version}. q[',
     ]."\n";
 
     $$self{usage} .= 
         "Usage: run-chunkify\n" .
         "Options:\n" .
         "   -c, --command <cmd>             The command to run (equal to the \"cmd\" config key)\n" .
-        "   -i, --input <file.vcf.gz>       Input VCF file\n" .
-        "   -o, --output <file.vcf.gz>      Output VCF file\n" .
+        "   -i, --input <file.vcf.gz>       Input file [optional]\n" .
+        "   -o, --output <file.vcf.gz>      Output file\n" .
         "\n";
 
     return $self;
@@ -91,14 +114,19 @@ sub parse_args
         }
         $self->throw();
     }
+    if ( !exists($$self{version}) or $$self{version} ne $$self{config_version} )
+    {
+        $self->throw("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
+    }
     if ( !exists($$self{cmd}) ) { $self->throw("Missing the command."); }
-    if ( !exists($$self{input}) ) { $self->throw("Missing the input file name."); }
     if ( !exists($$self{output}) ) { $self->throw("Missing the output file name."); }
-    if ( !exists($$self{chunk_size}) && !exists($$self{chunk_sites}) ) { $self->throw("Missing one of the chunk_size or chunk_sites keys."); }
-    if ( exists($$self{chunk_size}) && exists($$self{chunk_sites}) ) { $self->throw("Only one of the chunk_size or chunk_sites keys should be given."); }
-
-    if ( !($$self{output}=~/\.vcf.gz$/) ) { $self->throw("Expected .vcf.gz suffix of output file name."); }
-    $$self{outdir} = $`;
+    if ( !defined($$self{vcf_sites}) && (!defined($$self{regions}) or !defined($$self{chunk_size})) ) 
+    { 
+        $self->throw("Expected either \"regions\" and \"chunk_size\" key or \"vcf_sites\" key\n"); 
+    }
+    if ( $$self{output}=~/\.vcf.gz$/ ) { $$self{outdir} = $`; }
+    elsif ( $$self{output}=~/\.tab.gz$/ ) { $$self{outdir} = $`; }
+    else { $self->throw("todo: $$self{output}\n"); }
     $$self{chunk_file} = "$$self{outdir}/chunks.txt";
 }
 
@@ -108,7 +136,11 @@ sub main
     $self->parse_args();
 
     my $outdir = $$self{outdir};
-    if ( $self->is_finished($$self{output}) ) { $self->all_done; }
+    if ( $self->is_finished($$self{output}) ) 
+    { 
+        $self->clean($outdir) unless !$$self{do_clean};
+        $self->all_done; 
+    }
 
     # Determine the chunks
     $self->spawn('define_chunks',$$self{chunk_file});
@@ -127,6 +159,7 @@ sub main
     #   # Run performance stats and clean
     #   $self->spawn('runtime_stats',"$outdir/runtime");
     #   $self->wait;
+
     $self->clean($outdir) unless !$$self{do_clean};
     $self->all_done;
 }
@@ -134,6 +167,11 @@ sub main
 sub clean
 {
     my ($self,$outdir) = @_;
+    my $chunks = $self->read_chunks();
+    for my $chunk (@$chunks)
+    {
+        if ( -d "$$self{outdir}/$$chunk[0]" ) { $self->cmd("rm -rf $$self{outdir}/$$chunk[0]"); }
+    }
     $self->SUPER::clean($outdir);
 }
 
@@ -163,9 +201,47 @@ sub tabix_part
     rename("$vcf.part",$vcf) or $self->throw("rename $vcf.part $vcf: $!");
 }
 
+sub read_fai
+{
+    my ($self,$fai) = @_;
+
+    # Determine the chromosomes and their lengths
+    open(my $fh,'<',$fai) or $self->throw("$fai: $!"); 
+    my %chrs;
+    while (my $line=<$fh>)
+    {
+        my @items = split(/\t/,$line);
+        $chrs{$items[0]} = $items[1];
+    }
+    close($fh);
+    return \%chrs;
+}
+sub define_chunks_regions
+{
+    my ($self,$outfile) = @_;
+    my $chrs = $self->read_fai($$self{fai});
+    open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    for my $reg (@{$$self{regions}})
+    {
+        if ( !exists($$chrs{$reg}) ) { $self->throw("No such seq in $$self{fai}: \"$reg\".\n"); }
+        my $pos = 1;
+        while ( $pos <= $$chrs{$reg} )
+        {
+            $self->write_chunk($out,$reg,$pos,$pos+$$self{chunk_size}-1); 
+            $pos += $$self{chunk_size};
+        }
+    }
+    close($out) or $self->throw("close $outfile.part");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
 sub define_chunks
 {
     my ($self,$outfile) = @_;
+    if ( defined $$self{regions} )
+    {
+        $self->define_chunks_regions($outfile);
+        return;
+    }
     my $input = ref($$self{input}) eq 'ARRAY' ? $$self{input}[0] : $$self{input};
     open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
     open(my $in,"gunzip -S '' -c $input |") or $self->throw("gunzip -S '' -c $input: $!");
@@ -263,14 +339,17 @@ sub run_cmd
     my $cmd = $$self{cmd};
     $cmd =~ s/{REGION}/$region/g;
 
-    if ( ref($$self{input}) eq 'ARRAY' )
+    if ( defined $$self{input} )
     {
-        my $input = join(' ',@{$$self{input}});
-        $cmd =~ s/{INPUT}/$input/g;
-    }
-    else
-    {
-        $cmd = "tabix -h $$self{input} $region | $cmd";
+        if ( ref($$self{input}) eq 'ARRAY' )
+        {
+            my $input = join(' ',@{$$self{input}});
+            $cmd =~ s/{INPUT}/$input/g;
+        }
+        else
+        {
+            $cmd = "tabix -h $$self{input} $region | $cmd";
+        }
     }
     $cmd .= " | bgzip -c > $outfile.part";
     $self->cmd($cmd);
