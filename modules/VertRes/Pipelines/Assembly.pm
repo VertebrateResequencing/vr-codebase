@@ -851,6 +851,7 @@ sub estimate_memory_required
   $memory_params{genome_size}           = $self->{genome_size};
   $memory_params{read_length}           = $self->lane_read_length();
   $memory_params{kmer_size}             = $kmer_size;
+  $memory_params{error_correct}         = defined ($self->{error_correct}) ? $self->{error_correct}:0;
 
   my $assembler_class = $self->{assembler_class};
   eval("use $assembler_class; ");
