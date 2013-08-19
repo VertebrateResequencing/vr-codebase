@@ -1415,7 +1415,7 @@ sub mark_duplicates {
               };
        close $scriptfh;
  
-       VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'" }, qq{perl -w $script_name});
+       VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-n 3 -R 'span[hosts=1]' -q $queue -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'" }, qq{perl -w $script_name});
 
       }
 
