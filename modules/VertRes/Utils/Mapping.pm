@@ -270,8 +270,11 @@ sub _bsub_opts {
     if ($action && $action eq 'merge_and_stat') {
         $bsub_opts{bsub_opts} .= ' -q normal -M5100 -R \'select[mem>5100] rusage[mem=5100]\'';
     }
-    elsif ($action && $action =~ /split|map|merge/) {
+    elsif ($action && $action =~ /map|merge/) {
         $bsub_opts{bsub_opts} .= ' -R \'rusage[thouio=5]\' -M1000 -R \'select[mem>1000] rusage[mem=1000]\'';
+    }
+    elsif ($action && $action =~ /split/) {
+        $bsub_opts{bsub_opts} .= '-n 2  -R \'span[hosts=1]\' -R \'rusage[thouio=5]\' -M1000 -R \'select[mem>1000] rusage[mem=1000]\'';
     }
     
     return \%bsub_opts;

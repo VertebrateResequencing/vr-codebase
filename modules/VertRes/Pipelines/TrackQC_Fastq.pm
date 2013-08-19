@@ -115,7 +115,7 @@ our $options =
     'bsub_opts_stats_and_graphs'   => "-q normal -M1000 -R 'select[mem>1000] rusage[mem=1000]'",
     'bsub_opts_map_sample'         => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
     'bsub_opts_process_fastqs'     => "-q normal -M3200 -R 'select[mem>3200] rusage[mem=3200]'",
-    'bsub_opts_subsample'          => "-q normal -M1000 -R 'select[mem>1000] rusage[mem=1000]'",
+    'bsub_opts_subsample'          => "-q normal -M1000 -R 'select[mem>1000] rusage[mem=1000]' -n 2 -R 'span[hosts=1]'",
     'bwa_clip'        => 20,
     'chr_regex'       => '^(?:\d+|X|Y)$',
     'gc_depth_bin'    => 20000,
