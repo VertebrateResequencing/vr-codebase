@@ -457,9 +457,16 @@ sub improve_assembly
     move($descaffold_obj->output_filename,$assembly_file);
   }
 
+  # remove all contigs shorter than a read length
+  my $read_length = $self->lane_read_length();
+  my $fasta_processor = Bio::AssemblyImprovement::Util::FastaTools->new(input_filename => $assembly_file);
+  $fasta_processor->remove_small_contigs($read_length, 0);
+  move($fasta_processor->output_filename,$assembly_file);
+
+  # filter short contigs if needed
   if(defined($self->{post_contig_filtering}) && $self->{post_contig_filtering} > 0)
   {
-    my $fasta_processor = Bio::AssemblyImprovement::Util::FastaTools->new(input_filename => $assembly_file);
+    $fasta_processor = Bio::AssemblyImprovement::Util::FastaTools->new(input_filename => $assembly_file);
     $fasta_processor->remove_small_contigs($self->{post_contig_filtering}, 95);
     move($fasta_processor->output_filename,$assembly_file);
   }
