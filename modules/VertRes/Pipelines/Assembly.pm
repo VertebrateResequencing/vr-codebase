@@ -476,7 +476,7 @@ sub improve_assembly
 
   # order contigs by length
   my $order_contigs = Bio::AssemblyImprovement::Util::OrderContigsByLength->new( input_filename  => $assembly_file );
-  $order_contigs->->run();
+  $order_contigs->run();
   move($order_contigs->output_filename,$assembly_file);
 }
 
