@@ -458,7 +458,8 @@ sub improve_assembly
   }
 
   # remove all contigs shorter than a read length
-  my $read_length = $self->lane_read_length();
+  my $fastq_processor = Bio::AssemblyImprovement::Util::FastqTools->new(input_filename => $preprocess_input_files->processed_input_files->[0]);
+  my $read_length = $fastq_processor->first_read_length();
   my $fasta_processor = Bio::AssemblyImprovement::Util::FastaTools->new(input_filename => $assembly_file);
   $fasta_processor->remove_small_contigs($read_length, 0);
   move($fasta_processor->output_filename,$assembly_file);
