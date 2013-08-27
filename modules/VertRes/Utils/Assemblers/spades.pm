@@ -10,7 +10,7 @@ my $assembly_util = VertRes::Utils::Assemblers::spades->new();
 
 # use any of the utility functions described here, eg.
 my $assember = $assembler_class->new(
-  assembler_exec => '/path/to/spades', 
+  assembler_exec => '/path/to/spades',
   optimiser_exec => '/path/to/spades', #The spades assembler is like velvetoptimiser in that it runs the assembler for various kmer sizes and then chooses the best assembly
   min_kmer => 29, #odd number
   max_kmer => 101, #odd number
@@ -62,13 +62,18 @@ sub optimise_parameters
   my ($self, $num_threads) = @_;
   
   my $kmer_string = $self->_create_kmer_values_string();
-  
-  `python $self->{optimiser_exec} --12 $self->{files_str} --only-assembler --threads $num_threads -k $kmer_string -o spades_assembly`;
-  
-  my $params = $self->get_parameters("spades.log"); 
 
-  # Delete any unwanted files that SPAdes produces 
-  unlink($self->optimised_directory()."/dataset.info"); 
+  my $single_cell_opts = '';
+  if (defined($self->{single_cell}) and ($self->{single_cell})){
+    $single_cell_opts = '--sc --careful';
+  }
+  
+  `python $self->{optimiser_exec} --12 $self->{files_str} --only-assembler $single_cell_opts --threads $num_threads -k $kmer_string -o spades_assembly`;
+  
+  my $params = $self->get_parameters("spades.log");
+
+  # Delete any unwanted files that SPAdes produces
+  unlink($self->optimised_directory()."/dataset.info");
   unlink($self->optimised_directory()."/contigs.fasta"); #These are the unscaffolded contigs which we are not interested in
   #Should the spades.log file be deleted too? For now, I call it spades_assembly_logfile.txt. It is quite a large file though.
   system("mv ".$self->optimised_directory()."/spades.log ".$self->optimised_directory()."/spades_assembly_logfile.txt");
@@ -78,12 +83,12 @@ sub optimise_parameters
   system("touch ".$self->optimised_directory()."/_spades_optimise_parameters_done");
 
   return 1;
-}     
+}
 
-sub _create_kmer_values_string 
+sub _create_kmer_values_string
 {
   my ($self) = @_;
-  #SPAdes needs a comma separated list of kmer values and all the kmer values should be less than 128 
+  #SPAdes needs a comma separated list of kmer values and all the kmer values should be less than 128
   my @spades_kmer_array;
   my $current_kmer_value = $self->{min_kmer};
   my $max_kmer_value = $self->{max_kmer};
@@ -100,9 +105,9 @@ sub _create_kmer_values_string
 	push(@spades_kmer_array, $current_kmer_value);
 	$current_kmer_value = $current_kmer_value + 4; #Step in 4
   }
-  my $spades_kmer_string = join (',', @spades_kmer_array);	
+  my $spades_kmer_string = join (',', @spades_kmer_array);
   return $spades_kmer_string;
-}                                                                                                                        
+}
 
 
 sub optimised_directory
@@ -222,10 +227,10 @@ sub get_parameters
  Usage   : my $memory_required_in_kb = $obj->estimate_memory_required();
  Function: estimate the memory required for the assembler in KB
  Returns : integer in kb of memory requirement
- Like for Velvet, Ram for SPAdes is estimated based on the total number of reads. 
+ Like for Velvet, Ram for SPAdes is estimated based on the total number of reads.
  The memory required for velvet shows a linear relation to the number of reads but with a lot of variation
- between different assemblies. The memory estimate is a rule of thumb based on the observed memory usage. We 
- are yet to do extensive studies into the memory usage of SPAdes. For now, we use the same calculations as 
+ between different assemblies. The memory estimate is a rule of thumb based on the observed memory usage. We
+ are yet to do extensive studies into the memory usage of SPAdes. For now, we use the same calculations as
  we do for Velvet.
 =cut
 sub estimate_memory_required

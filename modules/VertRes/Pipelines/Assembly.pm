@@ -50,6 +50,7 @@ data => {
     khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
     QUASR_exec		=> '/software/pathogen/internal/pathdev/java/QUASR702_Parser/readsetProcessor.jar',
     max_threads => 1,
+    single_cell => 1, # Put this in to assemble single cell data. For normal assemblies, leave it out.
 },
 
 
@@ -131,6 +132,7 @@ our %options = (
                 QUASR_exec	    => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar',
                 no_scaffolding  => 0,
                 annotation      => 0,
+                single_cell     => 0,
                 );
 
 sub new {
@@ -347,6 +349,7 @@ my \$assembler = $assembler_class->new(
   max_kmer => \$kmer{max},
   files_str => qq[$files_str],
   output_directory => qq[$tmp_directory],
+  single_cell => $self->{single_cell},
   );
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
