@@ -266,7 +266,7 @@ sub adjust_bsub_options
             #   -q normal -M3000 -R 'select[type==X86_64 && mem>3000] rusage[mem=3000]'
             warn("$output_file: Increasing memory to $mem\n") unless $no_warn;  # this should be logged in the future
             
-
+            $opts =~ s/-M\d+/-M$mem/;
             $opts =~ s/(select[^]]+mem>)\d+/$1$mem/;
             $opts =~ s/(rusage[^]]+mem=)\d+/$1$mem/;
             
