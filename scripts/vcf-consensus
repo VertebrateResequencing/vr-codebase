@@ -80,6 +80,12 @@ sub do_consensus
         }
 
         chomp($line);
+        if ( !$$opts{case_known} )
+        {
+            if ( uc($line) eq $line ) { $$opts{case_known} = 'u'; }
+            elsif ( lc($line) eq $line ) { $$opts{case_known} = 'l'; }
+            else { $$opts{case_known} = 'u'; }
+        }
         $$opts{fa_buf} .= $line;
         $$opts{fa_len} += length($line);
 
@@ -144,7 +150,10 @@ sub apply_variant
     }
     else
     {
-        my @als = $$opts{vcf}->split_gt($$vline[$$opts{sample_col}-1]);
+        my $igt = $$opts{vcf}->get_tag_index($$vline[8],'GT',':');
+        if ( $igt==-1 ) { return; }
+        my $gt = $$opts{vcf}->get_field($$vline[$$opts{sample_col}-1],$igt);
+        my @als = $$opts{vcf}->split_gt($gt);
         if ( $hap )
         {
             # Note: we are not checking the phase or phase blocks, assuming the VCF is perfect
@@ -176,13 +185,14 @@ sub apply_variant
 
     # Sanity check
     my $ref_len = length($$vline[3]);
-    if ( $$vline[3] ne substr($$opts{fa_buf},$pos,$ref_len) ) 
+    if ( $$vline[3] ne uc(substr($$opts{fa_buf},$pos,$ref_len)) ) 
     { 
         error(sprintf "The fasta sequence does not match the REF at $$vline[0]:$$vline[1]. %s(%s) in .fa, %s in .vcf, frz=%d\n", 
             substr($$opts{fa_buf},$pos,$ref_len),
             substr($$opts{fa_buf},$pos+1,$ref_len+5),
             $$vline[3], $$opts{fa_frz}?$$opts{fa_frz}:0);
     }
+    if ( $$opts{case_known} eq 'l' ) { $alt = lc($alt); }
 
     my $alt_len = length($alt);
     substr($$opts{fa_buf},$pos,$ref_len,$alt);
