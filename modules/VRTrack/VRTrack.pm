@@ -571,6 +571,96 @@ sub processed_lane_hnames_with_lane_limit {
 }
 
 
+sub lanes_with_mapping_filtered_by_limits {
+    my ($self,$max_lanes, $limits,$prefix, $mapper, $assembly_name, @filter) = @_;
+    
+    my $additional_limits = "";
+    my @additional_limit_terms;
+    foreach my $limit_type (qw(project sample library lane)) {
+        if (defined $limits->{$limit_type}) {
+            my $array = $limits->{$limit_type};
+            unless (ref($array) && ref($array) eq 'ARRAY') {
+                die "In your config file, the limits->$limit_type is supposed to be an array ref\n";
+            }
+            
+            for my $search_term (@{$limits->{$limit_type}})
+            {
+                my $escaped_search_term  = $search_term;
+                $escaped_search_term =~ s!\\!\\\\!g;
+                push(@additional_limit_terms, $limit_type.'.name REGEXP "^'.$escaped_search_term.'$"');
+            }
+        }
+    }
+    
+    if(@additional_limit_terms > 0)
+    {
+      $additional_limits = join(" OR ", @additional_limit_terms);
+      $additional_limits = ' AND ('.$additional_limits.') ';
+    }
+    
+    return $self->lanes_with_mapping_filtered_by_lane_limits(-1,$additional_limits, @filter);
+}
+
+
+sub lanes_with_mapping_filtered_by_lane_limits {
+    my ($self, $max_lanes, $additional_limits, $prefix, $mapper, $assembly_name, @filter) = @_;
+    if ( scalar @filter % 2 ) { croak "Expected list of keys and values.\n"; }
+    my %flags = VRTrack::Core_obj->allowed_processed_flags();
+    my @goodfilters;
+    my $filterclause = '';
+    while (my ($key,$value)=splice(@filter,0,2))
+    {
+        if ( !exists($flags{$key}) ) { croak qq[The flag "$key" not recognised.\n]; }
+        push @goodfilters, ($value ? '' : '!') . qq[(lane.processed & $flags{$key})];
+    }
+    if ( scalar @goodfilters )
+    {
+        $filterclause = ' AND ' . join(' AND ', @goodfilters);
+    }
+    my $max_lanes_clause = '';
+    if(defined($max_lanes) && $max_lanes > 0)
+    {
+      $max_lanes_clause = " limit $max_lanes ";
+    }
+    
+    
+    my @lane_names;
+    my $sql =qq[select  distinct(lane.hierarchy_name) 
+                from latest_project as project,
+                    latest_sample as sample,
+                    latest_library as library,
+                    latest_lane as lane 
+                    left join latest_mapstats as mapstats on mapstats.lane_id = lane.lane_id
+    								left join assembly as assembly on assembly.assembly_id = mapstats.assembly_id
+    								left join mapper as mapper on mapstats.mapper_id = mapper.mapper_id
+                where lane.library_id = library.library_id 
+                      and library.sample_id = sample.sample_id 
+                      and sample.project_id = project.project_id 
+                      AND mapstats.is_qc = 0 
+                      AND mapstats.raw_reads is not NULL
+                      AND	mapstats.prefix = "$prefix" 
+                      AND mapper.name = "$mapper"
+                      AND assembly.name = "$assembly_name"
+                      $additional_limits
+                $filterclause 
+                order by project.hierarchy_name, 
+                        sample.name, 
+                        library.hierarchy_name, 
+                        lane.hierarchy_name
+                        $max_lanes_clause];
+    my $sth = $self->{_dbh}->prepare($sql);
+
+    my $tmpname;
+    if ($sth->execute()){
+        $sth->bind_columns ( \$tmpname );
+        push @lane_names, $tmpname while $sth->fetchrow_arrayref;
+    }
+    else{
+        die(sprintf('Cannot retrieve projects: %s', $DBI::errstr));
+    }
+
+    return \@lane_names;
+}
 
 =head2 qc_filtered_lane_hnames
 

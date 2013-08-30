@@ -1002,12 +1002,11 @@ sub get_mapping_jobs_from_vrtrack_without_get_lanes {
 
     # Get lanes
     my $hnames = $vrtrack->processed_lane_hnames_with_limits(-1,$config_data->{limits}, %filter);
-    my @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config);
-
+    $hnames = filter_lane_names_based_on_mapping($hnames, $config_data, \%filter,$vrtrack); 
+    my @lanes = filter_lanes($$config_data{limits},$hnames, $vrtrack, $config); 
     
     my $count = 0;
     foreach my $vrlane (@lanes) {
-        next unless does_lane_pass_vrtrack_processed_flag_filters($vrlane, \%filter);
         next if $vrlane->is_withdrawn;
         next if ($vrlane->is_processed('mapped') && !$ignore_mapped);
         next if ($ignore_mapped && mapping_complete($config_data, $vrlane));
@@ -1043,6 +1042,34 @@ sub get_mapping_jobs_from_vrtrack_without_get_lanes {
     
     return;
 }
+
+sub filter_lane_names_based_on_mapping
+{
+  my($hnames, $config_data, $filter,$vrtrack) = @_;
+  my %hnames_freq = map { $_ => 0 } @{$hnames};
+  my $mapper =  exists($$config_data{data}{'slx_mapper'}) ? $$config_data{data}{'slx_mapper'} : $$config_data{data}{'454_mapper'};
+  
+  my $hlanes_with_mapping_complete = $vrtrack->lanes_with_mapping_filtered_by_limits(-1,$config_data->{limits},$$config_data{prefix},  $mapper,$$config_data{data}{assembly_name}, %{$filter});
+  for my $lane_name(@{$hlanes_with_mapping_complete})
+  {
+    if(defined($hnames_freq{$lane_name}))
+    {
+      $hnames_freq{$lane_name}++;
+    }
+  }
+
+  my $filtered_hnames;
+  for my $lane_name(keys %hnames_freq )
+  {
+    if($hnames_freq{$lane_name} == 0)
+    {
+      push(@{$filtered_hnames},$lane_name );
+    }
+  }
+  $filtered_hnames;
+  return  $filtered_hnames;
+}
+
 
 =head2 does_lane_pass_vrtrack_processed_flag_filters
 
