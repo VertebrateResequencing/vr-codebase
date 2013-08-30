@@ -1009,7 +1009,6 @@ sub get_mapping_jobs_from_vrtrack_without_get_lanes {
     foreach my $vrlane (@lanes) {
         next if $vrlane->is_withdrawn;
         next if ($vrlane->is_processed('mapped') && !$ignore_mapped);
-        next if ($ignore_mapped && mapping_complete($config_data, $vrlane));
 
         my $lane_name = $vrlane->name;
         $count++;
