@@ -761,7 +761,7 @@ sub map {
     my $ref_fa = $self->{reference} || $self->throw("the reference fasta wasn't known for $lane_path");
     
     # get all the meta info about the lane
-    my %info = VertRes::Utils::Hierarchy->new->lane_info($self->{vrlane});
+    my %info = VertRes::Utils::Hierarchy->new->lane_info($self->{vrlane},(no_coverage => 1 ));
     my $insert_size_for_mapping = $info{insert_size} || 2000;
     my $insert_size_for_samheader = $info{insert_size} || 0;
     

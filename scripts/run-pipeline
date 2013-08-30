@@ -1066,7 +1066,6 @@ sub filter_lane_names_based_on_mapping
       push(@{$filtered_hnames},$lane_name );
     }
   }
-  $filtered_hnames;
   return  $filtered_hnames;
 }
 

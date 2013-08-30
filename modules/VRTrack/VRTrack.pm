@@ -598,7 +598,7 @@ sub lanes_with_mapping_filtered_by_limits {
       $additional_limits = ' AND ('.$additional_limits.') ';
     }
     
-    return $self->lanes_with_mapping_filtered_by_lane_limits(-1,$additional_limits, @filter);
+    return $self->lanes_with_mapping_filtered_by_lane_limits(-1,$additional_limits,$prefix, $mapper, $assembly_name, @filter);
 }
 
 

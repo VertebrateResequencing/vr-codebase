@@ -59,7 +59,7 @@ sub new {
 sub _bsub_opts {
     my ($self, $lane_path, $action) = @_;
     
-    my %bsub_opts = (bsub_opts => '');
+    my %bsub_opts = (bsub_opts => '', dont_wait => 1);
     
     if ($action eq 'map') {
         $bsub_opts{bsub_opts} = '-q normal -M4000 -R \'select[mem>4000] rusage[mem=4000]\'';
