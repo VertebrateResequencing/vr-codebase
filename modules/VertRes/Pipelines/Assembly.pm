@@ -341,6 +341,7 @@ chdir(qq[$tmp_directory]);
 # Calculate 66-90% of the median read length as min and max kmer values
 my \$fastq_tools  = Bio::AssemblyImprovement::Util::FastqTools->new(
     	input_filename   => "$output_directory/pool_1.fastq.gz",
+        single_cell => $self->{single_cell},
 );
 my \%kmer = \$fastq_tools->calculate_kmer_sizes();
 
