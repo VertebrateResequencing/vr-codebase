@@ -63,12 +63,15 @@ sub optimise_parameters
   
   my $kmer_string = $self->_create_kmer_values_string();
 
-  my $single_cell_opts = '';
+  my $spades_opts = '';
   if (defined($self->{single_cell}) and ($self->{single_cell})){
-    $single_cell_opts = '--sc --careful';
+    $spades_opts = '--sc --careful';
+  }
+  else {
+    $spades_opts = '--only-assembler';
   }
   
-  `python $self->{optimiser_exec} --12 $self->{files_str} --only-assembler $single_cell_opts --threads $num_threads -k $kmer_string -o spades_assembly`;
+  `python $self->{optimiser_exec} --12 $self->{files_str} $spades_opts --threads $num_threads -k $kmer_string -o spades_assembly`;
   
   my $params = $self->get_parameters("spades.log");
 
