@@ -953,7 +953,7 @@ exit 0;
     
     my $job_name = $self->{prefix}.'pseudo_genome';
     $self->archive_bsub_files($lane_path, $job_name);
-    VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-q normal -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'", dont_wait=>1 }, qq{perl -w $script_name});
+    VertRes::LSF::run($action_lock, $lane_path, $job_name, {bsub_opts => "-n 2 -R 'span[hosts=1]' -q normal -M${memory} -R 'select[mem>$memory] rusage[mem=$memory]'", dont_wait=>1 }, qq{perl -w $script_name});
     
     # we've only submitted to LSF, so it won't have finished; we always return
     # that we didn't complete
