@@ -83,6 +83,8 @@ sub optimise_parameters
   system("mv ".$self->optimised_directory()."/scaffolds.fasta ".$self->optimised_directory()."/contigs.fa"); #Move ths scaffolded sequences into a file called contigs.fa
   system("rm -rf ".$self->optimised_directory()."/K*"); #Directories with the intermediate assemblies
   system("rm -rf ".$self->optimised_directory()."/misc");
+  system("rm -rf ".$self->optimised_directory()."/mismatch_corrector_contigs");
+  system("rm -rf ".$self->optimised_directory()."/configs");
   system("touch ".$self->optimised_directory()."/_spades_optimise_parameters_done");
 
   return 1;
