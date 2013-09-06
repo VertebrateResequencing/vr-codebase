@@ -27,7 +27,7 @@ use Carp;
     About   : Creates new FaSlice object.
     Usage   : my $fa = FaSlice->new(file=>'ref.fa');
     Args    : file   .. the fasta file
-              oob    .. out-of-bounds requests: one of 'throw' (throws), 'N' (fills the missing bases by Ns), or '' (returns empty string, default)
+              oob    .. out-of-bounds requests: one of 'throw' (throws), 'N' (fills the missing bases with Ns), or '' (returns empty string, default)
               size   .. size of the cached chunk read by samtools faidx (1_000_000)
 
 =cut
@@ -94,6 +94,19 @@ sub chromosome_naming
     $$self{chr_naming} = defined $1 ? $1 : '';
 }
 
+sub cache_chr_lengths
+{
+    my ($self) = @_;
+    if ( exists($$self{chr_lengths}) ) { return; }
+    open(my $fh,'<',"$$self{file}.fai") or $self->throw("$$self{file}.fai: $!");
+    while (my $line=<$fh>)
+    {
+        my @items = split(/\t/,$line);
+        my $chr = $$self{chr_naming}.$items[0];
+        $$self{chr_lengths}{$chr} = $items[1];
+    }
+    close($fh) or $self->throw("close $$self{file}.fai");
+}
 
 sub read_chunk
 {
@@ -101,6 +114,12 @@ sub read_chunk
     $$self{chr}  = $chr;
     $chr =~ s/^chr//;
     $chr = $$self{chr_naming}.$chr;
+    if ( exists($$self{chr_lengths}) && (!exists($$self{chr_lengths}{$chr}) or $$self{chr_lengths}{$chr} < $pos ) )
+    {
+        $$self{to} = $$self{from} - 1;
+        $$self{chunk} = '';
+        return;
+    }
     my $to = $pos + $$self{size};
     my $cmd = "samtools faidx $$self{file} $chr:$pos-$to";
     my @out = $self->cmd($cmd) or $self->throw("$cmd: $!");
@@ -115,7 +134,7 @@ sub read_chunk
     }
     $$self{to} = $$self{from} + length($chunk) - 1;
     $$self{chunk} = $chunk;
-    $$self{ncache_missed}++;
+    $self->cache_chr_lengths();
     return;
 }
 
