@@ -28,21 +28,26 @@ sub new
     $$self{do_clean} = 1;
     $$self{limits} = { runtime=>24*60 };
     $$self{debug_chunks} = 0;
-    $$self{merge_pops} = 0;
+    $$self{merge_pops}  = 0;
     $$self{whole_genome_bams} = 1;
-	$$self{config_version} = '47417d8';
+    $$self{mpileup}        = 'samtools mpileup -DV -C50 -pm3 -F0.2 -d 10000';
+    $$self{bcftools}       = 'bcftools call -Nvm';
+    $$self{vcfstats}       = 'bcftools stats';
+    $$self{chunk_size}     = 1_000_000;
+	$$self{config_version} = '1377691623';
     $$self{_sampleconf} = q[
             # For sanity checking that your config file is not obsolete. Update the version key in your 
             #  config file to get rid of the warnings.
             version  => '] .$$self{config_version}. q[',
 
             # Add -P ILLUMINA or -P SLX if the BAMs contain also reads from different platforms. 
-            mpileup  => '/nfs/users/nfs_p/pd3/sandbox/svn/samtools/singletons/samtools-qsum mpileup -EDVS -C50 -pm3 -F0.2 -d 10000',
-            bcftools => '/nfs/users/nfs_p/pd3/sandbox/svn/samtools/singletons/bcftools-qsum view -Ngvm0.99',
+            mpileup  => '] .$$self{mpileup}.  q[',
+            bcftools => '] .$$self{bcftools}. q[',
+            vcfstats => '] .$$self{vcfstats}. q[',
             
-            bams     => '/lustre/scratch105/projects/g1k/MAIN-ANALYSIS/20101123-whole-genome-calling/merge_across_bams.list',
+            bams     => 'bams.list',
             fa_ref   => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
-            exons    => '/nfs/users/nfs_p/pd3/sandbox/other/20120425-inframe-indels/CCDS-human-GRCh37p6.sorted.txt.gz', # optional, for frame shift vcf check
+            exons    => '/nfs/users/nfs_p/pd3/sandbox/other/20120425-inframe-indels/CCDS-human-GRCh37p6.sorted.txt.gz', # optional, for frame shift vcfstats
 
             # To determine ploidy of sex chromosomes, one of these options must be given
             # mysql       => 'mysql -sN -uXXX -pXXX -hmcs10 -P 3306 g1k_meta', 
@@ -92,18 +97,18 @@ sub new
 
             # Do not merge population VCFs into one VCF. The merged set can find more rare variants
             #   than the pooled set.
-            merge_pops => 0,
+            merge_pops => ] .$$self{merge_pops}. q[,
             
             # This is a hard filtering to remove only the most obviously biased calls.
             #   Vital for the htslib SOM filtering is removing SNPs adjacent to GAPs.
             filter => 'vcf-annotate -f SnpGap=10',
             
-            chunk_size        => 1_000_000,
+            chunk_size        => ] .$$self{chunk_size}. q[,
             debug_chunks      => 0,
             shuffle_chunks    => 0,         # Process chunks in random order to randomize disk access
-            keep_bcfs         => 1,
+            keep_bcfs         => 0,
             chunks_overlap    => 0,
-            whole_genome_bams => 1,         # Set to 0 if BAMs are splitted by chromosome. In such a case, the bams must contain '*chrom$chr.' in the name.
+            whole_genome_bams => 0,         # Set to 0 if BAMs are splitted by chromosome. In such a case, the bams must contain '*chrom$chr.' in the name.
 
             # Do specific regions only (whitespace delimited file with the columns CHR,FROM,TO)
             #   regions => 'regions.list',
@@ -140,7 +145,7 @@ sub parse_args
     # This lengthy code checks if mandatory parameters are present and fills the defaults issuing warnings when doing so.
 	if ( !exists($$self{version}) or $$self{version} ne $$self{config_version} )
 	{
-		$self->warn("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
+		$self->throw("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
 	}
     if ( !exists($$self{bams}) ) { $self->throw("The 'bams' config key not present\n"); }
     if ( !exists($$self{mysql}) && !$$self{assumed_sex} && !$$self{sample_list} ) { $self->throw("None of the config keys 'mysql', 'assumed_sex' or 'sample_list' present\n"); }
@@ -178,26 +183,6 @@ sub parse_args
             ],
         };
         $self->warn("The 'ploidy' config key not present, check the code for assumed ploidy and pseudoautosomal regions\n"); 
-    }
-    if ( !exists($$self{mpileup}) ) 
-    { 
-        $$self{mpileup} = 'samtools mpileup -DS -C50 -m2 -F0.0005 -d 10000';
-        $self->warn("The 'mpileup' config key not present, assuming: $$self{mpileup}\n"); 
-    }
-    if ( !exists($$self{bcftools}) ) 
-    { 
-        $$self{bcftools} = 'bcftools view -p 0.99 -vcgN';
-        $self->warn("The 'bcftools' config key not present, assuming: $$self{bcftools}\n"); 
-    }
-    if ( !exists($$self{chunk_size}) ) 
-    { 
-        $$self{chunk_size} = 1_000_000;
-        $self->warn("The 'chunk_size' config key not present, assuming: $$self{chunk_size}\n"); 
-    }
-    if ( !exists($$self{chunks_overlap}) ) 
-    { 
-        $$self{chunks_overlap} = 0;
-        $self->warn("The 'chunks_overlap' config key not present, assuming: $$self{chunks_overlap}\n"); 
     }
     if ( !exists($$self{keep_bcfs}) ) 
     { 
@@ -265,7 +250,7 @@ sub main
     }
 
     # Call the variants
-	$self->write_annot_file();
+	# $self->write_annot_file();    not calling vcf-annotate by default any more
     for my $pop (keys %{$$self{pops}})
     {
         for my $chunk (@$chunks)
@@ -844,7 +829,13 @@ sub call_variants
         my $bam_list = "$outdir/lists/chr$chr-$pop.list";
         $cmd = "$$self{mpileup} -ug -r $chr:$from-$to -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -s $sample_list -";
     }
-    $self->cmd("$cmd | vcf-annotate -f $$self{annot_file} | bgzip -c > $outfile.part");
+    if ( exists($$self{annot_file}) )
+    {
+        if ( !-e $$self{annot_file} ) { $self->throw("The annot_file does not exist: $$self{annot_file}"); }  
+        $cmd .= " | vcf-annotate -f $$self{annot_file}"; 
+    }
+    $self->cmd("$cmd | bgzip -c > $outfile.part");
+
     $self->tabix_part($outfile);
 }
 
@@ -859,6 +850,8 @@ sub tabix_part
 sub merge_vcfs
 {
     my ($self,$outfile,$bcf,$vcfs) = @_;
+
+    $self->throw("FIXME: update this branch, merge_vcfs() not maintained\n");
 
     # List of all sites. Use awk, grep has the peculiar property of exiting with error status when no lines are printed
     #   through -v
@@ -969,7 +962,7 @@ sub vcf_stats
     my ($self,$outfile,$vcf,$args) = @_;
     $args .= " -F $$self{fa_ref}";
     if ( exists($$self{exons}) ) { $args .= " -e $$self{exons}"; }
-    $self->cmd("vcf check $args $vcf > $outfile.part");
+    $self->cmd("$$self{vcfstats} $args $vcf > $outfile.part");
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
 
