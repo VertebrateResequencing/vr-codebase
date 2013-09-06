@@ -395,7 +395,7 @@ sub concat
         close($in) or $self->throw("close gunzip -c $$self{outdir}/$$chunk[0]/$$chunk[1].gz");
     }
     close($fh) or $self->throw("close bgzip -c > $outfile.part");
-    rename("$outfile.part",$outfile);
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
 
 sub vcf_concat
