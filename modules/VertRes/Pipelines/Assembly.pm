@@ -361,7 +361,7 @@ my \@lane_paths = $lane_paths_str;
 Bio::AssemblyImprovement::Util::OrderContigsByLength->new( input_filename => \$assembler->optimised_assembly_file_path(), output_filename => \$assembler->optimised_assembly_file_path() )->run();
 copy(\$assembler->optimised_assembly_file_path(),\$assembler->optimised_directory().'/unscaffolded_contigs.fa');
 \$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
-\$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_assembly_file_path(),[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size);
+\$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_assembly_file_path(),[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size,$num_threads);
 
 Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_assembly_file_path(),base_contig_name => qq[$contigs_base_name])->run();
 
@@ -411,11 +411,15 @@ sub decide_appropriate_queue
   return $queue;
 }
 
+/*
+Improve assembly step. Runs SSPACE, abacas (if a reference is provided) and GapFiller.
+It descaffolds the resulting assembly if necessary and cleans up any small contigs.
+*/
 
 
 sub improve_assembly
 {
-  my ($self,$assembly_file, $input_files, $insert_size) = @_;
+  my ($self,$assembly_file, $input_files, $insert_size, $threads) = @_;
 
   my $preprocess_input_files = Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles->new(
       input_files    => $input_files,
@@ -429,6 +433,7 @@ sub improve_assembly
       input_files     => $preprocess_input_files->processed_input_files,
       input_assembly  => $preprocess_input_files->processed_input_assembly,
       insert_size     => $insert_size,
+      threads		  => $threads,
       scaffolder_exec => $self->{scaffolder_exec}
   );
   $scaffolding_obj->run();
@@ -451,6 +456,7 @@ sub improve_assembly
       input_files     => $preprocess_input_files->processed_input_files,
       input_assembly  => $scaffolding_obj->final_output_filename,
       insert_size     => $insert_size,
+      threads		  => $threads,
       gap_filler_exec => $self->{gap_filler_exec},
       _output_prefix  => 'gapfilled'
   )->run();
