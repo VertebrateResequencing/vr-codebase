@@ -411,10 +411,10 @@ sub decide_appropriate_queue
   return $queue;
 }
 
-/*
-Improve assembly step. Runs SSPACE, abacas (if a reference is provided) and GapFiller.
-It descaffolds the resulting assembly if necessary and cleans up any small contigs.
-*/
+
+##Improve assembly step. Runs SSPACE, abacas (if a reference is provided) and GapFiller.
+## descaffolds the resulting assembly if necessary and cleans up any small contigs.
+
 
 
 sub improve_assembly
