@@ -191,16 +191,18 @@ sub generate_sam {
         my $X = 1000;
         my $max_intron_length_str = $self->_max_intron_length_option(%other_args);
         my $inner_mate_str = $self->_insert_size_option($longest_read, %other_args);
+        my $min_intron_length_str = $self->_min_intron_length_option(%other_args);
+        my $max_multihits_str = $self->_max_multihits_option(%other_args);
         
         if((defined $other_args{is_paired}) && $other_args{is_paired} == 0)
         {
           # single ended
-          $self->simple_run(" $max_intron_length_str -o $directories -g 1 --no-convert-bam $ref $fqs[0]");
+          $self->simple_run(" $max_intron_length_str $min_intron_length_str -o $directories $max_multihits_str --no-convert-bam $ref $fqs[0]");
         }
         else
         {
           #paired_ended
-          $self->simple_run(" $max_intron_length_str $inner_mate_str -g 1 -o $directories --no-convert-bam $ref $fqs[0] $fqs[1]");
+          $self->simple_run(" $max_intron_length_str $min_intron_length_str $inner_mate_str $max_multihits_str -o $directories --no-convert-bam $ref $fqs[0] $fqs[1]");
         }
         Utils::CMD(qq[mv $directories/accepted_hits.sam $out]);
     }
@@ -213,6 +215,12 @@ sub _max_intron_length_option
   my ($self, %other_args) = @_;
   
   $other_args{max_intron_length}  ||=10000;
+  
+  if(defined $other_args{additional_mapper_params})
+  {
+     $other_args{max_intron_length} = $1 if $other_args{additional_mapper_params} =~ m/-I\s*(\d+)/;
+  }
+  
   return "-I ".$other_args{max_intron_length};
 }
 
@@ -227,6 +235,32 @@ sub _insert_size_option
     $inner_mate_distance = 50;
   }
   return "-r $inner_mate_distance";
+}
+
+sub _min_intron_length_option
+{
+  my ($self, %other_args) = @_;
+  my $min_intron_length;
+  
+  if(defined $other_args{additional_mapper_params})
+  {
+     $min_intron_length = $1 if $other_args{additional_mapper_params} =~ m/-i\s*(\d+)/;
+  }
+  
+  return defined($min_intron_length) ? "-i $min_intron_length" : '';
+}
+
+sub _max_multihits_option
+{
+  my ($self, %other_args) = @_;
+  my $max_multihits = 1; # default to 1
+  
+  if(defined $other_args{additional_mapper_params})
+  {
+    $max_multihits = $1 if $other_args{additional_mapper_params} =~ m/-g\s*(\d+)/;
+  }
+  
+  return "-g $max_multihits";
 }
 
 =head2 add_unmapped
