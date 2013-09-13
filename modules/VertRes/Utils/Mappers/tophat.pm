@@ -172,6 +172,9 @@ sub do_mapping {
     {
         $args{max_intron_length} = 10000; 
     }
+
+    # custom mapping parameters
+    $args{additional_mapper_params} = $input_args{additional_mapper_params} if(defined($input_args{additional_mapper_params} ));
     
     my $wrapper = $self->wrapper;
     $wrapper->do_mapping(%args);
