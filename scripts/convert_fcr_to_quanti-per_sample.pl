@@ -1,6 +1,6 @@
-#!/bin/perl -w
-
+#!/usr/bin/env perl
 use strict;
+use warnings;
 
 if($#ARGV != 1){
     print "Usage: $0 <SPLIT GT (FCR) FILE> <MANIFEST FILE>\n";
