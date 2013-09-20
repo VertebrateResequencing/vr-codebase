@@ -250,7 +250,7 @@ sub adjust_bsub_options
         if ($mem>500000) {
             Utils::error("FIXME: This job cannot be run on the farm, more than 500GB of memory is required.");
         }
-        elsif($mem>30000)
+        elsif($mem>250000)
         {
                 warn("$output_file: changing queue to hugemem\n");   
                 $opts =~ s/-q normal/-q hugemem/;
@@ -278,7 +278,7 @@ sub adjust_bsub_options
                 if ( !($opts=~/select/) ) { $opts .= " -R 'select[mem>$mem]'"; }
                 elsif($opts=~ /select\[mem(.){1,2}[\d]+\]/)
                 { 
-                  # select[type==X86_64] select[mem>1000]
+                  # select[type==X86_64] select[mem>1 ]
                   # If there is more than 1 select statement, dont do anything as the memory has already been modified.
                 }
                 elsif ( $opts=~/select\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/select\[/select[mem>$mem &&/ }

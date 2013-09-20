@@ -400,11 +400,11 @@ sub decide_appropriate_queue
 {
   my ($self, $memory_required_mb) = @_;
   my $queue = 'long';
-  if($memory_required_mb > 36000)
+  if($memory_required_mb > 60000)
   {
     $queue = 'hugemem';
-  }
-  elsif($memory_required_mb < 5000)
+  }modules/VertRes/LSF.pm
+  elsif($memory_required_mb < 8000)
   {
     $queue = 'normal';
   }
@@ -584,7 +584,7 @@ sub lane_read_length
 sub number_of_threads
 {
   my ($self, $memory_required_mb) = @_;
-  my $normal_queue_mem_limit = 35000;
+  my $normal_queue_mem_limit = 60000;
   my $num_threads = 1;
 
   if($normal_queue_mem_limit/$memory_required_mb > 2)
