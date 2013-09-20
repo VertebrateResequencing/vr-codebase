@@ -41,13 +41,13 @@ sub is_job_array_running
         {
             check_job($job);
         }
-        for (my $i=0; $i<@$ids; $i++)
+        for (my $j=0; $j<@$ids; $j++)
         {
-            my $id = $$ids[$i];
+            my $id = $$ids[$j];
             if ( !exists($$info{$id}) ) { next; }
-            if ( $jobs[$i]{status} ne $No ) { next; }   # the job was submitted multiple times and already has a status
-            if ( $$info{$id}{status}==$Done ) { $jobs[$i]{status} = $Done; }
-            if ( $$info{$id}{status}==$Running ) { $jobs[$i]{status} = $Running; }
+            if ( $jobs[$j]{status} ne $No ) { next; }   # the job was submitted multiple times and already has a status
+            if ( $$info{$id}{status}==$Done ) { $jobs[$j]{status} = $Done; }
+            if ( $$info{$id}{status}==$Running ) { $jobs[$j]{status} = $Running; }
         }
     }
     my $ntodo = 0;
@@ -186,7 +186,9 @@ sub parse_output
     my $fname = "$output.$jid.o";
     if ( !-e $fname ) { return undef; }
     
-    my $out = {};
+    # if the output file is empty, assume the job is running
+    my $out = { status=>$Running };
+
     open(my $fh,'<',$fname) or confess("$fname: $!");
     while (my $line=<$fh>)
     {
@@ -231,9 +233,21 @@ sub past_limits
 
 sub get_lsf_limits_unit
 {
-    my @units = grep { /LSF_UNIT_FOR_LIMITS/ } `lsadmin showconf lim`;
-    if ( @units && $units[0]=~/\s+MB$/ ) { return 'MB'; }
-    return 'kB';
+    for (my $i=2; $i<15; $i++)
+    {
+        my @units = grep { /LSF_UNIT_FOR_LIMITS/ } `lsadmin showconf lim`;
+        if ( $? ) 
+        { 
+            # lasdmin may be temporarily unavailable and return confusing errors:
+            # "Bad host name" or "ls_gethostinfo(): A socket operation has failed: Address already in use"
+            print STDERR "lsadmin failed, trying again in $i sec...\n";
+            sleep $i; 
+            next; 
+        }
+        if ( @units && $units[0]=~/\s+MB$/ ) { return 'MB'; }
+        return 'kB';
+    }
+    confess("lsadmin showconf lim failed repeatedly");
 }
 
 sub run_array

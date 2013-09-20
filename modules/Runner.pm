@@ -658,7 +658,12 @@ sub wait
             my $stat = $$status[$i]{status};
             my $done_file = $$jobs{$wfile}{$ids[$i]}{done_file};
 
-if ( !defined $stat ) { $self->throw("No status for $i-th job: $done_file; $ids[$i],$wfile??"); }
+            if ( !defined $stat )
+            {
+                # This should be fixed now in RunnerLSF. However, add a check to make this robust for other platforms
+                $self->warn("\nCould not determine status of $i-th job, going to assume that the job is still running: [$done_file] [$wfile] $ids[$i]\n");
+                $stat = $Running;
+            }
 
             # If the job is already running, skip. There can be error from previous run.
             if ( $stat & $Running ) 
@@ -928,6 +933,50 @@ sub _mkdir
     return $fname;
 }
 
+
+=head2 cmd
+
+    About : Executes a command via bash in the -o pipefail mode. 
+    Args  : <string>
+                The command to be executed
+            <hash>
+                Optional arguments: 
+                - verbose           .. print command to STDERR before executing [0]
+                - require_status    .. throw if exit status is different [0]
+
+=cut
+
+sub cmd
+{
+    my ($self,$cmd,%args) = @_;
+
+    if ( $args{_verbose} ) { print STDERR $cmd,"\n"; }
+
+    # Why not to use backticks? Perl calls /bin/sh, which is often bash. To get the correct
+    #   status of failing pipes, it must be called with the pipefail option.
+
+    my $kid_io;
+    my $pid = open($kid_io, "-|");
+    if ( !defined $pid ) { $self->throw("Cannot fork: $!"); }
+
+    my @out;
+    if ($pid) 
+    {
+        # parent
+        @out = <$kid_io>;
+        close($kid_io);
+    } 
+    else 
+    {      
+        # child
+        exec('/bin/bash', '-o','pipefail','-c', $cmd) or $self->throw("Failed to run the command [/bin/sh -o pipefail -c $cmd]: $!");
+    }
+
+    my $exit_status = $? >> 8;
+    my $status = exists($args{require_status}) ? $args{require_status} : 0;
+    if ( $status ne $exit_status ) { $self->throw("The command exited with $exit_status (expected $status):\n\t$cmd\n\n"); }
+    return @out;
+}
 
 =head2 throw
 
