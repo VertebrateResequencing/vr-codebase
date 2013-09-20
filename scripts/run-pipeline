@@ -694,64 +694,78 @@ sub get_storage_jobs {
 =cut
 
 sub filter_lanes {
-    my ($limits, $hnames, $vrtrack, $config) = @_;
-    
+    my ( $limits, $hnames, $vrtrack, $config ) = @_;
+
     my %valid_limits;
-    foreach my $limit_type (qw(project sample individual population technology seq_tech centre library lane species)) {
-        if (defined $limits->{$limit_type}) {
+
+    # project sample library lane filtered in SQL by processed_lane_hnames_with_limits
+    foreach my $limit_type (qw(individual population technology seq_tech centre species)) {
+        if ( defined $limits->{$limit_type} ) {
             my $array = $limits->{$limit_type};
-            unless (ref($array) && ref($array) eq 'ARRAY') {
+            unless ( ref($array) && ref($array) eq 'ARRAY' ) {
                 die "In your config file, the limits->$limit_type is supposed to be an array ref\n";
             }
-            
+
             # we will be treating all input strings as regexs, and so will force
             # ^ and $ on to the begining and end of regexs to avoid unexpected
             # matches if the input is a substring of a different id
             my @regexs;
-            foreach my $regex (@{$array}) {
+            foreach my $regex ( @{$array} ) {
                 $regex =~ s/^\^//;
                 $regex =~ s/\$$//;
-                push(@regexs, qr/^$regex$/);
+                push( @regexs, qr/^$regex$/ );
             }
-            
+
             $valid_limits{$limit_type} = \@regexs;
         }
     }
-    
+
     my @lanes;
     my $hu = VertRes::Utils::Hierarchy->new();
-    foreach my $hname (@{$hnames}) {
-    my $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack,$hname) or croak("Could not get lane for $hname: $config\n");
-        my $path   = $vrtrack->hierarchy_path_of_lane_hname($vrlane->name);
-        my %lane_info = $hu->lane_info($vrlane, no_coverage => 1);
-        
-        # we require that it pass all limit types ('AND')
-        my $all_passed = 1;
-        foreach my $limit_type (keys %valid_limits) {
-        my $actual_value = $lane_info{$limit_type};
-            
-            # we require that at least one of the limits for this type is
-            # matched ('OR')
-            my $one_passed = 0;
-            foreach my $regex (@{$valid_limits{$limit_type}}) {
-                if ($actual_value =~ /$regex/) {
-                    $one_passed = 1;
+
+    if (%valid_limits) {
+
+        foreach my $hname ( @{$hnames} ) {
+            my $vrlane = VRTrack::Lane->new_by_hierarchy_name( $vrtrack, $hname )
+              or croak("Could not get lane for $hname: $config\n");
+            my %lane_info = $hu->lane_info( $vrlane, no_coverage => 1 );
+
+            # we require that it pass all limit types ('AND')
+            my $all_passed = 1;
+            foreach my $limit_type ( keys %valid_limits ) {
+                my $actual_value = $lane_info{$limit_type};
+
+                # we require that at least one of the limits for this type is
+                # matched ('OR')
+                my $one_passed = 0;
+                foreach my $regex ( @{ $valid_limits{$limit_type} } ) {
+                    if ( $actual_value =~ /$regex/ ) {
+                        $one_passed = 1;
+                        last;
+                    }
+                }
+
+                unless ($one_passed) {
+                    $all_passed = 0;
                     last;
                 }
             }
-            
-            unless ($one_passed) {
-                $all_passed = 0;
-                last;
-            }
+            next unless $all_passed;
+
+            push @lanes, $vrlane;
+        }
     }
-        next unless $all_passed;
-        
-    push @lanes, $vrlane;
+    else {
+        foreach my $hname ( @{$hnames} ) {
+            my $vrlane = VRTrack::Lane->new_by_hierarchy_name( $vrtrack, $hname )
+              or croak("Could not get lane for $hname: $config\n");
+            push @lanes, $vrlane;
+        }
     }
-    
+
     return @lanes;
 }
+
 
 
 =head2 get_qc_jobs_from_vrtrack
@@ -1515,7 +1529,7 @@ sub get_snps_jobs_from_vrtrack {
         my $path   = $vrtrack->hierarchy_path_of_lane($vrlane);
         if ( !$path ) { croak("No path for [$vrlane->name]?\n"); }
         if ( $vrlane->is_withdrawn() ) { next; }
-        my $lane_info = lane_info($path);
+        
         my $bam;
         my $lane_path = File::Spec->catfile($config_data->{root}, $path);
         my %mapstat_ids;
@@ -1524,28 +1538,32 @@ sub get_snps_jobs_from_vrtrack {
         # Get all the possible BAMs from the current lane.
         my @bam_files = glob("$lane_path/*.bam");
         if ( !scalar @bam_files ) {die "No BAM files in [$lane_path]?"; };
-                 
         my $regex = $config_data->{data}{bam_suffix};
         $regex =~ s/\.bam/\\\.bam/;
         $regex = '^(\d+)\.[ps]e\..*' . $regex . '$';
 
         for my $file (@bam_files) {
-          # FIXME: this is inefficient
-          my $bam_reference = get_bam_reference($file);
-          if(defined($bam_reference) && $config_data->{data}{fa_ref} eq $bam_reference)
-          {
-            my ($basename, $path) = fileparse($file);
-            if ($basename =~ m/$regex/){
-                push @{$mapstat_ids{$1}}, $file;
+          next if(-l $file);
+          my ($basename, $path) = fileparse($file);
+          if ($basename =~ m/$regex/){
+            my $mapstats_id = $1;
+            
+            if ($file =~ m/^(.*)\.bam$/)
+            {
+          	  my $snp_done = "$1.snp/.snps_done";
+          	  next if -e $snp_done && $vrlane->is_processed('snp_called');
+            }
+            
+            my $bam_reference = get_bam_reference($file);
+            if(defined($bam_reference) && $config_data->{data}{fa_ref} eq $bam_reference)
+            {
+              push @{$mapstat_ids{$mapstats_id}}, $file;
             }
           }
         }
 
-        unless (scalar keys %mapstat_ids){
-            debug($config_data,"Didn't find an improved bam for snp calling in $lane_path\n");
-            next;
-        }
-
+        next unless (scalar keys %mapstat_ids);
+        
 	my $mapstat_id;
 	unless( $ignore_snp_called )
 	{
@@ -1596,6 +1614,7 @@ sub get_snps_jobs_from_vrtrack {
             close $fh;
         }
 
+        my $lane_info = lane_info($path);
         $config_data->{data}{file_list} = $file_list;
         $lane_info->{vrlane} = $vrlane;
         $lane_info->{lane_path} = $path;
