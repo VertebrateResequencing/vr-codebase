@@ -867,7 +867,7 @@ sub _revive_array
     if ( $@ ) { $self->throw("retrieve() threw an error: $freeze_file\n$@\n"); }
     if ( $$self{clean} ) { unlink($freeze_file); }
 
-    while (my ($key,$value) = each %$back) { $$self{$key} = $value; }
+    $self = $back;
 
     if ( !exists($$self{_store}{$job_id}) ) { $self->throw("No such job $job_id in $freeze_file\n"); }
     my $job = $$self{_store}{$job_id};
@@ -890,7 +890,7 @@ sub _revive
     if ( $@ ) { $self->throw("retrieve() threw an error: $freeze_file\n$@\n"); }
     if ( $$self{clean} ) { unlink($freeze_file); }
 
-    while (my ($key,$value) = each %$back) { $$self{$key} = $value; }
+    $self = $back;
 
 	if ( defined $config_file )
 	{
