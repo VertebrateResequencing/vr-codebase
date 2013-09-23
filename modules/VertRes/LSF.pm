@@ -282,8 +282,13 @@ sub adjust_bsub_options
                   # If there is more than 1 select statement, dont do anything as the memory has already been modified.
                 }
                 elsif ( $opts=~/select\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/select\[/select[mem>$mem &&/ }
-                if ( !($opts=~/rusage/) ) { $opts .= " -R 'rusage[mem=$mem]'" }
-                elsif ( $opts=~/rusage\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/rusage\[/rusage[mem=$mem,/ }
+                
+                # Avoid setting rusage twice
+                if(!($opts=~/rusage[^]]+mem=$mem/)))
+                {
+                  if ( !($opts=~/rusage/) ) { $opts .= " -R 'rusage[mem=$mem]'" }
+                  elsif ( $opts=~/rusage\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/rusage\[/rusage[mem=$mem,/ }
+                }
             }
         }
     }
