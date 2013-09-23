@@ -452,7 +452,7 @@ sub _is_marked_as_finished
         else { $is_dirty = 1; }
     }
 
-    if ( exists($$self{_jobs_db}{$done_file}) && $$self{_jobs_db}{$done_file}{finished} ) { return 1; }
+    if ( exists($$self{_jobs_db}{$done_file}) && $$self{_jobs_db}{$done_file}{finished} ) { return 2; }
 
     my $is_done = 0;
 
@@ -528,6 +528,8 @@ sub _get_unfinished_jobs
 
     # Determine the base directory (common prefix) which holds the list of completed jobs
     my %wfiles = ();
+    my $nprn_done = 0;
+    my $nprn_pend = 0;
     for my $call (keys %calls)
     {
         my @list = @{$calls{$call}};
@@ -551,8 +553,11 @@ sub _get_unfinished_jobs
             my $job = $calls{$call}[$i];
             $$job{wait_file} = "$dir/$call.w";
             $$job{run_file}  = $self->_get_temp_prefix($$job{done_file}) . '.r';
-            if ( $self->_is_marked_as_finished($job) )
+            my $ret;
+            if ( ($ret=$self->_is_marked_as_finished($job)) )
             {
+                if ( $nprn_done < 2 ) { $self->debugln("\to  $$job{done_file} .. " . ($ret==2 ? 'cached' : 'done')); $nprn_done++; }
+                elsif ( $nprn_done < 3 ) { $self->debugln("\to  ...etc..."); $nprn_done++; }
                 splice(@{$calls{$call}}, $i, 1);
                 $i--;
             }
@@ -563,6 +568,8 @@ sub _get_unfinished_jobs
                 { 
                     $self->throw("The target file name is not unique: $$job{done_file}\n",Dumper($wfiles{$$job{wait_file}}{$id}{args},$$job{args})); 
                 }
+                if ( $nprn_pend < 2 ) { $self->debugln("\tx  $$job{done_file} .. unfinished"); $nprn_pend++; }
+                elsif ( $nprn_pend < 3 ) { $self->debugln("\tx  ...etc..."); $nprn_pend++; }
                 $wfiles{$$job{wait_file}}{$id} = $job;
             }
         }
