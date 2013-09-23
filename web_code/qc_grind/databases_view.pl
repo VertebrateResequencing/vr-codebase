@@ -6,6 +6,7 @@ use warnings;
 use URI;
 use CGI::Carp qw(fatalsToBrowser);
 
+use lib '../../lib';
 use SangerPaths qw(core team145);
 use SangerWeb;
 use VRTrack::Project;
@@ -15,7 +16,7 @@ use VertRes::QCGrind::Util;
 my $title = 'QC Grind Databases';
 my $sw  = SangerWeb->new({
     'title'   => $title,
-    'jsfile'  => ['http://code.jquery.com/jquery-latest.js','/Teams/Team145/js/qc.js','/Teams/Team145/js/jquery.tablesorter.min.js'],
+    'jsfile'  => ['http://code.jquery.com/jquery-latest.js','/js/qc.js','/js/jquery.tablesorter.min.js'],
     'banner'  => q(),
     'inifile' => SangerWeb->document_root() . q(/Info/header.ini),
 });
