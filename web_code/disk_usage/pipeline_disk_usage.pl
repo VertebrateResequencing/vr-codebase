@@ -1,17 +1,10 @@
 #!/usr/local/bin/perl -T
 
-BEGIN {
-    $ENV{VRTRACK_HOST} = 'mcs10';
-    $ENV{VRTRACK_PORT} = 3306;
-    $ENV{VRTRACK_RO_USER} = 'vreseq_ro';
-    $ENV{VRTRACK_RW_USER} = 'vreseq_rw';
-    $ENV{VRTRACK_PASSWORD} = 't3aml3ss';
-};
-
 use strict;
 use warnings;
 use URI;
 
+use lib '../../lib';
 use SangerPaths qw(core team145);
 use SangerWeb;
 use VertRes::QCGrind::ViewUtil;
@@ -24,11 +17,11 @@ my $sw  = SangerWeb->new({
     'title'   => $title,
     'banner'  => q(),
     'inifile' => SangerWeb->document_root() . q(/Info/header.ini),
-    'jsfile'  => ['http://jsdev.sanger.ac.uk/prototype.js','http://jsdev.sanger.ac.uk/toggle.js','ttp://jsdev.sanger.ac.uk/scriptaculous/scriptaculous.js','http://jsdev.sanger.ac.uk/sidebar.js','http://jsdev.sanger.ac.uk/urchin.js','http://jsdev.sanger.ac.uk/zebra.js','http://js.sanger.ac.uk/sorttable_v2.js',],    
+    'jsfile'  => ['http://jsdev.sanger.ac.uk/prototype.js','http://jsdev.sanger.ac.uk/toggle.js','http://jsdev.sanger.ac.uk/scriptaculous/scriptaculous.js','http://jsdev.sanger.ac.uk/sidebar.js','http://jsdev.sanger.ac.uk/urchin.js','http://jsdev.sanger.ac.uk/zebra.js','http://js.sanger.ac.uk/sorttable_v2.js',],    
     'style'   => $utl->{CSS},
 });
 
-my $db = 'vrtrack_web_index';
+my $db = $utl->{VRTRACK_DATABASES}{WEB_TABLES};
 my $cgi = $sw->cgi();
 
 if ($cgi->param('download')) {
