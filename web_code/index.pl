@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use URI;
 
-use lib '../lib';
+use lib '/var/www/lib';
 use SangerPaths;
 use SangerWeb;
 use VertRes::QCGrind::ViewUtil;

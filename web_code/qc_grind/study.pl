@@ -7,7 +7,7 @@
 
 use strict;
 use warnings;
-use lib '../../lib';
+use lib '/var/www/lib';
 
 use CGI::Carp qw(fatalsToBrowser);
 use URI;

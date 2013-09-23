@@ -6,7 +6,7 @@ use warnings;
 use URI;
 use CGI::Carp qw(fatalsToBrowser);
 
-use lib '../../lib';
+use lib '/var/www/lib';
 use SangerPaths qw(core team145);
 use SangerWeb;
 use VRTrack::Project;

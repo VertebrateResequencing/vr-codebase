@@ -2,9 +2,9 @@
 
 use strict;
 use warnings;
-use lib '../../lib';
 use URI;
 
+use lib '/var/www/lib';
 use SangerPaths qw(core team145);
 use SangerWeb;
 use VRTrack::VRTrack;

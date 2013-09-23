@@ -2,8 +2,7 @@
 
 use strict;
 use warnings;
-#~ use lib './modules';
-use lib '../../lib';
+use lib '/var/www/lib';
 use URI;
 
 use SangerPaths qw(core team145);

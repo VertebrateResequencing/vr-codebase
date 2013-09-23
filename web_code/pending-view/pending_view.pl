@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use URI;
 
-use lib '../../lib';
+use lib '/var/www/lib';
 use SangerPaths qw(core team145);
 use SangerWeb;
 use VertRes::Utils::VRTrackFactory;
