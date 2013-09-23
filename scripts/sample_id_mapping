@@ -59,7 +59,7 @@ USAGE
 #vrtrack database connection parameters (set in env)
 my %dbparams = (host => $ENV{VRTRACK_HOST}, port => $ENV{VRTRACK_PORT} || 3306, user => $ENV{VRTRACK_RO_USER});
 #web db has database and study mappings
-my $web_db = 'vrtrack_web_index';
+my $web_db = 'vrtrack_web_tables';
 #sql to fetch project names
 my $sql_select_project_names_ssids = "select d.project_name, d.ssid from tracking_database t, db_projects d where d.db_id=t.db_id and t.db_name = ? order by d.project_name";
 my $sql_select_single_ssid = "select ssid db_projects where project_name = ?";
