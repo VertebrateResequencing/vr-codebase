@@ -284,7 +284,7 @@ sub adjust_bsub_options
                 elsif ( $opts=~/select\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/select\[/select[mem>$mem &&/ }
                 
                 # Avoid setting rusage twice
-                if(!($opts=~/rusage[^]]+mem=$mem/)))
+                if(!($opts=~/rusage[^]]+mem=$mem/))
                 {
                   if ( !($opts=~/rusage/) ) { $opts .= " -R 'rusage[mem=$mem]'" }
                   elsif ( $opts=~/rusage\[([^]]+)\]/ && !($1=~/mem/) ) { $opts =~ s/rusage\[/rusage[mem=$mem,/ }
