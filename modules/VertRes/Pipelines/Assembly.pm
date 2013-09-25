@@ -403,7 +403,7 @@ sub decide_appropriate_queue
   if($memory_required_mb > 60000)
   {
     $queue = 'hugemem';
-  }modules/VertRes/LSF.pm
+  }
   elsif($memory_required_mb < 8000)
   {
     $queue = 'normal';
