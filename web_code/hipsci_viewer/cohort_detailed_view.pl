@@ -141,7 +141,7 @@ sub displayDetailedInformation
     	];
 
     	foreach ( @cnv_samples ) {
-			my @penn_values = defined @{$geno_cnv_totals{$_}{$penncnv_flag}} : @{$geno_cnv_totals{$_}{$penncnv_flag}} : qw(-- --);
+			my @penn_values = defined @{$geno_cnv_totals{$_}{$penncnv_flag}} ? @{$geno_cnv_totals{$_}{$penncnv_flag}} : qw(-- --);
 			my @quanti_values = defined @{$geno_cnv_totals{$_}{$quantisnp_flag}} ? @{$geno_cnv_totals{$_}{$quantisnp_flag}} : qw(-- --);
 			print qq[
           		<tr>
