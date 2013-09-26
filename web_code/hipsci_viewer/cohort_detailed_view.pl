@@ -46,9 +46,13 @@ sub displayDetailedInformation
     my $quantisnp_flag = 'quantisnp';
     
     my $lane_id = $utl->getExpressionLaneID($expression_db, $cohort);
-    my $vrtrack = $utl->connectToDatabase($expression_db);
-    my $lane = VRTrack::Lane->new( $vrtrack, $lane_id );
-    displayError("Unable to retrieve lane $lane_id\n") unless $lane;
+    my ( $vrtrack, $lane, $mapstats );
+    if ( $lane_id ) {
+		$vrtrack = $utl->connectToDatabase($expression_db);
+		$lane = VRTrack::Lane->new( $vrtrack, $lane_id );
+		displayError("Unable to retrieve lane $lane_id\n") unless $lane;
+		$mapstats = $lane->latest_mapping();
+	}
     
     my %geno_sample_controls = $utl->getGenotypingSamples($genotyping_db, $cohort);
     my %geno_cnv_totals = $utl->getGenotypingCNVTotals($genotyping_db, $cohort);
@@ -67,8 +71,6 @@ sub displayDetailedInformation
 	print qq[ <h3 align="center" style="font: normal 700 1.5em arial"> Cohort identifier : $cohort </h3>];
 	print qq[ <h3 align="center" style="font: normal 700 1.5em arial"> Control sample:  $control_string</h3>];
 	
-    
-    my $mapstats = $lane->latest_mapping();
     if ($mapstats) {
 		print qq[
             <div class="centerFieldset">
