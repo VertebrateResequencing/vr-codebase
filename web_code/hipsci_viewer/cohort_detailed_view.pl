@@ -12,6 +12,7 @@ use VRTrack::Project;
 use VertRes::Utils::VRTrackFactory;
 use VertRes::QCGrind::ViewUtil;
 use CGI::Carp qw(fatalsToBrowser);
+use Scalar::Util qw(looks_like_number);
 
 my $utl = VertRes::QCGrind::ViewUtil->new();
 my $title = ' : Detailed View';
@@ -140,13 +141,13 @@ sub displayDetailedInformation
     	];
 
     	foreach ( @cnv_samples ) {
-			my @penn_values = @{$geno_cnv_totals{$_}{$penncnv_flag}};
-			my @quanti_values = @{$geno_cnv_totals{$_}{$quantisnp_flag}};
+			my @penn_values = defined @{$geno_cnv_totals{$_}{$penncnv_flag}} : @{$geno_cnv_totals{$_}{$penncnv_flag}} : qw(-- --);
+			my @quanti_values = defined @{$geno_cnv_totals{$_}{$quantisnp_flag}} ? @{$geno_cnv_totals{$_}{$quantisnp_flag}} : qw(-- --);
 			print qq[
           		<tr>
             		<td>$_</td>
             		<td>$penn_values[0]</td>];
-        	if ( $penn_values[1] == $penncnv_least ) {
+        	if ( looks_like_number($penn_values[1]) && $penn_values[1] == $penncnv_least ) {
 				print qq[	
 			    	<td bgcolor="LawnGreen">$penn_values[1]</td>
 			    	<td>$quanti_values[0]</td>];
@@ -156,7 +157,7 @@ sub displayDetailedInformation
             		<td>$penn_values[1]</td>
             		<td>$quanti_values[0]</td>];
 			}
-        	if ( $quanti_values[1] == $quancnv_least ) {
+        	if ( looks_like_number($quanti_values[1]) && $quanti_values[1] == $quancnv_least ) {
 				print qq[	
 			    	<td bgcolor="LawnGreen">$quanti_values[1]</td>];
 			}
