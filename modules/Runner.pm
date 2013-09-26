@@ -957,7 +957,7 @@ sub cmd
 {
     my ($self,$cmd,%args) = @_;
 
-    if ( $args{_verbose} ) { print STDERR $cmd,"\n"; }
+    if ( $$self{verbose} ) { print STDERR $cmd,"\n"; }
 
     # Why not to use backticks? Perl calls /bin/sh, which is often bash. To get the correct
     #   status of failing pipes, it must be called with the pipefail option.
