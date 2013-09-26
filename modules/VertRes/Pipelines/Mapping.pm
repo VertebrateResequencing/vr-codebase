@@ -188,7 +188,7 @@ our $actions = [ { name     => 'bam_to_fastq',
 our %options = (local_cache => '',
                 slx_mapper => 'bwa',
                 '454_mapper' => 'ssaha',
-                'bamcheck'   => 'bamcheck -q 20',
+                'bamcheck'   => 'bamcheck -q 20 --GC-depth 2e3,4.2e9 ',
                 do_cleanup => 1);
 
 our $split_dir_name = 'split';
