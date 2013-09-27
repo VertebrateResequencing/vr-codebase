@@ -58,7 +58,7 @@ export ORACLE_HOME=/software/oracle_client-10.2.0
 mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST $DB > $DUMPS
 
 if [ "$STUDY" = "" ]; then
-	$BIN_EXT/update_pipeline.pl -s $CONF/$DB"_studies" -d $DB $TAX $MIN_RUN $ARG_UP
+	cd $BIN_EXT && perl update_pipeline.pl -s $CONF/$DB"_studies" -d $DB $TAX $MIN_RUN $ARG_UP
 else
-	$BIN_EXT/update_pipeline.pl -s $CONF/$DB$STUDY -d $DB $TAX $MIN_RUN $ARG_UP
+	cd $BIN_EXT && perl update_pipeline.pl -s $CONF/$DB$STUDY -d $DB $TAX $MIN_RUN $ARG_UP
 fi

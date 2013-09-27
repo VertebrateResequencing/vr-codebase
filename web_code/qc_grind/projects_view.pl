@@ -5,6 +5,7 @@ use strict;
 use warnings;
 use URI;
 
+use lib '/var/www/lib';
 use SangerPaths qw(core team145);
 use SangerWeb;
 use VRTrack::Project;

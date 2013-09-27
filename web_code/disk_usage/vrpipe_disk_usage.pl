@@ -1,17 +1,10 @@
 #!/usr/local/bin/perl -T
 
-BEGIN {
-    $ENV{VRTRACK_HOST} = 'mcs10';
-    $ENV{VRTRACK_PORT} = 3306;
-    $ENV{VRTRACK_RO_USER} = 'vreseq_ro';
-    $ENV{VRTRACK_RW_USER} = 'vreseq_rw';
-    $ENV{VRTRACK_PASSWORD} = 't3aml3ss';
-};
-
 use strict;
 use warnings;
 use URI;
 
+use lib '/var/www/lib';
 use SangerPaths qw(core team145);
 use SangerWeb;
 use VertRes::QCGrind::ViewUtil;
@@ -24,11 +17,11 @@ my $sw  = SangerWeb->new({
     'title'   => $title,
     'banner'  => q(),
     'inifile' => SangerWeb->document_root() . q(/Info/header.ini),
-    'jsfile'  => ['http://jsdev.sanger.ac.uk/prototype.js','http://jsdev.sanger.ac.uk/toggle.js','ttp://jsdev.sanger.ac.uk/scriptaculous/scriptaculous.js','http://jsdev.sanger.ac.uk/sidebar.js','http://jsdev.sanger.ac.uk/urchin.js','http://jsdev.sanger.ac.uk/zebra.js','http://js.sanger.ac.uk/sorttable_v2.js',],    
+    'jsfile'  => ['http://jsdev.sanger.ac.uk/prototype.js','http://jsdev.sanger.ac.uk/toggle.js','http://jsdev.sanger.ac.uk/scriptaculous/scriptaculous.js','http://jsdev.sanger.ac.uk/sidebar.js','http://jsdev.sanger.ac.uk/urchin.js','http://jsdev.sanger.ac.uk/zebra.js','http://js.sanger.ac.uk/sorttable_v2.js',],    
     'style'   => $utl->{CSS},
 });
 
-my $db = 'vrtrack_web_index';
+my $db = $utl->{VRTRACK_DATABASES}{WEB_TABLES};
 my $cgi = $sw->cgi();
 
 print $sw->header();
@@ -106,7 +99,7 @@ sub displayTopTenTotals
     foreach my $pipeline(@projects[0 .. 9]) {
 		my @pipeline_data = @{ $pipeline };
 		my $pslink = "<a href='$indiv_pipe_script?setup=$pipeline_data[0]'> $pipeline_data[1] </a>";
-		print qq[<tr><td align="center">$pipeline_data[0]</td><td align="center">$pslink</td><td align="center">$pipeline_data[2]</td><td align="center">$pipeline_data[4]</td><td align="center">$pipeline_data[5]</td><td align="center">$pipeline_data[2]</td></tr>];
+		print qq[<tr><td align="center">$pipeline_data[0]</td><td align="center">$pslink</td><td align="center">$pipeline_data[3]</td><td align="center">$pipeline_data[4]</td><td align="center">$pipeline_data[5]</td><td align="center">$pipeline_data[2]</td></tr>];
 	}
     print qq[
         </table>

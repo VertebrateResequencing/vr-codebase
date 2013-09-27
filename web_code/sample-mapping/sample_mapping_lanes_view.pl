@@ -1,15 +1,8 @@
 #!/usr/local/bin/perl -T
 
-BEGIN {
-    $ENV{VRTRACK_HOST} = 'mcs10';
-    $ENV{VRTRACK_PORT} = 3306;
-    $ENV{VRTRACK_RO_USER} = 'vreseq_ro';
-    $ENV{VRTRACK_RW_USER} = 'vreseq_rw';
-    $ENV{VRTRACK_PASSWORD} = 't3aml3ss';
-};
-
 use strict;
 use warnings;
+use lib '/var/www/lib';
 use URI;
 
 use SangerPaths qw(core team145);
@@ -133,8 +126,8 @@ sub downloadMappings
 	my ($cgi, $sep, $type, $db, $projectID) = @_;
 	my $db_id = $utl->getDatabaseID ($db);
 	my $pname = $projectID == 99999 ? "all_$db" :$utl->fetchProjectName($db_id, $projectID);
-	my $vrtrack = $utl->connectToDatabase('vrtrack_web_index');
-	print $cgi->header(-type=>'text/$type',  -attachment=>"$pname.$type");
+  my $vrtrack = $utl->connectToDatabase($utl->{VRTRACK_DATABASES}{WEB_TABLES});
+  print $cgi->header(-type=>'text/$type',  -attachment=>"$pname.$type");
 	print join ($sep,"Sanger Sample Name","Supplier Name","Accession"), "\n";
 	my $sql = qq[SELECT supplier_name, accession_number, sanger_sample_name FROM sample_id_mapping where db_id = ?];
 	$sql = $sql." and project_id = ?" unless $projectID == 99999;

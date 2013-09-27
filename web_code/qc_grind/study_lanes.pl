@@ -10,6 +10,7 @@ use warnings;
 use CGI::Carp qw(fatalsToBrowser);
 use URI;
 
+use lib '/var/www/lib';
 use SangerPaths qw(core team145);
 use SangerWeb;
 use VRTrack::Project;
@@ -22,7 +23,7 @@ my $title = 'QC Grind Lane Status Update';
 my $sw  = SangerWeb->new({
     'title'   => $title,
     'banner'  => q(),
-    'jsfile'  => ['http://code.jquery.com/jquery-latest.js','/Teams/Team145/js/qc.js','/Teams/Team145/js/jquery.tablesorter.min.js'],
+    'jsfile'  => ['http://code.jquery.com/jquery-latest.js','/js/qc.js','/js/jquery.tablesorter.min.js'],
     'inifile' => SangerWeb->document_root() . q(/Info/header.ini),
 });
 my $utl = VertRes::QCGrind::Util->new();
