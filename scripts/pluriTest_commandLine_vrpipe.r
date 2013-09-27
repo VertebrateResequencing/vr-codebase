@@ -95,9 +95,9 @@ pluriTestCommandLine <- function (NewDataFileName, DataRepository)
 
         sNames <- names(s.new)
         novelNames <- names(novel.new)
-        textxy(as.vector(novel.new[novelNames]), as.vector(s.new[sNames]), labs=sNames, cx=0.4) # MIGHT NEED TO LOWER cx BACK TO 0.25 FOR SMALLER FONT
+        textxy(as.vector(novel.new[novelNames]), as.vector(s.new[sNames]), labs=sNames, cx=0.7) # MIGHT NEED TO LOWER cx BACK TO 0.25 FOR SMALLER FONT
 
-        points(s.new ~ novel.new, cex = 0.4, main = "Overview")
+        points(s.new ~ novel.new, cex = 0.2, main = "Overview")
         dev.off()
     })
     try({
