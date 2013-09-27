@@ -40,9 +40,10 @@ sub new
             #  config file to get rid of the warnings.
             version  => '] .$$self{config_version}. q[',
 
-            beagle_jar  => '/nfs/users/nfs_p/pd3/sandbox/svn/beagle/b4.r1007.jar',
+            beagle_jar  => '/nfs/users/nfs_p/pd3/sandbox/svn/beagle/b4.r1128.jar',
             beagle_args => '',
             java_args   => '',
+            bcftools    => '/nfs/users/nfs_p/pd3/git/bcftools/xxx-bcftools',
 
             # The known_vcf (aka -k) and in_vcf (aka -i) file names can contain the string "{CHROM}" which will be expanded 
             #   according to chromosomes listed in the "region" key below. If the key is not defined, glob expansion will
@@ -549,8 +550,8 @@ sub beagle
     }
     $self->merge_beagle_vcf($chr,$from,$to,$in_vcf,"$prefix.vcf.gz","$outdir/$$chunk[1]-$$chunk[2].vcf.gz.part");
     $self->tabix_part("$outdir/$$chunk[1]-$$chunk[2].vcf.gz");
-rename("$prefix.vcf.gz","$prefix.vcf.gz-beagle");
-#    unlink("$prefix.vcf.gz");
+#rename("$prefix.vcf.gz","$prefix.vcf.gz-beagle");
+    unlink("$prefix.vcf.gz");
     rename("$outdir/$$chunk[1]-$$chunk[2].vcf.gz.part","$outdir/$$chunk[1]-$$chunk[2].vcf.gz");
     $self->cmd(qq[touch $outfile]);
 }
@@ -578,7 +579,7 @@ sub concat_vcfs
     rename("$outfile.part","$outfile.tmp.vcf.gz");
     rename("$outfile.tbi","$outfile.tmp.vcf.gz.tbi");
     my $args = defined $chr ? "-r $chr" : '';
-    $self->cmd(qq[vcf check $args -s - $$self{eval_vcf} $outfile.tmp.vcf.gz > $outfile.vchk]);
+    $self->cmd(qq[$$self{bcftools} stats $args -s - $$self{eval_vcf} $outfile.tmp.vcf.gz > $outfile.vchk]);
     rename("$outfile.tmp.vcf.gz.tbi","$outfile.tbi");
     rename("$outfile.tmp.vcf.gz","$outfile");
 }
