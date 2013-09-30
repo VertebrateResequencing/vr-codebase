@@ -247,7 +247,7 @@ sub get_lsf_limits_unit
             next; 
         }
         if ( @units && $units[0]=~/\s+MB$/ ) { $lsf_limits_unit = 'MB'; }
-        $lsf_limits_unit = 'kB';
+        else { $lsf_limits_unit = 'kB'; }
         return $lsf_limits_unit;
     }
     confess("lsadmin showconf lim failed repeatedly");
