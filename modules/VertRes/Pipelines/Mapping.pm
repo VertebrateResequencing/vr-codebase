@@ -705,7 +705,6 @@ sub map_requires {
     push(@requires,
          $self->{reference},
          $self->{reference}.'.bwt',
-         $self->{reference}.'.body',
          $self->{reference}.'.fai',
          $self->{reference}.'.dict');
     
