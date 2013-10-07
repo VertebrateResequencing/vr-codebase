@@ -1323,6 +1323,7 @@ sub get_assembly_jobs_from_vrtrack {
         }
         next if $vrlane->is_withdrawn;
         next unless($vrlane->is_paired);
+        next if($vrlane->raw_reads < 20000);
         if(defined($config_data->{storage_device}))
         {
           my $storage_device_regex = $config_data->{storage_device};
