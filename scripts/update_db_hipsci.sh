@@ -47,7 +47,7 @@ fi
 ARG_UP="-u -v"
 
 CONF="/nfs/vertres01/conf"
-BIN_EXT="/software/vertres/bin-external/update_pipeline_hipsci"
+BIN_EXT="/software/vertres/update_pipeline_hipsci"
 DUMPS="/warehouse/g1k-04/sql_dumps/$DB.sql"
 
 export LD_LIBRARY_PATH=/software/badger/lib:/software/oracle_client-10.2.0/lib
