@@ -1,0 +1,176 @@
+#!/usr/bin/env perl
+#
+# sm15@sanger.ac.uk
+
+use strict;
+use warnings;
+use Carp;
+use Vcf;
+use List::MoreUtils qw(uniq);
+
+my $opts = parse_params();
+my $cohorts = read_samples($$opts{samples});
+vcf_summary($opts, $cohorts);
+
+exit;
+
+#--------------------------------
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    die
+        "\n",
+        "Usage: vcf-summary [OPTIONS] in.vcf.gz > summary.vcf\n",
+        "Description: Summarise, allele counts, allele numbers, genotype counts and average depth.\n",
+        "\n",
+        "    Options:\n",
+        "        -m, --map               Cohort <=> Sample map: tab-separated list of 'cohort\\tsample'\n",
+        "        -r, --region <string>   Region to summarise: chr:from-to\n",
+        "        -h, -?, --help          This help message.\n",
+        "\n",
+        "Examples:\n",
+        "\n",
+        "   vcf-summary -r 20:1-1000000 -s cohort-sample.map genotypes.vcf.gz | bgzip -c > summary.vcf.gz\n",
+        "\n";
+}
+
+sub parse_params
+{
+    $0 =~ s{^.+/}{}; $0 .= "($Vcf::VERSION)";
+    my $opts = { args=>[$0, @ARGV] };
+    while (my $arg=shift(@ARGV))
+    {
+        if ( $arg eq '-m' || $arg eq '--map' ) { $$opts{samples} = shift(@ARGV); next; }
+        if ( $arg eq '-r' || $arg eq '--region' ) { $$opts{region} = shift(@ARGV); next; }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        if ( -e $arg ) { $$opts{file} = $arg; next; }
+    }
+    if ( !$$opts{samples} || !$$opts{file} ) { error("Missing the -m option or the VCF argument.\n") }
+    if ( !$$opts{file} && $$opts{region} ) { error("Tabix index VCF file required with the -r option.\n") }
+    return $opts;
+}
+
+sub read_samples
+{
+    my ($samples) = @_;
+    open my $fh, "<$samples" || die("Could not read samples file $samples");
+    my %cohorts;
+    while (<$fh>)
+    {
+        chomp;
+        my ($cohort, $sample) = split /\s+/;
+        die "line does not have cohort and samples [$_]" unless ($cohort && $sample);
+        $cohorts{$sample} = $cohort;
+    }
+    close $fh;
+    return \%cohorts;
+}
+
+sub vcf_summary
+{
+    my ($opts, $cohorts) = @_;
+    my $vcf = $$opts{region} ? Vcf->new(file=>$$opts{file}, region => $$opts{region}) : Vcf->new(file=>$$opts{file});
+    my $summary_vcf = $$opts{region} ? Vcf->new(file=>$$opts{file}, region => $$opts{region}) : Vcf->new(file=>$$opts{file});
+    $vcf->parse_header();
+    $summary_vcf->parse_header();
+    $summary_vcf->remove_header_line(key=>'FORMAT');
+    
+    my @cohort_names = sort( uniq( values %$cohorts ) );
+    my $ncols = 8 + @cohort_names;
+    for (my $i=0; $i<@cohort_names; $i++)
+    {
+        my $icol = $i+9;
+        $$summary_vcf{columns}[$icol] = $cohort_names[$i];
+    }
+    @{$$summary_vcf{columns}} = @{$$summary_vcf{columns}}[0..$ncols];
+
+    my @samples = $vcf->get_samples();
+    my %nsamples;
+    foreach my $sample (@samples)
+    {
+        $nsamples{ $$cohorts{$sample} }++;
+    }
+
+    $summary_vcf->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
+    foreach my $cohort (@cohort_names)
+    {
+        $summary_vcf->add_header_line({key=>'COHORT',ID=>$cohort,N_SAMPLES=>$nsamples{$cohort}});
+    }
+    $summary_vcf->add_header_line({key=>'FORMAT',ID=>'AC',Number=>'A',Type=>'Integer',Description=>'Allele count in cohort'});
+    $summary_vcf->add_header_line({key=>'FORMAT',ID=>'AN',Number=>'1',Type=>'Integer',Description=>'Allele number in cohort'});  
+    $summary_vcf->add_header_line({key=>'FORMAT',ID=>'DP',Number=>'1',Type=>'Integer',Description=>'Average # high-quality bases in cohort'});  
+    $summary_vcf->add_header_line({key=>'FORMAT',ID=>'GC',Number=>'G',Type=>'Integer',Description=>'Genotype counts in cohort (diploid assumed; haploid A counted as diploid A/A)'});  
+    
+    print $summary_vcf->format_header();
+    while (my $rec = $vcf->next_data_array())
+    {
+        my $summary_rec = $summary_vcf->next_data_array();
+        @$summary_rec = @{$summary_rec}[0..$ncols];
+        my (%acounts, %gcounts);
+        my @alleles = split(/,/, $$rec[4]);
+        my $nA = @alleles;
+        my $nG = ($nA+1)*($nA+2)/2;
+        foreach my $cohort (@cohort_names)
+        {
+            
+            for (my $i=0; $i<=$nA; $i++) { $acounts{$cohort}{$i} = 0; }
+            for (my $i=0; $i<$nG; $i++) { $gcounts{$cohort}{$i} = 0; }
+        }
+        my $igt = $vcf->get_tag_index($$rec[8],'GT',':');
+        my $idp = $vcf->get_tag_index($$rec[8],'DP',':');
+        $$summary_rec[8] = 'AN:AC:GC';
+        if ($idp != -1) { $$summary_rec[8] .= ':DP'; }
+        my ($dp,$ndp);
+        for (my $i=0; $i<@samples; $i++)
+        {
+            my $icol = $i+9;
+            my $sample = $samples[$i];
+            my $cohort = $$cohorts{$sample};
+            my $gt = $vcf->get_field($$rec[$icol],$igt);
+            my ($al1,$al2) = split /[|\/]/, $gt;
+            foreach my $al ($al1,$al2)
+            {
+                next unless (defined $al);
+                next if $al eq '.';
+                $acounts{$cohort}{$al}++;
+            }
+            if ($al2 && $al2 ne '.')
+            {
+                $gcounts{$cohort}{ vcf_ij2G($al1,$al2) }++;
+            }
+            elsif ($al1 && !$al2 && $al1 ne '.')
+            {
+                $gcounts{$cohort}{ vcf_ij2G($al1,$al1) }++;
+            }
+            if ($idp != -1) { $dp += $vcf->get_field($$rec[$icol],$idp); $ndp++; }
+        }
+        for (my $i=0; $i<@cohort_names; $i++)
+        {
+            my $cohort = $cohort_names[$i];
+            my $icol = $i+9;
+            my $an = 0; my @acs;
+            for (my $j=0; $j<=$nA; $j++)
+            {
+                $an += $acounts{$cohort}{$j};
+                push @acs, $acounts{$cohort}{$j} if ($j > 0);
+            }
+            my @gcs;
+            for (my $j=0; $j<$nG; $j++)
+            {
+                push @gcs, $gcounts{$cohort}{$j};
+            }
+            $$summary_rec[$icol] = qq[$an:] . join(',', @acs) . ':' . join(',', @gcs);
+            if ($idp != -1) { $$summary_rec[$icol] .= sprintf(':%.2f', $dp/$ndp); }
+        }
+        print $summary_vcf->format_line($summary_rec);
+    }
+}
+
+sub vcf_ij2G
+{
+    my ($i,$j) = @_;
+    return $j*($j+1)/2+$i;
+}
+
+1;
