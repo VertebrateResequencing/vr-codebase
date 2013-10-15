@@ -114,9 +114,11 @@ sub new
             #   regions => 'regions.list',
 
             # Chunk-specific options will be applied to chunks with a non-zero overlap
-            #   chunk_options => { 
-            #       '10:42000001-43000000' => { mpileup=>'...'  } 
-            #   },
+            { 
+                'Y'                   => { bcftools => 'bcftools call -Nvm -Y', },
+                'X:1-60000'           => { bcftools => 'bcftools call -Nvm -X', },
+                'X:2699521-154931043' => { bcftools => 'bcftools call -Nvm -X', },
+            },
     ]."\n";
 
     $$self{usage} .= 
@@ -741,10 +743,13 @@ sub set_chunk_options
     my $hit;
     for my $chunk (keys %{$$self{chunk_options}})
     {
-        if ( !($chunk=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the chunk_options: [$chunk]"); }
+        if ( !($chunk=~/^([^:]+):(\d+)-(\d+)$/) && !($chunk=~/^([^:]+)$/) ) { $self->throw("Could not parse chunk_options: [$chunk]"); }
         if ( $chr ne $1 ) { next; }
-        if ( $2>$to ) { next; }
-        if ( $3<$from ) { next; }
+        if ( defined $2 )
+        {
+            if ( $2>$to ) { next; }
+            if ( $3<$from ) { next; }
+        }
         $hit = $chunk;
         last;
     }
