@@ -365,10 +365,13 @@ copy(\$assembler->optimised_assembly_file_path(),\$assembler->optimised_director
 
 Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_assembly_file_path(),base_contig_name => qq[$contigs_base_name])->run();
 
-die "Missing assembly logfile - velvet optimiser didnt complete"  unless(-e qq[$tmp_directory].'/$self->{assembler}_assembly_logfile.txt');
-move(qq[$tmp_directory].'/$self->{assembler}_assembly_logfile.txt', qq[$output_directory].'/$self->{assembler}_assembly_logfile.txt');
+if('$self->{assembler}' eq 'velvet')
+{
+  die "Missing assembly logfile - velvet optimiser didnt complete"  unless(-e qq[$tmp_directory].'/$self->{assembler}_assembly_logfile.txt');
+  move(qq[$tmp_directory].'/$self->{assembler}_assembly_logfile.txt', qq[$output_directory].'/$self->{assembler}_assembly_logfile.txt');
+}
 
-die "Missing assembly directory - velvet optimiser didnt complete" unless(-d "$tmp_directory/$self->{assembler}_assembly");
+die "Missing assembly directory - assembly didnt complete" unless(-d "$tmp_directory/$self->{assembler}_assembly");
 system("mv $tmp_directory/$self->{assembler}_assembly $output_directory");
 
 unlink(qq[$tmp_directory].'/forward.fastq');
