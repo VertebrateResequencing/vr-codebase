@@ -135,11 +135,11 @@ sub vcf_summary
                 next if $al eq '.';
                 $acounts{$cohort}{$al}++;
             }
-            if ($al2 && $al2 ne '.')
+            if (defined $al2 && $al2 ne '.')
             {
                 $gcounts{$cohort}{ vcf_ij2G($al1,$al2) }++;
             }
-            elsif ($al1 && !$al2 && $al1 ne '.')
+            elsif (defined $al1 && !(defined $al2) && $al1 ne '.')
             {
                 $gcounts{$cohort}{ vcf_ij2G($al1,$al1) }++;
             }
