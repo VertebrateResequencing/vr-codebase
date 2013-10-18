@@ -378,7 +378,10 @@ sub merge_beagle_vcf
     }
     my $nsamples = @ori_samples;
     open(my $fh,"| bgzip -c > $out_fname") or $self->throw("| bgzip -c > $out_fname: $!"); 
+    $ori_vcf->add_header_line({key=>'INFO', ID=>'AC',Number=>'A',Type=>'Integer',Description=>'Allele count in genotypes'});
+    $ori_vcf->add_header_line({key=>'INFO', ID=>'AN',Number=>'1',Type=>'Integer',Description=>'Total number of alleles in called genotypes'});
     $ori_vcf->add_header_line({key=>'FORMAT', ID=>'GL',Number=>'G',Type=>'Float',Description=>'Estimated Genotype Likelihood (Beagle)'});
+    $ori_vcf->add_header_line({key=>'FORMAT', ID=>'DS',Number=>'1',Type=>'Float',Description=>'Estimated ALT dose [P(RA) + P(AA)] (Beagle)'});
     print $fh $ori_vcf->format_header();
     my $prev;
     while (my $ori_rec = $ori_vcf->next_data_array())
@@ -400,25 +403,33 @@ sub merge_beagle_vcf
         if ( $$new_rec[1] ne $$ori_rec[1] ) { $self->throw("POS mismatch at $$ori_rec[0]:$$ori_rec[1] .. $$new_rec[3] vs $$ori_rec[3]\n"); }
         if ( $$new_rec[3] ne $$ori_rec[3] ) { $self->throw("REF mismatch at $$ori_rec[0]:$$ori_rec[1] .. $$new_rec[3] vs $$ori_rec[3]\n"); }
         if ( $$new_rec[4] ne $$ori_rec[4] ) { $self->throw("ALT mismatch at $$ori_rec[0]:$$ori_rec[1] .. $$new_rec[4] vs $$ori_rec[4]\n"); }
-        if ( $$new_rec[8] ne 'GT:GP' ) { $self->throw("Update me, the FORMAT field at $$ori_rec[0]:$$ori_rec[1] changed to $$new_rec[8]\n"); }
+        if ( $$new_rec[8] ne 'GT:DS:GP' ) { $self->throw("Update me, the FORMAT field at $$ori_rec[0]:$$ori_rec[1] changed to $$new_rec[8]\n"); }
         my @alt = split(/,/,$$ori_rec[4]);
         my $nal = 1 + scalar @alt;
         my $igt = $ori_vcf->get_tag_index($$ori_rec[8],'GT',':');
         my $ipl = $ori_vcf->get_tag_index($$ori_rec[8],'PL',':');
         my $igp = $ori_vcf->get_tag_index($$ori_rec[8],'GP',':');
+        my $igl = $ori_vcf->get_tag_index($$ori_rec[8],'GL',':');
+        my $ids = $ori_vcf->get_tag_index($$ori_rec[8],'DS',':');
+        if ( $ids!=-1 ) { $self->throw("Update me, FORMAT/DS already exist in $ori_fname"); }
         if ( $igp!=-1 ) { $self->throw("Update me, FORMAT/GP already exist in $ori_fname"); }
-        if ( 0 != $new_vcf->get_tag_index($$new_rec[8],'GT',':') ) { $self->throw("Expected GT:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
-        if ( 1 != $new_vcf->get_tag_index($$new_rec[8],'GP',':') ) { $self->throw("Expected GT:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
-        $$ori_rec[8] .= ':GL';
+        if ( 0 != $new_vcf->get_tag_index($$new_rec[8],'GT',':') ) { $self->throw("Expected GT:DS:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
+        if ( 1 != ($ids=$new_vcf->get_tag_index($$new_rec[8],'DS',':')) ) { $self->throw("Expected GT:DS:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
+        if ( 2 != $new_vcf->get_tag_index($$new_rec[8],'GP',':') ) { $self->throw("Expected GT:DS:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
+        $$ori_rec[8] .= ':DS';
+        if ( $igl<0 ) { $$ori_rec[8] .= 'GL'; }
+        my @ac = ();
         for (my $i=0; $i<$nsamples; $i++)
         {
             my $icol = $i+9;
             my $gt = $ori_vcf->get_field($$ori_rec[$icol],$igt);
+            my $ds = $new_vcf->get_field($$new_rec[$icol],$ids);
             if ( index($gt,'/')==-1 && index($gt,'|')==-1 )
             {
                 # haploid
                 my $new_gt = $new_vcf->get_field($$new_rec[$icol],0);
                 $new_gt = substr($new_gt,0,1);
+                $ac[$new_gt]++;
 
                 my @gp = split(/,/, $new_vcf->get_field($$new_rec[$icol],1));
                 my @new_gp;
@@ -438,21 +449,34 @@ sub merge_beagle_vcf
                 }
                 $$ori_rec[$icol] = $ori_vcf->replace_field($$ori_rec[$icol],$new_gt,$igt,':');
                 $$ori_rec[$icol] = $ori_vcf->replace_field($$ori_rec[$icol],join(',',@new_pl),$ipl,':');
-                $$ori_rec[$icol] .= ':' . join(',',@new_gp);
+                $$ori_rec[$icol] .= ':' . $ds;
+                if ( $igl<0 ) { $$ori_rec[$icol] .= ':' . join(',',@new_gp); }
+                else { $ori_vcf->replace_field($$ori_rec[$icol],join(',',@new_gp),$igl,':'); }
             }
             else
             {
                 # diploid
                 my $new_gt = $new_vcf->get_field($$new_rec[$icol],0);
+                my @gt = $new_vcf->split_gt($new_gt);
+                if ( scalar @gt !=2 ) { $self->throw("Uh: $new_gt"); }
+                for my $gt (@gt) { $ac[$gt]++; }
+
                 my @new_gp = split(/,/, $new_vcf->get_field($$new_rec[$icol],1));
                 for (my $j=0; $j<@new_gp; $j++)
                 {
                     $new_gp[$j] = $new_gp[$j]!=0 ? log($new_gp[$j])/2.302585 : -100;
                 }
                 $$ori_rec[$icol] = $ori_vcf->replace_field($$ori_rec[$icol],$new_gt,0,':');
-                $$ori_rec[$icol] .= ':' . join(',',@new_gp);
+                $$ori_rec[$icol] .= ':' . $ds;
+                if ( $igl<0 ) { $$ori_rec[$icol] .= ':' . join(',',@new_gp); }
+                else { $ori_vcf->replace_field($$ori_rec[$icol],join(',',@new_gp),$igl,':'); }
             }
         }
+        my $an = 0;
+        for my $ac (@ac) { $an += $ac ? $ac : 0; }
+        shift(@ac);
+        my $ac = scalar @ac ? join(',',@ac) : undef;
+        $$ori_rec[7] = $ori_vcf->add_info_field($$ori_rec[7],'AC'=>$ac,'AN'=>$an);
         print $fh $ori_vcf->format_line($ori_rec);
     }
     close($fh);

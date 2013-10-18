@@ -1,23 +1,18 @@
 package Vcf;
 
-our $VERSION = 'r874';
+our $VERSION = 'r899';
 
 # http://vcftools.sourceforge.net/specs.html
-# http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:variant_call_format
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf4.0
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf_4.0_sv
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf3.3
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcfv3.2
+# https://github.com/samtools/hts-specs
 #
 # Authors: petr.danecek@sanger
-# for VCF v3.2, v3.3, v4.0, v4.1
+# for VCF v3.2, v3.3, v4.0, v4.1, v4.2
 #
 
 =head1 NAME
 
 Vcf.pm.  Module for validation, parsing and creating VCF files. 
-         Supported versions: 3.2, 3.3, 4.0, 4.1
+         Supported versions: 3.2, 3.3, 4.0, 4.1, 4.2
 
 =head1 SYNOPSIS
 
@@ -157,8 +152,8 @@ sub new
     $$self{reserved}{cols} = {CHROM=>1,POS=>1,ID=>1,REF=>1,ALT=>1,QUAL=>1,FILTER=>1,INFO=>1,FORMAT=>1} unless exists($$self{reserved_cols});
     $$self{recalc_ac_an} = 1;
     $$self{has_header} = 0;
-    $$self{default_version} = '4.1';
-    $$self{versions} = [ qw(Vcf3_2 Vcf3_3 Vcf4_0 Vcf4_1) ];
+    $$self{default_version} = '4.2';
+    $$self{versions} = [ qw(Vcf3_2 Vcf3_3 Vcf4_0 Vcf4_1 Vcf4_2) ];
     if ( !exists($$self{max_line_len}) && exists($ENV{MAX_VCF_LINE_LEN}) ) { $$self{max_line_len} = $ENV{MAX_VCF_LINE_LEN} }
     $$self{fix_v40_AGtags} = $ENV{DONT_FIX_VCF40_AG_TAGS} ? 0 : 1;
     my %open_args = ();
@@ -413,11 +408,12 @@ sub _set_version
     elsif ( $$self{version} eq '3.3' ) { $reader=Vcf3_3->new(%$self); } 
     elsif ( $$self{version} eq '4.0' ) { $reader=Vcf4_0->new(%$self); }
     elsif ( $$self{version} eq '4.1' ) { $reader=Vcf4_1->new(%$self); }
+    elsif ( $$self{version} eq '4.2' ) { $reader=Vcf4_2->new(%$self); }
     else 
     { 
         $self->warn(qq[The version "$$self{version}" not supported, assuming VCFv$$self{default_version}\n]);
-        $$self{version} = '4.1';
-        $reader = Vcf4_1->new(%$self);
+        $$self{version} = '4.2';
+        $reader = Vcf4_2->new(%$self);
     }
 
     $self = $reader;
@@ -3476,6 +3472,28 @@ sub Vcf4_1::event_type
     elsif ( index($allele,'[')!=-1 or index($allele,']')!=-1 ) { return 'b'; }
 
     return $self->SUPER::event_type($rec,$allele);
+}
+
+#------------------------------------------------
+# Version 4.2 specific functions
+
+=head1 VCFv4.2
+
+VCFv4.2 specific functions
+
+=cut
+
+package Vcf4_2;
+use base qw(Vcf4_1);
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+    bless $self, ref($class) || $class;
+
+    $$self{version} = '4.2';
+    return $self;
 }
 
 1;
