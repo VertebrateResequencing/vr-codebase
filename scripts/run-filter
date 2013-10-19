@@ -43,6 +43,7 @@ sub new
     $$self{nbad_max}     = 1_000;
     $$self{scale_qlow}   = 0.1;
     $$self{scale_qhigh}  = 99.9;
+    $$self{qaccuracy}    = 99.0;
     $$self{good_site}    = 2;
     $$self{bad_site}     = 1;
     $$self{verbose}      = 1;
@@ -96,6 +97,7 @@ sub new
             # Scale in this quantile range [%]
             scale_qlow   => '] . $$self{scale_qlow} . q[',
             scale_qhigh  => '] . $$self{scale_qhigh} . q[',
+            qaccuracy    => '] . $$self{qaccuracy} . q[',    # throw if the quantile approximation is too inaccurate
 
             do_clean => 1, 
 
@@ -116,7 +118,9 @@ sub new
         "   -p, --parameters <type:string>      Parameters to use, e.g. 'snps:-c 15 -g -3' (overrides train_args config key)\n" .
         "   -r, --randomize                     Randomly shuffle annotations to find the best combination\n" .
         "   -s, --scan                          Scan the parameter space to find the best values\n" .
-        "Typical workflow automatically run by the pipeline is equivalent to:\n" .
+        "The pipeline is usually run as:\n" .
+        "   run-filter [som|svm] +config <file> -o <outdir>\n" .
+        "Which is equivalent to the following steps:\n" .
         "   1) Search for best annotations\n" .
         "       run-filter som +config <file> -o <outdir> --randomize\n" .
         "   2) Search for best parameters\n" .
@@ -251,6 +255,7 @@ sub main
     {
         for my $job (@jobs)
         {
+            $self->sanity_check_scaling("$outdir/$type/$job/annots.tab");
             $self->sanity_check_annots("$outdir/$type/$job/annots.tab",$type,$$self{$type}{annots},$job);
         }
     }
@@ -401,7 +406,6 @@ sub main_classify
         {
             $self->spawn('subset_train_file',$$self{$type}{$job}{train_fname},"$$self{outdir}/$type/$job/annots.train",$$self{$type}{$job}{cols});
             $self->spawn('subset_train_file',$$self{$type}{$job}{annots_fname},"$$self{outdir}/$type/$job/annots.tab",$$self{$type}{$job}{cols});
-            if ( !$self->is_finished("$$self{$type}{$job}{train_fname}.n") ) { $self->cmd("cp $$self{outdir}/$type/$job/annots.train.n $$self{$type}{$job}{train_fname}.n"); }
         }
     }
     $self->wait;
@@ -471,6 +475,7 @@ sub sanity_check_annots
     else
     {
         $$self{$type}{$job}{suffix} = '.' . join('-',sort @new_anns);
+        $$self{$type}{$job}{suffix} =~ s/[{}]//g;
     }
     $$self{$type}{$job}{train_fname}  = "$$self{outdir}/$type/$job/annots.train$$self{$type}{$job}{suffix}";
     $$self{$type}{$job}{annots_fname} = "$$self{outdir}/$type/$job/annots.tab$$self{$type}{$job}{suffix}";
@@ -650,6 +655,7 @@ sub scale_annots
     my $RE_FLOAT = qr/\-?\d+\.?\d*(?:[eE][+-]\d+)?/;
     my $ngood = 0;
     my $nbad  = 0;
+    my $ntot  = 0;
 
     # Read all values, extract chr,pos,is_ts,class and write for later evaluation.
     # Estimate quantiles for scaling.
@@ -670,29 +676,24 @@ sub scale_annots
                 $quests[$i]->add($vals[$i]);
             }
             print $fh_sites "$chr\t$pos\t$class\t$is_ts\n";
+            $ntot++;
         }
         close($in) or $self->throw("close failed: $file");
     }
     close($fh_sites) or $self->throw("close failed: $sites_fname");
 
-    # Write the quantiles
-    open($fh,'>',$scale_fname) or $self->throw("$scale_fname: $!");
-    print $fh "# [1]Annotation\t[2]$$self{scale_qlow} quantile\t[3]$$self{scale_qhigh} quantile\t[4]nGood\t[5]nBad\n";
+    my $ngood_skip = $ngood > $$self{ngood_max} ? $ngood - $$self{ngood_max} : 0;
+    my $nbad_skip  = $nbad > $$self{nbad_max} ? $nbad - $$self{nbad_max} : 0;
+    my @nout = ();
+
+    # Collect the quantiles
     my @margins = ();
     for (my $i=0; $i<@anns; $i++)
     {
         my $min = $quests[$i]->report($$self{scale_qlow}/100.);
         my $max = $quests[$i]->report($$self{scale_qhigh}/100.);
-        print $fh "$anns[$i]\t$min\t$max\t$ngood\t$nbad\n";
         push @margins, [$min,$max];
     }
-    close($fh) or $self->throw("close failed: $scale_fname");
-
-    my $ngood_skip = $ngood > $$self{ngood_max} ? $ngood - $$self{ngood_max} : 0;
-    my $nbad_skip  = $nbad > $$self{nbad_max} ? $nbad - $$self{nbad_max} : 0;
-    open($fh,'>',"$train_fname.n") or $self->throw("$train_fname.n: $!");
-    print $fh $ngood-$ngood_skip,"\t",$nbad-$nbad_skip,"\t# nGood, nBad\n";
-    close($fh) or $self->throw("close failed: $train_fname.n");
 
     # Scale and write the annots file
     open(my $fh_out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
@@ -707,8 +708,8 @@ sub scale_annots
             for (my $i=0; $i<@vals; $i++)
             {
                 if ( !($vals[$i]=~$RE_FLOAT) ) { $vals[$i] = undef; next; }
-                if ( $vals[$i] < $margins[$i][0] ) { $vals[$i] = $margins[$i][0]; }
-                elsif ( $vals[$i] > $margins[$i][1] ) { $vals[$i] = $margins[$i][1]; }
+                if ( $vals[$i] < $margins[$i][0] ) { $vals[$i] = $margins[$i][0]; $nout[$i]++; }
+                elsif ( $vals[$i] > $margins[$i][1] ) { $vals[$i] = $margins[$i][1]; $nout[$i]++; }
                 $vals[$i] = ($vals[$i] - $margins[$i][0]) / ($margins[$i][1] - $margins[$i][0]);
             }
             my @out = ($class);
@@ -736,7 +737,40 @@ sub scale_annots
     }
     close($fh_train) or $self->throw("close failed: $train_fname");
     close($fh_out) or $self->throw("close failed: $outfile.part");
+
+    # Write the quantiles
+    open($fh,'>',$scale_fname) or $self->throw("$scale_fname: $!");
+    print $fh "# [1]Annotation\t[2]$$self{scale_qlow} quantile\t[3]$$self{scale_qhigh} quantile\t[4]nGood\t[5]nBad\t[6]nTrimmed\n";
+    for (my $i=0; $i<@anns; $i++)
+    {
+        if ( !exists($nout[$i]) ) { $nout[$i] = 0 ; }
+        printf $fh "$anns[$i]\t$margins[$i][0]\t$margins[$i][1]\t$ngood\t$nbad\t%.4f\n", 100.*$nout[$i]/$ntot;
+    }
+    close($fh) or $self->throw("close failed: $scale_fname");
     rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
+
+sub sanity_check_scaling
+{
+    my ($self,$file) = @_;
+    $file =~ s/\.tab$/.scale/;
+    my @out = ();
+    open(my $fh,'<',$file) or $self->throw("$file: $!");
+    while (my $line=<$fh>)
+    {
+        if ( $line=~/^#/ ) { next; }
+        my @items = split(/\t/,$line);
+        if ( 100-$items[-1] < $$self{qaccuracy} ) { push @out, "\t$items[0]\t .. $items[-1]"; }
+    }
+    close($fh) or $self->throw("close failed: $file");
+    if ( scalar @out )
+    {
+        $self->throw(
+                "Too many out-of-range values detected in some annotations. Did the quantile approximation failed or\n" .
+                "is the cutoff $$self{qaccuracy}\% too strict??\n" .
+                join('', @out) . "\n" );
+
+    }
 }
 
 sub randomized_test
@@ -744,14 +778,13 @@ sub randomized_test
     my ($self,$outfile,$train_file,$type,@cmbs) = @_;
     my $annots = $$self{$type}{annots};
     my @annots = split(/,/,$annots);
-    my $ngood  = $self->read_value("$train_file.n",qr/\t/,0,0);
     open(my $fh,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
     for my $cmb (@cmbs)
     {
         my %ann2col = ();
         for my $i (@$cmb) { $ann2col{$annots[$i]} = $i; }
         $self->subset_train_file("$outfile.train",$train_file,\%ann2col);
-        my $score = $self->train("$outfile.train",$$self{$type}{train_args},$ngood);
+        my $score = $self->train("$outfile.train",$$self{$type}{train_args});
         print $fh $score;
         for my $i (@$cmb) { print $fh "\t", $annots[$i]; }
         print $fh "\n";
@@ -1259,7 +1292,7 @@ sub SVM_Runner::strip_values
 
 sub SVM_Runner::train
 {
-    my ($self,$file,$args,$ngood) = @_;
+    my ($self,$file,$args) = @_;
     $args = $self->expand_train_args($args);
     my @ret = $self->cmd("$$self{svm_train} $args $file");
     if ( !($ret[-1]=~/^Cross Validation Accuracy = ([\d.]+)/) ) 
@@ -1272,7 +1305,6 @@ sub SVM_Runner::train
 sub SVM_Runner::scan_params_jobs
 {
     my ($self,$type,$job) = @_;
-    my $ngood = $self->read_value("$$self{outdir}/$type/$job/annots.train.n",qr/\t/,0,0);
     my @jobs  = ();
     for (my $apar=$$self{apar}[0]; $apar<=$$self{apar}[1]; $apar+=$$self{apar}[2])
     {
@@ -1394,7 +1426,11 @@ sub SOM_Runner::format_values
     for (my $i=0; $i<@vals; $i++)
     {
         my $val = $vals[$i];
-        if ( !defined $val ) { push @out, $$self{defaults}{$$anns[$i]}; }
+        if ( !defined $val ) 
+        { 
+            if ( !defined $$self{defaults}{$$anns[$i]} ) { $self->throw("No default set for $$anns[$i]?"); }
+            push @out, $$self{defaults}{$$anns[$i]}; 
+        }
         else { push @out, $val; }
     }
     return (@out);
@@ -1414,16 +1450,15 @@ sub SOM_Runner::strip_values
 
 sub SOM_Runner::train
 {
-    my ($self,$file,$args,$ngood) = @_;
-    my @ret = $self->cmd("$$self{bcftools} som --train -n$ngood $args $file");
-    if ( !($ret[0]=~/^([\d.]+)/) ) { $self->throw("Could not parse output of $$self{bcftools} som -n$ngood $args --train $file: $ret[0]\n"); }
+    my ($self,$file,$args) = @_;
+    my @ret = $self->cmd("$$self{bcftools} som --train $args $file");
+    if ( !($ret[0]=~/^([\d.]+)/) ) { $self->throw("Could not parse output of $$self{bcftools} som $args --train $file: $ret[0]\n"); }
     return 100-$1;
 }
 
 sub SOM_Runner::scan_params_jobs
 {
     my ($self,$type,$job) = @_;
-    my $ngood = $self->read_value("$$self{outdir}/$type/$job/annots.train.n",qr/\t/,0,0);
     my @jobs  = ();
     for (my $apar=$$self{apar}[0]; $apar<=$$self{apar}[1]; $apar+=$$self{apar}[2])
     {
@@ -1431,7 +1466,7 @@ sub SOM_Runner::scan_params_jobs
         {
             my $a = $$self{aopt}.$apar;
             my $b = $$self{bopt}.$bpar;
-            push @jobs, { prefix=>"scan-$a-$b", args=>"$$self{$type}{train_args} -n$ngood -$a -$b", apar=>$apar, bpar=>$bpar };
+            push @jobs, { prefix=>"scan-$a-$b", args=>"$$self{$type}{train_args} -$a -$b", apar=>$apar, bpar=>$bpar };
         }
     }
     return (@jobs);
@@ -1451,9 +1486,8 @@ sub SOM_Runner::scan_params_test
 sub SOM_Runner::classify
 {
     my ($self,$outfile,$train_fname,$annots_fname,$train_args) = @_;
-    my $ngood = $self->read_value("$train_fname.n",qr/\t/,0,0);
     $self->cmd("mkdir -p $outfile.part");
-    $self->cmd("$$self{bcftools} som --train -n$ngood $train_args $train_fname -p $outfile.part/classify > $outfile.part/out.log");
+    $self->cmd("$$self{bcftools} som --train $train_args $train_fname -p $outfile.part/classify > $outfile.part/out.log");
     $self->cmd("$$self{bcftools} som --classify $annots_fname -p $outfile.part/classify > $outfile.part/scores.tab");
     rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
 }
