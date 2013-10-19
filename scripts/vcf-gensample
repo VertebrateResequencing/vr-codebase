@@ -1,0 +1,259 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Vcf;
+
+my $opts = parse_params();
+if ( exists($$opts{apply}) )
+{
+    gensample_to_vcf($opts);
+}
+else
+{
+    vcf_to_gensample($opts);
+}
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    die
+        "About: Helper script for run-shapeit, converts between VCF and GEN/SAMPLE\n",
+        "   file format used by SHAPEIT and IMPUTE2.\n", 
+        "Usage: vcf-gensample [OPTIONS] <file.vcf.gz>\n",
+        "Options:\n",
+        "   -a, --apply <prefix>                Apply SHAPEIT output to the VCF\n",
+        "   -o, --out <prefix>                  Prefix of output files\n",
+        "   -m, --min-AC <int>                  Exclude sites with rare alleles [3]\n",
+        "   -r, --region <chr|chr:from-to>      \n",
+        "   -h, -?, --help                      This help message.\n",
+        "\n";
+}
+
+sub parse_params
+{
+    my $opts = { min_ac=>3 };
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-a' || $arg eq '--apply' ) { $$opts{apply} = shift(@ARGV); next; }
+        if ( $arg eq '-r' || $arg eq '--region' ) { $$opts{region} = shift(@ARGV); next; }
+        if ( $arg eq '-m' || $arg eq '--min-AC' ) { $$opts{min_ac} = shift(@ARGV); next; }
+        if ( $arg eq '-o' || $arg eq '--out' ) { $$opts{out}=shift(@ARGV); next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        if ( -e $arg ) { $$opts{file}=$arg; next; }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    if ( !exists($$opts{out}) && !exists($$opts{apply}) ) { error() }
+    if ( !exists($$opts{file}) ) { error() }
+    return $opts;
+}
+
+sub parse_region
+{
+    my ($region) = @_;
+    if ( $region=~/:(\d+)-(\d+)$/ ) { return ($1,$2); }
+    return undef;
+}
+
+sub vcf_to_gensample
+{
+    my ($opts) = @_;
+
+    my ($from,$to) = parse_region($$opts{region});
+    my $vcf = Vcf->new(file=>$$opts{file},region=>$$opts{region},print_header=>1);
+    $vcf->parse_header();
+    my @samples = $vcf->get_samples();
+
+    my $fname_samples = "$$opts{out}_samples";
+    my $fname_haps = "$$opts{out}_haps.gz";
+
+    open(my $fh,'>',$fname_samples) or error("$fname_samples $!");
+    print $fh "ID_1 ID_2 missing\n";
+    print $fh "0 0 0\n";
+    for my $id (@samples)
+    {
+        print $fh "$id $id 0\n";
+    }
+    close($fh) or error("close $fname_samples");
+
+    my $prev_pos;
+    open($fh,"| gzip -c > $fname_haps.part") or error("| gzip -c > $fname_haps.part: $!");
+    while (my $x = $vcf->next_data_array())
+    {
+        # Check overlapping indels with position outside the region
+        if ( defined $from && $$x[1]<$from ) { next; }
+        if ( defined $to && $$x[1]>$to ) { last; }
+
+        # Consider only biallelic sites
+        if ( $$x[4] eq '.' or index($$x[4],',')!=-1 ) { next; }
+        if ( !($$x[3]=~/^[ACGT]+$/) or !($$x[4]=~/^[ACGT]+$/) ) { next; }
+
+        if ( defined $prev_pos && $$x[1] eq $prev_pos ) { next; } # skip duplicate lines
+        $prev_pos = $$x[1];
+
+        my @out;
+        my $nac = 0;
+        for (my $i=0; $i<@samples; $i++)
+        {
+            my $gt = $vcf->get_field($$x[$i+9],0);
+            my ($a1,$a2) = $vcf->split_gt($gt);
+            if ( !defined $a2 ) { $a2 = $a1; }
+            if ( $a1 ne '0' && $a1 ne '1' or $a2 ne '0' && $a2 ne '1' ) { error("Could not parse GT field of $samples[$i] at $$x[0]:$$x[1]: $gt\n"); }
+
+            my $gen = '1 0 0';
+            if ( $a1 ne $a2 ) { $gen = '0 1 0'; $nac += 1; }
+            elsif ( $a1 eq '1' ) { $gen = '0 0 1'; $nac += 2; }
+
+            push @out, $gen;
+        }
+        if ( $nac < $$opts{min_ac} ) { next; }
+        print $fh "$$x[0] $$x[0]:$$x[1]_$$x[3]_$$x[4] $$x[1] $$x[3] $$x[4] ";
+        print $fh join(' ',@out);
+        print $fh "\n";
+    }
+    close($fh) or error("close gzip -c > $fname_haps.part");
+    rename("$fname_haps.part",$fname_haps);
+}
+
+sub read_shapeit_samples
+{
+    my ($opts,$file,$vcf_samples) = @_;
+    my %vcf_smpl2vcf_col;
+    for (my $i=0; $i<@$vcf_samples; $i++) { $vcf_smpl2vcf_col{$$vcf_samples[$i]} = $i + 9; }
+
+    my @shp2vcf;
+    open(my $fh,'<',$file) or error("$file: $!");
+    <$fh>;
+    <$fh>;
+    while (my $line=<$fh>)
+    {
+        if ( !($line=~/^(\S+)/) ) { error("Could not parse $file: $line"); }
+        my $sample = $1;
+        if ( !exists($vcf_smpl2vcf_col{$sample}) ) { error(qq[The sample "$sample" from $file not present in the VCF?!\n]); }
+        push @shp2vcf, $vcf_smpl2vcf_col{$sample};
+        my $i = @shp2vcf - 1;
+        $$opts{shapeit_samples}[$i] = $sample;
+    }
+    close($fh) or error("close $file");
+    return \@shp2vcf;
+}
+
+sub process_line
+{
+    my ($opts,$chr,$pos,$ref,$alt,$ref_alt_swapped,$haps) = @_;
+    my $vcf = $$opts{vcf};
+    my $shp2vcf = $$opts{shp2vcf};
+    my $from  = $$opts{from};
+    my $to    = $$opts{to};
+    my $nsmpl = @$haps / 2;
+
+    my $prev_pos;
+    while (my $x = $vcf->next_data_array())
+    {
+        # Check overlapping indels with position outside the region
+        if ( defined $from && $$x[1]<$from ) { next; }
+        if ( defined $to && $$x[1]>$to ) { last; }
+
+        # Consider only biallelic sites
+        if ( $$x[4] eq '.' or index($$x[4],',')!=-1 ) { print $vcf->format_line($x); next; }
+        if ( !($$x[3]=~/^[ACGT]+$/) or !($$x[4]=~/^[ACGT]+$/) ) { print $vcf->format_line($x); next; }
+
+        if ( defined $prev_pos && $$x[1] eq $prev_pos ) { print $vcf->format_line($x); next; } # duplicate line
+        $prev_pos = $$x[1];
+
+        if ( $chr ne $$x[0] ) { error("Uh: different chr. Expected $chr, found $$x[0]:$$x[1]\n"); }
+        if ( $pos < $$x[1] ) { $vcf->_unread_line($x); return; }
+        if ( $pos > $$x[1] ) { print $vcf->format_line($x); next; }
+        if ( $ref ne $$x[3] or $alt ne $$x[4] ) { error("REF,ALT do not match at $chr:$pos .. $ref,$alt vs $$x[3],$$x[4]\n"); }
+
+        for (my $ismpl=0; $ismpl<$nsmpl; $ismpl++)
+        {
+            my $al_s1  = $$haps[2*$ismpl];
+            my $al_s2  = $$haps[2*$ismpl+1];
+            if ( $al_s1 ne '0' && $al_s1 ne '1' or $al_s2 ne '0' && $al_s2 ne '1' ) { error("Uh, got $al_s1,$al_s2 at $$x[0]:$$x[1]\n"); }
+            if ( $ref_alt_swapped )
+            {
+                $al_s1 = $al_s1 eq '0' ? '1' : '0';
+                $al_s2 = $al_s2 eq '0' ? '1' : '0';
+            }
+            my $icol   = $$shp2vcf[$ismpl];
+            my $gt = $vcf->get_field($$x[$icol],0);
+            my ($al_v1,$al_v2) = $vcf->split_gt($gt);
+            my $haploid = defined $al_v2 ? 0 : 1;
+            if ( $haploid )
+            {
+                if ( $al_v1 ne '0' && $al_v1 ne '1' ) { error("Could not parse GT field at $$x[0]:$$x[1]: $gt\n"); }
+                if ( $al_v1 eq '0' && ($al_s1 ne '0' or $al_s2 ne '0') ) { error("Uh, got $al_s1,$al_s2 at $$x[0]:$$x[1] $gt\n"); }
+                if ( $al_v1 eq '1' && ($al_s1 ne '1' or $al_s2 ne '1') ) { error("Uh, got $al_s1,$al_s2 at $$x[0]:$$x[1] $gt\n"); }
+            }
+            else
+            {
+                if ( $al_v1 ne '0' && $al_v1 ne '1' or $al_v2 ne '0' && $al_v2 ne '1' ) { error("Could not parse GT field at $$x[0]:$$x[1]: $gt\n"); }
+            }
+
+            if ( $haploid )
+            {
+                if ( $al_s1 ne $al_s2 ) { error("Uh: haploid/diploid mismatch at $$x[0]:$$x[1] for $$opts{shapeit_samples}[$ismpl]\n"); }
+            }
+            elsif ( ($al_v1 eq $al_s1 && $al_v2 eq $al_s2) or ($al_v1 eq $al_s2 && $al_v2 eq $al_s1) )
+            {
+                $$x[$icol] = $vcf->replace_field($$x[$icol],"$al_s1|$al_s2",0,':');
+            }
+            else
+            {
+                error("Uh: alleles mismatch at $$x[0]:$$x[1] for $$opts{shapeit_samples}[$ismpl]  (swapped=$ref_alt_swapped, $al_s1,$al_s2 vs $al_v1,$al_v2)\n");
+            }
+        }
+        print $vcf->format_line($x);
+    }
+}
+
+sub gensample_to_vcf
+{
+    my ($opts) = @_;
+
+    my ($from,$to) = parse_region($$opts{region});
+    my $vcf = Vcf->new(file=>$$opts{file},region=>$$opts{region},print_header=>1);
+    $vcf->parse_header();
+    print $vcf->format_header();
+    my @samples = $vcf->get_samples();
+
+    $$opts{shp2vcf} = read_shapeit_samples($opts,"$$opts{apply}.samples",\@samples);
+    $$opts{vcf}  = $vcf;
+    $$opts{from} = $from;
+    $$opts{to}   = $to;
+
+    my $fname = "$$opts{apply}.haps.gz";
+    open(my $fh,"gunzip -c $fname |") or error("gunzip -c $fname: $!");
+    while (my $line=<$fh>)
+    {
+        my @items = split(/ /,$line);
+        chomp($items[-1]);
+        my $chr = shift(@items);
+        my $id  = shift(@items);
+        my $pos = shift(@items);
+        my $ref = shift(@items);
+        my $alt = shift(@items);
+        if ( !($id=~/^([^:]+):(\d+)_([^_]+)_([^_]+)$/) ) { error("Could not parse id: $id [$fname]\n"); }
+        if ( $chr ne $1 ) { error("chr mismatch: [$id $chr $ref $alt] vs [$1]\n"); }
+        if ( $pos ne $2 ) { error("pos mismatch: [$id $chr:$pos $ref $alt] vs [$2]\n"); }
+        my $ref_alt_swapped = 0;
+        if ( $ref eq $4 && $alt eq $3 ) { $ref_alt_swapped = $ref; $ref = $alt; $alt = $ref_alt_swapped; $ref_alt_swapped = 1; }
+        if ( $ref ne $3 ) { error("ref mismatch: [$id $pos $ref $alt]"); }
+        if ( $alt ne $4 ) { error("alt mismatch: [$id $pos $ref $alt]"); }
+        process_line($opts,$chr,$pos,$ref,$alt,$ref_alt_swapped,\@items);
+    }
+    close($fh) or error("close gunzip -c $fname");
+
+}
+
+
