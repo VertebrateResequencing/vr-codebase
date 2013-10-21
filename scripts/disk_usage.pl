@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-my $inputfile = $ARGV[0] ? $ARGV[0] : '/lustre/scratch105/conf/vertres_disks.conf';
+my $inputfile = $ARGV[0] ? $ARGV[0] : '/nfs/vertres01/conf/vertres_disks.conf';
 open FILE, $inputfile or die "$!: inputfile";
 
 print "Type       Mounted on               Size     Used    Avail     Use%   OST Max%\n";
