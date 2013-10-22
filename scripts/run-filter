@@ -79,7 +79,7 @@ sub new
 
             snps => 
             {
-                fixed_filter => q\[] .$$self{snps}{fixed_filter}. q[\],     # IMPORTANT: this defines bad sites!
+                fixed_filter => q\[] .$$self{snps}{fixed_filter}. q[\],     # IMPORTANT: this defines bad sites! Only sites with FILTER="PASS" or "." will be classified
                 annots       => '] .$$self{snps}{annots}. q[',
                 good_vcf     => '] .$$self{snps}{good_vcf}. q[',
                 override_bad => '] .$$self{snps}{override_bad}. q[',        # Treat good sites failing fixed filters as: bad (0), good (1), unclassified (2)
@@ -489,7 +489,7 @@ sub shuffle
     my (@out, @cnt);
     my ($il, $nl);
     my $i = 0;
-    for ($nl=$n; $nl>=1; $nl--)
+    for ($nl=$n-1; $nl>=1; $nl--)       # the case 0000 not considered, starting from 00001
     {
         for ($il=0; $il<$nl-1; $il++) { $cnt[$il] = 0; }
         $cnt[$nl-1] = -1;
@@ -513,6 +513,7 @@ sub shuffle
         }
         if ( $i >= $nmax ) { last; }
     }
+    for ($il=0; $il<$n; $il++) { $out[$i] |= 1<<$i; }   # add all (11111)
     return \@out;
 }
 
@@ -558,7 +559,9 @@ sub get_file_list
     }
     else
     {
-        for my $chr (@{$$self{chroms}}) { push @files, $self->parse_file_name($file,$chr); }
+        my %files = ();
+        for my $chr (@{$$self{chroms}}) { my $file = $self->parse_file_name($file,$chr); $files{$file} = 1; }
+        @files = sort keys %files;
     }
 
     my @out;
@@ -619,7 +622,7 @@ sub extract_annots
         }
         
         my $class = 0;  # unclassified
-        if ( $flt eq 'PASS' ) 
+        if ( $flt eq 'PASS' or $flt eq '.' ) 
         { 
             if ( $is_good ) { $class = $$self{good_site}; }
         }
@@ -970,6 +973,7 @@ sub classify_eval
     open(my $fh,"|sort -k1,1gr > $outfile.tmp") or $self->throw("sort -k1,1gr > $outfile.tmp: $!");
     open(my $gz,"|bgzip -c > $outfile.sites.gz") or $self->throw("bgzip -c > $outfile.sites.gz: $!");
     my $ngood_sites = 0;
+    my $ntot_sites  = 0;
     while (1)
     {
         my $score_line = <$score_fh>;
@@ -981,6 +985,7 @@ sub classify_eval
         print $fh $score_line."\t".$items[2]."\t".$items[3];        # score,class,is_ts
         print $gz $items[0]."\t".$items[1]."\t".$score_line."\n";   # chr,pos,score
         if ( $items[2] eq $$self{good_site} ) { $ngood_sites++; }
+        $ntot_sites++;
     }
     close($fh) or $self->throw("close failed: sort -k1,1gr > $outfile.tmp");
     close($gz) or $self->throw("close failed: bgzip -c > $outfile.sites.gz");
@@ -996,8 +1001,8 @@ sub classify_eval
     my $ntv   = 0;
     my $nts_novel = 0;
     my $ntv_novel = 0;
+    my $ntot_prev = 0;
     my $score_prev;
-    my $ngood_prev = 0;
     while (my $line=<$fh>)
     {
         my ($score,$class,$is_ts) = split(/\t/,$line);
@@ -1021,8 +1026,8 @@ sub classify_eval
         if ( $score_prev eq $score ) { next; }
         $score_prev = $score;
 
-        if ( ($ngood-$ngood_prev)/$ngood_sites < 0.001 ) { next; }
-        $ngood_prev = $ngood;
+        if ( ($ntot-$ntot_prev)/$ntot_sites < 0.001 ) { next; }
+        $ntot_prev = $ntot;
         printf $out "%.2f\t%d\t%d\t%.3f\t%.3f\t$score_prev\n", 100.*$ngood/$ngood_sites, $ntot, $nts_novel+$ntv_novel, $ntv?$nts/$ntv:0,$ntv_novel?$nts_novel/$ntv_novel:0;
     }
     printf $out "%.2f\t%d\t%d\t%.3f\t%.3f\t$score_prev\n", 100.*$ngood/$ngood_sites, $ntot, $nts_novel+$ntv_novel, $ntv?$nts/$ntv:0,$ntv_novel?$nts_novel/$ntv_novel:0;
@@ -1055,18 +1060,22 @@ sub plot_tstv_graph
             \\tfor row in reader:
             \\t\\tif row[0][0]!='#': dat.append(row)
 
+            max_sens = max([float(x[0]) for x in dat])
+            min_sens = max_sens - 15
+
             fig, ax1 = plt.subplots(1,1, figsize=(5,4))
             ax2 = ax1.twinx()
-            plots  = ax1.plot([x[0] for x in dat],[x[3] for x in dat],'g',label='Ts/Tv')
-            plots += ax1.plot([x[0] for x in dat],[x[4] for x in dat],'r',label='Novel Ts/Tv')
-            plots += ax2.plot([x[0] for x in dat],[x[1] for x in dat],'k',label='Number of sites')
-            plots += ax2.plot([x[0] for x in dat],[x[2] for x in dat],'k--',label='Novel sites')
+            plots  = ax1.plot([x[1] for x in dat],[x[3] for x in dat],'g',label='Ts/Tv')
+            plots += ax1.plot([x[1] for x in dat],[x[4] for x in dat],'r',label='Novel Ts/Tv')
+            plots += ax2.plot([x[1] for x in dat],[x[0] for x in dat],'k',label='Sensitivity')
             labels = [l.get_label() for l in plots]
             plt.legend(plots,labels,numpoints=1,markerscale=2,loc='best',prop={'size':9},frameon=False)
-            ax1.set_xlabel('Sensitivity')
             ax1.set_ylabel('Ts/Tv')
-            ax2.set_ylabel('Number of sites')
-            ax2.ticklabel_format(style='sci', scilimits=(-3,2), axis='y')
+            ax1.set_xlabel('Number of sites')
+            ax2.set_ylabel('Sensitivity')
+            ax1.ticklabel_format(style='sci', scilimits=(-3,2), axis='x')
+            ax2.set_ylim(min_sens,max_sens)
+            plt.subplots_adjust(left=0.15,right=0.87,bottom=0.12,top=0.9)
             plt.savefig('$outfile.png')
             plt.close()
             ");
@@ -1086,8 +1095,8 @@ sub classify_merge
         {
             if ( $line=~/^#/ ) { next; }
             my @vals = split(/\t/,$line);
-            my $sens  = sprintf "%.1f", $vals[0];
-            if ( $sens<=$prev ) { next; }
+            my $sens = $vals[0]==100 ? "100.001" : sprintf "%.1f", $vals[0];     # this small hack is to ensure that the last value is always present
+            if ( $sens eq $prev ) { next; }
             chomp($vals[-1]);
             $prev   = $sens;
             my $ts  = $vals[3]*$vals[1]/($vals[3]+1);
@@ -1108,7 +1117,7 @@ sub classify_merge
     for my $sens (sort {$a<=>$b} keys %dat)
     {
         if ( scalar @{$dat{$sens}{scores}} != scalar @files ) { next; }
-        printf $fh "$sens\t%d\t%d\t%.3f\t%.3f\t%s\n", 
+        printf $fh "%.1f\t%d\t%d\t%.3f\t%.3f\t%s\n", $sens,
             $dat{$sens}{ts}+$dat{$sens}{tv}, 
             $dat{$sens}{nts}+$dat{$sens}{ntv}, 
             $dat{$sens}{tv}?$dat{$sens}{ts}/$dat{$sens}{tv}:0, 
