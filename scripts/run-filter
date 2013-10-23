@@ -439,6 +439,16 @@ sub main_classify
         $self->spawn('classify_merge',"$$self{outdir}/$type/result.tab",@{$tmp2{$type}});
     }
     $self->wait;
+
+    my @files = $self->get_file_list($$self{in_vcf});
+    for my $type (@{$$self{types}})
+    {
+        for my $file (@files)
+        {
+            $self->spawn('annotate_scores',"$$self{outdir}/$type/scored/$$file{bname}.vcf.gz","$$self{outdir}/$type/sites/$$file{bname}.bcf",@{$tmp2{$type}});
+        }
+    }
+    $self->wait;
 }
 
 sub sanity_check_annots
@@ -585,7 +595,7 @@ sub get_file_list
 sub strip_genotypes
 {
     my ($self,$outfile,$infile,$type) = @_;
-    $self->cmd("$$self{bcftools} subset -G -ou $infile -i '%TYPE=\"$type\"' | $$self{bcftools} filter -s BadSite $$self{$type}{fixed_filter} -bob - > $outfile.part");
+    $self->cmd("$$self{bcftools} subset -G -ou $infile -i '%TYPE=\"$type\"' | $$self{bcftools} filter -s BadSite $$self{$type}{fixed_filter} -ob - > $outfile.part");
     $self->cmd("$$self{bcftools} index $outfile.part");
     rename("$outfile.part.csi","$outfile.csi") or $self->throw("rename: $outfile.part.csi $outfile.csi: $!");
     rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile: $!");
@@ -1127,6 +1137,16 @@ sub classify_merge
     close($fh) or $self->throw("close failed: $outfile.part");
 
     $self->plot_tstv_graph($outfile);
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
+
+sub annotate_scores
+{
+    my ($self,$outfile,$infile, @files) = @_;
+    if ( scalar @files !=1 ) { $self->throw("todo: ", join(' ',@files), "\n"); }
+    my $ann_fname = $files[0] . ".sites.gz";
+    if ( !$self->is_finished("$ann_fname.tbi") ) { $self->cmd("tabix -s1 -b2 -e2 $ann_fname"); }
+    $self->cmd("$$self{bcftools} view $infile | vcf-annotate -a $ann_fname -d key=INFO,ID=MLQ,Number=1,Type=Float,Description='Machine Learning Quality' -c CHROM,FROM,INFO/MLQ | bgzip -c > $outfile.part");
     rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
 }
 
