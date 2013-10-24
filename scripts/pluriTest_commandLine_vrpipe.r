@@ -11,6 +11,8 @@ pluriTestCommandLine <- function (NewDataFileName, DataRepository)
     require(lumi) # load the Bioconductor package
     require(xtable)
     require(GO.db)
+    require (calibrate)
+
     load (file=DataRepository)
     sink(file = "pluritest_log.txt") # print to the log file
     working.lumi <- lumiR(NewDataFileName, convertNuID = FALSE, inputAnnotation = FALSE) # read in the gene expression data
@@ -90,7 +92,12 @@ pluriTestCommandLine <- function (NewDataFileName, DataRepository)
         filled.contour2(y = c(-129:70), x = c((1:200)/50), background129_70x1_4, 
             col = colram(50), nlevels = 35, xlab = "novelty", 
             ylab = "pluripotency")
-        points(s.new ~ novel.new, cex = 0.4, main = "Overview")
+
+        sNames <- names(s.new)
+        novelNames <- names(novel.new)
+        textxy(as.vector(novel.new[novelNames]), as.vector(s.new[sNames]), labs=sNames, cx=0.7) # MIGHT NEED TO LOWER cx BACK TO 0.25 FOR SMALLER FONT
+
+        points(s.new ~ novel.new, cex = 0.2, main = "Overview")
         dev.off()
     })
     try({

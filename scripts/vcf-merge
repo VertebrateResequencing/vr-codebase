@@ -46,7 +46,9 @@ sub parse_params
         args => [$0, @ARGV],
         joiner => 
         {
+            'I16' => \&joiner_dp4,
             'DP4' => \&joiner_dp4,
+            'MQ0'  => \&joiner_sum,
             'DP'  => \&joiner_sum,
         },
         trim_redundant_ALTs => 0,

@@ -867,7 +867,7 @@ sub _revive_array
     if ( $@ ) { $self->throw("retrieve() threw an error: $freeze_file\n$@\n"); }
     if ( $$self{clean} ) { unlink($freeze_file); }
 
-    while (my ($key,$value) = each %$back) { $$self{$key} = $value; }
+    $self = $back;
 
     if ( !exists($$self{_store}{$job_id}) ) { $self->throw("No such job $job_id in $freeze_file\n"); }
     my $job = $$self{_store}{$job_id};
@@ -890,7 +890,7 @@ sub _revive
     if ( $@ ) { $self->throw("retrieve() threw an error: $freeze_file\n$@\n"); }
     if ( $$self{clean} ) { unlink($freeze_file); }
 
-    while (my ($key,$value) = each %$back) { $$self{$key} = $value; }
+    $self = $back;
 
 	if ( defined $config_file )
 	{
@@ -957,7 +957,7 @@ sub cmd
 {
     my ($self,$cmd,%args) = @_;
 
-    if ( $args{_verbose} ) { print STDERR $cmd,"\n"; }
+    if ( $$self{verbose} ) { print STDERR $cmd,"\n"; }
 
     # Why not to use backticks? Perl calls /bin/sh, which is often bash. To get the correct
     #   status of failing pipes, it must be called with the pipefail option.

@@ -2,8 +2,8 @@
 # Generate dbf of external gene names for use by vcf2consequences_vep --n option
 
 BEGIN{
-    my $ROOT = '/software/vertres/lib/all';
-    my $VERSION = '70';
+    my $ROOT = '/software/vertres/installs';
+    my $VERSION = '73';
     unshift(@INC, "$ROOT/bioperl-1.2.3/lib/site_perl/5.8.8");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl/modules");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-variation/modules");

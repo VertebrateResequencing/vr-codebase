@@ -231,11 +231,13 @@ sub past_limits
     return %out;
 }
 
+our $lsf_limits_unit;
 sub get_lsf_limits_unit
 {
+    if ( defined $lsf_limits_unit ) { return $lsf_limits_unit; }
     for (my $i=2; $i<15; $i++)
     {
-        my @units = grep { /LSF_UNIT_FOR_LIMITS/ } `lsadmin showconf lim`;
+        my @units = grep { /LSF_UNIT_FOR_LIMITS/ } `lsadmin showconf lim 2>/dev/null`;
         if ( $? ) 
         { 
             # lasdmin may be temporarily unavailable and return confusing errors:
@@ -244,8 +246,9 @@ sub get_lsf_limits_unit
             sleep $i; 
             next; 
         }
-        if ( @units && $units[0]=~/\s+MB$/ ) { return 'MB'; }
-        return 'kB';
+        if ( @units && $units[0]=~/\s+MB$/ ) { $lsf_limits_unit = 'MB'; }
+        else { $lsf_limits_unit = 'kB'; }
+        return $lsf_limits_unit;
     }
     confess("lsadmin showconf lim failed repeatedly");
 }

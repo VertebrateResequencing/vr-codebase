@@ -19,106 +19,114 @@ package myRunner;
 use base qw(Runner);
 use strict;
 use warnings;
+use VertRes::Stats::Quantile;
+use VertRes::Stats::MannWhitney;
+
+sub filter_type
+{
+    my ($class,@args) = @_;
+    my %keys = map { $_ => 1 } @args;
+    if ( exists($keys{som}) ) { return 'som'; }
+    if ( exists($keys{svm}) ) { return 'svm'; }
+    return '';
+}
 
 sub new
 {
     my ($class,@args) = @_;
     my $self = $class->SUPER::new(@args);
 
-    $$self{do_clean} = 1;
-    $$self{config_version} = '1369387998';
-    $$self{good_vcf}     = '/lustre/scratch105/projects/g1k/ref/broad_resources_b37/hapmap_3.3.b37.sites.vcf.gz ' .
-                           '/lustre/scratch105/vrpipe/refs/human/ncbi37/resources/Mills_and_1000G_gold_standard.indels.b37.vcf.gz';
-    $$self{vcf_exec}     = 'vcf';
-    $$self{snps} = 
+    $$self{config_version} = '1378190340';
+    $$self{merge_files}  = 0;
+    $$self{do_clean}     = 1;
+    $$self{ngood_max}    = 1_000;
+    $$self{nbad_max}     = 1_000;
+    $$self{scale_qlow}   = 0.1;
+    $$self{scale_qhigh}  = 99.9;
+    $$self{qaccuracy}    = 99.0;
+    $$self{good_site}    = 2;
+    $$self{bad_site}     = 1;
+    $$self{verbose}      = 1;
+    $$self{snps}  = 
     {
-        filter_args  => q[-f 'QUAL>=10' -l 'QUAL>0.8'],
-        annots       => 'RPB,MDV,QBD,HWE,VDB,QUAL',
-        good_mask    => '10',
+        fixed_filter => q[-m+ -e'%QUAL<10 && RPB<0.1'],
+        annots       => 'RPB,SGB,VDB,QUAL,MQSB,ICB',
+        good_vcf     => '/lustre/scratch105/projects/g1k/ref/broad_resources_b37/hapmap_3.3.b37.sites.vcf.gz',
+        override_bad => 1,
         nshuffle_max => 100_000,
-        chunk_by     => 50,
+        chunk_by     => 100,
+        train_args   => '',
     };
-    $$self{indels} = 
-    {
-        filter_args  => q[-f 'QUAL>=10' -l 'QUAL>0.8'],
-        annots       => 'RPB,MDV,QBD,HWE,VDB,QUAL',
-        good_mask    => '01',
-        nshuffle_max => 100_000,
-        chunk_by     => 50,
-        fa_ref       => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
-    };
-    $$self{_sampleconf}  = q[
-            vcf_exec     => '] .$$self{vcf_exec}. q[',
+    $$self{_sampleconf} = '';
+
+    my $type = $class->filter_type(@ARGV);
+    if ( $type eq 'som' ) { $self = SOM_Runner->new(%$self); }
+    elsif ( $type eq 'svm' ) { $self = SVM_Runner->new(%$self); }
+
+    $$self{_sampleconf} = q[
+            # --------------------------------------
+            # Parameters shared by all filter types
+            # --------------------------------------
+
+            chroms       => [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22) ],
 
             do_snps      => 1,
-            do_indels    => 1,
+            do_indels    => 0,
 
             # Single VCF or a file with list of file names. Can be overriden by the -i command line argument.
             in_vcf       => undef,
+            merge_files  => ] .$$self{merge_files}. q[,     # Filter each file separately?
 
-            # Training sites. Multiple files can be given, for both SNPs and indels. Indicate which is which
-            # by setting the good_mask below.
-            good_vcf     => '] .$$self{good_vcf}. q[',
-
-            # Set the desired annotations and filtering parameters separately for SNPs and INDELs.
-            # The mask indicates which of the files contains training sites. For example, to read training
-            # sites from the first file, write '10'. To read training sites from both files, set to '11'.
             snps => 
             {
-                filter_args  => q\[] .$$self{snps}{filter_args}. q[\],
+                fixed_filter => q\[] .$$self{snps}{fixed_filter}. q[\],     # IMPORTANT: this defines bad sites! Only sites with FILTER="PASS" or "." will be classified
                 annots       => '] .$$self{snps}{annots}. q[',
-                good_mask    => '] .$$self{snps}{good_mask}. q[',
-                target_tstv  => [ 2.00, 2.40 ],     # Scan in this ts/tv region, use bigger value for exomes, 
-                                                    # typically >3.4 or >2.6 when also off-target regions are
-                                                    # included.
-                nshuffle_max => ] .$$self{snps}{nshuffle_max}. q[,    # maximum number of combinations to try
-                chunk_by     => ] .$$self{snps}{chunk_by}. q[,        # number of combinations to pack into one job
-            },
-            indels => 
-            {
-                filter_args  => q\[] .$$self{indels}{filter_args}. q[\],
-                annots       => '] .$$self{indels}{annots}. q[',
-                good_mask    => '] .$$self{indels}{good_mask}. q[',
-                target_rc    => [ 0.70, 0.90 ],     # Repeat-consistency, a metric similar to ts/tv for INDELs
-                fa_ref       => '] .$$self{indels}{fa_ref}. q[',
-                exons        => '/nfs/users/nfs_p/pd3/sandbox/other/20120425-inframe-indels/CCDS-human-GRCh37p6.sorted.txt.gz', # optional, for frame shift vcf check
-                nshuffle_max => ] .$$self{indels}{nshuffle_max}. q[,
-                chunk_by     => ] .$$self{indels}{chunk_by}. q[,
+                good_vcf     => '] .$$self{snps}{good_vcf}. q[',
+                override_bad => '] .$$self{snps}{override_bad}. q[',        # Treat good sites failing fixed filters as: bad (0), good (1), unclassified (2)
+                nshuffle_max => '] .$$self{snps}{nshuffle_max} . q[',
+                chunk_by     => '] .$$self{snps}{chunk_by} . q[',
+                
+                # Default filter-specific parameters used in -r and -c mode. SVM's -c and -g will be expanded to 2**c,2**g
+                train_args   => '] .$$self{snps}{train_args} . q[',
             },
 
+            # Maximum number of good and bad sites to train on (SVM can be slow)
+            ngood_max  => ] .$$self{ngood_max}. q[,
+            nbad_max   => ] .$$self{nbad_max}. q[,
 
-            # This pipeline can be run on pre-filtered VCFs and the filters can be afterwards applied to the
-            # the original unfiltered VCF, see the --apply option. In this case, one may wish to leave the FILTER 
-            # field of these sites untouched or, alternatively, one may want to unset existing filters and fill in
-            # the missing value "." instead. By default, the filters are left untouched.
-            unset_unknowns => 0,
-
-
-            # The -s functionality is not maintained in this version
-            #
-            #   scan_nbins   => [ 15, 17, 18, 19, 20, 21, 22, 23, 24, 25, 30 ], # list
-            #   scan_learn   => [ 0.01, 0.05, 0.10, 0.15, 0.20 ],               # list
-            #   scan_th      => [ 0.1, 0.2, 0.3, 0.4, 0.5 ],                    # list
-
+            # Scale in this quantile range [%]
+            scale_qlow   => '] . $$self{scale_qlow} . q[',
+            scale_qhigh  => '] . $$self{scale_qhigh} . q[',
+            qaccuracy    => '] . $$self{qaccuracy} . q[',    # throw if the quantile approximation is too inaccurate
 
             do_clean => 1, 
 
             # For sanity checking that your config file is not obsolete. Update the version key in your 
             #  config file to get rid of the warnings.
             version      => '] .$$self{config_version}. q[',
-    ]."\n";
+    ]."\n".$$self{_sampleconf}."\n";
 
     $$self{usage} .= 
-        "Usage: run-beautify\n" .
+        "Usage: run-filter [som|svm] [OPTIONS]\n" .
         "Options:\n" .
-        "   -a, --apply <type>:<th>:<list>      Apply SOM filter using the given threshold and annotations.\n" .
-        "                                           Type is either 'snps' or 'indels', both can be given.\n" .
-        "   -c, --clean                         Clean all temporary files\n" .
+        "   -a, --annots <type:list>            Subset of annotations to use, e.g. snps:QUAL,RPB\n" .
+        "   -C, --clean                         Clean all temporary files\n" .
+        "   -c, --classify                      Classify\n" .
         "   -i, --input <vcf>                   Input VCF\n" .
         "   -m, --mrProper                      Clean all temporary files leaving only the resulting VCF\n" .
+        "   -o, --outdir <dir>                  Output directory\n" .
+        "   -p, --parameters <type:string>      Parameters to use, e.g. 'snps:-c 15 -g -3' (overrides train_args config key)\n" .
         "   -r, --randomize                     Randomly shuffle annotations to find the best combination\n" .
         "   -s, --scan                          Scan the parameter space to find the best values\n" .
-        "   -o, --outdir <dir>                  Output directory\n" .
+        "The pipeline is usually run as:\n" .
+        "   run-filter [som|svm] +config <file> -o <outdir>\n" .
+        "Which is equivalent to the following steps:\n" .
+        "   1) Search for best annotations\n" .
+        "       run-filter som +config <file> -o <outdir> --randomize\n" .
+        "   2) Search for best parameters\n" .
+        "       run-filter som +config <file> -o <outdir> -a <annots> --scan\n" .
+        "   3) Classify\n" .
+        "       run-filter som +config <file> -o <outdir> -a <annots> -p <params> --classify\n" .
         "\n";
 
     return $self;
@@ -127,38 +135,62 @@ sub new
 sub parse_args
 {
     my ($self) = @_;
+    my %action = ();
     while (defined(my $arg=shift(@ARGV)))
     {
-        if ( $arg eq '-a' or $arg eq '--apply' ) 
+        if ( $arg eq 'som' ) { next; }
+        if ( $arg eq 'svm' ) { next; }
+        if ( $arg eq '-r' or $arg eq '--randomize' ) { $$self{randomize} = 1; $action{randomize} = 1; next; }
+        if ( $arg eq '-s' or $arg eq '--scan' ) { $$self{scan} = 1; $action{scan} = 1; next; }
+        if ( $arg eq '-c' or $arg eq '--classify' ) { $$self{classify} = 1; $action{classify} = 1; next; }
+        if ( $arg eq '-p' or $arg eq '--parameters' ) 
         { 
-            my $do_apply = shift(@ARGV); 
-            if ( !($do_apply=~/^([^:]+):([^:]+):(\S+)$/) ) { $self->throw("Could not parse the --apply parameter: [$do_apply]\n"); }
-            if ( $1 ne 'snps' && $1 ne 'indels' ) { $self->throw("Expected either 'snps' or 'indels' with -a but got '$1': $do_apply\n"); }
-            $$self{$1}{apply_th} = $2;
-            $$self{$1}{annots}   = $3;
-            $$self{$1}{do_apply} = 1;
-            $$self{do_apply} = 1;
+            $arg = shift(@ARGV);
+            my ($type,$args) = split(m{:}, $arg);
+            if ( $type ne 'snps' && $type ne 'indels' ) { $self->throw("Could not parse: $arg"); }
+            $$self{$type}{train_args} = $args; 
+            next; 
+        }
+        if ( $arg eq '-a' or $arg eq '--annots' ) 
+        { 
+            $arg = shift(@ARGV);
+            my ($type,$anns) = split(m{:}, $arg);
+            if ( $type ne 'snps' && $type ne 'indels' ) { $self->throw("Could not parse: $arg"); }
+            $$self{$type}{annots} = $anns;
             next; 
         }
         if ( $arg eq '-c' or $arg eq '--clean' ) { $$self{clean}=1; next; }
-        if ( $arg eq '-s' or $arg eq '--scan' ) { $$self{do_scan}=1; next; }
-        if ( $arg eq '-r' or $arg eq '--randomize' ) { $$self{do_randomize}=1; next; }
         if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
         if ( $arg eq '-i' or $arg eq '--input' ) { $$self{in_vcf}=shift(@ARGV); next; }
         if ( $arg eq '-m' or $arg eq '--mrProper' ) { $$self{mrProper}=1; next; }
-        $self->throw();
+        if ( $arg eq '-h' or $arg eq '-?' or $arg eq '--help' ) { $self->throw(); }
+        $self->throw("Unknown parameter: $arg");
     }
-    if ( !$$self{do_snps} && !$$self{do_indels} ) { $self->throw("Neither do_snps nor do_indels key is set!\n"); }
-    if ( !$$self{do_apply} && !$$self{do_scan} && !$$self{do_randomize} ) { $self->throw("Missing one of the --apply, --scan or --randomize options\n"); }
-    if ( $$self{do_scan} && $$self{do_randomize} ) { $self->throw("Only one of the --scan or --randomize options should be given\n"); }
+    if ( scalar keys %action != 1 ) { $$self{auto} = 1; }
+    $$self{types} = [];
+    if ( $$self{do_snps} ) { push @{$$self{types}}, 'snps'; }
+    if ( $$self{do_indels_} ) { push @{$$self{types}}, 'indels'; }
+    if ( !@{$$self{types}} ) { $self->throw("Neither do_snps nor do_indels key is set!\n"); }
     if ( exists($$self{version}) && $$self{version} ne $$self{config_version} )
     {
-        $self->warn("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
+        $self->throw("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
     }
-    if ( !exists($$self{good_vcf}) ) { $self->throw("Expected 'good_vcf' parameter."); }
-    if ( !exists($$self{in_vcf}) ) { $self->throw("Expected -i option."); }
+    for my $type (@{$$self{types}})
+    {
+        if ( !exists($$self{$type}{good_vcf}) ) { $self->throw("Expected '$type/good_vcf' parameter."); }
+        $$self{$type}{annots} =~ s/\s+//;
+        my @anns = split(/,/,$$self{$type}{annots});
+        my %anns;
+        for my $ann (@anns)
+        {
+            if ( exists($anns{$ann}) ) { $self->throw("Warning: The annotation \"$ann\" is present twice in the list: $$self{$type}{annots}\n"); }
+            $anns{$ann} = 1;
+        }
+    }
+    if ( !defined($$self{in_vcf}) ) { $self->throw("Expected -i option."); }
     if ( $$self{clean} ) 
     { 
+        # Run performance stats and clean
         $self->clean($$self{outdir});
         $self->all_done;
     }
@@ -173,214 +205,290 @@ sub parse_args
 sub main
 {
     my ($self) = @_;
-    $self->parse_args();
+
+    if ( ref($self) eq 'myRunner' ) { $self->parse_args(); $self->throw("Expected \"som\" or \"svm\".\n"); }
 
     my $outdir = $$self{outdir};
-    $self->save_config();
 
-    # Parse VCF and collect annotations
-    $self->spawn('collect',"$outdir/annots.tab.gz");
-    $self->wait;
-
-    # First run with all annotations to create distribution stats. This takes longer
-    # and will be re-used by the individual filtering tasks.
-    if ( $$self{do_snps} ) { $self->spawn('init_distributions',"$outdir/annots.tab.gz.SNP.n", "$outdir/annots.tab.gz", 'snps'); }
-    if ( $$self{do_indels} ) { $self->spawn('init_distributions',"$outdir/annots.tab.gz.INDEL.n", "$outdir/annots.tab.gz", 'indels'); }
-    $self->wait;
-
-
-    my (@snp_annots, @indel_annots);
-    if ( $$self{do_snps} ) { my %anns = $self->parse_annots('snps'); @snp_annots = sort keys %anns; }
-    if ( $$self{do_indels} ) { my %anns = $self->parse_annots('indels'); @indel_annots = sort keys %anns; }
-
-    if ( $$self{do_randomize} )
+    # Create sites-only VCFs
+    my @files = $self->get_file_list($$self{in_vcf});
+    for my $file (@files)
     {
-        my @snp_tests = $$self{do_snps} ? $self->spawn_randomize('snps', @snp_annots) : ();
-        my @indel_tests = $$self{do_indels} ? $self->spawn_randomize('indels', @indel_annots) : ();
-        $self->wait;
-
-        $self->spawn('find_best',"$outdir/randomize.SNP.tab",@snp_tests) unless !$$self{do_snps};
-        $self->spawn('find_best',"$outdir/randomize.INDEL.tab",@indel_tests) unless !$$self{do_indels};
-        $self->wait;
-
-        $self->spawn('plot_randomize',"$outdir/randomize.SNP.tab.png",'snps') unless !$$self{do_snps};
-        $self->spawn('plot_randomize',"$outdir/randomize.INDEL.tab.png",'indels') unless !$$self{do_indels};
-        $self->wait;
-    }
-    elsif ( $$self{do_scan} )
-    {
-        $self->throw("Sorry, this branch is currently not maintained.\n");
-        my @jobs;
-        for my $bin (@{$$self{scan_nbins}})
+        for my $type (@{$$self{types}})
         {
-            for my $learn (@{$$self{scan_learn}})
+            $self->spawn('strip_genotypes',"$outdir/$type/sites/$$file{bname}.bcf",$$file{file},$type);
+        }
+    }
+    $self->wait;
+
+    # Extract annotations
+    my %tmp;
+    for my $file (@files)
+    {
+        for my $type (@{$$self{types}})
+        {
+            $self->spawn('extract_annots',"$outdir/$type/annots/$$file{bname}.annots.tab","$outdir/$type/sites/$$file{bname}.bcf",$type);
+            push @{$tmp{$type}}, "$outdir/$type/annots/$$file{bname}.annots.tab";
+        }
+    }
+    $self->wait;
+
+    my @jobs = ();
+    for my $type (@{$$self{types}})
+    {
+        if ( $$self{merge_files} )
+        {
+            $self->spawn('scale_annots',"$outdir/$type/merged/annots.tab",$type,@{$tmp{$type}});
+            @jobs = ('merged');
+        }
+        else
+        {
+            for my $file (@files)
             {
-                for my $th (@{$$self{scan_th}}) 
-                { 
-                    push @jobs, "-a $$self{annots} -m$bin,$learn,$th"
+                $self->spawn('scale_annots',"$outdir/$type/$$file{bname}/annots.tab",$type,"$outdir/$type/annots/$$file{bname}.annots.tab");
+                push @jobs, $$file{bname};
+            }
+        }
+    }
+    $self->wait;
+    for my $type (@{$$self{types}})
+    {
+        for my $job (@jobs)
+        {
+            $self->sanity_check_scaling("$outdir/$type/$job/annots.tab");
+            $self->sanity_check_annots("$outdir/$type/$job/annots.tab",$type,$$self{$type}{annots},$job);
+        }
+    }
+
+    if ( $$self{randomize} or $$self{auto} )
+    {
+        $self->main_randomize(@jobs);
+    }
+    if ( $$self{scan} or $$self{auto} )
+    {
+        $self->main_scan_params(@jobs);
+    }
+    if ( $$self{classify} or $$self{auto} )
+    {
+        $self->main_classify(@jobs);
+    }
+    $self->all_done;
+}
+sub main_randomize
+{
+    my ($self,@jobs) = @_;
+    my %files;
+    for my $type (@{$$self{types}})
+    {
+        for my $job (@jobs)
+        {
+            my $finished = $self->is_finished("$$self{outdir}/$type/$job/randomize.tab") ? 1 : 0;
+
+            my @annots  = split(/,/,$$self{$type}{annots});
+            my $nannots = scalar @annots;
+            my $cmbs  = $self->shuffle($$self{$type}{nshuffle_max}, $nannots);
+            for (my $i=0; $i<@$cmbs; $i+=$$self{$type}{chunk_by})
+            {
+                my @test_annots;
+                for (my $j=0; $j<$$self{$type}{chunk_by}; $j++)
+                {
+                    if ( $i+$j >= @$cmbs ) { last; }
+                    my @anns;
+                    for (my $k=0; $k<@annots; $k++)
+                    {
+                        if ( $$cmbs[$i+$j] & (1<<$k) ) { next; }
+                        push @anns, $k;
+                    }
+                    if ( !@anns ) { next; }
+                    push @test_annots, \@anns;
                 }
+                push @{$files{$type}{$job}} , "$$self{outdir}/$type/$job/randomize/$i.tab";
+                if ( $finished ) { next; }
+                $self->spawn('randomized_test',"$$self{outdir}/$type/$job/randomize/$i.tab", "$$self{outdir}/$type/$job/annots.train", $type, @test_annots);
             }
         }
-        my @tests;
-        my $i = 0;
-        while ($i<@jobs)
-        {
-            my @args = ();
-            for (my $j=0; $j<$$self{chunk_by} && $i<@jobs; $j++, $i++)
-            {
-                push @args, $jobs[$i];
-            }
-            push @tests, "$outdir/scan/$i.tab";
-            $self->spawn('try_filter',"$outdir/scan/$i.tab", @args);
-        }
-        $self->wait;
-
-        $self->spawn('find_best',"$outdir/scan.tab",@tests);
-        $self->wait;
-        $self->spawn('plot_scan',"$outdir/scan.tab.png");
-        $self->wait;
     }
-    elsif ( $$self{snps}{do_apply} or $$self{indels}{do_apply} )
+    $self->wait;
+    for my $type (@{$$self{types}})
     {
-        my $dirname;
-        if ( $$self{snps}{do_apply} ) { $dirname = 'snps-' . $$self{snps}{annots} . '-' . $$self{snps}{apply_th}; }
-        if ( $$self{indels}{do_apply} ) 
-        { 
-            if ( defined $dirname ) { $dirname .= '-'; }
-            $dirname .= 'indels-' . join(',',$$self{indels}{annots}); 
-            $dirname .= '-' . $$self{indels}{apply_th}; 
-        }
-
-        # Run the requested filters to generate list of sites with scores
-        if ( $$self{snps}{do_apply} ) 
+        for my $job (@jobs)
         {
-            my $mask = '';
-            if ( exists($$self{snps}{good_mask}) ) { $mask = "-g 0$$self{snps}{good_mask}" }
-            $self->spawn('apply_init',"$outdir/$dirname/annots.SNP.tab","$$self{snps}{filter_args} $mask",$$self{snps}{annots}); 
+            $self->spawn('randomized_test_merge',"$$self{outdir}/$type/$job/randomize.tab", $files{$type}{$job});
         }
-        if ( $$self{indels}{do_apply} ) 
-        { 
-            my $mask = '';
-            if ( exists($$self{indels}{good_mask}) ) { $mask = "-g 0$$self{indels}{good_mask}" }
-            $self->spawn('apply_init',"$outdir/$dirname/annots.INDEL.tab","$$self{indels}{filter_args} $mask -t INDEL -F $$self{indels}{fa_ref}",$$self{indels}{annots}); 
+    }
+    $self->wait;
+    for my $type (@{$$self{types}})
+    {
+        for my $job (@jobs)
+        {
+            $self->spawn('randomized_test_eval',"$$self{outdir}/$type/$job/randomize.tab.eval", "$$self{outdir}/$type/$job/randomize.tab", $$self{$type}{annots});
         }
-        $self->wait;
+    }
+    $self->wait;
+}
+sub main_scan_params
+{
+    my ($self,@jobs) = @_;
 
-        # Apply filtering, create output VCFs
-        my %names = ();
-        my @files = $self->list_files($$self{in_vcf});
-        my @vcfs  = ();
+    for my $type (@{$$self{types}})
+    {
+        for my $job (@jobs)
+        {
+            $self->spawn('subset_train_file',$$self{$type}{$job}{train_fname},"$$self{outdir}/$type/$job/annots.train",$$self{$type}{$job}{cols});
+        }
+    }
+    $self->wait;
+
+    my %best = ();
+    for my $type (@{$$self{types}})
+    {
+        for my $job (@jobs)
+        {
+            $best{$type}{$job} = "$$self{outdir}/$type/$job/scan.$$self{aopt}.$$self{bopt}$$self{$type}{$job}{suffix}";
+        }
+    }
+
+    my %tmp  = ();
+    for my $type (@{$$self{types}})
+    {
+        for my $job (@jobs)
+        {
+            if ( $self->is_finished($best{$type}{$job}) ) { next; }
+            my @sjobs = $self->scan_params_jobs($type,$job);
+            for my $sjob (@sjobs)
+            {
+                my $outfile = "$$self{outdir}/$type/$job/scan$$self{$type}{$job}{suffix}/$$sjob{prefix}.tab";
+                push @{$tmp{$type}{$job}}, { file=>$outfile, apar=>$$sjob{apar}, bpar=>$$sjob{bpar} };
+                $self->spawn('scan_params_test',$outfile,$$self{$type}{$job}{train_fname},$$sjob{args});
+            }
+        }
+    }
+    $self->wait;
+
+    for my $type (@{$$self{types}})
+    {
+        for my $job (@jobs)
+        {
+            if ( $self->is_finished($best{$type}{$job}) ) { next; }
+            $self->spawn('scan_params_merge',"$$self{outdir}/$type/$job/scan.$$self{aopt}.$$self{bopt}$$self{$type}{$job}{suffix}.tab",@{$tmp{$type}{$job}});
+        }
+    }
+    $self->wait;
+    for my $type (@{$$self{types}})
+    {
+        for my $job (@jobs)
+        {
+            my $fname = "$$self{outdir}/$type/$job/scan.$$self{aopt}.$$self{bopt}$$self{$type}{$job}{suffix}.tab";
+            my $params;
+            if ( $$self{auto} )
+            {
+                my @args = $self->read_value($fname,qr/\t/,0);
+                chomp($args[-1]);
+                $params = "-$$self{aopt} $args[1] -$$self{bopt} $args[2]";
+            }
+            else 
+            { 
+                $params = $$self{$type}{train_args};
+            }
+            $$self{$type}{$job}{train_args} = $self->expand_train_args($params);
+            $self->spawn('scan_params_plot',"$best{$type}{$job}.py",$fname);
+        }
+    }
+    $self->wait;
+}
+sub main_classify
+{
+    my ($self,@jobs) = @_;
+
+    for my $type (@{$$self{types}})
+    {
+        for my $job (@jobs)
+        {
+            $self->spawn('subset_train_file',$$self{$type}{$job}{train_fname},"$$self{outdir}/$type/$job/annots.train",$$self{$type}{$job}{cols});
+            $self->spawn('subset_train_file',$$self{$type}{$job}{annots_fname},"$$self{outdir}/$type/$job/annots.tab",$$self{$type}{$job}{cols});
+        }
+    }
+    $self->wait;
+
+    my %tmp = ();
+    for my $type (@{$$self{types}})
+    {
+        for my $job (@jobs)
+        {
+            my $name = $$self{$type}{$job}{train_args}; $name =~ s/\s+//g; $name =~ s/^-//; $name .= $$self{$type}{$job}{suffix};
+            $tmp{$type}{$job} = $name;
+            $self->spawn('classify',"$$self{outdir}/$type/$job/classify.$name",$$self{$type}{$job}{train_fname},$$self{$type}{$job}{annots_fname},$$self{$type}{$job}{train_args});
+        }
+    }
+    $self->wait;
+
+    my %tmp2 = ();
+    for my $type (@{$$self{types}})
+    {
+        for my $job (@jobs)
+        {
+            my $outfile = "$$self{outdir}/$type/$job/classify.$tmp{$type}{$job}.tab";
+            push @{$tmp2{$type}}, $outfile;
+            $self->spawn('classify_eval',$outfile,"$$self{outdir}/$type/$job/classify.$tmp{$type}{$job}/scores.tab","$$self{outdir}/$type/$job/annots.sites.gz");
+        }
+    }
+    $self->wait;
+
+    for my $type (@{$$self{types}})
+    {
+        $self->spawn('classify_merge',"$$self{outdir}/$type/result.tab",@{$tmp2{$type}});
+    }
+    $self->wait;
+
+    my @files = $self->get_file_list($$self{in_vcf});
+    for my $type (@{$$self{types}})
+    {
         for my $file (@files)
         {
-            my $name = $self->strip_dir($file);
-            if ( exists($names{$name}) ) { $self->throw("Improve me: conflicting base names [$file] -> [$name]\n"); }
-
-            my $args;
-            if ( $$self{unset_unknowns} ) { $args .= ' -u'; }
-            if ( $$self{snps}{do_apply} ) { $args .= " -s $$self{snps}{apply_th}"; }
-            if ( $$self{indels}{do_apply} ) { $args .= " -i $$self{indels}{apply_th}"; }
-
-            $self->spawn('apply_filter',"$outdir/$dirname/$name","$outdir/$dirname/annots",$file, $args);
-            push @vcfs, "$outdir/$dirname/$name";
+            $self->spawn('annotate_scores',"$$self{outdir}/$type/scored/$$file{bname}.vcf.gz","$$self{outdir}/$type/sites/$$file{bname}.bcf",@{$tmp2{$type}});
         }
-        $self->wait;
-
-        for my $vcf (@vcfs)
-        {
-            $self->spawn('vcf_stats',"$vcf.filt.vchk",$vcf,'-f PASS');
-            $self->spawn('vcf_stats',"$vcf.vchk",$vcf,'');
-        }
-        $self->wait;
     }
-    $self->all_done;
-
-    # Run performance stats and clean
-    $self->spawn('runtime_stats',"$outdir/runtime");
     $self->wait;
-    $self->clean($outdir) unless !$$self{do_clean};
-
-    $self->all_done;
 }
 
-sub spawn_randomize
+sub sanity_check_annots
 {
-    my ($self,$key,@annots) = @_;
-    my $cmbs   = $self->shuffle($$self{$key}{nshuffle_max}, scalar @annots);
-    my @tests  = ();
-    for (my $i=0; $i<@$cmbs; $i+=$$self{$key}{chunk_by})
+    my ($self,$anns_tab,$type,$anns,$job) = @_;
+
+    if ( $$self{auto} )     # automatic selection of annotations and parameters
     {
-        my @args;
-        for (my $j=0; $j<$$self{$key}{chunk_by}; $j++)
+        if ( $self->is_finished("$$self{outdir}/$type/$job/randomize.tab") )
         {
-            if ( $i+$j >= @$cmbs ) { last; }
-            my @anns;
-            for (my $k=0; $k<@annots; $k++)
-            {
-                if ( $$cmbs[$i+$j] & (1<<$k) ) { next; }
-                push @anns, $annots[$k];
-            }
-            if ( !@anns ) { next; }
-            my $arg = '-a ' . join(',', @anns);
-            if ( exists($$self{$key}{good_mask}) ) { $arg .= " -g 0$$self{$key}{good_mask}" }
-            if ( $key eq 'indels' ) { $arg .= " -t INDEL -F $$self{$key}{fa_ref}"; }
-            push @args, $arg;
+            my @anns = $self->read_value("$$self{outdir}/$type/$job/randomize.tab",qr/\t/,0);
+            shift(@anns);
+            chomp($anns[-1]);
+            $anns = join(',',@anns);
         }
-        push @tests, "$$self{outdir}/randomize.$key/$i.tab";
-        $self->spawn('try_filter',"$$self{outdir}/randomize.$key/$i.tab", $key, @args);
     }
-    return (@tests);
-}
-
-
-sub mrProper
-{
-    my ($self,$outdir) = @_;
-    $self->clean($outdir);
-}
-
-sub clean
-{
-    my ($self,$outdir) = @_;
-    $self->SUPER::clean($outdir);
-    $self->cmd("rm -rf $outdir/chunks");
-}
-
-sub runtime_stats
-{
-    my ($self,$outfile) = @_;
-    $self->cmd("mkdir -p $outfile.part");
-    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
-    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
-}
-
-sub save_config
-{
-    my ($self) = @_;
-    my $src = $$self{_config};
-    my $dst = "$$self{outdir}/annots.conf";
-    if ( -e $dst && (stat($src))[9] <= (stat($dst))[9] ) { return; }
-    if ( !-d $$self{outdir} ) { $self->cmd("mkdir -p $$self{outdir}"); }
-    open(my $fh,'>',$dst) or $self->throw("$dst: $!");
-    my $about = $$self{_about};
-    $about =~ s/\n/\n# /g;
-    print $fh "# $about";
-    close($fh);
-    $self->cmd("cat $src >> $dst");
-}
-
-sub cmd
-{
-    my ($self,$cmd) = @_;
-    $cmd =~ s/\n/ /g;
-    return Utils::CMD($cmd,{verbose=>1});
-}
-
-sub tabix_part
-{
-    my ($self,$vcf) = @_;
-    $self->cmd("tabix -p vcf -f $vcf.part");
-    rename("$vcf.part.tbi","$vcf.tbi");
-    rename("$vcf.part",$vcf);
+    my $saved_anns = $self->read_value("$anns_tab.anns",qr/\t/,0,0);
+    my @saved = split(/,/,$saved_anns);
+    my %cols;
+    for (my $i=0; $i<@saved; $i++) { $cols{$saved[$i]} = $i; }
+    my @new_anns = split(/,/,$anns);
+    for my $ann (@new_anns)
+    {
+        if ( !exists($cols{$ann}) )
+        {
+            $self->throw("Error: Annotations mismatch. Existing files were generated for $saved_anns, which does not contain $ann\n");
+        }
+        $$self{$type}{$job}{cols}{$ann} = $cols{$ann};
+    }
+    if ( $saved_anns eq $anns )
+    {
+        $$self{$type}{$job}{suffix} = '';
+    }
+    else
+    {
+        $$self{$type}{$job}{suffix} = '.' . join('-',sort @new_anns);
+        $$self{$type}{$job}{suffix} =~ s/[{}]//g;
+    }
+    $$self{$type}{$job}{train_fname}  = "$$self{outdir}/$type/$job/annots.train$$self{$type}{$job}{suffix}";
+    $$self{$type}{$job}{annots_fname} = "$$self{outdir}/$type/$job/annots.tab$$self{$type}{$job}{suffix}";
 }
 
 sub shuffle
@@ -391,7 +499,7 @@ sub shuffle
     my (@out, @cnt);
     my ($il, $nl);
     my $i = 0;
-    for ($nl=$n; $nl>=1; $nl--)
+    for ($nl=$n-1; $nl>=1; $nl--)       # the case 0000 not considered, starting from 00001
     {
         for ($il=0; $il<$nl-1; $il++) { $cnt[$il] = 0; }
         $cnt[$nl-1] = -1;
@@ -415,26 +523,21 @@ sub shuffle
         }
         if ( $i >= $nmax ) { last; }
     }
+    for ($il=0; $il<$n; $il++) { $out[$i] |= 1<<$i; }   # add all (11111)
     return \@out;
 }
 
-sub list_files
+sub parse_file_name
 {
-    my ($self,$file) = @_;
-    if ( !$self->is_file_list($file) ) { return ($file); } 
-    my @files;
-    open(my $fh,'<',$file) or $self->throw("$file: $!");
-    while (my $line=<$fh>)
+    my ($self,$fname,$chr) = @_;
+    if ( index($fname,'*') >=0 )
     {
-        chomp($line);
-        $line =~ s/^\s*//;
-        $line =~ s/\s*$//;
-        push @files, $line;
+        # it is a file mask
+        $fname =~ s/\*/$chr/;
     }
-    close($fh);
-    return (@files);
+    if ( ! -e $fname ) { $self->throw("The file \"$fname\" does not exist\n"); }
+    return $fname;
 }
-
 sub is_file_list
 {
     my ($self,$file) = @_;
@@ -442,157 +545,610 @@ sub is_file_list
     if ( $out[0]=~/ASCII/ ) { return 1; }
     return 0;
 }
-
 sub strip_dir
 {
     my ($self,$file) = @_;
     $file =~ s{^.*/}{};
     return $file;
 }
-
-sub parse_annots
+sub get_file_list
 {
-    my ($self,$key) = @_;
-    my @annots = split(/,/,$$self{$key}{annots});
-    my %annots = map { $_ => 1 } @annots;
-    for my $filt (split(/\s+/,$$self{$key}{filter_args}))
+    my ($self,$file) = @_;
+    my @files;
+    if ( $self->is_file_list($file) )
     {
-        if ( $filt eq '&&' ) { next; }
-        if ( $filt=~/^-/ ) { next; }
-        $filt =~ s/\'//g;
-        $filt =~ s/\"//g;
-
-        my ($a,$b) = split(/[>=<]+/, $filt);
-        if ( exists($annots{$a}) or exists($annots{$b}) ) { next; }
-
-        use Scalar::Util qw(looks_like_number);
-        my $anum = looks_like_number($a);
-        my $bnum = looks_like_number($b);
-        if ( $anum && $bnum ) { $self->throw("Unable to decide which is which: $filt [$anum,$bnum $a,$b]\n"); }
-        if ( !$anum && !$bnum ) { $self->throw("Unable to decide which is which: $filt [$anum,$bnum $a,$b]\n"); }
-        if ( !$anum ) { $annots{$a} = 1; } else { $annots{$b} = 1; }
-    }
-    return %annots;
-}
-
-sub collect
-{
-    my ($self,$outfile) = @_;
-
-    # Prepare command-line arguments
-    my %annots;
-    if ( $$self{do_snps} ) { %annots = $self->parse_annots('snps'); }
-    if ( $$self{do_indels} ) { %annots = (%annots, $self->parse_annots('indels')); }
-
-    my $in_vcf = $$self{in_vcf};
-    if ( $self->is_file_list($in_vcf) ) { $in_vcf = "-v $in_vcf"; }
-    my $annots = join(',', sort keys %annots);
-
-    # Collect the annotations
-    $self->cmd("$$self{vcf_exec} query -Ha $annots $in_vcf $$self{good_vcf} | bgzip -c > $outfile.part");
-    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
-}
-
-sub init_distributions
-{
-    my ($self,$outfile,$tabfile,$key) = @_;
-
-    my $args = $$self{$key}{filter_args};
-    if ( exists($$self{$key}{good_mask}) ) { $args .= " -g 0$$self{$key}{good_mask}" }
-    if ( $key eq 'indels' ) { $args .= " -t INDEL -F $$self{$key}{fa_ref}"; }
-
-    my $type = $key eq 'snps' ? 'SNP' : 'INDEL';
-
-    # Init with the first annotation to avoid using all columns from
-    #   annots.tab.gz. Some of them may cause the vcffilter complain, such as
-    #   for indels "The annotation RPB does not look good, please leave it out"
-    my $ann = $$self{$key}{annots};
-    $ann =~ s/,.*//;
-    if ( $ann ne '' ) { $ann = "-a $ann"; }
-    
-    $self->cmd("$$self{vcf_exec} filter $tabfile -p -o $outfile.part/ $args $ann");
-    rename("$outfile.part","$outfile.plots");
-    rename("$outfile.plots/annots.$type.n",$outfile);
-}
-
-sub try_filter
-{
-    my ($self,$outfile,$key,@args) = @_;
-
-    my $filter_args = $$self{$key}{filter_args};
-    my ($min,$max,$type);
-    if ( $key eq 'snps' )
-    {
-        $min  = $$self{$key}{target_tstv}[0];
-        $max  = $$self{$key}{target_tstv}[1];
-        $type = 'SNP';
+        open(my $fh,'<',$file) or $self->throw("$file: $!");
+        while (my $line=<$fh>)
+        {
+            chomp($line);
+            $line =~ s/^\s*//;
+            $line =~ s/\s*$//;
+            push @files, $line;
+        }
+        close($fh);
     }
     else
     {
-        $min  = $$self{$key}{target_rc}[0];
-        $max  = $$self{$key}{target_rc}[1];
-        $type = 'INDEL';
+        my %files = ();
+        for my $chr (@{$$self{chroms}}) { my $file = $self->parse_file_name($file,$chr); $files{$file} = 1; }
+        @files = sort keys %files;
     }
 
-    `mkdir -p $outfile.xxx/`;
-    open(my $out,">","$outfile.part") or $self->throw("$outfile.part: $!");
-
-    my @best;
-    for my $arg (@args)
+    my @out;
+    my %names;
+    for my $fname (@files)
     {
-        $self->cmd("$$self{vcf_exec} filter $$self{outdir}/annots.tab.gz $arg -o $outfile.xxx/ $filter_args");
+        my $bname = $self->strip_dir($fname);
+        $bname  =~ s/.vcf.gz$//;
+        $bname  =~ s/.vcf$//;
+        $bname  =~ s/.bcf$//;
+        my $tmp = $bname;
+        my $i = 0;
+        while ( exists($names{$tmp}) ) { $tmp = $bname.(++$i); }
+        push @out, { file=>$fname, bname=>$tmp };
+        $names{$tmp} = 1;
+    }
+    return (@out);
+}
+
+# strip genotypes and annotate bad sites
+sub strip_genotypes
+{
+    my ($self,$outfile,$infile,$type) = @_;
+    $self->cmd("$$self{bcftools} subset -G -ou $infile -i '%TYPE=\"$type\"' | $$self{bcftools} filter -s BadSite $$self{$type}{fixed_filter} -ob - > $outfile.part");
+    $self->cmd("$$self{bcftools} index $outfile.part");
+    rename("$outfile.part.csi","$outfile.csi") or $self->throw("rename: $outfile.part.csi $outfile.csi: $!");
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile: $!");
+}
+
+sub extract_annots
+{
+    my ($self,$outfile,$infile,$type) = @_;
+
+    my @anns = split(/,/,$$self{$type}{annots});
+    my $anns = '%CHROM\t%POS\t%REF\t%ALT\t%FILTER\t%MASK\t%' . join('\t%', @anns) . '\n';
+    my $cmd  = "$$self{bcftools} query -c both -f'$anns' $infile $$self{$type}{good_vcf}";
+
+    print STDERR "$cmd\n";
+    open(my $in,"$cmd |") or $self->throw("$cmd: $!");
+
+    open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    while (my $line=<$in>)
+    {
+        my ($chr,$pos,$ref,$alt,$flt,$mask,@vals) = split(/\t/,$line);
+        $ref = lc($ref);
+        $alt = lc($alt);
+        $alt =~ s/,.*//;
+        if ( length($ref)>1 or length($alt)>1 ) { $self->throw("todo: $chr,$pos,$ref,$alt\n"); }
+
+        my $is_ts = 0;
+        if ( $ref eq 'c' and $alt eq 't' or $ref eq 't' and $alt eq 'c' ) { $is_ts = 1; }
+        elsif ( $ref eq 'a' and $alt eq 'g' or $ref eq 'g' and $alt eq 'a' ) { $is_ts = 1; }
+
+        my $is_good = 0;
+        for (my $i=1; $i<length($mask); $i++)
+        {
+            if ( substr($mask,$i,1) eq '1' ) { $is_good = 1; last; }
+        }
         
-        open(my $fh,'<',"$outfile.xxx/annots.$type.tab") or $self->throw("$outfile.xxx/annots.$type.tab: $!");
+        my $class = 0;  # unclassified
+        if ( $flt eq 'PASS' or $flt eq '.' ) 
+        { 
+            if ( $is_good ) { $class = $$self{good_site}; }
+        }
+        elsif ( !$is_good ) { $class = $$self{bad_site}; }
+        elsif ( !$$self{$type}{override_bad} ) { $class = $$self{bad_site}; }
+        elsif ( $$self{$type}{override_bad}==1 ) { $class = $$self{good_site}; }
+
+        print $out "$chr\t$pos\t$is_ts\t$class\t", join("\t",@vals);
+    }
+    close($in) or $self->throw("close failed: $cmd");
+    close($out) or $self->throw("close failed: $outfile.part");
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
+
+sub scale_annots
+{
+    my ($self,$outfile,$type,@files) = @_;
+
+    my $sites_fname = $outfile;
+    my $scale_fname = $outfile;
+    my $train_fname = $outfile;
+    $sites_fname =~ s/.tab$/.sites.gz/;
+    $scale_fname =~ s/.tab$/.scale/;
+    $train_fname =~ s/.tab$/.train/;
+
+    open(my $fh,'>',"$outfile.anns") or $self->throw("$outfile.anns: $!");
+    print $fh $$self{$type}{annots},"\n";
+    close($fh) or $self->throw("close fail: $outfile.anns");
+
+    my @anns = split(/,/,$$self{$type}{annots});
+    my @quests = ();
+    for my $ann (@anns) { push @quests, Quantile->new(); }
+    my $RE_FLOAT = qr/\-?\d+\.?\d*(?:[eE][+-]\d+)?/;
+    my $ngood = 0;
+    my $nbad  = 0;
+    my $ntot  = 0;
+
+    # Read all values, extract chr,pos,is_ts,class and write for later evaluation.
+    # Estimate quantiles for scaling.
+    #
+    open(my $fh_sites,"| bgzip -c > $sites_fname") or $self->throw("bgzip -c > $sites_fname: $!");
+    for my $file (@files)
+    {
+        open(my $in,'<',$file) or $self->throw("$file: $!");
+        while (my $line=<$in>)
+        {
+            my ($chr,$pos,$is_ts,$class,@vals) = split(/\t/,$line);
+            chomp($vals[-1]);
+            if ( $class==$$self{bad_site} ) { $nbad++; }
+            elsif ( $class==$$self{good_site} ) { $ngood++; }
+            for (my $i=0; $i<@vals; $i++)
+            {
+                if ( !($vals[$i]=~$RE_FLOAT) ) { next; }        # missing values do not contribute to scaling as defaults
+                $quests[$i]->add($vals[$i]);
+            }
+            print $fh_sites "$chr\t$pos\t$class\t$is_ts\n";
+            $ntot++;
+        }
+        close($in) or $self->throw("close failed: $file");
+    }
+    close($fh_sites) or $self->throw("close failed: $sites_fname");
+
+    my $ngood_skip = $ngood > $$self{ngood_max} ? $ngood - $$self{ngood_max} : 0;
+    my $nbad_skip  = $nbad > $$self{nbad_max} ? $nbad - $$self{nbad_max} : 0;
+    my @nout = ();
+
+    # Collect the quantiles
+    my @margins = ();
+    for (my $i=0; $i<@anns; $i++)
+    {
+        my $min = $quests[$i]->report($$self{scale_qlow}/100.);
+        my $max = $quests[$i]->report($$self{scale_qhigh}/100.);
+        push @margins, [$min,$max];
+    }
+
+    # Scale and write the annots file
+    open(my $fh_out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    open(my $fh_train,'>',$train_fname) or $self->throw("$train_fname: $!");
+    for my $file (@files)
+    {
+        open(my $in,'<',$file) or $self->throw("$file: $!");
+        while (my $line=<$in>)
+        {
+            my ($chr,$pos,$is_ts,$class,@vals) = split(/\t/,$line);
+            chomp($vals[-1]);
+            for (my $i=0; $i<@vals; $i++)
+            {
+                if ( !($vals[$i]=~$RE_FLOAT) ) { $vals[$i] = undef; next; }
+                if ( $vals[$i] < $margins[$i][0] ) { $vals[$i] = $margins[$i][0]; $nout[$i]++; }
+                elsif ( $vals[$i] > $margins[$i][1] ) { $vals[$i] = $margins[$i][1]; $nout[$i]++; }
+                $vals[$i] = ($vals[$i] - $margins[$i][0]) / ($margins[$i][1] - $margins[$i][0]);
+            }
+            my @out = ($class);
+            push @out, $self->format_values(\@anns, @vals);
+            print $fh_out join("\t",@out),"\n";
+
+            my $skip = 1;
+            if ( $class==$$self{good_site} )
+            {
+                if ( !$ngood_skip ) { $skip = 0; } 
+                elsif ( rand(1) > $ngood_skip/$ngood ) { $skip = 0; }
+                else { $ngood_skip--; }
+                $ngood--;
+            }
+            elsif ( $class==$$self{bad_site} )
+            {
+                if ( !$nbad_skip ) { $skip = 0; } 
+                elsif ( rand(1) > $nbad_skip/$nbad ) { $skip = 0; }
+                else { $nbad_skip--; }
+                $nbad--;
+            }
+            if ( !$skip ) { print $fh_train join("\t",@out),"\n"; }
+        }
+        close($in) or $self->throw("close failed: $file");
+    }
+    close($fh_train) or $self->throw("close failed: $train_fname");
+    close($fh_out) or $self->throw("close failed: $outfile.part");
+
+    # Write the quantiles
+    open($fh,'>',$scale_fname) or $self->throw("$scale_fname: $!");
+    print $fh "# [1]Annotation\t[2]$$self{scale_qlow} quantile\t[3]$$self{scale_qhigh} quantile\t[4]nGood\t[5]nBad\t[6]nTrimmed\n";
+    for (my $i=0; $i<@anns; $i++)
+    {
+        if ( !exists($nout[$i]) ) { $nout[$i] = 0 ; }
+        printf $fh "$anns[$i]\t$margins[$i][0]\t$margins[$i][1]\t$ngood\t$nbad\t%.4f\n", 100.*$nout[$i]/$ntot;
+    }
+    close($fh) or $self->throw("close failed: $scale_fname");
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
+
+sub sanity_check_scaling
+{
+    my ($self,$file) = @_;
+    $file =~ s/\.tab$/.scale/;
+    my @out = ();
+    open(my $fh,'<',$file) or $self->throw("$file: $!");
+    while (my $line=<$fh>)
+    {
+        if ( $line=~/^#/ ) { next; }
+        my @items = split(/\t/,$line);
+        if ( 100-$items[-1] < $$self{qaccuracy} ) { push @out, "\t$items[0]\t .. $items[-1]"; }
+    }
+    close($fh) or $self->throw("close failed: $file");
+    if ( scalar @out )
+    {
+        $self->throw(
+                "Too many out-of-range values detected in some annotations. Did the quantile approximation failed or\n" .
+                "is the cutoff $$self{qaccuracy}\% too strict??\n" .
+                join('', @out) . "\n" );
+
+    }
+}
+
+sub randomized_test
+{
+    my ($self,$outfile,$train_file,$type,@cmbs) = @_;
+    my $annots = $$self{$type}{annots};
+    my @annots = split(/,/,$annots);
+    open(my $fh,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    for my $cmb (@cmbs)
+    {
+        my %ann2col = ();
+        for my $i (@$cmb) { $ann2col{$annots[$i]} = $i; }
+        $self->subset_train_file("$outfile.train",$train_file,\%ann2col);
+        my $score = $self->train("$outfile.train",$$self{$type}{train_args});
+        print $fh $score;
+        for my $i (@$cmb) { print $fh "\t", $annots[$i]; }
+        print $fh "\n";
+    }
+    close($fh) or $self->throw("close failed: $outfile.part");
+    unlink("$outfile.train");
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
+
+sub randomized_test_merge
+{
+    my ($self,$outfile,$files) = @_;
+    open(my $fh,"| sort -k1,1gr > $outfile.part") or $self->throw("sort -k1,1gr > $outfile.part: $!");
+    for my $file (@$files)
+    {
+        open(my $in,'<',$file) or $self->throw("$file: $!");
+        while (my $line=<$in>) { print $fh $line; }
+        close($in) or $self->throw("close failed: $file");
+    }
+    close($fh) or $self->throw("close failed: sort -k1,1gr > $outfile.part");
+    for my $file (@$files) { unlink($file); }
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
+
+sub randomized_test_eval
+{
+    my ($self,$outfile,$infile,$annots) = @_;
+    my @anns = split(/,/,$annots);
+    my (%present,%absent);
+    open(my $fh,'<',$infile) or $self->throw("$infile: $!");
+    while (my $line=<$fh>)
+    {
+        my ($accuracy,@vals) = split(/\t/,$line);
+        chomp($vals[-1]);
+        my %had_ann = map { $_=>1 } @vals;
+        for my $ann (@anns)
+        {
+            if ( $had_ann{$ann} ) { push @{$present{$ann}}, $accuracy; }
+            else { push @{$absent{$ann}}, $accuracy; }
+        }
+    }
+    close($fh) or $self->throw("close failed: $infile");
+
+    my %keep = ();
+    my @out;
+    for my $ann (@anns)
+    {
+        my ($p_val,$u_present,$u_absent) = MannWhitney->Utest($present{$ann},$absent{$ann});
+        my $outcome = 'no    ';
+        if ( $p_val>0.05 ) { $outcome = 'unsure'; }
+        elsif ( $u_present > $u_absent ) { $outcome = 'yes   '; $keep{$ann} = 1; }
+        my $line = sprintf "$outcome\t%.6f\t%d\t%d\t$ann\n", $p_val,$u_present,$u_absent;
+        push @out, { line=>$line, u=>$u_present, outcome=>$outcome };
+    }
+    @out = sort {
+        if ( $$b{outcome} cmp $$a{outcome} ) { return $$b{outcome} cmp $$a{outcome}; }
+        return $$b{u}<=>$$a{u};
+    } @out;
+
+    open($fh,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    print $fh "# [1]Is useful\t[2]P-value (smaller is more significant)\t[3]U-present\t[4]U-absent\t[5]Annotation\n";
+    for my $rec (@out) { print $fh $$rec{line}; }
+    close($fh);
+
+    open($fh,'<',$infile) or $self->throw("$infile: $!");
+    open(my $out,'>',"$infile.stripped") or $self->throw("$infile.stripped: $!");
+    while (my $line=<$fh>)
+    {
+        my @items = split(/\t/,$line);
+        chomp($items[-1]);
+        my $skip = 0;
+        for (my $i=1; $i<@items; $i++) 
+        {
+            if ( $keep{$items[$i]} ) { next; }
+            $skip = 1; last;
+        }
+        if ( !$skip ) { print $out $line; }
+    }
+    close($fh) or $self->throw("close failed: $infile");
+    close($out) or $self->throw("close failed: $infile.stripped");
+
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
+
+sub subset_train_file
+{
+    my ($self,$outfile,$train_file,$ann2col) = @_;
+    my %col2ann = ();
+    while (my ($ann,$col) = each %$ann2col) { $col2ann{$col} = $ann; }
+    open(my $in,'<',$train_file) or $self->throw("$train_file: $!");
+    open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    while (my $line=<$in>)
+    {
+        my ($class,@vals) = split(/\t/,$line);
+        chomp($vals[-1]);
+        @vals = $self->strip_values(\%col2ann,@vals);
+        print $out join("\t",$class,@vals),"\n";
+    }
+    close($in) or $self->throw("close failed: $train_file");
+    close($out) or $self->throw("close failed: $outfile.part");
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
+
+sub scan_params_merge
+{
+    my ($self,$outfile,@files) = @_;
+    open(my $out,"| sort -k1,1gr > $outfile.part") or $self->throw("sort -k1,1gr > $outfile.part: $!");
+    for my $file (@files)
+    {
+        open(my $fh,'<',$$file{file}) or $self->throw("$$file{$file}: $!");
+        my @val = <$fh>;
+        close($fh) or $self->throw("close failed: $$file{file}");
+        chomp($val[0]);
+        print $out "$val[0]\t$$file{apar}\t$$file{bpar}\n";
+    }
+    close($out) or $self->throw("close failed: $outfile.part");
+    for my $file (@files) { unlink($$file{file}); }
+
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
+
+sub scan_params_plot
+{
+    my ($self,$outfile,$file) = @_;
+    my %best = ();
+    my @dat;
+    my %taken = ();
+    my $navals = 0;
+    my $nbvals = 0;
+    open(my $fh,'<',$file) or $self->throw("$file: $!");
+    while (my $line=<$fh>)
+    {
+        my ($accuracy,$a,$b) = split(/\t/,$line);
+        chomp($b);
+        my $ia = sprintf "%.0f", ($a-$$self{apar}[0])/$$self{apar}[2];
+        my $ib = sprintf "%.0f", ($b-$$self{bpar}[0])/$$self{bpar}[2];
+        if ( exists($taken{$ia.':'.$ib}) ) { $self->throw("Uh: $ia,$ib .. $a,$b (int(($a-$$self{apar}[0])/$$self{apar}[2]) and int(($b-$$self{bpar}[0])/$$self{bpar}[2]))\n"); }
+        $taken{$ia.':'.$ib} = 1;
+        if ( $navals < $ia ) { $navals = $ia; }
+        if ( $nbvals < $ib ) { $nbvals = $ib; }
+        push @dat, "Z[$ia][$ib] = $accuracy";
+        if ( !%best or $best{accuracy} < $accuracy ) { $best{accuracy} = $accuracy; $best{apar} = $a; $best{bpar} = $b; }
+    }
+    close($fh) or $self->throw("close failed: $file");
+
+    $navals++;
+    $nbvals++;
+    my $zvals  = join("\n", @dat);
+    my $title  = "$$self{aopt}=$best{apar}, $$self{bopt}=$best{bpar},\\naccuracy $best{accuracy}%";
+
+    my $plot = $outfile;
+    $plot =~ s/.py//;
+    open($fh,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    $self->tprint($fh,"
+        import matplotlib as mpl
+        mpl.use('Agg')
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        Z = [[0 for tmp in xrange($nbvals)] for tmp in xrange($navals)]
+        $zvals
+
+        fig, ax = plt.subplots(1,1)
+        im = plt.imshow(Z,interpolation='none',extent=[$$self{bpar}[0],$$self{bpar}[1],$$self{apar}[0],$$self{apar}[1]],origin='lower',aspect='auto')
+        cb = plt.colorbar(im)
+        ax.set_xlabel('$$self{bopt}')
+        ax.set_ylabel('$$self{aopt}')
+        ax.set_title('$title')
+        plt.savefig('$plot.png')
+        plt.close()
+    ");
+    close($fh) or $self->throw("close failed: $outfile.part");
+    $self->cmd("python $outfile.part");
+    
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
+
+sub classify_eval
+{
+    my ($self,$outfile,$score_file,$sites_file) = @_;
+    open(my $score_fh,'<',$score_file) or $self->throw("$score_file: $!");
+    open(my $sites_fh,"gunzip -c $sites_file|") or $self->throw("gunzip -c $sites_file: $!");
+    open(my $fh,"|sort -k1,1gr > $outfile.tmp") or $self->throw("sort -k1,1gr > $outfile.tmp: $!");
+    open(my $gz,"|bgzip -c > $outfile.sites.gz") or $self->throw("bgzip -c > $outfile.sites.gz: $!");
+    my $ngood_sites = 0;
+    my $ntot_sites  = 0;
+    while (1)
+    {
+        my $score_line = <$score_fh>;
+        my $sites_line = <$sites_fh>;
+        if ( !defined $score_line && !defined $sites_line ) { last; }
+        if ( !defined $score_line or !defined $sites_line ) { $self->throw("Out of sync: $score_file vs $sites_file"); }
+        chomp($score_line);
+        my @items = split(/\t/,$sites_line);
+        print $fh $score_line."\t".$items[2]."\t".$items[3];        # score,class,is_ts
+        print $gz $items[0]."\t".$items[1]."\t".$score_line."\n";   # chr,pos,score
+        if ( $items[2] eq $$self{good_site} ) { $ngood_sites++; }
+        $ntot_sites++;
+    }
+    close($fh) or $self->throw("close failed: sort -k1,1gr > $outfile.tmp");
+    close($gz) or $self->throw("close failed: bgzip -c > $outfile.sites.gz");
+    close($score_fh) or $self->throw("close failed: $score_file");
+    close($sites_fh) or $self->throw("close failed: gunzip -c $sites_file");
+
+    open($fh,'<',"$outfile.tmp") or $self->throw("$outfile.tmp: $!");
+    open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    print $out "# [1]Sensitivity\t[2]Number of sites\t[3]Number of novel sites\t[4]Ts/Tv\t[5]Novel Ts/Tv\t[6]Score threshold\n";
+    my $ngood = 0;
+    my $ntot  = 0;
+    my $nts   = 0;
+    my $ntv   = 0;
+    my $nts_novel = 0;
+    my $ntv_novel = 0;
+    my $ntot_prev = 0;
+    my $score_prev;
+    while (my $line=<$fh>)
+    {
+        my ($score,$class,$is_ts) = split(/\t/,$line);
+        chomp($is_ts);
+        if ( $class ne $$self{bad_site} )
+        {
+            if ( $is_ts )
+            {
+                $nts++; 
+                if ( $class ne $$self{good_site} ) { $nts_novel++; }
+            }
+            else 
+            { 
+                $ntv++; 
+                if ( $class ne $$self{good_site} ) { $ntv_novel++; }
+            }
+            $ntot++;
+            if ( $class eq $$self{good_site} ) { $ngood++; }
+        }
+        if ( !defined $score_prev ) { $score_prev = $score; }
+        if ( $score_prev eq $score ) { next; }
+        $score_prev = $score;
+
+        if ( ($ntot-$ntot_prev)/$ntot_sites < 0.001 ) { next; }
+        $ntot_prev = $ntot;
+        printf $out "%.2f\t%d\t%d\t%.3f\t%.3f\t$score_prev\n", 100.*$ngood/$ngood_sites, $ntot, $nts_novel+$ntv_novel, $ntv?$nts/$ntv:0,$ntv_novel?$nts_novel/$ntv_novel:0;
+    }
+    printf $out "%.2f\t%d\t%d\t%.3f\t%.3f\t$score_prev\n", 100.*$ngood/$ngood_sites, $ntot, $nts_novel+$ntv_novel, $ntv?$nts/$ntv:0,$ntv_novel?$nts_novel/$ntv_novel:0;
+    close($out) or $self->throw("close failed: $outfile.part");
+    close($fh) or $self->throw("close failed: $outfile.tmp");
+    unlink("$outfile.tmp");
+
+    $self->plot_tstv_graph($outfile);
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
+
+sub plot_tstv_graph
+{
+    my ($self,$outfile) = @_;
+    open(my $fh,'>',"$outfile.py") or $self->throw("$outfile.py: $!");
+    $self->tprint($fh,"
+            import matplotlib as mpl
+            mpl.use('Agg')
+            import matplotlib.pyplot as plt
+
+            import os
+            file = '$outfile'
+            if not os.access(file, os.R_OK): file = '$outfile.part'
+
+            import csv
+            csv.register_dialect('tab', delimiter='\\t', quoting=csv.QUOTE_NONE)
+            dat = []
+            with open(file, 'rb') as f:
+            \\treader = csv.reader(f, 'tab')
+            \\tfor row in reader:
+            \\t\\tif row[0][0]!='#': dat.append(row)
+
+            max_sens = max([float(x[0]) for x in dat])
+            min_sens = max_sens - 15
+
+            fig, ax1 = plt.subplots(1,1, figsize=(5,4))
+            ax2 = ax1.twinx()
+            plots  = ax1.plot([x[1] for x in dat],[x[3] for x in dat],'g',label='Ts/Tv')
+            plots += ax1.plot([x[1] for x in dat],[x[4] for x in dat],'r',label='Novel Ts/Tv')
+            plots += ax2.plot([x[1] for x in dat],[x[0] for x in dat],'k',label='Sensitivity')
+            labels = [l.get_label() for l in plots]
+            plt.legend(plots,labels,numpoints=1,markerscale=2,loc='best',prop={'size':9},frameon=False)
+            ax1.set_ylabel('Ts/Tv')
+            ax1.set_xlabel('Number of sites')
+            ax2.set_ylabel('Sensitivity')
+            ax1.ticklabel_format(style='sci', scilimits=(-3,2), axis='x')
+            ax2.set_ylim(min_sens,max_sens)
+            plt.subplots_adjust(left=0.15,right=0.87,bottom=0.12,top=0.9)
+            plt.savefig('$outfile.png')
+            plt.close()
+            ");
+    close($fh) or $self->throw("close failed: $outfile.py");
+    $self->cmd("python $outfile.py");
+}
+
+sub classify_merge
+{
+    my ($self,$outfile,@files) = @_;
+    my %dat = ();
+    for my $file (@files)
+    {
+        open(my $fh,'<',$file) or $self->throw("$file: $!");
+        my $prev = 0;
         while (my $line=<$fh>)
         {
             if ( $line=~/^#/ ) { next; }
-            chomp($line);
-            my @items = split(/\t/, $line);
-            if ( $items[0] < $min ) { next; }
-            if ( $items[0] > $max ) { next; }
-            print $out $line, "\t$arg\n";
+            my @vals = split(/\t/,$line);
+            my $sens = $vals[0]==100 ? "100.001" : sprintf "%.1f", $vals[0];     # this small hack is to ensure that the last value is always present
+            if ( $sens eq $prev ) { next; }
+            chomp($vals[-1]);
+            $prev   = $sens;
+            my $ts  = $vals[3]*$vals[1]/($vals[3]+1);
+            my $tv  = $vals[1]/($vals[3]+1);
+            my $nts = $vals[4]*$vals[2]/($vals[4]+1);
+            my $ntv = $vals[2]/($vals[4]+1);
+            $dat{$sens}{ts}  += $ts;
+            $dat{$sens}{tv}  += $tv;
+            $dat{$sens}{nts} += $nts;
+            $dat{$sens}{ntv} += $ntv;
+            push @{$dat{$sens}{scores}}, $vals[5];
         }
-        close($fh) or $self->throw("close $outfile.xxx/annots.$type.tab");
-        `rm -rf $outfile.xxx/`;
+        close($fh) or $self->throw("close failed: $file");
     }
-    close($out) or $self->throw("close $outfile.part");
-    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
-}
-
-sub apply_init
-{
-    my ($self,$outfile,$args,@annots) = @_;
-    my $annots = join(',',@annots);
-    `mkdir -p $outfile.part/`;
-    $self->cmd("$$self{vcf_exec} filter $$self{outdir}/annots.tab.gz -a $annots -o $outfile.part/ $args");
-    my $outdir = $outfile;
-    $outdir =~ s{/[^/]+$}{};
-    $self->cmd("mv $outfile.part/* $outdir");
-    $self->cmd("rm -rf $outfile.part");
-}
-
-sub apply_filter
-{
-    my ($self,$outfile,$prefix,$infile,$args) = @_;
-    my @chrs = `tabix -l $infile`;
-    if ( @chrs == 1 )
+    open(my $fh,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    print $fh "# [1]Sensitivity\t[2]Number of sites\t[3]Number of novel sites\t[4]Ts/Tv\t[5]Novel Ts/Tv\t[6]Score thresholds\n";
+    for my $file (@files) { print $fh "# $file\n"; }
+    for my $sens (sort {$a<=>$b} keys %dat)
     {
-        chomp($chrs[0]);
-        $args .= " -r $chrs[0]";
+        if ( scalar @{$dat{$sens}{scores}} != scalar @files ) { next; }
+        printf $fh "%.1f\t%d\t%d\t%.3f\t%.3f\t%s\n", $sens,
+            $dat{$sens}{ts}+$dat{$sens}{tv}, 
+            $dat{$sens}{nts}+$dat{$sens}{ntv}, 
+            $dat{$sens}{tv}?$dat{$sens}{ts}/$dat{$sens}{tv}:0, 
+            $dat{$sens}{ntv}?$dat{$sens}{nts}/$dat{$sens}{ntv}:0,
+            join(',',@{$dat{$sens}{scores}});
     }
-    $self->cmd("$$self{vcf_exec} filter $args $infile -o $prefix | bgzip -c > $outfile.part");
-    $self->tabix_part($outfile);
+    close($fh) or $self->throw("close failed: $outfile.part");
+
+    $self->plot_tstv_graph($outfile);
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
 }
 
-sub vcf_stats
+sub annotate_scores
 {
-    my ($self,$outfile,$vcf,$args) = @_;
-    if ( $$self{do_indels} ) { $args .= " -F $$self{indels}{fa_ref}"; }
-    if ( $$self{do_indels} && exists($$self{indels}{exons}) ) { $args .= " -e $$self{indels}{exons}"; }
-    $self->cmd("$$self{vcf_exec} check $args $vcf > $outfile.part");
-    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+    my ($self,$outfile,$infile, @files) = @_;
+    if ( scalar @files !=1 ) { $self->throw("todo: ", join(' ',@files), "\n"); }
+    my $ann_fname = $files[0] . ".sites.gz";
+    if ( !$self->is_finished("$ann_fname.tbi") ) { $self->cmd("tabix -s1 -b2 -e2 $ann_fname"); }
+    $self->cmd("$$self{bcftools} view $infile | vcf-annotate -a $ann_fname -d key=INFO,ID=MLQ,Number=1,Type=Float,Description='Machine Learning Quality' -c CHROM,FROM,INFO/MLQ | bgzip -c > $outfile.part");
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
 }
-
 
 sub tprint
 {
@@ -606,455 +1162,362 @@ sub tprint
     }
 }
 
-sub find_best
+sub mrProper
 {
-    my ($self,$outfile,@jobs) = @_;
+    my ($self,$outdir) = @_;
+    $self->clean($outdir);
+}
 
-    my $cmd = "sort -k1,1gr -k2,2nr > $outfile.part";
-    open(my $sort, "| $cmd") or $self->throw("$cmd: $!");
-    for my $job (@jobs)
-    {
-        open(my $fh,'<',$job) or $self->throw("$job: $!");
-        while (my $line=<$fh>)
-        {
-            print $sort $line;
-        }
-        close($fh) or $self->throw("$job: $!");
-    }
-    close($sort) or $self->throw("close $sort");
+sub clean
+{
+    my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
+    $self->cmd("rm -rf $outdir/randomize.snps");
+    $self->cmd("rm -rf $outdir/randomize.indels");
+}
+
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
 
-
-sub bignum
+sub save_config
 {
-    my ($num) = @_;
-    if ( !defined $num ) { return ''; }
-    if ( !($num=~/^\d+$/) ) { return $num; }
-    my $len = length($num);
-    my $out;
-    for (my $i=0; $i<$len; $i++)
-    {
-        $out .= substr($num,$i,1);
-        if ( $i+1<$len && !(($len-$i-1)%3) ) { $out .= ','; }
-    }
-    return $out;
+    my ($self) = @_;
+    my $src  = $$self{_config};
+    my $type = ref($self) eq 'SOM_Runner' ? 'som' : 'svm';
+    my $dst  = "$$self{outdir}/$type-filter.conf";
+    if ( -e $dst && (stat($src))[9] <= (stat($dst))[9] ) { return; }
+    if ( !-d $$self{outdir} ) { $self->cmd("mkdir -p $$self{outdir}"); }
+    open(my $fh,'>',$dst) or $self->throw("$dst: $!");
+    my $about = $$self{_about};
+    $about =~ s/\n/\n# /g;
+    print $fh "# $about";
+    close($fh);
+    $self->cmd("cat $src >> $dst");
 }
 
-sub calc_rank
+sub tabix_part
 {
-    my ($self, $dat, $anns) = @_;
-    my %out = ();
-    for my $tstv (keys %$dat)
+    my ($self,$vcf) = @_;
+    $self->cmd("tabix -p vcf -f $vcf.part");
+    rename("$vcf.part.tbi","$vcf.tbi");
+    rename("$vcf.part",$vcf);
+}
+
+
+sub read_value
+{
+    my ($self,$file,$re_delim,$nrow,$ncol) = @_;
+    open(my $fh,'<',$file) or $self->throw("$file: $!");
+    for (my $i=0; $i<$nrow; $i++) { <$fh>; }
+    my $line = <$fh>;
+    close($fh) or $self->throw("close failed: $file");
+    my @items = split($re_delim,$line);
+    if ( defined $ncol ) 
     {
-        my %rank = ();
-        for (my $i=@{$$dat{$tstv}}-1; $i>=0; $i--)
+        chomp($items[$ncol]);
+        return $items[$ncol];
+    }
+    return (@items);
+}
+
+sub expand_train_args
+{
+    my ($self,$args) = @_;
+    return $args;
+}
+
+#-------------------------------------------------------------------------------------------------
+
+package SVM_Runner;
+use base qw(myRunner);
+use strict;
+use warnings;
+
+sub SVM_Runner::new
+{
+    my ($class,@args) = @_;
+    my $self = {@args};
+    bless $self, ref($class) || $class;
+
+    $$self{bcftools}     = 'bcftools';
+    $$self{svm_scale}    = '/nfs/users/nfs_p/pd3/sandbox/svn/svm/libsvm-3.17/svm-scale';
+    $$self{svm_train}    = '/nfs/users/nfs_p/pd3/sandbox/svn/svm/libsvm-3.17/svm-train';
+    $$self{svm_predict}  = '/nfs/users/nfs_p/pd3/sandbox/svn/svm/libsvm-3.17/svm-predict';
+    $$self{apar}  = [-5,15,2];
+    $$self{bpar}  = [-15,3,2];
+    $$self{aopt}  = 'c';
+    $$self{bopt}  = 'g';
+    $$self{snps}{train_args} = '-v 5 -b 1 -c 15 -g -3';
+    $$self{_sampleconf}  = q[
+            # ------------------------------------
+            # SVM-specific parameters 
+            # ------------------------------------
+
+            bcftools     => '] .$$self{bcftools}. q[',
+            svm_scale    => '] .$$self{svm_scale}. q[',
+            svm_train    => '] .$$self{svm_train}. q[',
+            svm_predict  => '] .$$self{svm_predict}. q[',
+
+            # SVM C and gamma parameters scan: min,max,step (2**c,2**g)
+            apar => \[] .join(',',@{$$self{apar}}). q[\],  # c
+            bpar => \[] .join(',',@{$$self{bpar}}). q[\],  # g
+            aopt => '] .$$self{aopt}. q[',
+            bopt => '] .$$self{bopt}. q[',
+    ];
+
+    return $self;
+}
+
+sub SVM_Runner::main
+{
+    my ($self) = @_;
+    $self->parse_args();
+    $self->save_config();
+    $self->SUPER::main();
+}
+
+sub SVM_Runner::expand_train_args
+{
+    my ($self,$args) = @_;
+    my @args = split(/\s+/,$args);
+    for (my $i=0; $i<@args; $i++)
+    {
+        if ( $args[$i] eq '-c' ) { $i++; $args[$i] = 2**$args[$i]; }
+        if ( $args[$i] eq '-g' ) { $i++; $args[$i] = 2**$args[$i]; }
+    }
+    return join(' ',@args);
+}
+
+sub SVM_Runner::format_values
+{
+    my ($self,$anns,@vals) = @_;
+    my @out;
+    for (my $i=0; $i<@vals; $i++)
+    {
+        my $val = $vals[$i];
+        if ( !defined $val ) { next; }
+        push @out, ($i+1).':'.$val;
+    }
+    return (@out);
+}
+
+sub SVM_Runner::strip_values
+{
+    my ($self,$keep,@vals) = @_;
+    my @out;
+    for my $rec (@vals)
+    { 
+        my ($idx,$val) = split(/:/,$rec);
+        if ( !exists($$keep{$idx-1}) ) { next; }
+        push @out, $rec;
+    }
+    return (@out);
+}
+
+sub SVM_Runner::train
+{
+    my ($self,$file,$args) = @_;
+    $args = $self->expand_train_args($args);
+    my @ret = $self->cmd("$$self{svm_train} $args $file");
+    if ( !($ret[-1]=~/^Cross Validation Accuracy = ([\d.]+)/) ) 
+    { 
+        $self->throw("Could not parse the output of $$self{svm_train} $args $file: $ret[-1]"); 
+    }
+    return $1;
+}
+
+sub SVM_Runner::scan_params_jobs
+{
+    my ($self,$type,$job) = @_;
+    my @jobs  = ();
+    for (my $apar=$$self{apar}[0]; $apar<=$$self{apar}[1]; $apar+=$$self{apar}[2])
+    {
+        for (my $bpar=$$self{bpar}[0]; $bpar<=$$self{bpar}[1]; $bpar+=$$self{bpar}[2])
         {
-            for my $ann (@{$$dat{$tstv}[$i]{ann}})
+            my $aval = 2**$apar;
+            my $bval = 2**$bpar;
+            my $a = $$self{aopt}.' '.$aval;
+            my $b = $$self{bopt}.' '.$bval;
+            push @jobs, { prefix=>"scan-$$self{aopt}$apar-$$self{bopt}$bpar", args=>"$$self{$type}{train_args} -$a -$b", apar=>$apar, bpar=>$bpar };
+        }
+    }
+    return (@jobs);
+}
+
+sub SVM_Runner::scan_params_test
+{
+    my ($self,$outfile,$train_fname,$args) = @_;
+    my @ret = $self->cmd("$$self{svm_train} $args $train_fname");
+    if ( !($ret[-1]=~/^Cross Validation Accuracy = ([\d.]+)/) ) { $self->throw("Could not parse output of $$self{bcftools} som --train $train_fname $args: $ret[0]\n"); }
+    open(my $fh,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    print $fh $1, "\n";
+    close($fh) or $self->throw("close failed: $outfile.part");
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
+
+sub SVM_Runner::classify
+{
+    my ($self,$outfile,$train_fname,$annots_fname,$train_args) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("$$self{svm_train} -b 1 $train_args $train_fname $outfile.part/model");
+    $self->cmd("$$self{svm_predict} -b 1 $annots_fname $outfile.part/model $outfile.part/out.tab");
+    open(my $fh,'<',"$outfile.part/out.tab") or $self->throw("$outfile.part/out.tab: $!");
+    open(my $out,'>',"$outfile.part/scores.tab") or $self->throw("$outfile.part/scores.tab: $!");
+    my $line = <$fh>; 
+    my @items = split(/\s+/,$line); chomp($items[-1]);
+    my $idx;
+    for (my $i=0; $i<@items; $i++) { if ($items[$i] eq $$self{good_site}) { $idx=$i; } }
+    if ( !defined $idx ) { $self->throw("Could not parse: $outfile.part/out.tab"); }
+    while ($line=<$fh>)
+    {
+        my @vals = split(/\s+/,$line);
+        chomp($vals[$idx]);
+        print $out $vals[$idx]."\n";
+    }
+    close($out) or $self->throw("close failed: $outfile.part/scores.tab");
+    close($fh) or $self->throw("close failed: $outfile.part/out.tab");
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
+
+#-------------------------------------------------------------------------------------------------
+
+package SOM_Runner;
+use base qw(myRunner);
+use strict;
+use warnings;
+
+sub SOM_Runner::new
+{
+    my ($class,@args) = @_;
+    my $self = {@args};
+    bless $self, ref($class) || $class;
+
+    $$self{bcftools}     = 'bcftools';
+    $$self{apar}         = [0.1,1.2,0.1];
+    $$self{bpar}         = [20,50,5];
+    $$self{aopt}         = 'l';
+    $$self{bopt}         = 's';
+    $$self{snps}{train_args}  = '';
+    $$self{_sampleconf}  = q[
+            # ------------------------------------
+            # SOM-specific parameters 
+            # ------------------------------------
+
+            bcftools     => '] .$$self{bcftools}. q[',
+
+            # Parameters scan: min,max,step
+            apar => \[] .join(',',@{$$self{apar}}). q[\],  # c
+            bpar => \[] .join(',',@{$$self{bpar}}). q[\],  # g
+            aopt => '] .$$self{aopt}. q[',
+            bopt => '] .$$self{bopt}. q[',
+
+            # SOM cannot handle missing values, these defaults will be used instead
+            defaults =>
             {
-                if ( exists($rank{$ann}) ) { next; }
-                $rank{$ann} = @{$$dat{$tstv}} - $i;
-            }
-            if ( scalar keys %rank == scalar keys %$anns ) { last; }
-        }
-        for my $ann (keys %$anns)
-        {
-            if ( !exists($rank{$ann}) ) { $rank{$ann} = 1 + scalar keys %$anns; }
-            push @{$out{$ann}}, $rank{$ann};
-        }
-    }
-    my %means = ();
-    for my $ann (keys %out)
-    {
-        my @dat = sort { $a<=>$b } @{$out{$ann}};
-        $means{$ann} = $dat[ int(0.5*@dat) ];
-    }
-    my @order = sort { $means{$a}<=>$means{$b} } keys %means;
-    return (\%out,\@order);
+                RPB  => 1,
+                SGB  => 0,
+                VDB  => 1,
+                QUAL => 999,
+                MQSB => 1,
+                ICB  => 1,
+
+                MQB   => 1,
+                BQB   => 1,
+                MQSB  => 1,
+                RPB2  => 1,
+                MQB2  => 1,
+                BQB2  => 1,
+                MQSB2 => 1,
+                MQ0F  => 0,
+            },
+    ] . $$self{_sampleconf};
+
+    return $self;
 }
 
-sub round_value
+sub SOM_Runner::main
 {
-    my ($tick, $value) = @_;
-    my $rounded = $tick * int($value/$tick);
-    if ( $value - $rounded > $tick*0.5 ) { $rounded += $tick; }
-    return $rounded;
+    my ($self) = @_;
+    $self->parse_args();
+    $self->save_config();
+    $self->SUPER::main();
 }
 
-sub plot_randomize
+sub SOM_Runner::format_values
 {
-    my ($self,$outfile,$key) = @_;
-
-    my $prefix = $outfile;
-    $prefix =~ s/\.png$//;
-
-    # Collect data for two plots: 
-    #   1) biggest number of sites and best sensitivity by metric, which is ts/tv for SNPs and repeat consistency for indels
-    #   2) rank annotation box plot
-
-    my ($min,$max,$metric_name,$step);
-    if ( $key eq 'snps' )
+    my ($self,$anns,@vals) = @_;
+    my @out;
+    for (my $i=0; $i<@vals; $i++)
     {
-        $metric_name = 'ts/tv';
-        $min  = $$self{$key}{target_tstv}[0];
-        $max  = $$self{$key}{target_tstv}[1];
-        $step = 0.01;
-        $key  = 'SNP';
-    }
-    else
-    {
-        $metric_name = 'repeat consistency';
-        $min  = $$self{$key}{target_rc}[0];
-        $max  = $$self{$key}{target_rc}[1];
-        $step = 0.005;
-        $key  = 'INDEL';
-    }
-
-
-    my (%cnts,%sens,%anns);   # keep n-top hits for each segregating value to calculate rank
-    open(my $fh,"<",$prefix) or $self->throw("$prefix: $!");
-    while (my $line=<$fh>)
-    {
-        my @items = split(/\t/, $line);
-        # Novel:  if ( $items[3] < $min or $items[3] > $max ) { next; }
-        my $metric = round_value($step, $items[0]);
-        my $cnt    = $items[1];
-        my $sns    = $items[2];
-        my $novel_metric = $items[3];
-        if ( !($items[5]=~/-a\s*(\S+)/) ) { $self->throw("Could not detect annotations in $prefix: $line"); }
-        my @annot = split(/,/,$1);
-        for my $ann (@annot) { $anns{$ann} = 1; }
-        my $rec = { cnt=>$cnt, sns=>$sns, novel=>$novel_metric, ann=>\@annot };
-        if ( !exists($cnts{$metric}) ) { push @{$cnts{$metric}}, $rec; }
-        else
-        {
-            my $i;
-            for ($i=0; $i<@{$cnts{$metric}}; $i++)
-            {
-                if ( $cnt < $cnts{$metric}[$i]{cnt} ) { last; }   # sorted in ascending order
-            }
-            if ( $i>0 ) { splice(@{$cnts{$metric}}, $i, 0, $rec); }
-            elsif ( @{$cnts{$metric}}<20 ) { unshift @{$cnts{$metric}}, $rec; } 
-            if ( @{$cnts{$metric}}>20 ) { shift @{$cnts{$metric}}; }
+        my $val = $vals[$i];
+        if ( !defined $val ) 
+        { 
+            if ( !defined $$self{defaults}{$$anns[$i]} ) { $self->throw("No default set for $$anns[$i]?"); }
+            push @out, $$self{defaults}{$$anns[$i]}; 
         }
-        if ( !exists($sens{$metric}) ) { push @{$sens{$metric}}, $rec; }
-        else
-        {
-            my $i;
-            for ($i=0; $i<@{$sens{$metric}}; $i++)
-            {
-                if ( $sns < $sens{$metric}[$i]{sns} ) { last; }
-            }
-            if ( $i>0 ) { splice(@{$sens{$metric}}, $i, 0, $rec); }
-            elsif ( @{$sens{$metric}}<20 ) { unshift @{$sens{$metric}}, $rec; }
-            if ( @{$sens{$metric}} > 20 ) { shift @{$sens{$metric}}; }
-        }
+        else { push @out, $val; }
     }
-    close($fh);
-
-    my @anns = sort keys %anns;
-    my ($sens_rank,$sens_order) = $self->calc_rank(\%sens, \%anns);
-    my ($cnts_rank,$cnts_order) = $self->calc_rank(\%cnts, \%anns);
-
-    open($fh,'>',"$prefix.py") or $self->throw("$prefix.py: $!");
-    $self->tprint($fh, "
-        import matplotlib as mpl
-        mpl.use('Agg')
-        import matplotlib.pyplot as plt
-        from matplotlib.ticker import ScalarFormatter
-
-    ");
-    print $fh "rank_cnts_labels = ['", join("','", @$cnts_order), "']\n";
-    print $fh "rank_sens_labels = ['", join("','", @$sens_order), "']\n";
-    print $fh "rank_sens_dat = [";
-    for my $annot (@$sens_order)
-    {
-        print $fh "[", join(',', @{$$sens_rank{$annot}}), "],\n";
-    }
-    print $fh "]\n";
-    print $fh "rank_cnts_dat = [";
-    for my $annot (@$cnts_order)
-    {
-        print $fh "[", join(',', @{$$cnts_rank{$annot}}), "],\n";
-    }
-    $self->tprint($fh, "]
-        dat_cnt = [
-    ");
-    my %annot_sets = ();
-    for my $metric (sort {$a<=>$b} keys %cnts)
-    {
-        my $ann = join(',',@{$cnts{$metric}[-1]{ann}});
-        if ( !exists($annot_sets{$ann}) ) { $annot_sets{$ann} = 1 + scalar keys %annot_sets; }
-        $ann = $annot_sets{$ann};
-        print $fh "[$metric,$cnts{$metric}[-1]{cnt},$cnts{$metric}[-1]{sns},'$ann',$cnts{$metric}[-1]{novel}],\n";
-    }
-    $self->tprint($fh, "
-        ]
-        dat_sns = [
-    ");
-    for my $metric (sort {$a<=>$b} keys %sens)
-    {
-        my $ann = join(',',@{$cnts{$metric}[-1]{ann}});
-        if ( !exists($annot_sets{$ann}) ) { $annot_sets{$ann} = 1 + scalar keys %annot_sets; }
-        $ann = $annot_sets{$ann};
-        print $fh "[$metric,$sens{$metric}[-1]{sns},'" .bignum($sens{$metric}[-1]{cnt}). "','$ann',", $sens{$metric}[-1]{cnt} ,"],\n";
-    }
-    $self->tprint($fh, "
-        ]
-        annots = [
-    ");
-    for my $key (sort {$annot_sets{$a}<=>$annot_sets{$b}} keys %annot_sets)
-    {
-        print $fh "[$annot_sets{$key},'$key'],\n";
-    }
-    $self->tprint($fh, "
-        ]
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7,7))
-        fmt = ScalarFormatter(useMathText=True)
-        fmt.set_scientific(True)
-        fmt.set_powerlimits((-3,3))
-        ax1.yaxis.set_major_formatter(fmt)
-        ax1.yaxis.get_major_formatter().set_scientific(True)
-        ax1.boxplot(rank_cnts_dat)
-        ax2.boxplot(rank_sens_dat)
-        ax1.set_xticklabels(rank_cnts_labels, rotation=45, fontsize='small',va='top',ha='right')
-        ax2.set_xticklabels(rank_sens_labels, rotation=45, fontsize='small',va='top',ha='right')
-        ax1.set_title('Annotation rank', fontsize='medium')
-        ax1.set_ylabel('Count Rank')
-        ax2.set_ylabel('Sensitivity Rank')
-        if rank_cnts_dat[0][0]*0.8 > rank_cnts_dat[0][-1]: ax1.set_ylim(rank_cnts_dat[0][0]*0.8)
-        if rank_sens_dat[0][0]*0.9 > rank_sens_dat[0][-1]: ax2.set_ylim(rank_sens_dat[0][0]*0.9)
-        plt.savefig('$prefix.rank.png')
-        plt.close()
-
-        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True, figsize=(9,9))
-        fmt = ScalarFormatter(useMathText=True)
-        fmt.set_scientific(True)
-        fmt.set_powerlimits((-3,3))
-        ax1.yaxis.set_major_formatter(fmt)
-        ax1.yaxis.get_major_formatter().set_scientific(True)
-        fmt = ScalarFormatter(useMathText=True)
-        fmt.set_scientific(True)
-        fmt.set_powerlimits((-3,3))
-        ax2.yaxis.set_major_formatter(fmt)
-        cols = [x[2] for x in dat_cnt]
-        sc1  = ax1.scatter([x[0] for x in dat_cnt],[x[1] for x in dat_cnt],c=cols,edgecolor='none')
-        i = 0
-        for x,y,d,t in zip([d[0] for d in dat_cnt],[d[1] for d in dat_cnt],[d[2] for d in dat_cnt],[d[3] for d in dat_cnt]):
-        \\ti += 1
-        \\tif i % 2:
-        \\t\\tax1.annotate('%.2f (%s)' % (d,t), xy=(x,y), xytext=(3,3), textcoords='offset points',fontsize='xx-small',rotation=45,va='bottom',ha='left')
-        \\telse:
-        \\t\\tax1.annotate('%.2f (%s)' % (d,t), xy=(x,y), xytext=(3,-3), textcoords='offset points',fontsize='xx-small',rotation=45,va='top',ha='right')
-        ax1.set_ylabel('Number of sites')
-        ax1.grid(color='gray')
-        from mpl_toolkits.axes_grid1 import make_axes_locatable
-        div1 = make_axes_locatable(ax1)
-        cax1 = div1.append_axes('right', size='3%', pad=0.1)
-        cb1  = fig.colorbar(sc1, cax=cax1)
-        cb1.set_label('Sensitivity')
-        for t in cb1.ax.get_yticklabels(): t.set_fontsize(9)
-
-        cols = [x[4] for x in dat_sns]
-        sc2 = ax2.scatter([x[0] for x in dat_sns],[x[1] for x in dat_sns],c=cols,edgecolor='none')
-        i = 0
-        for x,y,d,t in zip([d[0] for d in dat_sns],[d[1] for d in dat_sns],[d[2] for d in dat_sns],[d[3] for d in dat_sns]):
-        \\ti += 1
-        \\tif i % 2:
-        \\t\\tax2.annotate('%s (%s)' % (d,t), xy=(x,y), xytext=(0,3), textcoords='offset points',fontsize='xx-small',rotation=45,va='bottom',ha='left')
-        \\telse:
-        \\t\\tax2.annotate('%s (%s)' % (d,t), xy=(x,y), xytext=(3,-3), textcoords='offset points',fontsize='xx-small',rotation=45,va='top',ha='right')
-        for a,b in zip([d[0] for d in annots],[d[1] for d in annots]):
-        \\tax2.annotate('(%d) .. %s' % (a,b), xy=(0.01,(len(annots)-a)*0.05+0.03), xytext=(5,0), textcoords='offset points',xycoords='axes fraction',fontsize='xx-small',va='bottom',ha='left')
-        ax2.set_ylabel('Sensitivity')
-        ax2.grid(color='gray')
-        div2 = make_axes_locatable(ax2)
-        cax2 = div2.append_axes('right', size='3%', pad=0.1)
-        cb2  = fig.colorbar(sc2, cax=cax2, format='%.2e')
-        cb2.set_label('Number of sites')
-        for t in cb2.ax.get_yticklabels(): t.set_fontsize(9)
-
-        # cols = [x[2] for x in dat_cnt] # uncomment if sensitivity should be the color
-        sc3 = ax3.scatter([x[0] for x in dat_cnt],[x[4] for x in dat_cnt],c=cols,edgecolor='none')
-        div3 = make_axes_locatable(ax3)
-        cax3 = div3.append_axes('right', size='3%', pad=0.1)
-        # cb3  = fig.colorbar(sc3, cax=cax3)
-        # cb3.set_label('Sensitivity')
-        cb3  = fig.colorbar(sc3, cax=cax3, format='%.2e')
-        cb3.set_label('Number of sites')
-        for t in cb3.ax.get_yticklabels(): t.set_fontsize(9)
-        ax3.grid(color='gray')
-        ax3.set_ylabel('Novel $metric_name')
-        ax3.set_xlabel('$metric_name')
-
-        #plt.subplots_adjust(right=0.82,bottom=0.06,top=0.95,left=0.2,hspace=0.1,wspace=0.05)
-        plt.savefig('$prefix.png')
-        plt.close()
-    ");
-    close($fh);
-
-    $self->cmd("python $prefix.py");
+    return (@out);
 }
 
-
-sub plot_scan
+sub SOM_Runner::strip_values
 {
-    my ($self,$outfile) = @_;
-
-    my $prefix = $outfile;
-    $prefix =~ s/\.png$//;
-
-    my %tstv;
-    my $t = $$self{target_tstv}[0];
-    while ($t<=$$self{target_tstv}[1])
-    {
-        my $_tstv = sprintf("%.2f", $t);
-        $tstv{$_tstv} = 1;
-        $t += ($$self{target_tstv}[1] - $$self{target_tstv}[0]) / 5;
+    my ($self,$keep,@vals) = @_;
+    my @out;
+    for (my $i=0; $i<@vals; $i++)
+    { 
+        if ( !exists($$keep{$i}) ) { next; }
+        push @out, $vals[$i];
     }
-    my $tstv_min = ($$self{target_tstv}[1] + $$self{target_tstv}[0])*0.5 - 0.01;
-    my $tstv_max = ($$self{target_tstv}[1] + $$self{target_tstv}[0])*0.5 + 0.01;
+    return (@out);
+}
 
-    my (%win,%learn,%th, %win_learn,%win_th,%learn_th);
-    open(my $fh,"<",$prefix) or $self->throw("$prefix: $!");
-    while (my $line=<$fh>)
+sub SOM_Runner::train
+{
+    my ($self,$file,$args) = @_;
+    my @ret = $self->cmd("$$self{bcftools} som --train $args $file");
+    if ( !($ret[0]=~/^([\d.]+)/) ) { $self->throw("Could not parse output of $$self{bcftools} som $args --train $file: $ret[0]\n"); }
+    return 100-$1;
+}
+
+sub SOM_Runner::scan_params_jobs
+{
+    my ($self,$type,$job) = @_;
+    my @jobs  = ();
+    for (my $apar=$$self{apar}[0]; $apar<=$$self{apar}[1]; $apar+=$$self{apar}[2])
     {
-        my @items = split(/\t/, $line);
-        my $tstv  = sprintf("%.2f", $items[0]);
-        my $cnt   = $items[1];
-        my $sns   = $items[2];
-        if ( !($items[5]=~/-m\s*(\S+)/) ) { $self->throw("Could not detect annotations in $prefix: $line"); }
-        my ($win,$learn,$th) = split(/,/, $1);
-        if ( $tstv_min<=$tstv && $tstv<=$tstv_max )
+        for (my $bpar=$$self{bpar}[0]; $bpar<=$$self{bpar}[1]; $bpar+=$$self{bpar}[2])
         {
-            if ( !exists($win_learn{$win}{$learn}) or $win_learn{$win}{$learn} < $cnt ) { $win_learn{$win}{$learn} = $cnt; }
-            if ( !exists($win_th{$win}{$th}) or $win_th{$win}{$th} < $cnt ) { $win_th{$win}{$th} = $cnt; }
-            if ( !exists($learn_th{$learn}{$th}) or $learn_th{$learn}{$th} < $cnt ) { $learn_th{$learn}{$th} = $cnt; }
+            my $a = $$self{aopt}.$apar;
+            my $b = $$self{bopt}.$bpar;
+            push @jobs, { prefix=>"scan-$a-$b", args=>"$$self{$type}{train_args} -$a -$b", apar=>$apar, bpar=>$bpar };
         }
-        if ( !exists($tstv{$tstv}) ) { next; }
-        if ( !exists($win{$tstv}{$win}) or $win{$tstv}{$win} < $cnt ) { $win{$tstv}{$win} = $cnt; }
-        if ( !exists($learn{$tstv}{$learn}) or $learn{$tstv}{$learn} < $cnt ) { $learn{$tstv}{$learn} = $cnt; }
-        if ( !exists($th{$tstv}{$th}) or $th{$tstv}{$th} < $cnt ) { $th{$tstv}{$th} = $cnt; }
     }
-    close($fh);
+    return (@jobs);
+}
 
-    if ( !scalar keys %win_learn ) { $self->throw("No result in the range of tstv=($tstv_min,$tstv_max)?! $prefix\n"); }
+sub SOM_Runner::scan_params_test
+{
+    my ($self,$outfile,$train_fname,$args) = @_;
+    my @ret = $self->cmd("$$self{bcftools} som --train $train_fname $args");
+    if ( !($ret[0]=~/^([\d.]+)/) ) { $self->throw("Could not parse output of $$self{bcftools} som --train $train_fname $args: $ret[0]\n"); }
+    open(my $fh,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    print $fh 100-$1, "\n";
+    close($fh) or $self->throw("close failed: $outfile.part");
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
 
-    open($fh,'>',"$prefix.py") or $self->throw("$prefix.py: $!");
-    $self->tprint($fh, "
-        import matplotlib as mpl
-        mpl.use('Agg')
-        import matplotlib.pyplot as plt
-        from matplotlib.ticker import ScalarFormatter
-
-    ");
-    print $fh "labels = ['", join("','", sort {$a<=>$b} keys %win), "']\n";
-    print $fh "dat_win = [";
-    for my $tstv (sort {$a<=>$b} keys %win)
-    {
-        my (@x,@y);
-        for my $win (sort {$a<=>$b} keys %{$win{$tstv}}) { push @x,$win; push @y,$win{$tstv}{$win}; }
-        print $fh "[", join(',',@x), "],\n";
-        print $fh "[", join(',',@y), "],\n";
-    }
-    print $fh "]\ndat_learn = [";
-    for my $tstv (sort {$a<=>$b} keys %learn)
-    {
-        my (@x,@y);
-        for my $learn (sort {$a<=>$b} keys %{$learn{$tstv}}) { push @x,$learn; push @y,$learn{$tstv}{$learn}; }
-        print $fh "[", join(',',@x), "],\n";
-        print $fh "[", join(',',@y), "],\n";
-    }
-    print $fh "]\ndat_th = [";
-    for my $tstv (sort {$a<=>$b} keys %th)
-    {
-        my (@x,@y);
-        for my $th (sort {$a<=>$b} keys %{$th{$tstv}}) { push @x,$th; push @y,$th{$tstv}{$th}; }
-        print $fh "[", join(',',@x), "],\n";
-        print $fh "[", join(',',@y), "],\n";
-    }
-    print $fh "]\ndat_win_learn = [";
-    my (@x,@y,@s);
-    for my $win (sort {$a<=>$b} keys %win_learn)
-    {
-        for my $learn (keys %{$win_learn{$win}}) { push @x,$win; push @y,$learn; push @s,$win_learn{$win}{$learn}; }
-    }
-    print $fh "[", join(',',@x), "],\n";
-    print $fh "[", join(',',@y), "],\n";
-    print $fh "[", join(',',@s), "],\n";
-    print $fh "]\ndat_win_th = [";
-    @x = (); @y = (); @s = ();
-    for my $win (sort {$a<=>$b} keys %win_th)
-    {
-        for my $th (keys %{$win_th{$win}}) { push @x,$win; push @y,$th; push @s,$win_th{$win}{$th}; }
-    }
-    print $fh "[", join(',',@x), "],\n";
-    print $fh "[", join(',',@y), "],\n";
-    print $fh "[", join(',',@s), "],\n";
-    print $fh "]\ndat_learn_th = [";
-    @x = (); @y = (); @s = ();
-    for my $learn (sort {$a<=>$b} keys %learn_th)
-    {
-        for my $th (keys %{$learn_th{$learn}}) { push @x,$learn; push @y,$th; push @s,$learn_th{$learn}{$th}; }
-    }
-    print $fh "[", join(',',@x), "],\n";
-    print $fh "[", join(',',@y), "],\n";
-    print $fh "[", join(',',@s), "],\n";
-    $self->tprint($fh, "
-        ]
-        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(5,8))
-        M1  = max(dat_win_learn[2])
-        m1  = min(dat_win_learn[2])
-        M2  = max(dat_win_th[2])
-        m2  = min(dat_win_th[2])
-        M3  = max(dat_learn_th[2])
-        m3  = min(dat_learn_th[2])
-        sc1 = ax1.scatter(dat_win_learn[0],dat_win_learn[1],s=[(x-m1)*100./(M1-m1+1) for x in dat_win_learn[2]], marker='o', c=dat_win_learn[2])
-        sc2 = ax2.scatter(dat_win_th[0],dat_win_th[1],s=[(x-m2)*100./(M2-m2+1) for x in dat_win_th[2]], marker='o', c=dat_win_th[2])
-        sc3 = ax3.scatter(dat_learn_th[0],dat_learn_th[1],s=[(x-m3)*100./(M3-m3+1) for x in dat_learn_th[2]], marker='o', c=dat_learn_th[2])
-        cb1 = fig.colorbar(sc1, ax=ax1, format='%.2e'); cb1.set_label('Number of sites')
-        for t in cb1.ax.get_yticklabels(): t.set_fontsize(9)
-        cb2 = fig.colorbar(sc2, ax=ax2, format='%.2e'); cb2.set_label('Number of sites')
-        for t in cb2.ax.get_yticklabels(): t.set_fontsize(9)
-        cb3 = fig.colorbar(sc3, ax=ax3, format='%.2e'); cb3.set_label('Number of sites')
-        for t in cb3.ax.get_yticklabels(): t.set_fontsize(9)
-        ax1.set_title('Stability of params at ts/tv $tstv_min-$tstv_max', fontsize='medium')
-        ax1.set_xlabel('nBins'); ax1.set_ylabel('learning constant')
-        ax2.set_xlabel('nBins'); ax2.set_ylabel('threshold')
-        ax3.set_xlabel('learning constant'); ax3.set_ylabel('threshold')
-        plt.subplots_adjust(right=0.95,bottom=0.06,top=0.95,left=0.2,hspace=0.32)
-        plt.savefig('$prefix.2.png')
-        plt.close()
-
-        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(5,8))
-        fmt = ScalarFormatter(useMathText=True)
-        fmt.set_scientific(True)
-        fmt.set_powerlimits((-3,3))
-        ax1.yaxis.set_major_formatter(fmt)
-        ax1.yaxis.get_major_formatter().set_scientific(True)
-        ax2.yaxis.set_major_formatter(fmt)
-        ax2.yaxis.get_major_formatter().set_scientific(True)
-        ax3.yaxis.set_major_formatter(fmt)
-        ax3.yaxis.get_major_formatter().set_scientific(True)
-        for i in range(len(labels)): ax1.plot(dat_win[2*i],dat_win[2*i+1],'-o',label='tstv '+labels[i])
-        for i in range(len(labels)): ax2.plot(dat_learn[2*i],dat_learn[2*i+1],'-o',label='tstv '+labels[i])
-        for i in range(len(labels)): ax3.plot(dat_th[2*i],dat_th[2*i+1],'-o',label='tstv '+labels[i])
-        ax1.legend(frameon=False,numpoints=1,markerscale=0.6,loc='best',prop={'size':9})
-        ax2.legend(frameon=False,numpoints=1,markerscale=0.6,loc='best',prop={'size':9})
-        ax3.legend(frameon=False,numpoints=1,markerscale=0.6,loc='best',prop={'size':9})
-        ax1.set_title('Stability of SOM params', fontsize='medium')
-        ax1.set_ylabel('Number of sites')
-        ax2.set_ylabel('Number of sites')
-        ax3.set_ylabel('Number of sites')
-        ax1.set_xlabel('nBins')
-        ax2.set_xlabel('learning constant')
-        ax3.set_xlabel('threshold')
-        plt.subplots_adjust(right=0.95,bottom=0.06,top=0.95,left=0.2,hspace=0.32)
-        plt.savefig('$prefix.png')
-        plt.close()
-    ");
-    close($fh);
-
-    `python $prefix.py`;
+sub SOM_Runner::classify
+{
+    my ($self,$outfile,$train_fname,$annots_fname,$train_args) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("$$self{bcftools} som --train $train_args $train_fname -p $outfile.part/classify > $outfile.part/out.log");
+    $self->cmd("$$self{bcftools} som --classify $annots_fname -p $outfile.part/classify > $outfile.part/scores.tab");
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
 }
 

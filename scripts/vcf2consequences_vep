@@ -277,10 +277,10 @@ sub load_vep_cache
 
 		my $gene_name=$rec->{Gene}; # Default to ENS id
 		my ($sift_pred,$polyphen_pred,$condel_pred,$blosum_pred);
-		my @extra_cols = split(/;/, $rec->{Extra}) if $rec->{Extra};	# eg PolyPhen=unknown(0);SIFT=tolerated(0.56);HGNC=RERE;BLOSUM62=-3
+		my @extra_cols = split(/;/, $rec->{Extra}) if $rec->{Extra};	# eg PolyPhen=unknown(0);SIFT=tolerated(0.56);SYMBOL=RERE;BLOSUM62=-3
 		foreach (@extra_cols) {
 			my ($key,$val) = split(/=/);
-			$gene_name = $val if $key eq 'HGNC';
+			$gene_name = $val if ($key eq 'SYMBOL' || $key eq 'HGNC'); # HGNC replaced by SYMBOL in v73
 			$sift_pred = "$key,$val" if $key eq 'SIFT';
 			$polyphen_pred = "$key,$val" if $key eq 'PolyPhen';
 			$condel_pred = "$key,$val" if $key eq 'Condel';
