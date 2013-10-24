@@ -1,5 +1,6 @@
-#!/bin/perl -w
+#!/usr/bin/env perl
 
+use warnings;
 use strict;
 
 if($#ARGV != 1){
