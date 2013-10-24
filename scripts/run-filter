@@ -36,7 +36,7 @@ sub new
     my ($class,@args) = @_;
     my $self = $class->SUPER::new(@args);
 
-    $$self{config_version} = '1378190340';
+    $$self{config_version} = '1382541677';
     $$self{merge_files}  = 0;
     $$self{do_clean}     = 1;
     $$self{ngood_max}    = 1_000;
@@ -47,6 +47,7 @@ sub new
     $$self{good_site}    = 2;
     $$self{bad_site}     = 1;
     $$self{verbose}      = 1;
+    $$self{nfold}        = '';
     $$self{snps}  = 
     {
         fixed_filter => q[-m+ -e'%QUAL<10 && RPB<0.1'],
@@ -86,13 +87,14 @@ sub new
                 nshuffle_max => '] .$$self{snps}{nshuffle_max} . q[',
                 chunk_by     => '] .$$self{snps}{chunk_by} . q[',
                 
-                # Default filter-specific parameters used in -r and -c mode. SVM's -c and -g will be expanded to 2**c,2**g
+                # Default parameters. SVM's -c and -g will be expanded to 2**c,2**g
                 train_args   => '] .$$self{snps}{train_args} . q[',
             },
 
             # Maximum number of good and bad sites to train on (SVM can be slow)
             ngood_max  => ] .$$self{ngood_max}. q[,
             nbad_max   => ] .$$self{nbad_max}. q[,
+            nfold      => '] .$$self{nfold} . q[',      # n-fold cross-validation
 
             # Scale in this quantile range [%]
             scale_qlow   => '] . $$self{scale_qlow} . q[',
@@ -384,7 +386,8 @@ sub main_scan_params
             {
                 my @args = $self->read_value($fname,qr/\t/,0);
                 chomp($args[-1]);
-                $params = "-$$self{aopt} $args[1] -$$self{bopt} $args[2]";
+                $params  = $self->strip_cmdline_args($$self{$type}{train_args}, "-$$self{aopt}", "-$$self{bopt}");
+                $params .= " -$$self{aopt} $args[1] -$$self{bopt} $args[2]";
             }
             else 
             { 
@@ -1231,6 +1234,16 @@ sub expand_train_args
     return $args;
 }
 
+sub strip_cmdline_args
+{
+    my ($self,$args,@params) = @_;
+    for my $param (@params)
+    {
+        $args =~ s/$param\s*\S+/ /s;
+    }
+    return $args;
+}
+
 #-------------------------------------------------------------------------------------------------
 
 package SVM_Runner;
@@ -1252,7 +1265,8 @@ sub SVM_Runner::new
     $$self{bpar}  = [-15,3,2];
     $$self{aopt}  = 'c';
     $$self{bopt}  = 'g';
-    $$self{snps}{train_args} = '-v 5 -b 1 -c 15 -g -3';
+    $$self{snps}{train_args} = '-b 1 -c 15 -g -3';
+    $$self{nfold}            = '-v 5';
     $$self{_sampleconf}  = q[
             # ------------------------------------
             # SVM-specific parameters 
@@ -1323,7 +1337,7 @@ sub SVM_Runner::train
 {
     my ($self,$file,$args) = @_;
     $args = $self->expand_train_args($args);
-    my @ret = $self->cmd("$$self{svm_train} $args $file");
+    my @ret = $self->cmd("$$self{svm_train} $$self{nfold} $args $file");
     if ( !($ret[-1]=~/^Cross Validation Accuracy = ([\d.]+)/) ) 
     { 
         $self->throw("Could not parse the output of $$self{svm_train} $args $file: $ret[-1]"); 
@@ -1334,7 +1348,8 @@ sub SVM_Runner::train
 sub SVM_Runner::scan_params_jobs
 {
     my ($self,$type,$job) = @_;
-    my @jobs  = ();
+    my @jobs = ();
+    my $args = $self->strip_cmdline_args($$self{$type}{train_args}, "-$$self{aopt}", "-$$self{bopt}");
     for (my $apar=$$self{apar}[0]; $apar<=$$self{apar}[1]; $apar+=$$self{apar}[2])
     {
         for (my $bpar=$$self{bpar}[0]; $bpar<=$$self{bpar}[1]; $bpar+=$$self{bpar}[2])
@@ -1343,7 +1358,7 @@ sub SVM_Runner::scan_params_jobs
             my $bval = 2**$bpar;
             my $a = $$self{aopt}.' '.$aval;
             my $b = $$self{bopt}.' '.$bval;
-            push @jobs, { prefix=>"scan-$$self{aopt}$apar-$$self{bopt}$bpar", args=>"$$self{$type}{train_args} -$a -$b", apar=>$apar, bpar=>$bpar };
+            push @jobs, { prefix=>"scan-$$self{aopt}$apar-$$self{bopt}$bpar", args=>"$args -$a -$b", apar=>$apar, bpar=>$bpar };
         }
     }
     return (@jobs);
@@ -1352,7 +1367,7 @@ sub SVM_Runner::scan_params_jobs
 sub SVM_Runner::scan_params_test
 {
     my ($self,$outfile,$train_fname,$args) = @_;
-    my @ret = $self->cmd("$$self{svm_train} $args $train_fname");
+    my @ret = $self->cmd("$$self{svm_train} $$self{nfold} $args $train_fname");
     if ( !($ret[-1]=~/^Cross Validation Accuracy = ([\d.]+)/) ) { $self->throw("Could not parse output of $$self{bcftools} som --train $train_fname $args: $ret[0]\n"); }
     open(my $fh,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
     print $fh $1, "\n";
@@ -1403,6 +1418,9 @@ sub SOM_Runner::new
     $$self{aopt}         = 'l';
     $$self{bopt}         = 's';
     $$self{snps}{train_args}  = '';
+    $$self{nfold}             = '-f5';
+    $$self{ngood_max}    = 10_000;
+    $$self{nbad_max}     = 10_000;
     $$self{_sampleconf}  = q[
             # ------------------------------------
             # SOM-specific parameters 
@@ -1480,7 +1498,7 @@ sub SOM_Runner::strip_values
 sub SOM_Runner::train
 {
     my ($self,$file,$args) = @_;
-    my @ret = $self->cmd("$$self{bcftools} som --train $args $file");
+    my @ret = $self->cmd("$$self{bcftools} som --train $$self{nfold} $args $file");
     if ( !($ret[0]=~/^([\d.]+)/) ) { $self->throw("Could not parse output of $$self{bcftools} som $args --train $file: $ret[0]\n"); }
     return 100-$1;
 }
@@ -1489,13 +1507,14 @@ sub SOM_Runner::scan_params_jobs
 {
     my ($self,$type,$job) = @_;
     my @jobs  = ();
+    my $args = $self->strip_cmdline_args($$self{$type}{train_args}, "-$$self{aopt}", "-$$self{bopt}");
     for (my $apar=$$self{apar}[0]; $apar<=$$self{apar}[1]; $apar+=$$self{apar}[2])
     {
         for (my $bpar=$$self{bpar}[0]; $bpar<=$$self{bpar}[1]; $bpar+=$$self{bpar}[2])
         {
             my $a = $$self{aopt}.$apar;
             my $b = $$self{bopt}.$bpar;
-            push @jobs, { prefix=>"scan-$a-$b", args=>"$$self{$type}{train_args} -$a -$b", apar=>$apar, bpar=>$bpar };
+            push @jobs, { prefix=>"scan-$a-$b", args=>"$args -$a -$b", apar=>$apar, bpar=>$bpar };
         }
     }
     return (@jobs);
@@ -1504,7 +1523,7 @@ sub SOM_Runner::scan_params_jobs
 sub SOM_Runner::scan_params_test
 {
     my ($self,$outfile,$train_fname,$args) = @_;
-    my @ret = $self->cmd("$$self{bcftools} som --train $train_fname $args");
+    my @ret = $self->cmd("$$self{bcftools} som --train $$self{nfold} $train_fname $args");
     if ( !($ret[0]=~/^([\d.]+)/) ) { $self->throw("Could not parse output of $$self{bcftools} som --train $train_fname $args: $ret[0]\n"); }
     open(my $fh,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
     print $fh 100-$1, "\n";
@@ -1516,8 +1535,11 @@ sub SOM_Runner::classify
 {
     my ($self,$outfile,$train_fname,$annots_fname,$train_args) = @_;
     $self->cmd("mkdir -p $outfile.part");
-    $self->cmd("$$self{bcftools} som --train $train_args $train_fname -p $outfile.part/classify > $outfile.part/out.log");
+    $self->cmd("$$self{bcftools} som --train $$self{nfold} $train_args $train_fname -p $outfile.part/classify > $outfile.part/out.log");
     $self->cmd("$$self{bcftools} som --classify $annots_fname -p $outfile.part/classify > $outfile.part/scores.tab");
+    my $i = 0;
+    while ( -e "$outfile.part/classify.$i.py" ) { $self->cmd("python $outfile.part/classify.$i.py"); }
+    $self->cmd("python $outfile.part/classify.eval.py");
     rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
 }
 
