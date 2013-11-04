@@ -92,9 +92,10 @@ sub new
             },
 
             # Maximum number of good and bad sites to train on (SVM can be slow)
-            ngood_max  => ] .$$self{ngood_max}. q[,
-            nbad_max   => ] .$$self{nbad_max}. q[,
-            nfold      => '] .$$self{nfold} . q[',      # n-fold cross-validation
+            ngood_max   => ] .$$self{ngood_max}. q[,
+            nbad_max    => ] .$$self{nbad_max}. q[,
+            nfold       => '] .$$self{nfold} . q[',      # n-fold cross-validation
+            random_seed => undef,      # random seed for selection training sites
 
             # Scale in this quantile range [%]
             scale_qlow   => '] . $$self{scale_qlow} . q[',
@@ -653,6 +654,8 @@ sub extract_annots
 sub scale_annots
 {
     my ($self,$outfile,$type,@files) = @_;
+
+    if ( defined $$self{random_seed} ) { srand($$self{random_seed}); }
 
     my $sites_fname = $outfile;
     my $scale_fname = $outfile;
