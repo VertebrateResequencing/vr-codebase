@@ -160,7 +160,7 @@ while(<GENOTYPES>){
         $manifestSummaryMapInfo       = $hash_ref->{coord};
         $manifestSummarySourceStrand  = $hash_ref->{flip};
         if($manifestSummarySourceStrand eq 'UNKNOWN'){
-            last;
+            next;
         }
 
         $manifestSummaryGenotypeID = $genotypeSNPName;        
