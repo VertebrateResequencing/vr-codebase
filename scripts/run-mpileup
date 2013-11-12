@@ -33,6 +33,7 @@ sub new
     $$self{mpileup}        = 'samtools mpileup -DV -C50 -pm3 -F0.2 -d 10000';
     $$self{bcftools}       = 'bcftools call -Nvm';
     $$self{vcfstats}       = 'bcftools stats';
+    $$self{filter}         = 'bcftools filter -m+ -sLowQual -e"%QUAL<=10" -g3 -G10 -ov -';
     $$self{chunk_size}     = 1_000_000;
 	$$self{config_version} = '1377691623';
     $$self{_sampleconf} = q[
@@ -44,7 +45,15 @@ sub new
             mpileup  => '] .$$self{mpileup}.  q[',
             bcftools => '] .$$self{bcftools}. q[',
             vcfstats => '] .$$self{vcfstats}. q[',
-            
+            filter   => '] .$$self{filter}. q[',
+            chunk_options =>
+            {   
+                # Chunk-specific options will be applied to chunks with a non-zero overlap
+                'Y'                   => { bcftools => 'bcftools call -Nvm -Y', },
+                'X:1-60000'           => { bcftools => 'bcftools call -Nvm -X', },
+                'X:2699521-154931043' => { bcftools => 'bcftools call -Nvm -X', },
+            },
+ 
             bams     => 'bams.list',
             fa_ref   => '/lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta',
             exons    => '/nfs/users/nfs_p/pd3/sandbox/other/20120425-inframe-indels/CCDS-human-GRCh37p6.sorted.txt.gz', # optional, for frame shift vcfstats
@@ -99,26 +108,16 @@ sub new
             #   than the pooled set.
             merge_pops => ] .$$self{merge_pops}. q[,
             
-            # This is a hard filtering to remove only the most obviously biased calls.
-            #   Vital for the htslib SOM filtering is removing SNPs adjacent to GAPs.
-            filter => 'vcf-annotate -f SnpGap=10',
-            
             chunk_size        => ] .$$self{chunk_size}. q[,
             debug_chunks      => 0,
             shuffle_chunks    => 0,         # Process chunks in random order to randomize disk access
             keep_bcfs         => 0,
             chunks_overlap    => 0,
             whole_genome_bams => 0,         # Set to 0 if BAMs are splitted by chromosome. In such a case, the bams must contain '*chrom$chr.' in the name.
+            hard_filter       => 0,
 
             # Do specific regions only (whitespace delimited file with the columns CHR,FROM,TO)
             #   regions => 'regions.list',
-
-            # Chunk-specific options will be applied to chunks with a non-zero overlap
-            { 
-                'Y'                   => { bcftools => 'bcftools call -Nvm -Y', },
-                'X:1-60000'           => { bcftools => 'bcftools call -Nvm -X', },
-                'X:2699521-154931043' => { bcftools => 'bcftools call -Nvm -X', },
-            },
     ]."\n";
 
     $$self{usage} .= 
@@ -325,7 +324,7 @@ sub main
 		my $filt = $vcf; $filt =~ s/.vcf.gz/.filt.vcf.gz/;
         $self->spawn('vcf_stats',"$vcf.filt.vchk",$vcf,'-f PASS -s -');
         $self->spawn('vcf_stats',"$vcf.vchk",$vcf,'-s -');
-        $self->spawn('apply_filter',$filt,$vcf);
+        if ( defined $$self{filter} && $$self{hard_filter} ) { $self->spawn('apply_filter',$filt,$vcf); }
     }
     $self->wait;
 
@@ -1006,7 +1005,7 @@ sub vcf_stats
 sub apply_filter
 {
     my ($self,$outfile,$vcf) = @_;
-    $self->cmd(qq[zcat $vcf | awk '/^#/||\$7=="PASS"' | bgzip -c > $outfile.part]);
+    $self->cmd(qq[zcat $vcf | awk '/^#/||\$7=="PASS"||\$7=="."' | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
 }
 
