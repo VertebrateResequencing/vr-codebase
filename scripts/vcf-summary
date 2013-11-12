@@ -99,7 +99,7 @@ sub vcf_summary
     }
     $summary_vcf->add_header_line({key=>'FORMAT',ID=>'AC',Number=>'A',Type=>'Integer',Description=>'Allele count in cohort'});
     $summary_vcf->add_header_line({key=>'FORMAT',ID=>'AN',Number=>'1',Type=>'Integer',Description=>'Allele number in cohort'});  
-    $summary_vcf->add_header_line({key=>'FORMAT',ID=>'DP',Number=>'1',Type=>'Integer',Description=>'Average # high-quality bases in cohort'});  
+    $summary_vcf->add_header_line({key=>'FORMAT',ID=>'DP',Number=>'1',Type=>'Float',Description=>'Average # high-quality bases in cohort'});  
     $summary_vcf->add_header_line({key=>'FORMAT',ID=>'GC',Number=>'G',Type=>'Integer',Description=>'Genotype counts in cohort (diploid assumed; haploid A counted as diploid A/A)'});  
     
     print $summary_vcf->format_header();
