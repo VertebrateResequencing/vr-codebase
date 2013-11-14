@@ -64,6 +64,19 @@ sub parse_region
     return undef;
 }
 
+sub missing_gts
+{
+    my ($vcf,$rec) = @_;
+    for (my $i=9; $i<@$rec; $i++)
+    {
+        my $gt = $vcf->get_field($$rec[$i],0);
+        my ($a1,$a2) = $vcf->split_gt($gt);
+        if ( !defined $a2 ) { $a2 = $a1; }
+        if ( $a1 eq '.' or $a2 eq '.' ) { return 1; }
+    }
+    return 0;
+}
+
 sub vcf_to_gensample
 {
     my ($opts) = @_;
@@ -96,6 +109,8 @@ sub vcf_to_gensample
         # Consider only biallelic sites
         if ( $$x[4] eq '.' or index($$x[4],',')!=-1 ) { next; }
         if ( !($$x[3]=~/^[ACGT]+$/) or !($$x[4]=~/^[ACGT]+$/) ) { next; }
+
+        if ( missing_gts($vcf,$x) ) { next; }
 
         if ( defined $prev_pos && $$x[1] eq $prev_pos ) { next; } # skip duplicate lines
         $prev_pos = $$x[1];
@@ -166,6 +181,8 @@ sub process_line
         # Consider only biallelic sites
         if ( $$x[4] eq '.' or index($$x[4],',')!=-1 ) { print $vcf->format_line($x); next; }
         if ( !($$x[3]=~/^[ACGT]+$/) or !($$x[4]=~/^[ACGT]+$/) ) { print $vcf->format_line($x); next; }
+
+        if ( missing_gts($vcf,$x) ) { print $vcf->format_line($x); next; }
 
         if ( defined $prev_pos && $$x[1] eq $prev_pos ) { print $vcf->format_line($x); next; } # duplicate line
         $prev_pos = $$x[1];

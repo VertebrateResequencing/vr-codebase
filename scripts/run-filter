@@ -36,7 +36,7 @@ sub new
     my ($class,@args) = @_;
     my $self = $class->SUPER::new(@args);
 
-    $$self{config_version} = '1382541677';
+    $$self{config_version} = '1384418534';
     $$self{merge_files}  = 0;
     $$self{do_clean}     = 1;
     $$self{ngood_max}    = 1_000;
@@ -50,7 +50,7 @@ sub new
     $$self{nfold}        = '';
     $$self{snps}  = 
     {
-        fixed_filter => q[-m+ -e'%QUAL<10 && RPB<0.1'],
+        bad_sites    => q[-m+ -e'%QUAL<10 && RPB<0.1'],
         annots       => 'RPB,SGB,VDB,QUAL,MQSB,ICB',
         good_vcf     => '/lustre/scratch105/projects/g1k/ref/broad_resources_b37/hapmap_3.3.b37.sites.vcf.gz',
         override_bad => 1,
@@ -80,10 +80,11 @@ sub new
 
             snps => 
             {
-                fixed_filter => q\[] .$$self{snps}{fixed_filter}. q[\],     # IMPORTANT: this defines bad sites! Only sites with FILTER="PASS" or "." will be classified
+                bad_sites    => q\[] .$$self{snps}{bad_sites}. q[\],     # IMPORTANT: this defines bad sites! Only sites with FILTER="PASS" or "." will be classified
+                good_sites   => undef,                                   # Similarly to "bad_sites", restricts good_vcf to sites which pass "good_sites" filter in "in_vcf"
                 annots       => '] .$$self{snps}{annots}. q[',
                 good_vcf     => '] .$$self{snps}{good_vcf}. q[',
-                override_bad => '] .$$self{snps}{override_bad}. q[',        # Treat good sites failing fixed filters as: bad (0), good (1), unclassified (2)
+                override_bad => '] .$$self{snps}{override_bad}. q[',        # Treat good sites failing bad_sites filter as: bad (0), good (1), unclassified (2)
                 nshuffle_max => '] .$$self{snps}{nshuffle_max} . q[',
                 chunk_by     => '] .$$self{snps}{chunk_by} . q[',
                 
@@ -92,9 +93,10 @@ sub new
             },
 
             # Maximum number of good and bad sites to train on (SVM can be slow)
-            ngood_max  => ] .$$self{ngood_max}. q[,
-            nbad_max   => ] .$$self{nbad_max}. q[,
-            nfold      => '] .$$self{nfold} . q[',      # n-fold cross-validation
+            ngood_max   => ] .$$self{ngood_max}. q[,
+            nbad_max    => ] .$$self{nbad_max}. q[,
+            nfold       => '] .$$self{nfold} . q[',      # n-fold cross-validation
+            random_seed => undef,      # random seed for selection training sites
 
             # Scale in this quantile range [%]
             scale_qlow   => '] . $$self{scale_qlow} . q[',
@@ -598,7 +600,7 @@ sub get_file_list
 sub strip_genotypes
 {
     my ($self,$outfile,$infile,$type) = @_;
-    $self->cmd("$$self{bcftools} subset -G -ou $infile -i '%TYPE=\"$type\"' | $$self{bcftools} filter -s BadSite $$self{$type}{fixed_filter} -ob - > $outfile.part");
+    $self->cmd("$$self{bcftools} subset -G -ou $infile -i '%TYPE=\"$type\"' | $$self{bcftools} filter -s BadSite $$self{$type}{bad_sites} -ob - > $outfile.part");
     $self->cmd("$$self{bcftools} index $outfile.part");
     rename("$outfile.part.csi","$outfile.csi") or $self->throw("rename: $outfile.part.csi $outfile.csi: $!");
     rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile: $!");
@@ -608,9 +610,20 @@ sub extract_annots
 {
     my ($self,$outfile,$infile,$type) = @_;
 
+    my $good_vcf = $$self{$type}{good_vcf};
+    if ( defined $$self{$type}{good_sites} )
+    {
+        my $tmpfile = $infile;
+        $tmpfile  =~ s/\.bcf$//i;
+        $tmpfile .= '.good.bcf';
+        $self->cmd("$$self{bcftools} isec -c both -n=2 -w1 $infile $good_vcf -ou | $$self{bcftools} filer $$self{$type}{good_sites} -ob - > $tmpfile");
+        $self->cmd("$$self{bcftools} index $tmpfile");
+        $good_vcf = $tmpfile;
+    }
+
     my @anns = split(/,/,$$self{$type}{annots});
     my $anns = '%CHROM\t%POS\t%REF\t%ALT\t%FILTER\t%MASK\t%' . join('\t%', @anns) . '\n';
-    my $cmd  = "$$self{bcftools} query -c both -f'$anns' $infile $$self{$type}{good_vcf}";
+    my $cmd  = "$$self{bcftools} query -c both -f'$anns' $infile $good_vcf";
 
     print STDERR "$cmd\n";
     open(my $in,"$cmd |") or $self->throw("$cmd: $!");
@@ -653,6 +666,8 @@ sub extract_annots
 sub scale_annots
 {
     my ($self,$outfile,$type,@files) = @_;
+
+    if ( defined $$self{random_seed} ) { srand($$self{random_seed}); }
 
     my $sites_fname = $outfile;
     my $scale_fname = $outfile;
