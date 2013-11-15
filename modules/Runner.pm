@@ -100,6 +100,7 @@ sub new
     $$self{_farm_options} = { runtime=>600, memory=>1_000 };
     $$self{_running_jobs} = {};
     $$self{_nretries} = 1;
+    $$self{_verbose} = 1;
     $$self{usage} = 
         "Runner.pm arguments:\n" .
         "   +help                   Summary of commands\n" .
@@ -114,7 +115,7 @@ sub new
         "   +run <file> <id>        Run the freezed object created by spawn\n" .
         "   +sampleconf             Print a working configuration example\n" .
         "   +show <file>            Print the content of the freezed object created by spawn\n" .
-        "   +verbose                Print debugging messages\n" .
+        "   +silent                 Decrease verbosity of the Runner module\n" .
         "\n";
     return $self;
 }
@@ -146,9 +147,9 @@ sub new
                 +sampleconf
                     Print a working config file example
                 +show <file>
-                     Print the content of the freezed object created by spawn
-                +verbose   
-                    Print debugging messages
+                    Print the content of the freezed object created by spawn
+                +silent
+                    Decrease verbosity of the Runner module
                 
 =cut
 
@@ -173,6 +174,7 @@ sub run
         if ( $arg eq '+nocache' ) { $$self{_nocache}=1; next; }
         if ( $arg eq '+retries' ) { $$self{_nretries}=shift(@ARGV); next; }
         if ( $arg eq '+verbose' ) { $$self{_verbose}=1; next; }
+        if ( $arg eq '+silent' ) { $$self{_verbose}=0; next; }
         if ( $arg eq '+local' ) { $$self{_run_locally}=1; next; }
         if ( $arg eq '+show' ) 
         { 
