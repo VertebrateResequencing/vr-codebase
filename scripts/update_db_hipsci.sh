@@ -10,6 +10,7 @@ FILE=""
 DB=""
 TAX=""
 GSF=""
+SPE=""
 while [ "$1" != "" ]; do
     case $1 in
         -d | --db )             shift
@@ -17,6 +18,9 @@ while [ "$1" != "" ]; do
                                 ;;
         -t | --tax )            shift
         						TAX="-tax $1"
+                                ;;
+        -n | --species )        shift
+                                                        SPE="-spe $1"
                                 ;;
         -f | --file )           shift
         						FILE="-f $1"
@@ -54,4 +58,4 @@ export ORACLE_HOME=/software/oracle_client-10.2.0
 
 mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST $DB > $DUMPS
 
-$BIN_EXT/update_pipeline.pl -s $CONF/$DB"_studies" -d $DB $TAX $FILE $GSF
+$BIN_EXT/update_pipeline.pl -s $CONF/$DB"_studies" -d $DB $TAX $SPE $FILE $GSF

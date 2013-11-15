@@ -10,6 +10,7 @@ TAX=""
 DB=""
 MIN_RUN=""
 STUDY=""
+SPE=""
 while [ "$1" != "" ]; do
     case $1 in
         -d | --db )             shift
@@ -17,6 +18,9 @@ while [ "$1" != "" ]; do
                                 ;;
         -t | --tax )            shift
         						TAX="-tax $1"
+                                ;;
+        -n | --species )        shift
+                                                        SPE="-spe $1"
                                 ;;
         -m | --min )            shift
         						MIN_RUN="-min $1"
@@ -57,7 +61,7 @@ export ORACLE_HOME=/software/oracle_client-10.2.0
 mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST $DB > $DUMPS
 
 if [ "$STUDY" = "" ]; then
-	cd $BIN_EXT && perl update_pipeline.pl -s $CONF/$DB"_studies" -d $DB $TAX $MIN_RUN $ARG_UP
+	cd $BIN_EXT && perl update_pipeline.pl -s $CONF/$DB"_studies" -d $DB $TAX $SPE $MIN_RUN $ARG_UP
 else
-	cd $BIN_EXT && perl update_pipeline.pl -s $CONF/$DB$STUDY -d $DB $TAX $MIN_RUN $ARG_UP
+	cd $BIN_EXT && perl update_pipeline.pl -s $CONF/$DB$STUDY -d $DB $TAX $SPE $MIN_RUN $ARG_UP
 fi
