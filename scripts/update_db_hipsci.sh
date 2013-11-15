@@ -46,7 +46,6 @@ fi
 
 ARG_UP="-u -v"
 
-CONF="/nfs/vertres01/conf"
 BIN_EXT="/software/vertres/update_pipeline_hipsci"
 DUMPS="/warehouse/g1k-04/sql_dumps/$DB.sql"
 

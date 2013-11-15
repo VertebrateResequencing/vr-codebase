@@ -47,7 +47,6 @@ fi
 ARG_UP="-u -sup -nop -md5 -wdr -trd -v"
 
 ROOT="/lustre/scratch105"
-CONF="/nfs/vertres01/conf"
 SCRIPTS="/software/vertres/scripts"
 BIN_EXT="/software/vertres/update_pipeline"
 DUMPS="/warehouse/g1k-04/sql_dumps/$DB.sql"
