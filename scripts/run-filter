@@ -616,7 +616,7 @@ sub extract_annots
         my $tmpfile = $infile;
         $tmpfile  =~ s/\.bcf$//i;
         $tmpfile .= '.good.bcf';
-        $self->cmd("$$self{bcftools} isec -c both -n=2 -w1 $infile $good_vcf -ou | $$self{bcftools} filer $$self{$type}{good_sites} -ob - > $tmpfile");
+        $self->cmd("$$self{bcftools} isec -c both -n=2 -w1 $infile $good_vcf -ou | $$self{bcftools} filter $$self{$type}{good_sites} -ob - > $tmpfile");
         $self->cmd("$$self{bcftools} index $tmpfile");
         $good_vcf = $tmpfile;
     }
