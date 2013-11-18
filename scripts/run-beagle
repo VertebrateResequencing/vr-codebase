@@ -419,7 +419,7 @@ sub merge_beagle_vcf
         if ( 1 != ($ids=$new_vcf->get_tag_index($$new_rec[8],'DS',':')) ) { $self->throw("Expected GT:DS:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
         if ( 2 != $new_vcf->get_tag_index($$new_rec[8],'GP',':') ) { $self->throw("Expected GT:DS:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
         $$ori_rec[8] .= ':DS';
-        if ( $igl<0 ) { $$ori_rec[8] .= 'GL'; }
+        if ( $igl<0 ) { $$ori_rec[8] .= ':GL'; }
         my @ac = ();
         for (my $i=0; $i<$nsamples; $i++)
         {
