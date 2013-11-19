@@ -112,7 +112,6 @@ sub new
             debug_chunks      => 0,
             shuffle_chunks    => 0,         # Process chunks in random order to randomize disk access
             keep_bcfs         => 0,
-            chunks_overlap    => 0,
             whole_genome_bams => 0,         # Set to 0 if BAMs are splitted by chromosome. In such a case, the bams must contain '*chrom$chr.' in the name.
             hard_filter       => 0,
 
@@ -622,7 +621,6 @@ sub get_chunks
     my ($self) = @_;
 
     my $regions = $$self{regions} ? $self->read_regions($$self{regions}) : $self->read_fai("$$self{fa_ref}.fai",$$self{chroms});
-
     my @chunks;
     for my $region (@$regions)
     {
@@ -632,12 +630,11 @@ sub get_chunks
         {
             my $from = $pos;
             my $to   = $from+$$self{chunk_size}-1;
-
             if ( $to>$end_pos ) { $to=$end_pos; }
 
             push @chunks, { chr=>$$region{chr}, from=>$from, to=>$to };
 
-            $pos += $$self{chunk_size} - $$self{chunks_overlap};
+            $pos += $$self{chunk_size};
             if ( $pos<1 ) { $self->throw("The split size too small [$$self{chunk_size}]?\n"); }
 
             if ( $$self{debug_chunks} && scalar @chunks>=$$self{debug_chunks} ) { return \@chunks; }
@@ -672,6 +669,28 @@ sub read_fai
 {
     my ($self,$fai,$regexs) = @_;
 
+    my %chunk_opts = ();
+    for my $key (keys %{$$self{chunk_options}})
+    {
+        my ($chr,$fromto) = split(/:/,$key);
+        if ( !defined $fromto or $fromto eq '' ) { next; }
+        my ($from,$to) = split(/-/,$fromto);
+        push @{$chunk_opts{$chr}},[$from,$to];
+    }
+    for my $chr (keys %{$$self{ploidy}})
+    {
+        if ( ref($$self{ploidy}{$chr}) ne 'ARRAY' ) { next; }
+        for my $reg (@{$$self{ploidy}{$chr}})
+        {
+            my ($from,$to) = split(/-/,$$reg{region}); 
+            push @{$chunk_opts{$chr}},[$from,$to];
+        }
+    }
+    for my $chr (keys %chunk_opts)
+    {
+        $chunk_opts{$chr} = [ sort { $$a[0]<=>$$b[0] } @{$chunk_opts{$chr}} ];
+    }
+
     # Determine the chromosomes and their lengths
     open(my $fh,'<',$fai) or $self->throw("$fai: $!"); 
     my @chr_lengths;
@@ -687,22 +706,27 @@ sub read_fai
             last;
         }
         if ( !defined $chr ) { next; }
-        if ( !exists($$self{ploidy}{$chr}) ) 
+        if ( !exists($chunk_opts{$chr}) ) 
         {
             push @chr_lengths, { chr=>$chr, from=>$from, to=>$to };
             next;
         }
 
         # Split the chunks as necessary
-        for my $reg (@{$$self{ploidy}{$chr}})
+        for my $reg (@{$chunk_opts{$chr}})
         {
-            my ($start,$end) = split(/-/,$$reg{region});
-            if ( $start>$from )
+            if ( $$reg[0]>$from )
             {
-                push @chr_lengths, { chr=>$chr, from=>$from, to=>$start-1 };
+                push @chr_lengths, { chr=>$chr, from=>$from, to=>$$reg[0]-1 };
+                $from = $$reg[0];
+                push @chr_lengths, { chr=>$chr, from=>$from, to=>$$reg[1] };
+                $from = $$reg[1]+1;
             }
-            push @chr_lengths, { chr=>$chr, from=>$start, to=>$end };
-            $from = $end+1;
+            elsif ( $$reg[0]==$from )
+            {
+                push @chr_lengths, { chr=>$chr, from=>$$reg[0], to=>$$reg[1] };
+                $from = $$reg[1]+1;
+            }
         }
         if ( $from<$to )
         {
@@ -845,6 +869,7 @@ sub debug_commands
     my $bam_list    = "$$self{outdir}/lists/chr$chr-pooled.list";
     my $sample_list = "$$self{outdir}/lists/chr$chr-pooled.samples";
     $self->create_sample_file($sample_list,"samples.$$.list", $chr,$pos,$pos);
+    $self->set_chunk_options($chr,$pos,$pos);
     my $cmd = "$$self{mpileup} -ug -r $chr:$pos-$pos -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -s samples.$$.list -";
     print "$cmd\n";
 }
