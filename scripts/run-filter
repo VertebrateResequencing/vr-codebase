@@ -1019,6 +1019,7 @@ sub classify_eval
     close($gz) or $self->throw("close failed: bgzip -c > $outfile.sites.gz");
     close($score_fh) or $self->throw("close failed: $score_file");
     close($sites_fh) or $self->throw("close failed: gunzip -c $sites_file");
+    $self->cmd("tabix -s1 -b2 -e2 $outfile.sites.gz");
 
     open($fh,'<',"$outfile.tmp") or $self->throw("$outfile.tmp: $!");
     open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
@@ -1163,7 +1164,6 @@ sub annotate_scores
     my ($self,$outfile,$infile, @files) = @_;
     if ( scalar @files !=1 ) { $self->throw("todo: ", join(' ',@files), "\n"); }
     my $ann_fname = $files[0] . ".sites.gz";
-    if ( !$self->is_finished("$ann_fname.tbi") ) { $self->cmd("tabix -s1 -b2 -e2 $ann_fname"); }
     $self->cmd("$$self{bcftools} view $infile | vcf-annotate -a $ann_fname -d key=INFO,ID=MLQ,Number=1,Type=Float,Description='Machine Learning Quality' -c CHROM,FROM,INFO/MLQ | bgzip -c > $outfile.part");
     rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
 }
