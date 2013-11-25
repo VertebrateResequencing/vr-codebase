@@ -425,7 +425,7 @@ sub decide_appropriate_queue
 
 sub map_and_filter_perfect_pairs
 {
-  my($reference, $working_directory)= @_;
+  my($self,$reference, $working_directory)= @_;
   
   my $mapper = VertRes::Wrapper::smalt->new();
   $mapper->setup_custom_reference_index($reference,'-k 13 -s 4','small');
@@ -446,7 +446,7 @@ sub map_and_filter_perfect_pairs
   
   `samtools index $working_directory/contigs.mapped.sorted.bam`;
   
-  my \$worked = VertRes::Utils::Sam->new(verbose => 1, quiet => 0)->bam2fastq(qq[$working_directory/contigs.mapped.sorted.bam], qq[$working_directory/subset]);
+  VertRes::Utils::Sam->new(verbose => 1, quiet => 0)->bam2fastq(qq[$working_directory/contigs.mapped.sorted.bam], qq[$working_directory/subset]);
   unlink("$working_directory/contigs.mapped.sorted.bam");
   `mv $working_directory/subset_1.fastq $working_directory/forward.fastq`;
   `mv $working_directory/subset_2.fastq $working_directory/reverse.fastq`;
