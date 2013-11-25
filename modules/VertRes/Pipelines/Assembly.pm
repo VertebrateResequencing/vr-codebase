@@ -85,6 +85,8 @@ use Data::Dumper;
 use FileHandle;
 use Utils;
 use VertRes::Utils::Assembly;
+use VertRes::Utils::Sam;
+use VertRes::Wrapper::smalt;
 use Bio::AssemblyImprovement::Scaffold::Descaffold;
 use Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles;
 use Bio::AssemblyImprovement::Scaffold::SSpace::Iterative;
@@ -361,6 +363,7 @@ my \@lane_paths = $lane_paths_str;
 Bio::AssemblyImprovement::Util::OrderContigsByLength->new( input_filename => \$assembler->optimised_assembly_file_path(), output_filename => \$assembler->optimised_assembly_file_path() )->run();
 copy(\$assembler->optimised_assembly_file_path(),\$assembler->optimised_directory().'/unscaffolded_contigs.fa');
 \$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
+\$ok = \$assembly_pipeline->map_and_filter_perfect_pairs(\$assembler->optimised_assembly_file_path(), qq[$tmp_directory]);
 \$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_assembly_file_path(),[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size,$num_threads);
 
 Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_assembly_file_path(),base_contig_name => qq[$contigs_base_name])->run();
@@ -420,6 +423,34 @@ sub decide_appropriate_queue
 ##Improve assembly step. Runs SSPACE, abacas (if a reference is provided) and GapFiller.
 ## descaffolds the resulting assembly if necessary and cleans up any small contigs.
 
+sub map_and_filter_perfect_pairs
+{
+  my($reference, $working_directory)= @_;
+  
+  my $mapper = VertRes::Wrapper::smalt->new();
+  $mapper->setup_custom_reference_index($reference,'-k 13 -s 4','small');
+  
+  `smalt map -x -i 3000 -f samsoft -y 0.95 -o $working_directory/contigs.mapped.sam $reference.small $working_directory/forward.fastq $working_directory/reverse.fastq`;
+  $self->throw("Sam file not created") unless(-e "$working_directory/contigs.mapped.sam");
+  
+  `samtools faidx $reference`;
+  $self->throw("Reference index file not created") unless(-e "$reference.fai");
+  
+  # Filter reads which are flagged as perfect pairs
+  `samtools view -F 2 -bt $reference.fai $working_directory/contigs.mapped.sam > $working_directory/contigs.mapped.bam`;
+  $self->throw("Couldnt convert from sam to BAM") unless(-e "$working_directory/contigs.mapped.bam");
+  unlink("$working_directory/contigs.mapped.sam");
+  
+  `samtools sort -m 500000000 $working_directory/contigs.mapped.bam $working_directory/contigs.mapped.sorted`;
+  $self->throw("Couldnt sort the BAM") unless(-e "$working_directory/contigs.mapped.sorted.bam");
+  
+  `samtools index $working_directory/contigs.mapped.sorted.bam`;
+  
+  my \$worked = VertRes::Utils::Sam->new(verbose => 1, quiet => 0)->bam2fastq(qq[$working_directory/contigs.mapped.sorted.bam], qq[$working_directory/subset]);
+  unlink("$working_directory/contigs.mapped.sorted.bam");
+  `mv $working_directory/subset_1.fastq $working_directory/forward.fastq`;
+  `mv $working_directory/subset_2.fastq $working_directory/reverse.fastq`;
+}
 
 
 sub improve_assembly
