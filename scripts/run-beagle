@@ -29,6 +29,8 @@ sub new
     $$self{do_clean} = 1;
     $$self{debug_chunks} = 0;
     $$self{limits} = { memory=>5_000, runtime=>24*60 };
+    $$self{bcftools}    = '/software/vertres/bin-external/bcftools-exp-rc';
+    $$self{beagle_jar}  = '/nfs/users/nfs_p/pd3/sandbox/svn/beagle/b4.r1194.jar';
     $$self{beagle_args} = '';
     $$self{java_args} = '';
     $$self{phased_join_args} = '';
@@ -40,10 +42,10 @@ sub new
             #  config file to get rid of the warnings.
             version  => '] .$$self{config_version}. q[',
 
-            beagle_jar  => '/nfs/users/nfs_p/pd3/sandbox/svn/beagle/b4.r1128.jar',
+            beagle_jar  => '] .$$self{beagle_jar}. q[',
             beagle_args => '',
             java_args   => '',
-            bcftools    => '/nfs/users/nfs_p/pd3/git/bcftools/xxx-bcftools',
+            bcftools    => '] .$$self{bcftools}. q[',
 
             # The known_vcf (aka -k) and in_vcf (aka -i) file names can contain the string "{CHROM}" which will be expanded 
             #   according to chromosomes listed in the "region" key below. If the key is not defined, glob expansion will
