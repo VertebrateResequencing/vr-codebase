@@ -419,7 +419,7 @@ sub merge_beagle_vcf
         if ( $igp!=-1 ) { $self->throw("Update me, FORMAT/GP already exist in $ori_fname"); }
         if ( 0 != $new_vcf->get_tag_index($$new_rec[8],'GT',':') ) { $self->throw("Expected GT:DS:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
         if ( 1 != ($ids=$new_vcf->get_tag_index($$new_rec[8],'DS',':')) ) { $self->throw("Expected GT:DS:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
-        if ( 2 != $new_vcf->get_tag_index($$new_rec[8],'GP',':') ) { $self->throw("Expected GT:DS:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
+        if ( 2 != ($igp=$new_vcf->get_tag_index($$new_rec[8],'GP',':')) ) { $self->throw("Expected GT:DS:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
         $$ori_rec[8] .= ':DS';
         if ( $igl<0 ) { $$ori_rec[8] .= ':GL'; }
         my @ac = ();
@@ -435,13 +435,15 @@ sub merge_beagle_vcf
                 $new_gt = substr($new_gt,0,1);
                 $ac[$new_gt]++;
 
-                my @gp = split(/,/, $new_vcf->get_field($$new_rec[$icol],1));
+                my @gp = split(/,/, $new_vcf->get_field($$new_rec[$icol],$igp));
                 my @new_gp;
                 my $j = 0;
                 my $k = 1;
                 while ($j<@gp)
                 {
-                    push @new_gp, $gp[$j]!=0 ? -10*log($gp[$j])/2.302585 : -100;
+                    my $val = $gp[$j]!=0 ? log($gp[$j])/2.302585 : -99;
+                    if ( $val < -99 ) { $val = -99; }
+                    push @new_gp, $val;
                     $j += ++$k;
                 }
 
@@ -465,10 +467,12 @@ sub merge_beagle_vcf
                 if ( scalar @gt !=2 ) { $self->throw("Uh: $new_gt"); }
                 for my $gt (@gt) { $ac[$gt]++; }
 
-                my @new_gp = split(/,/, $new_vcf->get_field($$new_rec[$icol],1));
+                my @new_gp = split(/,/, $new_vcf->get_field($$new_rec[$icol],$igp));
                 for (my $j=0; $j<@new_gp; $j++)
                 {
-                    $new_gp[$j] = $new_gp[$j]!=0 ? log($new_gp[$j])/2.302585 : -100;
+                    my $val = $new_gp[$j]!=0 ? log($new_gp[$j])/2.302585 : -99;
+                    if ( $val < -99 ) { $val = -99; }
+                    $new_gp[$j] = $val;
                 }
                 $$ori_rec[$icol] = $ori_vcf->replace_field($$ori_rec[$icol],$new_gt,0,':');
                 $$ori_rec[$icol] .= ':' . $ds;
@@ -578,7 +582,7 @@ sub beagle
     }
     $self->merge_beagle_vcf($chr,$from,$to,$in_vcf,"$prefix.vcf.gz","$outdir/$$chunk[1]-$$chunk[2].vcf.gz.part");
     $self->tabix_part("$outdir/$$chunk[1]-$$chunk[2].vcf.gz");
-#rename("$prefix.vcf.gz","$prefix.vcf.gz-beagle");
+    #rename("$prefix.vcf.gz","$prefix.vcf.gz-beagle");  # uncomment to save raw beagle output
     unlink("$prefix.vcf.gz");
     rename("$outdir/$$chunk[1]-$$chunk[2].vcf.gz.part","$outdir/$$chunk[1]-$$chunk[2].vcf.gz");
     $self->cmd(qq[touch $outfile]);
