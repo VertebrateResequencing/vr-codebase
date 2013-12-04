@@ -49,7 +49,8 @@ sub new
 
             # The known_vcf (aka -k) and in_vcf (aka -i) file names can contain the string "{CHROM}" which will be expanded 
             #   according to chromosomes listed in the "region" key below. If the key is not defined, glob expansion will
-            #   be used to obtain the chromosomes. The VCFs must be tabix indexed.
+            #   be used to obtain the chromosomes. The VCFs must be tabix indexed. Note that Beagle requires phased
+            #   known_vcf when do_impute is set.
             # When known_vcf is set, consider also setting the chunk_by_known key.
             #
             # in_vcf     => '/some/path/chr{CHROM}.vcf.gz',
@@ -125,11 +126,7 @@ sub parse_args
     {
         $self->warn("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
     }
-    if ( !exists($$self{known_vcf}) ) 
-    { 
-        $$self{known_vcf} = '--';
-    }
-    elsif ( !($$self{known_vcf}=~/.gz$/) )
+    if ( exists($$self{known_vcf}) && !($$self{known_vcf}=~/.gz$/) )
     {
         $self->warn("The known_vcf should be bgzipped and tabix indexed. Hopefully you know what you're doing?\n");
     }
@@ -573,7 +570,11 @@ sub beagle
         $self->cmd(qq[mkdir -p $outdir]);
         my $mem = $self->get_limits('memory') * 0.8;
         if ( $mem<=0 ) { $mem = 500; }
-        my $known = defined $known_vcf ? '' : "ref=$known_vcf";
+        my $known = defined $known_vcf ? "ref=$known_vcf" : '';
+        if ( $known ne '' )
+        {
+            $known .= $$self{do_impute} ? ' impute=true' : ' impute=false';
+        }
         $self->create_vcf_chunk($in_vcf,"$prefix.in.vcf.gz",$chr,$from,$to);
         $self->java_cmd(qq[java -Xms${mem}m -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} $known gl=$prefix.in.vcf.gz out=$prefix.part >>$outfile.o],"$outfile.e");
         if ( -s "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
