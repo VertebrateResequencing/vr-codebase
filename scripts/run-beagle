@@ -30,7 +30,7 @@ sub new
     $$self{debug_chunks} = 0;
     $$self{limits} = { memory=>5_000, runtime=>24*60 };
     $$self{bcftools}    = '/software/vertres/bin-external/bcftools-exp-rc';
-    $$self{beagle_jar}  = '/nfs/users/nfs_p/pd3/sandbox/svn/beagle/b4.r1194.jar';
+    $$self{beagle_jar}  = '/nfs/users/nfs_p/pd3/sandbox/svn/beagle/b4.r1196.jar';
     $$self{beagle_args} = '';
     $$self{java_args} = '';
     $$self{phased_join_args} = '';
