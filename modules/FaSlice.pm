@@ -178,7 +178,7 @@ sub get_base
 sub get_slice
 {
     my ($self,$chr,$from,$to) = @_;
-    if ( $to-$from >= $$self{size} ) { $self->throw("Too big region requested, $from-$to >= $$self{size}\n"); }
+    if ( $to-$from >= $$self{size} ) { $$self{size} = $to-$from+1; }
     if ( $from>$to ) { $self->throw("Expected $from>$to\n"); }
     if ( !$$self{chr} || $chr ne $$self{chr} || $from<$$self{from} || $to>$$self{to} )
     {
