@@ -50,7 +50,7 @@ sub new
             # The known_vcf (aka -k) and in_vcf (aka -i) file names can contain the string "{CHROM}" which will be expanded 
             #   according to chromosomes listed in the "region" key below. If the key is not defined, glob expansion will
             #   be used to obtain the chromosomes. The VCFs must be tabix indexed. Note that Beagle requires phased
-            #   known_vcf when do_impute is set.
+            #   known_vcf and the samples in known_vcf must not overlap the input samples.
             # When known_vcf is set, consider also setting the chunk_by_known key.
             #
             # in_vcf     => '/some/path/chr{CHROM}.vcf.gz',
@@ -70,7 +70,13 @@ sub new
 
             # If unset, imputed sites from known_vcf which are not present in in_vcf will not be printed on output. 
             #   This is useful when performing genotype refinement and the number of sites should stay unchanged.
-            do_impute => 1,
+            do_impute  => 1,
+
+            # No imputation or genotype, only genotype refinement. Run with gt=
+            #   and leaves off gl=. Consider adding to 'beagle_args' the
+            #   options gprobs=false (no posterior genotype probabilities) or
+            #   phase-its= to increase phasing accuracy (the default is phase-its=5).
+            do_phasing => 0,
 
             # Create whole-genome VCF? This can produce *huge* files for thousands of samples
             merge_chroms   => 0,
@@ -142,7 +148,7 @@ sub parse_args
     { 
          $self->throw("Missing the key chunk_nsites");
     }
-    if ( exists($$self{chunk_by_known}) && !exists($$self{known_vcf}) )
+    if ( $$self{chunk_by_known} && !exists($$self{known_vcf}) )
     {
         $self->throw("Expected the key \"known_vcf\" with \"chunk_by_known\".\n");
     }
@@ -356,7 +362,12 @@ sub next_beagle_rec
             if ( $$self{do_impute} ) { print $out_fh $out_vcf->format_line($x); }
             next;
         }
-        if ( $$x[1] > $$rec[1] ) { $self->throw("Out of sync? $$x[0]:$$x[1] vs $$rec[0]:$$rec[1]\n"); }
+        if ( $$x[1] > $$rec[1] ) 
+        { 
+            # Out of sync: The original VCF line not present in the beagle output
+            $vcf->_unread_line($x);
+            return undef;
+        }
         return $x;
     }
     return undef;
@@ -399,62 +410,74 @@ sub merge_beagle_vcf
         $prev = $$ori_rec[1];
 
         my $new_rec = $self->next_beagle_rec($new_vcf, $ori_rec, $fh, $ori_vcf);
-        if ( !defined $new_rec ) { $self->throw("No more records from $new_fname? $$ori_rec[0]:$$ori_rec[1]\n"); }
+        if ( !defined $new_rec ) 
+        { 
+            # This record was not given to beagle, well, at least it's not present in beagle's output
+            print $fh $ori_vcf->format_line($ori_rec);
+            next;
+        }
         if ( $$new_rec[0] ne $$ori_rec[0] ) { $self->throw("CHR mismatch at $$ori_rec[0]:$$ori_rec[1] .. $$new_rec[3] vs $$ori_rec[3]\n"); }
         if ( $$new_rec[1] ne $$ori_rec[1] ) { $self->throw("POS mismatch at $$ori_rec[0]:$$ori_rec[1] .. $$new_rec[3] vs $$ori_rec[3]\n"); }
         if ( $$new_rec[3] ne $$ori_rec[3] ) { $self->throw("REF mismatch at $$ori_rec[0]:$$ori_rec[1] .. $$new_rec[3] vs $$ori_rec[3]\n"); }
         if ( $$new_rec[4] ne $$ori_rec[4] ) { $self->throw("ALT mismatch at $$ori_rec[0]:$$ori_rec[1] .. $$new_rec[4] vs $$ori_rec[4]\n"); }
-        if ( $$new_rec[8] ne 'GT:DS:GP' ) { $self->throw("Update me, the FORMAT field at $$ori_rec[0]:$$ori_rec[1] changed to $$new_rec[8]\n"); }
         my @alt = split(/,/,$$ori_rec[4]);
         my $nal = 1 + scalar @alt;
         my $igt = $ori_vcf->get_tag_index($$ori_rec[8],'GT',':');
-        my $ipl = $ori_vcf->get_tag_index($$ori_rec[8],'PL',':');
-        my $igp = $ori_vcf->get_tag_index($$ori_rec[8],'GP',':');
-        my $igl = $ori_vcf->get_tag_index($$ori_rec[8],'GL',':');
-        my $ids = $ori_vcf->get_tag_index($$ori_rec[8],'DS',':');
-        if ( $ids!=-1 ) { $self->throw("Update me, FORMAT/DS already exist in $ori_fname"); }
-        if ( $igp!=-1 ) { $self->throw("Update me, FORMAT/GP already exist in $ori_fname"); }
-        if ( 0 != $new_vcf->get_tag_index($$new_rec[8],'GT',':') ) { $self->throw("Expected GT:DS:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
-        if ( 1 != ($ids=$new_vcf->get_tag_index($$new_rec[8],'DS',':')) ) { $self->throw("Expected GT:DS:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
-        if ( 2 != ($igp=$new_vcf->get_tag_index($$new_rec[8],'GP',':')) ) { $self->throw("Expected GT:DS:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
-        $$ori_rec[8] .= ':DS';
-        if ( $igl<0 ) { $$ori_rec[8] .= ':GL'; }
+        my $ipl_ori = $ori_vcf->get_tag_index($$ori_rec[8],'PL',':');
+        my $igp_ori = $ori_vcf->get_tag_index($$ori_rec[8],'GP',':');
+        my $igl_ori = $ori_vcf->get_tag_index($$ori_rec[8],'GL',':');
+        my $ids_ori = $ori_vcf->get_tag_index($$ori_rec[8],'DS',':');
+        if ( 0 != $new_vcf->get_tag_index($$new_rec[8],'GT',':') ) { $self->throw("Expected GT[:DS:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
+        my $ids_new = $new_vcf->get_tag_index($$new_rec[8],'DS',':');
+        my $igp_new = $new_vcf->get_tag_index($$new_rec[8],'GP',':');
+        if ( $ids_new!=-1 && $ids_ori==-1 ) { $$ori_rec[8] .= ':DS'; }
+        if ( $igp_new!=-1 && $igl_ori==-1 ) { $$ori_rec[8] .= ':GL'; }
+        $ids_ori = $ori_vcf->get_tag_index($$ori_rec[8],'DS',':');
+        $igl_ori = $ori_vcf->get_tag_index($$ori_rec[8],'GL',':');
         my @ac = ();
         for (my $i=0; $i<$nsamples; $i++)
         {
             my $icol = $i+9;
             my $gt = $ori_vcf->get_field($$ori_rec[$icol],$igt);
-            my $ds = $new_vcf->get_field($$new_rec[$icol],$ids);
+            if ( $ids_new != -1 )
+            {
+                my $ds = $new_vcf->get_field($$new_rec[$icol],$ids_new);
+                $$ori_rec[$icol] = $ori_vcf->replace_field($$ori_rec[$icol],$ds,$ids_ori,':');
+            }
             if ( index($gt,'/')==-1 && index($gt,'|')==-1 )
             {
                 # haploid
                 my $new_gt = $new_vcf->get_field($$new_rec[$icol],0);
                 $new_gt = substr($new_gt,0,1);
                 $ac[$new_gt]++;
-
-                my @gp = split(/,/, $new_vcf->get_field($$new_rec[$icol],$igp));
-                my @new_gp;
-                my $j = 0;
-                my $k = 1;
-                while ($j<@gp)
-                {
-                    my $val = $gp[$j]!=0 ? log($gp[$j])/2.302585 : -99;
-                    if ( $val < -99 ) { $val = -99; }
-                    push @new_gp, $val;
-                    $j += ++$k;
-                }
-
-                my @ori_pl = split(/,/,$ori_vcf->get_field($$ori_rec[$icol], $ipl));
-                my @new_pl;
-                for ($j=0; $j<$nal; $j++)
-                {
-                    push @new_pl, $ori_pl[$j];
-                }
                 $$ori_rec[$icol] = $ori_vcf->replace_field($$ori_rec[$icol],$new_gt,$igt,':');
-                $$ori_rec[$icol] = $ori_vcf->replace_field($$ori_rec[$icol],join(',',@new_pl),$ipl,':');
-                $$ori_rec[$icol] .= ':' . $ds;
-                if ( $igl<0 ) { $$ori_rec[$icol] .= ':' . join(',',@new_gp); }
-                else { $ori_vcf->replace_field($$ori_rec[$icol],join(',',@new_gp),$igl,':'); }
+
+                if ( $igp_new!=-1 )
+                {
+                    my @gp = split(/,/, $new_vcf->get_field($$new_rec[$icol],$igp_new));
+                    my $j = 0;
+                    my $k = 1;
+                    my @new_gp;
+                    while ($j<@gp)
+                    {
+                        my $val = $gp[$j]!=0 ? log($gp[$j])/2.302585 : -99;
+                        if ( $val < -99 ) { $val = -99; }
+                        push @new_gp, $val;
+                        $j += ++$k;
+                    }
+                    $ori_vcf->replace_field($$ori_rec[$icol],join(',',@new_gp),$igl_ori,':');
+                }
+
+                if ( $ipl_ori!=-1 )
+                {
+                    my @ori_pl = split(/,/,$ori_vcf->get_field($$ori_rec[$icol], $ipl_ori));
+                    my @new_pl;
+                    for (my $j=0; $j<$nal; $j++)
+                    {
+                        push @new_pl, $ori_pl[$j];
+                    }
+                    $$ori_rec[$icol] = $ori_vcf->replace_field($$ori_rec[$icol],join(',',@new_pl),$ipl_ori,':');
+                }
             }
             else
             {
@@ -463,18 +486,19 @@ sub merge_beagle_vcf
                 my @gt = $new_vcf->split_gt($new_gt);
                 if ( scalar @gt !=2 ) { $self->throw("Uh: $new_gt"); }
                 for my $gt (@gt) { $ac[$gt]++; }
-
-                my @new_gp = split(/,/, $new_vcf->get_field($$new_rec[$icol],$igp));
-                for (my $j=0; $j<@new_gp; $j++)
-                {
-                    my $val = $new_gp[$j]!=0 ? log($new_gp[$j])/2.302585 : -99;
-                    if ( $val < -99 ) { $val = -99; }
-                    $new_gp[$j] = $val;
-                }
                 $$ori_rec[$icol] = $ori_vcf->replace_field($$ori_rec[$icol],$new_gt,0,':');
-                $$ori_rec[$icol] .= ':' . $ds;
-                if ( $igl<0 ) { $$ori_rec[$icol] .= ':' . join(',',@new_gp); }
-                else { $ori_vcf->replace_field($$ori_rec[$icol],join(',',@new_gp),$igl,':'); }
+
+                if ( $igp_new!=-1 )
+                {
+                    my @new_gp = split(/,/, $new_vcf->get_field($$new_rec[$icol],$igp_new));
+                    for (my $j=0; $j<@new_gp; $j++)
+                    {
+                        my $val = $new_gp[$j]!=0 ? log($new_gp[$j])/2.302585 : -99;
+                        if ( $val < -99 ) { $val = -99; }
+                        $new_gp[$j] = $val;
+                    }
+                    $ori_vcf->replace_field($$ori_rec[$icol],join(',',@new_gp),$igl_ori,':');
+                }
             }
         }
         my $an = 0;
@@ -503,7 +527,6 @@ sub haploid_to_diploid
     my $igt = $vcf->get_tag_index($$rec[8],'GT',':');
     my $ipl = $vcf->get_tag_index($$rec[8],'PL',':');
     if ( $igt==-1 ) { $self->throw("GT not present in $$vcf{file} at $$rec[0]:$$rec[1]\n"); }
-    if ( $ipl==-1 ) { $self->throw("PL not present in $$vcf{file} at $$rec[0]:$$rec[1]\n"); }
     my @alt = split(/,/,$$rec[4]);
     my $nal = 1 + scalar @alt;
     my $ncols = @{$$vcf{columns}};
@@ -512,20 +535,23 @@ sub haploid_to_diploid
         my $gt = $vcf->get_field($$rec[$i], $igt);
         if ( index($gt,'/')>=0 || index($gt,'|')>=0 ) { next; }    # diploid
         my $new_gt = "$gt/$gt";
-
-        my $pl  = $vcf->get_field($$rec[$i], $ipl);
-        my @pls = split(/,/, $pl);
-
-        if ( @pls!=$nal ) { $self->throw("Wrong number of PL fields? col=$i, nal=$nal, $pl=$pl: ", join("\n",@$rec)); }
-
-        my @new_pl;
-        for (my $j=0; $j<$nal; $j++)
-        {
-            for (my $k=0; $k<$j; $k++) { push @new_pl, 999; }  # set likelihoods of hets to zero
-            push @new_pl, $pls[$j];
-        }
         $$rec[$i] = $vcf->replace_field($$rec[$i], $new_gt, $igt, ':');
-        $$rec[$i] = $vcf->replace_field($$rec[$i], join(',',@new_pl), $ipl, ':');
+
+        if ( $ipl != -1 )
+        {
+            my $pl  = $vcf->get_field($$rec[$i], $ipl);
+            my @pls = split(/,/, $pl);
+
+            if ( @pls!=$nal ) { $self->throw("Wrong number of PL fields? col=$i, nal=$nal, $pl=$pl: ", join("\n",@$rec)); }
+
+            my @new_pl;
+            for (my $j=0; $j<$nal; $j++)
+            {
+                for (my $k=0; $k<$j; $k++) { push @new_pl, 999; }  # set likelihoods of hets to zero
+                    push @new_pl, $pls[$j];
+            }
+            $$rec[$i] = $vcf->replace_field($$rec[$i], join(',',@new_pl), $ipl, ':');
+        }
     }
 }
 
@@ -575,8 +601,9 @@ sub beagle
         {
             $known .= $$self{do_impute} ? ' impute=true' : ' impute=false';
         }
+        my $action = $$self{do_phasing} ? "gt=$prefix.in.vcf.gz" : "gl=$prefix.in.vcf.gz";
         $self->create_vcf_chunk($in_vcf,"$prefix.in.vcf.gz",$chr,$from,$to);
-        $self->java_cmd(qq[java -Xms${mem}m -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} $known gl=$prefix.in.vcf.gz out=$prefix.part >>$outfile.o],"$outfile.e");
+        $self->java_cmd(qq[java -Xms${mem}m -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} $known $action out=$prefix.part >>$outfile.o],"$outfile.e");
         if ( -s "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
         rename("$prefix.part.vcf.gz","$prefix.vcf.gz") or $self->throw("rename $prefix.part.vcf.gz $prefix.vcf.gz: $!");
         unlink("$prefix.in.vcf.gz");
