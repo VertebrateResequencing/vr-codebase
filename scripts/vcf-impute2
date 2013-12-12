@@ -640,7 +640,7 @@ sub next_impute_line
             error("Out of sync? $$opts{impute2_info} .. $items[0] ne $$out{id1} or $items[1] ne $$out{id2}\n"); 
             #if ( !defined $rev_id || $rev_id ne $items[1] ) { error("Out of sync? $$opts{impute2_info} .. $items[0] ne $$out{id1} or $items[1] ne $$out{id2}\n"); }
         }
-        $$opts{imp2_info_tag} = join(',',splice(@items,3,3));
+        $$out{imp2_info_tag} = join(',',splice(@items,3,3));
     }
 
     if ( !exists($$opts{fh_haps}) ) { return $out; }
