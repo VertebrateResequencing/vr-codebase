@@ -158,6 +158,7 @@ sub main
 {
     my ($self) = @_;
     $self->parse_args();
+    $self->save_config();
 
     my $outdir = $$self{outdir};
 
@@ -462,10 +463,11 @@ sub merge_beagle_vcf
                     {
                         my $val = $gp[$j]!=0 ? log($gp[$j])/2.302585 : -99;
                         if ( $val < -99 ) { $val = -99; }
+                        else { $val = sprintf "%.2f", $val; }
                         push @new_gp, $val;
                         $j += ++$k;
                     }
-                    $ori_vcf->replace_field($$ori_rec[$icol],join(',',@new_gp),$igl_ori,':');
+                    $$ori_rec[$icol] = $ori_vcf->replace_field($$ori_rec[$icol],join(',',@new_gp),$igl_ori,':');
                 }
 
                 if ( $ipl_ori!=-1 )
@@ -495,9 +497,10 @@ sub merge_beagle_vcf
                     {
                         my $val = $new_gp[$j]!=0 ? log($new_gp[$j])/2.302585 : -99;
                         if ( $val < -99 ) { $val = -99; }
+                        else { $val = sprintf "%.2f", $val; }
                         $new_gp[$j] = $val;
                     }
-                    $ori_vcf->replace_field($$ori_rec[$icol],join(',',@new_gp),$igl_ori,':');
+                    $$ori_rec[$icol] = $ori_vcf->replace_field($$ori_rec[$icol],join(',',@new_gp),$igl_ori,':');
                 }
             }
         }
@@ -608,11 +611,11 @@ sub beagle
         rename("$prefix.part.vcf.gz","$prefix.vcf.gz") or $self->throw("rename $prefix.part.vcf.gz $prefix.vcf.gz: $!");
         unlink("$prefix.in.vcf.gz");
     }
-    $self->merge_beagle_vcf($chr,$from,$to,$in_vcf,"$prefix.vcf.gz","$outdir/$$chunk[1]-$$chunk[2].vcf.gz.part");
-    $self->tabix_part("$outdir/$$chunk[1]-$$chunk[2].vcf.gz");
-    #rename("$prefix.vcf.gz","$prefix.vcf.gz-beagle");  # uncomment to save raw beagle output
-    unlink("$prefix.vcf.gz");
-    rename("$outdir/$$chunk[1]-$$chunk[2].vcf.gz.part","$outdir/$$chunk[1]-$$chunk[2].vcf.gz");
+    $self->merge_beagle_vcf($chr,$from,$to,$in_vcf,"$prefix.vcf.gz","$prefix.vcf.gz.part");
+    # rename("$prefix.vcf.gz","$prefix.vcf.gz-beagle"); # uncomment to save raw beagle output
+    unlink("$prefix.vcf.gz");   # delete raw beagle output
+    $self->tabix_part("$prefix.vcf.gz");
+    rename("$prefix.vcf.gz.part","$prefix.vcf.gz");
     $self->cmd(qq[touch $outfile]);
 }
 
@@ -649,6 +652,21 @@ sub tabix_part
     my ($self,$vcf) = @_;
     $self->cmd("tabix -p vcf -f $vcf.part");
     rename("$vcf.part.tbi","$vcf.tbi");
+}
+
+sub save_config
+{
+    my ($self) = @_;
+    my $src = $$self{_config};
+    my $dst = "$$self{outdir}/beagle.conf";
+    if ( -e $dst && (stat($src))[9] <= (stat($dst))[9] ) { return; }
+    if ( !-d $$self{outdir} ) { $self->cmd("mkdir -p $$self{outdir}"); }
+    open(my $fh,'>',$dst) or $self->throw("$dst: $!");
+    my $about = $$self{_about};
+    $about =~ s/\n/\n# /g;
+    print $fh "# $about";
+    close($fh);
+    $self->cmd("cat $src >> $dst");
 }
 
 sub cmd
