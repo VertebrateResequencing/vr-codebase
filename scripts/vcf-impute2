@@ -257,16 +257,16 @@ sub convert_to_be_imputed
             if ( exists($$dat{GL}) ) 
             { 
                 ($gl_rr,$gl_ar,$gl_aa) = split(/,/,$$dat{GL});
-                $gl_rr = 10**$gl_rr;
-                $gl_ar = 10**$gl_ar;
-                $gl_aa = 10**$gl_aa;
+                $gl_rr = 10**$gl_rr unless !defined $gl_rr;
+                $gl_ar = 10**$gl_ar unless !defined $gl_ar;
+                $gl_aa = 10**$gl_aa unless !defined $gl_aa;
             }
             elsif ( exists($$dat{PL}) )
             {
                 ($gl_rr,$gl_ar,$gl_aa) = split(/,/,$$dat{PL});
-                $gl_rr = 10**(-$gl_rr/10.);
-                $gl_ar = 10**(-$gl_ar/10.);
-                $gl_aa = 10**(-$gl_aa/10.);
+                $gl_rr = 10**(-$gl_rr/10.) unless !defined $gl_rr;
+                $gl_ar = 10**(-$gl_ar/10.) unless !defined $gl_ar;
+                $gl_aa = 10**(-$gl_aa/10.) unless !defined $gl_aa;
             }
             elsif ( exists($$dat{GT}) )
             {
