@@ -600,7 +600,7 @@ sub get_file_list
 sub strip_genotypes
 {
     my ($self,$outfile,$infile,$type) = @_;
-    $self->cmd("$$self{bcftools} subset -G -Ou $infile -i '%TYPE=\"$type\"' | $$self{bcftools} filter -s BadSite $$self{$type}{bad_sites} -Ob - > $outfile.part");
+    $self->cmd("$$self{bcftools} view -G -Ou $infile -i '%TYPE=\"$type\"' | $$self{bcftools} filter -s BadSite $$self{$type}{bad_sites} -Ob - > $outfile.part");
     $self->cmd("$$self{bcftools} index $outfile.part");
     rename("$outfile.part.csi","$outfile.csi") or $self->throw("rename: $outfile.part.csi $outfile.csi: $!");
     rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile: $!");
