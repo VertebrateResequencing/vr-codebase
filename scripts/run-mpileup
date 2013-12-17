@@ -364,6 +364,8 @@ sub clean
                 unlink($file) unless !-e $file;
             }
         }
+        unlink("$outdir/$pop/$chr/concat.list") unless !-e $file;
+        rmdir("$outdir/$pop/$chr");
     }
 }
 
