@@ -600,7 +600,7 @@ sub get_file_list
 sub strip_genotypes
 {
     my ($self,$outfile,$infile,$type) = @_;
-    $self->cmd("$$self{bcftools} subset -G -ou $infile -i '%TYPE=\"$type\"' | $$self{bcftools} filter -s BadSite $$self{$type}{bad_sites} -ob - > $outfile.part");
+    $self->cmd("$$self{bcftools} subset -G -Ou $infile -i '%TYPE=\"$type\"' | $$self{bcftools} filter -s BadSite $$self{$type}{bad_sites} -Ob - > $outfile.part");
     $self->cmd("$$self{bcftools} index $outfile.part");
     rename("$outfile.part.csi","$outfile.csi") or $self->throw("rename: $outfile.part.csi $outfile.csi: $!");
     rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile: $!");
@@ -616,7 +616,7 @@ sub extract_annots
         my $tmpfile = $infile;
         $tmpfile  =~ s/\.bcf$//i;
         $tmpfile .= '.good.bcf';
-        $self->cmd("$$self{bcftools} isec -c both -n=2 -w1 $infile $good_vcf -ou | $$self{bcftools} filter $$self{$type}{good_sites} -ob - > $tmpfile");
+        $self->cmd("$$self{bcftools} isec -c both -n=2 -w1 $infile $good_vcf -Ou | $$self{bcftools} filter $$self{$type}{good_sites} -Ob - > $tmpfile");
         $self->cmd("$$self{bcftools} index $tmpfile");
         $good_vcf = $tmpfile;
     }
