@@ -33,7 +33,7 @@ sub new
     $$self{mpileup}        = 'samtools mpileup -DV -C50 -pm3 -F0.2 -d 10000';
     $$self{bcftools}       = 'bcftools call -Nvm';
     $$self{vcfstats}       = 'bcftools stats';
-    $$self{filter}         = 'bcftools filter -m+ -sLowQual -e"%QUAL<=10" -g3 -G10 -ov -';
+    $$self{filter}         = 'bcftools filter -m+ -sLowQual -e"%QUAL<=10" -g3 -G10 -Ov -';
     $$self{chunk_size}     = 1_000_000;
 	$$self{config_version} = '1377691623';
     $$self{_sampleconf} = q[
