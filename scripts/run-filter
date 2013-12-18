@@ -114,6 +114,7 @@ sub new
         "Usage: run-filter [som|svm] [OPTIONS]\n" .
         "Options:\n" .
         "   -a, --annots <type:list>            Subset of annotations to use, e.g. snps:QUAL,RPB\n" .
+        "   -A, --apply <expr>                  Apply filter to produce final VCF(s). If \"-\" is given, only MLQ annotation is added\n" .
         "   -C, --clean                         Clean all temporary files\n" .
         "   -c, --classify                      Classify\n" .
         "   -i, --input <vcf>                   Input VCF\n" .
@@ -122,15 +123,21 @@ sub new
         "   -p, --parameters <type:string>      Parameters to use, e.g. 'snps:-c 15 -g -3' (overrides train_args config key)\n" .
         "   -r, --randomize                     Randomly shuffle annotations to find the best combination\n" .
         "   -s, --scan                          Scan the parameter space to find the best values\n" .
+        "   -t, --threshold <type:value>        Test the effects of MLQ threshold, e.g. 'snps:0.0568229'\n" .
         "The pipeline is usually run as:\n" .
         "   run-filter [som|svm] +config <file> -o <outdir>\n" .
-        "Which is equivalent to the following steps:\n" .
+        "Which automatically runs the following three steps:\n" .
         "   1) Search for best annotations\n" .
         "       run-filter som +config <file> -o <outdir> --randomize\n" .
         "   2) Search for best parameters\n" .
         "       run-filter som +config <file> -o <outdir> -a <annots> --scan\n" .
         "   3) Classify\n" .
         "       run-filter som +config <file> -o <outdir> -a <annots> -p <params> --classify\n" .
+        "After this is done, proceed to select filtering threshold based on <outdir>/snps/result.tab*:\n" .
+        "   4) Test the effect of the threshold\n" .
+        "       run-filter som +config <file> -o <outdir> -t <type>:<value>\n" .
+        "   5) Create final VCF with genotypes. The --apply expression is directly passed to `bcftools filter`, e.g.\n" .
+        "       run-filter som +config <file> -o <outdir> --apply '-e \"%QUAL<10 || (MLQ<0.0568229 & %TYPE=\\\"snp\\\")\"'\n" .
         "\n";
 
     return $self;
@@ -144,6 +151,8 @@ sub parse_args
     {
         if ( $arg eq 'som' ) { next; }
         if ( $arg eq 'svm' ) { next; }
+        if ( $arg eq '-t' or $arg eq '--threshold' ) { my ($type,$value)=split(/:/,shift(@ARGV)); $$self{threshold}{$type} = $value; $$self{test_threshold} = 1; next; }
+        if ( $arg eq '-A' or $arg eq '--apply' ) { $$self{apply_threshold} = shift(@ARGV); next; }
         if ( $arg eq '-r' or $arg eq '--randomize' ) { $$self{randomize} = 1; $action{randomize} = 1; next; }
         if ( $arg eq '-s' or $arg eq '--scan' ) { $$self{scan} = 1; $action{scan} = 1; next; }
         if ( $arg eq '-c' or $arg eq '--classify' ) { $$self{classify} = 1; $action{classify} = 1; next; }
@@ -191,6 +200,7 @@ sub parse_args
             $anns{$ann} = 1;
         }
     }
+    if ( exists($$self{apply_threshold}) ) { $$self{test_threshold} = 0; }
     if ( !defined($$self{in_vcf}) ) { $self->throw("Expected -i option."); }
     if ( $$self{clean} ) 
     { 
@@ -275,6 +285,14 @@ sub main
     if ( $$self{classify} or $$self{auto} )
     {
         $self->main_classify(@jobs);
+    }
+    if ( $$self{test_threshold} )
+    {
+        $self->main_test_threshold();
+    }
+    if ( exists($$self{apply_threshold}) )
+    {
+        $self->main_apply_threshold();
     }
     $self->all_done;
 }
@@ -454,6 +472,98 @@ sub main_classify
         }
     }
     $self->wait;
+}
+sub main_test_threshold
+{
+    my ($self) = @_;
+    for my $type (@{$$self{types}})
+    {
+        my @files;
+        opendir(my $dh,"$$self{outdir}/$type/scored") or $self->throw("$$self{outdir}/$type/scored: $!");
+        while (my $file = readdir $dh) 
+        {
+            if ( $file=~/\.vcf\.gz$/ or $file=~/\.bcf$/ ) { push @files, $file; }
+        }
+        closedir $dh;
+
+        my $th = $$self{threshold}{$type};
+        for my $file (@files)
+        {
+            my $out = $file;
+            $out =~ s/\.vcf.gz$/.bcf/;
+            $self->spawn('apply_threshold',"$$self{outdir}/$type/test-$type-$th/$out","$$self{outdir}/$type/scored/$file",qq[-Ob -i'MLQ>=$th']);
+        }
+        $self->wait;
+
+        if ( !$self->is_finished("$$self{outdir}/$type/test-$type-$th.stats") )
+        {
+            $self->merge_stats("$$self{outdir}/$type/test-$type-$th.stats","$$self{outdir}/$type/test-$type-$th/*.stats");
+        }
+    }
+}
+sub main_apply_threshold
+{
+    my ($self) = @_;
+    my @files;
+    for my $type (@{$$self{types}})
+    {
+        opendir(my $dh,"$$self{outdir}/$type/scored") or $self->throw("$$self{outdir}/$type/scored: $!");
+        while (my $file = readdir $dh)
+        {
+            if ( $file=~/\.vcf\.gz$/ or $file=~/\.bcf$/ ) { push @files, "$$self{outdir}/$type/scored/$file"; }
+        }
+        closedir $dh;
+    }
+    $self->spawn('create_mlq_tab',"$$self{outdir}/MLQ.tab.gz",@files);
+    $self->wait;
+
+    @files = $self->get_file_list($$self{in_vcf});
+    for my $file (@files)
+    {
+        $self->spawn('apply_mlq_tab',"$$self{outdir}/final-vcfs/$$file{bname}.vcf.gz","$$self{outdir}/MLQ.tab.gz",$$file{file});
+    }
+    $self->wait;
+
+}
+
+sub apply_threshold
+{
+    my ($self,$outfile,$infile,$opts) = @_;
+    $self->cmd("$$self{bcftools} filter $opts $infile > $outfile.part");
+    $self->cmd("$$self{bcftools} stats $outfile.part > $outfile.stats");
+    $self->tabix_part($outfile);
+}
+sub merge_stats
+{
+    my ($self,$outfile,$infiles) = @_;
+    $self->cmd("$$self{plot_stats} -m $infiles > $outfile.part");
+    rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
+}
+sub create_mlq_tab
+{
+    my ($self,$outfile,@files) = @_;
+    open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
+    for my $file (@files) { print $fh "$file\n"; }
+    close($fh) or $self->throw("close $outfile.list");
+    $self->cmd(qq[$$self{bcftools} query -f'\%CHROM\\t\%POS\\t\%REF\\t\%ALT\\t\%MLQ\\n' -v $outfile.list | sort -k1,1 -k2,2n | bgzip -c > $outfile.part]); 
+    $self->cmd(qq[$$self{bcftools} tabix -s1 -b2 -e2 $outfile.part]);
+    rename("$outfile.part.tbi","$outfile.tbi");
+    rename("$outfile.part",$outfile);
+}
+sub apply_mlq_tab
+{
+    my ($self,$outfile,$mlq,$infile) = @_;
+    my $cmd = 
+        qq[$$self{bcftools} view $infile] .
+        qq[| vcf-annotate -a $mlq -d key=INFO,ID=MLQ,Number=1,Type=Float,Description='Machine Learning Quality Score' -c CHROM,POS,REF,ALT,MLQ];
+
+    if ( $$self{apply_threshold} ne '-' )
+    {
+        $cmd .= qq[ | $$self{bcftools} filter $$self{apply_threshold}];
+    }
+    $self->cmd($cmd . qq[ -Oz > $outfile.part]);
+    $self->cmd(qq[$$self{bcftools} stats $outfile.part > $outfile.stats]);
+    $self->tabix_part($outfile);
 }
 
 sub sanity_check_annots
@@ -1221,11 +1331,18 @@ sub save_config
 sub tabix_part
 {
     my ($self,$vcf) = @_;
-    $self->cmd("tabix -p vcf -f $vcf.part");
-    rename("$vcf.part.tbi","$vcf.tbi");
+    if ( $vcf=~/\.vcf.gz$/ )
+    {
+        $self->cmd("$$self{bcftools} tabix -p vcf -f $vcf.part");
+        rename("$vcf.part.tbi","$vcf.tbi");
+    }
+    else
+    {
+        $self->cmd("$$self{bcftools} index $vcf.part");
+        rename("$vcf.part.csi","$vcf.csi");
+    }
     rename("$vcf.part",$vcf);
 }
-
 
 sub read_value
 {
@@ -1273,6 +1390,7 @@ sub SVM_Runner::new
     bless $self, ref($class) || $class;
 
     $$self{bcftools}     = 'bcftools';
+    $$self{plot_stats}   = 'plot-vcfstats';
     $$self{svm_scale}    = '/nfs/users/nfs_p/pd3/sandbox/svn/svm/libsvm-3.17/svm-scale';
     $$self{svm_train}    = '/nfs/users/nfs_p/pd3/sandbox/svn/svm/libsvm-3.17/svm-train';
     $$self{svm_predict}  = '/nfs/users/nfs_p/pd3/sandbox/svn/svm/libsvm-3.17/svm-predict';
@@ -1288,6 +1406,7 @@ sub SVM_Runner::new
             # ------------------------------------
 
             bcftools     => '] .$$self{bcftools}. q[',
+            plot_stats   => '] .$$self{plot_stats}. q[',
             svm_scale    => '] .$$self{svm_scale}. q[',
             svm_train    => '] .$$self{svm_train}. q[',
             svm_predict  => '] .$$self{svm_predict}. q[',
@@ -1428,6 +1547,7 @@ sub SOM_Runner::new
     bless $self, ref($class) || $class;
 
     $$self{bcftools}     = 'bcftools';
+    $$self{plot_stats}   = 'plot-vcfstats';
     $$self{apar}         = [0.1,1.2,0.1];
     $$self{bpar}         = [20,50,5];
     $$self{aopt}         = 'l';
@@ -1442,6 +1562,7 @@ sub SOM_Runner::new
             # ------------------------------------
 
             bcftools     => '] .$$self{bcftools}. q[',
+            plot_stats   => '] .$$self{plot_stats}. q[',
 
             # Parameters scan: min,max,step
             apar => \[] .join(',',@{$$self{apar}}). q[\],  # c
