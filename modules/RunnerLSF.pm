@@ -299,6 +299,27 @@ sub run_array
             $bsub_opts = sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $lmem,$mem,$mem; 
         }
     }
+    if ( !defined($$opts{queue}) ) 
+    {            
+        if ( defined($$opts{runtime}) ) 
+        { 
+            if ( $$opts{runtime} <= 720.0 ) { $$opts{queue} = 'normal'; }
+            elsif ( $$opts{runtime} <= 60*24*2 ) { $$opts{queue} = 'long'; }
+            else { $$opts{queue} = 'basement'; }
+        }
+        else 
+        { 
+            $$opts{queue} = 'normal';
+        }
+    }
+    if ( defined($$opts{queue}) ) 
+    {
+        $bsub_opts .= " -q $$opts{queue}";
+    }
+    if ( defined($$opts{cpus}) ) 
+    {
+        $bsub_opts .= " -n $$opts{cpus} -R 'span[hosts=1]'";
+    }
     my $bsub_cmd  = qq[bsub -J '${job_name}[$bsub_ids]' -e $job_name.\%I.e -o $job_name.\%I.o $bsub_opts '$cmd'];
 
     # Submit to LSF
