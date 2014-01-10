@@ -92,6 +92,8 @@ sub new
             #   block free CPUs on multi-core nodes by reserving too much memory.
             memstep  => '] .$$self{memstep}. q[',   # the step for increasing memory limit
 
+            save_beagle_outputs => 0,   # If set, raw output files from beagle will not be removed (for debugging)
+
             do_clean => 1,         # Remove runner's temporary files
     ]."\n";
 
@@ -612,8 +614,14 @@ sub beagle
         unlink("$prefix.in.vcf.gz");
     }
     $self->merge_beagle_vcf($chr,$from,$to,$in_vcf,"$prefix.vcf.gz","$prefix.vcf.gz.part");
-    # rename("$prefix.vcf.gz","$prefix.vcf.gz-beagle"); # uncomment to save raw beagle output
-    unlink("$prefix.vcf.gz");   # delete raw beagle output
+    if ( $$self{save_beagle_outputs} )
+    {
+        rename("$prefix.vcf.gz","$prefix.raw-beagle.vcf.gz"); 
+    }
+    else
+    {
+        unlink("$prefix.vcf.gz");   # delete raw beagle output
+    }
     $self->tabix_part("$prefix.vcf.gz");
     rename("$prefix.vcf.gz.part","$prefix.vcf.gz");
     $self->cmd(qq[touch $outfile]);
