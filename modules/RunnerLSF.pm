@@ -329,7 +329,7 @@ sub run_array
     if ( scalar @out!=1 || !($out[0]=~/^Job <(\d+)> is submitted/) )
     {
         my $cwd = `pwd`;
-        confess("Expected different output from bsub. The command was:\n\t$cmd\nThe working directory was:\n\t$cwd\nThe output was:\n", @out);
+        confess("Expected different output from bsub. The command was:\n\t$cmd\nThe bsub_command was:\n\t$bsub_cmd\nThe working directory was:\n\t$cwd\nThe output was:\n", @out);
     }
 
     # Write down info about the submitted command
