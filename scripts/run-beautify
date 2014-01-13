@@ -29,9 +29,10 @@ sub new
     $$self{chunk_nsites} = 5_000;
     $$self{do_clean} = 1;
     $$self{vcfcheck_args} = '-s -';
-    $$self{vcf_annotate} = q[vcf-annotate
+    $$self{vcf_annotate} = q[
                 sed "s/ID=GL,Number=3/ID=GL,Number=G/"
                 |
+                vcf-annotate
                 --fill-ICF
                 -r INFO/AC1,INFO/AF1,INFO/FQ,INFO/G3,INFO/MQ,INFO/PV4,INFO/VDB,FORMAT/PL,FORMAT/GQ,FORMAT/SP,INFO/SF
                 -r INFO/BaseQRankSum,INFO/Dels,INFO/FS,INFO/HRun,INFO/HaplotypeScore,INFO/MQ0,INFO/InbreedingCoeff,INFO/MQRankSum,INFO/QD,INFO/ReadPosRankSum,INFO/VQSLOD,INFO/culprit,FORMAT/PQ
@@ -51,9 +52,8 @@ sub new
                 --regulatory
                 --sift b 
                 --polyphen b 
-                --condel b 
-                --gene 
-                --hgnc 
+                --plugin Condel,/software/vertres/bin-external/VEP_plugins/config/Condel/config/,b
+                --symbol
                 --format vcf 
                 --force_overwrite 
                 --cache 
