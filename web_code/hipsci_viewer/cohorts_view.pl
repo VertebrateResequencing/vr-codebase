@@ -52,11 +52,7 @@ sub displaySamplesPage
 	my $index = $utl->{SCRIPTS}{INDEX_PAGE};
 	
 	my %hipsci_cohorts;
-	my %cohort_controls;
 	for my $cohort (@expression_cohorts, @genotyping_cohorts){
-	    my %geno_sample_controls = $utl->getGenotypingSamples($genotyping_db, $cohort);
-	    my @geno_controls = keys %geno_sample_controls;
-	    if( @geno_controls && @geno_controls > 0 ){$cohort_controls{$cohort}=$geno_controls[0];}
 		$hipsci_cohorts{$cohort} = 1;
 	}
 	
@@ -78,7 +74,6 @@ sub displaySamplesPage
         print qq[
           	<tr>
             	<td>$cohort</td>
-            	<td>$geno_controls{$cohort}</td>
             	<td>$biosample_id</td>
                 <td><a href="$detailed_view_script?cohort=$cohort">Detailed view</a></td>                
             </tr>
