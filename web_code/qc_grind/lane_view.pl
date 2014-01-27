@@ -90,7 +90,7 @@ sub displayLane
 
     print qq[ <h3 align="center" style="font: normal 700 1.5em arial"> Run : $lanename ];
 	if( $run !~ /SRR|ERR/ ) {
-        print qq{[<a target="_blank" href="http://intweb.sanger.ac.uk/perl/prodsoft/npg/npg/run/$run">npg</a>]};
+        print qq{[<a target="_blank" href="http://npg.sanger.ac.uk/perl/npg/run/$run">npg</a>]};
 	}
     print " Sample : $sample_name</h3>";
     
