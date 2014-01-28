@@ -8,14 +8,13 @@ then
 fi
 
 DB="$1"
-DBEXISTS=$(mysql -u vreseq_ro -hmcs4a --batch --skip-column-names -e "SHOW DATABASES LIKE '$DB'" | grep $DB > /dev/null; echo "$?")
+DBEXISTS=$(mysql -u $VRTRACK_RO_USER -h$VRTRACK_HOST --batch --skip-column-names -e "SHOW DATABASES LIKE '$DB'" | grep $DB > /dev/null; echo "$?")
 if [ $DBEXISTS -eq 1 ];then
     echo "A database with the name $DB does not exist."
     exit
 fi
 
 ROOT="/lustre/scratch105"
-CONF="/nfs/vertres01/conf"
 DUMPS="/warehouse/g1k-04/sql_dumps/$DB.sql"
 
 export LD_LIBRARY_PATH=/software/badger/lib:/software/oracle_client-10.2.0/lib

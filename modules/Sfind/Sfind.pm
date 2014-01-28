@@ -43,7 +43,7 @@ has '_dbh' => (
 
 sub _db_connect { 
     my ($self) = @_; 
-    my $dbh = DBI->connect("DBI:mysql:host=mcs12:port=3379;database=sequencescape_warehouse", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
+    my $dbh = DBI->connect("DBI:mysql:host=mcs7:port=3379;database=sequencescape_warehouse", "warehouse_ro",undef, {'RaiseError' => 1, 'PrintError'=>0});
     return $dbh;
 } 
 

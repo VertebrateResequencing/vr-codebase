@@ -1,17 +1,10 @@
 #!/usr/local/bin/perl -T
 
-BEGIN {
-    $ENV{VRTRACK_HOST} = 'mcs4a';
-    $ENV{VRTRACK_PORT} = 3306;
-    $ENV{VRTRACK_RO_USER} = 'vreseq_ro';
-    $ENV{VRTRACK_RW_USER} = 'vreseq_rw';
-    $ENV{VRTRACK_PASSWORD} = 't3aml3ss';
-};
-
 use strict;
 use warnings;
 use URI;
 
+use lib '/var/www/lib';
 use SangerPaths qw(core team145);
 use SangerWeb;
 use VRTrack::VRTrack;

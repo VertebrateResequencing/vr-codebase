@@ -20,7 +20,9 @@ sub error
     my (@msg) = @_;
     if ( scalar @msg ) { confess @msg; }
     print 
-        "About: Finds differences amongst samples adding NOVEL* annotation to INFO field.\n",
+        "About: Finds differences amongst samples adding NOVELGT, NOVELAL and NOVELTY annotations to INFO field.\n",
+        "       Note that haploid genotypes are internally treated as homozygous diploid genotypes, therefore\n",
+        "       \"0/1\" and \"1\" are considered different genotypes.\n",
         "Usage: vcf-contrast +<list> -<list> [OPTIONS] file.vcf.gz\n",
         "Options:\n",
         "   +<list>                             List of samples where unique variant is expected\n",
@@ -91,6 +93,7 @@ sub query_vcf
     while (my $rec=$vcf->next_data_array)
     {
         if ( $$opts{apply_filters} && $$rec[6] ne '.' && $$rec[6] ne 'PASS' ) { next; }
+        if ( $$rec[4] eq '.' ) { next; }
 
         my $ipl = $vcf->get_tag_index($$rec[8],'PL',':');
 		my ($novel,$novelal,$novelgt) = contrast($opts,$vcf,$rec);
@@ -135,6 +138,9 @@ sub contrast
 		if ( $idp<0 ) { error("todo: DP not available"); }
 	}
 
+    my @x = split(/,/, $$rec[4]);
+    my $n_als = 1 + scalar @x;
+
 	my (@bg_pls, @bg_als, @bg_gts, @var_pls,@var_gts, $min_dp);
 	for my $bg_col (@{$$opts{bg_cols}}) 
 	{
@@ -147,7 +153,7 @@ sub contrast
 		if ( $has_PL )
 		{
 			my $pl = $vcf->get_field($$rec[$bg_col],$ipl);
-			@gt = likely_gt($pl);
+			($pl, @gt) = likely_gt($pl, $n_als);
             push @bg_pls, $pl;
 		}
 		else
@@ -156,7 +162,7 @@ sub contrast
 			@gt = $vcf->split_gt($gt);
 		}
 		push @bg_als, \@gt;
-		push @bg_gts, join('/',sort @gt);
+		push @bg_gts, join('/',sort(@gt));
 	}
 	if ( defined $min_dp && $min_dp<$$opts{min_dp} ) { return undef; }
 
@@ -169,15 +175,16 @@ sub contrast
 		if ( $has_PL )
 		{
 			$var_pl  = $vcf->get_field($$rec[$var_col],$ipl);
-			@var_als = sort likely_gt($var_pl);
+            ($var_pl,@var_als) = likely_gt($var_pl, $n_als);
+			@var_als = sort @var_als;
 			push @var_pls, $var_pl;
 		}
 		else
 		{
 			my $gt = $vcf->get_field($$rec[$var_col],$igt);
-			@var_als = sort $vcf->split_gt($gt);
+			@var_als = sort($vcf->split_gt($gt));
 		}
-		my $var_gt  = join('/',sort @var_als);
+		my $var_gt  = join('/',sort(@var_als));
 		push @var_gts, $var_gt;
 
 		my $bg_score;
@@ -215,23 +222,43 @@ sub contrast
 
 sub likely_gt
 {
-    my ($pl) = @_;
-    my @pls  = split(/,/,$pl);
+    my ($pl, $nals) = @_;
+    my @pls = split(/,/,$pl);
 
     my ($min,$imin,$jmin);
+    if ( $nals==@pls )
+    {
+        # haploid: treat as fake diploid
+        my @out_pls;
+        $min  = $pls[0]; 
+        $imin = 0;
+        for (my $i=1; $i<@pls; $i++)
+        {
+            if ( $min>$pls[$i] ) { $min = $pls[$i]; $imin = $i; }
+        }
+        for (my $i=0; $i<$nals; $i++)
+        {
+            for (my $j=0; $j<$i; $j++) { push @out_pls,255; }
+            push @out_pls, $pls[$i];
+        }
+        return (join(',',@out_pls), $imin,$imin);
+    }
+
+    # diploid
     my $idx=0;
-    my $i=0;
+    my $i = 0;
     while ($idx<@pls)
     {
         if ( $pls[$idx] eq '.' ) { return '.'; }
         for (my $j=0; $j<=$i; $j++)
-        {
+        { 
+            if ( $idx>=@pls ) { error("Unexpected number of PL values with n_als=$nals: $pl\n"); }
             if ( !defined $min or $min>$pls[$idx] ) { $min=$pls[$idx]; $imin=$i; $jmin=$j; }
             $idx++;
         }
         $i++;
     }
-    return ($jmin,$imin);
+    return ($pl,$jmin,$imin);
 }
 
 sub same_pls

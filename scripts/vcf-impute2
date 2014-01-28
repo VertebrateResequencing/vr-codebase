@@ -157,12 +157,15 @@ sub convert_known
         print $fh_legend "id position a0 a1\n";
         $fname = "$$opts{prefix}.known_haps.gz";
     }
+    my $prev;
     open($fh,"| gzip -c > $fname.part") or error("| gzip -c > $fname.part: $!");
     while (my $x = $vcf->next_data_hash())
     {
         # Consider only biallelic sites
         if ( scalar @{$$x{ALT}}!=1 or $$x{ALT}[0] eq '.' ) { next; }
         if ( !($$x{ALT}[0]=~/^[ACGT]+$/) or !($$x{REF}=~/^[ACGT]+$/) ) { next; }
+        if ( defined $prev && $$prev{CHROM} eq $$x{CHROM} && $$prev{POS} eq $$x{POS} ) { next; }
+        $prev = $x;
 
         my $oid = "$$x{CHROM}:$$x{POS}_$$x{REF}_$$x{ALT}[0]";
         my @out;
@@ -228,6 +231,7 @@ sub convert_to_be_imputed
     my $th   = $$opts{exclude_th} ? $$opts{exclude_th} : 0;
     my $frac = $$opts{exclude_frac} ? $$opts{exclude_frac} : 1;
     my $nsamples = @samples;
+    my $prev;
 
     open($fh,"| gzip -c > $$opts{prefix}.impute_gts.gz.part") or error("| gzip -c > $$opts{out}.impute_gts.gz.part: $!");
     while (my $x = $vcf->next_data_hash())
@@ -235,6 +239,8 @@ sub convert_to_be_imputed
         # Consider only biallelic sites
         if ( scalar @{$$x{ALT}}!=1 or $$x{ALT}[0] eq '.' ) { next; }
         if ( !($$x{ALT}[0]=~/^[ACGT]+$/) or !($$x{REF}=~/^[ACGT]+$/) ) { next; }
+        if ( defined $prev && $$prev{CHROM} eq $$x{CHROM} && $$prev{POS} eq $$x{POS} ) { next; }
+        $prev = $x;
 
         # Encode indels in the SNP id and fake ref,alt allele
         my $ref = $$x{REF};
@@ -251,16 +257,16 @@ sub convert_to_be_imputed
             if ( exists($$dat{GL}) ) 
             { 
                 ($gl_rr,$gl_ar,$gl_aa) = split(/,/,$$dat{GL});
-                $gl_rr = 10**$gl_rr;
-                $gl_ar = 10**$gl_ar;
-                $gl_aa = 10**$gl_aa;
+                $gl_rr = 10**$gl_rr unless !defined $gl_rr;
+                $gl_ar = 10**$gl_ar unless !defined $gl_ar;
+                $gl_aa = 10**$gl_aa unless !defined $gl_aa;
             }
             elsif ( exists($$dat{PL}) )
             {
                 ($gl_rr,$gl_ar,$gl_aa) = split(/,/,$$dat{PL});
-                $gl_rr = 10**(-$gl_rr/10.);
-                $gl_ar = 10**(-$gl_ar/10.);
-                $gl_aa = 10**(-$gl_aa/10.);
+                $gl_rr = 10**(-$gl_rr/10.) unless !defined $gl_rr;
+                $gl_ar = 10**(-$gl_ar/10.) unless !defined $gl_ar;
+                $gl_aa = 10**(-$gl_aa/10.) unless !defined $gl_aa;
             }
             elsif ( exists($$dat{GT}) )
             {
@@ -493,6 +499,11 @@ sub merge_lines
             my $sb = $haps[$i*2+1];
             if ( ($sa eq '0' or $sa eq '1') && ($sb eq '0' or $sb eq '1') )
             {
+                # TODO: the phased genotypes are sometimes different from the
+                #   genotypes suggested by the imputed genotype likelihoods.
+                #   Presumably the latter should be more accurate, maybe we
+                #   should prefer unphased but more accurate genotypes now and
+                #   then?
                 $phased = 1;
                 $$gt_hash{GT} = $sa;
                 if ( $ploidy==2 )
@@ -546,6 +557,31 @@ sub parse_region
     return ($region,undef,undef);
 }
 
+# swap ref and alt alleles of impute2 genotypes 
+sub reverse_gt_als
+{
+    my ($gts) = @_;
+    my @items = split(/ /,$gts); chomp($items[-1]);
+    if ( @items != 3*int(@items/3) ) { error(sprintf "Expected 3N fields, got %d\n",scalar @items); }
+    for (my $i=0; $i<@items; $i+=3)
+    {
+        my $tmp = $items[$i]; $items[$i] = $items[$i+2]; $items[$i+2] = $tmp;
+    }
+    return join(' ',@items);
+}
+sub reverse_hap_als
+{
+    my ($gts) = @_;
+    my @items = split(/ /,$gts); chomp($items[-1]);
+    if ( @items != 2*int(@items/2) ) { error(sprintf "Expected 2N fields, got %d\n",scalar @items); }
+    for (my $i=0; $i<@items; $i++)
+    {
+        if ( substr($items[$i],0,1) eq '0' ) { $items[$i] = '1'.substr($items[$i],1); }
+        elsif ( substr($items[$i],0,1) eq '1' ) { $items[$i] = '0'.substr($items[$i],1); }
+    }
+    return join(' ',@items);
+}
+
 # Break the impute2 line to position, alleles and unparsed genotypes
 sub next_impute_line
 {
@@ -566,27 +602,32 @@ sub next_impute_line
     my $chr_pos = $1;
     my $ori_ref = $2;
     my $ori_alt = $3;
+    my $rev_id  = undef;
 
     if ( $ori_ref ne $$out{ref} or $ori_alt ne $$out{alt} ) 
     {
         if ( $ori_ref ne $$out{alt} or $ori_alt ne $$out{ref} ) { error("This should not happen: $$out{id2} $ori_ref $ori_alt"); }
 
         # This can happen in rare cases when known_vcf and the query VCF have a variant at the same
-        # position but reversed REF and ALT, consider this short indel in low complexity region:
-        #       20:3800043_CAA_C 3800043 CAA C .. (1) query gts vcf
-        #       20:3800043_C_CAA 3800043 C CAA .. (2) known haps vcf
-        #       20:3800043_CAA_C 3800043 C CAA .. (3) impute2 GTs output
-        #       20:3800043_CAA_C 3800043 C CAA .. (4) impute2 haps output
-        # In this case, it is enough to make a cosmetic change of the ID in (3) and (4) to match the alleles.
-        # Both lines will appear on output: the phased one inferred from known_vcf and the unchanged query line.
-        # 
-        #       20:16254732_A_AC 16254732 A AC .. (1) query gts vcf
-        #       20:16254732_AC_A 16254732 AC A .. (2) known haps vcf
-        #       20:16254732_A_AC 16254732 AC A .. (3) impute2 GTs output
-        #       20:16254732_A_AC 16254732 AC A .. (4) impute2 haps output
+        # position but reversed REF and ALT, consider this case:
+        #   20:10077814_CT_C 10077814 CT C  .. known VCF
+        #   20:10077814_C_CT 10077814 C CT  .. to be imputed VCF
+        #   20:10077814_C_CT 10077814       .. INFO/IMP2 score (_info)
+        #   20:10077814_C_CT 10077814 CT C  .. impute2 GTs output (.gz)
+        #   20:10077814_C_CT 10077814 CT C  .. impute2 haps out (_haps.gz)
+        #   20:10077814_C_CT 10077814 CT C  .. impute2 haps LKs out (_haps_confidence.gz)
         #
-        $$out{rev_id} = $$out{id2};
-        $$out{id2} = $chr_pos.'_'.$ori_alt.'_'.$ori_ref;
+        # Also this case can happen:
+        #   20:3800043_C_CAA 3800043 C CAA .. known haps vcf
+        #   20:3800043_CAA_C 3800043 CAA C .. to be imputed vcf
+        #   20:3800043_CAA_C 3800043 C CAA .. impute2 GTs output
+        #   20:3800043_CAA_C 3800043 C CAA .. impute2 haps output
+        #
+        $rev_id = $chr_pos.'_'.$ori_alt.'_'.$ori_ref;
+        $$out{ref} = $ori_ref;
+        $$out{alt} = $ori_alt;
+        $$out{gts} = reverse_gt_als($$out{gts});
+        warn("Warning: detected different allele ordering at $chr_pos, swapping. Please check the sanity of $$out{id2} vs $rev_id\n");
     }
     if ( exists($$opts{impute2_info}) )
     {
@@ -594,11 +635,12 @@ sub next_impute_line
         my $info_line = readline($$opts{fh_info});
         my @items = split(/ /,$info_line);
         # Sanity check
-        if ( !$$opts{force} && ($items[0] ne $$out{id1} or $items[1] ne $$out{id2}) ) 
-        { 
+        if ( $items[0] ne $$out{id1} or $items[1] ne $$out{id2} ) 
+        {
             error("Out of sync? $$opts{impute2_info} .. $items[0] ne $$out{id1} or $items[1] ne $$out{id2}\n"); 
+            #if ( !defined $rev_id || $rev_id ne $items[1] ) { error("Out of sync? $$opts{impute2_info} .. $items[0] ne $$out{id1} or $items[1] ne $$out{id2}\n"); }
         }
-        $$opts{imp2_info_tag} = join(',',splice(@items,3,3));
+        $$out{imp2_info_tag} = join(',',splice(@items,3,3));
     }
 
     if ( !exists($$opts{fh_haps}) ) { return $out; }
@@ -629,14 +671,22 @@ sub next_impute_line
     {
         error("Out of sync? $$a{id1} ne $$b{id1} or $$a{id2} ne $$b{id2} or $$a{pos} ne $$b{pos} or $$a{ref} ne $$b{ref} or $$a{alt} ne $$b{alt}\n");
     }
-    if ( exists($$out{rev_id}) && $$out{rev_id} eq $$a{id2} ) { $$a{id2} = $$out{id2}; }
-    if ( exists($$out{rev_id}) && $$out{rev_id} eq $$b{id2} ) { $$b{id2} = $$out{id2}; }
-
     if ( $$out{id2} ne $$b{id2} or $$out{pos} ne $$b{pos} or $$out{ref} ne $$b{ref} or $$out{alt} ne $$b{alt} ) 
     { 
-        unshift @{$$opts{fh_haps_buffer}},$a;
-        unshift @{$$opts{fh_haps_conf_buffer}},$b;
-        return $out; 
+        if ( defined $rev_id && $$out{pos} eq $$b{pos} && $$out{ref} eq $$b{alt} && $$out{alt} eq $$b{ref} )
+        { 
+            $$a{haps} = reverse_hap_als($$a{haps}); 
+            $$a{ref}  = $$out{ref};
+            $$a{alt}  = $$out{alt};
+            $$b{ref}  = $$out{ref};
+            $$b{alt}  = $$out{alt};
+        }
+        else
+        {
+            unshift @{$$opts{fh_haps_buffer}},$a;
+            unshift @{$$opts{fh_haps_conf_buffer}},$b;
+            return $out; 
+        }
     }
     $$out{haps}  = $$a{haps};
     $$out{confs} = $$b{confs};

@@ -2,16 +2,15 @@
 # print vertres disk usage
 use strict;
 use warnings;
+use Path::Class;
+
+my $inputfile = $ARGV[0] ? $ARGV[0] : file($ENV{CONF}, 'vertres_disks.conf')->stringify;
+open FILE, $inputfile or die "$!: inputfile";
 
 print "Type       Mounted on               Size     Used    Avail     Use%   OST Max%\n";
-
-my @disks = qw [/lustre/scratch102 /lustre/scratch105 /lustre/scratch106 ];
-push (@disks, `ls -d /nfs/vertres*`);
-push (@disks, qw [/warehouse/g1k-01 /warehouse/g1k-02 /warehouse/g1k-03_1 /warehouse/g1k-03_2 /warehouse/g1k-04 ]);
-
 my ($Size_t, $Used_t, $Avail_t, $Use_pct_t);
 
-foreach my $d (@disks) {
+foreach my $d (<FILE>) {
   chomp $d;
   $_=`cd $d;df -PTh .| grep -v '^Filesystem'`;
 
@@ -24,7 +23,7 @@ foreach my $d (@disks) {
     chomp $ost_max;
   }
 
-  printf ("%-10s %-20s %8s %8s %8s %8s   %s\n", $Type, $Mounted_on, $Size, $Used, $Avail, $Use_pct, $ost_max);
+  printf ("%-10s %-20s %8s %8s %8s %8s %5s\n", $Type, $Mounted_on, $Size, $Used, $Avail, $Use_pct, $ost_max);
 
   # Totals; note df always rounds up, hence any discrepancies in addition
   $_=`cd $d;df -PT .| grep -v '^Filesystem'`;

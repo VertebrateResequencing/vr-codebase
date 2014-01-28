@@ -4,6 +4,7 @@ use warnings;
 use Time::Format;
 use Getopt::Long;
 use CGI;
+use JSON;
 
 # get user input
 my ($help, $dir);
@@ -133,6 +134,9 @@ h3 {
     color: #909090;
     margin-top: 2px;
 }
+.subtask {
+    font-size: 10pt;
+}
 CSS
     
     print $q->start_html(-title => 'Asana tasks '.($desired_user_name ? "for $desired_user_name" : 'by user'),
@@ -164,7 +168,17 @@ CSS
             my $project_name = $d->{projects}->[0]->{name};
             my $notes = $d->{notes} || '';
             
-            push(@{$tasks{$assignee}->{$d->{completed} ? 'completed' : 'todo'}->{$d->{assignee_status} || 'inbox'}}, [$project_name, $task_name, $notes]);
+            # subtasks
+            my @subtasks;
+            my $sd = asana("tasks/$t_ref->{id}/subtasks");
+            foreach my $st_ref (@{$sd}) {
+                my %subtask;
+                $subtask{name} = $st_ref->{name};
+                my $d = asana("tasks/$st_ref->{id}");
+                $subtask{status} = $d->{completed} == 1 ? "Completed" : "Todo";
+                push (@subtasks,\%subtask);
+            }
+            push(@{$tasks{$assignee}->{$d->{completed} ? 'completed' : 'todo'}->{$d->{assignee_status} || 'inbox'}}, [$project_name, $task_name, $notes, \@subtasks]);
         }
     }
     
@@ -179,6 +193,7 @@ CSS
                 foreach my $array (values %$hash) {
                     push(@completed_tasks, @$array);
                 }
+                no warnings 'uninitialized'; # project may be undefined
                 foreach my $task_details (sort { $a->[0] cmp $b->[0] || $a->[1] cmp $b->[1] } @completed_tasks) {
                     html_task_output($q, $task_details);
                 }
@@ -188,6 +203,7 @@ CSS
                     defined $hash->{$as_status} || next;
                     print "\t\t", $q->h3($as_status), "\n";
                     
+                    no warnings 'uninitialized'; # project may be undefined
                     foreach my $task_details (sort { $a->[0] cmp $b->[0] || $a->[1] cmp $b->[1] } @{$hash->{$as_status}}) {
                         html_task_output($q, $task_details);
                     }
@@ -204,14 +220,16 @@ exit;
 sub asana {
     my $command = shift;
     my $curl = qq[curl -s -u "$auth:" "$base_url/$command"];
-    
+
     my $data;
     my $max_retries = 4;
     while (! $data) {
         my $return = `$curl`;
-        my $hash = string_to_hash($return);
-        $data = $hash->{data};
-        unless ($data) {
+        if ($return) {
+            my $hash = from_json($return);
+            $data = $hash->{data};
+        }
+        else {
             $max_retries--;
             last if $max_retries == 0;
             sleep(1);
@@ -224,19 +242,16 @@ sub asana {
     return $data;
 }
 
-sub string_to_hash {
-    my $str = shift;
-    $str =~ s/:null/:undef/g;
-    $str =~ s/:true/:1/g;
-    $str =~ s/:false/:0/g;
-    $str =~ s/":/" => /g;
-    $str =~ s/\B\$(\w)/\\\$$1/g;
-    my $hash = eval $str;
-    return $hash;
-}
-
 sub html_task_output {
     my $q = shift;
-    my ($project_name, $task_name, $notes) = @{$_[0]};
-    print "\t\t\t", $q->div({class => 'task_details'}, $q->span({class => 'project'}, $project_name), $task_name, $q->div({class => 'notes'}, $notes)), "\n";
+    my ($project_name, $task_name, $notes, $subtasks) = @{$_[0]};
+
+    my $html = $q->span({class => 'project'}, $project_name) . " $task_name" . $q->div({class => 'notes'}, $notes) . "\n";
+
+    $html .= $q->div({class => 'subtask'}, "Subtasks") . "\n" if @{$subtasks};
+    foreach my $st (@{$subtasks}) {
+        $html .=  $q->div({class => 'notes'}, $st->{name} . " [" . $st->{status} . "]\n");
+    }
+
+    print "\t\t\t", $q->div({class => 'task_details'}, $html), "\n";
 }

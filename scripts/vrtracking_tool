@@ -270,9 +270,16 @@ while (<>){
 		#for recalculation operations (reset flags on db and delete files from disk)
 		else {
     		my @mapping_ids = sort { $b<=>$a } @{$vrobject->mapping_ids()};
-    		my $mapstats_id = $mapping_ids[0];
-    		my $qcdir = $vrdirectory.'/qc-sample.'.$mapstats_id.'/';
-    		unless (-d $qcdir) {
+    		my $mapstats_id = 0;
+    		my $qcdir;
+    		foreach ( @mapping_ids ) {
+				my $checkdir = $vrdirectory.'/qc-sample.'.$_.'/';
+				$qcdir = $checkdir if (-d $checkdir);
+				$mapstats_id = $_ if ($_ > $mapstats_id); 
+			}
+			#my $mapstats_id = $mapping_ids[0];
+    		#my $qcdir = $vrdirectory.'/qc-sample.'.$mapstats_id.'/';
+    		unless ($qcdir && -d $qcdir) {
     			$qcdir = $vrdirectory.'/qc-sample/'; 
     		}
     		my %files_deleted = (

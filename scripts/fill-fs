@@ -79,6 +79,7 @@ sub flanking_sequence
 
     my $vcf = $$opts{vcf} = exists($$opts{file}) ? Vcf->new(file=>$$opts{file}) : Vcf->new(fh=>\*STDIN);
     $vcf->parse_header;
+    $vcf->add_header_line({key=>'INFO',ID=>'FS',Number=>1,Type=>'String',Description=>'Flanking sequence'});  
     print $vcf->format_header;
 
     my (@lines,@mask);

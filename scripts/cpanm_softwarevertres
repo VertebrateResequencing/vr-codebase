@@ -1,0 +1,13 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+# pass the given args to cpanm on normal and precise nodes with umask 2
+foreach my $server ('uk10k-login', 'precise-dev64') {
+    warn "\nrunning 'cpanm @ARGV' on $server\n";
+    system(qq[ssh -A $server "umask 002; cpanm @ARGV"]);
+}
+
+exit;
+

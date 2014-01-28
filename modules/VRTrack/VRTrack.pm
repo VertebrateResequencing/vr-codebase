@@ -1073,6 +1073,7 @@ sub get_lanes {
             
             my %objs;
             $objs{individual} = $sample->individual;
+            $objs{individual} || next; # if there was some import failure we might have ended up with a sample row but no individual
             $objs{population} = $objs{individual}->population;
             $objs{species}    = $objs{individual}->species;
             

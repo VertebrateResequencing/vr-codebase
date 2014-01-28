@@ -4,7 +4,8 @@
 #   on chr2 and chr9 from duplicate reads calculation. It does
 #   so by running bamcheck twice and replacing the field 'SN  reads duplicated:' 
 #
-# After excluding, the regions are:
+#	
+# After excluding, the mm9/NCBIm37 regions are:
 #       1   1   197195432
 #       10  1   129993255
 #       11  1   121843856
@@ -49,12 +50,12 @@ read -t 1 -n 1 A && if [ $? -eq 0 ]; then
     exit 1
 fi
 
-bamcheck $@ -t /lustre/scratch102/projects/mouse/ref/bamcheck-mousewrapper.regions > $TMPFILE || die
+bamcheck $@ -t /lustre/scratch105/vrpipe/refs/mouse/ncbim37/resources/bamcheck-mousewrapper-NCBIm37.regions > $TMPFILE || die
+
 DUPL=`cat $TMPFILE | grep ^SN | grep 'reads duplicated:'` || die
 rm -f $TMPFILE
 
 bamcheck $@ | sed "s,^SN\treads duplicated:.*,$DUPL," || die
 
 exit 0
-
 
