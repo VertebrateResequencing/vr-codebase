@@ -651,6 +651,7 @@ sub wait
             my $rfile = $self->freeze($wfile);
             for my $id (sort {$a<=>$b} keys %{$$jobs{$wfile}})
             {
+                $self->_mkdir($$jobs{$wfile}{$id}{done_file});
                 my $cmd = qq[$0 +run $rfile $id];
                 $self->debugln("$$jobs{$wfile}{$id}{call}:\t$cmd");
                 system($cmd);
@@ -776,6 +777,11 @@ sub wait
         my $rfile = $self->freeze($wfile);
         my $cmd = qq[$0 +run $rfile {JOB_INDEX}];
         $self->debugln("$wfile:\t$cmd");
+
+        for my $id (@ids)
+        {
+            $self->_mkdir($$jobs{$wfile}{$id}{done_file});
+        }
 
         my $ok;
         eval 
@@ -968,7 +974,7 @@ sub _mkdir
 {
     my ($self,$fname) = @_;
     $fname =~ s{[^/]+$}{};
-    `mkdir -p $fname`;
+    if ( !-e $fname ) { `mkdir -p $fname`; }
     return $fname;
 }
 
