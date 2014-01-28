@@ -1233,6 +1233,11 @@ sub snp_type
 {
     my ($als,$ref) = @_;
 
+    if ( @$als==1 ) 
+    { 
+        return $$als[0] eq $ref ? 'hom_RR_' : 'hom_AA_';
+    }
+
     # Determine SNP type: hom(RR),het(RA),hom(AA) or het(AA)
     if ( $$als[0] eq $$als[1] )
     {

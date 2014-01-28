@@ -1,0 +1,60 @@
+#!/bin/bash
+#
+# This bamcheck wrapper omits three troublesome high-coverage regions
+#   on chr2 and chr9 from duplicate reads calculation. It does
+#   so by running bamcheck twice and replacing the field 'SN  reads duplicated:' 
+#
+# After excluding, the mm10/GRCm38 regions are:
+#	1	1	195471971
+#	2	1	98660847
+#	2	98667873	182113224
+#	3	1	160039680
+#	4	1	156508116
+#	5	1	151834684
+#	6	1	149736546
+#	7	1	145441459
+#	8	1	129401213
+#	9	3039419	35304068
+#	9	35306076	124595110
+#	10	1	130694993
+#	11	1	122082543
+#	12	1	120129022
+#	13	1	120421639
+#	14	1	124902244
+#	15	1	104043685
+#	16	1	98207768
+#	17	1	94987271
+#	18	1	90702639
+#	19	1	61431566
+#	X	1	171031299
+#	Y	1	91744698
+#	M	1	16299
+#
+
+
+TMPFILE=`mktemp /tmp/bamcheck-mousewrapper.XXXXXXXXXX` || exit 1
+
+die()
+{
+    if [ -e $TMPFILE ]; then cat $TMPFILE; fi
+    rm -f $TMPFILE
+    exit 1
+}
+
+trap 'die' TERM
+trap 'die' INT
+
+read -t 1 -n 1 A && if [ $? -eq 0 ]; then
+    echo "The mousewrapper does not accept streamed BAMs."
+    exit 1
+fi
+
+bamcheck $@ -t /lustre/scratch105/vrpipe/refs/mouse/GRCm38/resources/bamcheck-mousewrapper-GRCm38.regions > $TMPFILE || die
+
+DUPL=`cat $TMPFILE | grep ^SN | grep 'reads duplicated:'` || die
+rm -f $TMPFILE
+
+bamcheck $@ | sed "s,^SN\treads duplicated:.*,$DUPL," || die
+
+exit 0
+

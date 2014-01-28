@@ -1,38 +1,58 @@
-#!/bin/sh
+#!/bin/bash
 umask 002
-if [ $# -lt 1 -o $# -gt 2  ]
-then
-    echo "Error in $0 - Invalid Argument Count"
-    echo "Syntax: $0 vr-pipe_db_name(vrtrack_mouse_wgs, etc.) -OR-"
-    echo "Syntax: $0 vr-pipe_db_name taxon_id (9606, 10090....)"
+
+function usage
+{
+    echo "usage: update_db_vrpipe.sh [[-d vrtrack_db_name (optional: -t tax_id -m min_run_id -s study) ]  | [-h]]"
+}
+
+TAX=""
+DB=""
+MIN_RUN=""
+STUDY=""
+SPE=""
+while [ "$1" != "" ]; do
+    case $1 in
+        -d | --db )             shift
+                                DB=$1
+                                ;;
+        -t | --tax )            shift
+        						TAX="-tax $1"
+                                ;;
+        -n | --species )        shift
+                                                        SPE="-spe $1"
+                                ;;
+        -m | --min )            shift
+        						MIN_RUN="-min $1"
+                                ;;
+        -s | --study )          shift
+        						STUDY="_$1"
+                                ;;
+        -h | --help )           usage
+                                exit
+                                ;;
+        * )                     usage
+                                exit 1
+    esac
+    shift
+done
+
+if [ "$DB" = "" ];then
+    echo "A valid tracking database name must be entered."
     exit
 fi
 
-DB="$1"
-DBEXISTS=$(mysql -u vreseq_ro -hmcs4a --batch --skip-column-names -e "SHOW DATABASES LIKE '$DB'" | grep $DB > /dev/null; echo "$?")
+DBEXISTS=$(mysql -u $VRTRACK_RO_USER -h$VRTRACK_HOST --batch --skip-column-names -e "SHOW DATABASES LIKE '$DB'" | grep $DB > /dev/null; echo "$?")
 if [ $DBEXISTS -eq 1 ];then
     echo "A database with the name $DB does not exist."
     exit
 fi
 
-TAX=""
-if [ $# -eq 2  ]
-then
-    TAX="-tax $2"
-fi
-
-ARG_UP=""
-if [[ $DB =~ "g1k_track_phase3" ]]
-then
-    ARG_UP="-u -sup -v"
-else
-    ARG_UP="-u -sup -nop -v"
-fi
+ARG_UP="-u -sup -nop -md5 -wdr -trd -v"
 
 ROOT="/lustre/scratch105"
-CONF="/nfs/vertres01/conf"
 SCRIPTS="/software/vertres/scripts"
-BIN_EXT="/software/vertres/bin-external/update_pipeline"
+BIN_EXT="/software/vertres/update_pipeline"
 DUMPS="/warehouse/g1k-04/sql_dumps/$DB.sql"
 
 export LD_LIBRARY_PATH=/software/badger/lib:/software/oracle_client-10.2.0/lib
@@ -40,4 +60,8 @@ export ORACLE_HOME=/software/oracle_client-10.2.0
 
 mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST $DB > $DUMPS
 
-$BIN_EXT/update_pipeline.pl -s $CONF/$DB"_studies" -d $DB $TAX $ARG_UP
+if [ "$STUDY" = "" ]; then
+	cd $BIN_EXT && perl update_pipeline.pl -s $CONF/$DB"_studies" -d $DB $TAX $SPE $MIN_RUN $ARG_UP
+else
+	cd $BIN_EXT && perl update_pipeline.pl -s $CONF/$DB$STUDY -d $DB $TAX $SPE $MIN_RUN $ARG_UP
+fi

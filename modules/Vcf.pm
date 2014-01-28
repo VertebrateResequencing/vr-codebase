@@ -1,23 +1,18 @@
 package Vcf;
 
-our $VERSION = 'r785';
+our $VERSION = 'r899';
 
 # http://vcftools.sourceforge.net/specs.html
-# http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:variant_call_format
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf4.0
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf_4.0_sv
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf3.3
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcfv3.2
+# https://github.com/samtools/hts-specs
 #
 # Authors: petr.danecek@sanger
-# for VCF v3.2, v3.3, v4.0, v4.1
+# for VCF v3.2, v3.3, v4.0, v4.1, v4.2
 #
 
 =head1 NAME
 
 Vcf.pm.  Module for validation, parsing and creating VCF files. 
-         Supported versions: 3.2, 3.3, 4.0, 4.1
+         Supported versions: 3.2, 3.3, 4.0, 4.1, 4.2
 
 =head1 SYNOPSIS
 
@@ -157,8 +152,8 @@ sub new
     $$self{reserved}{cols} = {CHROM=>1,POS=>1,ID=>1,REF=>1,ALT=>1,QUAL=>1,FILTER=>1,INFO=>1,FORMAT=>1} unless exists($$self{reserved_cols});
     $$self{recalc_ac_an} = 1;
     $$self{has_header} = 0;
-    $$self{default_version} = '4.1';
-    $$self{versions} = [ qw(Vcf3_2 Vcf3_3 Vcf4_0 Vcf4_1) ];
+    $$self{default_version} = '4.2';
+    $$self{versions} = [ qw(Vcf3_2 Vcf3_3 Vcf4_0 Vcf4_1 Vcf4_2) ];
     if ( !exists($$self{max_line_len}) && exists($ENV{MAX_VCF_LINE_LEN}) ) { $$self{max_line_len} = $ENV{MAX_VCF_LINE_LEN} }
     $$self{fix_v40_AGtags} = $ENV{DONT_FIX_VCF40_AG_TAGS} ? 0 : 1;
     my %open_args = ();
@@ -336,7 +331,7 @@ sub next_data_array
     if ( !$line ) { return undef; }
     if ( ref($line) eq 'ARRAY' ) { return $line; }
     my @items = split(/\t/,$line);
-    if ( @items<8 ) { $line=~s/\n/\\n/g; $self->throw("Could not parse the line: [$line]"); }
+    if ( @items<8 ) { $line=~s/\n/\\n/g; $self->throw("Could not parse the line, wrong number of columns: [$line]"); }
     chomp($items[-1]);
     return \@items;
 }
@@ -413,11 +408,12 @@ sub _set_version
     elsif ( $$self{version} eq '3.3' ) { $reader=Vcf3_3->new(%$self); } 
     elsif ( $$self{version} eq '4.0' ) { $reader=Vcf4_0->new(%$self); }
     elsif ( $$self{version} eq '4.1' ) { $reader=Vcf4_1->new(%$self); }
+    elsif ( $$self{version} eq '4.2' ) { $reader=Vcf4_2->new(%$self); }
     else 
     { 
         $self->warn(qq[The version "$$self{version}" not supported, assuming VCFv$$self{default_version}\n]);
-        $$self{version} = '4.1';
-        $reader = Vcf4_1->new(%$self);
+        $$self{version} = '4.2';
+        $reader = Vcf4_2->new(%$self);
     }
 
     $self = $reader;
@@ -732,7 +728,7 @@ sub add_header_line
     if ( $args{append} )
     {
         my @tm = gmtime(time);
-        $key = sprintf "%s_%d%.2d%.2d", $key,$tm[5]+1900,$tm[4],$tm[3];
+        $key = sprintf "%s_%d%.2d%.2d", $key,$tm[5]+1900,$tm[4]+1,$tm[3];
         my $i = 1;
         while ( exists($$self{header}{$key.'.'.$i}) ) { $i++; }
         $key = $key.'.'.$i;
@@ -1089,8 +1085,8 @@ sub remove_field
 
     Usage   : my $col = $vcf->replace_field('GT:PL:DP:SP:GQ','XX',1,':');    # returns 'GT:XX:DP:SP:GQ'
     Arg 1   : Field
-        2   : The index of the field to replace
-        3   : Replacement
+        2   : Replacement
+        3   : 0-based index of the field to replace
         4   : Field separator
     Returns : Modified string
 
@@ -1105,8 +1101,17 @@ sub replace_field
     while ($itag!=$idx)
     {
         $isep = index($string,$sep,$prev_isep);
-        # Todo: VCFv4.1 allows omitting empty fields, shouldn't fail here
-        if ( $isep==-1 ) { $self->throw("The index out of range: $string:$isep .. $idx"); }
+        if ( $isep==-1 ) 
+        { 
+            # the out of range index may be OK, VCFv4.1 allows omitting empty fields
+            if ( $$self{version}<4.1 ) 
+            { 
+                $self->throw("The index out of range ($string,$repl,$idx,$sep), missing fields not supported in VCFv$$self{version}."); 
+            }
+            while ( $itag<$idx ) { $string .= ':'; $itag++; }
+            $string .= $repl;
+            return $string;
+        }
         $prev_isep = $isep+1;
         $itag++;
     }
@@ -1225,7 +1230,7 @@ sub get_sample_field
         {
             $isep = index($col,':',$prev_isep);
             if ( $itag==$idx ) { last; }
-            if ( $isep==-1 ) { $self->throw("The index out of range: $col:$isep .. $idx"); }
+            if ( $isep==-1 ) { return '.'; }    # This is valid, missing fields can be ommited from genotype columns
             $prev_isep = $isep+1;
             $itag++;
         }
@@ -1474,7 +1479,7 @@ sub _format_line_hash
                 if ( ref($$gt{$field}) eq 'HASH' ) 
                 {
                     # Special treatment for Number=[AG] tags
-                    unshift @gtype, $self->format_AGtag($record,$$gt{$field},$field);
+                    unshift @gtype, $self->format_AGtag($record,$col,$$gt{$field},$field);
                 }
                 else
                 { 
@@ -1734,25 +1739,31 @@ sub parse_AGtags
         else
         {
             @alleles = ($$rec{REF},@{$$rec{ALT}});
+            if ( @alleles==2 && $alleles[1] eq '.' ) { pop(@alleles); }
         }
         my @gtypes;
         for (my $i=0; $i<@alleles; $i++)
         {
             for (my $j=0; $j<=$i; $j++)
             {
-                push @gtypes, $alleles[$i].'/'.$alleles[$j];
+                push @{$gtypes[1]}, $alleles[$i].'/'.$alleles[$j];
             }
+            push @{$gtypes[0]}, $alleles[$i];
         }
         for my $tag (@gtags)
         {
-            for my $sample (values %{$$rec{gtypes}})
+            for my $name (keys %{$$rec{gtypes}})
             {
+                my $sample = $$rec{gtypes}{$name};
                 if ( !exists($$sample{$tag}) or $$sample{$tag} eq $missing ) { next; }
                 my @values = split(/,/,$$sample{$tag});
+                my $ploidy = $self->guess_ploidy(scalar @alleles, scalar @values) - 1;
+                if ( $ploidy>1 ) { $self->throw("Sorry, not ready for ploidy bigger than 2\n"); }
+                if ( $ploidy!=1 ) { $$rec{_cached_ploidy}{$name} = $ploidy; }
                 $$sample{$tag} = {};
                 for (my $i=0; $i<@values; $i++)
                 {
-                    $$sample{$tag}{$gtypes[$i]} = $values[$i];
+                    $$sample{$tag}{$gtypes[$ploidy][$i]} = $values[$i];
                 }
             }
         }
@@ -1772,7 +1783,7 @@ sub parse_AGtags
 
 sub format_AGtag
 {
-    my ($self,$record,$tag_data,$tag) = @_;
+    my ($self,$record,$sample,$tag_data,$tag) = @_;
 
     # The FORMAT field is checked only once and the results are cached.
     if ( !exists($$record{_atags}) )
@@ -1817,19 +1828,21 @@ sub format_AGtag
             {
                 for (my $j=0; $j<=$i; $j++)
                 {
-                    push @$gtypes, $alleles[$i].'/'.$alleles[$j];
-                    push @$gtypes2, $alleles[$j].'/'.$alleles[$i];
+                    push @{$$gtypes[1]}, $alleles[$i].'/'.$alleles[$j];
+                    push @{$$gtypes2[1]}, $alleles[$j].'/'.$alleles[$i];
                 }
+                push @{$$gtypes[0]}, $alleles[$i];
             }
             
             $$record{_gtypes}  = $gtypes;
             $$record{_gtypes2} = $gtypes2;
         }
 
-        for (my $i=0; $i<@$gtypes; $i++)
+        my $ploidy = exists($$record{_cached_ploidy}{$sample}) ? $$record{_cached_ploidy}{$sample} : 1;
+        for (my $i=0; $i<@{$$gtypes[$ploidy]}; $i++)
         {
-            my $gt = $$gtypes[$i];
-            if ( !exists($$tag_data{$gt}) ) { $gt = $$gtypes2[$i]; }
+            my $gt = $$gtypes[$ploidy][$i];
+            if ( !exists($$tag_data{$gt}) ) { $gt = $$gtypes2[$ploidy][$i]; }
             push @out, exists($$tag_data{$gt}) ? $$tag_data{$gt} : $$self{defaults}{default};
         }
     }
@@ -2024,7 +2037,7 @@ sub fill_ref_alt_mapping
     for my $ref (keys %$map)
     {
         $new_ref = $ref;
-        if ( $ref ne $new_ref ) { $self->throw("The reference prefixes do not agree: $ref vs $new_ref\n"); }
+        if ( $ref ne $new_ref ) { $self->warn("The reference prefixes do not agree: $ref vs $new_ref\n"); return undef; }
         for my $alt (keys %{$$map{$ref}})
         {
             $$map{$ref}{$alt} = $alt;
@@ -2382,6 +2395,14 @@ sub validate_info_field
     Returns : Error message in case of an error.
 
 =cut
+
+sub guess_ploidy
+{
+    my ($self, $nals, $nvals) = @_;
+    if ( $nvals==$nals ) { return 1; }
+    if ( $nvals==binom(1+$nals,2) ) { return 2; }
+    $self->throw("Could not determine the ploidy (nals=$nals, nvals=$nvals). (TODO: ploidy bigger than 2)\n", binom(2+$nals,2));
+}
 
 sub binom
 {
@@ -3033,7 +3054,7 @@ sub Vcf4_0::validate_alt_field
                     GTC  G      ->      GTC  G
                     G    <DEL>  ->      GTC  <DEL>
     Args    : 
-    Returns : New REF string and fills the hash with appropriate ALT.
+    Returns : New REF string and fills the hash with appropriate ALT or undef on error.
 
 =cut
 
@@ -3056,7 +3077,7 @@ sub Vcf4_0::fill_ref_alt_mapping
     for my $ref (keys %$map)
     {
         my $rlen = length($ref);
-        if ( substr($new_ref,0,$rlen) ne $ref ) { $self->throw("The reference prefixes do not agree: $ref vs $new_ref\n"); }
+        if ( substr($new_ref,0,$rlen) ne $ref ) { $self->warn("The reference prefixes do not agree: $ref vs $new_ref\n"); return undef; }
         for my $alt (keys %{$$map{$ref}})
         {
             # The second part of the regex is for VCF>4.0, but does no harm for v<=4.0
@@ -3082,7 +3103,7 @@ sub Vcf4_0::normalize_alleles
     my ($self,$ref,$alt) = @_;
 
     my $rlen = length($ref);
-    if ( $rlen==1 or length($alt)==1 )  { return ($ref,$alt); }
+    if ( $rlen==1 or length($alt)==1 )  { return ($ref,split(/,/,$alt)); }
 
     my @als = split(/,/,$alt);
     my $i = 1;
@@ -3378,20 +3399,9 @@ sub Vcf4_1::validate_alt_field
             if ( !($pos=~/^\S+:\d+$/) ) { $msg=', cannot parse sequence:position'; push @err,$item; next; }
             next;
         }
-        if ( $item=~/^\.[ACTGNactgn]*([ACTGNactgn])$/ )
-        {
-            if ( $ref1 ne $1 ) { $msg=', last base does not match the reference'; push @err,$item; }
-            next; 
-        }
-        elsif ( $item=~/^([ACTGNactgn])[ACTGNactgn]*\.$/ )
-        {
-            if ( substr($ref,-1,1) ne $1 ) { $msg=', first base does not match the reference'; push @err,$item; }
-            next; 
-        }
+        if ( $item=~/^\.[ACTGNactgn]*([ACTGNactgn])$/ ) { next; }
+        elsif ( $item=~/^([ACTGNactgn])[ACTGNactgn]*\.$/ ) { next; }
         if ( !($item=~/^[ACTGNactgn]+$|^<[^<>\s]+>$/) ) { push @err,$item; next; }
-        if ( $item=~/^<[^<>\s]+>$/ ) { next; }
-        if ( $ref_len==length($item) ) { next; }
-        if ( substr($item,0,1) ne $ref1 ) { $msg=', first base does not match the reference'; push @err,$item; next; }
     }
     if ( !@err ) { return undef; }
     return 'Could not parse the allele(s) [' .join(',',@err). ']' . $msg;
@@ -3462,6 +3472,28 @@ sub Vcf4_1::event_type
     elsif ( index($allele,'[')!=-1 or index($allele,']')!=-1 ) { return 'b'; }
 
     return $self->SUPER::event_type($rec,$allele);
+}
+
+#------------------------------------------------
+# Version 4.2 specific functions
+
+=head1 VCFv4.2
+
+VCFv4.2 specific functions
+
+=cut
+
+package Vcf4_2;
+use base qw(Vcf4_1);
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+    bless $self, ref($class) || $class;
+
+    $$self{version} = '4.2';
+    return $self;
 }
 
 1;

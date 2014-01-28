@@ -1,0 +1,505 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+
+    $$self{do_clean}      = 1;
+    $$self{limits}        = { memory=>5_500, runtime=>3*24*60 };
+    $$self{shapeit_bin}   = '/nfs/users/nfs_p/pd3/sandbox/svn/shapeit/shapeit.v2.r727.linux.x64';
+    $$self{vcf_gensample} = 'vcf-gensample';
+    $$self{phased_join_args} = '';
+    $$self{config_version} = '1349789206';
+    $$self{_sampleconf} = q[
+        # For sanity checking that your config file is not obsolete. Update the version key in your 
+        #  config file to get rid of the warnings.
+        version  => '] .$$self{config_version}. q[',
+
+        shapeit_bin   => '] .$$self{shapeit_bin}. q[',
+        vcf_gensample => 'vcf-gensample',
+        shapeit_args  => '',
+        gen_map       => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/ALL_1000G_phase1interim_jun2011_impute/genetic_map_chr{CHROM}_combined_b37.txt',
+
+        # Skip sites with the number of alternate alleles smaller than min_AC.
+        #   For this, the VCF must contain the INFO/AC annotation.
+        # min_AC      => 3, 
+
+        # The in_vcf (aka -i) file name can contain the string "{CHROM}" which
+        #   will be expanded according to chromosomes listed in the "region" key
+        #   below. If the key is not defined, glob expansion will be used to
+        #   obtain the chromosomes. The VCFs must be tabix indexed.  
+        # in_vcf     => '/some/path/chr{CHROM}.vcf.gz',
+        
+
+        # Do not split blocks phased by IMPUTE2 even when phasing quality is
+        #   low - single sites may be unphased in otherwise phased chunks
+        phased_join_args => '-q 0 -j 10',
+
+        # Number of sites per chunk and in buffer regions. The total number of
+        #   sites considered is buffer_nsites+chunk_nsites.  The chunks are
+        #   determined based on the input VCF (-i) unless chunk_by_known is set.
+        buffer_nsites  => 10_000,
+        chunk_nsites   => 100_000,
+
+        # Create whole-genome VCF? This can produce *huge* files for thousands of samples
+        merge_chroms   => 0,
+
+        # Regions to impute, the chunks must be sorted by chromosomal position
+        #   or else the resulting VCF will not be sorted. By default, the whole
+        #   input VCF is imputed.
+        # region => [ '1:159000000-161000000', '1:62000000-64000000', '2' ],
+
+        # Limits for shapeit and the other tasks
+        shapeit_limits => { memory=>5_500, runtime=>3*24*60 },
+        # limits         => { memory=>5_500, runtime=>3*24*60 },
+        do_clean => 1,   # Remove runner's temporary files
+    ]."\n";
+
+    $$self{chunks_overlap} = 0;
+
+    $$self{usage} .= 
+        "Usage: run-shapeit [OPTIONS]\n" .
+        "Options:\n" .
+        "   -i, --in-vcf <file>                 The target VCF file to be imputed or genotypes refined\n" .
+        "   -m, --mrProper                      Clean all intermediate files, including Impute2 output files, leaving only top-level VCFs\n" .
+        "   -o, --outdir <dir>                  Output directory\n" .
+        "   -r, --region <chr|chr:from-to>      Run phasing in the given region only\n" .
+        "\n";
+
+    return $self;
+}
+
+sub parse_args
+{
+    my ($self) = @_;
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-r' or $arg eq '--region' ) { push @{$$self{region}},shift(@ARGV); next; }
+        if ( $arg eq '-m' or $arg eq '--mrProper' ) { $$self{mrProper}=1; next; }
+        if ( $arg eq '-l' or $arg eq '--list-chunks' ) { $$self{list_chunks}=1; next; }
+        if ( $arg eq '-i' or $arg eq '--in-vcf' ) { $$self{in_vcf}=shift(@ARGV); next; }
+        if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
+        $self->throw();
+    }
+    if ( !exists($$self{in_vcf}) ) { $self->throw("Expected the -i option.\n"); }
+    if ( !exists($$self{outdir}) ) { $self->throw("Expected the -o option.\n"); }
+    $$self{chunk_file} = "$$self{outdir}/chunks.txt";
+    if ( $$self{mrProper} )
+    {
+        $self->mrProper($$self{outdir});
+        $self->all_done;
+    }
+    if ( !exists($$self{version}) or $$self{version} ne $$self{config_version} )
+    {
+        $self->warn("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
+    }
+    if ( !exists($$self{gen_map}) ) 
+    {
+        $$self{gen_map} = '/nfs/users/nfs_p/pd3/sandbox/impute2/genetic_maps_b37/genetic_map_chr{CHROM}_combined_b37.txt';
+        $self->warn("The 'gen_map' config key not present, assuming: $$self{gen_map}\n"); 
+    }
+    if ( !exists($$self{shapeit_args}) ) 
+    {
+        $$self{shapeit_args} = '';
+        $self->warn("The 'shapeit_args' config key not present, assuming: $$self{shapeit_args}\n"); 
+    }
+    if ( exists($$self{buffer_region}) or exists($$self{chunk_size}) )  
+    { 
+        $self->throw("The keys buffer_region and chunk_size are deprecated, please use buffer_nsites and chunk_nsites instead.\n"); 
+    }
+    if ( !exists($$self{buffer_nsites}) ) 
+    { 
+        $self->throw("Missing the key buffer_nsites"); 
+    }
+    if ( !exists($$self{chunk_nsites}) ) 
+    { 
+         $self->throw("Missing the key chunk_nsites");
+    }
+}
+
+sub main
+{
+    my ($self) = @_;
+    $self->parse_args();
+    $self->save_config();
+
+    my $outdir = $$self{outdir};
+
+    # Convert from VCFs to impute2/shapeit format
+    my $chunks = $self->read_chunks();
+    if ( !$self->is_finished("$outdir/01.vcf_to_shapeit.done") )
+    {
+        $self->set_limits(%{$$self{limits}}) unless !exists($$self{limits});
+        for my $chunk (@$chunks)
+        {
+            $self->spawn('vcf_to_shapeit',"$outdir/$$chunk[0]/01.vcf_to_shapeit.$$chunk[1]-$$chunk[2].done",$chunk);
+        }
+        $self->wait;
+        $self->set_limits(memory=>undef,runtime=>undef);
+        $self->cmd(qq[touch $outdir/01.vcf_to_shapeit.done]);
+    }
+
+    # Run shapeit on chunks
+    if ( !$self->is_finished("$outdir/02.shapeit.done") )
+    {
+        $self->set_limits(%{$$self{shapeit_limits}}) unless !exists($$self{shapeit_limits});
+        for my $chunk (@$chunks)
+        {
+            $self->spawn('shapeit',"$outdir/$$chunk[0]/02.shapeit.$$chunk[1]-$$chunk[2].done",$chunk);
+        }
+        $self->wait;
+        $self->set_limits(memory=>undef,runtime=>undef);
+        $self->cmd(qq[touch $outdir/02.shapeit.done]);
+    }
+
+    # Convert to VCFs
+    if ( !$self->is_finished("$outdir/03.shapeit_to_vcf.done") ) 
+    {
+        $self->set_limits(%{$$self{limits}}) unless !exists($$self{limits});
+        for my $chunk (@$chunks)
+        {
+            $self->spawn('shapeit_to_vcf',"$outdir/$$chunk[0]/03.shapeit_to_vcf.$$chunk[1]-$$chunk[2].vcf.gz",$chunk);
+        }
+        $self->wait;
+        $self->set_limits(memory=>undef,runtime=>undef);
+        $self->cmd(qq[touch $outdir/03.shapeit_to_vcf.done]);
+    }
+
+    # Concat VCFs
+    $self->set_limits(runtime=>24*60, %{$$self{limits}}) unless !exists($$self{limits});
+    my @chroms = $self->get_chroms($chunks);
+    for my $chr (@chroms)
+    {
+        if ( $self->is_finished("$outdir/$chr.vcf.gz") ) { next; }
+        $self->spawn('concat_vcfs',"$outdir/$chr.vcf.gz",$chunks,$chr);
+    }
+    $self->wait;
+    $self->set_limits(memory=>undef,runtime=>undef);
+
+    # Run performance stats and clean
+    $self->spawn('runtime_stats',"$outdir/runtime");
+    $self->wait;
+    $self->clean($outdir) unless !$$self{do_clean};
+
+    $self->all_done;
+}
+
+sub mrProper
+{
+    my ($self,$outdir) = @_;
+    my $chunks = $self->read_chunks();
+    my %chroms = ();
+    for my $chunk (@$chunks) { $chroms{$$chunk[0]} = 1; }
+    for my $chr (keys %chroms)
+    {
+        $self->cmd("rm -rf $outdir/$chr");
+    }
+    $self->SUPER::clean($outdir);
+}
+
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub set_chunk_options
+{
+    my ($self,$chr,$from,$to) = @_;
+    if ( !exists($$self{chunk_options}) ) { return; }
+    my $hit;
+    for my $chunk (keys %{$$self{chunk_options}})
+    {
+        if ( !($chunk=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the chunk_options: [$chunk]"); }
+        if ( $chr ne $1 ) { next; }
+        if ( $2>$to ) { next; }
+        if ( $3<$from ) { next; }
+        $hit = $chunk;
+        last;
+    }
+    if ( !defined $hit )
+    {
+        if ( exists($$self{ori_chunk_options}) ) 
+        {
+            $self->set_options($$self{ori_chunk_options},$self);
+        }
+        return;
+    }
+    if ( !exists($$self{ori_chunk_options}) )
+    {
+        $$self{ori_chunk_options} = {};
+        $self->set_options($self,$$self{ori_chunk_options},keys %{$$self{chunk_options}{$hit}});
+    }
+    $self->set_options($$self{chunk_options}{$hit},$self);
+}
+
+sub set_options
+{
+    my ($self,$src,$tgt,@keys) = @_;
+    if ( !scalar @keys ) { @keys = keys %$src }
+    for my $key (@keys)
+    {
+        $$tgt{$key} = $$src{$key};
+    }
+}
+
+sub read_chunks
+{
+    my ($self) = @_;
+    if ( !-e $$self{chunk_file} ) 
+    { 
+        my $in_file = $$self{chunk_by_known} ? $$self{known_vcf} : $$self{in_vcf};
+        my @regions = $self->define_regions($in_file);
+        for my $region (@regions)
+        {
+            $self->spawn('define_chunks',"$$self{chunk_file}.$region",$in_file,$region);
+        }
+        $self->wait;
+
+        $self->cmd("> $$self{chunk_file}.part");
+        for my $region (@regions)
+        {
+            $self->cmd("cat $$self{chunk_file}.$region >> $$self{chunk_file}.part");
+            $self->spawn('define_chunks',"$$self{chunk_file}.$region",$in_file,$region);
+        }
+        rename("$$self{chunk_file}.part",$$self{chunk_file}) or $self->throw("rename $$self{chunk_file}.part $$self{chunk_file}: $!");
+        for my $region (@regions)
+        {
+            unlink("$$self{chunk_file}.$region");
+        }
+    }
+    open(my $fh,'<',$$self{chunk_file}) or $self->throw("$$self{chunk_file}: $!");
+    my @chunks;
+    while (my $line=<$fh>)
+    {
+        chomp($line);
+        my @items = split(/\t/,$line);
+        push @chunks, [@items];
+    }
+    close($fh) or $self->throw("$$self{chunk_file}: $!");
+    return \@chunks;
+}
+
+sub define_chunks
+{
+    my ($self,$outfile,$in_file,$region) = @_;
+    my $tot_sites = $$self{buffer_nsites} + $$self{chunk_nsites};
+    my (@chunks,@buffer);
+    my $file = $self->expand_chrom($in_file,$region);
+    my $cmd  = "tabix $file $region |";
+    open(my $in,$cmd) or $self->throw("$cmd: $!");
+    while (my $line=<$in>)
+    {
+        if ( substr($line,0,1) eq '#' ) { next; }
+        my $i = index($line,"\t");
+        if ( $i<0 ) { $self->throw("Could not parse the line [CHR]: $line"); }
+        my $chr = substr($line,0,$i);
+        my $j = index($line,"\t",$i+1);
+        if ( $j<0 ) { $self->throw("Could not parse the line [POS]: $line"); }
+        my $pos = substr($line,$i+1,$j-$i-1);
+        if ( exists($$self{min_AC}) )
+        {
+            # Skip sites with small AC
+            my $iac = index($line,'AC=',$j);
+            if ( $iac!=-1 )
+            {
+                $iac += 3;
+                my ($ac,$d);
+                while ( ($d=substr($line,$iac,1)) && $d=~/\d/ ) { $ac .= $d; $iac++; }
+                if ( $ac < $$self{min_AC} ) { next; }
+            }
+        }
+
+        if ( @buffer && $buffer[0][0] ne $chr or @buffer>$tot_sites )
+        {
+            my $chr_from = $buffer[0][0];
+            my $pos_from = $buffer[0][1];
+            my $pos_to   = $buffer[-1][1];
+            my $nout     = @buffer;
+            push @chunks, { chr=>$chr_from, from=>$pos_from, to=>$pos_to, n=>$nout };
+            if ( $$self{chunk_nsites}<@buffer ) { splice(@buffer,0,$$self{chunk_nsites}); }
+            else { @buffer = (); }
+        }
+        push @buffer, [$chr,$pos];
+    }
+    if ( @buffer )
+    {
+        my $chr_from = $buffer[0][0];
+        my $pos_from = $buffer[0][1];
+        my $pos_to   = $buffer[-1][1];
+        my $nout     = @buffer;
+        push @chunks, { chr=>$chr_from, from=>$pos_from, to=>$pos_to, n=>$nout };
+    }
+    close($in) or $self->throw("close $cmd");
+
+    if ( !@chunks ) { $self->throw("No chunks defined?\n"); }
+    if ( @chunks>1 && $chunks[-1]{n} < $tot_sites*0.75 )
+    {
+        my $chunk = splice(@chunks,-1,1);
+        $chunks[-1]{to} = $$chunk{to};
+        $chunks[-1]{n} += $$chunk{n};
+    }
+
+    open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    for my $chunk (@chunks)
+    {
+        print $out "$$chunk{chr}\t$$chunk{from}\t$$chunk{to}\t$$chunk{n}\n";
+    }
+    close($out) or $self->throw("close $outfile.part");
+    rename("$outfile.part",$outfile);
+}
+
+sub get_chroms
+{
+    my ($self,$regions) = @_;
+    my %chroms;
+    for my $reg (@$regions) 
+    { 
+        $chroms{$$reg[0]} = 1; 
+    }
+    return ( sort keys %chroms );
+}
+
+sub expand_chrom
+{
+    my ($self,$path,$region) = @_;
+    $region =~ s/:.*$//;
+    $path =~ s/{CHROM}/$region/g;
+    return $path;
+}
+
+sub define_regions
+{
+    my ($self,$path) = @_;
+    if ( exists($$self{region}) ) { return @{$$self{region}}; }
+    if ( !($path=~/{CHROM}/) ) { return ('.'); }
+    my $before = $`;
+    my $after  = $';
+    $path =~ s/{CHROM}/*/;  # only one occurance of {CHROM} is allowed in this implementation
+    my @list = glob($path);
+    if ( !@list ) { $self->throw("No such file(s): $path"); }
+    my @regs;
+    for my $file (@list)
+    {
+        $file =~ s{^$before}{};
+        $file =~ s{$after$}{};
+        push @regs,$file;
+    }
+    return @regs;
+}
+
+sub vcf_to_shapeit
+{
+    my ($self,$outfile,$chunk) = @_;
+    my $chr  = $$chunk[0];
+    my $from = $$chunk[1];
+    my $to   = $$chunk[2];
+    my $outdir = "$$self{outdir}/$chr";
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
+    my $min_ac = exists($$self{min_AC}) ? "-m $$self{min_AC}" : '';
+    $self->cmd(qq[mkdir -p $outdir]);
+    $self->cmd(qq[$$self{vcf_gensample} $min_ac -r $chr:$from-$to -o $outdir/01.vcf_to_shapeit.$from-$to $in_vcf]);
+    $self->cmd(qq[touch $outfile]);
+}
+
+sub shapeit
+{
+    my ($self,$outfile,$chunk) = @_;
+
+    my $chr  = $$chunk[0];
+    my $from = $$chunk[1];
+    my $to   = $$chunk[2];
+    my $outdir = "$$self{outdir}/$chr";
+
+    $self->set_chunk_options($chr,$from,$to);
+    my $genmap = $self->expand_chrom($$self{gen_map},$chr);
+    if ( ! -e $genmap ) { $self->throw("The genmap [$genmap] does not exist.\n"); }
+
+    my $inp = "$outdir/01.vcf_to_shapeit.$from-$to";
+    my $out = "$outdir/02.shapeit.$from-$to";
+    my $cmd = qq[$$self{shapeit_bin} --input-map $genmap --input-gen ${inp}_haps.gz ${inp}_samples --output-max $out.haps.gz $out.samples --output-log $out.log];
+    $self->cmd($cmd); # Utils::CMD($cmd,{verbose=>1,require_errno=>1});
+    $self->cmd(qq[touch $outfile]);
+}
+
+sub shapeit_to_vcf
+{
+    my ($self,$outfile,$chunk) = @_;
+
+    my $chr  = $$chunk[0];
+    my $from = $$chunk[1];
+    my $to   = $$chunk[2];
+    my $outdir = "$$self{outdir}/$chr";
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
+    $self->cmd(qq[$$self{vcf_gensample} -r $chr:$from-$to -a $outdir/02.shapeit.$from-$to $in_vcf | bgzip -c > $outfile.part]);
+    $self->tabix_part($outfile);
+    rename("$outfile.part",$outfile);
+}
+
+sub concat_vcfs
+{
+    my ($self,$outfile,$chunks,$chr) = @_;
+    open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
+    for my $chunk (@$chunks)
+    {
+        if ( $$chunk[0] ne $chr ) { next; }
+        my $file = "$$self{outdir}/$$chunk[0]/03.shapeit_to_vcf.$$chunk[1]-$$chunk[2].vcf.gz";
+        print $fh $file, "\n";
+    }
+    close($fh);
+    $self->cmd(qq[vcf-phased-join $$self{phased_join_args} -l $outfile.list -o - 2>$outfile.log | bgzip -c > $outfile.part]);
+    $self->tabix_part($outfile);
+    rename("$outfile.part",$outfile);
+}
+
+sub tabix_part
+{
+    my ($self,$vcf) = @_;
+    $self->cmd("tabix -p vcf -f $vcf.part");
+    rename("$vcf.part.tbi","$vcf.tbi");
+}
+
+sub save_config
+{
+    my ($self) = @_;
+    my $src = $$self{_config};
+    my $dst = "$$self{outdir}/shapeit.conf";
+    if ( -e $dst && (stat($src))[9] <= (stat($dst))[9] ) { return; }
+    if ( !-d $$self{outdir} ) { $self->cmd("mkdir -p $$self{outdir}"); }
+    open(my $fh,'>',$dst) or $self->throw("$dst: $!");
+    my $about = $$self{_about};
+    $about =~ s/\n/\n# /g;
+    print $fh "# $about";
+    close($fh);
+    $self->cmd("cat $src >> $dst");
+}
+
+sub cmd
+{
+    my ($self,$cmd) = @_;
+    return Utils::CMD($cmd,{verbose=>1});
+}
+

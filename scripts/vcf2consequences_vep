@@ -38,16 +38,27 @@ if( (!$vep_input && !$tab_input) || $help ){$missing = 1;}
 if ( $vep_input && $tab_input ) { error("Only one of the -i or -t option can be given.") }
 if ( $append_gene_names && !($gene_list_db)) { error("--appendgenenames only valid with --genenames option") }
 
-$buffer_size = 1000 unless ($buffer_size);
+$buffer_size = 50000 unless ($buffer_size);
 
 if( $missing ) { error(); }
-
 
 my $t0 = Benchmark->new;
 my $grantham_matrix = GranthamMatrix->new() if $grantham;
 my $current_chr='';
 my $vep_cache = {};
 my $gerp_cache = {chr=>'', block=>'', scores=>{}};
+
+my $ontology; # ensembl or SO, we will detect this
+my $terms = {
+              ensembl => {
+                non_synonymous => ['NON_SYNONYMOUS_CODING'], 
+                synonymous =>['SYNONYMOUS_CODING']
+              },
+              so => {
+                non_synonymous  =>['initiator_codon_variant','inframe_insertion','inframe_deletion','missense_variant'], 
+                synonymous =>['synonymous_variant','stop_retained_variant']
+              }
+            };
 
 my %GENE_NAME;
 if ($gene_list_db) {
@@ -164,6 +175,7 @@ sub process_vcf_rec
 
 	if ($chr ne $current_chr) {
     	print STDERR "Processing chr $chr\n";    
+        init_vep(); # parse whole file to allow for VEP sort order bug
 		load_vep_cache($chr);
 		$current_chr=$chr;
 	}
@@ -209,14 +221,18 @@ sub process_vcf_rec
 
 			# eg "<dir>/gerp_score.22.bed.gz"
 			my $bed = join('.', "$gerp_cache_dir/gerp_score", $gerp_cache->{chr}, "bed.gz");
-			die "Cannot find $bed" unless -e $bed;
-			my $from = $gerp_cache->{block} * $buffer_size;
-			my $to = (1+$gerp_cache->{block}) * $buffer_size;
-			my @index_search = `tabix -p bed $bed $chr:${from}-${to}`;
-			for (@index_search) {
-				my @line = split("\t", $_);
-				$gerp_cache->{scores}->{$line[1]} = $line[3];
-			}
+            if (-e $bed) {
+                my $from = $gerp_cache->{block} * $buffer_size;
+                my $to = (1+$gerp_cache->{block}) * $buffer_size;
+                my @index_search = `tabix -p bed $bed $chr:${from}-${to}`;
+                for (@index_search) {
+                    my @line = split("\t", $_);
+                    $gerp_cache->{scores}->{$line[1]} = $line[3];
+                }
+            }
+            else {
+			     error("Cannot find $bed\n");
+            }
 		}
 		my $score = $gerp_cache->{scores}->{$pos};
 		if ($score) {
@@ -241,14 +257,7 @@ sub load_vep_cache
     my $rec;
     if ( $vep_input )
     {
-        return if !$vep_rec;
         $rec = parse_rec($vep_rec);
-
-        while ($rec && $rec->{vep_chr} ne $chr) {
-            $vep_rec = <VEP_FILE>;
-            last if !$vep_rec;
-            $rec = parse_rec($vep_rec);
-        }
     }
     else
     {
@@ -257,17 +266,25 @@ sub load_vep_cache
         $rec = parse_rec($vep_rec);
     }
 
-	while ($rec && $rec->{vep_chr} eq $chr) {
+	while ($rec) {
+
+        unless  ($rec->{vep_chr} eq $chr) {
+            $vep_rec = <VEP_FILE>;
+            last if !$vep_rec;
+            $rec = parse_rec($vep_rec);
+            next;
+        }
 
 		my $gene_name=$rec->{Gene}; # Default to ENS id
-		my ($sift_pred,$polyphen_pred,$condel_pred);
-		my @extra_cols = split(/;/, $rec->{Extra});	# eg PolyPhen=unknown(0);SIFT=tolerated(0.56);HGNC=RERE
+		my ($sift_pred,$polyphen_pred,$condel_pred,$blosum_pred);
+		my @extra_cols = split(/;/, $rec->{Extra}) if $rec->{Extra};	# eg PolyPhen=unknown(0);SIFT=tolerated(0.56);SYMBOL=RERE;BLOSUM62=-3
 		foreach (@extra_cols) {
 			my ($key,$val) = split(/=/);
-			$gene_name = $val if $key eq 'HGNC';
+			$gene_name = $val if ($key eq 'SYMBOL' || $key eq 'HGNC'); # HGNC replaced by SYMBOL in v73
 			$sift_pred = "$key,$val" if $key eq 'SIFT';
 			$polyphen_pred = "$key,$val" if $key eq 'PolyPhen';
 			$condel_pred = "$key,$val" if $key eq 'Condel';
+			$blosum_pred = "$key,$val" if $key eq 'BLOSUM62';
 		}
 
 		my $consequence = $rec->{Feature};
@@ -275,10 +292,12 @@ sub load_vep_cache
 		if ($gene_name =~ /^ENS/ && $gene_list_db) {	# lookup external gene names in DBM file
 			my $ext_name = $GENE_NAME{$gene_name};
             if ($append_gene_names) {
-			    $gene_name .= ":$ext_name" if $ext_name;
-            }
-            else {
-			    $gene_name = $ext_name if $ext_name;
+                if ($ext_name) {
+                    $gene_name .= ":$ext_name";
+                }
+                else {
+                    $gene_name .= ":";
+                }
             }
 		}
 		$consequence .= ":$gene_name";
@@ -288,27 +307,50 @@ sub load_vep_cache
 			$consequence .= ":" . $rec->{CDS_position} . ":" . $rec->{Protein_position};
 		}
 
-		if ( $rec->{Consequence} =~ '^SYNONYMOUS_CODING' && length($rec->{Amino_acids}) == 1) {
-			$consequence .= ":" . $rec->{Amino_acids} . ">" . $rec->{Amino_acids}; # eg change D to D>D
-		}
+        # Establish the Ontology for this file when we hit the first coding SNP
+        unless ($ontology) {
+            foreach my $ont (keys %{$terms} ) {
+                foreach my $csq ( keys %{$terms->{$ont}} ) {
+                    foreach my $syn_term ( @{$terms->{$ont}{$csq}} ) {
+                        if ($rec->{Consequence} =~ /^$syn_term/) {
+                            $ontology = $ont;
+                            print STDERR "Using '$ontology' terms\n";
+                        }
+                    }
+                }
+            }
+        }
 
-		if ( $rec->{Consequence} =~ '^NON_SYNONYMOUS_CODING') {
-			my $protein_pred="";
-			$protein_pred .= ":$sift_pred" if $sift_pred;
-			$protein_pred .= ":$polyphen_pred" if $polyphen_pred;
-			$protein_pred .= ":$condel_pred" if $condel_pred;
+        if ($ontology) {
+            # Modify synonymous coding Amino_acid notation, eg change D to D>D
+            foreach my $syn_term ( @{$terms->{$ontology}{synonymous}} ) {
+                if ( $rec->{Consequence} =~ "^$syn_term" && length($rec->{Amino_acids}) == 1) {
+                    $consequence .= ":" . $rec->{Amino_acids} . ">" . $rec->{Amino_acids};
+                }
+    		}
 
-			if ($grantham && $rec->{Amino_acids} !~ '-') {
-				my ($ref_aa,$var_aa) = split(/\//,$rec->{Amino_acids});
-				if (length($ref_aa) == 1 && length($var_aa) == 1) {
-					$protein_pred .= ":Grantham," . $grantham_matrix->score($ref_aa,$var_aa);
-				}
-			}
-			$rec->{Amino_acids} =~ s/\//>/;
+            # Apply protein predictions for non-synonymous coding csq
+            foreach my $non_syn_term ( @{$terms->{$ontology}{non_synonymous}} ) {
+                if ( $rec->{Consequence} =~ "^$non_syn_term") {
+                    my $protein_pred="";
+                    $protein_pred .= ":$sift_pred" if $sift_pred;
+                    $protein_pred .= ":$polyphen_pred" if $polyphen_pred;
+                    $protein_pred .= ":$condel_pred" if $condel_pred;
+                    $protein_pred .= ":$blosum_pred" if $blosum_pred;
 
-			$consequence .= ":" . $rec->{Amino_acids} if $rec->{Amino_acids} ne '-';
-			$consequence .= $protein_pred if $protein_pred ne "";
-		}
+                    if ($grantham && $rec->{Amino_acids} !~ '-') {
+                        my ($ref_aa,$var_aa) = split(/\//,$rec->{Amino_acids});
+                        if (length($ref_aa) == 1 && length($var_aa) == 1) {
+                            $protein_pred .= ":Grantham," . $grantham_matrix->score($ref_aa,$var_aa);
+                        }
+                    }
+                    $rec->{Amino_acids} =~ s/\//>/;
+
+                    $consequence .= ":" . $rec->{Amino_acids} if $rec->{Amino_acids} ne '-';
+                    $consequence .= $protein_pred if $protein_pred ne "";
+                }
+            }
+        }
 
 		## multi-allelic variants may have duplicate consequences, hence hash rather than array
 		$vep_cache->{$rec->{vep_pos}}{$rec->{variant_id}}{$consequence}++;

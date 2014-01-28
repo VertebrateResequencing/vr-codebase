@@ -5,18 +5,12 @@
 # Author:        cj5
 # Created:       2012-03-28
 
-BEGIN {
-    $ENV{VRTRACK_HOST} = 'mcs4a';
-    $ENV{VRTRACK_PORT} = 3306;
-    $ENV{VRTRACK_RO_USER} = 'vreseq_ro';
-    $ENV{VRTRACK_RW_USER} = 'vreseq_rw';
-    $ENV{VRTRACK_PASSWORD} = 't3aml3ss';
-};
-
 use strict;
 use warnings;
+use CGI::Carp qw(fatalsToBrowser);
 use URI;
 
+use lib '/var/www/lib';
 use SangerPaths qw(core team145);
 use SangerWeb;
 use VRTrack::Project;
@@ -29,12 +23,14 @@ my $title = 'QC Grind Lane Status Update';
 my $sw  = SangerWeb->new({
     'title'   => $title,
     'banner'  => q(),
+    'jsfile'  => ['http://code.jquery.com/jquery-latest.js','/js/qc.js','/js/jquery.tablesorter.min.js'],
     'inifile' => SangerWeb->document_root() . q(/Info/header.ini),
 });
 my $utl = VertRes::QCGrind::Util->new();
 my $main_script = $utl->{SCRIPTS}{DATABASES_VIEW};
 my $proj_view_script = $utl->{SCRIPTS}{PROJECTS_VIEW};
 my $lane_view_script = $utl->{SCRIPTS}{LANE_VIEW};
+my ($lib_filt, $runname_filt, $gt_status_filt, $npg_status_filt, $auto_qc_status_filt, $raw_bases_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt, $overlap_dup_filt, $final_net_filt);
 
 my $USER = $sw->username();
 my $cgi = $sw->cgi();
@@ -74,9 +70,9 @@ sub displayProjectLaneForm
 {
     my ($cgi, $vrtrack, $database, $project) = @_;
 
-	my ($gt_status_filt, $npg_status_filt, $auto_qc_status_filt, $raw_bases_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt, $overlap_dup_filt);
-
 	if ($form_submission) {
+		$lib_filt = $cgi->param('lib');
+		$runname_filt = $cgi->param('runname');
 		$gt_status_filt = $cgi->param('gt_status');
 		$npg_status_filt = $cgi->param('npg_status');
 		$auto_qc_status_filt = $cgi->param('auto_qc_status');
@@ -85,8 +81,11 @@ sub displayProjectLaneForm
 		$duplication_filt = $cgi->param('duplication');
 		$rmdup_mapped_filt = $cgi->param('rmdup_mapped');
 		$overlap_dup_filt = $cgi->param('overlap_dup');
+		$final_net_filt = $cgi->param('final_net');
 	}
 	else {
+        $lib_filt = $cgi->param('lib'); # lib param may be passed by samples_view as well as from form
+		$runname_filt = $cgi->param('runname');
 		$gt_status_filt = 'all';
 		$npg_status_filt = 'all';
 		$auto_qc_status_filt = 'all';
@@ -113,12 +112,12 @@ sub displayProjectLaneForm
 	print $cgi->h3({-align=>"center", -style=>"font: normal 700 1.5em arial"},"Project : $pname");
 	print $cgi->h5({-style=>"font: arial"},"<a  target='_blank' href='$pending_view?mode=2&amp;db=$database'>Pending Requests</a>");
     print $cgi->br;
-
     print qq[
         <div class="centerFieldset">
         <fieldset>
         <legend>Lane status</legend>
-        <table RULES=GROUPS cellpadding="4">
+        <table RULES=GROUPS cellpadding="4" class="sortable">
+        <thead> 
         <tr>
 		<th style="width: 40px">Pass</th>
 		<th style="width: 40px">Fail</th>
@@ -132,37 +131,43 @@ sub displayProjectLaneForm
     	<th>Genotype</th>
         <th>NPG Status</th>
         <th>Auto QC Status</th>
-        <th title="Raw bases mapped">Raw</th>
-        <th title="Gbp mapped">Mapped</th>
-        <th title="Percent of mapped reads which were duplicates">Dup \%</th>
-        <th title="Gbp mapped ignoring duplicate reads">Mapped-dups</th>
-        <th title="Overlapping base duplicate percent">Overlap \%</th>
+        <th title="Number of raw bases in Gb [the lane raw_bases]">Raw</th>
+        <th title="Number of mapped bases in Gb [Excludes soft-clipped reads, and for exomes parts of reads which fall outside target region]">Mapped</th>
+        <th title="Percent of mapped reads which were duplicates [rmdup_reads_mapped / reads_mapped]">Dup \%</th>
+        <th title="Gbp mapped ignoring duplicate reads [Subtract an estimate of duplicated Mapped bases from Mapped]">Mapped-dups</th>
+        <th title="The percent of bases duplicated due to reads of a pair overlapping">Overlap dup \%</th>
+        <th title="Final net bases excluding Overlapping base duplicates [rmdup_bases_mapped - overlap_dup percentage]">Final net bases</th>
         <th></th>
         </tr>
     ];
 
-    print $cgi->start_form;
+    print $cgi->start_form({name=>'qc_status'});
     print $cgi->hidden("db","$database");
     print $cgi->hidden("proj_id","$projectID");
 
+    # filters
     print qq[ <tr style="background-color:#F5F5F5"> ];
 
 	my @lane_status = qw (passed failed investigate gt_pending pending);
 	foreach my $status (@lane_status) {
-        print $cgi->th( $cgi->checkbox(-name=>$status, -checked=>1, -label=>''));
+        print $cgi->td( $cgi->checkbox(-name=>$status, -checked=>1, -label=>''));
 	}
-
-	print $cgi->th(['','','','']);
-	print "<th>", $cgi->popup_menu( -name => 'gt_status', -values => ['all','confirmed','unconfirmed','unchecked','unknown','candidate','wrong'], -default => 'all',), "</th>"; 
-	print "<th>", $cgi->popup_menu( -name => 'npg_status', -values => ['all','pass','fail','pending'], -default => 'all',), "</th>"; 
-	print "<th>", $cgi->popup_menu( -name => 'auto_qc_status', -values => ['all','passed','failed','no_qc'], -default => 'all',), "</th>"; 
-	print "<th>", $cgi->textfield(-name=>'raw_bases', -size=>1), "</th>";
-	print "<th>", $cgi->textfield(-name=>'bases_mapped', -size=>1), "</th>";
-	print "<th>", $cgi->textfield(-name=>'duplication', -size=>1), "</th>";
-	print "<th>", $cgi->textfield(-name=>'rmdup_mapped', -size=>1), "</th>";
-	print "<th>", $cgi->textfield(-name=>'overlap_dup', -size=>1), "</th>";
-    print "<th>", $cgi->submit(-name => 'filter', -value  => 'Filter'), "</th>";
+	print $cgi->td(['','']);
+	print "<td>", $cgi->textfield(-name=>'lib'), "</td>";
+	print "<td>", $cgi->textfield(-name=>'runname', -size=>6), "</td>";
+	print "<td>", $cgi->popup_menu( -name => 'gt_status', -values => ['all','confirmed','unconfirmed','unchecked','unknown','candidate','wrong'], -default => 'all',), "</td>"; 
+	print "<td>", $cgi->popup_menu( -name => 'npg_status', -values => ['all','pass','fail','pending'], -default => 'all',), "</td>"; 
+	print "<td>", $cgi->popup_menu( -name => 'auto_qc_status', -values => ['all','passed','failed','no_qc'], -default => 'all',), "</td>"; 
+	print "<td>", $cgi->textfield(-name=>'raw_bases', -size=>1), "</td>";
+	print "<td>", $cgi->textfield(-name=>'bases_mapped', -size=>1), "</td>";
+	print "<td>", $cgi->textfield(-name=>'duplication', -size=>1), "</td>";
+	print "<td>", $cgi->textfield(-name=>'rmdup_mapped', -size=>1), "</td>";
+	print "<td>", $cgi->textfield(-name=>'overlap_dup', -size=>1), "</td>";
+	print "<td>", $cgi->textfield(-name=>'final_net', -size=>1), "</td>";
+    print "<td>", $cgi->submit(-name => 'filter', -value  => 'Filter'), "</td>";
     print qq[ </tr> ];
+    print qq[ </thead> ];
+    print qq[<tbody>];
     
     foreach( sort( keys( %individuals2Samples ) ) ) {
         my $iname = $_;
@@ -180,6 +185,7 @@ sub displayProjectLaneForm
 
 				foreach my $lane (sort {$a->name cmp $b->name} @$lanes ) {
 
+        			next if $lane->is_withdrawn;
 					if ($form_submission) { # filter on lane status checkboxes
 						next unless $cgi->param($lane->qc_status) || $lane->qc_status eq 'no_qc';
 					}
@@ -191,19 +197,23 @@ sub displayProjectLaneForm
 
                 	my $lane_status_colour = $utl->get_colour_for_status($lane->qc_status);
                 	my $lane_id = $lane->id;
+                    my $raw_bases =  sprintf("%.2f", ($lane->raw_bases/1000000000));
 
+					next if $lib_filt && $libname !~ /^$lib_filt/;
+					next if $runname_filt && $lanename !~ /^$runname_filt/;
 					next if $gt_status_filt ne 'all' && $gt_status_filt ne $gt_status;
 					next if $npg_status_filt ne 'all' && $npg_status_filt ne $npg_qc;
 					next if $auto_qc_status_filt ne 'all' && $auto_qc_status_filt ne $auto_qc_status;
+                    next unless pass_filter($raw_bases,$raw_bases_filt);
 
 					my $lane_mapstats = getMapStats($lane);
 					if (%{$lane_mapstats}) {
 
-                        next unless pass_filter($lane_mapstats->{raw_bases},$raw_bases_filt);
                         next unless pass_filter($lane_mapstats->{bases_mapped},$bases_mapped_filt);
                         next unless pass_filter($lane_mapstats->{duplication},$duplication_filt);
                         next unless pass_filter($lane_mapstats->{rmdup_bases_mapped},$rmdup_mapped_filt);
                         next unless pass_filter($lane_mapstats->{overlap_dup},$overlap_dup_filt);
+                        next unless pass_filter($lane_mapstats->{final_net},$final_net_filt);
 	
 						print qq[<tr>];
 
@@ -214,7 +224,7 @@ sub displayProjectLaneForm
 						my $disabled = $utl->{AUTH_USERS}{$USER} ? '' : 'DISABLED';
 						foreach my $status (@lane_status) {
 							my $state =  $lane_qc_status eq $status ? 'checked' : '';
-							print $cgi->td("<input type='radio' name='$lane_id' value='$status' $state $disabled>");
+							print $cgi->td("<input type='radio' class='lanestatus' name='$lane_id' value='$status' $state $disabled/>");
 						}
 
 						my $gt_found = $lane_mapstats->{genotype_found};
@@ -230,7 +240,7 @@ sub displayProjectLaneForm
 						print qq [ <td style="background-color:$lane_status_colour;"><a href="$lane_view_script?lane_id=$lane_id&amp;db=$database">$lanename</a></td> ];
 						print qq [ <td style="background-color:$gt_status_colour;">$gt_display</td> ];
 
-						print $cgi->td([$npg_qc, $auto_qc_status, $lane_mapstats->{raw_bases}, $lane_mapstats->{bases_mapped}, $lane_mapstats->{duplication}, $lane_mapstats->{rmdup_bases_mapped}, $lane_mapstats->{overlap_dup}]);
+						print $cgi->td([$npg_qc, $auto_qc_status, $raw_bases, $lane_mapstats->{bases_mapped}, $lane_mapstats->{duplication}, $lane_mapstats->{rmdup_bases_mapped}, $lane_mapstats->{overlap_dup}, $lane_mapstats->{final_net}]);
 						print qq[</tr>];
 					}
 				} # foreach lane
@@ -238,18 +248,28 @@ sub displayProjectLaneForm
 		} # sample
     }
 
-    print qq[ <tr> ];
+    print qq[</tbody>];
+    print qq[ <tfoot><tr style="background-color:#F5F5F5"> ];
+    print qq[<tr>];
+
     if ($utl->{AUTH_USERS}{$USER}) {   
-		print qq[ <td colspan=6 align='center'> ];
+
+        # toggle lane status radios
+        foreach my $status (@lane_status) {
+            print $cgi->td("<input type='radio' name='statusAll' title='Toggle $status' class='togglestatus' id='$status'/>");
+        }
+		print qq[ <td colspan=4 > ];
 		print $cgi->submit(-name => 'update', -value  => 'Update');
+        print $cgi->button(-id =>'resetRadios', -value=>'Reset');
 		print qq[ </td> ];
     }
 
-    print qq[ <td colspan=8 align='right'> ];
+    print qq[ <td colspan=6 align='right'> ];
     print $cgi->submit(-name => 'download', -value  => 'Download');
-    print qq[ </td> ];
-    print qq[ </tr> ];
-    print qq[ </table> </fieldset> </div> ];
+    print qq[</td>];
+    print qq[</tr>];
+    print qq[</tfoot>];
+    print qq[</table> </fieldset> </div> ];
     print $cgi->end_form;
 }
 
@@ -277,8 +297,8 @@ sub updateLaneData
 sub downloadLaneData {
     my ($cgi, $vrtrack, $project) = @_;
 
-	my ($gt_status_filt, $npg_status_filt, $auto_qc_status_filt, $raw_bases_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt, $overlap_dup_filt);
-
+    $lib_filt = $cgi->param('lib');
+    $runname_filt = $cgi->param('runname');
 	$gt_status_filt = $cgi->param('gt_status');
 	$npg_status_filt = $cgi->param('npg_status');
 	$auto_qc_status_filt = $cgi->param('auto_qc_status');
@@ -287,6 +307,7 @@ sub downloadLaneData {
 	$duplication_filt = $cgi->param('duplication');
 	$rmdup_mapped_filt = $cgi->param('rmdup_mapped');
     $overlap_dup_filt = $cgi->param('overlap_dup');
+	$final_net_filt = $cgi->param('final_net');
 
     my $pname = $project->name;
 
@@ -305,7 +326,7 @@ sub downloadLaneData {
         else{$individuals2Samples{ $indname } = [ $sample ];}
     }
 
-    print join ("\t","Sanger ID","Sample Name","Library","Run number","Genotype","Lane QC status","NPG status","Auto QC status","Raw","Mapped","Duplication","RmDup Mapped","Overlap Dup"), "\n";
+    print join ("\t","Sanger ID","Sample Name","Library","Run number","Genotype","Lane QC status","NPG status","Auto QC status","Raw","Mapped","Duplication","RmDup Mapped","Overlap Dup","Final Net Mapped"), "\n";
 
     foreach( sort( keys( %individuals2Samples ) ) ) {
         my $iname = $_;
@@ -323,6 +344,7 @@ sub downloadLaneData {
 
 				foreach my $lane (sort {$a->name cmp $b->name} @$lanes ) {
 
+        			next if $lane->is_withdrawn;
 					next unless $cgi->param($lane->qc_status) || $lane->qc_status eq 'no_qc'; # filter on lane status checkboxes
 
         			my $lanename = $lane->name;
@@ -330,10 +352,14 @@ sub downloadLaneData {
 					my $lane_qc_status = $lane->qc_status;
         			my $npg_qc = $lane->npg_qc_status;
 					my $auto_qc_status = $lane->auto_qc_status();
+                    my $raw_bases =  sprintf("%.2f", ($lane->raw_bases/1000000000));
 
+					next if $lib_filt && $libname !~ /^$lib_filt/;
+					next if $runname_filt && $lanename !~ /^$runname_filt/;
 					next if $gt_status_filt ne 'all' && $gt_status_filt ne $gt_status;
 					next if $npg_status_filt ne 'all' && $npg_status_filt ne $npg_qc;
 					next if $auto_qc_status_filt ne 'all' && $auto_qc_status_filt ne $auto_qc_status;
+                    next unless pass_filter($raw_bases,$raw_bases_filt);
 
 					my $lane_mapstats = getMapStats($lane);
 					if (%{$lane_mapstats}) {
@@ -343,13 +369,13 @@ sub downloadLaneData {
 						my $gt_display = $gt_status;
 						$gt_display .= " ($gt_found:$gt_ratio)" if $gt_found;
 
-                        next unless pass_filter($lane_mapstats->{raw_bases},$raw_bases_filt);
                         next unless pass_filter($lane_mapstats->{bases_mapped},$bases_mapped_filt);
                         next unless pass_filter($lane_mapstats->{duplication},$duplication_filt);
                         next unless pass_filter($lane_mapstats->{rmdup_bases_mapped},$rmdup_mapped_filt);
                         next unless pass_filter($lane_mapstats->{overlap_dup},$overlap_dup_filt);
+                        next unless pass_filter($lane_mapstats->{final_net},$final_net_filt);
 
-						print (join("\t",$iname,$sample_name,$libname,$lanename,$gt_display,$lane_qc_status,$npg_qc,$auto_qc_status,$lane_mapstats->{raw_bases},$lane_mapstats->{bases_mapped},$lane_mapstats->{duplication},$lane_mapstats->{rmdup_bases_mapped},$lane_mapstats->{overlap_dup}),"\n");
+						print (join("\t",$iname,$sample_name,$libname,$lanename,$gt_display,$lane_qc_status,$npg_qc,$auto_qc_status,$raw_bases,$lane_mapstats->{bases_mapped},$lane_mapstats->{duplication},$lane_mapstats->{rmdup_bases_mapped},$lane_mapstats->{overlap_dup},$lane_mapstats->{final_net}),"\n");
 					}
 				} # foreach lane
 			} # foreach lib
@@ -365,10 +391,9 @@ sub getMapStats {
 
 	foreach my $mapstats ( @mappings ) {
         if ($mapstats->bases_mapped) {
-            $lane_mapstats{raw_bases} = sprintf("%.1f", ($mapstats->raw_bases()/1000000000)); # GB
-            $lane_mapstats{bases_mapped} = sprintf("%.1f", ($mapstats->bases_mapped()/1000000000)); # GB
-            $lane_mapstats{duplication} = sprintf("%.1f", (1.0-($mapstats->rmdup_reads_mapped()/$mapstats->reads_mapped))*100);
-            $lane_mapstats{rmdup_bases_mapped} =  sprintf("%.1f", ($mapstats->rmdup_bases_mapped/1000000000)); # GB
+            $lane_mapstats{bases_mapped} = sprintf("%.2f", ($mapstats->bases_mapped()/1000000000)); # GB
+            $lane_mapstats{duplication} = sprintf("%.2f", (1.0-($mapstats->rmdup_reads_mapped()/$mapstats->reads_mapped))*100);
+            $lane_mapstats{rmdup_bases_mapped} =  sprintf("%.2f", ($mapstats->rmdup_bases_mapped/1000000000)); # GB
             $lane_mapstats{genotype_found} = $mapstats->genotype_found;
             $lane_mapstats{genotype_ratio} = sprintf("%.3f",$mapstats->genotype_ratio) if $mapstats->genotype_ratio;
 
@@ -381,7 +406,7 @@ sub getMapStats {
                 $autoqc->reason =~ /The percent of bases duplicated due to reads of a pair overlapping \((.*)\) /;
                 $lane_mapstats{overlap_dup} = sprintf("%.2f",$1);
             }
-
+            $lane_mapstats{final_net} = sprintf("%.2f", ($mapstats->{rmdup_bases_mapped} - $mapstats->{rmdup_bases_mapped} * $lane_mapstats{overlap_dup} / 100)/1000000000); # GB
             last;
         }
     }

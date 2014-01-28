@@ -1,15 +1,8 @@
 #!/usr/local/bin/perl -T
 
-BEGIN {
-    $ENV{VRTRACK_HOST} = 'mcs4a';
-    $ENV{VRTRACK_PORT} = 3306;
-    $ENV{VRTRACK_RO_USER} = 'vreseq_ro';
-    $ENV{VRTRACK_RW_USER} = 'vreseq_rw';
-    $ENV{VRTRACK_PASSWORD} = 't3aml3ss';
-};
-
 use strict;
 use warnings;
+use lib '/var/www/lib';
 use URI;
 
 use SangerPaths qw(core team145);
@@ -46,11 +39,11 @@ if ($cgi->param('download')) {
 	my $pid = $cgi->param('proj_id');
     if( defined( $pid ) ) {
         if ($cgi->param('download') eq 'TSV') {
-    		&downloadMappingsTSV($cgi, $db, $pid);
+    		&downloadMappings($cgi, "\t", 'tsv', $db, $pid);
     		exit;
     	}
     	elsif ($cgi->param('download') eq 'CSV (Excel)') {
-    		&downloadMappingsCSV($cgi, $db, $pid);
+    		&downloadMappings($cgi, "\t", 'tsv', $db, $pid);
     		exit;
     	}
     }	
@@ -74,7 +67,7 @@ sub displayProjectMappingsPage
     
     my $db_id = $utl->getDatabaseID ($database);
      
-    my $pname = $utl->fetchProjectName($db_id, $projectID);
+    my $pname = $projectID == 99999 ? "All $database projects" : $utl->fetchProjectName($db_id, $projectID);
     
     my $index = $utl->{SCRIPTS}{INDEX_PAGE};
     
@@ -128,40 +121,43 @@ sub displayProjectMappingsPage
     print $cgi->end_form;
 }
 
-sub downloadMappingsTSV
+sub downloadMappings
 {
-	my ($cgi, $db, $projectID) = @_;
+	my ($cgi, $sep, $type, $db, $projectID) = @_;
 	my $db_id = $utl->getDatabaseID ($db);
-	my $pname = $utl->fetchProjectName($db_id, $projectID);
-	my $vrtrack = $utl->connectToDatabase('vrtrack_web_index');
-	print $cgi->header(-type=>'text/tsv',  -attachment=>"$pname.tsv");
-	print join ("\t","Sanger Sample Name","Supplier Name","Accession"), "\n";
-	my $sql = qq[SELECT supplier_name, accession_number, sanger_sample_name FROM sample_id_mapping where db_id = ? and project_id = ?];
-	my $sth = $vrtrack->{_dbh}->prepare($sql);
-	if ($sth->execute($db_id, $projectID)) {
-		my ($supp, $acc, $sang);
-		$sth->bind_columns(\($supp, $acc, $sang));
-		while ($sth->fetch) {
-		    print (join ("\t",$sang, $supp, $acc), "\n"); 
-		}
+	my $pname = $projectID == 99999 ? "all_$db" :$utl->fetchProjectName($db_id, $projectID);
+  my $vrtrack = $utl->connectToDatabase($utl->{VRTRACK_DATABASES}{WEB_TABLES});
+  print $cgi->header(-type=>'text/$type',  -attachment=>"$pname.$type");
+	print join ($sep,"Sanger Sample Name","Supplier Name","Accession"), "\n";
+	my $sql = qq[SELECT supplier_name, accession_number, sanger_sample_name FROM sample_id_mapping where db_id = ?];
+	$sql = $sql." and project_id = ?" unless $projectID == 99999;
+	my $sth = $vrtrack->{_dbh}->prepare($sql);	
+	if ( $projectID == 99999 ) {
+		$sth->execute($db_id);
+	}
+	else {
+		$sth->execute($db_id, $projectID);
+	}
+	while (my ($supp, $acc, $sang) = $sth->fetchrow_array()) {
+		print (join ($sep, $sang, $supp, $acc), "\n"); 
 	}
 }
 
-sub downloadMappingsCSV
-{
-	my ($cgi, $db, $projectID) = @_;
-	my $db_id = $utl->getDatabaseID ($db);
-	my $pname = $utl->fetchProjectName($db_id, $projectID);
-	my $vrtrack = $utl->connectToDatabase('vrtrack_web_index');
-	print $cgi->header(-type=>'text/csv',  -attachment=>"$pname.csv");
-	print join (",","Sanger Sample Name","Supplier Name","Accession"), "\n";
-	my $sql = qq[SELECT supplier_name, accession_number, sanger_sample_name FROM sample_id_mapping where db_id = ? and project_id = ?];
-	my $sth = $vrtrack->{_dbh}->prepare($sql);
-	if ($sth->execute($db_id, $projectID)) {
-		my ($supp, $acc, $sang);
-		$sth->bind_columns(\($supp, $acc, $sang));
-		while ($sth->fetch) {
-		    print (join (",",$sang, $supp, $acc), "\n"); 
-		}
-	}
-}
+#~ sub downloadMappingsCSV
+#~ {
+	#~ my ($cgi, $db, $projectID) = @_;
+	#~ my $db_id = $utl->getDatabaseID ($db);
+	#~ my $pname = $utl->fetchProjectName($db_id, $projectID);
+	#~ my $vrtrack = $utl->connectToDatabase('vrtrack_web_index');
+	#~ print $cgi->header(-type=>'text/csv',  -attachment=>"$pname.csv");
+	#~ print join (",","Sanger Sample Name","Supplier Name","Accession"), "\n";
+	#~ my $sql = qq[SELECT supplier_name, accession_number, sanger_sample_name FROM sample_id_mapping where db_id = ? and project_id = ?];
+	#~ my $sth = $vrtrack->{_dbh}->prepare($sql);
+	#~ if ($sth->execute($db_id, $projectID)) {
+		#~ my ($supp, $acc, $sang);
+		#~ $sth->bind_columns(\($supp, $acc, $sang));
+		#~ while ($sth->fetch) {
+		    #~ print (join (",",$sang, $supp, $acc), "\n"); 
+		#~ }
+	#~ }
+#~ }
