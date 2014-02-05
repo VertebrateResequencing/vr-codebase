@@ -107,6 +107,7 @@ sub new
         "   +config <file>          Configuration file\n" .
         "   +debug <file1> <file2>  Run the freezed object <file1> overriding with keys from <file2>\n" .
         "   +local                  Do not submit jobs to LSF, but run serially\n" .
+        "   +checkpoint             Use BLCR checkpoint/restart to deal with overrun (instead of bswitch)\n" .
         "   +loop <int>             Run in daemon mode with <int> sleep intervals\n" .
         "   +mail <address>         Email when the runner finishes\n" .
         "   +maxjobs <int>          Maximum number of simultaneously running jobs\n" .
@@ -132,6 +133,8 @@ sub new
                     Summary of commands
                 +local
                     Do not submit jobs to LSF, but run serially
+                +checkpoint
+                    Use BLCR checkpoint/restart to deal with overrun (instead of bswitch)
                 +loop <int>
                     Run in daemon mode with <int> sleep intervals
                 +mail <address>
@@ -176,6 +179,7 @@ sub run
         if ( $arg eq '+verbose' ) { $$self{_verbose}=1; next; }
         if ( $arg eq '+silent' ) { $$self{_verbose}=0; next; }
         if ( $arg eq '+local' ) { $$self{_run_locally}=1; next; }
+        if ( $arg eq '+checkpoint' ) { $$self{_farm_options}{_run_with_checkpoint}=1; next; }
         if ( $arg eq '+show' ) 
         { 
             $arg = shift(@ARGV);

@@ -321,7 +321,15 @@ sub run_array
     {
         $bsub_opts .= " -n $$opts{cpus} -R 'span[hosts=1]'";
     }
-    my $bsub_cmd  = qq[bsub -J '${job_name}[$bsub_ids]' -e $job_name.\%I.e -o $job_name.\%I.o $bsub_opts '$cmd'];
+
+    if ( $$opts{_run_with_checkpoint} ) 
+    {
+# fixme checkpoint dir
+        $bsub_opts .= " -k '/lustre/scratch113/teams/hgi/develop-test/runner-checkpointing/ibd-seq-chrom22/checkpoint method=blcr'";
+        $cmd = "cr_run $cmd";
+    }
+ 
+   my $bsub_cmd  = qq[bsub -J '${job_name}[$bsub_ids]' -e $job_name.\%I.e -o $job_name.\%I.o $bsub_opts '$cmd'];
 
     # Submit to LSF
     print STDERR "$bsub_cmd\n";
