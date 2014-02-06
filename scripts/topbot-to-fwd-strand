@@ -29,7 +29,8 @@ use Carp;
 use FaSlice;
 
 my $opts = parse_params();
-if ( exists($$opts{refseq}) ) { create_map($opts); }
+if ( exists($$opts{region}) ) { convert_one($opts); }
+elsif ( exists($$opts{refseq}) ) { create_map($opts); }
 elsif ( exists($$opts{map}) ) { convert($opts); }
 
 exit;
@@ -41,10 +42,10 @@ sub error
     my (@msg) = @_;
     if ( scalar @msg ) { confess @msg; }
     die
-        "Usage: topbot-to-fwd-strand [OPTIONS]\n",
-        "       cat snps.top | topbot-to-fwd-strand -r ref.fa > snps.map\n",
-        "       cat snps.top | topbot-to-fwd-strand -m snps.map > snps.fwd\n",
+        "About: This script converts from Illumina TOP strand to reference forward strand.\n",
+        "Usage: topbot-to-fwd-strand [OPTIONS] [chr:pos:A/B]\n",
         "Options:\n",
+        "   -b, --bot-strand                The alleles are on Illumina's BOT strand, not TOP.\n",
         "   -m, --map <file>                Output of the previous run with -r.\n",
         "   -r, --refseq <file>             Samtools indexed reference fasta file.\n",
         "   -h, -?, --help                  This help message.\n",
@@ -57,15 +58,47 @@ sub parse_params
     my $opts = {};
     while (defined(my $arg=shift(@ARGV)))
     {
+        if ( $arg eq '-b' || $arg eq '--bot' ) { $$opts{is_bot}=1; next }
         if ( $arg eq '-m' || $arg eq '--map' ) { $$opts{map}=shift(@ARGV); next }
         if ( $arg eq '-r' || $arg eq '--refseq' ) { $$opts{refseq}=shift(@ARGV); next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
-        error("Unknown parameter \"$arg\". Run -h for help.\n");
+
+        my (@vals) = split(/:/,$arg);
+        if ( @vals != 3 ) { error("Unknown parameter \"$arg\". Run -h for help.\n"); }
+        my (@als) = split(m{/},$vals[2]);
+        if ( @als !=2 ) { error("Unknown parameter \"$arg\". Run -h for help.\n"); }
+        if ( exists($$opts{map}) ) { error("Expected map or chr:pos:A/B, not both\n"); }
+        $$opts{region} = [$vals[0],$vals[1]];
+        $$opts{als} = [uc($als[0]),uc($als[1])];
     }
-    if ( !exists($$opts{map}) && !exists($$opts{refseq}) ) { error("Missing the -m or -r option.\n") }
+    if ( !exists($$opts{map}) && !exists($$opts{refseq}) && !exists($$opts{region}) ) { error("Missing the -m or -r options or chr:pos:A/B.\n") }
     return $opts;
 }
 
+sub convert_one
+{
+    my ($opts) = @_;
+    my $refseq = FaSlice->new(file=>$$opts{refseq}, size=>500);
+    my $chr = $$opts{region}[0];
+    my $pos = $$opts{region}[1];
+    my @als = @{$$opts{als}};
+    if ( $als[0] eq $als[1] ) { error("Expected two different alleles, got ",join(',',@als),"!\n"); }
+    my %flip = ( A=>'T', C=>'G', G=>'C', T=>'A', N=>'N' );
+    if ( $$opts{is_bot} ) { @als = ($flip{$als[0]},$flip{$als[1]}); }
+
+    my $strand = topbot_strand($refseq,$chr,$pos,@als);
+    if ( !$strand ) 
+    { 
+        error("Could not determine strand at $chr:$pos for ", join(",", @{$$opts{als}}), ".\n".
+              "Are you certain that the alleles are on TOP, not BOT strand?\n\n"); 
+    }
+    my @out = $strand<0 ? ($flip{$als[0]},$flip{$als[1]}) : @als;
+    if ( $$opts{is_bot} ) { $strand *= -1; }
+
+    my $ref = $refseq->get_base($chr,$pos);
+    if ( $ref eq $out[1] ) { @out = ($out[1],$out[0]); }
+    print "$chr\t$pos\t",join(',',@{$$opts{als}}),"\t$strand\t",join('/',@out),"\t(REF/ALT)\n";
+}
 
 sub convert
 {
@@ -100,7 +133,7 @@ sub convert
         my $als = ( $map[3] eq '-1' ) ? $flip{$als[0]}.$flip{$als[1]} : $items[2];
         print "$items[0]\t$items[1]\t$als\n";
     } 
-    close($map) or error("close $$opts{map}");
+    close($map);
     my $line = <STDIN>;
     if ( defined $line ) { error("Too many lines from STDIN, starting with $line"); }
 }
