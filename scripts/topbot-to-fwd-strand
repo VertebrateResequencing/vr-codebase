@@ -89,8 +89,17 @@ sub convert_one
     my $strand = topbot_strand($refseq,$chr,$pos,@als);
     if ( !$strand ) 
     { 
-        error("Could not determine strand at $chr:$pos for ", join(",", @{$$opts{als}}), ".\n".
-              "Are you certain that the alleles are on TOP, not BOT strand?\n\n"); 
+        my $aref = $refseq->get_slice($chr,$pos-9,$pos-1);
+        my $ref  = $refseq->get_base($chr,$pos);
+        my $bref = $refseq->get_slice($chr,$pos+1,$pos+9);
+
+        my $msg = "Could not determine strand at $chr:$pos for " .join("/", @{$$opts{als}}). ".\nThe reference sequence is: ${aref}[$ref]$bref\n";
+        if ( $ref=~/[^Nn]/ && ($aref=~/[^Nn]/ or $bref=~/[^Nn]/) )
+        {
+            $msg .= "Are you certain that the alleles are on TOP, not BOT strand?\n"; 
+        }
+        error("\n".$msg."\n");
+
     }
     my @out = $strand<0 ? ($flip{$als[0]},$flip{$als[1]}) : @als;
     if ( $$opts{is_bot} ) { $strand *= -1; }
@@ -164,8 +173,8 @@ sub topbot_strand
     my ($refseq,$chr,$pos,@als) = @_;
 
     my $win = 100;
-    my $ref_slice = $refseq->get_slice($chr,$pos-$win,$pos+$win);
-    my $ref_base  = $refseq->get_base($chr,$pos);
+    my $ref_slice = uc($refseq->get_slice($chr,$pos-$win,$pos+$win));
+    my $ref_base  = uc($refseq->get_base($chr,$pos));
     if ( substr($ref_slice,$win,1) ne $ref_base ) { error("Bad slice? $chr:$pos $ref_base .. $ref_slice\n"); }
 
     #  Unambiguous pairs: A/C, A/G, T/C, T/G
@@ -192,7 +201,7 @@ sub topbot_strand
     #       C/G    A or T             C/G          1
     #        "     C or G             G/C         -1
     #
-    my $als = join('',sort @als);
+    my $als = uc(join('',sort @als));
 
     if ( $als eq 'AC' )
     {
