@@ -78,7 +78,7 @@ sub parse_params
 sub convert_one
 {
     my ($opts) = @_;
-    my $refseq = FaSlice->new(file=>$$opts{refseq}, size=>500);
+    my $refseq = FaSlice->new(file=>$$opts{refseq}, size=>500, oob=>'N');
     my $chr = $$opts{region}[0];
     my $pos = $$opts{region}[1];
     my @als = @{$$opts{als}};
