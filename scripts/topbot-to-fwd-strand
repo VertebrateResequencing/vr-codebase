@@ -106,7 +106,9 @@ sub convert_one
 
     my $ref = $refseq->get_base($chr,$pos);
     if ( $ref eq $out[1] ) { @out = ($out[1],$out[0]); }
-    print "$chr\t$pos\t",join(',',@{$$opts{als}}),"\t$strand\t",join('/',@out),"\t(REF/ALT)\n";
+    $strand = $strand < 0 ? 'rev' : 'fwd';
+    print "# [1]chrom\t[2]pos\t[3]alleles on ".($$opts{is_bot} ? 'BOT' : 'TOP')."\t[4]input strand\t[5]REF/ALT on fwd\n";
+    print "$chr\t$pos\t",join(',',@{$$opts{als}}),"\t$strand\t",join('/',@out),"\n";
 }
 
 sub convert
