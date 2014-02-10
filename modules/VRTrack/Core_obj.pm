@@ -344,27 +344,9 @@ sub create {
 
 sub _all_values_by_field {
     my ($class, $vrtrack, $field, $order_by, $where) = @_;
-    confess "Need to call a vrtrack handle and field name" unless ($vrtrack && $field);
-    if ($vrtrack->isa('DBI::db')) {
-	confess "The interface has changed, expected vrtrack reference.\n";
-    } 
-    my $table = $class->_class_to_table;
     $order_by ||= 'row_id';
     $where ||= 'latest=true';
-    my $dbh = $vrtrack->{_dbh};
-    my $sql = qq[select $field from $table where $where order by $order_by];
-    my $sth = $dbh->prepare($sql);
-    my @data;
-    if ($sth->execute()) {
-        while( my $data = $sth->fetchrow_hashref) {
-            push( @data, $data->{$field} );
-        } 
-    }
-    else {
-        confess "Cannot retrieve $table by $field: ".$DBI::errstr;
-    }
-   
-    return \@data;
+    return $class->SUPER::_all_values_by_field($vrtrack, $field, $order_by, $where);
 }
 
 

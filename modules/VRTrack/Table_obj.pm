@@ -538,6 +538,46 @@ sub _get_child_by_field_value {
 }
 
 
+=head2 _all_values_by_field
+
+  Arg[1]     : column to get
+  Arg[2]     : column to order by (optional, default is no sort)
+  Arg[3]     : where clause (optional, default is none)
+  Example    ; VRTrack::Table_obj->_all_values_by_field($vrtrack, 'name')
+  Description: Class method. Probably best used internally by inheritors of Table_obj. 
+               Gives an array reference to all values in a column of the database table.
+  Returntype : ArrayRef
+
+=cut
+
+sub _all_values_by_field {
+    my ($class, $vrtrack, $field, $order_by, $where) = @_;
+    confess "Need to call a vrtrack handle and field name" unless ($vrtrack && $field);
+    if ($vrtrack->isa('DBI::db')) {
+    confess "The interface has changed, expected vrtrack reference.\n";
+    } 
+    my $table = $class->_class_to_table;
+    $order_by &&= " order by $order_by";
+    $order_by ||= '';
+    $where &&= " where $where";
+    $where ||= '';
+    my $dbh = $vrtrack->{_dbh};
+    my $sql = qq[select $field from $table$where$order_by];
+    my $sth = $dbh->prepare($sql);
+    my @data;
+    if ($sth->execute()) {
+        while( my $data = $sth->fetchrow_hashref) {
+            push( @data, $data->{$field} );
+        } 
+    }
+    else {
+        confess "Cannot retrieve $table by $field: ".$DBI::errstr;
+    }
+   
+    return \@data;
+}
+
+
 =head2 dirty
 
   Arg [1]    : boolean for dirty status
