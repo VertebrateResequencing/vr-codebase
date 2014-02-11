@@ -319,6 +319,12 @@ sub main
     {
         $self->main_apply_threshold();
     }
+
+    # Run performance stats and clean
+    $self->spawn('runtime_stats',"$outdir/runtime");
+    $self->wait;
+    $self->clean($outdir) unless !$$self{do_clean};
+
     $self->all_done;
 }
 sub main_randomize
@@ -638,7 +644,11 @@ sub shuffle
     # variable number of nested loops
     my (@out, @cnt);
     my ($il, $nl);
+
     my $i = 0;
+    for ($il=0; $il<$n; $il++) { $out[$i] |= 1<<$i; }   # add all (11111)
+    $i++;
+
     for ($nl=$n-1; $nl>=1; $nl--)       # the case 0000 not considered, starting from 00001
     {
         for ($il=0; $il<$nl-1; $il++) { $cnt[$il] = 0; }
@@ -663,7 +673,6 @@ sub shuffle
         }
         if ( $i >= $nmax ) { last; }
     }
-    for ($il=0; $il<$n; $il++) { $out[$i] |= 1<<$i; }   # add all (11111)
     return \@out;
 }
 
@@ -1384,8 +1393,6 @@ sub clean
 {
     my ($self,$outdir) = @_;
     $self->SUPER::clean($outdir);
-    $self->cmd("rm -rf $outdir/randomize.snps");
-    $self->cmd("rm -rf $outdir/randomize.indels");
 }
 
 sub runtime_stats
