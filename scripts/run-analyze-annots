@@ -1,0 +1,1022 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+use VertRes::Stats::Quantile;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+
+    $$self{limits} = { memory=>2_500 };
+    $$self{do_clean} = 1;
+    $$self{config_version} = '1391639059';
+    $$self{_sampleconf}  = q[
+            bcftools  => '/nfs/users/nfs_p/pd3/git/bcftools/xxx-bcftools',
+
+            chroms => [ 11, 20 ],
+
+            eval_vcf  => '/lustre/scratch105/projects/g1k/Phase1-Paper/analysis_results/integrated_call_sets/ALL.chr*.integrated_phase1_v3.20101123.snps_indels_svs.genotypes.vcf.gz',
+            query_vcf => '/lustre/scratch107/user/pd3/egyptians/mpileup-1106/pooled/*.vcf.gz',
+
+            # Set to 1 to sanity check annotations
+            throw_on_non_numbers => 0,
+
+            sets =>
+            [
+               {
+                    label => 'PhaseI',
+                    cmds  => 
+                    [
+                        { out=>'flt.bcf', cmd=>'{bcftools} view -v snps -f PASS {eval_vcf} -Ob > {out} && {bcftools} index {out}' },
+                        { in=>'flt.bcf', out=>'isec.bcf', cmd=>'{bcftools} isec -c both -w2 -n =2 {in} {query_vcf} -Ob > {out} && {bcftools} index {out}' },
+                    ],
+                    style => '-',
+                    color => 'g',
+                },
+                {
+                    label => 'LowQual (QUAL<10)',
+                    cmds  => 
+                    [
+                        { out=>'lowqual.bcf', cmd=>'{bcftools} view -i "%QUAL<10" {query_vcf} -Ob > {out}' },
+                    ],
+                    style => '-',
+                    color => 'r',
+                },
+                {
+                    label => 'AC>200',
+                    cmds  => 
+                    [
+                        { out=>'highAF.bcf', cmd=>'{bcftools} view -i "AC>200" {query_vcf} -Ob > {out}' },
+                    ],
+                    style => '-',
+                    color => 'k',
+                },
+                {
+                    label => 'All',
+                    cmds  => 
+                    [
+                    ],
+                    style => '-',
+                    color => 'b',
+                },
+ 
+            ],
+
+            # Annotations to analyze
+            annots => [ qw(AC BQB DP HOB ICB MQ MQ0F MQB MQSB QUAL RPB RPB SGB VDB) ],
+
+            # If present, substitute missing values.
+            defaults => 
+            {
+                BQB  => 1,
+                FMQ0 => 0,
+                HOB  => 0,
+                ICB  => 1,
+                MQ0F => 0,
+                MQB  => 1,
+                MQSB => 1,
+                RPB  => 1,
+                SGB  => 0,
+                VDB  => 1,
+            },
+
+            # Number of bins of Ts/Tv graphs
+            tstv_bins => 1000,
+
+            version => '] .$$self{config_version}. q[',
+    ]."\n";
+
+    $$self{usage} .= 
+        "Usage: run-grand-cmp\n" .
+        "Options:\n" .
+        "   -c, --clean                         Clean all temporary files\n" .
+        "   -m, --mrProper                      Clean all temporary files leaving only the resulting VCF\n" .
+        "   -q, --query-vcf <file>              Query VCF\n" .
+        "   -o, --outdir <dir>                  Output directory\n" .
+        "   -r, --regions <list>                List of chromosomes\n" .
+        "\n";
+
+    return $self;
+}
+
+sub parse_args
+{
+    my ($self) = @_;
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-q' or $arg eq '--query-vcf' ) { $$self{query_vcf}=shift(@ARGV); next; }
+        if ( $arg eq '-c' or $arg eq '--clean' ) { $$self{clean}=1; next; }
+        if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
+        if ( $arg eq '-m' or $arg eq '--mrProper' ) { $$self{mrProper}=1; next; }
+        if ( $arg eq '-r' or $arg eq '--regions' ) { $$self{regions}=shift(@ARGV); next; }
+        $self->throw();
+    }
+    if ( !exists($$self{outdir}) ) { $self->throw("Missing the -o option or the \"outdir\" config key\n"); }
+    if ( exists($$self{version}) && $$self{version} ne $$self{config_version} )
+    {
+        $self->warn("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
+    }
+    if ( $$self{clean} ) 
+    { 
+        $self->clean($$self{outdir});
+        $self->all_done;
+    }
+    if ( $$self{mrProper} )
+    {
+        $self->mrProper($$self{outdir});
+        $self->all_done;
+    }
+    if ( exists($$self{regions}) ) { $$self{chroms} = [ split(/,/,$$self{regions}) ]; }
+    $$self{outdir} =~ s{/+?$}{};
+    $$self{qlow}  = 0.1/100;    # cut off the distribution tails at low/high quantiles
+    $$self{qhigh} = 99.9/100;
+
+    my %anns = ();
+    for my $ann (@{$$self{annots}}) 
+    { 
+        if ( $anns{$ann} ) { $self->throw("Error: The annotation \"$ann\" is listed twice in the config.\n"); }
+        $anns{$ann} = 1;
+    }
+}
+
+sub main
+{
+    my ($self) = @_;
+    $self->parse_args();
+    $self->save_config('analyze.conf');
+
+    # Create sites VCFs
+    for my $chr (@{$$self{chroms}})
+    {
+        $self->spawn('sites_vcf',"$$self{outdir}/sites/eval.$chr.bcf",$$self{eval_vcf},$chr);
+        $self->spawn('sites_vcf',"$$self{outdir}/sites/query.$chr.bcf",$$self{query_vcf},$chr);
+    }
+    $self->wait;
+
+    # Subset the VCFs
+    for my $chr (@{$$self{chroms}})
+    {
+        for my $set (@{$$self{sets}})
+        {
+            my $name = $self->fs_friendly_name($$set{label});
+            $self->spawn('create_sets',"$$self{outdir}/sets/$name/$chr",$set,$chr);
+        }
+    }
+    $self->wait;
+
+    # Extract annots
+    for my $chr (@{$$self{chroms}})
+    {
+        for my $set (@{$$self{sets}})
+        {
+            my $name = $self->fs_friendly_name($$set{label});
+            $self->spawn('extract_annots',"$$self{outdir}/sets/$name/$chr/annots.tab.gz",$set,$chr);
+        }
+    }
+    $self->wait;
+
+    # Estimate quantiles
+    my @qfiles = ();
+    for my $set (@{$$self{sets}})
+    {
+        my $name = $self->fs_friendly_name($$set{label});
+        my @dirs = ();
+        for my $chr (@{$$self{chroms}}) { push @dirs, "$$self{outdir}/sets/$name/$chr"; }
+        $self->spawn('estimate_quantiles',"$$self{outdir}/sets/$name/quantiles.tab",@dirs);
+        push @qfiles, "$$self{outdir}/sets/$name/quantiles.tab";
+    }
+    $self->wait;
+    $self->spawn('merge_quantiles',"$$self{outdir}/quantiles.tab",@qfiles);
+    $self->wait;
+
+    # Plot ts/tv graphs
+    for my $chr (@{$$self{chroms}})
+    {
+        for my $set (@{$$self{sets}})
+        {
+            my $name = $self->fs_friendly_name($$set{label});
+            $self->spawn('tstv_dists',"$$self{outdir}/tstv/$name/$chr.vchk",$set,$chr);
+        }
+    }
+    $self->wait;
+    if ( !$self->is_finished("$$self{outdir}/tstv.dists") )
+    {
+        $self->tstv_dists_merge("$$self{outdir}/tstv.dists");
+    }
+    for my $ann (@{$$self{annots}})
+    {
+        $self->spawn('plot_tstv',"$$self{outdir}/plots/tstv-$ann.png","$$self{outdir}/tstv.dists/",$ann);
+    }
+    $self->wait;
+
+    # Create distributions
+    for (my $i=0; $i<@{$$self{annots}}; $i++)
+    {
+        my $ann  = $$self{annots}[$i];
+        for my $set (@{$$self{sets}})
+        {
+            my $name = $self->fs_friendly_name($$set{label});
+            $self->spawn('create_dist',"$$self{outdir}/dists/$name/$ann.dist","$$self{outdir}/sets/$name",$i);
+        }
+
+        # Create 2D distributions
+        for (my $j=0; $j<$i; $j++)
+        {
+            my $ann2 = $$self{annots}[$j];
+            for my $set (@{$$self{sets}})
+            {
+                my $name = $self->fs_friendly_name($$set{label});
+                $self->spawn('create_2d_dist',"$$self{outdir}/dists2d/$name/$ann-$ann2.dist","$$self{outdir}/sets/$name",$i,$j);
+            }
+        }
+    }
+    $self->wait;
+
+    # Plot distributions
+    for (my $i=0; $i<@{$$self{annots}}; $i++)
+    {
+        my $ann = $$self{annots}[$i];
+        $self->spawn('plot_dist',"$$self{outdir}/plots/dist-$ann.png","$$self{outdir}/dists",$ann);
+
+        # 2D distributions
+        for (my $j=0; $j<$i; $j++)
+        {
+            my $ann2 = $$self{annots}[$j];
+            $self->spawn('plot_2d_dist',"$$self{outdir}/plots/dist2d-$ann-$ann2.png","$$self{outdir}/dists2d",$ann,$ann2);
+        }
+    }
+    $self->wait;
+
+    $self->all_done;
+}
+
+sub fs_friendly_name
+{
+    my ($self,$name) = @_;
+    $name = lc($name);
+    $name =~ s/\s*$//;
+    $name =~ s/^\s*//;
+    $name =~ s/\s+/-/g;
+    $name =~ s/\%//g;
+    $name =~ s/\>/-gt-/g;
+    $name =~ s/\</-lt-/g;
+    $name =~ s/\(//g;
+    $name =~ s/\)//g;
+    $name =~ s/&+/and/g;
+    return $name;
+}
+
+sub parse_file_name
+{
+    my ($self,$fname,$chr) = @_;
+    if ( index($fname,'*') >=0 )
+    {
+        # it is a file mask
+        $fname =~ s/\*/$chr/;
+    }
+    if ( ! -e $fname ) { $self->throw("The file \"$fname\" does not exist\n"); }
+    return $fname;
+}
+
+sub index_part
+{
+    my ($self,$vcf) = @_;
+    $self->cmd("$$self{bcftools} index -f $vcf.part");
+    rename("$vcf.part.csi","$vcf.csi");
+    rename("$vcf.part",$vcf);
+}
+
+sub sites_vcf
+{
+    my ($self,$outfile,$vcf,$chr) = @_;
+    $vcf = $self->parse_file_name($vcf,$chr);
+    $self->cmd("$$self{bcftools} view -Gr $chr $vcf -Ob > $outfile.part");
+    $self->index_part($outfile);
+}
+
+sub expand_task
+{
+    my ($self,%args) = @_;
+    my $out = '';
+    my $str = $args{cmd};
+    while ( $str=~/{([^}]+)}/ )
+    {
+        $out .= $`;
+        my $key = $1;
+        if ( $key eq 'eval_vcf' ) { $key = "$$self{outdir}/sites/eval.$args{chr}.bcf"; }
+        elsif ( $key eq 'query_vcf' ) { $key = "$$self{outdir}/sites/query.$args{chr}.bcf"; }
+        elsif ( exists($args{$key}) ) 
+        { 
+            $key = ( $key eq 'in' or $key eq 'out' ) ? "$args{outdir}/$args{$key}" : $args{$key};
+        }
+        elsif ( exists($$self{$key}) ) { $key = $$self{$key}; }
+        else { $self->throw("No such key [$key] [$args{cmd}]"); }
+        $out .= $key;
+        $str = $';
+    }
+    $out .= $str;
+    return $out;
+}
+
+sub create_sets
+{
+    my ($self,$outdir,$set,$chr) = @_;
+    $self->cmd("mkdir -p $outdir.part");
+    my $vcf;
+    for my $task (@{$$set{cmds}})
+    {
+        my $cmd = $self->expand_task(%$task,chr=>$chr,outdir=>"$outdir.part");
+        print STDERR "$cmd\n";
+        $self->cmd($cmd);
+        $vcf = "$outdir.part/$$task{out}";
+    }
+    if ( !defined $vcf ) { $vcf = $self->parse_file_name($$self{query_vcf}, $chr); }
+
+    rename("$outdir.part",$outdir) or $self->throw("rename $outdir.part $outdir: $!");
+}
+sub vcf_input_name
+{
+    my ($self,$set,$chr) = @_;
+    my $name = $self->fs_friendly_name($$set{label});
+    my $dir  = "$$self{outdir}/sets/$name/$chr";
+    my $vcf;
+    for my $task (@{$$set{cmds}}) { $vcf = "$dir/$$task{out}"; }
+    if ( !defined $vcf ) { $vcf = $self->parse_file_name($$self{query_vcf}, $chr); }
+    return $vcf;
+}
+sub extract_annots
+{
+    my ($self,$outfile,$set,$chr) = @_;
+
+    if ( !($outfile=~m{/[^/]+$}) ) { $self->throw("Could not parse base dir name: $outfile\n"); }
+    my $outdir = $`;
+
+    my $vcf = $self->vcf_input_name($set,$chr);
+
+    # Extract annots
+    my $fmt = '%' . join('\\t%',@{$$self{annots}});
+    $self->cmd("$$self{bcftools} query -f '$fmt\\n' $vcf | bgzip -c > $outfile.part");
+
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub estimate_quantiles
+{
+    my ($self,$outfile,@dirs) = @_;
+    my @quests = ();
+    for my $ann (@{$$self{annots}}) { push @quests, Quantile->new(); }
+    for my $dir (@dirs)
+    {
+        open(my $fh, "gunzip -c $dir/annots.tab.gz |") or $self->throw("gunzip -c $dir/annots.tab.gz: $!");
+        while (my $line=<$fh>)
+        {
+            my @items = split(/\t/,$line);
+            chomp($items[-1]);
+            for (my $i=0; $i<@{$$self{annots}}; $i++)
+            {
+                my $val = $self->validate_value($items[$i],$$self{annots}[$i]);
+                if ( !defined $val ) { next; }
+                $quests[$i]->add($val);
+            }
+        }
+        close($fh);
+    }
+    open(my $fh,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    for (my $i=0; $i<@{$$self{annots}}; $i++)
+    {
+        print $fh "$$self{annots}[$i]";
+        print $fh "\t", $quests[$i]->report($$self{qlow});
+        print $fh "\t", $quests[$i]->report($$self{qhigh});
+        print $fh "\n";
+    }
+    close($fh) or $self->throw("$outfile.part: $!");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub merge_quantiles
+{
+    my ($self,$outfile,@files) = @_;
+
+    my @qiles = ();
+    for my $file (@files)
+    {
+        open(my $fh,'<',$file) or $self->throw("$file: $!");
+        my $i = 0;
+        while (my $line=<$fh>)
+        {
+            my @items = split(/\t/,$line);
+            chomp($items[-1]);
+            if ( !exists($qiles[$i]) ) { $qiles[$i] = \@items; }
+            else
+            {
+                if ( $qiles[$i][0] ne $items[0] ) { $self->throw("Uh: $file .. $qiles[$i][0] ne $items[0]\n"); }
+                if ( $qiles[$i][1] > $items[1] ) { $qiles[$i][1] = $items[1]; }
+                if ( $qiles[$i][2] < $items[2] ) { $qiles[$i][2] = $items[2]; }
+            }
+            $i++;
+        }
+        close($fh) or $self->throw("close $file");
+    }
+
+    open(my $fh,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    for my $qile (@qiles)
+    {
+        print $fh "$$qile[0]\t$$qile[1]\t$$qile[2]\n";
+    }
+    close($fh) or $self->throw("$outfile.part: $!");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub get_quantiles
+{
+    my ($self,$ann) = @_;
+    open(my $fh,'<',"$$self{outdir}/quantiles.tab") or $self->throw("$$self{outdir}/quantiles.tab: $!");
+    while (my $line=<$fh>)
+    {
+        my @items = split(/\t/,$line);
+        if ( $items[0] ne $ann ) { next; }
+        chomp($items[-1]);
+        return ($items[1],$items[2]);
+    }
+    close($fh);
+    $self->throw("Quantile for $ann not found: $$self{outdir}/quantiles.tab\n");
+}
+
+sub validate_value
+{
+    my ($self,$value,$ann) = @_;
+    if ( $value eq '.' ) 
+    { 
+        if ( !exists($$self{defaults}{$ann}) ) { return undef; }
+        $value = $$self{defaults}{$ann};
+    }
+    my $RE_FLOAT = qr/\-?\d+\.?\d*(?:[eE][+-]\d+)?/;
+    if ( !($value=~$RE_FLOAT) ) 
+    { 
+        if ( $$self{throw_on_non_numbers} ) { $self->throw("Non-numeric value in $ann: \"$value\"\n"); }
+        if ( !exists($$self{defaults}{$ann}) ) { return undef; }
+        $value = $$self{defaults}{$ann};
+    }
+    return $value;
+}
+
+sub tstv_dists
+{
+    my ($self,$outfile,$set,$chr,$dir) = @_;
+    my @anns;
+    for my $ann (@{$$self{annots}})
+    {
+        if ( $ann eq 'QUAL' ) { next; } # calculated by bcftools stats by default
+        my ($qmin,$qmax) = $self->get_quantiles($ann);
+        push @anns, "-u $ann:$qmin,$qmax,$$self{tstv_bins}";
+    }
+    my $vcf = $self->vcf_input_name($set,$chr);
+    $self->cmd("$$self{bcftools} stats ".join(' ',@anns)." $vcf > $outfile.part");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub create_dist
+{
+    my ($self,$outfile,$dir,$iann) = @_;
+    
+    my $ann = $$self{annots}[$iann];
+
+    my @values = ();
+    for my $chr (@{$$self{chroms}})
+    {
+        open(my $in,"gunzip -c $dir/$chr/annots.tab.gz |") or $self->throw("gunzip -c $dir/$chr/annots.tab.gz: $!");
+        while (my $line=<$in>)
+        {
+            my @items = split(/\t/,$line);
+            if ( @items != @{$$self{annots}} ) { $self->throw("Wrong number of annotations in $dir/$chr/annots.tab.gz\n"); }
+            my $value = $items[$iann];
+            chomp($value);
+            if ( $ann eq 'DP4' ) 
+            { 
+                @items = split(/,/,$value);
+                $value = $items[2]+$items[3];
+            }
+            elsif ( $value =~ /,/ ) { $value =~ s/,.*$//; }
+            $value = $self->validate_value($value,$ann); if ( !defined $value ) { next; }
+            push @values, $value;
+        }
+        close($in) or $self->throw("close failed: gunzip -c $dir/$chr/annots.tab.gz");
+    }
+
+    my @svalues = sort { $a<=>$b } @values;
+
+    # Cumulative distribution
+    my $prev  = $svalues[0];
+    my $nvals = scalar @svalues;
+    my $dn    = $nvals / 100.;
+    my $n     = 0;
+    my $nxt   = $dn;
+
+    $outfile =~ s/.dist$//;
+    open(my $fh,'>',"$outfile.cdist") or $self->throw("$outfile.cdist: $!");
+    print $fh "# $nvals\n";
+    for (my $i=0; $i<$nvals; $i++)
+    {
+        my $val = $svalues[$i];
+        $n++;
+        if ( $i+1==$nvals or ($n >= $nxt && $val>$prev ) )
+        {
+            printf $fh "%e\t%f\n", $prev, $n/$nvals;
+            $nxt = $n + $dn;
+        }
+        $prev = $val;
+    }
+    close($fh) or $self->throw("close failed: $outfile.cdist\n"); 
+
+
+    # Distribution
+    my ($min,$max);
+    if ( exists($$self{plot_args}{$ann}{xrange}) )
+    {
+        ($min,$max) = (@{$$self{plot_args}{$ann}{xrange}});
+    }
+    else
+    {
+        my $imin = int($$self{qlow}*$nvals);
+        my $imax = int($$self{qhigh}*$nvals);
+        $min = $svalues[$imin];  # cut off 0.1% tail
+        $max = $svalues[$imax];  # cut off 99.9% tail
+    }
+    my @dx;
+    for (my $i=0; $i<70; $i++)
+    {
+        push @dx, $i*($max-$min)/70.0 + $min;
+    }
+    $prev = $svalues[0];
+    $n = 0;
+    open($fh,'>',"$outfile.dist.part") or $self->throw("$outfile.dist.part: $!");
+    print $fh "# $nvals\n";
+    for (my $i=0; $i<$nvals; $i++)
+    {
+        my $val = $svalues[$i];
+        $n++;
+        if ( $i+1==$nvals or (@dx && $val >= $dx[0] && $val>$prev ) )
+        {
+            shift(@dx);
+            if ( !@dx ) { $n += $nvals - $i - 1; }
+            printf $fh "%e\t%f\n", $val, $n / $nvals;
+            $n = 0;
+            if ( !@dx ) { last; }
+        }
+        $prev = $val;
+    }
+
+    close($fh) or $self->throw("close failed: $outfile.dist.part\n"); 
+    rename("$outfile.dist.part","$outfile.dist") or $self->throw("rename $outfile.dist.part $outfile.dist: $!");
+}
+
+sub plot_dist
+{
+    my ($self,$outfile,$dir,$ann) = @_;
+
+    my @dirs;
+    my @labels;
+    my @colors;
+    my @styles;
+    for my $set (@{$$self{sets}})
+    {
+        my $name = $self->fs_friendly_name($$set{label}); 
+        push @dirs, $name;
+        push @labels, $$set{label};
+        push @colors, $$set{color};
+        push @styles, $$set{style};
+    }
+    my $labels = "['" . join("','",@labels) . "']";
+    my $dirs   = "['" . join("','",@dirs) . "']";
+    my $colors = "['" . join("','",@colors) . "']";
+    my $styles = "['" . join("','",@styles) . "']";
+    my $xscale = exists($$self{xscale}{$ann}) ? "ax1.set_xscale('$$self{xscale}{$ann}')" : '';
+
+    $outfile =~ s/\.png$//;
+    open(my $fh,'>',"$outfile.py") or $self->throw("$outfile.py: $!");
+    $self->tprint($fh, "
+            import matplotlib as mpl
+            mpl.use('Agg')
+            import matplotlib.pyplot as plt
+            import itertools
+            import csv
+            csv.register_dialect('tab', delimiter='\\t', quoting=csv.QUOTE_NONE)
+
+            def bignum(num):
+            \\ts = str(num); out = ''; slen = len(s)
+            \\tfor i in range(slen):
+            \\t\\tout += s[i]
+            \\t\\tif i+1<slen and (slen-i-1)\%3==0: out += ','
+            \\treturn out
+
+            labels  = $labels
+            dirs    = $dirs
+            colors  = $colors
+            styles  = $styles
+
+            xdat1 = []  # cdist
+            ydat1 = []
+            xdat2 = []  # dist
+            ydat2 = []
+            cnts  = []
+            for i in range(len(dirs)):
+            \\txdat1.append([])
+            \\tydat1.append([])
+            \\tfname = '$dir/' + dirs[i] + '/$ann.cdist'
+            \\twith open(fname, 'rb') as f:
+            \\t\\treader = csv.reader(f, 'tab')
+            \\t\\ttmp = []
+            \\t\\tfor row in reader:
+            \\t\\t\\tif row[0][0] != '#': tmp.append(row)
+            \\t\\t\\telse: cnts.append(row[0][2:])
+            \\t\\txdat1[i] = [x[0] for x in tmp]
+            \\t\\tydat1[i] = [x[1] for x in tmp]
+            \\txdat2.append([])
+            \\tydat2.append([])
+            \\tfname = '$dir/' + dirs[i] + '/$ann.dist'
+            \\twith open(fname, 'rb') as f:
+            \\t\\treader = csv.reader(f, 'tab')
+            \\t\\ttmp = []
+            \\t\\tfor row in reader:
+            \\t\\t\\tif row[0][0] != '#': tmp.append(row)
+            \\t\\txdat2[i] = [x[0] for x in tmp]
+            \\t\\tydat2[i] = [float(x[1]) for x in tmp]
+            \\t\\tm = max(ydat2[i])
+            \\t\\tydat2[i] = [x/m for x in ydat2[i]]
+
+            fig, (ax1,ax2) = plt.subplots(2, 1, figsize=(7,7))
+            for i in range(len(labels)): 
+            \\tax1.plot(xdat1[i],ydat1[i],label='\%s (\%s)'\%(labels[i],bignum(int(cnts[i]))), c=colors[i], ls=styles[i])
+            for i in range(len(labels)): 
+            \\tax2.plot(xdat2[i],ydat2[i],label='\%s (\%s)'\%(labels[i],bignum(int(cnts[i]))), c=colors[i], ls=styles[i])
+            ax2.set_xlabel('$ann')
+            ax1.set_ylabel('Number of sites (cumulative)')
+            ax2.set_ylabel('Number of sites')
+            ax1.ticklabel_format(style='sci', scilimits=(-3,2), axis='y')
+            ax1.ticklabel_format(style='sci', scilimits=(-3,2), axis='x')
+            ax2.ticklabel_format(style='sci', scilimits=(-3,2), axis='y')
+            ax2.ticklabel_format(style='sci', scilimits=(-3,2), axis='x')
+            $xscale
+            ax1.legend(numpoints=1,markerscale=2,loc='best',prop={'size':10},frameon=False)
+            ax1.set_title('Distribution of $ann')
+            #plt.subplots_adjust(bottom=0.2,left=0.1,right=0.95)
+            plt.savefig('$outfile.png')
+            plt.close()
+        ");
+    close($fh);
+    $self->cmd("python $outfile.py");
+}
+
+sub create_2d_dist
+{
+    my ($self,$outfile,$dir,$iann,$jann) = @_;
+
+    my $ann1 = $$self{annots}[$iann];
+    my $ann2 = $$self{annots}[$jann];
+
+    my ($qmin1,$qmax1) = $self->get_quantiles($ann1);
+    my ($qmin2,$qmax2) = $self->get_quantiles($ann2);
+
+    my $nbins  = 30;
+    my @dist   = ();
+    my $nvals  = 0;
+    my $nout1  = 0;
+    my $nout2  = 0;
+    for my $chr (@{$$self{chroms}})
+    {
+        open(my $in,"gunzip -c $dir/$chr/annots.tab.gz |") or $self->throw("gunzip -c $dir/$chr/annots.tab.gz: $!");
+        while (my $line=<$in>)
+        {
+            my @items = split(/\t/,$line);
+            if ( @items != @{$$self{annots}} ) { $self->throw("Wrong number of annotations in $dir/$chr/annots.tab.gz\n"); }
+            my $val1 = $items[$iann];
+            my $val2 = $items[$jann];
+            chomp($val1);
+            chomp($val2);
+            if ( $val1 eq '.' ) 
+            { 
+                if ( !exists($$self{defaults}{$ann1}) ) { next; }
+                $val1 = $$self{defaults}{$ann1};
+            }
+            if ( $val2 eq '.' ) 
+            { 
+                if ( !exists($$self{defaults}{$ann2}) ) { next; }
+                $val2 = $$self{defaults}{$ann2};
+            }
+            if ( $val1 =~ /,/ ) { $val1 =~ s/,.*$//; }
+            if ( $val2 =~ /,/ ) { $val2 =~ s/,.*$//; }
+            $val1 = $self->validate_value($val1,$ann1); if ( !defined $val1 ) { next; }
+            $val2 = $self->validate_value($val2,$ann2); if ( !defined $val2 ) { next; }
+            if ( $val1<$qmin1 ) { $val1 = $qmin1; $nout1++; }
+            if ( $val1>$qmax1 ) { $val1 = $qmax1; $nout1++; }
+            if ( $val2<$qmin2 ) { $val2 = $qmin2; $nout2++; }
+            if ( $val2>$qmax2 ) { $val2 = $qmax2; $nout2++; }
+            my $i = $nbins*($val1-$qmin1)/($qmax1-$qmin1);
+            my $j = $nbins*($val2-$qmin2)/($qmax2-$qmin2);
+            $dist[$i][$j]++;
+            $nvals++;
+        }
+        close($in) or $self->throw("close failed: gunzip -c $dir/$chr/annots.tab.gz");
+    }
+    if ( !$nvals ) { $self->throw("No values for $ann1($qmin1,$qmax1) or $ann2($qmin2,$qmax2) in $dir/*/annots.tab.gz??"); }
+
+    if ( $nout1/$nvals > 0.01 ) { $self->warn(sprintf "The quantile approximation inaccurate for $outfile? Excluded %.2f%% values ($nout1 out of $nvals, $qmin1,$qmax1)\n",$nout1*100./$nvals); }
+    if ( $nout2/$nvals > 0.01 ) { $self->warn(sprintf "The quantile approximation inaccurate for $outfile? Excluded %.2f%% values ($nout2 out of $nvals, $qmin2,$qmax2)\n",$nout2*100./$nvals); }
+
+    open(my $fh,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    for (my $i=0; $i<=$nbins; $i++)
+    {
+        for (my $j=0; $j<=$nbins; $j++)
+        {
+            if ( $j!=0 ) { print $fh "\t"; }
+            printf $fh "%e", $dist[$i][$j] ? $dist[$i][$j]/$nvals : 0;
+        }
+        print $fh "\n";
+    }
+    close($fh) or $self->throw("close failed: $outfile.part\n"); 
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+
+sub plot_2d_dist
+{
+    my ($self,$outfile,$dir,$ann1,$ann2) = @_;
+
+    my @dirs;
+    my @labels;
+    for my $set (@{$$self{sets}})
+    {
+        my $name = $self->fs_friendly_name($$set{label}); 
+        push @dirs, $name;
+        push @labels, $$set{label};
+    }
+    my $labels = "['" . join("','",@labels) . "']";
+    my $dirs   = "['" . join("','",@dirs) . "']";
+
+    my $nsets = @dirs;
+    my $ncols = $nsets>4 ? 3 : 2;
+    my $nrows = int($nsets / $ncols) + 1;
+
+    $outfile =~ s/\.png$//;
+    open(my $fh,'>',"$outfile.py") or $self->throw("$outfile.py: $!");
+    $self->tprint($fh, "
+            import matplotlib as mpl
+            mpl.use('Agg')
+            import matplotlib.pyplot as plt
+            import itertools
+            import csv
+            csv.register_dialect('tab', delimiter='\\t', quoting=csv.QUOTE_NONE)
+
+            labels  = $labels
+            dirs    = $dirs
+
+            dat = [] 
+            for i in range(len(dirs)):
+            \\tdat.append([])
+            \\tfname = '$dir/' + dirs[i] + '/$ann1-$ann2.dist'
+            \\twith open(fname, 'rb') as f:
+            \\t\\treader = csv.reader(f, 'tab')
+            \\t\\ttmp = []
+            \\t\\tfor row in reader:
+            \\t\\t\\tif row[0][0] != '#': tmp.append([float(x) for x in row])
+            \\t\\tdat[i] = tmp
+
+            fig, ax = plt.subplots($nrows, $ncols, figsize=($ncols*2,$nrows*2.3))
+            for i in range($ncols*$nrows):
+            \\tirow = i / $ncols; icol = i \% $ncols
+            \\tif i>=len(labels): ax[irow,icol].axis('off'); continue;
+            \\tax[irow,icol].imshow(dat[i],origin='lower', interpolation='none')
+            \\tax[irow,icol].set_title(labels[i],fontsize=8)
+            \\tax[irow,icol].set_ylabel('$ann1',fontsize=8)
+            \\tax[irow,icol].set_xlabel('$ann2',fontsize=8)
+            \\tax[irow,icol].set_xticks([])
+            \\tax[irow,icol].set_yticks([])
+            #.set_title('Distributions of $ann1 vs $ann2')
+            plt.subplots_adjust(bottom=0.05,left=0.05,right=0.95,top=0.95,hspace=0.12,wspace=0.12)
+            plt.savefig('$outfile.png')
+            plt.close()
+        ");
+    close($fh);
+    $self->cmd("python $outfile.py");
+}
+
+sub parse_vchk
+{
+    my ($self,$vchk,$dat) = @_;
+    open(my $fh,'<',$vchk) or $self->throw("$vchk: $!");
+    while (my $line=<$fh>)
+    {
+        my @vals = split(/\t/,$line);
+        chomp($vals[-1]);
+        my $ann;
+        if ( $vals[0] eq 'QUAL' ) { $ann = 'QUAL'; }
+        elsif ( $vals[0]=~/^USR:(\S+)/ ) { $ann = $1; }
+        else { next; }
+        my $bin = $vals[2];
+        my $ts  = $vals[4];
+        my $tv  = $vals[5];
+        $$dat{$ann}{$bin}{ts} += $ts;
+        $$dat{$ann}{$bin}{tv} += $tv;
+    }
+    close($fh) or $self->throw("$vchk: $!");
+}
+sub tstv_dists_merge
+{
+    my ($self,$outdir) = @_;
+    my $dat = {};
+    for my $set (@{$$self{sets}})
+    {
+        my $name = $self->fs_friendly_name($$set{label});
+        my $dirname = "$$self{outdir}/tstv/$name/";
+        opendir(my $dh, $dirname) or $self->throw("$dirname: $!");
+        while ( my $file = readdir($dh) )
+        {
+            if ( !($file=~/\.vchk$/) ) { next; }
+            if ( !exists($$dat{$name}) ) { $$dat{$name} = {}; }
+            $self->parse_vchk("$dirname/$file",$$dat{$name});
+        }
+        closedir($dh) or $self->throw("closedir $dirname");
+    }
+    $self->cmd("mkdir -p $outdir.part");
+    for my $ann (@{$$self{annots}})
+    {
+        open(my $fh,'>',"$outdir.part/$ann.dist") or $self->throw("$outdir.part/$ann.dist");
+        for my $name (sort keys %$dat)
+        {
+            for my $bin (sort {$a<=>$b} keys %{$$dat{$name}{$ann}})
+            {
+                my $ts = $$dat{$name}{$ann}{$bin}{ts} ? $$dat{$name}{$ann}{$bin}{ts} : 0;
+                my $tv = $$dat{$name}{$ann}{$bin}{tv} ? $$dat{$name}{$ann}{$bin}{tv} : 0;
+                print $fh "$name\t$bin\t$ts\t$tv\n";
+            }
+        }
+        close($fh) or $self->throw("close $outdir.part/$ann.dist");
+    }
+    rename("$outdir.part",$outdir) or $self->throw("rename $outdir.part $outdir: $!");
+}
+sub plot_tstv
+{
+    my ($self,$outfile,$dir,$ann) = @_;
+
+    my @labels;
+    my @colors;
+    my @styles;
+    for my $set (@{$$self{sets}})
+    {
+        my $name = $self->fs_friendly_name($$set{label}); 
+        push @labels, "'$name':'$$set{label}'";
+        push @colors, "'$name':'$$set{color}'";
+        push @styles, "'$name':'$$set{style}'";
+    }
+    my $labels = "{" . join(',',@labels) . "}";
+    my $colors = "{" . join(',',@colors) . "}";
+    my $styles = "{" . join(',',@styles) . "}";
+
+    $outfile =~ s/\.png$//;
+    open(my $fh,'>',"$outfile.py") or $self->throw("$outfile.py: $!");
+    $self->tprint($fh, "
+            import matplotlib as mpl
+            mpl.use('Agg')
+            import matplotlib.pyplot as plt
+            import itertools
+            import csv
+            csv.register_dialect('tab', delimiter='\\t', quoting=csv.QUOTE_NONE)
+
+            labels  = $labels
+            colors  = $colors
+            styles  = $styles
+
+            xdat   = {}
+            dat_ts = {}
+            dat_tv = {}
+            ndat   = {}
+            with open('$dir/$ann.dist') as f:
+            \\treader = csv.reader(f, 'tab')
+            \\tfor row in reader:
+            \\t\\tif row[0] not in xdat:
+            \\t\\t\\tndat[row[0]] = 0
+            \\t\\t\\txdat[row[0]] = []
+            \\t\\t\\tdat_ts[row[0]] = []
+            \\t\\t\\tdat_tv[row[0]] = []
+            \\t\\txdat[row[0]].append(row[1])
+            \\t\\tdat_ts[row[0]].append(row[2])
+            \\t\\tdat_tv[row[0]].append(row[3])
+            \\t\\tndat[row[0]] += int(row[2]) + int(row[3])
+
+            xdat_fwd = {}
+            xdat_bwd = {}
+            dat_fwd = {}
+            dat_bwd = {}
+            for set in labels:
+            \\txdat_fwd[set] = []
+            \\txdat_bwd[set] = []
+            \\tdat_fwd[set]  = []
+            \\tdat_bwd[set]  = []
+            \\tnts  = 0
+            \\tntv  = 0
+            \\tnout = 0
+            \\tdn   = ndat[set]*0.05
+            \\tfor i in range(len(dat_ts[set])):
+            \\t\\tif i==len(dat_ts[set]) or nts+ntv > dn:
+            \\t\\t\\tif ntv!=0:
+            \\t\\t\\t\\txdat_fwd[set].append(nts+ntv+nout)
+            \\t\\t\\t\\tdat_fwd[set].append(nts/ntv)
+            \\t\\t\\tnout += nts+ntv
+            \\t\\t\\tnts = 0
+            \\t\\t\\tntv = 0
+            \\t\\tnts += float(dat_ts[set][i])
+            \\t\\tntv += float(dat_tv[set][i])
+            \\tnts  = 0
+            \\tntv  = 0
+            \\tnout = 0
+            \\tdn   = ndat[set]*0.05
+            \\tfor i in xrange(len(dat_ts[set])-1,-1,-1):
+            \\t\\tif i==len(dat_ts[set]) or nts+ntv > dn:
+            \\t\\t\\tif ntv!=0:
+            \\t\\t\\t\\txdat_bwd[set].append(nts+ntv+nout)
+            \\t\\t\\t\\tdat_bwd[set].append(nts/ntv)
+            \\t\\t\\tnout += nts+ntv
+            \\t\\t\\tnts = 0
+            \\t\\t\\tntv = 0
+            \\t\\tnts += float(dat_ts[set][i])
+            \\t\\tntv += float(dat_tv[set][i])
+
+            fig, (ax1,ax2) = plt.subplots(2,1, figsize=(5,5), sharex=True)
+            for set in labels:
+            \\tax1.plot(xdat_fwd[set],dat_fwd[set],c=colors[set],ls=styles[set],label=labels[set])
+            for set in labels:
+            \\tax2.plot(xdat_bwd[set],dat_bwd[set],c=colors[set],ls=styles[set],label=labels[set])
+            ax1.set_xlabel('Number of sites (sorted by $ann, ascending)',fontsize=9)
+            ax2.set_xlabel('Number of sites (sorted by $ann, descending)',fontsize=9)
+            ax1.set_ylabel('Ts/Tv',fontsize=9)
+            ax2.set_ylabel('Ts/Tv',fontsize=9)
+            ax1.legend(numpoints=1,markerscale=2,loc='best',prop={'size':9},frameon=False)
+            ax1.ticklabel_format(style='sci', scilimits=(-3,2), axis='x')
+            plt.subplots_adjust(left=0.13,right=0.95,bottom=0.1,top=0.9,hspace=0.15,wspace=0.05)
+            ax1.set_title('Ts/Tv by $ann')
+            plt.savefig('$outfile.png')
+            plt.close()
+            ");
+    close($fh);
+    $self->cmd("python $outfile.py");
+}
+
+sub tprint
+{
+    my ($self,$fh,@txt) = @_;
+    for my $txt (@txt)
+    {
+        $txt =~ s/\n[ \t]+/\n/g;
+        $txt =~ s/\\t/\t/g;
+        $txt =~ s/\n\\t\s*/\n\t/g;
+        print $fh $txt;
+    }
+}
+
+
+sub mrProper
+{
+    my ($self,$outdir) = @_;
+    $self->clean($outdir);
+}
+
+sub clean
+{
+    my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
+    $self->cmd("rm -rf $outdir/chunks");
+}
+
+sub save_config
+{
+    my ($self,$cname) = @_;
+    my $src = $$self{_config};
+    my $dst = "$$self{outdir}/$cname";
+    if ( -e $dst && (stat($src))[9] <= (stat($dst))[9] ) { return; }
+    if ( !-d $$self{outdir} ) { $self->cmd("mkdir -p $$self{outdir}"); }
+    open(my $fh,'>',$dst) or $self->throw("$dst: $!");
+    my $about = $$self{_about};
+    $about =~ s/\n/\n# /g;
+    print $fh "# $about";
+    close($fh);
+    $self->cmd("cat $src >> $dst");
+}
+
