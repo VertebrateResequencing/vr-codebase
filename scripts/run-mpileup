@@ -35,10 +35,14 @@ sub new
     $$self{vcfstats}       = 'bcftools stats';
     $$self{filter}         = 'bcftools filter -m+ -sLowQual -e"%QUAL<=10" -g3 -G10 -Ov -';
     $$self{chunk_size}     = 1_000_000;
-	$$self{config_version} = '1377691623';
+	$$self{config_version} = '1392291886';
     $$self{_sampleconf} = q[
             # For sanity checking that your config file is not obsolete. Update the version key in your 
             #  config file to get rid of the warnings.
+            #
+            # What changed since version 1377691623: New version of bcftools requires sample files
+            #   to be prefixed with ':'.
+            #
             version  => '] .$$self{config_version}. q[',
 
             # Add -P ILLUMINA or -P SLX if the BAMs contain also reads from different platforms. 
@@ -850,12 +854,12 @@ sub call_variants
     my $cmd;
     if ( $$self{keep_bcfs} )
     {
-        $cmd = "$$self{bcftools} -s $sample_list $outdir/pooled/$chr/$chr:$from-$to.bcf";
+        $cmd = "$$self{bcftools} -s :$sample_list $outdir/pooled/$chr/$chr:$from-$to.bcf";
     }
     else
     {
         my $bam_list = "$outdir/lists/chr$chr-$pop.list";
-        $cmd = "$$self{mpileup} -ug -r $chr:$from-$to -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -s $sample_list -";
+        $cmd = "$$self{mpileup} -ug -r $chr:$from-$to -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -s :$sample_list -";
     }
     if ( exists($$self{annot_file}) )
     {
@@ -875,7 +879,7 @@ sub debug_commands
     my $sample_list = "$$self{outdir}/lists/chr$chr-pooled.samples";
     $self->create_sample_file($sample_list,"samples.$$.list", $chr,$pos,$pos);
     $self->set_chunk_options($chr,$pos,$pos);
-    my $cmd = "$$self{mpileup} -ug -r $chr:$pos-$pos -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -s samples.$$.list -";
+    my $cmd = "$$self{mpileup} -ug -r $chr:$pos-$pos -b $bam_list -f $$self{fa_ref} | $$self{bcftools} -s :samples.$$.list -";
     print "$cmd\n";
 }
 
@@ -884,6 +888,8 @@ sub create_sample_file
     my ($self,$all_samples,$out_samples,$chr,$from,$to) = @_;
 
     my ($mploidy,$fploidy) = $self->ploidy_defaults($chr,$from,$to);
+    if ( !$mploidy ) { $mploidy = 0; }
+    if ( !$fploidy ) { $fploidy = 0; }
     open(my $in,'<',$all_samples) or $self->throw("$all_samples: $!");
     open(my $out,'>',$out_samples) or $self->throw("$out_samples: $!");
     while (my $line=<$in>)
@@ -895,10 +901,14 @@ sub create_sample_file
             print $out $line;
             next;
         }
-        if ( !($line=~/^(\S+)\s+([MF])$/) ) { chomp($line); $self->throw("Could not parse [$all_samples]: [$line]\n"); }
-        if ( $2 eq 'M' && !$mploidy ) { next; }
-        if ( $2 eq 'F' && !$fploidy ) { next; }
-        print $out "$1\t" .($2 eq 'M' ? $mploidy : $fploidy). "\n";
+        my ($sample,$pl);
+        if ( ($line=~/^(\S+)\s+([MF])$/) ) { $sample = $1; $pl = $2; }
+        elsif ( ($line=~/^(\S+)\s+(\d)$/) ) { $sample = $1; $pl = $2; }
+        else { chomp($line); $self->throw("Could not parse [$all_samples]: [$line]\n"); }
+
+        if ( $pl eq 'M' ) { $pl = $mploidy }
+        elsif ( $pl eq 'F' ) { $pl = $fploidy }
+        print $out "$sample\t$pl\n";
     }
     close($out) or $self->throw("close failed: $out_samples");
     close($in) or $self->throw("close failed: $all_samples");
