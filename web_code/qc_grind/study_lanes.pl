@@ -98,7 +98,7 @@ sub displayProjectLaneForm
     foreach( @{ $samples } ) {
         my $sample = $_;
         my $ind = $sample->individual();
-        my $indname = $ind->name();
+        my $indname = $ind->alias() || $ind->name();
         if( $individuals2Samples{ $indname } ) {
             push( @{ $individuals2Samples{ $indname } }, $sample );
         }
@@ -318,7 +318,7 @@ sub downloadLaneData {
     my %individuals2Samples;
     foreach my $sample ( @{ $samples } ) {
         my $ind = $sample->individual();
-        my $indname = $ind->name();
+        my $indname = $ind->alias() || $ind->name();
         if( $individuals2Samples{ $indname } )
         {
             push( @{ $individuals2Samples{ $indname } }, $sample );
