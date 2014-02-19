@@ -289,17 +289,13 @@ sub run_array
 
   
     $cmd =~ s/{JOB_INDEX}/\$LSB_JOBINDEX/g;
+
+    # Set bsub options. By default request 1GB of memory, the queues require mem to be set explicitly
     my $bsub_opts = '';
-    if ( exists($$opts{memory}) && $$opts{memory} ) 
-    { 
-        my $mem = int($$opts{memory});
-        if ( $mem )
-        {
-            my $units = get_lsf_limits_unit();
-            my $lmem  = $units eq 'kB' ? $mem*1000 : $mem;
-            $bsub_opts = sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $lmem,$mem,$mem; 
-        }
-    }
+    my $units  = get_lsf_limits_unit();
+    my $mem    = exists($$opts{memory}) && $$opts{memory} ? int($$opts{memory}) : 1000;
+    my $lmem   = $units eq 'kB' ? $mem*1000 : $mem;
+    $bsub_opts = sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $lmem,$mem,$mem; 
     if ( !defined($$opts{queue}) ) 
     {            
         if ( defined($$opts{runtime}) ) 
