@@ -381,8 +381,15 @@ sub read_map
     open(my $fh,"gunzip -c $$opts{apply_map} |") or error("gunzip -c $$opts{apply_map}: $!");
     while (my $line=<$fh>)
     {
-        if ( $line=~/^#/ ) { next; }
-        my ($chr,$pos,$refalt,$strand,$ref_1st,$name) = split(/\t/,$line);
+        if ( $line=~/^#/ ) 
+        { 
+            my $exp = join("\t", '# [1]chr','[2]pos','[3]ref/alt (top)','[4]strand','[5]ref-is-1st','[6]name');
+            chomp($line);
+            if ( $line ne $exp ) { error("Could not parse map file. Expected:\n\t$exp\nFound:\n\t$line\n"); }
+            next; 
+        }
+        my ($chr,$pos,$refalt,$strand,$ref_1st,$name,@rest) = split(/\t/,$line);
+        if ( scalar @rest or $name eq '' ) { error("Could not parse map file, expected 6 columns, got: $line"); }
         chomp($name);
         $$opts{map}{$name} = [$chr,$pos,$refalt, $strand eq 'top_on_fwd' ? 1 : -1,$ref_1st];
     }
@@ -398,6 +405,7 @@ sub apply_map_file
     my $fh = \*STDIN;
     if ( exists($$opts{fname}) ) { open($fh,'<',$$opts{fname}) or error("$$opts{fname}: $!"); }
     my $line = <$fh>;
+    if ( !defined $line ) { error("Could not read from ". (exists($$opts{fname})?$$opts{fname}:'stdin')); }
     if ( $line=~/^\[Header/ )
     {
         while (my $line=<$fh>)
@@ -413,7 +421,8 @@ sub apply_map_file
     my %files = ();
     while (my $line=<$fh>)
     {
-        my ($name,$sample,$al1,$al2,$gc,$theta,$r,$x,$y,$xraw,$yraw,$baf,$lrr) = split(/\t/,$line);
+        my ($name,$sample,$al1,$al2,$gc,$theta,$r,$x,$y,$xraw,$yraw,$baf,$lrr,@rest) = split(/\s+/,$line);
+        if ( @rest or $lrr eq '' ) { error("Could not parse FCR file: $line, [$lrr], ", scalar @rest); }
         if ( $al1 eq '-' or $al2 eq '-' ) { next; }
         chomp($lrr);
 
@@ -456,6 +465,7 @@ sub apply_map_file
         print {$files{$sample}} "$$map[0]\t$$map[1]\t$name\t$ref\t$alt\t.\t.\t.\tGT:LRR:BAF:IA:IB:GC\t$gt:$lrr:$baf:$x:$y:$gc\n";
     }
     if ( $$opts{fname} ) { close($fh); }
+    if ( !scalar keys %files ) { error("No files written, broken input file?\n"); }
     for my $sample (keys %files)
     {
         close($files{$sample}) or error("close $$opts{outdir}/$sample.vcf");
