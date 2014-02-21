@@ -107,7 +107,7 @@ sub new
         "   +config <file>          Configuration file\n" .
         "   +debug <file1> <file2>  Run the freezed object <file1> overriding with keys from <file2>\n" .
         "   +local                  Do not submit jobs to LSF, but run serially\n" .
-        "   +checkpoint             Use BLCR checkpoint/restart to deal with overrun (instead of bswitch)\n" .
+        "   +blcr                   Use BLCR checkpoint/restart to deal with overrun (instead of bswitch)\n" .
         "   +loop <int>             Run in daemon mode with <int> sleep intervals\n" .
         "   +mail <address>         Email when the runner finishes\n" .
         "   +maxjobs <int>          Maximum number of simultaneously running jobs\n" .
@@ -133,7 +133,7 @@ sub new
                     Summary of commands
                 +local
                     Do not submit jobs to LSF, but run serially
-                +checkpoint
+                +blcr
                     Use BLCR checkpoint/restart to deal with overrun (instead of bswitch)
                 +loop <int>
                     Run in daemon mode with <int> sleep intervals
@@ -179,7 +179,7 @@ sub run
         if ( $arg eq '+verbose' ) { $$self{_verbose}=1; next; }
         if ( $arg eq '+silent' ) { $$self{_verbose}=0; next; }
         if ( $arg eq '+local' ) { $$self{_run_locally}=1; next; }
-        if ( $arg eq '+checkpoint' ) { $$self{_farm_options}{_run_with_checkpoint}=1; next; }
+        if ( $arg eq '+blcr' ) { $$self{_farm_options}{_run_with_blcr}=1; next; }
         if ( $arg eq '+show' ) 
         { 
             $arg = shift(@ARGV);
@@ -440,10 +440,10 @@ sub _is_marked_as_finished
             while (my $line=<$fh>)
             {
                 chomp($line);
-                if ( !($line=~/^([01sf])\t(\d+)\t/) ) { $self->throw("Could not parse $wfile: $line\n"); }
+                if ( !($line=~/^([01sf])\t(\d+)\t(.*)$/) ) { $self->throw("Could not parse $wfile: $line\n"); }
                 my $done = $1;
                 my $id   = $2;  
-                my $file = $';
+                my $file = $3;
                 $$self{_jobs_db}{$file}{finished} = $done;
                 $$self{_jobs_db}{$file}{wfile}    = $wfile;
                 $$self{_jobs_db}{$file}{call}     = $call;
@@ -593,7 +593,7 @@ sub _get_unfinished_jobs
                 { 
                     $self->throw("The target file name is not unique: $$job{done_file}\n",Dumper($wfiles{$$job{wait_file}}{$id}{args},$$job{args})); 
                 }
-                if ( $nprn_pend < 2 ) { $self->debugln("\tx  $$job{done_file} .. unfinished"); $nprn_pend++; }
+                if ( $nprn_pend < 2 ) { $self->debugln("\tx  $$job{done_file} .. $$job{wait_file}  .. unfinished"); $nprn_pend++; }
                 elsif ( $nprn_pend < 3 ) { $self->debugln("\tx  ...etc..."); $nprn_pend++; }
                 $wfiles{$$job{wait_file}}{$id} = $job;
             }
@@ -688,6 +688,7 @@ sub wait
         for (my $i=0; $i<@$status; $i++)
         {
             my $must_run = 1;
+	    my $can_restart = 0;
             my $stat = $$status[$i]{status};
             my $done_file = $$jobs{$wfile}{$ids[$i]}{done_file};
 
@@ -718,7 +719,15 @@ sub wait
             # If the job has been already ran and failed, check if it failed repeatedly
             elsif ( $stat & $Error ) 
             { 
-                my $nfailures = $$status[$i]{nfailures};
+            if ( !exists($$status[$i]{chkpnt_failed}) )
+            {
+                $self->warn("\nThe job is not running but has a checkpoint dir $$status[$i]{checkpoint_dir} and lsf_id $$status[$i]{last_checkpoint_lsf_id}\n\n");
+            }
+            else
+            {
+               $self->warn("\nThe job is not running and not checkpointed so need to re-run\n\n");
+            }    
+            my $nfailures = $$status[$i]{nfailures};
                 if ( $nfailures > abs($$self{_nretries}) )
                 {
                     if ( $$self{_nretries} < 0 )
@@ -752,13 +761,44 @@ sub wait
                     my $mem = $limits{memory}*1.3 > $limits{memory}+1_000 ? $limits{memory}*1.3 : $limits{memory}+1_000;
                     $self->inc_limits(memory=>$mem); 
                 }
-            }
+		else
+		{
+		    if ( !exists($$status[$i]{chkpnt_failed})  && $$status[$i]{last_checkpoint_lsf_id} ne ""  )
+		    {
+			$can_restart = 1;
+		    }
+		}
+	    }
 
             if ( $must_run )
             { 
                 if ( $$self{_maxjobs} && $$self{_maxjobs}<$is_running ) { last; }
-                $self->_update_limits($wfile, $ids[$i]);
-                next; 
+
+		# if this job doesn't have increased memory requirements, check if it has been checkpointed and try to restart it
+		 if ( $can_restart == 0)
+                 {
+                    # this job can't be restarted, update limits
+                    $self->_update_limits($wfile, $ids[$i]);
+                    next;
+                 }
+                 else
+		 {
+		     my $ok;
+                     $self->warn("\nRunning again, using checkpoint\n\n");
+		     eval 
+		     {
+		 	$farm->can('restart_job')->($jobs_id_file,$$status[$i],$$self{_farm_options});
+		 	$ok = 1;
+		     };
+		     if ( $ok )
+		     {
+                        next;
+                     }
+                     else
+                     {
+		 	$self->throw($@);
+		     }
+		 }
             }
 
             splice(@ids, $i, 1);
