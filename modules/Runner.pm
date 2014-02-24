@@ -118,7 +118,7 @@ sub new
     bless $self, ref($class) || $class;
     $$self{_status_codes}{DONE} = 111;
     $$self{_farm} = 'RunnerLSF';
-    $$self{_farm_options} = { runtime=>600, memory=>1_000 };
+    $$self{_farm_options} = { runtime=>600, memory_mb=>1_000 };
     $$self{_running_jobs} = {};
     $$self{_nretries} = 1;
     $$self{_verbose} = 1;
@@ -303,8 +303,8 @@ sub _sample_config
 =head2 set_limits
 
     About : Set time and memory requirements for computing farm
-    Usage : $self->set_limits(memory=>1_000, runtime=>24*60);
-    Args  : <memory>
+    Usage : $self->set_limits(memory_mb=>1_000, runtime=>24*60);
+    Args  : <memory_mb>
                 Expected memory requirements [MB] or undef to unset
             <runtime>
                 Expected running time [minutes] or undef to unset
@@ -338,7 +338,7 @@ sub _update_limits
 =head2 inc_limits
 
     About : increase limits if lower than requested
-    Usage : $self->inc_limits(memory=>10_000);
+    Usage : $self->inc_limits(memory_mb=>10_000);
     Args  : See set_limits
                 
 =cut
@@ -350,7 +350,7 @@ sub inc_limits
     {
         if ( !exists($$self{_farm_options}{$key}) or $$self{_farm_options}{$key}<$args{$key} ) 
         { 
-            $self->debugln("increasing limit, $key set to $args{$key}");
+            $self->debugln("Increasing limit, $key set to $args{$key}");
             $$self{_farm_options}{$key} = $args{$key};
         }
     }
@@ -359,7 +359,7 @@ sub inc_limits
 =head2 get_limits
 
     About : get limits set for computing farm
-    Usage : $self->get_limits('memory');
+    Usage : $self->get_limits('memory_mb');
     Args  : See set_limits
                 
 =cut
@@ -695,7 +695,7 @@ sub wait
     my $Error   = eval "\$${farm}::Error";
 
     my $is_running = 0;
-    for my $wfile (keys %$jobs)
+    WFILE: for my $wfile (keys %$jobs)
     {
         my $prefix = $self->_get_temp_prefix($wfile);
         my $jobs_id_file = $prefix . '.jid';
@@ -706,10 +706,10 @@ sub wait
         my $status = $farm->can('is_job_array_running')->($jobs_id_file,\@ids,$$self{_maxjobs});
         my $is_wfile_running = 0;
         my $warned = 0;
-        for (my $i=0; $i<@$status; $i++)
+        ELEMENT: for (my $i=0; $i<@$status; $i++)
         {
             my $must_run = 1;
-	    my $can_restart = 0;
+	    my $resources_changed = 0; 
             my $stat = $$status[$i]{status};
             my $done_file = $$jobs{$wfile}{$ids[$i]}{done_file};
 
@@ -740,88 +740,99 @@ sub wait
             # If the job has been already ran and failed, check if it failed repeatedly
             elsif ( $stat & $Error ) 
             { 
-            if ( !exists($$status[$i]{chkpnt_failed}) )
-            {
-                $self->warn("\nThe job is not running but has a checkpoint dir $$status[$i]{checkpoint_dir} and lsf_id $$status[$i]{last_checkpoint_lsf_id}\n\n");
-            }
-            else
-            {
-               $self->warn("\nThe job is not running and not checkpointed so need to re-run\n\n");
-            }    
-            my $nfailures = $$status[$i]{nfailures};
-                if ( $nfailures > abs($$self{_nretries}) )
-                {
-                    if ( $$self{_nretries} < 0 )
-                    {
-                        my $sfile = "$wfile.$ids[$i].s";
-                        $self->warn("\nThe job failed repeatedly (${nfailures}x) and +retries is negative, skipping: $wfile.$ids[$i].[eos]\n\n");
-                        system("touch $sfile");
-                        if ( $? ) { $self->throw("The command exited with a non-zero status $?: touch $sfile\n"); }
-                        $must_run = 0;
-                    }
-                    else
-                    {
-                        my $msg = 
-                            "The job failed repeatedly, ${nfailures}x: $wfile.$ids[$i].[eo]\n" .
-                            "(Remove $jobs_id_file to clean the status, increase +retries or run with negative value of +retries to skip this task.)\n";
-
-                        $self->_send_email('failed', "The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
-                        $self->throw($msg);
-                    }
-                }
-                elsif ( !$warned )
-                {
-                    $self->warn("\nRunning again, the previous attempt failed: $wfile.$ids[$i].[eo]\n\n");
-                    $warned = 1;
-                }
-
-                # Increase memory limits if necessary: by a set minimum or by a percentage, which ever is greater
-                my %limits = $farm->can('past_limits')->($ids[$i],$wfile);
-                if ( exists($limits{MEMLIMIT}) )
-                { 
-                    my $mem = $limits{memory}*1.3 > $limits{memory}+1_000 ? $limits{memory}*1.3 : $limits{memory}+1_000;
-                    $self->inc_limits(memory=>$mem); 
-                }
+		if ( exists($$status[$i]{have_chkpnt}) && exists($$status[$i]{last_chkpnt_lsf_id}) )
+		{
+		    $self->warn("\nThe job ($ids[$i]) is not running but has a checkpoint ($$status[$i]{last_chkpnt_lsf_id})\n\n");
+		}
 		else
 		{
-		    if ( !exists($$status[$i]{chkpnt_failed})  && $$status[$i]{last_checkpoint_lsf_id} ne ""  )
+		    $self->warn("\nThe job ($ids[$i]) is not running and not checkpointed so it will need to re-run from scratch\n\n");
+		} 
+		my $nfailures = $$status[$i]{nfailures};
+		if ( $nfailures > abs($$self{_nretries}) )
+		{
+		    if ( $$self{_nretries} < 0 )
 		    {
-			$can_restart = 1;
+			my $sfile = "$wfile.$ids[$i].s";
+			$self->warn("\nThe job failed repeatedly (${nfailures}x) and +retries is negative, skipping: $wfile.$ids[$i].[eos]\n\n");
+			system("touch $sfile");
+			if ( $? ) { $self->throw("The command exited with a non-zero status $?: touch $sfile\n"); }
+			$must_run = 0;
+		    }
+		    else
+		    {
+			my $msg = 
+			    "The job failed repeatedly, ${nfailures}x: $wfile.$ids[$i].[eo]\n" .
+			    "(Remove $jobs_id_file to clean the status, increase +retries or run with negative value of +retries to skip this task.)\n";
+			
+			$self->_send_email('failed', "The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
+			$self->throw($msg);
+		    }
+		}
+		elsif ( !$warned )
+		{
+		    $self->warn("Running again, the previous attempt failed: $wfile.$ids[$i].[eo]\n\n");
+		    $warned = 1;
+		}
+		
+		# Increase memory limits if necessary: by a set minimum or by a percentage, whichever is greater
+		my %limits = $farm->can('past_limits')->($ids[$i],$wfile);
+		if ( exists($limits{MEMLIMIT}) )
+		{ 
+		    my $mem = $limits{memory_mb}*1.3 > $limits{memory_mb}+1_000 ? $limits{memory_mb}*1.3 : $limits{memory_mb}+1_000;
+		    $self->inc_limits(memory_mb=>$mem); 
+		    $resources_changed = 1;
+		}
+
+		# Increase cpu count if necessary
+		if ( exists($$status[$i]{idle_factor}) )
+		{
+		    my $current_cpus = 1;
+		    if ( exists($$self{_farm_options}{cpus}) )
+		    {
+			$current_cpus = $$self{_farm_options}{cpus};
+		    }
+		    my $cpus = int($$status[$i]{idle_factor})+1;
+		    if ( $cpus > $current_cpus )
+		    {
+			warn(
+			    "Increasing cpu limit for job $ids[$i] to $cpus\n"
+			    );
+			$self->inc_limits(cpus=>$cpus);
+			$resources_changed = 1;
 		    }
 		}
 	    }
-
+	    
             if ( $must_run )
             { 
-                if ( $$self{_maxjobs} && $$self{_maxjobs}<$is_running ) { last; }
+                if ( $$self{_maxjobs} && $$self{_maxjobs}<$is_running ) { last WFILE; }
 
-		# if this job doesn't have increased memory requirements, check if it has been checkpointed and try to restart it
-		 if ( $can_restart == 0)
-                 {
-                    # this job can't be restarted, update limits
-                    $self->_update_limits($wfile, $ids[$i]);
-                    next;
-                 }
-                 else
-		 {
-		     my $ok;
-                     $self->warn("\nRunning again, using checkpoint\n\n");
-		     eval 
-		     {
-		 	$farm->can('restart_job')->($jobs_id_file,$$status[$i],$$self{_farm_options});
+		$self->_update_limits($wfile, $ids[$i]);
+
+		# if we have a checkpoint, go ahead and attempt to restart it now (whole arrays can't be restarted)
+		if ( exists($$status[$i]{have_chkpnt}) )
+		{
+		    my $ok;
+		    $self->warn("Restarting job\n\n");
+		    eval 
+		    {
+		 	$farm->can('restart_job')->($jobs_id_file,$$status[$i],$$self{_farm_options},$resources_changed);
 		 	$ok = 1;
-		     };
-		     if ( $ok )
-		     {
-                        next;
-                     }
-                     else
-                     {
-		 	$self->throw($@);
-		     }
-		 }
+		    };
+		    if ( ! $ok )
+		    {
+			warn(
+			    "Couldn't restart job (".$$status[$i]{id}."), it will be respawned from the beginning.\n"
+			    );
+			# couldn't restart job, keep the element in @ids/@status so it will be respawned from start
+                        next ELEMENT;
+		    }
+		}
+		# keep element
+		next ELEMENT;
             }
-
+	    
             splice(@ids, $i, 1);
             splice(@$status, $i, 1);
             $i--;
@@ -829,11 +840,11 @@ sub wait
         if ( !@ids ) 
         { 
             if ( !$is_wfile_running ) { unlink($jobs_id_file); }
-            next; 
+            next WFILE; 
         }
         if ( $$self{_maxjobs} )
         {
-            if ( $$self{_maxjobs} <= $is_running ) { last; }
+            if ( $$self{_maxjobs} <= $is_running ) { last WFILE; }
             if ( $$self{_maxjobs} < $is_running + @ids ) { splice(@ids, $$self{_maxjobs} - $is_running - @ids); }
         }
         $is_running += scalar @ids;
@@ -847,8 +858,9 @@ sub wait
         {
             $self->_mkdir($$jobs{$wfile}{$id}{done_file});
         }
-
-        my $ok;
+  
+	print STDERR "about to call run_array: $jobs_id_file, $prefix, $cmd\n";
+	my $ok;
         eval 
         {
             $farm->can('run_array')->($jobs_id_file,$prefix,$$self{_farm_options},$cmd,\@ids);
