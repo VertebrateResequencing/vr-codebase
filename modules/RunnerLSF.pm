@@ -519,9 +519,9 @@ sub past_limits
             if ($2 eq 'KB') { $mem /= 1024; }
             elsif ($2 eq 'GB') { $mem *= 1024; }
 
-            if ( !exists($out{memory_mb}) or $out{memory_mb}<$mem )
+            if ( !exists($out{memory}) or $out{memory}<$mem )
             {
-                $out{memory_mb} = $mem;
+                $out{memory} = $mem;
                 if ( $killed ) { $out{MEMLIMIT} = $mem; }
                 else { delete($out{MEMLIMIT}); }
             }
@@ -590,13 +590,13 @@ sub run_array
     $cmd =~ s/{JOB_INDEX}/\$LSB_JOBINDEX/g;
     my $bsub_opts = '';
     my $mem_mb;
-    if ( ! exists($$opts{memory_mb}) )
+    if ( ! exists($$opts{memory}) )
     {
-	$$opts{memory_mb} = $default_memlimit_mb;
+	$$opts{memory} = $default_memlimit_mb;
     }
-    if ( $$opts{memory_mb} ) 
+    if ( $$opts{memory} ) 
     { 
-        $mem_mb = int($$opts{memory_mb});
+        $mem_mb = int($$opts{memory});
         if ( $mem_mb )
         {
             my $units = get_lsf_limits_unit();
@@ -666,11 +666,9 @@ sub run_array
 	    $$opts{chkpnt_period_minutes} = int($$opts{chkpnt_period_minutes}); 
 	}
         $bsub_opts .= " -k '$chkpnt_dir method=blcr $$opts{chkpnt_period_minutes}'";
-	print STDERR "cmd is currently: $cmd\n";
 	if ( ! ( $cmd =~ m/^\s*cr[_]/ )  )
 	{ 
 	    $cmd = "cr_run $cmd"; 
-	print STDERR "cmd is now: $cmd\n";
 	}
     }
 

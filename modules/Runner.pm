@@ -118,7 +118,7 @@ sub new
     bless $self, ref($class) || $class;
     $$self{_status_codes}{DONE} = 111;
     $$self{_farm} = 'RunnerLSF';
-    $$self{_farm_options} = { runtime=>600, memory_mb=>1_000 };
+    $$self{_farm_options} = { runtime=>600, memory=>1_000 };
     $$self{_running_jobs} = {};
     $$self{_nretries} = 1;
     $$self{_verbose} = 1;
@@ -303,8 +303,8 @@ sub _sample_config
 =head2 set_limits
 
     About : Set time and memory requirements for computing farm
-    Usage : $self->set_limits(memory_mb=>1_000, runtime=>24*60);
-    Args  : <memory_mb>
+    Usage : $self->set_limits(memory=>1_000, runtime=>24*60);
+    Args  : <memory>
                 Expected memory requirements [MB] or undef to unset
             <runtime>
                 Expected running time [minutes] or undef to unset
@@ -338,7 +338,7 @@ sub _update_limits
 =head2 inc_limits
 
     About : increase limits if lower than requested
-    Usage : $self->inc_limits(memory_mb=>10_000);
+    Usage : $self->inc_limits(memory=>10_000);
     Args  : See set_limits
                 
 =cut
@@ -359,7 +359,7 @@ sub inc_limits
 =head2 get_limits
 
     About : get limits set for computing farm
-    Usage : $self->get_limits('memory_mb');
+    Usage : $self->get_limits('memory');
     Args  : See set_limits
                 
 =cut
@@ -779,8 +779,8 @@ sub wait
 		my %limits = $farm->can('past_limits')->($ids[$i],$wfile);
 		if ( exists($limits{MEMLIMIT}) )
 		{ 
-		    my $mem = $limits{memory_mb}*1.3 > $limits{memory_mb}+1_000 ? $limits{memory_mb}*1.3 : $limits{memory_mb}+1_000;
-		    $self->inc_limits(memory_mb=>$mem); 
+		    my $mem = $limits{memory}*1.3 > $limits{memory}+1_000 ? $limits{memory}*1.3 : $limits{memory}+1_000;
+		    $self->inc_limits(memory=>$mem); 
 		    $resources_changed = 1;
 		}
 
@@ -859,7 +859,6 @@ sub wait
             $self->_mkdir($$jobs{$wfile}{$id}{done_file});
         }
   
-	print STDERR "about to call run_array: $jobs_id_file, $prefix, $cmd\n";
 	my $ok;
         eval 
         {
