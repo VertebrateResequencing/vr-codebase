@@ -633,8 +633,8 @@ sub run_array
 	}
 	if ( !defined($$opts{chkpnt_time_s_per_mb}) )
 	{
-            # estimated time to checkpoint: ~9 minutes per GB of RAM on lustre (scratch113), so 0.54 s/MB
-	    $$opts{chkpnt_time_s_per_mb} = 0.54;
+            # estimated time to checkpoint: ~2.5 minutes per GB of RAM on lustre (scratch113), so 0.15 s/MB
+	    $$opts{chkpnt_time_s_per_mb} = 0.15;
 	}
 	if ( !defined($$opts{chkpnt_period_minutes}) )
 	{
