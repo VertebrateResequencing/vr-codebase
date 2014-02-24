@@ -94,6 +94,10 @@ sub is_job_array_running
 	    {
 		$jobs[$j]{idle_factor} = $$info{$id}{idle_factor};
 	    }
+	    if ( exists($$info{$id}{cpus}) )
+	    {
+		$jobs[$j]{cpus} = $$info{$id}{cpus};
+	    }
             if ( $jobs[$j]{status} ne $No ) { next; }   # the job was submitted multiple times and already has a status
             if ( $$info{$id}{status}==$Done ) { $jobs[$j]{status} = $Done; }
             if ( $$info{$id}{status}==$Running ) { $jobs[$j]{status} = $Running; }
@@ -237,6 +241,12 @@ sub parse_bjobs_l_section
             $$job{started} = DateTime->new(month=>$months{$1}, day=>$2, hour=>$3, minute=>$4, year=>$year)->epoch;
         }
 
+        # Tue Dec 24 13:12:00: [1] started on 8 Hosts/Processors <8*vr-1-1-05>...
+        if ( $line =~ /[Ss]tarted on (\d+) / ) 
+        {
+            $$job{cpus} = $1;
+        }
+
         # Tue Mar 19 13:58:23: Resource usage collected...
         if ( $line =~ /^\w+\s+(\w+)\s+(\d+) (\d+):(\d+):(\d+):\s+Resource usage collected/ ) 
         {
@@ -322,7 +332,9 @@ sub check_job
     if ( $$job{status}==$Running )
     {
         my $queue = $$job{queue};
-        if ( exists($queue_limits_seconds{$queue}) && ( ( $$job{cpu_time} > $queue_limits_seconds{$queue} ) || ( $$job{wall_time} > $queue_limits_seconds{$queue} ) ) )
+	my $cpus = 1;
+	if ( exists($$job{cpus}) ) { $cpus = $$job{cpus}; }
+        if ( exists($queue_limits_seconds{$queue}) && ( ( ($$job{cpu_time} / $cpus) > $queue_limits_seconds{$queue} ) || ( $$job{wall_time} > $queue_limits_seconds{$queue} ) ) )
         {
 	    warn(
 		"Job $$job{id} ($$job{lsf_id}) is currently running and has exceeded the $queue queue limit of $queue_limits_seconds{$queue} seconds (cpu time: $$job{cpu_time} wall time: $$job{wall_time})\n"
