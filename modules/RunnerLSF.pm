@@ -641,7 +641,7 @@ sub run_array
 	    my $chkpnts_per_run = int($$opts{chkpnts_per_run});
 	    do 
 	    {
-		$$opts{chkpnt_period_minutes} = ($queue_limits_seconds{$$opts{queue}} - ($$opts{chkpnt_time_s_per_mb} * $mem_mb)) / $chkpnts_per_run;
+		$$opts{chkpnt_period_minutes} = ((($queue_limits_seconds{$$opts{queue}} - ($$opts{chkpnt_time_s_per_mb} * $mem_mb)) / $chkpnts_per_run) / 60);
 		# reduce checkpoints per run and repeat if calculated checkpoint period is below the minimum
 		$chkpnts_per_run--;
 	    } while( ($$opts{chkpnt_period_minutes} < $chkpnt_minimum_period_minutes) && ($chkpnts_per_run > 0) );
