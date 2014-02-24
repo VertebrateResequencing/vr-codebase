@@ -666,7 +666,12 @@ sub run_array
 	    $$opts{chkpnt_period_minutes} = int($$opts{chkpnt_period_minutes}); 
 	}
         $bsub_opts .= " -k '$chkpnt_dir method=blcr $$opts{chkpnt_period_minutes}'";
-	if ( ! $cmd =~ m/\s*cr_/ ) { $cmd = "cr_run $cmd"; }
+	print STDERR "cmd is currently: $cmd\n";
+	if ( ! ( $cmd =~ m/^\s*cr[_]/ )  )
+	{ 
+	    $cmd = "cr_run $cmd"; 
+	print STDERR "cmd is now: $cmd\n";
+	}
     }
 
     my $bsub_cmd  = qq[bsub -J '${job_name}[$bsub_ids]' -e $job_name.\%I.e -o $job_name.\%I.o $bsub_opts '$cmd'];
