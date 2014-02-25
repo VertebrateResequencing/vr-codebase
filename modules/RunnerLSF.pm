@@ -138,7 +138,7 @@ sub parse_bjobs_l
       # into a single (long) line beginning with the line before
       $output =~ s/\n\s{21}//gm;
       # roll up *LIMIT line with the following line
-      $output =~ s/^( [A-Z]+LIMIT)\s*\n\s*(.*?)$/$1 $2/gm;
+      $output =~ s/^( [A-Z]+LIMIT| [A-Z]+TIME)\s*\n\s*(.*?)$/$1 $2/gm;
       # split bjobs -l output into separate entries for each job / job array element
       @job_output_sections = split /^[-]+[[:space:]]*$/m, $output; 
       if ( !scalar @job_output_sections ) 
@@ -253,7 +253,8 @@ sub parse_bjobs_l_section
         }
 
         # RUNLIMIT 60.0 min of bc-22-4-06
-	if ( $line =~ /RUNLIMIT ([0-9.]+) min/ )
+        # RUNTIME 60.0 min of bc-22-4-06
+	if ( $line =~ /RUN(LIMIT|TIME) ([0-9.]+) min/ )
 	{
 	    $$job{runtime_limit_seconds} = $1 * 60;
 	}
@@ -713,7 +714,7 @@ sub run_array
 	    $$opts{chkpnt_period_minutes} = int($$opts{chkpnt_period_minutes}); 
 	}
 	my $runtime_limit_minutes = int($runtime_limit_seconds/60);
-        $bsub_opts .= " -k '$chkpnt_dir method=blcr $$opts{chkpnt_period_minutes}' -W $runtime_limit_minutes";
+        $bsub_opts .= " -k '$chkpnt_dir method=blcr $$opts{chkpnt_period_minutes}' -We $runtime_limit_minutes";
 	if ( ! ( $cmd =~ m/^\s*cr[_]/ )  )
 	{ 
 	    $cmd = "cr_run $cmd"; 
