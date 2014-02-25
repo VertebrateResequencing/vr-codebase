@@ -137,7 +137,7 @@ sub parse_bjobs_l
       # roll up all continuation lines, signified by beginning with 21 spaces 
       # into a single (long) line beginning with the line before
       $output =~ s/\n\s{21}//gm;
-      # roll up *LIMIT line with the following line
+      # roll up *LIMIT or *TIME line with the following line
       $output =~ s/^( [A-Z]+LIMIT| [A-Z]+TIME)\s*\n\s*(.*?)$/$1 $2/gm;
       # split bjobs -l output into separate entries for each job / job array element
       @job_output_sections = split /^[-]+[[:space:]]*$/m, $output; 
@@ -256,7 +256,7 @@ sub parse_bjobs_l_section
         # RUNTIME 60.0 min of bc-22-4-06
 	if ( $line =~ /RUN(LIMIT|TIME) ([0-9.]+) min/ )
 	{
-	    $$job{runtime_limit_seconds} = $1 * 60;
+	    $$job{runtime_limit_seconds} = $2 * 60;
 	}
 	
         # Tue Mar 19 13:58:23: Resource usage collected...
