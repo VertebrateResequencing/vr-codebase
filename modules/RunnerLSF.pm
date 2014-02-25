@@ -445,12 +445,21 @@ sub check_job
 			# the latest checkpoint was successful, kill job so it can be restarted
 			warn(
 			    "\tc  job $$job{id} ($$job{lsf_id}) is over queue time limit but has a recent checkpoint.\n" .
-			    "Killing it so that it can be restarted.\n"
+			    "\tc  killing it so that it can be restarted.\n"
 			    );
-			my $cmd = "bkill -s KILL '$$job{lsf_id}'";
-			print STDERR "Calling $cmd\n";
-			my $out = `$cmd`;
-			print STDERR "bkill output: $out\n";
+			my $bkill_cmd = "bkill -s KILL '$$job{lsf_id}'";
+			my @out = `$bkill_cmd`;
+                        # Job <1878080> is being terminated
+                        # Job <1878081[1]> is being terminated
+			if ( scalar @out!=1 || !($out[0]=~/^Job <([\d\[\]]+)> is being terminated/) )
+			{
+			    warn(
+				"Expected different output from bkill.\n" .
+				"The bkill command was:\n" .
+				"\t$bkill_cmd\n" .
+				"The output was: " . join('',@out) . "\n"
+				);
+			}
 		    }
 		    else 
 		    {
@@ -460,10 +469,18 @@ sub check_job
 			    );
 			
 			# ask it to checkpoint-and-kill
-			my $cmd = "bchkpnt -k '$$job{lsf_id}'";
-			print STDERR "Calling $cmd\n";
-			my $out = `$cmd`;
-			print STDERR "bchkpnt output: $out\n";
+			my $bchkpnt_cmd = "bchkpnt -k '$$job{lsf_id}'";
+			my @out = `$bchkpnt_cmd`;
+			# Job <1878095[1]> is being checkpointed
+			if ( scalar @out!=1 || !($out[0]=~/^Job <([\d\[\]]+)> is being checkpointed/) )
+			{
+			    warn(
+				"Expected different output from bchkpnt.\n" .
+				"The bchkpnt command was:\n" .
+				"\t$bchkpnt_cmd\n" .
+				"The output was: " . join('',@out) . "\n"
+				);
+			}
 		    }
 		}
 		else 
@@ -725,11 +742,20 @@ sub run_array
 
     # Submit to LSF
     print STDERR "$bsub_cmd\n";
-    my @out = `$bsub_cmd`;
+    my @out = `$bsub_cmd 2>&1`;
     if ( scalar @out!=1 || !($out[0]=~/^Job <(\d+)> is submitted/) )
     {
 	my $cwd = `pwd`;
-	confess("Expected different output from bsub. The command was:\n\t$cmd\nThe bsub_command was:\n\t$bsub_cmd\nThe working directory was:\n\t$cwd\nThe output was:\n", @out);
+	confess(
+	    "Expected different output from bsub.\n" .
+	    "The command was:\n" .
+	    "\t$cmd\n" .
+	    "The bsub_command was:\n" .
+	    "\t$bsub_cmd\n" .
+	    "The working directory was:\n" .
+	    "\t$cwd\n" .
+	    "The output was: " . join('',@out) . "\n"
+	    );
     }
 
     # Write down info about the submitted command
@@ -758,10 +784,14 @@ sub restart_job
 
     my $id = $$job{id};
     my $restarted = 0;
-    if ( ! $resources_changed )
+    if ( $resources_changed )
+    {
+	warn("\tc  resource requirements have changed for job ($id)\n");
+    }
+    else 
     {
 	# resource requirements have not changed, try using brestart
-	print STDERR "Using brestart to restart job ($id) as resource requirements have not changed.\n";
+	warn("\tc  using brestart to restart job ($id) as resource requirements have not changed.\n");
 	my $brestart_opts = "";
 	
 	if ( defined($$job{queue}) )
@@ -775,8 +805,10 @@ sub restart_job
 	    my $lmem = $units eq 'kB' ? ($$job{mem_mb}*1000) : $$job{mem_mb};
 	    $brestart_opts .= "-M $lmem ";
 	}
-	
-	my $brestart_cmd = qq[brestart $brestart_opts  '$$job{chkpnt_dir}' '$$job{last_chkpnt_lsf_id}'];
+	my @chkpnt_lsf_dir_comps = File::Spec->splitdir($$job{chkpnt_dir});
+	pop @chkpnt_lsf_dir_comps;
+	my $chkpnt_lsf_dir = File::Spec->catdir(@chkpnt_lsf_dir_comps);
+	my $brestart_cmd = qq[brestart $brestart_opts $chkpnt_lsf_dir '$$job{last_chkpnt_lsf_id}'];
 	
 	if ( !defined('$$job{name}') )
 	{
@@ -784,11 +816,15 @@ sub restart_job
 	}
 	
 	# Submit to LSF
-	print STDERR "$brestart_cmd\n";
-	my @out = `$brestart_cmd`;
+	my @out = `$brestart_cmd 2>&1`;
 	if ( scalar @out!=1 || !($out[0]=~/^Job <(\d+)> is submitted/) )
 	{
-	    warn("Expected different output from brestart.\nThe brestart_command was:\n\t$brestart_cmd\nThe output was:\n", @out);
+	    warn(
+		"Expected different output from brestart.\n" .
+		"The brestart_command was:\n" .
+		"\t$brestart_cmd\n" .
+		"The output was: " . join('',@out) . "\n"
+		);
 	    # Example: Checkpoint log is not found or is corrupted. Job not submitted.
 	}
 	else 
@@ -812,7 +848,7 @@ sub restart_job
 	my $chkpnt_file = $$job{chkpnt_dir}."/jobstate.context";
 	my $cmd = "cr_restart -f $chkpnt_file";
 	my $job_name = $$job{name};
-	print STDERR "Attempting to restart job $id using cr_restart.\n";
+	warn("\tc  attempting to restart job $id using cr_restart.\n");
         run_array($jids_file, $job_name, $opts, $cmd, \@id);
     }
 }
