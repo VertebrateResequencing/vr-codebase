@@ -825,14 +825,18 @@ sub wait
 			warn(
 			    "Couldn't restart job $$status[$i]{id}, it will be respawned from the beginning.\n"
 			    );
-			# couldn't restart job, keep the element in @ids/@status so it will be respawned from start
+			# couldn't restart job, keep the element in @ids/@status so it will be submitted from start
 			next ELEMENT;
 		    }
 		}
-		# keep element
-		next ELEMENT;
+		else
+		{
+		    # must_run but no checkpoint, keep the element in the list so it will be submitted
+		    next ELEMENT;
+		}
             }
 	    
+	    # splice i-th element out so it won't get restarted
             splice(@ids, $i, 1);
             splice(@$status, $i, 1);
             $i--;
