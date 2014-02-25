@@ -28,10 +28,8 @@ use DateTime;
 use File::Spec;
 use Data::Dumper;
 
-#my %queue_limits_seconds = ( basement=>1e9, long=>2880*60, normal=>720*60, small=>30*60 );
-#my $chkpnt_minimum_period_minutes = 30;
-my %queue_limits_seconds = ( basement=>1*60*60, long=>1*60*60, normal=>1*60*60, small=>30*60 );
-my $chkpnt_minimum_period_minutes = 20;
+my %queue_limits_seconds = ( basement=>1e9, long=>2880*60, normal=>720*60, small=>30*60 );
+my $chkpnt_minimum_period_minutes = 10;
 my $default_memlimit_mb = 100;
 
 my %months = qw(Jan 1 Feb 2 Mar 3 Apr 4 May 5 Jun 6 Jul 7 Aug 8 Sep 9 Oct 10 Nov 11 Dec 12);
@@ -94,6 +92,10 @@ sub is_job_array_running
 	    {
 		$jobs[$j]{idle_factor} = $$info{$id}{idle_factor};
 	    }
+	    if ( exists($$info{$id}{runtime_limit_seconds}) )
+	    {
+		$jobs[$j]{runtime_limit_seconds} = $$info{$id}{runtime_limit_seconds};
+	    }
 	    if ( exists($$info{$id}{cpus}) )
 	    {
 		$jobs[$j]{cpus} = $$info{$id}{cpus};
@@ -130,10 +132,13 @@ sub parse_bjobs_l
   {
       my $output = `bjobs -l $jid 2>/dev/null`;
       if ( $? ) { sleep 5; next BJOBS; }
+      # quash carriage returns
+      $output =~ s/\r//gm;
       # roll up all continuation lines, signified by beginning with 21 spaces 
       # into a single (long) line beginning with the line before
-      $output =~ s/\r//gm;
       $output =~ s/\n\s{21}//gm;
+      # roll up *LIMIT line with the following line
+      $output =~ s/^( [A-Z]+LIMIT)\s*\n\s*(.*?)$/$1 $2/gm;
       # split bjobs -l output into separate entries for each job / job array element
       @job_output_sections = split /^[-]+[[:space:]]*$/m, $output; 
       if ( !scalar @job_output_sections ) 
@@ -247,6 +252,12 @@ sub parse_bjobs_l_section
             $$job{cpus} = $1;
         }
 
+        # RUNLIMIT 60.0 min of bc-22-4-06
+	if ( $line =~ /RUNLIMIT ([0-9.]+) min/ )
+	{
+	    $$job{runtime_limit_seconds} = $1 * 60;
+	}
+	
         # Tue Mar 19 13:58:23: Resource usage collected...
         if ( $line =~ /^\w+\s+(\w+)\s+(\d+) (\d+):(\d+):(\d+):\s+Resource usage collected/ ) 
         {
@@ -265,13 +276,13 @@ sub parse_bjobs_l_section
 	    elsif ( $line =~ /exit code 139/ )
 	    {
 		warn(
-		    "Job ($$job{lsf_id}) appears to have died while checkpointing"
+		    "\tc  job $$job{id} ($$job{lsf_id}) appears to have died while checkpointing"
 		    );
 	    }
 	    elsif ( $line =~ /exit code (\d+)/ ) 
 	    {
 		warn(
-		    "Job ($$job{lsf_id}) had unexpected error status while checkpointing (exit code $1)\n"
+		    "\tc  job $$job{id} ($$job{lsf_id}) had unexpected error status while checkpointing (exit code $1)\n"
 		    );
 	    }
 	}
@@ -334,16 +345,25 @@ sub check_job
         my $queue = $$job{queue};
 	my $cpus = 1;
 	if ( exists($$job{cpus}) ) { $cpus = $$job{cpus}; }
-        if ( exists($queue_limits_seconds{$queue}) && ( ( ($$job{cpu_time} / $cpus) > $queue_limits_seconds{$queue} ) || ( $$job{wall_time} > $queue_limits_seconds{$queue} ) ) )
+	my $runtime_limit_seconds = undef;
+	if ( exists($$job{runtime_limit_seconds}) )
+	{
+	    $runtime_limit_seconds = $$job{runtime_limit_seconds};
+	}
+	elsif ( exists($queue_limits_seconds{$queue}) )
+	{
+	    $runtime_limit_seconds = $queue_limits_seconds{$queue};
+	}
+        if ( defined($runtime_limit_seconds) && ( ( ($$job{cpu_time} / $cpus) > $runtime_limit_seconds ) || ( $$job{wall_time} > $runtime_limit_seconds ) ) )
         {
 	    warn(
-		"Job $$job{id} ($$job{lsf_id}) is currently running and has exceeded the $queue queue limit of $queue_limits_seconds{$queue} seconds (cpu time: $$job{cpu_time} wall time: $$job{wall_time})\n"
+		"\tc  job $$job{id} ($$job{lsf_id}) is currently running and has exceeded the runtime limit of $runtime_limit_seconds seconds (cpu time: $$job{cpu_time} wall time: $$job{wall_time})\n"
 		);
 	    # we have overrun either cpu time or wall time
             if ( exists($$job{chkpnt_dir}) )
             {
                 # we are using checkpointing and are over the queue time limit
-
+		
                 # process chkpnt.log to check if a recent checkpoint has been started
 		my $chkpnt_log_file = $$job{chkpnt_dir}."/chkpnt.log";
 		my @chkpnt_log_lines;
@@ -391,7 +411,7 @@ sub check_job
 		{
 		    # checkpoint in progress, allow it to finish (do nothing for now)
 		    warn(
-			"Running job $$job{id} ($$job{lsf_id}) is currently checkpointing, waiting for it to finish...\n"
+			"\tc  job $$job{id} ($$job{lsf_id}) is currently checkpointing, waiting for it to finish...\n"
 			);
 		}
 		elsif ( $last_end_i > $last_begin_i ) 
@@ -406,7 +426,7 @@ sub check_job
 		    } 
 		    else 
 		    {
-			confess("Have completed checkpoint for job $$job{id} ($$job{lsf_id}), but could not find timestamp [$timestamp_line]\n");
+			confess("Have completed checkpoint for job $$job{id} ($$job{lsf_id}), but could not find timestamp [$timestamp_line] in checkpoint log file ($chkpnt_log_file)\n");
 		    }
 		    my $chkpnt_context_file = $$job{chkpnt_dir}."/jobstate.context";
 		    my $chkpnt_context_mtime = undef;
@@ -417,13 +437,13 @@ sub check_job
 		    }
 		    else
 		    {
-			warn("Could not stat checkpoint context file $chkpnt_context_file, checkpoint probably failed\n");
+			warn("\tc  could not stat checkpoint context file $chkpnt_context_file, checkpoint probably failed\n");
 		    }
 		    if ( defined($chkpnt_context_mtime) && ( $chkpnt_context_mtime >= ( $chkpnt_start_time - 30 ) ) ) # allow 30 second drift between timestamp and log time
 		    {
 			# the latest checkpoint was successful, kill job so it can be restarted
 			warn(
-			    "Running job $$job{lsf_id} is over queue time limit but has a recent checkpoint.\n" .
+			    "\tc  job $$job{id} ($$job{lsf_id}) is over queue time limit but has a recent checkpoint.\n" .
 			    "Killing it so that it can be restarted.\n"
 			    );
 			my $cmd = "bkill -s KILL '$$job{lsf_id}'";
@@ -435,7 +455,7 @@ sub check_job
 		    {
 			# the latest checkpoint did not result in an updated jobstate.context
 			warn(
-			    "Job $$job{lsf_id} appears to have failed its latest checkpoint\n"
+			    "\tc  job $$job{id} ($$job{lsf_id}) appears to have failed its latest checkpoint, attempting checkpoint-and-kill now.\n"
 			    );
 			
 			# ask it to checkpoint-and-kill
@@ -448,30 +468,31 @@ sub check_job
 		else 
 		{
 		    # no checkpoints yet -- this is unexpected (perhaps the job is running with more cpus than expected?)
-		    confess( 
-			"\nA running job ($$job{lsf_id}) has run past the queue limit but has not yet attempted to checkpoint.\n" .
-			"(according to $chkpnt_log_file).\n" .
-			"You could try initiating a checkpoint manually using bchkpnt: bchkpnt '$$job{lsf_id}'\n\n" 
+		    warn( 
+			"\tc  job $$job{id} ($$job{lsf_id}) has run past the queue limit but has not yet attempted to checkpoint.\n" .
+			"\tc  This could be because you are using more CPUs than expected.\n" . 
+			"\tc  This job may soon be killed by LSF.\n" .
+			"\tc  You could try to save it by initiating a checkpoint manually using the command: bchkpnt '$$job{lsf_id}'\n" 
 			);
 		}
 	    }
 	    else # !exists($$job{chkpnt_dir})
 	    {
 		# use bswitch instead of checkpoint/restart, for some reason only after 1.3x the cpu time limit has gone
-		if ( $$job{cpu_time}*1.3 > $queue_limits_seconds{$queue} )
+		if ( exists($queue_limits_seconds{$queue}) && ( $$job{cpu_time}*1.3 > $queue_limits_seconds{$queue} ) )
 		{
 		    my $bswitch;
-		    QUEUE: for my $q (sort {$queue_limits_seconds{$a} <=> $queue_limits_seconds{$b}} keys %queue_limits_seconds)
-		    {
-			if ( $$job{cpu_time}*1.3 > $queue_limits_seconds{$q} ) { next; }
-			warn("Changing queue of the job $$job{lsf_id} from $$job{queue} to $q\n");
-			my $cmd = "bswitch $q '$$job{lsf_id}'";
-			print STDERR "calling $cmd\n";
-			my $out = `$cmd`;
-			print STDERR "output: [$out]\n";
-			$$job{queue} = $q;
-			last QUEUE;
-		    }
+		  QUEUE: for my $q (sort {$queue_limits_seconds{$a} <=> $queue_limits_seconds{$b}} keys %queue_limits_seconds)
+		  {
+		      if ( $$job{cpu_time}*1.3 > $queue_limits_seconds{$q} ) { next; }
+		      warn("\ts changing queue of the job $$job{lsf_id} from $$job{queue} to $q\n");
+		      my $cmd = "bswitch $q '$$job{lsf_id}'";
+		      print STDERR "calling $cmd\n";
+		      my $out = `$cmd`;
+		      print STDERR "output: [$out]\n";
+		      $$job{queue} = $q;
+		      last QUEUE;
+		  }
 		}
 	    }
         }
@@ -498,6 +519,21 @@ sub parse_output
             if ( $1 eq 'Exited' ) { $$out{status} = $Error; $$out{nfailures}++; }
             if ( $1 eq 'Done' ) { $$out{status} = $Done; $$out{nfailures} = 0; }
         }
+	# TERM_OWNER: job killed by owner.
+	if ( $line =~ /^TERM_OWNER:/ && $$out{nfailures} > 0 )
+	{
+	    $$out{nfailures}--;
+	}
+	# TERM_RUNLIMIT: job killed after reaching LSF run time limit.
+	if ( $line =~ /^TERM_RUNLIMIT:/ && $$out{nfailures} > 0 )
+	{
+	    $$out{nfailures}--;
+	}
+	# TERM_CHKPNT
+	if ( $line =~ /^TERM_CHKPNT/ && $$out{nfailures} > 0 )
+	{
+	    $$out{nfailures}--;
+	}
     }
     close($fh);
     return $out;
@@ -604,6 +640,10 @@ sub run_array
             $bsub_opts = sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $lmem,$mem_mb,$mem_mb; 
         }
     }
+    if ( !defined($$opts{runtime}) && defined($$opts{runtime_limit_seconds}) )
+    {
+	$$opts{runtime} = $$opts{runtime_limit_seconds};
+    }
     if ( !defined($$opts{queue}) ) 
     {            
         if ( !$$opts{_run_with_blcr} && defined($$opts{runtime}) ) 
@@ -627,6 +667,8 @@ sub run_array
     }
     if ( $$opts{_run_with_blcr} ) 
     {
+	my $runtime_limit_seconds = $queue_limits_seconds{$$opts{queue}};
+	if ( defined($$opts{runtime_limit_seconds}) ) { $runtime_limit_seconds = $$opts{runtime_limit_seconds}; }
 	if ( !defined($$opts{chkpnts_per_run}) ) 
 	{
 	    $$opts{chkpnts_per_run} = 1;
@@ -634,14 +676,15 @@ sub run_array
 	if ( !defined($$opts{chkpnt_time_s_per_mb}) )
 	{
             # estimated time to checkpoint: ~2.5 minutes per GB of RAM on lustre (scratch113), so 0.15 s/MB
-	    $$opts{chkpnt_time_s_per_mb} = 0.15;
+	    # but it is better to underestimate than overestimate - theoretical maximum is ~500MB/s, so 0.002s/MB
+	    $$opts{chkpnt_time_s_per_mb} = 0.002;
 	}
 	if ( !defined($$opts{chkpnt_period_minutes}) )
 	{
 	    my $chkpnts_per_run = int($$opts{chkpnts_per_run});
 	    do 
 	    {
-		$$opts{chkpnt_period_minutes} = ((($queue_limits_seconds{$$opts{queue}} - ($$opts{chkpnt_time_s_per_mb} * $mem_mb)) / $chkpnts_per_run) / 60);
+		$$opts{chkpnt_period_minutes} = ((($runtime_limit_seconds - ($$opts{chkpnt_time_s_per_mb} * $mem_mb)) / $chkpnts_per_run) / 60);
 		# reduce checkpoints per run and repeat if calculated checkpoint period is below the minimum
 		$chkpnts_per_run--;
 	    } while( ($$opts{chkpnt_period_minutes} < $chkpnt_minimum_period_minutes) && ($chkpnts_per_run > 0) );
@@ -649,6 +692,10 @@ sub run_array
 	    # if checkpoint period is still below minimum, just set to minimum
 	    if ( $$opts{chkpnt_period_minutes} < $chkpnt_minimum_period_minutes )
 	    {
+		warn(
+		    "Checkpoint period for job ($$opts{id}) of $$opts{chkpnt_period_minutes}m is less than the minimum of ${chkpnt_minimum_period_minutes}m.\n" .
+		    "Using the minimum.\n"
+		    );
 		$$opts{chkpnt_period_minutes} = $chkpnt_minimum_period_minutes;
 	    }
 	}
@@ -665,7 +712,8 @@ sub run_array
 	{
 	    $$opts{chkpnt_period_minutes} = int($$opts{chkpnt_period_minutes}); 
 	}
-        $bsub_opts .= " -k '$chkpnt_dir method=blcr $$opts{chkpnt_period_minutes}'";
+	my $runtime_limit_minutes = int($runtime_limit_seconds/60);
+        $bsub_opts .= " -k '$chkpnt_dir method=blcr $$opts{chkpnt_period_minutes}' -W $runtime_limit_minutes";
 	if ( ! ( $cmd =~ m/^\s*cr[_]/ )  )
 	{ 
 	    $cmd = "cr_run $cmd"; 
@@ -708,20 +756,10 @@ sub restart_job
     confess("RunnerLSF::restart_job called on job without id entry") unless exists($$job{id});
 
     my $id = $$job{id};
-    if ( $resources_changed > 0 )
+    my $restarted = 0;
+    if ( ! $resources_changed )
     {
-	# resource requirements have changed, submit using bsub and cr_restart
-	my @id;
-	push @id, $id;
-	my $chkpnt_file = $$job{chkpnt_dir}."/jobstate.context";
-	my $cmd = "cr_restart -f $chkpnt_file";
-	my $job_name = $$job{name};
-	print STDERR "Resource requirements have changed, calling run_array to restart job ($id) using cr_restart.\n";
-        run_array($jids_file, $job_name, $opts, $cmd, \@id);
-    }
-    else
-    {
-	# resource requirements have not changed, use brestart
+	# resource requirements have not changed, try using brestart
 	print STDERR "Using brestart to restart job ($id) as resource requirements have not changed.\n";
 	my $brestart_opts = "";
 	
@@ -749,16 +787,32 @@ sub restart_job
 	my @out = `$brestart_cmd`;
 	if ( scalar @out!=1 || !($out[0]=~/^Job <(\d+)> is submitted/) )
 	{
-	    confess("Expected different output from brestart.\nThe brestart_command was:\n\t$brestart_cmd\nThe output was:\n", @out);
+	    warn("Expected different output from brestart.\nThe brestart_command was:\n\t$brestart_cmd\nThe output was:\n", @out);
+	    # Example: Checkpoint log is not found or is corrupted. Job not submitted.
 	}
-	# Checkpoint log is not found or is corrupted. Job not submitted.
+	else 
+	{
+	    # Write down info about the submitted command
+	    my $jid = $1;
+	    print STDERR "Job name set to $$job{name}\n";
+	    open(my $jids_fh, '>>', $jids_file) or confess("$jids_file: $!");
+	    print $jids_fh join("\t", $jid, $$job{name} , $brestart_cmd)."\n";
+	    close $jids_fh;
+	    
+	    $restarted = 1;
+	}
+    }
     
-	# Write down info about the submitted command
-	my $jid = $1;
-	print STDERR "Job name set to $$job{name}\n";
-	open(my $jids_fh, '>>', $jids_file) or confess("$jids_file: $!");
-	print $jids_fh join("\t", $jid, $$job{name} , $brestart_cmd)."\n";
-	close $jids_fh;
+    if ( ! $restarted )
+    {
+	# brestart failed or resource requirements have changed, submit using bsub and cr_restart
+	my @id;
+	push @id, $id;
+	my $chkpnt_file = $$job{chkpnt_dir}."/jobstate.context";
+	my $cmd = "cr_restart -f $chkpnt_file";
+	my $job_name = $$job{name};
+	print STDERR "Attempting to restart job $id using cr_restart.\n";
+        run_array($jids_file, $job_name, $opts, $cmd, \@id);
     }
 }
 

@@ -823,10 +823,10 @@ sub wait
 		    if ( ! $ok )
 		    {
 			warn(
-			    "Couldn't restart job (".$$status[$i]{id}."), it will be respawned from the beginning.\n"
+			    "Couldn't restart job $$status[$i]{id}, it will be respawned from the beginning.\n"
 			    );
 			# couldn't restart job, keep the element in @ids/@status so it will be respawned from start
-                        next ELEMENT;
+			next ELEMENT;
 		    }
 		}
 		# keep element
