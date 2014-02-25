@@ -29,7 +29,7 @@ use File::Spec;
 use Data::Dumper;
 
 my %queue_limits_seconds = ( basement=>1e9, long=>2880*60, normal=>720*60, small=>30*60 );
-my $chkpnt_minimum_period_minutes = 10;
+my $chkpnt_minimum_period_minutes = 1;
 my $default_memlimit_mb = 100;
 
 my %months = qw(Jan 1 Feb 2 Mar 3 Apr 4 May 5 Jun 6 Jul 7 Aug 8 Sep 9 Oct 10 Nov 11 Dec 12);
