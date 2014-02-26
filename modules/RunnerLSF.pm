@@ -144,8 +144,7 @@ sub is_job_array_running
     {
 	my $unprocessed_lines = scalar(@jids) - $jidlines_processed;
 	warn(
-	    "\t   only needed to process $jidlines_processed jid file entries out of ".scalar(@jids)."\n" .
-	    "\t   you may be able to remove the first $unprocessed_lines lines from the jid file\n"
+	    "\t   only needed to process $jidlines_processed jid file entries out of ".scalar(@jids)." (skipped first $unprocessed_lines lines)\n" 
 	    );
     }
     my $ntodo = 0;
