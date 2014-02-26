@@ -502,7 +502,7 @@ sub check_job
 			{
 			    # allow it to finish (do nothing for now)
 			    warn(
-				"\tc  job $$job{id} ($$job{lsf_id}) is currently checkpointing (it has been ${chkpnt_elapsed_seconds}s so far), will wait for it to finish.\n"
+				"\tc  job $$job{id} ($$job{lsf_id}) is in the process of checkpointing (it has been ${chkpnt_elapsed_seconds}s so far), will wait for it to finish.\n"
 				);
 			}
 		    }
