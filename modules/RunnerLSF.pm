@@ -74,46 +74,79 @@ sub is_job_array_running
     }
     close $fh or confess("$jids_file: $!");
 
-    for (my $i=@jids-1; $i>=0; $i--)
+    my $jidlines_processed = 0;
+  JIDLINE: for (my $i=@jids-1; $i>=0; $i--)
+  {
+      $jidlines_processed++;
+      my $info = parse_bjobs_l($jids[$i]);
+      if ( !defined $info ) { next JIDLINE; }
+      for my $job (values %$info)
+      {
+	  check_job($job);
+      }
+    ELEMENT_ID: for (my $j=0; $j<@$ids; $j++)
     {
-        my $info = parse_bjobs_l($jids[$i]);
-        if ( !defined $info ) { next; }
-        for my $job (values %$info)
-        {
-            check_job($job);
-        }
-        for (my $j=0; $j<@$ids; $j++)
-        {
-            my $id = $$ids[$j];
-            if ( !exists($$info{$id}) ) { next; }
-	    # if we don't yet have_chkpnt for this job element, and we do have_chkpnt from this info
-	    if ( !exists($jobs[$j]{have_chkpnt}) && exists($$info{$id}{have_chkpnt}) ) 
-	    {
-		# copy all info needed for checkpoint restart from this (the latest) have_chkpnt info
-                $jobs[$j]{have_chkpnt} = $$info{$id}{have_chkpnt};
-                $jobs[$j]{last_chkpnt_lsf_id} = $$info{$id}{lsf_id};
-		$jobs[$j]{queue} = $$info{$id}{queue};
-		$jobs[$j]{mem_mb} = $$info{$id}{mem_mb};
-		$jobs[$j]{chkpnt_dir} = $$info{$id}{chkpnt_dir};
-		$jobs[$j]{name} = $$info{$id}{name};
-		$jobs[$j]{id} = $$info{$id}{id};
-	    }
-	    if ( exists($$info{$id}{idle_factor}) )
-	    {
-		$jobs[$j]{idle_factor} = $$info{$id}{idle_factor};
-	    }
-	    if ( exists($$info{$id}{runtime_limit_seconds}) )
-	    {
-		$jobs[$j]{runtime_limit_seconds} = $$info{$id}{runtime_limit_seconds};
-	    }
-	    if ( exists($$info{$id}{cpus}) )
-	    {
-		$jobs[$j]{cpus} = $$info{$id}{cpus};
-	    }
-            if ( $jobs[$j]{status} ne $No ) { next; }   # the job was submitted multiple times and already has a status
-            if ( $$info{$id}{status}==$Done ) { $jobs[$j]{status} = $Done; }
-            if ( $$info{$id}{status}==$Running ) { $jobs[$j]{status} = $Running; }
-        }
+	my $id = $$ids[$j];
+
+	if ( !exists($$info{$id}) ) { next ELEMENT_ID; }
+	# if we don't yet have_chkpnt for this job element, and we do have_chkpnt from this info
+	if ( !exists($jobs[$j]{have_chkpnt}) && exists($$info{$id}{have_chkpnt}) ) 
+	{
+	    # copy all info needed for checkpoint restart from this (the latest) have_chkpnt info
+	    $jobs[$j]{have_chkpnt} = $$info{$id}{have_chkpnt};
+	    $jobs[$j]{last_chkpnt_lsf_id} = $$info{$id}{lsf_id};
+	    $jobs[$j]{queue} = $$info{$id}{queue};
+	    $jobs[$j]{mem_mb} = $$info{$id}{mem_mb};
+	    $jobs[$j]{chkpnt_dir} = $$info{$id}{chkpnt_dir};
+	    $jobs[$j]{name} = $$info{$id}{name};
+	    $jobs[$j]{id} = $$info{$id}{id};
+	}
+	if ( exists($$info{$id}{idle_factor}) )
+	{
+	    $jobs[$j]{idle_factor} = $$info{$id}{idle_factor};
+	}
+	if ( exists($$info{$id}{runtime_limit_seconds}) )
+	{
+	    $jobs[$j]{runtime_limit_seconds} = $$info{$id}{runtime_limit_seconds};
+	}
+	if ( exists($$info{$id}{cpus}) )
+	{
+	    $jobs[$j]{cpus} = $$info{$id}{cpus};
+	}
+	if ( $jobs[$j]{status} ne $No ) { next ELEMENT_ID; }   # the job was submitted multiple times and already has a status
+	if ( $$info{$id}{status}==$Done ) { $jobs[$j]{status} = $Done; }
+	if ( $$info{$id}{status}==$Running ) { $jobs[$j]{status} = $Running; }
+	
+    }
+
+      # assume we don't need to process any more jid file lines
+      # we will set this to 1 below if an element is still missing needed information
+      my $continue_processing_jidlines = 0;
+    CHECK_ELEMENTS: for (my $j=0; $j<@$ids; $j++)
+    {
+	# check if we still need more information for this element
+	if ( ( $jobs[$j]{status} != $Done ) &&
+	     ( $jobs[$j]{status} != $Running ) &&
+	     ( !exists($jobs[$j]{have_chkpnt}) ) )
+	{
+	    # job is neither Done nor Running and does not have checkpoint information, keep searching through jid file entries
+	    $continue_processing_jidlines = 1;
+	}
+    }	
+      # if we don't need to continue processing jid file entries, don't
+      if ( ! $continue_processing_jidlines ) 
+      { 
+	  last JIDLINE; 
+      }
+    }
+    
+    if ($jidlines_processed < @jids) 
+    {
+	my $unprocessed_lines = scalar(@jids) - $jidlines_processed;
+	warn(
+	    "Only needed to process $jidlines_processed jid file entries out of ".scalar(@jids)."\n" .
+	    "You may be able to remove the first $unprocessed_lines lines from the jid file\n"
+	    );
     }
     my $ntodo = 0;
     for (my $i=0; $i<@$ids; $i++)
@@ -434,82 +467,85 @@ sub check_job
 		    return;
 		}
 		
-		# have a started checkpoint, get start time
-		my $timestamp_line = $chkpnt_log_lines[$last_begin_i+1];
-		my $chkpnt_start_time;
-		# Fri Feb 21 16:23:12 2014 : Echkpnt : main() : the LSB_ECHKPNT_METHOD = blcr
-		if ( $timestamp_line =~ m/^\w+\s+(\w+)\s+(\d+) (\d+):(\d+):(\d+)\s+(\d+)\s*:/ ) 
+		if ( $last_begin_i >= 0 )
 		{
-		    $chkpnt_start_time = DateTime->new(month=>$months{$1}, day=>$2, hour=>$3, minute=>$4, second=>$5, year=>$6)->epoch;
-		} 
-		else 
-		{
-		    confess("Have started checkpoint for job $$job{id} ($$job{lsf_id}), but could not find timestamp [$timestamp_line] in checkpoint log file ($chkpnt_log_file)\n");
-		}
-		
-		if ( $last_end_i < $last_begin_i ) # N.B. this relies on initial valie of last_end_i being -1
-		{
-		    # checkpoint in progress, check how long it has been in progress
-		    my $chkpnt_elapsed_seconds = $$job{cur_time} - $chkpnt_start_time;
-		    my $max_chkpnt_time_seconds = $max_chkpnt_time_s_per_mb * $$job{mem_mb};
-		    if ( $chkpnt_elapsed_seconds > $max_chkpnt_time_seconds )
+		    # have a started checkpoint, get start time
+		    my $timestamp_line = $chkpnt_log_lines[$last_begin_i+1];
+		    my $chkpnt_start_time;
+		    # Fri Feb 21 16:23:12 2014 : Echkpnt : main() : the LSB_ECHKPNT_METHOD = blcr
+		    if ( $timestamp_line =~ m/^\w+\s+(\w+)\s+(\d+) (\d+):(\d+):(\d+)\s+(\d+)\s*:/ ) 
 		    {
-			warn(
-			    "\tc  job $$job{id} ($$job{lsf_id}) has been checkpointing for a long time ($chkpnt_elapsed_seconds s) and will likely never finish.\n" .
-			    "\tc  killing it so that it can be restarted.\n"
-			    );
-			kill_job($job);
-		    }
+			$chkpnt_start_time = DateTime->new(month=>$months{$1}, day=>$2, hour=>$3, minute=>$4, second=>$5, year=>$6)->epoch;
+		    } 
 		    else 
 		    {
-			# allow it to finish (do nothing for now)
-			warn(
-			    "\tc  job $$job{id} ($$job{lsf_id}) is currently checkpointing (it has been $chkpnt_elapsed_seconds s so far), waiting for it to finish...\n"
-			    );
+			confess("Have started checkpoint for job $$job{id} ($$job{lsf_id}), but could not find timestamp [$timestamp_line] in checkpoint log file ($chkpnt_log_file)\n");
 		    }
-		}
-		elsif ( $last_end_i > $last_begin_i ) 
-		{
-		    my $chkpnt_context_file = $$job{chkpnt_dir}."/jobstate.context";
-		    my $chkpnt_context_mtime = undef;
-		    if ( -e $chkpnt_context_file && -s $chkpnt_context_file && (my @st = stat($chkpnt_context_file)) )
+		    
+		    if ( $last_end_i < $last_begin_i ) # N.B. this relies on initial valie of last_end_i being -1
 		    {
-			my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = @st;
-			$chkpnt_context_mtime = $mtime;
-		    }
-		    else
-		    {
-			warn("\tc  could not stat checkpoint context file $chkpnt_context_file, checkpoint probably failed\n");
-		    }
-
-		    if ( defined($chkpnt_context_mtime) && ( $chkpnt_context_mtime >= ( $chkpnt_start_time - 30 ) ) ) # allow 30 second drift between timestamp and log time
-		    {
-			# the latest checkpoint was successful, kill job so it can be restarted
-			warn(
-			    "\tc  job $$job{id} ($$job{lsf_id}) is over queue time limit but has a recent checkpoint.\n" .
-			    "\tc  killing it so that it can be restarted.\n"
-			    );
-			kill_job($job);
-		    }
-		    else 
-		    {
-			# the latest checkpoint did not result in an updated jobstate.context
-			warn(
-			    "\tc  job $$job{id} ($$job{lsf_id}) appears to have failed its latest checkpoint, attempting checkpoint-and-kill now.\n"
-			    );
-			
-			# ask it to checkpoint-and-kill
-			my $bchkpnt_cmd = "bchkpnt -k '$$job{lsf_id}'";
-			my @out = `$bchkpnt_cmd`;
-			# Job <1878095[1]> is being checkpointed
-			if ( scalar @out!=1 || !($out[0]=~/^Job <([\d\[\]]+)> is being checkpointed/) )
+			# checkpoint in progress, check how long it has been in progress
+			my $chkpnt_elapsed_seconds = $$job{cur_time} - $chkpnt_start_time;
+			my $max_chkpnt_time_seconds = $max_chkpnt_time_s_per_mb * $$job{mem_mb};
+			if ( $chkpnt_elapsed_seconds > $max_chkpnt_time_seconds )
 			{
 			    warn(
-				"Expected different output from bchkpnt.\n" .
-				"The bchkpnt command was:\n" .
-				"\t$bchkpnt_cmd\n" .
-				"The output was: " . join('',@out) . "\n"
+				"\tc  job $$job{id} ($$job{lsf_id}) has been checkpointing for a long time (${chkpnt_elapsed_seconds}s) and will likely never finish.\n" .
+				"\tc  killing it so that it can be restarted.\n"
 				);
+			    kill_job($job);
+			}
+			else 
+			{
+			    # allow it to finish (do nothing for now)
+			    warn(
+				"\tc  job $$job{id} ($$job{lsf_id}) is currently checkpointing (it has been ${chkpnt_elapsed_seconds}s so far), waiting for it to finish...\n"
+				);
+			}
+		    }
+		    elsif ( $last_end_i > $last_begin_i ) 
+		    {
+			my $chkpnt_context_file = $$job{chkpnt_dir}."/jobstate.context";
+			my $chkpnt_context_mtime = undef;
+			if ( -e $chkpnt_context_file && -s $chkpnt_context_file && (my @st = stat($chkpnt_context_file)) )
+			{
+			    my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = @st;
+			    $chkpnt_context_mtime = $mtime;
+			}
+			else
+			{
+			    warn("\tc  could not stat checkpoint context file $chkpnt_context_file, checkpoint probably failed\n");
+			}
+			
+			if ( defined($chkpnt_context_mtime) && ( $chkpnt_context_mtime >= ( $chkpnt_start_time - 30 ) ) ) # allow 30 second drift between timestamp and log time
+			{
+			    # the latest checkpoint was successful, kill job so it can be restarted
+			    warn(
+				"\tc  job $$job{id} ($$job{lsf_id}) is over queue time limit but has a recent checkpoint.\n" .
+				"\tc  killing it so that it can be restarted.\n"
+				);
+			    kill_job($job);
+			}
+			else 
+			{
+			    # the latest checkpoint did not result in an updated jobstate.context
+			    warn(
+				"\tc  job $$job{id} ($$job{lsf_id}) appears to have failed its latest checkpoint, attempting checkpoint-and-kill now.\n"
+				);
+			    
+			    # ask it to checkpoint-and-kill
+			    my $bchkpnt_cmd = "bchkpnt -k '$$job{lsf_id}'";
+			    my @out = `$bchkpnt_cmd`;
+			    # Job <1878095[1]> is being checkpointed
+			    if ( scalar @out!=1 || !($out[0]=~/^Job <([\d\[\]]+)> is being checkpointed/) )
+			    {
+				warn(
+				    "Expected different output from bchkpnt.\n" .
+				    "The bchkpnt command was:\n" .
+				    "\t$bchkpnt_cmd\n" .
+				    "The output was: " . join('',@out) . "\n"
+				    );
+			    }
 			}
 		    }
 		}
