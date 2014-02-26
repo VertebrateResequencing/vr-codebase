@@ -350,7 +350,7 @@ sub parse_bjobs_l_section
             if ( !exists($$job{cpu_time}) or $$job{cpu_time} < $1 ) { $$job{cpu_time} = $1; }
         }
 	
-        if ( $line =~ /IDLE_FACTOR.*:\s*([0-9.]+)/ ) 
+        if ( $line =~ /IDLE_FACTOR.*?:\s*([0-9.]+)/ ) 
         { 
             # IDLE_FACTOR(cputime/runtime):   2.53
 	    $$job{idle_factor} = $1; 
@@ -534,18 +534,7 @@ sub check_job
 				);
 			    
 			    # ask it to checkpoint-and-kill
-			    my $bchkpnt_cmd = "bchkpnt -k '$$job{lsf_id}'";
-			    my @out = `$bchkpnt_cmd`;
-			    # Job <1878095[1]> is being checkpointed
-			    if ( scalar @out!=1 || !($out[0]=~/^Job <([\d\[\]]+)> is being checkpointed/) )
-			    {
-				warn(
-				    "Expected different output from bchkpnt.\n" .
-				    "The bchkpnt command was:\n" .
-				    "\t$bchkpnt_cmd\n" .
-				    "The output was: " . join('',@out) . "\n"
-				    );
-			    }
+			    checkpoint_job($job, 1);
 			}
 		    }
 		}
@@ -553,11 +542,27 @@ sub check_job
 		{
 		    # no checkpoints yet -- this is unexpected (perhaps the job is running with more cpus than expected?)
 		    warn( 
-			"\tc  job $$job{id} ($$job{lsf_id}) has run past the queue limit but has not yet attempted to checkpoint.\n" .
-			"\tc  This could be because you are using more CPUs than expected.\n" . 
-			"\tc  This job may soon be killed by LSF.\n" .
-			"\tc  You could try to save it by initiating a checkpoint manually using the command: bchkpnt '$$job{lsf_id}'\n" 
+			"\tc  job $$job{id} ($$job{lsf_id}) has run past the limit but has not yet attempted to checkpoint.\n" 
 			);
+		    if ( exists($$job{idle_factor}) && $$job{idle_factor} > 1)
+		    {
+			warn( 
+			    "\tc  this may be because the job is using more CPUs than expected (idle factor: $$job{idle_factor}, ncpus: $cpus).\n" 
+			    );
+		    }
+		    if ( exists($queue_limits_seconds{$queue}) && ( (( $$job{cpu_time} / $cpus) > $queue_limits_seconds{$queue} ) || ( $$job{wall_time} > $queue_limits_seconds{$queue} ) ))
+		    {
+			warn(
+			    "\tc  job $$job{id} is over the $queue queue run limit and may soon be killed by LSF, attempting checkpoint-and-kill now.\n" 
+			    );
+			# ask it to checkpoint-and-kill
+			checkpoint_job($job, 1);
+		    }
+		    else
+		    {
+			# not actually over the queue limit yet, only our own limit
+			checkpoint_job($job);
+		    }
 		}
 	    }
 	    else # !exists($$job{chkpnt_dir})
@@ -598,6 +603,27 @@ sub kill_job
 	    "Expected different output from bkill.\n" .
 	    "The bkill command was:\n" .
 	    "\t$bkill_cmd\n" .
+	    "The output was: " . join('',@out) . "\n"
+	    );
+    }
+}
+
+sub checkpoint_job {
+    my ($job, $kill) = @_;
+    
+    if ( ! defined($kill) ) {$kill = 0;}
+    my $bchkpnt_opts = "";
+    if ( $kill ) { $bchkpnt_opts = "-k"; }
+    
+    my $bchkpnt_cmd = "bchkpnt $bchkpnt_opts '$$job{lsf_id}'";
+    my @out = `$bchkpnt_cmd`;
+    # Job <1878095[1]> is being checkpointed
+    if ( scalar @out!=1 || !($out[0]=~/^Job <([\d\[\]]+)> is being checkpointed/) )
+    {
+	warn(
+	    "Expected different output from bchkpnt.\n" .
+	    "The bchkpnt command was:\n" .
+	    "\t$bchkpnt_cmd\n" .
 	    "The output was: " . join('',@out) . "\n"
 	    );
     }
