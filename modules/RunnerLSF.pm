@@ -144,8 +144,8 @@ sub is_job_array_running
     {
 	my $unprocessed_lines = scalar(@jids) - $jidlines_processed;
 	warn(
-	    "Only needed to process $jidlines_processed jid file entries out of ".scalar(@jids)."\n" .
-	    "You may be able to remove the first $unprocessed_lines lines from the jid file\n"
+	    "\t   only needed to process $jidlines_processed jid file entries out of ".scalar(@jids)."\n" .
+	    "\t   you may be able to remove the first $unprocessed_lines lines from the jid file\n"
 	    );
     }
     my $ntodo = 0;
@@ -525,8 +525,7 @@ sub check_job
 			{
 			    # the latest checkpoint was successful, kill job so it can be restarted
 			    warn(
-				"\tc  job $$job{id} ($$job{lsf_id}) is over queue time limit but has a recent checkpoint.\n" .
-				"\tc  killing it so that it can be restarted.\n"
+				"\tc  job $$job{id} ($$job{lsf_id}) is over queue time limit but has a recent checkpoint: killing it so that it can be restarted.\n"
 				);
 			    kill_job($job);
 			}
@@ -551,7 +550,7 @@ sub check_job
 		    if ( exists($$job{idle_factor}) && $$job{idle_factor} > 1)
 		    {
 			warn( 
-			    "\tc  this may be because the job is using more CPUs than expected (idle factor: $$job{idle_factor}, ncpus: $cpus).\n" 
+			    "\tc  this may be because job $$job{id} is using more CPUs than expected (idle factor: $$job{idle_factor}, ncpus: $cpus).\n" 
 			    );
 		    }
 		    if ( exists($queue_limits_seconds{$queue}) && ( (( $$job{cpu_time} / $cpus) > $queue_limits_seconds{$queue} ) || ( $$job{wall_time} > $queue_limits_seconds{$queue} ) ))
@@ -850,7 +849,7 @@ sub run_array
     my $bsub_cmd  = qq[bsub -J '${job_name}[$bsub_ids]' -e $job_name.\%I.e -o $job_name.\%I.o $bsub_opts '$cmd'];
 
     # Submit to LSF
-    print STDERR "$bsub_cmd\n";
+    print STDERR "\t   $bsub_cmd\n";
     my @out = `$bsub_cmd 2>&1`;
     if ( scalar @out!=1 || !($out[0]=~/^Job <(\d+)> is submitted/) )
     {
