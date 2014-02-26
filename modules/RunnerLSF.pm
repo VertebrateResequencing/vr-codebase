@@ -174,7 +174,11 @@ sub parse_bjobs_l
   BJOBS: for (my $i=0; $i<3; $i++)
   {
       my $output = `bjobs -l $jid 2>/dev/null`;
-      if ( $? ) { sleep 5; next BJOBS; }
+      if ( $? ) { 
+	  warn("bjobs -l $jid failed, trying again in 5 sec...\n");
+	  sleep 5; 
+	  next BJOBS; 
+      }
       # quash carriage returns
       $output =~ s/\r//gm;
       # roll up all continuation lines, signified by beginning with 21 spaces 
@@ -499,7 +503,7 @@ sub check_job
 			{
 			    # allow it to finish (do nothing for now)
 			    warn(
-				"\tc  job $$job{id} ($$job{lsf_id}) is currently checkpointing (it has been ${chkpnt_elapsed_seconds}s so far), waiting for it to finish...\n"
+				"\tc  job $$job{id} ($$job{lsf_id}) is currently checkpointing (it has been ${chkpnt_elapsed_seconds}s so far), will wait for it to finish.\n"
 				);
 			}
 		    }
