@@ -742,39 +742,40 @@ sub wait
             { 
 		if ( exists($$status[$i]{have_chkpnt}) && exists($$status[$i]{last_chkpnt_lsf_id}) )
 		{
-		    $self->warn("\nThe job ($ids[$i]) is not running but has a checkpoint ($$status[$i]{last_chkpnt_lsf_id})\n\n");
+		    $self->warn("\tc  job ($ids[$i]) is not running but has a checkpoint ($$status[$i]{last_chkpnt_lsf_id})\n");
 		}
 		else
 		{
-		    $self->warn("\nThe job ($ids[$i]) is not running and not checkpointed so it will need to re-run from scratch\n\n");
-		} 
-		my $nfailures = $$status[$i]{nfailures};
-		if ( $nfailures > abs($$self{_nretries}) )
-		{
-		    if ( $$self{_nretries} < 0 )
+		    $self->warn("\tc  job ($ids[$i]) is not running and not checkpointed so it will need to re-run from scratch\n");
+
+		    my $nfailures = $$status[$i]{nfailures};
+		    if ( $nfailures > abs($$self{_nretries}) )
 		    {
-			my $sfile = "$wfile.$ids[$i].s";
-			$self->warn("\nThe job failed repeatedly (${nfailures}x) and +retries is negative, skipping: $wfile.$ids[$i].[eos]\n\n");
-			system("touch $sfile");
-			if ( $? ) { $self->throw("The command exited with a non-zero status $?: touch $sfile\n"); }
-			$must_run = 0;
+			if ( $$self{_nretries} < 0 )
+			{
+			    my $sfile = "$wfile.$ids[$i].s";
+			    $self->warn("\tc  job ($ids[$i]) failed repeatedly (${nfailures}x) and +retries is negative, skipping: $wfile.$ids[$i].[eos]\n\n");
+			    system("touch $sfile");
+			    if ( $? ) { $self->throw("The command exited with a non-zero status $?: touch $sfile\n"); }
+			    $must_run = 0;
+			}
+			else
+			{
+			    my $msg = 
+				"The job failed repeatedly, ${nfailures}x: $wfile.$ids[$i].[eo]\n" .
+				"(Remove $jobs_id_file to clean the status, increase +retries or run with negative value of +retries to skip this task.)\n";
+			    
+			    $self->_send_email('failed', "The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
+			    $self->throw($msg);
+			}
 		    }
-		    else
+		    elsif ( !$warned )
 		    {
-			my $msg = 
-			    "The job failed repeatedly, ${nfailures}x: $wfile.$ids[$i].[eo]\n" .
-			    "(Remove $jobs_id_file to clean the status, increase +retries or run with negative value of +retries to skip this task.)\n";
-			
-			$self->_send_email('failed', "The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
-			$self->throw($msg);
+			$self->warn("Running again, the previous attempt failed: $wfile.$ids[$i].[eo]\n\n");
+			$warned = 1;
 		    }
 		}
-		elsif ( !$warned )
-		{
-		    $self->warn("Running again, the previous attempt failed: $wfile.$ids[$i].[eo]\n\n");
-		    $warned = 1;
-		}
-		
+
 		# Increase memory limits if necessary: by a set minimum or by a percentage, whichever is greater
 		my %limits = $farm->can('past_limits')->($ids[$i],$wfile);
 		if ( exists($limits{MEMLIMIT}) )
@@ -814,7 +815,7 @@ sub wait
 		if ( exists($$status[$i]{have_chkpnt}) )
 		{
 		    my $ok;
-		    $self->warn("Restarting job\n\n");
+		    $self->warn("\tc  restarting job\n");
 		    eval 
 		    {
 		 	$farm->can('restart_job')->($jobs_id_file,$$status[$i],$$self{_farm_options},$resources_changed);
@@ -823,7 +824,7 @@ sub wait
 		    if ( ! $ok )
 		    {
 			warn(
-			    "Couldn't restart job $$status[$i]{id}, it will be respawned from the beginning.\n"
+			    "\tc  couldn't restart job $$status[$i]{id}, it will be respawned from the beginning.\n"
 			    );
 			# couldn't restart job, keep the element in @ids/@status so it will be submitted from start
 			next ELEMENT;

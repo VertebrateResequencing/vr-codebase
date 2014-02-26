@@ -28,9 +28,19 @@ use DateTime;
 use File::Spec;
 use Data::Dumper;
 
+# TODO: all of these should be farm options that can be overridden in config
 my %queue_limits_seconds = ( basement=>1e9, long=>2880*60, normal=>720*60, small=>30*60 );
 my $chkpnt_minimum_period_minutes = 1;
 my $default_memlimit_mb = 100;
+
+# estimated (minimum) time to checkpoint: ~2.5 minutes per GB of RAM on lustre (scratch113), so 0.15 s/MB
+# but it is better to underestimate than overestimate - theoretical maximum is ~500MB/s, so 0.002s/MB
+my $min_chkpnt_time_s_per_mb = 0.002;
+
+# maximum allowed time to checkpoint
+# lustre can sustain ~10+ GB/s, so 0.0001 s/MB
+# loaded by ~10000 jobs, that would be 1 s/MB
+my $max_chkpnt_time_s_per_mb = 1;
 
 my %months = qw(Jan 1 Feb 2 Mar 3 Apr 4 May 5 Jun 6 Jul 7 Aug 8 Sep 9 Oct 10 Nov 11 Dec 12);
 
@@ -70,7 +80,7 @@ sub is_job_array_running
         if ( !defined $info ) { next; }
         for my $job (values %$info)
         {
-            check_job($job, $jids_file);
+            check_job($job);
         }
         for (my $j=0; $j<@$ids; $j++)
         {
@@ -263,7 +273,8 @@ sub parse_bjobs_l_section
         if ( $line =~ /^\w+\s+(\w+)\s+(\d+) (\d+):(\d+):(\d+):\s+Resource usage collected/ ) 
         {
             if ( !exists($$job{started}) ) { confess("No wall time for job $$job{id}??", $line); }
-            my $wall_time = DateTime->new(month=>$months{$1}, day=>$2, hour=>$3, minute=>$4, year=>$year)->epoch - $$job{started};
+	    $$job{cur_time} = DateTime->new(month=>$months{$1}, day=>$2, hour=>$3, minute=>$4, year=>$year)->epoch;
+            my $wall_time = $$job{cur_time} - $$job{started};
             if ( !exists($$job{wall_time}) ) { $$job{wall_time} = $wall_time; }
         }
 
@@ -396,6 +407,7 @@ sub check_job
 		# wind back from last line looking for last "begin to checkpoint" and "end to checkpoint" lines
 		my $last_begin_i = -1;
 		my $last_end_i = -1;
+		my $chkpnt_fail_count = 0;
 		for ( my $i=@chkpnt_log_lines-1; $i>=0; $i-- )
 		{
 		    if ( $last_begin_i == -1 && $chkpnt_log_lines[$i] =~ m/^#+\s+begin.*checkpoint\s+#+\s*$/i ) 
@@ -406,29 +418,58 @@ sub check_job
 		    {
 			$last_end_i = $i;
 		    }
+		    if ( $chkpnt_log_lines[$i] =~ m/echkpnt[.]blcr fail/ )
+		    {
+			$chkpnt_fail_count++;
+		    }
 		}
 
+		if ( $chkpnt_fail_count >= 3 )
+		{
+		    warn(
+			"\tc  job $$job{id} ($$job{lsf_id}) has failed to checkpoint $chkpnt_fail_count times.\n" .
+			"\tc  killing it so that it can be restarted.\n"
+			);
+		    kill_job($job);
+		    return;
+		}
+		
+		# have a started checkpoint, get start time
+		my $timestamp_line = $chkpnt_log_lines[$last_begin_i+1];
+		my $chkpnt_start_time;
+		# Fri Feb 21 16:23:12 2014 : Echkpnt : main() : the LSB_ECHKPNT_METHOD = blcr
+		if ( $timestamp_line =~ m/^\w+\s+(\w+)\s+(\d+) (\d+):(\d+):(\d+)\s+(\d+)\s*:/ ) 
+		{
+		    $chkpnt_start_time = DateTime->new(month=>$months{$1}, day=>$2, hour=>$3, minute=>$4, second=>$5, year=>$6)->epoch;
+		} 
+		else 
+		{
+		    confess("Have started checkpoint for job $$job{id} ($$job{lsf_id}), but could not find timestamp [$timestamp_line] in checkpoint log file ($chkpnt_log_file)\n");
+		}
+		
 		if ( $last_end_i < $last_begin_i ) # N.B. this relies on initial valie of last_end_i being -1
 		{
-		    # checkpoint in progress, allow it to finish (do nothing for now)
-		    warn(
-			"\tc  job $$job{id} ($$job{lsf_id}) is currently checkpointing, waiting for it to finish...\n"
-			);
+		    # checkpoint in progress, check how long it has been in progress
+		    my $chkpnt_elapsed_seconds = $$job{cur_time} - $chkpnt_start_time;
+		    my $max_chkpnt_time_seconds = $max_chkpnt_time_s_per_mb * $$job{mem_mb};
+		    if ( $chkpnt_elapsed_seconds > $max_chkpnt_time_seconds )
+		    {
+			warn(
+			    "\tc  job $$job{id} ($$job{lsf_id}) has been checkpointing for a long time ($chkpnt_elapsed_seconds s) and will likely never finish.\n" .
+			    "\tc  killing it so that it can be restarted.\n"
+			    );
+			kill_job($job);
+		    }
+		    else 
+		    {
+			# allow it to finish (do nothing for now)
+			warn(
+			    "\tc  job $$job{id} ($$job{lsf_id}) is currently checkpointing (it has been $chkpnt_elapsed_seconds s so far), waiting for it to finish...\n"
+			    );
+		    }
 		}
 		elsif ( $last_end_i > $last_begin_i ) 
 		{
-		    # have a completed checkpoint, see if it was successful
-		    my $timestamp_line = $chkpnt_log_lines[$last_begin_i+1];
-		    my $chkpnt_start_time;
-		    # Fri Feb 21 16:23:12 2014 : Echkpnt : main() : the LSB_ECHKPNT_METHOD = blcr
-		    if ( $timestamp_line =~ m/^\w+\s+(\w+)\s+(\d+) (\d+):(\d+):(\d+)\s+(\d+)\s*:/ ) 
-		    {
-			$chkpnt_start_time = DateTime->new(month=>$months{$1}, day=>$2, hour=>$3, minute=>$4, second=>$5, year=>$6)->epoch;
-		    } 
-		    else 
-		    {
-			confess("Have completed checkpoint for job $$job{id} ($$job{lsf_id}), but could not find timestamp [$timestamp_line] in checkpoint log file ($chkpnt_log_file)\n");
-		    }
 		    my $chkpnt_context_file = $$job{chkpnt_dir}."/jobstate.context";
 		    my $chkpnt_context_mtime = undef;
 		    if ( -e $chkpnt_context_file && -s $chkpnt_context_file && (my @st = stat($chkpnt_context_file)) )
@@ -440,6 +481,7 @@ sub check_job
 		    {
 			warn("\tc  could not stat checkpoint context file $chkpnt_context_file, checkpoint probably failed\n");
 		    }
+
 		    if ( defined($chkpnt_context_mtime) && ( $chkpnt_context_mtime >= ( $chkpnt_start_time - 30 ) ) ) # allow 30 second drift between timestamp and log time
 		    {
 			# the latest checkpoint was successful, kill job so it can be restarted
@@ -447,19 +489,7 @@ sub check_job
 			    "\tc  job $$job{id} ($$job{lsf_id}) is over queue time limit but has a recent checkpoint.\n" .
 			    "\tc  killing it so that it can be restarted.\n"
 			    );
-			my $bkill_cmd = "bkill -s KILL '$$job{lsf_id}'";
-			my @out = `$bkill_cmd`;
-                        # Job <1878080> is being terminated
-                        # Job <1878081[1]> is being terminated
-			if ( scalar @out!=1 || !($out[0]=~/^Job <([\d\[\]]+)> is being terminated/) )
-			{
-			    warn(
-				"Expected different output from bkill.\n" .
-				"The bkill command was:\n" .
-				"\t$bkill_cmd\n" .
-				"The output was: " . join('',@out) . "\n"
-				);
-			}
+			kill_job($job);
 		    }
 		    else 
 		    {
@@ -512,11 +542,30 @@ sub check_job
 		      last QUEUE;
 		  }
 		}
-	    }
-        }
-    }
+	    } # not using checkpointing
+        } # over time
+    } # running
+    return;
 }
 
+sub kill_job
+{
+    my ($job) = @_;
+
+    my $bkill_cmd = "bkill -s KILL '$$job{lsf_id}'";
+    my @out = `$bkill_cmd`;
+    # Job <1878080> is being terminated
+    # Job <1878081[1]> is being terminated
+    if ( scalar @out!=1 || !($out[0]=~/^Job <([\d\[\]]+)> is being terminated/) )
+    {
+	warn(
+	    "Expected different output from bkill.\n" .
+	    "The bkill command was:\n" .
+	    "\t$bkill_cmd\n" .
+	    "The output was: " . join('',@out) . "\n"
+	    );
+    }
+}
 
 sub parse_output
 {
@@ -691,18 +740,12 @@ sub run_array
 	{
 	    $$opts{chkpnts_per_run} = 1;
 	}
-	if ( !defined($$opts{chkpnt_time_s_per_mb}) )
-	{
-            # estimated time to checkpoint: ~2.5 minutes per GB of RAM on lustre (scratch113), so 0.15 s/MB
-	    # but it is better to underestimate than overestimate - theoretical maximum is ~500MB/s, so 0.002s/MB
-	    $$opts{chkpnt_time_s_per_mb} = 0.002;
-	}
 	if ( !defined($$opts{chkpnt_period_minutes}) )
 	{
 	    my $chkpnts_per_run = int($$opts{chkpnts_per_run});
 	    do 
 	    {
-		$$opts{chkpnt_period_minutes} = ((($runtime_limit_seconds - ($$opts{chkpnt_time_s_per_mb} * $mem_mb)) / $chkpnts_per_run) / 60);
+		$$opts{chkpnt_period_minutes} = ((($runtime_limit_seconds - ($min_chkpnt_time_s_per_mb * $mem_mb)) / $chkpnts_per_run) / 60);
 		# reduce checkpoints per run and repeat if calculated checkpoint period is below the minimum
 		$chkpnts_per_run--;
 	    } while( ($$opts{chkpnt_period_minutes} < $chkpnt_minimum_period_minutes) && ($chkpnts_per_run > 0) );
@@ -784,61 +827,62 @@ sub restart_job
 
     my $id = $$job{id};
     my $restarted = 0;
-    if ( $resources_changed )
-    {
-	warn("\tc  resource requirements have changed for job ($id)\n");
-    }
-    else 
-    {
-	# resource requirements have not changed, try using brestart
-	warn("\tc  using brestart to restart job ($id) as resource requirements have not changed.\n");
-	my $brestart_opts = "";
+### Commenting out brestart option as it seems to frequently produce un-checkpointable jobs after restart
+    # if ( $resources_changed )
+    # {
+    # 	warn("\tc  resource requirements have changed for job ($id)\n");
+    # }
+    # else 
+    # {
+    # 	# resource requirements have not changed, try using brestart
+    # 	warn("\tc  using brestart to restart job ($id) as resource requirements have not changed.\n");
+    # 	my $brestart_opts = "";
 	
-	if ( defined($$job{queue}) )
-	{
-	    $brestart_opts .= "-q $$job{queue} ";
-	}
+    # 	if ( defined($$job{queue}) )
+    # 	{
+    # 	    $brestart_opts .= "-q $$job{queue} ";
+    # 	}
 	
-	if ( defined($$job{mem_mb}) )
-	{
-	    my $units = get_lsf_limits_unit();
-	    my $lmem = $units eq 'kB' ? ($$job{mem_mb}*1000) : $$job{mem_mb};
-	    $brestart_opts .= "-M $lmem ";
-	}
-	my @chkpnt_lsf_dir_comps = File::Spec->splitdir($$job{chkpnt_dir});
-	pop @chkpnt_lsf_dir_comps;
-	my $chkpnt_lsf_dir = File::Spec->catdir(@chkpnt_lsf_dir_comps);
-	my $brestart_cmd = qq[brestart $brestart_opts $chkpnt_lsf_dir '$$job{last_chkpnt_lsf_id}'];
+    # 	if ( defined($$job{mem_mb}) )
+    # 	{
+    # 	    my $units = get_lsf_limits_unit();
+    # 	    my $lmem = $units eq 'kB' ? ($$job{mem_mb}*1000) : $$job{mem_mb};
+    # 	    $brestart_opts .= "-M $lmem ";
+    # 	}
+    # 	my @chkpnt_lsf_dir_comps = File::Spec->splitdir($$job{chkpnt_dir});
+    # 	pop @chkpnt_lsf_dir_comps;
+    # 	my $chkpnt_lsf_dir = File::Spec->catdir(@chkpnt_lsf_dir_comps);
+    # 	my $brestart_cmd = qq[brestart $brestart_opts $chkpnt_lsf_dir '$$job{last_chkpnt_lsf_id}'];
 	
-	if ( !defined('$$job{name}') )
-	{
-	    confess("Job name not defined for $id ($$job{last_chkpnt_lsf_id})");
-	}
+    # 	if ( !defined('$$job{name}') )
+    # 	{
+    # 	    confess("Job name not defined for $id ($$job{last_chkpnt_lsf_id})");
+    # 	}
 	
-	# Submit to LSF
-	my @out = `$brestart_cmd 2>&1`;
-	if ( scalar @out!=1 || !($out[0]=~/^Job <(\d+)> is submitted/) )
-	{
-	    warn(
-		"Expected different output from brestart.\n" .
-		"The brestart_command was:\n" .
-		"\t$brestart_cmd\n" .
-		"The output was: " . join('',@out) . "\n"
-		);
-	    # Example: Checkpoint log is not found or is corrupted. Job not submitted.
-	}
-	else 
-	{
-	    # Write down info about the submitted command
-	    my $jid = $1;
-	    print STDERR "Job name set to $$job{name}\n";
-	    open(my $jids_fh, '>>', $jids_file) or confess("$jids_file: $!");
-	    print $jids_fh join("\t", $jid, $$job{name} , $brestart_cmd)."\n";
-	    close $jids_fh;
+    # 	# Submit to LSF
+    # 	my @out = `$brestart_cmd 2>&1`;
+    # 	if ( scalar @out!=1 || !($out[0]=~/^Job <(\d+)> is submitted/) )
+    # 	{
+    # 	    warn(
+    # 		"Expected different output from brestart.\n" .
+    # 		"The brestart_command was:\n" .
+    # 		"\t$brestart_cmd\n" .
+    # 		"The output was: " . join('',@out) . "\n"
+    # 		);
+    # 	    # Example: Checkpoint log is not found or is corrupted. Job not submitted.
+    # 	}
+    # 	else 
+    # 	{
+    # 	    # Write down info about the submitted command
+    # 	    my $jid = $1;
+    # 	    print STDERR "Job name set to $$job{name}\n";
+    # 	    open(my $jids_fh, '>>', $jids_file) or confess("$jids_file: $!");
+    # 	    print $jids_fh join("\t", $jid, $$job{name} , $brestart_cmd)."\n";
+    # 	    close $jids_fh;
 	    
-	    $restarted = 1;
-	}
-    }
+    # 	    $restarted = 1;
+    # 	}
+    # }
     
     if ( ! $restarted )
     {
