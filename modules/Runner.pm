@@ -734,12 +734,57 @@ sub wait
             elsif ( $stat & $Done )
             {
                 if ( $$self{_nocache} && !$self->is_finished($done_file) ) { $must_run = 1; }
-                else { $must_run = 0; }
+                else 
+		{ 
+		    $must_run = 0; 
+		    # ask farm to clean up after this job
+		    my $ok;
+		    eval 
+		    {
+			$self->debugln("\t.. calling cleanup_job on job $$status[$i]{id}\n");
+		 	$farm->can('cleanup_job')->($jobs_id_file,$$status[$i],$$self{_farm_options});
+			$ok = 1;
+		    };
+		    if ( !$ok )
+		    {
+			confess(
+			    "\tc  couldn't clean up after job $$status[$i]{id}.\n"
+			    );
+			$self->throw($@);
+		    }
+		}
             }
 
             # If the job has been already ran and failed, check if it failed repeatedly
             elsif ( $stat & $Error ) 
             { 
+		my $nfailures = $$status[$i]{nfailures};
+		if ( $nfailures > abs($$self{_nretries}) )
+		{
+		    if ( $$self{_nretries} < 0 )
+		    {
+			my $sfile = "$wfile.$ids[$i].s";
+			$self->warn("\tc  job ($ids[$i]) failed repeatedly (${nfailures}x) and +retries is negative, skipping: $wfile.$ids[$i].[eos]\n\n");
+			system("touch $sfile");
+			if ( $? ) { $self->throw("The command exited with a non-zero status $?: touch $sfile\n"); }
+			$must_run = 0;
+		    }
+		    else
+		    {
+			my $msg = 
+			    "The job failed repeatedly, ${nfailures}x: $wfile.$ids[$i].[eo]\n" .
+			    "(Remove $jobs_id_file to clean the status, increase +retries or run with negative value of +retries to skip this task.)\n";
+			
+			$self->_send_email('failed', "The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
+			$self->throw($msg);
+		    }
+		}
+		elsif ( !$warned )
+		{
+		    $self->warn("Running again, the previous attempt failed: $wfile.$ids[$i].[eo]\n\n");
+		    $warned = 1;
+		}
+		
 		if ( exists($$status[$i]{have_chkpnt}) && exists($$status[$i]{last_chkpnt_lsf_id}) )
 		{
 		    $self->warn("\tc  job ($ids[$i]) is not running but has a checkpoint ($$status[$i]{last_chkpnt_lsf_id})\n");
@@ -747,33 +792,6 @@ sub wait
 		else
 		{
 		    $self->warn("\tc  job ($ids[$i]) is not running and not checkpointed so it will need to re-run from scratch\n");
-
-		    my $nfailures = $$status[$i]{nfailures};
-		    if ( $nfailures > abs($$self{_nretries}) )
-		    {
-			if ( $$self{_nretries} < 0 )
-			{
-			    my $sfile = "$wfile.$ids[$i].s";
-			    $self->warn("\tc  job ($ids[$i]) failed repeatedly (${nfailures}x) and +retries is negative, skipping: $wfile.$ids[$i].[eos]\n\n");
-			    system("touch $sfile");
-			    if ( $? ) { $self->throw("The command exited with a non-zero status $?: touch $sfile\n"); }
-			    $must_run = 0;
-			}
-			else
-			{
-			    my $msg = 
-				"The job failed repeatedly, ${nfailures}x: $wfile.$ids[$i].[eo]\n" .
-				"(Remove $jobs_id_file to clean the status, increase +retries or run with negative value of +retries to skip this task.)\n";
-			    
-			    $self->_send_email('failed', "The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
-			    $self->throw($msg);
-			}
-		    }
-		    elsif ( !$warned )
-		    {
-			$self->warn("Running again, the previous attempt failed: $wfile.$ids[$i].[eo]\n\n");
-			$warned = 1;
-		    }
 		}
 
 		# Increase memory limits if necessary: by a set minimum or by a percentage, whichever is greater
@@ -788,20 +806,23 @@ sub wait
 		# Increase cpu count if necessary
 		if ( exists($$status[$i]{idle_factor}) )
 		{
-		    my $current_cpus = 1;
-		    if ( exists($$self{_farm_options}{cpus}) )
+		    my $cpus = sprintf("%.0f", (($$status[$i]{cpus} * $$status[$i]{idle_factor}) - 0.3));
+		    if ( $cpus == 0 ) { $cpus = 1; }
+		    if ( $cpus > $$status[$i]{cpus} )
 		    {
-			$current_cpus = $$self{_farm_options}{cpus};
-		    }
-		    my $cpus = int($$status[$i]{idle_factor})+1;
-		    if ( $cpus > $current_cpus )
-		    {
-			warn(
-			    "Increasing cpu limit for job $ids[$i] to $cpus\n"
-			    );
-			$self->inc_limits(cpus=>$cpus);
 			$resources_changed = 1;
+			warn(
+			    "\tc  increased cpu reservation for job $ids[$i] from $$status[$i]{cpus} to $$self{_farm_options}{cpus}\n"
+			    );
 		    }
+		    elsif ( $cpus < $$status[$i]{cpus} )
+		    {
+			$resources_changed = 1;
+			warn(
+			    "\tc  decreased cpu reservation for job $ids[$i] from $$status[$i]{cpus} to $$self{_farm_options}{cpus}\n"
+			    );
+		    }
+		    $self->set_limits(cpus=>$cpus);
 		}
 	    }
 	    

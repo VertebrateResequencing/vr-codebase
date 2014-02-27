@@ -62,18 +62,10 @@ sub is_job_array_running
     #   the jobs in the reverse order in case there were many failures.
     #   The last success counts, failures may be discarded in such a case.
     #
-    open(my $fh, '<', $jids_file) or confess("$jids_file: $!");
-    my $path;
-    my @jids = ();
-    while (my $line=<$fh>)
-    {
-        if ( !($line=~/^(\d+)\s+([^\t]*)/) ) { confess("Uh, could not parse \"$line\".\n") }
-        push @jids, $1;     # LSF array ID
-        if ( !defined $path ) { $path = $2; }
-        if ( $path ne $2 ) { confess("$path ne $2\n"); }
-    }
-    close $fh or confess("$jids_file: $!");
-
+    my $path = $jids_file;
+    $path =~ s/[.]jid$//;
+    my @jids = read_jids_file($jids_file, $path);
+    
     my $jidlines_processed = 0;
   JIDLINE: for (my $i=@jids-1; $i>=0; $i--)
   {
@@ -161,6 +153,21 @@ sub is_job_array_running
         }
     }
     return \@jobs;
+}
+
+sub read_jids_file
+{
+    my ($jids_file, $wfile) = @_;
+    my @jids = ();
+    open(my $fh, '<', $jids_file) or confess("$jids_file: $!");
+    while (my $line=<$fh>)
+    {
+	if ( !($line=~/^(\d+)\s+([^\t]*)/) ) { confess("read_jids_file: Uh, could not parse \"$line\".\n") }
+	if ( $wfile ne $2 ) { confess("read_jids_file: $wfile ne $2\n"); }
+        push @jids, $1;     # LSF array ID
+    }
+    close $fh or confess("$jids_file: $!");
+    return @jids;
 }
 
 sub parse_bjobs_l
@@ -841,7 +848,10 @@ sub run_array
         $bsub_opts .= " -k '$chkpnt_dir method=blcr $$opts{chkpnt_period_minutes}' -We $runtime_limit_minutes";
 	if ( ! ( $cmd =~ m/^\s*cr[_]/ )  )
 	{ 
-	    $cmd = "cr_run $cmd"; 
+	    # prepend cr_run to command to enable BLCR checkpoint/restart (only if not already prefixed by cr_run or cr_restart) 
+	    # $cmd = "cr_run $cmd";
+	    # if the command stdout is connected to the same place where LSF writes the job info, the LSF info will be truncated on restart, redirect stdout to /dev/null
+	    $cmd = "cr_run $cmd > /dev/null";  
 	}
     }
 
@@ -882,6 +892,47 @@ sub run_array
         }
         run_array($jids_file, $job_name, $opts, $cmd, \@skipped_ids);
     }
+}
+
+sub cleanup_job
+{
+    my ($jids_file, $done_job, $opts) = @_;
+    confess("RunnerLSF::cleanup_job called on job without id entry") unless exists($$done_job{id});
+    confess("RunnerLSF::cleanup_job called on job without wait_file entry") unless exists($$done_job{wait_file});
+    
+    my $id = $$done_job{id};
+    my $wfile = $$done_job{wait_file};
+    my $cleanfile = "$wfile.$id.cleaned";
+    
+    # if a .cleaned file exists, don't bother cleaning up as it has already been done
+    if ( -e $cleanfile ) { return; }
+    
+    my @jids = read_jids_file($jids_file, $wfile);
+    
+  CLEANUP_JIDLINE: for (my $i=@jids-1; $i>=0; $i--)
+  {
+      my $info = parse_bjobs_l($jids[$i]);
+      if ( !defined $info ) { next CLEANUP_JIDLINE; }
+      for my $job (values %$info)
+      {
+	  if ( ( $$job{id} eq $id ) && ( exists($$job{chkpnt_dir}) ) )
+	  {
+	      my $context_file = $$job{chkpnt_dir}."/jobstate.context";
+	      # remove jobstate.context from checkpoint directory
+	      if ( -f $context_file )
+	      {
+		  print STDERR "\n\n\n i'd like to unlink $context_file\n\n\n";
+		  #unlink($context_file) or confess("could not remove checkpoint context file for job $id ($$job{lsf_id}): $context_file\n");
+	      }
+	  }
+      }
+  }
+    # finished cleaning, write to a .cleaned file so we don't keep trying to clean up the cleaned
+    system("touch $cleanfile");
+    if ( $? ) { confess("The command exited with a non-zero status $?: touch $cleanfile\n"); }
+    
+    warn("\tc  job ($id) finished and all checkpoint context files have been cleaned up\n");
+    return;
 }
 
 sub restart_job
