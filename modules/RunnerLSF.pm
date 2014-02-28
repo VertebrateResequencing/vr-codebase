@@ -42,6 +42,9 @@ my $min_chkpnt_time_s_per_mb = 0.002;
 # loaded by ~10000 jobs, that would be 1 s/MB
 my $max_chkpnt_time_s_per_mb = 1;
 
+# the number of old checkpoints to keep around
+my $keep_n_previous_chkpnts = 0;
+
 my %months = qw(Jan 1 Feb 2 Mar 3 Apr 4 May 5 Jun 6 Jul 7 Aug 8 Sep 9 Oct 10 Nov 11 Dec 12);
 
 our $Running = 1;
@@ -81,6 +84,18 @@ sub is_job_array_running
 	my $id = $$ids[$j];
 
 	if ( !exists($$info{$id}) ) { next ELEMENT_ID; }
+	# if we already have a checkpoint for this job and this info also has checkpoint
+	if ( exists($jobs[$j]{have_chkpnt}) && exists($$info{$id}{have_chkpnt}) )
+	{
+	    # increment count of old checkpoints saved for this job
+	    $jobs[$j]{old_chkpnt_count}++;
+	    if ( $jobs[$j]{old_chkpnt_count} > $keep_n_previous_chkpnts )
+	    {
+		# delete checkpoint
+		delete_context_file($jobs[$j]);
+	    }
+	}
+
 	# if we don't yet have_chkpnt for this job element, and we do have_chkpnt from this info
 	if ( !exists($jobs[$j]{have_chkpnt}) && exists($$info{$id}{have_chkpnt}) ) 
 	{
@@ -400,6 +415,7 @@ sub check_job
         my $queue = $$job{queue};
 	my $cpus = 1;
 	if ( exists($$job{cpus}) ) { $cpus = $$job{cpus}; }
+
 	my $runtime_limit_seconds = undef;
 	if ( exists($$job{runtime_limit_seconds}) )
 	{
@@ -915,15 +931,9 @@ sub cleanup_job
       if ( !defined $info ) { next CLEANUP_JIDLINE; }
       for my $job (values %$info)
       {
-	  if ( ( $$job{id} eq $id ) && ( exists($$job{chkpnt_dir}) ) )
+	  if ( $$job{id} eq $id ) 
 	  {
-	      my $context_file = $$job{chkpnt_dir}."/jobstate.context";
-	      # remove jobstate.context from checkpoint directory
-	      if ( -f $context_file )
-	      {
-		  print STDERR "\n\n\n i'd like to unlink $context_file\n\n\n";
-		  #unlink($context_file) or confess("could not remove checkpoint context file for job $id ($$job{lsf_id}): $context_file\n");
-	      }
+	      delete_context_file($job);
 	  }
       }
   }
@@ -933,6 +943,21 @@ sub cleanup_job
     
     warn("\tc  job ($id) finished and all checkpoint context files have been cleaned up\n");
     return;
+}
+
+sub delete_context_file
+{
+    my ($job) = @_;
+
+    if ( exists($$job{chkpnt_dir}) )
+    {
+	my $context_file = $$job{chkpnt_dir}."/jobstate.context";
+	# remove jobstate.context from checkpoint directory
+	if ( -f $context_file )
+	{
+	    unlink($context_file) or confess("could not delete checkpoint context file for job $$job{id} ($$job{lsf_id}): $context_file\n");
+	}
+    }
 }
 
 sub restart_job
