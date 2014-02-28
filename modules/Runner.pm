@@ -764,7 +764,7 @@ sub wait
 		    if ( $$self{_nretries} < 0 )
 		    {
 			my $sfile = "$wfile.$ids[$i].s";
-			$self->warn("\tc  job ($ids[$i]) failed repeatedly (${nfailures}x) and +retries is negative, skipping: $wfile.$ids[$i].[eos]\n\n");
+			$self->warn("\t   job ($ids[$i]) failed repeatedly (${nfailures}x) and +retries is negative, skipping: $wfile.$ids[$i].[eos]\n");
 			system("touch $sfile");
 			if ( $? ) { $self->throw("The command exited with a non-zero status $?: touch $sfile\n"); }
 			$must_run = 0;
@@ -773,7 +773,10 @@ sub wait
 		    {
 			my $msg = 
 			    "The job failed repeatedly, ${nfailures}x: $wfile.$ids[$i].[eo]\n" .
-			    "(Remove $jobs_id_file to clean the status, increase +retries or run with negative value of +retries to skip this task.)\n";
+			    "Remove $jobs_id_file to clean the status (completely losing all checkpoint information for all jobs), \n" .
+			    "increase +retries or run with negative value of +retries to skip this task.\n" . 
+			    "You could also delete the checkpoint context for this job element only: rm \$(for file in \$(ls chkpnt/*/*.*.$ids[$i]); do ls \$(dirname \$file)/jobstate.context; done\n" .
+			    "and then remove the output file $wfile.$ids[$i].o\n";
 			
 			$self->_send_email('failed', "The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
 			$self->throw($msg);
@@ -781,7 +784,7 @@ sub wait
 		}
 		elsif ( !$warned )
 		{
-		    $self->warn("Running again, the previous attempt failed: $wfile.$ids[$i].[eo]\n\n");
+		    $self->warn("\t   running again, the previous attempt failed: $wfile.$ids[$i].[eo]\n");
 		    $warned = 1;
 		}
 		
