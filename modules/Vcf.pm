@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r899';
+our $VERSION = 'r940';
 
 # http://vcftools.sourceforge.net/specs.html
 # https://github.com/samtools/hts-specs
@@ -2374,7 +2374,7 @@ sub validate_info_field
         }
         elsif ( $$type{Number}!=-1 && @vals!=$$type{Number} )
         {
-            push @errs, "INFO tag [$key=$value] expected different number of values ($$type{Number})";
+            if ( !(@vals==1 && $vals[0] eq '.') ) { push @errs, "INFO tag [$key=$value] expected different number of values ($$type{Number})"; }
         }
         if ( !$$type{handler} ) { next; }
         for my $val (@vals)
@@ -2467,7 +2467,7 @@ sub validate_gtype_field
         }
         elsif ( $$type{Number}!=-1 && @vals!=$$type{Number} )
         {
-            push @errs, "FORMAT tag [$key] expected different number of values ($$type{Number})";
+            if ( !(@vals==1 && $vals[0] eq '.') ) { push @errs, "FORMAT tag [$key] expected different number of values ($$type{Number})"; }
         }
         if ( !$$type{handler} ) { next; }
         for my $val (@vals)
