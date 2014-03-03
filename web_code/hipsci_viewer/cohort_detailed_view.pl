@@ -59,7 +59,6 @@ sub displayDetailedInformation
     my %geno_cnv_totals = $utl->getGenotypingCNVTotals($genotyping_db, $cohort);
     my $penncnv_least = $utl->getGenotypingCNVLeastValue($genotyping_db, $cohort, $penncnv_flag);
     my $quancnv_least = $utl->getGenotypingCNVLeastValue($genotyping_db, $cohort, $quantisnp_flag);
-    my @geno_samples = keys %geno_sample_controls;
     
     print $cgi->h2({-align=>"center", -style=>"font: normal 900 1.5em arial"},"<a href='$main_script'>HipSci Cohort Viewer</a> $title");
 	print qq[ <h3 align="center" style="font: normal 700 1.5em arial"> Cohort identifier : $cohort </h3>];
