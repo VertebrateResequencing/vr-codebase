@@ -55,18 +55,11 @@ sub displayDetailedInformation
 		$mapstats = $lane->latest_mapping();
 	}
     
-    my %geno_sample_controls = $utl->getGenotypingSamples($genotyping_db, $cohort);
+    my $control_string = $utl->getControlSample($genotyping_db, $cohort);
     my %geno_cnv_totals = $utl->getGenotypingCNVTotals($genotyping_db, $cohort);
     my $penncnv_least = $utl->getGenotypingCNVLeastValue($genotyping_db, $cohort, $penncnv_flag);
     my $quancnv_least = $utl->getGenotypingCNVLeastValue($genotyping_db, $cohort, $quantisnp_flag);
     my @geno_samples = keys %geno_sample_controls;
-    
-    # Is there any chance we can have > 1 control?? Use array JUST IN CASE.....
-    my @geno_control;
-    foreach ( @geno_samples ) {
-		push @geno_control, $_ unless $geno_sample_controls{$_} == 2;
-	}
-	my $control_string = join(', ', @geno_control);
     
     print $cgi->h2({-align=>"center", -style=>"font: normal 900 1.5em arial"},"<a href='$main_script'>HipSci Cohort Viewer</a> $title");
 	print qq[ <h3 align="center" style="font: normal 700 1.5em arial"> Cohort identifier : $cohort </h3>];

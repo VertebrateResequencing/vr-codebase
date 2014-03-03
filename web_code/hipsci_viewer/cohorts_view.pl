@@ -65,16 +65,22 @@ sub displaySamplesPage
         <table RULES=GROUPS width="100%">
         <tr>
         <th>Cohort identifier</th>
-        <th>BioSample ID</th>
+        <th>Control sample</th>
         <th></th>
         </tr>
     ];
-    my $biosample_id = "N/A";
+    
+    # my $biosample_id = "N/A"; *** what is this supposed to be? There used to
+    # be a pointless BioSample ID column in the output that was hardcoded to be
+    # N/A??
+    
     for my $cohort( sort( keys( %hipsci_cohorts ) ) ) {
+        my $control_sample = $utl->getControlSample($genotyping_db, $cohort);
+        
         print qq[
           	<tr>
             	<td>$cohort</td>
-            	<td>$biosample_id</td>
+                <td>$control_sample</td>
                 <td><a href="$detailed_view_script?cohort=$cohort">Detailed view</a></td>                
             </tr>
         ];

@@ -436,6 +436,19 @@ sub getGenotypingSamples
 	return %samples;	
 }
 
+sub getControlSample
+{
+    my ($self, $db, $cohort) = @_;
+    my %geno_sample_controls = $self->getGenotypingSamples($db, $cohort);
+    
+    # Is there any chance we can have > 1 control?? Use array JUST IN CASE.....
+    my @geno_control;
+    foreach (keys %geno_sample_controls) {
+        push @geno_control, $_ unless $geno_sample_controls{$_} == 2;
+    }
+    return join(', ', @geno_control);
+}
+
 sub getExpressionLaneID
 {
 	my ($self, $db, $cohort) = @_;
