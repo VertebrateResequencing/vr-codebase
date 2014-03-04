@@ -774,10 +774,17 @@ sub wait
 			my $msg = 
 			    "The job failed repeatedly, ${nfailures}x: $wfile.$ids[$i].[eo]\n" .
 			    "Remove $jobs_id_file to clean the status (completely losing all checkpoint information for all jobs), \n" .
-			    "increase +retries or run with negative value of +retries to skip this task.\n" . 
-			    "You could also delete the checkpoint context for this job element only: rm \$(for file in \$(ls chkpnt/*/*.*.$ids[$i]); do ls \$(dirname \$file)/jobstate.context; done\n" .
-			    "and then remove the output file $wfile.$ids[$i].o\n";
-			
+			    "increase +retries or run with negative value of +retries to skip this task.\n";
+			if ( exists($$status[$i]{chkpnt_dir}) )
+			{
+			    my $chkdir = $$status[$i]{chkpnt_dir};
+			    my @dirs = File::Spec->splitdir($chkdir);
+			    pop @dirs;
+			    $chkdir = File::Spec->catdir( @dirs );
+			    $msg .= "You could also delete the checkpoint context for this job element only: \n" . 
+				"\t  rm \$(for file in \$(ls $chkdir/*/*.*.$ids[$i]); do ls \$(dirname \$file)/jobstate.context; done)\n" .
+				"\t  and then remove the output file: rm $wfile.$ids[$i].o\n";
+			}
 			$self->_send_email('failed', "The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
 			$self->throw($msg);
 		    }
