@@ -29,6 +29,7 @@ use VertRes::Wrapper::fastqcheck;
 use VertRes::Wrapper::bowtie2;
 use File::Basename;
 use File::Temp qw/ tempdir /;
+use IO::File;
 
 use base qw(VertRes::Wrapper::MapperI);
 
@@ -154,46 +155,46 @@ sub setup_fastqs {
 sub generate_sam {
     my ($self, $out, $ref, $fq1, $fq2, %other_args) = @_;
     my @fqs = ($fq1, $fq2);
-    
+
     my($filename, $base_directory, $suffix) = fileparse($out);
     my $directories = tempdir( DIR => $base_directory );
-    
+
     unless (-s $out) {
         my $e = 70;
-        
+
         my $longest_read = 0;
         foreach my $fq (@fqs) {
-          
+
             # create a fastqcheck file if it doesnt already exist
             unless(-e "$fq.fastqcheck")
             {
               my $fqc = VertRes::Wrapper::fastqcheck->new();
               $fqc->run($fq, "$fq.fastqcheck");
             }
-            
+
             my $pars = VertRes::Parser::fastqcheck->new(file => "$fq.fastqcheck");
             my $length = $pars->max_length();
             if ($length > $longest_read) {
                 $longest_read = $length;
             }
         }
-        
+
         foreach (sort { $a <=> $b } keys %e_parameter) {
             if ($longest_read <= $_) {
                 $e = $e_parameter{$_};
             }
         }
-        
+
         foreach my $fq (@fqs) {
             $fq =~ s/\.gz$//;
         }
-        
+
         my $X = 1000;
         my $max_intron_length_str = $self->_max_intron_length_option(%other_args);
         my $inner_mate_str = $self->_insert_size_option($longest_read, %other_args);
         my $min_intron_length_str = $self->_min_intron_length_option(%other_args);
         my $max_multihits_str = $self->_max_multihits_option(%other_args);
-        
+
         if((defined $other_args{is_paired}) && $other_args{is_paired} == 0)
         {
           # single ended
@@ -204,11 +205,111 @@ sub generate_sam {
           #paired_ended
           $self->simple_run(" $max_intron_length_str $min_intron_length_str $inner_mate_str $max_multihits_str -o $directories --no-convert-bam $ref $fqs[0] $fqs[1]");
         }
-        Utils::CMD(qq[mv $directories/accepted_hits.sam $out]);
+
+	if ( -e "$directories/unmapped.sam" || -e "$directories/unmapped.bam" ) {
+
+	  $self->add_unmapped($ref, $directories);
+
+	  Utils::CMD( qq[ mv $directories/merged.sorted.fixed.sam $out ] );
+
+
+	}
+	else {
+
+	  Utils::CMD( qq[ mv $directories/accepted_hits.sam $out ] );
+
+	}
     }
     
     return -s $out ? 1 : 0;
 }
+
+=head2 add_unmapped
+
+ Title   : add_unmapped
+ Usage   : $obj->add_unmapped($ref, $directories);
+ Function: Fix quality flags in the unmapped sam file
+	   Merge accepted_hits and unmapped files
+	   Sort the merged file by name
+	   Apply samtools fixmate to the sorted merge file
+ Returns : boolean
+ Args    : $ref, $directories
+
+=cut
+
+sub add_unmapped {
+
+    my ( $self, $ref, $directories ) = @_;
+
+    #Operation file names list
+    #We need to go through several intermediate steps to complete the merge operation
+    #I am assuming only sam files here and no bams
+    my %op_files = (
+		    accepted_sam => "$directories/accepted_hits.sam",
+		    accepted_bam => "$directories/accepted_hits.bam",
+		    unmapped_sam => "$directories/unmapped.sam",
+		    unmapped_bam => "$directories/unmapped.bam",
+		    qfixed_unmapped_sam => "$directories/qfixed_unmapped.sam",
+		    qfixed_unmapped_bam => "$directories/qfixed_unmapped.bam",
+		    merged_bam => "$directories/merged.bam",
+		    merge_sorted_bam => "$directories/merged.sorted.bam",
+		    merge_sorted_fixed_bam => "$directories/merged.sorted.fixed.bam",
+		    merge_sorted_fixed_sam => "$directories/merged.sorted.fixed.sam"
+		   );
+
+    my $samtools_sort_name = qq[ $directories/merged.sorted ];
+
+
+    my $fix_flag_command = qq[samtools view -h $op_files{unmapped_bam} | ] . q[awk 'BEGIN{FS=OFS="\t"} $5 ~ /255/ { $5 = "0"; }1' > ] . qq[ $op_files{qfixed_unmapped_sam} ];
+
+    `$fix_flag_command`;
+
+
+    #We will need to convert the sam files into bams, otherwise the merge won't happen
+
+    my $acc_h_convert_command = qq[ samtools view -bS $op_files{accepted_sam} > $op_files{accepted_bam} ];
+
+    `$acc_h_convert_command`;
+
+    my $unmap_convert_command = qq[ samtools view -bS $op_files{qfixed_unmapped_sam} > $op_files{qfixed_unmapped_bam} ];
+
+    `$unmap_convert_command`;
+
+    #This might be needed if files are huge. I'm not sure.
+    #Let's wait for the files to be converted, in case perl decides to move on before file creation
+    #while (!-e $op_files{accepted_bam} ) {
+    #  sleep(1);
+    #}
+
+    #while (!-e $op_files{qfixed_unmapped_bam} ) {
+    #  sleep(1);
+    #}
+
+    #We can now merge the accepted_hits and the unampped bam files into the merged bam file
+    my $merge_command = qq[ samtools merge -f $op_files{merged_bam} $op_files{accepted_bam} $op_files{qfixed_unmapped_bam} ];
+    my $exit = system($merge_command);
+    #`$merge_command`;
+
+    #Once merged, we will need to sort the merged file by read name. samtools fixmate needs a sam/bam file sorted by read name
+
+    Utils::CMD( qq[ samtools sort -n $op_files{merged_bam} $samtools_sort_name ] );
+
+    #Once sorted, we can now run samtools fixmate on it. We will use the most recent version of fixmate (hence the full path to it's location)
+    #This should be updated once the new verison of samtools is released and available in /software
+    my $most_recent_samtools_fixmate_exe = qq[ /software/vertres/bin-external/samtools-exp-rc fixmate ];
+
+    Utils::CMD( qq[ $most_recent_samtools_fixmate_exe $op_files{merge_sorted_bam} $op_files{merge_sorted_fixed_bam} ] );
+
+    #To keep consistency across the vr-codebase, we convert the final bam file to sam
+
+
+    my $convert_bam_to_sam = qq[ samtools view -h $op_files{merge_sorted_fixed_bam} > $op_files{merge_sorted_fixed_sam} ];
+
+    `$convert_bam_to_sam`;
+
+    return 1;
+}
+
 
 sub _max_intron_length_option
 {
@@ -263,21 +364,6 @@ sub _max_multihits_option
   return "-g $max_multihits";
 }
 
-=head2 add_unmapped
-
- Title   : add_unmapped
- Usage   : $obj->add_unmapped($sam_file, $ref_fasta, @fastqs);
- Function: Do whatever needs to be done with the sam file to add in unmapped
-           reads.
- Returns : boolean
- Args    : n/a
-
-=cut
-
-sub add_unmapped {
-    my ($self, $sam, $ref, @fqs) = @_;
-    return 1;
-}
 
 =head2 do_mapping
 
