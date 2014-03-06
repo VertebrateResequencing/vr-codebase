@@ -220,7 +220,7 @@ sub generate_sam {
 
 	}
     }
-    
+
     return -s $out ? 1 : 0;
 }
 
@@ -259,36 +259,30 @@ sub add_unmapped {
 
     my $samtools_sort_name = qq[ $directories/merged.sorted ];
 
-
     my $fix_flag_command = qq[samtools view -h $op_files{unmapped_bam} | ] . q[awk 'BEGIN{FS=OFS="\t"} $5 ~ /255/ { $5 = "0"; }1' > ] . qq[ $op_files{qfixed_unmapped_sam} ];
-
-    `$fix_flag_command`;
-
+    my $ff_exit = system($fix_flag_command);
 
     #We will need to convert the sam files into bams, otherwise the merge won't happen
 
     my $acc_h_convert_command = qq[ samtools view -bS $op_files{accepted_sam} > $op_files{accepted_bam} ];
-
-    `$acc_h_convert_command`;
+    my $acchc_exit = system($acc_h_convert_command);
 
     my $unmap_convert_command = qq[ samtools view -bS $op_files{qfixed_unmapped_sam} > $op_files{qfixed_unmapped_bam} ];
-
-    `$unmap_convert_command`;
+    my $uc_exit = system($unmap_convert_command);
 
     #This might be needed if files are huge. I'm not sure.
     #Let's wait for the files to be converted, in case perl decides to move on before file creation
     #while (!-e $op_files{accepted_bam} ) {
     #  sleep(1);
     #}
-
     #while (!-e $op_files{qfixed_unmapped_bam} ) {
     #  sleep(1);
     #}
 
     #We can now merge the accepted_hits and the unampped bam files into the merged bam file
     my $merge_command = qq[ samtools merge -f $op_files{merged_bam} $op_files{accepted_bam} $op_files{qfixed_unmapped_bam} ];
-    my $exit = system($merge_command);
-    #`$merge_command`;
+    my $m_exit = system($merge_command);
+
 
     #Once merged, we will need to sort the merged file by read name. samtools fixmate needs a sam/bam file sorted by read name
 
@@ -304,8 +298,7 @@ sub add_unmapped {
 
 
     my $convert_bam_to_sam = qq[ samtools view -h $op_files{merge_sorted_fixed_bam} > $op_files{merge_sorted_fixed_sam} ];
-
-    `$convert_bam_to_sam`;
+    my $cbts_exit = system($convert_bam_to_sam);
 
     return 1;
 }
@@ -428,7 +421,7 @@ sub do_mapping {
         }
         
         # add in unmapped reads if necessary
-        $self->add_unmapped($tmp_sam, @fqs) || $self->throw("failed during the add unmapped step");
+        #$self->add_unmapped($tmp_sam, @fqs) || $self->throw("failed during the add unmapped step");
 
         # tophat throws away some reads
         move($tmp_sam, $out_sam) || $self->throw("Failed to move $tmp_sam to $out_sam: $!");
