@@ -39,30 +39,30 @@ if(defined $options{v}){
         #print "VCF found OK\n";
     } 
     else{
-        print "$VCFFile VCF doesn't exist\n";
-        print "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output -b BED output -l logfile]\n";
+        warn "$VCFFile VCF doesn't exist\n";
+        warn "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output -b BED output -l logfile]\n";
         exit;
     }
 }
 else{
-    print "VCF file required\n";
-    print "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output -b BED output -l logfile]\n";
+    warn "VCF file required\n";
+    warn "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output -b BED output -l logfile]\n";
     exit;
 }
 if(defined $options{c}){
     $controlSampleName = $options{c};
 }
 else{
-    print "Control sample name required\n";
-    print "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output -b BED output -l logfile]\n";
+    warn "Control sample name required\n";
+    warn "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output -b BED output -l logfile]\n";
     exit;
 }
 if(defined $options{l}){
     $logfile = $options{l};
 }
 else{
-    print "logfile required\n";
-    print "Usage: loh.pl -v yourvcf.vcf -c controlSampleName -l logfile [-s for short output -b BED output]\n";
+    warn "logfile required\n";
+    warn "Usage: loh.pl -v yourvcf.vcf -c controlSampleName -l logfile [-s for short output -b BED output]\n";
     exit;
 }
 if(defined $options{s}){
@@ -75,11 +75,11 @@ if (defined $options{d}){
     $debugPrint = 1;
 }
 if ($ARGV[0]){
-    print "Unexpected arguments:\n";
+    warn "Unexpected arguments:\n";
     foreach (@ARGV){
-        print "$_\n";
+        warn "$_\n";
     }
-    print "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output -b BED output -l logfile]\n";
+    warn "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output -b BED output -l logfile]\n";
     exit;
 }
 
@@ -161,8 +161,8 @@ foreach(@sampleNames){
     }
 }
 if($controlPosition == 0){
-    print "Control sample $controlSampleName not found in $VCFFile\n";
-    print "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output]\n";
+    warn "Control sample $controlSampleName not found in $VCFFile\n";
+    warn "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output]\n";
     exit;
 }
 #$controlPosition = 2; # TESTING
@@ -634,7 +634,7 @@ sub trimBlocks{
                     push(@mismatchStore, 1);
                 }
                 else{
-                    print "UNEXPECTED OPTION\n";
+                    warn "UNEXPECTED OPTION\n";
                     exit;
                 }
             }
