@@ -35,35 +35,27 @@ my $logfile;
 
 if(defined $options{v}){
     $VCFFile = $options{v};
-    if (-e $VCFFile) {
+    if(-e $VCFFile) {
         #print "VCF found OK\n";
     } 
     else{
-        warn "$VCFFile VCF doesn't exist\n";
-        warn "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output -b BED output -l logfile]\n";
-        exit;
+        die("$VCFFile VCF doesn't exist\nUsage: hipsci_loh_caller.pl -v yourvcf.vcf.gz -c controlSampleName [-s for short output -b BED output -l logfile]\n");
     }
 }
 else{
-    warn "VCF file required\n";
-    warn "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output -b BED output -l logfile]\n";
-    exit;
+    die("VCF file required\nUsage: hipsci_loh_caller -v yourvcf.vcf.gz -c controlSampleName [-s for short output -b BED output -l logfile]\n");
 }
 if(defined $options{c}){
     $controlSampleName = $options{c};
 }
 else{
-    warn "Control sample name required\n";
-    warn "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output -b BED output -l logfile]\n";
-    exit;
+    die("Control sample name required\nUsage: hipsci_loh_caller -v yourvcf.vcf.gz -c controlSampleName [-s for short output -b BED output -l logfile]\n");
 }
 if(defined $options{l}){
     $logfile = $options{l};
 }
 else{
-    warn "logfile required\n";
-    warn "Usage: loh.pl -v yourvcf.vcf -c controlSampleName -l logfile [-s for short output -b BED output]\n";
-    exit;
+    die("logfile required\nUsage: hipsci_loh_caller.pl -v yourvcf.vcf.gz -c controlSampleName -l logfile [-s for short output -b BED output]\n");
 }
 if(defined $options{s}){
     $concisePrint = 1;
@@ -71,16 +63,15 @@ if(defined $options{s}){
 if(defined $options{b}){
     $bedPrint = 1;
 }
-if (defined $options{d}){
+if(defined $options{d}){
     $debugPrint = 1;
 }
-if ($ARGV[0]){
-    warn "Unexpected arguments:\n";
+if($ARGV[0]){
+    my $tmpOut = "Unexpected arguments:\n";
     foreach (@ARGV){
-        warn "$_\n";
+        $tmpOut = $tmpOut . "$_\n";
     }
-    warn "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output -b BED output -l logfile]\n";
-    exit;
+    die("$tmpOut" . "Usage: hipsci_loh_caller.pl -v yourvcf.vcf.gz -c controlSampleName [-s for short output -b BED output -l logfile]\n");
 }
 
 if($concisePrint == 0){
@@ -136,7 +127,7 @@ if($concisePrint == 0){
 
 ## Skip the header
 
-open(VCF, "$VCFFile") || die "cannot open $VCFFile ($!)";
+open(VCF, "zcat $VCFFile |") || die "cannot open $VCFFile ($!)";
 while (<VCF>){
     chomp;
     if(/^#CHROM/){
@@ -161,9 +152,7 @@ foreach(@sampleNames){
     }
 }
 if($controlPosition == 0){
-    warn "Control sample $controlSampleName not found in $VCFFile\n";
-    warn "Usage: loh.pl -v yourvcf.vcf -c controlSampleName [-s for short output]\n";
-    exit;
+    die("Control sample $controlSampleName not found in $VCFFile\nUsage: loh.pl -v yourvcf.vcf.gz -c controlSampleName [-s for short output]\n");
 }
 #$controlPosition = 2; # TESTING
 # PRINT THE HEADER OF THE CNV OUTPUT
@@ -210,7 +199,7 @@ if($concisePrint == 0){
 # Chr Coord Snp        GT  LRR     IA    BAF    IB    GC     GT  LRR     IA    BAF    IB    GC
 # MT 72 2010-08-MT-841 1/1 -0.4763 1.478 0.0981 0.535 0.3296 1/1 -0.2674 1.717 0.0894 0.604 0.3297
 
-#### blocksAoA
+#### blocksAoA looks something like this:
 #0 0 0
 #1 0 0
 #1 0 2
@@ -235,14 +224,14 @@ my @listOfAllTrimmedBlocks;
 #my $windowIterEnd = 8;
 #my $percentageFlexIterStart = 70;
 #my $percentageFlexIterEnd = 90;
-my $windowIterStart = 7;
-my $windowIterEnd = 8;
-my $percentageFlexIterStart = 70;
-my $percentageFlexIterEnd = 80;
-#my $windowIterStart = 2;
-#my $windowIterEnd = 15;
-#my $percentageFlexIterStart = 10;
-#my $percentageFlexIterEnd = 90;
+#my $windowIterStart = 7;
+#my $windowIterEnd = 8;
+#my $percentageFlexIterStart = 70;
+#my $percentageFlexIterEnd = 80;
+my $windowIterStart = 2;
+my $windowIterEnd = 15;
+my $percentageFlexIterStart = 10;
+my $percentageFlexIterEnd = 90;
 
 # LOOP THROUGH THE WINDOW SIZE AND PERCENTAGE FLEXIBILITY PARAMETERS AND PRODUCE @listOfAllTrimmedBlocks
 
@@ -392,7 +381,9 @@ for $j (0 .. $r){
     my $dRef = $listOfAllTrimmedBlocks[$thisCombinationPosition][$j];
     my $s = @$dRef - 1;
     if($s == -1){
-        print "0 CNVs containing 0 SNPs\n\n";
+        if($bedPrint == 0){
+            print "0 CNVs containing 0 SNPs\n\n";
+        }
         if($logfile){
             print LOGFILE "$sampleNames[($sampleNameIndex)]" . ": 0 CNVs\n";
         }
@@ -632,10 +623,6 @@ sub trimBlocks{
                     $#zeroStore = -1;
                     push(@countStore, $i);
                     push(@mismatchStore, 1);
-                }
-                else{
-                    warn "UNEXPECTED OPTION\n";
-                    exit;
                 }
             }
             if($#countStore >= 0){
