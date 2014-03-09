@@ -1,0 +1,145 @@
+Finding Cellomics Gene Expression Levels
+========================================
+
+For the cellomics data produced for QC1, reprogrammed iPS samples are tested for success by 
+differentiating them into several types of cells. The idea is that successfully reprogrammed pluripotent cells 
+can sucessfully differentiate into other cell types. The types used for the test are endoderm, mesoderm and 
+neuroectoderm.
+
+Certain genes are used as inidicators of these cell types, and the activity of these genes is measured 
+as a % of all cells showing activity of the gene (using an antibody?). [The % of cells is automatically 
+detected by a machine looking at a fixed area containing the cells].
+
+Ludovic Vallier decided on these genes, which are:
+
+GENE NAME    % CUTOFF
+
+pluripotent (undifferentiated):
+oct4         >60%
+sox2         >60%
+nanog        >60%
+
+endoderm:
+oct4         <15%
+sox17        >60%
+foxa2        >40%
+gata4        >60%
+
+mesoderm:
+oct4         <15%
+brachury     >50%
+eomes        >60%
+mixl1        >60%
+
+neuroectoderm:
+oct4         <5%
+sox1         >40%
+sox2         >60%
+nestin       >60%
+
+Notice that oct4 is expected to be high in the undifferentiated cells, but low in the differentiated.
+
+The above criteria was the initial method for applying a cutoff to the cellomics QC1 data, i.e. oct4 >60% in 
+pluripotent cells is a success/pass, for that gene in that type of cell. See "early cellomics example.ppt" for an 
+example of how this method is used in combination with PluriTest & CNV results (green is pass, red is fail). 
+So in general, not all genes will pass, but the point is to look for as good as possible results across the 
+set of genes looked at for each cell type.
+
+More recently, pairs of genes are measured together e.g. oct4 & sox17, but generally the same approach is still used as 
+described above. Please speak to Anja or Alex Alderton for the most up to date cellomics genes that are measured.
+
+RD and Ludovic wanted to look at the gene expression levels directly for these genes in the gene expression 
+data. This is what is obtained using the method described below.
+
+It should be noted however that this is not a QC1 test at present which is used directly for sample selection. 
+
+It is used for a more general purpose i.e. RD sometimes want to view it to see what is happening with these 
+genes.
+ 
+I recommend that you add it to VRPipe and the cohorts viewer as RD would want this. RD at some point in the 
+future will ask for you to do this probably otherwise.
+
+
+We will now extract the gene expression levels for the set of genes described above from a quantile normalised 
+gene expression file. The method is very simple, it just parses the gene expression file for the Target IDs 
+(gene names) that correspond to the genes described above (the script maps some of the names where there is 
+not a direct correspondence).
+
+IMPORTANT. Please do not use the expression file used for PluriTest e.g. hipsci_12samples_2014-02-12_Sample_Probe_Profile.txt
+This file is not normalised. As part of the method development, in the HipSci MC meeting we initially looked 
+at results from the gene expression file which isn't normalised, but it was decided to use the quantile normalised 
+equivalent (produced by Genome Studio). This file is available on iRODS e.g. hipsci_12samples_2014-02-12_quantile_Sample_Probe_Profile.txt
+
+For example:
+
+>iget /archive/GAPI/exp/analysis/cb/82/3c/hipsci_12samples_2014-02-12/hipsci_12samples_2014-02-12_quantile_Sample_Probe_Profile.txt
+
+Parse the quantile normalised file
+==================================
+
+First, reformat the quantile normalised file. Get rid of the header at the start of the file, including the empty line 7:
+
+Remove the first ~7 lines, e.g.:
+
+Illumina Inc. GenomeStudio version 1.9.0
+Normalization = quantile
+Array Content = HumanHT-12_V4_0_R1_15002873_B.bgx.xml
+Error Model = none
+DateTime = 12/02/2014 13:33
+Local Settings = en-GB
+
+TargetID	ProbeID        etc..
+
+now becomes:
+
+TargetID	ProbeID        etc..
+
+Convert to UNIX format:
+
+>dos2unix hipsci_12samples_2014-02-12_quantile_Sample_Probe_Profile.txt
+
+You will need an ID map to reheader the newly formatted file. Please see running_PluriTest.txt for a description 
+of how to obtain this information, i.e. from the spreadsheet that describes the gene expression samples 
+(e.g hipsci_12samples_2014-02-12.xlsx) in combination with Anja's spreadsheet of the latest HipSci samples 
+("All samples list CGap_140122 no filter.xls"). 
+The information should look something like the following, please put it into a tab separated file.
+
+9425128065_A	vorx_1	
+9425128065_B	dard_2	
+9425128065_C	vorx_3	
+9425128065_D	dard_3	
+9425128065_E	vorx	
+9425128065_F	dard	
+9425128065_G	veqz_6	
+9425128065_H	veqz	
+9425128065_I	vorx_2	
+9425128065_J	veqz_5	
+9425128065_K	dard_1	
+9425128065_L	veqz_4
+
+Now use that file to reheader the quantile normalised file:
+
+>perl reheader_quantile_GEX.pl set14_reheader_ID_map.txt hipsci_12samples_2014-02-12_quantile_Sample_Probe_Profile.txt-EDIT > set14_quantile_with_new_header.txt
+
+Extract the "cellomics genes":
+
+>perl get_cellomics_gene_expression_levels.pl set14_quantile_with_new_header.txt > set14_cellomics_levels.txt
+
+Now rearrange the order of the columns of the output you just produced. Edit the script rearrange_cellomics_columns.pl to 
+include the new order of the samples you want. In this example:
+
+my @order = (6, 11, 2, 4, 8, 12, 10, 7, 5, 1, 9, 3);
+
+That's because I want the following rearrangement of columns (the numbers are not present in the output):
+
+vorx_1	dard_2	vorx_3	dard_3	vorx	dard	veqz_6	veqz	vorx_2	veqz_5	dard_1	veqz_4
+  1       2       3       4       5       6        7      8        9      10      11       12
+
+should become this order:
+
+dard	dard_1	dard_2	dard_3	veqz	veqz_4	veqz_5	veqz_6	vorx	vorx_1	vorx_2	vorx_3	
+  6       11      2       4      8        12      10      7       5        1      9       3
+
+>perl rearrange_cellomics_columns.pl set14_cellomics_levels.txt > set14_cellomics_levels_final.txt
+
+I usually open the output file in OpenOffice and then save as a spreadsheet.

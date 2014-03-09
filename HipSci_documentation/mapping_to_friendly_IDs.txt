@@ -1,0 +1,362 @@
+pilot           = pilot.fcr.txt 
+batch 1 & 2     = coreex_hips_20130531.fcr.txt
+batch 1 & 2 & 3 = coreex_hips_20130613.fcr.txt
+batch 4         = coreex_hips_20130710.fcr.txt
+batch 5         = coreex_hips_20130808.fcr.txt
+batch 6         = coreex_hips_20130821.fcr.txt
+batch 7         = coreex_hips_20130829.fcr.txt
+batch 8         = coreex_hips_20130906.fcr.txt
+batch 9         = coreex_hips_20131008.fcr.txt
+batch 10        = coreex_hips_20131107.fcr.txt
+batch 11        = coreex_hips_20131128.fcr.txt
+batch 12        = coreex_hips_20140122.fcr.txt
+batch 13        = coreex_hips_20140206.fcr.txt
+batch 14        = coreex_hips_20140213.fcr.txt
+====================================================================
+
+Format is Sanger ID  friendly ID  old ID
+Please note that the pilot data doesn't have friendly IDs from the LIMS, 
+shown are "Chuks IDs".
+
+Two samples have artificial friendly IDs as they are not in the LIMS:
+lofv_X: 288717_B02_QC1Hip-4	lofv_X	ADD21187.3 feeder free (B)
+ffds_X: 295944_B01_QC1Hip-102	ffds_X	FS19_1
+
+pilot           = pilot.fcr.txt 
+
+271298_A01_hipscigt5466706	RV Bob
+271298_A02_HAPMAP5265731
+271298_A03_hipscigt5466710	D13.4
+271298_A04_hipscigt5466706	RV Bob
+271298_A05_HAPMAP5265743
+271298_A06_HAPMAP5265751
+271298_B01_hipscigt5466707	D13.1
+271298_B02_HAPMAP5265732
+271298_B03_hipscigt5466711	D18.1
+271298_B04_hipscigt5466707	D13.1
+271298_B05_HAPMAP5265744
+271298_B06_HAPMAP5265752
+271298_C01_hipscigt5466708	D13.2
+271298_C02_HAPMAP5265733
+271298_C03_hipscigt5466712	D18.2
+271298_C04_hipscigt5466708	D13.2
+271298_C05_HAPMAP5265745
+271298_C06_HAPMAP5265753
+271298_D01_hipscigt5466709	D13.3
+271298_D02_HAPMAP5265734
+271298_D03_HAPMAP5265735
+271298_D04_hipscigt5466709	D13.3
+271298_D05_HAPMAP5265746
+271298_D06_HAPMAP5265754
+271298_E01_hipscigt5466710	D13.4
+271298_E02_hipscigt5466706	RVBob
+271298_E03_HAPMAP5265736
+271298_E04_hipscigt5466710	D13.4
+271298_E05_HAPMAP5265747
+271298_E06_HAPMAP5265755
+271298_F01_hipscigt5466711	D18.1
+271298_F02_hipscigt5466707	D13.1
+271298_F03_HAPMAP5265738
+271298_F04_hipscigt5466711	D18.1
+271298_F05_HAPMAP5265748
+271298_F06_HAPMAP5265756
+271298_G01_hipscigt5466712	D18.2
+271298_G02_hipscigt5466708	D13.2
+271298_G03_HAPMAP5265739
+271298_G04_hipscigt5466712	D18.2
+271298_G05_HAPMAP5265749
+271298_G06_HAPMAP5265757
+271298_H01_HAPMAP5265730
+271298_H02_hipscigt5466709	D13.3
+271298_H03_HAPMAP5265740
+271298_H04_HAPMAP5265741
+271298_H05_HAPMAP5265750
+271298_H06_HAPMAP5265758
+
+batch 1 & 2     = coreex_hips_20130531.fcr.txt
+
+283163_A01_qc1hip5529683	fpdr_1	FS18.A; PBMC MOI6 SV P10
+283163_A02_qc1hip5533821	fpdj_1	FS10.A; PBMC MOI6 SV p9
+283163_A03_qc1hip5533829	fpdm_1	FS13 A PBMC SV:
+283163_B01_qc1hip5529684	fpdr_2	FS18.B; PBMC MOI6 SV P10
+283163_B02_qc1hip5533822	fpdj_2	FS10.B; PBMC MOI6 SV P9
+283163_B03_qc1hip5533830	fpdm_2	FS13.B; PBMC MOI6 SV
+283163_C01_qc1hip5529685	fpdr	FS18. Control: PBMC
+283163_C02_qc1hip5533823	fpdj_3	FS10.C; PBMC MOI6 SV P9
+283163_C03_qc1hip5533831	fpdm_3	FS13.C; PBMC MOI6 SV
+283163_D01_qc1hip5529686	fpdk_1	FS11.A; PBMC MOI6 SV p9
+283163_D02_qc1hip5533824	fpdj	FFS10 Control: PBMC Line 10
+283163_D03_qc1hip5533832	fpdm	Control: PBMC Line 13
+283163_E01_qc1hip5529687	fpdk_2	FS11.B; PBMC MOI6 SV P9
+283163_E02_qc1hip5533825	fpdl_1	FS12 A PBMC SV:
+283163_F01_qc1hip5529688	fpdk_3	FS11.C; PBMC MOI6 SV P9
+283163_F02_qc1hip5533826	fpdl_2	FS12.B; PBMC MOI6 SV
+283163_G01_qc1hip5529689	fpdk	FS11 Control: PBMC
+283163_G02_qc1hip5533827	fpdl_3	FS12.C; PBMC MOI6 SV
+283163_H01_qc1hip5533833	fpdr_3	FS18.C PBMC MOI6 SV P10
+283163_H02_qc1hip5533828	fpdl	Control: PBMC Line 12
+
+batch 1 & 2 & 3 = coreex_hips_20130613.fcr.txt
+
+283163_A01_qc1hip5529683	fpdr_1	FS18.A; PBMC MOI6 SV P10
+283163_A02_qc1hip5533821	fpdj_1	FS10.A; PBMC MOI6 SV p9
+283163_A03_qc1hip5533829	fpdm_1	FS13 A PBMC SV:
+283163_B01_qc1hip5529684	fpdr_2	FS18.B; PBMC MOI6 SV P10
+283163_B02_qc1hip5533822	fpdj_2	FS10.B; PBMC MOI6 SV P9
+283163_B03_qc1hip5533830	fpdm_2	FS13.B; PBMC MOI6 SV
+283163_C01_qc1hip5529685	fpdr	FS18. Control: PBMC
+283163_C02_qc1hip5533823	fpdj_3	FS10.C; PBMC MOI6 SV P9
+283163_C03_qc1hip5533831	fpdm_3	FS13.C; PBMC MOI6 SV
+283163_D01_qc1hip5529686	fpdk_1	FS11.A; PBMC MOI6 SV p9
+283163_D02_qc1hip5533824	fpdj	FFS10 Control: PBMC Line 10
+283163_D03_qc1hip5533832	fpdm	Control: PBMC Line 13
+283163_E01_qc1hip5529687	fpdk_2	FS11.B; PBMC MOI6 SV P9
+283163_E02_qc1hip5533825	fpdl_1	FS12 A PBMC SV:
+283163_F01_qc1hip5529688	fpdk_3	FS11.C; PBMC MOI6 SV P9
+283163_F02_qc1hip5533826	fpdl_2	FS12.B; PBMC MOI6 SV
+283163_G01_qc1hip5529689	fpdk	FS11 Control: PBMC
+283163_G02_qc1hip5533827	fpdl_3	FS12.C; PBMC MOI6 SV
+283163_H01_qc1hip5533833	fpdr_3	FS18.C PBMC MOI6 SV P10
+283163_H02_qc1hip5533828	fpdl	Control: PBMC Line 12
+285708_A01_qc1hip5539485	ffdr_1	Epi FS18 1a-1c  (P9)
+285708_B01_qc1hip5539486	ffdr_2	Epi FS18 2a-2c  (P9)
+285708_C01_qc1hip5539487	ffdr_3	Epi FS18 A1-A3 ( P8)
+285708_D01_qc1hip5539488	ffdr	Control line: FS 18
+285708_E01_qc1hip5539493	ffdm_4	Retro FS13 (P8) A
+285708_F01_qc1hip5539494	ffdm	Control line: FS13
+285708_G01_qc1hip5543903	ffdm_5	Retro FS13 (10) B
+285708_H01_qc1hip5543904	ffdm_6	Retro FS13 (9) C
+
+batch 4         = coreex_hips_20130710.fcr.txt
+
+288717_A01_qc1hip5539489	lofv_1	Epi ADD21187 (P8) A
+288717_A02_QC1Hip-2	ffdb_4	Retro FS02-p10 C
+288717_B01_qc1hip5539490	lofv	Control line: ADD21187
+288717_B02_QC1Hip-4	lofv_X	ADD21187.3 feeder free (B)
+288717_C01_qc1hip5543901	lofv_2	Epi ADD21187 (P8) B
+288717_C02_QC1Hip-1	ffdb_3	Retro FS02-p10 B
+288717_D01_qc1hip5543902	lofv_33	Epi ADD21187 (P8 C) feeder free
+288717_E01_qc1hip5546686	ffdb_2	Retro FS02-p10 A
+288717_F01_qc1hip5546687	ffdb_1	Episomal FS02-p9
+288717_G01_qc1hip5546688	ffdb	Control: Fibroblasts FS02 p7
+288717_H01_qc1hip5550526	lofv_3	Epi ADD21187 (P13) C (the same clone as sample 327114 but grown on feeders) 
+
+batch 5         = coreex_hips_20130808.fcr.txt
+
+291831_A01_qc1hip5539492	ffdc	Control line: FS03
+291831_A02_QC1Hip-10	ffdj_2	FSFE 10 B
+291831_B01_qc1hip5546691	ffdc_1	Episomal FS03 p9 A
+291831_B02_QC1Hip-12	ffdj	Control line: FS10
+291831_C01_qc1hip5550527	ffdc_2	Episomal FS03 p9 B
+291831_C02_QC1Hip-9	ffdj_1	FSFE10 A
+291831_D01_qc1hip5550528	ffdc_3	Episomal FS03 p9 C
+291831_D02_QC1Hip-11	ffdj_3	FSFE10 C
+291831_E01_QC1Hip-5	ffdm_1	FSFE13 A
+291831_F01_QC1Hip-8	ffdm	Control line: FS13
+291831_G01_QC1Hip-7	ffdm_3	FSFE13 C
+291831_H01_QC1Hip-23	ffdm_2	FSFE13 B
+
+batch 6         = coreex_hips_20130821.fcr.txt
+
+293844_A01_QC1Hip-13	ffdk_1	FSFE 11.A
+293844_A02_QC1Hip-56	gedo_22	92255.2 Epi (FF)
+293844_B01_QC1Hip-14	ffdk_2	FSFE 11 B
+293844_B02_QC1Hip-57	gedo_33	92255.3 Epi (FF)
+293844_C01_QC1Hip-15	ffdk_3	FSFE 11 C
+293844_C02_QC1Hip-84	gedo	92255 control resub
+293844_D01_QC1Hip-63	ffdk	FS11 (repeat submission)
+293844_E01_QC1Hip-31	gedo_1	92255.1 Epi
+293844_F01_QC1Hip-33	gedo_3	92255.3 Epi
+293844_G01_QC1Hip-32	gedo_2	92255.2 Epi
+293844_H01_QC1Hip-55	gedo_11	92255.1 Epi (FF)
+
+batch 7         = coreex_hips_20130829.fcr.txt
+
+294879_A01_QC1Hip-75	eiqh_4	49204.1
+294879_A02_QC1Hip-51	ffdz_2	FSFE12hB
+294879_B01_QC1Hip-76	eiqh_5	49204.2
+294879_B02_QC1Hip-18	ffdz_3	FSFE12hC
+294879_C01_QC1Hip-77	eiqh_6	49204.3
+294879_C02_QC1Hip-106	ffdz	FS12h
+294879_D01_QC1Hip-92	eiqh_1	49204_1
+294879_E01_QC1Hip-93	eiqh_2	49204_2
+294879_F01_QC1Hip-94	eiqh_3	49204_3
+294879_G01_QC1Hip-64	eiqh	49204
+294879_H01_QC1Hip-17	ffdz_1	FSFE12hA
+294878_A01_QC1Hip-86	airc_1	airc.1
+294878_A02_QC1Hip-45	airc_6	airc_3 Epi
+294878_B01_QC1Hip-87	airc_2	airc.2
+294878_B02_QC1Hip-46	airc	Airc
+294878_C01_QC1Hip-88	airc_3	airc.3
+294878_D01_QC1Hip-100	airc_44	airc.1 (FF)
+294878_E01_QC1Hip-48	airc_55	airc.s (FF)
+294878_F01_QC1Hip-49	airc_66	Airc.3 (FF)
+294878_G01_QC1Hip-98	airc_4	airc_1 Epi
+294878_H01_QC1Hip-99	airc_5	airc_2 Epi
+
+batch 8         = coreex_hips_20130906.fcr.txt
+
+295944_A01_qc1hip5546689	ffds_3	Retro FS19-p10
+295944_A02_QC1Hip-104	ffdc_33	FS03_C (FF)
+295944_B01_QC1Hip-102	ffds_X	FS19_1
+295944_B02_qc1hip5539492	ffdc	Control line: FS03
+295944_C01_QC1Hip-36	ffds_2	FS19 .2 Epi
+295944_D01_qc1hip5546690	ffds	Control: Fibroblasts FS19 p
+295944_E01_qc1hip5539491	ffdc_4	Retro FS03 (P8) A
+295944_F01_QC1Hip-3	ffdc_5	Retro FS03 (P8) B
+295944_G01_QC1Hip-103	ffdc_11	FS03_A (FF)
+295944_H01_QC1Hip-29	ffdc_22	FS03 B Epi (FF)
+
+batch 9         = coreex_hips_20131008.fcr.txt
+
+301364_A01_QC1Hip-115	xekf_1	xekf_1
+301364_A02_QC1Hip-107	yuze_1	yuze_1
+301364_A03_QC1Hip-81	nawk_4	nawk.1 Epi
+301364_B01_QC1Hip-116	xekf_2	xekf_2
+301364_B02_QC1Hip-108	yuze_2	yuze_2
+301364_B03_QC1Hip-82	nawk_5	nawk.2 Epi
+301364_C01_QC1Hip-117	xekf_3	xekf_3
+301364_C02_QC1Hip-109	yuze_3	yuze_3
+301364_C03_QC1Hip-83	nawk_6	nawk.3 Epi
+301364_D01_QC1Hip-140	gomv	gomv
+301364_D02_QC1Hip-119	yuze	yuze
+301364_D03_QC1Hip-118	cesj	cesj
+301364_E01_QC1Hip-110	gomv_2	gomv_2
+301364_E02_QC1Hip-52	nawk_44	Nawk.1 Epi (FF)
+301364_E03_QC1Hip-72	cesj_1	cesj.1 Epi
+301364_F01_QC1Hip-111	gomv_3	gomv_3
+301364_F02_QC1Hip-53	nawk_55	Nawk.2 Epi (FF)
+301364_F03_QC1Hip-73	cesj_2	cesj.2 Epi
+301364_G01_QC1Hip-112	gomv_4	gomv_4
+301364_G02_QC1Hip-54	nawk_66	Nawk.3 Epi (FF)
+301364_G03_QC1Hip-74	cesj_3	cesj.3 Epi
+301364_H01_QC1Hip-141	xekf	xekf
+301364_H02_QC1Hip-62	Nawk	Nawk
+301365_A01_QC1Hip-113	aomg_6	aomg_6
+301365_A02_QC1Hip-66	koun_3	koun_3
+301365_B01_QC1Hip-114	aomg_2	aomg_2 (C047NY)
+301365_B02_QC1Hip-67	koun_4	koun_4
+301365_C01_QC1Hip-120	aomg	aomg
+301365_C02_QC1Hip-80	koun	koun
+301365_D01_QC1Hip-138	aomg_1	aomg_1
+301365_E01_QC1Hip-139	aomg_3	aomg_3
+301365_F01_QC1Hip-78	aomg_4	aomg_4
+301365_G01_QC1Hip-79	aomg_5	aomg_5
+301365_H01_QC1Hip-65	koun_2	koun_2
+
+batch 10        = coreex_hips_20131107.fcr.txt
+
+307024_A01_QC1Hip-105	ffdl	FS12
+307024_A02_QC1Hip-38	ffdp_2	leeh_2
+307024_B01_QC1Hip-101	ffdp_11	FS16_1 FF
+307024_B02_QC1Hip-39	ffdp_3	FS16.3 Epi
+307024_C01_QC1Hip-142	ffdp_1	FS16_1
+307024_C02_QC1Hip-85	ffdp	FS16
+307024_D01_QC1Hip-162	ffdp_22	FS16_2
+307024_E01_QC1Hip-163	ffdl_2	FSFE12B
+307024_F01_QC1Hip-21	ffdl_3	FSFE12C
+307024_G01_QC1Hip-20	ffdl_1	FSFE12A
+307024_H01_QC1Hip-42	ffdp_33	FS16.3 Epi (FF)
+
+batch 11        = coreex_hips_20131128.fcr.txt
+
+311691_A01_QC1Hip-189	uahf_2	uahf_2
+311691_A02_QC1Hip-218	golb	golb
+311691_B01_QC1Hip-190	uahf_3	uahf_3
+311691_B02_QC1Hip-48	airc_55	airc.s (FF)
+311691_C01_QC1Hip-216	uahf_1	uahf_1
+311691_C02_QC1Hip-99	airc_5	airc_2 Epi
+311691_D01_QC1Hip-217	uahf	uahf
+311691_E01_QC1Hip-213	gomv	gomv
+311691_F01_QC1Hip-188	golb_3	golb_3
+311691_G01_QC1Hip-186	golb_1	golb_1
+311691_H01_QC1Hip-187	golb_2	golb_2
+
+batch 12        = coreex_hips_20140122.fcr.txt
+
+318465_A01_QC1Hip-214	fecs_2	fecs_2
+318465_A02_QC1Hip-494	auim_3	auim_3
+318465_A03_QC1Hip-487	oeoo_3	oeoo_3
+318465_A04_QC1Hip-230	aomg_2	aomg_2
+318465_A05_QC1Hip-611	veve	veve
+318465_B01_QC1Hip-215	fecs_1	fecs_1
+318465_B02_QC1Hip-607	fecs	fecs
+318465_B03_QC1Hip-488	oeoo_2	oeoo_2
+318465_B04_QC1Hip-260	xovo_5	xovo_5
+318465_B05_QC1Hip-69	xovo_1	xovo.1
+318465_C01_QC1Hip-267	febc_1	febc_1
+318465_C02_QC1Hip-613	auim	auim
+318465_C03_QC1Hip-504	kesz_1	kesz_1
+318465_C04_QC1Hip-507	veve_2	veve_2
+318465_C05_QC1Hip-70	xovo_2	xovo.2
+318465_D01_QC1Hip-489	fecs_3	fecs_3
+318465_D02_QC1Hip-670	febc	febc
+318465_D03_QC1Hip-505	kesz_2	kesz_2
+318465_D04_QC1Hip-508	veve_3	veve_3
+318465_D05_QC1Hip-71	xovo_3	xovo.3
+318465_E01_QC1Hip-490	febc_2	febc_2
+318465_E02_QC1Hip-261	iasn_3	iasn_3
+318465_E03_QC1Hip-506	kesz_3	kesz_3
+318465_E04_QC1Hip-518	veve_1	veve_1
+318465_F01_QC1Hip-491	febc_3	febc_3
+318465_F02_QC1Hip-262	iasn_2	iasn_2
+318465_F03_QC1Hip-608	kesz	kesz
+318465_F04_QC1Hip-58	xovo_4	xovo.1 Epi
+318465_G01_QC1Hip-492	auim_1	auim_1
+318465_G02_QC1Hip-263	iasn_1	iasn_1
+318465_G03_QC1Hip-614	iasn	iasn
+318465_G04_QC1Hip-60	xovo_6	xovo.3 Epi
+318465_H01_QC1Hip-493	auim_2	auim_2
+318465_H02_QC1Hip-486	oeoo_1	oeoo_1
+318465_H03_QC1Hip-671	oeoo	oeoo
+318465_H04_QC1Hip-61	xovo	xovo
+
+batch 13        = coreex_hips_20140206.fcr.txt
+
+321189_A01_QC1Hip-228	eiqh_1	eiqh_1
+321189_A02_QC1Hip-721	leeh_1	leeh_1
+321189_A03_QC1Hip-510	qonr_2	qonr_2
+321189_A04_QC1Hip-264	cehw_1	cehw_1
+321189_B01_QC1Hip-667	iakz_1	iakz_1
+321189_B02_QC1Hip-722	leeh_2	leeh_2
+321189_B03_QC1Hip-511	peop_1	peop_1
+321189_B04_QC1Hip-265	cehw_2	cehw_2
+321189_C01_QC1Hip-668	iakz_2	iakz_2
+321189_C02_QC1Hip-723	leeh_3	leeh_3
+321189_C03_QC1Hip-512	peop_3	peop_3
+321189_C04_QC1Hip-266	cehw_3	cehw_3
+321189_D01_QC1Hip-714	iakz	iakz
+321189_D02_QC1Hip-724	leeh	leeh
+321189_D03_QC1Hip-609	peop	peop
+321189_D04_QC1Hip-601	ougl_2	ougl_2
+321189_E01_QC1Hip-717	hikj_1	hikj_1
+321189_E02_QC1Hip-501	giuo_4	giuo_4
+321189_E03_QC1Hip-615	peop_2	peop_2
+321189_E04_QC1Hip-602	ougl_3	ougl_3
+321189_F01_QC1Hip-718	hikj_2	hikj_2
+321189_F02_QC1Hip-502	giuo_6	giuo_6
+321189_F03_QC1Hip-675	peop_4	peop_4
+321189_F04_QC1Hip-603	ougl_1	ougl_1
+321189_G01_QC1Hip-719	hikj_3	hikj_3
+321189_G02_QC1Hip-503	giuo_5	giuo_5
+321189_G03_QC1Hip-709	giuo	giuo
+321189_G04_QC1Hip-710	cehw	cehw
+321189_H01_QC1Hip-720	hikj	hikj
+321189_H02_QC1Hip-509	qonr_1	qonr_1
+321189_H03_QC1Hip-712	qonr	qonr
+321189_H04_QC1Hip-713	ougl	ougl
+
+batch 14 = coreex_hips_20140213.fcr.txt
+
+322220_A01_QC1Hip-515	vorx_1
+322220_A02_QC1Hip-845	veqz_4
+322220_B01_QC1Hip-516	vorx_3
+322220_B02_QC1Hip-846	veqz_5
+322220_C01_QC1Hip-673	vorx
+322220_C02_QC1Hip-847	veqz_6
+322220_D01_QC1Hip-835	vorx_2
+322220_D02_QC1Hip-848	veqz
+322220_E01_QC1Hip-841	dard_1
+322220_F01_QC1Hip-842	dard_2
+322220_G01_QC1Hip-843	dard_3
+322220_H01_QC1Hip-844	dard
