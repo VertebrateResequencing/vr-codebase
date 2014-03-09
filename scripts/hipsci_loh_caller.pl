@@ -39,17 +39,17 @@ if(defined $options{v}){
         #print "VCF found OK\n";
     } 
     else{
-        die("$VCFFile VCF doesn't exist\nUsage: hipsci_loh_caller.pl -v yourvcf.vcf.gz -c controlSampleName [-s for short output -b BED output -l logfile]\n");
+        die("$VCFFile VCF doesn't exist\nUsage: hipsci_loh_caller.pl -v yourvcf.vcf.gz -c controlSampleName -l logfile [-s for short output -b BED output]\n");
     }
 }
 else{
-    die("VCF file required\nUsage: hipsci_loh_caller -v yourvcf.vcf.gz -c controlSampleName [-s for short output -b BED output -l logfile]\n");
+    die("VCF file required\nUsage: hipsci_loh_caller -v yourvcf.vcf.gz -c controlSampleName -l logfile [-s for short output -b BED output]\n");
 }
 if(defined $options{c}){
     $controlSampleName = $options{c};
 }
 else{
-    die("Control sample name required\nUsage: hipsci_loh_caller -v yourvcf.vcf.gz -c controlSampleName [-s for short output -b BED output -l logfile]\n");
+    die("Control sample name required\nUsage: hipsci_loh_caller -v yourvcf.vcf.gz -c controlSampleName -l logfile [-s for short output -b BED output]\n");
 }
 if(defined $options{l}){
     $logfile = $options{l};
@@ -71,7 +71,7 @@ if($ARGV[0]){
     foreach (@ARGV){
         $tmpOut = $tmpOut . "$_\n";
     }
-    die("$tmpOut" . "Usage: hipsci_loh_caller.pl -v yourvcf.vcf.gz -c controlSampleName [-s for short output -b BED output -l logfile]\n");
+    die("$tmpOut" . "Usage: hipsci_loh_caller.pl -v yourvcf.vcf.gz -c controlSampleName -l logfile [-s for short output -b BED output]\n");
 }
 
 if($concisePrint == 0){
@@ -152,7 +152,7 @@ foreach(@sampleNames){
     }
 }
 if($controlPosition == 0){
-    die("Control sample $controlSampleName not found in $VCFFile\nUsage: loh.pl -v yourvcf.vcf.gz -c controlSampleName [-s for short output]\n");
+    die("Control sample $controlSampleName not found in $VCFFile\nUsage: hipsci_loh_caller.pl -v yourvcf.vcf.gz -c controlSampleName -l logfile [-s for short output -b BED output]\n");
 }
 #$controlPosition = 2; # TESTING
 # PRINT THE HEADER OF THE CNV OUTPUT
@@ -216,6 +216,7 @@ my @allTrimmedBlocks;
 my @blocksAoA;
 my @listOfAllTrimmedBlocks;
 
+# Testing parameters for quicker run:
 #my $windowIterStart = 7;
 #my $windowIterEnd = 8;
 #my $percentageFlexIterStart = 70;
@@ -224,10 +225,8 @@ my @listOfAllTrimmedBlocks;
 #my $windowIterEnd = 8;
 #my $percentageFlexIterStart = 70;
 #my $percentageFlexIterEnd = 90;
-#my $windowIterStart = 7;
-#my $windowIterEnd = 8;
-#my $percentageFlexIterStart = 70;
-#my $percentageFlexIterEnd = 80;
+
+# The correct parameters:
 my $windowIterStart = 2;
 my $windowIterEnd = 15;
 my $percentageFlexIterStart = 10;
