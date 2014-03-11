@@ -1,1 +1,0 @@
-/lustre/scratch107/user/pc12/HipSci_documentation/PennCNV_and_QuantiSNP/data/
