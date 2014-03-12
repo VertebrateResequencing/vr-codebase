@@ -49,6 +49,7 @@ sub new {
 	    DISK_USAGE_INDIV_PIPE    => "select ps_id, ps_name, ps_user, ps_type, file_type, path_root, s_gb, file_count from vrpipe_usage_top_level where ps_id = ? and s_gb > 0 order by s_gb desc", 
 	    DISK_USAGE_FILES         => "select ps_id, ps_name, ps_user, ps_type, s, type, path from vrpipe_file_info where ps_id = ? and path_root = ? and type = ? order by s desc",
 	    HIPSCI_FETCH_COHORT      => "SELECT distinct i.name from individual i, latest_sample s, latest_library b, latest_lane l where i.individual_id = s.individual_id and s.sample_id = b.sample_id and b.library_id = l.library_id and l.withdrawn is null",
+        HIPSCI_FETCH_COHORT_CHANGE_DATE => "select l.changed from latest_lane l join latest_library lib on lib.library_id = l.library_id join latest_sample s on s.sample_id = lib.sample_id join individual i on s.individual_id = i.individual_id where (l.withdrawn is NULL or l.withdrawn = 0) and i.name = ? order by l.changed desc limit 1",
 	    HIPSCI_FETCH_SAMPLES     => "SELECT s.name, s.note_id from latest_sample s, individual i where s.individual_id = i.individual_id and i.name = ?",
 	    HIPSCI_FETCH_CNV_TOTALS  => "SELECT distinct s.name, m.raw_bases, m.clip_bases, m.gt_expected from latest_mapstats m, latest_lane l, latest_library b, latest_sample s, individual i where m.lane_id=l.lane_id and l.library_id=b.library_id and b.sample_id=s.sample_id and  s.individual_id = i.individual_id and i.name = ?",
 	    HIPSCI_FETCH_LANE_ID     => "SELECT min(l.lane_id) from latest_lane l, latest_library b, latest_sample s, individual i where l.library_id = b.library_id and b.sample_id = s.sample_id and s.individual_id = i.individual_id and i.name = ?",
@@ -421,6 +422,20 @@ sub getHipsciCohorts
     return @cohorts;
 }
 
+sub getCohortChangeDate
+{
+    my ($self, $db) = @_;
+    my $vrtrack = $self->connectToDatabase($db);
+    $self->displayError( "Failed to connect to database: $db" ) unless defined( $vrtrack );
+    my $sql = $self->{SQL}{HIPSCI_FETCH_COHORT_CHANGE_DATE};
+    my $sth = $vrtrack->{_dbh}->prepare($sql);
+    my $date;
+    if ($sth->execute()) {
+        ($date) = $sth->fetchrow_array();
+    }
+    return $date;
+}
+
 sub getGenotypingSamples 
 {
 	my ($self, $db, $cohort) = @_;
@@ -444,7 +459,7 @@ sub getControlSample
     # Is there any chance we can have > 1 control?? Use array JUST IN CASE.....
     my @geno_control;
     foreach (keys %geno_sample_controls) {
-        push @geno_control, $_ unless $geno_sample_controls{$_} == 2;
+        push @geno_control, $_ if $geno_sample_controls{$_} == 1;
     }
     return join(', ', @geno_control);
 }

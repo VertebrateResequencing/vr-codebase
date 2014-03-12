@@ -53,7 +53,7 @@ sub displaySamplesPage
 	
 	my %hipsci_cohorts;
 	for my $cohort (@expression_cohorts, @genotyping_cohorts){
-		$hipsci_cohorts{$cohort} = 1;
+		$hipsci_cohorts{$cohort} = $utl->getCohortChangeDate($cohort);
 	}
 	
 	print qq[ <h4 align="center" style="font: arial"><i><a href="$index">Team 145</a></i> : $title</h4><br/> ];
@@ -66,6 +66,7 @@ sub displaySamplesPage
         <tr>
         <th>Cohort identifier</th>
         <th>Control sample</th>
+        <th>Date last sample added to cohort</th>
         <th></th>
         </tr>
     ];
@@ -74,13 +75,15 @@ sub displaySamplesPage
     # be a pointless BioSample ID column in the output that was hardcoded to be
     # N/A??
     
-    for my $cohort( sort( keys( %hipsci_cohorts ) ) ) {
+    for my $cohort (sort { $hipsci_cohorts{$a} cmp $hipsci_cohorts{$b} } keys %hipsci_cohorts) {
         my $control_sample = $utl->getControlSample($genotyping_db, $cohort);
+        my $date = $hipsci_cohorts{$cohort};
         
         print qq[
           	<tr>
             	<td>$cohort</td>
                 <td>$control_sample</td>
+                <td>$date</td>
                 <td><a href="$detailed_view_script?cohort=$cohort">Detailed view</a></td>                
             </tr>
         ];
