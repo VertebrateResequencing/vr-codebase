@@ -53,7 +53,7 @@ sub displaySamplesPage
 	
 	my %hipsci_cohorts;
 	for my $cohort (@expression_cohorts, @genotyping_cohorts){
-		$hipsci_cohorts{$cohort} = $utl->getCohortChangeDate($cohort);
+		$hipsci_cohorts{$cohort} = $utl->getCohortChangeDate($genotyping_db, $cohort);
 	}
 	
 	print qq[ <h4 align="center" style="font: arial"><i><a href="$index">Team 145</a></i> : $title</h4><br/> ];

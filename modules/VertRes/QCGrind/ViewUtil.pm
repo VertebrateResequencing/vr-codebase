@@ -424,13 +424,13 @@ sub getHipsciCohorts
 
 sub getCohortChangeDate
 {
-    my ($self, $db) = @_;
+    my ($self, $db, $cohort) = @_;
     my $vrtrack = $self->connectToDatabase($db);
     $self->displayError( "Failed to connect to database: $db" ) unless defined( $vrtrack );
     my $sql = $self->{SQL}{HIPSCI_FETCH_COHORT_CHANGE_DATE};
     my $sth = $vrtrack->{_dbh}->prepare($sql);
     my $date;
-    if ($sth->execute()) {
+    if ($sth->execute($cohort)) {
         ($date) = $sth->fetchrow_array();
     }
     return $date;
