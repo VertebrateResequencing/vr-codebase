@@ -75,7 +75,7 @@ sub displaySamplesPage
     # be a pointless BioSample ID column in the output that was hardcoded to be
     # N/A??
     
-    for my $cohort (sort { $hipsci_cohorts{$a} cmp $hipsci_cohorts{$b} } keys %hipsci_cohorts) {
+    for my $cohort (sort { $hipsci_cohorts{$b} cmp $hipsci_cohorts{$a} } keys %hipsci_cohorts) {
         my $control_sample = $utl->getControlSample($genotyping_db, $cohort);
         my $date = $hipsci_cohorts{$cohort};
         
