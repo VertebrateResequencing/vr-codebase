@@ -82,6 +82,7 @@ sub is_job_array_running
     ELEMENT_ID: for (my $j=0; $j<@$ids; $j++)
     {
 	my $id = $$ids[$j];
+	$jobs[$j]{id} = $$info{$id}{id};
 
 	if ( !exists($$info{$id}) ) { next ELEMENT_ID; }
 	# if we already have a checkpoint for this job and this info also has checkpoint
@@ -106,7 +107,6 @@ sub is_job_array_running
 	    $jobs[$j]{mem_mb} = $$info{$id}{mem_mb};
 	    $jobs[$j]{chkpnt_dir} = $$info{$id}{chkpnt_dir};
 	    $jobs[$j]{name} = $$info{$id}{name};
-	    $jobs[$j]{id} = $$info{$id}{id};
 	}
 	if ( exists($$info{$id}{idle_factor}) )
 	{
