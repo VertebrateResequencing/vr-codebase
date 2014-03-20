@@ -54,6 +54,8 @@ our %platform_aliases = (ILLUMINA => 'SLX',
                          Illumina => 'SLX',
                          LS454 => '454');
 
+our @schema_sql;
+
 =head2 new
 
   Arg [1]    : hashref of {database, host, port, user, password}
@@ -113,7 +115,7 @@ sub new {
 =cut
 
 sub schema {
-    my @sql;
+    return @schema_sql if @schema_sql;
     
     my $line = '';
     while (<DATA>) {
@@ -122,15 +124,15 @@ sub schema {
         next unless /\S/;
         $line .= $_;
         if (/;\s*$/) {
-            push(@sql, $line."\n");
+            push(@schema_sql, $line."\n");
             $line = '';
         }
     }
     if ($line =~ /;\s*$/) {
-        push(@sql, $line);
+        push(@schema_sql, $line);
     }
     
-    return @sql;
+    return @schema_sql;
 }
 
 =head2 schema_version
