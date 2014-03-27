@@ -152,12 +152,7 @@ foreach my $file_id (@file_ids) {
     $fm->finish(0);
 }
 $fm->wait_all_children;
-my $num_updated = check_updated('mapped');
-my $some_worked = 0;
-if ($num_updated > 10 && $num_updated < 2000) {
-    $some_worked = 1;
-}
-is $some_worked, 1, 'we were able to get some (but not all) updates to work when using transaction_start/commit with transaction() nested - deadlocks still occur this way';
+cmp_ok check_updated('mapped'), '>', 10, 'we were able to get at least some updates to work when using transaction_start/commit with transaction() nested; deadlocks can still occur this way';
 
 foreach my $file_id (@file_ids) {
     $fm->start and next;
