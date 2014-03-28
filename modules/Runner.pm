@@ -737,22 +737,25 @@ sub wait
                 else 
 		{ 
 		    $must_run = 0; 
-		    # ask farm to clean up after this job
-		    my $ok;
-		    eval 
-		    {
-			$self->debugln("\t.. calling cleanup_job on job $$status[$i]{id}\n");
-		 	$farm->can('cleanup_job')->($jobs_id_file,$$status[$i],$$self{_farm_options});
-			$ok = 1;
-		    };
-		    if ( !$ok )
-		    {
-			confess(
-			    "\tc  couldn't clean up after job $$status[$i]{id}.\n"
+		    # ask farm to clean up after this job if there is a checkpoint
+                    if ( exists $$status[$i]{have_chkpnt} )
+                    {
+		        my $ok;
+		        eval 
+		        {
+			    $self->debugln("\t.. calling cleanup_job on job $$status[$i]{id}\n");
+		 	    $farm->can('cleanup_job')->($jobs_id_file,$$status[$i],$$self{_farm_options});
+			    $ok = 1;
+		        };
+		        if ( !$ok )
+		        {
+			    confess(
+			        "\t  couldn't clean up after job $$status[$i]{id}.\n"
 			    );
-			$self->throw($@);
+			    $self->throw($@);
+		        }
 		    }
-		}
+                }
             }
 
             # If the job has been already ran and failed, check if it failed repeatedly
