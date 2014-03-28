@@ -34,14 +34,16 @@ sub new
     $$self{bcftools}       = 'bcftools call -Nvm';
     $$self{vcfstats}       = 'bcftools stats';
     $$self{filter}         = 'bcftools filter -m+ -sLowQual -e"%QUAL<=10" -g3 -G10 -Ov -';
+    $$self{concat}         = 'bcftools concat';
     $$self{chunk_size}     = 1_000_000;
-	$$self{config_version} = '1392291886';
+	$$self{config_version} = '1394700014';
     $$self{_sampleconf} = q[
             # For sanity checking that your config file is not obsolete. Update the version key in your 
             #  config file to get rid of the warnings.
             #
-            # What changed since version 1377691623: New version of bcftools requires sample files
-            #   to be prefixed with ':'.
+            # What changed since version:
+            #   1377691623 .. New version of bcftools requires sample files to be prefixed with ':'.
+            #   1394700014 .. Switched from "vcf-concat" to "bcftools concat"
             #
             version  => '] .$$self{config_version}. q[',
 
@@ -50,6 +52,7 @@ sub new
             bcftools => '] .$$self{bcftools}. q[',
             vcfstats => '] .$$self{vcfstats}. q[',
             filter   => '] .$$self{filter}. q[',
+            concat   => '] .$$self{concat}. q[',
             chunk_options =>
             {   
                 # Chunk-specific options will be applied to chunks with a non-zero overlap
@@ -1029,7 +1032,7 @@ sub concat_vcfs
 	close($fh) or $self->throw("close $chunks_list");
 
 	my $filter = exists($$self{filter}) ? "| $$self{filter}" : '';
-	$self->cmd("vcf-concat -p -f $chunks_list $filter | bgzip -c > $outfile.part");
+	$self->cmd("$$self{concat} -f $chunks_list $filter | bgzip -c > $outfile.part");
 	$self->tabix_part($outfile);
 }
 

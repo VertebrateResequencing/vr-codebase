@@ -161,8 +161,9 @@ sub new
         "After this is done, proceed to select filtering threshold based on <outdir>/snps/result.tab*:\n" .
         "   4) Test the effect of the threshold\n" .
         "       run-filter som +config <file> -o <outdir> -t <type>:<value>\n" .
-        "   5) Create final VCF with genotypes. The --apply expression is directly passed to `bcftools filter`, e.g.\n" .
-        "       run-filter som +config <file> -o <outdir> --apply '-e \"%QUAL<10 || (MLQ<0.0568229 & %TYPE=\\\"snp\\\")\"'\n" .
+        "   5) Create final VCF with genotypes. The --apply expression is directly passed to `bcftools filter`\n" .
+        "      as it is. The bad_sites fixed filter will not be applied unless explicitly added here, e.g.:\n" .
+        "       run-filter som +config <file> -o <outdir> --apply '-m+ -e \"%QUAL<10 || (MLQ<0.0568229 & %TYPE=\\\"snp\\\")\"'\n" .
         "\n";
 
     return $self;
@@ -406,7 +407,7 @@ sub main_scan_params
     {
         for my $job (@jobs)
         {
-            if ( $self->is_finished($best{$type}{$job}) ) { next; }
+            if ( $self->is_finished("$best{$type}{$job}.tab") ) { next; }
             my @sjobs = $self->scan_params_jobs($type,$job);
             for my $sjob (@sjobs)
             {
@@ -422,7 +423,7 @@ sub main_scan_params
     {
         for my $job (@jobs)
         {
-            if ( $self->is_finished($best{$type}{$job}) ) { next; }
+            if ( $self->is_finished("$best{$type}{$job}.tab") ) { next; }
             $self->spawn('scan_params_merge',"$$self{outdir}/$type/$job/scan.$$self{aopt}.$$self{bopt}$$self{$type}{$job}{suffix}.tab",@{$tmp{$type}{$job}});
         }
     }
@@ -586,13 +587,18 @@ sub apply_mlq_tab
     my ($self,$outfile,$mlq,$infile) = @_;
     my $cmd = 
         qq[$$self{bcftools} view $infile] .
-        qq[| vcf-annotate -a $mlq -d key=INFO,ID=MLQ,Number=1,Type=Float,Description='Machine Learning Quality Score' -c CHROM,POS,REF,ALT,MLQ];
+        qq[| $$self{bcftools} annotate -a $mlq -h $outfile.hdr -c CHROM,POS,REF,ALT,MLQ];
+
+    open(my $fh,'>',"$outfile.hdr") or $self->throw("$outfile.hdr: $!");
+    print $fh qq[##INFO=<ID=MLQ,Number=1,Type=Float,Description="Machine Learning Quality Score">\n];
+    close($fh) or $self->throw("close failed: $outfile.hdr");
 
     if ( $$self{apply_threshold} ne '-' )
     {
-        $cmd .= qq[ | $$self{bcftools} filter $$self{apply_threshold}];
+        $cmd .= qq[ -Ou | $$self{bcftools} filter $$self{apply_threshold}];
     }
     $self->cmd($cmd . qq[ -Oz > $outfile.part]);
+    unlink("$outfile.hdr");
     $self->cmd(qq[$$self{bcftools} stats $outfile.part > $outfile.stats]);
     $self->tabix_part($outfile);
 }
@@ -679,11 +685,7 @@ sub shuffle
 sub parse_file_name
 {
     my ($self,$fname,$chr) = @_;
-    if ( index($fname,'*') >=0 )
-    {
-        # it is a file mask
-        $fname =~ s/\*/$chr/;
-    }
+    $fname =~ s/{CHROM}/$chr/g;
     if ( ! -e $fname ) { $self->throw("The file \"$fname\" does not exist\n"); }
     return $fname;
 }
@@ -1367,7 +1369,13 @@ sub annotate_scores
     my ($self,$outfile,$infile, @files) = @_;
     if ( scalar @files !=1 ) { $self->throw("todo: ", join(' ',@files), "\n"); }
     my $ann_fname = $files[0] . ".sites.gz";
-    $self->cmd("$$self{bcftools} view $infile | vcf-annotate -a $ann_fname -d key=INFO,ID=MLQ,Number=1,Type=Float,Description='Machine Learning Quality' -c CHROM,FROM,INFO/MLQ | bgzip -c > $outfile.part");
+
+    open(my $fh,'>',"$outfile.hdr") or $self->throw("$outfile.hdr: $!");
+    print $fh qq[##INFO=<ID=MLQ,Number=1,Type=Float,Description="Machine Learning Quality Score">\n];
+    close($fh) or $self->throw("close failed: $outfile.hdr");
+
+    $self->cmd("$$self{bcftools} view $infile | $$self{bcftools} annotate -a $ann_fname -h $outfile.hdr -c CHROM,FROM,MLQ -Oz > $outfile.part");
+    unlink("$outfile.hdr");
     rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile");
 }
 
