@@ -27,14 +27,13 @@ sub error
     my (@msg) = @_;
     if ( scalar @msg ) { confess @msg; }
     die
-        "About: Helper script for run-shapeit, converts between VCF and GEN/SAMPLE (aka HAPS/SAMPLE)\n",
+        "About: Helper script for run-shapeit, converts between VCF and GEN/SAMPLE\n",
         "   file format used by SHAPEIT and IMPUTE2.\n", 
         "Usage: vcf-gensample [OPTIONS] <file.vcf.gz>\n",
         "Options:\n",
         "   -a, --apply <prefix>                Apply SHAPEIT output to the VCF\n",
-        "   -l, --legend-file                   Create HAP/LEGEND/SAMPLE file instead of GEN/SAMPLE\n",
-        "   -m, --min-AC <int>                  Exclude sites with rare alleles [3]\n",
         "   -o, --out <prefix>                  Prefix of output files\n",
+        "   -m, --min-AC <int>                  Exclude sites with rare alleles [3]\n",
         "   -r, --region <chr|chr:from-to>      \n",
         "   -h, -?, --help                      This help message.\n",
         "\n";
@@ -46,7 +45,6 @@ sub parse_params
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '-a' || $arg eq '--apply' ) { $$opts{apply} = shift(@ARGV); next; }
-        if ( $arg eq '-l' || $arg eq '--legend-file' ) { $$opts{create_legend} = 1; next; }
         if ( $arg eq '-r' || $arg eq '--region' ) { $$opts{region} = shift(@ARGV); next; }
         if ( $arg eq '-m' || $arg eq '--min-AC' ) { $$opts{min_ac} = shift(@ARGV); next; }
         if ( $arg eq '-o' || $arg eq '--out' ) { $$opts{out}=shift(@ARGV); next }
@@ -89,37 +87,19 @@ sub vcf_to_gensample
     my @samples = $vcf->get_samples();
 
     my $fname_samples = "$$opts{out}_samples";
-    my $fname_haps    = "$$opts{out}_haps.gz";
-    my $fname_legend  = "$$opts{out}_legend.gz";
+    my $fname_haps = "$$opts{out}_haps.gz";
 
     open(my $fh,'>',$fname_samples) or error("$fname_samples $!");
-    if ( $$opts{create_legend} )
+    print $fh "ID_1 ID_2 missing\n";
+    print $fh "0 0 0\n";
+    for my $id (@samples)
     {
-        print $fh "sample population group sex\n";
-        for my $id (@samples)
-        {
-            print $fh "$id $id $id 2\n";    # 1 male, 2 female
-        }
-    }
-    else
-    {
-        print $fh "ID_1 ID_2 missing\n";
-        print $fh "0 0 0\n";
-        for my $id (@samples)
-        {
-            print $fh "$id $id 0\n";
-        }
+        print $fh "$id $id 0\n";
     }
     close($fh) or error("close $fname_samples");
 
     my $prev_pos;
     open($fh,"| gzip -c > $fname_haps.part") or error("| gzip -c > $fname_haps.part: $!");
-    my $fh_lg;
-    if ( $$opts{create_legend} ) 
-    { 
-        open($fh_lg,"| gzip -c > $fname_legend.part") or error("| gzip -c > $fname_legend.part: $!"); 
-        print $fh_lg "id position a0 a1\n";
-    }
     while (my $x = $vcf->next_data_array())
     {
         # Check overlapping indels with position outside the region
@@ -144,39 +124,18 @@ sub vcf_to_gensample
             if ( !defined $a2 ) { $a2 = $a1; }
             if ( $a1 ne '0' && $a1 ne '1' or $a2 ne '0' && $a2 ne '1' ) { error("Could not parse GT field of $samples[$i] at $$x[0]:$$x[1]: $gt\n"); }
 
-            if ( $fh_lg )
-            {
-                push @out, $a1,$a2;
-                if ( $a1 ) { $nac++; }
-                if ( $a2 ) { $nac++; }
-            }
-            else
-            {
-                my $gen = '1 0 0';
-                if ( $a1 ne $a2 ) { $gen = '0 1 0'; $nac += 1; }
-                elsif ( $a1 eq '1' ) { $gen = '0 0 1'; $nac += 2; }
+            my $gen = '1 0 0';
+            if ( $a1 ne $a2 ) { $gen = '0 1 0'; $nac += 1; }
+            elsif ( $a1 eq '1' ) { $gen = '0 0 1'; $nac += 2; }
 
-                push @out, $gen;
-            }
+            push @out, $gen;
         }
         if ( $nac < $$opts{min_ac} ) { next; }
-        if ( $fh_lg )
-        {
-            print $fh_lg "$$x[0]:$$x[1]_$$x[3]_$$x[4] $$x[1] $$x[3] $$x[4]\n";
-        }
-        else
-        {
-            print $fh "$$x[0] $$x[0]:$$x[1]_$$x[3]_$$x[4] $$x[1] $$x[3] $$x[4] ";
-        }
+        print $fh "$$x[0] $$x[0]:$$x[1]_$$x[3]_$$x[4] $$x[1] $$x[3] $$x[4] ";
         print $fh join(' ',@out);
         print $fh "\n";
     }
     close($fh) or error("close gzip -c > $fname_haps.part");
-    if ( $fh_lg ) 
-    { 
-        close($fh_lg) or error("close gzip -c > $fname_legend.part"); 
-        rename("$fname_legend.part",$fname_legend);
-    }
     rename("$fname_haps.part",$fname_haps);
 }
 
@@ -203,33 +162,6 @@ sub read_shapeit_samples
     return \@shp2vcf;
 }
 
-# phase homs, unphase hets
-sub update_phase
-{
-    my ($vcf,$line) = @_;
-    for (my $i=9; $i<scalar(@$line); $i++)
-    {
-        my $idx = $vcf->get_tag_index($$line[8],'GT',':'); 
-        if ( $idx==-1 ) { next; }
-
-        my $gt = $vcf->get_field($$line[$i],$idx);
-        my (@als) = $vcf->split_gt($gt);
-        if ( @als==1 ) { next; }
-
-        my $is_hom = 1;
-        for (my $j=1; $j<@als; $j++)
-        {
-            if ( $als[0] ne $als[$j] ) { $is_hom = 0; last; }
-        }
-
-        my $new_gt = $is_hom ? join('|',@als) : join('/',@als);
-        if ( $new_gt eq $gt ) { next; }
-
-        $$line[$i] = $vcf->replace_field($$line[$i],$new_gt,$idx,':');
-    }
-    return $line;
-}
-
 sub process_line
 {
     my ($opts,$chr,$pos,$ref,$alt,$ref_alt_swapped,$haps) = @_;
@@ -247,20 +179,19 @@ sub process_line
         if ( defined $to && $$x[1]>$to ) { last; }
 
         # Consider only biallelic sites
-        if ( $$x[4] eq '.' or index($$x[4],',')!=-1 ) { $x = update_phase($vcf,$x); print $vcf->format_line($x); next; }
-        if ( !($$x[3]=~/^[ACGT]+$/) or !($$x[4]=~/^[ACGT]+$/) ) { $x = update_phase($vcf,$x); print $vcf->format_line($x); next; }
+        if ( $$x[4] eq '.' or index($$x[4],',')!=-1 ) { print $vcf->format_line($x); next; }
+        if ( !($$x[3]=~/^[ACGT]+$/) or !($$x[4]=~/^[ACGT]+$/) ) { print $vcf->format_line($x); next; }
 
-        if ( missing_gts($vcf,$x) ) { $x = update_phase($vcf,$x); print $vcf->format_line($x); next; }
+        if ( missing_gts($vcf,$x) ) { print $vcf->format_line($x); next; }
 
-        if ( defined $prev_pos && $$x[1] eq $prev_pos ) { $x = update_phase($vcf,$x); print $vcf->format_line($x); next; } # duplicate line
+        if ( defined $prev_pos && $$x[1] eq $prev_pos ) { print $vcf->format_line($x); next; } # duplicate line
         $prev_pos = $$x[1];
 
         if ( $chr ne $$x[0] ) { error("Uh: different chr. Expected $chr, found $$x[0]:$$x[1]\n"); }
         if ( $pos < $$x[1] ) { $vcf->_unread_line($x); return; }
-        if ( $pos > $$x[1] ) { $x = update_phase($vcf,$x); print $vcf->format_line($x); next; }
+        if ( $pos > $$x[1] ) { print $vcf->format_line($x); next; }
         if ( $ref ne $$x[3] or $alt ne $$x[4] ) { error("REF,ALT do not match at $chr:$pos .. $ref,$alt vs $$x[3],$$x[4]\n"); }
 
-        $$x[7] .= $$x[7] eq '.' ? 'SHAPEIT' : ';SHAPEIT';
         for (my $ismpl=0; $ismpl<$nsmpl; $ismpl++)
         {
             my $al_s1  = $$haps[2*$ismpl];
@@ -310,7 +241,6 @@ sub gensample_to_vcf
     my ($from,$to) = parse_region($$opts{region});
     my $vcf = Vcf->new(file=>$$opts{file},region=>$$opts{region},print_header=>1);
     $vcf->parse_header();
-    $vcf->add_header_line({key=>'INFO',ID=>'SHAPEIT',Number=>0,Type=>'Flag',Description=>'Rephased by SHAPEIT v2'});
     print $vcf->format_header();
     my @samples = $vcf->get_samples();
 
@@ -340,10 +270,7 @@ sub gensample_to_vcf
         process_line($opts,$chr,$pos,$ref,$alt,$ref_alt_swapped,\@items);
     }
     close($fh) or error("close gunzip -c $fname");
-    while (my $x = $vcf->next_data_array())
-    {
-        $x = update_phase($vcf,$x);
-        print $vcf->format_line($x);
-    }
+
 }
+
 
