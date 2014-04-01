@@ -33,6 +33,7 @@ sub error
         "Options:\n",
         "   -a, --apply-map <file>          Map file to be applied on data file\n",
         "   -c, --cut-assay-section         Simple preprocessing: cut out the relevant part of the manifest file\n",
+        "   -k, --keep-missing              Do not discard calls with missing genotypes\n",
         "   -m, --merge-vcfs                If multiple samples are present, merge into one VCF\n",
         "   -M, --create-map-file           Create strand map\n",
         "   -o, --output-prefix <path>      Output directory\n",
@@ -63,6 +64,7 @@ sub parse_params
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '-o' || $arg eq '--output-dir' ) { $$opts{outdir} = shift(@ARGV); next; }
+        if ( $arg eq '-k' || $arg eq '--keep-missing' ) { $$opts{keep_missing} = 1; next; }
         if ( $arg eq '-s' || $arg eq '--sample' ) { $$opts{sample_names} = shift(@ARGV); next; }
         if ( $arg eq '-a' || $arg eq '--apply-map' ) { $$opts{apply_map} = shift(@ARGV); next; }
         if ( $arg eq '-M' || $arg eq '--create-map' ) { $$opts{create_map} = 1; next; }
@@ -423,12 +425,41 @@ sub apply_map_file
     {
         my ($name,$sample,$al1,$al2,$gc,$theta,$r,$x,$y,$xraw,$yraw,$baf,$lrr,@rest) = split(/\s+/,$line);
         if ( @rest or $lrr eq '' ) { error("Could not parse FCR file: $line, [$lrr], ", scalar @rest); }
-        if ( $al1 eq '-' or $al2 eq '-' ) { next; }
+
+        if ( !exists($$opts{map}{$name}) ) { next; }
+        my $map = $$opts{map}{$name};
+
+        # both $$map[2] and $al1,$al2 are on TOP strand
+        my ($ref,$alt) = split(m{/},$$map[2]);
+        my $gt;
+
+        if ( $al1 eq '-' or $al2 eq '-' ) 
+        { 
+            if ( !$$opts{keep_missing} ) { next; }
+            if ( lc($baf) eq 'nan' ) { next; }
+            $gt = '.';
+        }
+        else
+        {
+            if ( $al1 ne $ref && $al1 ne $alt ) { print STDERR "REF does not match, expected $$map[2] for $name at $$map[0]:$$map[1]: $line"; next; }
+            if ( $al2 ne $ref && $al2 ne $alt ) { print STDERR "ALT does not match, expected $$map[2] for $name at $$map[0]:$$map[1]: $line"; next; }
+            my @als;
+            push @als, ($al1 eq $ref ? 0 : 1);
+            push @als, ($al2 eq $ref ? 0 : 1);
+            $gt = join('/',@als);
+        }
         chomp($lrr);
+        if ( $$map[3] < 0 )  { $ref = $flip{$ref}; $alt = $flip{$alt}; }
+        if ( $$map[4] == 0 ) { my $tmp = $x; $x = $y; $y = $tmp; $baf = 1 - $baf; }  # the alleles must be switched, ref is second
+        if ( $lrr eq 'nan' ) { $lrr = 0; }  # substitute 0 for nan
 
         if ( exists($$opts{sample_map}) )
         {
-            if ( !exists($$opts{sample_map}{$sample}) ) { error("No mapping found for the sample \"$sample\"\n"); }
+            if ( !exists($$opts{sample_map}{$sample}) ) 
+            { 
+                warn("No mapping found for the sample \"$sample\"\n"); 
+                $$opts{sample_map}{$sample} = $sample;
+            }
             $sample = $$opts{sample_map}{$sample};
         }
 
@@ -447,21 +478,6 @@ sub apply_map_file
 
             $files{$sample} = $fh;
         }
-        if ( !exists($$opts{map}{$name}) ) { next; }
-        
-        my $map = $$opts{map}{$name};
-
-        # both $$map[2] and $al1,$al2 are on TOP strand
-        my ($ref,$alt) = split(m{/},$$map[2]);
-        if ( $al1 ne $ref && $al1 ne $alt ) { print STDERR "REF does not match, expected $$map[2] for $name at $$map[0]:$$map[1]: $line"; next; }
-        if ( $al2 ne $ref && $al2 ne $alt ) { print STDERR "ALT does not match, expected $$map[2] for $name at $$map[0]:$$map[1]: $line"; next; }
-        my @als;
-        push @als, ($al1 eq $ref ? 0 : 1);
-        push @als, ($al2 eq $ref ? 0 : 1);
-        if ( $$map[3] < 0 )  { $ref = $flip{$ref}; $alt = $flip{$alt}; }
-        if ( $$map[4] == 0 ) { my $tmp = $x; $x = $y; $y = $tmp; $baf = 1 - $baf; }  # the alleles must be switched, ref is second
-        if ( $lrr eq 'nan' ) { $lrr = 0; }  # substitute 0 for nan
-        my $gt = join('/',@als);
         print {$files{$sample}} "$$map[0]\t$$map[1]\t$name\t$ref\t$alt\t.\t.\t.\tGT:LRR:BAF:IA:IB:GC\t$gt:$lrr:$baf:$x:$y:$gc\n";
     }
     if ( $$opts{fname} ) { close($fh); }
