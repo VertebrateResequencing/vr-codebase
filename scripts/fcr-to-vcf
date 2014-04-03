@@ -32,6 +32,7 @@ sub error
         "Usage: human-core-exome.pl [OPTIONS]\n",
         "Options:\n",
         "   -a, --apply-map <file>          Map file to be applied on data file\n",
+	"   -b, --bcftools-exe <file>       Absolute path to the bcftools exe to use (defaults to 'bcftools')\n",
         "   -c, --cut-assay-section         Simple preprocessing: cut out the relevant part of the manifest file\n",
         "   -k, --keep-missing              Do not discard calls with missing genotypes\n",
         "   -m, --merge-vcfs                If multiple samples are present, merge into one VCF\n",
@@ -60,6 +61,7 @@ sub parse_params
     {
         manifest => '/lustre/scratch107/user/pd3/hipSci/HumanCoreExome-12v1-0_A.sorted.cvs.gz',
         refseq => '/lustre/scratch107/vrpipe/refs/human/ncbi37/human_g1k_v37.fasta',
+	bcftools => 'bcftools',
     };
     while (defined(my $arg=shift(@ARGV)))
     {
@@ -69,6 +71,7 @@ sub parse_params
         if ( $arg eq '-a' || $arg eq '--apply-map' ) { $$opts{apply_map} = shift(@ARGV); next; }
         if ( $arg eq '-M' || $arg eq '--create-map' ) { $$opts{create_map} = 1; next; }
         if ( $arg eq '-m' || $arg eq '--merge-vcfs' ) { $$opts{merge_vcfs} = 1; next; }
+	if ( $arg eq '-b' || $arg eq '--bcftools-exe' ) { $$opts{bcftools} = shift(@ARGV); next; }
         if ( $arg eq '-c' || $arg eq '--cut-assay-section' ) { cut_assay_section(); exit; }
         if ( -e $arg ) { $$opts{fname} = $arg; next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
@@ -512,7 +515,7 @@ sub apply_map_file
         flush_buffer($out,\@buf,\@buf_line);
         close($in) or error("close $$opts{outdir}/$sample.vcf.sorted");
         close($out) or error("close bgzip -c > $$opts{outdir}/$sample.vcf.gz");
-        cmd("bcftools index -m0 $$opts{outdir}/$sample.vcf.gz");
+        cmd("$$opts{bcftools} index -m0 $$opts{outdir}/$sample.vcf.gz");
         push @files, "$$opts{outdir}/$sample.vcf.gz";
         unlink("$$opts{outdir}/$sample.vcf.sorted");
     }
@@ -523,8 +526,8 @@ sub apply_map_file
         $outfile =~ s{/+$}{};
         if ( @files>1 )
         {
-            cmd("bcftools merge ".join(' ',@files)." -Oz > $outfile.vcf.gz");
-            cmd("bcftools index -m0 $outfile.vcf.gz");
+            cmd("$$opts{bcftools} merge ".join(' ',@files)." -Oz > $outfile.vcf.gz");
+            cmd("$$opts{bcftools} index -m0 $outfile.vcf.gz");
         }
         elsif ( @files==1 )
         {
