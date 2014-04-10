@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r947';
+our $VERSION = 'r948';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://samtools.github.io/hts-specs/
@@ -263,6 +263,7 @@ sub close
     if ( !$$self{fh} ) { return; }
     my $ret = close($$self{fh});
     delete($$self{fh});
+    $$self{buffer} = [];
 	return $ret;
 }
 
