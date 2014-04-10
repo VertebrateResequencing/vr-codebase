@@ -76,7 +76,7 @@ sub do_consensus
             my $rest = $';
             if ( $rest=~/^:(\d+)-\d+$/ )
             {
-                print STDERR "Looks as fasta file snippet, the sequence $chr starts at position $1 ($rest)\n";
+                print STDERR "Looks as fasta file snippet, the sequence $chr starts at position $1\n";
                 $$opts{fa_pos} = $1;
             }
             else
