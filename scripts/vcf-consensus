@@ -179,7 +179,7 @@ sub apply_variant
         {
             for my $al (@als)
             {
-                if ( $al eq '0' ) { next; }
+                if ( $al eq '0' or $al eq '.' ) { next; }
                 $alt = $$opts{vcf}->get_field($$vline[4],$al-1,',');
                 last;
             }
