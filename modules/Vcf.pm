@@ -1,6 +1,6 @@
 package Vcf;
 
-our $VERSION = 'r948';
+our $VERSION = 'r953';
 
 # http://vcftools.sourceforge.net/specs.html
 # http://samtools.github.io/hts-specs/
@@ -1759,6 +1759,15 @@ sub parse_AGtags
                 if ( !exists($$sample{$tag}) or $$sample{$tag} eq $missing ) { next; }
                 my @values = split(/,/,$$sample{$tag});
                 my $ploidy = $self->guess_ploidy(scalar @alleles, scalar @values) - 1;
+                if ( $ploidy<0 ) 
+                { 
+                    my $nals  = scalar @alleles;
+                    my $nvals = scalar @values;
+                    my $ndip  = $nals*($nals+1)/2;
+                    $self->throw(
+                        "Wrong number of values in $name/$tag at $$rec{CHROM}:$$rec{POS} .. nAlleles=$nals, nValues=$nvals.\n".
+                        "Expected $ndip values for diploid genotypes or $nals for haploid genotypes.\n");
+                }
                 if ( $ploidy>1 ) { $self->throw("Sorry, not ready for ploidy bigger than 2\n"); }
                 if ( $ploidy!=1 ) { $$rec{_cached_ploidy}{$name} = $ploidy; }
                 $$sample{$tag} = {};
@@ -2408,7 +2417,7 @@ sub guess_ploidy
     my ($self, $nals, $nvals) = @_;
     if ( $nvals==$nals ) { return 1; }
     if ( $nvals==binom(1+$nals,2) ) { return 2; }
-    $self->throw("Could not determine the ploidy (nals=$nals, nvals=$nvals). (TODO: ploidy bigger than 2)\n", binom(2+$nals,2));
+    return -1;
 }
 
 sub binom
