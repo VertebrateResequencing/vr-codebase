@@ -331,12 +331,14 @@ use $assembler_class;
 use VertRes::Pipelines::Assembly;
 use File::Copy;
 use Cwd;
-use File::Path qw(make_path);
+use File::Path qw(make_path remove_tree);
 use Bio::AssemblyImprovement::Util::FastqTools;
 use Bio::AssemblyImprovement::Util::OrderContigsByLength;
 
 my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
 system("rm -rf $self->{assembler}_assembly_*");
+
+remove_tree(qq[$tmp_directory]) if(-d qq[$tmp_directory]);
 make_path(qq[$tmp_directory]);
 chdir(qq[$tmp_directory]);
 
@@ -383,6 +385,7 @@ unlink(qq[$tmp_directory].'/contigs.fa.scaffolded.filtered');
 
 chdir(qq[$output_directory]);
 unlink('pool_1.fastq.gz');
+remove_tree(qq[$tmp_directory]);
 system('touch $pipeline_version');
 system('touch $self->{prefix}$self->{assembler}_optimise_parameters_done');
 exit;
