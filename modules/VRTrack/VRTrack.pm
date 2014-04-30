@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '26';
+use constant SCHEMA_VERSION => '27';
 
 our $DEFAULT_PORT = 3306;
 
@@ -1788,6 +1788,7 @@ CREATE TABLE `lane` (
   KEY `lane_id` (`lane_id`),
   KEY `lanename` (`name`),
   KEY `library_id` (`library_id`),
+  KEY `acc` (`acc`),
   KEY `hierarchy_name` (`hierarchy_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
