@@ -385,6 +385,7 @@ unlink(qq[$tmp_directory].'/contigs.fa.scaffolded.filtered');
 
 chdir(qq[$output_directory]);
 unlink('pool_1.fastq.gz');
+remove_tree(qq[$tmp_directory]);
 system('touch $pipeline_version');
 system('touch $self->{prefix}$self->{assembler}_optimise_parameters_done');
 exit;
