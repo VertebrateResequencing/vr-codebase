@@ -109,13 +109,13 @@ sub split_reads
     my ($base_directory,$base,$suff) = Utils::basename($lane_path);
     opendir(my $lane_dir_handle, $base_directory);
     my @fastq_files  = grep { /\.fastq\.gz$/ } readdir($lane_dir_handle);
-    if(@fastq_files >=1 )
+    if(@fastq_files >=1 -e $lane_path."_1.fastq.gz")
     {
-      $forward_fastq .= $base_directory.'/'.$fastq_files[0];
+      $forward_fastq .= $lane_path."_1.fastq.gz ";
     }
-    if(@fastq_files >=2 )
+    if(@fastq_files >=2  && -e $lane_path."_2.fastq.gz")
     {
-      $reverse_fastq .= $base_directory.'/'.$fastq_files[1];
+      $reverse_fastq .= $lane_path."_2.fastq.gz ";
     }
   }
 
