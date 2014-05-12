@@ -30,7 +30,7 @@ my $utl = VertRes::QCGrind::Util->new();
 my $main_script = $utl->{SCRIPTS}{DATABASES_VIEW};
 my $proj_view_script = $utl->{SCRIPTS}{PROJECTS_VIEW};
 my $lane_view_script = $utl->{SCRIPTS}{LANE_VIEW};
-my ($lib_filt, $runname_filt, $gt_status_filt, $npg_status_filt, $auto_qc_status_filt, $raw_bases_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt, $overlap_dup_filt, $final_net_filt);
+my ($lib_filt, $runname_filt, $gt_status_filt, $npg_status_filt, $auto_qc_status_filt, $raw_bases_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt, $overlap_dup_filt, $final_net_filt, $show_withdrawn);
 
 my $USER = $sw->username();
 my $cgi = $sw->cgi();
@@ -51,6 +51,8 @@ unless ($projectID) {
 	$utl->displayError( "No Project ID",$sw );
 }
 my $project = VRTrack::Project->new( $vrtrack, $projectID );
+
+my $show_withdrawn = $cgi->param('show_withdrawn');
 
 if ($cgi->param('download')) {
     &downloadLaneData($cgi, $vrtrack, $project);
@@ -185,8 +187,8 @@ sub displayProjectLaneForm
 
 				foreach my $lane (sort {$a->name cmp $b->name} @$lanes ) {
 
-        			next if $lane->is_withdrawn;
-					if ($form_submission) { # filter on lane status checkboxes
+					next if $lane->is_withdrawn && ! $show_withdrawn;
+        			if ($form_submission) { # filter on lane status checkboxes
 						next unless $cgi->param($lane->qc_status) || $lane->qc_status eq 'no_qc';
 					}
 
@@ -344,7 +346,7 @@ sub downloadLaneData {
 
 				foreach my $lane (sort {$a->name cmp $b->name} @$lanes ) {
 
-        			next if $lane->is_withdrawn;
+        			next if $lane->is_withdrawn && ! $show_withdrawn;
 					next unless $cgi->param($lane->qc_status) || $lane->qc_status eq 'no_qc'; # filter on lane status checkboxes
 
         			my $lanename = $lane->name;
