@@ -56,7 +56,7 @@ sub new {
     };
     
     $self->{VRTRACK_DATABASES} = {
-		GENOTYPING => 'vrtrack_hipsci_qc1_genotyping',
+		GENOTYPING => 'vrtrack_hipsci_qc1_genotyping_vrpipe',
 		EXPRESSION => 'vrtrack_hipsci_qc1_expression_vrpipe',
 		WEB_TABLES => 'vrtrack_web_tables',
 	};
