@@ -630,9 +630,9 @@ sub lanes_with_mapping_filtered_by_lane_limits {
                     latest_sample as sample,
                     latest_library as library,
                     latest_lane as lane 
-                    left join latest_mapstats as mapstats on mapstats.lane_id = lane.lane_id
-    								left join assembly as assembly on assembly.assembly_id = mapstats.assembly_id
-    								left join mapper as mapper on mapstats.mapper_id = mapper.mapper_id
+                    inner join latest_mapstats as mapstats on mapstats.lane_id = lane.lane_id
+    								inner join assembly as assembly on assembly.assembly_id = mapstats.assembly_id
+    								inner join mapper as mapper on mapstats.mapper_id = mapper.mapper_id
                 where lane.library_id = library.library_id 
                       and library.sample_id = sample.sample_id 
                       and sample.project_id = project.project_id 
