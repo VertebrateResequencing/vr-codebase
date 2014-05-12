@@ -25,10 +25,14 @@ sub new
     my ($class,@args) = @_;
     my $self = $class->SUPER::new(@args);
 
+    $$self{bcftools} = '/software/vertres/bin-external/bcftools-exp-rc';
     $$self{do_clean} = 1;
     $$self{limits} = { runtime=>24*60 };
-    $$self{config_version} = '1376393805';
+    $$self{config_version} = '1394700014';
     $$self{_sampleconf} = q[
+
+        bcftools    => '] .$$self{bcftools}. q[',
+
         # This pipeline allows to execute arbitrary commands in parallel
         # on a computing farm and concatenate the outputs. Originally it was
         # developed to parallelize VCF operations but can be used in other
@@ -80,6 +84,10 @@ sub new
 
         # For sanity checking that your config file is not obsolete. Update the
         # version key in your config file to get rid of the warnings.
+        #
+        # What changed since version:
+        #   1376393805 .. Switched from "vcf-concat" to "bcftools concat"
+        #
         version  => '] .$$self{config_version}. q[',
     ]."\n";
 
@@ -410,7 +418,7 @@ sub vcf_concat
     }
     close($fh) or $self->throw("close $list");
 
-    $self->cmd("vcf-concat -f $list | bgzip -c > $outfile.part");
+    $self->cmd("$$self{bcftools} concat -f $list | bgzip -c > $outfile.part");
     $self->tabix_part($outfile);
 }
 
