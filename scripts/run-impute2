@@ -29,16 +29,24 @@ sub new
     $$self{limits}        = { memory=>5_500, runtime=>3*24*60 };
     $$self{impute2_bin}   = 'impute2';
     $$self{vcf_impute2}   = 'vcf-impute2';
-    $$self{phased_join_args} = '';
-    $$self{config_version} = '1349789206';
+    $$self{bcftools}      = '/software/vertres/bin-external/bcftools-exp-rc';
+    $$self{phased_concat_args} = '';
+    $$self{config_version} = '1392898523';
     $$self{_sampleconf} = q[
         # For sanity checking that your config file is not obsolete. Update the version key in your 
         #  config file to get rid of the warnings.
+        #
+        # What changed since version:
+        #   1349789206 .. Using "bcftools concat" instead of "vcf-phased-join"
+        #   1392388523 .. Support for -merge_ref_panels plus attempt to make the options more intuitive
+        #
         version  => '] .$$self{config_version}. q[',
 
         impute2_bin => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/impute2.3.0',
         vcf_impute2 => 'vcf-impute2',
         gen_map     => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/ALL_1000G_phase1interim_jun2011_impute/genetic_map_chr{CHROM}_combined_b37.txt',
+        bcftools    => '] .$$self{bcftools}. q[',
+        phased_concat_args => '] .$$self{phased_concat_args}. q[',
 
         # The known_vcf (aka -k) and in_vcf (aka -i) file names can contain the
         #   string "{CHROM}" which will be expanded according to chromosomes
@@ -48,50 +56,54 @@ sub new
         # Use known_vcf when there is an additional info about the samples (the
         #   samples overlap and "known_vcf" is used as scaffold of known
         #   genotypes) or when imputing reference data into the study samples
-        #   (the samples do not overlap).  When "known_is_phased" is set, the
-        #   haplotypes will be passed to impute2 with -h and -l.  With
-        #   "known_vcf" consider also setting the "chunk_by_known" key.
-        # Known issues: It's been reported that when -h file is splitted into
-        #   chunks, the performance is significantly worse than when left
-        #   unsplitted and passed via impute2_args args.
+        #   (the samples do not overlap).  
+        # The "known_vcf" will be passed to impute2 via -h and -l option. If
+        #   set, consider also setting the "chunk_by_known" key. When multiple
+        #   reference panels are given, the pipeline will run impute2 with the
+        #   -merge_ref_panels option. If 'known_hapref' is set, the reference
+        #   will be saved in the 'known_hapref' directory in the format suitable
+        #   for subsequent reusal by the run-impute2 pipeline.
+        # Reported issues: When -h file is splitted into chunks, the performance
+        #   is significantly worse than when left unsplitted and passed via
+        #   impute2_args args.
         #
-        # known_vcf => '/nfs/users/nfs_p/pd3/sandbox/gtypes/UK10k-twins/uk10k-twins.ref.vcf.gz',
-        # known_is_phased => 1,
-        # in_vcf     => '/some/path/chr{CHROM}.vcf.gz',
+        # known_vcf    => [ '/lustre/scratch107/user/pd3/uk10k-1kg-imputation/uk10k-files/{CHROM}.vcf.gz', '/lustre/scratch107/user/pd3/uk10k-1kg-imputation/1kg-files/{CHROM}.vcf.gz'  ],
+        # known_hapref => '/lustre/scratch107/user/pd3/uk10k-1kg-imputation/impute2-hap-files.2014-03-18/',
+        # phased_only  => 0,    # Include only fully phased sites from the reference panel
+        # in_vcf       => '/some/path/chr{CHROM}.vcf.gz',
 
-        # If given, vcf check will be run to evaluate the performance
+        # If given, bcftools stats will be run to evaluate the performance
         # eval_vcf => undef,
         
         # Impute N samples at a time against the reference panel of known_vcf
         #   haplotypes. Include '-burnin 0 -iter 4' in impute2_args for this.
         #   When also merge_with_known is set, the output VCF will be merged with
         #   the known_vcf.
+        # (Experimental, currently not functional.)
         # per_sample => 1,
         # merge_with_known => 1,
 
         # When known_is_phased is set, SHAPEIT is used to prephase the
         # haplotypes. Note that known_vcf must be phased for this.
         # (Experimental, currently not functional.)
-        # pre_phase => 1,
+        # pre_phase => 0,
 
         # The -prob_g option tells the program to treat the input genotypes
         #   probabilistically (i.e., as likelihoods), rather than just
-        #   thresholding the probabilities to get hard or missing calls. The
-        #   -pgs_prob option tells the program to "predict genotyped SNPs"
+        #   thresholding the probabilities (-call_thresh) to get hard or
+        #   missing calls.
+        # The -pgs_prob option tells the program to "predict genotyped SNPs"
         #   (infer genotypes at SNPs in the -g file) by combining LD
-        #   information with the input probabilities.  Without these options,
-        #   accuracy in some scenarios significantly increases: this may
-        #   indicate that there is a bug in this pipeline.
-        impute2_args => '-Ne 20000 -k 80 -allow_large_regions -prob_g -pgs_prob',
+        #   information with the input probabilities.
+        # Known issues: Without -prob_g and -pgs_prob, the accuracy in usually
+        #   noticeably better.
+        #
+        impute2_args => '-Ne 20000 -k 80 -allow_large_regions',
 
         # When likelihoods are not available (GL or PL), GT field is used instead. 
         #   The genotype confidence can be controlled by this parameter, 1.0 is
         #   the default.
         # vcf_impute2_args => '--GT-confidence 1.0',
-
-        # Do not split blocks phased by IMPUTE2 even when phasing quality is
-        #   low - single sites may be unphased in otherwise phased chunks
-        phased_join_args => '-q 0 -j 10',
 
         # Number of sites per chunk and in buffer regions. The total number of
         #   sites considered is buffer_nsites+chunk_nsites.  The chunks are
@@ -169,7 +181,6 @@ sub parse_args
     if ( exists($$self{pre_phase}) )
     {
         if ( !exists($$self{shapeit_bin}) ) { $self->throw("Missing the key \"shapeit_bin\". (Required when \"pre_phase\" is set.)\n"); }
-        if ( !$$self{known_is_phased} ) { $self->throw("With \"pre_phase=>1\" also \"known_is_phased=>1\" is required.\n"); }
     }
     if ( exists($$self{buffer_region}) or exists($$self{chunk_size}) )  
     { 
@@ -192,6 +203,10 @@ sub parse_args
         $self->throw("With \"chunk_by_known\" also \"known_vcf\" should be given.\n");
     }
     $$self{chunk_file} = "$$self{outdir}/chunks.txt";
+    if ( exists($$self{known_vcf}) && ref($$self{known_vcf}) ne 'ARRAY' )
+    {
+        $$self{known_vcf} = [ $$self{known_vcf} ];
+    }
 }
 
 sub main
@@ -319,12 +334,89 @@ sub set_options
     }
 }
 
+
+sub sync_hapref_chunks
+{
+    my ($self,$chunks) = @_;
+
+    if ( !exists($$self{known_hapref}) ) { return; }
+
+    my %chrs;
+    for my $chunk (@$chunks) 
+    { 
+        push @{$chrs{$$chunk[0]}}, $chunk;
+    }
+    my $need_sync = 0;
+    for my $chr (keys %chrs)
+    {
+        my $fname = "$$self{known_hapref}/$chr.chunks.txt";
+        if ( !-e $fname )
+        {
+            $self->cmd("mkdir -p $$self{known_hapref}");
+            open(my $fh,'>',"$fname.part") or $self->throw("$fname.part: $!");
+            for my $chunk (@{$chrs{$chr}})
+            {
+                print $fh join("\t",@$chunk), "\n";
+            }
+            close($fh) or $self->throw("close failed: $fname.part");
+            rename("$fname.part",$fname) or $self->throw("rename $fname.part $fname: $!");
+        }
+        else
+        {
+            open(my $fh,'<',$fname) or $self->throw("$fname: $!");
+            my @chunks;
+            while (my $line=<$fh>)
+            {
+                chomp($line);
+                my @items = split(/\t/,$line);
+                push @chunks, [@items];
+            }
+            close($fh) or $self->throw("$fname.part: $!");
+            if ( scalar @{$chrs{$chr}} != @chunks )  { $need_sync = 1; }
+            else
+            {
+                for (my $i=0; $i<@chunks; $i++)
+                {
+                    my $a = $chunks[$i];
+                    my $b = $chrs{$chr}[$i];
+                    for (my $j=0; $j<@$a; $j++) 
+                    {
+                        if ( $$a[$j] ne $$b[$j] ) { $need_sync = 1; }
+                    }
+                }
+            }
+            $chrs{$chr} = \@chunks;
+        }
+    }
+    if ( $need_sync && !-e "$$self{chunk_file}.used" )
+    {
+        my $fname = "$$self{chunk_file}.used";
+        open(my $fh,'>',"$fname.part") or $self->throw("$fname.part: $!");
+        for my $chr (keys %chrs)
+        {
+            for my $chunk (@{$chrs{$chr}})
+            {
+                print $fh join("\t",@$chunk), "\n";
+            }
+        }
+        close($fh) or $self->throw("close failed: $fname.part");
+        rename("$fname.part",$fname) or $self->throw("rename $fname.part $fname: $!");
+    }
+    if ( $need_sync )
+    {
+        my @out = ();
+        for my $chr (keys %chrs) { push @out, @{$chrs{$chr}}; }
+        @$chunks = @out;
+    }
+}
+
 sub read_chunks
 {
     my ($self) = @_;
     if ( !-e $$self{chunk_file} ) 
     { 
-        my $in_file = $$self{chunk_by_known} ? $$self{known_vcf} : $$self{in_vcf};
+        # When multiple reference VCFs are given, only the first is used to define chunks
+        my $in_file = $$self{chunk_by_known} ? $$self{known_vcf}[0] : $$self{in_vcf};
         my @regions = $self->define_regions($in_file);
         for my $region (@regions)
         {
@@ -336,7 +428,6 @@ sub read_chunks
         for my $region (@regions)
         {
             $self->cmd("cat $$self{chunk_file}.$region >> $$self{chunk_file}.part");
-            $self->spawn('define_chunks',"$$self{chunk_file}.$region",$in_file,$region);
         }
         rename("$$self{chunk_file}.part",$$self{chunk_file}) or $self->throw("rename $$self{chunk_file}.part $$self{chunk_file}: $!");
         for my $region (@regions)
@@ -353,6 +444,8 @@ sub read_chunks
         push @chunks, [@items];
     }
     close($fh) or $self->throw("$$self{chunk_file}: $!");
+
+    $self->sync_hapref_chunks(\@chunks);
     return \@chunks;
 }
 
@@ -404,13 +497,30 @@ sub define_chunks
         $chunks[-1]{n} += $$chunk{n};
     }
 
+    if ( !($region=~/:/) )
+    {
+        # Whole genome or whole chromosome was requested. When on a new
+        # chromosome, expand the first and last record to accompany
+        # sites which may be present only in one (known_vcf vs in_vcf)
+        for (my $i=0; $i<@chunks; $i++)
+        {
+            if ( $i==0 ) { $chunks[0]{from} = 0; next; }
+            if ( $chunks[$i]{chr} ne $chunks[$i-1]{chr} )
+            {
+                $chunks[$i-1]{to} = 249250621; # last chunk, longest chr of human genome
+                $chunks[$i]{from} = 0;
+            }
+        }
+        $chunks[-1]{to} = 249250621;
+    }
+
     open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
     for my $chunk (@chunks)
     {
         print $out "$$chunk{chr}\t$$chunk{from}\t$$chunk{to}\t$$chunk{n}\n";
     }
     close($out) or $self->throw("close $outfile.part");
-    rename("$outfile.part",$outfile);
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
 
 sub get_chroms
@@ -452,6 +562,14 @@ sub define_regions
     return @regs;
 }
 
+sub known_hapref_exists
+{
+    my ($self,$chr,$chunk) = @_;
+    if ( !exists($$self{known_hapref}) ) { return 0; }
+    if ( !-e "$$self{known_hapref}/$chr/$chunk.ref.hap.samples" ) { return 0; }
+    return "$$self{known_hapref}/$chr/$chunk.ref";
+}
+
 sub vcf_to_impute2
 {
     my ($self,$outfile,$chunk) = @_;
@@ -459,13 +577,23 @@ sub vcf_to_impute2
     my $from = $$chunk[1];
     my $to   = $$chunk[2];
     my $outdir = "$$self{outdir}/$chr";
-    my $prephased = ($$self{pre_phase} or $$self{known_is_phased}) ? '-p' : '';
-    my $legend = ($$self{per_sample} or $$self{known_is_phased}) ? '-l' : '';
-    my $in_vcf    = $self->expand_chrom($$self{in_vcf},$chr);
-    my $known_vcf = exists($$self{known_vcf}) ? $self->expand_chrom($$self{known_vcf},$chr) : '--';
+    my $phased_only = $$self{phased_only} ? '-p' : '';
+    my $in_vcf      = $self->expand_chrom($$self{in_vcf},$chr);
+    my $known_vcf   = '';   # the default is genotype refinement without reference panel
+    if ( exists($$self{known_vcf}) && !$self->known_hapref_exists($chr,"$from-$to") )
+    {
+        for my $file (@{$$self{known_vcf}})
+        {
+            $known_vcf .= ' -k '. $self->expand_chrom($file,$chr);
+        }
+    }
     my $args = exists($$self{vcf_impute2_args}) ? $$self{vcf_impute2_args} : '';
     $self->cmd(qq[mkdir -p $outdir]);
-    $self->cmd(qq[$$self{vcf_impute2} -r $chr:$from-$to -i $in_vcf $prephased $legend -k $known_vcf -o $outdir/01.vcf_to_impute2.$from-$to $args >>$outfile.o 2>>$outfile.e && touch $outfile]);
+    my $cmd = qq[$$self{vcf_impute2} -c v2i -r $chr:$from-$to -i $in_vcf $phased_only -l $known_vcf -o $outdir/01.vcf_to_impute2.$from-$to $args >>$outfile.o 2>>$outfile.e && touch $outfile];
+    open(my $fh,'>',"$outfile.o") or $self->throw("$outfile.o: $!");
+    print $fh "$cmd\n";
+    close($fh);
+    $self->cmd($cmd);
 }
 
 sub impute2
@@ -474,6 +602,7 @@ sub impute2
 
     if ( $$self{per_sample} ) 
     { 
+        # Experimental, not functional
         $self->impute2_per_sample($outfile,$chunk); 
         return;
     }
@@ -488,34 +617,91 @@ sub impute2
     if ( ! -e $genmap ) { $self->throw("The genmap [$genmap] does not exist.\n"); }
 
     my $files = '';
-    my $known = qq[$outdir/01.vcf_to_impute2.$from-$to.known_];
+    my $known = qq[$outdir/01.vcf_to_impute2.$from-$to.known];
+
     if ( $$self{pre_phase} )
     {
+        # Experimental branch, not functional
         $self->throw("FIXME: not finished.\n");
 
-        my $inp = "$outdir/01.vcf_to_impute2.$from-$to.impute_";
-        my $out = "$outdir/02.shapeit.$from-$to";
-        my $cmd = qq[$$self{shapeit_bin} --input-map $genmap --input-gen ${inp}haps.gz ${inp}samples --output-max $out.haps.gz $out.samples --output-log $out.log];
-        Utils::CMD($cmd,{verbose=>1,require_errno=>1});
-
-        # todo: reorder samples?
-        $inp = "$outdir/01.vcf_to_impute2.$from-$to.known_";
-        $files = qq[-h ${inp}haps.gz -l ${inp}legend -use_prephased_g];
-
-        $known = "$out.";
-    }
-    else 
-    { 
-        $files = qq[-g $outdir/01.vcf_to_impute2.$from-$to.impute_gts.gz -sample_g $outdir/01.vcf_to_impute2.$from-$to.impute_samples]; 
+        #   my $inp = "$outdir/01.vcf_to_impute2.$from-$to.impute_";
+        #   my $out = "$outdir/02.shapeit.$from-$to";
+        #   my $cmd = qq[$$self{shapeit_bin} --input-map $genmap --input-gen ${inp}haps.gz ${inp}samples --output-max $out.haps.gz $out.samples --output-log $out.log];
+        #   Utils::CMD($cmd,{verbose=>1,require_errno=>1});
+        #
+        #   # todo: reorder samples?
+        #   $inp = "$outdir/01.vcf_to_impute2.$from-$to.known_";
+        #   $files = qq[-h ${inp}haps.gz -l ${inp}legend -use_prephased_g];
+        #
+        #   $known = "$out.";
     }
 
+    # Reference genotypes: there can be one or more reference panels. With multiple panels,
+    #   they can be merged on the fly without saving or saved as gen.gz file for future reusal.
+    # Traditionally we ran without the reference panel in the genotype refinement mode,
+    #   but that part is now broken (or at least not well tested) - beware!
+    #
+    my $out  = "$outdir/02.impute2.$from-$to";
+    my $CMD  = "$$self{impute2_bin} $$self{impute2_args} -buffer 0 -include_buffer_in_output -o_gz -m $genmap -int $from $to";
     if ( exists($$self{known_vcf}) ) 
-    { 
-        $files .= $$self{known_is_phased} ? qq[ -h ${known}haps.gz -l ${known}legend] : qq[ -known_haps_g ${known}gts.gz -sample_known_haps_g ${known}samples];
+    {
+        my $hapref_file = $self->known_hapref_exists($chr,"$from-$to");
+        if ( $hapref_file )
+        {
+            # cached file exists
+            $CMD .= " -h $hapref_file.hap.gz -l $hapref_file.legend.gz";
+        }
+        elsif ( @{$$self{known_vcf}} == 1 )
+        {
+            # single file
+            $CMD .= " -h ${known}0_haps.gz -l ${known}0_legend";
+        }
+        elsif ( !exists($$self{known_hapref}) )
+        {
+            # merge on the fly, don't save
+            my $knowns = '';
+            for (my $i=0; $i<@{$$self{known_vcf}}; $i++)
+            {
+                $knowns .= " -h $known${i}_haps.gz -l $known${i}_legend";
+            }
+            $CMD .= " $knowns -merge_ref_panels";
+        }
+        else
+        {
+            # merge and save, cached file does not exist yet
+            my $knowns = '';
+            for (my $i=0; $i<@{$$self{known_vcf}}; $i++)
+            {
+                $knowns .= " -h $known${i}_haps.gz -l $known${i}_legend";
+            }
+            my $rg_prefix = "$$self{known_hapref}/$chr/$from-$to.ref";
+            $self->cmd(qq[mkdir -p $$self{known_hapref}/$chr/]);
+            $self->cmd(qq[$CMD $knowns -merge_ref_panels -o $rg_prefix -merge_ref_panels_output_ref $rg_prefix]);
+
+            unlink("$rg_prefix.hap.samples.part");
+            for my $file (@{$$self{known_vcf}})
+            {
+                my $vcf = $self->expand_chrom($file,$chr);
+                $self->cmd(qq[$$self{bcftools} query -l $vcf >> $rg_prefix.hap.samples.part]);
+            }
+            rename("$rg_prefix.hap.samples.part","$rg_prefix.hap.samples") or $self->throw("rename $rg_prefix.hap.samples.part $rg_prefix.hap.samples: $!");
+            $CMD .= " -h $rg_prefix.hap.gz -l $rg_prefix.legend.gz";
+        }
     }
 
-    my $out = "$outdir/02.impute2.$from-$to";
-    $self->cmd(qq[$$self{impute2_bin} $$self{impute2_args} -buffer 0 -phase -include_buffer_in_output -o_gz -m $genmap -int $from $to $files -o $out >>$out.o 2>>$out.e]);
+    # study genotypes
+    $files = qq[-g $outdir/01.vcf_to_impute2.$from-$to.impute_gts.gz -sample_g $outdir/01.vcf_to_impute2.$from-$to.impute_samples]; 
+
+    $self->cmd(qq[$CMD $files -o $out >>$out.o 2>>$out.e]);
+
+    # Sanity check outputs
+    open(my $fh,'<',"${out}_warnings") or $self->throw("${out}_warnings: $!");
+    my @warns = <$fh>;
+    close($fh) or $self->throw("close failed: ${out}_warnings");
+    open($fh,'<',"${out}_info") or $self->throw("${out}_info: $!");
+    my @info = <$fh>;
+    close($fh) or $self->throw("close failed: ${out}_info");
+    if ( @warns > @info*0.1 ) { $self->throw("Too many warnings, better to check this: ${out}_warnings"); }
 
     $self->cmd(qq[touch $outfile]);
 }
@@ -637,7 +823,7 @@ sub impute2_to_vcf
     {
         $self->throw("What happened: $outdir/02.impute2.$from-$to.gz, $in_vcf");
     }
-    $self->cmd(qq[$$self{vcf_impute2} -r $chr:$from-$to -i $in_vcf -o $outdir/02.impute2.$from-$to 2>$outfile.e | bgzip -c > $outfile.part]);
+    $self->cmd(qq[$$self{vcf_impute2} -c i2v -r $chr:$from-$to -i $in_vcf -o $outdir/02.impute2.$from-$to 2>$outfile.e | bgzip -c > $outfile.part]);
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
 }
@@ -653,7 +839,7 @@ sub concat_vcfs
         print $fh $file, "\n";
     }
     close($fh);
-    $self->cmd(qq[vcf-phased-join $$self{phased_join_args} -l $outfile.list -o - 2>>$outfile.log | bgzip -c > $outfile.part]);
+    $self->cmd(qq[$$self{bcftools} concat $$self{phased_concat_args} -lf $outfile.list -Oz > $outfile.part]);
     $self->tabix_part($outfile);
 
     if ( !defined($$self{eval_vcf}) )
@@ -665,7 +851,7 @@ sub concat_vcfs
     rename("$outfile.part","$outfile.tmp.vcf.gz");
     rename("$outfile.tbi","$outfile.tmp.vcf.gz.tbi");
     my $args = defined $chr ? "-r $chr" : '';
-    $self->cmd(qq[vcf check $args -s - $$self{eval_vcf} $outfile.tmp.vcf.gz > $outfile.vchk]);
+    $self->cmd(qq[$$self{bcftools} stats $args -s - $$self{eval_vcf} $outfile.tmp.vcf.gz > $outfile.vchk]);
     rename("$outfile.tmp.vcf.gz.tbi","$outfile.tbi");
     rename("$outfile.tmp.vcf.gz","$outfile");
 }
