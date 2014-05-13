@@ -67,7 +67,9 @@ use VertRes::LSF;
 use File::Basename;
 use VertRes::Parser::bam;
 use File::Basename;
+use Bio::RNASeq;
 use Utils;
+use Data::Dumper;
 
 use base qw(VertRes::Pipeline);
 
@@ -106,10 +108,9 @@ sub new {
 sub _find_sequencing_files
 {
   my $self = shift;
-  
   opendir(DIR,$self->{lane_path});
   my $sequencing_file_suffix = $self->{sequencing_file_suffix} || ".bam";
-  my @sequencing_filenames = grep { /$sequencing_file_suffix$/i } 
+  my @sequencing_filenames = grep { /$sequencing_file_suffix$/i }
   readdir(DIR);
   closedir(DIR);
 
@@ -135,6 +136,7 @@ sub _filter_out_sym_links
 sub calculate_expression_provides
 {
   my $self = shift;
+
   my @expression_done_files ;
   for my $filename (@{$self->_find_sequencing_files})
   {
@@ -182,38 +184,40 @@ sub _create_expression_job
   {
     $window_margin_str = ' window_margin => '.$self->{window_margin}.', ';
   }
-  
+
+
   my $intergenic_regions_str = "";
   if(defined ($self->{intergenic_regions}))
-  {
-    $intergenic_regions_str = ' intergenic_regions => '.$self->{intergenic_regions}.', ';
-  }
-  my $bitwise_flag_str = "";
-  if(defined($self->{bitwise_flag}))
-  {
-    $bitwise_flag_str = ' bitwise_flag => '.$self->{bitwise_flag}.',';
-  }
-  
-  my $driver_class = "Expression";
-  my $plots_class = "CoveragePlot";
-  if($self->{protocol} eq "TradisProtocol")
-  {
-    $driver_class = "Insertions";
-    $plots_class = "InsertSite";
-  }
+    {
+      $intergenic_regions_str = ' intergenic_regions => '.$self->{intergenic_regions}.', ';
+    }
 
-  
-        open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
-        print $scriptfh qq{
+  my $filters = {
+		 mapping_quality => $self->{mapping_quality}
+		};
+
+  if ( defined ($self->{bitwise_flag}) )
+    {
+      $filters->{bitwise_flag} = $self->{bitwise_flag};
+    }
+
+  $Data::Dumper::Terse = 1;
+
+  my $filters_for_script = Dumper($filters);
+
+  my $plots_class = "CoveragePlot";
+
+  open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
+
+  print $scriptfh qq{
   use strict;
-  use Pathogens::RNASeq::$driver_class;
-  use Pathogens::RNASeq::$plots_class;
-  
-  my \$expression_results = Pathogens::RNASeq::$driver_class->new(
+  use Bio::RNASeq;
+  use Bio::RNASeq::$plots_class;
+
+  my \$expression_results = Bio::RNASeq->new(
     sequence_filename    => qq[$sequencing_filename],
     annotation_filename  => qq[$self->{annotation_file}],
-    mapping_quality      => $self->{mapping_quality},
-    $bitwise_flag_str
+    filters => $filters_for_script,
     protocol             => qq[$self->{protocol}],
     output_base_filename => qq[$sequencing_filename],
     $window_margin_str
@@ -222,7 +226,7 @@ sub _create_expression_job
 
   \$expression_results->output_spreadsheet();
   
-  Pathogens::RNASeq::$plots_class->new(
+  Bio::RNASeq::$plots_class->new(
     filename             => \$expression_results->_corrected_sequence_filename,
     output_base_filename => qq[$sequencing_filename],
     mapping_quality      => $self->{mapping_quality},
