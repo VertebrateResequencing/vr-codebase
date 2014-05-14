@@ -1,668 +1,401 @@
-#
-# Copyright (c) 2013, 2014 Genome Research Ltd. 
-# 
-# Authors: Petr Danecek <pd3@sanger> 
-#          Allan Daly <ad7@sanger.ac.uk>
-#          Joshua Randall <jr17@sanger.ac.uk>
-#
-# This program is free software: you can redistribute it and/or modify it under 
-# the terms of the GNU General Public License as published by the Free Software 
-# Foundation; either version 3 of the License, or (at your option) any later 
-# version. 
-#
-# This program is distributed in the hope that it will be useful, but WITHOUT 
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS 
-# FOR A PARTICULAR PURPOSE. See the GNU General Public License for more 
-# details. 
-#
-# You should have received a copy of the GNU General Public License along with 
-# this program. If not, see <http://www.gnu.org/licenses/>.
-#
-
 package RunnerLSF;
 
 use strict;
 use warnings;
 use Carp;
 use DateTime;
-use File::Spec;
-use Data::Dumper;
 
-# TODO: all of these should be farm options that can be overridden in config
-my %queue_limits_seconds = ( basement=>1e9, long=>2880*60, normal=>720*60, small=>30*60 );
-my $chkpnt_minimum_period_minutes = 1;
-my $default_memlimit_mb = 100;
-
-# estimated (minimum) time to checkpoint: ~2.5 minutes per GB of RAM on lustre (scratch113), so 0.15 s/MB
-# but it is better to underestimate than overestimate - theoretical maximum is ~500MB/s, so 0.002s/MB
-my $min_chkpnt_time_s_per_mb = 0.002;
-
-# maximum allowed time to checkpoint
-# lustre can sustain ~10+ GB/s, so 0.0001 s/MB
-# loaded by ~10000 jobs, that would be 1 s/MB
-my $max_chkpnt_time_s_per_mb = 1;
-
-# the number of old checkpoints to keep around
-my $keep_n_previous_chkpnts = 0;
-
-my %months = qw(Jan 1 Feb 2 Mar 3 Apr 4 May 5 Jun 6 Jul 7 Aug 8 Sep 9 Oct 10 Nov 11 Dec 12);
-
-our $Running = 1;
-our $Error   = 2;
-our $Unknown = 4;
-our $No      = 8;
-our $Done    = 16;
-
-sub is_job_array_running
+sub new
 {
-    my ($jids_file, $ids, $nmax) = @_;
+    my ($class,@args) = @_;
+    my $self = @args ? {@args} : {};
+    bless $self, ref($class) || $class;
 
-    my @jobs = ();
-    for my $id (@$ids) { push @jobs, {status=>$No, nfailures=>0}; }
-    if ( ! -e $jids_file ) { return \@jobs; }
+    $$self{Running} = 1;
+    $$self{Error}   = 2;
+    $$self{Zombi}   = 4;
+    $$self{No}      = 8;
+    $$self{Done}    = 16;
+    $$self{Waiting} = 32;
+
+    $$self{lsf_status_codes} = 
+    { 
+        DONE  => $$self{Done}, 
+        PEND  => $$self{Running} | $$self{Waiting}, 
+        WAIT  => $$self{Running} | $$self{Waiting}, 
+        EXIT  => $$self{Error}, 
+        ZOMBI => $$self{Zombi},
+        RUN   => $$self{Running}, 
+        UNKWN => $$self{Running}, 
+        SSUSP => $$self{Running}
+    };
+
+    $$self{default_limits} = { runtime=>40, memory=>1_000, queue=>'normal' };
+    $$self{queue_limits}   = { basement=>1e9, long=>48*60, normal=>12*60, small=>30 };
+
+    $self->_set_lsf_limits_unit();
+    $self->_init_zombies();
+
+    return $self;
+}
+
+sub job_running
+{
+    my ($self,$task) = @_;
+    return $$task{status} & $$self{Running};
+}
+sub job_done
+{
+    my ($self, $task) = @_;
+    return $$task{status} & $$self{Done};
+}
+sub job_failed
+{
+    my ($self, $task) = @_;
+    return $$task{status} & $$self{Error};
+}
+sub job_nfailures
+{
+    my ($self, $task) = @_;
+    return $$task{nfailures} ? $$task{nfailures} : 0;
+}
+sub set_max_jobs
+{
+    my ($self,$nmax) = @_;
+    $$self{nmax_jobs} = $nmax;
+}
+sub set_limits
+{
+    my ($self,%limits) = @_;
+    $$self{limits} = { %{$$self{default_limits}}, %limits };
+    if ( exists($limits{queues}) )
+    {
+        $$self{queue_limits} = { %{$limits{queues}} };
+    }
+}
+sub clean_jobs
+{
+    my ($self,$wfile,$ids) = @_;
+}
+sub kill_job
+{
+    my ($self,$job) = @_;
+    if ( !exists($$job{lsf_id}) ) { return; }
+    my $cmd = "bkill -s7 -b '$$job{lsf_id}'";
+    warn("$cmd\n");
+    `$cmd`;
+}
+
+sub _init_zombies
+{
+    my ($self) = @_;
+    if ( !exists($ENV{LSF_ZOMBI_IS_DEAD}) ) { return; }
+    my @arrays = split(/\./,$ENV{LSF_ZOMBI_IS_DEAD});
+    for my $arr (@arrays)
+    {
+        if ( !($arr=~/^(\d+)\[(.+)\]$/) ) { confess("Could not parse LSF_ZOMBI_IS_DEAD=$ENV{LSF_ZOMBI_IS_DEAD}\n"); }
+        my $id  = $1;
+        my $ids = $2;
+        my @items = split(/,/,$ids);
+        for my $item (@items)
+        {
+            if ( $item=~/^(\d+)$/ ) { $$self{ignore_zombies}{"${id}[$1]"} = 1; next; }
+            my ($from,$to) = split(/-/,$item); 
+            for (my $i=$from; $i<=$to; $i++)
+            {
+                $$self{ignore_zombies}{"${id}[$i]"} = 1;
+            }
+        }
+    }
+}
+
+sub get_jobs
+{
+    my ($self, $jids_file, $ids) = @_;
+
+    # For each input job id create a hash with info: status, number of failuers
+    my @jobs_out = ();
+    for my $id (@$ids) { push @jobs_out, {status=>$$self{No}, nfailures=>0}; }
+    if ( ! -e $jids_file ) { return \@jobs_out; }
 
     # The same file with job ids may contain many job arrays runs. Check
     #   the jobs in the reverse order in case there were many failures.
     #   The last success counts, failures may be discarded in such a case.
     #
-    my $path = $jids_file;
-    $path =~ s/[.]jid$//;
-    my @jids = read_jids_file($jids_file, $path);
-    
-    my $jidlines_processed = 0;
-  JIDLINE: for (my $i=@jids-1; $i>=0; $i--)
-  {
-      $jidlines_processed++;
-      my $info = parse_bjobs_l($jids[$i]);
-      if ( !defined $info ) { next JIDLINE; }
-      for my $job (values %$info)
-      {
-	  check_job($job);
-      }
-    ELEMENT_ID: for (my $j=0; $j<@$ids; $j++)
+    open(my $fh, '<', $jids_file) or confess("$jids_file: $!");
+    my $path;
+    my @jids = ();
+    while (my $line=<$fh>)
     {
-	my $id = $$ids[$j];
-	$jobs[$j]{id} = $$info{$id}{id};
-
-	if ( !exists($$info{$id}) ) { next ELEMENT_ID; }
-	# if we already have a checkpoint for this job and this info also has checkpoint
-	if ( exists($jobs[$j]{have_chkpnt}) && exists($$info{$id}{have_chkpnt}) )
-	{
-	    # increment count of old checkpoints saved for this job
-	    $jobs[$j]{old_chkpnt_count}++;
-	    if ( $jobs[$j]{old_chkpnt_count} > $keep_n_previous_chkpnts )
-	    {
-		# delete checkpoint
-		delete_context_file($jobs[$j]);
-	    }
-	}
-
-	# if we don't yet have_chkpnt for this job element, and we do have_chkpnt from this info
-	if ( !exists($jobs[$j]{have_chkpnt}) && exists($$info{$id}{have_chkpnt}) ) 
-	{
-	    # copy all info needed for checkpoint restart from this (the latest) have_chkpnt info
-	    $jobs[$j]{have_chkpnt} = $$info{$id}{have_chkpnt};
-	    $jobs[$j]{last_chkpnt_lsf_id} = $$info{$id}{lsf_id};
-	    $jobs[$j]{queue} = $$info{$id}{queue};
-	    $jobs[$j]{mem_mb} = $$info{$id}{mem_mb};
-	    $jobs[$j]{chkpnt_dir} = $$info{$id}{chkpnt_dir};
-	    $jobs[$j]{name} = $$info{$id}{name};
-	}
-	if ( exists($$info{$id}{idle_factor}) )
-	{
-	    $jobs[$j]{idle_factor} = $$info{$id}{idle_factor};
-	}
-	if ( exists($$info{$id}{runtime_limit_seconds}) )
-	{
-	    $jobs[$j]{runtime_limit_seconds} = $$info{$id}{runtime_limit_seconds};
-	}
-	if ( exists($$info{$id}{cpus}) )
-	{
-	    $jobs[$j]{cpus} = $$info{$id}{cpus};
-	}
-	if ( $jobs[$j]{status} ne $No ) { next ELEMENT_ID; }   # the job was submitted multiple times and already has a status
-	if ( $$info{$id}{status}==$Done ) { $jobs[$j]{status} = $Done; }
-	if ( $$info{$id}{status}==$Running ) { $jobs[$j]{status} = $Running; }
-	
+        if ( !($line=~/^(\d+)\s+([^\t]*)/) ) { confess("Uh, could not parse \"$line\".\n") }
+        push @jids, $1;     # LSF array ID
+        if ( !defined $path ) { $path = $2; }
+        if ( $path ne $2 ) { confess("$path ne $2\n"); }
     }
 
-      # assume we don't need to process any more jid file lines
-      # we will set this to 1 below if an element is still missing needed information
-      my $continue_processing_jidlines = 0;
-    CHECK_ELEMENTS: for (my $j=0; $j<@$ids; $j++)
+    # ZOMBI jobs need special care, we cannot be 100% sure that the non-responsive
+    # node stopped writing to network disks. Let the user decide if they can be 
+    # safely ignored.
+    my %zombi_warning = ();
+
+    # Get info from bjobs -l: iterate over LSF array IDs we remember for this task in the jids_file
+    for (my $i=@jids-1; $i>=0; $i--)
     {
-	# check if we still need more information for this element
-	if ( ( $jobs[$j]{status} != $Done ) &&
-	     ( $jobs[$j]{status} != $Running ) &&
-	     ( !exists($jobs[$j]{have_chkpnt}) ) )
-	{
-	    # job is neither Done nor Running and does not have checkpoint information, keep searching through jid file entries
-	    $continue_processing_jidlines = 1;
-	}
-    }	
-      # if we don't need to continue processing jid file entries, don't
-      if ( ! $continue_processing_jidlines ) 
-      { 
-	  last JIDLINE; 
-      }
+        my $info = $self->_parse_bjobs_l($jids[$i]);
+        if ( !defined $info ) { next; }
+
+        # Check if the time limits are still OK for all running jobs. Switch queues if not
+        for my $job_l (values %$info)
+        {
+            if ( $$job_l{status} eq 'ZOMBI' && !$$self{ignore_zombies}{$$job_l{lsf_id}} ) { $zombi_warning{$$job_l{lsf_id}} = 1; }
+            $self->_check_job($job_l,$jids_file);
+        }
+
+        # Update status of input jobs present in the bjobs -l listing. Note that the failed jobs
+        # get their status from the output files as otherwise we wouldn't know how many times
+        # they failed already. 
+        for (my $j=0; $j<@$ids; $j++)
+        {
+            my $id = $$ids[$j];
+            if ( !exists($$info{$id}) ) { next; }
+            if ( $jobs_out[$j]{status} ne $$self{No} ) { next; }   # the job was submitted multiple times and already has a status
+
+            if ( $$info{$id}{status} & $$self{Done} ) 
+            { 
+                $jobs_out[$j]{status} = $$self{Done}; 
+            }
+            elsif ( $$info{$id}{status} & $$self{Running} ) 
+            { 
+                $jobs_out[$j]{status} = $$self{Running}; 
+                $jobs_out[$j]{lsf_id} = $$info{$id}{lsf_id};
+            }
+            elsif ( $$info{$id}{status} & $$self{Zombi} )
+            {
+                # Set as failed if ZOMBI should be ignored, otherwise say it's running.
+                my $lsf_id = $$info{$id}{lsf_id};
+                if ( $$self{ignore_zombies}{$lsf_id} ) { $jobs_out[$j]{status} = $$self{Error}; }
+                else { $jobs_out[$j]{status} = $$self{Running}; }
+                $jobs_out[$j]{lsf_id} = $lsf_id;
+            }
+        }
     }
-    
-    if ($jidlines_processed < @jids) 
+
+    if ( scalar keys %zombi_warning )
     {
-	my $unprocessed_lines = scalar(@jids) - $jidlines_processed;
-	warn(
-	    "\t   only needed to process $jidlines_processed jid file entries out of ".scalar(@jids)." (skipped first $unprocessed_lines lines)\n" 
-	    );
+        my %arrays = ();
+        for my $lsf_id (keys %zombi_warning)
+        {
+            if ( $lsf_id =~ s/^(\d+)\[(\d+)\]$// ) { push @{$arrays{$1}},$2; }
+        }
+        my @id_strings = ();
+        for my $id (keys %arrays)
+        {
+            while ( @{$arrays{$id}} )
+            {
+                push @id_strings, "${id}[". $self->_create_bsub_ids_string($id,$arrays{$id}) . "]";
+            }
+        }
+        warn(
+            "\n\n----\n\n" .
+            "WARNING:  Some jobs were found in ZOMBI state and are still considered as\n" .
+            "  running by the pipeline. To ignore these jobs, set the environment variable\n" .
+            "       LSF_ZOMBI_IS_DEAD='" .join('.',@id_strings). "'\n" .
+            "  and restart the pipeline. See also \"$jids_file\".\n" .
+            "----\n\n"
+            );
     }
+
+    # For jobs which are not present in the bjobs -l listing we get the info from output files
     my $ntodo = 0;
     for (my $i=0; $i<@$ids; $i++)
     {
-        if ( $jobs[$i]{status} & $Running || $jobs[$i]{status} & $Error ) { $ntodo++; }
-        if ( $nmax && $ntodo >= $nmax ) { last; } 
-        if ( $jobs[$i]{status} ne $No ) { next; }
-        my $info = parse_output($$ids[$i], $path);
+        if ( $jobs_out[$i]{status} & $$self{Running} || $jobs_out[$i]{status} & $$self{Error} ) { $ntodo++; }
+        if ( $$self{nmax_jobs} && $ntodo >= $$self{nmax_jobs} ) { last; } 
+        if ( $jobs_out[$i]{status} ne $$self{No} ) { next; }
+        my $info = $self->_parse_output($$ids[$i], $path);
         if ( defined $info )
         {
-            $jobs[$i]{status} = $$info{status};
-            $jobs[$i]{nfailures} = $$info{nfailures};
+            $jobs_out[$i]{status} = $$info{status};
+            $jobs_out[$i]{nfailures} = $$info{nfailures};
         }
     }
-    return \@jobs;
+    return \@jobs_out;
 }
 
-sub read_jids_file
+sub _parse_bjobs_l
 {
-    my ($jids_file, $wfile) = @_;
-    my @jids = ();
-    open(my $fh, '<', $jids_file) or confess("$jids_file: $!");
-    while (my $line=<$fh>)
+    my ($self,$jid) = @_;
+
+    my @lines;
+    for (my $i=0; $i<3; $i++)
     {
-	if ( !($line=~/^(\d+)\s+([^\t]*)/) ) { confess("read_jids_file: Uh, could not parse \"$line\".\n") }
-	if ( $wfile ne $2 ) { confess("read_jids_file: $wfile ne $2\n"); }
-        push @jids, $1;     # LSF array ID
-    }
-    close $fh or confess("$jids_file: $!");
-    return @jids;
-}
-
-sub parse_bjobs_l
-{
-    my ($jid) = @_;
-
-    my @job_output_sections;
-
-    # loop to retry bjobs up to 3 times if it fails
-  BJOBS: for (my $i=0; $i<3; $i++)
-  {
-      my $output = `bjobs -l $jid 2>/dev/null`;
-      if ( $? ) { 
-	  warn("bjobs -l $jid failed, trying again in 5 sec...\n");
-	  sleep 5; 
-	  next BJOBS; 
-      }
-      # quash carriage returns
-      $output =~ s/\r//gm;
-      # roll up all continuation lines, signified by beginning with 21 spaces 
-      # into a single (long) line beginning with the line before
-      $output =~ s/\n\s{21}//gm;
-      # roll up *LIMIT or *TIME line with the following line
-      $output =~ s/^( [A-Z]+LIMIT| [A-Z]+TIME)\s*\n\s*(.*?)$/$1 $2/gm;
-      # split bjobs -l output into separate entries for each job / job array element
-      @job_output_sections = split /^[-]+[[:space:]]*$/m, $output; 
-      if ( !scalar @job_output_sections ) 
-      { 
-	  return undef; 
-      }
-      else 
-      {
-	  # have some bjobs output
-	  last BJOBS;
-      }
+        @lines = `bjobs -l $jid 2>/dev/null`;
+        if ( $? ) { sleep 5; next; }
+        if ( !scalar @lines ) { return undef; }
     }
 
-    my $info = {};
-    foreach my $job_section (@job_output_sections)
-    {
-	my $job = parse_bjobs_l_section($job_section);
-	if ( scalar keys %$job ) { $$info{$$job{id}} = $job; }
-    }
-
-    return $info;
-}
-
-sub parse_bjobs_l_section 
-{
-    my ($jobinfo) = @_;
-
-    my $quoted_entry_capture_regex = '<(.*?)>(,|;|$)[[:space:]]*';
+    my %months = qw(Jan 1 Feb 2 Mar 3 Apr 4 May 5 Jun 6 Jul 7 Aug 8 Sep 9 Oct 10 Nov 11 Dec 12);
     my $year = (gmtime())[5] + 1900;
 
-    my $job = {};
-    foreach my $line (split /\n/, $jobinfo)
+    my $info = {};
+    my $job;
+    for (my $i=0; $i<@lines; $i++)
     {
-        if ( $line =~ /^\s*$/ ) { next; }
-	
-	# "Job" line (continuation lines have already been collapsed)
-        if ( $line =~ /^Job <(\d+)(.*)$/ )
+        if ( $lines[$i]=~/^\s*$/ ) { next; }
+
+        my $job_info;
+        if ( $lines[$i]=~/^Job <(\d+)(.*)$/ )
         {
-	    if ( !($line =~ s/Job $quoted_entry_capture_regex//) ) { confess("Could not determine the job id: [$line]"); }
-	    $$job{lsf_id} = $1;
-
-	    if ( !($line =~ s/Job Name $quoted_entry_capture_regex//) ) { confess("Could not determine the job name: [$line]"); }
-	    $$job{full_name} = $1;
-
             # Runner's ID is $id, LSF job ID is lsf_id
-            $$job{id} = $$job{lsf_id};
-            if ( $$job{lsf_id} =~ /\[(\d+)\]/ )
+            my $id = $1;
+            my $rest = $2;
+            my $lsf_id = $id;
+            if ( $rest=~/^\[(\d+)/ )
             {
-                $$job{id} = $1;
-            } 
-	    # if there was no index in the lsf id, get it from the job name
-	    # (when jobs are brestart-ed from a checkpoint, they are no longer actually job arrays - thanks LSF)
-	    elsif ( $$job{full_name} =~ /\[(\d+)\]/ )
-	    {
-		$$job{id} = $1;
-	    }
-	    
-	    if( $$job{full_name} =~ /^(.*)\[.*?$/ ) 
-	    {
-		# job name only has first part of name (without job array brackets)
-		$$job{name} = $1;
-	    }
+                $lsf_id = "$id\[$1\]";
+                $id = $1;
+            }
 
-            if ( !($line =~ s/Status $quoted_entry_capture_regex//) ) { confess("Could not determine the status: [$line]"); }
+            if ( scalar keys %$job) { $$info{$$job{id}} = $job; }
+            $job = { id=>$id, lsf_id=>$lsf_id };
+
+            my $job_info = $lines[$i];
+            chomp($job_info);
+            $i++; 
+
+            while ( $i<@lines && $lines[$i]=~/^\s{21}?(.*)$/ )
+            {
+                $job_info .= $1;
+                chomp($job_info);
+                $i++;
+            }
+            if ( !($job_info=~/,\s*Status <([^>]+)>/) ) { confess("Could not determine the status: [$job_info]"); }
             $$job{status} = $1;
-	    
-            if ( !($line =~ s/Queue $quoted_entry_capture_regex//) ) { confess("Could not determine the queue: [$line]"); }
+            if ( !($job_info=~/,\s*Queue <([^>]+)>/) ) { confess("Could not determine the queue: [$job_info]"); }
             $$job{queue} = $1;
+            if ( !($job_info=~/,\s*Command <([^>]+)>/) ) { confess("Could not determine the command: [$job_info]"); }
+            $$job{command} = $1;
         }
-
-	# "Submitted" line (again, already including continuation lines, if any)
-        if ( $line =~ /^\w+\s+(\w+)\s+(\d+) (\d+):(\d+):(\d+): [Ss]ubmitted/ )
+        
+        # Collect also checkpoint data for LSFCR to avoid code duplication: checkpoint directory, memory, status
+        # Wed Mar 19 10:14:17: Submitted from host <vr-2-2-02>...
+        if ( $lines[$i]=~/^\w+\s+\w+\s+\d+ \d+:\d+:\d+:\s*Submitted from/ )
         {
-            if ($line =~ s/Checkpoint directory $quoted_entry_capture_regex//)
-	    {
-		my $chkpnt_dir = $1;
-		my @dirs = File::Spec->splitdir($chkpnt_dir);
-		$$job{chkpnt_dir} = File::Spec->catdir( @dirs );
-                my $chkpnt_context_file = $$job{chkpnt_dir}."/jobstate.context";
-                if ( -e $chkpnt_context_file && -s $chkpnt_context_file )
-                {
-		    $$job{have_chkpnt} = 1;
-                }
-	    }
+            my $job_info = $lines[$i];
+            chomp($job_info);
+            $i++;
 
-	    if ($line =~ s/Requested Resources $quoted_entry_capture_regex//)
-	    {
-		$$job{resources} = $1;
-
-		if ( $$job{resources} =~ m/rusage\[[^]]*?mem=(\d+)[^]]*?\]/ ) 
-		{
-		    $$job{mem_mb} = $1;
-		}
-	    }
-	    else
-	    {
-		confess("Could not find Requested Resources: [$line]");
-	    }
+            while ( $i<@lines && $lines[$i]=~/^\s{21}?(.*)$/ )
+            {
+                $job_info .= $1;
+                chomp($job_info);
+                $i++;
+            }
+            if ( $job_info=~/,\s*Checkpoint directory <([^>]+)>/ ) { $$job{chkpnt_dir} = $1; }
+            if ( $job_info=~/\srusage\[mem=(\d+)/ ) 
+            { 
+                $$job{mem_usage} = $1; 
+                if ( $$self{lsf_limits_unit} eq 'kB' ) { $$job{mem_usage} /= 1000.0; }
+            }
         }
+        # elsif ( $lines[$i]=~/^\w+\s+\w+\s+\d+ \d+:\d+:\d+:\s*Completed <exit>; TERM_CHKPNT/ )
+        # {
+        #     $$job{status} = 'EXIT';
+        # }
 
         # Tue Mar 19 13:00:35: [685] started on <uk10k-4-1-07>...
         # Tue Dec 24 13:12:00: [1] started on 8 Hosts/Processors <8*vr-1-1-05>...
-        if ( $line =~ /^\w+\s+(\w+)\s+(\d+) (\d+):(\d+):(\d+):.+[Ss]tarted on/ ) 
+        elsif ( $lines[$i]=~/^\w+\s+(\w+)\s+(\d+) (\d+):(\d+):(\d+):.+ started on/ ) 
         {
             $$job{started} = DateTime->new(month=>$months{$1}, day=>$2, hour=>$3, minute=>$4, year=>$year)->epoch;
         }
-
-        # Tue Dec 24 13:12:00: [1] started on 8 Hosts/Processors <8*vr-1-1-05>...
-        if ( $line =~ /[Ss]tarted on (\d+) / ) 
+        elsif ( $lines[$i]=~/^\w+\s+(\w+)\s+(\d+) (\d+):(\d+):(\d+):.+ dispatched to/ )    # associated with underrun status
         {
-            $$job{cpus} = $1;
+            $$job{started} = DateTime->new(month=>$months{$1}, day=>$2, hour=>$3, minute=>$4, year=>$year)->epoch;
         }
-
-        # RUNLIMIT 60.0 min of bc-22-4-06
-        # RUNTIME 60.0 min of bc-22-4-06
-	if ( $line =~ /RUN(LIMIT|TIME) ([0-9.]+) min/ )
-	{
-	    $$job{runtime_limit_seconds} = $2 * 60;
-	}
-	
         # Tue Mar 19 13:58:23: Resource usage collected...
-        if ( $line =~ /^\w+\s+(\w+)\s+(\d+) (\d+):(\d+):(\d+):\s+Resource usage collected/ ) 
+        elsif ( $lines[$i]=~/^\w+\s+(\w+)\s+(\d+) (\d+):(\d+):(\d+):\s+Resource usage collected/ ) 
         {
-            if ( !exists($$job{started}) ) { confess("No wall time for job $$job{id}??", $line); }
-	    $$job{cur_time} = DateTime->new(month=>$months{$1}, day=>$2, hour=>$3, minute=>$4, year=>$year)->epoch;
-            my $wall_time = $$job{cur_time} - $$job{started};
-            if ( !exists($$job{wall_time}) ) { $$job{wall_time} = $wall_time; }
+            if ( !exists($$job{started}) ) { confess("No wall time for job $$job{id}??", @lines); }
+            my $wall_time = DateTime->new(month=>$months{$1}, day=>$2, hour=>$3, minute=>$4, year=>$year)->epoch - $$job{started};
+            if ( !exists($$job{cpu_time}) or $$job{cpu_time} < $wall_time ) { $$job{cpu_time} = $wall_time; }
         }
-
-        # Tue Feb 11 21:38:14: Completed <exit>; TERM_CHKPNT: job killed after checkpointing. Catch last Job_Id checkpointed
-	if ( $line =~ /TERM_CHKPNT/ && !$$job{term_chkpnt})
-	{
-	    if ( $line =~ /exit code 143/ )
-	    {
-		$$job{term_chkpnt} = $$job{lsf_id};
-	    }
-	    elsif ( $line =~ /exit code 139/ )
-	    {
-		warn(
-		    "\tc  job $$job{id} ($$job{lsf_id}) appears to have died while checkpointing"
-		    );
-	    }
-	    elsif ( $line =~ /exit code (\d+)/ ) 
-	    {
-		warn(
-		    "\tc  job $$job{id} ($$job{lsf_id}) had unexpected error status while checkpointing (exit code $1)\n"
-		    );
-	    }
-	}
-        # Job was suspended by the user while pending;
-	# this also sometimes occurs when checkpoint restarts fail repeatedly
-        if ( $line =~ /Job was suspended by the user while pending\;/ )
-        {
-            confess(
-		"A job was found in a suspended state (supposedly by the user but possibly automatically due to repeated failed attempts to restart from checkpoint).\n" .
-		"The pipeline cannot proceed. " .
-		"If you suspended this job, resume it and retry.\n" .
-		"Otherwise, please fix manually by deleting the appropriate line in .jobs/*.w.jid\n" .
-		"and removing the appropriate LSF output file(s) .jobs/*.w.<ID>.o\n"
-		);
-        }
-
-        if ( $line =~ /The CPU time used is (\d+) seconds./ ) 
+        if ( $lines[$i]=~/The CPU time used is (\d+) seconds./ ) 
         { 
-	    # CPU time can only go up, not down
             if ( !exists($$job{cpu_time}) or $$job{cpu_time} < $1 ) { $$job{cpu_time} = $1; }
         }
-	
-        if ( $line =~ /IDLE_FACTOR.*?:\s*([0-9.]+)/ ) 
+        if ( $lines[$i]=~/Exited with exit code (\d+)\./ ) 
         { 
-            # IDLE_FACTOR(cputime/runtime):   2.53
-	    $$job{idle_factor} = $1; 
+            $$job{exit_code} = $1;
         }
     }
-    
-    # if wall time has not been reported yet, set it to 0
-    if ( !exists($$job{wall_time}) ) { $$job{wall_time} = 0; }
-    
-    # if cpu time has not been reported yet, set it to wall time (as a guess)
-    if ( !exists($$job{cpu_time}) ) { $$job{cpu_time} = $$job{wall_time}; }
-    
-    return $job;
+    if ( scalar keys %$job) 
+    { 
+        if ( $$job{command}=~/^cr_restart/ && exists($$job{exit_code}) && $$job{exit_code} eq '16' )
+        {
+            # temporary failure (e.g. pid in use) of cr_restart, ignore this failure
+            return $info;
+        }
+        $$info{$$job{id}} = $job; 
+    }
+    return $info;
 }
 
-sub check_job
+sub _check_job
 {
-    my ($job) = @_;
-    my $status = { DONE=>$Done, PEND=>$Running, EXIT=>$Error, RUN=>$Running, UNKWN=>$Running, SSUSP=>$Running, PSUSP=>$Running };
+    my ($self,$job,$jids_file) = @_;
+    my $status = $$self{lsf_status_codes};
     if ( !exists($$status{$$job{status}}) ) 
     { 
-        if ( $$job{status} eq 'ZOMBI' )
-        {
-            confess(
-                    "FIXME: \n" .
-                    "Some of the jobs are in ZOMBI state, please see `man bjobs` for possible reasons why this happened.\n" .
-                    "Because the job might have been already requeued with a new job ID which this pipeline would be unaware of,\n" .
-                    "the pipeline cannot proceed. Please fix manually by deleting the appropriate line in .jobs/*.w.jid\n" .
-                    "and remove the appropriate LSF output file(s) .jobs/*.w.<ID>.o\n"
-                   );
-        }
-        confess("Todo: $$job{status}\n"); 
+        confess("Todo: $$job{status} $$job{lsf_id}\n"); 
     }
     $$job{status} = $$status{$$job{status}};
-    if ( $$job{status}==$Running )
+    if ( $$job{status}==$$self{Running} )
     {
-        my $queue = $$job{queue};
-	my $cpus = 1;
-	if ( exists($$job{cpus}) ) { $cpus = $$job{cpus}; }
+        if ( !exists($$job{cpu_time}) ) { $$job{cpu_time} = 0; }
 
-	my $runtime_limit_seconds = undef;
-	if ( exists($$job{runtime_limit_seconds}) )
-	{
-	    $runtime_limit_seconds = $$job{runtime_limit_seconds};
-	}
-	elsif ( exists($queue_limits_seconds{$queue}) )
-	{
-	    $runtime_limit_seconds = $queue_limits_seconds{$queue};
-	}
-        if ( defined($runtime_limit_seconds) && ( ( ($$job{cpu_time} / $cpus) > $runtime_limit_seconds ) || ( $$job{wall_time} > $runtime_limit_seconds ) ) )
+        # Estimate how long it might take before we are called again + plus 5 minutes to be safe, and
+        # bswitch to a longer queue if necessary.
+
+        my $wakeup_interval = $$self{limits}{wakeup_interval} ? $$self{limits}{wakeup_interval} + 300 : 600;
+        my $new_queue = $self->_get_queue($$job{cpu_time} + $wakeup_interval);
+        my $cur_queue = $$job{queue};
+        if ( defined $new_queue && $new_queue ne $cur_queue && $$self{queue_limits}{$new_queue} > $$self{queue_limits}{$cur_queue} )
         {
-	    warn(
-		"\tc  job $$job{id} ($$job{lsf_id}) is currently running and has exceeded the runtime limit of $runtime_limit_seconds seconds (cpu time: $$job{cpu_time} wall time: $$job{wall_time})\n"
-		);
-	    # we have overrun either cpu time or wall time
-            if ( exists($$job{chkpnt_dir}) )
-            {
-                # we are using checkpointing and are over the queue time limit
-		
-                # process chkpnt.log to check if a recent checkpoint has been started
-		my $chkpnt_log_file = $$job{chkpnt_dir}."/chkpnt.log";
-		my @chkpnt_log_lines;
-		if ( -f $chkpnt_log_file ) 
-		{
-		    open(my $fh, '<', $chkpnt_log_file) or confess("$chkpnt_log_file: $!");
-		    # read all lines into an array so we can process them in reverse order
-		    foreach my $line (<$fh>) 
-		    {
-			chomp $line;
-			push @chkpnt_log_lines, $line;
-		    }
-		    close $fh or confess("$chkpnt_log_file: $!");
-		}
-                # Example entries from chkpnt.log:
-                # ########### begin to checkpoint ############
-                # Fri Feb 21 15:40:13 2014 : Echkpnt : main() : the LSB_ECHKPNT_METHOD = blcr
-                # Fri Feb 21 15:40:13 2014 : Echkpnt : main() : the LSB_ECHKPNT_METHOD_DIR =
-                # Fri Feb 21 15:40:13 2014 : Echkpnt : main() : the echkpntProgPath is : /usr/local/lsf/9.1/linux2.6-glibc2.3-x86_64/etc/echkpnt.blcr
-                # ########### Echkpnt end checkpoint ###########
-                #
-                # ########### begin to checkpoint ############
-                # Fri Feb 21 16:23:12 2014 : Echkpnt : main() : the LSB_ECHKPNT_METHOD = blcr
-                # Fri Feb 21 16:23:12 2014 : Echkpnt : main() : the LSB_ECHKPNT_METHOD_DIR =
-                # Fri Feb 21 16:23:12 2014 : Echkpnt : main() : the echkpntProgPath is : /usr/local/lsf/9.1/linux2.6-glibc2.3-x86_64/etc/echkpnt.blcr
-                # Fri Feb 21 16:23:12 2014 : Echkpnt : main() : the echkpnt.blcr fail,the exit value is 1
-                # ########### Echkpnt end checkpoint ###########
-
-		# wind back from last line looking for last "begin to checkpoint" and "end to checkpoint" lines
-		my $last_begin_i = -1;
-		my $last_end_i = -1;
-		my $chkpnt_fail_count = 0;
-		for ( my $i=@chkpnt_log_lines-1; $i>=0; $i-- )
-		{
-		    if ( $last_begin_i == -1 && $chkpnt_log_lines[$i] =~ m/^#+\s+begin.*checkpoint\s+#+\s*$/i ) 
-		    {
-			$last_begin_i = $i;
-		    }
-		    elsif ( $last_end_i == -1 && $chkpnt_log_lines[$i] =~ m/^#+\s+.*end.*checkpoint\s+#+\s*$/i ) 
-		    {
-			$last_end_i = $i;
-		    }
-		    if ( $chkpnt_log_lines[$i] =~ m/echkpnt[.]blcr fail/ )
-		    {
-			$chkpnt_fail_count++;
-		    }
-		}
-
-		if ( $chkpnt_fail_count >= 3 )
-		{
-		    warn(
-			"\tc  job $$job{id} ($$job{lsf_id}) has failed to checkpoint $chkpnt_fail_count times.\n" .
-			"\tc  killing it so that it can be restarted.\n"
-			);
-		    kill_job($job);
-		    return;
-		}
-		
-		if ( $last_begin_i >= 0 )
-		{
-		    # have a started checkpoint, get start time
-		    my $timestamp_line = $chkpnt_log_lines[$last_begin_i+1];
-		    my $chkpnt_start_time;
-		    # Fri Feb 21 16:23:12 2014 : Echkpnt : main() : the LSB_ECHKPNT_METHOD = blcr
-		    if ( $timestamp_line =~ m/^\w+\s+(\w+)\s+(\d+) (\d+):(\d+):(\d+)\s+(\d+)\s*:/ ) 
-		    {
-			$chkpnt_start_time = DateTime->new(month=>$months{$1}, day=>$2, hour=>$3, minute=>$4, second=>$5, year=>$6)->epoch;
-		    } 
-		    else 
-		    {
-			confess("Have started checkpoint for job $$job{id} ($$job{lsf_id}), but could not find timestamp [$timestamp_line] in checkpoint log file ($chkpnt_log_file)\n");
-		    }
-		    
-		    if ( $last_end_i < $last_begin_i ) # N.B. this relies on initial valie of last_end_i being -1
-		    {
-			# checkpoint in progress, check how long it has been in progress
-			my $chkpnt_elapsed_seconds = $$job{cur_time} - $chkpnt_start_time;
-			my $max_chkpnt_time_seconds = $max_chkpnt_time_s_per_mb * $$job{mem_mb};
-			if ( $chkpnt_elapsed_seconds > $max_chkpnt_time_seconds )
-			{
-			    warn(
-				"\tc  job $$job{id} ($$job{lsf_id}) has been checkpointing for a long time (${chkpnt_elapsed_seconds}s) and will likely never finish.\n" .
-				"\tc  killing it so that it can be restarted.\n"
-				);
-			    kill_job($job);
-			}
-			else 
-			{
-			    # allow it to finish (do nothing for now)
-			    warn(
-				"\tc  job $$job{id} ($$job{lsf_id}) is in the process of checkpointing (it has been ${chkpnt_elapsed_seconds}s so far), will wait for it to finish.\n"
-				);
-			}
-		    }
-		    elsif ( $last_end_i > $last_begin_i ) 
-		    {
-			my $chkpnt_context_file = $$job{chkpnt_dir}."/jobstate.context";
-			my $chkpnt_context_mtime = undef;
-			if ( -e $chkpnt_context_file && -s $chkpnt_context_file && (my @st = stat($chkpnt_context_file)) )
-			{
-			    my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = @st;
-			    $chkpnt_context_mtime = $mtime;
-			}
-			else
-			{
-			    warn("\tc  could not stat checkpoint context file $chkpnt_context_file, checkpoint probably failed\n");
-			}
-			
-			if ( defined($chkpnt_context_mtime) && ( $chkpnt_context_mtime >= ( $chkpnt_start_time - 30 ) ) ) # allow 30 second drift between timestamp and log time
-			{
-			    # the latest checkpoint was successful, kill job so it can be restarted
-			    warn(
-				"\tc  job $$job{id} ($$job{lsf_id}) is over queue time limit but has a recent checkpoint: killing it so that it can be restarted.\n"
-				);
-			    kill_job($job);
-			}
-			else 
-			{
-			    # the latest checkpoint did not result in an updated jobstate.context
-			    warn(
-				"\tc  job $$job{id} ($$job{lsf_id}) appears to have failed its latest checkpoint, attempting checkpoint-and-kill now.\n"
-				);
-			    
-			    # ask it to checkpoint-and-kill
-			    checkpoint_job($job, 1);
-			}
-		    }
-		}
-		else 
-		{
-		    # no checkpoints yet -- this is unexpected (perhaps the job is running with more cpus than expected?)
-		    warn( 
-			"\tc  job $$job{id} ($$job{lsf_id}) has run past the limit but has not yet attempted to checkpoint.\n" 
-			);
-		    if ( exists($$job{idle_factor}) && $$job{idle_factor} > 1)
-		    {
-			warn( 
-			    "\tc  this may be because job $$job{id} is using more CPUs than expected (idle factor: $$job{idle_factor}, ncpus: $cpus).\n" 
-			    );
-		    }
-		    if ( exists($queue_limits_seconds{$queue}) && ( (( $$job{cpu_time} / $cpus) > $queue_limits_seconds{$queue} ) || ( $$job{wall_time} > $queue_limits_seconds{$queue} ) ))
-		    {
-			warn(
-			    "\tc  job $$job{id} is over the $queue queue run limit and may soon be killed by LSF, attempting checkpoint-and-kill now.\n" 
-			    );
-			# ask it to checkpoint-and-kill
-			checkpoint_job($job, 1);
-		    }
-		    else
-		    {
-			# not actually over the queue limit yet, only our own limit
-			checkpoint_job($job);
-		    }
-		}
-	    }
-	    else # !exists($$job{chkpnt_dir})
-	    {
-		# use bswitch instead of checkpoint/restart, for some reason only after 1.3x the cpu time limit has gone
-		if ( exists($queue_limits_seconds{$queue}) && ( $$job{cpu_time}*1.3 > $queue_limits_seconds{$queue} ) )
-		{
-		    my $bswitch;
-		  QUEUE: for my $q (sort {$queue_limits_seconds{$a} <=> $queue_limits_seconds{$b}} keys %queue_limits_seconds)
-		  {
-		      if ( $$job{cpu_time}*1.3 > $queue_limits_seconds{$q} ) { next; }
-		      warn("\ts changing queue of the job $$job{lsf_id} from $$job{queue} to $q\n");
-		      my $cmd = "bswitch $q '$$job{lsf_id}'";
-		      print STDERR "calling $cmd\n";
-		      my $out = `$cmd`;
-		      print STDERR "output: [$out]\n";
-		      $$job{queue} = $q;
-		      last QUEUE;
-		  }
-		}
-	    } # not using checkpointing
-        } # over time
-    } # running
-    return;
-}
-
-sub kill_job
-{
-    my ($job) = @_;
-
-    my $bkill_cmd = "bkill -s KILL '$$job{lsf_id}'";
-    my @out = `$bkill_cmd`;
-    # Job <1878080> is being terminated
-    # Job <1878081[1]> is being terminated
-    if ( scalar @out!=1 || !($out[0]=~/^Job <([\d\[\]]+)> is being terminated/) )
-    {
-	warn(
-	    "Expected different output from bkill.\n" .
-	    "The bkill command was:\n" .
-	    "\t$bkill_cmd\n" .
-	    "The output was: " . join('',@out) . "\n"
-	    );
+            warn("Switching job $$job{lsf_id} from queue $cur_queue to $new_queue\n");
+            `bswitch $new_queue '$$job{lsf_id}'`;
+            if ( $? ) { confess("Could not switch queues: $$job{lsf_id}"); }
+            $$job{queue} = $new_queue;
+        }
     }
 }
 
-sub checkpoint_job {
-    my ($job, $kill) = @_;
-    
-    if ( ! defined($kill) ) {$kill = 0;}
-    my $bchkpnt_opts = "";
-    if ( $kill ) { $bchkpnt_opts = "-k"; }
-    
-    my $bchkpnt_cmd = "bchkpnt $bchkpnt_opts '$$job{lsf_id}'";
-    my @out = `$bchkpnt_cmd`;
-    # Job <1878095[1]> is being checkpointed
-    if ( scalar @out!=1 || !($out[0]=~/^Job <([\d\[\]]+)> is being checkpointed/) )
+sub _get_queue
+{
+    my ($self,$time) = @_;
+    my $queue = exists($$self{limits}{queue}) ? $$self{limits}{queue} : $$self{default_limits}{queue};
+    if ( $$self{queue_limits}{$queue} >= $time ) { return $queue; }
+    for my $q (sort {$$self{queue_limits}{$a} <=> $$self{queue_limits}{$b}} keys %{$$self{queue_limits}})
     {
-	warn(
-	    "Expected different output from bchkpnt.\n" .
-	    "The bchkpnt command was:\n" .
-	    "\t$bchkpnt_cmd\n" .
-	    "The output was: " . join('',@out) . "\n"
-	    );
+        if ( $time > $$self{queue_limits}{$q} ) { next; }
+        return $q;
     }
+    return undef;
 }
 
-sub parse_output
+sub _parse_output
 {
-    my ($jid,$output) = @_;
+    my ($self,$jid,$output) = @_;
 
     my $fname = "$output.$jid.o";
     if ( !-e $fname ) { return undef; }
     
     # if the output file is empty, assume the job is running
-    my $out = { status=>$Running };
+    my $out = { status=>$$self{Running} };
+
+    # collect command lines and exit status to detect non-critical
+    # cr_restart exits
+    my @attempts = ();
 
     open(my $fh,'<',$fname) or confess("$fname: $!");
     while (my $line=<$fh>)
@@ -670,32 +403,40 @@ sub parse_output
         # Subject: Job 822187: <_2215_1_graphs> Done
         if ( $line =~ /^Subject: Job.+\s+(\S+)$/ )
         {
-            if ( $1 eq 'Exited' ) { $$out{status} = $Error; $$out{nfailures}++; }
-            if ( $1 eq 'Done' ) { $$out{status} = $Done; $$out{nfailures} = 0; }
+            if ( $1 eq 'Exited' ) { $$out{status} = $$self{Error}; $$out{nfailures}++; }
+            if ( $1 eq 'Done' ) { $$out{status} = $$self{Done}; $$out{nfailures} = 0; }
         }
-	# TERM_OWNER: job killed by owner.
-	if ( $line =~ /^TERM_OWNER:/ && $$out{nfailures} > 0 )
-	{
-	    $$out{nfailures}--;
-	}
-	# TERM_RUNLIMIT: job killed after reaching LSF run time limit.
-	if ( $line =~ /^TERM_RUNLIMIT:/ && $$out{nfailures} > 0 )
-	{
-	    $$out{nfailures}--;
-	}
-	# TERM_CHKPNT
-	if ( $line =~ /^TERM_CHKPNT/ && $$out{nfailures} > 0 )
-	{
-	    $$out{nfailures}--;
-	}
+        if ( $line =~ /^# LSBATCH:/ )
+        {
+            $line = <$fh>;
+            my $cmd = substr($line,0,10);
+            push @attempts, { cmd=>$cmd };
+            next;
+        }
+        if ( $line =~ /^Exited with exit code (\d+)\./ )
+        {
+            if ( !scalar @attempts or exists($attempts[-1]{exit}) ) { warn("Uh, unable to parse $output.$jid.o\n"); next; }
+            $attempts[-1]{exit} = $1;
+        }
+        # Do not count checkpoint and owner kills as a failure. 
+        if ( $line =~ /^TERM_CHKPNT/ && $$out{nfailures} ) { $$out{nfailures}--; }
+        if ( $line =~ /^TERM_OWNER/ && $$out{nfailures} ) { $$out{nfailures}--; }
     }
     close($fh);
+    for (my $i=0; $i<@attempts; $i++)
+    {
+        # cr_restart exited with a non-critical error
+        if ( $attempts[$i]{cmd} eq 'cr_restart' && exists($attempts[$i]{exit}) && $attempts[$i]{exit} eq '16' )
+        {
+            $$out{nfailures}--;
+        }
+    }
     return $out;
 }
 
 sub past_limits
 {
-    my ($jid,$output) = @_; 
+    my ($self,$jid,$output) = @_; 
     my $fname = "$output.$jid.o";
     if ( ! -e $fname ) { return (); }
     open(my $fh,'<',$fname) or confess("$fname: $!");
@@ -721,10 +462,11 @@ sub past_limits
     return %out;
 }
 
-our $lsf_limits_unit;
-sub get_lsf_limits_unit
+sub _set_lsf_limits_unit
 {
-    if ( defined $lsf_limits_unit ) { return $lsf_limits_unit; }
+    my ($self) = @_;
+    if ( exists($$self{lsf_limits_unit}) ) { return; }
+
     for (my $i=2; $i<15; $i++)
     {
         my @units = grep { /LSF_UNIT_FOR_LIMITS/ } `lsadmin showconf lim 2>/dev/null`;
@@ -736,18 +478,38 @@ sub get_lsf_limits_unit
             sleep $i; 
             next; 
         }
-        if ( @units && $units[0]=~/\s+MB$/ ) { $lsf_limits_unit = 'MB'; }
-        else { $lsf_limits_unit = 'kB'; }
-        return $lsf_limits_unit;
+        if ( @units && $units[0]=~/\s+MB$/ ) { $$self{lsf_limits_unit} = 'MB'; }
+        else { $$self{lsf_limits_unit} = 'kB'; }
+        return $$self{lsf_limits_unit};
     }
     confess("lsadmin showconf lim failed repeatedly");
 }
 
-sub run_array
+sub _create_bsub_opts_string
 {
-    my ($jids_file, $job_name, $opts, $cmd, $ids) = @_;
+    my ($self) = @_;
 
-    if ( !scalar @$ids ) { confess("No IDs given??\n"); }
+    # Set bsub options. By default request 1GB of memory, the queues require mem to be set explicitly
+    my $bsub_opts = '';
+    my $mem    = $$self{limits}{memory} ? int($$self{limits}{memory}) : $$self{default_limits}{memory};
+    my $lmem   = $$self{lsf_limits_unit} eq 'kB' ? $mem*1000 : $mem;
+
+    my $runtime = $$self{limits}{runtime} ? $$self{limits}{runtime} : $$self{default_limits}{runtime};
+    my $queue   = $self->_get_queue($runtime);
+    if ( !defined $queue ) { $queue = $$self{default_limits}{queue}; }
+
+    $bsub_opts  = sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $lmem,$mem,$mem; 
+    $bsub_opts .= " -q $queue";
+    if ( defined($$self{limits}{cpus}) ) 
+    {
+        $bsub_opts .= " -n $$self{limits}{cpus} -R 'span[hosts=1]'";
+    }
+    return $bsub_opts;
+}
+
+sub _create_bsub_ids_string
+{
+    my ($self,$job_name,$ids) = @_;
 
     # Process the list of IDs. The maximum job name length is 255 characters.
     my @ids = sort { $a<=>$b } @$ids;
@@ -775,120 +537,25 @@ sub run_array
         push @skipped_bsub_ids, pop(@bsub_ids);
         $bsub_ids = join(',', @bsub_ids);
     }
-
-  
-    $cmd =~ s/{JOB_INDEX}/\$LSB_JOBINDEX/g;
-    my $bsub_opts = '';
-    my $mem_mb;
-    if ( ! exists($$opts{memory}) )
+    @$ids = ();
+    foreach my $bsub_id (@skipped_bsub_ids)
     {
-	$$opts{memory} = $default_memlimit_mb;
+        if ($bsub_id =~ m/(\d+)-(\d+)/) { push @$ids, ($1..$2); }
+        else { push @$ids, $bsub_id; }
     }
-    if ( $$opts{memory} ) 
-    { 
-        $mem_mb = int($$opts{memory});
-        if ( $mem_mb )
-        {
-            my $units = get_lsf_limits_unit();
-            my $lmem  = $units eq 'kB' ? $mem_mb*1000 : $mem_mb;
-            $bsub_opts = sprintf " -M%d -R 'select[type==X86_64 && mem>%d] rusage[mem=%d]'", $lmem,$mem_mb,$mem_mb; 
-        }
-    }
-    if ( !defined($$opts{runtime}) && defined($$opts{runtime_limit_seconds}) )
-    {
-	$$opts{runtime} = $$opts{runtime_limit_seconds};
-    }
-    if ( !defined($$opts{queue}) ) 
-    {            
-        if ( !$$opts{_run_with_blcr} && defined($$opts{runtime}) ) 
-        { 
-            if ( $$opts{runtime} <= $queue_limits_seconds{normal}/60 ) { $$opts{queue} = 'normal'; }
-            elsif ( $$opts{runtime} <= $queue_limits_seconds{long}/60 ) { $$opts{queue} = 'long'; }
-            else { $$opts{queue} = 'basement'; }
-        }
-        else 
-        { 
-	    # default to normal queue, and always use normal with checkpointing unless queue is explicitly set
-            $$opts{queue} = 'normal';
-        }
-    }
-    confess "queue not defined (this should not occur)\n" unless ( defined($$opts{queue}) );
-    $bsub_opts .= " -q $$opts{queue}";
+    return $bsub_ids;
+}
 
-    if ( defined($$opts{cpus}) ) 
-    {
-        $bsub_opts .= " -n $$opts{cpus} -R 'span[hosts=1]'";
-    }
-    if ( $$opts{_run_with_blcr} ) 
-    {
-	my $runtime_limit_seconds = $queue_limits_seconds{$$opts{queue}};
-	if ( defined($$opts{runtime_limit_seconds}) ) { $runtime_limit_seconds = $$opts{runtime_limit_seconds}; }
-	if ( !defined($$opts{chkpnts_per_run}) ) 
-	{
-	    $$opts{chkpnts_per_run} = 1;
-	}
-	if ( !defined($$opts{chkpnt_period_minutes}) )
-	{
-	    my $chkpnts_per_run = int($$opts{chkpnts_per_run});
-	    do 
-	    {
-		$$opts{chkpnt_period_minutes} = ((($runtime_limit_seconds - ($min_chkpnt_time_s_per_mb * $mem_mb)) / $chkpnts_per_run) / 60);
-		# reduce checkpoints per run and repeat if calculated checkpoint period is below the minimum
-		$chkpnts_per_run--;
-	    } while( ($$opts{chkpnt_period_minutes} < $chkpnt_minimum_period_minutes) && ($chkpnts_per_run > 0) );
-	    $$opts{chkpnts_per_run} = $chkpnts_per_run + 1;
-	    # if checkpoint period is still below minimum, just set to minimum
-	    if ( $$opts{chkpnt_period_minutes} < $chkpnt_minimum_period_minutes )
-	    {
-		warn(
-		    "Checkpoint period for job ($$opts{id}) of $$opts{chkpnt_period_minutes}m is less than the minimum of ${chkpnt_minimum_period_minutes}m.\n" .
-		    "Using the minimum.\n"
-		    );
-		$$opts{chkpnt_period_minutes} = $chkpnt_minimum_period_minutes;
-	    }
-	}
-	my $cwd = `pwd`;
-	chomp $cwd;
-	$jids_file =~ /(.*\/\.jobs\/).*jid/;
-	my $temp_dir = $1;
-	my $chkpnt_dir = $cwd."/".$temp_dir."chkpnt";
-        if ( !$$opts{chkpnt_period_minutes} ) 
-	{ 
-	    $$opts{chkpnt_period_minutes} = 350; 
-	}
-	else 
-	{
-	    $$opts{chkpnt_period_minutes} = int($$opts{chkpnt_period_minutes}); 
-	}
-	my $runtime_limit_minutes = int($runtime_limit_seconds/60);
-        $bsub_opts .= " -k '$chkpnt_dir method=blcr $$opts{chkpnt_period_minutes}' -We $runtime_limit_minutes";
-	if ( ! ( $cmd =~ m/^\s*cr[_]/ )  )
-	{ 
-	    # prepend cr_run to command to enable BLCR checkpoint/restart (only if not already prefixed by cr_run or cr_restart) 
-	    # $cmd = "cr_run $cmd";
-	    # if the command stdout is connected to the same place where LSF writes the job info, the LSF info will be truncated on restart, redirect stdout to /dev/null
-	    $cmd = "cr_run $cmd > /dev/null";  
-	}
-    }
+sub _bsub_command
+{
+    my ($self,$jids_file,$job_name,$bsub_cmd,$cmd) = @_;
 
-    my $bsub_cmd  = qq[bsub -J '${job_name}[$bsub_ids]' -e $job_name.\%I.e -o $job_name.\%I.o $bsub_opts '$cmd'];
-
-    # Submit to LSF
-    print STDERR "\t   $bsub_cmd\n";
-    my @out = `$bsub_cmd 2>&1`;
+    print STDERR "$bsub_cmd\n";
+    my @out = `$bsub_cmd`;
     if ( scalar @out!=1 || !($out[0]=~/^Job <(\d+)> is submitted/) )
     {
-	my $cwd = `pwd`;
-	confess(
-	    "Expected different output from bsub.\n" .
-	    "The command was:\n" .
-	    "\t$cmd\n" .
-	    "The bsub_command was:\n" .
-	    "\t$bsub_cmd\n" .
-	    "The working directory was:\n" .
-	    "\t$cwd\n" .
-	    "The output was: " . join('',@out) . "\n"
-	    );
+        my $cwd = `pwd`;
+        confess("Expected different output from bsub. The command was:\n\t$cmd\nThe bsub_command was:\n\t$bsub_cmd\nThe working directory was:\n\t$cwd\nThe output was:\n", @out);
     }
 
     # Write down info about the submitted command
@@ -896,153 +563,29 @@ sub run_array
     open(my $jids_fh, '>>', $jids_file) or confess("$jids_file: $!");
     print $jids_fh "$jid\t$job_name\t$bsub_cmd\n";
     close $jids_fh;
+}
 
-    # If we skipped any subs due to command line limit, call run_array again
-    if (@skipped_bsub_ids)
+sub run_jobs
+{
+    my ($self,$jids_file,$job_name,$cmd,$ids) = @_;
+
+    if ( !scalar @$ids ) { confess("No IDs given??\n"); }
+
+    $cmd =~ s/{JOB_INDEX}/\$LSB_JOBINDEX/g;
+    my $bsub_opts = $self->_create_bsub_opts_string();
+
+    my @ids = @$ids;
+    while ( @ids )
     {
-        my @skipped_ids;
-        foreach my $bsub_id (@skipped_bsub_ids)
-        {
-            if ($bsub_id =~ m/(\d+)-(\d+)/) { push @skipped_ids, ($1..$2); }
-            else { push @skipped_ids, $bsub_id; }
-        }
-        run_array($jids_file, $job_name, $opts, $cmd, \@skipped_ids);
+        my $bsub_ids = $self->_create_bsub_ids_string($job_name,\@ids);
+
+        # Do not allow the system to requeue jobs automatically, we would loose track of the job ID: -rn 
+        my $bsub_cmd  = qq[bsub -rn -J '${job_name}[$bsub_ids]' -e $job_name.\%I.e -o $job_name.\%I.o $bsub_opts '$cmd'];
+
+        # Submit to LSF
+        $self->_bsub_command($jids_file,$job_name,$bsub_cmd,$cmd);
     }
 }
 
-sub cleanup_job
-{
-    my ($jids_file, $done_job, $opts) = @_;
-    confess("RunnerLSF::cleanup_job called on job without id entry") unless exists($$done_job{id});
-    confess("RunnerLSF::cleanup_job called on job without wait_file entry") unless exists($$done_job{wait_file});
-    
-    my $id = $$done_job{id};
-    my $wfile = $$done_job{wait_file};
-    my $cleanfile = "$wfile.$id.cleaned";
-    
-    # if a .cleaned file exists, don't bother cleaning up as it has already been done
-    if ( -e $cleanfile ) { return; }
-    
-    my @jids = read_jids_file($jids_file, $wfile);
-    
-  CLEANUP_JIDLINE: for (my $i=@jids-1; $i>=0; $i--)
-  {
-      my $info = parse_bjobs_l($jids[$i]);
-      if ( !defined $info ) { next CLEANUP_JIDLINE; }
-      for my $job (values %$info)
-      {
-	  if ( $$job{id} eq $id ) 
-	  {
-	      delete_context_file($job);
-	  }
-      }
-  }
-    # finished cleaning, write to a .cleaned file so we don't keep trying to clean up the cleaned
-    system("touch $cleanfile");
-    if ( $? ) { confess("The command exited with a non-zero status $?: touch $cleanfile\n"); }
-    
-    warn("\tc  job ($id) finished and all checkpoint context files have been cleaned up\n");
-    return;
-}
-
-sub delete_context_file
-{
-    my ($job) = @_;
-
-    if ( exists($$job{chkpnt_dir}) )
-    {
-	my $context_file = $$job{chkpnt_dir}."/jobstate.context";
-	# remove jobstate.context from checkpoint directory
-	if ( -f $context_file )
-	{
-	    unlink($context_file) or confess("could not delete checkpoint context file for job $$job{id} ($$job{lsf_id}): $context_file\n");
-	}
-    }
-}
-
-sub restart_job
-{
-    my ($jids_file, $job, $opts, $resources_changed) = @_;
-    confess("RunnerLSF::restart_job called on job without id entry") unless exists($$job{id});
-
-    my $id = $$job{id};
-    my $restarted = 0;
-### Commenting out brestart option as it seems to frequently produce un-checkpointable jobs after restart
-    # if ( $resources_changed )
-    # {
-    # 	warn("\tc  resource requirements have changed for job ($id)\n");
-    # }
-    # else 
-    # {
-    # 	# resource requirements have not changed, try using brestart
-    # 	warn("\tc  using brestart to restart job ($id) as resource requirements have not changed.\n");
-    # 	my $brestart_opts = "";
-	
-    # 	if ( defined($$job{queue}) )
-    # 	{
-    # 	    $brestart_opts .= "-q $$job{queue} ";
-    # 	}
-	
-    # 	if ( defined($$job{mem_mb}) )
-    # 	{
-    # 	    my $units = get_lsf_limits_unit();
-    # 	    my $lmem = $units eq 'kB' ? ($$job{mem_mb}*1000) : $$job{mem_mb};
-    # 	    $brestart_opts .= "-M $lmem ";
-    # 	}
-    # 	my @chkpnt_lsf_dir_comps = File::Spec->splitdir($$job{chkpnt_dir});
-    # 	pop @chkpnt_lsf_dir_comps;
-    # 	my $chkpnt_lsf_dir = File::Spec->catdir(@chkpnt_lsf_dir_comps);
-    # 	my $brestart_cmd = qq[brestart $brestart_opts $chkpnt_lsf_dir '$$job{last_chkpnt_lsf_id}'];
-	
-    # 	if ( !defined('$$job{name}') )
-    # 	{
-    # 	    confess("Job name not defined for $id ($$job{last_chkpnt_lsf_id})");
-    # 	}
-	
-    # 	# Submit to LSF
-    # 	my @out = `$brestart_cmd 2>&1`;
-    # 	if ( scalar @out!=1 || !($out[0]=~/^Job <(\d+)> is submitted/) )
-    # 	{
-    # 	    warn(
-    # 		"Expected different output from brestart.\n" .
-    # 		"The brestart_command was:\n" .
-    # 		"\t$brestart_cmd\n" .
-    # 		"The output was: " . join('',@out) . "\n"
-    # 		);
-    # 	    # Example: Checkpoint log is not found or is corrupted. Job not submitted.
-    # 	}
-    # 	else 
-    # 	{
-    # 	    # Write down info about the submitted command
-    # 	    my $jid = $1;
-    # 	    print STDERR "Job name set to $$job{name}\n";
-    # 	    open(my $jids_fh, '>>', $jids_file) or confess("$jids_file: $!");
-    # 	    print $jids_fh join("\t", $jid, $$job{name} , $brestart_cmd)."\n";
-    # 	    close $jids_fh;
-	    
-    # 	    $restarted = 1;
-    # 	}
-    # }
-    
-    if ( ! $restarted )
-    {
-	# brestart failed or resource requirements have changed, submit using bsub and cr_restart
-	my @id;
-	push @id, $id;
-	my $chkpnt_file = $$job{chkpnt_dir}."/jobstate.context";
-	my $cmd = "cr_restart -f $chkpnt_file";
-	my $job_name = $$job{name};
-	warn("\tc  attempting to restart job $id using cr_restart.\n");
-        run_array($jids_file, $job_name, $opts, $cmd, \@id);
-    }
-}
-
-=head1 AUTHORS
-
-petr.danecek@sanger
-Allan Daly <ad7@sanger.ac.uk>
-Joshua Randall <jr17@sanger.ac.uk>
-
-=cut
 1;
 

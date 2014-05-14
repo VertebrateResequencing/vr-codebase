@@ -1,24 +1,3 @@
-#
-# Copyright (c) 2011, 2012, 2013, 2014 Genome Research Ltd. 
-# 
-# Authors: Petr Danecek <pd3@sanger> 
-#          Allan Daly <ad7@sanger.ac.uk>
-#          Joshua Randall <jr17@sanger.ac.uk>
-#
-# This program is free software: you can redistribute it and/or modify it under 
-# the terms of the GNU General Public License as published by the Free Software 
-# Foundation; either version 3 of the License, or (at your option) any later 
-# version. 
-#
-# This program is distributed in the hope that it will be useful, but WITHOUT 
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS 
-# FOR A PARTICULAR PURPOSE. See the GNU General Public License for more 
-# details. 
-#
-# You should have received a copy of the GNU General Public License along with 
-# this program. If not, see <http://www.gnu.org/licenses/>.
-#
-
 =head1 NAME
 
 Runner.pm   - A simple module for quick development of scripts and pipelines which can be run in both serial and parallel mode.
@@ -117,8 +96,8 @@ sub new
     my $self = @args ? {@args} : {};
     bless $self, ref($class) || $class;
     $$self{_status_codes}{DONE} = 111;
-    $$self{_farm} = 'RunnerLSF';
-    $$self{_farm_options} = { runtime=>600, memory=>1_000 };
+    $$self{_farm} = 'LSF';
+    $$self{_farm_options} = {};
     $$self{_running_jobs} = {};
     $$self{_nretries} = 1;
     $$self{_verbose} = 1;
@@ -127,9 +106,10 @@ sub new
         "   +help                   Summary of commands\n" .
         "   +config <file>          Configuration file\n" .
         "   +debug <file1> <file2>  Run the freezed object <file1> overriding with keys from <file2>\n" .
+        "   +js <platform>          Job scheduler (lowercase allowed): LSF (bswitch), LSFCR (BLCR) [LSF]\n" .
+        "   +kill                   Kill all running jobs\n" .
         "   +local                  Do not submit jobs to LSF, but run serially\n" .
-        "   +blcr                   Use BLCR checkpoint/restart to deal with overrun (instead of bswitch)\n" .
-        "   +loop <int>             Run in daemon mode with <int> sleep intervals\n" .
+        "   +loop <int>             Run in daemon mode with <int> seconds sleep intervals\n" .
         "   +mail <address>         Email when the runner finishes\n" .
         "   +maxjobs <int>          Maximum number of simultaneously running jobs\n" .
         "   +nocache                When checking for finished files, do not rely on cached database and check again\n" .
@@ -152,12 +132,14 @@ sub new
 					Run the freezed object <file1> overriding with keys from <file2>
                 +help
                     Summary of commands
+                +js <platform>
+                    Job scheduler: LSF (bswitch to deal with overrun), LSFCR (BLCR)
+                +kill
+                    Kill all running jobs
                 +local
                     Do not submit jobs to LSF, but run serially
-                +blcr
-                    Use BLCR checkpoint/restart to deal with overrun (instead of bswitch)
                 +loop <int>
-                    Run in daemon mode with <int> sleep intervals
+                    Run in daemon mode with <int> seconds sleep intervals
                 +mail <address>
                     Email to send when the runner is done
                 +maxjobs <int>
@@ -193,14 +175,23 @@ sub run
         if ( $arg eq '+config' ) { $self->_read_config(shift(@ARGV)); next; }
         if ( $arg eq '+sampleconf' ) { $self->_sample_config(); next; }
         if ( $arg eq '+loop' ) { $$self{_loop}=shift(@ARGV); next; }
+        if ( $arg eq '+kill' ) { $$self{_kill_jobs}=1; next; }
         if ( $arg eq '+maxjobs' ) { $$self{_maxjobs}=shift(@ARGV); next; }
         if ( $arg eq '+mail' ) { $$self{_mail}=shift(@ARGV); next; }
         if ( $arg eq '+nocache' ) { $$self{_nocache}=1; next; }
         if ( $arg eq '+retries' ) { $$self{_nretries}=shift(@ARGV); next; }
         if ( $arg eq '+verbose' ) { $$self{_verbose}=1; next; }
         if ( $arg eq '+silent' ) { $$self{_verbose}=0; next; }
+        if ( $arg eq '+js' ) 
+        { 
+            $$self{_farm}=shift(@ARGV); 
+            if ( $$self{_farm} eq 'lsf' ) { $$self{_farm} = 'LSF'; }
+            elsif ( $$self{_farm} eq 'lsf-cr' ) { $$self{_farm} = 'LSFCR'; }
+            elsif ( $$self{_farm} eq 'lsfcr' ) { $$self{_farm} = 'LSFCR'; }
+            elsif ( $$self{_farm} eq 'LSF-CR' ) { $$self{_farm} = 'LSFCR'; }
+            next; 
+        }
         if ( $arg eq '+local' ) { $$self{_run_locally}=1; next; }
-        if ( $arg eq '+blcr' ) { $$self{_farm_options}{_run_with_blcr}=1; next; }
         if ( $arg eq '+show' ) 
         { 
             $arg = shift(@ARGV);
@@ -308,6 +299,16 @@ sub _sample_config
                 Expected memory requirements [MB] or undef to unset
             <runtime>
                 Expected running time [minutes] or undef to unset
+            <queues>
+                Hash with farm queue names (keys) and maximum runtime limits in
+                seconds (values)
+            <wakeup_interval>
+                Let the job scheduler aware of the pipeline's polling interval
+                [seconds] so that it can estimate if a job exceeds the runtime
+                limit before next wake-up call. The command line parameter
+                +loop overrides this value.
+
+            Plus any job-scheduler specific options
                 
 =cut
 
@@ -350,7 +351,7 @@ sub inc_limits
     {
         if ( !exists($$self{_farm_options}{$key}) or $$self{_farm_options}{$key}<$args{$key} ) 
         { 
-            $self->debugln("Increasing limit, $key set to $args{$key}");
+            $self->debugln("increasing limit, $key set to $args{$key}");
             $$self{_farm_options}{$key} = $args{$key};
         }
     }
@@ -532,7 +533,6 @@ sub _is_marked_as_finished
         }
         $is_dirty = 1;
     }
-
     $$self{_jobs_db}{$done_file}{finished} = $is_done;
     $$self{_jobs_db_dirty} += $is_dirty;
     return $$self{_jobs_db}{$done_file}{finished};
@@ -553,11 +553,20 @@ sub _mark_as_finished
     {
         $self->_mkdir($wfile);
         open(my $fh,'>',"$wfile.part") or $self->throw("$wfile.part: $!");
+        my @clean_ids = ();
+        my $all_done  = 1;
         for my $job (sort {$$a{id}<=>$$b{id}} @{$wfiles{$wfile}})
         {
             print $fh "$$job{finished}\t$$job{id}\t$$job{dfile}\n"; 
+            if ( $$job{finished} ) { push @clean_ids, $$job{id}; }
+            else { $all_done = 0; }
         }
         close($fh);
+        if ( $$self{_js} ) 
+        { 
+            # Clean all jobs associated with this wfile
+            $$self{_js}->clean_jobs($wfile,\@clean_ids,$all_done); 
+        }
         rename("$wfile.part",$wfile) or $self->throw("rename $wfile.part $wfile: $!");
     }
 }
@@ -614,7 +623,7 @@ sub _get_unfinished_jobs
                 { 
                     $self->throw("The target file name is not unique: $$job{done_file}\n",Dumper($wfiles{$$job{wait_file}}{$id}{args},$$job{args})); 
                 }
-                if ( $nprn_pend < 2 ) { $self->debugln("\tx  $$job{done_file} .. $$job{wait_file}  .. unfinished"); $nprn_pend++; }
+                if ( $nprn_pend < 2 ) { $self->debugln("\tx  $$job{done_file} .. unfinished"); $nprn_pend++; }
                 elsif ( $nprn_pend < 3 ) { $self->debugln("\tx  ...etc..."); $nprn_pend++; }
                 $wfiles{$$job{wait_file}}{$id} = $job;
             }
@@ -643,6 +652,20 @@ sub wait
 {
     my ($self,@files) = @_;
 
+    # Initialize job scheduler (LSF, LSFCR, ...). This needs to be done here in
+    # order for $js->clean_job() to work when $self->_get_unfinished_jobs() is called
+    if ( !$$self{_run_locally} && !$$self{_js} )
+    {
+        my $farm = 'Runner' . $$self{_farm};
+        eval 
+        {
+            require "$farm.pm";
+            $$self{_js} = $farm->new();
+        };
+        if ( $@ ) { $self->throw("require $farm\n$@"); }
+        if ( $$self{_maxjobs} ) { $$self{_js}->set_max_jobs($$self{_maxjobs}); }
+    }
+
     # First check the files passed to wait() explicitly
     for my $file (@files)
     {
@@ -653,6 +676,7 @@ sub wait
         }
     }
     if ( !exists($$self{_checkpoints}) or !scalar @{$$self{_checkpoints}} ) { return; }
+
     my (@caller) = caller(0);
     $self->debugln("Checking the status of ", scalar @{$$self{_checkpoints}}," job(s) .. $caller[1]:$caller[2]");
     my $jobs = $self->_get_unfinished_jobs();
@@ -687,15 +711,13 @@ sub wait
     }
 
     # Spawn to farm
-    my $farm = $$self{_farm};
-    eval "require $farm ";
-    if ( $@ ) { $self->throw("require $farm\n$@"); }
-    my $Done    = eval "\$${farm}::Done";
-    my $Running = eval "\$${farm}::Running";
-    my $Error   = eval "\$${farm}::Error";
+    my $js = $$self{_js};
+    if ( $$self{_loop} ) { $$self{_farm_options}{wakeup_interval} = $$self{_loop}; }
 
     my $is_running = 0;
-    WFILE: for my $wfile (keys %$jobs)
+
+    # Each wfile corresponds to a single task group, each typically having multiple parallel jobs
+    for my $wfile (keys %$jobs)     
     {
         my $prefix = $self->_get_temp_prefix($wfile);
         my $jobs_id_file = $prefix . '.jid';
@@ -703,187 +725,99 @@ sub wait
         my @ids = sort { $a<=>$b } keys %{$$jobs{$wfile}};
         $self->debugln("\t.. ", scalar keys %$jobs > 1 ? scalar @ids."x\t$wfile" : "$wfile");
 
-        my $status = $farm->can('is_job_array_running')->($jobs_id_file,\@ids,$$self{_maxjobs});
+        my $tasks = $js->get_jobs($jobs_id_file,\@ids);
         my $is_wfile_running = 0;
         my $warned = 0;
-        ELEMENT: for (my $i=0; $i<@$status; $i++)
+        for (my $i=0; $i<@$tasks; $i++)
         {
             my $must_run = 1;
-	    my $resources_changed = 0; 
-            my $stat = $$status[$i]{status};
             my $done_file = $$jobs{$wfile}{$ids[$i]}{done_file};
+            my $task = $$tasks[$i];
 
-            if ( !defined $stat )
+            if ( !defined $task )
             {
-                # This should be fixed now in RunnerLSF. However, add a check to make this robust for other platforms
-                $self->warn("\nCould not determine status of $i-th job, going to assume that the job is still running: [$done_file] [$wfile] $ids[$i]\n");
-                $stat = $Running;
+                $self->throw("\nCould not determine status of $i-th job: [$done_file] [$wfile] $ids[$i]\n");
             }
 
-            # If the job is already running, skip. There can be error from previous run.
-            if ( $stat & $Running ) 
+            # If the job is already running, don't check for errors - these could be from previous run anyway.
+            if ( $js->job_running($task) ) 
             { 
                 $must_run = 0;
                 $is_running++;
                 $is_wfile_running = 1;
+                if ( $$self{_kill_jobs} ) { $js->kill_job($task); next; }
             }
+        
+            elsif ( $$self{_kill_jobs} ) { next; }
 
             # With very big arrays, it takes long time for is_marked_as_finished to complete
             #   and therefore we have to take farm's Done status seriously. Check again if
             #   the file has not appeared in the meantime, stat on non-existent files is fast anyway.
-            elsif ( $stat & $Done )
+            elsif (  $js->job_done($task) )
             {
                 if ( $$self{_nocache} && !$self->is_finished($done_file) ) { $must_run = 1; }
-                else 
-		{ 
-		    $must_run = 0; 
-		    # ask farm to clean up after this job if there is a checkpoint
-                    if ( exists $$status[$i]{have_chkpnt} )
-                    {
-		        my $ok;
-		        eval 
-		        {
-			    $self->debugln("\t.. calling cleanup_job on job $$status[$i]{id}\n");
-		 	    $farm->can('cleanup_job')->($jobs_id_file,$$status[$i],$$self{_farm_options});
-			    $ok = 1;
-		        };
-		        if ( !$ok )
-		        {
-			    confess(
-			        "\t  couldn't clean up after job $$status[$i]{id}.\n"
-			    );
-			    $self->throw($@);
-		        }
-		    }
-                }
+                else { $must_run = 0; }
             }
 
             # If the job has been already ran and failed, check if it failed repeatedly
-            elsif ( $stat & $Error ) 
+            elsif ( $js->job_failed($task) ) 
             { 
-		my $nfailures = $$status[$i]{nfailures};
-		if ( $nfailures > abs($$self{_nretries}) )
-		{
-		    if ( $$self{_nretries} < 0 )
-		    {
-			my $sfile = "$wfile.$ids[$i].s";
-			$self->warn("\t   job ($ids[$i]) failed repeatedly (${nfailures}x) and +retries is negative, skipping: $wfile.$ids[$i].[eos]\n");
-			system("touch $sfile");
-			if ( $? ) { $self->throw("The command exited with a non-zero status $?: touch $sfile\n"); }
-			$must_run = 0;
-		    }
-		    else
-		    {
-			my $msg = 
-			    "The job failed repeatedly, ${nfailures}x: $wfile.$ids[$i].[eo]\n" .
-			    "Remove $jobs_id_file to clean the status (completely losing all checkpoint information for all jobs), \n" .
-			    "increase +retries or run with negative value of +retries to skip this task.\n";
-			if ( exists($$status[$i]{chkpnt_dir}) )
-			{
-			    my $chkdir = $$status[$i]{chkpnt_dir};
-			    my @dirs = File::Spec->splitdir($chkdir);
-			    pop @dirs;
-			    $chkdir = File::Spec->catdir( @dirs );
-			    $msg .= "You could also delete the checkpoint context for this job element only: \n" . 
-				"\t  rm \$(for file in \$(ls $chkdir/*/*.*.$ids[$i]); do ls \$(dirname \$file)/jobstate.context; done)\n" .
-				"\t  and then remove the output file: rm $wfile.$ids[$i].o\n";
-			}
-			$self->_send_email('failed', "The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
-			$self->throw($msg);
-		    }
-		}
-		elsif ( !$warned )
-		{
-		    $self->warn("\t   running again, the previous attempt failed: $wfile.$ids[$i].[eo]\n");
-		    $warned = 1;
-		}
-		
-		if ( exists($$status[$i]{have_chkpnt}) && exists($$status[$i]{last_chkpnt_lsf_id}) )
-		{
-		    $self->warn("\tc  job ($ids[$i]) is not running but has a checkpoint ($$status[$i]{last_chkpnt_lsf_id})\n");
-		}
-		else
-		{
-		    $self->warn("\tc  job ($ids[$i]) is not running and not checkpointed so it will need to re-run from scratch\n");
-		}
+                my $nfailures = $js->job_nfailures($task);
+                if ( $nfailures > abs($$self{_nretries}) )
+                {
+                    if ( $$self{_nretries} < 0 )
+                    {
+                        my $sfile = "$wfile.$ids[$i].s";
+                        $self->warn("\nThe job failed repeatedly (${nfailures}x) and +retries is negative, skipping: $wfile.$ids[$i].[eos]\n\n");
+                        system("touch $sfile");
+                        if ( $? ) { $self->throw("The command exited with a non-zero status $?: touch $sfile\n"); }
+                        $must_run = 0;
+                    }
+                    else
+                    {
+                        my $msg = 
+                            "The job failed repeatedly, ${nfailures}x: $wfile.$ids[$i].[eo]\n" .
+                            "(Remove $jobs_id_file to clean the status, increase +retries or run with negative value of +retries to skip this task.)\n";
 
-		# Increase memory limits if necessary: by a set minimum or by a percentage, whichever is greater
-		my %limits = $farm->can('past_limits')->($ids[$i],$wfile);
-		if ( exists($limits{MEMLIMIT}) )
-		{ 
-		    my $mem = $limits{memory}*1.3 > $limits{memory}+1_000 ? $limits{memory}*1.3 : $limits{memory}+1_000;
-		    $self->inc_limits(memory=>$mem); 
-		    $resources_changed = 1;
-		}
+                        $self->_send_email('failed', "The runner failed repeatedly\n", $$self{_about}, "\n", $msg);
+                        $self->throw($msg);
+                    }
+                }
+                elsif ( !$warned )
+                {
+                    $self->warn("\nRunning again, the job failed or needs restart: $wfile.$ids[$i].[eo]\n\n");
+                    $warned = 1;
+                }
 
-		# Increase cpu count if necessary
-		if ( exists($$status[$i]{idle_factor}) )
-		{
-		    my $cpus = sprintf("%.0f", (($$status[$i]{cpus} * $$status[$i]{idle_factor}) - 0.3));
-		    if ( $cpus == 0 ) { $cpus = 1; }
-		    if ( $cpus > $$status[$i]{cpus} )
-		    {
-			$resources_changed = 1;
-			warn(
-			    "\tc  increased cpu reservation for job $ids[$i] from $$status[$i]{cpus} to $$self{_farm_options}{cpus}\n"
-			    );
-		    }
-		    elsif ( $cpus < $$status[$i]{cpus} )
-		    {
-			$resources_changed = 1;
-			warn(
-			    "\tc  decreased cpu reservation for job $ids[$i] from $$status[$i]{cpus} to $$self{_farm_options}{cpus}\n"
-			    );
-		    }
-		    $self->set_limits(cpus=>$cpus);
-		}
-	    }
-	    
+                # Increase memory limits if necessary: by a set minimum or by a percentage, which ever is greater
+                my %limits = $js->past_limits($ids[$i],$wfile);
+                if ( exists($limits{MEMLIMIT}) )
+                { 
+                    my $mem = $limits{memory}*1.3 > $limits{memory}+1_000 ? $limits{memory}*1.3 : $limits{memory}+1_000;
+                    $self->inc_limits(memory=>$mem); 
+                }
+            }
+
             if ( $must_run )
             { 
-                if ( $$self{_maxjobs} && $$self{_maxjobs}<$is_running ) { last WFILE; }
-
-		$self->_update_limits($wfile, $ids[$i]);
-
-		# if we have a checkpoint, go ahead and attempt to restart it now (whole arrays can't be restarted)
-		if ( exists($$status[$i]{have_chkpnt}) )
-		{
-		    my $ok;
-		    $self->warn("\tc  restarting job\n");
-		    eval 
-		    {
-		 	$farm->can('restart_job')->($jobs_id_file,$$status[$i],$$self{_farm_options},$resources_changed);
-		 	$ok = 1;
-		    };
-		    if ( ! $ok )
-		    {
-			warn(
-			    "\tc  couldn't restart job $$status[$i]{id}, it will be respawned from the beginning.\n"
-			    );
-			# couldn't restart job, keep the element in @ids/@status so it will be submitted from start
-			next ELEMENT;
-		    }
-		}
-		else
-		{
-		    # must_run but no checkpoint, keep the element in the list so it will be submitted
-		    next ELEMENT;
-		}
+                if ( $$self{_maxjobs} && $$self{_maxjobs}<$is_running ) { last; }
+                $self->_update_limits($wfile, $ids[$i]);
+                next; 
             }
-	    
-	    # splice i-th element out so it won't get restarted
+
             splice(@ids, $i, 1);
-            splice(@$status, $i, 1);
+            splice(@$tasks, $i, 1);
             $i--;
         }
+        if ( $$self{_kill_jobs} ) { next; }
         if ( !@ids ) 
         { 
             if ( !$is_wfile_running ) { unlink($jobs_id_file); }
-            next WFILE; 
+            next; 
         }
         if ( $$self{_maxjobs} )
         {
-            if ( $$self{_maxjobs} <= $is_running ) { last WFILE; }
+            if ( $$self{_maxjobs} <= $is_running ) { last; }
             if ( $$self{_maxjobs} < $is_running + @ids ) { splice(@ids, $$self{_maxjobs} - $is_running - @ids); }
         }
         $is_running += scalar @ids;
@@ -897,11 +831,12 @@ sub wait
         {
             $self->_mkdir($$jobs{$wfile}{$id}{done_file});
         }
-  
-	my $ok;
+
+        my $ok;
         eval 
         {
-            $farm->can('run_array')->($jobs_id_file,$prefix,$$self{_farm_options},$cmd,\@ids);
+            $js->set_limits(%{$$self{_farm_options}});
+            $js->run_jobs($jobs_id_file,$prefix,$cmd,\@ids);
             $ok = 1;
         };
         if ( !$ok )
@@ -909,6 +844,7 @@ sub wait
             $self->throw($@);
         }
     }
+    if ( $$self{_kill_jobs} ) { $self->all_done; }
     if ( $is_running ) { exit; }
 }
 
@@ -1192,8 +1128,6 @@ sub debug
 =head1 AUTHORS
 
 petr.danecek@sanger
-Allan Daly <ad7@sanger.ac.uk>
-Joshua Randall <jr17@sanger.ac.uk>
 
 =cut
 
