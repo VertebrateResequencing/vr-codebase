@@ -264,6 +264,15 @@ sub run_jobs
 }
 
 
+sub _get_queue
+{
+    my ($self,$time) = @_;
+    my $queue = exists($$self{limits}{queue}) ? $$self{limits}{queue} : $$self{default_limits}{queue};
+    return $queue;
+}
+
+
+
 =head1 AUTHORS
 
 Allan Daly <ad7@sanger.ac.uk>
