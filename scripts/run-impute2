@@ -100,6 +100,11 @@ sub new
         #
         impute2_args => '-Ne 20000 -k 80 -allow_large_regions',
 
+        # Chunk-specific options will be applied to chunks with a non-zero overlap
+        chunk_options => { 
+            'X:0-155270560' => { impute2_args=>'-Ne 15000 -k 100 -allow_large_regions'  },
+        },
+
         # When likelihoods are not available (GL or PL), GT field is used instead. 
         #   The genotype confidence can be controlled by this parameter, 1.0 is
         #   the default.
@@ -119,11 +124,6 @@ sub new
         #   or else the resulting VCF will not be sorted. By default, the whole
         #   input VCF is imputed.
         # region => [ '1:159000000-161000000', '1:62000000-64000000', '2' ],
-
-        # Chunk-specific options will be applied to chunks with a non-zero overlap
-        chunk_options => { 
-            'X:0-155270560' => { impute2_args=>'-Ne 15000 -k 100'  },
-        },
 
         limits   => { memory=>5_500, runtime=>3*24*60 },
         do_clean => 1,   # Remove runner's temporary files
