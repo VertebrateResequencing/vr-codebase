@@ -53,7 +53,7 @@ sub displaySamplesPage
 	
 	my %hipsci_cohorts;
 	for my $cohort (@expression_cohorts, @genotyping_cohorts){
-		$hipsci_cohorts{$cohort} = $utl->getCohortChangeDate($genotyping_db, $cohort);
+		$hipsci_cohorts{$cohort} = $utl->getCohortChangeDate($expression_db, $cohort);
 	}
 	
 	print qq[ <h4 align="center" style="font: arial"><i><a href="$index">Team 145</a></i> : $title</h4><br/> ];
@@ -76,7 +76,7 @@ sub displaySamplesPage
     # N/A??
     
     for my $cohort (sort { $hipsci_cohorts{$b} cmp $hipsci_cohorts{$a} } keys %hipsci_cohorts) {
-        my $control_sample = $utl->getControlSample($genotyping_db, $cohort);
+        my $control_sample = $utl->getControlSample($expression_db, $cohort);
         my $date = $hipsci_cohorts{$cohort};
         
         print qq[
