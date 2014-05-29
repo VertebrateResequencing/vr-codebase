@@ -55,7 +55,7 @@ sub displayDetailedInformation
 		$mapstats = $lane->latest_mapping();
 	}
     
-    my $control_string = $utl->getControlSample($genotyping_db, $cohort);
+    my $control_string = $utl->getControlSample($expression_db, $cohort);
     my %geno_cnv_totals = $utl->getGenotypingCNVTotals($genotyping_db, $cohort);
     my $penncnv_least = $utl->getGenotypingCNVLeastValue($genotyping_db, $cohort, $penncnv_flag);
     my $quancnv_least = $utl->getGenotypingCNVLeastValue($genotyping_db, $cohort, $quantisnp_flag);
