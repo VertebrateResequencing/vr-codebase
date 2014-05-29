@@ -416,7 +416,7 @@ sub read_chunks
     if ( !-e $$self{chunk_file} ) 
     { 
         # When multiple reference VCFs are given, only the first is used to define chunks
-        my $in_file = $$self{chunk_by_known} ? $$self{known_vcf}[0] : $$self{in_vcf};
+        my $in_file = $$self{chunk_by_known} && defined $$self{known_vcf}[0] ? $$self{known_vcf}[0] : $$self{in_vcf};
         my @regions = $self->define_regions($in_file);
         for my $region (@regions)
         {
@@ -537,6 +537,7 @@ sub get_chroms
 sub expand_chrom
 {
     my ($self,$path,$region) = @_;
+    if ( !defined $region ) { return $path; }
     $region =~ s/:.*$//;
     $path =~ s/{CHROM}/$region/g;
     return $path;
