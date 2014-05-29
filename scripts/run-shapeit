@@ -352,7 +352,7 @@ sub read_chunks
     my ($self) = @_;
     if ( !-e $$self{chunk_file} ) 
     { 
-        my $in_file = $$self{chunk_by_ref} ? $$self{ref_vcf} : $$self{in_vcf};
+        my $in_file = $$self{chunk_by_ref} && defined $$self{ref_vcf} ? $$self{ref_vcf} : $$self{in_vcf};
         my @regions = $self->define_regions($in_file);
         for my $region (@regions)
         {
@@ -475,6 +475,7 @@ sub get_chroms
 sub expand_chrom
 {
     my ($self,$path,$region) = @_;
+    if ( !defined $region ) { return $path; }
     $region =~ s/:.*$//;
     $path =~ s/{CHROM}/$region/g;
     return $path;
