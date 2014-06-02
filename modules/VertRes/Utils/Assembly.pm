@@ -32,7 +32,7 @@ use base qw(VertRes::Base);
  Usage   : my $obj = VertRes::Utils::Assembly->new();
  Function: Create a new VertRes::Utils::Assembly object.
  Returns : VertRes::Utils::Assembly object
- Args    : assember => 'velvet'|'abyss' 
+ Args    : assember => 'velvet'|'abyss'
 
 =cut
 
@@ -93,7 +93,7 @@ sub estimate_memory_required
 
  Title   : split_reads
  Usage   : $obj->split_reads('/my_dir',['/path/to/lane1', 'path/to/lane2']);
- Function: Take in a list of lane directories, find the forward and reverse fastqs, and merge them into single forward & reverse fastqs (pool them), 
+ Function: Take in a list of lane directories, find the forward and reverse fastqs, and merge them into single forward & reverse fastqs (pool them),
            so that they can be used as input to other applications.
  Returns : nothing but creates 2 fastq files on disk in the output directory.
 
@@ -126,7 +126,7 @@ sub split_reads
   unless(-e "$output_directory/reverse.fastq")
   {
     `gzip -cd $reverse_fastq  > $output_directory/reverse.fastq`;
-  } 
+  }
 }
 
 =head2 assembly_directories
@@ -141,6 +141,67 @@ sub assembly_directories
 {
   my $self = shift;
   $self->throw("This is supposed to be overriden");
+}
+
+
+sub map_and_generate_stats
+{
+   my ($self, $directory, $output_directory, $lane_paths) = @_;
+
+   my $forward_fastq = '';
+   my $reverse_fastq = '';
+
+   for my $lane_path ( @$lane_paths)
+   {
+     my ($base_directory,$base,$suff) = Utils::basename($lane_path);
+     opendir(my $lane_dir_handle, $base_directory);
+     my @fastq_files  = grep { /\.fastq\.gz$/ } readdir($lane_dir_handle);
+     if(@fastq_files >=1 )
+     {
+       $forward_fastq .= $base_directory.'/'.$fastq_files[0];
+     }
+     if(@fastq_files >=2 )
+     {
+       $reverse_fastq .= $base_directory.'/'.$fastq_files[1];
+     }
+   }
+
+   unless( -e "$output_directory/forward.fastq")
+   {
+     `gzip -cd $forward_fastq  > $output_directory/forward.fastq`;
+   }
+   unless(-e "$output_directory/reverse.fastq")
+   {
+     `gzip -cd $reverse_fastq  > $output_directory/reverse.fastq`;
+   }
+
+   my $reference = $self->{reference} || "$directory/contigs.fa";
+
+   my $mapper = VertRes::Wrapper::smalt->new();
+   $mapper->setup_custom_reference_index($reference,'-k 13 -s 4','small');
+
+   `smalt map -x -i 3000 -f samsoft -y 0.95 -o $directory/contigs.mapped.sam $reference.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
+   $self->throw("Sam file not created") unless(-e "$directory/contigs.mapped.sam");
+
+   `samtools faidx $reference`;
+   $self->throw("Reference index file not created") unless(-e "$reference.fai");
+
+   `samtools view -bt $reference.fai $directory/contigs.mapped.sam > $directory/contigs.mapped.bam`;
+   $self->throw("Couldnt convert from sam to BAM") unless(-e "$directory/contigs.mapped.bam");
+   unlink("$directory/contigs.mapped.sam");
+
+   `samtools sort -m 500000000 $directory/contigs.mapped.bam $directory/contigs.mapped.sorted`;
+   $self->throw("Couldnt sort the BAM") unless(-e "$directory/contigs.mapped.sorted.bam");
+
+   `samtools index $directory/contigs.mapped.sorted.bam`;
+   $self->throw("Couldnt index the BAM") unless(-e "$directory/contigs.mapped.sorted.bam.bai");
+
+   `bamcheck -c 1,20000,5 -r $reference $directory/contigs.mapped.sorted.bam >  $directory/contigs.mapped.sorted.bam.bc`;
+   `plot-bamcheck -s $reference > $reference.gc`;
+   `plot-bamcheck -p $directory/qc_graphs/ -r  $reference.gc $directory/contigs.mapped.sorted.bam.bc`;
+
+   $self->generate_stats($directory);
+   unlink("$directory/contigs.mapped.bam");
 }
 
 

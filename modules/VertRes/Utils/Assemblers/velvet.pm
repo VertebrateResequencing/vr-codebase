@@ -10,9 +10,9 @@ my $assembly_util = VertRes::Utils::Assemblers::velvet->new();
 
 # use any of the utility functions described here, eg.
 my $assember = $assembler_class->new(
-  assembler_exec => '/path/to/velvet', 
+  assembler_exec => '/path/to/velvet',
   optimiser_exec => '/path/to/VelvetOptimiser.pl',
-  min_kmer => 29, 
+  min_kmer => 29,
   max_kmer => 49
 );
 
@@ -72,7 +72,7 @@ sub optimise_parameters
   unlink($self->optimised_directory()."/stats.txt");
 
   return 1;
-}                                                                                                                             
+}
 
 sub optimised_directory
 {
@@ -86,65 +86,6 @@ sub optimised_assembly_file_path
   return join('/',($self->optimised_directory(),'/contigs.fa'));
 }
 
-sub map_and_generate_stats
-{
-   my ($self, $directory, $output_directory, $lane_paths) = @_;
-   
-   my $forward_fastq = '';
-   my $reverse_fastq = '';
-   
-   for my $lane_path ( @$lane_paths)
-   {
-     my ($base_directory,$base,$suff) = Utils::basename($lane_path);
-     opendir(my $lane_dir_handle, $base_directory);
-     my @fastq_files  = grep { /\.fastq\.gz$/ } readdir($lane_dir_handle);
-     if(@fastq_files >=1 )
-     {
-       $forward_fastq .= $base_directory.'/'.$fastq_files[0];
-     }
-     if(@fastq_files >=2 )
-     {
-       $reverse_fastq .= $base_directory.'/'.$fastq_files[1];
-     }
-   }
-
-   unless( -e "$output_directory/forward.fastq")
-   {
-     `gzip -cd $forward_fastq  > $output_directory/forward.fastq`;
-   }
-   unless(-e "$output_directory/reverse.fastq")
-   {
-     `gzip -cd $reverse_fastq  > $output_directory/reverse.fastq`;
-   }
-
-   my $reference = $self->{reference} || "$directory/contigs.fa";
-
-   my $mapper = VertRes::Wrapper::smalt->new();
-   $mapper->setup_custom_reference_index($reference,'-k 13 -s 4','small');
-
-   `smalt map -x -i 3000 -f samsoft -y 0.95 -o $directory/contigs.mapped.sam $reference.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
-   $self->throw("Sam file not created") unless(-e "$directory/contigs.mapped.sam");
-
-   `samtools faidx $reference`;
-   $self->throw("Reference index file not created") unless(-e "$reference.fai");
-
-   `samtools view -bt $reference.fai $directory/contigs.mapped.sam > $directory/contigs.mapped.bam`;
-   $self->throw("Couldnt convert from sam to BAM") unless(-e "$directory/contigs.mapped.bam");
-   unlink("$directory/contigs.mapped.sam");
-
-   `samtools sort -m 500000000 $directory/contigs.mapped.bam $directory/contigs.mapped.sorted`;
-   $self->throw("Couldnt sort the BAM") unless(-e "$directory/contigs.mapped.sorted.bam");
-
-   `samtools index $directory/contigs.mapped.sorted.bam`;
-   $self->throw("Couldnt index the BAM") unless(-e "$directory/contigs.mapped.sorted.bam.bai");
-
-   `bamcheck -c 1,20000,5 -r $reference $directory/contigs.mapped.sorted.bam >  $directory/contigs.mapped.sorted.bam.bc`;
-   `plot-bamcheck -s $reference > $reference.gc`;
-   `plot-bamcheck -p $directory/qc_graphs/ -r  $reference.gc $directory/contigs.mapped.sorted.bam.bc`;
-   
-   $self->generate_stats($directory);
-   unlink("$directory/contigs.mapped.bam");
-}
 
 =head2 generate_files_str
 
@@ -182,7 +123,7 @@ sub get_parameters
    open(PARAM_FILE, $self->{output_directory}.'/'.$filename) or die "Couldnt open optimised parameters file";
    
    my %parameters;
-   my $found_final_assembly_details = 0; 
+   my $found_final_assembly_details = 0;
    while(<PARAM_FILE>)
    {
      my $line = $_;
@@ -214,7 +155,7 @@ sub get_parameters
  Usage   : my $memory_required_in_kb = $obj->estimate_memory_required();
  Function: estimate the memory required for the assembler in KB
  Returns : integer in kb of memory requirement
- Ram for velvet is estimated based on the total number of reads. 
+ Ram for velvet is estimated based on the total number of reads.
  The memory required for velvet shows a linear relation to the number of reads but with a lot of variation
  between different assemblies. The memory estimate is a rule of thumb based on the observed memory usage.
 =cut
