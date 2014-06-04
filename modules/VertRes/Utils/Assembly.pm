@@ -38,7 +38,7 @@ use base qw(VertRes::Base);
 
 sub new {
     my ($class, @args) = @_;
-    
+
     my $self = $class->SUPER::new(@args);
 
     return $self;
@@ -103,7 +103,7 @@ sub split_reads
   my ($self, $output_directory, $lane_paths) = @_;
   my $forward_fastq = '';
   my $reverse_fastq = '';
-  
+
   for my $lane_path ( @$lane_paths)
   {
     my ($base_directory,$base,$suff) = Utils::basename($lane_path);
@@ -168,11 +168,11 @@ sub map_and_generate_stats
 
    unless( -e "$output_directory/forward.fastq")
    {
-     `gzip -cd $forward_fastq  > $output_directory/forward.fastq`;
+     system("gzip -cd $forward_fastq  > $output_directory/forward.fastq") and $self->throw("Forward fastq not created");
    }
    unless(-e "$output_directory/reverse.fastq")
    {
-     `gzip -cd $reverse_fastq  > $output_directory/reverse.fastq`;
+     system("gzip -cd $reverse_fastq  > $output_directory/reverse.fastq") and $self->throw("Forward fastq not created");
    }
 
    my $reference = $self->{reference} || "$directory/contigs.fa";
@@ -180,28 +180,31 @@ sub map_and_generate_stats
    my $mapper = VertRes::Wrapper::smalt->new();
    $mapper->setup_custom_reference_index($reference,'-k 13 -s 4','small');
 
-   `smalt map -x -i 3000 -f samsoft -y 0.95 -o $directory/contigs.mapped.sam $reference.small $output_directory/forward.fastq $output_directory/reverse.fastq`;
-   $self->throw("Sam file not created") unless(-e "$directory/contigs.mapped.sam");
+   my $retcode = system("smalt map -x -i 3000 -f samsoft -y 0.95 -o $directory/contigs.mapped.sam $reference.small $output_directory/forward.fastq $output_directory/reverse.fastq");
+   $self->throw("Sam file not created") unless(-e "$directory/contigs.mapped.sam" and $retcode == 0);
 
-   `samtools faidx $reference`;
-   $self->throw("Reference index file not created") unless(-e "$reference.fai");
+   $retcode = system("samtools faidx $reference");
+   $self->throw("Reference index file not created") unless(-e "$reference.fai" and $retcode == 0);
 
-   `samtools view -bt $reference.fai $directory/contigs.mapped.sam > $directory/contigs.mapped.bam`;
-   $self->throw("Couldnt convert from sam to BAM") unless(-e "$directory/contigs.mapped.bam");
-   unlink("$directory/contigs.mapped.sam");
+   $retcode = system("samtools view -bt $reference.fai $directory/contigs.mapped.sam > $directory/contigs.mapped.bam");
+   $self->throw("Couldn't convert from sam to BAM") unless(-e "$directory/contigs.mapped.bam" and $retcode == 0);
+   unlink("$directory/contigs.mapped.sam") or $self->throw("Error deleting $directory/contigs.mapped.sam");
 
-   `samtools sort -m 500000000 $directory/contigs.mapped.bam $directory/contigs.mapped.sorted`;
-   $self->throw("Couldnt sort the BAM") unless(-e "$directory/contigs.mapped.sorted.bam");
+   $retcode = system("samtools sort -m 500000000 $directory/contigs.mapped.bam $directory/contigs.mapped.sorted");
+   $self->throw("Couldn't sort the BAM") unless(-e "$directory/contigs.mapped.sorted.bam" and $retcode == 0);
 
-   `samtools index $directory/contigs.mapped.sorted.bam`;
-   $self->throw("Couldnt index the BAM") unless(-e "$directory/contigs.mapped.sorted.bam.bai");
+   $retcode = system("samtools index $directory/contigs.mapped.sorted.bam");
+   $self->throw("Couldn't index the BAM") unless(-e "$directory/contigs.mapped.sorted.bam.bai" and $retcode == 0);
 
-   `bamcheck -c 1,20000,5 -r $reference $directory/contigs.mapped.sorted.bam >  $directory/contigs.mapped.sorted.bam.bc`;
-   `plot-bamcheck -s $reference > $reference.gc`;
-   `plot-bamcheck -p $directory/qc_graphs/ -r  $reference.gc $directory/contigs.mapped.sorted.bam.bc`;
+   $retcode = system("bamcheck -c 1,20000,5 -r $reference $directory/contigs.mapped.sorted.bam >  $directory/contigs.mapped.sorted.bam.bc");
+   $self->throw("Error running bamcheck") unless(-e "$directory/contigs.mapped.sorted.bam.bc" and $retcode == 0);
+
+   system("plot-bamcheck -s $reference > $reference.gc");
+   $self->throw("Error running plot-bamcheck -s") unless(-e "$reference.gc" and $retcode == 0);
+   system("plot-bamcheck -p $directory/qc_graphs/ -r  $reference.gc $directory/contigs.mapped.sorted.bam.bc");
 
    $self->generate_stats($directory);
-   unlink("$directory/contigs.mapped.bam");
+   unlink("$directory/contigs.mapped.bam") or $self->throw("Error deleting $directory/contigs.mapped.bam");
 }
 
 
