@@ -473,6 +473,9 @@ sub map_and_filter_perfect_pairs
 
   VertRes::Utils::Sam->new(verbose => 1, quiet => 0)->bam2fastq(qq[$working_directory/contigs.mapped.sorted.bam], qq[subset]);
   unlink("$working_directory/contigs.mapped.sorted.bam");
+  unlink("$reference.small.sma");
+  unlink("$reference.small.smi");
+  unlink("$reference.fai");
   `mv $working_directory/subset_1.fastq $working_directory/forward.fastq`;
   `mv $working_directory/subset_2.fastq $working_directory/reverse.fastq`;
 }
