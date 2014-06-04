@@ -37,6 +37,7 @@ data => {
 
     seq_pipeline_root    => '/lustre/scratch108/pathogen/pathpipe/prokaryotes/seq-pipelines',
     no_scaffolding => 0,
+    improve_assembly => 1, # To run abacas (if reference given), scaffolding and gap filling
     annotation     => 1,
     error_correct  => 1, # Should the reads be put through an error correction stage?
     normalise	   => 1, # Should we do digital normalisation?
@@ -49,6 +50,8 @@ data => {
     sga_exec       => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
     khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
     QUASR_exec		=> '/software/pathogen/internal/pathdev/java/QUASR702_Parser/readsetProcessor.jar',
+    trimmomatic_jar => '/software/pathogen/external/apps/usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar',
+    adapters_file   => '/lustre/scratch108/pathogen/pathpipe/usr/share/solexa-adapters.fasta',
     max_threads => 1,
     single_cell => 1, # Put this in to assemble single cell data. For normal assemblies, leave it out.
 },
@@ -126,16 +129,18 @@ our $actions = [ { name     => 'pool_fastqs',
                 ];
 
 our %options = (
-                do_cleanup      => 1,
-                scaffolder_exec => '/software/pathogen/external/apps/usr/local/SSPACE-BASIC-2.0_linux-x86_64/SSPACE_Basic_v2.0.pl',
-                gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-11_linux-x86_64/GapFiller.pl',
-                abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
-                sga_exec        => '/software/pathogen/external/apps/usr/bin/sga',
-                khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
-                QUASR_exec	    => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar',
-                no_scaffolding  => 0,
-                annotation      => 0,
-                single_cell     => 0,
+                do_cleanup       => 1,
+                scaffolder_exec  => '/software/pathogen/external/apps/usr/local/SSPACE-BASIC-2.0_linux-x86_64/SSPACE_Basic_v2.0.pl',
+                gap_filler_exec  => '/software/pathogen/external/apps/usr/local/GapFiller_v1-11_linux-x86_64/GapFiller.pl',
+                abacas_exec      => '/software/pathogen/internal/prod/bin/abacas.pl',
+                sga_exec         => '/software/pathogen/external/apps/usr/bin/sga',
+                khmer_exec		 => '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
+                QUASR_exec	     => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar',
+                trimmomatic_jar  => '/software/pathogen/external/apps/usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar',
+                no_scaffolding   => 0,
+                annotation       => 0,
+                single_cell      => 0,
+                improve_assembly => 1,
                 );
 
 sub new {
@@ -347,7 +352,16 @@ my \$fastq_tools  = Bio::AssemblyImprovement::Util::FastqTools->new(
     	input_filename   => "$output_directory/pool_1.fastq.gz",
         single_cell => $self->{single_cell},
 );
-my \%kmer = \$fastq_tools->calculate_kmer_sizes();
+
+my \%kmer;
+if ('$self->{assembler}' eq 'iva')
+{
+  \%kmer = (min => 0, max => 0);
+}
+else
+{
+  \%kmer = \$fastq_tools->calculate_kmer_sizes();
+}
 
 my \$assembler = $assembler_class->new(
   assembler => qq[$self->{assembler}],
@@ -364,9 +378,13 @@ my \@lane_paths = $lane_paths_str;
 
 Bio::AssemblyImprovement::Util::OrderContigsByLength->new( input_filename => \$assembler->optimised_assembly_file_path(), output_filename => \$assembler->optimised_assembly_file_path() )->run();
 copy(\$assembler->optimised_assembly_file_path(),\$assembler->optimised_directory().'/unscaffolded_contigs.fa');
-\$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
-\$ok = \$assembly_pipeline->map_and_filter_perfect_pairs(\$assembler->optimised_assembly_file_path(), qq[$tmp_directory]);
-\$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_assembly_file_path(),[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size,$num_threads);
+
+if ($self->{improve_assembly})
+{
+  \$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
+  \$ok = \$assembly_pipeline->map_and_filter_perfect_pairs(\$assembler->optimised_assembly_file_path(), qq[$tmp_directory]);
+  \$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_assembly_file_path(),[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size,$num_threads);
+}
 
 Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_assembly_file_path(),base_contig_name => qq[$contigs_base_name])->run();
 
@@ -397,6 +415,10 @@ exit;
       {
         $total_memory_mb = 2000;
       }
+      if ($self->{assembler} eq 'iva')
+      {
+        $total_memory_mb = 1500;
+      }
 
       my $queue = $self->decide_appropriate_queue($memory_required_mb);
 
@@ -415,7 +437,7 @@ sub decide_appropriate_queue
   {
     $queue = 'hugemem';
   }
-  elsif($memory_required_mb < 8000)
+  elsif($memory_required_mb < 8000 and $self->{assembler} ne 'iva')
   {
     $queue = 'normal';
   }
@@ -429,28 +451,31 @@ sub decide_appropriate_queue
 sub map_and_filter_perfect_pairs
 {
   my($self,$reference, $working_directory)= @_;
-  
+
   my $mapper = VertRes::Wrapper::smalt->new();
   $mapper->setup_custom_reference_index($reference,'-k 13 -s 4','small');
-  
+
   `smalt map -x -i 3000 -f samsoft -y 0.95 -o $working_directory/contigs.mapped.sam $reference.small $working_directory/forward.fastq $working_directory/reverse.fastq`;
   $self->throw("Sam file not created") unless(-e "$working_directory/contigs.mapped.sam");
-  
+
   `samtools faidx $reference`;
   $self->throw("Reference index file not created") unless(-e "$reference.fai");
-  
+
   # Filter reads which are flagged as perfect pairs
   `samtools view -F 2 -bt $reference.fai $working_directory/contigs.mapped.sam > $working_directory/contigs.mapped.bam`;
   $self->throw("Couldnt convert from sam to BAM") unless(-e "$working_directory/contigs.mapped.bam");
   unlink("$working_directory/contigs.mapped.sam");
-  
+
   `samtools sort -m 500000000 $working_directory/contigs.mapped.bam $working_directory/contigs.mapped.sorted`;
   $self->throw("Couldnt sort the BAM") unless(-e "$working_directory/contigs.mapped.sorted.bam");
-  
+
   `samtools index $working_directory/contigs.mapped.sorted.bam`;
-  
+
   VertRes::Utils::Sam->new(verbose => 1, quiet => 0)->bam2fastq(qq[$working_directory/contigs.mapped.sorted.bam], qq[subset]);
   unlink("$working_directory/contigs.mapped.sorted.bam");
+  unlink("$reference.small.sma");
+  unlink("$reference.small.smi");
+  unlink("$reference.fai");
   `mv $working_directory/subset_1.fastq $working_directory/forward.fastq`;
   `mv $working_directory/subset_2.fastq $working_directory/reverse.fastq`;
 }
