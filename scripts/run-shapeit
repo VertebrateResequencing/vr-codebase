@@ -27,7 +27,7 @@ sub new
 
     $$self{do_clean}      = 1;
     $$self{limits}        = { memory=>5_500, runtime=>3*24*60 };
-    $$self{shapeit_bin}   = '/nfs/users/nfs_p/pd3/sandbox/svn/shapeit/shapeit.v2.r727.linux.x64';
+    $$self{shapeit_bin}   = '/nfs/users/nfs_p/pd3/sandbox/svn/shapeit/shapeit.v2.r778.linux.x64';
     $$self{vcf_gensample} = 'vcf-gensample';
     $$self{bcftools}      = '/software/vertres/bin-external/bcftools-exp-rc';
     $$self{config_version} = '1392984920';
@@ -352,7 +352,7 @@ sub read_chunks
     my ($self) = @_;
     if ( !-e $$self{chunk_file} ) 
     { 
-        my $in_file = $$self{chunk_by_ref} ? $$self{ref_vcf} : $$self{in_vcf};
+        my $in_file = $$self{chunk_by_ref} && defined $$self{ref_vcf} ? $$self{ref_vcf} : $$self{in_vcf};
         my @regions = $self->define_regions($in_file);
         for my $region (@regions)
         {
@@ -393,6 +393,7 @@ sub define_chunks
     my (@chunks,@buffer);
     my $file = $self->expand_chrom($in_file,$region);
     my $min_ac = exists($$self{min_AC}) ? "-c $$self{min_AC}" : '';
+    if ( $region eq '.' ) { $region = ''; }
     my $cmd  = "$$self{bcftools} view $min_ac -g ^miss $file $region |";
     open(my $in,$cmd) or $self->throw("$cmd: $!");
     while (my $line=<$in>)
@@ -426,7 +427,7 @@ sub define_chunks
     }
     close($in) or $self->throw("close $cmd");
 
-    if ( !@chunks ) { $self->throw("No chunks defined?\n"); }
+    if ( !@chunks ) { $self->throw("No chunks defined: $cmd\n"); }
     if ( @chunks>1 && $chunks[-1]{n} < $tot_sites*0.75 )
     {
         my $chunk = splice(@chunks,-1,1);
@@ -474,6 +475,7 @@ sub get_chroms
 sub expand_chrom
 {
     my ($self,$path,$region) = @_;
+    if ( !defined $region ) { return $path; }
     $region =~ s/:.*$//;
     $path =~ s/{CHROM}/$region/g;
     return $path;

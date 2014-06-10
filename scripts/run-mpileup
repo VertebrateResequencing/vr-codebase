@@ -32,7 +32,7 @@ sub new
     $$self{whole_genome_bams} = 1;
     $$self{mpileup}        = 'samtools mpileup -t DP,DV -C50 -pm3 -F0.2 -d10000';
     $$self{bcftools}       = 'bcftools call -vm -f GQ';
-    $$self{vcfstats}       = 'bcftools stats';
+    $$self{vcfstats}       = 'bcftools stats -c both';
     $$self{filter}         = 'bcftools filter -m+ -sLowQual -e"%QUAL<=10" -g3 -G10 -Ov -';
     $$self{concat}         = 'bcftools concat';
     $$self{chunk_size}     = 1_000_000;

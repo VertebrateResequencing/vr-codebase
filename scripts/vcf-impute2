@@ -550,7 +550,35 @@ sub merge_lines
             }
         }
 
-        $$gt_hash{GL} = sprintf("%.2f,%.2f,%.2f",log($lk_aa)/$log10,log($lk_ab)/$log10,log($lk_bb)/$log10);
+        if ( @{$$rec{ALT}}>1 )
+        {
+            # multiallelic site
+            my @als = ($$rec{REF},@{$$rec{ALT}});
+            my @gls = ();
+            for (my $ia=0; $ia<@als; $ia++)
+            {
+                for (my $ib=0; $ib<=$ia; $ib++)
+                {
+                    if ( $ia>0 && $als[$ia] ne $$imp{alt} or $ib>0 && $als[$ib] ne $$imp{alt} )
+                    {
+                        push @gls, '.';
+                    }
+                    elsif ( $ia==0 )
+                    {
+                        push @gls, sprintf("%.2f", $ia==$ib ? log($lk_aa)/$log10 : log($lk_ab)/$log10);
+                    }
+                    else 
+                    {
+                        push @gls, sprintf("%.2f", log($lk_bb)/$log10);
+                    }
+                }
+            }
+            $$gt_hash{GL} = join(',',@gls);
+        }
+        else
+        {
+            $$gt_hash{GL} = sprintf("%.2f,%.2f,%.2f",log($lk_aa)/$log10,log($lk_ab)/$log10,log($lk_bb)/$log10);
+        }
 
         if ( @confs )
         {
