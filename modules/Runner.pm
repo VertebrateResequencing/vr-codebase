@@ -303,7 +303,7 @@ sub _sample_config
                 Hash with farm queue names (keys) and maximum runtime limits in
                 seconds (values)
             <wakeup_interval>
-                Let the job scheduler aware of the pipeline's polling interval
+                Make the job scheduler aware of the pipeline's polling interval
                 [seconds] so that it can estimate if a job exceeds the runtime
                 limit before next wake-up call. The command line parameter
                 +loop overrides this value.

@@ -30,6 +30,7 @@ sub new
         SSUSP => $$self{Running}
     };
 
+    # runtime and queue_limits are in minutes
     $$self{default_limits} = { runtime=>40, memory=>1_000, queue=>'normal' };
     $$self{queue_limits}   = { basement=>1e9, long=>48*60, normal=>12*60, small=>30 };
 
@@ -64,6 +65,7 @@ sub set_max_jobs
     my ($self,$nmax) = @_;
     $$self{nmax_jobs} = $nmax;
 }
+# runtime and queue_limits are in minutes
 sub set_limits
 {
     my ($self,%limits) = @_;
@@ -357,19 +359,21 @@ sub _check_job
         # Estimate how long it might take before we are called again + plus 5 minutes to be safe, and
         # bswitch to a longer queue if necessary.
 
-        my $wakeup_interval = $$self{limits}{wakeup_interval} ? $$self{limits}{wakeup_interval} + 300 : 600;
-        my $new_queue = $self->_get_queue($$job{cpu_time} + $wakeup_interval);
+        my $wakeup_interval = $$self{limits}{wakeup_interval} ? $$self{limits}{wakeup_interval} + 300 : 300;
+        my $time_mins = ($$job{cpu_time} + $wakeup_interval) / 60.;
+        my $new_queue = $self->_get_queue($time_mins);
         my $cur_queue = $$job{queue};
         if ( defined $new_queue && $new_queue ne $cur_queue && $$self{queue_limits}{$new_queue} > $$self{queue_limits}{$cur_queue} )
         {
             warn("Switching job $$job{lsf_id} from queue $cur_queue to $new_queue\n");
             `bswitch $new_queue '$$job{lsf_id}'`;
-            if ( $? ) { confess("Could not switch queues: $$job{lsf_id}"); }
-            $$job{queue} = $new_queue;
+            if ( $? ) { warn("Could not switch queues: $$job{lsf_id}"); }
+            else { $$job{queue} = $new_queue; }
         }
     }
 }
 
+# time is in minutes
 sub _get_queue
 {
     my ($self,$time) = @_;
