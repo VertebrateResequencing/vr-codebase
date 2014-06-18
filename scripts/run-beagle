@@ -647,6 +647,8 @@ sub beagle
         my $known = defined $known_vcf ? "ref=$known_vcf" : '';
         if ( $known ne '' )
         {
+            $self->create_vcf_chunk($known_vcf,"$prefix.ref.vcf.gz",$chr,$from,$to);
+            $known  = "ref=$prefix.ref.vcf.gz";
             $known .= $$self{do_impute} ? ' impute=true' : ' impute=false';
         }
         my $action = $$self{do_phasing} ? "gt=$prefix.in.vcf.gz" : "gl=$prefix.in.vcf.gz";
@@ -655,6 +657,7 @@ sub beagle
         if ( -s "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
         rename("$prefix.part.vcf.gz","$prefix.vcf.gz") or $self->throw("rename $prefix.part.vcf.gz $prefix.vcf.gz: $!");
         unlink("$prefix.in.vcf.gz");
+        unlink("$prefix.ref.vcf.gz");
     }
     $self->merge_beagle_vcf($chr,$from,$to,$in_vcf,"$prefix.vcf.gz","$prefix.vcf.gz.part");
     if ( $$self{save_beagle_outputs} )
