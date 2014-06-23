@@ -61,8 +61,8 @@ sub optimise_parameters
 {
   my ($self, $num_threads) = @_;
   my $trimming_opts = '';
-  if (defined($self->{adapeters_file}) and defined($self->{trimmomatic_jar})) {
-    $trimming_opts = "--trimmo $self->{trimmomatic_jar} --adapters $self->{adapeters_file}";
+  if (defined($self->{adapters_file}) and defined($self->{trimmomatic_jar})) {
+    $trimming_opts = "--trimmo $self->{trimmomatic_jar} --adapters $self->{adapters_file}";
   }
 
   `$self->{optimiser_exec} $trimming_opts --fr $self->{files_str} --threads $num_threads iva_assembly`;
