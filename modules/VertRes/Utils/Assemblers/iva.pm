@@ -66,7 +66,6 @@ sub optimise_parameters
   }
 
   `$self->{optimiser_exec} $trimming_opts --fr $self->{files_str} --threads $num_threads iva_assembly`;
-  print "\n-------------\nRUN IVA: $self->{optimiser_exec} $trimming_opts --fr $self->{files_str} --threads $num_threads iva_assembly\n---------\n";
   File::Copy::move(File::Spec->catfile($self->optimised_directory(), 'contigs.fasta'), File::Spec->catfile($self->optimised_directory(), 'contigs.fa'));
   system("touch ". File::Spec->catfile($self->optimised_directory(), '_iva_optimise_parameters_done'));
   return 1;

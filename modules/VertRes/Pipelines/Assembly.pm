@@ -137,6 +137,7 @@ our %options = (
                 khmer_exec		 => '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
                 QUASR_exec	     => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar',
                 trimmomatic_jar  => '/software/pathogen/external/apps/usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar',
+                adapters_file    => '/lustre/scratch108/pathogen/pathpipe/usr/share/solexa-adapters.fasta',
                 no_scaffolding   => 0,
                 annotation       => 0,
                 single_cell      => 0,
@@ -371,6 +372,8 @@ my \$assembler = $assembler_class->new(
   files_str => qq[$files_str],
   output_directory => qq[$tmp_directory],
   single_cell => $self->{single_cell},
+  trimmomatic_jar => qq[$self->{trimmomatic_jar}],
+  adapters_file => qq[$self->{adapters_file}],
   );
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
