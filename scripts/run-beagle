@@ -170,9 +170,10 @@ sub main
     my $outdir = $$self{outdir};
 
     my $chunks = $self->read_chunks();
+    my $cpus = $self->num_threads($$self{beagle_args});
     for my $chunk (@$chunks)
     {
-        $self->set_limits(%{$$self{limits}}) unless !exists($$self{limits});
+        $self->set_limits(%{$$self{limits}}, $cpus ? (cpus => $cpus) : ()) unless !exists($$self{limits});
         $self->spawn('beagle',"$outdir/$$chunk[0]/$$chunk[1]-$$chunk[2].done","$outdir/$$chunk[0]",$chunk);
     }
     $self->wait;
@@ -201,6 +202,13 @@ sub main
     $self->clean($outdir) unless !$$self{do_clean};
 
     $self->all_done;
+}
+
+sub num_threads
+{
+    my ($self,$opts) = @_;
+    my ($cpus) = $opts =~ m/nthreads=(\d+)/;
+    return $cpus;
 }
 
 sub mrProper
