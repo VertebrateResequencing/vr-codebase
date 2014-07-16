@@ -95,7 +95,9 @@ sub new
     my ($class,@args) = @_;
     my $self = @args ? {@args} : {};
     bless $self, ref($class) || $class;
-    $$self{_status_codes}{DONE} = 111;
+    $$self{_status_codes}{DONE}  = 111;
+    $$self{_status_codes}{WAIT}  = 0;
+    $$self{_status_codes}{ERROR} = 255;
     $$self{_farm} = 'LSF';
     $$self{_farm_options} = {};
     $$self{_running_jobs} = {};
@@ -238,7 +240,7 @@ sub run
         my $status = $?>>8;
         if ( $status ) 
         { 
-            if ( $status==$$self{_status_codes}{DONE} ) { exit 0; }
+            if ( $status==$$self{_status_codes}{DONE} ) { exit $status; }
             # Exit with the correct status immediately if the user module fails. Note that +retries applies only to spawned jobs.
             die "\n"; 
         }
@@ -870,7 +872,7 @@ sub _send_email
     my ($self,$status, @msg) = @_;
     if ( !exists($$self{_mail}) ) { return; }
     open(my $mh,"| mail -s 'Runner report: $status' $$self{_mail}");
-    print $mh @msg;
+    print $mh join('',@msg) . "\n";
     close($mh);
 }
 
@@ -1085,6 +1087,7 @@ sub cmd
 sub throw
 {
     my ($self,@msg) = @_;
+    $! = $$self{_status_codes}{ERROR};
     if ( scalar @msg ) { confess "\n[". scalar gmtime() ."]\n", @msg; }
     die $$self{usage};
 }
