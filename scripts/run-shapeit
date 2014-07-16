@@ -30,6 +30,7 @@ sub new
     $$self{shapeit_bin}   = '/nfs/users/nfs_p/pd3/sandbox/svn/shapeit/shapeit.v2.r778.linux.x64';
     $$self{vcf_gensample} = 'vcf-gensample';
     $$self{bcftools}      = '/software/vertres/bin-external/bcftools-exp-rc';
+    $$self{max_chr_len}   = 249250621;
     $$self{config_version} = '1392984920';
     $$self{_sampleconf} = q[
         # For sanity checking that your config file is not obsolete. Update the version key in your 
@@ -65,6 +66,7 @@ sub new
         #   determined based on the input VCF (-i) unless chunk_by_ref is set.
         buffer_nsites  => 10_000,
         chunk_nsites   => 100_000,
+        max_chr_len    => ] .$$self{max_chr_len}. q[,
 
         # Create whole-genome VCF? This can produce *huge* files for thousands of samples
         merge_chroms   => 0,
@@ -276,77 +278,6 @@ sub set_options
     }
 }
 
-sub sync_ref_chunks
-{
-    my ($self,$chunks) = @_;
-
-    if ( !exists($$self{ref_dir}) ) { return; }
-
-    my %chrs;
-    for my $chunk (@$chunks) 
-    { 
-        push @{$chrs{$$chunk[0]}}, $chunk;
-    }
-
-    my $need_sync = 0;
-    for my $chr (keys %chrs)
-    {
-        my $fname = "$$self{ref_dir}/$chr.chunks.txt";
-        if ( !-e $fname )
-        {
-            $self->cmd("mkdir -p $$self{ref_dir}");
-            open(my $fh,'>',"$fname.part") or $self->throw("$fname.part: $!");
-            for my $chunk (@{$chrs{$chr}})
-            {
-                print $fh join("\t",@$chunk), "\n";
-            }
-            close($fh) or $self->throw("close failed: $fname.part");
-            rename("$fname.part",$fname) or $self->throw("rename $fname.part $fname: $!");
-        }
-        else
-        {
-            open(my $fh,'<',$fname) or $self->throw("$fname: $!");
-            my @chunks;
-            while (my $line=<$fh>)
-            {
-                chomp($line);
-                my @items = split(/\t/,$line);
-                push @chunks, [@items];
-            }
-            close($fh) or $self->throw("$fname.part: $!");
-            if ( scalar @{$chrs{$chr}} != @chunks )  { $need_sync = 1; }
-            else
-            {
-                for (my $i=0; $i<@chunks; $i++)
-                {
-                    my $a = $chunks[$i];
-                    my $b = $chrs{$chr}[$i];
-                    for (my $j=0; $j<@$a; $j++) 
-                    {
-                        if ( $$a[$j] ne $$b[$j] ) { $need_sync = 1; }
-                    }
-                }
-            }
-            $chrs{$chr} = \@chunks;
-        }
-    }
-    if ( $need_sync && !-e "$$self{chunk_file}.used" )
-    {
-        my $fname = "$$self{chunk_file}.used";
-        open(my $fh,'>',"$fname.part") or $self->throw("$fname.part: $!");
-        for my $chr (keys %chrs)
-        {
-            for my $chunk (@{$chrs{$chr}})
-            {
-                print $fh join("\t",@$chunk), "\n";
-            }
-        }
-        close($fh) or $self->throw("close failed: $fname.part");
-        rename("$fname.part",$fname) or $self->throw("rename $fname.part $fname: $!");
-    }
-
-}
-
 sub read_chunks
 {
     my ($self) = @_;
@@ -356,6 +287,18 @@ sub read_chunks
         my @regions = $self->define_regions($in_file);
         for my $region (@regions)
         {
+            if ( exists($$self{ref_dir}) )
+            {
+                if ( -e "$$self{ref_dir}/$region.chunks.txt" )
+                {
+                    $self->cmd("cp $$self{ref_dir}/$region.chunks.txt $$self{chunk_file}.$region");
+                    next;
+                }
+                if ( $region=~/^([^:]+):/ ) # not a whole chromosome
+                {
+                    $self->throw("todo: $region vs $$self{ref_dir}\n");
+                }
+            }
             $self->spawn('define_chunks',"$$self{chunk_file}.$region",$in_file,$region);
         }
         $self->wait;
@@ -380,9 +323,6 @@ sub read_chunks
         push @chunks, [@items];
     }
     close($fh) or $self->throw("$$self{chunk_file}: $!");
-
-    $self->sync_ref_chunks(\@chunks);
-
     return \@chunks;
 }
 
@@ -426,9 +366,8 @@ sub define_chunks
         push @chunks, { chr=>$chr_from, from=>$pos_from, to=>$pos_to, n=>$nout };
     }
     close($in) or $self->throw("close $cmd");
-
     if ( !@chunks ) { $self->throw("No chunks defined: $cmd\n"); }
-    if ( @chunks>1 && $chunks[-1]{n} < $tot_sites*0.75 )
+    if ( @chunks>1 && $chunks[-1]{n} < $tot_sites*0.75 && $chunks[-1]{chr} eq $chunks[-2]{chr} )
     {
         my $chunk = splice(@chunks,-1,1);
         $chunks[-1]{to} = $$chunk{to};
@@ -445,11 +384,11 @@ sub define_chunks
             if ( $i==0 ) { $chunks[0]{from} = 0; next; }
             if ( $chunks[$i]{chr} ne $chunks[$i-1]{chr} )
             {
-                $chunks[$i-1]{to} = 249250621; # last chunk, longest chr of human genome
+                $chunks[$i-1]{to} = $$self{max_chr_len}; # last chunk, longest chr of human genome
                 $chunks[$i]{from} = 0;
             }
         }
-        $chunks[-1]{to} = 249250621;
+        $chunks[-1]{to} = $$self{max_chr_len};
     }
 
     open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
@@ -485,7 +424,11 @@ sub define_regions
 {
     my ($self,$path) = @_;
     if ( exists($$self{region}) ) { return @{$$self{region}}; }
-    if ( !($path=~/{CHROM}/) ) { return ('.'); }
+    if ( !($path=~/{CHROM}/) ) 
+    { 
+        my @chrs = grep { chomp } $self->cmd("tabix -l $path");
+        return @chrs;
+    }
     my $before = $`;
     my $after  = $';
     $path =~ s/{CHROM}/*/;  # only one occurance of {CHROM} is allowed in this implementation
