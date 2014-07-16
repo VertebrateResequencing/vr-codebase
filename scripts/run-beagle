@@ -36,6 +36,7 @@ sub new
     $$self{phased_concat_args} = '';
     $$self{memstep} = 2_000;
     $$self{config_version} = '1392388523';
+    $$self{max_chr_len}   = 249250621;
     $$self{redo_beagle} = 0;
     $$self{_sampleconf} = q[
             # For sanity checking that your config file is not obsolete. Update the version key in your 
@@ -69,6 +70,7 @@ sub new
             buffer_nsites  => 1_000,
             chunk_nsites   => 3_000,
             chunk_by_known => 0,
+            max_chr_len    => ] .$$self{max_chr_len}. q[,
 
             # Indels usually have high false positives rate
             exclude_multiallelic_indels => 0,
@@ -309,7 +311,7 @@ sub define_chunks
     close($in) or $self->throw("close $cmd");
 
     if ( !@chunks ) { $self->throw("No chunks defined?\n"); }
-    if ( @chunks>1 && $chunks[-1]{n} < $tot_sites*0.75 )
+    if ( @chunks>1 && $chunks[-1]{n} < $tot_sites*0.75 && $chunks[-1]{chr} eq $chunks[-2]{chr} )
     {
         my $chunk = splice(@chunks,-1,1);
         $chunks[-1]{to} = $$chunk{to};
@@ -318,10 +320,19 @@ sub define_chunks
 
     if ( !($region=~/:/) )
     {
-        # The whole chromosome was requested, expand the first and last record
-        # to accompany sites not present in whatever file we chunk by (known_vcf or in_vcf).
-        $chunks[0]{from} = 0;
-        $chunks[-1]{to} = 249250621; # longest chr of human genome
+        # Whole genome or whole chromosome was requested. When on a new
+        # chromosome, expand the first and last record to accompany
+        # sites which may be present only in one (known_vcf vs in_vcf)
+        for (my $i=0; $i<@chunks; $i++)
+        {
+            if ( $i==0 ) { $chunks[0]{from} = 0; next; }
+            if ( $chunks[$i]{chr} ne $chunks[$i-1]{chr} )
+            {
+                $chunks[$i-1]{to} = $$self{max_chr_len};
+                $chunks[$i]{from} = 0;
+            }
+        }
+        $chunks[-1]{to} = $$self{max_chr_len};
     }
 
     open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
@@ -330,7 +341,7 @@ sub define_chunks
         print $out "$$chunk{chr}\t$$chunk{from}\t$$chunk{to}\t$$chunk{n}\n";
     }
     close($out) or $self->throw("close $outfile.part");
-    rename("$outfile.part",$outfile);
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
 
 sub get_chroms
@@ -357,11 +368,16 @@ sub define_regions
 {
     my ($self,$path) = @_;
     if ( exists($$self{region}) ) { return @{$$self{region}}; }
-    if ( !($path=~/{CHROM}/) ) { return ('.'); }
+    if ( !($path=~/{CHROM}/) ) 
+    { 
+        my @chrs = grep { chomp } $self->cmd("tabix -l $path");
+        return @chrs;
+    }
     my $before = $`;
     my $after  = $';
     $path =~ s/{CHROM}/*/;  # only one occurance of {CHROM} is allowed in this implementation
     my @list = glob($path);
+    if ( !@list ) { $self->throw("No such file(s): $path"); }
     my @regs;
     for my $file (@list)
     {
