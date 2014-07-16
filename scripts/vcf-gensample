@@ -207,6 +207,7 @@ sub read_shapeit_samples
 sub update_phase
 {
     my ($vcf,$line) = @_;
+    my $is_het = 0;
     for (my $i=9; $i<scalar(@$line); $i++)
     {
         my $idx = $vcf->get_tag_index($$line[8],'GT',':'); 
@@ -222,10 +223,16 @@ sub update_phase
             if ( $als[0] ne $als[$j] ) { $is_hom = 0; last; }
         }
 
+        if ( !$is_hom ) { $is_het = 1; }
         my $new_gt = $is_hom ? join('|',@als) : join('/',@als);
         if ( $new_gt eq $gt ) { next; }
 
         $$line[$i] = $vcf->replace_field($$line[$i],$new_gt,$idx,':');
+    }
+    if ( !$is_het )
+    {
+        if ( $$line[7] eq '.' ) { $$line[7] = 'SHAPEIT'; }
+        else { $$line[7] .= ';SHAPEIT'; }
     }
     return $line;
 }
@@ -260,7 +267,9 @@ sub process_line
         if ( $pos > $$x[1] ) { $x = update_phase($vcf,$x); print $vcf->format_line($x); next; }
         if ( $ref ne $$x[3] or $alt ne $$x[4] ) { error("REF,ALT do not match at $chr:$pos .. $ref,$alt vs $$x[3],$$x[4]\n"); }
 
-        $$x[7] .= $$x[7] eq '.' ? 'SHAPEIT' : ';SHAPEIT';
+        if ( $$x[7] eq '.' ) { $$x[7] = 'SHAPEIT'; }
+        else { $$x[7] .= ';SHAPEIT'; }
+
         for (my $ismpl=0; $ismpl<$nsmpl; $ismpl++)
         {
             my $al_s1  = $$haps[2*$ismpl];
@@ -310,6 +319,7 @@ sub gensample_to_vcf
     my ($from,$to) = parse_region($$opts{region});
     my $vcf = Vcf->new(file=>$$opts{file},region=>$$opts{region},print_header=>1);
     $vcf->parse_header();
+    # When run with reference panel, many sites will be omitted as shapeit requires sites to be present in both sets
     $vcf->add_header_line({key=>'INFO',ID=>'SHAPEIT',Number=>0,Type=>'Flag',Description=>'Rephased by SHAPEIT v2'});
     print $vcf->format_header();
     my @samples = $vcf->get_samples();
