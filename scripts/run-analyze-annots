@@ -26,7 +26,8 @@ sub new
     my $self = $class->SUPER::new(@args);
 
     $$self{limits} = { memory=>2_500 };
-    $$self{do_clean} = 1;
+    $$self{do_clean}  = 1;
+    $$self{strip_gts} = 1;
     $$self{config_version} = '1391639059';
     $$self{_sampleconf}  = q[
             bcftools  => '/nfs/users/nfs_p/pd3/git/bcftools/xxx-bcftools',
@@ -35,6 +36,9 @@ sub new
 
             eval_vcf  => '/lustre/scratch105/projects/g1k/Phase1-Paper/analysis_results/integrated_call_sets/ALL.chr*.integrated_phase1_v3.20101123.snps_indels_svs.genotypes.vcf.gz',
             query_vcf => '/lustre/scratch107/user/pd3/egyptians/mpileup-1106/pooled/*.vcf.gz',
+
+            # Before doing anything, reduce the file size by stripping FORMAT fields
+            strip_gts => 1,
 
             # Set to 1 to sanity check annotations
             throw_on_non_numbers => 0,
@@ -145,6 +149,13 @@ sub parse_args
         $self->all_done;
     }
     if ( exists($$self{regions}) ) { $$self{chroms} = [ split(/,/,$$self{regions}) ]; }
+    if ( !exists($$self{chroms}) )
+    {
+        my $tabix = exists($$self{tabix}) ? $$self{tabix} : 'tabix';
+        my @chrs = grep { chomp } $self->cmd("$tabix -l $$self{query_vcf}");
+        $$self{chroms} = \@chrs;
+    }
+
     $$self{outdir} =~ s{/+?$}{};
     $$self{qlow}  = 0.1/100;    # cut off the distribution tails at low/high quantiles
     $$self{qhigh} = 99.9/100;
@@ -166,7 +177,10 @@ sub main
     # Create sites VCFs
     for my $chr (@{$$self{chroms}})
     {
-        $self->spawn('sites_vcf',"$$self{outdir}/sites/eval.$chr.bcf",$$self{eval_vcf},$chr);
+        if ( exists($$self{eval_vcf}) )
+        {
+            $self->spawn('sites_vcf',"$$self{outdir}/sites/eval.$chr.bcf",$$self{eval_vcf},$chr);
+        }
         $self->spawn('sites_vcf',"$$self{outdir}/sites/query.$chr.bcf",$$self{query_vcf},$chr);
     }
     $self->wait;
@@ -308,7 +322,8 @@ sub sites_vcf
 {
     my ($self,$outfile,$vcf,$chr) = @_;
     $vcf = $self->parse_file_name($vcf,$chr);
-    $self->cmd("$$self{bcftools} view -Gr $chr $vcf -Ob > $outfile.part");
+    my $args = $$self{strip_gts} ? '-G' : '';
+    $self->cmd("$$self{bcftools} view $args -r $chr $vcf -Ob > $outfile.part");
     $self->index_part($outfile);
 }
 
@@ -694,6 +709,12 @@ sub create_2d_dist
 
     my ($qmin1,$qmax1) = $self->get_quantiles($ann1);
     my ($qmin2,$qmax2) = $self->get_quantiles($ann2);
+    if ( $qmin1==$qmax1 or $qmin2==$qmax2 )
+    { 
+        warn("Zero distribution of $ann1, $ann2?\n"); 
+        $self->cmd("touch $outfile");
+        return;
+    }
 
     my $nbins  = 30;
     my @dist   = ();
@@ -803,6 +824,7 @@ sub plot_2d_dist
             for i in range($ncols*$nrows):
             \\tirow = i / $ncols; icol = i \% $ncols
             \\tif i>=len(labels): ax[irow,icol].axis('off'); continue;
+            \\tif len(dat[i])==0: continue
             \\tax[irow,icol].imshow(dat[i],origin='lower', interpolation='none')
             \\tax[irow,icol].set_title(labels[i],fontsize=8)
             \\tax[irow,icol].set_ylabel('$ann1',fontsize=8)
@@ -930,6 +952,10 @@ sub plot_tstv
             \\txdat_bwd[set] = []
             \\tdat_fwd[set]  = []
             \\tdat_bwd[set]  = []
+            \\tif set not in ndat:
+            \\t\\tndat[set] = 0
+            \\t\\tdat_ts[set] = []
+            \\t\\tdat_tv[set] = []
             \\tnts  = 0
             \\tntv  = 0
             \\tnout = 0
