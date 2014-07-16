@@ -296,7 +296,7 @@ sub define_chunks
             my $pos_to   = $buffer[-1][1];
             my $nout     = @buffer;
             push @chunks, { chr=>$chr_from, from=>$pos_from, to=>$pos_to, n=>$nout };
-            if ( $$self{chunk_nsites}<@buffer ) { splice(@buffer,0,$nout); }
+            if ( $$self{chunk_nsites}<@buffer ) { splice(@buffer,0,$$self{chunk_nsites}); }
             else { @buffer = (); }
         }
         push @buffer, [$chr,$pos];
@@ -312,7 +312,7 @@ sub define_chunks
     close($in) or $self->throw("close $cmd");
 
     if ( !@chunks ) { $self->throw("No chunks defined?\n"); }
-    if ( @chunks>1 && $chunks[-1]{n} < $tot_sites*0.75 )
+    if ( @chunks>1 && $chunks[-1]{n} < $tot_sites*0.75 && $chunks[-1]{chr} eq $chunks[-2]{chr} )
     {
         my $chunk = splice(@chunks,-1,1);
         $chunks[-1]{to} = $$chunk{to};
