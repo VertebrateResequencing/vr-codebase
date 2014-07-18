@@ -329,7 +329,7 @@ sub update_db_requires {
 
 sub update_db_provides {
    my ($self) = @_;
-    return [ $self->{lane_path}."/".$self->{prefix}."update_db_done"];
+    return [ $self->{lane_path}."/".$self->{prefix}."rna_seq_update_db_done"];
 }
 
 =head2 update_db
@@ -379,7 +379,7 @@ sub update_db {
 
 sub cleanup_requires {
   my ($self) = @_;
-  return [ $self->{lane_path}."/".$self->{prefix}."rna_seq_update_db_done"];
+  return [ $self->{lane_path}."/".$self->{prefix}."rna_seq_cleanup_done"];
 }
 
 =head2 cleanup_provides
