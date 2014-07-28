@@ -160,7 +160,7 @@ sub parse_args
         $self->throw();
     }
     if ( !exists($$self{in_vcf}) ) { $self->throw("Expected the -i option.\n"); }
-    if ( ref($$self{in_vcf}) ne 'SCALAR' ) { $self->throw("Expected string for in_vcf, got ".ref($$self{in_vcf})); }
+    if ( ref($$self{in_vcf}) ne '' ) { $self->throw("Expected string for in_vcf, got ".ref($$self{in_vcf})); }
     if ( !exists($$self{outdir}) ) { $self->throw("Expected the -o option.\n"); }
     if ( $$self{mrProper} )
     {
