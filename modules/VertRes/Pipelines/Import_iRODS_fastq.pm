@@ -255,7 +255,7 @@ for my \$fastq (\@fastqs)
 system("samtools view -F 0x200 $in_bam > pf_pass.sam");
 
 # Reads with PF fail have bases set to N and quality scores to 0.
-system("samtools view -f 0x200 $in_bam | awk -F '\\t'  'BEGIN{OFS=\\"\\t\\";} {gsub(/[ACGT]/,\\"N\\",\$10) }; {gsub(/./,\\"!\\",\$11) };   1' > pf_fail.sam");
+system("samtools view -f 0x200 $in_bam | awk -F '\\t'  'BEGIN{OFS=\\"\\t\\";} {gsub(/[ACGT]/,\\"N\\",\\$10) }; {gsub(/./,\\"!\\",\\$11) };   1' > pf_fail.sam");
 
 #  remove secondary alignments
 system("cat pf_pass.sam pf_fail.sam | samtools view -F 0x100 -b - > $in_bam");
