@@ -251,6 +251,16 @@ for my \$fastq (\@fastqs)
     unlink(\$fastq,\$fastq.'.fastqcheck');
 }
 
+# output reads with PF pass only and remove secondary alignments, based on bit flags (0x200 for instrument QC fail, 0x100 for tophat secondary alignment)
+system("samtools view -F 0x300 $in_bam > pf_pass.sam");
+
+# Reads with PF fail have bases set to N and quality scores to 0. secondary alignments removed
+system("samtools view -f 0x200 $in_bam | samtools view -F 0x100 - | awk -F '\t'  'BEGIN{OFS=\"\t\";} {gsub(/[ACGT]/,\"N\",\$10) }; {gsub(/./,\"!\",\$11) };   1' > pf_fail.sam");
+
+system("cat pf_pass.sam pf_fail.sam | samtools view -b - > $in_bam");
+unlink("pf_pass.sam");
+unlink("pf_fail.sam");
+
 VertRes::Wrapper::samtools->new()->sort(qq[$in_bam], qq[sorted], n => 1, m => $samtools_sorting_memory);
 system("mv sorted.bam $in_bam");
 
