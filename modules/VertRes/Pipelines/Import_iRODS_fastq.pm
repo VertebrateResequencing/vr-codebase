@@ -258,7 +258,8 @@ system("samtools view -F 0x200 $in_bam > pf_pass.sam");
 system("samtools view -f 0x200 $in_bam | awk -F '\\t'  'BEGIN{OFS=\\"\\t\\";} {gsub(/[ACGT]/,\\"N\\",\\\$10) }; {gsub(/./,\\"!\\",\\\$11) };   1' > pf_fail.sam");
 
 #  remove secondary alignments
-system("samtools view -H $in_bam | cat - pf_pass.sam pf_fail.sam | samtools view -F 0x100 -b -S - > $in_bam");
+system("samtools view -H $in_bam | cat - pf_pass.sam pf_fail.sam | samtools view -F 0x100 -b -S - > secondary_alignments_removed.bam");
+system("mv secondary_alignments_removed.bam $in_bam");
 unlink("pf_pass.sam");
 unlink("pf_fail.sam");
 
