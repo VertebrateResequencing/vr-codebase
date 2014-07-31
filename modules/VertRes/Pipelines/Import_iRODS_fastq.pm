@@ -251,8 +251,23 @@ for my \$fastq (\@fastqs)
     unlink(\$fastq,\$fastq.'.fastqcheck');
 }
 
+# output reads with PF pass only
+system("samtools view -F 0x200 $in_bam > pf_pass.sam");
+
+# Reads with PF fail have bases set to N and quality scores to 0.
+system("samtools view -f 0x200 $in_bam | awk -F '\\t'  'BEGIN{OFS=\\"\\t\\";} {gsub(/[ACGT]/,\\"N\\",\\\$10) }; {gsub(/./,\\"!\\",\\\$11) };   1' > pf_fail.sam");
+
+#  remove secondary alignments
+system("samtools view -H $in_bam | cat - pf_pass.sam pf_fail.sam | samtools view -F 0x100 -b -S - > secondary_alignments_removed.bam");
+system("mv secondary_alignments_removed.bam $in_bam");
+unlink("pf_pass.sam");
+unlink("pf_fail.sam");
+
 VertRes::Wrapper::samtools->new()->sort(qq[$in_bam], qq[sorted], n => 1, m => $samtools_sorting_memory);
 system("mv sorted.bam $in_bam");
+
+unlink(qq[rm $in_bam.bc]);
+system(qq[$$self{bamcheck} $in_bam >  $in_bam.bc]);
 
 VertRes::Utils::Sam->new(verbose => 1, quiet => 0, java_memory => $java_mem )->bam2fastq(qq[$in_bam], qq[$fastq_base]);
 };
