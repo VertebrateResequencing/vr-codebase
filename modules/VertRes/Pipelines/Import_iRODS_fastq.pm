@@ -266,6 +266,9 @@ unlink("pf_fail.sam");
 VertRes::Wrapper::samtools->new()->sort(qq[$in_bam], qq[sorted], n => 1, m => $samtools_sorting_memory);
 system("mv sorted.bam $in_bam");
 
+unlink(qq[rm $in_bam.bc]);
+system(qq[$$self{bamcheck} $in_bam >  $in_bam.bc]);
+
 VertRes::Utils::Sam->new(verbose => 1, quiet => 0, java_memory => $java_mem )->bam2fastq(qq[$in_bam], qq[$fastq_base]);
 };
     unless($self->is_paired){
