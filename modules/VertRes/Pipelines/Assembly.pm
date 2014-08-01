@@ -676,18 +676,17 @@ sub number_of_threads
 ###########################
 
 
-sub pool_fastqs
-{
-      my ($self, $build_path,$action_lock) = @_;
+sub pool_fastqs {
+    my ( $self, $build_path, $action_lock ) = @_;
 
-      my $lane_names = $self->get_all_lane_names($self->{pools});
-      my $output_directory = $self->{lane_path}."/".$self->{prefix}.$self->{assembler}."_pool_fastq_tmp_files";
-      my $base_path =  $self->{seq_pipeline_root};
-      my $assembler = $self->{assembler};
+    my $lane_names       = $self->get_all_lane_names( $self->{pools} );
+    my $output_directory = $self->{lane_path} . "/" . $self->{prefix} . $self->{assembler} . "_pool_fastq_tmp_files";
+    my $base_path        = $self->{seq_pipeline_root};
+    my $assembler        = $self->{assembler};
 
-      my $script_name = $self->{fsu}->catfile($build_path, $self->{prefix}."pool_fastqs.pl");
-      open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
-      print $scriptfh qq{
+    my $script_name = $self->{fsu}->catfile( $build_path, $self->{prefix} . "pool_fastqs.pl" );
+    open( my $scriptfh, '>', $script_name ) or $self->throw("Couldn't write to temp script $script_name: $!");
+    print $scriptfh qq{
 use strict;
 use VertRes::Pipelines::Assembly;
 use Bio::AssemblyImprovement::Assemble::SGA::Main;
@@ -700,33 +699,30 @@ my \@lane_names;
 system("mkdir $output_directory");
 };
 
-   for my $lane_name ( @$lane_names)
-   {
-     my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
-     my $vlane = VRTrack::Lane->new_by_name($self->{vrtrack},$lane_name);
+    for my $lane_name (@$lane_names) {
+        my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
+        my $vlane = VRTrack::Lane->new_by_name( $self->{vrtrack}, $lane_name );
 
-     my @file_names;
-     my @file_names_with_path ;
+        my @file_names;
+        my @file_names_with_path;
 
-     if( @{$vlane->files} == 2)
-     {
+        if ( @{ $vlane->files } == 2 ) {
 
-       for my $file_name (@{$vlane->files})
-       {
-        	push(@file_names, $file_name->name );
-       }
-       @file_names = sort @file_names; # Unfortunately normalisation code cannot handle reads interleaved in any other way besides /1, /2, /1 and so on. We rely here on the files being named with _1 and _2 so that the order is maintained.
-     }
-     
-     my $forward_reads_filename = $self->{lane_path}."/".$file_names[0];
-     my $reverse_reads_filename = $self->{lane_path}."/".$file_names[1];
+            for my $file_name ( @{ $vlane->files } ) {
+                push( @file_names, $file_name->name );
+            }
+            @file_names = sort @file_names
+              ; # Unfortunately normalisation code cannot handle reads interleaved in any other way besides /1, /2, /1 and so on. We rely here on the files being named with _1 and _2 so that the order is maintained.
+        }
 
+        my $forward_reads_filename = $self->{lane_path} . "/" . $file_names[0];
+        my $reverse_reads_filename = $self->{lane_path} . "/" . $file_names[1];
 
-     #Primer removal
-     if(defined ($self->{remove_primers}) and $self->{remove_primers} == 1 and defined ($self->{primers_file}))
-     {
-     	#Replace code here with an alternative way of removing primers that can accept a shuffled file
-     	print $scriptfh qq{
+        #Primer removal
+        if ( defined( $self->{remove_primers} ) and $self->{remove_primers} == 1 and defined( $self->{primers_file} ) )
+        {
+            #Replace code here with an alternative way of removing primers that can accept a shuffled file
+            print $scriptfh qq{
 my \$primer_remover = Bio::AssemblyImprovement::PrimerRemoval::Main->new(
 forward_file    => "$forward_reads_filename",
 reverse_file    => "$reverse_reads_filename",
@@ -736,31 +732,32 @@ QUASR_exec		=> "$self->{QUASR_exec}",
 )->run();
 };
 
-$forward_reads_filename = $output."/".'primer_removed.forward.fastq.gz';
-$reverse_reads_filename = $output."/".'primer_removed.reverse.fastq.gz';
-      }
+            $forward_reads_filename = $output_directory . "/" . 'primer_removed.forward.fastq.gz';
+            $reverse_reads_filename = $output_directory . "/" . 'primer_removed.reverse.fastq.gz';
+        }
 
-     # Create a shuffled sequence. This shuffled file will be the input for any processing steps below (i.e. normalisation, error correction etc)
-     my $shuffled_filename = $output_directory.'/'.$lane_name.'.fastq.gz';
-	 my $output_filename = $lane_name.'.fastq.gz'; # Each step below (normalisation and error correction), should produce an output file with this name (which is the same as the shuffled filename)
+# Create a shuffled sequence. This shuffled file will be the input for any processing steps below (i.e. normalisation, error correction etc)
+        my $shuffled_filename = $output_directory . '/' . $lane_name . '.fastq.gz';
+        my $output_filename   = $lane_name
+          . '.fastq.gz'
+          ; # Each step below (normalisation and error correction), should produce an output file with this name (which is the same as the shuffled filename)
 
-     print $scriptfh qq{
+        print $scriptfh qq{
 \$assembly->shuffle_sequences_fastq_gz("$forward_reads_filename","$reverse_reads_filename", "$shuffled_filename");
 };
 
- 	 #Clean up primer removed files. This is quite messy. Will be better when primer removal can accept a shuffled file so it fits in like normalisation and error_correction does
-     if(defined ($self->{remove_primers}) and $self->{remove_primers} == 1 and defined ($self->{primers_file}))
-     {
-      print $scriptfh qq{
+#Clean up primer removed files. This is quite messy. Will be better when primer removal can accept a shuffled file so it fits in like normalisation and error_correction does
+        if ( defined( $self->{remove_primers} ) and $self->{remove_primers} == 1 and defined( $self->{primers_file} ) )
+        {
+            print $scriptfh qq{
 unlink("$output_directory/primer_removed.forward.fastq.gz");
 unlink("$output_directory/primer_removed.reverse.fastq.gz");
 };
-     }
+        }
 
- 	 # Digital normalisation
-     if(defined ($self->{normalise}) and $self->{normalise} == 1)
-     {
-       print $scriptfh qq{
+        # Digital normalisation
+        if ( defined( $self->{normalise} ) and $self->{normalise} == 1 ) {
+            print $scriptfh qq{
 my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new(
 input_file       => "$shuffled_filename",
 khmer_exec       => "$self->{khmer_exec}",
@@ -768,12 +765,11 @@ output_filename  => "$output_filename",
 output_directory => "$output_directory",
 )->run();
 };
-     }
+        }
 
-     # Error correction
-	 if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
-	 {
-	  print $scriptfh qq{
+        # Error correction
+        if ( defined( $self->{error_correct} ) and $self->{error_correct} == 1 ) {
+            print $scriptfh qq{
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
 input_files     => ["$shuffled_filename"],
 output_filename => "$output_filename",
@@ -782,33 +778,35 @@ pe_mode		    => 2,
 sga_exec        => "$self->{sga_exec}",
 )->run();
 };
-	 }
+        }
 
-   } #End for loop
-
-   print $scriptfh qq{
+    print $scriptfh qq{
 system("mv $shuffled_filename $output_directory/pool_1.fastq.gz");
 unlink("$output_directory/$lane_name.fastq.gz");
 system("touch $output_directory/$self->{prefix}pool_fastqs_done");
 exit;
       };
-      close $scriptfh;
-      my $job_name = $self->{prefix}.'pool_fastqs';
+    close $scriptfh;
+    my $job_name = $self->{prefix} . 'pool_fastqs';
 
-      my $memory_in_mb = 500;
-      my $queue = 'normal';
-      if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
-      {
+    my $memory_in_mb = 500;
+    my $queue        = 'normal';
+    if ( defined( $self->{error_correct} ) and $self->{error_correct} == 1 ) {
         $memory_in_mb = 4000;
-        $queue = 'long';
-      }
+        $queue        = 'long';
+    }
 
-      VertRes::LSF::run($action_lock, $self->{lane_path}, $job_name, {bsub_opts => "-q $queue -M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'"}, qq{perl -w $script_name});
+    VertRes::LSF::run(
+        $action_lock, $self->{lane_path}, $job_name,
+        { bsub_opts => "-q $queue -M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'" },
+        qq{perl -w $script_name}
+    );
 
-      # we've only submitted to LSF, so it won't have finished; we always return
-      # that we didn't complete
-      return $self->{No};
+    # we've only submitted to LSF, so it won't have finished; we always return
+    # that we didn't complete
+    return $self->{No};
 }
+
 
 sub pool_fastqs_requires
 {
