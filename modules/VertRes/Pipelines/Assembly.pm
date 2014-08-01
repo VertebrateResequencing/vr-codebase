@@ -699,7 +699,7 @@ my \@lane_names;
 system("mkdir $output_directory");
 };
 
-    for my $lane_name (@$lane_names) {
+    my $lane_name = $self->{lane};
         my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
         my $vlane = VRTrack::Lane->new_by_name( $self->{vrtrack}, $lane_name );
 
