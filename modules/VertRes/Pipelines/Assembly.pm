@@ -784,7 +784,7 @@ sga_exec        => "$self->{sga_exec}",
     print $scriptfh qq{
 system("mv $shuffled_filename $output_directory/pool_1.fastq.gz");
 unlink("$output_directory/$lane_name.fastq.gz");
-system("touch $output_directory/$self->{prefix}pool_fastqs_done");
+system("touch $self->{lane_path}/$self->{prefix}$self->{assembler}_pool_fastqs_done");
 exit;
       };
     close $scriptfh;
@@ -818,8 +818,7 @@ sub pool_fastqs_provides
 {
    my $self = shift;
    my @provided_files ;
-   push(@provided_files, $self->{lane_path}.'/'.$self->{prefix}."pool_fastqs_done");
-
+   push(@provided_files, $self->{lane_path}.'/'.$self->{prefix}.$self->{assembler}.'_pool_fastqs_done');
 
    return \@provided_files;
 }
