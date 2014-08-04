@@ -244,8 +244,6 @@ sub mapping_and_generate_stats
   use strict;
   use $assembler_class;
 
-  unlink("$self->{prefix}$self->{assembler}_pool_1.fastq.gz");
-
   my \@lane_paths = $lane_paths_str;
 
   my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory] $reference_str );
@@ -406,7 +404,7 @@ remove_tree(qq[$pool_directory]);
 chdir(qq[ $output_directory]);
 
 system('touch $pipeline_version');
-system('touch $self->{prefix}$self->{assembler}_optimise_parameters_done');
+system('touch $output_directory/$self->{prefix}$self->{assembler}_optimise_parameters_done');
 exit;
               };
               close $scriptfh;
