@@ -696,7 +696,8 @@ use File::Copy;
 my \$assembly= VertRes::Pipelines::Assembly->new(assembler => qq[$assembler]);
 my \@lane_names;
 
-system("mkdir $output_directory");
+system("rm -rf $output_directory");
+system("mkdir -p $output_directory");
 };
 
     my $lane_name = $self->{lane};
