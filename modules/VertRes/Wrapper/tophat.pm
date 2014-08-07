@@ -194,8 +194,7 @@ sub generate_sam {
         my $inner_mate_str = $self->_insert_size_option($longest_read, %other_args);
         my $min_intron_length_str = $self->_min_intron_length_option(%other_args);
         my $max_multihits_str = $self->_max_multihits_option(%other_args);
-		
-		my $library_type = $self->_library_type(%other_args);
+	my $library_type = $self->_library_type_option(%other_args);
 
         if((defined $other_args{is_paired}) && $other_args{is_paired} == 0)
         {
