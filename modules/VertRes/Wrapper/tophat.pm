@@ -27,8 +27,8 @@ use VertRes::IO;
 use VertRes::Parser::fastqcheck;
 use VertRes::Wrapper::fastqcheck;
 use VertRes::Wrapper::bowtie2;
-use File::Basename;
 use File::Temp qw/ tempdir /;
+use File::Basename;
 use IO::File;
 
 use base qw(VertRes::Wrapper::MapperI);
@@ -194,16 +194,18 @@ sub generate_sam {
         my $inner_mate_str = $self->_insert_size_option($longest_read, %other_args);
         my $min_intron_length_str = $self->_min_intron_length_option(%other_args);
         my $max_multihits_str = $self->_max_multihits_option(%other_args);
+		
+		my $library_type = $self->_library_type(%other_args);
 
         if((defined $other_args{is_paired}) && $other_args{is_paired} == 0)
         {
           # single ended
-          $self->simple_run(" $max_intron_length_str $min_intron_length_str -o $directories $max_multihits_str --no-convert-bam $ref $fqs[0]");
+          $self->simple_run("$library_type $max_intron_length_str $min_intron_length_str -o $directories $max_multihits_str --no-convert-bam $ref $fqs[0]");
         }
         else
         {
           #paired_ended
-          $self->simple_run(" $max_intron_length_str $min_intron_length_str $inner_mate_str $max_multihits_str -o $directories --no-convert-bam $ref $fqs[0] $fqs[1]");
+          $self->simple_run("$library_type $max_intron_length_str $min_intron_length_str $inner_mate_str $max_multihits_str -o $directories --no-convert-bam $ref $fqs[0] $fqs[1]");
         }
 
 	if ( -e "$directories/unmapped.sam" || -e "$directories/unmapped.bam" ) {
@@ -303,6 +305,19 @@ sub add_unmapped {
     return 1;
 }
 
+
+
+sub _library_type_option
+{
+  my ($self, %other_args) = @_;
+  
+  if(defined $other_args{additional_mapper_params})
+  {
+     $other_args{library_type} = $1 if $other_args{additional_mapper_params} =~ m/--library-type\s+([\w-]+)/;
+  }
+  
+  return "--library-type ".$other_args{library_type};
+}
 
 sub _max_intron_length_option
 {
