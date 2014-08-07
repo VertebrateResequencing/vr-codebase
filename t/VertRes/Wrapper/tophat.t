@@ -145,6 +145,13 @@ foreach my $file (@ref_index_files) {
     ok -s $file, "output file exists $file";
 }
 
+my %arguments1 = ('additional_mapper_params' => '-I 345 --library-type fr-unstranded -c ggg -r ttt');
+is ($tophat->_library_type_option(%arguments1), '--library-type fr-unstranded', "expected string as library_type_option");
+
+my %arguments2 = ('additional_mapper_params' => '-I 345 -c ggg -r ttt');
+is ($tophat->_library_type_option(%arguments2), '', "expected string as library_type_option");
+
+
 done_testing;
 exit;
 
