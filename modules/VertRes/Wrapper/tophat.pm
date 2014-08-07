@@ -314,8 +314,14 @@ sub _library_type_option
   {
      $other_args{library_type} = $1 if $other_args{additional_mapper_params} =~ m/--library-type\s+([\w-]+)/;
   }
-  
-  return "--library-type ".$other_args{library_type};
+  if(defined $other_args{library_type} ) {
+
+    return "--library-type ".$other_args{library_type};
+  }
+  else {
+
+    return '';
+  }
 }
 
 sub _max_intron_length_option
