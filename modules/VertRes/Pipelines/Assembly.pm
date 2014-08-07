@@ -1032,8 +1032,6 @@ sub update_db {
 
     my $vrtrack = $vrlane->vrtrack;
 
-    return $$self{'Yes'} if $vrlane->is_processed('assembled');
-
     unless($vrlane->is_processed('assembled')){
       $vrtrack->transaction_start();
       $vrlane->is_processed('assembled',1);
@@ -1044,7 +1042,7 @@ sub update_db {
 
     my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
     Utils::CMD("rm $job_status") if (-e $job_status);
-    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_update_db_done")   );
+    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_update_db_done")   ) unless( -e "$self->{prefix}assembly_update_db_done");
 
     return $$self{'Yes'};
 }
