@@ -133,7 +133,6 @@ our $options =
     'gc_depth_bin'    => 20000,
     'gtype_confidence'=> 5.0,
     'kraken_report'   => 'kraken.report',
-    'kraken_db'       => '/lustre/scratch108/pathogen/pathpipe/kraken/minikraken_20140330/',
     'sample_dir'      => 'qc-sample',
     'sample_size'     => 50e6,
     'stats'           => '_stats',
@@ -343,6 +342,7 @@ sub assign_taxonomy_provides
 sub assign_taxonomy
 {
     my ($self,$lane_path,$lock_file) = @_;
+    $$self{kraken_db} or $self->throw("Missing the option kraken_db.\n");
     my $name = $$self{lane};
     my $fastq_files = existing_fastq_files("$lane_path/$name");
     scalar @$fastq_files or $self->throw("No fastq files in $lane_path??\n");
