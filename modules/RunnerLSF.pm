@@ -259,7 +259,7 @@ sub _parse_bjobs_l
             }
 
             if ( scalar keys %$job) { $$info{$$job{id}} = $job; }
-            $job = { id=>$id, lsf_id=>$lsf_id };
+            $job = { id=>$id, lsf_id=>$lsf_id, cpus=>1 };
 
             my $job_info = $lines[$i];
             chomp($job_info);
@@ -326,6 +326,10 @@ sub _parse_bjobs_l
         { 
             if ( !exists($$job{cpu_time}) or $$job{cpu_time} < $1 ) { $$job{cpu_time} = $1; }
         }
+        if ( $lines[$i]=~/started on (\d+) Hosts\/Processors/ ) 
+        { 
+            $$job{cpus} = $1;
+        }
         if ( $lines[$i]=~/Exited with exit code (\d+)\./ ) 
         { 
             $$job{exit_code} = $1;
@@ -360,7 +364,7 @@ sub _check_job
         # bswitch to a longer queue if necessary.
 
         my $wakeup_interval = $$self{limits}{wakeup_interval} ? $$self{limits}{wakeup_interval} + 300 : 300;
-        my $time_mins = ($$job{cpu_time} + $wakeup_interval) / 60.;
+        my $time_mins = ($$job{cpu_time} / $$job{cpus} + $wakeup_interval) / 60.;
         my $new_queue = $self->_get_queue($time_mins);
         my $cur_queue = $$job{queue};
         if ( defined $new_queue && $new_queue ne $cur_queue && $$self{queue_limits}{$new_queue} > $$self{queue_limits}{$cur_queue} )
