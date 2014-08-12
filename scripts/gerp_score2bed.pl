@@ -53,7 +53,7 @@ for ($i=1;$i<$slice_len;$i+=$slice_sz) {
 
     foreach my $score (@$scores) {
         if (defined $score->diff_score) {
-            printf("$chr\t%d\t%d\t%.4f\n",  $score->position + $offset, $score->position + $offset, $score->diff_score);
+            printf("$chr\t%d\t%d\t%.4f\n",  $score->position + $offset-1, $score->position + $offset, $score->diff_score);
         }
     }
 }
