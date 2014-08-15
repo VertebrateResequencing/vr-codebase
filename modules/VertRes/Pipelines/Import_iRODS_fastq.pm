@@ -251,22 +251,17 @@ for my \$fastq (\@fastqs)
     unlink(\$fastq,\$fastq.'.fastqcheck');
 }
 
-#  remove secondary and supplementary alignments
-system("samtools view -H $in_bam | cat - pf_pass.sam pf_fail.sam | samtools view -F 0x900 -b -S - > secondary_alignments_removed.bam");
-system("mv secondary_alignments_removed.bam $in_bam");
-
 # output reads with PF pass only
 system("samtools view -F 0x200 $in_bam > pf_pass.sam");
 
 # Reads with PF fail have bases set to N and quality scores to 0.
 system("samtools view -f 0x200 $in_bam | awk -F '\\t'  'BEGIN{OFS=\\"\\t\\";} {gsub(/[ACGT]/,\\"N\\",\\\$10) }; {gsub(/./,\\"!\\",\\\$11) };   1' > pf_fail.sam");
 
-######  merge the sam files together and reheader and move
-system("samtools view -H $in_bam | cat - pf_pass.sam pf_fail.sam > _merged.sam");
+#  remove secondary alignments
+system("samtools view -H $in_bam | cat - pf_pass.sam pf_fail.sam | samtools view -F 0x100 -b -S - > secondary_alignments_removed.bam");
+system("mv secondary_alignments_removed.bam $in_bam");
 unlink("pf_pass.sam");
 unlink("pf_fail.sam");
-system("samtools view -Sb _merged.sam > $in_bam");
-unlink("_merged.sam");
 
 VertRes::Wrapper::samtools->new()->sort(qq[$in_bam], qq[sorted], n => 1, m => $samtools_sorting_memory);
 system("mv sorted.bam $in_bam");
