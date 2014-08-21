@@ -132,6 +132,7 @@ our $options =
     'chr_regex'       => '^(?:\d+|X|Y)$',
     'gc_depth_bin'    => 20000,
     'gtype_confidence'=> 5.0,
+    'kraken_db'       => '/lustre/scratch108/pathogen/pathpipe/kraken/minikraken_20140330/',
     'kraken_report'   => 'kraken.report',
     'sample_dir'      => 'qc-sample',
     'sample_size'     => 50e6,
@@ -186,7 +187,6 @@ sub VertRes::Pipelines::TrackQC_Fastq::new
         bwa_exec
         gcdepth_R
         glf
-        kraken_db
         kraken_exec
         kraken_report_exec
         mapviewdepth
