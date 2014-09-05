@@ -141,7 +141,10 @@ sub new
                 +local
                     Do not submit jobs to LSF, but run serially
                 +loop <int>
-                    Run in daemon mode with <int> seconds sleep intervals
+                    Run in daemon mode with <int> seconds sleep intervals.
+                    Negative values can be used to request only one iteration
+                    at a time and still indicate the interval, so that the job
+                    scheduler can estimate if a job needs switching to a longer queue.
                 +mail <address>
                     Email to send when the runner is done
                 +maxjobs <int>
@@ -244,7 +247,7 @@ sub run
             # Exit with the correct status immediately if the user module fails. Note that +retries applies only to spawned jobs.
             die "\n"; 
         }
-        if ( !$$self{_loop} ) { return; }
+        if ( !$$self{_loop} or $$self{_loop}<0 ) { return; }
         $self->debugln($$self{_about}, "sleeping for $$self{_loop} seconds...");
         sleep($$self{_loop});
     }
@@ -714,7 +717,11 @@ sub wait
 
     # Spawn to farm
     my $js = $$self{_js};
-    if ( $$self{_loop} ) { $$self{_farm_options}{wakeup_interval} = $$self{_loop}; }
+    if ( $$self{_loop} )
+    { 
+        $$self{_farm_options}{wakeup_interval} = abs($$self{_loop}); 
+        $js->set_limits(%{$$self{_farm_options}});
+    }
 
     my $is_running = 0;
 
