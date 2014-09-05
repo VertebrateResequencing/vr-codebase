@@ -32,7 +32,7 @@ sub new
 
     # runtime and queue_limits are in minutes
     $$self{default_limits} = { runtime=>40, memory=>1_000, queue=>'normal' };
-    $$self{queue_limits}   = { basement=>1e9, long=>48*60, normal=>12*60, small=>30 };
+    $$self{queue_limits}   = { basement=>1e9, long=>72*60, normal=>12*60, small=>30 };
 
     $self->_set_lsf_limits_unit();
     $self->_init_zombies();
