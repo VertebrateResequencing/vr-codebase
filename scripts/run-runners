@@ -27,9 +27,13 @@ use Carp;
 
 my $opts = parse_params();
 
-while (my $project = get_project($opts))
+while (1)
 {
-    run_project($opts,$project);
+    my $project = get_project($opts);
+    if ( $project )
+    {
+        run_project($opts,$project);
+    }
     print STDERR "sleeping..\n";
     sleep(60);
 }
