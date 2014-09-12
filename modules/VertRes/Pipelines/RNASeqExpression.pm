@@ -195,6 +195,7 @@ sub _create_expression_job
   my $filters = {
 		 mapping_quality => $self->{mapping_quality}
 		};
+	$self->{parallel_processes} ||= 4;
 
   if ( defined ($self->{bitwise_flag}) )
     {
@@ -220,26 +221,32 @@ sub _create_expression_job
     filters => $filters_for_script,
     protocol             => qq[$self->{protocol}],
     output_base_filename => qq[$sequencing_filename],
+    parallel_processes   => $self->{parallel_processes},
     $window_margin_str
     $intergenic_regions_str
     );
 
   \$expression_results->output_spreadsheet();
-  
-  Bio::RNASeq::$plots_class->new(
-    filename             => \$expression_results->_corrected_sequence_filename,
-    output_base_filename => qq[$sequencing_filename],
-    mapping_quality      => $self->{mapping_quality},
-    $mpileup_str
-  )->create_plots();
+};
 
-  
+  if((!defined($self->{no_coverage_plots})) || defined($self->{no_coverage_plots}) && $self->{no_coverage_plots} != 1 )
+  {
+        print $scriptfh qq{
+        Bio::RNASeq::$plots_class->new(
+          filename             => \$expression_results->_corrected_sequence_filename,
+          output_base_filename => qq[$sequencing_filename],
+          mapping_quality      => $self->{mapping_quality},
+          $mpileup_str
+        )->create_plots();
+      };
+  }
+  print $scriptfh qq{
   system('touch $prefix${sequencing_filename}_calculate_expression_done');
   exit;
                 };
                 close $scriptfh;
 
-        VertRes::LSF::run($sequencing_file_action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -n2 -M${total_memory_mb} -R 'span[hosts=1] select[mem>$total_memory_mb] rusage[mem=$total_memory_mb]'", dont_wait=>1}, qq{perl -w $script_name});
+        VertRes::LSF::run($sequencing_file_action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -n4 -M${total_memory_mb} -R 'span[hosts=1] select[mem>$total_memory_mb] rusage[mem=$total_memory_mb]'", dont_wait=>1}, qq{perl -w $script_name});
 
         # we've only submitted to LSF, so it won't have finished; we always return
         # that we didn't complete
