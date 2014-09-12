@@ -163,12 +163,23 @@ sub _create_expression_job
   my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$sequencing_filename.'_calculate_expression.pl');
   my $prefix = $self->{prefix};
   
-  my $total_memory_mb = 3000;
+  my $total_memory_mb = 5000;
   my $queue = 'normal';
-  if($self->get_reference_size_from_bam($output_directory.'/'.$sequencing_filename) > 20000000)
+  if($self->get_reference_size_from_bam($output_directory.'/'.$sequencing_filename) > 6000000)
   {
-    $total_memory_mb = 6000;
+    # Large reference so have some sensible defaults to get it to run in a reasonable amount of time
+    $total_memory_mb = 10000;
+    $self->{parallel_processes} ||= 8;
+    $self->{intergenic_regions} ||= 0;
+    $self->{no_coverage_plots}  ||= 1;
     $queue = 'long';
+  }
+  else
+  {
+    # Small reference so can run more intensive tasks by default
+    $self->{intergenic_regions} ||= 1;
+    $self->{parallel_processes} ||= 4;
+    $self->{no_coverage_plots}  ||= 0;
   }
   
   my($action_lock_filename, $directories, $suffix) = fileparse($action_lock);
@@ -195,6 +206,7 @@ sub _create_expression_job
   my $filters = {
 		 mapping_quality => $self->{mapping_quality}
 		};
+	
 
   if ( defined ($self->{bitwise_flag}) )
     {
@@ -220,26 +232,32 @@ sub _create_expression_job
     filters => $filters_for_script,
     protocol             => qq[$self->{protocol}],
     output_base_filename => qq[$sequencing_filename],
+    parallel_processes   => $self->{parallel_processes},
     $window_margin_str
     $intergenic_regions_str
     );
 
   \$expression_results->output_spreadsheet();
-  
-  Bio::RNASeq::$plots_class->new(
-    filename             => \$expression_results->_corrected_sequence_filename,
-    output_base_filename => qq[$sequencing_filename],
-    mapping_quality      => $self->{mapping_quality},
-    $mpileup_str
-  )->create_plots();
+};
 
-  
+  if((!defined($self->{no_coverage_plots})) || defined($self->{no_coverage_plots}) && $self->{no_coverage_plots} != 1 )
+  {
+        print $scriptfh qq{
+        Bio::RNASeq::$plots_class->new(
+          filename             => \$expression_results->_corrected_sequence_filename,
+          output_base_filename => qq[$sequencing_filename],
+          mapping_quality      => $self->{mapping_quality},
+          $mpileup_str
+        )->create_plots();
+      };
+  }
+  print $scriptfh qq{
   system('touch $prefix${sequencing_filename}_calculate_expression_done');
   exit;
                 };
                 close $scriptfh;
 
-        VertRes::LSF::run($sequencing_file_action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -n2 -M${total_memory_mb} -R 'span[hosts=1] select[mem>$total_memory_mb] rusage[mem=$total_memory_mb]'", dont_wait=>1}, qq{perl -w $script_name});
+        VertRes::LSF::run($sequencing_file_action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -n".$self->{parallel_processes}." -M${total_memory_mb} -R 'span[hosts=1] select[mem>$total_memory_mb] rusage[mem=$total_memory_mb]'", dont_wait=>1}, qq{perl -w $script_name});
 
         # we've only submitted to LSF, so it won't have finished; we always return
         # that we didn't complete
