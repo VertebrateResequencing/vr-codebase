@@ -168,8 +168,8 @@ sub _create_expression_job
   if($self->get_reference_size_from_bam($output_directory.'/'.$sequencing_filename) > 6000000)
   {
     # Large reference so have some sensible defaults to get it to run in a reasonable amount of time
-    $total_memory_mb = 10000;
-    $self->{parallel_processes} ||= 8;
+    $total_memory_mb = 20000;
+    $self->{parallel_processes} ||= 16;
     $self->{intergenic_regions} ||= 0;
     $self->{no_coverage_plots}  ||= 1;
     $queue = 'long';
