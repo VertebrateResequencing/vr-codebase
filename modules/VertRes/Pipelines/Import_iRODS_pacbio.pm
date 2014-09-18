@@ -54,6 +54,7 @@ use base qw(VertRes::Pipeline);
 
 use strict;
 use warnings;
+use Data::Dumper;
 use VertRes::LSF;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
@@ -65,7 +66,7 @@ our $actions =
     # Create the hierarchy path, download and bamcheck the bam files.
     {
         'name'     => 'get_files',
-        'action'   => \&get_files_requires,
+        'action'   => \&get_files,
         'requires' => \&get_files_requires, 
         'provides' => \&get_files_provides,
     },
@@ -105,11 +106,10 @@ sub get_files_provides
 sub get_files
 {
       my ($self,$lane_path,$lock_file) = @_;
-
-      my $opts = $self->dump_opts(qw(files bamcheck));
-
+      
       my $prefix   = $$self{prefix};
       my $work_dir = $lane_path;
+      my $opts = $self->dump_opts(qw(files));
       `mkdir -p $lane_path`;
 
       # Create a script to be run on LSF.
@@ -167,6 +167,16 @@ sub download_files
     }
 }
 
+sub dump_opts
+{
+    my ($self,@keys) = @_;
+    my %opts;
+    for my $key (@keys)
+    {
+        $opts{$key} = exists($$self{$key}) ? $$self{$key} : undef;
+    }
+    return Data::Dumper->Dump([\%opts],["opts"]);
+}
 
 1;
 
