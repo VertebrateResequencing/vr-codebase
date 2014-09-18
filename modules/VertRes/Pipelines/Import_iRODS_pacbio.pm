@@ -49,7 +49,8 @@ path-help@sanger.ac.uk
 
 
 package VertRes::Pipelines::Import_iRODS_pacbio;
-use base qw(VertRes::Pipelines::Import_iRODS VertRes::Pipelines::Import);
+use VertRes::Pipeline;
+use base qw(VertRes::Pipeline);
 
 use strict;
 use warnings;
@@ -59,8 +60,8 @@ use VRTrack::Lane;
 use VRTrack::File;
 use VertRes::Utils::FileSystem;
 
-our @actions =
-(
+our $actions =
+[
     # Create the hierarchy path, download and bamcheck the bam files.
     {
         'name'     => 'get_files',
@@ -69,16 +70,21 @@ our @actions =
         'provides' => \&get_files_provides,
     },
 
-);
+];
+our %options = ( bsub_opts => '' );
 
 
 sub new 
 {
-    my ($class, %args) = @_;
-    my $self = $class->SUPER::new(%$options,'actions'=>\@actions,%args);
-    $self->write_logs(1);
-    if ( !$$self{files} ) { $self->throw("Missing the option files.\n"); }
-    return $self;
+  my ( $class, @args ) = @_;
+
+  my $self = $class->SUPER::new( %options, actions => $actions, @args );
+  if ( defined( $self->{db} ) ) {
+      $self->{vrtrack} = VRTrack::VRTrack->new( $self->{db} ) or $self->throw("Could not connect to the database\n");
+  }
+  $self->{fsu} = VertRes::Utils::FileSystem->new;
+
+  return $self;
 }
 
 #---------- get_files ---------------------

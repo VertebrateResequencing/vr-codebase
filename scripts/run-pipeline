@@ -1475,6 +1475,7 @@ sub get_import_pacbio_jobs_from_vrtrack
         $lanes_to_run{$path}{vrlane}    = $lane;
         push @{$lanes_to_run{$path}{files}}, $file->name();
         debug($config_data,".");
+        last if ($config_data->{limit} && $count >= $config_data->{limit});
     }
 
     _make_jobs_from_vrtrack_lanes($jobs,$config,$mtime,$config_data,\%lanes_to_run);
