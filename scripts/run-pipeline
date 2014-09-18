@@ -406,6 +406,12 @@ sub get_jobs
                 next;
             }
             
+            if ($action=~/^__VRTrack_Import_Pacbio__$/ )
+            {
+                get_import_pacbio_jobs_from_vrtrack(\@jobs,$config_fname,$config_mtime,$config_data);
+                next;
+            }
+            
             
             if ($action=~/^__SNPs__$/ )
             {
@@ -1397,6 +1403,66 @@ sub get_import_jobs_from_vrtrack
         #   tracking DB and will prevent other jobs from running.
         if ( $$config_data{mpsa_limit} && scalar keys %lanes_to_run > $$config_data{mpsa_limit} ) { last; }
 
+        my $file = VRTrack::File->new_by_hierarchy_name($vrtrack,$fname) or croak("Could not get File for $fname: $config\n");
+        my $lane = VRTrack::Lane->new($vrtrack, $file->lane_id());
+        unless (exists $filtered_lanes{$lane->name}) { next; }
+        if ( $lane->is_withdrawn() ) { next; }
+
+        my $path = $vrtrack->hierarchy_path_of_lane_hname($lane->name);
+        next unless $path;
+
+        $lanes_to_run{$path}{is_paired} = $lane->is_paired();
+        $lanes_to_run{$path}{vrlane}    = $lane;
+        push @{$lanes_to_run{$path}{files}}, $file->name();
+        debug($config_data,".");
+    }
+
+    _make_jobs_from_vrtrack_lanes($jobs,$config,$mtime,$config_data,\%lanes_to_run);
+    debug($config_data,"done\n");
+    return;
+}
+
+
+
+=head2 get_import_pacbio_jobs_from_vrtrack
+
+  Arg [1]    : Pointer to array of jobs
+  Arg [2]    : The config file name
+  Arg [3]    : The mtime of the config file
+  Arg [4]    : The config data.
+  Description: Obtains the lane list from the VRTrack database.
+
+=cut
+
+sub get_import_pacbio_jobs_from_vrtrack
+{
+    my ($jobs,$config,$mtime,$config_data) = @_;
+
+    if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
+    debug($config_data,"$config\tget_import_jobs_from_vrtrack...");
+
+    my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
+
+    my %filter  = ('import'=>0);
+    if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
+
+    my $fnames  = $vrtrack->processed_file_hnames(%filter);
+
+    my @lanes = @{$vrtrack->processed_lane_hnames() || []};
+    if (defined $config_data->{limits}) {
+        @lanes = map {$_->name} filter_lanes($config_data->{limits}, \@lanes, $vrtrack, $config);
+        debug($config_data, "got ", scalar(@lanes), " lanes that passed your limits...");
+    }
+
+    my %filtered_lanes = ();
+    foreach my $vrlane (@lanes)
+    {
+        $filtered_lanes{$vrlane} = 1;
+    }
+
+    my %lanes_to_run = ();
+    foreach my $fname (@$fnames)
+    {
         my $file = VRTrack::File->new_by_hierarchy_name($vrtrack,$fname) or croak("Could not get File for $fname: $config\n");
         my $lane = VRTrack::Lane->new($vrtrack, $file->lane_id());
         unless (exists $filtered_lanes{$lane->name}) { next; }
