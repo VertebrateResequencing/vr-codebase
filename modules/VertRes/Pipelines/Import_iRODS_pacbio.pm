@@ -181,7 +181,7 @@ sub convert_cells_to_fastq {
         my $fastq = $filename . '.fastq';
         next if ( -e $fastq.'.gz');
         system( $self->{bash5tools} . " --outType fastq " . $bas_file );
-        Utils::CMD(qq[gzip -9 -c $fastq > $fastq.gz]);
+        Utils::CMD(qq[gzip -9 $fastq]);
         my $fastqcheck = VertRes::Wrapper::fastqcheck->new();
         $fastqcheck->run( $fastq . '.gz', $fastq . '.gz.fastqcheck' );
     }
