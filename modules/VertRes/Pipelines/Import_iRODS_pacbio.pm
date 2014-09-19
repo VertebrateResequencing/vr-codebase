@@ -79,6 +79,13 @@ our $actions =
         'requires' => \&convert_to_fastq_requires, 
         'provides' => \&convert_to_fastq_provides,
     },
+    # If all files were downloaded OK, update the VRTrack database.
+    {
+        'name'     => 'update_db',
+        'action'   => \&update_db,
+        'requires' => \&update_db_requires, 
+        'provides' => \&update_db_provides,
+    },
 
 ];
 our %options = ( bsub_opts => '', 
@@ -122,7 +129,7 @@ sub _output_fastq_filenames
   {
      my($filename, $dirs, $suffix) = fileparse($file,'.bas.h5');
 
-     my $fastq_filename =  $filename.'.fastq';
+     my $fastq_filename =  $filename.'.fastq.gz';
      push(@output_files, $fastq_filename);
   }
   return \@output_files;
@@ -180,6 +187,9 @@ sub convert_cells_to_fastq
      my $fastq = $filename.'.fastq';
      next if(-e $fastq);
      system($self->{bash5tools}." --outType fastq ".$bas_file);
+     Utils::CMD(qq[gzip -9 -c $fastq > $fastq.gz]);
+     my $fastqcheck = VertRes::Wrapper::fastqcheck->new();
+     $fastqcheck->run($fastq.'.gz', $fastq.'.gz.fastqcheck');
   }
 }
 
@@ -265,6 +275,53 @@ sub download_files
         move($outfile.'.tmp',$outfile );
     }
 }
+
+
+
+# Requires the gzipped fastq files. How many? Find out how many .md5 files there are.
+sub update_db_requires
+{
+    my ($self,$lane_path) = @_;
+    return $self->convert_to_fastq_provides;
+}
+
+# This subroutine will check existence of the key 'db'. If present, it is assumed
+#   that Import should write the stats and status into the VRTrack database. In this
+#   case, 0 is returned, meaning that the task must be run. The task will change the
+#   QC status from NULL to pending, therefore we will not be called again.
+#
+#   If the key 'db' is absent, the empty list is returned and the database will not
+#   be written.
+#
+sub update_db_provides
+{
+    my ($self) = @_;
+    if ( exists($$self{db}) ) { return 0; }
+    my @provides = ();
+    return \@provides;
+}
+
+
+sub update_db
+{
+    my ($self,$lane_path,$lock_file) = @_;
+
+    if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
+
+    my $vrtrack = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database\n");
+    my $vrlane  = VRTrack::Lane->new_by_name($vrtrack,$$self{lane}) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
+
+    $vrtrack->transaction_start();
+
+    $vrlane->is_processed('import',1);
+    $vrlane->is_withdrawn(0);
+    $vrlane->raw_bases($tot_tot_len);
+    $vrlane->raw_reads($tot_num_seq);
+    $vrlane->update();
+    $vrtrack->transaction_commit();    
+    return $$self{Yes};
+}
+
 
 sub dump_opts
 {
