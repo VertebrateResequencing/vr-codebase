@@ -219,12 +219,23 @@ sub _create_expression_job
 
   my $plots_class = "CoveragePlot";
 
+  my $gtf_file = $self->{annotation_file};
+  $gtf_file =~ s!gff$!gtf!i;
+  my $feature_counts_cmd = '';
+  if(-e $gtf_file)
+  {
+    my $output_counts_name = $sequencing_filename.".featurecounts.csv";
+    $feature_counts_cmd =  'system( "featureCounts -O -T '.$self->{parallel_processes}.' -t exon -g gene_id -a '.$gtf_file.'   -o  '.$output_counts_name.' '.$sequencing_filename.'")';
+  }
+
   open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
 
   print $scriptfh qq{
   use strict;
   use Bio::RNASeq;
   use Bio::RNASeq::$plots_class;
+  
+$feature_counts_cmd
 
   my \$expression_results = Bio::RNASeq->new(
     sequence_filename    => qq[$sequencing_filename],
