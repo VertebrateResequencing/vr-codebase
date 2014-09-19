@@ -62,6 +62,7 @@ use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::File;
 use VertRes::Utils::FileSystem;
+use VertRes::Wrapper::fastqcheck;
 use File::Basename;
 
 our $actions = [
@@ -144,7 +145,7 @@ sub _bas_h5_filenames {
 
 sub convert_to_fastq {
     my ( $self, $lane_path, $lock_file ) = @_;
-    my $memory_in_mb = 5000;
+    my $memory_in_mb = 1000;
 
     my $prefix   = $$self{prefix};
     my $work_dir = $lane_path;
