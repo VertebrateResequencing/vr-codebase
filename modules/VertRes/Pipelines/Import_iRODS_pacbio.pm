@@ -159,7 +159,7 @@ sub convert_to_fastq
   my $opts
 
   my \$import = VertRes::Pipelines::Import_iRODS_pacbio->new();
-  \$import->convert_cells_to_fastq(@\$bas_files);
+  \$import->convert_cells_to_fastq(\$bas_files);
 
   ];
 
