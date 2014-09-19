@@ -179,7 +179,7 @@ sub convert_cells_to_fastq
      my($filename, $dirs, $suffix) = fileparse($bas_file,'.bas.h5');
      my $fastq = $filename.'.fastq';
      next if(-e $fastq);
-     system($options->{bash5tools}." --outType fastq ".$bas_file);
+     system($self->{bash5tools}." --outType fastq ".$bas_file);
   }
 }
 
@@ -195,7 +195,7 @@ sub get_files_requires
 sub get_files_provides
 {
     my ($self, $lane_path) = @_;
-    return $$self{files};
+    return $self->_bas_h5_filenames;
 }
 
 sub get_files
