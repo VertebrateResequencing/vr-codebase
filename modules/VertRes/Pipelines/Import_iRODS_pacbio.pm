@@ -104,7 +104,7 @@ sub new
 sub convert_to_fastq_requires
 {
     my ($self) = @_;
-    return $$self{files};
+    return $self->_bas_h5_filenames;
 }
 
 sub convert_to_fastq_provides
