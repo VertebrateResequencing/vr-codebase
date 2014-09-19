@@ -150,7 +150,7 @@ sub convert_to_fastq
       my $work_dir = $lane_path;
       my $opts =  Data::Dumper->Dump([\@{$self->_bas_h5_filenames}],["bas_files"]);
 
-      open(my $fh,'>', "$work_dir/${prefix}import_files.pl") or $self->throw("$work_dir/${prefix}import_files.pl: $!");
+      open(my $fh,'>', "$work_dir/${prefix}convert_to_fastq.pl") or $self->throw("$work_dir/${prefix}convert_to_fastq.pl: $!");
       print $fh qq[
   use strict;
   use warnings;
