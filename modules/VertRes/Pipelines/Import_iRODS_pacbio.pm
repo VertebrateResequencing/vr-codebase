@@ -55,6 +55,7 @@ use base qw(VertRes::Pipeline);
 use strict;
 use warnings;
 use Data::Dumper;
+use VertRes::Wrapper::iRODS;
 use VertRes::LSF;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
@@ -100,7 +101,7 @@ sub get_files_requires
 sub get_files_provides
 {
     my ($self, $lane_path) = @_;
-    return $$self{files};
+    return $self{files};
 }
 
 sub get_files
@@ -173,7 +174,7 @@ sub dump_opts
     my %opts;
     for my $key (@keys)
     {
-        $opts{$key} = exists($$self{$key}) ? $$self{$key} : undef;
+        $opts{$key} = exists($self{$key}) ? $self{$key} : undef;
     }
     return Data::Dumper->Dump([\%opts],["opts"]);
 }
