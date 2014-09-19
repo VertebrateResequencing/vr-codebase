@@ -225,7 +225,7 @@ sub _create_expression_job
   if(-e $gtf_file)
   {
     my $output_counts_name = $sequencing_filename.".featurecounts.csv";
-    $feature_counts_cmd =  'system( "featureCounts -O -T '.$self->{parallel_processes}.' -t exon -g gene_id -a '.$gtf_file.'   -o  '.$output_counts_name.' '.$sequencing_filename.'")';
+    $feature_counts_cmd =  'system( "featureCounts -O -T '.$self->{parallel_processes}.' -t exon -g gene_id -a '.$gtf_file.'   -o  '.$output_counts_name.' '.$sequencing_filename.'");';
   }
 
   open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
