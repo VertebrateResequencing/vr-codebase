@@ -1446,41 +1446,45 @@ sub get_import_pacbio_jobs_from_vrtrack
     my %filter  = ('import'=>0);
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
 
-    my $fnames  = $vrtrack->processed_file_hnames(%filter);
 
-    my @lanes = @{$vrtrack->processed_lane_hnames() || []};
+    my $max_lanes = 3000;
+    if(defined($config_data->{max_lanes_to_search}))
+    {
+      $max_lanes = $config_data->{max_lanes_to_search};
+    }
+    my @lanes = @{$vrtrack->processed_lane_hnames_with_limits($max_lanes,$config_data->{limits}, %filter) || []};
+
     if (defined $config_data->{limits}) {
-        @lanes = map {$_->name} filter_lanes($config_data->{limits}, \@lanes, $vrtrack, $config);
-        debug($config_data, "got ", scalar(@lanes), " lanes that passed your limits...");
+          @lanes = filter_lanes($config_data->{limits}, \@lanes, $vrtrack, $config);
+          debug($config_data, "got ", scalar(@lanes), " lanes that passed your limits...");
     }
 
-    my %filtered_lanes = ();
-    foreach my $vrlane (@lanes)
-    {
-        $filtered_lanes{$vrlane} = 1;
-    }
 
-    my %lanes_to_run = ();
-    my $count =0;
-    foreach my $fname (@$fnames)
-    {
-        my $file = VRTrack::File->new_by_hierarchy_name($vrtrack,$fname) or croak("Could not get File for $fname: $config\n");
-        my $lane = VRTrack::Lane->new($vrtrack, $file->lane_id());
-        unless (exists $filtered_lanes{$lane->name}) { next; }
-        if ( $lane->is_withdrawn() ) { next; }
-
-        my $path = $vrtrack->hierarchy_path_of_lane_hname($lane->name);
-        next unless $path;
-
-        $lanes_to_run{$path}{is_paired} = $lane->is_paired();
-        $lanes_to_run{$path}{vrlane}    = $lane;
-        push @{$lanes_to_run{$path}{files}}, $file->name();
-        debug($config_data,".");
+    foreach my $vrlane (@lanes) {
+        unless (ref($vrlane)) {
+            $vrlane = VRTrack::Lane->new_by_hierarchy_name($vrtrack, $vrlane);
+        }
+        next if $vrlane->is_withdrawn;
         $count++;
+
+        my $path = $vrtrack->hierarchy_path_of_lane($vrlane);
+        if ( !$path ) { croak("No path for [$vrlane->name]?\n"); }
+        my $lane_info = lane_info($path);
+
+        $lane_info->{vrlane} = $vrlane;
+        $lane_info->{lane_path} = $path;
+        
+        my $files = $vrlane->files();
+        foreach my $file (@{$files}) {
+            push @{$lane_info->{files}}, $file->name if ( !($file->name=~m{([^/]+)$}) ) ;
+        }
+        
+        my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
+        push @$jobs, $job;
+        debug($config_data,".");
+
         last if ($config_data->{limit} && $count >= $config_data->{limit});
     }
-
-    _make_jobs_from_vrtrack_lanes($jobs,$config,$mtime,$config_data,\%lanes_to_run);
     debug($config_data,"done\n");
     return;
 }
