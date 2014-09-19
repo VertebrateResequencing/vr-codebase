@@ -179,7 +179,7 @@ sub convert_cells_to_fastq {
     for my $bas_file ( @{$bas_files} ) {
         my ( $filename, $dirs, $suffix ) = fileparse( $bas_file, '.bas.h5' );
         my $fastq = $filename . '.fastq';
-        next if ( -e $fastq );
+        next if ( -e $fastq.'.gz');
         system( $self->{bash5tools} . " --outType fastq " . $bas_file );
         Utils::CMD(qq[gzip -9 -c $fastq > $fastq.gz]);
         my $fastqcheck = VertRes::Wrapper::fastqcheck->new();
