@@ -118,11 +118,12 @@ sub convert_to_fastq_provides {
     my ( $self, $lane_path ) = @_;
 
     my @output_files ;
-    for my $file ($self->_output_fastq_filenames)
+    for my $file (@{$self->_output_fastq_filenames})
     {
       push(@output_files,$file);
       push(@output_files,$file.'.fastqcheck');
     }
+    push(@output_files,'_convert_to_fastq_done');
     return \@output_files;
 }
 
@@ -167,7 +168,7 @@ sub convert_to_fastq {
 
   my \$import = VertRes::Pipelines::Import_iRODS_pacbio->new();
   \$import->convert_cells_to_fastq(\$bas_files);
-
+  touch('_convert_to_fastq_done');
   ];
 
     close($fh);
