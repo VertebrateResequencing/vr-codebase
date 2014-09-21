@@ -168,7 +168,7 @@ sub convert_to_fastq {
 
   my \$import = VertRes::Pipelines::Import_iRODS_pacbio->new();
   \$import->convert_cells_to_fastq(\$bas_files);
-  touch('_convert_to_fastq_done');
+  system('touch _convert_to_fastq_done');
   ];
 
     close($fh);
