@@ -313,7 +313,7 @@ sub update_db {
 
     my $rawreads = 0;
     my $rawbases = 0;
-    for my $fastq ( @{ $self->convert_to_fastq_provides } ) {
+    for my $fastq ( @{ $self->_output_fastq_filenames } ) {
         my $parser = VertRes::Parser::fastqcheck->new( file => $lane_path.'/'.$fastq . '.fastqcheck' );
         $rawreads += $parser->num_sequences() || 0;
         $rawbases += $parser->total_length()  || 0;
