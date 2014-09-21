@@ -117,7 +117,13 @@ sub convert_to_fastq_requires {
 sub convert_to_fastq_provides {
     my ( $self, $lane_path ) = @_;
 
-    return $self->_output_fastq_filenames;
+    my @output_files ;
+    for my $file ($self->_output_fastq_filenames)
+    {
+      push(@output_files,$file);
+      push(@output_files,$file.'.fastqcheck');
+    }
+    return \@output_files;
 }
 
 sub _output_fastq_filenames {
