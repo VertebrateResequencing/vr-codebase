@@ -110,10 +110,14 @@ sub pacbio_assembly_requires {
 sub pacbio_assembly {
     my ($self, $lane_path, $action_lock) = @_;
     
-    my $memory_in_gb = $self->{memory}/1000 || 80;
+    my $memory_in_gb = 80;
+    if(defined($self->{memory}))
+    {
+      $memory_in_gb = $self->{memory}/1000;
+    }
     my $threads = $self->{threads} || 12;
     my $genome_size_estimate = $self->{genome_size} || 4000000;
-    my $files = $self->pacbio_assembly_requires();
+    my $files = join(' ', @{$self->pacbio_assembly_requires()});
     my $output_dir= $self->{lane_path}."/pacbio_2_2_0";
     
       my $script_name = $self->{fsu}->catfile($lane_path, $self->{prefix}."pacbio_assembly.pl");
