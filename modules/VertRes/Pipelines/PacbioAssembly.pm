@@ -7,7 +7,7 @@ VertRes::Pipelines::PacbioAssembly -  Pipeline for annotating an assembly
 
 # make the config files, which specifies the details for connecting to the
 # VRTrack g1k-meta database and the data roots:
-echo '__VRTrack_PacbioAssembly__ annotation.conf' > pipeline.config
+#echo '__VRTrack_PacbioAssembly__ annotation.conf' > pipeline.config
 # where annotation.conf contains:
 root    => '/abs/path/to/root/data/dir',
 module  => 'VertRes::Pipelines::PacbioAssembly',
@@ -90,8 +90,8 @@ sub pacbio_assembly_provides {
 
 sub pacbio_assembly_requires {
     my ($self) = @_;
-    
-    my @files = glob( $self->{lane_path}."/".$self->{prefix}.'*.bax.h5');
+    my $file_regex = $self->{lane_path}."/".'*.bax.h5';
+    my @files = glob( $file_regex);
     die 'no files to assemble' if(@files == 0);
     
     return \@files;
