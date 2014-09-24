@@ -116,7 +116,7 @@ sub pacbio_assembly {
     my $files = join(' ', @{$self->pacbio_assembly_requires()});
     my $output_dir= $self->{lane_path}."/pacbio_2_2_0";
     my $queue = $self->{queue}|| "normal";
-    my $pipeline_version = $self->{pipeline_version} || '6.0'
+    my $pipeline_version = $self->{pipeline_version} || '6.0';
     
     my $lane_name = $self->{vrlane}->name;
     
