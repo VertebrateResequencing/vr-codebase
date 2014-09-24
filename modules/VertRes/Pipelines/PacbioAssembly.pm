@@ -137,6 +137,7 @@ sub pacbio_assembly {
   system("mv $output_dir/All_output/data/corrected.fastq $self->{lane_path}/$lane_name.corrected.fastq");
   system("gzip -9 $self->{lane_path}/$lane_name.corrected.fastq");
   
+  system("touch $output_dir/pipeline_version_$pipeline_version");
   system("touch $self->{prefix}pacbio_assembly_done");  
   exit;
       };
