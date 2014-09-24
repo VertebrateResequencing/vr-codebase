@@ -134,8 +134,8 @@ sub pacbio_assembly {
   system("plot-bamcheck -s $output_dir/contigs.fa > $output_dir/contigs.fa.gc");
   system("plot-bamcheck -p $output_dir/qc_graphs/ -r  $output_dir/contigs.fa.gc $output_dir/contigs.mapped.sorted.bam.bc");
 
-  system("mv $output_dir/All_output/data/corrected.fastq ".$self->{lane_path}."/$lane_name.corrected.fastq");
-  system("gzip -9 ".$self->{lane_path}."/$lane_name.corrected.fastq");
+  system("mv $output_dir/All_output/data/corrected.fastq $self->{lane_path}/$lane_name.corrected.fastq");
+  system("gzip -9 $self->{lane_path}/$lane_name.corrected.fastq");
   
   system("touch $self->{prefix}pacbio_assembly_done");  
   exit;
