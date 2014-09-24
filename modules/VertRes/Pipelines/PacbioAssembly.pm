@@ -126,6 +126,8 @@ sub pacbio_assembly {
   use strict;
   system("rm -rf $output_dir");
   system("pacbio_assemble_smrtanalysis --no_bsub $genome_size_estimate $output_dir $files");
+  die "No assembly produced\n" unless( -e qq[$output_dir/assembly.fasta]);
+  
   system("mv $output_dir/assembly.fasta $output_dir/contigs.fa");
   system("sed -i.bak -e 's/|quiver//' $output_dir/contigs.fa");
   system("assembly_stats $output_dir/contigs.fa > $output_dir/contigs.fa.stats");
