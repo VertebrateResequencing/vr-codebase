@@ -85,7 +85,7 @@ sub new {
 
 sub pacbio_assembly_provides {
     my ($self) = @_;
-    return [$self->{lane_path}."/pacbio_2_2_0/contigs.fa", $self->{lane_path}."/".$self->{prefix}."pacbio_assembly_done"];
+    return [$self->{lane_path}."/pacbio_assembly/contigs.fa", $self->{lane_path}."/".$self->{prefix}."pacbio_assembly_done"];
 }
 
 sub pacbio_assembly_requires {
@@ -114,7 +114,7 @@ sub pacbio_assembly {
     my $threads = $self->{threads} || 16;
     my $genome_size_estimate = $self->{genome_size} || 4000000;
     my $files = join(' ', @{$self->pacbio_assembly_requires()});
-    my $output_dir= $self->{lane_path}."/pacbio_2_2_0";
+    my $output_dir= $self->{lane_path}."/pacbio_assembly";
     my $queue = $self->{queue}|| "normal";
     my $pipeline_version = $self->{pipeline_version} || '6.0';
     
