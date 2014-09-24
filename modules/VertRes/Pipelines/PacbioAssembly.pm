@@ -85,7 +85,7 @@ sub new {
 
 sub pacbio_assembly_provides {
     my ($self) = @_;
-    return [$self->{lane_path}."/pacbio_2_2_0/contigs.fa"];
+    return [$self->{lane_path}."/pacbio_2_2_0/contigs.fa", $self->{lane_path}."/".$self->{prefix}."pacbio_assembly_done"];
 }
 
 sub pacbio_assembly_requires {
@@ -127,12 +127,12 @@ sub pacbio_assembly {
   system("rm -rf $output_dir");
   system("pacbio_assemble_smrtanalysis --no_bsub $genome_size_estimate $output_dir $files");
   system("mv $output_dir/assembly.fasta $output_dir/contigs.fa");
+  system("sed -i.bak -e 's/|quiver//' $output_dir/contigs.fa");
   system("assembly_stats $output_dir/contigs.fa > $output_dir/contigs.fa.stats");
   
   system("mv $output_dir/All_output/data/aligned_reads.bam $output_dir/contigs.mapped.sorted.bam");
+  system("samtools index $output_dir/contigs.mapped.sorted.bam");
   system("bamcheck -c 1,20000,5 -r $output_dir/contigs.fa $output_dir/contigs.mapped.sorted.bam > $output_dir/contigs.mapped.sorted.bam.bc");
-  system("plot-bamcheck -s $output_dir/contigs.fa > $output_dir/contigs.fa.gc");
-  system("plot-bamcheck -p $output_dir/qc_graphs/ -r  $output_dir/contigs.fa.gc $output_dir/contigs.mapped.sorted.bam.bc");
 
   system("mv $output_dir/All_output/data/corrected.fastq $self->{lane_path}/$lane_name.corrected.fastq");
   system("gzip -9 $self->{lane_path}/$lane_name.corrected.fastq");
