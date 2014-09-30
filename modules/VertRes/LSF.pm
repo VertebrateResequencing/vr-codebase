@@ -12,6 +12,7 @@ our $Error   = 2;
 our $Unknown = 4;
 our $No      = 8;
 our $Done    = 16;
+our $Max_jobs_to_check = 10;
 
 
 =pod
@@ -47,7 +48,7 @@ sub is_job_running
 
     my $job_running = $No;
 
-    open(my $fh, '<', $jids_file) or Utils::error("$jids_file: $!");
+    open(my $fh, '-|', "tail -n ".$Max_jobs_to_check." ".$jids_file) or confess("$jids_file: $!");    
     while (my $jid=<$fh>)
     {
         chomp($jid);
