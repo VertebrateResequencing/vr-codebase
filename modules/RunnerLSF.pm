@@ -10,6 +10,7 @@ our $Error   = 2;
 our $Unknown = 4;
 our $No      = 8;
 our $Done    = 16;
+our $Max_jobs_to_check = 10;
 
 sub is_job_array_running
 {
@@ -23,7 +24,7 @@ sub is_job_array_running
     #   the jobs in the reverse order in case there were many failures.
     #   The last success counts, failures may be discarded in such a case.
     #
-    open(my $fh, '<', $jids_file) or confess("$jids_file: $!");
+    open(my $fh, '-|', "tail -n ".$Max_jobs_to_check." ".$jids_file) or confess("$jids_file: $!");
     my $path;
     my @jids = ();
     while (my $line=<$fh>)
