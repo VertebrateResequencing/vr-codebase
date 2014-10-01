@@ -352,7 +352,10 @@ while (<>){
                                           "annotate\_cleanup\_done\$",
                                           "annotate\_update\_db\_done\$",
                                           "annotate\_assembly\_done\$",
-                                          "^velvet_assembly\/annotation\$"
+                                          "^velvet_assembly\/annotation\$",
+                                          "^iva_assembly\/annotation\$",
+                                          "^pacbio_assembly\/annotation\$",
+                                          "^spades_assembly\/annotation\$",
                                 ],
     		);
     		
