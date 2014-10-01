@@ -117,6 +117,7 @@ sub pacbio_assembly {
     my $output_dir= $self->{lane_path}."/pacbio_assembly";
     my $queue = $self->{queue}|| "normal";
     my $pipeline_version = $self->{pipeline_version} || '6.0';
+    my $target_coverage = $self->{target_coverage} || 30;
     
     my $lane_name = $self->{vrlane}->name;
     
@@ -125,7 +126,7 @@ sub pacbio_assembly {
       print $scriptfh qq{
   use strict;
   system("rm -rf $output_dir");
-  system("pacbio_assemble_smrtanalysis --no_bsub $genome_size_estimate $output_dir $files");
+  system("pacbio_assemble_smrtanalysis --no_bsub --target_coverage $target_coverage $genome_size_estimate $output_dir $files");
   die "No assembly produced\n" unless( -e qq[$output_dir/assembly.fasta]);
   
   system("mv $output_dir/assembly.fasta $output_dir/contigs.fa");
