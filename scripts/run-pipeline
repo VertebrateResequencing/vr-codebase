@@ -100,6 +100,8 @@ use VertRes::Utils::Math;
 use Utils;
 use Data::Dumper;
 use IO::File;
+use Sys::CpuLoadX;
+use Sys::CPU;
 
 my $Error   = $VertRes::Pipeline::Error;
 my $No      = $VertRes::Pipeline::No;
@@ -108,6 +110,7 @@ my $Running = $VertRes::Pipeline::Running;
 
 my $opts = read_cmd_line_args();
 
+check_load_on_host($$opts{dont_check_load});
 create_lock($$opts{lockfile});
 run_pipelines($opts);
 remove_lock($$opts{lockfile});
@@ -125,6 +128,7 @@ sub read_cmd_line_args
     $$opts{'sleep_time'} = 60;
     $$opts{'once'}       = 0;
     $$opts{'status_filter'} = '.*';
+    $$opts{'dont_check_load'}=0;
 
     my $module;
     if ( !scalar @ARGV) { usage(); }
@@ -140,6 +144,7 @@ sub read_cmd_line_args
         if ( $arg eq '-m' || $arg eq '--max-lsf-jobs' ) { $$opts{'lsf_limit'}=shift(@ARGV); next; }
         if ( $arg eq '-o' || $arg eq '--once' ) { $$opts{'once'}=1; next; }
         if ( $arg eq '-v' || $arg eq '--verbose' ) { $$opts{'verbose'}++; next; }
+        if ( $arg eq '-a' || $arg eq '--dont_check_load' ) { $$opts{'dont_check_load'}=1; next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { usage(); }
         if ( -d $arg ) { $$opts{'dir'} = $arg; next; }
         usage("Unknown parameter \"$arg\". Run -h for help.\n");
@@ -156,6 +161,19 @@ sub read_cmd_line_args
     if ( $$opts{verbose}>1 ) { $Carp::Verbose=1; }
 
     return $opts;
+}
+
+sub check_load_on_host
+{
+  my ($dont_check_load) = @_;
+  return if(defined($dont_check_load) && $dont_check_load == 1);
+  
+  my $number_of_cpus = Sys::CPU::cpu_count();
+  my $current_1min_load = Sys::CpuLoadX::get_cpu_load();
+  if($current_1min_load > $number_of_cpus )
+  {
+    die "The 1 min load is $current_1min_load which is higher than the number of CPUs $number_of_cpus so halting\n";
+  }
 }
 
 sub usage
