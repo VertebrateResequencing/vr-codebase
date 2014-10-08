@@ -195,6 +195,7 @@ sub usage
         "   -o, --once                      Run all jobs only once and then exit.\n",
         "   -s, --sleep-time <int>          Check the projects every N minutes.\n",
         "   -t, --todo                      List jobs which should be run (i.e. jobs with the status 0,1,2).\n",
+        "   -a, --dont_check_load           Dont halt script if the load is higher than the number of CPUs.\n",
         "   -v, --verbose                   Be verbose. (Given twice increases the verbosity level.)\n",
         "\n";
 
