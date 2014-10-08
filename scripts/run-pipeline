@@ -1683,7 +1683,10 @@ sub get_snps_jobs_from_vrtrack {
 
         # Get all the possible BAMs from the current lane.
         my @bam_files = glob("$lane_path/*.bam");
-        if ( !scalar @bam_files ) {die "No BAM files in [$lane_path]?"; };
+        if ( !scalar @bam_files ) {
+          print "No BAM files found in $lane_path\n";
+          next;
+          };
         my $regex = $config_data->{data}{bam_suffix};
         $regex =~ s/\.bam/\\\.bam/;
         $regex = '^(\d+)\.[ps]e\..*' . $regex . '$';
