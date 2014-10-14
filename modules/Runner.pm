@@ -1077,9 +1077,15 @@ sub cmd
         exec('/bin/bash', '-o','pipefail','-c', $cmd) or $self->throw("Failed to run the command [/bin/sh -o pipefail -c $cmd]: $!");
     }
 
-    my $exit_status = $? >> 8;
+    CORE::wait();
+
+    my $exit_status = $?>0 ? $? >> 8 : $?;
     my $status = exists($args{require_status}) ? $args{require_status} : 0;
-    if ( $status ne $exit_status ) { $self->throw("The command exited with $exit_status (expected $status):\n\t$cmd\n\n"); }
+    if ( $status ne $exit_status ) 
+    { 
+        my $msg = @out ? join('',@out,"\n\n") : '';
+        $self->throw("The command exited with $exit_status (expected $status):\n\t$cmd\n\n".$msg); 
+    }
     return @out;
 }
 
