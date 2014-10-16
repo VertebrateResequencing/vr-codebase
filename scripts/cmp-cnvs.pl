@@ -40,7 +40,7 @@ sub parse_params
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
-    if ( !$$opts{dirs} or scalar @{$$opts{dirs}}<2 ) { error(); }
+    if ( !$$opts{dirs} ) { error(); }
     return $opts;
 }
 
@@ -71,7 +71,7 @@ sub read_dat
             if ( $line=~/^#/ ) { next; }
             my ($rg,$chr,$start,$end,$cnq,$cnc,$qual) = split(/\t/,$line);
             chomp($qual);
-            push @{$$opts{dat}{$query}{$chr}}, [$start,$end,$cnc,$cnq,$qual];
+            push @{$$opts{dat}{$query}{$chr}}, { start=>$start, end=>$end, cnc=>$cnc, cnq=>$cnq, qual=>$qual };
             $$regs{$chr}{$start} = 1;
         }
         close($fh);
@@ -88,8 +88,8 @@ sub filter_by_quality
     my ($regs,$qual) = @_;
     for my $reg (@$regs)
     {
-        if ( $$reg[4]>=$qual ) { next; }
-        if ( $$reg[2] ne $$reg[3]  ) { $$reg[3] = $$reg[2]; }
+        if ( $$reg{qual}>=$qual ) { next; }
+        if ( $$reg{cnc} ne $$reg{cnq}  ) { $$reg{cnq} = $$reg{cnc}; }   # low quality
     }
 }
 
@@ -107,24 +107,24 @@ sub unify_regions
                 my $i;
                 for ($i=0; $i<@$dat; $i++)
                 {
-                    if ( $pos >= $$dat[$i][0] && $pos<$$dat[$i][1] ) { last; }
-                    if ( $pos < $$dat[$i][0] ) { last; }
+                    if ( $pos >= $$dat[$i]{start} && $pos<$$dat[$i]{end} ) { last; }
+                    if ( $pos < $$dat[$i]{start} ) { last; }
                 }
-                if ( $i==0 && $pos < $$dat[$i][0] )
+                if ( $i==0 && $pos < $$dat[$i]{start} )
                 {
                     # one more block at the beginning
-                    my $to = $$dat[0][0];
-                    splice(@$dat,0,0,[$pos,$to,$$dat[0][2],$$dat[0][3],$$dat[0][4]]);
+                    my $to = $$dat[0]{start};
+                    splice(@$dat,0,0, { start=>$pos, end=>$to, cnc=>$$dat[0]{cnc}, cnq=>$$dat[0]{cnq}, qual=>$$dat[0]{qual} });
                     next;
                 }
 
-                if ( $i==@$dat ) { error("Uh: i=$i  pos=$pos  last=$$dat[$i-1][0],$$dat[$i-1][1]  $smpl,$chr\n"); }
-                if ( $$dat[$i][0]==$pos ) { next; }
+                if ( $i==@$dat ) { error("Uh: i=$i  pos=$pos  last=$$dat[$i-1]{start},$$dat[$i-1]{end}  $smpl,$chr\n"); }
+                if ( $$dat[$i]{start}==$pos ) { next; }
 
                 # one more block in the middle or at the end
-                my $to = $$dat[$i][1];
-                $$dat[$i][1] = $pos;
-                splice(@$dat,$i+1,0,[$pos,$to,$$dat[$i][2],$$dat[$i][3],$$dat[$i][4]]);
+                my $to = $$dat[$i]{end};
+                $$dat[$i]{end} = $pos;
+                splice(@$dat,$i+1,0, { start=>$pos, end=>$to, cnc=>$$dat[$i]{cnc}, cnq=>$$dat[$i]{cnq}, qual=>$$dat[$i]{qual} });
             }
         }
     }
@@ -134,9 +134,9 @@ sub is_continuation
 {
     my ($regs,$i) = @_;
     if ( $i==0 ) { return 0; }
-    if ( $$regs[$i-1][2] ne $$regs[$i][2] ) { return 0; }
-    if ( $$regs[$i-1][3] ne $$regs[$i][3] ) { return 0; }
-    if ( $$regs[$i-1][1] ne $$regs[$i][0] ) { return 0; }
+    if ( $$regs[$i-1]{cnc} ne $$regs[$i]{cnc} ) { return 0; }
+    if ( $$regs[$i-1]{cnq} ne $$regs[$i]{cnq} ) { return 0; }
+    if ( $$regs[$i-1]{end} ne $$regs[$i]{start} ) { return 0; }
     return 1;
 }
 
@@ -146,8 +146,8 @@ sub is_shared
     for my $a (keys %$dat)
     {
         if ( $a eq $smpl ) { next; }
-        if ( $$dat{$a}{$chr}[$i][2]!=$$dat{$smpl}{$chr}[$i][2] ) { next; }
-        if ( $$dat{$a}{$chr}[$i][3]!=$$dat{$smpl}{$chr}[$i][3] ) { next; }
+        if ( $$dat{$a}{$chr}[$i]{cnc}!=$$dat{$smpl}{$chr}[$i]{cnc} ) { next; }
+        if ( $$dat{$a}{$chr}[$i]{cnq}!=$$dat{$smpl}{$chr}[$i]{cnq} ) { next; }
         return 1;
     }
     return 0;
@@ -172,12 +172,12 @@ sub report_stats
             {
                 my $reg = $$regs[$i];
 
-                $$tot_lens{$smpl} += $$reg[1] - $$reg[0];
-                if ( $$reg[2] ne $$reg[3] ) 
+                $$tot_lens{$smpl} += $$reg{end} - $$reg{start};
+                if ( $$reg{cnc} ne $$reg{cnq} && $$reg{qual}>=$$opts{qual} ) 
                 { 
-                    $$diff_lens{$smpl} += $$reg[1] - $$reg[0]; 
+                    $$diff_lens{$smpl} += $$reg{end} - $$reg{start}; 
                     if ( !is_continuation($regs,$i) ) { $$ndiffs{$smpl}++; }
-                    if ( is_shared($$opts{dat},$smpl,$chr,$i) ) { $$shared_lens{$smpl} += $$reg[1] - $$reg[0]; }
+                    if ( is_shared($$opts{dat},$smpl,$chr,$i) ) { $$shared_lens{$smpl} += $$reg{end} - $$reg{start}; }
                 }
             }
         }
@@ -215,21 +215,22 @@ sub report_stats
             for my $a (@smpls)
             {
                 my $areg = $$opts{dat}{$a}{$chr}[$i];
-                if ( $$areg[2] eq $$areg[3] && $$areg[2] eq $$reg[2] ) { next; }
+                if ( $$areg{cnc} eq $$areg{cnq} ) { next; }
                 $is_diff = 1;
-                if ( !defined $qual or $qual<$$areg[4] ) { $qual = $$areg[4]; }
+                if ( !defined $qual or $qual<$$areg{qual} ) { $qual = $$areg{qual}; }
             }
             if ( !$is_diff ) { next; }
-            if ( !defined $qual ) { $qual = $$reg[4]; }
+            if ( !defined $qual ) { $qual = $$reg{qual}; }
+            if ( $qual < $$opts{qual} ) { next; }
 
-            my $row = "RG\t$chr\t$$reg[0]\t$$reg[1]";
-            $row .= sprintf "\t%.1f\t$qual\t$$reg[2]", ($$reg[1]-$$reg[0])/1e6;
+            my $row = "RG\t$chr\t$$reg{start}\t$$reg{end}";
+            $row .= sprintf "\t%.1f\t$qual\t$$reg{cnc}", ($$reg{end}-$$reg{start})/1e6;
             for my $smpl (@smpls)
             {
-                $row .= "\t$$opts{dat}{$smpl}{$chr}[$i][3]";
+                $row .= "\t$$opts{dat}{$smpl}{$chr}[$i]{cnq}";
             }
             $row .= "\n";
-            push @regs, [ $$reg[1]-$$reg[0], $row];
+            push @regs, [ $$reg{end}-$$reg{start}, $row];
         }
     }
     for my $rg (sort {$$b[0] <=> $$a[0]} @regs)

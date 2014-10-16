@@ -11,6 +11,7 @@ def read_dat(fname,cn):
    with open(fname, 'rb') as f:
       reader = csv.reader(f, 'tab')
       for row in reader:
+          if row[0][0]=='#': continue
           type = row[0]
           chr  = row[1]
           if type=='CN':
@@ -36,9 +37,7 @@ def plot_copy_number(plot_fname,dat,titles):
         for i in range(len(xlabels)):
             if xlabels[i] in cn:
                 if cn[xlabels[i]]==-1:
-                    ax.annotate('?', xy=(i+j*0.05,2.4+j*0.01),va='center',ha='center',color=color,fontweight='bold')
-                elif cn[xlabels[i]]==4:
-                    ax.annotate('x', xy=(i+j*0.05,2.4+j*0.01),va='center',ha='center',color=color,fontweight='bold')
+                    ax.annotate('?', xy=(i+j*0.05,0.5+j*0.01),va='center',ha='center',color=color,fontweight='bold')
                 else:
                     if ymin>cn[xlabels[i]]: ymin = cn[xlabels[i]]
                 xvals.append(i)
@@ -50,8 +49,8 @@ def plot_copy_number(plot_fname,dat,titles):
     ax.set_xticks(range(len(xlabels)))
     ax.set_xticklabels(xlabels,rotation=45)
     ax.set_xlim(-1,len(xlabels))
-    ax.set_ylim(1.6,3.4)
-    ax.set_yticks([2.0,2.5,3.0])
+    ax.set_ylim(0,5.0)
+    ax.set_yticks([1.0,2.0,3.0,4.0])
     ax.set_xlabel('Chromosome')
     ax.set_ylabel('Copy Number')
     plt.savefig(plot_fname)
@@ -68,7 +67,7 @@ def main():
     titles = []
     for arg in args.files:
         cn = {}
-        arg = arg.split(':')
+        arg = arg.split('@')
         if len(arg)==1: arg = (arg,arg)
         read_dat(arg[1],cn)
         dat.append(cn)
