@@ -1,0 +1,205 @@
+#!/usr/bin/env perl
+#
+# Author: shane.mccarthy@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+
+use Net::FTP;
+use Path::Class::File;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+
+    $$self{do_clean} = 1;
+    $$self{limits} = { runtime=>24*60 };
+    $$self{debug_chunks} = 0;
+    $$self{_sampleconf} = q[
+            ascp  => 'ascp',
+    ]."\n";
+
+    $$self{usage} .= 
+        "Upload files to the DCC using aspera (as for 1000G)\n" .
+        "\n" .
+        "Usage: run-dcc-uplaod\n" .
+        "Options:\n" .
+        "   -c, --clean             Clean all temporary files\n" .
+        "   -o, --outdir <dir>      Output directory\n" .
+        "\n";
+
+    return $self;
+}
+
+sub parse_args
+{
+    my ($self) = @_;
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-s' or $arg eq '--source_dir' ) { $$self{source_dir}=shift(@ARGV); next; }
+        if ( $arg eq '-t' or $arg eq '--target_dir' ) { $$self{target_dir}=shift(@ARGV); next; }
+        if ( $arg eq '-f' or $arg eq '--transfer_list' ) { $$self{transfer_list}=shift(@ARGV); next; }
+        $self->throw();
+    }
+    if ( !exists($$self{source_dir}) ) { $self->throw("Expected --source_dir option."); }
+    if ( !exists($$self{target_dir}) ) { $self->throw("Expected --target_dir option."); }
+    if ( !exists($$self{transfer_list}) ) { $self->throw("Expected --transfer_list option."); }
+    
+    if ( !exists($$self{ascp}) )
+    { 
+        $$self{ascp} = "ascp -QTd -k1 -l135M -L-";
+    }
+}
+
+sub main
+{
+    my ($self) = @_;
+    $self->parse_args();
+    
+    $ENV{ASPERA_SCP_PASS} || $self->throw("Set the password in the ASPERA_SCP_PASS environment variable\n");
+    
+    my $transfer_list = Path::Class::File->new($$self{transfer_list});
+    my $outdir = $transfer_list->dir;
+    
+    my $samples = $self->read_samples();
+    
+    foreach my $sample (@$samples)
+    {
+        foreach my $ag (qw(alignment exome_alignment)) {
+            next unless (-d "$$self{source_dir}/$sample/$ag");
+            $self->spawn('upload_to_dcc', "$$self{source_dir}_upload_log/$sample.$ag.upload_done", $sample, $ag);
+        }
+    }
+    $self->wait;
+    
+    # Run performance stats and clean
+    $self->spawn('runtime_stats', "$$self{source_dir}/runtime");
+    $self->wait;
+    
+    $self->all_done;
+}
+
+sub read_samples
+{
+    my ($self) = @_;
+    my @samples;
+    open my $fh, "<$$self{transfer_list}" || $self->throw("Could not open file $$self{transfer_list}");
+    while (<$fh>)
+    {
+        my ($sample) = m/((HG|NA)\d{5})/;
+        push @samples, $sample;
+    }
+    close $fh;
+    return \@samples;
+}
+
+sub upload_to_dcc
+{
+    my ($self, $outfile, $sample, $ag) = @_;
+    
+    if ($self->check_upload("$sample/$ag"))
+    {
+        $self->cmd("touch $outfile");
+        return;
+    }
+    
+    if ($$self{ascp} =~ /-L (\S+)/)
+    {
+        $self->cmd("mkdir -p $1") unless (-d $1);
+    }
+    $self->cmd("$$self{ascp} $$self{source_dir}/$sample/$ag g1k-drop-si\@fasp.1000genomes.ebi.ac.uk:$$self{target_dir}/$sample");
+    
+    if ($self->check_upload("$sample/$ag"))
+    {
+        $self->cmd("touch $outfile");
+        return;
+    }
+}
+
+sub check_upload
+{
+    my ($self, $sample) = @_;
+    my @files;
+    open my $fh, "grep $sample $$self{transfer_list} |";
+    while (<$fh>)
+    {
+        chomp;
+        my ($path, $size) = split /\t/;
+        $size ||= $self->size($path);
+        $size || $self->throw("File $path does not exist");
+        push @files, { path => $path, size => $size };
+    }
+    close $fh;
+    
+    my $ftp = Net::FTP->new("ftp.1000genomes.ebi.ac.uk", Debug => 0) || $self->throw("Cannot connect to ftp.1000genomes.ebi.ac.uk: $@");
+    $ftp->login('g1k-drop-si', $ENV{ASPERA_SCP_PASS}) || $self->throw("Cannot login ", $ftp->message);
+    
+    my $count = 0;
+    my $transferred = 0;
+    foreach my $file (@files)
+    {
+        my $rel_path = Path::Class::File->new($$file{path})->relative($$self{source_dir});
+        my $remote_size = $ftp->size("$$self{target_dir}/$rel_path");
+        $remote_size ||= 0;
+        if ($$file{size} == $remote_size)
+        {
+            $transferred++;
+        }
+        $count++;
+    }
+    $ftp->quit;
+    
+    unless ($count == scalar @files)
+    {
+        $self->throw("Numer of files read disagree\n");
+    }
+    
+    return ($transferred == scalar @files) ? 1 : 0;
+}
+
+sub size
+{
+    my ($self, $file) = @_;
+    while (-l $file)
+    {
+        $file = readlink($file);
+    }
+    my $size = -s $file;
+    return $size ? $size : 0;
+}
+
+sub clean
+{
+    my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
+}
+
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{source_dir}_upload_log -p $outfile.part/graph > $outfile.part/stats.txt");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub cmd
+{
+    my ($self,$cmd) = @_;
+    return Utils::CMD($cmd,{verbose=>$$self{_verbose}});
+}
