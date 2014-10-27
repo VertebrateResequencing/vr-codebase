@@ -227,7 +227,7 @@ sub process_vcf_rec
                 my @index_search = `tabix -p bed $bed $chr:${from}-${to}`;
                 for (@index_search) {
                     my @line = split("\t", $_);
-                    $gerp_cache->{scores}->{$line[1]} = $line[3];
+                    $gerp_cache->{scores}->{$line[2]} = $line[3];
                 }
             }
             else {
