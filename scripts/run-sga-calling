@@ -1,0 +1,305 @@
+#!/usr/bin/env perl
+#
+# Author: shane.mccarthy@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+
+use Path::Class qw(file);
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+
+    $$self{do_clean} = 1;
+    $$self{limits} = { runtime=>24*60 };
+    $$self{debug_chunks} = 0;
+    $$self{_sampleconf} = q[
+    ]."\n";
+
+    $$self{usage} .= 
+        "Usage: run-sga-calling\n" .
+        "Options:\n" .
+        "   -o, --outdir <dir>      Output directory\n" .
+        "   -f, --fofn              File of BAM file names\n" .
+        "   -r, --ref_fa            Reference fasta file\n" .
+        "\n";
+
+    return $self;
+}
+
+sub parse_args
+{
+    my ($self) = @_;
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
+        if ( $arg eq '-f' or $arg eq '--fofn' ) { $$self{fofn}=shift(@ARGV); next; }
+        if ( $arg eq '-r' or $arg eq '--ref_fa' ) { $$self{ref_fa}=shift(@ARGV); next; }
+        $self->throw();
+    }
+    if ( !exists($$self{sga}) ) { $$self{sga} = 'sga'; }
+    if ( !exists($$self{outdir}) ) { $self->throw("Expected --outdir option."); }
+    if ( !exists($$self{fofn}) ) { $self->throw("Expected --fofn option."); }
+    if ( !exists($$self{ref_fa}) ) { $self->throw("The --ref_fa option is required."); }
+    
+    if ( !exists($$self{index_limits}) )
+    { 
+        $$self{index_limits} = { memory => 60000, runtime => 3*24*60 };
+    }
+    if ( !exists($$self{graph_diff_limits}) )
+    { 
+        $$self{graph_diff_limits} = { memory => 90000, runtime => 3*24*60 };
+    }
+    if ( !exists($$self{haplotype_filter_limits}) )
+    { 
+        $$self{haplotype_filter_limits} = { memory => 48000, runtime => 24*60 };
+    }
+    if ( !exists($$self{index_options}) )
+    { 
+        $$self{index_options} = '--no-reverse -a ropebwt -t 4';
+    }
+    if ( !exists($$self{graph_diff_options}) )
+    { 
+        $$self{graph_diff_options} = '--debruijn --low-coverage --genome-size 5000000 --min-dbg-count 30 --debruijn -k 61 -x 10 -t 16';
+    }
+    if ( !exists($$self{haplotype_filter_options}) )
+    { 
+        $$self{haplotype_filter_options} = '-t 4';
+    }
+
+}
+
+sub main
+{
+    my ($self) = @_;
+    $self->parse_args();
+    
+    my $fqs = $self->read_fofn($$self{fofn});
+
+    my $cpus = $self->num_threads($$self{index_options});
+    $self->set_limits(%{$$self{limits}}, %{$$self{index_limits}}, $cpus ? (cpus => $cpus) : ());
+    foreach my $fq (@$fqs)
+    {
+        my $dir = $fq->dir;
+        my $base = $fq->basename;
+        $self->spawn('sga_index', "$dir/.$base.index.done", "$fq");
+    }
+    $self->wait;
+    $self->set_limits(memory=>undef,runtime=>undef,cpus=>undef,queue=>undef);
+    
+    $cpus = $self->num_threads($$self{graph_diff_options});
+    $self->set_limits(%{$$self{limits}}, %{$$self{graph_diff_limits}}, $cpus ? (cpus => $cpus) : ());
+    my @outs = (); my %chroms;
+    foreach my $fq (@$fqs)
+    {
+        my $dir = $fq->dir->basename;
+        my $base = $fq->basename;
+        my $sub = '';
+        my $prefix = $base;
+        $prefix =~ s/\.(fq|fastq)(\.gz)?$//;
+        foreach my $chrom (qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y))
+        {
+            if ($dir eq $chrom) { $sub = "$chrom/"; $chroms{$chrom} = 1; last; }
+        }
+        push @outs, "$$self{outdir}/$sub$prefix";
+        $self->spawn('sga_graph_diff', "$$self{outdir}/$sub.$base.graph_diff.done", "$fq", "$$self{outdir}/$sub$prefix");
+    }
+    $self->wait;
+    $self->set_limits(memory=>1000,runtime=>undef,cpus=>undef,queue=>undef);
+
+    foreach my $out (@outs)
+    {
+        $self->spawn('non_redundant_vcf', "$out.calls.nr.vcf", "$out.calls.vcf");
+    }
+    $self->wait;
+
+    $cpus = $self->num_threads($$self{haplotype_filter_options});
+    $self->set_limits(%{$$self{limits}}, %{$$self{haplotype_filter_limits}}, $cpus ? (cpus => $cpus) : ());
+    foreach my $out (@outs)
+    {
+        my $fq = shift @$fqs;
+        my $diploid = "$out.nr.diploid.vcf";
+        # my $haploid = "$out.nr.haploid.vcf";
+        $self->spawn('haplotype_filter', "$out.calls.nr.diploid.vcf", "$fq", "$out.strings.fa", "$out.calls.nr.vcf");
+        # $self->spawn('haplotype_filter', "$out.calls.nr.haploid.vcf", "$fq", "$out.strings.fa", "$out.calls.nr.vcf");
+    }
+    $self->wait;
+
+    $self->set_limits(memory=>1000,runtime=>undef,cpus=>undef,queue=>undef);
+    foreach my $out (@outs)
+    {
+        $self->spawn('sort_vcf', "$out.calls.nr.diploid.sort.vcf.gz", "$out.calls.nr.diploid.vcf");
+        # $self->spawn('sort_vcf', "$out.calls.nr.haploid.sort.vcf.gz", "$out.calls.nr.haploid.vcf");
+    }
+    $self->wait;
+
+    my @stats = ();
+    foreach my $chrom (keys %chroms)
+    {
+        $self->cmd("find $$self{outdir}/$chrom -type f -name \\*.diploid.sort.vcf.gz | sort -V > $$self{outdir}/$chrom/diploid.concat.list") unless (-s "$$self{outdir}/$chrom/diploid.concat.list");
+        $self->spawn('concat_vcf', "$$self{outdir}/$chrom.diploid.vcf.gz", $chrom, "$$self{outdir}/$chrom/diploid.concat.list");
+        push @stats, "$$self{outdir}/$chrom.diploid.vcf.gz";
+        # $self->cmd("find $$self{outdir}/$chrom -type f -name \\*.haploid.sort.vcf.gz | sort -V > $$self{outdir}/$chrom/haploid.concat.list") unless unless (-s "$$self{outdir}/$chrom/haploid.concat.list");
+        # $self->spawn('concat_vcf', "$$self{outdir}/$chrom.haploid.vcf.gz", $chrom, "$$self{outdir}/$chrom/haploid.concat.list");
+        # push @stats, "$$self{outdir}/$chrom.haploid.vcf.gz";
+    }
+    $self->wait;
+
+    if ($$self{filter}) {
+        foreach my $chrom (keys %chroms)
+        {
+            $self->spawn('filter_vcf', "$$self{outdir}/$chrom.diploid.filt.vcf.gz", "$$self{outdir}/$chrom.diploid.vcf.gz");
+            push @stats, "$$self{outdir}/$chrom.diploid.filt.vcf.gz";
+            # $self->spawn('filter_vcf', "$$self{outdir}/$chrom.haploid.filt.vcf.gz", "$$self{outdir}/$chrom.haploid.vcf.gz");
+            # push @stats, "$$self{outdir}/$chrom.haploid.filt.vcf.gz";
+        }
+        $self->wait;        
+    }
+
+    foreach my $vcf (@stats)
+    {
+        $self->spawn('vcf_stats', "$vcf.vchk", $vcf);
+    }
+    $self->wait;
+
+    # Run performance stats and clean
+    $self->spawn('runtime_stats', "$$self{outdir}/runtime");
+    $self->wait;
+    
+    $self->all_done;
+}
+
+sub haplotype_filter
+{
+    my ($self,$outfile,$fq,$haplotypes,$vcf) = @_;
+    my $opts = $$self{haplotype_filter_options};
+    $opts .= ' --haploid' if ($outfile =~ m/haploid/);
+    $self->cmd(qq[$$self{sga} haplotype-filter $opts -o $outfile.part --reads $fq --reference $$self{ref_fa} $haplotypes $vcf]);
+    rename("$outfile.part", $outfile);
+}
+
+sub vcf_stats
+{
+    my ($self,$outfile,$vcf) = @_;
+    $self->cmd("vcf check -f PASS -F $$self{ref_fa} -s - -e ~pd3/sandbox/other/20120425-inframe-indels/CCDS-human-GRCh37p6.sorted.txt.gz $vcf > $outfile.part");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub filter_vcf
+{
+    my ($self,$outfile,$vcf) = @_;
+    $self->cmd(qq[zcat $vcf | $$self{filter} | bgzip -c > $outfile.part]);
+    $self->tabix_part($outfile);
+}
+
+sub sort_vcf
+{
+    my ($self,$outfile,$vcf) = @_;
+    $self->cmd("vcf-sort -c $vcf | vcf view -t $$self{ref_fa}.fai - | bgzip -c > $outfile.part");
+    $self->tabix_part($outfile);
+}
+
+sub concat_vcf
+{
+    my ($self,$outfile,$chrom,$concat_list) = @_;
+    $self->cmd(qq[vcf-concat -p -s 100 -f $concat_list | bgzip -c > $outfile.tmp.vcf.gz]);
+    $self->cmd(qq[tabix -f $outfile.tmp.vcf.gz]);
+    $self->cmd(qq[tabix -h $outfile.tmp.vcf.gz $chrom | vcf norm -Df $$self{ref_fa} - | ~js18/work/devel/sga/src/bin/sga-vcf-dedup.pl | bgzip -c > $outfile.part]);
+    $self->cmd(qq[rm $outfile.tmp.vcf.gz $outfile.tmp.vcf.gz.tbi]);
+    $self->tabix_part($outfile);
+}
+
+sub non_redundant_vcf
+{
+    my ($self,$outfile,$vcf) = @_;
+    $self->cmd(qq[~js18/work/devel/sga/src/bin/sga-vcf-dedup.pl $vcf > $outfile.part]);
+    rename("$outfile.part", $outfile);
+}
+
+sub sga_index
+{
+    my ($self,$outfile,$fq) = @_;
+    my $prefix = $fq;
+    $prefix =~ s/\.(fq|fastq)(\.gz)?$//;
+    $self->cmd(qq[$$self{sga} index $$self{index_options} -p $prefix $fq]);
+    $self->cmd(qq[touch $outfile]);
+}
+
+sub sga_graph_diff
+{
+    my ($self,$outfile,$fq,$prefix) = @_;
+    my $opts = $$self{graph_diff_options};
+    if ($fq =~ m/([\dXY]+)_\d+-\d+/) { $opts .= " --precache-reference $1"; }
+    $self->cmd(qq[$$self{sga} graph-diff $opts -p $prefix --variant $fq --reference $$self{ref_fa}]);
+    $self->cmd(qq[touch $outfile]);
+}
+
+sub num_threads
+{
+    my ($self,$opts) = @_;
+    my ($cpus) = $opts =~ m/-t\s*(\d+)/;
+    unless ($cpus) {
+        ($cpus) = $opts =~ m/--threads (\d+)/;
+    }
+    return $cpus;
+}
+
+sub read_fofn
+{
+    my ($self, $file) = @_;
+    my @list;
+    open my $fh, "<$file" || $self->throw("Could not open file $file");
+    while (<$fh>)
+    {
+        chomp;
+        next if /^#/;
+        push @list, file($_);
+    }
+    close $fh;
+    return \@list;
+}
+
+sub tabix_part
+{
+    my ($self,$vcf) = @_;
+    $self->cmd("tabix -p vcf -f $vcf.part");
+    rename("$vcf.part.tbi","$vcf.tbi");
+    rename("$vcf.part",$vcf);
+}
+
+sub clean
+{
+    my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
+}
+
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub cmd
+{
+    my ($self,$cmd) = @_;
+    return Utils::CMD($cmd,{verbose=>$$self{_verbose}});
+}
