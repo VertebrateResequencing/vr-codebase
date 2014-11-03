@@ -368,6 +368,11 @@ my \$assembler = $assembler_class->new(
   output_directory => qq[$tmp_directory],
   single_cell => $self->{single_cell},
   trimmomatic_jar => qq[$self->{trimmomatic_jar}],
+  remove_primers => qq[$self->{remove_primers}],
+  primer_removal_tool => qq[$self->{primer_removal_tool}],
+  primers_file => qq[$self->{primers_file}],
+  remove_adapters => qq[$self->{remove_adapters}],
+  adapter_removal_tool => qq[$self->{adapter_removal_tool}],
   adapters_file => qq[$self->{adapters_file}],
   );
 
@@ -718,8 +723,13 @@ system("mkdir -p $output_directory");
         my $reverse_reads_filename = $self->{lane_path} . "/" . $file_names[1];
 
         #Primer removal
-        if ( defined( $self->{remove_primers} ) and $self->{remove_primers} == 1 and defined( $self->{primers_file} ) )
-        {
+        my $using_quasr = defined( $self->{remove_primers} )
+          and $self->{remove_primers} == 1
+          and defined( $self->{primers_file} )
+          and defined( $self->{primer_removal_tool} )
+          and $self->{primer_removal_tool} eq 'quasr';
+
+        if ($using_quasr) {
             #Replace code here with an alternative way of removing primers that can accept a shuffled file
             print $scriptfh qq{
 my \$primer_remover = Bio::AssemblyImprovement::PrimerRemoval::Main->new(
@@ -746,7 +756,7 @@ QUASR_exec		=> "$self->{QUASR_exec}",
 };
 
 #Clean up primer removed files. This is quite messy. Will be better when primer removal can accept a shuffled file so it fits in like normalisation and error_correction does
-        if ( defined( $self->{remove_primers} ) and $self->{remove_primers} == 1 and defined( $self->{primers_file} ) )
+        if ($using_quasr)
         {
             print $scriptfh qq{
 unlink("$output_directory/primer_removed.forward.fastq.gz");
