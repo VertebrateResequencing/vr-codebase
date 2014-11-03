@@ -61,8 +61,26 @@ sub optimise_parameters
 {
   my ($self, $num_threads) = @_;
   my $trimming_opts = '';
-  if (defined($self->{adapters_file}) and defined($self->{trimmomatic_jar})) {
+
+  if (
+      defined($self->{remove_adapters})
+      and $self->{remove_adapters}
+      and defined($self->{adapter_removal_tool})
+      and $self->{adapter_removal_tool} eq 'iva'
+      and defined($self->{adapters_file})
+      and defined($self->{trimmomatic_jar})
+  ) {
     $trimming_opts = "--trimmo $self->{trimmomatic_jar} --adapters $self->{adapters_file}";
+  }
+
+  if (
+      defined($self->{remove_primers})
+      and $self->{remove_primers}
+      and defined($self->{primer_removal_tool})
+      and $self->{primer_removal_tool} eq 'iva'
+      and defined($self->{primers_file})
+  ) {
+    $trimming_opts .= " --pcr_primers " . $self->{primers_file};
   }
 
   `$self->{optimiser_exec} $trimming_opts --fr $self->{files_str} --threads $num_threads iva_assembly`;
