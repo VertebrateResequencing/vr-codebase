@@ -268,7 +268,7 @@ sub download_files {
         close($fh);
 
         move( $outfile . '.tmp', $outfile );
-        chmod "0755", $outfile;
+        chmod 0664, $outfile;
     }
 }
 
