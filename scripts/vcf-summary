@@ -97,7 +97,7 @@ sub vcf_summary
     $summary_vcf->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
     foreach my $cohort (@cohort_names)
     {
-        $summary_vcf->add_header_line({key=>'COHORT',ID=>$cohort,N_SAMPLES=>$nsamples{$cohort}});
+        $summary_vcf->add_header_line({key=>'cohort',value=>qq[$cohort ($nsamples{$cohort} samples)]});
     }
     $summary_vcf->add_header_line({key=>'INFO',ID=>'AC',Number=>'A',Type=>'Integer',Description=>'Allele count in genotypes across all samples'});
     $summary_vcf->add_header_line({key=>'INFO',ID=>'MAC',Number=>'1',Type=>'Integer',Description=>'Minor allele count in genotypes across all samples'});
