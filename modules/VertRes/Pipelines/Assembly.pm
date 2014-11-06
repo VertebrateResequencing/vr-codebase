@@ -43,6 +43,7 @@ data => {
     normalise	   => 1, # Should we do digital normalisation?
     remove_primers => 1,
     primers_file   => /path/to/primers/file, #Essential if primers are to be removed
+    primer_removal_tool => 'quasr' # quasr is the only option for now.
 
     assembler => 'velvet',
     assembler_exec => '/software/pathogen/external/apps/usr/bin/velvet',
@@ -51,7 +52,9 @@ data => {
     khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
     QUASR_exec		=> '/software/pathogen/internal/pathdev/java/QUASR702_Parser/readsetProcessor.jar',
     trimmomatic_jar => '/software/pathogen/external/apps/usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar',
+    remove_adapters => 1, # should we remove adapters?
     adapters_file   => '/lustre/scratch108/pathogen/pathpipe/usr/share/solexa-adapters.fasta',
+    adapter_removal_tool => 'trimmomatic' # trimmomatic is the only option for now
     max_threads => 1,
     single_cell => 1, # Put this in to assemble single cell data. For normal assemblies, leave it out.
 },
@@ -722,22 +725,49 @@ system("mkdir -p $output_directory");
         my $forward_reads_filename = $self->{lane_path} . "/" . $file_names[0];
         my $reverse_reads_filename = $self->{lane_path} . "/" . $file_names[1];
 
+        # Adapter removal
+        my $using_trimmomatic = defined( $self->{remove_adapters} )
+            and $self->{remove_adapters} == 1
+            and defined( $self->{adapters_file} )
+            and defined( $self->{adapter_removal_tool} )
+            and $self->{adapter_removal_tool} eq 'trimmomatic'
+            and $self->{assembler} ne 'iva';
+
+        my $adpater_trimmed_reads_1 = "$output_directory/adapter_trimmed.forward.fastq.gz";
+        my $adpater_trimmed_reads_2 = "$output_directory/adapter_trimmed.reverse.fastq.gz";
+
+        if ($using_trimmomatic) {
+            print $scriptfh qq{
+my \$adapter_remover = Bio::AssemblyImprovement::AdapterRemoval::Trimmomatic::Main->new(
+  'reads_in_1'       => "$forward_reads_filename",
+  'reads_in_2'       => "$reverse_reads_filename",
+  'paired_out_1'     => "$adpater_trimmed_reads_1",
+  'paired_out_2'     => "$adpater_trimmed_reads_2",
+  'trimmomatic_exec' => "$self->{trimmomatic_jar}",
+  'adapters_file'    => "$self->{adapters_file}",
+)->run();
+};
+            $forward_reads_filename = $adpater_trimmed_reads_1;
+            $reverse_reads_filename = $adpater_trimmed_reads_2;
+        }
+
         #Primer removal
         my $using_quasr = defined( $self->{remove_primers} )
           and $self->{remove_primers} == 1
           and defined( $self->{primers_file} )
           and defined( $self->{primer_removal_tool} )
-          and $self->{primer_removal_tool} eq 'quasr';
+          and $self->{primer_removal_tool} eq 'quasr'
+          and $self->{assembler} ne 'iva';
 
         if ($using_quasr) {
             #Replace code here with an alternative way of removing primers that can accept a shuffled file
             print $scriptfh qq{
 my \$primer_remover = Bio::AssemblyImprovement::PrimerRemoval::Main->new(
-forward_file    => "$forward_reads_filename",
-reverse_file    => "$reverse_reads_filename",
-primers_file	=> "$self->{primers_file}",
-output_directory => "$output_directory",
-QUASR_exec		=> "$self->{QUASR_exec}",
+  forward_file     => "$forward_reads_filename",
+  reverse_file     => "$reverse_reads_filename",
+  primers_file     => "$self->{primers_file}",
+  output_directory => "$output_directory",
+  QUASR_exec       => "$self->{QUASR_exec}",
 )->run();
 };
 
@@ -745,7 +775,7 @@ QUASR_exec		=> "$self->{QUASR_exec}",
             $reverse_reads_filename = $output_directory . "/" . 'primer_removed.reverse.fastq.gz';
         }
 
-# Create a shuffled sequence. This shuffled file will be the input for any processing steps below (i.e. normalisation, error correction etc)
+        # Create a shuffled sequence. This shuffled file will be the input for any processing steps below (i.e. normalisation, error correction etc)
         my $shuffled_filename = $output_directory . '/' . $lane_name . '.fastq.gz';
         my $output_filename   = $lane_name
           . '.fastq.gz'
@@ -756,11 +786,17 @@ QUASR_exec		=> "$self->{QUASR_exec}",
 };
 
 #Clean up primer removed files. This is quite messy. Will be better when primer removal can accept a shuffled file so it fits in like normalisation and error_correction does
-        if ($using_quasr)
-        {
+        if ($using_quasr) {
             print $scriptfh qq{
 unlink("$output_directory/primer_removed.forward.fastq.gz");
 unlink("$output_directory/primer_removed.reverse.fastq.gz");
+};
+        }
+
+        if ($using_trimmomatic) {
+            print $scriptfh qq{
+unlink("$adpater_trimmed_reads_1");
+unlink("$adpater_trimmed_reads_2");
 };
         }
 
