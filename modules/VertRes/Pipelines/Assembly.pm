@@ -726,12 +726,12 @@ system("mkdir -p $output_directory");
         my $reverse_reads_filename = $self->{lane_path} . "/" . $file_names[1];
 
         # Adapter removal
-        my $using_trimmomatic = defined( $self->{remove_adapters} )
+        my $using_trimmomatic = (defined( $self->{remove_adapters} )
             and $self->{remove_adapters} == 1
             and defined( $self->{adapters_file} )
             and defined( $self->{adapter_removal_tool} )
             and $self->{adapter_removal_tool} eq 'trimmomatic'
-            and $self->{assembler} ne 'iva';
+            and $self->{assembler} ne 'iva');
 
         my $adpater_trimmed_reads_1 = "$output_directory/adapter_trimmed.forward.fastq.gz";
         my $adpater_trimmed_reads_2 = "$output_directory/adapter_trimmed.reverse.fastq.gz";
@@ -752,12 +752,12 @@ my \$adapter_remover = Bio::AssemblyImprovement::AdapterRemoval::Trimmomatic::Ma
         }
 
         #Primer removal
-        my $using_quasr = defined( $self->{remove_primers} )
+        my $using_quasr = (defined( $self->{remove_primers} )
           and $self->{remove_primers} == 1
           and defined( $self->{primers_file} )
           and defined( $self->{primer_removal_tool} )
           and $self->{primer_removal_tool} eq 'quasr'
-          and $self->{assembler} ne 'iva';
+          and $self->{assembler} ne 'iva');
 
         if ($using_quasr) {
             #Replace code here with an alternative way of removing primers that can accept a shuffled file
