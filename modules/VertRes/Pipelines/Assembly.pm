@@ -141,6 +141,11 @@ our %options = (
                 QUASR_exec	     => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar',
                 trimmomatic_jar  => '/software/pathogen/external/apps/usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar',
                 adapters_file    => '/lustre/scratch108/pathogen/pathpipe/usr/share/solexa-adapters.fasta',
+                primers_file     => '',
+                remove_primers   => 0,
+                remove_adapters  => 0,
+                primer_removal_tool  => 'quasr',
+                adapter_removal_tool => 'trimmomatic',
                 no_scaffolding   => 0,
                 annotation       => 0,
                 single_cell      => 0,
@@ -698,6 +703,7 @@ use VertRes::Pipelines::Assembly;
 use Bio::AssemblyImprovement::Assemble::SGA::Main;
 use Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main;
 use Bio::AssemblyImprovement::PrimerRemoval::Main;
+use Bio::AssemblyImprovement::AdapterRemoval::Trimmomatic::Main;
 use File::Copy;
 my \$assembly= VertRes::Pipelines::Assembly->new(assembler => qq[$assembler]);
 my \@lane_names;
