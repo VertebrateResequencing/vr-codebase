@@ -352,6 +352,12 @@ sub get_jobs
         {
             my $action = $1;
             my $config_fname = $2;
+            if( ! -e $config_fname)
+            {
+              if ( $$opts{verbose}>1 ) { print STDERR "Config file not found, skipping: $config_fname\n";}
+              next;
+            }
+            
             if ( -e "$config_fname.lock" ) 
             { 
                 if ( $$opts{verbose}>1 ) { print STDERR "The config locked, skipping: $config_fname.lock\n"; }
