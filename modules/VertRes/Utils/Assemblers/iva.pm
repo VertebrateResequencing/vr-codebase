@@ -66,6 +66,7 @@ sub optimise_parameters
       defined($self->{remove_adapters})
       and $self->{remove_adapters}
       and defined($self->{adapter_removal_tool})
+      and $self->{adapter_removal_tool} eq 'iva'
       and defined($self->{adapters_file})
       and defined($self->{trimmomatic_jar})
   ) {
@@ -76,6 +77,7 @@ sub optimise_parameters
       defined($self->{remove_primers})
       and $self->{remove_primers}
       and defined($self->{primer_removal_tool})
+      and $self->{primer_removal_tool} eq 'iva'
       and defined($self->{primers_file})
   ) {
     $trimming_opts .= " --pcr_primers " . $self->{primers_file};
