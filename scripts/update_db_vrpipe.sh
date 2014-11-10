@@ -52,7 +52,7 @@ ARG_UP="-u -sup -nop -md5 -wdr -trd -v"
 
 ROOT="/lustre/scratch105"
 SCRIPTS="/software/vertres/scripts"
-BIN_EXT="/software/vertres/update_pipeline/bin"
+BIN_EXT="/software/vertres/update_pipeline"
 DUMPS="/warehouse/g1k-04/sql_dumps/$DB.sql"
 
 export LD_LIBRARY_PATH=/software/badger/lib:/software/oracle_client-10.2.0/lib
@@ -61,7 +61,7 @@ export ORACLE_HOME=/software/oracle_client-10.2.0
 mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST $DB > $DUMPS
 
 if [ "$STUDY" = "" ]; then
-	cd $BIN_EXT && perl update_pipeline.pl -s $CONF/$DB"_studies" -d $DB $TAX $SPE $MIN_RUN $ARG_UP
+	cd $BIN_EXT && perl bin/update_pipeline.pl -s $CONF/$DB"_studies" -d $DB $TAX $SPE $MIN_RUN $ARG_UP
 else
-	cd $BIN_EXT && perl update_pipeline.pl -s $CONF/$DB$STUDY -d $DB $TAX $SPE $MIN_RUN $ARG_UP
+	cd $BIN_EXT && perl bin/update_pipeline.pl -s $CONF/$DB$STUDY -d $DB $TAX $SPE $MIN_RUN $ARG_UP
 fi
