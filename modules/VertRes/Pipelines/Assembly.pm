@@ -376,10 +376,10 @@ my \$assembler = $assembler_class->new(
   output_directory => qq[$tmp_directory],
   single_cell => $self->{single_cell},
   trimmomatic_jar => qq[$self->{trimmomatic_jar}],
-  remove_primers => qq[$self->{remove_primers}],
+  remove_primers => $self->{remove_primers},
   primer_removal_tool => qq[$self->{primer_removal_tool}],
   primers_file => qq[$self->{primers_file}],
-  remove_adapters => qq[$self->{remove_adapters}],
+  remove_adapters => $self->{remove_adapters},
   adapter_removal_tool => qq[$self->{adapter_removal_tool}],
   adapters_file => qq[$self->{adapters_file}],
   );
