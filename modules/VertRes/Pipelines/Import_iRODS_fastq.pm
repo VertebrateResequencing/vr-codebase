@@ -426,7 +426,7 @@ sub update_db
     for my $suffix (@bam_suffix)
     {
 	# Remove bams
-	Utils::CMD(qq[rm $lane_path/$$self{lane}$nonhuman.$suffix]);
+	Utils::CMD(qq[rm $lane_path/$$self{lane}$nonhuman.$suffix]) if(-e qq[$lane_path/$$self{lane}$nonhuman.$suffix]);
     }
 
     for my $suffix (@fastq_suffix)
