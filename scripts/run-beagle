@@ -31,12 +31,16 @@ sub new
     $$self{limits} = { memory=>5_000, runtime=>24*60 };
     $$self{tabix}       = '/software/vertres/bin-external/tabix-exp-rc';
     $$self{bcftools}    = '/software/vertres/bin-external/bcftools-exp-rc';
-    $$self{beagle_jar}  = '/nfs/users/nfs_p/pd3/sandbox/svn/beagle/b4.r1230.jar';
+    $$self{bcftools_plugins} = '/nfs/users/nfs_p/pd3/git/bcftools/plugins-xxx';
+    $$self{htslib_so}   = '/software/vertres/bin-external/samtools-current-exp-rc/lib/libhts.so.1';
+    $$self{beagle_jar}  = '/nfs/users/nfs_p/pd3/sandbox/svn/beagle/b4.r1398.jar';
     $$self{beagle_args} = '';
-    $$self{java_args} = '';
+    $$self{beagle_tags} = 'INFO,FORMAT';
+    $$self{java_exec}   = '/software/jdk1.7.0_71/bin/java';
+    $$self{java_args}   = '';
     $$self{phased_concat_args} = '';
     $$self{memstep} = 2_000;
-    $$self{config_version} = '1392388523';
+    $$self{config_version} = '1413467786';
     $$self{max_chr_len}   = 249250621;
     $$self{redo_beagle} = 0;
     $$self{_sampleconf} = q[
@@ -45,13 +49,18 @@ sub new
             #
             # What changed since version:
             #   1356084361 .. Using "bcftools concat" instead of "vcf-phased-join"
+            #   1413467786 .. Using "bcftools annotate" and "bcftools +fixploidy"
             #
             version  => '] .$$self{config_version}. q[',
 
             beagle_jar  => '] .$$self{beagle_jar}. q[',
             beagle_args => '',
+            beagle_tags => '] .$$self{beagle_tags}. q[',    # bcftools annotate -c args: all INFO,FORMAT tag
+            java_exec   => '] .$$self{java_exec}. q[',
             java_args   => '',
             bcftools    => '] .$$self{bcftools}. q[',
+            htslib_so   => '] .$$self{htslib_so}. q[',
+            bcftools_plugins   => '] .$$self{bcftools_plugins}. q[',
             phased_concat_args => '] .$$self{phased_concat_args}. q[',
 
             # The known_vcf (aka -k) and in_vcf (aka -i) file names can contain the string "{CHROM}" which will be expanded 
@@ -172,6 +181,8 @@ sub main
 
     my $outdir = $$self{outdir};
 
+    $self->bcftools_sanity_check;
+
     my $chunks = $self->read_chunks();
     my $cpus = $self->num_threads($$self{beagle_args});
     for my $chunk (@$chunks)
@@ -205,6 +216,33 @@ sub main
     $self->clean($outdir) unless !$$self{do_clean};
 
     $self->all_done;
+}
+
+sub bcftools_sanity_check
+{
+    my ($self) = @_;
+    if ( exists($$self{bcftools_plugins}) ) { $ENV{BCFTOOLS_PLUGINS} = $$self{bcftools_plugins}; }
+    if ( exists($$self{htslib_so}) ) 
+    { 
+        my $ld_path = $$self{htslib_so};
+        $ld_path =~ s{[^/]+$}{};
+        $ENV{LD_LIBRARY_PATH} = exists($ENV{LD_LIBRARY_PATH}) ? "$ld_path:$ENV{LD_LIBRARY_PATH}" : $ld_path;
+
+    }
+    `$$self{bcftools} +fixploidy -h 2>&1`;
+    if ( $? )
+    {
+        my @out = `$$self{bcftools} plugin -lv`;
+        $self->throw(
+            "\n-----------------------------------------------------------------------------------------------------------\n",
+            @out, 
+            "\n-----------------------------------------------------------------------------------------------------------\n" .
+            "\nCould not run \"bcftools +fixploidy -h\". Are these environment variables correct, is libhts.so accessible?\n" .
+            "\tBCFTOOLS_PLUGINS=$ENV{BCFTOOLS_PLUGINS}\n" .
+            "\tLD_LIBRARY_PATH=$ENV{LD_LIBRARY_PATH}\n" .
+            "\n-----------------------------------------------------------------------------------------------------------\n\n\n"
+            );
+    }
 }
 
 sub num_threads
@@ -389,261 +427,20 @@ sub define_regions
     return @regs;
 }
 
-sub next_beagle_rec
-{
-    my ($self,$vcf,$rec, $out_fh,$out_vcf) = @_;
-    while (my $x = $vcf->next_data_array)
-    {
-        if ( $$x[0] ne $$rec[0] ) { $self->throw("Different chromosomes?!  $$x[0] vs $$rec[0]\n"); }
-        if ( $$x[1] < $$rec[1] )
-        {
-            # Out of sync: The beagle site not present in the original VCF
-            if ( !$$self{known_vcf} ) { $self->throw("Out of sync? $$x[0]:$$x[1] vs $$rec[0]:$$rec[1]\n"); }
-            if ( $$self{do_impute} ) { print $out_fh $out_vcf->format_line($x); }
-            next;
-        }
-        if ( $$x[1] > $$rec[1] ) 
-        { 
-            # Out of sync: The original VCF line not present in the beagle output
-            $vcf->_unread_line($x);
-            return undef;
-        }
-        return $x;
-    }
-    return undef;
-}
-
-sub merge_beagle_vcf 
-{
-    my ($self,$chr,$from,$to,$ori_fname,$new_fname,$out_fname) = @_;
-    my $region  =  "$chr:$from-$to";
-    my $ori_vcf = Vcf->new(file=>$ori_fname, region=>$region);
-    my $new_vcf = Vcf->new(file=>$new_fname);
-    $ori_vcf->parse_header();
-    $new_vcf->parse_header();
-    my @ori_samples = $ori_vcf->get_samples();
-    my @new_samples = $new_vcf->get_samples();
-    my %ori_to_new  = ();
-    for (my $i=0; $i<@ori_samples; $i++)
-    {
-        my $smpl = $ori_samples[$i];
-        if ( !exists($$new_vcf{has_column}{$smpl}) ) { $ori_to_new{$i+9} = -1; }
-        else { $ori_to_new{$i+9} = $$new_vcf{has_column}{$smpl} - 1; }
-    }
-    my $nsamples = @ori_samples;
-    open(my $fh,"| bgzip -c > $out_fname") or $self->throw("| bgzip -c > $out_fname: $!"); 
-    $ori_vcf->add_header_line({key=>'INFO', ID=>'AC',Number=>'A',Type=>'Integer',Description=>'Allele count in genotypes'});
-    $ori_vcf->add_header_line({key=>'INFO', ID=>'AN',Number=>'1',Type=>'Integer',Description=>'Total number of alleles in called genotypes'});
-    $ori_vcf->add_header_line({key=>'FORMAT', ID=>'GL',Number=>'G',Type=>'Float',Description=>'Estimated Genotype Likelihood (Beagle)'});
-    $ori_vcf->add_header_line({key=>'FORMAT', ID=>'DS',Number=>'1',Type=>'Float',Description=>'Estimated ALT dose [P(RA) + P(AA)] (Beagle)'});
-    print $fh $ori_vcf->format_header();
-    my $prev;
-    while (my $ori_rec = $ori_vcf->next_data_array())
-    {
-        if ( $$ori_rec[1] < $from ) { next; }
-        if ( $$self{exclude_multiallelic_indels} && $self->is_multiallelic_indel($$ori_rec[3],$$ori_rec[4]) ) { print $fh $ori_vcf->format_line($ori_rec); next; }
-
-        # skip duplicate positions
-        if ( defined $prev && $prev eq $$ori_rec[1] ) 
-        { 
-            print $fh $ori_vcf->format_line($ori_rec);
-            next; 
-        }
-        $prev = $$ori_rec[1];
-
-        my $new_rec = $self->next_beagle_rec($new_vcf, $ori_rec, $fh, $ori_vcf);
-        if ( !defined $new_rec ) 
-        { 
-            # This record was not given to beagle, well, at least it's not present in beagle's output
-            print $fh $ori_vcf->format_line($ori_rec);
-            next;
-        }
-        if ( $$new_rec[0] ne $$ori_rec[0] ) { $self->throw("CHR mismatch at $$ori_rec[0]:$$ori_rec[1] .. $$new_rec[3] vs $$ori_rec[3]\n"); }
-        if ( $$new_rec[1] ne $$ori_rec[1] ) { $self->throw("POS mismatch at $$ori_rec[0]:$$ori_rec[1] .. $$new_rec[3] vs $$ori_rec[3]\n"); }
-        if ( $$new_rec[3] ne $$ori_rec[3] ) { $self->throw("REF mismatch at $$ori_rec[0]:$$ori_rec[1] .. $$new_rec[3] vs $$ori_rec[3]\n"); }
-        if ( $$new_rec[4] ne $$ori_rec[4] ) { $self->throw("ALT mismatch at $$ori_rec[0]:$$ori_rec[1] .. $$new_rec[4] vs $$ori_rec[4]\n"); }
-        my @alt = split(/,/,$$ori_rec[4]);
-        my $nal = 1 + scalar @alt;
-        my $igt = $ori_vcf->get_tag_index($$ori_rec[8],'GT',':');
-        my $ipl_ori = $ori_vcf->get_tag_index($$ori_rec[8],'PL',':');
-        my $igp_ori = $ori_vcf->get_tag_index($$ori_rec[8],'GP',':');
-        my $igl_ori = $ori_vcf->get_tag_index($$ori_rec[8],'GL',':');
-        my $ids_ori = $ori_vcf->get_tag_index($$ori_rec[8],'DS',':');
-        if ( 0 != $new_vcf->get_tag_index($$new_rec[8],'GT',':') ) { $self->throw("Expected GT[:DS:GP, got $$new_rec[8] at $$new_rec[0]:$$new_rec[1]\n"); }
-        my $ids_new = $new_vcf->get_tag_index($$new_rec[8],'DS',':');
-        my $igp_new = $new_vcf->get_tag_index($$new_rec[8],'GP',':');
-        if ( $ids_new!=-1 && $ids_ori==-1 ) { $$ori_rec[8] .= ':DS'; }
-        if ( $igp_new!=-1 && $igl_ori==-1 ) { $$ori_rec[8] .= ':GL'; }
-        $ids_ori = $ori_vcf->get_tag_index($$ori_rec[8],'DS',':');
-        $igl_ori = $ori_vcf->get_tag_index($$ori_rec[8],'GL',':');
-        my @ac = ();
-        for (my $i=0; $i<$nsamples; $i++)
-        {
-            my $icol_ori = $i+9;
-            my $icol_new = $ori_to_new{$icol_ori};
-            if ( $icol_new==-1 ) { next; }  # leave the record unchanged, missing sample (chrY)
-
-            my $gt = $ori_vcf->get_field($$ori_rec[$icol_ori],$igt);
-            if ( $ids_new != -1 )
-            {
-                my $ds = $new_vcf->get_field($$new_rec[$icol_new],$ids_new);
-                $$ori_rec[$icol_ori] = $ori_vcf->replace_field($$ori_rec[$icol_ori],$ds,$ids_ori,':');
-            }
-            if ( index($gt,'/')==-1 && index($gt,'|')==-1 )
-            {
-                # haploid
-                my $new_gt = $new_vcf->get_field($$new_rec[$icol_new],0);
-                $new_gt = substr($new_gt,0,1);
-                $ac[$new_gt]++;
-                $$ori_rec[$icol_ori] = $ori_vcf->replace_field($$ori_rec[$icol_ori],$new_gt,$igt,':');
-
-                if ( $igp_new!=-1 )
-                {
-                    my @gp = split(/,/, $new_vcf->get_field($$new_rec[$icol_new],$igp_new));
-                    my $j = 0;
-                    my $k = 1;
-                    my @new_gp;
-                    while ($j<@gp)
-                    {
-                        my $val = $gp[$j]!=0 ? log($gp[$j])/2.302585 : -99;
-                        if ( $val < -99 ) { $val = -99; }
-                        else { $val = sprintf "%.2f", $val; }
-                        push @new_gp, $val;
-                        $j += ++$k;
-                    }
-                    $$ori_rec[$icol_ori] = $ori_vcf->replace_field($$ori_rec[$icol_ori],join(',',@new_gp),$igl_ori,':');
-                }
-
-                if ( $ipl_ori!=-1 )
-                {
-                    my @ori_pl = split(/,/,$ori_vcf->get_field($$ori_rec[$icol_ori], $ipl_ori));
-                    my @new_pl;
-                    for (my $j=0; $j<$nal; $j++)
-                    {
-                        push @new_pl, $ori_pl[$j];
-                    }
-                    $$ori_rec[$icol_ori] = $ori_vcf->replace_field($$ori_rec[$icol_ori],join(',',@new_pl),$ipl_ori,':');
-                }
-            }
-            else
-            {
-                # diploid
-                my $new_gt = $new_vcf->get_field($$new_rec[$icol_new],0);
-                my @gt = $new_vcf->split_gt($new_gt);
-                if ( scalar @gt !=2 ) { $self->throw("Uh: $new_gt, $$ori_rec[0]:$$ori_rec[1]  [$icol_ori][$icol_new]\n"); }
-                for my $gt (@gt) { $ac[$gt]++; }
-                $$ori_rec[$icol_ori] = $ori_vcf->replace_field($$ori_rec[$icol_ori],$new_gt,0,':');
-
-                if ( $igp_new!=-1 )
-                {
-                    my @new_gp = split(/,/, $new_vcf->get_field($$new_rec[$icol_new],$igp_new));
-                    for (my $j=0; $j<@new_gp; $j++)
-                    {
-                        my $val = $new_gp[$j]!=0 ? log($new_gp[$j])/2.302585 : -99;
-                        if ( $val < -99 ) { $val = -99; }
-                        else { $val = sprintf "%.2f", $val; }
-                        $new_gp[$j] = $val;
-                    }
-                    $$ori_rec[$icol_ori] = $ori_vcf->replace_field($$ori_rec[$icol_ori],join(',',@new_gp),$igl_ori,':');
-                }
-            }
-        }
-        my $an = 0;
-        for my $ac (@ac) { $an += $ac ? $ac : 0; }
-        shift(@ac);
-        my $ac = scalar @ac ? join(',',@ac) : undef;
-        $$ori_rec[7] = $ori_vcf->add_info_field($$ori_rec[7],'AC'=>$ac,'AN'=>$an);
-        print $fh $ori_vcf->format_line($ori_rec);
-    }
-    close($fh);
-}
-
-sub is_multiallelic_indel
-{
-    my ($self,$ref,$alt) = @_;
-    my $i = index($alt,',');
-    if ( $i==-1 ) { return 0; }
-    if ( length($ref)>1 or $i>1 ) { return 1; }
-    return 0;
-}
-
-sub haploid_to_diploid
-{
-    my ($self,$vcf,$rec) = @_;
-
-    my $igt = $vcf->get_tag_index($$rec[8],'GT',':');
-    my $ipl = $vcf->get_tag_index($$rec[8],'PL',':');
-    if ( $igt==-1 ) { $self->throw("GT not present in $$vcf{file} at $$rec[0]:$$rec[1]\n"); }
-    my @alt = split(/,/,$$rec[4]);
-    my $nal = 1 + scalar @alt;
-    my $ncols = @{$$vcf{columns}};
-    my $nonmiss_gts = $$self{nonmiss_gts};
-    for (my $i=9; $i<$ncols; $i++)
-    {
-        my $gt = $vcf->get_field($$rec[$i], $igt);
-
-        # detect non-missing genotypes
-        if ( $gt ne './.' && $gt ne '.' ) { $$nonmiss_gts[$i-9]++; }
-
-        if ( index($gt,'/')>=0 || index($gt,'|')>=0 ) { next; }    # diploid
-        my $new_gt = "$gt/$gt";
-        $$rec[$i] = $vcf->replace_field($$rec[$i], $new_gt, $igt, ':');
-
-        if ( $ipl != -1 )
-        {
-            my $pl  = $vcf->get_field($$rec[$i], $ipl);
-            my @pls = split(/,/, $pl);
-
-            if ( @pls!=$nal ) { $self->throw("Wrong number of PL fields? col=$i, nal=$nal, $pl=$pl: ", join("\n",@$rec)); }
-
-            my @new_pl;
-            for (my $j=0; $j<$nal; $j++)
-            {
-                for (my $k=0; $k<$j; $k++) { push @new_pl, 999; }  # set likelihoods of hets to zero
-                    push @new_pl, $pls[$j];
-            }
-            $$rec[$i] = $vcf->replace_field($$rec[$i], join(',',@new_pl), $ipl, ':');
-        }
-    }
-}
-
 sub create_vcf_chunk
 {
     my ($self,$in_vcf,$out_vcf,$chr,$from,$to) = @_;
-    my $vcf = Vcf->new(file=>$in_vcf, region=>"$chr:$from-$to");
-    $vcf->parse_header();
 
-    open(my $out,"| gzip -c > $out_vcf") or $self->throw("gzip -c > $out_vcf: $!");
-    print $out $vcf->format_header();
+    # Force ploidy of 2 for all samples, beagle 
+    open(my $fh,'>',"$out_vcf.ploidy") or $self->throw("$out_vcf.ploidy: $!");
+    print $fh "Z 1 100 X 2\n";
+    close($fh);
 
-    $$self{nonmiss_gts} = [];
-    my $prev;
-    while (my $rec = $vcf->next_data_array())
-    {
-        if ( $$rec[1] < $from ) { next; }
-        if ( $$self{exclude_multiallelic_indels} && $self->is_multiallelic_indel($$rec[3],$$rec[4]) ) { next; }
+    my $ma = $$self{exclude_multiallelic_indels} ? '-m2 -M2' : '';
+    $self->cmd("$$self{bcftools} view $ma -r $chr:$from-$to $in_vcf -Ou | $$self{bcftools} +fixploidy -- -p $out_vcf.ploidy | gzip -c > $out_vcf.part");
 
-        # skip duplicate positions
-        if ( defined $prev && $prev eq $$rec[1] ) { next; }
-        $prev = $$rec[1];
-
-        $self->haploid_to_diploid($vcf, $rec);
-        print $out $vcf->format_line($rec);
-    }
-    $vcf->close();
-    close($out) or error("close gzip -c > $out_vcf");
-
-    # Exclude samples with all genotypes missing - chrY
-    my (@samples) = $vcf->get_samples();
-    my @nonmiss_smpls = ();
-    for (my $i=0; $i<@samples; $i++) { if ( $$self{nonmiss_gts}[$i] ) { push @nonmiss_smpls, $samples[$i]; } }
-    if ( @nonmiss_smpls==@samples ) { return; }
-    open($out,'>',"$out_vcf.samples") or $self->throw("$out_vcf.samples: $!");
-    print $out join("\n",@nonmiss_smpls), "\n";
-    close($out) or $self->throw("close failed: $out_vcf.samples");
-    $self->cmd("gunzip -c $out_vcf | $$self{bcftools} view -S $out_vcf.samples | gzip -c > $out_vcf.x");
-    rename("$out_vcf.x",$out_vcf) or $self->throw("rename $out_vcf.x $out_vcf: $!");
-    unlink("$out_vcf.samples");
+    unlink("$out_vcf.ploidy");
+    rename("$out_vcf.part",$out_vcf) or $self->throw("rename $out_vcf.part $out_vcf: $!");
 }
 
 sub beagle
@@ -670,23 +467,31 @@ sub beagle
         }
         my $action = $$self{do_phasing} ? "gt=$prefix.in.vcf.gz" : "gl=$prefix.in.vcf.gz";
         $self->create_vcf_chunk($in_vcf,"$prefix.in.vcf.gz",$chr,$from,$to);
-        $self->java_cmd(qq[java -Xms${mem}m -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} $known $action out=$prefix.part >>$outfile.o],"$outfile.e");
+        $self->java_cmd(qq[$$self{java_exec} -Xms${mem}m -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} $known $action out=$prefix.part >>$outfile.o],"$outfile.e");
         if ( -s "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
         rename("$prefix.part.vcf.gz","$prefix.vcf.gz") or $self->throw("rename $prefix.part.vcf.gz $prefix.vcf.gz: $!");
         unlink("$prefix.in.vcf.gz");
         unlink("$prefix.ref.vcf.gz");
     }
-    $self->merge_beagle_vcf($chr,$from,$to,$in_vcf,"$prefix.vcf.gz","$prefix.vcf.gz.part");
+
+    $self->cmd("$$self{bcftools} index $prefix.vcf.gz");    # workaround: beagle does not include the contig tag, index instead
+    $self->cmd("$$self{bcftools} view -Ob -o $prefix.bgl.bcf $prefix.vcf.gz");
+    $self->cmd("$$self{bcftools} index $prefix.bgl.bcf");
+    $self->cmd(qq[$$self{bcftools} annotate -c $$self{beagle_tags} -a $prefix.bgl.bcf -r $chr:$from-$to $in_vcf -Ou | $$self{bcftools} +fill-AN-AC -Ob -o $prefix.bcf]);
+    $self->cmd(qq[$$self{bcftools} index $prefix.bcf]);
+    unlink("$prefix.bgl.bcf");
+    unlink("$prefix.bgl.bcf.csi");
     if ( $$self{save_beagle_outputs} )
     {
         rename("$prefix.vcf.gz","$prefix.raw-beagle.vcf.gz"); 
+        rename("$prefix.vcf.gz.csi","$prefix.raw-beagle.vcf.gz.csi"); 
     }
     else
     {
-        unlink("$prefix.vcf.gz");   # delete raw beagle output
+        # delete raw beagle output
+        unlink("$prefix.vcf.gz");
+        unlink("$prefix.vcf.gz.csi");
     }
-    $self->tabix_part("$prefix.vcf.gz");
-    rename("$prefix.vcf.gz.part","$prefix.vcf.gz");
     $self->cmd(qq[touch $outfile]);
 }
 
@@ -697,12 +502,21 @@ sub concat_vcfs
     for my $chunk (@$chunks)
     {
         if ( defined $chr && $$chunk[0] ne $chr ) { next; }
-        my $file = "$$self{outdir}/$$chunk[0]/$$chunk[1]-$$chunk[2].vcf.gz";
+        my $file = "$$self{outdir}/$$chunk[0]/$$chunk[1]-$$chunk[2].bcf";
         print $fh $file, "\n";
     }
     close($fh);
-    $self->cmd(qq[$$self{bcftools} concat $$self{phased_concat_args} -lf $outfile.list -Oz > $outfile.part]);
+    $self->cmd(qq[$$self{bcftools} concat $$self{phased_concat_args} -lf $outfile.list -Oz -o $outfile.part]);
     $self->tabix_part($outfile);
+
+    # clean
+    for my $chunk (@$chunks)
+    {
+        if ( defined $chr && $$chunk[0] ne $chr ) { next; }
+        my $file = "$$self{outdir}/$$chunk[0]/$$chunk[1]-$$chunk[2].bcf";
+        unlink("$file.csi");
+        unlink($file);
+    }
 
     if ( !defined($$self{eval_vcf}) )
     {

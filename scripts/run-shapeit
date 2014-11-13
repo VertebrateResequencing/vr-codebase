@@ -27,29 +27,26 @@ sub new
 
     $$self{do_clean}      = 1;
     $$self{limits}        = { memory=>5_500, runtime=>3*24*60 };
-    $$self{shapeit_bin}   = '/nfs/users/nfs_p/pd3/sandbox/svn/shapeit/shapeit.v2.r778.linux.x64';
-    $$self{vcf_gensample} = 'vcf-gensample';
+    $$self{shapeit_bin}   = '/nfs/users/nfs_p/pd3/sandbox/svn/shapeit/shapeit.v2.r790';
     $$self{bcftools}      = '/software/vertres/bin-external/bcftools-exp-rc';
+    $$self{tabix}         = '/software/vertres/bin-external/tabix-exp-rc';
     $$self{max_chr_len}   = 249250621;
-    $$self{config_version} = '1392984920';
+    $$self{config_version} = '1410863403';
     $$self{_sampleconf} = q[
         # For sanity checking that your config file is not obsolete. Update the version key in your 
         #  config file to get rid of the warnings.
         #
         # What changed since version:
         #   1349789206 .. Using "bcftools concat" instead of "vcf-phased-join", new ref_vcf and ref_dir options
+        #   1410863403 .. Using "bcftools convert" instead of "vcf-gensample"
         #
         version  => '] .$$self{config_version}. q[',
 
         shapeit_bin   => '] .$$self{shapeit_bin}. q[',
-        vcf_gensample => 'vcf-gensample',
         bcftools      => '] .$$self{bcftools}. q[',
+        tabix         => '] .$$self{tabix}. q[',
         shapeit_args  => '',
         gen_map       => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/ALL_1000G_phase1interim_jun2011_impute/genetic_map_chr{CHROM}_combined_b37.txt',
-
-        # Skip sites with the number of alternate alleles smaller than min_AC.
-        #   For this, the VCF must contain the INFO/AC annotation.
-        # min_AC      => 3, 
 
         # The in_vcf (aka -i) file name can contain the string "{CHROM}" which
         #   will be expanded according to chromosomes listed in the "region" key
@@ -67,9 +64,6 @@ sub new
         buffer_nsites  => 10_000,
         chunk_nsites   => 100_000,
         max_chr_len    => ] .$$self{max_chr_len}. q[,
-
-        # Create whole-genome VCF? This can produce *huge* files for thousands of samples
-        merge_chroms   => 0,
 
         # Regions to impute, the chunks must be sorted by chromosomal position
         #   or else the resulting VCF will not be sorted. By default, the whole
@@ -191,7 +185,7 @@ sub main
         $self->set_limits(%{$$self{limits}}) unless !exists($$self{limits});
         for my $chunk (@$chunks)
         {
-            $self->spawn('shapeit_to_vcf',"$outdir/$$chunk[0]/03.shapeit_to_vcf.$$chunk[1]-$$chunk[2].vcf.gz",$chunk);
+            $self->spawn('shapeit_to_vcf',"$outdir/$$chunk[0]/03.shapeit_to_vcf.$$chunk[1]-$$chunk[2].bcf",$chunk);
         }
         $self->wait;
         $self->set_limits(memory=>undef,runtime=>undef);
@@ -278,6 +272,24 @@ sub set_options
     }
 }
 
+sub has_region
+{
+    my ($self,$vcf,$region) = @_;
+    my $file = $self->expand_chrom($vcf,$region);
+    if ( !-e $file ) { return 0; }
+    if ( $file ne $vcf ) { return 1; }  # expanded template
+
+    # potentially multiple chromosomes in the file
+    open(my $fh,"$$self{bcftools} query -r $region -f'%CHROM\\t%POS\\n' $file |") or $self->throw("$$self{bcftools} query -r $region -f'%CHROM\\t%POS\\n' $file: $!");
+    while (my $line=<$fh>)
+    {
+        close($fh);
+        return 1;
+    }
+    close($fh);
+    return 0;
+}
+
 sub read_chunks
 {
     my ($self) = @_;
@@ -299,6 +311,7 @@ sub read_chunks
                     $self->throw("todo: $region vs $$self{ref_dir}\n");
                 }
             }
+            if ( !$self->has_region($$self{in_vcf},$region) ) { next; }
             $self->spawn('define_chunks',"$$self{chunk_file}.$region",$in_file,$region);
         }
         $self->wait;
@@ -306,6 +319,7 @@ sub read_chunks
         $self->cmd("> $$self{chunk_file}.part");
         for my $region (@regions)
         {
+            if ( !$self->has_region($$self{in_vcf},$region) ) { next; }
             $self->cmd("cat $$self{chunk_file}.$region >> $$self{chunk_file}.part");
         }
         rename("$$self{chunk_file}.part",$$self{chunk_file}) or $self->throw("rename $$self{chunk_file}.part $$self{chunk_file}: $!");
@@ -332,9 +346,8 @@ sub define_chunks
     my $tot_sites = $$self{buffer_nsites} + $$self{chunk_nsites};
     my (@chunks,@buffer);
     my $file = $self->expand_chrom($in_file,$region);
-    my $min_ac = exists($$self{min_AC}) ? "-c $$self{min_AC}" : '';
     if ( $region eq '.' ) { $region = ''; }
-    my $cmd  = "$$self{bcftools} view $min_ac -g ^miss $file $region |";
+    my $cmd  = "$$self{bcftools} view $file $region |";
     open(my $in,$cmd) or $self->throw("$cmd: $!");
     while (my $line=<$in>)
     {
@@ -426,7 +439,7 @@ sub define_regions
     if ( exists($$self{region}) ) { return @{$$self{region}}; }
     if ( !($path=~/{CHROM}/) ) 
     { 
-        my @chrs = grep { chomp } $self->cmd("tabix -l $path");
+        my @chrs = grep { chomp } $self->cmd("$$self{tabix} -l $path");
         return @chrs;
     }
     my $before = $`;
@@ -454,10 +467,10 @@ sub ref_to_shapeit
     $outdir =~ s{/[^/]*$}{};
     my $ref_vcf = $self->expand_chrom($$self{ref_vcf},$chr);
     $self->cmd(qq[mkdir -p $outdir]);
-    $self->cmd(qq[$$self{vcf_gensample} -r $chr:$from-$to $ref_vcf -l -o $outfile.part >>$outfile.o 2>>$outfile.e]);
-    rename("$outfile.part_samples","${prefix}_samples") or $self->throw("rename $outfile.part_samples ${prefix}_samples: $!");
-    rename("$outfile.part_legend.gz","${prefix}_legend.gz") or $self->throw("rename $outfile.part_legend.gz ${prefix}_legend.gz: $!");
-    rename("$outfile.part_haps.gz",$outfile) or $self->throw("rename $outfile.part_haps.gz $outfile: $!");
+    $self->cmd(qq[$$self{bcftools} convert -r $chr:$from-$to $ref_vcf --haplegendsample $outfile.part]);
+    rename("$outfile.part.samples","${prefix}_samples") or $self->throw("rename $outfile.part.samples ${prefix}_samples: $!");
+    rename("$outfile.part.legend.gz","${prefix}_legend.gz") or $self->throw("rename $outfile.part.legend.gz ${prefix}_legend.gz: $!");
+    rename("$outfile.part.hap.gz",$outfile) or $self->throw("rename $outfile.part_hap.gz $outfile: $!");
 }
 
 sub vcf_to_shapeit
@@ -468,9 +481,8 @@ sub vcf_to_shapeit
     my $to   = $$chunk[2];
     my $outdir = "$$self{outdir}/$chr";
     my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
-    my $min_ac = exists($$self{min_AC}) ? "-m $$self{min_AC}" : '';
     $self->cmd(qq[mkdir -p $outdir]);
-    $self->cmd(qq[$$self{vcf_gensample} $min_ac -r $chr:$from-$to -o $outdir/01.vcf_to_shapeit.$from-$to $in_vcf]);
+    $self->cmd(qq[$$self{bcftools} convert -r $chr:$from-$to --gensample $outdir/01.vcf_to_shapeit.$from-$to $in_vcf]);
     $self->cmd(qq[touch $outfile]);
 }
 
@@ -511,7 +523,7 @@ sub shapeit
         # Exclude mismatching REF/ALT sites. Shapeit kindly produces .snp.strand.exclude file
         $ref .= " --exclude-snp $out.snp.strand.exclude";
     }
-    my $cmd = qq[$$self{shapeit_bin} $ref --input-map $genmap --input-gen ${inp}_haps.gz ${inp}_samples --output-max $out.haps.gz $out.samples --output-log $out.log];
+    my $cmd = qq[$$self{shapeit_bin} $$self{shapeit_args} $ref --input-map $genmap --input-gen ${inp}.gen.gz ${inp}.samples --output-max $out.haps.gz $out.samples --output-log $out.log];
 
     $self->cmd($cmd); # Utils::CMD($cmd,{verbose=>1,require_errno=>1});
     $self->cmd(qq[touch $outfile]);
@@ -525,9 +537,8 @@ sub shapeit_to_vcf
     my $from = $$chunk[1];
     my $to   = $$chunk[2];
     my $outdir = "$$self{outdir}/$chr";
-    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
-    $self->cmd(qq[$$self{vcf_gensample} -r $chr:$from-$to -a $outdir/02.shapeit.$from-$to $in_vcf | bgzip -c > $outfile.part]);
-    $self->tabix_part($outfile);
+    $self->cmd(qq[$$self{bcftools} convert --hapsample2vcf $outdir/02.shapeit.$from-$to.haps.gz,$outdir/02.shapeit.$from-$to.samples -Ob -o $outfile.part]);
+    $self->index_part($outfile);
     rename("$outfile.part",$outfile);
 }
 
@@ -538,20 +549,32 @@ sub concat_vcfs
     for my $chunk (@$chunks)
     {
         if ( $$chunk[0] ne $chr ) { next; }
-        my $file = "$$self{outdir}/$$chunk[0]/03.shapeit_to_vcf.$$chunk[1]-$$chunk[2].vcf.gz";
+        my $file = "$$self{outdir}/$$chunk[0]/03.shapeit_to_vcf.$$chunk[1]-$$chunk[2].bcf";
         print $fh $file, "\n";
     }
     close($fh);
-    $self->cmd(qq[$$self{bcftools} concat -lf $outfile.list -Oz > $outfile.part]);
+    $self->cmd(qq[$$self{bcftools} concat -lf $outfile.list -Ob -o $outfile.gts.bcf]);
+    $self->cmd(qq[$$self{bcftools} index $outfile.gts.bcf]);
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
+    $self->cmd(qq[$$self{bcftools} annotate -c -FMT/GT -r $chr -a $outfile.gts.bcf $in_vcf -Oz -o $outfile.part]);
     $self->tabix_part($outfile);
+    unlink("$outfile.gts.bcf");
+    unlink("$outfile.gts.bcf.csi");
     rename("$outfile.part",$outfile);
 }
 
 sub tabix_part
 {
     my ($self,$vcf) = @_;
-    $self->cmd("tabix -p vcf -f $vcf.part");
+    $self->cmd("$$self{tabix} -p vcf -f $vcf.part");
     rename("$vcf.part.tbi","$vcf.tbi");
+}
+
+sub index_part
+{
+    my ($self,$vcf) = @_;
+    $self->cmd("$$self{bcftools} index $vcf.part");
+    rename("$vcf.part.csi","$vcf.csi");
 }
 
 sub save_config
@@ -572,6 +595,6 @@ sub save_config
 sub cmd
 {
     my ($self,$cmd) = @_;
-    return Utils::CMD($cmd,{verbose=>1});
+    return $self->SUPER::cmd($cmd,verbose=>1);
 }
 
