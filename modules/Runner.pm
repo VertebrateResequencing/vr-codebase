@@ -300,7 +300,9 @@ sub _sample_config
 
     About : Set time and memory requirements for computing farm
     Usage : $self->set_limits(memory=>1_000, runtime=>24*60);
-    Args  : <memory>
+    Args  : <cpus>
+                Number of processors to use
+            <memory>
                 Expected memory requirements [MB] or undef to unset
             <runtime>
                 Expected running time [minutes] or undef to unset
