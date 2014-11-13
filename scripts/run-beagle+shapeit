@@ -1,0 +1,447 @@
+#!/usr/bin/env perl
+#
+# Author: sm15@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+use Vcf;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+
+    $$self{do_clean} = 1;
+    $$self{debug_chunks} = 0;
+    $$self{limits} = { memory=>1_000, queue=>'normal', runtime=>undef, cpus=>undef };
+    $$self{beagle_jar}  = 'b4.r1196.jar';
+    $$self{beagle_args} = '';
+    $$self{java_args} = '';
+    $$self{memstep} = 2_000;
+    $$self{config_version} = '1356084362';
+    $$self{_sampleconf} = q[
+            # For sanity checking that your config file is not obsolete. Update the version key in your 
+            #  config file to get rid of the warnings.
+            version  => '] .$$self{config_version}. q[',
+
+            in_vcf     => '/some/path/chr{CHROM}.vcf.gz',
+
+            chroms => [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X) ],
+
+            makeBGLCHUNKS => 'makeBGLCHUNKS',
+            makeBGLCHUNKS_args => '--window 8000 --overlap 2000',
+
+            java        => 'java',
+            java_args   => '',
+            beagle_jar  => '] .$$self{beagle_jar}. q[',
+            beagle_args => 'phase-its=15',
+
+            prepareGenFromBeagle4 => 'prepareGenFromBeagle4',
+
+            shapeit_bin => 'shapeit.v2.r727.linux.x64',
+            shapeit_args => '-call --input-scaffold OMNI.merged.chr{CHROM}.hap.gz OMNI.merged.chr{CHROM}.hap.sample AFFY.merged.chr{CHROM}.hap.gz AFFY.merged.chr{CHROM}.hap.sample --input-map genetic_map_chr{CHROM}_combined_b37.txt --input-thr 1.0 --thread 8 --window 0.1 --states 400 --states-random 200 --burn 0 --run 12 --prune 4 --main 20',
+
+            ligateHAPLOTYPES => 'ligateHAPLOTYPES',
+            ligateHAPLOTYPES_args => '--scaffold scaffolded_samples.txt',
+
+            hap2vcf => 'hap2vcf.pl',
+            hap2vcf_with_all_info => 'hap2vcf_with_all_info.pl',
+            samples_pop_map => 'samples.pop',
+
+            limits   => { memory=>10_000, runtime=>24*60 },
+
+            # How much memory should be given to Beagle in the next run if it fails because of out-of-memory error?
+            #   Smaller step saves farm node's memory but can result in multiple runs (note that it can take
+            #   considerable amount of CPU time before the memory is exhausted). On the other hand, bigger step may 
+            #   block free CPUs on multi-core nodes by reserving too much memory.
+            memstep  => '] .$$self{memstep}. q[',   # the step for increasing memory limit
+
+            do_clean => 1,         # Remove runner's temporary files
+    ]."\n";
+
+    $$self{usage} .= 
+        "Usage: run-beagle+shapeit\n" .
+        "Options:\n" .
+        "   -i, --in-vcf <file>                 The target VCF file to be imputed, refined and phased\n" .
+        "   -o, --outdir <dir>                  Output directory\n" .
+        "\n";
+
+    return $self;
+}
+
+sub parse_args
+{
+    my ($self) = @_;
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-i' or $arg eq '--in-vcf' ) { $$self{in_vcf}=shift(@ARGV); next; }
+        if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
+        $self->throw();
+    }
+
+    if ( !exists($$self{outdir}) ) { $self->throw("Missing the -o option.\n"); }
+    if ( !exists($$self{in_vcf}) ) { $self->throw("Missing the -i option.\n"); }
+    if ( !exists($$self{version}) or $$self{version} ne $$self{config_version} )
+    {
+        $self->warn("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
+    }
+}
+
+sub main
+{
+    my ($self) = @_;
+    $self->parse_args();
+    $self->save_config();
+
+    my $outdir = $$self{outdir};
+    my @chroms = @{$$self{chroms}};
+
+    # Make Beagle and Shapeit chunks
+    $self->set_limits(%{$$self{limits}});
+    foreach my $chr (@chroms)
+    {
+        $self->spawn('make_beagle_chunks',"$outdir/beagle4/chunks/beagle4.chr$chr.chunks",$chr);
+        # $self->spawn('make_shapeit_chunks',"$outdir/shapeit/chunks/shapeit.chr$chr.chunks",$chr);
+    }
+    $self->wait;
+
+    # Run Beagle
+    $self->set_limits(%{$$self{limits}}, %{$$self{beagle_limits}});
+    foreach my $chr (@chroms)
+    {
+        my $chunks = $self->read_chunks("$outdir/beagle4/chunks/beagle4.chr$chr.chunks");
+        foreach my $chunk (@$chunks)
+        {
+            $self->spawn('beagle4',"$outdir/beagle4/$chr/output.Beagle4.chr$chr.$$chunk[1]-$$chunk[2].done",$chunk);
+        }
+    }
+    $self->wait;
+
+    # Convert Beagle output to Shapeit input
+    $self->set_limits(%{$$self{limits}}, memory => 12000);
+    foreach my $chr (@chroms)
+    {
+        $self->spawn('prepare_gen_from_beagle4',"$outdir/shapeit/input.SHAPEIT.chr$chr.done",$chr);
+    }
+    $self->wait; 
+
+    # Run Shapeit
+    my $cpus = $self->num_threads($$self{shapeit_args});
+    $self->set_limits(%{$$self{limits}}, %{$$self{shapeit_limits}}, $cpus ? (cpus => $cpus) : ());
+    foreach my $chr (@chroms)
+    {
+        my $chunks = $self->read_chunks("$outdir/shapeit/chunks/shapeit.chr$chr.chunks");
+        foreach my $chunk (@$chunks)
+        {
+            $self->spawn('shapeit',"$outdir/shapeit/$chr/output.SHAPEIT.chr$$chunk[0].$$chunk[1]-$$chunk[2].done",$chunk);
+        }        
+    }
+    $self->wait;
+
+    # Ligate haplotypes
+    $self->set_limits(%{$$self{limits}});
+    foreach my $chr (@chroms)
+    {
+        $self->spawn('ligate_haplotypes',"$outdir/shapeit/output.SHAPEIT.chr$chr.done",$chr);
+    }
+    $self->wait; 
+
+    # Shapeit to VCF
+    $self->set_limits(%{$$self{limits}});
+    for my $chr (@chroms)
+    {
+        $self->spawn('shapeit_to_vcf',"$outdir/ALL.chr$chr.phase3_integrated_snps_indels_svs.vcf.gz",$chr);
+        $self->spawn('shapeit_to_vcf_with_all_info',"$outdir/ALL.chr$chr.shapeit.phase3_integrated_snps_indels_svs.vcf.gz",$chr);
+    }
+    $self->wait; 
+
+    # Run performance stats and clean
+    $self->set_limits(%{$$self{limits}});
+    $self->spawn('runtime_stats',"$outdir/runtime");
+    $self->wait;
+    $self->clean($outdir) unless (!$$self{do_clean});
+
+    $self->all_done;
+}
+
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub read_chunks
+{
+    my ($self, $file) = @_;
+    open(my $fh,'<',$file) or $self->throw("$file: $!");
+    my @chunks;
+    while (my $line=<$fh>)
+    {
+        chomp($line);
+        my @items = split(/\t/,$line);
+        push @chunks, [@items];
+    }
+    close($fh) or $self->throw("$file: $!");
+    return \@chunks;
+}
+
+sub expand_chrom
+{
+    my ($self,$path,$region) = @_;
+    $region =~ s/:.*$//;
+    $path =~ s/{CHROM}/$region/g;
+    return $path;
+}
+
+sub num_threads
+{
+    my ($self,$opts) = @_;
+    my ($cpus) = $opts =~ m/-T (\d+)/;
+    unless ($cpus) {
+        ($cpus) = $opts =~ m/--thread (\d+)/;
+    }
+    return $cpus;
+}
+
+sub make_beagle_chunks
+{
+    my ($self,$outfile,$chr) = @_;
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
+    $self->cmd(qq[$$self{makeBGLCHUNKS} --vcf $in_vcf $$self{makeBGLCHUNKS_args} --output $outfile.part]);
+    rename("$outfile.part", $outfile);
+}
+
+sub beagle4
+{
+    my ($self,$outfile,$chunk) = @_;
+
+    my $chr    = $$chunk[0];
+    my $from   = $$chunk[1];
+    my $to     = $$chunk[2];
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
+    my $prefix = "$$self{outdir}/beagle4/$chr/output.Beagle4.chr$chr.$from-$to";
+
+    my $mem = $self->get_limits('memory') * 0.8;
+    if ( $mem<=0 ) { $mem = 500; }
+    
+    $self->java_cmd(qq[$$self{java} -Xms${mem}m -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} gl=$in_vcf out=$prefix.tmp $$self{beagle_args} chrom=$chr:$from-$to >>$outfile.o],"$outfile.e");
+    if ( -s "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
+    
+    $self->cmd(qq[zcat $prefix.tmp.vcf.gz | gzip -c > $prefix.part.vcf.gz]);
+    rename("$prefix.part.vcf.gz","$prefix.vcf.gz") or $self->throw("rename $prefix.part.vcf.gz $prefix.vcf.gz: $!");
+    unlink("$prefix.tmp.vcf.gz");
+    $self->cmd(qq[touch $outfile]);
+}
+
+sub prepare_gen_from_beagle4
+{
+    my ($self,$outfile,$chr) = @_;
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
+    my $prefix = qq[$$self{outdir}/shapeit/input.SHAPEIT.chr$chr];
+    $self->cmd(qq[$$self{prepareGenFromBeagle4} --likelihoods $in_vcf --posteriors $$self{outdir}/beagle4/$chr/output.Beagle4.chr$chr.*.vcf.gz --output $prefix]);
+
+    my ($nsites,$nsamples) = $self->stats($in_vcf);
+    
+    my $hap = "$prefix.hap.gz";
+    my $hap_sample = "$prefix.hap.sample";
+    my $gen = "$prefix.gen.gz";
+    my $gen_sample = "$prefix.gen.sample";
+    
+    # check number of lines in hap.sample/gen.sample (#samples+2)
+    my ($hap_sample_rows, undef) = $self->dimensions($hap_sample);
+    $self->throw("Number of lines in $hap_sample ($hap_sample_rows) does not agree with number of samples in $in_vcf ($nsamples+2)") unless ($hap_sample_rows == $nsamples+2);
+    my ($gen_sample_rows, undef) = $self->dimensions($gen_sample);
+    $self->throw("Number of lines in $gen_sample ($gen_sample_rows) does not agree with number of samples in $in_vcf ($nsamples+2)") unless ($gen_sample_rows == $nsamples+2);
+
+    # check number of lines in hap.gz/gen.gz (#sites)
+    # check number of columns in hap.gz/gen.gz (2*#samples+5/3*#samples+5)
+    my ($hap_rows, $hap_cols) = $self->dimensions($hap);
+    $self->throw("Number of lines in $hap ($hap_rows) does not agree with number of sites in $in_vcf ($nsites)") unless ($hap_rows == $nsites);
+    $self->throw("Number of columns in $hap ($hap_cols) does not agree with number of samples in $in_vcf (2*$nsamples+5)") unless ($hap_cols == 2*$nsamples+5);
+    my ($gen_rows, $gen_cols) = $self->dimensions($gen);
+    $self->throw("Number of lines in $gen ($gen_rows) does not agree with number of sites in $in_vcf ($nsites)") unless ($gen_rows == $nsites);
+    $self->throw("Number of columns in $gen ($gen_cols) does not agree with number of samples in $in_vcf (3*$nsamples+5)") unless ($gen_cols == 3*$nsamples+5);
+
+    $self->cmd(qq[touch $outfile]);
+}
+
+sub shapeit
+{
+    my ($self,$outfile,$chunk) = @_;
+
+    my $chr    = $$chunk[0];
+    my $from   = $$chunk[1];
+    my $to     = $$chunk[2];
+    my $input  = "$$self{outdir}/shapeit/input.SHAPEIT.chr$chr";
+    my $output = "$$self{outdir}/shapeit/$chr/output.SHAPEIT.chr$chr.$from-$to";
+
+    my $shapeit_args = $self->expand_chrom($$self{shapeit_args},$chr);
+
+    $self->cmd(qq[$$self{shapeit_bin} -call --input-gen $input.gen.gz $input.gen.sample --input-init $input.hap.gz $input.hap.sample $shapeit_args --output-max $output.haps.gz $output.haps.sample --output-log $output.haps.log --input-from $from --input-to $to]);
+
+    $self->cmd(qq[touch $outfile]);
+}
+
+sub ligate_haplotypes
+{
+    my ($self,$outfile,$chr) = @_;
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
+    my $haps = "$$self{outdir}/shapeit/output.SHAPEIT.chr$chr.haps.gz";
+    my $sample = "$$self{outdir}/shapeit/output.SHAPEIT.chr$chr.haps.sample";
+    $self->cmd(qq[$$self{ligateHAPLOTYPES} --vcf $in_vcf --chunks $$self{outdir}/shapeit/$chr/output.SHAPEIT.chr$chr.*.haps.gz --output $haps $sample $$self{ligateHAPLOTYPES_args}]);
+    
+    my ($nsites,$nsamples) = $self->stats($in_vcf);
+
+    # check number of lines in haps.sample (#samples+2)
+    my ($sample_rows, undef) = $self->dimensions($sample);
+    $self->throw("Number of lines in $sample ($sample_rows) does not agree with number of samples in $in_vcf ($nsamples+2)") unless ($sample_rows == $nsamples+2);
+
+    # check number of lines in haps.gz (#sites)
+    # check number of columns in haps.gz (2*#samples+5)
+    my ($haps_rows, $haps_cols) = $self->dimensions($haps);
+    $self->throw("Number of lines in $haps ($haps_rows) does not agree with number of sites in $in_vcf ($nsites)") unless ($haps_rows == $nsites);
+    $self->throw("Number of columns in $haps ($haps_cols) does not agree with number of samples in $in_vcf (2*$nsamples+5)") unless ($haps_cols == 2*$nsamples+5);
+
+    $self->cmd(qq[touch $outfile]);
+}
+
+sub shapeit_to_vcf
+{
+    my ($self,$outfile,$chr) = @_;
+    $self->cmd(qq[$$self{hap2vcf} $chr $outfile.part]);
+    
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
+    my ($in_sites,$in_samples) = $self->stats($in_vcf);
+    my ($out_sites,$out_samples) = $self->stats("$outfile.part");
+    
+    $self->throw("Number of input ($in_samples) and output ($out_samples) samples do not agree") unless ($in_samples == $out_samples);
+    $self->throw("Number of input ($in_sites) and output ($out_sites) sites do not agree") unless ($in_sites == $out_sites);
+    
+    $self->tabix_part($outfile);
+}
+
+sub shapeit_to_vcf_with_all_info
+{
+    my ($self,$outfile,$chr) = @_;
+    
+    my $outdir = $$self{outdir};
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
+    $self->cmd(qq[ls $outdir/beagle4/$chr/*.vcf.gz | sort -V > $outdir/beagle4/$chr/concat.list]);
+    $self->cmd(qq[$$self{hap2vcf_with_all_info} -p $$self{samples_pop_map} -b $outdir/beagle4/$chr/concat.list -s $outdir/shapeit/output.SHAPEIT.chr$chr.haps.sample -h $outdir/shapeit/output.SHAPEIT.chr$chr.haps.gz -g $outdir/shapeit/input.SHAPEIT.chr$chr.gen.gz -v $in_vcf | bgzip -c > $outfile.part]);
+    
+    my ($in_sites,$in_samples) = $self->stats($in_vcf);
+    my ($out_sites,$out_samples) = $self->stats("$outfile.part");
+    
+    $self->throw("Number of input ($in_samples) and output ($out_samples) samples do not agree") unless ($in_samples == $out_samples);
+    $self->throw("Number of input ($in_sites) and output ($out_sites) sites do not agree") unless ($in_sites == $out_sites);
+    
+    $self->tabix_part($outfile);
+}
+
+sub dimensions
+{
+    my ($self, $file) = @_;
+    my $cat = $file =~ /gz$/ ? 'zcat' : 'cat';
+    my $stat = `$cat $file | awk -F " " 'END{print NR"\\t"NF}'`;
+    chomp $stat;
+    my ($nrows, $ncols) = split(/\t/, $stat);
+    return ($nrows, $ncols);
+}
+
+sub stats
+{
+    my ($self, $vcf) = @_;
+    my ($nsites, $nsamples);
+    if (-s "$vcf.stats")
+    {
+        my $stat = `cat $vcf.stats`;
+        chomp $stat;
+        ($nsites, $nsamples) = split(/\t/, $stat);
+    }
+    else
+    {
+        $nsamples = `zcat $vcf | vcf-query -l | wc -l`;
+        chomp $nsamples;
+        $nsites = `zcat $vcf | grep -v "^#" | wc -l`;
+        chomp $nsites;
+        $self->cmd(qq[echo "$nsites\t$nsamples" > $vcf.stats]);
+    }
+    return ($nsites, $nsamples);
+}
+
+sub tabix_part
+{
+    my ($self,$vcf) = @_;
+    $self->cmd("tabix -p vcf -f $vcf.part");
+    rename("$vcf.part.tbi","$vcf.tbi");
+    rename("$vcf.part.stats","$vcf.stats") if (-s "$vcf.part.stats");
+    rename("$vcf.part",$vcf);
+}
+
+sub save_config
+{
+    my ($self) = @_;
+    my $src = $$self{_config};
+    my $dst = "$$self{outdir}/phasing.conf";
+    if ( -e $dst && (stat($src))[9] <= (stat($dst))[9] ) { return; }
+    if ( !-d $$self{outdir} ) { $self->cmd("mkdir -p $$self{outdir}"); }
+    open(my $fh,'>',$dst) or $self->throw("$dst: $!");
+    my $about = $$self{_about};
+    $about =~ s/\n/\n# /g;
+    print $fh "# $about";
+    close($fh);
+    $self->cmd("cat $src >> $dst");
+}
+
+sub cmd
+{
+    my ($self,$cmd) = @_;
+    return Utils::CMD($cmd,{verbose=>1});
+}
+
+sub java_cmd
+{
+    my ($self,$cmd,$err_file) = @_;
+
+    print STDERR "$cmd 2>$err_file\n";
+    if ( -e $err_file ) { `cat $err_file >> $err_file.prev`; unlink($err_file); }
+
+    `$cmd 2>$err_file`;
+    if ( ! $? ) { return; } # finished OK
+
+    # something went wrong
+    my $out_of_memory = 0;
+    open(my $fh,'<',$err_file) or $self->throw("$err_file: $!");
+    while (my $line=<$fh>)
+    {
+        if ( $line=~/java.lang.OutOfMemoryError/ ) { $out_of_memory = 1; last; }
+        if ( $line=~/Could not create the Java virtual machine/ ) { $out_of_memory = 1; last; }
+    }
+    close($fh);
+    if ( !$out_of_memory ) { $self->throw("The command failed: $cmd\n"); }
+
+    # out of memory: tell the runner to use more memory next time
+    my $mem = $self->get_limits('memory') + $$self{memstep};
+    $self->set_limits(memory=>$mem);
+
+    $self->throw("Memory limit exceeded, increasing the memory limit for the next run to $mem. The command was:\n$cmd\n");
+}
+
+

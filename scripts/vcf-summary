@@ -6,7 +6,8 @@ use strict;
 use warnings;
 use Carp;
 use Vcf;
-use List::MoreUtils qw(uniq);
+use List::MoreUtils qw(minmax uniq);
+use Clone qw(clone);
 
 my $opts = parse_params();
 my $cohorts = read_samples($$opts{samples});
@@ -46,8 +47,9 @@ sub parse_params
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         if ( -e $arg ) { $$opts{file} = $arg; next; }
     }
-    if ( !$$opts{samples} || !$$opts{file} ) { error("Missing the -m option or the VCF argument.\n") }
+    if ( !$$opts{samples} ) { error("Missing the -m option or the VCF argument.\n") }
     if ( !$$opts{file} && $$opts{region} ) { error("Tabix index VCF file required with the -r option.\n") }
+    $$opts{fh} = \*STDIN unless (exists $$opts{file});
     return $opts;
 }
 
@@ -70,10 +72,9 @@ sub read_samples
 sub vcf_summary
 {
     my ($opts, $cohorts) = @_;
-    my $vcf = $$opts{region} ? Vcf->new(file=>$$opts{file}, region => $$opts{region}) : Vcf->new(file=>$$opts{file});
-    my $summary_vcf = $$opts{region} ? Vcf->new(file=>$$opts{file}, region => $$opts{region}) : Vcf->new(file=>$$opts{file});
+    my $vcf = Vcf->new(%$opts);
     $vcf->parse_header();
-    $summary_vcf->parse_header();
+    my $summary_vcf = clone($vcf);
     $summary_vcf->remove_header_line(key=>'FORMAT');
     
     my @cohort_names = sort( uniq( values %$cohorts ) );
@@ -89,44 +90,56 @@ sub vcf_summary
     my %nsamples;
     foreach my $sample (@samples)
     {
-        $nsamples{ $$cohorts{$sample} }++;
+        next unless exists $$cohorts{"$sample"};
+        $nsamples{ $$cohorts{"$sample"} }++;
     }
 
     $summary_vcf->add_header_line({key=>'source',value=>join(' ',@{$$opts{args}})},append=>'timestamp');
     foreach my $cohort (@cohort_names)
     {
-        $summary_vcf->add_header_line({key=>'COHORT',ID=>$cohort,N_SAMPLES=>$nsamples{$cohort}});
+        $summary_vcf->add_header_line({key=>'cohort',value=>qq[$cohort ($nsamples{$cohort} samples)]});
     }
+    $summary_vcf->add_header_line({key=>'INFO',ID=>'AC',Number=>'A',Type=>'Integer',Description=>'Allele count in genotypes across all samples'});
+    $summary_vcf->add_header_line({key=>'INFO',ID=>'MAC',Number=>'1',Type=>'Integer',Description=>'Minor allele count in genotypes across all samples'});
+    $summary_vcf->add_header_line({key=>'INFO',ID=>'AN',Number=>'1',Type=>'Integer',Description=>'Allele number in genotypes across all samples'});
+    $summary_vcf->add_header_line({key=>'INFO',ID=>'GC',Number=>'G',Type=>'Integer',Description=>'Genotype counts across all samples (diploid assumed; haploid A counted as diploid A/A)'});  
+    $summary_vcf->add_header_line({key=>'INFO',ID=>'NC',Number=>'1',Type=>'Integer',Description=>'Number of cohorts with an ALT allele'});
+    $summary_vcf->add_header_line({key=>'INFO',ID=>'CS',Number=>'.',Type=>'String',Description=>'List of cohorts with an ALT allele'});
+    $summary_vcf->add_header_line({key=>'INFO',ID=>'HWE',Number=>'1',Type=>'Float',Description=>'Hardy-Weinberg estimated from called genotypes across all samples'});
+    $summary_vcf->add_header_line({key=>'INFO',ID=>'ICF',Number=>'1',Type=>'Float',Description=>'Inbreeding coefficient estimated from called genotypes across all samples'});
     $summary_vcf->add_header_line({key=>'FORMAT',ID=>'AC',Number=>'A',Type=>'Integer',Description=>'Allele count in cohort'});
-    $summary_vcf->add_header_line({key=>'FORMAT',ID=>'AN',Number=>'1',Type=>'Integer',Description=>'Allele number in cohort'});  
-    $summary_vcf->add_header_line({key=>'FORMAT',ID=>'DP',Number=>'1',Type=>'Float',Description=>'Average # high-quality bases in cohort'});  
+    $summary_vcf->add_header_line({key=>'FORMAT',ID=>'MAC',Number=>'1',Type=>'Integer',Description=>'Minor allele count in cohort'});
+    $summary_vcf->add_header_line({key=>'FORMAT',ID=>'AN',Number=>'1',Type=>'Integer',Description=>'Allele number in cohort'});
+    $summary_vcf->add_header_line({key=>'FORMAT',ID=>'DP',Number=>'1',Type=>'Float',Description=>'Average # high-quality bases in cohort'});
     $summary_vcf->add_header_line({key=>'FORMAT',ID=>'GC',Number=>'G',Type=>'Integer',Description=>'Genotype counts in cohort (diploid assumed; haploid A counted as diploid A/A)'});  
+    $summary_vcf->add_header_line({key=>'FORMAT',ID=>'HWE',Number=>'1',Type=>'Float',Description=>'Hardy-Weinberg estimated from called genotypes in cohort'});
+    $summary_vcf->add_header_line({key=>'FORMAT',ID=>'ICF',Number=>'1',Type=>'Float',Description=>'Inbreeding coefficient estimated from called genotypes in cohort'});
     
     print $summary_vcf->format_header();
     while (my $rec = $vcf->next_data_array())
     {
-        my $summary_rec = $summary_vcf->next_data_array();
-        @$summary_rec = @{$summary_rec}[0..$ncols];
+        my $summary_rec = [0..$ncols];
+        @$summary_rec = @{$rec}[0..7];
         my (%acounts, %gcounts);
         my @alleles = split(/,/, $$rec[4]);
         my $nA = @alleles;
         my $nG = ($nA+1)*($nA+2)/2;
         foreach my $cohort (@cohort_names)
         {
-            
             for (my $i=0; $i<=$nA; $i++) { $acounts{$cohort}{$i} = 0; }
             for (my $i=0; $i<$nG; $i++) { $gcounts{$cohort}{$i} = 0; }
         }
         my $igt = $vcf->get_tag_index($$rec[8],'GT',':');
         my $idp = $vcf->get_tag_index($$rec[8],'DP',':');
-        $$summary_rec[8] = 'AN:AC:GC';
+        $$summary_rec[8] = 'AN:AC:MAC:GC:HWE:ICF';
         if ($idp != -1) { $$summary_rec[8] .= ':DP'; }
         my ($dp,$ndp);
         for (my $i=0; $i<@samples; $i++)
         {
             my $icol = $i+9;
             my $sample = $samples[$i];
-            my $cohort = $$cohorts{$sample};
+            my $cohort = $$cohorts{"$sample"};
+            next unless $cohort;
             my $gt = $vcf->get_field($$rec[$icol],$igt);
             my ($al1,$al2) = split /[|\/]/, $gt;
             foreach my $al ($al1,$al2)
@@ -145,26 +158,128 @@ sub vcf_summary
             }
             if ($idp != -1) { $dp += $vcf->get_field($$rec[$icol],$idp); $ndp++; }
         }
+        my $an = 0;
+        my @acs = 0 x $nA;
+        my @gcs = 0 x $nG;
+        my %alt_seen;
+        my %mac_seen;
         for (my $i=0; $i<@cohort_names; $i++)
         {
             my $cohort = $cohort_names[$i];
             my $icol = $i+9;
-            my $an = 0; my @acs;
+            my $cohort_an = 0; my @cohort_acs;
             for (my $j=0; $j<=$nA; $j++)
             {
-                $an += $acounts{$cohort}{$j};
-                push @acs, $acounts{$cohort}{$j} if ($j > 0);
+                $cohort_an += $acounts{$cohort}{$j};
+                if ($j > 0) {
+                    push @cohort_acs, $acounts{$cohort}{$j} if ($j > 0);
+                    $acs[$j-1]+=$acounts{$cohort}{$j};
+                    $alt_seen{$cohort}++ if ($acounts{$cohort}{$j} > 0);
+                }
             }
-            my @gcs;
+            $an += $cohort_an;
+            my ($cohort_mac) = minmax(@cohort_acs);
+            my @cohort_gcs;
             for (my $j=0; $j<$nG; $j++)
             {
-                push @gcs, $gcounts{$cohort}{$j};
+                push @cohort_gcs, $gcounts{$cohort}{$j};
+                $gcs[$j]+=$gcounts{$cohort}{$j};
             }
-            $$summary_rec[$icol] = qq[$an:] . join(',', @acs) . ':' . join(',', @gcs);
+            my $cohort_hwe = eval_hwe(@cohort_gcs);
+            my $cohort_icf = calc_icf(@cohort_gcs);
+            $$summary_rec[$icol] = qq[$cohort_an:] . join(',', @cohort_acs) . qq[:$cohort_mac:] . join(',', @cohort_gcs) . ':' . sprintf("%.6f", $cohort_hwe) . ':' . sprintf("%.6f", $cohort_icf);
             if ($idp != -1) { $$summary_rec[$icol] .= sprintf(':%.2f', $dp/$ndp); }
         }
+        my ($mac) = minmax(@acs);
+        $$summary_rec[7] = $summary_vcf->add_info_field($$summary_rec[7],AN=>$an);
+        $$summary_rec[7] = $summary_vcf->add_info_field($$summary_rec[7],AC=>@acs);
+        $$summary_rec[7] = $summary_vcf->add_info_field($$summary_rec[7],MAC=>$mac);
+        $$summary_rec[7] = $summary_vcf->add_info_field($$summary_rec[7],NC=>scalar(keys %alt_seen));
+        $$summary_rec[7] = $summary_vcf->add_info_field($$summary_rec[7],CS=>join(',', sort keys %alt_seen));
+        # $$summary_rec[7] = $summary_vcf->add_info_field($$summary_rec[7],GC=>@gcs);
+        $$summary_rec[7] .= qq[;GC=] . join(',', @gcs);
+        $$summary_rec[7] = $summary_vcf->add_info_field($$summary_rec[7],HWE=>eval_hwe(@gcs));
+        $$summary_rec[7] = $summary_vcf->add_info_field($$summary_rec[7],ICF=>calc_icf(@gcs));
         print $summary_vcf->format_line($summary_rec);
     }
+}
+
+sub calc_icf
+{
+    my ($obs_hom1,$obs_hets,$obs_hom2) = @_;
+
+    if ($obs_hom1 + $obs_hets == 0 || $obs_hets + $obs_hom2 == 0) { return 0; }
+    my $n_gts = $obs_hom1 + $obs_hets + $obs_hom2; # number of genotypes
+
+    my $p = (2.0 * $obs_hom1 + $obs_hets) / ( 2.0 * $n_gts );  # expected reference allele frequency
+    my $q = 1.0 - $p; # expected alternative allele frequency
+
+    # F = 1 - Obs(f(Aa))/E(f(Aa))
+    # E(f(Aa)) = 2*f(A)*f(a)
+    return 1.0 - ( $obs_hets / ( 2.0 * $p * $q * $n_gts ) ); # inbreeding coefficient
+}
+
+# Wigginton 2005, PMID: 15789306
+sub eval_hwe
+{
+    my ($obs_hom1,$obs_hets,$obs_hom2) = @_;
+    if ( $obs_hom1 + $obs_hom2 + $obs_hets == 0 ) { return 1; }
+
+    my $obs_homc = $obs_hom1 < $obs_hom2 ? $obs_hom2 : $obs_hom1;
+    my $obs_homr = $obs_hom1 < $obs_hom2 ? $obs_hom1 : $obs_hom2;
+
+    my $rare_copies = 2 * $obs_homr + $obs_hets;
+    my $genotypes   = $obs_hets + $obs_homc + $obs_homr;
+
+    my @het_probs = ((0) x ($rare_copies+1));
+
+    # start at midpoint
+    my $mid = int($rare_copies * (2 * $genotypes - $rare_copies) / (2 * $genotypes));
+    # check to ensure that midpoint and rare alleles have same parity
+    if (($rare_copies & 1) ^ ($mid & 1)) { $mid++; }
+
+    my $curr_hets = $mid;
+    my $curr_homr = ($rare_copies - $mid) / 2;
+    my $curr_homc = $genotypes - $curr_hets - $curr_homr;
+
+    $het_probs[$mid] = 1.0;
+    my $sum = $het_probs[$mid];
+    for ($curr_hets=$mid; $curr_hets > 1; $curr_hets -= 2)
+    {
+        $het_probs[$curr_hets - 2] = $het_probs[$curr_hets] * $curr_hets * ($curr_hets - 1.0) / (4.0 * ($curr_homr + 1.0) * ($curr_homc + 1.0));
+        $sum += $het_probs[$curr_hets - 2];
+
+        # 2 fewer heterozygotes for next iteration -> add one rare, one common homozygote
+        $curr_homr++;
+        $curr_homc++;
+    }
+    $curr_hets = $mid;
+    $curr_homr = int(($rare_copies - $mid) / 2);
+    $curr_homc = $genotypes - $curr_hets - $curr_homr;
+    for ($curr_hets = $mid; $curr_hets <= $rare_copies - 2; $curr_hets += 2)
+    {
+        $het_probs[$curr_hets + 2] = $het_probs[$curr_hets] * 4.0 * $curr_homr * $curr_homc /(($curr_hets + 2.0) * ($curr_hets + 1.0));
+        $sum += $het_probs[$curr_hets + 2];
+
+        # add 2 heterozygotes for next iteration -> subtract one rare, one common homozygote
+        $curr_homr--;
+        $curr_homc--;
+    }
+
+    for (my $i = 0; $i <= $rare_copies; $i++)
+    {
+        $het_probs[$i] /= $sum;
+    }
+
+    my $p_hwe = 0.0;
+    #  p-value calculation for p_hwe
+    for (my $i = 0; $i <= $rare_copies; $i++)
+    {
+        if ($het_probs[$i] > $het_probs[$obs_hets]) { next; }
+        $p_hwe += $het_probs[$i];
+    }
+
+    return $p_hwe > 1.0 ? 1.0 : $p_hwe;
 }
 
 sub vcf_ij2G

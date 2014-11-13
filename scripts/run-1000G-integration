@@ -1,0 +1,207 @@
+#!/usr/bin/env perl
+#
+# Author: shane.mccarthy@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+
+use Path::Class qw(file);
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+
+    $$self{do_clean} = 1;
+    $$self{limits} = { runtime=>24*60 };
+    $$self{debug_chunks} = 0;
+    $$self{_sampleconf} = q[
+    ]."\n";
+
+    $$self{usage} .= 
+        "Integration script as run for 1000G Phase3 using\n" .
+        "https://github.com/ekg/1000G-integration\n" .
+        "\n" .
+        "Usage: run-1000G-integration\n" .
+        "Options:\n" .
+        "   -o, --outdir <dir>      Output directory\n" .
+        "\n";
+
+    return $self;
+}
+
+sub parse_args
+{
+    my ($self) = @_;
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
+        $self->throw();
+    }
+    $$self{limits} = { memory => 20_000, runtime => 2*24*60 };
+    if ( !exists($$self{outdir}) ) { $self->throw("Expected --outdir option."); }
+    if ( !exists($$self{chunks}) ) { $self->throw("Expected --chunks option."); }
+    
+    if ( !exists($$self{glia}) ) { $$self{glia} = 'glia'; }
+    if ( !exists($$self{freebayes}) ) { $$self{freebayes} = 'freebayes'; }
+    if ( !exists($$self{samtools}) ) { $$self{samtools} = 'samtools'; }
+    if ( !exists($$self{reference}) ) { $self->throw("reference option is required."); }
+    if ( !exists($$self{union}) ) { $self->throw("union option is required."); }
+    if ( !exists($$self{contamination}) ) { $self->throw("contamination option is required."); }
+    if ( !exists($$self{cnvmap}) ) { $self->throw("cnvmap option is required."); }
+    if ( !exists($$self{merger}) ) { $self->throw("merger option is required."); }
+    if ( !exists($$self{overlap}) ) { $$self{overlap} = 500; }
+}
+
+sub main
+{
+    my ($self) = @_;
+    $self->parse_args();
+    
+    my $chunks = $self->get_chunks($$self{chunks});
+
+    $self->set_limits(%{$$self{limits}});
+    foreach my $chunk (@$chunks)
+    {
+        my ($chrom,$from,$to) = $chunk =~ m/(.+):(\d+)-(\d+)/;
+        $self->spawn('merge_and_glia', "$$self{outdir}/$chrom/.${chunk}_glia.done", $chunk);
+    }
+    $self->wait;
+    
+    my %concats;
+    foreach my $chunk (@$chunks)
+    {
+        my ($chrom,$from,$to) = $chunk =~ m/(.+):(\d+)-(\d+)/;
+        $self->spawn('freebayes', "$$self{outdir}/$chrom/$chunk.diploid.vcf.gz", $chunk);
+        push @{$concats{$chrom}}, "$$self{outdir}/$chrom/$chunk.diploid.vcf.gz";
+    }
+    $self->wait;
+
+    foreach my $chrom (keys %concats)
+    {
+        my $concat_list = "$$self{outdir}/$chrom/concat.diploid.list";
+        $self->write_list($concat_list, $concats{$chrom}) unless (-s $concat_list);
+        $self->spawn('vcf_concat', "$$self{outdir}/$chrom.diploid.vcf.gz", $concat_list);
+    }
+    $self->wait;
+    
+    foreach my $chrom (keys %concats)
+    {
+        $self->spawn('vcf_stats', "$$self{outdir}/$chrom.diploid.vcf.gz.vchk", "$$self{outdir}/$chrom.diploid.vcf.gz");
+    }
+    $self->wait;
+    
+    # Run performance stats and clean
+    $self->spawn('runtime_stats', "$$self{outdir}/runtime");
+    $self->wait;
+    
+    $self->all_done;
+}
+
+sub merge_and_glia
+{
+    my ($self,$outfile,$chunk) = @_;
+    my ($chrom,$from,$to) = $chunk =~ m/(.+):(\d+)-(\d+)/;
+    my $begin = $from > $$self{overlap} ? $from-$$self{overlap} : 0;
+    my $end = $to+$$self{overlap};
+    my $realigned_bam = qq[$$self{outdir}/$chrom/${chunk}_realigned.bam];
+    my $merger = $$self{merger};
+    $merger =~ s/{CHROM}/$chrom/g;
+    $merger =~ s/{FROM}/$begin/g;
+    $merger =~ s/{TO}/$end/g;
+    $self->cmd(qq[$merger | $$self{glia} -Rr -w 1000 -S 200 -Q 200 -G 4 -f $$self{reference} -v $$self{union} 2>$outfile.glia.err | $$self{samtools} view -h - | $$self{samtools} view -Sb - >$realigned_bam]);
+    $self->cmd(qq[$$self{samtools} index $realigned_bam]);
+    $self->cmd(qq[touch $outfile]);
+}
+
+sub freebayes
+{
+    my ($self,$outfile,$chunk) = @_;
+    my ($chrom,$from,$to) = $chunk =~ m/(.+):(\d+)-(\d+)/;
+    my $realigned_bam = qq[$$self{outdir}/$chrom/${chunk}_realigned.bam];
+    $self->cmd(qq[$$self{freebayes} -f $$self{reference} --region $chunk --min-alternate-fraction 0.2 --min-alternate-count 2 --min-mapping-quality 1 --min-base-quality 3 --min-repeat-entropy 1 --genotyping-max-iterations 10 --contamination-estimates $$self{contamination} --cnv-map $$self{cnvmap} --haplotype-basis-alleles $$self{union} $realigned_bam 2>$outfile.freebayes.err | bgzip -c > $outfile.part]);
+    $self->tabix_part($outfile);
+}
+
+sub vcf_stats
+{
+    my ($self,$outfile,$vcf) = @_;
+    $self->cmd("vcf check -F $$self{reference} -s - $vcf > $outfile.part");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub vcf_concat
+{
+    my ($self,$outfile,$concat_list) = @_;
+    $self->cmd(qq[vcf-concat -p -f $concat_list | bgzip -c > $outfile.part]);
+    $self->tabix_part($outfile);
+}
+
+sub get_chunks
+{
+    my ($self, $file) = @_;
+    my @chunks;
+    open my $fh, "<$file" || $self->throw("Could not open file $file");
+    while (<$fh>)
+    {
+        chomp;
+        next if /^#/;
+        push @chunks, $_;
+    }
+    close $fh;
+    return \@chunks;
+}
+
+sub write_list
+{
+    my ($self,$file, $list) = @_;
+    open my $fh, ">$file" || $self->throw("Could not open file $file");
+    foreach my $item (@$list)
+    {
+        print $fh "$item\n";
+    }
+    close $fh;
+}
+
+sub tabix_part
+{
+    my ($self,$vcf) = @_;
+    $self->cmd("tabix -p vcf -f $vcf.part");
+    rename("$vcf.part.tbi","$vcf.tbi");
+    rename("$vcf.part",$vcf);
+}
+
+sub clean
+{
+    my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
+}
+
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub cmd
+{
+    my ($self,$cmd) = @_;
+    return Utils::CMD($cmd,{verbose=>$$self{_verbose}});
+}

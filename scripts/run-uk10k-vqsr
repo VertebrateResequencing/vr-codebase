@@ -1,0 +1,1034 @@
+#!/usr/bin/env perl
+#
+# Author: shane.mccarthy@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+
+use File::Temp;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+
+    $$self{do_clean} = 1;
+    $$self{limits} = { runtime=>24*60 };
+    $$self{debug_chunks} = 0;
+    $$self{_sampleconf} = q[
+            gatk  => '/path/to/GenomeAnalysisTK.jar',
+            
+            bams     => 'merge_across_bams.list',
+            fa_ref   => '/path/to/human_g1k_v37.fasta',
+            
+            limits   => { runtime=>24*60 },
+            do_clean => 1,         # Remove runner's temporary files
+            
+            chroms => [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X) ],
+            pops   =>
+            {
+                # With no populations, at least 'pooled' must be given
+                pooled => [ '.' ],
+            },
+            
+            # Set the depth filter (+/D=N) to about twice the average depth.
+            filter => '',
+            
+            chunk_size        => 3_000_000,
+            debug_chunks      => 0,
+            chunks_overlap    => 0,
+            shuffle_chunks    => 0,         # Process chunks in random order to randomize disk access
+            whole_genome_bams => 0,         # Set to 1 if BAMs are not splitted by chromosome
+
+    ]."\n";
+
+    $$self{usage} .= 
+        "Usage: run-mpileup\n" .
+        "Options:\n" .
+        "   -c, --clean             Clean all temporary files\n" .
+        "   -m, --mrProper          Clean all temporary files, including the population directories and BCFs, leaving only toplevel VCFs\n" .
+        "   -o, --outdir <dir>      Output directory\n" .
+        "\n";
+
+    return $self;
+}
+
+sub parse_args
+{
+    my ($self) = @_;
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-c' or $arg eq '--clean' ) { $$self{clean}=1; next; }
+        if ( $arg eq '-m' or $arg eq '--mrProper' ) { $$self{mrProper}=1; next; }
+        if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
+        $self->throw();
+    }
+    if ( !exists($$self{outdir}) ) { $self->throw("Expected -o option."); }
+    
+    if ( !exists($$self{gatk}) )
+    { 
+        $$self{gatk} = $ENV{GATK};
+    }
+    
+    if ( !exists($$self{dbsnp}) )
+    { 
+        $$self{dbsnp} = '/path/to/broad_resources_b37/dbsnp_132.b37.vcf.gz';
+    }
+    
+    if ( !exists($$self{snps}->{resources}))
+    {
+        $$self{snps}->{resources} = ['-resource:hapmap,known=false,training=true,truth=true,prior=15.0 /path/to/broad_resources_b37/hapmap_3.3.b37.sites.vcf.gz', 
+                            '-resource:omni,known=false,training=true,truth=false,prior=12.0 /path/to/broad_resources_b37/1000G_omni2.5.b37.sites.vcf.gz',
+                            '-resource:dbsnp,known=true,training=false,truth=false,prior=8.0 /path/to/broad_resources_b37/dbsnp_132.b37.vcf.gz'];
+    }
+    
+    if ( !exists($$self{snps}->{tranches}))
+    {
+        my $snp_tranches = '-tranche 100 ';
+        $snp_tranches .= join(' ', map { sprintf('-tranche 97.%.2d ', $_) } (0..99));
+        $snp_tranches .= join(' ', map { sprintf('-tranche 98.%.2d ', $_) } (0..99));
+        $snp_tranches .= join(' ', map { sprintf('-tranche 99.%.2d ', $_) } (0..99));
+        $$self{snps}->{tranches} = $snp_tranches;
+    }
+    
+    if ( !exists($$self{snps}->{annotations}))
+    {
+        $$self{snps}->{annotations} = '-an QD -an HaplotypeScore -an MQRankSum -an ReadPosRankSum -an FS -an MQ -an InbreedingCoeff -an DP'; 
+    }
+    
+    if ( !exists($$self{snps}->{target_titv}))
+    {
+        $$self{snps}->{target_titv} = 2.3; 
+    }
+    
+    if ( !exists($$self{snps}->{ts_filter_level}))
+    {
+        $$self{snps}->{ts_filter_level} = 99.85; 
+    }
+    if ( !exists($$self{snps}->{genotyper_opts}))
+    {
+        $$self{snps}->{genotyper_opts} = "-baq CALCULATE_AS_NECESSARY -gt_mode GENOTYPE_GIVEN_ALLELES -out_mode EMIT_ALL_SITES --standard_min_confidence_threshold_for_calling 4.0 --standard_min_confidence_threshold_for_emitting 4.0 -l INFO"; 
+    }
+    if ( !exists($$self{snps}->{recal_opts}))
+    {
+        $$self{snps}->{recal_opts} = '';
+    }
+    
+    
+    if ( !exists($$self{indels}->{resources}))
+    {
+        $$self{indels}->{resources} = ['-resource:mills,known=false,training=true,truth=true,prior=12.0 /path/to/broad_resources_b37/indels_mills_devine.b37.sites.vcf.gz',
+                      '-resource:g1k,known=false,training=true,truth=false,prior=10.0 /path/to/resources/ALL.wgs.low_coverage_vqsr.20101123.indels.sites.vcf.gz',
+                      '-resource:dbsnp,known=true,training=false,truth=false,prior=8.0 /path/to/broad_resources_b37/dbsnp_132.b37.vcf.gz'];
+    }
+    
+    if ( !exists($$self{indels}->{tranches}))
+    {
+        my $indel_tranches = '-tranche 100 -tranche 99.90 ';
+        $indel_tranches .= join(' ', map { "-tranche $_.00" } reverse(80..98));
+        $$self{indels}->{tranches} = $indel_tranches;
+    }
+    
+    if ( !exists($$self{indels}->{annotations}))
+    {
+        $$self{indels}->{annotations} = '-an QD -an FS -an HaplotypeScore -an ReadPosRankSum -an InbreedingCoeff'; 
+    }
+    
+    if ( !exists($$self{indels}->{target_titv}))
+    {
+        $$self{indels}->{target_titv} = 2.3; 
+    }
+    
+    if ( !exists($$self{indels}->{ts_filter_level}))
+    {
+        $$self{indels}->{ts_filter_level} = 95.0; 
+    }
+    if ( !exists($$self{indels}->{genotyper_opts}))
+    {
+        $$self{indels}->{genotyper_opts} = "-baq CALCULATE_AS_NECESSARY -gt_mode GENOTYPE_GIVEN_ALLELES -out_mode EMIT_ALL_SITES --standard_min_confidence_threshold_for_calling 4.0 --standard_min_confidence_threshold_for_emitting 4.0 -l INFO"; 
+    }
+    if ( !exists($$self{snps}->{recal_opts}))
+    {
+        $$self{indels}->{recal_opts} = '';
+    }
+    
+    if ( !exists($$self{indel_filter}) )
+    {
+        $$self{indel_filter} = ''; 
+    }
+    
+    # This lengthy code checks if mandatory parameters are present and fills the defaults issuing warnings when doing so.
+    if ( !exists($$self{bams}) ) { $self->throw("The 'bams' config key not present\n"); }
+    if ( !exists($$self{chroms}) ) 
+    { 
+        $$self{chroms} = [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y) ];
+        $self->warn("The 'chroms' config key not present, assuming: ".join(' ',@{$$self{chroms}})."\n"); 
+    }
+    if ( !exists($$self{modes}) ) 
+    { 
+        $$self{modes} = [ qw(indels snps) ];
+        $self->warn("The 'modes' config key not present, assuming: ".join(' ',@{$$self{modes}})."\n"); 
+    }
+    if ( !exists($$self{fa_ref}) ) 
+    { 
+        $$self{fa_ref} = '/path/to/human_g1k_v37.fasta';
+        $self->warn("The 'fa_ref' config key not present, assuming: $$self{fa_ref}\n"); 
+    }
+    if ( !exists($$self{chunk_size}) ) 
+    { 
+        $$self{chunk_size} = 3_000_000;
+        $self->warn("The 'chunk_size' config key not present, assuming: $$self{chunk_size}\n"); 
+    }
+    if ( !exists($$self{chunks_overlap}) ) 
+    { 
+        $$self{chunks_overlap} = 0;
+        $self->warn("The 'chunks_overlap' config key not present, assuming: $$self{chunks_overlap}\n"); 
+    }
+    if ( $$self{clean} ) 
+    { 
+        $self->clean($$self{outdir});
+        $self->all_done;
+    }
+    if ( $$self{mrProper} )
+    {
+        $self->mrProper($$self{outdir});
+        $self->all_done;
+    }
+}
+
+sub main
+{
+    my ($self) = @_;
+    $self->parse_args();
+
+    my $outdir = $$self{outdir};
+    my @chroms = @{$$self{chroms}};
+    my @modes = @{$$self{modes}};
+    
+    foreach my $chr (@chroms)
+    {
+        my $bams_outfile = "$outdir/lists/chr$chr.list";
+        if ( !$self->is_finished($bams_outfile) )
+        {
+            $self->bams_list($bams_outfile, $$self{bams}, $chr);
+        }
+    }
+    
+    # Separate raw VCF into SNP and INDEL VCFs
+    foreach my $chr (@chroms)
+    {
+        my $raw_vcf = "$$self{raw_vcf}/$chr.vcf.gz";
+        foreach my $mode (@modes)
+        {
+            $self->spawn('split_vcf', "$outdir/$mode/$chr/raw.vcf.gz", $mode, $raw_vcf);
+        }
+    }
+    $self->wait;
+    
+    $self->set_limits(memory => 2000);
+    foreach my $mode (@modes)
+    {
+        next unless ($mode eq 'indels');
+        foreach my $chr (@chroms)
+        {
+            $self->spawn('left_align_indels', "$outdir/indels/$chr/raw.left_aligned.vcf.gz", "$outdir/indels/$chr/raw.vcf.gz");
+        }
+    }
+    $self->wait;
+    
+    # Run gatk for each chunk, merge and run VQSR
+    my $chunks = $self->get_chunks;
+    
+    # Run the genotyper at given sites
+    $self->set_limits(%{$$self{limits}}) unless !exists($$self{limits});
+    foreach my $mode (@modes)
+    {
+        foreach my $chunk (@$chunks)
+        {
+            my $chr  = $$chunk{chr};
+            my $from = $$chunk{from};
+            my $to   = $$chunk{to};
+            my $vcf = "$outdir/$mode/$chr/raw.vcf.gz";
+            if ($mode eq 'indels')
+            {
+                $vcf =~ s/vcf/left_aligned.vcf/;
+            }
+            $self->spawn('unified_genotyper', "$outdir/$mode/$chr/$chr:$from-$to.vcf.gz", $chunk, $mode, $vcf);
+        }
+    }
+    $self->wait;
+    
+    # Concat chunks into chromosomes and apply filtering
+    $self->set_limits(memory => 2000);
+    foreach my $chr (@chroms)
+    {
+        foreach my $mode (@modes)
+        {
+            $self->spawn('concat_vcfs', "$outdir/$mode/$chr/$chr.vcf.gz", $mode, $chr, $chunks);
+        }
+    }
+    $self->wait;
+    
+    # Model the variants
+    $self->set_limits(memory => 30000);
+    foreach my $mode (@modes)
+    {
+        next if ($mode eq 'indels' && $$self{indel_filter});
+        $self->spawn('variant_recalibrator', "$outdir/$mode/recal.csv", $mode);
+    }
+    $self->wait;
+    # $self->all_done; # COMMENT OUT WHEN FILTER LEVELS DECIDED
+    # Apply the recalibration
+    $self->set_limits(memory => 6000, time => undef);
+    foreach my $mode (@modes)
+    {
+        next if ($mode eq 'indels' && $$self{indel_filter});
+        my $recal = "$outdir/$mode/recal.csv";
+        my $tranches = "$outdir/$mode/recal.tranches";
+        foreach my $chr (@chroms)
+        {
+            $self->spawn('apply_recalibration', "$outdir/$mode/$chr/$chr.recal.vcf.gz", "$outdir/$mode/$chr/$chr.vcf.gz", , $recal, $tranches, $chr, $mode);
+        }
+    }
+    $self->wait;
+    
+    $self->set_limits(memory => 5000, time => undef);
+    # Extract the VQSLOD scores
+    foreach my $mode (@modes)
+    {
+        foreach my $chr (@chroms)
+        {
+            my $vcf = "$outdir/$mode/$chr/$chr.vcf.gz";
+            unless ($mode eq 'indels' && $$self{indel_filter})
+            {
+                $vcf =~ s/vcf/recal.vcf/;
+            }
+            $self->spawn('extract_vqslod', "$outdir/$mode/$chr/$chr.vqslod.gz", $vcf);
+        }
+    }
+    $self->wait;
+    
+    # Annotate the original VCF with the VQSLOD scores
+    foreach my $mode (@modes)
+    {
+        foreach my $chr (@chroms)
+        {
+            my $vcf = "$outdir/$mode/$chr/raw.vcf.gz";
+            if ($mode eq 'indels')
+            {
+                $vcf =~ s/vcf/left_aligned.vcf/;
+            }
+            $self->spawn('annotate_vqslod', "$outdir/$mode/$chr.vcf.gz", $vcf, "$outdir/$mode/$chr/$chr.vqslod.gz");
+        }
+    }
+    $self->wait;
+    
+    # $self->all_done;
+    
+    # Filter based on the VQSLOD scores
+    foreach my $mode (@modes)
+    {
+        next if ($mode eq 'indels' && $$self{indel_filter});
+        foreach my $chr (@chroms)
+        {
+            $self->spawn('filter_vqslod', "$outdir/$mode/$chr.filt.vcf.gz", "$outdir/$mode/$chr.vcf.gz", $mode);
+        }
+    }
+    
+    if ($$self{indel_filter})
+    {
+        foreach my $chr (@chroms)
+        {
+            $self->spawn('filter_indels', "$outdir/indels/$chr.filt.vcf.gz", "$outdir/indels/$chr.vcf.gz");
+        }
+    }    
+    $self->wait;
+    
+    # Merge snps and indels foreach chromosome
+    foreach my $chr (@chroms)
+    {
+        $self->spawn('merge_vcfs', "$outdir/$chr.vqsr.vcf.gz", "$outdir/snps/$chr.filt.vcf.gz", "$outdir/indels/$chr.filt.vcf.gz");
+    }
+    $self->wait;
+    
+    # Create whole genome file: concat all chromosomes
+    if ($$self{merge_chroms})
+    {
+        $self->spawn('concat_chroms', "$outdir/all.vqsr.vcf.gz");
+        $self->wait;
+    }
+    
+    # Run summary stats
+    foreach my $chr (@chroms)
+    {
+        $self->spawn('vcf_stats',"$outdir/$chr.vqsr.vcf.gz.vchk","$outdir/$chr.vqsr.vcf.gz");
+        $self->spawn('apply_filter',"$outdir/$chr.vqsr.filt.vcf.gz","$outdir/$chr.vqsr.vcf.gz");
+    }
+    $self->wait;
+    
+    # Run performance stats and clean
+    $self->spawn('runtime_stats',"$outdir/runtime");
+    $self->wait;
+    $self->clean($outdir) unless !$$self{do_clean};
+
+    $self->all_done;
+}
+
+sub vcf_stats
+{
+    my ($self,$outfile,$vcf) = @_;
+    $self->cmd("vcf check -fs - $vcf > $outfile.part");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub apply_filter
+{
+    my ($self,$outfile,$vcf) = @_;
+    $self->cmd(qq[vcf view -f $vcf | bgzip -c > $outfile.part]);
+    $self->tabix_part($outfile);
+}
+
+sub bams_list
+{
+    my ($self, $outfile, $bam_list, $chr) = @_;
+
+    open(my $in,'<',$bam_list) or $self->throw("$bam_list: $!");
+    my $out = $self->open_file("$outfile.part");
+    while (my $line=<$in>)
+    {
+        if ( !$$self{whole_genome_bams} && !($line=~/chrom$chr\./) ) { next; }
+        print $out $line;
+    }
+    close($out);
+    close($in);
+
+    if ( !-s "$outfile.part" ) 
+    { 
+        if ( !$$self{whole_genome_bams} ) 
+        {
+            $self->throw("The BAMs not named as chrom$chr.bam, please set whole_genome_bams=>1 in your config file.\n");
+        }
+        $self->throw("No matching BAMs found: chr$chr\n");
+    }
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+# java -Xmx2g -jar GenomeAnalysisTK.jar \
+#   -R ref.fasta \
+#   -T LeftAlignVariants \
+#   --variant input.vcf \
+#   -o output.vcf
+sub left_align_indels
+{
+    my ($self, $outfile, $vcf) = @_;
+    my $out_vcf = $outfile;
+    $out_vcf =~ s/\.gz$//;
+    my $jvm = $self->jvm();
+    my $cmd = "java $jvm -jar $$self{gatk} -T LeftAlignVariants -R $$self{fa_ref} --variant $vcf -o $out_vcf";
+    $self->cmd("$cmd");
+    $self->cmd("cat $out_vcf | ~pd3/git/wscripts/guniq -c 1,2,4,5 | bgzip -c > $outfile.part");
+    unlink($out_vcf, $out_vcf.'.idx');
+    $self->tabix_part($outfile);
+}
+
+##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes, for each ALT allele, in the same order as listed">
+##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency, for each ALT allele, in the same order as listed">
+##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
+##INFO=<ID=DB,Number=0,Type=Flag,Description="dbSNP Membership">
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Filtered Depth">
+##INFO=<ID=MQ,Number=1,Type=Float,Description="RMS Mapping Quality">
+##INFO=<ID=DS,Number=0,Type=Flag,Description="Were any of the samples downsampled?">
+
+##INFO=<ID=BaseQRankSum,Number=1,Type=Float,Description="Z-score from Wilcoxon rank sum test of Alt Vs. Ref base qualities">
+##INFO=<ID=Dels,Number=1,Type=Float,Description="Fraction of Reads Containing Spanning Deletions">
+##INFO=<ID=FS,Number=1,Type=Float,Description="Phred-scaled p-value using Fisher's exact test to detect strand bias">
+##INFO=<ID=HRun,Number=1,Type=Integer,Description="Largest Contiguous Homopolymer Run of Variant Allele In Either Direction">
+##INFO=<ID=HaplotypeScore,Number=1,Type=Float,Description="Consistency of the site with at most two segregating haplotypes">
+##INFO=<ID=InbreedingCoeff,Number=1,Type=Float,Description="Inbreeding coefficient as estimated from the genotype likelihoods per-sample when compared against the Hardy-Weinberg expectation">
+##INFO=<ID=MQ0,Number=1,Type=Integer,Description="Total Mapping Quality Zero Reads">
+##INFO=<ID=MQRankSum,Number=1,Type=Float,Description="Z-score From Wilcoxon rank sum test of Alt vs. Ref read mapping qualities">
+##INFO=<ID=QD,Number=1,Type=Float,Description="Variant Confidence/Quality by Depth">
+##INFO=<ID=ReadPosRankSum,Number=1,Type=Float,Description="Z-score from Wilcoxon rank sum test of Alt vs. Ref read position bias">
+
+sub extract_vqslod
+{
+    my ($self, $outfile, $vcf) = @_;
+    my $cmd = qq[vcf-query -f '\%CHROM\t\%POS\t\%ID\t\%FILTER\t\%INFO/VQSLOD\t\%INFO/BaseQRankSum\t\%INFO/Dels\t\%INFO/FS\t\%INFO/HRun\t\%INFO/HaplotypeScore\t\%INFO/InbreedingCoeff\t\%INFO/MQ0\t\%INFO/MQRankSum\t\%INFO/QD\t\%INFO/ReadPosRankSum\t\%INFO/culprit\n' $vcf | sed -r 's/PASS/./; s/TruthSensitivityTranche\\S+/./' | bgzip -c > $outfile.part];
+    $self->cmd($cmd);
+    $self->tabix_part($outfile);
+}
+
+sub annotate_vqslod
+{
+    my ($self, $outfile, $vcf, $annotation) = @_;
+    
+    open my $dh, ">$vcf.desc";
+    print $dh "key=INFO,ID=VQSLOD,Number=1,Type=Float,Description='Log odds ratio of being a true variant versus being false under the trained gaussian mixture model (GATK)'\n";
+    print $dh "key=INFO,ID=BaseQRankSum,Number=1,Type=Float,Description='Z-score from Wilcoxon rank sum test of Alt vs. Ref base qualities (GATK)'\n";
+    print $dh "key=INFO,ID=Dels,Number=1,Type=Float,Description='Fraction of reads containing spanning deletions (GATK)'\n";
+    print $dh "key=INFO,ID=FS,Number=1,Type=Float,Description='Phred-scaled p-value using Fisher's exact test to detect strand bias (GATK)'\n";
+    print $dh "key=INFO,ID=HRun,Number=1,Type=Integer,Description='Largest contiguous homopolymer run of variant allele in either direction (GATK)'\n";
+    print $dh "key=INFO,ID=HaplotypeScore,Number=1,Type=Float,Description='Consistency of the site with at most two segregating haplotypes (GATK)'\n";
+    print $dh "key=INFO,ID=InbreedingCoeff,Number=1,Type=Float,Description='Inbreeding coefficient as estimated from the genotype likelihoods per-sample when compared against the Hardy-Weinberg expectation (GATK)'\n";
+    print $dh "key=INFO,ID=MQ0,Number=1,Type=Integer,Description='Total mapping quality zero reads (GATK)'\n";
+    print $dh "key=INFO,ID=MQRankSum,Number=1,Type=Float,Description='Z-score From Wilcoxon rank sum test of Alt vs. Ref read mapping qualities (GATK)'\n";
+    print $dh "key=INFO,ID=QD,Number=1,Type=Float,Description='Variant confidence/quality by depth (GATK)'\n";
+    print $dh "key=INFO,ID=ReadPosRankSum,Number=1,Type=Float,Description='Z-score from Wilcoxon rank sum test of Alt vs. Ref read position bias (GATK)'\n";
+    print $dh "key=INFO,ID=culprit,Number=1,Type=String,Description='The annotation which was the worst performing in the Gaussian mixture model, likely the reason why the variant was filtered out (GATK)'\n";
+    print $dh "key=FILTER,ID=LowQual,Description='Low quality variant according to GATK (GATK)'\n";
+    close $dh;
+    
+    my $columns = "CHROM,FROM,ID,FILTER,INFO/VQSLOD,INFO/BaseQRankSum,INFO/Dels,INFO/FS,INFO/HRun,INFO/HaplotypeScore,INFO/InbreedingCoeff,INFO/MQ0,INFO/MQRankSum,INFO/QD,INFO/ReadPosRankSum,INFO/culprit";
+    # my $cmd = qq[zcat $vcf | vcf-annotate -a $annotation -d $vcf.desc -c $columns | vcf-annotate -f $vcf.filter | grep -v "^##source" | awk -v OFS="\\t" '{ if(\$7=="."){\$7="LowQual"}; print; }' | bgzip -c > $outfile.part];
+    my $cmd = qq[zcat $vcf | vcf-annotate -a $annotation -d $vcf.desc -c $columns | bgzip -c > $outfile.part];
+    $self->cmd($cmd);
+    $self->tabix_part($outfile);
+}
+
+sub filter_vqslod
+{
+    my ($self, $outfile, $vcf, $mode) = @_;
+    
+    my $snp_ts = $$self{snps}->{ts_filter_level};
+    my $snp_vqslod = `awk -F ',' '(/[0-9]/ && \$1>=$snp_ts){print \$6; exit;}' $$self{outdir}/snps/recal.tranches`;
+    chomp $snp_vqslod;
+    
+    my ($indel_ts, $indel_vqslod);
+    unless ($$self{indel_filter})
+    {
+        $indel_ts = $$self{indels}->{ts_filter_level};
+        $indel_vqslod = `awk -F ',' '(/[0-9]/ && \$1>=$indel_ts){print \$6; exit;}' $$self{outdir}/indels/recal.tranches`;
+        chomp $indel_vqslod;
+    }
+    my $cutoff = $mode eq 'snps' ? $snp_vqslod : $indel_vqslod;
+    
+    my $desc = "Minimum VQSLOD score [SNPs:$snp_vqslod, truth sensitivity $snp_ts;";
+    if ($$self{indel_filter})
+    {
+        $desc .= "]";
+    }
+    else
+    {
+        $desc .= " indels:$indel_vqslod, truth sensitivity $indel_ts]";
+    }
+    
+    $mode = $mode eq 'snps' ? 'SNPs' : 'indels';
+    
+    open my $fh, ">$vcf.filter";
+    print $fh qq[{
+       tag  => 'INFO/VQSLOD',
+       name => 'MinVQSLOD',
+       apply_to => '$mode',
+       desc => '$desc',
+       test => sub { return \$MATCH < $cutoff ? \$FAIL : \$PASS },
+    },
+    ];
+    close $fh;
+    
+    my $cmd = qq[zcat $vcf | vcf-annotate -f $vcf.filter | vcf-annotate -f RefN | bgzip -c > $outfile.part];
+    $self->cmd($cmd);
+    $self->tabix_part($outfile);
+}
+
+sub filter_indels
+{
+    my ($self, $outfile, $vcf) = @_;
+    
+    my $cmd = qq[zcat $vcf | vcf-annotate -f $$self{indel_filter} | bgzip -c > $outfile.part];
+    $self->cmd($cmd);
+    $self->tabix_part($outfile);
+}
+
+sub mrProper
+{
+    my ($self,$outdir) = @_;
+    for my $pop (keys %{$$self{pops}})
+    {
+        $self->cmd("rm -rf $outdir/$pop");
+    }
+    $self->clean($outdir);
+}
+
+sub clean
+{
+    my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
+    my $chunks = $self->get_chunks;
+    for my $pop (keys %{$$self{pops}})
+    {
+        for my $chunk (@$chunks)
+        {
+            my $chr  = $$chunk{chr};
+            my $from = $$chunk{from};
+            my $to   = $$chunk{to};
+            for my $suffix qw(samples vcf.gz vcf.gz.tbi)
+            {
+                my $file = "$outdir/$pop/$chr/$chr:$from-$to.$suffix";
+                unlink($file) unless !-e $file;
+            }
+        }
+    }
+}
+
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub cmd
+{
+    my ($self,$cmd) = @_;
+    return Utils::CMD($cmd,{verbose=>$$self{_verbose}});
+}
+
+sub split_vcf
+{
+    my ($self, $outfile, $mode, $vcf) = @_;
+    # my $filter = qq[vcf-annotate -r FILTER -f +/-1/-2/-3/-4/-a/-c/-D/-d/-H/-HG/-q/-Q/-v/-W/-w]; # remove any filters
+    # $mode = $mode eq 'snps' ? 'SNPs' : 'indels';
+    # my $cmd = qq[vcf-subset --exclude-ref --type $mode $vcf | $filter | bgzip -c > $outfile.part]; # remove all-sample hom ref calls
+    my $cmd;
+    if ($mode eq 'indels') {
+        $cmd = qq[vcf view -v :indel $vcf | vcf-annotate -n -r FILTER | bgzip -c > $outfile.part];
+    } else {
+        $cmd = qq[vcf view -v :snp $vcf | vcf-annotate -r FILTER | bgzip -c > $outfile.part];
+    }
+    $self->cmd($cmd);
+    $self->tabix_part($outfile);
+}
+
+sub unified_genotyper
+{
+    my ($self, $outfile, $chunk, $mode, $sites_vcf) = @_;
+    
+    my $chr  = $$chunk{chr};
+    my $from = $$chunk{from};
+    my $to   = $$chunk{to};
+    
+    my $genotyper_opts = $$self{$mode}->{genotyper_opts};
+    
+    my $jvm = $self->jvm();
+    
+    my $out_vcf = $outfile;
+    $out_vcf =~ s/\.gz$//;
+    $mode = $mode eq 'snps' ? 'SNP' : 'INDEL';
+    
+    # $self->cmd("tabix -h $sites_vcf $chr:$from-$to | cut -f 1-8 > $out_vcf.sites.vcf");
+    
+    # if (`grep -v ^# $out_vcf.sites.vcf | head -1`)
+    # {
+        my $cmd = "java $jvm -jar $$self{gatk} -T UnifiedGenotyper -R $$self{fa_ref} --dbsnp $$self{dbsnp} -I $$self{outdir}/lists/chr$chr.list -o $out_vcf";
+        # my $args = "--alleles $sites_vcf -gt_mode GENOTYPE_GIVEN_ALLELES -out_mode EMIT_ALL_SITES --sites_only --genotype_likelihoods_model $mode --standard_min_confidence_threshold_for_calling 4.0 --standard_min_confidence_threshold_for_emitting 4.0 -l INFO -L $out_vcf.sites.vcf";
+        # my $args = "-baq CALCULATE_AS_NECESSARY --alleles $sites_vcf -gt_mode GENOTYPE_GIVEN_ALLELES -out_mode EMIT_ALL_SITES --genotype_likelihoods_model $mode --standard_min_confidence_threshold_for_calling 4.0 --standard_min_confidence_threshold_for_emitting 4.0 -l INFO -L $chr:$from-$to";
+        my $args = "--alleles $sites_vcf --genotype_likelihoods_model $mode $genotyper_opts -L $chr:$from-$to";
+        $self->cmd("$cmd $args");
+    # }
+    # else
+    # {
+    #     $self->cmd("cp $out_vcf.sites.vcf $out_vcf");
+    # }
+    $self->cmd("bgzip -c $out_vcf > $outfile.part");
+    unlink($out_vcf, $out_vcf.'.idx');
+    $self->tabix_part($outfile);
+}
+
+sub jvm
+{
+    my ($self, $dir) = @_;
+    my $memory = $self->get_limits('memory') || 6000;
+    my $java_mem = int($memory * 0.8);
+    my $xss = 280;
+    if ($java_mem > 1000)
+    {
+        $xss = " -Xss${xss}m";
+    }
+    else
+    {
+        $xss = ''; # login node with small memory limit doesn't like Xss option at all
+    }
+    my $temp_dir = '';
+    if ($dir)
+    {
+        $temp_dir = ' -Djava.io.tmpdir='.File::Temp->newdir(DIR => $dir);
+    }
+    return "-Xmx${java_mem}m -Xms${java_mem}m$xss$temp_dir -server -XX:+UseSerialGC";
+}
+
+sub variant_recalibrator
+{
+    my ($self, $outfile, $mode) = @_;
+    my $outdir = $$self{outdir};
+    my $resources = join ' ', @{ $$self{$mode}->{resources} };
+    my $annotations = $$self{$mode}->{annotations};
+    my $tranches = $$self{$mode}->{tranches};
+    my $target_titv = $$self{$mode}->{target_titv};
+    my $ts_filter_level = $$self{$mode}->{ts_filter_level};
+    my $recal_opts = $$self{$mode}->{recal_opts};
+    
+    my $inputs;
+    foreach my $chr (@{$$self{chroms}})
+    {
+        $inputs .= " --input $outdir/$mode/$chr/$chr.vcf.gz";
+    }
+    my $regions;
+    if ($$self{targets})
+    {
+        $regions = "-L $$self{targets}";
+    }
+    else
+    {
+        foreach my $chr (@{$$self{chroms}})
+        {
+            $regions .= "-L $chr ";
+        }
+    }
+    my $tranches_file = "$outdir/$mode/recal.tranches";
+    my $rplots_file = "$outdir/$mode/recal.plots.r";
+    
+    $mode = $mode eq 'snps' ? 'SNP' : 'INDEL';
+    
+    my $jvm = $self->jvm();
+    my $cmd = "java $jvm -jar $$self{gatk} -T VariantRecalibrator -R $$self{fa_ref}$inputs -recalFile $outfile.part -tranchesFile $tranches_file -rscriptFile $rplots_file";
+    my $args = "--mode $mode -l INFO --target_titv $target_titv --ts_filter_level $ts_filter_level $recal_opts";
+    
+    $self->cmd("$cmd $args $annotations $resources $tranches $regions");
+    $self->cmd("Rscript ~sm15/scripts/plot_Tranches.R $tranches_file $target_titv $ts_filter_level");
+    rename("$outfile.part", $outfile);
+}
+
+# sub apply_recalibration
+# {
+#     my ($self, $outfile, $vcf, $recal, $tranches, $chr, $mode) = @_;
+#     
+#     my $out_vcf = $outfile;
+#     $out_vcf =~ s/\.gz$//;
+#     
+#     my $chr_recal = $out_vcf;
+#     $chr_recal =~ s/vcf$/csv/;
+#     $self->cmd("grep ^$chr, $recal > $chr_recal");
+#     
+#     my $chr_tranches = $chr_recal;
+#     $chr_tranches =~ s/csv$/tranches/;
+#     
+#     $self->cmd("cp $tranches $chr_tranches");
+#     
+#     my $ts_filter_level = $$self{$mode}->{ts_filter_level};
+#     $mode = $mode eq 'snps' ? 'SNP' : 'INDEL';
+#     
+#     my $region_file = $chr_tranches;
+#     $region_file =~ s/recal\.tranches/list/;
+#     $self->cmd("echo $chr > $region_file");
+#     
+#     my $jvm = $self->jvm();
+#     my $cmd = "java $jvm -jar $$self{gatk} -T ApplyRecalibration -R $$self{fa_ref} --input $vcf -o $out_vcf -recalFile $chr_recal -tranchesFile $chr_tranches";
+#     my $args = "--mode $mode --ts_filter_level $ts_filter_level";
+#     $self->cmd("$cmd $args -L $region_file");
+#     $self->cmd("bgzip -c $out_vcf > $outfile.part");
+#     unlink($out_vcf, $out_vcf.'.idx');
+#     $self->tabix_part($outfile);
+# }
+
+sub apply_recalibration
+{
+    my ($self, $outfile, $vcf, $recal, $tranches, $chr, $mode) = @_;
+    
+    my $out_vcf = $outfile;
+    $out_vcf =~ s/\.gz$//;
+    
+    my $ts_filter_level = $$self{$mode}->{ts_filter_level};
+    $mode = $mode eq 'snps' ? 'SNP' : 'INDEL';
+    
+    my $jvm = $self->jvm();
+    my $cmd = "java $jvm -jar $$self{gatk} -T ApplyRecalibration -R $$self{fa_ref} --input $vcf -o $out_vcf -recalFile $recal -tranchesFile $tranches";
+    my $args = "--mode $mode --ts_filter_level $ts_filter_level";
+    $self->cmd("$cmd $args -L $chr");
+    $self->cmd("bgzip -c $out_vcf > $outfile.part");
+    unlink($out_vcf, $out_vcf.'.idx');
+    $self->tabix_part($outfile);
+}
+
+sub open_file
+{
+    my ($self,$file) = @_;
+    if ( ($file=~m{^(.+)/[^/]+$}) && ! -e $1 ) { $self->cmd("mkdir -p $1"); }
+    open(my $fh,'>',$file) or $self->throw("$file: $!");
+    return $fh;
+}
+
+sub sample_list
+{
+    my ($self,$outfile,$bams) = @_;
+
+    if ( defined $$self{sample_list} )
+    {
+        $self->cmd("cp $$self{sample_list} $outfile");
+        return;
+    }
+
+    my %samples;
+
+    # Now fill the ploidy information
+    open(my $in,'<',$bams) or $self->throw("$bams: $!");
+    while (my $bam=<$in>)
+    {
+        chomp($bam);
+
+        open(my $rgs,"samtools view -H $bam |") or $self->throw("samtools view -H $bam: $!");
+        while (my $rg=<$rgs>)
+        {
+            if ( !($rg=~/^\@RG/) ) { next; }
+            if ( $rg=~/SM:(\S+)/ ) { $samples{$1}=1; }
+        }
+        close($rgs);
+    }
+    close($in);
+
+    open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
+    for my $sample (sort keys %samples)
+    {
+        my $sex;
+        if ( !$$self{mysql} ) { $sex = $$self{assumed_sex}; }
+        else
+        {
+            my @sex = $self->cmd(qq[$$self{mysql} -e 'SELECT sex FROM individual WHERE name="$sample"']);
+            if ( !@sex ) { $self->throw("No info for $sample?\n"); }
+            $sex = $sex[0];
+            chomp($sex);
+        }
+        if ( !($sex=~/^[MF]$/) ) { $self->throw("Neither male nor female? Expected 'F' or 'M', got '$sex'."); }
+        print $out "$sample\t$sex\n";
+    }
+    close($out);
+
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub get_chunks
+{
+    my ($self) = @_;
+
+    my $regions = $$self{regions} ? $self->read_regions($$self{regions}) : $self->read_fai("$$self{fa_ref}.fai",$$self{chroms});
+
+    my @chunks;
+    for my $region (@$regions)
+    {
+        my $pos     = $$region{from};
+        my $end_pos = $$region{to};
+        while ($pos<$end_pos)
+        {
+            my $from = $pos;
+            my $to   = $from+$$self{chunk_size}-1;
+            
+            if ( $to>$end_pos ) { $to=$end_pos; }
+            
+            push @chunks, { chr=>$$region{chr}, from=>$from, to=>$to };
+            
+            $pos += $$self{chunk_size} - $$self{chunks_overlap};
+            if ( $pos<1 ) { $self->throw("The split size too small [$$self{chunk_size}]?\n"); }
+            
+            if ( $$self{debug_chunks} && scalar @chunks>=$$self{debug_chunks} ) { return \@chunks; }
+        }
+    }
+    
+    if ( $$self{shuffle_chunks} )
+    {
+        use Math::Random;
+        random_set_seed_from_phrase(1,1);
+        @chunks = random_permutation(@chunks);
+    }
+    
+    return \@chunks;
+}
+
+sub read_regions
+{
+    my ($self,$file) = @_;
+    open(my $fh,'<',$file) or $self->throw("$file: $!"); 
+    my @regions;
+    while (my $line=<$fh>)
+    {
+        chomp($line);
+        if ( !($line=~/^(\S+)\s+(\d+)\s+(\d+)\s*$/) ) { $self->throw("Could not parse the regions file $file: [$line]"); }
+        push @regions, { chr=>$1, from=>$2, to=>$3 };
+    }
+    return \@regions;
+}
+
+sub read_fai
+{
+    my ($self,$fai,$regexs) = @_;
+
+    # Determine the chromosomes and their lengths
+    open(my $fh,'<',$fai) or $self->throw("$fai: $!"); 
+    my @chr_lengths;
+    while (my $line=<$fh>)
+    {
+        my ($chr,$from,$to);
+        for my $regex (@$regexs)
+        {
+            if ( !($line=~/^($regex)\t(\d+)/i) ) { next; }
+            $chr  = $1;
+            $from = 1;
+            $to   = $2;
+            last;
+        }
+        if ( !defined $chr ) { next; }
+        if ( !exists($$self{ploidy}{$chr}) ) 
+        {
+            push @chr_lengths, { chr=>$chr, from=>$from, to=>$to };
+            next;
+        }
+
+        # Split the chunks as necessary
+        for my $reg (@{$$self{ploidy}{$chr}})
+        {
+            my ($start,$end) = split(/-/,$$reg{region});
+            if ( $start>$from )
+            {
+                push @chr_lengths, { chr=>$chr, from=>$from, to=>$start-1 };
+            }
+            push @chr_lengths, { chr=>$chr, from=>$start, to=>$end };
+            $from = $end+1;
+        }
+        if ( $from<$to )
+        {
+            push @chr_lengths, { chr=>$chr, from=>$from, to=>$to };
+        }
+    }
+    close($fh);
+    return \@chr_lengths;
+}
+
+sub ploidy_defaults
+{
+    my ($self,$chr,$from,$to) = @_;
+    my $mploidy = $$self{ploidy}{default};
+    my $fploidy = $$self{ploidy}{default};
+    if ( !exists($$self{ploidy}{$chr}) ) { return ($mploidy,$fploidy); }
+    for my $reg (@{$$self{ploidy}{$chr}})
+    {
+        my ($start,$end) = split(/-/,$$reg{region});
+
+        # Require at least one end to be within the interval
+        if ( $from>=$start && $from<=$end or $to>=$start && $to<=$end )
+        {
+            if ( exists($$reg{M}) ) { $mploidy=$$reg{M}; }
+            if ( exists($$reg{F}) ) { $fploidy=$$reg{F}; }
+            return ($mploidy,$fploidy);
+        }
+    }
+    return ($mploidy,$fploidy);
+}
+
+sub set_chunk_options
+{
+    my ($self,$chr,$from,$to) = @_;
+    if ( !exists($$self{chunk_options}) ) { return; }
+    my $hit;
+    for my $chunk (keys %{$$self{chunk_options}})
+    {
+        if ( !($chunk=~/^([^:]+):(\d+)-(\d+)$/) ) { $self->throw("Could not parse the chunk_options: [$chunk]"); }
+        if ( $chr ne $1 ) { next; }
+        if ( $2>$to ) { next; }
+        if ( $3<$from ) { next; }
+        $hit = $chunk;
+        last;
+    }
+    if ( !defined $hit )
+    {
+        if ( exists($$self{ori_chunk_options}) ) 
+        {
+            $self->set_options($$self{ori_chunk_options},$self);
+        }
+        return;
+    }
+    if ( !exists($$self{ori_chunk_options}) )
+    {
+        $$self{ori_chunk_options} = {};
+        $self->set_options($self,$$self{ori_chunk_options},keys %{$$self{chunk_options}{$hit}});
+    }
+    $self->set_options($$self{chunk_options}{$hit},$self);
+}
+
+sub set_options
+{
+    my ($self,$src,$tgt,@keys) = @_;
+    if ( !scalar @keys ) { @keys = keys %$src }
+    for my $key (@keys)
+    {
+        $$tgt{$key} = $$src{$key};
+    }
+}
+
+sub tabix_part
+{
+    my ($self,$vcf) = @_;
+    $self->cmd("tabix -p vcf -f $vcf.part");
+    rename("$vcf.part.tbi","$vcf.tbi");
+    rename("$vcf.part",$vcf);
+}
+
+sub merge_vcfs
+{
+    my ($self,$outfile,@vcfs) = @_;
+    my $cmd = 'vcf-concat -s '.scalar(@vcfs).' '.join(' ',@vcfs)." | grep -v '^##source' | bgzip -c > $outfile.part";
+    $self->cmd($cmd);
+    $self->tabix_part($outfile);
+}
+
+sub concat_vcfs
+{
+    my ($self, $outfile, $mode, $chr, $chunks) = @_;
+    
+    my $outdir = $$self{outdir};
+    my $chunks_list = "$outdir/$mode/$chr/concat.list";
+    
+    open(my $fh,'>',$chunks_list) or $self->throw("$chunks_list: $!");
+    foreach my $chunk (sort { $$a{from} <=> $$b{from} } @$chunks)
+    {
+        if ( $$chunk{chr} ne $chr ) { next; }
+        my $from = $$chunk{from};
+        my $to   = $$chunk{to};
+        print $fh "$outdir/$mode/$chr/$chr:$from-$to.vcf.gz\n";
+    }
+    close($fh);
+    
+    $self->cmd(qq[vcf-concat -f $chunks_list | bgzip -c > $outfile.part]);
+    $self->tabix_part($outfile);
+}
+
+sub concat_chroms
+{
+    my ($self, $outfile, $mode) = @_;
+    
+    my $outdir = $$self{outdir};
+    my $chunks_list = "$outdir/$mode/concat.list";
+    
+    open(my $fh,'>',$chunks_list) or $self->throw("$chunks_list: $!");
+    foreach my $chr (@{$$self{chroms}})
+    {
+        print $fh "$outdir/$mode/$chr/$chr.vcf.gz\n";
+    }
+    close($fh);
+    
+    $self->cmd("vcf-concat -f $chunks_list | bgzip -c > $outfile.part");
+    $self->tabix_part($outfile);
+}

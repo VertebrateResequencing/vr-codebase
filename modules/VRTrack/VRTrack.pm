@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '24';
+use constant SCHEMA_VERSION => '25';
 
 our $DEFAULT_PORT = 3306;
 
@@ -1489,7 +1489,7 @@ CREATE TABLE `schema_version` (
   PRIMARY KEY  (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-insert into schema_version(schema_version) values (24);
+insert into schema_version(schema_version) values (25);
 
 --
 -- Table structure for table `assembly`
@@ -1596,6 +1596,7 @@ CREATE TABLE `lane` (
   `gt_status` enum('unchecked','confirmed','wrong','unconfirmed','candidate','unknown','swapped') DEFAULT 'unchecked',
   `submission_id` smallint(5) unsigned DEFAULT NULL,
   `withdrawn` tinyint(1) DEFAULT NULL,
+  `manually_withdrawn` tinyint(1) DEFAULT NULL,
   `note_id` mediumint(8) unsigned DEFAULT NULL,
   `changed` datetime NOT NULL DEFAULT '0000-00-00',
   `run_date` datetime DEFAULT NULL,

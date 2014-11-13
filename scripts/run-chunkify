@@ -254,7 +254,7 @@ sub define_chunks
     open(my $out,'>',"$outfile.part") or $self->throw("$outfile.part: $!");
     open(my $in,"gunzip -S '' -c $input |") or $self->throw("gunzip -S '' -c $input: $!");
     my ($start_chr,$start_pos);
-    my $chunk_sites = $$self{chunk_sites};
+    my $chunk_sites = $$self{vcf_sites};
     my $nsites = 0;
     while (my $line=<$in>)
     {
