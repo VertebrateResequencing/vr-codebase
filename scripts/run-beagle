@@ -40,6 +40,7 @@ sub new
     $$self{java_args}   = '';
     $$self{phased_concat_args} = '';
     $$self{memstep} = 2_000;
+    $$self{input_tag} = 'gl';
     $$self{config_version} = '1413467786';
     $$self{max_chr_len}   = 249250621;
     $$self{redo_beagle} = 0;
@@ -89,11 +90,8 @@ sub new
             #   This is useful when performing genotype refinement and the number of sites should stay unchanged.
             do_impute  => 1,
 
-            # No imputation or genotype, only genotype refinement. Run with gt=
-            #   and leaves off gl=. Consider adding to 'beagle_args' the
-            #   options gprobs=false (no posterior genotype probabilities) or
-            #   phase-its= to increase phasing accuracy (the default is phase-its=5).
-            do_phasing => 0,
+            # Tag to use from the in_vcf file: gt (GT), gl (GL or PL), gtgl (GT, GL, or PL)
+            input_tag => '] .$$self{input_tag}. q[',
 
             # Create whole-genome VCF? This can produce *huge* files for thousands of samples
             merge_chroms   => 0,
@@ -273,6 +271,24 @@ sub runtime_stats
     rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
 
+sub has_region
+{
+    my ($self,$vcf,$region) = @_;
+    my $file = $self->expand_chrom($vcf,$region);
+    if ( !-e $file ) { return 0; }
+    if ( $file ne $vcf ) { return 1; }  # expanded template
+
+    # potentially multiple chromosomes in the file
+    open(my $fh,"$$self{bcftools} query -r $region -f'%CHROM\\t%POS\\n' $file |") or $self->throw("$$self{bcftools} query -r $region -f'%CHROM\\t%POS\\n' $file: $!");
+    while (my $line=<$fh>)
+    {
+        close($fh);
+        return 1;
+    }
+    close($fh);
+    return 0;
+}
+
 sub read_chunks
 {
     my ($self) = @_;
@@ -282,6 +298,7 @@ sub read_chunks
         my @regions = $self->define_regions($in_file);
         for my $region (@regions)
         {
+            if ( !$self->has_region($$self{in_vcf},$region) ) { next; }
             $self->spawn('define_chunks',"$$self{chunk_file}.$region",$in_file,$region);
         }
         $self->wait;
@@ -289,6 +306,7 @@ sub read_chunks
         $self->cmd("> $$self{chunk_file}.part");
         for my $region (@regions)
         {
+            if ( !$self->has_region($$self{in_vcf},$region) ) { next; }
             $self->cmd("cat $$self{chunk_file}.$region >> $$self{chunk_file}.part");
         }
         rename("$$self{chunk_file}.part",$$self{chunk_file}) or $self->throw("rename $$self{chunk_file}.part $$self{chunk_file}: $!");
@@ -465,7 +483,7 @@ sub beagle
             $known  = "ref=$prefix.ref.vcf.gz";
             $known .= $$self{do_impute} ? ' impute=true' : ' impute=false';
         }
-        my $action = $$self{do_phasing} ? "gt=$prefix.in.vcf.gz" : "gl=$prefix.in.vcf.gz";
+        my $action = "$$self{input_tag}=$prefix.in.vcf.gz";
         $self->create_vcf_chunk($in_vcf,"$prefix.in.vcf.gz",$chr,$from,$to);
         $self->java_cmd(qq[$$self{java_exec} -Xms${mem}m -Xmx${mem}m $$self{java_args} -jar $$self{beagle_jar} $$self{beagle_args} $known $action out=$prefix.part >>$outfile.o],"$outfile.e");
         if ( -s "$outfile.e" ) { $self->throw("Expected empty error file: $outfile.e"); }
