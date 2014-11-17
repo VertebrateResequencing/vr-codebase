@@ -122,7 +122,10 @@ sub convert_to_fastq_provides {
     my @fastqs ;
     for my $file (@{$self->{files}})
     {
-      push(@fastqs, $self->_fastq_from_cram($file));
+      for my $f (@{$self->_fastq_from_cram($file)})
+      {
+        push(@fastqs,$f );
+      }
     }
 
     return \@fastqs;
