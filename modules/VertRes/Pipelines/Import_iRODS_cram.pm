@@ -135,7 +135,11 @@ sub convert_to_fastq {
     my $prefix   = $$self{prefix};
     my $work_dir = $lane_path;
     
-    my $reference_file = $self->{lane}->files->[0]->reference();
+    my $reference_file;
+    if(defined($self->{vrlane}) && defined($self->{vrlane}->files) && defined($self->{vrlane}->files->[0]))
+    {
+      $reference_file = $self->{vrlane}->files->[0]->reference();
+    }
     # change directory
     if(defined($reference_file))
     {
