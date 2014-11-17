@@ -14,29 +14,22 @@ use VertRes::Utils::VRTrackFactory;
 use VRTrack::Multiplex_pool;
 use Getopt::Long;
 use Carp;
+use Data::Dumper;
 
 use strict;
 use warnings;
 
-my ($db_study_file, %db_studies, $verbose, $help);
+my ($db_file, %db_studies, $verbose, $help);
 
 GetOptions(
-    'd|db_study_file=s'     =>  \$db_study_file,
+    'd|db_file=s'           =>  \$db_file,
     'v|verbose'             =>  \$verbose,
     'h|help'	            =>  \$help,
 );
 
-($db_study_file && !$help) or die <<USAGE;
+($db_file && !$help) or die <<USAGE;
     Usage: $0 -d <tsv_file_of_db_project_mappings>
 USAGE
-
-#initialise array of databases for which pending data is to be stored:
-open DBFILE, "<", $db_study_file or die "Can't open $db_study_file: $!\n";
-while (<DBFILE>){
-	chomp;
-	my @mapping = split("\t", $_);
-	push @{ $db_studies{$mapping[0]} }, $mapping[1];
-}
 
 #db connection parameters for vrtrack dbs:
 my $HOST = $ENV{VRTRACK_HOST};
@@ -44,6 +37,21 @@ my $PORT = $ENV{VRTRACK_PORT} || 3306;
 my $WRITE_USER = $ENV{VRTRACK_RW_USER};
 my $WRITE_PASS = $ENV{VRTRACK_PASSWORD};
 my $READ_USER = $ENV{VRTRACK_RO_USER};
+
+my $sql_select_projects = "SELECT name from latest_project";
+#initialise array of databases for which pending data is to be stored:
+open DBFILE, "<", $db_file or die "Can't open $db_file: $!\n";
+while (<DBFILE>){
+	chomp;
+	my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => $_, mode => 'r');
+    my $sth_projects = $vrtrack->{_dbh}->prepare($sql_select_projects);
+    croak "Can't connect to vrtrack database $_\n" unless $vrtrack;
+	if ($sth_projects->execute()) {
+		while ( my $project = $sth_projects->fetchrow_array() ) {
+			push @{ $db_studies{$_} }, $project;
+		}
+	}
+}
 
 #pending_db connection, SQL statements and statement handles:
 my $pending_db = 'vrtrack_pending_requests';
@@ -53,16 +61,16 @@ croak "Can't connect to web tracking database\n" unless $vrtrack;
 #my $sql_pend_study = qq[INSERT into study(name) values (?)];
 my $sql_pend_study = qq[INSERT IGNORE INTO study SET name = ?];
 my $sql_fetch_study = qq[SELECT study_id from study where name = ?];
-my $sql_pend_project = qq[INSERT into project(project_id,study_id,name,hierarchy_name,ssid,latest) values(?,?,?,?,?,1)];
-my $sql_pend_sample = qq[INSERT into sample(sample_id,name,hierarchy_name,project_id,latest) values (?,?,?,?,1)];
-my $sql_pend_libreq = qq[INSERT into library_request(library_request_id,sample_id,ssid,prep_status,changed,latest) values (?,?,?,?,?,1)];
-my $sql_pend_lib = qq[INSERT into library(library_id,sample_id,name,hierarchy_name,latest) values (?,?,?,?,1)];
+my $sql_pend_project = qq[INSERT IGNORE into project(project_id,study_id,name,hierarchy_name,ssid,latest,changed) values(?,?,?,?,?,1,NOW())];
+my $sql_pend_sample = qq[INSERT IGNORE into sample(sample_id,name,hierarchy_name,project_id,latest,changed) values (?,?,?,?,1,NOW())];
+my $sql_pend_libreq = qq[INSERT IGNORE into library_request(library_request_id,sample_id,ssid,prep_status,changed,latest) values (?,?,?,?,?,1)];
+my $sql_pend_lib = qq[INSERT IGNORE into library(library_id,sample_id,name,hierarchy_name,latest,changed) values (?,?,?,?,1,NOW())];
 my $sql_check_pool = qq[SELECT multiplex_pool_id from multiplex_pool where ssid = ?];
-my $sql_pend_pool = qq[INSERT into multiplex_pool(ssid) values (?)];
+my $sql_pend_pool = qq[INSERT IGNORE into multiplex_pool(ssid) values (?)];
 my $sql_check_mplex = qq[SELECT multiplex_pool_id from library_multiplex_pool where library_id = ?];
-my $sql_pend_mplex = qq[INSERT into library_multiplex_pool(multiplex_pool_id,library_id) values (?,?)];
-my $sql_pend_sreq = qq[INSERT into seq_request(seq_request_id,ssid,seq_type,seq_status,changed,latest) values (?,?,?,?,?,1)];
-my $sql_pend_sreq_mp = qq[INSERT into seq_request(seq_request_id,multiplex_pool_id,ssid,seq_type,seq_status,changed,latest) values (?,?,?,?,?,?,1)];
+my $sql_pend_mplex = qq[INSERT IGNORE into library_multiplex_pool(multiplex_pool_id,library_id) values (?,?)];
+my $sql_pend_sreq = qq[INSERT IGNORE into seq_request(seq_request_id,ssid,seq_type,seq_status,changed,latest) values (?,?,?,?,?,1)];
+my $sql_pend_sreq_mp = qq[INSERT IGNORE into seq_request(seq_request_id,multiplex_pool_id,ssid,seq_type,seq_status,changed,latest) values (?,?,?,?,?,?,1)];
 
 my $sth_study = $vrtrack->{_dbh}->prepare($sql_pend_study);
 my $sth_fetch_study = $vrtrack->{_dbh}->prepare($sql_fetch_study);

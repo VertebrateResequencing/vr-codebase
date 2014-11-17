@@ -1,0 +1,263 @@
+#!/usr/bin/env perl
+#
+# Author: petr.danecek@sanger
+#
+# This script/pipeline is intended for chaining multiple runners. It runs as a
+# daemon and waits for new projects to appear in dropbox directory ("input_dir").
+# The projects are small text files which define the input data, such as:
+#
+#   # Where to send notification about job completion
+#   email: someone@somewhere.org
+#
+#   # Input file
+#   vcf:  /path/to/input/file
+#
+# Currently on the keys listed above are allowed, although in principle any
+# config keys could be used without having it hard-wired in the scrip. This
+# would need some security consideration first, depending on the intended usage
+# of the pipeline.
+#
+# After the runners finish, the result is moved to output directory and an
+# email is sent to notify the user.
+#
+
+use strict;
+use warnings;
+use Carp;
+
+my $opts = parse_params();
+
+while (1)
+{
+    my $project = get_project($opts);
+    if ( $project )
+    {
+        run_project($opts,$project);
+    }
+    print STDERR "sleeping..\n";
+    sleep(60);
+}
+
+exit;
+
+#--------------------------------
+
+sub error
+{
+    my (@msg) = @_;
+    if ( scalar @msg ) { confess @msg; }
+    print 
+        "Usage: run-runners [OPTIONS]\n",
+        "Options:\n",
+        "   -c, --config <file>     config file\n",
+        "   -h, -?, --help          this help message\n",
+        "\n";
+    exit -1;
+}
+
+sub parse_params
+{
+    my $opts = {};
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-c' || $arg eq '--config' ) { $$opts{config}=shift(@ARGV); next }
+        if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
+        error("Unknown parameter \"$arg\". Run -h for help.\n");
+    }
+    if ( !exists($$opts{config}) ) { error("Missing the -c option.\n") }
+    my %x = do "$$opts{config}";
+    if ( $@ ) { error("do $$opts{config}: $@\n"); }
+    %$opts = (%$opts,%x);
+    return $opts;
+}
+
+# Check for projects in progress and, if none found, for unfinished projects.
+sub get_project
+{
+    my ($opts) = @_;
+
+    # First check projects in progress
+    my ($dh,$project);
+    opendir($dh, $$opts{work_dir}) or error("$$opts{work_dir}: $!");
+    while (my $dir = readdir($dh))
+    {
+        if ( !-d "$$opts{work_dir}/$dir" or !($dir=~/^\d+_(.*)$/ ) ) { next; }
+        $project = parse_project($opts,"$$opts{work_dir}/$dir/$1.txt");
+        last;
+    }
+    closedir($dh);
+    if ( defined $project ) { return $project; }
+
+
+    # No unfinished projects, check for new
+    opendir($dh, $$opts{input_dir}) or error("$$opts{input_dir}: $!");
+    while (my $file = readdir($dh))
+    {
+        if ( !($file =~/\.txt$/ ) ) { next; }
+        $project = parse_project($opts,"$$opts{input_dir}/$file");
+        my $alias = $$project{name};
+        $alias =~ s/\.txt$//;
+        $$project{alias} = time() .'_'. $alias;
+        $$project{file}  = $file;
+        last;
+    }
+    closedir($dh);
+    if ( !defined $project ) { return undef; }
+
+    system("mkdir -p $$opts{work_dir}/$$project{alias}");
+    system("mv $$opts{input_dir}/$$project{file} $$opts{work_dir}/$$project{alias}/");
+    if ( $? ) { confess "mv $$opts{input_dir}/$$project{file} $$opts{work_dir}/$$project{alias}/"; }
+
+    return $project;
+}
+
+sub clean_project
+{
+    my ($opts,$project) = @_;
+
+    my $name = $$project{name};
+    $name =~ s/\.txt$//;
+    $$project{prefix} = "$$opts{work_dir}/$$project{alias}/$name";
+
+    for my $outdir (keys %{$$opts{outputs}})
+    {
+        system("mkdir -p $$opts{output_dir}/$$project{alias}/$outdir");
+        for my $file (@{$$opts{outputs}{$outdir}})
+        {
+            my $path = expand_vars($opts,$project,$file);
+            system("mv $path $$opts{output_dir}/$$project{alias}/$outdir/");
+        }
+    }
+
+    system("mkdir -p $$opts{output_dir}/$$project{alias}/tmp-data");
+    system("mv $$opts{work_dir}/$$project{alias} $$opts{output_dir}/$$project{alias}/tmp-data");
+}
+
+# Parse the project definition
+sub parse_project
+{
+    my ($opts,$file) = @_;
+    if ( !($file=~m{^(.+)/([^/]+)$}) ) { error("Could not parse dir/fname: $file\n"); }
+    my $dir  = $1;
+    my $name = $2;
+    my %project = ();
+    open(my $fh,'<',$file) or error("$file: $!");
+    while (my $line=<$fh>)
+    {
+        if ( $line=~/^#/ ) { next; }
+        if ( $line=~/^\s*$/ ) { next; }
+        $line =~ s/^\s*//;
+        $line =~ s/\s*$//;
+        my ($key,$value) = split(/\s+/,$line);
+        if ( $key eq 'email:' ) { $project{email} = $value; next; }
+        elsif ( $key eq 'vcf:' ) { $project{vcf} = $value; next; }
+        else { error("Could not parse $file: $line\n"); }
+    }
+    close($fh) or error("close failed: $file");
+    $project{dir}  = $dir;
+    $project{name} = $name;
+    if ( $dir=~m{^.+/(\d+_[^/]+)$} ) { $project{alias} = $1; }
+    return \%project;
+}
+
+# Replace variables $()
+sub expand_vars
+{
+    my ($opts,$project,$str) = @_;
+    while ( ($str =~ /\$\(([^\)]+)\)/) )
+    {
+        if ( exists($$project{$1}) ) { $str = $` . $$project{$1} . $'; next; }
+        if ( exists($$opts{$1}) ) { $str = $` . $$opts{$1} . $'; next; }
+    }
+    return $str;
+}
+
+sub first_file_newer
+{
+    my ($a,$b) = @_;
+    my $atime = (stat($a))[9];
+    my $btime = (stat($b))[9];
+    return $atime > $btime ? 1 : 0;
+}
+
+# Create config file for each task (if the key "config" exists for the task)
+# and run all runners until finished.
+sub run_project
+{
+    my ($opts,$project) = @_;
+    my $name = $$project{name};
+    $name =~ s/\.txt$//;
+    for my $task (@{$$opts{tasks}})
+    {
+        my $prefix = "$$opts{work_dir}/$$project{alias}/$name";
+        if ( -e "$prefix.$task.done" ) { next; }
+        if ( ! -e "$prefix.$task" ) { system("mkdir -p $prefix.$task"); }
+        $$project{prefix} = $prefix;
+
+        if ( exists($$opts{$task}{config}) && (!-e "$prefix.$task.conf" or first_file_newer($$opts{config},"$prefix.$task.conf")) )
+        {
+            my $config = expand_vars($opts,$project,$$opts{$task}{config});
+            open(my $fh,'>',"$prefix.$task.conf.part") or error("$prefix.$task.conf.part: $!");
+            print $fh $config;
+            close($fh) or error("close failed: $prefix.$task.conf.part");
+            rename("$prefix.$task.conf.part","$prefix.$task.conf") or error("rename $prefix.$task.conf.part $prefix.$task.conf: $!");
+        }
+
+        run_task($opts,$project,$task);
+
+        system("touch $prefix.$task.done");
+        if ( $? ) { confess "touch $prefix.$task.done"; }
+    }
+    clean_project($opts,$project);
+    send_email($project,"The project \"$name\" finished","The project \"$name\" finished");
+}
+
+
+# Run a single runner
+sub run_task
+{
+    my ($opts,$project,$task_name) = @_;
+    my $task = $$opts{$task_name};
+    for my $job (@{$$task{run}})
+    {
+        my $cmd = expand_vars($opts,$project,$$job{cmd});
+
+        while ( 1 )
+        {
+            print STDERR "$cmd\n";
+            system($cmd);
+
+            my $status = $? >> 8;
+
+            if ( $status==$$job{status}{error} )
+            {
+                send_email($project,"$task_name failed","Project $$project{name} failed: $cmd");
+                error("Failed: $cmd"); 
+            }
+
+            if ( $status==$$job{status}{done} ) 
+            { 
+                send_email($project,"$task_name done","Finished");
+                last;
+            }
+            if ( !exists($$job{loop}) ) { last }
+
+            if ( $status==$$job{status}{loop} ) { sleep($$job{loop}); }
+            else 
+            { 
+                send_email($project,"$task_name error","Unexpected return status: status ($?): $cmd\nProject $$project{name}\n");
+                error("Unexpected return status: $status ($?) .. $cmd"); 
+            }
+        }
+    }
+}
+
+sub send_email
+{
+    my ($opts, $status, @msg) = @_;
+    if ( !exists($$opts{email}) ) { return; }
+    open(my $mh,"| mail -s 'Runner report: $status' $$opts{email}");
+    print $mh join('',@msg) . "\n";
+    close($mh);
+}
+

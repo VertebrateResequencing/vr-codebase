@@ -1,0 +1,485 @@
+#!/usr/bin/env perl
+#
+# Author: shane.mccarthy@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+
+use VertRes::Parser::bam;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+
+    $$self{do_clean} = 1;
+    $$self{limits} = { runtime=>24*60 };
+    $$self{debug_chunks} = 0;
+    $$self{_sampleconf} = q[
+    ]."\n";
+
+    $$self{usage} .= 
+        "Usage: run-sga-prepare-fastq\n" .
+        "Options:\n" .
+        "   -o, --outdir <dir>      Output directory\n" .
+        "   -f, --fofn              File of BAM file names\n" .
+        "\n";
+
+    return $self;
+}
+
+sub parse_args
+{
+    my ($self) = @_;
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
+        if ( $arg eq '-f' or $arg eq '--fofn' ) { $$self{fofn}=shift(@ARGV); next; }
+        $self->throw();
+    }
+    if ( !exists($$self{outdir}) ) { $self->throw("Expected --outdir option."); }
+    if ( !exists($$self{fofn}) ) { $self->throw("Expected --fofn option."); }
+
+    if ( !exists($$self{chroms}) ) 
+    { 
+        $$self{chroms} = [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X) ];
+    }
+    if ( !exists($$self{fa_ref}) ) 
+    { 
+        $$self{fa_ref} = '/lustre/scratch105/vrpipe/refs/human/ncbi37/hs37d5.fa';
+    }
+    if ( !exists($$self{chunk_size}) ) 
+    { 
+        $$self{chunk_size} = 5_000_000;
+    }
+    if ( !exists($$self{chunks_overlap}) ) 
+    { 
+        $$self{chunks_overlap} = 1000;
+    }
+
+    if ( !exists($$self{include_mate}) ) { $$self{include_mate} = 1; }
+    if ( !exists($$self{sga}) ) { $$self{sga} = 'sga'; }
+    if ( !exists($$self{bam2fastq}) ) { $$self{bam2fastq} = 'bam2fastq'; }
+    if ( !exists($$self{fastqcheck}) ) { $$self{fastqcheck} = 'fastqcheck'; }
+    if ( !exists($$self{bamcheck}) ) { $$self{bamcheck} = 'bamcheck'; }
+    
+    if ( !exists($$self{sga_preprocess_options}) )
+    { 
+        $$self{sga_preprocess_options} = '--min-length=75';
+    }
+}
+
+sub main
+{
+    my ($self) = @_;
+    $self->parse_args();
+    
+    my $bams = $self->read_fofn($$self{fofn});
+    my $regions = $self->get_chunks;
+	
+	my @samples;
+    foreach my $bam (@$bams)
+    {
+		my ($sample) = $bam =~ m/((NA|HG)\d{5})/; # 1000G specific - replace by reading from BAM header?
+		push @samples, $sample;
+		my $split_dir = qq[$$self{outdir}/data/$sample];
+        $self->spawn('split_bam_by_region', qq[$split_dir/.split_bam_done], $bam, $split_dir, $regions);
+    }
+    $self->wait;
+
+    foreach my $sample (@samples)
+    {
+        my @region_bams;
+    	foreach my $region (@$regions) {
+    		my $chrom = $$region{chr};
+    		my $from = $$region{from};
+    		my $to = $$region{to};
+            my $prefix = qq[$$self{outdir}/data/$sample/${chrom}_$from-$to];
+            push @region_bams, qq[$prefix.bam];
+        }
+        $self->spawn('bam2fastq_and_preprocess', qq[$$self{outdir}/data/.$sample.bam2fastq_and_proprocess_done], \@region_bams);
+	}
+    $self->wait;
+
+	foreach my $region (@$regions)
+	{
+		my $chrom = $$region{chr};
+		my $from = $$region{from};
+		my $to = $$region{to};
+		my $prefix = qq[$$self{outdir}/$chrom/$chrom:$from-$to];
+        my $fastq_list = qq[$$self{outdir}/lists/$chrom:$from-$to];
+        if ( !-d "$$self{outdir}/lists" ) { $self->cmd("mkdir -p $$self{outdir}/lists"); }
+        if ( !$self->is_finished($fastq_list) )
+        {
+            my @sample_fqs;
+            foreach my $sample (@samples)
+            {
+                push @sample_fqs, qq[$$self{outdir}/data/$sample/${chrom}_$from-$to.processed.fq.gz];
+            }
+            $self->fastq_list($fastq_list,\@sample_fqs);
+        }
+        next unless (-s $fastq_list);
+		$self->spawn('merge_and_index', qq[$prefix.fq.gz], $fastq_list);
+	}
+	$self->wait;
+
+    $self->all_done;
+}
+
+sub fastq_list
+{
+    my ($self,$list,$fqs) = @_;
+    open my $fh, ">$list.part";
+    foreach my $fq (@$fqs) {
+        next unless (-s $fq);
+        print $fh "$fq\n";
+    }
+    close($fh);
+    rename("$list.part", $list);
+}
+
+sub lines
+{
+    my ($self, $file) = @_;
+    my $lines = `wc -l $file`;
+    chomp $lines;
+    return $lines || 0;
+}
+
+sub merge_and_index
+{
+    my ($self, $outfile, $list) = @_;
+    $self->throw("Unexpected number of lines in $list") unless ($self->lines($list) == 2535);
+    my $index = $outfile;
+    $index =~ s/fq\.gz$/popidx/;
+
+    # Open filehandles for the output sequences and the output index
+    open(my $fh, "| gzip -c > $outfile.part") || $self->throw("Cannot open $outfile.part");
+    open(my $idx, "> $index") || $self->throw("Cannot open $index");
+    open(my $ls, "< $list") || $self->throw("Cannot open $list");
+
+    # Track position data
+    my $current_index = 0;
+    my $current_start_index = 0;
+    my $current_name = "";
+
+    # Iterate over every file
+    my @fqs;
+    while (my $fq = <$ls>)
+    {
+        chomp $fq;
+        push @fqs, $fq;
+
+        # Write out the previous file's data to the index, if any
+        if($current_name ne "") {
+            print $idx join("\t", ($current_start_index, $current_index - 1, $current_name)) . "\n";
+        }
+        
+        # Reset position data
+        ($current_name) = $fq =~ m/((HG|NA)\d{5})/;
+        $current_start_index = $current_index;
+
+        # Iterate over all reads in the file
+        open(my $seq, qq[gunzip -c $fq |]) || $self->throw("Cannot open $fq");
+        while (my $line = <$seq>)
+        {
+            chomp $line;
+            my ($header) = split(' ', $line);
+
+            my $record = "";
+            if ($header =~ /^@/)
+            {
+                # parse fastq
+                $record = $header . "\n";
+                $record .= <$seq>;
+                $record .= <$seq>;
+                $record .= <$seq>;
+            }
+            else
+            {
+                $self->throw("Unexpected format\n");
+            }
+
+            $current_index += 1;
+            print $fh $record;
+        }
+    }
+    close($ls);
+
+    # Write the last element of the index
+    print $idx join("\t", ($current_start_index, $current_index - 1, $current_name)) . "\n";
+
+    close($idx);
+    close($fh);
+
+    foreach my $fq (@fqs) { unlink $fq; }
+
+    rename("$outfile.part", $outfile);
+}
+
+sub bam2fastq_and_preprocess
+{
+    my ($self,$outfile,$bams) = @_;
+    foreach my $bam (@$bams) {
+        my $prefix = $bam;
+        $prefix =~ s/\.bam$//;
+        $self->bam2fastq($bam);
+
+        my @fqs;
+        push @fqs, qq[${prefix}_1.fq] if (-s qq[${prefix}_1.fq]);
+        push @fqs, qq[${prefix}_2.fq] if (-s qq[${prefix}_2.fq]);
+        next unless (@fqs);
+        $self->sga_preprocess($prefix,@fqs);
+
+        foreach my $fq (@fqs) {
+            $self->cmd(qq[rm $fq]);
+        }
+    }
+
+    foreach my $bam (@$bams) {
+        $self->cmd(qq[rm $bam]);
+    }
+    $self->cmd(qq[touch $outfile]);
+}
+
+
+sub bam2fastq
+{
+    my ($self,$bam) = @_;
+    my $prefix = $bam;
+    $prefix =~ s/\.bam$//;
+    $self->cmd(qq[$$self{bam2fastq} -q -o $prefix#.fq $bam]);
+}
+
+sub sga_preprocess
+{
+    my ($self,$prefix,@fqs) = @_;
+    $self->cmd(qq[$$self{sga} preprocess $$self{sga_preprocess_options} @fqs | gzip -c > $prefix.processed.fq.gz]);
+}
+
+sub split_bam_by_region
+{
+	my ($self, $outfile, $bam, $split_dir, $regions) = @_;
+	
+    my $pb = VertRes::Parser::bam->new(file => $bam);
+    
+    my %region_bams;
+    my %chrom_regions;
+    foreach my $region (@$regions) {
+		my $key = qq[$$region{chr}_$$region{from}-$$region{to}];
+        my $region_bam = qq[$split_dir/$key.bam];
+        $region_bams{$key} = $region_bam;
+        push @{ $chrom_regions{$$region{chr}} }, { from => $$region{from}, to => $$region{to}, bam_path => $region_bam };
+    }
+    
+    my @get_fields = ('RNAME', 'POS');
+    if ($$self{include_mate}) {
+        push(@get_fields, 'MRNM', 'MPOS');
+    }
+        
+    # stream through the bam, outputting all our desired files
+    my $parsed_record = $pb->result_holder();
+    $pb->get_fields(@get_fields);
+    my %counts;
+    while ($pb->next_result()) {
+        my $seq_name = $parsed_record->{RNAME};
+        my $seq_pos  = $parsed_record->{POS};
+        my %out_bams;
+        if (exists $chrom_regions{$seq_name}) {
+            my $seq_bams = $self->position_to_bam($seq_pos, $chrom_regions{$seq_name});
+            foreach my $seq_bam (@$seq_bams) {
+                $out_bams{$seq_bam} = 1;
+            }
+        }
+        if ($$self{include_mate}) {
+            my $mate_name = $parsed_record->{MRNM};
+            my $mate_pos  = $parsed_record->{MPOS};
+            if (exists $chrom_regions{$mate_name}) {
+                my $mate_bams = $self->position_to_bam($mate_pos, $chrom_regions{$mate_name});
+                foreach my $mate_bam (@$mate_bams) {
+                    $out_bams{$mate_bam} = 1;
+                }
+            }
+        }
+            
+        if (keys %out_bams) {
+            foreach my $out_bam (keys %out_bams) {
+                $pb->write_result($out_bam . '.unchecked.bam');
+                $counts{$out_bam}++;
+            }
+        }
+    }
+    $pb->close;
+        
+    # check all the bams we created
+    my @out_files;
+    foreach my $region_bam (values %region_bams) {
+        my $unchecked_bam = $region_bam . '.unchecked.bam';
+            
+        # the input bam might not have had reads mapped to every sequence in the
+        # header, so we might not have created all the bams expected. Create
+        # a header-only bam in that case:
+        unless (-s $unchecked_bam) {
+            $pb = VertRes::Parser::bam->new(file => $bam);
+            $pb->next_result;
+            $pb->_create_no_record_output_bam($unchecked_bam);
+            $pb->close;
+        }
+        
+        my $actual_reads = $self->num_records($unchecked_bam);
+        my $expected_reads = $counts{$region_bam} || 0;
+        
+        if ($expected_reads == $actual_reads) {
+            rename($unchecked_bam,$region_bam);
+            push(@out_files, $region_bam);
+        }
+        else {
+            $self->warn("When attempting $bam -> $region_bam split, got $actual_reads reads instead of $expected_reads; will delete it");
+            unlink($unchecked_bam);
+        }
+    }
+    if (scalar @out_files == scalar keys %region_bams) {
+		$self->cmd("touch $outfile");
+        return 1;
+    }
+    else {
+        $self->throw("Number of correct output files " . scalar @out_files . " not equal to number of expected output files " . scalar keys %region_bams);
+    }
+}
+    
+sub position_to_bam
+{
+	my ($self, $pos, $region_bams) = @_;
+    my @matching_bams;
+    foreach my $hash (@$region_bams) {
+        next unless ($pos >= $hash->{from} && $pos <= $hash->{to});
+        push @matching_bams, $hash->{bam_path};
+    }
+    return \@matching_bams;
+}
+
+sub read_fofn
+{
+    my ($self, $file) = @_;
+    my @list;
+    open my $fh, "<$file" || $self->throw("Could not open file $file");
+    while (<$fh>)
+    {
+        chomp;
+        next if /^#/;
+        push @list, $_;
+    }
+    close $fh;
+    return \@list;
+}
+
+sub get_chunks
+{
+    my ($self) = @_;
+
+    my $regions = $$self{regions} ? $self->read_regions($$self{regions}) : $self->read_fai("$$self{fa_ref}.fai",$$self{chroms});
+
+    my @chunks;
+    for my $region (@$regions)
+    {
+        my $pos     = $$region{from};
+        my $end_pos = $$region{to};
+        while ($pos<$end_pos)
+        {
+            my $from = $pos;
+            my $to   = $from+$$self{chunk_size}-1;
+            
+            if ( $to>$end_pos ) { $to=$end_pos; }
+            
+            push @chunks, { chr=>$$region{chr}, from=>$from, to=>$to };
+            
+            $pos += $$self{chunk_size} - $$self{chunks_overlap};
+            if ( $pos<1 ) { $self->throw("The split size too small [$$self{chunk_size}]?\n"); }
+            
+            if ( $$self{debug_chunks} && scalar @chunks>=$$self{debug_chunks} ) { return \@chunks; }
+        }
+    }
+    return \@chunks;
+}
+
+sub read_regions
+{
+    my ($self,$file) = @_;
+    open(my $fh,'<',$file) or $self->throw("$file: $!"); 
+    my @regions;
+    while (my $line=<$fh>)
+    {
+        chomp($line);
+        if ( !($line=~/^(\S+)\s+(\d+)\s+(\d+)\s*$/) ) { $self->throw("Could not parse the regions file $file: [$line]"); }
+        push @regions, { chr=>$1, from=>$2, to=>$3 };
+    }
+    return \@regions;
+}
+
+sub read_fai
+{
+    my ($self,$fai,$regexs) = @_;
+
+    # Determine the chromosomes and their lengths
+    open(my $fh,'<',$fai) or $self->throw("$fai: $!"); 
+    my @chr_lengths;
+    while (my $line=<$fh>)
+    {
+        my ($chr,$from,$to);
+        for my $regex (@$regexs)
+        {
+            if ( !($line=~/^($regex)\t(\d+)/i) ) { next; }
+            $chr  = $1;
+            $from = 1;
+            $to   = $2;
+            last;
+        }
+        if ( !defined $chr ) { next; }
+        push @chr_lengths, { chr=>$chr, from=>$from, to=>$to };
+    }
+    close($fh);
+    return \@chr_lengths;
+}
+
+sub num_records {
+    my ($self, $bam) = @_;
+    my $records = `samtools view -c $bam`;
+    ($records) = $records =~ /^(\d+)/m;
+    $records ||= 0;
+    return $records;
+}
+
+sub clean
+{
+    my ($self,$outdir) = @_;
+    $self->SUPER::clean($outdir);
+}
+
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub cmd
+{
+    my ($self,$cmd) = @_;
+    return Utils::CMD($cmd,{verbose=>$$self{_verbose}});
+}

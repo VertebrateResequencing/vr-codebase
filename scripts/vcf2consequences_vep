@@ -227,7 +227,7 @@ sub process_vcf_rec
                 my @index_search = `tabix -p bed $bed $chr:${from}-${to}`;
                 for (@index_search) {
                     my @line = split("\t", $_);
-                    $gerp_cache->{scores}->{$line[1]} = $line[3];
+                    $gerp_cache->{scores}->{$line[2]} = $line[3];
                 }
             }
             else {
@@ -276,14 +276,15 @@ sub load_vep_cache
         }
 
 		my $gene_name=$rec->{Gene}; # Default to ENS id
-		my ($sift_pred,$polyphen_pred,$condel_pred);
-		my @extra_cols = split(/;/, $rec->{Extra}) if $rec->{Extra};	# eg PolyPhen=unknown(0);SIFT=tolerated(0.56);HGNC=RERE
+		my ($sift_pred,$polyphen_pred,$condel_pred,$blosum_pred);
+		my @extra_cols = split(/;/, $rec->{Extra}) if $rec->{Extra};	# eg PolyPhen=unknown(0);SIFT=tolerated(0.56);SYMBOL=RERE;BLOSUM62=-3
 		foreach (@extra_cols) {
 			my ($key,$val) = split(/=/);
-			$gene_name = $val if $key eq 'HGNC';
+			$gene_name = $val if ($key eq 'SYMBOL' || $key eq 'HGNC'); # HGNC replaced by SYMBOL in v73
 			$sift_pred = "$key,$val" if $key eq 'SIFT';
 			$polyphen_pred = "$key,$val" if $key eq 'PolyPhen';
 			$condel_pred = "$key,$val" if $key eq 'Condel';
+			$blosum_pred = "$key,$val" if $key eq 'BLOSUM62';
 		}
 
 		my $consequence = $rec->{Feature};
@@ -335,6 +336,7 @@ sub load_vep_cache
                     $protein_pred .= ":$sift_pred" if $sift_pred;
                     $protein_pred .= ":$polyphen_pred" if $polyphen_pred;
                     $protein_pred .= ":$condel_pred" if $condel_pred;
+                    $protein_pred .= ":$blosum_pred" if $blosum_pred;
 
                     if ($grantham && $rec->{Amino_acids} !~ '-') {
                         my ($ref_aa,$var_aa) = split(/\//,$rec->{Amino_acids});

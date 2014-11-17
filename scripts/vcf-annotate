@@ -1082,7 +1082,7 @@ sub apply_snpgap_filter
         #   respect to POS. Specifically mpileup likes to write REF=CAGAGAGAGA
         #   ALT=CAGAGAGAGAGA. Thus this filtering is more strict and may remove
         #   some valid SNPs.
-        $to = $is_indel ? $$line[1]+length($$line[3])-1 : $$line[1];
+        $to = $is_indel ? $indel_pos+length($$line[3])-1 : $$line[1];
         push @$buffer, { line=>$line, chr=>$$line[0], from=>defined $indel_pos ? $indel_pos : $$line[1], to=>$to, exclude=>0, can_be_filtered=>$can_be_filtered, is_indel=>$is_indel };
     }
 
@@ -1126,7 +1126,7 @@ sub apply_snpgap_filter
             undef $indel_to;
             next;
         }
-        if ( $$buf{from}<=$indel_to+$win ) { $$buf{exclude}=1; }
+        if ( $$buf{from}<=$indel_to+$win-1 ) { $$buf{exclude}=1; }
     }
 
     # Output. If no $line was given, output everything

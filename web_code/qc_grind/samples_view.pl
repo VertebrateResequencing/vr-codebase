@@ -5,6 +5,7 @@ use strict;
 use warnings;
 use URI;
 
+use lib '/var/www/lib';
 use SangerPaths qw(core team145);
 use SangerWeb;
 use VRTrack::Project;
@@ -59,7 +60,7 @@ sub displaySamplesPage
     foreach( @{ $samples } ) {
         my $sample = $_;
         my $ind = $sample->individual();
-        my $indname = $ind->name();
+        my $indname = $ind->alias() || $ind->name();
         if( $individuals2Samples{ $indname } ) {
             push( @{ $individuals2Samples{ $indname } }, $sample );
         }
