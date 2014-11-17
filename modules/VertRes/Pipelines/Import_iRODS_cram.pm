@@ -181,7 +181,7 @@ sub _fastq_from_cram
 
 
 sub cram_to_fastq {
-    my ( $self, $files, $reference ) = @_;
+    my ( $self, $files, $reference_file ) = @_;
 
     for my $file ( @{$files} ) {
       
