@@ -108,7 +108,7 @@ sub fill_aa
         Description=>'Ancestral Allele, ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/pilot_data/technical/reference/ancestral_alignments/README'});
     print $vcf->format_header();
 
-    my $fa;
+    my %chr2fa = ();
     my $nskipped = 0;
     while (my $line = $vcf->next_line() )
     {
@@ -117,17 +117,18 @@ sub fill_aa
         my $pos = $$rec[1];
         my $ref = $$rec[3];
 
-        my $fname = $aa_fname;
-        if ( ! -e $fname )
+        if ( !exists($chr2fa{$chr}) )
         {
-            if ( -e "$fname$chr.fa.gz" ) { $fname = "$fname$chr.fa.gz"; }
-            else { error(qq[Neither "$fname" nor "$fname$chr.fa.gz" exists.\n]); }
-        }
-        if ( !$fa or $$fa{file} ne $fname )
-        {
-            $fa = FaSlice->new(file=>$fname, size=>100_000);
+            my $fname = $aa_fname;
+            if ( ! -e $fname )
+            {
+                if ( -e "$fname$chr.fa.gz" ) { $fname = "$fname$chr.fa.gz"; }
+                else { error(qq[Neither "$fname" nor "$fname$chr.fa.gz" exists.\n]); }
+            }
+            $chr2fa{$chr} = FaSlice->new(file=>$fname, size=>100_000);
         }
 
+        my $fa = $chr2fa{$chr};
         my $ref_len = length($ref);
         if ( exists($$opts{types}) && !exists($$opts{types}{a}) )
         {

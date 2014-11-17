@@ -2,8 +2,9 @@
 # print vertres disk usage
 use strict;
 use warnings;
+use Path::Class;
 
-my $inputfile = $ARGV[0] ? $ARGV[0] : '/lustre/scratch105/conf/vertres_disks.conf';
+my $inputfile = $ARGV[0] ? $ARGV[0] : file($ENV{CONF}, 'vertres_disks.conf')->stringify;
 open FILE, $inputfile or die "$!: inputfile";
 
 print "Type       Mounted on               Size     Used    Avail     Use%   OST Max%\n";

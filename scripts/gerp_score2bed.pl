@@ -2,8 +2,8 @@
 # generate GERP scores, write to bed file
 # accepts species amd chr as parameters
 BEGIN{
-    my $ROOT = '/software/vertres/lib/all';
-    my $VERSION = '70';
+    my $ROOT = '/software/vertres/installs';
+    my $VERSION = '75';
     unshift(@INC, "$ROOT/bioperl-1.2.3/lib/site_perl/5.8.8");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl/modules");
     unshift(@INC, "$ROOT/ensembl/$VERSION/ensembl-variation/modules");
@@ -20,7 +20,7 @@ use Data::Dumper;
 die "Usage $0 <species> <chromosome>" unless @ARGV == 2;
 my $species = $ARGV[0];
 my $chr = $ARGV[1];
-print STDERR `date`, "Generating bed for $species chr $chr\n";
+print STDERR `date`, "Generating bed for $species, chr $chr\n";
 
 my $reg = "Bio::EnsEMBL::Registry";
 $reg->load_registry_from_db( -host => "ensembldb.ensembl.org", -user => "anonymous",);
@@ -53,7 +53,7 @@ for ($i=1;$i<$slice_len;$i+=$slice_sz) {
 
     foreach my $score (@$scores) {
         if (defined $score->diff_score) {
-            printf("$chr\t%d\t%d\t%.4f\n",  $score->position + $offset, $score->position + $offset, $score->diff_score);
+            printf("$chr\t%d\t%d\t%.4f\n",  $score->position + $offset-1, $score->position + $offset, $score->diff_score);
         }
     }
 }

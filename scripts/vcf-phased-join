@@ -562,9 +562,11 @@ sub flush_buffer
             if ( index($$gts1[$i],'|')==-1 or index($$gts2[$i],'|')==-1 )
             {
                 push @phased, 0;
-                next;
             }
-            push @phased, 1;
+            else
+            {
+                push @phased, 1;
+            }
             my ($a1,$a2) = $vcf->split_gt($$gts1[$i]);
             my ($b1,$b2) = $vcf->split_gt($$gts2[$i]);
             if ( !defined $a2 ) { $a2 = $a1; }  # haploid genotypes

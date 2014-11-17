@@ -1,23 +1,18 @@
 package Vcf;
 
-our $VERSION = 'r840';
+our $VERSION = 'r953';
 
 # http://vcftools.sourceforge.net/specs.html
-# http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:variant_call_format
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf4.0
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf_4.0_sv
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcf3.3
-# http://www.1000genomes.org/wiki/doku.php?id=1000_genomes:analysis:vcfv3.2
+# http://samtools.github.io/hts-specs/
 #
 # Authors: petr.danecek@sanger
-# for VCF v3.2, v3.3, v4.0, v4.1
+# for VCF v3.2, v3.3, v4.0, v4.1, v4.2
 #
 
 =head1 NAME
 
 Vcf.pm.  Module for validation, parsing and creating VCF files. 
-         Supported versions: 3.2, 3.3, 4.0, 4.1
+         Supported versions: 3.2, 3.3, 4.0, 4.1, 4.2
 
 =head1 SYNOPSIS
 
@@ -157,8 +152,8 @@ sub new
     $$self{reserved}{cols} = {CHROM=>1,POS=>1,ID=>1,REF=>1,ALT=>1,QUAL=>1,FILTER=>1,INFO=>1,FORMAT=>1} unless exists($$self{reserved_cols});
     $$self{recalc_ac_an} = 1;
     $$self{has_header} = 0;
-    $$self{default_version} = '4.1';
-    $$self{versions} = [ qw(Vcf3_2 Vcf3_3 Vcf4_0 Vcf4_1) ];
+    $$self{default_version} = '4.2';
+    $$self{versions} = [ qw(Vcf3_2 Vcf3_3 Vcf4_0 Vcf4_1 Vcf4_2) ];
     if ( !exists($$self{max_line_len}) && exists($ENV{MAX_VCF_LINE_LEN}) ) { $$self{max_line_len} = $ENV{MAX_VCF_LINE_LEN} }
     $$self{fix_v40_AGtags} = $ENV{DONT_FIX_VCF40_AG_TAGS} ? 0 : 1;
     my %open_args = ();
@@ -268,6 +263,7 @@ sub close
     if ( !$$self{fh} ) { return; }
     my $ret = close($$self{fh});
     delete($$self{fh});
+    $$self{buffer} = [];
 	return $ret;
 }
 
@@ -413,11 +409,12 @@ sub _set_version
     elsif ( $$self{version} eq '3.3' ) { $reader=Vcf3_3->new(%$self); } 
     elsif ( $$self{version} eq '4.0' ) { $reader=Vcf4_0->new(%$self); }
     elsif ( $$self{version} eq '4.1' ) { $reader=Vcf4_1->new(%$self); }
+    elsif ( $$self{version} eq '4.2' ) { $reader=Vcf4_2->new(%$self); }
     else 
     { 
         $self->warn(qq[The version "$$self{version}" not supported, assuming VCFv$$self{default_version}\n]);
-        $$self{version} = '4.1';
-        $reader = Vcf4_1->new(%$self);
+        $$self{version} = '4.2';
+        $reader = Vcf4_2->new(%$self);
     }
 
     $self = $reader;
@@ -1234,7 +1231,7 @@ sub get_sample_field
         {
             $isep = index($col,':',$prev_isep);
             if ( $itag==$idx ) { last; }
-            if ( $isep==-1 ) { $self->throw("The index out of range: $col:$isep .. $idx"); }
+            if ( $isep==-1 ) { return '.'; }    # This is valid, missing fields can be ommited from genotype columns
             $prev_isep = $isep+1;
             $itag++;
         }
@@ -1762,6 +1759,15 @@ sub parse_AGtags
                 if ( !exists($$sample{$tag}) or $$sample{$tag} eq $missing ) { next; }
                 my @values = split(/,/,$$sample{$tag});
                 my $ploidy = $self->guess_ploidy(scalar @alleles, scalar @values) - 1;
+                if ( $ploidy<0 ) 
+                { 
+                    my $nals  = scalar @alleles;
+                    my $nvals = scalar @values;
+                    my $ndip  = $nals*($nals+1)/2;
+                    $self->throw(
+                        "Wrong number of values in $name/$tag at $$rec{CHROM}:$$rec{POS} .. nAlleles=$nals, nValues=$nvals.\n".
+                        "Expected $ndip values for diploid genotypes or $nals for haploid genotypes.\n");
+                }
                 if ( $ploidy>1 ) { $self->throw("Sorry, not ready for ploidy bigger than 2\n"); }
                 if ( $ploidy!=1 ) { $$rec{_cached_ploidy}{$name} = $ploidy; }
                 $$sample{$tag} = {};
@@ -2041,7 +2047,7 @@ sub fill_ref_alt_mapping
     for my $ref (keys %$map)
     {
         $new_ref = $ref;
-        if ( $ref ne $new_ref ) { $self->throw("The reference prefixes do not agree: $ref vs $new_ref\n"); }
+        if ( $ref ne $new_ref ) { $self->warn("The reference prefixes do not agree: $ref vs $new_ref\n"); return undef; }
         for my $alt (keys %{$$map{$ref}})
         {
             $$map{$ref}{$alt} = $alt;
@@ -2340,6 +2346,7 @@ sub validate_info_field
     # Expected numbers
     my $ng = -1;
     my $na = -1;
+    my $nr = -1;
     if ( $$self{version}>4.0 )
     {
         if ( $$alts[0] eq '.' ) { $ng=1; $na=1; }
@@ -2347,6 +2354,7 @@ sub validate_info_field
         {
             $na = @$alts;
             $ng = (1+$na+1)*($na+1)/2;
+            $nr = $na+1;
         }
     }
 
@@ -2371,6 +2379,10 @@ sub validate_info_field
         {
             if ( $na != @vals && !(@vals==1 && $vals[0] eq '.') ) { push @errs, "INFO tag [$key=$value] expected different number of values (expected $na, found ".scalar @vals.")"; }
         }
+        elsif ( $$type{Number} eq 'R' )
+        {
+            if ( $nr != @vals && !(@vals==1 && $vals[0] eq '.') ) { push @errs, "INFO tag [$key=$value] expected different number of values (expected $nr, found ".scalar @vals.")"; }
+        }
         elsif ( $$type{Number}==0 ) 
         {
             if ( defined($value) ) { push @errs, "INFO tag [$key] did not expect any parameters, got [$value]"; }
@@ -2378,7 +2390,7 @@ sub validate_info_field
         }
         elsif ( $$type{Number}!=-1 && @vals!=$$type{Number} )
         {
-            push @errs, "INFO tag [$key=$value] expected different number of values ($$type{Number})";
+            if ( !(@vals==1 && $vals[0] eq '.') ) { push @errs, "INFO tag [$key=$value] expected different number of values ($$type{Number})"; }
         }
         if ( !$$type{handler} ) { next; }
         for my $val (@vals)
@@ -2405,7 +2417,7 @@ sub guess_ploidy
     my ($self, $nals, $nvals) = @_;
     if ( $nvals==$nals ) { return 1; }
     if ( $nvals==binom(1+$nals,2) ) { return 2; }
-    $self->throw("Could not determine the ploidy (nals=$nals, nvals=$nvals). (TODO: ploidy bigger than 2)\n", binom(2+$nals,2));
+    return -1;
 }
 
 sub binom
@@ -2440,13 +2452,15 @@ sub validate_gtype_field
     # Expected numbers
     my $ng = -1;
     my $na = -1;
+    my $nr = -1;
     if ( $$self{version}>4.0 )
     {
-        if ( $$alts[0] eq '.' ) { $ng=1; $na=1; }
+        if ( $$alts[0] eq '.' ) { $ng=1; $na=1; $nr=1; }
         else
         {
             $na = @$alts;
             $ng = binom($ploidy+$na,$ploidy);
+            $nr = $na+1;
         }
     }
 
@@ -2469,9 +2483,13 @@ sub validate_gtype_field
         {
             if ( $na != @vals && !(@vals==1 && $vals[0] eq '.') ) { push @errs, "FORMAT tag [$key] expected different number of values (expected $na, found ".scalar @vals.")"; }
         }
+        elsif ( $$type{Number} eq 'R' )
+        {
+            if ( $nr != @vals && !(@vals==1 && $vals[0] eq '.') ) { push @errs, "FORMAT tag [$key] expected different number of values (expected $nr, found ".scalar @vals.")"; }
+        }
         elsif ( $$type{Number}!=-1 && @vals!=$$type{Number} )
         {
-            push @errs, "FORMAT tag [$key] expected different number of values ($$type{Number})";
+            if ( !(@vals==1 && $vals[0] eq '.') ) { push @errs, "FORMAT tag [$key] expected different number of values ($$type{Number})"; }
         }
         if ( !$$type{handler} ) { next; }
         for my $val (@vals)
@@ -3058,7 +3076,7 @@ sub Vcf4_0::validate_alt_field
                     GTC  G      ->      GTC  G
                     G    <DEL>  ->      GTC  <DEL>
     Args    : 
-    Returns : New REF string and fills the hash with appropriate ALT.
+    Returns : New REF string and fills the hash with appropriate ALT or undef on error.
 
 =cut
 
@@ -3081,7 +3099,7 @@ sub Vcf4_0::fill_ref_alt_mapping
     for my $ref (keys %$map)
     {
         my $rlen = length($ref);
-        if ( substr($new_ref,0,$rlen) ne $ref ) { $self->throw("The reference prefixes do not agree: $ref vs $new_ref\n"); }
+        if ( substr($new_ref,0,$rlen) ne $ref ) { $self->warn("The reference prefixes do not agree: $ref vs $new_ref\n"); return undef; }
         for my $alt (keys %{$$map{$ref}})
         {
             # The second part of the regex is for VCF>4.0, but does no harm for v<=4.0
@@ -3476,6 +3494,28 @@ sub Vcf4_1::event_type
     elsif ( index($allele,'[')!=-1 or index($allele,']')!=-1 ) { return 'b'; }
 
     return $self->SUPER::event_type($rec,$allele);
+}
+
+#------------------------------------------------
+# Version 4.2 specific functions
+
+=head1 VCFv4.2
+
+VCFv4.2 specific functions
+
+=cut
+
+package Vcf4_2;
+use base qw(Vcf4_1);
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+    bless $self, ref($class) || $class;
+
+    $$self{version} = '4.2';
+    return $self;
 }
 
 1;

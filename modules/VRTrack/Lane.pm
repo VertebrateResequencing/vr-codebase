@@ -51,7 +51,7 @@ sub fields_dispatch {
     my %fields = %{$self->SUPER::fields_dispatch()};
     %fields = (%fields,
                lane_id           => sub { $self->id(@_)},
-	       library_id        => sub { $self->library_id(@_)},
+	           library_id        => sub { $self->library_id(@_)},
                seq_request_id    => sub { $self->seq_request_id(@_)},
                name              => sub { $self->name(@_)},
                hierarchy_name    => sub { $self->hierarchy_name(@_)},
@@ -68,6 +68,7 @@ sub fields_dispatch {
                storage_path      => sub { $self->storage_path(@_)},
                submission_id     => sub { $self->submission_id(@_)},
                withdrawn         => sub { $self->is_withdrawn(@_)},
+               manually_withdrawn => sub { $self->is_manually_withdrawn(@_)},
                run_date          => sub { $self->run_date(@_)});
     
     return \%fields;
@@ -248,6 +249,28 @@ sub is_paired {
 sub is_withdrawn {
     my $self = shift;
     return $self->_get_set('is_withdrawn', 'boolean', @_);
+}
+
+
+=head2 is_manually_withdrawn
+
+  Arg [1]    : boolean for is_manually_withdrawn status
+  Example    : $lane->is_manually_withdrawn(1);
+  Description: Get/Set for whether lane has been manually withdrawn or not;
+               The distinction between this and is_withdrawn is that a lane that
+               is manually withdrawn won't be automatically unwithdrawn by some
+               automated system that checks this value.
+  Returntype : boolean (undef if withdrawn status had never been set)
+
+=cut
+
+sub is_manually_withdrawn {
+    my $self = shift;
+    my $withdrawn = $self->_get_set('is_manually_withdrawn', 'boolean', @_);
+    if (defined $withdrawn) {
+        $self->is_withdrawn($withdrawn);
+    }
+    return $withdrawn;
 }
 
 

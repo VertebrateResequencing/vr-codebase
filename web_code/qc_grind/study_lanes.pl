@@ -10,6 +10,7 @@ use warnings;
 use CGI::Carp qw(fatalsToBrowser);
 use URI;
 
+use lib '/var/www/lib';
 use SangerPaths qw(core team145);
 use SangerWeb;
 use VRTrack::Project;
@@ -22,14 +23,14 @@ my $title = 'QC Grind Lane Status Update';
 my $sw  = SangerWeb->new({
     'title'   => $title,
     'banner'  => q(),
-    'jsfile'  => ['http://code.jquery.com/jquery-latest.js','/Teams/Team145/js/qc.js','/Teams/Team145/js/jquery.tablesorter.min.js'],
+    'jsfile'  => ['http://code.jquery.com/jquery-latest.js','/js/qc.js','/js/jquery.tablesorter.min.js'],
     'inifile' => SangerWeb->document_root() . q(/Info/header.ini),
 });
 my $utl = VertRes::QCGrind::Util->new();
 my $main_script = $utl->{SCRIPTS}{DATABASES_VIEW};
 my $proj_view_script = $utl->{SCRIPTS}{PROJECTS_VIEW};
 my $lane_view_script = $utl->{SCRIPTS}{LANE_VIEW};
-my ($lib_filt, $runname_filt, $gt_status_filt, $npg_status_filt, $auto_qc_status_filt, $raw_bases_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt, $overlap_dup_filt, $final_net_filt);
+my ($lib_filt, $runname_filt, $gt_status_filt, $npg_status_filt, $auto_qc_status_filt, $raw_bases_filt, $bases_mapped_filt, $duplication_filt, $rmdup_mapped_filt, $overlap_dup_filt, $final_net_filt, $show_withdrawn);
 
 my $USER = $sw->username();
 my $cgi = $sw->cgi();
@@ -50,6 +51,8 @@ unless ($projectID) {
 	$utl->displayError( "No Project ID",$sw );
 }
 my $project = VRTrack::Project->new( $vrtrack, $projectID );
+
+my $show_withdrawn = $cgi->param('show_withdrawn');
 
 if ($cgi->param('download')) {
     &downloadLaneData($cgi, $vrtrack, $project);
@@ -97,7 +100,7 @@ sub displayProjectLaneForm
     foreach( @{ $samples } ) {
         my $sample = $_;
         my $ind = $sample->individual();
-        my $indname = $ind->name();
+        my $indname = $ind->alias() || $ind->name();
         if( $individuals2Samples{ $indname } ) {
             push( @{ $individuals2Samples{ $indname } }, $sample );
         }
@@ -184,8 +187,8 @@ sub displayProjectLaneForm
 
 				foreach my $lane (sort {$a->name cmp $b->name} @$lanes ) {
 
-        			next if $lane->is_withdrawn;
-					if ($form_submission) { # filter on lane status checkboxes
+					next if $lane->is_withdrawn && ! $show_withdrawn;
+        			if ($form_submission) { # filter on lane status checkboxes
 						next unless $cgi->param($lane->qc_status) || $lane->qc_status eq 'no_qc';
 					}
 
@@ -317,7 +320,7 @@ sub downloadLaneData {
     my %individuals2Samples;
     foreach my $sample ( @{ $samples } ) {
         my $ind = $sample->individual();
-        my $indname = $ind->name();
+        my $indname = $ind->alias() || $ind->name();
         if( $individuals2Samples{ $indname } )
         {
             push( @{ $individuals2Samples{ $indname } }, $sample );
@@ -343,7 +346,7 @@ sub downloadLaneData {
 
 				foreach my $lane (sort {$a->name cmp $b->name} @$lanes ) {
 
-        			next if $lane->is_withdrawn;
+        			next if $lane->is_withdrawn && ! $show_withdrawn;
 					next unless $cgi->param($lane->qc_status) || $lane->qc_status eq 'no_qc'; # filter on lane status checkboxes
 
         			my $lanename = $lane->name;

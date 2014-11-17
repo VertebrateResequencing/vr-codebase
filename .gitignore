@@ -9,3 +9,4 @@ modules/VRTrack/Testconfig.pm
 _build
 blib
 Build
+perl5lib_dependencies
