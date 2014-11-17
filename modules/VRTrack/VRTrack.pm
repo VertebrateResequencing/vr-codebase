@@ -46,7 +46,7 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '27';
+use constant SCHEMA_VERSION => '28';
 
 our $DEFAULT_PORT = 3306;
 
