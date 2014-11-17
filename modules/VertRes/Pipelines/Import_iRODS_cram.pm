@@ -261,7 +261,7 @@ sub download_files {
     my $irods = VertRes::Wrapper::iRODS->new();
 
     for my $ifile ( @{ $$self{files} } ) {
-        next if ( $ifile =~ /\.cram/ );
+        next unless ( $ifile =~ /\.cram/ );
         if ( !defined $ifile ) { $self->warn("No such file in iRODS? [$ifile]\n"); next; }
         my ( $filename, $dirs, $suffix ) = fileparse($ifile);
         next if ( -e $filename );
