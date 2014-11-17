@@ -63,6 +63,7 @@ use VRTrack::Lane;
 use VRTrack::File;
 use VertRes::Utils::FileSystem;
 use VertRes::Wrapper::fastqcheck;
+use Pathogens::Import::ValidateFastqConversion;
 use File::Basename;
 
 our $actions = [
@@ -194,10 +195,18 @@ sub cram_to_fastq {
         system($cmd );
         my $fastqcheck = VertRes::Wrapper::fastqcheck->new();
         
+        my @fastqcheck_files;
         for my $fastq (@{$self->_fastq_from_cram($file)})
         {
+          push(@fastqcheck_files,$fastq . '.fastqcheck');
           $fastqcheck->run( $fastq, $fastq . '.fastqcheck' );
         }
+        
+        my $validate = Pathogens::Import::ValidateFastqConversion->new(
+             fastqcheck_filenames => \@fastqcheck_files,
+             irods_filename       => $file
+            );
+        $self->throw("The number of reads in the FASTQ files doesnt match the number if reads in iRODS") unless($validate->is_total_reads_valid());
     }
 }
 
@@ -278,6 +287,7 @@ sub download_files {
 
         move( $outfile . '.tmp', $outfile );
         chmod 0664, $outfile;
+
     }
 }
 
