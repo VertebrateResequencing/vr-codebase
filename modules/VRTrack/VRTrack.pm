@@ -1642,7 +1642,7 @@ CREATE TABLE `allocation` (
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 
-insert into schema_version(schema_version) values (27);
+insert into schema_version(schema_version) values (28);
 
 
 # Dump of table assembly
@@ -1715,6 +1715,7 @@ CREATE TABLE `file` (
   `note_id` mediumint(8) unsigned DEFAULT NULL,
   `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
   `latest` tinyint(1) DEFAULT '0',
+  `reference` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`row_id`),
   KEY `file_id` (`file_id`),
   KEY `lane_id` (`lane_id`),
