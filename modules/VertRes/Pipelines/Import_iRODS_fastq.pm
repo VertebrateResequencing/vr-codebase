@@ -260,15 +260,17 @@ system("samtools view -f 0x200 $in_bam | awk -F '\\t'  'BEGIN{OFS=\\"\\t\\";} {g
 if(-s qq[pf_fail.sam] == 0)
 {
   system("samtools view -F 0x100 -b -o secondary_alignments_removed.bam pf_pass.bam");
+  unlink("pf_fail.sam");
+  unlink("pf_pass.bam");
 }
 else
 {
   system("samtools view -H $in_bam > header.sam");
-  system("cat header.sam pf_fail.sam | samtools view -b -S  > pf_fail.bam");
+  system("cat header.sam pf_fail.sam | samtools view -b -S -o pf_fail.bam -");
   unlink("pf_fail.sam");
   unlink("header.sam");
   
-  system("samtools merge -n merged.bam pf_pass.bam pf_fail.bam");
+  system("samtools merge -f -n merged.bam pf_pass.bam pf_fail.bam");
   unlink("pf_pass.bam");
   unlink("pf_fail.bam");
   
