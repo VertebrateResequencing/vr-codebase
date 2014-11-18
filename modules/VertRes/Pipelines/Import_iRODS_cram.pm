@@ -141,7 +141,7 @@ sub convert_to_fastq {
     my $reference_file;
     if(defined($self->{vrlane}) && defined($self->{vrlane}->files) && defined($self->{vrlane}->files->[0]))
     {
-      $reference_file = $self->{vrlane}->files->[0]->reference();
+      $reference_file = $self->{vrlane}->files->[0]->{reference};
     }
     # change directory
     if(defined($reference_file))
@@ -152,18 +152,16 @@ sub convert_to_fastq {
       $reference_file = undef unless(-e $reference_file);
     }
 
-    my $opts = Data::Dumper->Dump( [ \@{ $self->{files} } ], ["files"] );
-
+    my $file = $lane_path.'/'.$self->{files}->[0];
+    
     open( my $fh, '>', "$work_dir/${prefix}convert_to_fastq.pl" ) or $self->throw("$work_dir/${prefix}convert_to_fastq.pl: $!");
     print $fh qq[
   use strict;
   use warnings;
   use VertRes::Pipelines::Import_iRODS_cram;
-
-  my $opts
-
+  
   my \$import = VertRes::Pipelines::Import_iRODS_cram->new();
-  \$import->cram_to_fastq(\$files,qq[$reference_file] );
+  \$import->cram_to_fastq(qq[$file],qq[$reference_file] );
   system('touch ${prefix}convert_to_fastq_done');
   ];
 
@@ -188,33 +186,30 @@ sub _fastq_from_cram
 
 
 sub cram_to_fastq {
-    my ( $self, $files, $reference_file ) = @_;
+    my ( $self, $file, $reference_file ) = @_;
 
-    for my $file ( @{$files} ) {
-      
-        my ( $filename, $dirs, $suffix ) = fileparse( $file, '.cram' );
-        my $fastq_base = $dirs.$filename ;
-        my $cmd = $self->{cramtools_java} .' -jar '.$self->{cramtools_jar}. ' fastq --gzip -I '.$file .' --fastq-base-name '. $fastq_base ;
-        if($reference_file)
-        {
-          $cmd .= " --reference-fasta-file $reference_file ";
-        }
-        system($cmd );
-        my $fastqcheck = VertRes::Wrapper::fastqcheck->new();
-        
-        my @fastqcheck_files;
-        for my $fastq (@{$self->_fastq_from_cram($file)})
-        {
-          push(@fastqcheck_files,$fastq . '.fastqcheck');
-          $fastqcheck->run( $fastq, $fastq . '.fastqcheck' );
-        }
-        
-        my $validate = Pathogens::Import::ValidateFastqConversion->new(
-             fastqcheck_filenames => \@fastqcheck_files,
-             irods_filename       => $file
-            );
-        $self->throw("The number of reads in the FASTQ files doesnt match the number if reads in iRODS") unless($validate->is_total_reads_valid());
+    my ( $filename, $dirs, $suffix ) = fileparse( $file, '.cram' );
+    my $fastq_base = $dirs.$filename ;
+    my $cmd = $self->{cramtools_java} .' -jar '.$self->{cramtools_jar}. ' fastq --gzip -I '.$file .' --fastq-base-name '. $fastq_base ;
+    if($reference_file)
+    {
+      $cmd .= " --reference-fasta-file $reference_file ";
     }
+    system($cmd );
+    my $fastqcheck = VertRes::Wrapper::fastqcheck->new();
+    
+    my @fastqcheck_files;
+    for my $fastq (@{$self->_fastq_from_cram($file)})
+    {
+      push(@fastqcheck_files,$fastq . '.fastqcheck');
+      $fastqcheck->run( $fastq, $fastq . '.fastqcheck' );
+    }
+    
+    my $validate = Pathogens::Import::ValidateFastqConversion->new(
+         fastqcheck_filenames => \@fastqcheck_files,
+         irods_filename       => $file
+        );
+    $self->throw("The number of reads in the FASTQ files doesnt match the number if reads in iRODS") unless($validate->is_total_reads_valid());
 }
 
 #---------- get_files ---------------------
