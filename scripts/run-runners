@@ -12,8 +12,8 @@
 #   # Input file
 #   vcf:  /path/to/input/file
 #
-# Currently on the keys listed above are allowed, although in principle any
-# config keys could be used without having it hard-wired in the scrip. This
+# Currently only the keys listed above are allowed, although in principle any
+# config keys could be used without having it hard-wired in the script. This
 # would need some security consideration first, depending on the intended usage
 # of the pipeline.
 #
