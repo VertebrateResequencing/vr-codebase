@@ -230,7 +230,7 @@ sub bcftools_sanity_check
     `$$self{bcftools} +fixploidy -h 2>&1`;
     if ( $? )
     {
-        my @out = `$$self{bcftools} plugin -lv`;
+        my @out = `$$self{bcftools} plugin -lv 2>&1`;
         $self->throw(
             "\n-----------------------------------------------------------------------------------------------------------\n",
             @out, 
