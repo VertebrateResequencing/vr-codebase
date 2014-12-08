@@ -166,14 +166,8 @@ sub bam_to_fastq_requires
 sub bam_to_fastq_provides {
   my ($self, $lane_path) = @_;
    
-  if( $self->is_paired )
-  {
-    return ["$self->{lane}_1.fastq", "$self->{lane}_2.fastq", "$self->{lane}_1.fastq.fastqcheck", "$self->{lane}_2.fastq.fastqcheck"];
-  }
-  else
-  {
-    return ["$self->{lane}_1.fastq", "$self->{lane}_1.fastq.fastqcheck"];
-  }
+  return ["$self->{prefix}bam_to_fastq_done"];
+
 }
 
 sub is_paired {
@@ -296,6 +290,7 @@ system("mv $self->{lane}.fastq.fastqcheck $self->{lane}_1.fastq.fastqcheck");
 };
     }
     print $scriptfh qq{
+      system("touch $self->{prefix}bam_to_fastq_done ");
 exit;
 };
     close $scriptfh;
@@ -316,14 +311,7 @@ sub compress_and_validate_requires
 {
   my ($self, $lane_path) = @_;
    
-  if( $self->is_paired )
-  {
-    return ["$self->{lane}_1.fastq", "$self->{lane}_2.fastq", "$self->{lane}_1.fastq.fastqcheck", "$self->{lane}_2.fastq.fastqcheck"];
-  }
-  else
-  {
-    return ["$self->{lane}_1.fastq", "$self->{lane}_1.fastq.fastqcheck"];
-  }
+  return ["$self->{prefix}bam_to_fastq_done"];
 }
 
 sub compress_and_validate_provides {
