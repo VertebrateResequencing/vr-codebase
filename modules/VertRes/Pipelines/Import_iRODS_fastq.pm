@@ -253,7 +253,7 @@ system("samtools view -f 0x200 $in_bam | awk -F '\\t'  'BEGIN{OFS=\\"\\t\\";} {g
 
 if(-s qq[pf_fail.sam] == 0)
 {
-  system("samtools view -F 0x100 -b -o secondary_alignments_removed.bam pf_pass.bam");
+  system("samtools view -F 0x900 -b -o secondary_alignments_removed.bam pf_pass.bam");
   unlink("pf_fail.sam");
   unlink("pf_pass.bam");
 }
@@ -268,7 +268,7 @@ else
   unlink("pf_pass.bam");
   unlink("pf_fail.bam");
   
-  system("samtools view -F 0x100 -b -o secondary_alignments_removed.bam  merged.bam");
+  system("samtools view -F 0x900 -b -o secondary_alignments_removed.bam  merged.bam");
   unlink("merged.bam");
 }
 
