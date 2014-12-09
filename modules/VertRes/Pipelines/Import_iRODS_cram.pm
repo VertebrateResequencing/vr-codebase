@@ -139,20 +139,6 @@ sub convert_to_fastq {
     my $prefix   = $$self{prefix};
     my $work_dir = $lane_path;
     
-    my $reference_file;
-    if(defined($self->{vrlane}) && defined($self->{vrlane}->files) && defined($self->{vrlane}->files->[0]))
-    {
-      $reference_file = $self->{vrlane}->files->[0]->{reference};
-    }
-    # change directory
-    if(defined($reference_file))
-    {
-      my($filename, $dirs, $suffix) = File::Basename::fileparse($reference_file );
-      $dirs =~ s!/\w+/$!/fasta/!;
-      $reference_file = $filename.$dirs.$suffix;
-      $reference_file = undef unless(-e $reference_file);
-    }
-
     my $file = $lane_path.'/'.$self->{files}->[0];
     
     open( my $fh, '>', "$work_dir/${prefix}convert_to_fastq.pl" ) or $self->throw("$work_dir/${prefix}convert_to_fastq.pl: $!");
@@ -162,7 +148,7 @@ sub convert_to_fastq {
   use VertRes::Pipelines::Import_iRODS_cram;
   
   my \$import = VertRes::Pipelines::Import_iRODS_cram->new();
-  \$import->cram_to_fastq(qq[$file],qq[$reference_file] );
+  \$import->cram_to_fastq(qq[$file]);
   system('touch ${prefix}convert_to_fastq_done');
   ];
 
@@ -187,7 +173,7 @@ sub _fastq_from_cram
 
 
 sub cram_to_fastq {
-    my ( $self, $file, $reference_file ) = @_;
+    my ( $self, $file ) = @_;
 
     my ( $filename, $dirs, $suffix ) = fileparse( $file, '.cram' );
     my $fastq_base = $dirs.$filename ;
