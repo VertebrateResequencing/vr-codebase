@@ -94,7 +94,8 @@ our $actions = [
 our %options = (
     bsub_opts  => '',
     cramtools_jar  => '/software/pathogen/external/apps/usr/share/java/cramtools-2.1.jar',
-    cramtools_java => '/software/jdk1.8.0_11/bin/java'
+    cramtools_java => '/software/jdk1.8.0_11/bin/java',
+    samtools_exec  => '/software/pathogen/external/apps/usr/local/samtools-1.1/samtools'
 );
 
 sub new {
@@ -190,11 +191,13 @@ sub cram_to_fastq {
 
     my ( $filename, $dirs, $suffix ) = fileparse( $file, '.cram' );
     my $fastq_base = $dirs.$filename ;
+    
+    # remove supplementary and secondary alignments
+    system($self->{samtools_exec}." view -F 0x900 -o output.cram $file");
+    system("mv output.cram $file");
+    
     my $cmd = $self->{cramtools_java} .' -jar '.$self->{cramtools_jar}. ' fastq --gzip -I '.$file .' --fastq-base-name '. $fastq_base ;
-    if($reference_file)
-    {
-      $cmd .= " --reference-fasta-file $reference_file ";
-    }
+
     system($cmd );
     my $fastqcheck = VertRes::Wrapper::fastqcheck->new();
     
