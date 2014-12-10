@@ -179,7 +179,7 @@ sub cram_to_fastq {
     my $fastq_base = $dirs.$filename ;
     
     # remove supplementary and secondary alignments
-    system($self->{samtools_exec}." view -F 0x900 -h -o output.cram $file");
+    system($self->{samtools_exec}." view -F 0x900 -h -C -o output.cram $file");
     system("mv output.cram $file");
     
     my $cmd = $self->{cramtools_java} .' -jar '.$self->{cramtools_jar}. ' fastq --gzip -I '.$file .' --fastq-base-name '. $fastq_base ;
