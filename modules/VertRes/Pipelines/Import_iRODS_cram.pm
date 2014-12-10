@@ -194,9 +194,10 @@ sub cram_to_fastq {
       $fastqcheck->run( $fastq, $fastq . '.fastqcheck' );
     }
     
+    my $filename_without_path = $filename. $suffix;
     my $validate = Pathogens::Import::ValidateFastqConversion->new(
          fastqcheck_filenames => \@fastqcheck_files,
-         irods_filename       => $file
+         irods_filename       => $filename_without_path
         );
     $self->throw("The number of reads in the FASTQ files doesnt match the number if reads in iRODS") unless($validate->is_total_reads_valid());
 }
