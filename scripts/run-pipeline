@@ -1541,11 +1541,11 @@ sub get_import_cram_jobs_from_vrtrack
     my ($jobs,$config,$mtime,$config_data) = @_;
 
     if ( !$$config_data{db} ) { croak("Expected db key in the config $config.\n"); }
-    debug($config_data,"$config\tget_import_jobs_from_vrtrack...");
+    debug($config_data,"$config\tget_import_cram_jobs_from_vrtrack...");
 
     my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
 
-    my %filter  = ('import'=>0, 'qc'=>0);
+    my %filter  = ( import => 0);
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
 
 
@@ -1579,10 +1579,10 @@ sub get_import_cram_jobs_from_vrtrack
         my $files = $vrlane->files();
         foreach my $file (@{$files}) {
             next unless( $file->type() == 6);
-            push @{$lane_info->{files}}, $file->name if ( $file->name=~m{^/} ) ;
+            push @{$lane_info->{files}}, $file->name;
         }
         
-        next unless($lane_info->{files});
+        next if(! defined($lane_info->{files}));
         my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
         push @$jobs, $job;
         debug($config_data,".");
