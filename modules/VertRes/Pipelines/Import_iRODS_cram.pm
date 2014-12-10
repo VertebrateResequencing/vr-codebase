@@ -149,7 +149,6 @@ sub convert_to_fastq {
   
   my \$import = VertRes::Pipelines::Import_iRODS_cram->new();
   \$import->cram_to_fastq(qq[$file]);
-  system('touch ${prefix}convert_to_fastq_done');
   ];
 
     close($fh);
@@ -321,7 +320,7 @@ sub update_db {
     }
     
       # Remove Large Files
-      my @cram_suffix   = ('cram','cram.md5');
+      my @cram_suffix   = ('cram');
 
       my $bam = $self->{files}->[0];
 
