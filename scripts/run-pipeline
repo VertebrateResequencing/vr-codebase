@@ -1440,6 +1440,7 @@ sub get_import_jobs_from_vrtrack
         if ( $$config_data{mpsa_limit} && scalar keys %lanes_to_run > $$config_data{mpsa_limit} ) { last; }
 
         my $file = VRTrack::File->new_by_hierarchy_name($vrtrack,$fname) or croak("Could not get File for $fname: $config\n");
+        next unless( $file->type() == 4);
         my $lane = VRTrack::Lane->new($vrtrack, $file->lane_id());
         unless (exists $filtered_lanes{$lane->name}) { next; }
         if ( $lane->is_withdrawn() ) { next; }
@@ -1544,7 +1545,7 @@ sub get_import_cram_jobs_from_vrtrack
 
     my $vrtrack = VRTrack::VRTrack->new($$config_data{db}) or croak("Could not connect to the database: $config\n");
 
-    my %filter  = ('import'=>0);
+    my %filter  = ('import'=>0, 'qc'=>0);
     if ( exists($$config_data{vrtrack_processed_flags}) ) { %filter = %{$$config_data{vrtrack_processed_flags}}; }
 
 
@@ -1577,9 +1578,11 @@ sub get_import_cram_jobs_from_vrtrack
         
         my $files = $vrlane->files();
         foreach my $file (@{$files}) {
+            next unless( $file->type() == 6);
             push @{$lane_info->{files}}, $file->name if ( $file->name=~m{^/} ) ;
         }
         
+        next unless($lane_info->{files});
         my $job = Job->new({lane_info => $lane_info, %$config_data, path => $path, config => $config, mtime => $mtime});
         push @$jobs, $job;
         debug($config_data,".");
