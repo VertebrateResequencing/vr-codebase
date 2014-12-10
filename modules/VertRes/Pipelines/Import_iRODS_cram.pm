@@ -191,6 +191,13 @@ sub cram_to_fastq {
     {
       push(@fastqcheck_files,$fastq . '.fastqcheck');
       $fastqcheck->run( $fastq, $fastq . '.fastqcheck' );
+      Utils::CMD(qq[md5sum $fastq > $fastq.md5]);
+
+      my $fastq_without_gz = $fastq;
+      $fastq_without_gz  =~ s!\.gz!!i;
+      Utils::CMD(qq[gunzip -c $fastq > $fastq_without_gz]);
+      Utils::CMD(qq[md5sum $fastq_without_gz > $fastq_without_gz.md5]);
+      unlink($fastq_without_gz);
     }
     
     my $filename_without_path = $filename. $suffix;
@@ -320,7 +327,7 @@ sub update_db {
     }
     
       # Remove Large Files
-      my @cram_suffix   = ('cram');
+      my @cram_suffix   = ('cram','cram.md5');
 
       my $bam = $self->{files}->[0];
 
