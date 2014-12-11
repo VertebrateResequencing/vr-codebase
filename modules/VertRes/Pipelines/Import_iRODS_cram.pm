@@ -95,7 +95,7 @@ our %options = (
     bsub_opts  => '',
     cramtools_jar  => '/software/pathogen/external/apps/usr/share/java/cramtools-2.1.jar',
     cramtools_java => '/software/jdk1.8.0_11/bin/java',
-    samtools_exec  => '/software/pathogen/external/apps/usr/local/samtools-1.1/samtools'
+    samtools_exec  => '/software/pathogen/external/apps/usr/bin/samtools-1.1.30'
 );
 
 sub new {
@@ -134,7 +134,7 @@ sub convert_to_fastq_provides {
 
 sub convert_to_fastq {
     my ( $self, $lane_path, $lock_file ) = @_;
-    my $memory_in_mb = 1000;
+    my $memory_in_mb = 2000;
 
     my $prefix   = $$self{prefix};
     my $work_dir = $lane_path;
