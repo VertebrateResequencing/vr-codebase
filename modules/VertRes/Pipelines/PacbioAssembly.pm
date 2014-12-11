@@ -130,7 +130,7 @@ sub pacbio_assembly {
   die "No assembly produced\n" unless( -e qq[$output_dir/assembly.fasta]);
   
   system("mv $output_dir/assembly.fasta $output_dir/contigs.fa");
-  system("sed -i.bak -e 's/|quiver//' $output_dir/contigs.fa");
+  system("sed -i.bak -e 's/|/_/' $output_dir/contigs.fa");
   system("assembly_stats $output_dir/contigs.fa > $output_dir/contigs.fa.stats");
   
   system("mv $output_dir/All_output/data/aligned_reads.bam $output_dir/contigs.mapped.sorted.bam");

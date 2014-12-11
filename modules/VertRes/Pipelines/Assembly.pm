@@ -1027,6 +1027,11 @@ sub cleanup {
   foreach my $file (qw(contigs.fa.scaffolded.filtered .RData contigs.fa.png.Rout scaffolded.summaryfile.txt reverse.fastq forward.fastq))
   {
     unlink($self->{fsu}->catfile($lane_path, $file));
+    if(-e ($lane_path.'/'.$self->{assembler}.'_assembly/'. $file))
+    {
+      unlink($lane_path.'/'.$self->{assembler}.'_assembly/'. $file);
+    }
+    
   }
   Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_cleanup_done")   );
 
