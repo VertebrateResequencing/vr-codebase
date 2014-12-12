@@ -95,6 +95,11 @@ sub new
                 #   successfull in distinguishing the good and bad training sites.
                 annots       => '] .$$self{snps}{annots}. q[',
 
+                # Explicit list of bad sites (chr pos, one at a line) to be used in training. In order for
+                #   the option to take effect, the "bad_sites" filtering expression above must exclude
+                #   records marked with "BadSitesList", for example as: -m+ -e'%FILTER="BadSitesList"'
+                bad_sites_list => undef,
+
                 # Defines good sites used in training.
                 good_vcf     => '] .$$self{snps}{good_vcf}. q[',
 
@@ -228,6 +233,7 @@ sub parse_args
     }
     if ( exists($$self{apply_threshold}) ) { $$self{test_threshold} = 0; }
     if ( !defined($$self{in_vcf}) ) { $self->throw("Expected -i option."); }
+    if ( !defined($$self{outdir}) ) { $self->throw("Missing the -o option."); }
     if ( $$self{clean} ) 
     { 
         # Run performance stats and clean
@@ -746,7 +752,33 @@ sub get_file_list
 sub strip_genotypes
 {
     my ($self,$outfile,$infile,$type) = @_;
-    $self->cmd("$$self{bcftools} view -G -Ou $infile -i '%TYPE=\"$type\"' | $$self{bcftools} filter -s BadSite $$self{$type}{bad_sites} -Ob - > $outfile.part");
+    if ( defined $$self{$type}{bad_sites_list} )
+    {
+        open(my $in,'<',$$self{$type}{bad_sites_list}) or $self->throw("$$self{$type}{bad_sites_list}: $!");
+        open(my $out,'>',"$outfile.annots") or $self->throw("$outfile.annots: $!");
+        while (my $line=<$in>)
+        {
+            my @items = split(/\s+/,$line);
+            chomp($items[1]);
+            print $out "$items[0]\t$items[1]\tBadSitesList\n";
+        }
+        close($out) or $self->throw("close failed: $outfile.annots");
+        close($in) or $self->throw("close failed: $$self{$type}{bad_sites_list}");
+        $self->cmd("bgzip -f $outfile.annots");
+        $self->cmd("tabix -s1 -b2 -e2 $outfile.annots.gz");
+
+        open($out,'>',"$outfile.annots.hdr") or $self->throw("$outfile.annots.hdr: $!");
+        print $out qq[##FILTER=<ID=BadSitesList,Description="Listed in $$self{$type}{bad_sites_list}">\n];
+        close($out) or $self->throw("close failed: $outfile.annots.hdr");
+        
+        $self->cmd(qq[$$self{bcftools} view -G -Ou $infile -i '%TYPE="$type"' | $$self{bcftools} annotate -c CHROM,POS,+FILTER -h $outfile.annots.hdr -a $outfile.annots.gz -Ou -o $outfile.tmp]);
+        $infile = "$outfile.tmp";
+    }
+    $self->cmd(qq[$$self{bcftools} view -G -Ou $infile -i '%TYPE="$type"' | $$self{bcftools} filter -s BadSite $$self{$type}{bad_sites} -Ob - > $outfile.part]);
+    unlink("$outfile.annots.hdr");
+    unlink("$outfile.annots.gz");
+    unlink("$outfile.annots.gz.tbi");
+    unlink("$outfile.tmp");
     $self->cmd("$$self{bcftools} index $outfile.part");
     rename("$outfile.part.csi","$outfile.csi") or $self->throw("rename: $outfile.part.csi $outfile.csi: $!");
     rename("$outfile.part",$outfile) or $self->throw("rename: $outfile.part $outfile: $!");
