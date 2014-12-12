@@ -149,7 +149,7 @@ sub parse_args
     {
         $self->warn("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
     }
-    if ( exists($$self{known_vcf}) && !($$self{known_vcf}=~/.gz$/) )
+    if ( exists($$self{known_vcf}) && !($$self{known_vcf}=~/.gz$/) && !($$self{known_vcf}=~/.bcf$/) )
     {
         $self->warn("The known_vcf should be bgzipped and tabix indexed. Hopefully you know what you're doing?\n");
     }
@@ -495,8 +495,20 @@ sub beagle
     $self->cmd("$$self{bcftools} index $prefix.vcf.gz");    # workaround: beagle does not include the contig tag, index instead
     $self->cmd("$$self{bcftools} view -Ob -o $prefix.bgl.bcf $prefix.vcf.gz");
     $self->cmd("$$self{bcftools} index $prefix.bgl.bcf");
-    $self->cmd(qq[$$self{bcftools} annotate -c $$self{beagle_tags} -a $prefix.bgl.bcf -r $chr:$from-$to $in_vcf -Ou | $$self{bcftools} +fill-AN-AC -Ob -o $prefix.bcf]);
-    $self->cmd(qq[$$self{bcftools} index $prefix.bcf]);
+    if ( $$self{do_impute} )
+    {
+        $self->cmd(qq[$$self{bcftools} concat -r $chr:$from-$to -aD $in_vcf $prefix.bgl.bcf -Ob -o $prefix.merged.bcf]);
+        $self->cmd(qq[$$self{bcftools} index $prefix.merged.bcf]);
+        $self->cmd(qq[$$self{bcftools} annotate -r $chr:$from-$to -c $$self{beagle_tags} -a $prefix.bgl.bcf $prefix.merged.bcf -Ou | $$self{bcftools} +fill-AN-AC -Ob -o $prefix.bcf]);
+        $self->cmd(qq[$$self{bcftools} index $prefix.bcf]);
+        unlink("$prefix.merged.bcf");
+        unlink("$prefix.merged.bcf.csi");
+    }
+    else
+    {
+        $self->cmd(qq[$$self{bcftools} annotate -c $$self{beagle_tags} -a $prefix.bgl.bcf -r $chr:$from-$to $in_vcf -Ou | $$self{bcftools} +fill-AN-AC -Ob -o $prefix.bcf]);
+        $self->cmd(qq[$$self{bcftools} index $prefix.bcf]);
+    }
     unlink("$prefix.bgl.bcf");
     unlink("$prefix.bgl.bcf.csi");
     if ( $$self{save_beagle_outputs} )
