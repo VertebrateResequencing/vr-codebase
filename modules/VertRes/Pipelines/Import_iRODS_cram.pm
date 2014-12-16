@@ -124,7 +124,7 @@ sub convert_to_fastq_provides {
     my @fastqs ;
     for my $file (@{$self->{files}})
     {
-      for my $f (@{$self->_fastq_from_cram($file,$self->{vrlane}->{is_paired})})
+      for my $f (@{$self->_fastq_from_cram($lane_path.'/'.$file,$self->{vrlane}->{is_paired})})
       {
         push(@fastqs,$f );
       }
