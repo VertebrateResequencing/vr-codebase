@@ -208,6 +208,9 @@ sub cram_to_fastq {
     {
       system("mv ${filename}.fastq.gz  ${filename}_1.fastq.gz ");
     }
+    unlink($filename."_1.fastq_orphan.gz") if(-e $filename."_1.fastq_orphan.gz");
+    unlink($filename."_2.fastq_orphan.gz") if(-e $filename."_2.fastq_orphan.gz");
+    unlink($filename.".fastq.gz")          if(-e $filename.".fastq.gz");
     
     my $fastqcheck = VertRes::Wrapper::fastqcheck->new();
     
