@@ -322,7 +322,7 @@ sub download_files {
 # Requires the gzipped fastq files. How many? Find out how many .md5 files there are.
 sub update_db_requires {
     my ( $self, $lane_path ) = @_;
-    return $self->convert_to_fastq_provides;
+    return $self->convert_to_fastq_provides($lane_path);
 }
 
 # This subroutine will check existence of the key 'db'. If present, it is assumed
@@ -373,7 +373,7 @@ sub update_db {
 
     my $rawreads = 0;
     my $rawbases = 0;
-    for my $fastq ( @{ $self->convert_to_fastq_provides } ) {
+    for my $fastq ( @{ $self->convert_to_fastq_provides($lane_path) } ) {
         my $parser = VertRes::Parser::fastqcheck->new( file => $lane_path.'/'.$fastq . '.fastqcheck' );
         $rawreads += $parser->num_sequences() || 0;
         $rawbases += $parser->total_length()  || 0;
