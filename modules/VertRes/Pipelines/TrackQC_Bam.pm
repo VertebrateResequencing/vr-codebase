@@ -1072,6 +1072,9 @@ sub update_db
     {
         Utils::CMD("rm -f $lane_path/$$self{lane}*.fastq.gz");
     }
+    
+    unlink($lane_path."/.renamed.".$$self{lane}.'_1.fastq.gz') if( -e $lane_path."/.renamed.".$$self{lane}.'_1.fastq.gz');
+    unlink($lane_path."/.renamed.".$$self{lane}.'_2.fastq.gz') if( -e $lane_path."/.renamed.".$$self{lane}.'_2.fastq.gz');
 
     # Rename the sample dir by mapstats ID, cleaning existing one
     if ( $has_mapstats && $mapstats_id )
