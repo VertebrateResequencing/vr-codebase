@@ -127,7 +127,6 @@ our $options =
     'bsub_opts_map_sample'         => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
     'bsub_opts_process_fastqs'     => "-q normal -M3200 -R 'select[mem>3200] rusage[mem=3200]'",
     'bsub_opts_subsample'          => "-q normal -M1000 -R 'select[mem>1000] rusage[mem=1000]' -n 2 -R 'span[hosts=1]'",
-    'bsub_opts_assign_taxonomy'    => "-q normal -M4500 -R 'select[mem>4500] rusage[mem=4500]' -n 4 -R 'span[hosts=1]'",
     'bwa_clip'        => 20,
     'chr_regex'       => '^(?:\d+|X|Y)$',
     'gc_depth_bin'    => 20000,
@@ -349,6 +348,10 @@ sub assign_taxonomy
     my $reads_1 = $fastq_files->[0];
     my $reads_2 = scalar @$fastq_files > 1 ? "\"$fastq_files->[1]\"" : undef;
 
+    
+    (-e $$self{kraken_db}.'/database.kdb') or $self->throw("Missing the kraken_db file.\n");
+    my $memory_in_mb = ((-s $$self{kraken_db}.'/database.kdb')/1000000 ) + 4000 ;
+
     my $script = "_assign_taxonomy.pl";
     open(my $fh, '>', "$lane_path/$script");
     print $fh
@@ -370,7 +373,7 @@ my \$kraken = Bio::Metagenomics::External::Kraken->new(
 system("touch _assign_taxonomy_done") and die "Error touch _assign_taxonomy_done";
 ];
     close $fh;
-    VertRes::LSF::run($lock_file,"$lane_path","_assign_taxonomy", {bsub_opts=>$$self{bsub_opts_assign_taxonomy}}, "perl -w $script");
+    VertRes::LSF::run($lock_file,"$lane_path","_assign_taxonomy", {bsub_opts=>"-q normal -M${memory_in_mb} -R 'select[mem>${memory_in_mb}] rusage[mem=${memory_in_mb}]' -n 4 -R 'span[hosts=1]'"}, "perl -w $script");
     return $$self{'No'};
 }
 

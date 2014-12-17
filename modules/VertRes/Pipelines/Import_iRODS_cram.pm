@@ -65,6 +65,7 @@ use VertRes::Utils::FileSystem;
 use VertRes::Wrapper::fastqcheck;
 use Pathogens::Import::ValidateFastqConversion;
 use File::Basename;
+use Cwd 'abs_path';
 
 our $actions = [
 
@@ -123,7 +124,7 @@ sub convert_to_fastq_provides {
     my @fastqs ;
     for my $file (@{$self->{files}})
     {
-      for my $f (@{$self->_fastq_from_cram($file)})
+      for my $f (@{$self->_fastq_from_cram($lane_path.'/'.$file,$self->{vrlane}->{is_paired})})
       {
         push(@fastqs,$f );
       }
@@ -140,6 +141,7 @@ sub convert_to_fastq {
     my $work_dir = $lane_path;
     
     my $file = $lane_path.'/'.$self->{files}->[0];
+    my $is_paired = $self->{vrlane}->{is_paired};
     
     open( my $fh, '>', "$work_dir/${prefix}convert_to_fastq.pl" ) or $self->throw("$work_dir/${prefix}convert_to_fastq.pl: $!");
     print $fh qq[
@@ -148,7 +150,7 @@ sub convert_to_fastq {
   use VertRes::Pipelines::Import_iRODS_cram;
   
   my \$import = VertRes::Pipelines::Import_iRODS_cram->new();
-  \$import->cram_to_fastq(qq[$file]);
+  \$import->cram_to_fastq(qq[$file],$is_paired);
   ];
 
     close($fh);
@@ -165,29 +167,55 @@ sub convert_to_fastq {
 
 sub _fastq_from_cram
 {
-  my ( $self, $cram ) = @_;
-  my ( $filename, $dirs, $suffix ) = fileparse( $cram, '.cram' );
-  return [$dirs.$filename.'_1.fastq.gz', $dirs.$filename.'_2.fastq.gz' ];
+  my ( $self, $cram,$is_paired, ) = @_;
+  my $full_cram_path = abs_path($cram);
+  my ( $filename, $dirs, $suffix ) = fileparse( $full_cram_path, '.cram' );
+  
+  if($is_paired == 1)
+  {
+    return [$dirs.$filename.'_1.fastq.gz', $dirs.$filename.'_2.fastq.gz' ];
+  }
+  else
+  {
+    return [$dirs.$filename.'_1.fastq.gz' ];
+  }
 }
 
 
 sub cram_to_fastq {
-    my ( $self, $file ) = @_;
+    my ( $self, $file,$is_paired ) = @_;
 
     my ( $filename, $dirs, $suffix ) = fileparse( $file, '.cram' );
     my $fastq_base = $dirs.$filename ;
     
-    # remove supplementary and secondary alignments
-    system($self->{samtools_exec}." view -F 0x900 -h -C -o output.cram $file");
-    system("mv output.cram $file");
-    
-    my $cmd = $self->{cramtools_java} .' -Xmx2800m -Xms2500m  -jar '.$self->{cramtools_jar}. ' fastq --gzip -I '.$file .' --fastq-base-name '. $fastq_base ;
+    my @bamtofastq_command = ( 
+      'bamtofastq',
+      'collate=1',
+      'inputformat=cram',
+      "F=".$filename."_1.fastq.gz",
+      "O=".$filename."_1.fastq_orphan.gz",
+      "F2=".$filename."_2.fastq.gz",
+      "O2=".$filename."_2.fastq_orphan.gz",
+      "S=".$filename.".fastq.gz",
+      'gz=1',
+      'exclude=SECONDARY,SUPPLEMENTARY',
+      '<',
+      $file,
+    );
 
-    system($cmd );
+    system(join(" ", @bamtofastq_command) );
+    unless($is_paired)
+    {
+      system("mv ${filename}.fastq.gz  ${filename}_1.fastq.gz ");
+    }
+    unlink($filename."_1.fastq_orphan.gz") if(-e $filename."_1.fastq_orphan.gz");
+    unlink($filename."_2.fastq_orphan.gz") if(-e $filename."_2.fastq_orphan.gz");
+    unlink($filename.".fastq.gz")          if(-e $filename.".fastq.gz");
+    
     my $fastqcheck = VertRes::Wrapper::fastqcheck->new();
     
     my @fastqcheck_files;
-    for my $fastq (@{$self->_fastq_from_cram($file)})
+    for my $fastq (@{$self->_fastq_from_cram($file,$is_paired)})
     {
       push(@fastqcheck_files,$fastq . '.fastqcheck');
       $fastqcheck->run( $fastq, $fastq . '.fastqcheck' );
@@ -294,7 +322,7 @@ sub download_files {
 # Requires the gzipped fastq files. How many? Find out how many .md5 files there are.
 sub update_db_requires {
     my ( $self, $lane_path ) = @_;
-    return $self->convert_to_fastq_provides;
+    return $self->convert_to_fastq_provides($lane_path);
 }
 
 # This subroutine will check existence of the key 'db'. If present, it is assumed
@@ -345,7 +373,7 @@ sub update_db {
 
     my $rawreads = 0;
     my $rawbases = 0;
-    for my $fastq ( @{ $self->convert_to_fastq_provides } ) {
+    for my $fastq ( @{ $self->convert_to_fastq_provides($lane_path) } ) {
         my $parser = VertRes::Parser::fastqcheck->new( file => $lane_path.'/'.$fastq . '.fastqcheck' );
         $rawreads += $parser->num_sequences() || 0;
         $rawbases += $parser->total_length()  || 0;
