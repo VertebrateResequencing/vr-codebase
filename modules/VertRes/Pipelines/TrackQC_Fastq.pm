@@ -350,7 +350,7 @@ sub assign_taxonomy
 
     
     (-e $$self{kraken_db}.'/database.kdb') or $self->throw("Missing the kraken_db file.\n");
-    my $memory_in_mb = ((-s $$self{kraken_db}.'/database.kdb')/1000000 ) + 4000 ;
+    my $memory_in_mb = int(((-s $$self{kraken_db}.'/database.kdb')/1000000 ) + 4000) ;
 
     my $script = "_assign_taxonomy.pl";
     open(my $fh, '>', "$lane_path/$script");
