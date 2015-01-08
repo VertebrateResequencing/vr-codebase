@@ -374,7 +374,8 @@ sub update_db {
     my $rawreads = 0;
     my $rawbases = 0;
     for my $fastq ( @{ $self->convert_to_fastq_provides($lane_path) } ) {
-        my $parser = VertRes::Parser::fastqcheck->new( file => $lane_path.'/'.$fastq . '.fastqcheck' );
+        $self->throw("Cannot find ". $fastq . '.fastqcheck'."\n") unless(-e $fastq . '.fastqcheck');
+        my $parser = VertRes::Parser::fastqcheck->new( file => $fastq . '.fastqcheck' );
         $rawreads += $parser->num_sequences() || 0;
         $rawbases += $parser->total_length()  || 0;
     }
