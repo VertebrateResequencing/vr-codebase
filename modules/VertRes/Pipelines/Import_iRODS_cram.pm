@@ -151,6 +151,7 @@ sub convert_to_fastq {
   
   my \$import = VertRes::Pipelines::Import_iRODS_cram->new();
   \$import->cram_to_fastq(qq[$file],$is_paired);
+  system('touch _cram_to_fastq_done');
   ];
 
     close($fh);
@@ -322,7 +323,10 @@ sub download_files {
 # Requires the gzipped fastq files. How many? Find out how many .md5 files there are.
 sub update_db_requires {
     my ( $self, $lane_path ) = @_;
-    return $self->convert_to_fastq_provides($lane_path);
+    
+    my $expected_output_files = $self->convert_to_fastq_provides($lane_path);
+    push(@{$expected_output_files},'_cram_to_fastq_done');
+    return $expected_output_files;
 }
 
 # This subroutine will check existence of the key 'db'. If present, it is assumed
