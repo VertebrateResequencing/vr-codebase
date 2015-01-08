@@ -121,6 +121,18 @@ sub convert_to_fastq_requires {
 sub convert_to_fastq_provides {
     my ( $self, $lane_path ) = @_;
 
+    my $fastqs ;
+    $fastqs = $self->_list_of_fastq_files($lane_path);
+    
+    push(@{$fastqs},'_cram_to_fastq_done');
+
+    return $fastqs;
+}
+
+
+sub _list_of_fastq_files {
+    my ( $self, $lane_path ) = @_;
+
     my @fastqs ;
     for my $file (@{$self->{files}})
     {
@@ -129,9 +141,9 @@ sub convert_to_fastq_provides {
         push(@fastqs,$f );
       }
     }
-
     return \@fastqs;
 }
+
 
 sub convert_to_fastq {
     my ( $self, $lane_path, $lock_file ) = @_;
@@ -151,6 +163,7 @@ sub convert_to_fastq {
   
   my \$import = VertRes::Pipelines::Import_iRODS_cram->new();
   \$import->cram_to_fastq(qq[$file],$is_paired);
+  system('touch _cram_to_fastq_done');
   ];
 
     close($fh);
@@ -322,6 +335,7 @@ sub download_files {
 # Requires the gzipped fastq files. How many? Find out how many .md5 files there are.
 sub update_db_requires {
     my ( $self, $lane_path ) = @_;
+    
     return $self->convert_to_fastq_provides($lane_path);
 }
 
@@ -373,8 +387,9 @@ sub update_db {
 
     my $rawreads = 0;
     my $rawbases = 0;
-    for my $fastq ( @{ $self->convert_to_fastq_provides($lane_path) } ) {
-        my $parser = VertRes::Parser::fastqcheck->new( file => $lane_path.'/'.$fastq . '.fastqcheck' );
+    for my $fastq ( @{ $self->_list_of_fastq_files($lane_path) } ) {
+        $self->throw("Cannot find ". $fastq . '.fastqcheck'."\n") unless(-e $fastq . '.fastqcheck');
+        my $parser = VertRes::Parser::fastqcheck->new( file => $fastq . '.fastqcheck' );
         $rawreads += $parser->num_sequences() || 0;
         $rawbases += $parser->total_length()  || 0;
     }
