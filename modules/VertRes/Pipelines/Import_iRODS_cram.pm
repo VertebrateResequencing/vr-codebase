@@ -50,7 +50,7 @@ path-help@sanger.ac.uk
 
 package VertRes::Pipelines::Import_iRODS_cram;
 use VertRes::Pipeline;
-use base qw(VertRes::Pipelines::Import_iRODS VertRes::Pipelines::Import);
+use base qw(VertRes::Pipeline);
 
 use strict;
 use warnings;
@@ -61,7 +61,6 @@ use VertRes::LSF;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::File;
-use VertRes::Pipelines::Import;
 use VertRes::Utils::FileSystem;
 use VertRes::Wrapper::fastqcheck;
 use Pathogens::Import::ValidateFastqConversion;
@@ -359,12 +358,9 @@ sub update_db {
     my ( $self, $lane_path, $lock_file ) = @_;
 
     if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
-    
-    # Update database
-    $self->VertRes::Pipelines::Import::update_db($lane_path,$lock_file);
 
     my $prefix = $self->{prefix};
-
+ $self->update_db_master($lane_path,$lock_file);
     # remove job files
     foreach my $file (qw(import_files convert_to_fastq )) {
         foreach my $suffix (qw(o e pl)) {
@@ -405,6 +401,184 @@ sub update_db {
     $vrlane->update();
     $vrtrack->transaction_commit();
     return $$self{Yes};
+}
+
+
+sub update_db_master
+{
+    my ($self,$lane_path,$lock_file) = @_;
+
+    if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
+
+    my $vrtrack = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database\n");
+    my $vrlane  = VRTrack::Lane->new_by_name($vrtrack,$$self{lane}) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
+
+    $vrtrack->transaction_start();
+
+    # To determine file types, a simple heuristic is used: When there are two files 
+    #   lane_1.fastq.gz and lane_2.fastq.gz, fwd (1) and rev (2) will be set for file type.
+    #   When only one file is present, single-end (0) will be set.
+    my $i=0;
+    my %processed_files;
+    while (1)
+    {
+        $i++;
+        my $name = "$$self{lane}_$i.fastq";
+
+        # Check what fastq files actually exist in the hierarchy
+        if ( ! -e "$lane_path/$name.gz" ) { last; }
+
+        $processed_files{$name} = $i;
+    }
+
+    # do the same for every _nonhuman.fastq files
+    $i=0;
+    while (1)
+    {
+	$i++;
+	my $name = "$$self{lane}_$i"."_nonhuman.fastq";
+
+	# Check what fastq files actually exist in the hierarchy
+	if ( ! -e "$lane_path/$name.gz" ) { last; }
+
+	$processed_files{$name} = $i;
+    }
+
+    my $nfiles = scalar keys %processed_files;
+    while (my ($name,$type) = each %processed_files)
+    {
+        # The file may be absent from the database, if it was created by splitting the _s_ fastq.
+        my $vrfile = $vrlane->get_file_by_name($name);
+        if ( !$vrfile ) 
+        { 
+            $vrfile = $vrlane->add_file($name); 
+            $vrfile->hierarchy_name($name);
+        }
+        $vrfile->md5(`awk '{printf "%s",\$1}' $lane_path/$name.md5`);
+
+        # Hm, this must be evaled, otherwise it dies without rollback
+        my ($avg_len,$tot_len,$num_seq,$avg_qual);
+        eval {
+            my $fastq = VertRes::Parser::fastqcheck->new(file => "$lane_path/$name.gz.fastqcheck");
+            $avg_len  = $fastq->avg_length();
+            $tot_len  = $fastq->total_length();
+            $num_seq  = $fastq->num_sequences();
+            $avg_qual = $fastq->avg_qual();
+        };
+        if ( $@ )
+        {
+            $vrtrack->transaction_rollback();
+            $self->throw("Problem reading the fastqcheck file: $lane_path/$name.gz.fastqcheck\n");
+        }
+        $vrfile->read_len($avg_len);
+        $vrfile->raw_bases($tot_len);
+        $vrfile->raw_reads($num_seq);
+        $vrfile->mean_q($avg_qual); 
+        $vrfile->is_processed('import',1);
+
+        # Only the gzipped variant will carry the latest flag
+        $vrfile->is_latest(0);  
+
+        # If there is only one file, it is single-end file
+        if ( $nfiles == 1 ) { $type = 0; }
+        $vrfile->type($type);
+        $vrfile->update();
+
+        # Now add also the fastq.gz file into the File table. (Requested for the Mapping pipeline.)
+        $self->fix_lane_file_if_exists("$name.gz",$vrlane, $vrtrack);
+        my $vrfile_gz = $vrlane->get_file_by_name("$name.gz");
+        if ( !$vrfile_gz )
+        {
+            $vrfile_gz = $vrlane->add_file("$name.gz");
+            vrtrack_copy_fields($vrfile,$vrfile_gz,[qw(file_id name hierarchy_name)]);
+            $vrfile_gz->hierarchy_name("$name.gz");
+            $vrfile_gz->md5(`awk '{printf "%s",\$1}' $lane_path/$name.gz.md5`);
+            $vrfile_gz->is_processed('import',1);
+            $vrfile_gz->update();
+        }
+    }
+
+    # Update also the status of the _s_ file, if any. Loop over the
+    #   files passed to the pipeline and filter out those which were not
+    #   processed above.
+    for my $file (@{$$self{files}})
+    {
+        if ( exists($processed_files{$file}) ) { next; }
+
+        my $vrfile = $vrlane->get_file_by_name($file);
+        if ( !$vrfile ) { $self->throw("FIXME: no such file [$file] for the lane [$lane_path]."); }
+        $vrfile->is_processed('import',1);
+        $vrfile->is_latest(0);
+        $vrfile->update();
+    }
+
+
+    # Update the lane stats
+    my $read_len=0;
+    my $raw_reads=0;
+    my $raw_bases=0;
+    my $vfiles=$vrlane->files;
+    for my $vfile(@$vfiles){
+	$raw_reads+=$vfile->raw_reads;
+	$raw_bases+=$vfile->raw_bases;
+	$read_len=$vfile->read_len;
+    }
+    $vrlane->raw_reads($raw_reads);
+    $vrlane->raw_bases($raw_bases);
+    $vrlane->read_len($read_len);
+
+
+    # Finally, change the import status of the lane, so that it will not be picked up again
+    #   by the run-pipeline script.
+    $vrlane->is_processed('import',1);
+    $vrlane->update();
+    $vrtrack->transaction_commit();
+
+    return $$self{Yes};
+}
+
+=head2 fix_lane_file_if_exists
+
+        Example : fix_lane_file_if_exists("my_file_name", $vlane);
+        Args    : filename to check
+                : lane object which will in future have the file object
+
+  This will see if a file row already exists for a lane. If its attached to a different lane, then delete it so that it doesnt cause
+  issues later.
+=cut
+
+sub fix_lane_file_if_exists
+{
+  my ($self,$file_name, $vrlane, $vrtrack) = @_;
+  
+  if(VRTrack::File->is_name_in_database($vrtrack,$file_name,$file_name) == 1)
+  {
+    my $direct_file_object = VRTrack::File->new_by_name($vrtrack, $file_name);
+    my $lane_file_object = $vrlane->get_file_by_name($file_name);
+    
+    if(! defined($lane_file_object)  || ( defined($lane_file_object) &&  $direct_file_object->row_id() != $lane_file_object->row_id()  ) )
+    {
+      # file exists already but its not attached to our lane, delete it
+      $direct_file_object->delete();
+    }
+  }
+}
+
+sub vrtrack_copy_fields
+{
+    my ($src,$dst,$except) = @_;
+
+    my %omit = $except ? map { $_=>1 } @$except : ();
+    my $src_fields = $src->fields_dispatch();
+    my $dst_fields = $dst->fields_dispatch();
+
+    while (my ($key,$handler) = each %$src_fields)
+    {
+        if ( exists($omit{$key}) ) { next; }
+
+        my $value = &{$handler}();
+        &{$$dst_fields{$key}}($value);
+    }
 }
 
 sub dump_opts {
