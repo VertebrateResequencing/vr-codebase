@@ -357,7 +357,8 @@ sub update_db {
     if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
 
     my $prefix = $self->{prefix};
- $self->update_db_master($lane_path,$lock_file);
+    my $vrtrack = VRTrack::VRTrack->new( $$self{db} ) or $self->throw("Could not connect to the database\n");
+    $self->update_db_master($lane_path,$lock_file,$vrtrack);
     # remove job files
     foreach my $file (qw(import_files convert_to_fastq )) {
         foreach my $suffix (qw(o e pl)) {
@@ -377,7 +378,7 @@ sub update_db {
       }
     
 
-    my $vrtrack = VRTrack::VRTrack->new( $$self{db} ) or $self->throw("Could not connect to the database\n");
+   
     my $vrlane = VRTrack::Lane->new_by_name( $vrtrack, $$self{lane} ) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
 
     $vrtrack->transaction_start();
@@ -403,11 +404,10 @@ sub update_db {
 
 sub update_db_master
 {
-    my ($self,$lane_path,$lock_file) = @_;
+    my ($self,$lane_path,$lock_file,$vrtrack) = @_;
 
     if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
 
-    my $vrtrack = VRTrack::VRTrack->new($$self{db}) or $self->throw("Could not connect to the database\n");
     my $vrlane  = VRTrack::Lane->new_by_name($vrtrack,$$self{lane}) or $self->throw("No such lane in the DB: [$$self{lane}]\n");
 
     $vrtrack->transaction_start();
