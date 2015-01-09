@@ -50,7 +50,7 @@ path-help@sanger.ac.uk
 
 package VertRes::Pipelines::Import_iRODS_cram;
 use VertRes::Pipeline;
-use base qw(VertRes::Pipelines::Import_iRODS VertRes::Pipelines::Import);
+use base qw(VertRes::Pipeline);
 
 use strict;
 use warnings;
