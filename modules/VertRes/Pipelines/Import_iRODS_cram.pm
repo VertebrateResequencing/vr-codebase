@@ -103,9 +103,6 @@ sub new {
     my ( $class, @args ) = @_;
 
     my $self = $class->SUPER::new( %options, actions => $actions, @args );
-    if ( defined( $self->{db} ) ) {
-        $self->{vrtrack} = VRTrack::VRTrack->new( $self->{db} ) or $self->throw("Could not connect to the database\n");
-    }
     $self->{fsu} = VertRes::Utils::FileSystem->new;
 
     return $self;
