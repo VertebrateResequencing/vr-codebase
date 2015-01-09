@@ -50,7 +50,7 @@ path-help@sanger.ac.uk
 
 package VertRes::Pipelines::Import_iRODS_cram;
 use VertRes::Pipeline;
-use base qw(VertRes::Pipeline);
+use base qw(VertRes::Pipelines::Import_iRODS VertRes::Pipelines::Import);
 
 use strict;
 use warnings;
@@ -61,6 +61,7 @@ use VertRes::LSF;
 use VRTrack::VRTrack;
 use VRTrack::Lane;
 use VRTrack::File;
+use VertRes::Pipelines::Import;
 use VertRes::Utils::FileSystem;
 use VertRes::Wrapper::fastqcheck;
 use Pathogens::Import::ValidateFastqConversion;
@@ -358,6 +359,9 @@ sub update_db {
     my ( $self, $lane_path, $lock_file ) = @_;
 
     if ( !$$self{db} ) { $self->throw("Expected the db key.\n"); }
+    
+    # Update database
+    $self->VertRes::Pipelines::Import::update_db($lane_path,$lock_file);
 
     my $prefix = $self->{prefix};
 
