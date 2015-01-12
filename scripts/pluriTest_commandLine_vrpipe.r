@@ -7,7 +7,7 @@ args <- commandArgs(trailingOnly=TRUE)
 #GENERATE GRAPHS AND CSV FILE GIVING PLURIPOTENCY, NOVELTY AND COMBINED SCORE
 #NEEDS R VERSION 2.1.5 AND BIOCONDUCTOR R PACKAGE INSTALLED
 pluriTestCommandLine <- function (NewDataFileName, DataRepository) 
-{
+{q
     require(lumi) # load the Bioconductor package
     require(xtable)
     require(GO.db)
@@ -22,14 +22,16 @@ pluriTestCommandLine <- function (NewDataFileName, DataRepository)
     dev.off()
     working.lumi <- lumiT(working.lumi) # Transform the data
     
-    hc <- hclust(as.dist(1 - abs(cor(exprs(working.lumi[, ])))))
     png(file = "pluritest_image02a.png") # Clustering of vst-transformed samples (VST = variance stabilization normalisation)
+    if (length(as.dist(1 - abs(cor(exprs(working.lumi[, ])))))!=1){
+    hc <- hclust(as.dist(1 - abs(cor(exprs(working.lumi[, ])))))
     plot(hc, hang = -1, main = "Clustering of vst-transformed samples", 
         sub = "distance based on pearson correlations", xlab = "")
+    } else {plot(0,type='n',axes=FALSE,ann=FALSE)}
+    dev.off()
 
 # RSN (robust spline normalisation) NORMALISATION OF THE DATA
 
-    dev.off()
     A <- fData(working.lumi)[, 1] #matches on ILMN_Ids for lumi/RSN
     B <- fData(H9targetArray)[, 1] # the well studied H9 stem cell line
     sel.match <- match(B, A) # check input IDs against pluritest IDs from the well studied H9 stem cell line
@@ -61,16 +63,25 @@ pluriTestCommandLine <- function (NewDataFileName, DataRepository)
         novel.new <- (novel.new/sum(!is.na(sel)))^(1/8)
         s.new <- drop(coef[1] + coef[2:4] %*% H15.new[c(1, 14, 13), ])
     })
+    
+    #re-order the scores by sample names
+    ctrls <- grep("_CTRL",names(s.new),value=FALSE)
+    s.new.ips <-s.new[-ctrls]
+    s.new <- c(s.new[ctrls],s.new.ips[order(names(s.new.ips))])
+    ctrls <- grep("_CTRL",names(novel.new),value=FALSE)
+    novel.new.ips <-novel.new[-ctrls]
+    novel.new <- c(novel.new[ctrls],novel.new.ips[order(names(novel.new.ips))])
+
     table.results <- matrix(, nrow = ncol(exprs(working.lumi)), ncol = 5)
     rownames(table.results) <- colnames(exprs(working.lumi))
     colnames(table.results) <- c("pluri-raw", "pluri logit-p", 
         "novelty", "novelty logit-p", "RMSD")
     try({
         png(file = "pluritest_image02.png") # Graph of pluripotency scores
-        par(mar = c(12, 4, 4, 2))
+        par(mar = c(18, 4, 4, 2))
         par(xaxt = "n")
         plot(s.new, main = "pluripotency", xlab = "", ylab = "pluripotency", 
-            ylim = c(-130, 70))
+            ylim = c(-130, 70), cex=1, pch=23, bg="black")
         abline(h = 25.25, lty = "dashed", col = "red")
         abline(h = 59.95, lty = "dashed", col = "red")
         abline(h = -28.92, lty = "dashed", col = "lightblue")
@@ -95,9 +106,17 @@ pluriTestCommandLine <- function (NewDataFileName, DataRepository)
 
         sNames <- names(s.new)
         novelNames <- names(novel.new)
-        textxy(as.vector(novel.new[novelNames]), as.vector(s.new[sNames]), labs=sNames, cx=0.7) # MIGHT NEED TO LOWER cx BACK TO 0.25 FOR SMALLER FONT
 
-        points(s.new ~ novel.new, cex = 0.2, main = "Overview")
+        ctrls <-grep("_CTRL",names(s.new),value=FALSE)
+        s.new.ctrls<-s.new[ctrls]
+        s.new.stcls<-s.new[-ctrls]
+        novel.new.ctrls<-novel.new[ctrls]
+        novel.new.stcls<-novel.new[-ctrls]
+        points(s.new.stcls ~ novel.new.stcls, cex = 1, main = "Overview", col="red", pch=20)
+        points(s.new.ctrls ~ novel.new.ctrls, cex = 1, main = "Overview", pch=20)
+
+        #textxy(as.vector(novel.new[novelNames])-0.2, as.vector(s.new[sNames])-0.2, labs=sNames, cx=1) # MIGHT NEED TO LOWER cx BACK TO 0.25 FOR SMALLER FONT
+        #points(s.new ~ novel.new, cex = 0.75, pch=21, main = "Overview", bg="black")
         dev.off()
     })
     try({
@@ -105,7 +124,7 @@ pluriTestCommandLine <- function (NewDataFileName, DataRepository)
             "orange", "red"))(5))
         df.novelty.new <- data.frame(novelty = novel.new)
         png(file = "pluritest_image03c.png") # Graph of novelty scores
-        par(mar = c(12, 4, 4, 2))
+        par(mar = c(18, 4, 4, 2))
         par(xaxt = "n")
         barplot(novel.new, col = pmin(5, 10 * predict(logit.novelty, 
             type = "response", newdata = df.novelty.new) + 1), 
