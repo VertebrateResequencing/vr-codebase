@@ -175,6 +175,7 @@ sub topbot_strand
     my ($refseq,$chr,$pos,@als) = @_;
 
     my $win = 100;
+    if ( $win >= $pos ) { $win = $pos - 1; }
     my $ref_slice = uc($refseq->get_slice($chr,$pos-$win,$pos+$win));
     my $ref_base  = uc($refseq->get_base($chr,$pos));
     if ( substr($ref_slice,$win,1) ne $ref_base ) { error("Bad slice? $chr:$pos $ref_base .. $ref_slice\n"); }

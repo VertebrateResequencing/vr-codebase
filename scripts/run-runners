@@ -12,6 +12,12 @@
 #   # Input file
 #   vcf:  /path/to/input/file
 #
+#   # Maximum number of jobs to run simultaneously
+#   maxjobs: 200
+#
+#   # List of chromosomes to include
+#   region: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+#
 # Currently only the keys listed above are allowed, although in principle any
 # config keys could be used without having it hard-wired in the script. This
 # would need some security consideration first, depending on the intended usage
@@ -148,10 +154,15 @@ sub parse_project
         if ( $line=~/^\s*$/ ) { next; }
         $line =~ s/^\s*//;
         $line =~ s/\s*$//;
-        my ($key,$value) = split(/\s+/,$line);
-        if ( $key eq 'email:' ) { $project{email} = $value; next; }
-        elsif ( $key eq 'vcf:' ) { $project{vcf} = $value; next; }
-        else { error("Could not parse $file: $line\n"); }
+        if ( !($line=~/^\s*([^:]+)\s*:/) ) { error("Could not parse $file: $line\n"); }
+        my $key = $1;
+        my $value = $';
+        $value =~ s/^\s*//;
+        $value =~ s/\s*$//;
+        $key   =~ s/\s*$//;
+        $key   =~ s/[^A-Za-z0-9\-\.\+]+//g;     # any key can be modified, no malicious code please
+        $value =~ s/[^A-Za-z0-9\-\.\+]+//g;
+        $project{$key} = $value;
     }
     close($fh) or error("close failed: $file");
     $project{dir}  = $dir;
