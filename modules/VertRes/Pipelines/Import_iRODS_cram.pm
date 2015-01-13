@@ -66,6 +66,9 @@ use VertRes::Wrapper::fastqcheck;
 use Pathogens::Import::ValidateFastqConversion;
 use File::Basename;
 use Cwd 'abs_path';
+use Bio::Tradis::DetectTags;
+use Bio::Tradis::AddTagsToSeq;
+
 
 our $actions = [
 
@@ -198,6 +201,14 @@ sub cram_to_fastq {
     my ( $filename, $dirs, $suffix ) = fileparse( $file, '.cram' );
     my $fastq_base = $dirs.$filename ;
     
+    # Handle TraDIS data
+    my $is_tradis = Bio::Tradis::DetectTags->new( bamfile => qq[$file],samtools_exec => $$self{samtools_exec} )->tags_present;
+    if (defined($is_tradis) && $is_tradis == 1) {
+      my $add_tag_obj = Bio::Tradis::AddTagsToSeq->new( bamfile => qq[$file], samtools_exec => $$self{samtools_exec});
+      $add_tag_obj->add_tags_to_seq();
+      system("mv ".$add_tag_obj->outfile." $file");
+    }
+
     my @bamtofastq_command = ( 
       'bamtofastq',
       'collate=1',
