@@ -66,6 +66,9 @@ use VertRes::Wrapper::fastqcheck;
 use Pathogens::Import::ValidateFastqConversion;
 use File::Basename;
 use Cwd 'abs_path';
+use Bio::Tradis::DetectTags;
+use Bio::Tradis::AddTagsToSeq;
+
 
 our $actions = [
 
@@ -198,6 +201,14 @@ sub cram_to_fastq {
     my ( $filename, $dirs, $suffix ) = fileparse( $file, '.cram' );
     my $fastq_base = $dirs.$filename ;
     
+    # Handle TraDIS data
+    my $is_tradis = Bio::Tradis::DetectTags->new( bamfile => qq[$file],samtools_exec => $$self{samtools_exec} )->tags_present;
+    if (defined($is_tradis) && $is_tradis == 1) {
+      my $add_tag_obj = Bio::Tradis::AddTagsToSeq->new( bamfile => qq[$file], samtools_exec => $$self{samtools_exec});
+      $add_tag_obj->add_tags_to_seq();
+      system("mv ".$add_tag_obj->outfile." $file");
+    }
+
     my @bamtofastq_command = ( 
       'bamtofastq',
       'collate=1',
@@ -217,6 +228,7 @@ sub cram_to_fastq {
     unless($is_paired)
     {
       system("mv ${filename}.fastq.gz  ${filename}_1.fastq.gz ");
+      unlink("${filename}_2.fastq.gz") if(-e "${filename}_2.fastq.gz");
     }
     unlink($filename."_1.fastq_orphan.gz") if(-e $filename."_1.fastq_orphan.gz");
     unlink($filename."_2.fastq_orphan.gz") if(-e $filename."_2.fastq_orphan.gz");
@@ -516,9 +528,9 @@ sub update_db_master
     my $raw_bases=0;
     my $vfiles=$vrlane->files;
     for my $vfile(@$vfiles){
-	$raw_reads+=$vfile->raw_reads;
-	$raw_bases+=$vfile->raw_bases;
-	$read_len=$vfile->read_len;
+      $raw_reads+=$vfile->raw_reads if (defined($vfile->raw_reads));
+      $raw_bases+=$vfile->raw_bases if (defined($vfile->raw_bases));
+      $read_len=$vfile->read_len;
     }
     $vrlane->raw_reads($raw_reads);
     $vrlane->raw_bases($raw_bases);
