@@ -528,9 +528,9 @@ sub update_db_master
     my $raw_bases=0;
     my $vfiles=$vrlane->files;
     for my $vfile(@$vfiles){
-	$raw_reads+=$vfile->raw_reads;
-	$raw_bases+=$vfile->raw_bases;
-	$read_len=$vfile->read_len;
+      $raw_reads+=$vfile->raw_reads if (defined($vfile->raw_reads));
+      $raw_bases+=$vfile->raw_bases if (defined($vfile->raw_bases));
+      $read_len=$vfile->read_len;
     }
     $vrlane->raw_reads($raw_reads);
     $vrlane->raw_bases($raw_bases);
