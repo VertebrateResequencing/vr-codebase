@@ -11,6 +11,7 @@ DB=""
 MIN_RUN=""
 STUDY=""
 SPE=""
+FORMAT=""
 while [ "$1" != "" ]; do
     case $1 in
         -d | --db )             shift
@@ -28,6 +29,9 @@ while [ "$1" != "" ]; do
         -s | --study )          shift
         						STUDY="_$1"
                                 ;;
+	-f | --format )		shift
+							FORMAT="--file_type $1"
+				;;
         -h | --help )           usage
                                 exit
                                 ;;
@@ -61,7 +65,7 @@ export ORACLE_HOME=/software/oracle_client-10.2.0
 mysqldump -u $VRTRACK_RW_USER -p$VRTRACK_PASSWORD -P$VRTRACK_PORT -h$VRTRACK_HOST $DB > $DUMPS
 
 if [ "$STUDY" = "" ]; then
-	cd $BIN_EXT && perl bin/update_pipeline.pl -s $CONF/$DB"_studies" -d $DB $TAX $SPE $MIN_RUN $ARG_UP
+	cd $BIN_EXT && perl bin/update_pipeline.pl -s $CONF/$DB"_studies" -d $DB $TAX $SPE $MIN_RUN $FORMAT $ARG_UP
 else
-	cd $BIN_EXT && perl bin/update_pipeline.pl -s $CONF/$DB$STUDY -d $DB $TAX $SPE $MIN_RUN $ARG_UP
+	cd $BIN_EXT && perl bin/update_pipeline.pl -s $CONF/$DB$STUDY -d $DB $TAX $SPE $MIN_RUN $FORMAT $ARG_UP
 fi
