@@ -32,7 +32,6 @@ package VertRes::Utils::Assemblers::iva;
 
 use strict;
 use warnings;
-use VertRes::Wrapper::smalt;
 use File::Copy;
 use File::Spec;
 use Utils;
@@ -83,7 +82,14 @@ sub optimise_parameters
     $trimming_opts .= " --pcr_primers " . $self->{primers_file};
   }
 
-  `$self->{optimiser_exec} $trimming_opts --fr $self->{files_str} --threads $num_threads iva_assembly`;
+  my $extension_opts = join(' ', (
+    "--seed_ext_min_cov",   (defined($self->{iva_seed_ext_min_cov}))   ? $self->{iva_seed_ext_min_cov}   : 5,
+    "--seed_ext_min_ratio", (defined($self->{iva_seed_ext_min_ratio})) ? $self->{iva_seed_ext_min_ratio} : 2, 
+    "--ext_min_cov",        (defined($self->{iva_ext_min_cov}))        ? $self->{iva_ext_min_cov}        : 5,
+    "--ext_min_ratio",      (defined($self->{iva_ext_min_ratio}))      ? $self->{iva_ext_min_ratio}      : 2,
+  ));
+  
+  `$self->{optimiser_exec} $extension_opts $trimming_opts --fr $self->{files_str} --threads $num_threads iva_assembly`;
   File::Copy::move(File::Spec->catfile($self->optimised_directory(), 'contigs.fasta'), File::Spec->catfile($self->optimised_directory(), 'contigs.fa'));
   system("touch ". File::Spec->catfile($self->optimised_directory(), '_iva_optimise_parameters_done'));
   return 1;

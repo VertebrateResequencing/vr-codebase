@@ -150,7 +150,11 @@ our %options = (
                 annotation       => 0,
                 single_cell      => 0,
                 improve_assembly => 1,
-                );
+                iva_seed_ext_min_cov   => 5,
+                iva_seed_ext_min_ratio => 2,
+                iva_ext_min_cov        => 5,
+                iva_ext_min_ratio      => 2,
+               );
 
 sub new {
   my ($class, @args) = @_;
@@ -382,6 +386,10 @@ my \$assembler = $assembler_class->new(
   remove_adapters => $self->{remove_adapters},
   adapter_removal_tool => qq[$self->{adapter_removal_tool}],
   adapters_file => qq[$self->{adapters_file}],
+  iva_seed_ext_min_cov   => qq[$self->{iva_seed_ext_min_cov}],
+  iva_seed_ext_min_ratio => qq[$self->{iva_seed_ext_min_ratio}],
+  iva_ext_min_cov        => qq[$self->{iva_ext_min_cov}],
+  iva_ext_min_ratio      => qq[$self->{iva_ext_min_ratio}],
   );
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
