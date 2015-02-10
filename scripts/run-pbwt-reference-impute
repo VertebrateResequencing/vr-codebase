@@ -47,28 +47,32 @@ pbwt_bin => '] .$$self{pbwt_bin}. q[',
 bcftools => '] .$$self{bcftools}. q[',
 
 input_vcf => '/some/path/chr{CHROM}.vcf.gz',
+chroms => [qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22)],
 
+# max samples for pbwt imputation. Input VCF will be split into subsets
+# containing at most 'max_samples' samples
+max_samples => ] .$$self{max_samples}. q[,
+
+### PREPHASING
 # prephasing options with reference panel of phased haplotypes in IMPUTE2 format.
 prephase => ] .$$self{prephase}. q[, # set to 0 if prephasing not required, then options below are not required
 shapeit_prephase_args => '--thread 16', # e.g. --thread arguments, --no-mcmc to speed up pre-phasing, --aligned if REF allele is aligned on the reference genome
+
+# genetic map
 gen_map => 'imputation-ref-panels/genetic-map/genetic_map_chr{CHROM}_combined_b37.txt',
+
+# reference panel of phased haplotypes in IMPUTE2 format for pre-phasing with SHAPEIT2
 ref_haps => 'imputation-ref-panels/impute2/chr{CHROM}.1000g.haps.gz',
 ref_legend => 'imputation-ref-panels/impute2/chr{CHROM}.1000g.legend.gz',
 ref_samples => 'imputation-ref-panels/impute2/chr{CHROM}.1000g.samples',
 
-# reference panel pf phased haplotypes in PBWT format (for imputation)
+### IMPUTATION
+# reference panel of phased haplotypes in PBWT format for imputation with PBWT
 ref_pbwt => 'imputation-ref-panels/pbwt/chr{CHROM}.1000g.pbwt',
-
-# list of chromosomes
-chroms => [qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22)],
-
-# max samples for pbwt imputation. Input VCF will be split into subsets
-# containing 'max_samples' samples
-max_samples => ] .$$self{max_samples}. q[,
 
 # Limits for shapeit and the other tasks
 shapeit_prephase_limits => { memory=>5_500, runtime=>3*24*60 },
-pbwt_reference_impute_limits => { memory=>15_000, runtime=>3*24*60 },
+pbwt_reference_impute_limits => { memory=>2_000, runtime=>3*24*60 },
 
 do_clean => 1,   # Remove runner's temporary files
 ]."\n";
@@ -129,7 +133,7 @@ sub main
 
     my $groups = $self->sample_group_lists($self->expand_chrom($$self{input_vcf},$chroms[0]));
 
-    # Run per-sample shapeit pre-phasing per chromosome
+    # Run shapeit pre-phasing per chromosome
     if ($$self{prephase})
     {
         my $cpus = $self->num_threads($$self{shapeit_prephase_args});
@@ -287,7 +291,7 @@ sub shapeit_prephase
     if ( ! -e $ref_samples ) { $self->throw("The ref_samples [$ref_samples] does not exist.\n"); }
 
     # split multi-allelic and convert input to GEN/SAMPLE
-    $self->cmd(qq[$$self{bcftools} norm -Ou -r $chr -m- $input_vcf | $$self{bcftools} convert -g $outdir/$chr.input]);
+    $self->cmd(qq[$$self{bcftools} norm -Ou -r $chr -m- $input_vcf | $$self{bcftools} convert --gensample $outdir/$chr.input]);
 
     # find sites to be removed
     my $ref  = "--input-ref $ref_haps $ref_legend $ref_samples";
@@ -335,27 +339,41 @@ sub pbwt_reference_impute
 sub merge_vcfs
 {
     my ($self,$outfile,$vcfs) = @_;
-    open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
-    for my $vcf (@$vcfs)
+    if (@$vcfs>1)
     {
-        print $fh "$vcf\n";
+        open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
+        for my $vcf (@$vcfs)
+        {
+            print $fh "$vcf\n";
+        }
+        close($fh);
+        $self->cmd(qq[$$self{bcftools} merge -Ob --file-list $outfile.list > $outfile.part]);
+        $self->index_part($outfile);
     }
-    close($fh);
-    $self->cmd(qq[$$self{bcftools} merge -Ob --file-list $outfile.list > $outfile.part]);
-    $self->index_part($outfile);
+    else {
+        $self->cmd(qq[cp $$vcfs[0] $outfile.part]);
+        $self->cmd(qq[cp $$vcfs[0].csi $outfile.csi]);
+    }
     rename("$outfile.part",$outfile);
 }
 
 sub concat_vcfs
 {
     my ($self,$outfile,$vcfs) = @_;
-    open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
-    for my $vcf (@$vcfs)
+    if (@$vcfs>1)
     {
-        print $fh "$vcf\n";
+        open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
+        for my $vcf (@$vcfs)
+        {
+            print $fh "$vcf\n";
+        }
+        close($fh);
+        $self->cmd(qq[$$self{bcftools} concat -Oz --file-list $outfile.list > $outfile.part]);
     }
-    close($fh);
-    $self->cmd(qq[$$self{bcftools} concat -Oz --file-list $outfile.list > $outfile.part]);
+    else
+    {
+        $self->cmd(qq[$$self{bcftools} view -Oz $$vcfs[0] > $outfile.part]);
+    }
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
 }
