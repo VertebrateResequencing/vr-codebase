@@ -37,8 +37,9 @@ while (1)
     {
         run_project($opts,$project);
     }
+    if ( !$$opts{loop} ) { last; }
     print STDERR "sleeping..\n";
-    sleep(60);
+    sleep($$opts{loop});
 }
 
 exit;
@@ -53,6 +54,7 @@ sub error
         "Usage: run-runners [OPTIONS]\n",
         "Options:\n",
         "   -c, --config <file>     config file\n",
+        "   -l, --loop <int>        run in daemon mode, check the status every <int> seconds\n",
         "   -v, --verbose           print what's been done\n",
         "   -h, -?, --help          this help message\n",
         "\n";
@@ -64,6 +66,7 @@ sub parse_params
     my $opts = {};
     while (defined(my $arg=shift(@ARGV)))
     {
+        if ( $arg eq '-l' || $arg eq '--loop' ) { $$opts{loop}=shift(@ARGV); next }
         if ( $arg eq '-c' || $arg eq '--config' ) { $$opts{config}=shift(@ARGV); next }
         if ( $arg eq '-v' || $arg eq '--verbose' ) { $$opts{verbose}=1; next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
