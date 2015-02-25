@@ -111,6 +111,7 @@ sub new
         "   +js <platform>          Job scheduler (lowercase allowed): LSF (bswitch), LSFCR (BLCR) [LSF]\n" .
         "   +kill                   Kill all running jobs\n" .
         "   +local                  Do not submit jobs to LSF, but run serially\n" .
+        "   +lock <file>            Exit if another instance is already running\n" .
         "   +loop <int>             Run in daemon mode with <int> seconds sleep intervals\n" .
         "   +mail <address>         Email when the runner finishes\n" .
         "   +maxjobs <int>          Maximum number of simultaneously running jobs\n" .
@@ -140,6 +141,8 @@ sub new
                     Kill all running jobs
                 +local
                     Do not submit jobs to LSF, but run serially
+                +lock <file>
+                    Exit if another instance is already running
                 +loop <int>
                     Run in daemon mode with <int> seconds sleep intervals.
                     Negative values can be used to request only one iteration
@@ -180,6 +183,7 @@ sub run
         if ( $arg eq '+config' ) { $self->_read_config(shift(@ARGV)); next; }
         if ( $arg eq '+sampleconf' ) { $self->_sample_config(); next; }
         if ( $arg eq '+loop' ) { $$self{_loop}=shift(@ARGV); next; }
+        if ( $arg eq '+lock' ) { $$self{_lock}=shift(@ARGV); next; }
         if ( $arg eq '+kill' ) { $$self{_kill_jobs}=1; next; }
         if ( $arg eq '+maxjobs' ) { $$self{_maxjobs}=shift(@ARGV); next; }
         if ( $arg eq '+mail' ) { $$self{_mail}=shift(@ARGV); next; }
@@ -228,6 +232,8 @@ sub run
     }
     @ARGV = @argv;
 
+    $self->create_lock();
+
     # Run the user's module once or multiple times
     while (1)
     {
@@ -242,15 +248,62 @@ sub run
         wait();
         my $status = $?>>8;
         if ( $status ) 
-        { 
+        {
+            $self->remove_lock();
             if ( $status==$$self{_status_codes}{DONE} ) { exit $status; }
             # Exit with the correct status immediately if the user module fails. Note that +retries applies only to spawned jobs.
             die "\n"; 
         }
-        if ( !$$self{_loop} or $$self{_loop}<0 ) { return; }
+        if ( !$$self{_loop} or $$self{_loop}<0 )
+        { 
+            $self->remove_lock();
+            return; 
+        }
         $self->debugln($$self{_about}, "sleeping for $$self{_loop} seconds...");
         sleep($$self{_loop});
     }
+}
+
+sub create_lock
+{
+    my ($self) = @_;
+    if ( !exists($$self{_lock}) ) { return; }
+
+    my $lock = $$self{_lock};
+    if ( -e $lock )
+    {
+        # Find out the PID of the running pipeline
+        open(my $fh,'<',$lock) or $self->throw("$lock; $!");
+        while (my $pid=<$fh>)
+        {
+            chomp($pid);
+            if ( !($pid=~/^\d+$/) ) { $self->throw("Could not parse lock file: $lock, $pid\n"); }
+
+            # Is the process still running?
+            my $running = kill 0, $pid;
+            if ( $running )
+            {
+                $self->warn("\nAnother process is running ($pid), exiting.\n\n");
+                exit $$self{_status_codes}{WAIT};
+            }
+
+            $self->warn("\nIgnoring an old lock file, PID $pid is not running.\n\n");
+            last;
+        }
+        close($fh);
+    }
+
+    open(my $fh,'>',$lock) or usage(qq[$lock: $!]);
+    print $fh $$ . "\n";
+    close($fh);
+}
+sub remove_lock
+{
+    my ($self) = @_;
+    if ( !exists($$self{_lock}) ) { return; }
+
+    my $lock = $$self{_lock};
+    if ( -e $lock ) { unlink($lock); }
 }
 
 
