@@ -30,6 +30,7 @@ use Carp;
 
 my $opts = parse_params();
 
+create_lock($opts);
 while (1)
 {
     my $project = get_project($opts);
@@ -41,6 +42,7 @@ while (1)
     print STDERR "sleeping..\n";
     sleep($$opts{loop});
 }
+remove_lock($opts);
 
 exit;
 
@@ -55,6 +57,7 @@ sub error
         "Options:\n",
         "   -c, --config <file>     config file\n",
         "   -l, --loop <int>        run in daemon mode, check the status every <int> seconds\n",
+        "   -L, --lock <file>       exit if another instance is already running\n",
         "   -v, --verbose           print what's been done\n",
         "   -h, -?, --help          this help message\n",
         "\n";
@@ -66,6 +69,7 @@ sub parse_params
     my $opts = {};
     while (defined(my $arg=shift(@ARGV)))
     {
+        if ( $arg eq '-L' || $arg eq '--lock' ) { $$opts{lock}=shift(@ARGV); next }
         if ( $arg eq '-l' || $arg eq '--loop' ) { $$opts{loop}=shift(@ARGV); next }
         if ( $arg eq '-c' || $arg eq '--config' ) { $$opts{config}=shift(@ARGV); next }
         if ( $arg eq '-v' || $arg eq '--verbose' ) { $$opts{verbose}=1; next }
@@ -77,6 +81,45 @@ sub parse_params
     if ( $@ ) { error("do $$opts{config}: $@\n"); }
     %$opts = (%$opts,%x);
     return $opts;
+}
+
+sub create_lock
+{
+    my ($opts) = @_;
+
+    if ( !exists($$opts{lock}) ) { return; }
+
+    my $lock = $$opts{lock};
+    if ( -e $lock )
+    {
+        # Find out the PID of the running pipeline
+        open(my $fh,'<',$lock) or error("$lock; $!");
+        while (my $pid=<$fh>)
+        {
+            chomp($pid);
+            if ( !($pid=~/^\d+$/) ) { die "Could not parse lock file: $lock, $pid\n"; }
+
+            # Is the process still running?
+            my $running = kill 0, $pid;
+            if ( $running ) { die "Another process is running ($pid), exiting.\n"; }
+
+            print STDERR "Ignoring an old lock file, PID $pid is not running.\n";
+            last;
+        }
+        close($fh);
+    }
+
+    open(my $fh,'>',$lock) or error("$lock: $!");
+    print $fh $$ . "\n";
+    close($fh);
+}
+
+sub remove_lock
+{
+    my ($opts) = @_;
+    if ( !exists($$opts{lock}) ) { return; }
+    my $lock = $$opts{lock};
+    if ( -e $lock ) { unlink($lock); }
 }
 
 # Check for projects in progress and, if none found, for unfinished projects.
@@ -240,7 +283,8 @@ sub run_project
             rename("$prefix.$task.conf.part","$prefix.$task.conf") or error("rename $prefix.$task.conf.part $prefix.$task.conf: $!");
         }
 
-        run_task($opts,$project,$task);
+        my $ret = run_task($opts,$project,$task);
+        if ( !$ret ) { return; }
 
         system("touch $prefix.$task.done");
         if ( $? ) { confess "touch $prefix.$task.done"; }
@@ -280,7 +324,11 @@ sub run_task
             }
             if ( !exists($$job{loop}) ) { last }
 
-            if ( $status==$$job{status}{loop} ) { sleep($$job{loop}); }
+            if ( $status==$$job{status}{loop} )
+            {
+                if ( !$$opts{loop} ) { return 0; }
+                sleep($$job{loop}); 
+            }
             else 
             { 
                 send_email($project,"$task_name error","Unexpected return status: status ($?): $cmd\nProject $$project{name}\n");
@@ -288,6 +336,7 @@ sub run_task
             }
         }
     }
+    return 1;
 }
 
 sub send_email
