@@ -7,7 +7,7 @@ args <- commandArgs(trailingOnly=TRUE)
 #GENERATE GRAPHS AND CSV FILE GIVING PLURIPOTENCY, NOVELTY AND COMBINED SCORE
 #NEEDS R VERSION 2.1.5 AND BIOCONDUCTOR R PACKAGE INSTALLED
 pluriTestCommandLine <- function (NewDataFileName, DataRepository) 
-{q
+{
     require(lumi) # load the Bioconductor package
     require(xtable)
     require(GO.db)
@@ -72,8 +72,8 @@ pluriTestCommandLine <- function (NewDataFileName, DataRepository)
     novel.new.ips <-novel.new[-ctrls]
     novel.new <- c(novel.new[ctrls],novel.new.ips[order(names(novel.new.ips))])
 
-    table.results <- matrix(, nrow = ncol(exprs(working.lumi)), ncol = 5)
-    rownames(table.results) <- colnames(exprs(working.lumi))
+    table.results <- matrix(, nrow = length(s.new), ncol = 5)
+    rownames(table.results) <- names(s.new)
     colnames(table.results) <- c("pluri-raw", "pluri logit-p", 
         "novelty", "novelty logit-p", "RMSD")
     try({
