@@ -33,13 +33,13 @@ my $opts = parse_params();
 create_lock($opts);
 while (1)
 {
-    my $project = get_project($opts);
-    if ( $project )
+    my $projects = list_projects($opts);
+    for my $project (@$projects)
     {
         run_project($opts,$project);
     }
     if ( !$$opts{loop} ) { last; }
-    print STDERR "sleeping..\n";
+    print STDERR "sleeping..\n" unless !$$opts{verbose};
     sleep($$opts{loop});
 }
 remove_lock($opts);
@@ -58,6 +58,7 @@ sub error
         "   -c, --config <file>     config file\n",
         "   -l, --loop <int>        run in daemon mode, check the status every <int> seconds\n",
         "   -L, --lock <file>       exit if another instance is already running\n",
+        "   -n, --nmax <int>        maximum number of projects to run simultaneously\n",
         "   -v, --verbose           print what's been done\n",
         "   -h, -?, --help          this help message\n",
         "\n";
@@ -66,9 +67,10 @@ sub error
 
 sub parse_params
 {
-    my $opts = {};
+    my $opts = { nmax_projects=>1 };
     while (defined(my $arg=shift(@ARGV)))
     {
+        if ( $arg eq '-n' || $arg eq '--nmax' ) { $$opts{nmax_projects}=shift(@ARGV); next }
         if ( $arg eq '-L' || $arg eq '--lock' ) { $$opts{lock}=shift(@ARGV); next }
         if ( $arg eq '-l' || $arg eq '--loop' ) { $$opts{loop}=shift(@ARGV); next }
         if ( $arg eq '-c' || $arg eq '--config' ) { $$opts{config}=shift(@ARGV); next }
@@ -122,10 +124,10 @@ sub remove_lock
     if ( -e $lock ) { unlink($lock); }
 }
 
-# Check for projects in progress and, if none found, for unfinished projects.
-sub get_project
+sub list_projects
 {
     my ($opts) = @_;
+    my @projects = ();
 
     # First check projects in progress
     my ($dh,$project);
@@ -134,10 +136,11 @@ sub get_project
     {
         if ( !-d "$$opts{work_dir}/$dir" or !($dir=~/^\d+_(.*)$/ ) ) { next; }
         $project = parse_project($opts,"$$opts{work_dir}/$dir/$1.txt");
-        last;
+        push @projects, $project;
+        if ( scalar @projects >= $$opts{nmax_projects} ) { last; }
     }
     closedir($dh);
-    if ( defined $project ) { return $project; }
+    if ( scalar @projects >= $$opts{nmax_projects} ) { return \@projects; }
 
 
     # No unfinished projects, check for new
@@ -150,16 +153,16 @@ sub get_project
         $alias =~ s/\.txt$//;
         $$project{alias} = time() .'_'. $alias;
         $$project{file}  = $file;
-        last;
+
+        system("mkdir -p $$opts{work_dir}/$$project{alias}");
+        system("mv $$opts{input_dir}/$$project{file} $$opts{work_dir}/$$project{alias}/");
+        if ( $? ) { confess "mv $$opts{input_dir}/$$project{file} $$opts{work_dir}/$$project{alias}/"; }
+
+        push @projects, $project;
+        if ( scalar @projects >= $$opts{nmax_projects} ) { last; }
     }
     closedir($dh);
-    if ( !defined $project ) { return undef; }
-
-    system("mkdir -p $$opts{work_dir}/$$project{alias}");
-    system("mv $$opts{input_dir}/$$project{file} $$opts{work_dir}/$$project{alias}/");
-    if ( $? ) { confess "mv $$opts{input_dir}/$$project{file} $$opts{work_dir}/$$project{alias}/"; }
-
-    return $project;
+    return \@projects;
 }
 
 sub clean_project
