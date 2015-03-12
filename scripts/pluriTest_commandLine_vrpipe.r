@@ -7,7 +7,7 @@ args <- commandArgs(trailingOnly=TRUE)
 #GENERATE GRAPHS AND CSV FILE GIVING PLURIPOTENCY, NOVELTY AND COMBINED SCORE
 #NEEDS R VERSION 2.1.5 AND BIOCONDUCTOR R PACKAGE INSTALLED
 pluriTestCommandLine <- function (NewDataFileName, DataRepository) 
-{q
+{
     require(lumi) # load the Bioconductor package
     require(xtable)
     require(GO.db)
@@ -66,14 +66,18 @@ pluriTestCommandLine <- function (NewDataFileName, DataRepository)
     
     #re-order the scores by sample names
     ctrls <- grep("_CTRL",names(s.new),value=FALSE)
-    s.new.ips <-s.new[-ctrls]
-    s.new <- c(s.new[ctrls],s.new.ips[order(names(s.new.ips))])
+    if (length(ctrls)!=0){	
+    s.new.ips <- s.new[-ctrls]
+   	s.new <- c(s.new[ctrls],s.new.ips[order(names(s.new.ips))])
+    }
     ctrls <- grep("_CTRL",names(novel.new),value=FALSE)
-    novel.new.ips <-novel.new[-ctrls]
+    if (length(ctrls)!=0){
+    novel.new.ips <- novel.new[-ctrls]
     novel.new <- c(novel.new[ctrls],novel.new.ips[order(names(novel.new.ips))])
+    }
 
-    table.results <- matrix(, nrow = ncol(exprs(working.lumi)), ncol = 5)
-    rownames(table.results) <- colnames(exprs(working.lumi))
+    table.results <- matrix(, nrow = length(s.new), ncol = 5)
+    rownames(table.results) <- names(s.new)
     colnames(table.results) <- c("pluri-raw", "pluri logit-p", 
         "novelty", "novelty logit-p", "RMSD")
     try({
@@ -108,12 +112,14 @@ pluriTestCommandLine <- function (NewDataFileName, DataRepository)
         novelNames <- names(novel.new)
 
         ctrls <-grep("_CTRL",names(s.new),value=FALSE)
+        if (length(ctrls)!=0){
         s.new.ctrls<-s.new[ctrls]
         s.new.stcls<-s.new[-ctrls]
         novel.new.ctrls<-novel.new[ctrls]
         novel.new.stcls<-novel.new[-ctrls]
         points(s.new.stcls ~ novel.new.stcls, cex = 1, main = "Overview", col="red", pch=20)
         points(s.new.ctrls ~ novel.new.ctrls, cex = 1, main = "Overview", pch=20)
+        }else{points(s.new ~ novel.new, cex = 1, main = "Overview", col="red", pch=20)}
 
         #textxy(as.vector(novel.new[novelNames])-0.2, as.vector(s.new[sNames])-0.2, labs=sNames, cx=1) # MIGHT NEED TO LOWER cx BACK TO 0.25 FOR SMALLER FONT
         #points(s.new ~ novel.new, cex = 0.75, pch=21, main = "Overview", bg="black")
