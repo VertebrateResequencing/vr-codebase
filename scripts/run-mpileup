@@ -1031,7 +1031,7 @@ sub concat_vcfs
 	}
 	close($fh) or $self->throw("close $chunks_list");
 
-	my $filter = exists($$self{filter}) ? "| $$self{filter}" : '';
+	my $filter = defined ($$self{filter}) ? "| $$self{filter}" : '';
 	$self->cmd("$$self{concat} -f $chunks_list $filter | bgzip -c > $outfile.part");
 	$self->tabix_part($outfile);
 }
