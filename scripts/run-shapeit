@@ -30,8 +30,10 @@ sub new
     $$self{shapeit_bin}   = '/nfs/users/nfs_p/pd3/sandbox/svn/shapeit/shapeit.v2.r790';
     $$self{bcftools}      = '/software/vertres/bin-external/bcftools-exp-rc';
     $$self{tabix}         = '/software/vertres/bin-external/tabix-exp-rc';
+    $$self{shapeit_args}  = '';
+    $$self{concat_args}   = '--compact-PS';
     $$self{max_chr_len}   = 249250621;
-    $$self{config_version} = '1410863403';
+    $$self{config_version} = '1426364865';
     $$self{_sampleconf} = q[
         # For sanity checking that your config file is not obsolete. Update the version key in your 
         #  config file to get rid of the warnings.
@@ -39,13 +41,15 @@ sub new
         # What changed since version:
         #   1349789206 .. Using "bcftools concat" instead of "vcf-phased-join", new ref_vcf and ref_dir options
         #   1410863403 .. Using "bcftools convert" instead of "vcf-gensample"
+        #   1426364865 .. Using "bcftools concat -l --compact-PS" instead of "bcftools concat -l"
         #
         version  => '] .$$self{config_version}. q[',
 
         shapeit_bin   => '] .$$self{shapeit_bin}. q[',
         bcftools      => '] .$$self{bcftools}. q[',
         tabix         => '] .$$self{tabix}. q[',
-        shapeit_args  => '',
+        shapeit_args  => '] .$$self{shapeit_args}. q[',
+        concat_args   => '] .$$self{concat_args}. q[',
         gen_map       => '/nfs/users/nfs_p/pd3/sandbox/svn/impute2/ALL_1000G_phase1interim_jun2011_impute/genetic_map_chr{CHROM}_combined_b37.txt',
 
         # The in_vcf (aka -i) file name can contain the string "{CHROM}" which
@@ -119,11 +123,6 @@ sub parse_args
     {
         $$self{gen_map} = '/nfs/users/nfs_p/pd3/sandbox/impute2/genetic_maps_b37/genetic_map_chr{CHROM}_combined_b37.txt';
         $self->warn("The 'gen_map' config key not present, assuming: $$self{gen_map}\n"); 
-    }
-    if ( !exists($$self{shapeit_args}) ) 
-    {
-        $$self{shapeit_args} = '';
-        $self->warn("The 'shapeit_args' config key not present, assuming: $$self{shapeit_args}\n"); 
     }
     if ( exists($$self{buffer_region}) or exists($$self{chunk_size}) )  
     { 
@@ -553,7 +552,7 @@ sub concat_vcfs
         print $fh $file, "\n";
     }
     close($fh);
-    $self->cmd(qq[$$self{bcftools} concat -lf $outfile.list -Ob -o $outfile.gts.bcf]);
+    $self->cmd(qq[$$self{bcftools} concat $$self{concat_args} -lf $outfile.list -Ob -o $outfile.gts.bcf]);
     $self->cmd(qq[$$self{bcftools} index $outfile.gts.bcf]);
     my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
     $self->cmd(qq[$$self{bcftools} annotate -c -FMT/GT -r $chr -a $outfile.gts.bcf $in_vcf -Oz -o $outfile.part]);
