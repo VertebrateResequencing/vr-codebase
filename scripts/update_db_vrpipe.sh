@@ -21,7 +21,7 @@ while [ "$1" != "" ]; do
         						TAX="-tax $1"
                                 ;;
         -n | --species )        shift
-                                                        SPE="-spe $1"
+                                                        SPE="-spe '$1'"
                                 ;;
         -m | --min )            shift
         						MIN_RUN="-min $1"
