@@ -503,28 +503,18 @@ sub shapeit
     my $ref = '';
     if ( $$self{ref_dir} )
     {
-        # With reference panel, shapeit works only with sites present also in reference panel
         $ref  = "--input-ref $$self{ref_dir}/$chr/$from-${to}_haps.gz $$self{ref_dir}/$chr/$from-${to}_legend.gz $$self{ref_dir}/$chr/$from-${to}_samples";
-        $ref .= " --include-snp $out.ref.sites";
-        open(my $in,"gunzip -c $$self{ref_dir}/$chr/$from-${to}_legend.gz |") or $self->throw("$$self{ref_dir}/$chr/$from-${to}_legend.gz: $!"); 
-        open(my $out,'>',"$out.ref.sites") or $self->throw("$out.ref.sites: $!");
-        <$in>;
-        while (my $line=<$in>)
-        {
-            my @items = split(/\s+/,$line);
-            print $out $items[1], "\n";
-        }
-        close($out) or $self->throw("close failed: $out.ref.sites");
-        close($in) or $self->throw("close failed: $$self{ref_dir}/$chr/$from-${to}_legend.gz");
     }
+    my $cmd = qq[$$self{shapeit_bin} $$self{shapeit_args} $ref --input-map $genmap --input-gen ${inp}.gen.gz ${inp}.samples --output-log $out.log];
+
+    # first check input files
+    Utils::CMD("$cmd -check",{verbose=>1,exit_on_error => 0});
     if ( -e "$out.snp.strand.exclude" )
     {
         # Exclude mismatching REF/ALT sites. Shapeit kindly produces .snp.strand.exclude file
-        $ref .= " --exclude-snp $out.snp.strand.exclude";
+        $cmd .= " --exclude-snp $out.snp.strand.exclude";
     }
-    my $cmd = qq[$$self{shapeit_bin} $$self{shapeit_args} $ref --input-map $genmap --input-gen ${inp}.gen.gz ${inp}.samples --output-max $out.haps.gz $out.samples --output-log $out.log];
-
-    $self->cmd($cmd); # Utils::CMD($cmd,{verbose=>1,require_errno=>1});
+    $self->cmd("$cmd --output-max $out.haps.gz $out.samples");
     $self->cmd(qq[touch $outfile]);
 }
 
