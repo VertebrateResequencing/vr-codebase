@@ -7,7 +7,7 @@ use strict;
 
 sub new {
 	
-    $ENV{VRTRACK_HOST} = 'mcs10';
+    $ENV{VRTRACK_HOST} = 'rdgroup-db';
     $ENV{VRTRACK_PORT} = 3306;
     $ENV{VRTRACK_RO_USER} = 'vreseq_ro';
     $ENV{VRTRACK_RW_USER} = 'vreseq_rw';
