@@ -319,9 +319,13 @@ sub _read_config
     }
 	if ( !-e $config ) { $self->throw("The file does not exist: $config\n"); }
 
-    my %x = do "$config";
-    if ( $@ ) { $self->throw("do $config: $@\n"); }
-    while (my ($key,$value) = each %x)
+    open(my $fh,'<',$config) or $self->throw("$config: $!");
+    my @config_lines = <$fh>;
+    close($fh) or $self->throw("close failed: $config");
+    my $config_str = join('',@config_lines);
+    my $x = eval "{ $config_str }";
+    if ( $@ ) { $self->throw("eval $config: $@\n"); }
+    while (my ($key,$value) = each %$x)
     {
         if ( !ref($value) ) 
         { 
