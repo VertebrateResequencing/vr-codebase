@@ -597,6 +597,7 @@ sub _is_marked_as_finished
         }
         $is_dirty = 1;
     }
+    if ( $is_done eq '0' ) { $$self{_jobs_db_unfinished}++; }
     $$self{_jobs_db}{$done_file}{finished} = $is_done;
     $$self{_jobs_db_dirty} += $is_dirty;
     return $$self{_jobs_db}{$done_file}{finished};
@@ -639,6 +640,8 @@ sub _mark_as_finished
 sub _get_unfinished_jobs
 {
     my ($self) = @_;
+
+    $$self{_jobs_db_unfinished} = 0;
 
     my %calls = ();
     for my $job (@{$$self{_checkpoints}})
@@ -691,6 +694,9 @@ sub _get_unfinished_jobs
                 elsif ( $nprn_pend < 3 ) { $self->debugln("\tx  ...etc..."); $nprn_pend++; }
                 $wfiles{$$job{wait_file}}{$id} = $job;
             }
+
+            # Exit the loop now if run with +maxjobs, this increases performance significantly with very many jobs (10k+)
+            if ( $$self{_maxjobs} && $$self{_maxjobs} < $$self{_jobs_db_unfinished} ) { last; }
         }
         if ( !@{$calls{$call}} ) { delete($calls{$call}); }
     }
@@ -753,6 +759,7 @@ sub wait
     }
     my $n = 0;
     for my $wfile (keys %$jobs) { $n += scalar keys %{$$jobs{$wfile}}; }
+    if ( $$self{_maxjobs} && $$self{_maxjobs} < $$self{_jobs_db_unfinished} ) { $n = "$$self{_maxjobs}+"; }
     $self->debugln("\t-> $n unfinished");
 
     # With '+local', the jobs will be run serially
