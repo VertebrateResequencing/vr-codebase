@@ -35,7 +35,11 @@ sub new
     $$self{pbwt_bin} = 'pbwt';
     $$self{bcftools} = 'bcftools';
     $$self{tabix} = 'tabix';
-    $$self{config_version} = '1392984920';
+    $$self{bgzip} = 'bgzip';
+    $$self{rmtrailer} = 'rmtrailer';
+    $$self{pbwt_reference_impute_opts} = '',
+    $$self{n_chunk_sites} = 100000;
+    $$self{config_version} = '2069599512';
     $$self{_sampleconf} = q[
 # For sanity checking that your config file is not obsolete. Update the version key in your 
 #  config file to get rid of the warnings.
@@ -45,9 +49,19 @@ version  => '] .$$self{config_version}. q[',
 shapeit_bin => '] .$$self{shapeit_bin}. q[',
 pbwt_bin => '] .$$self{pbwt_bin}. q[',
 bcftools => '] .$$self{bcftools}. q[',
+tabix => '] .$$self{tabix}. q[',
+bgzip => '] .$$self{bgzip}. q[',
+rmtrailer => '] .$$self{rmtrailer}. q[',
 
 input_vcf => '/some/path/chr{CHROM}.vcf.gz',
-chroms => [qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22)],
+chroms => [qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X_PAR1 X_nonPAR X_PAR2)],
+region_options =>
+{   
+    # region specific options will be applied to these chrom labels
+    'X_PAR1'   => { region => 'X:1-2699520' },
+    'X_nonPAR' => { region => 'X:2699521-154931043', shapeit_prephase_args => '--thread 16 --chrX', },
+    'X_PAR2'   => { region => 'X:154931044-155270560' },
+},
 
 # max samples for pbwt imputation. Input VCF will be split into subsets
 # containing at most 'max_samples' samples
@@ -69,6 +83,12 @@ ref_samples => 'imputation-ref-panels/impute2/chr{CHROM}.1000g.samples',
 ### IMPUTATION
 # reference panel of phased haplotypes in PBWT format for imputation with PBWT
 ref_pbwt => 'imputation-ref-panels/pbwt/chr{CHROM}.1000g.pbwt',
+pbwt_reference_impute_opts => '] .$$self{pbwt_reference_impute_opts}. q[', # nSparse=2 fSparse=0.5 
+ref_fa => 'ref/hs37d5.fa',
+
+# merging will the imputation results will run in 
+# parallel over chunks containing at most 'n_chunk_sites' sites
+n_chunk_sites => ] .$$self{n_chunk_sites}. q[,
 
 # Limits for shapeit and the other tasks
 shapeit_prephase_limits => { memory=>5_500, runtime=>3*24*60 },
@@ -103,6 +123,7 @@ sub parse_args
 
     if ( !exists($$self{ref_pbwt}) ) { $self->throw("ref_pbwt is required.\n"); }
     if ( !exists($$self{chroms}) ) { $self->throw("chroms is required.\n"); }
+    if ( !exists($$self{ref_fa}) ) { $self->throw("ref_fa is required.\n"); }
     if ($$self{prephase})
     {
         if ( !exists($$self{gen_map}) ) { $self->throw("gen_map is required.\n"); }
@@ -110,6 +131,7 @@ sub parse_args
         if ( !exists($$self{ref_legend}) ) { $self->throw("ref_legend is required.\n"); }
         if ( !exists($$self{ref_samples}) ) { $self->throw("ref_samples is required.\n"); }
     }
+    $$self{ref_pbwt} =~ s/\.pbwt//;
 
     if ( $$self{mrProper} )
     {
@@ -129,16 +151,17 @@ sub main
     $self->save_config();
 
     my $outdir = $$self{outdir};
-    my @chroms = @{$$self{chroms}};
+    my $chroms = $self->get_chroms();
+    my $regions = $self->get_regions();
 
-    my $groups = $self->sample_group_lists($self->expand_chrom($$self{input_vcf},$chroms[0]));
+    my $groups = $self->sample_group_lists($self->expand_chrom($$self{input_vcf},$$chroms[0]));
 
     # Run shapeit pre-phasing per chromosome
     if ($$self{prephase})
     {
         my $cpus = $self->num_threads($$self{shapeit_prephase_args});
         $self->set_limits(%{$$self{shapeit_prephase_limits}}, $cpus ? (cpus => $cpus) : ()) unless !exists($$self{shapeit_prephase_limits});
-        for my $chr (@chroms)
+        for my $chr (@$chroms)
         {
             $self->spawn('shapeit_prephase',"$outdir/$chr/$chr.shapeit_prephase.bcf",$chr);
         }
@@ -147,15 +170,14 @@ sub main
     }
 
     # Impute with PBWT
-    my %merge_vcfs;
+    my %merge_bcfs;
     $self->set_limits(%{$$self{pbwt_reference_impute_limits}}) unless !exists($$self{pbwt_reference_impute_limits});
     foreach my $group (@$groups)
     {
-        for my $chr (@chroms)
+        for my $chr (@$chroms)
         {
-            my $input_vcf = $$self{prephase} ? "$outdir/$chr/$chr.shapeit_prephase.bcf" : $self->expand_chrom($$self{input_vcf},$chr);
-            push @{$merge_vcfs{$chr}}, "$outdir/$chr/$group/$chr.pbwt_reference_impute.bcf";
-            $self->spawn('pbwt_reference_impute',"$outdir/$chr/$group/$chr.pbwt_reference_impute.bcf",$input_vcf,$chr,$group);
+            push @{$merge_bcfs{$chr}}, "$outdir/$chr/$group/$chr.pbwt_reference_impute.bcf";
+            $self->spawn('pbwt_reference_impute',"$outdir/$chr/$group/$chr.pbwt_reference_impute.bcf",$chr,$group);
         }
     }
     $self->wait;
@@ -163,18 +185,29 @@ sub main
 
     # Merge BCFs
     $self->set_limits(runtime=>24*60, %{$$self{limits}}) unless !exists($$self{limits});
-    my @concat_vcfs = ();
-    for my $chr (@chroms)
+    my %concat_vcfs;
+    foreach my $chr (@$chroms)
     {
-        push @concat_vcfs, "$outdir/$chr/$chr.pbwt_reference_impute.bcf";
-        $self->spawn('merge_vcfs',"$outdir/$chr/$chr.pbwt_reference_impute.bcf",$merge_vcfs{$chr});
+        my $hdr = "$outdir/$chr/$chr.pbwt_reference_impute.header.gz";
+        $self->merge_header($hdr, $merge_bcfs{$chr}) unless (-s $hdr);
+        foreach my $region (@{$$regions{$chr}})
+        {
+            my ($chr,$from,$to) = $self->parse_region($region);
+            push @{$concat_vcfs{$chr}}, "$outdir/$chr/$chr:$from-$to.pbwt_reference_impute.gz";
+            $self->spawn('merge_bcfs',"$outdir/$chr/$chr:$from-$to.pbwt_reference_impute.gz",$hdr,$region,$merge_bcfs{$chr});
+        }
     }
+
     $self->wait;
     $self->set_limits(memory=>undef,runtime=>undef,cpus=>undef);
 
-    # Concat BCFs
+    # Concat VCFs
     $self->set_limits(runtime=>24*60, %{$$self{limits}}) unless !exists($$self{limits});
-    $self->spawn('concat_vcfs',"$outdir/ALL.pbwt_reference_impute.vcf.gz",\@concat_vcfs);
+    for my $chr (@$chroms)
+    {
+        my $hdr = "$outdir/$chr/$chr.pbwt_reference_impute.header.gz";
+        $self->spawn('concat_vcfs',"$outdir/$chr.pbwt_reference_impute.vcf.gz",$hdr,$concat_vcfs{$chr});
+    }
     $self->wait;
     $self->set_limits(memory=>undef,runtime=>undef,cpus=>undef);
 
@@ -184,6 +217,112 @@ sub main
     $self->clean($outdir) unless !$$self{do_clean};
 
     $self->all_done;
+}
+
+# get list of chromosomes in all of (1) input VCF(s), (2) config chrom list, (3) reference panel
+# record list in lists/chromosome.list
+sub get_chroms
+{
+    my ($self) = @_;
+
+    $self->cmd("mkdir -p $$self{outdir}/lists") unless (-e "$$self{outdir}/lists");
+
+    unless (-s "$$self{outdir}/lists/chromosome.list")
+    {
+        open my $fh, ">$$self{outdir}/lists/chromosome.list.part" || $self->throw("$$self{outdir}/lists/chromosome.part.list: $!");
+        foreach my $chr (@{$$self{chroms}})
+        {
+            my $pbwt = $self->expand_chrom($$self{ref_pbwt},$chr);
+            next unless ( -e "$pbwt.pbwt" );
+            my $region = $$self{region_options}->{$chr}->{region} || $chr;
+            my $vcf = $self->expand_chrom($$self{input_vcf},$region);
+            next unless (`$$self{bcftools} view -H -r$region $vcf | head`);
+            print $fh "$chr\n";
+        }
+        close $fh || $self->throw("$$self{outdir}/lists/chromosome.list.part: $!");
+        rename("$$self{outdir}/lists/chromosome.list.part", "$$self{outdir}/lists/chromosome.list");
+    }
+
+    my @chroms;
+    open my $fh, "<$$self{outdir}/lists/chromosome.list" || $self->throw("$$self{outdir}/lists/chromosome.list: $!");
+    while (<$fh>)
+    {
+        chomp;
+        push @chroms, $_;
+    }
+    close $fh || $self->throw("$$self{outdir}/lists/chromosome.list: $!");
+
+    $self->throw("No chromosomes overlap") unless (@chroms);
+
+    return \@chroms;
+}
+
+sub get_regions
+{
+    my ($self) = @_;
+
+    $self->cmd("mkdir -p $$self{outdir}/lists") unless (-e "$$self{outdir}/lists");
+
+    my $chroms = $self->get_chroms();
+    foreach my $chr (@$chroms)
+    {
+        my $pbwt = $self->expand_chrom($$self{ref_pbwt},$chr);
+        $self->throw("$pbwt.sites does not exist") unless ( -s "$pbwt.sites" );
+        $self->spawn('pbwt_sites_to_vcf', "$pbwt.sites.vcf.gz", $pbwt, $chr);
+    }
+    $self->wait;
+
+    foreach my $chr (@$chroms)
+    {
+        my $regions_list = "$$self{outdir}/lists/$chr.regions.list";
+        $self->spawn('define_chunks', $regions_list, $chr);
+    }
+    $self->wait;
+
+    my %regions;
+    foreach my $chr (@$chroms)
+    {
+        open my $fh, "<$$self{outdir}/lists/$chr.regions.list" || $self->throw("$$self{outdir}/lists/$chr.regions.list: $!");
+        while (my $region = <$fh>)
+        {
+            chomp $region;
+            my ($chr,$from,$to) = $self->parse_region($region);
+            push @{$regions{$chr}}, $region;
+        }
+        close $fh || $self->throw("$$self{outdir}/lists/regions.list: $!");
+    }
+
+    $self->throw("No regions found") unless (keys %regions);
+
+    return \%regions;
+}
+
+sub define_chunks
+{
+    my ($self,$outfile,$chr) = @_;
+    open my $out, ">$outfile.part" || $self->throw("$outfile.part: $!");
+    my $sites_vcf = $self->expand_chrom("$$self{ref_pbwt}.sites.vcf.gz",$chr);
+    my $region = $$self{region_options}->{$chr}->{region} || $chr;
+    open(my $in,"$$self{bcftools} view -H -r$region $sites_vcf |") or $self->throw("$$self{bcftools} view -H -r$region $sites_vcf: $!");
+    my $n_chunk_sites = $$self{n_chunk_sites};
+    my $pos;
+    my $start_pos = 1;
+    my $nsites = 0;
+    while (my $line=<$in>)
+    {
+        $pos = $self->ith_column($line,2);
+        $nsites++;
+        if ( $nsites>$n_chunk_sites ) 
+        {
+            print $out "$chr:$start_pos-$pos\n";
+            $start_pos = $pos+1;
+            $nsites = 0;
+        }
+    }
+    if ( $nsites>0 ) { print $out "$chr:$start_pos-$pos\n"; }
+    close($in) or $self->throw("$$self{bcftools} view -H -r$region $sites_vcf");
+    close $out || $self->throw("$$self{outdir}/lists/regions.list.part: $!");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
 }
 
 sub num_threads
@@ -229,20 +368,28 @@ sub expand_chrom
 sub sample_group_lists
 {
     my ($self,$vcf) = @_;
+
+    $self->cmd("mkdir -p $$self{outdir}/lists") unless (-e "$$self{outdir}/lists");
+
+    unless (-s "$$self{outdir}/lists/all_samples.list")
+    {
+        $self->cmd(qq[$$self{bcftools} query -l $vcf > $$self{outdir}/lists/all_samples.list]);
+    }
+
     my @samples;
-    open my $fh, "$$self{bcftools} query -l $vcf | tail -17000 |" || $self->throw();
+    open my $fh, "<$$self{outdir}/lists/all_samples.list" || $self->throw("$$self{outdir}/lists/all_samples.list: $!");
     while (<$fh>)
     {
         chomp;
         push @samples, $_;
     }
-    close $fh || $self->throw();
+    close $fh || $self->throw("$$self{outdir}/lists/all_samples.list: $!");
+
+    $self->throw("No samples found") unless (@samples);
 
     if (@samples < $$self{max_samples}) {
         return ['.'];
     }
-
-    $self->cmd("mkdir -p $$self{outdir}/lists") unless (-e "$$self{outdir}/lists");
 
     my $group_size = $$self{max_samples};
     while (@samples % $group_size && @samples % $group_size < $group_size*0.95) {
@@ -258,12 +405,12 @@ sub sample_group_lists
         my $group = Digest::MD5::md5_hex(@$sample_group);
         unless (-s "$$self{outdir}/lists/$group.list")
         {
-            open my $ofh, ">$$self{outdir}/lists/$group.part" || $self->throw();
+            open my $ofh, ">$$self{outdir}/lists/$group.part" || $self->throw("$$self{outdir}/lists/$group.part: $!");
             foreach my $sample (@$sample_group)
             {
                 print $ofh "$sample\n";
             }
-            close $ofh || $self->throw();
+            close $ofh || $self->throw("$$self{outdir}/lists/$group.part: $!");
             rename("$$self{outdir}/lists/$group.part","$$self{outdir}/lists/$group.list");
         }
         push @groups, $group;
@@ -271,14 +418,40 @@ sub sample_group_lists
 
     return \@groups;
 }
-# shapeit -check --input-vcf in_vcf --input-map genetic_map_chr{CHROM}_combined_b37.txt --input-ref ref.haps.gz ref.legend.gz ref.samples --output-log out.check
-# shapeit --input-vcf in_vcf --input-map genetic_map_chr{CHROM}_combined_b37.txt --input-ref ref.haps.gz ref.legend.gz ref.samples --output-log out.shapeit --exclude-snp out.check.snp.strand.exclude --output-max out.shapeit.phased
+
+sub pbwt_sites_to_vcf
+{
+    my ($self,$outfile,$pbwt,$chr) = @_;
+
+    open my $fh, "| $$self{bgzip} -c > $outfile.part" || $self->throw("open $$self{bgzip} -c > $outfile.part: $!");
+    print $fh qq[##fileformat=VCFv4.1\n];
+    print $fh qq[##contig=<ID=$chr,length=2147483647>\n];
+    print $fh qq[##FILTER=<ID=PASS,Description="All filters passed">\n];
+    print $fh qq[#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n];
+    open my $pfh, "<$pbwt.sites" || $self->throw("open $pbwt.sites: $!");
+    while (<$pfh>)
+    {
+        chomp;
+        my @line = split /\s+/;
+        print $fh join("\t", $line[0], $line[1], '.', $line[2], $line[3], '.', '.', '.');
+        print $fh "\n";
+    }
+    close $pfh || $self->throw("close $pbwt.sites: $!");
+    close $fh  || $self->throw("close $$self{bgzip} -c > $outfile.part: $!");
+    $self->tabix_part($outfile);
+    rename("$outfile.part",$outfile);
+}
+
 sub shapeit_prephase
 {
     my ($self,$outfile,$chr) = @_;
-    
-    my $outdir = "$$self{outdir}/$chr";
-    my $input_vcf = $self->expand_chrom($$self{input_vcf},$chr);
+
+    my $region = $$self{region_options}->{$chr}->{region} || $chr;
+    my $shapeit_prephase_args = $$self{region_options}->{$chr}->{shapeit_prephase_args} || $$self{shapeit_prephase_args};
+
+    my $prefix = "$$self{outdir}/$chr/$chr";
+
+    my $input_vcf = $self->expand_chrom($$self{input_vcf},$region);
     if ( ! -e $input_vcf ) { $self->throw("The input_vcf [$input_vcf] does not exist.\n"); }
 
     my $genmap = $self->expand_chrom($$self{gen_map},$chr);
@@ -291,42 +464,48 @@ sub shapeit_prephase
     if ( ! -e $ref_samples ) { $self->throw("The ref_samples [$ref_samples] does not exist.\n"); }
 
     # split multi-allelic and convert input to GEN/SAMPLE
-    $self->cmd(qq[$$self{bcftools} norm -Ou -r $chr -m- $input_vcf | $$self{bcftools} convert --gensample $outdir/$chr.input]);
+    $self->cmd(qq[$$self{bcftools} norm -Ou -r $region -m- $input_vcf | $$self{bcftools} convert --gensample $prefix.input]);
 
     # find sites to be removed
     my $ref  = "--input-ref $ref_haps $ref_legend $ref_samples";
-    my $cmd = qq[$$self{shapeit_bin} -check $ref --input-map $genmap --input-gen $outdir/$chr.input.gen.gz $outdir/$chr.input.samples --output-log $outdir/$chr.shapeit.log];
+    my $cmd = qq[$$self{shapeit_bin} -check $ref --input-map $genmap --input-gen $prefix.input.gen.gz $prefix.input.samples --output-log $prefix.shapeit.log];
     Utils::CMD($cmd,{verbose=>1,exit_on_error => 0});
-    if ( -s "$outdir/$chr.shapeit.snp.strand.exclude" )
+    if ( -s "$prefix.shapeit.snp.strand.exclude" )
     {
-        $ref .= " --exclude-snp $outdir/$chr.shapeit.snp.strand.exclude";
+        $ref .= " --exclude-snp $prefix.shapeit.snp.strand.exclude";
     }
 
     # phase
-    $cmd = qq[$$self{shapeit_bin} $ref --input-map $genmap --input-gen $outdir/$chr.input.gen.gz $outdir/$chr.input.samples --output-log $outdir/$chr.shapeit_prephase.log $$self{shapeit_prephase_args} --output-max $outdir/$chr.shapeit_prephase];
+    $cmd = qq[$$self{shapeit_bin} $ref --input-map $genmap --input-gen $prefix.input.gen.gz $prefix.input.samples --output-log $prefix.shapeit_prephase.log $shapeit_prephase_args --output-max $prefix.shapeit_prephase];
     $self->cmd($cmd);
 
     # convert to bcf
-    # $self->cmd(qq[$$self{bcftools} convert -Ou --hapsample2vcf $outdir/$chr.shapeit_prephase.haps,$outdir/$chr.shapeit_prephase.sample | bcftools view -Ob -S test/TEST.snps.chr20.samples -o $outfile.part]);
-    $self->cmd(qq[$$self{bcftools} convert -Ob --hapsample2vcf $outdir/$chr.shapeit_prephase.haps,$outdir/$chr.shapeit_prephase.sample -o $outfile.part]);
+    ##shapeitVersion=v2.r790
+    ##shapeitCommand=
+    $self->cmd(qq[$$self{bcftools} convert -Ob --hapsample2vcf $prefix.shapeit_prephase.haps,$prefix.shapeit_prephase.sample -o $outfile.part]);
     $self->index_part($outfile);
     rename("$outfile.part",$outfile);
 }
 
 sub pbwt_reference_impute
 {
-    my ($self,$outfile,$input_vcf,$chr,$group) = @_;
+    my ($self,$outfile,$chr,$group) = @_;
+
+    my $region = $$self{region_options}->{$chr}->{region} || $chr;
+    my $pbwt_reference_impute_opts = $$self{region_options}->{$chr}->{pbwt_reference_impute_opts} || $$self{pbwt_reference_impute_opts};
+
+    my $input_vcf = $$self{prephase} ? "$$self{outdir}/$chr/$chr.shapeit_prephase.bcf" : $self->expand_chrom($$self{input_vcf},$region);
+    if ( ! -e $input_vcf ) { $self->throw("The input_vcf [$input_vcf] does not exist.\n"); }
 
     my $outdir = "$$self{outdir}/$chr/$group";
 
     my $ref_pbwt = $self->expand_chrom($$self{ref_pbwt},$chr);
-    $ref_pbwt =~ s/\.pbwt$//;
-    if ( ! -e "$ref_pbwt.pbwt" ) { $self->throw("The ref_pbwt [$$ref_pbwt.pbwt] does not exist.\n"); }
+    if ( ! -e "$ref_pbwt.pbwt" ) { $self->throw("The ref_pbwt [$ref_pbwt.pbwt] does not exist.\n"); }
 
-    my $pbwt_input = qq[$$self{bcftools} view -Ou -r $chr $input_vcf];
+    my $pbwt_input = qq[$$self{bcftools} view -Ou -r $region $input_vcf];
     if ($group ne '.') { $pbwt_input .= qq[ -S $$self{outdir}/lists/$group.list]; }
 
-    my $cmd = qq[$pbwt_input | $$self{pbwt_bin} -readVcfGT - -referenceImpute $ref_pbwt -writeBcfGz $outfile.part];
+    my $cmd = qq[$pbwt_input | $$self{pbwt_bin} -readVcfGT - -referenceFasta $$self{ref_fa} -referenceImpute $ref_pbwt $pbwt_reference_impute_opts -writeBcfGz $outfile.part];
     if ($$self{cmp}) {
         my $cmp = $self->expand_chrom($$self{cmp},$chr);
         $cmd .= qq[ $cmp > $outfile.gt.cmp];
@@ -334,6 +513,21 @@ sub pbwt_reference_impute
     $self->cmd($cmd);
     $self->index_part($outfile);
     rename("$outfile.part",$outfile);
+}
+
+# read pbwt PBW2 file with 57854162 bytes: M, N are 7562, 1826550
+# user    0.010000    system  0.260000    max_RSS 56888   Memory  58076369
+sub pbwt_records
+{
+    my ($self,$pbwt) = @_;
+    $pbwt =~ s/\.pbwt$//;
+    if ( ! -e "$pbwt.pbwt" ) { $self->throw("The pbwt [$pbwt.pbwt] does not exist.\n"); }
+    open my $ph, "$$self{pbwt_bin} -read $pbwt.pbwt 2>&1 |" || $self->throw("Could not read the pbwt [$pbwt.pbwt]");
+    my $line = <$ph>;
+    chomp $line;
+    close $ph;
+    my ($nhaps, $nsites) = $line =~ m/M, N are (\d+), (\d+)$/;
+    return $nsites;
 }
 
 sub merge_vcfs
@@ -357,23 +551,103 @@ sub merge_vcfs
     rename("$outfile.part",$outfile);
 }
 
-sub concat_vcfs
+sub merge_header
 {
-    my ($self,$outfile,$vcfs) = @_;
-    if (@$vcfs>1)
+    my ($self,$outfile,$bcfs) = @_;
+    my $cmd;
+    if (@$bcfs>1)
     {
         open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
-        for my $vcf (@$vcfs)
+        for my $bcf (@$bcfs)
         {
-            print $fh "$vcf\n";
+            print $fh "$bcf\n";
         }
         close($fh);
-        $self->cmd(qq[$$self{bcftools} concat -Oz --file-list $outfile.list > $outfile.part]);
+        $cmd = qq[$$self{bcftools} merge -Oz --print-header --file-list $outfile.list > $outfile.part];
     }
-    else
+    else {
+        $cmd = qq[$$self{bcftools} view -Oz -h $$bcfs[0] > $outfile.part];
+    }
+    $self->cmd($cmd);
+    rename("$outfile.part",$outfile);
+}
+
+sub merge_bcfs
+{
+    my ($self,$outfile,$hdr,$region,$bcfs) = @_;
+    my $cmd;
+    if (@$bcfs>1)
     {
-        $self->cmd(qq[$$self{bcftools} view -Oz $$vcfs[0] > $outfile.part]);
+        open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
+        for my $bcf (@$bcfs)
+        {
+            print $fh "$bcf\n";
+        }
+        close($fh);
+        $cmd = qq[$$self{bcftools} merge -Ou --use-header $hdr -r $region --file-list $outfile.list | $$self{bcftools} view -H];
     }
+    else {
+        $cmd = qq[$$self{bcftools} view -H -r $region $$bcfs[0]];
+    }
+
+    my ($chr,$from,$to) = $self->parse_region($region);
+    open(my $in,"$cmd |") or $self->throw("$cmd: $!");
+    open(my $out,"| $$self{bgzip} -c > $outfile.part") or $self->throw("$$self{bgzip} -c > $outfile.part: $!");
+    while (my $line=<$in>)
+    {
+        my $pos = $self->ith_column($line, 2);
+        if ( $pos < $from ) { next; }
+        if ( defined $to && $pos > $to ) { next; }
+        print $out $line;
+    }
+    close($out) or $self->throw("close $$self{bgzip} -c > $outfile.part");
+    close($in) or $self->throw("close $cmd");
+    rename("$outfile.part",$outfile);
+}
+
+sub parse_region
+{
+    my ($self,$region) = @_;
+    if ( $region=~/^([^:]+):(\d+)-(\d+)$/ ) { return ($1,$2,$3); }
+    elsif ( $region=~/^([^:]+):(\d+)$/ ) { return ($1,$2,undef); }
+    elsif ( $region=~/^([^:]+)$/ ) { return ($1,undef,undef); }
+    else { $self->throw("Could not parse the region: $region\n"); }
+}
+
+sub ith_column
+{
+    # $icol is 1-based
+    my ($self,$line,$icol) = @_;
+    if ( $icol<=0 ) { $self->throw("Expected \$icol > 0, got $icol\n"); }
+    my $s = 0;
+    my $e = -1;
+    my $i = 0;
+    while ($i<$icol)
+    {
+        $s = $e + 1;
+        $e = index($line,"\t",$s);
+        $i++;
+        if ( $e==-1 ) { last; }
+    }
+    if ( $e==-1 ) 
+    { 
+        if ( $i<$icol ) { $self->throw("Too few columns on the line, asked $icol: $line"); }
+        $e = length($line) - 1; 
+    }
+    return substr($line,$s,$e-$s);
+}
+
+sub concat_vcfs
+{
+    my ($self,$outfile,$hdr,$vcfs) = @_;
+    # should be able to use cat, but there is a bug in htslib 
+    # where indexing stops at an EOF line even if it is not the 
+    # last line. so we use rmtrailer to chop off the EOF
+    foreach my $file ($hdr,@$vcfs) {
+        next if ($file eq $$vcfs[-1]);
+        $self->cmd(qq[$$self{rmtrailer} $file]);
+    }
+    $self->cmd(qq[cat $hdr @$vcfs > $outfile.part]);
     $self->tabix_part($outfile);
     rename("$outfile.part",$outfile);
 }
@@ -382,14 +656,20 @@ sub tabix_part
 {
     my ($self,$vcf) = @_;
     $self->cmd("$$self{tabix} -p vcf -f $vcf.part");
+    my $records = `$$self{bcftools} index -n $vcf.part`;
     rename("$vcf.part.tbi","$vcf.tbi");
+    chomp $records;
+    return $records;
 }
 
 sub index_part
 {
     my ($self,$bcf) = @_;
     $self->cmd("$$self{bcftools} index -f $bcf.part");
+    my $records = `$$self{bcftools} index -n $bcf.part`;
     rename("$bcf.part.csi","$bcf.csi");
+    chomp $records;
+    return $records;
 }
 
 sub save_config
