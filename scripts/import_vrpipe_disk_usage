@@ -1,0 +1,299 @@
+#!/usr/bin/env perl
+
+use DBI;
+use Benchmark;
+use Carp;
+use Data::Dumper;
+use Array::Compare;
+
+use strict;
+use warnings;
+my $HOST = $ENV{VRTRACK_HOST};
+
+my $VRHOST = 'mcs10';
+my $PORT = $ENV{VRTRACK_PORT} || 3306;
+my $VRPORT = 3349;
+my $WRITE_USER = $ENV{VRTRACK_RW_USER};
+my $WRITE_PASS = $ENV{VRTRACK_PASSWORD};
+
+my $web_db = 'vrtrack_web_tables';
+my $vr_db = 'vertres_vrpipe';
+
+my $web_dbh = DBI->connect("DBI:mysql:host=$HOST:port=$PORT;database=$web_db", $WRITE_USER, $WRITE_PASS, {'AutoCommit' => 0, 'RaiseError' => 1, 'PrintError'=>0} );
+croak "Can't connect to database\n" unless ($web_dbh);
+my $vrdbh = DBI->connect("DBI:mysql:host=$VRHOST:port=$VRPORT;database=$vr_db", $WRITE_USER, $WRITE_PASS, {'RaiseError' => 1, 'PrintError'=>0});
+croak "Can't connect to database\n" unless ($vrdbh);
+
+
+#Build temporary helper file table:
+truncate_temp_tables($web_dbh);
+truncate_usage_tables($web_dbh);
+
+#create file table:
+my $sql_select_file_max = "SELECT max(id) from file";
+my $sql_select_file_build = "SELECT id, s, type, path, ifnull(moved_to, 'null') from file where s > 0 and type <> 'cat' and type <> 'lsf' and path not like '%PersistentArray%' and id > ? and id <= ?";
+
+#get pipeline file:
+my $sql_select_pipeline_file = "SELECT distinct ss.pipelinesetup, so.file from stepstate ss, stepoutputfile so where ss.id=so.stepstate and so.file > ? and so.file <= ?";
+
+#get lsffile size:
+my $sql_select_persistent_files = "SELECT s, path from file where s > 0 and path like '%PersistentArray%'";
+my $sql_select_lsf_files = "SELECT s, path from file where s > 0 and type = 'lsf'";
+
+my $sql_select_piplinesetup_ids = qq[SELECT id, user from pipelinesetup order by id];
+my $sql_select_pipelinesetup_file = qq[SELECT file from pipeline_file where pipelinesetup = ?];
+my $sql_select_pipelinesetup_data = qq[SELECT ps.id, ps.name, p.name, ps.pipeline, ps.output_root from pipelinesetup ps, pipeline p where ps.pipeline = p.id and ps.id = ?];
+my $sql_select_pipe_file_data = qq[SELECT f.id, f.s, f.type, f.path, ifnull(f.moved_to, 'null'), path_root from file_info f, pipeline_file p where p.file = f.id and p.pipelinesetup = ? order by f.s limit 1000];
+my $sql_select_root_top_level = qq[SELECT count(*) from vrpipe_root_top_level where path_root = ? and file_type = ? and s = ? and s_gb = ? and file_count = ?];
+my $sql_select_setup_totals = qq[SELECT f.path_root, f.type, count(*), sum(f.s) from pipeline_file p, file_info f where p.file = f.id and p.pipelinesetup = ? group by p.pipelinesetup, f.path_root, f.type];
+
+my $sql_delete_moved_to = qq[DELETE from file_info where moved_to is not null];
+
+my $sql_insert_pipelinesetup_data = qq[INSERT into vrpipe_pipelinesetup(ps_id, ps_name, ps_user, ps_type, pipeline, output_root) values (?,?,?,?,?,?)];
+my $sql_insert_usage_top_level_data = qq[INSERT into vrpipe_usage_top_level(ps_id, ps_name, ps_user, ps_type, path_root, file_type, s, s_gb, file_count) values (?,?,?,?,?,?,?,?,?)];
+my $sql_insert_usage_total_data = qq[INSERT into vrpipe_usage_total(ps_id, ps_name, ps_user, ps_type, total_s, total_s_gb, file_count) values (?,?,?,?,?,?,?)];
+my $sql_insert_root_top_level = qq[INSERT into vrpipe_root_top_level(path_root, file_type, s, s_gb, file_count) values(?,?,?,?,?)];
+my $sql_insert_root_top_level_display = qq[INSERT into vrpipe_root_top_level(path_root, file_type, s, s_gb, file_count, top_level_display) values(?,?,?,?,?,1)];
+my $sql_update_root_top_level_display = qq[UPDATE vrpipe_root_top_level set top_level_display = 1 where path_root = ? and file_type = ? and s = ? and s_gb = ? and file_count = ?];
+
+my $sth_fmax = $vrdbh->prepare($sql_select_file_max);
+my $sth_file = $vrdbh->prepare($sql_select_file_build);
+my $sth_pers = $vrdbh->prepare($sql_select_persistent_files);
+my $sth_lsff = $vrdbh->prepare($sql_select_lsf_files);
+my $sth_pipf = $vrdbh->prepare($sql_select_pipeline_file);
+my $sth_sid  = $vrdbh->prepare($sql_select_piplinesetup_ids);
+my $sth_sps  = $vrdbh->prepare($sql_select_pipelinesetup_data);
+
+my $sth_spd = $web_dbh->prepare($sql_select_pipe_file_data);
+
+my $sth_ips = $web_dbh->prepare($sql_insert_pipelinesetup_data);
+my $sth_iul = $web_dbh->prepare($sql_insert_usage_top_level_data);
+my $sth_iut = $web_dbh->prepare($sql_insert_usage_total_data);
+my $sth_irt = $web_dbh->prepare($sql_insert_root_top_level);
+my $sth_ird = $web_dbh->prepare($sql_insert_root_top_level_display);
+my $sth_urd = $web_dbh->prepare($sql_update_root_top_level_display);
+my $sth_srd = $web_dbh->prepare($sql_select_root_top_level);
+my $sth_sst = $web_dbh->prepare($sql_select_setup_totals);
+
+my $sth_dmt = $web_dbh->prepare($sql_delete_moved_to);
+$sth_dmt->execute();
+
+my $start_time = Benchmark->new;
+
+my $file_max = 0;
+if ($sth_fmax->execute()) {
+	$file_max = $sth_fmax->fetchrow_array();
+}
+
+my $min = 0;
+my $max = 0;
+my $chunk = 100000;
+my @filedata_to_stringify = qw (2 3 5);
+while ($max < $file_max) {
+	$max += $chunk;
+	#print "MAX: $max\n";
+	my @file_data;
+	my @pipe_data;
+	if ($sth_file->execute($min,$max)) {
+		while (my ($id, $s, $type, $path, $moved_to) = $sth_file->fetchrow_array()) {
+			my $root = join('/', (split('/', $path))[0 .. 3]);
+			push @file_data, [$id, $s, $type, $path, $moved_to, $root];
+		}
+	}
+	if ($sth_pipf->execute($min,$max)) {
+		while (my ($pipeline, $file) = $sth_pipf->fetchrow_array()) {
+			push @pipe_data, [$pipeline, $file];
+		}
+	}
+    my $filestring = '';
+	if ( scalar @file_data > 0 ) {
+		foreach my $row ( @file_data ) {
+			my @item = @{$row};
+			for my $i ( @filedata_to_stringify ) {
+				$item[$i] = process_sql_string($item[$i]);
+			}
+			my $join = join ',', @item if @item;
+			my $arrstring = '(' . $join . ')';
+			$filestring = length($filestring) > 0 ? $filestring . ',' . $arrstring : $arrstring;
+		}
+		my $sql = "INSERT into file_info(id, s, type, path, moved_to, path_root) values $filestring";
+		my $sthtemp = $web_dbh->prepare($sql) if length $filestring > 0;
+		$sthtemp->execute();
+	}
+	my $pipestring = '';
+	if ( scalar @pipe_data > 0 ) {
+		foreach my $row ( @pipe_data ) {
+			my @item = @{$row};
+			my $join = join ',', @item;
+			my $arrstring = '(' . $join . ')';
+			$pipestring = length($pipestring) > 0 ? $pipestring . ',' . $arrstring : $arrstring;
+		}
+		my $sql = "INSERT into pipeline_file(pipelinesetup, file) values $pipestring";
+		my $sthtemp = $web_dbh->prepare($sql);
+		$sthtemp->execute();
+	}	
+	$min += $chunk;
+}
+$web_dbh->commit();
+
+#TODO ADD LSF file data
+#~ my $sql_insert_root_top_level_display = qq[INSERT into vrpipe_root_top_level(path_root, file_type, s, s_gb, file_count, top_level_display) values(?,?,?,?,?,1)];
+
+#~ my %pers_size;
+#~ my %lsf_size;
+#~ if ($sth_pers->execute()) {
+	#~ while (my ($s, $path) = $sth_pers->fetchrow_array()) {
+		#~ my $root = join('/', (split('/', $path))[0 .. 3]);
+		#~ $pers_size{$root} += $s;
+    #~ }
+#~ } 
+#~ 
+#~ if ($sth_lsff->execute()) {
+	#~ while (my ($s, $path) = $sth_lsff->fetchrow_array()) {
+		#~ my $root = join('/', (split('/', $path))[0 .. 3]);
+		#~ $lsf_size{$root} += $s;
+    #~ }
+#~ }
+
+my %pipelines;
+if ($sth_sid->execute()) {
+    while (my ($id, $user) = $sth_sid->fetchrow_array()) {
+        $pipelines{$id} = $user;
+	}
+}
+
+my %root_total;
+my %root_count;
+my @columns_to_stringify = qw(1 2 3 7 8 9);
+foreach my $pipelinesetup ( sort {$b <=> $a} keys %pipelines ) {
+	#print "Setup: $pipelinesetup\n";
+	my @pipeline_data;
+	my $setup_total = 0;
+	my $file_count = 0;
+	my %setup_root_total;
+	my %setup_root_count;
+	my $ps_id;
+	my $ps_name;
+	my $ps_type;
+	my $ps_user = $pipelines{$pipelinesetup};
+    if ($sth_sps->execute($pipelinesetup)) {
+        while (my ($id, $name, $type, $pipeline, $output_root) = $sth_sps->fetchrow_array()) {
+			$sth_ips->execute($id, $name, $ps_user, $type, $pipeline, $output_root);
+			$ps_id = $id;
+			$ps_name = $name;
+			$ps_type = $type;
+	    }
+    } 
+    if ($sth_spd->execute($pipelinesetup)) {
+        while (my ($file, $s, $type, $path, $moved_to, $root) = $sth_spd->fetchrow_array()) {
+			push @pipeline_data, [$ps_id, $ps_name, $ps_user, $ps_type, 1, $file, $s, $type, $path, $root];
+		}
+	}
+	my $pipestring = '';
+	if ( scalar @pipeline_data > 0 ) {
+		foreach my $row ( @pipeline_data ) {
+			my @item = @{$row};
+			for my $i ( @columns_to_stringify ) {
+				$item[$i] = process_sql_string($item[$i]);
+			}
+			my $join = join ',', @item;
+			my $arrstring = '(' . $join . ')';
+			$pipestring = length($pipestring) > 0 ? $pipestring . ',' . $arrstring : $arrstring;
+		}
+		my $sql = "INSERT into vrpipe_file_info(ps_id, ps_name, ps_user, ps_type, step_number, file_id, s, type, path, path_root) values $pipestring";
+		my $sthtemp = $web_dbh->prepare($sql);
+		$sthtemp->execute();
+	}
+	$web_dbh->commit(); 
+    #1 Gigabyte = 1073741824 Bytes
+	if ($sth_sst->execute($pipelinesetup)) {
+		while (my ($root, $type, $count, $sum) = $sth_sst->fetchrow_array()) {
+			my $hashkey = $root.'_'.$type; 
+			$setup_total += $sum;
+			$file_count += $count;
+			$setup_root_total{$hashkey} += $sum;
+			$setup_root_count{$hashkey} += $count;
+			$root_total{$hashkey} += $sum;
+			$root_count{$hashkey} += $count;
+		}
+	}
+	foreach my $root (keys %setup_root_total) {
+		my $total = $setup_root_total{$root};
+		my $count = $setup_root_count{$root};
+		my @file_info = split('_', $root);
+	    $sth_iul->execute($ps_id, $ps_name, $ps_user, $ps_type, $file_info[0], $file_info[1], $total, $total/1073741824, $count);
+	}
+    $sth_iut->execute($ps_id, $ps_name, $ps_user, $ps_type, $setup_total, $setup_total/1073741824, $file_count);
+    $web_dbh->commit();
+}
+
+my %top_level_total;
+my %top_level_filetypes;
+my %top_level_count;
+my %top_level_filetype_count;
+foreach my $root (keys %root_total) {
+    my $total = $root_total{$root};
+    my $count = $root_count{$root};
+	my @root_info = split('_', $root);
+	$top_level_total{$root_info[0]} += $total;
+	$top_level_count{$root_info[0]} += $count;
+	push @{ $top_level_filetypes{$root_info[0] }}, $root_info[1];
+	$sth_irt->execute($root_info[0], $root_info[1], $total, $total/1073741824, $count);
+	$web_dbh->commit();
+}
+
+my $comp = Array::Compare->new;
+my @filetype_keys = sort keys %top_level_filetypes;
+my @top_keys = sort keys %top_level_total;
+carp "Top_level_filetypes directory array is not equal to top_level_total directory array.\n" unless $comp->compare(\(@filetype_keys, @top_keys));
+
+foreach my $top (keys %top_level_total) {
+    my $total = $top_level_total{$top};
+    my $count = $top_level_count{$top};
+    my $totalgb = $total/1073741824;
+    my $filetypes = join (',', @{ $top_level_filetypes{$top}});
+    if ($sth_srd->execute($top, $filetypes, $total, $totalgb, $count)) {
+		while ( (my $chk) = $sth_srd->fetchrow_array()) {
+			if ( $chk == 1 ) {
+				$sth_urd->execute($top, $filetypes, $total, $totalgb, $count);
+			}
+			else {
+				$sth_ird->execute($top, $filetypes, $total, $totalgb, $count);
+			}
+		}
+	}
+}
+$web_dbh->commit();
+$sth_fmax->finish();
+$web_dbh->disconnect();
+$vrdbh->disconnect();
+
+my $end_time = Benchmark->new;
+my $update_time = timediff($end_time, $start_time);
+print "The vrpipe data update took ",timestr($update_time, 'noc'),"\n";
+
+sub process_sql_string {
+  my ($string) = @_;
+  $string =~ tr/\'//d;
+  return "'".$string."'";
+}
+  
+sub truncate_usage_tables {
+  my ($web_dbh) = @_;
+  my @truncate_tables = qw(vrpipe_pipelinesetup vrpipe_file_info vrpipe_usage_top_level vrpipe_root_top_level vrpipe_usage_total);
+  foreach (@truncate_tables) {
+    my $sql = qq[TRUNCATE TABLE $_];
+    my $sth = $web_dbh->prepare($sql);
+  	croak "Unable to truncate table $_\n" unless $sth->execute();
+  }
+}
+
+sub truncate_temp_tables {
+  my ($web_dbh) = @_;
+  my @truncate_tables = qw(file_info pipeline_file);
+  foreach (@truncate_tables) {
+    my $sql = qq[TRUNCATE TABLE $_];
+    my $sth = $web_dbh->prepare($sql);
+  	croak "Unable to truncate table $_\n" unless $sth->execute();
+  }
+}

@@ -27,7 +27,7 @@ sub error
         "Options:\n",
         "   -c, --collapse <snps|indels|both|any|none>      treat as identical sites with differing alleles [any]\n",
         "   -d, --remove-duplicates                         If there should be two consecutive rows with the same chr:pos, print only the first one.\n",
-        "   -H, --vcf-header <file>                         Use the VCF header\n",
+        "   -H, --vcf-header <file>                         Use the provided VCF header\n",
         "   -h, -?, --help                                  This help message.\n",
         "   -r, --regions <list|file>                       Do only the given regions (comma-separated list or one region per line in a file).\n",
         "   -R, --ref-for-missing <string>                  Use the REF allele instead of the default missing genotype. Because it is not obvious\n",
@@ -46,7 +46,9 @@ sub parse_params
         args => [$0, @ARGV],
         joiner => 
         {
+            'I16' => \&joiner_dp4,
             'DP4' => \&joiner_dp4,
+            'MQ0'  => \&joiner_sum,
             'DP'  => \&joiner_sum,
         },
         trim_redundant_ALTs => 0,
@@ -61,7 +63,7 @@ sub parse_params
         if ( $arg eq '-H' || $arg eq '--vcf-header' ) { $$opts{vcf_header}=shift(@ARGV); next; }
         if ( $arg eq '-c' || $arg eq '--collapse' ) 
         {
-            $$opts{collapse_any} = 1;
+            $$opts{collapse_any} = 0;
             my $c = shift(@ARGV);
             if ( $c eq 'snps' ) { $$opts{collapse_snps}=1; }
             elsif ( $c eq 'indels' ) { $$opts{collapse_indels}=1; }
@@ -350,6 +352,7 @@ sub merge_vcf_files
             if ( scalar keys %ref_alt_map > 1 ) 
             { 
                 $new_ref = $vcf_out->fill_ref_alt_mapping(\%ref_alt_map); 
+                if ( !defined $new_ref ) { error("Failed on line $out{CHROM}:$out{POS}\n"); }
             }
             if ( !$have_samples or !$$opts{trim_redundant_ALTs} )
             {

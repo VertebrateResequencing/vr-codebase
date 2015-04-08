@@ -1,0 +1,330 @@
+#!/usr/bin/env perl
+#
+# Author: sm15@sanger
+#
+
+use strict;
+use warnings;
+use Carp;
+use Utils;
+
+my $runner = myRunner->new();
+$runner->run();
+
+exit;
+
+#--------------------------------
+
+package myRunner;
+use base qw(Runner);
+use strict;
+use warnings;
+use Vcf;
+
+sub new
+{
+    my ($class,@args) = @_;
+    my $self = $class->SUPER::new(@args);
+
+    $$self{do_clean} = 1;
+    $$self{debug_chunks} = 0;
+    $$self{limits} = { memory=>1_000, queue=>'normal', runtime=>undef, cpus=>undef };
+    $$self{memstep} = 2_000;
+    $$self{config_version} = '1356084362';
+    $$self{_sampleconf} = q[
+            # For sanity checking that your config file is not obsolete. Update the version key in your 
+            #  config file to get rid of the warnings.
+            version  => '] .$$self{config_version}. q[',
+
+            in_vcf     => '/some/path/chr{CHROM}.vcf.gz',
+
+            chroms => [ qw(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X) ],
+
+            makeBGLCHUNKS => 'makeBGLCHUNKS',
+            makeBGLCHUNKS_args => '--window 8000 --overlap 2000',
+
+            limits   => { memory=>10_000, runtime=>24*60 },
+
+            # How much memory should be given to Beagle in the next run if it fails because of out-of-memory error?
+            #   Smaller step saves farm node's memory but can result in multiple runs (note that it can take
+            #   considerable amount of CPU time before the memory is exhausted). On the other hand, bigger step may 
+            #   block free CPUs on multi-core nodes by reserving too much memory.
+            memstep  => '] .$$self{memstep}. q[',   # the step for increasing memory limit
+
+            do_clean => 1,         # Remove runner's temporary files
+    ]."\n";
+
+    $$self{usage} .= 
+        "Usage: run-beagle\n" .
+        "Options:\n" .
+        "   -i, --in-vcf <file>                 The target VCF file to be imputed, refined and phased\n" .
+        "   -o, --outdir <dir>                  Output directory\n" .
+        "\n";
+
+    return $self;
+}
+
+sub parse_args
+{
+    my ($self) = @_;
+    while (defined(my $arg=shift(@ARGV)))
+    {
+        if ( $arg eq '-i' or $arg eq '--in-vcf' ) { $$self{in_vcf}=shift(@ARGV); next; }
+        if ( $arg eq '-o' or $arg eq '--outdir' ) { $$self{outdir}=shift(@ARGV); next; }
+        $self->throw();
+    }
+
+    if ( !exists($$self{outdir}) ) { $self->throw("Missing the -o option.\n"); }
+    if ( !exists($$self{in_vcf}) ) { $self->throw("Missing the -i option.\n"); }
+    if ( !exists($$self{version}) or $$self{version} ne $$self{config_version} )
+    {
+        $self->warn("Warning: Your config file may be out of date, the latest version key is \"$$self{config_version}\". Please run with +sampleconf to see what changed.\n");
+    }
+}
+
+sub main
+{
+    my ($self) = @_;
+    $self->parse_args();
+    $self->save_config();
+
+    my $outdir = $$self{outdir};
+    my @chroms = @{$$self{chroms}};
+
+    # Make MVNcall chunks
+    $self->set_limits(%{$$self{limits}});
+    foreach my $chr (@chroms)
+    {
+        $self->spawn('make_mvncall_chunks',"$outdir/chunks/mvncall.chr$chr.chunks",$chr);
+    }
+    $self->wait;
+
+    # Run MVNcall
+    $self->set_limits(%{$$self{limits}}, %{$$self{mvncall_limits}});
+    foreach my $chr (@chroms)
+    {
+        my $chunks = $self->read_chunks("$outdir/chunks/mvncall.chr$chr.chunks");
+        foreach my $chunk (@$chunks)
+        {
+            $self->spawn('mvncall',"$outdir/$chr/chr$chr.$$chunk[1]-$$chunk[2].mvncall.vcf.gz",$chunk);
+        }
+    }
+    $self->wait;
+
+    # Concat chromosome VCFs
+    $self->set_limits(%{$$self{limits}});
+    foreach my $chr (@chroms)
+    {
+        $self->spawn('vcf_concat',"$outdir/chr$chr.mvncall.vcf.gz",$chr);
+    }
+    $self->wait; 
+
+    # Combine with GLs
+    $self->set_limits(%{$$self{limits}});
+    foreach my $chr (@chroms)
+    {
+        $self->spawn('combine_with_gls',"$outdir/ALL.chr$chr.mvncall.20130502.genotypes.vcf.gz","$outdir/chr$chr.mvncall.vcf.gz",$chr);
+    }
+    $self->wait; 
+
+    # Run performance stats and clean
+    $self->set_limits(%{$$self{limits}});
+    $self->spawn('runtime_stats',"$outdir/runtime");
+    $self->wait;
+    $self->clean($outdir) unless (!$$self{do_clean});
+
+    $self->all_done;
+}
+
+sub make_mvncall_chunks
+{
+    my ($self,$outfile,$chr) = @_;
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
+    $self->cmd(qq[export LD_LIBRARY_PATH=/nfs/users/nfs_s/sm15/lib; $$self{makeMVNCHUNKS} --vcf $in_vcf $$self{makeMVNCHUNKS_args} --output $outfile.part]);
+    rename("$outfile.part", $outfile);
+}
+
+sub runtime_stats
+{
+    my ($self,$outfile) = @_;
+    $self->cmd("mkdir -p $outfile.part");
+    $self->cmd("runtime-stats $$self{outdir} -p $outfile.part/graph > $outfile.part/stats.txt");
+    rename("$outfile.part",$outfile) or $self->throw("rename $outfile.part $outfile: $!");
+}
+
+sub read_chunks
+{
+    my ($self, $file) = @_;
+    open(my $fh,'<',$file) or $self->throw("$file: $!");
+    my @chunks;
+    while (my $line=<$fh>)
+    {
+        chomp($line);
+        my @items = split(/\t/,$line);
+        push @chunks, [@items];
+    }
+    close($fh) or $self->throw("$file: $!");
+    return \@chunks;
+}
+
+sub expand_chrom
+{
+    my ($self,$path,$region) = @_;
+    $region =~ s/:.*$//;
+    $path =~ s/{CHROM}/$region/g;
+    return $path;
+}
+
+sub num_threads
+{
+    my ($self,$opts) = @_;
+    my ($cpus) = $opts =~ m/-T (\d+)/;
+    unless ($cpus) {
+        ($cpus) = $opts =~ m/--thread (\d+)/;
+    }
+    return $cpus;
+}
+
+sub mvncall
+{
+    my ($self,$outfile,$chunk) = @_;
+    
+    my $chr    = $$chunk[0];
+    my $from   = $$chunk[1];
+    my $to     = $$chunk[2];
+    
+    my $mvncall_args = $self->expand_chrom($$self{mvncall_args},$chr);
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
+    
+    $self->cmd(qq[export LD_LIBRARY_PATH=/nfs/users/nfs_s/sm15/lib; $$self{mvncall_bin} $mvncall_args --glfs $in_vcf --o $outfile.tmp.vcf --interval $from $to]);
+    # $self->cmd(qq[cat $outfile.tmp.vcf | vcf-sort | bgzip -c > $outfile.part]);
+    $self->cmd(qq[cat $outfile.tmp.vcf | awk '/^#/||(\$2>$from && \$2<$to)' | bgzip -c > $outfile.part]);
+    # unlink(qq[$outfile.tmp.vcf]);
+    $self->tabix_part($outfile);
+}
+
+sub vcf_concat
+{
+    my ($self,$outfile,$chr) = @_;
+    
+    my $outdir = $$self{outdir};
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
+    $self->cmd(qq[ls $outdir/$chr/*.vcf.gz | sort -V > $outdir/$chr/concat.list]);
+    $self->cmd(qq[vcf-concat -f $outdir/$chr/concat.list | bin/dedup.pl | bgzip -c > $outfile.part]);
+    
+    my ($in_sites,$in_samples) = $self->stats($in_vcf);
+    my ($out_sites,$out_samples) = $self->stats("$outfile.part");
+    
+    $self->throw("Number of input ($in_samples) and output ($out_samples) samples do not agree") unless ($in_samples == $out_samples);
+    $self->throw("Number of input ($in_sites) and output ($out_sites) sites do not agree") unless ($in_sites == $out_sites);
+    
+    $self->tabix_part($outfile);
+}
+
+sub combine_with_gls
+{
+    my ($self,$outfile,$vcf,$chr) = @_;
+    
+    my $outdir = $$self{outdir};
+    my $in_vcf = $self->expand_chrom($$self{in_vcf},$chr);
+    $self->cmd(qq[bin/mvncall_add_info.pl -g $in_vcf -m $vcf | grep -v ^##reference | vcf-annotate --fill-AC-AN | bgzip -c > $outfile.part]);
+    
+    my ($in_sites,$in_samples) = $self->stats($in_vcf);
+    my ($out_sites,$out_samples) = $self->stats("$outfile.part");
+    
+    $self->throw("Number of input ($in_samples) and output ($out_samples) samples do not agree") unless ($in_samples == $out_samples);
+    $self->throw("Number of input ($in_sites) and output ($out_sites) sites do not agree") unless ($in_sites == $out_sites);
+    
+    $self->tabix_part($outfile);
+}
+
+sub dimensions
+{
+    my ($self, $file) = @_;
+    my $cat = $file =~ /gz$/ ? 'zcat' : 'cat';
+    my $stat = `$cat $file | awk -F " " 'END{print NR"\\t"NF}'`;
+    chomp $stat;
+    my ($nrows, $ncols) = split(/\t/, $stat);
+    return ($nrows, $ncols);
+}
+
+sub stats
+{
+    my ($self, $vcf) = @_;
+    my ($nsites, $nsamples);
+    if (-s "$vcf.stats")
+    {
+        my $stat = `cat $vcf.stats`;
+        chomp $stat;
+        ($nsites, $nsamples) = split(/\t/, $stat);
+    }
+    else
+    {
+        $nsamples = `zcat $vcf | vcf-query -l | wc -l`;
+        chomp $nsamples;
+        $nsites = `zcat $vcf | grep -v "^#" | wc -l`;
+        chomp $nsites;
+        $self->cmd(qq[echo "$nsites\t$nsamples" > $vcf.stats]);
+    }
+    return ($nsites, $nsamples);
+}
+
+sub tabix_part
+{
+    my ($self,$vcf) = @_;
+    $self->cmd("tabix -p vcf -f $vcf.part");
+    rename("$vcf.part.tbi","$vcf.tbi");
+    rename("$vcf.part.stats","$vcf.stats") if (-s "$vcf.part.stats");
+    rename("$vcf.part",$vcf);
+}
+
+sub save_config
+{
+    my ($self) = @_;
+    my $src = $$self{_config};
+    my $dst = "$$self{outdir}/mvncall.conf";
+    if ( -e $dst && (stat($src))[9] <= (stat($dst))[9] ) { return; }
+    if ( !-d $$self{outdir} ) { $self->cmd("mkdir -p $$self{outdir}"); }
+    open(my $fh,'>',$dst) or $self->throw("$dst: $!");
+    my $about = $$self{_about};
+    $about =~ s/\n/\n# /g;
+    print $fh "# $about";
+    close($fh);
+    $self->cmd("cat $src >> $dst");
+}
+
+sub cmd
+{
+    my ($self,$cmd) = @_;
+    return Utils::CMD($cmd,{verbose=>1});
+}
+
+sub java_cmd
+{
+    my ($self,$cmd,$err_file) = @_;
+
+    print STDERR "$cmd 2>$err_file\n";
+    if ( -e $err_file ) { `cat $err_file >> $err_file.prev`; unlink($err_file); }
+
+    `$cmd 2>$err_file`;
+    if ( ! $? ) { return; } # finished OK
+
+    # something went wrong
+    my $out_of_memory = 0;
+    open(my $fh,'<',$err_file) or $self->throw("$err_file: $!");
+    while (my $line=<$fh>)
+    {
+        if ( $line=~/java.lang.OutOfMemoryError/ ) { $out_of_memory = 1; last; }
+        if ( $line=~/Could not create the Java virtual machine/ ) { $out_of_memory = 1; last; }
+    }
+    close($fh);
+    if ( !$out_of_memory ) { $self->throw("The command failed: $cmd\n"); }
+
+    # out of memory: tell the runner to use more memory next time
+    my $mem = $self->get_limits('memory') + $$self{memstep};
+    $self->set_limits(memory=>$mem);
+
+    $self->throw("Memory limit exceeded, increasing the memory limit for the next run to $mem. The command was:\n$cmd\n");
+}
+
+

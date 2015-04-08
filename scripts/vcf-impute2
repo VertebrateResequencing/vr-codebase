@@ -9,11 +9,21 @@ use Carp;
 use Vcf;
 
 my $opts = parse_params();
-if ( $$opts{from_vcf} )
+if ( $$opts{conversion} eq 'v2i' )
 {
-    convert_known($opts);
     convert_to_be_imputed($opts);
-    samples_overlap($opts);
+    if ( exists($$opts{known}) )
+    {
+        for (my $i=0; $i<(@{$$opts{known}}); $i++)
+        {
+            convert_known($opts, $$opts{known}[$i], $i);
+            samples_overlap($opts, $i);
+        }
+    }
+}
+elsif ( $$opts{conversion} eq 'h2v' )
+{
+    impute2_hap_to_vcf($opts);
 }
 else
 {
@@ -32,33 +42,36 @@ sub error
         "About: Helper script of run-impute2. Conversion between input and output files of impute2. Only biallelic sites will be modified.\n",
         "Usage: vcf-impute2 [OPTIONS]\n",
         "Options:\n",
-        "   -e, --exclude-missing <frac,th>     Exclude sites with too many samples (frac float) below the given GL threshold (th float)\n",
-        "   -f, --force                         Perform fewer sanity checks and try to make the conversion even if some fail\n",
-        "       --GT-confidence <float>         In absence of GL and PL, GT is used. What likelihood corresponds to the GTs? [1.0]\n",
-        "   -i, --impute <file>                 VCF file to be imputed.\n",
-        "   -k, --known <file>                  VCF file with reference genotypes or \"--\" when not available.\n",
-        "   -l, --legend-file                   Create the legend and haplotype file instead of the default genotype file.\n",
-        "   -o, --out <prefix>                  Prefix of impute2 output files\n",
-        "   -p, --phased-only                   Output only fully phased references genotypes (-k)\n",
-        "   -r, --region <chr|chr:from-to>      \n",
-        "   -h, -?, --help                      This help message.\n",
+        "   -c, --convert-between <v2i|i2v|h2v>     Convert from VCF to impute2 (v2i), impute2's gen to VCF (i2v), impute2's hap+legend to VCF (h2v)\n",
+        "   -e, --exclude-missing <frac,th>         Exclude sites with too many samples (frac float) below the given GL threshold (th float)\n",
+        "   -f, --force                             Perform fewer sanity checks and try to make the conversion even if some fail\n",
+        "       --GT-confidence <float>             In absence of GL and PL, GT is used. What likelihood corresponds to the GTs? [1.0]\n",
+        "   -i, --impute <file>                     VCF file to be imputed.\n",
+        "   -k, --known <file>                      VCF file with reference genotypes, the option can be given multiple times.\n",
+        "   -l, --legend-file                       Create impute2's -l and -h file instead of -known_haps_g file.\n",
+        "   -o, --out <prefix>                      Prefix of impute2 output files\n",
+        "   -p, --phased-only                       Output only fully phased references genotypes (-k)\n",
+        "   -r, --region <chr|chr:from-to>          \n",
+        "   -s, --samples <file>                    List of samples (plain list)\n",
+        "   -h, -?, --help                          This help message.\n",
         "Examples:\n",
         "   # Convert from VCFs to impute2 files\n",
-        "   vcf-impute2 -r 20:50000001-55000000 -i file.vcf.gz -k ref.vcf.gz -o dir/prefix\n",
-        "   vcf-impute2 -r 20:50000001-55000000 -i file.vcf.gz -k -- -o dir/prefix\n",
+        "   vcf-impute2 -c v2i -r 20:50000001-55000000 -i file.vcf.gz -k ref.vcf.gz -o dir/prefix\n",
+        "   vcf-impute2 -c v2i -r 20:50000001-55000000 -i file.vcf.gz               -o dir/prefix\n",
         "\n",
         "   # Take the impute2 results and annotate the original VCF file\n",
-        "   vcf-impute2 -r 20:50000001-55000000 -i file.vcf.gz -o dir/prefix | bgzip -c > imputed.vcf.gz\n",
+        "   vcf-impute2 -c i2v -r 20:50000001-55000000 -i file.vcf.gz -o dir/prefix | bgzip -c > imputed.vcf.gz\n",
         "   # Take the impute2 results and create a new VCF file\n",
-        "   vcf-impute2 -r 20:50000001-55000000 -o dir/prefix | bgzip -c > imputed.vcf.gz\n",
+        "   vcf-impute2 -c i2v -r 20:50000001-55000000                -o dir/prefix | bgzip -c > imputed.vcf.gz\n",
         "\n";
 }
 
 sub parse_params
 {
-    my $opts = { from_vcf=>1, gtconf => 1 };
+    my $opts = { gtconf => 1 };
     while (defined(my $arg=shift(@ARGV)))
     {
+        if ( $arg eq '-c' || $arg eq '--convert-between' ) { $$opts{conversion} = shift(@ARGV); next; }
         if ( $arg eq '-r' || $arg eq '--region' ) 
         { 
             $$opts{chrom}=shift(@ARGV); 
@@ -70,16 +83,18 @@ sub parse_params
         if ( $arg eq '-o' || $arg eq '--out' ) { $$opts{out}=shift(@ARGV); next }
         if (                 $arg eq '--GT-confidence' ) { $$opts{gtconf}=shift(@ARGV); next }
         if ( $arg eq '-f' || $arg eq '--force' ) { $$opts{force}=1; next }
-        if ( $arg eq '-k' || $arg eq '--known' ) { $$opts{known}=shift(@ARGV); next }
+        if ( $arg eq '-k' || $arg eq '--known' ) { push @{$$opts{known}},shift(@ARGV); next }
         if ( $arg eq '-p' || $arg eq '--phased-only' ) { $$opts{phased_only}=1; next }
+        if ( $arg eq '-s' || $arg eq '--samples' ) { $$opts{samples_file}=shift(@ARGV); next }
         if ( $arg eq '-l' || $arg eq '--legend-file' ) { $$opts{create_legend}=1; next }
         if ( $arg eq '-i' || $arg eq '--impute' ) { $$opts{impute}=shift(@ARGV); next }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
+    if ( !exists($$opts{conversion}) ) { error("The --convert-between option must be given.\n"); }
     if ( !exists($$opts{out}) ) { error("Missing the -o option.\n") }
     $$opts{prefix} = init_path($$opts{out});
-    if ( !exists($$opts{known}) )
+    if ( $$opts{conversion} eq 'i2v' )
     {
         $$opts{impute2_out}  = "$$opts{prefix}.gz";
         if ( -e "$$opts{prefix}_info" ) { $$opts{impute2_info} = "$$opts{prefix}_info"; } # unavailable when called with per_sample
@@ -90,9 +105,20 @@ sub parse_params
         { 
             error("Missing the -k option or one of the files: $$opts{impute2_out} $$opts{impute2_samples}\n") 
         }
-        $$opts{from_vcf} = 0;
     }
-    elsif ( !exists($$opts{impute}) ) { error("Missing the -i option.\n") }
+    elsif ( $$opts{conversion} eq 'h2v' )
+    {
+        # sorry for the different naming, this is to match output of run-impute2's "known_refgen"
+        $$opts{impute2_haps}   = "$$opts{prefix}.hap.gz";
+        $$opts{impute2_legend} = "$$opts{prefix}.legend.gz";
+        if ( exists($$opts{impute}) ) { error("The option -i currently not accepted with -c h2v\n"); }
+        if ( !exists($$opts{samples_file}) ) { error("Expected -s with -c h2v"); }
+    }
+    elsif ( $$opts{conversion} eq 'v2i' )
+    {
+        if (!exists($$opts{impute}) ) { error("Missing the -i option.\n") }
+    }
+    else { error("The requested conversion not recognised: \"$$opts{conversion}\".\n"); }
     return $opts;
 }
 
@@ -119,43 +145,46 @@ sub init_path
 
 sub convert_known
 {
-    my ($opts) = @_;
+    my ($opts,$known_fname,$idx) = @_;
 
-    if ( $$opts{create_legend} && -e "$$opts{prefix}.known_haps.gz" )
+    my $out_prefix = "$$opts{prefix}.known${idx}";
+
+    # The difference between -h and -known_haps_g file is not big, the latter has five extra
+    # columns and therefore does not need the legend file
+    if ( $$opts{create_legend} && -e "${out_prefix}_haps.gz" )
     {
-        warn("The file already exists, skipping: $$opts{prefix}.known_haps\n");
+        warn("The file already exists, skipping: ${out_prefix}_haps.gz\n");
         return;
     }
-    if ( !$$opts{create_legend} && -e "$$opts{prefix}.known_gts.gz" ) 
+    if ( !$$opts{create_legend} && -e "${out_prefix}_khaps.gz" )
     { 
-        warn("The file already exists, skipping: $$opts{prefix}.known_gts.gz\n");
+        warn("The file already exists, skipping: ${out_prefix}_khaps.gz\n");
         return; 
     }
-    if ( $$opts{known} eq '--' ) { return; }
 
-    my $vcf = Vcf->new(file=>$$opts{known},%{$$opts{region}});
+    my $vcf = Vcf->new(file=>$known_fname,%{$$opts{region}});
     $vcf->parse_header();
     my @samples = $vcf->get_samples();
 
     my $fh;
-    open($fh,'>',"$$opts{prefix}.known_samples") or error("$$opts{out}.known_samples $!");
+    open($fh,'>',"${out_prefix}_samples") or error("${out_prefix}_samples $!");
     print $fh "ID_1 ID_2 missing\n";
     print $fh "0 0 0\n";
     for my $id (@samples)
     {
         print $fh "$id $id 0\n";
     }
-    close($fh) or error("close $$opts{prefix}.known_samples");
+    close($fh) or error("close failed: ${out_prefix}_samples");
 
     my $phased_only = $$opts{phased_only} ? 1 : 0;
 
-    my $fname = "$$opts{prefix}.known_gts.gz";
+    my $fname = "${out_prefix}_khaps.gz";
     my $fh_legend;
     if ( $$opts{create_legend} ) 
     { 
-        open($fh_legend,'>',"$$opts{prefix}.known_legend") or error("$$opts{prefix}.known_legend: $!");
+        open($fh_legend,'>',"${out_prefix}_legend") or error("${out_prefix}_legend: $!");
         print $fh_legend "id position a0 a1\n";
-        $fname = "$$opts{prefix}.known_haps.gz";
+        $fname = "${out_prefix}_haps.gz";
     }
     my $prev;
     open($fh,"| gzip -c > $fname.part") or error("| gzip -c > $fname.part: $!");
@@ -171,9 +200,9 @@ sub convert_known
         my @out;
         if ( defined $fh_legend )
         {
-            print $fh_legend "$oid $$x{POS} $$x{REF} $$x{ALT}[0]\n";
+            print $fh_legend "$oid $$x{POS} $$x{REF} $$x{ALT}[0]\n";        # -h file
         }
-        else { push @out, "$oid $oid $$x{POS} $$x{REF} $$x{ALT}[0]"; }
+        else { push @out, "$oid $oid $$x{POS} $$x{REF} $$x{ALT}[0]"; }      # -known_haps_g file
         my $phased = 1;
         for my $id (@samples)
         {
@@ -199,7 +228,7 @@ sub convert_known
         if ( $phased_only && !$phased ) { next; }
         print $fh join(' ',@out),"\n";
     }
-    if ( defined $fh_legend ) { close($fh_legend) or error("close $$opts{prefix}.known_legend"); }
+    if ( defined $fh_legend ) { close($fh_legend) or error("close ${out_prefix}_legend"); }
     close($fh) or error("close gzip -c > $fname.part");
     rename("$fname.part",$fname);
 }
@@ -253,20 +282,22 @@ sub convert_to_be_imputed
         {
             my $dat = $$x{gtypes}{$id};
 
-            my ($gl_rr,$gl_ar,$gl_aa); 
+            my @gl = ();
             if ( exists($$dat{GL}) ) 
             { 
-                ($gl_rr,$gl_ar,$gl_aa) = split(/,/,$$dat{GL});
-                $gl_rr = 10**$gl_rr;
-                $gl_ar = 10**$gl_ar;
-                $gl_aa = 10**$gl_aa;
+                @gl = split(/,/,$$dat{GL});
+                if ( $gl[0] ne '.' )
+                {
+                    for (my $i=0; $i<@gl; $i++) { $gl[$i] = 10**$gl[$i]; }
+                }
             }
             elsif ( exists($$dat{PL}) )
             {
-                ($gl_rr,$gl_ar,$gl_aa) = split(/,/,$$dat{PL});
-                $gl_rr = 10**(-$gl_rr/10.);
-                $gl_ar = 10**(-$gl_ar/10.);
-                $gl_aa = 10**(-$gl_aa/10.);
+                @gl = split(/,/,$$dat{PL});
+                if ( $gl[0] ne '.' )
+                {
+                    for (my $i=0; $i<@gl; $i++) { $gl[$i] = 10**(-0.1*$gl[$i]); }
+                }
             }
             elsif ( exists($$dat{GT}) )
             {
@@ -276,23 +307,17 @@ sub convert_to_be_imputed
                     if ( @als > 2 ) { error("Not ready for this: $$x{CHROM} $$x{POS}: $$dat{GT}\n"); }
                     if ( @als == 1 )
                     {
-                        # haploid genotypes have GL of Het=0
-                        $gl_rr = $als[0] eq '0' ? $$opts{gtconf} : 1-$$opts{gtconf};
-                        $gl_ar = 0;
-                        $gl_aa = $als[0] eq '0' ? 1-$$opts{gtconf} : $$opts{gtconf};
+                        @gl = ( $als[0] eq '0' ) ? ($$opts{gtconf},1-$$opts{gtconf}) : (1-$$opts{gtconf},$$opts{gtconf});
                     }
                     elsif ( $als[0] eq $als[1] )
                     {
                         # homozygous diploid genotype
-                        $gl_rr = $als[0] eq '0' ? $$opts{gtconf} : 0.5*(1-$$opts{gtconf});
-                        $gl_ar = 0.5*(1-$$opts{gtconf});
-                        $gl_aa = $als[0] eq '0' ? 0.5*(1-$$opts{gtconf}) : $$opts{gtconf};
+                        @gl = ( $als[0] eq '0' ) ? ($$opts{gtconf},0.5*(1-$$opts{gtconf}),0.5*(1-$$opts{gtconf})) : (0.5*(1-$$opts{gtconf}),0.5*(1-$$opts{gtconf}),$$opts{gtconf});
                     }
                     else
                     {
                         # heterozygous diploid genotype
-                        $gl_rr = $gl_aa = 0.5*(1-$$opts{gtconf});
-                        $gl_ar = $$opts{gtconf};
+                        @gl = (0.5*(1-$$opts{gtconf}),$$opts{gtconf},0.5*(1-$$opts{gtconf}));
                     }
                 }
             }
@@ -303,21 +328,20 @@ sub convert_to_be_imputed
 
             
             # Check the ploidy
-            if ( index($$dat{GT},'/')==-1 && index($$dat{GT},'|')==-1  ) 
-            { 
-                $gl_ar = 0;
-                if ( !defined $gl_rr ) { $gl_rr = $gl_aa = 0.5 }
+            if ( @gl==2 || (index($$dat{GT},'/')==-1 && index($$dat{GT},'|')==-1)  ) 
+            {
+                if ( $gl[0] eq '.' ) { @gl = (1/3.,1/3.); }
+                else { @gl = ($gl[0],0,$gl[1]); }
             }
-            elsif ( !defined $gl_rr ) { $gl_rr = $gl_ar = $gl_aa = 1/3.; }
+            elsif ( !@gl || $gl[0] eq '.' ) { @gl = (1/3.,1/3.,1/3.); }
 
-            my $norm = $gl_rr + $gl_ar + $gl_aa;
-            $gl_rr /= $norm;
-            $gl_ar /= $norm;
-            $gl_aa /= $norm;
+            my $norm = 0;
+            for my $gl (@gl) { $norm += $gl; }
+            for (my $i=0; $i<@gl; $i++) { $gl[$i] /= $norm; }
 
-            $out .= sprintf " %f %f %f", $gl_rr,$gl_ar,$gl_aa;
+            $out .= sprintf " %f %f %f", $gl[0],$gl[1],$gl[2];
 
-            if ( $gl_rr<$th && $gl_ar<$th && $gl_aa<$th ) { $nmissing++; }
+            if ( $gl[0]<$th && $gl[1]<$th && $gl[2]<$th ) { $nmissing++; }
         }
         if ( $frac<$nmissing/$nsamples ) { next; }
         print $fh $out,"\n";
@@ -342,16 +366,10 @@ sub get_samples
 # Check if the sample IDs match or at least overlap
 sub samples_overlap
 {
-    my ($opts) = @_;
-
-    if ( $$opts{known} eq '--' )
-    {
-        print STDERR "No known samples.\n";
-        return;
-    }
+    my ($opts,$idx) = @_;
 
     my $impute = get_samples($opts,"$$opts{prefix}.impute_samples");
-    my $known  = get_samples($opts,"$$opts{prefix}.known_samples");
+    my $known  = get_samples($opts,"$$opts{prefix}.known${idx}_samples");
     my @known_only;
     my @impute_only;
     my $both = 0;
@@ -366,13 +384,13 @@ sub samples_overlap
     }
     if ( !@known_only && !@impute_only ) { return; }
 
-    printf STDERR "%d samples only in $$opts{prefix}.known_samples\n", scalar @known_only;
+    printf STDERR "%d samples only in $$opts{prefix}.known${idx}_samples\n", scalar @known_only;
     printf STDERR "%d samples only in $$opts{prefix}.impute_samples\n", scalar @impute_only;
     printf STDERR "%d samples in both\n", $both;
     print STDERR "\n";
     for my $sample (@known_only)
     {
-        print STDERR "only in $$opts{prefix}.known_samples:\t$sample\n";
+        print STDERR "only in $$opts{prefix}.known${idx}_samples:\t$sample\n";
     }
     for my $sample (@impute_only)
     {
@@ -532,7 +550,35 @@ sub merge_lines
             }
         }
 
-        $$gt_hash{GL} = sprintf("%.2f,%.2f,%.2f",log($lk_aa)/$log10,log($lk_ab)/$log10,log($lk_bb)/$log10);
+        if ( @{$$rec{ALT}}>1 )
+        {
+            # multiallelic site
+            my @als = ($$rec{REF},@{$$rec{ALT}});
+            my @gls = ();
+            for (my $ia=0; $ia<@als; $ia++)
+            {
+                for (my $ib=0; $ib<=$ia; $ib++)
+                {
+                    if ( $ia>0 && $als[$ia] ne $$imp{alt} or $ib>0 && $als[$ib] ne $$imp{alt} )
+                    {
+                        push @gls, '.';
+                    }
+                    elsif ( $ia==0 )
+                    {
+                        push @gls, sprintf("%.2f", $ia==$ib ? log($lk_aa)/$log10 : log($lk_ab)/$log10);
+                    }
+                    else 
+                    {
+                        push @gls, sprintf("%.2f", log($lk_bb)/$log10);
+                    }
+                }
+            }
+            $$gt_hash{GL} = join(',',@gls);
+        }
+        else
+        {
+            $$gt_hash{GL} = sprintf("%.2f,%.2f,%.2f",log($lk_aa)/$log10,log($lk_ab)/$log10,log($lk_bb)/$log10);
+        }
 
         if ( @confs )
         {
@@ -640,7 +686,7 @@ sub next_impute_line
             error("Out of sync? $$opts{impute2_info} .. $items[0] ne $$out{id1} or $items[1] ne $$out{id2}\n"); 
             #if ( !defined $rev_id || $rev_id ne $items[1] ) { error("Out of sync? $$opts{impute2_info} .. $items[0] ne $$out{id1} or $items[1] ne $$out{id2}\n"); }
         }
-        $$opts{imp2_info_tag} = join(',',splice(@items,3,3));
+        $$out{imp2_info_tag} = join(',',splice(@items,3,3));
     }
 
     if ( !exists($$opts{fh_haps}) ) { return $out; }
@@ -808,6 +854,7 @@ sub impute2_to_vcf
         $vcf->add_columns(@$samples);
     }
     $vcf->add_header_line({key=>'INFO',ID=>'IMP2',Number=>3,Type=>'Float',Description=>'IMPUTE2 scores: exp_freq_a1, info, certainty'});
+    $vcf->add_header_line({key=>'FORMAT',ID=>'GL',Number=>'G',Type=>'Float',Description=>'IMPUTE2 Genotype Likelihoods'});
     $$opts{vcf} = $vcf;
 
     $$opts{samples} = check_samples($opts,$vcf,$$opts{impute2_samples});
@@ -853,4 +900,77 @@ sub impute2_to_vcf
     if ( exists($$opts{fh_haps_buffer}) && @{$$opts{fh_haps_buffer}} ) { error("Out of sync? some lines still in the buffer!"); }
 }
 
+
+sub impute2_hap_to_vcf
+{
+    my ($opts) = @_;
+
+    open(my $fh,'<',$$opts{samples_file}) or error("$$opts{samples_file}: $!");
+    my @samples;
+    while (my $line=<$fh>)
+    {
+        $line =~ s/^\s*//;
+        $line =~ s/\s*$//;
+        push @samples, $line;
+    }
+    close($fh) or error("close failed: $$opts{samples_file}");
+
+    print "##fileformat=VCFv4.2\n";
+    print "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count in genotypes\">\n";
+    print "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Total number of alleles in called genotypes\">\n";
+    print "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n";
+    print "#", join("\t", qw(CHROM POS ID REF ALT QUAL FILTER INFO FORMAT"), @samples), "\n";
+
+    open(my $leg_fh,"zcat $$opts{impute2_legend} |") or error("zcat $$opts{impute2_legend}: $!");
+    open(my $hap_fh,"zcat $$opts{impute2_haps} |") or error("zcat $$opts{impute2_haps}: $!");
+    my $line = <$leg_fh>;
+    if ( $line ne "id position a0 a1\n" ) { error("Expected \"id position a0 a1\" in $$opts{impute2_legend}, found $line"); }
+    while (1)
+    {
+        my $leg_line = <$leg_fh>;
+        my $hap_line = <$hap_fh>;
+        if ( !$hap_line && !$leg_line ) { last; }
+        if ( !$hap_line || !$leg_line ) { error("Out of sync!\n"); }
+
+        chomp($hap_line);
+        chomp($leg_line);
+        my @haps = split(/\s+/,$hap_line);
+        my @leg  = split(/\s+/,$leg_line);
+        if ( scalar @haps != 2 * scalar @samples ) { error("The number of samples does not match the number of haplotypes\n"); }
+        if ( !($leg[0]=~/^([^:]+):(\d+)_([^_]+)_([^_]+)/) ) { error("Unexpected ID format, wished to find \"chr:pos_REF_ALT\": $leg_line"); }
+        my $chr = $1;
+        my $pos = $2;
+        my $ref = $3;
+        my $alt = $4;
+        if ( $pos ne $leg[1] ) { error("Unexpected format, position does not match: $leg_line"); }
+
+        my $reverse = 0;
+        if ( $ref eq $leg[3] && $alt eq $leg[2] ) { $reverse = 1; }
+        elsif ( $ref ne $leg[2] or $alt ne $leg[3] ) { error("Unexpected format, the allele do not match: $leg_line, [$ref],[$alt] vs [$leg[2]],[$leg[3]]"); }
+
+        my $ac = 0;
+        my $an = 0;
+        my @gts;
+        for (my $i=0; $i<@samples; $i++)
+        {
+            my $a = $haps[2*$i];
+            my $b = $haps[2*$i+1];
+            if ( $a ne '0' && $a ne '1' ) { error("Unexpected input: $a .. $leg_line"); }
+            if ( $b ne '0' && $b ne '1' ) { error("Unexpected input: $b .. $leg_line"); }
+            if ( $reverse ) 
+            {
+                $a = $a eq '0' ? '1' : '0';
+                $b = $b eq '0' ? '1' : '0';
+            }
+            if ( $a eq '1' ) { $ac++; }
+            if ( $b eq '1' ) { $ac++; }
+            push @gts, $a.'|'.$b;
+            $an += 2;
+        }
+
+        print "$chr\t$pos\t.\t$ref\t$alt\t.\t.\tAN=$an;AC=$ac\tGT\t" . join("\t",@gts) . "\n";
+    }
+    close($leg_fh) or error("close failed: $$opts{impute2_legend}");
+    close($hap_fh) or error("close failed: $$opts{impute2_haps}");
+}
 

@@ -46,13 +46,15 @@ use VRTrack::File;
 use VRTrack::Core_obj;
 use VRTrack::History;
 
-use constant SCHEMA_VERSION => '26';
+use constant SCHEMA_VERSION => '28';
 
 our $DEFAULT_PORT = 3306;
 
 our %platform_aliases = (ILLUMINA => 'SLX',
                          Illumina => 'SLX',
                          LS454 => '454');
+
+our @schema_sql;
 
 =head2 new
 
@@ -113,7 +115,7 @@ sub new {
 =cut
 
 sub schema {
-    my @sql;
+    return @schema_sql if @schema_sql;
     
     my $line = '';
     while (<DATA>) {
@@ -122,15 +124,15 @@ sub schema {
         next unless /\S/;
         $line .= $_;
         if (/;\s*$/) {
-            push(@sql, $line."\n");
+            push(@schema_sql, $line."\n");
             $line = '';
         }
     }
     if ($line =~ /;\s*$/) {
-        push(@sql, $line);
+        push(@schema_sql, $line);
     }
     
-    return @sql;
+    return @schema_sql;
 }
 
 =head2 schema_version
@@ -630,9 +632,9 @@ sub lanes_with_mapping_filtered_by_lane_limits {
                     latest_sample as sample,
                     latest_library as library,
                     latest_lane as lane 
-                    left join latest_mapstats as mapstats on mapstats.lane_id = lane.lane_id
-    								left join assembly as assembly on assembly.assembly_id = mapstats.assembly_id
-    								left join mapper as mapper on mapstats.mapper_id = mapper.mapper_id
+                    inner join latest_mapstats as mapstats on mapstats.lane_id = lane.lane_id
+    								inner join assembly as assembly on assembly.assembly_id = mapstats.assembly_id
+    								inner join mapper as mapper on mapstats.mapper_id = mapper.mapper_id
                 where lane.library_id = library.library_id 
                       and library.sample_id = sample.sample_id 
                       and sample.project_id = project.project_id 
@@ -884,6 +886,7 @@ sub individual_names {
            project        => string, (may not be the true project code)
            sample         => string,
            individual     => string,
+           individual_alias => string,
            individual_acc => string,
            individual_coverage => float, (the coverage of this lane's individual)
            population     => string,
@@ -977,6 +980,7 @@ sub lane_info {
     }
     $info{sample} = $objs{sample}->name || confess("sample name wasn't known for $rg");
     $info{individual} = $objs{individual}->name || confess("individual name wasn't known for $rg");
+    $info{individual_alias} = $objs{individual}->alias;
     $info{species} =  $objs{species}->name if $objs{species};#|| $self->throw("species name wasn't known for $rg");
     $info{individual_acc} = $objs{individual}->acc; # || $self->throw("sample accession wasn't known for $rg");
     if ($args{get_coverage}) {
@@ -1221,6 +1225,7 @@ sub get_lanes {
             
             my %objs;
             $objs{individual} = $sample->individual;
+            $objs{individual} || next; # if there was some import failure we might have ended up with a sample row but no individual
             $objs{population} = $objs{individual}->population;
             $objs{species}    = $objs{individual}->species;
             
@@ -1637,6 +1642,8 @@ CREATE TABLE `allocation` (
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 
+insert into schema_version(schema_version) values (28);
+
 
 # Dump of table assembly
 # ------------------------------------------------------------
@@ -1708,6 +1715,7 @@ CREATE TABLE `file` (
   `note_id` mediumint(8) unsigned DEFAULT NULL,
   `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
   `latest` tinyint(1) DEFAULT '0',
+  `reference` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`row_id`),
   KEY `file_id` (`file_id`),
   KEY `lane_id` (`lane_id`),
@@ -1779,6 +1787,7 @@ CREATE TABLE `lane` (
   `gt_status` enum('unchecked','confirmed','wrong','unconfirmed','candidate','unknown','swapped') DEFAULT 'unchecked',
   `submission_id` smallint(5) unsigned DEFAULT NULL,
   `withdrawn` tinyint(1) DEFAULT NULL,
+  `manually_withdrawn` tinyint(1) DEFAULT NULL,
   `note_id` mediumint(8) unsigned DEFAULT NULL,
   `changed` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
   `run_date` datetime DEFAULT NULL,
@@ -1788,6 +1797,7 @@ CREATE TABLE `lane` (
   KEY `lane_id` (`lane_id`),
   KEY `lanename` (`name`),
   KEY `library_id` (`library_id`),
+  KEY `acc` (`acc`),
   KEY `hierarchy_name` (`hierarchy_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 

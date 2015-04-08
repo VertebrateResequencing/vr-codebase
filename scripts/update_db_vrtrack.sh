@@ -15,7 +15,6 @@ if [ $DBEXISTS -eq 1 ];then
 fi
 
 ROOT="/lustre/scratch105"
-CONF="/nfs/vertres01/conf"
 DUMPS="/warehouse/g1k-04/sql_dumps/$DB.sql"
 
 export LD_LIBRARY_PATH=/software/badger/lib:/software/oracle_client-10.2.0/lib

@@ -55,7 +55,9 @@ sub fields_dispatch {
                raw_reads         => sub { $self->raw_reads(@_)},
                raw_bases         => sub { $self->raw_bases(@_)},
                mean_q            => sub { $self->mean_q(@_)},
+               reference         => sub { $self->reference(@_)},
                md5               => sub { $self->md5(@_)});
+               
     
     return \%fields;
 }
@@ -280,6 +282,21 @@ sub raw_reads {
 sub raw_bases {
     my $self = shift;
     return $self->_get_set('raw_bases', 'number', @_);
+}
+
+=head2 reference
+
+  Arg [1]    : path to reference 
+  Example    : my $num_bp = $file->reference();
+	       $file->reference('abc');
+  Description: Get/Set for path to reference 
+  Returntype : string
+
+=cut
+
+sub reference {
+    my $self = shift;
+    return $self->_get_set('reference', 'string', @_);
 }
 
 

@@ -166,14 +166,8 @@ sub bam_to_fastq_requires
 sub bam_to_fastq_provides {
   my ($self, $lane_path) = @_;
    
-  if( $self->is_paired )
-  {
-    return ["$self->{lane}_1.fastq", "$self->{lane}_2.fastq", "$self->{lane}_1.fastq.fastqcheck", "$self->{lane}_2.fastq.fastqcheck"];
-  }
-  else
-  {
-    return ["$self->{lane}_1.fastq", "$self->{lane}_1.fastq.fastqcheck"];
-  }
+  return ["$self->{prefix}bam_to_fastq_done"];
+
 }
 
 sub is_paired {
@@ -251,8 +245,40 @@ for my \$fastq (\@fastqs)
     unlink(\$fastq,\$fastq.'.fastqcheck');
 }
 
+# output reads with PF pass only
+system("samtools view -F 0x200 -b -o pf_pass.bam $in_bam");
+
+# Reads with PF fail have bases set to N and quality scores to 0.
+system("samtools view -f 0x200 $in_bam | awk -F '\\t'  'BEGIN{OFS=\\"\\t\\";} {gsub(/[ACGT]/,\\"N\\",\\\$10) }; {gsub(/./,\\"!\\",\\\$11) };   1' > pf_fail.sam");
+
+if(-s qq[pf_fail.sam] == 0)
+{
+  system("samtools view -F 0x900 -b -o secondary_alignments_removed.bam pf_pass.bam");
+  unlink("pf_fail.sam");
+  unlink("pf_pass.bam");
+}
+else
+{
+  system("samtools view -H $in_bam > header.sam");
+  system("cat header.sam pf_fail.sam | samtools view -b -S -o pf_fail.bam -");
+  unlink("pf_fail.sam");
+  unlink("header.sam");
+  
+  system("samtools merge -f -n merged.bam pf_pass.bam pf_fail.bam");
+  unlink("pf_pass.bam");
+  unlink("pf_fail.bam");
+  
+  system("samtools view -F 0x900 -b -o secondary_alignments_removed.bam  merged.bam");
+  unlink("merged.bam");
+}
+
+system("mv secondary_alignments_removed.bam $in_bam");
+
 VertRes::Wrapper::samtools->new()->sort(qq[$in_bam], qq[sorted], n => 1, m => $samtools_sorting_memory);
 system("mv sorted.bam $in_bam");
+
+unlink(qq[rm $in_bam.bc]);
+system(qq[$$self{bamcheck} $in_bam >  $in_bam.bc]);
 
 VertRes::Utils::Sam->new(verbose => 1, quiet => 0, java_memory => $java_mem )->bam2fastq(qq[$in_bam], qq[$fastq_base]);
 };
@@ -264,6 +290,7 @@ system("mv $self->{lane}.fastq.fastqcheck $self->{lane}_1.fastq.fastqcheck");
 };
     }
     print $scriptfh qq{
+      system("touch $self->{prefix}bam_to_fastq_done ");
 exit;
 };
     close $scriptfh;
@@ -284,14 +311,7 @@ sub compress_and_validate_requires
 {
   my ($self, $lane_path) = @_;
    
-  if( $self->is_paired )
-  {
-    return ["$self->{lane}_1.fastq", "$self->{lane}_2.fastq", "$self->{lane}_1.fastq.fastqcheck", "$self->{lane}_2.fastq.fastqcheck"];
-  }
-  else
-  {
-    return ["$self->{lane}_1.fastq", "$self->{lane}_1.fastq.fastqcheck"];
-  }
+  return ["$self->{prefix}bam_to_fastq_done"];
 }
 
 sub compress_and_validate_provides {
@@ -411,14 +431,14 @@ sub update_db
     for my $suffix (@bam_suffix)
     {
 	# Remove bams
-	Utils::CMD(qq[rm $lane_path/$$self{lane}$nonhuman.$suffix]);
+	Utils::CMD(qq[rm $lane_path/$$self{lane}$nonhuman.$suffix]) if(-e qq[$lane_path/$$self{lane}$nonhuman.$suffix]);
     }
 
     for my $suffix (@fastq_suffix)
     {
 	# Remove fastqs
-	Utils::CMD(qq[rm $lane_path/$$self{lane}_1.$suffix]);
-	Utils::CMD(qq[rm $lane_path/$$self{lane}_2.$suffix]) if $self->is_paired;
+	Utils::CMD(qq[rm $lane_path/$$self{lane}_1.$suffix]) if(-e qq[$lane_path/$$self{lane}_1.$suffix]);
+	Utils::CMD(qq[rm $lane_path/$$self{lane}_2.$suffix]) if( $self->is_paired && -e qq[$lane_path/$$self{lane}_2.$suffix]);
     }
 
     return $$self{'Yes'};

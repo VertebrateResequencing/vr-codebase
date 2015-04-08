@@ -1,0 +1,120 @@
+#!/usr/bin/env perl
+
+use DBI;
+use VRTrack::VRTrack;
+use Carp;
+
+use strict;
+use warnings;
+
+my $HOST = $ENV{VRTRACK_HOST};
+my $PORT = $ENV{VRTRACK_PORT} || 3306;
+my $WRITE_USER = $ENV{VRTRACK_RW_USER};
+my $WRITE_PASS = $ENV{VRTRACK_PASSWORD};
+
+my $user = $WRITE_USER;
+my $pass = $WRITE_PASS;
+
+my %dbparams = (host => $HOST, port => $PORT, user => $user, password => $pass);
+
+my @databases = grep(s/^DBI:mysql://, DBI->data_sources("mysql", \%dbparams));
+my @tables = qw(tracking_database db_projects schema_version latest_project);
+
+@databases = grep(!/^information_schema/, @databases);
+@databases = grep(!/test/, @databases);
+@databases = grep(!/jm23/, @databases);
+@databases = grep(!/tttt/, @databases);
+@databases = grep(!/dump/, @databases);
+@databases = grep(!/irods/, @databases);
+@databases = grep(!/kuusamo/, @databases);
+
+# we have to actually check that these databases are vrtrack databases with
+# the correct schema version
+my $schema_version = VRTrack::VRTrack::SCHEMA_VERSION;
+my %expected_tables;
+foreach (VRTrack::VRTrack->schema()) {
+    if (/CREATE TABLE `(.+?)`/i || /create view (\S+)/i) {
+        $expected_tables{$1} = 1;
+    }
+}
+
+my %vr_dbs = ();
+DB: foreach my $db (@databases) {
+    my $dbh = DBI->connect("dbi:mysql:$db;host=$dbparams{host};port=$dbparams{port}", $dbparams{user}, $dbparams{password}, { RaiseError => 0 });
+    unless ($dbh) {
+        carp("Could not connect to database $db to check if it was a VRTrack database");
+        next DB;
+    }
+    my %tables = map { s/`//g; s/^$db\.//; $_ => 1 } $dbh->tables();
+    foreach my $etable (keys %expected_tables) {
+        next DB unless exists $tables{$etable};
+    }
+    foreach my $table (keys %tables) {
+        next DB unless exists $expected_tables{$table};
+    }
+    my $sql = qq[ select * from $tables[2] ];
+    my $rows = $dbh->selectall_arrayref($sql);
+    next DB unless $rows->[0]->[0] == $schema_version;
+    $vr_dbs{$db} = 1;
+}
+
+my %web_dbs = ();
+my $web_db = 'vrtrack_web_tables';
+my $webconn = DBI->connect("dbi:mysql:$web_db;host=$dbparams{host};port=$dbparams{port}", $dbparams{user}, $dbparams{password}, { RaiseError => 0 });
+croak "Can't connect to web tracking database\n" unless $webconn;
+
+my $sql_dbs = qq[SELECT db_name FROM $tables[0]];
+my $sql_insert_db = qq[INSERT into $tables[0](db_name, imported) VALUES (?, NOW())];
+my $sql_delete_db = qq[DELETE FROM $tables[0] where db_name = ?];
+my $sth_dbs = $webconn->prepare($sql_dbs);
+my $sth_ins = $webconn->prepare($sql_insert_db);
+my $sth_del = $webconn->prepare($sql_delete_db);
+
+if ($sth_dbs->execute()) {
+	my ($col1);
+	$sth_dbs->bind_col(1, \$col1);
+	while ($sth_dbs->fetch) {
+		$web_dbs{$col1} = 1;
+	}
+}
+
+foreach ( keys %vr_dbs ) {
+    if (! $web_dbs{$_} ) { $sth_ins->execute($_); }
+}
+
+foreach ( keys %web_dbs ) {
+    if (! $vr_dbs{$_} ) { $sth_del->execute($_); }
+}
+
+my $sql_fetch_db = qq[SELECT db_id, db_name FROM $tables[0]];
+my $sth_dbid = $webconn->prepare($sql_fetch_db);
+my %db_map;
+
+if ($sth_dbid->execute()) {
+  my ($id, $name);
+  $sth_dbid->bind_col(1, \$id);
+  $sth_dbid->bind_col(2, \$name);
+  while ($sth_dbid->fetch) {
+    $db_map{$name} = $id;
+  }
+}
+
+my $sql_insert_proj = qq[INSERT into $tables[1](db_id, project_id, project_name, ssid, imported) VALUES (?,?,?,?, NOW())];
+my $sql_delete_proj = qq[TRUNCATE TABLE $tables[1]];
+my $sql_fetch_proj = qq[SELECT project_id, name, ssid from $tables[3]];
+my $sth_insp = $webconn->prepare($sql_insert_proj);
+my $sth_delp = $webconn->prepare($sql_delete_proj);
+croak "Unable to truncate the $tables[1] table" unless $sth_delp->execute();
+
+foreach ( keys %db_map ) {
+  my $dbh = DBI->connect("dbi:mysql:$_;host=$dbparams{host};port=$dbparams{port}", $dbparams{user}, $dbparams{password}, { RaiseError => 0 });
+  my $sth_get = $dbh->prepare($sql_fetch_proj);
+  if ($sth_get->execute()) {
+    my ($proj_id, $proj_name, $ssid);
+    $sth_get->bind_columns(\($proj_id, $proj_name, $ssid));
+    while ($sth_get->fetch) {
+      croak "Unable to insert $tables[1] data for $_" unless $sth_insp->execute($db_map{$_}, $proj_id, $proj_name, $ssid);
+    }
+  }
+  $dbh->disconnect;
+}

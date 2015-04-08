@@ -1,0 +1,54 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+no warnings 'uninitialized';
+use DBI;
+use CGI qw(:standard);
+use VRTrack::VRTrack;
+use VertRes::Utils::VRTrackFactory;
+use Carp;
+
+##TODO Add update flag for nightly cron as this takes too long to run - only update main dbs nightly or only import new entries from each db
+
+#warehouse connection:
+my $wh2_dbh = DBI->connect("DBI:mysql:host=mcs7:port=3379;database=sequencescape_warehouse", "warehouse_ro",undef,
+                             {'RaiseError' => 1, 'PrintError'=>0});
+
+#web_db connection:
+my $web_db = 'vrtrack_web_tables';
+my $webdb_dbh = VertRes::Utils::VRTrackFactory->instantiate(database => $web_db,
+                                                          mode => 'rw');
+croak "Can't connect to web tracking database\n" unless $webdb_dbh;
+
+
+
+#my @dbs = qw(vrtrack_human_wgs vrtrack_mouse_wgs vrtrack_human_wes vrtrack_mouse_wes vrtrack_cerevisiae_wgs vrtrack_uk10k_neuro vrtrack_uk10k_obesity vrtrack_uk10k_rare vrtrack_uk10k_cohort);
+my @tables = qw(sample_id_mapping tracking_database db_projects);
+
+#web_db sql
+my $sql_dbs = qq[SELECT distinct t.db_name, d.db_id, d.project_id, d.project_name, d.ssid FROM $tables[1] t, $tables[2] d where t.db_id = d.db_id];
+my $insert_mapping_sql = qq[INSERT INTO $tables[0] (db_name, db_id, project_id, project_name, supplier_name, accession_number, sanger_sample_name) VALUES (?,?,?,?,?,?,?)];
+my $sql_truncate = qq[TRUNCATE TABLE $tables[0]];
+
+my $sth_dbs = $webdb_dbh->{_dbh}->prepare($sql_dbs);
+my $ins_map_sth = $webdb_dbh->{_dbh}->prepare($insert_mapping_sql);
+my $trn_sth = $webdb_dbh->{_dbh}->prepare($sql_truncate);
+
+#warehouse_sql
+my $sql_wh_mappings = qq[select distinct csa.supplier_name, ifnull(csa.sanger_sample_id, 'N/A'), ifnull(csa.accession_number, 'N/A') from current_samples csa, study_samples sta, current_studies cst where csa.internal_id = sta.sample_internal_id and sta.study_internal_id = cst.internal_id and cst.internal_id = ? and csa.supplier_name is not null]; 
+
+my $wh_sth = $wh2_dbh->prepare($sql_wh_mappings);
+
+#truncate mappings table
+croak "Unable to truncate table $tables[0]\n" unless $trn_sth->execute();
+
+if ($sth_dbs->execute()) {		
+	while (my ($dbname, $dbid, $pid, $pname, $pssid) = $sth_dbs->fetchrow_array()) {
+		if ($wh_sth->execute($pssid)) {
+   			while (my ($supp, $sang, $acc) = $wh_sth->fetchrow_array()) {
+   				$ins_map_sth->execute($dbname, $dbid, $pid, $pname, $supp, $acc, $sang);
+   			}
+   		}
+	}
+}

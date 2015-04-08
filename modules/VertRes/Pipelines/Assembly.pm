@@ -37,11 +37,13 @@ data => {
 
     seq_pipeline_root    => '/lustre/scratch108/pathogen/pathpipe/prokaryotes/seq-pipelines',
     no_scaffolding => 0,
+    improve_assembly => 1, # To run abacas (if reference given), scaffolding and gap filling
     annotation     => 1,
     error_correct  => 1, # Should the reads be put through an error correction stage?
     normalise	   => 1, # Should we do digital normalisation?
     remove_primers => 1,
     primers_file   => /path/to/primers/file, #Essential if primers are to be removed
+    primer_removal_tool => 'quasr' # quasr is the only option for now.
 
     assembler => 'velvet',
     assembler_exec => '/software/pathogen/external/apps/usr/bin/velvet',
@@ -49,6 +51,10 @@ data => {
     sga_exec       => '/software/pathogen/external/apps/usr/local/src/SGA/sga',
     khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
     QUASR_exec		=> '/software/pathogen/internal/pathdev/java/QUASR702_Parser/readsetProcessor.jar',
+    trimmomatic_jar => '/software/pathogen/external/apps/usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar',
+    remove_adapters => 1, # should we remove adapters?
+    adapters_file   => '/lustre/scratch108/pathogen/pathpipe/usr/share/solexa-adapters.fasta',
+    adapter_removal_tool => 'trimmomatic' # trimmomatic is the only option for now
     max_threads => 1,
     single_cell => 1, # Put this in to assemble single cell data. For normal assemblies, leave it out.
 },
@@ -85,6 +91,8 @@ use Data::Dumper;
 use FileHandle;
 use Utils;
 use VertRes::Utils::Assembly;
+use VertRes::Utils::Sam;
+use VertRes::Wrapper::smalt;
 use Bio::AssemblyImprovement::Scaffold::Descaffold;
 use Bio::AssemblyImprovement::Scaffold::SSpace::PreprocessInputFiles;
 use Bio::AssemblyImprovement::Scaffold::SSpace::Iterative;
@@ -124,17 +132,29 @@ our $actions = [ { name     => 'pool_fastqs',
                 ];
 
 our %options = (
-                do_cleanup      => 1,
-                scaffolder_exec => '/software/pathogen/external/apps/usr/local/SSPACE-BASIC-2.0_linux-x86_64/SSPACE_Basic_v2.0.pl',
-                gap_filler_exec => '/software/pathogen/external/apps/usr/local/GapFiller_v1-11_linux-x86_64/GapFiller.pl',
-                abacas_exec     => '/software/pathogen/internal/prod/bin/abacas.pl',
-                sga_exec        => '/software/pathogen/external/apps/usr/bin/sga',
-                khmer_exec		=> '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
-                QUASR_exec	    => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar',
-                no_scaffolding  => 0,
-                annotation      => 0,
-                single_cell     => 0,
-                );
+                do_cleanup       => 1,
+                scaffolder_exec  => '/software/pathogen/external/apps/usr/local/SSPACE-BASIC-2.0_linux-x86_64/SSPACE_Basic_v2.0.pl',
+                gap_filler_exec  => '/software/pathogen/external/apps/usr/local/GapFiller_v1-11_linux-x86_64/GapFiller.pl',
+                abacas_exec      => '/software/pathogen/internal/prod/bin/abacas.pl',
+                sga_exec         => '/software/pathogen/external/apps/usr/bin/sga',
+                khmer_exec		 => '/software/pathogen/external/apps/usr/local/khmer/scripts/normalize-by-median.py',
+                QUASR_exec	     => '/software/pathogen/external/apps/usr/local/QUASR/readsetProcessor.jar',
+                trimmomatic_jar  => '/software/pathogen/external/apps/usr/local/Trimmomatic-0.32/trimmomatic-0.32.jar',
+                adapters_file    => '/lustre/scratch108/pathogen/pathpipe/usr/share/solexa-adapters.fasta',
+                primers_file     => '',
+                remove_primers   => 0,
+                remove_adapters  => 0,
+                primer_removal_tool  => 'quasr',
+                adapter_removal_tool => 'trimmomatic',
+                no_scaffolding   => 0,
+                annotation       => 0,
+                single_cell      => 0,
+                improve_assembly => 1,
+                iva_seed_ext_min_cov   => 5,
+                iva_seed_ext_min_ratio => 2,
+                iva_ext_min_cov        => 5,
+                iva_ext_min_ratio      => 2,
+               );
 
 sub new {
   my ($class, @args) = @_;
@@ -236,23 +256,17 @@ sub mapping_and_generate_stats
   use strict;
   use $assembler_class;
 
-  unlink("pool_1.fastq.gz");
-
   my \@lane_paths = $lane_paths_str;
 
   my \$assembler_util= $assembler_class->new( output_directory => qq[$output_directory] $reference_str );
   my \$directory = \$assembler_util->${working_directory_method_name}();
-  \$assembler_util->map_and_generate_stats(\$directory,qq[$output_directory], \\\@lane_paths );
+  \$assembler_util->map_and_generate_stats(\$directory,\$directory, \\\@lane_paths );
 
   unlink("\$directory/contigs.mapped.sorted.bam.bai");
   unlink("\$directory/contigs.mapped.sorted.bam");
   unlink("\$directory/contigs.fa.small.sma");
   unlink("\$directory/contigs.fa.small.smi");
 
-  if($annotation == 1)
-  {
-    system("prokka --centre SC --cpus 2 --force --outdir  \$directory/annotation \$directory/contigs.fa");
-  }
   system("touch \$directory/$self->{prefix}$self->{assembler}_${action_name_suffix}_done");
 
   system("touch $self->{prefix}$self->{assembler}_${action_name_suffix}_done");
@@ -290,6 +304,7 @@ sub optimise_parameters
 
       my $lane_names = $self->get_all_lane_names($self->{pools});
       my $output_directory = $self->{lane_path};
+      my $pool_directory = $self->{lane_path}."/".$self->{prefix}.$self->{assembler}."_pool_fastq_tmp_files";
       my $base_path = $self->{seq_pipeline_root};
 
       my $assembler_class = $self->{assembler_class};
@@ -297,10 +312,10 @@ sub optimise_parameters
 
       eval("use $assembler_class; ");
       my $assembler_util= $assembler_class->new();
-      my $files_str = $assembler_util->generate_files_str($self->{pools}, $output_directory);
+      my $files_str = $assembler_util->generate_files_str($self->{pools}, $pool_directory);
 
       my $job_name = $self->{prefix}.$self->{assembler}.'_optimise_parameters';
-      my $script_name = $self->{fsu}->catfile($output_directory, $self->{prefix}.$self->{assembler}."_optimise_parameters.pl");
+      my $script_name = $self->{fsu}->catfile($self->{lane_path}, $self->{prefix}.$self->{assembler}."_optimise_parameters.pl");
 
       my @lane_paths;
       for my $lane_name (@$lane_names)
@@ -316,7 +331,7 @@ sub optimise_parameters
 
       my $num_threads = $self->number_of_threads($memory_required_mb);
       my $insert_size = $self->get_insert_size();
-      my $tmp_directory = $self->{tmp_directory}.'/'.$lane_names->[0] || getcwd();
+      my $tmp_directory = $self->{tmp_directory}.'/'.$self->{prefix}.$self->{assembler}.'_'.$lane_names->[0] || getcwd();
 
       my $pipeline_version = join('/',($output_directory, $self->{assembler}.'_assembly','pipeline_version_'.$self->{pipeline_version}));
 
@@ -329,21 +344,32 @@ use $assembler_class;
 use VertRes::Pipelines::Assembly;
 use File::Copy;
 use Cwd;
-use File::Path qw(make_path);
+use File::Path qw(make_path remove_tree);
 use Bio::AssemblyImprovement::Util::FastqTools;
 use Bio::AssemblyImprovement::Util::OrderContigsByLength;
 
 my \$assembly_pipeline = VertRes::Pipelines::Assembly->new();
 system("rm -rf $self->{assembler}_assembly_*");
+
+remove_tree(qq[$tmp_directory]) if(-d qq[$tmp_directory]);
 make_path(qq[$tmp_directory]);
 chdir(qq[$tmp_directory]);
 
 # Calculate 66-90% of the median read length as min and max kmer values
 my \$fastq_tools  = Bio::AssemblyImprovement::Util::FastqTools->new(
-    	input_filename   => "$output_directory/pool_1.fastq.gz",
+    	input_filename   => "$pool_directory/pool_1.fastq.gz",
         single_cell => $self->{single_cell},
 );
-my \%kmer = \$fastq_tools->calculate_kmer_sizes();
+
+my \%kmer;
+if ('$self->{assembler}' eq 'iva')
+{
+  \%kmer = (min => 0, max => 0);
+}
+else
+{
+  \%kmer = \$fastq_tools->calculate_kmer_sizes();
+}
 
 my \$assembler = $assembler_class->new(
   assembler => qq[$self->{assembler}],
@@ -353,6 +379,17 @@ my \$assembler = $assembler_class->new(
   files_str => qq[$files_str],
   output_directory => qq[$tmp_directory],
   single_cell => $self->{single_cell},
+  trimmomatic_jar => qq[$self->{trimmomatic_jar}],
+  remove_primers => $self->{remove_primers},
+  primer_removal_tool => qq[$self->{primer_removal_tool}],
+  primers_file => qq[$self->{primers_file}],
+  remove_adapters => $self->{remove_adapters},
+  adapter_removal_tool => qq[$self->{adapter_removal_tool}],
+  adapters_file => qq[$self->{adapters_file}],
+  iva_seed_ext_min_cov   => qq[$self->{iva_seed_ext_min_cov}],
+  iva_seed_ext_min_ratio => qq[$self->{iva_seed_ext_min_ratio}],
+  iva_ext_min_cov        => qq[$self->{iva_ext_min_cov}],
+  iva_ext_min_ratio      => qq[$self->{iva_ext_min_ratio}],
   );
 
 my \$ok = \$assembler->optimise_parameters($num_threads);
@@ -360,8 +397,13 @@ my \@lane_paths = $lane_paths_str;
 
 Bio::AssemblyImprovement::Util::OrderContigsByLength->new( input_filename => \$assembler->optimised_assembly_file_path(), output_filename => \$assembler->optimised_assembly_file_path() )->run();
 copy(\$assembler->optimised_assembly_file_path(),\$assembler->optimised_directory().'/unscaffolded_contigs.fa');
-\$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
-\$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_assembly_file_path(),[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size,$num_threads);
+
+if ($self->{improve_assembly})
+{
+  \$ok = \$assembler->split_reads(qq[$tmp_directory], \\\@lane_paths);
+  \$ok = \$assembly_pipeline->map_and_filter_perfect_pairs(\$assembler->optimised_assembly_file_path(), qq[$tmp_directory]);
+  \$ok = \$assembly_pipeline->improve_assembly(\$assembler->optimised_assembly_file_path(),[qq[$tmp_directory].'/forward.fastq',qq[$tmp_directory].'/reverse.fastq'],$insert_size,$num_threads);
+}
 
 Bio::AssemblyImprovement::PrepareForSubmission::RenameContigs->new(input_assembly => \$assembler->optimised_assembly_file_path(),base_contig_name => qq[$contigs_base_name])->run();
 
@@ -378,10 +420,12 @@ unlink(qq[$tmp_directory].'/forward.fastq');
 unlink(qq[$tmp_directory].'/reverse.fastq');
 unlink(qq[$tmp_directory].'/contigs.fa.scaffolded.filtered');
 
-chdir(qq[$output_directory]);
-unlink('pool_1.fastq.gz');
+remove_tree(qq[$tmp_directory]);
+remove_tree(qq[$pool_directory]);
+chdir(qq[ $output_directory]);
+
 system('touch $pipeline_version');
-system('touch $self->{prefix}$self->{assembler}_optimise_parameters_done');
+system('touch $output_directory/$self->{prefix}$self->{assembler}_optimise_parameters_done');
 exit;
               };
               close $scriptfh;
@@ -390,6 +434,10 @@ exit;
       if($total_memory_mb < 2000)
       {
         $total_memory_mb = 2000;
+      }
+      if ($self->{assembler} eq 'iva')
+      {
+        $total_memory_mb = 1500;
       }
 
       my $queue = $self->decide_appropriate_queue($memory_required_mb);
@@ -409,7 +457,7 @@ sub decide_appropriate_queue
   {
     $queue = 'hugemem';
   }
-  elsif($memory_required_mb < 8000)
+  elsif($memory_required_mb < 8000 and $self->{assembler} ne 'iva')
   {
     $queue = 'normal';
   }
@@ -420,6 +468,37 @@ sub decide_appropriate_queue
 ##Improve assembly step. Runs SSPACE, abacas (if a reference is provided) and GapFiller.
 ## descaffolds the resulting assembly if necessary and cleans up any small contigs.
 
+sub map_and_filter_perfect_pairs
+{
+  my($self,$reference, $working_directory)= @_;
+
+  my $mapper = VertRes::Wrapper::smalt->new();
+  $mapper->setup_custom_reference_index($reference,'-k 13 -s 4','small');
+
+  `smalt map -x -i 3000 -f samsoft -y 0.95 -o $working_directory/contigs.mapped.sam $reference.small $working_directory/forward.fastq $working_directory/reverse.fastq`;
+  $self->throw("Sam file not created") unless(-e "$working_directory/contigs.mapped.sam");
+
+  `samtools faidx $reference`;
+  $self->throw("Reference index file not created") unless(-e "$reference.fai");
+
+  # Filter reads which are flagged as perfect pairs
+  `samtools view -F 2 -bt $reference.fai $working_directory/contigs.mapped.sam > $working_directory/contigs.mapped.bam`;
+  $self->throw("Couldnt convert from sam to BAM") unless(-e "$working_directory/contigs.mapped.bam");
+  unlink("$working_directory/contigs.mapped.sam");
+
+  `samtools sort -m 500000000 $working_directory/contigs.mapped.bam $working_directory/contigs.mapped.sorted`;
+  $self->throw("Couldnt sort the BAM") unless(-e "$working_directory/contigs.mapped.sorted.bam");
+
+  `samtools index $working_directory/contigs.mapped.sorted.bam`;
+
+  VertRes::Utils::Sam->new(verbose => 1, quiet => 0)->bam2fastq(qq[$working_directory/contigs.mapped.sorted.bam], qq[subset]);
+  unlink("$working_directory/contigs.mapped.sorted.bam");
+  unlink("$reference.small.sma");
+  unlink("$reference.small.smi");
+  unlink("$reference.fai");
+  `mv $working_directory/subset_1.fastq $working_directory/forward.fastq`;
+  `mv $working_directory/subset_2.fastq $working_directory/reverse.fastq`;
+}
 
 
 sub improve_assembly
@@ -616,87 +695,128 @@ sub number_of_threads
 ###########################
 
 
-sub pool_fastqs
-{
-      my ($self, $build_path,$action_lock) = @_;
+sub pool_fastqs {
+    my ( $self, $build_path, $action_lock ) = @_;
 
-      my $lane_names = $self->get_all_lane_names($self->{pools});
-      my $output_directory = $self->{lane_path};
-      my $base_path =  $self->{seq_pipeline_root};
-      my $assembler = $self->{assembler};
+    my $lane_names       = $self->get_all_lane_names( $self->{pools} );
+    my $output_directory = $self->{lane_path} . "/" . $self->{prefix} . $self->{assembler} . "_pool_fastq_tmp_files";
+    my $base_path        = $self->{seq_pipeline_root};
+    my $assembler        = $self->{assembler};
 
-      my $script_name = $self->{fsu}->catfile($build_path, $self->{prefix}."pool_fastqs.pl");
-      open(my $scriptfh, '>', $script_name) or $self->throw("Couldn't write to temp script $script_name: $!");
-      print $scriptfh qq{
+    my $script_name = $self->{fsu}->catfile( $build_path, $self->{prefix} . "pool_fastqs.pl" );
+    open( my $scriptfh, '>', $script_name ) or $self->throw("Couldn't write to temp script $script_name: $!");
+    print $scriptfh qq{
 use strict;
 use VertRes::Pipelines::Assembly;
 use Bio::AssemblyImprovement::Assemble::SGA::Main;
 use Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main;
 use Bio::AssemblyImprovement::PrimerRemoval::Main;
+use Bio::AssemblyImprovement::AdapterRemoval::Trimmomatic::Main;
 use File::Copy;
 my \$assembly= VertRes::Pipelines::Assembly->new(assembler => qq[$assembler]);
 my \@lane_names;
+
+system("rm -rf $output_directory");
+system("mkdir -p $output_directory");
 };
 
-   for my $lane_name ( @$lane_names)
-   {
-     my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
-     my $vlane = VRTrack::Lane->new_by_name($self->{vrtrack},$lane_name);
-     my $file_names_str;
-     my @file_names;
-     my @file_names_with_path ;
+    my $lane_name = $self->{lane};
+        my $lane_path = $self->{vrtrack}->hierarchy_path_of_lane_name($lane_name);
+        my $vlane = VRTrack::Lane->new_by_name( $self->{vrtrack}, $lane_name );
 
-     if( @{$vlane->files} == 2)
-     {
+        my @file_names;
+        my @file_names_with_path;
 
-       for my $file_name (@{$vlane->files})
-       {
-        	push(@file_names, $file_name->name );
-       }
-       @file_names = sort @file_names; # Unfortunately normalisation code cannot handle reads interleaved in any other way besides /1, /2, /1 and so on. We rely here on the files being named with _1 and _2 so that the order is maintained.
-       $file_names_str = '("'.join('","',@file_names ).'")';
-     }
+        if ( @{ $vlane->files } == 2 ) {
 
-     #Primer removal
-     if(defined ($self->{remove_primers}) and $self->{remove_primers} == 1 and defined ($self->{primers_file}))
-     {
-     	#Replace code here with an alternative way of removing primers that can accept a shuffled file
-     	print $scriptfh qq{
+            for my $file_name ( @{ $vlane->files } ) {
+                push( @file_names, $file_name->name );
+            }
+            @file_names = sort @file_names
+              ; # Unfortunately normalisation code cannot handle reads interleaved in any other way besides /1, /2, /1 and so on. We rely here on the files being named with _1 and _2 so that the order is maintained.
+        }
+
+        my $forward_reads_filename = $self->{lane_path} . "/" . $file_names[0];
+        my $reverse_reads_filename = $self->{lane_path} . "/" . $file_names[1];
+
+        # Adapter removal
+        my $using_trimmomatic = (defined( $self->{remove_adapters} )
+            and $self->{remove_adapters} == 1
+            and defined( $self->{adapters_file} )
+            and defined( $self->{adapter_removal_tool} )
+            and $self->{adapter_removal_tool} eq 'trimmomatic'
+            and $self->{assembler} ne 'iva');
+
+        my $adpater_trimmed_reads_1 = "$output_directory/adapter_trimmed.forward.fastq.gz";
+        my $adpater_trimmed_reads_2 = "$output_directory/adapter_trimmed.reverse.fastq.gz";
+
+        if ($using_trimmomatic) {
+            print $scriptfh qq{
+my \$adapter_remover = Bio::AssemblyImprovement::AdapterRemoval::Trimmomatic::Main->new(
+  'reads_in_1'       => "$forward_reads_filename",
+  'reads_in_2'       => "$reverse_reads_filename",
+  'paired_out_1'     => "$adpater_trimmed_reads_1",
+  'paired_out_2'     => "$adpater_trimmed_reads_2",
+  'trimmomatic_exec' => "$self->{trimmomatic_jar}",
+  'adapters_file'    => "$self->{adapters_file}",
+)->run();
+};
+            $forward_reads_filename = $adpater_trimmed_reads_1;
+            $reverse_reads_filename = $adpater_trimmed_reads_2;
+        }
+
+        #Primer removal
+        my $using_quasr = (defined( $self->{remove_primers} )
+          and $self->{remove_primers} == 1
+          and defined( $self->{primers_file} )
+          and defined( $self->{primer_removal_tool} )
+          and $self->{primer_removal_tool} eq 'quasr'
+          and $self->{assembler} ne 'iva');
+
+        if ($using_quasr) {
+            #Replace code here with an alternative way of removing primers that can accept a shuffled file
+            print $scriptfh qq{
 my \$primer_remover = Bio::AssemblyImprovement::PrimerRemoval::Main->new(
-forward_file    => "$output_directory/$file_names[0]",
-reverse_file    => "$output_directory/$file_names[1]",
-primers_file	=> "$self->{primers_file}",
-output_directory => "$output_directory",
-QUASR_exec		=> "$self->{QUASR_exec}",
+  forward_file     => "$forward_reads_filename",
+  reverse_file     => "$reverse_reads_filename",
+  primers_file     => "$self->{primers_file}",
+  output_directory => "$output_directory",
+  QUASR_exec       => "$self->{QUASR_exec}",
 )->run();
 };
 
-	  my @primer_removed_files = ( 'primer_removed.forward.fastq.gz', 'primer_removed.reverse.fastq.gz');
-	  $file_names_str = '("'.join('","', @primer_removed_files ).'")';
-      }
+            $forward_reads_filename = $output_directory . "/" . 'primer_removed.forward.fastq.gz';
+            $reverse_reads_filename = $output_directory . "/" . 'primer_removed.reverse.fastq.gz';
+        }
 
-     # Create a shuffled sequence. This shuffled file will be the input for any processing steps below (i.e. normalisation, error correction etc)
-     my $shuffled_filename = $output_directory.'/'.$lane_name.'.fastq.gz';
-	 my $output_filename = $lane_name.'.fastq.gz'; # Each step below (normalisation and error correction), should produce an output file with this name (which is the same as the shuffled filename)
+        # Create a shuffled sequence. This shuffled file will be the input for any processing steps below (i.e. normalisation, error correction etc)
+        my $shuffled_filename = $output_directory . '/' . $lane_name . '.fastq.gz';
+        my $output_filename   = $lane_name
+          . '.fastq.gz'
+          ; # Each step below (normalisation and error correction), should produce an output file with this name (which is the same as the shuffled filename)
 
-     print $scriptfh qq{
-my \@filenames_array = $file_names_str;
-\$assembly->shuffle_sequences_fastq_gz("$lane_name", "$base_path/$lane_path", "$output_directory",\\\@filenames_array);
+        print $scriptfh qq{
+\$assembly->shuffle_sequences_fastq_gz("$forward_reads_filename","$reverse_reads_filename", "$shuffled_filename");
 };
 
- 	 #Clean up primer removed files. This is quite messy. Will be better when primer removal can accept a shuffled file so it fits in like normalisation and error_correction does
-     if(defined ($self->{remove_primers}) and $self->{remove_primers} == 1 and defined ($self->{primers_file}))
-     {
-      print $scriptfh qq{
+#Clean up primer removed files. This is quite messy. Will be better when primer removal can accept a shuffled file so it fits in like normalisation and error_correction does
+        if ($using_quasr) {
+            print $scriptfh qq{
 unlink("$output_directory/primer_removed.forward.fastq.gz");
 unlink("$output_directory/primer_removed.reverse.fastq.gz");
 };
-     }
+        }
 
- 	 # Digital normalisation
-     if(defined ($self->{normalise}) and $self->{normalise} == 1)
-     {
-       print $scriptfh qq{
+        if ($using_trimmomatic) {
+            print $scriptfh qq{
+unlink("$adpater_trimmed_reads_1");
+unlink("$adpater_trimmed_reads_2");
+};
+        }
+
+        # Digital normalisation
+        if ( defined( $self->{normalise} ) and $self->{normalise} == 1 ) {
+            print $scriptfh qq{
 my \$diginorm = Bio::AssemblyImprovement::DigitalNormalisation::Khmer::Main->new(
 input_file       => "$shuffled_filename",
 khmer_exec       => "$self->{khmer_exec}",
@@ -704,12 +824,11 @@ output_filename  => "$output_filename",
 output_directory => "$output_directory",
 )->run();
 };
-     }
+        }
 
-     # Error correction
-	 if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
-	 {
-	  print $scriptfh qq{
+        # Error correction
+        if ( defined( $self->{error_correct} ) and $self->{error_correct} == 1 ) {
+            print $scriptfh qq{
 my \$sga = Bio::AssemblyImprovement::Assemble::SGA::Main->new(
 input_files     => ["$shuffled_filename"],
 output_filename => "$output_filename",
@@ -718,49 +837,35 @@ pe_mode		    => 2,
 sga_exec        => "$self->{sga_exec}",
 )->run();
 };
-	 }
+        }
 
-   } #End for loop
-
-   my $pool_count = 1;
-   for my $lane_pool (@{$self->{pools}})
-   {
-    my $lane_names_str = '("'.join('.fastq.gz","',@{$lane_pool->{lanes}}).'.fastq.gz")';
     print $scriptfh qq{
-\@lane_names = $lane_names_str;
-\$assembly->concat_fastq_gz_files(\\\@lane_names, "pool_$pool_count.fastq.gz", "$output_directory", "$output_directory");
-};
-     for my $lane_name (  @{$lane_pool->{lanes}}  )
-     {
-        print $scriptfh qq{
+system("mv $shuffled_filename $output_directory/pool_1.fastq.gz");
 unlink("$output_directory/$lane_name.fastq.gz");
-};
-     }
-
-     $pool_count++;
-   }
-
-   print $scriptfh qq{
-system("touch $output_directory/$self->{prefix}pool_fastqs_done");
+system("touch $self->{lane_path}/$self->{prefix}$self->{assembler}_pool_fastqs_done");
 exit;
       };
-      close $scriptfh;
-      my $job_name = $self->{prefix}.'pool_fastqs';
+    close $scriptfh;
+    my $job_name = $self->{prefix} . 'pool_fastqs';
 
-      my $memory_in_mb = 500;
-      my $queue = 'normal';
-      if(defined ($self->{error_correct}) and $self->{error_correct} == 1)
-      {
+    my $memory_in_mb = 500;
+    my $queue        = 'normal';
+    if ( defined( $self->{error_correct} ) and $self->{error_correct} == 1 ) {
         $memory_in_mb = 4000;
-        $queue = 'long';
-      }
+        $queue        = 'long';
+    }
 
-      VertRes::LSF::run($action_lock, $output_directory, $job_name, {bsub_opts => "-q $queue -M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'"}, qq{perl -w $script_name});
+    VertRes::LSF::run(
+        $action_lock, $self->{lane_path}, $job_name,
+        { bsub_opts => "-q $queue -M${memory_in_mb} -R 'select[mem>$memory_in_mb] rusage[mem=$memory_in_mb]'" },
+        qq{perl -w $script_name}
+    );
 
-      # we've only submitted to LSF, so it won't have finished; we always return
-      # that we didn't complete
-      return $self->{No};
+    # we've only submitted to LSF, so it won't have finished; we always return
+    # that we didn't complete
+    return $self->{No};
 }
+
 
 sub pool_fastqs_requires
 {
@@ -771,8 +876,7 @@ sub pool_fastqs_provides
 {
    my $self = shift;
    my @provided_files ;
-   push(@provided_files, $self->{lane_path}.'/'.$self->{prefix}."pool_fastqs_done");
-
+   push(@provided_files, $self->{lane_path}.'/'.$self->{prefix}.$self->{assembler}.'_pool_fastqs_done');
 
    return \@provided_files;
 }
@@ -792,39 +896,16 @@ sub get_all_lane_names
   return \@all_lane_names;
 }
 
-sub concat_fastq_gz_files
-{
-  my ($self, $filenames, $outputname, $input_directory, $output_directory) = @_;
-
-  my $filenames_with_paths = '';
-
-  if(@{$filenames} == 1)
-  {
-    move($input_directory.'/'.$filenames->[0], "$output_directory/$outputname");
-  }
-  else
-  {
-    for my $filename (@$filenames)
-    {
-      $filenames_with_paths = $filenames_with_paths.$input_directory.'/'.$filename.' ';
-    }
-    `gzip -cd $filenames_with_paths | gzip > $output_directory/$outputname`;
-  }
-}
-
 
 # adapted from https://github.com/dzerbino/velvet/blob/master/shuffleSequences_fastq.pl
 sub shuffle_sequences_fastq_gz
 {
-  my ($self, $name, $input_directory, $output_directory, $file_names) = @_;
+  my ($self, $input_file_1, $input_file_2, $output_file_name) = @_;
 
-  my $filenameA = $file_names->[0];
-  my $filenameB = $file_names->[1];
-  my $filenameOut = $name.".fastq.gz";
 
-  open( my $FILEA, "-|",'gunzip -c '.$input_directory.'/'.$filenameA) ;
-  open( my $FILEB, "-|",'gunzip -c '.$input_directory.'/'.$filenameB) ;
-  open( my $OUTFILE, "|-", "gzip -c  > $output_directory".'/'."$filenameOut");
+  open( my $FILEA, "-|",'gunzip -c '.$input_file_1);
+  open( my $FILEB, "-|",'gunzip -c '.$input_file_2);
+  open( my $OUTFILE, "|-", "gzip -c  > $output_file_name");
 
   # FIXME: if FileB contains more reads than fileA they will get missed! This is also a bug in Velvets shuffleSequences_fastq.pl
   while(<$FILEA>) {
@@ -954,6 +1035,11 @@ sub cleanup {
   foreach my $file (qw(contigs.fa.scaffolded.filtered .RData contigs.fa.png.Rout scaffolded.summaryfile.txt reverse.fastq forward.fastq))
   {
     unlink($self->{fsu}->catfile($lane_path, $file));
+    if(-e ($lane_path.'/'.$self->{assembler}.'_assembly/'. $file))
+    {
+      unlink($lane_path.'/'.$self->{assembler}.'_assembly/'. $file);
+    }
+    
   }
   Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_cleanup_done")   );
 
@@ -1011,8 +1097,6 @@ sub update_db {
 
     my $vrtrack = $vrlane->vrtrack;
 
-    return $$self{'Yes'} if $vrlane->is_processed('assembled');
-
     unless($vrlane->is_processed('assembled')){
       $vrtrack->transaction_start();
       $vrlane->is_processed('assembled',1);
@@ -1023,7 +1107,7 @@ sub update_db {
 
     my $job_status =  File::Spec->catfile($lane_path, $self->{prefix} . 'job_status');
     Utils::CMD("rm $job_status") if (-e $job_status);
-    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_update_db_done")   );
+    Utils::CMD("touch ".$self->{fsu}->catfile($lane_path,"$self->{prefix}assembly_update_db_done")   ) unless( -e "$self->{prefix}assembly_update_db_done");
 
     return $$self{'Yes'};
 }

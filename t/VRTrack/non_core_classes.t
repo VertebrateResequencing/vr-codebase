@@ -11,7 +11,7 @@ BEGIN {
         plan skip_all => "Skipping all tests because VRTrack tests have not been configured";
     }
     else {
-        plan tests => 63;
+        plan tests => 64;
     }
 
     use_ok('VRTrack::VRTrack');
@@ -109,6 +109,8 @@ is $individual->population($pop_name), undef, 'population() returned undef when 
 is $individual->population_id, undef, 'population_id starts undefined';
 ok my $pop = $individual->add_population($pop_name), 'add_population made a new population';
 ok my $pop_id = $pop->id, 'population has an id';
+my $values = VRTrack::Individual->_all_values_by_field($vrtrack, 'name', 'individual_id');
+is($values->[0], $ind_name, " _all_values_by_field should return first individual name value correctly");
 
 is $individual->population_id, $pop_id, 'population_id was updated';
 
