@@ -33,7 +33,7 @@ vrtracking_tool
 
     Examples of use:
       Re-do pipeline stages:
-         > Reimport bam files for a set of lanes:	
+         > Reimport bam files for a set of lanes: 
          vrtracking_tool -c $CONF/my_db.conf -s import <file of lane names to reimport> 
          
          > Recalculate the complete genotyping and qc for a set of lanes:
@@ -71,14 +71,14 @@ vrtracking_tool
     The format for the configuration file is:
     
                root    => '/lustre/scratch101/sanger/jm23/TRACKING/',
-               db 	   => 'vrtrack_jm23_neuro',
+               db      => 'vrtrack_jm23_neuro',
                [log     => '/lustre/scratch105/log/vrtracking_tool-jm23_neuro.log',] -> optional
- 		(If the -v or --verbose flag is used, the information concerning the files/directories deleted and the 
- 		database objects deleted/flags reset will be written to the log file if specified in the config file.)
+    (If the -v or --verbose flag is used, the information concerning the files/directories deleted and the 
+    database objects deleted/flags reset will be written to the log file if specified in the config file.)
  
- 	NOTE- the tool currently uses names for lanes and studies, hierarchy names for libraries, but only id numbers for samples, 
- 	e.g. it can accept the lane name 5659_2.
- 	
+  NOTE- the tool currently uses names for lanes and studies, hierarchy names for libraries, but only id numbers for samples, 
+  e.g. it can accept the lane name 5659_2.
+  
     There are 2 modes of operation. You can either provide a file of lane names or library hierarchy names 
     (one per line), or enter the interactive mode by omitting the file name from the command and enter the 
     names or ids individually, 
@@ -88,7 +88,7 @@ vrtracking_tool
          2345_8#5.....
 
     Summary of all flags implemented by this tool:
-                        -----------    		
+                        -----------       
               -c,   --config    <location of config file with root and db specified>
                         --- OR ----              
               -d,   --db        <specify db name>
@@ -97,7 +97,7 @@ vrtracking_tool
               -s,   --stage     <stage of pipeline to be restarted>
               -v,   --verbose   [be extra verbose about what it is doing, writes to log file if specified in the config file]
               -del, --delete    [use this flag to delete database entries rather than resetting flags]
-              -t,   --test		[use this flag to try the tool without performing any delete/resetting operations]
+              -t,   --test    [use this flag to try the tool without performing any delete/resetting operations]
               -h,   --help      <this message>
               
     To quit the tool, type quit (or q) on the command line.
@@ -130,22 +130,22 @@ my @entities = ('lane', 'library', 'sample', 'study');
 
 my %reset_stages = ();
 foreach (@stages) {
-	$reset_stages{$_} = $_;
+  $reset_stages{$_} = $_;
 }
 $reset_stages{'genotype'} = 'qc';
 foreach (@entities) {
-	$reset_stages{$_} = 'all';
+  $reset_stages{$_} = 'all';
 }
 
 GetOptions(
     'c|config=s'    =>  \$config,
     'd|db=s'        =>  \$db,
-    'r|root=s'		=>  \$root,
-    's|stage=s'		=>  \$stage,
-    'del|delete'	=>  \$delete,
+    'r|root=s'    =>  \$root,
+    's|stage=s'   =>  \$stage,
+    'del|delete'  =>  \$delete,
     'v|verbose'     =>  \$verbose,
     't|test'        =>  \$test,
-    'h|help'	    =>  \$help,
+    'h|help'      =>  \$help,
     );
 
 # determine type of operation
@@ -171,13 +171,13 @@ my $reset_stage = $reset_stages{$stage};
              -del, --delete    [use this flag to delete database entries rather than resetting flags]
              -h,   --help      <this message>
 
-	This tool is able to perform the following operations:
-	1. Remove a library, sample or study from disk and either 
-    	*reset all flags* for lane and file on the database, OR 
-    	*delete* the object from the database and all downstream objects.
-	2. Sets up the lanes that need to have the specified stage of the pipeline performed again.
-   	   It deletes the relevant files on disk and resets the lane processed flag for that stage to 0 
-   	   (e.g. lane->is_processed(qc => 0))
+  This tool is able to perform the following operations:
+  1. Remove a library, sample or study from disk and either 
+      *reset all flags* for lane and file on the database, OR 
+      *delete* the object from the database and all downstream objects.
+  2. Sets up the lanes that need to have the specified stage of the pipeline performed again.
+       It deletes the relevant files on disk and resets the lane processed flag for that stage to 0 
+       (e.g. lane->is_processed(qc => 0))
 
   Stages/objects currently implemented:
     -pipeline stages:  
@@ -202,32 +202,32 @@ $verbose ? Log::Log4perl->easy_init($INFO) : Log::Log4perl->easy_init($ERROR);
 my $logger = get_logger();
 
 if ($config) {
-	$config_data = get_config_data($config);
-	$root = $$config_data{root} unless ($root);
-	$db = $$config_data{db} unless ($db);
-	if ($$config_data{log}) {
-		my $layout;
-		if ($test) {
-			$layout = Log::Log4perl::Layout::PatternLayout->new(
-     				"TEST: %m%n");			
-		}
-		else {
-			$layout = Log::Log4perl::Layout::PatternLayout->new(
-     				"%d %p> %m%n");
-     	}			
-		my $appender = Log::Log4perl::Appender->new(
-     				"Log::Dispatch::File",
-     				filename => $$config_data{log},
-    				mode     => "append",
-		);
-		$appender->threshold($INFO);
-		$appender->layout($layout);
-		$logger->add_appender($appender);
-	}	
-}	
+  $config_data = get_config_data($config);
+  $root = $$config_data{root} unless ($root);
+  $db = $$config_data{db} unless ($db);
+  if ($$config_data{log}) {
+    my $layout;
+    if ($test) {
+      $layout = Log::Log4perl::Layout::PatternLayout->new(
+            "TEST: %m%n");      
+    }
+    else {
+      $layout = Log::Log4perl::Layout::PatternLayout->new(
+            "%d %p> %m%n");
+      }     
+    my $appender = Log::Log4perl::Appender->new(
+            "Log::Dispatch::File",
+            filename => $$config_data{log},
+            mode     => "append",
+    );
+    $appender->threshold($INFO);
+    $appender->layout($layout);
+    $logger->add_appender($appender);
+  } 
+} 
 
 if ('/' ne substr $root,-1,1) {
-	$root = $root.'/';
+  $root = $root.'/';
 }
 croak "Root directory $root does not exist" unless (-e $root);
 
@@ -236,74 +236,74 @@ my $vrtrack = VertRes::Utils::VRTrackFactory->instantiate(database => $db,
 croak "Can't connect to tracking database" unless ($vrtrack);
 
 if ($delete && !$entity_op) {
-	croak "--stage can not be set to $stage if the delete flag is used (only lane, library, sample or study).";
+  croak "--stage can not be set to $stage if the delete flag is used (only lane, library, sample or study).";
 }
 
 # get input from file of study/library/lane names or stdin
 while (<>){
-	next if /^(\s)*$/;
+  next if /^(\s)*$/;
     my $vrinput = $_;
     chomp $vrinput;
     exit 0 if ( lc($vrinput) eq 'quit' || lc($vrinput) eq 'q' );
-	$logger->info("--------------------------------------".($delete ? "$stage db object and directory deletion on disk": "$stage db flag reset and file deletion on disk")."--------------------------------------");
-	#initialise VRTrack objects for the operation specified in $stage
+  $logger->info("--------------------------------------".($delete ? "$stage db object and directory deletion on disk": "$stage db flag reset and file deletion on disk")."--------------------------------------");
+  #initialise VRTrack objects for the operation specified in $stage
     my @vrobjects = get_vrtrack_objects($vrtrack, $vrinput, $stage);
     unless (@vrobjects){
-		$logger->error("Unable to get VRTrack object $vrinput");
-		next;
+    $logger->error("Unable to get VRTrack object $vrinput");
+    next;
     }
     for my $vrobject (@vrobjects) { 
-    	#initialise the directory for the operations
-    	my $vrdirectory = $root.get_vrtrack_directory($vrtrack,$vrobject);
-    	unless ( $vrdirectory ){
-			$logger->error("Unable to get the tracking directory for $vrinput");
-			next;
-    	}
+      #initialise the directory for the operations
+      my $vrdirectory = $root.get_vrtrack_directory($vrtrack,$vrobject);
+      unless ( $vrdirectory ){
+      $logger->error("Unable to get the tracking directory for $vrinput");
+      next;
+      }
     
-    	#for delete operations (delete objects from db and directories from disk)
-    	if ( $delete ) {
-    		#to die or report and continue?....
-    		unless ($test) {$vrobject->delete() or croak "Unable to delete the VRTrack object $vrinput, error = $!\n"};
-    		$logger->info("The $stage ".$vrobject->name()." and all child objects have been deleted from the database");	
-    		if ( -d $vrdirectory ) {
-    			unless ($test) { remove_tree($vrdirectory) or croak "Unable to delete the directory $vrdirectory\n" };
-    			#add {keep_root => 1} to remove_tree call if the directory needs to be kept 
-    			$logger->info("The directory for the $stage ".$vrobject->name()." has been deleted on disk");
-    		}
-    		else {
-    			$logger->error("The directory $vrdirectory does not exist");
-    		}
-		}
-		
-		#for recalculation operations (reset flags on db and delete files from disk)
-		else {
-    		my @mapping_ids = sort { $b<=>$a } @{$vrobject->mapping_ids()};
-    		my $mapstats_id = 0;
-    		my $qcdir;
-    		foreach ( @mapping_ids ) {
-				my $checkdir = $vrdirectory.'/qc-sample.'.$_.'/';
-				$qcdir = $checkdir if (-d $checkdir);
-				$mapstats_id = $_ if ($_ > $mapstats_id); 
-			}
-			#my $mapstats_id = $mapping_ids[0];
-    		#my $qcdir = $vrdirectory.'/qc-sample.'.$mapstats_id.'/';
-    		unless ($qcdir && -d $qcdir) {
-    			$qcdir = $vrdirectory.'/qc-sample/'; 
-    		}
-    		my %files_deleted = (
-    			import => ["^$mapstats_id\.[ps]e\.raw\.sorted\.bam", "^$mapstats_id\.[ps]e\.recalc\.sorted\.bam"],
-				qc => ["^qc-sample\.$mapstats_id\$", "^qc-sample\$"],
-				genotype => ["^$vrinput\.gtype\$", "^$vrinput\.gtypex\$", "^$vrinput\.gtypey\$", "^$vrinput\.glf\$", "^_$vrinput\_glf\.o\$", "^_$vrinput\_glf\.e\$"],
-				improved => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.bam\.recal_data\.csv\$", "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.bam", "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.(?!snp\$)",
-				            "^\.realign\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.recalibrate\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.sort\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.rewrite\_header\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$"],
-				snp_called => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.snp\$",
-					       "^[0-9]+\.[ps]e\.markdup\.snp\$",
-					       "^[0-9]+\.[ps]e\.raw\.sorted\.snp\$"],
-				all => ["^[\\w]+"],
+      #for delete operations (delete objects from db and directories from disk)
+      if ( $delete ) {
+        #to die or report and continue?....
+        unless ($test) {$vrobject->delete() or croak "Unable to delete the VRTrack object $vrinput, error = $!\n"};
+        $logger->info("The $stage ".$vrobject->name()." and all child objects have been deleted from the database");  
+        if ( -d $vrdirectory ) {
+          unless ($test) { remove_tree($vrdirectory) or croak "Unable to delete the directory $vrdirectory\n" };
+          #add {keep_root => 1} to remove_tree call if the directory needs to be kept 
+          $logger->info("The directory for the $stage ".$vrobject->name()." has been deleted on disk");
+        }
+        else {
+          $logger->error("The directory $vrdirectory does not exist");
+        }
+    }
+    
+    #for recalculation operations (reset flags on db and delete files from disk)
+    else {
+        my @mapping_ids = sort { $b<=>$a } @{$vrobject->mapping_ids()};
+        my $mapstats_id = 0;
+        my $qcdir;
+        foreach ( @mapping_ids ) {
+        my $checkdir = $vrdirectory.'/qc-sample.'.$_.'/';
+        $qcdir = $checkdir if (-d $checkdir);
+        $mapstats_id = $_ if ($_ > $mapstats_id); 
+      }
+      #my $mapstats_id = $mapping_ids[0];
+        #my $qcdir = $vrdirectory.'/qc-sample.'.$mapstats_id.'/';
+        unless ($qcdir && -d $qcdir) {
+          $qcdir = $vrdirectory.'/qc-sample/'; 
+        }
+        my %files_deleted = (
+          import => ["^$mapstats_id\.[ps]e\.raw\.sorted\.bam", "^$mapstats_id\.[ps]e\.recalc\.sorted\.bam"],
+        qc => ["^qc-sample\.$mapstats_id\$", "^qc-sample\$"],
+        genotype => ["^$vrinput\.gtype\$", "^$vrinput\.gtypex\$", "^$vrinput\.gtypey\$", "^$vrinput\.glf\$", "^_$vrinput\_glf\.o\$", "^_$vrinput\_glf\.e\$"],
+        improved => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.bam\.recal_data\.csv\$", "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.bam", "^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.(?!snp\$)",
+                    "^\.realign\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.recalibrate\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.sort\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$","^\.rewrite\_header\_complete\_$mapstats_id\.[ps]e\.raw\.sorted\.bam\$"],
+        snp_called => ["^$mapstats_id\.[ps]e\.realigned\.sorted\.recal\.calmd\.intervals\.snp\$",
+                 "^[0-9]+\.[ps]e\.markdup\.snp\$",
+                 "^[0-9]+\.[ps]e\.raw\.sorted\.snp\$"],
+        all => ["^[\\w]+"],
 
- 			     assembled => [ #Files from pool fastqs stage
- 					      "[\\w]*pool_fastqs_done", 
-					      "[\\w]*pool_fastqs\.(e|o|pl)",
+           assembled => [ #Files from pool fastqs stage
+                "[\\w]*pool_fastqs_done", 
+                "[\\w]*pool_fastqs\.(e|o|pl)",
                                               "^pool_1\.fastq\.gz\$",
                                               #Files from optimise parameters stage. Changed to cope with different assemblers. 4 June 2013
                                               "[\\w]*optimise_parameters\.(e|o|pl)", 
@@ -337,7 +337,10 @@ while (<>){
                                            "^[\\w]+map_[ps]e_[0-9]+_[0-9]+\.[oe](\.previous)?\$",
                                            "^[\\w]+merge_[ps]e_[0-9]+\.([oe](\.previous)?|pl)\$",
                                            "^[\\w]+statistics_[0-9]+\.[ps]e\.raw\.sorted\.bam\.([oe](\.previous)?|pl)\$",
-                                           "^[\\w]+mark_duplicates_[ps]e_[0-9]+\.([oe](\.previous)?|pl)\$"],
+                                           "^[\\w]+mark_duplicates_[ps]e_[0-9]+\.([oe](\.previous)?|pl)\$",
+                                           "^[0-9]+_job_status\$",
+                                           "^[0-9]+_split.jids\$"
+                                           ],
                                 rna_seq_expression => ["\.intergenic\.",
                                            "calculate\_expression", 
                                            "\.coverageplot\.gz\$",
@@ -345,7 +348,10 @@ while (<>){
                                            "rna\_seq\_update\_db\_done\$",
                                            "rna\_seq\_cleanup\_done\$",
                                            "\.corrected\.bam\.bai\$",
-                                           "\.corrected\.bam\$"],
+                                           "\.corrected\.bam\$",
+                                           "\.featurecounts.csv\$",
+                                           "\.featurecounts.csv.summary\$"
+                                           ],
                                            
                                 annotated => [
                                           "annotate\_assembly\.(e|o|pl)\$",
@@ -354,91 +360,91 @@ while (<>){
                                           "annotate\_assembly\_done\$",
                                           "^velvet_assembly\/annotation\$"
                                 ],
-    		);
-    		
-    		my @files_del = $entity_op ? @{$files_deleted{$reset_stage}} : @{$files_deleted{$stage}};	
-    		my $file_dir = ( $stage eq 'genotype' ? $qcdir : $vrdirectory );
-    		
-    		my %allowed_processed_flags = $vrobject->allowed_processed_flags();
-    		my @reset_flags = ( $reset_stage eq 'all' ? keys %allowed_processed_flags : $reset_stage );
-    		my @reset_objects = ($vrobject);
-     		push @reset_objects, get_reset_flag_objects($vrtrack, $reset_stage, $vrobject);
-     	
-     		opendir DIR, $file_dir or croak "cannot open dir $file_dir: $!";
-    		my @current_files = readdir DIR;
-    		closedir DIR;
-		
-			#delete files on disk if found in @files_del
-			foreach my $file (@current_files) {
-				if ( grep { $file =~ m{$_} } @files_del ) {
-					my $filepath = File::Spec->catfile($file_dir, $file);
-					if ( -d $filepath ) {
-						unless ($test) {remove_tree($filepath) or die "Unable to delete the directory $filepath, error = $!\n"};
-						$logger->info("Removed directory: ", $filepath);
-					}
-					elsif ( -e $filepath || (!-e $filepath && -l $filepath) ) {
-						unless ($test) {unlink $filepath or die "Unable to delete $filepath, error = $!\n"}; 
-						$logger->info("Deleted: ", $filepath);
-					}
-				}
-			}
-		
-			#update database for lane (and file if appropriate)
-			for my $reset_obj (@reset_objects) {
-    			for my $flag (@reset_flags) {
-    				unless ($test) {
-    					$reset_obj->is_processed($flag => 0);
-    					if ( ($reset_stage eq 'qc' || $reset_stage eq 'mapped' || $reset_stage eq 'all') && $reset_obj->isa('VRTrack::Lane')) {
-    						$reset_obj->genotype_status('unchecked') unless $reset_stage eq 'mapped';
-						$logger->info("Deleted ".$flag." mapstats for the lane ".$reset_obj->name()) if delete_mapstats_entries($reset_obj,$flag);
-    					}	
-    					$reset_obj->update;
-    				}
-    			}
-    		}
-    		$logger->info("Processed flag for " . join(', ', @reset_flags) . " has been reset to 0 for the " . (($reset_stage eq 'import' || $reset_stage eq 'all' ) ? "lane and bam file of " : "lane ") . $vrobject->name);
-		}
-	}	
+        );
+        
+        my @files_del = $entity_op ? @{$files_deleted{$reset_stage}} : @{$files_deleted{$stage}}; 
+        my $file_dir = ( $stage eq 'genotype' ? $qcdir : $vrdirectory );
+        
+        my %allowed_processed_flags = $vrobject->allowed_processed_flags();
+        my @reset_flags = ( $reset_stage eq 'all' ? keys %allowed_processed_flags : $reset_stage );
+        my @reset_objects = ($vrobject);
+        push @reset_objects, get_reset_flag_objects($vrtrack, $reset_stage, $vrobject);
+      
+        opendir DIR, $file_dir or croak "cannot open dir $file_dir: $!";
+        my @current_files = readdir DIR;
+        closedir DIR;
+    
+      #delete files on disk if found in @files_del
+      foreach my $file (@current_files) {
+        if ( grep { $file =~ m{$_} } @files_del ) {
+          my $filepath = File::Spec->catfile($file_dir, $file);
+          if ( -d $filepath ) {
+            unless ($test) {remove_tree($filepath) or die "Unable to delete the directory $filepath, error = $!\n"};
+            $logger->info("Removed directory: ", $filepath);
+          }
+          elsif ( -e $filepath || (!-e $filepath && -l $filepath) ) {
+            unless ($test) {unlink $filepath or die "Unable to delete $filepath, error = $!\n"}; 
+            $logger->info("Deleted: ", $filepath);
+          }
+        }
+      }
+    
+      #update database for lane (and file if appropriate)
+      for my $reset_obj (@reset_objects) {
+          for my $flag (@reset_flags) {
+            unless ($test) {
+              $reset_obj->is_processed($flag => 0);
+              if ( ($reset_stage eq 'qc' || $reset_stage eq 'mapped' || $reset_stage eq 'all') && $reset_obj->isa('VRTrack::Lane')) {
+                $reset_obj->genotype_status('unchecked') unless $reset_stage eq 'mapped';
+            $logger->info("Deleted ".$flag." mapstats for the lane ".$reset_obj->name()) if delete_mapstats_entries($reset_obj,$flag);
+              } 
+              $reset_obj->update;
+            }
+          }
+        }
+        $logger->info("Processed flag for " . join(', ', @reset_flags) . " has been reset to 0 for the " . (($reset_stage eq 'import' || $reset_stage eq 'all' ) ? "lane and bam file of " : "lane ") . $vrobject->name);
+    }
+  } 
 }
 
 sub get_vrtrack_objects
 {
-	my ($vrtrack, $vrinput, $stage) = @_;
-	my @vrobjects;
-	my $object;
-	my @lanearray;
-	if ( $stage eq 'study' ) {
-		$object = $object = VRTrack::Project->new_by_name($vrtrack,$vrinput);
-		my $samples = $object->samples();
-		for my $sample ( @{$samples} ) {
-			my $libraries = $sample->libraries();
-			for my $library ( @{$libraries} ) {
-				push @lanearray, @{$library->lanes()};
-			}
-		}	
-	}
-	elsif ( $stage eq 'sample' ) {
-		$object = VRTrack::Sample->new($vrtrack,$vrinput);
-		my $libraries = $object->libraries();
-		for my $library ( @{$libraries} ) {
-			push @lanearray, @{$library->lanes()};
-		}			
-	}
-	elsif ( $stage eq 'library' ) {
-		$object = VRTrack::Library->new_by_hierarchy_name($vrtrack,$vrinput);
-		push @lanearray, @{$object->lanes()};
-	}
-	else {
-		$object = VRTrack::Lane->new_by_name($vrtrack,$vrinput);
-		push @lanearray, $object;
-	}
-	if ($delete) {
-		push @vrobjects, $object;
-	}
-	else {
-		push @vrobjects, @lanearray;		
-	}
-	return @vrobjects;
+  my ($vrtrack, $vrinput, $stage) = @_;
+  my @vrobjects;
+  my $object;
+  my @lanearray;
+  if ( $stage eq 'study' ) {
+    $object = $object = VRTrack::Project->new_by_name($vrtrack,$vrinput);
+    my $samples = $object->samples();
+    for my $sample ( @{$samples} ) {
+      my $libraries = $sample->libraries();
+      for my $library ( @{$libraries} ) {
+        push @lanearray, @{$library->lanes()};
+      }
+    } 
+  }
+  elsif ( $stage eq 'sample' ) {
+    $object = VRTrack::Sample->new($vrtrack,$vrinput);
+    my $libraries = $object->libraries();
+    for my $library ( @{$libraries} ) {
+      push @lanearray, @{$library->lanes()};
+    }     
+  }
+  elsif ( $stage eq 'library' ) {
+    $object = VRTrack::Library->new_by_hierarchy_name($vrtrack,$vrinput);
+    push @lanearray, @{$object->lanes()};
+  }
+  else {
+    $object = VRTrack::Lane->new_by_name($vrtrack,$vrinput);
+    push @lanearray, $object;
+  }
+  if ($delete) {
+    push @vrobjects, $object;
+  }
+  else {
+    push @vrobjects, @lanearray;    
+  }
+  return @vrobjects;
 }
 
 sub get_vrtrack_directory
@@ -446,9 +452,9 @@ sub get_vrtrack_directory
     my ($vrtrack, $vrobject) = @_;
 
     my %recognised_type = ('VRTrack::Project' => 1,
-			   'VRTrack::Sample'  => 1,
-			   'VRTrack::Library' => 1,
-			   'VRTrack::Lane'    => 1);
+         'VRTrack::Sample'  => 1,
+         'VRTrack::Library' => 1,
+         'VRTrack::Lane'    => 1);
     
     # Check object
     croak "Unable to retrieve the tracking directory as the tracking object is not defined.\n"         unless defined $vrobject;
@@ -462,14 +468,14 @@ sub get_vrtrack_directory
 
 sub get_reset_flag_objects
 {
-	my ($vrtrack, $stage, $vrobject) = @_;
-	my @return_objects = ();
-	if ( ($stage eq 'import' || $stage eq 'all') && $vrobject->isa('VRTrack::Lane')) {
-		for my $file ( @{$vrobject->files()} ) {
-			push @return_objects, $file;
-		}
-	}
-	return @return_objects;
+  my ($vrtrack, $stage, $vrobject) = @_;
+  my @return_objects = ();
+  if ( ($stage eq 'import' || $stage eq 'all') && $vrobject->isa('VRTrack::Lane')) {
+    for my $file ( @{$vrobject->files()} ) {
+      push @return_objects, $file;
+    }
+  }
+  return @return_objects;
 }
 
 sub get_config_data
