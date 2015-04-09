@@ -1628,6 +1628,17 @@ sub _list_names {
 
 __DATA__
 
+# Dump of table schema_version
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `schema_version`;
+
+CREATE TABLE `schema_version` (
+  `schema_version` mediumint(8) unsigned NOT NULL,
+  PRIMARY KEY (`schema_version`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
 
 # Dump of table allocation
 # ------------------------------------------------------------
@@ -2057,18 +2068,6 @@ CREATE TABLE `sample` (
   KEY `latest` (`latest`),
   KEY `project_id` (`project_id`),
   KEY `name` (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
-
-
-# Dump of table schema_version
-# ------------------------------------------------------------
-
-DROP TABLE IF EXISTS `schema_version`;
-
-CREATE TABLE `schema_version` (
-  `schema_version` mediumint(8) unsigned NOT NULL,
-  PRIMARY KEY (`schema_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 
