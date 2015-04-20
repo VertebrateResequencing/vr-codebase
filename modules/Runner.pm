@@ -283,8 +283,14 @@ sub create_lock
             my $running = kill 0, $pid;
             if ( $running )
             {
-                $self->warn("\nAnother process is running ($pid), exiting.\n\n");
-                exit $$self{_status_codes}{WAIT};
+                my @out = `ps --no-headers -p $pid -o command`;
+                my $script_name = $0;
+                $script_name =~ s{^.*/}{};
+                if ( $out[0]=~/$script_name/ )
+                {
+                    $self->warn("\nAnother process is running ($pid), exiting.\n\n");
+                    exit $$self{_status_codes}{WAIT};
+                }
             }
 
             $self->warn("\nIgnoring an old lock file, PID $pid is not running.\n\n");

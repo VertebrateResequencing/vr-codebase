@@ -103,7 +103,16 @@ sub create_lock
 
             # Is the process still running?
             my $running = kill 0, $pid;
-            if ( $running ) { die "Another process is running ($pid), exiting.\n"; }
+            if ( $running )
+            {
+                my @out = `ps --no-headers -p $pid -o command`;
+                my $script_name = $0;
+                $script_name =~ s{^.*/}{};
+                if ( $out[0]=~/$script_name/ )
+                {
+                    die "Another process is running ($pid), exiting.\n";
+                }
+            }
 
             print STDERR "Ignoring an old lock file, PID $pid is not running.\n";
             last;
