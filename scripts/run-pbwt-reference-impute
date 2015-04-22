@@ -184,7 +184,7 @@ sub main
     $self->set_limits(memory=>undef,runtime=>undef,cpus=>undef);
 
     # Merge BCFs
-    $self->set_limits(runtime=>24*60, %{$$self{limits}}) unless !exists($$self{limits});
+    $self->set_limits(runtime=>2*60, %{$$self{limits}}) unless !exists($$self{limits});
     my %concat_vcfs;
     foreach my $chr (@$chroms)
     {
@@ -202,7 +202,7 @@ sub main
     $self->set_limits(memory=>undef,runtime=>undef,cpus=>undef);
 
     # Concat VCFs
-    $self->set_limits(runtime=>24*60, %{$$self{limits}}) unless !exists($$self{limits});
+    $self->set_limits(runtime=>2*60, %{$$self{limits}}) unless !exists($$self{limits});
     for my $chr (@$chroms)
     {
         my $hdr = "$outdir/$chr/$chr.pbwt_reference_impute.header.gz";
@@ -555,6 +555,7 @@ sub merge_header
 {
     my ($self,$outfile,$bcfs) = @_;
     my $cmd;
+    my $annotate = $$self{annotate} ? qq[ | $$self{annotate} -Oz] : '';
     if (@$bcfs>1)
     {
         open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
@@ -563,10 +564,10 @@ sub merge_header
             print $fh "$bcf\n";
         }
         close($fh);
-        $cmd = qq[$$self{bcftools} merge -Oz --print-header --file-list $outfile.list > $outfile.part];
+        $cmd = qq[$$self{bcftools} merge -Oz --print-header --file-list $outfile.list$annotate > $outfile.part];
     }
     else {
-        $cmd = qq[$$self{bcftools} view -Oz -h $$bcfs[0] > $outfile.part];
+        $cmd = qq[$$self{bcftools} view -Oz -h $$bcfs[0]$annotate > $outfile.part];
     }
     $self->cmd($cmd);
     rename("$outfile.part",$outfile);
@@ -576,6 +577,7 @@ sub merge_bcfs
 {
     my ($self,$outfile,$hdr,$region,$bcfs) = @_;
     my $cmd;
+    my $annotate = $$self{annotate} ? qq[ | $$self{annotate} -Ou] : '';
     if (@$bcfs>1)
     {
         open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
@@ -584,10 +586,10 @@ sub merge_bcfs
             print $fh "$bcf\n";
         }
         close($fh);
-        $cmd = qq[$$self{bcftools} merge -Ou --use-header $hdr -r $region --file-list $outfile.list | $$self{bcftools} view -H];
+        $cmd = qq[$$self{bcftools} merge -Ou --use-header $hdr -r $region --file-list $outfile.list$annotate | $$self{bcftools} view -H];
     }
     else {
-        $cmd = qq[$$self{bcftools} view -H -r $region $$bcfs[0]];
+        $cmd = qq[$$self{bcftools} view -Ou -r $region $$bcfs[0]$annotate | $$self{bcftools} view -H];
     }
 
     my ($chr,$from,$to) = $self->parse_region($region);
