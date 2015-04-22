@@ -218,8 +218,6 @@ sub parse_project
         $value =~ s/^\s*//;
         $value =~ s/\s*$//;
         $key   =~ s/\s*$//;
-        $key   =~ s{[^A-Za-z0-9\-\.\+_\{\}/\@]+}{}g;     # any key can be modified, no malicious code please
-        $value =~ s{[^A-Za-z0-9\-\.\+_\{\}/\@]+}{}g;
         $project{$key} = $value;
     }
     close($fh) or error("close failed: $file");
