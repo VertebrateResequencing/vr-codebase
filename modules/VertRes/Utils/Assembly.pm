@@ -23,6 +23,7 @@ use File::Basename;
 use VertRes::Utils::Hierarchy;
 use VertRes::Utils::FileSystem;
 use VRTrack::Lane;
+use VertRes::Wrapper::smalt;
 
 use base qw(VertRes::Base);
 
