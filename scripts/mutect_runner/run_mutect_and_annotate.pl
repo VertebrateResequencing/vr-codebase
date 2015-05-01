@@ -241,7 +241,12 @@ sub parse_args {
 				$self->throw("No such file $$self{$o}");
 			}
 		}
-		print STDERR "Optional setting: $o $$self{$o}\n"
+		if ( exists $$self{$o} && defined $$self{$o} ) {
+			print STDERR "Optional setting: $o $$self{$o}\n"
+		}
+		else {
+			print STDERR "Optional setting: $o NOT SET\n"
+		}
 	}
 	if ( ! -e "$$self{vep_cache}/$$self{species}" ) {
 		$self->throw("No directory $$self{species} in vep cache dir $$self{vep_cache}");
