@@ -40,7 +40,7 @@ sub new {
 
     $$self{do_clean} = 0;
     $$self{limits} = { memory=>5_000, runtime=>24*60 };
-    $$self{mutect} = '/software/vertres/bin-external/muTect-1.1.7.jar';
+    $$self{mutect} = '/software/vertres/bin-external/mutect-1.1.7.jar';
 	$$self{java} = '/software/vertres/bin-external/java7';
 	#$$self{vep}    = '/software/vertres/bin-external/variant_effect_predictor.pl';
 	##$$self{vep}    = '/nfs/users/nfs_k/kw10/src/variant_effect_predictor_ens75.pl';
