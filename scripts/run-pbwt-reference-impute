@@ -555,7 +555,6 @@ sub merge_header
 {
     my ($self,$outfile,$bcfs) = @_;
     my $cmd;
-    my $annotate = $$self{annotate} ? qq[ | $$self{annotate} -Oz] : '';
     if (@$bcfs>1)
     {
         open(my $fh,'>',"$outfile.list") or $self->throw("$outfile.list: $!");
@@ -564,10 +563,10 @@ sub merge_header
             print $fh "$bcf\n";
         }
         close($fh);
-        $cmd = qq[$$self{bcftools} merge -Oz --print-header --file-list $outfile.list$annotate > $outfile.part];
+        $cmd = qq[$$self{bcftools} merge -Oz --print-header --file-list $outfile.list > $outfile.part];
     }
     else {
-        $cmd = qq[$$self{bcftools} view -Oz -h $$bcfs[0]$annotate > $outfile.part];
+        $cmd = qq[$$self{bcftools} view -Oz -h $$bcfs[0] > $outfile.part];
     }
     $self->cmd($cmd);
     rename("$outfile.part",$outfile);
