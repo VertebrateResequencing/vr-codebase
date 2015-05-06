@@ -788,7 +788,6 @@ sub calculate_heterozygousity_requires
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
     my @requires = ("$sample_dir/$$self{lane}.bam");
-    print "Blah Fastq\n";
     return \@requires;
 }
 
