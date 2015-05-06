@@ -84,6 +84,14 @@ our @actions =
       'provides' => \&transposon_provides,
     },
 
+    # Calculates heterozygousity percentage and counts.
+    {
+        'name'     => 'calculate_heterozygousity',
+        'action'   => \&calculate_heterozygousity,
+        'requires' => \&calculate_heterozygousity_requires,
+        'provides' => \&calculate_heterozygousity_provides,
+    },
+
     # Creates some QC graphs and generate some statistics.
     {
         'name'     => 'stats_and_graphs',
@@ -120,9 +128,13 @@ our $options =
     'kraken_report_exec' => 'kraken-report',
     'mapviewdepth'    => 'mapviewdepth_sam',
     'samtools'        => 'samtools',
-    
+    'bcftools'        => 'bcftools',
+    'vcfutils'        => 'vcfutils.pl',
+
+
     'adapters'        => '/software/pathogen/projects/protocols/ext/solexa-adapters.fasta',
     'bsub_opts'       => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
+    'bsub_opts_ploidy'   => "-q normal -M1000 -R 'select[mem>1000] rusage[mem=1000]'",
     'bsub_opts_stats_and_graphs'   => "-q normal -M1000 -R 'select[mem>1000] rusage[mem=1000]'",
     'bsub_opts_map_sample'         => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
     'bsub_opts_process_fastqs'     => "-q normal -M3200 -R 'select[mem>3200] rusage[mem=3200]'",
@@ -135,6 +147,7 @@ our $options =
     'kraken_report'   => 'kraken.report',
     'sample_dir'      => 'qc-sample',
     'sample_size'     => 50e6,
+    'ploidy'          => '_heterozygousity.txt',
     'stats'           => '_stats',
     'stats_detailed'  => '_detailed-stats.txt',
     'stats_dump'      => '_stats.dump',
@@ -770,6 +783,154 @@ sub transposon
    return $$self{'No'};
 }
 
+#----------- calculate_heterozygousity ---------------------
+
+sub calculate_heterozygousity_requires
+{
+    my ($self) = @_;
+    my $sample_dir = $$self{'sample_dir'};
+    my @requires = ("$sample_dir/$$self{lane}.bam");
+    print "Blah Fastq\n";
+    return \@requires;
+}
+
+sub calculate_heterozygousity_provides
+{
+    my ($self) = @_;
+    my $sample_dir = $$self{'sample_dir'};
+    my @provides = ("$sample_dir/_heterozygousity_done","$sample_dir/_heterozygousity.txt");
+    return \@provides;
+}
+
+sub calculate_heterozygousity
+{
+  my ($self,$lane_path,$lock_file) = @_;
+
+  my $fa_ref     = $$self{'fa_ref'};
+  my $sample_dir = $$self{'sample_dir'};
+  my $lane  = $$self{lane};
+
+  # Dynamic script to be run by LSF.
+  open(my $fh, '>', "$lane_path/$sample_dir/_snps_and_heterozygousity.pl") or Utils::error("$lane_path/$sample_dir/_snps_and_heterozygousity.pl: $!");
+  print $fh
+qq[
+use VertRes::Pipelines::TrackQC_Fastq;
+
+my \%params =
+(
+    'samtools'     => q[$$self{'samtools'}],
+    'bcftools'     => q[$$self{'bcftools'}],
+    'vcfutils'     => q[$$self{'vcfutils'}],
+    'lane_path'    => q[$lane_path],
+    'lane'         => q[$$self{lane}],
+    'sample_dir'   => q[$$self{'sample_dir'}],
+    'fa_ref'       => q[$$self{fa_ref}],
+    'fai_ref'      => q[$$self{fai_ref}],
+    'bwa_exec'     => q[$$self{bwa_exec}],
+
+);
+
+my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
+\$qc->run_snp_calling(\$params{lane_path});
+
+];
+  close $fh;
+
+  VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_snps_and_heterozygousity", {bsub_opts=>$self->{bsub_opts_ploidy}}, qq{perl -w _snps_and_heterozygousity.pl});
+  return $$self{'No'};
+}
+
+sub run_snp_calling {
+
+  my ($self) = @_;
+
+  my $full_path = $self->{lane_path} . q(/) . $self->{sample_dir} . q(/);
+
+  my $cmd = $self->{samtools} . q( mpileup -d 1000 -DSugBf );
+  $cmd .= $self->{fa_ref} . q( ) . $full_path . $self->{lane} . q(.bam | );
+  $cmd .= $self->{bcftools} . q( view -bvcg - > ) . $full_path . $self->{lane} . q(_var.raw.bcf);
+
+  my $return = system($cmd);
+
+  if ($return == 0) {
+    my $bcf_file = $full_path . $self->{lane} . q(_var.raw.bcf);
+    my $cmd2 = $self->{bcftools} . q( view ) . $bcf_file;
+    my $genome_length;
+    my $het_ploidy_counter = 0;
+
+    for my $row ( `$cmd2` ) {
+      $row =~ s/\n$//;
+      if ($row =~ m/^\#/) {
+	if ($row =~ m/contig\=\<ID\=chr/) {
+	  $row =~ s/.*contig\=\<ID\=chr.*,length\=(\d+).*/$1/;
+	  $genome_length = $row;
+	}
+	next;
+      }
+      else {
+	if ($row =~ m/^chr/) {
+	  my $bias_threshold = 0.001;
+	  my ($vcf_values) = _get_values_from_vcf_fields($row);
+	  if ($vcf_values->{ploidy} eq '1/0' || $vcf_values->{ploidy} eq '0/1') {
+	    #if ( $vcf_values->{strand_bias} >= $bias_threshold && $vcf_values->{baseQ_bias} >= $bias_threshold && $vcf_values->{maqQ_bias} >= $bias_threshold && $vcf_values->{tail_bias} >= $bias_threshold ) {
+	      if ( $vcf_values->{dp} >= 2 && $vcf_values->{mq} >= 30 && $vcf_values->{af1} >= 0.95 ) {
+		$het_ploidy_counter++;
+	      }
+	    #}
+	  }
+	}
+      }
+    }
+    my $ploidy_percentage = ($het_ploidy_counter * 100)/$genome_length;
+    open(my $fh, '>', "$full_path/_heterozygousity.txt") or Utils::error("$full_path/_heterozygousity.txt: $!");
+    print $fh "$het_ploidy_counter\t$ploidy_percentage\n";
+    close($fh);
+    `touch $full_path/_heterozygousity_done`;
+  }
+  else {
+    die "Unable to create the bcf file\n";
+  }
+}
+
+sub _get_values_from_vcf_fields {
+
+  my ($row) = @_;
+
+  my %vcf_values;
+
+  my @values = split(/\t/, $row);
+
+  $vcf_values{dp} = $values[7];
+  $vcf_values{dp} =~ s/.*DP\=([0-9]+).*/$1/;
+
+  $vcf_values{mq} = $values[7];
+  $vcf_values{mq} =~ s/.*MQ\=([0-9]+).*/$1/;
+
+  $vcf_values{af1} = $values[7];
+  $vcf_values{af1} =~ s/.*AF1\=([\-0-9]+).*/$1/;
+
+  ( $vcf_values{strand_bias}, $vcf_values{baseQ_bias}, $vcf_values{mapQ_bias}, $vcf_values{tail_bias} ) = (0.001,0.001,0.001,0.001);
+
+  my $pv4_values = $values[7];
+  $pv4_values =~ s/.*;PV4\=([0-9\.]+,[0-9\.]+,[0-9\.]+,[0-9\.]+).*/$1/;
+  if ($pv4_values =~ m/^\d/ ) {
+    my @pv4 = split(/,/,$pv4_values);
+
+    $vcf_values{strand_bias} = $pv4[0];
+    $vcf_values{baseQ_bias} = $pv4[1];
+    $vcf_values{mapQ_bias} = $pv4[2];
+    $vcf_values{tail_bias} = $pv4[3];
+
+  }
+
+
+
+  $vcf_values{ploidy} = $values[9];
+  $vcf_values{ploidy} =~ s/(\d\/\d).*/$1/;
+
+  return(\%vcf_values);
+}
+
 
 #----------- stats_and_graphs ---------------------
 
@@ -837,7 +998,9 @@ my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
 ];
     close $fh;
 
-    VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_graphs", {bsub_opts=>$$self{bsub_opts_stats_and_graphs}}, qq{perl -w _graphs.pl});
+    VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}0_graphs",
+    {bsub_opts=>$$self{bsub_opts_stats_and_graphs}}, qq{perl -w
+    _graphs.pl});
     return $$self{'No'};
 }
 
