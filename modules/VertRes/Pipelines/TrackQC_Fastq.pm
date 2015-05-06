@@ -129,8 +129,6 @@ our $options =
     'mapviewdepth'    => 'mapviewdepth_sam',
     'samtools'        => 'samtools',
     'bcftools'        => 'bcftools',
-    'vcfutils'        => 'vcfutils.pl',
-
 
     'adapters'        => '/software/pathogen/projects/protocols/ext/solexa-adapters.fasta',
     'bsub_opts'       => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
@@ -820,7 +818,6 @@ my \%params =
 (
     'samtools'     => q[$$self{'samtools'}],
     'bcftools'     => q[$$self{'bcftools'}],
-    'vcfutils'     => q[$$self{'vcfutils'}],
     'lane_path'    => q[$lane_path],
     'lane'         => q[$$self{lane}],
     'sample_dir'   => q[$$self{'sample_dir'}],
