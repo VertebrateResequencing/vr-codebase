@@ -122,7 +122,7 @@ if (!$opts{f} || !$opts{m} || !$opts{o}) {
 	   'all' -keep all
 	   list is a "|" separated list, eg: "missense|stop_gained|stop_lost"
 	   'default' -list is "/transcript_ablation|stop_g|stop_l|missense|splice_d|splice_a|
-	   coding_seq|initiator_c|transcript_amp|TF_binding|regulatory_reg|frameshift_v|inframe_/"
+	   initiator_c|transcript_amp|TF_binding|regulatory_reg|frameshift_v|inframe_/"
 	   REQUIRED
 
 	-m extended|default; add or exclude DP4T in table format
@@ -166,7 +166,7 @@ if ($which ne 'all' && $which ne 'default') {
 my $consequences;
 
 if ($which eq 'default') {
-	$consequences = "transcript_ablation|stop_g|stop_l|missense|splice_d|splice_a|coding_seq|initiator_c|transcript_amp|TF_binding|regulatory_reg|frameshift_v|inframe_";
+	$consequences = "transcript_ablation|stop_g|stop_l|missense|splice_d|splice_a|initiator_c|transcript_amp|TF_binding|regulatory_reg|frameshift_v|inframe_";
 }
 elsif ($which ne 'all') {
 	$consequences = $which;
@@ -270,7 +270,7 @@ while (<>) {
 			if ($outformat ne 'vcf') {
 				open F, ">$dir/$sample-vs-$ref-MuTect.txt" or die "Can't open $dir/$sample-vs-$ref-MuTect.txt" ;
 				print F "##Reformatted MuTect calls with ENSEMBL VEP consequence annotations\n";
-				print F "##Filtered for conseqeuences: transcript_ablation|stop_lost|stop_gain|missense|splice_donor|splice_acceptor|coding_seq|initiator_codon|transcript_amp|TF_binding|regulatory_reg|frameshift_variant|inframe_insertion|inframe_deletion\n" if $which eq 'limit';
+				print F "##Filtered for conseqeuences: transcript_ablation|stop_lost|stop_gain|missense|splice_donor|splice_acceptor|initiator_codon|transcript_amp|TF_binding|regulatory_reg|frameshift_variant|inframe_insertion|inframe_deletion\n" if $which eq 'limit';
 				print F "##Excludes consequences affecting NMD and non-coding transcripts\n" if $which eq 'limit';
 				print F "##No consequence filtering\n" if $which eq 'all';
 				print F $reference."\n";

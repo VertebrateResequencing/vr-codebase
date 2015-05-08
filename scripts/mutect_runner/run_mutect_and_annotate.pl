@@ -133,7 +133,7 @@ sub new {
 			summary_table => 'y',
 			
 			# REQUIRED: 'default', 'all' or a list of "|" separated SO consequences used in VEP
-			# 'default' is 'transcript_ablation|stop_g|stop_l|missense|splice_d|splice_a|coding_seq|initiator_c|transcript_amp|TF_binding|regulatory_reg|frameshift_v|inframe_'
+			# 'default' is 'transcript_ablation|stop_g|stop_l|missense|splice_d|splice_a|initiator_c|transcript_amp|TF_binding|regulatory_reg|frameshift_v|inframe_'
 			conseq_list    => 'default',
 			# OPTIONAL: filter by transcript biotype
 			# Keep consequences with transcripts of these Ensembl biotypes; separate with "|"
