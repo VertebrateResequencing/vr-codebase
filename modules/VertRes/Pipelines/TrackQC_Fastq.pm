@@ -1015,7 +1015,7 @@ my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
 ];
     close $fh;
 
-    VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}0_graphs",{bsub_opts=>$$self{bsub_opts_stats_and_graphs}}, qq{perl -w _graphs.pl});
+    VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_graphs",{bsub_opts=>$$self{bsub_opts_stats_and_graphs}}, qq{perl -w _graphs.pl});
     return $$self{'No'};
 }
 
