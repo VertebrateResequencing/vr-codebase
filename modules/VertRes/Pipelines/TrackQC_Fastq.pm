@@ -86,7 +86,7 @@ our @actions =
 
     # Calculates heterozygousity percentage and counts.
     {
-        'name'     => 'calculate_heterozygousity',
+        'name'     => 'snps_and_heterozygousity',
         'action'   => \&calculate_heterozygousity,
         'requires' => \&calculate_heterozygousity_requires,
         'provides' => \&calculate_heterozygousity_provides,
@@ -795,7 +795,7 @@ sub calculate_heterozygousity_provides
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @provides = ("$sample_dir/_heterozygousity_done","$sample_dir/_heterozygousity.txt");
+    my @provides = ("$sample_dir/_snps_and_heterozygousity_done","$sample_dir/heterozygousity_report.txt");
     return \@provides;
 }
 
@@ -808,7 +808,7 @@ sub calculate_heterozygousity
   my $lane  = $$self{lane};
 
   # Dynamic script to be run by LSF.
-  open(my $fh, '>', "$lane_path/$sample_dir/_snps_and_heterozygousity.pl") or Utils::error("$lane_path/$sample_dir/_snps_and_heterozygousity.pl: $!");
+  open(my $fh, '>', "$lane_path/_snps_and_heterozygousity.pl") or Utils::error("$lane_path/$sample_dir/_snps_and_heterozygousity.pl: $!");
   print $fh
 qq[
 use VertRes::Pipelines::TrackQC_Fastq;
@@ -828,11 +828,11 @@ my \%params =
 
 my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
 \$qc->run_snp_calling(\$params{lane_path});
-
+system("touch _snps_and_heterozygousity_done") and die "Error touch _snps_and_heterozygousity_done";
 ];
   close $fh;
 
-  VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}_snps_and_heterozygousity", {bsub_opts=>$self->{bsub_opts_ploidy}}, qq{perl -w _snps_and_heterozygousity.pl});
+  VertRes::LSF::run($lock_file,"$lane_path","_snps_and_heterozygousity", {bsub_opts=>$self->{bsub_opts_ploidy}}, qq{perl -w _snps_and_heterozygousity.pl});
   return $$self{'No'};
 }
 
@@ -841,47 +841,68 @@ sub run_snp_calling {
   my ($self) = @_;
 
   my $full_path = $self->{lane_path} . q(/) . $self->{sample_dir} . q(/);
+  my $bcf_file = $full_path . $self->{lane} . q(_var.raw.bcf);
 
-  my $cmd = $self->{samtools} . q( mpileup -d 1000 -DSugBf );
-  $cmd .= $self->{fa_ref} . q( ) . $full_path . $self->{lane} . q(.bam | );
-  $cmd .= $self->{bcftools} . q( view -bvcg - > ) . $full_path . $self->{lane} . q(_var.raw.bcf);
+  my $mpileup_to_bcf = $self->{samtools} . q( mpileup -d 1000 -DSugBf );
+  $mpileup_to_bcf .= $self->{fa_ref} . q( ) . $full_path . $self->{lane} . q(.bam | );
+  $mpileup_to_bcf .= $self->{bcftools} . q( view -bvcg - > ) . $bcf_file;
 
-  my $return = system($cmd);
+  my $mpileup_return = system($mpileup_to_bcf);
 
-  if ($return == 0) {
-    my $bcf_file = $full_path . $self->{lane} . q(_var.raw.bcf);
-    my $cmd2 = $self->{bcftools} . q( view ) . $bcf_file;
+  if ( $mpileup_return == 0 && (-e $bcf_file) ) {
+    my $vcf_data = $self->{bcftools} . q( view ) . $bcf_file;
     my $genome_length;
     my $het_ploidy_counter = 0;
+    my (@contig_ids,@contig_lengths);
 
-    for my $row ( `$cmd2` ) {
-      $row =~ s/\n$//;
-      if ($row =~ m/^\#/) {
-	if ($row =~ m/contig\=\<ID\=chr/) {
-	  $row =~ s/.*contig\=\<ID\=chr.*,length\=(\d+).*/$1/;
-	  $genome_length = $row;
+    #We need to fetch the name of all the contigs in the bcf file.
+    #This will allow ploidy computation agaisnt the largest contig only.
+    #All others will not be used
+    for my $row ( `$vcf_data` ) {
+      if ($row =~ m/^##/ ) {
+	$row =~ s/\n$//;
+	if ($row =~ m/contig\=\<ID\=/) {
+	  my $contig_id = $row;
+	  my $contig_length = $row;
+	  $contig_id =~ s/##contig\=\<ID\=(.*),.*/$1/;
+	  $contig_length =~ s/.*length=(\d+).*/$1/;
+	  push(@contig_ids,$contig_id);
+	  push(@contig_lengths,$contig_length);
 	}
+      }
+      else {
+	last;
+      }
+    }
+
+    for my $row ( `$vcf_data` ) {
+      $row =~ s/\n$//;
+      if ($row =~ m/^##/ ) {
 	next;
       }
       else {
-	if ($row =~ m/^chr/) {
+	my $contig_id = $contig_ids[0];
+	$genome_length = $contig_lengths[0];
+
+	if ($row =~ m/^$contig_id/) {
 	  my $bias_threshold = 0.001;
 	  my ($vcf_values) = _get_values_from_vcf_fields($row);
 	  if ($vcf_values->{ploidy} eq '1/0' || $vcf_values->{ploidy} eq '0/1') {
-	    #if ( $vcf_values->{strand_bias} >= $bias_threshold && $vcf_values->{baseQ_bias} >= $bias_threshold && $vcf_values->{maqQ_bias} >= $bias_threshold && $vcf_values->{tail_bias} >= $bias_threshold ) {
+	    if ( $vcf_values->{strand_bias} >= $bias_threshold && $vcf_values->{baseQ_bias} >= $bias_threshold && $vcf_values->{tail_bias} >= $bias_threshold && $vcf_values->{mapQ_bias} >= $bias_threshold) {
 	      if ( $vcf_values->{dp} >= 2 && $vcf_values->{mq} >= 30 && $vcf_values->{af1} >= 0.95 ) {
 		$het_ploidy_counter++;
 	      }
-	    #}
+	    }
 	  }
 	}
       }
     }
     my $ploidy_percentage = ($het_ploidy_counter * 100)/$genome_length;
-    open(my $fh, '>', "$full_path/_heterozygousity.txt") or Utils::error("$full_path/_heterozygousity.txt: $!");
+    open(my $fh, '>', "$full_path/heterozygousity_report.txt") or Utils::error("$full_path/heterozygousity_report.txt: $!");
     print $fh "$het_ploidy_counter\t$ploidy_percentage\n";
     close($fh);
-    `touch $full_path/_heterozygousity_done`;
+
+    `rm -rf $bcf_file`;
   }
   else {
     die "Unable to create the bcf file\n";
@@ -994,9 +1015,7 @@ my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
 ];
     close $fh;
 
-    VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}0_graphs",
-    {bsub_opts=>$$self{bsub_opts_stats_and_graphs}}, qq{perl -w
-    _graphs.pl});
+    VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_${lane}0_graphs",{bsub_opts=>$$self{bsub_opts_stats_and_graphs}}, qq{perl -w _graphs.pl});
     return $$self{'No'};
 }
 
