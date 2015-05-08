@@ -26,34 +26,44 @@ my $help = <<END;
     chr site1 annotations sample1
     chr site1 annotations sample2
 
-  Assumes the first 14 columns are annotations, sample info in 15+.
+  Assumes the first 14 columns are annotations, sample info in 15+ unless specified.
 
-  Usage: summary_bysample.pl mutect_all_summary.txt > mutect_all_summary.bysample.txt 
+  Usage: summary_bysample.pl mutect_all_summary.txt [column_number] > mutect_all_summary.bysample.txt 
 
 END
 
 
 my $file = shift @ARGV or die $help;
+my $colnum = shift @ARGV; # 1-based assumed
+$colnum-- if $colnum;
+
 if (! -e $file) {
 	die "No such file $file\n";
 }
 open F, $file or die $!;
 
 my @samples;
+my $recurrency;
+
 while (<F>) {
 	chomp;
-	if (/^#/ ) {
+	if (/^##/) {
+		print $_."\n"; next;
+	}
+	elsif (/^#/ ) {
 		my @c = split "\t",$_;
-		@samples = @c[14..$#c];
+		$recurrency=1 if $c[-1] eq 'recurrency';
+		@samples = $recurrency ? @c[($colnum)..$#c-1] : @c[($colnum)..$#c];
 		chomp @samples;
-		print join ("\t",@c[0..13])."\tSample\n";
+		print join ("\t",@c[0..($colnum-1)])."\tSample\n";
 		next;
 	}
 	my @line = split "\t", $_;
-	my @cell = @line[14..$#line];
+	pop @line if $recurrency ==1;
+	my @cell = @line[$colnum..$#line];
 	foreach my $i (0..$#cell) {
 		if ($cell[$i]==1) {
-			print join ("\t",@line[0..13])."\t$samples[$i]\n";
+			print join ("\t",@line[0..($colnum-1)])."\t$samples[$i]\n";
 		}
 	}
 }
