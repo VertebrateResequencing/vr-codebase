@@ -14,6 +14,7 @@ use base qw(VertRes::Pipelines::TrackQC_Bam);
 
 use strict;
 use warnings;
+use Carp;
 use VertRes::LSF;
 use VertRes::Parser::fastqcheck;
 use VertRes::Wrapper::bwa;
@@ -84,12 +85,12 @@ our @actions =
       'provides' => \&transposon_provides,
     },
 
-    # Calculates heterozygousity percentage and counts.
+    # Calculates heterozygosity percentage and counts.
     {
-        'name'     => 'snps_and_heterozygousity',
-        'action'   => \&calculate_heterozygousity,
-        'requires' => \&calculate_heterozygousity_requires,
-        'provides' => \&calculate_heterozygousity_provides,
+        'name'     => 'snps_and_heterozygosity',
+        'action'   => \&calculate_heterozygosity,
+        'requires' => \&calculate_heterozygosity_requires,
+        'provides' => \&calculate_heterozygosity_provides,
     },
 
     # Creates some QC graphs and generate some statistics.
@@ -128,11 +129,12 @@ our $options =
     'kraken_report_exec' => 'kraken-report',
     'mapviewdepth'    => 'mapviewdepth_sam',
     'samtools'        => 'samtools',
-    'bcftools'        => 'bcftools',
+    'samtools_heterozygosity'        => 'samtools-1.1.30',
+    'bcftools'        => 'bcftools-1.2',
 
     'adapters'        => '/software/pathogen/projects/protocols/ext/solexa-adapters.fasta',
     'bsub_opts'       => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
-    'bsub_opts_ploidy'   => "-q normal -M1000 -R 'select[mem>1000] rusage[mem=1000]'",
+    'bsub_opts_snps_and_heterozygosity'   => "-q normal -M1000 -R 'select[mem>1000] rusage[mem=1000]'",
     'bsub_opts_stats_and_graphs'   => "-q normal -M1000 -R 'select[mem>1000] rusage[mem=1000]'",
     'bsub_opts_map_sample'         => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
     'bsub_opts_process_fastqs'     => "-q normal -M3200 -R 'select[mem>3200] rusage[mem=3200]'",
@@ -145,7 +147,11 @@ our $options =
     'kraken_report'   => 'kraken.report',
     'sample_dir'      => 'qc-sample',
     'sample_size'     => 50e6,
-    'ploidy'          => '_heterozygousity.txt',
+    'bcft_min_dp'     => 10,
+    'bcft_min_dv'     => 5,
+    'bcft_dp_dv_ratio'     => 0.3,
+    'bcft_min_qual'     => 20,
+    'heterozygosity'          => 'heterozygosity_report.txt',
     'stats'           => '_stats',
     'stats_detailed'  => '_detailed-stats.txt',
     'stats_dump'      => '_stats.dump',
@@ -783,7 +789,7 @@ sub transposon
 
 #----------- calculate_heterozygousity ---------------------
 
-sub calculate_heterozygousity_requires
+sub calculate_heterozygosity_requires
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
@@ -791,15 +797,15 @@ sub calculate_heterozygousity_requires
     return \@requires;
 }
 
-sub calculate_heterozygousity_provides
+sub calculate_heterozygosity_provides
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @provides = ("$sample_dir/_snps_and_heterozygousity_done","$sample_dir/heterozygousity_report.txt");
+    my @provides = ("_snps_and_heterozygosity_done","heterozygosity_report.txt");
     return \@provides;
 }
 
-sub calculate_heterozygousity
+sub calculate_heterozygosity
 {
   my ($self,$lane_path,$lock_file) = @_;
 
@@ -808,15 +814,19 @@ sub calculate_heterozygousity
   my $lane  = $$self{lane};
 
   # Dynamic script to be run by LSF.
-  open(my $fh, '>', "$lane_path/_snps_and_heterozygousity.pl") or Utils::error("$lane_path/$sample_dir/_snps_and_heterozygousity.pl: $!");
+  open(my $fh, '>', "$lane_path/$sample_dir/_snps_and_heterozygosity.pl") or Utils::error("$lane_path/$sample_dir/_snps_and_heterozygosity.pl: $!");
   print $fh
 qq[
 use VertRes::Pipelines::TrackQC_Fastq;
 
 my \%params =
 (
-    'samtools'     => q[$$self{'samtools'}],
+    'samtools_heterozygosity' => q[$$self{'samtools_heterozygosity'}],
     'bcftools'     => q[$$self{'bcftools'}],
+    'bcft_min_dp'  => q[$$self{'bcft_min_dp'}],
+    'bcft_min_dv'     => q[$$self{'bcft_min_dv'}],
+    'bcft_dp_dv_ratio' => q[$$self{'bcft_dp_dv_ratio'}],
+    'bcft_min_qual'     => q[$$self{'bcft_min_qual'}],
     'lane_path'    => q[$lane_path],
     'lane'         => q[$$self{lane}],
     'sample_dir'   => q[$$self{'sample_dir'}],
@@ -828,11 +838,11 @@ my \%params =
 
 my \$qc = VertRes::Pipelines::TrackQC_Fastq->new(\%params);
 \$qc->run_snp_calling(\$params{lane_path});
-system("touch _snps_and_heterozygousity_done") and die "Error touch _snps_and_heterozygousity_done";
+system("touch $lane_path/_snps_and_heterozygosity_done") and die "Error touch $lane_path/_snps_and_heterozygosity_done";
 ];
   close $fh;
 
-  VertRes::LSF::run($lock_file,"$lane_path","_snps_and_heterozygousity", {bsub_opts=>$self->{bsub_opts_ploidy}}, qq{perl -w _snps_and_heterozygousity.pl});
+  VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_snps_and_heterozygosity", {bsub_opts=>$self->{bsub_opts_ploidy}}, qq{perl -w _snps_and_heterozygosity.pl});
   return $$self{'No'};
 }
 
@@ -840,113 +850,79 @@ sub run_snp_calling {
 
   my ($self) = @_;
 
+  my $lane_path = $self->{lane_path};
   my $full_path = $self->{lane_path} . q(/) . $self->{sample_dir} . q(/);
-  my $bcf_file = $full_path . $self->{lane} . q(_var.raw.bcf);
+  my $temp_vcf_file = $full_path . $self->{lane} . q(_temp_vcf.vcf.gz);
+  my $snp_called_vcf_file = $full_path . $self->{lane} . q(_snp_called.vcf.gz);
+  my $filtered_snp_called_vcf_file = $full_path . $self->{lane} . q(_filtered_snp_called.vcf);
 
-  my $mpileup_to_bcf = $self->{samtools} . q( mpileup -d 1000 -DSugBf );
-  $mpileup_to_bcf .= $self->{fa_ref} . q( ) . $full_path . $self->{lane} . q(.bam | );
-  $mpileup_to_bcf .= $self->{bcftools} . q( view -bvcg - > ) . $bcf_file;
+  my $genome_length;
+  my $heterozigous_snps = 0;
+  my $heterozigous_snp_percentage = 0;
 
-  my $mpileup_return = system($mpileup_to_bcf);
+  my $mpileup_to_vcf = $self->{samtools_heterozygosity} . q( mpileup -d 500 -t INFO/DPR,DV -C50 -ugvf );
+  $mpileup_to_vcf .= $self->{fa_ref} . q( ) . $full_path . $self->{lane} . q(.bam | bgzip > ) . $temp_vcf_file;
 
-  if ( $mpileup_return == 0 && (-e $bcf_file) ) {
-    my $vcf_data = $self->{bcftools} . q( view ) . $bcf_file;
-    my $genome_length;
-    my $het_ploidy_counter = 0;
-    my (@contig_ids,@contig_lengths);
+  my $mpileup_return = system($mpileup_to_vcf);
 
-    #We need to fetch the name of all the contigs in the bcf file.
-    #This will allow ploidy computation agaisnt the largest contig only.
-    #All others will not be used
-    for my $row ( `$vcf_data` ) {
-      if ($row =~ m/^##/ ) {
-	$row =~ s/\n$//;
-	if ($row =~ m/contig\=\<ID\=/) {
-	  my $contig_id = $row;
-	  my $contig_length = $row;
-	  $contig_id =~ s/##contig\=\<ID\=(.*),.*/$1/;
-	  $contig_length =~ s/.*length=(\d+).*/$1/;
-	  push(@contig_ids,$contig_id);
-	  push(@contig_lengths,$contig_length);
-	}
-      }
-      else {
-	last;
-      }
-    }
+  if ( $mpileup_return == 0 && (-e $temp_vcf_file) ) {
 
-    for my $row ( `$vcf_data` ) {
-      $row =~ s/\n$//;
-      if ($row =~ m/^##/ ) {
-	next;
-      }
-      else {
-	my $contig_id = $contig_ids[0];
-	$genome_length = $contig_lengths[0];
+    my $snp_call_command = $self->{bcftools} . q( call -vm -O z ) . $temp_vcf_file . q( > ) . $snp_called_vcf_file;
+    my $snp_call_return = system($snp_call_command);
 
-	if ($row =~ m/^$contig_id/) {
-	  my $bias_threshold = 0.001;
-	  my ($vcf_values) = _get_values_from_vcf_fields($row);
-	  if ($vcf_values->{ploidy} eq '1/0' || $vcf_values->{ploidy} eq '0/1') {
-	    if ( $vcf_values->{strand_bias} >= $bias_threshold && $vcf_values->{baseQ_bias} >= $bias_threshold && $vcf_values->{tail_bias} >= $bias_threshold && $vcf_values->{mapQ_bias} >= $bias_threshold) {
-	      if ( $vcf_values->{dp} >= 2 && $vcf_values->{mq} >= 30 && $vcf_values->{af1} >= 0.95 ) {
-		$het_ploidy_counter++;
-	      }
+    if ( $snp_call_return == 0 && (-e $snp_called_vcf_file) ) {
+      my $bcf_filter_command = $self->{bcftools} . q( filter -i ");
+      $bcf_filter_command .= q(MIN(DP) >= ) . $self->{bcft_min_dp};
+      $bcf_filter_command .= q( & MIN(DV) >= ) . $self->{bcft_min_dv};
+      $bcf_filter_command .= q( & MIN(DV/DP)>= ) . $self->{bcft_dp_dv_ratio};
+      $bcf_filter_command .= q( & QUAL >= ) . $self->{bcft_min_qual};
+      $bcf_filter_command .= q{ & (GT='1/0' | GT='0/1' | GT='1/2')" };
+      $bcf_filter_command .= $snp_called_vcf_file . q( > ) . $filtered_snp_called_vcf_file;
+
+      my $bcf_filter_return = system($bcf_filter_command);
+
+      if( $bcf_filter_return == 0 && (-e $filtered_snp_called_vcf_file) ) {
+
+	my $het_snp_counter_command = $self->{bcftools} . q( query -f "%CHROM %POS\n" ) . $filtered_snp_called_vcf_file . q( | wc -l );
+	$heterozigous_snps = `$het_snp_counter_command`;
+	chomp($heterozigous_snps);
+
+	unless ( $heterozigous_snps == 0 ) {
+	  my $vcf_header_command = $self->{bcftools} . q( view -h ) . $filtered_snp_called_vcf_file;
+	  for my $row ( `$vcf_header_command` ) {
+	    if ($row =~ m/.*length=/) {
+	      my $length = $row;
+	      $length =~ s/.*length=(\d+).*/$1/;
+	      $genome_length += $length;
 	    }
 	  }
+	  $heterozigous_snp_percentage = ($heterozigous_snps * 100)/$genome_length;
 	}
+
+	open(my $fh, '>', "$lane_path/heterozygosity_report.txt") or Utils::error("$lane_path/heterozygosity_report.txt: $!");
+	print $fh "##Total Number of Het SNPs\tGenome \% of Het SNPs\n";
+	print $fh "$heterozigous_snps\t$heterozigous_snp_percentage\n";
+	close($fh);
+
+	#Removing the temporarily created vcf files
+	unlink($temp_vcf_file);
+	unlink($snp_called_vcf_file);
+	unlink($filtered_snp_called_vcf_file);
+
+      }
+      else {
+	croak "Unable to filter the vcf file: $snp_called_vcf_file.\nCouldn't create the file: $filtered_snp_called_vcf_file";
       }
     }
-    my $ploidy_percentage = ($het_ploidy_counter * 100)/$genome_length;
-    open(my $fh, '>', "$full_path/heterozygousity_report.txt") or Utils::error("$full_path/heterozygousity_report.txt: $!");
-    print $fh "$het_ploidy_counter\t$ploidy_percentage\n";
-    close($fh);
-
-    `rm -rf $bcf_file`;
+    else {
+      croak "Unable to run the snp calling command on the vcf file: $temp_vcf_file.\nCouldn't create the file: $snp_called_vcf_file";
+    }
   }
   else {
-    die "Unable to create the bcf file\n";
+    croak "Unable to run the mpileup command.\nCouldn't create the vcf file: $temp_vcf_file\n";
   }
 }
 
-sub _get_values_from_vcf_fields {
-
-  my ($row) = @_;
-
-  my %vcf_values;
-
-  my @values = split(/\t/, $row);
-
-  $vcf_values{dp} = $values[7];
-  $vcf_values{dp} =~ s/.*DP\=([0-9]+).*/$1/;
-
-  $vcf_values{mq} = $values[7];
-  $vcf_values{mq} =~ s/.*MQ\=([0-9]+).*/$1/;
-
-  $vcf_values{af1} = $values[7];
-  $vcf_values{af1} =~ s/.*AF1\=([\-0-9]+).*/$1/;
-
-  ( $vcf_values{strand_bias}, $vcf_values{baseQ_bias}, $vcf_values{mapQ_bias}, $vcf_values{tail_bias} ) = (0.001,0.001,0.001,0.001);
-
-  my $pv4_values = $values[7];
-  $pv4_values =~ s/.*;PV4\=([0-9\.]+,[0-9\.]+,[0-9\.]+,[0-9\.]+).*/$1/;
-  if ($pv4_values =~ m/^\d/ ) {
-    my @pv4 = split(/,/,$pv4_values);
-
-    $vcf_values{strand_bias} = $pv4[0];
-    $vcf_values{baseQ_bias} = $pv4[1];
-    $vcf_values{mapQ_bias} = $pv4[2];
-    $vcf_values{tail_bias} = $pv4[3];
-
-  }
-
-
-
-  $vcf_values{ploidy} = $values[9];
-  $vcf_values{ploidy} =~ s/(\d\/\d).*/$1/;
-
-  return(\%vcf_values);
-}
 
 
 #----------- stats_and_graphs ---------------------
@@ -955,7 +931,7 @@ sub stats_and_graphs_requires
 {
     my ($self) = @_;
     my $sample_dir = $$self{'sample_dir'};
-    my @requires = ("$sample_dir/$$self{lane}.bam");
+    my @requires = ("$sample_dir/$$self{lane}.bam","heterozygosity_report.txt");
     return \@requires;
 }
 
