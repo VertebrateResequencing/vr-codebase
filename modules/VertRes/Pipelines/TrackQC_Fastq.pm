@@ -134,7 +134,7 @@ our $options =
 
     'adapters'        => '/software/pathogen/projects/protocols/ext/solexa-adapters.fasta',
     'bsub_opts'       => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
-    'bsub_opts_snps_and_heterozygosity'   => "-q normal -M1000 -R 'select[mem>1000] rusage[mem=1000]'",
+    'bsub_opts_snps_and_heterozygosity'   => "-q normal -M500 -R 'select[mem>500] rusage[mem=500]'",
     'bsub_opts_stats_and_graphs'   => "-q normal -M1000 -R 'select[mem>1000] rusage[mem=1000]'",
     'bsub_opts_map_sample'         => "-q normal -M5000 -R 'select[mem>5000] rusage[mem=5000]'",
     'bsub_opts_process_fastqs'     => "-q normal -M3200 -R 'select[mem>3200] rusage[mem=3200]'",
@@ -151,6 +151,7 @@ our $options =
     'bcft_min_dv'     => 5,
     'bcft_dp_dv_ratio'     => 0.3,
     'bcft_min_qual'     => 20,
+    'bcft_dp4_ref_allele_ratio'     => 0.3,
     'heterozygosity'          => 'heterozygosity_report.txt',
     'stats'           => '_stats',
     'stats_detailed'  => '_detailed-stats.txt',
@@ -827,6 +828,7 @@ my \%params =
     'bcft_min_dv'     => q[$$self{'bcft_min_dv'}],
     'bcft_dp_dv_ratio' => q[$$self{'bcft_dp_dv_ratio'}],
     'bcft_min_qual'     => q[$$self{'bcft_min_qual'}],
+    'bcft_dp4_ref_allele_ratio' => q[$$self{'bcft_dp4_ref_allele_ratio'}],
     'lane_path'    => q[$lane_path],
     'lane'         => q[$$self{lane}],
     'sample_dir'   => q[$$self{'sample_dir'}],
@@ -842,7 +844,7 @@ system("touch $lane_path/_snps_and_heterozygosity_done") and die "Error touch $l
 ];
   close $fh;
 
-  VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_snps_and_heterozygosity", {bsub_opts=>$self->{bsub_opts_ploidy}}, qq{perl -w _snps_and_heterozygosity.pl});
+  VertRes::LSF::run($lock_file,"$lane_path/$sample_dir","_snps_and_heterozygosity", {bsub_opts=>$self->{bsub_opts_snps_and_heterozygosity}}, qq{perl -w _snps_and_heterozygosity.pl});
   return $$self{'No'};
 }
 
@@ -856,28 +858,40 @@ sub run_snp_calling {
   my $snp_called_vcf_file = $full_path . $self->{lane} . q(_snp_called.vcf.gz);
   my $filtered_snp_called_vcf_file = $full_path . $self->{lane} . q(_filtered_snp_called.vcf);
 
+  #Two percentages will be reported.
+  #1 - The percentage of heterozigous SNPs for the whole genome length
+  #2 - The percentage of heterzygous SNPs for the total number of positions in the vcf file
   my $genome_length;
-  my $heterozigous_snps = 0;
-  my $heterozigous_snp_percentage = 0;
+  my $number_of_positions_visited;
 
-  my $mpileup_to_vcf = $self->{samtools_heterozygosity} . q( mpileup -d 500 -t INFO/DPR,DV -C50 -ugvf );
+  my $heterozigous_snps = 0;
+  my $heterozigous_snp_genome_percentage = 0;
+  my $heterozigous_snp_posistions_visited_percentage = 0;
+
+  my $mpileup_to_vcf = $self->{samtools_heterozygosity} . q( mpileup -d 500 -t INFO/DPR,DV -C50 -ugf );
   $mpileup_to_vcf .= $self->{fa_ref} . q( ) . $full_path . $self->{lane} . q(.bam | bgzip > ) . $temp_vcf_file;
 
   my $mpileup_return = system($mpileup_to_vcf);
 
   if ( $mpileup_return == 0 && (-e $temp_vcf_file) ) {
 
+    my $positions_visited_command = $self->{bcftools} . q( view -H ) . $temp_vcf_file . q( | wc -l);
+    $number_of_positions_visited = `$positions_visited_command`;
+    chomp($number_of_positions_visited);
+
     my $snp_call_command = $self->{bcftools} . q( call -vm -O z ) . $temp_vcf_file . q( > ) . $snp_called_vcf_file;
     my $snp_call_return = system($snp_call_command);
 
     if ( $snp_call_return == 0 && (-e $snp_called_vcf_file) ) {
-      my $bcf_filter_command = $self->{bcftools} . q( filter -i ");
-      $bcf_filter_command .= q(MIN(DP) >= ) . $self->{bcft_min_dp};
-      $bcf_filter_command .= q( & MIN(DV) >= ) . $self->{bcft_min_dv};
-      $bcf_filter_command .= q( & MIN(DV/DP)>= ) . $self->{bcft_dp_dv_ratio};
-      $bcf_filter_command .= q( & QUAL >= ) . $self->{bcft_min_qual};
-      $bcf_filter_command .= q{ & (GT='1/0' | GT='0/1' | GT='1/2')" };
-      $bcf_filter_command .= $snp_called_vcf_file . q( > ) . $filtered_snp_called_vcf_file;
+      my $bcf_filter_command = $self->{bcftools} . q( filter -i );
+      $bcf_filter_command .= q{"(DP4[0]+DP4[1])/(DP4[2]+DP4[3]) > 0.3" } . $snp_called_vcf_file . q{ | };
+      $bcf_filter_command .= $self->{bcftools} . q( filter -i );
+      $bcf_filter_command .= q{"MIN(DP) >= } . $self->{bcft_min_dp};
+      $bcf_filter_command .= q{ & MIN(DV) >= } . $self->{bcft_min_dv};
+      $bcf_filter_command .= q{ & MIN(DV/DP)>= } . $self->{bcft_dp_dv_ratio};
+      $bcf_filter_command .= q{ & QUAL >= } . $self->{bcft_min_qual};
+      $bcf_filter_command .= q{ & (GT='1/0' | GT='0/1' | GT='1/2')" -};
+      $bcf_filter_command .= q{ > } . $filtered_snp_called_vcf_file;
 
       my $bcf_filter_return = system($bcf_filter_command);
 
@@ -896,12 +910,13 @@ sub run_snp_calling {
 	      $genome_length += $length;
 	    }
 	  }
-	  $heterozigous_snp_percentage = ($heterozigous_snps * 100)/$genome_length;
+	  $heterozigous_snp_genome_percentage = ($heterozigous_snps * 100)/$genome_length;
+	  $heterozigous_snp_posistions_visited_percentage = ($heterozigous_snps * 100)/$number_of_positions_visited;
 	}
 
 	open(my $fh, '>', "$lane_path/heterozygosity_report.txt") or Utils::error("$lane_path/heterozygosity_report.txt: $!");
-	print $fh "##Total Number of Het SNPs\tGenome \% of Het SNPs\n";
-	print $fh "$heterozigous_snps\t$heterozigous_snp_percentage\n";
+	print $fh "##Total Number of Het SNPs\tGenome \% of Het SNPs\tPositions visited \% of Het SNPs\n";
+	print $fh "$heterozigous_snps\t$heterozigous_snp_genome_percentage\t$heterozigous_snp_posistions_visited_percentage\n";
 	close($fh);
 
 	#Removing the temporarily created vcf files
