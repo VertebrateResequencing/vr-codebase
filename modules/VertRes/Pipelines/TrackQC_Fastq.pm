@@ -858,9 +858,13 @@ sub run_snp_calling {
   my $snp_called_vcf_file = $full_path . $self->{lane} . q(_snp_called.vcf.gz);
   my $filtered_snp_called_vcf_file = $full_path . $self->{lane} . q(_filtered_snp_called.vcf);
 
-  #Two percentages will be reported.
-  #1 - The percentage of heterozigous SNPs for the whole genome length
-  #2 - The percentage of heterzygous SNPs for the total number of positions in the vcf file
+  #Two heterozygosity percentages will be reported.
+  #
+  # 1 - The percentage of heterozygous SNPs for the total genome length
+  #
+  # 2 - The percentage of heterozygous SNPs for the total number of genomic
+  #     positions in the vcf file where the coverage of depth is greater than 0
+  #
   my $genome_length;
   my $number_of_positions_visited;
 
@@ -875,7 +879,7 @@ sub run_snp_calling {
 
   if ( $mpileup_return == 0 && (-e $temp_vcf_file) ) {
 
-    my $positions_visited_command = $self->{bcftools} . q( view -H ) . $temp_vcf_file . q( | wc -l);
+    my $positions_visited_command = $self->{bcftools} . q( call -m -f GQ,GP ) . $temp_vcf_file . q( | egrep -v "^#|DP=0" | wc -l);
     $number_of_positions_visited = `$positions_visited_command`;
     chomp($number_of_positions_visited);
 
