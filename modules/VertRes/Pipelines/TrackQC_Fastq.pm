@@ -868,9 +868,9 @@ sub run_snp_calling {
   my $genome_length;
   my $number_of_positions_visited;
 
-  my $heterozigous_snps = 0;
-  my $heterozigous_snp_genome_percentage = 0;
-  my $heterozigous_snp_posistions_visited_percentage = 0;
+  my $heterozygous_snps = 0;
+  my $heterozygous_snp_genome_percentage = 0;
+  my $heterozygous_snp_positions_visited_percentage = 0;
 
   my $mpileup_to_vcf = $self->{samtools_heterozygosity} . q( mpileup -d 500 -t INFO/DPR,DV -C50 -ugf );
   $mpileup_to_vcf .= $self->{fa_ref} . q( ) . $full_path . $self->{lane} . q(.bam | bgzip > ) . $temp_vcf_file;
@@ -902,10 +902,10 @@ sub run_snp_calling {
       if( $bcf_filter_return == 0 && (-e $filtered_snp_called_vcf_file) ) {
 
 	my $het_snp_counter_command = $self->{bcftools} . q( query -f "%CHROM %POS\n" ) . $filtered_snp_called_vcf_file . q( | wc -l );
-	$heterozigous_snps = `$het_snp_counter_command`;
-	chomp($heterozigous_snps);
+	$heterozygous_snps = `$het_snp_counter_command`;
+	chomp($heterozygous_snps);
 
-	unless ( $heterozigous_snps == 0 ) {
+	unless ( $heterozygous_snps == 0 ) {
 	  my $vcf_header_command = $self->{bcftools} . q( view -h ) . $filtered_snp_called_vcf_file;
 	  for my $row ( `$vcf_header_command` ) {
 	    if ($row =~ m/.*length=/) {
@@ -914,13 +914,13 @@ sub run_snp_calling {
 	      $genome_length += $length;
 	    }
 	  }
-	  $heterozigous_snp_genome_percentage = ($heterozigous_snps * 100)/$genome_length;
-	  $heterozigous_snp_posistions_visited_percentage = ($heterozigous_snps * 100)/$number_of_positions_visited;
+	  $heterozygous_snp_genome_percentage = ($heterozygous_snps * 100)/$genome_length;
+	  $heterozygous_snp_positions_visited_percentage = ($heterozygous_snps * 100)/$number_of_positions_visited;
 	}
 
 	open(my $fh, '>', "$lane_path/heterozygosity_report.txt") or Utils::error("$lane_path/heterozygosity_report.txt: $!");
 	print $fh "##Total Number of Het SNPs\tGenome \% of Het SNPs\tPositions visited \% of Het SNPs\n";
-	print $fh "$heterozigous_snps\t$heterozigous_snp_genome_percentage\t$heterozigous_snp_posistions_visited_percentage\n";
+	print $fh "$heterozygous_snps\t$heterozygous_snp_genome_percentage\t$heterozygous_snp_positions_visited_percentage\n";
 	close($fh);
 
 	#Removing the temporarily created vcf files
