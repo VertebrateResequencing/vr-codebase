@@ -31,14 +31,14 @@ has 'bcf_query_filter_command' => ( is => 'rw', isa => 'Str', lazy => 1, builder
 sub build_full_path {
 
   my ($self) = @_;
-  my $full_path = File::Spec->catfile($self->lane_path, $self->sample_dir);
+  my $full_path = File::Spec->catfile( $self->lane_path, $self->sample_dir );
   return($full_path);
 }
 
 sub _file_path {
 
   my ($self,$suffix) = @_;
-  my $path = File::Spec->catfile($self->full_path, $self->{lane} . $suffix);
+  my $path = File::Spec->catfile( $self->full_path, $self->{lane} . $suffix );
   return($path);
 }
 
@@ -48,8 +48,13 @@ sub build_mpileup_command {
 
   my $bam_file = _file_path( $self, q(.bam) );
   my $temp_vcf = _file_path( $self, q(_temp_vcf.vcf.gz) );
-  my $cmd = $self->samtools . q( mpileup -d 500 -t INFO/DPR,DV -C50 -ugf );
-  $cmd .= $self->fa_ref . q( ) . $bam_file . q( | bgzip > ) . $temp_vcf;
+  my $cmd = $self->samtools;
+  $cmd .= q( mpileup -d 500 -t INFO/DPR,DV -C50 -ugf );
+  $cmd .= $self->fa_ref;
+  $cmd .= q( );
+  $cmd .= $bam_file;
+  $cmd .= q( | bgzip > );
+  $cmd .= $temp_vcf;
 
   return($cmd);
 }
@@ -60,7 +65,10 @@ sub build_total_number_of_snps_command {
   my ($self) = @_;
 
   my $temp_vcf = _file_path( $self, q(_temp_vcf.vcf.gz) );
-  my $cmd = $self->{bcftools} . q( call -m -f GQ,GP ) . $temp_vcf . q( | egrep -v "^#|DP=0" | wc -l);
+  my $cmd = $self->{bcftools};
+  $cmd .= q( call -m -f GQ,GP );
+  $cmd .= $temp_vcf;
+  $cmd .= q( | egrep -v "^#|DP=0" | wc -l);
 
   return($cmd);
 }
@@ -72,7 +80,11 @@ sub build_snp_call_command {
 
   my $temp_vcf = _file_path( $self, q(_temp_vcf.vcf.gz) );
   my $snp_called_vcf = _file_path( $self, q(_snp_called.vcf.gz) );
-  my $cmd = $self->bcftools . q( call -vm -O z ) . $temp_vcf . q( > ) . $snp_called_vcf;
+  my $cmd = $self->bcftools;
+  $cmd .= q( call -vm -O z );
+  $cmd .= $temp_vcf;
+  $cmd .= q( > );
+  $cmd .= $snp_called_vcf;
 
   return($cmd);
 }
@@ -84,9 +96,12 @@ sub build_bcf_query_filter_command {
 
   my $snp_called_vcf = _file_path( $self, q(_snp_called.vcf.gz) );
   my $filtered_snp_called_vcf = _file_path( $self, q(_filtered_snp_called.vcf) );
-  my $cmd = $self->{bcftools} . q( filter -i );
-  $cmd .= q{"(DP4[0]+DP4[1])/(DP4[2]+DP4[3]) > 0.3" } . $snp_called_vcf . q{ | };
-  $cmd .= $self->{bcftools} . q( filter -i);
+  my $cmd = $self->{bcftools} . q( filter -i);
+  $cmd .= q{ "(DP4[0]+DP4[1])/(DP4[2]+DP4[3]) > 0.3" };
+  $cmd .= $snp_called_vcf;
+  $cmd .= q{ | };
+  $cmd .= $self->{bcftools};
+  $cmd .= q( filter -i);
   $cmd .= q{ "MIN(DP) >= } . $self->{bcft_min_dp};
   $cmd .= q{ & MIN(DV) >= } . $self->{bcft_min_dv};
   $cmd .= q{ & MIN(DV/DP)>= } . $self->{bcft_dp_dv_ratio};
